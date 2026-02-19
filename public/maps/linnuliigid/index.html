@@ -2,10 +2,11 @@
 <html>
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <title>Linnuliigid 2026</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
+    :root{--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);--appHeader:0px;--appBottomNav:0px}
     html,body {height:100%;margin:0;font-family:system-ui,Arial,sans-serif}
     #root{height:100%}
     #app {display:grid;grid-template-columns:360px 1fr;height:100dvh;min-height:0}
@@ -84,16 +85,18 @@
     .sidebar-backdrop{display:none;position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,.35)}
     body.sidebar-open .sidebar-toggle{display:none!important}
     @media (max-width: 900px){
-      #app{grid-template-columns:1fr}
+      #app{grid-template-columns:1fr;height:calc(100dvh - var(--appHeader) - var(--appBottomNav) - var(--sab))}
+      #map{height:100%}
       #sidebar{
         position:fixed;top:0;left:0;height:100dvh;width:min(420px,92vw);
-        z-index:1150;transform:translateX(-105%);transition:transform .22s ease;
+        z-index:4000;transform:translateX(-105%);transition:transform .22s ease;
         box-shadow:0 10px 30px rgba(0,0,0,.18);border-right:1px solid #e5e7eb;
       }
       #sidebar.open{transform:translateX(0)}
       .close-sidebar{display:inline-flex}
       .sidebar-toggle{display:flex}
       .sidebar-backdrop.show{display:block}
+      .sidebar-backdrop{z-index:3500!important}
     }
 
 
@@ -1126,20 +1129,10 @@ setTimeout(autoDetectAvatarsForActive, 30000);
   const backdrop = document.getElementById('sidebarBackdrop');
   if(!sidebar || !openBtn || !backdrop) return;
 
-  // Dynamic burger positioning: anchor below the parent app's map selector header
+  // Dynamic burger positioning: anchor 8px below top of visible map
   function repositionBurger(){
     if(!IS_MOBILE_DEVICE) return;
-    // The iframe is embedded; use a small fixed offset from safe-area top
-    // We don't have access to the parent header, but we know the parent header is ~56px
-    // Use the top of the map container as reference
-    const mapEl = document.getElementById('map');
-    if(mapEl){
-      const rect = mapEl.getBoundingClientRect();
-      // Position burger 8px below the top of the visible map area
-      openBtn.style.top = Math.max(8, rect.top + 8) + 'px';
-    } else {
-      openBtn.style.top = 'calc(env(safe-area-inset-top, 0px) + 8px)';
-    }
+    openBtn.style.top = '8px';
   }
   repositionBurger();
   window.addEventListener('load', repositionBurger);
@@ -1186,6 +1179,25 @@ function notifySilent(msg){
 // (Back-compat) if any code still calls notifySilent(), shadow it to be silent:
 window._realAlert = window.alert;
 window.alert = function(msg){ notifySilent(msg); };
+
+
+// === Listen for parent APP_INSETS to adjust layout ===
+window.addEventListener('message', function(ev){
+  try{
+    if(!ev.data || ev.data.type !== 'APP_INSETS') return;
+    var h = ev.data.headerPx || 0;
+    var b = ev.data.bottomNavPx || 0;
+    document.documentElement.style.setProperty('--appHeader', h + 'px');
+    document.documentElement.style.setProperty('--appBottomNav', b + 'px');
+    if(window.map && map.invalidateSize) setTimeout(function(){ map.invalidateSize(true); }, 100);
+  }catch(e){}
+});
+// Request insets from parent on load
+try{
+  if(window.parent && window.parent !== window){
+    window.parent.postMessage({ type: 'INSETS_REQUEST' }, '*');
+  }
+}catch(e){}
 </script>
 
 
@@ -1240,21 +1252,21 @@ window.alert = function(msg){ notifySilent(msg); };
   .btn.icon{padding:4px 8px;border:1px solid #cbd5e1;background:#fff;border-radius:8px;cursor:pointer}
   /* Desktop size buttons */
   .wind-size-btns{display:inline}
-  /* Mobile: bottom sheet */
+  /* Mobile: full-screen modal */
   @media (max-width: 900px){
     #windPanel{
-      position:fixed!important;left:0!important;right:0!important;bottom:0!important;top:auto!important;
-      width:100%!important;border-radius:16px 16px 0 0!important;
-      box-shadow:0 -6px 24px rgba(0,0,0,.18)!important;
-      z-index:1200!important;
-      transition:height .25s ease;
-      max-height:55vh;
+      position:fixed!important;inset:0!important;width:100%!important;height:100%!important;
+      border-radius:0!important;box-shadow:none!important;
+      z-index:6000!important;max-height:none!important;
     }
-    #windPanel.wind-collapsed{height:52px!important;overflow:hidden!important}
-    #windPanel.wind-expanded{height:min(50vh,420px)!important;overflow:hidden!important}
+    #windPanel.wind-collapsed,#windPanel.wind-expanded{height:100%!important}
+    #windyFrame{height:calc(100% - 44px)!important}
     .wind-size-btns{display:none!important}
-    #windHeader{cursor:grab;touch-action:none}
-    #windHeader .wind-expand-arrow{display:inline-block}
+    #windHeader .wind-expand-arrow{display:none!important}
+    #windHeader{background:#fff;border-bottom:1px solid #e5e7eb;padding:8px 12px}
+    #windHeader .title{font-size:15px;font-weight:600}
+    .wind-close-desktop{display:none!important}
+    .wind-close-mobile{display:inline-block!important}
   }
   @media (min-width: 901px){
     #windHeader .wind-expand-arrow{display:none}
@@ -1298,9 +1310,9 @@ window.alert = function(msg){ notifySilent(msg); };
         <button id="windMedium" class="btn icon">M</button>
         <button id="windLarge" class="btn icon">L</button>
       </span>
-      <button id="windClose" class="btn icon">✕</button>
+      <button id="windClose" class="btn icon wind-close-desktop">✕</button>
+      <button id="windCloseMobile" class="btn icon wind-close-mobile" style="display:none">← Tagasi</button>
     </div>
-  </div>
   <iframe id="windyFrame" src=""></iframe>
 </div>
 <script>
@@ -1377,7 +1389,10 @@ window.alert = function(msg){ notifySilent(msg); };
   function openWind(){
     refreshWind();
     panel.style.display = 'block';
-    if(isMob) setWindExpanded(false); // start collapsed on mobile
+    if(isMob){
+      // Full-screen modal on mobile — no collapsed state
+      document.body.style.overflow = 'hidden';
+    }
     try{
       if (!window.__wind_sync__ && window.map){
         map.on('moveend zoomend', refreshWind);
@@ -1388,6 +1403,7 @@ window.alert = function(msg){ notifySilent(msg); };
   function closeWind(){
     panel.style.display = 'none';
     if(isMob) document.body.style.overflow = '';
+    try{ setTimeout(()=>{ if(map && map.invalidateSize) map.invalidateSize(true); }, 260); }catch(e){}
   }
 
   btn.addEventListener('click', ()=>{
@@ -1398,6 +1414,8 @@ window.alert = function(msg){ notifySilent(msg); };
     }
   });
   btnClose.addEventListener('click', closeWind);
+  const btnCloseMob = document.getElementById('windCloseMobile');
+  if(btnCloseMob) btnCloseMob.addEventListener('click', closeWind);
 
   // Expand/collapse toggle on mobile
   if(expandArrow){

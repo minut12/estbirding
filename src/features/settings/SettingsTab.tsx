@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { clearAppCaches, fullReset, doSoftReload, doHardReload, type ResetReport } from '@/lib/cache-reset';
+import { APP_VERSION } from '@/lib/version';
 import { Trash2, RotateCcw } from 'lucide-react';
 
 type ResetMode = 'soft' | 'hard' | null;
@@ -166,6 +167,12 @@ export default function SettingsTab() {
           </a>
           <p className="text-xs text-muted-foreground">
             Kasuta seda linki, kui rakendus on täiesti kinni jäänud ja nupud ei tööta.
+          </p>
+
+          <Separator className="my-2" />
+
+          <p className="text-xs text-muted-foreground">
+            Versioon: {APP_VERSION}
           </p>
         </div>
       </div>

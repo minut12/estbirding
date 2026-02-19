@@ -5,6 +5,9 @@ const PRECACHE_URLS = [
   '/map-placeholder.html',
 ];
 
+// Never cache the reset page
+const DENY_CACHE = ['/reset/', '/reset/index.html'];
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
@@ -22,6 +25,14 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // Always fetch /reset/ from network
+  if (DENY_CACHE.some((p) => url.pathname.startsWith(p))) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );

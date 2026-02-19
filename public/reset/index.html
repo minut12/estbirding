@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="et">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lähtestus – EstBirding</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f8f8f6;
+      color: #1a2e1a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100dvh;
+      padding: 1rem;
+    }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      max-width: 400px;
+      width: 100%;
+      padding: 2rem;
+      text-align: center;
+    }
+    h1 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+    p { font-size: 0.875rem; color: #666; margin-bottom: 1.5rem; line-height: 1.5; }
+    #status {
+      font-size: 0.8125rem;
+      color: #3a7d44;
+      min-height: 2rem;
+      margin-bottom: 1rem;
+      white-space: pre-line;
+    }
+    button {
+      background: #3a7d44;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.75rem 1.5rem;
+      font-size: 1rem;
+      cursor: pointer;
+      width: 100%;
+      margin-bottom: 0.5rem;
+    }
+    button:disabled { opacity: 0.5; cursor: wait; }
+    button.secondary {
+      background: transparent;
+      color: #3a7d44;
+      border: 1px solid #3a7d44;
+    }
+    .error { color: #c53030; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🔄 Rakenduse lähtestus</h1>
+    <p>See leht kustutab kõik vahemälud, teenustöötajad ja salvestatud andmed ning laadib rakenduse uuesti.</p>
+    <div id="status"></div>
+    <button id="btnReset" onclick="runReset()">Lähtesta kohe</button>
+    <button class="secondary" onclick="location.href='/'">Tagasi rakendusse</button>
+  </div>
+  <script>
+    var statusEl = document.getElementById('status');
+    var btn = document.getElementById('btnReset');
+
+    function log(msg) { statusEl.textContent += msg + '\n'; }
+
+    async function runReset() {
+      btn.disabled = true;
+      var errors = [];
+
+      // 1. Unregister service workers
+      try {
+        if ('serviceWorker' in navigator) {
+          var regs = await navigator.serviceWorker.getRegistrations();
+          for (var i = 0; i < regs.length; i++) {
+            await regs[i].unregister();
+          }
+          log('✅ Teenustöötajad eemaldatud (' + regs.length + ')');
+        }
+      } catch (e) { errors.push('SW: ' + e.message); }
+
+      // 2. Delete cache storage
+      try {
+        if ('caches' in window) {
+          var keys = await caches.keys();
+          for (var j = 0; j < keys.length; j++) {
+            await caches.delete(keys[j]);
+          }
+          log('✅ Vahemälud kustutatud (' + keys.length + ')');
+        }
+      } catch (e) { errors.push('Caches: ' + e.message); }
+
+      // 3. localStorage + sessionStorage
+      try { localStorage.clear(); log('✅ localStorage tühjendatud'); }
+      catch (e) { errors.push('localStorage: ' + e.message); }
+
+      try { sessionStorage.clear(); log('✅ sessionStorage tühjendatud'); }
+      catch (e) { errors.push('sessionStorage: ' + e.message); }
+
+      // 4. IndexedDB
+      try {
+        if ('indexedDB' in window && typeof indexedDB.databases === 'function') {
+          var dbs = await indexedDB.databases();
+          for (var k = 0; k < dbs.length; k++) {
+            if (dbs[k].name) indexedDB.deleteDatabase(dbs[k].name);
+          }
+          log('✅ IndexedDB kustutatud (' + dbs.length + ')');
+        }
+      } catch (e) { errors.push('IDB: ' + e.message); }
+
+      if (errors.length > 0) {
+        log('⚠️ Osaliselt: ' + errors.join('; '));
+      }
+
+      log('\nSuunan ümber…');
+      setTimeout(function () {
+        window.location.href = '/?v=' + Date.now();
+      }, 1200);
+    }
+  </script>
+</body>
+</html>

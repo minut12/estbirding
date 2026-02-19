@@ -4,6 +4,8 @@ import MapTab from '@/features/map/MapTab';
 import NewsTab from '@/features/news/NewsTab';
 import EventsTab from '@/features/events/EventsTab';
 import SettingsTab from '@/features/settings/SettingsTab';
+import CacheResetFab from '@/components/CacheResetFab';
+import VersionBanner from '@/components/VersionBanner';
 import { cn } from '@/lib/utils';
 
 type Tab = 'kaart' | 'uudised' | 'üritused' | 'seaded';
@@ -22,6 +24,8 @@ export default function Index() {
 
   return (
     <div className="flex flex-col h-screen bg-background">
+      <VersionBanner />
+
       {/* Content area */}
       <div className="flex-1 overflow-hidden">
         {active === 'kaart' && <MapTab />}
@@ -48,6 +52,9 @@ export default function Index() {
           </button>
         ))}
       </nav>
+
+      {/* Mobile-only cache reset FAB */}
+      <CacheResetFab />
     </div>
   );
 }

@@ -249,28 +249,16 @@ const DEFAULT_SPRING_DATES = {
 };
 
 // === Avatar defaults & preloading ===
-// You can bundle avatars so you don't need to set them manually later.
-// Option 1 (simple): Fill DEFAULT_AVATARS with "Species name" -> URL or path.
-// Example:  'Aed-põõsalind': '/maps/linnuliigid/avatars/aed-poosalind.webp'
-const DEFAULT_AVATARS = {
-  // 'Aed-põõsalind': 'https://example.com/avatar.webp'
-};
+const DEFAULT_AVATARS = {};
+const PLACEHOLDER_AVATAR_URL = new URL('avatars/placeholder.webp', window.location.href).toString();
 
-// Option 2 (recommended for large sets): place an 'avatars.json' next to this HTML.
-// Expected format: { "Aed-põõsalind": "/maps/linnuliigid/avatars/aed-poosalind.webp", ... }
-// If found, it's merged as defaults (localStorage overrides it).
-async function tryLoadBundledAvatars(){
-  try{
-    const url = new URL('avatars.json', window.location.href).toString();
-    const r = await fetch(url, {cache:'no-store'});
-    if(!r.ok) return;
-    const data = await r.json();
-    if(!data || typeof data !== 'object') return;
-    avatars = Object.assign({}, data, avatars);
-    save();
-    preloadAvatars(Object.values(avatars));
-    render();
-  }catch(e){ /* ignore */ }
+// Slugify Estonian species name to filename
+function slugifySpeciesKey(key){
+  return String(key).toLowerCase()
+    .replace(/õ/g,'o').replace(/ä/g,'a').replace(/ö/g,'o').replace(/ü/g,'u')
+    .replace(/š/g,'s').replace(/ž/g,'z')
+    .replace(/[^a-z0-9]+/g,'-')
+    .replace(/^-+|-+$/g,'');
 }
 
 const __avatarPreloadCache = new Set();
@@ -288,10 +276,72 @@ function preloadAvatars(urls){
   }catch(e){ /* ignore */ }
 }
 
+// Auto-detect avatar file for a single species key (returns Promise)
+const __avatarProbeCache = new Map(); // key -> url|null
+function probeAvatarFile(key){
+  if(__avatarProbeCache.has(key)) return Promise.resolve(__avatarProbeCache.get(key));
+  const slug = slugifySpeciesKey(key);
+  const url = new URL('avatars/' + slug + '.webp', window.location.href).toString();
+  return new Promise(resolve=>{
+    const img = new Image();
+    img.onload = ()=>{
+      __avatarProbeCache.set(key, url);
+      resolve(url);
+    };
+    img.onerror = ()=>{
+      __avatarProbeCache.set(key, null);
+      resolve(null);
+    };
+    img.src = url;
+  });
+}
+
+// Auto-detect avatars for active (last 7d) species only
+async function autoDetectAvatarsForActive(){
+  try{
+    const now = Date.now(), sevenMs = 7*24*60*60*1000;
+    const activeKeys = [];
+    for(const name of SPECIES){
+      if(avatars[name]) continue; // localStorage already has one
+      const p = points[name];
+      if(!p) continue;
+      let active = false;
+      if(Number.isFinite(p.occ7) && p.occ7 > 0) active = true;
+      if(!active && p.t){
+        const ms = _toDay(p.t);
+        if(ms && (now - ms) <= sevenMs) active = true;
+      }
+      if(active) activeKeys.push(name);
+    }
+    // Probe in parallel (only active species without existing avatar)
+    const results = await Promise.all(activeKeys.map(k => probeAvatarFile(k).then(url => ({k,url}))));
+    let changed = false;
+    for(const {k,url} of results){
+      if(url){
+        avatars[k] = url;
+        changed = true;
+      }
+    }
+    if(changed){
+      save();
+      preloadAvatars(Object.values(avatars));
+      // Re-render markers and sidebar
+      activeKeys.forEach(k=>{ try{ updateMarker(k); }catch(e){} });
+      render();
+    }
+  }catch(e){ /* ignore */ }
+}
+
+// Helper: get display avatar (localStorage > detected > placeholder)
+function getDisplayAvatar(key){
+  return avatars[key] || PLACEHOLDER_AVATAR_URL;
+}
+
 let avatars = JSON.parse(localStorage.getItem(LS_AVATARS) || '{}');
 avatars = Object.assign({}, DEFAULT_AVATARS, avatars);
 preloadAvatars(Object.values(avatars));
-setTimeout(tryLoadBundledAvatars, 0);
+// Preload placeholder
+preloadAvatars([PLACEHOLDER_AVATAR_URL]);
 
 let points  = JSON.parse(localStorage.getItem(LS_POINTS) || '{}'); // key = estonian name
 let proxyBase = localStorage.getItem(LS_PROXY) || '';
@@ -600,7 +650,7 @@ const isVisible = (p.visible !== false) && passesRecent;
 if (isVisible && Number.isFinite(p.lat) && Number.isFinite(p.lon)) {
     const bcol = _borderColorByDate(p.t);
     const c7 = Number.isFinite(p.occ7) ? p.occ7 : null;
-    const icon = avatars[key] ? avatarIcon(avatars[key], bcol, c7) : defaultIcon(bcol, c7);
+    const icon = avatarIcon(getDisplayAvatar(key), bcol, c7);
     const when = p.t ? `<br><small>vaatluse kuupäev: ${p.t}</small>` : '';
     const src = p.src?`<br><small>allikas: ${p.src}</small>`:'';
     const m = L.marker([p.lat,p.lon], {icon}).addTo(map)
@@ -826,7 +876,7 @@ function rowHTML(obj) {
     : `No location yet${(occ7!==null?` <span class="pill">7d:</span> ${occ7}`:'')}${springTxt}`;
 
   return `<div class="row" data-key="${key}">
-    <div class="avatar" style="background-image:url('${avatars[key]||''}');border:3px solid ${bcol}"></div>
+    <div class="avatar" style="background-image:url('${getDisplayAvatar(key)}');border:3px solid ${bcol}"></div>
     <div>
       <div class="top">
         <div class="name-label clickable ${muted}" onclick="toggleVisibility('${key}')">${key}</div>
@@ -866,6 +916,11 @@ document.getElementById('filterBox').addEventListener('input', render);
 // Restore existing markers and render list
 Object.keys(points).forEach(updateMarker);
 render();
+
+// Auto-detect avatar files for active species (after initial render + data fetch)
+setTimeout(autoDetectAvatarsForActive, 3000);
+// Re-run after first refresh cycle completes
+setTimeout(autoDetectAvatarsForActive, 30000);
 
 /* Mobile: sidebar drawer (show map by default) */
 (function(){

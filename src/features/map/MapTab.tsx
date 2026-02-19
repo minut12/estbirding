@@ -2,13 +2,18 @@ import { maps, getActiveMap } from './config';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { APP_VERSION } from '@/lib/version';
 
 export default function MapTab() {
   const [selectedId, setSelectedId] = useState(getActiveMap().id);
   const current = maps.find((m) => m.id === selectedId) ?? getActiveMap();
+  const iframeSrc = useMemo(() => {
+    const sep = current.source.includes('?') ? '&' : '?';
+    return `${current.source}${sep}v=${APP_VERSION}`;
+  }, [current.source]);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,7 +43,7 @@ export default function MapTab() {
   const retry = () => {
     setError(null);
     if (iframeRef.current) {
-      iframeRef.current.src = current.source;
+      iframeRef.current.src = iframeSrc;
     }
   };
 
@@ -77,7 +82,7 @@ export default function MapTab() {
           <iframe
             ref={iframeRef}
             key={current.id}
-            src={current.source}
+            src={iframeSrc}
             title={current.name}
             className="absolute inset-0 w-full h-full border-0 block"
             sandbox="allow-scripts allow-same-origin allow-popups allow-forms"

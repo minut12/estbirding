@@ -14,7 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bird_avatar_map: {
+        Row: {
+          file_path: string
+          public_url: string
+          species_key: string
+          updated_at: string
+        }
+        Insert: {
+          file_path: string
+          public_url: string
+          species_key: string
+          updated_at?: string
+        }
+        Update: {
+          file_path?: string
+          public_url?: string
+          species_key?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

@@ -268,6 +268,15 @@ let springDates = (function(){
 const map = L.map('map').setView([58.7,25.3], 6.5);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).addTo(map);
 
+// Listen for MAP_SHOWN from parent to fix Leaflet sizing
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'MAP_SHOWN') {
+    setTimeout(function(){ map.invalidateSize(); }, 100);
+  }
+});
+// Notify parent that map is ready
+try { window.parent.postMessage({ type: 'MAP_READY' }, '*'); } catch(e) {}
+
 const markers = new Map();
 
 // === Auto update (no UI changes) ===

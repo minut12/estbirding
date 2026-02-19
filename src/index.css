@@ -111,3 +111,9 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+
+/* Ensure full height for map layout */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}

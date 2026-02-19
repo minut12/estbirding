@@ -25,6 +25,22 @@ export default function MapTab() {
     } catch (e) { /* cross-origin safety */ }
   }, []);
 
+  // Send APP_INSETS to iframe so it can adjust layout for parent header/nav
+  const sendAppInsets = useCallback(() => {
+    try {
+      // Parent has a header (map selector ~56px) and bottom nav (~56px)
+      const headerEl = document.querySelector('.shrink-0');
+      const navEl = document.querySelector('nav.border-t');
+      const headerPx = headerEl ? headerEl.getBoundingClientRect().height : 56;
+      const bottomNavPx = navEl ? navEl.getBoundingClientRect().height : 56;
+      iframeRef.current?.contentWindow?.postMessage({
+        type: 'APP_INSETS',
+        headerPx: 0, // iframe already sits below header in parent layout
+        bottomNavPx,
+      }, '*');
+    } catch (e) { /* cross-origin safety */ }
+  }, []);
+
   // Send shared avatars to iframe
   const sendAvatarsToIframe = useCallback(() => {
     const avatars = getMergedAvatars();
@@ -42,16 +58,19 @@ export default function MapTab() {
     return () => clearTimeout(t0);
   }, [sendAvatarsToIframe]);
 
-  // Listen for AVATARS_REQUEST from iframe
+  // Listen for AVATARS_REQUEST and INSETS_REQUEST from iframe
   useEffect(() => {
     const handler = (ev: MessageEvent) => {
       if (ev.data?.type === 'AVATARS_REQUEST') {
         sendAvatarsToIframe();
       }
+      if (ev.data?.type === 'INSETS_REQUEST') {
+        sendAppInsets();
+      }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [sendAvatarsToIframe]);
+  }, [sendAvatarsToIframe, sendAppInsets]);
 
   useEffect(() => {
     const t = setTimeout(sendMapShown, 500);
@@ -62,8 +81,9 @@ export default function MapTab() {
   const handleLoad = () => {
     setError(null);
     sendMapShown();
-    // Send avatars when iframe loads
+    // Send avatars and insets when iframe loads
     setTimeout(sendAvatarsToIframe, 300);
+    setTimeout(sendAppInsets, 400);
   };
 
   const handleError = () => {

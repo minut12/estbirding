@@ -27,6 +27,15 @@
   .last-fetched-inline{ font-size:11px; color:#64748b; margin-left:6px; white-space:nowrap }
   .last-fetched-line{ font-size:11px; color:#64748b; margin-top:2px }
 
+  /* Fetch queue controls */
+  .fetch-controls{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0}
+  .fetch-controls .btn{font-size:12px;padding:3px 8px}
+  .fetch-controls .btn.stop{background:#e74c3c}
+  .fetch-progress{font-size:11px;color:#334155;padding:2px 0;min-height:16px}
+  .fetch-progress-bar{height:3px;background:#e2e8f0;border-radius:2px;overflow:hidden;margin-top:2px}
+  .fetch-progress-bar-inner{height:100%;background:#27ae60;transition:width .2s}
+  .fetch-error{font-size:11px;color:#dc2626;margin-top:2px;max-height:40px;overflow:auto}
+
 
 .btn.on{background:#27ae60;color:#fff}
 
@@ -93,6 +102,14 @@
 <div class="top-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
   <span class="pill" title="Only show occurrences within the last 7 days.">7 days only</span>
 </div>
+<div class="fetch-controls">
+  <button id="btnRefreshVisible" class="btn" title="Fetch data for currently visible/filtered species">Refresh visible</button>
+  <button id="btnRefreshSelected" class="btn secondary" title="Fetch data for selected species only">Refresh selected</button>
+  <button id="btnStopFetch" class="btn stop" style="display:none" title="Cancel ongoing fetches">Stop</button>
+</div>
+<div id="fetchProgress" class="fetch-progress"></div>
+<div id="fetchProgressBar" class="fetch-progress-bar" style="display:none"><div id="fetchProgressBarInner" class="fetch-progress-bar-inner" style="width:0%"></div></div>
+<div id="fetchError" class="fetch-error"></div>
     <input id="filterBox" type="text" placeholder="Filter…" />
     <div id="list"></div>
   </aside>
@@ -364,6 +381,48 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).
 
 const markers = new Map();
 
+// === Mobile detection ===
+const IS_MOBILE = matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+// === Per-species cache with TTL ===
+const CACHE_PREFIX = 'linn_cache_v1:';
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+function getCachedSpecies(key){
+  try{
+    const raw = localStorage.getItem(CACHE_PREFIX + key);
+    if(!raw) return null;
+    const obj = JSON.parse(raw);
+    if(!obj || !obj.cachedAt) return null;
+    return obj;
+  }catch(e){ return null; }
+}
+function setCachedSpecies(key, data){
+  try{
+    data.cachedAt = Date.now();
+    localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(data));
+  }catch(e){}
+}
+function isCacheExpired(cached){
+  if(!cached || !cached.cachedAt) return true;
+  return (Date.now() - cached.cachedAt) > CACHE_TTL_MS;
+}
+
+// Load cached data into points on startup (instant markers)
+(function loadCacheIntoPoints(){
+  for(const name of SPECIES){
+    const c = getCachedSpecies(name);
+    if(!c) continue;
+    points[name] = points[name] || {};
+    if(Number.isFinite(c.lat)) points[name].lat = c.lat;
+    if(Number.isFinite(c.lon)) points[name].lon = c.lon;
+    if(c.lastDate) points[name].t = c.lastDate;
+    if(Number.isFinite(c.occ7)) points[name].occ7 = c.occ7;
+    if(c.src) points[name].src = c.src;
+    if(typeof points[name].visible !== 'boolean') points[name].visible = true;
+  }
+})();
+
 // === Auto update (no UI changes) ===
 function _toDay(s){
   if(!s) return null;
@@ -376,8 +435,7 @@ function _isNewer(newD, oldD){
   if(a && b) return a > b;
   return !!newD && !oldD;
 }
-  // --- Border color based on recency (<=7 days = green, older = orange) ---
-  
+
 // --- Recent-only (markers only) helpers ---
 window.__recentOnly = true; // ALWAYS enforce last-7-days only
 function isRecent(isoDate){
@@ -390,25 +448,156 @@ function isRecent(isoDate){
 }
 
 function _borderColorByDate(isoDate){
-    try{
-      const ms = _toDay(isoDate);
-      if (!ms) return '#e67e22'; // unknown date -> orange
-      const now = Date.now();
-      const seven = 7 * 24 * 60 * 60 * 1000;
-      return (now - ms) <= seven ? '#27ae60' : '#e67e22';
-    }catch(e){ return '#e67e22'; }
-  }
+  try{
+    const ms = _toDay(isoDate);
+    if (!ms) return '#e67e22';
+    const now = Date.now();
+    const seven = 7 * 24 * 60 * 60 * 1000;
+    return (now - ms) <= seven ? '#27ae60' : '#e67e22';
+  }catch(e){ return '#e67e22'; }
+}
 
-async function _refreshAllOnce(){
-  const delay = ms => new Promise(r=>setTimeout(r, ms));
-  for(const o of DATA){
-    try{ await autoFetchCoords(o.est, o.url); }catch(e){}
-    await delay(800);
+// === Fetch Queue System ===
+const FETCH_CONCURRENCY = IS_MOBILE ? 2 : 4;
+let __fetchQueue = [];
+let __fetchRunning = 0;
+let __fetchAbort = null; // AbortController
+let __fetchTotal = 0;
+let __fetchDone = 0;
+let __fetchLastError = '';
+
+function _updateFetchUI(){
+  const prog = document.getElementById('fetchProgress');
+  const bar = document.getElementById('fetchProgressBar');
+  const barInner = document.getElementById('fetchProgressBarInner');
+  const errEl = document.getElementById('fetchError');
+  const stopBtn = document.getElementById('btnStopFetch');
+  if(!prog) return;
+  if(__fetchTotal > 0 && __fetchDone < __fetchTotal){
+    prog.textContent = 'Refreshing: ' + __fetchDone + '/' + __fetchTotal;
+    if(bar){ bar.style.display='block'; barInner.style.width = Math.round(__fetchDone/__fetchTotal*100)+'%'; }
+    if(stopBtn) stopBtn.style.display='inline-block';
+  } else {
+    prog.textContent = __fetchTotal > 0 ? 'Done (' + __fetchDone + '/' + __fetchTotal + ')' : '';
+    if(bar) bar.style.display='none';
+    if(stopBtn) stopBtn.style.display='none';
+  }
+  if(errEl) errEl.textContent = __fetchLastError ? 'Last error: ' + __fetchLastError : '';
+}
+
+function _stopFetchQueue(){
+  __fetchQueue = [];
+  if(__fetchAbort){ try{ __fetchAbort.abort(); }catch(e){} }
+  __fetchAbort = null;
+  __fetchRunning = 0;
+  _updateFetchUI();
+}
+
+async function _processQueue(){
+  while(__fetchQueue.length > 0 && __fetchRunning < FETCH_CONCURRENCY){
+    const item = __fetchQueue.shift();
+    if(!item) continue;
+    __fetchRunning++;
+    (async ()=>{
+      try{
+        await autoFetchCoords(item.key, item.url);
+        // Update cache
+        const p = points[item.key];
+        if(p) setCachedSpecies(item.key, { lat:p.lat, lon:p.lon, lastDate:p.t, occ7:p.occ7, src:p.src });
+      }catch(e){
+        __fetchLastError = item.key + ': ' + (e.message||e);
+      }
+      __fetchDone++;
+      __fetchRunning--;
+      _updateFetchUI();
+      _processQueue();
+    })();
   }
 }
-// run once on load (after initial render) and then every 30 minutes
-setTimeout(_refreshAllOnce, 2000);
-setInterval(_refreshAllOnce, 30 * 60 * 1000);
+
+let __lastRefreshClick = 0;
+function _enqueueFetch(speciesKeys){
+  // Debounce
+  const now = Date.now();
+  if(now - __lastRefreshClick < 1000) return;
+  __lastRefreshClick = now;
+
+  _stopFetchQueue();
+  __fetchAbort = new AbortController();
+  __fetchTotal = speciesKeys.length;
+  __fetchDone = 0;
+  __fetchLastError = '';
+
+  for(const key of speciesKeys){
+    const obj = DATA.find(d => d.est === key);
+    if(obj) __fetchQueue.push({ key: obj.est, url: obj.url });
+  }
+  _updateFetchUI();
+  _processQueue();
+}
+
+// Get currently visible/filtered species keys
+function _getFilteredSpeciesKeys(){
+  const q = (document.getElementById('filterBox')?.value||'').toLowerCase().trim();
+  return DATA.filter(x => x.est.toLowerCase().includes(q)).map(x => x.est);
+}
+
+// Wire buttons (after DOM ready)
+function _wireFetchButtons(){
+  const btnVis = document.getElementById('btnRefreshVisible');
+  const btnSel = document.getElementById('btnRefreshSelected');
+  const btnStop = document.getElementById('btnStopFetch');
+  if(btnVis && !btnVis.__wired){
+    btnVis.addEventListener('click', ()=>{
+      const keys = _getFilteredSpeciesKeys();
+      // On mobile, only fetch species with expired or missing cache
+      const toFetch = IS_MOBILE ? keys.filter(k => isCacheExpired(getCachedSpecies(k))) : keys;
+      if(toFetch.length === 0){ document.getElementById('fetchProgress').textContent = 'All cached (< 6h old)'; return; }
+      _enqueueFetch(toFetch);
+    });
+    btnVis.__wired = true;
+  }
+  if(btnSel && !btnSel.__wired){
+    btnSel.addEventListener('click', ()=>{
+      // "Selected" = species with highlight or just the filter result if small
+      const keys = _getFilteredSpeciesKeys();
+      if(keys.length > 20){
+        document.getElementById('fetchProgress').textContent = 'Filter to fewer species first (max 20)';
+        return;
+      }
+      _enqueueFetch(keys);
+    });
+    btnSel.__wired = true;
+  }
+  if(btnStop && !btnStop.__wired){
+    btnStop.addEventListener('click', _stopFetchQueue);
+    btnStop.__wired = true;
+  }
+}
+
+// === Desktop: idle background refresh ===
+function _desktopIdleRefresh(){
+  if(IS_MOBILE) return; // Never auto on mobile
+  const keys = SPECIES.filter(k => isCacheExpired(getCachedSpecies(k)));
+  if(keys.length === 0) return;
+  _enqueueFetch(keys);
+}
+
+// Schedule: desktop auto-refresh after 4s, then every 30min
+if(!IS_MOBILE){
+  const scheduleIdle = typeof requestIdleCallback === 'function'
+    ? (fn) => requestIdleCallback(fn, {timeout: 10000})
+    : (fn) => setTimeout(fn, 4000);
+  scheduleIdle(() => _desktopIdleRefresh());
+  setInterval(() => {
+    if(!IS_MOBILE){
+      const schedIdle = typeof requestIdleCallback === 'function'
+        ? (fn) => requestIdleCallback(fn, {timeout: 10000})
+        : (fn) => setTimeout(fn, 2000);
+      schedIdle(() => _desktopIdleRefresh());
+    }
+  }, 30 * 60 * 1000);
+}
 
 
 function save() {
@@ -916,6 +1105,7 @@ document.getElementById('filterBox').addEventListener('input', render);
 // Restore existing markers and render list
 Object.keys(points).forEach(updateMarker);
 render();
+_wireFetchButtons();
 
 // Auto-detect avatar files for active species (after initial render + data fetch)
 setTimeout(autoDetectAvatarsForActive, 3000);

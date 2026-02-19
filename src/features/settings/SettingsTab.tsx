@@ -6,10 +6,21 @@ import { Button } from '@/components/ui/button';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
+import { clearAppCaches, fullReset, doSoftReload, doHardReload, type ResetReport } from '@/lib/cache-reset';
+import { Trash2, RotateCcw } from 'lucide-react';
+
+type ResetMode = 'soft' | 'hard' | null;
 
 export default function SettingsTab() {
   const [form, setForm] = useState<AppSettings>(loadSettings);
+  const [confirmMode, setConfirmMode] = useState<ResetMode>(null);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     setForm(loadSettings());
@@ -22,6 +33,33 @@ export default function SettingsTab() {
   const handleSave = () => {
     saveSettings(form);
     toast.success('Seaded salvestatud');
+  };
+
+  const showReport = (report: ResetReport) => {
+    if (report.errors.length > 0) {
+      toast.warning('Osaline tühjendus', {
+        description: report.errors.join('; '),
+        duration: 4000,
+      });
+    } else {
+      toast.success('Vahemälu tühjendatud. Laen uuesti…');
+    }
+  };
+
+  const handleReset = async () => {
+    const mode = confirmMode;
+    setConfirmMode(null);
+    if (!mode) return;
+    setResetting(true);
+    try {
+      const report = mode === 'soft' ? await clearAppCaches() : await fullReset();
+      showReport(report);
+      await new Promise((r) => setTimeout(r, 800));
+      if (mode === 'soft') doSoftReload(); else doHardReload();
+    } catch {
+      toast.error('Tühjendamine ebaõnnestus');
+      setResetting(false);
+    }
   };
 
   return (
@@ -85,7 +123,62 @@ export default function SettingsTab() {
         </div>
 
         <Button onClick={handleSave} className="w-full">Salvesta</Button>
+
+        <Separator />
+
+        {/* Troubleshooting section */}
+        <div className="space-y-3">
+          <h3 className="font-semibold text-foreground">Tõrkeotsing</h3>
+          <p className="text-xs text-muted-foreground">
+            Kui rakendus ei laadi uusimat versiooni, tühjenda vahemälu.
+          </p>
+          <div className="flex flex-col gap-2">
+            <Button
+              variant="outline"
+              disabled={resetting}
+              onClick={() => setConfirmMode('soft')}
+              className="w-full justify-start gap-2"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Tühjenda vahemälu
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={resetting}
+              onClick={() => setConfirmMode('hard')}
+              className="w-full justify-start gap-2"
+            >
+              <Trash2 className="w-4 h-4" />
+              Täielik lähtestus
+            </Button>
+          </div>
+          {resetting && (
+            <p className="text-sm text-muted-foreground animate-pulse">Tühjendamine…</p>
+          )}
+        </div>
       </div>
+
+      {/* Confirm dialog */}
+      <AlertDialog open={confirmMode !== null} onOpenChange={(open) => { if (!open) setConfirmMode(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmMode === 'hard' ? 'Täielik lähtestus' : 'Vahemälu tühjendamine'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmMode === 'hard'
+                ? 'Kõik salvestatud seaded ja vahemälu kustutatakse. Rakendus laaditakse uuesti.'
+                : 'Vahemälu tühjendatakse ja rakendus laaditakse uuesti. Seaded jäävad alles.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Tühista</AlertDialogCancel>
+            <AlertDialogAction onClick={handleReset}>
+              {confirmMode === 'hard' ? 'Lähtesta' : 'Tühjenda'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

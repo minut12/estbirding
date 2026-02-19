@@ -91,8 +91,8 @@
   <aside id="sidebar">
     <div class="sidebar-header"><h2 style="margin:0">Linnuliigid 2026</h2><button id="closeSidebarBtn" class="btn icon close-sidebar" title="Sulge" aria-label="Sulge">✕</button></div>
 <div class="top-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
-      <button id="recentToggle" class="btn secondary" title="Näita ainult viimase 7 päeva (rohelised) vaatlusmarkereid — vaikimisi VÄLJAS">7p: OFF</button>
-    </div>
+  <span class="pill" title="Only show occurrences within the last 7 days.">7 days only</span>
+</div>
     <input id="filterBox" type="text" placeholder="Filter…" />
     <div id="list"></div>
   </aside>
@@ -329,8 +329,7 @@ function _isNewer(newD, oldD){
   // --- Border color based on recency (<=7 days = green, older = orange) ---
   
 // --- Recent-only (markers only) helpers ---
-const LS_RECENT_ONLY = 'bm_recent_only';
-window.__recentOnly = (localStorage.getItem(LS_RECENT_ONLY) === '1');
+window.__recentOnly = true; // ALWAYS enforce last-7-days only
 function isRecent(isoDate){
   try{
     const ms = _toDay(isoDate);
@@ -596,9 +595,9 @@ function updateMarker(key) {
   const p = points[key];
   if (markers.has(key)) { map.removeLayer(markers.get(key)); markers.delete(key); }
   if (!p) return;
-  const passesRecent = (!window.__recentOnly) || isRecent(p.t);
-  const isVisible = (p.visible !== false) && passesRecent;
-  if (isVisible && Number.isFinite(p.lat) && Number.isFinite(p.lon)) {
+  const passesRecent = isRecent(p.t) || (Number.isFinite(p.occ7) && p.occ7 > 0);
+const isVisible = (p.visible !== false) && passesRecent;
+if (isVisible && Number.isFinite(p.lat) && Number.isFinite(p.lon)) {
     const bcol = _borderColorByDate(p.t);
     const c7 = Number.isFinite(p.occ7) ? p.occ7 : null;
     const icon = avatars[key] ? avatarIcon(avatars[key], bcol, c7) : defaultIcon(bcol, c7);
@@ -736,6 +735,16 @@ async function autoFetchCoords(key, searchUrl) {
 
     // NEW: count how many occurrences are within last 7 days (based on dates found on search page)
     const occ7Dates = extractAllEventDates(shtml);
+    // Use the newest date found on the search page as the "latest observation date"
+    // so that last-7-days filtering is accurate.
+    try{
+      let newest = null, newestMs = -1;
+      for (const d of (occ7Dates || [])){
+        const ms = _toDay(d);
+        if (ms && ms > newestMs){ newestMs = ms; newest = d; }
+      }
+      if (newest) eventDate = newest;
+    }catch(e){}
     const occ7 = (occ7Dates && occ7Dates.length>=0) ? countInLastNDaysFromDates(occ7Dates, 7) : null;
 
     if (!coords) {
@@ -853,36 +862,6 @@ try{
 }catch(e){}
 
 document.getElementById('filterBox').addEventListener('input', render);
-
-// Recent-only toggle button (affects markers only)
-(function(){
-  const btn = document.getElementById('recentToggle');
-  if(!btn) return;
-  function syncBtn(){
-    if (window.__recentOnly){ btn.classList.add('on'); btn.classList.remove('secondary'); btn.textContent = '7p: ON'; }
-    else { btn.classList.remove('on'); btn.classList.add('secondary'); btn.textContent = '7p: OFF'; }
-  }
-  function refreshMarkersSafe(){
-    try{
-      if (typeof points !== 'undefined' && points){
-        Object.keys(points).forEach(updateMarker);
-      }
-    }catch(e){ /* no-op */ }
-  }
-  btn.addEventListener('click', ()=>{
-    window.__recentOnly = !window.__recentOnly;
-    try{ localStorage.setItem(LS_RECENT_ONLY, window.__recentOnly ? '1' : '0'); }catch(e){}
-    syncBtn();
-    refreshMarkersSafe();
-  });
-  // init
-  syncBtn();
-  // apply after everything is loaded
-  window.addEventListener('DOMContentLoaded', refreshMarkersSafe);
-  window.addEventListener('load', refreshMarkersSafe);
-  setTimeout(refreshMarkersSafe, 0);
-})();
-
 
 // Restore existing markers and render list
 Object.keys(points).forEach(updateMarker);
@@ -1355,12 +1334,5 @@ window.alert = function(msg){ notifySilent(msg); };
 </script>
 
 
-<script>
-window.addEventListener('message',function(e){
-  if(e.data&&e.data.type==='MAP_SHOWN'&&typeof map!=='undefined'){
-    try{map.invalidateSize(true)}catch(x){}
-  }
-});
-</script>
 </body>
 </html>

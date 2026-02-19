@@ -6,6 +6,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { APP_VERSION } from '@/lib/version';
+import { fetchSharedAvatars, getMergedAvatars, notifyIframe } from '@/lib/avatar-storage';
 
 export default function MapTab() {
   const [selectedId, setSelectedId] = useState(getActiveMap().id);
@@ -24,8 +25,35 @@ export default function MapTab() {
     } catch (e) { /* cross-origin safety */ }
   }, []);
 
+  // Send shared avatars to iframe
+  const sendAvatarsToIframe = useCallback(() => {
+    const avatars = getMergedAvatars();
+    notifyIframe(avatars);
+  }, []);
+
+  // Fetch shared avatars on mount, cache locally, then send to iframe
   useEffect(() => {
-    // Send on mount + short delay for iframe load
+    // Send cached avatars immediately
+    const t0 = setTimeout(sendAvatarsToIframe, 600);
+    // Fetch fresh from cloud in background
+    fetchSharedAvatars().then(() => {
+      sendAvatarsToIframe();
+    });
+    return () => clearTimeout(t0);
+  }, [sendAvatarsToIframe]);
+
+  // Listen for AVATARS_REQUEST from iframe
+  useEffect(() => {
+    const handler = (ev: MessageEvent) => {
+      if (ev.data?.type === 'AVATARS_REQUEST') {
+        sendAvatarsToIframe();
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [sendAvatarsToIframe]);
+
+  useEffect(() => {
     const t = setTimeout(sendMapShown, 500);
     const t2 = setTimeout(sendMapShown, 1500);
     return () => { clearTimeout(t); clearTimeout(t2); };
@@ -34,6 +62,8 @@ export default function MapTab() {
   const handleLoad = () => {
     setError(null);
     sendMapShown();
+    // Send avatars when iframe loads
+    setTimeout(sendAvatarsToIframe, 300);
   };
 
   const handleError = () => {
@@ -49,7 +79,6 @@ export default function MapTab() {
 
   return (
     <div className="flex flex-col h-full" style={{ minHeight: 0 }}>
-      {/* Map selector header */}
       <div className="px-4 py-3 border-b border-border bg-card shrink-0">
         <Select value={selectedId} onValueChange={setSelectedId}>
           <SelectTrigger className="w-full">
@@ -66,7 +95,6 @@ export default function MapTab() {
         </Select>
       </div>
 
-      {/* Map area */}
       <div className="flex-1 relative" style={{ minHeight: 0 }}>
         {error ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-destructive/10 p-6 text-center">

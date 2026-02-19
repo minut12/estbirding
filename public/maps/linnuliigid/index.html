@@ -1390,27 +1390,44 @@ window.alert = function(msg){ notifySilent(msg); };
 
 <script>
 // === postMessage API for parent app (Avatar Manager) ===
+// Shared defaults from parent (Supabase-backed, lower priority than local overrides)
+var __sharedDefaults = {};
+
 (function(){
   window.addEventListener('message', function(ev){
     try{
       if(!ev.data || typeof ev.data !== 'object') return;
       var type = ev.data.type;
 
-      // Parent sends updated avatars
-      if(type === 'AVATARS_UPDATE' && ev.data.avatars){
-        var incoming = ev.data.avatars;
-        for(var k in incoming){
-          if(incoming.hasOwnProperty(k)){
-            if(incoming[k]){
-              avatars[k] = incoming[k];
-            } else {
-              delete avatars[k];
-            }
+      // Parent sends shared defaults (from Supabase cloud)
+      if(type === 'AVATARS_DEFAULTS' && ev.data.avatars){
+        __sharedDefaults = ev.data.avatars || {};
+        // Merge: local overrides take priority over shared defaults
+        var localAvatars = JSON.parse(localStorage.getItem(LS_AVATARS) || '{}');
+        var merged = Object.assign({}, __sharedDefaults, localAvatars);
+        // Apply to avatars object
+        for(var k in merged){
+          if(merged.hasOwnProperty(k) && merged[k]){
+            avatars[k] = merged[k];
           }
         }
         save();
         preloadAvatars(Object.values(avatars));
-        // Re-render all markers + sidebar
+        SPECIES.forEach(function(name){ try{ updateMarker(name); }catch(e){} });
+        render();
+      }
+
+      // Legacy: direct avatar update (still supported)
+      if(type === 'AVATARS_UPDATE' && ev.data.avatars){
+        var incoming = ev.data.avatars;
+        for(var k in incoming){
+          if(incoming.hasOwnProperty(k)){
+            if(incoming[k]) avatars[k] = incoming[k];
+            else delete avatars[k];
+          }
+        }
+        save();
+        preloadAvatars(Object.values(avatars));
         SPECIES.forEach(function(name){ try{ updateMarker(name); }catch(e){} });
         render();
       }
@@ -1424,6 +1441,13 @@ window.alert = function(msg){ notifySilent(msg); };
       }
     }catch(e){ console.warn('postMessage handler error', e); }
   });
+
+  // Request avatars from parent on load
+  try{
+    if(window.parent && window.parent !== window){
+      window.parent.postMessage({ type: 'AVATARS_REQUEST' }, '*');
+    }
+  }catch(e){ /* ignore */ }
 })();
 </script>
 

@@ -77,7 +77,10 @@
     .close-sidebar{display:none}
 
     /* Mobile drawer + backdrop */
-    .sidebar-toggle{display:none;position:fixed;left:12px;top:12px;z-index:1200;border:1px solid #cbd5e1;background:#fff;border-radius:10px;padding:8px 10px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.12)}
+    .sidebar-toggle{display:none;position:fixed;left:calc(env(safe-area-inset-left, 0px) + 12px);top:calc(env(safe-area-inset-top, 0px) + 12px);z-index:2000;border:1px solid #cbd5e1;background:#fff;border-radius:12px;padding:8px 10px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.12);width:44px;height:44px;display:none;align-items:center;justify-content:center;pointer-events:auto;-webkit-tap-highlight-color:transparent}
+    .sidebar-toggle::after{content:'';position:absolute;inset:-8px}
+    .leaflet-top,.leaflet-bottom{z-index:1000!important}
+    .leaflet-control{z-index:1000!important}
     .sidebar-backdrop{display:none;position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,.35)}
     @media (max-width: 900px){
       #app{grid-template-columns:1fr}
@@ -88,7 +91,7 @@
       }
       #sidebar.open{transform:translateX(0)}
       .close-sidebar{display:inline-flex}
-      .sidebar-toggle{display:block}
+      .sidebar-toggle{display:flex}
       .sidebar-backdrop.show{display:block}
     }
 
@@ -376,7 +379,9 @@ let springDates = (function(){
 })();
 
 // Map
-const map = L.map('map').setView([58.7,25.3], 6.5);
+const IS_MOBILE_DEVICE = matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const map = L.map('map', { zoomControl: !IS_MOBILE_DEVICE }).setView([58.7,25.3], 6.5);
+if (IS_MOBILE_DEVICE) { L.control.zoom({ position: 'topright' }).addTo(map); }
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).addTo(map);
 
 const markers = new Map();

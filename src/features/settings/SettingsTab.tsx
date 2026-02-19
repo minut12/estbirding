@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { clearAppCaches, fullReset, doSoftReload, doHardReload, type ResetReport } from '@/lib/cache-reset';
 import { APP_VERSION } from '@/lib/version';
 import { Trash2, RotateCcw } from 'lucide-react';
+import AvatarManager from './AvatarManager';
 
 type ResetMode = 'soft' | 'hard' | null;
 
@@ -124,6 +125,11 @@ export default function SettingsTab() {
         </div>
 
         <Button onClick={handleSave} className="w-full">Salvesta</Button>
+
+        <Separator />
+
+        {/* Avatar Manager */}
+        <AvatarManager />
 
         <Separator />
 

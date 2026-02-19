@@ -1388,6 +1388,44 @@ window.alert = function(msg){ notifySilent(msg); };
 })();
 </script>
 
+<script>
+// === postMessage API for parent app (Avatar Manager) ===
+(function(){
+  window.addEventListener('message', function(ev){
+    try{
+      if(!ev.data || typeof ev.data !== 'object') return;
+      var type = ev.data.type;
+
+      // Parent sends updated avatars
+      if(type === 'AVATARS_UPDATE' && ev.data.avatars){
+        var incoming = ev.data.avatars;
+        for(var k in incoming){
+          if(incoming.hasOwnProperty(k)){
+            if(incoming[k]){
+              avatars[k] = incoming[k];
+            } else {
+              delete avatars[k];
+            }
+          }
+        }
+        save();
+        preloadAvatars(Object.values(avatars));
+        // Re-render all markers + sidebar
+        SPECIES.forEach(function(name){ try{ updateMarker(name); }catch(e){} });
+        render();
+      }
+
+      // Parent requests current avatar state
+      if(type === 'AVATARS_REQUEST'){
+        var src = ev.source;
+        if(src && typeof src.postMessage === 'function'){
+          src.postMessage({ type: 'AVATARS_CURRENT', avatars: avatars }, '*');
+        }
+      }
+    }catch(e){ console.warn('postMessage handler error', e); }
+  });
+})();
+</script>
 
 </body>
 </html>

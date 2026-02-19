@@ -15,7 +15,7 @@ export const maps: MapDefinition[] = [
     name: 'Linnuliigid (EE)',
     region: 'Eesti',
     type: 'asset',
-    source: '/map-placeholder.html',
+    source: '/maps/linnuliigid/index.html',
     enabled: true,
   },
   // TODO: add more maps here

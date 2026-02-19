@@ -10,6 +10,13 @@
     #app {display:grid;grid-template-columns:400px 1fr;height:100%}
     #sidebar {border-right:1px solid #ddd;padding:10px;overflow:auto}
     #map {height:100%;}
+    /* Mobile: stack vertically with collapsible sidebar */
+    @media (max-width: 768px) {
+      #app {grid-template-columns:1fr;grid-template-rows:auto 1fr}
+      #sidebar {max-height:45vh;border-right:none;border-bottom:1px solid #ddd}
+      #sidebar.collapsed {max-height:44px;overflow:hidden}
+      #sidebarToggle {display:block !important}
+    }
     .row {display:grid;grid-template-columns:46px 1fr;gap:10px;align-items:center;padding:8px 0;border-bottom:1px dashed #eee}
     .avatar {width:40px;height:40px;border-radius:50%;border:1px solid #999;background-size:cover;background-position:center;background-color:#eef}
     .top {display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
@@ -66,7 +73,10 @@
 <body>
 <div id="app">
   <aside id="sidebar">
-    <h2>Linnuliigid 2026</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 style="margin:0">Linnuliigid 2026</h2>
+      <button id="sidebarToggle" class="btn secondary" style="display:none;font-size:11px;padding:4px 10px" onclick="document.getElementById('sidebar').classList.toggle('collapsed');this.textContent=this.textContent==='▲ Peida'?'▼ Näita':'▲ Peida'">▲ Peida</button>
+    </div>
     <details>
       <summary>Auto‑fetch options</summary>
       <div class="small">

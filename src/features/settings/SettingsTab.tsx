@@ -155,6 +155,18 @@ export default function SettingsTab() {
           {resetting && (
             <p className="text-sm text-muted-foreground animate-pulse">Tühjendamine…</p>
           )}
+
+          <Separator className="my-2" />
+
+          <a
+            href="/reset/"
+            className="inline-flex items-center gap-1.5 text-sm text-primary underline underline-offset-4 hover:text-primary/80"
+          >
+            Ava lähtestusleht ↗
+          </a>
+          <p className="text-xs text-muted-foreground">
+            Kasuta seda linki, kui rakendus on täiesti kinni jäänud ja nupud ei tööta.
+          </p>
         </div>
       </div>
 

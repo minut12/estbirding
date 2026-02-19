@@ -1,0 +1,17 @@
+{
+  "name": "EstBirding",
+  "short_name": "EstBirding",
+  "description": "Eesti linnuvaatluse rakendus",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f7f3",
+  "theme_color": "#3d7a45",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64",
+      "type": "image/x-icon"
+    }
+  ]
+}

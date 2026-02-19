@@ -28,13 +28,14 @@ export default function MapTab() {
       </div>
 
       {/* Map iframe */}
-      <div className="flex-1 relative">
+      <div className="flex-1 relative overflow-auto -webkit-overflow-scrolling-touch">
         <iframe
           key={current.id}
           src={current.source}
           title={current.name}
-          className="absolute inset-0 w-full h-full border-0"
-          sandbox="allow-scripts allow-same-origin allow-popups"
+          className="border-0"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+          style={{ width: '1024px', height: '100%', minHeight: '600px' }}
         />
       </div>
     </div>

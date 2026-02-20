@@ -118,7 +118,8 @@
 </div>
 <div id="snapshotBanner" class="snapshot-banner" style="display:none"></div>
 <div class="fetch-controls">
-  <button id="btnRefreshVisible" class="btn" title="Request server-side data refresh">Refresh data</button>
+  <button id="btnReloadData" class="btn" title="Reload latest snapshot from server">Reload data</button>
+  <button id="btnForceRefresh" class="btn secondary" title="Force server-side data refresh (admin)" style="display:none">Force refresh</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
 <div id="fetchProgress" class="fetch-progress"></div>
@@ -312,6 +313,7 @@ function _borderColorByDate(isoDate){
 const SNAPSHOT_API = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/linnuliigid-snapshot';
 let __pollTimer = null;
 let __pollCount = 0;
+let __adminKey = ''; // received from parent via postMessage
 
 function _showSnapshotBanner(msg, type){
   const el = document.getElementById('snapshotBanner');
@@ -442,26 +444,28 @@ function _stopPolling(){
   _updateProgressUI(0, 0, '');
 }
 
-async function triggerRefresh(){
+async function triggerForceRefresh(){
+  if(!__adminKey){
+    _showSnapshotBanner('Force refresh requires admin key (set in Settings → Developer).', 'error');
+    setTimeout(_hideSnapshotBanner, 6000);
+    return;
+  }
   try{
     _showSnapshotBanner('Requesting server refresh…');
     _updateProgressUI(0, SPECIES.length, 'running');
 
-    // The POST requires X-INGEST-KEY — for browser-triggered refreshes,
-    // we use the anon key approach. The edge function also accepts the EVENTS_INGEST_KEY.
-    // For now, try without auth (the edge function checks X-INGEST-KEY header)
-    const key = localStorage.getItem('__ingest_key') || '';
     const res = await fetch(SNAPSHOT_API, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-INGEST-KEY': key,
+        'X-INGEST-KEY': __adminKey,
       },
     });
 
-    if(res.status === 401){
-      _showSnapshotBanner('Refresh requires admin key. Set via sidebar.', 'error');
+    if(res.status === 401 || res.status === 403){
+      _showSnapshotBanner('Force refresh requires admin key (set in Settings → Developer).', 'error');
       _updateProgressUI(0, 0, 'error');
+      setTimeout(_hideSnapshotBanner, 6000);
       return;
     }
     if(res.status === 409){
@@ -474,18 +478,29 @@ async function triggerRefresh(){
   }
 }
 
+function _updateForceRefreshButton(){
+  const btn = document.getElementById('btnForceRefresh');
+  if(btn) btn.style.display = __adminKey ? 'inline-block' : 'none';
+}
+
 // Wire buttons
 function _wireSnapshotButtons(){
-  const btnRefresh = document.getElementById('btnRefreshVisible');
+  const btnReload = document.getElementById('btnReloadData');
+  const btnForce = document.getElementById('btnForceRefresh');
   const btnStop = document.getElementById('btnStopFetch');
-  if(btnRefresh && !btnRefresh.__wired){
-    btnRefresh.addEventListener('click', triggerRefresh);
-    btnRefresh.__wired = true;
+  if(btnReload && !btnReload.__wired){
+    btnReload.addEventListener('click', function(){ loadSnapshot(); });
+    btnReload.__wired = true;
+  }
+  if(btnForce && !btnForce.__wired){
+    btnForce.addEventListener('click', triggerForceRefresh);
+    btnForce.__wired = true;
   }
   if(btnStop && !btnStop.__wired){
     btnStop.addEventListener('click', _stopPolling);
     btnStop.__wired = true;
   }
+  _updateForceRefreshButton();
 }
 
 // === Auto-refresh via postMessage (parent app sends these) ===
@@ -500,8 +515,13 @@ function refreshSelected(){
 window.addEventListener('message', function(ev){
   try{
     if(!ev.data || typeof ev.data !== 'object') return;
-    if(ev.origin !== window.location.origin) return;
     var t = ev.data.type;
+    if(t === 'SET_ADMIN_KEY'){
+      __adminKey = ev.data.key || '';
+      _updateForceRefreshButton();
+      return;
+    }
+    if(ev.origin !== window.location.origin) return;
     if(t === 'MAP_REFRESH_VISIBLE') refreshVisible();
     if(t === 'MAP_REFRESH_SELECTED') refreshSelected();
     if(t === 'MAP_PING' && ev.source){

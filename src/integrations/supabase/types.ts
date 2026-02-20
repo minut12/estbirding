@@ -44,6 +44,7 @@ export type Database = {
           guid: string
           id: string
           image_url: string | null
+          image_url_original: string | null
           language: string
           published_at: string
           source_id: string
@@ -61,6 +62,7 @@ export type Database = {
           guid: string
           id?: string
           image_url?: string | null
+          image_url_original?: string | null
           language?: string
           published_at?: string
           source_id: string
@@ -78,6 +80,7 @@ export type Database = {
           guid?: string
           id?: string
           image_url?: string | null
+          image_url_original?: string | null
           language?: string
           published_at?: string
           source_id?: string

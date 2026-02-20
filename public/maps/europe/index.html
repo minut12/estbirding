@@ -15,9 +15,18 @@
       --orange: #f97316;
       --btn: #0a7;
       --btn2: #666;
+
+      --mSize: 34px;      /* map marker circle size (match Estonia map feel) */
+      --mBorder: 3px;
+      --badgeFont: 12px;
+      --badgePadY: 2px;
+      --badgePadX: 7px;
+      --badgeOffset: 12px;
     }
     html, body { height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
     body { overflow:hidden; background:#fff; }
+
+    body.embedded { --topbar-h: 0px; }
 
     #shell{ height:100%; display:flex; flex-direction:column; }
     #topbar{
@@ -27,6 +36,8 @@
       border-bottom:1px solid var(--line);
       background:#fafafa;
     }
+    body.embedded #topbar{ display:none; }
+
     #topbar strong{ font-size:14px; }
     #topbar .pill{
       display:inline-flex; align-items:center; gap:6px;
@@ -41,6 +52,7 @@
       display:grid;
       grid-template-columns: var(--sidebar-w) 1fr;
       height:calc(100dvh - var(--topbar-h));
+      position:relative;
     }
 
     /* Sidebar */
@@ -48,8 +60,36 @@
       border-right:1px solid var(--line);
       overflow:auto; padding:10px; box-sizing:border-box;
       background:#fff;
+      z-index: 3000;
     }
-    #sidebar h2{ margin:0 0 6px 0; font-size:18px; }
+
+    .sidebarHeader{
+      position: sticky;
+      top: 0;
+      z-index: 3100;
+      background:#fff;
+      padding-bottom:8px;
+      border-bottom:1px solid #f0f0f0;
+      margin-bottom:8px;
+    }
+    .sidebarHeaderTop{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+    #sidebar h2{ margin:0; font-size:18px; }
+    #closeSidebarBtn{
+      display:none;
+      width:40px; height:40px;
+      border-radius:12px;
+      border:1px solid #ddd;
+      background:#fff;
+      cursor:pointer;
+      font-size:18px;
+      line-height:1;
+    }
+
     .small{ color:var(--muted); font-size:12px; margin:6px 0 10px; line-height:1.35; }
     #controls{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .btn{
@@ -113,38 +153,57 @@
     #mapWrap{ position:relative; width:100%; height:100%; }
     #map{ width:100%; height:100%; }
 
-    /* Burger */
-    #burger{
-      position:absolute; left:12px; top:12px; z-index:900;
-      width:48px; height:48px; border-radius:14px;
-      border:1px solid #ddd; background:#fff;
+    /* Burger (fixed so it never disappears) */
+    #openSidebarBtn{
+      position:fixed;
+      left:12px;
+      top:72px; /* below Lovable map selector */
+      z-index: 5000;
+      width:48px; height:48px;
+      border-radius:14px;
+      border:1px solid #ddd;
+      background:#fff;
       box-shadow:0 6px 18px rgba(0,0,0,.18);
-      display:none; align-items:center; justify-content:center;
-      cursor:pointer; user-select:none;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
+      user-select:none;
     }
-    #burger span{ font-size:22px; line-height:1; }
+    #openSidebarBtn span{ font-size:22px; line-height:1; }
+
+    #sidebarBackdrop{
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,.35);
+      z-index: 4000;
+      display:none;
+    }
 
     /* Mobile off-canvas sidebar */
     @media (max-width: 900px){
       #main{ grid-template-columns: 1fr; }
       #sidebar{
-        position:absolute;
-        left:0; top:var(--topbar-h);
+        position:fixed;
+        left:0; top:0;
         width:min(92vw, 420px);
-        height:calc(100dvh - var(--topbar-h));
-        z-index:950;
+        height:100dvh;
         transform:translateX(-105%);
         transition:transform .2s ease;
         box-shadow:0 12px 30px rgba(0,0,0,.25);
+        border-right:1px solid var(--line);
+        padding-top:12px;
       }
       #sidebar.open{ transform:translateX(0); }
-      #burger{ display:flex; }
-      #mapWrap{ height:calc(100dvh - var(--topbar-h)); }
+      #openSidebarBtn{ display:flex; }
+      body.sidebar-open #openSidebarBtn{ display:none; }
+      body.sidebar-open #sidebarBackdrop{ display:block; }
+      #closeSidebarBtn{ display:inline-flex; align-items:center; justify-content:center; }
     }
 
-    /* Marker styling */
+    /* Marker styling (smaller like Estonia map) */
     .leaflet-marker-icon{ overflow: visible !important; }
-    .markerWrap{ position:relative; width:46px; height:46px; overflow:visible; }
+    .markerWrap{ position:relative; width:var(--mSize); height:var(--mSize); overflow:visible; }
     .markerWrap .crown{
       position:absolute; top:-12px; left:50%;
       transform:translateX(-50%);
@@ -157,24 +216,40 @@
       background-size:cover; background-position:center;
       background-color:#29c;
       box-sizing:border-box;
+      border: var(--mBorder) solid #999;
     }
     .markerWrap .countBadge{
-      position:absolute; left:50%; bottom:-14px;
+      position:absolute; left:50%;
+      bottom: calc(-1 * var(--badgeOffset));
       transform:translateX(-50%);
       min-width:20px;
-      padding:2px 7px;
+      padding: var(--badgePadY) var(--badgePadX);
       border-radius:999px;
-      font-size:12px; font-weight:800;
+      font-size:var(--badgeFont);
+      font-weight:800;
       color:#fff; text-align:center;
       box-shadow:0 1px 2px rgba(0,0,0,.25);
       z-index:6;
+    }
+
+    /* Warning banner */
+    .bannerWarn{
+      margin:8px 0 10px;
+      padding:8px 10px;
+      background:#fff7ed;
+      border:1px solid #fed7aa;
+      color:#9a3412;
+      border-radius:12px;
+      font-size:12px;
+      line-height:1.35;
+      display:none;
     }
 
     /* Settings modal */
     #modalBackdrop{
       position:fixed; inset:0;
       background:rgba(0,0,0,.35);
-      z-index:2000;
+      z-index:9000;
       display:none;
       align-items:center; justify-content:center;
       padding:18px; box-sizing:border-box;
@@ -205,18 +280,6 @@
       box-sizing:border-box;
     }
     #modal .rowBtns{ display:flex; gap:10px; justify-content:flex-end; margin-top:10px; }
-
-    .bannerWarn{
-      margin:8px 0 10px;
-      padding:8px 10px;
-      background:#fff7ed;
-      border:1px solid #fed7aa;
-      color:#9a3412;
-      border-radius:12px;
-      font-size:12px;
-      line-height:1.35;
-      display:none;
-    }
   </style>
 </head>
 
@@ -232,12 +295,17 @@
   </div>
 
   <div id="main">
-    <aside id="sidebar">
-      <h2>Europe 2026</h2>
-      <div class="small">
-        Combined map across <b>Finland, Sweden, Latvia, Lithuania, Poland, Belarus, Russia</b>.
-        <br/>Uses the <b>same avatars</b> as your other maps via <span class="hintBadge">bm_global_avatars</span>.
-        <br/>Markers show only if there is at least one record in the last 7 days.
+    <aside id="sidebar" aria-label="Sidebar">
+      <div class="sidebarHeader">
+        <div class="sidebarHeaderTop">
+          <h2>Europe 2026</h2>
+          <button id="closeSidebarBtn" title="Close">✕</button>
+        </div>
+        <div class="small" style="margin-bottom:0;">
+          Combined map across <b>Finland, Sweden, Latvia, Lithuania, Poland, Belarus, Russia</b>.
+          <br/>Uses the <b>same avatars</b> as your other maps.
+          <br/>Markers show only if there is at least one record in the last 7 days.
+        </div>
       </div>
 
       <div id="controls">
@@ -257,11 +325,14 @@
     </aside>
 
     <div id="mapWrap">
-      <div id="burger" aria-label="Open menu"><span>≡</span></div>
       <div id="map"></div>
     </div>
   </div>
 </div>
+
+<!-- Fixed burger + backdrop for mobile -->
+<div id="openSidebarBtn" aria-label="Open menu"><span>≡</span></div>
+<div id="sidebarBackdrop" aria-hidden="true"></div>
 
 <!-- Settings modal -->
 <div id="modalBackdrop">
@@ -269,8 +340,8 @@
     <h3>Europe map settings</h3>
     <div class="small" style="margin-top:0;">
       eBird token is prefilled as <span class="hintBadge">9s72dc2jcjlq</span> and stored locally.
-      <br/>Species list: one per line (default = your canonical list of 376 species).
-      <br/><b>Tip:</b> You don’t need to re-add avatars/codes here — they are shared across maps.
+      <br/>Species list: one per line (default = 376 species).
+      <br/><b>Note:</b> This page automatically imports avatars from your Estonia map localStorage if it detects them.
     </div>
     <div class="grid">
       <input id="tokenInput" type="text" placeholder="eBird token (X-eBirdApiToken)"/>
@@ -285,32 +356,33 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
+/* ========= Embedded detection ========= */
+(function(){
+  try {
+    if (window.self !== window.top) document.body.classList.add("embedded");
+  } catch(e) {
+    document.body.classList.add("embedded");
+  }
+})();
+
 /* ========= Regions ========= */
 const REGIONS = ["FI","SE","LV","LT","PL","BY","RU"];
 const REGION_NAME = {FI:"Finland",SE:"Sweden",LV:"Latvia",LT:"Lithuania",PL:"Poland",BY:"Belarus",RU:"Russia"};
 
-/* ========= Shared storage keys (same avatars everywhere) ========= */
+/* ========= Shared storage keys ========= */
 const LS_AVATARS = "bm_global_avatars";
 const LS_CODES   = "bm_global_ebird_codes";
 
-/* ========= Europe-specific cache ========= */
+/* ========= Europe cache ========= */
 const LS_POINTS  = "bm_eu_points";
 
-/* ========= User settings ========= */
+/* ========= Settings keys ========= */
 const LS_EBIRD_TOKEN = "bm_ebird_token";
 const LS_SPECIES     = "bm_species_list_global";
 
 /* ========= Defaults ========= */
 const DEFAULT_EBIRD_TOKEN = "9s72dc2jcjlq";
 const DEFAULT_SPECIES = ["Aed-lepalind", "Aed-põõsalind", "Aed-roolind", "Aedporr", "Alk", "Alverüdi", "Ameerika piilpart", "Atlantise tormilind", "Aul", "Baleaari tormilind", "Euroopa kaelustäks", "Habekakk", "Habeviires", "Hahk", "Hakk", "Hall-kärbsenäpp", "Hallhaigur", "Hallhani", "Hallkibu", "Hallpea-rähn", "Hallpõsk-pütt", "Hallrästas", "Hallrüdi", "Halltsiitsitaja", "Hallvares", "Hallõgija", "Hangelind", "Harakas", "Haugaskotkas", "Hele-urvalind", "Heletilder", "Herilaseviu", "Hiireviu", "Hoburästas", "Händkakk", "Hänilane", "Hõbehaigur", "Hõbehaugas", "Hõbekajakas", "Hüüp", "Ida-mustvaeras", "Jahipistrik", "Jämejalg", "Järvekaur", "Jääkajakas", "Jääkaur", "Jääkoskel", "Jõgi-ritsiklind", "Jõgitiir", "Jõgitilder", "Jõgivästrik", "Kadakatäks", "Kaelus-kärbsenäpp", "Kaelus-turteltuvi", "Kaeluskotkas", "Kaelusrästas", "Kaelustuvi", "Kalakajakas", "Kalakotkas", "Kalda-rädilind", "Kaldapääsuke", "Kaljukajakas", "Kaljukotkas", "Kanada lagle", "Kanakull", "Kanepilind", "Karbuskajakas", "Karkjalg", "Karmiinleevike", "Karvasjalg-kakk", "Karvasjalg-viu", "Kassikakk", "Kiivitaja", "Kiripugu-rüdi", "Kirjuhahk", "Kivikakk", "Kivirullija", "Kivitäks", "Kodukakk", "Kodutuvi", "Koduvarblane", "Koldhaigur", "Koldjalg-hõbekajakas", "Koldvint", "Kormoran", "Krüüsel", "Kukkurtihane", "Kuld-lehelind", "Kuldhänilane", "Kuldnokk", "Kuldtsiitsitaja", "Kuninghahk", "Kuuse-käbilind", "Käblik", "Kägu", "Käharpelikan", "Käosulane", "Kääbuskormoran", "Kääbuskotkas", "Kõnnuõgija", "Kõrbe-kivitäks", "Kõrbe-põõsalind", "Kõrkja-roolind", "Kõrvukräts", "Kõvernokk-rüdi", "Kühmnokk-luik", "Künnivares", "Laanenäär", "Laanepüü", "Laanerähn", "Laisaba-änn", "Lammitilder", "Lapi tsiitsitaja", "Lasuurtihane", "Lauk", "Laululuik", "Laulurästas", "Leeterüdi", "Leevike", "Liiv-kivitäks", "Liivatüll", "Linavästrik", "Loorkakk", "Luitsnokk-iibis", "Luitsnokk-part", "Lumehani", "Lumekakk", "Lääne-lehelind", "Lääne-pöialpoiss", "Lõopistrik", "Lõuna-hõbekajakas", "Lühinokk-hani", "Madukotkas", "Mandariinpart", "Merikajakas", "Merikotkas", "Merirüdi", "Merisk", "Merivart", "Mesilasenäpp", "Mets-lehelind", "Metsis", "Metskiur", "Metskurvits", "Metstilder", "Metsvint", "Mudanepp", "Mudatilder", "Must-harksaba", "Must-kärbsenäpp", "Must-lepalind", "Must-toonekurg", "Mustjalg-tüll", "Mustkael-pütt", "Mustkurk-raat", "Mustlagle", "Mustlauk-õgija", "Mustpea-põõsalind", "Mustpea-tsiitsitaja", "Mustpugu-rästas", "Musträhn", "Musträstas", "Mustsaba-vigle", "Musttihane", "Mustvaeras", "Mustvares", "Mustviires", "Mägi-kanepilind", "Mägikiur", "Männi-käbilind", "Männileevike", "Männitalvike", "Mänsak", "Naaskelnokk", "Naerukajakas", "Naerutiir", "Niidu-kaelustäks", "Niidu-ritsiklind", "Niidukiur", "Nunn-kivitäks", "Nurmkana", "Nõgipart", "Nõlva-lehelind", "Nõmmekiur", "Nõmmelõoke", "Ohakalind", "Ohhoota hõbekajakas", "Padu-roolind", "Pasknäär", "Peegel-tormilind", "Pelikan", "Peoleo", "Piilpart", "Piiritaja", "Pikksaba-änn", "Plütt", "Plüü", "Polaarkajakas", "Porr", "Prillvaeras", "Pruunselg-põõsalind", "Puna-harksaba", "Puna-veetallaja", "Punajalg-pistrik", "Punajalg-tilder", "Punakael-lagle", "Punakurk-kaur", "Punanokk-vart", "Punapea-vart", "Punapea-õgija", "Punarind", "Punasaba-õgija", "Punaselg-õgija", "Purpurhaigur", "Puukoristaja", "Põhja-kirjurästas", "Põhja-lehelind", "Põhja-tormipääsu", "Põhjatihane", "Põhjatsiitsitaja", "Põhjavint", "Põldlõoke", "Põldtsiitsitaja", "Põldvarblane", "Põldvutt", "Pöialpoiss", "Rabapistrik", "Rabapüü", "Raisakotkas", "Randkajakas", "Randkiur", "Randtiir", "Rasvatihane", "Raudkull", "Ristpart", "Roherähn", "Rohevint", "Rohukoskel", "Rohunepp", "Ronk", "Roo-loorkull", "Roo-ritsiklind", "Roohabekas", "Rooruik", "Roosa-kuldnokk", "Roosakajakas", "Roosatiir", "Roostepääsuke", "Roosterind-tüll", "Rootsiitsitaja", "Rubiinööbik", "Rukkirääk", "Ruugerüdi", "Rägapart", "Rästas-roolind", "Räusk", "Rääkspart", "Räästapääsuke", "Rüüt", "Sabatihane", "Salu-lehelind", "Salupäll", "Salutihane", "Sarviklõoke", "Sarvikpütt", "Siberi lehelind", "Siberi raat", "Siidhaigur", "Siidisaba", "Siisike", "Sinikael-part", "Siniraag", "Sinirind", "Sinisaba", "Sinitihane", "Soo-loorkull", "Soo-roolind", "Sookiur", "Sookurg", "Soopart", "Sooräts", "Soorüdi", "Stepi-loorkull", "Stepikajakas", "Stepikiivitaja", "Stepikotkas", "Stepipistrik", "Stepiviu", "Suitsupääsuke", "Suula", "Suur-kirjurähn", "Suur-konnakotkas", "Suur-laukhani", "Suurkoovitaja", "Suurnokk-vint", "Suurrüdi", "Suuränn", "Sõtkas", "Söödikänn", "Tait", "Talvike", "Tamme-kirjurähn", "Teder", "Tiigi-roolind", "Tikutaja", "Triip-ritsiklind", "Tuhk-lehelind", "Tumetilder", "Tundra-rabahani", "Tundrakaur", "Tundrakiur", "Turteltuvi", "Tutkas", "Tutt-tihane", "Tutt-tiir", "Tuttlõoke", "Tuttpütt", "Tuttvart", "Tuuletallaja", "Täpikhuik", "Tõmmu-lehelind", "Tõmmuiibis", "Tõmmukajakas", "Tõmmuvaeras", "Urvalind", "Vaaraohani", "Vaenukägu", "Vainurästas", "Valge-toonekurg", "Valgepõsk-lagle", "Valgeselg-kirjurähn", "Valgesilm-vart", "Valgetiib-viires", "Veetallaja", "Veisehaigur", "Vesipapp", "Vihitaja", "Viupart", "Väike-kirjurähn", "Väike-konnakotkas", "Väike-käosulane", "Väike-kärbsenäpp", "Väike-laukhani", "Väike-lehelind", "Väike-põõsalind", "Väikealk", "Väikehuik", "Väikehüüp", "Väikekajakas", "Väikekoovitaja", "Väikekoskel", "Väikeluik", "Väikepistrik", "Väikepütt", "Väikerüdi", "Väiketiir", "Väiketrapp", "Väiketsiitsitaja", "Väiketüll", "Välja-loorkull", "Välja-väikelõoke", "Värbkakk", "Värbrüdi", "Väänkael", "Võsa-ritsiklind", "Võsaraat", "Vööt-käbilind", "Vööt-põõsalind", "Vööthani", "Vöötkakk", "Vöötnokk-kajakas", "Vöötsaba-vigle", "Õõnetuvi", "Ööbik", "Ööhaigur", "Öösorr"];
-
-/* ========= Limits ========= */
-const MAX_RESULTS = 10000;
-const CONCURRENCY = 5;
-const REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
-
-/* ========= Load storage ========= */
-let avatars = JSON.parse(localStorage.getItem(LS_AVATARS) || "{}");
 const DEFAULT_EBIRD_CODES = {
   "Aed-lepalind": "comred2",
   "Aed-põõsalind": "garwar1",
@@ -333,26 +405,71 @@ const DEFAULT_EBIRD_CODES = {
   "Väikepistrik": "merlin",
   "Kanakull": "norgos1"
 };
-const _storedCodesRaw = JSON.parse(localStorage.getItem(LS_CODES) || "{}");
-const _storedCodes = {};
-for (const [k,v] of Object.entries(_storedCodesRaw)) {
-  if (typeof v === "string" && v.trim()) _storedCodes[k] = v.trim();
+
+/* ========= Limits ========= */
+const MAX_RESULTS = 10000;
+const CONCURRENCY_DESKTOP = 6;
+const CONCURRENCY_MOBILE = 4;
+const REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
+
+/* ========= Storage load ========= */
+function safeParseJSON(str){ try{ return JSON.parse(str); }catch{ return null; } }
+function isAvatarVal(v){ return typeof v === "string" && (v.startsWith("data:image") || v.startsWith("http") || v.startsWith("/") ); }
+
+/* Discover legacy avatar stores and merge into bm_global_avatars */
+function migrateAvatars() {
+  const current = safeParseJSON(localStorage.getItem(LS_AVATARS) || "{}") || {};
+  // if already has many, keep
+  const curCount = Object.values(current).filter(isAvatarVal).length;
+
+  let best = null;
+  let bestCount = curCount;
+
+  // scan localStorage for any JSON object with lots of image-like values
+  for (let i=0; i<localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (!k || k === LS_AVATARS) continue;
+    const raw = localStorage.getItem(k);
+    if (!raw || raw.length < 10 || raw.length > 2_000_000) continue; // avoid huge
+    const obj = safeParseJSON(raw);
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) continue;
+    let c = 0;
+    for (const v of Object.values(obj)) {
+      if (isAvatarVal(v)) c++;
+    }
+    if (c > bestCount) { bestCount = c; best = obj; }
+  }
+
+  const merged = { ...(best || {}), ...current }; // current overrides legacy
+  const mergedCount = Object.values(merged).filter(isAvatarVal).length;
+
+  if (mergedCount > curCount) {
+    localStorage.setItem(LS_AVATARS, JSON.stringify(merged));
+  }
+  return merged;
 }
-let EBIRD_CODES = { ...DEFAULT_EBIRD_CODES, ..._storedCodes };
-localStorage.setItem(LS_CODES, JSON.stringify(EBIRD_CODES));
-let points = JSON.parse(localStorage.getItem(LS_POINTS) || "{}");
+
+let avatars = migrateAvatars();
+let EBIRD_CODES = (() => {
+  const stored = safeParseJSON(localStorage.getItem(LS_CODES) || "{}") || {};
+  // Merge default codes with stored (stored wins)
+  const merged = { ...DEFAULT_EBIRD_CODES, ...stored };
+  localStorage.setItem(LS_CODES, JSON.stringify(merged));
+  return merged;
+})();
+
+let points = safeParseJSON(localStorage.getItem(LS_POINTS) || "{}") || {};
 
 let EBIRD_TOKEN = (localStorage.getItem(LS_EBIRD_TOKEN) || DEFAULT_EBIRD_TOKEN).trim();
-if (!localStorage.getItem(LS_EBIRD_TOKEN)) {
-  localStorage.setItem(LS_EBIRD_TOKEN, EBIRD_TOKEN);
-}
+if (!localStorage.getItem(LS_EBIRD_TOKEN)) localStorage.setItem(LS_EBIRD_TOKEN, EBIRD_TOKEN);
 
 let SPECIES = [];
 try {
   const raw = (localStorage.getItem(LS_SPECIES) || "").trim();
   SPECIES = raw ? raw.split("\n").map(s=>s.trim()).filter(Boolean) : [];
-} catch { SPECIES = []; }
-
+} catch(e) {
+  SPECIES = [];
+}
 if (SPECIES.length === 0) {
   SPECIES = DEFAULT_SPECIES.slice();
   localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
@@ -367,8 +484,8 @@ function saveAll(){
 }
 
 function preloadAvatars(){
-  const urls = Object.values(avatars).filter(Boolean);
-  urls.slice(0, 300).forEach(u => { const img = new Image(); img.decoding="async"; img.loading="eager"; img.src = u; });
+  const urls = Object.values(avatars).filter(isAvatarVal);
+  urls.slice(0, 400).forEach(u => { const img = new Image(); img.decoding="async"; img.loading="eager"; img.src = u; });
 }
 
 /* ========= Helpers ========= */
@@ -406,8 +523,8 @@ function showWarn(msg){
 }
 
 /* ========= Map ========= */
-const map = L.map("map", { zoomControl:true }).setView([56.7, 20.5], 5);
-map.zoomControl.setPosition("topright");
+const map = L.map("map", { zoomControl:false }).setView([56.7, 20.5], 5);
+L.control.zoom({ position:"topright" }).addTo(map);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
 
 const markers = new Map();
@@ -418,8 +535,9 @@ function makeIcon(url, border, hasCrown, occ7, isMigr){
     ? `<div class="countBadge" style="background:${isMigr ? "#16a34a" : "#f97316"}">${occ7}</div>`
     : ``;
   const bg = url ? `background-image:url('${url}');` : "";
-  const html = `<div class="markerWrap">${crown}<div class="circle" style="border:3px solid ${border};${bg}"></div>${badge}</div>`;
-  return L.divIcon({ html, className:"", iconSize:[46,46], iconAnchor:[23,23], popupAnchor:[0,-18] });
+  const html = `<div class="markerWrap">${crown}<div class="circle" style="border-color:${border};${bg}"></div>${badge}</div>`;
+  const size = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--mSize")) || 34;
+  return L.divIcon({ html, className:"", iconSize:[size,size], iconAnchor:[size/2, size/2], popupAnchor:[0, -size/2] });
 }
 
 function updateMarker(key){
@@ -580,7 +698,7 @@ function wireRows(){
   });
 }
 
-/* ========= eBird fetch (EU aggregate) ========= */
+/* ========= eBird fetch ========= */
 let abortController = null;
 function setStatus(s){ statusText.textContent = s || ""; }
 
@@ -597,7 +715,6 @@ async function fetchEurope(speciesName, force=false, signal=null){
 
   if (!force && p.fetchedAt && (Date.now() - p.fetchedAt) < REFRESH_COOLDOWN_MS) return;
 
-  // Fetch recent obs for this species in each region (last 7 days) and merge
   const urls = REGIONS.map(r =>
     `https://api.ebird.org/v2/data/obs/${r}/recent/${encodeURIComponent(code)}?back=7&maxResults=${MAX_RESULTS}&_ts=${Date.now()}`
   );
@@ -671,6 +788,9 @@ async function refreshKeys(keys, force=true){
   let done = 0;
   const total = keys.length;
 
+  const isMobile = window.matchMedia("(max-width: 900px)").matches;
+  const conc = isMobile ? CONCURRENCY_MOBILE : CONCURRENCY_DESKTOP;
+
   const tasks = keys.map(k => async ()=>{
     if (signal.aborted) return;
     try{ await fetchEurope(k, force, signal); }
@@ -684,7 +804,7 @@ async function refreshKeys(keys, force=true){
 
   progressLine.textContent = `Refreshing: 0/${total}`;
   setStatus(`Refreshing 0/${total}`);
-  await runPool(tasks, CONCURRENCY);
+  await runPool(tasks, conc);
 
   if (!signal.aborted){
     progressLine.textContent = `Done. Refreshed ${total} species.`;
@@ -694,12 +814,16 @@ async function refreshKeys(keys, force=true){
 
 function refreshFiltered(){
   const q = (filterBox.value||"").toLowerCase().trim();
-  const keys = SPECIES.filter(n => n.toLowerCase().includes(q));
+  const keys = SPECIES.filter(n => n.toLowerCase().includes(q) && (EBIRD_CODES[n] || (points[n]||{}).ebirdCode));
+  if (keys.length === 0) {
+    showWarn("No species with eBird codes in the current filter. Add codes (or send more screenshots) and try again.");
+    return;
+  }
   refreshKeys(keys, true);
 }
 function refreshSelected(){
-  const keys = SPECIES.filter(n => (points[n]||{}).selected);
-  if (keys.length === 0) return alert("No species selected.");
+  const keys = SPECIES.filter(n => (points[n]||{}).selected && (EBIRD_CODES[n] || (points[n]||{}).ebirdCode));
+  if (keys.length === 0) return alert("No selected species with eBird codes.");
   refreshKeys(keys, true);
 }
 
@@ -713,13 +837,34 @@ function setAvatarPrompt(species){
   saveAll(); preloadAvatars(); render();
 }
 
-/* ========= Burger (mobile) ========= */
+/* ========= Sidebar open/close (mobile) ========= */
 const sidebar = document.getElementById("sidebar");
-const burger = document.getElementById("burger");
-function toggleSidebar(){ sidebar.classList.toggle("open"); setTimeout(()=> map.invalidateSize(), 220); }
-function closeSidebarOnMobile(){ if (window.matchMedia("(max-width: 900px)").matches) { sidebar.classList.remove("open"); setTimeout(()=> map.invalidateSize(), 220); } }
-burger.addEventListener("click", toggleSidebar);
-window.addEventListener("resize", ()=> setTimeout(()=> map.invalidateSize(), 150));
+const openBtn = document.getElementById("openSidebarBtn");
+const closeBtn = document.getElementById("closeSidebarBtn");
+const backdrop = document.getElementById("sidebarBackdrop");
+
+function openSidebar() {
+  document.body.classList.add("sidebar-open");
+  sidebar.classList.add("open");
+  setTimeout(()=> map.invalidateSize(true), 260);
+}
+function closeSidebar() {
+  document.body.classList.remove("sidebar-open");
+  sidebar.classList.remove("open");
+  setTimeout(()=> map.invalidateSize(true), 260);
+}
+function closeSidebarOnMobile(){
+  if (window.matchMedia("(max-width: 900px)").matches) closeSidebar();
+}
+
+openBtn.addEventListener("click", ()=>{
+  if (sidebar.classList.contains("open")) closeSidebar();
+  else openSidebar();
+});
+closeBtn.addEventListener("click", closeSidebar);
+backdrop.addEventListener("click", closeSidebar);
+
+window.addEventListener("resize", ()=> setTimeout(()=> map.invalidateSize(true), 150));
 
 /* ========= Export/Import/Reset ========= */
 document.getElementById("exportBtn").addEventListener("click", ()=>{
@@ -740,7 +885,7 @@ document.getElementById("importBtn").addEventListener("click", async ()=>{
     try{
       const obj = JSON.parse(await f.text());
       if (obj.avatars) avatars = obj.avatars;
-      if (obj.EBIRD_CODES) EBIRD_CODES = Object.assign({ "Väikepistrik":"merlin", "Kanakull":"norgos1" }, obj.EBIRD_CODES);
+      if (obj.EBIRD_CODES) EBIRD_CODES = { ...DEFAULT_EBIRD_CODES, ...obj.EBIRD_CODES, ...EBIRD_CODES };
       if (obj.points) points = obj.points;
       if (Array.isArray(obj.SPECIES)) SPECIES = obj.SPECIES;
       saveAll(); preloadAvatars(); render();
@@ -785,6 +930,22 @@ filterBox.addEventListener("input", render);
 /* ========= Init ========= */
 preloadAvatars();
 render();
+
+// Auto-open sidebar on desktop, keep closed on mobile
+if (!window.matchMedia("(max-width: 900px)").matches) {
+  sidebar.classList.add("open");
+} else {
+  closeSidebar();
+}
+
+// Auto refresh a small starter set (fast feedback) if we have codes
+(function(){
+  const withCodes = SPECIES.filter(s => !!EBIRD_CODES[s]);
+  if (withCodes.length >= 10) {
+    refreshKeys(withCodes.slice(0, 35), false);
+  }
+})();
+
 </script>
 </body>
 </html>

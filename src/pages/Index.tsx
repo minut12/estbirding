@@ -21,8 +21,7 @@ const tabs: { id: Tab; label: string; icon: typeof Map }[] = [
 export default function Index() {
   const [active, setActive] = useState<Tab>('kaart');
 
-  const goToSettings = () => setActive('seaded');
-  // NewsTab no longer needs onOpenSettings
+  // goToSettings kept for potential future use
 
   return (
     <div className="flex flex-col h-screen bg-background">
@@ -32,7 +31,7 @@ export default function Index() {
       <div className="flex-1 overflow-hidden">
         {active === 'kaart' && <MapTab isActive={active === 'kaart'} />}
         {active === 'uudised' && <NewsTab />}
-        {active === 'üritused' && <EventsTab onOpenSettings={goToSettings} />}
+        {active === 'üritused' && <EventsTab />}
         {active === 'seaded' && <SettingsTab />}
       </div>
 

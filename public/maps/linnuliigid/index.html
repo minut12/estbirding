@@ -1248,22 +1248,22 @@ try{
   #windHeader{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:#f8fafc;border-bottom:1px solid #e5e7eb}
   #windHeader .title{font-size:13px;color:#334155}
   #windHeader .actions button{margin-left:6px}
-  #windyFrame{width:100%;height:calc(100% - 34px);border:0}
+  #windyFrame{width:100%;flex:1;border:0}
   .btn.icon{padding:4px 8px;border:1px solid #cbd5e1;background:#fff;border-radius:8px;cursor:pointer}
-  /* Desktop size buttons */
   .wind-size-btns{display:inline}
-  /* Mobile: full-screen modal */
+  /* Mobile: full-screen modal — NO inline panel, only modal */
   @media (max-width: 900px){
     #windPanel{
-      position:fixed!important;inset:0!important;width:100%!important;height:100%!important;
+      position:fixed!important;inset:0!important;width:100%!important;height:100dvh!important;
       border-radius:0!important;box-shadow:none!important;
-      z-index:6000!important;max-height:none!important;
+      z-index:9999!important;max-height:none!important;
+      display:none;flex-direction:column;
     }
-    #windPanel.wind-collapsed,#windPanel.wind-expanded{height:100%!important}
-    #windyFrame{height:calc(100% - 44px)!important}
+    #windPanel.windy-modal-open{display:flex!important}
+    #windyFrame{height:calc(100dvh - 56px)!important;flex:none}
     .wind-size-btns{display:none!important}
     #windHeader .wind-expand-arrow{display:none!important}
-    #windHeader{background:#fff;border-bottom:1px solid #e5e7eb;padding:8px 12px}
+    #windHeader{background:#fff;border-bottom:1px solid #e5e7eb;padding:8px 12px;height:56px;min-height:56px;box-sizing:border-box}
     #windHeader .title{font-size:15px;font-weight:600}
     .wind-close-desktop{display:none!important}
     .wind-close-mobile{display:inline-block!important}
@@ -1304,7 +1304,6 @@ try{
   <div id="windHeader">
     <div class="title">Tuulekaart — Windy</div>
     <div class="actions">
-      <span id="windExpandArrow" class="wind-expand-arrow" style="cursor:pointer;font-size:16px;margin-right:4px">▲</span>
       <span class="wind-size-btns">
         <button id="windSmall" class="btn icon">S</button>
         <button id="windMedium" class="btn icon">M</button>
@@ -1313,7 +1312,8 @@ try{
       <button id="windClose" class="btn icon wind-close-desktop">✕</button>
       <button id="windCloseMobile" class="btn icon wind-close-mobile" style="display:none">← Tagasi</button>
     </div>
-  <iframe id="windyFrame" src=""></iframe>
+  </div>
+  <iframe id="windyFrame" src="" loading="lazy" referrerpolicy="no-referrer"></iframe>
 </div>
 <script>
 (function(){
@@ -1342,10 +1342,8 @@ try{
   const bS = document.getElementById('windSmall');
   const bM = document.getElementById('windMedium');
   const bL = document.getElementById('windLarge');
-  const expandArrow = document.getElementById('windExpandArrow');
-  const isMob = IS_MOBILE_DEVICE;
+  const isMob = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
 
-  // Throttle for mobile sync
   let __lastWindSync = 0;
 
   function windyUrl(lat, lon, zoom){
@@ -1353,7 +1351,6 @@ try{
     return `https://embed.windy.com/embed2.html?lat=${lat.toFixed(3)}&lon=${lon.toFixed(3)}&detailLat=${lat.toFixed(3)}&detailLon=${lon.toFixed(3)}&zoom=${z}&level=surface&overlay=wind&marker=true&pressure=true`;
   }
   function refreshWind(){
-    // Throttle on mobile: max 1/s
     if(isMob){
       const now = Date.now();
       if(now - __lastWindSync < 1000) return;
@@ -1369,29 +1366,14 @@ try{
     }catch(e){}
   }
 
-  // Mobile bottom sheet state
-  let windExpanded = false;
-  function setWindExpanded(exp){
-    windExpanded = exp;
-    if(isMob){
-      panel.classList.toggle('wind-collapsed', !exp);
-      panel.classList.toggle('wind-expanded', exp);
-      if(expandArrow) expandArrow.textContent = exp ? '▼' : '▲';
-      // Allow iframe interaction only when expanded
-      iframe.style.pointerEvents = exp ? 'auto' : 'none';
-      // Prevent body scroll when expanded
-      document.body.style.overflow = exp ? 'hidden' : '';
-      // Invalidate map
-      try{ setTimeout(()=>{ if(map && map.invalidateSize) map.invalidateSize(true); }, 260); }catch(e){}
-    }
-  }
-
   function openWind(){
     refreshWind();
-    panel.style.display = 'block';
     if(isMob){
-      // Full-screen modal on mobile — no collapsed state
+      // Mobile: full-screen modal
+      panel.classList.add('windy-modal-open');
       document.body.style.overflow = 'hidden';
+    } else {
+      panel.style.display = 'block';
     }
     try{
       if (!window.__wind_sync__ && window.map){
@@ -1401,43 +1383,31 @@ try{
     }catch(e){}
   }
   function closeWind(){
-    panel.style.display = 'none';
-    if(isMob) document.body.style.overflow = '';
+    if(isMob){
+      panel.classList.remove('windy-modal-open');
+      document.body.style.overflow = '';
+      // Free resources
+      iframe.setAttribute('src', 'about:blank');
+    } else {
+      panel.style.display = 'none';
+    }
     try{ setTimeout(()=>{ if(map && map.invalidateSize) map.invalidateSize(true); }, 260); }catch(e){}
   }
 
   btn.addEventListener('click', ()=>{
-    if (panel.style.display === 'none' || !panel.style.display){
-      openWind();
-    } else {
-      closeWind();
-    }
+    const isOpen = isMob ? panel.classList.contains('windy-modal-open') : (panel.style.display !== 'none' && panel.style.display);
+    if (!isOpen) openWind(); else closeWind();
   });
   btnClose.addEventListener('click', closeWind);
   const btnCloseMob = document.getElementById('windCloseMobile');
   if(btnCloseMob) btnCloseMob.addEventListener('click', closeWind);
 
-  // Expand/collapse toggle on mobile
-  if(expandArrow){
-    expandArrow.addEventListener('click', (e)=>{
-      e.stopPropagation();
-      setWindExpanded(!windExpanded);
-    });
+  if(!isMob){
+    bS.addEventListener('click', ()=>{ panel.style.width='320px'; panel.style.height='240px'; refreshWind(); });
+    bM.addEventListener('click', ()=>{ panel.style.width='420px'; panel.style.height='300px'; refreshWind(); });
+    bL.addEventListener('click', ()=>{ panel.style.width='560px'; panel.style.height='420px'; refreshWind(); });
   }
-  // Also allow tapping the header to toggle on mobile
-  if(isMob){
-    const hdr = document.getElementById('windHeader');
-    if(hdr) hdr.addEventListener('click', ()=> setWindExpanded(!windExpanded));
-  }
-
-  bS.addEventListener('click', ()=>{ panel.style.width='320px'; panel.style.height='240px'; refreshWind(); });
-  bM.addEventListener('click', ()=>{ panel.style.width='420px'; panel.style.height='300px'; refreshWind(); });
-  bL.addEventListener('click', ()=>{ panel.style.width='560px'; panel.style.height='420px'; refreshWind(); });
-
-  // optional: open by default on first load
-  // setTimeout(()=>btn.click(), 1200);
 })();
-
 </script>
 
 

@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Newspaper, ChevronLeft, Archive, ArchiveRestore, ExternalLink, Search, Filter, RefreshCw } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -290,13 +291,43 @@ function NewsCard({ item, isArchived, onOpen, onToggleArchive }: {
   );
 }
 
-/* ── Article View ───────────────────────────────── */
+/* ── Article View (lazy-loads content) ──────────── */
 function ArticleView({ item, onBack, isArchived, onToggleArchive }: {
   item: NewsItem;
   onBack: () => void;
   isArchived: boolean;
   onToggleArchive: () => void;
 }) {
+  const [contentHtml, setContentHtml] = useState<string | null>(item.content_html);
+  const [loadingContent, setLoadingContent] = useState(!item.content_html);
+  const [contentError, setContentError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (item.content_html) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingContent(true);
+      setContentError(null);
+      try {
+        const { data, error } = await supabase.functions.invoke('fetch-eoy-article-content', {
+          body: { news_item_id: item.id },
+        });
+        if (cancelled) return;
+        if (error) throw error;
+        if (data?.content_html) {
+          setContentHtml(data.content_html);
+        } else if (data?.error) {
+          setContentError(data.error);
+        }
+      } catch (e: any) {
+        if (!cancelled) setContentError(e.message || 'Sisu laadimine ebaõnnestus');
+      } finally {
+        if (!cancelled) setLoadingContent(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [item.id, item.content_html]);
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-card">
@@ -320,11 +351,21 @@ function ArticleView({ item, onBack, isArchived, onToggleArchive }: {
           <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at)}</span>
         </div>
 
-        {item.content_html ? (
+        {loadingContent ? (
+          <div className="space-y-3">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-5/6" />
+            <Skeleton className="h-4 w-4/6" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/6" />
+          </div>
+        ) : contentHtml ? (
           <div
             className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
-            dangerouslySetInnerHTML={{ __html: item.content_html }}
+            dangerouslySetInnerHTML={{ __html: contentHtml }}
           />
+        ) : contentError ? (
+          <p className="text-sm text-muted-foreground italic">{contentError}</p>
         ) : item.summary ? (
           <p className="text-sm text-foreground leading-relaxed">{item.summary}</p>
         ) : null}

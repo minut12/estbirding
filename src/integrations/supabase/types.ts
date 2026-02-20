@@ -35,6 +35,98 @@ export type Database = {
         }
         Relationships: []
       }
+      news_items: {
+        Row: {
+          content_html: string | null
+          created_at: string
+          guid: string
+          id: string
+          image_url: string | null
+          language: string
+          published_at: string
+          source_id: string
+          source_slug: string
+          summary: string | null
+          title: string
+          updated_at: string
+          url: string
+        }
+        Insert: {
+          content_html?: string | null
+          created_at?: string
+          guid: string
+          id?: string
+          image_url?: string | null
+          language?: string
+          published_at?: string
+          source_id: string
+          source_slug: string
+          summary?: string | null
+          title: string
+          updated_at?: string
+          url: string
+        }
+        Update: {
+          content_html?: string | null
+          created_at?: string
+          guid?: string
+          id?: string
+          image_url?: string | null
+          language?: string
+          published_at?: string
+          source_id?: string
+          source_slug?: string
+          summary?: string | null
+          title?: string
+          updated_at?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "news_items_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "news_sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      news_sources: {
+        Row: {
+          created_at: string
+          fetch_url: string | null
+          homepage_url: string | null
+          id: string
+          is_active: boolean
+          name: string
+          slug: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          fetch_url?: string | null
+          homepage_url?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          slug: string
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          fetch_url?: string | null
+          homepage_url?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          slug?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

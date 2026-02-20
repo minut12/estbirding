@@ -313,7 +313,6 @@
         <button class="btn" id="refreshFilteredBtn">Refresh filtered</button>
         <button class="btn secondary" id="refreshSelectedBtn">Refresh selected</button>
         <button class="btn danger" id="stopBtn">Stop</button>
-        <button class="btn on" id="perCountryBtn">Per-country: ON</button>
         <button class="btn secondary" id="exportBtn">Export</button>
         <button class="btn secondary" id="importBtn">Import</button>
         <button class="btn secondary" id="resetBtn">Reset EU cache</button>
@@ -404,7 +403,90 @@ const DEFAULT_EBIRD_CODES = {
   "Hallhani": "gragoo",
   "Hallkibu": "tersan",
   "Väikepistrik": "merlin",
-  "Kanakull": "norgos1"
+  "Kanakull": "norgos1",
+  "Vöötkakk": "nohowl",
+  "Vöötnokk-kajakas": "ribgul",
+  "Vöötsaba-vigle": "batgod",
+  "Õõnetuvi": "stodov1",
+  "Ööbik": "thrnig1",
+  "Ööhaigur": "bcnher",
+  "Öösorr": "eurnig1",
+  "Väänkael": "eurrwry",
+  "Võsa-ritsiklind": "cogwar1",
+  "Võsaraat": "dunnoc1",
+  "Vööt-käbilind": "whwcro",
+  "Vööt-põõsalind": "barwar1",
+  "Vööthani": "bahgoo",
+  "Väiketrapp": "litbus1",
+  "Väiketsiitsitaja": "litbun",
+  "Väiketüll": "ltrplo",
+  "Välja-loorkull": "norhar1",
+  "Välja-väikelõoke": "gstlar1",
+  "Värbkakk": "eupowl1",
+  "Värbrüdi": "temsti",
+  "Väiketiir": "litter1",
+  "Väikekoovitaja": "whimbr",
+  "Väikekoskel": "smew",
+  "Väikeluik": "tunswa",
+  "Väikepütt": "litgre1",
+  "Väikerüdi": "litsti",
+  "Väike-lehelind": "comchi1",
+  "Väike-põõsalind": "leswhi4",
+  "Väikealk": "ribgul",
+  "Väikehuik": "ltrcra1",
+  "Väikehüüp": "litbit1",
+  "Väikekajakas": "litgul",
+  "Viupart": "eurwig",
+  "Väike-konnakotkas": "leseag1",
+  "Väike-käosulane": "boowar1",
+  "Väike-kärbsenäpp": "rebfly",
+  "Väike-laukhani": "lwfgoo",
+  "Valgesilm-vart": "ferduc",
+  "Valgetiib-viires": "whwter",
+  "Veetallaja": "renpha",
+  "Veisehaigur": "categr1",
+  "Vesipapp": "whtdip1",
+  "Vaarahani": "egygoo",
+  "Vaenukägu": "hoopoe",
+  "Vainurästas": "redwin",
+  "Valge-toonekurg": "whisto1",
+  "Valgepõsk-lagle": "bargoo",
+  "Valgeselg-kirjurähn": "whbwoo1",
+  "Täpikuik": "spocra1",
+  "Tõmmu-lehelind": "duswar",
+  "Tõmmuiibis": "gloibi",
+  "Tõmmukajakas": "lbbgul",
+  "Tõmmuvaeras": "whwsco3",
+  "Urvalind": "redpol1",
+  "Tutt-tiir": "santer1",
+  "Tuttlõoke": "crelar1",
+  "Tuttpütt": "grcgre1",
+  "Tuttvart": "tufduc",
+  "Tuuletallaja": "eurkes",
+  "Triip-ritsiklind": "lanwar",
+  "Tuhk-lehelind": "humwar1",
+  "Tumetilder": "spored",
+  "Tundra-rabahani": "tunbeg1",
+  "Tundrakaur": "yebloo",
+  "Tundrakiur": "retpip",
+  "Turteltuvi": "eutdov",
+  "Tait": "commoo3",
+  "Talvike": "yellow2",
+  "Tamme-kirjurähn": "miswoo1",
+  "Teder": "blagro1",
+  "Tiigi-roolind": "eurwar1",
+  "Tikutaja": "comsni",
+  "Suurkoovitaja": "eurcur",
+  "Suurnokk-vint": "hawfin",
+  "Suurrüdi": "redkno",
+  "Suuränn": "gresku1",
+  "Söödikänn": "parjae",
+  "Stepipistrik": "sakfal1",
+  "Stepiviu": "lolbuz1",
+  "Suitsupääsuke": "barswa",
+  "Suula": "norgan",
+  "Suur-konnakotkas": "grseag1",
+  "Suur-laukhani": "gwfgoo"
 };
 
 /* ========= Limits ========= */
@@ -505,20 +587,16 @@ function borderColorByDate(iso){
 }
 function fmtMeta(p){
   if(!p) return "No data yet";
+  const hasLoc = Number.isFinite(p.lat) && Number.isFinite(p.lon);
   const parts = [];
-  // Show total 7d count
-  if ((p.occ7===0) || Number.isFinite(Number(p.occ7))) parts.push(`<span class="pillMini">7d</span>${p.occ7}`);
-  // Show per-country chips
-  if (p.regions && typeof p.regions === "object") {
-    const chips = Object.entries(p.regions)
-      .filter(([,v]) => v && v.occ7 > 0)
-      .sort((a,b) => b[1].occ7 - a[1].occ7)
-      .map(([r,v]) => `<span class="pillMini">${r}:${v.occ7}</span>`);
-    if (chips.length) parts.push(chips.join(" "));
-  }
+  if (hasLoc){
+    parts.push(`<span class="pillMini">lat</span>${Number(p.lat).toFixed(4)}`);
+    parts.push(`<span class="pillMini">lon</span>${Number(p.lon).toFixed(4)}`);
+  } else parts.push("No location yet");
   if (p.t) parts.push(`<span class="pillMini">date</span>${p.t}`);
-  if (p.region) parts.push(`<span class="pillMini">latest</span>${p.region}`);
-  return parts.length ? parts.join(" ") : "No data yet";
+  if (p.region) parts.push(`<span class="pillMini">region</span>${p.region}`);
+  if ((p.occ7===0) || Number.isFinite(Number(p.occ7))) parts.push(`<span class="pillMini">7d</span>${p.occ7}`);
+  return parts.join(" ");
 }
 function showWarn(msg){
   const el = document.getElementById("warnBanner");
@@ -545,72 +623,30 @@ function makeIcon(url, border, hasCrown, occ7, isMigr){
   return L.divIcon({ html, className:"", iconSize:[size,size], iconAnchor:[size/2, size/2], popupAnchor:[0, -size/2] });
 }
 
-let showPerCountry = true; // toggle state
-
-function removeMarkersForSpecies(key) {
-  // Remove all composite markers (species@@region)
-  for (const [mk, m] of markers) {
-    if (mk === key || mk.startsWith(key + "@@")) {
-      map.removeLayer(m);
-      markers.delete(mk);
-    }
-  }
-}
-
 function updateMarker(key){
-  removeMarkersForSpecies(key);
+  if (markers.has(key)) { map.removeLayer(markers.get(key)); markers.delete(key); }
   const p = points[key]; if (!p) return;
   if (p.visible === false) return;
-
-  const hasCrown = !!(p.rarity && String(p.rarity).trim());
-  const isMigr = !!p.migration;
-  const avatarUrl = avatars[key] || "";
-
-  // Per-country markers
-  if (showPerCountry && p.regions && typeof p.regions === "object") {
-    let latestMarker = null;
-    let latestDate = "";
-    for (const [region, rd] of Object.entries(p.regions)) {
-      if (!rd || !Number.isFinite(rd.lat) || !Number.isFinite(rd.lon)) continue;
-      if (!isRecent7(rd.t)) continue;
-
-      const border = borderColorByDate(rd.t);
-      const occ7 = Number.isFinite(rd.occ7) ? rd.occ7 : undefined;
-      const icon = makeIcon(avatarUrl, border, hasCrown, occ7, isMigr);
-
-      const popup = `<b>${key}</b><br><small>region: ${region} (${REGION_NAME[region]||region})</small>`
-        + (rd.t ? `<br><small>date: ${rd.t}</small>` : "")
-        + (rd.loc ? `<br><small>location: ${rd.loc}</small>` : "")
-        + (Number.isFinite(occ7) ? `<br><small>7d records (${region}): ${occ7}</small>` : "")
-        + `<br><small>migration: ${isMigr?"yes":"no"}</small>`
-        + (p.rarity ? `<br><small>rarity: ${p.rarity}</small>` : "");
-
-      const compositeKey = `${key}@@${region}`;
-      const m = L.marker([rd.lat, rd.lon], { icon }).addTo(map).bindPopup(popup);
-      markers.set(compositeKey, m);
-
-      if (rd.t && rd.t >= latestDate) { latestDate = rd.t; latestMarker = m; }
-    }
-    // Store convenience reference for Open button
-    if (latestMarker) markers.set(key, latestMarker);
-    return;
-  }
-
-  // Fallback: single latest marker (old behavior or toggle off)
   if (!Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return;
   if (!isRecent7(p.t)) return;
 
   const border = borderColorByDate(p.t);
-  let occ7 = Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : undefined;
-  const icon = makeIcon(avatarUrl, border, hasCrown, occ7, isMigr);
+  const hasCrown = !!(p.rarity && String(p.rarity).trim());
+  let occ7 = (p.occ7!==undefined && p.occ7!==null && p.occ7!=="") ? Number(p.occ7) : undefined;
+  if (!Number.isFinite(occ7)) occ7 = undefined;
+  const isMigr = !!p.migration;
+
+  const icon = makeIcon(avatars[key] || "", border, hasCrown, occ7, isMigr);
 
   const where = p.loc ? `<br><small>location: ${p.loc}</small>` : "";
   const when  = p.t ? `<br><small>date: ${p.t}</small>` : "";
-  const src   = p.region ? `<br><small>source: eBird ${p.region} (${REGION_NAME[p.region]||p.region})</small>` : "";
-  const occLn = Number.isFinite(occ7) ? `<br><small>7d records: ${occ7}</small>` : "";
+  const src   = p.region ? `<br><small>source: eBird ${p.region} (${REGION_NAME[p.region]||p.region})</small>` : "<br><small>source: eBird</small>";
+  const occLn = ((occ7===0)||Number.isFinite(occ7)) ? `<br><small>7d records: ${occ7}${(occ7>=MAX_RESULTS?" (capped)":"")}</small>` : "";
+  const migr  = `<br><small>migration: ${isMigr ? "yes" : "no"}</small>`;
+  const rarLn = (p.rarity ? `<br><small>rarity: ${p.rarity}</small>` : "");
 
   const m = L.marker([p.lat, p.lon], { icon }).addTo(map)
-    .bindPopup(`<b>${key}</b>${when}${where}${src}${occLn}`);
+    .bindPopup(`<b>${key}</b>${when}${where}${src}${occLn}${migr}${rarLn}`);
   markers.set(key, m);
 }
 
@@ -767,60 +803,35 @@ async function fetchEurope(speciesName, force=false, signal=null){
   );
 
   const settled = await Promise.allSettled(urls.map(u => fetchJSON(u, signal)));
-
-  // Build per-region results
-  const regions = {};
-  let totalOcc7 = 0;
-  let latestDate = "";
-  let latestRecord = null;
-  let latestRegion = "";
-
-  settled.forEach((s, idx) => {
-    if (s.status !== "fulfilled" || !Array.isArray(s.value)) return;
-    const region = REGIONS[idx];
-    const recent = s.value.filter(o => isRecent7(String(o.obsDt||"").slice(0,10)));
-    const occ7_region = recent.length;
-    if (occ7_region === 0) return;
-
-    totalOcc7 += occ7_region;
-
-    // Pick latest record in this region
-    recent.sort((a,b) => String(b.obsDt||"").localeCompare(String(a.obsDt||"")));
-    const best = recent[0];
-    regions[region] = {
-      lat: +best.lat,
-      lon: +best.lng,
-      t: String(best.obsDt||"").slice(0,10),
-      loc: best.locName || "",
-      occ7: occ7_region
-    };
-
-    // Track overall latest
-    const dt = String(best.obsDt||"").slice(0,10);
-    if (dt >= latestDate) {
-      latestDate = dt;
-      latestRecord = best;
-      latestRegion = region;
+  const combined = [];
+  settled.forEach((s, idx)=>{
+    if (s.status === "fulfilled" && Array.isArray(s.value)){
+      const region = REGIONS[idx];
+      s.value.forEach(o => { o.__region = region; combined.push(o); });
     }
   });
 
-  p.occ7 = totalOcc7;
-  p.regions = regions;
+  const recent = combined.filter(o => isRecent7(String(o.obsDt||"").slice(0,10)));
+  const occ7 = recent.length;
+
+  p.occ7 = occ7;
   p.fetchedAt = Date.now();
 
-  if (totalOcc7 === 0) {
-    p.lat = null; p.lon = null; p.t = ""; p.loc = ""; p.region = "";
+  if (occ7 === 0){
+    p.lat = null; p.lon = null; p.t = ""; p.loc=""; p.region="";
     if (typeof p.visible !== "boolean") p.visible = true;
     saveAll(); updateMarker(speciesName); render();
     return;
   }
 
-  // Convenience latest fields
-  p.lat = +latestRecord.lat;
-  p.lon = +latestRecord.lng;
-  p.t = latestDate;
-  p.loc = latestRecord.locName || "";
-  p.region = latestRegion;
+  recent.sort((a,b)=> String(b.obsDt||"").localeCompare(String(a.obsDt||"")));
+  const o = recent[0];
+
+  p.lat = +o.lat;
+  p.lon = +o.lng;
+  p.t   = String(o.obsDt||"").slice(0,10);
+  p.loc = o.locName || "";
+  p.region = o.__region || "";
   if (typeof p.visible !== "boolean") p.visible = true;
 
   saveAll();
@@ -997,13 +1008,6 @@ document.getElementById("modalSave").addEventListener("click", ()=>{
 document.getElementById("refreshFilteredBtn").addEventListener("click", refreshFiltered);
 document.getElementById("refreshSelectedBtn").addEventListener("click", refreshSelected);
 document.getElementById("stopBtn").addEventListener("click", stopRefresh);
-document.getElementById("perCountryBtn").addEventListener("click", ()=>{
-  showPerCountry = !showPerCountry;
-  const btn = document.getElementById("perCountryBtn");
-  btn.textContent = showPerCountry ? "Per-country: ON" : "Per-country: OFF";
-  btn.className = showPerCountry ? "btn on" : "btn off";
-  render();
-});
 filterBox.addEventListener("input", render);
 
 /* ========= Init ========= */

@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.events-ingest]
 verify_jwt = false
+
+[functions.linnuliigid-snapshot]
+verify_jwt = false

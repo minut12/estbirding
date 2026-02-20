@@ -151,6 +151,42 @@ export type Database = {
         }
         Relationships: []
       }
+      linnuliigid_snapshot: {
+        Row: {
+          created_at: string
+          generated_at: string | null
+          id: number
+          last_error: string | null
+          points_json: Json
+          progress_done: number
+          progress_total: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          generated_at?: string | null
+          id?: number
+          last_error?: string | null
+          points_json?: Json
+          progress_done?: number
+          progress_total?: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          generated_at?: string | null
+          id?: number
+          last_error?: string | null
+          points_json?: Json
+          progress_done?: number
+          progress_total?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       news_items: {
         Row: {
           content_fetch_error: string | null

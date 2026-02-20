@@ -56,6 +56,12 @@ export default function MapTab({ isActive = true }: MapTabProps) {
     } catch (e) { /* cross-origin safety */ }
   }, [sendToIframe]);
 
+  // Send admin key to iframe
+  const sendAdminKey = useCallback(() => {
+    const key = localStorage.getItem('linn_admin_key') || '';
+    if (key) sendToIframe({ type: 'SET_ADMIN_KEY', key });
+  }, [sendToIframe]);
+
   // Send shared avatars to iframe
   const sendAvatarsToIframe = useCallback(() => {
     const avatars = getMergedAvatars();
@@ -129,9 +135,10 @@ export default function MapTab({ isActive = true }: MapTabProps) {
     setError(null);
     iframeReadyRef.current = true;
     sendMapShown();
-    // Send avatars and insets when iframe loads
+    // Send avatars, insets, and admin key when iframe loads
     setTimeout(sendAvatarsToIframe, 300);
     setTimeout(sendAppInsets, 400);
+    setTimeout(sendAdminKey, 500);
     // Auto-refresh after initial load
     setTimeout(() => {
       lastAutoRefreshRef.current = Date.now();

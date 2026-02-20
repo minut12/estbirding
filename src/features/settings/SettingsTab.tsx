@@ -16,6 +16,7 @@ import { clearAppCaches, fullReset, doSoftReload, doHardReload, type ResetReport
 import { APP_VERSION } from '@/lib/version';
 import { Trash2, RotateCcw } from 'lucide-react';
 import AvatarManager from './AvatarManager';
+import DeveloperSettings from './DeveloperSettings';
 
 type ResetMode = 'soft' | 'hard' | null;
 
@@ -130,6 +131,11 @@ export default function SettingsTab() {
 
         {/* Avatar Manager */}
         <AvatarManager />
+
+        <Separator />
+
+        {/* Developer Settings */}
+        <DeveloperSettings />
 
         <Separator />
 

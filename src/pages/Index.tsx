@@ -3,6 +3,7 @@ import { Map, Newspaper, CalendarDays, Settings } from 'lucide-react';
 import MapTab from '@/features/map/MapTab';
 import NewsTab from '@/features/news/NewsTab';
 import EventsTab from '@/features/events/EventsTab';
+
 import SettingsTab from '@/features/settings/SettingsTab';
 import CacheResetFab from '@/components/CacheResetFab';
 import VersionBanner from '@/components/VersionBanner';
@@ -21,6 +22,7 @@ export default function Index() {
   const [active, setActive] = useState<Tab>('kaart');
 
   const goToSettings = () => setActive('seaded');
+  // NewsTab no longer needs onOpenSettings
 
   return (
     <div className="flex flex-col h-screen bg-background">
@@ -29,7 +31,7 @@ export default function Index() {
       {/* Content area */}
       <div className="flex-1 overflow-hidden">
         {active === 'kaart' && <MapTab />}
-        {active === 'uudised' && <NewsTab onOpenSettings={goToSettings} />}
+        {active === 'uudised' && <NewsTab />}
         {active === 'üritused' && <EventsTab onOpenSettings={goToSettings} />}
         {active === 'seaded' && <SettingsTab />}
       </div>

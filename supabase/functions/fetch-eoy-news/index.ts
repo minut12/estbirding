@@ -214,7 +214,7 @@ Deno.serve(async (req) => {
     const html = await res.text();
 
     const baseUrl = "https://www.eoy.ee";
-    let parsed = parseEoyListPage(html, baseUrl);
+    let parsed = parseEoyListPage(html, baseUrl, source.fetch_url);
 
     console.log(`Parsed ${parsed.length} items from EOÜ index page`);
 

@@ -8,7 +8,13 @@ import { Button } from '@/components/ui/button';
 import { APP_VERSION } from '@/lib/version';
 import { fetchSharedAvatars, getMergedAvatars, notifyIframe } from '@/lib/avatar-storage';
 
-export default function MapTab() {
+const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+
+interface MapTabProps {
+  isActive?: boolean;
+}
+
+export default function MapTab({ isActive = true }: MapTabProps) {
   const [selectedId, setSelectedId] = useState(getActiveMap().id);
   const current = maps.find((m) => m.id === selectedId) ?? getActiveMap();
   const iframeSrc = useMemo(() => {
@@ -17,29 +23,38 @@ export default function MapTab() {
   }, [current.source]);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const iframeReadyRef = useRef(false);
+  const lastAutoRefreshRef = useRef(0);
 
-  // Send MAP_SHOWN to iframe so Leaflet can invalidateSize
-  const sendMapShown = useCallback(() => {
+  // Send a postMessage to the iframe (safe wrapper)
+  const sendToIframe = useCallback((msg: Record<string, unknown>) => {
     try {
-      iframeRef.current?.contentWindow?.postMessage({ type: 'MAP_SHOWN' }, '*');
+      iframeRef.current?.contentWindow?.postMessage(msg, '*');
     } catch (e) { /* cross-origin safety */ }
   }, []);
+
+  // Send MAP_SHOWN to iframe so Leaflet can invalidateSize
+  const sendMapShown = useCallback(() => sendToIframe({ type: 'MAP_SHOWN' }), [sendToIframe]);
+
+  // Send MAP_REFRESH_VISIBLE to iframe
+  const sendRefreshVisible = useCallback(() => {
+    if (!iframeReadyRef.current) return;
+    sendToIframe({ type: 'MAP_REFRESH_VISIBLE' });
+  }, [sendToIframe]);
 
   // Send APP_INSETS to iframe so it can adjust layout for parent header/nav
   const sendAppInsets = useCallback(() => {
     try {
-      // Parent has a header (map selector ~56px) and bottom nav (~56px)
       const headerEl = document.querySelector('.shrink-0');
       const navEl = document.querySelector('nav.border-t');
-      const headerPx = headerEl ? headerEl.getBoundingClientRect().height : 56;
       const bottomNavPx = navEl ? navEl.getBoundingClientRect().height : 56;
-      iframeRef.current?.contentWindow?.postMessage({
+      sendToIframe({
         type: 'APP_INSETS',
-        headerPx: 0, // iframe already sits below header in parent layout
+        headerPx: 0,
         bottomNavPx,
-      }, '*');
+      });
     } catch (e) { /* cross-origin safety */ }
-  }, []);
+  }, [sendToIframe]);
 
   // Send shared avatars to iframe
   const sendAvatarsToIframe = useCallback(() => {
@@ -49,9 +64,7 @@ export default function MapTab() {
 
   // Fetch shared avatars on mount, cache locally, then send to iframe
   useEffect(() => {
-    // Send cached avatars immediately
     const t0 = setTimeout(sendAvatarsToIframe, 600);
-    // Fetch fresh from cloud in background
     fetchSharedAvatars().then(() => {
       sendAvatarsToIframe();
     });
@@ -78,12 +91,52 @@ export default function MapTab() {
     return () => { clearTimeout(t); clearTimeout(t2); };
   }, [current.id, sendMapShown]);
 
+  // --- Auto-refresh: on tab activation ---
+  useEffect(() => {
+    if (isActive && iframeReadyRef.current) {
+      // Small delay to let iframe settle after tab switch
+      const t = setTimeout(sendRefreshVisible, 500);
+      return () => clearTimeout(t);
+    }
+  }, [isActive, sendRefreshVisible]);
+
+  // --- Auto-refresh: on visibilitychange ---
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === 'visible' && isActive && iframeReadyRef.current) {
+        // If >30 min since last refresh, refresh immediately
+        const elapsed = Date.now() - lastAutoRefreshRef.current;
+        const delay = elapsed > AUTO_REFRESH_INTERVAL_MS ? 300 : 500;
+        setTimeout(sendRefreshVisible, delay);
+      }
+    };
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
+  }, [isActive, sendRefreshVisible]);
+
+  // --- Auto-refresh: 30 minute interval ---
+  useEffect(() => {
+    if (!isActive) return;
+    const id = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      lastAutoRefreshRef.current = Date.now();
+      sendRefreshVisible();
+    }, AUTO_REFRESH_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [isActive, sendRefreshVisible]);
+
   const handleLoad = () => {
     setError(null);
+    iframeReadyRef.current = true;
     sendMapShown();
     // Send avatars and insets when iframe loads
     setTimeout(sendAvatarsToIframe, 300);
     setTimeout(sendAppInsets, 400);
+    // Auto-refresh after initial load
+    setTimeout(() => {
+      lastAutoRefreshRef.current = Date.now();
+      sendRefreshVisible();
+    }, 800);
   };
 
   const handleError = () => {
@@ -92,6 +145,7 @@ export default function MapTab() {
 
   const retry = () => {
     setError(null);
+    iframeReadyRef.current = false;
     if (iframeRef.current) {
       iframeRef.current.src = iframeSrc;
     }

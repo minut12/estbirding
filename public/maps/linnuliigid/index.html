@@ -43,6 +43,7 @@
   .snapshot-banner{font-size:11px;color:#334155;padding:4px 8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;margin:6px 0}
   .snapshot-banner.warn{background:#fef3c7;border-color:#fde68a;color:#92400e}
   .snapshot-banner.error{background:#fee2e2;border-color:#fecaca;color:#dc2626}
+  .snapshot-banner .btn-inline{font-size:11px;padding:2px 8px;margin-left:6px;border:none;border-radius:4px;background:#0a7;color:#fff;cursor:pointer}
 
 .btn.on{background:#27ae60;color:#fff}
 
@@ -105,6 +106,9 @@
       .sidebar-backdrop{z-index:3500!important}
     }
 
+  /* Debug panel */
+  .debug-panel{font-size:11px;color:#64748b;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:4px 8px;margin:6px 0}
+  .debug-panel summary{cursor:pointer;font-weight:600;color:#475569}
 
 </style>
 </head>
@@ -113,18 +117,25 @@
 <div id="app">
   <aside id="sidebar">
     <div class="sidebar-header"><h2 style="margin:0">Linnuliigid 2026</h2><button id="closeSidebarBtn" class="btn icon close-sidebar" title="Sulge" aria-label="Sulge">✕</button></div>
-<div class="top-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
-  <span class="pill" title="Only show occurrences within the last 7 days.">7 days only</span>
+<div class="top-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:center">
+  <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px">
+    <input type="checkbox" id="toggle7days" checked />
+    <span>7 days only</span>
+  </label>
 </div>
 <div id="snapshotBanner" class="snapshot-banner" style="display:none"></div>
 <div class="fetch-controls">
-  <button id="btnReloadData" class="btn" title="Reload latest snapshot from server">Reload data</button>
-  <button id="btnForceRefresh" class="btn secondary" title="Force server-side data refresh (admin)" style="display:none">Force refresh</button>
+  <button id="btnRefreshData" class="btn" title="Trigger server-side data refresh">Refresh data</button>
+  <button id="btnReloadSnapshot" class="btn secondary" title="Reload latest snapshot from server">Reload snapshot</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
 <div id="fetchProgress" class="fetch-progress"></div>
 <div id="fetchProgressBar" class="fetch-progress-bar" style="display:none"><div id="fetchProgressBarInner" class="fetch-progress-bar-inner" style="width:0%"></div></div>
 <div id="fetchError" class="fetch-error"></div>
+<details class="debug-panel" id="debugPanel">
+  <summary>Debug info</summary>
+  <div id="debugContent">Loading…</div>
+</details>
     <input id="filterBox" type="text" placeholder="Filter…" />
     <div id="list"></div>
   </aside>
@@ -290,7 +301,10 @@ function _toDay(s){
   return new Date(+m[1], +m[2]-1, +m[3]).getTime();
 }
 
+// Toggle state: 7 days only
 window.__recentOnly = true;
+function is7daysOnly(){ return window.__recentOnly; }
+
 function isRecent(isoDate){
   try{
     const ms = _toDay(isoDate);
@@ -308,24 +322,34 @@ function _borderColorByDate(isoDate){
 }
 
 // =========================================
-// === SNAPSHOT-BASED FETCHING (replaces per-species client scraping) ===
+// === SNAPSHOT-BASED FETCHING ===
 // =========================================
 const SNAPSHOT_API = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/linnuliigid-snapshot';
 let __pollTimer = null;
 let __pollCount = 0;
-let __adminKey = ''; // received from parent via postMessage
+let __snapshotMeta = { status: null, generated_at: null };
+let __renderedMarkerCount = 0;
 
-function _showSnapshotBanner(msg, type){
+function _showSnapshotBanner(msg, type, showAllBtn){
   const el = document.getElementById('snapshotBanner');
   if(!el) return;
   el.style.display = 'block';
   el.className = 'snapshot-banner' + (type ? ' ' + type : '');
-  el.textContent = msg;
+  el.innerHTML = msg + (showAllBtn ? ' <button class="btn-inline" onclick="window.__showAll()">Show all</button>' : '');
 }
 function _hideSnapshotBanner(){
   const el = document.getElementById('snapshotBanner');
   if(el) el.style.display = 'none';
 }
+
+// "Show all" shortcut — turns off 7-day toggle
+window.__showAll = function(){
+  window.__recentOnly = false;
+  const cb = document.getElementById('toggle7days');
+  if(cb) cb.checked = false;
+  refreshAllMarkers();
+  _hideSnapshotBanner();
+};
 
 function _updateProgressUI(done, total, status){
   const prog = document.getElementById('fetchProgress');
@@ -344,6 +368,21 @@ function _updateProgressUI(done, total, status){
   }
 }
 
+function _updateDebugPanel(){
+  const el = document.getElementById('debugContent');
+  if(!el) return;
+  const totalWithCoords = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.lat); }).length;
+  const occ7Count = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.occ7) && p.occ7 > 0; }).length;
+  el.innerHTML = [
+    'Status: <b>' + (__snapshotMeta.status || '?') + '</b>',
+    'Generated: <b>' + (__snapshotMeta.generated_at ? new Date(__snapshotMeta.generated_at).toLocaleString() : '—') + '</b>',
+    'Species with coords: <b>' + totalWithCoords + '</b>',
+    'Species with occ7>0: <b>' + occ7Count + '</b>',
+    'Markers rendered: <b>' + __renderedMarkerCount + '</b>',
+    '7-day filter: <b>' + (is7daysOnly() ? 'ON' : 'OFF') + '</b>',
+  ].join('<br>');
+}
+
 function _applySnapshot(snap){
   if(!snap || !snap.points_json) return;
   const pts = snap.points_json;
@@ -358,9 +397,27 @@ function _applySnapshot(snap){
     if(s.src) p.src = s.src;
     if(typeof p.visible !== 'boolean') p.visible = true;
   }
+  __snapshotMeta.status = snap.status || 'ready';
+  __snapshotMeta.generated_at = snap.generated_at;
   save();
+  refreshAllMarkers();
+}
+
+function refreshAllMarkers(){
+  __renderedMarkerCount = 0;
   Object.keys(points).forEach(updateMarker);
   render();
+  _checkEmpty7dBanner();
+  _updateDebugPanel();
+}
+
+function _checkEmpty7dBanner(){
+  if(!is7daysOnly()) return;
+  const occ7Count = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.occ7) && p.occ7 > 0; }).length;
+  const totalWithCoords = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.lat); }).length;
+  if(occ7Count === 0 && totalWithCoords > 0){
+    _showSnapshotBanner('No observations in last 7 days in current dataset. Turn off "7 days only" to see all known locations.', 'warn', true);
+  }
 }
 
 async function loadSnapshot(){
@@ -373,7 +430,6 @@ async function loadSnapshot(){
     if(snap.status === 'running'){
       _updateProgressUI(snap.progress_done, snap.progress_total, 'running');
       _showSnapshotBanner('Server is refreshing data (' + snap.progress_done + '/' + snap.progress_total + ')…');
-      // Apply last known data while refresh runs
       if(snap.points_json && Object.keys(snap.points_json).length > 0){
         _applySnapshot(snap);
       }
@@ -397,9 +453,7 @@ async function loadSnapshot(){
   }catch(e){
     console.warn('[snapshot] Load failed:', e);
     _showSnapshotBanner('Using cached data (server unavailable)', 'warn');
-    // Fall back to localStorage (already loaded)
-    Object.keys(points).forEach(updateMarker);
-    render();
+    refreshAllMarkers();
   }
 }
 
@@ -408,7 +462,7 @@ function _startPolling(){
   __pollCount = 0;
   __pollTimer = setInterval(async ()=>{
     __pollCount++;
-    if(__pollCount > 90){ // 90 * 2s = 3 min max
+    if(__pollCount > 90){
       _stopPolling();
       _showSnapshotBanner('Refresh timed out. Try again later.', 'error');
       return;
@@ -429,7 +483,6 @@ function _startPolling(){
           setTimeout(_hideSnapshotBanner, 4000);
         } else if(snap.status === 'error'){
           _showSnapshotBanner('Refresh failed: ' + (snap.last_error || 'Unknown error'), 'error');
-          // Still apply whatever data exists
           if(snap.points_json && Object.keys(snap.points_json).length > 0){
             _applySnapshot(snap);
           }
@@ -444,27 +497,21 @@ function _stopPolling(){
   _updateProgressUI(0, 0, '');
 }
 
-async function triggerForceRefresh(){
-  if(!__adminKey){
-    _showSnapshotBanner('Force refresh requires admin key (set in Settings → Developer).', 'error');
-    setTimeout(_hideSnapshotBanner, 6000);
-    return;
-  }
+// Public refresh (no key needed)
+async function triggerRefresh(){
   try{
     _showSnapshotBanner('Requesting server refresh…');
     _updateProgressUI(0, SPECIES.length, 'running');
 
     const res = await fetch(SNAPSHOT_API, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-INGEST-KEY': __adminKey,
-      },
+      headers: { 'Content-Type': 'application/json' },
     });
 
-    if(res.status === 401 || res.status === 403){
-      _showSnapshotBanner('Force refresh requires admin key (set in Settings → Developer).', 'error');
-      _updateProgressUI(0, 0, 'error');
+    if(res.status === 429){
+      const data = await res.json().catch(()=>({}));
+      _showSnapshotBanner(data.error || 'Refresh recently triggered. Try again later.', 'warn');
+      _updateProgressUI(0, 0, '');
       setTimeout(_hideSnapshotBanner, 6000);
       return;
     }
@@ -478,49 +525,45 @@ async function triggerForceRefresh(){
   }
 }
 
-function _updateForceRefreshButton(){
-  const btn = document.getElementById('btnForceRefresh');
-  if(btn) btn.style.display = __adminKey ? 'inline-block' : 'none';
-}
-
 // Wire buttons
 function _wireSnapshotButtons(){
-  const btnReload = document.getElementById('btnReloadData');
-  const btnForce = document.getElementById('btnForceRefresh');
+  const btnRefresh = document.getElementById('btnRefreshData');
+  const btnReload = document.getElementById('btnReloadSnapshot');
   const btnStop = document.getElementById('btnStopFetch');
+  const toggle7d = document.getElementById('toggle7days');
+
+  if(btnRefresh && !btnRefresh.__wired){
+    btnRefresh.addEventListener('click', triggerRefresh);
+    btnRefresh.__wired = true;
+  }
   if(btnReload && !btnReload.__wired){
     btnReload.addEventListener('click', function(){ loadSnapshot(); });
     btnReload.__wired = true;
-  }
-  if(btnForce && !btnForce.__wired){
-    btnForce.addEventListener('click', triggerForceRefresh);
-    btnForce.__wired = true;
   }
   if(btnStop && !btnStop.__wired){
     btnStop.addEventListener('click', _stopPolling);
     btnStop.__wired = true;
   }
-  _updateForceRefreshButton();
+  if(toggle7d && !toggle7d.__wired){
+    toggle7d.addEventListener('change', function(){
+      window.__recentOnly = this.checked;
+      refreshAllMarkers();
+      if(this.checked) _checkEmpty7dBanner();
+      else _hideSnapshotBanner();
+    });
+    toggle7d.__wired = true;
+  }
 }
 
 // === Auto-refresh via postMessage (parent app sends these) ===
-function refreshVisible(){
-  // Instead of fetching 369 species, just reload snapshot
-  loadSnapshot();
-}
-function refreshSelected(){
-  loadSnapshot();
-}
+function refreshVisible(){ loadSnapshot(); }
+function refreshSelected(){ loadSnapshot(); }
 
 window.addEventListener('message', function(ev){
   try{
     if(!ev.data || typeof ev.data !== 'object') return;
     var t = ev.data.type;
-    if(t === 'SET_ADMIN_KEY'){
-      __adminKey = ev.data.key || '';
-      _updateForceRefreshButton();
-      return;
-    }
+    if(t === 'SET_ADMIN_KEY') return; // no longer used
     if(ev.origin !== window.location.origin) return;
     if(t === 'MAP_REFRESH_VISIBLE') refreshVisible();
     if(t === 'MAP_REFRESH_SELECTED') refreshSelected();
@@ -650,9 +693,15 @@ function updateMarker(key) {
   const p = points[key];
   if (markers.has(key)) { map.removeLayer(markers.get(key)); markers.delete(key); }
   if (!p) return;
+
+  // Determine visibility based on 7-day toggle
+  const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
   const passesRecent = isRecent(p.t) || (Number.isFinite(p.occ7) && p.occ7 > 0);
-  const isVisible = (p.visible !== false) && passesRecent;
-  if (isVisible && Number.isFinite(p.lat) && Number.isFinite(p.lon)) {
+  const passesFilter = is7daysOnly() ? passesRecent : true;
+  const isVisible = (p.visible !== false) && passesFilter && hasCoords;
+
+  if (isVisible) {
+    __renderedMarkerCount++;
     const bcol = _borderColorByDate(p.t);
     const c7 = Number.isFinite(p.occ7) ? p.occ7 : null;
     const icon = avatarIcon(getDisplayAvatar(key), bcol, c7);
@@ -707,8 +756,7 @@ function render() {
 }
 
 // Restore existing markers from localStorage and render list
-Object.keys(points).forEach(updateMarker);
-render();
+refreshAllMarkers();
 _wireSnapshotButtons();
 
 // Load snapshot from server (single request — replaces 369 client fetches)
@@ -770,7 +818,6 @@ setTimeout(autoDetectAvatarsForActive, 30000);
 window.addEventListener('message', function(ev){
   try{
     if(!ev.data || ev.data.type !== 'APP_INSETS') return;
-    // No longer adjust height via CSS vars — flex layout handles it
     if(window.map && map.invalidateSize) setTimeout(function(){ map.invalidateSize(true); }, 100);
   }catch(e){}
 });

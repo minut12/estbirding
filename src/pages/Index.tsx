@@ -30,7 +30,7 @@ export default function Index() {
 
       {/* Content area */}
       <div className="flex-1 overflow-hidden">
-        {active === 'kaart' && <MapTab />}
+        {active === 'kaart' && <MapTab isActive={active === 'kaart'} />}
         {active === 'uudised' && <NewsTab />}
         {active === 'üritused' && <EventsTab onOpenSettings={goToSettings} />}
         {active === 'seaded' && <SettingsTab />}

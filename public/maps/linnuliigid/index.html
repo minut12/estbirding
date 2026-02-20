@@ -608,6 +608,42 @@ if(!IS_MOBILE){
   }, 30 * 60 * 1000);
 }
 
+// === Auto-refresh API via postMessage (used by parent app) ===
+let __lastAutoRefreshAt = 0;
+const AUTO_REFRESH_MIN_MS = 2 * 60 * 1000; // 2 min throttle
+
+function refreshVisible(){
+  const now = Date.now();
+  if(now - __lastAutoRefreshAt < AUTO_REFRESH_MIN_MS) { console.log('[map] refreshVisible throttled'); return; }
+  if(__fetchRunning > 0) { console.log('[map] refreshVisible skipped — fetch in progress'); return; }
+  __lastAutoRefreshAt = now;
+  const keys = _getFilteredSpeciesKeys();
+  const toFetch = keys.filter(k => isCacheExpired(getCachedSpecies(k)));
+  if(toFetch.length === 0){ console.log('[map] refreshVisible: all cached'); return; }
+  console.log('[map] refreshVisible: fetching ' + toFetch.length + ' species');
+  _enqueueFetch(toFetch);
+}
+
+function refreshSelected(){
+  const keys = _getFilteredSpeciesKeys();
+  if(keys.length > 20){ console.log('[map] refreshSelected: too many species'); return; }
+  _enqueueFetch(keys);
+}
+
+window.addEventListener('message', function(ev){
+  try{
+    if(!ev.data || typeof ev.data !== 'object') return;
+    // Only accept messages from same origin (parent app)
+    if(ev.origin !== window.location.origin) return;
+    var t = ev.data.type;
+    if(t === 'MAP_REFRESH_VISIBLE') refreshVisible();
+    if(t === 'MAP_REFRESH_SELECTED') refreshSelected();
+    if(t === 'MAP_PING' && ev.source){
+      ev.source.postMessage({ type: 'MAP_PONG' }, ev.origin);
+    }
+  }catch(e){ console.warn('[map] postMessage refresh handler error', e); }
+});
+
 
 function save() {
   localStorage.setItem(LS_AVATARS, JSON.stringify(avatars));

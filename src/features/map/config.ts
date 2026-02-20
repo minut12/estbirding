@@ -18,15 +18,14 @@ export const maps: MapDefinition[] = [
     source: '/maps/linnuliigid/index.html',
     enabled: true,
   },
-  // TODO: add more maps here
-  // {
-  //   id: 'linnuliigid-fi',
-  //   name: 'Linnuliigid (FI)',
-  //   region: 'Soome',
-  //   type: 'remote',
-  //   source: 'https://example.com/fi-map',
-  //   enabled: false,
-  // },
+  {
+    id: 'europe',
+    name: 'Europe',
+    region: 'Europe',
+    type: 'asset',
+    source: '/maps/europe/index.html',
+    enabled: true,
+  },
 ];
 
 export function getActiveMap(): MapDefinition {

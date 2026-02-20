@@ -59,6 +59,33 @@ function sanitizeHtml(html: string): string {
   return clean.trim();
 }
 
+/* ── Title blacklist (menu/footer labels, not articles) ── */
+const TITLE_BLACKLIST = new Set([
+  "meist", "kontakt", "toeta", "privaatsus", "küpsised",
+  "liitu", "töötajad", "ühistu", "kasulikku", "sündmused",
+  "uudised", "projektid", "annetused", "linnukaitse",
+]);
+
+function isBlacklistedTitle(title: string): boolean {
+  const lower = title.toLowerCase().trim();
+  if (TITLE_BLACKLIST.has(lower)) return true;
+  if (lower.length < 8) return true;
+  return false;
+}
+
+function isValidArticleUrl(url: string, listingUrl: string): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    if (!u.hostname.includes("eoy.ee")) return false;
+    // Must not be the listing page itself
+    if (url === listingUrl) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 interface ParsedItem {
   title: string;
   summary: string;
@@ -68,33 +95,32 @@ interface ParsedItem {
   content_html: string | null;
 }
 
-function parseEoyListPage(html: string, baseUrl: string): ParsedItem[] {
+function parseEoyListPage(html: string, baseUrl: string, listingUrl: string): ParsedItem[] {
   const items: ParsedItem[] = [];
 
-  // EOÜ news page has article blocks. Try multiple patterns.
-  // Pattern 1: look for news entry divs/articles
-  // The page typically has entries with headings, dates, excerpts, and "Loe edasi" links.
-
-  // Split by likely article boundaries
+  // EOÜ news page has article blocks with class containing "entry", "news", "article", "post"
   const blocks = html.split(/<(?:article|div\s+class=['"][^'"]*(?:news|article|post|entry)[^'"]*['"])/i);
 
   for (let i = 1; i < blocks.length; i++) {
     const block = blocks[i];
+
     // Extract title from first heading
     const titleMatch = block.match(/<h[2-4][^>]*>([\s\S]*?)<\/h[2-4]>/i);
     const title = titleMatch ? stripHtml(titleMatch[1]) : "";
-    if (!title) continue;
+    if (!title || isBlacklistedTitle(title)) continue;
 
-    // Extract link
-    const linkMatch = block.match(/href=['"]([^'"]*(?:uudised|news)[^'"]*)['"]/i)
-      || block.match(/href=['"](\/ET\/[^'"]+)['"]/i)
+    // Extract link — require it points to an actual article path
+    const linkMatch = block.match(/href=['"]([^'"]*\/ET\/[^'"]+)['"]/i)
+      || block.match(/href=['"]([^'"]*(?:uudised|news)\/[^'"]+)['"]/i)
       || block.match(/href=['"](https?:\/\/[^'"]+)['"]/i);
     let url = linkMatch ? linkMatch[1] : "";
     if (url.startsWith("/")) url = baseUrl + url;
+    if (!isValidArticleUrl(url, listingUrl)) continue;
 
-    // Extract date
+    // Extract date — REQUIRE a date to confirm it's a news item
     const dateTexts = block.match(/\d{1,2}\.?\s+(?:jaanuar|veebruar|märts|aprill|mai|juuni|juuli|august|september|oktoober|november|detsember)\s+\d{4}/gi);
     const published_at = dateTexts ? parseEstonianDate(dateTexts[0]) : null;
+    if (!published_at) continue; // No date → likely not a news card
 
     // Extract image
     const imgMatch = block.match(/<img[^>]*src=['"]([^'"]+)['"]/i);
@@ -108,13 +134,14 @@ function parseEoyListPage(html: string, baseUrl: string): ParsedItem[] {
     items.push({ title, summary, url, image_url, published_at, content_html: null });
   }
 
-  // Fallback: if no blocks found, try a simpler approach — find all "Loe edasi" links
+  // Fallback: "Loe edasi" links (still apply validation)
   if (items.length === 0) {
     const linkRe = /href=['"]([^'"]+)[^>]*>(?:[^<]*Loe edasi|[^<]*loe edasi)/gi;
     let linkMatch;
     while ((linkMatch = linkRe.exec(html))) {
       let url = linkMatch[1];
       if (url.startsWith("/")) url = baseUrl + url;
+      if (!isValidArticleUrl(url, listingUrl)) continue;
       items.push({ title: url, summary: "", url, image_url: null, published_at: null, content_html: null });
     }
   }

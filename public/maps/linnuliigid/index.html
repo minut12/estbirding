@@ -861,10 +861,13 @@ function updateMarker(key) {
 
 
 // ----- Fetch helpers -------
+// Supabase Edge Function proxy for CORS bypass
+const PROXY_FN_URL = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/elurikkus-proxy';
+
 function makeFetchURL(url) {
   // cache-bust every request
   url = url + (url.includes('?') ? '&' : '?') + '_ts=' + Date.now();
-  const bases = [ '', proxyBase, 'https://api.allorigins.win/raw?url=', 'https://cors.isomorphic-git.org/' ];
+  const bases = [ '', proxyBase, PROXY_FN_URL + '?url=', 'https://api.allorigins.win/raw?url=', 'https://cors.isomorphic-git.org/' ];
   const built = [];
   for (const b of bases) built.push(b ? b + encodeURIComponent(url) : url);
   return [...new Set(built)];
@@ -950,7 +953,7 @@ function findFirstDetailLink(html) {
   return links.length > 0 ? links[0] : null;
 }
 
-// === Biocache JSON API: primary data source for dates & coords ===
+// === Coord & date helpers ===
 function _isEstoniaCoords(lat, lon) {
   return Number.isFinite(lat) && Number.isFinite(lon) && lat >= 57 && lat <= 60 && lon >= 21 && lon <= 29;
 }
@@ -958,182 +961,124 @@ function _isEstoniaCoords(lat, lon) {
 function _parseEventDateField(raw) {
   if (!raw) return null;
   const s = String(raw);
-  // Accept YYYY-MM-DD or YYYY-MM-DDT...
   const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
   return m ? m[1] : null;
 }
 
-async function fetchBiocacheRecords(speciesName, pageSize) {
-  pageSize = pageSize || 50;
-  const url = 'https://elurikkus.ee/biocache-service/ws/occurrences/search.json'
-    + '?q=' + encodeURIComponent(speciesName)
-    + '&pageSize=' + pageSize
-    + '&start=0'
-    + '&sort=eventDate'
-    + '&dir=desc';
-  return tryFetchJSON(url);
-}
-
-// === Main fetch function: uses Biocache JSON API ===
+// === Main fetch function: HTML scraping with proxy fallback ===
 async function autoFetchCoords(key, searchUrl) {
   try {
     let latestDate = null;
     let occ7 = 0;
     let chosenLat = null, chosenLon = null;
-    let source = 'biocache';
+    let source = 'html';
     let debugInfo = '';
     let lastError = null;
+    let fetchedOk = false;
 
-    // --- Try Biocache JSON API first ---
-    let usedBiocache = false;
     try {
-      const json = await fetchBiocacheRecords(key, 50);
-      const records = json?.occurrences || json?.records || [];
-      if (Array.isArray(records) && records.length > 0) {
-        usedBiocache = true;
-        const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-        let bestDate = null, bestMs = -1;
-        let bestCoordDate = null, bestCoordMs = -1;
-        let bestLat = null, bestLon = null;
+      const shtml = await tryFetch(searchUrl);
+      fetchedOk = true;
 
-        for (const rec of records) {
-          const ed = _parseEventDateField(rec.eventDate);
-          if (!ed) continue;
-          const ms = _toDay(ed);
-          if (!ms) continue;
-
-          // Track latest eventDate overall
-          if (ms > bestMs) { bestMs = ms; bestDate = ed; }
-
-          // Count 7-day occurrences (with valid Estonia coords)
-          const lat = parseFloat(rec.decimalLatitude);
-          const lon = parseFloat(rec.decimalLongitude);
-          const hasCoords = _isEstoniaCoords(lat, lon);
-
-          if (ms >= sevenDaysAgo) {
-            occ7++;
-          }
-
-          // Choose newest record with valid coords
-          if (hasCoords && ms > bestCoordMs) {
-            bestCoordMs = ms;
-            bestCoordDate = ed;
-            bestLat = lat;
-            bestLon = lon;
-          }
+      // Extract dates: YYYY-MM-DD patterns, eventDate JSON, Estonian dd.mm.yyyy
+      const allDatesRaw = [];
+      let m;
+      // YYYY-MM-DD HH:MM (table rows)
+      const reTable = /(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}/g;
+      while ((m = reTable.exec(shtml)) !== null) allDatesRaw.push(m[1]);
+      // DarwinCore JSON eventDate
+      const reJson = /"eventDate"\s*:\s*"?(\d{4}-\d{2}-\d{2})/ig;
+      while ((m = reJson.exec(shtml)) !== null) allDatesRaw.push(m[1]);
+      // "datetime":"2025-09-12T04:31:00Z" (SSR JSON)
+      const reDt = /"datetime"\s*:\s*"(\d{4}-\d{2}-\d{2})T/ig;
+      while ((m = reDt.exec(shtml)) !== null) allDatesRaw.push(m[1]);
+      // Label "Kuupäev: YYYY-MM-DD"
+      const reLbl = /(?:Kuupäev|vaatluse kuupäev|eventDate)\s*[:\-–]\s*(\d{4}-\d{2}-\d{2})/ig;
+      while ((m = reLbl.exec(shtml)) !== null) allDatesRaw.push(m[1]);
+      // Estonian dd.mm.yyyy
+      const reEe = /\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b/g;
+      while ((m = reEe.exec(shtml)) !== null) {
+        const d = parseInt(m[1],10), mo = parseInt(m[2],10), y = parseInt(m[3],10);
+        if (y >= 2020 && y <= 2030 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+          allDatesRaw.push(`${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
         }
-
-        latestDate = bestDate;
-        chosenLat = bestLat;
-        chosenLon = bestLon;
-
-        if (!latestDate && records.length > 0) {
-          // All records lacked parseable eventDate
-          lastError = 'Biocache records found but no parseable eventDate';
-        }
-
-        debugInfo = 'biocache: ' + records.length + ' records, latestDate=' + latestDate + ', occ7=' + occ7;
-        console.log('[biocache]', key, { records: records.length, latestDate, occ7, hasCoords: chosenLat !== null });
-      } else {
-        debugInfo = 'biocache: 0 records';
-        console.log('[biocache]', key, 'no records in response', json?.totalRecords);
       }
+
+      const allDates = [...new Set(allDatesRaw)];
+      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      let bestMs = -1;
+      for (const d of allDates) {
+        const ms = _toDay(d);
+        if (ms && ms > bestMs) { bestMs = ms; latestDate = d; }
+        if (ms && ms >= sevenDaysAgo) occ7++;
+      }
+
+      // Try coords from search page HTML (including SSR JSON)
+      const coords = extractLatLon(shtml);
+      if (coords && _isEstoniaCoords(coords[0], coords[1])) {
+        chosenLat = coords[0]; chosenLon = coords[1];
+      }
+
+      // If no coords, try detail pages (up to 10)
+      if (chosenLat === null) {
+        const detailLinks = findDetailLinks(shtml, 10);
+        for (const link of detailLinks) {
+          try {
+            const dhtml = await tryFetch(link);
+            const dc = extractLatLon(dhtml);
+            if (dc && _isEstoniaCoords(dc[0], dc[1])) {
+              chosenLat = dc[0]; chosenLon = dc[1];
+              // Also extract date from detail page SSR JSON
+              const dtM = dhtml.match(/"datetime"\s*:\s*"(\d{4}-\d{2}-\d{2})T/i);
+              if (dtM) {
+                const detMs = _toDay(dtM[1]);
+                if (detMs && detMs > bestMs) { bestMs = detMs; latestDate = dtM[1]; }
+              }
+              break;
+            }
+          } catch (e) { /* try next */ }
+        }
+      }
+
+      debugInfo = 'dates=' + allDates.length + ', latest=' + latestDate + ', occ7=' + occ7 + ', coords=' + (chosenLat !== null);
+      console.log('[fetch]', key, debugInfo);
+
     } catch (e) {
-      console.warn('[biocache-fail]', key, e.message);
-      debugInfo = 'biocache failed: ' + e.message;
-    }
-
-    // --- Fallback: HTML scraping (only if Biocache failed entirely) ---
-    if (!usedBiocache) {
-      source = 'html-fallback';
-      try {
-        const shtml = await tryFetch(searchUrl);
-        // Strict date extraction: only near "Kuupäev"/"eventDate" labels, or dd.mm.yyyy Estonian format
-        const strictDates = [];
-        let m;
-        // DarwinCore JSON eventDate
-        const reJson = /"eventDate"\s*:\s*"?(\d{4}-\d{2}-\d{2})/ig;
-        while ((m = reJson.exec(shtml)) !== null) strictDates.push(m[1]);
-        // Label "Kuupäev: YYYY-MM-DD"
-        const reLbl = /(?:Kuupäev|vaatluse kuupäev|eventDate)\s*[:\-–]\s*(\d{4}-\d{2}-\d{2})/ig;
-        while ((m = reLbl.exec(shtml)) !== null) strictDates.push(m[1]);
-        // Estonian dd.mm.yyyy format
-        const reEe = /\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b/g;
-        while ((m = reEe.exec(shtml)) !== null) {
-          const d = parseInt(m[1],10), mo = parseInt(m[2],10), y = parseInt(m[3],10);
-          if (y >= 2020 && y <= 2030 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
-            strictDates.push(`${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
-          }
-        }
-
-        // Find newest date
-        let bestMs = -1;
-        for (const d of strictDates) {
-          const ms = _toDay(d);
-          if (ms && ms > bestMs) { bestMs = ms; latestDate = d; }
-        }
-
-        // Count 7-day
-        const sevenDaysAgo = Date.now() - 7*24*60*60*1000;
-        occ7 = strictDates.filter(d => { const ms = _toDay(d); return ms && ms >= sevenDaysAgo; }).length;
-
-        // Try coords from HTML
-        const coords = extractLatLon(shtml);
-        if (coords && _isEstoniaCoords(coords[0], coords[1])) {
-          chosenLat = coords[0]; chosenLon = coords[1];
-        }
-
-        debugInfo = 'html-fallback: dates=' + strictDates.length + ', latestDate=' + latestDate;
-      } catch (e) {
-        lastError = 'HTML fallback also failed: ' + e.message;
-        debugInfo = lastError;
-      }
+      lastError = 'Fetch failed: ' + e.message;
+      debugInfo = lastError;
+      console.warn('[fetch-fail]', key, e.message);
     }
 
     // --- Store results ---
     points[key] = points[key] || {};
     const p = points[key];
 
-    // ALWAYS overwrite date from fresh fetch (fixes wrong cached dates)
-    if (latestDate) {
-      p.t = latestDate;
-    } else if (!usedBiocache) {
-      // Only keep old date if biocache didn't run (total failure)
-    } else {
-      // Biocache ran but found no dates — clear stale date
-      p.t = null;
-    }
+    if (latestDate) { p.t = latestDate; }
+    else if (fetchedOk) { p.t = null; }
 
-    p.occ7 = occ7;
+    if (fetchedOk) { p.occ7 = occ7; }
     p.src = source;
     p.lastFetched = new Date().toISOString();
     p.lastError = lastError;
     p.debugInfo = debugInfo;
 
     if (chosenLat !== null && chosenLon !== null) {
-      p.lat = chosenLat;
-      p.lon = chosenLon;
-    } else if (occ7 > 0) {
-      // Active but no coords — keep null so marker is skipped but species stays in list
-      p.lat = null;
-      p.lon = null;
-      if (!lastError) p.lastError = 'Active species but coordinates hidden/unavailable';
-    } else {
-      // Not active in last 7 days and no coords
-      p.lat = null;
-      p.lon = null;
+      p.lat = chosenLat; p.lon = chosenLon;
+    } else if (fetchedOk && occ7 > 0) {
+      p.lat = null; p.lon = null;
+      if (!lastError) p.lastError = 'Coordinates hidden/unavailable';
+    } else if (fetchedOk) {
+      p.lat = null; p.lon = null;
     }
 
     if (typeof p.visible !== 'boolean') p.visible = true;
     save(); updateMarker(key); render();
-    console.log('[fetch-done]', key, { occ7, latestDate, hasCoords: chosenLat !== null, source, debugInfo });
 
   } catch (e) {
     points[key] = points[key] || {};
-    points[key].lastError = e.message || 'Unknown fetch error';
+    points[key].lastError = e.message || 'Unknown error';
     points[key].lastFetched = new Date().toISOString();
     save(); render();
-    console.warn('[fetch-error]', key, e.message);
   }
 }
 

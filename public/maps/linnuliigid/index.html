@@ -7,11 +7,13 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
     :root{--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);--appHeader:0px;--appBottomNav:0px}
-    html,body {height:100%;margin:0;font-family:system-ui,Arial,sans-serif}
-    #root{height:100%}
-    #app {display:grid;grid-template-columns:360px 1fr;height:100dvh;min-height:0}
-    #sidebar {border-right:1px solid #ddd;padding:10px;overflow:auto;background:#fff;min-height:0}
-    #map {height:100%;min-height:0}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;padding:0;overflow:hidden;font-family:system-ui,Arial,sans-serif}
+    #root{height:100%;display:flex;flex-direction:column}
+    #app{display:flex;flex:1;min-height:0}
+    #sidebar{width:360px;border-right:1px solid #ddd;padding:10px;overflow:auto;background:#fff;min-height:0;flex-shrink:0}
+    #mapWrap{flex:1;min-height:0;position:relative}
+    #map{position:absolute;inset:0}
     .row {display:grid;grid-template-columns:46px 1fr;gap:10px;align-items:center;padding:8px 0;border-bottom:1px dashed #eee}
     .avatar {width:40px;height:40px;border-radius:50%;border:1px solid #999;background-size:cover;background-position:center;background-color:#eef}
     .top {display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
@@ -24,7 +26,7 @@
     .latin {color:#888;font-size:12px;margin-left:6px}
     .clickable {cursor:pointer}
     .muted {opacity:.55; text-decoration: line-through;}
-  
+
   .last-fetched-inline{ font-size:11px; color:#64748b; margin-left:6px; white-space:nowrap }
   .last-fetched-line{ font-size:11px; color:#64748b; margin-top:2px }
 
@@ -37,6 +39,10 @@
   .fetch-progress-bar-inner{height:100%;background:#27ae60;transition:width .2s}
   .fetch-error{font-size:11px;color:#dc2626;margin-top:2px;max-height:40px;overflow:auto}
 
+  /* Snapshot banner */
+  .snapshot-banner{font-size:11px;color:#334155;padding:4px 8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;margin:6px 0}
+  .snapshot-banner.warn{background:#fef3c7;border-color:#fde68a;color:#92400e}
+  .snapshot-banner.error{background:#fee2e2;border-color:#fecaca;color:#dc2626}
 
 .btn.on{background:#27ae60;color:#fff}
 
@@ -85,8 +91,8 @@
     .sidebar-backdrop{display:none;position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,.35)}
     body.sidebar-open .sidebar-toggle{display:none!important}
     @media (max-width: 900px){
-      #app{grid-template-columns:1fr;height:calc(100dvh - var(--appHeader) - var(--appBottomNav) - var(--sab))}
-      #map{height:100%}
+      #app{flex-direction:column}
+      #mapWrap{flex:1;min-height:0}
       #sidebar{
         position:fixed;top:0;left:0;height:100dvh;width:min(420px,92vw);
         z-index:4000;transform:translateX(-105%);transition:transform .22s ease;
@@ -103,16 +109,17 @@
 </style>
 </head>
 <body>
+<div id="root">
 <div id="app">
   <aside id="sidebar">
     <div class="sidebar-header"><h2 style="margin:0">Linnuliigid 2026</h2><button id="closeSidebarBtn" class="btn icon close-sidebar" title="Sulge" aria-label="Sulge">✕</button></div>
 <div class="top-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
   <span class="pill" title="Only show occurrences within the last 7 days.">7 days only</span>
 </div>
+<div id="snapshotBanner" class="snapshot-banner" style="display:none"></div>
 <div class="fetch-controls">
-  <button id="btnRefreshVisible" class="btn" title="Fetch data for currently visible/filtered species">Refresh visible</button>
-  <button id="btnRefreshSelected" class="btn secondary" title="Fetch data for selected species only">Refresh selected</button>
-  <button id="btnStopFetch" class="btn stop" style="display:none" title="Cancel ongoing fetches">Stop</button>
+  <button id="btnRefreshVisible" class="btn" title="Request server-side data refresh">Refresh data</button>
+  <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
 <div id="fetchProgress" class="fetch-progress"></div>
 <div id="fetchProgressBar" class="fetch-progress-bar" style="display:none"><div id="fetchProgressBarInner" class="fetch-progress-bar-inner" style="width:0%"></div></div>
@@ -120,7 +127,8 @@
     <input id="filterBox" type="text" placeholder="Filter…" />
     <div id="list"></div>
   </aside>
-  <main id="map"></main>
+  <main id="mapWrap"><div id="map"></div></main>
+</div>
 </div>
 
 <button id="openSidebarBtn" class="sidebar-toggle" title="Nimekiri" aria-label="Nimekiri">☰</button>
@@ -133,22 +141,15 @@
 function notifySilent(msg){
   try { console.warn(msg); } catch(e){}
 }
-// (Back-compat) if any code still calls notifySilent(), shadow it to be silent:
 window._realAlert = window.alert;
 window.alert = function(msg){ notifySilent(msg); };
 
 // --- Per‑species clear: remove coords/date/occ/src and marker immediately ---
-
 function clearOccurrence(key){
   try{
-    // ensure data container exists
     window.points = window.points || {};
     const p = (points[key] = points[key] || {});
-
-    // clear fields
     delete p.lat; delete p.lon; delete p.t; delete p.occ; delete p.src;
-
-    // remove marker layer immediately if present
     try{
       if (window.markers && typeof markers.has === 'function' && markers.has(key)){
         const m = markers.get(key);
@@ -156,16 +157,12 @@ function clearOccurrence(key){
         try { markers.delete(key); } catch(e){}
       }
     }catch(e){ console.warn('marker remove failed', e); }
-
-    // remove any occurrence circles
     try{
       if (window.circleLayers && typeof circleLayers.has === 'function' && circleLayers.has(key)){
         circleLayers.get(key).forEach(c => { try { c.remove ? c.remove() : map.removeLayer(c); } catch(e){} });
         circleLayers.delete(key);
       }
     }catch(e){ /* ignore */ }
-
-    // save and update UI
     if (typeof save === 'function') save();
     if (typeof updateMarker === 'function') updateMarker(key);
     if (typeof render === 'function') render();
@@ -174,109 +171,21 @@ function clearOccurrence(key){
 </script>
 
 <script>
-// === Species (Estonian labels used as the search term) ===
-const SPECIES = [
-"Aed-põõsalind", "Aed-roolind", "Aedporr", "Alk", "Alverüdi", "Ameerika piilpart", "Atlantise tormilind", "Aul", "Baleaari tormilind", "Euroopa kaelustäks", "Habekakk", "Habeviires", "Hahk", "Hakk", "Hall-kärbsenäpp", "Hallhaigur", "Hallhani", "Hallkibu", "Hallpea-rähn",
- "Hallpõsk-pütt", "Hallrästas", "Hallrüdi", "Halltsiitsitaja", "Hallvares", "Hallõgija", "Hangelind", "Harakas", "Haugaskotkas", "Hele-urvalind", "Heletilder", "Herilaseviu", "Hiireviu", "Hoburästas", "Händkakk", "Hänilane", "Hõbehaigur", "Hõbehaugas", "Hõbekajakas", "Hüüp",
- "Ida-mustvaeras", "Jahipistrik", "Jämejalg", "Järvekaur", "Jääkajakas", "Jääkaur", "Jääkoskel", "Jõgi-ritsiklind", "Jõgitiir", "Jõgitilder", "Jõgivästrik", "Kadakatäks", "Kaelus-kärbsenäpp", "Kaelus-turteltuvi", "Kaeluskotkas", "Kaelusrästas", "Kaelustuvi", "Kalakajakas", "Kalakotkas", "Kalda-rädilind",
- "Kaldapääsuke", "Kaljukajakas", "Kaljukotkas", "Kanada lagle", "Kanakull", "Kanepilind", "Karbuskajakas", "Karkjalg", "Karmiinleevike", "Karvasjalg-kakk", "Karvasjalg-viu", "Kassikakk", "Kiivitaja", "Kiripugu-rüdi", "Kirjuhahk", "Kivikakk", "Kivirullija", "Kivitäks", "Kodukakk", "Kodutuvi",
- "Koduvarblane", "Koldhaigur", "Koldjalg-hõbekajakas", "Koldvint", "Kormoran", "Krüüsel", "Kukkurtihane", "Kuld-lehelind", "Kuldhänilane", "Kuldnokk", "Kuldtsiitsitaja", "Kuninghahk", "Kuuse-käbilind", "Käblik", "Kägu", "Käharpelikan", "Käosulane", "Kääbuskormoran", "Kääbuskotkas", "Kõnnuõgija",
- "Kõrbe-kivitäks", "Kõrbe-põõsalind", "Kõrkja-roolind", "Kõrvukräts", "Kõvernokk-rüdi", "Kühmnokk-luik", "Künnivares", "Laanenäär", "Laanepüü", "Laanerähn", "Laisaba-änn", "Lammitilder", "Lapi tsiitsitaja", "Lasuurtihane", "Lauk", "Laululuik", "Laulurästas", "Leeterüdi", "Leevike", "Liiv-kivitäks",
- "Liivatüll", "Linavästrik", "Loorkakk", "Luitsnokk-iibis", "Luitsnokk-part", "Lumehani", "Lumekakk", "Lääne-lehelind", "Lääne-pöialpoiss", "Lõopistrik", "Lõuna-hõbekajakas", "Lühinokk-hani", "Madukotkas", "Mandariinpart", "Merikajakas", "Merikotkas", "Merirüdi", "Merisk", "Merivart", "Mesilasenäpp",
- "Mets-lehelind", "Metsis", "Metskiur", "Metskurvits", "Metstilder", "Metsvint", "Mudanepp", "Mudatilder", "Must-harksaba", "Must-kärbsenäpp", "Must-lepalind", "Must-toonekurg", "Mustjalg-tüll", "Mustkael-pütt", "Mustkurk-raat", "Mustlagle", "Mustlauk-õgija", "Mustpea-põõsalind", "Mustpea-tsiitsitaja", "Mustpugu-rästas",
- "Musträhn", "Musträstas", "Mustsaba-vigle", "Musttihane", "Mustvaeras", "Mustvares", "Mustviires", "Mägi-kanepilind", "Mägikiur", "Männi-käbilind", "Männileevike", "Männitalvike", "Mänsak", "Naaskelnokk", "Naerukajakas", "Naerutiir", "Niidu-kaelustäks", "Niidu-ritsiklind", "Niidukiur", "Nunn-kivitäks",
- "Nurmkana", "Nõgipart", "Nõlva-lehelind", "Nõmmekiur", "Nõmmelõoke", "Ohakalind", "Ohhoota hõbekajakas", "Padu-roolind", "Pasknäär", "Peegel-tormilind", "Pelikan", "Peoleo", "Piilpart", "Piiritaja", "Pikksaba-änn", "Plütt", "Plüü", "Polaarkajakas", "Porr", "Prillvaeras",
- "Pruunselg-põõsalind", "Puna-harksaba", "Puna-veetallaja", "Punajalg-pistrik", "Punajalg-tilder", "Punakael-lagle", "Punakurk-kaur", "Punanokk-vart", "Punapea-vart", "Punapea-õgija", "Punarind", "Punasaba-õgija", "Punaselg-õgija", "Purpurhaigur", "Puukoristaja", "Põhja-kirjurästas", "Põhja-lehelind", "Põhja-tormipääsu", "Põhjatihane", "Põhjatsiitsitaja",
- "Põhjavint", "Põldlõoke", "Põldtsiitsitaja", "Põldvarblane", "Põldvutt", "Pöialpoiss", "Rabapistrik", "Rabapüü", "Raisakotkas", "Randkajakas", "Randkiur", "Randtiir", "Rasvatihane", "Raudkull", "Ristpart", "Roherähn", "Rohevint", "Rohukoskel", "Rohunepp", "Ronk",
- "Roo-loorkull", "Roo-ritsiklind", "Roohabekas", "Rooruik", "Roosa-kuldnokk", "Roosakajakas", "Roosatiir", "Roostepääsuke", "Roosterind-tüll", "Rootsiitsitaja", "Rubiinööbik", "Rukkirääk", "Ruugerüdi", "Rägapart", "Rästas-roolind", "Räusktiir", "Rääkspart", "Räästapääsuke", "Rüüt", "Sabatihane",
- "Salu-lehelind", "Salupäll", "Salutihane", "Sarviklõoke", "Sarvikpütt", "Siberi lehelind", "Siberi raat", "Siidhaigur", "Siidisaba", "Siisike", "Sinikael-part", "Siniraag", "Sinirind", "Sinisaba", "Sinitihane", "Soo-loorkull", "Soo-roolind", "Sookiur", "Sookurg", "Soopart",
- "Sooräts", "Soorüdi", "Stepi-loorkull", "Stepikajakas", "Stepikiivitaja", "Stepikotkas", "Stepipistrik", "Stepiviu", "Suitsupääsuke", "Suula", "Suur-kirjurähn", "Suur-konnakotkas", "Suur-laukhani", "Suurkoovitaja", "Suurnokk-vint", "Suurrüdi", "Suuränn", "Sõtkas", "Söödikänn", "Tait",
- "Talvike", "Tamme-kirjurähn", "Teder", "Tiigi-roolind", "Tikutaja", "Triip-ritsiklind", "Tuhk-lehelind", "Tumetilder", "Tundra-rabahani", "Tundrakaur", "Tundrakiur", "Tutkas", "Tutt-tihane", "Tutt-tiir", "Tuttlõoke", "Tuttpütt", "Tuttvart", "Tuuletallaja", "Täpikhuik",
- "Tõmmu-lehelind", "Tõmmuiibis", "Tõmmukajakas", "Tõmmuvaeras", "Urvalind", "Vaaraohani", "Vaenukägu", "Vainurästas", "Valge-toonekurg", "Valgepõsk-lagle", "Valgeselg-kirjurähn", "Valgesilm-vart", "Valgetiib-viires", "Veetallaja", "Veisehaigur", "Vesipapp", "Vihitaja", "Viupart", "Väike-kirjurähn", "Väike-konnakotkas",
- "Väike-käosulane", "Väike-kärbsenäpp", "Väike-laukhani", "Väike-lehelind", "Väike-põõsalind", "Väikealk", "Väikehuik", "Väikehüüp", "Väikekajakas", "Väikekoovitaja", "Väikekoskel", "Väikeluik", "Väikepistrik", "Väikepütt", "Väikerüdi", "Väiketiir", "Väiketrapp", "Väiketsiitsitaja", "Väiketüll", "Välja-loorkull",
- "Välja-väikelõoke", "Värbkakk", "Värbrüdi", "Väänkael", "Võsa-ritsiklind", "Võsaraat", "Vööt-käbilind", "Vööt-põõsalind", "Vööthani", "Vöötkakk", "Vöötnokk-kajakas", "Vöötsaba-vigle", "Õõnetuvi", "Ööbik", "Ööhaigur", "Öösorr"];
+// === Species ===
+const SPECIES = ["Aed-põõsalind","Aed-roolind","Aedporr","Alk","Alverüdi","Ameerika piilpart","Atlantise tormilind","Aul","Baleaari tormilind","Euroopa kaelustäks","Habekakk","Habeviires","Hahk","Hakk","Hall-kärbsenäpp","Hallhaigur","Hallhani","Hallkibu","Hallpea-rähn","Hallpõsk-pütt","Hallrästas","Hallrüdi","Halltsiitsitaja","Hallvares","Hallõgija","Hangelind","Harakas","Haugaskotkas","Hele-urvalind","Heletilder","Herilaseviu","Hiireviu","Hoburästas","Händkakk","Hänilane","Hõbehaigur","Hõbehaugas","Hõbekajakas","Hüüp","Ida-mustvaeras","Jahipistrik","Jämejalg","Järvekaur","Jääkajakas","Jääkaur","Jääkoskel","Jõgi-ritsiklind","Jõgitiir","Jõgitilder","Jõgivästrik","Kadakatäks","Kaelus-kärbsenäpp","Kaelus-turteltuvi","Kaeluskotkas","Kaelusrästas","Kaelustuvi","Kalakajakas","Kalakotkas","Kalda-rädilind","Kaldapääsuke","Kaljukajakas","Kaljukotkas","Kanada lagle","Kanakull","Kanepilind","Karbuskajakas","Karkjalg","Karmiinleevike","Karvasjalg-kakk","Karvasjalg-viu","Kassikakk","Kiivitaja","Kiripugu-rüdi","Kirjuhahk","Kivikakk","Kivirullija","Kivitäks","Kodukakk","Kodutuvi","Koduvarblane","Koldhaigur","Koldjalg-hõbekajakas","Koldvint","Kormoran","Krüüsel","Kukkurtihane","Kuld-lehelind","Kuldhänilane","Kuldnokk","Kuldtsiitsitaja","Kuninghahk","Kuuse-käbilind","Käblik","Kägu","Käharpelikan","Käosulane","Kääbuskormoran","Kääbuskotkas","Kõnnuõgija","Kõrbe-kivitäks","Kõrbe-põõsalind","Kõrkja-roolind","Kõrvukräts","Kõvernokk-rüdi","Kühmnokk-luik","Künnivares","Laanenäär","Laanepüü","Laanerähn","Laisaba-änn","Lammitilder","Lapi tsiitsitaja","Lasuurtihane","Lauk","Laululuik","Laulurästas","Leeterüdi","Leevike","Liiv-kivitäks","Liivatüll","Linavästrik","Loorkakk","Luitsnokk-iibis","Luitsnokk-part","Lumehani","Lumekakk","Lääne-lehelind","Lääne-pöialpoiss","Lõopistrik","Lõuna-hõbekajakas","Lühinokk-hani","Madukotkas","Mandariinpart","Merikajakas","Merikotkas","Merirüdi","Merisk","Merivart","Mesilasenäpp","Mets-lehelind","Metsis","Metskiur","Metskurvits","Metstilder","Metsvint","Mudanepp","Mudatilder","Must-harksaba","Must-kärbsenäpp","Must-lepalind","Must-toonekurg","Mustjalg-tüll","Mustkael-pütt","Mustkurk-raat","Mustlagle","Mustlauk-õgija","Mustpea-põõsalind","Mustpea-tsiitsitaja","Mustpugu-rästas","Musträhn","Musträstas","Mustsaba-vigle","Musttihane","Mustvaeras","Mustvares","Mustviires","Mägi-kanepilind","Mägikiur","Männi-käbilind","Männileevike","Männitalvike","Mänsak","Naaskelnokk","Naerukajakas","Naerutiir","Niidu-kaelustäks","Niidu-ritsiklind","Niidukiur","Nunn-kivitäks","Nurmkana","Nõgipart","Nõlva-lehelind","Nõmmekiur","Nõmmelõoke","Ohakalind","Ohhoota hõbekajakas","Padu-roolind","Pasknäär","Peegel-tormilind","Pelikan","Peoleo","Piilpart","Piiritaja","Pikksaba-änn","Plütt","Plüü","Polaarkajakas","Porr","Prillvaeras","Pruunselg-põõsalind","Puna-harksaba","Puna-veetallaja","Punajalg-pistrik","Punajalg-tilder","Punakael-lagle","Punakurk-kaur","Punanokk-vart","Punapea-vart","Punapea-õgija","Punarind","Punasaba-õgija","Punaselg-õgija","Purpurhaigur","Puukoristaja","Põhja-kirjurästas","Põhja-lehelind","Põhja-tormipääsu","Põhjatihane","Põhjatsiitsitaja","Põhjavint","Põldlõoke","Põldtsiitsitaja","Põldvarblane","Põldvutt","Pöialpoiss","Rabapistrik","Rabapüü","Raisakotkas","Randkajakas","Randkiur","Randtiir","Rasvatihane","Raudkull","Ristpart","Roherähn","Rohevint","Rohukoskel","Rohunepp","Ronk","Roo-loorkull","Roo-ritsiklind","Roohabekas","Rooruik","Roosa-kuldnokk","Roosakajakas","Roosatiir","Roostepääsuke","Roosterind-tüll","Rootsiitsitaja","Rubiinööbik","Rukkirääk","Ruugerüdi","Rägapart","Rästas-roolind","Räusktiir","Rääkspart","Räästapääsuke","Rüüt","Sabatihane","Salu-lehelind","Salupäll","Salutihane","Sarviklõoke","Sarvikpütt","Siberi lehelind","Siberi raat","Siidhaigur","Siidisaba","Siisike","Sinikael-part","Siniraag","Sinirind","Sinisaba","Sinitihane","Soo-loorkull","Soo-roolind","Sookiur","Sookurg","Soopart","Sooräts","Soorüdi","Stepi-loorkull","Stepikajakas","Stepikiivitaja","Stepikotkas","Stepipistrik","Stepiviu","Suitsupääsuke","Suula","Suur-kirjurähn","Suur-konnakotkas","Suur-laukhani","Suurkoovitaja","Suurnokk-vint","Suurrüdi","Suuränn","Sõtkas","Söödikänn","Tait","Talvike","Tamme-kirjurähn","Teder","Tiigi-roolind","Tikutaja","Triip-ritsiklind","Tuhk-lehelind","Tumetilder","Tundra-rabahani","Tundrakaur","Tundrakiur","Tutkas","Tutt-tihane","Tutt-tiir","Tuttlõoke","Tuttpütt","Tuttvart","Tuuletallaja","Täpikhuik","Tõmmu-lehelind","Tõmmuiibis","Tõmmukajakas","Tõmmuvaeras","Urvalind","Vaaraohani","Vaenukägu","Vainurästas","Valge-toonekurg","Valgepõsk-lagle","Valgeselg-kirjurähn","Valgesilm-vart","Valgetiib-viires","Veetallaja","Veisehaigur","Vesipapp","Vihitaja","Viupart","Väike-kirjurähn","Väike-konnakotkas","Väike-käosulane","Väike-kärbsenäpp","Väike-laukhani","Väike-lehelind","Väike-põõsalind","Väikealk","Väikehuik","Väikehüüp","Väikekajakas","Väikekoovitaja","Väikekoskel","Väikeluik","Väikepistrik","Väikepütt","Väikerüdi","Väiketiir","Väiketrapp","Väiketsiitsitaja","Väiketüll","Välja-loorkull","Välja-väikelõoke","Värbkakk","Värbrüdi","Väänkael","Võsa-ritsiklind","Võsaraat","Vööt-käbilind","Vööt-põõsalind","Vööthani","Vöötkakk","Vöötnokk-kajakas","Vöötsaba-vigle","Õõnetuvi","Ööbik","Ööhaigur","Öösorr"];
 
-// Build species objects with direct links to /search
 const DATA = SPECIES.map(name => ({ est: name, url: 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(name) }));
 
 // Local storage keys
 const LS_AVATARS='bm_rari_avatars', LS_POINTS='bm_rari_points', LS_PROXY='bm_rari_proxy', LS_NAMES='bm_rari_names', LS_SPRING='bm_rari_spring_dates';
 
-// Default spring migration “usual/earliest” dates parsed from "Saabuvad rändlinnud 2025.a kevadel.txt"
-// Format: "D.MM" (day without leading zero, month 2-digit)
-const DEFAULT_SPRING_DATES = {
-  "Heletilder": "6.04",
-  "Herilaseviu": "5.05",
-  "Hänilane": "14.04",
-  "Jõgitiir": "21.03",
-  "Kadakatäks": "22.04",
-  "Kaelusrästas": "17.04",
-  "Kalakotkas": "31.03",
-  "Kaldapääsuke": "29.04",
-  "Karmiinleevike": "6.05",
-  "Kivirullija": "6.05",
-  "Kivitäks": "2.04",
-  "Koldvint": "6.04",
-  "Kukkurtihane": "1.04",
-  "Kuldhänilane": "12.04",
-  "Käosulane": "4.05",
-  "Lammitilder": "14.04",
-  "Lapi tsiitsitaja": "5.04",
-  "Lepalind": "12.04",
-  "Linavästrik": "18.03",
-  "Lõopistrik": "19.04",
-  "Madukotkas": "26.04",
-  "Metskiur": "8.04",
-  "Metstilder": "24.03",
-  "Mudatilder": "9.04",
-  "Mustlagle": "30.03",
-  "Mustviires": "29.04",
-  "Nõmmelõoke": "10.03",
-  "Peoleo": "6.05",
-  "Piiritaja": "3.05",
-  "Plütt": "19.05",
-  "Plüü": "25.04",
-  "Põldtsiitsitaja": "4.05",
-  "Rabapistrik": "11.04",
-  "Randtiir": "16.04",
-  "Rohunepp": "28.04",
-  "Rukkirääk": "7.05",
-  "Rägapart": "25.03",
-  "Räusk": "4.04",
-  "Räästapääsuke": "18.04",
-  "Rüüt": "5.03",
-  "Sarviklõoke": "6.03",
-  "Sinirind": "18.04",
-  "Sooräts": "17.04",
-  "Soorüdi": "27.03",
-  "Suitsupääsuke": "10.04",
-  "Suurkoovitaja": "25.03",
-  "Suurrüdi": "4.05",
-  "Tundrakaur": "1.05",
-  "Tundrakiur": "23.04",
-  "Turteltuvi": "25.04",
-  "Täpikhuik": "18.04",
-  "Tõmmukajakas": "8.03",
-  "Vaenukägu": "13.04",
-  "Veetallaja": "19.05",
-  "Vihitaja": "31.03",
-  "Väikehuik": "24.04",
-  "Väikehüüp": "30.05",
-  "Väikekoovitaja": "12.04",
-  "Väikerüdi": "17.05",
-  "Väiketiir": "21.04",
-  "Väiketüll": "6.04",
-  "Värbrüdi": "20.04",
-  "Väänkael": "11.04",
-  "Ööbik": "28.04",
-  "Öösorr": "24.04"
-};
+// Default spring migration dates
+const DEFAULT_SPRING_DATES = {"Heletilder":"6.04","Herilaseviu":"5.05","Hänilane":"14.04","Jõgitiir":"21.03","Kadakatäks":"22.04","Kaelusrästas":"17.04","Kalakotkas":"31.03","Kaldapääsuke":"29.04","Karmiinleevike":"6.05","Kivirullija":"6.05","Kivitäks":"2.04","Koldvint":"6.04","Kukkurtihane":"1.04","Kuldhänilane":"12.04","Käosulane":"4.05","Lammitilder":"14.04","Lapi tsiitsitaja":"5.04","Lepalind":"12.04","Linavästrik":"18.03","Lõopistrik":"19.04","Madukotkas":"26.04","Metskiur":"8.04","Metstilder":"24.03","Mudatilder":"9.04","Mustlagle":"30.03","Mustviires":"29.04","Nõmmelõoke":"10.03","Peoleo":"6.05","Piiritaja":"3.05","Plütt":"19.05","Plüü":"25.04","Põldtsiitsitaja":"4.05","Rabapistrik":"11.04","Randtiir":"16.04","Rohunepp":"28.04","Rukkirääk":"7.05","Rägapart":"25.03","Räusk":"4.04","Räästapääsuke":"18.04","Rüüt":"5.03","Sarviklõoke":"6.03","Sinirind":"18.04","Sooräts":"17.04","Soorüdi":"27.03","Suitsupääsuke":"10.04","Suurkoovitaja":"25.03","Suurrüdi":"4.05","Tundrakaur":"1.05","Tundrakiur":"23.04","Turteltuvi":"25.04","Täpikhuik":"18.04","Tõmmukajakas":"8.03","Vaenukägu":"13.04","Veetallaja":"19.05","Vihitaja":"31.03","Väikehuik":"24.04","Väikehüüp":"30.05","Väikekoovitaja":"12.04","Väikerüdi":"17.05","Väiketiir":"21.04","Väiketüll":"6.04","Värbrüdi":"20.04","Väänkael":"11.04","Ööbik":"28.04","Öösorr":"24.04"};
 
 // === Avatar defaults & preloading ===
 const DEFAULT_AVATARS = {};
 const PLACEHOLDER_AVATAR_URL = new URL('avatars/placeholder.webp', window.location.href).toString();
 
-// Slugify Estonian species name to filename
 function slugifySpeciesKey(key){
   return String(key).toLowerCase()
     .replace(/õ/g,'o').replace(/ä/g,'a').replace(/ö/g,'o').replace(/ü/g,'u')
@@ -300,33 +209,25 @@ function preloadAvatars(urls){
   }catch(e){ /* ignore */ }
 }
 
-// Auto-detect avatar file for a single species key (returns Promise)
-const __avatarProbeCache = new Map(); // key -> url|null
+const __avatarProbeCache = new Map();
 function probeAvatarFile(key){
   if(__avatarProbeCache.has(key)) return Promise.resolve(__avatarProbeCache.get(key));
   const slug = slugifySpeciesKey(key);
   const url = new URL('avatars/' + slug + '.webp', window.location.href).toString();
   return new Promise(resolve=>{
     const img = new Image();
-    img.onload = ()=>{
-      __avatarProbeCache.set(key, url);
-      resolve(url);
-    };
-    img.onerror = ()=>{
-      __avatarProbeCache.set(key, null);
-      resolve(null);
-    };
+    img.onload = ()=>{ __avatarProbeCache.set(key, url); resolve(url); };
+    img.onerror = ()=>{ __avatarProbeCache.set(key, null); resolve(null); };
     img.src = url;
   });
 }
 
-// Auto-detect avatars for active (last 7d) species only
 async function autoDetectAvatarsForActive(){
   try{
     const now = Date.now(), sevenMs = 7*24*60*60*1000;
     const activeKeys = [];
     for(const name of SPECIES){
-      if(avatars[name]) continue; // localStorage already has one
+      if(avatars[name]) continue;
       const p = points[name];
       if(!p) continue;
       let active = false;
@@ -337,26 +238,20 @@ async function autoDetectAvatarsForActive(){
       }
       if(active) activeKeys.push(name);
     }
-    // Probe in parallel (only active species without existing avatar)
     const results = await Promise.all(activeKeys.map(k => probeAvatarFile(k).then(url => ({k,url}))));
     let changed = false;
     for(const {k,url} of results){
-      if(url){
-        avatars[k] = url;
-        changed = true;
-      }
+      if(url){ avatars[k] = url; changed = true; }
     }
     if(changed){
       save();
       preloadAvatars(Object.values(avatars));
-      // Re-render markers and sidebar
       activeKeys.forEach(k=>{ try{ updateMarker(k); }catch(e){} });
       render();
     }
   }catch(e){ /* ignore */ }
 }
 
-// Helper: get display avatar (localStorage > detected > placeholder)
 function getDisplayAvatar(key){
   return avatars[key] || PLACEHOLDER_AVATAR_URL;
 }
@@ -364,95 +259,42 @@ function getDisplayAvatar(key){
 let avatars = JSON.parse(localStorage.getItem(LS_AVATARS) || '{}');
 avatars = Object.assign({}, DEFAULT_AVATARS, avatars);
 preloadAvatars(Object.values(avatars));
-// Preload placeholder
 preloadAvatars([PLACEHOLDER_AVATAR_URL]);
 
-let points  = JSON.parse(localStorage.getItem(LS_POINTS) || '{}'); // key = estonian name
+let points  = JSON.parse(localStorage.getItem(LS_POINTS) || '{}');
 let proxyBase = localStorage.getItem(LS_PROXY) || '';
-let nameCache = JSON.parse(localStorage.getItem(LS_NAMES) || '{}'); // not really used here
+let nameCache = JSON.parse(localStorage.getItem(LS_NAMES) || '{}');
 
-// Spring dates are editable and persisted separately (so they don't get wiped when you clear per‑species occurrence)
 let springDates = (function(){
   try{
     const saved = JSON.parse(localStorage.getItem(LS_SPRING) || 'null');
-    const base = Object.assign({}, DEFAULT_SPRING_DATES, (saved && typeof saved==='object' ? saved : {}));
-    return base;
-  }catch(e){
-    return Object.assign({}, DEFAULT_SPRING_DATES);
-  }
+    return Object.assign({}, DEFAULT_SPRING_DATES, (saved && typeof saved==='object' ? saved : {}));
+  }catch(e){ return Object.assign({}, DEFAULT_SPRING_DATES); }
 })();
 
 // Map
 const IS_MOBILE_DEVICE = matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const IS_MOBILE = IS_MOBILE_DEVICE;
 const map = L.map('map', { zoomControl: !IS_MOBILE_DEVICE }).setView([58.7,25.3], 6.5);
 if (IS_MOBILE_DEVICE) { L.control.zoom({ position: 'topright' }).addTo(map); }
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).addTo(map);
 
 const markers = new Map();
 
-// === Mobile detection ===
-const IS_MOBILE = matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-// === Per-species cache with TTL ===
-const CACHE_PREFIX = 'linn_cache_v1:';
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
-
-function getCachedSpecies(key){
-  try{
-    const raw = localStorage.getItem(CACHE_PREFIX + key);
-    if(!raw) return null;
-    const obj = JSON.parse(raw);
-    if(!obj || !obj.cachedAt) return null;
-    return obj;
-  }catch(e){ return null; }
-}
-function setCachedSpecies(key, data){
-  try{
-    data.cachedAt = Date.now();
-    localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(data));
-  }catch(e){}
-}
-function isCacheExpired(cached){
-  if(!cached || !cached.cachedAt) return true;
-  return (Date.now() - cached.cachedAt) > CACHE_TTL_MS;
-}
-
-// Load cached data into points on startup (instant markers)
-(function loadCacheIntoPoints(){
-  for(const name of SPECIES){
-    const c = getCachedSpecies(name);
-    if(!c) continue;
-    points[name] = points[name] || {};
-    if(Number.isFinite(c.lat)) points[name].lat = c.lat;
-    if(Number.isFinite(c.lon)) points[name].lon = c.lon;
-    if(c.lastDate) points[name].t = c.lastDate;
-    if(Number.isFinite(c.occ7)) points[name].occ7 = c.occ7;
-    if(c.src) points[name].src = c.src;
-    if(typeof points[name].visible !== 'boolean') points[name].visible = true;
-  }
-})();
-
-// === Auto update (no UI changes) ===
+// === Helpers ===
 function _toDay(s){
   if(!s) return null;
   const m = (''+s).match(/(\d{4})-(\d{2})-(\d{2})/);
   if(!m) return null;
   return new Date(+m[1], +m[2]-1, +m[3]).getTime();
 }
-function _isNewer(newD, oldD){
-  const a = _toDay(newD), b = _toDay(oldD);
-  if(a && b) return a > b;
-  return !!newD && !oldD;
-}
 
-// --- Recent-only (markers only) helpers ---
-window.__recentOnly = true; // ALWAYS enforce last-7-days only
+window.__recentOnly = true;
 function isRecent(isoDate){
   try{
     const ms = _toDay(isoDate);
     if (!ms) return false;
-    const seven = 7 * 24 * 60 * 60 * 1000;
-    return (Date.now() - ms) <= seven;
+    return (Date.now() - ms) <= 7 * 24 * 60 * 60 * 1000;
   }catch(e){ return false; }
 }
 
@@ -460,180 +302,204 @@ function _borderColorByDate(isoDate){
   try{
     const ms = _toDay(isoDate);
     if (!ms) return '#e67e22';
-    const now = Date.now();
-    const seven = 7 * 24 * 60 * 60 * 1000;
-    return (now - ms) <= seven ? '#27ae60' : '#e67e22';
+    return (Date.now() - ms) <= 7 * 24 * 60 * 60 * 1000 ? '#27ae60' : '#e67e22';
   }catch(e){ return '#e67e22'; }
 }
 
-// === Fetch Queue System ===
-const FETCH_CONCURRENCY = IS_MOBILE ? 2 : 4;
-let __fetchQueue = [];
-let __fetchRunning = 0;
-let __fetchAbort = null; // AbortController
-let __fetchTotal = 0;
-let __fetchDone = 0;
-let __fetchLastError = '';
+// =========================================
+// === SNAPSHOT-BASED FETCHING (replaces per-species client scraping) ===
+// =========================================
+const SNAPSHOT_API = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/linnuliigid-snapshot';
+let __pollTimer = null;
+let __pollCount = 0;
 
-function _updateFetchUI(){
+function _showSnapshotBanner(msg, type){
+  const el = document.getElementById('snapshotBanner');
+  if(!el) return;
+  el.style.display = 'block';
+  el.className = 'snapshot-banner' + (type ? ' ' + type : '');
+  el.textContent = msg;
+}
+function _hideSnapshotBanner(){
+  const el = document.getElementById('snapshotBanner');
+  if(el) el.style.display = 'none';
+}
+
+function _updateProgressUI(done, total, status){
   const prog = document.getElementById('fetchProgress');
   const bar = document.getElementById('fetchProgressBar');
   const barInner = document.getElementById('fetchProgressBarInner');
-  const errEl = document.getElementById('fetchError');
   const stopBtn = document.getElementById('btnStopFetch');
   if(!prog) return;
-  if(__fetchTotal > 0 && __fetchDone < __fetchTotal){
-    prog.textContent = 'Refreshing: ' + __fetchDone + '/' + __fetchTotal;
-    if(bar){ bar.style.display='block'; barInner.style.width = Math.round(__fetchDone/__fetchTotal*100)+'%'; }
+  if(status === 'running' && total > 0){
+    prog.textContent = 'Server refresh: ' + done + '/' + total;
+    if(bar){ bar.style.display='block'; barInner.style.width = Math.round(done/total*100)+'%'; }
     if(stopBtn) stopBtn.style.display='inline-block';
   } else {
-    prog.textContent = __fetchTotal > 0 ? 'Done (' + __fetchDone + '/' + __fetchTotal + ')' : '';
+    prog.textContent = status === 'ready' ? 'Data loaded' : (status === 'error' ? 'Refresh failed' : '');
     if(bar) bar.style.display='none';
     if(stopBtn) stopBtn.style.display='none';
   }
-  if(errEl) errEl.textContent = __fetchLastError ? 'Last error: ' + __fetchLastError : '';
 }
 
-function _stopFetchQueue(){
-  __fetchQueue = [];
-  if(__fetchAbort){ try{ __fetchAbort.abort(); }catch(e){} }
-  __fetchAbort = null;
-  __fetchRunning = 0;
-  _updateFetchUI();
+function _applySnapshot(snap){
+  if(!snap || !snap.points_json) return;
+  const pts = snap.points_json;
+  for(const key in pts){
+    if(!pts.hasOwnProperty(key)) continue;
+    const s = pts[key];
+    points[key] = points[key] || {};
+    const p = points[key];
+    if(s.t) p.t = s.t;
+    if(Number.isFinite(s.lat) && Number.isFinite(s.lon)){ p.lat = s.lat; p.lon = s.lon; }
+    if(Number.isFinite(s.occ7)) p.occ7 = s.occ7;
+    if(s.src) p.src = s.src;
+    if(typeof p.visible !== 'boolean') p.visible = true;
+  }
+  save();
+  Object.keys(points).forEach(updateMarker);
+  render();
 }
 
-async function _processQueue(){
-  while(__fetchQueue.length > 0 && __fetchRunning < FETCH_CONCURRENCY){
-    const item = __fetchQueue.shift();
-    if(!item) continue;
-    __fetchRunning++;
-    (async ()=>{
-      try{
-        await autoFetchCoords(item.key, item.url);
-        // Update cache
-        const p = points[item.key];
-        if(p) setCachedSpecies(item.key, { lat:p.lat, lon:p.lon, lastDate:p.t, occ7:p.occ7, src:p.src });
-      }catch(e){
-        __fetchLastError = item.key + ': ' + (e.message||e);
+async function loadSnapshot(){
+  try{
+    _showSnapshotBanner('Loading data…');
+    const res = await fetch(SNAPSHOT_API, {cache:'no-store'});
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const snap = await res.json();
+
+    if(snap.status === 'running'){
+      _updateProgressUI(snap.progress_done, snap.progress_total, 'running');
+      _showSnapshotBanner('Server is refreshing data (' + snap.progress_done + '/' + snap.progress_total + ')…');
+      // Apply last known data while refresh runs
+      if(snap.points_json && Object.keys(snap.points_json).length > 0){
+        _applySnapshot(snap);
       }
-      __fetchDone++;
-      __fetchRunning--;
-      _updateFetchUI();
-      _processQueue();
-    })();
+      _startPolling();
+      return;
+    }
+
+    if(snap.points_json && Object.keys(snap.points_json).length > 0){
+      _applySnapshot(snap);
+      const age = snap.generated_at ? Math.round((Date.now() - new Date(snap.generated_at).getTime()) / 60000) : null;
+      _showSnapshotBanner('Data loaded' + (age !== null ? ' (' + age + ' min ago)' : ''));
+      setTimeout(_hideSnapshotBanner, 4000);
+      _updateProgressUI(0, 0, 'ready');
+    } else {
+      _showSnapshotBanner('No snapshot data yet. Press "Refresh data" to generate.', 'warn');
+    }
+
+    if(snap.last_error){
+      document.getElementById('fetchError').textContent = 'Last error: ' + snap.last_error;
+    }
+  }catch(e){
+    console.warn('[snapshot] Load failed:', e);
+    _showSnapshotBanner('Using cached data (server unavailable)', 'warn');
+    // Fall back to localStorage (already loaded)
+    Object.keys(points).forEach(updateMarker);
+    render();
   }
 }
 
-let __lastRefreshClick = 0;
-function _enqueueFetch(speciesKeys){
-  // Debounce
-  const now = Date.now();
-  if(now - __lastRefreshClick < 1000) return;
-  __lastRefreshClick = now;
+function _startPolling(){
+  _stopPolling();
+  __pollCount = 0;
+  __pollTimer = setInterval(async ()=>{
+    __pollCount++;
+    if(__pollCount > 90){ // 90 * 2s = 3 min max
+      _stopPolling();
+      _showSnapshotBanner('Refresh timed out. Try again later.', 'error');
+      return;
+    }
+    try{
+      const res = await fetch(SNAPSHOT_API, {cache:'no-store'});
+      if(!res.ok) return;
+      const snap = await res.json();
+      _updateProgressUI(snap.progress_done, snap.progress_total, snap.status);
 
-  _stopFetchQueue();
-  __fetchAbort = new AbortController();
-  __fetchTotal = speciesKeys.length;
-  __fetchDone = 0;
-  __fetchLastError = '';
+      if(snap.status === 'running'){
+        _showSnapshotBanner('Refreshing: ' + snap.progress_done + '/' + snap.progress_total + '…');
+      } else {
+        _stopPolling();
+        if(snap.status === 'ready' && snap.points_json){
+          _applySnapshot(snap);
+          _showSnapshotBanner('Refresh complete!');
+          setTimeout(_hideSnapshotBanner, 4000);
+        } else if(snap.status === 'error'){
+          _showSnapshotBanner('Refresh failed: ' + (snap.last_error || 'Unknown error'), 'error');
+          // Still apply whatever data exists
+          if(snap.points_json && Object.keys(snap.points_json).length > 0){
+            _applySnapshot(snap);
+          }
+        }
+      }
+    }catch(e){ /* keep polling */ }
+  }, 2000);
+}
 
-  for(const key of speciesKeys){
-    const obj = DATA.find(d => d.est === key);
-    if(obj) __fetchQueue.push({ key: obj.est, url: obj.url });
+function _stopPolling(){
+  if(__pollTimer){ clearInterval(__pollTimer); __pollTimer = null; }
+  _updateProgressUI(0, 0, '');
+}
+
+async function triggerRefresh(){
+  try{
+    _showSnapshotBanner('Requesting server refresh…');
+    _updateProgressUI(0, SPECIES.length, 'running');
+
+    // The POST requires X-INGEST-KEY — for browser-triggered refreshes,
+    // we use the anon key approach. The edge function also accepts the EVENTS_INGEST_KEY.
+    // For now, try without auth (the edge function checks X-INGEST-KEY header)
+    const key = localStorage.getItem('__ingest_key') || '';
+    const res = await fetch(SNAPSHOT_API, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-INGEST-KEY': key,
+      },
+    });
+
+    if(res.status === 401){
+      _showSnapshotBanner('Refresh requires admin key. Set via sidebar.', 'error');
+      _updateProgressUI(0, 0, 'error');
+      return;
+    }
+    if(res.status === 409){
+      _showSnapshotBanner('Refresh already in progress…');
+    }
+
+    _startPolling();
+  }catch(e){
+    _showSnapshotBanner('Failed to start refresh: ' + e.message, 'error');
   }
-  _updateFetchUI();
-  _processQueue();
 }
 
-// Get currently visible/filtered species keys
-function _getFilteredSpeciesKeys(){
-  const q = (document.getElementById('filterBox')?.value||'').toLowerCase().trim();
-  return DATA.filter(x => x.est.toLowerCase().includes(q)).map(x => x.est);
-}
-
-// Wire buttons (after DOM ready)
-function _wireFetchButtons(){
-  const btnVis = document.getElementById('btnRefreshVisible');
-  const btnSel = document.getElementById('btnRefreshSelected');
+// Wire buttons
+function _wireSnapshotButtons(){
+  const btnRefresh = document.getElementById('btnRefreshVisible');
   const btnStop = document.getElementById('btnStopFetch');
-  if(btnVis && !btnVis.__wired){
-    btnVis.addEventListener('click', ()=>{
-      const keys = _getFilteredSpeciesKeys();
-      // On mobile, only fetch species with expired or missing cache
-      const toFetch = IS_MOBILE ? keys.filter(k => isCacheExpired(getCachedSpecies(k))) : keys;
-      if(toFetch.length === 0){ document.getElementById('fetchProgress').textContent = 'All cached (< 6h old)'; return; }
-      _enqueueFetch(toFetch);
-    });
-    btnVis.__wired = true;
-  }
-  if(btnSel && !btnSel.__wired){
-    btnSel.addEventListener('click', ()=>{
-      // "Selected" = species with highlight or just the filter result if small
-      const keys = _getFilteredSpeciesKeys();
-      if(keys.length > 20){
-        document.getElementById('fetchProgress').textContent = 'Filter to fewer species first (max 20)';
-        return;
-      }
-      _enqueueFetch(keys);
-    });
-    btnSel.__wired = true;
+  if(btnRefresh && !btnRefresh.__wired){
+    btnRefresh.addEventListener('click', triggerRefresh);
+    btnRefresh.__wired = true;
   }
   if(btnStop && !btnStop.__wired){
-    btnStop.addEventListener('click', _stopFetchQueue);
+    btnStop.addEventListener('click', _stopPolling);
     btnStop.__wired = true;
   }
 }
 
-// === Desktop: idle background refresh ===
-function _desktopIdleRefresh(){
-  if(IS_MOBILE) return; // Never auto on mobile
-  const keys = SPECIES.filter(k => isCacheExpired(getCachedSpecies(k)));
-  if(keys.length === 0) return;
-  _enqueueFetch(keys);
-}
-
-// Schedule: desktop auto-refresh after 4s, then every 30min
-if(!IS_MOBILE){
-  const scheduleIdle = typeof requestIdleCallback === 'function'
-    ? (fn) => requestIdleCallback(fn, {timeout: 10000})
-    : (fn) => setTimeout(fn, 4000);
-  scheduleIdle(() => _desktopIdleRefresh());
-  setInterval(() => {
-    if(!IS_MOBILE){
-      const schedIdle = typeof requestIdleCallback === 'function'
-        ? (fn) => requestIdleCallback(fn, {timeout: 10000})
-        : (fn) => setTimeout(fn, 2000);
-      schedIdle(() => _desktopIdleRefresh());
-    }
-  }, 30 * 60 * 1000);
-}
-
-// === Auto-refresh API via postMessage (used by parent app) ===
-let __lastAutoRefreshAt = 0;
-const AUTO_REFRESH_MIN_MS = 2 * 60 * 1000; // 2 min throttle
-
+// === Auto-refresh via postMessage (parent app sends these) ===
 function refreshVisible(){
-  const now = Date.now();
-  if(now - __lastAutoRefreshAt < AUTO_REFRESH_MIN_MS) { console.log('[map] refreshVisible throttled'); return; }
-  if(__fetchRunning > 0) { console.log('[map] refreshVisible skipped — fetch in progress'); return; }
-  __lastAutoRefreshAt = now;
-  const keys = _getFilteredSpeciesKeys();
-  const toFetch = keys.filter(k => isCacheExpired(getCachedSpecies(k)));
-  if(toFetch.length === 0){ console.log('[map] refreshVisible: all cached'); return; }
-  console.log('[map] refreshVisible: fetching ' + toFetch.length + ' species');
-  _enqueueFetch(toFetch);
+  // Instead of fetching 369 species, just reload snapshot
+  loadSnapshot();
 }
-
 function refreshSelected(){
-  const keys = _getFilteredSpeciesKeys();
-  if(keys.length > 20){ console.log('[map] refreshSelected: too many species'); return; }
-  _enqueueFetch(keys);
+  loadSnapshot();
 }
 
 window.addEventListener('message', function(ev){
   try{
     if(!ev.data || typeof ev.data !== 'object') return;
-    // Only accept messages from same origin (parent app)
     if(ev.origin !== window.location.origin) return;
     var t = ev.data.type;
     if(t === 'MAP_REFRESH_VISIBLE') refreshVisible();
@@ -641,7 +507,7 @@ window.addEventListener('message', function(ev){
     if(t === 'MAP_PING' && ev.source){
       ev.source.postMessage({ type: 'MAP_PONG' }, ev.origin);
     }
-  }catch(e){ console.warn('[map] postMessage refresh handler error', e); }
+  }catch(e){ console.warn('[map] postMessage handler error', e); }
 });
 
 
@@ -652,15 +518,14 @@ function save() {
   localStorage.setItem(LS_SPRING, JSON.stringify(springDates));
 }
 
-// Icons (supports optional "Rarity" crown)
-
+// Icons
 function _markerIcon(avatarUrl, borderColor, count7d){
   const color = borderColor || '#222';
   const count = Number.isFinite(count7d)
-    ? `<div class="marker-count" title="Vaatlused viimase 7 päeva jooksul">${count7d}</div>`
+    ? '<div class="marker-count" title="Vaatlused viimase 7 päeva jooksul">' + count7d + '</div>'
     : '';
-  const bg = avatarUrl ? `background-image:url('${avatarUrl}')` : `background-color:#29c`;
-  const html = `<div class="marker-wrap"><div class="marker-circle" style="border-color:${color};${bg}"></div>${count}</div>`;
+  const bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#29c";
+  const html = '<div class="marker-wrap"><div class="marker-circle" style="border-color:' + color + ';' + bg + '"></div>' + count + '</div>';
   return L.divIcon({html, className:'', iconSize:[44,72], iconAnchor:[22,36], popupAnchor:[0,-36]});
 }
 function defaultIcon(borderColor, count7d) { return _markerIcon('', borderColor, count7d); }
@@ -685,8 +550,8 @@ function setAvatar(key) {
 }
 
 function setLocation(key) {
-  const prev = points[key] ? `${points[key].lat||''},${points[key].lon||''}` : '';
-  const txt = prompt('Paste coordinates as "lat,lon" (e.g. 59.437,24.753):', prev);
+  const prev = points[key] ? (points[key].lat||'')+','+(points[key].lon||'') : '';
+  const txt = prompt('Paste coordinates as "lat,lon":', prev);
   if (!txt) return;
   const m = txt.split(',').map(v=>parseFloat(v.trim()));
   if (m.length===2 && Number.isFinite(m[0]) && Number.isFinite(m[1])) {
@@ -699,14 +564,12 @@ function setLocation(key) {
   } else notifySilent('Invalid format. Use: 59.123,24.456');
 }
 
-// === NEW: toggle visibility on click ===
 function toggleVisibility(key){
   points[key] = points[key] || {};
   points[key].visible = (points[key].visible === false) ? true : false;
   save(); updateMarker(key); render();
 }
 
-// === NEW: per-species Rarity (adds crown on the marker) ===
 function setRarity(key, val){
   points[key] = points[key] || {};
   const v = (val || '').trim();
@@ -715,56 +578,39 @@ function setRarity(key, val){
   save(); updateMarker(key); render();
 }
 
-// === NEW: per-species Migration flag (colors the 7d count under marker) ===
 function setMigration(key, on){
   points[key] = points[key] || {};
   points[key].migration = !!on;
   save(); updateMarker(key); render();
 }
 
-
-
-// === Spring migration dates (editable) ===
-const EE_NUM = {
-  "ühe":1,"üks":1,"kahe":2,"kaks":2,"kolme":3,"kolm":3,"nelja":4,"neli":4,"viie":5,"viis":5,
-  "kuue":6,"kuus":6,"seitsme":7,"seitse":7,"kaheksa":8,"üheksa":9,"kümme":10,"üksteist":11,
-  "kaksteist":12,"kolmteist":13,"neliteist":14,"viisteist":15,"kuusteist":16,"seitseteist":17,
-  "kaheksateist":18,"üheksateist":19,"kakskümmend":20,
-  "kakskümmend üks":21,"kakskümmend kaks":22,"kakskümmend kolm":23,"kakskümmend neli":24,
-  "kakskümmend viis":25,"kakskümmend kuus":26,"kakskümmend seitse":27,"kakskümmend kaheksa":28,
-  "kakskümmend üheksa":29,"kolmkümmend":30,"kolmkümmend üks":31
-};
-
+// === Spring migration dates ===
 function _normSpringDDMM(s){
   s = (s||'').trim();
   if(!s) return null;
   let m = s.match(/^(\d{1,2})\.(\d{1,2})$/);
   if(m){
     const d = parseInt(m[1],10), mo = parseInt(m[2],10);
-    if(mo>=1 && mo<=12 && d>=1 && d<=31) return `${d}.${String(mo).padStart(2,'0')}`;
+    if(mo>=1 && mo<=12 && d>=1 && d<=31) return d+'.'+String(mo).padStart(2,'0');
   }
   m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if(m){
     const d = parseInt(m[3],10), mo = parseInt(m[2],10);
-    if(mo>=1 && mo<=12 && d>=1 && d<=31) return `${d}.${String(mo).padStart(2,'0')}`;
+    if(mo>=1 && mo<=12 && d>=1 && d<=31) return d+'.'+String(mo).padStart(2,'0');
   }
   return null;
 }
 function _ddmmToDate(ddmm){
   const mm = (ddmm||'').match(/^(\d{1,2})\.(\d{2})$/);
   if(!mm) return null;
-  const d = parseInt(mm[1],10), mo = parseInt(mm[2],10);
-  if(!Number.isFinite(d) || !Number.isFinite(mo)) return null;
-  return new Date(2025, mo-1, d, 12, 0, 0, 0);
+  return new Date(2025, parseInt(mm[2],10)-1, parseInt(mm[1],10), 12, 0, 0, 0);
 }
 function _dateToDdmm(dt){
-  const d = dt.getDate();
-  const mo = dt.getMonth()+1;
-  return `${d}.${String(mo).padStart(2,'0')}`;
+  return dt.getDate()+'.'+String(dt.getMonth()+1).padStart(2,'0');
 }
 function editSpringDate(key){
   const prev = (springDates && springDates[key]) ? springDates[key] : '';
-  const v = prompt(`Kevadine saabumise kuupäev (D.MM või YYYY-MM-DD)\n\n${key}`, prev || '');
+  const v = prompt('Kevadine saabumise kuupäev (D.MM või YYYY-MM-DD)\n\n'+key, prev || '');
   if(v === null) return;
   if(String(v).trim() === ''){
     delete springDates[key];
@@ -780,101 +626,6 @@ function editSpringDate(key){
   save(); render();
 }
 
-function _parseEeNum(token, prevToken){
-  token = (token||'').toLowerCase().trim();
-  prevToken = (prevToken||'').toLowerCase().trim();
-  if(/^\d+$/.test(token)) return parseInt(token,10);
-  if(EE_NUM[token]) return EE_NUM[token];
-  const combo = (prevToken ? (prevToken + ' ' + token) : '');
-  if(combo && EE_NUM[combo]) return EE_NUM[combo];
-  return null;
-}
-
-function parseSpringDatesFromTxt(text){
-  const out = {};
-  const paras = String(text||'').split(/\n\s*\n/g).map(s=>s.trim()).filter(Boolean);
-
-  const entryRe = /^([A-ZÄÖÜÕŠŽ][^\n–-]{1,80}?)\s*(?:\([^)]*\))?\s*[–-]\s*([0-3]?\d\.[01]?\d)\b/;
-  const avgParenRe = /keskmis(?:e|est|ega)[^()]{0,40}\((\d{1,2}\.\d{2})\)/i;
-
-  for(const para of paras){
-    const m = para.match(entryRe);
-    if(!m) continue;
-    const species = m[1].trim();
-    const obsRaw = m[2].trim();
-    const obs = _normSpringDDMM(obsRaw);
-    if(!obs) continue;
-
-    let avg = null;
-
-    const mp = para.match(avgParenRe);
-    if(mp){
-      avg = _normSpringDDMM(mp[1]);
-    } else {
-      // Find phrases like "... 5 päeva võrra hilisem/varasem" and compute "usual" date.
-      const re = /\b([0-9]+|[a-zäöüõšž]+)\s+p(?:äeva|äev)\b/ig;
-      let mm;
-      while((mm = re.exec(para)) !== null){
-        const token = mm[1];
-        const before = para.slice(0, mm.index).trim();
-        const prevToken = before ? before.split(/\s+/).slice(-1)[0].replace(/[().,;:]+$/,'') : '';
-        const n = _parseEeNum(token, prevToken);
-        if(!n) continue;
-
-        const after = para.slice(re.lastIndex, re.lastIndex + 60);
-        const dirM = after.match(/\b(varasem|hilisem)\b/i);
-        if(!dirM) continue;
-
-        const direction = dirM[1].toLowerCase();
-        const obsDt = _ddmmToDate(obs);
-        if(!obsDt) continue;
-        const avgDt = new Date(obsDt.getTime() + (direction === 'hilisem' ? -n : n) * 24*60*60*1000);
-        avg = _dateToDdmm(avgDt);
-        break;
-      }
-    }
-
-    out[species] = avg || obs; // if no usable "usual date", fall back to observed date
-  }
-  return out;
-}
-
-function importSpringDatesTxt(){
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.txt,text/plain';
-  input.onchange = ()=>{
-    const f = input.files && input.files[0];
-    if(!f) return;
-    const r = new FileReader();
-    r.onload = ()=>{
-      try{
-        const parsed = parseSpringDatesFromTxt(r.result || '');
-        springDates = Object.assign({}, springDates || {}, parsed || {});
-        save(); render();
-        notifySilent('Spring dates imported: ' + Object.keys(parsed||{}).length);
-      }catch(e){
-        notifySilent('Spring .txt import failed: ' + (e && e.message ? e.message : e));
-      }
-    };
-    r.readAsText(f);
-  };
-  input.click();
-}
-
-function exportSpringDates(){
-  try{
-    const blob = new Blob([JSON.stringify(springDates || {}, null, 2)], {type:'application/json'});
-    const url = URL.createObjectURL(blob);
-    const a = Object.assign(document.createElement('a'), {href:url, download:'spring_dates.json'});
-    a.click();
-    URL.revokeObjectURL(url);
-  }catch(e){
-    notifySilent('Spring export failed.');
-  }
-}
-
-
 function updateMarker(key) {
   const p = points[key];
   if (markers.has(key)) { map.removeLayer(markers.get(key)); markers.delete(key); }
@@ -885,263 +636,14 @@ function updateMarker(key) {
     const bcol = _borderColorByDate(p.t);
     const c7 = Number.isFinite(p.occ7) ? p.occ7 : null;
     const icon = avatarIcon(getDisplayAvatar(key), bcol, c7);
-    const when = p.t ? `<br><small>vaatluse kuupäev: ${p.t}</small>` : '';
-    const src = p.src ? `<br><small>allikas: ${p.src}</small>` : '';
-    const debug = p.debugInfo ? `<br><small style="color:#888;font-size:10px">${p.debugInfo}</small>` : '';
+    const when = p.t ? '<br><small>vaatluse kuupäev: '+p.t+'</small>' : '';
+    const src = p.src ? '<br><small>allikas: '+p.src+'</small>' : '';
     const m = L.marker([p.lat,p.lon], {icon}).addTo(map)
-      .bindPopup(`<b>${key}</b>${when}${(Number.isFinite(p.occ7)?`<br><small>7 päeva vaatlused: ${p.occ7}</small>`:'')}${src}${debug}`);
+      .bindPopup('<b>'+key+'</b>'+when+(Number.isFinite(p.occ7)?'<br><small>7 päeva vaatlused: '+p.occ7+'</small>':'')+src);
     markers.set(key, m);
   }
 }
 
-
-
-// ----- Fetch helpers -------
-// Supabase Edge Function proxy for CORS bypass
-const PROXY_FN_URL = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/elurikkus-proxy';
-
-function makeFetchURL(url) {
-  // cache-bust every request
-  url = url + (url.includes('?') ? '&' : '?') + '_ts=' + Date.now();
-  const bases = [ '', proxyBase, PROXY_FN_URL + '?url=', 'https://api.allorigins.win/raw?url=', 'https://cors.isomorphic-git.org/' ];
-  const built = [];
-  for (const b of bases) built.push(b ? b + encodeURIComponent(url) : url);
-  return [...new Set(built)];
-}
-
-async function tryFetch(url) {
-  const list = makeFetchURL(url);
-  for (const u of list) {
-    try {
-      const res = await fetch(u, {mode:'cors', cache:'no-store'});
-      if (!res.ok) continue;
-      const txt = await res.text();
-      if (txt && txt.length > 400) return txt;
-    } catch(e) { /* try next */ }
-  }
-  throw new Error('All fetch attempts failed (CORS/blocked).');
-}
-
-async function tryFetchJSON(url) {
-  const list = makeFetchURL(url);
-  for (const u of list) {
-    try {
-      const res = await fetch(u, {mode:'cors', cache:'no-store'});
-      if (!res.ok) continue;
-      const json = await res.json();
-      if (json) return json;
-    } catch(e) { /* try next */ }
-  }
-  throw new Error('JSON fetch failed (CORS/blocked).');
-}
-
-// Extract Estonian "Tavanimetus"
-function stripTags(html) { return html.replace(/<[^>]*>/g,' '); }
-function extractEstName(html) {
-  let m = html.match(/"vernacularName"\s*:\s*"([^"]+)"/i);
-  if (m) return m[1].trim();
-  const txt = stripTags(html).replace(/\s+/g,' ').trim();
-  m = txt.match(/Tavanimetus\s*[:\-–]\s*([A-Za-zÄÖÜÕäöüõšžŠŽ\s\-']{2,80})/i);
-  if (m) return m[1].trim();
-  m = txt.match(/Tavanimetus\s+([A-Za-zÄÖÜÕäöüõšžŠŽ][A-Za-zÄÖÜÕäöüõšžŠŽ\s\-']{1,80})/i);
-  if (m) return m[1].trim();
-  return null;
-}
-
-// Extract coordinates from HTML (kept for fallback)
-function extractLatLon(html) {
-  const patterns = [
-    /decimalLatitude\D+(-?\d+\.\d+)\D+decimalLongitude\D+(-?\d+\.\d+)/i,
-    /"decimalLatitude"\s*:\s*(-?\d+\.\d+)[^\d-]+?"decimalLongitude"\s*:\s*(-?\d+\.\d+)/i,
-    /([5-6]\d\.\d+)\s*[;,\s]\s*(2\d\.\d+)/,
-    /(2\d\.\d+)\s*[;,\s]\s*([5-6]\d\.\d+)/,
-    /L\.marker\s*\(\s*\[\s*([5-6]\d\.\d+)\s*,\s*(2\d\.\d+)\s*\]/i,
-    /"coordinates"\s*:\s*\[\s*(2\d\.\d+)\s*,\s*([5-6]\d\.\d+)\s*\]/
-  ];
-  for (const re of patterns) {
-    const m = html.match(re);
-    if (m) {
-      let a = parseFloat(m[1]), b = parseFloat(m[2]);
-      if (a >= 50 && a <= 70 && b >= 20 && b <= 30) return [a,b];
-      if (b >= 50 && b <= 70 && a >= 20 && a <= 30) return [b,a];
-    }
-  }
-  return null;
-}
-
-// Find detail links from HTML (used by fetchEstonianName)
-function findDetailLinks(html, maxN) {
-  maxN = maxN || 25;
-  const re = /href=["']([^"']*(?:occurrence|occurrences|observation|observations)[^"']*)["']/ig;
-  const seen = new Set();
-  const out = [];
-  let m;
-  while ((m = re.exec(html)) !== null && out.length < maxN) {
-    let href = m[1];
-    if (href.startsWith('/')) href = 'https://elurikkus.ee' + href;
-    else if (!href.startsWith('http')) href = 'https://elurikkus.ee/' + href;
-    if (!seen.has(href)) { seen.add(href); out.push(href); }
-  }
-  return out;
-}
-function findFirstDetailLink(html) {
-  const links = findDetailLinks(html);
-  return links.length > 0 ? links[0] : null;
-}
-
-// === Coord & date helpers ===
-function _isEstoniaCoords(lat, lon) {
-  return Number.isFinite(lat) && Number.isFinite(lon) && lat >= 57 && lat <= 60 && lon >= 21 && lon <= 29;
-}
-
-function _parseEventDateField(raw) {
-  if (!raw) return null;
-  const s = String(raw);
-  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
-  return m ? m[1] : null;
-}
-
-// === Main fetch function: HTML scraping with proxy fallback ===
-async function autoFetchCoords(key, searchUrl) {
-  try {
-    let latestDate = null;
-    let occ7 = 0;
-    let chosenLat = null, chosenLon = null;
-    let source = 'html';
-    let debugInfo = '';
-    let lastError = null;
-    let fetchedOk = false;
-
-    try {
-      const shtml = await tryFetch(searchUrl);
-      fetchedOk = true;
-
-      // Extract dates: YYYY-MM-DD patterns, eventDate JSON, Estonian dd.mm.yyyy
-      const allDatesRaw = [];
-      let m;
-      // YYYY-MM-DD HH:MM (table rows)
-      const reTable = /(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}/g;
-      while ((m = reTable.exec(shtml)) !== null) allDatesRaw.push(m[1]);
-      // DarwinCore JSON eventDate
-      const reJson = /"eventDate"\s*:\s*"?(\d{4}-\d{2}-\d{2})/ig;
-      while ((m = reJson.exec(shtml)) !== null) allDatesRaw.push(m[1]);
-      // "datetime":"2025-09-12T04:31:00Z" (SSR JSON)
-      const reDt = /"datetime"\s*:\s*"(\d{4}-\d{2}-\d{2})T/ig;
-      while ((m = reDt.exec(shtml)) !== null) allDatesRaw.push(m[1]);
-      // Label "Kuupäev: YYYY-MM-DD"
-      const reLbl = /(?:Kuupäev|vaatluse kuupäev|eventDate)\s*[:\-–]\s*(\d{4}-\d{2}-\d{2})/ig;
-      while ((m = reLbl.exec(shtml)) !== null) allDatesRaw.push(m[1]);
-      // Estonian dd.mm.yyyy
-      const reEe = /\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b/g;
-      while ((m = reEe.exec(shtml)) !== null) {
-        const d = parseInt(m[1],10), mo = parseInt(m[2],10), y = parseInt(m[3],10);
-        if (y >= 2020 && y <= 2030 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
-          allDatesRaw.push(`${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
-        }
-      }
-
-      const allDates = [...new Set(allDatesRaw)];
-      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-      let bestMs = -1;
-      for (const d of allDates) {
-        const ms = _toDay(d);
-        if (ms && ms > bestMs) { bestMs = ms; latestDate = d; }
-        if (ms && ms >= sevenDaysAgo) occ7++;
-      }
-
-      // Try coords from search page HTML (including SSR JSON)
-      const coords = extractLatLon(shtml);
-      if (coords && _isEstoniaCoords(coords[0], coords[1])) {
-        chosenLat = coords[0]; chosenLon = coords[1];
-      }
-
-      // If no coords, try detail pages (up to 10)
-      if (chosenLat === null) {
-        const detailLinks = findDetailLinks(shtml, 10);
-        for (const link of detailLinks) {
-          try {
-            const dhtml = await tryFetch(link);
-            const dc = extractLatLon(dhtml);
-            if (dc && _isEstoniaCoords(dc[0], dc[1])) {
-              chosenLat = dc[0]; chosenLon = dc[1];
-              // Also extract date from detail page SSR JSON
-              const dtM = dhtml.match(/"datetime"\s*:\s*"(\d{4}-\d{2}-\d{2})T/i);
-              if (dtM) {
-                const detMs = _toDay(dtM[1]);
-                if (detMs && detMs > bestMs) { bestMs = detMs; latestDate = dtM[1]; }
-              }
-              break;
-            }
-          } catch (e) { /* try next */ }
-        }
-      }
-
-      debugInfo = 'dates=' + allDates.length + ', latest=' + latestDate + ', occ7=' + occ7 + ', coords=' + (chosenLat !== null);
-      console.log('[fetch]', key, debugInfo);
-
-    } catch (e) {
-      lastError = 'Fetch failed: ' + e.message;
-      debugInfo = lastError;
-      console.warn('[fetch-fail]', key, e.message);
-    }
-
-    // --- Store results ---
-    points[key] = points[key] || {};
-    const p = points[key];
-
-    if (latestDate) { p.t = latestDate; }
-    else if (fetchedOk) { p.t = null; }
-
-    if (fetchedOk) { p.occ7 = occ7; }
-    p.src = source;
-    p.lastFetched = new Date().toISOString();
-    p.lastError = lastError;
-    p.debugInfo = debugInfo;
-
-    if (chosenLat !== null && chosenLon !== null) {
-      p.lat = chosenLat; p.lon = chosenLon;
-    } else if (fetchedOk && occ7 > 0) {
-      p.lat = null; p.lon = null;
-      if (!lastError) p.lastError = 'Coordinates hidden/unavailable';
-    } else if (fetchedOk) {
-      p.lat = null; p.lon = null;
-    }
-
-    if (typeof p.visible !== 'boolean') p.visible = true;
-    save(); updateMarker(key); render();
-
-  } catch (e) {
-    points[key] = points[key] || {};
-    points[key].lastError = e.message || 'Unknown error';
-    points[key].lastFetched = new Date().toISOString();
-    save(); render();
-  }
-}
-
-// Fetch Estonian name (kept for manual use if needed)
-async function fetchEstonianName(est, searchUrl) {
-  try {
-    const html = await tryFetch(searchUrl);
-    let name = extractEstName(html);
-    if (!name) {
-      const detail = findFirstDetailLink(html);
-      if (detail) {
-        const dhtml = await tryFetch(detail);
-        name = extractEstName(dhtml);
-      }
-    }
-    if (name) {
-      nameCache[est] = name;
-      save();
-      const row = document.querySelector(`[data-key="${est}"] .name-label`);
-      if (row) row.textContent = name;
-      return name;
-    } else throw new Error('Tavanimetus not found');
-  } catch(e) {
-    console.warn('Name fetch failed for', est, e);
-    return null;
-  }
-}
 
 // UI
 function rowHTML(obj) {
@@ -1153,36 +655,29 @@ function rowHTML(obj) {
   const occ7 = Number.isFinite(p.occ7) ? p.occ7 : null;
 
   const springVal = (springDates && springDates[key]) ? String(springDates[key]).trim() : '';
-  const springTxt = ` <span class="pill">Kevad:</span> <span class="clickable" title="Muuda kevadise saabumise kuupäeva" onclick="editSpringDate('${key}')">${springVal || '—'}</span>`;
+  const springTxt = ' <span class="pill">Kevad:</span> <span class="clickable" title="Muuda kevadise saabumise kuupäeva" onclick="editSpringDate(\''+key+'\')">'+( springVal || '—')+'</span>';
 
   const noCoords = !hasPoint && occ7 > 0;
   const meta = hasPoint
-    ? `<span class="pill">lat:</span> ${p.lat.toFixed(4)} <span class="pill">lon:</span> ${p.lon.toFixed(4)}${p.t?` <span class="pill">date:</span> ${p.t}`:''}${(occ7!==null?` <span class="pill">7d:</span> ${occ7}`:'')}${springTxt}`
+    ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> '+p.t:'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+springTxt
     : noCoords
-      ? `<span class="pill" style="background:#fef3c7;color:#92400e">Koordinaadid peidetud</span>${(occ7!==null?` <span class="pill">7d:</span> ${occ7}`:'')}${springTxt}`
-      : `No location yet${(occ7!==null?` <span class="pill">7d:</span> ${occ7}`:'')}${springTxt}`;
+      ? '<span class="pill" style="background:#fef3c7;color:#92400e">Koordinaadid peidetud</span>'+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+springTxt
+      : 'No location yet'+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+springTxt;
 
-  const errorLine = p.lastError ? `<div class="fetch-error" style="font-size:10px;color:#b45309;margin-top:1px">${p.lastError}</div>` : '';
-
-  return `<div class="row" data-key="${key}">
-    <div class="avatar" style="background-image:url('${getDisplayAvatar(key)}');border:3px solid ${bcol}"></div>
-    <div>
-      <div class="top">
-        <div class="name-label clickable ${muted}" onclick="toggleVisibility('${key}')">${key}</div>
-        <div class="controls">
-          <a class="btn" target="_blank" href="${obj.url}">Open</a>
-          <button class="btn secondary" onclick="setAvatar('${key}')">Avatar</button>
-        </div>
-      </div>
-      <div class="small">${meta}</div>
-      ${p.lastFetched?`<div class="last-fetched-line">Värskendatud: ${new Date(p.lastFetched).toLocaleString([], {hour:'2-digit', minute:'2-digit', year:'numeric', month:'2-digit', day:'2-digit'}).replace(',', '')}</div>`:'' }
-      ${errorLine}
-    </div>
-  </div>`;
+  return '<div class="row" data-key="'+key+'">' +
+    '<div class="avatar" style="background-image:url(\''+getDisplayAvatar(key)+'\');border:3px solid '+bcol+'"></div>' +
+    '<div>' +
+      '<div class="top">' +
+        '<div class="name-label clickable '+muted+'" onclick="toggleVisibility(\''+key+'\')">'+key+'</div>' +
+        '<div class="controls">' +
+          '<a class="btn" target="_blank" href="'+obj.url+'">Open</a>' +
+          '<button class="btn secondary" onclick="setAvatar(\''+key+'\')">Avatar</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="small">'+meta+'</div>' +
+    '</div>' +
+  '</div>';
 }
-
-
-
 
 function render() {
   const q = (document.getElementById('filterBox').value||'').toLowerCase().trim();
@@ -1191,29 +686,19 @@ function render() {
   for (const o of arr) list.insertAdjacentHTML('beforeend', rowHTML(o));
 }
 
-// Controls
-
-// Spring dates buttons
-try{
-  const sb1 = document.getElementById('springImportBtn');
-  if(sb1) sb1.onclick = importSpringDatesTxt;
-  const sb2 = document.getElementById('springExportBtn');
-  if(sb2) sb2.onclick = exportSpringDates;
-}catch(e){}
-
-document.getElementById('filterBox').addEventListener('input', render);
-
-// Restore existing markers and render list
+// Restore existing markers from localStorage and render list
 Object.keys(points).forEach(updateMarker);
 render();
-_wireFetchButtons();
+_wireSnapshotButtons();
 
-// Auto-detect avatar files for active species (after initial render + data fetch)
+// Load snapshot from server (single request — replaces 369 client fetches)
+loadSnapshot();
+
+// Auto-detect avatar files for active species
 setTimeout(autoDetectAvatarsForActive, 3000);
-// Re-run after first refresh cycle completes
 setTimeout(autoDetectAvatarsForActive, 30000);
 
-/* Mobile: sidebar drawer (show map by default) */
+/* Mobile: sidebar drawer */
 (function(){
   const sidebar = document.getElementById('sidebar');
   const openBtn = document.getElementById('openSidebarBtn');
@@ -1221,7 +706,6 @@ setTimeout(autoDetectAvatarsForActive, 30000);
   const backdrop = document.getElementById('sidebarBackdrop');
   if(!sidebar || !openBtn || !backdrop) return;
 
-  // Dynamic burger positioning: anchor 8px below top of visible map
   function repositionBurger(){
     if(!IS_MOBILE_DEVICE) return;
     openBtn.style.top = '8px';
@@ -1254,7 +738,6 @@ setTimeout(autoDetectAvatarsForActive, 30000);
   backdrop.addEventListener('click', closeSidebar);
   if (closeBtn) closeBtn.addEventListener('click', closeSidebar);
 
-  // On small screens: start closed (map visible)
   try{
     if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) closeSidebar();
   }catch(e){}
@@ -1263,28 +746,14 @@ setTimeout(autoDetectAvatarsForActive, 30000);
   window.addEventListener('orientationchange', invalidateSoon);
 })();
 
-
-
-function notifySilent(msg){
-  try { console.warn(msg); } catch(e){}
-}
-// (Back-compat) if any code still calls notifySilent(), shadow it to be silent:
-window._realAlert = window.alert;
-window.alert = function(msg){ notifySilent(msg); };
-
-
-// === Listen for parent APP_INSETS to adjust layout ===
+// === Listen for parent APP_INSETS ===
 window.addEventListener('message', function(ev){
   try{
     if(!ev.data || ev.data.type !== 'APP_INSETS') return;
-    var h = ev.data.headerPx || 0;
-    var b = ev.data.bottomNavPx || 0;
-    document.documentElement.style.setProperty('--appHeader', h + 'px');
-    document.documentElement.style.setProperty('--appBottomNav', b + 'px');
+    // No longer adjust height via CSS vars — flex layout handles it
     if(window.map && map.invalidateSize) setTimeout(function(){ map.invalidateSize(true); }, 100);
   }catch(e){}
 });
-// Request insets from parent on load
 try{
   if(window.parent && window.parent !== window){
     window.parent.postMessage({ type: 'INSETS_REQUEST' }, '*');
@@ -1293,49 +762,10 @@ try{
 </script>
 
 
-<script>
-(function(){
-  function wireClearButtons(){
-    document.querySelectorAll('.row[data-key]').forEach(row=>{
-      const key = row.getAttribute('data-key');
-      const clearBtn = Array.from(row.querySelectorAll('button')).find(b => (b.textContent||'').trim().toLowerCase() === 'clear');
-      if (clearBtn && !clearBtn.__wired){
-        clearBtn.addEventListener('click', function(ev){
-          ev.stopPropagation();
-          try{ clearOccurrence(key); }catch(e){ console.warn(e); }
-        });
-        clearBtn.__wired = true;
-      }
-    });
-  }
-  if (document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', wireClearButtons);
-  } else {
-    wireClearButtons();
-  }
-  if (typeof window.render === 'function' && !window.__wire_clear_fix2__){
-    const _render = window.render;
-    window.render = function(){
-      const r = _render.apply(this, arguments);
-      try { wireClearButtons(); } catch(e){}
-      return r;
-    };
-    window.__wire_clear_fix2__ = true;
-  }
-})();
-</script>
-
-
-
-<!-- removed broken Self-contained builder block (caused JS parse error) -->
-
-
-
-<!-- === Wind overlay: Windy embed toggle, synced with map center/zoom === -->
+<!-- === Wind overlay === -->
 <style>
   #windToggleBar{display:flex;gap:8px;align-items:center;margin:8px 0}
   .active7d-badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;font-size:12px;color:#334155;white-space:nowrap}
-  /* Desktop: floating panel */
   #windPanel{position:absolute;right:12px;top:12px;width:420px;height:300px;background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.15);overflow:hidden;z-index:800;display:none}
   #windHeader{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:#f8fafc;border-bottom:1px solid #e5e7eb}
   #windHeader .title{font-size:13px;color:#334155}
@@ -1343,7 +773,6 @@ try{
   #windyFrame{width:100%;flex:1;border:0}
   .btn.icon{padding:4px 8px;border:1px solid #cbd5e1;background:#fff;border-radius:8px;cursor:pointer}
   .wind-size-btns{display:inline}
-  /* Mobile: full-screen modal — NO inline panel, only modal */
   @media (max-width: 900px){
     #windPanel{
       position:fixed!important;inset:0!important;width:100%!important;height:100dvh!important;
@@ -1367,7 +796,7 @@ try{
 <div id="windToggleBar" class="hidden-in-export">
   <button id="toggleWind" class="btn secondary">Tuulekaart</button>
   <button id="toggleSpring" class="btn secondary">Kevadränne</button>
-  <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 päeva jooksul aktiivsed (7d vaatlustes &gt; 0 või kuupäev viimase 7 päeva sees).">7p liigid: 0</span>
+  <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 päeva jooksul aktiivsed">7p liigid: 0</span>
 </div>
 <div id="springPanel" class="hidden-in-export">
   <div id="springHeader">
@@ -1379,7 +808,7 @@ try{
   <div id="springBody">
     <div class="springTopRow">
       <input id="springSearch" type="text" placeholder="Otsi liiki..." />
-      <span id="springCount" title="Mitu liiki on nimekirjas (pärast filtrit).">0</span>
+      <span id="springCount" title="Mitu liiki on nimekirjas">0</span>
     </div>
     <div class="springTableWrap">
       <table id="springTable">
@@ -1389,7 +818,7 @@ try{
         <tbody id="springTableBody"></tbody>
       </table>
     </div>
-    <div class="springHint">Klikka kuupäeval, et muuta (salvestub localStorage-sse). Nimekiri on sorteeritud kuupäeva järgi.</div>
+    <div class="springHint">Klikka kuupäeval, et muuta (salvestub localStorage-sse).</div>
   </div>
 </div>
 <div id="windPanel">
@@ -1409,7 +838,6 @@ try{
 </div>
 <script>
 (function(){
-  // place button under Export/Import row
   (function placeWindButton(){
     const bar = document.getElementById('windToggleBar');
     const spring = document.getElementById('springPanel');
@@ -1424,7 +852,6 @@ try{
         if(spring){ sb.insertBefore(spring, bar.nextSibling); }
       }
     }catch(e){}
-    window.__springPanel_placed__ = true;
   })();
 
   const panel = document.getElementById('windPanel');
@@ -1437,10 +864,9 @@ try{
   const isMob = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
 
   let __lastWindSync = 0;
-
   function windyUrl(lat, lon, zoom){
     const z = Math.max(3, Math.min(12, Math.round(zoom||6)));
-    return `https://embed.windy.com/embed2.html?lat=${lat.toFixed(3)}&lon=${lon.toFixed(3)}&detailLat=${lat.toFixed(3)}&detailLon=${lon.toFixed(3)}&zoom=${z}&level=surface&overlay=wind&marker=true&pressure=true`;
+    return 'https://embed.windy.com/embed2.html?lat='+lat.toFixed(3)+'&lon='+lon.toFixed(3)+'&detailLat='+lat.toFixed(3)+'&detailLon='+lon.toFixed(3)+'&zoom='+z+'&level=surface&overlay=wind&marker=true&pressure=true';
   }
   function refreshWind(){
     if(isMob){
@@ -1452,16 +878,12 @@ try{
       const c = window.map && map.getCenter ? map.getCenter() : {lat:58.7, lng:25.3};
       const z = window.map && map.getZoom ? map.getZoom() : 6;
       const url = windyUrl(c.lat, c.lng, z);
-      if (iframe.getAttribute('src') !== url){
-        iframe.setAttribute('src', url);
-      }
+      if (iframe.getAttribute('src') !== url) iframe.setAttribute('src', url);
     }catch(e){}
   }
-
   function openWind(){
     refreshWind();
     if(isMob){
-      // Mobile: full-screen modal
       panel.classList.add('windy-modal-open');
       document.body.style.overflow = 'hidden';
     } else {
@@ -1478,14 +900,12 @@ try{
     if(isMob){
       panel.classList.remove('windy-modal-open');
       document.body.style.overflow = '';
-      // Free resources
       iframe.setAttribute('src', 'about:blank');
     } else {
       panel.style.display = 'none';
     }
     try{ setTimeout(()=>{ if(map && map.invalidateSize) map.invalidateSize(true); }, 260); }catch(e){}
   }
-
   btn.addEventListener('click', ()=>{
     const isOpen = isMob ? panel.classList.contains('windy-modal-open') : (panel.style.display !== 'none' && panel.style.display);
     if (!isOpen) openWind(); else closeWind();
@@ -1493,7 +913,6 @@ try{
   btnClose.addEventListener('click', closeWind);
   const btnCloseMob = document.getElementById('windCloseMobile');
   if(btnCloseMob) btnCloseMob.addEventListener('click', closeWind);
-
   if(!isMob){
     bS.addEventListener('click', ()=>{ panel.style.width='320px'; panel.style.height='240px'; refreshWind(); });
     bM.addEventListener('click', ()=>{ panel.style.width='420px'; panel.style.height='300px'; refreshWind(); });
@@ -1503,77 +922,49 @@ try{
 </script>
 
 
-<!-- === Kevadrände paneel (top list) === -->
+<!-- === Kevadrände paneel === -->
 <script>
 (function(){
   function springSortKey(v){
     try{
       if(!v) return 999999;
-      const s = String(v).trim();
-      // Prefer normalized D.MM if available
-      const n = (typeof _normSpringDDMM === 'function') ? _normSpringDDMM(s) : '';
-      const x = n || s;
+      const x = (typeof _normSpringDDMM === 'function') ? (_normSpringDDMM(String(v).trim()) || String(v).trim()) : String(v).trim();
       let m = x.match(/^(\d{1,2})\.(\d{1,2})$/);
-      if(m){
-        const d = +m[1], mo = +m[2];
-        return mo*100 + d;
-      }
+      if(m) return (+m[2])*100 + (+m[1]);
       m = x.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      if(m){
-        const mo = +m[2], d = +m[3];
-        return mo*100 + d;
-      }
+      if(m) return (+m[2])*100 + (+m[3]);
       return 999999;
     }catch(e){ return 999999; }
   }
-
-  function getSpringDates(){
-    try{
-      return (typeof springDates !== 'undefined') ? springDates : (window.springDates || {});
-    }catch(e){ return {}; }
-  }
-  function getSpeciesList(){
-    try{
-      return (typeof SPECIES !== 'undefined') ? SPECIES : (window.SPECIES || Object.keys(getSpringDates()||{}));
-    }catch(e){ return Object.keys(getSpringDates()||{}); }
-  }
+  function getSpringDates(){ try{ return (typeof springDates !== 'undefined') ? springDates : {}; }catch(e){ return {}; } }
+  function getSpeciesList(){ try{ return (typeof SPECIES !== 'undefined') ? SPECIES : Object.keys(getSpringDates()); }catch(e){ return []; } }
 
   function renderSpringPanel(){
     const body = document.getElementById('springTableBody');
     const countEl = document.getElementById('springCount');
     const q = (document.getElementById('springSearch')?.value || '').toLowerCase().trim();
     if(!body || !countEl) return;
-
-    const sd = getSpringDates() || {};
-    const list = getSpeciesList() || [];
+    const sd = getSpringDates();
+    const list = getSpeciesList();
     const rows = [];
-
     for(const name of list){
-      const raw = (sd && sd[name] !== undefined) ? String(sd[name]).trim() : '';
+      const raw = (sd[name] !== undefined) ? String(sd[name]).trim() : '';
       if(!raw) continue;
       if(q && !String(name).toLowerCase().includes(q)) continue;
       const disp = (typeof _normSpringDDMM === 'function') ? (_normSpringDDMM(raw) || raw) : raw;
       rows.push({name, disp, key: springSortKey(disp)});
     }
-
     rows.sort((a,b)=> (a.key-b.key) || String(a.name).localeCompare(String(b.name)));
-
     body.innerHTML = rows.map(r => {
       const safeName = String(r.name).replace(/"/g,'&quot;');
-      const safeDisp = String(r.disp).replace(/"/g,'&quot;');
-      return `<tr>
-        <td><span class="springDateBtn" title="Muuda kuupäeva" onclick="editSpringDate('${safeName.replace(/'/g, "\\'")}')">${safeDisp}</span></td>
-        <td><span class="springSpeciesBtn" title="Leia liigi kaart küljepaneelis" onclick="window.__springScrollToSpecies && window.__springScrollToSpecies('${safeName.replace(/'/g, "\\'")}')">${safeName}</span></td>
-      </tr>`;
+      return '<tr><td><span class="springDateBtn" onclick="editSpringDate(\''+safeName.replace(/'/g, "\\'")+'\')">'+ r.disp+'</span></td><td><span class="springSpeciesBtn" onclick="window.__springScrollToSpecies && window.__springScrollToSpecies(\''+safeName.replace(/'/g, "\\'")+'\')">'+ safeName+'</span></td></tr>';
     }).join('');
-
     countEl.textContent = rows.length;
   }
 
-  // Scroll-to helper (sidebar), without disturbing map state
   window.__springScrollToSpecies = function(name){
     try{
-      const row = document.querySelector(`.row[data-key="${CSS.escape(name)}"]`);
+      const row = document.querySelector('.row[data-key="'+CSS.escape(name)+'"]');
       if(row){
         row.scrollIntoView({behavior:'smooth', block:'nearest'});
         row.style.outline = '2px solid #93c5fd';
@@ -1587,236 +978,116 @@ try{
     const panel = document.getElementById('springPanel');
     if(!panel) return;
     const wantOpen = (open===true) ? true : (open===false ? false : (panel.style.display==='none' || !panel.style.display));
-    if(wantOpen){
-      panel.style.display = 'block';
-      renderSpringPanel();
-    }else{
-      panel.style.display = 'none';
-    }
+    if(wantOpen){ panel.style.display = 'block'; renderSpringPanel(); } else { panel.style.display = 'none'; }
   }
 
-  // Wire UI
   function wire(){
     const btn = document.getElementById('toggleSpring');
     const close = document.getElementById('springClose');
     const search = document.getElementById('springSearch');
-    if(btn && !btn.__springBound){
-      btn.addEventListener('click', ()=> toggleSpring());
-      btn.__springBound = true;
-    }
-    if(close && !close.__springBound){
-      close.addEventListener('click', ()=> toggleSpring(false));
-      close.__springBound = true;
-    }
-    if(search && !search.__springBound){
-      search.addEventListener('input', renderSpringPanel);
-      search.__springBound = true;
-    }
+    if(btn && !btn.__springBound){ btn.addEventListener('click', ()=> toggleSpring()); btn.__springBound = true; }
+    if(close && !close.__springBound){ close.addEventListener('click', ()=> toggleSpring(false)); close.__springBound = true; }
+    if(search && !search.__springBound){ search.addEventListener('input', renderSpringPanel); search.__springBound = true; }
   }
 
-  // Keep spring panel refreshed when the rest of the UI rerenders (e.g., after editing a date)
   try{
     if (typeof window.render === 'function' && !window.__springpanel_render_patch__){
       const _r = window.render;
-      window.render = function(){
-        const out = _r.apply(this, arguments);
-        try{ wire(); renderSpringPanel(); }catch(e){}
-        return out;
-      };
+      window.render = function(){ const out = _r.apply(this, arguments); try{ wire(); renderSpringPanel(); }catch(e){} return out; };
       window.__springpanel_render_patch__ = true;
     }
   }catch(e){}
-
-  if (document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', ()=>{ wire(); renderSpringPanel(); });
-  } else {
-    wire(); renderSpringPanel();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ()=>{ wire(); renderSpringPanel(); });
+  else { wire(); renderSpringPanel(); }
 })();
 </script>
 
-<!-- === 7 päeva aktiivsete liikide loendur (Tuulekaart riba) === -->
+<!-- === 7d active species badge === -->
 <script>
 (function(){
   function computeActiveSpecies7d(){
-  try{
-    // NOTE: top-level const/let are not on window; access by identifier first
-    const pts = (typeof points !== 'undefined') ? points : (window.points || {});
-    const list = (typeof SPECIES !== 'undefined') ? SPECIES : (window.SPECIES || []);
-    const now = Date.now();
-    const sevenMs = 7 * 24 * 60 * 60 * 1000;
-
-    let n = 0;
-    for (const name of list){
-      const p = pts[name] || {};
-      let active = false;
-
-      // Primary signal: 7-day occurrences counter (occ7)
-      const occ7 = (p.occ7 === 0 || p.occ7) ? Number(p.occ7) : NaN;
-      if (Number.isFinite(occ7)) active = occ7 > 0;
-
-      // Fallback: check last observation date (p.t) within last 7 days
-      if (!active && p.t){
-        try{
-          const ms = (typeof _toDay === 'function') ? _toDay(p.t) : null;
-          if (ms && (now - ms) <= sevenMs) active = true;
-        }catch(e){}
+    try{
+      const pts = (typeof points !== 'undefined') ? points : {};
+      const list = (typeof SPECIES !== 'undefined') ? SPECIES : [];
+      const now = Date.now(), sevenMs = 7*24*60*60*1000;
+      let n = 0;
+      for (const name of list){
+        const p = pts[name] || {};
+        let active = false;
+        const occ7 = (p.occ7 === 0 || p.occ7) ? Number(p.occ7) : NaN;
+        if (Number.isFinite(occ7)) active = occ7 > 0;
+        if (!active && p.t){
+          try{ const ms = (typeof _toDay === 'function') ? _toDay(p.t) : null; if (ms && (now - ms) <= sevenMs) active = true; }catch(e){}
+        }
+        if (active) n++;
       }
-
-      if (active) n++;
-    }
-    return n;
-  }catch(e){ return 0; }
-}
-
+      return n;
+    }catch(e){ return 0; }
+  }
   function updateActive7dBadge(){
     try{
       const el = document.getElementById('active7dBadge');
-      if (!el) return;
-      const n = computeActiveSpecies7d();
-      el.textContent = '7p liigid: ' + n;
+      if (el) el.textContent = '7p liigid: ' + computeActiveSpecies7d();
     }catch(e){}
   }
-
-  // Patch render & updateMarker to keep the badge in sync
   try{
     if (typeof window.render === 'function' && !window.__active7d_render_patch__){
       const _r = window.render;
-      window.render = function(){
-        const out = _r.apply(this, arguments);
-        try{ updateActive7dBadge(); }catch(e){}
-        return out;
-      };
+      window.render = function(){ const out = _r.apply(this, arguments); try{ updateActive7dBadge(); }catch(e){} return out; };
       window.__active7d_render_patch__ = true;
     }
   }catch(e){}
-
   try{
     if (typeof window.updateMarker === 'function' && !window.__active7d_upd_patch__){
       const _u = window.updateMarker;
-      window.updateMarker = function(){
-        const out = _u.apply(this, arguments);
-        try{ updateActive7dBadge(); }catch(e){}
-        return out;
-      };
+      window.updateMarker = function(){ const out = _u.apply(this, arguments); try{ updateActive7dBadge(); }catch(e){} return out; };
       window.__active7d_upd_patch__ = true;
     }
   }catch(e){}
-
-  // Init + periodic refresh (in case the 7-day window changes over time)
-  if (document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', updateActive7dBadge);
-  } else {
-    updateActive7dBadge();
-  }
-  setInterval(updateActive7dBadge, 60 * 1000);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', updateActive7dBadge);
+  else updateActive7dBadge();
+  setInterval(updateActive7dBadge, 60000);
 })();
 </script>
 
-
+<!-- === Filter input wiring === -->
 <script>
-(function(){
-  function refreshLF(){
-    try{
-      (window.SPECIES||[]).forEach(function(name){
-        const row = document.querySelector(`.row[data-key="${CSS.escape(name)}"]`);
-        if(!row) return;
-        const p = (window.points||{})[name]||{};
-        const t = p.lastFetched ? new Date(p.lastFetched).toLocaleString([], {hour:'2-digit', minute:'2-digit', year:'numeric', month:'2-digit', day:'2-digit'}).replace(',', '') : '';
-        const inline = row.querySelector('.last-fetched-inline');
-        const line = row.querySelector('.last-fetched-line');
-        if (inline) inline.textContent = t ? (' · uuendatud ' + t) : '';
-        if (line)   line.textContent   = t ? ('Värskendatud: ' + t) : '';
-      });
-    }catch(e){}
-  }
-  if (typeof window.render === 'function' && !window.__lf_patch__){
-    const _r = window.render;
-    window.render = function(){
-      const r = _r.apply(this, arguments);
-      try{ refreshLF(); }catch(e){}
-      return r;
-    };
-    window.__lf_patch__ = true;
-  } else {
-    document.addEventListener('DOMContentLoaded', refreshLF);
-  }
-  setTimeout(refreshLF, 800);
-  // Update when marker is updated
-  try{
-    const _upd = window.updateMarker;
-    if (typeof _upd === 'function' && !window.__lf_upd__){
-      window.updateMarker = function(key){
-        const ret = _upd.apply(this, arguments);
-        try{ refreshLF(); }catch(e){}
-        return ret;
-      };
-      window.__lf_upd__ = true;
-    }
-  }catch(e){}
-})();
+document.getElementById('filterBox').addEventListener('input', render);
 </script>
 
+<!-- === postMessage API for parent app (Avatar Manager) === -->
 <script>
-// === postMessage API for parent app (Avatar Manager) ===
-// Shared defaults from parent (Supabase-backed, lower priority than local overrides)
 var __sharedDefaults = {};
-
 (function(){
   window.addEventListener('message', function(ev){
     try{
       if(!ev.data || typeof ev.data !== 'object') return;
       var type = ev.data.type;
-
-      // Parent sends shared defaults (from Supabase cloud)
       if(type === 'AVATARS_DEFAULTS' && ev.data.avatars){
         __sharedDefaults = ev.data.avatars || {};
-        // Merge: local overrides take priority over shared defaults
         var localAvatars = JSON.parse(localStorage.getItem(LS_AVATARS) || '{}');
         var merged = Object.assign({}, __sharedDefaults, localAvatars);
-        // Apply to avatars object
-        for(var k in merged){
-          if(merged.hasOwnProperty(k) && merged[k]){
-            avatars[k] = merged[k];
-          }
-        }
+        for(var k in merged){ if(merged.hasOwnProperty(k) && merged[k]) avatars[k] = merged[k]; }
         save();
         preloadAvatars(Object.values(avatars));
         SPECIES.forEach(function(name){ try{ updateMarker(name); }catch(e){} });
         render();
       }
-
-      // Legacy: direct avatar update (still supported)
       if(type === 'AVATARS_UPDATE' && ev.data.avatars){
         var incoming = ev.data.avatars;
-        for(var k in incoming){
-          if(incoming.hasOwnProperty(k)){
-            if(incoming[k]) avatars[k] = incoming[k];
-            else delete avatars[k];
-          }
-        }
+        for(var k in incoming){ if(incoming.hasOwnProperty(k)){ if(incoming[k]) avatars[k] = incoming[k]; else delete avatars[k]; } }
         save();
         preloadAvatars(Object.values(avatars));
         SPECIES.forEach(function(name){ try{ updateMarker(name); }catch(e){} });
         render();
       }
-
-      // Parent requests current avatar state
       if(type === 'AVATARS_REQUEST'){
         var src = ev.source;
-        if(src && typeof src.postMessage === 'function'){
-          src.postMessage({ type: 'AVATARS_CURRENT', avatars: avatars }, '*');
-        }
+        if(src && typeof src.postMessage === 'function') src.postMessage({ type: 'AVATARS_CURRENT', avatars: avatars }, '*');
       }
     }catch(e){ console.warn('postMessage handler error', e); }
   });
-
-  // Request avatars from parent on load
-  try{
-    if(window.parent && window.parent !== window){
-      window.parent.postMessage({ type: 'AVATARS_REQUEST' }, '*');
-    }
-  }catch(e){ /* ignore */ }
+  try{ if(window.parent && window.parent !== window) window.parent.postMessage({ type: 'AVATARS_REQUEST' }, '*'); }catch(e){}
 })();
 </script>
 

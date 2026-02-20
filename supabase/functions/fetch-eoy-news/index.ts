@@ -191,22 +191,8 @@ Deno.serve(async (req) => {
 
     console.log(`Parsed ${parsed.length} items from EOÜ index page`);
 
-    // For each item, try to fetch detail page for content_html
-    const enriched: ParsedItem[] = [];
-    for (const item of parsed) {
-      if (item.url && item.url.startsWith("http")) {
-        const detail = await fetchDetailPage(item.url);
-        enriched.push({
-          ...item,
-          title: item.title || detail.title || item.url,
-          content_html: detail.content_html || item.content_html,
-          published_at: item.published_at || detail.published_at,
-          image_url: item.image_url || detail.image_url,
-        });
-      } else {
-        enriched.push(item);
-      }
-    }
+    // No longer fetch detail pages here — content_html is lazy-loaded via fetch-eoy-article-content
+    const enriched = parsed;
 
     // Upsert into DB
     let inserted = 0;
@@ -219,7 +205,6 @@ Deno.serve(async (req) => {
         source_slug: "eoy",
         title: item.title,
         summary: item.summary || "",
-        content_html: item.content_html,
         url: item.url,
         image_url: item.image_url,
         published_at: item.published_at ? new Date(item.published_at).toISOString() : new Date().toISOString(),

@@ -37,6 +37,8 @@ export type Database = {
       }
       news_items: {
         Row: {
+          content_fetch_error: string | null
+          content_fetched_at: string | null
           content_html: string | null
           created_at: string
           guid: string
@@ -52,6 +54,8 @@ export type Database = {
           url: string
         }
         Insert: {
+          content_fetch_error?: string | null
+          content_fetched_at?: string | null
           content_html?: string | null
           created_at?: string
           guid: string
@@ -67,6 +71,8 @@ export type Database = {
           url: string
         }
         Update: {
+          content_fetch_error?: string | null
+          content_fetched_at?: string | null
           content_html?: string | null
           created_at?: string
           guid?: string

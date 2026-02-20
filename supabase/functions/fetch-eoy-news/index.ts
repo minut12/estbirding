@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { encode as hexEncode } from "https://deno.land/std@0.208.0/encoding/hex.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,7 +15,6 @@ const ET_MONTHS: Record<string, string> = {
 };
 
 function parseEstonianDate(text: string): string | null {
-  // "17. veebruar 2026" or "17 veebruar 2026"
   const m = text.trim().match(/(\d{1,2})\.?\s+(\S+)\s+(\d{4})/);
   if (!m) return null;
   const day = m[1].padStart(2, "0");
@@ -25,18 +25,10 @@ function parseEstonianDate(text: string): string | null {
 
 /* ── HTML helpers ───────────────────────────────── */
 function extractText(html: string, tag: string): string[] {
-  const re = new RegExp(`<${tag}[^>]*>([\s\S]*?)</${tag}>`, "gi");
+  const re = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, "gi");
   const results: string[] = [];
   let match;
   while ((match = re.exec(html))) results.push(match[1].replace(/<[^>]*>/g, "").trim());
-  return results;
-}
-
-function extractAttr(html: string, tag: string, attr: string): string[] {
-  const re = new RegExp(`<${tag}[^>]*${attr}=["']([^"']+)["']`, "gi");
-  const results: string[] = [];
-  let match;
-  while ((match = re.exec(html))) results.push(match[1]);
   return results;
 }
 
@@ -44,22 +36,7 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-/* Sanitize HTML: allow safe tags only */
-function sanitizeHtml(html: string): string {
-  const allowedTags = new Set(["p", "a", "ul", "ol", "li", "strong", "em", "img", "h2", "h3", "blockquote", "br"]);
-  // Remove script/iframe/style tags entirely
-  let clean = html.replace(/<(script|iframe|style|object|embed)[^>]*>[\s\S]*?<\/\1>/gi, "");
-  // Remove tags not in allowlist but keep content
-  clean = clean.replace(/<\/?([a-z][a-z0-9]*)\b[^>]*>/gi, (match, tag) => {
-    const t = tag.toLowerCase();
-    if (allowedTags.has(t)) return match;
-    // Keep self-closing allowed tags
-    return "";
-  });
-  return clean.trim();
-}
-
-/* ── Title blacklist (menu/footer labels, not articles) ── */
+/* ── Title blacklist ── */
 const TITLE_BLACKLIST = new Set([
   "meist", "kontakt", "toeta", "privaatsus", "küpsised",
   "liitu", "töötajad", "ühistu", "kasulikku", "sündmused",
@@ -78,7 +55,6 @@ function isValidArticleUrl(url: string, listingUrl: string): boolean {
   try {
     const u = new URL(url);
     if (!u.hostname.includes("eoy.ee")) return false;
-    // Must not be the listing page itself
     if (url === listingUrl) return false;
     return true;
   } catch {
@@ -86,30 +62,110 @@ function isValidArticleUrl(url: string, listingUrl: string): boolean {
   }
 }
 
+/* ── Robust image extraction from an HTML block ── */
+function extractImageFromBlock(block: string, baseUrl: string): string | null {
+  // 1) <img src="...">
+  const srcMatch = block.match(/<img[^>]*\ssrc=["']([^"']+)["']/i);
+  if (srcMatch) return normalizeUrl(srcMatch[1], baseUrl);
+
+  // 2) <img data-src="..." / data-original="..." / data-lazy="...">
+  const dataSrcMatch = block.match(/<img[^>]*\s(?:data-src|data-original|data-lazy)=["']([^"']+)["']/i);
+  if (dataSrcMatch) return normalizeUrl(dataSrcMatch[1], baseUrl);
+
+  // 3) <source srcset="..."> (take first URL)
+  const srcsetMatch = block.match(/<(?:source|img)[^>]*\ssrcset=["']([^"']+)["']/i);
+  if (srcsetMatch) {
+    const firstUrl = srcsetMatch[1].split(",")[0].trim().split(/\s+/)[0];
+    if (firstUrl) return normalizeUrl(firstUrl, baseUrl);
+  }
+
+  // 4) style="background-image:url(...)"
+  const bgMatch = block.match(/background-image\s*:\s*url\s*\(\s*["']?([^"')]+)["']?\s*\)/i);
+  if (bgMatch) return normalizeUrl(bgMatch[1], baseUrl);
+
+  return null;
+}
+
+function normalizeUrl(url: string, baseUrl: string): string {
+  if (!url) return "";
+  try {
+    return new URL(url, baseUrl).toString();
+  } catch {
+    return url.startsWith("/") ? baseUrl + url : url;
+  }
+}
+
+/* ── SHA-1 hash for image filenames ── */
+async function sha1(text: string): Promise<string> {
+  const data = new TextEncoder().encode(text);
+  const hashBuffer = await crypto.subtle.digest("SHA-1", data);
+  const hashArray = new Uint8Array(hashBuffer);
+  return new TextDecoder().decode(hexEncode(hashArray));
+}
+
+/* ── Rehost image to Supabase Storage ── */
+async function rehostImage(
+  originalUrl: string,
+  supabase: any,
+  supabaseUrl: string,
+): Promise<string | null> {
+  try {
+    const res = await fetch(originalUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)" },
+    });
+    if (!res.ok) return null;
+
+    const contentType = res.headers.get("content-type") || "image/jpeg";
+    const ext = contentType.includes("png") ? "png"
+      : contentType.includes("webp") ? "webp"
+      : contentType.includes("gif") ? "gif"
+      : "jpg";
+
+    const hash = await sha1(originalUrl);
+    const path = `eoy/${hash}.${ext}`;
+
+    const blob = await res.blob();
+    const arrayBuffer = await blob.arrayBuffer();
+
+    const { error } = await supabase.storage
+      .from("news-images")
+      .upload(path, arrayBuffer, {
+        contentType,
+        upsert: true,
+      });
+
+    if (error) {
+      console.error("Storage upload error:", error);
+      return null;
+    }
+
+    return `${supabaseUrl}/storage/v1/object/public/news-images/${path}`;
+  } catch (e) {
+    console.error("Rehost error:", e);
+    return null;
+  }
+}
+
 interface ParsedItem {
   title: string;
   summary: string;
   url: string;
-  image_url: string | null;
+  image_url_original: string | null;
   published_at: string | null;
-  content_html: string | null;
 }
 
 function parseEoyListPage(html: string, baseUrl: string, listingUrl: string): ParsedItem[] {
   const items: ParsedItem[] = [];
 
-  // EOÜ news page has article blocks with class containing "entry", "news", "article", "post"
   const blocks = html.split(/<(?:article|div\s+class=['"][^'"]*(?:news|article|post|entry)[^'"]*['"])/i);
 
   for (let i = 1; i < blocks.length; i++) {
     const block = blocks[i];
 
-    // Extract title from first heading
     const titleMatch = block.match(/<h[2-4][^>]*>([\s\S]*?)<\/h[2-4]>/i);
     const title = titleMatch ? stripHtml(titleMatch[1]) : "";
     if (!title || isBlacklistedTitle(title)) continue;
 
-    // Extract link — require it points to an actual article path
     const linkMatch = block.match(/href=['"]([^'"]*\/ET\/[^'"]+)['"]/i)
       || block.match(/href=['"]([^'"]*(?:uudised|news)\/[^'"]+)['"]/i)
       || block.match(/href=['"](https?:\/\/[^'"]+)['"]/i);
@@ -117,24 +173,20 @@ function parseEoyListPage(html: string, baseUrl: string, listingUrl: string): Pa
     if (url.startsWith("/")) url = baseUrl + url;
     if (!isValidArticleUrl(url, listingUrl)) continue;
 
-    // Extract date — REQUIRE a date to confirm it's a news item
     const dateTexts = block.match(/\d{1,2}\.?\s+(?:jaanuar|veebruar|märts|aprill|mai|juuni|juuli|august|september|oktoober|november|detsember)\s+\d{4}/gi);
     const published_at = dateTexts ? parseEstonianDate(dateTexts[0]) : null;
-    if (!published_at) continue; // No date → likely not a news card
+    if (!published_at) continue;
 
-    // Extract image
-    const imgMatch = block.match(/<img[^>]*src=['"]([^'"]+)['"]/i);
-    let image_url = imgMatch ? imgMatch[1] : null;
-    if (image_url && image_url.startsWith("/")) image_url = baseUrl + image_url;
+    // Robust image extraction
+    const image_url_original = extractImageFromBlock(block, baseUrl);
 
-    // Extract summary (first paragraph text after title)
     const pTexts = extractText(block, "p");
     const summary = pTexts.find((t) => t.length > 20) || pTexts[0] || "";
 
-    items.push({ title, summary, url, image_url, published_at, content_html: null });
+    items.push({ title, summary, url, image_url_original, published_at });
   }
 
-  // Fallback: "Loe edasi" links (still apply validation)
+  // Fallback: "Loe edasi" links
   if (items.length === 0) {
     const linkRe = /href=['"]([^'"]+)[^>]*>(?:[^<]*Loe edasi|[^<]*loe edasi)/gi;
     let linkMatch;
@@ -142,43 +194,11 @@ function parseEoyListPage(html: string, baseUrl: string, listingUrl: string): Pa
       let url = linkMatch[1];
       if (url.startsWith("/")) url = baseUrl + url;
       if (!isValidArticleUrl(url, listingUrl)) continue;
-      items.push({ title: url, summary: "", url, image_url: null, published_at: null, content_html: null });
+      items.push({ title: url, summary: "", url, image_url_original: null, published_at: null });
     }
   }
 
   return items;
-}
-
-async function fetchDetailPage(url: string): Promise<{ content_html: string | null; published_at: string | null; title: string | null; image_url: string | null }> {
-  try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)" },
-    });
-    if (!res.ok) return { content_html: null, published_at: null, title: null, image_url: null };
-    const html = await res.text();
-
-    // Extract article content
-    const articleMatch = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i)
-      || html.match(/<div\s+class=['"][^'"]*(?:content|article|post-body|entry-content)[^'"]*['"][^>]*>([\s\S]*?)<\/div>/i);
-    const content_html = articleMatch ? sanitizeHtml(articleMatch[1] || articleMatch[2] || "") : null;
-
-    // Extract date from detail
-    const dateMatch = html.match(/\d{1,2}\.?\s+(?:jaanuar|veebruar|märts|aprill|mai|juuni|juuli|august|september|oktoober|november|detsember)\s+\d{4}/i);
-    const published_at = dateMatch ? parseEstonianDate(dateMatch[0]) : null;
-
-    // Title
-    const titleMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-    const title = titleMatch ? stripHtml(titleMatch[1]) : null;
-
-    // Image
-    const imgMatch = html.match(/<meta\s+property=['"]og:image['"]\s+content=['"]([^'"]+)['"]/i)
-      || html.match(/<img[^>]*class=['"][^'"]*(?:featured|hero|main)[^'"]*['"][^>]*src=['"]([^'"]+)['"]/i);
-    const image_url = imgMatch ? (imgMatch[1] || imgMatch[2]) : null;
-
-    return { content_html, published_at, title, image_url };
-  } catch {
-    return { content_html: null, published_at: null, title: null, image_url: null };
-  }
 }
 
 Deno.serve(async (req) => {
@@ -187,12 +207,12 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
+      supabaseUrl,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Get EOÜ source
     const { data: source, error: srcErr } = await supabase
       .from("news_sources")
       .select("*")
@@ -206,7 +226,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Fetch the news index page
     const res = await fetch(source.fetch_url, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)" },
     });
@@ -214,26 +233,33 @@ Deno.serve(async (req) => {
     const html = await res.text();
 
     const baseUrl = "https://www.eoy.ee";
-    let parsed = parseEoyListPage(html, baseUrl, source.fetch_url);
-
+    const parsed = parseEoyListPage(html, baseUrl, source.fetch_url);
     console.log(`Parsed ${parsed.length} items from EOÜ index page`);
 
-    // No longer fetch detail pages here — content_html is lazy-loaded via fetch-eoy-article-content
-    const enriched = parsed;
-
-    // Upsert into DB
     let inserted = 0;
     let updated = 0;
-    for (const item of enriched) {
+    let imagesRehosted = 0;
+
+    for (const item of parsed) {
       if (!item.url) continue;
       const guid = `eoy:${item.url}`;
-      const row = {
+
+      // Rehost image if we have an original
+      let image_url: string | null = null;
+      if (item.image_url_original) {
+        image_url = await rehostImage(item.image_url_original, supabase, supabaseUrl);
+        if (image_url) imagesRehosted++;
+        else image_url = item.image_url_original; // fallback to original
+      }
+
+      const row: Record<string, unknown> = {
         source_id: source.id,
         source_slug: "eoy",
         title: item.title,
         summary: item.summary || "",
         url: item.url,
-        image_url: item.image_url,
+        image_url,
+        image_url_original: item.image_url_original,
         published_at: item.published_at ? new Date(item.published_at).toISOString() : new Date().toISOString(),
         language: "et",
         guid,
@@ -252,7 +278,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ success: true, parsed: enriched.length, inserted, updated }),
+      JSON.stringify({ success: true, parsed: parsed.length, inserted, updated, imagesRehosted }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {

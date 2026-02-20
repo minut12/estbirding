@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.news-ingest]
 verify_jwt = false
+
+[functions.backfill-news-images]
+verify_jwt = false

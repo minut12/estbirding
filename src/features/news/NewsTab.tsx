@@ -256,15 +256,21 @@ function NewsCard({ item, isArchived, onOpen, onToggleArchive }: {
   return (
     <div className="px-4 py-3 active:bg-muted/50 transition-colors">
       <div className="flex gap-3">
-        {item.image_url && (
-          <img
-            src={item.image_url}
-            alt=""
-            className="w-20 h-20 rounded-lg object-cover shrink-0 bg-muted"
-            loading="lazy"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-          />
-        )}
+        <div className="w-20 h-20 rounded-lg shrink-0 bg-muted overflow-hidden">
+          {item.image_url ? (
+            <img
+              src={item.image_url}
+              alt=""
+              className="w-full h-full object-cover"
+              loading="lazy"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <Newspaper className="w-8 h-8 text-muted-foreground/30" />
+            </div>
+          )}
+        </div>
         <div className="flex-1 min-w-0">
           <button onClick={onOpen} className="text-left w-full">
             <p className="font-medium text-sm text-foreground line-clamp-2">{item.title}</p>
@@ -337,13 +343,17 @@ function ArticleView({ item, onBack, isArchived, onToggleArchive }: {
         <span className="font-medium truncate text-sm flex-1">Uudis</span>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {item.image_url && (
+        {item.image_url ? (
           <img
             src={item.image_url}
             alt=""
             className="w-full rounded-xl object-cover max-h-56 bg-muted"
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
+        ) : (
+          <div className="w-full rounded-xl bg-muted flex items-center justify-center h-40">
+            <Newspaper className="w-12 h-12 text-muted-foreground/30" />
+          </div>
         )}
         <h1 className="text-xl font-bold text-foreground">{item.title}</h1>
         <div className="flex items-center gap-2">

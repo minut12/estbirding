@@ -69,47 +69,71 @@ function extractArticleBody(html: string): string | null {
   const doc = new DOMParser().parseFromString(html, "text/html");
   if (!doc) return null;
 
-  // Find the first H1
-  const h1 = doc.querySelector("h1");
-  if (!h1) return null;
+  // EOÜ structure: div.entry.clearfix > div.small-thumbs > [entry-title with H1, entry-image, p, p, ...]
+  // Find the main content container
+  const entry = doc.querySelector("div.entry.clearfix") || doc.querySelector("div.small-thumbs");
+  if (!entry) {
+    // Fallback: just find H1
+    const h1 = doc.querySelector("h1");
+    if (!h1) return null;
+    return `<h1>${h1.textContent?.trim()}</h1>`;
+  }
 
   const parts: string[] = [];
 
-  // Include the H1 itself
-  const h1Text = h1.textContent?.trim();
-  if (h1Text) parts.push(`<h1>${h1Text}</h1>`);
+  // Walk all child nodes of the entry container (or its inner small-thumbs)
+  const container = entry.querySelector("div.small-thumbs") || entry;
+  const children = Array.from(container.children);
 
-  // Walk sibling elements after the H1
-  let current = h1.nextElementSibling;
-  while (current) {
-    const tag = current.tagName.toLowerCase();
+  for (const child of children) {
+    const el = child as Element;
+    const tag = el.tagName.toLowerCase();
+    const text = el.textContent || "";
 
-    // Stop at footer-like headings
-    if (["h1", "h2", "h3", "h4", "h5", "h6"].includes(tag)) {
-      const headingText = current.textContent || "";
-      if (isStopHeading(headingText)) break;
-    }
-
-    // Skip nav/header/footer elements
-    if (["nav", "header", "footer"].includes(tag)) {
-      current = current.nextElementSibling;
+    // Extract title from entry-title div
+    if (el.className?.includes?.("entry-title") || el.classList?.contains?.("entry-title")) {
+      const h1 = el.querySelector("h1");
+      if (h1) parts.push(`<h1>${h1.textContent?.trim()}</h1>`);
       continue;
     }
 
-    // Skip elements that look like contact blocks
-    const text = current.textContent || "";
-    if (text.includes("eoy@eoy.ee") || text.includes("Veski 4")) {
-      current = current.nextElementSibling;
-      continue;
+    // Skip entry-image div (we already have image_url from listing)
+    if (el.className?.includes?.("entry-image")) continue;
+
+    // Skip portfolio/related content sections
+    if (el.className?.includes?.("portfolio") || el.id === "portfolio") continue;
+
+    // Stop at "Samal teemal" or other footer headings
+    if (["h2", "h3", "h4"].includes(tag) || el.querySelector?.("h2,h3")) {
+      const headingText = text.toLowerCase();
+      if (isStopHeading(headingText) || headingText.includes("samal teemal")) break;
     }
+    if (el.className?.includes?.("entry-title") && text.toLowerCase().includes("samal teemal")) break;
 
-    const sanitized = sanitizeNode(current as Element);
-    if (sanitized.trim()) parts.push(sanitized);
+    // Skip contact blocks
+    if (text.includes("eoy@eoy.ee") || text.includes("Veski 4")) continue;
 
-    current = current.nextElementSibling;
+    // Process content elements (p, ul, ol, blockquote, etc.)
+    if (["p", "ul", "ol", "blockquote", "h2", "h3", "figure"].includes(tag)) {
+      const sanitized = sanitizeNode(el);
+      if (sanitized.trim() && sanitized.trim() !== "<p></p>") parts.push(sanitized);
+    } else if (tag === "div") {
+      // Check for nested headings that signal end
+      const innerHeading = el.querySelector("h2, h3");
+      if (innerHeading) {
+        const ht = innerHeading.textContent?.toLowerCase() || "";
+        if (isStopHeading(ht) || ht.includes("samal teemal")) break;
+      }
+      // Extract paragraphs from generic divs
+      const innerPs = el.querySelectorAll("p");
+      for (const p of innerPs) {
+        const sanitized = sanitizeNode(p as Element);
+        if (sanitized.trim() && sanitized.trim() !== "<p></p>") parts.push(sanitized);
+      }
+    }
   }
 
-  // If we only got the H1, that's not useful content
+  // Must have more than just the title
   if (parts.length <= 1) return null;
 
   return parts.join("\n");

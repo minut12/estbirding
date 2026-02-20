@@ -46,10 +46,25 @@
     /* Sidebar */
     #sidebar{
       border-right:1px solid var(--line);
-      overflow:auto; padding:10px; box-sizing:border-box;
+      overflow:auto; padding:0; box-sizing:border-box;
       background:#fff;
     }
-    #sidebar h2{ margin:0 0 6px 0; font-size:18px; }
+    .sidebarHeader{
+      position:sticky; top:0; z-index:10;
+      display:flex; align-items:center; justify-content:space-between;
+      padding:10px 12px;
+      background:#fff;
+      border-bottom:1px solid var(--line);
+    }
+    .sidebarHeader h2{ margin:0; font-size:18px; }
+    #closeSidebarBtn{
+      width:36px; height:36px; border-radius:10px;
+      border:1px solid #ddd; background:#fff;
+      font-size:20px; cursor:pointer;
+      display:none; align-items:center; justify-content:center;
+      line-height:1;
+    }
+    .sidebarBody{ padding:10px; }
     .small{ color:var(--muted); font-size:12px; margin:6px 0 10px; line-height:1.35; }
     #controls{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .btn{
@@ -113,32 +128,40 @@
     #mapWrap{ position:relative; width:100%; height:100%; }
     #map{ width:100%; height:100%; }
 
-    /* Burger */
-    #burger{
-      position:absolute; left:12px; top:12px; z-index:900;
+    /* Floating burger button */
+    #openSidebarBtn{
+      position:fixed; left:12px; top:72px; z-index:5000;
       width:48px; height:48px; border-radius:14px;
       border:1px solid #ddd; background:#fff;
       box-shadow:0 6px 18px rgba(0,0,0,.18);
       display:none; align-items:center; justify-content:center;
       cursor:pointer; user-select:none;
     }
-    #burger span{ font-size:22px; line-height:1; }
+    #openSidebarBtn span{ font-size:22px; line-height:1; }
+
+    /* Sidebar backdrop */
+    #sidebarBackdrop{
+      position:fixed; inset:0; z-index:3500;
+      background:rgba(0,0,0,.35);
+      display:none;
+    }
 
     /* Mobile off-canvas sidebar */
     @media (max-width: 900px){
       #main{ grid-template-columns: 1fr; }
       #sidebar{
-        position:absolute;
-        left:0; top:var(--topbar-h);
+        position:fixed;
+        left:0; top:0;
         width:min(92vw, 420px);
-        height:calc(100dvh - var(--topbar-h));
-        z-index:950;
+        height:100dvh;
+        z-index:4000;
         transform:translateX(-105%);
         transition:transform .2s ease;
         box-shadow:0 12px 30px rgba(0,0,0,.25);
       }
       #sidebar.open{ transform:translateX(0); }
-      #burger{ display:flex; }
+      #openSidebarBtn{ display:flex; }
+      #closeSidebarBtn{ display:flex; }
       #mapWrap{ height:calc(100dvh - var(--topbar-h)); }
     }
 
@@ -174,7 +197,7 @@
     #modalBackdrop{
       position:fixed; inset:0;
       background:rgba(0,0,0,.35);
-      z-index:2000;
+      z-index:6000;
       display:none;
       align-items:center; justify-content:center;
       padding:18px; box-sizing:border-box;
@@ -233,35 +256,48 @@
 
   <div id="main">
     <aside id="sidebar">
-      <h2>Europe 2026</h2>
-      <div class="small">
-        Combined map across <b>Finland, Sweden, Latvia, Lithuania, Poland, Belarus, Russia</b>.
-        <br/>Uses the <b>same avatars</b> as your other maps via <span class="hintBadge">bm_global_avatars</span>.
-        <br/>Markers show only if there is at least one record in the last 7 days.
+      <div class="sidebarHeader">
+        <h2>Europe 2026</h2>
+        <button id="closeSidebarBtn" aria-label="Close sidebar">✕</button>
       </div>
+      <div class="sidebarBody">
+        <div class="small">
+          Combined map across <b>Finland, Sweden, Latvia, Lithuania, Poland, Belarus, Russia</b>.
+          <br/>Uses the <b>same avatars</b> as your other maps via <span class="hintBadge">bm_global_avatars</span>.
+          <br/>Markers show only if there is at least one record in the last 7 days.
+        </div>
 
-      <div id="controls">
-        <button class="btn secondary" id="settingsBtn">Settings</button>
-        <button class="btn" id="refreshFilteredBtn">Refresh filtered</button>
-        <button class="btn secondary" id="refreshSelectedBtn">Refresh selected</button>
-        <button class="btn danger" id="stopBtn">Stop</button>
-        <button class="btn secondary" id="exportBtn">Export</button>
-        <button class="btn secondary" id="importBtn">Import</button>
-        <button class="btn secondary" id="resetBtn">Reset EU cache</button>
+        <div id="controls">
+          <button class="btn secondary" id="settingsBtn">Settings</button>
+          <button class="btn" id="refreshFilteredBtn">Refresh filtered</button>
+          <button class="btn secondary" id="refreshSelectedBtn">Refresh selected</button>
+          <button class="btn danger" id="stopBtn">Stop</button>
+          <button class="btn on" id="toggle7dBtn">7d: ON</button>
+          <button class="btn secondary" id="showAllBtn">Show all</button>
+          <button class="btn secondary" id="exportBtn">Export</button>
+          <button class="btn secondary" id="importBtn">Import</button>
+          <button class="btn secondary" id="resetBtn">Reset EU cache</button>
+        </div>
+
+        <div id="warnBanner" class="bannerWarn"></div>
+        <div id="progressLine">Ready.</div>
+        <div id="debugInfo" style="font-size:11px;color:#999;margin:4px 0 8px;cursor:pointer;" title="Debug info"></div>
+        <input id="filterBox" type="text" placeholder="Filter species…"/>
+        <div id="list"></div>
       </div>
-
-      <div id="warnBanner" class="bannerWarn"></div>
-      <div id="progressLine">Ready.</div>
-      <input id="filterBox" type="text" placeholder="Filter species…"/>
-      <div id="list"></div>
     </aside>
 
     <div id="mapWrap">
-      <div id="burger" aria-label="Open menu"><span>≡</span></div>
       <div id="map"></div>
     </div>
   </div>
 </div>
+
+<!-- Floating burger (mobile) -->
+<button id="openSidebarBtn" aria-label="Open menu"><span>≡</span></button>
+
+<!-- Sidebar backdrop (mobile) -->
+<div id="sidebarBackdrop"></div>
 
 <!-- Settings modal -->
 <div id="modalBackdrop">
@@ -270,7 +306,7 @@
     <div class="small" style="margin-top:0;">
       eBird token is prefilled as <span class="hintBadge">9s72dc2jcjlq</span> and stored locally.
       <br/>Species list: one per line (default = your canonical list of 376 species).
-      <br/><b>Tip:</b> You don’t need to re-add avatars/codes here — they are shared across maps.
+      <br/><b>Tip:</b> You don't need to re-add avatars/codes here — they are shared across maps.
     </div>
     <div class="grid">
       <input id="tokenInput" type="text" placeholder="eBird token (X-eBirdApiToken)"/>
@@ -307,14 +343,40 @@ const DEFAULT_SPECIES = ["Aed-lepalind", "Aed-põõsalind", "Aed-roolind", "Aedp
 /* ========= Limits ========= */
 const MAX_RESULTS = 10000;
 const CONCURRENCY = 5;
+const MOBILE_CONCURRENCY = 4;
 const REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
+const AUTO_FETCH_STARTER_COUNT = 40;
+
+/* ========= Import eBird codes from legacy keys ========= */
+function importLegacyCodes(){
+  const legacyKeys = ["ebird_codes", "EBIRD_CODES", "bm_ebird_codes", "country_ebird_codes"];
+  let merged = {};
+  legacyKeys.forEach(k => {
+    try {
+      const raw = localStorage.getItem(k);
+      if (raw) {
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === "object") Object.assign(merged, obj);
+      }
+    } catch {}
+  });
+  return merged;
+}
 
 /* ========= Load storage ========= */
 let avatars = JSON.parse(localStorage.getItem(LS_AVATARS) || "{}");
-let EBIRD_CODES = Object.assign(
-  { "Väikepistrik":"merlin", "Kanakull":"norgos1" },
-  JSON.parse(localStorage.getItem(LS_CODES) || "{}")
-);
+
+// Load codes: start with defaults, merge legacy, then merge saved global
+let EBIRD_CODES = { "Väikepistrik":"merlin", "Kanakull":"norgos1" };
+const legacyCodes = importLegacyCodes();
+if (Object.keys(legacyCodes).length > 0) {
+  Object.assign(EBIRD_CODES, legacyCodes);
+}
+const savedCodes = JSON.parse(localStorage.getItem(LS_CODES) || "{}");
+Object.assign(EBIRD_CODES, savedCodes);
+// Persist merged codes back
+localStorage.setItem(LS_CODES, JSON.stringify(EBIRD_CODES));
+
 let points = JSON.parse(localStorage.getItem(LS_POINTS) || "{}");
 
 let EBIRD_TOKEN = (localStorage.getItem(LS_EBIRD_TOKEN) || DEFAULT_EBIRD_TOKEN).trim();
@@ -381,8 +443,8 @@ function showWarn(msg){
 }
 
 /* ========= Map ========= */
-const map = L.map("map", { zoomControl:true }).setView([56.7, 20.5], 5);
-map.zoomControl.setPosition("topright");
+const map = L.map("map", { zoomControl:false }).setView([56.7, 20.5], 5);
+L.control.zoom({ position: "topright" }).addTo(map);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
 
 const markers = new Map();
@@ -397,12 +459,17 @@ function makeIcon(url, border, hasCrown, occ7, isMigr){
   return L.divIcon({ html, className:"", iconSize:[46,46], iconAnchor:[23,23], popupAnchor:[0,-18] });
 }
 
+/* ========= 7-day filter toggle ========= */
+let show7daysOnly = true;
+
 function updateMarker(key){
   if (markers.has(key)) { map.removeLayer(markers.get(key)); markers.delete(key); }
   const p = points[key]; if (!p) return;
   if (p.visible === false) return;
   if (!Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return;
-  if (!isRecent7(p.t)) return;
+
+  // Apply 7-day filter
+  if (show7daysOnly && !isRecent7(p.t)) return;
 
   const border = borderColorByDate(p.t);
   const hasCrown = !!(p.rarity && String(p.rarity).trim());
@@ -476,6 +543,29 @@ function render(){
   SPECIES.filter(n => n.toLowerCase().includes(q)).forEach(n => listEl.insertAdjacentHTML("beforeend", rowHTML(n)));
   wireRows();
   SPECIES.forEach(updateMarker);
+
+  // Check if 7d filter yields 0 markers
+  if (show7daysOnly && markers.size === 0) {
+    const anyWithCoords = SPECIES.some(k => {
+      const p = points[k];
+      return p && Number.isFinite(p.lat) && Number.isFinite(p.lon);
+    });
+    if (anyWithCoords) {
+      showWarn("No observations in last 7 days in current dataset. Turn off '7 days only' to see all known locations.");
+    }
+  } else {
+    showWarn("");
+  }
+
+  // Update 7d toggle button text
+  const btn7d = document.getElementById("toggle7dBtn");
+  if (btn7d) {
+    btn7d.textContent = show7daysOnly ? "7d: ON" : "7d: OFF";
+    btn7d.className = show7daysOnly ? "btn on" : "btn off";
+  }
+
+  // Update debug info
+  updateDebugInfo();
 }
 
 function wireRows(){
@@ -593,9 +683,9 @@ async function fetchEurope(speciesName, force=false, signal=null){
   p.fetchedAt = Date.now();
 
   if (occ7 === 0){
-    p.lat = null; p.lon = null; p.t = ""; p.loc=""; p.region="";
+    // Keep old coords if they exist (so "show all" still works)
     if (typeof p.visible !== "boolean") p.visible = true;
-    saveAll(); updateMarker(speciesName); render();
+    saveAll(); updateMarker(speciesName);
     return;
   }
 
@@ -611,7 +701,6 @@ async function fetchEurope(speciesName, force=false, signal=null){
 
   saveAll();
   updateMarker(speciesName);
-  render();
 }
 
 async function runPool(tasks, limit){
@@ -633,20 +722,31 @@ function stopRefresh(){
   }
 }
 
+function getEffectiveConcurrency(){
+  return window.matchMedia("(max-width: 900px)").matches ? MOBILE_CONCURRENCY : CONCURRENCY;
+}
+
 async function refreshKeys(keys, force=true){
   showWarn("");
   if (!EBIRD_TOKEN) {
     showWarn("Missing eBird token. Open Settings and set it.");
     return;
   }
+  // Skip species without codes
+  const withCodes = keys.filter(k => EBIRD_CODES[k] || (points[k] && points[k].ebirdCode));
+  if (withCodes.length === 0) {
+    showWarn("No species with eBird codes to refresh. Add codes first.");
+    return;
+  }
+
   stopRefresh();
   abortController = new AbortController();
   const signal = abortController.signal;
 
   let done = 0;
-  const total = keys.length;
+  const total = withCodes.length;
 
-  const tasks = keys.map(k => async ()=>{
+  const tasks = withCodes.map(k => async ()=>{
     if (signal.aborted) return;
     try{ await fetchEurope(k, force, signal); }
     catch(e){ console.warn("Fetch failed", k, e); }
@@ -659,11 +759,12 @@ async function refreshKeys(keys, force=true){
 
   progressLine.textContent = `Refreshing: 0/${total}`;
   setStatus(`Refreshing 0/${total}`);
-  await runPool(tasks, CONCURRENCY);
+  await runPool(tasks, getEffectiveConcurrency());
 
   if (!signal.aborted){
     progressLine.textContent = `Done. Refreshed ${total} species.`;
     setStatus("Done.");
+    render();
   }
 }
 
@@ -680,7 +781,7 @@ function refreshSelected(){
 
 /* ========= Avatar prompt ========= */
 function setAvatarPrompt(species){
-  const url = prompt(`Avatar URL for: ${species}\n(Stored in bm_global_avatars so it’s shared)`, avatars[species] || "");
+  const url = prompt(`Avatar URL for: ${species}\n(Stored in bm_global_avatars so it's shared)`, avatars[species] || "");
   if (url === null) return;
   const v = url.trim();
   if (!v) delete avatars[species];
@@ -688,13 +789,43 @@ function setAvatarPrompt(species){
   saveAll(); preloadAvatars(); render();
 }
 
-/* ========= Burger (mobile) ========= */
+/* ========= Sidebar open/close (mobile) ========= */
 const sidebar = document.getElementById("sidebar");
-const burger = document.getElementById("burger");
-function toggleSidebar(){ sidebar.classList.toggle("open"); setTimeout(()=> map.invalidateSize(), 220); }
-function closeSidebarOnMobile(){ if (window.matchMedia("(max-width: 900px)").matches) { sidebar.classList.remove("open"); setTimeout(()=> map.invalidateSize(), 220); } }
-burger.addEventListener("click", toggleSidebar);
+const openSidebarBtn = document.getElementById("openSidebarBtn");
+const closeSidebarBtn = document.getElementById("closeSidebarBtn");
+const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+
+function openSidebar(){
+  sidebar.classList.add("open");
+  sidebarBackdrop.style.display = "block";
+  openSidebarBtn.style.display = "none";
+  setTimeout(()=> map.invalidateSize(true), 250);
+}
+function closeSidebar(){
+  sidebar.classList.remove("open");
+  sidebarBackdrop.style.display = "none";
+  if (window.matchMedia("(max-width: 900px)").matches) {
+    openSidebarBtn.style.display = "flex";
+  }
+  setTimeout(()=> map.invalidateSize(true), 250);
+}
+function closeSidebarOnMobile(){
+  if (window.matchMedia("(max-width: 900px)").matches) closeSidebar();
+}
+
+openSidebarBtn.addEventListener("click", openSidebar);
+closeSidebarBtn.addEventListener("click", closeSidebar);
+sidebarBackdrop.addEventListener("click", closeSidebar);
 window.addEventListener("resize", ()=> setTimeout(()=> map.invalidateSize(), 150));
+
+/* ========= Debug info ========= */
+function updateDebugInfo(){
+  const el = document.getElementById("debugInfo");
+  if (!el) return;
+  const codesCount = Object.keys(EBIRD_CODES).length;
+  const pointsWithCoords = SPECIES.filter(k => { const p = points[k]; return p && Number.isFinite(p.lat); }).length;
+  el.textContent = `Codes: ${codesCount} | With coords: ${pointsWithCoords} | Markers: ${markers.size} | 7d filter: ${show7daysOnly?"ON":"OFF"}`;
+}
 
 /* ========= Export/Import/Reset ========= */
 document.getElementById("exportBtn").addEventListener("click", ()=>{
@@ -760,6 +891,49 @@ filterBox.addEventListener("input", render);
 /* ========= Init ========= */
 preloadAvatars();
 render();
+
+/* ========= Auto-fetch starter set on first open ========= */
+(function autoFetchStarter(){
+  const codesAvailable = Object.keys(EBIRD_CODES).length;
+  if (codesAvailable < 20) {
+    progressLine.textContent = `${codesAvailable} eBird codes available. Add more codes or import data.`;
+    return;
+  }
+  // Only auto-fetch species that have codes and haven't been fetched recently
+  const candidates = SPECIES.filter(k => {
+    const code = EBIRD_CODES[k];
+    if (!code) return false;
+    const p = points[k];
+    if (p && p.fetchedAt && (Date.now() - p.fetchedAt) < REFRESH_COOLDOWN_MS) return false;
+    return true;
+  });
+  if (candidates.length === 0) {
+    progressLine.textContent = "All species recently fetched.";
+    return;
+  }
+  const starterSet = candidates.slice(0, AUTO_FETCH_STARTER_COUNT);
+  progressLine.textContent = `Auto-fetching ${starterSet.length} species with codes…`;
+  refreshKeys(starterSet, false);
+})();
+
+/* ========= Listen for postMessage from parent ========= */
+window.addEventListener("message", function(ev){
+  if (ev.data && ev.data.type === "MAP_SHOWN") {
+    setTimeout(()=> map.invalidateSize(true), 200);
+  }
+  if (ev.data && ev.data.type === "AVATARS_UPDATE") {
+    if (ev.data.avatars && typeof ev.data.avatars === "object") {
+      Object.assign(avatars, ev.data.avatars);
+      saveAll(); preloadAvatars(); render();
+    }
+  }
+  if (ev.data && ev.data.type === "APP_INSETS") {
+    // Adjust burger button position if parent sends insets
+    if (ev.data.bottomNavPx) {
+      // no-op for now
+    }
+  }
+});
 </script>
 </body>
 </html>

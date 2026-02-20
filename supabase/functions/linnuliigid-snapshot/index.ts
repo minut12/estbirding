@@ -309,23 +309,31 @@ Deno.serve(async (req) => {
     }
 
     if (req.method === "POST") {
-      // Require ingest key
-      const key =
-        req.headers.get("x-ingest-key") ||
-        req.headers.get("authorization")?.replace("Bearer ", "");
-      if (!INGEST_KEY || key !== INGEST_KEY) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      // Check if already running
+      // Public refresh with cooldown — no key required
+      // Check if already running or recently completed (15 min cooldown)
       const { data: current } = await supabaseAdmin
         .from("linnuliigid_snapshot")
-        .select("status")
+        .select("status, generated_at")
         .eq("id", 1)
         .single();
+
+      if (current?.generated_at) {
+        const elapsed = Date.now() - new Date(current.generated_at).getTime();
+        const COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
+        if (elapsed < COOLDOWN_MS && current.status === "ready") {
+          const retryAfter = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
+          return new Response(
+            JSON.stringify({
+              error: "Refresh recently completed. Try again later.",
+              retry_after_seconds: retryAfter,
+            }),
+            {
+              status: 429,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            }
+          );
+        }
+      }
 
       if (current?.status === "running") {
         return new Response(

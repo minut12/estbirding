@@ -965,13 +965,24 @@ function extractLatLon(html) {
 }
 
 function findFirstDetailLink(html) {
-  const re = /href=["']([^"']*(?:occurrence|occurrences|observation|observations)[^"']*)["']/i;
-  const m = html.match(re);
-  if (!m) return null;
-  let href = m[1];
-  if (href.startsWith('http')) return href;
-  if (href.startsWith('/')) return 'https://elurikkus.ee' + href;
-  return 'https://elurikkus.ee/' + href;
+  const links = findDetailLinks(html);
+  return links.length > 0 ? links[0] : null;
+}
+
+// Find up to maxN unique detail links from search HTML
+function findDetailLinks(html, maxN) {
+  maxN = maxN || 25;
+  const re = /href=["']([^"']*(?:occurrence|occurrences|observation|observations)[^"']*)["']/ig;
+  const seen = new Set();
+  const out = [];
+  let m;
+  while ((m = re.exec(html)) !== null && out.length < maxN) {
+    let href = m[1];
+    if (href.startsWith('/')) href = 'https://elurikkus.ee' + href;
+    else if (!href.startsWith('http')) href = 'https://elurikkus.ee/' + href;
+    if (!seen.has(href)) { seen.add(href); out.push(href); }
+  }
+  return out;
 }
 
 // === Modified: auto-fetch stores occurrence date and sets default visible:true ===
@@ -981,54 +992,104 @@ async function autoFetchCoords(key, searchUrl) {
     let coords = extractLatLon(shtml);
     let eventDate = extractEventDate(shtml);
 
-    // NEW: count how many occurrences are within last 7 days (based on dates found on search page)
+    // Count occurrences within last 7 days from search page
     const occ7Dates = extractAllEventDates(shtml);
-    // Use the newest date found on the search page as the "latest observation date"
-    // so that last-7-days filtering is accurate.
-    try{
-      let newest = null, newestMs = -1;
-      for (const d of (occ7Dates || [])){
-        const ms = _toDay(d);
-        if (ms && ms > newestMs){ newestMs = ms; newest = d; }
-      }
-      if (newest) eventDate = newest;
-    }catch(e){}
-    const occ7 = (occ7Dates && occ7Dates.length>=0) ? countInLastNDaysFromDates(occ7Dates, 7) : null;
+    let newestDate = null, newestMs = -1;
+    for (const d of (occ7Dates || [])){
+      const ms = _toDay(d);
+      if (ms && ms > newestMs){ newestMs = ms; newestDate = d; }
+    }
+    if (newestDate) eventDate = newestDate;
+    const occ7 = occ7Dates.length >= 0 ? countInLastNDaysFromDates(occ7Dates, 7) : 0;
 
-    if (!coords) {
-      const detail = findFirstDetailLink(shtml);
-      if (detail) {
-        const dhtml = await tryFetch(detail);
-        coords = extractLatLon(dhtml);
-        if (!eventDate) eventDate = extractEventDate(dhtml);
+    // If coords found directly on search page, check if recent enough
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    let bestCandidate = null; // { lat, lon, eventDate, link }
+
+    if (coords) {
+      const edMs = eventDate ? _toDay(eventDate) : null;
+      if (edMs && edMs >= sevenDaysAgo) {
+        bestCandidate = { lat: coords[0], lon: coords[1], eventDate, link: searchUrl };
       }
     }
-    if (!coords) throw new Error('No coordinates found on search/detail pages');
 
-    const [lat, lon] = coords;
-    points[key] = points[key] || {};
-    
-const prev = points[key] || {};
-const changedCoords = !(Number.isFinite(prev.lat) && Number.isFinite(prev.lon)) || prev.lat !== lat || prev.lon !== lon;
-const newerDate = _isNewer(eventDate, prev.t);
-const changedOcc7 = Number.isFinite(occ7) && (prev.occ7 !== occ7);
+    // Try up to 25 detail links to find coords with a recent date
+    if (!bestCandidate) {
+      const detailLinks = findDetailLinks(shtml, 25);
+      let fallbackCandidate = null; // any coords, even if date is old
 
-if (changedCoords || newerDate || changedOcc7){
-  points[key] = points[key] || {};
-  points[key].lat = lat; points[key].lon = lon;
-  // keep the newest date when available; otherwise keep previous
-  if (newerDate || !prev.t) points[key].t = eventDate || '(kuupäev puudub)'; // <-- occurrence date from site
-  points[key].src = 'Elurikkus';
-  points[key].lastFetched = new Date().toISOString();
-  if (Number.isFinite(occ7)) { points[key].occ7 = occ7; points[key].occ7Updated = new Date().toISOString(); }
-  if (typeof points[key].visible !== 'boolean') points[key].visible = true; // default visible
-  save(); updateMarker(key); render();
-  console.log('[updated]', key, points[key]);
-} else {
-  console.log('[no change]', key);
-}
+      for (const link of detailLinks) {
+        try {
+          const dhtml = await tryFetch(link);
+          const dCoords = extractLatLon(dhtml);
+          const dDate = extractEventDate(dhtml);
+          if (!dCoords) continue;
+
+          const dMs = dDate ? _toDay(dDate) : null;
+
+          // Pass 1: Accept only if within last 7 days
+          if (dMs && dMs >= sevenDaysAgo) {
+            if (!bestCandidate || dMs > (_toDay(bestCandidate.eventDate) || 0)) {
+              bestCandidate = { lat: dCoords[0], lon: dCoords[1], eventDate: dDate, link };
+            }
+            // Found a recent one - can stop early if it's the newest possible
+            break;
+          }
+
+          // Track fallback (any valid coords)
+          if (!fallbackCandidate) {
+            fallbackCandidate = { lat: dCoords[0], lon: dCoords[1], eventDate: dDate || newestDate, link };
+          }
+        } catch (e) { /* skip this detail page */ }
+      }
+
+      // Pass 2: If no recent candidate but species is active, use fallback coords
+      if (!bestCandidate && fallbackCandidate && occ7 > 0) {
+        bestCandidate = fallbackCandidate;
+        if (!bestCandidate.eventDate) bestCandidate.eventDate = newestDate;
+      }
+    }
+
+    // Handle results
+    if (bestCandidate && Number.isFinite(bestCandidate.lat) && Number.isFinite(bestCandidate.lon)) {
+      const lat = bestCandidate.lat, lon = bestCandidate.lon;
+      const finalDate = bestCandidate.eventDate || eventDate || '(kuupäev puudub)';
+      points[key] = points[key] || {};
+      const prev = points[key];
+      const changedCoords = !(Number.isFinite(prev.lat) && Number.isFinite(prev.lon)) || prev.lat !== lat || prev.lon !== lon;
+      const newerDate = _isNewer(finalDate, prev.t);
+      const changedOcc7 = Number.isFinite(occ7) && (prev.occ7 !== occ7);
+
+      if (changedCoords || newerDate || changedOcc7) {
+        points[key].lat = lat; points[key].lon = lon;
+        if (newerDate || !prev.t) points[key].t = finalDate;
+        points[key].src = 'Elurikkus';
+        points[key].lastFetched = new Date().toISOString();
+        points[key].lastError = null;
+        if (Number.isFinite(occ7)) { points[key].occ7 = occ7; points[key].occ7Updated = new Date().toISOString(); }
+        if (typeof points[key].visible !== 'boolean') points[key].visible = true;
+        save(); updateMarker(key); render();
+      }
+      console.log('[fetch]', key, { occ7, newestDate, foundCoords: true, chosenLink: bestCandidate.link });
+    } else {
+      // No coords found at all — store as active but without marker
+      points[key] = points[key] || {};
+      points[key].occ7 = occ7;
+      points[key].t = newestDate || points[key].t || null;
+      points[key].lastFetched = new Date().toISOString();
+      points[key].lastError = 'No usable coordinates in ' + findDetailLinks(shtml, 25).length + ' recent records';
+      if (occ7 > 0) { points[key].lat = null; points[key].lon = null; }
+      if (typeof points[key].visible !== 'boolean') points[key].visible = true;
+      save(); updateMarker(key); render();
+      console.log('[fetch]', key, { occ7, newestDate, foundCoords: false, chosenLink: null, error: points[key].lastError });
+    }
   } catch (e) {
-    notifySilent(key + ' — auto‑fetch failed: ' + e.message + '\nTip: set a proxy base and try again.');
+    // Never crash the whole refresh for one species
+    points[key] = points[key] || {};
+    points[key].lastError = e.message || 'Unknown fetch error';
+    points[key].lastFetched = new Date().toISOString();
+    save(); render();
+    console.warn('[fetch-error]', key, e.message);
   }
 }
 
@@ -1069,9 +1130,14 @@ function rowHTML(obj) {
   const springVal = (springDates && springDates[key]) ? String(springDates[key]).trim() : '';
   const springTxt = ` <span class="pill">Kevad:</span> <span class="clickable" title="Muuda kevadise saabumise kuupäeva" onclick="editSpringDate('${key}')">${springVal || '—'}</span>`;
 
+  const noCoords = !hasPoint && occ7 > 0;
   const meta = hasPoint
     ? `<span class="pill">lat:</span> ${p.lat.toFixed(4)} <span class="pill">lon:</span> ${p.lon.toFixed(4)}${p.t?` <span class="pill">date:</span> ${p.t}`:''}${(occ7!==null?` <span class="pill">7d:</span> ${occ7}`:'')}${springTxt}`
-    : `No location yet${(occ7!==null?` <span class="pill">7d:</span> ${occ7}`:'')}${springTxt}`;
+    : noCoords
+      ? `<span class="pill" style="background:#fef3c7;color:#92400e">Koordinaadid peidetud</span>${(occ7!==null?` <span class="pill">7d:</span> ${occ7}`:'')}${springTxt}`
+      : `No location yet${(occ7!==null?` <span class="pill">7d:</span> ${occ7}`:'')}${springTxt}`;
+
+  const errorLine = p.lastError ? `<div class="fetch-error" style="font-size:10px;color:#b45309;margin-top:1px">${p.lastError}</div>` : '';
 
   return `<div class="row" data-key="${key}">
     <div class="avatar" style="background-image:url('${getDisplayAvatar(key)}');border:3px solid ${bcol}"></div>
@@ -1085,6 +1151,7 @@ function rowHTML(obj) {
       </div>
       <div class="small">${meta}</div>
       ${p.lastFetched?`<div class="last-fetched-line">Värskendatud: ${new Date(p.lastFetched).toLocaleString([], {hour:'2-digit', minute:'2-digit', year:'numeric', month:'2-digit', day:'2-digit'}).replace(',', '')}</div>`:'' }
+      ${errorLine}
     </div>
   </div>`;
 }

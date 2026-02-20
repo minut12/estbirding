@@ -844,22 +844,23 @@ function updateMarker(key) {
   if (markers.has(key)) { map.removeLayer(markers.get(key)); markers.delete(key); }
   if (!p) return;
   const passesRecent = isRecent(p.t) || (Number.isFinite(p.occ7) && p.occ7 > 0);
-const isVisible = (p.visible !== false) && passesRecent;
-if (isVisible && Number.isFinite(p.lat) && Number.isFinite(p.lon)) {
+  const isVisible = (p.visible !== false) && passesRecent;
+  if (isVisible && Number.isFinite(p.lat) && Number.isFinite(p.lon)) {
     const bcol = _borderColorByDate(p.t);
     const c7 = Number.isFinite(p.occ7) ? p.occ7 : null;
     const icon = avatarIcon(getDisplayAvatar(key), bcol, c7);
     const when = p.t ? `<br><small>vaatluse kuupäev: ${p.t}</small>` : '';
-    const src = p.src?`<br><small>allikas: ${p.src}</small>`:'';
+    const src = p.src ? `<br><small>allikas: ${p.src}</small>` : '';
+    const debug = p.debugInfo ? `<br><small style="color:#888;font-size:10px">${p.debugInfo}</small>` : '';
     const m = L.marker([p.lat,p.lon], {icon}).addTo(map)
-      .bindPopup(`<b>${key}</b>${when}${(Number.isFinite(p.occ7)?`<br><small>7 päeva vaatlused: ${p.occ7}</small>`:'')}${src}`);
+      .bindPopup(`<b>${key}</b>${when}${(Number.isFinite(p.occ7)?`<br><small>7 päeva vaatlused: ${p.occ7}</small>`:'')}${src}${debug}`);
     markers.set(key, m);
   }
 }
 
 
 
-// ----- Fetch helpers (search → detail → coords + eventDate) -------
+// ----- Fetch helpers -------
 function makeFetchURL(url) {
   // cache-bust every request
   url = url + (url.includes('?') ? '&' : '?') + '_ts=' + Date.now();
@@ -882,6 +883,19 @@ async function tryFetch(url) {
   throw new Error('All fetch attempts failed (CORS/blocked).');
 }
 
+async function tryFetchJSON(url) {
+  const list = makeFetchURL(url);
+  for (const u of list) {
+    try {
+      const res = await fetch(u, {mode:'cors', cache:'no-store'});
+      if (!res.ok) continue;
+      const json = await res.json();
+      if (json) return json;
+    } catch(e) { /* try next */ }
+  }
+  throw new Error('JSON fetch failed (CORS/blocked).');
+}
+
 // Extract Estonian "Tavanimetus"
 function stripTags(html) { return html.replace(/<[^>]*>/g,' '); }
 function extractEstName(html) {
@@ -895,61 +909,13 @@ function extractEstName(html) {
   return null;
 }
 
-// === NEW: extract occurrence date from page ===
-function extractEventDate(html) {
-  // 1) DarwinCore JSON
-  let m = html.match(/"eventDate"\s*:\s*"([^"]+)"/i);
-  if (m) return m[1];
-  // 2) Label "Kuupäev: 2024-05-12" (or English Date:)
-  m = html.match(/(?:Kuupäev|Date)\s*[:\-–]\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/i);
-  if (m) return m[1];
-  // 3) any yyyy-mm-dd as fallback
-  m = html.match(/([0-9]{4}-[0-9]{2}-[0-9]{2})/);
-  if (m) return m[1];
-  return null;
-}
-// === NEW: extract *all* occurrence dates from search page and count last-N-days sightings ===
-function extractAllEventDates(html){
-  const out = [];
-  if (!html) return out;
-  let m;
-  const reJson = /"eventDate"\s*:\s*"?(\d{4}-\d{2}-\d{2})/ig;
-  while ((m = reJson.exec(html)) !== null) out.push(m[1]);
-  const reLbl = /(?:Kuupäev|Date)\s*[:\-–]\s*(\d{4}-\d{2}-\d{2})/ig;
-  while ((m = reLbl.exec(html)) !== null) out.push(m[1]);
-  // fallback (less strict)
-  if (out.length === 0){
-    const reAny = /(\d{4}-\d{2}-\d{2})/g;
-    while ((m = reAny.exec(html)) !== null){
-      out.push(m[1]);
-      if (out.length > 500) break;
-    }
-  }
-  return out;
-}
-function countInLastNDaysFromDates(dates, days){
-  try{
-    const now = Date.now();
-    const windowMs = (days * 24 * 60 * 60 * 1000);
-    let c = 0;
-    (dates || []).forEach(d=>{
-      const ms = _toDay(d);
-      if (!ms) return;
-      const diff = now - ms;
-      if (diff >= 0 && diff <= windowMs) c++;
-    });
-    return c;
-  }catch(e){ return 0; }
-}
-
-
-// Extract coordinates
+// Extract coordinates from HTML (kept for fallback)
 function extractLatLon(html) {
   const patterns = [
     /decimalLatitude\D+(-?\d+\.\d+)\D+decimalLongitude\D+(-?\d+\.\d+)/i,
     /"decimalLatitude"\s*:\s*(-?\d+\.\d+)[^\d-]+?"decimalLongitude"\s*:\s*(-?\d+\.\d+)/i,
-    /([5-6]\d\.\d+)\s*[;,\s]\s*(2\d\.\d+)/,   // lat, lon
-    /(2\d\.\d+)\s*[;,\s]\s*([5-6]\d\.\d+)/,   // lon, lat
+    /([5-6]\d\.\d+)\s*[;,\s]\s*(2\d\.\d+)/,
+    /(2\d\.\d+)\s*[;,\s]\s*([5-6]\d\.\d+)/,
     /L\.marker\s*\(\s*\[\s*([5-6]\d\.\d+)\s*,\s*(2\d\.\d+)\s*\]/i,
     /"coordinates"\s*:\s*\[\s*(2\d\.\d+)\s*,\s*([5-6]\d\.\d+)\s*\]/
   ];
@@ -964,12 +930,7 @@ function extractLatLon(html) {
   return null;
 }
 
-function findFirstDetailLink(html) {
-  const links = findDetailLinks(html);
-  return links.length > 0 ? links[0] : null;
-}
-
-// Find up to maxN unique detail links from search HTML
+// Find detail links from HTML (used by fetchEstonianName)
 function findDetailLinks(html, maxN) {
   maxN = maxN || 25;
   const re = /href=["']([^"']*(?:occurrence|occurrences|observation|observations)[^"']*)["']/ig;
@@ -984,107 +945,190 @@ function findDetailLinks(html, maxN) {
   }
   return out;
 }
+function findFirstDetailLink(html) {
+  const links = findDetailLinks(html);
+  return links.length > 0 ? links[0] : null;
+}
 
-// === Modified: auto-fetch stores occurrence date and sets default visible:true ===
+// === Biocache JSON API: primary data source for dates & coords ===
+function _isEstoniaCoords(lat, lon) {
+  return Number.isFinite(lat) && Number.isFinite(lon) && lat >= 57 && lat <= 60 && lon >= 21 && lon <= 29;
+}
+
+function _parseEventDateField(raw) {
+  if (!raw) return null;
+  const s = String(raw);
+  // Accept YYYY-MM-DD or YYYY-MM-DDT...
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : null;
+}
+
+async function fetchBiocacheRecords(speciesName, pageSize) {
+  pageSize = pageSize || 50;
+  const url = 'https://elurikkus.ee/biocache-service/ws/occurrences/search.json'
+    + '?q=' + encodeURIComponent(speciesName)
+    + '&pageSize=' + pageSize
+    + '&start=0'
+    + '&sort=eventDate'
+    + '&dir=desc';
+  return tryFetchJSON(url);
+}
+
+// === Main fetch function: uses Biocache JSON API ===
 async function autoFetchCoords(key, searchUrl) {
   try {
-    const shtml = await tryFetch(searchUrl);
-    let coords = extractLatLon(shtml);
-    let eventDate = extractEventDate(shtml);
+    let latestDate = null;
+    let occ7 = 0;
+    let chosenLat = null, chosenLon = null;
+    let source = 'biocache';
+    let debugInfo = '';
+    let lastError = null;
 
-    // Count occurrences within last 7 days from search page
-    const occ7Dates = extractAllEventDates(shtml);
-    let newestDate = null, newestMs = -1;
-    for (const d of (occ7Dates || [])){
-      const ms = _toDay(d);
-      if (ms && ms > newestMs){ newestMs = ms; newestDate = d; }
-    }
-    if (newestDate) eventDate = newestDate;
-    const occ7 = occ7Dates.length >= 0 ? countInLastNDaysFromDates(occ7Dates, 7) : 0;
+    // --- Try Biocache JSON API first ---
+    let usedBiocache = false;
+    try {
+      const json = await fetchBiocacheRecords(key, 50);
+      const records = json?.occurrences || json?.records || [];
+      if (Array.isArray(records) && records.length > 0) {
+        usedBiocache = true;
+        const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        let bestDate = null, bestMs = -1;
+        let bestCoordDate = null, bestCoordMs = -1;
+        let bestLat = null, bestLon = null;
 
-    // If coords found directly on search page, check if recent enough
-    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    let bestCandidate = null; // { lat, lon, eventDate, link }
+        for (const rec of records) {
+          const ed = _parseEventDateField(rec.eventDate);
+          if (!ed) continue;
+          const ms = _toDay(ed);
+          if (!ms) continue;
 
-    if (coords) {
-      const edMs = eventDate ? _toDay(eventDate) : null;
-      if (edMs && edMs >= sevenDaysAgo) {
-        bestCandidate = { lat: coords[0], lon: coords[1], eventDate, link: searchUrl };
-      }
-    }
+          // Track latest eventDate overall
+          if (ms > bestMs) { bestMs = ms; bestDate = ed; }
 
-    // Try up to 25 detail links to find coords with a recent date
-    if (!bestCandidate) {
-      const detailLinks = findDetailLinks(shtml, 25);
-      let fallbackCandidate = null; // any coords, even if date is old
+          // Count 7-day occurrences (with valid Estonia coords)
+          const lat = parseFloat(rec.decimalLatitude);
+          const lon = parseFloat(rec.decimalLongitude);
+          const hasCoords = _isEstoniaCoords(lat, lon);
 
-      for (const link of detailLinks) {
-        try {
-          const dhtml = await tryFetch(link);
-          const dCoords = extractLatLon(dhtml);
-          const dDate = extractEventDate(dhtml);
-          if (!dCoords) continue;
-
-          const dMs = dDate ? _toDay(dDate) : null;
-
-          // Pass 1: Accept only if within last 7 days
-          if (dMs && dMs >= sevenDaysAgo) {
-            if (!bestCandidate || dMs > (_toDay(bestCandidate.eventDate) || 0)) {
-              bestCandidate = { lat: dCoords[0], lon: dCoords[1], eventDate: dDate, link };
-            }
-            // Found a recent one - can stop early if it's the newest possible
-            break;
+          if (ms >= sevenDaysAgo) {
+            occ7++;
           }
 
-          // Track fallback (any valid coords)
-          if (!fallbackCandidate) {
-            fallbackCandidate = { lat: dCoords[0], lon: dCoords[1], eventDate: dDate || newestDate, link };
+          // Choose newest record with valid coords
+          if (hasCoords && ms > bestCoordMs) {
+            bestCoordMs = ms;
+            bestCoordDate = ed;
+            bestLat = lat;
+            bestLon = lon;
           }
-        } catch (e) { /* skip this detail page */ }
-      }
+        }
 
-      // Pass 2: If no recent candidate but species is active, use fallback coords
-      if (!bestCandidate && fallbackCandidate && occ7 > 0) {
-        bestCandidate = fallbackCandidate;
-        if (!bestCandidate.eventDate) bestCandidate.eventDate = newestDate;
+        latestDate = bestDate;
+        chosenLat = bestLat;
+        chosenLon = bestLon;
+
+        if (!latestDate && records.length > 0) {
+          // All records lacked parseable eventDate
+          lastError = 'Biocache records found but no parseable eventDate';
+        }
+
+        debugInfo = 'biocache: ' + records.length + ' records, latestDate=' + latestDate + ', occ7=' + occ7;
+        console.log('[biocache]', key, { records: records.length, latestDate, occ7, hasCoords: chosenLat !== null });
+      } else {
+        debugInfo = 'biocache: 0 records';
+        console.log('[biocache]', key, 'no records in response', json?.totalRecords);
+      }
+    } catch (e) {
+      console.warn('[biocache-fail]', key, e.message);
+      debugInfo = 'biocache failed: ' + e.message;
+    }
+
+    // --- Fallback: HTML scraping (only if Biocache failed entirely) ---
+    if (!usedBiocache) {
+      source = 'html-fallback';
+      try {
+        const shtml = await tryFetch(searchUrl);
+        // Strict date extraction: only near "Kuupäev"/"eventDate" labels, or dd.mm.yyyy Estonian format
+        const strictDates = [];
+        let m;
+        // DarwinCore JSON eventDate
+        const reJson = /"eventDate"\s*:\s*"?(\d{4}-\d{2}-\d{2})/ig;
+        while ((m = reJson.exec(shtml)) !== null) strictDates.push(m[1]);
+        // Label "Kuupäev: YYYY-MM-DD"
+        const reLbl = /(?:Kuupäev|vaatluse kuupäev|eventDate)\s*[:\-–]\s*(\d{4}-\d{2}-\d{2})/ig;
+        while ((m = reLbl.exec(shtml)) !== null) strictDates.push(m[1]);
+        // Estonian dd.mm.yyyy format
+        const reEe = /\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b/g;
+        while ((m = reEe.exec(shtml)) !== null) {
+          const d = parseInt(m[1],10), mo = parseInt(m[2],10), y = parseInt(m[3],10);
+          if (y >= 2020 && y <= 2030 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+            strictDates.push(`${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+          }
+        }
+
+        // Find newest date
+        let bestMs = -1;
+        for (const d of strictDates) {
+          const ms = _toDay(d);
+          if (ms && ms > bestMs) { bestMs = ms; latestDate = d; }
+        }
+
+        // Count 7-day
+        const sevenDaysAgo = Date.now() - 7*24*60*60*1000;
+        occ7 = strictDates.filter(d => { const ms = _toDay(d); return ms && ms >= sevenDaysAgo; }).length;
+
+        // Try coords from HTML
+        const coords = extractLatLon(shtml);
+        if (coords && _isEstoniaCoords(coords[0], coords[1])) {
+          chosenLat = coords[0]; chosenLon = coords[1];
+        }
+
+        debugInfo = 'html-fallback: dates=' + strictDates.length + ', latestDate=' + latestDate;
+      } catch (e) {
+        lastError = 'HTML fallback also failed: ' + e.message;
+        debugInfo = lastError;
       }
     }
 
-    // Handle results
-    if (bestCandidate && Number.isFinite(bestCandidate.lat) && Number.isFinite(bestCandidate.lon)) {
-      const lat = bestCandidate.lat, lon = bestCandidate.lon;
-      const finalDate = bestCandidate.eventDate || eventDate || '(kuupäev puudub)';
-      points[key] = points[key] || {};
-      const prev = points[key];
-      const changedCoords = !(Number.isFinite(prev.lat) && Number.isFinite(prev.lon)) || prev.lat !== lat || prev.lon !== lon;
-      const newerDate = _isNewer(finalDate, prev.t);
-      const changedOcc7 = Number.isFinite(occ7) && (prev.occ7 !== occ7);
+    // --- Store results ---
+    points[key] = points[key] || {};
+    const p = points[key];
 
-      if (changedCoords || newerDate || changedOcc7) {
-        points[key].lat = lat; points[key].lon = lon;
-        if (newerDate || !prev.t) points[key].t = finalDate;
-        points[key].src = 'Elurikkus';
-        points[key].lastFetched = new Date().toISOString();
-        points[key].lastError = null;
-        if (Number.isFinite(occ7)) { points[key].occ7 = occ7; points[key].occ7Updated = new Date().toISOString(); }
-        if (typeof points[key].visible !== 'boolean') points[key].visible = true;
-        save(); updateMarker(key); render();
-      }
-      console.log('[fetch]', key, { occ7, newestDate, foundCoords: true, chosenLink: bestCandidate.link });
+    // ALWAYS overwrite date from fresh fetch (fixes wrong cached dates)
+    if (latestDate) {
+      p.t = latestDate;
+    } else if (!usedBiocache) {
+      // Only keep old date if biocache didn't run (total failure)
     } else {
-      // No coords found at all — store as active but without marker
-      points[key] = points[key] || {};
-      points[key].occ7 = occ7;
-      points[key].t = newestDate || points[key].t || null;
-      points[key].lastFetched = new Date().toISOString();
-      points[key].lastError = 'No usable coordinates in ' + findDetailLinks(shtml, 25).length + ' recent records';
-      if (occ7 > 0) { points[key].lat = null; points[key].lon = null; }
-      if (typeof points[key].visible !== 'boolean') points[key].visible = true;
-      save(); updateMarker(key); render();
-      console.log('[fetch]', key, { occ7, newestDate, foundCoords: false, chosenLink: null, error: points[key].lastError });
+      // Biocache ran but found no dates — clear stale date
+      p.t = null;
     }
+
+    p.occ7 = occ7;
+    p.src = source;
+    p.lastFetched = new Date().toISOString();
+    p.lastError = lastError;
+    p.debugInfo = debugInfo;
+
+    if (chosenLat !== null && chosenLon !== null) {
+      p.lat = chosenLat;
+      p.lon = chosenLon;
+    } else if (occ7 > 0) {
+      // Active but no coords — keep null so marker is skipped but species stays in list
+      p.lat = null;
+      p.lon = null;
+      if (!lastError) p.lastError = 'Active species but coordinates hidden/unavailable';
+    } else {
+      // Not active in last 7 days and no coords
+      p.lat = null;
+      p.lon = null;
+    }
+
+    if (typeof p.visible !== 'boolean') p.visible = true;
+    save(); updateMarker(key); render();
+    console.log('[fetch-done]', key, { occ7, latestDate, hasCoords: chosenLat !== null, source, debugInfo });
+
   } catch (e) {
-    // Never crash the whole refresh for one species
     points[key] = points[key] || {};
     points[key].lastError = e.message || 'Unknown fetch error';
     points[key].lastFetched = new Date().toISOString();

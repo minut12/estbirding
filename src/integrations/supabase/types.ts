@@ -35,6 +35,122 @@ export type Database = {
         }
         Relationships: []
       }
+      events: {
+        Row: {
+          all_day: boolean
+          category: string
+          content_html: string | null
+          created_at: string
+          description: string
+          end_at: string | null
+          guid: string
+          id: string
+          image_url: string | null
+          is_cancelled: boolean
+          language: string
+          location_lat: number | null
+          location_lon: number | null
+          location_name: string | null
+          registration_url: string | null
+          source_id: string
+          source_slug: string
+          start_at: string
+          tags: string[] | null
+          title: string
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          all_day?: boolean
+          category?: string
+          content_html?: string | null
+          created_at?: string
+          description?: string
+          end_at?: string | null
+          guid: string
+          id?: string
+          image_url?: string | null
+          is_cancelled?: boolean
+          language?: string
+          location_lat?: number | null
+          location_lon?: number | null
+          location_name?: string | null
+          registration_url?: string | null
+          source_id: string
+          source_slug: string
+          start_at: string
+          tags?: string[] | null
+          title: string
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          all_day?: boolean
+          category?: string
+          content_html?: string | null
+          created_at?: string
+          description?: string
+          end_at?: string | null
+          guid?: string
+          id?: string
+          image_url?: string | null
+          is_cancelled?: boolean
+          language?: string
+          location_lat?: number | null
+          location_lon?: number | null
+          location_name?: string | null
+          registration_url?: string | null
+          source_id?: string
+          source_slug?: string
+          start_at?: string
+          tags?: string[] | null
+          title?: string
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "events_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "events_sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      events_sources: {
+        Row: {
+          created_at: string
+          homepage_url: string | null
+          id: string
+          is_active: boolean
+          name: string
+          slug: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          homepage_url?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          slug: string
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          homepage_url?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          slug?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       news_items: {
         Row: {
           content_fetch_error: string | null

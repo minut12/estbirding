@@ -7,6 +7,8 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
     :root{
+      --burger-top: 88px;
+      --burger-left: 12px;
       --topbar-h: 56px;
       --sidebar-w: 420px;
       --line: #e5e7eb;
@@ -58,9 +60,12 @@
     /* Sidebar */
     #sidebar{
       border-right:1px solid var(--line);
-      overflow:auto; padding:10px; box-sizing:border-box;
+      overflow:auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      touch-action: pan-y; padding:10px; box-sizing:border-box;
       background:#fff;
-      z-index: 3000;
+      z-index: 6000;
     }
 
     .sidebarHeader{
@@ -156,8 +161,8 @@
     /* Burger (fixed so it never disappears) */
     #openSidebarBtn{
       position:fixed;
-      left:12px;
-      top:72px; /* below Lovable map selector */
+      left: var(--burger-left);
+      top: var(--burger-top); /* below Lovable map selector */
       z-index: 5000;
       width:48px; height:48px;
       border-radius:14px;
@@ -176,8 +181,9 @@
       position:fixed;
       inset:0;
       background:rgba(0,0,0,.35);
-      z-index: 4000;
+      z-index: 5000;
       display:none;
+      pointer-events: auto;
     }
 
     /* Mobile off-canvas sidebar */
@@ -354,7 +360,74 @@
   </div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+/* ========= Burger drag (mobile) ========= */
+function setupBurgerDrag(){
+  const btn = document.getElementById("openSidebarBtn");
+  if (!btn) return;
+
+  const LS_BURGER_POS = "bm_eu_burger_pos";
+  try{
+    const saved = JSON.parse(localStorage.getItem(LS_BURGER_POS) || "null");
+    if (saved && typeof saved.top === "number" && typeof saved.left === "number"){
+      document.documentElement.style.setProperty("--burger-top", saved.top + "px");
+      document.documentElement.style.setProperty("--burger-left", saved.left + "px");
+    }
+  }catch(e){}
+
+  let dragging = false;
+  let startX=0, startY=0, startTop=0, startLeft=0;
+  let holdTimer = null;
+
+  const onDown = (e)=>{
+    if (!window.matchMedia("(max-width: 900px)").matches) return;
+    const pt = e.touches ? e.touches[0] : e;
+    startX = pt.clientX; startY = pt.clientY;
+    const cs = getComputedStyle(document.documentElement);
+    startTop = parseFloat(cs.getPropertyValue("--burger-top")) || 88;
+    startLeft = parseFloat(cs.getPropertyValue("--burger-left")) || 12;
+
+    holdTimer = setTimeout(()=>{ dragging = true; btn.style.opacity = "0.85"; }, 350);
+  };
+
+  const onMove = (e)=>{
+    if (!holdTimer && !dragging) return;
+    if (!dragging) return;
+    const pt = e.touches ? e.touches[0] : e;
+    const dx = pt.clientX - startX;
+    const dy = pt.clientY - startY;
+
+    // clamp within viewport
+    const top = Math.max(56, Math.min(window.innerHeight - 80, startTop + dy));
+    const left = Math.max(8, Math.min(window.innerWidth - 80, startLeft + dx));
+
+    document.documentElement.style.setProperty("--burger-top", top + "px");
+    document.documentElement.style.setProperty("--burger-left", left + "px");
+    e.preventDefault();
+  };
+
+  const onUp = ()=>{
+    if (holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
+    if (dragging){
+      dragging = false;
+      btn.style.opacity = "";
+      const cs = getComputedStyle(document.documentElement);
+      const top = parseFloat(cs.getPropertyValue("--burger-top")) || 88;
+      const left = parseFloat(cs.getPropertyValue("--burger-left")) || 12;
+      localStorage.setItem(LS_BURGER_POS, JSON.stringify({ top, left }));
+    }
+  };
+
+  btn.addEventListener("touchstart", onDown, {passive:true});
+  btn.addEventListener("touchmove", onMove, {passive:false});
+  btn.addEventListener("touchend", onUp, {passive:true});
+  btn.addEventListener("mousedown", onDown);
+  window.addEventListener("mousemove", onMove, {passive:false});
+  window.addEventListener("mouseup", onUp);
+}
+setupBurgerDrag();
+
+</script>
 <script>
 /* ========= Embedded detection ========= */
 (function(){
@@ -1028,6 +1101,73 @@ if (!window.matchMedia("(max-width: 900px)").matches) {
     refreshKeys(withCodes.slice(0, 35), false);
   }
 })();
+
+
+/* ========= Burger drag (mobile) ========= */
+function setupBurgerDrag(){
+  const btn = document.getElementById("openSidebarBtn");
+  if (!btn) return;
+
+  const LS_BURGER_POS = "bm_eu_burger_pos";
+  try{
+    const saved = JSON.parse(localStorage.getItem(LS_BURGER_POS) || "null");
+    if (saved && typeof saved.top === "number" && typeof saved.left === "number"){
+      document.documentElement.style.setProperty("--burger-top", saved.top + "px");
+      document.documentElement.style.setProperty("--burger-left", saved.left + "px");
+    }
+  }catch(e){}
+
+  let dragging = false;
+  let startX=0, startY=0, startTop=0, startLeft=0;
+  let holdTimer = null;
+
+  const onDown = (e)=>{
+    if (!window.matchMedia("(max-width: 900px)").matches) return;
+    const pt = e.touches ? e.touches[0] : e;
+    startX = pt.clientX; startY = pt.clientY;
+    const cs = getComputedStyle(document.documentElement);
+    startTop = parseFloat(cs.getPropertyValue("--burger-top")) || 88;
+    startLeft = parseFloat(cs.getPropertyValue("--burger-left")) || 12;
+
+    holdTimer = setTimeout(()=>{ dragging = true; btn.style.opacity = "0.85"; }, 350);
+  };
+
+  const onMove = (e)=>{
+    if (!holdTimer && !dragging) return;
+    if (!dragging) return;
+    const pt = e.touches ? e.touches[0] : e;
+    const dx = pt.clientX - startX;
+    const dy = pt.clientY - startY;
+
+    // clamp within viewport
+    const top = Math.max(56, Math.min(window.innerHeight - 80, startTop + dy));
+    const left = Math.max(8, Math.min(window.innerWidth - 80, startLeft + dx));
+
+    document.documentElement.style.setProperty("--burger-top", top + "px");
+    document.documentElement.style.setProperty("--burger-left", left + "px");
+    e.preventDefault();
+  };
+
+  const onUp = ()=>{
+    if (holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
+    if (dragging){
+      dragging = false;
+      btn.style.opacity = "";
+      const cs = getComputedStyle(document.documentElement);
+      const top = parseFloat(cs.getPropertyValue("--burger-top")) || 88;
+      const left = parseFloat(cs.getPropertyValue("--burger-left")) || 12;
+      localStorage.setItem(LS_BURGER_POS, JSON.stringify({ top, left }));
+    }
+  };
+
+  btn.addEventListener("touchstart", onDown, {passive:true});
+  btn.addEventListener("touchmove", onMove, {passive:false});
+  btn.addEventListener("touchend", onUp, {passive:true});
+  btn.addEventListener("mousedown", onDown);
+  window.addEventListener("mousemove", onMove, {passive:false});
+  window.addEventListener("mouseup", onUp);
+}
+setupBurgerDrag();
 
 </script>
 </body>

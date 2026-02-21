@@ -23,7 +23,7 @@
       --badgePadX: 7px;
       --badgeOffset: 12px;
 
-      --burger-top: 88px;
+      --burger-top: 70px;
       --burger-left: 12px;
     }
     html, body { height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
@@ -57,30 +57,25 @@
     }
 
     /* Sidebar */
-    #sidebar{
-      z-index: 7000;
-      border-right:1px solid var(--line);
-      overflow:auto;
-      -webkit-overflow-scrolling: touch;
-      overscroll-behavior: contain;
-      touch-action: pan-y;
+#sidebar{
+  z-index: 7000;
+  border-right:1px solid var(--line);
+  background:#fff;
+  pointer-events:auto;
 
-      padding:10px; box-sizing:border-box;
-      background:#fff;
-
-      pointer-events: auto;
-    }
+  /* Make only the list scroll; keep header+controls fixed */
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
 
     .sidebarHeader{
-      position: sticky;
-      top: 0;
-      z-index: 6100;
-      background:#fff;
-      padding-bottom:8px;
-      border-bottom:1px solid #f0f0f0;
-      margin-bottom:8px;
-    }
-    .sidebarHeaderTop{
+  background:#fff;
+  padding-bottom:8px;
+  border-bottom:1px solid #f0f0f0;
+  margin-bottom:8px;
+}
+.sidebarHeaderTop{
       display:flex;
       align-items:center;
       justify-content:space-between;
@@ -100,6 +95,45 @@
 
     .small{ color:var(--muted); font-size:12px; margin:6px 0 10px; line-height:1.35; }
     #controls{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+/* Fixed panel (header + controls + filter) */
+#stickyPanel{
+  position:sticky;
+  top:0;
+  z-index:7200;
+  background:#fff;
+  padding:10px 10px 10px;
+  box-shadow:0 6px 14px rgba(0,0,0,.08);
+}
+
+/* Scrollable list area */
+#listWrap{
+  flex:1 1 auto;
+  min-height:0;
+  overflow:auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding:0 10px 10px;
+}
+
+/* Keep close button reachable */
+#closeSidebarBtn{
+  position:relative;
+  z-index:7300;
+}
+
+/* Mobile: prevent controls from wrapping into a weird overlay strip */
+@media (max-width: 900px){
+  #controls{
+    flex-wrap:nowrap;
+    overflow-x:auto;
+    -webkit-overflow-scrolling: touch;
+    gap:8px;
+    padding-bottom:6px;
+    scrollbar-width:none;
+  }
+  #controls::-webkit-scrollbar{ display:none; }
+  #controls .btn{ flex:0 0 auto; }
+}
     .btn{
       padding:6px 10px; border:0; border-radius:10px;
       background:var(--btn); color:#fff; cursor:pointer; font-size:13px;
@@ -205,7 +239,7 @@
         transform:translateX(-105%);
         transition:transform .2s ease;
         box-shadow:0 12px 30px rgba(0,0,0,.25);
-        padding-top:12px;
+        padding-top:0;
       }
       #sidebar.open{ transform:translateX(0); }
       #openSidebarBtn{ display:flex; }
@@ -308,7 +342,9 @@
 
   <div id="main">
     <aside id="sidebar" aria-label="Sidebar">
-      <div class="sidebarHeader">
+      
+  <div id="stickyPanel">
+<div class="sidebarHeader">
         <div class="sidebarHeaderTop">
           <h2>Europe 2026</h2>
           <button id="closeSidebarBtn" title="Close">✕</button>
@@ -334,7 +370,9 @@
       <div id="warnBanner" class="bannerWarn"></div>
       <div id="progressLine">Ready.</div>
       <input id="filterBox" type="text" placeholder="Filter species…"/>
-      <div id="list"></div>
+  </div>
+  <div id="listWrap"><div id="list"></div></div>
+
     </aside>
 
     <div id="mapWrap">
@@ -1276,7 +1314,7 @@ function setupBurgerDrag(){
     const dx = pt.clientX - startX;
     const dy = pt.clientY - startY;
 
-    const top = Math.max(56, Math.min(window.innerHeight - 80, startTop + dy));
+    const top = Math.max(40, Math.min(window.innerHeight - 80, startTop + dy));
     const left = Math.max(8, Math.min(window.innerWidth - 80, startLeft + dx));
 
     document.documentElement.style.setProperty("--burger-top", top + "px");

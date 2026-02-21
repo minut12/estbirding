@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Newspaper, ChevronLeft, Archive, ArchiveRestore, ExternalLink, Search, Filter, RefreshCw, Facebook } from 'lucide-react';
+import { Newspaper, ChevronLeft, Archive, ArchiveRestore, ExternalLink, Search, Filter, RefreshCw } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,8 +26,6 @@ interface NewsSource {
   id: string;
   name: string;
   slug: string;
-  type: string;
-  homepage_url: string | null;
 }
 
 /* ── Archive helpers (localStorage) ─────────────── */
@@ -54,14 +52,6 @@ function formatEstDate(iso: string): string {
 /* ── Page size ──────────────────────────────────── */
 const PAGE_SIZE = 20;
 
-/* ── Facebook embed config ──────────────────────── */
-const FB_SOURCES: Record<string, { name: string; href: string }> = {
-  'facebook_birdingpoland': {
-    name: 'Birding Poland',
-    href: 'https://www.facebook.com/BirdingPoland',
-  },
-};
-
 /* ── Main component ─────────────────────────────── */
 export default function NewsTab() {
   const queryClient = useQueryClient();
@@ -77,18 +67,13 @@ export default function NewsTab() {
   const { data: sources = [] } = useQuery<NewsSource[]>({
     queryKey: ['news-sources'],
     queryFn: async () => {
-      const { data } = await supabase.from('news_sources').select('id, name, slug, type, homepage_url').eq('is_active', true);
+      const { data } = await supabase.from('news_sources').select('id, name, slug').eq('is_active', true);
       return (data || []) as NewsSource[];
     },
     staleTime: 60_000,
   });
 
-  // Check if there are any Facebook-type sources
-  const facebookSources = sources.filter(s => s.type === 'facebook');
-  // Non-facebook sources for traditional news list
-  const nonFacebookSources = sources.filter(s => s.type !== 'facebook');
-
-  // News items (infinite scroll) - only for non-facebook sources
+  // News items (infinite scroll)
   const {
     data,
     fetchNextPage,
@@ -105,13 +90,7 @@ export default function NewsTab() {
         .order('published_at', { ascending: false })
         .range(pageParam, pageParam + PAGE_SIZE - 1);
 
-      // Exclude facebook sources from traditional query
-      const fbSlugs = facebookSources.map(s => s.slug);
-      if (sourceFilter === 'all') {
-        if (fbSlugs.length > 0) {
-          // Can't easily do NOT IN with supabase-js, filter client-side
-        }
-      } else if (sourceFilter !== 'all') {
+      if (sourceFilter !== 'all') {
         query = query.eq('source_slug', sourceFilter);
       }
       if (search.trim()) {
@@ -214,14 +193,14 @@ export default function NewsTab() {
 
         {/* Filters */}
         <div className="flex gap-2">
-          {nonFacebookSources.length > 1 && (
+          {sources.length > 1 && (
             <select
               value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value)}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="all">Kõik allikad</option>
-              {nonFacebookSources.map(s => (
+              {sources.map(s => (
                 <option key={s.slug} value={s.slug}>{s.name}</option>
               ))}
             </select>
@@ -238,23 +217,13 @@ export default function NewsTab() {
         </div>
       </div>
 
-      {/* Content */}
+      {/* List */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        {/* Facebook embeds at the top */}
-        {tab === 'latest' && facebookSources.map(src => (
-          <FacebookEmbed
-            key={src.slug}
-            name={src.name}
-            href={src.homepage_url || FB_SOURCES[src.slug]?.href || ''}
-          />
-        ))}
-
-        {/* Traditional news list */}
         {isLoading ? (
           <div className="p-6 text-center text-sm text-muted-foreground">Laen uudiseid…</div>
-        ) : visibleItems.length === 0 && facebookSources.length === 0 ? (
+        ) : visibleItems.length === 0 ? (
           <EmptyState tab={tab} />
-        ) : visibleItems.length > 0 ? (
+        ) : (
           <div className="divide-y divide-border">
             {visibleItems.map((item) => (
               <NewsCard
@@ -266,89 +235,12 @@ export default function NewsTab() {
               />
             ))}
           </div>
-        ) : null}
+        )}
         {/* Infinite scroll sentinel */}
         <div ref={observerRef} className="h-10" />
         {isFetchingNextPage && (
           <div className="p-4 text-center text-sm text-muted-foreground">Laen lisaks…</div>
         )}
-      </div>
-    </div>
-  );
-}
-
-/* ── Facebook Page Plugin Embed ─────────────────── */
-function FacebookEmbed({ name, href }: { name: string; href: string }) {
-  const [failed, setFailed] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(340);
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const updateWidth = () => {
-      if (containerRef.current) {
-        setWidth(containerRef.current.offsetWidth);
-      }
-    };
-    updateWidth();
-    const ro = new ResizeObserver(updateWidth);
-    ro.observe(containerRef.current);
-    return () => ro.disconnect();
-  }, []);
-
-  const iframeSrc = `https://www.facebook.com/plugins/page.php?href=${encodeURIComponent(href)}&tabs=timeline&width=${width}&height=800&small_header=true&adapt_container_width=true&hide_cover=true&show_facepile=false`;
-
-  if (failed) {
-    return (
-      <div className="m-4 p-6 rounded-xl border border-border bg-card text-center space-y-3">
-        <Facebook className="w-10 h-10 text-muted-foreground/40 mx-auto" />
-        <p className="text-sm text-muted-foreground">Facebook embed pole saadaval</p>
-        <p className="text-xs text-muted-foreground">{name}</p>
-        <a href={href} target="_blank" rel="noopener noreferrer">
-          <Button variant="outline" size="sm" className="gap-1.5 mt-2">
-            <ExternalLink className="w-3.5 h-3.5" /> Ava Facebookis
-          </Button>
-        </a>
-      </div>
-    );
-  }
-
-  return (
-    <div ref={containerRef} className="px-4 pt-4 pb-2 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Facebook className="w-4 h-4 text-primary" />
-          <span className="text-sm font-medium text-foreground">{name}</span>
-        </div>
-        <a href={href} target="_blank" rel="noopener noreferrer">
-          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
-            <ExternalLink className="w-3 h-3" /> Ava Facebookis
-          </Button>
-        </a>
-      </div>
-      <div className="rounded-xl overflow-hidden border border-border bg-card">
-        <iframe
-          src={iframeSrc}
-          width="100%"
-          height="800"
-          style={{ border: 'none', overflow: 'hidden', maxWidth: '100%' }}
-          scrolling="no"
-          frameBorder="0"
-          allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
-          onError={() => setFailed(true)}
-          onLoad={(e) => {
-            // Detect if iframe loaded but is blocked (will be empty)
-            try {
-              const iframe = e.target as HTMLIFrameElement;
-              // Can't access cross-origin content, but a timeout fallback
-              setTimeout(() => {
-                if (iframe && iframe.offsetHeight < 50) {
-                  setFailed(true);
-                }
-              }, 5000);
-            } catch {}
-          }}
-        />
       </div>
     </div>
   );

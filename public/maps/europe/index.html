@@ -58,14 +58,16 @@
 
     /* Sidebar */
     #sidebar{
+      z-index: 7000;
       border-right:1px solid var(--line);
       overflow:auto;
       -webkit-overflow-scrolling: touch;
       overscroll-behavior: contain;
       touch-action: pan-y;
+
       padding:10px; box-sizing:border-box;
       background:#fff;
-      z-index: 6000;
+
       pointer-events: auto;
     }
 
@@ -161,10 +163,11 @@
 
     /* Burger + backdrop */
     #openSidebarBtn{
+      z-index: 8000;
       position:fixed;
       left: var(--burger-left);
       top: var(--burger-top);
-      z-index: 7000;
+
       width:48px; height:48px;
       border-radius:14px;
       border:1px solid #ddd;
@@ -180,10 +183,12 @@
     #openSidebarBtn span{ font-size:22px; line-height:1; }
 
     #sidebarBackdrop{
+      pointer-events: auto;
+      z-index: 6000;
       position:fixed;
       inset:0;
       background:rgba(0,0,0,.35);
-      z-index: 6500;
+
       display:none;
       pointer-events:auto;
     }
@@ -192,6 +197,7 @@
     @media (max-width: 900px){
       #main{ grid-template-columns: 1fr; }
       #sidebar{
+        z-index: 7000;
         position:fixed;
         left:0; top:0;
         width:min(92vw, 420px);

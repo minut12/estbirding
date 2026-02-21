@@ -7,8 +7,6 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
     :root{
-      --burger-top: 88px;
-      --burger-left: 12px;
       --topbar-h: 56px;
       --sidebar-w: 420px;
       --line: #e5e7eb;
@@ -18,16 +16,18 @@
       --btn: #0a7;
       --btn2: #666;
 
-      --mSize: 34px;      /* map marker circle size (match Estonia map feel) */
+      --mSize: 34px;      /* map marker circle size */
       --mBorder: 3px;
       --badgeFont: 12px;
       --badgePadY: 2px;
       --badgePadX: 7px;
       --badgeOffset: 12px;
+
+      --burger-top: 88px;
+      --burger-left: 12px;
     }
     html, body { height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
     body { overflow:hidden; background:#fff; }
-
     body.embedded { --topbar-h: 0px; }
 
     #shell{ height:100%; display:flex; flex-direction:column; }
@@ -39,7 +39,6 @@
       background:#fafafa;
     }
     body.embedded #topbar{ display:none; }
-
     #topbar strong{ font-size:14px; }
     #topbar .pill{
       display:inline-flex; align-items:center; gap:6px;
@@ -63,15 +62,18 @@
       overflow:auto;
       -webkit-overflow-scrolling: touch;
       overscroll-behavior: contain;
-      touch-action: pan-y; padding:10px; box-sizing:border-box;
+      touch-action: pan-y;
+
+      padding:10px; box-sizing:border-box;
       background:#fff;
       z-index: 6000;
+      pointer-events: auto;
     }
 
     .sidebarHeader{
       position: sticky;
       top: 0;
-      z-index: 3100;
+      z-index: 6100;
       background:#fff;
       padding-bottom:8px;
       border-bottom:1px solid #f0f0f0;
@@ -158,12 +160,12 @@
     #mapWrap{ position:relative; width:100%; height:100%; }
     #map{ width:100%; height:100%; }
 
-    /* Burger (fixed so it never disappears) */
+    /* Burger + backdrop */
     #openSidebarBtn{
       position:fixed;
       left: var(--burger-left);
-      top: var(--burger-top); /* below Lovable map selector */
-      z-index: 5000;
+      top: var(--burger-top);
+      z-index: 7000;
       width:48px; height:48px;
       border-radius:14px;
       border:1px solid #ddd;
@@ -174,6 +176,7 @@
       justify-content:center;
       cursor:pointer;
       user-select:none;
+      touch-action: manipulation;
     }
     #openSidebarBtn span{ font-size:22px; line-height:1; }
 
@@ -181,9 +184,9 @@
       position:fixed;
       inset:0;
       background:rgba(0,0,0,.35);
-      z-index: 5000;
+      z-index: 6500;
       display:none;
-      pointer-events: auto;
+      pointer-events:auto;
     }
 
     /* Mobile off-canvas sidebar */
@@ -197,7 +200,6 @@
         transform:translateX(-105%);
         transition:transform .2s ease;
         box-shadow:0 12px 30px rgba(0,0,0,.25);
-        border-right:1px solid var(--line);
         padding-top:12px;
       }
       #sidebar.open{ transform:translateX(0); }
@@ -207,7 +209,7 @@
       #closeSidebarBtn{ display:inline-flex; align-items:center; justify-content:center; }
     }
 
-    /* Marker styling (smaller like Estonia map) */
+    /* Marker styling */
     .leaflet-marker-icon{ overflow: visible !important; }
     .markerWrap{ position:relative; width:var(--mSize); height:var(--mSize); overflow:visible; }
     .markerWrap .crown{
@@ -238,7 +240,6 @@
       z-index:6;
     }
 
-    /* Warning banner */
     .bannerWarn{
       margin:8px 0 10px;
       padding:8px 10px;
@@ -308,9 +309,9 @@
           <button id="closeSidebarBtn" title="Close">✕</button>
         </div>
         <div class="small" style="margin-bottom:0;">
-          Combined map across <b>Finland, Sweden, Latvia, Lithuania, Poland, Belarus, Russia</b>.
-          <br/>Uses the <b>same avatars</b> as your other maps.
-          <br/>Markers show only if there is at least one record in the last 7 days.
+          Per-country markers are ON by default (matches country maps like Finland).
+          <br/>Counts are computed like your Finland map: fetch last 30 days (max 1000), then count last 7 days.
+          <br/>Markers are shown only when a country has &gt;0 records in last 7 days.
         </div>
       </div>
 
@@ -319,6 +320,7 @@
         <button class="btn" id="refreshFilteredBtn">Refresh filtered</button>
         <button class="btn secondary" id="refreshSelectedBtn">Refresh selected</button>
         <button class="btn danger" id="stopBtn">Stop</button>
+        <button class="btn on" id="perCountryBtn">Per-country: ON</button>
         <button class="btn secondary" id="exportBtn">Export</button>
         <button class="btn secondary" id="importBtn">Import</button>
         <button class="btn secondary" id="resetBtn">Reset EU cache</button>
@@ -336,18 +338,15 @@
   </div>
 </div>
 
-<!-- Fixed burger + backdrop for mobile -->
 <div id="openSidebarBtn" aria-label="Open menu"><span>≡</span></div>
 <div id="sidebarBackdrop" aria-hidden="true"></div>
 
-<!-- Settings modal -->
 <div id="modalBackdrop">
   <div id="modal">
     <h3>Europe map settings</h3>
     <div class="small" style="margin-top:0;">
       eBird token is prefilled as <span class="hintBadge">9s72dc2jcjlq</span> and stored locally.
       <br/>Species list: one per line (default = 376 species).
-      <br/><b>Note:</b> This page automatically imports avatars from your Estonia map localStorage if it detects them.
     </div>
     <div class="grid">
       <input id="tokenInput" type="text" placeholder="eBird token (X-eBirdApiToken)"/>
@@ -360,74 +359,7 @@
   </div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
-/* ========= Burger drag (mobile) ========= */
-function setupBurgerDrag(){
-  const btn = document.getElementById("openSidebarBtn");
-  if (!btn) return;
-
-  const LS_BURGER_POS = "bm_eu_burger_pos";
-  try{
-    const saved = JSON.parse(localStorage.getItem(LS_BURGER_POS) || "null");
-    if (saved && typeof saved.top === "number" && typeof saved.left === "number"){
-      document.documentElement.style.setProperty("--burger-top", saved.top + "px");
-      document.documentElement.style.setProperty("--burger-left", saved.left + "px");
-    }
-  }catch(e){}
-
-  let dragging = false;
-  let startX=0, startY=0, startTop=0, startLeft=0;
-  let holdTimer = null;
-
-  const onDown = (e)=>{
-    if (!window.matchMedia("(max-width: 900px)").matches) return;
-    const pt = e.touches ? e.touches[0] : e;
-    startX = pt.clientX; startY = pt.clientY;
-    const cs = getComputedStyle(document.documentElement);
-    startTop = parseFloat(cs.getPropertyValue("--burger-top")) || 88;
-    startLeft = parseFloat(cs.getPropertyValue("--burger-left")) || 12;
-
-    holdTimer = setTimeout(()=>{ dragging = true; btn.style.opacity = "0.85"; }, 350);
-  };
-
-  const onMove = (e)=>{
-    if (!holdTimer && !dragging) return;
-    if (!dragging) return;
-    const pt = e.touches ? e.touches[0] : e;
-    const dx = pt.clientX - startX;
-    const dy = pt.clientY - startY;
-
-    // clamp within viewport
-    const top = Math.max(56, Math.min(window.innerHeight - 80, startTop + dy));
-    const left = Math.max(8, Math.min(window.innerWidth - 80, startLeft + dx));
-
-    document.documentElement.style.setProperty("--burger-top", top + "px");
-    document.documentElement.style.setProperty("--burger-left", left + "px");
-    e.preventDefault();
-  };
-
-  const onUp = ()=>{
-    if (holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
-    if (dragging){
-      dragging = false;
-      btn.style.opacity = "";
-      const cs = getComputedStyle(document.documentElement);
-      const top = parseFloat(cs.getPropertyValue("--burger-top")) || 88;
-      const left = parseFloat(cs.getPropertyValue("--burger-left")) || 12;
-      localStorage.setItem(LS_BURGER_POS, JSON.stringify({ top, left }));
-    }
-  };
-
-  btn.addEventListener("touchstart", onDown, {passive:true});
-  btn.addEventListener("touchmove", onMove, {passive:false});
-  btn.addEventListener("touchend", onUp, {passive:true});
-  btn.addEventListener("mousedown", onDown);
-  window.addEventListener("mousemove", onMove, {passive:false});
-  window.addEventListener("mouseup", onUp);
-}
-setupBurgerDrag();
-
-</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 /* ========= Embedded detection ========= */
 (function(){
@@ -442,16 +374,14 @@ setupBurgerDrag();
 const REGIONS = ["FI","SE","LV","LT","PL","BY","RU"];
 const REGION_NAME = {FI:"Finland",SE:"Sweden",LV:"Latvia",LT:"Lithuania",PL:"Poland",BY:"Belarus",RU:"Russia"};
 
-/* ========= Shared storage keys ========= */
+/* ========= Storage keys ========= */
 const LS_AVATARS = "bm_global_avatars";
 const LS_CODES   = "bm_global_ebird_codes";
-
-/* ========= Europe cache ========= */
 const LS_POINTS  = "bm_eu_points";
-
-/* ========= Settings keys ========= */
 const LS_EBIRD_TOKEN = "bm_ebird_token";
 const LS_SPECIES     = "bm_species_list_global";
+const LS_PER_COUNTRY = "bm_eu_per_country";
+const LS_BURGER_POS  = "bm_eu_burger_pos";
 
 /* ========= Defaults ========= */
 const DEFAULT_EBIRD_TOKEN = "9s72dc2jcjlq";
@@ -754,52 +684,66 @@ const DEFAULT_EBIRD_CODES = {
 };
 
 /* ========= Limits ========= */
-const MAX_RESULTS = 10000;
+const MAX_RESULTS = 1000;   // match Finland map
+const BACK_DAYS = 30;       // match Finland map
+const REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
 const CONCURRENCY_DESKTOP = 6;
 const CONCURRENCY_MOBILE = 4;
-const REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
 
-/* ========= Storage load ========= */
+/* ========= Helpers ========= */
 function safeParseJSON(str){ try{ return JSON.parse(str); }catch{ return null; } }
 function isAvatarVal(v){ return typeof v === "string" && (v.startsWith("data:image") || v.startsWith("http") || v.startsWith("/") ); }
+function isRecent7(iso){
+  if(!iso) return false;
+  const d = new Date(iso);
+  if (isNaN(d)) return false;
+  return (Date.now() - d.getTime())/86400000 <= 7;
+}
+function borderColorByDate(iso){
+  if (!iso) return "#999";
+  const d = new Date(iso);
+  if (isNaN(d)) return "#f97316";
+  const diff = (Date.now() - d.getTime())/86400000;
+  return diff <= 7 ? "#16a34a" : "#f97316";
+}
+function showWarn(msg){
+  const el = document.getElementById("warnBanner");
+  if (!msg) { el.style.display="none"; el.textContent=""; return; }
+  el.textContent = msg;
+  el.style.display = "block";
+}
 
-/* Discover legacy avatar stores and merge into bm_global_avatars */
+/* ========= Avatars migration ========= */
 function migrateAvatars() {
   const current = safeParseJSON(localStorage.getItem(LS_AVATARS) || "{}") || {};
-  // if already has many, keep
   const curCount = Object.values(current).filter(isAvatarVal).length;
 
   let best = null;
   let bestCount = curCount;
 
-  // scan localStorage for any JSON object with lots of image-like values
   for (let i=0; i<localStorage.length; i++) {
     const k = localStorage.key(i);
     if (!k || k === LS_AVATARS) continue;
     const raw = localStorage.getItem(k);
-    if (!raw || raw.length < 10 || raw.length > 2_000_000) continue; // avoid huge
+    if (!raw || raw.length < 10 || raw.length > 2_000_000) continue;
     const obj = safeParseJSON(raw);
     if (!obj || typeof obj !== "object" || Array.isArray(obj)) continue;
     let c = 0;
-    for (const v of Object.values(obj)) {
-      if (isAvatarVal(v)) c++;
-    }
+    for (const v of Object.values(obj)) if (isAvatarVal(v)) c++;
     if (c > bestCount) { bestCount = c; best = obj; }
   }
 
-  const merged = { ...(best || {}), ...current }; // current overrides legacy
+  const merged = { ...(best || {}), ...current };
   const mergedCount = Object.values(merged).filter(isAvatarVal).length;
-
-  if (mergedCount > curCount) {
-    localStorage.setItem(LS_AVATARS, JSON.stringify(merged));
-  }
+  if (mergedCount > curCount) localStorage.setItem(LS_AVATARS, JSON.stringify(merged));
   return merged;
 }
 
+/* ========= Load storage ========= */
 let avatars = migrateAvatars();
+
 let EBIRD_CODES = (() => {
   const stored = safeParseJSON(localStorage.getItem(LS_CODES) || "{}") || {};
-  // Merge default codes with stored (stored wins)
   const merged = { ...DEFAULT_EBIRD_CODES, ...stored };
   localStorage.setItem(LS_CODES, JSON.stringify(merged));
   return merged;
@@ -822,51 +766,20 @@ if (SPECIES.length === 0) {
   localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
 }
 
+let perCountry = (localStorage.getItem(LS_PER_COUNTRY) || "1") === "1";
+
 function saveAll(){
   localStorage.setItem(LS_AVATARS, JSON.stringify(avatars));
   localStorage.setItem(LS_CODES, JSON.stringify(EBIRD_CODES));
   localStorage.setItem(LS_POINTS, JSON.stringify(points));
   localStorage.setItem(LS_EBIRD_TOKEN, EBIRD_TOKEN);
   localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
+  localStorage.setItem(LS_PER_COUNTRY, perCountry ? "1" : "0");
 }
 
 function preloadAvatars(){
   const urls = Object.values(avatars).filter(isAvatarVal);
-  urls.slice(0, 400).forEach(u => { const img = new Image(); img.decoding="async"; img.loading="eager"; img.src = u; });
-}
-
-/* ========= Helpers ========= */
-function isRecent7(iso){
-  if(!iso) return false;
-  const d = new Date(iso);
-  if (isNaN(d)) return false;
-  return (Date.now() - d.getTime())/86400000 <= 7;
-}
-function borderColorByDate(iso){
-  if (!iso) return "#999";
-  const d = new Date(iso);
-  if (isNaN(d)) return "#f97316";
-  const diff = (Date.now() - d.getTime())/86400000;
-  return diff <= 7 ? "#16a34a" : "#f97316";
-}
-function fmtMeta(p){
-  if(!p) return "No data yet";
-  const hasLoc = Number.isFinite(p.lat) && Number.isFinite(p.lon);
-  const parts = [];
-  if (hasLoc){
-    parts.push(`<span class="pillMini">lat</span>${Number(p.lat).toFixed(4)}`);
-    parts.push(`<span class="pillMini">lon</span>${Number(p.lon).toFixed(4)}`);
-  } else parts.push("No location yet");
-  if (p.t) parts.push(`<span class="pillMini">date</span>${p.t}`);
-  if (p.region) parts.push(`<span class="pillMini">region</span>${p.region}`);
-  if ((p.occ7===0) || Number.isFinite(Number(p.occ7))) parts.push(`<span class="pillMini">7d</span>${p.occ7}`);
-  return parts.join(" ");
-}
-function showWarn(msg){
-  const el = document.getElementById("warnBanner");
-  if (!msg) { el.style.display="none"; el.textContent=""; return; }
-  el.textContent = msg;
-  el.style.display = "block";
+  urls.slice(0, 500).forEach(u => { const img = new Image(); img.decoding="async"; img.loading="eager"; img.src = u; });
 }
 
 /* ========= Map ========= */
@@ -887,31 +800,122 @@ function makeIcon(url, border, hasCrown, occ7, isMigr){
   return L.divIcon({ html, className:"", iconSize:[size,size], iconAnchor:[size/2, size/2], popupAnchor:[0, -size/2] });
 }
 
-function updateMarker(key){
-  if (markers.has(key)) { map.removeLayer(markers.get(key)); markers.delete(key); }
-  const p = points[key]; if (!p) return;
-  if (p.visible === false) return;
-  if (!Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return;
-  if (!isRecent7(p.t)) return;
+/* ========= Meta text ========= */
+function fmtMeta(p){
+  if(!p) return "No data yet";
 
-  const border = borderColorByDate(p.t);
+  const parts = [];
+  const hasLoc = Number.isFinite(p.lat) && Number.isFinite(p.lon);
+  if (hasLoc) {
+    parts.push(`<span class="pillMini">lat</span>${Number(p.lat).toFixed(4)}`);
+    parts.push(`<span class="pillMini">lon</span>${Number(p.lon).toFixed(4)}`);
+  } else {
+    parts.push("No location yet");
+  }
+
+  if (p.t) parts.push(`<span class="pillMini">last</span>${p.t}`);
+  if (p.region) parts.push(`<span class="pillMini">country</span>${p.region}`);
+  if ((p.occ7===0) || Number.isFinite(Number(p.occ7))) parts.push(`<span class="pillMini">7d total</span>${p.occ7}`);
+
+  if (p.regions && typeof p.regions === "object") {
+    const chips = [];
+    for (const [rg, d] of Object.entries(p.regions)) {
+      if (!d || !Number.isFinite(Number(d.occ7))) continue;
+      if (Number(d.occ7) <= 0) continue;
+      chips.push(`${rg}:${d.occ7}`);
+    }
+    if (chips.length) parts.push(`<span class="pillMini">countries</span>${chips.join(" · ")}`);
+  }
+  return parts.join(" ");
+}
+
+/* ========= Markers ========= */
+function clearSpeciesMarkers(species){
+  for (const [k, m] of Array.from(markers.entries())) {
+    if (k === species || k.startsWith(species + "@@")) {
+      try { map.removeLayer(m); } catch(e){}
+      markers.delete(k);
+    }
+  }
+}
+
+function updateMarker(species){
+  clearSpeciesMarkers(species);
+
+  const p = points[species]; if (!p) return;
+  if (p.visible === false) return;
+
+  const regionsObj = (p.regions && typeof p.regions === "object") ? p.regions : null;
+  if (!regionsObj) return;
+
   const hasCrown = !!(p.rarity && String(p.rarity).trim());
-  let occ7 = (p.occ7!==undefined && p.occ7!==null && p.occ7!=="") ? Number(p.occ7) : undefined;
-  if (!Number.isFinite(occ7)) occ7 = undefined;
   const isMigr = !!p.migration;
 
-  const icon = makeIcon(avatars[key] || "", border, hasCrown, occ7, isMigr);
+  // determine latest overall (by last seen date)
+  let latestRegion = "";
+  let latestDate = "";
+  for (const [rg, d] of Object.entries(regionsObj)) {
+    const dt = (d && d.t) ? String(d.t) : "";
+    if (dt && (!latestDate || dt > latestDate)) {
+      latestDate = dt;
+      latestRegion = rg;
+    }
+  }
 
-  const where = p.loc ? `<br><small>location: ${p.loc}</small>` : "";
-  const when  = p.t ? `<br><small>date: ${p.t}</small>` : "";
-  const src   = p.region ? `<br><small>source: eBird ${p.region} (${REGION_NAME[p.region]||p.region})</small>` : "<br><small>source: eBird</small>";
-  const occLn = ((occ7===0)||Number.isFinite(occ7)) ? `<br><small>7d records: ${occ7}${(occ7>=MAX_RESULTS?" (capped)":"")}</small>` : "";
-  const migr  = `<br><small>migration: ${isMigr ? "yes" : "no"}</small>`;
-  const rarLn = (p.rarity ? `<br><small>rarity: ${p.rarity}</small>` : "");
+  let latestMarker = null;
 
-  const m = L.marker([p.lat, p.lon], { icon }).addTo(map)
-    .bindPopup(`<b>${key}</b>${when}${where}${src}${occLn}${migr}${rarLn}`);
-  markers.set(key, m);
+  if (perCountry) {
+    for (const [rg, d] of Object.entries(regionsObj)) {
+      if (!d) continue;
+      if (!Number.isFinite(d.lat) || !Number.isFinite(d.lon)) continue;
+
+      // show markers only if occ7>0
+      const occ7 = Number(d.occ7 || 0);
+      if (!(occ7 > 0)) continue;
+
+      const border = borderColorByDate(d.t);
+      const icon = makeIcon(avatars[species] || "", border, hasCrown, occ7, isMigr);
+
+      const where = d.loc ? `<br><small>location: ${d.loc}</small>` : "";
+      const when  = d.t ? `<br><small>last seen: ${d.t}</small>` : "";
+      const srcLn = `<br><small>source: eBird ${rg} (${REGION_NAME[rg]||rg})</small>`;
+      const occLn = `<br><small>7d records: ${occ7} (computed from last ${BACK_DAYS}d)</small>`;
+      const migr  = `<br><small>migration: ${isMigr ? "yes" : "no"}</small>`;
+      const rarLn = (p.rarity ? `<br><small>rarity: ${p.rarity}</small>` : "");
+
+      const markerKey = species + "@@" + rg;
+      const m = L.marker([d.lat, d.lon], { icon }).addTo(map)
+        .bindPopup(`<b>${species}</b>${when}${where}${srcLn}${occLn}${migr}${rarLn}`);
+      markers.set(markerKey, m);
+
+      if (rg === latestRegion) latestMarker = m;
+    }
+  } else {
+    // single marker: show latest region that has occ7>0
+    let best = null;
+    for (const [rg, d] of Object.entries(regionsObj)) {
+      const occ7 = Number(d?.occ7 || 0);
+      if (!(occ7 > 0)) continue;
+      if (!best || (d.t && d.t > best.t)) best = { rg, ...d };
+    }
+    if (best) {
+      const border = borderColorByDate(best.t);
+      const icon = makeIcon(avatars[species] || "", border, hasCrown, Number(best.occ7||0), isMigr);
+      const where = best.loc ? `<br><small>location: ${best.loc}</small>` : "";
+      const when  = best.t ? `<br><small>last seen: ${best.t}</small>` : "";
+      const srcLn = `<br><small>source: eBird ${best.rg} (${REGION_NAME[best.rg]||best.rg})</small>`;
+      const occLn = `<br><small>7d records (country): ${best.occ7}</small>`;
+      const migr  = `<br><small>migration: ${isMigr ? "yes" : "no"}</small>`;
+      const rarLn = (p.rarity ? `<br><small>rarity: ${p.rarity}</small>` : "");
+
+      const m = L.marker([best.lat, best.lon], { icon }).addTo(map)
+        .bindPopup(`<b>${species}</b>${when}${where}${srcLn}${occLn}${migr}${rarLn}`);
+      latestMarker = m;
+      markers.set(species + "@@" + best.rg, m);
+    }
+  }
+
+  if (latestMarker) markers.set(species, latestMarker);
 }
 
 /* ========= UI ========= */
@@ -919,6 +923,9 @@ const listEl = document.getElementById("list");
 const filterBox = document.getElementById("filterBox");
 const progressLine = document.getElementById("progressLine");
 const statusText = document.getElementById("statusText");
+const perCountryBtn = document.getElementById("perCountryBtn");
+
+function setStatus(s){ statusText.textContent = s || ""; }
 
 function rowHTML(name){
   const p = points[name] || {};
@@ -943,7 +950,6 @@ function rowHTML(name){
       <div class="avatar" style="background-image:url('${avatars[name]||""}');border-color:${bcol}"></div>
       <div>
         <div class="${nameCls}" title="Tap to hide/show marker">${name}</div>
-
         <div class="controlsRow">
           <input class="code" type="text" placeholder="eBird code" value="${codeVal}" data-code/>
           <button class="btn secondary" data-fetch>Fetch</button>
@@ -954,7 +960,6 @@ function rowHTML(name){
           <label class="chk"><input type="checkbox" data-auto ${auto?"checked":""}/> auto</label>
           <label class="chk"><input type="checkbox" data-sel ${p.selected?"checked":""}/> select</label>
         </div>
-
         <div class="meta">${fmtMeta(p)}</div>
       </div>
     </div>`;
@@ -965,6 +970,7 @@ function render(){
   listEl.innerHTML = "";
   SPECIES.filter(n => n.toLowerCase().includes(q)).forEach(n => listEl.insertAdjacentHTML("beforeend", rowHTML(n)));
   wireRows();
+  // update markers for visible list quickly
   SPECIES.forEach(updateMarker);
 }
 
@@ -983,71 +989,61 @@ function wireRows(){
     const autoEl = row.querySelector("[data-auto]");
     const selEl = row.querySelector("[data-sel]");
 
-    if (nameEl){
-      nameEl.addEventListener("click", ()=>{
-        p.visible = (p.visible === false) ? true : false;
-        saveAll(); updateMarker(key); render();
-      });
-    }
-    if (rarityEl){
-      rarityEl.addEventListener("change", ()=>{
-        p.rarity = rarityEl.value || "";
-        saveAll(); updateMarker(key); render();
-      });
-    }
-    if (migBtn){
-      migBtn.addEventListener("click", ()=>{
-        p.migration = !p.migration;
-        saveAll(); updateMarker(key); render();
-      });
-    }
-    if (selEl){
-      selEl.addEventListener("change", ()=>{
-        p.selected = !!selEl.checked;
+    if (nameEl) nameEl.addEventListener("click", ()=>{
+      p.visible = (p.visible === false) ? true : false;
+      saveAll(); updateMarker(key); render();
+    });
+
+    if (rarityEl) rarityEl.addEventListener("change", ()=>{
+      p.rarity = rarityEl.value || "";
+      saveAll(); updateMarker(key); render();
+    });
+
+    if (migBtn) migBtn.addEventListener("click", ()=>{
+      p.migration = !p.migration;
+      saveAll(); updateMarker(key); render();
+    });
+
+    if (selEl) selEl.addEventListener("change", ()=>{
+      p.selected = !!selEl.checked;
+      saveAll();
+    });
+
+    if (autoEl) autoEl.addEventListener("change", ()=>{
+      p.ebirdAuto = !!autoEl.checked;
+      saveAll();
+    });
+
+    if (fetchBtn) fetchBtn.addEventListener("click", ()=>{
+      const v = (codeEl.value||"").trim();
+      if (v) {
+        p.ebirdCode = v;
+        EBIRD_CODES[key] = v;
         saveAll();
-      });
-    }
-    if (autoEl){
-      autoEl.addEventListener("change", ()=>{
-        p.ebirdAuto = !!autoEl.checked;
-        saveAll();
-      });
-    }
-    if (fetchBtn){
-      fetchBtn.addEventListener("click", ()=>{
-        const v = (codeEl.value||"").trim();
-        if (v){
-          p.ebirdCode = v;
-          EBIRD_CODES[key] = v;
-          saveAll();
-        }
-        fetchEurope(key, true);
-      });
-    }
-    if (openBtn){
-      openBtn.addEventListener("click", ()=>{
-        if (markers.has(key)){
-          const m = markers.get(key);
-          map.setView(m.getLatLng(), Math.max(map.getZoom(), 8));
-          m.openPopup();
-          closeSidebarOnMobile();
-        } else if (Number.isFinite(p.lat) && Number.isFinite(p.lon)){
-          map.setView([p.lat,p.lon], 8);
-          closeSidebarOnMobile();
-        } else {
-          alert("No marker for last 7 days yet.");
-        }
-      });
-    }
-    if (avatarBtn){
-      avatarBtn.addEventListener("click", ()=> setAvatarPrompt(key));
-    }
+      }
+      fetchEurope(key, true);
+    });
+
+    if (openBtn) openBtn.addEventListener("click", ()=>{
+      if (markers.has(key)) {
+        const m = markers.get(key);
+        map.setView(m.getLatLng(), Math.max(map.getZoom(), 6));
+        m.openPopup();
+        closeSidebarOnMobile();
+      } else if (Number.isFinite(p.lat) && Number.isFinite(p.lon)) {
+        map.setView([p.lat,p.lon], 6);
+        closeSidebarOnMobile();
+      } else {
+        alert("No marker yet. Fetch first.");
+      }
+    });
+
+    if (avatarBtn) avatarBtn.addEventListener("click", ()=> setAvatarPrompt(key));
   });
 }
 
-/* ========= eBird fetch ========= */
+/* ========= eBird fetch (match Finland logic) ========= */
 let abortController = null;
-function setStatus(s){ statusText.textContent = s || ""; }
 
 async function fetchJSON(url, signal){
   const res = await fetch(url, { headers: { "X-eBirdApiToken": EBIRD_TOKEN }, signal });
@@ -1063,39 +1059,70 @@ async function fetchEurope(speciesName, force=false, signal=null){
   if (!force && p.fetchedAt && (Date.now() - p.fetchedAt) < REFRESH_COOLDOWN_MS) return;
 
   const urls = REGIONS.map(r =>
-    `https://api.ebird.org/v2/data/obs/${r}/recent/${encodeURIComponent(code)}?back=7&maxResults=${MAX_RESULTS}&_ts=${Date.now()}`
+    `https://api.ebird.org/v2/data/obs/${r}/recent/${encodeURIComponent(code)}?back=${BACK_DAYS}&maxResults=${MAX_RESULTS}&_ts=${Date.now()}`
   );
 
   const settled = await Promise.allSettled(urls.map(u => fetchJSON(u, signal)));
-  const combined = [];
+
+  const regionsData = {};
+  let total7 = 0;
+
+  // latest overall by last-seen date (arr[0])
+  let latest = { t:"", region:"", lat:null, lon:null, loc:"" };
+
+  const now = Date.now();
+
   settled.forEach((s, idx)=>{
-    if (s.status === "fulfilled" && Array.isArray(s.value)){
-      const region = REGIONS[idx];
-      s.value.forEach(o => { o.__region = region; combined.push(o); });
+    const region = REGIONS[idx];
+    if (s.status !== "fulfilled" || !Array.isArray(s.value) || s.value.length === 0) return;
+
+    const arr = s.value.slice();
+    arr.sort((a,b)=> String(b.obsDt||'').localeCompare(String(a.obsDt||'')));
+
+    const occ7 = arr.reduce((acc, it)=>{
+      const dt = String(it.obsDt||'').slice(0,10);
+      const d = new Date(dt);
+      if (!dt || isNaN(d)) return acc;
+      const diffDays = (now - d.getTime())/86400000;
+      return diffDays <= 7 ? (acc+1) : acc;
+    }, 0);
+
+    const o = arr[0];
+    const t = String(o.obsDt||"").slice(0,10);
+    const lat = +o.lat, lon = +o.lng;
+
+    regionsData[region] = {
+      lat, lon,
+      t,
+      loc: o.locName || "",
+      occ7
+    };
+
+    total7 += occ7;
+
+    if (t && (!latest.t || t > latest.t)) {
+      latest = { t, region, lat, lon, loc: (o.locName || "") };
     }
   });
 
-  const recent = combined.filter(o => isRecent7(String(o.obsDt||"").slice(0,10)));
-  const occ7 = recent.length;
-
-  p.occ7 = occ7;
   p.fetchedAt = Date.now();
+  p.occ7 = total7;
+  p.regions = regionsData;
 
-  if (occ7 === 0){
-    p.lat = null; p.lon = null; p.t = ""; p.loc=""; p.region="";
-    if (typeof p.visible !== "boolean") p.visible = true;
-    saveAll(); updateMarker(speciesName); render();
-    return;
+  if (latest.t) {
+    p.t = latest.t;
+    p.region = latest.region;
+    p.lat = latest.lat;
+    p.lon = latest.lon;
+    p.loc = latest.loc;
+  } else {
+    p.t = "";
+    p.region = "";
+    p.lat = null;
+    p.lon = null;
+    p.loc = "";
   }
 
-  recent.sort((a,b)=> String(b.obsDt||"").localeCompare(String(a.obsDt||"")));
-  const o = recent[0];
-
-  p.lat = +o.lat;
-  p.lon = +o.lng;
-  p.t   = String(o.obsDt||"").slice(0,10);
-  p.loc = o.locName || "";
-  p.region = o.__region || "";
   if (typeof p.visible !== "boolean") p.visible = true;
 
   saveAll();
@@ -1105,7 +1132,7 @@ async function fetchEurope(speciesName, force=false, signal=null){
 
 async function runPool(tasks, limit){
   const executing = new Set();
-  for (const task of tasks){
+  for (const task of tasks) {
     const pr = task().finally(()=> executing.delete(pr));
     executing.add(pr);
     if (executing.size >= limit) await Promise.race(executing);
@@ -1114,7 +1141,7 @@ async function runPool(tasks, limit){
 }
 
 function stopRefresh(){
-  if (abortController){
+  if (abortController) {
     abortController.abort();
     abortController = null;
     setStatus("Stopped.");
@@ -1134,15 +1161,14 @@ async function refreshKeys(keys, force=true){
 
   let done = 0;
   const total = keys.length;
-
   const isMobile = window.matchMedia("(max-width: 900px)").matches;
   const conc = isMobile ? CONCURRENCY_MOBILE : CONCURRENCY_DESKTOP;
 
   const tasks = keys.map(k => async ()=>{
     if (signal.aborted) return;
-    try{ await fetchEurope(k, force, signal); }
-    catch(e){ console.warn("Fetch failed", k, e); }
-    finally{
+    try { await fetchEurope(k, force, signal); }
+    catch(e) { console.warn("Fetch failed", k, e); }
+    finally {
       done++;
       progressLine.textContent = `Refreshing: ${done}/${total}`;
       setStatus(done === total ? "Done." : `Refreshing ${done}/${total}`);
@@ -1153,7 +1179,7 @@ async function refreshKeys(keys, force=true){
   setStatus(`Refreshing 0/${total}`);
   await runPool(tasks, conc);
 
-  if (!signal.aborted){
+  if (!signal.aborted) {
     progressLine.textContent = `Done. Refreshed ${total} species.`;
     setStatus("Done.");
   }
@@ -1163,7 +1189,7 @@ function refreshFiltered(){
   const q = (filterBox.value||"").toLowerCase().trim();
   const keys = SPECIES.filter(n => n.toLowerCase().includes(q) && (EBIRD_CODES[n] || (points[n]||{}).ebirdCode));
   if (keys.length === 0) {
-    showWarn("No species with eBird codes in the current filter. Add codes (or send more screenshots) and try again.");
+    showWarn("No species with eBird codes in the current filter.");
     return;
   }
   refreshKeys(keys, true);
@@ -1176,7 +1202,7 @@ function refreshSelected(){
 
 /* ========= Avatar prompt ========= */
 function setAvatarPrompt(species){
-  const url = prompt(`Avatar URL for: ${species}\n(Stored in bm_global_avatars so it’s shared)`, avatars[species] || "");
+  const url = prompt(`Avatar URL for: ${species}`, avatars[species] || "");
   if (url === null) return;
   const v = url.trim();
   if (!v) delete avatars[species];
@@ -1184,7 +1210,7 @@ function setAvatarPrompt(species){
   saveAll(); preloadAvatars(); render();
 }
 
-/* ========= Sidebar open/close (mobile) ========= */
+/* ========= Sidebar open/close ========= */
 const sidebar = document.getElementById("sidebar");
 const openBtn = document.getElementById("openSidebarBtn");
 const closeBtn = document.getElementById("closeSidebarBtn");
@@ -1210,8 +1236,83 @@ openBtn.addEventListener("click", ()=>{
 });
 closeBtn.addEventListener("click", closeSidebar);
 backdrop.addEventListener("click", closeSidebar);
-
 window.addEventListener("resize", ()=> setTimeout(()=> map.invalidateSize(true), 150));
+
+/* ========= Burger drag ========= */
+function setupBurgerDrag(){
+  const btn = document.getElementById("openSidebarBtn");
+  if (!btn) return;
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS_BURGER_POS) || "null");
+    if (saved && typeof saved.top === "number" && typeof saved.left === "number") {
+      document.documentElement.style.setProperty("--burger-top", saved.top + "px");
+      document.documentElement.style.setProperty("--burger-left", saved.left + "px");
+    }
+  } catch(e){}
+
+  let dragging = false;
+  let startX=0, startY=0, startTop=0, startLeft=0;
+  let holdTimer = null;
+
+  const onDown = (e)=>{
+    if (!window.matchMedia("(max-width: 900px)").matches) return;
+    const pt = e.touches ? e.touches[0] : e;
+    startX = pt.clientX; startY = pt.clientY;
+    const cs = getComputedStyle(document.documentElement);
+    startTop = parseFloat(cs.getPropertyValue("--burger-top")) || 88;
+    startLeft = parseFloat(cs.getPropertyValue("--burger-left")) || 12;
+    holdTimer = setTimeout(()=>{ dragging = true; btn.style.opacity = "0.85"; }, 350);
+  };
+
+  const onMove = (e)=>{
+    if (!dragging) return;
+    const pt = e.touches ? e.touches[0] : e;
+    const dx = pt.clientX - startX;
+    const dy = pt.clientY - startY;
+
+    const top = Math.max(56, Math.min(window.innerHeight - 80, startTop + dy));
+    const left = Math.max(8, Math.min(window.innerWidth - 80, startLeft + dx));
+
+    document.documentElement.style.setProperty("--burger-top", top + "px");
+    document.documentElement.style.setProperty("--burger-left", left + "px");
+    e.preventDefault();
+  };
+
+  const onUp = ()=>{
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+    if (dragging) {
+      dragging = false;
+      btn.style.opacity = "";
+      const cs = getComputedStyle(document.documentElement);
+      const top = parseFloat(cs.getPropertyValue("--burger-top")) || 88;
+      const left = parseFloat(cs.getPropertyValue("--burger-left")) || 12;
+      localStorage.setItem(LS_BURGER_POS, JSON.stringify({ top, left }));
+    }
+  };
+
+  btn.addEventListener("touchstart", onDown, {passive:true});
+  btn.addEventListener("touchmove", onMove, {passive:false});
+  btn.addEventListener("touchend", onUp, {passive:true});
+  btn.addEventListener("mousedown", onDown);
+  window.addEventListener("mousemove", onMove, {passive:false});
+  window.addEventListener("mouseup", onUp);
+}
+setupBurgerDrag();
+
+/* ========= Per-country toggle ========= */
+function syncPerCountryBtn(){
+  perCountryBtn.textContent = perCountry ? "Per-country: ON" : "Per-country: OFF";
+  perCountryBtn.className = "btn " + (perCountry ? "on" : "off");
+}
+perCountryBtn.addEventListener("click", ()=>{
+  perCountry = !perCountry;
+  saveAll();
+  syncPerCountryBtn();
+  // redraw markers
+  SPECIES.forEach(updateMarker);
+});
+syncPerCountryBtn();
 
 /* ========= Export/Import/Reset ========= */
 document.getElementById("exportBtn").addEventListener("click", ()=>{
@@ -1229,14 +1330,16 @@ document.getElementById("importBtn").addEventListener("click", async ()=>{
   pick.onchange = async ()=>{
     const f = pick.files[0];
     if (!f) return;
-    try{
+    try {
       const obj = JSON.parse(await f.text());
       if (obj.avatars) avatars = obj.avatars;
       if (obj.EBIRD_CODES) EBIRD_CODES = { ...DEFAULT_EBIRD_CODES, ...obj.EBIRD_CODES, ...EBIRD_CODES };
       if (obj.points) points = obj.points;
       if (Array.isArray(obj.SPECIES)) SPECIES = obj.SPECIES;
       saveAll(); preloadAvatars(); render();
-    }catch{ alert("Import failed: invalid JSON"); }
+    } catch(e) {
+      alert("Import failed: invalid JSON");
+    }
   };
   pick.click();
 });
@@ -1278,88 +1381,18 @@ filterBox.addEventListener("input", render);
 preloadAvatars();
 render();
 
-// Auto-open sidebar on desktop, keep closed on mobile
+// Sidebar defaults
 if (!window.matchMedia("(max-width: 900px)").matches) {
   sidebar.classList.add("open");
 } else {
   closeSidebar();
 }
 
-// Auto refresh a small starter set (fast feedback) if we have codes
+// Starter refresh (quick feedback)
 (function(){
   const withCodes = SPECIES.filter(s => !!EBIRD_CODES[s]);
-  if (withCodes.length >= 10) {
-    refreshKeys(withCodes.slice(0, 35), false);
-  }
+  if (withCodes.length >= 10) refreshKeys(withCodes.slice(0, 25), false);
 })();
-
-
-/* ========= Burger drag (mobile) ========= */
-function setupBurgerDrag(){
-  const btn = document.getElementById("openSidebarBtn");
-  if (!btn) return;
-
-  const LS_BURGER_POS = "bm_eu_burger_pos";
-  try{
-    const saved = JSON.parse(localStorage.getItem(LS_BURGER_POS) || "null");
-    if (saved && typeof saved.top === "number" && typeof saved.left === "number"){
-      document.documentElement.style.setProperty("--burger-top", saved.top + "px");
-      document.documentElement.style.setProperty("--burger-left", saved.left + "px");
-    }
-  }catch(e){}
-
-  let dragging = false;
-  let startX=0, startY=0, startTop=0, startLeft=0;
-  let holdTimer = null;
-
-  const onDown = (e)=>{
-    if (!window.matchMedia("(max-width: 900px)").matches) return;
-    const pt = e.touches ? e.touches[0] : e;
-    startX = pt.clientX; startY = pt.clientY;
-    const cs = getComputedStyle(document.documentElement);
-    startTop = parseFloat(cs.getPropertyValue("--burger-top")) || 88;
-    startLeft = parseFloat(cs.getPropertyValue("--burger-left")) || 12;
-
-    holdTimer = setTimeout(()=>{ dragging = true; btn.style.opacity = "0.85"; }, 350);
-  };
-
-  const onMove = (e)=>{
-    if (!holdTimer && !dragging) return;
-    if (!dragging) return;
-    const pt = e.touches ? e.touches[0] : e;
-    const dx = pt.clientX - startX;
-    const dy = pt.clientY - startY;
-
-    // clamp within viewport
-    const top = Math.max(56, Math.min(window.innerHeight - 80, startTop + dy));
-    const left = Math.max(8, Math.min(window.innerWidth - 80, startLeft + dx));
-
-    document.documentElement.style.setProperty("--burger-top", top + "px");
-    document.documentElement.style.setProperty("--burger-left", left + "px");
-    e.preventDefault();
-  };
-
-  const onUp = ()=>{
-    if (holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
-    if (dragging){
-      dragging = false;
-      btn.style.opacity = "";
-      const cs = getComputedStyle(document.documentElement);
-      const top = parseFloat(cs.getPropertyValue("--burger-top")) || 88;
-      const left = parseFloat(cs.getPropertyValue("--burger-left")) || 12;
-      localStorage.setItem(LS_BURGER_POS, JSON.stringify({ top, left }));
-    }
-  };
-
-  btn.addEventListener("touchstart", onDown, {passive:true});
-  btn.addEventListener("touchmove", onMove, {passive:false});
-  btn.addEventListener("touchend", onUp, {passive:true});
-  btn.addEventListener("mousedown", onDown);
-  window.addEventListener("mousemove", onMove, {passive:false});
-  window.addEventListener("mouseup", onUp);
-}
-setupBurgerDrag();
-
 </script>
 </body>
 </html>

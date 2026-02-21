@@ -35,42 +35,6 @@ export type Database = {
         }
         Relationships: []
       }
-      europe_snapshot: {
-        Row: {
-          created_at: string
-          generated_at: string | null
-          id: number
-          last_error: string | null
-          points_json: Json
-          progress_done: number
-          progress_total: number
-          status: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          generated_at?: string | null
-          id?: number
-          last_error?: string | null
-          points_json?: Json
-          progress_done?: number
-          progress_total?: number
-          status?: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          generated_at?: string | null
-          id?: number
-          last_error?: string | null
-          points_json?: Json
-          progress_done?: number
-          progress_total?: number
-          status?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
       events: {
         Row: {
           all_day: boolean

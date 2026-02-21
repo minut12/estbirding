@@ -336,8 +336,6 @@
       </div>
 
       <div id="controls">
-        <button class="btn" id="loadSnapshotBtn">📥 Laadi ülesvõte</button>
-        <button class="btn secondary" id="triggerRefreshBtn">🔄 Värskenda andmeid</button>
         <button class="btn secondary" id="settingsBtn">Settings</button>
         <button class="btn" id="refreshFilteredBtn">Refresh filtered</button>
         <button class="btn secondary" id="refreshSelectedBtn">Refresh selected</button>
@@ -372,11 +370,6 @@
       <br/>Species list: one per line (default = 376 species).
     </div>
     <div class="grid">
-      <label style="font-size:13px;font-weight:600;">Data source</label>
-      <select id="dataSourceSelect" style="padding:8px 12px;border:1px solid #d1d5db;border-radius:12px;font-size:14px;">
-        <option value="snapshot">Cloud snapshot (default)</option>
-        <option value="ebird">Live eBird (manual)</option>
-      </select>
       <input id="tokenInput" type="text" placeholder="eBird token (X-eBirdApiToken)"/>
       <textarea id="speciesInput" placeholder="One species per line (Estonian names)..."></textarea>
     </div>
@@ -410,8 +403,6 @@ const LS_EBIRD_TOKEN = "bm_ebird_token";
 const LS_SPECIES     = "bm_species_list_global";
 const LS_PER_COUNTRY = "bm_eu_per_country";
 const LS_BURGER_POS  = "bm_eu_burger_pos";
-const LS_DATA_SOURCE = "bm_eu_data_source"; // "snapshot" | "ebird"
-const SNAPSHOT_URL = "https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/europe-snapshot";
 
 /* ========= Defaults ========= */
 const DEFAULT_EBIRD_TOKEN = "9s72dc2jcjlq";
@@ -800,7 +791,6 @@ if (SPECIES.length === 0) {
 }
 
 let perCountry = (localStorage.getItem(LS_PER_COUNTRY) || "1") === "1";
-let dataSource = localStorage.getItem(LS_DATA_SOURCE) || "snapshot";
 
 function saveAll(){
   localStorage.setItem(LS_AVATARS, JSON.stringify(avatars));
@@ -809,7 +799,6 @@ function saveAll(){
   localStorage.setItem(LS_EBIRD_TOKEN, EBIRD_TOKEN);
   localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
   localStorage.setItem(LS_PER_COUNTRY, perCountry ? "1" : "0");
-  localStorage.setItem(LS_DATA_SOURCE, dataSource);
 }
 
 function preloadAvatars(){
@@ -1400,12 +1389,7 @@ const settingsBtn = document.getElementById("settingsBtn");
 const tokenInput = document.getElementById("tokenInput");
 const speciesInput = document.getElementById("speciesInput");
 
-function openSettings(){
-  tokenInput.value = EBIRD_TOKEN || "";
-  speciesInput.value = SPECIES.join("\n");
-  document.getElementById("dataSourceSelect").value = dataSource;
-  modalBackdrop.style.display = "flex";
-}
+function openSettings(){ tokenInput.value = EBIRD_TOKEN || ""; speciesInput.value = SPECIES.join("\n"); modalBackdrop.style.display = "flex"; }
 function closeSettings(){ modalBackdrop.style.display = "none"; }
 
 settingsBtn.addEventListener("click", openSettings);
@@ -1414,7 +1398,6 @@ modalBackdrop.addEventListener("click", (e)=>{ if (e.target === modalBackdrop) c
 
 document.getElementById("modalSave").addEventListener("click", ()=>{
   EBIRD_TOKEN = (tokenInput.value||"").trim() || DEFAULT_EBIRD_TOKEN;
-  dataSource = document.getElementById("dataSourceSelect").value || "snapshot";
   const lines = (speciesInput.value||"").split("\n").map(s=>s.trim()).filter(Boolean);
   if (lines.length) SPECIES = lines;
   saveAll(); render(); closeSettings();
@@ -1425,107 +1408,6 @@ document.getElementById("refreshFilteredBtn").addEventListener("click", refreshF
 document.getElementById("refreshSelectedBtn").addEventListener("click", refreshSelected);
 document.getElementById("stopBtn").addEventListener("click", ()=>{ AUTO_SYNC_CANCELLED = true; stopRefresh(); });
 filterBox.addEventListener("input", render);
-
-/* ========= Snapshot loading ========= */
-async function loadSnapshot(){
-  progressLine.textContent = "Loading snapshot…";
-  setStatus("Loading snapshot…");
-  try {
-    const res = await fetch(SNAPSHOT_URL);
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const snap = await res.json();
-
-    if (snap.status === "running") {
-      progressLine.textContent = `Snapshot refreshing on server… ${snap.progress_done||0}/${snap.progress_total||"?"}`;
-      setStatus("Server refresh in progress");
-      // Still load whatever points_json is available
-    }
-
-    if (snap.points_json && typeof snap.points_json === "object") {
-      const snapPoints = snap.points_json;
-      // Merge snapshot data into points, preserving local overrides (rarity, migration, visible, avatars, ebirdCode)
-      for (const [name, data] of Object.entries(snapPoints)) {
-        const existing = points[name] || {};
-        points[name] = {
-          ...data,
-          // preserve local user overrides
-          rarity: existing.rarity || "",
-          migration: existing.migration || false,
-          visible: typeof existing.visible === "boolean" ? existing.visible : true,
-          ebirdCode: existing.ebirdCode || EBIRD_CODES[name] || "",
-          ebirdAuto: existing.ebirdAuto || false,
-          selected: existing.selected || false,
-        };
-      }
-      saveAll();
-      SPECIES.forEach(updateMarker);
-      render();
-
-      const genAt = snap.generated_at ? new Date(snap.generated_at).toLocaleString() : "unknown";
-      const count = Object.keys(snapPoints).length;
-      progressLine.textContent = `Snapshot loaded: ${count} species (generated ${genAt})`;
-      setStatus("Snapshot loaded");
-    } else {
-      progressLine.textContent = "Snapshot empty. Trigger a server refresh.";
-      setStatus("Empty snapshot");
-    }
-  } catch(e) {
-    console.error("Snapshot load failed:", e);
-    progressLine.textContent = "Snapshot load failed: " + e.message;
-    setStatus("Snapshot error");
-  }
-}
-
-async function triggerServerRefresh(){
-  progressLine.textContent = "Triggering server refresh…";
-  setStatus("Triggering refresh…");
-  try {
-    const res = await fetch(SNAPSHOT_URL, { method: "POST" });
-    const json = await res.json();
-    if (res.status === 429) {
-      progressLine.textContent = "Cooldown: try again in " + (json.retry_after_seconds || "?") + "s";
-      setStatus("Cooldown");
-      return;
-    }
-    if (res.status === 409) {
-      progressLine.textContent = "Server refresh already running. Will poll…";
-    } else {
-      progressLine.textContent = "Server refresh started. Polling…";
-    }
-    setStatus("Refreshing…");
-    // Poll until done
-    pollSnapshot();
-  } catch(e) {
-    progressLine.textContent = "Trigger failed: " + e.message;
-    setStatus("Error");
-  }
-}
-
-let pollTimer = null;
-function pollSnapshot(){
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(async ()=>{
-    try {
-      const res = await fetch(SNAPSHOT_URL);
-      const snap = await res.json();
-      if (snap.status === "running") {
-        progressLine.textContent = `Server refreshing… ${snap.progress_done||0}/${snap.progress_total||"?"}`;
-      } else {
-        clearInterval(pollTimer);
-        pollTimer = null;
-        await loadSnapshot();
-      }
-    } catch(e) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-      progressLine.textContent = "Poll failed: " + e.message;
-    }
-  }, 5000);
-}
-
-/* ========= Button wiring ========= */
-document.getElementById("loadSnapshotBtn").addEventListener("click", loadSnapshot);
-document.getElementById("triggerRefreshBtn").addEventListener("click", triggerServerRefresh);
 
 /* ========= Init ========= */
 preloadAvatars();
@@ -1538,16 +1420,11 @@ if (!window.matchMedia("(max-width: 900px)").matches) {
   closeSidebar();
 }
 
-// Auto-load: if data source is snapshot, load snapshot on start
-if (dataSource === "snapshot") {
-  // Load snapshot immediately (replaces old auto-sync for snapshot mode)
-  loadSnapshot();
-}
+// Starter refresh (quick feedback)
 
-/* ========= Auto-sync (only for "ebird" data source) ========= */
+/* ========= Auto-sync (fill map like country maps) ========= */
 const LS_LAST_AUTOSYNC = "bm_eu_last_autosync";
 function shouldAutoSync(){
-  if (dataSource === "snapshot") return false; // snapshot mode uses server data
   const last = Number(localStorage.getItem(LS_LAST_AUTOSYNC) || 0);
   const empty = Object.keys(points || {}).length === 0;
   return empty || (Date.now() - last) > 6*60*60*1000;

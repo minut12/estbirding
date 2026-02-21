@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.linnuliigid-snapshot]
 verify_jwt = false
+
+[functions.europe-snapshot]
+verify_jwt = false

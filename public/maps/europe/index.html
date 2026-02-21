@@ -23,7 +23,8 @@
       --badgePadX: 7px;
       --badgeOffset: 12px;
 
-      --burger-top: 70px;
+      --hostTop: 72px;
+      --burger-top: calc(var(--hostTop) + 6px);
       --burger-left: 12px;
     }
     html, body { height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
@@ -57,25 +58,36 @@
     }
 
     /* Sidebar */
-#sidebar{
-  z-index: 7000;
-  border-right:1px solid var(--line);
-  background:#fff;
-  pointer-events:auto;
+    #sidebar{
+      z-index: 7000;
+      border-right:1px solid var(--line);
+      overflow:auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      touch-action: pan-y;
 
-  /* Make only the list scroll; keep header+controls fixed */
-  display:flex;
-  flex-direction:column;
-  overflow:hidden;
-}
+      padding:10px; box-sizing:border-box;
+      background:#fff;
+
+      pointer-events: auto;
+    }
 
     .sidebarHeader{
-  background:#fff;
-  padding-bottom:8px;
-  border-bottom:1px solid #f0f0f0;
-  margin-bottom:8px;
-}
-.sidebarHeaderTop{
+      background:#fff;
+      padding-bottom:8px;
+      border-bottom:1px solid #f0f0f0;
+      margin-bottom:8px;
+      position: relative;
+    }
+    #stickyPanel{
+      position: sticky;
+      top: 0;
+      z-index: 7200;
+      background: #fff;
+      padding: 6px 0 10px;
+      box-shadow: 0 6px 14px rgba(0,0,0,.08);
+    }
+    .sidebarHeaderTop{
       display:flex;
       align-items:center;
       justify-content:space-between;
@@ -91,49 +103,13 @@
       cursor:pointer;
       font-size:18px;
       line-height:1;
+      position: absolute;
+      top: 8px;
+      right: 8px;
     }
 
     .small{ color:var(--muted); font-size:12px; margin:6px 0 10px; line-height:1.35; }
     #controls{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
-/* Fixed panel (header + controls + filter) */
-#stickyPanel{
-  position:sticky;
-  top:0;
-  z-index:7200;
-  background:#fff;
-  padding:10px 10px 10px;
-  box-shadow:0 6px 14px rgba(0,0,0,.08);
-}
-
-/* Scrollable list area */
-#listWrap{
-  flex:1 1 auto;
-  min-height:0;
-  overflow:auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-  padding:0 10px 10px;
-}
-
-/* Keep close button reachable */
-#closeSidebarBtn{
-  position:relative;
-  z-index:7300;
-}
-
-/* Mobile: prevent controls from wrapping into a weird overlay strip */
-@media (max-width: 900px){
-  #controls{
-    flex-wrap:nowrap;
-    overflow-x:auto;
-    -webkit-overflow-scrolling: touch;
-    gap:8px;
-    padding-bottom:6px;
-    scrollbar-width:none;
-  }
-  #controls::-webkit-scrollbar{ display:none; }
-  #controls .btn{ flex:0 0 auto; }
-}
     .btn{
       padding:6px 10px; border:0; border-radius:10px;
       background:var(--btn); color:#fff; cursor:pointer; font-size:13px;
@@ -229,17 +205,20 @@
 
     /* Mobile off-canvas sidebar */
     @media (max-width: 900px){
+      #controls{ flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 6px; }
+      #controls .btn{ flex: 0 0 auto; }
+
       #main{ grid-template-columns: 1fr; }
       #sidebar{
         z-index: 7000;
         position:fixed;
-        left:0; top:0;
+        left:0; top: var(--hostTop);
+        height: calc(100dvh - var(--hostTop));
         width:min(92vw, 420px);
-        height:100dvh;
-        transform:translateX(-105%);
+                transform:translateX(-105%);
         transition:transform .2s ease;
         box-shadow:0 12px 30px rgba(0,0,0,.25);
-        padding-top:0;
+        padding-top:12px;
       }
       #sidebar.open{ transform:translateX(0); }
       #openSidebarBtn{ display:flex; }
@@ -343,7 +322,7 @@
   <div id="main">
     <aside id="sidebar" aria-label="Sidebar">
       
-  <div id="stickyPanel">
+      <div id="stickyPanel">
 <div class="sidebarHeader">
         <div class="sidebarHeaderTop">
           <h2>Europe 2026</h2>
@@ -370,9 +349,8 @@
       <div id="warnBanner" class="bannerWarn"></div>
       <div id="progressLine">Ready.</div>
       <input id="filterBox" type="text" placeholder="Filter species…"/>
-  </div>
-  <div id="listWrap"><div id="list"></div></div>
-
+      </div>
+      <div id="list"></div>
     </aside>
 
     <div id="mapWrap">
@@ -733,6 +711,9 @@ const REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
 const CONCURRENCY_DESKTOP = 6;
 const CONCURRENCY_MOBILE = 4;
 
+
+const REGION_CONCURRENCY_DESKTOP = 3;
+const REGION_CONCURRENCY_MOBILE = 2;
 /* ========= Helpers ========= */
 function safeParseJSON(str){ try{ return JSON.parse(str); }catch{ return null; } }
 function isAvatarVal(v){ return typeof v === "string" && (v.startsWith("data:image") || v.startsWith("http") || v.startsWith("/") ); }
@@ -1094,6 +1075,18 @@ async function fetchJSON(url, signal){
   return await res.json();
 }
 
+async function fetchRegionsLimited(urls, signal){
+  const results = new Array(urls.length);
+  const isMobile = window.matchMedia("(max-width: 900px)").matches;
+  const limit = isMobile ? REGION_CONCURRENCY_MOBILE : REGION_CONCURRENCY_DESKTOP;
+  const tasks = urls.map((u,i)=> async ()=>{
+    try{ results[i] = await fetchJSON(u, signal); }
+    catch(e){ results[i] = null; }
+  });
+  await runPool(tasks, limit);
+  return results;
+}
+
 async function fetchEurope(speciesName, force=false, signal=null){
   const p = points[speciesName] = points[speciesName] || {};
   const code = p.ebirdCode || EBIRD_CODES[speciesName];
@@ -1105,7 +1098,7 @@ async function fetchEurope(speciesName, force=false, signal=null){
     `https://api.ebird.org/v2/data/obs/${r}/recent/${encodeURIComponent(code)}?back=${BACK_DAYS}&maxResults=${MAX_RESULTS}&_ts=${Date.now()}`
   );
 
-  const settled = await Promise.allSettled(urls.map(u => fetchJSON(u, signal)));
+  const regionResults = await fetchRegionsLimited(urls, signal);
 
   const regionsData = {};
   let total7 = 0;
@@ -1115,36 +1108,30 @@ async function fetchEurope(speciesName, force=false, signal=null){
 
   const now = Date.now();
 
-  settled.forEach((s, idx)=>{
+  regionResults.forEach((arr, idx)=>{
     const region = REGIONS[idx];
-    if (s.status !== "fulfilled" || !Array.isArray(s.value) || s.value.length === 0) return;
-
-    const arr = s.value.slice();
-    arr.sort((a,b)=> String(b.obsDt||'').localeCompare(String(a.obsDt||'')));
-
-    const occ7 = arr.reduce((acc, it)=>{
-      const dt = String(it.obsDt||'').slice(0,10);
+    if (!Array.isArray(arr) || arr.length === 0) return;
+    const recentArr = arr.slice();
+    recentArr.sort((a,b)=> String(b.obsDt||"").localeCompare(String(a.obsDt||"")));
+    const occ7 = recentArr.reduce((acc, it)=>{
+      const dt = String(it.obsDt||"").slice(0,10);
       const d = new Date(dt);
       if (!dt || isNaN(d)) return acc;
-      const diffDays = (now - d.getTime())/86400000;
+      const diffDays = (Date.now() - d.getTime())/86400000;
       return diffDays <= 7 ? (acc+1) : acc;
     }, 0);
-
-    const o = arr[0];
-    const t = String(o.obsDt||"").slice(0,10);
-    const lat = +o.lat, lon = +o.lng;
-
+    const o = recentArr[0];
     regionsData[region] = {
-      lat, lon,
-      t,
+      lat: +o.lat,
+      lon: +o.lng,
+      t: String(o.obsDt||"").slice(0,10),
       loc: o.locName || "",
       occ7
     };
-
     total7 += occ7;
-
-    if (t && (!latest.t || t > latest.t)) {
-      latest = { t, region, lat, lon, loc: (o.locName || "") };
+    const dt = regionsData[region].t;
+    if (dt && (!latest.t || dt > latest.t)){
+      latest = { t: dt, region, lat: regionsData[region].lat, lon: regionsData[region].lon, loc: regionsData[region].loc };
     }
   });
 
@@ -1229,6 +1216,7 @@ async function refreshKeys(keys, force=true){
 }
 
 function refreshFiltered(){
+  AUTO_SYNC_CANCELLED = false;
   const q = (filterBox.value||"").toLowerCase().trim();
   const keys = SPECIES.filter(n => n.toLowerCase().includes(q) && (EBIRD_CODES[n] || (points[n]||{}).ebirdCode));
   if (keys.length === 0) {
@@ -1238,6 +1226,7 @@ function refreshFiltered(){
   refreshKeys(keys, true);
 }
 function refreshSelected(){
+  AUTO_SYNC_CANCELLED = false;
   const keys = SPECIES.filter(n => (points[n]||{}).selected && (EBIRD_CODES[n] || (points[n]||{}).ebirdCode));
   if (keys.length === 0) return alert("No selected species with eBird codes.");
   refreshKeys(keys, true);
@@ -1314,7 +1303,7 @@ function setupBurgerDrag(){
     const dx = pt.clientX - startX;
     const dy = pt.clientY - startY;
 
-    const top = Math.max(40, Math.min(window.innerHeight - 80, startTop + dy));
+    const top = Math.max(56, Math.min(window.innerHeight - 80, startTop + dy));
     const left = Math.max(8, Math.min(window.innerWidth - 80, startLeft + dx));
 
     document.documentElement.style.setProperty("--burger-top", top + "px");
@@ -1417,7 +1406,7 @@ document.getElementById("modalSave").addEventListener("click", ()=>{
 /* ========= Buttons ========= */
 document.getElementById("refreshFilteredBtn").addEventListener("click", refreshFiltered);
 document.getElementById("refreshSelectedBtn").addEventListener("click", refreshSelected);
-document.getElementById("stopBtn").addEventListener("click", stopRefresh);
+document.getElementById("stopBtn").addEventListener("click", ()=>{ AUTO_SYNC_CANCELLED = true; stopRefresh(); });
 filterBox.addEventListener("input", render);
 
 /* ========= Init ========= */
@@ -1432,10 +1421,45 @@ if (!window.matchMedia("(max-width: 900px)").matches) {
 }
 
 // Starter refresh (quick feedback)
-(function(){
-  const withCodes = SPECIES.filter(s => !!EBIRD_CODES[s]);
-  if (withCodes.length >= 10) refreshKeys(withCodes.slice(0, 25), false);
-})();
+
+/* ========= Auto-sync (fill map like country maps) ========= */
+const LS_LAST_AUTOSYNC = "bm_eu_last_autosync";
+function shouldAutoSync(){
+  const last = Number(localStorage.getItem(LS_LAST_AUTOSYNC) || 0);
+  const empty = Object.keys(points || {}).length === 0;
+  return empty || (Date.now() - last) > 6*60*60*1000;
+}
+function startAutoSync(){
+  if (!shouldAutoSync()) return;
+
+  const isMobile = window.matchMedia("(max-width: 900px)").matches;
+  const chunkSize = isMobile ? 60 : 100;
+
+  const keys = SPECIES.filter(s => (EBIRD_CODES[s] || (points[s]||{}).ebirdCode));
+  if (keys.length === 0) return;
+
+  AUTO_SYNC_CANCELLED = false;
+  let offset = 0;
+  const runNext = async ()=>{
+    if (AUTO_SYNC_CANCELLED) return;
+
+    const chunk = keys.slice(offset, offset + chunkSize);
+    if (chunk.length === 0){
+      localStorage.setItem(LS_LAST_AUTOSYNC, String(Date.now()));
+      return;
+    }
+    await refreshKeys(chunk, false);
+    offset += chunkSize;
+
+    if (offset < keys.length && !AUTO_SYNC_CANCELLED){
+      setTimeout(runNext, 1200);
+    } else {
+      localStorage.setItem(LS_LAST_AUTOSYNC, String(Date.now()));
+    }
+  };
+  runNext();
+}
+startAutoSync();
 </script>
 </body>
 </html>

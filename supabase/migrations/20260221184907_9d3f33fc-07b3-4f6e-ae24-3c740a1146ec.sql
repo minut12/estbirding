@@ -1,0 +1,2 @@
+ALTER TABLE public.news_sources DROP CONSTRAINT news_sources_type_check;
+ALTER TABLE public.news_sources ADD CONSTRAINT news_sources_type_check CHECK (type = ANY (ARRAY['scrape'::text, 'rss'::text, 'webhook'::text, 'facebook'::text]));

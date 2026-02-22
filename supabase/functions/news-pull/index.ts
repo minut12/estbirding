@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { normalizeRssItem, parseRss } from "../_shared/rss-normalize.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,6 +8,7 @@ const corsHeaders = {
 };
 
 const COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
+const BIRDING_POLAND_KEY = "facebook_birdingpoland";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -29,7 +31,6 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Get enabled RSS sources with feed_url set
     const { data: sources, error: srcErr } = await supabase
       .from("news_sources")
       .select("*")
@@ -48,7 +49,6 @@ Deno.serve(async (req) => {
     const results: Array<{ source: string; fetched: number; inserted: number; skipped: boolean; error?: string }> = [];
 
     for (const source of sources) {
-      // Check cooldown: skip if last item fetched within COOLDOWN_MS
       if (!force) {
         const { data: recent } = await supabase
           .from("news_items")
@@ -77,34 +77,49 @@ Deno.serve(async (req) => {
         }
 
         const text = await feedRes.text();
-        const items = parseRss(text).slice(0, 10);
+        const sourceKey = source.key || source.slug;
+        const normalized = parseRss(text).map(normalizeRssItem);
+        const sorted = normalized.sort((a, b) => toTimestamp(b.published_at) - toTimestamp(a.published_at));
+        const items = sourceKey === BIRDING_POLAND_KEY ? sorted.slice(0, 1) : sorted.slice(0, 10);
+
+        if (sourceKey === BIRDING_POLAND_KEY && items[0]) {
+          console.log("[news-pull] sanity normalized preview", {
+            source: source.slug,
+            title: items[0].title,
+            image_url: items[0].image_url,
+            bodyText: items[0].body.slice(0, 120),
+          });
+        }
 
         let inserted = 0;
         for (const item of items) {
-          const guid = item.guid || `${source.slug}:${item.link}`;
-          const externalId = item.guid || item.link;
+          const externalId = item.external_id?.trim();
+          if (!externalId) continue;
+
+          const guid = `${source.slug}:${externalId}`;
 
           const row = {
             source_id: source.id,
             source_slug: source.slug,
-            source_key: source.key || source.slug,
+            source_key: sourceKey,
             external_id: externalId,
-            title: item.title || "",
-            summary: (item.description || "").slice(0, 500),
-            content_html: item.contentEncoded || item.description || null,
-            body: stripHtml(item.contentEncoded || item.description || ""),
-            url: item.link || "",
-            permalink_url: item.link || null,
-            image_url: item.imageUrl || null,
-            published_at: item.pubDate || new Date().toISOString(),
+            title: item.title || item.body.slice(0, 80) || "",
+            summary: item.body.slice(0, 500) || null,
+            content_html: item.body_html || null,
+            body: item.body || null,
+            url: item.permalink_url || "",
+            permalink_url: item.permalink_url,
+            image_url: item.image_url,
+            published_at: item.published_at || new Date().toISOString(),
             language: "et",
             guid,
             fetched_at: new Date().toISOString(),
+            raw_json: item.raw_json,
           };
 
           const { error } = await supabase
             .from("news_items")
-            .upsert(row, { onConflict: "guid" });
+            .upsert(row, { onConflict: "source_slug,external_id" });
 
           if (!error) inserted++;
           else console.error(`Upsert error for ${guid}:`, error);
@@ -129,68 +144,8 @@ Deno.serve(async (req) => {
   }
 });
 
-/* ── RSS Parser ─────────────────────────────────── */
-interface RssItem {
-  title: string;
-  link: string;
-  description: string;
-  contentEncoded: string;
-  pubDate: string;
-  guid: string;
-  imageUrl: string | null;
-}
-
-function parseRss(xml: string): RssItem[] {
-  // Use regex-based parsing since DOMParser isn't available in Deno edge
-  const items: RssItem[] = [];
-
-  // Try RSS 2.0 <item> or Atom <entry>
-  const itemRegex = /<item[\s>]([\s\S]*?)<\/item>|<entry[\s>]([\s\S]*?)<\/entry>/gi;
-  let match;
-
-  while ((match = itemRegex.exec(xml)) !== null) {
-    const block = match[1] || match[2] || "";
-    const get = (tag: string): string => {
-      const r = new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>|<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i");
-      const m = block.match(r);
-      return (m?.[1] || m?.[2] || "").trim();
-    };
-
-    // Extract link (RSS vs Atom)
-    let link = get("link");
-    if (!link) {
-      const linkMatch = block.match(/<link[^>]+href=["']([^"']+)["']/i);
-      if (linkMatch) link = linkMatch[1];
-    }
-
-    // Extract image from enclosure, media:content, or description img
-    let imageUrl: string | null = null;
-    const enclosure = block.match(/<enclosure[^>]+url=["']([^"']+)["'][^>]*type=["']image/i);
-    if (enclosure) imageUrl = enclosure[1];
-    if (!imageUrl) {
-      const media = block.match(/<media:content[^>]+url=["']([^"']+)["']/i);
-      if (media) imageUrl = media[1];
-    }
-    if (!imageUrl) {
-      const desc = get("description") || get("content:encoded") || "";
-      const imgMatch = desc.match(/<img[^>]+src=["']([^"']+)["']/i);
-      if (imgMatch) imageUrl = imgMatch[1];
-    }
-
-    items.push({
-      title: get("title"),
-      link,
-      description: get("description"),
-      contentEncoded: get("content:encoded") || get("content"),
-      pubDate: get("pubDate") || get("published") || get("updated"),
-      guid: get("guid") || get("id") || link,
-      imageUrl,
-    });
-  }
-
-  return items;
-}
-
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 2000);
+function toTimestamp(value: string | null): number {
+  if (!value) return 0;
+  const n = new Date(value).getTime();
+  return Number.isFinite(n) ? n : 0;
 }

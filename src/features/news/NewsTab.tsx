@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useInfiniteQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -21,6 +21,7 @@ interface NewsItem {
   body: string | null;
   content_html: string | null;
   url: string;
+  permalink_url?: string | null;
   image_url: string | null;
   published_at: string;
   language: string;
@@ -49,8 +50,21 @@ function sourceLabel(slug: string, sources: NewsSource[]): string {
   return s?.name || slug.toUpperCase();
 }
 
+function toPlainText(value: string | null | undefined): string {
+  if (!value) return '';
+  const decoded = value
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'");
+  return decoded.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 /* ── Page size ──────────────────────────────────── */
 const PAGE_SIZE = 20;
+const BIRDING_POLAND_SLUG = 'facebook_birdingpoland';
 
 /* ── Main component ─────────────────────────────── */
 export default function NewsTab() {
@@ -80,7 +94,7 @@ export default function NewsTab() {
     queryFn: async ({ pageParam = 0 }) => {
       let query = supabase
         .from('news_items')
-        .select('id, source_slug, title, summary, body, content_html, url, image_url, published_at, language, guid, archived')
+        .select('id, source_slug, title, summary, body, content_html, url, permalink_url, image_url, published_at, language, guid, archived')
         .order('published_at', { ascending: false })
         .range(pageParam, pageParam + PAGE_SIZE - 1);
 
@@ -106,7 +120,18 @@ export default function NewsTab() {
     staleTime: 30_000,
   });
 
-  const allItems = data?.pages.flat() ?? [];
+  const allItems = useMemo(() => {
+    const flat = data?.pages.flat() ?? [];
+    if (tab === 'archive') return flat;
+
+    let seenBirdingPoland = false;
+    return flat.filter((item) => {
+      if (item.source_slug !== BIRDING_POLAND_SLUG) return true;
+      if (seenBirdingPoland) return false;
+      seenBirdingPoland = true;
+      return true;
+    });
+  }, [data?.pages, tab]);
 
   // Toggle archive via DB update
   const archiveMutation = useMutation({
@@ -302,7 +327,8 @@ function NewsCard({ item, sources, onOpen, onToggleArchive }: {
   onOpen: () => void;
   onToggleArchive: () => void;
 }) {
-  const snippet = item.summary || item.body?.slice(0, 150) || '';
+  const snippet = toPlainText(item.body || item.summary).slice(0, 150);
+  const originalUrl = item.permalink_url || item.url;
 
   return (
     <div className="px-4 py-3 active:bg-muted/50 transition-colors">
@@ -339,7 +365,7 @@ function NewsCard({ item, sources, onOpen, onToggleArchive }: {
             <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onOpen}>
               Ava
             </Button>
-            <a href={item.url} target="_blank" rel="noopener noreferrer">
+            <a href={originalUrl} target="_blank" rel="noopener noreferrer">
               <Button variant="ghost" size="sm" className="h-7 text-xs px-2 gap-1">
                 <ExternalLink className="w-3 h-3" /> Originaal
               </Button>
@@ -392,7 +418,8 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     return () => { cancelled = true; };
   }, [item.id, item.content_html, item.source_slug]);
 
-  const displayBody = contentHtml || item.body || item.summary;
+  const displayBody = contentHtml || toPlainText(item.body || item.summary);
+  const originalUrl = item.permalink_url || item.url;
 
   return (
     <div className="flex flex-col h-full">
@@ -441,7 +468,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
         )}
 
         <div className="flex gap-2 pt-2">
-          <a href={item.url} target="_blank" rel="noopener noreferrer">
+          <a href={originalUrl} target="_blank" rel="noopener noreferrer">
             <Button variant="outline" size="sm" className="gap-1.5">
               <ExternalLink className="w-3.5 h-3.5" /> Ava originaal
             </Button>

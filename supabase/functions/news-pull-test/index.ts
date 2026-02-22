@@ -1,3 +1,5 @@
+import { normalizeRssItem, parseRss } from "../_shared/rss-normalize.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -29,7 +31,15 @@ Deno.serve(async (req) => {
     }
 
     const text = await res.text();
-    const items = parseRssPreview(text).slice(0, 3);
+    const items = parseRss(text)
+      .map(normalizeRssItem)
+      .slice(0, 3)
+      .map((item) => ({
+        title: item.title,
+        image_url: item.image_url,
+        body_preview: item.body.slice(0, 120),
+        published_at: item.published_at,
+      }));
 
     return new Response(
       JSON.stringify({ items }),
@@ -42,24 +52,3 @@ Deno.serve(async (req) => {
     });
   }
 });
-
-function parseRssPreview(xml: string): Array<{ title: string; pubDate: string }> {
-  const items: Array<{ title: string; pubDate: string }> = [];
-  const itemRegex = /<item[\s>]([\s\S]*?)<\/item>|<entry[\s>]([\s\S]*?)<\/entry>/gi;
-  let match;
-
-  while ((match = itemRegex.exec(xml)) !== null) {
-    const block = match[1] || match[2] || "";
-    const get = (tag: string): string => {
-      const r = new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>|<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i");
-      const m = block.match(r);
-      return (m?.[1] || m?.[2] || "").trim();
-    };
-    items.push({
-      title: get("title"),
-      pubDate: get("pubDate") || get("published") || get("updated"),
-    });
-  }
-
-  return items;
-}

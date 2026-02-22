@@ -225,17 +225,24 @@ export type Database = {
       }
       news_items: {
         Row: {
+          archived: boolean
+          body: string | null
           content_fetch_error: string | null
           content_fetched_at: string | null
           content_html: string | null
           created_at: string
+          external_id: string | null
+          fetched_at: string
           guid: string
           id: string
           image_url: string | null
           image_url_original: string | null
           language: string
+          permalink_url: string | null
           published_at: string
+          raw_json: Json | null
           source_id: string
+          source_key: string | null
           source_slug: string
           summary: string | null
           title: string
@@ -243,17 +250,24 @@ export type Database = {
           url: string
         }
         Insert: {
+          archived?: boolean
+          body?: string | null
           content_fetch_error?: string | null
           content_fetched_at?: string | null
           content_html?: string | null
           created_at?: string
+          external_id?: string | null
+          fetched_at?: string
           guid: string
           id?: string
           image_url?: string | null
           image_url_original?: string | null
           language?: string
+          permalink_url?: string | null
           published_at?: string
+          raw_json?: Json | null
           source_id: string
+          source_key?: string | null
           source_slug: string
           summary?: string | null
           title: string
@@ -261,17 +275,24 @@ export type Database = {
           url: string
         }
         Update: {
+          archived?: boolean
+          body?: string | null
           content_fetch_error?: string | null
           content_fetched_at?: string | null
           content_html?: string | null
           created_at?: string
+          external_id?: string | null
+          fetched_at?: string
           guid?: string
           id?: string
           image_url?: string | null
           image_url_original?: string | null
           language?: string
+          permalink_url?: string | null
           published_at?: string
+          raw_json?: Json | null
           source_id?: string
+          source_key?: string | null
           source_slug?: string
           summary?: string | null
           title?: string
@@ -291,10 +312,13 @@ export type Database = {
       news_sources: {
         Row: {
           created_at: string
+          feed_url: string | null
           fetch_url: string | null
           homepage_url: string | null
           id: string
           is_active: boolean
+          is_enabled: boolean
+          key: string | null
           name: string
           slug: string
           type: string
@@ -302,10 +326,13 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          feed_url?: string | null
           fetch_url?: string | null
           homepage_url?: string | null
           id?: string
           is_active?: boolean
+          is_enabled?: boolean
+          key?: string | null
           name: string
           slug: string
           type?: string
@@ -313,10 +340,13 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          feed_url?: string | null
           fetch_url?: string | null
           homepage_url?: string | null
           id?: string
           is_active?: boolean
+          is_enabled?: boolean
+          key?: string | null
           name?: string
           slug?: string
           type?: string

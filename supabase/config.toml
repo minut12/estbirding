@@ -20,3 +20,15 @@ verify_jwt = false
 
 [functions.linnuliigid-snapshot]
 verify_jwt = false
+
+[functions.news-pull]
+verify_jwt = false
+
+[functions.news-archive]
+verify_jwt = false
+
+[functions.news-source-update]
+verify_jwt = false
+
+[functions.news-pull-test]
+verify_jwt = false

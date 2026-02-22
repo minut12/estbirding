@@ -1,12 +1,16 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Newspaper, ChevronLeft, Archive, ArchiveRestore, ExternalLink, Search, Filter, RefreshCw } from 'lucide-react';
+import {
+  Newspaper, ChevronLeft, Archive, ArchiveRestore, ExternalLink,
+  Search, RefreshCw, Loader2,
+} from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 /* ── Types ──────────────────────────────────────── */
 interface NewsItem {
@@ -14,30 +18,20 @@ interface NewsItem {
   source_slug: string;
   title: string;
   summary: string | null;
+  body: string | null;
   content_html: string | null;
   url: string;
   image_url: string | null;
   published_at: string;
   language: string;
   guid: string;
+  archived: boolean;
 }
 
 interface NewsSource {
   id: string;
   name: string;
   slug: string;
-}
-
-/* ── Archive helpers (localStorage) ─────────────── */
-const ARCHIVE_KEY = 'estbirding-news-archived';
-function loadArchived(): Set<string> {
-  try {
-    const raw = localStorage.getItem(ARCHIVE_KEY);
-    return raw ? new Set(JSON.parse(raw)) : new Set();
-  } catch { return new Set(); }
-}
-function saveArchived(ids: Set<string>) {
-  localStorage.setItem(ARCHIVE_KEY, JSON.stringify([...ids]));
 }
 
 /* ── Format date ────────────────────────────────── */
@@ -47,6 +41,12 @@ function formatEstDate(iso: string): string {
     const d = new Date(iso);
     return `${d.getDate()}. ${ET_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
   } catch { return iso; }
+}
+
+/* ── Source display names ───────────────────────── */
+function sourceLabel(slug: string, sources: NewsSource[]): string {
+  const s = sources.find(s => s.slug === slug);
+  return s?.name || slug.toUpperCase();
 }
 
 /* ── Page size ──────────────────────────────────── */
@@ -59,7 +59,6 @@ export default function NewsTab() {
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [selected, setSelected] = useState<NewsItem | null>(null);
-  const [archivedIds, setArchivedIds] = useState<Set<string>>(loadArchived);
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollPosRef = useRef(0);
 
@@ -75,20 +74,18 @@ export default function NewsTab() {
 
   // News items (infinite scroll)
   const {
-    data,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-    isLoading,
-    refetch,
+    data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, refetch,
   } = useInfiniteQuery({
-    queryKey: ['news-items', sourceFilter, search],
+    queryKey: ['news-items', sourceFilter, search, tab],
     queryFn: async ({ pageParam = 0 }) => {
       let query = supabase
         .from('news_items')
-        .select('*')
+        .select('id, source_slug, title, summary, body, content_html, url, image_url, published_at, language, guid, archived')
         .order('published_at', { ascending: false })
         .range(pageParam, pageParam + PAGE_SIZE - 1);
+
+      // Filter by archive state in DB
+      query = query.eq('archived', tab === 'archive');
 
       if (sourceFilter !== 'all') {
         query = query.eq('source_slug', sourceFilter);
@@ -110,20 +107,46 @@ export default function NewsTab() {
   });
 
   const allItems = data?.pages.flat() ?? [];
-  const visibleItems = tab === 'archive'
-    ? allItems.filter(i => archivedIds.has(i.id))
-    : allItems.filter(i => !archivedIds.has(i.id));
 
-  // Toggle archive
-  const toggleArchive = useCallback((id: string) => {
-    setArchivedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      saveArchived(next);
-      return next;
-    });
-  }, []);
+  // Toggle archive via DB update
+  const archiveMutation = useMutation({
+    mutationFn: async ({ id, archived }: { id: string; archived: boolean }) => {
+      const { error } = await supabase.functions.invoke('news-archive', {
+        body: { id, archived },
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['news-items'] });
+    },
+    onError: () => {
+      toast.error('Arhiveerimise viga');
+    },
+  });
+
+  const toggleArchive = useCallback((id: string, currentArchived: boolean) => {
+    archiveMutation.mutate({ id, archived: !currentArchived });
+  }, [archiveMutation]);
+
+  // Pull / refresh
+  const pullMutation = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('news-pull', {
+        body: { force: false },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['news-items'] });
+      const total = data?.results?.reduce((s: number, r: any) => s + (r.inserted || 0), 0) || 0;
+      if (total > 0) toast.success(`${total} uut uudist`);
+      else toast.info('Uusi uudiseid pole');
+    },
+    onError: () => {
+      toast.error('Uudiste tõmbamine ebaõnnestus');
+    },
+  });
 
   // Infinite scroll observer
   const observerRef = useRef<HTMLDivElement>(null);
@@ -155,7 +178,14 @@ export default function NewsTab() {
 
   // Article detail view
   if (selected) {
-    return <ArticleView item={selected} onBack={closeArticle} isArchived={archivedIds.has(selected.id)} onToggleArchive={() => toggleArchive(selected.id)} />;
+    return (
+      <ArticleView
+        item={selected}
+        sources={sources}
+        onBack={closeArticle}
+        onToggleArchive={() => toggleArchive(selected.id, selected.archived)}
+      />
+    );
   }
 
   return (
@@ -164,8 +194,16 @@ export default function NewsTab() {
       <div className="px-4 py-3 border-b border-border bg-card space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-foreground text-lg">Uudised</h2>
-          <Button variant="ghost" size="icon" onClick={() => refetch()} title="Värskenda">
-            <RefreshCw className="w-4 h-4" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => pullMutation.mutate()}
+            disabled={pullMutation.isPending}
+            title="Värskenda"
+          >
+            {pullMutation.isPending
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <RefreshCw className="w-4 h-4" />}
           </Button>
         </div>
 
@@ -175,7 +213,7 @@ export default function NewsTab() {
             onClick={() => setTab('latest')}
             className={cn(
               'flex-1 py-1.5 text-sm font-medium rounded-md transition-colors',
-              tab === 'latest' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'
+              tab === 'latest' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
             )}
           >
             Viimased
@@ -184,7 +222,7 @@ export default function NewsTab() {
             onClick={() => setTab('archive')}
             className={cn(
               'flex-1 py-1.5 text-sm font-medium rounded-md transition-colors',
-              tab === 'archive' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'
+              tab === 'archive' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
             )}
           >
             Arhiiv
@@ -220,18 +258,29 @@ export default function NewsTab() {
       {/* List */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {isLoading ? (
-          <div className="p-6 text-center text-sm text-muted-foreground">Laen uudiseid…</div>
-        ) : visibleItems.length === 0 ? (
+          <div className="p-4 space-y-3">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="flex gap-3 px-4 py-3">
+                <Skeleton className="w-20 h-20 rounded-lg shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-3 w-2/3" />
+                  <Skeleton className="h-3 w-1/2" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : allItems.length === 0 ? (
           <EmptyState tab={tab} />
         ) : (
           <div className="divide-y divide-border">
-            {visibleItems.map((item) => (
+            {allItems.map((item) => (
               <NewsCard
                 key={item.id}
                 item={item}
-                isArchived={archivedIds.has(item.id)}
+                sources={sources}
                 onOpen={() => openArticle(item)}
-                onToggleArchive={() => toggleArchive(item.id)}
+                onToggleArchive={() => toggleArchive(item.id, item.archived)}
               />
             ))}
           </div>
@@ -247,16 +296,18 @@ export default function NewsTab() {
 }
 
 /* ── News Card ──────────────────────────────────── */
-function NewsCard({ item, isArchived, onOpen, onToggleArchive }: {
+function NewsCard({ item, sources, onOpen, onToggleArchive }: {
   item: NewsItem;
-  isArchived: boolean;
+  sources: NewsSource[];
   onOpen: () => void;
   onToggleArchive: () => void;
 }) {
+  const snippet = item.summary || item.body?.slice(0, 150) || '';
+
   return (
     <div className="px-4 py-3 active:bg-muted/50 transition-colors">
       <div className="flex gap-3">
-        <div className="w-20 h-20 rounded-lg shrink-0 bg-muted overflow-hidden">
+        <button onClick={onOpen} className="w-20 h-20 rounded-lg shrink-0 bg-muted overflow-hidden">
           {item.image_url ? (
             <img
               src={item.image_url}
@@ -270,25 +321,32 @@ function NewsCard({ item, isArchived, onOpen, onToggleArchive }: {
               <Newspaper className="w-8 h-8 text-muted-foreground/30" />
             </div>
           )}
-        </div>
+        </button>
         <div className="flex-1 min-w-0">
           <button onClick={onOpen} className="text-left w-full">
             <p className="font-medium text-sm text-foreground line-clamp-2">{item.title}</p>
           </button>
           <div className="flex items-center gap-2 mt-1">
-            <Badge variant="secondary" className="text-xs px-1.5 py-0">{item.source_slug.toUpperCase()}</Badge>
+            <Badge variant="secondary" className="text-xs px-1.5 py-0">
+              {sourceLabel(item.source_slug, sources)}
+            </Badge>
             <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at)}</span>
           </div>
-          {item.summary && (
-            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{item.summary}</p>
+          {snippet && (
+            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{snippet}</p>
           )}
           <div className="flex gap-2 mt-2">
             <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onOpen}>
               Ava
             </Button>
+            <a href={item.url} target="_blank" rel="noopener noreferrer">
+              <Button variant="ghost" size="sm" className="h-7 text-xs px-2 gap-1">
+                <ExternalLink className="w-3 h-3" /> Originaal
+              </Button>
+            </a>
             <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onToggleArchive}>
-              {isArchived ? <ArchiveRestore className="w-3.5 h-3.5 mr-1" /> : <Archive className="w-3.5 h-3.5 mr-1" />}
-              {isArchived ? 'Taasta' : 'Arhiveeri'}
+              {item.archived ? <ArchiveRestore className="w-3.5 h-3.5 mr-1" /> : <Archive className="w-3.5 h-3.5 mr-1" />}
+              {item.archived ? 'Taasta' : 'Arhiveeri'}
             </Button>
           </div>
         </div>
@@ -298,18 +356,18 @@ function NewsCard({ item, isArchived, onOpen, onToggleArchive }: {
 }
 
 /* ── Article View (lazy-loads content) ──────────── */
-function ArticleView({ item, onBack, isArchived, onToggleArchive }: {
+function ArticleView({ item, sources, onBack, onToggleArchive }: {
   item: NewsItem;
+  sources: NewsSource[];
   onBack: () => void;
-  isArchived: boolean;
   onToggleArchive: () => void;
 }) {
   const [contentHtml, setContentHtml] = useState<string | null>(item.content_html);
-  const [loadingContent, setLoadingContent] = useState(!item.content_html);
+  const [loadingContent, setLoadingContent] = useState(!item.content_html && item.source_slug === 'eoy');
   const [contentError, setContentError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (item.content_html) return;
+    if (item.content_html || item.source_slug !== 'eoy') return;
     let cancelled = false;
     (async () => {
       setLoadingContent(true);
@@ -332,7 +390,9 @@ function ArticleView({ item, onBack, isArchived, onToggleArchive }: {
       }
     })();
     return () => { cancelled = true; };
-  }, [item.id, item.content_html]);
+  }, [item.id, item.content_html, item.source_slug]);
+
+  const displayBody = contentHtml || item.body || item.summary;
 
   return (
     <div className="flex flex-col h-full">
@@ -357,7 +417,7 @@ function ArticleView({ item, onBack, isArchived, onToggleArchive }: {
         )}
         <h1 className="text-xl font-bold text-foreground">{item.title}</h1>
         <div className="flex items-center gap-2">
-          <Badge variant="secondary">{item.source_slug.toUpperCase()}</Badge>
+          <Badge variant="secondary">{sourceLabel(item.source_slug, sources)}</Badge>
           <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at)}</span>
         </div>
 
@@ -366,8 +426,6 @@ function ArticleView({ item, onBack, isArchived, onToggleArchive }: {
             <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-5/6" />
             <Skeleton className="h-4 w-4/6" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-3/6" />
           </div>
         ) : contentHtml ? (
           <div
@@ -376,9 +434,11 @@ function ArticleView({ item, onBack, isArchived, onToggleArchive }: {
           />
         ) : contentError ? (
           <p className="text-sm text-muted-foreground italic">{contentError}</p>
-        ) : item.summary ? (
-          <p className="text-sm text-foreground leading-relaxed">{item.summary}</p>
-        ) : null}
+        ) : displayBody ? (
+          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{displayBody}</p>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">Sisu pole saadaval. Ava originaal.</p>
+        )}
 
         <div className="flex gap-2 pt-2">
           <a href={item.url} target="_blank" rel="noopener noreferrer">
@@ -387,8 +447,8 @@ function ArticleView({ item, onBack, isArchived, onToggleArchive }: {
             </Button>
           </a>
           <Button variant="outline" size="sm" className="gap-1.5" onClick={onToggleArchive}>
-            {isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
-            {isArchived ? 'Taasta' : 'Arhiveeri'}
+            {item.archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+            {item.archived ? 'Taasta' : 'Arhiveeri'}
           </Button>
         </div>
       </div>
@@ -402,7 +462,7 @@ function EmptyState({ tab }: { tab: string }) {
     <div className="flex flex-col items-center justify-center h-full p-8 text-center gap-3">
       <Newspaper className="w-14 h-14 text-muted-foreground/40" />
       <p className="text-sm text-muted-foreground">
-        {tab === 'archive' ? 'Arhiivis pole ühtegi uudist.' : 'Uudiseid pole veel. Tõmba alla, et värskendada.'}
+        {tab === 'archive' ? 'Arhiivis pole ühtegi uudist.' : 'Uudiseid pole veel. Vajuta värskendamisnuppu.'}
       </p>
     </div>
   );

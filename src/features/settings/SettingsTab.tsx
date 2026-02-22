@@ -17,6 +17,7 @@ import { APP_VERSION } from '@/lib/version';
 import { Trash2, RotateCcw } from 'lucide-react';
 import AvatarManager from './AvatarManager';
 import DeveloperSettings from './DeveloperSettings';
+import NewsSourcesSettings from './NewsSourcesSettings';
 
 type ResetMode = 'soft' | 'hard' | null;
 
@@ -71,17 +72,8 @@ export default function SettingsTab() {
         <h2 className="font-semibold text-foreground">Seaded</h2>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        {/* News source */}
-        <div className="space-y-2">
-          <Label htmlFor="newsUrl">Uudiste allikas URL</Label>
-          <Input
-            id="newsUrl"
-            placeholder="https://example.com/rss"
-            value={form.newsSourceUrl}
-            onChange={(e) => update('newsSourceUrl', e.target.value)}
-          />
-          <p className="text-xs text-muted-foreground">RSS või JSON voo URL</p>
-        </div>
+        {/* News Sources */}
+        <NewsSourcesSettings />
 
         {/* Events source */}
         <div className="space-y-2">

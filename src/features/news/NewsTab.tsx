@@ -17,16 +17,19 @@ interface NewsItem {
   id: string;
   source_slug: string;
   source_key?: string | null;
-  lang?: string | null;
+  source_lang?: string | null;
   title: string;
+  translated_title?: string | null;
   title_et?: string | null;
   summary: string | null;
   body: string | null;
+  translated_body?: string | null;
   body_et?: string | null;
   content_html: string | null;
   url: string;
   permalink_url?: string | null;
   image_url?: string | null;
+  cached_image_url?: string | null;
   imageUrl?: string | null;
   raw_json?: Record<string, any> | null;
   published_at: string;
@@ -163,6 +166,8 @@ function cleanUrl(url: string | null | undefined): string | null {
 }
 
 function ensureImageUrl(item: NewsItem): NewsItem {
+  const cached = decodeUrl(item.cached_image_url);
+  if (cached) return { ...item, image_url: cached };
   const decoded = decodeUrl(item.image_url ?? item.imageUrl);
   if (decoded) return { ...item, image_url: decoded };
   return { ...item, image_url: extractImageUrlFromRaw(item) };
@@ -200,7 +205,7 @@ export default function NewsTab() {
     queryFn: async ({ pageParam = 0 }) => {
       let query = supabase
         .from('news_items')
-        .select('id, source_slug, source_key, lang, title, title_et, summary, body, body_et, content_html, raw_json, url, permalink_url, image_url, published_at, language, guid, archived')
+        .select('id, source_slug, source_key, source_lang, title, translated_title, title_et, summary, body, translated_body, body_et, content_html, raw_json, url, permalink_url, image_url, cached_image_url, published_at, language, guid, archived')
         .order('published_at', { ascending: false })
         .range(pageParam, pageParam + PAGE_SIZE - 1);
 
@@ -435,10 +440,11 @@ function NewsCard({ item, sources, onOpen, onToggleArchive }: {
   onToggleArchive: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const thumb = decodeUrl(item.image_url ?? item.imageUrl);
-  const displayTitle = item.title_et || item.title;
-  const snippet = toPlainText(item.body_et || item.body || item.summary).slice(0, 150);
+  const thumb = decodeUrl(item.cached_image_url || item.image_url || item.imageUrl);
+  const displayTitle = item.translated_title || item.title_et || item.title;
+  const snippet = toPlainText(item.translated_body || item.body_et || item.body || item.summary).slice(0, 150);
   const originalUrl = item.permalink_url || item.url;
+  const isTranslated = Boolean(item.translated_body || item.body_et);
 
   useEffect(() => {
     setImageFailed(false);
@@ -475,6 +481,7 @@ function NewsCard({ item, sources, onOpen, onToggleArchive }: {
             <Badge variant="secondary" className="text-xs px-1.5 py-0">
               {sourceLabel(item.source_slug, sources)}
             </Badge>
+            {isTranslated && <Badge variant="outline" className="text-xs px-1.5 py-0">Tõlgitud</Badge>}
             <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at)}</span>
           </div>
           {snippet && (
@@ -537,10 +544,12 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     return () => { cancelled = true; };
   }, [item.id, item.content_html, item.source_slug]);
 
-  const displayTitle = item.title_et || item.title;
-  const displayBody = item.body_et || contentHtml || toPlainText(item.body || item.summary);
+  const displayTitle = item.translated_title || item.title_et || item.title;
+  const displayBody = item.translated_body || item.body_et || contentHtml || toPlainText(item.body || item.summary);
   const sanitizedContentHtml = contentHtml ? stripImagesFromHtml(contentHtml) : null;
   const originalUrl = item.permalink_url || item.url;
+  const heroImageUrl = decodeUrl(item.cached_image_url || item.image_url || item.imageUrl);
+  const isTranslated = Boolean(item.translated_body || item.body_et);
 
   return (
     <div className="flex flex-col h-full">
@@ -551,9 +560,9 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
         <span className="font-medium truncate text-sm flex-1">Uudis</span>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {item.image_url ? (
+        {heroImageUrl ? (
           <img
-            src={item.image_url}
+            src={heroImageUrl}
             alt=""
             className="w-full rounded-xl object-cover max-h-56 bg-muted"
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
@@ -566,6 +575,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
         <h1 className="text-xl font-bold text-foreground">{displayTitle}</h1>
         <div className="flex items-center gap-2">
           <Badge variant="secondary">{sourceLabel(item.source_slug, sources)}</Badge>
+          {isTranslated && <Badge variant="outline">Tõlgitud</Badge>}
           <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at)}</span>
         </div>
 
@@ -575,7 +585,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
             <Skeleton className="h-4 w-5/6" />
             <Skeleton className="h-4 w-4/6" />
           </div>
-        ) : sanitizedContentHtml && !item.body_et ? (
+        ) : sanitizedContentHtml && !item.body_et && !item.translated_body ? (
           <div
             className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
             dangerouslySetInnerHTML={{ __html: sanitizedContentHtml }}

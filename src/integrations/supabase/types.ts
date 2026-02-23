@@ -228,6 +228,7 @@ export type Database = {
           archived: boolean
           body: string | null
           body_et: string | null
+          cached_image_url: string | null
           content_fetch_error: string | null
           content_fetched_at: string | null
           content_html: string | null
@@ -243,13 +244,18 @@ export type Database = {
           permalink_url: string | null
           published_at: string
           raw_json: Json | null
+          source_lang: string | null
           source_id: string
           source_key: string | null
           source_slug: string
           summary: string | null
           title: string
+          translated_body: string | null
+          translated_title: string | null
           title_et: string | null
           translate_hash: string | null
+          translation_error: string | null
+          translation_status: string
           translated_at: string | null
           updated_at: string
           url: string
@@ -258,6 +264,7 @@ export type Database = {
           archived?: boolean
           body?: string | null
           body_et?: string | null
+          cached_image_url?: string | null
           content_fetch_error?: string | null
           content_fetched_at?: string | null
           content_html?: string | null
@@ -273,13 +280,18 @@ export type Database = {
           permalink_url?: string | null
           published_at?: string
           raw_json?: Json | null
+          source_lang?: string | null
           source_id: string
           source_key?: string | null
           source_slug: string
           summary?: string | null
           title: string
+          translated_body?: string | null
+          translated_title?: string | null
           title_et?: string | null
           translate_hash?: string | null
+          translation_error?: string | null
+          translation_status?: string
           translated_at?: string | null
           updated_at?: string
           url: string
@@ -288,6 +300,7 @@ export type Database = {
           archived?: boolean
           body?: string | null
           body_et?: string | null
+          cached_image_url?: string | null
           content_fetch_error?: string | null
           content_fetched_at?: string | null
           content_html?: string | null
@@ -303,13 +316,18 @@ export type Database = {
           permalink_url?: string | null
           published_at?: string
           raw_json?: Json | null
+          source_lang?: string | null
           source_id?: string
           source_key?: string | null
           source_slug?: string
           summary?: string | null
           title?: string
+          translated_body?: string | null
+          translated_title?: string | null
           title_et?: string | null
           translate_hash?: string | null
+          translation_error?: string | null
+          translation_status?: string
           translated_at?: string | null
           updated_at?: string
           url?: string

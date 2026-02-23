@@ -24,18 +24,15 @@ async function sha256Hex(input: string): Promise<string> {
 }
 
 async function translateViaEdgeFunction(
-  title: string,
-  body: string,
-  sourceLang: string,
-  targetLang: string,
-): Promise<{ title_et: string; body_et: string; translate_hash: string }> {
+  id: string,
+): Promise<void> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error("SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing");
   }
 
-  const res = await fetch(`${supabaseUrl}/functions/v1/translate-news`, {
+  const res = await fetch(`${supabaseUrl}/functions/v1/translate-news-item`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -43,23 +40,32 @@ async function translateViaEdgeFunction(
       "apikey": serviceRoleKey,
     },
     body: JSON.stringify({
-      title,
-      body,
-      source_lang: sourceLang,
-      target_lang: targetLang,
+      id,
     }),
   });
 
   if (!res.ok) {
-    throw new Error(`translate-news failed: HTTP ${res.status} ${await res.text()}`);
+    throw new Error(`translate-news-item failed: HTTP ${res.status} ${await res.text()}`);
   }
+}
 
-  const data = await res.json();
-  return {
-    title_et: typeof data?.title_et === "string" ? data.title_et : "",
-    body_et: typeof data?.body_et === "string" ? data.body_et : "",
-    translate_hash: typeof data?.translate_hash === "string" ? data.translate_hash : "",
-  };
+async function cacheImageViaEdgeFunction(newsItemId: string): Promise<void> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceRoleKey) return;
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/cache-news-image`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${serviceRoleKey}`,
+      "apikey": serviceRoleKey,
+    },
+    body: JSON.stringify({ news_item_id: newsItemId }),
+  });
+  if (!res.ok && IS_DEV) {
+    console.warn("[cache-image] failed", newsItemId, res.status);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -166,52 +172,45 @@ Deno.serve(async (req) => {
             guid,
             fetched_at: new Date().toISOString(),
             raw_json: item.raw_json,
+            source_lang: lang,
           };
+          const rowWithLang = lang === "et"
+            ? { ...row, translation_status: "done" }
+            : row;
 
-          const translationPayload: {
-            title_et?: string | null;
-            body_et?: string | null;
-            translated_at?: string;
-            translate_hash?: string;
-          } = {};
-
-          if (lang !== "et" && AUTO_TRANSLATE_TO_ET) {
-            const { data: existing } = await supabase
-              .from("news_items")
-              .select("title_et, body_et, translate_hash")
-              .eq("source_slug", source.slug)
-              .eq("external_id", externalId)
-              .maybeSingle();
-
-            const shouldTranslate = !existing?.title_et || !existing?.body_et || existing.translate_hash !== contentHash;
-            if (shouldTranslate) {
-              if (IS_DEV) console.log("[translate] run", guid, contentHash);
-              try {
-                const translated = await translateViaEdgeFunction(originalTitle, originalBody, lang, "et");
-                translationPayload.title_et = translated.title_et || null;
-                translationPayload.body_et = translated.body_et || null;
-                translationPayload.translated_at = new Date().toISOString();
-                translationPayload.translate_hash = contentHash;
-              } catch (translateErr) {
-                console.error(`[translate] failed for ${guid}:`, translateErr);
-              }
-            } else if (IS_DEV) {
-              console.log("[translate] skip (hash match)", guid, contentHash);
-            }
-          }
-
-          const rowWithTranslations = { ...row, ...translationPayload };
           const decodedImageUrl = decodeUrl(item.image_url);
           const rowWithImage = decodedImageUrl
-            ? { ...rowWithTranslations, image_url: decodedImageUrl }
-            : rowWithTranslations;
+            ? { ...rowWithLang, image_url: decodedImageUrl }
+            : rowWithLang;
 
-          const { error } = await supabase
+          const { data: upserted, error } = await supabase
             .from("news_items")
-            .upsert(rowWithImage, { onConflict: "source_slug,external_id" });
+            .upsert(rowWithImage, { onConflict: "source_slug,external_id" })
+            .select("id, translate_hash, translated_title, translated_body, cached_image_url")
+            .single();
 
           if (!error) inserted++;
           else console.error(`Upsert error for ${guid}:`, error);
+
+          if (!error && upserted?.id) {
+            if (decodedImageUrl && !upserted.cached_image_url) {
+              await cacheImageViaEdgeFunction(upserted.id);
+            }
+
+            if (lang !== "et" && AUTO_TRANSLATE_TO_ET) {
+              const shouldTranslate = !upserted.translated_title || !upserted.translated_body || upserted.translate_hash !== contentHash;
+              if (shouldTranslate) {
+                if (IS_DEV) console.log("[translate] run", guid, contentHash);
+                try {
+                  await translateViaEdgeFunction(upserted.id);
+                } catch (translateErr) {
+                  console.error(`[translate] failed for ${guid}:`, translateErr);
+                }
+              } else if (IS_DEV) {
+                console.log("[translate] skip (hash match)", guid, contentHash);
+              }
+            }
+          }
         }
 
         results.push({ source: source.slug, fetched: items.length, inserted, skipped: false });

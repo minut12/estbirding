@@ -79,6 +79,10 @@ Deno.serve(async (req) => {
         published_at: item.published_at || new Date().toISOString(),
         language: item.language || "et",
         lang: item.lang || item.language || "et",
+        source_lang: item.source_lang || item.lang || item.language || "et",
+        translation_status: (item.source_lang || item.lang || item.language || "et").startsWith("et")
+          ? "done"
+          : "pending",
         guid,
       };
       const decodedImageUrl = decodeUrl(item.image_url);

@@ -71,3 +71,11 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## Server secrets (news translation)
+
+Set secrets only in Supabase Edge Functions environment (never in client code or DB):
+
+- `OPENAI_API_KEY`
+- Optional: `OPENAI_TRANSLATION_MODEL` (default `gpt-4.1-mini`)
+- Optional: `AUTO_TRANSLATE_TO_ET` (`true` by default)

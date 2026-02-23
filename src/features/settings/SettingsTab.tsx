@@ -61,9 +61,7 @@ export default function SettingsTab() {
   const [form, setForm] = useState<AppSettings>(loadSettings);
   const [confirmMode, setConfirmMode] = useState<ResetMode>(null);
   const [resetting, setResetting] = useState(false);
-  const [translationConfigured, setTranslationConfigured] = useState(false);
-  const [translationProvider, setTranslationProvider] = useState('openai');
-  const [translationModel, setTranslationModel] = useState('gpt-4.1-mini');
+  const [openAIAvailable, setOpenAIAvailable] = useState(false);
   const [translationStatusLoading, setTranslationStatusLoading] = useState(true);
   const [translationStatusUnavailable, setTranslationStatusUnavailable] = useState(false);
   const [pingLoading, setPingLoading] = useState(false);
@@ -85,16 +83,14 @@ export default function SettingsTab() {
   const loadTranslationStatus = async () => {
     setTranslationStatusLoading(true);
     try {
-      const data = await invokeEdgeFunction<any>(supabase, 'translation-status');
-      setTranslationConfigured(data?.configured === true);
-      setTranslationProvider(data?.provider || 'openai');
-      setTranslationModel(data?.model || 'gpt-4.1-mini');
+      const data = await invokeEdgeFunction<any>(supabase, 'openai_status');
+      setOpenAIAvailable(data?.hasOpenAIKey === true);
       setTranslationStatusUnavailable(false);
     } catch (error) {
-      console.error('[SETTINGS] translation-status invoke failed', error);
-      setTranslationConfigured(false);
+      console.error('[SETTINGS] openai_status invoke failed', error);
+      setOpenAIAvailable(false);
       setTranslationStatusUnavailable(true);
-      toast.error((error as Error)?.message || 'Failed to load translation status');
+      toast.error((error as Error)?.message || 'OpenAI status unavailable');
     } finally {
       setTranslationStatusLoading(false);
     }
@@ -116,8 +112,8 @@ export default function SettingsTab() {
     localStorage.setItem(NEWS_AUTO_TRANSLATE_ET_KEY, checked ? '1' : '0');
 
     if (!checked) return;
-    if (!translationConfigured) {
-      toast.error('Translation not configured');
+    if (!openAIAvailable) {
+      toast.error('Set OPENAI_API_KEY in Supabase Secrets');
       return;
     }
 
@@ -154,9 +150,14 @@ export default function SettingsTab() {
       else toast.error('Edge ping failed');
     } catch (error) {
       console.error('[SETTINGS] ping invoke failed', error);
-      const serialized = serializeForDebug(error);
+      const e = error as Error & { cause?: unknown };
+      const serialized = {
+        name: e.name || 'Error',
+        message: e.message || String(error),
+        cause: serializeForDebug(e.cause),
+        full: serializeForDebug(error),
+      };
       setEdgeTestResult(`Error\n${JSON.stringify(serialized, null, 2)}`);
-      const e = error as Error;
       toast.error(`Ping failed: ${e.name || 'Error'} ${e.message || String(error)}`);
     } finally {
       setPingLoading(false);
@@ -217,8 +218,9 @@ export default function SettingsTab() {
 
         <div className="space-y-2">
           <div className="text-xs text-muted-foreground">
-            {translationStatusUnavailable ? 'OpenAI status unavailable' : `OpenAI configured: ${translationConfigured ? 'yes' : 'no'}`}
-            {translationConfigured ? ` (${translationProvider}, ${translationModel})` : ''}
+            {translationStatusUnavailable
+              ? 'OpenAI status unavailable'
+              : (openAIAvailable ? 'OpenAI status: available' : 'OpenAI status: set OPENAI_API_KEY')}
           </div>
           <div className="flex items-center justify-between rounded-md border border-border p-3">
             <div className="space-y-1">
@@ -230,11 +232,11 @@ export default function SettingsTab() {
             <Switch
               id="autoTranslate"
               checked={form.autoTranslateToEstonian}
-              disabled={!translationConfigured || translationStatusLoading}
+              disabled={!openAIAvailable || translationStatusLoading || translationStatusUnavailable}
               onCheckedChange={handleAutoTranslateToggle}
             />
           </div>
-          {!translationConfigured && (
+          {!openAIAvailable && (
             <p className="text-xs text-muted-foreground">
               Admin: set OPENAI_API_KEY in Supabase Secrets.
             </p>
@@ -357,6 +359,14 @@ export default function SettingsTab() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-2">
+              <p className="text-xs font-semibold text-foreground">Supabase URL Debug</p>
+              <pre className="max-h-36 overflow-auto rounded-md border border-border bg-muted/30 p-2 text-xs whitespace-pre-wrap break-words">
+                {[
+                  `SUPABASE_URL.json=${JSON.stringify(SUPABASE_URL)}`,
+                  `SUPABASE_URL.length=${SUPABASE_URL.length}`,
+                  `SUPABASE_URL.lastCharCode=${SUPABASE_URL ? SUPABASE_URL.charCodeAt(SUPABASE_URL.length - 1) : 'n/a'}`,
+                ].join('\n')}
+              </pre>
               <p className="text-xs font-semibold text-foreground">Result</p>
               <pre className="max-h-48 overflow-auto rounded-md border border-border bg-muted/30 p-2 text-xs whitespace-pre-wrap break-words">
                 {edgeTestResult || '(no result yet)'}

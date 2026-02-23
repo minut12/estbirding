@@ -54,6 +54,9 @@ verify_jwt = false
 [functions.translation-status]
 verify_jwt = false
 
+[functions.openai_status]
+verify_jwt = true
+
 [functions.translate-text]
 verify_jwt = false
 

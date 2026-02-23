@@ -16,13 +16,15 @@ import { toast } from 'sonner';
 interface NewsItem {
   id: string;
   source_slug: string;
+  source_key?: string | null;
   title: string;
   summary: string | null;
   body: string | null;
   content_html: string | null;
   url: string;
   permalink_url?: string | null;
-  image_url: string | null;
+  image_url?: string | null;
+  thumbnail_url?: string | null;
   published_at: string;
   language: string;
   guid: string;
@@ -62,6 +64,10 @@ function toPlainText(value: string | null | undefined): string {
   return decoded.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function getItemImageUrl(item: NewsItem): string | null {
+  return item.image_url || item.thumbnail_url || null;
+}
+
 /* ── Page size ──────────────────────────────────── */
 const PAGE_SIZE = 20;
 const BIRDING_POLAND_SLUG = 'facebook_birdingpoland';
@@ -94,7 +100,7 @@ export default function NewsTab() {
     queryFn: async ({ pageParam = 0 }) => {
       let query = supabase
         .from('news_items')
-        .select('id, source_slug, title, summary, body, content_html, url, permalink_url, image_url, published_at, language, guid, archived')
+        .select('id, source_slug, source_key, title, summary, body, content_html, url, permalink_url, image_url, thumbnail_url:image_url_original, published_at, language, guid, archived')
         .order('published_at', { ascending: false })
         .range(pageParam, pageParam + PAGE_SIZE - 1);
 
@@ -132,6 +138,13 @@ export default function NewsTab() {
       return true;
     });
   }, [data?.pages, tab]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    allItems.forEach((item) => {
+      console.log('NEWS LIST image_url', item.source_key || item.source_slug, item.title, item.image_url || item.thumbnail_url || null);
+    });
+  }, [allItems]);
 
   // Toggle archive via DB update
   const archiveMutation = useMutation({
@@ -328,16 +341,21 @@ function NewsCard({ item, sources, onOpen, onToggleArchive }: {
   onToggleArchive: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
+  const imageUrl = getItemImageUrl(item);
   const snippet = toPlainText(item.body || item.summary).slice(0, 150);
   const originalUrl = item.permalink_url || item.url;
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageUrl]);
 
   return (
     <div className="px-4 py-3 active:bg-muted/50 transition-colors">
       <div className="flex gap-3">
         <button onClick={onOpen} className="w-20 h-20 rounded-lg shrink-0 bg-muted overflow-hidden">
-          {item.image_url && !imageFailed ? (
+          {imageUrl && !imageFailed ? (
             <img
-              src={item.image_url}
+              src={imageUrl}
               alt=""
               className="w-full h-full object-cover"
               loading="lazy"
@@ -421,6 +439,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
 
   const displayBody = contentHtml || toPlainText(item.body || item.summary);
   const originalUrl = item.permalink_url || item.url;
+  const imageUrl = getItemImageUrl(item);
 
   return (
     <div className="flex flex-col h-full">
@@ -431,9 +450,9 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
         <span className="font-medium truncate text-sm flex-1">Uudis</span>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {item.image_url ? (
+        {imageUrl ? (
           <img
-            src={item.image_url}
+            src={imageUrl}
             alt=""
             className="w-full rounded-xl object-cover max-h-56 bg-muted"
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}

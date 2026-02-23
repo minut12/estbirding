@@ -17,9 +17,12 @@ interface NewsItem {
   id: string;
   source_slug: string;
   source_key?: string | null;
+  lang?: string | null;
   title: string;
+  title_et?: string | null;
   summary: string | null;
   body: string | null;
+  body_et?: string | null;
   content_html: string | null;
   url: string;
   permalink_url?: string | null;
@@ -197,7 +200,7 @@ export default function NewsTab() {
     queryFn: async ({ pageParam = 0 }) => {
       let query = supabase
         .from('news_items')
-        .select('id, source_slug, source_key, title, summary, body, content_html, raw_json, url, permalink_url, image_url, published_at, language, guid, archived')
+        .select('id, source_slug, source_key, lang, title, title_et, summary, body, body_et, content_html, raw_json, url, permalink_url, image_url, published_at, language, guid, archived')
         .order('published_at', { ascending: false })
         .range(pageParam, pageParam + PAGE_SIZE - 1);
 
@@ -433,17 +436,13 @@ function NewsCard({ item, sources, onOpen, onToggleArchive }: {
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const thumb = decodeUrl(item.image_url ?? item.imageUrl);
-  const snippet = toPlainText(item.body || item.summary).slice(0, 150);
+  const displayTitle = item.title_et || item.title;
+  const snippet = toPlainText(item.body_et || item.body || item.summary).slice(0, 150);
   const originalUrl = item.permalink_url || item.url;
 
   useEffect(() => {
     setImageFailed(false);
   }, [thumb]);
-
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    console.log('[THUMB]', item.source_key, item.image_url, decodeUrl(item.image_url));
-  }, [item.source_key, item.image_url]);
 
   return (
     <div className="px-4 py-3 active:bg-muted/50 transition-colors">
@@ -470,7 +469,7 @@ function NewsCard({ item, sources, onOpen, onToggleArchive }: {
         </button>
         <div className="flex-1 min-w-0">
           <button onClick={onOpen} className="text-left w-full">
-            <p className="font-medium text-sm text-foreground line-clamp-2">{item.title}</p>
+            <p className="font-medium text-sm text-foreground line-clamp-2">{displayTitle}</p>
           </button>
           <div className="flex items-center gap-2 mt-1">
             <Badge variant="secondary" className="text-xs px-1.5 py-0">
@@ -538,7 +537,8 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     return () => { cancelled = true; };
   }, [item.id, item.content_html, item.source_slug]);
 
-  const displayBody = contentHtml || toPlainText(item.body || item.summary);
+  const displayTitle = item.title_et || item.title;
+  const displayBody = item.body_et || contentHtml || toPlainText(item.body || item.summary);
   const sanitizedContentHtml = contentHtml ? stripImagesFromHtml(contentHtml) : null;
   const originalUrl = item.permalink_url || item.url;
 
@@ -563,7 +563,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
             <Newspaper className="w-12 h-12 text-muted-foreground/30" />
           </div>
         )}
-        <h1 className="text-xl font-bold text-foreground">{item.title}</h1>
+        <h1 className="text-xl font-bold text-foreground">{displayTitle}</h1>
         <div className="flex items-center gap-2">
           <Badge variant="secondary">{sourceLabel(item.source_slug, sources)}</Badge>
           <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at)}</span>
@@ -575,7 +575,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
             <Skeleton className="h-4 w-5/6" />
             <Skeleton className="h-4 w-4/6" />
           </div>
-        ) : sanitizedContentHtml ? (
+        ) : sanitizedContentHtml && !item.body_et ? (
           <div
             className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
             dangerouslySetInnerHTML={{ __html: sanitizedContentHtml }}

@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeRssItem, parseRss } from "../_shared/rss-normalize.ts";
+import { isAutoTranslateEnabled, sha256Hex, translate } from "../_shared/translate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -98,28 +99,67 @@ Deno.serve(async (req) => {
           }
 
           const guid = `${source.slug}:${externalId}`;
+          const lang = sourceKey === BIRDING_POLAND_KEY ? "pl" : "et";
+          const originalTitle = item.title || item.body.slice(0, 80) || "";
+          const originalBody = item.body || "";
+          const translateHash = await sha256Hex(`${originalTitle}\n${originalBody}`);
 
           const row = {
             source_id: source.id,
             source_slug: source.slug,
             source_key: sourceKey,
             external_id: externalId,
-            title: item.title || item.body.slice(0, 80) || "",
+            title: originalTitle,
             summary: item.body.slice(0, 500) || null,
             content_html: item.body_html || null,
-            body: item.body || null,
+            body: originalBody || null,
             url: item.permalink_url || "",
             permalink_url: item.permalink_url,
             published_at: item.published_at || new Date().toISOString(),
-            language: "et",
+            language: lang,
+            lang,
             guid,
             fetched_at: new Date().toISOString(),
             raw_json: item.raw_json,
           };
+
+          const translationPayload: {
+            title_et?: string | null;
+            body_et?: string | null;
+            translated_at?: string;
+            translate_hash?: string;
+          } = {};
+
+          if (lang !== "et" && isAutoTranslateEnabled()) {
+            const { data: existing } = await supabase
+              .from("news_items")
+              .select("title_et, body_et, translate_hash")
+              .eq("source_slug", source.slug)
+              .eq("external_id", externalId)
+              .maybeSingle();
+
+            const shouldTranslate = !existing?.title_et || !existing?.body_et || existing.translate_hash !== translateHash;
+            if (shouldTranslate) {
+              try {
+                const [titleEt, bodyEt] = await Promise.all([
+                  translate(originalTitle, lang, "et"),
+                  translate(originalBody, lang, "et"),
+                ]);
+                translationPayload.title_et = titleEt || null;
+                translationPayload.body_et = bodyEt || null;
+                translationPayload.translated_at = new Date().toISOString();
+                translationPayload.translate_hash = translateHash;
+              } catch (translateErr) {
+                console.error(`[translate] failed for ${guid}:`, translateErr);
+              }
+            }
+          }
+
+          const rowWithTranslations = { ...row, ...translationPayload };
           const decodedImageUrl = decodeUrl(item.image_url);
           const rowWithImage = decodedImageUrl
-            ? { ...row, image_url: decodedImageUrl }
-            : row;
+            ? { ...rowWithTranslations, image_url: decodedImageUrl }
+            : rowWithTranslations;
 
           const { error } = await supabase
             .from("news_items")

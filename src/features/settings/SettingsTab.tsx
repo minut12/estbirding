@@ -3,9 +3,7 @@ import { loadSettings, saveSettings, type AppSettings } from '@/lib/settings';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -72,10 +70,8 @@ export default function SettingsTab() {
         <h2 className="font-semibold text-foreground">Seaded</h2>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-6">
-        {/* News Sources */}
         <NewsSourcesSettings />
 
-        {/* Events source */}
         <div className="space-y-2">
           <Label htmlFor="eventsUrl">Ürituste allikas URL</Label>
           <Input
@@ -87,51 +83,37 @@ export default function SettingsTab() {
           <p className="text-xs text-muted-foreground">JSON-vormingus ürituste voo URL</p>
         </div>
 
-        {/* Translation provider */}
         <div className="space-y-2">
-          <Label>Tõlketeenuse pakkuja</Label>
-          <Select
-            value={form.translationProvider}
-            onValueChange={(v) => update('translationProvider', v as AppSettings['translationProvider'])}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="mock">Mock (läbipääs)</SelectItem>
-              <SelectItem value="deepl" disabled>DeepL (tulekul)</SelectItem>
-              <SelectItem value="google" disabled>Google (tulekul)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Translation API key */}
-        <div className="space-y-2">
-          <Label htmlFor="apiKey">Tõlke API võti</Label>
-          <Input
-            id="apiKey"
-            type="password"
-            placeholder="Valikuline"
-            value={form.translationApiKey}
-            onChange={(e) => update('translationApiKey', e.target.value)}
-          />
+          <div className="flex items-center justify-between rounded-md border border-border p-3">
+            <div className="space-y-1">
+              <Label htmlFor="autoTranslate">Tõlgi uudised automaatselt eesti keelde</Label>
+              <p className="text-xs text-muted-foreground">
+                Mõjub serveripoolses uudiste importimises.
+              </p>
+            </div>
+            <Switch
+              id="autoTranslate"
+              checked={form.autoTranslateToEstonian}
+              onCheckedChange={(checked) => update('autoTranslateToEstonian', checked)}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Admin only: tõlke pakkuja ja API võtmed tuleb seadistada Supabase secrets kaudu.
+          </p>
         </div>
 
         <Button onClick={handleSave} className="w-full">Salvesta</Button>
 
         <Separator />
 
-        {/* Avatar Manager */}
         <AvatarManager />
 
         <Separator />
 
-        {/* Developer Settings */}
         <DeveloperSettings />
 
         <Separator />
 
-        {/* Troubleshooting section */}
         <div className="space-y-3">
           <h3 className="font-semibold text-foreground">Tõrkeotsing</h3>
           <p className="text-xs text-muted-foreground">
@@ -181,7 +163,6 @@ export default function SettingsTab() {
         </div>
       </div>
 
-      {/* Confirm dialog */}
       <AlertDialog open={confirmMode !== null} onOpenChange={(open) => { if (!open) setConfirmMode(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>

@@ -78,6 +78,7 @@ Deno.serve(async (req) => {
         url: item.url || "",
         published_at: item.published_at || new Date().toISOString(),
         language: item.language || "et",
+        lang: item.lang || item.language || "et",
         guid,
       };
       const decodedImageUrl = decodeUrl(item.image_url);

@@ -25,6 +25,7 @@ interface NewsItem {
   permalink_url?: string | null;
   image_url?: string | null;
   thumbnail_url?: string | null;
+  raw_json?: Record<string, any> | null;
   published_at: string;
   language: string;
   guid: string;
@@ -64,8 +65,60 @@ function toPlainText(value: string | null | undefined): string {
   return decoded.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function getItemImageUrl(item: NewsItem): string | null {
-  return item.image_url || item.thumbnail_url || null;
+function getThumbUrl(item: NewsItem): string | null {
+  if (item.image_url) return item.image_url;
+  if (item.thumbnail_url) return item.thumbnail_url;
+
+  const rssCandidate = item.raw_json && typeof item.raw_json === 'object'
+    ? ((item.raw_json as any).rss_item ?? item.raw_json)
+    : null;
+
+  const enclosureUrl = cleanUrl(rssCandidate?.enclosure?.url);
+  if (enclosureUrl) return enclosureUrl;
+
+  const mediaContentUrl = cleanUrl(rssCandidate?.['media:content']?.url);
+  if (mediaContentUrl) return mediaContentUrl;
+
+  const html = rssCandidate?.['content:encoded']
+    || rssCandidate?.content
+    || rssCandidate?.description
+    || item.content_html
+    || item.body
+    || '';
+
+  return extractFirstImageFromHtml(html);
+}
+
+function extractFirstImageFromHtml(html: string): string | null {
+  if (!html) return null;
+  const imgTagMatch = html.match(/<img\b[^>]*>/i);
+  if (!imgTagMatch) return null;
+  const imgTag = imgTagMatch[0];
+
+  const src = extractAttribute(imgTag, 'src');
+  const dataSrc = extractAttribute(imgTag, 'data-src');
+  const dataOriginal = extractAttribute(imgTag, 'data-original');
+  const srcSet = extractFirstSrcsetUrl(extractAttribute(imgTag, 'srcset'));
+
+  return cleanUrl(src) || cleanUrl(dataSrc) || cleanUrl(dataOriginal) || cleanUrl(srcSet) || null;
+}
+
+function extractAttribute(tag: string, attribute: string): string | null {
+  const attrMatch = tag.match(new RegExp(`${attribute}\\s*=\\s*["']([^"']+)["']`, 'i'));
+  return attrMatch?.[1] || null;
+}
+
+function extractFirstSrcsetUrl(srcset: string | null): string | null {
+  if (!srcset) return null;
+  const first = srcset.split(',')[0]?.trim();
+  if (!first) return null;
+  const url = first.split(/\s+/)[0]?.trim();
+  return url || null;
+}
+
+function cleanUrl(url: string | null | undefined): string | null {
+  const trimmed = url?.trim();
+  return trimmed ? trimmed : null;
 }
 
 /* ── Page size ──────────────────────────────────── */
@@ -100,7 +153,7 @@ export default function NewsTab() {
     queryFn: async ({ pageParam = 0 }) => {
       let query = supabase
         .from('news_items')
-        .select('id, source_slug, source_key, title, summary, body, content_html, url, permalink_url, image_url, thumbnail_url:image_url_original, published_at, language, guid, archived')
+        .select('id, source_slug, source_key, title, summary, body, content_html, raw_json, url, permalink_url, image_url, thumbnail_url:image_url_original, published_at, language, guid, archived')
         .order('published_at', { ascending: false })
         .range(pageParam, pageParam + PAGE_SIZE - 1);
 
@@ -116,7 +169,11 @@ export default function NewsTab() {
 
       const { data, error } = await query;
       if (error) throw error;
-      return (data || []) as NewsItem[];
+      const items = (data || []) as NewsItem[];
+      if (import.meta.env.DEV) {
+        console.log('[NEWS] first item', items?.[0]);
+      }
+      return items;
     },
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage.length < PAGE_SIZE) return undefined;
@@ -138,13 +195,6 @@ export default function NewsTab() {
       return true;
     });
   }, [data?.pages, tab]);
-
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    allItems.forEach((item) => {
-      console.log('NEWS LIST image_url', item.source_key || item.source_slug, item.title, item.image_url || item.thumbnail_url || null);
-    });
-  }, [allItems]);
 
   // Toggle archive via DB update
   const archiveMutation = useMutation({
@@ -341,7 +391,7 @@ function NewsCard({ item, sources, onOpen, onToggleArchive }: {
   onToggleArchive: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const imageUrl = getItemImageUrl(item);
+  const imageUrl = getThumbUrl(item);
   const snippet = toPlainText(item.body || item.summary).slice(0, 150);
   const originalUrl = item.permalink_url || item.url;
 
@@ -439,7 +489,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
 
   const displayBody = contentHtml || toPlainText(item.body || item.summary);
   const originalUrl = item.permalink_url || item.url;
-  const imageUrl = getItemImageUrl(item);
+  const imageUrl = getThumbUrl(item);
 
   return (
     <div className="flex flex-col h-full">

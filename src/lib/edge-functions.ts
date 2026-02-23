@@ -1,6 +1,30 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_URL } from '@/config/supabaseEnv';
 
+export class EdgeInvokeError extends Error {
+  status?: number;
+  responseText?: string;
+  functionName?: string;
+  kind: 'network' | 'http' | 'unknown';
+
+  constructor(
+    message: string,
+    options: {
+      status?: number;
+      responseText?: string;
+      functionName?: string;
+      kind: 'network' | 'http' | 'unknown';
+    },
+  ) {
+    super(message);
+    this.name = 'EdgeInvokeError';
+    this.status = options.status;
+    this.responseText = options.responseText;
+    this.functionName = options.functionName;
+    this.kind = options.kind;
+  }
+}
+
 export async function invokeEdgeFunction<T = any>(
   supabase: SupabaseClient,
   functionName: string,
@@ -15,7 +39,10 @@ export async function invokeEdgeFunction<T = any>(
     const errName = String(err?.name || '');
 
     if (errName === 'FunctionsFetchError' || /failed to fetch|networkerror/i.test(message)) {
-      throw new Error(`Cannot reach Supabase Edge Functions. URL=${SUPABASE_URL}. Check env + network.`);
+      throw new EdgeInvokeError(
+        `Cannot reach Supabase Edge Functions. URL=${SUPABASE_URL}. Check env + network.`,
+        { functionName, kind: 'network' },
+      );
     }
 
     if (errName === 'FunctionsHttpError' || err?.context) {
@@ -27,9 +54,15 @@ export async function invokeEdgeFunction<T = any>(
       } catch {
         text = '';
       }
-      throw new Error(`Edge function '${functionName}' HTTP ${status ?? 'unknown'}${text ? `: ${text}` : ''}`);
+      throw new EdgeInvokeError(
+        `Edge function '${functionName}' HTTP ${status ?? 'unknown'}${text ? `: ${text}` : ''}`,
+        { functionName, kind: 'http', status, responseText: text || undefined },
+      );
     }
 
-    throw new Error(`Edge function '${functionName}' failed: ${message}`);
+    throw new EdgeInvokeError(`Edge function '${functionName}' failed: ${message}`, {
+      functionName,
+      kind: 'unknown',
+    });
   }
 }

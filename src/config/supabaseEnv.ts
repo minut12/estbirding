@@ -26,14 +26,16 @@ function pickString(values: unknown[]): string {
 }
 
 function sanitizeSupabaseUrl(rawValue: string): string {
-  const raw = String(rawValue || "").trim();
-  if (!raw) return "";
+  const raw = String(rawValue || "");
+  const trimmed = raw.trim().replace(/[\r\n\t]+$/g, "");
+  const withoutTrailingSlashes = trimmed.replace(/\/+$/, "");
+  if (!withoutTrailingSlashes) return "";
 
   let parsed: URL;
   try {
-    parsed = new URL(raw);
+    parsed = new URL(withoutTrailingSlashes);
   } catch {
-    return raw;
+    return withoutTrailingSlashes;
   }
 
   parsed.hostname = parsed.hostname.replace(/\.+$/, "");
@@ -65,6 +67,7 @@ const resolvedAnonKey = pickString([
 const isHttps = resolvedUrl.startsWith("https://");
 const hasSupabaseHost = resolvedUrl.includes(".supabase.co");
 const hasAnonKey = resolvedAnonKey.length > 20;
+const hasWhitespace = /\s/.test(resolvedUrl);
 
 let hostname = "";
 try {
@@ -80,13 +83,42 @@ const hasTrailingDotHostname = /\.$/.test(hostname);
 const isValidUrl = Boolean(
   resolvedUrl &&
   isHttps &&
+  !hasWhitespace &&
   !hasTrailingDotHostname &&
   !isLocalHost &&
   (hasSupabaseHost || isCustomDomainAllowed),
 );
 
+function lastCharInfo(value: string): { char: string; code: number | null } {
+  if (!value) return { char: "", code: null };
+  const char = value.slice(-1);
+  return { char, code: char.charCodeAt(0) };
+}
+
+const rawLast = lastCharInfo(resolvedUrlRaw);
+const cleanedLast = lastCharInfo(resolvedUrl);
+
+export const SUPABASE_URL_DEBUG = {
+  raw: {
+    value: resolvedUrlRaw,
+    json: JSON.stringify(resolvedUrlRaw),
+    length: resolvedUrlRaw.length,
+    lastChar: rawLast.char,
+    lastCharCode: rawLast.code,
+  },
+  cleaned: {
+    value: resolvedUrl,
+    json: JSON.stringify(resolvedUrl),
+    length: resolvedUrl.length,
+    lastChar: cleanedLast.char,
+    lastCharCode: cleanedLast.code,
+  },
+} as const;
+
 if (import.meta.env.DEV) {
   console.info("[SUPABASE ENV] SUPABASE_URL=", resolvedUrl || "(empty)");
+  console.info("[SUPABASE ENV] RAW_URL=", SUPABASE_URL_DEBUG.raw);
+  console.info("[SUPABASE ENV] CLEANED_URL=", SUPABASE_URL_DEBUG.cleaned);
   console.info("[SUPABASE ENV] URL startsWith https:// =", isHttps);
   console.info("[SUPABASE ENV] URL includes .supabase.co =", hasSupabaseHost);
   console.info("[SUPABASE ENV] ANON key present =", resolvedAnonKey.length > 0, "len=", resolvedAnonKey.length);
@@ -99,6 +131,7 @@ export const SUPABASE_ANON_KEY_PRESENT = hasAnonKey;
 let errorReason = "";
 if (!resolvedUrl) errorReason = "missing url";
 else if (!isHttps) errorReason = "url is not https";
+else if (hasWhitespace) errorReason = "url contains whitespace";
 else if (hasTrailingDotHostname) errorReason = "hostname ends with '.'";
 else if (isLocalHost) errorReason = "localhost url is not allowed for mobile/cloud build";
 else if (!(hasSupabaseHost || isCustomDomainAllowed)) errorReason = "invalid hostname";

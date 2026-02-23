@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { loadSettings, saveSettings, NEWS_AUTO_TRANSLATE_ET_KEY, type AppSettings } from '@/lib/settings';
 import { supabase } from '@/integrations/supabase/client';
-import { SUPABASE_ANON_KEY_PRESENT, SUPABASE_ENV_ERROR, SUPABASE_URL } from '@/config/supabaseEnv';
-import { invokeEdgeFunction } from '@/lib/edge-functions';
+import { SUPABASE_ANON_KEY_PRESENT, SUPABASE_ENV_ERROR, SUPABASE_URL, SUPABASE_URL_DEBUG } from '@/config/supabaseEnv';
+import { EdgeInvokeError, invokeEdgeFunction } from '@/lib/edge-functions';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -103,7 +103,10 @@ export default function SettingsTab() {
       else toast.error('Edge ping failed');
     } catch (error) {
       console.error('[SETTINGS] ping invoke failed', error);
-      toast.error((error as Error)?.message || 'Edge ping failed');
+      const e = error as EdgeInvokeError;
+      toast.error(
+        `Ping failed. status=${e.status ?? 'n/a'} msg=${e.message}${e.responseText ? ` body=${e.responseText}` : ''}`,
+      );
     } finally {
       setPingLoading(false);
     }
@@ -205,9 +208,17 @@ export default function SettingsTab() {
               <div className="rounded-md border border-border p-3 text-xs text-muted-foreground space-y-1">
                 <div>SUPABASE_URL: {SUPABASE_URL || '(empty)'}</div>
                 <div>Anon key present: {SUPABASE_ANON_KEY_PRESENT ? 'true' : 'false'}</div>
+                <div>rawUrl.json: {SUPABASE_URL_DEBUG.raw.json}</div>
+                <div>rawUrl.length: {SUPABASE_URL_DEBUG.raw.length}</div>
+                <div>rawUrl.lastChar: {SUPABASE_URL_DEBUG.raw.lastChar || '(empty)'}</div>
+                <div>rawUrl.lastCharCode: {SUPABASE_URL_DEBUG.raw.lastCharCode ?? 'n/a'}</div>
+                <div>cleanedUrl.json: {SUPABASE_URL_DEBUG.cleaned.json}</div>
+                <div>cleanedUrl.length: {SUPABASE_URL_DEBUG.cleaned.length}</div>
+                <div>cleanedUrl.lastChar: {SUPABASE_URL_DEBUG.cleaned.lastChar || '(empty)'}</div>
+                <div>cleanedUrl.lastCharCode: {SUPABASE_URL_DEBUG.cleaned.lastCharCode ?? 'n/a'}</div>
               </div>
               <Button variant="outline" onClick={handlePingEdge} disabled={pingLoading}>
-                {pingLoading ? 'Pinging...' : 'Ping Edge Functions'}
+                {pingLoading ? 'Testing...' : 'Test connection'}
               </Button>
             </div>
           </>

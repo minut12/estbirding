@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/lib/supabaseClient';
 import {
   CalendarDays, ChevronLeft, MapPin, ExternalLink, Download,
   Search, Clock, Tag, UserCheck, RefreshCw,

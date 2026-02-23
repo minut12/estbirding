@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
 import { loadSettings, saveSettings, NEWS_AUTO_TRANSLATE_ET_KEY, type AppSettings } from '@/lib/settings';
-import { supabase } from '@/integrations/supabase/client';
+import { getSupabaseFetchLogLines, subscribeSupabaseFetchLogs, supabase } from '@/lib/supabaseClient';
 import { SUPABASE_ANON_KEY_PRESENT, SUPABASE_ENV_ERROR, SUPABASE_URL, SUPABASE_URL_DEBUG } from '@/config/supabaseEnv';
-import { EdgeInvokeError, invokeEdgeFunction } from '@/lib/edge-functions';
+import { invokeEdgeFunction } from '@/lib/edge-functions';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -32,10 +35,19 @@ export default function SettingsTab() {
   const [translationStatusLoading, setTranslationStatusLoading] = useState(true);
   const [translationStatusUnavailable, setTranslationStatusUnavailable] = useState(false);
   const [pingLoading, setPingLoading] = useState(false);
+  const [edgeTestOpen, setEdgeTestOpen] = useState(false);
+  const [edgeTestResult, setEdgeTestResult] = useState<string>('');
+  const [fetchLogLines, setFetchLogLines] = useState<string[]>([]);
 
   useEffect(() => {
     setForm(loadSettings());
     void loadTranslationStatus();
+  }, []);
+
+  useEffect(() => {
+    setFetchLogLines(getSupabaseFetchLogLines());
+    const unsubscribe = subscribeSupabaseFetchLogs(setFetchLogLines);
+    return unsubscribe;
   }, []);
 
   const loadTranslationStatus = async () => {
@@ -97,16 +109,33 @@ export default function SettingsTab() {
 
   const handlePingEdge = async () => {
     setPingLoading(true);
+    setEdgeTestOpen(true);
+    setEdgeTestResult('Testing ping...');
     try {
-      const data = await invokeEdgeFunction<any>(supabase, 'ping');
+      const { data, error } = await supabase.functions.invoke('ping', { body: {} });
+      if (error) throw error;
+      const message = data?.ok === true
+        ? `Success\n${JSON.stringify(data, null, 2)}`
+        : `Unexpected response\n${JSON.stringify(data, null, 2)}`;
+      setEdgeTestResult(message);
       if (data?.ok === true) toast.success('Edge ping ok');
       else toast.error('Edge ping failed');
     } catch (error) {
       console.error('[SETTINGS] ping invoke failed', error);
-      const e = error as EdgeInvokeError;
-      toast.error(
-        `Ping failed. name=${e.name} cause=${e.causeName ?? 'n/a'} status=${e.status ?? 'n/a'} message=${e.message}${e.responseText ? ` body=${e.responseText}` : ''}`,
-      );
+      const e = error as Error & { cause?: unknown };
+      const causeObj = e.cause as { name?: string; message?: string } | undefined;
+      const serialized = {
+        name: e.name || 'Error',
+        message: e.message || String(error),
+        cause: causeObj
+          ? {
+            name: causeObj.name ?? null,
+            message: causeObj.message ?? String(causeObj),
+          }
+          : null,
+      };
+      setEdgeTestResult(`Error\n${JSON.stringify(serialized, null, 2)}`);
+      toast.error(`Ping failed: ${serialized.name} ${serialized.message}`);
     } finally {
       setPingLoading(false);
     }
@@ -218,7 +247,7 @@ export default function SettingsTab() {
                 <div>cleanedUrl.lastCharCode: {SUPABASE_URL_DEBUG.cleaned.lastCharCode ?? 'n/a'}</div>
               </div>
               <Button variant="outline" onClick={handlePingEdge} disabled={pingLoading}>
-                {pingLoading ? 'Testing...' : 'Test connection'}
+                {pingLoading ? 'Testing...' : 'Test Edge Functions'}
               </Button>
             </div>
           </>
@@ -295,6 +324,29 @@ export default function SettingsTab() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {import.meta.env.DEV && (
+        <Dialog open={edgeTestOpen} onOpenChange={setEdgeTestOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Edge Function Test</DialogTitle>
+              <DialogDescription>
+                Result for invoke("ping") and latest Supabase fetch calls.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-foreground">Result</p>
+              <pre className="max-h-48 overflow-auto rounded-md border border-border bg-muted/30 p-2 text-xs whitespace-pre-wrap break-words">
+                {edgeTestResult || '(no result yet)'}
+              </pre>
+              <p className="text-xs font-semibold text-foreground">Last fetch lines (max 5)</p>
+              <pre className="max-h-48 overflow-auto rounded-md border border-border bg-muted/30 p-2 text-xs whitespace-pre-wrap break-words">
+                {(fetchLogLines.length > 0 ? fetchLogLines.join('\n') : '(no fetch logs yet)')}
+              </pre>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

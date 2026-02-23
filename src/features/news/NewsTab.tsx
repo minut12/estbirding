@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/lib/supabaseClient';
 import {
   Newspaper, ChevronLeft, Archive, ArchiveRestore, ExternalLink,
   Search, RefreshCw, Loader2,
@@ -293,9 +293,18 @@ export default function NewsTab() {
   }, [archiveMutation]);
 
   const runPendingTranslation = useCallback(async (limit: number) => {
+    const missingIds = newsItems
+      .filter((item) => {
+        if ((item.source_key || item.source_slug) === 'eoy') return false;
+        return !item.title_et || !item.body_et;
+      })
+      .slice(0, limit)
+      .map((item) => item.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+
     const candidates: Array<{ name: string; body: Record<string, unknown> }> = [
-      { name: 'translate-missing-news-et', body: { limit, include_archived: false } },
-      { name: 'translate-news-pending', body: { limit } },
+      { name: 'translate-missing-news-et', body: missingIds.length > 0 ? { ids: missingIds } : { limit, include_archived: false } },
+      { name: 'translate-news-pending', body: missingIds.length > 0 ? { ids: missingIds } : { limit } },
     ];
 
     let lastError: string | null = null;
@@ -320,7 +329,7 @@ export default function NewsTab() {
     }
 
     toast.error(lastError || 'Tolge ebaonnestus');
-  }, [queryClient]);
+  }, [newsItems, queryClient]);
 
   useEffect(() => {
     if (!showEtContent || newsItems.length === 0) return;

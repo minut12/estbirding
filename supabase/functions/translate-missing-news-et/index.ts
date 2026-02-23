@@ -14,6 +14,12 @@ Deno.serve(async (req) => {
     if (!getOpenAIConfig()) return jsonResponse(400, { error: "Translation not configured" });
 
     const body = await req.json().catch(() => ({}));
+    const requestedIds = Array.isArray(body?.ids)
+      ? body.ids
+        .filter((id: unknown): id is string => typeof id === "string" && id.trim().length > 0)
+        .map((id: string) => id.trim())
+        .slice(0, 100)
+      : [];
     const limit = Number.isFinite(body?.limit) ? Math.max(1, Math.min(100, Number(body.limit))) : 20;
     const includeArchived = body?.include_archived === true;
     const onlySourceKey = typeof body?.source_key === "string" && body.source_key.trim()
@@ -28,10 +34,16 @@ Deno.serve(async (req) => {
     let query = supabase
       .from("news_items")
       .select("id, source_key, title, body, source_lang, title_et, body_et, translate_hash")
-      .neq("source_key", "eoy")
-      .or("title_et.is.null,body_et.is.null,translation_status.eq.pending,translation_status.eq.error")
-      .order("published_at", { ascending: false })
-      .limit(limit);
+      .neq("source_key", "eoy");
+
+    if (requestedIds.length > 0) {
+      query = query.in("id", requestedIds);
+    } else {
+      query = query
+        .or("title_et.is.null,body_et.is.null,translation_status.eq.pending,translation_status.eq.error")
+        .order("published_at", { ascending: false })
+        .limit(limit);
+    }
 
     if (!includeArchived) query = query.eq("archived", false);
     if (onlySourceKey) query = query.eq("source_key", onlySourceKey);

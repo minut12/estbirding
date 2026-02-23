@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { isAutoTranslateNewsToEtEnabled } from '@/lib/settings';
 import { isEstonianLocale, resolveAppLocale } from '@/lib/locale';
 import { toast } from 'sonner';
 
@@ -290,8 +289,6 @@ export default function NewsTab() {
   }, [archiveMutation]);
 
   const runPendingTranslation = useCallback(async (limit: number) => {
-    if (!isAutoTranslateNewsToEtEnabled()) return;
-
     const { data: statusData, error: statusError } = await supabase.functions.invoke('translation-status');
     if (statusError || statusData?.configured !== true) return;
 
@@ -312,6 +309,16 @@ export default function NewsTab() {
       await queryClient.invalidateQueries({ queryKey: ['news-items'] });
     }
   }, [queryClient]);
+
+  useEffect(() => {
+    if (!showEtContent || newsItems.length === 0) return;
+    const hasMissingEt = newsItems.some((item) => {
+      if ((item.source_key || item.source_slug) === 'eoy') return false;
+      return !item.title_et || !item.body_et;
+    });
+    if (!hasMissingEt) return;
+    void runPendingTranslation(20);
+  }, [showEtContent, newsItems, runPendingTranslation]);
 
   // Pull / refresh
   const pullMutation = useMutation({

@@ -11,6 +11,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { isEstonianLocale, resolveAppLocale } from '@/lib/locale';
+import { invokeEdgeFunction } from '@/lib/edge-functions';
+import { SUPABASE_CONFIG_ERROR } from '@/config/supabase';
 import { toast } from 'sonner';
 
 /* ── Types ──────────────────────────────────────── */
@@ -268,13 +270,15 @@ export default function NewsTab() {
     toast.error('Uudiste laadimine ebaõnnestus');
   }, [isError]);
 
+  useEffect(() => {
+    if (!SUPABASE_CONFIG_ERROR) return;
+    toast.error(SUPABASE_CONFIG_ERROR);
+  }, []);
+
   // Toggle archive via DB update
   const archiveMutation = useMutation({
     mutationFn: async ({ id, archived }: { id: string; archived: boolean }) => {
-      const { error } = await supabase.functions.invoke('news-archive', {
-        body: { id, archived },
-      });
-      if (error) throw error;
+      await invokeEdgeFunction(supabase, 'news-archive', { id, archived });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['news-items'] });
@@ -296,23 +300,22 @@ export default function NewsTab() {
 
     let lastError: string | null = null;
     for (const candidate of candidates) {
-      const { data, error } = await supabase.functions.invoke(candidate.name, {
-        body: candidate.body,
-      });
-      if (error) {
-        lastError = error.message || `Function ${candidate.name} failed`;
-        continue;
-      }
-      if (data?.error === 'Translation not configured') {
-        toast.error('Translation not configured');
+      try {
+        const data = await invokeEdgeFunction<any>(supabase, candidate.name, candidate.body);
+        if (data?.error === 'Translation not configured') {
+          toast.error('Translation not configured');
+          return;
+        }
+        const translated = Number(data?.translated || 0);
+        if (translated > 0) {
+          toast.success(`Tolgiti ${translated} uudist`);
+          await queryClient.invalidateQueries({ queryKey: ['news-items'] });
+        }
         return;
+      } catch (error: any) {
+        console.error(`[NEWS] ${candidate.name} invoke failed`, error);
+        lastError = error?.message || `Function ${candidate.name} failed`;
       }
-      const translated = Number(data?.translated || 0);
-      if (translated > 0) {
-        toast.success(`Tolgiti ${translated} uudist`);
-        await queryClient.invalidateQueries({ queryKey: ['news-items'] });
-      }
-      return;
     }
 
     toast.error(lastError || 'Tolge ebaonnestus');
@@ -331,10 +334,7 @@ export default function NewsTab() {
   // Pull / refresh
   const pullMutation = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke('news-pull', {
-        body: { force: false },
-      });
-      if (error) throw error;
+      const data = await invokeEdgeFunction<any>(supabase, 'news-pull', { force: false });
       return data;
     },
     onSuccess: async (data) => {
@@ -576,17 +576,17 @@ function ArticleView({ item, sources, showEtContent, onBack, onToggleArchive }: 
       setLoadingContent(true);
       setContentError(null);
       try {
-        const { data, error } = await supabase.functions.invoke('fetch-eoy-article-content', {
-          body: { news_item_id: item.id },
+        const data = await invokeEdgeFunction<any>(supabase, 'fetch-eoy-article-content', {
+          news_item_id: item.id,
         });
         if (cancelled) return;
-        if (error) throw error;
         if (data?.content_html) {
           setContentHtml(data.content_html);
         } else if (data?.error) {
           setContentError(data.error);
         }
       } catch (e: any) {
+        console.error('[NEWS] fetch-eoy-article-content invoke failed', e);
         if (!cancelled) setContentError(e.message || 'Sisu laadimine ebaõnnestus');
       } finally {
         if (!cancelled) setLoadingContent(false);

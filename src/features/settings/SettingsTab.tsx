@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { loadSettings, saveSettings, NEWS_AUTO_TRANSLATE_ET_KEY, type AppSettings } from '@/lib/settings';
 import { supabase } from '@/integrations/supabase/client';
+import { SUPABASE_CONFIG_ERROR } from '@/config/supabase';
+import { invokeEdgeFunction } from '@/lib/edge-functions';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -29,6 +31,7 @@ export default function SettingsTab() {
   const [translationModel, setTranslationModel] = useState('gpt-4.1-mini');
   const [translationStatusLoading, setTranslationStatusLoading] = useState(true);
   const [translationStatusUnavailable, setTranslationStatusUnavailable] = useState(false);
+  const [pingLoading, setPingLoading] = useState(false);
 
   useEffect(() => {
     setForm(loadSettings());
@@ -37,17 +40,20 @@ export default function SettingsTab() {
 
   const loadTranslationStatus = async () => {
     setTranslationStatusLoading(true);
-    const { data, error } = await supabase.functions.invoke('translation-status');
-    if (error) {
-      setTranslationConfigured(false);
-      setTranslationStatusUnavailable(true);
-    } else {
+    try {
+      const data = await invokeEdgeFunction<any>(supabase, 'translation-status');
       setTranslationConfigured(data?.configured === true);
       setTranslationProvider(data?.provider || 'openai');
       setTranslationModel(data?.model || 'gpt-4.1-mini');
       setTranslationStatusUnavailable(false);
+    } catch (error) {
+      console.error('[SETTINGS] translation-status invoke failed', error);
+      setTranslationConfigured(false);
+      setTranslationStatusUnavailable(true);
+      toast.error((error as Error)?.message || 'Failed to load translation status');
+    } finally {
+      setTranslationStatusLoading(false);
     }
-    setTranslationStatusLoading(false);
   };
 
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
@@ -71,11 +77,12 @@ export default function SettingsTab() {
       return;
     }
 
-    const { data, error } = await supabase.functions.invoke('translate-news-pending', {
-      body: { limit: 10 },
-    });
-    if (error) {
-      toast.error(error.message || 'Tolge ebaonnestus');
+    let data: any;
+    try {
+      data = await invokeEdgeFunction<any>(supabase, 'translate-news-pending', { limit: 10 });
+    } catch (error) {
+      console.error('[SETTINGS] translate-news-pending invoke failed', error);
+      toast.error((error as Error)?.message || 'Tolge ebaonnestus');
       return;
     }
     if (data?.error === 'Translation not configured') {
@@ -86,6 +93,20 @@ export default function SettingsTab() {
     const translated = Number(data?.translated || 0);
     if (translated > 0) toast.success(`Tolgiti ${translated} uudist`);
     else toast.info('Tolkida pole midagi');
+  };
+
+  const handlePingEdge = async () => {
+    setPingLoading(true);
+    try {
+      const data = await invokeEdgeFunction<any>(supabase, 'ping');
+      if (data?.ok === true) toast.success('Edge ping ok');
+      else toast.error('Edge ping failed');
+    } catch (error) {
+      console.error('[SETTINGS] ping invoke failed', error);
+      toast.error((error as Error)?.message || 'Edge ping failed');
+    } finally {
+      setPingLoading(false);
+    }
   };
 
   const showReport = (report: ResetReport) => {
@@ -122,6 +143,12 @@ export default function SettingsTab() {
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-6">
         <NewsSourcesSettings />
+
+        {SUPABASE_CONFIG_ERROR && (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            {SUPABASE_CONFIG_ERROR}
+          </div>
+        )}
 
         <div className="space-y-2">
           <Label htmlFor="eventsUrl">Urituste allikas URL</Label>
@@ -169,6 +196,18 @@ export default function SettingsTab() {
         <Separator />
 
         <DeveloperSettings />
+
+        {import.meta.env.DEV && (
+          <>
+            <Separator />
+            <div className="space-y-2">
+              <h3 className="font-semibold text-foreground">Edge Health Check</h3>
+              <Button variant="outline" onClick={handlePingEdge} disabled={pingLoading}>
+                {pingLoading ? 'Pinging...' : 'Ping Edge Functions'}
+              </Button>
+            </div>
+          </>
+        )}
 
         <Separator />
 

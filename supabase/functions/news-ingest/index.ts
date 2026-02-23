@@ -6,6 +6,11 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-ingest-key, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+function decodeUrl(u: string | null | undefined): string | null {
+  if (!u) return null;
+  return u.replaceAll("&amp;", "&").replaceAll("&#38;", "&");
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -75,8 +80,9 @@ Deno.serve(async (req) => {
         language: item.language || "et",
         guid,
       };
-      const rowWithImage = item.image_url
-        ? { ...row, image_url: item.image_url }
+      const decodedImageUrl = decodeUrl(item.image_url);
+      const rowWithImage = decodedImageUrl
+        ? { ...row, image_url: decodedImageUrl }
         : row;
 
       const { error, status } = await supabase

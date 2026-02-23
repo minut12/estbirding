@@ -146,6 +146,11 @@ export function extractImageUrl(item: ParsedRssItem, bodyHtml?: string): string 
   return null;
 }
 
+function decodeUrl(u: string | null | undefined): string | null {
+  if (!u) return null;
+  return u.replaceAll("&amp;", "&").replaceAll("&#38;", "&");
+}
+
 function extractFirstImageUrl(html: string): string | null {
   if (!html) return null;
   const imgTagMatch = html.match(/<img\b[^>]*>/i);
@@ -178,7 +183,7 @@ function firstArrayUrl(items: Array<{ url?: string }> | undefined): string | nul
 }
 
 function cleanUrl(value: string | undefined | null): string | null {
-  const trimmed = value?.trim();
+  const trimmed = decodeUrl(value)?.trim();
   return trimmed ? trimmed : null;
 }
 

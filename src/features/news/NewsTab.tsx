@@ -24,6 +24,7 @@ interface NewsItem {
   url: string;
   permalink_url?: string | null;
   image_url?: string | null;
+  imageUrl?: string | null;
   raw_json?: Record<string, any> | null;
   published_at: string;
   language: string;
@@ -62,6 +63,11 @@ function toPlainText(value: string | null | undefined): string {
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'");
   return decoded.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function decodeUrl(u: string | null | undefined): string | null {
+  if (!u) return null;
+  return u.replaceAll("&amp;", "&").replaceAll("&#38;", "&");
 }
 
 function extractImageUrlFromRaw(item: NewsItem): string | null {
@@ -131,12 +137,13 @@ function pickArrayOrObjectUrl(
 }
 
 function cleanUrl(url: string | null | undefined): string | null {
-  const trimmed = url?.trim();
+  const trimmed = decodeUrl(url)?.trim();
   return trimmed ? trimmed : null;
 }
 
 function ensureImageUrl(item: NewsItem): NewsItem {
-  if (item.image_url) return item;
+  const decoded = decodeUrl(item.image_url ?? item.imageUrl);
+  if (decoded) return { ...item, image_url: decoded };
   return { ...item, image_url: extractImageUrlFromRaw(item) };
 }
 
@@ -407,25 +414,26 @@ function NewsCard({ item, sources, onOpen, onToggleArchive }: {
   onToggleArchive: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
+  const thumb = decodeUrl(item.image_url ?? item.imageUrl);
   const snippet = toPlainText(item.body || item.summary).slice(0, 150);
   const originalUrl = item.permalink_url || item.url;
 
   useEffect(() => {
     setImageFailed(false);
-  }, [item.image_url]);
+  }, [thumb]);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
-    console.log('NEWS THUMB', item.source_key, item.image_url);
+    console.log('[THUMB]', item.source_key, item.image_url, decodeUrl(item.image_url));
   }, [item.source_key, item.image_url]);
 
   return (
     <div className="px-4 py-3 active:bg-muted/50 transition-colors">
       <div className="flex gap-3">
         <button onClick={onOpen} className="w-20 h-20 rounded-lg shrink-0 bg-muted overflow-hidden">
-          {item.image_url && !imageFailed ? (
+          {thumb && !imageFailed ? (
             <img
-              src={item.image_url ?? undefined}
+              src={thumb}
               alt={item.title ?? 'news image'}
               className="w-full h-full object-cover"
               referrerPolicy="no-referrer"

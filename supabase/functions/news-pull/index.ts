@@ -11,6 +11,11 @@ const COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
 const BIRDING_POLAND_KEY = "facebook_birdingpoland";
 const IS_DEV = Deno.env.get("DENO_DEPLOYMENT_ID") == null;
 
+function decodeUrl(u: string | null | undefined): string | null {
+  if (!u) return null;
+  return u.replaceAll("&amp;", "&").replaceAll("&#38;", "&");
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -111,8 +116,9 @@ Deno.serve(async (req) => {
             fetched_at: new Date().toISOString(),
             raw_json: item.raw_json,
           };
-          const rowWithImage = item.image_url
-            ? { ...row, image_url: item.image_url }
+          const decodedImageUrl = decodeUrl(item.image_url);
+          const rowWithImage = decodedImageUrl
+            ? { ...row, image_url: decodedImageUrl }
             : row;
 
           const { error } = await supabase

@@ -32,3 +32,6 @@ verify_jwt = false
 
 [functions.news-pull-test]
 verify_jwt = false
+
+[functions.translate-news]
+verify_jwt = false

@@ -1,6 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeRssItem, parseRss } from "../_shared/rss-normalize.ts";
-import { isAutoTranslateEnabled, sha256Hex, translate } from "../_shared/translate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,10 +10,56 @@ const corsHeaders = {
 const COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
 const BIRDING_POLAND_KEY = "facebook_birdingpoland";
 const IS_DEV = Deno.env.get("DENO_DEPLOYMENT_ID") == null;
+const AUTO_TRANSLATE_TO_ET = (Deno.env.get("AUTO_TRANSLATE_TO_ET") || "true").toLowerCase() !== "false";
 
 function decodeUrl(u: string | null | undefined): string | null {
   if (!u) return null;
   return u.replaceAll("&amp;", "&").replaceAll("&#38;", "&");
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const data = new TextEncoder().encode(input);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function translateViaEdgeFunction(
+  title: string,
+  body: string,
+  sourceLang: string,
+  targetLang: string,
+): Promise<{ title_et: string; body_et: string; translate_hash: string }> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing");
+  }
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/translate-news`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${serviceRoleKey}`,
+      "apikey": serviceRoleKey,
+    },
+    body: JSON.stringify({
+      title,
+      body,
+      source_lang: sourceLang,
+      target_lang: targetLang,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`translate-news failed: HTTP ${res.status} ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  return {
+    title_et: typeof data?.title_et === "string" ? data.title_et : "",
+    body_et: typeof data?.body_et === "string" ? data.body_et : "",
+    translate_hash: typeof data?.translate_hash === "string" ? data.translate_hash : "",
+  };
 }
 
 Deno.serve(async (req) => {
@@ -102,7 +147,7 @@ Deno.serve(async (req) => {
           const lang = sourceKey === BIRDING_POLAND_KEY ? "pl" : "et";
           const originalTitle = item.title || item.body.slice(0, 80) || "";
           const originalBody = item.body || "";
-          const translateHash = await sha256Hex(`${originalTitle}\n${originalBody}`);
+          const contentHash = await sha256Hex(`${originalTitle}\n${originalBody}`);
 
           const row = {
             source_id: source.id,
@@ -130,7 +175,7 @@ Deno.serve(async (req) => {
             translate_hash?: string;
           } = {};
 
-          if (lang !== "et" && isAutoTranslateEnabled()) {
+          if (lang !== "et" && AUTO_TRANSLATE_TO_ET) {
             const { data: existing } = await supabase
               .from("news_items")
               .select("title_et, body_et, translate_hash")
@@ -138,20 +183,20 @@ Deno.serve(async (req) => {
               .eq("external_id", externalId)
               .maybeSingle();
 
-            const shouldTranslate = !existing?.title_et || !existing?.body_et || existing.translate_hash !== translateHash;
+            const shouldTranslate = !existing?.title_et || !existing?.body_et || existing.translate_hash !== contentHash;
             if (shouldTranslate) {
+              if (IS_DEV) console.log("[translate] run", guid, contentHash);
               try {
-                const [titleEt, bodyEt] = await Promise.all([
-                  translate(originalTitle, lang, "et"),
-                  translate(originalBody, lang, "et"),
-                ]);
-                translationPayload.title_et = titleEt || null;
-                translationPayload.body_et = bodyEt || null;
+                const translated = await translateViaEdgeFunction(originalTitle, originalBody, lang, "et");
+                translationPayload.title_et = translated.title_et || null;
+                translationPayload.body_et = translated.body_et || null;
                 translationPayload.translated_at = new Date().toISOString();
-                translationPayload.translate_hash = translateHash;
+                translationPayload.translate_hash = contentHash;
               } catch (translateErr) {
                 console.error(`[translate] failed for ${guid}:`, translateErr);
               }
+            } else if (IS_DEV) {
+              console.log("[translate] skip (hash match)", guid, contentHash);
             }
           }
 

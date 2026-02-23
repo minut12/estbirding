@@ -189,9 +189,6 @@ export default function NewsTab() {
       const { data, error } = await query;
       if (error) throw error;
       const items = ((data || []) as NewsItem[]).map(ensureImageUrl);
-      if (import.meta.env.DEV) {
-        console.log('[NEWS] first item', items?.[0]);
-      }
       return items;
     },
     getNextPageParam: (lastPage, allPages) => {
@@ -214,13 +211,6 @@ export default function NewsTab() {
       return true;
     });
   }, [data?.pages, tab]);
-
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    allItems.forEach((item) => {
-      console.log(item.source_key || item.source_slug, item.image_url || null);
-    });
-  }, [allItems]);
 
   // Toggle archive via DB update
   const archiveMutation = useMutation({
@@ -424,19 +414,27 @@ function NewsCard({ item, sources, onOpen, onToggleArchive }: {
     setImageFailed(false);
   }, [item.image_url]);
 
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.log('NEWS THUMB', item.source_key, item.image_url);
+  }, [item.source_key, item.image_url]);
+
   return (
     <div className="px-4 py-3 active:bg-muted/50 transition-colors">
       <div className="flex gap-3">
         <button onClick={onOpen} className="w-20 h-20 rounded-lg shrink-0 bg-muted overflow-hidden">
           {item.image_url && !imageFailed ? (
             <img
-              src={item.image_url}
-              alt=""
+              src={item.image_url ?? undefined}
+              alt={item.title ?? 'news image'}
               className="w-full h-full object-cover"
               referrerPolicy="no-referrer"
               loading="lazy"
               decoding="async"
-              onError={() => setImageFailed(true)}
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = 'none';
+                setImageFailed(true);
+              }}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">

@@ -44,3 +44,6 @@ verify_jwt = false
 
 [functions.cache-news-image]
 verify_jwt = false
+
+[functions.translation-status]
+verify_jwt = false

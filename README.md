@@ -77,5 +77,5 @@ Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/c
 Set secrets only in Supabase Edge Functions environment (never in client code or DB):
 
 - `OPENAI_API_KEY`
-- Optional: `OPENAI_TRANSLATION_MODEL` (default `gpt-4.1-mini`)
+- Optional: `OPENAI_MODEL` (default `gpt-4.1-mini`)
 - Optional: `AUTO_TRANSLATE_TO_ET` (`true` by default)

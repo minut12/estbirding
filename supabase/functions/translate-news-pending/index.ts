@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getOpenAIConfig } from "../_shared/openai.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,6 +21,16 @@ Deno.serve(async (req) => {
   }
 
   try {
+    if (!getOpenAIConfig()) {
+      return new Response(JSON.stringify({ error: "Translation not configured" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const limit = Number.isFinite(body?.limit) ? Math.max(1, Math.min(50, Number(body.limit))) : 50;
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
@@ -32,7 +43,7 @@ Deno.serve(async (req) => {
       .neq("source_key", "eoy")
       .gte("created_at", sinceIso)
       .order("published_at", { ascending: false })
-      .limit(50);
+      .limit(limit);
 
     if (error) throw error;
     if (!items || items.length === 0) {

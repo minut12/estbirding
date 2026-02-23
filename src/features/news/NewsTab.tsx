@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { loadSettings } from '@/lib/settings';
 import { toast } from 'sonner';
 
 /* ── Types ──────────────────────────────────────── */
@@ -265,6 +266,28 @@ export default function NewsTab() {
     archiveMutation.mutate({ id, archived: !currentArchived });
   }, [archiveMutation]);
 
+  const runPendingTranslation = useCallback(async (limit: number) => {
+    const settings = loadSettings();
+    if (!settings.autoTranslateToEstonian) return;
+
+    const { data: statusData, error: statusError } = await supabase.functions.invoke('translation-status');
+    if (statusError || statusData?.configured !== true) return;
+
+    const { data, error } = await supabase.functions.invoke('translate-news-pending', {
+      body: { limit },
+    });
+    if (error) {
+      toast.error(error.message || 'Tolge ebaonnestus');
+      return;
+    }
+    if (data?.error === 'Translation not configured') {
+      toast.error('Translation not configured');
+      return;
+    }
+    const translated = Number(data?.translated || 0);
+    if (translated > 0) toast.success(`Tolgiti ${translated} uudist`);
+  }, []);
+
   // Pull / refresh
   const pullMutation = useMutation({
     mutationFn: async () => {
@@ -274,11 +297,12 @@ export default function NewsTab() {
       if (error) throw error;
       return data;
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ['news-items'] });
       const total = data?.results?.reduce((s: number, r: any) => s + (r.inserted || 0), 0) || 0;
       if (total > 0) toast.success(`${total} uut uudist`);
       else toast.info('Uusi uudiseid pole');
+      await runPendingTranslation(10);
     },
     onError: () => {
       toast.error('Uudiste tõmbamine ebaõnnestus');

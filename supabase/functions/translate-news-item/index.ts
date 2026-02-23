@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getOpenAIConfig, translateToEstonian } from "../_shared/openai.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,18 +21,16 @@ async function sha256Hex(input: string): Promise<string> {
 }
 
 async function classifyLanguageWithOpenAI(title: string, body: string): Promise<string> {
-  const apiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
-
-  const model = Deno.env.get("OPENAI_TRANSLATION_MODEL") || "gpt-4.1-mini";
+  const cfg = getOpenAIConfig();
+  if (!cfg) throw new Error("Translation not configured");
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
+      "Authorization": `Bearer ${cfg.apiKey}`,
     },
     body: JSON.stringify({
-      model,
+      model: cfg.model,
       temperature: 0,
       messages: [
         {
@@ -59,54 +58,15 @@ function heuristicLanguage(title: string, body: string): string | null {
   return null;
 }
 
-async function translateToEstonian(title: string, body: string, sourceLang: string): Promise<{ translated_title: string; translated_body: string }> {
-  const apiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
-
-  const model = Deno.env.get("OPENAI_TRANSLATION_MODEL") || "gpt-4.1-mini";
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content:
-            "Translate provided title and body to Estonian. Preserve names, places, species names, emojis, and line breaks. Return JSON only with keys translated_title and translated_body.",
-        },
-        {
-          role: "user",
-          content: `source_lang=${sourceLang}\ntarget_lang=et\n\nTITLE:\n${title}\n\nBODY:\n${body}`,
-        },
-      ],
-    }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Translation failed: ${res.status} ${text}`);
-  }
-
-  const data = await res.json();
-  const content = data?.choices?.[0]?.message?.content || "{}";
-  const parsed = JSON.parse(content);
-  return {
-    translated_title: typeof parsed?.translated_title === "string" ? parsed.translated_title : "",
-    translated_body: typeof parsed?.translated_body === "string" ? parsed.translated_body : "",
-  };
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse(405, { error: "Method not allowed" });
 
   try {
+    if (!getOpenAIConfig()) {
+      return jsonResponse(400, { error: "Translation not configured" });
+    }
+
     const body = await req.json().catch(() => ({}));
     const id = typeof body.id === "string" ? body.id : "";
     if (!id) return jsonResponse(400, { error: "Missing id" });
@@ -154,11 +114,15 @@ Deno.serve(async (req) => {
     }
 
     try {
-      const translated = await translateToEstonian(title, bodyText, sourceLang);
+      const translated = await translateToEstonian({
+        title,
+        body: bodyText,
+        sourceLang,
+      });
       await supabase.from("news_items").update({
         source_lang: sourceLang,
-        translated_title: translated.translated_title || null,
-        translated_body: translated.translated_body || null,
+        translated_title: translated.title_et || null,
+        translated_body: translated.body_et || null,
         translation_status: "done",
         translation_error: null,
         translated_at: new Date().toISOString(),

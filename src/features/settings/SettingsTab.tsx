@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { loadSettings, saveSettings, type AppSettings } from '@/lib/settings';
+import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -23,10 +24,29 @@ export default function SettingsTab() {
   const [form, setForm] = useState<AppSettings>(loadSettings);
   const [confirmMode, setConfirmMode] = useState<ResetMode>(null);
   const [resetting, setResetting] = useState(false);
+  const [translationConfigured, setTranslationConfigured] = useState(false);
+  const [translationProvider, setTranslationProvider] = useState('openai');
+  const [translationModel, setTranslationModel] = useState('gpt-4.1-mini');
+  const [translationStatusLoading, setTranslationStatusLoading] = useState(true);
 
   useEffect(() => {
     setForm(loadSettings());
+    void loadTranslationStatus();
   }, []);
+
+  const loadTranslationStatus = async () => {
+    setTranslationStatusLoading(true);
+    const { data, error } = await supabase.functions.invoke('translation-status');
+    if (error) {
+      setTranslationConfigured(false);
+      toast.error('Translation status load failed');
+    } else {
+      setTranslationConfigured(data?.configured === true);
+      setTranslationProvider(data?.provider || 'openai');
+      setTranslationModel(data?.model || 'gpt-4.1-mini');
+    }
+    setTranslationStatusLoading(false);
+  };
 
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -37,14 +57,42 @@ export default function SettingsTab() {
     toast.success('Seaded salvestatud');
   };
 
+  const handleAutoTranslateToggle = async (checked: boolean) => {
+    const next = { ...form, autoTranslateToEstonian: checked };
+    setForm(next);
+    saveSettings(next);
+
+    if (!checked) return;
+    if (!translationConfigured) {
+      toast.error('Translation not configured');
+      return;
+    }
+
+    const { data, error } = await supabase.functions.invoke('translate-news-pending', {
+      body: { limit: 10 },
+    });
+    if (error) {
+      toast.error(error.message || 'Tolge ebaonnestus');
+      return;
+    }
+    if (data?.error === 'Translation not configured') {
+      toast.error('Translation not configured');
+      return;
+    }
+
+    const translated = Number(data?.translated || 0);
+    if (translated > 0) toast.success(`Tolgiti ${translated} uudist`);
+    else toast.info('Tolkida pole midagi');
+  };
+
   const showReport = (report: ResetReport) => {
     if (report.errors.length > 0) {
-      toast.warning('Osaline tühjendus', {
+      toast.warning('Osaline tuhjendus', {
         description: report.errors.join('; '),
         duration: 4000,
       });
     } else {
-      toast.success('Vahemälu tühjendatud. Laen uuesti…');
+      toast.success('Vahemalu tuhjendatud. Laen uuesti...');
     }
   };
 
@@ -59,7 +107,7 @@ export default function SettingsTab() {
       await new Promise((r) => setTimeout(r, 800));
       if (mode === 'soft') doSoftReload(); else doHardReload();
     } catch {
-      toast.error('Tühjendamine ebaõnnestus');
+      toast.error('Tuhjendamine ebaonnestus');
       setResetting(false);
     }
   };
@@ -73,33 +121,41 @@ export default function SettingsTab() {
         <NewsSourcesSettings />
 
         <div className="space-y-2">
-          <Label htmlFor="eventsUrl">Ürituste allikas URL</Label>
+          <Label htmlFor="eventsUrl">Urituste allikas URL</Label>
           <Input
             id="eventsUrl"
             placeholder="https://example.com/events.json"
             value={form.eventsSourceUrl}
             onChange={(e) => update('eventsSourceUrl', e.target.value)}
           />
-          <p className="text-xs text-muted-foreground">JSON-vormingus ürituste voo URL</p>
+          <p className="text-xs text-muted-foreground">JSON-vormingus urituste voo URL</p>
         </div>
 
         <div className="space-y-2">
+          <div className="text-xs text-muted-foreground">
+            Translation: {translationConfigured
+              ? `Configured (${translationProvider}, ${translationModel})`
+              : 'Not configured'}
+          </div>
           <div className="flex items-center justify-between rounded-md border border-border p-3">
             <div className="space-y-1">
-              <Label htmlFor="autoTranslate">Tõlgi uudised automaatselt eesti keelde</Label>
+              <Label htmlFor="autoTranslate">Tolgi uudised automaatselt eesti keelde</Label>
               <p className="text-xs text-muted-foreground">
-                Mõjub serveripoolses uudiste importimises.
+                Mojub serveripoolses uudiste importimises.
               </p>
             </div>
             <Switch
               id="autoTranslate"
               checked={form.autoTranslateToEstonian}
-              onCheckedChange={(checked) => update('autoTranslateToEstonian', checked)}
+              disabled={!translationConfigured || translationStatusLoading}
+              onCheckedChange={handleAutoTranslateToggle}
             />
           </div>
-          <p className="text-xs text-muted-foreground">
-            Admin only: tõlke pakkuja ja API võtmed tuleb seadistada Supabase secrets kaudu.
-          </p>
+          {!translationConfigured && (
+            <p className="text-xs text-muted-foreground">
+              Admin only: translation provider + API keys must be configured via Supabase secrets.
+            </p>
+          )}
         </div>
 
         <Button onClick={handleSave} className="w-full">Salvesta</Button>
@@ -115,9 +171,9 @@ export default function SettingsTab() {
         <Separator />
 
         <div className="space-y-3">
-          <h3 className="font-semibold text-foreground">Tõrkeotsing</h3>
+          <h3 className="font-semibold text-foreground">Torkeotsing</h3>
           <p className="text-xs text-muted-foreground">
-            Kui rakendus ei laadi uusimat versiooni, tühjenda vahemälu.
+            Kui rakendus ei laadi uusimat versiooni, tuhjenda vahemalu.
           </p>
           <div className="flex flex-col gap-2">
             <Button
@@ -127,7 +183,7 @@ export default function SettingsTab() {
               className="w-full justify-start gap-2"
             >
               <RotateCcw className="w-4 h-4" />
-              Tühjenda vahemälu
+              Tuhjenda vahemalu
             </Button>
             <Button
               variant="destructive"
@@ -136,11 +192,11 @@ export default function SettingsTab() {
               className="w-full justify-start gap-2"
             >
               <Trash2 className="w-4 h-4" />
-              Täielik lähtestus
+              Taielik lahtestus
             </Button>
           </div>
           {resetting && (
-            <p className="text-sm text-muted-foreground animate-pulse">Tühjendamine…</p>
+            <p className="text-sm text-muted-foreground animate-pulse">Tuhjendamine...</p>
           )}
 
           <Separator className="my-2" />
@@ -149,10 +205,10 @@ export default function SettingsTab() {
             href="/reset/"
             className="inline-flex items-center gap-1.5 text-sm text-primary underline underline-offset-4 hover:text-primary/80"
           >
-            Ava lähtestusleht ↗
+            Ava lahtestusleht ->
           </a>
           <p className="text-xs text-muted-foreground">
-            Kasuta seda linki, kui rakendus on täiesti kinni jäänud ja nupud ei tööta.
+            Kasuta seda linki, kui rakendus on taiesti kinni jaanud ja nupud ei toota.
           </p>
 
           <Separator className="my-2" />
@@ -167,18 +223,18 @@ export default function SettingsTab() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirmMode === 'hard' ? 'Täielik lähtestus' : 'Vahemälu tühjendamine'}
+              {confirmMode === 'hard' ? 'Taielik lahtestus' : 'Vahemalu tuhjendamine'}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirmMode === 'hard'
-                ? 'Kõik salvestatud seaded ja vahemälu kustutatakse. Rakendus laaditakse uuesti.'
-                : 'Vahemälu tühjendatakse ja rakendus laaditakse uuesti. Seaded jäävad alles.'}
+                ? 'Koik salvestatud seaded ja vahemalu kustutatakse. Rakendus laaditakse uuesti.'
+                : 'Vahemalu tuhjendatakse ja rakendus laaditakse uuesti. Seaded jaavad alles.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Tühista</AlertDialogCancel>
+            <AlertDialogCancel>Tuhista</AlertDialogCancel>
             <AlertDialogAction onClick={handleReset}>
-              {confirmMode === 'hard' ? 'Lähtesta' : 'Tühjenda'}
+              {confirmMode === 'hard' ? 'Lahtesta' : 'Tuhjenda'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

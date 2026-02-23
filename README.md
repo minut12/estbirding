@@ -92,6 +92,7 @@ The client requires a cloud Supabase URL and anon key at build time.
 Rules validated at runtime:
 
 - URL must be `https://...`
+- URL must not contain trailing dots (e.g. `https://project.supabase.co.` is invalid)
 - URL must be `.supabase.co` or another non-localhost HTTPS custom domain
 - Anon key length must be `> 20`
 
@@ -100,3 +101,4 @@ If invalid, app startup throws:
 `Supabase URL/Key missing or invalid in this build. SUPABASE_URL=<value>`
 
 For Lovable/mobile pipelines, set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in project/build environment settings, not only in local `.env.local`.
+Ensure `VITE_SUPABASE_URL` has no trailing `.` and no trailing `/`.

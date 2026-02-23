@@ -25,16 +25,33 @@ function pickString(values: unknown[]): string {
   return "";
 }
 
+function sanitizeSupabaseUrl(rawValue: string): string {
+  const raw = String(rawValue || "").trim();
+  if (!raw) return "";
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return raw;
+  }
+
+  parsed.hostname = parsed.hostname.replace(/\.+$/, "");
+  const cleaned = parsed.toString().replace(/\/+$/, "");
+  return cleaned;
+}
+
 const importMetaEnv = getImportMetaEnv();
 const processEnv = getProcessEnv();
 
 // Resolution order: Vite -> Next -> Expo
-const resolvedUrl = pickString([
+const resolvedUrlRaw = pickString([
   importMetaEnv.VITE_SUPABASE_URL,
   processEnv.VITE_SUPABASE_URL,
   processEnv.NEXT_PUBLIC_SUPABASE_URL,
   processEnv.EXPO_PUBLIC_SUPABASE_URL,
 ]);
+const resolvedUrl = sanitizeSupabaseUrl(resolvedUrlRaw);
 
 const resolvedAnonKey = pickString([
   importMetaEnv.VITE_SUPABASE_ANON_KEY,
@@ -58,10 +75,12 @@ try {
 
 const isLocalHost = hostname === "localhost" || hostname === "127.0.0.1";
 const isCustomDomainAllowed = isHttps && !!hostname && !isLocalHost;
+const hasTrailingDotHostname = /\.$/.test(hostname);
 
 const isValidUrl = Boolean(
   resolvedUrl &&
   isHttps &&
+  !hasTrailingDotHostname &&
   !isLocalHost &&
   (hasSupabaseHost || isCustomDomainAllowed),
 );
@@ -77,11 +96,18 @@ export const SUPABASE_URL = resolvedUrl;
 export const SUPABASE_ANON_KEY = resolvedAnonKey;
 export const SUPABASE_ANON_KEY_PRESENT = hasAnonKey;
 
+let errorReason = "";
+if (!resolvedUrl) errorReason = "missing url";
+else if (!isHttps) errorReason = "url is not https";
+else if (hasTrailingDotHostname) errorReason = "hostname ends with '.'";
+else if (isLocalHost) errorReason = "localhost url is not allowed for mobile/cloud build";
+else if (!(hasSupabaseHost || isCustomDomainAllowed)) errorReason = "invalid hostname";
+else if (!hasAnonKey) errorReason = "anon key missing/invalid";
+
 export const SUPABASE_ENV_ERROR = (!isValidUrl || !hasAnonKey)
-  ? `Supabase URL/Key missing or invalid in this build. SUPABASE_URL=${resolvedUrl || "(empty)"}`
+  ? `Supabase URL/Key missing or invalid in this build (${errorReason}). SUPABASE_URL=${resolvedUrl || "(empty)"}`
   : null;
 
 if (SUPABASE_ENV_ERROR) {
   throw new Error(SUPABASE_ENV_ERROR);
 }
-

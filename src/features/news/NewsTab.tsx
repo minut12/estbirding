@@ -65,6 +65,24 @@ function toPlainText(value: string | null | undefined): string {
   return decoded.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function stripImagesFromHtml(html: string): string {
+  if (!html) return html;
+
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    doc.querySelectorAll('img').forEach((img) => img.remove());
+    doc.querySelectorAll('figure').forEach((figure) => {
+      if (!figure.textContent?.trim() && figure.querySelectorAll('img,video,picture,iframe').length === 0) {
+        figure.remove();
+      }
+    });
+    return doc.body.innerHTML;
+  } catch {
+    return html.replace(/<img[^>]*>/gi, '');
+  }
+}
+
 function decodeUrl(u: string | null | undefined): string | null {
   if (!u) return null;
   return u.replaceAll("&amp;", "&").replaceAll("&#38;", "&");
@@ -521,6 +539,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
   }, [item.id, item.content_html, item.source_slug]);
 
   const displayBody = contentHtml || toPlainText(item.body || item.summary);
+  const sanitizedContentHtml = contentHtml ? stripImagesFromHtml(contentHtml) : null;
   const originalUrl = item.permalink_url || item.url;
 
   return (
@@ -556,10 +575,10 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
             <Skeleton className="h-4 w-5/6" />
             <Skeleton className="h-4 w-4/6" />
           </div>
-        ) : contentHtml ? (
+        ) : sanitizedContentHtml ? (
           <div
             className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
-            dangerouslySetInnerHTML={{ __html: contentHtml }}
+            dangerouslySetInnerHTML={{ __html: sanitizedContentHtml }}
           />
         ) : contentError ? (
           <p className="text-sm text-muted-foreground italic">{contentError}</p>

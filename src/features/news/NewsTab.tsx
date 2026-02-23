@@ -289,22 +289,33 @@ export default function NewsTab() {
   }, [archiveMutation]);
 
   const runPendingTranslation = useCallback(async (limit: number) => {
-    const { data, error } = await supabase.functions.invoke('translate-missing-news-et', {
-      body: { limit, include_archived: false },
-    });
-    if (error) {
-      toast.error(error.message || 'Tolge ebaonnestus');
+    const candidates: Array<{ name: string; body: Record<string, unknown> }> = [
+      { name: 'translate-missing-news-et', body: { limit, include_archived: false } },
+      { name: 'translate-news-pending', body: { limit } },
+    ];
+
+    let lastError: string | null = null;
+    for (const candidate of candidates) {
+      const { data, error } = await supabase.functions.invoke(candidate.name, {
+        body: candidate.body,
+      });
+      if (error) {
+        lastError = error.message || `Function ${candidate.name} failed`;
+        continue;
+      }
+      if (data?.error === 'Translation not configured') {
+        toast.error('Translation not configured');
+        return;
+      }
+      const translated = Number(data?.translated || 0);
+      if (translated > 0) {
+        toast.success(`Tolgiti ${translated} uudist`);
+        await queryClient.invalidateQueries({ queryKey: ['news-items'] });
+      }
       return;
     }
-    if (data?.error === 'Translation not configured') {
-      toast.error('Translation not configured');
-      return;
-    }
-    const translated = Number(data?.translated || 0);
-    if (translated > 0) {
-      toast.success(`Tolgiti ${translated} uudist`);
-      await queryClient.invalidateQueries({ queryKey: ['news-items'] });
-    }
+
+    toast.error(lastError || 'Tolge ebaonnestus');
   }, [queryClient]);
 
   useEffect(() => {

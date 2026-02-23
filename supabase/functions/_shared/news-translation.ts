@@ -1,4 +1,4 @@
-import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+﻿import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getOpenAIConfig, translateToEstonian } from "./openai.ts";
 
 export interface NewsTranslationItem {
@@ -51,7 +51,7 @@ export async function sha256Hex(input: string): Promise<string> {
 function heuristicLanguage(title: string, body: string): string | null {
   const text = `${title}\n${body}`.toLowerCase();
   if (/[\u0105\u0107\u0119\u0142\u0144\u00f3\u015b\u017a\u017c]/i.test(text)) return "pl";
-  if (/[õäöü]/i.test(text)) return "et";
+  if (/[\u00f5\u00e4\u00f6\u00fc]/i.test(text)) return "et";
   if (/[a-z]/i.test(text)) return "en";
   return null;
 }
@@ -157,3 +157,4 @@ export async function translateNewsItemToEt(
     return { id, status: "error", skipped: false, source_lang: normalizedSourceLang || sourceLang, error: errorText };
   }
 }
+

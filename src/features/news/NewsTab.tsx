@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { isAutoTranslateNewsToEtEnabled } from '@/lib/settings';
+import { isEstonianLocale, resolveAppLocale } from '@/lib/locale';
 import { toast } from 'sonner';
 
 /* ── Types ──────────────────────────────────────── */
@@ -196,7 +197,7 @@ export default function NewsTab() {
   const [selected, setSelected] = useState<NewsItem | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollPosRef = useRef(0);
-  const autoTranslateToEt = isAutoTranslateNewsToEtEnabled();
+  const showEtContent = isEstonianLocale(resolveAppLocale());
 
   // Sources
   const { data: sources = [] } = useQuery<NewsSource[]>({
@@ -294,8 +295,8 @@ export default function NewsTab() {
     const { data: statusData, error: statusError } = await supabase.functions.invoke('translation-status');
     if (statusError || statusData?.configured !== true) return;
 
-    const { data, error } = await supabase.functions.invoke('translate-news-pending', {
-      body: { limit },
+    const { data, error } = await supabase.functions.invoke('translate-missing-news-et', {
+      body: { limit, include_archived: false },
     });
     if (error) {
       toast.error(error.message || 'Tolge ebaonnestus');
@@ -351,7 +352,7 @@ export default function NewsTab() {
       <ArticleView
         item={selected}
         sources={sources}
-        autoTranslateToEt={autoTranslateToEt}
+        showEtContent={showEtContent}
         onBack={closeArticle}
         onToggleArchive={() => toggleArchive(selected.id, selected.archived)}
       />
@@ -453,7 +454,7 @@ export default function NewsTab() {
                 key={item.id}
                 item={item}
                 sources={sources}
-                autoTranslateToEt={autoTranslateToEt}
+                showEtContent={showEtContent}
                 onOpen={() => openArticle(item)}
                 onToggleArchive={() => toggleArchive(item.id, item.archived)}
               />
@@ -466,17 +467,17 @@ export default function NewsTab() {
 }
 
 /* ── News Card ──────────────────────────────────── */
-function NewsCard({ item, sources, autoTranslateToEt, onOpen, onToggleArchive }: {
+function NewsCard({ item, sources, showEtContent, onOpen, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
-  autoTranslateToEt: boolean;
+  showEtContent: boolean;
   onOpen: () => void;
   onToggleArchive: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const thumb = decodeUrl(item.image_url);
-  const displayTitle = autoTranslateToEt ? (item.title_et || item.title) : item.title;
-  const snippet = toPlainText(autoTranslateToEt ? (item.body_et || item.body || item.summary) : (item.body || item.summary)).slice(0, 150);
+  const displayTitle = showEtContent ? (item.title_et || item.title) : item.title;
+  const snippet = toPlainText(showEtContent ? (item.body_et || item.body || item.summary) : (item.body || item.summary)).slice(0, 150);
   const originalUrl = item.permalink_url || item.url || '#';
   const isTranslated = Boolean(item.title_et || item.body_et);
 
@@ -542,10 +543,10 @@ function NewsCard({ item, sources, autoTranslateToEt, onOpen, onToggleArchive }:
 }
 
 /* ── Article View (lazy-loads content) ──────────── */
-function ArticleView({ item, sources, autoTranslateToEt, onBack, onToggleArchive }: {
+function ArticleView({ item, sources, showEtContent, onBack, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
-  autoTranslateToEt: boolean;
+  showEtContent: boolean;
   onBack: () => void;
   onToggleArchive: () => void;
 }) {
@@ -579,8 +580,8 @@ function ArticleView({ item, sources, autoTranslateToEt, onBack, onToggleArchive
     return () => { cancelled = true; };
   }, [item.id, item.content_html, item.source_slug]);
 
-  const displayTitle = autoTranslateToEt ? (item.title_et || item.title) : item.title;
-  const displayBody = autoTranslateToEt
+  const displayTitle = showEtContent ? (item.title_et || item.title) : item.title;
+  const displayBody = showEtContent
     ? (item.body_et || contentHtml || toPlainText(item.body || item.summary))
     : (contentHtml || toPlainText(item.body || item.summary));
   const heroImageUrl = decodeUrl(item.image_url);
@@ -622,7 +623,7 @@ function ArticleView({ item, sources, autoTranslateToEt, onBack, onToggleArchive
             <Skeleton className="h-4 w-5/6" />
             <Skeleton className="h-4 w-4/6" />
           </div>
-        ) : bodyHtmlWithoutDuplicateHero && !(autoTranslateToEt && item.body_et) ? (
+        ) : bodyHtmlWithoutDuplicateHero && !(showEtContent && item.body_et) ? (
           <div
             className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
             dangerouslySetInnerHTML={{ __html: bodyHtmlWithoutDuplicateHero }}

@@ -6,6 +6,8 @@ export class EdgeInvokeError extends Error {
   responseText?: string;
   functionName?: string;
   kind: 'network' | 'http' | 'unknown';
+  causeName?: string;
+  causeMessage?: string;
 
   constructor(
     message: string,
@@ -14,6 +16,8 @@ export class EdgeInvokeError extends Error {
       responseText?: string;
       functionName?: string;
       kind: 'network' | 'http' | 'unknown';
+      causeName?: string;
+      causeMessage?: string;
     },
   ) {
     super(message);
@@ -22,6 +26,8 @@ export class EdgeInvokeError extends Error {
     this.responseText = options.responseText;
     this.functionName = options.functionName;
     this.kind = options.kind;
+    this.causeName = options.causeName;
+    this.causeMessage = options.causeMessage;
   }
 }
 
@@ -40,8 +46,8 @@ export async function invokeEdgeFunction<T = any>(
 
     if (errName === 'FunctionsFetchError' || /failed to fetch|networkerror/i.test(message)) {
       throw new EdgeInvokeError(
-        `Cannot reach Supabase Edge Functions. URL=${SUPABASE_URL}. Check env + network.`,
-        { functionName, kind: 'network' },
+        `Cannot reach Supabase Edge Functions. URL=${SUPABASE_URL}. name=${errName || 'unknown'} message=${message || 'n/a'}`,
+        { functionName, kind: 'network', causeName: errName, causeMessage: message },
       );
     }
 
@@ -56,13 +62,22 @@ export async function invokeEdgeFunction<T = any>(
       }
       throw new EdgeInvokeError(
         `Edge function '${functionName}' HTTP ${status ?? 'unknown'}${text ? `: ${text}` : ''}`,
-        { functionName, kind: 'http', status, responseText: text || undefined },
+        {
+          functionName,
+          kind: 'http',
+          status,
+          responseText: text || undefined,
+          causeName: errName,
+          causeMessage: message,
+        },
       );
     }
 
     throw new EdgeInvokeError(`Edge function '${functionName}' failed: ${message}`, {
       functionName,
       kind: 'unknown',
+      causeName: errName,
+      causeMessage: message,
     });
   }
 }

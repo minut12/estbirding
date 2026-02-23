@@ -1,13 +1,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getOpenAIConfig } from "../_shared/openai.ts";
-import { jsonResponse, translateNewsItemToEt } from "../_shared/news-translation.ts";
+import { corsHeaders, jsonResponse, translateNewsItemToEt } from "../_shared/news-translation.ts";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return jsonResponse(200, null);
+  if (req.method === "OPTIONS") return new Response("ok", { status: 200, headers: corsHeaders() });
   if (req.method !== "POST") return jsonResponse(405, { error: "Method not allowed" });
 
   try {

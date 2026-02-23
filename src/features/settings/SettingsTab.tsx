@@ -105,7 +105,7 @@ export default function SettingsTab() {
       console.error('[SETTINGS] ping invoke failed', error);
       const e = error as EdgeInvokeError;
       toast.error(
-        `Ping failed. status=${e.status ?? 'n/a'} msg=${e.message}${e.responseText ? ` body=${e.responseText}` : ''}`,
+        `Ping failed. name=${e.name} cause=${e.causeName ?? 'n/a'} status=${e.status ?? 'n/a'} message=${e.message}${e.responseText ? ` body=${e.responseText}` : ''}`,
       );
     } finally {
       setPingLoading(false);

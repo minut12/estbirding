@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { isEstonianLocale, resolveAppLocale } from '@/lib/locale';
-import { invokeEdgeFunction } from '@/lib/edge-functions';
+import { EdgeInvokeError, invokeEdgeFunction } from '@/lib/edge-functions';
 import { SUPABASE_ENV_ERROR } from '@/config/supabaseEnv';
 import { toast } from 'sonner';
 
@@ -314,7 +314,8 @@ export default function NewsTab() {
         return;
       } catch (error: any) {
         console.error(`[NEWS] ${candidate.name} invoke failed`, error);
-        lastError = error?.message || `Function ${candidate.name} failed`;
+        const e = error as EdgeInvokeError;
+        lastError = `name=${e.name} cause=${e.causeName ?? 'n/a'} status=${e.status ?? 'n/a'} message=${e.message}${e.responseText ? ` body=${e.responseText}` : ''}`;
       }
     }
 

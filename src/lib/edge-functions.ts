@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { SUPABASE_URL } from '@/config/supabaseEnv';
 
 export async function invokeEdgeFunction<T = any>(
   supabase: SupabaseClient,
@@ -14,7 +15,7 @@ export async function invokeEdgeFunction<T = any>(
     const errName = String(err?.name || '');
 
     if (errName === 'FunctionsFetchError' || /failed to fetch|networkerror/i.test(message)) {
-      throw new Error('Cannot reach Supabase Edge Functions. Check SUPABASE_URL and network.');
+      throw new Error(`Cannot reach Supabase Edge Functions. URL=${SUPABASE_URL}. Check env + network.`);
     }
 
     if (errName === 'FunctionsHttpError' || err?.context) {
@@ -32,4 +33,3 @@ export async function invokeEdgeFunction<T = any>(
     throw new Error(`Edge function '${functionName}' failed: ${message}`);
   }
 }
-

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { loadSettings, saveSettings, NEWS_AUTO_TRANSLATE_ET_KEY, type AppSettings } from '@/lib/settings';
 import { supabase } from '@/integrations/supabase/client';
-import { SUPABASE_CONFIG_ERROR } from '@/config/supabase';
+import { SUPABASE_ANON_KEY_PRESENT, SUPABASE_ENV_ERROR, SUPABASE_URL } from '@/config/supabaseEnv';
 import { invokeEdgeFunction } from '@/lib/edge-functions';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -144,9 +144,9 @@ export default function SettingsTab() {
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-6">
         <NewsSourcesSettings />
 
-        {SUPABASE_CONFIG_ERROR && (
+        {SUPABASE_ENV_ERROR && (
           <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-            {SUPABASE_CONFIG_ERROR}
+            {SUPABASE_ENV_ERROR}
           </div>
         )}
 
@@ -202,6 +202,10 @@ export default function SettingsTab() {
             <Separator />
             <div className="space-y-2">
               <h3 className="font-semibold text-foreground">Edge Health Check</h3>
+              <div className="rounded-md border border-border p-3 text-xs text-muted-foreground space-y-1">
+                <div>SUPABASE_URL: {SUPABASE_URL || '(empty)'}</div>
+                <div>Anon key present: {SUPABASE_ANON_KEY_PRESENT ? 'true' : 'false'}</div>
+              </div>
               <Button variant="outline" onClick={handlePingEdge} disabled={pingLoading}>
                 {pingLoading ? 'Pinging...' : 'Ping Edge Functions'}
               </Button>

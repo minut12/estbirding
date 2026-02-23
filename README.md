@@ -79,3 +79,24 @@ Set secrets only in Supabase Edge Functions environment (never in client code or
 - `OPENAI_API_KEY`
 - Optional: `OPENAI_MODEL` (default `gpt-4.1-mini`)
 - Optional: `AUTO_TRANSLATE_TO_ET` (`true` by default)
+
+## Client env vars (web + mobile builds)
+
+The client requires a cloud Supabase URL and anon key at build time.
+
+- Required (Vite/Lovable): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+- Alternative fallbacks supported in runtime config:
+  - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+  - `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+
+Rules validated at runtime:
+
+- URL must be `https://...`
+- URL must be `.supabase.co` or another non-localhost HTTPS custom domain
+- Anon key length must be `> 20`
+
+If invalid, app startup throws:
+
+`Supabase URL/Key missing or invalid in this build. SUPABASE_URL=<value>`
+
+For Lovable/mobile pipelines, set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in project/build environment settings, not only in local `.env.local`.

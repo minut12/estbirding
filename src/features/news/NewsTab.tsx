@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { isEstonianLocale, resolveAppLocale } from '@/lib/locale';
 import { invokeEdgeFunction } from '@/lib/edge-functions';
-import { SUPABASE_CONFIG_ERROR } from '@/config/supabase';
+import { SUPABASE_ENV_ERROR } from '@/config/supabaseEnv';
 import { toast } from 'sonner';
 
 /* ── Types ──────────────────────────────────────── */
@@ -271,8 +271,8 @@ export default function NewsTab() {
   }, [isError]);
 
   useEffect(() => {
-    if (!SUPABASE_CONFIG_ERROR) return;
-    toast.error(SUPABASE_CONFIG_ERROR);
+    if (!SUPABASE_ENV_ERROR) return;
+    toast.error(SUPABASE_ENV_ERROR);
   }, []);
 
   // Toggle archive via DB update

@@ -32,7 +32,7 @@ async function translateViaEdgeFunction(
     throw new Error("SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing");
   }
 
-  const res = await fetch(`${supabaseUrl}/functions/v1/translate-news-item`, {
+  const res = await fetch(`${supabaseUrl}/functions/v1/translate-news-item-et`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -45,7 +45,7 @@ async function translateViaEdgeFunction(
   });
 
   if (!res.ok) {
-    throw new Error(`translate-news-item failed: HTTP ${res.status} ${await res.text()}`);
+    throw new Error(`translate-news-item-et failed: HTTP ${res.status} ${await res.text()}`);
   }
 }
 

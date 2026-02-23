@@ -32,7 +32,7 @@ export async function translateToEstonian(input: {
         {
           role: "system",
           content:
-            "Translate title and body to Estonian. Preserve names, places, species names, emojis, and line breaks. Return JSON only with keys title_et and body_et.",
+            "Translate title and body to Estonian. Preserve URLs, hashtags, @mentions, numbers, Latin species names, proper names, emojis, and line breaks exactly as-is. Return JSON only with keys title_et and body_et.",
         },
         {
           role: "user",

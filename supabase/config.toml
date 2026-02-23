@@ -39,7 +39,13 @@ verify_jwt = false
 [functions.translate-news-item]
 verify_jwt = false
 
+[functions.translate-news-item-et]
+verify_jwt = false
+
 [functions.translate-news-pending]
+verify_jwt = false
+
+[functions.translate-missing-news-et]
 verify_jwt = false
 
 [functions.cache-news-image]

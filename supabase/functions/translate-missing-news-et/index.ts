@@ -14,14 +14,18 @@ Deno.serve(async (req) => {
     if (!getOpenAIConfig()) return jsonResponse(400, { error: "Translation not configured" });
 
     const body = await req.json().catch(() => ({}));
-    const limit = Number.isFinite(body?.limit) ? Math.max(1, Math.min(50, Number(body.limit))) : 5;
+    const limit = Number.isFinite(body?.limit) ? Math.max(1, Math.min(100, Number(body.limit))) : 20;
+    const includeArchived = body?.include_archived === true;
+    const onlySourceKey = typeof body?.source_key === "string" && body.source_key.trim()
+      ? body.source_key.trim()
+      : null;
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { data: items, error } = await supabase
+    let query = supabase
       .from("news_items")
       .select("id, source_key, title, body, source_lang, title_et, body_et, translate_hash")
       .neq("source_key", "eoy")
@@ -29,14 +33,18 @@ Deno.serve(async (req) => {
       .order("published_at", { ascending: false })
       .limit(limit);
 
+    if (!includeArchived) query = query.eq("archived", false);
+    if (onlySourceKey) query = query.eq("source_key", onlySourceKey);
+
+    const { data: items, error } = await query;
     if (error) throw error;
     if (!items || items.length === 0) {
-      return jsonResponse(200, { success: true, translated: 0, failed: 0, skipped: 0 });
+      return jsonResponse(200, { success: true, scanned: 0, translated: 0, skipped: 0, failed: 0 });
     }
 
     let translated = 0;
-    let failed = 0;
     let skipped = 0;
+    let failed = 0;
     let failureStreak = 0;
 
     for (const item of items) {
@@ -56,7 +64,13 @@ Deno.serve(async (req) => {
       await sleep(backoffMs);
     }
 
-    return jsonResponse(200, { success: true, translated, failed, skipped });
+    return jsonResponse(200, {
+      success: true,
+      scanned: items.length,
+      translated,
+      skipped,
+      failed,
+    });
   } catch (error) {
     return jsonResponse(500, { error: (error as Error)?.message || String(error) });
   }

@@ -103,3 +103,26 @@ If invalid, app startup throws:
 
 For Lovable/mobile pipelines, set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in project/build environment settings, not only in local `.env.local`.
 Ensure `VITE_SUPABASE_URL` has no trailing `.`, no trailing `/`, and no hidden newline/space characters.
+
+## Edge function health checks
+
+- The app calls `ping` first, then `openai_status`.
+- Admin status messages:
+  - `Edge Functions unreachable` if `ping` cannot be reached.
+  - `Set OPENAI_API_KEY in Supabase Secrets` if `openai_status` returns `hasOpenAIKey=false`.
+  - `OpenAI available` if `hasOpenAIKey=true`.
+- In development, Settings includes URL sanitization debug values and the last 10 Supabase fetch log lines.
+
+## Discover project refs from org slug
+
+Use Supabase Management API to list projects for your org slug so you can choose the correct project ref you actually own.
+
+1. Set env vars:
+   - `SUPABASE_ACCESS_TOKEN=<your personal access token>`
+   - `SUPABASE_ORG_SLUG=hjchtdyzgukmxqhibphb`
+2. Run:
+   - `npm run supabase:list-projects`
+3. Output includes:
+   - project name
+   - project ref/id
+   - status

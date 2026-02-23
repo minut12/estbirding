@@ -24,6 +24,7 @@ import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
 
 type ResetMode = 'soft' | 'hard' | null;
+type OpenAIHealth = 'checking' | 'available' | 'missing_key' | 'edge_unreachable';
 
 function serializeForDebug(value: unknown, depth = 0): unknown {
   if (depth > 3) return '[max-depth]';
@@ -61,9 +62,7 @@ export default function SettingsTab() {
   const [form, setForm] = useState<AppSettings>(loadSettings);
   const [confirmMode, setConfirmMode] = useState<ResetMode>(null);
   const [resetting, setResetting] = useState(false);
-  const [openAIAvailable, setOpenAIAvailable] = useState(false);
-  const [translationStatusLoading, setTranslationStatusLoading] = useState(true);
-  const [translationStatusUnavailable, setTranslationStatusUnavailable] = useState(false);
+  const [openAIHealth, setOpenAIHealth] = useState<OpenAIHealth>('checking');
   const [pingLoading, setPingLoading] = useState(false);
   const [edgeTestOpen, setEdgeTestOpen] = useState(false);
   const [edgeTestResult, setEdgeTestResult] = useState<string>('');
@@ -81,20 +80,25 @@ export default function SettingsTab() {
   }, []);
 
   const loadTranslationStatus = async () => {
-    setTranslationStatusLoading(true);
+    setOpenAIHealth('checking');
     try {
+      const ping = await invokeEdgeFunction<any>(supabase, 'ping');
+      if (ping?.ok !== true) {
+        setOpenAIHealth('edge_unreachable');
+        return;
+      }
+
       const data = await invokeEdgeFunction<any>(supabase, 'openai_status');
-      setOpenAIAvailable(data?.hasOpenAIKey === true);
-      setTranslationStatusUnavailable(false);
+      setOpenAIHealth(data?.hasOpenAIKey === true ? 'available' : 'missing_key');
     } catch (error) {
       console.error('[SETTINGS] openai_status invoke failed', error);
-      setOpenAIAvailable(false);
-      setTranslationStatusUnavailable(true);
-      toast.error((error as Error)?.message || 'OpenAI status unavailable');
-    } finally {
-      setTranslationStatusLoading(false);
+      setOpenAIHealth('edge_unreachable');
     }
   };
+
+  const openAIAvailable = openAIHealth === 'available';
+  const translationStatusLoading = openAIHealth === 'checking';
+  const edgeFunctionsUnreachable = openAIHealth === 'edge_unreachable';
 
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -113,7 +117,8 @@ export default function SettingsTab() {
 
     if (!checked) return;
     if (!openAIAvailable) {
-      toast.error('Set OPENAI_API_KEY in Supabase Secrets');
+      if (edgeFunctionsUnreachable) toast.error('Edge Functions unreachable');
+      else toast.error('Set OPENAI_API_KEY in Supabase Secrets');
       return;
     }
 
@@ -218,9 +223,10 @@ export default function SettingsTab() {
 
         <div className="space-y-2">
           <div className="text-xs text-muted-foreground">
-            {translationStatusUnavailable
-              ? 'OpenAI status unavailable'
-              : (openAIAvailable ? 'OpenAI status: available' : 'OpenAI status: set OPENAI_API_KEY')}
+            {translationStatusLoading && 'Checking Edge/OpenAI status...'}
+            {!translationStatusLoading && edgeFunctionsUnreachable && 'Edge Functions unreachable'}
+            {!translationStatusLoading && !edgeFunctionsUnreachable && openAIAvailable && 'OpenAI available'}
+            {!translationStatusLoading && !edgeFunctionsUnreachable && !openAIAvailable && 'Set OPENAI_API_KEY in Supabase Secrets'}
           </div>
           <div className="flex items-center justify-between rounded-md border border-border p-3">
             <div className="space-y-1">
@@ -232,7 +238,7 @@ export default function SettingsTab() {
             <Switch
               id="autoTranslate"
               checked={form.autoTranslateToEstonian}
-              disabled={!openAIAvailable || translationStatusLoading || translationStatusUnavailable}
+              disabled={!openAIAvailable || translationStatusLoading}
               onCheckedChange={handleAutoTranslateToggle}
             />
           </div>

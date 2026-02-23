@@ -31,7 +31,7 @@ export function subscribeSupabaseFetchLogs(listener: (lines: string[]) => void):
 
 const loggingFetch: typeof fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url;
-  const method = init?.method || 'GET';
+  const method = String(init?.method || (typeof input === 'string' ? 'GET' : input.method) || 'GET').toUpperCase();
   const line = `[fetch] ${method} ${url}`;
   console.log(line);
   pushFetchLine(line);

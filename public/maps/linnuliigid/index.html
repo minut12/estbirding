@@ -324,7 +324,32 @@ function _borderColorByDate(isoDate){
 // =========================================
 // === SNAPSHOT-BASED FETCHING ===
 // =========================================
-const SNAPSHOT_API = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/linnuliigid-snapshot';
+function _sanitizeSupabaseUrl(raw){
+  const trimmed = String(raw || '').trim().replace(/[\r\n\t]+$/g, '').replace(/\/+$/g, '');
+  if(!trimmed) return '';
+  try{
+    const parsed = new URL(trimmed);
+    if(parsed.protocol !== 'https:') return '';
+    parsed.hostname = parsed.hostname.replace(/\.+$/g, '');
+    return parsed.toString().replace(/\/+$/g, '');
+  }catch(e){
+    return '';
+  }
+}
+function _resolveSnapshotApi(){
+  const qs = new URLSearchParams(window.location.search);
+  const fromQuery = qs.get('supabase_url');
+  const fromWindow = window.__SUPABASE_URL || window.SUPABASE_URL;
+  const fromStorage = localStorage.getItem('supabase_url') || localStorage.getItem('VITE_SUPABASE_URL');
+  const base = _sanitizeSupabaseUrl(fromQuery || fromWindow || fromStorage);
+  if(!base) return '';
+  return base + '/functions/v1/linnuliigid-snapshot';
+}
+function _requireSnapshotApi(){
+  if(SNAPSHOT_API) return SNAPSHOT_API;
+  throw new Error('Missing supabase_url. Pass ?supabase_url=https://<project-ref>.supabase.co');
+}
+const SNAPSHOT_API = _resolveSnapshotApi();
 let __pollTimer = null;
 let __pollCount = 0;
 let __snapshotMeta = { status: null, generated_at: null };
@@ -423,7 +448,7 @@ function _checkEmpty7dBanner(){
 async function loadSnapshot(){
   try{
     _showSnapshotBanner('Loading data…');
-    const res = await fetch(SNAPSHOT_API, {cache:'no-store'});
+    const res = await fetch(_requireSnapshotApi(), {cache:'no-store'});
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const snap = await res.json();
 
@@ -468,7 +493,7 @@ function _startPolling(){
       return;
     }
     try{
-      const res = await fetch(SNAPSHOT_API, {cache:'no-store'});
+      const res = await fetch(_requireSnapshotApi(), {cache:'no-store'});
       if(!res.ok) return;
       const snap = await res.json();
       _updateProgressUI(snap.progress_done, snap.progress_total, snap.status);
@@ -503,7 +528,7 @@ async function triggerRefresh(){
     _showSnapshotBanner('Requesting server refresh…');
     _updateProgressUI(0, SPECIES.length, 'running');
 
-    const res = await fetch(SNAPSHOT_API, {
+    const res = await fetch(_requireSnapshotApi(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });

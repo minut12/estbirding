@@ -289,9 +289,6 @@ export default function NewsTab() {
   }, [archiveMutation]);
 
   const runPendingTranslation = useCallback(async (limit: number) => {
-    const { data: statusData, error: statusError } = await supabase.functions.invoke('translation-status');
-    if (statusError || statusData?.configured !== true) return;
-
     const { data, error } = await supabase.functions.invoke('translate-missing-news-et', {
       body: { limit, include_archived: false },
     });

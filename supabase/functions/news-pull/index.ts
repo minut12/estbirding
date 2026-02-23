@@ -9,6 +9,7 @@ const corsHeaders = {
 
 const COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
 const BIRDING_POLAND_KEY = "facebook_birdingpoland";
+const IS_DEV = Deno.env.get("DENO_DEPLOYMENT_ID") == null;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -82,19 +83,14 @@ Deno.serve(async (req) => {
         const sorted = normalized.sort((a, b) => toTimestamp(b.published_at) - toTimestamp(a.published_at));
         const items = sourceKey === BIRDING_POLAND_KEY ? sorted.slice(0, 1) : sorted.slice(0, 10);
 
-        if (sourceKey === BIRDING_POLAND_KEY && items[0]) {
-          console.log("[news-pull] sanity normalized preview", {
-            source: source.slug,
-            title: items[0].title,
-            image_url: items[0].image_url,
-            bodyText: items[0].body.slice(0, 120),
-          });
-        }
-
         let inserted = 0;
         for (const item of items) {
           const externalId = item.external_id?.trim();
           if (!externalId) continue;
+
+          if (IS_DEV) {
+            console.log("[RSS] image_url", sourceKey, externalId, item.image_url || null);
+          }
 
           const guid = `${source.slug}:${externalId}`;
 

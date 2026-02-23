@@ -327,6 +327,7 @@ function NewsCard({ item, sources, onOpen, onToggleArchive }: {
   onOpen: () => void;
   onToggleArchive: () => void;
 }) {
+  const [imageFailed, setImageFailed] = useState(false);
   const snippet = toPlainText(item.body || item.summary).slice(0, 150);
   const originalUrl = item.permalink_url || item.url;
 
@@ -334,13 +335,13 @@ function NewsCard({ item, sources, onOpen, onToggleArchive }: {
     <div className="px-4 py-3 active:bg-muted/50 transition-colors">
       <div className="flex gap-3">
         <button onClick={onOpen} className="w-20 h-20 rounded-lg shrink-0 bg-muted overflow-hidden">
-          {item.image_url ? (
+          {item.image_url && !imageFailed ? (
             <img
               src={item.image_url}
               alt=""
               className="w-full h-full object-cover"
               loading="lazy"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              onError={() => setImageFailed(true)}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">

@@ -24,11 +24,11 @@ export default function Index() {
   // goToSettings kept for potential future use
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-[100dvh] min-h-[100dvh] bg-background overflow-hidden">
       <VersionBanner />
 
       {/* Content area */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden">
         {active === 'kaart' && <MapTab isActive={active === 'kaart'} />}
         {active === 'uudised' && <NewsTab />}
         {active === 'üritused' && <EventsTab />}

@@ -12,6 +12,9 @@ export interface ParsedRssItem {
   updated?: string;
   enclosure?: { url?: string };
   "media:content"?: { url?: string };
+  "media:thumbnail"?: { url?: string };
+  media?: { content?: { url?: string } };
+  image?: { url?: string };
   _raw?: string;
 }
 
@@ -50,6 +53,10 @@ export function parseRss(xml: string): ParsedRssItem[] {
 
     const enclosureMatch = block.match(/<enclosure[^>]+url=["']([^"']+)["']/i);
     const mediaContentMatch = block.match(/<media:content[^>]+url=["']([^"']+)["']/i);
+    const mediaThumbnailMatch = block.match(/<media:thumbnail[^>]+url=["']([^"']+)["']/i);
+    const imageTag = get("image");
+    const imageUrlMatch = imageTag.match(/<url[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/url>/i);
+    const imageUrl = (imageUrlMatch?.[1] || imageTag || "").trim() || undefined;
 
     items.push({
       title: get("title"),
@@ -65,6 +72,9 @@ export function parseRss(xml: string): ParsedRssItem[] {
       updated: get("updated"),
       enclosure: enclosureMatch ? { url: enclosureMatch[1] } : undefined,
       "media:content": mediaContentMatch ? { url: mediaContentMatch[1] } : undefined,
+      "media:thumbnail": mediaThumbnailMatch ? { url: mediaThumbnailMatch[1] } : undefined,
+      media: mediaContentMatch ? { content: { url: mediaContentMatch[1] } } : undefined,
+      image: imageUrl ? { url: imageUrl } : undefined,
       _raw: block,
     });
   }
@@ -75,8 +85,7 @@ export function parseRss(xml: string): ParsedRssItem[] {
 export function normalizeRssItem(item: ParsedRssItem): NormalizedRssItem {
   const bodyHtml = item["content:encoded"] || item.content || item.description || item.summary || "";
   const bodyText = htmlToText(bodyHtml);
-  const imageFromHtml = extractFirstImageUrl(bodyHtml);
-  const imageUrl = item.enclosure?.url || item["media:content"]?.url || imageFromHtml || null;
+  const imageUrl = extractImageUrl(item);
   const titleText = htmlToText(item.title || "");
   const title = titleText || bodyText.slice(0, 80) || "Untitled";
 
@@ -92,9 +101,57 @@ export function normalizeRssItem(item: ParsedRssItem): NormalizedRssItem {
   };
 }
 
+export function extractImageUrl(item: ParsedRssItem): string | null {
+  const fromEnclosure = cleanUrl(item.enclosure?.url);
+  if (fromEnclosure) return fromEnclosure;
+
+  const fromMediaContent = cleanUrl(item["media:content"]?.url) || cleanUrl(item.media?.content?.url);
+  if (fromMediaContent) return fromMediaContent;
+
+  const htmlCandidates = [item["content:encoded"], item.content, item.description];
+  for (const html of htmlCandidates) {
+    const fromHtml = extractFirstImageUrl(html || "");
+    if (fromHtml) return fromHtml;
+  }
+
+  const fromImage = cleanUrl(item.image?.url);
+  if (fromImage) return fromImage;
+
+  const fromThumbnail = cleanUrl(item["media:thumbnail"]?.url);
+  if (fromThumbnail) return fromThumbnail;
+
+  return null;
+}
+
 function extractFirstImageUrl(html: string): string | null {
-  const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
-  return match?.[1] || null;
+  if (!html) return null;
+  const imgTagMatch = html.match(/<img\b[^>]*>/i);
+  if (!imgTagMatch) return null;
+  const imgTag = imgTagMatch[0];
+
+  const directSrc = extractAttribute(imgTag, "src");
+  const lazySrc = extractAttribute(imgTag, "data-src") || extractAttribute(imgTag, "data-original");
+  const srcSet = extractSrcSetFirstUrl(extractAttribute(imgTag, "srcset"));
+
+  return cleanUrl(directSrc) || cleanUrl(lazySrc) || cleanUrl(srcSet) || null;
+}
+
+function extractAttribute(tag: string, attribute: string): string | null {
+  const attrMatch = tag.match(new RegExp(`${attribute}\\s*=\\s*["']([^"']+)["']`, "i"));
+  return attrMatch?.[1] || null;
+}
+
+function extractSrcSetFirstUrl(srcset: string | null): string | null {
+  if (!srcset) return null;
+  const first = srcset.split(",")[0]?.trim();
+  if (!first) return null;
+  const url = first.split(/\s+/)[0]?.trim();
+  return url || null;
+}
+
+function cleanUrl(value: string | undefined | null): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
 function htmlToText(html: string): string {

@@ -255,6 +255,7 @@ Deno.serve(async (req) => {
       const row: Record<string, unknown> = {
         source_id: source.id,
         source_slug: "eoy",
+        source_key: source.source_key || source.key || "eoy",
         title: item.title,
         summary: item.summary || "",
         url: item.url,

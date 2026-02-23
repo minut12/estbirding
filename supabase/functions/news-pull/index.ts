@@ -49,25 +49,6 @@ async function translateViaEdgeFunction(
   }
 }
 
-async function cacheImageViaEdgeFunction(newsItemId: string): Promise<void> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) return;
-
-  const res = await fetch(`${supabaseUrl}/functions/v1/cache-news-image`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${serviceRoleKey}`,
-      "apikey": serviceRoleKey,
-    },
-    body: JSON.stringify({ news_item_id: newsItemId }),
-  });
-  if (!res.ok && IS_DEV) {
-    console.warn("[cache-image] failed", newsItemId, res.status);
-  }
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -135,7 +116,7 @@ Deno.serve(async (req) => {
         }
 
         const text = await feedRes.text();
-        const sourceKey = source.key || source.slug;
+        const sourceKey = source.source_key || source.key || source.slug;
         const normalized = parseRss(text).map(normalizeRssItem);
         const sorted = normalized.sort((a, b) => toTimestamp(b.published_at) - toTimestamp(a.published_at));
         const items = sourceKey === BIRDING_POLAND_KEY ? sorted.slice(0, 1) : sorted.slice(0, 10);
@@ -186,17 +167,13 @@ Deno.serve(async (req) => {
           const { data: upserted, error } = await supabase
             .from("news_items")
             .upsert(rowWithImage, { onConflict: "source_slug,external_id" })
-            .select("id, translate_hash, title_et, body_et, cached_image_url")
+            .select("id, translate_hash, title_et, body_et")
             .single();
 
           if (!error) inserted++;
           else console.error(`Upsert error for ${guid}:`, error);
 
           if (!error && upserted?.id) {
-            if (decodedImageUrl && !upserted.cached_image_url) {
-              await cacheImageViaEdgeFunction(upserted.id);
-            }
-
             if (lang !== "et" && AUTO_TRANSLATE_TO_ET) {
               const shouldTranslate = !upserted.title_et || !upserted.body_et || upserted.translate_hash !== contentHash;
               if (shouldTranslate) {

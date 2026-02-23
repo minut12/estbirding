@@ -53,9 +53,10 @@ async function classifyLanguageWithOpenAI(title: string, body: string): Promise<
 
 function heuristicLanguage(title: string, body: string): string | null {
   const text = `${title}\n${body}`.toLowerCase();
-  if (/[ąćęłńóśźż]/.test(text)) return "pl";
-  if (/[õäöü]/.test(text)) return "et";
-  return null;
+  if (/[\u0105\u0107\u0119\u0142\u0144\u00F3\u015B\u017A\u017C]/i.test(text)) return "pl";
+  if (/[õäöü]/i.test(text)) return "et";
+  if (/[a-z]/i.test(text)) return "en";
+  return "unknown";
 }
 
 Deno.serve(async (req) => {

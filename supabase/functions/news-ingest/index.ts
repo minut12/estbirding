@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
     // Find source
     const { data: source, error: srcErr } = await supabase
       .from("news_sources")
-      .select("id")
+      .select("id, slug, source_key, key")
       .eq("slug", source_slug)
       .single();
 
@@ -69,9 +69,11 @@ Deno.serve(async (req) => {
 
     for (const item of items) {
       const guid = item.guid || `${source_slug}:${item.url}`;
+      const sourceKey = source.source_key || source.key || source.slug || source_slug;
       const row = {
         source_id: source.id,
         source_slug,
+        source_key: sourceKey,
         title: item.title || "",
         summary: item.summary || "",
         content_html: item.content_html || null,

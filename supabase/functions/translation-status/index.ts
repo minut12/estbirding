@@ -15,6 +15,7 @@ Deno.serve(async (req) => {
     });
   }
 
+  console.log("OPENAI_API_KEY present:", Boolean(Deno.env.get("OPENAI_API_KEY")));
   const cfg = getOpenAIConfig();
   return new Response(JSON.stringify({
     configured: Boolean(cfg),

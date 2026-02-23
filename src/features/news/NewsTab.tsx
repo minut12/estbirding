@@ -16,7 +16,7 @@ import { toast } from 'sonner';
 /* ── Types ──────────────────────────────────────── */
 interface NewsItem {
   id: string;
-  source_slug: string;
+  source_slug: string | null;
   source_key?: string | null;
   title: string;
   title_et?: string | null;
@@ -24,18 +24,16 @@ interface NewsItem {
   body: string | null;
   body_et?: string | null;
   content_html: string | null;
-  url: string;
+  url: string | null;
   permalink_url?: string | null;
   image_url?: string | null;
-  cached_image_url?: string | null;
-  image_cached_url?: string | null;
   raw_json?: Record<string, any> | null;
   published_at: string;
-  language: string;
+  language: string | null;
   source_lang?: string | null;
   translated_at?: string | null;
   translation_status?: string | null;
-  guid: string;
+  guid: string | null;
   archived: boolean;
 }
 
@@ -43,6 +41,8 @@ interface NewsSource {
   id: string;
   name: string;
   slug: string;
+  source_key?: string | null;
+  key?: string | null;
 }
 
 /* ── Format date ────────────────────────────────── */
@@ -55,9 +55,10 @@ function formatEstDate(iso: string): string {
 }
 
 /* ── Source display names ───────────────────────── */
-function sourceLabel(slug: string, sources: NewsSource[]): string {
-  const s = sources.find(s => s.slug === slug);
-  return s?.name || slug.toUpperCase();
+function sourceLabel(source: string | null | undefined, sources: NewsSource[]): string {
+  if (!source) return 'EOU';
+  const s = sources.find((it) => it.slug === source || it.source_key === source || it.key === source);
+  return s?.name || source.toUpperCase();
 }
 
 function toPlainText(value: string | null | undefined): string {
@@ -174,7 +175,7 @@ function ensureImageUrl(item: NewsItem): NewsItem {
 
 /* ── Page size ──────────────────────────────────── */
 const PAGE_SIZE = 20;
-const BIRDING_POLAND_SLUG = 'facebook_birdingpoland';
+const BIRDING_POLAND_KEY = 'facebook_birdingpoland';
 
 /* ── Main component ─────────────────────────────── */
 export default function NewsTab() {
@@ -191,7 +192,14 @@ export default function NewsTab() {
   const { data: sources = [] } = useQuery<NewsSource[]>({
     queryKey: ['news-sources'],
     queryFn: async () => {
-      const { data } = await supabase.from('news_sources').select('id, name, slug').eq('is_active', true);
+      const { data, error } = await supabase
+        .from('news_sources')
+        .select('id, name, slug, source_key, key')
+        .eq('is_enabled', true);
+      if (error) {
+        console.error('[NEWS] sources query failed', error);
+        throw error;
+      }
       return (data || []) as NewsSource[];
     },
     staleTime: 60_000,
@@ -199,28 +207,42 @@ export default function NewsTab() {
 
   // News items (infinite scroll)
   const {
-    data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, refetch,
+    data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError, refetch,
   } = useInfiniteQuery({
-    queryKey: ['news-items', sourceFilter, search, tab],
+    queryKey: ['news-items', sourceFilter, search, tab, sources],
     queryFn: async ({ pageParam = 0 }) => {
+      const enabledSourceKeys = (sources || [])
+        .map((s) => (s.source_key || s.key || s.slug || '').trim())
+        .filter(Boolean);
+
       let query = supabase
         .from('news_items')
-        .select('id, source_slug, source_key, title, body, content_html, summary, image_url, cached_image_url, image_cached_url:cached_image_url, permalink_url, url, published_at, language, guid, archived, raw_json, title_et, body_et, translation_status, translated_at, source_lang')
+        .select('id, source_slug, source_key, title, body, content_html, summary, image_url, permalink_url, url, published_at, language, guid, archived, raw_json, title_et, body_et, translation_status, translated_at, source_lang')
         .order('published_at', { ascending: false })
         .range(pageParam, pageParam + PAGE_SIZE - 1);
 
       // Filter by archive state in DB
       query = query.eq('archived', tab === 'archive');
 
-      if (sourceFilter !== 'all') {
-        query = query.eq('source_slug', sourceFilter);
+      if (sourceFilter === 'legacy_null') {
+        query = query.is('source_key', null);
+      } else if (sourceFilter !== 'all') {
+        query = query.eq('source_key', sourceFilter);
+      } else if (enabledSourceKeys.length > 0) {
+        query = query.or(`source_key.in.(${enabledSourceKeys.join(',')}),source_key.is.null`);
       }
       if (search.trim()) {
-        query = query.or(`title.ilike.%${search.trim()}%,summary.ilike.%${search.trim()}%`);
+        query = query.ilike('title', `%${search.trim()}%`);
       }
 
       const { data, error } = await query;
-      if (error) throw error;
+      if (error) {
+        console.error('[NEWS] items query failed', error);
+        throw error;
+      }
+      if (import.meta.env.DEV) {
+        console.log('[NEWS] first item', data?.[0]);
+      }
       const items = ((data || []) as NewsItem[]).map(ensureImageUrl);
       return items;
     },
@@ -230,6 +252,8 @@ export default function NewsTab() {
     },
     initialPageParam: 0,
     staleTime: 30_000,
+    retry: 1,
+    enabled: sources.length > 0 || sourceFilter === 'all' || sourceFilter === 'legacy_null',
   });
 
   const allItems = useMemo(() => {
@@ -238,12 +262,17 @@ export default function NewsTab() {
 
     let seenBirdingPoland = false;
     return flat.filter((item) => {
-      if (item.source_slug !== BIRDING_POLAND_SLUG) return true;
+      if (item.source_key !== BIRDING_POLAND_KEY) return true;
       if (seenBirdingPoland) return false;
       seenBirdingPoland = true;
       return true;
     });
   }, [data?.pages, tab]);
+
+  useEffect(() => {
+    if (!isError) return;
+    toast.error('Uudiste laadimine ebaõnnestus');
+  }, [isError]);
 
   // Toggle archive via DB update
   const archiveMutation = useMutation({
@@ -283,8 +312,11 @@ export default function NewsTab() {
       return;
     }
     const translated = Number(data?.translated || 0);
-    if (translated > 0) toast.success(`Tolgiti ${translated} uudist`);
-  }, []);
+    if (translated > 0) {
+      toast.success(`Tolgiti ${translated} uudist`);
+      await queryClient.invalidateQueries({ queryKey: ['news-items'] });
+    }
+  }, [queryClient]);
 
   // Pull / refresh
   const pullMutation = useMutation({
@@ -398,9 +430,11 @@ export default function NewsTab() {
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="all">Kõik allikad</option>
-              {sources.map(s => (
-                <option key={s.slug} value={s.slug}>{s.name}</option>
-              ))}
+              {sources.map((s) => {
+                const sourceKey = s.source_key || s.key || s.slug;
+                return <option key={sourceKey} value={sourceKey}>{s.name}</option>;
+              })}
+              <option value="legacy_null">Legacy (source_key puudub)</option>
             </select>
           )}
           <div className="relative flex-1">
@@ -430,6 +464,8 @@ export default function NewsTab() {
               </div>
             ))}
           </div>
+        ) : isError ? (
+          <EmptyState tab={tab} />
         ) : allItems.length === 0 ? (
           <EmptyState tab={tab} />
         ) : (
@@ -465,10 +501,10 @@ function NewsCard({ item, sources, autoTranslateToEt, onOpen, onToggleArchive }:
   onToggleArchive: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const thumb = decodeUrl(item.image_cached_url || item.cached_image_url || item.image_url);
+  const thumb = decodeUrl(item.image_url);
   const displayTitle = autoTranslateToEt ? (item.title_et || item.title) : item.title;
   const snippet = toPlainText(autoTranslateToEt ? (item.body_et || item.body || item.summary) : (item.body || item.summary)).slice(0, 150);
-  const originalUrl = item.permalink_url || item.url;
+  const originalUrl = item.permalink_url || item.url || '#';
   const isTranslated = Boolean(item.title_et || item.body_et);
 
   useEffect(() => {
@@ -504,7 +540,7 @@ function NewsCard({ item, sources, autoTranslateToEt, onOpen, onToggleArchive }:
           </button>
           <div className="flex items-center gap-2 mt-1">
             <Badge variant="secondary" className="text-xs px-1.5 py-0">
-              {sourceLabel(item.source_slug, sources)}
+              {sourceLabel(item.source_key || item.source_slug, sources)}
             </Badge>
             {isTranslated && <Badge variant="outline" className="text-xs px-1.5 py-0">Tõlgitud</Badge>}
             <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at)}</span>
@@ -575,7 +611,7 @@ function ArticleView({ item, sources, autoTranslateToEt, onBack, onToggleArchive
     ? (item.body_et || contentHtml || toPlainText(item.body || item.summary))
     : (contentHtml || toPlainText(item.body || item.summary));
   const sanitizedContentHtml = contentHtml ? stripImagesFromHtml(contentHtml) : null;
-  const originalUrl = item.permalink_url || item.url;
+  const originalUrl = item.permalink_url || item.url || '#';
   const heroImageUrl = decodeUrl(item.image_url);
   const isTranslated = Boolean(item.title_et || item.body_et);
 
@@ -602,7 +638,7 @@ function ArticleView({ item, sources, autoTranslateToEt, onBack, onToggleArchive
         )}
         <h1 className="text-xl font-bold text-foreground">{displayTitle}</h1>
         <div className="flex items-center gap-2">
-          <Badge variant="secondary">{sourceLabel(item.source_slug, sources)}</Badge>
+          <Badge variant="secondary">{sourceLabel(item.source_key || item.source_slug, sources)}</Badge>
           {isTranslated && <Badge variant="outline">Tõlgitud</Badge>}
           <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at)}</span>
         </div>

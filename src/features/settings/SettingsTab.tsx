@@ -205,7 +205,7 @@ export default function SettingsTab() {
             href="/reset/"
             className="inline-flex items-center gap-1.5 text-sm text-primary underline underline-offset-4 hover:text-primary/80"
           >
-            Ava lahtestusleht ->
+            Ava lähtestusleht &rarr;
           </a>
           <p className="text-xs text-muted-foreground">
             Kasuta seda linki, kui rakendus on taiesti kinni jaanud ja nupud ei toota.

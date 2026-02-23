@@ -18,20 +18,15 @@ interface NewsItem {
   id: string;
   source_slug: string;
   source_key?: string | null;
-  source_lang?: string | null;
   title: string;
   translated_title?: string | null;
-  title_et?: string | null;
   summary: string | null;
   body: string | null;
   translated_body?: string | null;
-  body_et?: string | null;
   content_html: string | null;
   url: string;
   permalink_url?: string | null;
   image_url?: string | null;
-  cached_image_url?: string | null;
-  imageUrl?: string | null;
   raw_json?: Record<string, any> | null;
   published_at: string;
   language: string;
@@ -92,7 +87,7 @@ function stripImagesFromHtml(html: string): string {
 
 function decodeUrl(u: string | null | undefined): string | null {
   if (!u) return null;
-  return u.replaceAll("&amp;", "&").replaceAll("&#38;", "&");
+  return u.replace(/&amp;/g, "&").replace(/&#38;/g, "&");
 }
 
 function extractImageUrlFromRaw(item: NewsItem): string | null {
@@ -167,9 +162,7 @@ function cleanUrl(url: string | null | undefined): string | null {
 }
 
 function ensureImageUrl(item: NewsItem): NewsItem {
-  const cached = decodeUrl(item.cached_image_url);
-  if (cached) return { ...item, image_url: cached };
-  const decoded = decodeUrl(item.image_url ?? item.imageUrl);
+  const decoded = decodeUrl(item.image_url);
   if (decoded) return { ...item, image_url: decoded };
   return { ...item, image_url: extractImageUrlFromRaw(item) };
 }
@@ -206,7 +199,7 @@ export default function NewsTab() {
     queryFn: async ({ pageParam = 0 }) => {
       let query = supabase
         .from('news_items')
-        .select('id, source_slug, source_key, source_lang, title, translated_title, title_et, summary, body, translated_body, body_et, content_html, raw_json, url, permalink_url, image_url, cached_image_url, published_at, language, guid, archived')
+        .select('id, source_slug, source_key, title, translated_title, summary, body, translated_body, content_html, raw_json, url, permalink_url, image_url, published_at, language, guid, archived')
         .order('published_at', { ascending: false })
         .range(pageParam, pageParam + PAGE_SIZE - 1);
 
@@ -464,11 +457,11 @@ function NewsCard({ item, sources, onOpen, onToggleArchive }: {
   onToggleArchive: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const thumb = decodeUrl(item.cached_image_url || item.image_url || item.imageUrl);
-  const displayTitle = item.translated_title || item.title_et || item.title;
-  const snippet = toPlainText(item.translated_body || item.body_et || item.body || item.summary).slice(0, 150);
+  const thumb = decodeUrl(item.image_url);
+  const displayTitle = item.translated_title || item.title;
+  const snippet = toPlainText(item.translated_body || item.body || item.summary).slice(0, 150);
   const originalUrl = item.permalink_url || item.url;
-  const isTranslated = Boolean(item.translated_body || item.body_et);
+  const isTranslated = Boolean(item.translated_body);
 
   useEffect(() => {
     setImageFailed(false);
@@ -568,12 +561,12 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     return () => { cancelled = true; };
   }, [item.id, item.content_html, item.source_slug]);
 
-  const displayTitle = item.translated_title || item.title_et || item.title;
-  const displayBody = item.translated_body || item.body_et || contentHtml || toPlainText(item.body || item.summary);
+  const displayTitle = item.translated_title || item.title;
+  const displayBody = item.translated_body || contentHtml || toPlainText(item.body || item.summary);
   const sanitizedContentHtml = contentHtml ? stripImagesFromHtml(contentHtml) : null;
   const originalUrl = item.permalink_url || item.url;
-  const heroImageUrl = decodeUrl(item.cached_image_url || item.image_url || item.imageUrl);
-  const isTranslated = Boolean(item.translated_body || item.body_et);
+  const heroImageUrl = decodeUrl(item.image_url);
+  const isTranslated = Boolean(item.translated_body);
 
   return (
     <div className="flex flex-col h-full">
@@ -609,7 +602,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
             <Skeleton className="h-4 w-5/6" />
             <Skeleton className="h-4 w-4/6" />
           </div>
-        ) : sanitizedContentHtml && !item.body_et && !item.translated_body ? (
+        ) : sanitizedContentHtml && !item.translated_body ? (
           <div
             className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
             dangerouslySetInnerHTML={{ __html: sanitizedContentHtml }}

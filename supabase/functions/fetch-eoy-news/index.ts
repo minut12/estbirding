@@ -205,8 +205,18 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   try {
+    const body = await req.json().catch(() => ({}));
+    const dryRun = body?.dry_run === true;
+    const feedUrlOverride = typeof body?.feed_url === "string" ? body.feed_url : null;
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabase = createClient(
       supabaseUrl,
@@ -226,15 +236,27 @@ Deno.serve(async (req) => {
       });
     }
 
-    const res = await fetch(source.fetch_url, {
+    const fetchUrl = feedUrlOverride || source.fetch_url;
+    const res = await fetch(fetchUrl, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)" },
     });
     if (!res.ok) throw new Error(`Failed to fetch EOÜ page: ${res.status}`);
     const html = await res.text();
 
     const baseUrl = "https://www.eoy.ee";
-    const parsed = parseEoyListPage(html, baseUrl, source.fetch_url);
+    const parsed = parseEoyListPage(html, baseUrl, fetchUrl);
     console.log(`Parsed ${parsed.length} items from EOÜ index page`);
+
+    if (dryRun) {
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          count: parsed.length,
+          sampleTitles: parsed.slice(0, 3).map((it) => it.title).filter(Boolean),
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     let inserted = 0;
     let updated = 0;

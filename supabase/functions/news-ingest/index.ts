@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
 
     for (const item of items) {
       const guid = item.guid || `${source_slug}:${item.url}`;
-      const sourceKey = source.source_key || source.key || source.slug || source_slug;
+      const sourceKey = String(source.source_key || source.key || source.slug || source_slug || "unknown").trim() || "unknown";
       const row = {
         source_id: source.id,
         source_slug,

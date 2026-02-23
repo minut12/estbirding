@@ -28,6 +28,7 @@ export default function SettingsTab() {
   const [translationProvider, setTranslationProvider] = useState('openai');
   const [translationModel, setTranslationModel] = useState('gpt-4.1-mini');
   const [translationStatusLoading, setTranslationStatusLoading] = useState(true);
+  const [translationStatusUnavailable, setTranslationStatusUnavailable] = useState(false);
 
   useEffect(() => {
     setForm(loadSettings());
@@ -39,10 +40,12 @@ export default function SettingsTab() {
     const { data, error } = await supabase.functions.invoke('translation-status');
     if (error) {
       setTranslationConfigured(false);
+      setTranslationStatusUnavailable(true);
     } else {
       setTranslationConfigured(data?.configured === true);
       setTranslationProvider(data?.provider || 'openai');
       setTranslationModel(data?.model || 'gpt-4.1-mini');
+      setTranslationStatusUnavailable(false);
     }
     setTranslationStatusLoading(false);
   };
@@ -133,7 +136,7 @@ export default function SettingsTab() {
 
         <div className="space-y-2">
           <div className="text-xs text-muted-foreground">
-            OpenAI configured: {translationConfigured ? 'yes' : 'no'}
+            {translationStatusUnavailable ? 'OpenAI status unavailable' : `OpenAI configured: ${translationConfigured ? 'yes' : 'no'}`}
             {translationConfigured ? ` (${translationProvider}, ${translationModel})` : ''}
           </div>
           <div className="flex items-center justify-between rounded-md border border-border p-3">

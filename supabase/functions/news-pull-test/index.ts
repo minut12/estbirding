@@ -12,10 +12,53 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { feed_url } = await req.json();
-    if (!feed_url) {
+    const { slug, source_key, feed_url, type, kind } = await req.json();
+    if (!feed_url && slug !== "eoy" && source_key !== "eoy") {
       return new Response(JSON.stringify({ error: "Missing feed_url" }), {
         status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const resolvedKind = String(kind || type || "").toLowerCase();
+    const isEoy = slug === "eoy" || source_key === "eoy" || resolvedKind.includes("scrap");
+    if (isEoy) {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL");
+      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (!supabaseUrl || !serviceRoleKey) {
+        return new Response(JSON.stringify({ ok: false, count: 0, sampleTitles: [], error: "Missing Supabase env" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const dryRunRes = await fetch(`${supabaseUrl}/functions/v1/fetch-eoy-news`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${serviceRoleKey}`,
+          "apikey": serviceRoleKey,
+        },
+        body: JSON.stringify({ dry_run: true, feed_url }),
+      });
+      const dryData = await dryRunRes.json().catch(() => ({}));
+      if (!dryRunRes.ok) {
+        return new Response(JSON.stringify({
+          ok: false,
+          count: 0,
+          sampleTitles: [],
+          error: dryData?.error || `EOY dry-run failed: ${dryRunRes.status}`,
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({
+        ok: true,
+        count: Number(dryData?.count || 0),
+        sampleTitles: Array.isArray(dryData?.sampleTitles) ? dryData.sampleTitles : [],
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -25,7 +68,7 @@ Deno.serve(async (req) => {
     });
     if (!res.ok) {
       return new Response(
-        JSON.stringify({ error: `HTTP ${res.status}`, items: [] }),
+        JSON.stringify({ ok: false, error: `HTTP ${res.status}`, count: 0, sampleTitles: [] }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
@@ -33,20 +76,24 @@ Deno.serve(async (req) => {
     const text = await res.text();
     const items = parseRss(text)
       .map(normalizeRssItem)
-      .slice(0, 3)
-      .map((item) => ({
-        title: item.title,
-        image_url: item.image_url,
-        body_preview: item.body.slice(0, 120),
-        published_at: item.published_at,
-      }));
+      .slice(0, 3);
 
     return new Response(
-      JSON.stringify({ items }),
+      JSON.stringify({
+        ok: true,
+        count: items.length,
+        sampleTitles: items.map((item) => item.title).filter(Boolean),
+        items: items.map((item) => ({
+          title: item.title,
+          image_url: item.image_url,
+          body_preview: item.body.slice(0, 120),
+          published_at: item.published_at,
+        })),
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message, items: [] }), {
+    return new Response(JSON.stringify({ ok: false, error: error.message, count: 0, sampleTitles: [], items: [] }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

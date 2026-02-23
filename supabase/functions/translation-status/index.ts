@@ -17,10 +17,12 @@ Deno.serve(async (req) => {
 
   console.log("OPENAI_API_KEY present:", Boolean(Deno.env.get("OPENAI_API_KEY")));
   const cfg = getOpenAIConfig();
+  const checked_env_vars = ["OPENAI_API_KEY", "OPENAI_MODEL", "OPENAI_TRANSLATION_MODEL"];
   return new Response(JSON.stringify({
     configured: Boolean(cfg),
     provider: "openai",
     model: cfg?.model || "gpt-4.1-mini",
+    checked_env_vars,
   }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });

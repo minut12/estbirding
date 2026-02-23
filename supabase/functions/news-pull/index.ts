@@ -116,7 +116,7 @@ Deno.serve(async (req) => {
         }
 
         const text = await feedRes.text();
-        const sourceKey = source.source_key || source.key || source.slug;
+        const sourceKey = String(source.source_key || source.key || source.slug || "unknown").trim() || "unknown";
         const normalized = parseRss(text).map(normalizeRssItem);
         const sorted = normalized.sort((a, b) => toTimestamp(b.published_at) - toTimestamp(a.published_at));
         const items = sourceKey === BIRDING_POLAND_KEY ? sorted.slice(0, 1) : sorted.slice(0, 10);
@@ -139,7 +139,7 @@ Deno.serve(async (req) => {
           const row = {
             source_id: source.id,
             source_slug: source.slug,
-            source_key: sourceKey,
+            source_key: sourceKey || "unknown",
             external_id: externalId,
             title: originalTitle,
             summary: item.body.slice(0, 500) || null,

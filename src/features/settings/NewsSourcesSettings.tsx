@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,7 @@ interface NewsSource {
   id: string;
   name: string;
   slug: string;
+  source_key?: string | null;
   type: string;
   homepage_url: string | null;
   feed_url: string | null;
@@ -25,12 +26,12 @@ export default function NewsSourcesSettings() {
   const { data: sources = [], isLoading } = useQuery<NewsSource[]>({
     queryKey: ['news-sources-settings'],
     queryFn: async () => {
-      const { data } = await supabase.from('news_sources').select('id, name, slug, type, homepage_url, feed_url, is_enabled').eq('is_active', true);
+      const { data } = await supabase.from('news_sources').select('id, name, slug, source_key, type, homepage_url, feed_url, is_enabled').eq('is_active', true);
       return (data || []) as NewsSource[];
     },
   });
 
-  if (isLoading) return <p className="text-sm text-muted-foreground">Laen allikaid…</p>;
+  if (isLoading) return <p className="text-sm text-muted-foreground">Laen allikaidâ€¦</p>;
   if (sources.length === 0) return <p className="text-sm text-muted-foreground">Uudiste allikaid pole.</p>;
 
   return (
@@ -46,7 +47,7 @@ export default function NewsSourcesSettings() {
 function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: ReturnType<typeof useQueryClient> }) {
   const [feedUrl, setFeedUrl] = useState(source.feed_url || '');
   const [enabled, setEnabled] = useState(source.is_enabled);
-  const [testResult, setTestResult] = useState<{ ok: boolean; title?: string; date?: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ ok: boolean; count?: number; sampleTitles?: string[]; error?: string } | null>(null);
   const [testing, setTesting] = useState(false);
 
   const updateMutation = useMutation({
@@ -61,7 +62,7 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
       queryClient.invalidateQueries({ queryKey: ['news-sources'] });
       toast.success(`${source.name} uuendatud`);
     },
-    onError: () => toast.error('Salvestamine ebaõnnestus'),
+    onError: () => toast.error('Salvestamine ebaÃµnnestus'),
   });
 
   const testFeed = async () => {
@@ -70,16 +71,26 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
     setTestResult(null);
     try {
       const { data, error } = await supabase.functions.invoke('news-pull-test', {
-        body: { feed_url: feedUrl },
+        body: {
+          slug: source.slug,
+          source_key: source.source_key,
+          feed_url: feedUrl,
+          type: source.type,
+          kind: source.type,
+        },
       });
       if (error) throw error;
-      if (data?.items?.length > 0) {
-        setTestResult({ ok: true, title: data.items[0].title, date: data.items[0].pubDate });
+      if (data?.ok) {
+        setTestResult({
+          ok: true,
+          count: Number(data?.count || 0),
+          sampleTitles: Array.isArray(data?.sampleTitles) ? data.sampleTitles : [],
+        });
       } else {
-        setTestResult({ ok: false });
+        setTestResult({ ok: false, error: data?.error || 'Voogu ei Ãµnnestunud lugeda' });
       }
-    } catch {
-      setTestResult({ ok: false });
+    } catch (e: any) {
+      setTestResult({ ok: false, error: e?.message || 'Voogu ei Ãµnnestunud lugeda' });
     } finally {
       setTesting(false);
     }
@@ -110,7 +121,7 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
         />
         {isFacebook && (
           <p className="text-xs text-muted-foreground">
-            Kasuta Facebook→RSS teenust (nt RSS.app / FetchRSS). Facebooki tokenit pole vaja.
+            Kasuta Facebookâ†’RSS teenust (nt RSS.app / FetchRSS). Facebooki tokenit pole vaja.
           </p>
         )}
       </div>
@@ -121,14 +132,14 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
             <div className="flex items-start gap-1.5">
               <Check className="w-3.5 h-3.5 mt-0.5 shrink-0" />
               <div>
-                <p className="font-medium">{testResult.title}</p>
-                {testResult.date && <p className="opacity-70">{testResult.date}</p>}
+                <p className="font-medium">Leitud: {testResult.count ?? 0}</p>
+                {testResult.sampleTitles?.[0] && <p className="opacity-70">{testResult.sampleTitles[0]}</p>}
               </div>
             </div>
           ) : (
             <div className="flex items-center gap-1.5">
               <X className="w-3.5 h-3.5" />
-              <span>Voogu ei õnnestunud lugeda</span>
+              <span>{testResult.error || 'Voogu ei õnnestunud lugeda'}</span>
             </div>
           )}
         </div>
@@ -156,3 +167,4 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
     </div>
   );
 }
+

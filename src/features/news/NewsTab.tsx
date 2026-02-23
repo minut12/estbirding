@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { useQuery, useInfiniteQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import {
   Newspaper, ChevronLeft, Archive, ArchiveRestore, ExternalLink,
@@ -27,6 +27,7 @@ interface NewsItem {
   url: string | null;
   permalink_url?: string | null;
   image_url?: string | null;
+  fetched_at?: string | null;
   raw_json?: Record<string, any> | null;
   published_at: string;
   language: string | null;
@@ -73,21 +74,32 @@ function toPlainText(value: string | null | undefined): string {
   return decoded.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function stripImagesFromHtml(html: string): string {
+function stripLeadingSameImage(html: string, heroUrl?: string | null): string {
   if (!html) return html;
 
   try {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
-    doc.querySelectorAll('img').forEach((img) => img.remove());
-    doc.querySelectorAll('figure').forEach((figure) => {
-      if (!figure.textContent?.trim() && figure.querySelectorAll('img,video,picture,iframe').length === 0) {
-        figure.remove();
-      }
-    });
+    const firstImg = doc.body.querySelector('img');
+    if (!firstImg) return html;
+
+    const imgSrc = decodeUrl(firstImg.getAttribute('src'));
+    const normalizedHero = decodeUrl(heroUrl);
+    const isFirstContentImage = doc.body.firstElementChild?.tagName.toLowerCase() === 'img'
+      || doc.body.firstElementChild?.querySelector('img') != null;
+
+    const sameAsHero = normalizedHero && imgSrc
+      ? imgSrc.includes(normalizedHero) || normalizedHero.includes(imgSrc)
+      : false;
+
+    if (sameAsHero || isFirstContentImage) {
+      const firstFigure = firstImg.closest('figure');
+      if (firstFigure && !firstFigure.textContent?.trim()) firstFigure.remove();
+      else firstImg.remove();
+    }
     return doc.body.innerHTML;
   } catch {
-    return html.replace(/<img[^>]*>/gi, '');
+    return html.replace(/^\s*(<figure[^>]*>\s*)?<img[^>]*>(\s*<\/figure>)?/i, '');
   }
 }
 
@@ -173,8 +185,6 @@ function ensureImageUrl(item: NewsItem): NewsItem {
   return { ...item, image_url: extractImageUrlFromRaw(item) };
 }
 
-/* ── Page size ──────────────────────────────────── */
-const PAGE_SIZE = 20;
 const BIRDING_POLAND_KEY = 'facebook_birdingpoland';
 
 /* ── Main component ─────────────────────────────── */
@@ -205,69 +215,53 @@ export default function NewsTab() {
     staleTime: 60_000,
   });
 
-  // News items (infinite scroll)
   const {
-    data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError, refetch,
-  } = useInfiniteQuery({
-    queryKey: ['news-items', sourceFilter, search, tab, sources],
-    queryFn: async ({ pageParam = 0 }) => {
-      const enabledSourceKeys = (sources || [])
-        .map((s) => (s.source_key || s.key || s.slug || '').trim())
-        .filter(Boolean);
-
-      let query = supabase
+    data: newsItems = [], isLoading, isError, refetch,
+  } = useQuery({
+    queryKey: ['news-items', tab],
+    queryFn: async () => {
+      const { data, error } = await supabase
         .from('news_items')
-        .select('id, source_slug, source_key, title, body, content_html, summary, image_url, permalink_url, url, published_at, language, guid, archived, raw_json, title_et, body_et, translation_status, translated_at, source_lang')
-        .order('published_at', { ascending: false })
-        .range(pageParam, pageParam + PAGE_SIZE - 1);
+        .select('id, source_key, source_slug, title, body, image_url, permalink_url, published_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang')
+        .eq('archived', tab === 'archive')
+        .order('published_at', { ascending: false, nullsFirst: false })
+        .order('fetched_at', { ascending: false })
+        .limit(50);
 
-      // Filter by archive state in DB
-      query = query.eq('archived', tab === 'archive');
-
-      if (sourceFilter === 'legacy_null') {
-        query = query.is('source_key', null);
-      } else if (sourceFilter !== 'all') {
-        query = query.eq('source_key', sourceFilter);
-      } else if (enabledSourceKeys.length > 0) {
-        query = query.or(`source_key.in.(${enabledSourceKeys.join(',')}),source_key.is.null`);
-      }
-      if (search.trim()) {
-        query = query.ilike('title', `%${search.trim()}%`);
-      }
-
-      const { data, error } = await query;
       if (error) {
         console.error('[NEWS] items query failed', error);
         throw error;
       }
-      if (import.meta.env.DEV) {
-        console.log('[NEWS] first item', data?.[0]);
-      }
-      const items = ((data || []) as NewsItem[]).map(ensureImageUrl);
-      return items;
+      if (import.meta.env.DEV) console.log('[NEWS] first item', data?.[0]);
+      return ((data || []) as NewsItem[]).map(ensureImageUrl);
     },
-    getNextPageParam: (lastPage, allPages) => {
-      if (lastPage.length < PAGE_SIZE) return undefined;
-      return allPages.flat().length;
-    },
-    initialPageParam: 0,
     staleTime: 30_000,
     retry: 1,
-    enabled: sources.length > 0 || sourceFilter === 'all' || sourceFilter === 'legacy_null',
   });
 
   const allItems = useMemo(() => {
-    const flat = data?.pages.flat() ?? [];
-    if (tab === 'archive') return flat;
+    const filteredBySource = newsItems.filter((item) => {
+      const displaySourceKey = item.source_key ?? 'eoy';
+      if (sourceFilter === 'all') return true;
+      if (sourceFilter === 'legacy_null') return item.source_key == null;
+      return displaySourceKey === sourceFilter;
+    });
 
+    const filteredBySearch = search.trim()
+      ? filteredBySource.filter((item) =>
+        (item.title || '').toLowerCase().includes(search.trim().toLowerCase()))
+      : filteredBySource;
+
+    if (tab === 'archive') return filteredBySearch;
     let seenBirdingPoland = false;
-    return flat.filter((item) => {
-      if (item.source_key !== BIRDING_POLAND_KEY) return true;
+    return filteredBySearch.filter((item) => {
+      const displaySourceKey = item.source_key ?? 'eoy';
+      if (displaySourceKey !== BIRDING_POLAND_KEY) return true;
       if (seenBirdingPoland) return false;
       seenBirdingPoland = true;
       return true;
     });
-  }, [data?.pages, tab]);
+  }, [newsItems, sourceFilter, search, tab]);
 
   useEffect(() => {
     if (!isError) return;
@@ -338,22 +332,6 @@ export default function NewsTab() {
       toast.error('Uudiste tõmbamine ebaõnnestus');
     },
   });
-
-  // Infinite scroll observer
-  const observerRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!observerRef.current) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage();
-        }
-      },
-      { threshold: 0.1 },
-    );
-    obs.observe(observerRef.current);
-    return () => obs.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // Save/restore scroll
   const openArticle = (item: NewsItem) => {
@@ -482,11 +460,6 @@ export default function NewsTab() {
             ))}
           </div>
         )}
-        {/* Infinite scroll sentinel */}
-        <div ref={observerRef} className="h-10" />
-        {isFetchingNextPage && (
-          <div className="p-4 text-center text-sm text-muted-foreground">Laen lisaks…</div>
-        )}
       </div>
     </div>
   );
@@ -610,9 +583,9 @@ function ArticleView({ item, sources, autoTranslateToEt, onBack, onToggleArchive
   const displayBody = autoTranslateToEt
     ? (item.body_et || contentHtml || toPlainText(item.body || item.summary))
     : (contentHtml || toPlainText(item.body || item.summary));
-  const sanitizedContentHtml = contentHtml ? stripImagesFromHtml(contentHtml) : null;
-  const originalUrl = item.permalink_url || item.url || '#';
   const heroImageUrl = decodeUrl(item.image_url);
+  const bodyHtmlWithoutDuplicateHero = contentHtml ? stripLeadingSameImage(contentHtml, heroImageUrl) : null;
+  const originalUrl = item.permalink_url || item.url || '#';
   const isTranslated = Boolean(item.title_et || item.body_et);
 
   return (
@@ -649,10 +622,10 @@ function ArticleView({ item, sources, autoTranslateToEt, onBack, onToggleArchive
             <Skeleton className="h-4 w-5/6" />
             <Skeleton className="h-4 w-4/6" />
           </div>
-        ) : sanitizedContentHtml && !(autoTranslateToEt && item.body_et) ? (
+        ) : bodyHtmlWithoutDuplicateHero && !(autoTranslateToEt && item.body_et) ? (
           <div
             className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
-            dangerouslySetInnerHTML={{ __html: sanitizedContentHtml }}
+            dangerouslySetInnerHTML={{ __html: bodyHtmlWithoutDuplicateHero }}
           />
         ) : contentError ? (
           <p className="text-sm text-muted-foreground italic">{contentError}</p>

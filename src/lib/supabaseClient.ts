@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/integrations/supabase/types';
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from '@/config/supabaseEnv';
 
-const MAX_FETCH_LOG_LINES = 5;
+const MAX_FETCH_LOG_LINES = 10;
 const fetchLogLines: string[] = [];
 const fetchLogListeners = new Set<(lines: string[]) => void>();
 
@@ -32,19 +32,14 @@ export function subscribeSupabaseFetchLogs(listener: (lines: string[]) => void):
 const loggingFetch: typeof fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url;
   const method = init?.method || 'GET';
-  const requestLine = `[fetch] ${method} ${url}`;
-  console.log(requestLine);
-  pushFetchLine(requestLine);
+  const line = `[fetch] ${method} ${url}`;
+  console.log(line);
+  pushFetchLine(line);
 
   try {
-    const response = await fetch(input, init);
-    const responseLine = `[fetch] ${method} ${url} -> ${response.status}`;
-    pushFetchLine(responseLine);
-    return response;
+    return await fetch(input, init);
   } catch (e) {
-    const errorLine = `[fetch error] ${method} ${url} ${(e as Error)?.message || String(e)}`;
-    console.error(errorLine, e);
-    pushFetchLine(errorLine);
+    console.error('[fetch error]', method, url, e);
     throw e;
   }
 };

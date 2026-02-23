@@ -25,6 +25,38 @@ import NewsSourcesSettings from './NewsSourcesSettings';
 
 type ResetMode = 'soft' | 'hard' | null;
 
+function serializeForDebug(value: unknown, depth = 0): unknown {
+  if (depth > 3) return '[max-depth]';
+  if (value == null) return value;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (Array.isArray(value)) return value.map((item) => serializeForDebug(item, depth + 1));
+  if (value instanceof Response) {
+    return {
+      type: 'Response',
+      status: value.status,
+      statusText: value.statusText,
+      url: value.url,
+      ok: value.ok,
+    };
+  }
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.getOwnPropertyNames(obj)) {
+      try {
+        out[key] = serializeForDebug(obj[key], depth + 1);
+      } catch (e) {
+        out[key] = `[unserializable: ${(e as Error)?.message || String(e)}]`;
+      }
+    }
+    if (Object.keys(out).length === 0) {
+      return String(value);
+    }
+    return out;
+  }
+  return String(value);
+}
+
 export default function SettingsTab() {
   const [form, setForm] = useState<AppSettings>(loadSettings);
   const [confirmMode, setConfirmMode] = useState<ResetMode>(null);
@@ -122,20 +154,10 @@ export default function SettingsTab() {
       else toast.error('Edge ping failed');
     } catch (error) {
       console.error('[SETTINGS] ping invoke failed', error);
-      const e = error as Error & { cause?: unknown };
-      const causeObj = e.cause as { name?: string; message?: string } | undefined;
-      const serialized = {
-        name: e.name || 'Error',
-        message: e.message || String(error),
-        cause: causeObj
-          ? {
-            name: causeObj.name ?? null,
-            message: causeObj.message ?? String(causeObj),
-          }
-          : null,
-      };
+      const serialized = serializeForDebug(error);
       setEdgeTestResult(`Error\n${JSON.stringify(serialized, null, 2)}`);
-      toast.error(`Ping failed: ${serialized.name} ${serialized.message}`);
+      const e = error as Error;
+      toast.error(`Ping failed: ${e.name || 'Error'} ${e.message || String(error)}`);
     } finally {
       setPingLoading(false);
     }
@@ -339,7 +361,7 @@ export default function SettingsTab() {
               <pre className="max-h-48 overflow-auto rounded-md border border-border bg-muted/30 p-2 text-xs whitespace-pre-wrap break-words">
                 {edgeTestResult || '(no result yet)'}
               </pre>
-              <p className="text-xs font-semibold text-foreground">Last fetch lines (max 5)</p>
+              <p className="text-xs font-semibold text-foreground">Last fetch lines (max 10)</p>
               <pre className="max-h-48 overflow-auto rounded-md border border-border bg-muted/30 p-2 text-xs whitespace-pre-wrap break-words">
                 {(fetchLogLines.length > 0 ? fetchLogLines.join('\n') : '(no fetch logs yet)')}
               </pre>

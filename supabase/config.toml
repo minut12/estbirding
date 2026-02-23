@@ -47,3 +47,6 @@ verify_jwt = false
 
 [functions.translation-status]
 verify_jwt = false
+
+[functions.translate-text]
+verify_jwt = false

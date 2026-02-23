@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
 
     const { data: item, error } = await supabase
       .from("news_items")
-      .select("id, source_key, title, body, source_lang, translated_title, translated_body, translate_hash")
+      .select("id, source_key, title, body, source_lang, title_et, body_et, translate_hash")
       .eq("id", id)
       .single();
 
@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
       return jsonResponse(200, { id, status: "done", skipped: true, reason: "already_estonian" });
     }
 
-    if (item.translated_title && item.translated_body && item.translate_hash === contentHash) {
+    if (item.title_et && item.body_et && item.translate_hash === contentHash) {
       await supabase.from("news_items").update({
         source_lang: sourceLang,
         translation_status: "done",
@@ -121,8 +121,8 @@ Deno.serve(async (req) => {
       });
       await supabase.from("news_items").update({
         source_lang: sourceLang,
-        translated_title: translated.title_et || null,
-        translated_body: translated.body_et || null,
+        title_et: translated.title_et || null,
+        body_et: translated.body_et || null,
         translation_status: "done",
         translation_error: null,
         translated_at: new Date().toISOString(),

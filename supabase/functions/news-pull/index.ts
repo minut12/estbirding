@@ -186,7 +186,7 @@ Deno.serve(async (req) => {
           const { data: upserted, error } = await supabase
             .from("news_items")
             .upsert(rowWithImage, { onConflict: "source_slug,external_id" })
-            .select("id, translate_hash, translated_title, translated_body, cached_image_url")
+            .select("id, translate_hash, title_et, body_et, cached_image_url")
             .single();
 
           if (!error) inserted++;
@@ -198,7 +198,7 @@ Deno.serve(async (req) => {
             }
 
             if (lang !== "et" && AUTO_TRANSLATE_TO_ET) {
-              const shouldTranslate = !upserted.translated_title || !upserted.translated_body || upserted.translate_hash !== contentHash;
+              const shouldTranslate = !upserted.title_et || !upserted.body_et || upserted.translate_hash !== contentHash;
               if (shouldTranslate) {
                 if (IS_DEV) console.log("[translate] run", guid, contentHash);
                 try {

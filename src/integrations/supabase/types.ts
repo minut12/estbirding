@@ -227,6 +227,8 @@ export type Database = {
         Row: {
           archived: boolean
           body: string | null
+          body_et: string | null
+          cached_image_url: string | null
           content_fetch_error: string | null
           content_fetched_at: string | null
           content_html: string | null
@@ -237,6 +239,7 @@ export type Database = {
           id: string
           image_url: string | null
           image_url_original: string | null
+          lang: string | null
           language: string
           permalink_url: string | null
           published_at: string
@@ -247,9 +250,12 @@ export type Database = {
           source_slug: string
           summary: string | null
           title: string
+          title_et: string | null
+          translate_hash: string | null
           translated_at: string | null
           translated_body: string | null
           translated_title: string | null
+          translation_error: string | null
           translation_status: string
           updated_at: string
           url: string
@@ -257,6 +263,8 @@ export type Database = {
         Insert: {
           archived?: boolean
           body?: string | null
+          body_et?: string | null
+          cached_image_url?: string | null
           content_fetch_error?: string | null
           content_fetched_at?: string | null
           content_html?: string | null
@@ -267,6 +275,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           image_url_original?: string | null
+          lang?: string | null
           language?: string
           permalink_url?: string | null
           published_at?: string
@@ -277,9 +286,12 @@ export type Database = {
           source_slug: string
           summary?: string | null
           title: string
+          title_et?: string | null
+          translate_hash?: string | null
           translated_at?: string | null
           translated_body?: string | null
           translated_title?: string | null
+          translation_error?: string | null
           translation_status?: string
           updated_at?: string
           url: string
@@ -287,6 +299,8 @@ export type Database = {
         Update: {
           archived?: boolean
           body?: string | null
+          body_et?: string | null
+          cached_image_url?: string | null
           content_fetch_error?: string | null
           content_fetched_at?: string | null
           content_html?: string | null
@@ -297,6 +311,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           image_url_original?: string | null
+          lang?: string | null
           language?: string
           permalink_url?: string | null
           published_at?: string
@@ -307,9 +322,12 @@ export type Database = {
           source_slug?: string
           summary?: string | null
           title?: string
+          title_et?: string | null
+          translate_hash?: string | null
           translated_at?: string | null
           translated_body?: string | null
           translated_title?: string | null
+          translation_error?: string | null
           translation_status?: string
           updated_at?: string
           url?: string

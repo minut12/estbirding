@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { loadSettings, saveSettings, type AppSettings } from '@/lib/settings';
+import { loadSettings, saveSettings, NEWS_AUTO_TRANSLATE_ET_KEY, type AppSettings } from '@/lib/settings';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -39,7 +39,6 @@ export default function SettingsTab() {
     const { data, error } = await supabase.functions.invoke('translation-status');
     if (error) {
       setTranslationConfigured(false);
-      toast.error('Translation status load failed');
     } else {
       setTranslationConfigured(data?.configured === true);
       setTranslationProvider(data?.provider || 'openai');
@@ -61,6 +60,7 @@ export default function SettingsTab() {
     const next = { ...form, autoTranslateToEstonian: checked };
     setForm(next);
     saveSettings(next);
+    localStorage.setItem(NEWS_AUTO_TRANSLATE_ET_KEY, checked ? '1' : '0');
 
     if (!checked) return;
     if (!translationConfigured) {
@@ -133,9 +133,8 @@ export default function SettingsTab() {
 
         <div className="space-y-2">
           <div className="text-xs text-muted-foreground">
-            Translation: {translationConfigured
-              ? `Configured (${translationProvider}, ${translationModel})`
-              : 'Not configured'}
+            OpenAI configured: {translationConfigured ? 'yes' : 'no'}
+            {translationConfigured ? ` (${translationProvider}, ${translationModel})` : ''}
           </div>
           <div className="flex items-center justify-between rounded-md border border-border p-3">
             <div className="space-y-1">
@@ -153,7 +152,7 @@ export default function SettingsTab() {
           </div>
           {!translationConfigured && (
             <p className="text-xs text-muted-foreground">
-              Admin only: translation provider + API keys must be configured via Supabase secrets.
+              Admin: set OPENAI_API_KEY in Supabase Secrets.
             </p>
           )}
         </div>

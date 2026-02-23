@@ -29,19 +29,19 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const limit = Number.isFinite(body?.limit) ? Math.max(1, Math.min(50, Number(body.limit))) : 50;
+    const limit = Number.isFinite(body?.limit) ? Math.max(1, Math.min(50, Number(body.limit))) : 5;
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    const sinceIso = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
     const { data: items, error } = await supabase
       .from("news_items")
       .select("id")
-      .eq("translation_status", "pending")
+      .eq("archived", false)
       .neq("source_key", "eoy")
-      .gte("created_at", sinceIso)
+      .or("title_et.is.null,body_et.is.null")
+      .in("translation_status", ["pending", "error"])
       .order("published_at", { ascending: false })
       .limit(limit);
 

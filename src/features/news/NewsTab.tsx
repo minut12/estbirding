@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { loadSettings } from '@/lib/settings';
+import { isAutoTranslateNewsToEtEnabled } from '@/lib/settings';
 import { toast } from 'sonner';
 
 /* ── Types ──────────────────────────────────────── */
@@ -19,17 +19,22 @@ interface NewsItem {
   source_slug: string;
   source_key?: string | null;
   title: string;
-  translated_title?: string | null;
+  title_et?: string | null;
   summary: string | null;
   body: string | null;
-  translated_body?: string | null;
+  body_et?: string | null;
   content_html: string | null;
   url: string;
   permalink_url?: string | null;
   image_url?: string | null;
+  cached_image_url?: string | null;
+  image_cached_url?: string | null;
   raw_json?: Record<string, any> | null;
   published_at: string;
   language: string;
+  source_lang?: string | null;
+  translated_at?: string | null;
+  translation_status?: string | null;
   guid: string;
   archived: boolean;
 }
@@ -180,6 +185,7 @@ export default function NewsTab() {
   const [selected, setSelected] = useState<NewsItem | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollPosRef = useRef(0);
+  const autoTranslateToEt = isAutoTranslateNewsToEtEnabled();
 
   // Sources
   const { data: sources = [] } = useQuery<NewsSource[]>({
@@ -199,7 +205,7 @@ export default function NewsTab() {
     queryFn: async ({ pageParam = 0 }) => {
       let query = supabase
         .from('news_items')
-        .select('id, source_slug, source_key, title, translated_title, summary, body, translated_body, content_html, raw_json, url, permalink_url, image_url, published_at, language, guid, archived')
+        .select('id, source_slug, source_key, title, body, content_html, summary, image_url, cached_image_url, image_cached_url:cached_image_url, permalink_url, url, published_at, language, guid, archived, raw_json, title_et, body_et, translation_status, translated_at, source_lang')
         .order('published_at', { ascending: false })
         .range(pageParam, pageParam + PAGE_SIZE - 1);
 
@@ -260,8 +266,7 @@ export default function NewsTab() {
   }, [archiveMutation]);
 
   const runPendingTranslation = useCallback(async (limit: number) => {
-    const settings = loadSettings();
-    if (!settings.autoTranslateToEstonian) return;
+    if (!isAutoTranslateNewsToEtEnabled()) return;
 
     const { data: statusData, error: statusError } = await supabase.functions.invoke('translation-status');
     if (statusError || statusData?.configured !== true) return;
@@ -336,6 +341,7 @@ export default function NewsTab() {
       <ArticleView
         item={selected}
         sources={sources}
+        autoTranslateToEt={autoTranslateToEt}
         onBack={closeArticle}
         onToggleArchive={() => toggleArchive(selected.id, selected.archived)}
       />
@@ -433,6 +439,7 @@ export default function NewsTab() {
                 key={item.id}
                 item={item}
                 sources={sources}
+                autoTranslateToEt={autoTranslateToEt}
                 onOpen={() => openArticle(item)}
                 onToggleArchive={() => toggleArchive(item.id, item.archived)}
               />
@@ -450,18 +457,19 @@ export default function NewsTab() {
 }
 
 /* ── News Card ──────────────────────────────────── */
-function NewsCard({ item, sources, onOpen, onToggleArchive }: {
+function NewsCard({ item, sources, autoTranslateToEt, onOpen, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
+  autoTranslateToEt: boolean;
   onOpen: () => void;
   onToggleArchive: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const thumb = decodeUrl(item.image_url);
-  const displayTitle = item.translated_title || item.title;
-  const snippet = toPlainText(item.translated_body || item.body || item.summary).slice(0, 150);
+  const thumb = decodeUrl(item.image_cached_url || item.cached_image_url || item.image_url);
+  const displayTitle = autoTranslateToEt ? (item.title_et || item.title) : item.title;
+  const snippet = toPlainText(autoTranslateToEt ? (item.body_et || item.body || item.summary) : (item.body || item.summary)).slice(0, 150);
   const originalUrl = item.permalink_url || item.url;
-  const isTranslated = Boolean(item.translated_body);
+  const isTranslated = Boolean(item.title_et || item.body_et);
 
   useEffect(() => {
     setImageFailed(false);
@@ -525,9 +533,10 @@ function NewsCard({ item, sources, onOpen, onToggleArchive }: {
 }
 
 /* ── Article View (lazy-loads content) ──────────── */
-function ArticleView({ item, sources, onBack, onToggleArchive }: {
+function ArticleView({ item, sources, autoTranslateToEt, onBack, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
+  autoTranslateToEt: boolean;
   onBack: () => void;
   onToggleArchive: () => void;
 }) {
@@ -561,12 +570,14 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     return () => { cancelled = true; };
   }, [item.id, item.content_html, item.source_slug]);
 
-  const displayTitle = item.translated_title || item.title;
-  const displayBody = item.translated_body || contentHtml || toPlainText(item.body || item.summary);
+  const displayTitle = autoTranslateToEt ? (item.title_et || item.title) : item.title;
+  const displayBody = autoTranslateToEt
+    ? (item.body_et || contentHtml || toPlainText(item.body || item.summary))
+    : (contentHtml || toPlainText(item.body || item.summary));
   const sanitizedContentHtml = contentHtml ? stripImagesFromHtml(contentHtml) : null;
   const originalUrl = item.permalink_url || item.url;
   const heroImageUrl = decodeUrl(item.image_url);
-  const isTranslated = Boolean(item.translated_body);
+  const isTranslated = Boolean(item.title_et || item.body_et);
 
   return (
     <div className="flex flex-col h-full">
@@ -602,7 +613,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
             <Skeleton className="h-4 w-5/6" />
             <Skeleton className="h-4 w-4/6" />
           </div>
-        ) : sanitizedContentHtml && !item.translated_body ? (
+        ) : sanitizedContentHtml && !(autoTranslateToEt && item.body_et) ? (
           <div
             className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
             dangerouslySetInnerHTML={{ __html: sanitizedContentHtml }}

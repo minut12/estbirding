@@ -24,7 +24,6 @@ interface NewsItem {
   url: string;
   permalink_url?: string | null;
   image_url?: string | null;
-  thumbnail_url?: string | null;
   raw_json?: Record<string, any> | null;
   published_at: string;
   language: string;
@@ -65,23 +64,31 @@ function toPlainText(value: string | null | undefined): string {
   return decoded.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function getThumbUrl(item: NewsItem): string | null {
-  if (item.image_url) return item.image_url;
-  if (item.thumbnail_url) return item.thumbnail_url;
-
+function extractImageUrlFromRaw(item: NewsItem): string | null {
   const rssCandidate = item.raw_json && typeof item.raw_json === 'object'
     ? ((item.raw_json as any).rss_item ?? item.raw_json)
     : null;
+  if (!rssCandidate) return null;
 
-  const enclosureUrl = cleanUrl(rssCandidate?.enclosure?.url);
-  if (enclosureUrl) return enclosureUrl;
+  const enclosure = pickArrayOrObjectUrl(rssCandidate.enclosure, rssCandidate.enclosures);
+  if (enclosure) return enclosure;
 
-  const mediaContentUrl = cleanUrl(rssCandidate?.['media:content']?.url);
-  if (mediaContentUrl) return mediaContentUrl;
+  const mediaContent = pickArrayOrObjectUrl(
+    rssCandidate['media:content'],
+    rssCandidate['media:content:list'],
+  );
+  if (mediaContent) return mediaContent;
 
-  const html = rssCandidate?.['content:encoded']
-    || rssCandidate?.content
-    || rssCandidate?.description
+  const mediaThumbnail = pickArrayOrObjectUrl(
+    rssCandidate['media:thumbnail'],
+    rssCandidate['media:thumbnail:list'],
+  );
+  if (mediaThumbnail) return mediaThumbnail;
+
+  const html = rssCandidate['content:encoded']
+    || rssCandidate.content
+    || rssCandidate.description
+    || rssCandidate.summary
     || item.content_html
     || item.body
     || '';
@@ -116,9 +123,21 @@ function extractFirstSrcsetUrl(srcset: string | null): string | null {
   return url || null;
 }
 
+function pickArrayOrObjectUrl(
+  single: { url?: string } | undefined,
+  many: Array<{ url?: string }> | undefined,
+): string | null {
+  return cleanUrl(single?.url) || cleanUrl(many?.[0]?.url) || null;
+}
+
 function cleanUrl(url: string | null | undefined): string | null {
   const trimmed = url?.trim();
   return trimmed ? trimmed : null;
+}
+
+function ensureImageUrl(item: NewsItem): NewsItem {
+  if (item.image_url) return item;
+  return { ...item, image_url: extractImageUrlFromRaw(item) };
 }
 
 /* ── Page size ──────────────────────────────────── */
@@ -153,7 +172,7 @@ export default function NewsTab() {
     queryFn: async ({ pageParam = 0 }) => {
       let query = supabase
         .from('news_items')
-        .select('id, source_slug, source_key, title, summary, body, content_html, raw_json, url, permalink_url, image_url, thumbnail_url:image_url_original, published_at, language, guid, archived')
+        .select('id, source_slug, source_key, title, summary, body, content_html, raw_json, url, permalink_url, image_url, published_at, language, guid, archived')
         .order('published_at', { ascending: false })
         .range(pageParam, pageParam + PAGE_SIZE - 1);
 
@@ -169,7 +188,7 @@ export default function NewsTab() {
 
       const { data, error } = await query;
       if (error) throw error;
-      const items = (data || []) as NewsItem[];
+      const items = ((data || []) as NewsItem[]).map(ensureImageUrl);
       if (import.meta.env.DEV) {
         console.log('[NEWS] first item', items?.[0]);
       }
@@ -195,6 +214,13 @@ export default function NewsTab() {
       return true;
     });
   }, [data?.pages, tab]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    allItems.forEach((item) => {
+      console.log(item.source_key || item.source_slug, item.image_url || null);
+    });
+  }, [allItems]);
 
   // Toggle archive via DB update
   const archiveMutation = useMutation({
@@ -391,24 +417,25 @@ function NewsCard({ item, sources, onOpen, onToggleArchive }: {
   onToggleArchive: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const imageUrl = getThumbUrl(item);
   const snippet = toPlainText(item.body || item.summary).slice(0, 150);
   const originalUrl = item.permalink_url || item.url;
 
   useEffect(() => {
     setImageFailed(false);
-  }, [imageUrl]);
+  }, [item.image_url]);
 
   return (
     <div className="px-4 py-3 active:bg-muted/50 transition-colors">
       <div className="flex gap-3">
         <button onClick={onOpen} className="w-20 h-20 rounded-lg shrink-0 bg-muted overflow-hidden">
-          {imageUrl && !imageFailed ? (
+          {item.image_url && !imageFailed ? (
             <img
-              src={imageUrl}
+              src={item.image_url}
               alt=""
               className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
               loading="lazy"
+              decoding="async"
               onError={() => setImageFailed(true)}
             />
           ) : (
@@ -489,7 +516,6 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
 
   const displayBody = contentHtml || toPlainText(item.body || item.summary);
   const originalUrl = item.permalink_url || item.url;
-  const imageUrl = getThumbUrl(item);
 
   return (
     <div className="flex flex-col h-full">
@@ -500,9 +526,9 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
         <span className="font-medium truncate text-sm flex-1">Uudis</span>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {imageUrl ? (
+        {item.image_url ? (
           <img
-            src={imageUrl}
+            src={item.image_url}
             alt=""
             className="w-full rounded-xl object-cover max-h-56 bg-muted"
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}

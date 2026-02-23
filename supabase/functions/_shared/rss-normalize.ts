@@ -11,8 +11,11 @@ export interface ParsedRssItem {
   published?: string;
   updated?: string;
   enclosure?: { url?: string };
+  enclosures?: Array<{ url?: string }>;
   "media:content"?: { url?: string };
+  "media:content:list"?: Array<{ url?: string }>;
   "media:thumbnail"?: { url?: string };
+  "media:thumbnail:list"?: Array<{ url?: string }>;
   media?: { content?: { url?: string } };
   image?: { url?: string };
   _raw?: string;
@@ -51,9 +54,12 @@ export function parseRss(xml: string): ParsedRssItem[] {
       if (linkMatch) link = linkMatch[1].trim();
     }
 
-    const enclosureMatch = block.match(/<enclosure[^>]+url=["']([^"']+)["']/i);
-    const mediaContentMatch = block.match(/<media:content[^>]+url=["']([^"']+)["']/i);
-    const mediaThumbnailMatch = block.match(/<media:thumbnail[^>]+url=["']([^"']+)["']/i);
+    const enclosureMatches = Array.from(block.matchAll(/<enclosure[^>]+url=["']([^"']+)["']/gi));
+    const mediaContentMatches = Array.from(block.matchAll(/<media:content[^>]+url=["']([^"']+)["']/gi));
+    const mediaThumbnailMatches = Array.from(block.matchAll(/<media:thumbnail[^>]+url=["']([^"']+)["']/gi));
+    const enclosureMatch = enclosureMatches[0];
+    const mediaContentMatch = mediaContentMatches[0];
+    const mediaThumbnailMatch = mediaThumbnailMatches[0];
     const imageTag = get("image");
     const imageUrlMatch = imageTag.match(/<url[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/url>/i);
     const imageUrl = (imageUrlMatch?.[1] || imageTag || "").trim() || undefined;
@@ -71,8 +77,17 @@ export function parseRss(xml: string): ParsedRssItem[] {
       published: get("published"),
       updated: get("updated"),
       enclosure: enclosureMatch ? { url: enclosureMatch[1] } : undefined,
+      enclosures: enclosureMatches.length > 0
+        ? enclosureMatches.map((m) => ({ url: m[1] }))
+        : undefined,
       "media:content": mediaContentMatch ? { url: mediaContentMatch[1] } : undefined,
+      "media:content:list": mediaContentMatches.length > 0
+        ? mediaContentMatches.map((m) => ({ url: m[1] }))
+        : undefined,
       "media:thumbnail": mediaThumbnailMatch ? { url: mediaThumbnailMatch[1] } : undefined,
+      "media:thumbnail:list": mediaThumbnailMatches.length > 0
+        ? mediaThumbnailMatches.map((m) => ({ url: m[1] }))
+        : undefined,
       media: mediaContentMatch ? { content: { url: mediaContentMatch[1] } } : undefined,
       image: imageUrl ? { url: imageUrl } : undefined,
       _raw: block,
@@ -85,7 +100,7 @@ export function parseRss(xml: string): ParsedRssItem[] {
 export function normalizeRssItem(item: ParsedRssItem): NormalizedRssItem {
   const bodyHtml = item["content:encoded"] || item.content || item.description || item.summary || "";
   const bodyText = htmlToText(bodyHtml);
-  const imageUrl = extractImageUrl(item);
+  const imageUrl = extractImageUrl(item, bodyHtml);
   const titleText = htmlToText(item.title || "");
   const title = titleText || bodyText.slice(0, 80) || "Untitled";
 
@@ -101,14 +116,22 @@ export function normalizeRssItem(item: ParsedRssItem): NormalizedRssItem {
   };
 }
 
-export function extractImageUrl(item: ParsedRssItem): string | null {
-  const fromEnclosure = cleanUrl(item.enclosure?.url);
+export function extractImageUrl(item: ParsedRssItem, bodyHtml?: string): string | null {
+  const fromEnclosure = cleanUrl(item.enclosure?.url) || cleanUrl(firstArrayUrl(item.enclosures));
   if (fromEnclosure) return fromEnclosure;
 
-  const fromMediaContent = cleanUrl(item["media:content"]?.url) || cleanUrl(item.media?.content?.url);
+  const fromMediaContent =
+    cleanUrl(item["media:content"]?.url)
+    || cleanUrl(firstArrayUrl(item["media:content:list"]))
+    || cleanUrl(item.media?.content?.url);
   if (fromMediaContent) return fromMediaContent;
 
-  const htmlCandidates = [item["content:encoded"], item.content, item.description];
+  const fromMediaThumbnail =
+    cleanUrl(item["media:thumbnail"]?.url)
+    || cleanUrl(firstArrayUrl(item["media:thumbnail:list"]));
+  if (fromMediaThumbnail) return fromMediaThumbnail;
+
+  const htmlCandidates = [bodyHtml, item["content:encoded"], item.content, item.description, item.summary];
   for (const html of htmlCandidates) {
     const fromHtml = extractFirstImageUrl(html || "");
     if (fromHtml) return fromHtml;
@@ -147,6 +170,11 @@ function extractSrcSetFirstUrl(srcset: string | null): string | null {
   if (!first) return null;
   const url = first.split(/\s+/)[0]?.trim();
   return url || null;
+}
+
+function firstArrayUrl(items: Array<{ url?: string }> | undefined): string | null {
+  if (!items || items.length === 0) return null;
+  return items[0]?.url || null;
 }
 
 function cleanUrl(value: string | undefined | null): string | null {

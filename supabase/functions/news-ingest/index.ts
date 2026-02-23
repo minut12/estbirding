@@ -71,15 +71,17 @@ Deno.serve(async (req) => {
         summary: item.summary || "",
         content_html: item.content_html || null,
         url: item.url || "",
-        image_url: item.image_url || null,
         published_at: item.published_at || new Date().toISOString(),
         language: item.language || "et",
         guid,
       };
+      const rowWithImage = item.image_url
+        ? { ...row, image_url: item.image_url }
+        : row;
 
       const { error, status } = await supabase
         .from("news_items")
-        .upsert(row, { onConflict: "guid" });
+        .upsert(rowWithImage, { onConflict: "guid" });
 
       if (error) {
         console.error(`Upsert error for ${guid}:`, error);

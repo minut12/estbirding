@@ -105,17 +105,19 @@ Deno.serve(async (req) => {
             body: item.body || null,
             url: item.permalink_url || "",
             permalink_url: item.permalink_url,
-            image_url: item.image_url,
             published_at: item.published_at || new Date().toISOString(),
             language: "et",
             guid,
             fetched_at: new Date().toISOString(),
             raw_json: item.raw_json,
           };
+          const rowWithImage = item.image_url
+            ? { ...row, image_url: item.image_url }
+            : row;
 
           const { error } = await supabase
             .from("news_items")
-            .upsert(row, { onConflict: "source_slug,external_id" });
+            .upsert(rowWithImage, { onConflict: "source_slug,external_id" });
 
           if (!error) inserted++;
           else console.error(`Upsert error for ${guid}:`, error);

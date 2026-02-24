@@ -22,6 +22,7 @@ import {
   resolveEndpoint,
   setStoredEndpoint,
   TRANSLATION_ENDPOINT_UPDATED_EVENT,
+  WORKER_DEFAULT_ENDPOINT,
 } from '@/config/translationEndpoint';
 
 type ResetMode = 'soft' | 'hard' | null;
@@ -83,11 +84,6 @@ export default function SettingsTab() {
     setTestTranslateResult('');
     try {
       const endpoint = resolveEndpoint(translationApiUrl);
-      if (!endpoint) {
-        toast.error('Set Translation API URL');
-        setTestTranslateResult('Set Translation API URL');
-        return;
-      }
       const payload = {
         id: 'dev-test-pl',
         title: 'Bocian bialy widziany nad rzeka',
@@ -129,6 +125,14 @@ export default function SettingsTab() {
     const saved = getStoredEndpoint();
     setStoredEndpointView(saved);
     setTranslationApiUrlInput(saved || getEnvEndpoint());
+    toast.success('Translation endpoint saved');
+  };
+
+  const handleUseWorkerDefault = () => {
+    setStoredEndpoint(WORKER_DEFAULT_ENDPOINT);
+    const saved = getStoredEndpoint();
+    setStoredEndpointView(saved);
+    setTranslationApiUrlInput(saved);
     toast.success('Translation endpoint saved');
   };
 
@@ -188,6 +192,9 @@ export default function SettingsTab() {
           />
           <Button variant="outline" onClick={handleSaveTranslateEndpoint} className="w-full">
             Save translation endpoint
+          </Button>
+          <Button variant="outline" onClick={handleUseWorkerDefault} className="w-full">
+            Use Worker default
           </Button>
           <p className="text-xs text-muted-foreground">
             Use your Cloudflare Worker URL (e.g. https://estbirding.kristian03.workers.dev).

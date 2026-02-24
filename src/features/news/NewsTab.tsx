@@ -743,7 +743,6 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
   const isLikelyEstonian = normalizedLang === 'et';
   const canShowTranslate = !isLikelyEstonian || isBirdingPoland;
   const [translateEndpoint, setTranslateEndpoint] = useState(() => resolveEndpoint());
-  const endpointConfigured = Boolean(translateEndpoint);
 
   useEffect(() => {
     const refreshEndpoint = () => setTranslateEndpoint(resolveEndpoint());
@@ -767,10 +766,6 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
   const isTranslated = Boolean(hasTranslatedContent);
 
   const handleToggleTranslate = useCallback(async () => {
-    if (!endpointConfigured) {
-      toast.error('Translation backend not configured. Set it in Settings.');
-      return;
-    }
     if (showManualTranslation) {
       setShowManualTranslation(false);
       return;
@@ -782,6 +777,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
 
     setManualTranslateLoading(true);
     try {
+      toast.info(`Calling ${translateEndpoint}`);
       const result = await translateEt({
         id: item.id,
         title: item.title,
@@ -797,7 +793,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     } finally {
       setManualTranslateLoading(false);
     }
-  }, [bodyText, endpointConfigured, item.id, item.title, manualTranslation, showManualTranslation, translateEndpoint]);
+  }, [bodyText, item.id, item.title, manualTranslation, showManualTranslation, translateEndpoint]);
 
   return (
     <div className="flex flex-col h-full">
@@ -868,8 +864,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
               size="sm"
               className="gap-1.5"
               onClick={handleToggleTranslate}
-              disabled={manualTranslateLoading || !endpointConfigured}
-              title={endpointConfigured ? undefined : 'Translation backend not configured. Set it in Settings.'}
+              disabled={manualTranslateLoading}
             >
               {manualTranslateLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
               {showManualTranslation ? 'Original' : (manualTranslateLoading ? 'Translating...' : 'Translate')}

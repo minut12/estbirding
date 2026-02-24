@@ -24,6 +24,9 @@ verify_jwt = false
 [functions.linnuliigid-snapshot]
 verify_jwt = false
 
+[functions.save-snapshot]
+verify_jwt = false
+
 [functions.news-pull]
 verify_jwt = false
 

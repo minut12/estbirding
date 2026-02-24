@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { loadSettings, saveSettings, NEWS_AUTO_TRANSLATE_ET_KEY, type AppSettings } from '@/lib/settings';
-import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -24,31 +23,10 @@ export default function SettingsTab() {
   const [form, setForm] = useState<AppSettings>(loadSettings);
   const [confirmMode, setConfirmMode] = useState<ResetMode>(null);
   const [resetting, setResetting] = useState(false);
-  const [translationConfigured, setTranslationConfigured] = useState(false);
-  const [translationProvider, setTranslationProvider] = useState('openai');
-  const [translationModel, setTranslationModel] = useState('gpt-4.1-mini');
-  const [translationStatusLoading, setTranslationStatusLoading] = useState(true);
-  const [translationStatusUnavailable, setTranslationStatusUnavailable] = useState(false);
 
   useEffect(() => {
     setForm(loadSettings());
-    void loadTranslationStatus();
   }, []);
-
-  const loadTranslationStatus = async () => {
-    setTranslationStatusLoading(true);
-    const { data, error } = await supabase.functions.invoke('translation-status');
-    if (error) {
-      setTranslationConfigured(false);
-      setTranslationStatusUnavailable(true);
-    } else {
-      setTranslationConfigured(data?.configured === true);
-      setTranslationProvider(data?.provider || 'openai');
-      setTranslationModel(data?.model || 'gpt-4.1-mini');
-      setTranslationStatusUnavailable(false);
-    }
-    setTranslationStatusLoading(false);
-  };
 
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -59,33 +37,14 @@ export default function SettingsTab() {
     toast.success('Seaded salvestatud');
   };
 
-  const handleAutoTranslateToggle = async (checked: boolean) => {
+  const handleAutoTranslateToggle = (checked: boolean) => {
     const next = { ...form, autoTranslateToEstonian: checked };
     setForm(next);
     saveSettings(next);
     localStorage.setItem(NEWS_AUTO_TRANSLATE_ET_KEY, checked ? '1' : '0');
-
-    if (!checked) return;
-    if (!translationConfigured) {
-      toast.error('Translation not configured');
-      return;
-    }
-
-    const { data, error } = await supabase.functions.invoke('translate-news-pending', {
-      body: { limit: 10 },
-    });
-    if (error) {
-      toast.error(error.message || 'Tolge ebaonnestus');
-      return;
-    }
-    if (data?.error === 'Translation not configured') {
-      toast.error('Translation not configured');
-      return;
-    }
-
-    const translated = Number(data?.translated || 0);
-    if (translated > 0) toast.success(`Tolgiti ${translated} uudist`);
-    else toast.info('Tolkida pole midagi');
+    toast.success(checked
+      ? 'Automaatne tõlkimine sisse lülitatud'
+      : 'Automaatne tõlkimine välja lülitatud');
   };
 
   const showReport = (report: ResetReport) => {
@@ -135,29 +94,19 @@ export default function SettingsTab() {
         </div>
 
         <div className="space-y-2">
-          <div className="text-xs text-muted-foreground">
-            {translationStatusUnavailable ? 'OpenAI status unavailable' : `OpenAI configured: ${translationConfigured ? 'yes' : 'no'}`}
-            {translationConfigured ? ` (${translationProvider}, ${translationModel})` : ''}
-          </div>
           <div className="flex items-center justify-between rounded-md border border-border p-3">
             <div className="space-y-1">
               <Label htmlFor="autoTranslate">Tolgi uudised automaatselt eesti keelde</Label>
               <p className="text-xs text-muted-foreground">
-                Mojub serveripoolses uudiste importimises.
+                Mojub ainult kliendipoolses kuvamises.
               </p>
             </div>
             <Switch
               id="autoTranslate"
               checked={form.autoTranslateToEstonian}
-              disabled={!translationConfigured || translationStatusLoading}
               onCheckedChange={handleAutoTranslateToggle}
             />
           </div>
-          {!translationConfigured && (
-            <p className="text-xs text-muted-foreground">
-              Admin: set OPENAI_API_KEY in Supabase Secrets.
-            </p>
-          )}
         </div>
 
         <Button onClick={handleSave} className="w-full">Salvesta</Button>

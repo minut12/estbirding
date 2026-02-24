@@ -10,8 +10,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { isAutoTranslateNewsToEtEnabled } from '@/lib/settings';
 import { isEstonianLocale, resolveAppLocale } from '@/lib/locale';
-import { needsEstonianTranslation, translateNewsItemToEstonian, type NewsTranslationResult } from '@/lib/translation/newsTranslation';
+import { translateToEstonian, type TranslationResponse } from '@/lib/translate';
 import { toast } from 'sonner';
 
 /* ── Types ──────────────────────────────────────── */
@@ -189,31 +190,27 @@ function ensureImageUrl(item: NewsItem): NewsItem {
 const BIRDING_POLAND_KEY = 'facebook_birdingpoland';
 
 interface EtTranslationState {
-  translated: NewsTranslationResult | null;
+  translated: TranslationResponse | null;
   loading: boolean;
 }
 
 function useEtTranslation({
   enabled,
-  locale,
   id,
   title,
   body,
-  sourceLang,
   fallbackTitleEt,
   fallbackBodyEt,
 }: {
   enabled: boolean;
-  locale: string;
   id: string;
   title: string;
   body: string | null | undefined;
-  sourceLang?: string | null;
   fallbackTitleEt?: string | null;
   fallbackBodyEt?: string | null;
 }): EtTranslationState {
   const hasFallback = Boolean((fallbackTitleEt || '').trim() || (fallbackBodyEt || '').trim());
-  const [translated, setTranslated] = useState<NewsTranslationResult | null>(
+  const [translated, setTranslated] = useState<TranslationResponse | null>(
     hasFallback ? {
       title_et: (fallbackTitleEt || '').trim(),
       body_et: (fallbackBodyEt || '').trim(),
@@ -221,7 +218,7 @@ function useEtTranslation({
   );
   const [loading, setLoading] = useState(false);
   const bodyText = (body || '').trim();
-  const shouldTranslate = enabled && needsEstonianTranslation(locale, sourceLang) && Boolean(title.trim() || bodyText);
+  const shouldTranslate = enabled && Boolean(title.trim() || bodyText);
 
   useEffect(() => {
     if (!hasFallback) {
@@ -243,11 +240,10 @@ function useEtTranslation({
     }
 
     setLoading(true);
-    translateNewsItemToEstonian({
+    translateToEstonian({
       id,
       title,
       body: bodyText,
-      sourceLang,
     })
       .then((result) => {
         if (cancelled || !result) return;
@@ -263,9 +259,51 @@ function useEtTranslation({
     return () => {
       cancelled = true;
     };
-  }, [shouldTranslate, id, title, bodyText, sourceLang]);
+  }, [shouldTranslate, id, title, bodyText]);
 
   return { translated, loading };
+}
+
+function useOnceVisible<T extends HTMLElement>(rootMargin = '120px') {
+  const ref = useRef<T | null>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (visible) return;
+    const node = ref.current;
+    if (!node) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setVisible(true);
+        observer.disconnect();
+      }
+    }, { rootMargin, threshold: 0.01 });
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [visible, rootMargin]);
+
+  return [ref, visible] as const;
+}
+
+function useDebouncedTrue(value: boolean, delayMs: number): boolean {
+  const [debounced, setDebounced] = useState(false);
+
+  useEffect(() => {
+    if (!value) {
+      setDebounced(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setDebounced(true), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [value, delayMs]);
+
+  return debounced;
 }
 
 /* ── Main component ─────────────────────────────── */
@@ -279,6 +317,7 @@ export default function NewsTab() {
   const scrollPosRef = useRef(0);
   const appLocale = resolveAppLocale();
   const showEtContent = isEstonianLocale(appLocale);
+  const autoTranslateEnabled = isAutoTranslateNewsToEtEnabled();
 
   // Sources
   const { data: sources = [] } = useQuery<NewsSource[]>({
@@ -409,7 +448,7 @@ export default function NewsTab() {
         item={selected}
         sources={sources}
         showEtContent={showEtContent}
-        locale={appLocale}
+        autoTranslateEnabled={autoTranslateEnabled}
         onBack={closeArticle}
         onToggleArchive={() => toggleArchive(selected.id, selected.archived)}
       />
@@ -512,7 +551,7 @@ export default function NewsTab() {
                 item={item}
                 sources={sources}
                 showEtContent={showEtContent}
-                locale={appLocale}
+                autoTranslateEnabled={autoTranslateEnabled}
                 onOpen={() => openArticle(item)}
                 onToggleArchive={() => toggleArchive(item.id, item.archived)}
               />
@@ -525,23 +564,23 @@ export default function NewsTab() {
 }
 
 /* ── News Card ──────────────────────────────────── */
-function NewsCard({ item, sources, showEtContent, locale, onOpen, onToggleArchive }: {
+function NewsCard({ item, sources, showEtContent, autoTranslateEnabled, onOpen, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
   showEtContent: boolean;
-  locale: string;
+  autoTranslateEnabled: boolean;
   onOpen: () => void;
   onToggleArchive: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
+  const [cardRef, isVisible] = useOnceVisible<HTMLDivElement>();
+  const debouncedVisible = useDebouncedTrue(isVisible, 180);
   const thumb = decodeUrl(item.image_url);
   const translation = useEtTranslation({
-    enabled: showEtContent,
-    locale,
+    enabled: showEtContent && autoTranslateEnabled && debouncedVisible,
     id: item.id,
     title: item.title,
     body: item.body || item.summary,
-    sourceLang: item.source_lang || item.language,
     fallbackTitleEt: item.title_et,
     fallbackBodyEt: item.body_et,
   });
@@ -558,7 +597,7 @@ function NewsCard({ item, sources, showEtContent, locale, onOpen, onToggleArchiv
   }, [thumb]);
 
   return (
-    <div className="px-4 py-3 active:bg-muted/50 transition-colors">
+    <div ref={cardRef} className="px-4 py-3 active:bg-muted/50 transition-colors">
       <div className="flex gap-3">
         <button onClick={onOpen} className="w-20 h-20 rounded-lg shrink-0 bg-muted overflow-hidden">
           {thumb && !imageFailed ? (
@@ -591,7 +630,7 @@ function NewsCard({ item, sources, showEtContent, locale, onOpen, onToggleArchiv
             {translation.loading && (
               <Badge variant="outline" className="text-xs px-1.5 py-0 flex items-center gap-1">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                Tolgin
+                Tõlgin...
               </Badge>
             )}
             {isTranslated && <Badge variant="outline" className="text-xs px-1.5 py-0">Tõlgitud</Badge>}
@@ -621,11 +660,11 @@ function NewsCard({ item, sources, showEtContent, locale, onOpen, onToggleArchiv
 }
 
 /* ── Article View (lazy-loads content) ──────────── */
-function ArticleView({ item, sources, showEtContent, locale, onBack, onToggleArchive }: {
+function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBack, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
   showEtContent: boolean;
-  locale: string;
+  autoTranslateEnabled: boolean;
   onBack: () => void;
   onToggleArchive: () => void;
 }) {
@@ -660,12 +699,10 @@ function ArticleView({ item, sources, showEtContent, locale, onBack, onToggleArc
   }, [item.id, item.content_html, item.source_slug]);
 
   const translation = useEtTranslation({
-    enabled: showEtContent,
-    locale,
+    enabled: showEtContent && autoTranslateEnabled,
     id: item.id,
     title: item.title,
     body: toPlainText(contentHtml || item.body || item.summary),
-    sourceLang: item.source_lang || item.language,
     fallbackTitleEt: item.title_et,
     fallbackBodyEt: item.body_et,
   });
@@ -705,7 +742,7 @@ function ArticleView({ item, sources, showEtContent, locale, onBack, onToggleArc
           {translation.loading && (
             <Badge variant="outline" className="flex items-center gap-1">
               <Loader2 className="w-3 h-3 animate-spin" />
-              Tolgin
+              Tõlgin...
             </Badge>
           )}
           {isTranslated && <Badge variant="outline">Tõlgitud</Badge>}

@@ -82,7 +82,7 @@ export default async function handler(req: any, res: any): Promise<void> {
           content: [
             {
               type: 'input_text',
-              text: 'Translate to Estonian. Preserve URLs, hashtags, @mentions, numbers, emojis, Latin species names, and paragraph breaks. Return strict JSON only with keys "title_et" and "body_et".',
+              text: 'Translate to Estonian. If the input is already Estonian, return it unchanged. Preserve URLs, hashtags, @mentions, numbers, emojis, Latin species names, and paragraph breaks exactly. Return strict JSON only with keys "title_et" and "body_et".',
             },
           ],
         },

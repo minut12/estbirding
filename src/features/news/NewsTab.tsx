@@ -460,8 +460,6 @@ export default function NewsTab() {
       <ArticleView
         item={selected}
         sources={sources}
-        showEtContent={showEtContent}
-        autoTranslateEnabled={autoTranslateEnabled}
         onBack={closeArticle}
         onToggleArchive={() => toggleArchive(selected.id, selected.archived)}
       />
@@ -674,17 +672,18 @@ function NewsCard({ item, sources, showEtContent, autoTranslateEnabled, onOpen, 
 }
 
 /* ── Article View (lazy-loads content) ──────────── */
-function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBack, onToggleArchive }: {
+function ArticleView({ item, sources, onBack, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
-  showEtContent: boolean;
-  autoTranslateEnabled: boolean;
   onBack: () => void;
   onToggleArchive: () => void;
 }) {
   const [contentHtml, setContentHtml] = useState<string | null>(item.content_html);
   const [loadingContent, setLoadingContent] = useState(!item.content_html && item.source_slug === 'eoy');
   const [contentError, setContentError] = useState<string | null>(null);
+  const [manualTranslation, setManualTranslation] = useState<TranslateEtOutput | null>(null);
+  const [showManualTranslation, setShowManualTranslation] = useState(false);
+  const [manualTranslateLoading, setManualTranslateLoading] = useState(false);
 
   useEffect(() => {
     if (item.content_html || item.source_slug !== 'eoy') return;
@@ -712,23 +711,58 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
     return () => { cancelled = true; };
   }, [item.id, item.content_html, item.source_slug]);
 
-  const translation = useEtTranslation({
-    enabled: showEtContent && autoTranslateEnabled,
-    id: item.id,
-    title: item.title,
-    body: toPlainText(contentHtml || item.body || item.summary),
-    sourceLang: item.source_lang || item.language,
-    fallbackTitleEt: item.title_et,
-    fallbackBodyEt: item.body_et,
-  });
-  const displayTitle = showEtContent ? (translation.translated?.title_et || item.title_et || item.title) : item.title;
-  const displayBody = showEtContent
-    ? (translation.translated?.body_et || item.body_et || toPlainText(contentHtml || item.body || item.summary))
-    : (contentHtml || toPlainText(item.body || item.summary));
+  useEffect(() => {
+    setManualTranslation(null);
+    setShowManualTranslation(false);
+    setManualTranslateLoading(false);
+  }, [item.id]);
+
+  const sourceName = sourceLabel(item.source_key || item.source_slug, sources);
+  const isBirdingPoland = item.source_key === BIRDING_POLAND_KEY
+    || item.source_slug === BIRDING_POLAND_KEY
+    || sourceName.trim().toLowerCase() === 'birding poland';
+  const normalizedLang = normalizeLocale(item.source_lang || item.language || '');
+  const isLikelyEstonian = normalizedLang === 'et';
+  const canShowTranslate = !isLikelyEstonian || isBirdingPoland;
+  const bodyText = toPlainText(contentHtml || item.body || item.summary);
+  const hasTranslatedContent = showManualTranslation
+    && Boolean(manualTranslation?.title_et || manualTranslation?.body_et);
+  const displayTitle = hasTranslatedContent ? (manualTranslation?.title_et || item.title) : item.title;
+  const displayBody = hasTranslatedContent
+    ? (manualTranslation?.body_et || bodyText)
+    : (contentHtml || bodyText);
   const heroImageUrl = decodeUrl(item.image_url);
   const bodyHtmlWithoutDuplicateHero = contentHtml ? stripLeadingSameImage(contentHtml, heroImageUrl) : null;
   const originalUrl = item.permalink_url || item.url || '#';
-  const isTranslated = Boolean(translation.translated?.title_et || translation.translated?.body_et || item.title_et || item.body_et);
+  const isTranslated = Boolean(hasTranslatedContent);
+
+  const handleToggleTranslate = useCallback(async () => {
+    if (showManualTranslation) {
+      setShowManualTranslation(false);
+      return;
+    }
+    if (manualTranslation) {
+      setShowManualTranslation(true);
+      return;
+    }
+
+    setManualTranslateLoading(true);
+    try {
+      const result = await translateEt({
+        id: item.id,
+        title: item.title,
+        body: bodyText,
+      });
+      if (!result) return;
+      setManualTranslation(result);
+      setShowManualTranslation(true);
+    } catch (error) {
+      const status = error instanceof TranslateEtHttpError ? error.status : 0;
+      toast.error(`Tõlkimine ebaõnnestus (HTTP ${status})`);
+    } finally {
+      setManualTranslateLoading(false);
+    }
+  }, [bodyText, item.id, item.title, manualTranslation, showManualTranslation]);
 
   return (
     <div className="flex flex-col h-full">
@@ -753,8 +787,8 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
         )}
         <h1 className="text-xl font-bold text-foreground">{displayTitle}</h1>
         <div className="flex items-center gap-2">
-          <Badge variant="secondary">{sourceLabel(item.source_key || item.source_slug, sources)}</Badge>
-          {translation.loading && (
+          <Badge variant="secondary">{sourceName}</Badge>
+          {manualTranslateLoading && (
             <Badge variant="outline" className="flex items-center gap-1">
               <Loader2 className="w-3 h-3 animate-spin" />
               Tõlgin...
@@ -770,7 +804,7 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
             <Skeleton className="h-4 w-5/6" />
             <Skeleton className="h-4 w-4/6" />
           </div>
-        ) : bodyHtmlWithoutDuplicateHero && !(showEtContent && (translation.translated?.body_et || item.body_et)) ? (
+        ) : bodyHtmlWithoutDuplicateHero && !hasTranslatedContent ? (
           <div
             className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
             dangerouslySetInnerHTML={{ __html: bodyHtmlWithoutDuplicateHero }}
@@ -778,14 +812,7 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
         ) : contentError ? (
           <p className="text-sm text-muted-foreground italic">{contentError}</p>
         ) : displayBody ? (
-          <div className="space-y-2">
-            {translation.errorStatus !== null && (
-              <div className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900">
-                Tõlkimine ebaõnnestus (HTTP {translation.errorStatus}). Kuvan originaalteksti.
-              </div>
-            )}
-            <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{displayBody}</p>
-          </div>
+          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{displayBody}</p>
         ) : (
           <p className="text-sm text-muted-foreground italic">Sisu pole saadaval. Ava originaal.</p>
         )}
@@ -800,6 +827,18 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
             {item.archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
             {item.archived ? 'Taasta' : 'Arhiveeri'}
           </Button>
+          {canShowTranslate && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={handleToggleTranslate}
+              disabled={manualTranslateLoading}
+            >
+              {manualTranslateLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+              {showManualTranslation ? 'Original' : (manualTranslateLoading ? 'Translating...' : 'Translate')}
+            </Button>
+          )}
         </div>
       </div>
     </div>

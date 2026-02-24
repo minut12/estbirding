@@ -20,6 +20,7 @@ export class TranslateEtHttpError extends Error {
 }
 
 const inFlight = new Map<string, Promise<TranslateEtOutput | null>>();
+let loggedEndpoint = false;
 
 function weakHash(input: string): string {
   let h = 2166136261;
@@ -75,6 +76,10 @@ export async function translateEt(input: TranslateEtInput): Promise<TranslateEtO
 
   if (!normalized.id || (!normalized.title && !normalized.body)) {
     return null;
+  }
+  if (!loggedEndpoint) {
+    loggedEndpoint = true;
+    console.info('[translate] using /api/translate-et');
   }
 
   const cacheKey = await buildCacheKey(normalized);

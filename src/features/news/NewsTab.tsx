@@ -14,7 +14,7 @@ import { isAutoTranslateNewsToEtEnabled } from '@/lib/settings';
 import { isEstonianLocale, normalizeLocale, resolveAppLocale } from '@/lib/locale';
 import { TranslateEtHttpError, translateEt, type TranslateEtOutput } from '@/lib/translateEt';
 import { toast } from 'sonner';
-import { getTranslateEndpoint } from '@/config/translateEndpoint';
+import { getTranslateEndpoint, TRANSLATE_ENDPOINT_UPDATED_EVENT } from '@/config/translateEndpoint';
 
 /* ── Types ──────────────────────────────────────── */
 interface NewsItem {
@@ -334,7 +334,18 @@ export default function NewsTab() {
   const appLocale = resolveAppLocale();
   const showEtContent = isEstonianLocale(appLocale);
   const autoTranslateEnabled = isAutoTranslateNewsToEtEnabled();
-  const endpointConfigured = Boolean(getTranslateEndpoint());
+  const [translateEndpoint, setTranslateEndpoint] = useState(() => getTranslateEndpoint());
+  const endpointConfigured = Boolean(translateEndpoint);
+
+  useEffect(() => {
+    const refreshEndpoint = () => setTranslateEndpoint(getTranslateEndpoint());
+    window.addEventListener('storage', refreshEndpoint);
+    window.addEventListener(TRANSLATE_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
+    return () => {
+      window.removeEventListener('storage', refreshEndpoint);
+      window.removeEventListener(TRANSLATE_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
+    };
+  }, []);
 
   // Sources
   const { data: sources = [] } = useQuery<NewsSource[]>({
@@ -731,7 +742,18 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
   const normalizedLang = normalizeLocale(item.source_lang || item.language || '');
   const isLikelyEstonian = normalizedLang === 'et';
   const canShowTranslate = !isLikelyEstonian || isBirdingPoland;
-  const endpointConfigured = Boolean(getTranslateEndpoint());
+  const [translateEndpoint, setTranslateEndpoint] = useState(() => getTranslateEndpoint());
+  const endpointConfigured = Boolean(translateEndpoint);
+
+  useEffect(() => {
+    const refreshEndpoint = () => setTranslateEndpoint(getTranslateEndpoint());
+    window.addEventListener('storage', refreshEndpoint);
+    window.addEventListener(TRANSLATE_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
+    return () => {
+      window.removeEventListener('storage', refreshEndpoint);
+      window.removeEventListener(TRANSLATE_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
+    };
+  }, []);
   const bodyText = toPlainText(contentHtml || item.body || item.summary);
   const hasTranslatedContent = showManualTranslation
     && Boolean(manualTranslation?.title_et || manualTranslation?.body_et);
@@ -764,7 +786,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
         id: item.id,
         title: item.title,
         body: bodyText,
-      });
+      }, translateEndpoint);
       if (!result) return;
       setManualTranslation(result);
       setShowManualTranslation(true);
@@ -775,7 +797,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     } finally {
       setManualTranslateLoading(false);
     }
-  }, [bodyText, endpointConfigured, item.id, item.title, manualTranslation, showManualTranslation]);
+  }, [bodyText, endpointConfigured, item.id, item.title, manualTranslation, showManualTranslation, translateEndpoint]);
 
   return (
     <div className="flex flex-col h-full">

@@ -70,7 +70,7 @@ function writeCache(cacheKey: string, value: TranslateEtOutput): void {
   }
 }
 
-export async function translateEt(input: TranslateEtInput): Promise<TranslateEtOutput | null> {
+export async function translateEt(input: TranslateEtInput, endpointOverride?: string): Promise<TranslateEtOutput | null> {
   const normalized: TranslateEtInput = {
     id: String(input.id || '').trim(),
     title: String(input.title || '').trim(),
@@ -80,7 +80,7 @@ export async function translateEt(input: TranslateEtInput): Promise<TranslateEtO
   if (!normalized.id || (!normalized.title && !normalized.body)) {
     return null;
   }
-  const endpoint = getTranslateEndpoint();
+  const endpoint = String(endpointOverride || getTranslateEndpoint() || '').trim();
   if (!endpoint) {
     throw new Error('Translation backend not configured. Set it in Settings.');
   }

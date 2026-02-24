@@ -16,8 +16,8 @@ import { Trash2, RotateCcw } from 'lucide-react';
 import AvatarManager from './AvatarManager';
 import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
-import { translateEt } from '@/lib/translateEt';
 import {
+  getTranslateEndpoint,
   getEnvTranslateEndpoint,
   getTranslateEndpointOverride,
   setTranslateEndpointOverride as persistTranslateEndpointOverride,
@@ -62,17 +62,42 @@ export default function SettingsTab() {
     setTestTranslateLoading(true);
     setTestTranslateResult('');
     try {
-      const result = await translateEt({
+      const endpoint = getTranslateEndpoint();
+      if (!endpoint) {
+        toast.error('Set Translation API URL');
+        setTestTranslateResult('Set Translation API URL');
+        return;
+      }
+      const payload = {
         id: 'dev-test-pl',
         title: 'Bocian bialy widziany nad rzeka',
         body: 'Dzis rano @birdwatcher zauwazyl 3 osobniki przy drodze nr 12. Szczegoly: https://example.com #ptaki',
+      };
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
+      const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+      const isJson = contentType.includes('application/json');
+      if (!isJson) {
+        const text = (await response.text()).trim();
+        const preview = text.slice(0, 120).replace(/\s+/g, ' ');
+        throw new Error(`HTTP ${response.status} Expected JSON, got ${contentType || 'unknown'}: ${preview || '[empty body]'}`);
+      }
+      const result = await response.json() as { title_et?: unknown; body_et?: unknown; error?: unknown };
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${String(result?.error || 'Test failed')}`);
+      }
+      if (typeof result.title_et !== 'string' || typeof result.body_et !== 'string') {
+        throw new Error(`HTTP ${response.status} Invalid JSON payload`);
+      }
       setTestTranslateResult(JSON.stringify(result, null, 2));
-      toast.success('Test translate õnnestus');
+      toast.success(`Translation OK: ${(result.title_et || '').slice(0, 80)}`);
     } catch (error: any) {
       const message = error?.message || 'Unknown error';
       setTestTranslateResult(`REQUEST FAILED\n${message}`);
-      toast.error(message);
+      toast.error(`Test failed. ${message}`);
     } finally {
       setTestTranslateLoading(false);
     }
@@ -80,7 +105,8 @@ export default function SettingsTab() {
 
   const handleSaveTranslateEndpoint = () => {
     persistTranslateEndpointOverride(translateEndpointOverride);
-    toast.success('Saved');
+    setTranslateEndpointOverride(getTranslateEndpointOverride());
+    toast.success('Saved translation endpoint');
   };
 
   const showReport = (report: ResetReport) => {
@@ -264,3 +290,4 @@ export default function SettingsTab() {
     </div>
   );
 }
+

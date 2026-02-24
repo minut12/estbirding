@@ -74,8 +74,10 @@ Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/c
 
 ## Translation endpoint (news translation)
 
-The app translates non-Estonian news into Estonian via in-repo server endpoint `/api/translate-et`, with client-side cache.
+The app translates non-Estonian news into Estonian via Cloudflare Pages Function endpoint `/api/translate-et`, with client-side cache.
 
-- Set `OPENAI_API_KEY` in Lovable Secrets (or local env for development).
+- In Cloudflare Pages dashboard, set Production Environment Variable:
+  - `OPENAI_API_KEY=<your key>`
+- Redeploy the Pages project after saving env vars.
 - Optional: `OPENAI_TRANSLATION_MODEL` (default `gpt-4.1-mini`).
 - The client never calls OpenAI directly.

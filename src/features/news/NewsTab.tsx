@@ -758,11 +758,8 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
       setShowManualTranslation(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const parsedUrl = message.match(/URL=(.+?)\. Error=/)?.[1];
-      const url = error instanceof TranslateEtHttpError ? error.url : (parsedUrl || 'unknown');
-      const details = `Translate failed. URL=${url}. Error=${message}`;
-      console.error(details, error);
-      toast.error(details);
+      console.error('[translate] detail translate failed', error);
+      toast.error(message);
     } finally {
       setManualTranslateLoading(false);
     }

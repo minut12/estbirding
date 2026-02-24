@@ -11,12 +11,10 @@ export interface TranslateEtOutput {
 
 export class TranslateEtHttpError extends Error {
   status: number;
-  url: string;
 
-  constructor(status: number, message: string, url: string) {
+  constructor(status: number, message: string) {
     super(message);
     this.status = status;
-    this.url = url;
     this.name = 'TranslateEtHttpError';
   }
 }
@@ -69,12 +67,6 @@ function writeCache(cacheKey: string, value: TranslateEtOutput): void {
   }
 }
 
-function resolveTranslateEndpoint(): { endpoint: string; url: string } {
-  const endpoint = String(import.meta.env.VITE_TRANSLATE_API_URL || '/api/translate-et');
-  const url = endpoint.startsWith('http') ? endpoint : `${window.location.origin}${endpoint}`;
-  return { endpoint, url };
-}
-
 export async function translateEt(input: TranslateEtInput): Promise<TranslateEtOutput | null> {
   const normalized: TranslateEtInput = {
     id: String(input.id || '').trim(),
@@ -85,7 +77,7 @@ export async function translateEt(input: TranslateEtInput): Promise<TranslateEtO
   if (!normalized.id || (!normalized.title && !normalized.body)) {
     return null;
   }
-  const { endpoint, url } = resolveTranslateEndpoint();
+  const endpoint = '/api/translate-et';
   if (!loggedEndpoint) {
     loggedEndpoint = true;
     console.info(`[translate] using ${endpoint}`);
@@ -98,21 +90,32 @@ export async function translateEt(input: TranslateEtInput): Promise<TranslateEtO
   const pending = inFlight.get(cacheKey);
   if (pending) return pending;
 
-  const request = fetch(url, {
+  const request = fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(normalized),
   })
     .then(async (res) => {
+      const contentType = String(res.headers.get('content-type') || '').toLowerCase();
+      const isJson = contentType.includes('application/json');
       if (!res.ok) {
         let errorMessage = `HTTP ${res.status}`;
-        try {
+        if (isJson) {
           const payload = await res.json() as { error?: unknown };
           if (payload?.error) errorMessage = String(payload.error);
-        } catch {
-          // Ignore JSON parse errors for error bodies.
+        } else {
+          const bodyText = (await res.text()).trim();
+          if (bodyText) {
+            const preview = bodyText.slice(0, 120).replace(/\s+/g, ' ');
+            errorMessage = `HTTP ${res.status} ${preview}`;
+          }
         }
-        throw new TranslateEtHttpError(res.status, errorMessage, url);
+        throw new TranslateEtHttpError(res.status, errorMessage);
+      }
+      if (!isJson) {
+        const bodyText = (await res.text()).trim();
+        const preview = bodyText.slice(0, 120).replace(/\s+/g, ' ');
+        throw new Error(`Expected JSON response from ${endpoint}. Got: ${preview || '[empty body]'}`);
       }
       const parsed = await res.json() as Partial<TranslateEtOutput>;
       const result = {
@@ -124,9 +127,9 @@ export async function translateEt(input: TranslateEtInput): Promise<TranslateEtO
     })
     .catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`[translate] failed. URL=${url}. Error=${message}`, error);
+      console.error(`[translate] failed. URL=${endpoint}. Error=${message}`, error);
       if (error instanceof TranslateEtHttpError) throw error;
-      throw new Error(`URL=${url}. Error=${message}`);
+      throw new Error(message);
     })
     .finally(() => {
       inFlight.delete(cacheKey);

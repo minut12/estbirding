@@ -62,3 +62,9 @@ verify_jwt = false
 
 [functions.translate-text]
 verify_jwt = false
+
+[functions.cron_ingest_news]
+verify_jwt = false
+
+[functions.cron_translate_news]
+verify_jwt = false

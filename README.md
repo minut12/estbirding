@@ -72,10 +72,10 @@ To connect a domain, navigate to Project > Settings > Domains and click Connect 
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
 
-## Server secrets (news translation)
+## Translation endpoint (news translation)
 
-Set secrets only in Supabase Edge Functions environment (never in client code or DB):
+The app translates non-Estonian news into Estonian via an external webhook (for example n8n), with client-side cache.
 
-- `OPENAI_API_KEY`
-- Optional: `OPENAI_MODEL` (default `gpt-4.1-mini`)
-- Optional: `AUTO_TRANSLATE_TO_ET` (`true` by default)
+- Set `VITE_TRANSLATE_API_URL` in `.env` (or `TRANSLATE_API_URL` as fallback).
+- Keep OpenAI API keys only in your webhook backend (never in client code).
+- Example workflow setup: `docs/n8n-translation-workflow.md`.

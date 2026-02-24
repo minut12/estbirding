@@ -315,6 +315,7 @@
     <strong>Europe</strong>
     <span class="pill">FI · SE · LV · LT · PL · BY · RU</span>
     <span class="pill">eBird · 7 days</span>
+    <span class="pill" id="proxyPill"></span>
     <span class="pill">Avatars: <span class="hintBadge">bm_global_avatars</span></span>
     <span class="muted" id="statusText"></span>
   </div>
@@ -403,9 +404,39 @@ const LS_EBIRD_TOKEN = "bm_ebird_token";
 const LS_SPECIES     = "bm_species_list_global";
 const LS_PER_COUNTRY = "bm_eu_per_country";
 const LS_BURGER_POS  = "bm_eu_burger_pos";
+const LS_PROXY_BASE  = "estbirding.proxyBase";
 
 /* ========= Defaults ========= */
 const DEFAULT_EBIRD_TOKEN = "9s72dc2jcjlq";
+const FALLBACK_PROXY_BASE = "https://api.allorigins.win/raw?url=";
+const queryProxyBase = (new URLSearchParams(window.location.search).get("proxyBase") || "").trim();
+const storedProxyBase = (localStorage.getItem(LS_PROXY_BASE) || "").trim();
+const activeProxyBase = queryProxyBase || storedProxyBase || FALLBACK_PROXY_BASE;
+
+function buildProxyUrl(url){
+  const target = encodeURIComponent(String(url || "").trim());
+  if (!activeProxyBase) return String(url || "").trim();
+  if (activeProxyBase.includes("{url}")) return activeProxyBase.replace("{url}", target);
+  return activeProxyBase + target;
+}
+
+function detectProxyMode(){
+  if (!activeProxyBase) return "none";
+  if (activeProxyBase.includes("/functions/v1/proxy")) return "Supabase";
+  if (activeProxyBase.includes("allorigins.win")) return "Fallback";
+  return "Custom";
+}
+
+function updateProxyHint(){
+  const el = document.getElementById("proxyPill");
+  if (!el) return;
+  el.textContent = "Proxy: " + detectProxyMode();
+  el.title = activeProxyBase;
+  if (detectProxyMode() === "none") {
+    showWarn("Proxy base is not configured. Cross-origin requests can fail.");
+  }
+}
+
 const DEFAULT_SPECIES = ["Aed-lepalind", "Aed-põõsalind", "Aed-roolind", "Aedporr", "Alk", "Alverüdi", "Ameerika piilpart", "Atlantise tormilind", "Aul", "Baleaari tormilind", "Euroopa kaelustäks", "Habekakk", "Habeviires", "Hahk", "Hakk", "Hall-kärbsenäpp", "Hallhaigur", "Hallhani", "Hallkibu", "Hallpea-rähn", "Hallpõsk-pütt", "Hallrästas", "Hallrüdi", "Halltsiitsitaja", "Hallvares", "Hallõgija", "Hangelind", "Harakas", "Haugaskotkas", "Hele-urvalind", "Heletilder", "Herilaseviu", "Hiireviu", "Hoburästas", "Händkakk", "Hänilane", "Hõbehaigur", "Hõbehaugas", "Hõbekajakas", "Hüüp", "Ida-mustvaeras", "Jahipistrik", "Jämejalg", "Järvekaur", "Jääkajakas", "Jääkaur", "Jääkoskel", "Jõgi-ritsiklind", "Jõgitiir", "Jõgitilder", "Jõgivästrik", "Kadakatäks", "Kaelus-kärbsenäpp", "Kaelus-turteltuvi", "Kaeluskotkas", "Kaelusrästas", "Kaelustuvi", "Kalakajakas", "Kalakotkas", "Kalda-rädilind", "Kaldapääsuke", "Kaljukajakas", "Kaljukotkas", "Kanada lagle", "Kanakull", "Kanepilind", "Karbuskajakas", "Karkjalg", "Karmiinleevike", "Karvasjalg-kakk", "Karvasjalg-viu", "Kassikakk", "Kiivitaja", "Kiripugu-rüdi", "Kirjuhahk", "Kivikakk", "Kivirullija", "Kivitäks", "Kodukakk", "Kodutuvi", "Koduvarblane", "Koldhaigur", "Koldjalg-hõbekajakas", "Koldvint", "Kormoran", "Krüüsel", "Kukkurtihane", "Kuld-lehelind", "Kuldhänilane", "Kuldnokk", "Kuldtsiitsitaja", "Kuninghahk", "Kuuse-käbilind", "Käblik", "Kägu", "Käharpelikan", "Käosulane", "Kääbuskormoran", "Kääbuskotkas", "Kõnnuõgija", "Kõrbe-kivitäks", "Kõrbe-põõsalind", "Kõrkja-roolind", "Kõrvukräts", "Kõvernokk-rüdi", "Kühmnokk-luik", "Künnivares", "Laanenäär", "Laanepüü", "Laanerähn", "Laisaba-änn", "Lammitilder", "Lapi tsiitsitaja", "Lasuurtihane", "Lauk", "Laululuik", "Laulurästas", "Leeterüdi", "Leevike", "Liiv-kivitäks", "Liivatüll", "Linavästrik", "Loorkakk", "Luitsnokk-iibis", "Luitsnokk-part", "Lumehani", "Lumekakk", "Lääne-lehelind", "Lääne-pöialpoiss", "Lõopistrik", "Lõuna-hõbekajakas", "Lühinokk-hani", "Madukotkas", "Mandariinpart", "Merikajakas", "Merikotkas", "Merirüdi", "Merisk", "Merivart", "Mesilasenäpp", "Mets-lehelind", "Metsis", "Metskiur", "Metskurvits", "Metstilder", "Metsvint", "Mudanepp", "Mudatilder", "Must-harksaba", "Must-kärbsenäpp", "Must-lepalind", "Must-toonekurg", "Mustjalg-tüll", "Mustkael-pütt", "Mustkurk-raat", "Mustlagle", "Mustlauk-õgija", "Mustpea-põõsalind", "Mustpea-tsiitsitaja", "Mustpugu-rästas", "Musträhn", "Musträstas", "Mustsaba-vigle", "Musttihane", "Mustvaeras", "Mustvares", "Mustviires", "Mägi-kanepilind", "Mägikiur", "Männi-käbilind", "Männileevike", "Männitalvike", "Mänsak", "Naaskelnokk", "Naerukajakas", "Naerutiir", "Niidu-kaelustäks", "Niidu-ritsiklind", "Niidukiur", "Nunn-kivitäks", "Nurmkana", "Nõgipart", "Nõlva-lehelind", "Nõmmekiur", "Nõmmelõoke", "Ohakalind", "Ohhoota hõbekajakas", "Padu-roolind", "Pasknäär", "Peegel-tormilind", "Pelikan", "Peoleo", "Piilpart", "Piiritaja", "Pikksaba-änn", "Plütt", "Plüü", "Polaarkajakas", "Porr", "Prillvaeras", "Pruunselg-põõsalind", "Puna-harksaba", "Puna-veetallaja", "Punajalg-pistrik", "Punajalg-tilder", "Punakael-lagle", "Punakurk-kaur", "Punanokk-vart", "Punapea-vart", "Punapea-õgija", "Punarind", "Punasaba-õgija", "Punaselg-õgija", "Purpurhaigur", "Puukoristaja", "Põhja-kirjurästas", "Põhja-lehelind", "Põhja-tormipääsu", "Põhjatihane", "Põhjatsiitsitaja", "Põhjavint", "Põldlõoke", "Põldtsiitsitaja", "Põldvarblane", "Põldvutt", "Pöialpoiss", "Rabapistrik", "Rabapüü", "Raisakotkas", "Randkajakas", "Randkiur", "Randtiir", "Rasvatihane", "Raudkull", "Ristpart", "Roherähn", "Rohevint", "Rohukoskel", "Rohunepp", "Ronk", "Roo-loorkull", "Roo-ritsiklind", "Roohabekas", "Rooruik", "Roosa-kuldnokk", "Roosakajakas", "Roosatiir", "Roostepääsuke", "Roosterind-tüll", "Rootsiitsitaja", "Rubiinööbik", "Rukkirääk", "Ruugerüdi", "Rägapart", "Rästas-roolind", "Räusk", "Rääkspart", "Räästapääsuke", "Rüüt", "Sabatihane", "Salu-lehelind", "Salupäll", "Salutihane", "Sarviklõoke", "Sarvikpütt", "Siberi lehelind", "Siberi raat", "Siidhaigur", "Siidisaba", "Siisike", "Sinikael-part", "Siniraag", "Sinirind", "Sinisaba", "Sinitihane", "Soo-loorkull", "Soo-roolind", "Sookiur", "Sookurg", "Soopart", "Sooräts", "Soorüdi", "Stepi-loorkull", "Stepikajakas", "Stepikiivitaja", "Stepikotkas", "Stepipistrik", "Stepiviu", "Suitsupääsuke", "Suula", "Suur-kirjurähn", "Suur-konnakotkas", "Suur-laukhani", "Suurkoovitaja", "Suurnokk-vint", "Suurrüdi", "Suuränn", "Sõtkas", "Söödikänn", "Tait", "Talvike", "Tamme-kirjurähn", "Teder", "Tiigi-roolind", "Tikutaja", "Triip-ritsiklind", "Tuhk-lehelind", "Tumetilder", "Tundra-rabahani", "Tundrakaur", "Tundrakiur", "Turteltuvi", "Tutkas", "Tutt-tihane", "Tutt-tiir", "Tuttlõoke", "Tuttpütt", "Tuttvart", "Tuuletallaja", "Täpikhuik", "Tõmmu-lehelind", "Tõmmuiibis", "Tõmmukajakas", "Tõmmuvaeras", "Urvalind", "Vaaraohani", "Vaenukägu", "Vainurästas", "Valge-toonekurg", "Valgepõsk-lagle", "Valgeselg-kirjurähn", "Valgesilm-vart", "Valgetiib-viires", "Veetallaja", "Veisehaigur", "Vesipapp", "Vihitaja", "Viupart", "Väike-kirjurähn", "Väike-konnakotkas", "Väike-käosulane", "Väike-kärbsenäpp", "Väike-laukhani", "Väike-lehelind", "Väike-põõsalind", "Väikealk", "Väikehuik", "Väikehüüp", "Väikekajakas", "Väikekoovitaja", "Väikekoskel", "Väikeluik", "Väikepistrik", "Väikepütt", "Väikerüdi", "Väiketiir", "Väiketrapp", "Väiketsiitsitaja", "Väiketüll", "Välja-loorkull", "Välja-väikelõoke", "Värbkakk", "Värbrüdi", "Väänkael", "Võsa-ritsiklind", "Võsaraat", "Vööt-käbilind", "Vööt-põõsalind", "Vööthani", "Vöötkakk", "Vöötnokk-kajakas", "Vöötsaba-vigle", "Õõnetuvi", "Ööbik", "Ööhaigur", "Öösorr"];
 const DEFAULT_EBIRD_CODES = {
   "Siberi lehelind": "radwar1",
@@ -1087,7 +1118,11 @@ function wireRows(){
 let abortController = null;
 
 async function fetchJSON(url, signal){
-  const res = await fetch(url, { headers: { "X-eBirdApiToken": EBIRD_TOKEN }, signal });
+  const res = await fetch(buildProxyUrl(url), {
+    headers: { "X-eBirdApiToken": EBIRD_TOKEN },
+    signal,
+    cache: "no-store",
+  });
   if (!res.ok) throw new Error("HTTP " + res.status);
   return await res.json();
 }
@@ -1428,6 +1463,7 @@ filterBox.addEventListener("input", render);
 
 /* ========= Init ========= */
 preloadAvatars();
+updateProxyHint();
 render();
 
 // Sidebar defaults

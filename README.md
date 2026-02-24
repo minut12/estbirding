@@ -95,3 +95,46 @@ wrangler deploy
 
 - Optional: set `OPENAI_TRANSLATION_MODEL` (default `gpt-4.1-mini`).
 - Ensure the Worker has `workers.dev` enabled.
+
+## CORS Proxy (No Cloudflare)
+
+Use the Supabase Edge Function proxy instead of Cloudflare for cross-origin bird data requests.
+
+### Deploy
+
+```sh
+supabase functions deploy proxy
+```
+
+### Local test
+
+```sh
+supabase functions serve proxy --no-verify-jwt
+curl "http://localhost:54321/functions/v1/proxy?url=https%3A%2F%2Felurikkus.ee%2Fapp%2Foccurrences%2Fsearch%3Ftext%3DKuldnokk"
+```
+
+### Allowed upstream hosts
+
+- `elurikkus.ee`
+- `www.elurikkus.ee`
+- `api.ebird.org`
+
+### Frontend config
+
+- Env var: `VITE_PROXY_BASE`
+- Recommended value:
+  - `https://<PROJECT_REF>.supabase.co/functions/v1/proxy?url=`
+- Fallback if empty:
+  - `https://api.allorigins.win/raw?url=`
+
+### Hosting env setup
+
+- Lovable: Project settings -> Environment variables -> add `VITE_PROXY_BASE`.
+- Vercel: Project settings -> Environment Variables -> add `VITE_PROXY_BASE` for the target environments.
+- Any static host: set build-time env `VITE_PROXY_BASE` before `npm run build`.
+
+### UI setting
+
+- Open app Settings -> `Proxy Base URL`.
+- Paste your proxy base, save, and reopen map if needed.
+- The Europe map top bar shows active proxy mode: `Supabase`, `Fallback`, or `Custom`.

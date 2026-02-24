@@ -7,6 +7,7 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { APP_VERSION } from '@/lib/version';
 import { fetchSharedAvatars, getMergedAvatars, notifyIframe } from '@/lib/avatar-storage';
+import { resolveProxyBase } from '@/config/proxyEndpoint';
 
 const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -18,8 +19,12 @@ export default function MapTab({ isActive = true }: MapTabProps) {
   const [selectedId, setSelectedId] = useState(getActiveMap().id);
   const current = maps.find((m) => m.id === selectedId) ?? getActiveMap();
   const iframeSrc = useMemo(() => {
+    const proxyBase = resolveProxyBase();
+    const params = new URLSearchParams();
+    params.set('v', APP_VERSION);
+    if (proxyBase) params.set('proxyBase', proxyBase);
     const sep = current.source.includes('?') ? '&' : '?';
-    return `${current.source}${sep}v=${APP_VERSION}`;
+    return `${current.source}${sep}${params.toString()}`;
   }, [current.source]);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [error, setError] = useState<string | null>(null);

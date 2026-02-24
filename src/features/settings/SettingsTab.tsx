@@ -27,6 +27,15 @@ import {
   WORKER_DEFAULT_ENDPOINT,
 } from '@/config/translationEndpoint';
 import { isNativePlatform, postJson } from '@/lib/httpClient';
+import {
+  FALLBACK_PROXY_BASE,
+  getEnvProxyBase,
+  getProxyMode,
+  getStoredProxyBase,
+  PROXY_ENDPOINT_UPDATED_EVENT,
+  resolveProxyBase,
+  setStoredProxyBase,
+} from '@/config/proxyEndpoint';
 
 type ResetMode = 'soft' | 'hard' | null;
 
@@ -38,14 +47,22 @@ export default function SettingsTab() {
   const [testTranslateResult, setTestTranslateResult] = useState('');
   const [translationApiUrl, setTranslationApiUrlInput] = useState('');
   const [storedEndpointView, setStoredEndpointView] = useState('');
+  const [proxyBaseUrl, setProxyBaseUrl] = useState('');
+  const [storedProxyBaseView, setStoredProxyBaseView] = useState('');
   const envEndpoint = getEnvEndpoint();
   const resolvedEndpoint = resolveEndpoint(translationApiUrl);
+  const envProxyBase = getEnvProxyBase();
+  const resolvedProxyBase = resolveProxyBase(proxyBaseUrl);
+  const proxyMode = getProxyMode(resolvedProxyBase);
 
   useEffect(() => {
     setForm(loadSettings());
     const initialStored = getStoredEndpoint();
     setStoredEndpointView(initialStored);
     setTranslationApiUrlInput(initialStored || getEnvEndpoint());
+    const initialProxyStored = getStoredProxyBase();
+    setStoredProxyBaseView(initialProxyStored);
+    setProxyBaseUrl(initialProxyStored || getEnvProxyBase());
   }, []);
 
   useEffect(() => {
@@ -58,6 +75,16 @@ export default function SettingsTab() {
     };
   }, []);
 
+  useEffect(() => {
+    const refreshStored = () => setStoredProxyBaseView(getStoredProxyBase());
+    window.addEventListener('storage', refreshStored);
+    window.addEventListener(PROXY_ENDPOINT_UPDATED_EVENT, refreshStored);
+    return () => {
+      window.removeEventListener('storage', refreshStored);
+      window.removeEventListener(PROXY_ENDPOINT_UPDATED_EVENT, refreshStored);
+    };
+  }, []);
+
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
@@ -65,8 +92,11 @@ export default function SettingsTab() {
   const handleSave = () => {
     setStoredEndpoint(translationApiUrl);
     setStoredEndpointView(getStoredEndpoint());
+    setStoredProxyBase(proxyBaseUrl);
+    setStoredProxyBaseView(getStoredProxyBase());
     saveSettings(form);
     toast.success('Translation endpoint saved');
+    toast.success('Proxy base saved');
     toast.success('Seaded salvestatud');
   };
 
@@ -144,6 +174,22 @@ export default function SettingsTab() {
     toast.success('Translation endpoint saved');
   };
 
+  const handleSaveProxyBase = () => {
+    setStoredProxyBase(proxyBaseUrl);
+    const saved = getStoredProxyBase();
+    setStoredProxyBaseView(saved);
+    setProxyBaseUrl(saved || getEnvProxyBase());
+    toast.success('Proxy base saved');
+  };
+
+  const handleUseProxyFallback = () => {
+    setStoredProxyBase(FALLBACK_PROXY_BASE);
+    const saved = getStoredProxyBase();
+    setStoredProxyBaseView(saved);
+    setProxyBaseUrl(saved);
+    toast.success('Proxy base saved');
+  };
+
   const showReport = (report: ResetReport) => {
     if (report.errors.length > 0) {
       toast.warning('Osaline tuhjendus', {
@@ -215,6 +261,37 @@ export default function SettingsTab() {
           </p>
           <p className="text-xs text-muted-foreground">
             Env endpoint: {envEndpoint || '(empty)'}
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="proxyBaseUrl">Proxy Base URL</Label>
+          <Input
+            id="proxyBaseUrl"
+            placeholder="https://<project-ref>.supabase.co/functions/v1/proxy?url="
+            value={proxyBaseUrl}
+            onChange={(e) => setProxyBaseUrl(e.target.value)}
+          />
+          <Button variant="outline" onClick={handleSaveProxyBase} className="w-full">
+            Save proxy base
+          </Button>
+          <Button variant="outline" onClick={handleUseProxyFallback} className="w-full">
+            Use fallback proxy
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Active proxy: {proxyMode}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Resolved proxy base: {resolvedProxyBase || '(empty)'}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Stored proxy base: {storedProxyBaseView || '(empty)'}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Env proxy base: {envProxyBase || '(empty)'}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            If this is empty or invalid, map data fetches may fail due to CORS.
           </p>
         </div>
 

@@ -3,6 +3,9 @@ project_id = "eenwcyuyugyrjgpivxrq"
 [functions.elurikkus-proxy]
 verify_jwt = false
 
+[functions.proxy]
+verify_jwt = false
+
 [functions.fetch-eoy-news]
 verify_jwt = false
 

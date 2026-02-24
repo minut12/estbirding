@@ -18,7 +18,7 @@ export type HttpJsonResponse = {
   rawText?: string;
 };
 
-const MAX_PREVIEW = 200;
+const MAX_PREVIEW = 120;
 
 function parseMaybeJson(value: unknown): any {
   if (typeof value !== 'string') return value;
@@ -44,8 +44,8 @@ async function nativeRequest(method: 'GET' | 'POST', url: string, body?: any): P
     const response = await CapacitorHttp.request({
       method,
       url: endpoint,
-      headers: { 'Content-Type': 'application/json' },
-      data: method === 'POST' ? body : undefined,
+      headers: method === 'POST' ? { 'Content-Type': 'text/plain;charset=UTF-8' } : undefined,
+      data: method === 'POST' ? JSON.stringify(body || {}) : undefined,
     });
     const parsed = parseMaybeJson(response?.data);
     const rawText = typeof response?.data === 'string' ? response.data.slice(0, MAX_PREVIEW) : undefined;
@@ -65,7 +65,7 @@ async function webRequest(method: 'GET' | 'POST', url: string, body?: any): Prom
   try {
     response = await fetch(endpoint, {
       method,
-      headers: { 'content-type': 'application/json' },
+      headers: method === 'POST' ? { 'content-type': 'text/plain;charset=UTF-8' } : undefined,
       body: method === 'POST' ? JSON.stringify(body || {}) : undefined,
     });
   } catch (error: any) {

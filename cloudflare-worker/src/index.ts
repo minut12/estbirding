@@ -13,7 +13,7 @@ const MAX_TEXT_CHARS = 20_000;
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'content-type',
 };
 
@@ -58,6 +58,10 @@ export default {
     }
 
     const { pathname } = new URL(request.url);
+    if (pathname === '/health' && request.method === 'GET') {
+      return json(200, { ok: true });
+    }
+
     if (pathname !== '/' && pathname !== '/translate-et') {
       return json(404, { error: 'Not found' });
     }
@@ -67,7 +71,8 @@ export default {
 
     let body: TranslateInput;
     try {
-      body = await request.json<TranslateInput>();
+      const raw = await request.text();
+      body = JSON.parse(raw || '{}') as TranslateInput;
     } catch {
       return json(400, { error: 'Invalid JSON body' });
     }
@@ -162,4 +167,3 @@ export default {
     }
   },
 };
-

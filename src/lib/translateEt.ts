@@ -24,6 +24,7 @@ export class TranslateEtHttpError extends Error {
 
 const inFlight = new Map<string, Promise<TranslateEtOutput | null>>();
 let loggedEndpoint = false;
+const MAX_ERROR_PREVIEW_CHARS = 120;
 
 function weakHash(input: string): string {
   let h = 2166136261;
@@ -102,12 +103,13 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
   const request = postJson(endpoint, normalized)
     .then((response) => {
       if (response.status !== 200) {
-        const preview = String(response.rawText || JSON.stringify(response.data) || '').slice(0, 200).replace(/\s+/g, ' ');
+        const preview = String(response.rawText || JSON.stringify(response.data) || '').slice(0, MAX_ERROR_PREVIEW_CHARS).replace(/\s+/g, ' ');
         throw new TranslateEtHttpError(response.status, `status=${response.status}. endpoint=${endpoint}. ${preview || '[empty body]'}`);
       }
       const parsed = (response.data || {}) as Partial<TranslateEtOutput>;
       if (typeof parsed.title_et !== 'string' || typeof parsed.body_et !== 'string') {
-        throw new Error('Invalid JSON payload: required string fields title_et/body_et');
+        const preview = String(response.rawText || JSON.stringify(response.data) || '').slice(0, MAX_ERROR_PREVIEW_CHARS).replace(/\s+/g, ' ');
+        throw new Error(`non-json/invalid response: ${preview || 'Invalid JSON payload: required string fields title_et/body_et'}`);
       }
       const result = {
         title_et: parsed.title_et,
@@ -120,10 +122,10 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[translate] failed. URL=${endpoint}. Error=${message}`, error);
       if (error instanceof HttpClientError) {
-        throw new TranslateEtHttpError(error.status || 0, `${message}. endpoint=${error.endpoint}`);
+        throw new TranslateEtHttpError(error.status || 0, `Translate failed. endpoint=${error.endpoint}. error=${message}`);
       }
       if (error instanceof TranslateEtHttpError) throw error;
-      throw new Error(`${message}. Endpoint=${endpoint}`);
+      throw new Error(`Translate failed. endpoint=${endpoint}. error=${message}`);
     })
     .finally(() => {
       inFlight.delete(cacheKey);

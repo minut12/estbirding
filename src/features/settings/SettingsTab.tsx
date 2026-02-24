@@ -96,7 +96,7 @@ export default function SettingsTab() {
       try {
         const healthRes = await getJson(healthUrl);
         if (healthRes.status !== 200) {
-          const preview = String(healthRes.rawText || JSON.stringify(healthRes.data) || '').slice(0, 200).replace(/\s+/g, ' ');
+          const preview = String(healthRes.rawText || JSON.stringify(healthRes.data) || '').slice(0, 120).replace(/\s+/g, ' ');
           throw new Error(`status=${healthRes.status} ${preview || '[empty body]'}`);
         }
       } catch (error: any) {
@@ -113,7 +113,7 @@ export default function SettingsTab() {
       };
       const translateRes = await postJson(endpoint, payload);
       if (translateRes.status !== 200) {
-        const preview = String(translateRes.rawText || JSON.stringify(translateRes.data) || '').slice(0, 200).replace(/\s+/g, ' ');
+        const preview = String(translateRes.rawText || JSON.stringify(translateRes.data) || '').slice(0, 120).replace(/\s+/g, ' ');
         throw new Error(`status=${translateRes.status}. endpoint=${endpoint}. ${preview || '[empty body]'}`);
       }
       const result = (translateRes.data || {}) as { title_et?: unknown; body_et?: unknown; error?: unknown };

@@ -1,4 +1,5 @@
 import { getEnvEndpoint, getStoredEndpoint, resolveEndpoint } from '@/config/translationEndpoint';
+import { HttpClientError, httpPostJson } from '@/lib/httpClient';
 
 export interface TranslateEtInput {
   id: string;
@@ -23,7 +24,6 @@ export class TranslateEtHttpError extends Error {
 
 const inFlight = new Map<string, Promise<TranslateEtOutput | null>>();
 let loggedEndpoint = false;
-const MAX_ERROR_PREVIEW_CHARS = 200;
 
 function weakHash(input: string): string {
   let h = 2166136261;
@@ -99,38 +99,10 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
   const pending = inFlight.get(cacheKey);
   if (pending) return pending;
 
-  const request = fetch(endpoint, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(normalized),
-  })
-    .then(async (res) => {
-      const contentType = String(res.headers.get('content-type') || '').toLowerCase();
-      const isJson = contentType.includes('application/json');
-      if (!res.ok) {
-        let errorMessage = `HTTP ${res.status}`;
-        if (isJson) {
-          const payload = await res.json() as { error?: unknown };
-          if (payload?.error) errorMessage = `HTTP ${res.status} ${String(payload.error)}`;
-        } else {
-          const bodyText = (await res.text()).trim();
-          if (bodyText) {
-            const preview = bodyText.slice(0, MAX_ERROR_PREVIEW_CHARS).replace(/\s+/g, ' ');
-            errorMessage = `HTTP ${res.status} Expected JSON, got ${contentType || 'unknown'}: ${preview}`;
-          } else {
-            errorMessage = `HTTP ${res.status} Expected JSON, got ${contentType || 'unknown'}`;
-          }
-        }
-        throw new TranslateEtHttpError(res.status, errorMessage);
-      }
-      if (!isJson) {
-        const bodyText = (await res.text()).trim();
-        const preview = bodyText.slice(0, MAX_ERROR_PREVIEW_CHARS).replace(/\s+/g, ' ');
-        throw new Error(`HTTP ${res.status} Expected JSON, got ${contentType || 'unknown'}: ${preview || '[empty body]'}`);
-      }
-      const parsed = await res.json() as Partial<TranslateEtOutput>;
+  const request = httpPostJson(endpoint, normalized)
+    .then((parsed: Partial<TranslateEtOutput>) => {
       if (typeof parsed.title_et !== 'string' || typeof parsed.body_et !== 'string') {
-        throw new Error(`HTTP ${res.status} Invalid JSON payload: required string fields title_et/body_et`);
+        throw new Error('Invalid JSON payload: required string fields title_et/body_et');
       }
       const result = {
         title_et: parsed.title_et,
@@ -142,6 +114,9 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
     .catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[translate] failed. URL=${endpoint}. Error=${message}`, error);
+      if (error instanceof HttpClientError) {
+        throw new TranslateEtHttpError(error.status || 0, `${message}. endpoint=${error.endpoint}`);
+      }
       if (error instanceof TranslateEtHttpError) throw error;
       throw new Error(`${message}. Endpoint=${endpoint}`);
     })

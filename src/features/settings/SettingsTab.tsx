@@ -19,12 +19,14 @@ import NewsSourcesSettings from './NewsSourcesSettings';
 import {
   getEnvEndpoint,
   getStoredEndpoint,
+  resolveBaseEndpoint,
   resolveEndpoint,
   resolveHealthUrl,
   setStoredEndpoint,
   TRANSLATION_ENDPOINT_UPDATED_EVENT,
   WORKER_DEFAULT_ENDPOINT,
 } from '@/config/translationEndpoint';
+import { HttpClientError, httpGetJson, httpPostJson } from '@/lib/httpClient';
 
 type ResetMode = 'soft' | 'hard' | null;
 
@@ -83,19 +85,17 @@ export default function SettingsTab() {
   const handleTestTranslate = async () => {
     setTestTranslateLoading(true);
     setTestTranslateResult('');
+    const baseEndpoint = resolveBaseEndpoint(translationApiUrl);
     const endpoint = resolveEndpoint(translationApiUrl);
     try {
       const healthUrl = resolveHealthUrl(endpoint);
-      let healthResponse: Response;
       try {
-        healthResponse = await fetch(healthUrl, { method: 'GET' });
+        await httpGetJson(healthUrl);
       } catch (error: any) {
-        const message = error?.message || 'Failed to fetch';
-        throw new Error(`Cannot reach Worker (health). ${message}. Endpoint=${healthUrl}`);
-      }
-      if (!healthResponse.ok) {
-        const healthPreview = (await healthResponse.text()).slice(0, 200).replace(/\s+/g, ' ');
-        throw new Error(`Cannot reach Worker (health). HTTP ${healthResponse.status}. ${healthPreview || '[empty body]'}`);
+        if (error instanceof HttpClientError) {
+          throw new Error(`Cannot reach Worker (health). status=${error.status || 0}. endpoint=${error.endpoint}. ${error.message}`);
+        }
+        throw new Error(`Cannot reach Worker (health). endpoint=${healthUrl}. ${error?.message || 'Unknown error'}`);
       }
 
       const payload = {
@@ -103,42 +103,12 @@ export default function SettingsTab() {
         title: 'Bocian bialy widziany nad rzeka',
         body: 'Dzis rano @birdwatcher zauwazyl 3 osobniki przy drodze nr 12. Szczegoly: https://example.com #ptaki',
       };
-      let response: Response;
-      try {
-        response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-      } catch (error: any) {
-        const message = error?.message || 'Failed to fetch';
-        throw new Error(`${message}. Endpoint=${endpoint}`);
-      }
-      const rawText = await response.text();
-      const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-      const isJson = contentType.includes('application/json');
-      let result: { title_et?: unknown; body_et?: unknown; error?: unknown } = {};
-      if (isJson) {
-        try {
-          result = rawText ? JSON.parse(rawText) : {};
-        } catch {
-          // Keep raw text fallback for error preview.
-        }
-      }
-      if (!response.ok) {
-        const preview = String(rawText || JSON.stringify(result) || '').slice(0, 200).replace(/\s+/g, ' ');
-        throw new Error(`HTTP ${response.status} ${preview || 'Request failed'}`);
-      }
-      if (!isJson) {
-        const preview = String(rawText || '').slice(0, 200).replace(/\s+/g, ' ');
-        throw new Error(`HTTP ${response.status} Expected JSON, got ${contentType || 'unknown'}: ${preview || '[empty body]'}`);
-      }
+      const result = await httpPostJson(endpoint, payload) as { title_et?: unknown; body_et?: unknown; error?: unknown };
       if (typeof result.title_et !== 'string' || typeof result.body_et !== 'string') {
-        const preview = String(rawText || '').slice(0, 200).replace(/\s+/g, ' ');
-        throw new Error(`HTTP ${response.status} ${preview || 'Invalid JSON payload'}`);
+        throw new Error(`Invalid JSON payload from ${endpoint}`);
       }
       setTestTranslateResult(JSON.stringify(result, null, 2));
-      toast.success(`Translation OK: ${(result.title_et || '').slice(0, 80)}`);
+      toast.success(`Translation OK: ${(result.title_et || '').slice(0, 80)} (${baseEndpoint})`);
     } catch (error: any) {
       const message = error?.message || 'Unknown error';
       setTestTranslateResult(`REQUEST FAILED\n${message}`);

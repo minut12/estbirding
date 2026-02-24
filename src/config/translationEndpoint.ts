@@ -8,7 +8,9 @@ export function getStoredEndpoint(): string {
 }
 
 export function setStoredEndpoint(v: string): void {
-  localStorage.setItem(KEY, (v || '').trim());
+  const input = String(v || '').trim();
+  const normalized = normalizeBaseUrl(input);
+  localStorage.setItem(KEY, normalized);
   window.dispatchEvent(new Event(TRANSLATION_ENDPOINT_UPDATED_EVENT));
 }
 
@@ -33,16 +35,35 @@ function normalizeEndpoint(raw: string): string {
   }
 }
 
-export function resolveEndpoint(currentInput?: string): string {
+function normalizeBaseUrl(raw: string): string {
+  const trimmed = String(raw || '').trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+  try {
+    const parsed = new URL(trimmed);
+    let path = parsed.pathname || '/';
+    if (path.endsWith('/translate-et')) path = path.slice(0, -'/translate-et'.length) || '/';
+    if (path.endsWith('/health')) path = path.slice(0, -'/health'.length) || '/';
+    parsed.pathname = path;
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return trimmed;
+  }
+}
+
+export function resolveBaseEndpoint(currentInput?: string): string {
   const hardcoded = WORKER_DEFAULT_ENDPOINT;
   const env = getEnvEndpoint();
   const stored = (localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY) || '').trim();
   const raw = (currentInput?.trim() || stored || env.trim() || hardcoded).trim();
-  return normalizeEndpoint(raw);
+  return normalizeBaseUrl(raw);
+}
+
+export function resolveEndpoint(currentInput?: string): string {
+  return normalizeEndpoint(resolveBaseEndpoint(currentInput));
 }
 
 export function resolveHealthUrl(endpoint?: string): string {
-  const resolved = String(endpoint || resolveEndpoint()).trim();
+  const resolved = String(endpoint || resolveBaseEndpoint()).trim();
   try {
     const parsed = new URL(resolved);
     const path = parsed.pathname || '/';

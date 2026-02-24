@@ -1,4 +1,4 @@
-import { toast } from 'sonner';
+import { getEnvTranslateEndpoint, getTranslateEndpoint, getTranslateEndpointOverride } from '@/config/translateEndpoint';
 
 export interface TranslateEtInput {
   id: string;
@@ -23,33 +23,7 @@ export class TranslateEtHttpError extends Error {
 
 const inFlight = new Map<string, Promise<TranslateEtOutput | null>>();
 let loggedEndpoint = false;
-let showedConfigError = false;
-const MAX_ERROR_PREVIEW_CHARS = 120;
-
-function createConfigError(): Error {
-  const message = 'Translate not configured: set VITE_TRANSLATE_API_URL';
-  if (!showedConfigError) {
-    showedConfigError = true;
-    toast.error(message);
-  }
-  return new Error(message);
-}
-
-function resolveEndpoint(): string {
-  const endpoint = String(import.meta.env.VITE_TRANSLATE_API_URL || '').trim();
-  if (!endpoint) {
-    throw createConfigError();
-  }
-  try {
-    const parsed = new URL(endpoint);
-    if (parsed.protocol !== 'https:') {
-      throw new Error('Translate endpoint must use https');
-    }
-    return parsed.toString();
-  } catch {
-    throw createConfigError();
-  }
-}
+const MAX_ERROR_PREVIEW_CHARS = 200;
 
 function weakHash(input: string): string {
   let h = 2166136261;
@@ -106,10 +80,15 @@ export async function translateEt(input: TranslateEtInput): Promise<TranslateEtO
   if (!normalized.id || (!normalized.title && !normalized.body)) {
     return null;
   }
-  const endpoint = resolveEndpoint();
+  const endpoint = getTranslateEndpoint();
+  if (!endpoint) {
+    throw new Error('Translation backend not configured. Set it in Settings.');
+  }
   if (!loggedEndpoint) {
     loggedEndpoint = true;
-    console.info(`[translate] using ${endpoint}`);
+    const fromEnv = getEnvTranslateEndpoint() || '(empty)';
+    const fromOverride = getTranslateEndpointOverride() || '(empty)';
+    console.info(`[translate] endpoint resolved=${endpoint}; env=${fromEnv}; override=${fromOverride}`);
   }
 
   const cacheKey = await buildCacheKey(normalized);
@@ -149,9 +128,12 @@ export async function translateEt(input: TranslateEtInput): Promise<TranslateEtO
         throw new Error(`HTTP ${res.status} Expected JSON, got ${contentType || 'unknown'}: ${preview || '[empty body]'}`);
       }
       const parsed = await res.json() as Partial<TranslateEtOutput>;
+      if (typeof parsed.title_et !== 'string' || typeof parsed.body_et !== 'string') {
+        throw new Error(`HTTP ${res.status} Invalid JSON payload: required string fields title_et/body_et`);
+      }
       const result = {
-        title_et: String(parsed.title_et || ''),
-        body_et: String(parsed.body_et || ''),
+        title_et: parsed.title_et,
+        body_et: parsed.body_et,
       };
       writeCache(cacheKey, result);
       return result;

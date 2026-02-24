@@ -14,6 +14,7 @@ import { isAutoTranslateNewsToEtEnabled } from '@/lib/settings';
 import { isEstonianLocale, normalizeLocale, resolveAppLocale } from '@/lib/locale';
 import { TranslateEtHttpError, translateEt, type TranslateEtOutput } from '@/lib/translateEt';
 import { toast } from 'sonner';
+import { getTranslateEndpoint } from '@/config/translateEndpoint';
 
 /* ── Types ──────────────────────────────────────── */
 interface NewsItem {
@@ -203,6 +204,7 @@ function useEtTranslation({
   sourceLang,
   fallbackTitleEt,
   fallbackBodyEt,
+  endpointConfigured,
 }: {
   enabled: boolean;
   id: string;
@@ -211,6 +213,7 @@ function useEtTranslation({
   sourceLang?: string | null;
   fallbackTitleEt?: string | null;
   fallbackBodyEt?: string | null;
+  endpointConfigured: boolean;
 }): EtTranslationState {
   const hasFallback = Boolean((fallbackTitleEt || '').trim() || (fallbackBodyEt || '').trim());
   const [translated, setTranslated] = useState<TranslateEtOutput | null>(
@@ -224,7 +227,7 @@ function useEtTranslation({
   const bodyText = (body || '').trim();
   const normalizedLang = normalizeLocale(sourceLang || '');
   const isLikelyEstonian = normalizedLang === 'et';
-  const shouldTranslate = enabled && !isLikelyEstonian && Boolean(title.trim() || bodyText);
+  const shouldTranslate = enabled && endpointConfigured && !isLikelyEstonian && Boolean(title.trim() || bodyText);
 
   useEffect(() => {
     if (!hasFallback) {
@@ -331,6 +334,7 @@ export default function NewsTab() {
   const appLocale = resolveAppLocale();
   const showEtContent = isEstonianLocale(appLocale);
   const autoTranslateEnabled = isAutoTranslateNewsToEtEnabled();
+  const endpointConfigured = Boolean(getTranslateEndpoint());
 
   // Sources
   const { data: sources = [] } = useQuery<NewsSource[]>({
@@ -563,6 +567,7 @@ export default function NewsTab() {
                 sources={sources}
                 showEtContent={showEtContent}
                 autoTranslateEnabled={autoTranslateEnabled}
+                endpointConfigured={endpointConfigured}
                 onOpen={() => openArticle(item)}
                 onToggleArchive={() => toggleArchive(item.id, item.archived)}
               />
@@ -575,11 +580,12 @@ export default function NewsTab() {
 }
 
 /* ── News Card ──────────────────────────────────── */
-function NewsCard({ item, sources, showEtContent, autoTranslateEnabled, onOpen, onToggleArchive }: {
+function NewsCard({ item, sources, showEtContent, autoTranslateEnabled, endpointConfigured, onOpen, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
   showEtContent: boolean;
   autoTranslateEnabled: boolean;
+  endpointConfigured: boolean;
   onOpen: () => void;
   onToggleArchive: () => void;
 }) {
@@ -595,6 +601,7 @@ function NewsCard({ item, sources, showEtContent, autoTranslateEnabled, onOpen, 
     sourceLang: item.source_lang || item.language,
     fallbackTitleEt: item.title_et,
     fallbackBodyEt: item.body_et,
+    endpointConfigured,
   });
   const displayTitle = showEtContent ? (translation.translated?.title_et || item.title_et || item.title) : item.title;
   const snippetSource = showEtContent
@@ -724,6 +731,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
   const normalizedLang = normalizeLocale(item.source_lang || item.language || '');
   const isLikelyEstonian = normalizedLang === 'et';
   const canShowTranslate = !isLikelyEstonian || isBirdingPoland;
+  const endpointConfigured = Boolean(getTranslateEndpoint());
   const bodyText = toPlainText(contentHtml || item.body || item.summary);
   const hasTranslatedContent = showManualTranslation
     && Boolean(manualTranslation?.title_et || manualTranslation?.body_et);
@@ -737,6 +745,10 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
   const isTranslated = Boolean(hasTranslatedContent);
 
   const handleToggleTranslate = useCallback(async () => {
+    if (!endpointConfigured) {
+      toast.error('Translation backend not configured. Set it in Settings.');
+      return;
+    }
     if (showManualTranslation) {
       setShowManualTranslation(false);
       return;
@@ -759,11 +771,11 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error('[translate] detail translate failed', error);
-      toast.error(message);
+      toast.error(`Translate failed. ${message}`);
     } finally {
       setManualTranslateLoading(false);
     }
-  }, [bodyText, item.id, item.title, manualTranslation, showManualTranslation]);
+  }, [bodyText, endpointConfigured, item.id, item.title, manualTranslation, showManualTranslation]);
 
   return (
     <div className="flex flex-col h-full">
@@ -834,7 +846,8 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
               size="sm"
               className="gap-1.5"
               onClick={handleToggleTranslate}
-              disabled={manualTranslateLoading}
+              disabled={manualTranslateLoading || !endpointConfigured}
+              title={endpointConfigured ? undefined : 'Translation backend not configured. Set it in Settings.'}
             >
               {manualTranslateLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
               {showManualTranslation ? 'Original' : (manualTranslateLoading ? 'Translating...' : 'Translate')}

@@ -17,6 +17,11 @@ import AvatarManager from './AvatarManager';
 import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
 import { translateEt } from '@/lib/translateEt';
+import {
+  getEnvTranslateEndpoint,
+  getTranslateEndpointOverride,
+  setTranslateEndpointOverride as persistTranslateEndpointOverride,
+} from '@/config/translateEndpoint';
 
 type ResetMode = 'soft' | 'hard' | null;
 
@@ -26,9 +31,12 @@ export default function SettingsTab() {
   const [resetting, setResetting] = useState(false);
   const [testTranslateLoading, setTestTranslateLoading] = useState(false);
   const [testTranslateResult, setTestTranslateResult] = useState('');
+  const [translateEndpointOverride, setTranslateEndpointOverride] = useState('');
+  const envTranslateEndpoint = getEnvTranslateEndpoint();
 
   useEffect(() => {
     setForm(loadSettings());
+    setTranslateEndpointOverride(getTranslateEndpointOverride());
   }, []);
 
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
@@ -68,6 +76,11 @@ export default function SettingsTab() {
     } finally {
       setTestTranslateLoading(false);
     }
+  };
+
+  const handleSaveTranslateEndpoint = () => {
+    persistTranslateEndpointOverride(translateEndpointOverride);
+    toast.success('Saved');
   };
 
   const showReport = (report: ResetReport) => {
@@ -114,6 +127,25 @@ export default function SettingsTab() {
             onChange={(e) => update('eventsSourceUrl', e.target.value)}
           />
           <p className="text-xs text-muted-foreground">JSON-vormingus urituste voo URL</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="translateApiUrl">Translation API URL</Label>
+          <Input
+            id="translateApiUrl"
+            placeholder="https://estbirding.kristian03.workers.dev"
+            value={translateEndpointOverride}
+            onChange={(e) => setTranslateEndpointOverride(e.target.value)}
+          />
+          <Button variant="outline" onClick={handleSaveTranslateEndpoint} className="w-full">
+            Save translation endpoint
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Use your Cloudflare Worker URL (e.g. https://estbirding.kristian03.workers.dev). Leave empty to use build env VITE_TRANSLATE_API_URL.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Build env fallback: {envTranslateEndpoint || '(empty)'}
+          </p>
         </div>
 
         <div className="space-y-2">

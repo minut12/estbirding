@@ -80,6 +80,8 @@ The app translates non-Estonian news into Estonian via a Cloudflare Worker endpo
 
 - Set `VITE_TRANSLATE_API_URL` to your Worker URL, for example:
   - `VITE_TRANSLATE_API_URL=https://<worker-name>.<account>.workers.dev/translate-et`
+- Vite only exposes client env vars prefixed with `VITE_`.
+- Runtime override is also available in app Settings (`Translation API URL`) and is stored in localStorage.
 - The client never calls OpenAI directly.
 
 ### Worker setup

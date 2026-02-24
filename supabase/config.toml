@@ -24,9 +24,6 @@ verify_jwt = false
 [functions.linnuliigid-snapshot]
 verify_jwt = false
 
-[functions.save-snapshot]
-verify_jwt = false
-
 [functions.news-pull]
 verify_jwt = false
 
@@ -61,10 +58,4 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.translate-text]
-verify_jwt = false
-
-[functions.cron_ingest_news]
-verify_jwt = false
-
-[functions.cron_translate_news]
 verify_jwt = false

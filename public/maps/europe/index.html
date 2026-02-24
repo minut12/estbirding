@@ -269,28 +269,6 @@
       line-height:1.35;
       display:none;
     }
-    .snapshot-banner{
-      font-size:11px;
-      color:#334155;
-      padding:6px 10px;
-      background:#f0fdf4;
-      border:1px solid #bbf7d0;
-      border-radius:10px;
-      margin:8px 0 10px;
-      display:none;
-    }
-    .snapshot-banner.warn{ background:#fef3c7; border-color:#fde68a; color:#92400e; }
-    .snapshot-banner.error{ background:#fee2e2; border-color:#fecaca; color:#dc2626; }
-    .debug-panel{
-      font-size:11px;
-      color:#64748b;
-      background:#f8fafc;
-      border:1px solid #e2e8f0;
-      border-radius:8px;
-      padding:6px 10px;
-      margin:8px 0 10px;
-    }
-    .debug-panel summary{ cursor:pointer; font-weight:600; color:#475569; }
 
     /* Settings modal */
     #modalBackdrop{
@@ -360,24 +338,16 @@
 
       <div id="controls">
         <button class="btn secondary" id="settingsBtn">Settings</button>
-        <button class="btn" id="btnRefreshData">Refresh data</button>
-        <button class="btn secondary" id="btnReloadSnapshot">Reload snapshot</button>
-        <button class="btn secondary" id="refreshFilteredBtn">Refresh filtered</button>
+        <button class="btn" id="refreshFilteredBtn">Refresh filtered</button>
         <button class="btn secondary" id="refreshSelectedBtn">Refresh selected</button>
         <button class="btn danger" id="stopBtn">Stop</button>
         <button class="btn on" id="perCountryBtn">Per-country: ON</button>
-        <label class="chk"><input type="checkbox" id="toggle7days" checked/> 7 days only</label>
         <button class="btn secondary" id="exportBtn">Export</button>
         <button class="btn secondary" id="importBtn">Import</button>
         <button class="btn secondary" id="resetBtn">Reset EU cache</button>
       </div>
 
-      <div id="snapshotBanner" class="snapshot-banner"></div>
       <div id="warnBanner" class="bannerWarn"></div>
-      <details class="debug-panel" id="debugPanel">
-        <summary>Debug info</summary>
-        <div id="debugContent">Loading...</div>
-      </details>
       <div id="progressLine">Ready.</div>
       <input id="filterBox" type="text" placeholder="Filter species…"/>
       </div>
@@ -435,8 +405,6 @@ const LS_SPECIES     = "bm_species_list_global";
 const LS_PER_COUNTRY = "bm_eu_per_country";
 const LS_BURGER_POS  = "bm_eu_burger_pos";
 const LS_PROXY_BASE  = "estbirding.proxyBase";
-const LS_SNAPSHOT_PREFIX = "bm_map_snapshot:";
-const SNAPSHOT_VERSION = "europe_map_v1";
 
 /* ========= Defaults ========= */
 const DEFAULT_EBIRD_TOKEN = "9s72dc2jcjlq";
@@ -873,11 +841,6 @@ if (SPECIES.length === 0) {
 }
 
 let perCountry = (localStorage.getItem(LS_PER_COUNTRY) || "1") === "1";
-let recentOnly = true;
-let lastRefreshAt = null;
-let lastSnapshotAt = null;
-let dataMode = "live";
-let AUTO_SYNC_CANCELLED = false;
 
 function saveAll(){
   localStorage.setItem(LS_AVATARS, JSON.stringify(avatars));
@@ -886,144 +849,6 @@ function saveAll(){
   localStorage.setItem(LS_EBIRD_TOKEN, EBIRD_TOKEN);
   localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
   localStorage.setItem(LS_PER_COUNTRY, perCountry ? "1" : "0");
-}
-
-function getSnapshotKey(){
-  return `europe_map:v1:7days=${recentOnly ? "1" : "0"}:perCountry=${perCountry ? "1" : "0"}:regions=${REGIONS.join(",")}`;
-}
-
-function getSnapshotStorageKey(){
-  return LS_SNAPSHOT_PREFIX + getSnapshotKey();
-}
-
-function getSnapshotCounts(){
-  let markersCount = 0;
-  let itemsCount = 0;
-  for (const name of SPECIES){
-    const p = points[name];
-    if (!p) continue;
-    const regions = (p.regions && typeof p.regions === "object") ? p.regions : null;
-    if (!regions) continue;
-    let hasVisible = false;
-    for (const d of Object.values(regions)){
-      const occ7 = Number(d?.occ7 || 0);
-      if (recentOnly && !(occ7 > 0)) continue;
-      if (Number.isFinite(d?.lat) && Number.isFinite(d?.lon)) {
-        hasVisible = true;
-        if (perCountry) markersCount++;
-      }
-    }
-    if (hasVisible) {
-      itemsCount++;
-      if (!perCountry) markersCount++;
-    }
-  }
-  return { markers: markersCount, items: itemsCount };
-}
-
-function updateDebugPanel(){
-  const el = document.getElementById("debugContent");
-  if (!el) return;
-  const counts = getSnapshotCounts();
-  el.innerHTML = [
-    `active filters: <b>7 days only=${recentOnly ? "ON" : "OFF"}, per-country=${perCountry ? "ON" : "OFF"}</b>`,
-    `dataMode: <b>${dataMode}</b>`,
-    `lastSnapshotAt: <b>${lastSnapshotAt ? new Date(lastSnapshotAt).toLocaleString() : "—"}</b>`,
-    `lastRefreshAt: <b>${lastRefreshAt ? new Date(lastRefreshAt).toLocaleString() : "—"}</b>`,
-    `counts: <b>markers=${counts.markers}, items=${counts.items}</b>`,
-  ].join("<br>");
-}
-
-function showSnapshotBanner(msg, type){
-  const el = document.getElementById("snapshotBanner");
-  if (!el) return;
-  el.textContent = msg;
-  el.className = "snapshot-banner" + (type ? " " + type : "");
-  el.style.display = "block";
-}
-
-function hideSnapshotBanner(){
-  const el = document.getElementById("snapshotBanner");
-  if (el) el.style.display = "none";
-}
-
-async function saveSnapshotRemote(snapshot){
-  try{
-    const apiBase = "https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/save-snapshot";
-    const body = {
-      key: getSnapshotKey(),
-      version: snapshot.version,
-      created_at: snapshot.createdAt,
-      payload: snapshot.payload,
-      meta: snapshot.meta || {},
-    };
-    await fetch(apiBase, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-  }catch(e){
-    console.warn("[snapshot] remote save failed", e);
-  }
-}
-
-async function saveSnapshotLocalAndRemote(){
-  const snapshot = {
-    version: SNAPSHOT_VERSION,
-    createdAt: new Date().toISOString(),
-    payload: { points, species: SPECIES },
-    meta: {
-      filters: { recentOnly, perCountry, regions: REGIONS.slice() },
-      counts: getSnapshotCounts(),
-    },
-  };
-  localStorage.setItem(getSnapshotStorageKey(), JSON.stringify(snapshot));
-  lastSnapshotAt = snapshot.createdAt;
-  updateDebugPanel();
-  await saveSnapshotRemote(snapshot);
-}
-
-function applySnapshot(snapshot){
-  if (!snapshot || snapshot.version !== SNAPSHOT_VERSION || !snapshot.payload || !snapshot.payload.points){
-    showSnapshotBanner("Snapshot outdated", "warn");
-    return false;
-  }
-  points = snapshot.payload.points || {};
-  if (Array.isArray(snapshot.payload.species) && snapshot.payload.species.length) {
-    SPECIES = snapshot.payload.species;
-  }
-  dataMode = "snapshot";
-  lastSnapshotAt = snapshot.createdAt || null;
-  saveAll();
-  render();
-  updateDebugPanel();
-  return true;
-}
-
-function loadSnapshotLocal(){
-  const raw = localStorage.getItem(getSnapshotStorageKey());
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch(e){
-    return null;
-  }
-}
-
-function reloadSnapshot(){
-  const snapshot = loadSnapshotLocal();
-  if (!snapshot) {
-    showSnapshotBanner("No snapshot available", "warn");
-    updateDebugPanel();
-    return false;
-  }
-  if (!applySnapshot(snapshot)) return false;
-  showSnapshotBanner(`Loaded snapshot: ${new Date(snapshot.createdAt).toLocaleString()}`);
-  setStatus(`Loaded snapshot: ${new Date(snapshot.createdAt).toLocaleString()}`);
-  progressLine.textContent = "Loaded snapshot.";
-  return true;
 }
 
 function preloadAvatars(){
@@ -1120,7 +945,7 @@ function updateMarker(species){
 
       // show markers only if occ7>0
       const occ7 = Number(d.occ7 || 0);
-      if (recentOnly && !(occ7 > 0)) continue;
+      if (!(occ7 > 0)) continue;
 
       const border = borderColorByDate(d.t);
       const icon = makeIcon(avatars[species] || "", border, hasCrown, occ7, isMigr);
@@ -1144,7 +969,7 @@ function updateMarker(species){
     let best = null;
     for (const [rg, d] of Object.entries(regionsObj)) {
       const occ7 = Number(d?.occ7 || 0);
-      if (recentOnly && !(occ7 > 0)) continue;
+      if (!(occ7 > 0)) continue;
       if (!best || (d.t && d.t > best.t)) best = { rg, ...d };
     }
     if (best) {
@@ -1425,15 +1250,13 @@ async function refreshKeys(keys, force=true){
 
   let done = 0;
   const total = keys.length;
-  let successCount = 0;
-  let failureCount = 0;
   const isMobile = window.matchMedia("(max-width: 900px)").matches;
   const conc = isMobile ? CONCURRENCY_MOBILE : CONCURRENCY_DESKTOP;
 
   const tasks = keys.map(k => async ()=>{
     if (signal.aborted) return;
-    try { await fetchEurope(k, force, signal); successCount++; }
-    catch(e) { failureCount++; console.warn("Fetch failed", k, e); }
+    try { await fetchEurope(k, force, signal); }
+    catch(e) { console.warn("Fetch failed", k, e); }
     finally {
       done++;
       progressLine.textContent = `Refreshing: ${done}/${total}`;
@@ -1449,7 +1272,6 @@ async function refreshKeys(keys, force=true){
     progressLine.textContent = `Done. Refreshed ${total} species.`;
     setStatus("Done.");
   }
-  return { done, total, successCount, failureCount, aborted: signal.aborted };
 }
 
 function refreshFiltered(){
@@ -1580,7 +1402,6 @@ perCountryBtn.addEventListener("click", ()=>{
   syncPerCountryBtn();
   // redraw markers
   SPECIES.forEach(updateMarker);
-  updateDebugPanel();
 });
 syncPerCountryBtn();
 
@@ -1639,70 +1460,18 @@ document.getElementById("modalSave").addEventListener("click", ()=>{
   const lines = (speciesInput.value||"").split("\n").map(s=>s.trim()).filter(Boolean);
   if (lines.length) SPECIES = lines;
   saveAll(); render(); closeSettings();
-  updateDebugPanel();
 });
 
 /* ========= Buttons ========= */
-document.getElementById("btnRefreshData").addEventListener("click", async ()=>{
-  hideSnapshotBanner();
-  showWarn("");
-  AUTO_SYNC_CANCELLED = true;
-  const keys = SPECIES.filter(n => (EBIRD_CODES[n] || (points[n]||{}).ebirdCode));
-  if (keys.length === 0) {
-    showSnapshotBanner("No species with eBird codes configured.", "warn");
-    return;
-  }
-  dataMode = "live";
-  updateDebugPanel();
-  try{
-    const result = await refreshKeys(keys, true);
-    if (result.aborted) {
-      showSnapshotBanner("Refresh stopped", "warn");
-      return;
-    }
-    if (result.successCount <= 0) {
-      const loaded = reloadSnapshot();
-      if (!loaded) showSnapshotBanner("Refresh failed and no snapshot available", "error");
-      else showSnapshotBanner("Refresh failed. Showing last snapshot.", "warn");
-      showWarn("Refresh failed. UI kept on last known snapshot.");
-      return;
-    }
-    lastRefreshAt = new Date().toISOString();
-    await saveSnapshotLocalAndRemote();
-    dataMode = "live";
-    setStatus(`Data loaded · ${new Date(lastRefreshAt).toLocaleString()}`);
-    progressLine.textContent = "Data loaded";
-    showSnapshotBanner("Data loaded");
-    setTimeout(hideSnapshotBanner, 4000);
-    updateDebugPanel();
-  }catch(e){
-    console.warn("[refresh] failed", e);
-    const loaded = reloadSnapshot();
-    if (!loaded) showSnapshotBanner("Refresh failed and no snapshot available", "error");
-    else showSnapshotBanner("Refresh failed. Showing last snapshot.", "warn");
-    showWarn("Refresh failed. UI kept on last known snapshot.");
-  }
-});
-document.getElementById("btnReloadSnapshot").addEventListener("click", reloadSnapshot);
 document.getElementById("refreshFilteredBtn").addEventListener("click", refreshFiltered);
 document.getElementById("refreshSelectedBtn").addEventListener("click", refreshSelected);
 document.getElementById("stopBtn").addEventListener("click", ()=>{ AUTO_SYNC_CANCELLED = true; stopRefresh(); });
 filterBox.addEventListener("input", render);
-document.getElementById("toggle7days").addEventListener("change", (e)=>{
-  recentOnly = !!e.target.checked;
-  render();
-  updateDebugPanel();
-});
 
 /* ========= Init ========= */
 preloadAvatars();
 updateProxyHint();
 render();
-recentOnly = (document.getElementById("toggle7days")?.checked !== false);
-if (!reloadSnapshot()) {
-  dataMode = "live";
-}
-updateDebugPanel();
 
 // Sidebar defaults
 if (!window.matchMedia("(max-width: 900px)").matches) {
@@ -1751,18 +1520,6 @@ function startAutoSync(){
   runNext();
 }
 startAutoSync();
-
-/* ========= Parent app refresh messages ========= */
-window.addEventListener("message", function(ev){
-  try{
-    if (!ev.data || typeof ev.data !== "object") return;
-    if (ev.origin !== window.location.origin) return;
-    const t = ev.data.type;
-    if (t === "MAP_REFRESH_VISIBLE" || t === "MAP_REFRESH_SELECTED") {
-      document.getElementById("btnRefreshData")?.click();
-    }
-  }catch(e){}
-});
 </script>
 </body>
 </html>

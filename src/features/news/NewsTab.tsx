@@ -757,8 +757,12 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
       setManualTranslation(result);
       setShowManualTranslation(true);
     } catch (error) {
-      const status = error instanceof TranslateEtHttpError ? error.status : 0;
-      toast.error(`Tõlkimine ebaõnnestus (HTTP ${status})`);
+      const message = error instanceof Error ? error.message : String(error);
+      const parsedUrl = message.match(/URL=(.+?)\. Error=/)?.[1];
+      const url = error instanceof TranslateEtHttpError ? error.url : (parsedUrl || 'unknown');
+      const details = `Translate failed. URL=${url}. Error=${message}`;
+      console.error(details, error);
+      toast.error(details);
     } finally {
       setManualTranslateLoading(false);
     }

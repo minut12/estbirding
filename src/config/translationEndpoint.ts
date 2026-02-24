@@ -23,13 +23,8 @@ function normalizeEndpoint(raw: string): string {
   if (!trimmed) return '';
   try {
     const parsed = new URL(trimmed);
-    const pathname = parsed.pathname || '/';
-    const isWorkerHost = parsed.hostname.endsWith('.workers.dev');
-    const isRootPath = pathname === '' || pathname === '/';
-    if (isRootPath || (isWorkerHost && isRootPath)) {
-      parsed.pathname = '/translate-et';
-    }
-    return parsed.toString().replace(/\/+$/, '');
+    const search = parsed.search || '';
+    return `${parsed.origin}/translate-et${search}`;
   } catch {
     return trimmed;
   }
@@ -66,12 +61,8 @@ export function resolveHealthUrl(endpoint?: string): string {
   const resolved = String(endpoint || resolveBaseEndpoint()).trim();
   try {
     const parsed = new URL(resolved);
-    const path = parsed.pathname || '/';
-    if (path.endsWith('/translate-et')) {
-      parsed.pathname = path.slice(0, -'/translate-et'.length) || '/';
-    }
-    parsed.pathname = `${parsed.pathname.replace(/\/+$/, '')}/health`;
-    return parsed.toString();
+    const search = parsed.search || '';
+    return `${parsed.origin}/health${search}`;
   } catch {
     return `${resolved.replace(/\/+$/, '')}/health`;
   }

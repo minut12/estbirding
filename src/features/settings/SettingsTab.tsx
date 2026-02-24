@@ -26,7 +26,7 @@ import {
   TRANSLATION_ENDPOINT_UPDATED_EVENT,
   WORKER_DEFAULT_ENDPOINT,
 } from '@/config/translationEndpoint';
-import { HttpClientError, getJson, isNativePlatform, postJson } from '@/lib/httpClient';
+import { isNativePlatform, postJson } from '@/lib/httpClient';
 
 type ResetMode = 'soft' | 'hard' | null;
 
@@ -94,16 +94,13 @@ export default function SettingsTab() {
     try {
       const healthUrl = resolveHealthUrl(endpoint);
       try {
-        const healthRes = await getJson(healthUrl);
-        if (healthRes.status !== 200) {
-          const preview = String(healthRes.rawText || JSON.stringify(healthRes.data) || '').slice(0, 120).replace(/\s+/g, ' ');
+        const healthRes = await fetch(healthUrl, { method: 'GET' });
+        if (!healthRes.ok) {
+          const preview = (await healthRes.text()).slice(0, 120).replace(/\s+/g, ' ');
           throw new Error(`status=${healthRes.status} ${preview || '[empty body]'}`);
         }
       } catch (error: any) {
-        if (error instanceof HttpClientError) {
-          throw new Error(`Cannot reach Worker (health). status=${error.status || 0}. endpoint=${error.endpoint}. ${error.message}`);
-        }
-        throw new Error(`Cannot reach Worker (health). endpoint=${healthUrl}. ${error?.message || 'Unknown error'}`);
+        throw new Error(`Worker blocked (likely Cloudflare Access). Open this URL in browser: ${healthUrl}`);
       }
 
       const payload = {
@@ -208,7 +205,7 @@ export default function SettingsTab() {
             Use Worker default
           </Button>
           <p className="text-xs text-muted-foreground">
-            Use your Cloudflare Worker URL (e.g. https://estbirding.kristian03.workers.dev).
+            Use your Cloudflare Worker URL (e.g. https://estbirding.kristian03.workers.dev?t=YOUR_TOKEN).
           </p>
           <p className="text-xs text-muted-foreground">
             Resolved endpoint: {resolvedEndpoint || '(empty)'}

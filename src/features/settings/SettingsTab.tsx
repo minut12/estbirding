@@ -17,9 +17,12 @@ import AvatarManager from './AvatarManager';
 import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
 import {
-  getTranslationApiUrl,
-  setTranslationApiUrl,
-} from '@/config/translationConfig';
+  getEnvEndpoint,
+  getStoredEndpoint,
+  resolveEndpoint,
+  setStoredEndpoint,
+  TRANSLATION_ENDPOINT_UPDATED_EVENT,
+} from '@/config/translationEndpoint';
 
 type ResetMode = 'soft' | 'hard' | null;
 
@@ -30,10 +33,25 @@ export default function SettingsTab() {
   const [testTranslateLoading, setTestTranslateLoading] = useState(false);
   const [testTranslateResult, setTestTranslateResult] = useState('');
   const [translationApiUrl, setTranslationApiUrlInput] = useState('');
+  const [storedEndpointView, setStoredEndpointView] = useState('');
+  const envEndpoint = getEnvEndpoint();
+  const resolvedEndpoint = resolveEndpoint(translationApiUrl);
 
   useEffect(() => {
     setForm(loadSettings());
-    setTranslationApiUrlInput(getTranslationApiUrl());
+    const initialStored = getStoredEndpoint();
+    setStoredEndpointView(initialStored);
+    setTranslationApiUrlInput(initialStored || getEnvEndpoint());
+  }, []);
+
+  useEffect(() => {
+    const refreshStored = () => setStoredEndpointView(getStoredEndpoint());
+    window.addEventListener('storage', refreshStored);
+    window.addEventListener(TRANSLATION_ENDPOINT_UPDATED_EVENT, refreshStored);
+    return () => {
+      window.removeEventListener('storage', refreshStored);
+      window.removeEventListener(TRANSLATION_ENDPOINT_UPDATED_EVENT, refreshStored);
+    };
   }, []);
 
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
@@ -41,7 +59,8 @@ export default function SettingsTab() {
   };
 
   const handleSave = () => {
-    setTranslationApiUrl(translationApiUrl);
+    setStoredEndpoint(translationApiUrl);
+    setStoredEndpointView(getStoredEndpoint());
     saveSettings(form);
     toast.success('Translation endpoint saved');
     toast.success('Seaded salvestatud');
@@ -49,7 +68,8 @@ export default function SettingsTab() {
 
   const handleAutoTranslateToggle = (checked: boolean) => {
     const next = { ...form, autoTranslateToEstonian: checked };
-    setTranslationApiUrl(translationApiUrl);
+    setStoredEndpoint(translationApiUrl);
+    setStoredEndpointView(getStoredEndpoint());
     setForm(next);
     saveSettings(next);
     localStorage.setItem(NEWS_AUTO_TRANSLATE_ET_KEY, checked ? '1' : '0');
@@ -62,7 +82,7 @@ export default function SettingsTab() {
     setTestTranslateLoading(true);
     setTestTranslateResult('');
     try {
-      const endpoint = String(translationApiUrl || getTranslationApiUrl() || '').trim();
+      const endpoint = resolveEndpoint(translationApiUrl);
       if (!endpoint) {
         toast.error('Set Translation API URL');
         setTestTranslateResult('Set Translation API URL');
@@ -78,19 +98,20 @@ export default function SettingsTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-      const isJson = contentType.includes('application/json');
-      if (!isJson) {
-        const text = (await response.text()).trim();
-        const preview = text.slice(0, 120).replace(/\s+/g, ' ');
-        throw new Error(`HTTP ${response.status} Expected JSON, got ${contentType || 'unknown'}: ${preview || '[empty body]'}`);
+      const rawText = await response.text();
+      let result: { title_et?: unknown; body_et?: unknown; error?: unknown } = {};
+      try {
+        result = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        // Keep raw text fallback for error preview.
       }
-      const result = await response.json() as { title_et?: unknown; body_et?: unknown; error?: unknown };
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status} ${String(result?.error || 'Test failed')}`);
+        const preview = String(rawText || JSON.stringify(result) || '').slice(0, 120).replace(/\s+/g, ' ');
+        throw new Error(`HTTP ${response.status} ${preview || 'Request failed'}`);
       }
       if (typeof result.title_et !== 'string' || typeof result.body_et !== 'string') {
-        throw new Error(`HTTP ${response.status} Invalid JSON payload`);
+        const preview = String(rawText || '').slice(0, 120).replace(/\s+/g, ' ');
+        throw new Error(`HTTP ${response.status} ${preview || 'Invalid JSON payload'}`);
       }
       setTestTranslateResult(JSON.stringify(result, null, 2));
       toast.success(`Translation OK: ${(result.title_et || '').slice(0, 80)}`);
@@ -104,8 +125,10 @@ export default function SettingsTab() {
   };
 
   const handleSaveTranslateEndpoint = () => {
-    setTranslationApiUrl(translationApiUrl);
-    setTranslationApiUrlInput(getTranslationApiUrl());
+    setStoredEndpoint(translationApiUrl);
+    const saved = getStoredEndpoint();
+    setStoredEndpointView(saved);
+    setTranslationApiUrlInput(saved || getEnvEndpoint());
     toast.success('Translation endpoint saved');
   };
 
@@ -168,6 +191,15 @@ export default function SettingsTab() {
           </Button>
           <p className="text-xs text-muted-foreground">
             Use your Cloudflare Worker URL (e.g. https://estbirding.kristian03.workers.dev).
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Resolved endpoint: {resolvedEndpoint || '(empty)'}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Stored endpoint: {storedEndpointView || '(empty)'}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Env endpoint: {envEndpoint || '(empty)'}
           </p>
         </div>
 

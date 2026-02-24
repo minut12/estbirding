@@ -74,8 +74,8 @@ Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/c
 
 ## Translation endpoint (news translation)
 
-The app translates non-Estonian news into Estonian via an external webhook (for example n8n), with client-side cache.
+The app translates non-Estonian news into Estonian via in-repo server endpoint `/api/translate-et`, with client-side cache.
 
-- Set `VITE_TRANSLATE_API_URL` in `.env` (or `TRANSLATE_API_URL` as fallback).
-- Keep OpenAI API keys only in your webhook backend (never in client code).
-- Example workflow setup: `docs/n8n-translation-workflow.md`.
+- Set `OPENAI_API_KEY` in Lovable Secrets (or local env for development).
+- Optional: `OPENAI_TRANSLATION_MODEL` (default `gpt-4.1-mini`).
+- The client never calls OpenAI directly.

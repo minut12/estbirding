@@ -11,8 +11,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { isAutoTranslateNewsToEtEnabled } from '@/lib/settings';
-import { isEstonianLocale, resolveAppLocale } from '@/lib/locale';
-import { translateToEstonian, type TranslationResponse } from '@/lib/translate';
+import { isEstonianLocale, normalizeLocale, resolveAppLocale } from '@/lib/locale';
+import { translateEt, type TranslateEtOutput } from '@/lib/translateEt';
 import { toast } from 'sonner';
 
 /* ── Types ──────────────────────────────────────── */
@@ -190,7 +190,7 @@ function ensureImageUrl(item: NewsItem): NewsItem {
 const BIRDING_POLAND_KEY = 'facebook_birdingpoland';
 
 interface EtTranslationState {
-  translated: TranslationResponse | null;
+  translated: TranslateEtOutput | null;
   loading: boolean;
 }
 
@@ -199,6 +199,7 @@ function useEtTranslation({
   id,
   title,
   body,
+  sourceLang,
   fallbackTitleEt,
   fallbackBodyEt,
 }: {
@@ -206,11 +207,12 @@ function useEtTranslation({
   id: string;
   title: string;
   body: string | null | undefined;
+  sourceLang?: string | null;
   fallbackTitleEt?: string | null;
   fallbackBodyEt?: string | null;
 }): EtTranslationState {
   const hasFallback = Boolean((fallbackTitleEt || '').trim() || (fallbackBodyEt || '').trim());
-  const [translated, setTranslated] = useState<TranslationResponse | null>(
+  const [translated, setTranslated] = useState<TranslateEtOutput | null>(
     hasFallback ? {
       title_et: (fallbackTitleEt || '').trim(),
       body_et: (fallbackBodyEt || '').trim(),
@@ -218,7 +220,9 @@ function useEtTranslation({
   );
   const [loading, setLoading] = useState(false);
   const bodyText = (body || '').trim();
-  const shouldTranslate = enabled && Boolean(title.trim() || bodyText);
+  const normalizedLang = normalizeLocale(sourceLang || '');
+  const isLikelyEstonian = normalizedLang === 'et';
+  const shouldTranslate = enabled && !isLikelyEstonian && Boolean(title.trim() || bodyText);
 
   useEffect(() => {
     if (!hasFallback) {
@@ -240,7 +244,7 @@ function useEtTranslation({
     }
 
     setLoading(true);
-    translateToEstonian({
+    translateEt({
       id,
       title,
       body: bodyText,
@@ -581,6 +585,7 @@ function NewsCard({ item, sources, showEtContent, autoTranslateEnabled, onOpen, 
     id: item.id,
     title: item.title,
     body: item.body || item.summary,
+    sourceLang: item.source_lang || item.language,
     fallbackTitleEt: item.title_et,
     fallbackBodyEt: item.body_et,
   });
@@ -703,6 +708,7 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
     id: item.id,
     title: item.title,
     body: toPlainText(contentHtml || item.body || item.summary),
+    sourceLang: item.source_lang || item.language,
     fallbackTitleEt: item.title_et,
     fallbackBodyEt: item.body_et,
   });

@@ -14,7 +14,7 @@ import { isAutoTranslateNewsToEtEnabled } from '@/lib/settings';
 import { isEstonianLocale, normalizeLocale, resolveAppLocale } from '@/lib/locale';
 import { TranslateEtHttpError, translateEt, type TranslateEtOutput } from '@/lib/translateEt';
 import { toast } from 'sonner';
-import { getTranslateEndpoint, TRANSLATE_ENDPOINT_UPDATED_EVENT } from '@/config/translateEndpoint';
+import { getTranslationApiUrl, TRANSLATION_API_URL_UPDATED_EVENT } from '@/config/translationConfig';
 
 /* ── Types ──────────────────────────────────────── */
 interface NewsItem {
@@ -334,16 +334,16 @@ export default function NewsTab() {
   const appLocale = resolveAppLocale();
   const showEtContent = isEstonianLocale(appLocale);
   const autoTranslateEnabled = isAutoTranslateNewsToEtEnabled();
-  const [translateEndpoint, setTranslateEndpoint] = useState(() => getTranslateEndpoint());
+  const [translateEndpoint, setTranslateEndpoint] = useState(() => getTranslationApiUrl());
   const endpointConfigured = Boolean(translateEndpoint);
 
   useEffect(() => {
-    const refreshEndpoint = () => setTranslateEndpoint(getTranslateEndpoint());
+    const refreshEndpoint = () => setTranslateEndpoint(getTranslationApiUrl());
     window.addEventListener('storage', refreshEndpoint);
-    window.addEventListener(TRANSLATE_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
+    window.addEventListener(TRANSLATION_API_URL_UPDATED_EVENT, refreshEndpoint);
     return () => {
       window.removeEventListener('storage', refreshEndpoint);
-      window.removeEventListener(TRANSLATE_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
+      window.removeEventListener(TRANSLATION_API_URL_UPDATED_EVENT, refreshEndpoint);
     };
   }, []);
 
@@ -742,16 +742,16 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
   const normalizedLang = normalizeLocale(item.source_lang || item.language || '');
   const isLikelyEstonian = normalizedLang === 'et';
   const canShowTranslate = !isLikelyEstonian || isBirdingPoland;
-  const [translateEndpoint, setTranslateEndpoint] = useState(() => getTranslateEndpoint());
+  const [translateEndpoint, setTranslateEndpoint] = useState(() => getTranslationApiUrl());
   const endpointConfigured = Boolean(translateEndpoint);
 
   useEffect(() => {
-    const refreshEndpoint = () => setTranslateEndpoint(getTranslateEndpoint());
+    const refreshEndpoint = () => setTranslateEndpoint(getTranslationApiUrl());
     window.addEventListener('storage', refreshEndpoint);
-    window.addEventListener(TRANSLATE_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
+    window.addEventListener(TRANSLATION_API_URL_UPDATED_EVENT, refreshEndpoint);
     return () => {
       window.removeEventListener('storage', refreshEndpoint);
-      window.removeEventListener(TRANSLATE_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
+      window.removeEventListener(TRANSLATION_API_URL_UPDATED_EVENT, refreshEndpoint);
     };
   }, []);
   const bodyText = toPlainText(contentHtml || item.body || item.summary);

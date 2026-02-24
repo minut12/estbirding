@@ -1,4 +1,4 @@
-import { getEnvTranslateEndpoint, getTranslateEndpoint, getTranslateEndpointOverride } from '@/config/translateEndpoint';
+import { getTranslationApiUrl } from '@/config/translationConfig';
 
 export interface TranslateEtInput {
   id: string;
@@ -80,15 +80,16 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
   if (!normalized.id || (!normalized.title && !normalized.body)) {
     return null;
   }
-  const endpoint = String(endpointOverride || getTranslateEndpoint() || '').trim();
+  const endpoint = String(endpointOverride || getTranslationApiUrl() || '').trim();
+  if (import.meta.env.DEV) {
+    console.info('[translate] endpoint=', endpoint || '(empty)');
+  }
   if (!endpoint) {
     throw new Error('Translation backend not configured. Set it in Settings.');
   }
   if (!loggedEndpoint) {
     loggedEndpoint = true;
-    const fromEnv = getEnvTranslateEndpoint() || '(empty)';
-    const fromOverride = getTranslateEndpointOverride() || '(empty)';
-    console.info(`[translate] endpoint resolved=${endpoint}; env=${fromEnv}; override=${fromOverride}`);
+    console.info(`[translate] endpoint resolved=${endpoint}`);
   }
 
   const cacheKey = await buildCacheKey(normalized);

@@ -17,11 +17,9 @@ import AvatarManager from './AvatarManager';
 import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
 import {
-  getTranslateEndpoint,
-  getEnvTranslateEndpoint,
-  getTranslateEndpointOverride,
-  setTranslateEndpointOverride as persistTranslateEndpointOverride,
-} from '@/config/translateEndpoint';
+  getTranslationApiUrl,
+  setTranslationApiUrl,
+} from '@/config/translationConfig';
 
 type ResetMode = 'soft' | 'hard' | null;
 
@@ -31,12 +29,11 @@ export default function SettingsTab() {
   const [resetting, setResetting] = useState(false);
   const [testTranslateLoading, setTestTranslateLoading] = useState(false);
   const [testTranslateResult, setTestTranslateResult] = useState('');
-  const [translateEndpointOverride, setTranslateEndpointOverride] = useState('');
-  const envTranslateEndpoint = getEnvTranslateEndpoint();
+  const [translationApiUrl, setTranslationApiUrlInput] = useState('');
 
   useEffect(() => {
     setForm(loadSettings());
-    setTranslateEndpointOverride(getTranslateEndpointOverride());
+    setTranslationApiUrlInput(getTranslationApiUrl());
   }, []);
 
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
@@ -44,12 +41,15 @@ export default function SettingsTab() {
   };
 
   const handleSave = () => {
+    setTranslationApiUrl(translationApiUrl);
     saveSettings(form);
+    toast.success('Translation endpoint saved');
     toast.success('Seaded salvestatud');
   };
 
   const handleAutoTranslateToggle = (checked: boolean) => {
     const next = { ...form, autoTranslateToEstonian: checked };
+    setTranslationApiUrl(translationApiUrl);
     setForm(next);
     saveSettings(next);
     localStorage.setItem(NEWS_AUTO_TRANSLATE_ET_KEY, checked ? '1' : '0');
@@ -62,7 +62,7 @@ export default function SettingsTab() {
     setTestTranslateLoading(true);
     setTestTranslateResult('');
     try {
-      const endpoint = getTranslateEndpoint();
+      const endpoint = String(translationApiUrl || getTranslationApiUrl() || '').trim();
       if (!endpoint) {
         toast.error('Set Translation API URL');
         setTestTranslateResult('Set Translation API URL');
@@ -104,9 +104,9 @@ export default function SettingsTab() {
   };
 
   const handleSaveTranslateEndpoint = () => {
-    persistTranslateEndpointOverride(translateEndpointOverride);
-    setTranslateEndpointOverride(getTranslateEndpointOverride());
-    toast.success('Saved translation endpoint');
+    setTranslationApiUrl(translationApiUrl);
+    setTranslationApiUrlInput(getTranslationApiUrl());
+    toast.success('Translation endpoint saved');
   };
 
   const showReport = (report: ResetReport) => {
@@ -160,17 +160,14 @@ export default function SettingsTab() {
           <Input
             id="translateApiUrl"
             placeholder="https://estbirding.kristian03.workers.dev"
-            value={translateEndpointOverride}
-            onChange={(e) => setTranslateEndpointOverride(e.target.value)}
+            value={translationApiUrl}
+            onChange={(e) => setTranslationApiUrlInput(e.target.value)}
           />
           <Button variant="outline" onClick={handleSaveTranslateEndpoint} className="w-full">
             Save translation endpoint
           </Button>
           <p className="text-xs text-muted-foreground">
-            Use your Cloudflare Worker URL (e.g. https://estbirding.kristian03.workers.dev). Leave empty to use build env VITE_TRANSLATE_API_URL.
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Build env fallback: {envTranslateEndpoint || '(empty)'}
+            Use your Cloudflare Worker URL (e.g. https://estbirding.kristian03.workers.dev).
           </p>
         </div>
 

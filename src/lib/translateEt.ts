@@ -9,6 +9,16 @@ export interface TranslateEtOutput {
   body_et: string;
 }
 
+export class TranslateEtHttpError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+    this.name = 'TranslateEtHttpError';
+  }
+}
+
 const inFlight = new Map<string, Promise<TranslateEtOutput | null>>();
 
 function weakHash(input: string): string {
@@ -80,7 +90,16 @@ export async function translateEt(input: TranslateEtInput): Promise<TranslateEtO
     body: JSON.stringify(normalized),
   })
     .then(async (res) => {
-      if (!res.ok) return null;
+      if (!res.ok) {
+        let errorMessage = `HTTP ${res.status}`;
+        try {
+          const payload = await res.json() as { error?: unknown };
+          if (payload?.error) errorMessage = String(payload.error);
+        } catch {
+          // Ignore JSON parse errors for error bodies.
+        }
+        throw new TranslateEtHttpError(res.status, errorMessage);
+      }
       const parsed = await res.json() as Partial<TranslateEtOutput>;
       const result = {
         title_et: String(parsed.title_et || ''),
@@ -89,7 +108,6 @@ export async function translateEt(input: TranslateEtInput): Promise<TranslateEtO
       writeCache(cacheKey, result);
       return result;
     })
-    .catch(() => null)
     .finally(() => {
       inFlight.delete(cacheKey);
     });

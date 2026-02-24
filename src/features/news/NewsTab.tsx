@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { isAutoTranslateNewsToEtEnabled } from '@/lib/settings';
 import { isEstonianLocale, normalizeLocale, resolveAppLocale } from '@/lib/locale';
-import { translateEt, type TranslateEtOutput } from '@/lib/translateEt';
+import { TranslateEtHttpError, translateEt, type TranslateEtOutput } from '@/lib/translateEt';
 import { toast } from 'sonner';
 
 /* ── Types ──────────────────────────────────────── */
@@ -192,6 +192,7 @@ const BIRDING_POLAND_KEY = 'facebook_birdingpoland';
 interface EtTranslationState {
   translated: TranslateEtOutput | null;
   loading: boolean;
+  errorStatus: number | null;
 }
 
 function useEtTranslation({
@@ -219,6 +220,7 @@ function useEtTranslation({
     } : null,
   );
   const [loading, setLoading] = useState(false);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const bodyText = (body || '').trim();
   const normalizedLang = normalizeLocale(sourceLang || '');
   const isLikelyEstonian = normalizedLang === 'et';
@@ -240,10 +242,12 @@ function useEtTranslation({
 
     if (!shouldTranslate) {
       setLoading(false);
+      setErrorStatus(null);
       return () => { cancelled = true; };
     }
 
     setLoading(true);
+    setErrorStatus(null);
     translateEt({
       id,
       title,
@@ -253,8 +257,13 @@ function useEtTranslation({
         if (cancelled || !result) return;
         setTranslated(result);
       })
-      .catch(() => {
-        // If endpoint fails, UI falls back to original content.
+      .catch((error) => {
+        if (cancelled) return;
+        if (error instanceof TranslateEtHttpError) {
+          setErrorStatus(error.status);
+        } else {
+          setErrorStatus(0);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -265,7 +274,7 @@ function useEtTranslation({
     };
   }, [shouldTranslate, id, title, bodyText]);
 
-  return { translated, loading };
+  return { translated, loading, errorStatus };
 }
 
 function useOnceVisible<T extends HTMLElement>(rootMargin = '120px') {
@@ -769,7 +778,14 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
         ) : contentError ? (
           <p className="text-sm text-muted-foreground italic">{contentError}</p>
         ) : displayBody ? (
-          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{displayBody}</p>
+          <div className="space-y-2">
+            {translation.errorStatus !== null && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900">
+                Tõlkimine ebaõnnestus (HTTP {translation.errorStatus}). Kuvan originaalteksti.
+              </div>
+            )}
+            <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{displayBody}</p>
+          </div>
         ) : (
           <p className="text-sm text-muted-foreground italic">Sisu pole saadaval. Ava originaal.</p>
         )}

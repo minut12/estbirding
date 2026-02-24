@@ -23,6 +23,8 @@ export default function SettingsTab() {
   const [form, setForm] = useState<AppSettings>(loadSettings);
   const [confirmMode, setConfirmMode] = useState<ResetMode>(null);
   const [resetting, setResetting] = useState(false);
+  const [testTranslateLoading, setTestTranslateLoading] = useState(false);
+  const [testTranslateResult, setTestTranslateResult] = useState('');
 
   useEffect(() => {
     setForm(loadSettings());
@@ -45,6 +47,32 @@ export default function SettingsTab() {
     toast.success(checked
       ? 'Automaatne tõlkimine sisse lülitatud'
       : 'Automaatne tõlkimine välja lülitatud');
+  };
+
+  const handleTestTranslate = async () => {
+    setTestTranslateLoading(true);
+    setTestTranslateResult('');
+    try {
+      const response = await fetch('/api/translate-et', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: 'dev-test-pl',
+          title: 'Bocian biały widziany nad rzeką',
+          body: 'Dziś rano @birdwatcher zauważył 3 osobniki przy drodze nr 12. Szczegóły: https://example.com #ptaki 🐦',
+        }),
+      });
+      const text = await response.text();
+      setTestTranslateResult(`HTTP ${response.status}\n${text}`);
+      if (response.ok) toast.success('Test translate õnnestus');
+      else toast.error(`Test translate ebaõnnestus (HTTP ${response.status})`);
+    } catch (error: any) {
+      const message = error?.message || 'Unknown error';
+      setTestTranslateResult(`REQUEST FAILED\n${message}`);
+      toast.error('Test translate ebaõnnestus');
+    } finally {
+      setTestTranslateLoading(false);
+    }
   };
 
   const showReport = (report: ResetReport) => {
@@ -106,6 +134,22 @@ export default function SettingsTab() {
               checked={form.autoTranslateToEstonian}
               onCheckedChange={handleAutoTranslateToggle}
             />
+          </div>
+          <div className="rounded-md border border-border p-3 space-y-2">
+            <div className="text-sm font-medium">Admin test</div>
+            <Button
+              variant="outline"
+              onClick={handleTestTranslate}
+              disabled={testTranslateLoading}
+              className="w-full"
+            >
+              {testTranslateLoading ? 'Testin...' : 'Test translate'}
+            </Button>
+            {testTranslateResult && (
+              <pre className="max-h-40 overflow-auto rounded bg-muted p-2 text-xs whitespace-pre-wrap break-words">
+                {testTranslateResult}
+              </pre>
+            )}
           </div>
         </div>
 

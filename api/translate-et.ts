@@ -66,7 +66,7 @@ export default async function handler(req: any, res: any): Promise<void> {
 
   const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
   if (!apiKey) {
-    json(res, 500, { error: 'Server misconfigured' });
+    json(res, 503, { error: 'OPENAI_API_KEY missing' });
     return;
   }
 

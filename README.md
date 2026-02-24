@@ -74,31 +74,19 @@ Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/c
 
 ## Translation endpoint (news translation)
 
-The app translates non-Estonian news into Estonian via a Cloudflare Worker endpoint and local client cache.
+The app translates non-Estonian news into Estonian via a translation HTTP endpoint and local client cache.
 
 ### App configuration
 
-- Set `VITE_TRANSLATE_API_URL` to your Worker URL, for example:
-  - `VITE_TRANSLATE_API_URL=https://<worker-name>.<account>.workers.dev/translate-et`
+- Set `VITE_TRANSLATE_API_URL` to your translation API URL, for example:
+  - `VITE_TRANSLATE_API_URL=https://<api-domain>/translate-et`
 - Vite only exposes client env vars prefixed with `VITE_`.
 - Runtime override is also available in app Settings (`Translation API URL`) and is stored in localStorage.
 - The client never calls OpenAI directly.
 
-### Worker setup
+## CORS Proxy (Supabase Edge Function)
 
-```sh
-cd cloudflare-worker
-wrangler login
-wrangler secret put OPENAI_API_KEY
-wrangler deploy
-```
-
-- Optional: set `OPENAI_TRANSLATION_MODEL` (default `gpt-4.1-mini`).
-- Ensure the Worker has `workers.dev` enabled.
-
-## CORS Proxy (No Cloudflare)
-
-Use the Supabase Edge Function proxy instead of Cloudflare for cross-origin bird data requests.
+Use the Supabase Edge Function proxy for cross-origin bird data requests.
 
 ### Deploy
 
@@ -118,6 +106,7 @@ curl "http://localhost:54321/functions/v1/proxy?url=https%3A%2F%2Felurikkus.ee%2
 - `elurikkus.ee`
 - `www.elurikkus.ee`
 - `api.ebird.org`
+- Edit allowlist in `supabase/functions/proxy/index.ts` (`ALLOWED_HOSTS`)
 
 ### Frontend config
 

@@ -1,6 +1,6 @@
 const KEY = 'estbirding.translationApiUrl';
 const LEGACY_KEY = 'translate_api_url_override';
-export const WORKER_DEFAULT_ENDPOINT = 'https://estbirding.kristian03.workers.dev';
+export const WORKER_DEFAULT_ENDPOINT = '';
 export const TRANSLATION_ENDPOINT_UPDATED_EVENT = 'translation-endpoint-updated';
 
 export function getStoredEndpoint(): string {

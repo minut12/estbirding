@@ -130,7 +130,7 @@ export default function SettingsTab() {
           throw new Error(`status=${healthRes.status} ${preview || '[empty body]'}`);
         }
       } catch (error: any) {
-        throw new Error(`Worker blocked (likely Cloudflare Access). Open this URL in browser: ${healthUrl}`);
+        throw new Error(`Translation backend blocked or unreachable. Open this URL in browser: ${healthUrl}`);
       }
 
       const payload = {
@@ -240,7 +240,7 @@ export default function SettingsTab() {
           <Label htmlFor="translateApiUrl">Translation API URL</Label>
           <Input
             id="translateApiUrl"
-            placeholder="https://estbirding.kristian03.workers.dev"
+            placeholder="https://<backend-domain>/translate-et"
             value={translationApiUrl}
             onChange={(e) => setTranslationApiUrlInput(e.target.value)}
           />
@@ -248,10 +248,10 @@ export default function SettingsTab() {
             Save translation endpoint
           </Button>
           <Button variant="outline" onClick={handleUseWorkerDefault} className="w-full">
-            Use Worker default
+            Clear translation endpoint
           </Button>
           <p className="text-xs text-muted-foreground">
-            Use your Cloudflare Worker URL (e.g. https://estbirding.kristian03.workers.dev?t=YOUR_TOKEN).
+            Use your translation backend base URL (query params supported).
           </p>
           <p className="text-xs text-muted-foreground">
             Resolved endpoint: {resolvedEndpoint || '(empty)'}

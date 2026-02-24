@@ -9,6 +9,17 @@ const ALLOWED_ORIGINS = new Set([
   "https://estbirding.ee",
 ]);
 
+function redactUrlForLog(value: string): string {
+  try {
+    const u = new URL(value);
+    const hasQuery = Boolean(u.search);
+    const hasHash = Boolean(u.hash);
+    return `${u.origin}${u.pathname}${hasQuery ? "?<redacted>" : ""}${hasHash ? "#<redacted>" : ""}`;
+  } catch {
+    return "<invalid-url>";
+  }
+}
+
 function resolveAllowedOrigin(origin: string | null): string {
   if (!origin) return "*";
   if (ALLOWED_ORIGINS.has(origin)) return origin;
@@ -58,8 +69,12 @@ Deno.serve(async (req) => {
   } catch {
     return jsonError(400, "Invalid url query parameter", origin);
   }
+  if (target.protocol !== "http:" && target.protocol !== "https:") {
+    return jsonError(400, "Only http/https target URLs are allowed", origin);
+  }
 
   if (!ALLOWED_HOSTS.has(target.hostname)) {
+    console.warn(`[proxy] blocked host target=${redactUrlForLog(rawTarget)} host=${target.hostname}`);
     return jsonError(403, `Host not allowed: ${target.hostname}`, origin);
   }
 
@@ -78,6 +93,7 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown upstream error";
+    console.warn(`[proxy] upstream fetch failed target=${redactUrlForLog(rawTarget)} message=${message}`);
     return jsonError(502, `Upstream request failed: ${message}`, origin);
   }
 

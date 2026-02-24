@@ -212,7 +212,7 @@ export default function NewsTab() {
         console.error('[NEWS] sources query failed', error);
         throw error;
       }
-      return (data || []) as NewsSource[];
+      return (data || []) as unknown as NewsSource[];
     },
     staleTime: 60_000,
   });

@@ -55,6 +55,6 @@ Deno.serve(async (req) => {
     });
     return jsonResponse(200, { title_et, body_et, translate_hash: translateHash });
   } catch (error) {
-    return jsonResponse(500, { error: error.message });
+    return jsonResponse(500, { error: (error as Error).message });
   }
 });

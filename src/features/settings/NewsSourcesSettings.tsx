@@ -28,7 +28,7 @@ export default function NewsSourcesSettings() {
     queryKey: ['news-sources-settings'],
     queryFn: async () => {
       const { data } = await supabase.from('news_sources').select('id, name, slug, source_key, type, homepage_url, feed_url, is_enabled').eq('is_active', true);
-      return (data || []) as NewsSource[];
+      return (data || []) as unknown as NewsSource[];
     },
   });
 

@@ -26,7 +26,7 @@ import {
   TRANSLATION_ENDPOINT_UPDATED_EVENT,
   WORKER_DEFAULT_ENDPOINT,
 } from '@/config/translationEndpoint';
-import { HttpClientError, httpGetJson, httpPostJson } from '@/lib/httpClient';
+import { HttpClientError, getJson, isNativePlatform, postJson } from '@/lib/httpClient';
 
 type ResetMode = 'soft' | 'hard' | null;
 
@@ -87,10 +87,18 @@ export default function SettingsTab() {
     setTestTranslateResult('');
     const baseEndpoint = resolveBaseEndpoint(translationApiUrl);
     const endpoint = resolveEndpoint(translationApiUrl);
+    if (import.meta.env.DEV) {
+      const health = resolveHealthUrl(endpoint);
+      console.info('[translate] native=', isNativePlatform(), 'health=', health, 'translate=', endpoint);
+    }
     try {
       const healthUrl = resolveHealthUrl(endpoint);
       try {
-        await httpGetJson(healthUrl);
+        const healthRes = await getJson(healthUrl);
+        if (healthRes.status !== 200) {
+          const preview = String(healthRes.rawText || JSON.stringify(healthRes.data) || '').slice(0, 200).replace(/\s+/g, ' ');
+          throw new Error(`status=${healthRes.status} ${preview || '[empty body]'}`);
+        }
       } catch (error: any) {
         if (error instanceof HttpClientError) {
           throw new Error(`Cannot reach Worker (health). status=${error.status || 0}. endpoint=${error.endpoint}. ${error.message}`);
@@ -100,10 +108,15 @@ export default function SettingsTab() {
 
       const payload = {
         id: 'dev-test-pl',
-        title: 'Bocian bialy widziany nad rzeka',
-        body: 'Dzis rano @birdwatcher zauwazyl 3 osobniki przy drodze nr 12. Szczegoly: https://example.com #ptaki',
+        title: 'Jedna z dwóch mew wróciła na zbiornik',
+        body: 'Powróciła dziś rano. Szczegóły: https://example.com #ptaki',
       };
-      const result = await httpPostJson(endpoint, payload) as { title_et?: unknown; body_et?: unknown; error?: unknown };
+      const translateRes = await postJson(endpoint, payload);
+      if (translateRes.status !== 200) {
+        const preview = String(translateRes.rawText || JSON.stringify(translateRes.data) || '').slice(0, 200).replace(/\s+/g, ' ');
+        throw new Error(`status=${translateRes.status}. endpoint=${endpoint}. ${preview || '[empty body]'}`);
+      }
+      const result = (translateRes.data || {}) as { title_et?: unknown; body_et?: unknown; error?: unknown };
       if (typeof result.title_et !== 'string' || typeof result.body_et !== 'string') {
         throw new Error(`Invalid JSON payload from ${endpoint}`);
       }

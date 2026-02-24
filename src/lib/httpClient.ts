@@ -1,3 +1,5 @@
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
+
 export class HttpClientError extends Error {
   status: number;
   endpoint: string;
@@ -10,15 +12,17 @@ export class HttpClientError extends Error {
   }
 }
 
-const MAX_ERROR_PREVIEW_CHARS = 200;
+export type HttpJsonResponse = {
+  status: number;
+  data: any;
+  rawText?: string;
+};
 
-function normalizeBodyPreview(input: unknown): string {
-  return String(input || '').slice(0, MAX_ERROR_PREVIEW_CHARS).replace(/\s+/g, ' ').trim();
-}
+const MAX_PREVIEW = 200;
 
-function parseNativeData(data: unknown): unknown {
-  if (typeof data !== 'string') return data;
-  const trimmed = data.trim();
+function parseMaybeJson(value: unknown): any {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
   if (!trimmed) return {};
   try {
     return JSON.parse(trimmed);
@@ -27,77 +31,66 @@ function parseNativeData(data: unknown): unknown {
   }
 }
 
-function getNativeHttp() {
-  const cap = (globalThis as any)?.Capacitor;
-  const nativeHttp = (globalThis as any)?.CapacitorHttp || cap?.Plugins?.CapacitorHttp;
-  const isNative = cap?.isNativePlatform?.() === true;
-  return { isNative, nativeHttp };
+export function isNativePlatform(): boolean {
+  return Capacitor?.isNativePlatform?.() === true;
 }
 
-async function requestJson(method: 'GET' | 'POST', url: string, data?: unknown): Promise<any> {
+async function nativeRequest(method: 'GET' | 'POST', url: string, body?: any): Promise<HttpJsonResponse> {
   const endpoint = String(url || '').trim();
-  const { isNative, nativeHttp } = getNativeHttp();
-
-  if (isNative && nativeHttp?.request) {
-    let nativeResponse: any;
-    try {
-      nativeResponse = await nativeHttp.request({
-        method,
-        url: endpoint,
-        headers: { 'Content-Type': 'application/json' },
-        data,
-      });
-    } catch (error: any) {
-      const message = error?.message || 'Failed to fetch';
-      throw new HttpClientError(0, endpoint, `${message}. Endpoint=${endpoint}`);
-    }
-
-    const status = Number(nativeResponse?.status || 0);
-    const parsed = parseNativeData(nativeResponse?.data);
-    if (status < 200 || status >= 300) {
-      const preview = normalizeBodyPreview(typeof parsed === 'string' ? parsed : JSON.stringify(parsed));
-      throw new HttpClientError(status, endpoint, `HTTP ${status} ${preview || 'Request failed'}`);
-    }
-    if (typeof parsed === 'string') {
-      throw new HttpClientError(status, endpoint, `HTTP ${status} Expected JSON, got text: ${normalizeBodyPreview(parsed)}`);
-    }
-    return parsed;
+  if (!CapacitorHttp?.request) {
+    throw new HttpClientError(0, endpoint, 'CapacitorHttp unavailable');
   }
+  try {
+    const response = await CapacitorHttp.request({
+      method,
+      url: endpoint,
+      headers: { 'Content-Type': 'application/json' },
+      data: method === 'POST' ? body : undefined,
+    });
+    const parsed = parseMaybeJson(response?.data);
+    const rawText = typeof response?.data === 'string' ? response.data.slice(0, MAX_PREVIEW) : undefined;
+    return {
+      status: Number(response?.status || 0),
+      data: parsed,
+      rawText,
+    };
+  } catch (error: any) {
+    throw new HttpClientError(0, endpoint, error?.message || 'Failed to fetch');
+  }
+}
 
+async function webRequest(method: 'GET' | 'POST', url: string, body?: any): Promise<HttpJsonResponse> {
+  const endpoint = String(url || '').trim();
   let response: Response;
   try {
     response = await fetch(endpoint, {
       method,
       headers: { 'content-type': 'application/json' },
-      body: method === 'POST' ? JSON.stringify(data || {}) : undefined,
+      body: method === 'POST' ? JSON.stringify(body || {}) : undefined,
     });
   } catch (error: any) {
-    const message = error?.message || 'Failed to fetch';
-    throw new HttpClientError(0, endpoint, `${message}. Endpoint=${endpoint}`);
+    throw new HttpClientError(0, endpoint, error?.message || 'Failed to fetch');
   }
 
   const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-  const isJson = contentType.includes('application/json');
-  if (!isJson) {
-    const raw = await response.text();
-    const preview = normalizeBodyPreview(raw);
-    throw new HttpClientError(response.status, endpoint, `HTTP ${response.status} Expected JSON, got ${contentType || 'unknown'}: ${preview || '[empty body]'}`);
+  if (contentType.includes('application/json')) {
+    const data = await response.json();
+    return { status: response.status, data };
   }
-
-  const parsed = await response.json();
-  if (!response.ok) {
-    const preview = normalizeBodyPreview(typeof parsed === 'string' ? parsed : JSON.stringify(parsed));
-    throw new HttpClientError(response.status, endpoint, `HTTP ${response.status} ${preview || 'Request failed'}`);
-  }
-
-  return parsed;
+  const text = await response.text();
+  return {
+    status: response.status,
+    data: text,
+    rawText: text.slice(0, MAX_PREVIEW),
+  };
 }
 
-export async function httpGetJson(url: string): Promise<any> {
-  return requestJson('GET', url);
+export async function getJson(url: string): Promise<HttpJsonResponse> {
+  if (isNativePlatform()) return nativeRequest('GET', url);
+  return webRequest('GET', url);
 }
 
-export async function httpPostJson(url: string, data: any): Promise<any> {
-  return requestJson('POST', url, data);
+export async function postJson(url: string, body: any): Promise<HttpJsonResponse> {
+  if (isNativePlatform()) return nativeRequest('POST', url, body);
+  return webRequest('POST', url, body);
 }
-

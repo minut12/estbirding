@@ -1,5 +1,5 @@
 import { getEnvEndpoint, getStoredEndpoint, resolveEndpoint } from '@/config/translationEndpoint';
-import { HttpClientError, httpPostJson } from '@/lib/httpClient';
+import { HttpClientError, postJson } from '@/lib/httpClient';
 
 export interface TranslateEtInput {
   id: string;
@@ -99,8 +99,13 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
   const pending = inFlight.get(cacheKey);
   if (pending) return pending;
 
-  const request = httpPostJson(endpoint, normalized)
-    .then((parsed: Partial<TranslateEtOutput>) => {
+  const request = postJson(endpoint, normalized)
+    .then((response) => {
+      if (response.status !== 200) {
+        const preview = String(response.rawText || JSON.stringify(response.data) || '').slice(0, 200).replace(/\s+/g, ' ');
+        throw new TranslateEtHttpError(response.status, `status=${response.status}. endpoint=${endpoint}. ${preview || '[empty body]'}`);
+      }
+      const parsed = (response.data || {}) as Partial<TranslateEtOutput>;
       if (typeof parsed.title_et !== 'string' || typeof parsed.body_et !== 'string') {
         throw new Error('Invalid JSON payload: required string fields title_et/body_et');
       }

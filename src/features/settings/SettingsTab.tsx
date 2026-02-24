@@ -20,6 +20,7 @@ import {
   getEnvEndpoint,
   getStoredEndpoint,
   resolveEndpoint,
+  resolveHealthUrl,
   setStoredEndpoint,
   TRANSLATION_ENDPOINT_UPDATED_EVENT,
   WORKER_DEFAULT_ENDPOINT,
@@ -82,31 +83,58 @@ export default function SettingsTab() {
   const handleTestTranslate = async () => {
     setTestTranslateLoading(true);
     setTestTranslateResult('');
+    const endpoint = resolveEndpoint(translationApiUrl);
     try {
-      const endpoint = resolveEndpoint(translationApiUrl);
+      const healthUrl = resolveHealthUrl(endpoint);
+      let healthResponse: Response;
+      try {
+        healthResponse = await fetch(healthUrl, { method: 'GET' });
+      } catch (error: any) {
+        const message = error?.message || 'Failed to fetch';
+        throw new Error(`Cannot reach Worker (health). ${message}. Endpoint=${healthUrl}`);
+      }
+      if (!healthResponse.ok) {
+        const healthPreview = (await healthResponse.text()).slice(0, 200).replace(/\s+/g, ' ');
+        throw new Error(`Cannot reach Worker (health). HTTP ${healthResponse.status}. ${healthPreview || '[empty body]'}`);
+      }
+
       const payload = {
         id: 'dev-test-pl',
         title: 'Bocian bialy widziany nad rzeka',
         body: 'Dzis rano @birdwatcher zauwazyl 3 osobniki przy drodze nr 12. Szczegoly: https://example.com #ptaki',
       };
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const rawText = await response.text();
-      let result: { title_et?: unknown; body_et?: unknown; error?: unknown } = {};
+      let response: Response;
       try {
-        result = rawText ? JSON.parse(rawText) : {};
-      } catch {
-        // Keep raw text fallback for error preview.
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } catch (error: any) {
+        const message = error?.message || 'Failed to fetch';
+        throw new Error(`${message}. Endpoint=${endpoint}`);
+      }
+      const rawText = await response.text();
+      const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+      const isJson = contentType.includes('application/json');
+      let result: { title_et?: unknown; body_et?: unknown; error?: unknown } = {};
+      if (isJson) {
+        try {
+          result = rawText ? JSON.parse(rawText) : {};
+        } catch {
+          // Keep raw text fallback for error preview.
+        }
       }
       if (!response.ok) {
-        const preview = String(rawText || JSON.stringify(result) || '').slice(0, 120).replace(/\s+/g, ' ');
+        const preview = String(rawText || JSON.stringify(result) || '').slice(0, 200).replace(/\s+/g, ' ');
         throw new Error(`HTTP ${response.status} ${preview || 'Request failed'}`);
       }
+      if (!isJson) {
+        const preview = String(rawText || '').slice(0, 200).replace(/\s+/g, ' ');
+        throw new Error(`HTTP ${response.status} Expected JSON, got ${contentType || 'unknown'}: ${preview || '[empty body]'}`);
+      }
       if (typeof result.title_et !== 'string' || typeof result.body_et !== 'string') {
-        const preview = String(rawText || '').slice(0, 120).replace(/\s+/g, ' ');
+        const preview = String(rawText || '').slice(0, 200).replace(/\s+/g, ' ');
         throw new Error(`HTTP ${response.status} ${preview || 'Invalid JSON payload'}`);
       }
       setTestTranslateResult(JSON.stringify(result, null, 2));

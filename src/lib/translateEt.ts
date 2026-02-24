@@ -101,7 +101,7 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
 
   const request = fetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify(normalized),
   })
     .then(async (res) => {
@@ -143,7 +143,7 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[translate] failed. URL=${endpoint}. Error=${message}`, error);
       if (error instanceof TranslateEtHttpError) throw error;
-      throw new Error(message);
+      throw new Error(`${message}. Endpoint=${endpoint}`);
     })
     .finally(() => {
       inFlight.delete(cacheKey);

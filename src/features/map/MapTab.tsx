@@ -9,65 +9,6 @@ import { APP_VERSION } from '@/lib/version';
 import { fetchSharedAvatars, getMergedAvatars, notifyIframe } from '@/lib/avatar-storage';
 
 const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
-type EnvRecord = Record<string, unknown>;
-
-function getImportMetaEnv(): EnvRecord {
-  try {
-    return ((import.meta as unknown as { env?: EnvRecord })?.env || {}) as EnvRecord;
-  } catch {
-    return {};
-  }
-}
-
-function getProcessEnv(): EnvRecord {
-  try {
-    const proc = (globalThis as unknown as { process?: { env?: EnvRecord } }).process;
-    return (proc?.env || {}) as EnvRecord;
-  } catch {
-    return {};
-  }
-}
-
-function pickString(values: unknown[]): string {
-  for (const value of values) {
-    const normalized = String(value || '').trim();
-    if (normalized) return normalized;
-  }
-  return '';
-}
-
-function sanitizeSupabaseUrl(rawValue: string): string {
-  const compact = String(rawValue || '').trim().replace(/[\r\n\t]+/g, '');
-  if (!compact) return '';
-  let candidate = compact.replace(/\/+$/g, '');
-  if (!/^https?:\/\//i.test(candidate)) candidate = `https://${candidate.replace(/^\/+/, '')}`;
-  try {
-    const parsed = new URL(candidate);
-    parsed.protocol = 'https:';
-    parsed.hostname = parsed.hostname.replace(/\.+$/, '');
-    return parsed.toString().replace(/\/+$/, '');
-  } catch {
-    return '';
-  }
-}
-
-function resolveMapSupabaseConfig(): { url: string; anonKey: string } {
-  const importMetaEnv = getImportMetaEnv();
-  const processEnv = getProcessEnv();
-  const rawUrl = pickString([
-    importMetaEnv.VITE_SUPABASE_URL,
-    processEnv.VITE_SUPABASE_URL,
-    processEnv.NEXT_PUBLIC_SUPABASE_URL,
-    processEnv.EXPO_PUBLIC_SUPABASE_URL,
-  ]);
-  const anonKey = pickString([
-    importMetaEnv.VITE_SUPABASE_ANON_KEY,
-    processEnv.VITE_SUPABASE_ANON_KEY,
-    processEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    processEnv.EXPO_PUBLIC_SUPABASE_ANON_KEY,
-  ]);
-  return { url: sanitizeSupabaseUrl(rawUrl), anonKey };
-}
 
 interface MapTabProps {
   isActive?: boolean;
@@ -76,7 +17,6 @@ interface MapTabProps {
 export default function MapTab({ isActive = true }: MapTabProps) {
   const [selectedId, setSelectedId] = useState(getActiveMap().id);
   const current = maps.find((m) => m.id === selectedId) ?? getActiveMap();
-  const supabaseConfig = useMemo(() => resolveMapSupabaseConfig(), []);
   const iframeSrc = useMemo(() => {
     const sep = current.source.includes('?') ? '&' : '?';
     return `${current.source}${sep}v=${APP_VERSION}`;
@@ -95,13 +35,6 @@ export default function MapTab({ isActive = true }: MapTabProps) {
 
   // Send MAP_SHOWN to iframe so Leaflet can invalidateSize
   const sendMapShown = useCallback(() => sendToIframe({ type: 'MAP_SHOWN' }), [sendToIframe]);
-  const sendSupabaseConfigToIframe = useCallback(() => {
-    sendToIframe({
-      type: 'SUPABASE_CONFIG',
-      url: supabaseConfig.url,
-      anonKey: supabaseConfig.anonKey,
-    });
-  }, [sendToIframe, supabaseConfig.anonKey, supabaseConfig.url]);
 
   // Send MAP_REFRESH_VISIBLE to iframe
   const sendRefreshVisible = useCallback(() => {
@@ -149,13 +82,10 @@ export default function MapTab({ isActive = true }: MapTabProps) {
       if (ev.data?.type === 'INSETS_REQUEST') {
         sendAppInsets();
       }
-      if (ev.data?.type === 'SUPABASE_CONFIG_REQUEST') {
-        sendSupabaseConfigToIframe();
-      }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [sendAvatarsToIframe, sendAppInsets, sendSupabaseConfigToIframe]);
+  }, [sendAvatarsToIframe, sendAppInsets]);
 
   useEffect(() => {
     const t = setTimeout(sendMapShown, 500);
@@ -202,7 +132,6 @@ export default function MapTab({ isActive = true }: MapTabProps) {
     iframeReadyRef.current = true;
     sendMapShown();
     // Send avatars and insets when iframe loads
-    setTimeout(sendSupabaseConfigToIframe, 200);
     setTimeout(sendAvatarsToIframe, 300);
     setTimeout(sendAppInsets, 400);
     // Auto-refresh after initial load

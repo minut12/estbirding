@@ -1,4 +1,4 @@
-project_id = "YOUR_SUPABASE_PROJECT_REF"
+project_id = "eenwcyuyugyrjgpivxrq"
 
 [functions.elurikkus-proxy]
 verify_jwt = false
@@ -54,11 +54,5 @@ verify_jwt = false
 [functions.translation-status]
 verify_jwt = false
 
-[functions.openai_status]
-verify_jwt = false
-
 [functions.translate-text]
-verify_jwt = false
-
-[functions.ping]
 verify_jwt = false

@@ -228,6 +228,7 @@ export type Database = {
           archived: boolean
           body: string | null
           body_et: string | null
+          cached_image_url: string | null
           content_fetch_error: string | null
           content_fetched_at: string | null
           content_html: string | null
@@ -236,9 +237,9 @@ export type Database = {
           fetched_at: string
           guid: string
           id: string
-          image_cached_url: string | null
           image_url: string | null
           image_url_original: string | null
+          lang: string | null
           language: string
           permalink_url: string | null
           published_at: string
@@ -250,6 +251,7 @@ export type Database = {
           summary: string | null
           title: string
           title_et: string | null
+          translate_hash: string | null
           translated_at: string | null
           translated_body: string | null
           translated_title: string | null
@@ -262,6 +264,7 @@ export type Database = {
           archived?: boolean
           body?: string | null
           body_et?: string | null
+          cached_image_url?: string | null
           content_fetch_error?: string | null
           content_fetched_at?: string | null
           content_html?: string | null
@@ -270,9 +273,9 @@ export type Database = {
           fetched_at?: string
           guid: string
           id?: string
-          image_cached_url?: string | null
           image_url?: string | null
           image_url_original?: string | null
+          lang?: string | null
           language?: string
           permalink_url?: string | null
           published_at?: string
@@ -284,6 +287,7 @@ export type Database = {
           summary?: string | null
           title: string
           title_et?: string | null
+          translate_hash?: string | null
           translated_at?: string | null
           translated_body?: string | null
           translated_title?: string | null
@@ -296,6 +300,7 @@ export type Database = {
           archived?: boolean
           body?: string | null
           body_et?: string | null
+          cached_image_url?: string | null
           content_fetch_error?: string | null
           content_fetched_at?: string | null
           content_html?: string | null
@@ -304,9 +309,9 @@ export type Database = {
           fetched_at?: string
           guid?: string
           id?: string
-          image_cached_url?: string | null
           image_url?: string | null
           image_url_original?: string | null
+          lang?: string | null
           language?: string
           permalink_url?: string | null
           published_at?: string
@@ -318,6 +323,7 @@ export type Database = {
           summary?: string | null
           title?: string
           title_et?: string | null
+          translate_hash?: string | null
           translated_at?: string | null
           translated_body?: string | null
           translated_title?: string | null
@@ -348,7 +354,6 @@ export type Database = {
           key: string | null
           name: string
           slug: string
-          source_key: string | null
           type: string
           updated_at: string
         }
@@ -363,7 +368,6 @@ export type Database = {
           key?: string | null
           name: string
           slug: string
-          source_key?: string | null
           type?: string
           updated_at?: string
         }
@@ -378,7 +382,6 @@ export type Database = {
           key?: string | null
           name?: string
           slug?: string
-          source_key?: string | null
           type?: string
           updated_at?: string
         }

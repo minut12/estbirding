@@ -1,7 +1,6 @@
 ﻿import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabaseClient';
-import { invokeEdgeFunction } from '@/lib/edge-functions';
+import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -28,7 +27,7 @@ export default function NewsSourcesSettings() {
     queryKey: ['news-sources-settings'],
     queryFn: async () => {
       const { data } = await supabase.from('news_sources').select('id, name, slug, source_key, type, homepage_url, feed_url, is_enabled').eq('is_active', true);
-      return (data || []) as unknown as NewsSource[];
+      return (data || []) as NewsSource[];
     },
   });
 
@@ -53,21 +52,17 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
 
   const updateMutation = useMutation({
     mutationFn: async () => {
-      await invokeEdgeFunction(supabase, 'news-source-update', {
-        id: source.id,
-        feed_url: feedUrl || null,
-        is_enabled: enabled,
+      const { error } = await supabase.functions.invoke('news-source-update', {
+        body: { id: source.id, feed_url: feedUrl || null, is_enabled: enabled },
       });
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['news-sources-settings'] });
       queryClient.invalidateQueries({ queryKey: ['news-sources'] });
       toast.success(`${source.name} uuendatud`);
     },
-    onError: (error: any) => {
-      console.error('[NEWS SOURCES] news-source-update invoke failed', error);
-      toast.error(error?.message || 'Salvestamine ebaõnnestus');
-    },
+    onError: () => toast.error('Salvestamine ebaÃµnnestus'),
   });
 
   const testFeed = async () => {
@@ -75,13 +70,16 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
     setTesting(true);
     setTestResult(null);
     try {
-      const data = await invokeEdgeFunction<any>(supabase, 'news-pull-test', {
-        slug: source.slug,
-        source_key: source.source_key,
-        feed_url: feedUrl,
-        type: source.type,
-        kind: source.type,
+      const { data, error } = await supabase.functions.invoke('news-pull-test', {
+        body: {
+          slug: source.slug,
+          source_key: source.source_key,
+          feed_url: feedUrl,
+          type: source.type,
+          kind: source.type,
+        },
       });
+      if (error) throw error;
       if (data?.ok) {
         setTestResult({
           ok: true,
@@ -92,7 +90,6 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
         setTestResult({ ok: false, error: data?.error || 'Voogu ei Ãµnnestunud lugeda' });
       }
     } catch (e: any) {
-      console.error('[NEWS SOURCES] news-pull-test invoke failed', e);
       setTestResult({ ok: false, error: e?.message || 'Voogu ei Ãµnnestunud lugeda' });
     } finally {
       setTesting(false);

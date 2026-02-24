@@ -192,7 +192,7 @@ Deno.serve(async (req) => {
 
         results.push({ source: source.slug, fetched: items.length, inserted, skipped: false });
       } catch (e) {
-        results.push({ source: source.slug, fetched: 0, inserted: 0, skipped: false, error: (e as Error).message });
+        results.push({ source: source.slug, fetched: 0, inserted: 0, skipped: false, error: e.message });
       }
     }
 
@@ -202,7 +202,7 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     console.error("news-pull error:", error);
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
+    return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

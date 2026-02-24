@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/integrations/supabase/client';
 import {
   Newspaper, ChevronLeft, Archive, ArchiveRestore, ExternalLink,
   Search, RefreshCw, Loader2,
@@ -10,9 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { isAutoTranslateNewsToEtEnabled } from '@/lib/settings';
 import { isEstonianLocale, resolveAppLocale } from '@/lib/locale';
-import { EdgeInvokeError, invokeEdgeFunction } from '@/lib/edge-functions';
-import { SUPABASE_ENV_ERROR } from '@/config/supabaseEnv';
 import { toast } from 'sonner';
 
 /* ── Types ──────────────────────────────────────── */
@@ -212,7 +211,7 @@ export default function NewsTab() {
         console.error('[NEWS] sources query failed', error);
         throw error;
       }
-      return (data || []) as unknown as NewsSource[];
+      return (data || []) as NewsSource[];
     },
     staleTime: 60_000,
   });
@@ -270,15 +269,13 @@ export default function NewsTab() {
     toast.error('Uudiste laadimine ebaõnnestus');
   }, [isError]);
 
-  useEffect(() => {
-    if (!SUPABASE_ENV_ERROR) return;
-    toast.error(SUPABASE_ENV_ERROR);
-  }, []);
-
   // Toggle archive via DB update
   const archiveMutation = useMutation({
     mutationFn: async ({ id, archived }: { id: string; archived: boolean }) => {
-      await invokeEdgeFunction(supabase, 'news-archive', { id, archived });
+      const { error } = await supabase.functions.invoke('news-archive', {
+        body: { id, archived },
+      });
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['news-items'] });
@@ -293,58 +290,36 @@ export default function NewsTab() {
   }, [archiveMutation]);
 
   const runPendingTranslation = useCallback(async (limit: number) => {
-    const missingIds = newsItems
-      .filter((item) => {
-        if ((item.source_key || item.source_slug) === 'eoy') return false;
-        return !item.title_et || !item.body_et;
-      })
-      .slice(0, limit)
-      .map((item) => item.id)
-      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    if (!isAutoTranslateNewsToEtEnabled()) return;
 
-    const candidates: Array<{ name: string; body: Record<string, unknown> }> = [
-      { name: 'translate-missing-news-et', body: missingIds.length > 0 ? { ids: missingIds } : { limit, include_archived: false } },
-      { name: 'translate-news-pending', body: missingIds.length > 0 ? { ids: missingIds } : { limit } },
-    ];
+    const { data: statusData, error: statusError } = await supabase.functions.invoke('translation-status');
+    if (statusError || statusData?.configured !== true) return;
 
-    let lastError: string | null = null;
-    for (const candidate of candidates) {
-      try {
-        const data = await invokeEdgeFunction<any>(supabase, candidate.name, candidate.body);
-        if (data?.error === 'Translation not configured') {
-          toast.error('Translation not configured');
-          return;
-        }
-        const translated = Number(data?.translated || 0);
-        if (translated > 0) {
-          toast.success(`Tolgiti ${translated} uudist`);
-          await queryClient.invalidateQueries({ queryKey: ['news-items'] });
-        }
-        return;
-      } catch (error: any) {
-        console.error(`[NEWS] ${candidate.name} invoke failed`, error);
-        const e = error as EdgeInvokeError;
-        lastError = `name=${e.name} cause=${e.causeName ?? 'n/a'} status=${e.status ?? 'n/a'} message=${e.message}${e.responseText ? ` body=${e.responseText}` : ''}`;
-      }
-    }
-
-    toast.error(lastError || 'Tolge ebaonnestus');
-  }, [newsItems, queryClient]);
-
-  useEffect(() => {
-    if (!showEtContent || newsItems.length === 0) return;
-    const hasMissingEt = newsItems.some((item) => {
-      if ((item.source_key || item.source_slug) === 'eoy') return false;
-      return !item.title_et || !item.body_et;
+    const { data, error } = await supabase.functions.invoke('translate-missing-news-et', {
+      body: { limit, include_archived: false },
     });
-    if (!hasMissingEt) return;
-    void runPendingTranslation(20);
-  }, [showEtContent, newsItems, runPendingTranslation]);
+    if (error) {
+      toast.error(error.message || 'Tolge ebaonnestus');
+      return;
+    }
+    if (data?.error === 'Translation not configured') {
+      toast.error('Translation not configured');
+      return;
+    }
+    const translated = Number(data?.translated || 0);
+    if (translated > 0) {
+      toast.success(`Tolgiti ${translated} uudist`);
+      await queryClient.invalidateQueries({ queryKey: ['news-items'] });
+    }
+  }, [queryClient]);
 
   // Pull / refresh
   const pullMutation = useMutation({
     mutationFn: async () => {
-      const data = await invokeEdgeFunction<any>(supabase, 'news-pull', { force: false });
+      const { data, error } = await supabase.functions.invoke('news-pull', {
+        body: { force: false },
+      });
+      if (error) throw error;
       return data;
     },
     onSuccess: async (data) => {
@@ -586,17 +561,17 @@ function ArticleView({ item, sources, showEtContent, onBack, onToggleArchive }: 
       setLoadingContent(true);
       setContentError(null);
       try {
-        const data = await invokeEdgeFunction<any>(supabase, 'fetch-eoy-article-content', {
-          news_item_id: item.id,
+        const { data, error } = await supabase.functions.invoke('fetch-eoy-article-content', {
+          body: { news_item_id: item.id },
         });
         if (cancelled) return;
+        if (error) throw error;
         if (data?.content_html) {
           setContentHtml(data.content_html);
         } else if (data?.error) {
           setContentError(data.error);
         }
       } catch (e: any) {
-        console.error('[NEWS] fetch-eoy-article-content invoke failed', e);
         if (!cancelled) setContentError(e.message || 'Sisu laadimine ebaõnnestus');
       } finally {
         if (!cancelled) setLoadingContent(false);

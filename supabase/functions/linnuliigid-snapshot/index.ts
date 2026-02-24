@@ -179,7 +179,7 @@ async function sleep(ms: number) {
 }
 
 // Run the full refresh, updating progress in DB
-async function runRefresh(supabase: any) {
+async function runRefresh(supabase: ReturnType<typeof createClient>) {
   const total = SPECIES.length;
 
   // Set status=running
@@ -394,7 +394,7 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     console.error("Snapshot error:", error);
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
+    return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -74,10 +74,22 @@ Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/c
 
 ## Translation endpoint (news translation)
 
-The app translates non-Estonian news into Estonian via Cloudflare Pages Function endpoint `/api/translate-et`, with client-side cache.
+The app translates non-Estonian news into Estonian via a Cloudflare Worker endpoint and local client cache.
 
-- In Cloudflare Pages dashboard, set Production Environment Variable:
-  - `OPENAI_API_KEY=<your key>`
-- Redeploy the Pages project after saving env vars.
-- Optional: `OPENAI_TRANSLATION_MODEL` (default `gpt-4.1-mini`).
+### App configuration
+
+- Set `VITE_TRANSLATE_API_URL` to your Worker URL, for example:
+  - `VITE_TRANSLATE_API_URL=https://<worker-name>.<account>.workers.dev/translate-et`
 - The client never calls OpenAI directly.
+
+### Worker setup
+
+```sh
+cd cloudflare-worker
+wrangler login
+wrangler secret put OPENAI_API_KEY
+wrangler deploy
+```
+
+- Optional: set `OPENAI_TRANSLATION_MODEL` (default `gpt-4.1-mini`).
+- Ensure the Worker has `workers.dev` enabled.

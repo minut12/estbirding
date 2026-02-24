@@ -1,3 +1,5 @@
+import { toast } from 'sonner';
+
 export interface TranslateEtInput {
   id: string;
   title: string;
@@ -21,6 +23,33 @@ export class TranslateEtHttpError extends Error {
 
 const inFlight = new Map<string, Promise<TranslateEtOutput | null>>();
 let loggedEndpoint = false;
+let showedConfigError = false;
+const MAX_ERROR_PREVIEW_CHARS = 120;
+
+function createConfigError(): Error {
+  const message = 'Translate not configured: set VITE_TRANSLATE_API_URL';
+  if (!showedConfigError) {
+    showedConfigError = true;
+    toast.error(message);
+  }
+  return new Error(message);
+}
+
+function resolveEndpoint(): string {
+  const endpoint = String(import.meta.env.VITE_TRANSLATE_API_URL || '').trim();
+  if (!endpoint) {
+    throw createConfigError();
+  }
+  try {
+    const parsed = new URL(endpoint);
+    if (parsed.protocol !== 'https:') {
+      throw new Error('Translate endpoint must use https');
+    }
+    return parsed.toString();
+  } catch {
+    throw createConfigError();
+  }
+}
 
 function weakHash(input: string): string {
   let h = 2166136261;
@@ -77,7 +106,7 @@ export async function translateEt(input: TranslateEtInput): Promise<TranslateEtO
   if (!normalized.id || (!normalized.title && !normalized.body)) {
     return null;
   }
-  const endpoint = '/api/translate-et';
+  const endpoint = resolveEndpoint();
   if (!loggedEndpoint) {
     loggedEndpoint = true;
     console.info(`[translate] using ${endpoint}`);
@@ -102,20 +131,22 @@ export async function translateEt(input: TranslateEtInput): Promise<TranslateEtO
         let errorMessage = `HTTP ${res.status}`;
         if (isJson) {
           const payload = await res.json() as { error?: unknown };
-          if (payload?.error) errorMessage = String(payload.error);
+          if (payload?.error) errorMessage = `HTTP ${res.status} ${String(payload.error)}`;
         } else {
           const bodyText = (await res.text()).trim();
           if (bodyText) {
-            const preview = bodyText.slice(0, 120).replace(/\s+/g, ' ');
-            errorMessage = `HTTP ${res.status} ${preview}`;
+            const preview = bodyText.slice(0, MAX_ERROR_PREVIEW_CHARS).replace(/\s+/g, ' ');
+            errorMessage = `HTTP ${res.status} Expected JSON, got ${contentType || 'unknown'}: ${preview}`;
+          } else {
+            errorMessage = `HTTP ${res.status} Expected JSON, got ${contentType || 'unknown'}`;
           }
         }
         throw new TranslateEtHttpError(res.status, errorMessage);
       }
       if (!isJson) {
         const bodyText = (await res.text()).trim();
-        const preview = bodyText.slice(0, 120).replace(/\s+/g, ' ');
-        throw new Error(`Expected JSON response from ${endpoint}. Got: ${preview || '[empty body]'}`);
+        const preview = bodyText.slice(0, MAX_ERROR_PREVIEW_CHARS).replace(/\s+/g, ' ');
+        throw new Error(`HTTP ${res.status} Expected JSON, got ${contentType || 'unknown'}: ${preview || '[empty body]'}`);
       }
       const parsed = await res.json() as Partial<TranslateEtOutput>;
       const result = {

@@ -16,6 +16,7 @@ import { Trash2, RotateCcw } from 'lucide-react';
 import AvatarManager from './AvatarManager';
 import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
+import { translateEt } from '@/lib/translateEt';
 
 type ResetMode = 'soft' | 'hard' | null;
 
@@ -53,23 +54,17 @@ export default function SettingsTab() {
     setTestTranslateLoading(true);
     setTestTranslateResult('');
     try {
-      const response = await fetch('/api/translate-et', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: 'dev-test-pl',
-          title: 'Bocian biały widziany nad rzeką',
-          body: 'Dziś rano @birdwatcher zauważył 3 osobniki przy drodze nr 12. Szczegóły: https://example.com #ptaki 🐦',
-        }),
+      const result = await translateEt({
+        id: 'dev-test-pl',
+        title: 'Bocian bialy widziany nad rzeka',
+        body: 'Dzis rano @birdwatcher zauwazyl 3 osobniki przy drodze nr 12. Szczegoly: https://example.com #ptaki',
       });
-      const text = await response.text();
-      setTestTranslateResult(`HTTP ${response.status}\n${text}`);
-      if (response.ok) toast.success('Test translate õnnestus');
-      else toast.error(`Test translate ebaõnnestus (HTTP ${response.status})`);
+      setTestTranslateResult(JSON.stringify(result, null, 2));
+      toast.success('Test translate õnnestus');
     } catch (error: any) {
       const message = error?.message || 'Unknown error';
       setTestTranslateResult(`REQUEST FAILED\n${message}`);
-      toast.error('Test translate ebaõnnestus');
+      toast.error(message);
     } finally {
       setTestTranslateLoading(false);
     }

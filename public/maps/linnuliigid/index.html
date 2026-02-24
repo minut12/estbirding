@@ -325,35 +325,87 @@ function _borderColorByDate(isoDate){
 // === SNAPSHOT-BASED FETCHING ===
 // =========================================
 function _sanitizeSupabaseUrl(raw){
-  const trimmed = String(raw || '').trim().replace(/[\r\n\t]+$/g, '').replace(/\/+$/g, '');
-  if(!trimmed) return '';
+  const compact = String(raw || '').trim().replace(/[\r\n\t]+/g, '');
+  if(!compact) return '';
+  let candidate = compact.replace(/\/+$/g, '');
+  if(!/^https?:\/\//i.test(candidate)) candidate = 'https://' + candidate.replace(/^\/+/g, '');
   try{
-    const parsed = new URL(trimmed);
-    if(parsed.protocol !== 'https:') return '';
+    const parsed = new URL(candidate);
+    parsed.protocol = 'https:';
     parsed.hostname = parsed.hostname.replace(/\.+$/g, '');
     return parsed.toString().replace(/\/+$/g, '');
   }catch(e){
     return '';
   }
 }
-function _resolveSnapshotApi(){
+function _resolveSupabaseConfig(){
   const qs = new URLSearchParams(window.location.search);
-  const fromQuery = qs.get('supabase_url');
-  const fromWindow = window.__SUPABASE_URL || window.SUPABASE_URL;
-  const fromStorage = localStorage.getItem('supabase_url') || localStorage.getItem('VITE_SUPABASE_URL');
-  const base = _sanitizeSupabaseUrl(fromQuery || fromWindow || fromStorage);
-  if(!base) return '';
-  return base + '/functions/v1/linnuliigid-snapshot';
+  const envUrl = window.__APP_SUPABASE_URL || window.__SUPABASE_URL || window.SUPABASE_URL;
+  const envKey = window.__APP_SUPABASE_ANON_KEY || window.__SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY;
+  const fromStorageUrl =
+    localStorage.getItem('supabase_url') ||
+    localStorage.getItem('VITE_SUPABASE_URL') ||
+    localStorage.getItem('NEXT_PUBLIC_SUPABASE_URL') ||
+    localStorage.getItem('EXPO_PUBLIC_SUPABASE_URL');
+  const fromStorageKey =
+    localStorage.getItem('supabase_anon_key') ||
+    localStorage.getItem('VITE_SUPABASE_ANON_KEY') ||
+    localStorage.getItem('NEXT_PUBLIC_SUPABASE_ANON_KEY') ||
+    localStorage.getItem('EXPO_PUBLIC_SUPABASE_ANON_KEY');
+  const fromQueryUrl = qs.get('supabase_url');
+  const fromQueryKey = qs.get('supabase_anon_key') || qs.get('anon_key');
+
+  const url = _sanitizeSupabaseUrl(envUrl || fromStorageUrl || fromQueryUrl);
+  const anonKey = String(envKey || fromStorageKey || fromQueryKey || '').trim();
+  return {
+    url: url,
+    anonKey: anonKey,
+    hasServerRefresh: !!(url && anonKey),
+  };
 }
-function _requireSnapshotApi(){
-  if(SNAPSHOT_API) return SNAPSHOT_API;
-  throw new Error('Missing supabase_url. Pass ?supabase_url=https://<project-ref>.supabase.co');
-}
-const SNAPSHOT_API = _resolveSnapshotApi();
+let __supabaseCfg = _resolveSupabaseConfig();
+let SNAPSHOT_API = __supabaseCfg.url ? (__supabaseCfg.url + '/functions/v1/linnuliigid-snapshot') : '';
 let __pollTimer = null;
 let __pollCount = 0;
 let __snapshotMeta = { status: null, generated_at: null };
 let __renderedMarkerCount = 0;
+function _snapshotFetchHeaders(){
+  if(!__supabaseCfg.anonKey) return {};
+  return {
+    apikey: __supabaseCfg.anonKey,
+    Authorization: 'Bearer ' + __supabaseCfg.anonKey,
+  };
+}
+function _disableServerRefreshUi(){
+  const btnRefresh = document.getElementById('btnRefreshData');
+  if(btnRefresh){
+    btnRefresh.classList.add('secondary');
+    btnRefresh.title = 'Server refresh disabled: Supabase not configured. Using snapshot.';
+  }
+}
+function _reloadSnapshotLocalOnly(){
+  _stopPolling();
+  refreshAllMarkers();
+  _updateProgressUI(0, 0, 'ready');
+}
+function _refreshSupabaseConfig(overrides){
+  if(overrides){
+    if(typeof overrides.url === 'string') window.__APP_SUPABASE_URL = overrides.url;
+    if(typeof overrides.anonKey === 'string') window.__APP_SUPABASE_ANON_KEY = overrides.anonKey;
+  }
+  __supabaseCfg = _resolveSupabaseConfig();
+  SNAPSHOT_API = __supabaseCfg.url ? (__supabaseCfg.url + '/functions/v1/linnuliigid-snapshot') : '';
+  if(!__supabaseCfg.hasServerRefresh){
+    _disableServerRefreshUi();
+    _showSnapshotBanner('Server refresh disabled: Supabase not configured. Using snapshot.', 'warn');
+  } else {
+    const btnRefresh = document.getElementById('btnRefreshData');
+    if(btnRefresh){
+      btnRefresh.classList.remove('secondary');
+      btnRefresh.title = 'Trigger server-side data refresh';
+    }
+  }
+}
 
 function _showSnapshotBanner(msg, type, showAllBtn){
   const el = document.getElementById('snapshotBanner');
@@ -446,9 +498,14 @@ function _checkEmpty7dBanner(){
 }
 
 async function loadSnapshot(){
+  if(!__supabaseCfg.hasServerRefresh){
+    _reloadSnapshotLocalOnly();
+    _showSnapshotBanner('Server refresh disabled: Supabase not configured. Using snapshot.', 'warn');
+    return;
+  }
   try{
     _showSnapshotBanner('Loading data…');
-    const res = await fetch(_requireSnapshotApi(), {cache:'no-store'});
+    const res = await fetch(SNAPSHOT_API, {cache:'no-store', headers:_snapshotFetchHeaders()});
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const snap = await res.json();
 
@@ -493,7 +550,7 @@ function _startPolling(){
       return;
     }
     try{
-      const res = await fetch(_requireSnapshotApi(), {cache:'no-store'});
+      const res = await fetch(SNAPSHOT_API, {cache:'no-store', headers:_snapshotFetchHeaders()});
       if(!res.ok) return;
       const snap = await res.json();
       _updateProgressUI(snap.progress_done, snap.progress_total, snap.status);
@@ -524,13 +581,18 @@ function _stopPolling(){
 
 // Public refresh (no key needed)
 async function triggerRefresh(){
+  if(!__supabaseCfg.hasServerRefresh){
+    _showSnapshotBanner('Server refresh disabled: Supabase not configured. Using snapshot.', 'warn');
+    await loadSnapshot();
+    return;
+  }
   try{
     _showSnapshotBanner('Requesting server refresh…');
     _updateProgressUI(0, SPECIES.length, 'running');
 
-    const res = await fetch(_requireSnapshotApi(), {
+    const res = await fetch(SNAPSHOT_API, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: Object.assign({ 'Content-Type': 'application/json' }, _snapshotFetchHeaders()),
     });
 
     if(res.status === 429){
@@ -588,6 +650,13 @@ window.addEventListener('message', function(ev){
   try{
     if(!ev.data || typeof ev.data !== 'object') return;
     var t = ev.data.type;
+    if(t === 'SUPABASE_CONFIG'){
+      _refreshSupabaseConfig({
+        url: ev.data.url,
+        anonKey: ev.data.anonKey,
+      });
+      return;
+    }
     if(t === 'SET_ADMIN_KEY') return; // no longer used
     if(ev.origin !== window.location.origin) return;
     if(t === 'MAP_REFRESH_VISIBLE') refreshVisible();
@@ -783,6 +852,7 @@ function render() {
 // Restore existing markers from localStorage and render list
 refreshAllMarkers();
 _wireSnapshotButtons();
+_refreshSupabaseConfig();
 
 // Load snapshot from server (single request — replaces 369 client fetches)
 loadSnapshot();
@@ -848,6 +918,7 @@ window.addEventListener('message', function(ev){
 });
 try{
   if(window.parent && window.parent !== window){
+    window.parent.postMessage({ type: 'SUPABASE_CONFIG_REQUEST' }, '*');
     window.parent.postMessage({ type: 'INSETS_REQUEST' }, '*');
   }
 }catch(e){}

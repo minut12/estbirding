@@ -101,6 +101,16 @@ supabase functions serve proxy --no-verify-jwt
 curl "http://localhost:54321/functions/v1/proxy?url=https%3A%2F%2Felurikkus.ee%2Fapp%2Foccurrences%2Fsearch%3Ftext%3DKuldnokk"
 ```
 
+### Browser self-test
+
+Open:
+
+`https://<PROJECT_REF>.supabase.co/functions/v1/proxy?url=https%3A%2F%2Felurikkus.ee%2F`
+
+- If `401`: `verify_jwt` is still enabled for `proxy`.
+- If `403`: update host allow rules in `supabase/functions/proxy/index.ts`.
+- If CORS error in browser console: verify CORS headers are present on error responses.
+
 ### Allowed upstream hosts
 
 - `elurikkus.ee`

@@ -1,51 +1,52 @@
-const ALLOWED_HOSTS = new Set([
+const ALLOWED_EXACT_HOSTS = new Set([
   "elurikkus.ee",
-  "www.elurikkus.ee",
   "api.ebird.org",
 ]);
 
 const ALLOWED_ORIGINS = new Set([
-  "https://www.estbirding.ee",
   "https://estbirding.ee",
+  "https://www.estbirding.ee",
 ]);
 
-function redactUrlForLog(value: string): string {
-  try {
-    const u = new URL(value);
-    const hasQuery = Boolean(u.search);
-    const hasHash = Boolean(u.hash);
-    return `${u.origin}${u.pathname}${hasQuery ? "?<redacted>" : ""}${hasHash ? "#<redacted>" : ""}`;
-  } catch {
-    return "<invalid-url>";
-  }
+function isAllowedHost(hostname: string): boolean {
+  const host = String(hostname || "").toLowerCase();
+  if (ALLOWED_EXACT_HOSTS.has(host)) return true;
+  if (host.endsWith(".elurikkus.ee")) return true;
+  return false;
 }
 
-function resolveAllowedOrigin(origin: string | null): string {
+function pickAllowedOrigin(origin: string | null): string {
   if (!origin) return "*";
   if (ALLOWED_ORIGINS.has(origin)) return origin;
-  if (/^http:\/\/localhost:\d+$/.test(origin)) return origin;
+  if (origin.startsWith("http://localhost")) return origin;
   return "*";
 }
 
-function corsHeaders(origin: string | null): HeadersInit {
-  return {
-    "Access-Control-Allow-Origin": resolveAllowedOrigin(origin),
+function corsHeaders(origin: string | null): Headers {
+  return new Headers({
+    "Access-Control-Allow-Origin": pickAllowedOrigin(origin),
     "Access-Control-Allow-Methods": "GET,HEAD,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-eBirdApiToken",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, X-eBirdApiToken",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin",
     "Cache-Control": "no-store",
-  };
+  });
 }
 
-function jsonError(status: number, message: string, origin: string | null): Response {
-  return new Response(JSON.stringify({ error: message }), {
-    status,
-    headers: {
-      ...corsHeaders(origin),
-      "Content-Type": "application/json; charset=utf-8",
-    },
-  });
+function jsonResponse(status: number, payload: Record<string, unknown>, origin: string | null): Response {
+  const headers = corsHeaders(origin);
+  headers.set("Content-Type", "application/json; charset=utf-8");
+  return new Response(JSON.stringify(payload), { status, headers });
+}
+
+function redactUrlForLog(input: string): string {
+  try {
+    const u = new URL(input);
+    const queryHint = u.search ? "?<redacted>" : "";
+    return `${u.origin}${u.pathname}${queryHint}`;
+  } catch {
+    return "<invalid-url>";
+  }
 }
 
 Deno.serve(async (req) => {
@@ -54,35 +55,35 @@ Deno.serve(async (req) => {
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
   }
   if (req.method !== "GET" && req.method !== "HEAD") {
-    return jsonError(405, "Method not allowed. Use GET, HEAD, or OPTIONS.", origin);
+    return jsonResponse(400, { error: "invalid method" }, origin);
   }
 
   const reqUrl = new URL(req.url);
   const rawTarget = (reqUrl.searchParams.get("url") || "").trim();
   if (!rawTarget) {
-    return jsonError(400, "Missing required query parameter: url", origin);
+    return jsonResponse(400, { error: "missing url" }, origin);
   }
 
   let target: URL;
   try {
     target = new URL(rawTarget);
   } catch {
-    return jsonError(400, "Invalid url query parameter", origin);
-  }
-  if (target.protocol !== "http:" && target.protocol !== "https:") {
-    return jsonError(400, "Only http/https target URLs are allowed", origin);
+    return jsonResponse(400, { error: "invalid url" }, origin);
   }
 
-  if (!ALLOWED_HOSTS.has(target.hostname)) {
-    console.warn(`[proxy] blocked host target=${redactUrlForLog(rawTarget)} host=${target.hostname}`);
-    return jsonError(403, `Host not allowed: ${target.hostname}`, origin);
+  if (target.protocol !== "http:" && target.protocol !== "https:") {
+    return jsonResponse(400, { error: "invalid url" }, origin);
+  }
+
+  if (!isAllowedHost(target.hostname)) {
+    console.warn(`[proxy] blocked host=${target.hostname} target=${redactUrlForLog(rawTarget)}`);
+    return jsonResponse(403, { error: "host not allowed", host: target.hostname }, origin);
   }
 
   const upstreamHeaders = new Headers();
-  const ebirdToken = req.headers.get("X-eBirdApiToken");
-  if (ebirdToken && target.hostname === "api.ebird.org") {
-    upstreamHeaders.set("X-eBirdApiToken", ebirdToken);
-  }
+  const accept = req.headers.get("accept");
+  if (accept) upstreamHeaders.set("Accept", accept);
+  upstreamHeaders.set("User-Agent", "EstBirding-Proxy/1.0");
 
   let upstream: Response;
   try {
@@ -92,12 +93,38 @@ Deno.serve(async (req) => {
       redirect: "follow",
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown upstream error";
-    console.warn(`[proxy] upstream fetch failed target=${redactUrlForLog(rawTarget)} message=${message}`);
-    return jsonError(502, `Upstream request failed: ${message}`, origin);
+    const message = error instanceof Error ? error.message : "network error";
+    console.warn(`[proxy] upstream failed target=${redactUrlForLog(rawTarget)} message=${message}`);
+    return jsonResponse(502, { error: "upstream failed", status: 0, message }, origin);
   }
 
-  const headers = new Headers(corsHeaders(origin));
+  const finalUrl = upstream.url || target.toString();
+  let finalHost = "";
+  try {
+    finalHost = new URL(finalUrl).hostname;
+  } catch {
+    finalHost = "";
+  }
+  if (!isAllowedHost(finalHost)) {
+    console.warn(`[proxy] redirect blocked host=${finalHost} target=${redactUrlForLog(rawTarget)}`);
+    return jsonResponse(403, { error: "host not allowed", host: finalHost || "unknown" }, origin);
+  }
+
+  if (!upstream.ok) {
+    let preview = "";
+    try {
+      preview = (await upstream.text()).slice(0, 200);
+    } catch {
+      preview = upstream.statusText || "upstream error";
+    }
+    return jsonResponse(502, {
+      error: "upstream failed",
+      status: upstream.status,
+      message: preview || upstream.statusText || "upstream error",
+    }, origin);
+  }
+
+  const headers = corsHeaders(origin);
   const contentType = upstream.headers.get("content-type");
   if (contentType) headers.set("Content-Type", contentType);
 

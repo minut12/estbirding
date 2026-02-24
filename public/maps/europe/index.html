@@ -408,10 +408,11 @@ const LS_PROXY_BASE  = "estbirding.proxyBase";
 
 /* ========= Defaults ========= */
 const DEFAULT_EBIRD_TOKEN = "9s72dc2jcjlq";
+const DEFAULT_PROXY_BASE = "https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/proxy?url=";
 const FALLBACK_PROXY_BASE = "https://api.allorigins.win/raw?url=";
 const queryProxyBase = (new URLSearchParams(window.location.search).get("proxyBase") || "").trim();
 const storedProxyBase = (localStorage.getItem(LS_PROXY_BASE) || "").trim();
-const activeProxyBase = queryProxyBase || storedProxyBase || FALLBACK_PROXY_BASE;
+const activeProxyBase = queryProxyBase || storedProxyBase || DEFAULT_PROXY_BASE || FALLBACK_PROXY_BASE;
 
 function buildProxyUrl(url){
   const target = encodeURIComponent(String(url || "").trim());
@@ -432,6 +433,7 @@ function updateProxyHint(){
   if (!el) return;
   el.textContent = "Proxy: " + detectProxyMode();
   el.title = activeProxyBase;
+  console.info("[proxy] active", { mode: detectProxyMode(), proxyBase: activeProxyBase });
   if (detectProxyMode() === "none") {
     showWarn("Proxy base is not configured. Cross-origin requests can fail.");
   }
@@ -1118,12 +1120,17 @@ function wireRows(){
 let abortController = null;
 
 async function fetchJSON(url, signal){
-  const res = await fetch(buildProxyUrl(url), {
+  const proxyUrl = buildProxyUrl(url);
+  const res = await fetch(proxyUrl, {
     headers: { "X-eBirdApiToken": EBIRD_TOKEN },
     signal,
     cache: "no-store",
   });
-  if (!res.ok) throw new Error("HTTP " + res.status);
+  if (!res.ok) {
+    const preview = (await res.text().catch(()=>"")).slice(0, 200);
+    console.error("[proxy fetch] failed", { targetUrl: url, proxyUrl, status: res.status, preview });
+    throw new Error("HTTP " + res.status + " " + preview);
+  }
   return await res.json();
 }
 

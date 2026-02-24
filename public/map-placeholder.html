@@ -80,9 +80,9 @@
     <details>
       <summary>Auto‑fetch options</summary>
       <div class="small">
-       <label>Proxy base (optional): <input id="proxyBase" placeholder="e.g. https://api.allorigins.win/raw?url=" style="width:100%"></label>
-        <p>Leave empty to try direct fetch. If CORS blocks it, set a proxy base like:<br>
-        <code>https://api.allorigins.win/raw?url=</code> or <code>https://cors.isomorphic-git.org/</code></p>
+       <label>Proxy base (optional): <input id="proxyBase" placeholder="e.g. https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/proxy?url=" style="width:100%"></label>
+        <p>Leave empty to use the default Supabase proxy:<br>
+        <code>https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/proxy?url=</code></p>
         <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
           <button id="fetchAllNames" class="btn secondary">Fetch ALL names</button>
           <button id="fetchAllCoords" class="btn secondary">Fetch ALL coords</button> 
@@ -250,7 +250,9 @@ const DEFAULT_SPRING_DATES = {
 
 let avatars = JSON.parse(localStorage.getItem(LS_AVATARS) || '{}');
 let points  = JSON.parse(localStorage.getItem(LS_POINTS) || '{}'); // key = estonian name
-let proxyBase = localStorage.getItem(LS_PROXY) || '';
+const DEFAULT_PROXY_BASE = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/proxy?url=';
+const FALLBACK_PROXY_BASE = 'https://api.allorigins.win/raw?url=';
+let proxyBase = localStorage.getItem(LS_PROXY) || DEFAULT_PROXY_BASE;
 let nameCache = JSON.parse(localStorage.getItem(LS_NAMES) || '{}'); // not really used here
 
 // Spring dates are editable and persisted separately (so they don't get wiped when you clear per‑species occurrence)
@@ -590,7 +592,7 @@ function updateMarker(key) {
 function makeFetchURL(url) {
   // cache-bust every request
   url = url + (url.includes('?') ? '&' : '?') + '_ts=' + Date.now();
-  const bases = [ '', proxyBase, 'https://api.allorigins.win/raw?url=', 'https://cors.isomorphic-git.org/' ];
+  const bases = [ proxyBase || DEFAULT_PROXY_BASE, FALLBACK_PROXY_BASE ];
   const built = [];
   for (const b of bases) built.push(b ? b + encodeURIComponent(url) : url);
   return [...new Set(built)];
@@ -601,7 +603,11 @@ async function tryFetch(url) {
   for (const u of list) {
     try {
       const res = await fetch(u, {mode:'cors', cache:'no-store'});
-      if (!res.ok) continue;
+      if (!res.ok) {
+        const preview = (await res.text().catch(()=> '')).slice(0, 200);
+        console.error('[proxy fetch] failed', { targetUrl: url, proxyUrl: u, status: res.status, preview });
+        continue;
+      }
       const txt = await res.text();
       if (txt && txt.length > 400) return txt;
     } catch(e) { /* try next */ }

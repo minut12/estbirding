@@ -243,6 +243,15 @@ export default function DeveloperSettings() {
               Testi ühendust
             </Button>
           </div>
+          <div className="space-y-0.5 rounded-md bg-muted/40 p-2 text-[11px] text-muted-foreground">
+            <p>Supabase URL: {import.meta.env.VITE_SUPABASE_URL || "(puudub)"}</p>
+            <p>
+              Functions URL:{" "}
+              {import.meta.env.VITE_SUPABASE_URL
+                ? `${String(import.meta.env.VITE_SUPABASE_URL).replace(/\/+$/, "")}/functions/v1/events-admin`
+                : "(puudub)"}
+            </p>
+          </div>
         </div>
 
         {!savedEventsAdminKey.trim() ? (

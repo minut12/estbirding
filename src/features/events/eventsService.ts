@@ -31,9 +31,8 @@ export type EventPayload = Partial<Omit<EventRow, "id" | "created_at" | "updated
 const EVENT_COLUMNS =
   "id,title,description,start_at,end_at,location_name,lat,lng,category,organizer_name,url,image_url,is_published,is_archived,created_by,created_at,updated_at";
 
-const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-const fnUrl = supabaseUrl ? `${supabaseUrl}/functions/v1/events-admin` : "";
 
 export async function listPublishedEvents(): Promise<EventRow[]> {
   const { data, error } = await (supabase as any)
@@ -75,30 +74,45 @@ function requireAdminKey(): string {
 }
 
 async function callAdminFn(action: string, payload: unknown, adminKey: string): Promise<any> {
-  if (!fnUrl) throw new Error("VITE_SUPABASE_URL puudub.");
-  if (!anonKey) throw new Error("VITE_SUPABASE_ANON_KEY puudub.");
+  const normalizedSupabaseUrl = (supabaseUrl || "").replace(/\/+$/, "");
+  const fnUrl = `${normalizedSupabaseUrl}/functions/v1/events-admin`;
 
-  const res = await fetch(fnUrl, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-admin-key": adminKey,
-      apikey: anonKey,
-      authorization: `Bearer ${anonKey}`,
-    },
-    body: JSON.stringify({ action, payload }),
-  });
+  if (!supabaseUrl || !String(supabaseUrl).startsWith("http")) {
+    throw new Error(`VITE_SUPABASE_URL puudu/vigane: ${String(supabaseUrl)}`);
+  }
+  if (!anonKey || anonKey.length < 20) {
+    throw new Error("VITE_SUPABASE_ANON_KEY puudu/vigane");
+  }
+  if (!adminKey) {
+    throw new Error("events_admin_key puudub");
+  }
 
-  const text = await res.text();
+  let res: Response;
+  try {
+    res = await fetch(fnUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-admin-key": adminKey,
+        apikey: anonKey,
+        authorization: `Bearer ${anonKey}`,
+      },
+      body: JSON.stringify({ action, payload }),
+    });
+  } catch (err) {
+    throw new Error(`Fetch error to ${fnUrl}: ${String(err)}`);
+  }
+
+  const bodyText = await res.text();
   let json: any = null;
   try {
-    json = JSON.parse(text);
+    json = JSON.parse(bodyText);
   } catch {
-    json = { raw: text };
+    json = { raw: bodyText };
   }
 
   if (!res.ok) {
-    throw new Error(json?.error || `HTTP ${res.status}: ${text}`);
+    throw new Error(`HTTP ${res.status} from ${fnUrl}: ${bodyText}`);
   }
 
   return json?.data ?? json;

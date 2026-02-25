@@ -362,6 +362,7 @@
         <button class="btn secondary" id="settingsBtn">Settings</button>
         <button class="btn" id="btnRefreshData">Refresh data</button>
         <button class="btn secondary" id="btnReloadSnapshot">Reload snapshot</button>
+        <button class="btn secondary" id="btnResetCache">Reset cache</button>
         <button class="btn secondary" id="refreshFilteredBtn">Refresh filtered</button>
         <button class="btn secondary" id="refreshSelectedBtn">Refresh selected</button>
         <button class="btn danger" id="stopBtn">Stop</button>
@@ -436,7 +437,8 @@ const LS_PER_COUNTRY = "bm_eu_per_country";
 const LS_BURGER_POS  = "bm_eu_burger_pos";
 const LS_PROXY_BASE  = "estbirding.proxyBase";
 const LS_SNAPSHOT_PREFIX = "bm_map_snapshot:";
-const SNAPSHOT_VERSION = "europe_map_v1";
+const LS_EU_LAST_GOOD = "bm_eu_last_good_snapshot";
+const SNAPSHOT_VERSION = "europe_map_v2";
 
 /* ========= Defaults ========= */
 const DEFAULT_EBIRD_TOKEN = "9s72dc2jcjlq";
@@ -878,6 +880,14 @@ let lastRefreshAt = null;
 let lastSnapshotAt = null;
 let dataMode = "live";
 let AUTO_SYNC_CANCELLED = false;
+let snapshotDebugNote = null;
+let refreshStoppedByUser = false;
+let lastError = null;
+let stoppedAtIndex = null;
+let stoppedAtKey = null;
+let lastRequest = null;
+let okCount = 0;
+let failCount = 0;
 
 function saveAll(){
   localStorage.setItem(LS_AVATARS, JSON.stringify(avatars));
@@ -928,9 +938,15 @@ function updateDebugPanel(){
   el.innerHTML = [
     `active filters: <b>7 days only=${recentOnly ? "ON" : "OFF"}, per-country=${perCountry ? "ON" : "OFF"}</b>`,
     `dataMode: <b>${dataMode}</b>`,
-    `lastSnapshotAt: <b>${lastSnapshotAt ? new Date(lastSnapshotAt).toLocaleString() : "—"}</b>`,
-    `lastRefreshAt: <b>${lastRefreshAt ? new Date(lastRefreshAt).toLocaleString() : "—"}</b>`,
+    `lastSnapshotAt: <b>${lastSnapshotAt ? new Date(lastSnapshotAt).toLocaleString() : "-"}</b>`,
+    `lastRefreshAt: <b>${lastRefreshAt ? new Date(lastRefreshAt).toLocaleString() : "-"}</b>`,
     `counts: <b>markers=${counts.markers}, items=${counts.items}</b>`,
+    `okCount/failCount: <b>${okCount}/${failCount}</b>`,
+    `lastError: <b>${lastError || "-"}</b>`,
+    `stoppedAtIndex: <b>${stoppedAtIndex ?? "-"}</b>`,
+    `stoppedAtKey: <b>${stoppedAtKey || "-"}</b>`,
+    `lastRequest: <b>${lastRequest ? `${lastRequest.url} (${lastRequest.status ?? "?"}, ${lastRequest.timeMs ?? "?"}ms)` : "-"}</b>`,
+    `snapshotNote: <b>${snapshotDebugNote || "-"}</b>`,
   ].join("<br>");
 }
 
@@ -980,14 +996,22 @@ async function saveSnapshotLocalAndRemote(){
     },
   };
   localStorage.setItem(getSnapshotStorageKey(), JSON.stringify(snapshot));
+  localStorage.setItem(LS_EU_LAST_GOOD, JSON.stringify(snapshot));
   lastSnapshotAt = snapshot.createdAt;
   updateDebugPanel();
   await saveSnapshotRemote(snapshot);
 }
 
 function applySnapshot(snapshot){
-  if (!snapshot || snapshot.version !== SNAPSHOT_VERSION || !snapshot.payload || !snapshot.payload.points){
-    showSnapshotBanner("Snapshot outdated", "warn");
+  if (!snapshot) return false;
+  if (snapshot.version !== SNAPSHOT_VERSION){
+    snapshotDebugNote = "snapshot outdated";
+    updateDebugPanel();
+    return false;
+  }
+  if (!snapshot.payload || typeof snapshot.payload !== "object" || !snapshot.payload.points || typeof snapshot.payload.points !== "object"){
+    snapshotDebugNote = "snapshot corrupted";
+    updateDebugPanel();
     return false;
   }
   points = snapshot.payload.points || {};
@@ -996,6 +1020,8 @@ function applySnapshot(snapshot){
   }
   dataMode = "snapshot";
   lastSnapshotAt = snapshot.createdAt || null;
+  snapshotDebugNote = null;
+  localStorage.setItem(LS_EU_LAST_GOOD, JSON.stringify(snapshot));
   saveAll();
   render();
   updateDebugPanel();
@@ -1008,6 +1034,7 @@ function loadSnapshotLocal(){
   try {
     return JSON.parse(raw);
   } catch(e){
+    snapshotDebugNote = "snapshot corrupted";
     return null;
   }
 }
@@ -1016,10 +1043,19 @@ function reloadSnapshot(){
   const snapshot = loadSnapshotLocal();
   if (!snapshot) {
     showSnapshotBanner("No snapshot available", "warn");
+    setStatus("No snapshot found");
+    progressLine.textContent = "No snapshot found.";
     updateDebugPanel();
     return false;
   }
-  if (!applySnapshot(snapshot)) return false;
+  if (!applySnapshot(snapshot)) {
+    const msg = snapshotDebugNote === "snapshot outdated" ? "Snapshot outdated" : "Snapshot corrupted";
+    showSnapshotBanner(msg, "warn");
+    setStatus(msg);
+    progressLine.textContent = msg;
+    updateDebugPanel();
+    return false;
+  }
   showSnapshotBanner(`Loaded snapshot: ${new Date(snapshot.createdAt).toLocaleString()}`);
   setStatus(`Loaded snapshot: ${new Date(snapshot.createdAt).toLocaleString()}`);
   progressLine.textContent = "Loaded snapshot.";
@@ -1294,19 +1330,86 @@ function wireRows(){
 /* ========= eBird fetch (match Finland logic) ========= */
 let abortController = null;
 
-async function fetchJSON(url, signal){
-  const proxyUrl = buildProxyUrl(url);
-  const res = await fetch(proxyUrl, {
-    headers: { "X-eBirdApiToken": EBIRD_TOKEN },
-    signal,
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    const preview = (await res.text().catch(()=>"")).slice(0, 200);
-    console.error("[proxy fetch] failed", { targetUrl: url, proxyUrl, status: res.status, preview });
-    throw new Error("HTTP " + res.status + " " + preview);
+function delayMs(ms){
+  return new Promise((resolve)=> setTimeout(resolve, ms));
+}
+
+function buildErrorMessage(prefix, status, snippet){
+  const cleanSnippet = (snippet || "").slice(0, 200);
+  if (status === 401 || status === 403) {
+    return `Missing/invalid API token. Set VITE_EBIRD_TOKEN (or Lovable secret). HTTP ${status}. ${cleanSnippet}`;
   }
-  return await res.json();
+  return `${prefix} HTTP ${status}. ${cleanSnippet}`;
+}
+
+async function safeFetchJson(url, options = {}){
+  const timeoutMs = Number(options.timeoutMs || 20000);
+  const retries = Number(options.retries || 2);
+  const retryBackoff = [1000, 3000];
+  const proxyUrl = buildProxyUrl(url);
+  let attempt = 0;
+  while (attempt <= retries) {
+    const t0 = performance.now();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(()=> controller.abort(), timeoutMs);
+    if (options.signal) {
+      if (options.signal.aborted) controller.abort();
+      else options.signal.addEventListener("abort", ()=> controller.abort(), { once: true });
+    }
+    try {
+      const res = await fetch(proxyUrl, {
+        headers: options.headers || {},
+        signal: controller.signal,
+        cache: options.cache || "no-store",
+        method: options.method || "GET",
+        body: options.body,
+      });
+      const timeMs = Math.round(performance.now() - t0);
+      const status = res.status;
+      if (status === 429 && attempt < retries) {
+        clearTimeout(timeoutId);
+        await delayMs(retryBackoff[Math.min(attempt, retryBackoff.length - 1)]);
+        attempt++;
+        continue;
+      }
+      if (!res.ok) {
+        const textSnippet = (await res.text().catch(()=> "")).slice(0, 200);
+        const err = new Error(buildErrorMessage("Request failed.", status, textSnippet));
+        err.status = status;
+        err.textSnippet = textSnippet;
+        err.timeMs = timeMs;
+        err.url = proxyUrl;
+        throw err;
+      }
+      const json = await res.json();
+      clearTimeout(timeoutId);
+      return { ok: true, status, json, textSnippet: "", timeMs, url: proxyUrl };
+    } catch (e) {
+      clearTimeout(timeoutId);
+      const timeMs = Math.round(performance.now() - t0);
+      if (controller.signal.aborted && !(options.signal && options.signal.aborted)) {
+        const err = new Error(`Request timed out after ${timeoutMs}ms`);
+        err.status = 0;
+        err.textSnippet = "";
+        err.timeMs = timeMs;
+        err.url = proxyUrl;
+        throw err;
+      }
+      if ((e && e.name === "AbortError") || (options.signal && options.signal.aborted)) {
+        throw e;
+      }
+      if (attempt < retries) {
+        await delayMs(retryBackoff[Math.min(attempt, retryBackoff.length - 1)]);
+        attempt++;
+        continue;
+      }
+      if (!e.status) e.status = 0;
+      if (!e.timeMs) e.timeMs = timeMs;
+      if (!e.url) e.url = proxyUrl;
+      throw e;
+    }
+  }
+  return { ok: false, status: 0, json: null, textSnippet: "", timeMs: 0, url: proxyUrl };
 }
 
 async function fetchRegionsLimited(urls, signal){
@@ -1314,8 +1417,20 @@ async function fetchRegionsLimited(urls, signal){
   const isMobile = window.matchMedia("(max-width: 900px)").matches;
   const limit = isMobile ? REGION_CONCURRENCY_MOBILE : REGION_CONCURRENCY_DESKTOP;
   const tasks = urls.map((u,i)=> async ()=>{
-    try{ results[i] = await fetchJSON(u, signal); }
-    catch(e){ results[i] = null; }
+    try{
+      const response = await safeFetchJson(u, {
+        signal,
+        timeoutMs: 20000,
+        retries: 2,
+        headers: { "X-eBirdApiToken": EBIRD_TOKEN },
+      });
+      lastRequest = { url: response.url, status: response.status, timeMs: response.timeMs };
+      results[i] = response.json;
+    }
+    catch(e){
+      lastRequest = { url: e.url || buildProxyUrl(u), status: e.status, timeMs: e.timeMs };
+      results[i] = null;
+    }
   });
   await runPool(tasks, limit);
   return results;
@@ -1406,6 +1521,8 @@ async function runPool(tasks, limit){
 
 function stopRefresh(){
   if (abortController) {
+    refreshStoppedByUser = true;
+    setRefreshError("Stopped by user", stoppedAtIndex, stoppedAtKey || "user");
     abortController.abort();
     abortController = null;
     setStatus("Stopped.");
@@ -1413,27 +1530,64 @@ function stopRefresh(){
   }
 }
 
+function setRefreshError(message, idx, key){
+  lastError = (message || "Unknown refresh error").slice(0, 400);
+  stoppedAtIndex = Number.isFinite(idx) ? idx : null;
+  stoppedAtKey = key || null;
+}
+
+function validateRefreshConfig(){
+  const missing = [];
+  if (!EBIRD_TOKEN) missing.push("eBird token missing: set VITE_EBIRD_TOKEN (or Lovable secret)");
+  if (!activeProxyBase) missing.push("proxy base missing: set estbirding.proxyBase or configure default proxy");
+  return { ok: missing.length === 0, message: missing.join(" | ") };
+}
+
 async function refreshKeys(keys, force=true){
   showWarn("");
-  if (!EBIRD_TOKEN) {
-    showWarn("Missing eBird token. Open Settings and set it.");
-    return;
+  refreshStoppedByUser = false;
+  lastError = null;
+  stoppedAtIndex = null;
+  stoppedAtKey = null;
+  lastRequest = null;
+  okCount = 0;
+  failCount = 0;
+  updateDebugPanel();
+
+  const cfg = validateRefreshConfig();
+  if (!cfg.ok) {
+    setRefreshError(cfg.message, 0, "config");
+    showWarn(cfg.message);
+    updateDebugPanel();
+    return { done: 0, total: keys.length, successCount: 0, failureCount: keys.length, aborted: false };
   }
   stopRefresh();
+  refreshStoppedByUser = false;
   abortController = new AbortController();
   const signal = abortController.signal;
 
   let done = 0;
   const total = keys.length;
-  let successCount = 0;
-  let failureCount = 0;
   const isMobile = window.matchMedia("(max-width: 900px)").matches;
   const conc = isMobile ? CONCURRENCY_MOBILE : CONCURRENCY_DESKTOP;
 
-  const tasks = keys.map(k => async ()=>{
+  const tasks = keys.map((k, index) => async ()=>{
     if (signal.aborted) return;
-    try { await fetchEurope(k, force, signal); successCount++; }
-    catch(e) { failureCount++; console.warn("Fetch failed", k, e); }
+    try {
+      await fetchEurope(k, force, signal);
+      okCount++;
+      if (okCount % 5 === 0) {
+        render();
+        updateDebugPanel();
+      }
+    }
+    catch(e) {
+      failCount++;
+      const preview = String(e?.textSnippet || e?.message || "").slice(0, 200);
+      setRefreshError(preview || "Fetch failed", index + 1, k);
+      lastRequest = { url: e?.url || "", status: e?.status, timeMs: e?.timeMs };
+      console.warn("Fetch failed", k, e);
+    }
     finally {
       done++;
       progressLine.textContent = `Refreshing: ${done}/${total}`;
@@ -1443,13 +1597,20 @@ async function refreshKeys(keys, force=true){
 
   progressLine.textContent = `Refreshing: 0/${total}`;
   setStatus(`Refreshing 0/${total}`);
-  await runPool(tasks, conc);
+  try {
+    await runPool(tasks, conc);
+  } catch (e) {
+    setRefreshError(String(e?.message || e || "Refresh runtime failure"), stoppedAtIndex, stoppedAtKey || "runPool");
+    console.error("[refresh] top-level failure", e);
+  }
 
   if (!signal.aborted) {
-    progressLine.textContent = `Done. Refreshed ${total} species.`;
+    progressLine.textContent = `Done. Refreshed ${total} species. ok=${okCount}, fail=${failCount}`;
     setStatus("Done.");
   }
-  return { done, total, successCount, failureCount, aborted: signal.aborted };
+  render();
+  updateDebugPanel();
+  return { done, total, successCount: okCount, failureCount: failCount, aborted: signal.aborted };
 }
 
 function refreshFiltered(){
@@ -1621,6 +1782,48 @@ document.getElementById("resetBtn").addEventListener("click", ()=>{
   saveAll(); render();
 });
 
+async function resetEuropeCache(){
+  const keysToRemove = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key) continue;
+    if (key.startsWith(LS_SNAPSHOT_PREFIX) || key === LS_EU_LAST_GOOD || key === LS_POINTS) keysToRemove.push(key);
+  }
+  keysToRemove.forEach((key)=> localStorage.removeItem(key));
+  if (window.indexedDB && typeof indexedDB.databases === "function") {
+    try {
+      const dbs = await indexedDB.databases();
+      for (const db of (dbs || [])) {
+        const name = db && db.name;
+        if (!name) continue;
+        const n = name.toLowerCase();
+        if (n.includes("europe") || n.includes("snapshot")) {
+          try { indexedDB.deleteDatabase(name); } catch (e) {}
+        }
+      }
+    } catch (e) {
+      console.warn("[cache] indexedDB reset skipped", e);
+    }
+  }
+  points = {};
+  dataMode = "live";
+  lastRefreshAt = null;
+  lastSnapshotAt = null;
+  lastError = null;
+  stoppedAtIndex = null;
+  stoppedAtKey = null;
+  lastRequest = null;
+  okCount = 0;
+  failCount = 0;
+  snapshotDebugNote = null;
+  saveAll();
+  render();
+  updateDebugPanel();
+  showSnapshotBanner("Cache reset complete", "warn");
+  setStatus("Cache reset");
+  progressLine.textContent = "Cache reset.";
+}
+
 /* ========= Settings modal ========= */
 const modalBackdrop = document.getElementById("modalBackdrop");
 const settingsBtn = document.getElementById("settingsBtn");
@@ -1657,7 +1860,10 @@ document.getElementById("btnRefreshData").addEventListener("click", async ()=>{
   try{
     const result = await refreshKeys(keys, true);
     if (result.aborted) {
-      showSnapshotBanner("Refresh stopped", "warn");
+      const msg = `Refresh stopped. ${lastError || "Stopped by user."} idx=${stoppedAtIndex ?? "?"} key=${stoppedAtKey || "?"}`;
+      showSnapshotBanner(msg, "warn");
+      showWarn(msg);
+      updateDebugPanel();
       return;
     }
     if (result.successCount <= 0) {
@@ -1668,7 +1874,7 @@ document.getElementById("btnRefreshData").addEventListener("click", async ()=>{
       return;
     }
     lastRefreshAt = new Date().toISOString();
-    await saveSnapshotLocalAndRemote();
+    if (result.successCount > 0) await saveSnapshotLocalAndRemote();
     dataMode = "live";
     setStatus(`Data loaded · ${new Date(lastRefreshAt).toLocaleString()}`);
     progressLine.textContent = "Data loaded";
@@ -1676,14 +1882,20 @@ document.getElementById("btnRefreshData").addEventListener("click", async ()=>{
     setTimeout(hideSnapshotBanner, 4000);
     updateDebugPanel();
   }catch(e){
+    setRefreshError(String(e?.message || e || "Refresh failed"), stoppedAtIndex, stoppedAtKey || "refresh");
     console.warn("[refresh] failed", e);
     const loaded = reloadSnapshot();
     if (!loaded) showSnapshotBanner("Refresh failed and no snapshot available", "error");
     else showSnapshotBanner("Refresh failed. Showing last snapshot.", "warn");
     showWarn("Refresh failed. UI kept on last known snapshot.");
+    updateDebugPanel();
   }
 });
 document.getElementById("btnReloadSnapshot").addEventListener("click", reloadSnapshot);
+document.getElementById("btnResetCache").addEventListener("click", async ()=>{
+  if (!confirm("Reset Europe snapshot/cache state?")) return;
+  await resetEuropeCache();
+});
 document.getElementById("refreshFilteredBtn").addEventListener("click", refreshFiltered);
 document.getElementById("refreshSelectedBtn").addEventListener("click", refreshSelected);
 document.getElementById("stopBtn").addEventListener("click", ()=>{ AUTO_SYNC_CANCELLED = true; stopRefresh(); });
@@ -1766,3 +1978,4 @@ window.addEventListener("message", function(ev){
 </script>
 </body>
 </html>
+

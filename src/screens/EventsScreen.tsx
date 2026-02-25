@@ -5,8 +5,7 @@ import { et } from "@/localization/et";
 import { sampleEvents, type EventItem } from "@/data/events";
 import { EventMapPreview } from "@/components/events/EventMapPreview";
 import { EventCard } from "@/components/events/EventCard";
-import { listPublishedEvents } from "@/services/events";
-import type { EventRow } from "@/types/events";
+import { listPublishedEvents, type EventRow } from "@/features/events/eventsService";
 import EventDetailsScreen from "./EventDetailsScreen";
 
 type MainTab = "tulevased" | "moodunud" | "muud";
@@ -32,7 +31,6 @@ export default function EventsScreen() {
   const [searchValue, setSearchValue] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isUsingFallback, setIsUsingFallback] = useState(false);
   const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
   const [openedDetails, setOpenedDetails] = useState<EventItem | null>(null);
   const [events, setEvents] = useState<EventItem[]>(sampleEvents);
@@ -49,10 +47,9 @@ export default function EventsScreen() {
     try {
       const rows = await listPublishedEvents();
       setEvents(rows.map(mapRowToEventItem));
-      setIsUsingFallback(false);
-    } catch {
+    } catch (error) {
+      console.warn("[EventsScreen] Failed to load Supabase events, falling back to seed data.", error);
       setEvents(sampleEvents);
-      setIsUsingFallback(true);
     } finally {
       setIsLoading(false);
     }
@@ -193,11 +190,6 @@ export default function EventsScreen() {
       </div>
 
       <div className="px-4 pb-3">
-        {isUsingFallback && (
-          <p className="mb-2 text-xs text-muted-foreground">
-            Kuva kasutab lokaalseid näidisüritusi (andmebaas pole veel valmis).
-          </p>
-        )}
         <EventMapPreview
           events={filteredEvents}
           highlightedEventId={highlightedEventId}

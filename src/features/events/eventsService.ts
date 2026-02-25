@@ -36,7 +36,7 @@ export async function listPublishedEvents(): Promise<EventRow[]> {
     .from("events")
     .select(EVENT_COLUMNS)
     .eq("is_published", true)
-    .eq("is_archived", false)
+    .or("is_archived.is.null,is_archived.eq.false")
     .order("start_at", { ascending: true });
   if (error) throw error;
   return (data ?? []) as EventRow[];
@@ -66,48 +66,56 @@ type AdminActionResponse<T> = {
   data?: T;
   error?: string;
   ok?: boolean;
+  raw?: string;
 };
 
-async function invokeAdminAction<T>(action: string, payload?: unknown): Promise<T> {
+function getAdminKeyOrThrow(): string {
   const adminKey = getEventsAdminKey();
-  if (!adminKey) throw new Error("EVENTS_ADMIN_KEY puudub");
+  if (!adminKey) {
+    throw new Error("events_admin_key puudub. Lisa see Seaded -> Arendaja alt.");
+  }
+  return adminKey;
+}
 
-  let data: any;
-  let error: any;
+function getFnUrl(): string {
+  const baseUrl = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
+  if (!baseUrl) {
+    throw new Error("VITE_SUPABASE_URL puudub.");
+  }
+  return `${baseUrl}/functions/v1/events-admin`;
+}
+
+async function callAdminFn<T>(action: string, payload: unknown, adminKey: string): Promise<AdminActionResponse<T>> {
+  const fnUrl = getFnUrl();
+  const res = await fetch(fnUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-admin-key": adminKey,
+    },
+    body: JSON.stringify({ action, payload }),
+  });
+
+  const text = await res.text();
+  let json: AdminActionResponse<T>;
   try {
-    const result = await supabase.functions.invoke("events-admin", {
-      body: { action, payload },
-      headers: { "x-admin-key": adminKey },
-    });
-    data = result.data;
-    error = result.error;
-  } catch (invokeError) {
-    const baseUrl = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
-    if (!baseUrl) throw invokeError;
-    const response = await fetch(`${baseUrl}/functions/v1/events-admin`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-admin-key": adminKey,
-      },
-      body: JSON.stringify({ action, payload }),
-    });
-    data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const message = data?.error || `HTTP ${response.status}`;
-      throw new Error(message);
-    }
-    error = null;
+    json = JSON.parse(text) as AdminActionResponse<T>;
+  } catch {
+    json = { raw: text };
   }
 
-  if (error) throw error;
+  if (!res.ok) {
+    throw new Error(json?.error || `HTTP ${res.status}: ${text}`);
+  }
 
-  const parsed = (data ?? {}) as AdminActionResponse<T>;
+  return json;
+}
+
+async function invokeAdminAction<T>(action: string, payload?: unknown): Promise<T> {
+  const adminKey = getAdminKeyOrThrow();
+  const parsed = await callAdminFn<T>(action, payload, adminKey);
   if (parsed.error) throw new Error(parsed.error);
   if (parsed.data === undefined) {
-    if (typeof parsed.ok === "boolean") {
-      return parsed as T;
-    }
     throw new Error("Tühi vastus events-admin funktsioonilt");
   }
   return parsed.data;
@@ -126,7 +134,9 @@ export async function adminUpdateEvent(id: string, patch: Partial<EventPayload>)
 }
 
 export async function adminDeleteEvent(id: string): Promise<void> {
-  const parsed = await invokeAdminAction<{ ok: boolean }>("delete", { id });
+  const adminKey = getAdminKeyOrThrow();
+  const parsed = await callAdminFn<{ ok: boolean }>("delete", { id }, adminKey);
+  if (parsed.error) throw new Error(parsed.error);
   if (!parsed.ok) throw new Error("Kustutamine ebaõnnestus");
 }
 

@@ -1,5 +1,5 @@
-import { CalendarDays, ChevronLeft, ChevronRight, MapPin } from "lucide-react";
-import { cn } from "@/lib/utils";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, MapPin } from "lucide-react";
 import type { EventItem } from "@/data/events";
 
 interface EventMapPreviewProps {
@@ -10,18 +10,59 @@ interface EventMapPreviewProps {
   onNext: () => void;
 }
 
-function toMapPosition(
-  item: EventItem,
-  bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number }
-) {
-  const latDenom = Math.max(bounds.maxLat - bounds.minLat, 0.1);
-  const lngDenom = Math.max(bounds.maxLng - bounds.minLng, 0.1);
-  const x = ((item.lng - bounds.minLng) / lngDenom) * 100;
-  const y = 100 - ((item.lat - bounds.minLat) / latDenom) * 100;
-  return {
-    left: `${Math.min(94, Math.max(6, x))}%`,
-    top: `${Math.min(92, Math.max(8, y))}%`,
-  };
+type LeafletLike = any;
+
+declare global {
+  interface Window {
+    L?: LeafletLike;
+  }
+}
+
+function getCenter(events: EventItem[]): [number, number] {
+  if (!events.length) return [58.7, 25.0];
+  const lat = events.reduce((sum, e) => sum + e.lat, 0) / events.length;
+  const lng = events.reduce((sum, e) => sum + e.lng, 0) / events.length;
+  return [lat, lng];
+}
+
+function ensureLeafletAssets(): Promise<void> {
+  if (window.L) return Promise.resolve();
+
+  const existingLink = document.querySelector('link[data-leaflet-css="1"]');
+  if (!existingLink) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    link.setAttribute("data-leaflet-css", "1");
+    document.head.appendChild(link);
+  }
+
+  return new Promise((resolve, reject) => {
+    const existingScript = document.querySelector('script[data-leaflet-js="1"]') as HTMLScriptElement | null;
+    if (existingScript) {
+      existingScript.addEventListener("load", () => resolve(), { once: true });
+      existingScript.addEventListener("error", () => reject(new Error("Leaflet script failed")), { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    script.async = true;
+    script.setAttribute("data-leaflet-js", "1");
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Leaflet script failed"));
+    document.body.appendChild(script);
+  });
+}
+
+function InvalidateMapSize({ map, deps }: { map: LeafletLike | null; deps: unknown[] }) {
+  useEffect(() => {
+    if (!map) return;
+    const id = window.setTimeout(() => map.invalidateSize(), 50);
+    return () => window.clearTimeout(id);
+  }, [map, ...deps]);
+
+  return null;
 }
 
 export function EventMapPreview({
@@ -31,62 +72,150 @@ export function EventMapPreview({
   onPrev,
   onNext,
 }: EventMapPreviewProps) {
-  const bounds = events.reduce(
-    (acc, item) => ({
-      minLat: Math.min(acc.minLat, item.lat),
-      maxLat: Math.max(acc.maxLat, item.lat),
-      minLng: Math.min(acc.minLng, item.lng),
-      maxLng: Math.max(acc.maxLng, item.lng),
-    }),
-    { minLat: 90, maxLat: -90, minLng: 180, maxLng: -180 }
-  );
+  const mapRef = useRef<HTMLDivElement | null>(null);
+  const miniMapRef = useRef<HTMLDivElement | null>(null);
+  const leafletMapRef = useRef<LeafletLike | null>(null);
+  const leafletMiniRef = useRef<LeafletLike | null>(null);
+  const markersRef = useRef<Map<string, LeafletLike>>(new Map());
+  const [tileError, setTileError] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
+  const center = useMemo(() => getCenter(events), [events]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function init() {
+      if (!mapRef.current || !miniMapRef.current) return;
+
+      try {
+        await ensureLeafletAssets();
+        if (cancelled || !window.L) return;
+
+        const L = window.L;
+
+        if (!leafletMapRef.current) {
+          const map = L.map(mapRef.current, {
+            zoomControl: false,
+            attributionControl: true,
+          }).setView(center, 7);
+
+          const tileLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: '&copy; OpenStreetMap contributors',
+            maxZoom: 19,
+          });
+          tileLayer.on("tileerror", () => setTileError(true));
+          tileLayer.addTo(map);
+
+          leafletMapRef.current = map;
+        }
+
+        if (!leafletMiniRef.current) {
+          const mini = L.map(miniMapRef.current, {
+            zoomControl: false,
+            attributionControl: false,
+            dragging: false,
+            touchZoom: false,
+            scrollWheelZoom: false,
+            doubleClickZoom: false,
+            boxZoom: false,
+            keyboard: false,
+          }).setView(center, 5);
+
+          const miniTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            maxZoom: 19,
+          });
+          miniTiles.on("tileerror", () => setTileError(true));
+          miniTiles.addTo(mini);
+
+          leafletMiniRef.current = mini;
+        }
+
+        setMapReady(true);
+      } catch {
+        setTileError(true);
+      }
+    }
+
+    void init();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [center]);
+
+  useEffect(() => {
+    const map = leafletMapRef.current;
+    if (!map || !window.L) return;
+
+    markersRef.current.forEach((marker) => marker.remove());
+    markersRef.current.clear();
+
+    events.forEach((event) => {
+      const active = event.id === highlightedEventId;
+      const icon = window.L!.divIcon({
+        className: "",
+        html: `<div style="width:36px;height:36px;border-radius:16px;background:white;border:2px solid ${active ? "#2F6B4F" : "#fff"};box-shadow:0 8px 20px rgba(47,107,79,.25);display:flex;align-items:center;justify-content:center;font-size:16px;">📍</div>`,
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
+      });
+
+      const marker = window.L!.marker([event.lat, event.lng], { icon }).addTo(map);
+      marker.on("click", () => onSelectEvent(event.id));
+      marker.setZIndexOffset(active ? 1000 : 0);
+      markersRef.current.set(event.id, marker);
+    });
+
+    if (events.length) {
+      map.setView(center, 7, { animate: false });
+    }
+  }, [events, highlightedEventId, onSelectEvent, center]);
+
+  useEffect(() => {
+    const mini = leafletMiniRef.current;
+    if (!mini || !window.L) return;
+
+    mini.eachLayer((layer: any) => {
+      if (layer instanceof window.L.TileLayer) return;
+      mini.removeLayer(layer);
+    });
+
+    events.forEach((event) => {
+      const circle = window.L!.circleMarker([event.lat, event.lng], {
+        radius: event.id === highlightedEventId ? 4 : 3,
+        color: "#2F6B4F",
+        fillColor: "#2F6B4F",
+        fillOpacity: event.id === highlightedEventId ? 1 : 0.6,
+        weight: 0,
+      });
+      circle.addTo(mini);
+    });
+
+    if (events.length) {
+      mini.setView(center, 5, { animate: false });
+    }
+  }, [events, highlightedEventId, center]);
+
+  useEffect(() => {
+    return () => {
+      leafletMapRef.current?.remove();
+      leafletMiniRef.current?.remove();
+      leafletMapRef.current = null;
+      leafletMiniRef.current = null;
+    };
+  }, []);
 
   return (
     <div className="relative h-[300px] overflow-hidden rounded-2xl border border-border/70 bg-[#edf2ed] shadow-sm">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_24%_20%,#f6faf6_0%,transparent_44%),radial-gradient(circle_at_80%_72%,#dce8df_0%,transparent_35%),linear-gradient(160deg,#f3f7f3_0%,#e6ede7_55%,#d9e4dc_100%)]" />
-      <div className="absolute inset-0 opacity-40 [background-image:linear-gradient(120deg,rgba(79,108,89,0.2)_1px,transparent_1px),linear-gradient(40deg,rgba(79,108,89,0.14)_1px,transparent_1px)] [background-size:64px_64px,80px_80px]" />
+      <div ref={mapRef} className="h-[300px] w-full" />
 
-      {events.map((event) => {
-        const isActive = event.id === highlightedEventId;
-        const pos = toMapPosition(event, bounds);
-        return (
-          <button
-            key={event.id}
-            onClick={() => onSelectEvent(event.id)}
-            className={cn(
-              "absolute -translate-x-1/2 -translate-y-1/2 rounded-full transition-all",
-              isActive ? "z-20 scale-110" : "z-10 scale-100"
-            )}
-            style={pos}
-            aria-label={event.title}
-          >
-            <span
-              className={cn(
-                "flex h-11 w-11 items-center justify-center rounded-[18px] border border-white bg-white shadow-[0_8px_20px_rgba(47,107,79,0.25)]",
-                isActive ? "ring-2 ring-primary/35" : ""
-              )}
-            >
-              <CalendarDays className="h-5 w-5 text-primary" />
-            </span>
-          </button>
-        );
-      })}
+      {tileError && (
+        <div className="absolute left-3 top-12 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+          Kaardi taust ei lae (tile error)
+        </div>
+      )}
 
       <div className="absolute right-3 top-3 h-24 w-28 overflow-hidden rounded-xl border border-white/80 bg-white/85 shadow-sm backdrop-blur-sm">
-        <div className="absolute inset-0 bg-[linear-gradient(145deg,#eff6ef_0%,#dfebe1_100%)]" />
-        {events.map((event) => {
-          const pos = toMapPosition(event, bounds);
-          return (
-            <span
-              key={`mini-${event.id}`}
-              className={cn(
-                "absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full",
-                event.id === highlightedEventId ? "bg-primary" : "bg-primary/55"
-              )}
-              style={pos}
-            />
-          );
-        })}
+        <div ref={miniMapRef} className="h-full w-full" />
       </div>
 
       <div className="absolute bottom-3 right-3 flex gap-2">
@@ -112,6 +241,8 @@ export function EventMapPreview({
           Kaart
         </span>
       </div>
+
+      <InvalidateMapSize map={leafletMapRef.current} deps={[events.length, highlightedEventId, mapReady]} />
     </div>
   );
 }

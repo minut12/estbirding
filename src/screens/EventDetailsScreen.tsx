@@ -33,7 +33,7 @@ export default function EventDetailsScreen({ event, onBack }: EventDetailsScreen
       toast.success(nextArchived ? "Üritus arhiveeritud" : "Üritus taastatud");
       if (nextArchived) onBack();
     } catch (error: any) {
-      toast.error(error?.message || "Arhiveerimine ebaõnnestus");
+      toast.error(error instanceof Error ? error.message : String(error));
     } finally {
       setIsSaving(false);
     }
@@ -47,7 +47,7 @@ export default function EventDetailsScreen({ event, onBack }: EventDetailsScreen
       toast.success("Üritus kustutatud");
       onBack();
     } catch (error: any) {
-      toast.error(error?.message || "Kustutamine ebaõnnestus");
+      toast.error(error instanceof Error ? error.message : String(error));
     } finally {
       setIsSaving(false);
     }

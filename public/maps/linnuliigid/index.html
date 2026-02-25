@@ -154,6 +154,7 @@
 <script src="/maps/shared/map-hamburger-control.js"></script>
 <script src="/maps/shared/format-ee.js"></script>
 <script src="/maps/shared/species-meta.js"></script>
+<script src="/maps/shared/rarity-style.js"></script>
 <script src="/maps/shared/et-strings.js"></script>
 
 <script>
@@ -611,24 +612,21 @@ function save() {
 
 // Icons
 function rarityToBadge(level){
-  if(level === 'rare') return 'R';
-  if(level === 'super') return 'SR';
-  if(level === 'mega') return 'MR';
-  return '';
+  var style = window.getRarityStyle ? window.getRarityStyle(level || 'none') : null;
+  return style && style.badgeText ? style.badgeText : '';
 }
 function rarityToBorder(level, fallback){
-  if(level === 'rare') return '#f59e0b';
-  if(level === 'super') return '#dc2626';
-  if(level === 'mega') return '#7c3aed';
-  return fallback || '#222';
+  var style = window.getRarityStyle ? window.getRarityStyle(level || 'none') : null;
+  return (style && style.ringColor) || fallback || '#222';
 }
 function _markerIcon(avatarUrl, borderColor, count7d, rarityLevel){
   const color = rarityToBorder(rarityLevel, borderColor || '#222');
+  const style = window.getRarityStyle ? window.getRarityStyle(rarityLevel || 'none') : null;
   const count = Number.isFinite(count7d)
     ? '<div class="marker-count" title="Vaatlused viimase 7 päeva jooksul">' + count7d + '</div>'
     : '';
   const rarityBadge = rarityToBadge(rarityLevel)
-    ? '<div class="marker-rarity-badge">' + rarityToBadge(rarityLevel) + '</div>'
+    ? '<div class="marker-rarity-badge" style="background:' + (style ? style.badgeBg : '#111') + ';color:' + (style ? style.badgeFg : '#fff') + '">' + rarityToBadge(rarityLevel) + '</div>'
     : '';
   const bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#29c";
   const html = '<div class="marker-wrap"><div class="marker-circle" style="border-color:' + color + ';' + bg + '"></div>' + rarityBadge + count + '</div>';

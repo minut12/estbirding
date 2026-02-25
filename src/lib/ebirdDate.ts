@@ -1,4 +1,4 @@
-export function parseObsDt(input: unknown): number | null {
+export function parseObsDtToMs(input: unknown): number | null {
   const raw = String(input ?? "").trim();
   if (!raw) return null;
 
@@ -22,8 +22,10 @@ export function parseObsDt(input: unknown): number | null {
 }
 
 export function isInLast7Days(input: unknown, nowMs = Date.now()): boolean {
-  const ts = parseObsDt(input);
+  const ts = parseObsDtToMs(input);
   if (ts == null) return false;
   const cutoff = nowMs - (7 * 24 * 60 * 60 * 1000);
   return ts >= cutoff;
 }
+
+export const parseObsDt = parseObsDtToMs;

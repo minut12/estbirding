@@ -211,7 +211,7 @@
     /* Marker styling */
     .leaflet-marker-icon{ overflow: visible !important; }
     .markerWrap{ position:relative; width:var(--mSize); height:var(--mSize); overflow:visible; }
-    .markerWrap .marker-rarity-badge{position:absolute;right:-2px;top:-4px;min-width:20px;height:16px;padding:0 5px;border-radius:999px;background:#111;color:#fff;border:1px solid rgba(255,255,255,.9);font-size:10px;line-height:14px;font-weight:800;text-align:center;z-index:7}
+    .markerWrap .marker-rarity-badge{position:absolute;right:-2px;top:-4px;min-width:20px;height:16px;padding:0 5px;border-radius:999px;border:1px solid rgba(255,255,255,.9);font-size:10px;line-height:14px;font-weight:800;text-align:center;z-index:7}
     .markerWrap .circle{
       position:absolute; inset:0;
       border-radius:50%;
@@ -403,6 +403,7 @@
 <script src="/maps/shared/map-hamburger-control.js"></script>
 <script src="/maps/shared/format-ee.js"></script>
 <script src="/maps/shared/species-meta.js"></script>
+<script src="/maps/shared/rarity-style.js"></script>
 <script src="/maps/shared/et-strings.js"></script>
 <script>
 /* ========= Embedded detection ========= */
@@ -930,16 +931,17 @@ let lastErrorStatus = null;
 let lastErrorSnippet = null;
 let lastBodySnippet = null;
 let debugCountryTop5 = "-";
+let debugCountrySample = "-";
 
-function parseObsDate(obsDt){
+function parseObsDateToMs(obsDt){
   const raw = String(obsDt || "").trim();
   if (!raw) return null;
   let m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0).getTime();
   m = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
-  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), 0, 0);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), 0, 0).getTime();
   const d = new Date(raw);
-  if (!isNaN(d.getTime())) return d;
+  if (!isNaN(d.getTime())) return d.getTime();
   return null;
 }
 
@@ -1017,6 +1019,7 @@ function updateDebugPanel(){
     `stoppedAtKey: <b>${stoppedAtKey || "-"}</b>`,
     `lastRequest: <b>${lastRequest ? `${lastRequest.url} (${lastRequest.status ?? "?"}, ${lastRequest.timeMs ?? "?"}ms)` : "-"}</b>`,
     `countryTop5(7d): <b>${debugCountryTop5}</b>`,
+    `countrySample(7d): <b>${debugCountrySample}</b>`,
     `snapshotNote: <b>${snapshotDebugNote || "-"}</b>`,
   ].join("<br>");
 }
@@ -1155,13 +1158,17 @@ function showPulseRing(lat, lon){
 window.addEventListener("beforeunload", clearPulseRing);
 
 function makeIcon(url, border, rarityLevel, occ7, isMigr){
-  const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(rarityLevel) : "";
-  const rarityBadge = rarityText ? `<div class="marker-rarity-badge">${rarityText}</div>` : ``;
+  const rarityStyle = window.getRarityStyle ? window.getRarityStyle(rarityLevel || "none") : null;
+  const ring = (rarityStyle && rarityStyle.ringColor) ? rarityStyle.ringColor : border;
+  const rarityText = rarityStyle && rarityStyle.badgeText ? rarityStyle.badgeText : "";
+  const rarityBadge = rarityText
+    ? `<div class="marker-rarity-badge" style="background:${rarityStyle.badgeBg};color:${rarityStyle.badgeFg}">${rarityText}</div>`
+    : ``;
   const badge = ((occ7===0)||Number.isFinite(occ7))
     ? `<div class="countBadge" style="background:${isMigr ? "#16a34a" : "#f97316"}">${occ7}</div>`
     : ``;
   const bg = url ? `background-image:url('${url}');` : "";
-  const html = `<div class="markerWrap"><div class="circle" style="border-color:${border};${bg}"></div>${rarityBadge}${badge}</div>`;
+  const html = `<div class="markerWrap"><div class="circle" style="border-color:${ring};${bg}"></div>${rarityBadge}${badge}</div>`;
   const size = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--mSize")) || 34;
   return L.divIcon({ html, className:"", iconSize:[size,size], iconAnchor:[size/2, size/2], popupAnchor:[0, -size/2] });
 }
@@ -1482,7 +1489,7 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
     aggregate[speciesName] = {
       regions: {},
       total7: 0,
-      latest: { t: "", region: "", lat: null, lon: null, loc: "" },
+      latest: { t: "", tMs: 0, region: "", lat: null, lon: null, loc: "" },
     };
   });
 
@@ -1513,6 +1520,7 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
 
       const perSpeciesRegion = {};
       const countryCounts = {};
+      const countrySampleRows = [];
       const nowMs = Date.now();
       const last7Cutoff = nowMs - (7 * 24 * 60 * 60 * 1000);
       for (const obs of response.json) {
@@ -1520,16 +1528,16 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
         const speciesName = speciesByCode.get(speciesCode);
         if (!speciesName) continue;
         const obsDt = String(obs?.obsDt || "");
-        const d = parseObsDate(obsDt);
-        const ts = d ? d.getTime() : null;
+        const ts = parseObsDateToMs(obsDt);
         const isValidDt = ts !== null && Number.isFinite(ts);
         if (!perSpeciesRegion[speciesName]) {
-          perSpeciesRegion[speciesName] = { occ7: 0, latestObs: null, latestTs: 0 };
+          perSpeciesRegion[speciesName] = { occ7: 0, latestObs: null, latestTs: 0, speciesCode: speciesCode, sampleObsDt: obsDt };
         }
         if (isValidDt) {
           if (ts >= last7Cutoff && ts <= nowMs) {
             perSpeciesRegion[speciesName].occ7++;
             countryCounts[speciesName] = (countryCounts[speciesName] || 0) + 1;
+            if (countrySampleRows.length < 5) countrySampleRows.push({ speciesCode, count: perSpeciesRegion[speciesName].occ7, obsDt });
           }
           if (!perSpeciesRegion[speciesName].latestTs || ts > perSpeciesRegion[speciesName].latestTs) {
             perSpeciesRegion[speciesName].latestObs = obs;
@@ -1542,6 +1550,9 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
         .slice(0, 5)
         .map(([name, count]) => `${name}:${count}`)
         .join(" | ") || "-";
+      debugCountrySample = countrySampleRows
+        .map((x) => `${region} ${x.speciesCode}:${x.count} @ ${x.obsDt}`)
+        .join(" | ") || "-";
 
       for (const [speciesName, regionStats] of Object.entries(perSpeciesRegion)) {
         const latestObs = regionStats.latestObs;
@@ -1550,17 +1561,20 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
         const lon = Number(latestObs.lng);
         if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
         const t = String(latestObs.obsDt || "").slice(0, 10);
+        const lastSeenMs = Number(regionStats.latestTs || 0);
         aggregate[speciesName].regions[region] = {
           lat,
           lon,
           t,
+          tMs: lastSeenMs,
           loc: latestObs.locName || "",
           occ7: Number(regionStats.occ7 || 0),
         };
         aggregate[speciesName].total7 += Number(regionStats.occ7 || 0);
-        if (t && (!aggregate[speciesName].latest.t || t > aggregate[speciesName].latest.t)) {
+        if (lastSeenMs && (!aggregate[speciesName].latest.tMs || lastSeenMs > aggregate[speciesName].latest.tMs)) {
           aggregate[speciesName].latest = {
             t,
+            tMs: lastSeenMs,
             region,
             lat,
             lon,
@@ -1592,18 +1606,20 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
 
   for (const speciesName of keys) {
     const p = points[speciesName] = points[speciesName] || {};
-    const agg = aggregate[speciesName] || { regions: {}, total7: 0, latest: { t: "", region: "", lat: null, lon: null, loc: "" } };
+    const agg = aggregate[speciesName] || { regions: {}, total7: 0, latest: { t: "", tMs: 0, region: "", lat: null, lon: null, loc: "" } };
     p.fetchedAt = Date.now();
     p.occ7 = agg.total7;
     p.regions = agg.regions;
     if (agg.latest.t) {
       p.t = agg.latest.t;
+      p.tMs = agg.latest.tMs || 0;
       p.region = agg.latest.region;
       p.lat = agg.latest.lat;
       p.lon = agg.latest.lon;
       p.loc = agg.latest.loc;
     } else {
       p.t = "";
+      p.tMs = 0;
       p.region = "";
       p.lat = null;
       p.lon = null;

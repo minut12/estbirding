@@ -216,6 +216,15 @@
       box-shadow:0 1px 2px rgba(0,0,0,.25);
       z-index:6;
     }
+    .pulse-ring{
+      animation: pulseRing 0.9s ease-out 0s 3 forwards;
+      transform-origin:center center;
+    }
+    @keyframes pulseRing{
+      0%{ opacity:.95; transform:scale(.5); }
+      70%{ opacity:.35; transform:scale(1.4); }
+      100%{ opacity:0; transform:scale(1.8); }
+    }
 
     .bannerWarn{
       margin:8px 0 10px;
@@ -766,6 +775,29 @@ function borderColorByDate(iso){
   const diff = (Date.now() - d.getTime())/86400000;
   return diff <= 7 ? "#16a34a" : "#f97316";
 }
+function formatDateEt(isoLike){
+  if (!isoLike) return "";
+  const s = String(isoLike).trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[3]}.${m[2]}.${m[1]}`;
+  const d = new Date(s);
+  if (isNaN(d)) return s;
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}.${mm}.${yyyy}`;
+}
+function formatDateTimeEt(isoLike){
+  if (!isoLike) return "-";
+  const d = new Date(String(isoLike));
+  if (isNaN(d)) return formatDateEt(isoLike);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}.${mm}.${yyyy} ${hh}:${mi}`;
+}
 function showWarn(msg){
   const el = document.getElementById("warnBanner");
   if (!msg) { el.style.display="none"; el.textContent=""; return; }
@@ -903,8 +935,8 @@ function updateDebugPanel(){
   el.innerHTML = [
     `active filters: <b>7 days only=${recentOnly ? "ON" : "OFF"}, per-country=${perCountry ? "ON" : "OFF"}</b>`,
     `dataMode: <b>${dataMode}</b>`,
-    `lastSnapshotAt: <b>${lastSnapshotAt ? new Date(lastSnapshotAt).toLocaleString() : "-"}</b>`,
-    `lastRefreshAt: <b>${lastRefreshAt ? new Date(lastRefreshAt).toLocaleString() : "-"}</b>`,
+    `lastSnapshotAt: <b>${lastSnapshotAt ? formatDateTimeEt(lastSnapshotAt) : "-"}</b>`,
+    `lastRefreshAt: <b>${lastRefreshAt ? formatDateTimeEt(lastRefreshAt) : "-"}</b>`,
     `counts: <b>markers=${counts.markers}, items=${counts.items}</b>`,
     `okCount/failCount: <b>${okCount}/${failCount}</b>`,
     `lastError: <b>${lastError || "-"}</b>`,
@@ -1004,8 +1036,8 @@ function reloadSnapshot(){
     updateDebugPanel();
     return false;
   }
-  showSnapshotBanner(`Loaded snapshot: ${new Date(snapshot.createdAt).toLocaleString()}`);
-  setStatus(`Loaded snapshot: ${new Date(snapshot.createdAt).toLocaleString()}`);
+  showSnapshotBanner(`Loaded snapshot: ${formatDateTimeEt(snapshot.createdAt)}`);
+  setStatus(`Loaded snapshot: ${formatDateTimeEt(snapshot.createdAt)}`);
   progressLine.textContent = "Loaded snapshot.";
   return true;
 }
@@ -1019,8 +1051,40 @@ function preloadAvatars(){
 const map = L.map("map", { zoomControl:false }).setView([56.7, 20.5], 5);
 L.control.zoom({ position:"topright" }).addTo(map);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+map.createPane("highlightPane");
+map.getPane("highlightPane").style.zIndex = "650";
+map.getPane("highlightPane").style.pointerEvents = "none";
 
 const markers = new Map();
+let activePulseRing = null;
+let activePulseTimeout = null;
+
+function clearPulseRing(){
+  if (activePulseTimeout) {
+    clearTimeout(activePulseTimeout);
+    activePulseTimeout = null;
+  }
+  if (activePulseRing) {
+    try { map.removeLayer(activePulseRing); } catch(e){}
+    activePulseRing = null;
+  }
+}
+
+function showPulseRing(lat, lon){
+  clearPulseRing();
+  activePulseRing = L.circleMarker([lat, lon], {
+    pane: "highlightPane",
+    radius: 18,
+    color: "#0ea5e9",
+    weight: 3,
+    fillColor: "#38bdf8",
+    fillOpacity: 0.2,
+    className: "pulse-ring",
+    interactive: false,
+  }).addTo(map);
+  activePulseTimeout = setTimeout(clearPulseRing, 2500);
+}
+window.addEventListener("beforeunload", clearPulseRing);
 
 function makeIcon(url, border, hasCrown, occ7, isMigr){
   const crown = hasCrown ? `<div class="crown">👑</div>` : ``;
@@ -1046,7 +1110,7 @@ function fmtMeta(p){
     parts.push("No location yet");
   }
 
-  if (p.t) parts.push(`<span class="pillMini">last</span>${p.t}`);
+  if (p.t) parts.push(`<span class="pillMini">last</span>${formatDateEt(p.t)}`);
   if (p.region) parts.push(`<span class="pillMini">country</span>${p.region}`);
   if ((p.occ7===0) || Number.isFinite(Number(p.occ7))) parts.push(`<span class="pillMini">7d total</span>${p.occ7}`);
 
@@ -1111,7 +1175,7 @@ function updateMarker(species){
       const icon = makeIcon(meta.avatarUrl || avatars[species] || "", border, hasCrown, occ7, isMigr);
 
       const where = d.loc ? `<br><small>location: ${d.loc}</small>` : "";
-      const when  = d.t ? `<br><small>last seen: ${d.t}</small>` : "";
+      const when  = d.t ? `<br><small>last seen: ${formatDateEt(d.t)}</small>` : "";
       const srcLn = `<br><small>source: eBird ${rg} (${REGION_NAME[rg]||rg})</small>`;
       const occLn = `<br><small>7d records: ${occ7} (computed from last ${BACK_DAYS}d)</small>`;
       const migr  = `<br><small>migration: ${isMigr ? "yes" : "no"}</small>`;
@@ -1136,7 +1200,7 @@ function updateMarker(species){
       const border = borderColorByDate(best.t);
       const icon = makeIcon(meta.avatarUrl || avatars[species] || "", border, hasCrown, Number(best.occ7||0), isMigr);
       const where = best.loc ? `<br><small>location: ${best.loc}</small>` : "";
-      const when  = best.t ? `<br><small>last seen: ${best.t}</small>` : "";
+      const when  = best.t ? `<br><small>last seen: ${formatDateEt(best.t)}</small>` : "";
       const srcLn = `<br><small>source: eBird ${best.rg} (${REGION_NAME[best.rg]||best.rg})</small>`;
       const occLn = `<br><small>7d records (country): ${best.occ7}</small>`;
       const migr  = `<br><small>migration: ${isMigr ? "yes" : "no"}</small>`;
@@ -1166,14 +1230,16 @@ function rowHTML(name){
   const meta = getSpeciesMeta(name);
   const bcol = borderColorByDate(p.t);
   const nameCls = (p.visible === false) ? "name disabled" : "name";
-  const hasMarker = markers.has(name) || (Number.isFinite(p.lat) && Number.isFinite(p.lon));
+  const hasLocation = Number.isFinite(p.lat) && Number.isFinite(p.lon);
+  const hasMarker = markers.has(name) || hasLocation;
+  const openDisabled = hasLocation ? "" : "disabled title=\"No location yet\"";
 
   return `
     <div class="row" data-key="${name}">
       <div class="avatar" style="background-image:url('${meta.avatarUrl || avatars[name] || ""}');border-color:${bcol}"></div>
       <div>
         <div class="${nameCls}" title="Tap to hide/show marker">${name}</div>
-        ${hasMarker ? `<div style="margin-top:6px;"><button class="btn secondary" data-open>Open</button></div>` : ""}
+        ${hasMarker ? `<div style="margin-top:6px;"><button class="btn secondary" data-open ${openDisabled}>Open</button></div>` : ""}
         <div class="meta">${fmtMeta(p)}</div>
       </div>
     </div>`;
@@ -1202,16 +1268,22 @@ function wireRows(){
     });
 
     if (openBtn) openBtn.addEventListener("click", ()=>{
+      if (!(Number.isFinite(p.lat) && Number.isFinite(p.lon))) {
+        showSnapshotBanner("No location yet", "warn");
+        setTimeout(hideSnapshotBanner, 1800);
+        return;
+      }
+      const targetZoom = Math.max(map.getZoom(), 6);
+      const targetLatLng = [p.lat, p.lon];
+      map.flyTo(targetLatLng, targetZoom, { duration: 0.6 });
+      showPulseRing(p.lat, p.lon);
+
       if (markers.has(key)) {
         const m = markers.get(key);
-        map.setView(m.getLatLng(), Math.max(map.getZoom(), 6));
-        m.openPopup();
-        closeSidebarOnMobile();
-      } else if (Number.isFinite(p.lat) && Number.isFinite(p.lon)) {
-        map.setView([p.lat,p.lon], 6);
+        setTimeout(()=> { try { m.openPopup(); } catch(e){} }, 450);
         closeSidebarOnMobile();
       } else {
-        alert("No marker yet. Fetch first.");
+        closeSidebarOnMobile();
       }
     });
   });
@@ -1704,7 +1776,7 @@ document.getElementById("btnRefreshData").addEventListener("click", async ()=>{
     lastRefreshAt = new Date().toISOString();
     if (result.successCount > 0) await saveSnapshotLocal();
     dataMode = "live";
-    setStatus(`Data loaded · ${new Date(lastRefreshAt).toLocaleString()}`);
+    setStatus(`Data loaded · ${formatDateTimeEt(lastRefreshAt)}`);
     progressLine.textContent = "Data loaded";
     showSnapshotBanner("Data loaded");
     setTimeout(hideSnapshotBanner, 4000);

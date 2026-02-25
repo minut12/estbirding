@@ -5,6 +5,7 @@ import { normalizeSpeciesName, normalizeUiText } from '@/lib/textNormalize';
 const BUCKET = 'bird-avatars';
 const FILE_PATH = 'meta/species_meta_v1.json';
 const CLOUD_UPDATED_AT_KEY = 'estbirding.speciesMeta.cloud.updatedAt';
+export const SPECIES_META_LAST_SYNC_AT_KEY = 'estbirding.speciesMeta.lastSyncAt';
 
 export type SpeciesMetaCloudItem = {
   ebirdCode?: string;
@@ -91,15 +92,21 @@ export async function uploadSpeciesMetaJson(payload: SpeciesMetaCloudJson): Prom
   if (error) throw new Error(error.message || 'Cloud upload failed');
 }
 
-export async function refreshSpeciesMetaFromCloud(): Promise<{ updated: boolean; merged: Record<string, SpeciesMeta> }> {
+export async function refreshSpeciesMetaFromCloud(options?: { force?: boolean }): Promise<{ updated: boolean; merged: Record<string, SpeciesMeta> }> {
+  const force = !!options?.force;
   const local = loadSpeciesMeta();
   const cloud = await downloadSpeciesMetaJson();
   if (!cloud) return { updated: false, merged: local };
 
   const prevUpdatedAt = localStorage.getItem(CLOUD_UPDATED_AT_KEY) || '';
+  if (!force && cloud.updatedAt && prevUpdatedAt && cloud.updatedAt === prevUpdatedAt) {
+    localStorage.setItem(SPECIES_META_LAST_SYNC_AT_KEY, new Date().toISOString());
+    return { updated: false, merged: local };
+  }
   const merged = mergeCloudOverLocal(local, cloud);
   replaceSpeciesMeta(merged);
   localStorage.setItem(CLOUD_UPDATED_AT_KEY, cloud.updatedAt || '');
+  localStorage.setItem(SPECIES_META_LAST_SYNC_AT_KEY, new Date().toISOString());
 
   const updated = Boolean(cloud.updatedAt && cloud.updatedAt !== prevUpdatedAt);
   if (updated) {
@@ -133,6 +140,7 @@ export async function saveSpeciesMetaToCloud(speciesName: string, patch: Partial
   const merged = mergeCloudOverLocal(loadSpeciesMeta(), cloudFinal);
   replaceSpeciesMeta(merged);
   localStorage.setItem(CLOUD_UPDATED_AT_KEY, cloudFinal.updatedAt || '');
+  localStorage.setItem(SPECIES_META_LAST_SYNC_AT_KEY, new Date().toISOString());
   try { window.dispatchEvent(new CustomEvent('species-meta-updated')); } catch {}
   return merged;
 }

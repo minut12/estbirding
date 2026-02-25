@@ -440,7 +440,9 @@ const SNAPSHOT_VERSION = "europe_map_v2";
 
 /* ========= Defaults ========= */
 const PROJECT_REF = "eenwcyuyugyrjgpivxrq";
-const EBIRD_RECENT_API = `https://${PROJECT_REF}.supabase.co/functions/v1/ebird_recent`;
+const SUPABASE_URL = `https://${PROJECT_REF}.supabase.co`;
+const FUNCTIONS_BASE = `${SUPABASE_URL}/functions/v1`;
+const EBIRD_RECENT_API = `${FUNCTIONS_BASE}/ebird_recent`;
 
 function detectProxyMode(){
   return "Supabase eBird";
@@ -868,6 +870,8 @@ let lastRequest = null;
 let okCount = 0;
 let failCount = 0;
 let proxyTestResult = "-";
+let lastStatus = null;
+let lastErrorSnippet = null;
 
 function saveAll(){
   localStorage.setItem(LS_AVATARS, JSON.stringify(avatars));
@@ -922,6 +926,8 @@ function updateDebugPanel(){
     `counts: <b>markers=${counts.markers}, items=${counts.items}</b>`,
     `okCount/failCount: <b>${okCount}/${failCount}</b>`,
     `lastError: <b>${lastError || "-"}</b>`,
+    `lastStatus: <b>${lastStatus ?? "-"}</b>`,
+    `lastErrorSnippet: <b>${lastErrorSnippet || "-"}</b>`,
     `stoppedAtIndex: <b>${stoppedAtIndex ?? "-"}</b>`,
     `stoppedAtKey: <b>${stoppedAtKey || "-"}</b>`,
     `lastRequest: <b>${lastRequest ? `${lastRequest.url} (${lastRequest.status ?? "?"}, ${lastRequest.timeMs ?? "?"}ms)` : "-"}</b>`,
@@ -945,7 +951,7 @@ function hideSnapshotBanner(){
 
 async function saveSnapshotRemote(snapshot){
   try{
-    const apiBase = "https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/save-snapshot";
+    const apiBase = `${FUNCTIONS_BASE}/save-snapshot`;
     const body = {
       key: getSnapshotKey(),
       version: snapshot.version,
@@ -1543,6 +1549,7 @@ function stopRefresh(){
 
 function setRefreshError(message, idx, key){
   lastError = (message || "Unknown refresh error").slice(0, 400);
+  lastErrorSnippet = String(message || "").slice(0, 200) || null;
   stoppedAtIndex = Number.isFinite(idx) ? idx : null;
   stoppedAtKey = key || null;
 }
@@ -1562,6 +1569,8 @@ async function refreshKeys(keys, force=true){
   lastRequest = null;
   okCount = 0;
   failCount = 0;
+  lastStatus = null;
+  lastErrorSnippet = null;
   updateDebugPanel();
 
   const cfg = validateRefreshConfig();
@@ -1571,6 +1580,27 @@ async function refreshKeys(keys, force=true){
     updateDebugPanel();
     return { done: 0, total: keys.length, successCount: 0, failureCount: keys.length, aborted: false };
   }
+
+  // Fast guard: stop immediately when function is missing in this project.
+  const healthUrl = `${EBIRD_RECENT_API}?regionCode=EE&back=1&maxResults=1&_ts=${Date.now()}`;
+  try {
+    const health = await safeFetchJson(healthUrl, { timeoutMs: 10000, retries: 0 });
+    lastStatus = health.status;
+    lastRequest = { url: health.url, status: health.status, timeMs: health.timeMs };
+  } catch (e) {
+    lastStatus = e?.status ?? 0;
+    lastErrorSnippet = String(e?.textSnippet || e?.message || "").slice(0, 200);
+    lastRequest = { url: e?.url || healthUrl, status: e?.status, timeMs: e?.timeMs };
+    if (Number(e?.status) === 404) {
+      const msg = "ebird_recent not deployed to this Supabase project";
+      showSnapshotBanner(msg, "error");
+      showWarn(msg);
+      setRefreshError(`${msg}. status=404 ${lastErrorSnippet || ""}`, 0, "health-check");
+      updateDebugPanel();
+      return { done: 0, total: keys.length, successCount: 0, failureCount: 0, aborted: false };
+    }
+  }
+
   stopRefresh();
   refreshStoppedByUser = false;
   abortController = new AbortController();
@@ -1593,6 +1623,8 @@ async function refreshKeys(keys, force=true){
     }
     catch(e) {
       failCount++;
+      lastStatus = e?.status ?? 0;
+      lastErrorSnippet = String(e?.textSnippet || e?.message || "").slice(0, 200);
       const preview = String(e?.textSnippet || e?.message || "").slice(0, 200);
       const regionPart = e?.region ? ` country=${e.region}` : "";
       const statusPart = Number.isFinite(e?.status) ? ` status=${e.status}` : "";
@@ -1845,12 +1877,16 @@ async function testEbirdViaProxy(){
     });
     const snippet = JSON.stringify(response.json || "").slice(0, 200);
     proxyTestResult = `ok status=${response.status} ${snippet}`;
+    lastStatus = response.status;
+    lastErrorSnippet = snippet || null;
     lastRequest = { url: response.url, status: response.status, timeMs: response.timeMs };
     showSnapshotBanner("Proxy test passed", "");
   } catch (e) {
     const status = e?.status ?? 0;
     const snippet = String(e?.textSnippet || e?.message || "").slice(0, 200);
     proxyTestResult = `fail status=${status} ${snippet}`;
+    lastStatus = status;
+    lastErrorSnippet = snippet || null;
     lastRequest = { url: e?.url || testUrl, status: status, timeMs: e?.timeMs };
     showSnapshotBanner("Proxy test failed", "warn");
   }

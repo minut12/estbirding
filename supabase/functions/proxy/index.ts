@@ -26,7 +26,7 @@ function corsHeaders(origin: string | null): Headers {
   return new Headers({
     "Access-Control-Allow-Origin": pickAllowedOrigin(origin),
     "Access-Control-Allow-Methods": "GET,HEAD,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, X-eBirdApiToken",
+    "Access-Control-Allow-Headers": "Content-Type, X-eBirdApiToken, apikey, Authorization",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin",
     "Cache-Control": "no-store",
@@ -85,6 +85,15 @@ Deno.serve(async (req) => {
   if (accept) upstreamHeaders.set("Accept", accept);
   upstreamHeaders.set("User-Agent", "EstBirding-Proxy/1.0");
 
+  const targetHost = target.hostname.toLowerCase();
+  if (targetHost === "api.ebird.org") {
+    const token = req.headers.get("x-ebirdapitoken") || req.headers.get("X-eBirdApiToken");
+    if (!token) {
+      return jsonResponse(400, { error: "Missing X-eBirdApiToken header for eBird" }, origin);
+    }
+    upstreamHeaders.set("X-eBirdApiToken", token);
+  }
+
   let upstream: Response;
   try {
     upstream = await fetch(target.toString(), {
@@ -108,20 +117,6 @@ Deno.serve(async (req) => {
   if (!isAllowedHost(finalHost)) {
     console.warn(`[proxy] redirect blocked host=${finalHost} target=${redactUrlForLog(rawTarget)}`);
     return jsonResponse(403, { error: "host not allowed", host: finalHost || "unknown" }, origin);
-  }
-
-  if (!upstream.ok) {
-    let preview = "";
-    try {
-      preview = (await upstream.text()).slice(0, 200);
-    } catch {
-      preview = upstream.statusText || "upstream error";
-    }
-    return jsonResponse(502, {
-      error: "upstream failed",
-      status: upstream.status,
-      message: preview || upstream.statusText || "upstream error",
-    }, origin);
   }
 
   const headers = corsHeaders(origin);

@@ -377,6 +377,7 @@
       <div id="warnBanner" class="bannerWarn"></div>
       <details class="debug-panel" id="debugPanel">
         <summary>Debug info</summary>
+        <button class="btn secondary" id="btnTestProxy" style="margin:6px 0 8px;">Test eBird via proxy</button>
         <div id="debugContent">Loading...</div>
       </details>
       <div id="progressLine">Ready.</div>
@@ -888,6 +889,7 @@ let stoppedAtKey = null;
 let lastRequest = null;
 let okCount = 0;
 let failCount = 0;
+let proxyTestResult = "-";
 
 function saveAll(){
   localStorage.setItem(LS_AVATARS, JSON.stringify(avatars));
@@ -946,6 +948,7 @@ function updateDebugPanel(){
     `stoppedAtIndex: <b>${stoppedAtIndex ?? "-"}</b>`,
     `stoppedAtKey: <b>${stoppedAtKey || "-"}</b>`,
     `lastRequest: <b>${lastRequest ? `${lastRequest.url} (${lastRequest.status ?? "?"}, ${lastRequest.timeMs ?? "?"}ms)` : "-"}</b>`,
+    `proxyTest: <b>${proxyTestResult || "-"}</b>`,
     `snapshotNote: <b>${snapshotDebugNote || "-"}</b>`,
   ].join("<br>");
 }
@@ -1425,11 +1428,28 @@ async function fetchRegionsLimited(urls, signal){
         headers: { "X-eBirdApiToken": EBIRD_TOKEN },
       });
       lastRequest = { url: response.url, status: response.status, timeMs: response.timeMs };
-      results[i] = response.json;
+      if (!Array.isArray(response.json)) {
+        const err = new Error("Invalid eBird payload");
+        err.status = response.status;
+        err.textSnippet = JSON.stringify(response.json || "").slice(0, 200);
+        err.timeMs = response.timeMs;
+        err.url = response.url;
+        throw err;
+      }
+      results[i] = { ok: true, data: response.json, error: null };
     }
     catch(e){
       lastRequest = { url: e.url || buildProxyUrl(u), status: e.status, timeMs: e.timeMs };
-      results[i] = null;
+      results[i] = {
+        ok: false,
+        data: null,
+        error: {
+          status: e?.status ?? 0,
+          textSnippet: String(e?.textSnippet || e?.message || "").slice(0, 200),
+          url: e?.url || buildProxyUrl(u),
+          timeMs: e?.timeMs,
+        },
+      };
     }
   });
   await runPool(tasks, limit);
@@ -1451,14 +1471,18 @@ async function fetchEurope(speciesName, force=false, signal=null){
 
   const regionsData = {};
   let total7 = 0;
+  const regionErrors = [];
 
   // latest overall by last-seen date (arr[0])
   let latest = { t:"", region:"", lat:null, lon:null, loc:"" };
 
-  const now = Date.now();
-
-  regionResults.forEach((arr, idx)=>{
+  regionResults.forEach((entry, idx)=>{
     const region = REGIONS[idx];
+    if (!entry || entry.ok !== true) {
+      if (entry?.error) regionErrors.push({ region, ...entry.error });
+      return;
+    }
+    const arr = entry.data;
     if (!Array.isArray(arr) || arr.length === 0) return;
     const recentArr = arr.slice();
     recentArr.sort((a,b)=> String(b.obsDt||"").localeCompare(String(a.obsDt||"")));
@@ -1506,6 +1530,17 @@ async function fetchEurope(speciesName, force=false, signal=null){
 
   saveAll();
   updateMarker(speciesName);
+  if (regionErrors.length > 0) {
+    const first = regionErrors[0];
+    const err = new Error(`upstream ${first.status} ${first.textSnippet}`);
+    err.status = first.status;
+    err.textSnippet = first.textSnippet;
+    err.url = first.url;
+    err.timeMs = first.timeMs;
+    err.region = first.region;
+    err.species = speciesName;
+    throw err;
+  }
   render();
 }
 
@@ -1584,7 +1619,9 @@ async function refreshKeys(keys, force=true){
     catch(e) {
       failCount++;
       const preview = String(e?.textSnippet || e?.message || "").slice(0, 200);
-      setRefreshError(preview || "Fetch failed", index + 1, k);
+      const regionPart = e?.region ? ` country=${e.region}` : "";
+      const statusPart = Number.isFinite(e?.status) ? ` status=${e.status}` : "";
+      setRefreshError(`species=${k}${regionPart}${statusPart} ${preview || "Fetch failed"}`, index + 1, k);
       lastRequest = { url: e?.url || "", status: e?.status, timeMs: e?.timeMs };
       console.warn("Fetch failed", k, e);
     }
@@ -1824,6 +1861,28 @@ async function resetEuropeCache(){
   progressLine.textContent = "Cache reset.";
 }
 
+async function testEbirdViaProxy(){
+  const testUrl = `https://api.ebird.org/v2/data/obs/EE/recent?back=1&maxResults=3&_ts=${Date.now()}`;
+  try {
+    const response = await safeFetchJson(testUrl, {
+      timeoutMs: 20000,
+      retries: 0,
+      headers: { "X-eBirdApiToken": EBIRD_TOKEN },
+    });
+    const snippet = JSON.stringify(response.json || "").slice(0, 200);
+    proxyTestResult = `ok status=${response.status} ${snippet}`;
+    lastRequest = { url: response.url, status: response.status, timeMs: response.timeMs };
+    showSnapshotBanner("Proxy test passed", "");
+  } catch (e) {
+    const status = e?.status ?? 0;
+    const snippet = String(e?.textSnippet || e?.message || "").slice(0, 200);
+    proxyTestResult = `fail status=${status} ${snippet}`;
+    lastRequest = { url: e?.url || buildProxyUrl(testUrl), status: status, timeMs: e?.timeMs };
+    showSnapshotBanner("Proxy test failed", "warn");
+  }
+  updateDebugPanel();
+}
+
 /* ========= Settings modal ========= */
 const modalBackdrop = document.getElementById("modalBackdrop");
 const settingsBtn = document.getElementById("settingsBtn");
@@ -1896,6 +1955,7 @@ document.getElementById("btnResetCache").addEventListener("click", async ()=>{
   if (!confirm("Reset Europe snapshot/cache state?")) return;
   await resetEuropeCache();
 });
+document.getElementById("btnTestProxy").addEventListener("click", testEbirdViaProxy);
 document.getElementById("refreshFilteredBtn").addEventListener("click", refreshFiltered);
 document.getElementById("refreshSelectedBtn").addEventListener("click", refreshSelected);
 document.getElementById("stopBtn").addEventListener("click", ()=>{ AUTO_SYNC_CANCELLED = true; stopRefresh(); });

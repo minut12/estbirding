@@ -13,8 +13,8 @@ import {
   getMergedAvatars, validateFile, processImage, notifyIframeUpdate,
   uploadSharedAvatar, removeSharedAvatar, fetchSpeciesList,
 } from '@/lib/avatar-storage';
-import { getSpeciesMeta, loadSpeciesMeta, replaceSpeciesMeta, upsertSpeciesMeta } from '@/lib/speciesMeta';
-import { mergeSpeciesMetaFromCloud, saveSpeciesMetaCloudPatch } from '@/lib/speciesMetaCloud';
+import { getSpeciesMeta, loadSpeciesMeta, upsertSpeciesMeta } from '@/lib/speciesMeta';
+import { refreshSpeciesMetaFromCloud, saveSpeciesMetaToCloud } from '@/lib/speciesMetaCloud';
 import { ET_STRINGS } from '@/lib/etStrings';
 import { normalizeUiText } from '@/lib/textNormalize';
 
@@ -34,11 +34,8 @@ export default function AvatarManager() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const local = loadSpeciesMeta();
-    mergeSpeciesMetaFromCloud(local).then((merged) => {
-      replaceSpeciesMeta(merged);
-      window.dispatchEvent(new CustomEvent('species-meta-updated'));
-    }).catch(() => {});
+    loadSpeciesMeta();
+    refreshSpeciesMetaFromCloud().catch(() => {});
     fetchSpeciesList().then((list) => { if (list.length > 0) setSpecies(list.map(normalizeUiText)); });
   }, []);
 
@@ -132,7 +129,7 @@ export default function AvatarManager() {
     };
     upsertSpeciesMeta(selected, patch);
     window.dispatchEvent(new CustomEvent('species-meta-updated'));
-    saveSpeciesMetaCloudPatch(selected, patch)
+    saveSpeciesMetaToCloud(selected, patch)
       .then(() => toast.success(ET_STRINGS.saveSpeciesSettingsOk))
       .catch(() => toast.warning(ET_STRINGS.saveSpeciesSettingsLocalOnly));
   }, [selected, ebirdCode, rarityLevel, currentAvatar]);

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Map, Newspaper, CalendarDays, Settings } from 'lucide-react';
 import MapTab from '@/features/map/MapTab';
 import NewsTab from '@/features/news/NewsTab';
@@ -8,6 +8,7 @@ import SettingsTab from '@/features/settings/SettingsTab';
 import CacheResetFab from '@/components/CacheResetFab';
 import VersionBanner from '@/components/VersionBanner';
 import { cn } from '@/lib/utils';
+import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 
 type Tab = 'kaart' | 'uudised' | 'üritused' | 'seaded';
 
@@ -21,6 +22,14 @@ const tabs: { id: Tab; label: string; icon: typeof Map }[] = [
 export default function Index() {
   const [active, setActive] = useState<Tab>('kaart');
   const [selectedMapId, setSelectedMapId] = useState<string>('linnuliigid-ee');
+
+  useEffect(() => {
+    refreshSpeciesMetaFromCloud().catch(() => {});
+    const id = window.setInterval(() => {
+      refreshSpeciesMetaFromCloud().catch(() => {});
+    }, 60000);
+    return () => window.clearInterval(id);
+  }, []);
 
   // goToSettings kept for potential future use
 

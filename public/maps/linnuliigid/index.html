@@ -637,22 +637,6 @@ function avatarIcon(url, borderColor, count7d, rarityLevel) { return _markerIcon
 
 
 // Avatar & manual location
-function setAvatar(key) {
-  const useUrl = confirm('OK = paste image URL, Cancel = upload file');
-  if (useUrl) {
-    const url = prompt('Image URL for '+key, avatars[key]||'');
-    if (url) { avatars[key]=url; save(); preloadAvatars([url]); render(); updateMarker(key); }
-  } else {
-    const input = document.createElement('input'); input.type='file'; input.accept='image/*';
-    input.onchange = () => {
-      const f = input.files[0]; if(!f) return;
-      const r = new FileReader();
-      r.onload = () => { avatars[key]=r.result; save(); preloadAvatars([r.result]); render(); updateMarker(key); };
-      r.readAsDataURL(f);
-    }; input.click();
-  }
-}
-
 function setLocation(key) {
   const prev = points[key] ? (points[key].lat||'')+','+(points[key].lon||'') : '';
   const txt = prompt('Paste coordinates as "lat,lon":', prev);
@@ -783,7 +767,6 @@ function rowHTML(obj) {
         '<div class="name-row"><div class="name-label clickable '+muted+'" onclick="toggleVisibility(\''+key+'\')">'+key+'</div>' + (rarityText ? '<span class="rarity-badge" title="Haruldus">'+rarityText+'</span>' : '') + '</div>' +
         '<div class="controls">' +
           '<a class="btn" target="_blank" href="'+obj.url+'">Open</a>' +
-          '<button class="btn secondary" onclick="setAvatar(\''+key+'\')">Avatar</button>' +
         '</div>' +
       '</div>' +
       '<div class="small">'+meta+'</div>' +

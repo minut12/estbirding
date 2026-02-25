@@ -9,7 +9,7 @@ import { APP_VERSION } from '@/lib/version';
 import { fetchSharedAvatars, getMergedAvatars, notifyIframe } from '@/lib/avatar-storage';
 import { resolveProxyBase } from '@/config/proxyEndpoint';
 import { loadSpeciesMeta } from '@/lib/speciesMeta';
-import { mergeSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
+import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 
 const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -85,11 +85,8 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     fetchSharedAvatars().then(() => {
       sendAvatarsToIframe();
     });
-    mergeSpeciesMetaFromCloud(loadSpeciesMeta())
-      .then((merged) => {
-        localStorage.setItem('estbirding.speciesMeta.v1', JSON.stringify(merged));
-        sendSpeciesMetaToIframe();
-      })
+    refreshSpeciesMetaFromCloud()
+      .then(() => sendSpeciesMetaToIframe())
       .catch(() => {
         sendSpeciesMetaToIframe();
       });
@@ -173,6 +170,13 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     window.addEventListener('species-meta-updated', onMetaUpdated as EventListener);
     return () => window.removeEventListener('species-meta-updated', onMetaUpdated as EventListener);
   }, [sendSpeciesMetaToIframe]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      refreshSpeciesMetaFromCloud().catch(() => {});
+    }, 60000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const handleError = () => {
     setError('Võrguühenduse viga või ressurss puudub');

@@ -16,6 +16,7 @@ import { Trash2, RotateCcw } from 'lucide-react';
 import AvatarManager from './AvatarManager';
 import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
+import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import {
   getEnvEndpoint,
   getStoredEndpoint,
@@ -63,6 +64,14 @@ export default function SettingsTab() {
     const initialProxyStored = getStoredProxyBase();
     setStoredProxyBaseView(initialProxyStored);
     setProxyBaseUrl(initialProxyStored || getEnvProxyBase());
+    refreshSpeciesMetaFromCloud().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      refreshSpeciesMetaFromCloud().catch(() => {});
+    }, 60000);
+    return () => window.clearInterval(id);
   }, []);
 
   useEffect(() => {

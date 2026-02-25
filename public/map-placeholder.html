@@ -691,14 +691,21 @@ function _extractRowDateMsFromText(dateText){
 }
 
 async function countElurikkus7d(searchUrl, days=7){
+  return await sumElurikkusIndividuals7d(searchUrl, days);
+}
+
+async function sumElurikkusIndividuals7d(searchUrl, days=7){
   const cutoffMs = _cutoffStartMs(days);
-  const maxPages = 20;
+  const maxPages = 25;
   let offset = 0;
-  let total = 0;
-  let pages = 0;
   let pageSize = 0;
-  let oldestDateSeenOnLastPage = null;
-  let capReached = false;
+  let pagesFetched = 0;
+  let rowCount = 0;
+  let individualSum = 0;
+  let oldestIncludedDate;
+  let maxPagesHit = false;
+
+  const normHeader = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
 
   for(let page = 0; page < maxPages; page++){
     const u = new URL(searchUrl, 'https://elurikkus.ee');
@@ -707,47 +714,54 @@ async function countElurikkus7d(searchUrl, days=7){
 
     const html = await tryFetch(u.toString());
     const doc = new DOMParser().parseFromString(html, 'text/html');
-    let rowDateMs = [];
     const rows = Array.from(doc.querySelectorAll('table tbody tr'));
+    if(!rows.length) break;
+    if(page === 0) pageSize = rows.length;
 
-    if(rows.length){
-      rowDateMs = rows.map(r => {
-        const dateText = r.querySelector('td')?.textContent?.trim() || '';
-        return _extractRowDateMsFromText(dateText);
-      }).filter(v => Number.isFinite(v));
-    } else {
-      const lines = html.split(/\r?\n/);
-      const dateHeaderIdx = lines.findIndex(l => /(?:^|>)\s*Date\s*(?:<|$)/i.test(l));
-      const chunk = dateHeaderIdx >= 0 ? lines.slice(dateHeaderIdx + 1, dateHeaderIdx + 500) : lines;
-      rowDateMs = chunk.map(line => {
-        const m = line.match(/(\d{4}-\d{2}-\d{2})/);
-        if(!m) return null;
-        return _extractRowDateMsFromText(m[1]);
-      }).filter(v => Number.isFinite(v));
+    const headers = Array.from(doc.querySelectorAll('table thead th')).map(th => normHeader(th.textContent));
+    let dateIdx = headers.findIndex(h => h === 'date' || h.includes('date'));
+    let indIdx = headers.findIndex(h => h === 'individual count' || h.includes('individual'));
+    if(dateIdx < 0) dateIdx = 0;
+
+    let lastRowDateMs = null;
+    for(const row of rows){
+      const cells = Array.from(row.querySelectorAll('td'));
+      if(!cells.length) continue;
+
+      const dateCell = cells[Math.min(dateIdx, cells.length - 1)];
+      const dateText = dateCell?.textContent?.trim() || '';
+      const rowDateMs = _extractRowDateMsFromText(dateText);
+      if(!Number.isFinite(rowDateMs)) continue;
+      lastRowDateMs = rowDateMs;
+
+      if(rowDateMs >= cutoffMs){
+        let individualCount = 1;
+        if(indIdx >= 0 && indIdx < cells.length){
+          const individualText = cells[indIdx]?.textContent?.trim() || '';
+          const parsed = parseInt(individualText, 10);
+          individualCount = Number.isFinite(parsed) ? parsed : 1;
+        }
+        rowCount++;
+        individualSum += individualCount;
+        const d = new Date(rowDateMs).toISOString().slice(0,10);
+        if(!oldestIncludedDate || d < oldestIncludedDate) oldestIncludedDate = d;
+      }
     }
 
-    if(!rowDateMs.length) break;
-    if(page === 0) pageSize = rowDateMs.length;
+    pagesFetched++;
+    if(Number.isFinite(lastRowDateMs) && lastRowDateMs < cutoffMs) break;
 
-    for(const ms of rowDateMs){
-      if(ms >= cutoffMs) total++;
-    }
-
-    pages++;
-    oldestDateSeenOnLastPage = new Date(rowDateMs[rowDateMs.length - 1]).toISOString().slice(0,10);
-    if(rowDateMs[rowDateMs.length - 1] < cutoffMs) break;
-
-    const step = pageSize > 0 ? pageSize : rowDateMs.length;
+    const step = pageSize > 0 ? pageSize : rows.length;
     if(!step) break;
     offset += step;
   }
 
-  if(pages >= maxPages){
-    capReached = true;
-    console.debug('[occ7] maxPages reached', { searchUrl, pages, total });
+  if(pagesFetched >= maxPages){
+    maxPagesHit = true;
+    console.debug('[occ7] maxPages reached', { searchUrl, pagesFetched, rowCount, individualSum });
   }
 
-  return { count: total, pages, pageSize, oldestDateSeenOnLastPage, capReached };
+  return { individualSum, rowCount, pagesFetched, oldestIncludedDate, maxPagesHit, pageSize };
 }
 
 
@@ -789,8 +803,8 @@ async function autoFetchCoords(key, searchUrl) {
     let coords = extractLatLon(shtml);
     let eventDate = extractEventDate(shtml);
 
-    const occ7Meta = await countElurikkus7d(searchUrl, 7);
-    const occ7 = Number.isFinite(occ7Meta.count) ? occ7Meta.count : null;
+    const occ7Meta = await sumElurikkusIndividuals7d(searchUrl, 7);
+    const occ7 = Number.isFinite(occ7Meta.individualSum) ? occ7Meta.individualSum : null;
 
     if (!coords) {
       const detail = findFirstDetailLink(shtml);
@@ -820,10 +834,10 @@ if (changedCoords || newerDate || changedOcc7){
   if (Number.isFinite(occ7)) {
     points[key].occ7 = occ7;
     points[key].occ7Updated = new Date().toISOString();
-    points[key].occ7PagesFetched = occ7Meta.pages;
-    points[key].occ7PageSize = occ7Meta.pageSize;
-    points[key].occ7OldestDateSeen = occ7Meta.oldestDateSeenOnLastPage || null;
-    points[key].occ7MaxPagesReached = !!occ7Meta.capReached;
+    points[key].occ7Rows = occ7Meta.rowCount;
+    points[key].occ7Pages = occ7Meta.pagesFetched;
+    points[key].occ7OldestIncludedDate = occ7Meta.oldestIncludedDate || null;
+    points[key].occ7MaxPagesReached = !!occ7Meta.maxPagesHit;
   }
   if (typeof points[key].visible !== 'boolean') points[key].visible = true; // default visible
   save(); updateMarker(key); render();

@@ -137,3 +137,29 @@ Open:
 - Open app Settings -> `Proxy Base URL`.
 - Paste your proxy base, save, and reopen map if needed.
 - The Europe map top bar shows active proxy mode: `Supabase`, `Fallback`, or `Custom`.
+
+## Deploy `ebird_recent` (required for Europe map)
+
+The Europe map uses the dedicated Edge Function `ebird_recent` for eBird data.
+
+Note: Supabase Edge Functions require JWT verification by default. We explicitly set `verify_jwt = false` for this public function in `supabase/config.toml`.
+
+### Deploy
+
+```sh
+supabase link --project-ref eenwcyuyugyrjgpivxrq
+supabase secrets set EBIRD_API_TOKEN="PASTE_TOKEN_HERE" --project-ref eenwcyuyugyrjgpivxrq
+supabase functions deploy ebird_recent --project-ref eenwcyuyugyrjgpivxrq
+```
+
+### Verify function exists remotely
+
+```sh
+supabase functions list --project-ref eenwcyuyugyrjgpivxrq
+```
+
+### Test after deploy
+
+```sh
+curl -i "https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/ebird_recent?regionCode=EE&back=1&maxResults=1"
+```

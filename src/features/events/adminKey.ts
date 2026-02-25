@@ -1,4 +1,4 @@
-const EVENTS_ADMIN_KEY_STORAGE = "events_admin_key";
+export const EVENTS_ADMIN_KEY_STORAGE = "events_admin_key";
 
 export function getEventsAdminKey(): string | null {
   const value = localStorage.getItem(EVENTS_ADMIN_KEY_STORAGE);

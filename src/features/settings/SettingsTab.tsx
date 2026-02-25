@@ -299,17 +299,6 @@ export default function SettingsTab() {
         <NewsSourcesSettings />
 
         <div className="space-y-2">
-          <Label htmlFor="eventsUrl">Urituste allikas URL</Label>
-          <Input
-            id="eventsUrl"
-            placeholder="https://example.com/events.json"
-            value={form.eventsSourceUrl}
-            onChange={(e) => update('eventsSourceUrl', e.target.value)}
-          />
-          <p className="text-xs text-muted-foreground">JSON-vormingus urituste voo URL</p>
-        </div>
-
-        <div className="space-y-2">
           <Label htmlFor="translateApiUrl">Translation API URL</Label>
           <Input
             id="translateApiUrl"

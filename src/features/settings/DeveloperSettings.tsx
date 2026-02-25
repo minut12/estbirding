@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Code, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useSession } from "@/features/auth/useSession";
 import {
   adminCreateEvent,
   adminDeleteEvent,
@@ -15,7 +14,6 @@ import {
   type EventPayload,
   type EventRow,
 } from "@/features/events/eventsService";
-import { supabase } from "@/config/supabaseClient";
 import {
   clearEventsAdminKey,
   getEventsAdminKey,
@@ -56,30 +54,12 @@ const emptyForm: FormState = {
 
 export default function DeveloperSettings() {
   const [key, setKey] = useState(() => localStorage.getItem(LS_KEY) || "");
-  const [eventsAdminKey, setEventsAdminKeyValue] = useState(() => getEventsAdminKey() || "");
-  const { user, loading } = useSession();
+  const [eventsAdminKeyValue, setEventsAdminKeyValue] = useState(() => getEventsAdminKey() ?? "");
   const [events, setEvents] = useState<EventRow[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
-  const [email, setEmail] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
-
-  useEffect(() => {
-    if (!user || !eventsAdminKey.trim()) return;
-    void loadEvents();
-  }, [user, eventsAdminKey]);
-
-  const handleSave = () => {
-    localStorage.setItem(LS_KEY, key);
-    toast.success("Admin key salvestatud");
-  };
-
-  const handleClear = () => {
-    localStorage.removeItem(LS_KEY);
-    setKey("");
-    toast.success("Admin key eemaldatud");
-  };
 
   const loadEvents = async () => {
     setEventsLoading(true);
@@ -91,6 +71,22 @@ export default function DeveloperSettings() {
     } finally {
       setEventsLoading(false);
     }
+  };
+
+  useEffect(() => {
+    if (!eventsAdminKeyValue.trim()) return;
+    void loadEvents();
+  }, [eventsAdminKeyValue]);
+
+  const handleSave = () => {
+    localStorage.setItem(LS_KEY, key);
+    toast.success("Admin key salvestatud");
+  };
+
+  const handleClear = () => {
+    localStorage.removeItem(LS_KEY);
+    setKey("");
+    toast.success("Admin key eemaldatud");
   };
 
   const startCreate = () => {
@@ -160,38 +156,6 @@ export default function DeveloperSettings() {
     }
   };
 
-  const loginWithMagicLink = async () => {
-    if (!email.trim()) {
-      toast.error("Sisesta e-post");
-      return;
-    }
-    const { error } = await supabase.auth.signInWithOtp({ email: email.trim() });
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-    toast.success("Sisselogimise link saadetud e-postile");
-  };
-
-  const copyUserId = async () => {
-    if (!user?.id) return;
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(user.id);
-      } else {
-        const input = document.createElement("input");
-        input.value = user.id;
-        document.body.appendChild(input);
-        input.select();
-        document.execCommand("copy");
-        document.body.removeChild(input);
-      }
-      toast.success("Kopeeritud");
-    } catch {
-      toast.error("Kopeerimine ebaõnnestus");
-    }
-  };
-
   return (
     <div className="space-y-4">
       <h3 className="flex items-center gap-2 font-semibold text-foreground">
@@ -225,118 +189,51 @@ export default function DeveloperSettings() {
       </div>
 
       <div className="space-y-3 rounded-lg border border-border p-3">
-        {user && (
-          <div className="rounded-md border border-border/70 bg-muted/30 p-2">
-            <div className="text-xs text-muted-foreground">Sinu kasutaja ID (UUID):</div>
-            <div className="mt-1 flex items-center gap-2">
-              <code className="min-w-0 flex-1 truncate rounded bg-background px-2 py-1 text-xs">
-                {user.id}
-              </code>
-              <Button type="button" variant="outline" size="sm" onClick={copyUserId}>
-                Kopeeri
-              </Button>
-            </div>
-          </div>
-        )}
-
         <h4 className="font-semibold text-foreground">Üritused (Lisa/Halda)</h4>
 
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Laen...</p>
-        ) : !user ? (
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">Logi sisse, et hallata üritusi.</p>
-            <div className="flex gap-2">
-              <Input
-                placeholder="E-post"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-              <Button onClick={loginWithMagicLink}>Logi sisse</Button>
-            </div>
+        <div className="space-y-2">
+          <Label htmlFor="eventsAdminKey">Events Admin Key</Label>
+          <Input
+            id="eventsAdminKey"
+            type="password"
+            value={eventsAdminKeyValue}
+            onChange={(e) => setEventsAdminKeyValue(e.target.value)}
+            placeholder="EVENTS_ADMIN_KEY"
+          />
+          <p className="text-xs text-muted-foreground">Võti salvestatakse ainult sinu brauserisse.</p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={async () => {
+                setEventsAdminKey(eventsAdminKeyValue.trim());
+                setEventsAdminKeyValue(eventsAdminKeyValue.trim());
+                toast.success("events_admin_key salvestatud");
+                if (eventsAdminKeyValue.trim()) {
+                  await loadEvents();
+                }
+              }}
+              disabled={!eventsAdminKeyValue.trim()}
+            >
+              Salvesta
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                clearEventsAdminKey();
+                setEventsAdminKeyValue("");
+                setEvents([]);
+                toast.success("events_admin_key eemaldatud");
+              }}
+            >
+              Tühjenda
+            </Button>
           </div>
-        ) : !eventsAdminKey.trim() ? (
-          <div className="space-y-2">
-            <div className="space-y-2">
-              <Label htmlFor="eventsAdminKey">Events Admin Key</Label>
-              <Input
-                id="eventsAdminKey"
-                type="password"
-                value={eventsAdminKey}
-                onChange={(e) => setEventsAdminKeyValue(e.target.value)}
-                placeholder="EVENTS_ADMIN_KEY"
-              />
-              <p className="text-xs text-muted-foreground">
-                Võti salvestatakse ainult sinu brauserisse.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setEventsAdminKey(eventsAdminKey.trim());
-                  setEventsAdminKeyValue(eventsAdminKey.trim());
-                  toast.success("Salvestatud");
-                }}
-                disabled={!eventsAdminKey.trim()}
-              >
-                Salvesta
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  clearEventsAdminKey();
-                  setEventsAdminKeyValue("");
-                  toast.success("Eemaldatud");
-                }}
-              >
-                Eemalda
-              </Button>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Lisa EVENTS_ADMIN_KEY, et luua ja hallata üritusi.
-            </p>
-          </div>
+        </div>
+
+        {!eventsAdminKeyValue.trim() ? (
+          <p className="text-sm text-muted-foreground">Lisa EVENTS_ADMIN_KEY, et luua ja hallata üritusi.</p>
         ) : (
           <div className="space-y-3">
-            <div className="space-y-2">
-              <Label htmlFor="eventsAdminKey">Events Admin Key</Label>
-              <Input
-                id="eventsAdminKey"
-                type="password"
-                value={eventsAdminKey}
-                onChange={(e) => setEventsAdminKeyValue(e.target.value)}
-                placeholder="EVENTS_ADMIN_KEY"
-              />
-              <p className="text-xs text-muted-foreground">
-                Võti salvestatakse ainult sinu brauserisse.
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setEventsAdminKey(eventsAdminKey.trim());
-                    setEventsAdminKeyValue(eventsAdminKey.trim());
-                    toast.success("Salvestatud");
-                  }}
-                  disabled={!eventsAdminKey.trim()}
-                >
-                  Salvesta
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    clearEventsAdminKey();
-                    setEventsAdminKeyValue("");
-                    toast.success("Eemaldatud");
-                    setEvents([]);
-                  }}
-                >
-                  Eemalda
-                </Button>
-              </div>
-            </div>
-
             <div className="flex items-center justify-between gap-2">
               <Button onClick={startCreate}>Lisa üritus</Button>
               <Button variant="outline" onClick={() => void loadEvents()}>

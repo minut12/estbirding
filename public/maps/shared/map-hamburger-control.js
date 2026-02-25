@@ -26,7 +26,11 @@
         button.type = "button";
         button.title = opts.title || "Nimekiri";
         button.setAttribute("aria-label", opts.ariaLabel || "Nimekiri");
-        button.textContent = opts.iconText || "☰";
+        button.innerHTML = opts.iconSvg || (
+          '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">' +
+          '<path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' +
+          '</svg>'
+        );
 
         L.DomEvent.disableClickPropagation(container);
         L.DomEvent.disableScrollPropagation(container);

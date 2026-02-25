@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-  <title>Europe â€“ BirdMap (eBird, last 7 days)</title>
+  <title>Europe - BirdMap (eBird, last 7 days)</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
     :root{
@@ -105,6 +105,8 @@
     #sidebar h2{ margin:0; font-size:18px; }
     #closeSidebarBtn{
       display:inline-flex;
+      align-items:center;
+      justify-content:center;
       width:40px; height:40px;
       border-radius:12px;
       border:1px solid #ddd;
@@ -323,8 +325,8 @@
 
   <div id="topbar">
     <strong>Europe</strong>
-    <span class="pill">FI Â· SE Â· LV Â· LT Â· PL Â· BY Â· RU</span>
-    <span class="pill">eBird Â· 7 days</span>
+    <span class="pill">FI | SE | LV | LT | PL | BY | RU</span>
+    <span class="pill">eBird | 7 days</span>
     <span class="pill" id="proxyPill"></span>
     <span class="pill">Avatars: <span class="hintBadge">bm_global_avatars</span></span>
     <span class="muted" id="statusText"></span>
@@ -339,7 +341,11 @@
           <div class="header-copy">
           <h2>Europe 2026</h2>
           </div>
-          <button id="closeSidebarBtn" title="Close">âœ•</button>
+          <button id="closeSidebarBtn" title="Close" aria-label="Close">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
         <div class="small header-copy" style="margin-bottom:0;">
           Per-country markers are ON by default (matches country maps like Finland).
@@ -363,7 +369,7 @@
         <div id="debugContent">Loading...</div>
       </details>
       <div id="progressLine">Ready.</div>
-      <input id="filterBox" type="text" placeholder="Filter speciesâ€¦"/>
+      <input id="filterBox" type="text" placeholder="Filter species..."/>
       </div>
       </div>
       <div class="panel-content-scroll">
@@ -770,6 +776,50 @@ const REGION_CONCURRENCY_DESKTOP = 3;
 const REGION_CONCURRENCY_MOBILE = 2;
 /* ========= Helpers ========= */
 function safeParseJSON(str){ try{ return JSON.parse(str); }catch{ return null; } }
+function decodeLatin1Utf8(str){
+  const bytes = new Uint8Array(str.length);
+  for (let i = 0; i < str.length; i++) bytes[i] = str.charCodeAt(i) & 0xff;
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+function normalizeText(v){
+  const s = String(v || "").trim();
+  if (!s) return "";
+  if (!/[\u00C3\u00C2\u00E2]/.test(s)) return s;
+  try {
+    const fixed = decodeLatin1Utf8(s);
+    return fixed && /[^\x00-\x7F]/.test(fixed) ? fixed : s;
+  } catch(e) {
+    return s;
+  }
+}
+function normalizeNameArray(arr){
+  const out = [];
+  const seen = new Set();
+  for (const raw of (arr || [])) {
+    const key = normalizeText(raw);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
+}
+function normalizeNameMap(obj){
+  const out = {};
+  const src = (obj && typeof obj === "object" && !Array.isArray(obj)) ? obj : {};
+  for (const [rawKey, value] of Object.entries(src)) {
+    const key = normalizeText(rawKey);
+    if (!key) continue;
+    out[key] = value;
+  }
+  return out;
+}
+function normalizeSpeciesMetaStorage(){
+  const raw = safeParseJSON(localStorage.getItem(LS_SPECIES_META) || "{}") || {};
+  const normalized = normalizeNameMap(raw);
+  if (Object.keys(normalized).length && JSON.stringify(raw) !== JSON.stringify(normalized)) {
+    localStorage.setItem(LS_SPECIES_META, JSON.stringify(normalized));
+  }
+}
 function getSpeciesMeta(name){
   if (window.getSpeciesMetaShared) return window.getSpeciesMetaShared(name);
   return { name, rarityLevel: "none" };
@@ -836,30 +886,36 @@ function migrateAvatars() {
 
 /* ========= Load storage ========= */
 let avatars = migrateAvatars();
+avatars = normalizeNameMap(avatars);
+localStorage.setItem(LS_AVATARS, JSON.stringify(avatars));
 
 let EBIRD_CODES = (() => {
-  const stored = safeParseJSON(localStorage.getItem(LS_CODES) || "{}") || {};
-  const merged = { ...DEFAULT_EBIRD_CODES, ...stored };
+  const defaults = normalizeNameMap(DEFAULT_EBIRD_CODES);
+  const stored = normalizeNameMap(safeParseJSON(localStorage.getItem(LS_CODES) || "{}") || {});
+  const merged = { ...defaults, ...stored };
   localStorage.setItem(LS_CODES, JSON.stringify(merged));
   return merged;
 })();
 
-let points = safeParseJSON(localStorage.getItem(LS_POINTS) || "{}") || {};
+let points = normalizeNameMap(safeParseJSON(localStorage.getItem(LS_POINTS) || "{}") || {});
+localStorage.setItem(LS_POINTS, JSON.stringify(points));
 let EBIRD_TOKEN = (localStorage.getItem(LS_EBIRD_TOKEN) || "").trim();
 let tokenSanitized = false;
+normalizeSpeciesMetaStorage();
 
 
 let SPECIES = [];
 try {
   const raw = (localStorage.getItem(LS_SPECIES) || "").trim();
-  SPECIES = raw ? raw.split("\n").map(s=>s.trim()).filter(Boolean) : [];
+  SPECIES = raw ? normalizeNameArray(raw.split("\n").map(s=>s.trim()).filter(Boolean)) : [];
 } catch(e) {
   SPECIES = [];
 }
 if (SPECIES.length === 0) {
-  SPECIES = DEFAULT_SPECIES.slice();
+  SPECIES = normalizeNameArray(DEFAULT_SPECIES.slice());
   localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
 }
+localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
 
 let perCountry = (localStorage.getItem(LS_PER_COUNTRY) || "1") === "1";
 let recentOnly = true;
@@ -883,14 +939,12 @@ let debugCountryTop5 = "-";
 function parseObsDate(obsDt){
   const raw = String(obsDt || "").trim();
   if (!raw) return null;
-  const isoLike = raw.replace(" ", "T");
-  let d = new Date(isoLike);
+  let m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0);
+  m = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), 0, 0);
+  const d = new Date(raw);
   if (!isNaN(d.getTime())) return d;
-  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) {
-    d = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00`);
-    if (!isNaN(d.getTime())) return d;
-  }
   return null;
 }
 
@@ -1106,7 +1160,9 @@ function showPulseRing(lat, lon){
 window.addEventListener("beforeunload", clearPulseRing);
 
 function makeIcon(url, border, hasCrown, occ7, isMigr){
-  const crown = hasCrown ? `<div class="crown">ðŸ‘‘</div>` : ``;
+  const crown = hasCrown
+    ? '<div class="crown"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M3 18h18l-2-9-5 4-2-7-2 7-5-4-2 9z" fill="currentColor"/></svg></div>'
+    : ``;
   const badge = ((occ7===0)||Number.isFinite(occ7))
     ? `<div class="countBadge" style="background:${isMigr ? "#16a34a" : "#f97316"}">${occ7}</div>`
     : ``;
@@ -1140,7 +1196,7 @@ function fmtMeta(p){
       if (Number(d.occ7) <= 0) continue;
       chips.push(`${rg}:${d.occ7}`);
     }
-    if (chips.length) parts.push(`<span class="pillMini">countries</span>${chips.join(" Â· ")}`);
+    if (chips.length) parts.push(`<span class="pillMini">countries</span>${chips.join(" | ")}`);
   }
   return parts.join(" ");
 }
@@ -1217,11 +1273,12 @@ function updateMarker(species){
     }
     if (best) {
       const border = borderColorByDate(best.t);
-      const icon = makeIcon(meta.avatarUrl || avatars[species] || "", border, hasCrown, Number(best.occ7||0), isMigr);
+      const total7 = Number(p.occ7 || 0);
+      const icon = makeIcon(meta.avatarUrl || avatars[species] || "", border, hasCrown, total7, isMigr);
       const where = best.loc ? `<br><small>location: ${best.loc}</small>` : "";
       const when  = best.t ? `<br><small>last seen: ${formatDateEt(best.t)}</small>` : "";
       const srcLn = `<br><small>source: eBird ${best.rg} (${REGION_NAME[best.rg]||best.rg})</small>`;
-      const occLn = `<br><small>7d records (country): ${best.occ7}</small>`;
+      const occLn = `<br><small>7d records (total): ${total7}</small>`;
       const migr  = `<br><small>migration: ${isMigr ? "yes" : "no"}</small>`;
       const rarLn = hasCrown ? `<br><small>rarity: yes</small>` : "";
 
@@ -1731,7 +1788,7 @@ initMapHamburgerControl({
   },
   title: (window.ET_STRINGS && window.ET_STRINGS.listMenu) || "Nimekiri",
   ariaLabel: (window.ET_STRINGS && window.ET_STRINGS.listMenu) || "Nimekiri",
-  iconText: "â˜°"
+  iconSvg: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
 });
 if (sidebarBackdrop) sidebarBackdrop.addEventListener("click", closeSidebar);
 closeBtn.addEventListener("click", closeSidebar);
@@ -1808,7 +1865,7 @@ document.getElementById("btnRefreshData").addEventListener("click", async ()=>{
     lastRefreshAt = new Date().toISOString();
     if (result.successCount > 0) await saveSnapshotLocal();
     dataMode = "live";
-    setStatus(`Data loaded · ${formatDateTimeEt(lastRefreshAt)}`);
+    setStatus(`Data loaded | ${formatDateTimeEt(lastRefreshAt)}`);
     progressLine.textContent = "Data loaded";
     showSnapshotBanner("Data loaded");
     setTimeout(hideSnapshotBanner, 4000);

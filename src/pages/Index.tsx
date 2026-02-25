@@ -9,6 +9,7 @@ import CacheResetFab from '@/components/CacheResetFab';
 import VersionBanner from '@/components/VersionBanner';
 import { cn } from '@/lib/utils';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
+import { getMyProfile } from '@/services/profile';
 
 type Tab = 'kaart' | 'uudised' | 'üritused' | 'seaded';
 
@@ -24,6 +25,7 @@ export default function Index() {
   const [selectedMapId, setSelectedMapId] = useState<string>('linnuliigid-ee');
 
   useEffect(() => {
+    getMyProfile().catch(() => {});
     refreshSpeciesMetaFromCloud({ force: true }).catch(() => {});
     const id = window.setInterval(() => {
       refreshSpeciesMetaFromCloud().catch(() => {});

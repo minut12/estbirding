@@ -37,10 +37,21 @@ import {
   resolveProxyBase,
   setStoredProxyBase,
 } from '@/config/proxyEndpoint';
+import { isAdmin } from '@/services/profile';
+import AdminEventsScreen from '@/screens/AdminEventsScreen';
+import CreateEventScreen from '@/screens/CreateEventScreen';
+import MapPickerScreen from '@/screens/MapPickerScreen';
+import type { EventRow } from '@/types/events';
 
 type ResetMode = 'soft' | 'hard' | null;
 
 export default function SettingsTab() {
+  const [adminMode, setAdminMode] = useState<'settings' | 'admin-events' | 'create-event' | 'map-picker'>('settings');
+  const [adminReady, setAdminReady] = useState(false);
+  const [adminAllowed, setAdminAllowed] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<EventRow | null>(null);
+  const [pickedCoords, setPickedCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [mapPickerInitial, setMapPickerInitial] = useState<{ lat: number | null; lng: number | null } | null>(null);
   const [form, setForm] = useState<AppSettings>(loadSettings);
   const [confirmMode, setConfirmMode] = useState<ResetMode>(null);
   const [resetting, setResetting] = useState(false);
@@ -65,6 +76,12 @@ export default function SettingsTab() {
     setStoredProxyBaseView(initialProxyStored);
     setProxyBaseUrl(initialProxyStored || getEnvProxyBase());
     refreshSpeciesMetaFromCloud({ force: true }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    isAdmin()
+      .then((value) => setAdminAllowed(value))
+      .finally(() => setAdminReady(true));
   }, []);
 
   useEffect(() => {
@@ -226,6 +243,53 @@ export default function SettingsTab() {
     }
   };
 
+  if (adminMode === 'admin-events') {
+    return (
+      <AdminEventsScreen
+        onBack={() => setAdminMode('settings')}
+        onCreate={() => {
+          setEditingEvent(null);
+          setPickedCoords(null);
+          setAdminMode('create-event');
+        }}
+        onEdit={(event) => {
+          setEditingEvent(event);
+          setPickedCoords(null);
+          setAdminMode('create-event');
+        }}
+      />
+    );
+  }
+
+  if (adminMode === 'create-event') {
+    return (
+      <CreateEventScreen
+        initialEvent={editingEvent}
+        pickedCoords={pickedCoords}
+        onBack={() => setAdminMode('admin-events')}
+        onSaved={() => setAdminMode('admin-events')}
+        onOpenMapPicker={(coords) => {
+          setMapPickerInitial(coords);
+          setAdminMode('map-picker');
+        }}
+      />
+    );
+  }
+
+  if (adminMode === 'map-picker') {
+    return (
+      <MapPickerScreen
+        initialLat={mapPickerInitial?.lat}
+        initialLng={mapPickerInitial?.lng}
+        onBack={() => setAdminMode('create-event')}
+        onConfirm={(coords) => {
+          setPickedCoords(coords);
+          setAdminMode('create-event');
+        }}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="px-4 py-3 border-b border-border bg-card">
@@ -345,6 +409,21 @@ export default function SettingsTab() {
         <Separator />
 
         <DeveloperSettings />
+
+        {adminReady && adminAllowed && (
+          <>
+            <Separator />
+            <div className="space-y-2">
+              <h3 className="font-semibold text-foreground">Admin</h3>
+              <Button
+                onClick={() => setAdminMode('admin-events')}
+                className="w-full justify-start"
+              >
+                Halda üritusi
+              </Button>
+            </div>
+          </>
+        )}
 
         <Separator />
 

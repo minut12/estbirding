@@ -1,22 +1,41 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, RefreshCw, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { et } from "@/localization/et";
 import { sampleEvents, type EventItem } from "@/data/events";
 import { EventMapPreview } from "@/components/events/EventMapPreview";
 import { EventCard } from "@/components/events/EventCard";
+import { listPublishedEvents } from "@/services/events";
+import type { EventRow } from "@/types/events";
 import EventDetailsScreen from "./EventDetailsScreen";
 
 type MainTab = "tulevased" | "moodunud" | "muud";
 type CategoryFilter = "koik" | "EstBirding" | "Muud";
+
+const mapRowToEventItem = (row: EventRow): EventItem => ({
+  id: row.id,
+  title: row.title,
+  startAt: row.start_at,
+  locationName: row.location_name ?? "Asukoht täpsustamisel",
+  lat: row.lat ?? 58.7,
+  lng: row.lng ?? 25.0,
+  category: row.category,
+  imageUrl:
+    row.image_url ||
+    "https://images.unsplash.com/photo-1448375240586-882707db888b?w=360&h=280&fit=crop",
+  description: row.description ?? undefined,
+});
 
 export default function EventsScreen() {
   const [mainTab, setMainTab] = useState<MainTab>("tulevased");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("koik");
   const [searchValue, setSearchValue] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUsingFallback, setIsUsingFallback] = useState(false);
   const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
   const [openedDetails, setOpenedDetails] = useState<EventItem | null>(null);
+  const [events, setEvents] = useState<EventItem[]>(sampleEvents);
 
   const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const todayStart = useMemo(() => {
@@ -25,9 +44,27 @@ export default function EventsScreen() {
     return date;
   }, []);
 
+  const loadEvents = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const rows = await listPublishedEvents();
+      setEvents(rows.map(mapRowToEventItem));
+      setIsUsingFallback(false);
+    } catch {
+      setEvents(sampleEvents);
+      setIsUsingFallback(true);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
+
   const filteredEvents = useMemo(() => {
     const searchTerm = searchValue.trim().toLowerCase();
-    return sampleEvents.filter((event) => {
+    return events.filter((event) => {
       const eventDate = new Date(event.startAt);
       const tabMatch =
         mainTab === "tulevased"
@@ -44,7 +81,7 @@ export default function EventsScreen() {
 
       return tabMatch && categoryMatch && searchMatch;
     });
-  }, [categoryFilter, mainTab, searchValue, todayStart]);
+  }, [categoryFilter, events, mainTab, searchValue, todayStart]);
 
   useEffect(() => {
     if (filteredEvents.length === 0) {
@@ -78,7 +115,7 @@ export default function EventsScreen() {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await Promise.all([loadEvents(), new Promise((resolve) => setTimeout(resolve, 600))]);
     setIsRefreshing(false);
   };
 
@@ -156,6 +193,11 @@ export default function EventsScreen() {
       </div>
 
       <div className="px-4 pb-3">
+        {isUsingFallback && (
+          <p className="mb-2 text-xs text-muted-foreground">
+            Kuva kasutab lokaalseid näidisüritusi (andmebaas pole veel valmis).
+          </p>
+        )}
         <EventMapPreview
           events={filteredEvents}
           highlightedEventId={highlightedEventId}
@@ -166,7 +208,11 @@ export default function EventsScreen() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-t-[28px] bg-white px-4 pt-4 shadow-[0_-8px_24px_rgba(38,64,52,0.08)]">
-        {filteredEvents.length === 0 ? (
+        {isLoading ? (
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+            Laen üritusi...
+          </div>
+        ) : filteredEvents.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             <CalendarDays className="h-10 w-10 text-muted-foreground/45" />
             <p className="text-sm text-muted-foreground">{et.emptyByTab[mainTab]}</p>

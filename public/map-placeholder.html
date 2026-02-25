@@ -675,6 +675,81 @@ function countInLastNDaysFromDates(dates, days){
   }catch(e){ return 0; }
 }
 
+function _startOfTodayLocalMs(){
+  const n = new Date();
+  return new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+}
+function _cutoffStartMs(days){
+  const d = Math.max(1, Number(days) || 7);
+  return _startOfTodayLocalMs() - (d - 1) * 24 * 60 * 60 * 1000;
+}
+function _extractRowDateMsFromText(dateText){
+  const d = String(dateText || '').trim().slice(0, 10);
+  const m = d.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return null;
+  return new Date(+m[1], +m[2]-1, +m[3]).getTime();
+}
+
+async function countElurikkus7d(searchUrl, days=7){
+  const cutoffMs = _cutoffStartMs(days);
+  const maxPages = 20;
+  let offset = 0;
+  let total = 0;
+  let pages = 0;
+  let pageSize = 0;
+  let oldestDateSeenOnLastPage = null;
+  let capReached = false;
+
+  for(let page = 0; page < maxPages; page++){
+    const u = new URL(searchUrl, 'https://elurikkus.ee');
+    u.searchParams.set('country', 'Estonia');
+    u.searchParams.set('offset', String(offset));
+
+    const html = await tryFetch(u.toString());
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    let rowDateMs = [];
+    const rows = Array.from(doc.querySelectorAll('table tbody tr'));
+
+    if(rows.length){
+      rowDateMs = rows.map(r => {
+        const dateText = r.querySelector('td')?.textContent?.trim() || '';
+        return _extractRowDateMsFromText(dateText);
+      }).filter(v => Number.isFinite(v));
+    } else {
+      const lines = html.split(/\r?\n/);
+      const dateHeaderIdx = lines.findIndex(l => /(?:^|>)\s*Date\s*(?:<|$)/i.test(l));
+      const chunk = dateHeaderIdx >= 0 ? lines.slice(dateHeaderIdx + 1, dateHeaderIdx + 500) : lines;
+      rowDateMs = chunk.map(line => {
+        const m = line.match(/(\d{4}-\d{2}-\d{2})/);
+        if(!m) return null;
+        return _extractRowDateMsFromText(m[1]);
+      }).filter(v => Number.isFinite(v));
+    }
+
+    if(!rowDateMs.length) break;
+    if(page === 0) pageSize = rowDateMs.length;
+
+    for(const ms of rowDateMs){
+      if(ms >= cutoffMs) total++;
+    }
+
+    pages++;
+    oldestDateSeenOnLastPage = new Date(rowDateMs[rowDateMs.length - 1]).toISOString().slice(0,10);
+    if(rowDateMs[rowDateMs.length - 1] < cutoffMs) break;
+
+    const step = pageSize > 0 ? pageSize : rowDateMs.length;
+    if(!step) break;
+    offset += step;
+  }
+
+  if(pages >= maxPages){
+    capReached = true;
+    console.debug('[occ7] maxPages reached', { searchUrl, pages, total });
+  }
+
+  return { count: total, pages, pageSize, oldestDateSeenOnLastPage, capReached };
+}
+
 
 // Extract coordinates
 function extractLatLon(html) {
@@ -714,9 +789,8 @@ async function autoFetchCoords(key, searchUrl) {
     let coords = extractLatLon(shtml);
     let eventDate = extractEventDate(shtml);
 
-    // NEW: count how many occurrences are within last 7 days (based on dates found on search page)
-    const occ7Dates = extractAllEventDates(shtml);
-    const occ7 = (occ7Dates && occ7Dates.length>=0) ? countInLastNDaysFromDates(occ7Dates, 7) : null;
+    const occ7Meta = await countElurikkus7d(searchUrl, 7);
+    const occ7 = Number.isFinite(occ7Meta.count) ? occ7Meta.count : null;
 
     if (!coords) {
       const detail = findFirstDetailLink(shtml);
@@ -743,7 +817,14 @@ if (changedCoords || newerDate || changedOcc7){
   if (newerDate || !prev.t) points[key].t = eventDate || '(kuupäev puudub)'; // <-- occurrence date from site
   points[key].src = 'Elurikkus';
   points[key].lastFetched = new Date().toISOString();
-  if (Number.isFinite(occ7)) { points[key].occ7 = occ7; points[key].occ7Updated = new Date().toISOString(); }
+  if (Number.isFinite(occ7)) {
+    points[key].occ7 = occ7;
+    points[key].occ7Updated = new Date().toISOString();
+    points[key].occ7PagesFetched = occ7Meta.pages;
+    points[key].occ7PageSize = occ7Meta.pageSize;
+    points[key].occ7OldestDateSeen = occ7Meta.oldestDateSeenOnLastPage || null;
+    points[key].occ7MaxPagesReached = !!occ7Meta.capReached;
+  }
   if (typeof points[key].visible !== 'boolean') points[key].visible = true; // default visible
   save(); updateMarker(key); render();
   console.log('[updated]', key, points[key]);

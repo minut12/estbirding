@@ -15,6 +15,7 @@ const mapRowToEventItem = (row: EventRow): EventItem => ({
   id: row.id,
   title: row.title,
   startAt: row.start_at,
+  endAt: row.end_at ?? undefined,
   locationName: row.location_name ?? "Asukoht täpsustamisel",
   lat: row.lat ?? 58.7,
   lng: row.lng ?? 25.0,
@@ -23,6 +24,9 @@ const mapRowToEventItem = (row: EventRow): EventItem => ({
     row.image_url ||
     "https://images.unsplash.com/photo-1448375240586-882707db888b?w=360&h=280&fit=crop",
   description: row.description ?? undefined,
+  organizerName: row.organizer_name ?? undefined,
+  url: row.url ?? undefined,
+  isPublished: row.is_published,
   isArchived: row.is_archived,
 });
 

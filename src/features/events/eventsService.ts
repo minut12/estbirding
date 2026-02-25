@@ -31,6 +31,10 @@ export type EventPayload = Partial<Omit<EventRow, "id" | "created_at" | "updated
 const EVENT_COLUMNS =
   "id,title,description,start_at,end_at,location_name,lat,lng,category,organizer_name,url,image_url,is_published,is_archived,created_by,created_at,updated_at";
 
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
+const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const fnUrl = supabaseUrl ? `${supabaseUrl}/functions/v1/events-admin` : "";
+
 export async function listPublishedEvents(): Promise<EventRow[]> {
   const { data, error } = await (supabase as any)
     .from("events")
@@ -62,44 +66,33 @@ export async function setPublished(id: string, flag: boolean): Promise<EventRow>
   return adminPublishEvent(id, flag);
 }
 
-type AdminActionResponse<T> = {
-  data?: T;
-  error?: string;
-  ok?: boolean;
-  raw?: string;
-};
-
-function getAdminKeyOrThrow(): string {
-  const adminKey = getEventsAdminKey();
-  if (!adminKey) {
-    throw new Error("events_admin_key puudub. Lisa see Seaded -> Arendaja alt.");
+function requireAdminKey(): string {
+  const key = getEventsAdminKey();
+  if (!key || !key.trim()) {
+    throw new Error("events_admin_key puudub. Lisa see Seaded → Arendaja alt.");
   }
-  return adminKey;
+  return key.trim();
 }
 
-function getFnUrl(): string {
-  const baseUrl = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
-  if (!baseUrl) {
-    throw new Error("VITE_SUPABASE_URL puudub.");
-  }
-  return `${baseUrl}/functions/v1/events-admin`;
-}
+async function callAdminFn(action: string, payload: unknown, adminKey: string): Promise<any> {
+  if (!fnUrl) throw new Error("VITE_SUPABASE_URL puudub.");
+  if (!anonKey) throw new Error("VITE_SUPABASE_ANON_KEY puudub.");
 
-async function callAdminFn<T>(action: string, payload: unknown, adminKey: string): Promise<AdminActionResponse<T>> {
-  const fnUrl = getFnUrl();
   const res = await fetch(fnUrl, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "x-admin-key": adminKey,
+      apikey: anonKey,
+      authorization: `Bearer ${anonKey}`,
     },
     body: JSON.stringify({ action, payload }),
   });
 
   const text = await res.text();
-  let json: AdminActionResponse<T>;
+  let json: any = null;
   try {
-    json = JSON.parse(text) as AdminActionResponse<T>;
+    json = JSON.parse(text);
   } catch {
     json = { raw: text };
   }
@@ -108,42 +101,35 @@ async function callAdminFn<T>(action: string, payload: unknown, adminKey: string
     throw new Error(json?.error || `HTTP ${res.status}: ${text}`);
   }
 
-  return json;
-}
-
-async function invokeAdminAction<T>(action: string, payload?: unknown): Promise<T> {
-  const adminKey = getAdminKeyOrThrow();
-  const parsed = await callAdminFn<T>(action, payload, adminKey);
-  if (parsed.error) throw new Error(parsed.error);
-  if (parsed.data === undefined) {
-    throw new Error("Tühi vastus events-admin funktsioonilt");
-  }
-  return parsed.data;
+  return json?.data ?? json;
 }
 
 export async function adminListEvents(): Promise<EventRow[]> {
-  return invokeAdminAction<EventRow[]>("list", {});
+  const key = requireAdminKey();
+  return callAdminFn("list", {}, key);
 }
 
 export async function adminCreateEvent(payload: EventPayload): Promise<EventRow> {
-  return invokeAdminAction<EventRow>("create", payload);
+  const key = requireAdminKey();
+  return callAdminFn("create", payload, key);
 }
 
 export async function adminUpdateEvent(id: string, patch: Partial<EventPayload>): Promise<EventRow> {
-  return invokeAdminAction<EventRow>("update", { id, patch });
+  const key = requireAdminKey();
+  return callAdminFn("update", { id, patch }, key);
 }
 
 export async function adminDeleteEvent(id: string): Promise<void> {
-  const adminKey = getAdminKeyOrThrow();
-  const parsed = await callAdminFn<{ ok: boolean }>("delete", { id }, adminKey);
-  if (parsed.error) throw new Error(parsed.error);
-  if (!parsed.ok) throw new Error("Kustutamine ebaõnnestus");
+  const key = requireAdminKey();
+  await callAdminFn("delete", { id }, key);
 }
 
 export async function adminPublishEvent(id: string, is_published: boolean): Promise<EventRow> {
-  return invokeAdminAction<EventRow>("publish", { id, is_published });
+  const key = requireAdminKey();
+  return callAdminFn("publish", { id, is_published }, key);
 }
 
 export async function adminArchiveEvent(id: string, is_archived: boolean): Promise<EventRow> {
-  return invokeAdminAction<EventRow>("archive", { id, is_archived });
+  const key = requireAdminKey();
+  return callAdminFn("archive", { id, is_archived }, key);
 }

@@ -4,12 +4,16 @@ export interface EventItem {
   id: string;
   title: string;
   startAt: string;
+  endAt?: string;
   locationName: string;
   lat: number;
   lng: number;
   category: EventCategory;
   imageUrl: string;
   description?: string;
+  organizerName?: string;
+  url?: string;
+  isPublished?: boolean;
   isArchived?: boolean;
 }
 

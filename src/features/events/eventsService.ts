@@ -1,4 +1,5 @@
 import { supabase } from "@/config/supabaseClient";
+import { getEventsAdminKey } from "./adminKey";
 
 export type EventCategory = "EstBirding" | "Muud";
 
@@ -40,43 +41,96 @@ export async function listPublishedEvents(): Promise<EventRow[]> {
 }
 
 export async function listAllEventsAdmin(): Promise<EventRow[]> {
-  const { data, error } = await (supabase as any)
-    .from("events")
-    .select(EVENT_COLUMNS)
-    .order("start_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as EventRow[];
+  return adminListEvents();
 }
 
 export async function createEvent(payload: EventPayload): Promise<EventRow> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const { data, error } = await (supabase as any)
-    .from("events")
-    .insert({ ...payload, created_by: user?.id ?? null })
-    .select(EVENT_COLUMNS)
-    .single();
-  if (error) throw error;
-  return data as EventRow;
+  return adminCreateEvent(payload);
 }
 
 export async function updateEvent(id: string, patch: Partial<EventPayload>): Promise<EventRow> {
-  const { data, error } = await (supabase as any)
-    .from("events")
-    .update(patch)
-    .eq("id", id)
-    .select(EVENT_COLUMNS)
-    .single();
-  if (error) throw error;
-  return data as EventRow;
+  return adminUpdateEvent(id, patch);
 }
 
 export async function deleteEvent(id: string): Promise<void> {
-  const { error } = await (supabase as any).from("events").delete().eq("id", id);
-  if (error) throw error;
+  await adminDeleteEvent(id);
 }
 
 export async function setPublished(id: string, flag: boolean): Promise<EventRow> {
-  return updateEvent(id, { is_published: flag });
+  return adminPublishEvent(id, flag);
+}
+
+type AdminActionResponse<T> = {
+  data?: T;
+  error?: string;
+  ok?: boolean;
+};
+
+async function invokeAdminAction<T>(action: string, payload?: unknown): Promise<T> {
+  const adminKey = getEventsAdminKey();
+  if (!adminKey) throw new Error("EVENTS_ADMIN_KEY puudub");
+
+  let data: any;
+  let error: any;
+  try {
+    const result = await supabase.functions.invoke("events-admin", {
+      body: { action, payload },
+      headers: { "x-admin-key": adminKey },
+    });
+    data = result.data;
+    error = result.error;
+  } catch (invokeError) {
+    const baseUrl = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
+    if (!baseUrl) throw invokeError;
+    const response = await fetch(`${baseUrl}/functions/v1/events-admin`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-admin-key": adminKey,
+      },
+      body: JSON.stringify({ action, payload }),
+    });
+    data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = data?.error || `HTTP ${response.status}`;
+      throw new Error(message);
+    }
+    error = null;
+  }
+
+  if (error) throw error;
+
+  const parsed = (data ?? {}) as AdminActionResponse<T>;
+  if (parsed.error) throw new Error(parsed.error);
+  if (parsed.data === undefined) throw new Error("Tühi vastus events-admin funktsioonilt");
+  return parsed.data;
+}
+
+export async function adminListEvents(): Promise<EventRow[]> {
+  return invokeAdminAction<EventRow[]>("list", {});
+}
+
+export async function adminCreateEvent(payload: EventPayload): Promise<EventRow> {
+  return invokeAdminAction<EventRow>("create", payload);
+}
+
+export async function adminUpdateEvent(id: string, patch: Partial<EventPayload>): Promise<EventRow> {
+  return invokeAdminAction<EventRow>("update", { id, patch });
+}
+
+export async function adminDeleteEvent(id: string): Promise<void> {
+  const adminKey = getEventsAdminKey();
+  if (!adminKey) throw new Error("EVENTS_ADMIN_KEY puudub");
+
+  const { data, error } = await supabase.functions.invoke("events-admin", {
+    body: { action: "delete", payload: { id } },
+    headers: { "x-admin-key": adminKey },
+  });
+  if (error) throw error;
+  const parsed = (data ?? {}) as AdminActionResponse<never>;
+  if (parsed.error) throw new Error(parsed.error);
+}
+
+export async function adminPublishEvent(id: string, is_published: boolean): Promise<EventRow> {
+  return invokeAdminAction<EventRow>("publish", { id, is_published });
 }

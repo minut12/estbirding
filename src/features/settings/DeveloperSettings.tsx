@@ -6,16 +6,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useSession } from "@/features/auth/useSession";
 import {
-  createEvent,
-  deleteEvent,
-  listAllEventsAdmin,
-  setPublished,
-  updateEvent,
+  adminCreateEvent,
+  adminDeleteEvent,
+  adminListEvents,
+  adminPublishEvent,
+  adminUpdateEvent,
   type EventCategory,
   type EventPayload,
   type EventRow,
 } from "@/features/events/eventsService";
 import { supabase } from "@/config/supabaseClient";
+import {
+  clearEventsAdminKey,
+  getEventsAdminKey,
+  setEventsAdminKey,
+} from "@/features/events/adminKey";
 
 const LS_KEY = "linn_admin_key";
 
@@ -51,6 +56,7 @@ const emptyForm: FormState = {
 
 export default function DeveloperSettings() {
   const [key, setKey] = useState(() => localStorage.getItem(LS_KEY) || "");
+  const [eventsAdminKey, setEventsAdminKeyValue] = useState(() => getEventsAdminKey() || "");
   const { user, loading } = useSession();
   const [events, setEvents] = useState<EventRow[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
@@ -60,9 +66,9 @@ export default function DeveloperSettings() {
   const [form, setForm] = useState<FormState>(emptyForm);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !eventsAdminKey.trim()) return;
     void loadEvents();
-  }, [user]);
+  }, [user, eventsAdminKey]);
 
   const handleSave = () => {
     localStorage.setItem(LS_KEY, key);
@@ -78,7 +84,7 @@ export default function DeveloperSettings() {
   const loadEvents = async () => {
     setEventsLoading(true);
     try {
-      const rows = await listAllEventsAdmin();
+      const rows = await adminListEvents();
       setEvents(rows);
     } catch (error: any) {
       toast.error(error?.message || "Ürituste laadimine ebaõnnestus");
@@ -142,9 +148,9 @@ export default function DeveloperSettings() {
 
     try {
       if (editingId) {
-        await updateEvent(editingId, payload);
+        await adminUpdateEvent(editingId, payload);
       } else {
-        await createEvent(payload);
+        await adminCreateEvent(payload);
       }
       toast.success("Üritus salvestatud");
       setFormOpen(false);
@@ -249,8 +255,88 @@ export default function DeveloperSettings() {
               <Button onClick={loginWithMagicLink}>Logi sisse</Button>
             </div>
           </div>
+        ) : !eventsAdminKey.trim() ? (
+          <div className="space-y-2">
+            <div className="space-y-2">
+              <Label htmlFor="eventsAdminKey">Events Admin Key</Label>
+              <Input
+                id="eventsAdminKey"
+                type="password"
+                value={eventsAdminKey}
+                onChange={(e) => setEventsAdminKeyValue(e.target.value)}
+                placeholder="EVENTS_ADMIN_KEY"
+              />
+              <p className="text-xs text-muted-foreground">
+                Võti salvestatakse ainult sinu brauserisse.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEventsAdminKey(eventsAdminKey.trim());
+                  setEventsAdminKeyValue(eventsAdminKey.trim());
+                  toast.success("Salvestatud");
+                }}
+                disabled={!eventsAdminKey.trim()}
+              >
+                Salvesta
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  clearEventsAdminKey();
+                  setEventsAdminKeyValue("");
+                  toast.success("Eemaldatud");
+                }}
+              >
+                Eemalda
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Lisa EVENTS_ADMIN_KEY, et luua ja hallata üritusi.
+            </p>
+          </div>
         ) : (
           <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="eventsAdminKey">Events Admin Key</Label>
+              <Input
+                id="eventsAdminKey"
+                type="password"
+                value={eventsAdminKey}
+                onChange={(e) => setEventsAdminKeyValue(e.target.value)}
+                placeholder="EVENTS_ADMIN_KEY"
+              />
+              <p className="text-xs text-muted-foreground">
+                Võti salvestatakse ainult sinu brauserisse.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setEventsAdminKey(eventsAdminKey.trim());
+                    setEventsAdminKeyValue(eventsAdminKey.trim());
+                    toast.success("Salvestatud");
+                  }}
+                  disabled={!eventsAdminKey.trim()}
+                >
+                  Salvesta
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    clearEventsAdminKey();
+                    setEventsAdminKeyValue("");
+                    toast.success("Eemaldatud");
+                    setEvents([]);
+                  }}
+                >
+                  Eemalda
+                </Button>
+              </div>
+            </div>
+
             <div className="flex items-center justify-between gap-2">
               <Button onClick={startCreate}>Lisa üritus</Button>
               <Button variant="outline" onClick={() => void loadEvents()}>
@@ -279,7 +365,7 @@ export default function DeveloperSettings() {
                           checked={event.is_published}
                           onChange={async (e) => {
                             try {
-                              await setPublished(event.id, e.target.checked);
+                              await adminPublishEvent(event.id, e.target.checked);
                               await loadEvents();
                             } catch (error: any) {
                               toast.error(error?.message || "Uuendamine ebaõnnestus");
@@ -297,7 +383,7 @@ export default function DeveloperSettings() {
                         onClick={async () => {
                           if (!window.confirm("Kustuta üritus?")) return;
                           try {
-                            await deleteEvent(event.id);
+                            await adminDeleteEvent(event.id);
                             await loadEvents();
                           } catch (error: any) {
                             toast.error(error?.message || "Kustutamine ebaõnnestus");

@@ -13,9 +13,10 @@ const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
 interface MapTabProps {
   isActive?: boolean;
+  onMapChange?: (mapId: string) => void;
 }
 
-export default function MapTab({ isActive = true }: MapTabProps) {
+export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   const [selectedId, setSelectedId] = useState(getActiveMap().id);
   const current = maps.find((m) => m.id === selectedId) ?? getActiveMap();
   const iframeSrc = useMemo(() => {
@@ -30,6 +31,10 @@ export default function MapTab({ isActive = true }: MapTabProps) {
   const [error, setError] = useState<string | null>(null);
   const iframeReadyRef = useRef(false);
   const lastAutoRefreshRef = useRef(0);
+
+  useEffect(() => {
+    onMapChange?.(selectedId);
+  }, [onMapChange, selectedId]);
 
   // Send a postMessage to the iframe (safe wrapper)
   const sendToIframe = useCallback((msg: Record<string, unknown>) => {

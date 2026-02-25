@@ -8,11 +8,12 @@ import {
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
-import { Upload, Trash2, RotateCcw, Bird, RefreshCw, Check, Cloud } from 'lucide-react';
+import { Upload, Trash2, Bird, RefreshCw, Check, Cloud } from 'lucide-react';
 import {
   getMergedAvatars, validateFile, processImage, notifyIframeUpdate,
-  uploadSharedAvatar, removeSharedAvatar, fetchSpeciesList, fetchSharedAvatars,
+  uploadSharedAvatar, removeSharedAvatar, fetchSpeciesList,
 } from '@/lib/avatar-storage';
+import { getSpeciesMeta, loadSpeciesMeta, upsertSpeciesMeta } from '@/lib/speciesMeta';
 
 const PLACEHOLDER_URL = '/maps/linnuliigid/avatars/placeholder.webp';
 
@@ -25,16 +26,28 @@ export default function AvatarManager() {
   const [processing, setProcessing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [manualKey, setManualKey] = useState('');
+  const [ebirdCode, setEbirdCode] = useState('');
+  const [isRarity, setIsRarity] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    loadSpeciesMeta();
     fetchSpeciesList().then((list) => { if (list.length > 0) setSpecies(list); });
   }, []);
 
   useEffect(() => {
-    if (!selected) { setCurrentAvatar(null); setPreview(null); return; }
+    if (!selected) {
+      setCurrentAvatar(null);
+      setPreview(null);
+      setEbirdCode('');
+      setIsRarity(false);
+      return;
+    }
     const avatars = getMergedAvatars();
-    setCurrentAvatar(avatars[selected] || null);
+    const meta = getSpeciesMeta(selected);
+    setCurrentAvatar(meta.avatarUrl || avatars[selected] || null);
+    setEbirdCode(meta.ebirdCode || '');
+    setIsRarity(!!meta.isRarity);
     setPreview(null);
   }, [selected]);
 
@@ -62,6 +75,7 @@ export default function AvatarManager() {
       const publicUrl = await uploadSharedAvatar(selected, preview);
       setCurrentAvatar(publicUrl);
       setPreview(null);
+      upsertSpeciesMeta(selected, { avatarUrl: publicUrl });
       notifyIframeUpdate('update', selected, publicUrl);
       toast.success('Avatar salvestatud pilve — nähtav kõigil seadmetel');
     } catch (ex: any) {
@@ -78,6 +92,7 @@ export default function AvatarManager() {
       await removeSharedAvatar(selected);
       setCurrentAvatar(null);
       setPreview(null);
+      upsertSpeciesMeta(selected, { avatarUrl: '' });
       notifyIframeUpdate('reset', selected);
       toast.success('Avatar eemaldatud');
     } catch (ex: any) {
@@ -99,6 +114,16 @@ export default function AvatarManager() {
     } catch { toast.error('Kaardi värskendamine ebaõnnestus'); }
   }, []);
 
+  const handleMetaSave = useCallback(() => {
+    if (!selected) return;
+    upsertSpeciesMeta(selected, {
+      ebirdCode: ebirdCode.trim(),
+      isRarity,
+      avatarUrl: currentAvatar || undefined,
+    });
+    toast.success('Liigi seaded salvestatud');
+  }, [selected, ebirdCode, isRarity, currentAvatar]);
+
   const activeKey = selected || manualKey;
   const displayUrl = preview || currentAvatar || PLACEHOLDER_URL;
   const hasSpecies = species.length > 0;
@@ -111,10 +136,10 @@ export default function AvatarManager() {
     <div className="space-y-4">
       <h3 className="font-semibold text-foreground flex items-center gap-2">
         <Cloud className="w-4 h-4 text-primary" />
-        Avatarid
+        Liigi seaded
       </h3>
       <p className="text-xs text-muted-foreground">
-        Lae üles linnuliikide avatarid — salvestatakse pilve ja nähtav kõigil seadmetel.
+        Hallatakse ühiselt: avatar, eBird speciesCode ja rarity-lipp.
       </p>
 
       {hasSpecies ? (
@@ -161,6 +186,27 @@ export default function AvatarManager() {
                 {preview ? 'Eelvaade (salvestamata)' : currentAvatar ? 'Pilves salvestatud avatar' : 'Vaikimisi / placeholder'}
               </p>
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ebirdCode">eBird speciesCode</Label>
+            <Input
+              id="ebirdCode"
+              placeholder="nt comred2"
+              value={ebirdCode}
+              onChange={(e) => setEbirdCode(e.target.value)}
+            />
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={isRarity}
+                onChange={(e) => setIsRarity(e.target.checked)}
+              />
+              Rarity liik
+            </label>
+            <Button variant="outline" className="w-full" onClick={handleMetaSave}>
+              Salvesta liigi seaded
+            </Button>
           </div>
 
           <div className="space-y-2">

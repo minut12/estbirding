@@ -20,6 +20,7 @@ const tabs: { id: Tab; label: string; icon: typeof Map }[] = [
 
 export default function Index() {
   const [active, setActive] = useState<Tab>('kaart');
+  const [selectedMapId, setSelectedMapId] = useState<string>('linnuliigid-ee');
 
   // goToSettings kept for potential future use
 
@@ -29,7 +30,7 @@ export default function Index() {
 
       {/* Content area */}
       <div className="flex-1 min-h-0 overflow-hidden">
-        {active === 'kaart' && <MapTab isActive={active === 'kaart'} />}
+        {active === 'kaart' && <MapTab isActive={active === 'kaart'} onMapChange={setSelectedMapId} />}
         {active === 'uudised' && <NewsTab />}
         {active === 'üritused' && <EventsTab />}
         {active === 'seaded' && <SettingsTab />}
@@ -55,7 +56,7 @@ export default function Index() {
       </nav>
 
       {/* Mobile-only cache reset FAB */}
-      <CacheResetFab />
+      {active === 'kaart' && selectedMapId === 'linnuliigid-ee' && <CacheResetFab />}
     </div>
   );
 }

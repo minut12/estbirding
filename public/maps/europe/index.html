@@ -152,27 +152,6 @@
     #mapWrap{ position:relative; width:100%; height:100%; }
     #map{ width:100%; height:100%; }
 
-    /* Burger */
-    .sidebar-toggle{
-      display:none;
-      position:fixed;
-      left:calc(env(safe-area-inset-left, 0px) + 12px);
-      z-index:3000;
-      border:1px solid #cbd5e1;
-      background:#fff;
-      border-radius:12px;
-      cursor:pointer;
-      box-shadow:0 6px 18px rgba(0,0,0,.12);
-      width:44px;
-      height:44px;
-      align-items:center;
-      justify-content:center;
-      pointer-events:auto;
-      -webkit-tap-highlight-color:transparent;
-      font-size:22px;
-      line-height:1;
-    }
-    .sidebar-toggle::after{ content:''; position:absolute; inset:-8px; }
     .sidebar-backdrop{
       display:none;
       position:fixed;
@@ -180,7 +159,6 @@
       z-index:1100;
       background:rgba(0,0,0,.35);
     }
-    body.sidebar-open .sidebar-toggle{ display:none !important; }
 
     /* Mobile off-canvas sidebar */
     @media (max-width: 900px){
@@ -202,7 +180,6 @@
         -webkit-overflow-scrolling: touch;
       }
       #sidebar.open{ transform:translateX(0); }
-      .sidebar-toggle{ display:flex; }
       #sidebar.open + #mapWrap{ pointer-events:auto; }
       #closeSidebarBtn{ display:inline-flex; align-items:center; justify-content:center; }
       .sidebar-backdrop.show{ display:block; }
@@ -366,7 +343,6 @@
   </div>
 </div>
 
-<button id="openSidebarBtn" class="sidebar-toggle" title="Nimekiri" aria-label="Nimekiri">☰</button>
 <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
 
 
@@ -389,6 +365,7 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/maps/shared/map-hamburger-control.js"></script>
 <script>
 /* ========= Embedded detection ========= */
 (function(){
@@ -1623,7 +1600,6 @@ async function refreshKeys(keys, force=true){
 
 /* ========= Sidebar open/close ========= */
 const sidebar = document.getElementById("sidebar");
-const openBtn = document.getElementById("openSidebarBtn");
 const closeBtn = document.getElementById("closeSidebarBtn");
 const sidebarBackdrop = document.getElementById("sidebarBackdrop");
 
@@ -1643,9 +1619,15 @@ function closeSidebarOnMobile(){
   if (window.matchMedia("(max-width: 900px)").matches) closeSidebar();
 }
 
-openBtn.addEventListener("click", ()=>{
-  if (sidebar.classList.contains("open")) closeSidebar();
-  else openSidebar();
+initMapHamburgerControl({
+  map,
+  onClick: function(){
+    if (sidebar.classList.contains("open")) closeSidebar();
+    else openSidebar();
+  },
+  title: "Nimekiri",
+  ariaLabel: "Nimekiri",
+  iconText: "☰"
 });
 if (sidebarBackdrop) sidebarBackdrop.addEventListener("click", closeSidebar);
 closeBtn.addEventListener("click", closeSidebar);

@@ -377,7 +377,7 @@
       <div id="warnBanner" class="bannerWarn"></div>
       <details class="debug-panel" id="debugPanel">
         <summary>Debug info</summary>
-        <button class="btn secondary" id="btnTestProxy" style="margin:6px 0 8px;">Test eBird via proxy</button>
+        <button class="btn secondary" id="btnTestProxy" style="margin:6px 0 8px;">Test eBird</button>
         <div id="debugContent">Loading...</div>
       </details>
       <div id="progressLine">Ready.</div>
@@ -399,11 +399,10 @@
   <div id="modal">
     <h3>Europe map settings</h3>
     <div class="small" style="margin-top:0;">
-      eBird token is prefilled as <span class="hintBadge">9s72dc2jcjlq</span> and stored locally.
+      eBird token is stored server-side in Supabase secret <span class="hintBadge">EBIRD_API_TOKEN</span>.
       <br/>Species list: one per line (default = 376 species).
     </div>
     <div class="grid">
-      <input id="tokenInput" type="text" placeholder="eBird token (X-eBirdApiToken)"/>
       <textarea id="speciesInput" placeholder="One species per line (Estonian names)..."></textarea>
     </div>
     <div class="rowBtns">
@@ -432,46 +431,27 @@ const REGION_NAME = {FI:"Finland",SE:"Sweden",LV:"Latvia",LT:"Lithuania",PL:"Pol
 const LS_AVATARS = "bm_global_avatars";
 const LS_CODES   = "bm_global_ebird_codes";
 const LS_POINTS  = "bm_eu_points";
-const LS_EBIRD_TOKEN = "bm_ebird_token";
 const LS_SPECIES     = "bm_species_list_global";
 const LS_PER_COUNTRY = "bm_eu_per_country";
 const LS_BURGER_POS  = "bm_eu_burger_pos";
-const LS_PROXY_BASE  = "estbirding.proxyBase";
 const LS_SNAPSHOT_PREFIX = "bm_map_snapshot:";
 const LS_EU_LAST_GOOD = "bm_eu_last_good_snapshot";
 const SNAPSHOT_VERSION = "europe_map_v2";
 
 /* ========= Defaults ========= */
-const DEFAULT_EBIRD_TOKEN = "9s72dc2jcjlq";
-const DEFAULT_PROXY_BASE = "https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/proxy?url=";
-const FALLBACK_PROXY_BASE = "https://api.allorigins.win/raw?url=";
-const queryProxyBase = (new URLSearchParams(window.location.search).get("proxyBase") || "").trim();
-const storedProxyBase = (localStorage.getItem(LS_PROXY_BASE) || "").trim();
-const activeProxyBase = queryProxyBase || storedProxyBase || DEFAULT_PROXY_BASE || FALLBACK_PROXY_BASE;
-
-function buildProxyUrl(url){
-  const target = encodeURIComponent(String(url || "").trim());
-  if (!activeProxyBase) return String(url || "").trim();
-  if (activeProxyBase.includes("{url}")) return activeProxyBase.replace("{url}", target);
-  return activeProxyBase + target;
-}
+const PROJECT_REF = "eenwcyuyugyrjgpivxrq";
+const EBIRD_RECENT_API = `https://${PROJECT_REF}.supabase.co/functions/v1/ebird_recent`;
 
 function detectProxyMode(){
-  if (!activeProxyBase) return "none";
-  if (activeProxyBase.includes("/functions/v1/proxy")) return "Supabase";
-  if (activeProxyBase.includes("allorigins.win")) return "Fallback";
-  return "Custom";
+  return "Supabase eBird";
 }
 
 function updateProxyHint(){
   const el = document.getElementById("proxyPill");
   if (!el) return;
-  el.textContent = "Proxy: " + detectProxyMode();
-  el.title = activeProxyBase;
-  console.info("[proxy] active", { mode: detectProxyMode(), proxyBase: activeProxyBase });
-  if (detectProxyMode() === "none") {
-    showWarn("Proxy base is not configured. Cross-origin requests can fail.");
-  }
+  el.textContent = "eBird: " + detectProxyMode();
+  el.title = EBIRD_RECENT_API;
+  console.info("[ebird_recent] active", { endpoint: EBIRD_RECENT_API });
 }
 
 const DEFAULT_SPECIES = ["Aed-lepalind", "Aed-põõsalind", "Aed-roolind", "Aedporr", "Alk", "Alverüdi", "Ameerika piilpart", "Atlantise tormilind", "Aul", "Baleaari tormilind", "Euroopa kaelustäks", "Habekakk", "Habeviires", "Hahk", "Hakk", "Hall-kärbsenäpp", "Hallhaigur", "Hallhani", "Hallkibu", "Hallpea-rähn", "Hallpõsk-pütt", "Hallrästas", "Hallrüdi", "Halltsiitsitaja", "Hallvares", "Hallõgija", "Hangelind", "Harakas", "Haugaskotkas", "Hele-urvalind", "Heletilder", "Herilaseviu", "Hiireviu", "Hoburästas", "Händkakk", "Hänilane", "Hõbehaigur", "Hõbehaugas", "Hõbekajakas", "Hüüp", "Ida-mustvaeras", "Jahipistrik", "Jämejalg", "Järvekaur", "Jääkajakas", "Jääkaur", "Jääkoskel", "Jõgi-ritsiklind", "Jõgitiir", "Jõgitilder", "Jõgivästrik", "Kadakatäks", "Kaelus-kärbsenäpp", "Kaelus-turteltuvi", "Kaeluskotkas", "Kaelusrästas", "Kaelustuvi", "Kalakajakas", "Kalakotkas", "Kalda-rädilind", "Kaldapääsuke", "Kaljukajakas", "Kaljukotkas", "Kanada lagle", "Kanakull", "Kanepilind", "Karbuskajakas", "Karkjalg", "Karmiinleevike", "Karvasjalg-kakk", "Karvasjalg-viu", "Kassikakk", "Kiivitaja", "Kiripugu-rüdi", "Kirjuhahk", "Kivikakk", "Kivirullija", "Kivitäks", "Kodukakk", "Kodutuvi", "Koduvarblane", "Koldhaigur", "Koldjalg-hõbekajakas", "Koldvint", "Kormoran", "Krüüsel", "Kukkurtihane", "Kuld-lehelind", "Kuldhänilane", "Kuldnokk", "Kuldtsiitsitaja", "Kuninghahk", "Kuuse-käbilind", "Käblik", "Kägu", "Käharpelikan", "Käosulane", "Kääbuskormoran", "Kääbuskotkas", "Kõnnuõgija", "Kõrbe-kivitäks", "Kõrbe-põõsalind", "Kõrkja-roolind", "Kõrvukräts", "Kõvernokk-rüdi", "Kühmnokk-luik", "Künnivares", "Laanenäär", "Laanepüü", "Laanerähn", "Laisaba-änn", "Lammitilder", "Lapi tsiitsitaja", "Lasuurtihane", "Lauk", "Laululuik", "Laulurästas", "Leeterüdi", "Leevike", "Liiv-kivitäks", "Liivatüll", "Linavästrik", "Loorkakk", "Luitsnokk-iibis", "Luitsnokk-part", "Lumehani", "Lumekakk", "Lääne-lehelind", "Lääne-pöialpoiss", "Lõopistrik", "Lõuna-hõbekajakas", "Lühinokk-hani", "Madukotkas", "Mandariinpart", "Merikajakas", "Merikotkas", "Merirüdi", "Merisk", "Merivart", "Mesilasenäpp", "Mets-lehelind", "Metsis", "Metskiur", "Metskurvits", "Metstilder", "Metsvint", "Mudanepp", "Mudatilder", "Must-harksaba", "Must-kärbsenäpp", "Must-lepalind", "Must-toonekurg", "Mustjalg-tüll", "Mustkael-pütt", "Mustkurk-raat", "Mustlagle", "Mustlauk-õgija", "Mustpea-põõsalind", "Mustpea-tsiitsitaja", "Mustpugu-rästas", "Musträhn", "Musträstas", "Mustsaba-vigle", "Musttihane", "Mustvaeras", "Mustvares", "Mustviires", "Mägi-kanepilind", "Mägikiur", "Männi-käbilind", "Männileevike", "Männitalvike", "Mänsak", "Naaskelnokk", "Naerukajakas", "Naerutiir", "Niidu-kaelustäks", "Niidu-ritsiklind", "Niidukiur", "Nunn-kivitäks", "Nurmkana", "Nõgipart", "Nõlva-lehelind", "Nõmmekiur", "Nõmmelõoke", "Ohakalind", "Ohhoota hõbekajakas", "Padu-roolind", "Pasknäär", "Peegel-tormilind", "Pelikan", "Peoleo", "Piilpart", "Piiritaja", "Pikksaba-änn", "Plütt", "Plüü", "Polaarkajakas", "Porr", "Prillvaeras", "Pruunselg-põõsalind", "Puna-harksaba", "Puna-veetallaja", "Punajalg-pistrik", "Punajalg-tilder", "Punakael-lagle", "Punakurk-kaur", "Punanokk-vart", "Punapea-vart", "Punapea-õgija", "Punarind", "Punasaba-õgija", "Punaselg-õgija", "Purpurhaigur", "Puukoristaja", "Põhja-kirjurästas", "Põhja-lehelind", "Põhja-tormipääsu", "Põhjatihane", "Põhjatsiitsitaja", "Põhjavint", "Põldlõoke", "Põldtsiitsitaja", "Põldvarblane", "Põldvutt", "Pöialpoiss", "Rabapistrik", "Rabapüü", "Raisakotkas", "Randkajakas", "Randkiur", "Randtiir", "Rasvatihane", "Raudkull", "Ristpart", "Roherähn", "Rohevint", "Rohukoskel", "Rohunepp", "Ronk", "Roo-loorkull", "Roo-ritsiklind", "Roohabekas", "Rooruik", "Roosa-kuldnokk", "Roosakajakas", "Roosatiir", "Roostepääsuke", "Roosterind-tüll", "Rootsiitsitaja", "Rubiinööbik", "Rukkirääk", "Ruugerüdi", "Rägapart", "Rästas-roolind", "Räusk", "Rääkspart", "Räästapääsuke", "Rüüt", "Sabatihane", "Salu-lehelind", "Salupäll", "Salutihane", "Sarviklõoke", "Sarvikpütt", "Siberi lehelind", "Siberi raat", "Siidhaigur", "Siidisaba", "Siisike", "Sinikael-part", "Siniraag", "Sinirind", "Sinisaba", "Sinitihane", "Soo-loorkull", "Soo-roolind", "Sookiur", "Sookurg", "Soopart", "Sooräts", "Soorüdi", "Stepi-loorkull", "Stepikajakas", "Stepikiivitaja", "Stepikotkas", "Stepipistrik", "Stepiviu", "Suitsupääsuke", "Suula", "Suur-kirjurähn", "Suur-konnakotkas", "Suur-laukhani", "Suurkoovitaja", "Suurnokk-vint", "Suurrüdi", "Suuränn", "Sõtkas", "Söödikänn", "Tait", "Talvike", "Tamme-kirjurähn", "Teder", "Tiigi-roolind", "Tikutaja", "Triip-ritsiklind", "Tuhk-lehelind", "Tumetilder", "Tundra-rabahani", "Tundrakaur", "Tundrakiur", "Turteltuvi", "Tutkas", "Tutt-tihane", "Tutt-tiir", "Tuttlõoke", "Tuttpütt", "Tuttvart", "Tuuletallaja", "Täpikhuik", "Tõmmu-lehelind", "Tõmmuiibis", "Tõmmukajakas", "Tõmmuvaeras", "Urvalind", "Vaaraohani", "Vaenukägu", "Vainurästas", "Valge-toonekurg", "Valgepõsk-lagle", "Valgeselg-kirjurähn", "Valgesilm-vart", "Valgetiib-viires", "Veetallaja", "Veisehaigur", "Vesipapp", "Vihitaja", "Viupart", "Väike-kirjurähn", "Väike-konnakotkas", "Väike-käosulane", "Väike-kärbsenäpp", "Väike-laukhani", "Väike-lehelind", "Väike-põõsalind", "Väikealk", "Väikehuik", "Väikehüüp", "Väikekajakas", "Väikekoovitaja", "Väikekoskel", "Väikeluik", "Väikepistrik", "Väikepütt", "Väikerüdi", "Väiketiir", "Väiketrapp", "Väiketsiitsitaja", "Väiketüll", "Välja-loorkull", "Välja-väikelõoke", "Värbkakk", "Värbrüdi", "Väänkael", "Võsa-ritsiklind", "Võsaraat", "Vööt-käbilind", "Vööt-põõsalind", "Vööthani", "Vöötkakk", "Vöötnokk-kajakas", "Vöötsaba-vigle", "Õõnetuvi", "Ööbik", "Ööhaigur", "Öösorr"];
@@ -860,8 +840,6 @@ let EBIRD_CODES = (() => {
 
 let points = safeParseJSON(localStorage.getItem(LS_POINTS) || "{}") || {};
 
-let EBIRD_TOKEN = (localStorage.getItem(LS_EBIRD_TOKEN) || DEFAULT_EBIRD_TOKEN).trim();
-if (!localStorage.getItem(LS_EBIRD_TOKEN)) localStorage.setItem(LS_EBIRD_TOKEN, EBIRD_TOKEN);
 
 let SPECIES = [];
 try {
@@ -895,7 +873,6 @@ function saveAll(){
   localStorage.setItem(LS_AVATARS, JSON.stringify(avatars));
   localStorage.setItem(LS_CODES, JSON.stringify(EBIRD_CODES));
   localStorage.setItem(LS_POINTS, JSON.stringify(points));
-  localStorage.setItem(LS_EBIRD_TOKEN, EBIRD_TOKEN);
   localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
   localStorage.setItem(LS_PER_COUNTRY, perCountry ? "1" : "0");
 }
@@ -1339,9 +1316,6 @@ function delayMs(ms){
 
 function buildErrorMessage(prefix, status, snippet){
   const cleanSnippet = (snippet || "").slice(0, 200);
-  if (status === 401 || status === 403) {
-    return `Missing/invalid API token. Set VITE_EBIRD_TOKEN (or Lovable secret). HTTP ${status}. ${cleanSnippet}`;
-  }
   return `${prefix} HTTP ${status}. ${cleanSnippet}`;
 }
 
@@ -1349,7 +1323,7 @@ async function safeFetchJson(url, options = {}){
   const timeoutMs = Number(options.timeoutMs || 20000);
   const retries = Number(options.retries || 2);
   const retryBackoff = [1000, 3000];
-  const proxyUrl = buildProxyUrl(url);
+  const requestUrl = String(url || "");
   let attempt = 0;
   while (attempt <= retries) {
     const t0 = performance.now();
@@ -1360,7 +1334,7 @@ async function safeFetchJson(url, options = {}){
       else options.signal.addEventListener("abort", ()=> controller.abort(), { once: true });
     }
     try {
-      const res = await fetch(proxyUrl, {
+      const res = await fetch(requestUrl, {
         headers: options.headers || {},
         signal: controller.signal,
         cache: options.cache || "no-store",
@@ -1381,12 +1355,12 @@ async function safeFetchJson(url, options = {}){
         err.status = status;
         err.textSnippet = textSnippet;
         err.timeMs = timeMs;
-        err.url = proxyUrl;
+        err.url = requestUrl;
         throw err;
       }
       const json = await res.json();
       clearTimeout(timeoutId);
-      return { ok: true, status, json, textSnippet: "", timeMs, url: proxyUrl };
+      return { ok: true, status, json, textSnippet: "", timeMs, url: requestUrl };
     } catch (e) {
       clearTimeout(timeoutId);
       const timeMs = Math.round(performance.now() - t0);
@@ -1395,7 +1369,7 @@ async function safeFetchJson(url, options = {}){
         err.status = 0;
         err.textSnippet = "";
         err.timeMs = timeMs;
-        err.url = proxyUrl;
+        err.url = requestUrl;
         throw err;
       }
       if ((e && e.name === "AbortError") || (options.signal && options.signal.aborted)) {
@@ -1408,11 +1382,11 @@ async function safeFetchJson(url, options = {}){
       }
       if (!e.status) e.status = 0;
       if (!e.timeMs) e.timeMs = timeMs;
-      if (!e.url) e.url = proxyUrl;
+      if (!e.url) e.url = requestUrl;
       throw e;
     }
   }
-  return { ok: false, status: 0, json: null, textSnippet: "", timeMs: 0, url: proxyUrl };
+  return { ok: false, status: 0, json: null, textSnippet: "", timeMs: 0, url: requestUrl };
 }
 
 async function fetchRegionsLimited(urls, signal){
@@ -1421,12 +1395,7 @@ async function fetchRegionsLimited(urls, signal){
   const limit = isMobile ? REGION_CONCURRENCY_MOBILE : REGION_CONCURRENCY_DESKTOP;
   const tasks = urls.map((u,i)=> async ()=>{
     try{
-      const response = await safeFetchJson(u, {
-        signal,
-        timeoutMs: 20000,
-        retries: 2,
-        headers: { "X-eBirdApiToken": EBIRD_TOKEN },
-      });
+      const response = await safeFetchJson(u, { signal, timeoutMs: 20000, retries: 2 });
       lastRequest = { url: response.url, status: response.status, timeMs: response.timeMs };
       if (!Array.isArray(response.json)) {
         const err = new Error("Invalid eBird payload");
@@ -1439,14 +1408,14 @@ async function fetchRegionsLimited(urls, signal){
       results[i] = { ok: true, data: response.json, error: null };
     }
     catch(e){
-      lastRequest = { url: e.url || buildProxyUrl(u), status: e.status, timeMs: e.timeMs };
+      lastRequest = { url: e.url || u, status: e.status, timeMs: e.timeMs };
       results[i] = {
         ok: false,
         data: null,
         error: {
           status: e?.status ?? 0,
           textSnippet: String(e?.textSnippet || e?.message || "").slice(0, 200),
-          url: e?.url || buildProxyUrl(u),
+          url: e?.url || u,
           timeMs: e?.timeMs,
         },
       };
@@ -1463,9 +1432,16 @@ async function fetchEurope(speciesName, force=false, signal=null){
 
   if (!force && p.fetchedAt && (Date.now() - p.fetchedAt) < REFRESH_COOLDOWN_MS) return;
 
-  const urls = REGIONS.map(r =>
-    `https://api.ebird.org/v2/data/obs/${r}/recent/${encodeURIComponent(code)}?back=${BACK_DAYS}&maxResults=${MAX_RESULTS}&_ts=${Date.now()}`
-  );
+  const urls = REGIONS.map((r) => {
+    const q = new URLSearchParams({
+      regionCode: r,
+      back: String(BACK_DAYS),
+      maxResults: String(MAX_RESULTS),
+      speciesCode: String(code),
+      _ts: String(Date.now()),
+    });
+    return `${EBIRD_RECENT_API}?${q.toString()}`;
+  });
 
   const regionResults = await fetchRegionsLimited(urls, signal);
 
@@ -1573,8 +1549,7 @@ function setRefreshError(message, idx, key){
 
 function validateRefreshConfig(){
   const missing = [];
-  if (!EBIRD_TOKEN) missing.push("eBird token missing: set VITE_EBIRD_TOKEN (or Lovable secret)");
-  if (!activeProxyBase) missing.push("proxy base missing: set estbirding.proxyBase or configure default proxy");
+  if (!EBIRD_RECENT_API) missing.push("eBird function endpoint missing");
   return { ok: missing.length === 0, message: missing.join(" | ") };
 }
 
@@ -1862,12 +1837,11 @@ async function resetEuropeCache(){
 }
 
 async function testEbirdViaProxy(){
-  const testUrl = `https://api.ebird.org/v2/data/obs/EE/recent?back=1&maxResults=3&_ts=${Date.now()}`;
+  const testUrl = `${EBIRD_RECENT_API}?regionCode=EE&back=1&maxResults=1&_ts=${Date.now()}`;
   try {
     const response = await safeFetchJson(testUrl, {
       timeoutMs: 20000,
       retries: 0,
-      headers: { "X-eBirdApiToken": EBIRD_TOKEN },
     });
     const snippet = JSON.stringify(response.json || "").slice(0, 200);
     proxyTestResult = `ok status=${response.status} ${snippet}`;
@@ -1877,7 +1851,7 @@ async function testEbirdViaProxy(){
     const status = e?.status ?? 0;
     const snippet = String(e?.textSnippet || e?.message || "").slice(0, 200);
     proxyTestResult = `fail status=${status} ${snippet}`;
-    lastRequest = { url: e?.url || buildProxyUrl(testUrl), status: status, timeMs: e?.timeMs };
+    lastRequest = { url: e?.url || testUrl, status: status, timeMs: e?.timeMs };
     showSnapshotBanner("Proxy test failed", "warn");
   }
   updateDebugPanel();
@@ -1886,10 +1860,9 @@ async function testEbirdViaProxy(){
 /* ========= Settings modal ========= */
 const modalBackdrop = document.getElementById("modalBackdrop");
 const settingsBtn = document.getElementById("settingsBtn");
-const tokenInput = document.getElementById("tokenInput");
 const speciesInput = document.getElementById("speciesInput");
 
-function openSettings(){ tokenInput.value = EBIRD_TOKEN || ""; speciesInput.value = SPECIES.join("\n"); modalBackdrop.style.display = "flex"; }
+function openSettings(){ speciesInput.value = SPECIES.join("\n"); modalBackdrop.style.display = "flex"; }
 function closeSettings(){ modalBackdrop.style.display = "none"; }
 
 settingsBtn.addEventListener("click", openSettings);
@@ -1897,7 +1870,6 @@ document.getElementById("modalCancel").addEventListener("click", closeSettings);
 modalBackdrop.addEventListener("click", (e)=>{ if (e.target === modalBackdrop) closeSettings(); });
 
 document.getElementById("modalSave").addEventListener("click", ()=>{
-  EBIRD_TOKEN = (tokenInput.value||"").trim() || DEFAULT_EBIRD_TOKEN;
   const lines = (speciesInput.value||"").split("\n").map(s=>s.trim()).filter(Boolean);
   if (lines.length) SPECIES = lines;
   saveAll(); render(); closeSettings();

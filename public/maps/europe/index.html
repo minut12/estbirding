@@ -362,7 +362,7 @@
         <button class="btn secondary" id="settingsBtn">Settings</button>
         <button class="btn" id="btnRefreshData">Refresh data</button>
         <button class="btn secondary" id="btnReloadSnapshot">Reload snapshot</button>
-        <button class="btn secondary" id="btnResetCache">Reset cache</button>
+        <button class="btn secondary" id="btnHardResetEu">Hard reset (Europe)</button>
         <button class="btn secondary" id="refreshFilteredBtn">Refresh filtered</button>
         <button class="btn secondary" id="refreshSelectedBtn">Refresh selected</button>
         <button class="btn danger" id="stopBtn">Stop</button>
@@ -1845,7 +1845,7 @@ async function resetEuropeCache(){
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (!key) continue;
-    if (key.startsWith(LS_SNAPSHOT_PREFIX) || key === LS_EU_LAST_GOOD || key === LS_POINTS) keysToRemove.push(key);
+    if (key.startsWith(LS_SNAPSHOT_PREFIX) || key === LS_EU_LAST_GOOD || key === LS_POINTS || key === "estbirding.proxyBase") keysToRemove.push(key);
   }
   keysToRemove.forEach((key)=> localStorage.removeItem(key));
   if (window.indexedDB && typeof indexedDB.databases === "function") {
@@ -1868,11 +1868,14 @@ async function resetEuropeCache(){
   lastRefreshAt = null;
   lastSnapshotAt = null;
   lastError = null;
+  lastErrorStatus = null;
+  lastErrorSnippet = null;
   stoppedAtIndex = null;
   stoppedAtKey = null;
   lastRequest = null;
   okCount = 0;
   failCount = 0;
+  proxyTestResult = "-";
   lastBodySnippet = null;
   snapshotDebugNote = null;
   saveAll();
@@ -1903,8 +1906,9 @@ async function testEbirdDirect(){
     });
     const snippet = String(response.textSnippet || JSON.stringify(response.json || "")).slice(0, 200);
     proxyTestResult = `ok status=${response.status} ${snippet}`;
+    lastError = null;
     lastErrorStatus = response.status;
-    lastErrorSnippet = snippet || null;
+    lastErrorSnippet = null;
     lastBodySnippet = snippet || null;
     lastRequest = { url: response.url, status: response.status, timeMs: response.timeMs };
     showSnapshotBanner("Test eBird passed", "");
@@ -1994,8 +1998,8 @@ document.getElementById("btnRefreshData").addEventListener("click", async ()=>{
   }
 });
 document.getElementById("btnReloadSnapshot").addEventListener("click", reloadSnapshot);
-document.getElementById("btnResetCache").addEventListener("click", async ()=>{
-  if (!confirm("Reset Europe snapshot/cache state?")) return;
+document.getElementById("btnHardResetEu").addEventListener("click", async ()=>{
+  if (!confirm("Hard reset Europe state? This clears Europe points/snapshots/proxyBase/debug state.")) return;
   await resetEuropeCache();
 });
 document.getElementById("btnTestEbird").addEventListener("click", testEbirdDirect);

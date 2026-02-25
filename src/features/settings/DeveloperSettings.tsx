@@ -182,6 +182,25 @@ export default function DeveloperSettings() {
     toast.success("Sisselogimise link saadetud e-postile");
   };
 
+  const copyUserId = async () => {
+    if (!user?.id) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(user.id);
+      } else {
+        const input = document.createElement("input");
+        input.value = user.id;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand("copy");
+        document.body.removeChild(input);
+      }
+      toast.success("Kopeeritud");
+    } catch {
+      toast.error("Kopeerimine ebaõnnestus");
+    }
+  };
+
   return (
     <div className="space-y-4">
       <h3 className="flex items-center gap-2 font-semibold text-foreground">
@@ -215,6 +234,20 @@ export default function DeveloperSettings() {
       </div>
 
       <div className="space-y-3 rounded-lg border border-border p-3">
+        {user && (
+          <div className="rounded-md border border-border/70 bg-muted/30 p-2">
+            <div className="text-xs text-muted-foreground">Sinu kasutaja ID (UUID):</div>
+            <div className="mt-1 flex items-center gap-2">
+              <code className="min-w-0 flex-1 truncate rounded bg-background px-2 py-1 text-xs">
+                {user.id}
+              </code>
+              <Button type="button" variant="outline" size="sm" onClick={copyUserId}>
+                Kopeeri
+              </Button>
+            </div>
+          </div>
+        )}
+
         <h4 className="font-semibold text-foreground">Üritused (Admin)</h4>
 
         {loading || adminLoading ? (

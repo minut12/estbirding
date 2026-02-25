@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+Ôªøimport { useState, useEffect, useRef, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -14,6 +14,7 @@ import {
   uploadSharedAvatar, removeSharedAvatar, fetchSpeciesList,
 } from '@/lib/avatar-storage';
 import { getSpeciesMeta, loadSpeciesMeta, upsertSpeciesMeta } from '@/lib/speciesMeta';
+import { ET_STRINGS } from '@/lib/etStrings';
 
 const PLACEHOLDER_URL = '/maps/linnuliigid/avatars/placeholder.webp';
 
@@ -61,7 +62,7 @@ export default function AvatarManager() {
       const dataUrl = await processImage(file);
       setPreview(dataUrl);
     } catch (ex: any) {
-      toast.error(ex?.message || 'Pildi tˆˆtlemine ebaınnestus');
+      toast.error(ex?.message || 'Pildi t√∂√∂tlemine eba√µnnestus');
     } finally {
       setProcessing(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -77,9 +78,9 @@ export default function AvatarManager() {
       setPreview(null);
       upsertSpeciesMeta(selected, { avatarUrl: publicUrl });
       notifyIframeUpdate('update', selected, publicUrl);
-      toast.success('Avatar salvestatud pilve - n‰htav kıigil seadmetel');
+      toast.success('Avatar salvestatud pilve - n√§htav k√µigil seadmetel');
     } catch (ex: any) {
-      toast.error(ex?.message || 'Salvestamine ebaınnestus');
+      toast.error(ex?.message || 'Salvestamine eba√µnnestus');
     } finally {
       setSaving(false);
     }
@@ -96,7 +97,7 @@ export default function AvatarManager() {
       notifyIframeUpdate('reset', selected);
       toast.success('Avatar eemaldatud');
     } catch (ex: any) {
-      toast.error(ex?.message || 'Eemaldamine ebaınnestus');
+      toast.error(ex?.message || 'Eemaldamine eba√µnnestus');
     } finally {
       setSaving(false);
     }
@@ -109,10 +110,10 @@ export default function AvatarManager() {
         const src = iframe.src;
         const base = src.replace(/[?&]v=[^&]*/, '');
         iframe.src = base + (base.includes('?') ? '&' : '?') + 'v=' + Date.now();
-        toast.success('Kaart v‰rskendatud');
+        toast.success('Kaart v√§rskendatud');
       }
     } catch {
-      toast.error('Kaardi v‰rskendamine ebaınnestus');
+      toast.error('Kaardi v√§rskendamine eba√µnnestus');
     }
   }, []);
 
@@ -138,11 +139,9 @@ export default function AvatarManager() {
     <div className="space-y-4">
       <h3 className="font-semibold text-foreground flex items-center gap-2">
         <Cloud className="w-4 h-4 text-primary" />
-        Liigi seaded
+        {ET_STRINGS.speciesSettings}
       </h3>
-      <p className="text-xs text-muted-foreground">
-        Hallatakse ¸hiselt: avatar, eBird speciesCode ja harulduse tase.
-      </p>
+      <p className="text-xs text-muted-foreground">{ET_STRINGS.sharedManaged}</p>
 
       {hasSpecies ? (
         <div className="space-y-1.5">
@@ -167,14 +166,14 @@ export default function AvatarManager() {
         </div>
       ) : (
         <div className="space-y-1.5">
-          <Label htmlFor="manualSpecies">Liigi nimi (k‰sitsi)</Label>
+          <Label htmlFor="manualSpecies">Liigi nimi (k√§sitsi)</Label>
           <Input
             id="manualSpecies"
             placeholder="nt. Sookurg"
             value={manualKey}
             onChange={(e) => { setManualKey(e.target.value); setSelected(e.target.value); }}
           />
-          <p className="text-xs text-destructive">species.json ei laadunud. Sisesta liigi nimi k‰sitsi.</p>
+          <p className="text-xs text-destructive">species.json ei laadunud. Sisesta liigi nimi k√§sitsi.</p>
         </div>
       )}
 
@@ -202,20 +201,20 @@ export default function AvatarManager() {
               value={ebirdCode}
               onChange={(e) => setEbirdCode(e.target.value)}
             />
-            <Label htmlFor="rarityLevel">Haruldus</Label>
+            <Label htmlFor="rarityLevel">{ET_STRINGS.rarityLabel}</Label>
             <select
               id="rarityLevel"
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               value={rarityLevel}
               onChange={(e) => setRarityLevel(e.target.value as 'none' | 'rare' | 'super' | 'mega')}
             >
-              <option value="none">Tavaline</option>
-              <option value="rare">Haruldane</option>
-              <option value="super">V‰ga haruldane</option>
-              <option value="mega">Mega haruldane</option>
+              <option value="none">{ET_STRINGS.rarityNormal}</option>
+              <option value="rare">{ET_STRINGS.rarityRare}</option>
+              <option value="super">{ET_STRINGS.raritySuper}</option>
+              <option value="mega">{ET_STRINGS.rarityMega}</option>
             </select>
             <Button variant="outline" className="w-full" onClick={handleMetaSave}>
-              Salvesta liigi seaded
+              {ET_STRINGS.saveSpeciesSettings}
             </Button>
           </div>
 
@@ -223,7 +222,7 @@ export default function AvatarManager() {
             <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFileChange} />
             <Button variant="outline" className="w-full gap-2" disabled={processing || saving} onClick={() => fileRef.current?.click()}>
               <Upload className="w-4 h-4" />
-              {processing ? 'Tˆˆtlen...' : 'Lae avatar ¸les'}
+              {processing ? 'T√∂√∂tlen...' : ET_STRINGS.uploadAvatar}
             </Button>
           </div>
 
@@ -247,11 +246,9 @@ export default function AvatarManager() {
       <Separator />
       <Button variant="outline" size="sm" onClick={handleRefreshMap} className="gap-2">
         <RefreshCw className="w-3.5 h-3.5" />
-        V‰rskenda kaarti
+        {ET_STRINGS.refreshMap}
       </Button>
-      <p className="text-xs text-muted-foreground">
-        Kui avatar ei ilmu kohe kaardile, vajuta "V‰rskenda kaarti".
-      </p>
+      <p className="text-xs text-muted-foreground">Kui avatar ei ilmu kohe kaardile, vajuta "{ET_STRINGS.refreshMap}".</p>
     </div>
   );
 }

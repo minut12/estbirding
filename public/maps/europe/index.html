@@ -1,9 +1,9 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-  <title>Europe – BirdMap (eBird, last 7 days)</title>
+  <title>Europe â€“ BirdMap (eBird, last 7 days)</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
     :root{
@@ -112,12 +112,12 @@
       cursor:pointer;
       font-size:18px;
       line-height:1;
-      position: absolute;
-      top: 8px;
-      right: 8px;
+      flex:0 0 40px;
+      margin-left:8px;
     }
 
     .small{ color:var(--muted); font-size:12px; margin:6px 0 10px; line-height:1.35; }
+    .header-copy{flex:1;min-width:0;padding-right:12px}
     #controls{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .btn{
       padding:6px 10px; border:0; border-radius:10px;
@@ -323,8 +323,8 @@
 
   <div id="topbar">
     <strong>Europe</strong>
-    <span class="pill">FI · SE · LV · LT · PL · BY · RU</span>
-    <span class="pill">eBird · 7 days</span>
+    <span class="pill">FI Â· SE Â· LV Â· LT Â· PL Â· BY Â· RU</span>
+    <span class="pill">eBird Â· 7 days</span>
     <span class="pill" id="proxyPill"></span>
     <span class="pill">Avatars: <span class="hintBadge">bm_global_avatars</span></span>
     <span class="muted" id="statusText"></span>
@@ -336,10 +336,12 @@
       <div id="stickyPanel">
 <div class="sidebarHeader">
         <div class="sidebarHeaderTop">
+          <div class="header-copy">
           <h2>Europe 2026</h2>
-          <button id="closeSidebarBtn" title="Close">✕</button>
+          </div>
+          <button id="closeSidebarBtn" title="Close">âœ•</button>
         </div>
-        <div class="small" style="margin-bottom:0;">
+        <div class="small header-copy" style="margin-bottom:0;">
           Per-country markers are ON by default (matches country maps like Finland).
           <br/>Counts are computed like your Finland map: fetch last 30 days (max 1000), then count last 7 days.
           <br/>Markers are shown only when a country has &gt;0 records in last 7 days.
@@ -361,7 +363,7 @@
         <div id="debugContent">Loading...</div>
       </details>
       <div id="progressLine">Ready.</div>
-      <input id="filterBox" type="text" placeholder="Filter species…"/>
+      <input id="filterBox" type="text" placeholder="Filter speciesâ€¦"/>
       </div>
       </div>
       <div class="panel-content-scroll">
@@ -400,6 +402,7 @@
 <script src="/maps/shared/map-hamburger-control.js"></script>
 <script src="/maps/shared/format-ee.js"></script>
 <script src="/maps/shared/species-meta.js"></script>
+<script src="/maps/shared/et-strings.js"></script>
 <script>
 /* ========= Embedded detection ========= */
 (function(){
@@ -440,39 +443,39 @@ function updateProxyHint(){
   console.info("[ebird] direct mode");
 }
 
-const DEFAULT_SPECIES = ["Aed-lepalind", "Aed-põõsalind", "Aed-roolind", "Aedporr", "Alk", "Alverüdi", "Ameerika piilpart", "Atlantise tormilind", "Aul", "Baleaari tormilind", "Euroopa kaelustäks", "Habekakk", "Habeviires", "Hahk", "Hakk", "Hall-kärbsenäpp", "Hallhaigur", "Hallhani", "Hallkibu", "Hallpea-rähn", "Hallpõsk-pütt", "Hallrästas", "Hallrüdi", "Halltsiitsitaja", "Hallvares", "Hallõgija", "Hangelind", "Harakas", "Haugaskotkas", "Hele-urvalind", "Heletilder", "Herilaseviu", "Hiireviu", "Hoburästas", "Händkakk", "Hänilane", "Hõbehaigur", "Hõbehaugas", "Hõbekajakas", "Hüüp", "Ida-mustvaeras", "Jahipistrik", "Jämejalg", "Järvekaur", "Jääkajakas", "Jääkaur", "Jääkoskel", "Jõgi-ritsiklind", "Jõgitiir", "Jõgitilder", "Jõgivästrik", "Kadakatäks", "Kaelus-kärbsenäpp", "Kaelus-turteltuvi", "Kaeluskotkas", "Kaelusrästas", "Kaelustuvi", "Kalakajakas", "Kalakotkas", "Kalda-rädilind", "Kaldapääsuke", "Kaljukajakas", "Kaljukotkas", "Kanada lagle", "Kanakull", "Kanepilind", "Karbuskajakas", "Karkjalg", "Karmiinleevike", "Karvasjalg-kakk", "Karvasjalg-viu", "Kassikakk", "Kiivitaja", "Kiripugu-rüdi", "Kirjuhahk", "Kivikakk", "Kivirullija", "Kivitäks", "Kodukakk", "Kodutuvi", "Koduvarblane", "Koldhaigur", "Koldjalg-hõbekajakas", "Koldvint", "Kormoran", "Krüüsel", "Kukkurtihane", "Kuld-lehelind", "Kuldhänilane", "Kuldnokk", "Kuldtsiitsitaja", "Kuninghahk", "Kuuse-käbilind", "Käblik", "Kägu", "Käharpelikan", "Käosulane", "Kääbuskormoran", "Kääbuskotkas", "Kõnnuõgija", "Kõrbe-kivitäks", "Kõrbe-põõsalind", "Kõrkja-roolind", "Kõrvukräts", "Kõvernokk-rüdi", "Kühmnokk-luik", "Künnivares", "Laanenäär", "Laanepüü", "Laanerähn", "Laisaba-änn", "Lammitilder", "Lapi tsiitsitaja", "Lasuurtihane", "Lauk", "Laululuik", "Laulurästas", "Leeterüdi", "Leevike", "Liiv-kivitäks", "Liivatüll", "Linavästrik", "Loorkakk", "Luitsnokk-iibis", "Luitsnokk-part", "Lumehani", "Lumekakk", "Lääne-lehelind", "Lääne-pöialpoiss", "Lõopistrik", "Lõuna-hõbekajakas", "Lühinokk-hani", "Madukotkas", "Mandariinpart", "Merikajakas", "Merikotkas", "Merirüdi", "Merisk", "Merivart", "Mesilasenäpp", "Mets-lehelind", "Metsis", "Metskiur", "Metskurvits", "Metstilder", "Metsvint", "Mudanepp", "Mudatilder", "Must-harksaba", "Must-kärbsenäpp", "Must-lepalind", "Must-toonekurg", "Mustjalg-tüll", "Mustkael-pütt", "Mustkurk-raat", "Mustlagle", "Mustlauk-õgija", "Mustpea-põõsalind", "Mustpea-tsiitsitaja", "Mustpugu-rästas", "Musträhn", "Musträstas", "Mustsaba-vigle", "Musttihane", "Mustvaeras", "Mustvares", "Mustviires", "Mägi-kanepilind", "Mägikiur", "Männi-käbilind", "Männileevike", "Männitalvike", "Mänsak", "Naaskelnokk", "Naerukajakas", "Naerutiir", "Niidu-kaelustäks", "Niidu-ritsiklind", "Niidukiur", "Nunn-kivitäks", "Nurmkana", "Nõgipart", "Nõlva-lehelind", "Nõmmekiur", "Nõmmelõoke", "Ohakalind", "Ohhoota hõbekajakas", "Padu-roolind", "Pasknäär", "Peegel-tormilind", "Pelikan", "Peoleo", "Piilpart", "Piiritaja", "Pikksaba-änn", "Plütt", "Plüü", "Polaarkajakas", "Porr", "Prillvaeras", "Pruunselg-põõsalind", "Puna-harksaba", "Puna-veetallaja", "Punajalg-pistrik", "Punajalg-tilder", "Punakael-lagle", "Punakurk-kaur", "Punanokk-vart", "Punapea-vart", "Punapea-õgija", "Punarind", "Punasaba-õgija", "Punaselg-õgija", "Purpurhaigur", "Puukoristaja", "Põhja-kirjurästas", "Põhja-lehelind", "Põhja-tormipääsu", "Põhjatihane", "Põhjatsiitsitaja", "Põhjavint", "Põldlõoke", "Põldtsiitsitaja", "Põldvarblane", "Põldvutt", "Pöialpoiss", "Rabapistrik", "Rabapüü", "Raisakotkas", "Randkajakas", "Randkiur", "Randtiir", "Rasvatihane", "Raudkull", "Ristpart", "Roherähn", "Rohevint", "Rohukoskel", "Rohunepp", "Ronk", "Roo-loorkull", "Roo-ritsiklind", "Roohabekas", "Rooruik", "Roosa-kuldnokk", "Roosakajakas", "Roosatiir", "Roostepääsuke", "Roosterind-tüll", "Rootsiitsitaja", "Rubiinööbik", "Rukkirääk", "Ruugerüdi", "Rägapart", "Rästas-roolind", "Räusk", "Rääkspart", "Räästapääsuke", "Rüüt", "Sabatihane", "Salu-lehelind", "Salupäll", "Salutihane", "Sarviklõoke", "Sarvikpütt", "Siberi lehelind", "Siberi raat", "Siidhaigur", "Siidisaba", "Siisike", "Sinikael-part", "Siniraag", "Sinirind", "Sinisaba", "Sinitihane", "Soo-loorkull", "Soo-roolind", "Sookiur", "Sookurg", "Soopart", "Sooräts", "Soorüdi", "Stepi-loorkull", "Stepikajakas", "Stepikiivitaja", "Stepikotkas", "Stepipistrik", "Stepiviu", "Suitsupääsuke", "Suula", "Suur-kirjurähn", "Suur-konnakotkas", "Suur-laukhani", "Suurkoovitaja", "Suurnokk-vint", "Suurrüdi", "Suuränn", "Sõtkas", "Söödikänn", "Tait", "Talvike", "Tamme-kirjurähn", "Teder", "Tiigi-roolind", "Tikutaja", "Triip-ritsiklind", "Tuhk-lehelind", "Tumetilder", "Tundra-rabahani", "Tundrakaur", "Tundrakiur", "Turteltuvi", "Tutkas", "Tutt-tihane", "Tutt-tiir", "Tuttlõoke", "Tuttpütt", "Tuttvart", "Tuuletallaja", "Täpikhuik", "Tõmmu-lehelind", "Tõmmuiibis", "Tõmmukajakas", "Tõmmuvaeras", "Urvalind", "Vaaraohani", "Vaenukägu", "Vainurästas", "Valge-toonekurg", "Valgepõsk-lagle", "Valgeselg-kirjurähn", "Valgesilm-vart", "Valgetiib-viires", "Veetallaja", "Veisehaigur", "Vesipapp", "Vihitaja", "Viupart", "Väike-kirjurähn", "Väike-konnakotkas", "Väike-käosulane", "Väike-kärbsenäpp", "Väike-laukhani", "Väike-lehelind", "Väike-põõsalind", "Väikealk", "Väikehuik", "Väikehüüp", "Väikekajakas", "Väikekoovitaja", "Väikekoskel", "Väikeluik", "Väikepistrik", "Väikepütt", "Väikerüdi", "Väiketiir", "Väiketrapp", "Väiketsiitsitaja", "Väiketüll", "Välja-loorkull", "Välja-väikelõoke", "Värbkakk", "Värbrüdi", "Väänkael", "Võsa-ritsiklind", "Võsaraat", "Vööt-käbilind", "Vööt-põõsalind", "Vööthani", "Vöötkakk", "Vöötnokk-kajakas", "Vöötsaba-vigle", "Õõnetuvi", "Ööbik", "Ööhaigur", "Öösorr"];
+const DEFAULT_SPECIES = ["Aed-lepalind", "Aed-pÃµÃµsalind", "Aed-roolind", "Aedporr", "Alk", "AlverÃ¼di", "Ameerika piilpart", "Atlantise tormilind", "Aul", "Baleaari tormilind", "Euroopa kaelustÃ¤ks", "Habekakk", "Habeviires", "Hahk", "Hakk", "Hall-kÃ¤rbsenÃ¤pp", "Hallhaigur", "Hallhani", "Hallkibu", "Hallpea-rÃ¤hn", "HallpÃµsk-pÃ¼tt", "HallrÃ¤stas", "HallrÃ¼di", "Halltsiitsitaja", "Hallvares", "HallÃµgija", "Hangelind", "Harakas", "Haugaskotkas", "Hele-urvalind", "Heletilder", "Herilaseviu", "Hiireviu", "HoburÃ¤stas", "HÃ¤ndkakk", "HÃ¤nilane", "HÃµbehaigur", "HÃµbehaugas", "HÃµbekajakas", "HÃ¼Ã¼p", "Ida-mustvaeras", "Jahipistrik", "JÃ¤mejalg", "JÃ¤rvekaur", "JÃ¤Ã¤kajakas", "JÃ¤Ã¤kaur", "JÃ¤Ã¤koskel", "JÃµgi-ritsiklind", "JÃµgitiir", "JÃµgitilder", "JÃµgivÃ¤strik", "KadakatÃ¤ks", "Kaelus-kÃ¤rbsenÃ¤pp", "Kaelus-turteltuvi", "Kaeluskotkas", "KaelusrÃ¤stas", "Kaelustuvi", "Kalakajakas", "Kalakotkas", "Kalda-rÃ¤dilind", "KaldapÃ¤Ã¤suke", "Kaljukajakas", "Kaljukotkas", "Kanada lagle", "Kanakull", "Kanepilind", "Karbuskajakas", "Karkjalg", "Karmiinleevike", "Karvasjalg-kakk", "Karvasjalg-viu", "Kassikakk", "Kiivitaja", "Kiripugu-rÃ¼di", "Kirjuhahk", "Kivikakk", "Kivirullija", "KivitÃ¤ks", "Kodukakk", "Kodutuvi", "Koduvarblane", "Koldhaigur", "Koldjalg-hÃµbekajakas", "Koldvint", "Kormoran", "KrÃ¼Ã¼sel", "Kukkurtihane", "Kuld-lehelind", "KuldhÃ¤nilane", "Kuldnokk", "Kuldtsiitsitaja", "Kuninghahk", "Kuuse-kÃ¤bilind", "KÃ¤blik", "KÃ¤gu", "KÃ¤harpelikan", "KÃ¤osulane", "KÃ¤Ã¤buskormoran", "KÃ¤Ã¤buskotkas", "KÃµnnuÃµgija", "KÃµrbe-kivitÃ¤ks", "KÃµrbe-pÃµÃµsalind", "KÃµrkja-roolind", "KÃµrvukrÃ¤ts", "KÃµvernokk-rÃ¼di", "KÃ¼hmnokk-luik", "KÃ¼nnivares", "LaanenÃ¤Ã¤r", "LaanepÃ¼Ã¼", "LaanerÃ¤hn", "Laisaba-Ã¤nn", "Lammitilder", "Lapi tsiitsitaja", "Lasuurtihane", "Lauk", "Laululuik", "LaulurÃ¤stas", "LeeterÃ¼di", "Leevike", "Liiv-kivitÃ¤ks", "LiivatÃ¼ll", "LinavÃ¤strik", "Loorkakk", "Luitsnokk-iibis", "Luitsnokk-part", "Lumehani", "Lumekakk", "LÃ¤Ã¤ne-lehelind", "LÃ¤Ã¤ne-pÃ¶ialpoiss", "LÃµopistrik", "LÃµuna-hÃµbekajakas", "LÃ¼hinokk-hani", "Madukotkas", "Mandariinpart", "Merikajakas", "Merikotkas", "MerirÃ¼di", "Merisk", "Merivart", "MesilasenÃ¤pp", "Mets-lehelind", "Metsis", "Metskiur", "Metskurvits", "Metstilder", "Metsvint", "Mudanepp", "Mudatilder", "Must-harksaba", "Must-kÃ¤rbsenÃ¤pp", "Must-lepalind", "Must-toonekurg", "Mustjalg-tÃ¼ll", "Mustkael-pÃ¼tt", "Mustkurk-raat", "Mustlagle", "Mustlauk-Ãµgija", "Mustpea-pÃµÃµsalind", "Mustpea-tsiitsitaja", "Mustpugu-rÃ¤stas", "MustrÃ¤hn", "MustrÃ¤stas", "Mustsaba-vigle", "Musttihane", "Mustvaeras", "Mustvares", "Mustviires", "MÃ¤gi-kanepilind", "MÃ¤gikiur", "MÃ¤nni-kÃ¤bilind", "MÃ¤nnileevike", "MÃ¤nnitalvike", "MÃ¤nsak", "Naaskelnokk", "Naerukajakas", "Naerutiir", "Niidu-kaelustÃ¤ks", "Niidu-ritsiklind", "Niidukiur", "Nunn-kivitÃ¤ks", "Nurmkana", "NÃµgipart", "NÃµlva-lehelind", "NÃµmmekiur", "NÃµmmelÃµoke", "Ohakalind", "Ohhoota hÃµbekajakas", "Padu-roolind", "PasknÃ¤Ã¤r", "Peegel-tormilind", "Pelikan", "Peoleo", "Piilpart", "Piiritaja", "Pikksaba-Ã¤nn", "PlÃ¼tt", "PlÃ¼Ã¼", "Polaarkajakas", "Porr", "Prillvaeras", "Pruunselg-pÃµÃµsalind", "Puna-harksaba", "Puna-veetallaja", "Punajalg-pistrik", "Punajalg-tilder", "Punakael-lagle", "Punakurk-kaur", "Punanokk-vart", "Punapea-vart", "Punapea-Ãµgija", "Punarind", "Punasaba-Ãµgija", "Punaselg-Ãµgija", "Purpurhaigur", "Puukoristaja", "PÃµhja-kirjurÃ¤stas", "PÃµhja-lehelind", "PÃµhja-tormipÃ¤Ã¤su", "PÃµhjatihane", "PÃµhjatsiitsitaja", "PÃµhjavint", "PÃµldlÃµoke", "PÃµldtsiitsitaja", "PÃµldvarblane", "PÃµldvutt", "PÃ¶ialpoiss", "Rabapistrik", "RabapÃ¼Ã¼", "Raisakotkas", "Randkajakas", "Randkiur", "Randtiir", "Rasvatihane", "Raudkull", "Ristpart", "RoherÃ¤hn", "Rohevint", "Rohukoskel", "Rohunepp", "Ronk", "Roo-loorkull", "Roo-ritsiklind", "Roohabekas", "Rooruik", "Roosa-kuldnokk", "Roosakajakas", "Roosatiir", "RoostepÃ¤Ã¤suke", "Roosterind-tÃ¼ll", "Rootsiitsitaja", "RubiinÃ¶Ã¶bik", "RukkirÃ¤Ã¤k", "RuugerÃ¼di", "RÃ¤gapart", "RÃ¤stas-roolind", "RÃ¤usk", "RÃ¤Ã¤kspart", "RÃ¤Ã¤stapÃ¤Ã¤suke", "RÃ¼Ã¼t", "Sabatihane", "Salu-lehelind", "SalupÃ¤ll", "Salutihane", "SarviklÃµoke", "SarvikpÃ¼tt", "Siberi lehelind", "Siberi raat", "Siidhaigur", "Siidisaba", "Siisike", "Sinikael-part", "Siniraag", "Sinirind", "Sinisaba", "Sinitihane", "Soo-loorkull", "Soo-roolind", "Sookiur", "Sookurg", "Soopart", "SoorÃ¤ts", "SoorÃ¼di", "Stepi-loorkull", "Stepikajakas", "Stepikiivitaja", "Stepikotkas", "Stepipistrik", "Stepiviu", "SuitsupÃ¤Ã¤suke", "Suula", "Suur-kirjurÃ¤hn", "Suur-konnakotkas", "Suur-laukhani", "Suurkoovitaja", "Suurnokk-vint", "SuurrÃ¼di", "SuurÃ¤nn", "SÃµtkas", "SÃ¶Ã¶dikÃ¤nn", "Tait", "Talvike", "Tamme-kirjurÃ¤hn", "Teder", "Tiigi-roolind", "Tikutaja", "Triip-ritsiklind", "Tuhk-lehelind", "Tumetilder", "Tundra-rabahani", "Tundrakaur", "Tundrakiur", "Turteltuvi", "Tutkas", "Tutt-tihane", "Tutt-tiir", "TuttlÃµoke", "TuttpÃ¼tt", "Tuttvart", "Tuuletallaja", "TÃ¤pikhuik", "TÃµmmu-lehelind", "TÃµmmuiibis", "TÃµmmukajakas", "TÃµmmuvaeras", "Urvalind", "Vaaraohani", "VaenukÃ¤gu", "VainurÃ¤stas", "Valge-toonekurg", "ValgepÃµsk-lagle", "Valgeselg-kirjurÃ¤hn", "Valgesilm-vart", "Valgetiib-viires", "Veetallaja", "Veisehaigur", "Vesipapp", "Vihitaja", "Viupart", "VÃ¤ike-kirjurÃ¤hn", "VÃ¤ike-konnakotkas", "VÃ¤ike-kÃ¤osulane", "VÃ¤ike-kÃ¤rbsenÃ¤pp", "VÃ¤ike-laukhani", "VÃ¤ike-lehelind", "VÃ¤ike-pÃµÃµsalind", "VÃ¤ikealk", "VÃ¤ikehuik", "VÃ¤ikehÃ¼Ã¼p", "VÃ¤ikekajakas", "VÃ¤ikekoovitaja", "VÃ¤ikekoskel", "VÃ¤ikeluik", "VÃ¤ikepistrik", "VÃ¤ikepÃ¼tt", "VÃ¤ikerÃ¼di", "VÃ¤iketiir", "VÃ¤iketrapp", "VÃ¤iketsiitsitaja", "VÃ¤iketÃ¼ll", "VÃ¤lja-loorkull", "VÃ¤lja-vÃ¤ikelÃµoke", "VÃ¤rbkakk", "VÃ¤rbrÃ¼di", "VÃ¤Ã¤nkael", "VÃµsa-ritsiklind", "VÃµsaraat", "VÃ¶Ã¶t-kÃ¤bilind", "VÃ¶Ã¶t-pÃµÃµsalind", "VÃ¶Ã¶thani", "VÃ¶Ã¶tkakk", "VÃ¶Ã¶tnokk-kajakas", "VÃ¶Ã¶tsaba-vigle", "Ã•Ãµnetuvi", "Ã–Ã¶bik", "Ã–Ã¶haigur", "Ã–Ã¶sorr"];
 const DEFAULT_EBIRD_CODES = {
   "Siberi lehelind": "radwar1",
   "Siberi raat": "sibacc",
   "Siidhaigur": "litegr",
-  "Mänsak": "eurmut3",
+  "MÃ¤nsak": "eurmut3",
   "Naaskelnokk": "pieav01",
   "Naerukajakas": "bkhgul",
   "Naerutiir": "gubter2",
-  "Niidu-kaelustäks": "sibsto1",
+  "Niidu-kaelustÃ¤ks": "sibsto1",
   "Niidu-ritsiklind": "pagwar1",
   "Niidukiur": "ricpip1",
-  "Nunn-kivitäks": "piewhe1",
+  "Nunn-kivitÃ¤ks": "piewhe1",
   "Nurmkana": "grypar",
-  "Nõgipart": "ambduc",
-  "Nõlva-lehelind": "grewar3",
-  "Nõmmekiur": "tawpip1",
-  "Nõmmelõoke": "woolar1",
+  "NÃµgipart": "ambduc",
+  "NÃµlva-lehelind": "grewar3",
+  "NÃµmmekiur": "tawpip1",
+  "NÃµmmelÃµoke": "woolar1",
   "Ohakalind": "eurgol",
-  "Ohhoota hõbekajakas": "slbgul",
+  "Ohhoota hÃµbekajakas": "slbgul",
   "Padu-roolind": "padwar1",
-  "Pasknäär": "eurjay1",
+  "PasknÃ¤Ã¤r": "eurjay1",
   "Peegel-tormilind": "sooshe",
   "Pelikan": "grwpel1",
   "Peoleo": "eugori2",
   "Piilpart": "gnwtea",
   "Piiritaja": "comswi",
-  "Pikksaba-änn": "lotjae",
-  "Plütt": "brbsan",
-  "Plüü": "bkbplo",
+  "Pikksaba-Ã¤nn": "lotjae",
+  "PlÃ¼tt": "brbsan",
+  "PlÃ¼Ã¼": "bkbplo",
   "Polaarkajakas": "y00478",
   "Prillvaeras": "sursco",
-  "Pruunselg-põõsalind": "grewhi1",
+  "Pruunselg-pÃµÃµsalind": "grewhi1",
   "Puna-harksaba": "redkit1",
   "Puna-veetallaja": "redpha1",
   "Punajalg-pistrik": "reffal1",
@@ -481,68 +484,68 @@ const DEFAULT_EBIRD_CODES = {
   "Punakurk-kaur": "retloo",
   "Punanokk-vart": "recpoc",
   "Punapea-vart": "compoc",
-  "Punapea-õgija": "wooshr1",
+  "Punapea-Ãµgija": "wooshr1",
   "Punarind": "eurrob1",
-  "Punasaba-õgija": "rutshr2",
-  "Punaselg-õgija": "rebshr1",
+  "Punasaba-Ãµgija": "rutshr2",
+  "Punaselg-Ãµgija": "rebshr1",
   "Purpurhaigur": "purher1",
-  "Põhja-kirjurästas": "scathr2",
-  "Põhja-lehelind": "arcwar1",
-  "Põhja-tormipääsu": "lcspet",
-  "Põhjatsiitsitaja": "rusbun",
-  "Põhjavint": "brambl",
-  "Põldlõoke": "skylar",
-  "Põldtsiitsitaja": "ortbun1",
-  "Põldvutt": "comqua1",
-  "Pöialpoiss": "goldcr1",
+  "PÃµhja-kirjurÃ¤stas": "scathr2",
+  "PÃµhja-lehelind": "arcwar1",
+  "PÃµhja-tormipÃ¤Ã¤su": "lcspet",
+  "PÃµhjatsiitsitaja": "rusbun",
+  "PÃµhjavint": "brambl",
+  "PÃµldlÃµoke": "skylar",
+  "PÃµldtsiitsitaja": "ortbun1",
+  "PÃµldvutt": "comqua1",
+  "PÃ¶ialpoiss": "goldcr1",
   "Rabapistrik": "perfal",
-  "Rabapüü": "wilpta",
+  "RabapÃ¼Ã¼": "wilpta",
   "Raisakotkas": "cinvul1",
   "Randkajakas": "laugul",
   "Randkiur": "rocpip1",
   "Randtiir": "arcter",
   "Raudkull": "eurspa1",
   "Ristpart": "comshe",
-  "Roherähn": "eugwoo2",
+  "RoherÃ¤hn": "eugwoo2",
   "Rohevint": "eurgre1",
   "Rohukoskel": "rebmer",
   "Rohunepp": "gresni1",
-  "Kõrbe-kivitäks": "deswhe1",
-  "Kõrbe-põõsalind": "asdwar1",
-  "Kõrkja-roolind": "sedwar1",
-  "Kõrvukräts": "loeowl",
-  "Kõvernokk-rüdi": "cursan",
-  "Künnivares": "rook1",
-  "Laanenäär": "sibjay1",
-  "Laanepüü": "hazgro1",
-  "Laisaba-änn": "pomjae",
+  "KÃµrbe-kivitÃ¤ks": "deswhe1",
+  "KÃµrbe-pÃµÃµsalind": "asdwar1",
+  "KÃµrkja-roolind": "sedwar1",
+  "KÃµrvukrÃ¤ts": "loeowl",
+  "KÃµvernokk-rÃ¼di": "cursan",
+  "KÃ¼nnivares": "rook1",
+  "LaanenÃ¤Ã¤r": "sibjay1",
+  "LaanepÃ¼Ã¼": "hazgro1",
+  "Laisaba-Ã¤nn": "pomjae",
   "Lammitilder": "marsan",
   "Lapi tsiitsitaja": "laplon",
   "Lasuurtihane": "azutit2",
   "Lauk": "eurcoo",
   "Laululuik": "whoswa",
-  "Laulurästas": "sonthr1",
-  "Leeterüdi": "sander",
+  "LaulurÃ¤stas": "sonthr1",
+  "LeeterÃ¼di": "sander",
   "Leevike": "eurbul",
-  "Liiv-kivitäks": "isawhe1",
-  "Linavästrik": "whiwag",
+  "Liiv-kivitÃ¤ks": "isawhe1",
+  "LinavÃ¤strik": "whiwag",
   "Loorkakk": "webowl1",
   "Luitsnokk-iibis": "eurspo1",
   "Luitsnokk-part": "norsho",
   "Lumehani": "snogoo",
   "Lumekakk": "snoowl1",
-  "Lääne-lehelind": "webwar1",
-  "Lääne-pöialpoiss": "firecr1",
-  "Lõopistrik": "eurhob",
-  "Lõuna-hõbekajakas": "yelgul1",
-  "Lühinokk-hani": "pifgoo",
+  "LÃ¤Ã¤ne-lehelind": "webwar1",
+  "LÃ¤Ã¤ne-pÃ¶ialpoiss": "firecr1",
+  "LÃµopistrik": "eurhob",
+  "LÃµuna-hÃµbekajakas": "yelgul1",
+  "LÃ¼hinokk-hani": "pifgoo",
   "Madukotkas": "shteag1",
   "Mandariinpart": "manduc",
   "Merikajakas": "gbbgul",
   "Merikotkas": "wtheag",
-  "Merirüdi": "pursan",
+  "MerirÃ¼di": "pursan",
   "Merivart": "gresca",
-  "Mesilasenäpp": "eubeat1",
+  "MesilasenÃ¤pp": "eubeat1",
   "Mets-lehelind": "woowar",
   "Metsis": "wescap1",
   "Metskurvits": "eurwoo",
@@ -550,63 +553,63 @@ const DEFAULT_EBIRD_CODES = {
   "Must-harksaba": "blakit1",
   "Must-lepalind": "blared1",
   "Must-toonekurg": "blasto1",
-  "Mustjalg-tüll": "kenplo1",
-  "Mustkael-pütt": "eargre",
+  "Mustjalg-tÃ¼ll": "kenplo1",
+  "Mustkael-pÃ¼tt": "eargre",
   "Mustkurk-raat": "bltacc1",
   "Mustlagle": "brant",
-  "Mustlauk-õgija": "legshr2",
-  "Mustpea-põõsalind": "blackc1",
+  "Mustlauk-Ãµgija": "legshr2",
+  "Mustpea-pÃµÃµsalind": "blackc1",
   "Mustpea-tsiitsitaja": "blhbun1",
-  "Mustpugu-rästas": "retthr1",
-  "Musträhn": "blawoo1",
+  "Mustpugu-rÃ¤stas": "retthr1",
+  "MustrÃ¤hn": "blawoo1",
   "Mustvaeras": "blksco1",
   "Mustvares": "carcro1",
   "Mustviires": "blkter",
-  "Männi-käbilind": "parcro2",
-  "Männileevike": "pingro",
-  "Männitalvike": "pinbun",
-  "Euroopa kaelustäks": "stonec4",
+  "MÃ¤nni-kÃ¤bilind": "parcro2",
+  "MÃ¤nnileevike": "pingro",
+  "MÃ¤nnitalvike": "pinbun",
+  "Euroopa kaelustÃ¤ks": "stonec4",
   "Habekakk": "grgowl",
   "Habeviires": "whiter2",
   "Hahk": "comeid",
-  "Hall-kärbsenäpp": "spofly1",
+  "Hall-kÃ¤rbsenÃ¤pp": "spofly1",
   "Hallhaigur": "graher1",
   "Hallhani": "gragoo",
   "Hallkibu": "tersan",
-  "Hallpea-rähn": "gyfwoo1",
-  "Hallpõsk-pütt": "rengre",
-  "Hallrüdi": "semsan",
+  "Hallpea-rÃ¤hn": "gyfwoo1",
+  "HallpÃµsk-pÃ¼tt": "rengre",
+  "HallrÃ¼di": "semsan",
   "Halltsiitsitaja": "corbun1",
-  "Hallõgija": "norshr1",
+  "HallÃµgija": "norshr1",
   "Hangelind": "snobun",
   "Haugaskotkas": "boneag2",
   "Hele-urvalind": "hoared1",
   "Heletilder": "comgre",
   "Herilaseviu": "euhbuz1",
-  "Hoburästas": "misthr1",
-  "Händkakk": "uraowl1",
-  "Hänilane": "eaywag1",
-  "Hõbehaigur": "greegr",
-  "Hüüp": "grebit1",
+  "HoburÃ¤stas": "misthr1",
+  "HÃ¤ndkakk": "uraowl1",
+  "HÃ¤nilane": "eaywag1",
+  "HÃµbehaigur": "greegr",
+  "HÃ¼Ã¼p": "grebit1",
   "Ida-mustvaeras": "blksco2",
   "Jahipistrik": "gyrfal",
-  "Jämejalg": "eutkne1",
-  "Järvekaur": "arcloo",
-  "Jääkajakas": "glagul",
-  "Jääkaur": "comloo",
-  "Jõgi-ritsiklind": "eurwar2",
-  "Jõgitiir": "comter",
-  "Jõgitilder": "comsan",
-  "Jõgivästrik": "grywag",
-  "Kaelus-kärbsenäpp": "colfly1",
+  "JÃ¤mejalg": "eutkne1",
+  "JÃ¤rvekaur": "arcloo",
+  "JÃ¤Ã¤kajakas": "glagul",
+  "JÃ¤Ã¤kaur": "comloo",
+  "JÃµgi-ritsiklind": "eurwar2",
+  "JÃµgitiir": "comter",
+  "JÃµgitilder": "comsan",
+  "JÃµgivÃ¤strik": "grywag",
+  "Kaelus-kÃ¤rbsenÃ¤pp": "colfly1",
   "Kaelus-turteltuvi": "eucdov",
   "Kaeluskotkas": "eurgr1",
-  "Kaelusrästas": "rinouz1",
+  "KaelusrÃ¤stas": "rinouz1",
   "Kaelustuvi": "cowpig1",
   "Kalakajakas": "mewgul",
   "Kalakotkas": "osprey",
-  "Kalda-rädilind": "cetwar1",
-  "Kaldapääsuke": "banswa",
+  "Kalda-rÃ¤dilind": "cetwar1",
+  "KaldapÃ¤Ã¤suke": "banswa",
   "Kaljukajakas": "bklkit",
   "Kaljukotkas": "goleag",
   "Kanada lagle": "cangoo",
@@ -617,99 +620,99 @@ const DEFAULT_EBIRD_CODES = {
   "Karvasjalg-viu": "rolhaw",
   "Kassikakk": "eueowl1",
   "Kiivitaja": "norlap",
-  "Kiripugu-rüdi": "pecsan",
+  "Kiripugu-rÃ¼di": "pecsan",
   "Kirjuhahk": "steeid",
   "Kivikakk": "litowl1",
   "Kivirullija": "rudtur",
-  "Kivitäks": "norwhe",
+  "KivitÃ¤ks": "norwhe",
   "Kodukakk": "tawowl1",
   "Koldhaigur": "squher1",
-  "Koldjalg-hõbekajakas": "casgul2",
+  "Koldjalg-hÃµbekajakas": "casgul2",
   "Koldvint": "eurser1",
   "Kormoran": "grecor",
-  "Krüüsel": "blkguj",
+  "KrÃ¼Ã¼sel": "blkguj",
   "Kuld-lehelind": "palwar5",
-  "Kuldhänilane": "citwag",
+  "KuldhÃ¤nilane": "citwag",
   "Kuldnokk": "eursta",
   "Kuldtsiitsitaja": "yebbun",
   "Kuninghahk": "kineid",
-  "Kuuse-käbilind": "redcro",
-  "Käblik": "winwre4",
-  "Kägu": "comcuc",
-  "Käharpelikan": "dalpel1",
-  "Käosulane": "ictwar1",
-  "Kääbuskormoran": "pygcor2",
-  "Kääbuskotkas": "booeag1",
-  "Kõnnuõgija": "isashr1",
+  "Kuuse-kÃ¤bilind": "redcro",
+  "KÃ¤blik": "winwre4",
+  "KÃ¤gu": "comcuc",
+  "KÃ¤harpelikan": "dalpel1",
+  "KÃ¤osulane": "ictwar1",
+  "KÃ¤Ã¤buskormoran": "pygcor2",
+  "KÃ¤Ã¤buskotkas": "booeag1",
+  "KÃµnnuÃµgija": "isashr1",
   "Aed-lepalind": "comred2",
-  "Aed-põõsalind": "garwar1",
+  "Aed-pÃµÃµsalind": "garwar1",
   "Aed-roolind": "blrwar1",
   "Aedporr": "shtre1",
   "Alk": "razorb",
-  "Alverüdi": "shtsan",
+  "AlverÃ¼di": "shtsan",
   "Ameerika piilpart": "amewig",
   "Atlantise tormilind": "scoshe1",
   "Aul": "lotduc",
   "Baleaari tormilind": "balshe1",
-  "Väikepistrik": "merlin",
+  "VÃ¤ikepistrik": "merlin",
   "Kanakull": "norgos1",
-  "Vöötkakk": "nohowl",
-  "Vöötnokk-kajakas": "ribgul",
-  "Vöötsaba-vigle": "batgod",
-  "Õõnetuvi": "stodov1",
-  "Ööbik": "thrnig1",
-  "Ööhaigur": "bcnher",
-  "Öösorr": "eurnig1",
-  "Väänkael": "eurrwry",
-  "Võsa-ritsiklind": "cogwar1",
-  "Võsaraat": "dunnoc1",
-  "Vööt-käbilind": "whwcro",
-  "Vööt-põõsalind": "barwar1",
-  "Vööthani": "bahgoo",
-  "Väiketrapp": "litbus1",
-  "Väiketsiitsitaja": "litbun",
-  "Väiketüll": "ltrplo",
-  "Välja-loorkull": "norhar1",
-  "Välja-väikelõoke": "gstlar1",
-  "Värbkakk": "eupowl1",
-  "Värbrüdi": "temsti",
-  "Väiketiir": "litter1",
-  "Väikekoovitaja": "whimbr",
-  "Väikekoskel": "smew",
-  "Väikeluik": "tunswa",
-  "Väikepütt": "litgre1",
-  "Väikerüdi": "litsti",
-  "Väike-lehelind": "comchi1",
-  "Väike-põõsalind": "leswhi4",
-  "Väikealk": "ribgul",
-  "Väikehuik": "ltrcra1",
-  "Väikehüüp": "litbit1",
-  "Väikekajakas": "litgul",
+  "VÃ¶Ã¶tkakk": "nohowl",
+  "VÃ¶Ã¶tnokk-kajakas": "ribgul",
+  "VÃ¶Ã¶tsaba-vigle": "batgod",
+  "Ã•Ãµnetuvi": "stodov1",
+  "Ã–Ã¶bik": "thrnig1",
+  "Ã–Ã¶haigur": "bcnher",
+  "Ã–Ã¶sorr": "eurnig1",
+  "VÃ¤Ã¤nkael": "eurrwry",
+  "VÃµsa-ritsiklind": "cogwar1",
+  "VÃµsaraat": "dunnoc1",
+  "VÃ¶Ã¶t-kÃ¤bilind": "whwcro",
+  "VÃ¶Ã¶t-pÃµÃµsalind": "barwar1",
+  "VÃ¶Ã¶thani": "bahgoo",
+  "VÃ¤iketrapp": "litbus1",
+  "VÃ¤iketsiitsitaja": "litbun",
+  "VÃ¤iketÃ¼ll": "ltrplo",
+  "VÃ¤lja-loorkull": "norhar1",
+  "VÃ¤lja-vÃ¤ikelÃµoke": "gstlar1",
+  "VÃ¤rbkakk": "eupowl1",
+  "VÃ¤rbrÃ¼di": "temsti",
+  "VÃ¤iketiir": "litter1",
+  "VÃ¤ikekoovitaja": "whimbr",
+  "VÃ¤ikekoskel": "smew",
+  "VÃ¤ikeluik": "tunswa",
+  "VÃ¤ikepÃ¼tt": "litgre1",
+  "VÃ¤ikerÃ¼di": "litsti",
+  "VÃ¤ike-lehelind": "comchi1",
+  "VÃ¤ike-pÃµÃµsalind": "leswhi4",
+  "VÃ¤ikealk": "ribgul",
+  "VÃ¤ikehuik": "ltrcra1",
+  "VÃ¤ikehÃ¼Ã¼p": "litbit1",
+  "VÃ¤ikekajakas": "litgul",
   "Viupart": "eurwig",
-  "Väike-konnakotkas": "leseag1",
-  "Väike-käosulane": "boowar1",
-  "Väike-kärbsenäpp": "rebfly",
-  "Väike-laukhani": "lwfgoo",
+  "VÃ¤ike-konnakotkas": "leseag1",
+  "VÃ¤ike-kÃ¤osulane": "boowar1",
+  "VÃ¤ike-kÃ¤rbsenÃ¤pp": "rebfly",
+  "VÃ¤ike-laukhani": "lwfgoo",
   "Valgesilm-vart": "ferduc",
   "Valgetiib-viires": "whwter",
   "Veetallaja": "renpha",
   "Veisehaigur": "categr1",
   "Vesipapp": "whtdip1",
   "Vaaraohani": "egygoo",
-  "Vaenukägu": "hoopoe",
-  "Vainurästas": "redwin",
+  "VaenukÃ¤gu": "hoopoe",
+  "VainurÃ¤stas": "redwin",
   "Valge-toonekurg": "whisto1",
-  "Valgepõsk-lagle": "bargoo",
-  "Valgeselg-kirjurähn": "whbwoo1",
-  "Täpikhuik": "spocra1",
-  "Tõmmu-lehelind": "duswar",
-  "Tõmmuiibis": "gloibi",
-  "Tõmmukajakas": "lbbgul",
-  "Tõmmuvaeras": "whwsco3",
+  "ValgepÃµsk-lagle": "bargoo",
+  "Valgeselg-kirjurÃ¤hn": "whbwoo1",
+  "TÃ¤pikhuik": "spocra1",
+  "TÃµmmu-lehelind": "duswar",
+  "TÃµmmuiibis": "gloibi",
+  "TÃµmmukajakas": "lbbgul",
+  "TÃµmmuvaeras": "whwsco3",
   "Urvalind": "redpol1",
   "Tutt-tiir": "santer1",
-  "Tuttlõoke": "crelar1",
-  "Tuttpütt": "grcgre1",
+  "TuttlÃµoke": "crelar1",
+  "TuttpÃ¼tt": "grcgre1",
   "Tuttvart": "tufduc",
   "Tuuletallaja": "eurkes",
   "Triip-ritsiklind": "lanwar",
@@ -721,33 +724,33 @@ const DEFAULT_EBIRD_CODES = {
   "Turteltuvi": "eutdov",
   "Tait": "commoo3",
   "Talvike": "yellow2",
-  "Tamme-kirjurähn": "miswoo1",
+  "Tamme-kirjurÃ¤hn": "miswoo1",
   "Teder": "blagro1",
   "Tiigi-roolind": "eurwar1",
   "Tikutaja": "comsni",
   "Suurkoovitaja": "eurcur",
   "Suurnokk-vint": "hawfin",
-  "Suurrüdi": "redkno",
-  "Suuränn": "gresku1",
-  "Söödikänn": "parjae",
+  "SuurrÃ¼di": "redkno",
+  "SuurÃ¤nn": "gresku1",
+  "SÃ¶Ã¶dikÃ¤nn": "parjae",
   "Stepipistrik": "sakfal1",
   "Stepiviu": "lolbuz1",
-  "Suitsupääsuke": "barswa",
+  "SuitsupÃ¤Ã¤suke": "barswa",
   "Suula": "norgan",
   "Suur-konnakotkas": "grseag1",
   "Suur-laukhani": "gwfgoo",
-  "Hõbehaugas": "bkskit1",
-  "Kadakatäks": "whinch1",
-  "Laanerähn": "ettwoo1",
-  "Liivatüll": "corplo",
+  "HÃµbehaugas": "bkskit1",
+  "KadakatÃ¤ks": "whinch1",
+  "LaanerÃ¤hn": "ettwoo1",
+  "LiivatÃ¼ll": "corplo",
   "Merisk": "euroys1",
   "Metskiur": "trepip",
   "Metstilder": "grnsan",
   "Mudanepp": "jacsni",
   "Mudatilder": "woosan",
-  "Must-kärbsenäpp": "eupfly1",
+  "Must-kÃ¤rbsenÃ¤pp": "eupfly1",
   "Mustsaba-vigle": "bktgod",
-  "Mägi-kanepilind": "twite1",
+  "MÃ¤gi-kanepilind": "twite1",
   "Siidisaba": "bohwax",
   "Siisike": "eursis",
   "Siniraag": "eurrol1",
@@ -875,6 +878,21 @@ let failCount = 0;
 let lastErrorStatus = null;
 let lastErrorSnippet = null;
 let lastBodySnippet = null;
+let debugCountryTop5 = "-";
+
+function parseObsDate(obsDt){
+  const raw = String(obsDt || "").trim();
+  if (!raw) return null;
+  const isoLike = raw.replace(" ", "T");
+  let d = new Date(isoLike);
+  if (!isNaN(d.getTime())) return d;
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    d = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00`);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
+}
 
 function getEbirdToken(){
   const raw = String(localStorage.getItem(LS_EBIRD_TOKEN) || "");
@@ -949,6 +967,7 @@ function updateDebugPanel(){
     `stoppedAtIndex: <b>${stoppedAtIndex ?? "-"}</b>`,
     `stoppedAtKey: <b>${stoppedAtKey || "-"}</b>`,
     `lastRequest: <b>${lastRequest ? `${lastRequest.url} (${lastRequest.status ?? "?"}, ${lastRequest.timeMs ?? "?"}ms)` : "-"}</b>`,
+    `countryTop5(7d): <b>${debugCountryTop5}</b>`,
     `snapshotNote: <b>${snapshotDebugNote || "-"}</b>`,
   ].join("<br>");
 }
@@ -1087,7 +1106,7 @@ function showPulseRing(lat, lon){
 window.addEventListener("beforeunload", clearPulseRing);
 
 function makeIcon(url, border, hasCrown, occ7, isMigr){
-  const crown = hasCrown ? `<div class="crown">👑</div>` : ``;
+  const crown = hasCrown ? `<div class="crown">ðŸ‘‘</div>` : ``;
   const badge = ((occ7===0)||Number.isFinite(occ7))
     ? `<div class="countBadge" style="background:${isMigr ? "#16a34a" : "#f97316"}">${occ7}</div>`
     : ``;
@@ -1121,7 +1140,7 @@ function fmtMeta(p){
       if (Number(d.occ7) <= 0) continue;
       chips.push(`${rg}:${d.occ7}`);
     }
-    if (chips.length) parts.push(`<span class="pillMini">countries</span>${chips.join(" · ")}`);
+    if (chips.length) parts.push(`<span class="pillMini">countries</span>${chips.join(" Â· ")}`);
   }
   return parts.join(" ");
 }
@@ -1439,24 +1458,33 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
       }
 
       const perSpeciesRegion = {};
+      const countryCounts = {};
+      const nowMs = Date.now();
       for (const obs of response.json) {
         const speciesCode = String(obs?.speciesCode || "");
         const speciesName = speciesByCode.get(speciesCode);
         if (!speciesName) continue;
         const obsDt = String(obs?.obsDt || "");
-        const dt = obsDt.slice(0, 10);
-        const d = new Date(dt);
-        const isValidDt = !!dt && !isNaN(d);
+        const d = parseObsDate(obsDt);
+        const isValidDt = !!d;
         if (!perSpeciesRegion[speciesName]) {
           perSpeciesRegion[speciesName] = { occ7: 0, latestObs: null };
         }
         if (isValidDt) {
-          const diffDays = (Date.now() - d.getTime()) / 86400000;
-          if (diffDays <= 7) perSpeciesRegion[speciesName].occ7++;
+          const diffDays = (nowMs - d.getTime()) / 86400000;
+          if (diffDays <= 7) {
+            perSpeciesRegion[speciesName].occ7++;
+            countryCounts[speciesName] = (countryCounts[speciesName] || 0) + 1;
+          }
           const latestDt = String(perSpeciesRegion[speciesName].latestObs?.obsDt || "");
           if (!latestDt || obsDt > latestDt) perSpeciesRegion[speciesName].latestObs = obs;
         }
       }
+      debugCountryTop5 = Object.entries(countryCounts)
+        .sort((a, b) => Number(b[1]) - Number(a[1]))
+        .slice(0, 5)
+        .map(([name, count]) => `${name}:${count}`)
+        .join(" | ") || "-";
 
       for (const [speciesName, regionStats] of Object.entries(perSpeciesRegion)) {
         const latestObs = regionStats.latestObs;
@@ -1701,9 +1729,9 @@ initMapHamburgerControl({
     if (sidebar.classList.contains("open")) closeSidebar();
     else openSidebar();
   },
-  title: "Nimekiri",
-  ariaLabel: "Nimekiri",
-  iconText: "☰"
+  title: (window.ET_STRINGS && window.ET_STRINGS.listMenu) || "Nimekiri",
+  ariaLabel: (window.ET_STRINGS && window.ET_STRINGS.listMenu) || "Nimekiri",
+  iconText: "â˜°"
 });
 if (sidebarBackdrop) sidebarBackdrop.addEventListener("click", closeSidebar);
 closeBtn.addEventListener("click", closeSidebar);
@@ -1879,6 +1907,7 @@ window.addEventListener("message", function(ev){
 </script>
 </body>
 </html>
+
 
 
 

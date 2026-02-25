@@ -80,12 +80,11 @@
       position: relative;
     }
     #stickyPanel{
-      position: sticky;
-      top: 0;
-      z-index: 7200;
+      position: static;
+      z-index: auto;
       background: #fff;
       padding: 6px 0 10px;
-      box-shadow: 0 6px 14px rgba(0,0,0,.08);
+      box-shadow: none;
     }
     .sidebarHeaderTop{
       display:flex;
@@ -171,7 +170,7 @@
     #mapWrap{ position:relative; width:100%; height:100%; }
     #map{ width:100%; height:100%; }
 
-    /* Burger + backdrop */
+    /* Burger */
     #openSidebarBtn{
       z-index: 8000;
       position:fixed;
@@ -192,20 +191,9 @@
     }
     #openSidebarBtn span{ font-size:22px; line-height:1; }
 
-    #sidebarBackdrop{
-      pointer-events: auto;
-      z-index: 6000;
-      position:fixed;
-      inset:0;
-      background:rgba(0,0,0,.35);
-
-      display:none;
-      pointer-events:auto;
-    }
-
     /* Mobile off-canvas sidebar */
     @media (max-width: 900px){
-      #controls{ flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 6px; }
+      #controls{ flex-wrap: wrap; overflow: visible; padding-bottom: 6px; }
       #controls .btn{ flex: 0 0 auto; }
 
       #main{ grid-template-columns: 1fr; }
@@ -214,16 +202,17 @@
         position:fixed;
         left:0; top: var(--hostTop);
         height: calc(100dvh - var(--hostTop));
-        width:min(92vw, 420px);
-                transform:translateX(-105%);
+        width:min(82vw, 380px);
+        transform:translateX(-105%);
         transition:transform .2s ease;
         box-shadow:0 12px 30px rgba(0,0,0,.25);
         padding-top:12px;
+        overflow-y:auto;
+        -webkit-overflow-scrolling: touch;
       }
       #sidebar.open{ transform:translateX(0); }
       #openSidebarBtn{ display:flex; }
-      body.sidebar-open #openSidebarBtn{ display:none; }
-      body.sidebar-open #sidebarBackdrop{ display:block; }
+      #sidebar.open + #mapWrap{ pointer-events:auto; }
       #closeSidebarBtn{ display:inline-flex; align-items:center; justify-content:center; }
     }
 
@@ -362,22 +351,14 @@
         <button class="btn secondary" id="settingsBtn">Settings</button>
         <button class="btn" id="btnRefreshData">Refresh data</button>
         <button class="btn secondary" id="btnReloadSnapshot">Reload snapshot</button>
-        <button class="btn secondary" id="btnHardResetEu">Hard reset (Europe)</button>
-        <button class="btn secondary" id="refreshFilteredBtn">Refresh filtered</button>
-        <button class="btn secondary" id="refreshSelectedBtn">Refresh selected</button>
-        <button class="btn danger" id="stopBtn">Stop</button>
         <button class="btn on" id="perCountryBtn">Per-country: ON</button>
         <label class="chk"><input type="checkbox" id="toggle7days" checked/> 7 days only</label>
-        <button class="btn secondary" id="exportBtn">Export</button>
-        <button class="btn secondary" id="importBtn">Import</button>
-        <button class="btn secondary" id="resetBtn">Reset EU cache</button>
       </div>
 
       <div id="snapshotBanner" class="snapshot-banner"></div>
       <div id="warnBanner" class="bannerWarn"></div>
       <details class="debug-panel" id="debugPanel">
         <summary>Debug info</summary>
-        <button class="btn secondary" id="btnTestEbird" style="margin:6px 0 8px;">Test eBird</button>
         <div id="debugContent">Loading...</div>
       </details>
       <div id="progressLine">Ready.</div>
@@ -393,7 +374,7 @@
 </div>
 
 <div id="openSidebarBtn" aria-label="Open menu"><span>≡</span></div>
-<div id="sidebarBackdrop" aria-hidden="true"></div>
+
 
 <div id="modalBackdrop">
   <div id="modal">
@@ -869,7 +850,6 @@ let stoppedAtKey = null;
 let lastRequest = null;
 let okCount = 0;
 let failCount = 0;
-let proxyTestResult = "-";
 let lastErrorStatus = null;
 let lastErrorSnippet = null;
 let lastBodySnippet = null;
@@ -947,7 +927,6 @@ function updateDebugPanel(){
     `stoppedAtIndex: <b>${stoppedAtIndex ?? "-"}</b>`,
     `stoppedAtKey: <b>${stoppedAtKey || "-"}</b>`,
     `lastRequest: <b>${lastRequest ? `${lastRequest.url} (${lastRequest.status ?? "?"}, ${lastRequest.timeMs ?? "?"}ms)` : "-"}</b>`,
-    `testEbird: <b>${proxyTestResult || "-"}</b>`,
     `snapshotNote: <b>${snapshotDebugNote || "-"}</b>`,
   ].join("<br>");
 }
@@ -1687,23 +1666,6 @@ async function refreshKeys(keys, force=true){
   return { done, total, successCount: okCount, failureCount: failCount, aborted: signal.aborted };
 }
 
-function refreshFiltered(){
-  AUTO_SYNC_CANCELLED = false;
-  const q = (filterBox.value||"").toLowerCase().trim();
-  const keys = SPECIES.filter(n => n.toLowerCase().includes(q) && (EBIRD_CODES[n] || (points[n]||{}).ebirdCode));
-  if (keys.length === 0) {
-    showWarn("No species with eBird codes in the current filter.");
-    return;
-  }
-  refreshKeys(keys, true);
-}
-function refreshSelected(){
-  AUTO_SYNC_CANCELLED = false;
-  const keys = SPECIES.filter(n => (points[n]||{}).selected && (EBIRD_CODES[n] || (points[n]||{}).ebirdCode));
-  if (keys.length === 0) return alert("No selected species with eBird codes.");
-  refreshKeys(keys, true);
-}
-
 /* ========= Avatar prompt ========= */
 function setAvatarPrompt(species){
   const url = prompt(`Avatar URL for: ${species}`, avatars[species] || "");
@@ -1718,15 +1680,12 @@ function setAvatarPrompt(species){
 const sidebar = document.getElementById("sidebar");
 const openBtn = document.getElementById("openSidebarBtn");
 const closeBtn = document.getElementById("closeSidebarBtn");
-const backdrop = document.getElementById("sidebarBackdrop");
 
 function openSidebar() {
-  document.body.classList.add("sidebar-open");
   sidebar.classList.add("open");
   setTimeout(()=> map.invalidateSize(true), 260);
 }
 function closeSidebar() {
-  document.body.classList.remove("sidebar-open");
   sidebar.classList.remove("open");
   setTimeout(()=> map.invalidateSize(true), 260);
 }
@@ -1739,7 +1698,6 @@ openBtn.addEventListener("click", ()=>{
   else openSidebar();
 });
 closeBtn.addEventListener("click", closeSidebar);
-backdrop.addEventListener("click", closeSidebar);
 window.addEventListener("resize", ()=> setTimeout(()=> map.invalidateSize(true), 150));
 
 /* ========= Burger drag ========= */
@@ -1819,129 +1777,6 @@ perCountryBtn.addEventListener("click", ()=>{
 });
 syncPerCountryBtn();
 
-/* ========= Export/Import/Reset ========= */
-document.getElementById("exportBtn").addEventListener("click", ()=>{
-  const blob = new Blob([JSON.stringify({ avatars, EBIRD_CODES, points, SPECIES }, null, 2)], {type:"application/json"});
-  const url = URL.createObjectURL(blob);
-  const a = Object.assign(document.createElement("a"), { href:url, download:"europe_birdmap_backup.json" });
-  a.click();
-  setTimeout(()=> URL.revokeObjectURL(url), 1500);
-});
-
-document.getElementById("importBtn").addEventListener("click", async ()=>{
-  const pick = document.createElement("input");
-  pick.type = "file";
-  pick.accept = "application/json";
-  pick.onchange = async ()=>{
-    const f = pick.files[0];
-    if (!f) return;
-    try {
-      const obj = JSON.parse(await f.text());
-      if (obj.avatars) avatars = obj.avatars;
-      if (obj.EBIRD_CODES) EBIRD_CODES = { ...DEFAULT_EBIRD_CODES, ...obj.EBIRD_CODES, ...EBIRD_CODES };
-      if (obj.points) points = obj.points;
-      if (Array.isArray(obj.SPECIES)) SPECIES = obj.SPECIES;
-      saveAll(); preloadAvatars(); render();
-    } catch(e) {
-      alert("Import failed: invalid JSON");
-    }
-  };
-  pick.click();
-});
-
-document.getElementById("resetBtn").addEventListener("click", ()=>{
-  if (!confirm("Reset Europe cache? (avatars/codes are shared keys and will stay)")) return;
-  points = {};
-  localStorage.removeItem(LS_POINTS);
-  saveAll(); render();
-});
-
-async function resetEuropeCache(){
-  const keysToRemove = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key) continue;
-    if (key.startsWith(LS_SNAPSHOT_PREFIX) || key === LS_EU_LAST_GOOD || key === LS_POINTS || key === "estbirding.proxyBase") keysToRemove.push(key);
-  }
-  keysToRemove.forEach((key)=> localStorage.removeItem(key));
-  if (window.indexedDB && typeof indexedDB.databases === "function") {
-    try {
-      const dbs = await indexedDB.databases();
-      for (const db of (dbs || [])) {
-        const name = db && db.name;
-        if (!name) continue;
-        const n = name.toLowerCase();
-        if (n.includes("europe") || n.includes("snapshot")) {
-          try { indexedDB.deleteDatabase(name); } catch (e) {}
-        }
-      }
-    } catch (e) {
-      console.warn("[cache] indexedDB reset skipped", e);
-    }
-  }
-  points = {};
-  dataMode = "live";
-  lastRefreshAt = null;
-  lastSnapshotAt = null;
-  lastError = null;
-  lastErrorStatus = null;
-  lastErrorSnippet = null;
-  stoppedAtIndex = null;
-  stoppedAtKey = null;
-  lastRequest = null;
-  okCount = 0;
-  failCount = 0;
-  proxyTestResult = "-";
-  lastBodySnippet = null;
-  snapshotDebugNote = null;
-  saveAll();
-  render();
-  updateDebugPanel();
-  showSnapshotBanner("Cache reset complete", "warn");
-  setStatus("Cache reset");
-  progressLine.textContent = "Cache reset.";
-}
-
-async function testEbirdDirect(){
-  if (!EBIRD_TOKEN) {
-    const msg = "Missing eBird token. Open Settings and paste your eBird API token.";
-    lastErrorStatus = 0;
-    lastErrorSnippet = msg;
-    lastBodySnippet = msg;
-    proxyTestResult = `fail status=0 ${msg}`;
-    showSnapshotBanner(msg, "warn");
-    updateDebugPanel();
-    return;
-  }
-  const testUrl = buildEbirdCountryRecentUrl("EE", 1, 1, getEbirdToken());
-  try {
-    const response = await safeFetchJson(testUrl, {
-      timeoutMs: 20000,
-      retries: 0,
-      headers: { "X-eBirdApiToken": EBIRD_TOKEN },
-    });
-    const snippet = String(response.textSnippet || JSON.stringify(response.json || "")).slice(0, 200);
-    proxyTestResult = `ok status=${response.status} ${snippet}`;
-    lastError = null;
-    lastErrorStatus = response.status;
-    lastErrorSnippet = null;
-    lastBodySnippet = snippet || null;
-    lastRequest = { url: response.url, status: response.status, timeMs: response.timeMs };
-    showSnapshotBanner("Test eBird passed", "");
-  } catch (e) {
-    const status = e?.status ?? 0;
-    const snippet = String(e?.textSnippet || e?.message || "").slice(0, 200);
-    proxyTestResult = `fail status=${status} ${snippet}`;
-    lastErrorStatus = status;
-    lastErrorSnippet = snippet || null;
-    lastBodySnippet = snippet || null;
-    lastRequest = { url: e?.url || testUrl, status: status, timeMs: e?.timeMs };
-    if (status === 401 || status === 403) showSnapshotBanner("token invalid", "warn");
-    else showSnapshotBanner("Test eBird failed", "warn");
-  }
-  updateDebugPanel();
-}
-
 /* ========= Settings modal ========= */
 const modalBackdrop = document.getElementById("modalBackdrop");
 const settingsBtn = document.getElementById("settingsBtn");
@@ -2014,14 +1849,6 @@ document.getElementById("btnRefreshData").addEventListener("click", async ()=>{
   }
 });
 document.getElementById("btnReloadSnapshot").addEventListener("click", reloadSnapshot);
-document.getElementById("btnHardResetEu").addEventListener("click", async ()=>{
-  if (!confirm("Hard reset Europe state? This clears Europe points/snapshots/proxyBase/debug state.")) return;
-  await resetEuropeCache();
-});
-document.getElementById("btnTestEbird").addEventListener("click", testEbirdDirect);
-document.getElementById("refreshFilteredBtn").addEventListener("click", refreshFiltered);
-document.getElementById("refreshSelectedBtn").addEventListener("click", refreshSelected);
-document.getElementById("stopBtn").addEventListener("click", ()=>{ AUTO_SYNC_CANCELLED = true; stopRefresh(); });
 filterBox.addEventListener("input", render);
 document.getElementById("toggle7days").addEventListener("change", (e)=>{
   recentOnly = !!e.target.checked;
@@ -2105,5 +1932,6 @@ window.addEventListener("message", function(ev){
 </script>
 </body>
 </html>
+
 
 

@@ -401,6 +401,10 @@
     <div class="small" style="margin-top:0;">
       eBird token is stored server-side in Supabase secret <span class="hintBadge">EBIRD_API_TOKEN</span>.
       <br/>Species list: one per line (default = 376 species).
+      <br/><br/><b>Deploy checklist</b>
+      <br/>1) Add <span class="hintBadge">EBIRD_API_TOKEN</span> in Lovable Secrets.
+      <br/>2) Deploy <span class="hintBadge">ebird_recent</span>. If Test eBird shows 404, publish/sync in Lovable to deploy backend.
+      <br/>3) After deploy, Test eBird should return 200.
     </div>
     <div class="grid">
       <textarea id="speciesInput" placeholder="One species per line (Estonian names)..."></textarea>
@@ -870,7 +874,7 @@ let lastRequest = null;
 let okCount = 0;
 let failCount = 0;
 let proxyTestResult = "-";
-let lastStatus = null;
+let lastErrorStatus = null;
 let lastErrorSnippet = null;
 
 function saveAll(){
@@ -926,7 +930,7 @@ function updateDebugPanel(){
     `counts: <b>markers=${counts.markers}, items=${counts.items}</b>`,
     `okCount/failCount: <b>${okCount}/${failCount}</b>`,
     `lastError: <b>${lastError || "-"}</b>`,
-    `lastStatus: <b>${lastStatus ?? "-"}</b>`,
+    `lastErrorStatus: <b>${lastErrorStatus ?? "-"}</b>`,
     `lastErrorSnippet: <b>${lastErrorSnippet || "-"}</b>`,
     `stoppedAtIndex: <b>${stoppedAtIndex ?? "-"}</b>`,
     `stoppedAtKey: <b>${stoppedAtKey || "-"}</b>`,
@@ -1364,9 +1368,21 @@ async function safeFetchJson(url, options = {}){
         err.url = requestUrl;
         throw err;
       }
-      const json = await res.json();
+      const rawText = await res.text();
+      const textSnippet = rawText.slice(0, 200);
+      let json = null;
+      try {
+        json = rawText ? JSON.parse(rawText) : null;
+      } catch (parseErr) {
+        const err = new Error(`Invalid JSON response. ${textSnippet}`);
+        err.status = status;
+        err.textSnippet = textSnippet;
+        err.timeMs = timeMs;
+        err.url = requestUrl;
+        throw err;
+      }
       clearTimeout(timeoutId);
-      return { ok: true, status, json, textSnippet: "", timeMs, url: requestUrl };
+      return { ok: true, status, json, textSnippet, timeMs, url: requestUrl };
     } catch (e) {
       clearTimeout(timeoutId);
       const timeMs = Math.round(performance.now() - t0);
@@ -1569,7 +1585,7 @@ async function refreshKeys(keys, force=true){
   lastRequest = null;
   okCount = 0;
   failCount = 0;
-  lastStatus = null;
+  lastErrorStatus = null;
   lastErrorSnippet = null;
   updateDebugPanel();
 
@@ -1585,14 +1601,15 @@ async function refreshKeys(keys, force=true){
   const healthUrl = `${EBIRD_RECENT_API}?regionCode=EE&back=1&maxResults=1&_ts=${Date.now()}`;
   try {
     const health = await safeFetchJson(healthUrl, { timeoutMs: 10000, retries: 0 });
-    lastStatus = health.status;
+    lastErrorStatus = health.status;
     lastRequest = { url: health.url, status: health.status, timeMs: health.timeMs };
   } catch (e) {
-    lastStatus = e?.status ?? 0;
+    lastErrorStatus = e?.status ?? 0;
     lastErrorSnippet = String(e?.textSnippet || e?.message || "").slice(0, 200);
     lastRequest = { url: e?.url || healthUrl, status: e?.status, timeMs: e?.timeMs };
-    if (Number(e?.status) === 404) {
-      const msg = "ebird_recent not deployed to this Supabase project";
+    const missingFn = Number(e?.status) === 404 && String(e?.textSnippet || e?.message || "").includes("Requested function was not found");
+    if (missingFn) {
+      const msg = "Edge Function ebird_recent is not deployed yet. In Lovable, trigger backend deployment (publish/sync) so Supabase deploys functions.";
       showSnapshotBanner(msg, "error");
       showWarn(msg);
       setRefreshError(`${msg}. status=404 ${lastErrorSnippet || ""}`, 0, "health-check");
@@ -1623,7 +1640,7 @@ async function refreshKeys(keys, force=true){
     }
     catch(e) {
       failCount++;
-      lastStatus = e?.status ?? 0;
+      lastErrorStatus = e?.status ?? 0;
       lastErrorSnippet = String(e?.textSnippet || e?.message || "").slice(0, 200);
       const preview = String(e?.textSnippet || e?.message || "").slice(0, 200);
       const regionPart = e?.region ? ` country=${e.region}` : "";
@@ -1877,7 +1894,7 @@ async function testEbirdViaProxy(){
     });
     const snippet = JSON.stringify(response.json || "").slice(0, 200);
     proxyTestResult = `ok status=${response.status} ${snippet}`;
-    lastStatus = response.status;
+    lastErrorStatus = response.status;
     lastErrorSnippet = snippet || null;
     lastRequest = { url: response.url, status: response.status, timeMs: response.timeMs };
     showSnapshotBanner("Proxy test passed", "");
@@ -1885,7 +1902,7 @@ async function testEbirdViaProxy(){
     const status = e?.status ?? 0;
     const snippet = String(e?.textSnippet || e?.message || "").slice(0, 200);
     proxyTestResult = `fail status=${status} ${snippet}`;
-    lastStatus = status;
+    lastErrorStatus = status;
     lastErrorSnippet = snippet || null;
     lastRequest = { url: e?.url || testUrl, status: status, timeMs: e?.timeMs };
     showSnapshotBanner("Proxy test failed", "warn");

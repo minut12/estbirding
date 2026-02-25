@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useSession } from "@/features/auth/useSession";
-import { isAdmin } from "@/features/auth/profile";
 import {
   createEvent,
   deleteEvent,
@@ -53,8 +52,6 @@ const emptyForm: FormState = {
 export default function DeveloperSettings() {
   const [key, setKey] = useState(() => localStorage.getItem(LS_KEY) || "");
   const { user, loading } = useSession();
-  const [adminLoading, setAdminLoading] = useState(true);
-  const [adminAllowed, setAdminAllowed] = useState(false);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [email, setEmail] = useState("");
@@ -63,21 +60,9 @@ export default function DeveloperSettings() {
   const [form, setForm] = useState<FormState>(emptyForm);
 
   useEffect(() => {
-    if (!user) {
-      setAdminAllowed(false);
-      setAdminLoading(false);
-      return;
-    }
-    setAdminLoading(true);
-    isAdmin()
-      .then(setAdminAllowed)
-      .finally(() => setAdminLoading(false));
-  }, [user]);
-
-  useEffect(() => {
-    if (!adminAllowed) return;
+    if (!user) return;
     void loadEvents();
-  }, [adminAllowed]);
+  }, [user]);
 
   const handleSave = () => {
     localStorage.setItem(LS_KEY, key);
@@ -248,9 +233,9 @@ export default function DeveloperSettings() {
           </div>
         )}
 
-        <h4 className="font-semibold text-foreground">Üritused (Admin)</h4>
+        <h4 className="font-semibold text-foreground">Üritused (Lisa/Halda)</h4>
 
-        {loading || adminLoading ? (
+        {loading ? (
           <p className="text-sm text-muted-foreground">Laen...</p>
         ) : !user ? (
           <div className="space-y-2">
@@ -264,8 +249,6 @@ export default function DeveloperSettings() {
               <Button onClick={loginWithMagicLink}>Logi sisse</Button>
             </div>
           </div>
-        ) : !adminAllowed ? (
-          <p className="text-sm text-muted-foreground">Sul puudub ligipääs.</p>
         ) : (
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">

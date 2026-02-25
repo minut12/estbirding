@@ -1,4 +1,10 @@
-﻿import { createClient } from "npm:@supabase/supabase-js@2";
+﻿// Requires Supabase secrets:
+// - EVENTS_ADMIN_KEY
+// - SUPABASE_SERVICE_ROLE_KEY
+// - SUPABASE_URL
+// After adding this folder, deploy via Supabase Dashboard -> Edge Functions.
+
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -6,119 +12,165 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "content-type, x-admin-key, apikey, authorization",
 };
 
-const ADMIN_KEY = Deno.env.get("EVENTS_ADMIN_KEY");
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
 
-  if (req.method !== "POST") {
-    return json({ error: "method_not_allowed" }, 405);
-  }
-
+  const ADMIN_KEY = Deno.env.get("EVENTS_ADMIN_KEY");
   if (!ADMIN_KEY) {
-    return json({ error: "EVENTS_ADMIN_KEY missing" }, 500);
-  }
-
-  if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-    return json({ error: "server_not_configured" }, 500);
+    return new Response(JSON.stringify({ error: "EVENTS_ADMIN_KEY missing" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   const provided = req.headers.get("x-admin-key") ?? "";
   if (provided !== ADMIN_KEY) {
-    return json({ error: "unauthorized" }, 401);
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   try {
-    const { action, payload } = await req.json();
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+
+    const body = await req.json();
+    const action = body?.action;
+    const payload = body?.payload ?? {};
+
     if (!action || typeof action !== "string") {
-      return json({ error: "invalid_action" }, 400);
+      return new Response(JSON.stringify({ error: "action is required" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-    const columns =
-      "id,title,description,start_at,end_at,location_name,lat,lng,category,organizer_name,url,image_url,is_published,is_archived,created_by,created_at,updated_at";
-
     if (action === "list") {
-      const { data, error } = await db.from("events").select(columns).order("start_at", { ascending: false });
-      if (error) return json({ error: error.message }, 400);
-      return json({ data: data ?? [] }, 200);
+      const { data, error } = await supabase
+        .from("events")
+        .select("*")
+        .order("start_at", { ascending: false });
+      if (error) throw error;
+      return new Response(JSON.stringify({ data: data ?? [] }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     if (action === "create") {
-      const row = payload ?? {};
-      if (!row.title || !row.start_at) {
-        return json({ error: "title and start_at are required" }, 400);
+      if (!payload?.title || !payload?.start_at) {
+        return new Response(JSON.stringify({ error: "title and start_at are required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-      const { data, error } = await db.from("events").insert(row).select(columns).single();
-      if (error) return json({ error: error.message }, 400);
-      return json({ data }, 200);
+      const { data, error } = await supabase
+        .from("events")
+        .insert(payload)
+        .select("*")
+        .single();
+      if (error) throw error;
+      return new Response(JSON.stringify({ data }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     if (action === "update") {
       const id = payload?.id;
       const patch = payload?.patch;
       if (!id || !patch || typeof patch !== "object") {
-        return json({ error: "id and patch are required" }, 400);
+        return new Response(JSON.stringify({ error: "id and patch are required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-      const { data, error } = await db.from("events").update(patch).eq("id", id).select(columns).single();
-      if (error) return json({ error: error.message }, 400);
-      return json({ data }, 200);
+      const { data, error } = await supabase
+        .from("events")
+        .update(patch)
+        .eq("id", id)
+        .select("*")
+        .single();
+      if (error) throw error;
+      return new Response(JSON.stringify({ data }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     if (action === "delete") {
       const id = payload?.id;
-      if (!id) return json({ error: "id is required" }, 400);
-      const { error } = await db.from("events").delete().eq("id", id);
-      if (error) return json({ error: error.message }, 400);
-      return json({ ok: true }, 200);
+      if (!id) {
+        return new Response(JSON.stringify({ error: "id is required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { error } = await supabase.from("events").delete().eq("id", id);
+      if (error) throw error;
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     if (action === "publish") {
       const id = payload?.id;
-      const isPublished = payload?.is_published;
-      if (!id || typeof isPublished !== "boolean") {
-        return json({ error: "id and is_published are required" }, 400);
+      const is_published = payload?.is_published;
+      if (!id || typeof is_published !== "boolean") {
+        return new Response(JSON.stringify({ error: "id and is_published are required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-      const { data, error } = await db
+      const { data, error } = await supabase
         .from("events")
-        .update({ is_published: isPublished })
+        .update({ is_published })
         .eq("id", id)
-        .select(columns)
+        .select("*")
         .single();
-      if (error) return json({ error: error.message }, 400);
-      return json({ data }, 200);
+      if (error) throw error;
+      return new Response(JSON.stringify({ data }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     if (action === "archive") {
       const id = payload?.id;
-      const isArchived = payload?.is_archived;
-      if (!id || typeof isArchived !== "boolean") {
-        return json({ error: "id and is_archived are required" }, 400);
+      const is_archived = payload?.is_archived;
+      if (!id || typeof is_archived !== "boolean") {
+        return new Response(JSON.stringify({ error: "id and is_archived are required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-      const { data, error } = await db
+      const { data, error } = await supabase
         .from("events")
-        .update({ is_archived: isArchived })
+        .update({ is_archived })
         .eq("id", id)
-        .select(columns)
+        .select("*")
         .single();
-      if (error) return json({ error: error.message }, 400);
-      return json({ data }, 200);
+      if (error) throw error;
+      return new Response(JSON.stringify({ data }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    return json({ error: "unknown_action" }, 400);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "unknown_error";
-    return json({ error: message }, 500);
+    return new Response(JSON.stringify({ error: "unknown_action" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (error: any) {
+    return new Response(JSON.stringify({ error: error?.message ?? "unknown_error" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
-
-function json(body: unknown, status: number): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "content-type": "application/json" },
-  });
-}

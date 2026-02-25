@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
     const columns =
-      "id,title,description,start_at,end_at,location_name,lat,lng,category,organizer_name,url,image_url,is_published,created_by,created_at,updated_at";
+      "id,title,description,start_at,end_at,location_name,lat,lng,category,organizer_name,url,image_url,is_published,is_archived,created_by,created_at,updated_at";
 
     if (action === "list") {
       const { data, error } = await supabase.from("events").select(columns).order("start_at", {
@@ -99,6 +99,22 @@ Deno.serve(async (req) => {
       const { data, error } = await supabase
         .from("events")
         .update({ is_published: isPublished })
+        .eq("id", id)
+        .select(columns)
+        .single();
+      if (error) return json({ error: error.message }, 400);
+      return json({ data });
+    }
+
+    if (action === "archive") {
+      const id = payload?.id;
+      const isArchived = payload?.is_archived;
+      if (!id || typeof isArchived !== "boolean") {
+        return json({ error: "id and is_archived are required" }, 400);
+      }
+      const { data, error } = await supabase
+        .from("events")
+        .update({ is_archived: isArchived })
         .eq("id", id)
         .select(columns)
         .single();

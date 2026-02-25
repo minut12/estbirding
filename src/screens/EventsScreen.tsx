@@ -23,6 +23,7 @@ const mapRowToEventItem = (row: EventRow): EventItem => ({
     row.image_url ||
     "https://images.unsplash.com/photo-1448375240586-882707db888b?w=360&h=280&fit=crop",
   description: row.description ?? undefined,
+  isArchived: row.is_archived,
 });
 
 export default function EventsScreen() {
@@ -62,6 +63,7 @@ export default function EventsScreen() {
   const filteredEvents = useMemo(() => {
     const searchTerm = searchValue.trim().toLowerCase();
     return events.filter((event) => {
+      if (event.isArchived) return false;
       const eventDate = new Date(event.startAt);
       const tabMatch =
         mainTab === "tulevased"

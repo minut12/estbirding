@@ -10,6 +10,7 @@ export interface EventItem {
   category: EventCategory;
   imageUrl: string;
   description?: string;
+  isArchived?: boolean;
 }
 
 const baseDate = new Date();

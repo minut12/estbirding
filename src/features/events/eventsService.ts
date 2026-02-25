@@ -1,4 +1,4 @@
-import { supabase } from "@/config/supabaseClient";
+﻿import { supabase } from "@/config/supabaseClient";
 import { getEventsAdminKey } from "./adminKey";
 
 export type EventCategory = "EstBirding" | "Muud";
@@ -17,6 +17,7 @@ export type EventRow = {
   url: string | null;
   image_url: string | null;
   is_published: boolean;
+  is_archived: boolean;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -28,13 +29,14 @@ export type EventPayload = Partial<Omit<EventRow, "id" | "created_at" | "updated
 };
 
 const EVENT_COLUMNS =
-  "id,title,description,start_at,end_at,location_name,lat,lng,category,organizer_name,url,image_url,is_published,created_by,created_at,updated_at";
+  "id,title,description,start_at,end_at,location_name,lat,lng,category,organizer_name,url,image_url,is_published,is_archived,created_by,created_at,updated_at";
 
 export async function listPublishedEvents(): Promise<EventRow[]> {
   const { data, error } = await (supabase as any)
     .from("events")
     .select(EVENT_COLUMNS)
     .eq("is_published", true)
+    .eq("is_archived", false)
     .order("start_at", { ascending: true });
   if (error) throw error;
   return (data ?? []) as EventRow[];
@@ -102,7 +104,12 @@ async function invokeAdminAction<T>(action: string, payload?: unknown): Promise<
 
   const parsed = (data ?? {}) as AdminActionResponse<T>;
   if (parsed.error) throw new Error(parsed.error);
-  if (parsed.data === undefined) throw new Error("Tühi vastus events-admin funktsioonilt");
+  if (parsed.data === undefined) {
+    if (typeof parsed.ok === "boolean") {
+      return parsed as T;
+    }
+    throw new Error("Tühi vastus events-admin funktsioonilt");
+  }
   return parsed.data;
 }
 
@@ -119,18 +126,14 @@ export async function adminUpdateEvent(id: string, patch: Partial<EventPayload>)
 }
 
 export async function adminDeleteEvent(id: string): Promise<void> {
-  const adminKey = getEventsAdminKey();
-  if (!adminKey) throw new Error("EVENTS_ADMIN_KEY puudub");
-
-  const { data, error } = await supabase.functions.invoke("events-admin", {
-    body: { action: "delete", payload: { id } },
-    headers: { "x-admin-key": adminKey },
-  });
-  if (error) throw error;
-  const parsed = (data ?? {}) as AdminActionResponse<never>;
-  if (parsed.error) throw new Error(parsed.error);
+  const parsed = await invokeAdminAction<{ ok: boolean }>("delete", { id });
+  if (!parsed.ok) throw new Error("Kustutamine ebaõnnestus");
 }
 
 export async function adminPublishEvent(id: string, is_published: boolean): Promise<EventRow> {
   return invokeAdminAction<EventRow>("publish", { id, is_published });
+}
+
+export async function adminArchiveEvent(id: string, is_archived: boolean): Promise<EventRow> {
+  return invokeAdminAction<EventRow>("archive", { id, is_archived });
 }

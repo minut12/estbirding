@@ -1,6 +1,10 @@
-import { ArrowLeft, CalendarDays, MapPin } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ArrowLeft, CalendarDays, Loader2, MapPin } from "lucide-react";
+import { toast } from "sonner";
 import { formatEventDate, et } from "@/localization/et";
 import type { EventItem } from "@/data/events";
+import { getEventsAdminKey } from "@/features/events/adminKey";
+import { adminArchiveEvent, adminDeleteEvent } from "@/features/events/eventsService";
 
 interface EventDetailsScreenProps {
   event: EventItem;
@@ -8,6 +12,47 @@ interface EventDetailsScreenProps {
 }
 
 export default function EventDetailsScreen({ event, onBack }: EventDetailsScreenProps) {
+  const [isArchived, setIsArchived] = useState(Boolean(event.isArchived));
+  const [isSaving, setIsSaving] = useState(false);
+  const canAdmin = useMemo(() => {
+    const key = getEventsAdminKey();
+    return Boolean(key && key.trim().length > 0);
+  }, []);
+
+  const handleArchiveToggle = async () => {
+    const nextArchived = !isArchived;
+    const message = nextArchived
+      ? "Arhiveerin ürituse? See eemaldatakse ürituste loendist."
+      : "Taastan ürituse? See kuvatakse uuesti.";
+
+    if (!window.confirm(message)) return;
+    setIsSaving(true);
+    try {
+      const updated = await adminArchiveEvent(event.id, nextArchived);
+      setIsArchived(updated.is_archived);
+      toast.success(nextArchived ? "Üritus arhiveeritud" : "Üritus taastatud");
+      if (nextArchived) onBack();
+    } catch (error: any) {
+      toast.error(error?.message || "Arhiveerimine ebaõnnestus");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm("Kustutan ürituse? Seda ei saa tagasi võtta.")) return;
+    setIsSaving(true);
+    try {
+      await adminDeleteEvent(event.id);
+      toast.success("Üritus kustutatud");
+      onBack();
+    } catch (error: any) {
+      toast.error(error?.message || "Kustutamine ebaõnnestus");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="flex h-full flex-col bg-background">
       <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-3">
@@ -40,9 +85,35 @@ export default function EventDetailsScreen({ event, onBack }: EventDetailsScreen
           </p>
         </div>
 
-        <span className="mt-4 inline-flex rounded-full bg-[#DDEBE3] px-3 py-1 text-xs font-medium text-primary">
-          {event.category}
-        </span>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <span className="inline-flex rounded-full bg-[#DDEBE3] px-3 py-1 text-xs font-medium text-primary">
+            {event.category}
+          </span>
+          {isArchived && (
+            <span className="inline-flex rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+              Arhiveeritud
+            </span>
+          )}
+        </div>
+
+        {canAdmin && (
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button
+              onClick={handleArchiveToggle}
+              disabled={isSaving}
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-border bg-white px-3 text-sm font-medium disabled:opacity-60"
+            >
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : isArchived ? "Taasta" : "Arhiveeri"}
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={isSaving}
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-red-300 bg-red-50 px-3 text-sm font-medium text-red-700 disabled:opacity-60"
+            >
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Kustuta"}
+            </button>
+          </div>
+        )}
 
         <p className="mt-4 text-sm leading-relaxed text-foreground">
           {event.description ?? "Selle ürituse kohta kuvatakse peagi lisainfo."}

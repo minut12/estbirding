@@ -26,7 +26,7 @@ function corsHeaders(origin: string | null): Headers {
   return new Headers({
     "Access-Control-Allow-Origin": pickAllowedOrigin(origin),
     "Access-Control-Allow-Methods": "GET,HEAD,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-eBirdApiToken, apikey, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin",
     "Cache-Control": "no-store",
@@ -87,9 +87,9 @@ Deno.serve(async (req) => {
 
   const targetHost = target.hostname.toLowerCase();
   if (targetHost === "api.ebird.org") {
-    const token = req.headers.get("x-ebirdapitoken") || req.headers.get("X-eBirdApiToken");
+    const token = Deno.env.get("EBIRD_API_TOKEN");
     if (!token) {
-      return jsonResponse(400, { error: "Missing X-eBirdApiToken header for eBird" }, origin);
+      return jsonResponse(500, { error: "EBIRD_API_TOKEN secret not set" }, origin);
     }
     upstreamHeaders.set("X-eBirdApiToken", token);
   }

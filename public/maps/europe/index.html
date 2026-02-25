@@ -403,7 +403,7 @@
       <br/>Species list: one per line (default = 376 species).
       <br/><br/><b>Deploy checklist</b>
       <br/>1) Add <span class="hintBadge">EBIRD_API_TOKEN</span> in Lovable Secrets.
-      <br/>2) Deploy <span class="hintBadge">ebird_recent</span>. If Test eBird shows 404, publish/sync in Lovable to deploy backend.
+      <br/>2) Ensure the already deployed <span class="hintBadge">proxy</span> function has eBird support.
       <br/>3) After deploy, Test eBird should return 200.
     </div>
     <div class="grid">
@@ -446,7 +446,7 @@ const SNAPSHOT_VERSION = "europe_map_v2";
 const PROJECT_REF = "eenwcyuyugyrjgpivxrq";
 const SUPABASE_URL = `https://${PROJECT_REF}.supabase.co`;
 const FUNCTIONS_BASE = `${SUPABASE_URL}/functions/v1`;
-const EBIRD_RECENT_API = `${FUNCTIONS_BASE}/ebird_recent`;
+const PROXY_API = `${FUNCTIONS_BASE}/proxy`;
 
 function detectProxyMode(){
   return "Supabase eBird";
@@ -455,9 +455,9 @@ function detectProxyMode(){
 function updateProxyHint(){
   const el = document.getElementById("proxyPill");
   if (!el) return;
-  el.textContent = "eBird: " + detectProxyMode();
-  el.title = EBIRD_RECENT_API;
-  console.info("[ebird_recent] active", { endpoint: EBIRD_RECENT_API });
+  el.textContent = "eBird: Proxy";
+  el.title = PROXY_API;
+  console.info("[proxy] active", { endpoint: PROXY_API });
 }
 
 const DEFAULT_SPECIES = ["Aed-lepalind", "Aed-põõsalind", "Aed-roolind", "Aedporr", "Alk", "Alverüdi", "Ameerika piilpart", "Atlantise tormilind", "Aul", "Baleaari tormilind", "Euroopa kaelustäks", "Habekakk", "Habeviires", "Hahk", "Hakk", "Hall-kärbsenäpp", "Hallhaigur", "Hallhani", "Hallkibu", "Hallpea-rähn", "Hallpõsk-pütt", "Hallrästas", "Hallrüdi", "Halltsiitsitaja", "Hallvares", "Hallõgija", "Hangelind", "Harakas", "Haugaskotkas", "Hele-urvalind", "Heletilder", "Herilaseviu", "Hiireviu", "Hoburästas", "Händkakk", "Hänilane", "Hõbehaigur", "Hõbehaugas", "Hõbekajakas", "Hüüp", "Ida-mustvaeras", "Jahipistrik", "Jämejalg", "Järvekaur", "Jääkajakas", "Jääkaur", "Jääkoskel", "Jõgi-ritsiklind", "Jõgitiir", "Jõgitilder", "Jõgivästrik", "Kadakatäks", "Kaelus-kärbsenäpp", "Kaelus-turteltuvi", "Kaeluskotkas", "Kaelusrästas", "Kaelustuvi", "Kalakajakas", "Kalakotkas", "Kalda-rädilind", "Kaldapääsuke", "Kaljukajakas", "Kaljukotkas", "Kanada lagle", "Kanakull", "Kanepilind", "Karbuskajakas", "Karkjalg", "Karmiinleevike", "Karvasjalg-kakk", "Karvasjalg-viu", "Kassikakk", "Kiivitaja", "Kiripugu-rüdi", "Kirjuhahk", "Kivikakk", "Kivirullija", "Kivitäks", "Kodukakk", "Kodutuvi", "Koduvarblane", "Koldhaigur", "Koldjalg-hõbekajakas", "Koldvint", "Kormoran", "Krüüsel", "Kukkurtihane", "Kuld-lehelind", "Kuldhänilane", "Kuldnokk", "Kuldtsiitsitaja", "Kuninghahk", "Kuuse-käbilind", "Käblik", "Kägu", "Käharpelikan", "Käosulane", "Kääbuskormoran", "Kääbuskotkas", "Kõnnuõgija", "Kõrbe-kivitäks", "Kõrbe-põõsalind", "Kõrkja-roolind", "Kõrvukräts", "Kõvernokk-rüdi", "Kühmnokk-luik", "Künnivares", "Laanenäär", "Laanepüü", "Laanerähn", "Laisaba-änn", "Lammitilder", "Lapi tsiitsitaja", "Lasuurtihane", "Lauk", "Laululuik", "Laulurästas", "Leeterüdi", "Leevike", "Liiv-kivitäks", "Liivatüll", "Linavästrik", "Loorkakk", "Luitsnokk-iibis", "Luitsnokk-part", "Lumehani", "Lumekakk", "Lääne-lehelind", "Lääne-pöialpoiss", "Lõopistrik", "Lõuna-hõbekajakas", "Lühinokk-hani", "Madukotkas", "Mandariinpart", "Merikajakas", "Merikotkas", "Merirüdi", "Merisk", "Merivart", "Mesilasenäpp", "Mets-lehelind", "Metsis", "Metskiur", "Metskurvits", "Metstilder", "Metsvint", "Mudanepp", "Mudatilder", "Must-harksaba", "Must-kärbsenäpp", "Must-lepalind", "Must-toonekurg", "Mustjalg-tüll", "Mustkael-pütt", "Mustkurk-raat", "Mustlagle", "Mustlauk-õgija", "Mustpea-põõsalind", "Mustpea-tsiitsitaja", "Mustpugu-rästas", "Musträhn", "Musträstas", "Mustsaba-vigle", "Musttihane", "Mustvaeras", "Mustvares", "Mustviires", "Mägi-kanepilind", "Mägikiur", "Männi-käbilind", "Männileevike", "Männitalvike", "Mänsak", "Naaskelnokk", "Naerukajakas", "Naerutiir", "Niidu-kaelustäks", "Niidu-ritsiklind", "Niidukiur", "Nunn-kivitäks", "Nurmkana", "Nõgipart", "Nõlva-lehelind", "Nõmmekiur", "Nõmmelõoke", "Ohakalind", "Ohhoota hõbekajakas", "Padu-roolind", "Pasknäär", "Peegel-tormilind", "Pelikan", "Peoleo", "Piilpart", "Piiritaja", "Pikksaba-änn", "Plütt", "Plüü", "Polaarkajakas", "Porr", "Prillvaeras", "Pruunselg-põõsalind", "Puna-harksaba", "Puna-veetallaja", "Punajalg-pistrik", "Punajalg-tilder", "Punakael-lagle", "Punakurk-kaur", "Punanokk-vart", "Punapea-vart", "Punapea-õgija", "Punarind", "Punasaba-õgija", "Punaselg-õgija", "Purpurhaigur", "Puukoristaja", "Põhja-kirjurästas", "Põhja-lehelind", "Põhja-tormipääsu", "Põhjatihane", "Põhjatsiitsitaja", "Põhjavint", "Põldlõoke", "Põldtsiitsitaja", "Põldvarblane", "Põldvutt", "Pöialpoiss", "Rabapistrik", "Rabapüü", "Raisakotkas", "Randkajakas", "Randkiur", "Randtiir", "Rasvatihane", "Raudkull", "Ristpart", "Roherähn", "Rohevint", "Rohukoskel", "Rohunepp", "Ronk", "Roo-loorkull", "Roo-ritsiklind", "Roohabekas", "Rooruik", "Roosa-kuldnokk", "Roosakajakas", "Roosatiir", "Roostepääsuke", "Roosterind-tüll", "Rootsiitsitaja", "Rubiinööbik", "Rukkirääk", "Ruugerüdi", "Rägapart", "Rästas-roolind", "Räusk", "Rääkspart", "Räästapääsuke", "Rüüt", "Sabatihane", "Salu-lehelind", "Salupäll", "Salutihane", "Sarviklõoke", "Sarvikpütt", "Siberi lehelind", "Siberi raat", "Siidhaigur", "Siidisaba", "Siisike", "Sinikael-part", "Siniraag", "Sinirind", "Sinisaba", "Sinitihane", "Soo-loorkull", "Soo-roolind", "Sookiur", "Sookurg", "Soopart", "Sooräts", "Soorüdi", "Stepi-loorkull", "Stepikajakas", "Stepikiivitaja", "Stepikotkas", "Stepipistrik", "Stepiviu", "Suitsupääsuke", "Suula", "Suur-kirjurähn", "Suur-konnakotkas", "Suur-laukhani", "Suurkoovitaja", "Suurnokk-vint", "Suurrüdi", "Suuränn", "Sõtkas", "Söödikänn", "Tait", "Talvike", "Tamme-kirjurähn", "Teder", "Tiigi-roolind", "Tikutaja", "Triip-ritsiklind", "Tuhk-lehelind", "Tumetilder", "Tundra-rabahani", "Tundrakaur", "Tundrakiur", "Turteltuvi", "Tutkas", "Tutt-tihane", "Tutt-tiir", "Tuttlõoke", "Tuttpütt", "Tuttvart", "Tuuletallaja", "Täpikhuik", "Tõmmu-lehelind", "Tõmmuiibis", "Tõmmukajakas", "Tõmmuvaeras", "Urvalind", "Vaaraohani", "Vaenukägu", "Vainurästas", "Valge-toonekurg", "Valgepõsk-lagle", "Valgeselg-kirjurähn", "Valgesilm-vart", "Valgetiib-viires", "Veetallaja", "Veisehaigur", "Vesipapp", "Vihitaja", "Viupart", "Väike-kirjurähn", "Väike-konnakotkas", "Väike-käosulane", "Väike-kärbsenäpp", "Väike-laukhani", "Väike-lehelind", "Väike-põõsalind", "Väikealk", "Väikehuik", "Väikehüüp", "Väikekajakas", "Väikekoovitaja", "Väikekoskel", "Väikeluik", "Väikepistrik", "Väikepütt", "Väikerüdi", "Väiketiir", "Väiketrapp", "Väiketsiitsitaja", "Väiketüll", "Välja-loorkull", "Välja-väikelõoke", "Värbkakk", "Värbrüdi", "Väänkael", "Võsa-ritsiklind", "Võsaraat", "Vööt-käbilind", "Vööt-põõsalind", "Vööthani", "Vöötkakk", "Vöötnokk-kajakas", "Vöötsaba-vigle", "Õõnetuvi", "Ööbik", "Ööhaigur", "Öösorr"];
@@ -1454,16 +1454,7 @@ async function fetchEurope(speciesName, force=false, signal=null){
 
   if (!force && p.fetchedAt && (Date.now() - p.fetchedAt) < REFRESH_COOLDOWN_MS) return;
 
-  const urls = REGIONS.map((r) => {
-    const q = new URLSearchParams({
-      regionCode: r,
-      back: String(BACK_DAYS),
-      maxResults: String(MAX_RESULTS),
-      speciesCode: String(code),
-      _ts: String(Date.now()),
-    });
-    return `${EBIRD_RECENT_API}?${q.toString()}`;
-  });
+  const urls = REGIONS.map((r) => buildEbirdProxyUrl(r, code, BACK_DAYS, MAX_RESULTS));
 
   const regionResults = await fetchRegionsLimited(urls, signal);
 
@@ -1572,8 +1563,15 @@ function setRefreshError(message, idx, key){
 
 function validateRefreshConfig(){
   const missing = [];
-  if (!EBIRD_RECENT_API) missing.push("eBird function endpoint missing");
+  if (!PROXY_API) missing.push("proxy endpoint missing");
   return { ok: missing.length === 0, message: missing.join(" | ") };
+}
+
+function buildEbirdProxyUrl(regionCode, speciesCode, back, maxResults){
+  const upstream = speciesCode
+    ? `https://api.ebird.org/v2/data/obs/${encodeURIComponent(regionCode)}/recent/${encodeURIComponent(speciesCode)}?back=${back}&maxResults=${maxResults}&_ts=${Date.now()}`
+    : `https://api.ebird.org/v2/data/obs/${encodeURIComponent(regionCode)}/recent?back=${back}&maxResults=${maxResults}&_ts=${Date.now()}`;
+  return `${PROXY_API}?url=${encodeURIComponent(upstream)}`;
 }
 
 async function refreshKeys(keys, force=true){
@@ -1597,8 +1595,7 @@ async function refreshKeys(keys, force=true){
     return { done: 0, total: keys.length, successCount: 0, failureCount: keys.length, aborted: false };
   }
 
-  // Fast guard: stop immediately when function is missing in this project.
-  const healthUrl = `${EBIRD_RECENT_API}?regionCode=EE&back=1&maxResults=1&_ts=${Date.now()}`;
+  const healthUrl = buildEbirdProxyUrl("EE", "", 1, 1);
   try {
     const health = await safeFetchJson(healthUrl, { timeoutMs: 10000, retries: 0 });
     lastErrorStatus = health.status;
@@ -1607,12 +1604,21 @@ async function refreshKeys(keys, force=true){
     lastErrorStatus = e?.status ?? 0;
     lastErrorSnippet = String(e?.textSnippet || e?.message || "").slice(0, 200);
     lastRequest = { url: e?.url || healthUrl, status: e?.status, timeMs: e?.timeMs };
-    const missingFn = Number(e?.status) === 404 && String(e?.textSnippet || e?.message || "").includes("Requested function was not found");
-    if (missingFn) {
-      const msg = "Edge Function ebird_recent is not deployed yet. In Lovable, trigger backend deployment (publish/sync) so Supabase deploys functions.";
+    const status = Number(e?.status || 0);
+    const snippet = String(e?.textSnippet || e?.message || "");
+    if (status === 500 && snippet.includes("EBIRD_API_TOKEN secret not set")) {
+      const msg = "Proxy is missing EBIRD_API_TOKEN secret.";
       showSnapshotBanner(msg, "error");
       showWarn(msg);
-      setRefreshError(`${msg}. status=404 ${lastErrorSnippet || ""}`, 0, "health-check");
+      setRefreshError(`${msg}. status=500 ${lastErrorSnippet || ""}`, 0, "health-check");
+      updateDebugPanel();
+      return { done: 0, total: keys.length, successCount: 0, failureCount: 0, aborted: false };
+    }
+    if (status === 401 || status === 403) {
+      const msg = "eBird rejected the request via proxy (401/403).";
+      showSnapshotBanner(msg, "error");
+      showWarn(msg);
+      setRefreshError(`${msg}. status=${status} ${lastErrorSnippet || ""}`, 0, "health-check");
       updateDebugPanel();
       return { done: 0, total: keys.length, successCount: 0, failureCount: 0, aborted: false };
     }
@@ -1886,7 +1892,7 @@ async function resetEuropeCache(){
 }
 
 async function testEbirdViaProxy(){
-  const testUrl = `${EBIRD_RECENT_API}?regionCode=EE&back=1&maxResults=1&_ts=${Date.now()}`;
+  const testUrl = buildEbirdProxyUrl("EE", "", 1, 1);
   try {
     const response = await safeFetchJson(testUrl, {
       timeoutMs: 20000,

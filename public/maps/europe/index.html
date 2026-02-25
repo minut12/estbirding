@@ -58,15 +58,34 @@
     #sidebar{
       z-index: 7000;
       border-right:1px solid var(--line);
-      overflow:auto;
-      -webkit-overflow-scrolling: touch;
-      overscroll-behavior: contain;
-      touch-action: pan-y;
-
-      padding:10px; box-sizing:border-box;
+      display:flex;
+      flex-direction:column;
+      height:100%;
+      max-height:100vh;
+      overflow:hidden;
+      padding:0;
+      box-sizing:border-box;
       background:#fff;
-
       pointer-events: auto;
+    }
+
+    .panel-header{
+      position:sticky;
+      top:0;
+      z-index:50;
+      background:#fff;
+      border-bottom:1px solid #f0f0f0;
+      padding:10px;
+    }
+    .panel-content-scroll{
+      flex:1;
+      min-height:0;
+      overflow-y:auto;
+      -webkit-overflow-scrolling:touch;
+      overscroll-behavior:contain;
+      touch-action:pan-y;
+      padding:10px;
+      box-sizing:border-box;
     }
 
     .sidebarHeader{
@@ -76,13 +95,7 @@
       margin-bottom:8px;
       position: relative;
     }
-    #stickyPanel{
-      position: static;
-      z-index: auto;
-      background: #fff;
-      padding: 6px 0 10px;
-      box-shadow: none;
-    }
+    #stickyPanel{ padding: 6px 0 10px; }
     .sidebarHeaderTop{
       display:flex;
       align-items:center;
@@ -91,7 +104,7 @@
     }
     #sidebar h2{ margin:0; font-size:18px; }
     #closeSidebarBtn{
-      display:none;
+      display:inline-flex;
       width:40px; height:40px;
       border-radius:12px;
       border:1px solid #ddd;
@@ -137,6 +150,13 @@
     }
     .name{ font-weight:650; cursor:pointer; user-select:none; line-height:1.15; }
     .name.disabled{ opacity:.45; text-decoration:line-through; }
+    .name-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .rarity-badge{
+      display:inline-flex;align-items:center;justify-content:center;
+      min-width:26px;height:18px;padding:0 6px;border-radius:999px;
+      background:#e2e8f0;color:#334155;font-size:10px;font-weight:700;
+      border:1px solid #cbd5e1;line-height:1;
+    }
     .meta{ margin-top:4px; color:var(--muted); font-size:12px; line-height:1.35; }
     .pillMini{
       display:inline-block; padding:2px 7px;
@@ -181,7 +201,7 @@
       }
       #sidebar.open{ transform:translateX(0); }
       #sidebar.open + #mapWrap{ pointer-events:auto; }
-      #closeSidebarBtn{ display:inline-flex; align-items:center; justify-content:center; }
+      #closeSidebarBtn{ align-items:center; justify-content:center; }
       .sidebar-backdrop.show{ display:block; }
       .sidebar-backdrop{ z-index:3500 !important; }
     }
@@ -312,7 +332,7 @@
 
   <div id="main">
     <aside id="sidebar" aria-label="Sidebar">
-      
+      <div class="panel-header">
       <div id="stickyPanel">
 <div class="sidebarHeader">
         <div class="sidebarHeaderTop">
@@ -343,7 +363,10 @@
       <div id="progressLine">Ready.</div>
       <input id="filterBox" type="text" placeholder="Filter species…"/>
       </div>
+      </div>
+      <div class="panel-content-scroll">
       <div id="list"></div>
+      </div>
     </aside>
 
     <div id="mapWrap">
@@ -375,6 +398,8 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="/maps/shared/map-hamburger-control.js"></script>
+<script src="/maps/shared/format-ee.js"></script>
+<script src="/maps/shared/species-meta.js"></script>
 <script>
 /* ========= Embedded detection ========= */
 (function(){
@@ -742,20 +767,9 @@ const REGION_CONCURRENCY_DESKTOP = 3;
 const REGION_CONCURRENCY_MOBILE = 2;
 /* ========= Helpers ========= */
 function safeParseJSON(str){ try{ return JSON.parse(str); }catch{ return null; } }
-function loadSpeciesMeta(){
-  const parsed = safeParseJSON(localStorage.getItem(LS_SPECIES_META) || "{}");
-  return (parsed && typeof parsed === "object" && !Array.isArray(parsed)) ? parsed : {};
-}
 function getSpeciesMeta(name){
-  const meta = loadSpeciesMeta();
-  const raw = meta[name];
-  if (!raw || typeof raw !== "object") return { name };
-  return {
-    name,
-    ebirdCode: typeof raw.ebirdCode === "string" ? raw.ebirdCode.trim() : "",
-    isRarity: !!raw.isRarity,
-    avatarUrl: typeof raw.avatarUrl === "string" ? raw.avatarUrl.trim() : "",
-  };
+  if (window.getSpeciesMetaShared) return window.getSpeciesMetaShared(name);
+  return { name, rarityLevel: "none" };
 }
 function resolveEbirdCode(name){
   const meta = getSpeciesMeta(name);
@@ -775,28 +789,14 @@ function borderColorByDate(iso){
   const diff = (Date.now() - d.getTime())/86400000;
   return diff <= 7 ? "#16a34a" : "#f97316";
 }
-function formatDateEt(isoLike){
-  if (!isoLike) return "";
-  const s = String(isoLike).trim();
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return `${m[3]}.${m[2]}.${m[1]}`;
-  const d = new Date(s);
-  if (isNaN(d)) return s;
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  return `${dd}.${mm}.${yyyy}`;
-}
+function formatDateEt(isoLike){ return window.formatDateEE ? window.formatDateEE(isoLike) : String(isoLike || ""); }
 function formatDateTimeEt(isoLike){
   if (!isoLike) return "-";
   const d = new Date(String(isoLike));
   if (isNaN(d)) return formatDateEt(isoLike);
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
   const hh = String(d.getHours()).padStart(2, "0");
   const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${dd}.${mm}.${yyyy} ${hh}:${mi}`;
+  return `${formatDateEt(d)} ${hh}:${mi}`;
 }
 function showWarn(msg){
   const el = document.getElementById("warnBanner");
@@ -1146,7 +1146,7 @@ function updateMarker(species){
   const regionsObj = (p.regions && typeof p.regions === "object") ? p.regions : null;
   if (!regionsObj) return;
 
-  const hasCrown = !!meta.isRarity || !!(p.rarity && String(p.rarity).trim());
+  const hasCrown = (meta.rarityLevel && meta.rarityLevel !== "none") || !!(p.rarity && String(p.rarity).trim());
   const isMigr = !!p.migration;
 
   // determine latest overall (by last seen date)
@@ -1233,12 +1233,16 @@ function rowHTML(name){
   const hasLocation = Number.isFinite(p.lat) && Number.isFinite(p.lon);
   const hasMarker = markers.has(name) || hasLocation;
   const openDisabled = hasLocation ? "" : "disabled title=\"No location yet\"";
+  const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(meta.rarityLevel) : "";
 
   return `
     <div class="row" data-key="${name}">
       <div class="avatar" style="background-image:url('${meta.avatarUrl || avatars[name] || ""}');border-color:${bcol}"></div>
       <div>
-        <div class="${nameCls}" title="Tap to hide/show marker">${name}</div>
+        <div class="name-row">
+          <div class="${nameCls}" title="Tap to hide/show marker">${name}</div>
+          ${rarityText ? `<span class="rarity-badge" title="Haruldus">${rarityText}</span>` : ""}
+        </div>
         ${hasMarker ? `<div style="margin-top:6px;"><button class="btn secondary" data-open ${openDisabled}>Open</button></div>` : ""}
         <div class="meta">${fmtMeta(p)}</div>
       </div>

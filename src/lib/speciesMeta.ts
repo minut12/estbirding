@@ -4,7 +4,7 @@ const SPECIES_META_MIGRATED_KEY = "estbirding.speciesMeta.migrated.v1";
 export type SpeciesMeta = {
   name: string;
   ebirdCode?: string;
-  isRarity?: boolean;
+  rarityLevel?: "none" | "rare" | "super" | "mega";
   avatarUrl?: string;
 };
 
@@ -21,20 +21,27 @@ function safeParseRecord(value: string | null): Record<string, any> {
   }
 }
 
-function toBooleanRarity(value: unknown): boolean | undefined {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "string") return value.trim().length > 0;
-  return undefined;
+function normalizeRarityLevel(raw: any): "none" | "rare" | "super" | "mega" {
+  const lvl = typeof raw?.rarityLevel === "string" ? raw.rarityLevel.trim().toLowerCase() : "";
+  if (lvl === "rare" || lvl === "super" || lvl === "mega" || lvl === "none") return lvl;
+  if (raw?.isRarity === true) return "rare";
+  if (typeof raw?.rarity === "string" && raw.rarity.trim()) {
+    const legacy = raw.rarity.trim().toLowerCase();
+    if (legacy.includes("mega")) return "mega";
+    if (legacy.includes("very") || legacy.includes("super")) return "super";
+    return "rare";
+  }
+  return "none";
 }
 
 function sanitizeMeta(name: string, raw: any): SpeciesMeta {
   const ebirdCode = typeof raw?.ebirdCode === "string" ? raw.ebirdCode.trim() : "";
   const avatarUrl = typeof raw?.avatarUrl === "string" ? raw.avatarUrl.trim() : "";
-  const isRarity = toBooleanRarity(raw?.isRarity);
+  const rarityLevel = normalizeRarityLevel(raw);
   return {
     name,
     ...(ebirdCode ? { ebirdCode } : {}),
-    ...(typeof isRarity === "boolean" ? { isRarity } : {}),
+    rarityLevel,
     ...(avatarUrl ? { avatarUrl } : {}),
   };
 }
@@ -77,9 +84,9 @@ function migrateLegacyIfNeeded(current: SpeciesMetaMap): SpeciesMetaMap {
   for (const [name, point] of Object.entries(europePoints)) {
     if (!point || typeof point !== "object") continue;
     const ebirdCode = typeof (point as any).ebirdCode === "string" ? (point as any).ebirdCode.trim() : "";
-    const isRarity = toBooleanRarity((point as any).rarity);
+    const rarityLevel = normalizeRarityLevel(point as any);
     if (ebirdCode) mergeIn(next, name, { ebirdCode });
-    if (typeof isRarity === "boolean") mergeIn(next, name, { isRarity });
+    mergeIn(next, name, { rarityLevel });
   }
 
   localStorage.setItem(SPECIES_META_MIGRATED_KEY, "1");

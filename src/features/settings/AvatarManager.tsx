@@ -27,7 +27,7 @@ export default function AvatarManager() {
   const [saving, setSaving] = useState(false);
   const [manualKey, setManualKey] = useState('');
   const [ebirdCode, setEbirdCode] = useState('');
-  const [isRarity, setIsRarity] = useState(false);
+  const [rarityLevel, setRarityLevel] = useState<'none' | 'rare' | 'super' | 'mega'>('none');
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -40,14 +40,14 @@ export default function AvatarManager() {
       setCurrentAvatar(null);
       setPreview(null);
       setEbirdCode('');
-      setIsRarity(false);
+      setRarityLevel('none');
       return;
     }
     const avatars = getMergedAvatars();
     const meta = getSpeciesMeta(selected);
     setCurrentAvatar(meta.avatarUrl || avatars[selected] || null);
     setEbirdCode(meta.ebirdCode || '');
-    setIsRarity(!!meta.isRarity);
+    setRarityLevel(meta.rarityLevel || 'none');
     setPreview(null);
   }, [selected]);
 
@@ -61,7 +61,7 @@ export default function AvatarManager() {
       const dataUrl = await processImage(file);
       setPreview(dataUrl);
     } catch (ex: any) {
-      toast.error(ex?.message || 'Pildi tÃ¶Ã¶tlemine ebaÃµnnestus');
+      toast.error(ex?.message || 'Pildi töötlemine ebaõnnestus');
     } finally {
       setProcessing(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -77,9 +77,9 @@ export default function AvatarManager() {
       setPreview(null);
       upsertSpeciesMeta(selected, { avatarUrl: publicUrl });
       notifyIframeUpdate('update', selected, publicUrl);
-      toast.success('Avatar salvestatud pilve â€” nÃ¤htav kÃµigil seadmetel');
+      toast.success('Avatar salvestatud pilve - nähtav kõigil seadmetel');
     } catch (ex: any) {
-      toast.error(ex?.message || 'Salvestamine ebaÃµnnestus');
+      toast.error(ex?.message || 'Salvestamine ebaõnnestus');
     } finally {
       setSaving(false);
     }
@@ -96,7 +96,7 @@ export default function AvatarManager() {
       notifyIframeUpdate('reset', selected);
       toast.success('Avatar eemaldatud');
     } catch (ex: any) {
-      toast.error(ex?.message || 'Eemaldamine ebaÃµnnestus');
+      toast.error(ex?.message || 'Eemaldamine ebaõnnestus');
     } finally {
       setSaving(false);
     }
@@ -109,20 +109,22 @@ export default function AvatarManager() {
         const src = iframe.src;
         const base = src.replace(/[?&]v=[^&]*/, '');
         iframe.src = base + (base.includes('?') ? '&' : '?') + 'v=' + Date.now();
-        toast.success('Kaart vÃ¤rskendatud');
+        toast.success('Kaart värskendatud');
       }
-    } catch { toast.error('Kaardi vÃ¤rskendamine ebaÃµnnestus'); }
+    } catch {
+      toast.error('Kaardi värskendamine ebaõnnestus');
+    }
   }, []);
 
   const handleMetaSave = useCallback(() => {
     if (!selected) return;
     upsertSpeciesMeta(selected, {
       ebirdCode: ebirdCode.trim(),
-      isRarity,
+      rarityLevel,
       avatarUrl: currentAvatar || undefined,
     });
     toast.success('Liigi seaded salvestatud');
-  }, [selected, ebirdCode, isRarity, currentAvatar]);
+  }, [selected, ebirdCode, rarityLevel, currentAvatar]);
 
   const activeKey = selected || manualKey;
   const displayUrl = preview || currentAvatar || PLACEHOLDER_URL;
@@ -139,14 +141,14 @@ export default function AvatarManager() {
         Liigi seaded
       </h3>
       <p className="text-xs text-muted-foreground">
-        Hallatakse Ã¼hiselt: avatar, eBird speciesCode ja rarity-lipp.
+        Hallatakse ühiselt: avatar, eBird speciesCode ja harulduse tase.
       </p>
 
       {hasSpecies ? (
         <div className="space-y-1.5">
           <Label>Vali liik</Label>
           <Command className="border border-input rounded-md">
-            <CommandInput placeholder="Otsi liikiâ€¦" value={search} onValueChange={setSearch} />
+            <CommandInput placeholder="Otsi liiki..." value={search} onValueChange={setSearch} />
             <CommandList className="max-h-[200px]">
               <CommandEmpty>Liiki ei leitud</CommandEmpty>
               <CommandGroup>
@@ -157,7 +159,7 @@ export default function AvatarManager() {
                   </CommandItem>
                 ))}
                 {filtered.length > 50 && (
-                  <p className="text-xs text-muted-foreground px-2 py-1">â€¦ja veel {filtered.length - 50} liiki</p>
+                  <p className="text-xs text-muted-foreground px-2 py-1">...ja veel {filtered.length - 50} liiki</p>
                 )}
               </CommandGroup>
             </CommandList>
@@ -165,10 +167,14 @@ export default function AvatarManager() {
         </div>
       ) : (
         <div className="space-y-1.5">
-          <Label htmlFor="manualSpecies">Liigi nimi (kÃ¤sitsi)</Label>
-          <Input id="manualSpecies" placeholder="nt. Sookurg" value={manualKey}
-            onChange={(e) => { setManualKey(e.target.value); setSelected(e.target.value); }} />
-          <p className="text-xs text-destructive">species.json ei laadunud. Sisesta liigi nimi kÃ¤sitsi.</p>
+          <Label htmlFor="manualSpecies">Liigi nimi (käsitsi)</Label>
+          <Input
+            id="manualSpecies"
+            placeholder="nt. Sookurg"
+            value={manualKey}
+            onChange={(e) => { setManualKey(e.target.value); setSelected(e.target.value); }}
+          />
+          <p className="text-xs text-destructive">species.json ei laadunud. Sisesta liigi nimi käsitsi.</p>
         </div>
       )}
 
@@ -196,14 +202,18 @@ export default function AvatarManager() {
               value={ebirdCode}
               onChange={(e) => setEbirdCode(e.target.value)}
             />
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={isRarity}
-                onChange={(e) => setIsRarity(e.target.checked)}
-              />
-              Rarity liik
-            </label>
+            <Label htmlFor="rarityLevel">Haruldus</Label>
+            <select
+              id="rarityLevel"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={rarityLevel}
+              onChange={(e) => setRarityLevel(e.target.value as 'none' | 'rare' | 'super' | 'mega')}
+            >
+              <option value="none">Tavaline</option>
+              <option value="rare">Haruldane</option>
+              <option value="super">Väga haruldane</option>
+              <option value="mega">Mega haruldane</option>
+            </select>
             <Button variant="outline" className="w-full" onClick={handleMetaSave}>
               Salvesta liigi seaded
             </Button>
@@ -213,7 +223,7 @@ export default function AvatarManager() {
             <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFileChange} />
             <Button variant="outline" className="w-full gap-2" disabled={processing || saving} onClick={() => fileRef.current?.click()}>
               <Upload className="w-4 h-4" />
-              {processing ? 'TÃ¶Ã¶tlenâ€¦' : 'Lae avatar Ã¼les'}
+              {processing ? 'Töötlen...' : 'Lae avatar üles'}
             </Button>
           </div>
 
@@ -221,7 +231,7 @@ export default function AvatarManager() {
             {preview && (
               <Button onClick={handleSave} className="w-full gap-2" disabled={saving}>
                 <Cloud className="w-4 h-4" />
-                {saving ? 'Salvestanâ€¦' : 'Salvesta pilve'}
+                {saving ? 'Salvestan...' : 'Salvesta pilve'}
               </Button>
             )}
             {currentAvatar && (
@@ -237,10 +247,10 @@ export default function AvatarManager() {
       <Separator />
       <Button variant="outline" size="sm" onClick={handleRefreshMap} className="gap-2">
         <RefreshCw className="w-3.5 h-3.5" />
-        VÃ¤rskenda kaarti
+        Värskenda kaarti
       </Button>
       <p className="text-xs text-muted-foreground">
-        Kui avatar ei ilmu kohe kaardile, vajuta â€žVÃ¤rskenda kaarti".
+        Kui avatar ei ilmu kohe kaardile, vajuta "Värskenda kaarti".
       </p>
     </div>
   );

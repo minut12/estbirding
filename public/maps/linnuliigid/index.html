@@ -11,7 +11,7 @@
     html,body{height:100%;margin:0;padding:0;overflow:hidden;font-family:system-ui,Arial,sans-serif}
     #root{height:100%;display:flex;flex-direction:column}
     #app{display:flex;flex:1;min-height:0}
-    #sidebar{width:360px;border-right:1px solid #ddd;padding:10px;overflow:auto;background:#fff;min-height:0;flex-shrink:0}
+    #sidebar{width:360px;border-right:1px solid #ddd;background:#fff;min-height:0;flex-shrink:0}
     #mapWrap{flex:1;min-height:0;position:relative}
     #map{position:absolute;inset:0}
     .row {display:grid;grid-template-columns:46px 1fr;gap:10px;align-items:center;padding:8px 0;border-bottom:1px dashed #eee}
@@ -80,9 +80,14 @@
   .springHint{margin-top:8px;font-size:11px;color:#64748b}
 
     /* Sidebar header */
+    #sidebar{display:flex;flex-direction:column;height:100%;max-height:100vh;overflow:hidden}
+    .panel-header{position:sticky;top:0;z-index:50;background:#fff;border-bottom:1px solid #e5e7eb;padding:10px}
+    .panel-content-scroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:10px;box-sizing:border-box}
     .sidebar-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
     .btn.icon{padding:4px 8px;border:1px solid #cbd5e1;background:#fff;border-radius:8px;cursor:pointer}
-    .close-sidebar{display:none}
+    .close-sidebar{display:inline-flex}
+    .name-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .rarity-badge{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:18px;padding:0 6px;border-radius:999px;background:#e2e8f0;color:#334155;font-size:10px;font-weight:700;border:1px solid #cbd5e1;line-height:1}
 
     /* Mobile drawer + backdrop */
     .leaflet-top,.leaflet-bottom{z-index:1000!important}
@@ -97,7 +102,6 @@
         box-shadow:0 10px 30px rgba(0,0,0,.18);border-right:1px solid #e5e7eb;
       }
       #sidebar.open{transform:translateX(0)}
-      .close-sidebar{display:inline-flex}
       .sidebar-backdrop.show{display:block}
       .sidebar-backdrop{z-index:3500!important}
     }
@@ -112,7 +116,10 @@
 <div id="root">
 <div id="app">
   <aside id="sidebar">
+    <div class="panel-header">
     <div class="sidebar-header"><h2 style="margin:0">Linnuliigid 2026</h2><button id="closeSidebarBtn" class="btn icon close-sidebar" title="Sulge" aria-label="Sulge">✕</button></div>
+    </div>
+    <div class="panel-content-scroll">
 <div class="top-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:center">
   <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px">
     <input type="checkbox" id="toggle7days" checked />
@@ -134,6 +141,7 @@
 </details>
     <input id="filterBox" type="text" placeholder="Filter…" />
     <div id="list"></div>
+    </div>
   </aside>
   <main id="mapWrap"><div id="map"></div></main>
 </div>
@@ -143,6 +151,8 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="/maps/shared/map-hamburger-control.js"></script>
+<script src="/maps/shared/format-ee.js"></script>
+<script src="/maps/shared/species-meta.js"></script>
 
 <script>
 // --- Silent notifier: replace alerts with console logs ---
@@ -371,7 +381,7 @@ function _updateDebugPanel(){
   const occ7Count = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.occ7) && p.occ7 > 0; }).length;
   el.innerHTML = [
     'Status: <b>' + (__snapshotMeta.status || '?') + '</b>',
-    'Generated: <b>' + (__snapshotMeta.generated_at ? new Date(__snapshotMeta.generated_at).toLocaleString() : '—') + '</b>',
+    'Generated: <b>' + (__snapshotMeta.generated_at ? (window.formatDateEE ? window.formatDateEE(__snapshotMeta.generated_at) : __snapshotMeta.generated_at) : '-') + '</b>',
     'Species with coords: <b>' + totalWithCoords + '</b>',
     'Species with occ7>0: <b>' + occ7Count + '</b>',
     'Markers rendered: <b>' + __renderedMarkerCount + '</b>',
@@ -435,8 +445,8 @@ async function loadSnapshot(){
 
     if(snap.points_json && Object.keys(snap.points_json).length > 0){
       _applySnapshot(snap);
-      const age = snap.generated_at ? Math.round((Date.now() - new Date(snap.generated_at).getTime()) / 60000) : null;
-      _showSnapshotBanner('Data loaded' + (age !== null ? ' (' + age + ' min ago)' : ''));
+      const age = snap.generated_at && window.formatAgeEE ? window.formatAgeEE(snap.generated_at) : null;
+      _showSnapshotBanner('Data loaded' + (age ? ' (' + age + ')' : ''));
       setTimeout(_hideSnapshotBanner, 4000);
       _updateProgressUI(0, 0, 'ready');
     } else {
@@ -701,7 +711,7 @@ function updateMarker(key) {
     const bcol = _borderColorByDate(p.t);
     const c7 = Number.isFinite(p.occ7) ? p.occ7 : null;
     const icon = avatarIcon(getDisplayAvatar(key), bcol, c7);
-    const when = p.t ? '<br><small>vaatluse kuupäev: '+p.t+'</small>' : '';
+    const when = p.t ? '<br><small>vaatluse kuup�ev: ' + (window.formatDateEE ? window.formatDateEE(p.t) : p.t) + '</small>' : '';
     const src = p.src ? '<br><small>allikas: '+p.src+'</small>' : '';
     const m = L.marker([p.lat,p.lon], {icon}).addTo(map)
       .bindPopup('<b>'+key+'</b>'+when+(Number.isFinite(p.occ7)?'<br><small>7 päeva vaatlused: '+p.occ7+'</small>':'')+src);
@@ -718,13 +728,14 @@ function rowHTML(obj) {
   const hasPoint = Number.isFinite(p.lat) && Number.isFinite(p.lon);
   const muted = (p.visible===false) ? 'muted' : '';
   const occ7 = Number.isFinite(p.occ7) ? p.occ7 : null;
-
+  const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
+  const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(metaCfg.rarityLevel) : '';
   const springVal = (springDates && springDates[key]) ? String(springDates[key]).trim() : '';
   const springTxt = ' <span class="pill">Kevad:</span> <span class="clickable" title="Muuda kevadise saabumise kuupäeva" onclick="editSpringDate(\''+key+'\')">'+( springVal || '—')+'</span>';
 
   const noCoords = !hasPoint && occ7 > 0;
   const meta = hasPoint
-    ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> '+p.t:'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+springTxt
+    ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + (window.formatDateEE ? window.formatDateEE(p.t) : p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+springTxt
     : noCoords
       ? '<span class="pill" style="background:#fef3c7;color:#92400e">Koordinaadid peidetud</span>'+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+springTxt
       : 'No location yet'+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+springTxt;
@@ -733,7 +744,7 @@ function rowHTML(obj) {
     '<div class="avatar" style="background-image:url(\''+getDisplayAvatar(key)+'\');border:3px solid '+bcol+'"></div>' +
     '<div>' +
       '<div class="top">' +
-        '<div class="name-label clickable '+muted+'" onclick="toggleVisibility(\''+key+'\')">'+key+'</div>' +
+        '<div class="name-row"><div class="name-label clickable '+muted+'" onclick="toggleVisibility(\''+key+'\')">'+key+'</div>' + (rarityText ? '<span class="rarity-badge" title="Haruldus">'+rarityText+'</span>' : '') + '</div>' +
         '<div class="controls">' +
           '<a class="btn" target="_blank" href="'+obj.url+'">Open</a>' +
           '<button class="btn secondary" onclick="setAvatar(\''+key+'\')">Avatar</button>' +
@@ -1152,3 +1163,4 @@ var __sharedDefaults = {};
 
 </body>
 </html>
+

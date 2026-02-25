@@ -876,6 +876,9 @@ let failCount = 0;
 let proxyTestResult = "-";
 let lastErrorStatus = null;
 let lastErrorSnippet = null;
+let lastProxyVersion = null;
+let lastEbirdTokenPresent = null;
+let lastBodySnippet = null;
 
 function saveAll(){
   localStorage.setItem(LS_AVATARS, JSON.stringify(avatars));
@@ -932,6 +935,9 @@ function updateDebugPanel(){
     `lastError: <b>${lastError || "-"}</b>`,
     `lastErrorStatus: <b>${lastErrorStatus ?? "-"}</b>`,
     `lastErrorSnippet: <b>${lastErrorSnippet || "-"}</b>`,
+    `x-proxy-version: <b>${lastProxyVersion || "-"}</b>`,
+    `x-ebird-token-present: <b>${lastEbirdTokenPresent || "-"}</b>`,
+    `bodySnippet: <b>${lastBodySnippet || "-"}</b>`,
     `stoppedAtIndex: <b>${stoppedAtIndex ?? "-"}</b>`,
     `stoppedAtKey: <b>${stoppedAtKey || "-"}</b>`,
     `lastRequest: <b>${lastRequest ? `${lastRequest.url} (${lastRequest.status ?? "?"}, ${lastRequest.timeMs ?? "?"}ms)` : "-"}</b>`,
@@ -1353,6 +1359,8 @@ async function safeFetchJson(url, options = {}){
       });
       const timeMs = Math.round(performance.now() - t0);
       const status = res.status;
+      const proxyVersion = res.headers.get("x-proxy-version") || null;
+      const ebirdTokenPresent = res.headers.get("x-ebird-token-present") || null;
       if (status === 429 && attempt < retries) {
         clearTimeout(timeoutId);
         await delayMs(retryBackoff[Math.min(attempt, retryBackoff.length - 1)]);
@@ -1366,6 +1374,8 @@ async function safeFetchJson(url, options = {}){
         err.textSnippet = textSnippet;
         err.timeMs = timeMs;
         err.url = requestUrl;
+        err.proxyVersion = proxyVersion;
+        err.ebirdTokenPresent = ebirdTokenPresent;
         throw err;
       }
       const rawText = await res.text();
@@ -1379,10 +1389,21 @@ async function safeFetchJson(url, options = {}){
         err.textSnippet = textSnippet;
         err.timeMs = timeMs;
         err.url = requestUrl;
+        err.proxyVersion = proxyVersion;
+        err.ebirdTokenPresent = ebirdTokenPresent;
         throw err;
       }
       clearTimeout(timeoutId);
-      return { ok: true, status, json, textSnippet, timeMs, url: requestUrl };
+      return {
+        ok: true,
+        status,
+        json,
+        textSnippet,
+        timeMs,
+        url: requestUrl,
+        proxyVersion,
+        ebirdTokenPresent,
+      };
     } catch (e) {
       clearTimeout(timeoutId);
       const timeMs = Math.round(performance.now() - t0);
@@ -1392,6 +1413,8 @@ async function safeFetchJson(url, options = {}){
         err.textSnippet = "";
         err.timeMs = timeMs;
         err.url = requestUrl;
+        err.proxyVersion = null;
+        err.ebirdTokenPresent = null;
         throw err;
       }
       if ((e && e.name === "AbortError") || (options.signal && options.signal.aborted)) {
@@ -1419,6 +1442,9 @@ async function fetchRegionsLimited(urls, signal){
     try{
       const response = await safeFetchJson(u, { signal, timeoutMs: 20000, retries: 2 });
       lastRequest = { url: response.url, status: response.status, timeMs: response.timeMs };
+      lastProxyVersion = response.proxyVersion || lastProxyVersion;
+      lastEbirdTokenPresent = response.ebirdTokenPresent || lastEbirdTokenPresent;
+      lastBodySnippet = response.textSnippet || lastBodySnippet;
       if (!Array.isArray(response.json)) {
         const err = new Error("Invalid eBird payload");
         err.status = response.status;
@@ -1431,6 +1457,9 @@ async function fetchRegionsLimited(urls, signal){
     }
     catch(e){
       lastRequest = { url: e.url || u, status: e.status, timeMs: e.timeMs };
+      lastProxyVersion = e?.proxyVersion || lastProxyVersion;
+      lastEbirdTokenPresent = e?.ebirdTokenPresent || lastEbirdTokenPresent;
+      lastBodySnippet = String(e?.textSnippet || e?.message || "").slice(0, 200) || lastBodySnippet;
       results[i] = {
         ok: false,
         data: null,
@@ -1585,6 +1614,9 @@ async function refreshKeys(keys, force=true){
   failCount = 0;
   lastErrorStatus = null;
   lastErrorSnippet = null;
+  lastProxyVersion = null;
+  lastEbirdTokenPresent = null;
+  lastBodySnippet = null;
   updateDebugPanel();
 
   const cfg = validateRefreshConfig();
@@ -1599,23 +1631,45 @@ async function refreshKeys(keys, force=true){
   try {
     const health = await safeFetchJson(healthUrl, { timeoutMs: 10000, retries: 0 });
     lastErrorStatus = health.status;
+    lastProxyVersion = health.proxyVersion || null;
+    lastEbirdTokenPresent = health.ebirdTokenPresent || null;
+    lastBodySnippet = health.textSnippet || null;
     lastRequest = { url: health.url, status: health.status, timeMs: health.timeMs };
   } catch (e) {
     lastErrorStatus = e?.status ?? 0;
     lastErrorSnippet = String(e?.textSnippet || e?.message || "").slice(0, 200);
+    lastProxyVersion = e?.proxyVersion || null;
+    lastEbirdTokenPresent = e?.ebirdTokenPresent || null;
+    lastBodySnippet = String(e?.textSnippet || e?.message || "").slice(0, 200) || null;
     lastRequest = { url: e?.url || healthUrl, status: e?.status, timeMs: e?.timeMs };
     const status = Number(e?.status || 0);
     const snippet = String(e?.textSnippet || e?.message || "");
-    if (status === 500 && snippet.includes("EBIRD_API_TOKEN secret not set")) {
-      const msg = "Proxy is missing EBIRD_API_TOKEN secret.";
+    if (status === 404) {
+      const msg = "proxy function not deployed";
+      showSnapshotBanner(msg, "error");
+      showWarn(msg);
+      setRefreshError(`${msg}. status=404 ${lastErrorSnippet || ""}`, 0, "health-check");
+      updateDebugPanel();
+      return { done: 0, total: keys.length, successCount: 0, failureCount: 0, aborted: false };
+    }
+    if (status === 500 && snippet.includes("EBIRD_API_TOKEN secret not available in runtime")) {
+      const msg = "Lovable secrets not injected into Edge Functions runtime";
       showSnapshotBanner(msg, "error");
       showWarn(msg);
       setRefreshError(`${msg}. status=500 ${lastErrorSnippet || ""}`, 0, "health-check");
       updateDebugPanel();
       return { done: 0, total: keys.length, successCount: 0, failureCount: 0, aborted: false };
     }
-    if (status === 401 || status === 403) {
-      const msg = "eBird rejected the request via proxy (401/403).";
+    if (status === 403) {
+      const msg = "Token present but rejected by eBird (invalid token)";
+      showSnapshotBanner(msg, "error");
+      showWarn(msg);
+      setRefreshError(`${msg}. status=403 ${lastErrorSnippet || ""}`, 0, "health-check");
+      updateDebugPanel();
+      return { done: 0, total: keys.length, successCount: 0, failureCount: 0, aborted: false };
+    }
+    if (status === 401) {
+      const msg = "eBird rejected the proxy request (401).";
       showSnapshotBanner(msg, "error");
       showWarn(msg);
       setRefreshError(`${msg}. status=${status} ${lastErrorSnippet || ""}`, 0, "health-check");
@@ -1882,6 +1936,9 @@ async function resetEuropeCache(){
   lastRequest = null;
   okCount = 0;
   failCount = 0;
+  lastProxyVersion = null;
+  lastEbirdTokenPresent = null;
+  lastBodySnippet = null;
   snapshotDebugNote = null;
   saveAll();
   render();
@@ -1898,10 +1955,13 @@ async function testEbirdViaProxy(){
       timeoutMs: 20000,
       retries: 0,
     });
-    const snippet = JSON.stringify(response.json || "").slice(0, 200);
+    const snippet = String(response.textSnippet || JSON.stringify(response.json || "")).slice(0, 200);
     proxyTestResult = `ok status=${response.status} ${snippet}`;
     lastErrorStatus = response.status;
     lastErrorSnippet = snippet || null;
+    lastProxyVersion = response.proxyVersion || null;
+    lastEbirdTokenPresent = response.ebirdTokenPresent || null;
+    lastBodySnippet = snippet || null;
     lastRequest = { url: response.url, status: response.status, timeMs: response.timeMs };
     showSnapshotBanner("Proxy test passed", "");
   } catch (e) {
@@ -1910,6 +1970,9 @@ async function testEbirdViaProxy(){
     proxyTestResult = `fail status=${status} ${snippet}`;
     lastErrorStatus = status;
     lastErrorSnippet = snippet || null;
+    lastProxyVersion = e?.proxyVersion || null;
+    lastEbirdTokenPresent = e?.ebirdTokenPresent || null;
+    lastBodySnippet = snippet || null;
     lastRequest = { url: e?.url || testUrl, status: status, timeMs: e?.timeMs };
     showSnapshotBanner("Proxy test failed", "warn");
   }

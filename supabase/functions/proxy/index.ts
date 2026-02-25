@@ -26,7 +26,7 @@ function corsHeaders(origin: string | null): Headers {
   return new Headers({
     "Access-Control-Allow-Origin": pickAllowedOrigin(origin),
     "Access-Control-Allow-Methods": "GET,HEAD,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, X-eBirdApiToken",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin",
     "Cache-Control": "no-store",

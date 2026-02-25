@@ -85,7 +85,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     fetchSharedAvatars().then(() => {
       sendAvatarsToIframe();
     });
-    refreshSpeciesMetaFromCloud()
+    refreshSpeciesMetaFromCloud({ force: true })
       .then(() => sendSpeciesMetaToIframe())
       .catch(() => {
         sendSpeciesMetaToIframe();

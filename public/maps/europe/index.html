@@ -98,7 +98,7 @@
     #stickyPanel{ padding: 6px 0 10px; }
     .sidebarHeaderTop{
       display:flex;
-      align-items:center;
+      align-items:flex-start;
       justify-content:space-between;
       gap:10px;
     }
@@ -109,17 +109,18 @@
       justify-content:center;
       width:40px; height:40px;
       border-radius:12px;
-      border:1px solid #ddd;
-      background:#fff;
+      border:1px solid #d1d5db;
+      background:#f3f4f6;
+      color:#111827;
+      box-shadow:0 1px 2px rgba(0,0,0,.08);
       cursor:pointer;
-      font-size:18px;
       line-height:1;
       flex:0 0 40px;
       margin-left:8px;
     }
 
     .small{ color:var(--muted); font-size:12px; margin:6px 0 10px; line-height:1.35; }
-    .header-copy{flex:1;min-width:0;padding-right:12px}
+    .header-copy{flex:1;min-width:0;padding-right:52px}
     #controls{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .btn{
       padding:6px 10px; border:0; border-radius:10px;
@@ -933,6 +934,7 @@ let lastBodySnippet = null;
 let debugCountryTop5 = "-";
 let debugCountrySample = "-";
 let debugMax7d = "-";
+let debugExampleGt1 = "-";
 
 function parseObsDateToMs(obsDt){
   const raw = String(obsDt || "").trim();
@@ -1021,7 +1023,8 @@ function updateDebugPanel(){
     `lastRequest: <b>${lastRequest ? `${lastRequest.url} (${lastRequest.status ?? "?"}, ${lastRequest.timeMs ?? "?"}ms)` : "-"}</b>`,
     `countryTop5(7d): <b>${debugCountryTop5}</b>`,
     `countrySample(7d): <b>${debugCountrySample}</b>`,
-    `max7d: <b>${debugMax7d}</b>`,
+    `max7dCountThisRefresh: <b>${debugMax7d}</b>`,
+    `Example >1: <b>${debugExampleGt1}</b>`,
     `snapshotNote: <b>${snapshotDebugNote || "-"}</b>`,
   ].join("<br>");
 }
@@ -1523,8 +1526,8 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
         throw err;
       }
 
-      const perSpeciesRegion = {};
-      const countryCounts = {};
+      const perSpeciesRegionByCode = {};
+      const countryCountsByCode = {};
       const countrySampleRows = [];
       const nowMs = Date.now();
       const last7Cutoff = nowMs - (7 * 24 * 60 * 60 * 1000);
@@ -1535,36 +1538,38 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
         const obsDt = String(obs?.obsDt || "");
         const ts = parseObsDateToMs(obsDt);
         const isValidDt = ts !== null && Number.isFinite(ts);
-        if (!perSpeciesRegion[speciesName]) {
-          perSpeciesRegion[speciesName] = { occ7: 0, latestObs: null, latestTs: 0, speciesCode: speciesCode, sampleObsDt: obsDt };
+        if (!perSpeciesRegionByCode[speciesCode]) {
+          perSpeciesRegionByCode[speciesCode] = { occ7: 0, latestObs: null, latestTs: 0, speciesCode: speciesCode, sampleObsDt: obsDt };
         }
         if (isValidDt) {
           if (ts >= last7Cutoff && ts <= nowMs) {
-            perSpeciesRegion[speciesName].occ7++;
-            countryCounts[speciesName] = (countryCounts[speciesName] || 0) + 1;
-            if (countrySampleRows.length < 5) countrySampleRows.push({ speciesCode, count: perSpeciesRegion[speciesName].occ7, obsDt });
-            if (perSpeciesRegion[speciesName].occ7 > max7dCount) {
-              max7dCount = perSpeciesRegion[speciesName].occ7;
+            perSpeciesRegionByCode[speciesCode].occ7 += 1;
+            countryCountsByCode[speciesCode] = (countryCountsByCode[speciesCode] || 0) + 1;
+            if (countrySampleRows.length < 5) countrySampleRows.push({ speciesCode, count: perSpeciesRegionByCode[speciesCode].occ7, obsDt });
+            if (perSpeciesRegionByCode[speciesCode].occ7 > max7dCount) {
+              max7dCount = perSpeciesRegionByCode[speciesCode].occ7;
               max7dSpecies = speciesName;
               max7dCountry = region;
             }
           }
-          if (!perSpeciesRegion[speciesName].latestTs || ts > perSpeciesRegion[speciesName].latestTs) {
-            perSpeciesRegion[speciesName].latestObs = obs;
-            perSpeciesRegion[speciesName].latestTs = ts;
+          if (!perSpeciesRegionByCode[speciesCode].latestTs || ts > perSpeciesRegionByCode[speciesCode].latestTs) {
+            perSpeciesRegionByCode[speciesCode].latestObs = obs;
+            perSpeciesRegionByCode[speciesCode].latestTs = ts;
           }
         }
       }
-      debugCountryTop5 = Object.entries(countryCounts)
+      debugCountryTop5 = Object.entries(countryCountsByCode)
         .sort((a, b) => Number(b[1]) - Number(a[1]))
         .slice(0, 5)
-        .map(([name, count]) => `${name}:${count}`)
+        .map(([code, count]) => `${speciesByCode.get(code) || code}:${count}`)
         .join(" | ") || "-";
       debugCountrySample = countrySampleRows
         .map((x) => `${region} ${x.speciesCode}:${x.count} @ ${x.obsDt}`)
         .join(" | ") || "-";
 
-      for (const [speciesName, regionStats] of Object.entries(perSpeciesRegion)) {
+      for (const [speciesCode, regionStats] of Object.entries(perSpeciesRegionByCode)) {
+        const speciesName = speciesByCode.get(speciesCode);
+        if (!speciesName) continue;
         const latestObs = regionStats.latestObs;
         if (!latestObs) continue;
         const lat = Number(latestObs.lat);
@@ -1638,7 +1643,10 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
     if (typeof p.visible !== "boolean") p.visible = true;
     updateMarker(speciesName);
   }
-  debugMax7d = `Max 7d count (this refresh): ${max7dCount} for ${max7dSpecies} in ${max7dCountry}`;
+  debugMax7d = String(max7dCount || 0);
+  debugExampleGt1 = max7dCount > 1
+    ? `${max7dSpecies} in ${max7dCountry} = ${max7dCount}`
+    : "none > 1 in this refresh";
   saveAll();
   render();
   return { okCountries, failCountries, totalCountries: REGIONS.length };

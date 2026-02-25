@@ -24,7 +24,7 @@ export default function Index() {
   const [selectedMapId, setSelectedMapId] = useState<string>('linnuliigid-ee');
 
   useEffect(() => {
-    refreshSpeciesMetaFromCloud().catch(() => {});
+    refreshSpeciesMetaFromCloud({ force: true }).catch(() => {});
     const id = window.setInterval(() => {
       refreshSpeciesMetaFromCloud().catch(() => {});
     }, 60000);

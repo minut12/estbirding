@@ -1,6 +1,7 @@
 import { normalizeSpeciesName, normalizeUiText } from "@/lib/textNormalize";
 export const SPECIES_META_KEY = "estbirding.speciesMeta.v1";
 const SPECIES_META_MIGRATED_KEY = "estbirding.speciesMeta.migrated.v1";
+export const SPECIES_META_LOCAL_UPDATED_AT_KEY = "estbirding.speciesMeta.local.updatedAt";
 
 export type SpeciesMeta = {
   name: string;
@@ -103,6 +104,7 @@ export function saveSpeciesMeta(map: SpeciesMetaMap): void {
     out[name] = sanitizeMeta(name, meta);
   });
   localStorage.setItem(SPECIES_META_KEY, JSON.stringify(out));
+  localStorage.setItem(SPECIES_META_LOCAL_UPDATED_AT_KEY, new Date().toISOString());
 }
 
 export function loadSpeciesMeta(): SpeciesMetaMap {

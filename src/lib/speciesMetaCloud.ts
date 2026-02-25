@@ -1,11 +1,13 @@
 import { supabase } from '@/integrations/supabase/client';
-import { loadSpeciesMeta, replaceSpeciesMeta, type SpeciesMeta } from '@/lib/speciesMeta';
+import { loadSpeciesMeta, replaceSpeciesMeta, SPECIES_META_LOCAL_UPDATED_AT_KEY, type SpeciesMeta } from '@/lib/speciesMeta';
 import { normalizeSpeciesName, normalizeUiText } from '@/lib/textNormalize';
 
 const BUCKET = 'bird-avatars';
 const FILE_PATH = 'meta/species_meta_v1.json';
 const CLOUD_UPDATED_AT_KEY = 'estbirding.speciesMeta.cloud.updatedAt';
 export const SPECIES_META_LAST_SYNC_AT_KEY = 'estbirding.speciesMeta.lastSyncAt';
+const CLOUD_LOADED_KEY = 'estbirding.speciesMeta.cloud.loaded';
+const LAST_SYNC_ERROR_KEY = 'estbirding.speciesMeta.lastSyncError';
 
 export type SpeciesMetaCloudItem = {
   ebirdCode?: string;
@@ -17,6 +19,14 @@ export type SpeciesMetaCloudJson = {
   version: 1;
   updatedAt: string;
   items: Record<string, SpeciesMetaCloudItem>;
+};
+
+export type SpeciesMetaSyncStatus = {
+  cloudLoaded: boolean;
+  cloudUpdatedAt: string;
+  localUpdatedAt: string;
+  lastSyncAt: string;
+  lastSyncError: string;
 };
 
 function normalizeRarityLevel(level: unknown): 'none' | 'rare' | 'super' | 'mega' {
@@ -62,18 +72,23 @@ function mergeCloudOverLocal(localMap: Record<string, SpeciesMeta>, cloud: Speci
 }
 
 export async function downloadSpeciesMetaJson(): Promise<SpeciesMetaCloudJson | null> {
-  const { data, error } = await supabase.storage.from(BUCKET).download(FILE_PATH);
-  if (error || !data) return null;
   try {
-    const text = await data.text();
+    const { data } = supabase.storage.from(BUCKET).getPublicUrl(FILE_PATH);
+    const url = `${data.publicUrl}?t=${Date.now()}`;
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const text = await res.text();
     if (!text) return null;
     const parsed = JSON.parse(text) as Partial<SpeciesMetaCloudJson>;
+    localStorage.setItem(CLOUD_LOADED_KEY, '1');
+    localStorage.setItem(LAST_SYNC_ERROR_KEY, '');
     return {
       version: 1,
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
       items: normalizeCloudItems(parsed.items),
     };
   } catch {
+    localStorage.setItem(CLOUD_LOADED_KEY, '0');
     return null;
   }
 }
@@ -87,6 +102,7 @@ export async function uploadSpeciesMetaJson(payload: SpeciesMetaCloudJson): Prom
   const blob = new Blob([JSON.stringify(body)], { type: 'application/json' });
   const { error } = await supabase.storage.from(BUCKET).upload(FILE_PATH, blob, {
     contentType: 'application/json',
+    cacheControl: '0',
     upsert: true,
   });
   if (error) throw new Error(error.message || 'Cloud upload failed');
@@ -96,7 +112,11 @@ export async function refreshSpeciesMetaFromCloud(options?: { force?: boolean })
   const force = !!options?.force;
   const local = loadSpeciesMeta();
   const cloud = await downloadSpeciesMetaJson();
-  if (!cloud) return { updated: false, merged: local };
+  if (!cloud) {
+    localStorage.setItem(SPECIES_META_LAST_SYNC_AT_KEY, new Date().toISOString());
+    localStorage.setItem(LAST_SYNC_ERROR_KEY, 'Cloud download failed');
+    return { updated: false, merged: local };
+  }
 
   const prevUpdatedAt = localStorage.getItem(CLOUD_UPDATED_AT_KEY) || '';
   if (!force && cloud.updatedAt && prevUpdatedAt && cloud.updatedAt === prevUpdatedAt) {
@@ -107,6 +127,7 @@ export async function refreshSpeciesMetaFromCloud(options?: { force?: boolean })
   replaceSpeciesMeta(merged);
   localStorage.setItem(CLOUD_UPDATED_AT_KEY, cloud.updatedAt || '');
   localStorage.setItem(SPECIES_META_LAST_SYNC_AT_KEY, new Date().toISOString());
+  localStorage.setItem(LAST_SYNC_ERROR_KEY, '');
 
   const updated = Boolean(cloud.updatedAt && cloud.updatedAt !== prevUpdatedAt);
   if (updated) {
@@ -141,6 +162,17 @@ export async function saveSpeciesMetaToCloud(speciesName: string, patch: Partial
   replaceSpeciesMeta(merged);
   localStorage.setItem(CLOUD_UPDATED_AT_KEY, cloudFinal.updatedAt || '');
   localStorage.setItem(SPECIES_META_LAST_SYNC_AT_KEY, new Date().toISOString());
+  localStorage.setItem(LAST_SYNC_ERROR_KEY, '');
   try { window.dispatchEvent(new CustomEvent('species-meta-updated')); } catch {}
   return merged;
+}
+
+export function getSpeciesMetaSyncStatus(): SpeciesMetaSyncStatus {
+  return {
+    cloudLoaded: localStorage.getItem(CLOUD_LOADED_KEY) === '1',
+    cloudUpdatedAt: localStorage.getItem(CLOUD_UPDATED_AT_KEY) || '',
+    localUpdatedAt: localStorage.getItem(SPECIES_META_LOCAL_UPDATED_AT_KEY) || '',
+    lastSyncAt: localStorage.getItem(SPECIES_META_LAST_SYNC_AT_KEY) || '',
+    lastSyncError: localStorage.getItem(LAST_SYNC_ERROR_KEY) || '',
+  };
 }

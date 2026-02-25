@@ -64,7 +64,7 @@ export default function SettingsTab() {
     const initialProxyStored = getStoredProxyBase();
     setStoredProxyBaseView(initialProxyStored);
     setProxyBaseUrl(initialProxyStored || getEnvProxyBase());
-    refreshSpeciesMetaFromCloud().catch(() => {});
+    refreshSpeciesMetaFromCloud({ force: true }).catch(() => {});
   }, []);
 
   useEffect(() => {

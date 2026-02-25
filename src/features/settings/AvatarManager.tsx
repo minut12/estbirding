@@ -14,7 +14,12 @@ import {
   uploadSharedAvatar, removeSharedAvatar, fetchSpeciesList,
 } from '@/lib/avatar-storage';
 import { getSpeciesMeta, loadSpeciesMeta, upsertSpeciesMeta } from '@/lib/speciesMeta';
-import { SPECIES_META_LAST_SYNC_AT_KEY, refreshSpeciesMetaFromCloud, saveSpeciesMetaToCloud } from '@/lib/speciesMetaCloud';
+import {
+  SPECIES_META_LAST_SYNC_AT_KEY,
+  getSpeciesMetaSyncStatus,
+  refreshSpeciesMetaFromCloud,
+  saveSpeciesMetaToCloud,
+} from '@/lib/speciesMetaCloud';
 import { ET_STRINGS } from '@/lib/etStrings';
 import { normalizeUiText } from '@/lib/textNormalize';
 
@@ -33,12 +38,20 @@ export default function AvatarManager() {
   const [rarityLevel, setRarityLevel] = useState<'none' | 'rare' | 'super' | 'mega'>('none');
   const [syncing, setSyncing] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<string>(() => localStorage.getItem(SPECIES_META_LAST_SYNC_AT_KEY) || '');
+  const [syncStatus, setSyncStatus] = useState(() => getSpeciesMetaSyncStatus());
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadSpeciesMeta();
-    refreshSpeciesMetaFromCloud().catch(() => {});
+    refreshSpeciesMetaFromCloud({ force: true }).catch(() => {});
+    setSyncStatus(getSpeciesMetaSyncStatus());
     fetchSpeciesList().then((list) => { if (list.length > 0) setSpecies(list.map(normalizeUiText)); });
+  }, []);
+
+  useEffect(() => {
+    const onMetaUpdated = () => setSyncStatus(getSpeciesMetaSyncStatus());
+    window.addEventListener('species-meta-updated', onMetaUpdated as EventListener);
+    return () => window.removeEventListener('species-meta-updated', onMetaUpdated as EventListener);
   }, []);
 
   useEffect(() => {
@@ -135,9 +148,10 @@ export default function AvatarManager() {
       .then(async () => {
         await refreshSpeciesMetaFromCloud({ force: true }).catch(() => {});
         setLastSyncAt(localStorage.getItem(SPECIES_META_LAST_SYNC_AT_KEY) || '');
-        toast.success(ET_STRINGS.saveSpeciesSettingsOk);
+        setSyncStatus(getSpeciesMetaSyncStatus());
+        toast.success('Salvestatud pilve');
       })
-      .catch(() => toast.warning(ET_STRINGS.saveSpeciesSettingsLocalOnly));
+      .catch(() => toast.warning('Salvestatud lokaalselt'));
   }, [selected, ebirdCode, rarityLevel, currentAvatar]);
 
   const handleSyncNow = useCallback(async () => {
@@ -145,9 +159,11 @@ export default function AvatarManager() {
     try {
       await refreshSpeciesMetaFromCloud({ force: true });
       setLastSyncAt(localStorage.getItem(SPECIES_META_LAST_SYNC_AT_KEY) || '');
+      setSyncStatus(getSpeciesMetaSyncStatus());
       toast.success('Sünkroonitud');
     } catch {
       toast.warning('Sünkroon ebaõnnestus (kasutan lokaalseid seadeid)');
+      setSyncStatus(getSpeciesMetaSyncStatus());
     } finally {
       setSyncing(false);
     }
@@ -262,6 +278,14 @@ export default function AvatarManager() {
               {syncing ? 'Sünkroonin...' : 'Sünkrooni nüüd'}
             </Button>
             <p className="text-xs text-muted-foreground">Viimane sünkroon: {formatLastSync(lastSyncAt)}</p>
+            <div className="rounded-md border border-border bg-muted/20 p-2 text-xs space-y-1">
+              <div className="font-medium">Meta Sync Status</div>
+              <div>cloudLoaded: {syncStatus.cloudLoaded ? 'yes' : 'no'}</div>
+              <div>cloudUpdatedAt: {syncStatus.cloudUpdatedAt || '-'}</div>
+              <div>localUpdatedAt: {syncStatus.localUpdatedAt || '-'}</div>
+              <div>lastSyncAt: {syncStatus.lastSyncAt || '-'}</div>
+              <div>lastSyncError: {syncStatus.lastSyncError || '-'}</div>
+            </div>
           </div>
 
           <div className="space-y-2">

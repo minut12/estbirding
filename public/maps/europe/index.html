@@ -211,12 +211,7 @@
     /* Marker styling */
     .leaflet-marker-icon{ overflow: visible !important; }
     .markerWrap{ position:relative; width:var(--mSize); height:var(--mSize); overflow:visible; }
-    .markerWrap .crown{
-      position:absolute; top:-12px; left:50%;
-      transform:translateX(-50%);
-      font-size:18px; z-index:5;
-      text-shadow: 0 1px 0 rgba(0,0,0,.35), 0 0 2px rgba(0,0,0,.25);
-    }
+    .markerWrap .marker-rarity-badge{position:absolute;right:-2px;top:-4px;min-width:20px;height:16px;padding:0 5px;border-radius:999px;background:#111;color:#fff;border:1px solid rgba(255,255,255,.9);font-size:10px;line-height:14px;font-weight:800;text-align:center;z-index:7}
     .markerWrap .circle{
       position:absolute; inset:0;
       border-radius:50%;
@@ -1159,15 +1154,14 @@ function showPulseRing(lat, lon){
 }
 window.addEventListener("beforeunload", clearPulseRing);
 
-function makeIcon(url, border, hasCrown, occ7, isMigr){
-  const crown = hasCrown
-    ? '<div class="crown"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M3 18h18l-2-9-5 4-2-7-2 7-5-4-2 9z" fill="currentColor"/></svg></div>'
-    : ``;
+function makeIcon(url, border, rarityLevel, occ7, isMigr){
+  const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(rarityLevel) : "";
+  const rarityBadge = rarityText ? `<div class="marker-rarity-badge">${rarityText}</div>` : ``;
   const badge = ((occ7===0)||Number.isFinite(occ7))
     ? `<div class="countBadge" style="background:${isMigr ? "#16a34a" : "#f97316"}">${occ7}</div>`
     : ``;
   const bg = url ? `background-image:url('${url}');` : "";
-  const html = `<div class="markerWrap">${crown}<div class="circle" style="border-color:${border};${bg}"></div>${badge}</div>`;
+  const html = `<div class="markerWrap"><div class="circle" style="border-color:${border};${bg}"></div>${rarityBadge}${badge}</div>`;
   const size = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--mSize")) || 34;
   return L.divIcon({ html, className:"", iconSize:[size,size], iconAnchor:[size/2, size/2], popupAnchor:[0, -size/2] });
 }
@@ -1221,7 +1215,7 @@ function updateMarker(species){
   const regionsObj = (p.regions && typeof p.regions === "object") ? p.regions : null;
   if (!regionsObj) return;
 
-  const hasCrown = (meta.rarityLevel && meta.rarityLevel !== "none") || !!(p.rarity && String(p.rarity).trim());
+  const rarityLevel = meta.rarityLevel || "none";
   const isMigr = !!p.migration;
 
   // determine latest overall (by last seen date)
@@ -1247,18 +1241,19 @@ function updateMarker(species){
       if (recentOnly && !(occ7 > 0)) continue;
 
       const border = borderColorByDate(d.t);
-      const icon = makeIcon(meta.avatarUrl || avatars[species] || "", border, hasCrown, occ7, isMigr);
+      const icon = makeIcon(meta.avatarUrl || avatars[species] || "", border, rarityLevel, occ7, isMigr);
 
       const where = d.loc ? `<br><small>location: ${d.loc}</small>` : "";
       const when  = d.t ? `<br><small>last seen: ${formatDateEt(d.t)}</small>` : "";
       const srcLn = `<br><small>source: eBird ${rg} (${REGION_NAME[rg]||rg})</small>`;
       const occLn = `<br><small>7d records: ${occ7} (computed from last ${BACK_DAYS}d)</small>`;
       const migr  = `<br><small>migration: ${isMigr ? "yes" : "no"}</small>`;
-      const rarLn = hasCrown ? `<br><small>rarity: yes</small>` : "";
+      const rarLn = rarityLevel !== "none" ? `<br><small>rarity: ${window.getRarityBadgeText(rarityLevel)}</small>` : "";
 
       const markerKey = species + "@@" + rg;
+      const popupName = window.normalizeUiText ? window.normalizeUiText(species) : species;
       const m = L.marker([d.lat, d.lon], { icon }).addTo(map)
-        .bindPopup(`<b>${species}</b>${when}${where}${srcLn}${occLn}${migr}${rarLn}`);
+        .bindPopup(`<b>${popupName}</b>${when}${where}${srcLn}${occLn}${migr}${rarLn}`);
       markers.set(markerKey, m);
 
       if (rg === latestRegion) latestMarker = m;
@@ -1274,16 +1269,17 @@ function updateMarker(species){
     if (best) {
       const border = borderColorByDate(best.t);
       const total7 = Number(p.occ7 || 0);
-      const icon = makeIcon(meta.avatarUrl || avatars[species] || "", border, hasCrown, total7, isMigr);
+      const icon = makeIcon(meta.avatarUrl || avatars[species] || "", border, rarityLevel, total7, isMigr);
       const where = best.loc ? `<br><small>location: ${best.loc}</small>` : "";
       const when  = best.t ? `<br><small>last seen: ${formatDateEt(best.t)}</small>` : "";
       const srcLn = `<br><small>source: eBird ${best.rg} (${REGION_NAME[best.rg]||best.rg})</small>`;
       const occLn = `<br><small>7d records (total): ${total7}</small>`;
       const migr  = `<br><small>migration: ${isMigr ? "yes" : "no"}</small>`;
-      const rarLn = hasCrown ? `<br><small>rarity: yes</small>` : "";
+      const rarLn = rarityLevel !== "none" ? `<br><small>rarity: ${window.getRarityBadgeText(rarityLevel)}</small>` : "";
 
+      const popupName = window.normalizeUiText ? window.normalizeUiText(species) : species;
       const m = L.marker([best.lat, best.lon], { icon }).addTo(map)
-        .bindPopup(`<b>${species}</b>${when}${where}${srcLn}${occLn}${migr}${rarLn}`);
+        .bindPopup(`<b>${popupName}</b>${when}${where}${srcLn}${occLn}${migr}${rarLn}`);
       latestMarker = m;
       markers.set(species + "@@" + best.rg, m);
     }
@@ -1304,6 +1300,7 @@ function setStatus(s){ statusText.textContent = s || ""; }
 function rowHTML(name){
   const p = points[name] || {};
   const meta = getSpeciesMeta(name);
+  const displayName = window.normalizeUiText ? window.normalizeUiText(name) : name;
   const bcol = borderColorByDate(p.t);
   const nameCls = (p.visible === false) ? "name disabled" : "name";
   const hasLocation = Number.isFinite(p.lat) && Number.isFinite(p.lon);
@@ -1316,7 +1313,7 @@ function rowHTML(name){
       <div class="avatar" style="background-image:url('${meta.avatarUrl || avatars[name] || ""}');border-color:${bcol}"></div>
       <div>
         <div class="name-row">
-          <div class="${nameCls}" title="Tap to hide/show marker">${name}</div>
+          <div class="${nameCls}" title="Tap to hide/show marker">${displayName}</div>
           ${rarityText ? `<span class="rarity-badge" title="Haruldus">${rarityText}</span>` : ""}
         </div>
         ${hasMarker ? `<div style="margin-top:6px;"><button class="btn secondary" data-open ${openDisabled}>Open</button></div>` : ""}
@@ -1517,24 +1514,27 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
       const perSpeciesRegion = {};
       const countryCounts = {};
       const nowMs = Date.now();
+      const last7Cutoff = nowMs - (7 * 24 * 60 * 60 * 1000);
       for (const obs of response.json) {
         const speciesCode = String(obs?.speciesCode || "");
         const speciesName = speciesByCode.get(speciesCode);
         if (!speciesName) continue;
         const obsDt = String(obs?.obsDt || "");
         const d = parseObsDate(obsDt);
-        const isValidDt = !!d;
+        const ts = d ? d.getTime() : null;
+        const isValidDt = ts !== null && Number.isFinite(ts);
         if (!perSpeciesRegion[speciesName]) {
-          perSpeciesRegion[speciesName] = { occ7: 0, latestObs: null };
+          perSpeciesRegion[speciesName] = { occ7: 0, latestObs: null, latestTs: 0 };
         }
         if (isValidDt) {
-          const diffDays = (nowMs - d.getTime()) / 86400000;
-          if (diffDays <= 7) {
+          if (ts >= last7Cutoff && ts <= nowMs) {
             perSpeciesRegion[speciesName].occ7++;
             countryCounts[speciesName] = (countryCounts[speciesName] || 0) + 1;
           }
-          const latestDt = String(perSpeciesRegion[speciesName].latestObs?.obsDt || "");
-          if (!latestDt || obsDt > latestDt) perSpeciesRegion[speciesName].latestObs = obs;
+          if (!perSpeciesRegion[speciesName].latestTs || ts > perSpeciesRegion[speciesName].latestTs) {
+            perSpeciesRegion[speciesName].latestObs = obs;
+            perSpeciesRegion[speciesName].latestTs = ts;
+          }
         }
       }
       debugCountryTop5 = Object.entries(countryCounts)
@@ -1959,8 +1959,17 @@ window.addEventListener("message", function(ev){
     if (t === "MAP_REFRESH_VISIBLE" || t === "MAP_REFRESH_SELECTED") {
       document.getElementById("btnRefreshData")?.click();
     }
+    if (t === "SPECIES_META_DEFAULTS" && ev.data.speciesMeta && typeof ev.data.speciesMeta === "object") {
+      const incoming = normalizeNameMap(ev.data.speciesMeta);
+      if (Object.keys(incoming).length) {
+        const existing = safeParseJSON(localStorage.getItem(LS_SPECIES_META) || "{}") || {};
+        localStorage.setItem(LS_SPECIES_META, JSON.stringify({ ...existing, ...incoming }));
+        render();
+      }
+    }
   }catch(e){}
 });
+try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: "SPECIES_META_REQUEST" }, "*"); } catch(e){}
 </script>
 </body>
 </html>

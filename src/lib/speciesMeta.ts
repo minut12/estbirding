@@ -1,3 +1,4 @@
+import { normalizeSpeciesName, normalizeUiText } from "@/lib/textNormalize";
 export const SPECIES_META_KEY = "estbirding.speciesMeta.v1";
 const SPECIES_META_MIGRATED_KEY = "estbirding.speciesMeta.migrated.v1";
 
@@ -35,11 +36,12 @@ function normalizeRarityLevel(raw: any): "none" | "rare" | "super" | "mega" {
 }
 
 function sanitizeMeta(name: string, raw: any): SpeciesMeta {
-  const ebirdCode = typeof raw?.ebirdCode === "string" ? raw.ebirdCode.trim() : "";
-  const avatarUrl = typeof raw?.avatarUrl === "string" ? raw.avatarUrl.trim() : "";
+  const normalizedName = normalizeSpeciesName(name);
+  const ebirdCode = typeof raw?.ebirdCode === "string" ? normalizeUiText(raw.ebirdCode) : "";
+  const avatarUrl = typeof raw?.avatarUrl === "string" ? normalizeUiText(raw.avatarUrl) : "";
   const rarityLevel = normalizeRarityLevel(raw);
   return {
-    name,
+    name: normalizedName,
     ...(ebirdCode ? { ebirdCode } : {}),
     rarityLevel,
     ...(avatarUrl ? { avatarUrl } : {}),
@@ -47,9 +49,10 @@ function sanitizeMeta(name: string, raw: any): SpeciesMeta {
 }
 
 function mergeIn(map: SpeciesMetaMap, name: string, partial: Partial<SpeciesMeta>) {
-  if (!name) return;
-  const prev = map[name] ?? { name };
-  map[name] = sanitizeMeta(name, { ...prev, ...partial });
+  const key = normalizeSpeciesName(name);
+  if (!key) return;
+  const prev = map[key] ?? { name: key };
+  map[key] = sanitizeMeta(key, { ...prev, ...partial });
 }
 
 function migrateLegacyIfNeeded(current: SpeciesMetaMap): SpeciesMetaMap {
@@ -107,7 +110,9 @@ export function loadSpeciesMeta(): SpeciesMetaMap {
   const raw = safeParseRecord(localStorage.getItem(SPECIES_META_KEY));
   const cleaned: SpeciesMetaMap = {};
   Object.entries(raw).forEach(([name, meta]) => {
-    cleaned[name] = sanitizeMeta(name, meta);
+    const key = normalizeSpeciesName(name);
+    if (!key) return;
+    cleaned[key] = sanitizeMeta(key, meta);
   });
   const migrated = migrateLegacyIfNeeded(cleaned);
   saveSpeciesMeta(migrated);
@@ -116,13 +121,19 @@ export function loadSpeciesMeta(): SpeciesMetaMap {
 
 export function getSpeciesMeta(name: string): SpeciesMeta {
   const map = loadSpeciesMeta();
-  return map[name] ?? { name };
+  const key = normalizeSpeciesName(name);
+  return map[key] ?? { name: key };
 }
 
 export function upsertSpeciesMeta(name: string, partial: Partial<SpeciesMeta>): void {
-  if (!name) return;
+  const key = normalizeSpeciesName(name);
+  if (!key) return;
   const map = loadSpeciesMeta();
-  const prev = map[name] ?? { name };
-  map[name] = sanitizeMeta(name, { ...prev, ...partial, name });
+  const prev = map[key] ?? { name: key };
+  map[key] = sanitizeMeta(key, { ...prev, ...partial, name: key });
+  saveSpeciesMeta(map);
+}
+
+export function replaceSpeciesMeta(map: SpeciesMetaMap): void {
   saveSpeciesMeta(map);
 }

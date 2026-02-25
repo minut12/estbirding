@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { APP_VERSION } from '@/lib/version';
 import { fetchSharedAvatars, getMergedAvatars, notifyIframe } from '@/lib/avatar-storage';
 import { resolveProxyBase } from '@/config/proxyEndpoint';
+import { loadSpeciesMeta } from '@/lib/speciesMeta';
+import { mergeSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 
 const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -73,6 +75,9 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     const avatars = getMergedAvatars();
     notifyIframe(avatars);
   }, []);
+  const sendSpeciesMetaToIframe = useCallback(() => {
+    sendToIframe({ type: 'SPECIES_META_DEFAULTS', speciesMeta: loadSpeciesMeta() });
+  }, [sendToIframe]);
 
   // Fetch shared avatars on mount, cache locally, then send to iframe
   useEffect(() => {
@@ -80,8 +85,16 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     fetchSharedAvatars().then(() => {
       sendAvatarsToIframe();
     });
+    mergeSpeciesMetaFromCloud(loadSpeciesMeta())
+      .then((merged) => {
+        localStorage.setItem('estbirding.speciesMeta.v1', JSON.stringify(merged));
+        sendSpeciesMetaToIframe();
+      })
+      .catch(() => {
+        sendSpeciesMetaToIframe();
+      });
     return () => clearTimeout(t0);
-  }, [sendAvatarsToIframe]);
+  }, [sendAvatarsToIframe, sendSpeciesMetaToIframe]);
 
   // Listen for AVATARS_REQUEST and INSETS_REQUEST from iframe
   useEffect(() => {
@@ -89,13 +102,16 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       if (ev.data?.type === 'AVATARS_REQUEST') {
         sendAvatarsToIframe();
       }
+      if (ev.data?.type === 'SPECIES_META_REQUEST') {
+        sendSpeciesMetaToIframe();
+      }
       if (ev.data?.type === 'INSETS_REQUEST') {
         sendAppInsets();
       }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [sendAvatarsToIframe, sendAppInsets]);
+  }, [sendAvatarsToIframe, sendAppInsets, sendSpeciesMetaToIframe]);
 
   useEffect(() => {
     const t = setTimeout(sendMapShown, 500);
@@ -143,6 +159,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     sendMapShown();
     // Send avatars and insets when iframe loads
     setTimeout(sendAvatarsToIframe, 300);
+    setTimeout(sendSpeciesMetaToIframe, 350);
     setTimeout(sendAppInsets, 400);
     // Auto-refresh after initial load
     setTimeout(() => {
@@ -150,6 +167,12 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       sendRefreshVisible();
     }, 800);
   };
+
+  useEffect(() => {
+    const onMetaUpdated = () => sendSpeciesMetaToIframe();
+    window.addEventListener('species-meta-updated', onMetaUpdated as EventListener);
+    return () => window.removeEventListener('species-meta-updated', onMetaUpdated as EventListener);
+  }, [sendSpeciesMetaToIframe]);
 
   const handleError = () => {
     setError('Võrguühenduse viga või ressurss puudub');

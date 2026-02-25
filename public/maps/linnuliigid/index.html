@@ -62,7 +62,7 @@
 .rarity-select{font-size:12px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;vertical-align:middle}
 
 
-  /* === KevadrÃ¤nde (esimesed saabumised) paneel === */
+  /* === Kevadrände (esimesed saabumised) paneel === */
   #springPanel{display:none;margin:8px 0 0;background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,0.10);overflow:hidden}
   #springHeader{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:#f8fafc;border-bottom:1px solid #e5e7eb}
   #springHeader .title{font-size:13px;color:#334155}
@@ -118,7 +118,7 @@
 <div id="app">
   <aside id="sidebar">
     <div class="panel-header">
-    <div class="sidebar-header"><h2 style="margin:0">Linnuliigid 2026</h2><button id="closeSidebarBtn" class="btn icon close-sidebar" title="Sulge" aria-label="Sulge">âœ•</button></div>
+    <div class="sidebar-header"><h2 style="margin:0">Linnuliigid 2026</h2><button id="closeSidebarBtn" class="btn icon close-sidebar" title="Sulge" aria-label="Sulge"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
     </div>
     <div class="panel-content-scroll">
 <div class="top-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:center">
@@ -138,9 +138,9 @@
 <div id="fetchError" class="fetch-error"></div>
 <details class="debug-panel" id="debugPanel">
   <summary>Debug info</summary>
-  <div id="debugContent">Loadingâ€¦</div>
+  <div id="debugContent">Loading...</div>
 </details>
-    <input id="filterBox" type="text" placeholder="Filterâ€¦" />
+    <input id="filterBox" type="text" placeholder="Filter..." />
     <div id="list"></div>
     </div>
   </aside>
@@ -164,7 +164,7 @@ function notifySilent(msg){
 window._realAlert = window.alert;
 window.alert = function(msg){ notifySilent(msg); };
 
-// --- Perâ€‘species clear: remove coords/date/occ/src and marker immediately ---
+// --- Per-species clear: remove coords/date/occ/src and marker immediately ---
 function clearOccurrence(key){
   try{
     window.points = window.points || {};
@@ -194,13 +194,33 @@ function clearOccurrence(key){
 // === Species ===
 const SPECIES = ["Aed-pÃµÃµsalind","Aed-roolind","Aedporr","Alk","AlverÃ¼di","Ameerika piilpart","Atlantise tormilind","Aul","Baleaari tormilind","Euroopa kaelustÃ¤ks","Habekakk","Habeviires","Hahk","Hakk","Hall-kÃ¤rbsenÃ¤pp","Hallhaigur","Hallhani","Hallkibu","Hallpea-rÃ¤hn","HallpÃµsk-pÃ¼tt","HallrÃ¤stas","HallrÃ¼di","Halltsiitsitaja","Hallvares","HallÃµgija","Hangelind","Harakas","Haugaskotkas","Hele-urvalind","Heletilder","Herilaseviu","Hiireviu","HoburÃ¤stas","HÃ¤ndkakk","HÃ¤nilane","HÃµbehaigur","HÃµbehaugas","HÃµbekajakas","HÃ¼Ã¼p","Ida-mustvaeras","Jahipistrik","JÃ¤mejalg","JÃ¤rvekaur","JÃ¤Ã¤kajakas","JÃ¤Ã¤kaur","JÃ¤Ã¤koskel","JÃµgi-ritsiklind","JÃµgitiir","JÃµgitilder","JÃµgivÃ¤strik","KadakatÃ¤ks","Kaelus-kÃ¤rbsenÃ¤pp","Kaelus-turteltuvi","Kaeluskotkas","KaelusrÃ¤stas","Kaelustuvi","Kalakajakas","Kalakotkas","Kalda-rÃ¤dilind","KaldapÃ¤Ã¤suke","Kaljukajakas","Kaljukotkas","Kanada lagle","Kanakull","Kanepilind","Karbuskajakas","Karkjalg","Karmiinleevike","Karvasjalg-kakk","Karvasjalg-viu","Kassikakk","Kiivitaja","Kiripugu-rÃ¼di","Kirjuhahk","Kivikakk","Kivirullija","KivitÃ¤ks","Kodukakk","Kodutuvi","Koduvarblane","Koldhaigur","Koldjalg-hÃµbekajakas","Koldvint","Kormoran","KrÃ¼Ã¼sel","Kukkurtihane","Kuld-lehelind","KuldhÃ¤nilane","Kuldnokk","Kuldtsiitsitaja","Kuninghahk","Kuuse-kÃ¤bilind","KÃ¤blik","KÃ¤gu","KÃ¤harpelikan","KÃ¤osulane","KÃ¤Ã¤buskormoran","KÃ¤Ã¤buskotkas","KÃµnnuÃµgija","KÃµrbe-kivitÃ¤ks","KÃµrbe-pÃµÃµsalind","KÃµrkja-roolind","KÃµrvukrÃ¤ts","KÃµvernokk-rÃ¼di","KÃ¼hmnokk-luik","KÃ¼nnivares","LaanenÃ¤Ã¤r","LaanepÃ¼Ã¼","LaanerÃ¤hn","Laisaba-Ã¤nn","Lammitilder","Lapi tsiitsitaja","Lasuurtihane","Lauk","Laululuik","LaulurÃ¤stas","LeeterÃ¼di","Leevike","Liiv-kivitÃ¤ks","LiivatÃ¼ll","LinavÃ¤strik","Loorkakk","Luitsnokk-iibis","Luitsnokk-part","Lumehani","Lumekakk","LÃ¤Ã¤ne-lehelind","LÃ¤Ã¤ne-pÃ¶ialpoiss","LÃµopistrik","LÃµuna-hÃµbekajakas","LÃ¼hinokk-hani","Madukotkas","Mandariinpart","Merikajakas","Merikotkas","MerirÃ¼di","Merisk","Merivart","MesilasenÃ¤pp","Mets-lehelind","Metsis","Metskiur","Metskurvits","Metstilder","Metsvint","Mudanepp","Mudatilder","Must-harksaba","Must-kÃ¤rbsenÃ¤pp","Must-lepalind","Must-toonekurg","Mustjalg-tÃ¼ll","Mustkael-pÃ¼tt","Mustkurk-raat","Mustlagle","Mustlauk-Ãµgija","Mustpea-pÃµÃµsalind","Mustpea-tsiitsitaja","Mustpugu-rÃ¤stas","MustrÃ¤hn","MustrÃ¤stas","Mustsaba-vigle","Musttihane","Mustvaeras","Mustvares","Mustviires","MÃ¤gi-kanepilind","MÃ¤gikiur","MÃ¤nni-kÃ¤bilind","MÃ¤nnileevike","MÃ¤nnitalvike","MÃ¤nsak","Naaskelnokk","Naerukajakas","Naerutiir","Niidu-kaelustÃ¤ks","Niidu-ritsiklind","Niidukiur","Nunn-kivitÃ¤ks","Nurmkana","NÃµgipart","NÃµlva-lehelind","NÃµmmekiur","NÃµmmelÃµoke","Ohakalind","Ohhoota hÃµbekajakas","Padu-roolind","PasknÃ¤Ã¤r","Peegel-tormilind","Pelikan","Peoleo","Piilpart","Piiritaja","Pikksaba-Ã¤nn","PlÃ¼tt","PlÃ¼Ã¼","Polaarkajakas","Porr","Prillvaeras","Pruunselg-pÃµÃµsalind","Puna-harksaba","Puna-veetallaja","Punajalg-pistrik","Punajalg-tilder","Punakael-lagle","Punakurk-kaur","Punanokk-vart","Punapea-vart","Punapea-Ãµgija","Punarind","Punasaba-Ãµgija","Punaselg-Ãµgija","Purpurhaigur","Puukoristaja","PÃµhja-kirjurÃ¤stas","PÃµhja-lehelind","PÃµhja-tormipÃ¤Ã¤su","PÃµhjatihane","PÃµhjatsiitsitaja","PÃµhjavint","PÃµldlÃµoke","PÃµldtsiitsitaja","PÃµldvarblane","PÃµldvutt","PÃ¶ialpoiss","Rabapistrik","RabapÃ¼Ã¼","Raisakotkas","Randkajakas","Randkiur","Randtiir","Rasvatihane","Raudkull","Ristpart","RoherÃ¤hn","Rohevint","Rohukoskel","Rohunepp","Ronk","Roo-loorkull","Roo-ritsiklind","Roohabekas","Rooruik","Roosa-kuldnokk","Roosakajakas","Roosatiir","RoostepÃ¤Ã¤suke","Roosterind-tÃ¼ll","Rootsiitsitaja","RubiinÃ¶Ã¶bik","RukkirÃ¤Ã¤k","RuugerÃ¼di","RÃ¤gapart","RÃ¤stas-roolind","RÃ¤usktiir","RÃ¤Ã¤kspart","RÃ¤Ã¤stapÃ¤Ã¤suke","RÃ¼Ã¼t","Sabatihane","Salu-lehelind","SalupÃ¤ll","Salutihane","SarviklÃµoke","SarvikpÃ¼tt","Siberi lehelind","Siberi raat","Siidhaigur","Siidisaba","Siisike","Sinikael-part","Siniraag","Sinirind","Sinisaba","Sinitihane","Soo-loorkull","Soo-roolind","Sookiur","Sookurg","Soopart","SoorÃ¤ts","SoorÃ¼di","Stepi-loorkull","Stepikajakas","Stepikiivitaja","Stepikotkas","Stepipistrik","Stepiviu","SuitsupÃ¤Ã¤suke","Suula","Suur-kirjurÃ¤hn","Suur-konnakotkas","Suur-laukhani","Suurkoovitaja","Suurnokk-vint","SuurrÃ¼di","SuurÃ¤nn","SÃµtkas","SÃ¶Ã¶dikÃ¤nn","Tait","Talvike","Tamme-kirjurÃ¤hn","Teder","Tiigi-roolind","Tikutaja","Triip-ritsiklind","Tuhk-lehelind","Tumetilder","Tundra-rabahani","Tundrakaur","Tundrakiur","Tutkas","Tutt-tihane","Tutt-tiir","TuttlÃµoke","TuttpÃ¼tt","Tuttvart","Tuuletallaja","TÃ¤pikhuik","TÃµmmu-lehelind","TÃµmmuiibis","TÃµmmukajakas","TÃµmmuvaeras","Urvalind","Vaaraohani","VaenukÃ¤gu","VainurÃ¤stas","Valge-toonekurg","ValgepÃµsk-lagle","Valgeselg-kirjurÃ¤hn","Valgesilm-vart","Valgetiib-viires","Veetallaja","Veisehaigur","Vesipapp","Vihitaja","Viupart","VÃ¤ike-kirjurÃ¤hn","VÃ¤ike-konnakotkas","VÃ¤ike-kÃ¤osulane","VÃ¤ike-kÃ¤rbsenÃ¤pp","VÃ¤ike-laukhani","VÃ¤ike-lehelind","VÃ¤ike-pÃµÃµsalind","VÃ¤ikealk","VÃ¤ikehuik","VÃ¤ikehÃ¼Ã¼p","VÃ¤ikekajakas","VÃ¤ikekoovitaja","VÃ¤ikekoskel","VÃ¤ikeluik","VÃ¤ikepistrik","VÃ¤ikepÃ¼tt","VÃ¤ikerÃ¼di","VÃ¤iketiir","VÃ¤iketrapp","VÃ¤iketsiitsitaja","VÃ¤iketÃ¼ll","VÃ¤lja-loorkull","VÃ¤lja-vÃ¤ikelÃµoke","VÃ¤rbkakk","VÃ¤rbrÃ¼di","VÃ¤Ã¤nkael","VÃµsa-ritsiklind","VÃµsaraat","VÃ¶Ã¶t-kÃ¤bilind","VÃ¶Ã¶t-pÃµÃµsalind","VÃ¶Ã¶thani","VÃ¶Ã¶tkakk","VÃ¶Ã¶tnokk-kajakas","VÃ¶Ã¶tsaba-vigle","Ã•Ãµnetuvi","Ã–Ã¶bik","Ã–Ã¶haigur","Ã–Ã¶sorr"];
 
-const DATA = SPECIES.map(name => ({ est: name, url: 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(name) }));
+function _fixMojibake(s){
+  var v = String(s || "");
+  if (!/[\u00C3\u00C2\u00E2]/.test(v)) return v;
+  try {
+    var bytes = new Uint8Array(v.length);
+    for (var i = 0; i < v.length; i++) bytes[i] = v.charCodeAt(i) & 255;
+    var decoded = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    return decoded || v;
+  } catch(e){ return v; }
+}
+function _normText(s){ return _fixMojibake(s).replace(/\uFFFD/g, "").trim(); }
+for (let i = 0; i < SPECIES.length; i++) SPECIES[i] = _normText(SPECIES[i]);
+
+const DATA = SPECIES.map(name => ({ est: _normText(name), url: 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(_normText(name)) }));
 
 // Local storage keys
 const LS_AVATARS='bm_rari_avatars', LS_POINTS='bm_rari_points', LS_PROXY='bm_rari_proxy', LS_NAMES='bm_rari_names', LS_SPRING='bm_rari_spring_dates';
 
 // Default spring migration dates
 const DEFAULT_SPRING_DATES = {"Heletilder":"6.04","Herilaseviu":"5.05","HÃ¤nilane":"14.04","JÃµgitiir":"21.03","KadakatÃ¤ks":"22.04","KaelusrÃ¤stas":"17.04","Kalakotkas":"31.03","KaldapÃ¤Ã¤suke":"29.04","Karmiinleevike":"6.05","Kivirullija":"6.05","KivitÃ¤ks":"2.04","Koldvint":"6.04","Kukkurtihane":"1.04","KuldhÃ¤nilane":"12.04","KÃ¤osulane":"4.05","Lammitilder":"14.04","Lapi tsiitsitaja":"5.04","Lepalind":"12.04","LinavÃ¤strik":"18.03","LÃµopistrik":"19.04","Madukotkas":"26.04","Metskiur":"8.04","Metstilder":"24.03","Mudatilder":"9.04","Mustlagle":"30.03","Mustviires":"29.04","NÃµmmelÃµoke":"10.03","Peoleo":"6.05","Piiritaja":"3.05","PlÃ¼tt":"19.05","PlÃ¼Ã¼":"25.04","PÃµldtsiitsitaja":"4.05","Rabapistrik":"11.04","Randtiir":"16.04","Rohunepp":"28.04","RukkirÃ¤Ã¤k":"7.05","RÃ¤gapart":"25.03","RÃ¤usk":"4.04","RÃ¤Ã¤stapÃ¤Ã¤suke":"18.04","RÃ¼Ã¼t":"5.03","SarviklÃµoke":"6.03","Sinirind":"18.04","SoorÃ¤ts":"17.04","SoorÃ¼di":"27.03","SuitsupÃ¤Ã¤suke":"10.04","Suurkoovitaja":"25.03","SuurrÃ¼di":"4.05","Tundrakaur":"1.05","Tundrakiur":"23.04","Turteltuvi":"25.04","TÃ¤pikhuik":"18.04","TÃµmmukajakas":"8.03","VaenukÃ¤gu":"13.04","Veetallaja":"19.05","Vihitaja":"31.03","VÃ¤ikehuik":"24.04","VÃ¤ikehÃ¼Ã¼p":"30.05","VÃ¤ikekoovitaja":"12.04","VÃ¤ikerÃ¼di":"17.05","VÃ¤iketiir":"21.04","VÃ¤iketÃ¼ll":"6.04","VÃ¤rbrÃ¼di":"20.04","VÃ¤Ã¤nkael":"11.04","Ã–Ã¶bik":"28.04","Ã–Ã¶sorr":"24.04"};
+for (const _k of Object.keys(DEFAULT_SPRING_DATES)) {
+  const _nk = _normText(_k);
+  if (_nk !== _k) {
+    DEFAULT_SPRING_DATES[_nk] = DEFAULT_SPRING_DATES[_k];
+    delete DEFAULT_SPRING_DATES[_k];
+  }
+}
 
 // === Avatar defaults & preloading ===
 const DEFAULT_AVATARS = {};
@@ -350,7 +370,7 @@ function _hideSnapshotBanner(){
   if(el) el.style.display = 'none';
 }
 
-// "Show all" shortcut â€” turns off 7-day toggle
+// "Show all" shortcut - turns off 7-day toggle
 window.__showAll = function(){
   window.__recentOnly = false;
   const cb = document.getElementById('toggle7days');
@@ -430,14 +450,14 @@ function _checkEmpty7dBanner(){
 
 async function loadSnapshot(){
   try{
-    _showSnapshotBanner('Loading dataâ€¦');
+    _showSnapshotBanner('Loading data...');
     const res = await fetch(SNAPSHOT_API, {cache:'no-store'});
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const snap = await res.json();
 
     if(snap.status === 'running'){
       _updateProgressUI(snap.progress_done, snap.progress_total, 'running');
-      _showSnapshotBanner('Server is refreshing data (' + snap.progress_done + '/' + snap.progress_total + ')â€¦');
+      _showSnapshotBanner('Server is refreshing data (' + snap.progress_done + '/' + snap.progress_total + ')...');
       if(snap.points_json && Object.keys(snap.points_json).length > 0){
         _applySnapshot(snap);
       }
@@ -482,7 +502,7 @@ function _startPolling(){
       _updateProgressUI(snap.progress_done, snap.progress_total, snap.status);
 
       if(snap.status === 'running'){
-        _showSnapshotBanner('Refreshing: ' + snap.progress_done + '/' + snap.progress_total + 'â€¦');
+        _showSnapshotBanner('Refreshing: ' + snap.progress_done + '/' + snap.progress_total + '...');
       } else {
         _stopPolling();
         if(snap.status === 'ready' && snap.points_json){
@@ -508,7 +528,7 @@ function _stopPolling(){
 // Public refresh (no key needed)
 async function triggerRefresh(){
   try{
-    _showSnapshotBanner('Requesting server refreshâ€¦');
+    _showSnapshotBanner('Requesting server refresh...');
     _updateProgressUI(0, SPECIES.length, 'running');
 
     const res = await fetch(SNAPSHOT_API, {
@@ -524,7 +544,7 @@ async function triggerRefresh(){
       return;
     }
     if(res.status === 409){
-      _showSnapshotBanner('Refresh already in progressâ€¦');
+      _showSnapshotBanner('Refresh already in progress...');
     }
 
     _startPolling();
@@ -605,7 +625,7 @@ function rarityToBorder(level, fallback){
 function _markerIcon(avatarUrl, borderColor, count7d, rarityLevel){
   const color = rarityToBorder(rarityLevel, borderColor || '#222');
   const count = Number.isFinite(count7d)
-    ? '<div class="marker-count" title="Vaatlused viimase 7 pÃ¤eva jooksul">' + count7d + '</div>'
+    ? '<div class="marker-count" title="Vaatlused viimase 7 päeva jooksul">' + count7d + '</div>'
     : '';
   const rarityBadge = rarityToBadge(rarityLevel)
     ? '<div class="marker-rarity-badge">' + rarityToBadge(rarityLevel) + '</div>'
@@ -643,7 +663,7 @@ function setLocation(key) {
   if (m.length===2 && Number.isFinite(m[0]) && Number.isFinite(m[1])) {
     points[key] = points[key] || {};
     points[key].lat=m[0]; points[key].lon=m[1];
-    points[key].t = points[key].t || '(kuupÃ¤ev puudub)';
+    points[key].t = points[key].t || '(kuupäev puudub)';
     points[key].src='manual';
     if(typeof points[key].visible!=='boolean') points[key].visible=true;
     save(); updateMarker(key); render();
@@ -696,7 +716,7 @@ function _dateToDdmm(dt){
 }
 function editSpringDate(key){
   const prev = (springDates && springDates[key]) ? springDates[key] : '';
-  const v = prompt('Kevadine saabumise kuupÃ¤ev (D.MM vÃµi YYYY-MM-DD)\n\n'+key, prev || '');
+  const v = prompt('Kevadine saabumise kuupäev (D.MM või YYYY-MM-DD)\n\n'+key, prev || '');
   if(v === null) return;
   if(String(v).trim() === ''){
     delete springDates[key];
@@ -705,7 +725,7 @@ function editSpringDate(key){
   }
   const n = _normSpringDDMM(v);
   if(!n){
-    notifySilent('Vigane kuupÃ¤eva formaat. Kasuta D.MM (nt 5.04) vÃµi YYYY-MM-DD.');
+    notifySilent('Vigane kuupäeva formaat. Kasuta D.MM (nt 5.04) või YYYY-MM-DD.');
     return;
   }
   springDates[key] = n;
@@ -749,7 +769,7 @@ function rowHTML(obj) {
   const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
   const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(metaCfg.rarityLevel) : '';
   const springVal = (springDates && springDates[key]) ? String(springDates[key]).trim() : '';
-  const springTxt = ' <span class="pill">Kevad:</span> <span class="clickable" title="Muuda kevadise saabumise kuupÃ¤eva" onclick="editSpringDate(\''+key+'\')">'+( springVal || 'â€”')+'</span>';
+  const springTxt = ' <span class="pill">Kevad:</span> <span class="clickable" title="Muuda kevadise saabumise kuupäeva" onclick="editSpringDate(\''+key+'\')">'+( springVal || '-')+'</span>';
 
   const noCoords = !hasPoint && occ7 > 0;
   const meta = hasPoint
@@ -784,7 +804,7 @@ function render() {
 refreshAllMarkers();
 _wireSnapshotButtons();
 
-// Load snapshot from server (single request â€” replaces 369 client fetches)
+// Load snapshot from server (single request - replaces 369 client fetches)
 loadSnapshot();
 
 // Auto-detect avatar files for active species
@@ -883,14 +903,14 @@ try{
 </style>
 <div id="windToggleBar" class="hidden-in-export">
   <button id="toggleWind" class="btn secondary">Tuulekaart</button>
-  <button id="toggleSpring" class="btn secondary">KevadrÃ¤nne</button>
-  <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 pÃ¤eva jooksul aktiivsed">7p liigid: 0</span>
+  <button id="toggleSpring" class="btn secondary">Kevadränne</button>
+  <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 päeva jooksul aktiivsed">7p liigid: 0</span>
 </div>
 <div id="springPanel" class="hidden-in-export">
   <div id="springHeader">
-    <div class="title">KevadrÃ¤nne â€” esimesed saabumised</div>
+    <div class="title">Kevadränne - esimesed saabumised</div>
     <div class="actions">
-      <button id="springClose" class="btn icon">âœ•</button>
+      <button id="springClose" class="btn icon">X</button>
     </div>
   </div>
   <div id="springBody">
@@ -901,7 +921,7 @@ try{
     <div class="springTableWrap">
       <table id="springTable">
         <thead>
-          <tr><th style="width:92px">KuupÃ¤ev</th><th>Liik</th></tr>
+          <tr><th style="width:92px">Kuupäev</th><th>Liik</th></tr>
         </thead>
         <tbody id="springTableBody"></tbody>
       </table>
@@ -911,14 +931,14 @@ try{
 </div>
 <div id="windPanel">
   <div id="windHeader">
-    <div class="title">Tuulekaart â€” Windy</div>
+    <div class="title">Tuulekaart - Windy</div>
     <div class="actions">
       <span class="wind-size-btns">
         <button id="windSmall" class="btn icon">S</button>
         <button id="windMedium" class="btn icon">M</button>
         <button id="windLarge" class="btn icon">L</button>
       </span>
-      <button id="windClose" class="btn icon wind-close-desktop">âœ•</button>
+      <button id="windClose" class="btn icon wind-close-desktop">X</button>
       <button id="windCloseMobile" class="btn icon wind-close-mobile" style="display:none">â† Tagasi</button>
     </div>
   </div>
@@ -1010,7 +1030,7 @@ try{
 </script>
 
 
-<!-- === KevadrÃ¤nde paneel === -->
+<!-- === Kevadrände paneel === -->
 <script>
 (function(){
   function springSortKey(v){
@@ -1173,9 +1193,25 @@ var __sharedDefaults = {};
         var src = ev.source;
         if(src && typeof src.postMessage === 'function') src.postMessage({ type: 'AVATARS_CURRENT', avatars: avatars }, '*');
       }
+      if(type === 'SPECIES_META_DEFAULTS' && ev.data.speciesMeta && typeof ev.data.speciesMeta === 'object'){
+        var currentMeta = JSON.parse(localStorage.getItem('estbirding.speciesMeta.v1') || '{}');
+        var incomingMeta = ev.data.speciesMeta || {};
+        var mergedMeta = Object.assign({}, currentMeta, incomingMeta);
+        localStorage.setItem('estbirding.speciesMeta.v1', JSON.stringify(mergedMeta));
+        render();
+      }
+      if(type === 'SPECIES_META_REQUEST'){
+        var src2 = ev.source;
+        if(src2 && typeof src2.postMessage === 'function') src2.postMessage({ type: 'SPECIES_META_CURRENT', speciesMeta: JSON.parse(localStorage.getItem('estbirding.speciesMeta.v1') || '{}') }, '*');
+      }
     }catch(e){ console.warn('postMessage handler error', e); }
   });
-  try{ if(window.parent && window.parent !== window) window.parent.postMessage({ type: 'AVATARS_REQUEST' }, '*'); }catch(e){}
+  try{
+    if(window.parent && window.parent !== window){
+      window.parent.postMessage({ type: 'AVATARS_REQUEST' }, '*');
+      window.parent.postMessage({ type: 'SPECIES_META_REQUEST' }, '*');
+    }
+  }catch(e){}
 })();
 </script>
 

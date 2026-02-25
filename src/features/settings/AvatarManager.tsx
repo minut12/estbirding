@@ -13,8 +13,10 @@ import {
   getMergedAvatars, validateFile, processImage, notifyIframeUpdate,
   uploadSharedAvatar, removeSharedAvatar, fetchSpeciesList,
 } from '@/lib/avatar-storage';
-import { getSpeciesMeta, loadSpeciesMeta, upsertSpeciesMeta } from '@/lib/speciesMeta';
+import { getSpeciesMeta, loadSpeciesMeta, replaceSpeciesMeta, upsertSpeciesMeta } from '@/lib/speciesMeta';
+import { mergeSpeciesMetaFromCloud, saveSpeciesMetaCloudPatch } from '@/lib/speciesMetaCloud';
 import { ET_STRINGS } from '@/lib/etStrings';
+import { normalizeUiText } from '@/lib/textNormalize';
 
 const PLACEHOLDER_URL = '/maps/linnuliigid/avatars/placeholder.webp';
 
@@ -32,8 +34,12 @@ export default function AvatarManager() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    loadSpeciesMeta();
-    fetchSpeciesList().then((list) => { if (list.length > 0) setSpecies(list); });
+    const local = loadSpeciesMeta();
+    mergeSpeciesMetaFromCloud(local).then((merged) => {
+      replaceSpeciesMeta(merged);
+      window.dispatchEvent(new CustomEvent('species-meta-updated'));
+    }).catch(() => {});
+    fetchSpeciesList().then((list) => { if (list.length > 0) setSpecies(list.map(normalizeUiText)); });
   }, []);
 
   useEffect(() => {
@@ -119,12 +125,16 @@ export default function AvatarManager() {
 
   const handleMetaSave = useCallback(() => {
     if (!selected) return;
-    upsertSpeciesMeta(selected, {
+    const patch = {
       ebirdCode: ebirdCode.trim(),
       rarityLevel,
       avatarUrl: currentAvatar || undefined,
-    });
-    toast.success('Liigi seaded salvestatud');
+    };
+    upsertSpeciesMeta(selected, patch);
+    window.dispatchEvent(new CustomEvent('species-meta-updated'));
+    saveSpeciesMetaCloudPatch(selected, patch)
+      .then(() => toast.success(ET_STRINGS.saveSpeciesSettingsOk))
+      .catch(() => toast.warning(ET_STRINGS.saveSpeciesSettingsLocalOnly));
   }, [selected, ebirdCode, rarityLevel, currentAvatar]);
 
   const activeKey = selected || manualKey;
@@ -132,7 +142,7 @@ export default function AvatarManager() {
   const hasSpecies = species.length > 0;
 
   const filtered = search
-    ? species.filter((s) => s.toLowerCase().includes(search.toLowerCase()))
+    ? species.filter((s) => normalizeUiText(s).toLowerCase().includes(search.toLowerCase()))
     : species;
 
   return (

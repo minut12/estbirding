@@ -840,6 +840,7 @@ let EBIRD_CODES = (() => {
 
 let points = safeParseJSON(localStorage.getItem(LS_POINTS) || "{}") || {};
 let EBIRD_TOKEN = (localStorage.getItem(LS_EBIRD_TOKEN) || "").trim();
+let tokenSanitized = false;
 
 
 let SPECIES = [];
@@ -872,6 +873,16 @@ let proxyTestResult = "-";
 let lastErrorStatus = null;
 let lastErrorSnippet = null;
 let lastBodySnippet = null;
+
+function getEbirdToken(){
+  const raw = String(localStorage.getItem(LS_EBIRD_TOKEN) || "");
+  const tokenTrim = raw.trim();
+  const tokenClean = tokenTrim.replace(/[^A-Za-z0-9]/g, "");
+  tokenSanitized = tokenTrim !== tokenClean;
+  if (tokenTrim !== tokenClean) localStorage.setItem(LS_EBIRD_TOKEN, tokenClean);
+  EBIRD_TOKEN = tokenClean;
+  return tokenClean;
+}
 
 function saveAll(){
   localStorage.setItem(LS_AVATARS, JSON.stringify(avatars));
@@ -930,6 +941,8 @@ function updateDebugPanel(){
     `lastErrorStatus: <b>${lastErrorStatus ?? "-"}</b>`,
     `lastErrorSnippet: <b>${lastErrorSnippet || "-"}</b>`,
     `tokenPresent: <b>${EBIRD_TOKEN ? "yes" : "no"}</b>`,
+    `tokenLength: <b>${EBIRD_TOKEN ? EBIRD_TOKEN.length : 0}</b>`,
+    `tokenSanitized: <b>${tokenSanitized ? "yes" : "no"}</b>`,
     `bodySnippet: <b>${lastBodySnippet || "-"}</b>`,
     `stoppedAtIndex: <b>${stoppedAtIndex ?? "-"}</b>`,
     `stoppedAtKey: <b>${stoppedAtKey || "-"}</b>`,
@@ -1272,7 +1285,7 @@ function wireRows(){
         EBIRD_CODES[key] = v;
         saveAll();
       }
-      fetchEurope(key, true);
+      refreshKeys([key], true);
     });
 
     if (openBtn) openBtn.addEventListener("click", ()=>{
@@ -1394,17 +1407,38 @@ async function safeFetchJson(url, options = {}){
   return { ok: false, status: 0, json: null, textSnippet: "", timeMs: 0, url: requestUrl };
 }
 
-async function fetchRegionsLimited(urls, signal){
-  const results = new Array(urls.length);
-  const isMobile = window.matchMedia("(max-width: 900px)").matches;
-  const limit = isMobile ? REGION_CONCURRENCY_MOBILE : REGION_CONCURRENCY_DESKTOP;
-  const tasks = urls.map((u,i)=> async ()=>{
-    try{
-      const response = await safeFetchJson(u, {
+async function refreshEuropeAggregated(keys, signal, onProgress){
+  const token = getEbirdToken();
+  const speciesByCode = new Map();
+  for (const speciesName of keys) {
+    const p = points[speciesName] = points[speciesName] || {};
+    const code = p.ebirdCode || EBIRD_CODES[speciesName];
+    if (!code) continue;
+    speciesByCode.set(code, speciesName);
+  }
+
+  const aggregate = {};
+  keys.forEach((speciesName) => {
+    aggregate[speciesName] = {
+      regions: {},
+      total7: 0,
+      latest: { t: "", region: "", lat: null, lon: null, loc: "" },
+    };
+  });
+
+  let okCountries = 0;
+  let failCountries = 0;
+  let doneCountries = 0;
+
+  for (const region of REGIONS) {
+    if (signal?.aborted) break;
+    const url = buildEbirdCountryRecentUrl(region, BACK_DAYS, MAX_RESULTS, token);
+    try {
+      const response = await safeFetchJson(url, {
         signal,
         timeoutMs: 20000,
         retries: 2,
-        headers: { "X-eBirdApiToken": EBIRD_TOKEN },
+        headers: { "X-eBirdApiToken": token },
       });
       lastRequest = { url: response.url, status: response.status, timeMs: response.timeMs };
       lastBodySnippet = response.textSnippet || lastBodySnippet;
@@ -1412,115 +1446,103 @@ async function fetchRegionsLimited(urls, signal){
         const err = new Error("Invalid eBird payload");
         err.status = response.status;
         err.textSnippet = JSON.stringify(response.json || "").slice(0, 200);
-        err.timeMs = response.timeMs;
         err.url = response.url;
+        err.region = region;
         throw err;
       }
-      results[i] = { ok: true, data: response.json, error: null };
-    }
-    catch(e){
-      lastRequest = { url: e.url || u, status: e.status, timeMs: e.timeMs };
+
+      const perSpeciesRegion = {};
+      for (const obs of response.json) {
+        const speciesCode = String(obs?.speciesCode || "");
+        const speciesName = speciesByCode.get(speciesCode);
+        if (!speciesName) continue;
+        const obsDt = String(obs?.obsDt || "");
+        const dt = obsDt.slice(0, 10);
+        const d = new Date(dt);
+        const isValidDt = !!dt && !isNaN(d);
+        if (!perSpeciesRegion[speciesName]) {
+          perSpeciesRegion[speciesName] = { occ7: 0, latestObs: null };
+        }
+        if (isValidDt) {
+          const diffDays = (Date.now() - d.getTime()) / 86400000;
+          if (diffDays <= 7) perSpeciesRegion[speciesName].occ7++;
+          const latestDt = String(perSpeciesRegion[speciesName].latestObs?.obsDt || "");
+          if (!latestDt || obsDt > latestDt) perSpeciesRegion[speciesName].latestObs = obs;
+        }
+      }
+
+      for (const [speciesName, regionStats] of Object.entries(perSpeciesRegion)) {
+        const latestObs = regionStats.latestObs;
+        if (!latestObs) continue;
+        const lat = Number(latestObs.lat);
+        const lon = Number(latestObs.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+        const t = String(latestObs.obsDt || "").slice(0, 10);
+        aggregate[speciesName].regions[region] = {
+          lat,
+          lon,
+          t,
+          loc: latestObs.locName || "",
+          occ7: Number(regionStats.occ7 || 0),
+        };
+        aggregate[speciesName].total7 += Number(regionStats.occ7 || 0);
+        if (t && (!aggregate[speciesName].latest.t || t > aggregate[speciesName].latest.t)) {
+          aggregate[speciesName].latest = {
+            t,
+            region,
+            lat,
+            lon,
+            loc: latestObs.locName || "",
+          };
+        }
+      }
+      okCountries++;
+    } catch (e) {
+      failCountries++;
+      const status = Number(e?.status || 0);
+      if (status === 403) {
+        const err = new Error(String(e?.textSnippet || e?.message || "403 forbidden"));
+        err.status = 403;
+        err.textSnippet = String(e?.textSnippet || e?.message || "").slice(0, 200);
+        err.url = e?.url || url;
+        err.region = region;
+        throw err;
+      }
+      lastRequest = { url: e?.url || url, status: e?.status, timeMs: e?.timeMs };
       lastBodySnippet = String(e?.textSnippet || e?.message || "").slice(0, 200) || lastBodySnippet;
-      results[i] = {
-        ok: false,
-        data: null,
-        error: {
-          status: e?.status ?? 0,
-          textSnippet: String(e?.textSnippet || e?.message || "").slice(0, 200),
-          url: e?.url || u,
-          timeMs: e?.timeMs,
-        },
-      };
+      setRefreshError(`country=${region} status=${status} ${String(e?.textSnippet || e?.message || "").slice(0, 200)}`, doneCountries + 1, region);
     }
-  });
-  await runPool(tasks, limit);
-  return results;
-}
 
-async function fetchEurope(speciesName, force=false, signal=null){
-  const p = points[speciesName] = points[speciesName] || {};
-  const code = p.ebirdCode || EBIRD_CODES[speciesName];
-  if (!code) return;
-
-  if (!force && p.fetchedAt && (Date.now() - p.fetchedAt) < REFRESH_COOLDOWN_MS) return;
-
-  const urls = REGIONS.map((r) => buildEbirdUrl(r, code, BACK_DAYS, MAX_RESULTS));
-
-  const regionResults = await fetchRegionsLimited(urls, signal);
-
-  const regionsData = {};
-  let total7 = 0;
-  const regionErrors = [];
-
-  // latest overall by last-seen date (arr[0])
-  let latest = { t:"", region:"", lat:null, lon:null, loc:"" };
-
-  regionResults.forEach((entry, idx)=>{
-    const region = REGIONS[idx];
-    if (!entry || entry.ok !== true) {
-      if (entry?.error) regionErrors.push({ region, ...entry.error });
-      return;
-    }
-    const arr = entry.data;
-    if (!Array.isArray(arr) || arr.length === 0) return;
-    const recentArr = arr.slice();
-    recentArr.sort((a,b)=> String(b.obsDt||"").localeCompare(String(a.obsDt||"")));
-    const occ7 = recentArr.reduce((acc, it)=>{
-      const dt = String(it.obsDt||"").slice(0,10);
-      const d = new Date(dt);
-      if (!dt || isNaN(d)) return acc;
-      const diffDays = (Date.now() - d.getTime())/86400000;
-      return diffDays <= 7 ? (acc+1) : acc;
-    }, 0);
-    const o = recentArr[0];
-    regionsData[region] = {
-      lat: +o.lat,
-      lon: +o.lng,
-      t: String(o.obsDt||"").slice(0,10),
-      loc: o.locName || "",
-      occ7
-    };
-    total7 += occ7;
-    const dt = regionsData[region].t;
-    if (dt && (!latest.t || dt > latest.t)){
-      latest = { t: dt, region, lat: regionsData[region].lat, lon: regionsData[region].lon, loc: regionsData[region].loc };
-    }
-  });
-
-  p.fetchedAt = Date.now();
-  p.occ7 = total7;
-  p.regions = regionsData;
-
-  if (latest.t) {
-    p.t = latest.t;
-    p.region = latest.region;
-    p.lat = latest.lat;
-    p.lon = latest.lon;
-    p.loc = latest.loc;
-  } else {
-    p.t = "";
-    p.region = "";
-    p.lat = null;
-    p.lon = null;
-    p.loc = "";
+    doneCountries++;
+    onProgress?.(doneCountries, REGIONS.length);
+    await delayMs(250);
   }
 
-  if (typeof p.visible !== "boolean") p.visible = true;
-
+  for (const speciesName of keys) {
+    const p = points[speciesName] = points[speciesName] || {};
+    const agg = aggregate[speciesName] || { regions: {}, total7: 0, latest: { t: "", region: "", lat: null, lon: null, loc: "" } };
+    p.fetchedAt = Date.now();
+    p.occ7 = agg.total7;
+    p.regions = agg.regions;
+    if (agg.latest.t) {
+      p.t = agg.latest.t;
+      p.region = agg.latest.region;
+      p.lat = agg.latest.lat;
+      p.lon = agg.latest.lon;
+      p.loc = agg.latest.loc;
+    } else {
+      p.t = "";
+      p.region = "";
+      p.lat = null;
+      p.lon = null;
+      p.loc = "";
+    }
+    if (typeof p.visible !== "boolean") p.visible = true;
+    updateMarker(speciesName);
+  }
   saveAll();
-  updateMarker(speciesName);
-  if (regionErrors.length > 0) {
-    const first = regionErrors[0];
-    const err = new Error(`upstream ${first.status} ${first.textSnippet}`);
-    err.status = first.status;
-    err.textSnippet = first.textSnippet;
-    err.url = first.url;
-    err.timeMs = first.timeMs;
-    err.region = first.region;
-    err.species = speciesName;
-    throw err;
-  }
   render();
+  return { okCountries, failCountries, totalCountries: REGIONS.length };
 }
 
 async function runPool(tasks, limit){
@@ -1553,14 +1575,20 @@ function setRefreshError(message, idx, key){
 
 function validateRefreshConfig(){
   const missing = [];
-  if (!EBIRD_TOKEN) missing.push("Missing eBird token. Open Settings and paste your eBird API token.");
+  const token = getEbirdToken();
+  if (!token) missing.push("Missing eBird token. Open Settings and paste your eBird API token.");
   return { ok: missing.length === 0, message: missing.join(" | ") };
 }
 
-function buildEbirdUrl(regionCode, speciesCode, back, maxResults){
-  return speciesCode
-    ? `https://api.ebird.org/v2/data/obs/${encodeURIComponent(regionCode)}/recent/${encodeURIComponent(speciesCode)}?back=${back}&maxResults=${maxResults}&_ts=${Date.now()}`
-    : `https://api.ebird.org/v2/data/obs/${encodeURIComponent(regionCode)}/recent?back=${back}&maxResults=${maxResults}&_ts=${Date.now()}`;
+function buildEbirdUrl(baseUrl, token){
+  const u = new URL(baseUrl);
+  u.searchParams.set("key", token);
+  return u.toString();
+}
+
+function buildEbirdCountryRecentUrl(regionCode, back, maxResults, token){
+  const base = `https://api.ebird.org/v2/data/obs/${encodeURIComponent(regionCode)}/recent?back=${back}&maxResults=${maxResults}&_ts=${Date.now()}`;
+  return buildEbirdUrl(base, token);
 }
 
 async function refreshKeys(keys, force=true){
@@ -1585,7 +1613,7 @@ async function refreshKeys(keys, force=true){
     return { done: 0, total: keys.length, successCount: 0, failureCount: keys.length, aborted: false };
   }
 
-  const healthUrl = buildEbirdUrl("EE", "", 1, 1);
+  const healthUrl = buildEbirdCountryRecentUrl("EE", 1, 1, getEbirdToken());
   try {
     const health = await safeFetchJson(healthUrl, { timeoutMs: 10000, retries: 0 });
     lastErrorStatus = health.status;
@@ -1598,7 +1626,7 @@ async function refreshKeys(keys, force=true){
     lastRequest = { url: e?.url || healthUrl, status: e?.status, timeMs: e?.timeMs };
     const status = Number(e?.status || 0);
     if (status === 403) {
-      const msg = "Token invalid (403). Open Settings and update your eBird token.";
+      const msg = "eBird returned 403. Token may be malformed OR you may be temporarily blocked due to too many requests. Use Hard reset and try again with throttled refresh.";
       showSnapshotBanner(msg, "error");
       showWarn(msg);
       setRefreshError(`${msg}. status=403 ${lastErrorSnippet || ""}`, 0, "health-check");
@@ -1613,6 +1641,12 @@ async function refreshKeys(keys, force=true){
       updateDebugPanel();
       return { done: 0, total: keys.length, successCount: 0, failureCount: 0, aborted: false };
     }
+    const msg = `Health check failed (status ${status || "?"}).`;
+    showSnapshotBanner(msg, "warn");
+    showWarn(msg);
+    setRefreshError(`${msg} ${lastErrorSnippet || ""}`, 0, "health-check");
+    updateDebugPanel();
+    return { done: 0, total: keys.length, successCount: 0, failureCount: 0, aborted: false };
   }
 
   stopRefresh();
@@ -1621,52 +1655,34 @@ async function refreshKeys(keys, force=true){
   const signal = abortController.signal;
 
   let done = 0;
-  const total = keys.length;
-  const isMobile = window.matchMedia("(max-width: 900px)").matches;
-  const conc = isMobile ? CONCURRENCY_MOBILE : CONCURRENCY_DESKTOP;
-
-  const tasks = keys.map((k, index) => async ()=>{
-    if (signal.aborted) return;
-    try {
-      await fetchEurope(k, force, signal);
-      okCount++;
-      if (okCount % 5 === 0) {
-        render();
-        updateDebugPanel();
-      }
-    }
-    catch(e) {
-      failCount++;
-      lastErrorStatus = e?.status ?? 0;
-      lastErrorSnippet = String(e?.textSnippet || e?.message || "").slice(0, 200);
-      const preview = String(e?.textSnippet || e?.message || "").slice(0, 200);
-      const regionPart = e?.region ? ` country=${e.region}` : "";
-      const statusPart = Number.isFinite(e?.status) ? ` status=${e.status}` : "";
-      setRefreshError(`species=${k}${regionPart}${statusPart} ${preview || "Fetch failed"}`, index + 1, k);
-      lastRequest = { url: e?.url || "", status: e?.status, timeMs: e?.timeMs };
-      console.warn("Fetch failed", k, e);
-    }
-    finally {
-      done++;
-      progressLine.textContent = `Refreshing: ${done}/${total}`;
-      setStatus(done === total ? "Done." : `Refreshing ${done}/${total}`);
-    }
-  });
-
+  const total = REGIONS.length;
   progressLine.textContent = `Refreshing: 0/${total}`;
   setStatus(`Refreshing 0/${total}`);
   try {
-    await runPool(tasks, conc);
+    const result = await refreshEuropeAggregated(keys, signal, (d, t)=>{
+      done = d;
+      progressLine.textContent = `Refreshing: ${d}/${t}`;
+      setStatus(d === t ? "Done." : `Refreshing ${d}/${t}`);
+    });
+    okCount = result.okCountries;
+    failCount = result.failCountries;
   } catch (e) {
-    setRefreshError(String(e?.message || e || "Refresh runtime failure"), stoppedAtIndex, stoppedAtKey || "runPool");
+    failCount++;
+    lastErrorStatus = e?.status ?? 0;
+    lastErrorSnippet = String(e?.textSnippet || e?.message || "").slice(0, 200);
+    const msg = Number(e?.status) === 403
+      ? "eBird returned 403. Token may be malformed OR you may be temporarily blocked due to too many requests. Use Hard reset and try again with throttled refresh."
+      : String(e?.message || "Refresh runtime failure");
+    showSnapshotBanner(msg, "error");
+    showWarn(msg);
+    setRefreshError(msg, done, e?.region || "refresh");
     console.error("[refresh] top-level failure", e);
   }
 
   if (!signal.aborted) {
-    progressLine.textContent = `Done. Refreshed ${total} species. ok=${okCount}, fail=${failCount}`;
+    progressLine.textContent = `Done. Countries=${total}. ok=${okCount}, fail=${failCount}`;
     setStatus("Done.");
   }
-  render();
   updateDebugPanel();
   return { done, total, successCount: okCount, failureCount: failCount, aborted: signal.aborted };
 }
@@ -1897,7 +1913,7 @@ async function testEbirdDirect(){
     updateDebugPanel();
     return;
   }
-  const testUrl = buildEbirdUrl("EE", "", 1, 1);
+  const testUrl = buildEbirdCountryRecentUrl("EE", 1, 1, getEbirdToken());
   try {
     const response = await safeFetchJson(testUrl, {
       timeoutMs: 20000,

@@ -9,6 +9,7 @@ import {
   adminDeleteEvent,
   adminListEvents,
   adminPublishEvent,
+  adminTestConnection,
   adminUpdateEvent,
   type EventCategory,
   type EventPayload,
@@ -55,6 +56,7 @@ const emptyForm: FormState = {
 export default function DeveloperSettings() {
   const [key, setKey] = useState(() => localStorage.getItem(LS_KEY) || "");
   const [eventsAdminKeyValue, setEventsAdminKeyValue] = useState(() => getEventsAdminKey() ?? "");
+  const [savedEventsAdminKey, setSavedEventsAdminKey] = useState(() => getEventsAdminKey() ?? "");
   const [events, setEvents] = useState<EventRow[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
@@ -66,17 +68,17 @@ export default function DeveloperSettings() {
     try {
       const rows = await adminListEvents();
       setEvents(rows);
-    } catch (error: any) {
-      toast.error(error?.message || "Ürituste laadimine ebaõnnestus");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
     } finally {
       setEventsLoading(false);
     }
   };
 
   useEffect(() => {
-    if (!eventsAdminKeyValue.trim()) return;
+    if (!savedEventsAdminKey.trim()) return;
     void loadEvents();
-  }, [eventsAdminKeyValue]);
+  }, [savedEventsAdminKey]);
 
   const handleSave = () => {
     localStorage.setItem(LS_KEY, key);
@@ -151,8 +153,8 @@ export default function DeveloperSettings() {
       toast.success("Üritus salvestatud");
       setFormOpen(false);
       await loadEvents();
-    } catch (error: any) {
-      toast.error(error?.message || "Salvestamine ebaõnnestus");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -204,13 +206,11 @@ export default function DeveloperSettings() {
           <div className="flex gap-2">
             <Button
               variant="outline"
-              onClick={async () => {
+              onClick={() => {
                 setEventsAdminKey(eventsAdminKeyValue.trim());
                 setEventsAdminKeyValue(eventsAdminKeyValue.trim());
-                toast.success("events_admin_key salvestatud");
-                if (eventsAdminKeyValue.trim()) {
-                  await loadEvents();
-                }
+                setSavedEventsAdminKey(eventsAdminKeyValue.trim());
+                toast.success("Salvestatud");
               }}
               disabled={!eventsAdminKeyValue.trim()}
             >
@@ -221,16 +221,31 @@ export default function DeveloperSettings() {
               onClick={() => {
                 clearEventsAdminKey();
                 setEventsAdminKeyValue("");
+                setSavedEventsAdminKey("");
                 setEvents([]);
-                toast.success("events_admin_key eemaldatud");
+                toast.success("Tühjendatud");
               }}
             >
               Tühjenda
             </Button>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                try {
+                  await adminTestConnection();
+                  toast.success("Ühendus OK");
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : String(error));
+                }
+              }}
+              disabled={!savedEventsAdminKey.trim()}
+            >
+              Testi ühendust
+            </Button>
           </div>
         </div>
 
-        {!eventsAdminKeyValue.trim() ? (
+        {!savedEventsAdminKey.trim() ? (
           <p className="text-sm text-muted-foreground">Lisa EVENTS_ADMIN_KEY, et luua ja hallata üritusi.</p>
         ) : (
           <div className="space-y-3">
@@ -264,8 +279,8 @@ export default function DeveloperSettings() {
                             try {
                               await adminPublishEvent(event.id, e.target.checked);
                               await loadEvents();
-                            } catch (error: any) {
-                              toast.error(error?.message || "Uuendamine ebaõnnestus");
+                            } catch (error) {
+                              toast.error(error instanceof Error ? error.message : String(error));
                             }
                           }}
                         />
@@ -282,8 +297,8 @@ export default function DeveloperSettings() {
                           try {
                             await adminDeleteEvent(event.id);
                             await loadEvents();
-                          } catch (error: any) {
-                            toast.error(error?.message || "Kustutamine ebaõnnestus");
+                          } catch (error) {
+                            toast.error(error instanceof Error ? error.message : String(error));
                           }
                         }}
                       >

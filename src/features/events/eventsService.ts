@@ -109,6 +109,11 @@ export async function adminListEvents(): Promise<EventRow[]> {
   return callAdminFn("list", {}, key);
 }
 
+export async function adminTestConnection(): Promise<unknown> {
+  const key = requireAdminKey();
+  return callAdminFn("list", {}, key);
+}
+
 export async function adminCreateEvent(payload: EventPayload): Promise<EventRow> {
   const key = requireAdminKey();
   return callAdminFn("create", payload, key);

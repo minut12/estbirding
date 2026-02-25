@@ -935,6 +935,7 @@ let debugCountryTop5 = "-";
 let debugCountrySample = "-";
 let debugMax7d = "-";
 let debugExampleGt1 = "-";
+let debugLastCountryRows = "-";
 
 function parseObsDateToMs(obsDt){
   const raw = String(obsDt || "").trim();
@@ -946,6 +947,20 @@ function parseObsDateToMs(obsDt){
   const d = new Date(raw);
   if (!isNaN(d.getTime())) return d.getTime();
   return null;
+}
+
+function obsDtToYmd(obsDt){
+  const raw = String(obsDt || "").trim();
+  if (!raw) return null;
+  const ymd = raw.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : null;
+}
+
+function isInLastNDaysYmd(ymd, days){
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ""))) return false;
+  const d = Math.max(1, Number(days) || 7);
+  const cutoffYmd = new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+  return ymd >= cutoffYmd;
 }
 
 function getEbirdToken(){
@@ -1022,6 +1037,7 @@ function updateDebugPanel(){
     `stoppedAtKey: <b>${stoppedAtKey || "-"}</b>`,
     `lastRequest: <b>${lastRequest ? `${lastRequest.url} (${lastRequest.status ?? "?"}, ${lastRequest.timeMs ?? "?"}ms)` : "-"}</b>`,
     `countryTop5(7d): <b>${debugCountryTop5}</b>`,
+    `lastCountryRows: <b>${debugLastCountryRows}</b>`,
     `countrySample(7d): <b>${debugCountrySample}</b>`,
     `max7dCountThisRefresh: <b>${debugMax7d}</b>`,
     `Example >1: <b>${debugExampleGt1}</b>`,
@@ -1504,6 +1520,7 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
   let max7dCount = 0;
   let max7dSpecies = "-";
   let max7dCountry = "-";
+  const totalCountsGlobalByCode = {};
 
   for (const region of REGIONS) {
     if (signal?.aborted) break;
@@ -1527,42 +1544,43 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
       }
 
       const perSpeciesRegionByCode = {};
-      const countryCountsByCode = {};
+      const perCountryCounts = {};
       const countrySampleRows = [];
-      const nowMs = Date.now();
-      const last7Cutoff = nowMs - (7 * 24 * 60 * 60 * 1000);
       for (const obs of response.json) {
         const speciesCode = String(obs?.speciesCode || "");
         const speciesName = speciesByCode.get(speciesCode);
         if (!speciesName) continue;
         const obsDt = String(obs?.obsDt || "");
+        const ymd = obsDtToYmd(obsDt);
         const ts = parseObsDateToMs(obsDt);
         const isValidDt = ts !== null && Number.isFinite(ts);
         if (!perSpeciesRegionByCode[speciesCode]) {
           perSpeciesRegionByCode[speciesCode] = { occ7: 0, latestObs: null, latestTs: 0, speciesCode: speciesCode, sampleObsDt: obsDt };
         }
-        if (isValidDt) {
-          if (ts >= last7Cutoff && ts <= nowMs) {
-            perSpeciesRegionByCode[speciesCode].occ7 += 1;
-            countryCountsByCode[speciesCode] = (countryCountsByCode[speciesCode] || 0) + 1;
-            if (countrySampleRows.length < 5) countrySampleRows.push({ speciesCode, count: perSpeciesRegionByCode[speciesCode].occ7, obsDt });
-            if (perSpeciesRegionByCode[speciesCode].occ7 > max7dCount) {
-              max7dCount = perSpeciesRegionByCode[speciesCode].occ7;
-              max7dSpecies = speciesName;
-              max7dCountry = region;
-            }
+        if (ymd && isInLastNDaysYmd(ymd, 7)) {
+          perCountryCounts[speciesCode] = (perCountryCounts[speciesCode] ?? 0) + 1;
+          totalCountsGlobalByCode[speciesCode] = (totalCountsGlobalByCode[speciesCode] ?? 0) + 1;
+          perSpeciesRegionByCode[speciesCode].occ7 = perCountryCounts[speciesCode];
+          if (countrySampleRows.length < 5) countrySampleRows.push({ speciesCode, count: perCountryCounts[speciesCode], obsDt });
+          if (perCountryCounts[speciesCode] > max7dCount) {
+            max7dCount = perCountryCounts[speciesCode];
+            max7dSpecies = speciesCode;
+            max7dCountry = region;
           }
+        }
+        if (isValidDt) {
           if (!perSpeciesRegionByCode[speciesCode].latestTs || ts > perSpeciesRegionByCode[speciesCode].latestTs) {
             perSpeciesRegionByCode[speciesCode].latestObs = obs;
             perSpeciesRegionByCode[speciesCode].latestTs = ts;
           }
         }
       }
-      debugCountryTop5 = Object.entries(countryCountsByCode)
+      debugCountryTop5 = Object.entries(perCountryCounts)
         .sort((a, b) => Number(b[1]) - Number(a[1]))
         .slice(0, 5)
-        .map(([code, count]) => `${speciesByCode.get(code) || code}:${count}`)
+        .map(([code, count]) => `${code}:${count}`)
         .join(" | ") || "-";
+      debugLastCountryRows = `${region} rows=${response.json.length}`;
       debugCountrySample = countrySampleRows
         .map((x) => `${region} ${x.speciesCode}:${x.count} @ ${x.obsDt}`)
         .join(" | ") || "-";
@@ -1623,7 +1641,8 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
     const p = points[speciesName] = points[speciesName] || {};
     const agg = aggregate[speciesName] || { regions: {}, total7: 0, latest: { t: "", tMs: 0, region: "", lat: null, lon: null, loc: "" } };
     p.fetchedAt = Date.now();
-    p.occ7 = agg.total7;
+    const code = resolveEbirdCode(speciesName) || p.ebirdCode || EBIRD_CODES[speciesName];
+    p.occ7 = Number(totalCountsGlobalByCode[code] ?? agg.total7 ?? 0);
     p.regions = agg.regions;
     if (agg.latest.t) {
       p.t = agg.latest.t;
@@ -1643,7 +1662,7 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
     if (typeof p.visible !== "boolean") p.visible = true;
     updateMarker(speciesName);
   }
-  debugMax7d = String(max7dCount || 0);
+  debugMax7d = `${String(max7dCount || 0)} (species ${max7dSpecies} country ${max7dCountry})`;
   debugExampleGt1 = max7dCount > 1
     ? `${max7dSpecies} in ${max7dCountry} = ${max7dCount}`
     : "none > 1 in this refresh";

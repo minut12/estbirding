@@ -29,6 +29,29 @@ export function getFunctionsBaseUrl(): string {
   return `${url}/functions/v1`;
 }
 
+export function broadcastSupabaseConfigToMapIframes(): void {
+  if (typeof window === "undefined" || typeof document === "undefined") return;
+  const supabaseUrl = getSupabaseUrl();
+  const supabaseAnonKey = getSupabaseAnonKey();
+  const targetOrigin = window.location.origin;
+  const iframes = Array.from(
+    document.querySelectorAll('iframe[data-map-iframe="true"]'),
+  ) as HTMLIFrameElement[];
+
+  for (const iframe of iframes) {
+    if (!iframe.contentWindow) continue;
+    try {
+      iframe.contentWindow.postMessage(
+        { type: "SUPABASE_CONFIG", supabaseUrl, supabaseAnonKey },
+        targetOrigin,
+      );
+      iframe.contentWindow.postMessage({ type: "MAP_PING" }, targetOrigin);
+    } catch {
+      // no-op: iframe may be unloading
+    }
+  }
+}
+
 export function validateSupabaseConfig(): { ok: boolean; error?: string; url?: string } {
   const url = getSupabaseUrl();
   const key = getSupabaseAnonKey();

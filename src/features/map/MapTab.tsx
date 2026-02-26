@@ -10,7 +10,7 @@ import { fetchSharedAvatars, getMergedAvatars, notifyIframe } from '@/lib/avatar
 import { resolveProxyBase } from '@/config/proxyEndpoint';
 import { loadSpeciesMeta } from '@/lib/speciesMeta';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
-import { getSupabaseAnonKey, getSupabaseUrl } from '@/config/supabaseConfig';
+import { broadcastSupabaseConfigToMapIframes, getSupabaseAnonKey, getSupabaseUrl } from '@/config/supabaseConfig';
 
 const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -169,6 +169,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     setTimeout(sendAvatarsToIframe, 300);
     setTimeout(sendSpeciesMetaToIframe, 350);
     setTimeout(sendSupabaseConfigToIframe, 375);
+    setTimeout(broadcastSupabaseConfigToMapIframes, 390);
     setTimeout(sendAppInsets, 400);
     // Auto-refresh after initial load
     setTimeout(() => {
@@ -176,6 +177,10 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       sendRefreshVisible();
     }, 800);
   };
+
+  useEffect(() => {
+    broadcastSupabaseConfigToMapIframes();
+  }, [selectedId]);
 
   useEffect(() => {
     const onMetaUpdated = () => sendSpeciesMetaToIframe();
@@ -234,6 +239,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
         ) : (
           <iframe
             ref={iframeRef}
+            data-map-iframe="true"
             key={current.id}
             src={iframeSrc}
             title={current.name}

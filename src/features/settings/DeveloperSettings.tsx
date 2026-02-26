@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import {
   SUPABASE_ANON_KEY_OVERRIDE_KEY,
   SUPABASE_URL_OVERRIDE_KEY,
+  broadcastSupabaseConfigToMapIframes,
   getFunctionsBaseUrl,
   getSupabaseUrl,
   validateSupabaseConfig,
@@ -243,6 +244,7 @@ export default function DeveloperSettings() {
                 localStorage.removeItem(SUPABASE_ANON_KEY_OVERRIDE_KEY);
               }
               setSupabaseConfigTick((v) => v + 1);
+              broadcastSupabaseConfigToMapIframes();
               toast.success("Supabase override salvestatud");
             }}
           >
@@ -256,6 +258,7 @@ export default function DeveloperSettings() {
               setSupabaseUrlOverride("");
               setSupabaseAnonOverride("");
               setSupabaseConfigTick((v) => v + 1);
+              broadcastSupabaseConfigToMapIframes();
               toast.success("Supabase override tühjendatud");
             }}
           >

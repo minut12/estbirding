@@ -648,6 +648,13 @@ function _startPolling(){
       }
     }catch(e){
       __lastErrorMessage = String(e?.message || e || 'poll failed');
+      if((__lastErrorMessage || '').indexOf('Supabase URL') >= 0){
+        _stopPolling();
+        _showSnapshotBanner('Refresh stopped: ' + __lastErrorMessage, 'error');
+        var ferr = document.getElementById('fetchError');
+        if(ferr) ferr.textContent = __lastErrorMessage;
+        return;
+      }
     }
   }, 2000);
 }
@@ -717,6 +724,9 @@ async function triggerRefresh(opts){
     __lastErrorMessage = String(e?.message || e || 'start failed');
     _showSnapshotBanner('Failed to start refresh: ' + (__lastErrorMessage || 'Unknown error'), 'error');
     _stopPolling();
+    _updateProgressUI(0, 0, '');
+    var ferr = document.getElementById('fetchError');
+    if(ferr) ferr.textContent = __lastErrorMessage || 'start failed';
   }
 }
 

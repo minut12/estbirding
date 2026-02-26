@@ -248,7 +248,7 @@ export default function DeveloperSettings() {
             <p>
               Functions URL:{" "}
               {import.meta.env.VITE_SUPABASE_URL
-                ? `${String(import.meta.env.VITE_SUPABASE_URL).replace(/\/+$/, "")}/functions/v1/events-admin`
+                ? `${String(import.meta.env.VITE_SUPABASE_URL).replace(/\/+$/, "")}/functions/v1/events-ingest`
                 : "(puudub)"}
             </p>
           </div>

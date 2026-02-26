@@ -2,34 +2,113 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-ingest-key, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+    "content-type, x-admin-key, apikey, authorization, x-ingest-key, x-client-info, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
+
+function json(status: number, body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { status: 204, headers: corsHeaders });
+  }
+  if (req.method !== "POST") {
+    return json(405, { error: "method_not_allowed" });
   }
 
   try {
+    const body = await req.json().catch(() => null);
+    const action = body?.action;
+
+    if (typeof action === "string" && action.startsWith("admin_")) {
+      const adminKey = req.headers.get("x-admin-key") ?? "";
+      const expectedAdminKey = Deno.env.get("EVENTS_ADMIN_KEY");
+      if (!expectedAdminKey || adminKey !== expectedAdminKey) {
+        return json(401, { error: "unauthorized" });
+      }
+
+      const supabaseUrl = Deno.env.get("SUPABASE_URL");
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (!supabaseUrl || !serviceKey) {
+        return json(500, { error: "service env missing" });
+      }
+      const supabase = createClient(supabaseUrl, serviceKey);
+      const payload = body?.payload ?? {};
+
+      if (action === "admin_list") {
+        const { data, error } = await supabase.from("events").select("*").order("start_at", { ascending: false });
+        if (error) return json(500, { error: error.message });
+        return json(200, { data });
+      }
+
+      if (action === "admin_create") {
+        const { data, error } = await supabase.from("events").insert(payload).select("*").single();
+        if (error) return json(500, { error: error.message });
+        return json(200, { data });
+      }
+
+      if (action === "admin_update") {
+        const { id, patch } = payload || {};
+        if (!id || !patch) return json(400, { error: "id and patch required" });
+        const { data, error } = await supabase.from("events").update(patch).eq("id", id).select("*").single();
+        if (error) return json(500, { error: error.message });
+        return json(200, { data });
+      }
+
+      if (action === "admin_delete") {
+        const { id } = payload || {};
+        if (!id) return json(400, { error: "id required" });
+        const { error } = await supabase.from("events").delete().eq("id", id);
+        if (error) return json(500, { error: error.message });
+        return json(200, { data: { ok: true } });
+      }
+
+      if (action === "admin_archive") {
+        const { id, is_archived } = payload || {};
+        if (!id || typeof is_archived !== "boolean") return json(400, { error: "id and is_archived required" });
+        const { data, error } = await supabase
+          .from("events")
+          .update({ is_archived })
+          .eq("id", id)
+          .select("*")
+          .single();
+        if (error) return json(500, { error: error.message });
+        return json(200, { data });
+      }
+
+      if (action === "admin_publish") {
+        const { id, is_published } = payload || {};
+        if (!id || typeof is_published !== "boolean") return json(400, { error: "id and is_published required" });
+        const { data, error } = await supabase
+          .from("events")
+          .update({ is_published })
+          .eq("id", id)
+          .select("*")
+          .single();
+        if (error) return json(500, { error: error.message });
+        return json(200, { data });
+      }
+
+      return json(400, { error: "unknown_action", action });
+    }
+
     // Validate ingest key
     const ingestKey = req.headers.get("x-ingest-key");
     const expectedKey = Deno.env.get("EVENTS_INGEST_KEY");
     if (!expectedKey || ingestKey !== expectedKey) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json(401, { error: "Unauthorized" });
     }
 
-    const body = await req.json();
     const { source_slug, items } = body;
 
     if (!source_slug || !Array.isArray(items) || items.length === 0) {
-      return new Response(
-        JSON.stringify({ error: "source_slug and items[] are required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return json(400, { error: "source_slug and items[] are required" });
     }
 
     const supabase = createClient(
@@ -45,10 +124,7 @@ Deno.serve(async (req) => {
       .single();
 
     if (srcErr || !source) {
-      return new Response(
-        JSON.stringify({ error: `Source "${source_slug}" not found` }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return json(404, { error: `Source "${source_slug}" not found` });
     }
 
     const category = source_slug === "estbirding" ? "estbirding" : "other";
@@ -100,15 +176,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    return new Response(
-      JSON.stringify({ success: true, inserted, updated, errors }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return json(200, { success: true, inserted, updated, errors });
   } catch (error) {
     console.error("events-ingest error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json(500, { error: error.message });
   }
 });

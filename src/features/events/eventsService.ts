@@ -75,7 +75,7 @@ function requireAdminKey(): string {
 
 async function callAdminFn(action: string, payload: unknown, adminKey: string): Promise<any> {
   const normalizedSupabaseUrl = (supabaseUrl || "").replace(/\/+$/, "");
-  const fnUrl = `${normalizedSupabaseUrl}/functions/v1/events-admin`;
+  const fnUrl = `${normalizedSupabaseUrl}/functions/v1/events-ingest`;
 
   if (!supabaseUrl || !String(supabaseUrl).startsWith("http")) {
     throw new Error(`VITE_SUPABASE_URL puudu/vigane: ${String(supabaseUrl)}`);
@@ -120,35 +120,35 @@ async function callAdminFn(action: string, payload: unknown, adminKey: string): 
 
 export async function adminListEvents(): Promise<EventRow[]> {
   const key = requireAdminKey();
-  return callAdminFn("list", {}, key);
+  return callAdminFn("admin_list", {}, key);
 }
 
 export async function adminTestConnection(): Promise<unknown> {
   const key = requireAdminKey();
-  return callAdminFn("list", {}, key);
+  return callAdminFn("admin_list", {}, key);
 }
 
 export async function adminCreateEvent(payload: EventPayload): Promise<EventRow> {
   const key = requireAdminKey();
-  return callAdminFn("create", payload, key);
+  return callAdminFn("admin_create", payload, key);
 }
 
 export async function adminUpdateEvent(id: string, patch: Partial<EventPayload>): Promise<EventRow> {
   const key = requireAdminKey();
-  return callAdminFn("update", { id, patch }, key);
+  return callAdminFn("admin_update", { id, patch }, key);
 }
 
 export async function adminDeleteEvent(id: string): Promise<void> {
   const key = requireAdminKey();
-  await callAdminFn("delete", { id }, key);
+  await callAdminFn("admin_delete", { id }, key);
 }
 
 export async function adminPublishEvent(id: string, is_published: boolean): Promise<EventRow> {
   const key = requireAdminKey();
-  return callAdminFn("publish", { id, is_published }, key);
+  return callAdminFn("admin_publish", { id, is_published }, key);
 }
 
 export async function adminArchiveEvent(id: string, is_archived: boolean): Promise<EventRow> {
   const key = requireAdminKey();
-  return callAdminFn("archive", { id, is_archived }, key);
+  return callAdminFn("admin_archive", { id, is_archived }, key);
 }

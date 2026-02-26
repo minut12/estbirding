@@ -274,36 +274,57 @@ async function runRefresh(
   let done = startIndex;
   let lastError: string | null = null;
   const MAX_RETRIES = 2;
+  const INDEX_TIMEOUT_MS = 30000;
   for (let i = startIndex; i < total; i++) {
     const name = SPECIES[i];
     try {
-      let data: Awaited<ReturnType<typeof fetchSpeciesData>> | null = null;
-      let lastErr: Error | null = null;
-      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        try {
-          if (attempt > 0) await sleep(400 * Math.pow(2, attempt - 1));
-          data = await withTimeout(fetchSpeciesData(name), 12000, `species=${name}`);
-          break;
-        } catch (e) {
-          lastErr = e instanceof Error ? e : new Error(String(e));
-        }
-      }
-      done++;
-      if (data) {
-        const entry: (typeof points)[string] = {
-          src: "Elurikkus",
-          visible: true,
-        };
-        if (data.latestDate) entry.t = data.latestDate;
-        if (data.lat !== null && data.lon !== null) {
-          entry.lat = data.lat;
-          entry.lon = data.lon;
-        }
-        entry.occ7 = data.occ7;
-        points[name] = entry;
+      // Runner watches for takeover marker and skips current index once requested.
+      const { data: takeoverRow } = await supabase
+        .from("linnuliigid_snapshot")
+        .select("last_error")
+        .eq("id", 1)
+        .maybeSingle();
+      const marker = String((takeoverRow as { last_error?: string | null })?.last_error || "");
+      if (marker.includes("[force_takeover]")) {
+        done++;
+        lastError = `${name}: forced takeover skip`;
       } else {
-        lastError = `${name}: ${lastErr?.message || "Unknown fetch error"}`;
-        console.warn("[refresh]", lastError);
+        await Promise.race([
+          (async () => {
+            let data: Awaited<ReturnType<typeof fetchSpeciesData>> | null = null;
+            let lastErr: Error | null = null;
+            for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+              try {
+                if (attempt > 0) await sleep(400 * Math.pow(2, attempt - 1));
+                data = await withTimeout(fetchSpeciesData(name), 12000, `species=${name}`);
+                break;
+              } catch (e) {
+                lastErr = e instanceof Error ? e : new Error(String(e));
+              }
+            }
+            done++;
+            if (data) {
+              const entry: (typeof points)[string] = {
+                src: "Elurikkus",
+                visible: true,
+              };
+              if (data.latestDate) entry.t = data.latestDate;
+              if (data.lat !== null && data.lon !== null) {
+                entry.lat = data.lat;
+                entry.lon = data.lon;
+              }
+              entry.occ7 = data.occ7;
+              points[name] = entry;
+            } else {
+              lastError = `${name}: ${lastErr?.message || "Unknown fetch error"}`;
+              console.warn("[refresh]", lastError);
+            }
+          })(),
+          (async () => {
+            await sleep(INDEX_TIMEOUT_MS);
+            throw new Error(`INDEX_TIMEOUT index=${i} species=${name}`);
+          })(),
+        ]);
       }
     } catch (e) {
       done++;
@@ -380,7 +401,9 @@ Deno.serve(async (req) => {
         const currentDone = Number(current?.progress_done || 0);
         const progressTotal = Number(current?.progress_total || SPECIES.length);
         const nextDone = Math.max(currentDone, Math.min(requestedIndex, progressTotal));
-        const nextError = `Skipped to index ${nextDone} (${reason})`;
+        const prevError = String((current as { last_error?: string | null })?.last_error || "").trim();
+        const nextErrorLine = `forced advance: to=${nextDone} reason=${reason}`;
+        const nextError = prevError ? `${prevError}\n${nextErrorLine}` : nextErrorLine;
 
         const { error: skipError } = await updateSnapshot(supabaseAdmin, {
           progress_done: nextDone,
@@ -412,6 +435,42 @@ Deno.serve(async (req) => {
             status: 200,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           }
+        );
+      }
+      if (action === "force_takeover") {
+        const reason = String(body?.reason || "takeover");
+        const prevError = String((current as { last_error?: string | null })?.last_error || "").trim();
+        const takeoverLine = `[force_takeover] ${reason}`;
+        const nextError = prevError ? `${prevError}\n${takeoverLine}` : takeoverLine;
+        const { error: takeoverError } = await updateSnapshot(supabaseAdmin, {
+          status: "running",
+          last_error: nextError,
+          heartbeat_at: nowIso,
+          running_started_at: nowIso,
+        });
+        if (takeoverError) throw takeoverError;
+        const { data: updated, error: updatedError } = await selectSnapshotRow(supabaseAdmin);
+        if (updatedError) throw updatedError;
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            action: "force_takeover",
+            status: updated?.status || "running",
+            progress_done: Number(updated?.progress_done || 0),
+            progress_total: Number(updated?.progress_total || SPECIES.length),
+            last_error: updated?.last_error || nextError,
+            heartbeat_at: heartbeatColumnAvailable ? ((updated as { heartbeat_at?: string | null })?.heartbeat_at || nowIso) : null,
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+      if (action && action !== "start_refresh") {
+        return new Response(
+          JSON.stringify({ error: "unknown_action", action }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 

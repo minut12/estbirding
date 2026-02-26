@@ -820,20 +820,38 @@ async function _controlSkipOnServer(targetIndex, reason){
     runId: __runId,
     url: snapshotUrl,
   }, 'warn');
-  const res = await fetchWithTimeout(snapshotUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      action: 'force_advance',
-      toIndex: Math.max(0, Number(targetIndex) || 0),
-      reason: reason || 'watchdog',
-      force: true,
-    }),
-  }, 15000, __runId);
+  const doForceAdvance = function(){
+    return fetchWithTimeout(snapshotUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'force_advance',
+        toIndex: Math.max(0, Number(targetIndex) || 0),
+        reason: reason || 'watchdog',
+        force: true,
+      }),
+    }, 15000, __runId);
+  };
+  let res = await doForceAdvance();
+  if(res.status === 409){
+    pushDebugEvent('CONTROL_SKIP_RETRY', 'force_advance got 409, requesting force_takeover', {
+      targetIndex: targetIndex, reason: reason, runId: __runId
+    }, 'warn');
+    await fetchWithTimeout(snapshotUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'force_takeover', reason: reason || 'watchdog' }),
+    }, 15000, __runId);
+    res = await doForceAdvance();
+  }
   const text = await res.text();
   let payload = {};
   try{ payload = text ? JSON.parse(text) : {}; }catch(e){ payload = { raw: (text || '').slice(0, 300) }; }
   if(!res.ok){
+    if(res.status === 409){
+      __lastInfoMessage = 'Backend rejected force_advance (unexpected). Check function routing.';
+      _showSnapshotBanner(__lastInfoMessage, 'warn');
+    }
     pushDebugEvent('CONTROL_SKIP_FAIL', 'Skip control failed', {
       targetIndex: targetIndex,
       reason: reason,

@@ -671,19 +671,14 @@ function _startPolling(){
         const now = Date.now();
         if(__lastProgressAt > 0 && (now - __lastProgressAt) > 30000 && (now - __lastAutoKickAt) > 10000 && !__forceRetryInFlight){
           const nextIndex = Math.max(_getResumeIndex(), Number(snap.progress_done) || 0) + 1;
-          const doneNow = Number(snap.progress_done) || 0;
-          if(doneNow === __lastHangProgressDone) __hangKickCount++;
-          else __hangKickCount = 1;
-          __lastHangProgressDone = doneNow;
-          const useForce = __hangKickCount >= 2;
           _setResumeIndex(nextIndex);
           __lastFailedIndex = nextIndex;
-          __lastErrorMessage = 'Hang detected; auto-skip to ' + nextIndex + (useForce ? ' (force)' : '');
+          __lastErrorMessage = 'Hang detected; auto-skip to ' + nextIndex + ' (force)';
           __lastProgressAt = now;
           __lastAutoKickAt = now;
           _abortActiveRequest();
-          _showSnapshotBanner('Hang detected, auto-skip to ' + nextIndex + (useForce ? ' (force)' : '') + '...', 'warn');
-          triggerRefresh({ resumeFromSaved: true, silent: true, startIndex: nextIndex, force: useForce });
+          _showSnapshotBanner('Hang detected, auto-skip to ' + nextIndex + ' (force)...', 'warn');
+          triggerRefresh({ resumeFromSaved: true, silent: true, startIndex: nextIndex, force: true });
         }
       }
 
@@ -727,6 +722,7 @@ function _stopPolling(){
 // Public refresh (no key needed)
 async function triggerRefresh(opts){
   const options = opts || {};
+  const force = !!options.force;
   try{
     _ensureStopController();
     if(!_resolveSupabaseUrlLocal()) _requestSupabaseConfigFromParent();
@@ -765,7 +761,7 @@ async function triggerRefresh(opts){
     const res = await fetchWithTimeout(snapshotUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ start_index: startIndex, force: !!options.force }),
+      body: JSON.stringify({ start_index: startIndex, force }),
     }, 20000);
 
     if(res.status === 429){
@@ -776,23 +772,8 @@ async function triggerRefresh(opts){
       return;
     }
     if(res.status === 409){
-      if(options.force && !options.__forceRetried){
-        _showSnapshotBanner('forcing refresh restart...', 'warn');
-        __forceRetryInFlight = true;
-        try{
-          await triggerRefresh({
-            resumeFromSaved: true,
-            silent: true,
-            force: true,
-            startIndex: startIndex,
-            __forceRetried: true
-          });
-        }finally{
-          __forceRetryInFlight = false;
-        }
-        return;
-      }
-      _showSnapshotBanner('Refresh already in progress...');
+      if(force) _showSnapshotBanner('Server says running; forcing takeover (stale-run check)...', 'warn');
+      else _showSnapshotBanner('Refresh already in progress...');
     }
 
     _startPolling();

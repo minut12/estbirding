@@ -190,15 +190,66 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
   }
 }
 
+let heartbeatColumnAvailable = true;
+
+function isMissingHeartbeatColumnError(err: unknown): boolean {
+  const msg = String((err as { message?: string })?.message || err || "");
+  return msg.includes("heartbeat_at") && msg.toLowerCase().includes("column");
+}
+
+async function selectSnapshotRow(supabase: ReturnType<typeof createClient>) {
+  if (heartbeatColumnAvailable) {
+    const res = await supabase
+      .from("linnuliigid_snapshot")
+      .select("status, generated_at, progress_done, progress_total, heartbeat_at, running_started_at, points_json, last_error")
+      .eq("id", 1)
+      .single();
+    if (!res.error) return res;
+    if (!isMissingHeartbeatColumnError(res.error)) return res;
+    console.error("[snapshot] heartbeat_at column missing; continuing without heartbeat support");
+    heartbeatColumnAvailable = false;
+  }
+  return await supabase
+    .from("linnuliigid_snapshot")
+    .select("status, generated_at, progress_done, progress_total, running_started_at, points_json, last_error")
+    .eq("id", 1)
+    .single();
+}
+
+async function updateSnapshot(
+  supabase: ReturnType<typeof createClient>,
+  patch: Record<string, unknown>,
+) {
+  const payload = { ...patch };
+  if (!heartbeatColumnAvailable) delete payload.heartbeat_at;
+  const res = await supabase
+    .from("linnuliigid_snapshot")
+    .update(payload)
+    .eq("id", 1);
+  if (!res.error) return res;
+  if (isMissingHeartbeatColumnError(res.error)) {
+    console.error("[snapshot] heartbeat_at column missing during update; retrying without it");
+    heartbeatColumnAvailable = false;
+    const retryPayload = { ...patch };
+    delete retryPayload.heartbeat_at;
+    return await supabase
+      .from("linnuliigid_snapshot")
+      .update(retryPayload)
+      .eq("id", 1);
+  }
+  return res;
+}
+
 // Run one refresh batch, updating progress after every item.
 async function runRefresh(
   supabase: ReturnType<typeof createClient>,
-  opts?: { startIndex?: number; runId?: string; maxBatch?: number }
+  opts?: { startIndex?: number; runId?: string }
 ) {
   const total = SPECIES.length;
   const startIndex = Math.max(0, Math.min(total, Number(opts?.startIndex || 0)));
   const runId = opts?.runId || crypto.randomUUID();
-  const maxBatch = Math.max(1, Math.min(100, Number(opts?.maxBatch || 25)));
+  const startedAt = Date.now();
+  const MAX_RUN_MS = 60000;
   const nowIso = () => new Date().toISOString();
 
   const { data: existingRow } = await supabase
@@ -223,9 +274,7 @@ async function runRefresh(
   let done = startIndex;
   let lastError: string | null = null;
   const MAX_RETRIES = 2;
-  const endIndexExclusive = Math.min(total, startIndex + maxBatch);
-
-  for (let i = startIndex; i < endIndexExclusive; i++) {
+  for (let i = startIndex; i < total; i++) {
     const name = SPECIES[i];
     try {
       let data: Awaited<ReturnType<typeof fetchSpeciesData>> | null = null;
@@ -233,7 +282,7 @@ async function runRefresh(
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
           if (attempt > 0) await sleep(400 * Math.pow(2, attempt - 1));
-          data = await withTimeout(fetchSpeciesData(name), 15000, `species=${name}`);
+          data = await withTimeout(fetchSpeciesData(name), 12000, `species=${name}`);
           break;
         } catch (e) {
           lastErr = e instanceof Error ? e : new Error(String(e));
@@ -262,21 +311,21 @@ async function runRefresh(
       console.warn("[refresh] item failure", lastError);
     }
 
-    await supabase
-      .from("linnuliigid_snapshot")
-      .update({
-        points_json: points,
-        progress_done: done,
-        progress_total: total,
-        last_error: lastError,
-        heartbeat_at: nowIso(),
-        run_id: runId,
-      })
-      .eq("id", 1);
+    const upd = await updateSnapshot(supabase, {
+      points_json: points,
+      progress_done: done,
+      progress_total: total,
+      last_error: lastError,
+      heartbeat_at: nowIso(),
+      run_id: runId,
+    });
+    if (upd.error) throw upd.error;
+    if (Date.now() - startedAt > MAX_RUN_MS) {
+      return { done, total, finished: false, timedOut: true, lastError, points, runId };
+    }
   }
 
-  const finished = done >= total;
-  return { done, total, finished, lastError, points, runId };
+  return { done, total, finished: done >= total, timedOut: false, lastError, points, runId };
 }
 
 Deno.serve(async (req) => {
@@ -316,16 +365,13 @@ Deno.serve(async (req) => {
 
       const startIndex = Math.max(0, Number(body?.start_index || 0) || 0);
       const force = body?.force === true;
-      const STALE_MS = 60000;
+      const STALE_MS = 90000;
       const nowMs = Date.now();
       const nowIso = new Date().toISOString();
       const runId = crypto.randomUUID();
 
-      const { data: current } = await supabaseAdmin
-        .from("linnuliigid_snapshot")
-        .select("status, generated_at, progress_done, progress_total, heartbeat_at, running_started_at")
-        .eq("id", 1)
-        .single();
+      const { data: current, error: currentError } = await selectSnapshotRow(supabaseAdmin);
+      if (currentError) throw currentError;
 
       if (current?.generated_at) {
         const elapsed = Date.now() - new Date(current.generated_at).getTime();
@@ -345,15 +391,17 @@ Deno.serve(async (req) => {
         }
       }
 
-      const heartbeatMs = current?.heartbeat_at ? new Date(current.heartbeat_at).getTime() : null;
+      const heartbeatMs = (current as { heartbeat_at?: string | null })?.heartbeat_at
+        ? new Date((current as { heartbeat_at?: string | null }).heartbeat_at as string).getTime()
+        : null;
       const staleHeartbeat = !heartbeatMs || (nowMs - heartbeatMs > STALE_MS);
       const allowTakeover = force || staleHeartbeat;
       if (current?.status === "running" && !allowTakeover) {
         return new Response(
           JSON.stringify({
-            message: "Refresh already in progress",
+            error: "already running",
             status: "running",
-            heartbeat_at: current?.heartbeat_at || null,
+            heartbeat_at: (current as { heartbeat_at?: string | null })?.heartbeat_at || null,
             progress_done: current?.progress_done || 0,
             progress_total: current?.progress_total || SPECIES.length,
           }),
@@ -365,66 +413,66 @@ Deno.serve(async (req) => {
       }
 
       const resumeStart = Math.max(startIndex, Number(current?.progress_done || 0) || 0);
-      const { error: startError } = await supabaseAdmin
-        .from("linnuliigid_snapshot")
-        .update({
-          status: "running",
-          progress_done: resumeStart,
-          progress_total: SPECIES.length,
-          last_error: null,
-          running_started_at: nowIso,
-          heartbeat_at: nowIso,
-          run_id: runId,
-        })
-        .eq("id", 1);
+      const { error: startError } = await updateSnapshot(supabaseAdmin, {
+        status: "running",
+        progress_done: resumeStart,
+        progress_total: SPECIES.length,
+        last_error: null,
+        running_started_at: nowIso,
+        heartbeat_at: nowIso,
+        run_id: runId,
+      });
       if (startError) throw startError;
 
       try {
-        const result = await runRefresh(supabaseAdmin, { startIndex: resumeStart, runId, maxBatch: 25 });
+        const result = await runRefresh(supabaseAdmin, { startIndex: resumeStart, runId });
         const finalStatus = result.finished ? "ready" : "running";
-        const { error: finalizeError } = await supabaseAdmin
-          .from("linnuliigid_snapshot")
-          .update({
-            points_json: result.points,
-            status: finalStatus,
-            progress_done: result.done,
-            progress_total: result.total,
-            last_error: result.lastError,
-            heartbeat_at: new Date().toISOString(),
-            run_id: result.runId,
-            ...(result.finished ? { generated_at: new Date().toISOString() } : {}),
-          })
-          .eq("id", 1);
+        const { error: finalizeError } = await updateSnapshot(supabaseAdmin, {
+          points_json: result.points,
+          status: finalStatus,
+          progress_done: result.done,
+          progress_total: result.total,
+          last_error: result.lastError,
+          heartbeat_at: new Date().toISOString(),
+          run_id: result.runId,
+          ...(result.finished ? { generated_at: new Date().toISOString() } : {}),
+        });
         if (finalizeError) throw finalizeError;
 
+        const responseBody = {
+          status: finalStatus,
+          progress_done: result.done,
+          progress_total: result.total,
+          generated_at: result.finished ? new Date().toISOString() : current?.generated_at || null,
+          points_json: result.points,
+          last_error: result.lastError,
+          heartbeat_at: heartbeatColumnAvailable ? new Date().toISOString() : null,
+        };
         return new Response(
-          JSON.stringify({
-            ok: true,
-            status: finalStatus,
-            progress_done: result.done,
-            progress_total: result.total,
-            next_index: result.done,
-            run_id: result.runId,
-            forced: force,
-          }),
+          JSON.stringify(responseBody),
           {
-            status: 200,
+            status: result.timedOut && !result.finished ? 202 : 200,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           }
         );
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        await supabaseAdmin
-          .from("linnuliigid_snapshot")
-          .update({
-            status: "error",
-            last_error: msg,
-            heartbeat_at: new Date().toISOString(),
-            run_id: runId,
-          })
-          .eq("id", 1);
+        await updateSnapshot(supabaseAdmin, {
+          status: "error",
+          last_error: msg,
+          heartbeat_at: new Date().toISOString(),
+          run_id: runId,
+        });
         return new Response(
-          JSON.stringify({ ok: false, status: "error", error: msg, run_id: runId }),
+          JSON.stringify({
+            status: "error",
+            progress_done: Number(current?.progress_done || 0),
+            progress_total: Number(current?.progress_total || SPECIES.length),
+            generated_at: current?.generated_at || null,
+            points_json: (current as { points_json?: unknown })?.points_json || {},
+            last_error: msg,
+            heartbeat_at: heartbeatColumnAvailable ? new Date().toISOString() : null,
+          }),
           {
             status: 500,
             headers: { ...corsHeaders, "Content-Type": "application/json" },

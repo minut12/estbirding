@@ -1,4 +1,3 @@
-﻿import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/config/supabaseClient';
 import { Input } from '@/components/ui/input';
@@ -8,6 +7,9 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { Loader2, TestTube, Check, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { loadNewsSourcesWithOrigin, resetNewsSourcesToDefaults, saveNewsSources, type NewsSourcesOrigin } from '@/lib/newsSourcesStorage';
+import type { NewsSourceConfigItem } from '@/config/newsSources';
 
 interface NewsSource {
   id: string;
@@ -22,8 +24,11 @@ interface NewsSource {
 
 export default function NewsSourcesSettings() {
   const queryClient = useQueryClient();
+  const seeded = useMemo(() => loadNewsSourcesWithOrigin(), []);
+  const [localSources, setLocalSources] = useState<NewsSource[]>(seeded.sources);
+  const [origin, setOrigin] = useState<NewsSourcesOrigin>(seeded.source);
 
-  const { data: sources = [], isLoading } = useQuery<NewsSource[]>({
+  const { data: remoteSources = [], isLoading } = useQuery<NewsSource[]>({
     queryKey: ['news-sources-settings'],
     queryFn: async () => {
       const { data } = await supabase.from('news_sources').select('id, name, slug, key, type, homepage_url, feed_url, is_enabled').eq('is_active', true);
@@ -31,20 +36,80 @@ export default function NewsSourcesSettings() {
     },
   });
 
-  if (isLoading) return <p className="text-sm text-muted-foreground">Laen allikaidâ€¦</p>;
-  if (sources.length === 0) return <p className="text-sm text-muted-foreground">Uudiste allikaid pole.</p>;
+  useEffect(() => {
+    if (isLoading) return;
+    if (remoteSources.length > 0) {
+      saveNewsSources(remoteSources as unknown as NewsSourceConfigItem[]);
+      setLocalSources(remoteSources);
+      setOrigin('stored');
+      return;
+    }
+    const loaded = loadNewsSourcesWithOrigin();
+    setLocalSources(loaded.sources);
+    setOrigin(loaded.source);
+  }, [isLoading, remoteSources]);
+
+  const sources = localSources;
+  const localOnlyMode = origin !== 'stored';
+
+  const onResetDefaults = () => {
+    const defaults = resetNewsSourcesToDefaults();
+    setLocalSources(defaults as unknown as NewsSource[]);
+    setOrigin('default');
+    toast.success('Vaikimisi allikad taastatud');
+  };
+
+  const onLocalUpdate = (next: NewsSource) => {
+    setLocalSources((prev) => {
+      const updated = prev.map((s) => (s.id === next.id ? next : s));
+      saveNewsSources(updated as unknown as NewsSourceConfigItem[]);
+      return updated;
+    });
+    setOrigin('stored');
+  };
+
+  if (isLoading) return <p className="text-sm text-muted-foreground">Laen allikaid…</p>;
+  if (sources.length === 0) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">Uudiste allikaid pole.</p>
+        <Button variant="outline" size="sm" onClick={onResetDefaults}>Taasta vaikimisi allikad</Button>
+        <p className="text-xs text-muted-foreground">Allikad: 0 (source: {origin})</p>
+      </div>
+    );
+  }
 
   return (
     <div className="block space-y-4">
       <h3 className="font-semibold text-foreground">Uudiste allikad</h3>
       {sources.map(source => (
-        <SourceCard key={source.id} source={source} queryClient={queryClient} />
+        <SourceCard
+          key={source.id}
+          source={source}
+          queryClient={queryClient}
+          localOnlyMode={localOnlyMode}
+          onLocalUpdate={onLocalUpdate}
+        />
       ))}
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">Allikad: {sources.length} (source: {origin})</p>
+        <Button variant="ghost" size="sm" onClick={onResetDefaults}>Taasta vaikimisi allikad</Button>
+      </div>
     </div>
   );
 }
 
-function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: ReturnType<typeof useQueryClient> }) {
+function SourceCard({
+  source,
+  queryClient,
+  localOnlyMode,
+  onLocalUpdate,
+}: {
+  source: NewsSource;
+  queryClient: ReturnType<typeof useQueryClient>;
+  localOnlyMode: boolean;
+  onLocalUpdate: (next: NewsSource) => void;
+}) {
   const [feedUrl, setFeedUrl] = useState(source.feed_url || '');
   const [enabled, setEnabled] = useState(source.is_enabled);
   const [testResult, setTestResult] = useState<{ ok: boolean; count?: number; sampleTitles?: string[]; error?: string } | null>(null);
@@ -52,17 +117,25 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
 
   const updateMutation = useMutation({
     mutationFn: async () => {
+      if (localOnlyMode) {
+        onLocalUpdate({ ...source, feed_url: feedUrl || null, is_enabled: enabled });
+        return;
+      }
       const { error } = await supabase.functions.invoke('news-source-update', {
         body: { id: source.id, feed_url: feedUrl || null, is_enabled: enabled },
       });
       if (error) throw error;
     },
     onSuccess: () => {
+      if (localOnlyMode) {
+        toast.success(`${source.name} salvestatud lokaalselt`);
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ['news-sources-settings'] });
       queryClient.invalidateQueries({ queryKey: ['news-sources'] });
       toast.success(`${source.name} uuendatud`);
     },
-    onError: () => toast.error('Salvestamine ebaÃµnnestus'),
+    onError: () => toast.error('Salvestamine ebaõnnestus'),
   });
 
   const testFeed = async () => {
@@ -87,10 +160,10 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
           sampleTitles: Array.isArray(data?.sampleTitles) ? data.sampleTitles : [],
         });
       } else {
-        setTestResult({ ok: false, error: data?.error || 'Voogu ei Ãµnnestunud lugeda' });
+        setTestResult({ ok: false, error: data?.error || 'Voogu ei õnnestunud lugeda' });
       }
     } catch (e: any) {
-      setTestResult({ ok: false, error: e?.message || 'Voogu ei Ãµnnestunud lugeda' });
+      setTestResult({ ok: false, error: e?.message || 'Voogu ei õnnestunud lugeda' });
     } finally {
       setTesting(false);
     }
@@ -121,7 +194,7 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
         />
         {isFacebook && (
           <p className="text-xs text-muted-foreground">
-            Kasuta Facebookâ†’RSS teenust (nt RSS.app / FetchRSS). Facebooki tokenit pole vaja.
+            Kasuta Facebook→RSS teenust (nt RSS.app / FetchRSS). Facebooki tokenit pole vaja.
           </p>
         )}
       </div>
@@ -139,7 +212,7 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
           ) : (
             <div className="flex items-center gap-1.5">
               <X className="w-3.5 h-3.5" />
-              <span>{testResult.error || 'Voogu ei õnnestunud lugeda'}</span>
+              <span>{testResult.error || 'Voogu ei �nnestunud lugeda'}</span>
             </div>
           )}
         </div>

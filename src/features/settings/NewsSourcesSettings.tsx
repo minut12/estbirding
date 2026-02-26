@@ -113,6 +113,13 @@ function SourceCard({
   localOnlyMode: boolean;
   onLocalUpdate: (next: NewsSource) => void;
 }) {
+  const safeUrl = (u: string) => {
+    try {
+      return new URL(u).toString();
+    } catch {
+      return u;
+    }
+  };
   const [feedUrl, setFeedUrl] = useState(source.feed_url || '');
   const [enabled, setEnabled] = useState(source.is_enabled);
   const [testResult, setTestResult] = useState<{ ok: boolean; count?: number; sampleTitles?: string[]; error?: string } | null>(null);
@@ -176,7 +183,7 @@ function SourceCard({
   };
 
   const isFacebook = source.slug.includes('facebook');
-  const sourceUrl = (feedUrl || source.feed_url || source.homepage_url || '').trim();
+  const sourceUrl = safeUrl((feedUrl || source.feed_url || source.homepage_url || '').trim());
   const shortUrl = sourceUrl ? sourceUrl.replace(/^https?:\/\//, '') : '';
 
   const copySourceUrl = async () => {
@@ -185,7 +192,19 @@ function SourceCard({
       return;
     }
     try {
-      await navigator.clipboard.writeText(sourceUrl);
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(sourceUrl);
+      } else if (typeof document !== 'undefined') {
+        const ta = document.createElement('textarea');
+        ta.value = sourceUrl;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
       toast.success('URL kopeeritud');
     } catch {
       toast.error('URL kopeerimine ebaonnestus');
@@ -203,11 +222,11 @@ function SourceCard({
               <a
                 href={sourceUrl}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-xs text-primary underline underline-offset-4 hover:text-primary/80"
                 title={shortUrl || sourceUrl}
               >
-                Ava allikas
+                Ava
                 <ExternalLink className="h-3 w-3" />
               </a>
               <button

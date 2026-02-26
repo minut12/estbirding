@@ -10,6 +10,7 @@ import { fetchSharedAvatars, getMergedAvatars, notifyIframe } from '@/lib/avatar
 import { resolveProxyBase } from '@/config/proxyEndpoint';
 import { loadSpeciesMeta } from '@/lib/speciesMeta';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
+import { getSupabaseAnonKey, getSupabaseUrl } from '@/config/supabaseConfig';
 
 const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -78,6 +79,13 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   const sendSpeciesMetaToIframe = useCallback(() => {
     sendToIframe({ type: 'SPECIES_META_DEFAULTS', speciesMeta: loadSpeciesMeta() });
   }, [sendToIframe]);
+  const sendSupabaseConfigToIframe = useCallback(() => {
+    sendToIframe({
+      type: 'SUPABASE_CONFIG',
+      supabaseUrl: getSupabaseUrl(),
+      supabaseAnonKey: getSupabaseAnonKey(),
+    });
+  }, [sendToIframe]);
 
   // Fetch shared avatars on mount, cache locally, then send to iframe
   useEffect(() => {
@@ -105,10 +113,13 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       if (ev.data?.type === 'INSETS_REQUEST') {
         sendAppInsets();
       }
+      if (ev.data?.type === 'SUPABASE_CONFIG_REQUEST') {
+        sendSupabaseConfigToIframe();
+      }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [sendAvatarsToIframe, sendAppInsets, sendSpeciesMetaToIframe]);
+  }, [sendAvatarsToIframe, sendAppInsets, sendSpeciesMetaToIframe, sendSupabaseConfigToIframe]);
 
   useEffect(() => {
     const t = setTimeout(sendMapShown, 500);
@@ -157,6 +168,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     // Send avatars and insets when iframe loads
     setTimeout(sendAvatarsToIframe, 300);
     setTimeout(sendSpeciesMetaToIframe, 350);
+    setTimeout(sendSupabaseConfigToIframe, 375);
     setTimeout(sendAppInsets, 400);
     // Auto-refresh after initial load
     setTimeout(() => {

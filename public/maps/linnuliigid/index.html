@@ -358,7 +358,12 @@ function _borderColorByDate(isoDate){
 // =========================================
 // === SNAPSHOT-BASED FETCHING ===
 // =========================================
-const SNAPSHOT_API = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/linnuliigid-snapshot';
+const SUPABASE_URL_OVERRIDE_KEY = 'dev_supabase_url_override';
+const SUPABASE_KEY_OVERRIDE_KEY = 'dev_supabase_key_override';
+const SUPABASE_LEGACY_ANON_OVERRIDE_KEY = 'dev_supabase_anon_key_override';
+let __resolvedSupabaseUrl = '';
+let __resolvedSupabaseAnonKey = '';
+let SNAPSHOT_API = '';
 let __pollTimer = null;
 let __pollCount = 0;
 let __snapshotMeta = { status: null, generated_at: null };
@@ -370,12 +375,83 @@ let __lastRequestUrl = null;
 let __lastErrorMessage = null;
 let __lastFailedIndex = null;
 let __lastDurationMs = null;
+let __activeRequestController = null;
+let __stopController = new AbortController();
+let __isRefreshRunning = false;
+let __watchdogTimer = null;
 
 function _setResumeIndex(i){
   try { localStorage.setItem(ESTONIA_REFRESH_INDEX_KEY, String(Math.max(0, Number(i) || 0))); } catch(e){}
 }
 function _getResumeIndex(){
   try { return Math.max(0, Number(localStorage.getItem(ESTONIA_REFRESH_INDEX_KEY) || 0) || 0); } catch(e){ return 0; }
+}
+function _resolveSupabaseUrlLocal(){
+  try{
+    const fromOverride = (localStorage.getItem(SUPABASE_URL_OVERRIDE_KEY) || '').trim();
+    return fromOverride || (__resolvedSupabaseUrl || '');
+  }catch(e){
+    return (__resolvedSupabaseUrl || '');
+  }
+}
+function _resolveSupabaseAnonKeyLocal(){
+  try{
+    const k1 = (localStorage.getItem(SUPABASE_KEY_OVERRIDE_KEY) || '').trim();
+    const k2 = (localStorage.getItem(SUPABASE_LEGACY_ANON_OVERRIDE_KEY) || '').trim();
+    return k1 || k2 || (__resolvedSupabaseAnonKey || '');
+  }catch(e){
+    return (__resolvedSupabaseAnonKey || '');
+  }
+}
+function _validateSupabaseLocal(){
+  const url = String(_resolveSupabaseUrlLocal() || '').replace(/\/+$/, '');
+  if(!url) return { ok:false, error:'Supabase URL puudub. Lisa see Settings override alt.' };
+  if(!/^https:\/\//.test(url)) return { ok:false, error:'Supabase URL vigane: peab algama https:// (' + url + ')' };
+  if(url.indexOf('.supabase.co') === -1) return { ok:false, error:'Supabase URL vigane: peab sisaldama .supabase.co (' + url + ')' };
+  return { ok:true, url };
+}
+function _resolveSnapshotApi(){
+  const validation = _validateSupabaseLocal();
+  if(!validation.ok) throw new Error(validation.error);
+  SNAPSHOT_API = validation.url + '/functions/v1/linnuliigid-snapshot';
+  return SNAPSHOT_API;
+}
+async function fetchWithTimeout(url, init, ms){
+  const controller = new AbortController();
+  __activeRequestController = controller;
+  const stopRelay = function(){ controller.abort(); };
+  try{ __stopController.signal.addEventListener('abort', stopRelay, { once:true }); }catch(e){}
+  const id = setTimeout(function(){ controller.abort(); }, ms);
+  try{
+    const reqInit = Object.assign({}, init || {}, { signal: controller.signal });
+    return await fetch(url, reqInit);
+  }finally{
+    clearTimeout(id);
+    try{ __stopController.signal.removeEventListener('abort', stopRelay); }catch(e){}
+    if(__activeRequestController === controller) __activeRequestController = null;
+  }
+}
+function _abortActiveRequest(){
+  try{ if(__activeRequestController) __activeRequestController.abort(); }catch(e){}
+}
+function _startWatchdog(){
+  _stopWatchdog();
+  __watchdogTimer = setInterval(function(){
+    if(!__isRefreshRunning) return;
+    if(__lastProgressAt <= 0) return;
+    if(Date.now() - __lastProgressAt <= 30000) return;
+    const idx = _getResumeIndex();
+    __lastFailedIndex = idx;
+    __lastErrorMessage = 'Watchdog timeout; auto-skip';
+    _setResumeIndex(idx + 1);
+    _showSnapshotBanner('Hang detected, retrying...', 'warn');
+    __lastProgressAt = Date.now();
+    _abortActiveRequest();
+    triggerRefresh({ resumeFromSaved: true, silent: true });
+  }, 5000);
+}
+function _stopWatchdog(){
+  if(__watchdogTimer){ clearInterval(__watchdogTimer); __watchdogTimer = null; }
 }
 
 function _showSnapshotBanner(msg, type, showAllBtn){
@@ -434,6 +510,8 @@ function _updateDebugPanel(){
     'Markers rendered: <b>' + __renderedMarkerCount + '</b>',
     'Resume index: <b>' + _getResumeIndex() + '</b>',
     'lastRequest URL: <b>' + (__lastRequestUrl || '-') + '</b>',
+    'Resolved Supabase URL: <b>' + (_resolveSupabaseUrlLocal() || '-') + '</b>',
+    'Snapshot URL: <b>' + (SNAPSHOT_API || '-') + '</b>',
     'lastErrorMessage: <b>' + (__lastErrorMessage || '-') + '</b>',
     'lastFailedIndex: <b>' + (__lastFailedIndex ?? '-') + '</b>',
     'lastDurationMs: <b>' + (__lastDurationMs ?? '-') + '</b>',
@@ -480,10 +558,11 @@ function _checkEmpty7dBanner(){
 
 async function loadSnapshot(){
   const t0 = Date.now();
-  __lastRequestUrl = SNAPSHOT_API;
   try{
+    const snapshotUrl = _resolveSnapshotApi();
+    __lastRequestUrl = snapshotUrl;
     _showSnapshotBanner('Loading data...');
-    const res = await fetch(SNAPSHOT_API, {cache:'no-store'});
+    const res = await fetchWithTimeout(snapshotUrl, {cache:'no-store'}, 20000);
     __lastDurationMs = Date.now() - t0;
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const snap = await res.json();
@@ -522,6 +601,9 @@ async function loadSnapshot(){
 
 function _startPolling(){
   _stopPolling();
+  __isRefreshRunning = true;
+  __stopController = new AbortController();
+  _startWatchdog();
   __pollCount = 0;
   __pollTimer = setInterval(async ()=>{
     __pollCount++;
@@ -531,9 +613,10 @@ function _startPolling(){
       return;
     }
     try{
+      const snapshotUrl = _resolveSnapshotApi();
+      __lastRequestUrl = snapshotUrl;
       const t0 = Date.now();
-      const res = await fetch(SNAPSHOT_API, {cache:'no-store'});
-      __lastRequestUrl = SNAPSHOT_API;
+      const res = await fetchWithTimeout(snapshotUrl, {cache:'no-store'}, 20000);
       __lastDurationMs = Date.now() - t0;
       if(!res.ok) return;
       const snap = await res.json();
@@ -570,6 +653,10 @@ function _startPolling(){
 
 function _stopPolling(){
   if(__pollTimer){ clearInterval(__pollTimer); __pollTimer = null; }
+  __isRefreshRunning = false;
+  _stopWatchdog();
+  _abortActiveRequest();
+  try{ __stopController.abort(); }catch(e){}
   _updateProgressUI(0, 0, '');
 }
 
@@ -577,15 +664,40 @@ function _stopPolling(){
 async function triggerRefresh(opts){
   const options = opts || {};
   try{
+    const validation = _validateSupabaseLocal();
+    if(!validation.ok) throw new Error(validation.error || 'Supabase config vigane');
+    const supabaseUrl = validation.url;
+    const anonKey = _resolveSupabaseAnonKeyLocal();
+    const healthUrl = supabaseUrl + '/auth/v1/health';
+    try{
+      const healthRes = await fetchWithTimeout(healthUrl, {
+        method:'GET',
+        headers: anonKey ? { apikey: anonKey, authorization: 'Bearer ' + anonKey } : {},
+      }, 10000);
+      __lastRequestUrl = healthUrl;
+      __lastDurationMs = 0;
+      if(!(healthRes.ok || healthRes.status === 401 || healthRes.status === 404)){
+        throw new Error('Supabase health check failed (HTTP ' + healthRes.status + ')');
+      }
+    }catch(healthErr){
+      const msg = String(healthErr && healthErr.message ? healthErr.message : healthErr);
+      if(msg.indexOf('TypeError') >= 0 || msg.indexOf('Failed to fetch') >= 0 || msg.indexOf('NetworkError') >= 0){
+        throw new Error('Supabase URL unreachable (DNS). Update Supabase URL override in Settings.');
+      }
+      throw healthErr;
+    }
+
     _showSnapshotBanner('Requesting server refresh...');
     _updateProgressUI(0, SPECIES.length, 'running');
     const startIndex = options.resumeFromSaved ? _getResumeIndex() : 0;
+    const snapshotUrl = _resolveSnapshotApi();
+    __lastRequestUrl = snapshotUrl;
 
-    const res = await fetch(SNAPSHOT_API, {
+    const res = await fetchWithTimeout(snapshotUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ start_index: startIndex }),
-    });
+    }, 20000);
 
     if(res.status === 429){
       const data = await res.json().catch(()=>({}));
@@ -603,6 +715,7 @@ async function triggerRefresh(opts){
   }catch(e){
     __lastErrorMessage = String(e?.message || e || 'start failed');
     _showSnapshotBanner('Failed to start refresh: ' + (__lastErrorMessage || 'Unknown error'), 'error');
+    _stopPolling();
   }
 }
 
@@ -629,8 +742,10 @@ function _wireSnapshotButtons(){
   }
   if(btnSkip && !btnSkip.__wired){
     btnSkip.addEventListener('click', function(){
+      _abortActiveRequest();
       const nextIndex = _getResumeIndex() + 1;
       __lastFailedIndex = nextIndex;
+      __lastErrorMessage = 'Skipped by user';
       _setResumeIndex(nextIndex);
       _showSnapshotBanner('Skipping stuck item, resuming from ' + nextIndex + '...', 'warn');
       triggerRefresh({ resumeFromSaved: true });
@@ -639,6 +754,8 @@ function _wireSnapshotButtons(){
   }
   if(btnStop && !btnStop.__wired){
     btnStop.addEventListener('click', function(){
+      _abortActiveRequest();
+      try{ __stopController.abort(); }catch(e){}
       _stopPolling();
       _showSnapshotBanner('Stopped by user', 'warn');
     });
@@ -664,6 +781,13 @@ window.addEventListener('message', function(ev){
     if(!ev.data || typeof ev.data !== 'object') return;
     var t = ev.data.type;
     if(t === 'SET_ADMIN_KEY') return; // no longer used
+    if(t === 'SUPABASE_CONFIG'){
+      __resolvedSupabaseUrl = String(ev.data.supabaseUrl || '').trim();
+      __resolvedSupabaseAnonKey = String(ev.data.supabaseAnonKey || '').trim();
+      try { _resolveSnapshotApi(); } catch(e) {}
+      _updateDebugPanel();
+      return;
+    }
     if(ev.origin !== window.location.origin) return;
     if(t === 'MAP_REFRESH_VISIBLE') refreshVisible();
     if(t === 'MAP_REFRESH_SELECTED') refreshSelected();
@@ -917,6 +1041,7 @@ window.addEventListener('message', function(ev){
 try{
   if(window.parent && window.parent !== window){
     window.parent.postMessage({ type: 'INSETS_REQUEST' }, '*');
+    window.parent.postMessage({ type: 'SUPABASE_CONFIG_REQUEST' }, '*');
   }
 }catch(e){}
 </script>

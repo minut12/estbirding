@@ -142,10 +142,10 @@
 <div id="fetchProgressBar" class="fetch-progress-bar" style="display:none"><div id="fetchProgressBarInner" class="fetch-progress-bar-inner" style="width:0%"></div></div>
 <div id="fetchError" class="fetch-error"></div>
 <details class="debug-panel" id="debugPanel">
-  <summary>Debug info</summary>
+  <summary>Debug (lite)</summary>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px">
-    <button id="btnCopyDebugJson" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy debug JSON</button>
-    <button id="btnClearDebugEvents" class="btn secondary" style="font-size:11px;padding:2px 8px">Clear events</button>
+    <button id="btnCopyDebugJson" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy debug (lite)</button>
+    <button id="btnClearDebugEvents" class="btn secondary" style="font-size:11px;padding:2px 8px">Reset debug</button>
   </div>
   <div id="debugContent">Loading...</div>
 </details>
@@ -420,6 +420,7 @@ let __lastProgressAtMs = 0;
 const __debugEvents = [];
 const __DEBUG_MAX_EVENTS = 120;
 let __activeStepController = null;
+const VERBOSE_DEBUG = (function(){ try { return localStorage.getItem('debugVerbose') === '1'; } catch(e){ return false; } })();
 let __snapshotInFlightRef = null;
 let __snapshotInFlightStartedAtMs = 0;
 let __pollLoopToken = 0;
@@ -450,12 +451,11 @@ function pushDebugEvent(phase, msg, data, level){
       data: (typeof data === 'undefined') ? undefined : _safeData(data),
     };
     __lastPhase = ev.phase;
-    __debugEvents.unshift(ev);
-    if(__debugEvents.length > __DEBUG_MAX_EVENTS) __debugEvents.length = __DEBUG_MAX_EVENTS;
-    try{ console.debug('[L2026] ' + ev.phase + ': ' + ev.msg, ev.data || ''); }catch(e){}
-  }catch(e){
-    try{ console.debug('[L2026] EVENT_LOG_FAIL', e); }catch(_e){}
-  }
+    if(VERBOSE_DEBUG){
+      __debugEvents.unshift(ev);
+      if(__debugEvents.length > __DEBUG_MAX_EVENTS) __debugEvents.length = __DEBUG_MAX_EVENTS;
+    }
+  }catch(e){}
 }
 function _maskKey(k){
   const s = String(k || '');
@@ -477,33 +477,21 @@ function getAbortReason(signal){
 }
 function _copyDebugJson(){
   const payload = {
-    debugInfo: {
-      buildId: MAP_BUILD_ID,
-      status: __snapshotMeta.status,
-      generatedAt: __snapshotMeta.generated_at,
-      resumeIndex: _getResumeIndex(),
-      lastInfoMessage: __lastInfoMessage,
-      lastErrorMessage: __lastErrorMessage,
-      refreshRunId: __runId,
-      refreshStartedAtMs: __refreshStartedAtMs,
-      lastProgressAtMs: __lastProgressAtMs,
-      currentIndex: __currentIndex,
-      attemptForCurrentIndex: __attemptForCurrentIndex,
-      configWaitCount: __configWaitCount,
-      configWaitStartedAtMs: __configWaitStartedAtMs,
-      configArrivedAtMs: __configArrivedAtMs,
-      snapshotLoadAttemptCount: __snapshotLoadAttemptCount,
-      lastSnapshotLoadAtMs: __lastSnapshotLoadAtMs,
-      lastHttpStatus: __lastHttpStatus,
-      lastHttpOk: __lastHttpOk,
-      lastResponseBytes: __lastResponseBytes,
-      lastPhase: __lastPhase,
-      lastError: __lastErrorObj,
-    },
-    events: __debugEvents,
-    appVersion: MAP_BUILD_ID,
-    userAgent: navigator.userAgent,
-    url: location.href,
+    buildId: MAP_BUILD_ID,
+    status: __snapshotMeta.status || (__isRefreshRunning ? 'running' : 'stopped'),
+    generatedAt: __snapshotMeta.generated_at || null,
+    progress_done: Number(__currentIndex || 0),
+    progress_total: Number(__lastProgressDone > 0 ? SPECIES.length : 0),
+    resumeIndex: _getResumeIndex(),
+    speciesWithCoords: SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.lat); }).length,
+    markersRendered: __renderedMarkerCount,
+    lastRequestUrl: __lastRequestUrl || '',
+    lastHttp: { status: __lastHttpStatus, ok: __lastHttpOk, durationMs: __lastDurationMs },
+    lastSnapshotBytes: __lastResponseBytes,
+    lastInfoMessage: __lastInfoMessage || '',
+    lastErrorMessage: __lastErrorMessage || '',
+    stopSignalAborted: !!(__stopController && __stopController.signal && __stopController.signal.aborted),
+    filter7day: !!is7daysOnly(),
   };
   const text = JSON.stringify(payload, null, 2);
   if(navigator.clipboard && navigator.clipboard.writeText){
@@ -517,8 +505,13 @@ function _copyDebugJson(){
   }
 }
 function _clearDebugEvents(){
-  __debugEvents.length = 0;
-  pushDebugEvent('DEBUG_CLEAR', 'Events cleared');
+  __lastInfoMessage = '';
+  __lastErrorMessage = '';
+  __lastHttpStatus = null;
+  __lastHttpOk = null;
+  __lastDurationMs = null;
+  __lastResponseBytes = null;
+  if(VERBOSE_DEBUG) __debugEvents.length = 0;
   _updateDebugPanel();
 }
 
@@ -976,52 +969,24 @@ function _updateDebugPanel(){
   const el = document.getElementById('debugContent');
   if(!el) return;
   const totalWithCoords = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.lat); }).length;
-  const occ7Count = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.occ7) && p.occ7 > 0; }).length;
-  const stuckMs = (__isRefreshRunning && __lastProgressAt > 0) ? (Date.now() - __lastProgressAt) : 0;
-  const stuckWarning = (stuckMs > 20000 && Number.isFinite(__currentIndex))
-    ? ('<div style="margin:4px 0;padding:4px;border:1px solid #f59e0b;background:#fef3c7;color:#92400e;border-radius:4px">Stuck: index ' + __currentIndex + ', attempts ' + __attemptForCurrentIndex + (__attemptForCurrentIndex > 5 ? ' - Use Skip stuck item' : '') + '</div>')
-    : '';
-  const eventsHtml = __debugEvents.map(function(ev){
-    const dataText = (typeof ev.data === 'undefined') ? '' : (' ' + String(JSON.stringify(ev.data)));
-    const safe = String('[' + ev.tsISO + '] ' + ev.level + ' ' + ev.phase + ': ' + ev.msg + dataText)
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    return '<div>' + safe + '</div>';
-  }).join('');
+  const progressDone = (__snapshotMeta.status === 'running') ? Number(__currentIndex || 0) : Number(__lastProgressDone > 0 ? __lastProgressDone : 0);
+  const progressTotal = (__snapshotMeta.status === 'running' || __lastProgressDone > 0) ? SPECIES.length : 0;
   el.innerHTML = [
     'buildId: <b>' + MAP_BUILD_ID + '</b>',
-    'Status: <b>' + (__snapshotMeta.status || '?') + '</b>',
-    'Generated: <b>' + (__snapshotMeta.generated_at ? (window.formatDateEE ? window.formatDateEE(__snapshotMeta.generated_at) : __snapshotMeta.generated_at) : '-') + '</b>',
+    'status: <b>' + (__snapshotMeta.status || (__isRefreshRunning ? 'running' : 'stopped')) + '</b>',
+    'generatedAt: <b>' + (__snapshotMeta.generated_at ? (window.formatDateEE ? window.formatDateEE(__snapshotMeta.generated_at) : __snapshotMeta.generated_at) : '-') + '</b>',
+    'progress: <b>' + progressDone + '/' + progressTotal + '</b>',
+    'resumeIndex: <b>' + _getResumeIndex() + '</b>',
     'Species with coords: <b>' + totalWithCoords + '</b>',
-    'Species with occ7>0: <b>' + occ7Count + '</b>',
     'Markers rendered: <b>' + __renderedMarkerCount + '</b>',
-    'Resume index: <b>' + _getResumeIndex() + '</b>',
-    'lastRequest URL: <b>' + (__lastRequestUrl || '-') + '</b>',
+    'lastRequestUrl: <b>' + (__lastRequestUrl || '-') + '</b>',
+    'lastHttp: <b>{ status: ' + (__lastHttpStatus ?? '-') + ', ok: ' + (__lastHttpOk ?? '-') + ', durationMs: ' + (__lastDurationMs ?? '-') + ' }</b>',
+    'lastSnapshotBytes: <b>' + (__lastResponseBytes ?? '-') + '</b>',
     'lastInfoMessage: <b>' + (__lastInfoMessage || '-') + '</b>',
-    'Resolved Supabase URL: <b>' + (_resolveSupabaseUrlLocal() || '-') + '</b>',
-    'Resolved anon key: <b>' + _maskKey(_resolveSupabaseAnonKeyLocal()) + '</b>',
-    'Snapshot URL: <b>' + (SNAPSHOT_API || '-') + '</b>',
-    'supabaseConfigReady: <b>' + (__supabaseConfigReady ? 'yes' : 'no') + '</b>',
     'lastErrorMessage: <b>' + (__lastErrorMessage || '-') + '</b>',
-    'refreshRunId: <b>' + __runId + '</b>',
-    'refreshStartedAtMs: <b>' + (__refreshStartedAtMs || '-') + '</b>',
-    'lastProgressAtMs: <b>' + (__lastProgressAtMs || '-') + '</b>',
-    'currentIndex: <b>' + (__currentIndex ?? '-') + '</b>',
-    'attemptForCurrentIndex: <b>' + (__attemptForCurrentIndex || 0) + '</b>',
-    'configWaitCount: <b>' + (__configWaitCount || 0) + '</b>',
-    'snapshotLoadAttemptCount: <b>' + (__snapshotLoadAttemptCount || 0) + '</b>',
-    'lastSnapshotLoadAtMs: <b>' + (__lastSnapshotLoadAtMs || '-') + '</b>',
-    'lastHttpStatus: <b>' + (__lastHttpStatus ?? '-') + '</b>',
-    'lastHttpOk: <b>' + (__lastHttpOk ?? '-') + '</b>',
-    'lastResponseBytes: <b>' + (__lastResponseBytes ?? '-') + '</b>',
-    'lastPhase: <b>' + (__lastPhase || '-') + '</b>',
-    'lastFailedIndex: <b>' + (__lastFailedIndex ?? '-') + '</b>',
-    'lastDurationMs: <b>' + (__lastDurationMs ?? '-') + '</b>',
-    'lastTimeoutMs: <b>' + (__lastTimeoutMs ?? '-') + '</b>',
-    'stopSignalAbortedAtStart: <b>' + __stopSignalAbortedAtStart + '</b>',
+    'stopSignalAborted: <b>' + (!!(__stopController && __stopController.signal && __stopController.signal.aborted)) + '</b>',
     '7-day filter: <b>' + (is7daysOnly() ? 'ON' : 'OFF') + '</b>',
-    stuckWarning,
-    '<div style="margin-top:6px"><b>Events (newest first):</b></div>',
-    '<div style="max-height:180px;overflow:auto;border:1px solid #e2e8f0;padding:4px;border-radius:4px;background:#fff">' + eventsHtml + '</div>',
+    (VERBOSE_DEBUG ? ('verboseEvents: <b>' + __debugEvents.length + '</b>') : ''),
   ].join('<br>');
 }
 

@@ -408,12 +408,17 @@ let __lastSnapshotLoadAtMs = 0;
 let __lastHttpStatus = null;
 let __lastHttpOk = null;
 let __lastResponseBytes = null;
+let __lastBodyDurationMs = null;
+let __lastParseDurationMs = null;
+let __lastContentType = null;
+let __lastBodyBytes = null;
 let __lastErrorObj = null;
 let __lastPhase = '';
 let __refreshStartedAtMs = 0;
 let __lastProgressAtMs = 0;
 const __debugEvents = [];
 const __DEBUG_MAX_EVENTS = 120;
+let __activeStepController = null;
 
 function _safeData(v){
   try{
@@ -604,6 +609,99 @@ function _makeAbortError(reason, durationMs, timeoutMs){
   return err;
 }
 
+function _combineSignals(signals){
+  const list = (signals || []).filter(Boolean);
+  if(typeof AbortSignal !== 'undefined' && AbortSignal.any){
+    return AbortSignal.any(list);
+  }
+  const ctrl = new AbortController();
+  const onAbort = function(ev){
+    try{
+      const src = ev && ev.target;
+      const reason = (src && src.reason) ? src.reason : 'aborted';
+      ctrl.abort(reason);
+    }catch(e){
+      try{ ctrl.abort('aborted'); }catch(_e){}
+    }
+  };
+  for(const s of list){
+    if(s.aborted){
+      try{ ctrl.abort(s.reason || 'aborted'); }catch(e){}
+      return ctrl.signal;
+    }
+    try{ s.addEventListener('abort', onAbort, { once:true }); }catch(e){}
+  }
+  return ctrl.signal;
+}
+
+async function fetchJsonWithTimeout(url, opts){
+  const options = opts || {};
+  const timeoutMs = Math.max(Number(options.timeoutMs || 15000), 5000);
+  const runId = options.runId;
+  const index = options.index;
+  const timeoutCtrl = new AbortController();
+  const combinedSignal = _combineSignals([options.signal, timeoutCtrl.signal]);
+  const t0 = performance.now();
+  let timeoutId = null;
+  try{
+    timeoutId = setTimeout(function(){ try{ timeoutCtrl.abort('timeout'); }catch(e){} }, timeoutMs);
+    pushDebugEvent('FETCH_START', 'Starting request', { url:url, timeoutMs:timeoutMs, runId:runId, index:index });
+    const res = await fetch(url, { signal: combinedSignal, cache:'no-store' });
+    __lastHttpStatus = res.status;
+    __lastHttpOk = res.ok;
+    __lastContentType = res.headers.get('content-type') || '';
+    pushDebugEvent('FETCH_HEADERS', 'Headers received', {
+      url:url, runId:runId, index:index, status:res.status, ok:res.ok,
+      contentType: __lastContentType,
+      durationMs: Math.round(performance.now() - t0),
+    }, res.ok ? 'info' : 'warn');
+
+    const b0 = performance.now();
+    pushDebugEvent('BODY_READ_START', 'Reading response body', { url:url, runId:runId, index:index });
+    const text = await res.text();
+    __lastBodyDurationMs = Math.round(performance.now() - b0);
+    __lastBodyBytes = text ? (new TextEncoder().encode(text).length) : 0;
+    __lastResponseBytes = __lastBodyBytes;
+    pushDebugEvent('BODY_READ_DONE', 'Body read done', {
+      url:url, runId:runId, index:index, bytes: __lastBodyBytes, durationMs: __lastBodyDurationMs, contentType: __lastContentType
+    });
+
+    if(!res.ok){
+      const err = new Error('HTTP ' + res.status + ' ' + res.statusText);
+      err.bodySnippet = (text || '').slice(0, 300);
+      throw err;
+    }
+
+    const p0 = performance.now();
+    pushDebugEvent('JSON_PARSE_START', 'Parsing JSON', { url:url, runId:runId, index:index });
+    const json = text ? JSON.parse(text) : null;
+    __lastParseDurationMs = Math.round(performance.now() - p0);
+    pushDebugEvent('JSON_PARSE_DONE', 'JSON parsed', {
+      url:url, runId:runId, index:index, parseMs: __lastParseDurationMs,
+      topKeys: (json && typeof json === 'object') ? Object.keys(json).slice(0, 10) : null
+    });
+    return json;
+  }catch(e){
+    const isAbort = !!(e && (e.name === 'AbortError' || (combinedSignal && combinedSignal.aborted)));
+    if(isAbort){
+      const reason = getAbortReason(combinedSignal) || getAbortReason(timeoutCtrl.signal) || 'aborted';
+      const dur = performance.now() - t0;
+      pushDebugEvent('FETCH_FAIL', 'Request aborted', {
+        url:url, runId:runId, index:index, wasAbortError: (e && e.name === 'AbortError') || false,
+        abortReason: reason,
+        abortReasonStopSignal: getAbortReason(__stopController && __stopController.signal),
+        abortReasonRequestSignal: getAbortReason(combinedSignal),
+        durationMs: Math.round(dur),
+      }, 'warn');
+      throw _makeAbortError(reason, dur, timeoutMs);
+    }
+    pushDebugEvent('FETCH_FAIL', 'Request failed', { url:url, runId:runId, index:index, message: String(e && e.message ? e.message : e) }, 'error');
+    throw e;
+  }finally{
+    if(timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 async function fetchWithTimeout(url, init, ms, runId){
   // Hard clamp: never abort below 5 seconds
   ms = Math.max(ms || 15000, 5000);
@@ -703,6 +801,7 @@ async function fetchWithTimeout(url, init, ms, runId){
 }
 function _abortActiveRequest(){
   try{ if(__activeRequestController) __activeRequestController.abort(); }catch(e){}
+  try{ if(__activeStepController) __activeStepController.abort('active_request_abort'); }catch(e){}
 }
 function _startWatchdog(){
   _stopWatchdog();
@@ -717,6 +816,8 @@ function _startWatchdog(){
     _setResumeIndex(idx);
     _showSnapshotBanner('Hang detected, retrying...', 'warn');
     __lastProgressAt = Date.now();
+    pushDebugEvent('WATCHDOG_ABORT', 'Watchdog aborting active step', { index: idx, runId: __runId }, 'warn');
+    try{ if(__activeStepController) __activeStepController.abort('watchdog_timeout'); }catch(e){}
     _abortActiveRequest();
     triggerRefresh({ resumeFromSaved: true, silent: true, force: true });
   }, 5000);
@@ -883,25 +984,34 @@ async function loadSnapshot(){
     __snapshotLoadRetryCount = 0;
     __lastRequestUrl = snapshotUrl;
     _showSnapshotBanner('Loading data...');
-    const res = await fetchWithTimeout(snapshotUrl, {cache:'no-store'}, 15000, runId);
+    __activeStepController = new AbortController();
+    const snap = await fetchJsonWithTimeout(snapshotUrl, {
+      timeoutMs: 15000,
+      signal: _combineSignals([__activeStepController.signal, __stopController && __stopController.signal, __runCancelController && __runCancelController.signal]),
+      runId: runId,
+      index: __currentIndex
+    });
     __lastDurationMs = Date.now() - t0;
-    if(!res.ok) throw new Error('HTTP ' + res.status);
-    const snap = await res.json();
-    __lastResponseBytes = JSON.stringify(snap || {}).length;
     pushDebugEvent('SNAPSHOT_LOAD_DONE', 'Snapshot loaded', { status: snap.status, progress_done: snap.progress_done, progress_total: snap.progress_total });
 
     if(snap.status === 'running'){
       _updateProgressUI(snap.progress_done, snap.progress_total, 'running');
       _showSnapshotBanner('Server is refreshing data (' + snap.progress_done + '/' + snap.progress_total + ')...');
       if(snap.points_json && Object.keys(snap.points_json).length > 0){
+        pushDebugEvent('SNAPSHOT_APPLY_START', 'Applying running snapshot', { runId: runId, index: __currentIndex });
         _applySnapshot(snap);
+        pushDebugEvent('SNAPSHOT_APPLY_DONE', 'Applied running snapshot', { runId: runId, index: __currentIndex });
       }
       _startPolling();
       return;
     }
 
     if(snap.points_json && Object.keys(snap.points_json).length > 0){
+      pushDebugEvent('SNAPSHOT_APPLY_START', 'Applying snapshot', { runId: runId, index: __currentIndex });
       _applySnapshot(snap);
+      pushDebugEvent('SNAPSHOT_APPLY_DONE', 'Applied snapshot', { runId: runId, index: __currentIndex });
+      __lastProgressAtMs = Date.now();
+      pushDebugEvent('PROGRESS_TICK', 'Snapshot apply completed', { runId: runId, index: __currentIndex, atMs: __lastProgressAtMs });
       const age = snap.generated_at && window.formatAgeEE ? window.formatAgeEE(snap.generated_at) : null;
       _showSnapshotBanner('Data loaded' + (age ? ' (' + age + ')' : ''));
       setTimeout(_hideSnapshotBanner, 4000);
@@ -915,7 +1025,7 @@ async function loadSnapshot(){
     }
   }catch(e){
     if(e && e.isAbort){
-      if(e.abortReason === 'user' || e.abortReason === 'new-run' || e.abortReason === 'stop'){
+      if(e.abortReason === 'user' || e.abortReason === 'new-run' || e.abortReason === 'stop' || e.abortReason === 'watchdog_timeout'){
         pushDebugEvent('SNAPSHOT_LOAD_CANCELLED', 'Snapshot load cancelled', { runId: runId, reason: e.abortReason }, 'warn');
         return;
       }
@@ -954,6 +1064,8 @@ async function loadSnapshot(){
     console.warn('[snapshot] Load failed:', e);
     _showSnapshotBanner('Using cached data (server unavailable)', 'warn');
     refreshAllMarkers();
+  }finally{
+    __activeStepController = null;
   }
 }
 
@@ -974,10 +1086,14 @@ function _startPolling(){
       const snapshotUrl = _resolveSnapshotApi();
       __lastRequestUrl = snapshotUrl;
       const t0 = Date.now();
-      const res = await fetchWithTimeout(snapshotUrl, {cache:'no-store'}, 15000, __runId);
+      __activeStepController = new AbortController();
+      const snap = await fetchJsonWithTimeout(snapshotUrl, {
+        timeoutMs: 15000,
+        signal: _combineSignals([__activeStepController.signal, __stopController && __stopController.signal, __runCancelController && __runCancelController.signal]),
+        runId: __runId,
+        index: __currentIndex
+      });
       __lastDurationMs = Date.now() - t0;
-      if(!res.ok) return;
-      const snap = await res.json();
       _updateProgressUI(snap.progress_done, snap.progress_total, snap.status);
       if(snap.status === 'running'){
         const now = Date.now();
@@ -1031,7 +1147,7 @@ function _startPolling(){
           _showSnapshotBanner('Stopped by user', 'warn');
           return;
         }
-        if(e.abortReason === 'new-run' || e.abortReason === 'stop'){
+        if(e.abortReason === 'new-run' || e.abortReason === 'stop' || e.abortReason === 'watchdog_timeout'){
           return;
         }
         __lastErrorMessage = e.message || String(e);
@@ -1045,6 +1161,8 @@ function _startPolling(){
         if(ferr) ferr.textContent = __lastErrorMessage;
         return;
       }
+    }finally{
+      __activeStepController = null;
     }
   }, 2000);
 }

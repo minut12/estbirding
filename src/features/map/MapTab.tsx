@@ -10,7 +10,7 @@ import { fetchSharedAvatars, getMergedAvatars, notifyIframe } from '@/lib/avatar
 import { resolveProxyBase } from '@/config/proxyEndpoint';
 import { loadSpeciesMeta } from '@/lib/speciesMeta';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
-import { broadcastSupabaseConfigToMapIframes, getSupabaseAnonKey, getSupabaseUrl } from '@/config/supabaseConfig';
+import { broadcastSupabaseConfigToMapIframes, getSupabaseAnonKey, getSupabaseUrl, validateSupabaseConfig } from '@/config/supabaseConfig';
 
 const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -80,10 +80,23 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     sendToIframe({ type: 'SPECIES_META_DEFAULTS', speciesMeta: loadSpeciesMeta() });
   }, [sendToIframe]);
   const sendSupabaseConfigToIframe = useCallback(() => {
+    const validation = validateSupabaseConfig();
+    if (validation.ok) {
+      sendToIframe({
+        type: 'SUPABASE_CONFIG',
+        supabaseUrl: getSupabaseUrl(),
+        supabaseAnonKey: getSupabaseAnonKey(),
+      });
+      return;
+    }
     sendToIframe({
       type: 'SUPABASE_CONFIG',
-      supabaseUrl: getSupabaseUrl(),
-      supabaseAnonKey: getSupabaseAnonKey(),
+      supabaseUrl: '',
+      supabaseAnonKey: '',
+    });
+    sendToIframe({
+      type: 'SUPABASE_CONFIG_ERROR',
+      error: validation.error || 'Supabase config invalid',
     });
   }, [sendToIframe]);
 
@@ -104,6 +117,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   // Listen for AVATARS_REQUEST and INSETS_REQUEST from iframe
   useEffect(() => {
     const handler = (ev: MessageEvent) => {
+      if (ev.origin !== window.location.origin) return;
       if (ev.data?.type === 'AVATARS_REQUEST') {
         sendAvatarsToIframe();
       }
@@ -114,12 +128,29 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
         sendAppInsets();
       }
       if (ev.data?.type === 'SUPABASE_CONFIG_REQUEST') {
-        sendSupabaseConfigToIframe();
+        const validation = validateSupabaseConfig();
+        if (validation.ok) {
+          sendToIframe({
+            type: 'SUPABASE_CONFIG',
+            supabaseUrl: getSupabaseUrl(),
+            supabaseAnonKey: getSupabaseAnonKey(),
+          });
+        } else {
+          sendToIframe({
+            type: 'SUPABASE_CONFIG',
+            supabaseUrl: '',
+            supabaseAnonKey: '',
+          });
+          sendToIframe({
+            type: 'SUPABASE_CONFIG_ERROR',
+            error: validation.error || 'Supabase config invalid',
+          });
+        }
       }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [sendAvatarsToIframe, sendAppInsets, sendSpeciesMetaToIframe, sendSupabaseConfigToIframe]);
+  }, [sendAvatarsToIframe, sendAppInsets, sendSpeciesMetaToIframe, sendSupabaseConfigToIframe, sendToIframe]);
 
   useEffect(() => {
     const t = setTimeout(sendMapShown, 500);
@@ -180,7 +211,26 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
 
   useEffect(() => {
     broadcastSupabaseConfigToMapIframes();
-  }, [selectedId]);
+    sendSupabaseConfigToIframe();
+  }, [selectedId, sendSupabaseConfigToIframe]);
+
+  useEffect(() => {
+    let prev = `${getSupabaseUrl()}|${getSupabaseAnonKey()}`;
+    const syncIfChanged = () => {
+      const next = `${getSupabaseUrl()}|${getSupabaseAnonKey()}`;
+      if (next === prev) return;
+      prev = next;
+      sendSupabaseConfigToIframe();
+    };
+    const id = window.setInterval(syncIfChanged, 1000);
+    window.addEventListener('focus', syncIfChanged);
+    window.addEventListener('storage', syncIfChanged);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('focus', syncIfChanged);
+      window.removeEventListener('storage', syncIfChanged);
+    };
+  }, [sendSupabaseConfigToIframe]);
 
   useEffect(() => {
     const onMetaUpdated = () => sendSpeciesMetaToIframe();

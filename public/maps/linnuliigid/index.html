@@ -838,6 +838,12 @@ window.addEventListener('message', function(ev){
       _updateDebugPanel();
       return;
     }
+    if(t === 'SUPABASE_CONFIG_ERROR'){
+      __lastErrorMessage = String(ev.data.error || 'Supabase config invalid');
+      _showSnapshotBanner(__lastErrorMessage, 'error');
+      _updateDebugPanel();
+      return;
+    }
     if(ev.origin !== window.location.origin) return;
     if(t === 'MAP_REFRESH_VISIBLE') refreshVisible();
     if(t === 'MAP_REFRESH_SELECTED') refreshSelected();

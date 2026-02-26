@@ -1,9 +1,16 @@
-ï»¿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Code, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  SUPABASE_ANON_KEY_OVERRIDE_KEY,
+  SUPABASE_URL_OVERRIDE_KEY,
+  getFunctionsBaseUrl,
+  getSupabaseUrl,
+  validateSupabaseConfig,
+} from "@/config/supabaseConfig";
 import {
   adminCreateEvent,
   adminDeleteEvent,
@@ -62,8 +69,32 @@ export default function DeveloperSettings() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [supabaseUrlOverride, setSupabaseUrlOverride] = useState(() => localStorage.getItem(SUPABASE_URL_OVERRIDE_KEY) || "");
+  const [supabaseAnonOverride, setSupabaseAnonOverride] = useState(() => localStorage.getItem(SUPABASE_ANON_KEY_OVERRIDE_KEY) || "");
+  const [supabaseConfigTick, setSupabaseConfigTick] = useState(0);
+
+  const supabaseDiag = useMemo(() => {
+    void supabaseConfigTick;
+    return validateSupabaseConfig();
+  }, [supabaseConfigTick]);
+
+  const resolvedSupabaseUrl = useMemo(() => {
+    void supabaseConfigTick;
+    return getSupabaseUrl() || "(puudub)";
+  }, [supabaseConfigTick]);
+
+  const resolvedFunctionsBase = useMemo(() => {
+    void supabaseConfigTick;
+    return getFunctionsBaseUrl();
+  }, [supabaseConfigTick]);
+
+  const adminDisabled = !savedEventsAdminKey.trim() || !supabaseDiag.ok;
 
   const loadEvents = async () => {
+    if (!supabaseDiag.ok) {
+      toast.error(supabaseDiag.error || "Supabase config vigane");
+      return;
+    }
     setEventsLoading(true);
     try {
       const rows = await adminListEvents();
@@ -76,9 +107,9 @@ export default function DeveloperSettings() {
   };
 
   useEffect(() => {
-    if (!savedEventsAdminKey.trim()) return;
+    if (!savedEventsAdminKey.trim() || !supabaseDiag.ok) return;
     void loadEvents();
-  }, [savedEventsAdminKey]);
+  }, [savedEventsAdminKey, supabaseDiag.ok]);
 
   const handleSave = () => {
     localStorage.setItem(LS_KEY, key);
@@ -92,12 +123,20 @@ export default function DeveloperSettings() {
   };
 
   const startCreate = () => {
+    if (!supabaseDiag.ok) {
+      toast.error(supabaseDiag.error || "Supabase config vigane");
+      return;
+    }
     setEditingId(null);
     setForm(emptyForm);
     setFormOpen(true);
   };
 
   const startEdit = (event: EventRow) => {
+    if (!supabaseDiag.ok) {
+      toast.error(supabaseDiag.error || "Supabase config vigane");
+      return;
+    }
     setEditingId(event.id);
     setForm({
       title: event.title,
@@ -119,11 +158,15 @@ export default function DeveloperSettings() {
   const validateError = useMemo(() => {
     if (!form.title.trim()) return "Pealkiri on kohustuslik.";
     if (!form.start_at) return "Algusaeg on kohustuslik.";
-    if ((form.lat && !form.lng) || (!form.lat && form.lng)) return "Lat ja lng peavad mÃµlemad olemas olema.";
+    if ((form.lat && !form.lng) || (!form.lat && form.lng)) return "Lat ja lng peavad mõlemad olemas olema.";
     return null;
   }, [form]);
 
   const submitForm = async () => {
+    if (!supabaseDiag.ok) {
+      toast.error(supabaseDiag.error || "Supabase config vigane");
+      return;
+    }
     if (validateError) {
       toast.error(validateError);
       return;
@@ -150,7 +193,7 @@ export default function DeveloperSettings() {
       } else {
         await adminCreateEvent(payload);
       }
-      toast.success("Ãœritus salvestatud");
+      toast.success("Üritus salvestatud");
       setFormOpen(false);
       await loadEvents();
     } catch (error) {
@@ -166,6 +209,69 @@ export default function DeveloperSettings() {
       </h3>
 
       <div className="space-y-2">
+        <h4 className="font-semibold text-foreground">Supabase (arendaja)</h4>
+        <Label htmlFor="supabaseUrlOverride">Supabase URL override</Label>
+        <Input
+          id="supabaseUrlOverride"
+          type="text"
+          placeholder="https://<project-ref>.supabase.co"
+          value={supabaseUrlOverride}
+          onChange={(e) => setSupabaseUrlOverride(e.target.value)}
+        />
+        <Label htmlFor="supabaseAnonOverride">Supabase anon key override</Label>
+        <Input
+          id="supabaseAnonOverride"
+          type="password"
+          placeholder="Optional"
+          value={supabaseAnonOverride}
+          onChange={(e) => setSupabaseAnonOverride(e.target.value)}
+        />
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              const trimmedUrl = supabaseUrlOverride.trim();
+              if (trimmedUrl) {
+                localStorage.setItem(SUPABASE_URL_OVERRIDE_KEY, trimmedUrl);
+              } else {
+                localStorage.removeItem(SUPABASE_URL_OVERRIDE_KEY);
+              }
+              if (supabaseAnonOverride.trim()) {
+                localStorage.setItem(SUPABASE_ANON_KEY_OVERRIDE_KEY, supabaseAnonOverride.trim());
+              } else {
+                localStorage.removeItem(SUPABASE_ANON_KEY_OVERRIDE_KEY);
+              }
+              setSupabaseConfigTick((v) => v + 1);
+              toast.success("Supabase override salvestatud");
+            }}
+          >
+            Salvesta
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              localStorage.removeItem(SUPABASE_URL_OVERRIDE_KEY);
+              localStorage.removeItem(SUPABASE_ANON_KEY_OVERRIDE_KEY);
+              setSupabaseUrlOverride("");
+              setSupabaseAnonOverride("");
+              setSupabaseConfigTick((v) => v + 1);
+              toast.success("Supabase override tühjendatud");
+            }}
+          >
+            Tühjenda
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Kasuta ainult kui env on vale. Muudatus kehtib ainult selles seadmes.
+        </p>
+        <div className="space-y-0.5 rounded-md bg-muted/40 p-2 text-[11px] text-muted-foreground">
+          <p>Resolved Supabase URL: {resolvedSupabaseUrl}</p>
+          <p>Functions base: {resolvedFunctionsBase}</p>
+          {!supabaseDiag.ok && <p className="text-destructive">Hoiatus: {supabaseDiag.error}</p>}
+        </div>
+      </div>
+
+      <div className="space-y-2">
         <Label htmlFor="adminKey">Linnuliigid admin key</Label>
         <Input
           id="adminKey"
@@ -175,7 +281,7 @@ export default function DeveloperSettings() {
           onChange={(e) => setKey(e.target.value)}
         />
         <p className="text-xs text-muted-foreground">
-          Seda vÃµtit kasutatakse linnuliigid kaardi andmete jÃµuga vÃ¤rskendamiseks.
+          Seda võtit kasutatakse linnuliigid kaardi andmete jõuga värskendamiseks.
         </p>
       </div>
 
@@ -186,12 +292,12 @@ export default function DeveloperSettings() {
         </Button>
         <Button variant="outline" size="sm" onClick={handleClear} className="gap-1.5" disabled={!localStorage.getItem(LS_KEY)}>
           <Trash2 className="h-3.5 w-3.5" />
-          TÃ¼hjenda
+          Tühjenda
         </Button>
       </div>
 
       <div className="space-y-3 rounded-lg border border-border p-3">
-        <h4 className="font-semibold text-foreground">Ãœritused (Lisa/Halda)</h4>
+        <h4 className="font-semibold text-foreground">Üritused (Lisa/Halda)</h4>
 
         <div className="space-y-2">
           <Label htmlFor="eventsAdminKey">Events Admin Key</Label>
@@ -202,7 +308,7 @@ export default function DeveloperSettings() {
             onChange={(e) => setEventsAdminKeyValue(e.target.value)}
             placeholder="EVENTS_ADMIN_KEY"
           />
-          <p className="text-xs text-muted-foreground">VÃµti salvestatakse ainult sinu brauserisse.</p>
+          <p className="text-xs text-muted-foreground">Võti salvestatakse ainult sinu brauserisse.</p>
           <div className="flex gap-2">
             <Button
               variant="outline"
@@ -223,52 +329,53 @@ export default function DeveloperSettings() {
                 setEventsAdminKeyValue("");
                 setSavedEventsAdminKey("");
                 setEvents([]);
-                toast.success("TÃ¼hjendatud");
+                toast.success("Tühjendatud");
               }}
             >
-              TÃ¼hjenda
+              Tühjenda
             </Button>
             <Button
               variant="outline"
               onClick={async () => {
+                if (!supabaseDiag.ok) {
+                  toast.error(supabaseDiag.error || "Supabase config vigane");
+                  return;
+                }
                 try {
                   await adminTestConnection();
-                  toast.success("Ãœhendus OK");
+                  toast.success("Ühendus OK");
                 } catch (error) {
                   toast.error(error instanceof Error ? error.message : String(error));
                 }
               }}
-              disabled={!savedEventsAdminKey.trim()}
+              disabled={adminDisabled}
             >
-              Testi Ã¼hendust
+              Testi ühendust
             </Button>
           </div>
           <div className="space-y-0.5 rounded-md bg-muted/40 p-2 text-[11px] text-muted-foreground">
-            <p>Supabase URL: {import.meta.env.VITE_SUPABASE_URL || "(puudub)"}</p>
-            <p>
-              Functions URL:{" "}
-              {import.meta.env.VITE_SUPABASE_URL
-                ? `${String(import.meta.env.VITE_SUPABASE_URL).replace(/\/+$/, "")}/functions/v1/events-ingest`
-                : "(puudub)"}
-            </p>
+            <p>Supabase URL: {resolvedSupabaseUrl}</p>
+            <p>Functions URL: {`${resolvedFunctionsBase}/events-ingest`}</p>
           </div>
         </div>
 
         {!savedEventsAdminKey.trim() ? (
-          <p className="text-sm text-muted-foreground">Lisa EVENTS_ADMIN_KEY, et luua ja hallata Ã¼ritusi.</p>
+          <p className="text-sm text-muted-foreground">Lisa EVENTS_ADMIN_KEY, et luua ja hallata üritusi.</p>
+        ) : !supabaseDiag.ok ? (
+          <p className="text-sm text-destructive">{supabaseDiag.error}</p>
         ) : (
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <Button onClick={startCreate}>Lisa Ã¼ritus</Button>
-              <Button variant="outline" onClick={() => void loadEvents()}>
-                VÃ¤rskenda
+              <Button onClick={startCreate} disabled={adminDisabled}>Lisa üritus</Button>
+              <Button variant="outline" onClick={() => void loadEvents()} disabled={adminDisabled}>
+                Värskenda
               </Button>
             </div>
 
             {eventsLoading ? (
-              <p className="text-sm text-muted-foreground">Laen Ã¼ritusi...</p>
+              <p className="text-sm text-muted-foreground">Laen üritusi...</p>
             ) : events.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Ãœritusi pole.</p>
+              <p className="text-sm text-muted-foreground">Üritusi pole.</p>
             ) : (
               <div className="space-y-2">
                 {events.map((event) => (
@@ -284,6 +391,7 @@ export default function DeveloperSettings() {
                         <input
                           type="checkbox"
                           checked={event.is_published}
+                          disabled={adminDisabled}
                           onChange={async (e) => {
                             try {
                               await adminPublishEvent(event.id, e.target.checked);
@@ -295,14 +403,14 @@ export default function DeveloperSettings() {
                         />
                         Avalik
                       </label>
-                      <Button variant="outline" size="sm" onClick={() => startEdit(event)}>
+                      <Button variant="outline" size="sm" onClick={() => startEdit(event)} disabled={adminDisabled}>
                         Muuda
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={async () => {
-                          if (!window.confirm("Kustuta Ã¼ritus?")) return;
+                          if (!window.confirm("Kustuta üritus?")) return;
                           try {
                             await adminDeleteEvent(event.id);
                             await loadEvents();
@@ -310,6 +418,7 @@ export default function DeveloperSettings() {
                             toast.error(error instanceof Error ? error.message : String(error));
                           }
                         }}
+                        disabled={adminDisabled}
                       >
                         Kustuta
                       </Button>
@@ -321,12 +430,12 @@ export default function DeveloperSettings() {
 
             {formOpen && (
               <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
-                <h5 className="font-medium">{editingId ? "Muuda Ã¼ritust" : "Lisa Ã¼ritus"}</h5>
+                <h5 className="font-medium">{editingId ? "Muuda üritust" : "Lisa üritus"}</h5>
                 <AdminEventForm form={form} onChange={setForm} />
                 <div className="flex gap-2">
-                  <Button onClick={submitForm}>Salvesta</Button>
+                  <Button onClick={submitForm} disabled={adminDisabled}>Salvesta</Button>
                   <Button variant="outline" onClick={() => setFormOpen(false)}>
-                    TÃ¼hista
+                    Tühista
                   </Button>
                 </div>
               </div>
@@ -360,7 +469,7 @@ function AdminEventForm({
       />
       <Input
         type="datetime-local"
-        placeholder="LÃµpp"
+        placeholder="Lõpp"
         value={form.end_at}
         onChange={(e) => set("end_at", e.target.value)}
       />

@@ -1,6 +1,5 @@
 const KEY = "estbirding.proxyBase";
 export const PROXY_ENDPOINT_UPDATED_EVENT = "proxy-endpoint-updated";
-export const DEFAULT_SUPABASE_PROXY_BASE = "https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/proxy?url=";
 export const FALLBACK_PROXY_BASE = "https://api.allorigins.win/raw?url=";
 
 function normalizeProxyBase(raw: string): string {
@@ -39,7 +38,7 @@ export function getEnvProxyBase(): string {
 }
 
 export function getDefaultProxyBase(): string {
-  return getEnvProxyBase() || buildDefaultSupabaseProxyBase() || DEFAULT_SUPABASE_PROXY_BASE || FALLBACK_PROXY_BASE;
+  return getEnvProxyBase() || buildDefaultSupabaseProxyBase() || FALLBACK_PROXY_BASE;
 }
 
 export function resolveProxyBase(currentInput?: string): string {

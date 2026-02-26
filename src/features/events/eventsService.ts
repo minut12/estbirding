@@ -1,4 +1,5 @@
-﻿import { supabase } from "@/config/supabaseClient";
+import { supabase } from "@/config/supabaseClient";
+import { getFunctionsBaseUrl, getSupabaseAnonKey, getSupabaseUrl, validateSupabaseConfig } from "@/config/supabaseConfig";
 import { getEventsAdminKey } from "./adminKey";
 
 export type EventCategory = "EstBirding" | "Muud";
@@ -30,9 +31,6 @@ export type EventPayload = Partial<Omit<EventRow, "id" | "created_at" | "updated
 
 const EVENT_COLUMNS =
   "id,title,description,start_at,end_at,location_name,lat,lng,category,organizer_name,url,image_url,is_published,is_archived,created_by,created_at,updated_at";
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 export async function listPublishedEvents(): Promise<EventRow[]> {
   const { data, error } = await (supabase as any)
@@ -68,20 +66,22 @@ export async function setPublished(id: string, flag: boolean): Promise<EventRow>
 function requireAdminKey(): string {
   const key = getEventsAdminKey();
   if (!key || !key.trim()) {
-    throw new Error("events_admin_key puudub. Lisa see Seaded → Arendaja alt.");
+    throw new Error("events_admin_key puudub. Lisa see Seaded ? Arendaja alt.");
   }
   return key.trim();
 }
 
 async function callAdminFn(action: string, payload: unknown, adminKey: string): Promise<any> {
-  const normalizedSupabaseUrl = (supabaseUrl || "").replace(/\/+$/, "");
-  const fnUrl = `${normalizedSupabaseUrl}/functions/v1/events-ingest`;
-
-  if (!supabaseUrl || !String(supabaseUrl).startsWith("http")) {
-    throw new Error(`VITE_SUPABASE_URL puudu/vigane: ${String(supabaseUrl)}`);
+  const validation = validateSupabaseConfig();
+  const resolvedUrl = validation.url || getSupabaseUrl() || "(empty)";
+  if (!validation.ok) {
+    throw new Error(`${validation.error} Resolved Supabase URL: ${resolvedUrl}`);
   }
+
+  const anonKey = getSupabaseAnonKey();
+  const fnUrl = `${getFunctionsBaseUrl()}/events-ingest`;
   if (!anonKey || anonKey.length < 20) {
-    throw new Error("VITE_SUPABASE_ANON_KEY puudu/vigane");
+    throw new Error(`VITE_SUPABASE_ANON_KEY puudu/vigane. Resolved Supabase URL: ${resolvedUrl}`);
   }
   if (!adminKey) {
     throw new Error("events_admin_key puudub");

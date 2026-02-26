@@ -193,21 +193,14 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
 // Run the full refresh, updating progress in DB
 async function runRefresh(
   supabase: ReturnType<typeof createClient>,
-  opts?: { startIndex?: number }
+  opts?: { startIndex?: number; runId?: string }
 ) {
   const total = SPECIES.length;
   const startIndex = Math.max(0, Math.min(total, Number(opts?.startIndex || 0)));
-
-  // Set status=running
-  await supabase
-    .from("linnuliigid_snapshot")
-    .update({
-      status: "running",
-      progress_done: startIndex,
-      progress_total: total,
-      last_error: null,
-    })
-    .eq("id", 1);
+  const runId = opts?.runId || crypto.randomUUID();
+  const startedAt = Date.now();
+  const MAX_RUN_MS = 90000;
+  const nowIso = () => new Date().toISOString();
 
   const { data: existingRow } = await supabase
     .from("linnuliigid_snapshot")
@@ -279,10 +272,18 @@ async function runRefresh(
     await supabase
       .from("linnuliigid_snapshot")
       .update({
+        points_json: points,
         progress_done: done,
         last_error: lastError,
+        heartbeat_at: nowIso(),
+        run_id: runId,
       })
       .eq("id", 1);
+
+    if (Date.now() - startedAt > MAX_RUN_MS) {
+      console.log(`[refresh] Time budget reached at ${done}/${total}; leaving status=running`);
+      return;
+    }
 
     // Jitter between batches
     await sleep(JITTER_MIN + Math.random() * (JITTER_MAX - JITTER_MIN));
@@ -298,6 +299,8 @@ async function runRefresh(
       progress_done: done,
       progress_total: total,
       last_error: lastError,
+      heartbeat_at: nowIso(),
+      run_id: runId,
     })
     .eq("id", 1);
 
@@ -339,11 +342,16 @@ Deno.serve(async (req) => {
         body = {};
       }
       const startIndex = Math.max(0, Number(body?.start_index || 0) || 0);
+      const force = body?.force === true;
+      const STALE_MS = 120000;
+      const nowMs = Date.now();
+      const nowIso = new Date().toISOString();
+      const runId = crypto.randomUUID();
       // Public refresh with cooldown — no key required
       // Check if already running or recently completed (15 min cooldown)
       const { data: current } = await supabaseAdmin
         .from("linnuliigid_snapshot")
-        .select("status, generated_at")
+        .select("status, generated_at, progress_done, progress_total, heartbeat_at, running_started_at")
         .eq("id", 1)
         .single();
 
@@ -365,11 +373,14 @@ Deno.serve(async (req) => {
         }
       }
 
-      if (current?.status === "running") {
+      const heartbeatMs = current?.heartbeat_at ? new Date(current.heartbeat_at).getTime() : null;
+      const isStale = !heartbeatMs || (nowMs - heartbeatMs > STALE_MS);
+      if (current?.status === "running" && !(force && isStale)) {
         return new Response(
           JSON.stringify({
             message: "Refresh already in progress",
             status: "running",
+            heartbeat_at: current?.heartbeat_at || null,
           }),
           {
             status: 409,
@@ -378,19 +389,37 @@ Deno.serve(async (req) => {
         );
       }
 
+      const resumeStart = Math.max(startIndex, Number(current?.progress_done || 0) || 0);
+      const runningStartedAt = current?.running_started_at || nowIso;
+
+      const { error: startError } = await supabaseAdmin
+        .from("linnuliigid_snapshot")
+        .update({
+          status: "running",
+          progress_done: resumeStart,
+          progress_total: SPECIES.length,
+          last_error: null,
+          running_started_at: runningStartedAt,
+          heartbeat_at: nowIso,
+          run_id: runId,
+        })
+        .eq("id", 1);
+      if (startError) throw startError;
+
       // Run refresh (this will take a while but edge functions support up to 150s)
       // Use waitUntil pattern: respond immediately, run in background
       // Actually, for simplicity, we run inline and let the client poll status
       // But we should respond quickly... Let's use EdgeRuntime.waitUntil if available
 
       // Start refresh in background
-      const refreshPromise = runRefresh(supabaseAdmin, { startIndex }).catch((e) => {
+      const refreshPromise = runRefresh(supabaseAdmin, { startIndex: resumeStart, runId }).catch((e) => {
         console.error("[refresh] Fatal error:", e);
         supabaseAdmin
           .from("linnuliigid_snapshot")
           .update({
             status: "error",
             last_error: e?.message || String(e),
+            heartbeat_at: new Date().toISOString(),
           })
           .eq("id", 1);
       });
@@ -401,16 +430,19 @@ Deno.serve(async (req) => {
         if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
           // @ts-ignore
           EdgeRuntime.waitUntil(refreshPromise);
-        } else {
-          // Fallback: just await it
-          await refreshPromise;
         }
       } catch {
-        await refreshPromise;
+        // no-op
       }
 
       return new Response(
-        JSON.stringify({ message: "Refresh started", status: "running", start_index: startIndex }),
+        JSON.stringify({
+          message: force && isStale ? "Refresh takeover started" : "Refresh started",
+          status: "running",
+          start_index: resumeStart,
+          force,
+          run_id: runId,
+        }),
         {
           status: 202,
           headers: { ...corsHeaders, "Content-Type": "application/json" },

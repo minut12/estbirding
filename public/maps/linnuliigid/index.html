@@ -442,12 +442,12 @@ function _startWatchdog(){
     if(Date.now() - __lastProgressAt <= 30000) return;
     const idx = _getResumeIndex();
     __lastFailedIndex = idx;
-    __lastErrorMessage = 'Watchdog timeout; auto-skip';
-    _setResumeIndex(idx + 1);
+    __lastErrorMessage = 'Watchdog timeout; forcing stale takeover';
+    _setResumeIndex(idx);
     _showSnapshotBanner('Hang detected, retrying...', 'warn');
     __lastProgressAt = Date.now();
     _abortActiveRequest();
-    triggerRefresh({ resumeFromSaved: true, silent: true });
+    triggerRefresh({ resumeFromSaved: true, silent: true, force: true });
   }, 5000);
 }
 function _stopWatchdog(){
@@ -495,6 +495,7 @@ function _updateProgressUI(done, total, status){
     if(bar) bar.style.display='none';
     if(stopBtn) stopBtn.style.display='none';
   }
+  _updateDebugPanel();
 }
 
 function _updateDebugPanel(){
@@ -626,7 +627,7 @@ function _startPolling(){
         if(__lastProgressAt > 0 && (now - __lastProgressAt) > 30000){
           _showSnapshotBanner('Hang detected, retrying...', 'warn');
           __lastProgressAt = now;
-          triggerRefresh({ resumeFromSaved: true, silent: true });
+          triggerRefresh({ resumeFromSaved: true, silent: true, force: true });
         }
       }
 
@@ -696,7 +697,7 @@ async function triggerRefresh(opts){
     const res = await fetchWithTimeout(snapshotUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ start_index: startIndex }),
+      body: JSON.stringify({ start_index: startIndex, force: !!options.force }),
     }, 20000);
 
     if(res.status === 429){

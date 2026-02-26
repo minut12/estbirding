@@ -39,33 +39,42 @@ export type Database = {
         Row: {
           created_at: string
           generated_at: string | null
+          heartbeat_at: string | null
           id: number
           last_error: string | null
           points_json: Json
           progress_done: number
           progress_total: number
+          run_id: string | null
+          running_started_at: string | null
           status: string
           updated_at: string
         }
         Insert: {
           created_at?: string
           generated_at?: string | null
+          heartbeat_at?: string | null
           id?: number
           last_error?: string | null
           points_json?: Json
           progress_done?: number
           progress_total?: number
+          run_id?: string | null
+          running_started_at?: string | null
           status?: string
           updated_at?: string
         }
         Update: {
           created_at?: string
           generated_at?: string | null
+          heartbeat_at?: string | null
           id?: number
           last_error?: string | null
           points_json?: Json
           progress_done?: number
           progress_total?: number
+          run_id?: string | null
+          running_started_at?: string | null
           status?: string
           updated_at?: string
         }
@@ -77,6 +86,7 @@ export type Database = {
           category: string
           content_html: string | null
           created_at: string
+          created_by: string | null
           description: string
           end_at: string | null
           guid: string
@@ -86,9 +96,12 @@ export type Database = {
           is_cancelled: boolean
           is_published: boolean
           language: string
+          lat: number | null
+          lng: number | null
           location_lat: number | null
           location_lon: number | null
           location_name: string | null
+          organizer_name: string | null
           registration_url: string | null
           source_id: string
           source_slug: string
@@ -103,6 +116,7 @@ export type Database = {
           category?: string
           content_html?: string | null
           created_at?: string
+          created_by?: string | null
           description?: string
           end_at?: string | null
           guid: string
@@ -112,9 +126,12 @@ export type Database = {
           is_cancelled?: boolean
           is_published?: boolean
           language?: string
+          lat?: number | null
+          lng?: number | null
           location_lat?: number | null
           location_lon?: number | null
           location_name?: string | null
+          organizer_name?: string | null
           registration_url?: string | null
           source_id: string
           source_slug: string
@@ -129,6 +146,7 @@ export type Database = {
           category?: string
           content_html?: string | null
           created_at?: string
+          created_by?: string | null
           description?: string
           end_at?: string | null
           guid?: string
@@ -138,9 +156,12 @@ export type Database = {
           is_cancelled?: boolean
           is_published?: boolean
           language?: string
+          lat?: number | null
+          lng?: number | null
           location_lat?: number | null
           location_lon?: number | null
           location_name?: string | null
+          organizer_name?: string | null
           registration_url?: string | null
           source_id?: string
           source_slug?: string
@@ -197,33 +218,42 @@ export type Database = {
         Row: {
           created_at: string
           generated_at: string | null
+          heartbeat_at: string | null
           id: number
           last_error: string | null
           points_json: Json
           progress_done: number
           progress_total: number
+          run_id: string | null
+          running_started_at: string | null
           status: string
           updated_at: string
         }
         Insert: {
           created_at?: string
           generated_at?: string | null
+          heartbeat_at?: string | null
           id?: number
           last_error?: string | null
           points_json?: Json
           progress_done?: number
           progress_total?: number
+          run_id?: string | null
+          running_started_at?: string | null
           status?: string
           updated_at?: string
         }
         Update: {
           created_at?: string
           generated_at?: string | null
+          heartbeat_at?: string | null
           id?: number
           last_error?: string | null
           points_json?: Json
           progress_done?: number
           progress_total?: number
+          run_id?: string | null
+          running_started_at?: string | null
           status?: string
           updated_at?: string
         }

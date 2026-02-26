@@ -446,6 +446,8 @@ function _resolveSnapshotApi(){
   return SNAPSHOT_API;
 }
 async function fetchWithTimeout(url, init, ms){
+  // Ensure stop controller is fresh before every request
+  _ensureStopController();
   const controller = new AbortController();
   const startedAt = Date.now();
   let abortReason = 'unknown';
@@ -454,7 +456,10 @@ async function fetchWithTimeout(url, init, ms){
     abortReason = (__abortReasonHint === 'user') ? 'user' : 'stop';
     controller.abort();
   };
-  try{ __stopController.signal.addEventListener('abort', stopRelay, { once:true }); }catch(e){}
+  // Only relay if the stop controller is NOT already aborted (prevents sync fire)
+  if(!__stopController.signal.aborted){
+    try{ __stopController.signal.addEventListener('abort', stopRelay, { once:true }); }catch(e){}
+  }
   const id = setTimeout(function(){
     abortReason = 'timeout';
     controller.abort();
@@ -463,13 +468,15 @@ async function fetchWithTimeout(url, init, ms){
     const reqInit = Object.assign({}, init || {}, { signal: controller.signal });
     return await fetch(url, reqInit);
   }catch(e){
-    if(e && e.name === 'AbortError'){
+    if(e && (e.name === 'AbortError' || (abortReason !== 'unknown'))){
       const durationMs = Date.now() - startedAt;
       const reason = (abortReason === 'unknown' && __abortReasonHint) ? __abortReasonHint : abortReason;
       const msg = 'Aborted (' + (reason || 'unknown') + ') after ' + durationMs + 'ms';
       __lastErrorMessage = msg;
       __lastDurationMs = durationMs;
-      throw new Error(msg);
+      var err = new Error(msg);
+      err.abortReason = reason;
+      throw err;
     }
     throw e;
   }finally{
@@ -736,6 +743,8 @@ function _stopPolling(){
   _stopWatchdog();
   _abortActiveRequest();
   try{ __stopController.abort(); }catch(e){}
+  // Immediately recreate so future requests aren't poisoned
+  __stopController = new AbortController();
   _updateProgressUI(0, 0, '');
 }
 
@@ -800,9 +809,21 @@ async function triggerRefresh(opts){
     _updateDebugPanel();
   }catch(e){
     __lastErrorMessage = String(e?.message || e || 'start failed');
-    _showSnapshotBanner('Failed to start refresh: ' + (__lastErrorMessage || 'Unknown error'), 'error');
-    _stopPolling();
-    _updateProgressUI(0, 0, '');
+    var reason = (e && e.abortReason) || '';
+    if(reason === 'user'){
+      // User pressed Stop – don't retry
+      _stopPolling();
+      _showSnapshotBanner('Stopped by user', 'warn');
+      _updateProgressUI(0, 0, '');
+    } else if(reason === 'timeout'){
+      // POST timed out – auto-retry after 2s
+      _showSnapshotBanner('Refresh request timed out, retrying...', 'warn');
+      setTimeout(function(){ triggerRefresh(options); }, 2000);
+    } else {
+      _showSnapshotBanner('Failed to start refresh: ' + (__lastErrorMessage || 'Unknown error'), 'error');
+      _stopPolling();
+      _updateProgressUI(0, 0, '');
+    }
     var ferr = document.getElementById('fetchError');
     if(ferr) ferr.textContent = __lastErrorMessage || 'start failed';
   }

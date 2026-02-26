@@ -375,10 +375,13 @@ let __lastRequestUrl = null;
 let __lastErrorMessage = null;
 let __lastFailedIndex = null;
 let __lastDurationMs = null;
+let __lastTimeoutMs = null;
+let __stopSignalAbortedAtStart = false;
 let __activeRequestController = null;
 let __stopController = new AbortController();
 let __abortReasonHint = '';
 let __isRefreshRunning = false;
+const MAP_BUILD_ID = '2026-02-26-1';
 let __watchdogTimer = null;
 let __lastAutoKickAt = 0;
 let __forceRetryInFlight = false;
@@ -446,24 +449,40 @@ function _resolveSnapshotApi(){
   return SNAPSHOT_API;
 }
 async function fetchWithTimeout(url, init, ms){
+  // Hard clamp: never abort below 5 seconds
+  ms = Math.max(ms || 15000, 5000);
+  __lastTimeoutMs = ms;
+
   // Ensure stop controller is fresh before every request
   _ensureStopController();
+  __stopSignalAbortedAtStart = __stopController.signal.aborted;
+  if(__stopSignalAbortedAtStart){
+    // Safety: recreate if somehow still aborted after _ensureStopController
+    __stopController = new AbortController();
+    __stopSignalAbortedAtStart = true; // record for debug
+  }
+
   const controller = new AbortController();
   const startedAt = Date.now();
   let abortReason = 'unknown';
   __activeRequestController = controller;
+
+  // Capture a local reference so relay always uses the controller from THIS call
+  const localStopController = __stopController;
   const stopRelay = function(){
     abortReason = (__abortReasonHint === 'user') ? 'user' : 'stop';
     controller.abort();
   };
-  // Only relay if the stop controller is NOT already aborted (prevents sync fire)
-  if(!__stopController.signal.aborted){
-    try{ __stopController.signal.addEventListener('abort', stopRelay, { once:true }); }catch(e){}
+  // Only relay if the local stop controller is NOT already aborted
+  if(!localStopController.signal.aborted){
+    try{ localStopController.signal.addEventListener('abort', stopRelay, { once:true }); }catch(e){}
   }
+
   const id = setTimeout(function(){
     abortReason = 'timeout';
     controller.abort();
   }, ms);
+
   try{
     const reqInit = Object.assign({}, init || {}, { signal: controller.signal });
     return await fetch(url, reqInit);
@@ -471,7 +490,7 @@ async function fetchWithTimeout(url, init, ms){
     if(e && (e.name === 'AbortError' || (abortReason !== 'unknown'))){
       const durationMs = Date.now() - startedAt;
       const reason = (abortReason === 'unknown' && __abortReasonHint) ? __abortReasonHint : abortReason;
-      const msg = 'Aborted (' + (reason || 'unknown') + ') after ' + durationMs + 'ms';
+      const msg = 'Aborted (' + (reason || 'unknown') + ') after ' + durationMs + 'ms; timeout=' + ms + '; stopAborted=' + __stopSignalAbortedAtStart;
       __lastErrorMessage = msg;
       __lastDurationMs = durationMs;
       var err = new Error(msg);
@@ -481,7 +500,7 @@ async function fetchWithTimeout(url, init, ms){
     throw e;
   }finally{
     clearTimeout(id);
-    try{ __stopController.signal.removeEventListener('abort', stopRelay); }catch(e){}
+    try{ localStopController.signal.removeEventListener('abort', stopRelay); }catch(e){}
     __abortReasonHint = '';
     if(__activeRequestController === controller) __activeRequestController = null;
   }
@@ -561,6 +580,7 @@ function _updateDebugPanel(){
   const totalWithCoords = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.lat); }).length;
   const occ7Count = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.occ7) && p.occ7 > 0; }).length;
   el.innerHTML = [
+    'buildId: <b>' + MAP_BUILD_ID + '</b>',
     'Status: <b>' + (__snapshotMeta.status || '?') + '</b>',
     'Generated: <b>' + (__snapshotMeta.generated_at ? (window.formatDateEE ? window.formatDateEE(__snapshotMeta.generated_at) : __snapshotMeta.generated_at) : '-') + '</b>',
     'Species with coords: <b>' + totalWithCoords + '</b>',
@@ -574,6 +594,8 @@ function _updateDebugPanel(){
     'lastErrorMessage: <b>' + (__lastErrorMessage || '-') + '</b>',
     'lastFailedIndex: <b>' + (__lastFailedIndex ?? '-') + '</b>',
     'lastDurationMs: <b>' + (__lastDurationMs ?? '-') + '</b>',
+    'lastTimeoutMs: <b>' + (__lastTimeoutMs ?? '-') + '</b>',
+    'stopSignalAbortedAtStart: <b>' + __stopSignalAbortedAtStart + '</b>',
     '7-day filter: <b>' + (is7daysOnly() ? 'ON' : 'OFF') + '</b>',
   ].join('<br>');
 }
@@ -867,6 +889,8 @@ function _wireSnapshotButtons(){
       __abortReasonHint = 'user';
       _abortActiveRequest();
       try{ __stopController.abort(); }catch(e){}
+      // Immediately recreate so nothing is poisoned
+      __stopController = new AbortController();
       _stopPolling();
       _showSnapshotBanner('Stopped by user', 'warn');
     });

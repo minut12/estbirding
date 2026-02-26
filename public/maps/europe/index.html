@@ -1112,6 +1112,7 @@ function loadSnapshotLocal(){
 }
 
 function reloadSnapshot(){
+  resetEuropeDebugState();
   const snapshot = loadSnapshotLocal();
   if (!snapshot) {
     showSnapshotBanner("No snapshot available", "warn");
@@ -1699,6 +1700,18 @@ function setRefreshError(message, idx, key){
   stoppedAtKey = key || null;
 }
 
+function resetEuropeDebugState(){
+  lastError = null;
+  stoppedAtIndex = null;
+  stoppedAtKey = null;
+  okCount = 0;
+  failCount = 0;
+  lastErrorStatus = null;
+  lastErrorSnippet = null;
+  lastBodySnippet = null;
+  lastRequest = null;
+}
+
 function validateRefreshConfig(){
   const missing = [];
   const token = getEbirdToken();
@@ -1890,6 +1903,7 @@ document.getElementById("modalSave").addEventListener("click", ()=>{
 
 /* ========= Buttons ========= */
 document.getElementById("btnRefreshData").addEventListener("click", async ()=>{
+  resetEuropeDebugState();
   hideSnapshotBanner();
   showWarn("");
   AUTO_SYNC_CANCELLED = true;
@@ -1934,7 +1948,10 @@ document.getElementById("btnRefreshData").addEventListener("click", async ()=>{
     updateDebugPanel();
   }
 });
-document.getElementById("btnReloadSnapshot").addEventListener("click", reloadSnapshot);
+document.getElementById("btnReloadSnapshot").addEventListener("click", ()=>{
+  resetEuropeDebugState();
+  reloadSnapshot();
+});
 filterBox.addEventListener("input", render);
 document.getElementById("toggle7days").addEventListener("change", (e)=>{
   recentOnly = !!e.target.checked;
@@ -2011,6 +2028,7 @@ window.addEventListener("message", function(ev){
     if (ev.origin !== window.location.origin) return;
     const t = ev.data.type;
     if (t === "MAP_REFRESH_VISIBLE" || t === "MAP_REFRESH_SELECTED") {
+      resetEuropeDebugState();
       document.getElementById("btnRefreshData")?.click();
     }
     if (t === "SPECIES_META_DEFAULTS" && ev.data.speciesMeta && typeof ev.data.speciesMeta === "object") {

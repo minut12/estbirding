@@ -178,21 +178,35 @@ async function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string
+): Promise<T> {
+  let timeoutId: number | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms) as unknown as number;
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
+}
+
 // Run the full refresh, updating progress in DB
-async function runRefresh(supabase: ReturnType<typeof createClient>) {
+async function runRefresh(
+  supabase: ReturnType<typeof createClient>,
+  opts?: { startIndex?: number }
+) {
   const total = SPECIES.length;
+  const startIndex = Math.max(0, Math.min(total, Number(opts?.startIndex || 0)));
 
-  // Set status=running
-  await supabase
+  const { data: existingRow } = await supabase
     .from("linnuliigid_snapshot")
-    .update({
-      status: "running",
-      progress_done: 0,
-      progress_total: total,
-      last_error: null,
-    })
-    .eq("id", 1);
-
+    .select("points_json")
+    .eq("id", 1)
+    .maybeSingle();
   const points: Record<
     string,
     {
@@ -203,9 +217,22 @@ async function runRefresh(supabase: ReturnType<typeof createClient>) {
       src?: string;
       visible?: boolean;
     }
-  > = {};
+  > = (existingRow?.points_json && typeof existingRow.points_json === "object")
+    ? existingRow.points_json as Record<string, { lat?: number; lon?: number; t?: string; occ7?: number; src?: string; visible?: boolean; }>
+    : {};
 
-  let done = 0;
+  // Set status=running
+  await supabase
+    .from("linnuliigid_snapshot")
+    .update({
+      status: "running",
+      progress_done: startIndex,
+      progress_total: total,
+      last_error: null,
+    })
+    .eq("id", 1);
+
+  let done = startIndex;
   let lastError: string | null = null;
   const CONCURRENCY = 5;
   const JITTER_MIN = 150;
@@ -213,7 +240,7 @@ async function runRefresh(supabase: ReturnType<typeof createClient>) {
   const MAX_RETRIES = 2;
 
   // Process in batches of CONCURRENCY
-  for (let i = 0; i < SPECIES.length; i += CONCURRENCY) {
+  for (let i = startIndex; i < SPECIES.length; i += CONCURRENCY) {
     const batch = SPECIES.slice(i, i + CONCURRENCY);
 
     const results = await Promise.allSettled(
@@ -222,7 +249,10 @@ async function runRefresh(supabase: ReturnType<typeof createClient>) {
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
           try {
             if (attempt > 0) await sleep(1000 * Math.pow(2, attempt - 1));
-            return { name, data: await fetchSpeciesData(name) };
+            return {
+              name,
+              data: await withTimeout(fetchSpeciesData(name), 25000, `species=${name}`),
+            };
           } catch (e) {
             lastErr = e instanceof Error ? e : new Error(String(e));
           }
@@ -309,6 +339,13 @@ Deno.serve(async (req) => {
     }
 
     if (req.method === "POST") {
+      let body: Record<string, unknown> = {};
+      try {
+        body = await req.json();
+      } catch {
+        body = {};
+      }
+      const startIndex = Math.max(0, Number(body?.start_index || 0) || 0);
       // Public refresh with cooldown — no key required
       // Check if already running or recently completed (15 min cooldown)
       const { data: current } = await supabaseAdmin
@@ -354,7 +391,7 @@ Deno.serve(async (req) => {
       // But we should respond quickly... Let's use EdgeRuntime.waitUntil if available
 
       // Start refresh in background
-      const refreshPromise = runRefresh(supabaseAdmin).catch((e) => {
+      const refreshPromise = runRefresh(supabaseAdmin, { startIndex }).catch((e) => {
         console.error("[refresh] Fatal error:", e);
         supabaseAdmin
           .from("linnuliigid_snapshot")
@@ -380,7 +417,7 @@ Deno.serve(async (req) => {
       }
 
       return new Response(
-        JSON.stringify({ message: "Refresh started", status: "running" }),
+        JSON.stringify({ message: "Refresh started", status: "running", start_index: startIndex }),
         {
           status: 202,
           headers: { ...corsHeaders, "Content-Type": "application/json" },

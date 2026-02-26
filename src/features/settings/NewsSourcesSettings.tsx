@@ -1,3 +1,4 @@
+﻿import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/config/supabaseClient';
 import { Input } from '@/components/ui/input';
@@ -6,8 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Loader2, TestTube, Check, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Loader2, TestTube, Check, X, ExternalLink, Copy } from 'lucide-react';
 import { loadNewsSourcesWithOrigin, resetNewsSourcesToDefaults, saveNewsSources, type NewsSourcesOrigin } from '@/lib/newsSourcesStorage';
 import type { NewsSourceConfigItem } from '@/config/newsSources';
 
@@ -31,7 +31,10 @@ export default function NewsSourcesSettings() {
   const { data: remoteSources = [], isLoading } = useQuery<NewsSource[]>({
     queryKey: ['news-sources-settings'],
     queryFn: async () => {
-      const { data } = await supabase.from('news_sources').select('id, name, slug, key, type, homepage_url, feed_url, is_enabled').eq('is_active', true);
+      const { data } = await supabase
+        .from('news_sources')
+        .select('id, name, slug, key, type, homepage_url, feed_url, is_enabled')
+        .eq('is_active', true);
       return (data || []) as NewsSource[];
     },
   });
@@ -68,7 +71,7 @@ export default function NewsSourcesSettings() {
     setOrigin('stored');
   };
 
-  if (isLoading) return <p className="text-sm text-muted-foreground">Laen allikaid…</p>;
+  if (isLoading) return <p className="text-sm text-muted-foreground">Laen allikaid...</p>;
   if (sources.length === 0) {
     return (
       <div className="space-y-3">
@@ -82,7 +85,7 @@ export default function NewsSourcesSettings() {
   return (
     <div className="block space-y-4">
       <h3 className="font-semibold text-foreground">Uudiste allikad</h3>
-      {sources.map(source => (
+      {sources.map((source) => (
         <SourceCard
           key={source.id}
           source={source}
@@ -135,11 +138,14 @@ function SourceCard({
       queryClient.invalidateQueries({ queryKey: ['news-sources'] });
       toast.success(`${source.name} uuendatud`);
     },
-    onError: () => toast.error('Salvestamine ebaõnnestus'),
+    onError: () => toast.error('Salvestamine ebaonnestus'),
   });
 
   const testFeed = async () => {
-    if (!feedUrl) { toast.error('Sisesta RSS URL'); return; }
+    if (!feedUrl) {
+      toast.error('Sisesta RSS URL');
+      return;
+    }
     setTesting(true);
     setTestResult(null);
     try {
@@ -160,28 +166,63 @@ function SourceCard({
           sampleTitles: Array.isArray(data?.sampleTitles) ? data.sampleTitles : [],
         });
       } else {
-        setTestResult({ ok: false, error: data?.error || 'Voogu ei õnnestunud lugeda' });
+        setTestResult({ ok: false, error: data?.error || 'Voogu ei onnestunud lugeda' });
       }
     } catch (e: any) {
-      setTestResult({ ok: false, error: e?.message || 'Voogu ei õnnestunud lugeda' });
+      setTestResult({ ok: false, error: e?.message || 'Voogu ei onnestunud lugeda' });
     } finally {
       setTesting(false);
     }
   };
 
   const isFacebook = source.slug.includes('facebook');
+  const sourceUrl = (feedUrl || source.feed_url || source.homepage_url || '').trim();
+  const shortUrl = sourceUrl ? sourceUrl.replace(/^https?:\/\//, '') : '';
+
+  const copySourceUrl = async () => {
+    if (!sourceUrl) {
+      toast.error('Allika URL puudub');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(sourceUrl);
+      toast.success('URL kopeeritud');
+    } catch {
+      toast.error('URL kopeerimine ebaonnestus');
+    }
+  };
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-3">
       <div className="flex items-start justify-between gap-2 sm:items-center">
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="font-medium text-sm text-foreground">{source.name}</span>
           <Badge variant="outline" className="text-xs">{source.type}</Badge>
+          {sourceUrl && (
+            <>
+              <a
+                href={sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-primary underline underline-offset-4 hover:text-primary/80"
+                title={shortUrl || sourceUrl}
+              >
+                Ava allikas
+                <ExternalLink className="h-3 w-3" />
+              </a>
+              <button
+                type="button"
+                onClick={copySourceUrl}
+                className="inline-flex items-center gap-1 rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted"
+                title={shortUrl || sourceUrl}
+              >
+                <Copy className="h-3 w-3" />
+                Copy
+              </button>
+            </>
+          )}
         </div>
-        <Switch
-          checked={enabled}
-          onCheckedChange={setEnabled}
-        />
+        <Switch checked={enabled} onCheckedChange={setEnabled} />
       </div>
 
       <div className="space-y-1.5">
@@ -194,7 +235,7 @@ function SourceCard({
         />
         {isFacebook && (
           <p className="text-xs text-muted-foreground">
-            Kasuta Facebook→RSS teenust (nt RSS.app / FetchRSS). Facebooki tokenit pole vaja.
+            Kasuta Facebook->RSS teenust (nt RSS.app / FetchRSS). Facebooki tokenit pole vaja.
           </p>
         )}
       </div>
@@ -212,7 +253,7 @@ function SourceCard({
           ) : (
             <div className="flex items-center gap-1.5">
               <X className="w-3.5 h-3.5" />
-              <span>{testResult.error || 'Voogu ei �nnestunud lugeda'}</span>
+              <span>{testResult.error || 'Voogu ei onnestunud lugeda'}</span>
             </div>
           )}
         </div>
@@ -241,4 +282,3 @@ function SourceCard({
     </div>
   );
 }
-

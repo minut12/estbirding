@@ -824,8 +824,8 @@ async function _controlSkipOnServer(targetIndex, reason){
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      action: 'skip',
-      index: Math.max(0, Number(targetIndex) || 0),
+      action: 'force_advance',
+      toIndex: Math.max(0, Number(targetIndex) || 0),
       reason: reason || 'watchdog',
       force: true,
     }),

@@ -374,9 +374,9 @@ Deno.serve(async (req) => {
       const { data: current, error: currentError } = await selectSnapshotRow(supabaseAdmin);
       if (currentError) throw currentError;
 
-      if (action === "skip") {
-        const requestedIndex = Math.max(0, Number(body?.index || 0) || 0);
-        const reason = String(body?.reason || "skip");
+      if (action === "skip" || action === "force_advance") {
+        const requestedIndex = Math.max(0, Number(body?.toIndex ?? body?.index ?? 0) || 0);
+        const reason = String(body?.reason || "force_advance");
         const currentDone = Number(current?.progress_done || 0);
         const progressTotal = Number(current?.progress_total || SPECIES.length);
         const nextDone = Math.max(currentDone, Math.min(requestedIndex, progressTotal));
@@ -399,7 +399,7 @@ Deno.serve(async (req) => {
         return new Response(
           JSON.stringify({
             ok: true,
-            action: "skip",
+            action: "force_advance",
             status: updated?.status || (nextDone >= progressTotal ? "ready" : "running"),
             progress_done: Number(updated?.progress_done || nextDone),
             progress_total: Number(updated?.progress_total || progressTotal),

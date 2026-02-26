@@ -12,7 +12,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const INGEST_KEY = Deno.env.get("EVENTS_INGEST_KEY"); // reuse same key
 
 // All 369 species
-const SPECIES = ["Aed-põõsalind","Aed-roolind","Aedporr","Alk","Alverüdi","Ameerika piilpart","Atlantise tormilind","Aul","Baleaari tormilind","Euroopa kaelustäks","Habekakk","Habeviires","Hahk","Hakk","Hall-kärbsenäpp","Hallhaigur","Hallhani","Hallkibu","Hallpea-rähn","Hallpõsk-pütt","Hallrästas","Hallrüdi","Halltsiitsitaja","Hallvares","Hallõgija","Hangelind","Harakas","Haugaskotkas","Hele-urvalind","Heletilder","Herilaseviu","Hiireviu","Hoburästas","Händkakk","Hänilane","Hõbehaigur","Hõbehaugas","Hõbekajakas","Hüüp","Ida-mustvaeras","Jahipistrik","Jämejalg","Järvekaur","Jääkajakas","Jääkaur","Jääkoskel","Jõgi-ritsiklind","Jõgitiir","Jõgitilder","Jõgivästrik","Kadakatäks","Kaelus-kärbsenäpp","Kaelus-turteltuvi","Kaeluskotkas","Kaelusrästas","Kaelustuvi","Kalakajakas","Kalakotkas","Kalda-rädilind","Kaldapääsuke","Kaljukajakas","Kaljukotkas","Kanada lagle","Kanakull","Kanepilind","Karbuskajakas","Karkjalg","Karmiinleevike","Karvasjalg-kakk","Karvasjalg-viu","Kassikakk","Kiivitaja","Kiripugu-rüdi","Kirjuhahk","Kivikakk","Kivirullija","Kivitäks","Kodukakk","Kodutuvi","Koduvarblane","Koldhaigur","Koldjalg-hõbekajakas","Koldvint","Kormoran","Krüüsel","Kukkurtihane","Kuld-lehelind","Kuldhänilane","Kuldnokk","Kuldtsiitsitaja","Kuninghahk","Kuuse-käbilind","Käblik","Kägu","Käharpelikan","Käosulane","Kääbuskormoran","Kääbuskotkas","Kõnnuõgija","Kõrbe-kivitäks","Kõrbe-põõsalind","Kõrkja-roolind","Kõrvukräts","Kõvernokk-rüdi","Kühmnokk-luik","Künnivares","Laanenäär","Laanepüü","Laanerähn","Laisaba-änn","Lammitilder","Lapi tsiitsitaja","Lasuurtihane","Lauk","Laululuik","Laulurästas","Leeterüdi","Leevike","Liiv-kivitäks","Liivatüll","Linavästrik","Loorkakk","Luitsnokk-iibis","Luitsnokk-part","Lumehani","Lumekakk","Lääne-lehelind","Lääne-pöialpoiss","Lõopistrik","Lõuna-hõbekajakas","Lühinokk-hani","Madukotkas","Mandariinpart","Merikajakas","Merikotkas","Merirüdi","Merisk","Merivart","Mesilasenäpp","Mets-lehelind","Metsis","Metskiur","Metskurvits","Metstilder","Metsvint","Mudanepp","Mudatilder","Must-harksaba","Must-kärbsenäpp","Must-lepalind","Must-toonekurg","Mustjalg-tüll","Mustkael-pütt","Mustkurk-raat","Mustlagle","Mustlauk-õgija","Mustpea-põõsalind","Mustpea-tsiitsitaja","Mustpugu-rästas","Musträhn","Musträstas","Mustsaba-vigle","Musttihane","Mustvaeras","Mustvares","Mustviires","Mägi-kanepilind","Mägikiur","Männi-käbilind","Männileevike","Männitalvike","Mänsak","Naaskelnokk","Naerukajakas","Naerutiir","Niidu-kaelustäks","Niidu-ritsiklind","Niidukiur","Nunn-kivitäks","Nurmkana","Nõgipart","Nõlva-lehelind","Nõmmekiur","Nõmmelõoke","Ohakalind","Ohhoota hõbekajakas","Padu-roolind","Pasknäär","Peegel-tormilind","Pelikan","Peoleo","Piilpart","Piiritaja","Pikksaba-änn","Plütt","Plüü","Polaarkajakas","Porr","Prillvaeras","Pruunselg-põõsalind","Puna-harksaba","Puna-veetallaja","Punajalg-pistrik","Punajalg-tilder","Punakael-lagle","Punakurk-kaur","Punanokk-vart","Punapea-vart","Punapea-õgija","Punarind","Punasaba-õgija","Punaselg-õgija","Purpurhaigur","Puukoristaja","Põhja-kirjurästas","Põhja-lehelind","Põhja-tormipääsu","Põhjatihane","Põhjatsiitsitaja","Põhjavint","Põldlõoke","Põldtsiitsitaja","Põldvarblane","Põldvutt","Pöialpoiss","Rabapistrik","Rabapüü","Raisakotkas","Randkajakas","Randkiur","Randtiir","Rasvatihane","Raudkull","Ristpart","Roherähn","Rohevint","Rohukoskel","Rohunepp","Ronk","Roo-loorkull","Roo-ritsiklind","Roohabekas","Rooruik","Roosa-kuldnokk","Roosakajakas","Roosatiir","Roostepääsuke","Roosterind-tüll","Rootsiitsitaja","Rubiinööbik","Rukkirääk","Ruugerüdi","Rägapart","Rästas-roolind","Räusktiir","Rääkspart","Räästapääsuke","Rüüt","Sabatihane","Salu-lehelind","Salupäll","Salutihane","Sarviklõoke","Sarvikpütt","Siberi lehelind","Siberi raat","Siidhaigur","Siidisaba","Siisike","Sinikael-part","Siniraag","Sinirind","Sinisaba","Sinitihane","Soo-loorkull","Soo-roolind","Sookiur","Sookurg","Soopart","Sooräts","Soorüdi","Stepi-loorkull","Stepikajakas","Stepikiivitaja","Stepikotkas","Stepipistrik","Stepiviu","Suitsupääsuke","Suula","Suur-kirjurähn","Suur-konnakotkas","Suur-laukhani","Suurkoovitaja","Suurnokk-vint","Suurrüdi","Suuränn","Sõtkas","Söödikänn","Tait","Talvike","Tamme-kirjurähn","Teder","Tiigi-roolind","Tikutaja","Triip-ritsiklind","Tuhk-lehelind","Tumetilder","Tundra-rabahani","Tundrakaur","Tundrakiur","Tutkas","Tutt-tihane","Tutt-tiir","Tuttlõoke","Tuttpütt","Tuttvart","Tuuletallaja","Täpikhuik","Tõmmu-lehelind","Tõmmuiibis","Tõmmukajakas","Tõmmuvaeras","Urvalind","Vaaraohani","Vaenukägu","Vainurästas","Valge-toonekurg","Valgepõsk-lagle","Valgeselg-kirjurähn","Valgesilm-vart","Valgetiib-viires","Veetallaja","Veisehaigur","Vesipapp","Vihitaja","Viupart","Väike-kirjurähn","Väike-konnakotkas","Väike-käosulane","Väike-kärbsenäpp","Väike-laukhani","Väike-lehelind","Väike-põõsalind","Väikealk","Väikehuik","Väikehüüp","Väikekajakas","Väikekoovitaja","Väikekoskel","Väikeluik","Väikepistrik","Väikepütt","Väikerüdi","Väiketiir","Väiketrapp","Väiketsiitsitaja","Väiketüll","Välja-loorkull","Välja-väikelõoke","Värbkakk","Värbrüdi","Väänkael","Võsa-ritsiklind","Võsaraat","Vööt-käbilind","Vööt-põõsalind","Vööthani","Vöötkakk","Vöötnokk-kajakas","Vöötsaba-vigle","Õõnetuvi","Ööbik","Ööhaigur","Öösorr"];
+const SPECIES = ["Aed-pÃµÃµsalind","Aed-roolind","Aedporr","Alk","AlverÃ¼di","Ameerika piilpart","Atlantise tormilind","Aul","Baleaari tormilind","Euroopa kaelustÃ¤ks","Habekakk","Habeviires","Hahk","Hakk","Hall-kÃ¤rbsenÃ¤pp","Hallhaigur","Hallhani","Hallkibu","Hallpea-rÃ¤hn","HallpÃµsk-pÃ¼tt","HallrÃ¤stas","HallrÃ¼di","Halltsiitsitaja","Hallvares","HallÃµgija","Hangelind","Harakas","Haugaskotkas","Hele-urvalind","Heletilder","Herilaseviu","Hiireviu","HoburÃ¤stas","HÃ¤ndkakk","HÃ¤nilane","HÃµbehaigur","HÃµbehaugas","HÃµbekajakas","HÃ¼Ã¼p","Ida-mustvaeras","Jahipistrik","JÃ¤mejalg","JÃ¤rvekaur","JÃ¤Ã¤kajakas","JÃ¤Ã¤kaur","JÃ¤Ã¤koskel","JÃµgi-ritsiklind","JÃµgitiir","JÃµgitilder","JÃµgivÃ¤strik","KadakatÃ¤ks","Kaelus-kÃ¤rbsenÃ¤pp","Kaelus-turteltuvi","Kaeluskotkas","KaelusrÃ¤stas","Kaelustuvi","Kalakajakas","Kalakotkas","Kalda-rÃ¤dilind","KaldapÃ¤Ã¤suke","Kaljukajakas","Kaljukotkas","Kanada lagle","Kanakull","Kanepilind","Karbuskajakas","Karkjalg","Karmiinleevike","Karvasjalg-kakk","Karvasjalg-viu","Kassikakk","Kiivitaja","Kiripugu-rÃ¼di","Kirjuhahk","Kivikakk","Kivirullija","KivitÃ¤ks","Kodukakk","Kodutuvi","Koduvarblane","Koldhaigur","Koldjalg-hÃµbekajakas","Koldvint","Kormoran","KrÃ¼Ã¼sel","Kukkurtihane","Kuld-lehelind","KuldhÃ¤nilane","Kuldnokk","Kuldtsiitsitaja","Kuninghahk","Kuuse-kÃ¤bilind","KÃ¤blik","KÃ¤gu","KÃ¤harpelikan","KÃ¤osulane","KÃ¤Ã¤buskormoran","KÃ¤Ã¤buskotkas","KÃµnnuÃµgija","KÃµrbe-kivitÃ¤ks","KÃµrbe-pÃµÃµsalind","KÃµrkja-roolind","KÃµrvukrÃ¤ts","KÃµvernokk-rÃ¼di","KÃ¼hmnokk-luik","KÃ¼nnivares","LaanenÃ¤Ã¤r","LaanepÃ¼Ã¼","LaanerÃ¤hn","Laisaba-Ã¤nn","Lammitilder","Lapi tsiitsitaja","Lasuurtihane","Lauk","Laululuik","LaulurÃ¤stas","LeeterÃ¼di","Leevike","Liiv-kivitÃ¤ks","LiivatÃ¼ll","LinavÃ¤strik","Loorkakk","Luitsnokk-iibis","Luitsnokk-part","Lumehani","Lumekakk","LÃ¤Ã¤ne-lehelind","LÃ¤Ã¤ne-pÃ¶ialpoiss","LÃµopistrik","LÃµuna-hÃµbekajakas","LÃ¼hinokk-hani","Madukotkas","Mandariinpart","Merikajakas","Merikotkas","MerirÃ¼di","Merisk","Merivart","MesilasenÃ¤pp","Mets-lehelind","Metsis","Metskiur","Metskurvits","Metstilder","Metsvint","Mudanepp","Mudatilder","Must-harksaba","Must-kÃ¤rbsenÃ¤pp","Must-lepalind","Must-toonekurg","Mustjalg-tÃ¼ll","Mustkael-pÃ¼tt","Mustkurk-raat","Mustlagle","Mustlauk-Ãµgija","Mustpea-pÃµÃµsalind","Mustpea-tsiitsitaja","Mustpugu-rÃ¤stas","MustrÃ¤hn","MustrÃ¤stas","Mustsaba-vigle","Musttihane","Mustvaeras","Mustvares","Mustviires","MÃ¤gi-kanepilind","MÃ¤gikiur","MÃ¤nni-kÃ¤bilind","MÃ¤nnileevike","MÃ¤nnitalvike","MÃ¤nsak","Naaskelnokk","Naerukajakas","Naerutiir","Niidu-kaelustÃ¤ks","Niidu-ritsiklind","Niidukiur","Nunn-kivitÃ¤ks","Nurmkana","NÃµgipart","NÃµlva-lehelind","NÃµmmekiur","NÃµmmelÃµoke","Ohakalind","Ohhoota hÃµbekajakas","Padu-roolind","PasknÃ¤Ã¤r","Peegel-tormilind","Pelikan","Peoleo","Piilpart","Piiritaja","Pikksaba-Ã¤nn","PlÃ¼tt","PlÃ¼Ã¼","Polaarkajakas","Porr","Prillvaeras","Pruunselg-pÃµÃµsalind","Puna-harksaba","Puna-veetallaja","Punajalg-pistrik","Punajalg-tilder","Punakael-lagle","Punakurk-kaur","Punanokk-vart","Punapea-vart","Punapea-Ãµgija","Punarind","Punasaba-Ãµgija","Punaselg-Ãµgija","Purpurhaigur","Puukoristaja","PÃµhja-kirjurÃ¤stas","PÃµhja-lehelind","PÃµhja-tormipÃ¤Ã¤su","PÃµhjatihane","PÃµhjatsiitsitaja","PÃµhjavint","PÃµldlÃµoke","PÃµldtsiitsitaja","PÃµldvarblane","PÃµldvutt","PÃ¶ialpoiss","Rabapistrik","RabapÃ¼Ã¼","Raisakotkas","Randkajakas","Randkiur","Randtiir","Rasvatihane","Raudkull","Ristpart","RoherÃ¤hn","Rohevint","Rohukoskel","Rohunepp","Ronk","Roo-loorkull","Roo-ritsiklind","Roohabekas","Rooruik","Roosa-kuldnokk","Roosakajakas","Roosatiir","RoostepÃ¤Ã¤suke","Roosterind-tÃ¼ll","Rootsiitsitaja","RubiinÃ¶Ã¶bik","RukkirÃ¤Ã¤k","RuugerÃ¼di","RÃ¤gapart","RÃ¤stas-roolind","RÃ¤usktiir","RÃ¤Ã¤kspart","RÃ¤Ã¤stapÃ¤Ã¤suke","RÃ¼Ã¼t","Sabatihane","Salu-lehelind","SalupÃ¤ll","Salutihane","SarviklÃµoke","SarvikpÃ¼tt","Siberi lehelind","Siberi raat","Siidhaigur","Siidisaba","Siisike","Sinikael-part","Siniraag","Sinirind","Sinisaba","Sinitihane","Soo-loorkull","Soo-roolind","Sookiur","Sookurg","Soopart","SoorÃ¤ts","SoorÃ¼di","Stepi-loorkull","Stepikajakas","Stepikiivitaja","Stepikotkas","Stepipistrik","Stepiviu","SuitsupÃ¤Ã¤suke","Suula","Suur-kirjurÃ¤hn","Suur-konnakotkas","Suur-laukhani","Suurkoovitaja","Suurnokk-vint","SuurrÃ¼di","SuurÃ¤nn","SÃµtkas","SÃ¶Ã¶dikÃ¤nn","Tait","Talvike","Tamme-kirjurÃ¤hn","Teder","Tiigi-roolind","Tikutaja","Triip-ritsiklind","Tuhk-lehelind","Tumetilder","Tundra-rabahani","Tundrakaur","Tundrakiur","Tutkas","Tutt-tihane","Tutt-tiir","TuttlÃµoke","TuttpÃ¼tt","Tuttvart","Tuuletallaja","TÃ¤pikhuik","TÃµmmu-lehelind","TÃµmmuiibis","TÃµmmukajakas","TÃµmmuvaeras","Urvalind","Vaaraohani","VaenukÃ¤gu","VainurÃ¤stas","Valge-toonekurg","ValgepÃµsk-lagle","Valgeselg-kirjurÃ¤hn","Valgesilm-vart","Valgetiib-viires","Veetallaja","Veisehaigur","Vesipapp","Vihitaja","Viupart","VÃ¤ike-kirjurÃ¤hn","VÃ¤ike-konnakotkas","VÃ¤ike-kÃ¤osulane","VÃ¤ike-kÃ¤rbsenÃ¤pp","VÃ¤ike-laukhani","VÃ¤ike-lehelind","VÃ¤ike-pÃµÃµsalind","VÃ¤ikealk","VÃ¤ikehuik","VÃ¤ikehÃ¼Ã¼p","VÃ¤ikekajakas","VÃ¤ikekoovitaja","VÃ¤ikekoskel","VÃ¤ikeluik","VÃ¤ikepistrik","VÃ¤ikepÃ¼tt","VÃ¤ikerÃ¼di","VÃ¤iketiir","VÃ¤iketrapp","VÃ¤iketsiitsitaja","VÃ¤iketÃ¼ll","VÃ¤lja-loorkull","VÃ¤lja-vÃ¤ikelÃµoke","VÃ¤rbkakk","VÃ¤rbrÃ¼di","VÃ¤Ã¤nkael","VÃµsa-ritsiklind","VÃµsaraat","VÃ¶Ã¶t-kÃ¤bilind","VÃ¶Ã¶t-pÃµÃµsalind","VÃ¶Ã¶thani","VÃ¶Ã¶tkakk","VÃ¶Ã¶tnokk-kajakas","VÃ¶Ã¶tsaba-vigle","Ã•Ãµnetuvi","Ã–Ã¶bik","Ã–Ã¶haigur","Ã–Ã¶sorr"];
 
 function isEstoniaCoords(lat: number, lon: number) {
   return lat >= 57 && lat <= 60 && lon >= 21 && lon <= 29;
@@ -190,118 +190,87 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
   }
 }
 
-// Run the full refresh, updating progress in DB
-async function runRefresh(
+// NOTE: heartbeat_at is optional. Add it with a migration for best stale-run detection.
+async function updateSnapshotRow(
   supabase: ReturnType<typeof createClient>,
-  opts?: { startIndex?: number }
+  patch: Record<string, unknown>,
+) {
+  const withHeartbeat = { ...patch, heartbeat_at: new Date().toISOString() };
+  const result = await supabase.from("linnuliigid_snapshot").update(withHeartbeat).eq("id", 1);
+  if (!result.error) return;
+  if (String(result.error.message || "").toLowerCase().includes("heartbeat_at")) {
+    await supabase.from("linnuliigid_snapshot").update(patch).eq("id", 1);
+    return;
+  }
+  throw result.error;
+}
+
+async function runRefreshChunk(
+  supabase: ReturnType<typeof createClient>,
+  opts?: { startIndex?: number; maxItems?: number },
 ) {
   const total = SPECIES.length;
-  const startIndex = Math.max(0, Math.min(total, Number(opts?.startIndex || 0)));
+  const maxItems = Math.max(1, Math.min(50, Number(opts?.maxItems || 10)));
+  let startIndex = Math.max(0, Math.min(total, Number(opts?.startIndex || 0)));
+  let lastError: string | null = null;
 
-  // Set status=running
-  await supabase
+  const { data: current } = await supabase
     .from("linnuliigid_snapshot")
-    .update({
-      status: "running",
-      progress_done: startIndex,
-      progress_total: total,
-      last_error: null,
-    })
-    .eq("id", 1);
-
-  const { data: existingRow } = await supabase
-    .from("linnuliigid_snapshot")
-    .select("points_json")
+    .select("status, progress_done, heartbeat_at, points_json")
     .eq("id", 1)
     .maybeSingle();
-  const points: Record<
-    string,
-    {
-      lat?: number;
-      lon?: number;
-      t?: string;
-      occ7?: number;
-      src?: string;
-      visible?: boolean;
-    }
-  > = (existingRow?.points_json && typeof existingRow.points_json === "object")
-    ? existingRow.points_json as Record<string, { lat?: number; lon?: number; t?: string; occ7?: number; src?: string; visible?: boolean; }>
-    : {};
 
-  let done = startIndex;
-  let lastError: string | null = null;
-  const CONCURRENCY = 5;
-  const JITTER_MIN = 150;
-  const JITTER_MAX = 250;
-  const MAX_RETRIES = 2;
-
-  // Process in batches of CONCURRENCY
-  for (let i = startIndex; i < SPECIES.length; i += CONCURRENCY) {
-    const batch = SPECIES.slice(i, i + CONCURRENCY);
-
-    const results = await Promise.allSettled(
-      batch.map(async (name) => {
-        let lastErr: Error | null = null;
-        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-          try {
-            if (attempt > 0) await sleep(1000 * Math.pow(2, attempt - 1));
-            return { name, data: await withTimeout(fetchSpeciesData(name), 25000, `species=${name}`) };
-          } catch (e) {
-            lastErr = e instanceof Error ? e : new Error(String(e));
-          }
-        }
-        throw lastErr || new Error("Unknown error for " + name);
-      })
-    );
-
-    for (const r of results) {
-      done++;
-      if (r.status === "fulfilled") {
-        const { name, data } = r.value;
-        const entry: (typeof points)[string] = {
-          src: "Elurikkus",
-          visible: true,
-        };
-        if (data.latestDate) entry.t = data.latestDate;
-        if (data.lat !== null && data.lon !== null) {
-          entry.lat = data.lat;
-          entry.lon = data.lon;
-        }
-        entry.occ7 = data.occ7;
-        points[name] = entry;
-      } else {
-        lastError = `${batch[results.indexOf(r)]}: ${r.reason?.message || r.reason}`;
-        console.warn("[refresh]", lastError);
-      }
-    }
-
-    // Update progress every batch
-    await supabase
-      .from("linnuliigid_snapshot")
-      .update({
-        progress_done: done,
-        last_error: lastError,
-      })
-      .eq("id", 1);
-
-    // Jitter between batches
-    await sleep(JITTER_MIN + Math.random() * (JITTER_MAX - JITTER_MIN));
+  const heartbeatMs = current?.heartbeat_at ? new Date(current.heartbeat_at).getTime() : 0;
+  const staleRunning = current?.status === "running" && heartbeatMs > 0 && (Date.now() - heartbeatMs) > 5 * 60 * 1000;
+  if (current?.status === "running" && !staleRunning && Number(current?.progress_done || 0) > startIndex) {
+    startIndex = Number(current?.progress_done || startIndex);
+  }
+  if (staleRunning) {
+    startIndex = Number(current?.progress_done || startIndex);
   }
 
-  // Write final snapshot
-  await supabase
-    .from("linnuliigid_snapshot")
-    .update({
-      points_json: points,
-      generated_at: new Date().toISOString(),
-      status: "ready",
-      progress_done: done,
-      progress_total: total,
-      last_error: lastError,
-    })
-    .eq("id", 1);
+  const points: Record<string, { lat?: number; lon?: number; t?: string; occ7?: number; src?: string; visible?: boolean }> =
+    (current?.points_json && typeof current.points_json === "object")
+      ? current.points_json as Record<string, { lat?: number; lon?: number; t?: string; occ7?: number; src?: string; visible?: boolean }>
+      : {};
 
-  console.log(`[refresh] Complete: ${done}/${total} species processed`);
+  await updateSnapshotRow(supabase, {
+    status: "running",
+    progress_done: startIndex,
+    progress_total: total,
+    last_error: null,
+  });
+
+  let done = startIndex;
+  const endIndex = Math.min(total, startIndex + maxItems);
+  for (let i = startIndex; i < endIndex; i++) {
+    const name = SPECIES[i];
+    try {
+      const data = await withTimeout(fetchSpeciesData(name), 25000, `species=${name}`);
+      const entry: (typeof points)[string] = { src: "Elurikkus", visible: true };
+      if (data.latestDate) entry.t = data.latestDate;
+      if (data.lat !== null && data.lon !== null) {
+        entry.lat = data.lat;
+        entry.lon = data.lon;
+      }
+      entry.occ7 = data.occ7;
+      points[name] = entry;
+    } catch (e) {
+      lastError = `${name}: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      done = i + 1;
+      await updateSnapshotRow(supabase, {
+        points_json: points,
+        progress_done: done,
+        progress_total: total,
+        status: done >= total ? "ready" : "running",
+        generated_at: done >= total ? new Date().toISOString() : null,
+        last_error: lastError,
+      });
+    }
+    await sleep(120);
+  }
+  return { done, total, status: done >= total ? "ready" : "running", last_error: lastError };
 }
 
 Deno.serve(async (req) => {
@@ -339,83 +308,12 @@ Deno.serve(async (req) => {
         body = {};
       }
       const startIndex = Math.max(0, Number(body?.start_index || 0) || 0);
-      // Public refresh with cooldown — no key required
-      // Check if already running or recently completed (15 min cooldown)
-      const { data: current } = await supabaseAdmin
-        .from("linnuliigid_snapshot")
-        .select("status, generated_at")
-        .eq("id", 1)
-        .single();
-
-      if (current?.generated_at) {
-        const elapsed = Date.now() - new Date(current.generated_at).getTime();
-        const COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
-        if (elapsed < COOLDOWN_MS && current.status === "ready") {
-          const retryAfter = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
-          return new Response(
-            JSON.stringify({
-              error: "Refresh recently completed. Try again later.",
-              retry_after_seconds: retryAfter,
-            }),
-            {
-              status: 429,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            }
-          );
-        }
-      }
-
-      if (current?.status === "running") {
-        return new Response(
-          JSON.stringify({
-            message: "Refresh already in progress",
-            status: "running",
-          }),
-          {
-            status: 409,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
-      }
-
-      // Run refresh (this will take a while but edge functions support up to 150s)
-      // Use waitUntil pattern: respond immediately, run in background
-      // Actually, for simplicity, we run inline and let the client poll status
-      // But we should respond quickly... Let's use EdgeRuntime.waitUntil if available
-
-      // Start refresh in background
-      const refreshPromise = runRefresh(supabaseAdmin, { startIndex }).catch((e) => {
-        console.error("[refresh] Fatal error:", e);
-        supabaseAdmin
-          .from("linnuliigid_snapshot")
-          .update({
-            status: "error",
-            last_error: e?.message || String(e),
-          })
-          .eq("id", 1);
+      const maxItems = Math.max(1, Math.min(50, Number(body?.max_items || 10) || 10));
+      const result = await runRefreshChunk(supabaseAdmin, { startIndex, maxItems });
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
-
-      // Try to use waitUntil for background processing
-      try {
-        // @ts-ignore - Deno Deploy specific
-        if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
-          // @ts-ignore
-          EdgeRuntime.waitUntil(refreshPromise);
-        } else {
-          // Fallback: just await it
-          await refreshPromise;
-        }
-      } catch {
-        await refreshPromise;
-      }
-
-      return new Response(
-        JSON.stringify({ message: "Refresh started", status: "running", start_index: startIndex }),
-        {
-          status: 202,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
     }
 
     return new Response(JSON.stringify({ error: "Method not allowed" }), {

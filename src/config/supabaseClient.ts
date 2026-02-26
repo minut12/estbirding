@@ -1,43 +1,17 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
-import { getSupabaseAnonKey, getSupabaseUrl, validateSupabaseConfig } from "@/config/supabaseConfig";
+import { supabase as integrationClient, supabaseInitError as integrationInitError } from "@/integrations/supabase/client";
 
-let initError: string | null = null;
-let client: SupabaseClient | null = null;
+let initError: string | null = integrationInitError ?? null;
+const client: SupabaseClient<Database> | null = integrationClient;
 
-function ensureSupabaseClient(): SupabaseClient | null {
-  if (client) return client;
+export const supabase = client;
 
-  const validation = validateSupabaseConfig();
-  if (!validation.ok) {
-    initError = validation.error || "Supabase config invalid";
-    return null;
-  }
-
-  try {
-    client = createClient<Database>(getSupabaseUrl(), getSupabaseAnonKey(), {
-      auth: {
-        storage: localStorage,
-        persistSession: true,
-        autoRefreshToken: true,
-      },
-    });
-    initError = null;
-    return client;
-  } catch (error) {
-    initError = error instanceof Error ? error.message : String(error);
-    client = null;
-    return null;
-  }
-}
-
-// Backward-compatible export for existing imports.
-export const supabase = ensureSupabaseClient() as SupabaseClient<Database> | null;
-
-export function getSupabaseClient(): SupabaseClient | null {
-  return ensureSupabaseClient();
+export function getSupabaseClient(): SupabaseClient<Database> | null {
+  return client;
 }
 
 export function getSupabaseInitError(): string | null {
+  if (!initError && integrationInitError) initError = integrationInitError;
   return initError;
 }

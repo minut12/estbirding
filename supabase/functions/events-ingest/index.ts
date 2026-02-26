@@ -14,6 +14,29 @@ function json(status: number, body: unknown) {
   });
 }
 
+function pickAdminEventColumns(input: Record<string, unknown>) {
+  const row: Record<string, unknown> = {};
+  const allowed = [
+    "title",
+    "description",
+    "start_at",
+    "end_at",
+    "location_name",
+    "lat",
+    "lng",
+    "category",
+    "organizer_name",
+    "url",
+    "image_url",
+    "is_published",
+    "is_archived",
+  ];
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(input, key)) row[key] = input[key];
+  }
+  return row;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -48,10 +71,11 @@ Deno.serve(async (req) => {
       }
 
       if (action === "admin_create") {
-        if (!payload?.title || !payload?.start_at) {
+        const insertPayload = pickAdminEventColumns(payload || {});
+        if (!insertPayload?.title || !insertPayload?.start_at) {
           return json(400, { error: "title and start_at required" });
         }
-        const { data, error } = await supabase.from("events").insert(payload).select("*").single();
+        const { data, error } = await supabase.from("events").insert(insertPayload).select("*").single();
         if (error) return json(500, { error: error.message });
         return json(200, { data });
       }
@@ -59,7 +83,8 @@ Deno.serve(async (req) => {
       if (action === "admin_update") {
         const { id, patch } = payload || {};
         if (!id || !patch) return json(400, { error: "id and patch required" });
-        const { data, error } = await supabase.from("events").update(patch).eq("id", id).select("*").single();
+        const updatePatch = pickAdminEventColumns(patch || {});
+        const { data, error } = await supabase.from("events").update(updatePatch).eq("id", id).select("*").single();
         if (error) return json(500, { error: error.message });
         return json(200, { data });
       }

@@ -143,6 +143,10 @@
 <div id="fetchError" class="fetch-error"></div>
 <details class="debug-panel" id="debugPanel">
   <summary>Debug info</summary>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px">
+    <button id="btnCopyDebugJson" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy debug JSON</button>
+    <button id="btnClearDebugEvents" class="btn secondary" style="font-size:11px;padding:2px 8px">Clear events</button>
+  </div>
   <div id="debugContent">Loading...</div>
 </details>
     <input id="filterBox" type="text" placeholder="Filter..." />
@@ -373,6 +377,7 @@ let __lastProgressDone = -1;
 let __lastProgressAt = 0;
 let __lastRequestUrl = null;
 let __lastErrorMessage = null;
+let __lastInfoMessage = '';
 let __lastFailedIndex = null;
 let __lastDurationMs = null;
 let __lastTimeoutMs = null;
@@ -393,9 +398,127 @@ let __snapshotLoadRetryCount = 0;
 let __pendingConfigLoadRetry = null;
 let __lastHangProgressDone = -1;
 let __hangKickCount = 0;
+let __currentIndex = null;
+let __attemptForCurrentIndex = 0;
+let __configWaitCount = 0;
+let __configWaitStartedAtMs = 0;
+let __configArrivedAtMs = 0;
+let __snapshotLoadAttemptCount = 0;
+let __lastSnapshotLoadAtMs = 0;
+let __lastHttpStatus = null;
+let __lastHttpOk = null;
+let __lastResponseBytes = null;
+let __lastErrorObj = null;
+let __lastPhase = '';
+let __refreshStartedAtMs = 0;
+let __lastProgressAtMs = 0;
+const __debugEvents = [];
+const __DEBUG_MAX_EVENTS = 120;
+
+function _safeData(v){
+  try{
+    const seen = new WeakSet();
+    return JSON.parse(JSON.stringify(v, function(k,val){
+      if(typeof val === 'object' && val){
+        if(seen.has(val)) return '[Circular]';
+        seen.add(val);
+      }
+      if(typeof val === 'function') return '[Function]';
+      return val;
+    }));
+  }catch(e){
+    return { note: 'data_unserializable', error: String(e && e.message ? e.message : e) };
+  }
+}
+function pushDebugEvent(phase, msg, data, level){
+  try{
+    const ev = {
+      tsISO: new Date().toISOString(),
+      level: level || 'info',
+      phase: String(phase || ''),
+      index: Number.isFinite(__currentIndex) ? __currentIndex : null,
+      msg: String(msg || ''),
+      data: (typeof data === 'undefined') ? undefined : _safeData(data),
+    };
+    __lastPhase = ev.phase;
+    __debugEvents.unshift(ev);
+    if(__debugEvents.length > __DEBUG_MAX_EVENTS) __debugEvents.length = __DEBUG_MAX_EVENTS;
+    try{ console.debug('[L2026] ' + ev.phase + ': ' + ev.msg, ev.data || ''); }catch(e){}
+  }catch(e){
+    try{ console.debug('[L2026] EVENT_LOG_FAIL', e); }catch(_e){}
+  }
+}
+function _maskKey(k){
+  const s = String(k || '');
+  if(!s) return '(missing)';
+  if(s.length <= 10) return s.slice(0, 3) + '***';
+  return s.slice(0,6) + '***' + s.slice(-4);
+}
+function getAbortReason(signal){
+  try{
+    if(!signal || !signal.aborted) return null;
+    const r = signal.reason;
+    if(typeof r === 'string') return r;
+    if(typeof r === 'undefined') return 'aborted';
+    return JSON.stringify(_safeData(r));
+  }catch(e){
+    return 'aborted';
+  }
+}
+function _copyDebugJson(){
+  const payload = {
+    debugInfo: {
+      buildId: MAP_BUILD_ID,
+      status: __snapshotMeta.status,
+      generatedAt: __snapshotMeta.generated_at,
+      resumeIndex: _getResumeIndex(),
+      lastInfoMessage: __lastInfoMessage,
+      lastErrorMessage: __lastErrorMessage,
+      refreshRunId: __runId,
+      refreshStartedAtMs: __refreshStartedAtMs,
+      lastProgressAtMs: __lastProgressAtMs,
+      currentIndex: __currentIndex,
+      attemptForCurrentIndex: __attemptForCurrentIndex,
+      configWaitCount: __configWaitCount,
+      configWaitStartedAtMs: __configWaitStartedAtMs,
+      configArrivedAtMs: __configArrivedAtMs,
+      snapshotLoadAttemptCount: __snapshotLoadAttemptCount,
+      lastSnapshotLoadAtMs: __lastSnapshotLoadAtMs,
+      lastHttpStatus: __lastHttpStatus,
+      lastHttpOk: __lastHttpOk,
+      lastResponseBytes: __lastResponseBytes,
+      lastPhase: __lastPhase,
+      lastError: __lastErrorObj,
+    },
+    events: __debugEvents,
+    appVersion: MAP_BUILD_ID,
+    userAgent: navigator.userAgent,
+    url: location.href,
+  };
+  const text = JSON.stringify(payload, null, 2);
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){
+      pushDebugEvent('DEBUG_COPY', 'Copied debug JSON');
+    }).catch(function(err){
+      pushDebugEvent('DEBUG_COPY_FAIL', 'Clipboard write failed', { err: String(err) }, 'warn');
+    });
+  } else {
+    pushDebugEvent('DEBUG_COPY_FAIL', 'Clipboard API unavailable', null, 'warn');
+  }
+}
+function _clearDebugEvents(){
+  __debugEvents.length = 0;
+  pushDebugEvent('DEBUG_CLEAR', 'Events cleared');
+  _updateDebugPanel();
+}
 
 function _requestSupabaseConfigFromParent(){
   try{
+    pushDebugEvent('CONFIG_REQUEST', 'Requesting SUPABASE_CONFIG from parent', {
+      resolvedSupabaseUrl: _resolveSupabaseUrlLocal() || '',
+      resolvedFunctionsBase: SNAPSHOT_API || '',
+      anonKeyMasked: _maskKey(_resolveSupabaseAnonKeyLocal()),
+    });
     if(window.parent && window.parent !== window){
       window.parent.postMessage({ type: 'SUPABASE_CONFIG_REQUEST' }, '*');
     }
@@ -423,7 +546,8 @@ function _scheduleLoadSnapshotRetry(reason){
   if(__pendingConfigLoadRetry) clearTimeout(__pendingConfigLoadRetry);
   __pendingConfigLoadRetry = setTimeout(function(){
     __pendingConfigLoadRetry = null;
-    __lastErrorMessage = __lastErrorMessage || ('Config arrived, retrying snapshot load (' + reason + ')');
+    __lastInfoMessage = 'Config arrived, retrying snapshot load (' + reason + ')';
+    pushDebugEvent('SNAPSHOT_RETRY', 'Retrying snapshot load', { reason: reason, runId: __runId });
     loadSnapshot();
   }, 200);
 }
@@ -460,8 +584,16 @@ function _validateSupabaseLocal(){
 }
 function _resolveSnapshotApi(){
   const validation = _validateSupabaseLocal();
-  if(!validation.ok) throw new Error(validation.error);
+  if(!validation.ok){
+    pushDebugEvent('CONFIG_WAIT', 'Snapshot API unresolved', {
+      error: validation.error,
+      resolvedSupabaseUrl: _resolveSupabaseUrlLocal() || '',
+      anonMasked: _maskKey(_resolveSupabaseAnonKeyLocal()),
+    }, 'warn');
+    throw new Error(validation.error);
+  }
   SNAPSHOT_API = validation.url + '/functions/v1/linnuliigid-snapshot';
+  pushDebugEvent('CONFIG_READY', 'Resolved snapshot API', { snapshotApi: SNAPSHOT_API });
   return SNAPSHOT_API;
 }
 function _makeAbortError(reason, durationMs, timeoutMs){
@@ -489,6 +621,7 @@ async function fetchWithTimeout(url, init, ms, runId){
   __stopSignalAbortedAtStart = !!(localStopController && localStopController.signal && localStopController.signal.aborted);
 
   if(runId != null && runId !== __runId){
+    pushDebugEvent('FETCH_CANCELLED', 'Run id mismatch before fetch', { runId: runId, activeRunId: __runId }, 'warn');
     throw _makeAbortError('new-run', 0, ms);
   }
 
@@ -513,15 +646,52 @@ async function fetchWithTimeout(url, init, ms, runId){
   }, ms);
 
   try{
+    pushDebugEvent('FETCH_START', 'Starting request', {
+      url: url,
+      timeoutMs: ms,
+      runId: runId,
+      stopSignalAborted: !!(localStopController && localStopController.signal.aborted),
+      stopSignalReason: getAbortReason(localStopController && localStopController.signal),
+      runSignalAborted: !!(localRunCancelController && localRunCancelController.signal.aborted),
+      runSignalReason: getAbortReason(localRunCancelController && localRunCancelController.signal),
+    });
     const reqInit = Object.assign({}, init || {}, { signal: controller.signal });
-    return await fetch(url, reqInit);
+    const res = await fetch(url, reqInit);
+    __lastHttpStatus = res.status;
+    __lastHttpOk = res.ok;
+    const bytes = Number(res.headers.get('content-length') || 0) || null;
+    __lastResponseBytes = bytes;
+    pushDebugEvent('FETCH_DONE', 'Request completed', {
+      url: url,
+      status: res.status,
+      ok: res.ok,
+      durationMs: Math.round(performance.now() - startedAt),
+      bytes: bytes,
+    }, res.ok ? 'info' : 'warn');
+    return res;
   }catch(e){
     if(e && (e.name === 'AbortError' || (abortReason !== 'unknown'))){
       const durationMs = performance.now() - startedAt;
       const reason = (abortReason === 'unknown' && __abortReasonHint) ? __abortReasonHint : abortReason;
       __lastDurationMs = Math.round(durationMs);
+      pushDebugEvent('FETCH_FAIL', 'Request aborted', {
+        url: url,
+        wasAbortError: (e && e.name === 'AbortError') || false,
+        abortReason: reason,
+        abortReasonStopSignal: getAbortReason(localStopController && localStopController.signal),
+        abortReasonRequestSignal: getAbortReason(controller.signal),
+        durationMs: Math.round(durationMs),
+      }, 'warn');
       throw _makeAbortError(reason, durationMs, ms);
     }
+    __lastErrorObj = {
+      name: e && e.name ? e.name : 'Error',
+      message: e && e.message ? e.message : String(e),
+      stack: e && e.stack ? e.stack : '',
+      cause: e && e.cause ? _safeData(e.cause) : null,
+      abortReason: null,
+    };
+    pushDebugEvent('FETCH_FAIL', 'Request failed', __lastErrorObj, 'error');
     throw e;
   }finally{
     clearTimeout(id);
@@ -542,7 +712,8 @@ function _startWatchdog(){
     if(Date.now() - __lastProgressAt <= 30000) return;
     const idx = _getResumeIndex();
     __lastFailedIndex = idx;
-    __lastErrorMessage = 'Watchdog timeout; forcing stale takeover';
+    __lastInfoMessage = 'Watchdog timeout; forcing stale takeover';
+    pushDebugEvent('INDEX_RETRY', 'Watchdog triggered force takeover', { index: idx, runId: __runId }, 'warn');
     _setResumeIndex(idx);
     _showSnapshotBanner('Hang detected, retrying...', 'warn');
     __lastProgressAt = Date.now();
@@ -582,12 +753,15 @@ function _updateProgressUI(done, total, status){
   const stopBtn = document.getElementById('btnStopFetch');
   if(!prog) return;
   if(status === 'running' && total > 0){
+    __currentIndex = done;
     _setResumeIndex(done);
     if(done !== __lastProgressDone){
       __lastProgressDone = done;
       __lastProgressAt = Date.now();
+      __lastProgressAtMs = __lastProgressAt;
       __hangKickCount = 0;
       __lastHangProgressDone = done;
+      pushDebugEvent('INDEX_SUCCESS', 'Progress advanced', { done: done, total: total, runId: __runId });
     }
     prog.textContent = 'Server refresh: ' + done + '/' + total;
     if(bar){ bar.style.display='block'; barInner.style.width = Math.round(done/total*100)+'%'; }
@@ -605,6 +779,16 @@ function _updateDebugPanel(){
   if(!el) return;
   const totalWithCoords = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.lat); }).length;
   const occ7Count = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.occ7) && p.occ7 > 0; }).length;
+  const stuckMs = (__isRefreshRunning && __lastProgressAt > 0) ? (Date.now() - __lastProgressAt) : 0;
+  const stuckWarning = (stuckMs > 20000 && Number.isFinite(__currentIndex))
+    ? ('<div style="margin:4px 0;padding:4px;border:1px solid #f59e0b;background:#fef3c7;color:#92400e;border-radius:4px">Stuck: index ' + __currentIndex + ', attempts ' + __attemptForCurrentIndex + (__attemptForCurrentIndex > 5 ? ' - Use Skip stuck item' : '') + '</div>')
+    : '';
+  const eventsHtml = __debugEvents.map(function(ev){
+    const dataText = (typeof ev.data === 'undefined') ? '' : (' ' + String(JSON.stringify(ev.data)));
+    const safe = String('[' + ev.tsISO + '] ' + ev.level + ' ' + ev.phase + ': ' + ev.msg + dataText)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return '<div>' + safe + '</div>';
+  }).join('');
   el.innerHTML = [
     'buildId: <b>' + MAP_BUILD_ID + '</b>',
     'Status: <b>' + (__snapshotMeta.status || '?') + '</b>',
@@ -614,15 +798,32 @@ function _updateDebugPanel(){
     'Markers rendered: <b>' + __renderedMarkerCount + '</b>',
     'Resume index: <b>' + _getResumeIndex() + '</b>',
     'lastRequest URL: <b>' + (__lastRequestUrl || '-') + '</b>',
+    'lastInfoMessage: <b>' + (__lastInfoMessage || '-') + '</b>',
     'Resolved Supabase URL: <b>' + (_resolveSupabaseUrlLocal() || '-') + '</b>',
+    'Resolved anon key: <b>' + _maskKey(_resolveSupabaseAnonKeyLocal()) + '</b>',
     'Snapshot URL: <b>' + (SNAPSHOT_API || '-') + '</b>',
     'supabaseConfigReady: <b>' + (__supabaseConfigReady ? 'yes' : 'no') + '</b>',
     'lastErrorMessage: <b>' + (__lastErrorMessage || '-') + '</b>',
+    'refreshRunId: <b>' + __runId + '</b>',
+    'refreshStartedAtMs: <b>' + (__refreshStartedAtMs || '-') + '</b>',
+    'lastProgressAtMs: <b>' + (__lastProgressAtMs || '-') + '</b>',
+    'currentIndex: <b>' + (__currentIndex ?? '-') + '</b>',
+    'attemptForCurrentIndex: <b>' + (__attemptForCurrentIndex || 0) + '</b>',
+    'configWaitCount: <b>' + (__configWaitCount || 0) + '</b>',
+    'snapshotLoadAttemptCount: <b>' + (__snapshotLoadAttemptCount || 0) + '</b>',
+    'lastSnapshotLoadAtMs: <b>' + (__lastSnapshotLoadAtMs || '-') + '</b>',
+    'lastHttpStatus: <b>' + (__lastHttpStatus ?? '-') + '</b>',
+    'lastHttpOk: <b>' + (__lastHttpOk ?? '-') + '</b>',
+    'lastResponseBytes: <b>' + (__lastResponseBytes ?? '-') + '</b>',
+    'lastPhase: <b>' + (__lastPhase || '-') + '</b>',
     'lastFailedIndex: <b>' + (__lastFailedIndex ?? '-') + '</b>',
     'lastDurationMs: <b>' + (__lastDurationMs ?? '-') + '</b>',
     'lastTimeoutMs: <b>' + (__lastTimeoutMs ?? '-') + '</b>',
     'stopSignalAbortedAtStart: <b>' + __stopSignalAbortedAtStart + '</b>',
     '7-day filter: <b>' + (is7daysOnly() ? 'ON' : 'OFF') + '</b>',
+    stuckWarning,
+    '<div style="margin-top:6px"><b>Events (newest first):</b></div>',
+    '<div style="max-height:180px;overflow:auto;border:1px solid #e2e8f0;padding:4px;border-radius:4px;background:#fff">' + eventsHtml + '</div>',
   ].join('<br>');
 }
 
@@ -667,8 +868,17 @@ async function loadSnapshot(){
   const t0 = Date.now();
   const runId = (__runId || 0);
   try{
+    __snapshotLoadAttemptCount++;
+    __lastSnapshotLoadAtMs = Date.now();
+    pushDebugEvent('SNAPSHOT_LOAD_START', 'Loading snapshot', { runId: runId, attempt: __snapshotLoadAttemptCount, snapshotApi: SNAPSHOT_API || null });
     _ensureStopController();
-    if(!_resolveSupabaseUrlLocal()) _requestSupabaseConfigFromParent();
+    if(!_resolveSupabaseUrlLocal()){
+      __configWaitCount++;
+      if(!__configWaitStartedAtMs) __configWaitStartedAtMs = Date.now();
+      __lastInfoMessage = 'Waiting for config...';
+      pushDebugEvent('CONFIG_WAIT', 'Supabase URL missing before snapshot load', { waitCount: __configWaitCount }, 'warn');
+      _requestSupabaseConfigFromParent();
+    }
     const snapshotUrl = _resolveSnapshotApi();
     __snapshotLoadRetryCount = 0;
     __lastRequestUrl = snapshotUrl;
@@ -677,6 +887,8 @@ async function loadSnapshot(){
     __lastDurationMs = Date.now() - t0;
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const snap = await res.json();
+    __lastResponseBytes = JSON.stringify(snap || {}).length;
+    pushDebugEvent('SNAPSHOT_LOAD_DONE', 'Snapshot loaded', { status: snap.status, progress_done: snap.progress_done, progress_total: snap.progress_total });
 
     if(snap.status === 'running'){
       _updateProgressUI(snap.progress_done, snap.progress_total, 'running');
@@ -704,6 +916,7 @@ async function loadSnapshot(){
   }catch(e){
     if(e && e.isAbort){
       if(e.abortReason === 'user' || e.abortReason === 'new-run' || e.abortReason === 'stop'){
+        pushDebugEvent('SNAPSHOT_LOAD_CANCELLED', 'Snapshot load cancelled', { runId: runId, reason: e.abortReason }, 'warn');
         return;
       }
       __lastErrorMessage = e.message || String(e);
@@ -712,8 +925,16 @@ async function loadSnapshot(){
     }
     __lastDurationMs = Date.now() - t0;
     if((__lastErrorMessage || '').indexOf('Supabase URL') >= 0){
+      __lastInfoMessage = 'Waiting for config...';
+      __lastErrorMessage = '';
       if(__snapshotLoadRetryCount < 10){
         __snapshotLoadRetryCount++;
+        __lastInfoMessage = 'Waiting for config...';
+        pushDebugEvent('SNAPSHOT_RETRY', 'Retry snapshot load due to config', {
+          reason: 'supabase_config',
+          retry: __snapshotLoadRetryCount,
+          runId: runId,
+        }, 'warn');
         _requestSupabaseConfigFromParent();
         setTimeout(loadSnapshot, 500);
       } else {
@@ -722,6 +943,14 @@ async function loadSnapshot(){
       _updateDebugPanel();
       return;
     }
+    __lastErrorObj = {
+      name: e && e.name ? e.name : 'Error',
+      message: __lastErrorMessage || String(e),
+      stack: e && e.stack ? e.stack : '',
+      cause: e && e.cause ? _safeData(e.cause) : null,
+      abortReason: e && e.abortReason ? e.abortReason : null,
+    };
+    pushDebugEvent('SNAPSHOT_LOAD_FAIL', 'Snapshot load failed', __lastErrorObj, 'error');
     console.warn('[snapshot] Load failed:', e);
     _showSnapshotBanner('Using cached data (server unavailable)', 'warn');
     refreshAllMarkers();
@@ -752,14 +981,28 @@ function _startPolling(){
       _updateProgressUI(snap.progress_done, snap.progress_total, snap.status);
       if(snap.status === 'running'){
         const now = Date.now();
+        if(__lastProgressAt > 0 && (now - __lastProgressAt) > 20000){
+          pushDebugEvent('STUCK_DETECTED', 'No progress for 20s', {
+            index: __currentIndex,
+            attempt: __attemptForCurrentIndex,
+            lastProgressAtMs: __lastProgressAt,
+            lastPhase: __lastPhase
+          }, 'warn');
+        }
         if(__lastProgressAt > 0 && (now - __lastProgressAt) > 30000 && (now - __lastAutoKickAt) > 10000 && !__forceRetryInFlight){
           const nextIndex = Math.max(_getResumeIndex(), Number(snap.progress_done) || 0) + 1;
           _setResumeIndex(nextIndex);
           __lastFailedIndex = nextIndex;
           __lastErrorMessage = 'Hang detected; auto-skip to ' + nextIndex + ' (force)';
+          __currentIndex = nextIndex;
+          __attemptForCurrentIndex++;
+          if(__attemptForCurrentIndex > 5){
+            __lastInfoMessage = 'Use Skip stuck item (attempts > 5)';
+          }
           __lastProgressAt = now;
           __lastAutoKickAt = now;
           _abortActiveRequest();
+          pushDebugEvent('INDEX_SKIP', 'Auto skip stuck index', { nextIndex: nextIndex, attempt: __attemptForCurrentIndex, runId: __runId }, 'warn');
           _showSnapshotBanner('Hang detected, auto-skip to ' + nextIndex + ' (force)...', 'warn');
           triggerRefresh({ resumeFromSaved: true, silent: true, startIndex: nextIndex, force: true });
         }
@@ -769,6 +1012,7 @@ function _startPolling(){
         _showSnapshotBanner('Refreshing: ' + snap.progress_done + '/' + snap.progress_total + '...');
       } else {
         _stopPolling();
+        pushDebugEvent('REFRESH_COMPLETE', 'Polling reached terminal status', { status: snap.status, runId: __runId });
         if(snap.status === 'ready' && snap.points_json){
           _applySnapshot(snap);
           _showSnapshotBanner('Refresh complete!');
@@ -823,6 +1067,15 @@ async function triggerRefresh(opts){
   const force = !!options.force;
   const runId = (options.newRun || !__runningRef) ? _beginRefreshRun(!!options.newRun) : __runId;
   try{
+    __refreshStartedAtMs = Date.now();
+    __lastProgressAtMs = __refreshStartedAtMs;
+    pushDebugEvent((options.resumeFromSaved ? 'REFRESH_RESUME' : 'REFRESH_START'), 'Refresh requested', {
+      runId: runId,
+      startIndex: options.startIndex,
+      resumeFromSaved: !!options.resumeFromSaved,
+      force: force,
+      filter7d: is7daysOnly(),
+    });
     _ensureStopController();
     if(!_resolveSupabaseUrlLocal()) _requestSupabaseConfigFromParent();
     const validation = _validateSupabaseLocal();
@@ -854,6 +1107,10 @@ async function triggerRefresh(opts){
     const startIndex = Number.isFinite(explicitStart)
       ? Math.max(0, explicitStart)
       : (options.resumeFromSaved ? _getResumeIndex() : 0);
+    const prevIndex = __currentIndex;
+    __currentIndex = startIndex;
+    __attemptForCurrentIndex = (prevIndex === startIndex) ? (__attemptForCurrentIndex + 1) : 1;
+    pushDebugEvent('INDEX_START', 'Starting index', { runId: runId, index: startIndex, attempt: __attemptForCurrentIndex });
     const snapshotUrl = _resolveSnapshotApi();
     __lastRequestUrl = snapshotUrl;
 
@@ -864,6 +1121,7 @@ async function triggerRefresh(opts){
     }, 30000, runId);
 
     if(res.status === 429){
+      pushDebugEvent('INDEX_RETRY', 'Refresh throttled (429)', { runId: runId, index: startIndex, force: force }, 'warn');
       const data = await res.json().catch(()=>({}));
       if(!options.silent) _showSnapshotBanner(data.error || 'Refresh recently triggered. Try again later.', 'warn');
       _updateProgressUI(0, 0, '');
@@ -871,11 +1129,13 @@ async function triggerRefresh(opts){
       return;
     }
     if(res.status === 409){
+      pushDebugEvent('INDEX_RETRY', 'Refresh locked (409)', { runId: runId, index: startIndex, force: force }, 'warn');
       if(force) _showSnapshotBanner('Server says running; forcing takeover (stale-run check)...', 'warn');
       else _showSnapshotBanner('Refresh already in progress...');
     }
 
     _startPolling();
+    pushDebugEvent('INDEX_SUCCESS', 'Refresh accepted', { runId: runId, index: startIndex, httpStatus: res.status });
     _updateDebugPanel();
   }catch(e){
     var reason = (e && e.abortReason) || '';
@@ -883,6 +1143,7 @@ async function triggerRefresh(opts){
       if(reason === 'user' || reason === 'new-run' || reason === 'stop'){
         _endRefreshRun();
         _updateProgressUI(0, 0, '');
+        pushDebugEvent('REFRESH_STOP', 'Refresh cancelled gracefully', { runId: runId, reason: reason, userStop: reason === 'user' });
         if(reason === 'user') _showSnapshotBanner('Stopped by user', 'warn');
         return;
       }
@@ -893,13 +1154,23 @@ async function triggerRefresh(opts){
     if(reason === 'user'){
       // User pressed Stop – don't retry
       _stopPolling();
+      pushDebugEvent('REFRESH_STOP', 'Stopped by user', { runId: runId, reason: reason, userStop: true });
       _showSnapshotBanner('Stopped by user', 'warn');
       _updateProgressUI(0, 0, '');
     } else if(reason === 'timeout'){
       // POST timed out – auto-retry after 2s
       _showSnapshotBanner('Refresh request timed out, retrying...', 'warn');
+      pushDebugEvent('INDEX_RETRY', 'Refresh request timeout, retrying', { runId: runId, reason: reason }, 'warn');
       setTimeout(function(){ triggerRefresh(options); }, 2000);
     } else {
+      __lastErrorObj = {
+        name: e && e.name ? e.name : 'Error',
+        message: __lastErrorMessage || String(e),
+        stack: e && e.stack ? e.stack : '',
+        cause: e && e.cause ? _safeData(e.cause) : null,
+        abortReason: reason || null,
+      };
+      pushDebugEvent('FETCH_FAIL', 'Refresh start failed', __lastErrorObj, 'error');
       _showSnapshotBanner('Failed to start refresh: ' + (__lastErrorMessage || 'Unknown error'), 'error');
       _stopPolling();
       _updateProgressUI(0, 0, '');
@@ -916,6 +1187,8 @@ function _wireSnapshotButtons(){
   const btnResume = document.getElementById('btnResumeFetch');
   const btnSkip = document.getElementById('btnSkipStuck');
   const btnStop = document.getElementById('btnStopFetch');
+  const btnCopyDebug = document.getElementById('btnCopyDebugJson');
+  const btnClearDebug = document.getElementById('btnClearDebugEvents');
   const toggle7d = document.getElementById('toggle7days');
 
   if(btnRefresh && !btnRefresh.__wired){
@@ -935,7 +1208,8 @@ function _wireSnapshotButtons(){
       _abortActiveRequest();
       const nextIndex = _getResumeIndex() + 1;
       __lastFailedIndex = nextIndex;
-      __lastErrorMessage = 'Skipped by user';
+      __lastInfoMessage = 'Skipped by user';
+      pushDebugEvent('INDEX_SKIP', 'User skipped current index', { nextIndex: nextIndex, runId: __runId }, 'warn');
       _setResumeIndex(nextIndex);
       _showSnapshotBanner('Skipping stuck item, resuming from ' + nextIndex + '...', 'warn');
       triggerRefresh({ resumeFromSaved: true, force: true, newRun: true });
@@ -963,6 +1237,14 @@ function _wireSnapshotButtons(){
     });
     toggle7d.__wired = true;
   }
+  if(btnCopyDebug && !btnCopyDebug.__wired){
+    btnCopyDebug.addEventListener('click', _copyDebugJson);
+    btnCopyDebug.__wired = true;
+  }
+  if(btnClearDebug && !btnClearDebug.__wired){
+    btnClearDebug.addEventListener('click', _clearDebugEvents);
+    btnClearDebug.__wired = true;
+  }
 }
 
 // === Auto-refresh via postMessage (parent app sends these) ===
@@ -979,11 +1261,19 @@ window.addEventListener('message', function(ev){
       const hadUrlMissingErr = ((__lastErrorMessage || '').indexOf('Supabase URL puudub') >= 0);
       __resolvedSupabaseUrl = String(ev.data.supabaseUrl || '').trim();
       __resolvedSupabaseAnonKey = String(ev.data.supabaseAnonKey || '').trim();
+      __configArrivedAtMs = Date.now();
       __supabaseConfigReady = !!__resolvedSupabaseUrl;
       if(hadUrlMissingErr) __lastErrorMessage = '';
+      __lastInfoMessage = 'Config ready';
+      pushDebugEvent('CONFIG_READY', 'Received SUPABASE_CONFIG', {
+        waitMs: (__configWaitStartedAtMs ? (__configArrivedAtMs - __configWaitStartedAtMs) : null),
+        supabaseUrl: __resolvedSupabaseUrl || '',
+        anonMasked: _maskKey(__resolvedSupabaseAnonKey),
+      });
       __snapshotMeta.status = null;
       try { _resolveSnapshotApi(); } catch(e) {}
       if(hadNoApi || hadUrlMissingErr || !__snapshotMeta.generated_at){
+        pushDebugEvent('SNAPSHOT_RETRY_REASON', 'Retry reason supabase_config', { hadNoApi: hadNoApi, hadUrlMissingErr: hadUrlMissingErr }, 'warn');
         _scheduleLoadSnapshotRetry('supabase_config');
       }
       _updateDebugPanel();
@@ -991,6 +1281,8 @@ window.addEventListener('message', function(ev){
     }
     if(t === 'SUPABASE_CONFIG_ERROR'){
       __lastErrorMessage = String(ev.data.error || 'Supabase config invalid');
+      __lastErrorObj = { name: 'SupabaseConfigError', message: __lastErrorMessage, stack: '', cause: null, abortReason: null };
+      pushDebugEvent('CONFIG_ERROR', 'Received SUPABASE_CONFIG_ERROR', __lastErrorObj, 'error');
       _showSnapshotBanner(__lastErrorMessage, 'error');
       _updateDebugPanel();
       return;

@@ -381,6 +381,11 @@ let __isRefreshRunning = false;
 let __watchdogTimer = null;
 let __lastAutoKickAt = 0;
 let __forceRetryInFlight = false;
+let __supabaseConfigReady = false;
+let __snapshotLoadRetryCount = 0;
+let __pendingConfigLoadRetry = null;
+let __lastHangProgressDone = -1;
+let __hangKickCount = 0;
 
 function _requestSupabaseConfigFromParent(){
   try{
@@ -388,6 +393,19 @@ function _requestSupabaseConfigFromParent(){
       window.parent.postMessage({ type: 'SUPABASE_CONFIG_REQUEST' }, '*');
     }
   }catch(e){}
+}
+function _ensureStopController(){
+  if(!__stopController || __stopController.signal.aborted){
+    __stopController = new AbortController();
+  }
+}
+function _scheduleLoadSnapshotRetry(reason){
+  if(__pendingConfigLoadRetry) clearTimeout(__pendingConfigLoadRetry);
+  __pendingConfigLoadRetry = setTimeout(function(){
+    __pendingConfigLoadRetry = null;
+    __lastErrorMessage = __lastErrorMessage || ('Config arrived, retrying snapshot load (' + reason + ')');
+    loadSnapshot();
+  }, 200);
 }
 
 function _setResumeIndex(i){
@@ -496,6 +514,8 @@ function _updateProgressUI(done, total, status){
     if(done !== __lastProgressDone){
       __lastProgressDone = done;
       __lastProgressAt = Date.now();
+      __hangKickCount = 0;
+      __lastHangProgressDone = done;
     }
     prog.textContent = 'Server refresh: ' + done + '/' + total;
     if(bar){ bar.style.display='block'; barInner.style.width = Math.round(done/total*100)+'%'; }
@@ -523,6 +543,7 @@ function _updateDebugPanel(){
     'lastRequest URL: <b>' + (__lastRequestUrl || '-') + '</b>',
     'Resolved Supabase URL: <b>' + (_resolveSupabaseUrlLocal() || '-') + '</b>',
     'Snapshot URL: <b>' + (SNAPSHOT_API || '-') + '</b>',
+    'supabaseConfigReady: <b>' + (__supabaseConfigReady ? 'yes' : 'no') + '</b>',
     'lastErrorMessage: <b>' + (__lastErrorMessage || '-') + '</b>',
     'lastFailedIndex: <b>' + (__lastFailedIndex ?? '-') + '</b>',
     'lastDurationMs: <b>' + (__lastDurationMs ?? '-') + '</b>',
@@ -570,8 +591,10 @@ function _checkEmpty7dBanner(){
 async function loadSnapshot(){
   const t0 = Date.now();
   try{
+    _ensureStopController();
     if(!_resolveSupabaseUrlLocal()) _requestSupabaseConfigFromParent();
     const snapshotUrl = _resolveSnapshotApi();
+    __snapshotLoadRetryCount = 0;
     __lastRequestUrl = snapshotUrl;
     _showSnapshotBanner('Loading data...');
     const res = await fetchWithTimeout(snapshotUrl, {cache:'no-store'}, 20000);
@@ -605,6 +628,17 @@ async function loadSnapshot(){
   }catch(e){
     __lastDurationMs = Date.now() - t0;
     __lastErrorMessage = String(e?.message || e || 'load failed');
+    if((__lastErrorMessage || '').indexOf('Supabase URL') >= 0){
+      if(__snapshotLoadRetryCount < 10){
+        __snapshotLoadRetryCount++;
+        _requestSupabaseConfigFromParent();
+        setTimeout(loadSnapshot, 500);
+      } else {
+        _showSnapshotBanner('Missing Supabase config after retries', 'error');
+      }
+      _updateDebugPanel();
+      return;
+    }
     console.warn('[snapshot] Load failed:', e);
     _showSnapshotBanner('Using cached data (server unavailable)', 'warn');
     refreshAllMarkers();
@@ -637,14 +671,19 @@ function _startPolling(){
         const now = Date.now();
         if(__lastProgressAt > 0 && (now - __lastProgressAt) > 30000 && (now - __lastAutoKickAt) > 10000 && !__forceRetryInFlight){
           const nextIndex = Math.max(_getResumeIndex(), Number(snap.progress_done) || 0) + 1;
+          const doneNow = Number(snap.progress_done) || 0;
+          if(doneNow === __lastHangProgressDone) __hangKickCount++;
+          else __hangKickCount = 1;
+          __lastHangProgressDone = doneNow;
+          const useForce = __hangKickCount >= 2;
           _setResumeIndex(nextIndex);
           __lastFailedIndex = nextIndex;
-          __lastErrorMessage = 'Hang detected; auto-skip to ' + nextIndex;
+          __lastErrorMessage = 'Hang detected; auto-skip to ' + nextIndex + (useForce ? ' (force)' : '');
           __lastProgressAt = now;
           __lastAutoKickAt = now;
           _abortActiveRequest();
-          _showSnapshotBanner('Hang detected, auto-skip to ' + nextIndex + '...', 'warn');
-          triggerRefresh({ resumeFromSaved: true, silent: true, startIndex: nextIndex, force: true });
+          _showSnapshotBanner('Hang detected, auto-skip to ' + nextIndex + (useForce ? ' (force)' : '') + '...', 'warn');
+          triggerRefresh({ resumeFromSaved: true, silent: true, startIndex: nextIndex, force: useForce });
         }
       }
 
@@ -689,6 +728,7 @@ function _stopPolling(){
 async function triggerRefresh(opts){
   const options = opts || {};
   try{
+    _ensureStopController();
     if(!_resolveSupabaseUrlLocal()) _requestSupabaseConfigFromParent();
     const validation = _validateSupabaseLocal();
     if(!validation.ok) throw new Error(validation.error || 'Supabase config vigane');
@@ -785,7 +825,7 @@ function _wireSnapshotButtons(){
     btnReload.__wired = true;
   }
   if(btnResume && !btnResume.__wired){
-    btnResume.addEventListener('click', function(){ triggerRefresh({ resumeFromSaved: true }); });
+    btnResume.addEventListener('click', function(){ triggerRefresh({ resumeFromSaved: true, force: true }); });
     btnResume.__wired = true;
   }
   if(btnSkip && !btnSkip.__wired){
@@ -796,7 +836,7 @@ function _wireSnapshotButtons(){
       __lastErrorMessage = 'Skipped by user';
       _setResumeIndex(nextIndex);
       _showSnapshotBanner('Skipping stuck item, resuming from ' + nextIndex + '...', 'warn');
-      triggerRefresh({ resumeFromSaved: true });
+      triggerRefresh({ resumeFromSaved: true, force: true });
     });
     btnSkip.__wired = true;
   }
@@ -830,11 +870,17 @@ window.addEventListener('message', function(ev){
     var t = ev.data.type;
     if(t === 'SET_ADMIN_KEY') return; // no longer used
     if(t === 'SUPABASE_CONFIG'){
+      const hadNoApi = !SNAPSHOT_API;
+      const hadUrlMissingErr = ((__lastErrorMessage || '').indexOf('Supabase URL puudub') >= 0);
       __resolvedSupabaseUrl = String(ev.data.supabaseUrl || '').trim();
       __resolvedSupabaseAnonKey = String(ev.data.supabaseAnonKey || '').trim();
-      __lastErrorMessage = null;
+      __supabaseConfigReady = !!__resolvedSupabaseUrl;
+      if(hadUrlMissingErr) __lastErrorMessage = '';
       __snapshotMeta.status = null;
       try { _resolveSnapshotApi(); } catch(e) {}
+      if(hadNoApi || hadUrlMissingErr || !__snapshotMeta.generated_at){
+        _scheduleLoadSnapshotRetry('supabase_config');
+      }
       _updateDebugPanel();
       return;
     }

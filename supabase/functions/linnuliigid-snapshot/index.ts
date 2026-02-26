@@ -190,16 +190,15 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
   }
 }
 
-// Run the full refresh, updating progress in DB
+// Run one refresh batch, updating progress after every item.
 async function runRefresh(
   supabase: ReturnType<typeof createClient>,
-  opts?: { startIndex?: number; runId?: string }
+  opts?: { startIndex?: number; runId?: string; maxBatch?: number }
 ) {
   const total = SPECIES.length;
   const startIndex = Math.max(0, Math.min(total, Number(opts?.startIndex || 0)));
   const runId = opts?.runId || crypto.randomUUID();
-  const startedAt = Date.now();
-  const MAX_RUN_MS = 90000;
+  const maxBatch = Math.max(1, Math.min(100, Number(opts?.maxBatch || 25)));
   const nowIso = () => new Date().toISOString();
 
   const { data: existingRow } = await supabase
@@ -223,34 +222,25 @@ async function runRefresh(
 
   let done = startIndex;
   let lastError: string | null = null;
-  const CONCURRENCY = 5;
-  const JITTER_MIN = 150;
-  const JITTER_MAX = 250;
   const MAX_RETRIES = 2;
+  const endIndexExclusive = Math.min(total, startIndex + maxBatch);
 
-  // Process in batches of CONCURRENCY
-  for (let i = startIndex; i < SPECIES.length; i += CONCURRENCY) {
-    const batch = SPECIES.slice(i, i + CONCURRENCY);
-
-    const results = await Promise.allSettled(
-      batch.map(async (name) => {
-        let lastErr: Error | null = null;
-        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-          try {
-            if (attempt > 0) await sleep(1000 * Math.pow(2, attempt - 1));
-            return { name, data: await withTimeout(fetchSpeciesData(name), 15000, `species=${name}`) };
-          } catch (e) {
-            lastErr = e instanceof Error ? e : new Error(String(e));
-          }
+  for (let i = startIndex; i < endIndexExclusive; i++) {
+    const name = SPECIES[i];
+    try {
+      let data: Awaited<ReturnType<typeof fetchSpeciesData>> | null = null;
+      let lastErr: Error | null = null;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          if (attempt > 0) await sleep(400 * Math.pow(2, attempt - 1));
+          data = await withTimeout(fetchSpeciesData(name), 15000, `species=${name}`);
+          break;
+        } catch (e) {
+          lastErr = e instanceof Error ? e : new Error(String(e));
         }
-        throw lastErr || new Error("Unknown error for " + name);
-      })
-    );
-
-    for (const r of results) {
+      }
       done++;
-      if (r.status === "fulfilled") {
-        const { name, data } = r.value;
+      if (data) {
         const entry: (typeof points)[string] = {
           src: "Elurikkus",
           visible: true,
@@ -263,48 +253,30 @@ async function runRefresh(
         entry.occ7 = data.occ7;
         points[name] = entry;
       } else {
-        lastError = `${batch[results.indexOf(r)]}: ${r.reason?.message || r.reason}`;
+        lastError = `${name}: ${lastErr?.message || "Unknown fetch error"}`;
         console.warn("[refresh]", lastError);
       }
+    } catch (e) {
+      done++;
+      lastError = `${name}: ${e instanceof Error ? e.message : String(e)}`;
+      console.warn("[refresh] item failure", lastError);
     }
 
-    // Update progress every batch
     await supabase
       .from("linnuliigid_snapshot")
       .update({
         points_json: points,
         progress_done: done,
+        progress_total: total,
         last_error: lastError,
         heartbeat_at: nowIso(),
         run_id: runId,
       })
       .eq("id", 1);
-
-    if (Date.now() - startedAt > MAX_RUN_MS) {
-      console.log(`[refresh] Time budget reached at ${done}/${total}; leaving status=running`);
-      return;
-    }
-
-    // Jitter between batches
-    await sleep(JITTER_MIN + Math.random() * (JITTER_MAX - JITTER_MIN));
   }
 
-  // Write final snapshot
-  await supabase
-    .from("linnuliigid_snapshot")
-    .update({
-      points_json: points,
-      generated_at: new Date().toISOString(),
-      status: "ready",
-      progress_done: done,
-      progress_total: total,
-      last_error: lastError,
-      heartbeat_at: nowIso(),
-      run_id: runId,
-    })
-    .eq("id", 1);
-
-  console.log(`[refresh] Complete: ${done}/${total} species processed`);
+  const finished = done >= total;
+  return { done, total, finished, lastError, points, runId };
 }
 
 Deno.serve(async (req) => {
@@ -341,15 +313,14 @@ Deno.serve(async (req) => {
       } catch {
         body = {};
       }
+
       const startIndex = Math.max(0, Number(body?.start_index || 0) || 0);
       const force = body?.force === true;
-      const STALE_MS = 120000;
-      const RUNNING_STUCK_MS = 5 * 60 * 1000;
+      const STALE_MS = 60000;
       const nowMs = Date.now();
       const nowIso = new Date().toISOString();
       const runId = crypto.randomUUID();
-      // Public refresh with cooldown — no key required
-      // Check if already running or recently completed (15 min cooldown)
+
       const { data: current } = await supabaseAdmin
         .from("linnuliigid_snapshot")
         .select("status, generated_at, progress_done, progress_total, heartbeat_at, running_started_at")
@@ -358,8 +329,8 @@ Deno.serve(async (req) => {
 
       if (current?.generated_at) {
         const elapsed = Date.now() - new Date(current.generated_at).getTime();
-        const COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
-        if (elapsed < COOLDOWN_MS && current.status === "ready") {
+        const COOLDOWN_MS = 15 * 60 * 1000;
+        if (elapsed < COOLDOWN_MS && current.status === "ready" && !force) {
           const retryAfter = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
           return new Response(
             JSON.stringify({
@@ -375,16 +346,16 @@ Deno.serve(async (req) => {
       }
 
       const heartbeatMs = current?.heartbeat_at ? new Date(current.heartbeat_at).getTime() : null;
-      const runningStartedMs = current?.running_started_at ? new Date(current.running_started_at).getTime() : null;
       const staleHeartbeat = !heartbeatMs || (nowMs - heartbeatMs > STALE_MS);
-      const staleRun = !runningStartedMs || (nowMs - runningStartedMs > RUNNING_STUCK_MS);
-      const allowTakeover = force || (current?.status === "running" && staleHeartbeat && staleRun);
+      const allowTakeover = force || staleHeartbeat;
       if (current?.status === "running" && !allowTakeover) {
         return new Response(
           JSON.stringify({
             message: "Refresh already in progress",
             status: "running",
             heartbeat_at: current?.heartbeat_at || null,
+            progress_done: current?.progress_done || 0,
+            progress_total: current?.progress_total || SPECIES.length,
           }),
           {
             status: 409,
@@ -394,10 +365,6 @@ Deno.serve(async (req) => {
       }
 
       const resumeStart = Math.max(startIndex, Number(current?.progress_done || 0) || 0);
-      const runningStartedAt = (force || staleRun)
-        ? nowIso
-        : (current?.running_started_at || nowIso);
-
       const { error: startError } = await supabaseAdmin
         .from("linnuliigid_snapshot")
         .update({
@@ -405,58 +372,66 @@ Deno.serve(async (req) => {
           progress_done: resumeStart,
           progress_total: SPECIES.length,
           last_error: null,
-          running_started_at: runningStartedAt,
+          running_started_at: nowIso,
           heartbeat_at: nowIso,
           run_id: runId,
         })
         .eq("id", 1);
       if (startError) throw startError;
 
-      // Run refresh (this will take a while but edge functions support up to 150s)
-      // Use waitUntil pattern: respond immediately, run in background
-      // Actually, for simplicity, we run inline and let the client poll status
-      // But we should respond quickly... Let's use EdgeRuntime.waitUntil if available
+      try {
+        const result = await runRefresh(supabaseAdmin, { startIndex: resumeStart, runId, maxBatch: 25 });
+        const finalStatus = result.finished ? "ready" : "running";
+        const { error: finalizeError } = await supabaseAdmin
+          .from("linnuliigid_snapshot")
+          .update({
+            points_json: result.points,
+            status: finalStatus,
+            progress_done: result.done,
+            progress_total: result.total,
+            last_error: result.lastError,
+            heartbeat_at: new Date().toISOString(),
+            run_id: result.runId,
+            ...(result.finished ? { generated_at: new Date().toISOString() } : {}),
+          })
+          .eq("id", 1);
+        if (finalizeError) throw finalizeError;
 
-      // Start refresh in background
-      const refreshPromise = runRefresh(supabaseAdmin, { startIndex: resumeStart, runId }).catch((e) => {
-        console.error("[refresh] Fatal error:", e);
-        supabaseAdmin
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            status: finalStatus,
+            progress_done: result.done,
+            progress_total: result.total,
+            next_index: result.done,
+            run_id: result.runId,
+            forced: force,
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        await supabaseAdmin
           .from("linnuliigid_snapshot")
           .update({
             status: "error",
-            last_error: e?.message || String(e),
+            last_error: msg,
             heartbeat_at: new Date().toISOString(),
+            run_id: runId,
           })
           .eq("id", 1);
-      });
-
-      // Try to use waitUntil for background processing
-      try {
-        // @ts-ignore - Deno Deploy specific
-        if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
-          // @ts-ignore
-          EdgeRuntime.waitUntil(refreshPromise);
-        }
-      } catch {
-        // no-op
+        return new Response(
+          JSON.stringify({ ok: false, status: "error", error: msg, run_id: runId }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
       }
-
-      return new Response(
-        JSON.stringify({
-          message: force && isStale ? "Refresh takeover started" : "Refresh started",
-          status: "running",
-          start_index: resumeStart,
-          force,
-          auto_takeover: !force && current?.status === "running" && staleHeartbeat && staleRun,
-          run_id: runId,
-        }),
-        {
-          status: 202,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
     }
-
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -469,3 +444,4 @@ Deno.serve(async (req) => {
     });
   }
 });
+

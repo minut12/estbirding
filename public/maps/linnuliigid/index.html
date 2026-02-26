@@ -368,6 +368,7 @@ const SUPABASE_LEGACY_ANON_OVERRIDE_KEY = 'dev_supabase_anon_key_override';
 let __resolvedSupabaseUrl = '';
 let __resolvedSupabaseAnonKey = '';
 let SNAPSHOT_API = '';
+let SNAPSHOT_CONTROL_API = '';
 let __pollTimer = null;
 let __pollCount = 0;
 let __snapshotMeta = { status: null, generated_at: null };
@@ -602,8 +603,17 @@ function _resolveSnapshotApi(){
     throw new Error(validation.error);
   }
   SNAPSHOT_API = validation.url + '/functions/v1/linnuliigid-snapshot';
+  SNAPSHOT_CONTROL_API = validation.url + '/functions/v1/linnuliigid-control';
   pushDebugEvent('CONFIG_READY', 'Resolved snapshot API', { snapshotApi: SNAPSHOT_API });
   return SNAPSHOT_API;
+}
+function _resolveSnapshotControlApi(){
+  const validation = _validateSupabaseLocal();
+  if(!validation.ok){
+    throw new Error(validation.error);
+  }
+  SNAPSHOT_CONTROL_API = validation.url + '/functions/v1/linnuliigid-control';
+  return SNAPSHOT_CONTROL_API;
 }
 function _makeAbortError(reason, durationMs, timeoutMs){
   const err = new Error('Aborted (' + (reason || 'unknown') + ') after ' + Math.round(durationMs) + 'ms; timeout=' + timeoutMs + '; stopAborted=' + __stopSignalAbortedAtStart);
@@ -812,16 +822,16 @@ function _abortActiveRequest(){
   try{ if(__activeStepController) __activeStepController.abort('replace'); }catch(e){}
 }
 async function _controlSkipOnServer(targetIndex, reason){
-  const snapshotUrl = _resolveSnapshotApi();
+  const controlUrl = _resolveSnapshotControlApi();
   const t0 = performance.now();
   pushDebugEvent('CONTROL_SKIP_START', 'Sending skip control to server', {
     targetIndex: targetIndex,
     reason: reason,
     runId: __runId,
-    url: snapshotUrl,
+    url: controlUrl,
   }, 'warn');
   const doForceAdvance = function(){
-    return fetchWithTimeout(snapshotUrl, {
+    return fetchWithTimeout(controlUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -837,7 +847,7 @@ async function _controlSkipOnServer(targetIndex, reason){
     pushDebugEvent('CONTROL_SKIP_RETRY', 'force_advance got 409, requesting force_takeover', {
       targetIndex: targetIndex, reason: reason, runId: __runId
     }, 'warn');
-    await fetchWithTimeout(snapshotUrl, {
+    await fetchWithTimeout(controlUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'force_takeover', reason: reason || 'watchdog' }),
@@ -859,6 +869,7 @@ async function _controlSkipOnServer(targetIndex, reason){
       durationMs: Math.round(performance.now() - t0),
       response: _safeData(payload),
     }, 'error');
+    __lastInfoMessage = "DB workaround: update public.linnuliigid_snapshot set progress_done=186 or status='stopped' in SQL editor.";
     throw new Error('Skip control failed: HTTP ' + res.status);
   }
   pushDebugEvent('CONTROL_SKIP_DONE', 'Skip control applied', {
@@ -880,7 +891,7 @@ function _startWatchdog(){
   __watchdogTimer = setInterval(function(){
     if(!__isRefreshRunning) return;
     if(__lastProgressAt <= 0) return;
-    if(Date.now() - __lastProgressAt <= 30000) return;
+    if(Date.now() - __lastProgressAt <= 20000) return;
     const idx = _getResumeIndex();
     __lastFailedIndex = idx;
     __lastInfoMessage = 'Watchdog timeout; forcing stale takeover';

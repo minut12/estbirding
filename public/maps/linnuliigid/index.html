@@ -377,6 +377,7 @@ let __lastFailedIndex = null;
 let __lastDurationMs = null;
 let __activeRequestController = null;
 let __stopController = new AbortController();
+let __abortReasonHint = '';
 let __isRefreshRunning = false;
 let __watchdogTimer = null;
 let __lastAutoKickAt = 0;
@@ -446,16 +447,35 @@ function _resolveSnapshotApi(){
 }
 async function fetchWithTimeout(url, init, ms){
   const controller = new AbortController();
+  const startedAt = Date.now();
+  let abortReason = 'unknown';
   __activeRequestController = controller;
-  const stopRelay = function(){ controller.abort(); };
+  const stopRelay = function(){
+    abortReason = (__abortReasonHint === 'user') ? 'user' : 'stop';
+    controller.abort();
+  };
   try{ __stopController.signal.addEventListener('abort', stopRelay, { once:true }); }catch(e){}
-  const id = setTimeout(function(){ controller.abort(); }, ms);
+  const id = setTimeout(function(){
+    abortReason = 'timeout';
+    controller.abort();
+  }, ms);
   try{
     const reqInit = Object.assign({}, init || {}, { signal: controller.signal });
     return await fetch(url, reqInit);
+  }catch(e){
+    if(e && e.name === 'AbortError'){
+      const durationMs = Date.now() - startedAt;
+      const reason = (abortReason === 'unknown' && __abortReasonHint) ? __abortReasonHint : abortReason;
+      const msg = 'Aborted (' + (reason || 'unknown') + ') after ' + durationMs + 'ms';
+      __lastErrorMessage = msg;
+      __lastDurationMs = durationMs;
+      throw new Error(msg);
+    }
+    throw e;
   }finally{
     clearTimeout(id);
     try{ __stopController.signal.removeEventListener('abort', stopRelay); }catch(e){}
+    __abortReasonHint = '';
     if(__activeRequestController === controller) __activeRequestController = null;
   }
 }
@@ -597,7 +617,7 @@ async function loadSnapshot(){
     __snapshotLoadRetryCount = 0;
     __lastRequestUrl = snapshotUrl;
     _showSnapshotBanner('Loading data...');
-    const res = await fetchWithTimeout(snapshotUrl, {cache:'no-store'}, 20000);
+    const res = await fetchWithTimeout(snapshotUrl, {cache:'no-store'}, 15000);
     __lastDurationMs = Date.now() - t0;
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const snap = await res.json();
@@ -662,7 +682,7 @@ function _startPolling(){
       const snapshotUrl = _resolveSnapshotApi();
       __lastRequestUrl = snapshotUrl;
       const t0 = Date.now();
-      const res = await fetchWithTimeout(snapshotUrl, {cache:'no-store'}, 20000);
+      const res = await fetchWithTimeout(snapshotUrl, {cache:'no-store'}, 15000);
       __lastDurationMs = Date.now() - t0;
       if(!res.ok) return;
       const snap = await res.json();
@@ -762,7 +782,7 @@ async function triggerRefresh(opts){
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ start_index: startIndex, force }),
-    }, 20000);
+    }, 30000);
 
     if(res.status === 429){
       const data = await res.json().catch(()=>({}));
@@ -823,6 +843,7 @@ function _wireSnapshotButtons(){
   }
   if(btnStop && !btnStop.__wired){
     btnStop.addEventListener('click', function(){
+      __abortReasonHint = 'user';
       _abortActiveRequest();
       try{ __stopController.abort(); }catch(e){}
       _stopPolling();

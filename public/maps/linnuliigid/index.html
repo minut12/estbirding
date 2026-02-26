@@ -379,6 +379,9 @@ let __lastTimeoutMs = null;
 let __stopSignalAbortedAtStart = false;
 let __activeRequestController = null;
 let __stopController = new AbortController();
+let __runCancelController = new AbortController();
+let __runId = 0;
+let __runningRef = false;
 let __abortReasonHint = '';
 let __isRefreshRunning = false;
 const MAP_BUILD_ID = '2026-02-26-1';
@@ -402,6 +405,19 @@ function _ensureStopController(){
   if(!__stopController || __stopController.signal.aborted){
     __stopController = new AbortController();
   }
+}
+function _beginRefreshRun(cancelPrevious){
+  if(cancelPrevious && __runCancelController){
+    try{ __runCancelController.abort('new-run'); }catch(e){}
+  }
+  __runId++;
+  __runningRef = true;
+  __runCancelController = new AbortController();
+  _ensureStopController();
+  return __runId;
+}
+function _endRefreshRun(){
+  __runningRef = false;
 }
 function _scheduleLoadSnapshotRetry(reason){
   if(__pendingConfigLoadRetry) clearTimeout(__pendingConfigLoadRetry);
@@ -448,34 +464,47 @@ function _resolveSnapshotApi(){
   SNAPSHOT_API = validation.url + '/functions/v1/linnuliigid-snapshot';
   return SNAPSHOT_API;
 }
-async function fetchWithTimeout(url, init, ms){
+function _makeAbortError(reason, durationMs, timeoutMs){
+  const err = new Error('Aborted (' + (reason || 'unknown') + ') after ' + Math.round(durationMs) + 'ms; timeout=' + timeoutMs + '; stopAborted=' + __stopSignalAbortedAtStart);
+  err.isAbort = true;
+  err.abortReason = reason || 'unknown';
+  err.durationMs = Math.round(durationMs);
+  return err;
+}
+
+async function fetchWithTimeout(url, init, ms, runId){
   // Hard clamp: never abort below 5 seconds
   ms = Math.max(ms || 15000, 5000);
   __lastTimeoutMs = ms;
 
-  // Ensure stop controller is fresh before every request
   _ensureStopController();
-  __stopSignalAbortedAtStart = __stopController.signal.aborted;
-  if(__stopSignalAbortedAtStart){
-    // Safety: recreate if somehow still aborted after _ensureStopController
-    __stopController = new AbortController();
-    __stopSignalAbortedAtStart = true; // record for debug
-  }
 
   const controller = new AbortController();
-  const startedAt = Date.now();
+  const startedAt = performance.now();
   let abortReason = 'unknown';
   __activeRequestController = controller;
 
-  // Capture a local reference so relay always uses the controller from THIS call
   const localStopController = __stopController;
+  const localRunCancelController = __runCancelController;
+  __stopSignalAbortedAtStart = !!(localStopController && localStopController.signal && localStopController.signal.aborted);
+
+  if(runId != null && runId !== __runId){
+    throw _makeAbortError('new-run', 0, ms);
+  }
+
   const stopRelay = function(){
     abortReason = (__abortReasonHint === 'user') ? 'user' : 'stop';
     controller.abort();
   };
-  // Only relay if the local stop controller is NOT already aborted
-  if(!localStopController.signal.aborted){
+  const runRelay = function(){
+    abortReason = 'new-run';
+    controller.abort();
+  };
+  if(localStopController && !localStopController.signal.aborted){
     try{ localStopController.signal.addEventListener('abort', stopRelay, { once:true }); }catch(e){}
+  }
+  if(localRunCancelController && !localRunCancelController.signal.aborted){
+    try{ localRunCancelController.signal.addEventListener('abort', runRelay, { once:true }); }catch(e){}
   }
 
   const id = setTimeout(function(){
@@ -488,19 +517,16 @@ async function fetchWithTimeout(url, init, ms){
     return await fetch(url, reqInit);
   }catch(e){
     if(e && (e.name === 'AbortError' || (abortReason !== 'unknown'))){
-      const durationMs = Date.now() - startedAt;
+      const durationMs = performance.now() - startedAt;
       const reason = (abortReason === 'unknown' && __abortReasonHint) ? __abortReasonHint : abortReason;
-      const msg = 'Aborted (' + (reason || 'unknown') + ') after ' + durationMs + 'ms; timeout=' + ms + '; stopAborted=' + __stopSignalAbortedAtStart;
-      __lastErrorMessage = msg;
-      __lastDurationMs = durationMs;
-      var err = new Error(msg);
-      err.abortReason = reason;
-      throw err;
+      __lastDurationMs = Math.round(durationMs);
+      throw _makeAbortError(reason, durationMs, ms);
     }
     throw e;
   }finally{
     clearTimeout(id);
     try{ localStopController.signal.removeEventListener('abort', stopRelay); }catch(e){}
+    try{ localRunCancelController.signal.removeEventListener('abort', runRelay); }catch(e){}
     __abortReasonHint = '';
     if(__activeRequestController === controller) __activeRequestController = null;
   }
@@ -639,6 +665,7 @@ function _checkEmpty7dBanner(){
 
 async function loadSnapshot(){
   const t0 = Date.now();
+  const runId = (__runId || 0);
   try{
     _ensureStopController();
     if(!_resolveSupabaseUrlLocal()) _requestSupabaseConfigFromParent();
@@ -646,7 +673,7 @@ async function loadSnapshot(){
     __snapshotLoadRetryCount = 0;
     __lastRequestUrl = snapshotUrl;
     _showSnapshotBanner('Loading data...');
-    const res = await fetchWithTimeout(snapshotUrl, {cache:'no-store'}, 15000);
+    const res = await fetchWithTimeout(snapshotUrl, {cache:'no-store'}, 15000, runId);
     __lastDurationMs = Date.now() - t0;
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const snap = await res.json();
@@ -675,8 +702,15 @@ async function loadSnapshot(){
       document.getElementById('fetchError').textContent = 'Last error: ' + snap.last_error;
     }
   }catch(e){
+    if(e && e.isAbort){
+      if(e.abortReason === 'user' || e.abortReason === 'new-run' || e.abortReason === 'stop'){
+        return;
+      }
+      __lastErrorMessage = e.message || String(e);
+    } else {
+      __lastErrorMessage = String(e?.message || e || 'load failed');
+    }
     __lastDurationMs = Date.now() - t0;
-    __lastErrorMessage = String(e?.message || e || 'load failed');
     if((__lastErrorMessage || '').indexOf('Supabase URL') >= 0){
       if(__snapshotLoadRetryCount < 10){
         __snapshotLoadRetryCount++;
@@ -711,7 +745,7 @@ function _startPolling(){
       const snapshotUrl = _resolveSnapshotApi();
       __lastRequestUrl = snapshotUrl;
       const t0 = Date.now();
-      const res = await fetchWithTimeout(snapshotUrl, {cache:'no-store'}, 15000);
+      const res = await fetchWithTimeout(snapshotUrl, {cache:'no-store'}, 15000, __runId);
       __lastDurationMs = Date.now() - t0;
       if(!res.ok) return;
       const snap = await res.json();
@@ -747,7 +781,19 @@ function _startPolling(){
         }
       }
     }catch(e){
-      __lastErrorMessage = String(e?.message || e || 'poll failed');
+      if(e && e.isAbort){
+        if(e.abortReason === 'user'){
+          _stopPolling();
+          _showSnapshotBanner('Stopped by user', 'warn');
+          return;
+        }
+        if(e.abortReason === 'new-run' || e.abortReason === 'stop'){
+          return;
+        }
+        __lastErrorMessage = e.message || String(e);
+      } else {
+        __lastErrorMessage = String(e?.message || e || 'poll failed');
+      }
       if((__lastErrorMessage || '').indexOf('Supabase URL') >= 0){
         _stopPolling();
         _showSnapshotBanner('Refresh stopped: ' + __lastErrorMessage, 'error');
@@ -767,6 +813,7 @@ function _stopPolling(){
   try{ __stopController.abort(); }catch(e){}
   // Immediately recreate so future requests aren't poisoned
   __stopController = new AbortController();
+  _endRefreshRun();
   _updateProgressUI(0, 0, '');
 }
 
@@ -774,6 +821,7 @@ function _stopPolling(){
 async function triggerRefresh(opts){
   const options = opts || {};
   const force = !!options.force;
+  const runId = (options.newRun || !__runningRef) ? _beginRefreshRun(!!options.newRun) : __runId;
   try{
     _ensureStopController();
     if(!_resolveSupabaseUrlLocal()) _requestSupabaseConfigFromParent();
@@ -786,7 +834,7 @@ async function triggerRefresh(opts){
       const healthRes = await fetchWithTimeout(healthUrl, {
         method:'GET',
         headers: anonKey ? { apikey: anonKey, authorization: 'Bearer ' + anonKey } : {},
-      }, 10000);
+      }, 10000, runId);
       __lastRequestUrl = healthUrl;
       __lastDurationMs = 0;
       if(!(healthRes.ok || healthRes.status === 401 || healthRes.status === 404)){
@@ -813,7 +861,7 @@ async function triggerRefresh(opts){
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ start_index: startIndex, force }),
-    }, 30000);
+    }, 30000, runId);
 
     if(res.status === 429){
       const data = await res.json().catch(()=>({}));
@@ -830,8 +878,18 @@ async function triggerRefresh(opts){
     _startPolling();
     _updateDebugPanel();
   }catch(e){
-    __lastErrorMessage = String(e?.message || e || 'start failed');
     var reason = (e && e.abortReason) || '';
+    if(e && e.isAbort){
+      if(reason === 'user' || reason === 'new-run' || reason === 'stop'){
+        _endRefreshRun();
+        _updateProgressUI(0, 0, '');
+        if(reason === 'user') _showSnapshotBanner('Stopped by user', 'warn');
+        return;
+      }
+      __lastErrorMessage = e.message || String(e);
+    } else {
+      __lastErrorMessage = String(e?.message || e || 'start failed');
+    }
     if(reason === 'user'){
       // User pressed Stop – don't retry
       _stopPolling();
@@ -861,7 +919,7 @@ function _wireSnapshotButtons(){
   const toggle7d = document.getElementById('toggle7days');
 
   if(btnRefresh && !btnRefresh.__wired){
-    btnRefresh.addEventListener('click', triggerRefresh);
+    btnRefresh.addEventListener('click', function(){ triggerRefresh({ newRun: true }); });
     btnRefresh.__wired = true;
   }
   if(btnReload && !btnReload.__wired){
@@ -869,7 +927,7 @@ function _wireSnapshotButtons(){
     btnReload.__wired = true;
   }
   if(btnResume && !btnResume.__wired){
-    btnResume.addEventListener('click', function(){ triggerRefresh({ resumeFromSaved: true, force: true }); });
+    btnResume.addEventListener('click', function(){ triggerRefresh({ resumeFromSaved: true, force: true, newRun: true }); });
     btnResume.__wired = true;
   }
   if(btnSkip && !btnSkip.__wired){
@@ -880,7 +938,7 @@ function _wireSnapshotButtons(){
       __lastErrorMessage = 'Skipped by user';
       _setResumeIndex(nextIndex);
       _showSnapshotBanner('Skipping stuck item, resuming from ' + nextIndex + '...', 'warn');
-      triggerRefresh({ resumeFromSaved: true, force: true });
+      triggerRefresh({ resumeFromSaved: true, force: true, newRun: true });
     });
     btnSkip.__wired = true;
   }

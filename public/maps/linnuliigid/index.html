@@ -465,7 +465,8 @@ function getAbortReason(signal){
     const r = signal.reason;
     if(typeof r === 'string') return r;
     if(typeof r === 'undefined') return 'aborted';
-    return JSON.stringify(_safeData(r));
+    if(r === null) return 'aborted';
+    return String(r);
   }catch(e){
     return 'aborted';
   }
@@ -724,12 +725,15 @@ async function fetchWithTimeout(url, init, ms, runId){
   }
 
   const stopRelay = function(){
-    abortReason = (__abortReasonHint === 'user') ? 'user' : 'stop';
-    controller.abort();
+    const sr = getAbortReason(localStopController && localStopController.signal);
+    if(sr === 'stop' || __abortReasonHint === 'user') abortReason = 'stop';
+    else if(sr === 'replace' || sr === 'retry' || sr === 'config_retry') abortReason = sr;
+    else abortReason = 'replace';
+    controller.abort(abortReason);
   };
   const runRelay = function(){
     abortReason = 'new-run';
-    controller.abort();
+    controller.abort('new-run');
   };
   if(localStopController && !localStopController.signal.aborted){
     try{ localStopController.signal.addEventListener('abort', stopRelay, { once:true }); }catch(e){}
@@ -740,7 +744,7 @@ async function fetchWithTimeout(url, init, ms, runId){
 
   const id = setTimeout(function(){
     abortReason = 'timeout';
-    controller.abort();
+    controller.abort('timeout');
   }, ms);
 
   try{
@@ -800,8 +804,51 @@ async function fetchWithTimeout(url, init, ms, runId){
   }
 }
 function _abortActiveRequest(){
-  try{ if(__activeRequestController) __activeRequestController.abort(); }catch(e){}
+  try{ if(__activeRequestController) __activeRequestController.abort('replace'); }catch(e){}
   try{ if(__activeStepController) __activeStepController.abort('active_request_abort'); }catch(e){}
+}
+async function _controlSkipOnServer(targetIndex, reason){
+  const snapshotUrl = _resolveSnapshotApi();
+  const t0 = performance.now();
+  pushDebugEvent('CONTROL_SKIP_START', 'Sending skip control to server', {
+    targetIndex: targetIndex,
+    reason: reason,
+    runId: __runId,
+    url: snapshotUrl,
+  }, 'warn');
+  const res = await fetchWithTimeout(snapshotUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'skip',
+      index: Math.max(0, Number(targetIndex) || 0),
+      reason: reason || 'watchdog',
+      force: true,
+    }),
+  }, 15000, __runId);
+  const text = await res.text();
+  let payload = {};
+  try{ payload = text ? JSON.parse(text) : {}; }catch(e){ payload = { raw: (text || '').slice(0, 300) }; }
+  if(!res.ok){
+    pushDebugEvent('CONTROL_SKIP_FAIL', 'Skip control failed', {
+      targetIndex: targetIndex,
+      reason: reason,
+      httpStatus: res.status,
+      durationMs: Math.round(performance.now() - t0),
+      response: _safeData(payload),
+    }, 'error');
+    throw new Error('Skip control failed: HTTP ' + res.status);
+  }
+  pushDebugEvent('CONTROL_SKIP_DONE', 'Skip control applied', {
+    targetIndex: targetIndex,
+    reason: reason,
+    httpStatus: res.status,
+    durationMs: Math.round(performance.now() - t0),
+    progress_done: Number(payload && payload.progress_done || 0),
+    progress_total: Number(payload && payload.progress_total || 0),
+    status: payload && payload.status || null,
+  });
+  return payload;
 }
 function _startWatchdog(){
   _stopWatchdog();
@@ -819,7 +866,21 @@ function _startWatchdog(){
     pushDebugEvent('WATCHDOG_ABORT', 'Watchdog aborting active step', { index: idx, runId: __runId }, 'warn');
     try{ if(__activeStepController) __activeStepController.abort('watchdog_timeout'); }catch(e){}
     _abortActiveRequest();
-    triggerRefresh({ resumeFromSaved: true, silent: true, force: true });
+    const targetIndex = Math.max(_getResumeIndex(), idx, Number(__currentIndex) || 0) + 1;
+    _setResumeIndex(targetIndex);
+    _controlSkipOnServer(targetIndex, 'watchdog')
+      .then(function(payload){
+        if(Number(payload && payload.progress_done || 0) < targetIndex){
+          __lastInfoMessage = 'Skip command sent, but server did not advance. Check runner job storage.';
+          _showSnapshotBanner(__lastInfoMessage, 'warn');
+        }
+      })
+      .catch(function(err){
+        __lastErrorMessage = String(err && err.message ? err.message : err);
+      })
+      .finally(function(){
+        loadSnapshot();
+      });
   }, 5000);
 }
 function _stopWatchdog(){
@@ -1120,7 +1181,19 @@ function _startPolling(){
           _abortActiveRequest();
           pushDebugEvent('INDEX_SKIP', 'Auto skip stuck index', { nextIndex: nextIndex, attempt: __attemptForCurrentIndex, runId: __runId }, 'warn');
           _showSnapshotBanner('Hang detected, auto-skip to ' + nextIndex + ' (force)...', 'warn');
-          triggerRefresh({ resumeFromSaved: true, silent: true, startIndex: nextIndex, force: true });
+          _controlSkipOnServer(nextIndex, 'poll_hang')
+            .then(function(payload){
+              if(Number(payload && payload.progress_done || 0) < nextIndex){
+                __lastInfoMessage = 'Skip command sent, but server did not advance. Check runner job storage.';
+                _showSnapshotBanner(__lastInfoMessage, 'warn');
+              }
+            })
+            .catch(function(err){
+              __lastErrorMessage = String(err && err.message ? err.message : err);
+            })
+            .finally(function(){
+              loadSnapshot();
+            });
         }
       }
 
@@ -1142,7 +1215,7 @@ function _startPolling(){
       }
     }catch(e){
       if(e && e.isAbort){
-        if(e.abortReason === 'user'){
+        if(e.abortReason === 'stop'){
           _stopPolling();
           _showSnapshotBanner('Stopped by user', 'warn');
           return;
@@ -1172,7 +1245,7 @@ function _stopPolling(){
   __isRefreshRunning = false;
   _stopWatchdog();
   _abortActiveRequest();
-  try{ __stopController.abort(); }catch(e){}
+  try{ __stopController.abort('replace'); }catch(e){}
   // Immediately recreate so future requests aren't poisoned
   __stopController = new AbortController();
   _endRefreshRun();
@@ -1330,7 +1403,19 @@ function _wireSnapshotButtons(){
       pushDebugEvent('INDEX_SKIP', 'User skipped current index', { nextIndex: nextIndex, runId: __runId }, 'warn');
       _setResumeIndex(nextIndex);
       _showSnapshotBanner('Skipping stuck item, resuming from ' + nextIndex + '...', 'warn');
-      triggerRefresh({ resumeFromSaved: true, force: true, newRun: true });
+      _controlSkipOnServer(nextIndex, 'user_click')
+        .then(function(payload){
+          if(Number(payload && payload.progress_done || 0) < nextIndex){
+            __lastInfoMessage = 'Skip command sent, but server did not advance. Check runner job storage.';
+            _showSnapshotBanner(__lastInfoMessage, 'warn');
+          }
+        })
+        .catch(function(err){
+          __lastErrorMessage = String(err && err.message ? err.message : err);
+        })
+        .finally(function(){
+          loadSnapshot();
+        });
     });
     btnSkip.__wired = true;
   }
@@ -1338,7 +1423,7 @@ function _wireSnapshotButtons(){
     btnStop.addEventListener('click', function(){
       __abortReasonHint = 'user';
       _abortActiveRequest();
-      try{ __stopController.abort(); }catch(e){}
+      try{ __stopController.abort('stop'); }catch(e){}
       // Immediately recreate so nothing is poisoned
       __stopController = new AbortController();
       _stopPolling();

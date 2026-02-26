@@ -362,6 +362,7 @@ Deno.serve(async (req) => {
       } catch {
         body = {};
       }
+      const action = String(body?.action || "").toLowerCase();
 
       const startIndex = Math.max(0, Number(body?.start_index || 0) || 0);
       const force = body?.force === true;
@@ -372,6 +373,47 @@ Deno.serve(async (req) => {
 
       const { data: current, error: currentError } = await selectSnapshotRow(supabaseAdmin);
       if (currentError) throw currentError;
+
+      if (action === "skip") {
+        const requestedIndex = Math.max(0, Number(body?.index || 0) || 0);
+        const reason = String(body?.reason || "skip");
+        const currentDone = Number(current?.progress_done || 0);
+        const progressTotal = Number(current?.progress_total || SPECIES.length);
+        const nextDone = Math.max(currentDone, Math.min(requestedIndex, progressTotal));
+        const nextError = `Skipped to index ${nextDone} (${reason})`;
+
+        const { error: skipError } = await updateSnapshot(supabaseAdmin, {
+          progress_done: nextDone,
+          progress_total: progressTotal,
+          status: nextDone >= progressTotal ? "ready" : "running",
+          last_error: nextError,
+          heartbeat_at: nowIso,
+          running_started_at: (current as { running_started_at?: string | null })?.running_started_at || nowIso,
+          ...(nextDone >= progressTotal ? { generated_at: nowIso } : {}),
+        });
+        if (skipError) throw skipError;
+
+        const { data: updated, error: updatedError } = await selectSnapshotRow(supabaseAdmin);
+        if (updatedError) throw updatedError;
+        const points = (updated as { points_json?: unknown })?.points_json || (current as { points_json?: unknown })?.points_json || {};
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            action: "skip",
+            status: updated?.status || (nextDone >= progressTotal ? "ready" : "running"),
+            progress_done: Number(updated?.progress_done || nextDone),
+            progress_total: Number(updated?.progress_total || progressTotal),
+            generated_at: updated?.generated_at || null,
+            points_json: points,
+            last_error: updated?.last_error || nextError,
+            heartbeat_at: heartbeatColumnAvailable ? ((updated as { heartbeat_at?: string | null })?.heartbeat_at || nowIso) : null,
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
 
       if (current?.generated_at) {
         const elapsed = Date.now() - new Date(current.generated_at).getTime();

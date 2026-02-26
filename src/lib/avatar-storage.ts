@@ -3,7 +3,7 @@
  * Supports both Supabase shared storage and localStorage overrides.
  */
 
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/config/supabaseClient';
 
 const LOCAL_OVERRIDES_KEY = 'linnuliigid_avatars_v1';
 const SHARED_CACHE_KEY = 'linnuliigid_avatar_defaults_v1';

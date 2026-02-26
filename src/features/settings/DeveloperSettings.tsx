@@ -209,7 +209,7 @@ export default function DeveloperSettings() {
       </h3>
 
       <div className="space-y-2">
-        <h4 className="font-semibold text-foreground">Supabase (arendaja)</h4>
+        <h4 className="font-semibold text-foreground">Supabase (test override)</h4>
         <Label htmlFor="supabaseUrlOverride">Supabase URL override</Label>
         <Input
           id="supabaseUrlOverride"

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Loader2, TestTube, Check, X, ExternalLink, Copy } from 'lucide-react';
+import { Loader2, TestTube, Check, X } from 'lucide-react';
 import { loadNewsSourcesWithOrigin, resetNewsSourcesToDefaults, saveNewsSources, type NewsSourcesOrigin } from '@/lib/newsSourcesStorage';
 import type { NewsSourceConfigItem } from '@/config/newsSources';
 
@@ -113,13 +113,6 @@ function SourceCard({
   localOnlyMode: boolean;
   onLocalUpdate: (next: NewsSource) => void;
 }) {
-  const safeUrl = (u: string) => {
-    try {
-      return new URL(u).toString();
-    } catch {
-      return u;
-    }
-  };
   const [feedUrl, setFeedUrl] = useState(source.feed_url || '');
   const [enabled, setEnabled] = useState(source.is_enabled);
   const [testResult, setTestResult] = useState<{ ok: boolean; count?: number; sampleTitles?: string[]; error?: string } | null>(null);
@@ -183,33 +176,7 @@ function SourceCard({
   };
 
   const isFacebook = source.slug.includes('facebook');
-  const sourceUrl = safeUrl((feedUrl || source.feed_url || source.homepage_url || '').trim());
-  const shortUrl = sourceUrl ? sourceUrl.replace(/^https?:\/\//, '') : '';
-
-  const copySourceUrl = async () => {
-    if (!sourceUrl) {
-      toast.error('Allika URL puudub');
-      return;
-    }
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(sourceUrl);
-      } else if (typeof document !== 'undefined') {
-        const ta = document.createElement('textarea');
-        ta.value = sourceUrl;
-        ta.setAttribute('readonly', '');
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-      }
-      toast.success('URL kopeeritud');
-    } catch {
-      toast.error('URL kopeerimine ebaonnestus');
-    }
-  };
+  const sourceUrl = (source.feed_url || source.homepage_url || '').trim();
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-3">
@@ -218,27 +185,14 @@ function SourceCard({
           <span className="font-medium text-sm text-foreground">{source.name}</span>
           <Badge variant="outline" className="text-xs">{source.type}</Badge>
           {sourceUrl && (
-            <>
-              <a
-                href={sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-primary underline underline-offset-4 hover:text-primary/80"
-                title={shortUrl || sourceUrl}
-              >
-                Ava
-                <ExternalLink className="h-3 w-3" />
-              </a>
-              <button
-                type="button"
-                onClick={copySourceUrl}
-                className="inline-flex items-center gap-1 rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted"
-                title={shortUrl || sourceUrl}
-              >
-                <Copy className="h-3 w-3" />
-                Copy
-              </button>
-            </>
+            <a
+              href={sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm underline"
+            >
+              Ava allikas
+            </a>
           )}
         </div>
         <Switch checked={enabled} onCheckedChange={setEnabled} />

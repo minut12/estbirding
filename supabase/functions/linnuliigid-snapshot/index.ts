@@ -238,7 +238,7 @@ async function runRefresh(
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
           try {
             if (attempt > 0) await sleep(1000 * Math.pow(2, attempt - 1));
-            return { name, data: await withTimeout(fetchSpeciesData(name), 25000, `species=${name}`) };
+            return { name, data: await withTimeout(fetchSpeciesData(name), 15000, `species=${name}`) };
           } catch (e) {
             lastErr = e instanceof Error ? e : new Error(String(e));
           }
@@ -344,6 +344,7 @@ Deno.serve(async (req) => {
       const startIndex = Math.max(0, Number(body?.start_index || 0) || 0);
       const force = body?.force === true;
       const STALE_MS = 120000;
+      const RUNNING_STUCK_MS = 5 * 60 * 1000;
       const nowMs = Date.now();
       const nowIso = new Date().toISOString();
       const runId = crypto.randomUUID();
@@ -374,8 +375,11 @@ Deno.serve(async (req) => {
       }
 
       const heartbeatMs = current?.heartbeat_at ? new Date(current.heartbeat_at).getTime() : null;
-      const isStale = !heartbeatMs || (nowMs - heartbeatMs > STALE_MS);
-      if (current?.status === "running" && !(force && isStale)) {
+      const runningStartedMs = current?.running_started_at ? new Date(current.running_started_at).getTime() : null;
+      const staleHeartbeat = !heartbeatMs || (nowMs - heartbeatMs > STALE_MS);
+      const staleRun = !runningStartedMs || (nowMs - runningStartedMs > RUNNING_STUCK_MS);
+      const allowTakeover = force || (current?.status === "running" && staleHeartbeat && staleRun);
+      if (current?.status === "running" && !allowTakeover) {
         return new Response(
           JSON.stringify({
             message: "Refresh already in progress",
@@ -390,7 +394,9 @@ Deno.serve(async (req) => {
       }
 
       const resumeStart = Math.max(startIndex, Number(current?.progress_done || 0) || 0);
-      const runningStartedAt = current?.running_started_at || nowIso;
+      const runningStartedAt = (force || staleRun)
+        ? nowIso
+        : (current?.running_started_at || nowIso);
 
       const { error: startError } = await supabaseAdmin
         .from("linnuliigid_snapshot")
@@ -441,6 +447,7 @@ Deno.serve(async (req) => {
           status: "running",
           start_index: resumeStart,
           force,
+          auto_takeover: !force && current?.status === "running" && staleHeartbeat && staleRun,
           run_id: runId,
         }),
         {

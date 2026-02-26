@@ -1,7 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, MapPin } from "lucide-react";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
 import type { EventItem } from "@/data/events";
 
 interface EventMapPreviewProps {
@@ -12,11 +10,59 @@ interface EventMapPreviewProps {
   onNext: () => void;
 }
 
+type LeafletLike = any;
+
+declare global {
+  interface Window {
+    L?: LeafletLike;
+  }
+}
+
 function getCenter(events: EventItem[]): [number, number] {
   if (!events.length) return [58.7, 25.0];
   const lat = events.reduce((sum, e) => sum + e.lat, 0) / events.length;
   const lng = events.reduce((sum, e) => sum + e.lng, 0) / events.length;
   return [lat, lng];
+}
+
+function ensureLeafletAssets(): Promise<void> {
+  if (window.L) return Promise.resolve();
+
+  const existingLink = document.querySelector('link[data-leaflet-css="1"]');
+  if (!existingLink) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    link.setAttribute("data-leaflet-css", "1");
+    document.head.appendChild(link);
+  }
+
+  return new Promise((resolve, reject) => {
+    const existingScript = document.querySelector('script[data-leaflet-js="1"]') as HTMLScriptElement | null;
+    if (existingScript) {
+      existingScript.addEventListener("load", () => resolve(), { once: true });
+      existingScript.addEventListener("error", () => reject(new Error("Leaflet script failed")), { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    script.async = true;
+    script.setAttribute("data-leaflet-js", "1");
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Leaflet script failed"));
+    document.body.appendChild(script);
+  });
+}
+
+function InvalidateMapSize({ map, deps }: { map: LeafletLike | null; deps: unknown[] }) {
+  useEffect(() => {
+    if (!map) return;
+    const id = window.setTimeout(() => map.invalidateSize(), 50);
+    return () => window.clearTimeout(id);
+  }, [map, ...deps]);
+
+  return null;
 }
 
 export function EventMapPreview({
@@ -28,100 +74,126 @@ export function EventMapPreview({
 }: EventMapPreviewProps) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const miniMapRef = useRef<HTMLDivElement | null>(null);
-  const leafletMapRef = useRef<L.Map | null>(null);
-  const leafletMiniRef = useRef<L.Map | null>(null);
-  const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const leafletMapRef = useRef<LeafletLike | null>(null);
+  const leafletMiniRef = useRef<LeafletLike | null>(null);
+  const markersRef = useRef<Map<string, LeafletLike>>(new Map());
   const [tileError, setTileError] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
   const center = useMemo(() => getCenter(events), [events]);
 
   useEffect(() => {
-    if (!mapRef.current || !miniMapRef.current) return;
+    let cancelled = false;
 
-    if (!leafletMapRef.current) {
-      const map = L.map(mapRef.current, {
-        zoomControl: false,
-        attributionControl: true,
-      }).setView(center, 7);
+    async function init() {
+      if (!mapRef.current || !miniMapRef.current) return;
 
-      const tileLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "&copy; OpenStreetMap contributors",
-        maxZoom: 19,
-      });
-      tileLayer.on("tileerror", () => setTileError(true));
-      tileLayer.addTo(map);
-      leafletMapRef.current = map;
+      try {
+        await ensureLeafletAssets();
+        if (cancelled || !window.L) return;
+
+        const L = window.L;
+
+        if (!leafletMapRef.current) {
+          const map = L.map(mapRef.current, {
+            zoomControl: false,
+            attributionControl: true,
+          }).setView(center, 7);
+
+          const tileLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: '&copy; OpenStreetMap contributors',
+            maxZoom: 19,
+          });
+          tileLayer.on("tileerror", () => setTileError(true));
+          tileLayer.addTo(map);
+
+          leafletMapRef.current = map;
+        }
+
+        if (!leafletMiniRef.current) {
+          const mini = L.map(miniMapRef.current, {
+            zoomControl: false,
+            attributionControl: false,
+            dragging: false,
+            touchZoom: false,
+            scrollWheelZoom: false,
+            doubleClickZoom: false,
+            boxZoom: false,
+            keyboard: false,
+          }).setView(center, 5);
+
+          const miniTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            maxZoom: 19,
+          });
+          miniTiles.on("tileerror", () => setTileError(true));
+          miniTiles.addTo(mini);
+
+          leafletMiniRef.current = mini;
+        }
+
+        setMapReady(true);
+      } catch {
+        setTileError(true);
+      }
     }
 
-    if (!leafletMiniRef.current) {
-      const mini = L.map(miniMapRef.current, {
-        zoomControl: false,
-        attributionControl: false,
-        dragging: false,
-        touchZoom: false,
-        scrollWheelZoom: false,
-        doubleClickZoom: false,
-        boxZoom: false,
-        keyboard: false,
-      }).setView(center, 5);
+    void init();
 
-      const miniTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
-      });
-      miniTiles.on("tileerror", () => setTileError(true));
-      miniTiles.addTo(mini);
-      leafletMiniRef.current = mini;
-    }
+    return () => {
+      cancelled = true;
+    };
   }, [center]);
 
   useEffect(() => {
     const map = leafletMapRef.current;
-    if (!map) return;
+    if (!map || !window.L) return;
+
     markersRef.current.forEach((marker) => marker.remove());
     markersRef.current.clear();
 
     events.forEach((event) => {
       const active = event.id === highlightedEventId;
-      const icon = L.divIcon({
+      const icon = window.L!.divIcon({
         className: "",
         html: `<div style="width:36px;height:36px;border-radius:16px;background:white;border:2px solid ${active ? "#2F6B4F" : "#fff"};box-shadow:0 8px 20px rgba(47,107,79,.25);display:flex;align-items:center;justify-content:center;font-size:16px;">📍</div>`,
         iconSize: [36, 36],
         iconAnchor: [18, 18],
       });
-      const marker = L.marker([event.lat, event.lng], { icon }).addTo(map);
+
+      const marker = window.L!.marker([event.lat, event.lng], { icon }).addTo(map);
       marker.on("click", () => onSelectEvent(event.id));
       marker.setZIndexOffset(active ? 1000 : 0);
       markersRef.current.set(event.id, marker);
     });
 
-    if (events.length) map.setView(center, 7, { animate: false });
+    if (events.length) {
+      map.setView(center, 7, { animate: false });
+    }
   }, [events, highlightedEventId, onSelectEvent, center]);
 
   useEffect(() => {
     const mini = leafletMiniRef.current;
-    if (!mini) return;
-    mini.eachLayer((layer) => {
-      if (layer instanceof L.TileLayer) return;
+    if (!mini || !window.L) return;
+
+    mini.eachLayer((layer: any) => {
+      if (layer instanceof window.L.TileLayer) return;
       mini.removeLayer(layer);
     });
+
     events.forEach((event) => {
-      L.circleMarker([event.lat, event.lng], {
+      const circle = window.L!.circleMarker([event.lat, event.lng], {
         radius: event.id === highlightedEventId ? 4 : 3,
         color: "#2F6B4F",
         fillColor: "#2F6B4F",
         fillOpacity: event.id === highlightedEventId ? 1 : 0.6,
         weight: 0,
-      }).addTo(mini);
+      });
+      circle.addTo(mini);
     });
-    if (events.length) mini.setView(center, 5, { animate: false });
-  }, [events, highlightedEventId, center]);
 
-  useEffect(() => {
-    const id = window.setTimeout(() => {
-      leafletMapRef.current?.invalidateSize();
-      leafletMiniRef.current?.invalidateSize();
-    }, 50);
-    return () => window.clearTimeout(id);
-  }, [events.length, highlightedEventId]);
+    if (events.length) {
+      mini.setView(center, 5, { animate: false });
+    }
+  }, [events, highlightedEventId, center]);
 
   useEffect(() => {
     return () => {
@@ -169,6 +241,8 @@ export function EventMapPreview({
           Kaart
         </span>
       </div>
+
+      <InvalidateMapSize map={leafletMapRef.current} deps={[events.length, highlightedEventId, mapReady]} />
     </div>
   );
 }

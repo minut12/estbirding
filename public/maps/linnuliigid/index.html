@@ -616,21 +616,6 @@ function _startPolling(){
       const snapshotUrl = _resolveSnapshotApi();
       __lastRequestUrl = snapshotUrl;
       const t0 = Date.now();
-      const resumeIndex = _getResumeIndex();
-      const chunkRes = await fetchWithTimeout(snapshotUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ start_index: resumeIndex, max_items: 10 }),
-      }, 25000);
-      __lastDurationMs = Date.now() - t0;
-      if(!chunkRes.ok){
-        const t = await chunkRes.text().catch(()=> '');
-        throw new Error('Chunk refresh failed HTTP ' + chunkRes.status + ' ' + t);
-      }
-      const chunk = await chunkRes.json();
-      if(Number.isFinite(chunk.done)) _setResumeIndex(Number(chunk.done));
-      _updateProgressUI(Number(chunk.done || 0), Number(chunk.total || SPECIES.length), String(chunk.status || 'running'));
-
       const res = await fetchWithTimeout(snapshotUrl, {cache:'no-store'}, 20000);
       __lastDurationMs = Date.now() - t0;
       if(!res.ok) return;
@@ -645,7 +630,7 @@ function _startPolling(){
         }
       }
 
-      if(String(chunk.status || snap.status) === 'running'){
+      if(snap.status === 'running'){
         _showSnapshotBanner('Refreshing: ' + snap.progress_done + '/' + snap.progress_total + '...');
       } else {
         _stopPolling();
@@ -705,9 +690,25 @@ async function triggerRefresh(opts){
     _showSnapshotBanner('Requesting server refresh...');
     _updateProgressUI(0, SPECIES.length, 'running');
     const startIndex = options.resumeFromSaved ? _getResumeIndex() : 0;
-    _setResumeIndex(startIndex);
     const snapshotUrl = _resolveSnapshotApi();
     __lastRequestUrl = snapshotUrl;
+
+    const res = await fetchWithTimeout(snapshotUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ start_index: startIndex }),
+    }, 20000);
+
+    if(res.status === 429){
+      const data = await res.json().catch(()=>({}));
+      if(!options.silent) _showSnapshotBanner(data.error || 'Refresh recently triggered. Try again later.', 'warn');
+      _updateProgressUI(0, 0, '');
+      setTimeout(_hideSnapshotBanner, 6000);
+      return;
+    }
+    if(res.status === 409){
+      _showSnapshotBanner('Refresh already in progress...');
+    }
 
     _startPolling();
     _updateDebugPanel();

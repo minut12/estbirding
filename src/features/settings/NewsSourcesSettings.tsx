@@ -62,7 +62,7 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
       queryClient.invalidateQueries({ queryKey: ['news-sources'] });
       toast.success(`${source.name} uuendatud`);
     },
-    onError: () => toast.error("Salvestamine ebaõnnestus"),
+    onError: () => toast.error('Salvestamine ebaÃµnnestus'),
   });
 
   const testFeed = async () => {
@@ -87,10 +87,10 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
           sampleTitles: Array.isArray(data?.sampleTitles) ? data.sampleTitles : [],
         });
       } else {
-        setTestResult({ ok: false, error: data?.error || "Voogu ei õnnestunud lugeda" });
+        setTestResult({ ok: false, error: data?.error || 'Voogu ei Ãµnnestunud lugeda' });
       }
     } catch (e: any) {
-      setTestResult({ ok: false, error: e?.message || "Voogu ei õnnestunud lugeda" });
+      setTestResult({ ok: false, error: e?.message || 'Voogu ei Ãµnnestunud lugeda' });
     } finally {
       setTesting(false);
     }
@@ -121,7 +121,7 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
         />
         {isFacebook && (
           <p className="text-xs text-muted-foreground">
-            Kasuta Facebook->RSS teenust (nt RSS.app / FetchRSS). Facebooki tokenit pole vaja.
+            Kasuta Facebookâ†’RSS teenust (nt RSS.app / FetchRSS). Facebooki tokenit pole vaja.
           </p>
         )}
       </div>

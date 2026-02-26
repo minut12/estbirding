@@ -23,7 +23,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const body = await req.json().catch(() => null);
+    const body = await req.json().catch(() => ({}));
     const action = body?.action;
 
     if (typeof action === "string" && action.startsWith("admin_")) {
@@ -48,6 +48,9 @@ Deno.serve(async (req) => {
       }
 
       if (action === "admin_create") {
+        if (!payload?.title || !payload?.start_at) {
+          return json(400, { error: "title and start_at required" });
+        }
         const { data, error } = await supabase.from("events").insert(payload).select("*").single();
         if (error) return json(500, { error: error.message });
         return json(200, { data });

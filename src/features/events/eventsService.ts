@@ -112,7 +112,7 @@ async function callAdminFn(action: string, payload: unknown, adminKey: string): 
   }
 
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status} from ${fnUrl}: ${bodyText}`);
+    throw new Error(`HTTP ${res.status}: ${bodyText}`);
   }
 
   return json?.data ?? json;

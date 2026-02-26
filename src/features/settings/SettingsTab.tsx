@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { loadSettings, saveSettings, NEWS_AUTO_TRANSLATE_ET_KEY, type AppSettings } from '@/lib/settings';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -46,6 +46,7 @@ import type { EventRow } from '@/types/events';
 type ResetMode = 'soft' | 'hard' | null;
 
 export default function SettingsTab() {
+  const newsSourcesSectionRef = useRef<HTMLDivElement | null>(null);
   const [adminMode, setAdminMode] = useState<'settings' | 'admin-events' | 'create-event' | 'map-picker'>('settings');
   const [adminReady, setAdminReady] = useState(false);
   const [adminAllowed, setAdminAllowed] = useState(false);
@@ -110,6 +111,12 @@ export default function SettingsTab() {
       window.removeEventListener(PROXY_ENDPOINT_UPDATED_EVENT, refreshStored);
     };
   }, []);
+
+  useEffect(() => {
+    if (import.meta.env.DEV && adminMode === 'settings' && !newsSourcesSectionRef.current) {
+      console.warn('[Settings] News sources section did not render while settings is open');
+    }
+  }, [adminMode]);
 
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -291,12 +298,14 @@ export default function SettingsTab() {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="px-4 py-3 border-b border-border bg-card">
         <h2 className="font-semibold text-foreground">Seaded</h2>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-6">
-        <NewsSourcesSettings />
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-6 max-h-[calc(100dvh-124px)] md:max-h-none pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+        <div ref={newsSourcesSectionRef} className="block">
+          <NewsSourcesSettings />
+        </div>
 
         <div className="space-y-2">
           <Label htmlFor="translateApiUrl">Translation API URL</Label>

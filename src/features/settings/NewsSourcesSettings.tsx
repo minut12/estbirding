@@ -35,7 +35,7 @@ export default function NewsSourcesSettings() {
   if (sources.length === 0) return <p className="text-sm text-muted-foreground">Uudiste allikaid pole.</p>;
 
   return (
-    <div className="space-y-4">
+    <div className="block space-y-4">
       <h3 className="font-semibold text-foreground">Uudiste allikad</h3>
       {sources.map(source => (
         <SourceCard key={source.id} source={source} queryClient={queryClient} />
@@ -100,8 +100,8 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="flex items-start justify-between gap-2 sm:items-center">
+        <div className="flex min-w-0 items-center gap-2">
           <span className="font-medium text-sm text-foreground">{source.name}</span>
           <Badge variant="outline" className="text-xs">{source.type}</Badge>
         </div>
@@ -145,13 +145,13 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
         </div>
       )}
 
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <Button
           variant="outline"
           size="sm"
           onClick={testFeed}
           disabled={testing || !feedUrl}
-          className="gap-1.5"
+          className="gap-1.5 w-full sm:w-auto"
         >
           {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <TestTube className="w-3.5 h-3.5" />}
           Testi voogu
@@ -160,6 +160,7 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
           size="sm"
           onClick={() => updateMutation.mutate()}
           disabled={updateMutation.isPending}
+          className="w-full sm:w-auto"
         >
           Salvesta
         </Button>

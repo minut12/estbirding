@@ -13,7 +13,7 @@ interface NewsSource {
   id: string;
   name: string;
   slug: string;
-  source_key?: string | null;
+  key?: string | null;
   type: string;
   homepage_url: string | null;
   feed_url: string | null;
@@ -26,7 +26,7 @@ export default function NewsSourcesSettings() {
   const { data: sources = [], isLoading } = useQuery<NewsSource[]>({
     queryKey: ['news-sources-settings'],
     queryFn: async () => {
-      const { data } = await supabase.from('news_sources').select('id, name, slug, source_key, type, homepage_url, feed_url, is_enabled').eq('is_active', true);
+      const { data } = await supabase.from('news_sources').select('id, name, slug, key, type, homepage_url, feed_url, is_enabled').eq('is_active', true);
       return (data || []) as NewsSource[];
     },
   });
@@ -73,7 +73,7 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
       const { data, error } = await supabase.functions.invoke('news-pull-test', {
         body: {
           slug: source.slug,
-          source_key: source.source_key,
+          source_key: source.key,
           feed_url: feedUrl,
           type: source.type,
           kind: source.type,

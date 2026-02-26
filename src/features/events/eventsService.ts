@@ -1,4 +1,4 @@
-import { supabase } from "@/config/supabaseClient";
+import { getSupabaseClient, getSupabaseInitError } from "@/config/supabaseClient";
 import { getFunctionsBaseUrl, getSupabaseAnonKey, getSupabaseUrl, validateSupabaseConfig } from "@/config/supabaseConfig";
 import { getEventsAdminKey } from "./adminKey";
 
@@ -33,6 +33,8 @@ const EVENT_COLUMNS =
   "id,title,description,start_at,end_at,location_name,lat,lng,category,organizer_name,url,image_url,is_published,is_archived,created_by,created_at,updated_at";
 
 export async function listPublishedEvents(): Promise<EventRow[]> {
+  const supabase = getSupabaseClient();
+  if (!supabase) throw new Error(getSupabaseInitError() || "Supabase not configured");
   const { data, error } = await (supabase as any)
     .from("events")
     .select(EVENT_COLUMNS)

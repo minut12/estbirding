@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { supabase } from '@/config/supabaseClient';
+import { getSupabaseClient, getSupabaseInitError } from '@/config/supabaseClient';
 import {
   Newspaper, ChevronLeft, Archive, ArchiveRestore, ExternalLink,
   Search, RefreshCw, Loader2,
@@ -336,6 +336,8 @@ export default function NewsTab() {
   const autoTranslateEnabled = isAutoTranslateNewsToEtEnabled();
   const [translateEndpoint, setTranslateEndpoint] = useState(() => resolveEndpoint());
   const endpointConfigured = Boolean(translateEndpoint);
+  const supabase = getSupabaseClient();
+  const supabaseError = getSupabaseInitError();
 
   useEffect(() => {
     const refreshEndpoint = () => setTranslateEndpoint(resolveEndpoint());
@@ -351,6 +353,7 @@ export default function NewsTab() {
   const { data: sources = [] } = useQuery<NewsSource[]>({
     queryKey: ['news-sources'],
     queryFn: async () => {
+      if (!supabase) throw new Error(supabaseError || 'Supabase not configured');
       const { data, error } = await supabase
         .from('news_sources')
         .select('id, name, slug, key')
@@ -362,6 +365,7 @@ export default function NewsTab() {
       return (data || []) as NewsSource[];
     },
     staleTime: 60_000,
+    enabled: Boolean(supabase),
   });
 
   const {
@@ -369,6 +373,7 @@ export default function NewsTab() {
   } = useQuery({
     queryKey: ['news-items', tab],
     queryFn: async () => {
+      if (!supabase) throw new Error(supabaseError || 'Supabase not configured');
       const { data, error } = await supabase
         .from('news_items')
         .select('id, source_key, source_slug, title, body, image_url, permalink_url, published_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang')
@@ -386,6 +391,7 @@ export default function NewsTab() {
     },
     staleTime: 30_000,
     retry: 1,
+    enabled: Boolean(supabase),
   });
 
   const allItems = useMemo(() => {
@@ -413,13 +419,18 @@ export default function NewsTab() {
   }, [newsItems, sourceFilter, search, tab]);
 
   useEffect(() => {
+    if (!supabase) {
+      toast.error(`Supabase seadistus puudub: ${supabaseError || 'Tundmatu viga'}`);
+      return;
+    }
     if (!isError) return;
     toast.error('Uudiste laadimine ebaõnnestus');
-  }, [isError]);
+  }, [isError, supabase, supabaseError]);
 
   // Toggle archive via DB update
   const archiveMutation = useMutation({
     mutationFn: async ({ id, archived }: { id: string; archived: boolean }) => {
+      if (!supabase) throw new Error(supabaseError || 'Supabase not configured');
       const { error } = await supabase.functions.invoke('news-archive', {
         body: { id, archived },
       });
@@ -440,6 +451,7 @@ export default function NewsTab() {
   // Pull / refresh
   const pullMutation = useMutation({
     mutationFn: async () => {
+      if (!supabase) throw new Error(supabaseError || 'Supabase not configured');
       const { data, error } = await supabase.functions.invoke('news-pull', {
         body: { force: false },
       });
@@ -696,6 +708,8 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
   onBack: () => void;
   onToggleArchive: () => void;
 }) {
+  const supabase = getSupabaseClient();
+  const supabaseError = getSupabaseInitError();
   const [contentHtml, setContentHtml] = useState<string | null>(item.content_html);
   const [loadingContent, setLoadingContent] = useState(!item.content_html && item.source_slug === 'eoy');
   const [contentError, setContentError] = useState<string | null>(null);
@@ -710,6 +724,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
       setLoadingContent(true);
       setContentError(null);
       try {
+        if (!supabase) throw new Error(supabaseError || 'Supabase not configured');
         const { data, error } = await supabase.functions.invoke('fetch-eoy-article-content', {
           body: { news_item_id: item.id },
         });
@@ -727,7 +742,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
       }
     })();
     return () => { cancelled = true; };
-  }, [item.id, item.content_html, item.source_slug]);
+  }, [item.id, item.content_html, item.source_slug, supabase, supabaseError]);
 
   useEffect(() => {
     setManualTranslation(null);

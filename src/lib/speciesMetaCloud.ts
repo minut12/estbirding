@@ -1,4 +1,4 @@
-import { supabase } from '@/config/supabaseClient';
+import { getSupabaseClient, getSupabaseInitError } from '@/config/supabaseClient';
 import { loadSpeciesMeta, replaceSpeciesMeta, SPECIES_META_LOCAL_UPDATED_AT_KEY, type SpeciesMeta } from '@/lib/speciesMeta';
 import { normalizeSpeciesName, normalizeUiText } from '@/lib/textNormalize';
 
@@ -28,6 +28,12 @@ export type SpeciesMetaSyncStatus = {
   lastSyncAt: string;
   lastSyncError: string;
 };
+
+function requireSupabase() {
+  const supabase = getSupabaseClient();
+  if (!supabase) throw new Error(getSupabaseInitError() || "Supabase not configured");
+  return supabase;
+}
 
 function normalizeRarityLevel(level: unknown): 'none' | 'rare' | 'super' | 'mega' {
   const v = String(level || '').trim().toLowerCase();
@@ -73,6 +79,7 @@ function mergeCloudOverLocal(localMap: Record<string, SpeciesMeta>, cloud: Speci
 
 export async function downloadSpeciesMetaJson(): Promise<SpeciesMetaCloudJson | null> {
   try {
+    const supabase = requireSupabase();
     const { data } = supabase.storage.from(BUCKET).getPublicUrl(FILE_PATH);
     const url = `${data.publicUrl}?t=${Date.now()}`;
     const res = await fetch(url, { cache: 'no-store' });
@@ -94,6 +101,7 @@ export async function downloadSpeciesMetaJson(): Promise<SpeciesMetaCloudJson | 
 }
 
 export async function uploadSpeciesMetaJson(payload: SpeciesMetaCloudJson): Promise<void> {
+  const supabase = requireSupabase();
   const body: SpeciesMetaCloudJson = {
     version: 1,
     updatedAt: payload.updatedAt || new Date().toISOString(),

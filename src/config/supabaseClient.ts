@@ -1,1 +1,1 @@
-export { supabase } from "@/integrations/supabase/client";
+export { getSupabaseClient, getSupabaseInitError } from "@/integrations/supabase/client";

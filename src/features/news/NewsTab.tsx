@@ -353,7 +353,7 @@ export default function NewsTab() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('news_sources')
-        .select('id, name, slug, source_key, key')
+        .select('id, name, slug, key')
         .eq('is_enabled', true);
       if (error) {
         console.error('[NEWS] sources query failed', error);

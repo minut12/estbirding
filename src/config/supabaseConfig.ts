@@ -11,7 +11,7 @@ function getEnvUrl(): string {
 }
 
 function getEnvAnonKey(): string {
-  return String(import.meta.env.VITE_SUPABASE_ANON_KEY || "").trim();
+  return String(import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "").trim();
 }
 
 export function getSupabaseUrl(): string {

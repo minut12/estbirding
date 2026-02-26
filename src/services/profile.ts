@@ -1,4 +1,4 @@
-import { getSupabaseClient, getSupabaseInitError } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 
 export type ProfileRow = {
   id: string;
@@ -8,8 +8,6 @@ export type ProfileRow = {
 };
 
 export async function getMyProfile(): Promise<ProfileRow | null> {
-  const supabase = getSupabaseClient();
-  if (!supabase) throw new Error(getSupabaseInitError() || "Supabase not configured");
   const {
     data: { user },
     error: userError,

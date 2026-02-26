@@ -1,6 +1,6 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getSupabaseClient, getSupabaseInitError } from '@/config/supabaseClient';
+import { supabase } from '@/config/supabaseClient';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ interface NewsSource {
   id: string;
   name: string;
   slug: string;
-  key?: string | null;
+  source_key?: string | null;
   type: string;
   homepage_url: string | null;
   feed_url: string | null;
@@ -22,21 +22,16 @@ interface NewsSource {
 
 export default function NewsSourcesSettings() {
   const queryClient = useQueryClient();
-  const supabase = getSupabaseClient();
-  const supabaseError = getSupabaseInitError();
 
   const { data: sources = [], isLoading } = useQuery<NewsSource[]>({
     queryKey: ['news-sources-settings'],
     queryFn: async () => {
-      if (!supabase) throw new Error(supabaseError || 'Supabase not configured');
-      const { data } = await supabase.from('news_sources').select('id, name, slug, key, type, homepage_url, feed_url, is_enabled').eq('is_active', true);
+      const { data } = await supabase.from('news_sources').select('id, name, slug, source_key, type, homepage_url, feed_url, is_enabled').eq('is_active', true);
       return (data || []) as NewsSource[];
     },
-    enabled: Boolean(supabase),
   });
 
-  if (!supabase) return <p className="text-sm text-destructive">Supabase seadistus puudub: {supabaseError || 'Tundmatu viga'}</p>;
-  if (isLoading) return <p className="text-sm text-muted-foreground">Laen allikaid...</p>;
+  if (isLoading) return <p className="text-sm text-muted-foreground">Laen allikaidâ€¦</p>;
   if (sources.length === 0) return <p className="text-sm text-muted-foreground">Uudiste allikaid pole.</p>;
 
   return (
@@ -54,12 +49,9 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
   const [enabled, setEnabled] = useState(source.is_enabled);
   const [testResult, setTestResult] = useState<{ ok: boolean; count?: number; sampleTitles?: string[]; error?: string } | null>(null);
   const [testing, setTesting] = useState(false);
-  const supabase = getSupabaseClient();
-  const supabaseError = getSupabaseInitError();
 
   const updateMutation = useMutation({
     mutationFn: async () => {
-      if (!supabase) throw new Error(supabaseError || 'Supabase not configured');
       const { error } = await supabase.functions.invoke('news-source-update', {
         body: { id: source.id, feed_url: feedUrl || null, is_enabled: enabled },
       });
@@ -70,14 +62,10 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
       queryClient.invalidateQueries({ queryKey: ['news-sources'] });
       toast.success(`${source.name} uuendatud`);
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : 'Salvestamine ebaonnestus'),
+    onError: () => toast.error('Salvestamine ebaÃµnnestus'),
   });
 
   const testFeed = async () => {
-    if (!supabase) {
-      toast.error(supabaseError || 'Supabase not configured');
-      return;
-    }
     if (!feedUrl) { toast.error('Sisesta RSS URL'); return; }
     setTesting(true);
     setTestResult(null);
@@ -85,7 +73,7 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
       const { data, error } = await supabase.functions.invoke('news-pull-test', {
         body: {
           slug: source.slug,
-          source_key: source.key,
+          source_key: source.source_key,
           feed_url: feedUrl,
           type: source.type,
           kind: source.type,
@@ -99,10 +87,10 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
           sampleTitles: Array.isArray(data?.sampleTitles) ? data.sampleTitles : [],
         });
       } else {
-        setTestResult({ ok: false, error: data?.error || 'Voogu ei onnestunud lugeda' });
+        setTestResult({ ok: false, error: data?.error || 'Voogu ei Ãµnnestunud lugeda' });
       }
     } catch (e: any) {
-      setTestResult({ ok: false, error: e?.message || 'Voogu ei onnestunud lugeda' });
+      setTestResult({ ok: false, error: e?.message || 'Voogu ei Ãµnnestunud lugeda' });
     } finally {
       setTesting(false);
     }
@@ -133,7 +121,7 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
         />
         {isFacebook && (
           <p className="text-xs text-muted-foreground">
-            Kasuta Facebook->RSS teenust (nt RSS.app / FetchRSS). Facebooki tokenit pole vaja.
+            Kasuta Facebookâ†’RSS teenust (nt RSS.app / FetchRSS). Facebooki tokenit pole vaja.
           </p>
         )}
       </div>
@@ -151,7 +139,7 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
           ) : (
             <div className="flex items-center gap-1.5">
               <X className="w-3.5 h-3.5" />
-              <span>{testResult.error || 'Voogu ei onnestunud lugeda'}</span>
+              <span>{testResult.error || 'Voogu ei õnnestunud lugeda'}</span>
             </div>
           )}
         </div>
@@ -179,3 +167,4 @@ function SourceCard({ source, queryClient }: { source: NewsSource; queryClient: 
     </div>
   );
 }
+

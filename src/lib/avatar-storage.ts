@@ -3,7 +3,7 @@
  * Supports both Supabase shared storage and localStorage overrides.
  */
 
-import { getSupabaseClient, getSupabaseInitError } from '@/config/supabaseClient';
+import { supabase } from '@/config/supabaseClient';
 
 const LOCAL_OVERRIDES_KEY = 'linnuliigid_avatars_v1';
 const SHARED_CACHE_KEY = 'linnuliigid_avatar_defaults_v1';
@@ -11,12 +11,6 @@ const MAX_SIZE = 256;
 const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
 
 export type AvatarMap = Record<string, string>; // speciesKey -> url
-
-function requireSupabase() {
-  const supabase = getSupabaseClient();
-  if (!supabase) throw new Error(getSupabaseInitError() || "Supabase not configured");
-  return supabase;
-}
 
 // ─── Local overrides (per-device, highest priority) ───
 
@@ -57,7 +51,6 @@ export function getMergedAvatars(): AvatarMap {
 /** Fetch all shared avatars from the database */
 export async function fetchSharedAvatars(): Promise<AvatarMap> {
   try {
-    const supabase = requireSupabase();
     const { data, error } = await supabase
       .from('bird_avatar_map')
       .select('species_key, public_url');
@@ -85,7 +78,6 @@ export function slugifySpeciesKey(key: string): string {
 
 /** Upload avatar to Supabase storage + upsert DB row */
 export async function uploadSharedAvatar(speciesKey: string, dataUrl: string): Promise<string> {
-  const supabase = requireSupabase();
   const slug = slugifySpeciesKey(speciesKey);
   const filePath = `linnuliigid/${slug}.webp`;
 
@@ -126,7 +118,6 @@ export async function uploadSharedAvatar(speciesKey: string, dataUrl: string): P
 
 /** Remove shared avatar from Supabase */
 export async function removeSharedAvatar(speciesKey: string): Promise<void> {
-  const supabase = requireSupabase();
   const slug = slugifySpeciesKey(speciesKey);
   const filePath = `linnuliigid/${slug}.webp`;
 

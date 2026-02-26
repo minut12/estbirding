@@ -1,4 +1,4 @@
-import { getSupabaseClient, getSupabaseInitError } from "@/config/supabaseClient";
+import { supabase } from "@/config/supabaseClient";
 import { ensureProfile } from "./useSession";
 
 export type ProfileRow = {
@@ -9,8 +9,6 @@ export type ProfileRow = {
 };
 
 export async function getMyProfile(): Promise<ProfileRow | null> {
-  const supabase = getSupabaseClient();
-  if (!supabase) throw new Error(getSupabaseInitError() || "Supabase not configured");
   const {
     data: { user },
   } = await supabase.auth.getUser();

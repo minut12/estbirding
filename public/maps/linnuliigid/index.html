@@ -134,8 +134,6 @@
 <div class="fetch-controls">
   <button id="btnRefreshData" class="btn" title="Trigger server-side data refresh">Refresh data</button>
   <button id="btnReloadSnapshot" class="btn secondary" title="Reload latest snapshot from server">Reload snapshot</button>
-  <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index">Resume</button>
-  <button id="btnSkipStuck" class="btn secondary" title="Skip current stuck item by resuming from next index">Skip stuck item</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
 <div id="fetchProgress" class="fetch-progress"></div>
@@ -363,20 +361,6 @@ let __pollTimer = null;
 let __pollCount = 0;
 let __snapshotMeta = { status: null, generated_at: null };
 let __renderedMarkerCount = 0;
-const ESTONIA_REFRESH_INDEX_KEY = "estonia_refresh_index";
-let __lastProgressDone = -1;
-let __lastProgressAt = 0;
-let __lastRequestUrl = null;
-let __lastErrorMessage = null;
-let __lastFailedIndex = null;
-let __lastDurationMs = null;
-
-function _setResumeIndex(i){
-  try { localStorage.setItem(ESTONIA_REFRESH_INDEX_KEY, String(Math.max(0, Number(i) || 0))); } catch(e){}
-}
-function _getResumeIndex(){
-  try { return Math.max(0, Number(localStorage.getItem(ESTONIA_REFRESH_INDEX_KEY) || 0) || 0); } catch(e){ return 0; }
-}
 
 function _showSnapshotBanner(msg, type, showAllBtn){
   const el = document.getElementById('snapshotBanner');
@@ -406,11 +390,6 @@ function _updateProgressUI(done, total, status){
   const stopBtn = document.getElementById('btnStopFetch');
   if(!prog) return;
   if(status === 'running' && total > 0){
-    _setResumeIndex(done);
-    if(done !== __lastProgressDone){
-      __lastProgressDone = done;
-      __lastProgressAt = Date.now();
-    }
     prog.textContent = 'Server refresh: ' + done + '/' + total;
     if(bar){ bar.style.display='block'; barInner.style.width = Math.round(done/total*100)+'%'; }
     if(stopBtn) stopBtn.style.display='inline-block';
@@ -432,11 +411,6 @@ function _updateDebugPanel(){
     'Species with coords: <b>' + totalWithCoords + '</b>',
     'Species with occ7>0: <b>' + occ7Count + '</b>',
     'Markers rendered: <b>' + __renderedMarkerCount + '</b>',
-    'Resume index: <b>' + _getResumeIndex() + '</b>',
-    'lastRequest URL: <b>' + (__lastRequestUrl || '-') + '</b>',
-    'lastErrorMessage: <b>' + (__lastErrorMessage || '-') + '</b>',
-    'lastFailedIndex: <b>' + (__lastFailedIndex ?? '-') + '</b>',
-    'lastDurationMs: <b>' + (__lastDurationMs ?? '-') + '</b>',
     '7-day filter: <b>' + (is7daysOnly() ? 'ON' : 'OFF') + '</b>',
   ].join('<br>');
 }
@@ -479,12 +453,9 @@ function _checkEmpty7dBanner(){
 }
 
 async function loadSnapshot(){
-  const t0 = Date.now();
-  __lastRequestUrl = SNAPSHOT_API;
   try{
     _showSnapshotBanner('Loading data...');
     const res = await fetch(SNAPSHOT_API, {cache:'no-store'});
-    __lastDurationMs = Date.now() - t0;
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const snap = await res.json();
 
@@ -512,8 +483,6 @@ async function loadSnapshot(){
       document.getElementById('fetchError').textContent = 'Last error: ' + snap.last_error;
     }
   }catch(e){
-    __lastDurationMs = Date.now() - t0;
-    __lastErrorMessage = String(e?.message || e || 'load failed');
     console.warn('[snapshot] Load failed:', e);
     _showSnapshotBanner('Using cached data (server unavailable)', 'warn');
     refreshAllMarkers();
@@ -531,21 +500,10 @@ function _startPolling(){
       return;
     }
     try{
-      const t0 = Date.now();
       const res = await fetch(SNAPSHOT_API, {cache:'no-store'});
-      __lastRequestUrl = SNAPSHOT_API;
-      __lastDurationMs = Date.now() - t0;
       if(!res.ok) return;
       const snap = await res.json();
       _updateProgressUI(snap.progress_done, snap.progress_total, snap.status);
-      if(snap.status === 'running'){
-        const now = Date.now();
-        if(__lastProgressAt > 0 && (now - __lastProgressAt) > 30000){
-          _showSnapshotBanner('Hang detected, retrying...', 'warn');
-          __lastProgressAt = now;
-          triggerRefresh({ resumeFromSaved: true, silent: true });
-        }
-      }
 
       if(snap.status === 'running'){
         _showSnapshotBanner('Refreshing: ' + snap.progress_done + '/' + snap.progress_total + '...');
@@ -562,9 +520,7 @@ function _startPolling(){
           }
         }
       }
-    }catch(e){
-      __lastErrorMessage = String(e?.message || e || 'poll failed');
-    }
+    }catch(e){ /* keep polling */ }
   }, 2000);
 }
 
@@ -574,22 +530,19 @@ function _stopPolling(){
 }
 
 // Public refresh (no key needed)
-async function triggerRefresh(opts){
-  const options = opts || {};
+async function triggerRefresh(){
   try{
     _showSnapshotBanner('Requesting server refresh...');
     _updateProgressUI(0, SPECIES.length, 'running');
-    const startIndex = options.resumeFromSaved ? _getResumeIndex() : 0;
 
     const res = await fetch(SNAPSHOT_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ start_index: startIndex }),
     });
 
     if(res.status === 429){
       const data = await res.json().catch(()=>({}));
-      if(!options.silent) _showSnapshotBanner(data.error || 'Refresh recently triggered. Try again later.', 'warn');
+      _showSnapshotBanner(data.error || 'Refresh recently triggered. Try again later.', 'warn');
       _updateProgressUI(0, 0, '');
       setTimeout(_hideSnapshotBanner, 6000);
       return;
@@ -599,10 +552,8 @@ async function triggerRefresh(opts){
     }
 
     _startPolling();
-    _updateDebugPanel();
   }catch(e){
-    __lastErrorMessage = String(e?.message || e || 'start failed');
-    _showSnapshotBanner('Failed to start refresh: ' + (__lastErrorMessage || 'Unknown error'), 'error');
+    _showSnapshotBanner('Failed to start refresh: ' + e.message, 'error');
   }
 }
 
@@ -610,8 +561,6 @@ async function triggerRefresh(opts){
 function _wireSnapshotButtons(){
   const btnRefresh = document.getElementById('btnRefreshData');
   const btnReload = document.getElementById('btnReloadSnapshot');
-  const btnResume = document.getElementById('btnResumeFetch');
-  const btnSkip = document.getElementById('btnSkipStuck');
   const btnStop = document.getElementById('btnStopFetch');
   const toggle7d = document.getElementById('toggle7days');
 
@@ -623,25 +572,8 @@ function _wireSnapshotButtons(){
     btnReload.addEventListener('click', function(){ loadSnapshot(); });
     btnReload.__wired = true;
   }
-  if(btnResume && !btnResume.__wired){
-    btnResume.addEventListener('click', function(){ triggerRefresh({ resumeFromSaved: true }); });
-    btnResume.__wired = true;
-  }
-  if(btnSkip && !btnSkip.__wired){
-    btnSkip.addEventListener('click', function(){
-      const nextIndex = _getResumeIndex() + 1;
-      __lastFailedIndex = nextIndex;
-      _setResumeIndex(nextIndex);
-      _showSnapshotBanner('Skipping stuck item, resuming from ' + nextIndex + '...', 'warn');
-      triggerRefresh({ resumeFromSaved: true });
-    });
-    btnSkip.__wired = true;
-  }
   if(btnStop && !btnStop.__wired){
-    btnStop.addEventListener('click', function(){
-      _stopPolling();
-      _showSnapshotBanner('Stopped by user', 'warn');
-    });
+    btnStop.addEventListener('click', _stopPolling);
     btnStop.__wired = true;
   }
   if(toggle7d && !toggle7d.__wired){
@@ -941,18 +873,13 @@ try{
       display:none;flex-direction:column;
     }
     #windPanel.windy-modal-open{display:flex!important}
-    #windyFrame{height:calc(100dvh - (56px + env(safe-area-inset-top, 0px)))!important;flex:none}
+    #windyFrame{height:calc(100dvh - 56px)!important;flex:none}
     .wind-size-btns{display:none!important}
     #windHeader .wind-expand-arrow{display:none!important}
-    #windHeader{
-      position:sticky;top:0;z-index:50;background:#fff;border-bottom:1px solid #e5e7eb;
-      padding:calc(env(safe-area-inset-top, 0px) + 6px) 12px 8px 12px;
-      height:calc(56px + env(safe-area-inset-top, 0px));min-height:calc(56px + env(safe-area-inset-top, 0px));box-sizing:border-box
-    }
+    #windHeader{background:#fff;border-bottom:1px solid #e5e7eb;padding:8px 12px;height:56px;min-height:56px;box-sizing:border-box}
     #windHeader .title{font-size:15px;font-weight:600}
     .wind-close-desktop{display:none!important}
     .wind-close-mobile{display:inline-block!important}
-    #windHeader .actions button{min-height:44px;min-width:44px}
   }
   @media (min-width: 901px){
     #windHeader .wind-expand-arrow{display:none}
@@ -983,7 +910,7 @@ try{
         <tbody id="springTableBody"></tbody>
       </table>
     </div>
-    <div class="springHint">Klikka kuup\u00e4eval, et muuta (salvestub localStorage-sse).</div>
+    <div class="springHint">Klikka kuupÃ¤eval, et muuta (salvestub localStorage-sse).</div>
   </div>
 </div>
 <div id="windPanel">
@@ -996,7 +923,7 @@ try{
         <button id="windLarge" class="btn icon">L</button>
       </span>
       <button id="windClose" class="btn icon wind-close-desktop">X</button>
-      <button id="windCloseMobile" class="btn icon wind-close-mobile" style="display:none">Tagasi</button>
+      <button id="windCloseMobile" class="btn icon wind-close-mobile" style="display:none">â† Tagasi</button>
     </div>
   </div>
   <iframe id="windyFrame" src="" loading="lazy" referrerpolicy="no-referrer"></iframe>

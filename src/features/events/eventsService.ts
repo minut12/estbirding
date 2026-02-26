@@ -1,4 +1,4 @@
-import { getSupabaseClient, getSupabaseInitError } from "@/config/supabaseClient";
+import { supabase } from "@/config/supabaseClient";
 import { getFunctionsBaseUrl, getSupabaseAnonKey, getSupabaseUrl, validateSupabaseConfig } from "@/config/supabaseConfig";
 import { getEventsAdminKey } from "./adminKey";
 
@@ -33,8 +33,6 @@ const EVENT_COLUMNS =
   "id,title,description,start_at,end_at,location_name,lat,lng,category,organizer_name,url,image_url,is_published,is_archived,created_by,created_at,updated_at";
 
 export async function listPublishedEvents(): Promise<EventRow[]> {
-  const supabase = getSupabaseClient();
-  if (!supabase) throw new Error(getSupabaseInitError() || "Supabase not configured");
   const { data, error } = await (supabase as any)
     .from("events")
     .select(EVENT_COLUMNS)
@@ -73,46 +71,6 @@ function requireAdminKey(): string {
   return key.trim();
 }
 
-export async function preflightSupabaseRestHealth(): Promise<{
-  ok: boolean;
-  message: string;
-  url: string;
-  status?: number;
-}> {
-  const validation = validateSupabaseConfig();
-  const resolvedUrl = validation.url || getSupabaseUrl() || "(empty)";
-  if (!validation.ok) {
-    throw new Error(`${validation.error} Resolved Supabase URL: ${resolvedUrl}`);
-  }
-
-  const anonKey = getSupabaseAnonKey();
-  if (!anonKey || anonKey.length < 20) {
-    throw new Error(`VITE_SUPABASE_ANON_KEY puudu/vigane. Resolved Supabase URL: ${resolvedUrl}`);
-  }
-
-  const healthUrl = `${resolvedUrl.replace(/\/+$/, "")}/auth/v1/health`;
-  try {
-    const res = await fetch(healthUrl, {
-      method: "GET",
-      headers: {
-        apikey: anonKey,
-        authorization: `Bearer ${anonKey}`,
-      },
-    });
-    if (res.ok) {
-      return { ok: true, message: "Supabase DNS/REST OK", url: healthUrl, status: res.status };
-    }
-    if (res.status === 401 || res.status === 404) {
-      return { ok: true, message: `Supabase reachable (HTTP ${res.status})`, url: healthUrl, status: res.status };
-    }
-    return { ok: true, message: `Supabase reachable (HTTP ${res.status})`, url: healthUrl, status: res.status };
-  } catch (err) {
-    throw new Error(
-      `Supabase URL unreachable (DNS/Network). Check Project URL or override in Settings. URL: ${resolvedUrl}. Error: ${String(err)}`
-    );
-  }
-}
-
 async function callAdminFn(action: string, payload: unknown, adminKey: string): Promise<any> {
   const validation = validateSupabaseConfig();
   const resolvedUrl = validation.url || getSupabaseUrl() || "(empty)";
@@ -128,7 +86,6 @@ async function callAdminFn(action: string, payload: unknown, adminKey: string): 
   if (!adminKey) {
     throw new Error("events_admin_key puudub");
   }
-  await preflightSupabaseRestHealth();
 
   let res: Response;
   try {
@@ -143,7 +100,7 @@ async function callAdminFn(action: string, payload: unknown, adminKey: string): 
       body: JSON.stringify({ action, payload }),
     });
   } catch (err) {
-    throw new Error(`Network error to ${fnUrl}: ${String(err)}. Likely wrong Supabase URL (DNS NXDOMAIN) or offline.`);
+    throw new Error(`Fetch error to ${fnUrl}: ${String(err)}`);
   }
 
   const bodyText = await res.text();
@@ -155,9 +112,6 @@ async function callAdminFn(action: string, payload: unknown, adminKey: string): 
   }
 
   if (!res.ok) {
-    if (res.status === 404 || res.status === 405) {
-      throw new Error("Edge Function events-ingest not deployed. Deploy it in Supabase -> Edge Functions.");
-    }
     throw new Error(`HTTP ${res.status}: ${bodyText}`);
   }
 

@@ -1,15 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
-import { getSupabaseClient } from "@/config/supabaseClient";
-
-function requireSupabase() {
-  const supabase = getSupabaseClient();
-  if (!supabase) throw new Error("Supabase not configured");
-  return supabase;
-}
+import { supabase } from "@/config/supabaseClient";
 
 export async function ensureProfile(user: User): Promise<void> {
-  const supabase = requireSupabase();
   const payload = {
     id: user.id,
     display_name: user.user_metadata?.display_name ?? user.email ?? null,
@@ -27,13 +20,6 @@ export function useSession() {
 
   useEffect(() => {
     let mounted = true;
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      setLoading(false);
-      return () => {
-        mounted = false;
-      };
-    }
 
     supabase.auth.getSession().then(({ data }) => {
       if (!mounted) return;

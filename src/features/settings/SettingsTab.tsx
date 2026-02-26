@@ -42,7 +42,6 @@ import AdminEventsScreen from '@/screens/AdminEventsScreen';
 import CreateEventScreen from '@/screens/CreateEventScreen';
 import MapPickerScreen from '@/screens/MapPickerScreen';
 import type { EventRow } from '@/types/events';
-import { getSupabaseInitError } from '@/config/supabaseClient';
 
 type ResetMode = 'soft' | 'hard' | null;
 
@@ -67,7 +66,6 @@ export default function SettingsTab() {
   const envProxyBase = getEnvProxyBase();
   const resolvedProxyBase = resolveProxyBase(proxyBaseUrl);
   const proxyMode = getProxyMode(resolvedProxyBase);
-  const supabaseInitError = getSupabaseInitError();
 
   useEffect(() => {
     setForm(loadSettings());
@@ -298,11 +296,6 @@ export default function SettingsTab() {
         <h2 className="font-semibold text-foreground">Seaded</h2>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-6">
-        {supabaseInitError && (
-          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-            Supabase seadistus puudub: {supabaseInitError}
-          </div>
-        )}
         <NewsSourcesSettings />
 
         <div className="space-y-2">

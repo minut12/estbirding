@@ -39,7 +39,7 @@ export async function listPublishedEvents(): Promise<EventRow[]> {
     .from("events")
     .select(EVENT_COLUMNS)
     .eq("is_published", true)
-    .or("is_archived.is.null,is_archived.eq.false")
+    .eq("is_archived", false)
     .order("start_at", { ascending: true });
   if (error) throw error;
   return (data ?? []) as EventRow[];

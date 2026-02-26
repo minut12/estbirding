@@ -73,13 +73,20 @@ export default function AdminEventsScreen({ onBack, onCreate, onEdit }: AdminEve
                       })}
                     </p>
                   </div>
-                  <span
-                    className={`rounded-full px-2 py-1 text-xs ${
-                      event.is_published ? "bg-[#DDEBE3] text-primary" : "bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    {event.is_published ? "Avalik" : "Peidetud"}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {event.is_archived && (
+                      <span className="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-800">
+                        Arhiveeritud
+                      </span>
+                    )}
+                    <span
+                      className={`rounded-full px-2 py-1 text-xs ${
+                        event.is_published ? "bg-[#DDEBE3] text-primary" : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {event.is_published ? "Avalik" : "Peidetud"}
+                    </span>
+                  </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button

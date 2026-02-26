@@ -2,13 +2,14 @@ import { supabase } from "@/lib/supabase";
 import type { EventInsert, EventRow, EventUpdate } from "@/types/events";
 
 const EVENT_COLUMNS =
-  "id,title,description,start_at,end_at,location_name,lat,lng,category,organizer_name,url,image_url,is_published,created_by,created_at,updated_at";
+  "id,title,description,start_at,end_at,location_name,lat,lng,category,organizer_name,url,image_url,is_published,is_archived,created_by,created_at,updated_at";
 
 export async function listPublishedEvents(): Promise<EventRow[]> {
   const { data, error } = await (supabase as any)
     .from("events")
     .select(EVENT_COLUMNS)
     .eq("is_published", true)
+    .eq("is_archived", false)
     .order("start_at", { ascending: true });
   if (error) throw error;
   return (data ?? []) as EventRow[];
@@ -34,6 +35,7 @@ export async function createEvent(payload: EventInsert): Promise<EventRow> {
       ...payload,
       category: payload.category ?? "EstBirding",
       is_published: payload.is_published ?? false,
+      is_archived: payload.is_archived ?? false,
       created_by: user?.id ?? null,
     })
     .select(EVENT_COLUMNS)

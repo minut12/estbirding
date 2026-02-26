@@ -14,6 +14,7 @@ export type EventRow = {
   url: string | null;
   image_url: string | null;
   is_published: boolean;
+  is_archived: boolean;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -32,6 +33,7 @@ export type EventInsert = {
   url?: string | null;
   image_url?: string | null;
   is_published?: boolean;
+  is_archived?: boolean;
 };
 
 export type EventUpdate = Partial<EventInsert>;

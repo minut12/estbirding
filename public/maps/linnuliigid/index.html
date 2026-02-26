@@ -379,6 +379,16 @@ let __activeRequestController = null;
 let __stopController = new AbortController();
 let __isRefreshRunning = false;
 let __watchdogTimer = null;
+let __lastAutoKickAt = 0;
+let __forceRetryInFlight = false;
+
+function _requestSupabaseConfigFromParent(){
+  try{
+    if(window.parent && window.parent !== window){
+      window.parent.postMessage({ type: 'SUPABASE_CONFIG_REQUEST' }, '*');
+    }
+  }catch(e){}
+}
 
 function _setResumeIndex(i){
   try { localStorage.setItem(ESTONIA_REFRESH_INDEX_KEY, String(Math.max(0, Number(i) || 0))); } catch(e){}
@@ -560,6 +570,7 @@ function _checkEmpty7dBanner(){
 async function loadSnapshot(){
   const t0 = Date.now();
   try{
+    if(!_resolveSupabaseUrlLocal()) _requestSupabaseConfigFromParent();
     const snapshotUrl = _resolveSnapshotApi();
     __lastRequestUrl = snapshotUrl;
     _showSnapshotBanner('Loading data...');
@@ -624,10 +635,16 @@ function _startPolling(){
       _updateProgressUI(snap.progress_done, snap.progress_total, snap.status);
       if(snap.status === 'running'){
         const now = Date.now();
-        if(__lastProgressAt > 0 && (now - __lastProgressAt) > 30000){
-          _showSnapshotBanner('Hang detected, retrying...', 'warn');
+        if(__lastProgressAt > 0 && (now - __lastProgressAt) > 30000 && (now - __lastAutoKickAt) > 10000 && !__forceRetryInFlight){
+          const nextIndex = Math.max(_getResumeIndex(), Number(snap.progress_done) || 0) + 1;
+          _setResumeIndex(nextIndex);
+          __lastFailedIndex = nextIndex;
+          __lastErrorMessage = 'Hang detected; auto-skip to ' + nextIndex;
           __lastProgressAt = now;
-          triggerRefresh({ resumeFromSaved: true, silent: true, force: true });
+          __lastAutoKickAt = now;
+          _abortActiveRequest();
+          _showSnapshotBanner('Hang detected, auto-skip to ' + nextIndex + '...', 'warn');
+          triggerRefresh({ resumeFromSaved: true, silent: true, startIndex: nextIndex, force: true });
         }
       }
 
@@ -672,6 +689,7 @@ function _stopPolling(){
 async function triggerRefresh(opts){
   const options = opts || {};
   try{
+    if(!_resolveSupabaseUrlLocal()) _requestSupabaseConfigFromParent();
     const validation = _validateSupabaseLocal();
     if(!validation.ok) throw new Error(validation.error || 'Supabase config vigane');
     const supabaseUrl = validation.url;
@@ -697,7 +715,10 @@ async function triggerRefresh(opts){
 
     _showSnapshotBanner('Requesting server refresh...');
     _updateProgressUI(0, SPECIES.length, 'running');
-    const startIndex = options.resumeFromSaved ? _getResumeIndex() : 0;
+    const explicitStart = Number(options.startIndex);
+    const startIndex = Number.isFinite(explicitStart)
+      ? Math.max(0, explicitStart)
+      : (options.resumeFromSaved ? _getResumeIndex() : 0);
     const snapshotUrl = _resolveSnapshotApi();
     __lastRequestUrl = snapshotUrl;
 
@@ -715,6 +736,22 @@ async function triggerRefresh(opts){
       return;
     }
     if(res.status === 409){
+      if(options.force && !options.__forceRetried){
+        _showSnapshotBanner('forcing refresh restart...', 'warn');
+        __forceRetryInFlight = true;
+        try{
+          await triggerRefresh({
+            resumeFromSaved: true,
+            silent: true,
+            force: true,
+            startIndex: startIndex,
+            __forceRetried: true
+          });
+        }finally{
+          __forceRetryInFlight = false;
+        }
+        return;
+      }
       _showSnapshotBanner('Refresh already in progress...');
     }
 
@@ -795,6 +832,8 @@ window.addEventListener('message', function(ev){
     if(t === 'SUPABASE_CONFIG'){
       __resolvedSupabaseUrl = String(ev.data.supabaseUrl || '').trim();
       __resolvedSupabaseAnonKey = String(ev.data.supabaseAnonKey || '').trim();
+      __lastErrorMessage = null;
+      __snapshotMeta.status = null;
       try { _resolveSnapshotApi(); } catch(e) {}
       _updateDebugPanel();
       return;
@@ -1055,6 +1094,9 @@ try{
     window.parent.postMessage({ type: 'SUPABASE_CONFIG_REQUEST' }, '*');
   }
 }catch(e){}
+document.addEventListener('DOMContentLoaded', function(){
+  _requestSupabaseConfigFromParent();
+});
 </script>
 
 

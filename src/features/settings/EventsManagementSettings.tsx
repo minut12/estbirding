@@ -173,9 +173,8 @@ export default function EventsManagementSettings() {
   };
 
   const testAdminEndpoint = async () => {
-    const adminKey = savedAdminKey.trim();
     try {
-      const result = await testEventsAdminHealth(adminKey);
+      const result = await testEventsAdminHealth();
       if (result.ok) {
         toast.success("Test events admin: OK");
         return;

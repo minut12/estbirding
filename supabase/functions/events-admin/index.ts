@@ -125,6 +125,8 @@ Deno.serve(async (req) => {
       return new Response(null, { status: 204, headers });
     }
 
+    console.log(`[events-admin] ${req.method} ${new URL(req.url).pathname}`);
+
     if (req.method === "GET") {
       return json(200, { ok: true, fn: "events-admin", now: new Date().toISOString() }, headers);
     }

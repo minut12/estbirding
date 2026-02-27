@@ -140,13 +140,21 @@ export async function testEventsAdminHealth(adminKey?: string): Promise<{ ok: bo
   const resolvedSupabaseUrl = getSupabaseUrl().replace(/\/+$/, "");
   const endpoint = `${getFunctionsBaseUrl()}/events-admin`;
   try {
-    const response = await fetch(endpoint, { method: "GET" });
-    const text = await response.text();
-    const data = text ? JSON.parse(text) : {};
-    if (!response.ok) {
-      const preview = String(text || JSON.stringify(data) || "").slice(0, 200).replace(/\s+/g, " ");
-      throw new Error(`HTTP ${response.status}: ${preview || data?.error || "health check failed"}`);
+    const { data, error } = await supabase.functions.invoke("events-admin", {
+      body: { action: "health" },
+    });
+
+    if (error) {
+      const response = await fetch(endpoint, { method: "GET" });
+      const text = await response.text();
+      const fallbackData = text ? JSON.parse(text) : {};
+      if (!response.ok) {
+        const preview = String(text || JSON.stringify(fallbackData) || "").slice(0, 200).replace(/\s+/g, " ");
+        throw new Error(`HTTP ${response.status}: ${preview || fallbackData?.error || "health check failed"}`);
+      }
+      return fallbackData as { ok: boolean; now?: string };
     }
+
     return data as { ok: boolean; now?: string };
   } catch (error: any) {
     const errorName = String(error?.name || "");

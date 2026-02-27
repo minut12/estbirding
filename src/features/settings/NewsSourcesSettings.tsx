@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { Loader2, TestTube, Check, X } from 'lucide-react';
-import { loadNewsSourcesWithOrigin, resetNewsSourcesToDefaults, saveNewsSources, type NewsSourcesOrigin } from '@/lib/newsSourcesStorage';
+import { loadNewsSourcesWithOrigin, normalizeSourceUrl, resetNewsSourcesToDefaults, saveNewsSources, type NewsSourcesOrigin } from '@/lib/newsSourcesStorage';
 import type { NewsSourceConfigItem } from '@/config/newsSources';
 import { resolveProxyBase } from '@/config/proxyEndpoint';
 
@@ -77,7 +77,7 @@ function SourceCard({
   const [testing, setTesting] = useState(false);
 
   const saveChanges = () => {
-    onLocalUpdate({ ...source, url: url.trim(), enabled });
+    onLocalUpdate({ ...source, url: normalizeSourceUrl(url), enabled });
     toast.success(`${source.name} salvestatud`);
   };
 
@@ -92,8 +92,9 @@ function SourceCard({
       const { data, error } = await supabase.functions.invoke('news-pull-test', {
         body: {
           id: source.id,
+          name: source.name,
           source_key: source.id,
-          feed_url: url,
+          feed_url: normalizeSourceUrl(url),
           type: source.kind,
           kind: source.kind,
           proxyBase: resolveProxyBase(),
@@ -107,10 +108,11 @@ function SourceCard({
           sampleTitles: Array.isArray(data?.sampleTitles) ? data.sampleTitles : [],
         });
       } else {
-        setTestResult({ ok: false, error: data?.error || 'Allika lugemine ebaonnestus' });
+        setTestResult({ ok: false, error: data?.error || `${source.name}: Viga` });
       }
     } catch (error: any) {
-      setTestResult({ ok: false, error: error?.message || 'Allika lugemine ebaonnestus' });
+      const message = error?.message || (error?.status ? `HTTP ${error.status}` : 'Viga');
+      setTestResult({ ok: false, error: `${source.name}: ${message}` });
     } finally {
       setTesting(false);
     }

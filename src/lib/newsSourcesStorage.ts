@@ -18,6 +18,15 @@ interface LegacyNewsSourceShape {
   key?: unknown;
 }
 
+
+export function normalizeSourceUrl(url: string): string {
+  const trimmed = String(url || "").trim();
+  const match = trimmed.match(/^https?:\/\/rss\.app\/feed\/([A-Za-z0-9_-]+)\/?$/);
+  if (match) {
+    return `https://rss.app/feeds/${match[1]}.xml`;
+  }
+  return trimmed;
+}
 function cloneDefaults(): NewsSourceConfigItem[] {
   return DEFAULT_NEWS_SOURCES.map((source) => ({ ...source }));
 }
@@ -39,7 +48,7 @@ function sanitizeSource(input: LegacyNewsSourceShape): NewsSourceConfigItem | nu
       : typeof input.feed_url === "string" ? input.feed_url
         : typeof input.homepage_url === "string" ? input.homepage_url
           : "";
-  const url = urlCandidate.trim();
+  const url = normalizeSourceUrl(urlCandidate);
   const enabledCandidate =
     typeof input.enabled === "boolean" ? input.enabled
       : typeof input.is_enabled === "boolean" ? input.is_enabled
@@ -94,7 +103,7 @@ function mergeWithDefaults(list: NewsSourceConfigItem[]): NewsSourceConfigItem[]
 }
 
 export function saveNewsSources(list: NewsSourceConfigItem[]): void {
-  const normalized = mergeWithDefaults(list);
+  const normalized = mergeWithDefaults(list).map((source) => ({ ...source, url: normalizeSourceUrl(source.url) }));
   localStorage.setItem(NEWS_SOURCES_KEY, JSON.stringify(normalized));
 }
 
@@ -131,15 +140,20 @@ export function loadNewsSources(): { list: NewsSourceConfigItem[]; source: NewsS
     return { list: repaired, source: "repaired" };
   }
 
-  const merged = mergeWithDefaults(sanitized);
+  const merged = mergeWithDefaults(sanitized).map((source) => ({ ...source, url: normalizeSourceUrl(source.url) }));
   if (isCorruptedSingleEntry(merged) || isCorruptedSingleEntry(sanitized)) {
     const repaired = mergeWithDefaults(cloneDefaults());
     saveNewsSources(repaired);
     return { list: repaired, source: "repaired" };
   }
 
+  const originalById = new Map(sanitized.map((source) => [source.id, source.url]));
+  const normalizedChanged = merged.some((source) => {
+    const original = originalById.get(source.id);
+    return typeof original === "string" && original !== source.url;
+  });
   const missingDefault = DEFAULT_NEWS_SOURCES.some((defaultSource) => !merged.some((stored) => stored.id === defaultSource.id));
-  if (missingDefault || merged.length !== sanitized.length) {
+  if (missingDefault || merged.length !== sanitized.length || normalizedChanged) {
     saveNewsSources(merged);
     return { list: merged, source: "repaired" };
   }
@@ -157,3 +171,4 @@ export function resetNewsSourcesToDefaults(): NewsSourceConfigItem[] {
   saveNewsSources(defaults);
   return defaults;
 }
+

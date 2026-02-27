@@ -183,6 +183,14 @@ function cleanUrl(url: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
+function formatErrorReason(error: unknown): string {
+  if (error instanceof Error) return error.message || 'Viga';
+  const asAny = error as { message?: string; status?: number } | null | undefined;
+  if (asAny?.message) return asAny.message;
+  if (typeof asAny?.status === 'number') return `HTTP ${asAny.status}`;
+  return 'Viga';
+}
+
 function ensureImageUrl(item: NewsItem): NewsItem {
   const decoded = decodeUrl(item.image_url);
   if (decoded) return { ...item, image_url: decoded };
@@ -429,7 +437,7 @@ export default function NewsTab() {
 
   useEffect(() => {
     if (!isError) return;
-    const shortReason = newsQueryError instanceof Error ? newsQueryError.message : 'unknown';
+    const shortReason = formatErrorReason(newsQueryError);
     setLastNewsFetchErrorShort(shortReason.slice(0, 120));
     toast.error(`Uudiste laadimine ebaõnnestus: ${shortReason.slice(0, 120)}`);
   }, [isError, newsQueryError]);
@@ -477,24 +485,27 @@ export default function NewsTab() {
         setActiveProxyName(getProxyMode(resolveProxyBase()));
       }
       if (failed.length > 0) {
-        const reason = String(failed[0]?.error || 'unknown').slice(0, 120);
+        const reason = String(failed[0]?.error || 'Viga').slice(0, 120);
         setLastNewsFetchErrorShort(reason);
       } else {
         setLastNewsFetchErrorShort('');
       }
       if (failed.length > 0 && failed.length === resultList.length) {
-        const reason = String(failed[0]?.error || 'unknown').slice(0, 120);
-        toast.error(`Uudiste laadimine ebaõnnestus: ${reason}`);
+        const failedSource = String(failed[0]?.source || 'allikas');
+        const reason = String(failed[0]?.error || 'Viga').slice(0, 120);
+        toast.error(`Uudiste laadimine ebaõnnestus: ${failedSource}: ${reason}`);
         return;
       }
       if (failed.length > 0) {
-        toast.warning(`${failed.length} allikas ebaõnnestus`);
+        const firstFailureSource = String(failed[0]?.source || 'allikas');
+        const firstFailureReason = String(failed[0]?.error || 'Viga').slice(0, 120);
+        toast.warning(`${failed.length} allikas ebaõnnestus (${firstFailureSource}: ${firstFailureReason})`);
       }
       if (total > 0) toast.success(`${total} uut uudist`);
       else toast.info('Uusi uudiseid pole');
     },
     onError: (error) => {
-      const reason = error instanceof Error ? error.message : 'unknown';
+      const reason = formatErrorReason(error);
       setLastNewsFetchErrorShort(reason.slice(0, 120));
       toast.error(`Uudiste laadimine ebaõnnestus: ${reason.slice(0, 120)}`);
     },

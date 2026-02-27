@@ -1,4 +1,4 @@
-import { normalizeRssItem, parseRss } from "../_shared/rss-normalize.ts";
+import { fetchSourceItems, normalizeSourceUrl, SourceFetchError } from "../_shared/source-fetch.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,7 +12,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { slug, source_key, feed_url, type, kind, proxyBase } = await req.json();
+    const { slug, source_key, id, name, feed_url, type, kind, proxyBase } = await req.json();
     if (!feed_url && slug !== "eoy" && source_key !== "eoy") {
       return new Response(JSON.stringify({ error: "Missing feed_url" }), {
         status: 400,
@@ -64,21 +64,16 @@ Deno.serve(async (req) => {
     }
 
     const base = String(proxyBase || Deno.env.get("NEWS_PROXY_BASE") || "").trim();
-    const target = base ? `${base}${encodeURIComponent(String(feed_url || "").trim())}` : feed_url;
-    const res = await fetch(target, {
-      headers: { "User-Agent": "EstBirding/1.0" },
-    });
-    if (!res.ok) {
-      return new Response(
-        JSON.stringify({ ok: false, error: `HTTP ${res.status}`, count: 0, sampleTitles: [] }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
-
-    const text = await res.text();
-    const items = parseRss(text)
-      .map(normalizeRssItem)
-      .slice(0, 3);
+    const sourceName = String(name || id || slug || source_key || "unknown").trim() || "unknown";
+    const items = (await fetchSourceItems({
+      id,
+      slug,
+      source_key,
+      name: sourceName,
+      feed_url: normalizeSourceUrl(String(feed_url || "")),
+      type,
+      kind,
+    }, base)).slice(0, 3);
 
     return new Response(
       JSON.stringify({
@@ -95,6 +90,13 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {
+    if (error instanceof SourceFetchError) {
+      return new Response(
+        JSON.stringify({ ok: false, error: error.message, status: error.status || null, source: error.sourceName, count: 0, sampleTitles: [], items: [] }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     return new Response(JSON.stringify({ ok: false, error: error.message, count: 0, sampleTitles: [], items: [] }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

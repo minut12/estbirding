@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { normalizeRssItem, parseRss } from "../_shared/rss-normalize.ts";
+import { fetchSourceItems, normalizeSourceUrl, SourceFetchError } from "../_shared/source-fetch.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -59,13 +59,6 @@ function resolveProxyBase(requestProxyBase: string | null | undefined): string {
   return buildDefaultSupabaseProxyBase();
 }
 
-function buildProxyUrl(targetUrl: string, proxyBase: string): string {
-  if (!proxyBase) return targetUrl;
-  const encoded = encodeURIComponent(targetUrl);
-  if (proxyBase.includes("{url}")) return proxyBase.replace("{url}", encoded);
-  return `${proxyBase}${encoded}`;
-}
-
 async function sha256Hex(input: string): Promise<string> {
   const data = new TextEncoder().encode(input);
   const hash = await crypto.subtle.digest("SHA-256", data);
@@ -96,37 +89,39 @@ async function translateViaEdgeFunction(id: string): Promise<void> {
 
 async function pullRssSource({ source, supabase, proxyBase }: { source: any; supabase: any; proxyBase: string }): Promise<PullResult> {
   const sourceKey = String(source.source_key || source.key || source.slug || "unknown").trim() || "unknown";
-  const feedUrl = String(source.feed_url || "").trim();
+  const feedUrl = normalizeSourceUrl(String(source.feed_url || "").trim());
   if (!feedUrl) {
     return { source: source.slug || source.id || "unknown", fetched: 0, inserted: 0, skipped: false, error: "missing feed url" };
   }
 
-  const targetUrl = buildProxyUrl(feedUrl, proxyBase);
-  const feedRes = await fetch(targetUrl, {
-    headers: { "User-Agent": "EstBirding/1.0" },
-  });
-
-  if (!feedRes.ok) {
-    return {
-      source: source.slug || source.id || "unknown",
-      fetched: 0,
-      inserted: 0,
-      skipped: false,
-      error: `HTTP ${feedRes.status} proxy`,
-    };
-  }
-
-  const text = await feedRes.text();
   let normalized;
   try {
-    normalized = parseRss(text).map(normalizeRssItem);
-  } catch {
+    normalized = await fetchSourceItems({
+      id: source.id,
+      slug: source.slug,
+      name: source.name,
+      source_key: source.source_key,
+      key: source.key,
+      kind: source.kind,
+      type: source.type,
+      feed_url: feedUrl,
+    }, proxyBase);
+  } catch (error) {
+    if (error instanceof SourceFetchError) {
+      return {
+        source: source.slug || source.id || "unknown",
+        fetched: 0,
+        inserted: 0,
+        skipped: false,
+        error: shortError(error.message),
+      };
+    }
     return {
       source: source.slug || source.id || "unknown",
       fetched: 0,
       inserted: 0,
       skipped: false,
-      error: "RSS parse error",
+      error: shortError(error?.message || "RSS parse error"),
     };
   }
 

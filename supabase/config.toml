@@ -21,7 +21,7 @@ verify_jwt = false
 [functions.backfill-news-images]
 verify_jwt = false
 
-[functions.events-ingest]
+[functions.events-admin]
 verify_jwt = false
 
 [functions.linnuliigid-snapshot]

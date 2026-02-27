@@ -2,8 +2,8 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "content-type, x-admin-key, apikey, authorization",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "content-type, x-events-admin-key, apikey, authorization",
 };
 
 function json(status: number, body: unknown) {
@@ -13,76 +13,204 @@ function json(status: number, body: unknown) {
   });
 }
 
+function asString(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function parseIsoOrNull(value: unknown): string | null {
+  const v = asString(value);
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function parseNumberOrNull(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function validateEventInput(input: any): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
+  const title = asString(input?.title);
+  const startsAt = parseIsoOrNull(input?.starts_at);
+  const endsAt = parseIsoOrNull(input?.ends_at);
+  const type = asString(input?.type).toLowerCase() === "muud" ? "muud" : "estbirding";
+
+  if (!title) return { ok: false, error: "title is required" };
+  if (!startsAt) return { ok: false, error: "starts_at is required and must be valid ISO datetime" };
+  if (endsAt && new Date(endsAt).getTime() < new Date(startsAt).getTime()) {
+    return { ok: false, error: "ends_at must be greater than or equal to starts_at" };
+  }
+
+  return {
+    ok: true,
+    value: {
+      title,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      type,
+      location_name: asString(input?.location_name) || null,
+      lat: parseNumberOrNull(input?.lat),
+      lon: parseNumberOrNull(input?.lon),
+      url: asString(input?.url) || null,
+      description: asString(input?.description) || null,
+      updated_at: new Date().toISOString(),
+    },
+  };
+}
+
+function validatePatch(input: any): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
+  const allowed = ["title", "starts_at", "ends_at", "type", "location_name", "lat", "lon", "url", "description"];
+  const patchRaw: Record<string, unknown> = {};
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(input || {}, key)) {
+      patchRaw[key] = (input as any)[key];
+    }
+  }
+
+  if (Object.keys(patchRaw).length === 0) {
+    return { ok: false, error: "patch is empty" };
+  }
+
+  const base: any = {};
+  if (patchRaw.title !== undefined) {
+    const title = asString(patchRaw.title);
+    if (!title) return { ok: false, error: "title cannot be empty" };
+    base.title = title;
+  }
+  if (patchRaw.starts_at !== undefined) {
+    const starts = parseIsoOrNull(patchRaw.starts_at);
+    if (!starts) return { ok: false, error: "starts_at must be valid datetime" };
+    base.starts_at = starts;
+  }
+  if (patchRaw.ends_at !== undefined) {
+    if (patchRaw.ends_at == null || asString(patchRaw.ends_at) === "") base.ends_at = null;
+    else {
+      const ends = parseIsoOrNull(patchRaw.ends_at);
+      if (!ends) return { ok: false, error: "ends_at must be valid datetime" };
+      base.ends_at = ends;
+    }
+  }
+  if (patchRaw.type !== undefined) {
+    base.type = asString(patchRaw.type).toLowerCase() === "muud" ? "muud" : "estbirding";
+  }
+  if (patchRaw.location_name !== undefined) base.location_name = asString(patchRaw.location_name) || null;
+  if (patchRaw.lat !== undefined) {
+    const lat = parseNumberOrNull(patchRaw.lat);
+    if (patchRaw.lat !== null && patchRaw.lat !== "" && lat == null) return { ok: false, error: "lat must be number" };
+    base.lat = lat;
+  }
+  if (patchRaw.lon !== undefined) {
+    const lon = parseNumberOrNull(patchRaw.lon);
+    if (patchRaw.lon !== null && patchRaw.lon !== "" && lon == null) return { ok: false, error: "lon must be number" };
+    base.lon = lon;
+  }
+  if (patchRaw.url !== undefined) base.url = asString(patchRaw.url) || null;
+  if (patchRaw.description !== undefined) base.description = asString(patchRaw.description) || null;
+
+  if (base.starts_at && base.ends_at && new Date(base.ends_at).getTime() < new Date(base.starts_at).getTime()) {
+    return { ok: false, error: "ends_at must be greater than or equal to starts_at" };
+  }
+
+  base.updated_at = new Date().toISOString();
+  return { ok: true, value: base };
+}
+
 Deno.serve(async (req) => {
   try {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
+
+    if (req.method === "GET") {
+      const action = new URL(req.url).searchParams.get("action");
+      if (action === "health") return json(200, { ok: true });
+      return json(405, { error: "method_not_allowed" });
+    }
+
     if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
 
-    const ADMIN_KEY = Deno.env.get("EVENTS_ADMIN_KEY");
-    if (!ADMIN_KEY) return json(500, { error: "EVENTS_ADMIN_KEY missing" });
+    const expectedKey = Deno.env.get("EVENTS_ADMIN_KEY");
+    if (!expectedKey) return json(500, { error: "EVENTS_ADMIN_KEY missing" });
 
-    const provided = req.headers.get("x-admin-key") ?? "";
-    if (provided !== ADMIN_KEY) return json(401, { error: "unauthorized" });
+    const provided = req.headers.get("X-Events-Admin-Key") ?? req.headers.get("x-events-admin-key") ?? "";
+    if (!provided || provided !== expectedKey) {
+      return json(401, { error: "invalid admin key" });
+    }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !serviceKey) return json(500, { error: "service env missing" });
 
     const supabase = createClient(supabaseUrl, serviceKey);
-
-    const body = await req.json().catch(() => null) as any;
-    const action = body?.action;
-    const payload = body?.payload ?? {};
-
-    if (!action) return json(400, { error: "missing_action" });
-
-    if (action === "list") {
-      const { data, error } = await supabase.from("events").select("*").order("start_at", { ascending: false });
-      if (error) return json(500, { error: error.message });
-      return json(200, { data });
-    }
+    const body = await req.json().catch(() => ({}));
+    const action = asString(body?.action);
 
     if (action === "create") {
-      if (!payload?.title || !payload?.start_at) return json(400, { error: "title and start_at required" });
-      const { data, error } = await supabase.from("events").insert(payload).select("*").single();
+      const valid = validateEventInput(body?.event);
+      if (!valid.ok) return json(400, { error: valid.error });
+      const row = {
+        ...valid.value,
+        status: "active",
+      };
+      const { data, error } = await supabase.from("events_manual").insert(row).select("*").single();
       if (error) return json(500, { error: error.message });
       return json(200, { data });
     }
 
     if (action === "update") {
-      const { id, patch } = payload || {};
-      if (!id || !patch) return json(400, { error: "id and patch required" });
-      const { data, error } = await supabase.from("events").update(patch).eq("id", id).select("*").single();
-      if (error) return json(500, { error: error.message });
-      return json(200, { data });
-    }
-
-    if (action === "delete") {
-      const { id } = payload || {};
-      if (!id) return json(400, { error: "id required" });
-      const { error } = await supabase.from("events").delete().eq("id", id);
-      if (error) return json(500, { error: error.message });
-      return json(200, { data: { ok: true } });
-    }
-
-    if (action === "publish") {
-      const { id, is_published } = payload || {};
-      if (!id || typeof is_published !== "boolean") return json(400, { error: "id and is_published required" });
-      const { data, error } = await supabase.from("events").update({ is_published }).eq("id", id).select("*").single();
+      const id = asString(body?.id);
+      if (!id) return json(400, { error: "id is required" });
+      const valid = validatePatch(body?.patch);
+      if (!valid.ok) return json(400, { error: valid.error });
+      const { data, error } = await supabase.from("events_manual").update(valid.value).eq("id", id).select("*").single();
       if (error) return json(500, { error: error.message });
       return json(200, { data });
     }
 
     if (action === "archive") {
-      const { id, is_archived } = payload || {};
-      if (!id || typeof is_archived !== "boolean") return json(400, { error: "id and is_archived required" });
-      const { data, error } = await supabase.from("events").update({ is_archived }).eq("id", id).select("*").single();
+      const id = asString(body?.id);
+      if (!id) return json(400, { error: "id is required" });
+      const now = new Date().toISOString();
+      const { data, error } = await supabase
+        .from("events_manual")
+        .update({ status: "archived", archived_at: now, updated_at: now })
+        .eq("id", id)
+        .select("*")
+        .single();
       if (error) return json(500, { error: error.message });
       return json(200, { data });
     }
 
-    return json(400, { error: "unknown_action", action });
-  } catch (e) {
-    return json(500, { error: String(e) });
+    if (action === "unarchive") {
+      const id = asString(body?.id);
+      if (!id) return json(400, { error: "id is required" });
+      const now = new Date().toISOString();
+      const { data, error } = await supabase
+        .from("events_manual")
+        .update({ status: "active", archived_at: null, updated_at: now })
+        .eq("id", id)
+        .select("*")
+        .single();
+      if (error) return json(500, { error: error.message });
+      return json(200, { data });
+    }
+
+    if (action === "delete") {
+      const id = asString(body?.id);
+      if (!id) return json(400, { error: "id is required" });
+      const now = new Date().toISOString();
+      const { data, error } = await supabase
+        .from("events_manual")
+        .update({ status: "deleted", deleted_at: now, updated_at: now })
+        .eq("id", id)
+        .select("*")
+        .single();
+      if (error) return json(500, { error: error.message });
+      return json(200, { data });
+    }
+
+    return json(400, { error: "unknown action" });
+  } catch (error) {
+    return json(500, { error: String(error) });
   }
 });

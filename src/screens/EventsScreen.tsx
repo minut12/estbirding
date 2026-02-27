@@ -5,41 +5,101 @@ import { et } from "@/localization/et";
 import { type EventItem } from "@/data/events";
 import { EventMapPreview } from "@/components/events/EventMapPreview";
 import { EventCard } from "@/components/events/EventCard";
-import { type EventRow } from "@/features/events/eventsService";
-import { useEvents } from "@/features/events/useEvents";
+import {
+  archiveManualEvent,
+  deleteManualEvent,
+  listPublicEventsManual,
+  type ManualEventPatch,
+  type ManualEventRow,
+  unarchiveManualEvent,
+  updateManualEvent,
+} from "@/features/events/eventsService";
+import { getEventsAdminKey } from "@/features/events/adminKey";
 import EventDetailsScreen from "./EventDetailsScreen";
+import { toast } from "sonner";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 type MainTab = "tulevased" | "moodunud" | "muud";
-type CategoryFilter = "koik" | "EstBirding" | "Muud";
+type CategoryFilter = "koik" | "active" | "archived";
 
-const mapRowToEventItem = (row: EventRow): EventItem => ({
-  id: row.id,
-  title: row.title,
-  startAt: row.start_at,
-  endAt: row.end_at ?? undefined,
-  locationName: row.location_name ?? "Asukoht tapsustamisel",
-  lat: row.lat ?? 58.7,
-  lng: row.lng ?? 25.0,
-  category: row.category,
-  imageUrl:
-    row.image_url ||
-    "https://images.unsplash.com/photo-1448375240586-882707db888b?w=360&h=280&fit=crop",
-  description: row.description ?? undefined,
-  organizerName: row.organizer_name ?? undefined,
-  url: row.url ?? undefined,
-  isPublished: row.is_published,
-  isArchived: row.is_archived,
-});
+type EditForm = {
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  type: "estbirding" | "muud";
+  location_name: string;
+  lat: string;
+  lon: string;
+  url: string;
+  description: string;
+};
+
+const emptyForm: EditForm = {
+  title: "",
+  starts_at: "",
+  ends_at: "",
+  type: "estbirding",
+  location_name: "",
+  lat: "",
+  lon: "",
+  url: "",
+  description: "",
+};
+
+function toLocalDatetime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function toEventItem(row: ManualEventRow): EventItem {
+  return {
+    id: row.id,
+    title: row.title,
+    startAt: row.starts_at,
+    endAt: row.ends_at || undefined,
+    locationName: row.location_name || "Asukoht tapsustamisel",
+    lat: row.lat == null ? Number.NaN : row.lat,
+    lng: row.lon == null ? Number.NaN : row.lon,
+    category: row.type === "muud" ? "Muud" : "EstBirding",
+    imageUrl: "https://images.unsplash.com/photo-1448375240586-882707db888b?w=360&h=280&fit=crop",
+    description: row.description || undefined,
+    url: row.url || undefined,
+    isPublished: row.status === "active",
+    isArchived: row.status === "archived",
+  };
+}
+
+function rowToForm(row: ManualEventRow): EditForm {
+  return {
+    title: row.title,
+    starts_at: toLocalDatetime(row.starts_at),
+    ends_at: row.ends_at ? toLocalDatetime(row.ends_at) : "",
+    type: row.type,
+    location_name: row.location_name || "",
+    lat: row.lat == null ? "" : String(row.lat),
+    lon: row.lon == null ? "" : String(row.lon),
+    url: row.url || "",
+    description: row.description || "",
+  };
+}
 
 export default function EventsScreen() {
   const [mainTab, setMainTab] = useState<MainTab>("tulevased");
-  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("koik");
+  const [statusFilter, setStatusFilter] = useState<CategoryFilter>("active");
   const [searchValue, setSearchValue] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
   const [openedDetails, setOpenedDetails] = useState<EventItem | null>(null);
-  const { events: loadedRows, loading: isLoading, errorMessage, emptyMessage, lastUpdated, refresh } = useEvents();
-  const events = useMemo(() => loadedRows.map(mapRowToEventItem), [loadedRows]);
+  const [rows, setRows] = useState<ManualEventRow[]>([]);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<EditForm>(emptyForm);
 
   const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const todayStart = useMemo(() => {
@@ -48,10 +108,30 @@ export default function EventsScreen() {
     return date;
   }, []);
 
+  const canManage = Boolean(getEventsAdminKey());
+
+  const loadEvents = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const data = await listPublicEventsManual();
+      setRows(data);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+      setRows([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadEvents();
+  }, [loadEvents]);
+
+  const events = useMemo(() => rows.map(toEventItem), [rows]);
+
   const filteredEvents = useMemo(() => {
     const searchTerm = searchValue.trim().toLowerCase();
     return events.filter((event) => {
-      if (event.isArchived) return false;
       const eventDate = new Date(event.startAt);
       const tabMatch =
         mainTab === "tulevased"
@@ -60,15 +140,26 @@ export default function EventsScreen() {
             ? eventDate < todayStart
             : event.category === "Muud";
 
-      const categoryMatch = categoryFilter === "koik" ? true : event.category === categoryFilter;
+      const statusMatch =
+        statusFilter === "koik"
+          ? true
+          : statusFilter === "active"
+            ? !event.isArchived
+            : Boolean(event.isArchived);
+
       const searchMatch = searchTerm
         ? event.title.toLowerCase().includes(searchTerm) ||
           event.locationName.toLowerCase().includes(searchTerm)
         : true;
 
-      return tabMatch && categoryMatch && searchMatch;
+      return tabMatch && statusMatch && searchMatch;
     });
-  }, [categoryFilter, events, mainTab, searchValue, todayStart]);
+  }, [events, mainTab, searchValue, statusFilter, todayStart]);
+
+  const mapEvents = useMemo(
+    () => filteredEvents.filter((event) => Number.isFinite(event.lat) && Number.isFinite(event.lng)),
+    [filteredEvents]
+  );
 
   useEffect(() => {
     if (filteredEvents.length === 0) {
@@ -100,11 +191,73 @@ export default function EventsScreen() {
     selectEvent(filteredEvents[nextIndex].id);
   };
 
-  const handleRefresh = useCallback(async () => {
+  const handleRefresh = async () => {
     setIsRefreshing(true);
-    await Promise.all([refresh(), new Promise((resolve) => setTimeout(resolve, 400))]);
+    await Promise.all([loadEvents(), new Promise((resolve) => setTimeout(resolve, 350))]);
     setIsRefreshing(false);
-  }, [refresh]);
+  };
+
+  const startEdit = (eventId: string) => {
+    const row = rows.find((r) => r.id === eventId);
+    if (!row) return;
+    setEditingId(eventId);
+    setEditForm(rowToForm(row));
+    setEditOpen(true);
+  };
+
+  const saveEdit = async () => {
+    if (!editingId) return;
+    if (!editForm.title.trim() || !editForm.starts_at) {
+      toast.error("Title ja start datetime on kohustuslikud.");
+      return;
+    }
+    if ((editForm.lat && !editForm.lon) || (!editForm.lat && editForm.lon)) {
+      toast.error("Lat ja lon peavad olema molemad.");
+      return;
+    }
+    const patch: ManualEventPatch = {
+      title: editForm.title.trim(),
+      starts_at: new Date(editForm.starts_at).toISOString(),
+      ends_at: editForm.ends_at ? new Date(editForm.ends_at).toISOString() : null,
+      type: editForm.type,
+      location_name: editForm.location_name.trim() || null,
+      lat: editForm.lat ? Number(editForm.lat) : null,
+      lon: editForm.lon ? Number(editForm.lon) : null,
+      url: editForm.url.trim() || null,
+      description: editForm.description.trim() || null,
+    };
+
+    try {
+      await updateManualEvent(editingId, patch);
+      toast.success("Uritus uuendatud");
+      setEditOpen(false);
+      await loadEvents();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const archiveToggle = async (eventId: string) => {
+    const row = rows.find((r) => r.id === eventId);
+    if (!row) return;
+    try {
+      if (row.status === "archived") await unarchiveManualEvent(eventId);
+      else await archiveManualEvent(eventId);
+      await loadEvents();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const removeEvent = async (eventId: string) => {
+    if (!window.confirm("Delete this event?")) return;
+    try {
+      await deleteManualEvent(eventId);
+      await loadEvents();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   if (openedDetails) {
     return <EventDetailsScreen event={openedDetails} onBack={() => setOpenedDetails(null)} />;
@@ -148,17 +301,17 @@ export default function EventsScreen() {
         <div className="flex gap-2">
           {(
             [
-              ["koik", et.chips.koik],
-              ["EstBirding", et.chips.estbirding],
-              ["Muud", et.chips.muud],
+              ["koik", "Koik"],
+              ["active", "Aktiivsed"],
+              ["archived", "Arhiveeritud"],
             ] as const
           ).map(([key, label]) => (
             <button
               key={key}
-              onClick={() => setCategoryFilter(key)}
+              onClick={() => setStatusFilter(key)}
               className={cn(
                 "rounded-full px-3 py-1.5 text-xs font-medium transition",
-                categoryFilter === key
+                statusFilter === key
                   ? "bg-primary text-primary-foreground"
                   : "bg-white text-muted-foreground"
               )}
@@ -179,47 +332,28 @@ export default function EventsScreen() {
         </div>
       </div>
 
-      <div className="px-4 pb-3">
-        <EventMapPreview
-          events={filteredEvents}
-          highlightedEventId={highlightedEventId}
-          onSelectEvent={selectEvent}
-          onPrev={() => cycleEvent("prev")}
-          onNext={() => cycleEvent("next")}
-        />
-      </div>
+      {mapEvents.length > 0 && (
+        <div className="px-4 pb-3">
+          <EventMapPreview
+            events={mapEvents}
+            highlightedEventId={highlightedEventId}
+            onSelectEvent={selectEvent}
+            onPrev={() => cycleEvent("prev")}
+            onNext={() => cycleEvent("next")}
+          />
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-t-[28px] bg-white px-4 pt-4 shadow-[0_-8px_24px_rgba(38,64,52,0.08)]">
         {isLoading ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            Laen uritusi...
-          </div>
-        ) : errorMessage ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <CalendarDays className="h-10 w-10 text-muted-foreground/45" />
-            <p className="text-sm text-muted-foreground">{errorMessage}</p>
-            <button
-              onClick={handleRefresh}
-              className="rounded-full border border-border px-4 py-1.5 text-xs font-medium text-foreground"
-            >
-              Varskenda
-            </button>
-          </div>
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Laen uritusi...</div>
         ) : filteredEvents.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             <CalendarDays className="h-10 w-10 text-muted-foreground/45" />
-            <p className="text-sm text-muted-foreground">{emptyMessage || et.emptyByTab[mainTab]}</p>
-            <button
-              onClick={handleRefresh}
-              className="rounded-full border border-border px-4 py-1.5 text-xs font-medium text-foreground"
-            >
+            <p className="text-sm text-muted-foreground">Uritusi ei leitud. Proovi varskendada.</p>
+            <button onClick={handleRefresh} className="rounded-full border border-border px-4 py-1.5 text-xs font-medium text-foreground">
               Varskenda
             </button>
-            {lastUpdated && (
-              <p className="text-xs text-muted-foreground">
-                Viimane varskendus: {lastUpdated.toLocaleTimeString("et-EE", { hour: "2-digit", minute: "2-digit" })}
-              </p>
-            )}
           </div>
         ) : (
           <div className="h-full space-y-3 overflow-y-auto pb-6">
@@ -228,6 +362,10 @@ export default function EventsScreen() {
                 key={event.id}
                 event={event}
                 selected={event.id === highlightedEvent?.id}
+                canManage={canManage}
+                onEdit={() => startEdit(event.id)}
+                onArchiveToggle={() => archiveToggle(event.id)}
+                onDelete={() => removeEvent(event.id)}
                 onPress={() => {
                   selectEvent(event.id);
                   setOpenedDetails(event);
@@ -240,6 +378,37 @@ export default function EventsScreen() {
           </div>
         )}
       </div>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit event</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-3">
+            <div><Label>Title*</Label><Input value={editForm.title} onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))} /></div>
+            <div><Label>Start datetime*</Label><Input type="datetime-local" value={editForm.starts_at} onChange={(e) => setEditForm((p) => ({ ...p, starts_at: e.target.value }))} /></div>
+            <div><Label>End datetime</Label><Input type="datetime-local" value={editForm.ends_at} onChange={(e) => setEditForm((p) => ({ ...p, ends_at: e.target.value }))} /></div>
+            <div>
+              <Label>Type</Label>
+              <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={editForm.type} onChange={(e) => setEditForm((p) => ({ ...p, type: e.target.value as "estbirding" | "muud" }))}>
+                <option value="estbirding">EstBirding</option>
+                <option value="muud">Muud</option>
+              </select>
+            </div>
+            <div><Label>Location</Label><Input value={editForm.location_name} onChange={(e) => setEditForm((p) => ({ ...p, location_name: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><Label>Lat</Label><Input value={editForm.lat} onChange={(e) => setEditForm((p) => ({ ...p, lat: e.target.value }))} /></div>
+              <div><Label>Lon</Label><Input value={editForm.lon} onChange={(e) => setEditForm((p) => ({ ...p, lon: e.target.value }))} /></div>
+            </div>
+            <div><Label>URL</Label><Input value={editForm.url} onChange={(e) => setEditForm((p) => ({ ...p, url: e.target.value }))} /></div>
+            <div><Label>Description</Label><Input value={editForm.description} onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button onClick={saveEdit}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

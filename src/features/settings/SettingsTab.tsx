@@ -16,7 +16,7 @@ import { Trash2, RotateCcw } from 'lucide-react';
 import AvatarManager from './AvatarManager';
 import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
-import EventSourcesSettings from './EventSourcesSettings';
+import EventsManagementSettings from './EventsManagementSettings';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import {
   getEnvEndpoint,
@@ -39,22 +39,11 @@ import {
   setStoredProxyBase,
 } from '@/config/proxyEndpoint';
 import { isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
-import { isAdmin } from '@/services/profile';
-import AdminEventsScreen from '@/screens/AdminEventsScreen';
-import CreateEventScreen from '@/screens/CreateEventScreen';
-import MapPickerScreen from '@/screens/MapPickerScreen';
-import type { EventRow } from '@/types/events';
 
 type ResetMode = 'soft' | 'hard' | null;
 
 export default function SettingsTab() {
   const newsSourcesSectionRef = useRef<HTMLDivElement | null>(null);
-  const [adminMode, setAdminMode] = useState<'settings' | 'admin-events' | 'create-event' | 'map-picker'>('settings');
-  const [adminReady, setAdminReady] = useState(false);
-  const [adminAllowed, setAdminAllowed] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<EventRow | null>(null);
-  const [pickedCoords, setPickedCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [mapPickerInitial, setMapPickerInitial] = useState<{ lat: number | null; lng: number | null } | null>(null);
   const [devMode, setDevMode] = useState<boolean>(() => isDeveloperModeEnabled());
   const [devTapCount, setDevTapCount] = useState(0);
   const [form, setForm] = useState<AppSettings>(loadSettings);
@@ -81,12 +70,6 @@ export default function SettingsTab() {
     setStoredProxyBaseView(initialProxyStored);
     setProxyBaseUrl(initialProxyStored || getEnvProxyBase());
     refreshSpeciesMetaFromCloud({ force: true }).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    isAdmin()
-      .then((value) => setAdminAllowed(value))
-      .finally(() => setAdminReady(true));
   }, []);
 
   useEffect(() => {
@@ -117,10 +100,10 @@ export default function SettingsTab() {
   }, []);
 
   useEffect(() => {
-    if (import.meta.env.DEV && adminMode === 'settings' && !newsSourcesSectionRef.current) {
+    if (import.meta.env.DEV && !newsSourcesSectionRef.current) {
       console.warn('[Settings] News sources section did not render while settings is open');
     }
-  }, [adminMode]);
+  }, []);
 
   const onVersionTap = () => {
     if (devMode) return;
@@ -132,10 +115,6 @@ export default function SettingsTab() {
       setDevTapCount(0);
       toast.success('Developer mode enabled');
     }
-  };
-
-  const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleSave = () => {
@@ -157,8 +136,8 @@ export default function SettingsTab() {
     saveSettings(next);
     localStorage.setItem(NEWS_AUTO_TRANSLATE_ET_KEY, checked ? '1' : '0');
     toast.success(checked
-      ? 'Automaatne tõlkimine sisse lülitatud'
-      : 'Automaatne tõlkimine välja lülitatud');
+      ? 'Automaatne tolkimine sisse lulitatud'
+      : 'Automaatne tolkimine valja lulitatud');
   };
 
   const handleTestTranslate = async () => {
@@ -178,14 +157,14 @@ export default function SettingsTab() {
           const preview = (await healthRes.text()).slice(0, 120).replace(/\s+/g, ' ');
           throw new Error(`status=${healthRes.status} ${preview || '[empty body]'}`);
         }
-      } catch (error: any) {
+      } catch {
         throw new Error(`Translation backend blocked or unreachable. Open this URL in browser: ${healthUrl}`);
       }
 
       const payload = {
         id: 'dev-test-pl',
-        title: 'Jedna z dwóch mew wróciła na zbiornik',
-        body: 'Powróciła dziś rano. Szczegóły: https://example.com #ptaki',
+        title: 'Jedna z dwoch mew wrocila na zbiornik',
+        body: 'Wrocila dzis rano. Szczegoly: https://example.com #ptaki',
       };
       const translateRes = await postJson(endpoint, payload);
       if (translateRes.status !== 200) {
@@ -266,53 +245,6 @@ export default function SettingsTab() {
     }
   };
 
-  if (adminMode === 'admin-events') {
-    return (
-      <AdminEventsScreen
-        onBack={() => setAdminMode('settings')}
-        onCreate={() => {
-          setEditingEvent(null);
-          setPickedCoords(null);
-          setAdminMode('create-event');
-        }}
-        onEdit={(event) => {
-          setEditingEvent(event);
-          setPickedCoords(null);
-          setAdminMode('create-event');
-        }}
-      />
-    );
-  }
-
-  if (adminMode === 'create-event') {
-    return (
-      <CreateEventScreen
-        initialEvent={editingEvent}
-        pickedCoords={pickedCoords}
-        onBack={() => setAdminMode('admin-events')}
-        onSaved={() => setAdminMode('admin-events')}
-        onOpenMapPicker={(coords) => {
-          setMapPickerInitial(coords);
-          setAdminMode('map-picker');
-        }}
-      />
-    );
-  }
-
-  if (adminMode === 'map-picker') {
-    return (
-      <MapPickerScreen
-        initialLat={mapPickerInitial?.lat}
-        initialLng={mapPickerInitial?.lng}
-        onBack={() => setAdminMode('create-event')}
-        onConfirm={(coords) => {
-          setPickedCoords(coords);
-          setAdminMode('create-event');
-        }}
-      />
-    );
-  }
-
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="px-4 py-3 border-b border-border bg-card">
@@ -323,9 +255,7 @@ export default function SettingsTab() {
           <NewsSourcesSettings />
         </div>
 
-        <div className="block">
-          <EventSourcesSettings />
-        </div>
+        <EventsManagementSettings />
 
         <div className="space-y-2">
           <Label htmlFor="translateApiUrl">Translation API URL</Label>
@@ -428,21 +358,6 @@ export default function SettingsTab() {
 
         {devMode && <DeveloperSettings />}
 
-        {adminReady && adminAllowed && (
-          <>
-            <Separator />
-            <div className="space-y-2">
-              <h3 className="font-semibold text-foreground">Admin</h3>
-              <Button
-                onClick={() => setAdminMode('admin-events')}
-                className="w-full justify-start"
-              >
-                Halda üritusi
-              </Button>
-            </div>
-          </>
-        )}
-
         <Separator />
 
         <div className="space-y-3">
@@ -480,7 +395,7 @@ export default function SettingsTab() {
             href="/reset/"
             className="inline-flex items-center gap-1.5 text-sm text-primary underline underline-offset-4 hover:text-primary/80"
           >
-            Ava lähtestusleht &rarr;
+            Ava lahtestusleht &rarr;
           </a>
           <p className="text-xs text-muted-foreground">
             Kasuta seda linki, kui rakendus on taiesti kinni jaanud ja nupud ei toota.
@@ -517,4 +432,3 @@ export default function SettingsTab() {
     </div>
   );
 }
-

@@ -1,322 +1,139 @@
-import { getFunctionsBaseUrl, getSupabaseAnonKey, getSupabaseUrl, supabaseFetch, validateSupabaseConfig } from "@/config/supabaseConfig";
+import { getFunctionsBaseUrl, getSupabaseUrl, supabaseFetch, validateSupabaseConfig } from "@/config/supabaseConfig";
 import { getEventsAdminKey } from "./adminKey";
-import { type EventSourceConfig, loadEventSources } from "@/config/eventSources";
 
-export type EventCategory = "EstBirding" | "Muud";
+export type ManualEventType = "estbirding" | "muud";
+export type ManualEventStatus = "active" | "archived" | "deleted";
 
-export type EventRow = {
+export type ManualEventRow = {
   id: string;
   title: string;
-  description: string | null;
-  start_at: string;
-  end_at: string | null;
+  starts_at: string;
+  ends_at: string | null;
+  type: ManualEventType;
   location_name: string | null;
   lat: number | null;
-  lng: number | null;
-  category: EventCategory;
-  organizer_name: string | null;
+  lon: number | null;
   url: string | null;
-  image_url: string | null;
-  is_published: boolean;
-  is_archived: boolean;
-  created_by: string | null;
+  description: string | null;
+  status: ManualEventStatus;
   created_at: string;
   updated_at: string;
+  archived_at: string | null;
+  deleted_at: string | null;
 };
 
-export type EventPayload = Partial<Omit<EventRow, "id" | "created_at" | "updated_at">> & {
+export type ManualEventInput = {
   title: string;
-  start_at: string;
+  starts_at: string;
+  ends_at?: string | null;
+  type: ManualEventType;
+  location_name?: string | null;
+  lat?: number | null;
+  lon?: number | null;
+  url?: string | null;
+  description?: string | null;
 };
 
-export type EventSourceFetchResult = {
-  sourceId: string;
-  sourceName: string;
-  ok: boolean;
-  status?: number;
-  message: string;
-  events: EventRow[];
-  error?: string;
-};
+export type ManualEventPatch = Partial<ManualEventInput>;
 
-function normalizeCategory(raw: unknown): EventCategory {
-  const value = String(raw ?? "").toLowerCase();
-  return value === "estbirding" ? "EstBirding" : "Muud";
+const READ_COLUMNS = "id,title,starts_at,ends_at,type,location_name,lat,lon,url,description,status,created_at,updated_at,archived_at,deleted_at";
+
+function sortByStartsAtAsc(list: ManualEventRow[]): ManualEventRow[] {
+  return [...list].sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
 }
 
-function toNumberOrNull(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return null;
+function normalizeType(value: unknown): ManualEventType {
+  return String(value || "").toLowerCase() === "muud" ? "muud" : "estbirding";
 }
 
-function mapAnyToEventRow(raw: any): EventRow {
-  const startAt = String(raw?.start_at ?? "");
+function mapRow(raw: any): ManualEventRow {
   return {
-    id: String(raw?.id ?? raw?.guid ?? `${raw?.source_slug ?? "events"}:${startAt}:${raw?.title ?? ""}`),
-    title: String(raw?.title ?? "Nimetu üritus"),
-    description: raw?.description == null ? null : String(raw.description),
-    start_at: startAt,
-    end_at: raw?.end_at == null ? null : String(raw.end_at),
-    location_name: raw?.location_name == null ? null : String(raw.location_name),
-    lat: toNumberOrNull(raw?.lat ?? raw?.location_lat),
-    lng: toNumberOrNull(raw?.lng ?? raw?.location_lon),
-    category: normalizeCategory(raw?.category ?? raw?.source_slug),
-    organizer_name: raw?.organizer_name == null ? null : String(raw.organizer_name),
-    url: raw?.url == null ? null : String(raw.url),
-    image_url: raw?.image_url == null ? null : String(raw.image_url),
-    is_published: typeof raw?.is_published === "boolean" ? raw.is_published : true,
-    is_archived: typeof raw?.is_archived === "boolean" ? raw.is_archived : Boolean(raw?.is_cancelled),
-    created_by: raw?.created_by == null ? null : String(raw.created_by),
-    created_at: String(raw?.created_at ?? new Date().toISOString()),
-    updated_at: String(raw?.updated_at ?? raw?.created_at ?? new Date().toISOString()),
+    id: String(raw.id),
+    title: String(raw.title || ""),
+    starts_at: String(raw.starts_at || ""),
+    ends_at: raw.ends_at ? String(raw.ends_at) : null,
+    type: normalizeType(raw.type),
+    location_name: raw.location_name ? String(raw.location_name) : null,
+    lat: raw.lat == null ? null : Number(raw.lat),
+    lon: raw.lon == null ? null : Number(raw.lon),
+    url: raw.url ? String(raw.url) : null,
+    description: raw.description ? String(raw.description) : null,
+    status: (raw.status as ManualEventStatus) || "active",
+    created_at: String(raw.created_at || ""),
+    updated_at: String(raw.updated_at || ""),
+    archived_at: raw.archived_at ? String(raw.archived_at) : null,
+    deleted_at: raw.deleted_at ? String(raw.deleted_at) : null,
   };
 }
 
-function getSourceFilterQuery(sourceId: string): string {
-  if (sourceId === "estbirding") return "source_slug=eq.estbirding";
-  return "source_slug=neq.estbirding";
-}
-
-function sortEventsAsc(list: EventRow[]): EventRow[] {
-  return [...list].sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
-}
-
-function dedupeEvents(list: EventRow[]): EventRow[] {
-  const seen = new Set<string>();
-  const out: EventRow[] = [];
-  for (const item of list) {
-    if (seen.has(item.id)) continue;
-    seen.add(item.id);
-    out.push(item);
+async function parseJsonResponse(response: Response): Promise<any> {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { raw: text };
   }
-  return out;
 }
 
-export async function fetchEventsForSource(source: EventSourceConfig): Promise<EventSourceFetchResult> {
+export async function listPublicEventsManual(): Promise<ManualEventRow[]> {
   const validation = validateSupabaseConfig();
   if (!validation.ok || !validation.url) {
-    return {
-      sourceId: source.id,
-      sourceName: source.name,
-      ok: false,
-      message: "Supabase seadistus puudub või on vigane.",
-      events: [],
-      error: validation.error || "Supabase not configured",
-    };
+    throw new Error(validation.error || "Supabase config invalid");
   }
 
-  const endpoint = `${validation.url.replace(/\/+$/, "")}/rest/v1/events?select=*&order=start_at.asc&${getSourceFilterQuery(source.id)}`;
-  try {
-    const response = await supabaseFetch(endpoint, { method: "GET" });
-    const text = await response.text();
-    const json = text ? JSON.parse(text) : [];
-    if (!response.ok) {
-      return {
-        sourceId: source.id,
-        sourceName: source.name,
-        ok: false,
-        status: response.status,
-        message: `HTTP ${response.status}`,
-        events: [],
-        error: typeof json?.message === "string" ? json.message : text || "Unknown error",
-      };
-    }
-    const mapped = Array.isArray(json) ? json.map(mapAnyToEventRow).filter((row) => !row.is_archived) : [];
-    return {
-      sourceId: source.id,
-      sourceName: source.name,
-      ok: true,
-      status: response.status,
-      message: `HTTP ${response.status}, ${mapped.length} kirjet`,
-      events: sortEventsAsc(mapped),
-    };
-  } catch (error: any) {
-    return {
-      sourceId: source.id,
-      sourceName: source.name,
-      ok: false,
-      message: "Päring ebaõnnestus",
-      events: [],
-      error: error?.message || String(error),
-    };
+  const endpoint = `${getSupabaseUrl().replace(/\/+$/, "")}/rest/v1/events_manual?select=${encodeURIComponent(READ_COLUMNS)}&status=neq.deleted&order=starts_at.asc`;
+  const response = await supabaseFetch(endpoint, { method: "GET" });
+  const json = await parseJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${json?.message || json?.error || "events read failed"}`);
   }
+  const rows = Array.isArray(json) ? json.map(mapRow) : [];
+  return sortByStartsAtAsc(rows);
 }
 
-export async function fetchEventsBySources(
-  sources: EventSourceConfig[]
-): Promise<{ events: EventRow[]; results: EventSourceFetchResult[] }> {
-  const enabled = sources.filter((source) => source.enabled);
-  if (enabled.length === 0) return { events: [], results: [] };
-
-  const settled = await Promise.allSettled(enabled.map((source) => fetchEventsForSource(source)));
-  const results: EventSourceFetchResult[] = settled.map((entry, index) => {
-    if (entry.status === "fulfilled") return entry.value;
-    const source = enabled[index];
-    return {
-      sourceId: source.id,
-      sourceName: source.name,
-      ok: false,
-      message: "Päring ebaõnnestus",
-      events: [],
-      error: entry.reason?.message || String(entry.reason),
-    };
-  });
-
-  const merged = dedupeEvents(results.flatMap((entry) => entry.events));
-  return { events: sortEventsAsc(merged), results };
-}
-
-export async function listPublishedEvents(): Promise<EventRow[]> {
-  const { events } = await fetchEventsBySources(loadEventSources());
-  return events;
-}
-
-export async function listAllEventsAdmin(): Promise<EventRow[]> {
-  return adminListEvents();
-}
-
-export async function createEvent(payload: EventPayload): Promise<EventRow> {
-  return adminCreateEvent(payload);
-}
-
-export async function updateEvent(id: string, patch: Partial<EventPayload>): Promise<EventRow> {
-  return adminUpdateEvent(id, patch);
-}
-
-export async function deleteEvent(id: string): Promise<void> {
-  await adminDeleteEvent(id);
-}
-
-export async function setPublished(id: string, flag: boolean): Promise<EventRow> {
-  return adminPublishEvent(id, flag);
-}
-
-function requireAdminKey(): string {
+function requireEventsAdminKey(): string {
   const key = getEventsAdminKey();
-  if (!key || !key.trim()) {
-    throw new Error("events_admin_key puudub. Lisa see Seaded ? Arendaja alt.");
-  }
-  return key.trim();
-}
-
-export async function preflightSupabaseRestHealth(): Promise<{
-  ok: boolean;
-  message: string;
-  url: string;
-  status?: number;
-}> {
-  const validation = validateSupabaseConfig();
-  const resolvedUrl = validation.url || getSupabaseUrl() || "(empty)";
-  if (!validation.ok) {
-    throw new Error(`${validation.error} Resolved Supabase URL: ${resolvedUrl}`);
-  }
-  const anonKey = getSupabaseAnonKey();
-  if (!anonKey || anonKey.length < 20) {
-    throw new Error(`VITE_SUPABASE_ANON_KEY puudu/vigane. Resolved Supabase URL: ${resolvedUrl}`);
-  }
-  const healthUrl = `${resolvedUrl.replace(/\/+$/, "")}/auth/v1/health`;
-  try {
-    const res = await fetch(healthUrl, {
-      method: "GET",
-      headers: { apikey: anonKey, authorization: `Bearer ${anonKey}` },
-    });
-    if (res.ok || res.status === 401 || res.status === 404) {
-      return { ok: true, message: `Supabase reachable (HTTP ${res.status})`, url: healthUrl, status: res.status };
-    }
-    return { ok: true, message: `Supabase reachable (HTTP ${res.status})`, url: healthUrl, status: res.status };
-  } catch (err) {
-    throw new Error(
-      `Supabase URL unreachable (DNS/Network). Check Project URL or override in Settings. URL: ${resolvedUrl}. Error: ${String(err)}`
-    );
-  }
-}
-
-async function callAdminFn(action: string, payload: unknown, adminKey: string): Promise<any> {
-  const validation = validateSupabaseConfig();
-  const resolvedUrl = validation.url || getSupabaseUrl() || "(empty)";
-  if (!validation.ok) {
-    throw new Error(`${validation.error} Resolved Supabase URL: ${resolvedUrl}`);
-  }
-
-  const anonKey = getSupabaseAnonKey();
-  const fnUrl = `${getFunctionsBaseUrl()}/events-ingest`;
-  if (!anonKey || anonKey.length < 20) {
-    throw new Error(`VITE_SUPABASE_ANON_KEY puudu/vigane. Resolved Supabase URL: ${resolvedUrl}`);
-  }
-  if (!adminKey) {
+  if (!key) {
     throw new Error("events_admin_key puudub");
   }
-  await preflightSupabaseRestHealth();
+  return key;
+}
 
-  let res: Response;
-  try {
-    res = await fetch(fnUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-admin-key": adminKey,
-        apikey: anonKey,
-        authorization: `Bearer ${anonKey}`,
-      },
-      body: JSON.stringify({ action, payload }),
-    });
-  } catch (err) {
-    throw new Error(`Network error to ${fnUrl}: ${String(err)}. Likely wrong Supabase URL (DNS NXDOMAIN) or offline.`);
+async function callEventsAdmin(action: "create" | "update" | "archive" | "unarchive" | "delete", payload: Record<string, unknown>): Promise<ManualEventRow> {
+  const key = requireEventsAdminKey();
+  const url = `${getFunctionsBaseUrl()}/events-admin`;
+  const response = await supabaseFetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "X-Events-Admin-Key": key,
+    },
+    body: JSON.stringify({ action, ...payload }),
+  });
+  const json = await parseJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${json?.error || json?.message || "events-admin failed"}`);
   }
-
-  const bodyText = await res.text();
-  let json: any = null;
-  try {
-    json = JSON.parse(bodyText);
-  } catch {
-    json = { raw: bodyText };
-  }
-
-  if (!res.ok) {
-    if (res.status === 404 || res.status === 405) {
-      throw new Error("Edge Function events-ingest not deployed. Deploy it in Supabase -> Edge Functions.");
-    }
-    throw new Error(`HTTP ${res.status}: ${bodyText}`);
-  }
-
-  return json?.data ?? json;
+  return mapRow(json?.data || json);
 }
 
-export async function adminListEvents(): Promise<EventRow[]> {
-  const key = requireAdminKey();
-  return callAdminFn("admin_list", {}, key);
+export async function createManualEvent(event: ManualEventInput): Promise<ManualEventRow> {
+  return callEventsAdmin("create", { event });
 }
 
-export async function adminTestConnection(): Promise<unknown> {
-  const key = requireAdminKey();
-  return callAdminFn("admin_list", {}, key);
+export async function updateManualEvent(id: string, patch: ManualEventPatch): Promise<ManualEventRow> {
+  return callEventsAdmin("update", { id, patch });
 }
 
-export async function adminCreateEvent(payload: EventPayload): Promise<EventRow> {
-  const key = requireAdminKey();
-  return callAdminFn("admin_create", payload, key);
+export async function archiveManualEvent(id: string): Promise<ManualEventRow> {
+  return callEventsAdmin("archive", { id });
 }
 
-export async function adminUpdateEvent(id: string, patch: Partial<EventPayload>): Promise<EventRow> {
-  const key = requireAdminKey();
-  return callAdminFn("admin_update", { id, patch }, key);
+export async function unarchiveManualEvent(id: string): Promise<ManualEventRow> {
+  return callEventsAdmin("unarchive", { id });
 }
 
-export async function adminDeleteEvent(id: string): Promise<void> {
-  const key = requireAdminKey();
-  await callAdminFn("admin_delete", { id }, key);
-}
-
-export async function adminPublishEvent(id: string, is_published: boolean): Promise<EventRow> {
-  const key = requireAdminKey();
-  return callAdminFn("admin_publish", { id, is_published }, key);
-}
-
-export async function adminArchiveEvent(id: string, is_archived: boolean): Promise<EventRow> {
-  const key = requireAdminKey();
-  return callAdminFn("admin_archive", { id, is_archived }, key);
+export async function deleteManualEvent(id: string): Promise<ManualEventRow> {
+  return callEventsAdmin("delete", { id });
 }

@@ -57,14 +57,18 @@ function toLocalDatetime(iso: string): string {
 }
 
 function toEventItem(row: ManualEventRow): EventItem {
+  const lat = Number(row.lat);
+  const lon = Number(row.lon);
+  const safeLat = Number.isFinite(lat) && Math.abs(lat) <= 90 ? lat : Number.NaN;
+  const safeLon = Number.isFinite(lon) && Math.abs(lon) <= 180 ? lon : Number.NaN;
   return {
     id: row.id,
     title: row.title,
     startAt: row.starts_at,
     endAt: row.ends_at || undefined,
     locationName: row.location_name || "Asukoht täpsustamisel",
-    lat: row.lat == null ? Number.NaN : row.lat,
-    lng: row.lon == null ? Number.NaN : row.lon,
+    lat: safeLat,
+    lng: safeLon,
     category: row.type === "muud" ? "Muud" : "EstBirding",
     imageUrl: "https://images.unsplash.com/photo-1448375240586-882707db888b?w=360&h=280&fit=crop",
     description: row.description || undefined,

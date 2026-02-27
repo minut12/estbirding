@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import maplibregl, { type LngLatBoundsLike, type Map as MapLibreMap, type Marker } from "maplibre-gl";
+import maplibregl, { type GeoJSONSource, type LngLatBoundsLike, type Map as MapLibreMap } from "maplibre-gl";
 
 type MapPoint = {
   id: string;
@@ -15,6 +15,9 @@ type EventsMapMapLibreProps = {
 
 const ESTONIA_CENTER: [number, number] = [24.75, 59.44];
 const ESTONIA_ZOOM = 5;
+const SOURCE_ID = "events";
+const LAYER_POINTS_ID = "events-points";
+const LAYER_LABELS_ID = "events-labels";
 
 const MAP_STYLE = {
   version: 8,
@@ -38,18 +41,40 @@ function isValidPoint(point: MapPoint): boolean {
   );
 }
 
+function stableKey(points: MapPoint[]): string {
+  return points
+    .map((p) => `${p.id}:${p.lat.toFixed(6)}:${p.lon.toFixed(6)}`)
+    .sort()
+    .join("|");
+}
+
 export function EventsMapMapLibre({ points, selectedId }: EventsMapMapLibreProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
-  const markersRef = useRef<Map<string, Marker>>(new Map());
   const loadedRef = useRef(false);
+  const userMovedRef = useRef(false);
+  const lastPointsKeyRef = useRef("");
 
   const validPoints = useMemo(() => points.filter(isValidPoint), [points]);
+  const pointsKey = useMemo(() => stableKey(validPoints), [validPoints]);
 
-  const applyViewRef = useRef<() => void>(() => {});
-  applyViewRef.current = () => {
+  const featureCollection = useMemo(
+    () => ({
+      type: "FeatureCollection" as const,
+      features: validPoints.map((p) => ({
+        type: "Feature" as const,
+        geometry: { type: "Point" as const, coordinates: [p.lon, p.lat] as [number, number] },
+        properties: { id: p.id, title: p.title || "", selected: p.id === selectedId },
+      })),
+    }),
+    [validPoints, selectedId],
+  );
+
+  const applyViewRef = useRef<(force?: boolean) => void>(() => {});
+  applyViewRef.current = (force = false) => {
     const map = mapRef.current;
     if (!map || validPoints.length === 0) return;
+    if (!force && userMovedRef.current) return;
 
     try {
       if (validPoints.length === 1) {
@@ -59,9 +84,7 @@ export function EventsMapMapLibre({ points, selectedId }: EventsMapMapLibreProps
       }
 
       const bounds = new maplibregl.LngLatBounds();
-      for (const p of validPoints) {
-        bounds.extend([p.lon, p.lat]);
-      }
+      for (const p of validPoints) bounds.extend([p.lon, p.lat]);
       map.fitBounds(bounds as LngLatBoundsLike, { padding: 40, maxZoom: 12, duration: 500 });
     } catch {
       map.easeTo({ center: ESTONIA_CENTER, zoom: ESTONIA_ZOOM, duration: 300 });
@@ -77,80 +100,91 @@ export function EventsMapMapLibre({ points, selectedId }: EventsMapMapLibreProps
       style: MAP_STYLE as any,
       center: ESTONIA_CENTER,
       zoom: ESTONIA_ZOOM,
+      maxZoom: 12,
       attributionControl: true,
     });
     mapRef.current = map;
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+
+    map.scrollZoom.disable();
+    map.dragRotate.disable();
+    map.touchZoomRotate.disableRotation();
+
+    map.on("dragstart", () => {
+      userMovedRef.current = true;
+    });
+    map.on("movestart", () => {
+      userMovedRef.current = true;
+    });
 
     map.on("load", () => {
       loadedRef.current = true;
-      applyViewRef.current();
+      map.addSource(SOURCE_ID, { type: "geojson", data: featureCollection as any });
+      map.addLayer({
+        id: LAYER_POINTS_ID,
+        type: "circle",
+        source: SOURCE_ID,
+        paint: {
+          "circle-radius": ["case", ["boolean", ["get", "selected"], false], 9, 7],
+          "circle-color": "#dc2626",
+          "circle-stroke-color": ["case", ["boolean", ["get", "selected"], false], "#7f1d1d", "#ffffff"],
+          "circle-stroke-width": ["case", ["boolean", ["get", "selected"], false], 3, 2],
+          "circle-opacity": 0.9,
+        },
+      });
+      map.addLayer({
+        id: LAYER_LABELS_ID,
+        type: "symbol",
+        source: SOURCE_ID,
+        layout: {
+          "text-field": ["get", "title"],
+          "text-size": 12,
+          "text-offset": [0, 1.2],
+          "text-anchor": "top",
+        },
+        paint: {
+          "text-color": "#1f2937",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1,
+        },
+      });
+
+      applyViewRef.current(true);
+      lastPointsKeyRef.current = pointsKey;
     });
 
-    const resizeObserver = new ResizeObserver(() => {
-      map.resize();
-    });
+    const resizeObserver = new ResizeObserver(() => map.resize());
     resizeObserver.observe(container);
 
     const timer = window.setTimeout(() => {
       map.resize();
-      applyViewRef.current();
+      applyViewRef.current(true);
     }, 50);
 
     return () => {
       window.clearTimeout(timer);
       resizeObserver.disconnect();
-      markersRef.current.forEach((marker) => marker.remove());
-      markersRef.current.clear();
       loadedRef.current = false;
       map.remove();
       mapRef.current = null;
     };
-  }, [validPoints.length]);
+  }, [featureCollection, pointsKey, validPoints.length]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loadedRef.current) return;
 
-    const nextIds = new Set(validPoints.map((p) => p.id));
-    for (const [id, marker] of markersRef.current.entries()) {
-      if (!nextIds.has(id)) {
-        marker.remove();
-        markersRef.current.delete(id);
-      }
+    const src = map.getSource(SOURCE_ID) as GeoJSONSource | undefined;
+    if (src) src.setData(featureCollection as any);
+
+    const pointsChanged = pointsKey !== lastPointsKeyRef.current;
+    if (pointsChanged) {
+      userMovedRef.current = false;
+      applyViewRef.current(true);
+      lastPointsKeyRef.current = pointsKey;
     }
-
-    for (const p of validPoints) {
-      const existing = markersRef.current.get(p.id);
-      if (existing) {
-        existing.setLngLat([p.lon, p.lat]);
-        continue;
-      }
-
-      const markerEl = document.createElement("div");
-      markerEl.className = "h-3.5 w-3.5 rounded-full border border-white bg-red-600 shadow";
-      if (p.id === selectedId) {
-        markerEl.classList.add("ring-2", "ring-red-300");
-      }
-
-      const marker = new maplibregl.Marker({ element: markerEl, anchor: "center" })
-        .setLngLat([p.lon, p.lat]);
-      if (p.title) marker.setPopup(new maplibregl.Popup({ offset: 12 }).setText(p.title));
-      marker.addTo(map);
-      markersRef.current.set(p.id, marker);
-    }
-
-    markersRef.current.forEach((marker, id) => {
-      const el = marker.getElement();
-      if (id === selectedId) el.classList.add("ring-2", "ring-red-300");
-      else el.classList.remove("ring-2", "ring-red-300");
-    });
-
-    applyViewRef.current();
-  }, [validPoints, selectedId]);
+  }, [featureCollection, pointsKey]);
 
   if (validPoints.length === 0) return null;
-
   return <div ref={containerRef} className="w-full h-[260px] sm:h-[320px] rounded-xl overflow-hidden bg-muted" />;
 }
 

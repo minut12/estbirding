@@ -178,7 +178,7 @@ export default function EventsManagementSettings() {
     try {
       const result = await testEventsAdminHealth();
       if (result.ok) {
-        toast.success("OK (events-admin)");
+        toast.success("OK");
         return;
       }
       toast.error("Test events admin ebaõnnestus");

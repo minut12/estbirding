@@ -1,4 +1,5 @@
-import { getSupabaseAnonKey, getSupabaseUrl, supabaseFetch, validateSupabaseConfig } from "@/config/supabaseConfig";
+import { getSupabaseUrl, supabaseFetch, validateSupabaseConfig } from "@/config/supabaseConfig";
+import { supabase } from "@/config/supabaseClient";
 import { getEventsAdminKey } from "./adminKey";
 
 export type ManualEventType = "estbirding" | "muud";
@@ -81,42 +82,6 @@ export function getEventsAdminUrl(): string {
   return `${resolvedSupabaseUrl}/functions/v1/events-admin`;
 }
 
-async function callEventsAdminDirect(body: Record<string, unknown>): Promise<any> {
-  const url = getEventsAdminUrl();
-  const anon = getSupabaseAnonKey();
-  if (!anon) {
-    throw new Error("Supabase anon key missing (check VITE_SUPABASE_ANON_KEY)");
-  }
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: anon,
-      Authorization: `Bearer ${anon}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  const text = await res.text();
-  let json: any = null;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch {
-    json = null;
-  }
-
-  if (!res.ok) {
-    const msg = String(json?.error || json?.message || text?.slice(0, 200) || `HTTP ${res.status}`);
-    const err = new Error(msg) as Error & { status?: number; url?: string };
-    err.status = res.status;
-    err.url = url;
-    throw err;
-  }
-
-  return json;
-}
-
 export async function listPublicEventsManual(): Promise<ManualEventRow[]> {
   const validation = validateSupabaseConfig();
   if (!validation.ok || !validation.url) {
@@ -155,46 +120,58 @@ async function callEventsAdmin(action: "create" | "update" | "archive" | "unarch
   const key = requireEventsAdminKey();
   const url = getEventsAdminUrl();
   try {
-    const data = await callEventsAdminDirect({ adminKey: key, action, ...payload });
+    const { data, error } = await supabase.functions.invoke("events-admin", {
+      body: { action, adminKey: key, ...payload },
+    });
+    if (error) {
+      const invokeError = error as any;
+      const status = Number(invokeError?.status || 0) || undefined;
+      const message = String(invokeError?.message || "events-admin failed");
+      console.log("[events-admin] invoke error", { method: "POST", url, action, status, error: invokeError });
+      throw new Error(`HTTP ${status ?? ""} ${message}`.trim());
+    }
     return mapRow((data as any)?.data || data);
   } catch (error: any) {
     const errorName = String(error?.name || "");
     const message = String(error?.message || "events-admin failed");
-    const status = Number(error?.status || 0) || undefined;
-    const errorUrl = String(error?.url || url);
     console.error("[events-admin] invoke failed", {
       method: "POST",
-      url: errorUrl,
+      url,
       fn: "events-admin",
       hasAdminKey: Boolean(key),
-      status,
       errorName,
       errorMessage: message,
     });
-    throw new Error(`HTTP ${status ?? "?"} ${message} [${errorUrl}]`);
+    throw new Error(message);
   }
 }
 
 export async function testEventsAdminHealth(adminKey?: string): Promise<{ ok: boolean; now?: string }> {
   const endpoint = getEventsAdminUrl();
   try {
-    const data = await callEventsAdminDirect({ action: "health" });
+    const { data, error } = await supabase.functions.invoke("events-admin", {
+      body: { action: "health" },
+    });
+    if (error) {
+      const invokeError = error as any;
+      const status = Number(invokeError?.status || 0) || undefined;
+      const message = String(invokeError?.message || "health check failed");
+      console.log("[events-admin] health invoke error", { method: "POST", url: endpoint, status, error: invokeError });
+      throw new Error(`HTTP ${status ?? ""} ${message}`.trim());
+    }
     return data as { ok: boolean; now?: string };
   } catch (error: any) {
     const errorName = String(error?.name || "");
     const message = String(error?.message || "health check failed");
-    const status = Number(error?.status || 0) || undefined;
-    const errorUrl = String(error?.url || endpoint);
     console.error("[events-admin] health failed", {
       method: "POST",
-      url: errorUrl,
+      url: endpoint,
       fn: "events-admin",
       hasAdminKey: Boolean(adminKey?.trim() || getEventsAdminKey()),
-      status,
       errorName,
       errorMessage: message,
     });
-    throw new Error(`HTTP ${status ?? "?"} ${message} [${errorUrl}]`);
+    throw new Error(message);
   }
 }
 

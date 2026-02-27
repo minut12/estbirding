@@ -88,6 +88,13 @@ function rowToForm(row: ManualEventRow): EditForm {
   };
 }
 
+function toErrorMessage(err: unknown): string {
+  const e = err as any;
+  if (e?.message) return String(e.message);
+  if (e && typeof e === "object") return JSON.stringify(e);
+  return String(e);
+}
+
 export default function EventsScreen() {
   const [mainTab, setMainTab] = useState<MainTab>("tulevased");
   const [statusFilter, setStatusFilter] = useState<CategoryFilter>("active");
@@ -116,7 +123,7 @@ export default function EventsScreen() {
       const data = await listPublicEventsManual();
       setRows(data);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      toast.error(toErrorMessage(error));
       setRows([]);
     } finally {
       setIsLoading(false);
@@ -233,7 +240,7 @@ export default function EventsScreen() {
       setEditOpen(false);
       await loadEvents();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      toast.error(toErrorMessage(error));
     }
   };
 
@@ -245,7 +252,7 @@ export default function EventsScreen() {
       else await archiveManualEvent(eventId);
       await loadEvents();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      toast.error(toErrorMessage(error));
     }
   };
 
@@ -255,7 +262,7 @@ export default function EventsScreen() {
       await deleteManualEvent(eventId);
       await loadEvents();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      toast.error(toErrorMessage(error));
     }
   };
 

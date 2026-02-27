@@ -106,6 +106,13 @@ function maskKey(value: string): string {
   return `${"*".repeat(Math.max(4, value.length - 4))}${value.slice(-4)}`;
 }
 
+function toErrorMessage(err: unknown): string {
+  const e = err as any;
+  if (e?.message) return String(e.message);
+  if (e && typeof e === "object") return JSON.stringify(e);
+  return String(e);
+}
+
 export default function EventsManagementSettings() {
   const [events, setEvents] = useState<ManualEventRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -131,7 +138,7 @@ export default function EventsManagementSettings() {
       const rows = await listPublicEventsManual();
       setEvents(rows);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      toast.error(toErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -181,7 +188,7 @@ export default function EventsManagementSettings() {
       }
       toast.error("Test events admin ebaõnnestus");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      toast.error(toErrorMessage(error));
     }
   };
 
@@ -203,7 +210,7 @@ export default function EventsManagementSettings() {
       setDialogOpen(false);
       await loadEvents();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      toast.error(toErrorMessage(e));
     }
   };
 
@@ -214,7 +221,7 @@ export default function EventsManagementSettings() {
       await loadEvents();
       toast.success(event.status === "archived" ? "Üritus taastatud" : "Üritus arhiveeritud");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      toast.error(toErrorMessage(e));
     }
   };
 
@@ -225,7 +232,7 @@ export default function EventsManagementSettings() {
       await loadEvents();
       toast.success("Üritus kustutatud");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      toast.error(toErrorMessage(e));
     }
   };
 

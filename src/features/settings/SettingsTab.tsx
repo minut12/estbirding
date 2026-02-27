@@ -37,6 +37,7 @@ import {
   resolveProxyBase,
   setStoredProxyBase,
 } from '@/config/proxyEndpoint';
+import { isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
 import { isAdmin } from '@/services/profile';
 import AdminEventsScreen from '@/screens/AdminEventsScreen';
 import CreateEventScreen from '@/screens/CreateEventScreen';
@@ -53,6 +54,8 @@ export default function SettingsTab() {
   const [editingEvent, setEditingEvent] = useState<EventRow | null>(null);
   const [pickedCoords, setPickedCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [mapPickerInitial, setMapPickerInitial] = useState<{ lat: number | null; lng: number | null } | null>(null);
+  const [devMode, setDevMode] = useState<boolean>(() => isDeveloperModeEnabled());
+  const [devTapCount, setDevTapCount] = useState(0);
   const [form, setForm] = useState<AppSettings>(loadSettings);
   const [confirmMode, setConfirmMode] = useState<ResetMode>(null);
   const [resetting, setResetting] = useState(false);
@@ -117,6 +120,18 @@ export default function SettingsTab() {
       console.warn('[Settings] News sources section did not render while settings is open');
     }
   }, [adminMode]);
+
+  const onVersionTap = () => {
+    if (devMode) return;
+    const next = devTapCount + 1;
+    setDevTapCount(next);
+    if (next >= 7) {
+      setDeveloperModeEnabled(true);
+      setDevMode(true);
+      setDevTapCount(0);
+      toast.success('Developer mode enabled');
+    }
+  };
 
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -406,7 +421,7 @@ export default function SettingsTab() {
 
         <Separator />
 
-        <DeveloperSettings />
+        {devMode && <DeveloperSettings />}
 
         {adminReady && adminAllowed && (
           <>
@@ -468,7 +483,7 @@ export default function SettingsTab() {
 
           <Separator className="my-2" />
 
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground cursor-default select-none" onClick={onVersionTap}>
             Versioon: {APP_VERSION}
           </p>
         </div>

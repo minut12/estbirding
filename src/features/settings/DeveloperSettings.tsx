@@ -5,11 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  SUPABASE_ANON_KEY_OVERRIDE_KEY,
-  SUPABASE_URL_OVERRIDE_KEY,
   broadcastSupabaseConfigToMapIframes,
+  clearSupabaseOverrides,
+  getSupabaseAnonKeyOverride,
+  getSupabaseConfigSource,
   getFunctionsBaseUrl,
   getSupabaseUrl,
+  getSupabaseUrlOverride,
+  setSupabaseOverrides,
   validateSupabaseConfig,
 } from "@/config/supabaseConfig";
 import {
@@ -71,8 +74,8 @@ export default function DeveloperSettings() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
-  const [supabaseUrlOverride, setSupabaseUrlOverride] = useState(() => localStorage.getItem(SUPABASE_URL_OVERRIDE_KEY) || "");
-  const [supabaseAnonOverride, setSupabaseAnonOverride] = useState(() => localStorage.getItem(SUPABASE_ANON_KEY_OVERRIDE_KEY) || "");
+  const [supabaseUrlOverride, setSupabaseUrlOverride] = useState(() => getSupabaseUrlOverride() || "");
+  const [supabaseAnonOverride, setSupabaseAnonOverride] = useState(() => getSupabaseAnonKeyOverride() || "");
   const [supabaseConfigTick, setSupabaseConfigTick] = useState(0);
 
   const supabaseDiag = useMemo(() => {
@@ -88,6 +91,10 @@ export default function DeveloperSettings() {
   const resolvedFunctionsBase = useMemo(() => {
     void supabaseConfigTick;
     return getFunctionsBaseUrl();
+  }, [supabaseConfigTick]);
+  const configSource = useMemo(() => {
+    void supabaseConfigTick;
+    return getSupabaseConfigSource();
   }, [supabaseConfigTick]);
 
   const adminDisabled = !savedEventsAdminKey.trim() || !supabaseDiag.ok;
@@ -232,17 +239,16 @@ export default function DeveloperSettings() {
           <Button
             variant="outline"
             onClick={() => {
-              const trimmedUrl = supabaseUrlOverride.trim();
-              if (trimmedUrl) {
-                localStorage.setItem(SUPABASE_URL_OVERRIDE_KEY, trimmedUrl);
-              } else {
-                localStorage.removeItem(SUPABASE_URL_OVERRIDE_KEY);
+              const result = setSupabaseOverrides({
+                supabaseUrlOverride: supabaseUrlOverride.trim() || null,
+                supabaseAnonKeyOverride: supabaseAnonOverride.trim() || null,
+              });
+              if (!result.ok) {
+                toast.error(result.error || "Supabase override vigane");
+                return;
               }
-              if (supabaseAnonOverride.trim()) {
-                localStorage.setItem(SUPABASE_ANON_KEY_OVERRIDE_KEY, supabaseAnonOverride.trim());
-              } else {
-                localStorage.removeItem(SUPABASE_ANON_KEY_OVERRIDE_KEY);
-              }
+              setSupabaseUrlOverride(getSupabaseUrlOverride() || "");
+              setSupabaseAnonOverride(getSupabaseAnonKeyOverride() || "");
               setSupabaseConfigTick((v) => v + 1);
               broadcastSupabaseConfigToMapIframes();
               toast.success("Supabase override salvestatud");
@@ -253,16 +259,15 @@ export default function DeveloperSettings() {
           <Button
             variant="outline"
             onClick={() => {
-              localStorage.removeItem(SUPABASE_URL_OVERRIDE_KEY);
-              localStorage.removeItem(SUPABASE_ANON_KEY_OVERRIDE_KEY);
+              clearSupabaseOverrides();
               setSupabaseUrlOverride("");
               setSupabaseAnonOverride("");
               setSupabaseConfigTick((v) => v + 1);
               broadcastSupabaseConfigToMapIframes();
-              toast.success("Supabase override tÃ¼hjendatud");
+              toast.success("Supabase override tühjendatud");
             }}
           >
-            TÃ¼hjenda
+              Reset to env
           </Button>
           <Button
             variant="outline"
@@ -295,6 +300,7 @@ export default function DeveloperSettings() {
           Kasuta ainult kui env on vale. Muudatus kehtib ainult selles seadmes.
         </p>
         <div className="space-y-0.5 rounded-md bg-muted/40 p-2 text-[11px] text-muted-foreground">
+          <p>Using: {configSource}</p>
           <p>Resolved Supabase URL: {resolvedSupabaseUrl}</p>
           <p>Functions base: {resolvedFunctionsBase}</p>
           {!supabaseDiag.ok && <p className="text-destructive">Hoiatus: {supabaseDiag.error}</p>}
@@ -322,7 +328,7 @@ export default function DeveloperSettings() {
         </Button>
         <Button variant="outline" size="sm" onClick={handleClear} className="gap-1.5" disabled={!localStorage.getItem(LS_KEY)}>
           <Trash2 className="h-3.5 w-3.5" />
-          TÃ¼hjenda
+          Tühjenda
         </Button>
       </div>
 
@@ -359,10 +365,10 @@ export default function DeveloperSettings() {
                 setEventsAdminKeyValue("");
                 setSavedEventsAdminKey("");
                 setEvents([]);
-                toast.success("TÃ¼hjendatud");
+                toast.success("Tühjendatud");
               }}
             >
-              TÃ¼hjenda
+              Tühjenda
             </Button>
             <Button
               variant="outline"

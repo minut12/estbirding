@@ -1,9 +1,13 @@
 const SUPABASE_URL_OVERRIDE_KEY = "dev_supabase_url_override";
 const SUPABASE_ANON_KEY_OVERRIDE_KEY = "dev_supabase_anon_key_override";
+export const DEV_MODE_KEY = "estbirding.devMode";
 
-function getLocalStorageValue(key: string): string {
-  if (typeof window === "undefined") return "";
-  return String(window.localStorage.getItem(key) || "").trim();
+function getLocalStorageValue(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  const value = window.localStorage.getItem(key);
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  return trimmed || null;
 }
 
 function getEnvUrl(): string {
@@ -14,14 +18,91 @@ function getEnvAnonKey(): string {
   return String(import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "").trim();
 }
 
+function isPlaceholderValue(value: string): boolean {
+  const v = value.toLowerCase();
+  return v.includes("<project-ref>") || v.includes("optional");
+}
+
+function normalizeSupabaseUrlOverride(raw: string | null): string | null {
+  const trimmed = String(raw || "").trim();
+  if (!trimmed || isPlaceholderValue(trimmed)) return null;
+  if (!trimmed.startsWith("https://")) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (!parsed.hostname.endsWith(".supabase.co")) return null;
+    return `${parsed.origin}`;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeSupabaseAnonOverride(raw: string | null): string | null {
+  const trimmed = String(raw || "").trim();
+  if (!trimmed || isPlaceholderValue(trimmed) || trimmed.length < 50) return null;
+  return trimmed;
+}
+
+export function getSupabaseUrlOverride(): string | null {
+  return normalizeSupabaseUrlOverride(getLocalStorageValue(SUPABASE_URL_OVERRIDE_KEY));
+}
+
+export function getSupabaseAnonKeyOverride(): string | null {
+  return normalizeSupabaseAnonOverride(getLocalStorageValue(SUPABASE_ANON_KEY_OVERRIDE_KEY));
+}
+
 export function getSupabaseUrl(): string {
-  const override = getLocalStorageValue(SUPABASE_URL_OVERRIDE_KEY);
+  const override = getSupabaseUrlOverride();
   return override || getEnvUrl();
 }
 
 export function getSupabaseAnonKey(): string {
-  const override = getLocalStorageValue(SUPABASE_ANON_KEY_OVERRIDE_KEY);
+  const override = getSupabaseAnonKeyOverride();
   return override || getEnvAnonKey();
+}
+
+export function clearSupabaseOverrides(): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(SUPABASE_URL_OVERRIDE_KEY);
+  window.localStorage.removeItem(SUPABASE_ANON_KEY_OVERRIDE_KEY);
+}
+
+export function setSupabaseOverrides(values: {
+  supabaseUrlOverride: string | null;
+  supabaseAnonKeyOverride: string | null;
+}): { ok: boolean; error?: string } {
+  if (typeof window === "undefined") return { ok: true };
+  const urlOverride = normalizeSupabaseUrlOverride(values.supabaseUrlOverride);
+  const anonOverride = normalizeSupabaseAnonOverride(values.supabaseAnonKeyOverride);
+
+  if (values.supabaseUrlOverride && !urlOverride) {
+    return { ok: false, error: "Supabase URL vigane. Kasuta https://<project>.supabase.co (mitte <project-ref>)." };
+  }
+  if (values.supabaseAnonKeyOverride && !anonOverride) {
+    return { ok: false, error: "Supabase anon key vigane. Eemalda 'Optional', tühikud ja kasuta vähemalt 50 märki." };
+  }
+
+  if (urlOverride) window.localStorage.setItem(SUPABASE_URL_OVERRIDE_KEY, urlOverride);
+  else window.localStorage.removeItem(SUPABASE_URL_OVERRIDE_KEY);
+
+  if (anonOverride) window.localStorage.setItem(SUPABASE_ANON_KEY_OVERRIDE_KEY, anonOverride);
+  else window.localStorage.removeItem(SUPABASE_ANON_KEY_OVERRIDE_KEY);
+
+  return { ok: true };
+}
+
+export function getSupabaseConfigSource(): "env" | "override" {
+  return getSupabaseUrlOverride() || getSupabaseAnonKeyOverride() ? "override" : "env";
+}
+
+export function isDeveloperModeEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(DEV_MODE_KEY) === "1";
+}
+
+export function setDeveloperModeEnabled(enabled: boolean): void {
+  if (typeof window === "undefined") return;
+  if (enabled) window.localStorage.setItem(DEV_MODE_KEY, "1");
+  else window.localStorage.removeItem(DEV_MODE_KEY);
 }
 
 function resolveRequestUrl(input: RequestInfo | URL): string {

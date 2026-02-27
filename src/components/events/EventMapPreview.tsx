@@ -22,33 +22,47 @@ function clamp(value: number, min: number, max: number): number {
 function buildStaticMapUrl(events: EventItem[]): string {
   const base = "https://staticmap.openstreetmap.de/staticmap.php";
   const params = new URLSearchParams();
-  params.set("size", "600x300");
+  params.set("size", "800x420");
 
-  if (!events.length) {
+  const points = events.filter(
+    (event) =>
+      Number.isFinite(event.lat) &&
+      Number.isFinite(event.lng) &&
+      Math.abs(event.lat) <= 90 &&
+      Math.abs(event.lng) <= 180,
+  );
+
+  if (!points.length) {
     params.set("center", "58.7,25.0");
     params.set("zoom", "7");
     return `${base}?${params.toString()}`;
   }
 
-  const lats = events.map((event) => event.lat);
-  const lngs = events.map((event) => event.lng);
-  const centerLat = avg(lats);
-  const centerLng = avg(lngs);
-  const spanLat = Math.max(...lats) - Math.min(...lats);
-  const spanLng = Math.max(...lngs) - Math.min(...lngs);
-  const span = Math.max(spanLat, spanLng);
+  const lats = points.map((event) => event.lat);
+  const lngs = points.map((event) => event.lng);
+  const centerLat = clamp(avg(lats), -90, 90);
+  const centerLng = clamp(avg(lngs), -180, 180);
 
   let zoom = 7;
-  if (span > 8) zoom = 4;
-  else if (span > 5) zoom = 5;
-  else if (span > 2) zoom = 6;
-  else if (span < 0.5) zoom = 8;
-  else if (span < 0.2) zoom = 9;
+  if (points.length === 1) {
+    zoom = 11;
+  } else {
+    const spanLat = Math.max(...lats) - Math.min(...lats);
+    const spanLng = Math.max(...lngs) - Math.min(...lngs);
+    const span = Math.max(spanLat, spanLng);
+    if (span > 20) zoom = 4;
+    else if (span > 10) zoom = 5;
+    else if (span > 5) zoom = 6;
+    else if (span > 2) zoom = 7;
+    else if (span > 1) zoom = 8;
+    else if (span > 0.5) zoom = 9;
+    else zoom = 10;
+  }
 
-  params.set("center", `${clamp(centerLat, 57.0, 60.0)},${clamp(centerLng, 21.0, 29.0)}`);
+  params.set("center", `${centerLat},${centerLng}`);
   params.set("zoom", String(zoom));
 
-  for (const event of events.slice(0, 60)) {
+  for (const event of points.slice(0, 60)) {
     params.append("markers", `${event.lat},${event.lng},red-pushpin`);
   }
 
@@ -62,23 +76,34 @@ export function EventMapPreview({
   onPrev,
   onNext,
 }: EventMapPreviewProps) {
-  const mapUrl = useMemo(() => buildStaticMapUrl(events), [events]);
+  const points = useMemo(
+    () =>
+      events.filter(
+        (event) =>
+          Number.isFinite(event.lat) &&
+          Number.isFinite(event.lng) &&
+          Math.abs(event.lat) <= 90 &&
+          Math.abs(event.lng) <= 180,
+      ),
+    [events],
+  );
+  const mapUrl = useMemo(() => buildStaticMapUrl(points), [points]);
 
   return (
-    <div className="relative h-[300px] overflow-hidden rounded-2xl border border-border/70 bg-[#edf2ed] shadow-sm">
+    <div className="relative w-full h-[260px] sm:h-[320px] overflow-hidden rounded-xl border border-border/70 bg-[#edf2ed] shadow-sm">
       <img
         src={mapUrl}
         alt="Ürituste kaart"
-        className="h-[300px] w-full object-cover"
+        className="h-full w-full object-cover"
         loading="lazy"
       />
 
       <div className="absolute right-3 top-3 h-24 w-28 overflow-y-auto rounded-xl border border-white/80 bg-white/85 p-1.5 shadow-sm backdrop-blur-sm">
-        {events.length === 0 ? (
+        {points.length === 0 ? (
           <p className="text-[11px] text-muted-foreground">Markereid pole</p>
         ) : (
           <div className="space-y-1">
-            {events.slice(0, 4).map((event) => (
+            {points.slice(0, 4).map((event) => (
               <button
                 key={event.id}
                 onClick={() => onSelectEvent(event.id)}

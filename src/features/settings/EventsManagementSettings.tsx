@@ -86,15 +86,26 @@ function validateForm(form: FormState): string | null {
   return null;
 }
 
+function parseCoord(value: string, min: number, max: number): number | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  const parsed = Number.parseFloat(trimmed);
+  if (!Number.isFinite(parsed)) return null;
+  if (parsed < min || parsed > max) return null;
+  return parsed;
+}
+
 function buildPayload(form: FormState): ManualEventInput {
+  const lat = parseCoord(form.lat, -90, 90);
+  const lon = parseCoord(form.lon, -180, 180);
   return {
     title: form.title.trim(),
     starts_at: new Date(form.starts_at).toISOString(),
     ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null,
     type: form.type,
     location_name: form.location_name.trim() || null,
-    lat: form.lat ? Number(form.lat) : null,
-    lon: form.lon ? Number(form.lon) : null,
+    lat,
+    lon,
     url: form.url.trim() || null,
     description: form.description.trim() || null,
   };

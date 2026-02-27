@@ -93,6 +93,15 @@ function toErrorMessage(err: unknown): string {
   return String(e?.message ?? String(err));
 }
 
+function parseCoord(value: string, min: number, max: number): number | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  const parsed = Number.parseFloat(trimmed);
+  if (!Number.isFinite(parsed)) return null;
+  if (parsed < min || parsed > max) return null;
+  return parsed;
+}
+
 export default function EventsScreen() {
   const [mainTab, setMainTab] = useState<MainTab>("tulevased");
   const [statusFilter, setStatusFilter] = useState<CategoryFilter>("active");
@@ -162,8 +171,15 @@ export default function EventsScreen() {
   }, [events, mainTab, searchValue, statusFilter, todayStart]);
 
   const mapEvents = useMemo(
-    () => filteredEvents.filter((event) => Number.isFinite(event.lat) && Number.isFinite(event.lng)),
-    [filteredEvents]
+    () =>
+      filteredEvents.filter(
+        (event) =>
+          Number.isFinite(event.lat) &&
+          Number.isFinite(event.lng) &&
+          Math.abs(event.lat) <= 90 &&
+          Math.abs(event.lng) <= 180,
+      ),
+    [filteredEvents],
   );
 
   useEffect(() => {
@@ -226,8 +242,8 @@ export default function EventsScreen() {
       ends_at: editForm.ends_at ? new Date(editForm.ends_at).toISOString() : null,
       type: editForm.type,
       location_name: editForm.location_name.trim() || null,
-      lat: editForm.lat ? Number(editForm.lat) : null,
-      lon: editForm.lon ? Number(editForm.lon) : null,
+      lat: parseCoord(editForm.lat, -90, 90),
+      lon: parseCoord(editForm.lon, -180, 180),
       url: editForm.url.trim() || null,
       description: editForm.description.trim() || null,
     };

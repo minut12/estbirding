@@ -15,6 +15,7 @@ import {
   archiveManualEvent,
   createManualEvent,
   deleteManualEvent,
+  getEventsAdminUrl,
   listPublicEventsManual,
   testEventsAdminHealth,
   type ManualEventInput,
@@ -115,6 +116,7 @@ export default function EventsManagementSettings() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const eventsAdminUrl = getEventsAdminUrl();
 
   const canWrite = Boolean(savedAdminKey.trim());
 
@@ -176,7 +178,7 @@ export default function EventsManagementSettings() {
     try {
       const result = await testEventsAdminHealth();
       if (result.ok) {
-        toast.success("Test events admin: OK");
+        toast.success("OK (events-admin)");
         return;
       }
       toast.error("Test events admin ebaõnnestus");
@@ -250,6 +252,7 @@ export default function EventsManagementSettings() {
         <Button variant="outline" onClick={testAdminEndpoint} className="w-full">
           Test events admin
         </Button>
+        <p className="text-xs text-muted-foreground break-all">Events admin URL: {eventsAdminUrl}</p>
       </div>
 
       <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">

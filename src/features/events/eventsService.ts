@@ -1,5 +1,4 @@
-import { getFunctionsBaseUrl, getSupabaseUrl, supabaseFetch, validateSupabaseConfig } from "@/config/supabaseConfig";
-import { supabase } from "@/config/supabaseClient";
+import { getSupabaseAnonKey, getSupabaseUrl, supabaseFetch, validateSupabaseConfig } from "@/config/supabaseConfig";
 import { getEventsAdminKey } from "./adminKey";
 
 export type ManualEventType = "estbirding" | "muud";
@@ -77,6 +76,47 @@ async function parseJsonResponse(response: Response): Promise<any> {
   }
 }
 
+export function getEventsAdminUrl(): string {
+  const resolvedSupabaseUrl = getSupabaseUrl().replace(/\/+$/, "");
+  return `${resolvedSupabaseUrl}/functions/v1/events-admin`;
+}
+
+async function callEventsAdminDirect(body: Record<string, unknown>): Promise<any> {
+  const url = getEventsAdminUrl();
+  const anon = getSupabaseAnonKey();
+  if (!anon) {
+    throw new Error("Supabase anon key missing (check VITE_SUPABASE_ANON_KEY)");
+  }
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: anon,
+      Authorization: `Bearer ${anon}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const text = await res.text();
+  let json: any = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = null;
+  }
+
+  if (!res.ok) {
+    const msg = String(json?.error || json?.message || text?.slice(0, 200) || `HTTP ${res.status}`);
+    const err = new Error(msg) as Error & { status?: number; url?: string };
+    err.status = res.status;
+    err.url = url;
+    throw err;
+  }
+
+  return json;
+}
+
 export async function listPublicEventsManual(): Promise<ManualEventRow[]> {
   const validation = validateSupabaseConfig();
   if (!validation.ok || !validation.url) {
@@ -113,64 +153,48 @@ function requireEventsAdminKey(): string {
 
 async function callEventsAdmin(action: "create" | "update" | "archive" | "unarchive" | "delete", payload: Record<string, unknown>): Promise<ManualEventRow> {
   const key = requireEventsAdminKey();
-  const resolvedSupabaseUrl = getSupabaseUrl().replace(/\/+$/, "");
-  const { data, error } = await supabase.functions.invoke("events-admin", {
-    body: { adminKey: key, action, ...payload },
-  });
-  if (error) {
-    const errorName = String((error as any)?.name || "");
-    const message = String(error.message || "events-admin failed");
+  const url = getEventsAdminUrl();
+  try {
+    const data = await callEventsAdminDirect({ adminKey: key, action, ...payload });
+    return mapRow((data as any)?.data || data);
+  } catch (error: any) {
+    const errorName = String(error?.name || "");
+    const message = String(error?.message || "events-admin failed");
+    const status = Number(error?.status || 0) || undefined;
+    const errorUrl = String(error?.url || url);
     console.error("[events-admin] invoke failed", {
-      supabaseUrl: resolvedSupabaseUrl,
-      functionsBase: `${resolvedSupabaseUrl}/functions/v1`,
+      method: "POST",
+      url: errorUrl,
       fn: "events-admin",
       hasAdminKey: Boolean(key),
+      status,
       errorName,
       errorMessage: message,
     });
-    if (errorName.includes("FunctionsFetchError")) {
-      throw new Error("Ürituse salvestamine ebaõnnestus: ühendus Edge Functioniga ebaõnnestus (CORS või URL).");
-    }
-    throw new Error(`Ürituse salvestamine ebaõnnestus: ${message}`);
+    throw new Error(`HTTP ${status ?? "?"} ${message} [${errorUrl}]`);
   }
-  return mapRow((data as any)?.data || data);
 }
 
 export async function testEventsAdminHealth(adminKey?: string): Promise<{ ok: boolean; now?: string }> {
-  const resolvedSupabaseUrl = getSupabaseUrl().replace(/\/+$/, "");
-  const endpoint = `${getFunctionsBaseUrl()}/events-admin`;
+  const endpoint = getEventsAdminUrl();
   try {
-    const { data, error } = await supabase.functions.invoke("events-admin", {
-      body: { action: "health" },
-    });
-
-    if (error) {
-      const response = await fetch(endpoint, { method: "GET" });
-      const text = await response.text();
-      const fallbackData = text ? JSON.parse(text) : {};
-      if (!response.ok) {
-        const preview = String(text || JSON.stringify(fallbackData) || "").slice(0, 200).replace(/\s+/g, " ");
-        throw new Error(`HTTP ${response.status}: ${preview || fallbackData?.error || "health check failed"}`);
-      }
-      return fallbackData as { ok: boolean; now?: string };
-    }
-
+    const data = await callEventsAdminDirect({ action: "health" });
     return data as { ok: boolean; now?: string };
   } catch (error: any) {
     const errorName = String(error?.name || "");
     const message = String(error?.message || "health check failed");
+    const status = Number(error?.status || 0) || undefined;
+    const errorUrl = String(error?.url || endpoint);
     console.error("[events-admin] health failed", {
-      supabaseUrl: resolvedSupabaseUrl,
-      functionsBase: `${resolvedSupabaseUrl}/functions/v1`,
+      method: "POST",
+      url: errorUrl,
       fn: "events-admin",
       hasAdminKey: Boolean(adminKey?.trim() || getEventsAdminKey()),
+      status,
       errorName,
       errorMessage: message,
     });
-    if (errorName.includes("FunctionsFetchError")) {
-      throw new Error("Ürituse salvestamine ebaõnnestus: ühendus Edge Functioniga ebaõnnestus (CORS või URL).");
-    }
-    throw new Error(message);
+    throw new Error(`HTTP ${status ?? "?"} ${message} [${errorUrl}]`);
   }
 }
 

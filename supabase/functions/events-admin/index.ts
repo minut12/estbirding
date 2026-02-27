@@ -129,9 +129,7 @@ Deno.serve(async (req) => {
     }
 
     if (req.method === "GET") {
-      const action = new URL(req.url).searchParams.get("action");
-      if (action === "health") return json(200, { ok: true, now: new Date().toISOString() }, corsHeaders);
-      return json(405, { error: "method_not_allowed" }, corsHeaders);
+      return json(200, { ok: true, fn: "events-admin", now: new Date().toISOString() }, corsHeaders);
     }
 
     if (req.method !== "POST") return json(405, { error: "method_not_allowed" }, corsHeaders);
@@ -140,7 +138,7 @@ Deno.serve(async (req) => {
     const action = asString(body?.action);
 
     if (action === "health") {
-      return json(200, { ok: true, now: new Date().toISOString() }, corsHeaders);
+      return json(200, { ok: true, fn: "events-admin", now: new Date().toISOString() }, corsHeaders);
     }
 
     const expectedKey = Deno.env.get("EVENTS_ADMIN_KEY");

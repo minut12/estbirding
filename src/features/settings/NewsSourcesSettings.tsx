@@ -1,5 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 import { supabase } from '@/config/supabaseClient';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,68 +9,33 @@ import { toast } from 'sonner';
 import { Loader2, TestTube, Check, X } from 'lucide-react';
 import { loadNewsSourcesWithOrigin, resetNewsSourcesToDefaults, saveNewsSources, type NewsSourcesOrigin } from '@/lib/newsSourcesStorage';
 import type { NewsSourceConfigItem } from '@/config/newsSources';
+import { resolveProxyBase } from '@/config/proxyEndpoint';
 
-interface NewsSource {
-  id: string;
-  name: string;
-  slug: string;
-  key?: string | null;
-  type: string;
-  homepage_url: string | null;
-  feed_url: string | null;
-  is_enabled: boolean;
-}
+interface NewsSource extends NewsSourceConfigItem {}
 
 export default function NewsSourcesSettings() {
-  const queryClient = useQueryClient();
   const seeded = useMemo(() => loadNewsSourcesWithOrigin(), []);
   const [localSources, setLocalSources] = useState<NewsSource[]>(seeded.sources);
   const [origin, setOrigin] = useState<NewsSourcesOrigin>(seeded.source);
 
-  const { data: remoteSources = [], isLoading } = useQuery<NewsSource[]>({
-    queryKey: ['news-sources-settings'],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('news_sources')
-        .select('id, name, slug, key, type, homepage_url, feed_url, is_enabled')
-        .eq('is_active', true);
-      return (data || []) as NewsSource[];
-    },
-  });
-
-  useEffect(() => {
-    if (isLoading) return;
-    if (remoteSources.length > 0) {
-      saveNewsSources(remoteSources as unknown as NewsSourceConfigItem[]);
-      setLocalSources(remoteSources);
-      setOrigin('stored');
-      return;
-    }
-    const loaded = loadNewsSourcesWithOrigin();
-    setLocalSources(loaded.sources);
-    setOrigin(loaded.source);
-  }, [isLoading, remoteSources]);
-
-  const sources = localSources;
-  const localOnlyMode = origin !== 'stored';
-
   const onResetDefaults = () => {
     const defaults = resetNewsSourcesToDefaults();
-    setLocalSources(defaults as unknown as NewsSource[]);
+    setLocalSources(defaults);
     setOrigin('default');
     toast.success('Vaikimisi allikad taastatud');
   };
 
   const onLocalUpdate = (next: NewsSource) => {
     setLocalSources((prev) => {
-      const updated = prev.map((s) => (s.id === next.id ? next : s));
-      saveNewsSources(updated as unknown as NewsSourceConfigItem[]);
+      const updated = prev.map((source) => (source.id === next.id ? next : source));
+      saveNewsSources(updated);
       return updated;
     });
     setOrigin('stored');
   };
 
-  if (isLoading) return <p className="text-sm text-muted-foreground">Laen allikaid...</p>;
+  const sources = localSources;
+
   if (sources.length === 0) {
     return (
       <div className="space-y-3">
@@ -89,8 +53,6 @@ export default function NewsSourcesSettings() {
         <SourceCard
           key={source.id}
           source={source}
-          queryClient={queryClient}
-          localOnlyMode={localOnlyMode}
           onLocalUpdate={onLocalUpdate}
         />
       ))}
@@ -104,46 +66,24 @@ export default function NewsSourcesSettings() {
 
 function SourceCard({
   source,
-  queryClient,
-  localOnlyMode,
   onLocalUpdate,
 }: {
   source: NewsSource;
-  queryClient: ReturnType<typeof useQueryClient>;
-  localOnlyMode: boolean;
   onLocalUpdate: (next: NewsSource) => void;
 }) {
-  const [feedUrl, setFeedUrl] = useState(source.feed_url || '');
-  const [enabled, setEnabled] = useState(source.is_enabled);
+  const [url, setUrl] = useState(source.url || '');
+  const [enabled, setEnabled] = useState(source.enabled);
   const [testResult, setTestResult] = useState<{ ok: boolean; count?: number; sampleTitles?: string[]; error?: string } | null>(null);
   const [testing, setTesting] = useState(false);
 
-  const updateMutation = useMutation({
-    mutationFn: async () => {
-      if (localOnlyMode) {
-        onLocalUpdate({ ...source, feed_url: feedUrl || null, is_enabled: enabled });
-        return;
-      }
-      const { error } = await supabase.functions.invoke('news-source-update', {
-        body: { id: source.id, feed_url: feedUrl || null, is_enabled: enabled },
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      if (localOnlyMode) {
-        toast.success(`${source.name} salvestatud lokaalselt`);
-        return;
-      }
-      queryClient.invalidateQueries({ queryKey: ['news-sources-settings'] });
-      queryClient.invalidateQueries({ queryKey: ['news-sources'] });
-      toast.success(`${source.name} uuendatud`);
-    },
-    onError: () => toast.error('Salvestamine ebaonnestus'),
-  });
+  const saveChanges = () => {
+    onLocalUpdate({ ...source, url: url.trim(), enabled });
+    toast.success(`${source.name} salvestatud`);
+  };
 
   const testFeed = async () => {
-    if (!feedUrl) {
-      toast.error('Sisesta RSS URL');
+    if (!url) {
+      toast.error('Sisesta URL');
       return;
     }
     setTesting(true);
@@ -151,11 +91,12 @@ function SourceCard({
     try {
       const { data, error } = await supabase.functions.invoke('news-pull-test', {
         body: {
-          slug: source.slug,
-          source_key: source.key,
-          feed_url: feedUrl,
-          type: source.type,
-          kind: source.type,
+          id: source.id,
+          source_key: source.id,
+          feed_url: url,
+          type: source.kind,
+          kind: source.kind,
+          proxyBase: resolveProxyBase(),
         },
       });
       if (error) throw error;
@@ -166,27 +107,24 @@ function SourceCard({
           sampleTitles: Array.isArray(data?.sampleTitles) ? data.sampleTitles : [],
         });
       } else {
-        setTestResult({ ok: false, error: data?.error || 'Voogu ei onnestunud lugeda' });
+        setTestResult({ ok: false, error: data?.error || 'Allika lugemine ebaonnestus' });
       }
-    } catch (e: any) {
-      setTestResult({ ok: false, error: e?.message || 'Voogu ei onnestunud lugeda' });
+    } catch (error: any) {
+      setTestResult({ ok: false, error: error?.message || 'Allika lugemine ebaonnestus' });
     } finally {
       setTesting(false);
     }
   };
-
-  const isFacebook = source.slug.includes('facebook');
-  const sourceUrl = (source.feed_url || source.homepage_url || '').trim();
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-3">
       <div className="flex items-start justify-between gap-2 sm:items-center">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="font-medium text-sm text-foreground">{source.name}</span>
-          <Badge variant="outline" className="text-xs">{source.type}</Badge>
-          {sourceUrl && (
+          <Badge variant="outline" className="text-xs">{source.kind}</Badge>
+          {source.url && (
             <a
-              href={sourceUrl}
+              href={source.url}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm underline"
@@ -199,18 +137,13 @@ function SourceCard({
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-xs">RSS / Atom URL</Label>
+        <Label className="text-xs">URL</Label>
         <Input
-          value={feedUrl}
-          onChange={(e) => setFeedUrl(e.target.value)}
-          placeholder="https://rss.app/feeds/..."
+          value={url}
+          onChange={(event) => setUrl(event.target.value)}
+          placeholder="https://example.com/feed.xml"
           className="h-9 text-sm"
         />
-        {isFacebook && (
-          <p className="text-xs text-muted-foreground">
-            Kasuta Facebook->RSS teenust (nt RSS.app / FetchRSS). Facebooki tokenit pole vaja.
-          </p>
-        )}
       </div>
 
       {testResult && (
@@ -226,7 +159,7 @@ function SourceCard({
           ) : (
             <div className="flex items-center gap-1.5">
               <X className="w-3.5 h-3.5" />
-              <span>{testResult.error || 'Voogu ei onnestunud lugeda'}</span>
+              <span>{testResult.error || 'Allika lugemine ebaonnestus'}</span>
             </div>
           )}
         </div>
@@ -237,16 +170,15 @@ function SourceCard({
           variant="outline"
           size="sm"
           onClick={testFeed}
-          disabled={testing || !feedUrl}
+          disabled={testing || !url}
           className="gap-1.5 w-full sm:w-auto"
         >
           {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <TestTube className="w-3.5 h-3.5" />}
-          Testi voogu
+          Testi allikat
         </Button>
         <Button
           size="sm"
-          onClick={() => updateMutation.mutate()}
-          disabled={updateMutation.isPending}
+          onClick={saveChanges}
           className="w-full sm:w-auto"
         >
           Salvesta

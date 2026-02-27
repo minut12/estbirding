@@ -14,6 +14,7 @@ import {
 import {
   archiveManualEvent,
   createManualEvent,
+  deleteEventImage,
   deleteManualEvent,
   listPublicEventsManual,
   testEventsAdminHealth,
@@ -21,6 +22,7 @@ import {
   type ManualEventPatch,
   type ManualEventRow,
   unarchiveManualEvent,
+  uploadEventImage,
   updateManualEvent,
 } from "@/features/events/eventsService";
 import { clearEventsAdminKey, getEventsAdminKey, setEventsAdminKey } from "@/features/events/adminKey";
@@ -131,6 +133,10 @@ export default function EventsManagementSettings() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [imagePath, setImagePath] = useState<string | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
   const storedAdminKey = (getEventsAdminKey() ?? "").trim();
 
   const canWrite = Boolean(savedAdminKey.trim());
@@ -158,15 +164,31 @@ export default function EventsManagementSettings() {
     void loadEvents();
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl?.startsWith("blob:")) {
+        URL.revokeObjectURL(imagePreviewUrl);
+      }
+    };
+  }, [imagePreviewUrl]);
+
   const openCreate = () => {
     setEditingId(null);
     setForm(emptyForm);
+    setSelectedImageFile(null);
+    setImagePreviewUrl(null);
+    setImagePath(null);
+    setRemoveImage(false);
     setDialogOpen(true);
   };
 
   const openEdit = (event: ManualEventRow) => {
     setEditingId(event.id);
     setForm(eventToForm(event));
+    setSelectedImageFile(null);
+    setImagePreviewUrl(event.image_url);
+    setImagePath(event.image_path);
+    setRemoveImage(false);
     setDialogOpen(true);
   };
 
@@ -212,14 +234,38 @@ export default function EventsManagementSettings() {
     }
 
     try {
+      const payload = buildPayload(form);
+      const previousImagePath = imagePath;
+      if (selectedImageFile) {
+        const uploaded = await uploadEventImage(selectedImageFile);
+        payload.image_url = uploaded.image_url;
+        payload.image_path = uploaded.image_path;
+      } else if (removeImage) {
+        payload.image_url = null;
+        payload.image_path = null;
+      } else if (imagePreviewUrl || imagePath) {
+        payload.image_url = imagePreviewUrl ?? null;
+        payload.image_path = imagePath ?? null;
+      }
       if (editingId) {
-        const patch: ManualEventPatch = buildPayload(form);
+        const patch: ManualEventPatch = payload;
         await updateManualEvent(editingId, patch);
       } else {
-        await createManualEvent(buildPayload(form));
+        await createManualEvent(payload);
+      }
+      if (previousImagePath && (removeImage || selectedImageFile)) {
+        try {
+          await deleteEventImage(previousImagePath);
+        } catch (cleanupError) {
+          console.warn("Old image cleanup failed", cleanupError);
+        }
       }
       toast.success("Üritus salvestatud");
       setDialogOpen(false);
+      setSelectedImageFile(null);
+      setImagePreviewUrl(null);
+      setImagePath(null);
+      setRemoveImage(false);
       await loadEvents();
     } catch (e) {
       toast.error(toErrorMessage(e));
@@ -366,6 +412,40 @@ export default function EventsManagementSettings() {
             <div>
               <Label>Description</Label>
               <Input value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="eventImage">Image</Label>
+              <Input
+                id="eventImage"
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  setSelectedImageFile(file);
+                  setRemoveImage(false);
+                  if (file) {
+                    const preview = URL.createObjectURL(file);
+                    setImagePreviewUrl(preview);
+                    setImagePath(null);
+                  }
+                }}
+              />
+              {imagePreviewUrl ? (
+                <div className="space-y-2">
+                  <img src={imagePreviewUrl} alt="Event preview" className="h-28 w-full rounded-md object-cover" />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setSelectedImageFile(null);
+                      setImagePreviewUrl(null);
+                      setRemoveImage(true);
+                    }}
+                  >
+                    Remove image
+                  </Button>
+                </div>
+              ) : null}
             </div>
           </div>
 

@@ -70,7 +70,7 @@ function toEventItem(row: ManualEventRow): EventItem {
     lat: safeLat,
     lng: safeLon,
     category: row.type === "muud" ? "Muud" : "EstBirding",
-    imageUrl: "https://images.unsplash.com/photo-1448375240586-882707db888b?w=360&h=280&fit=crop",
+    imageUrl: row.image_url || "https://images.unsplash.com/photo-1448375240586-882707db888b?w=360&h=280&fit=crop",
     description: row.description || undefined,
     url: row.url || undefined,
     isPublished: row.status === "active",

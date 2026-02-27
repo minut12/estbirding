@@ -16,6 +16,8 @@ export type ManualEventRow = {
   lon: number | null;
   url: string | null;
   description: string | null;
+  image_url: string | null;
+  image_path: string | null;
   status: ManualEventStatus;
   created_at: string;
   updated_at: string;
@@ -33,11 +35,13 @@ export type ManualEventInput = {
   lon?: number | null;
   url?: string | null;
   description?: string | null;
+  image_url?: string | null;
+  image_path?: string | null;
 };
 
 export type ManualEventPatch = Partial<ManualEventInput>;
 
-const READ_COLUMNS = "id,title,starts_at,ends_at,type,location_name,lat,lon,url,description,status,created_at,updated_at,archived_at,deleted_at";
+const READ_COLUMNS = "id,title,starts_at,ends_at,type,location_name,lat,lon,url,description,image_url,image_path,status,created_at,updated_at,archived_at,deleted_at";
 
 function sortByStartsAtAsc(list: ManualEventRow[]): ManualEventRow[] {
   return [...list].sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
@@ -59,6 +63,8 @@ function mapRow(raw: any): ManualEventRow {
     lon: raw.lon == null ? null : Number(raw.lon),
     url: raw.url ? String(raw.url) : null,
     description: raw.description ? String(raw.description) : null,
+    image_url: raw.image_url ? String(raw.image_url) : null,
+    image_path: raw.image_path ? String(raw.image_path) : null,
     status: (raw.status as ManualEventStatus) || "active",
     created_at: String(raw.created_at || ""),
     updated_at: String(raw.updated_at || ""),
@@ -147,6 +153,8 @@ export async function createManualEvent(event: ManualEventInput): Promise<Manual
     p_lon: event.lon ?? null,
     p_url: event.url ?? null,
     p_description: event.description ?? null,
+    p_image_url: event.image_url ?? null,
+    p_image_path: event.image_path ?? null,
   });
 }
 
@@ -172,4 +180,45 @@ export async function unarchiveManualEvent(id: string): Promise<ManualEventRow> 
 export async function deleteManualEvent(id: string): Promise<ManualEventRow> {
   const adminKey = requireEventsAdminKey();
   return callRpcRow("events_admin_delete", { admin_key: adminKey, p_id: id });
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = String(reader.result || "");
+      const base64 = value.includes(",") ? value.split(",")[1] : value;
+      resolve(base64);
+    };
+    reader.onerror = () => reject(reader.error || new Error("File read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function uploadEventImage(file: File): Promise<{ image_url: string; image_path: string }> {
+  const adminKey = requireEventsAdminKey();
+  const base64 = await fileToBase64(file);
+  const { data, error } = await supabase.functions.invoke("events-image-upload", {
+    body: {
+      adminKey,
+      fileName: file.name || "event-image.jpg",
+      mimeType: file.type || "image/jpeg",
+      base64,
+    },
+  });
+  if (error) throw error;
+  const image_url = String((data as any)?.publicUrl || "");
+  const image_path = String((data as any)?.path || "");
+  if (!image_url || !image_path) throw new Error("Image upload failed");
+  return { image_url, image_path };
+}
+
+export async function deleteEventImage(path: string): Promise<void> {
+  const adminKey = requireEventsAdminKey();
+  const cleanPath = String(path || "").trim();
+  if (!cleanPath) return;
+  const { error } = await supabase.functions.invoke("events-image-upload", {
+    body: { action: "delete", adminKey, path: cleanPath },
+  });
+  if (error) throw error;
 }

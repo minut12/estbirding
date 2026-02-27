@@ -134,7 +134,7 @@ async function fileToCompressedDataUrl(file: File): Promise<string> {
     img.src = fileDataUrl;
   });
 
-  const maxEdge = 800;
+  const maxEdge = 640;
   const longestEdge = Math.max(image.width, image.height);
   const scale = longestEdge > maxEdge ? maxEdge / longestEdge : 1;
   const targetW = Math.max(1, Math.round(image.width * scale));
@@ -146,7 +146,7 @@ async function fileToCompressedDataUrl(file: File): Promise<string> {
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("canvas not available");
   ctx.drawImage(image, 0, 0, targetW, targetH);
-  return canvas.toDataURL("image/jpeg", 0.8);
+  return canvas.toDataURL("image/jpeg", 0.7);
 }
 
 function maskKey(value: string): string {
@@ -269,17 +269,35 @@ export default function EventsManagementSettings() {
         payload.image_url = null;
         payload.image_path = null;
       }
+      if (payload.image_url && payload.image_url.length > 300000) {
+        toast.error("Pilt liiga suur — vähenda (või vali väiksem pilt).");
+        return;
+      }
 
       if (editingId) {
-        const patch: ManualEventPatch = payload;
+        const patch: ManualEventPatch = {
+          ...payload,
+          image_url: payload.image_url ?? null,
+          image_path: payload.image_url ? "inline-base64" : null,
+        };
         await updateManualEvent(editingId, patch);
       } else {
-        await createManualEvent(payload);
+        const created = await createManualEvent({
+          ...payload,
+          image_url: null,
+          image_path: null,
+        });
+        const patch: ManualEventPatch = {
+          ...payload,
+          image_url: payload.image_url ?? null,
+          image_path: payload.image_url ? "inline-base64" : null,
+        };
+        await updateManualEvent(created.id, patch);
       }
       toast.success("Üritus salvestatud");
       setDialogOpen(false);
-            setImagePreviewUrl(null);
-            setRemoveImage(false);
+      setImagePreviewUrl(null);
+      setRemoveImage(false);
       await loadEvents();
     } catch (e) {
       toast.error(toErrorMessage(e));
@@ -435,11 +453,16 @@ export default function EventsManagementSettings() {
                 accept="image/*"
                 onChange={async (e) => {
                   const file = e.target.files?.[0] ?? null;
-                                    setRemoveImage(false);
+                  setRemoveImage(false);
                   if (file) {
                     try {
                       const preview = await fileToCompressedDataUrl(file);
-                      setImagePreviewUrl(preview);                      setForm((p) => ({ ...p, image_url: preview, image_path: file.name || null }));
+                      if (preview.length > 300000) {
+                        toast.error("Pilt liiga suur — vähenda (või vali väiksem pilt).");
+                        return;
+                      }
+                      setImagePreviewUrl(preview);
+                      setForm((p) => ({ ...p, image_url: preview, image_path: "inline-base64" }));
                     } catch (err) {
                       toast.error(`Image processing failed: ${toErrorMessage(err)}`);
                     }
@@ -453,8 +476,8 @@ export default function EventsManagementSettings() {
                     type="button"
                     variant="outline"
                     onClick={() => {
-                                            setImagePreviewUrl(null);
-                                            setForm((p) => ({ ...p, image_url: null, image_path: null }));
+                      setImagePreviewUrl(null);
+                      setForm((p) => ({ ...p, image_url: null, image_path: null }));
                       setRemoveImage(true);
                     }}
                   >

@@ -138,8 +138,8 @@ Deno.serve(async (req) => {
       return json(200, { ok: true, fn: "events-admin", now: new Date().toISOString() }, headers);
     }
 
-    const expectedKey = (Deno.env.get("EVENTS_ADMIN_KEY") ?? "").toString();
-    const providedKey = (body?.adminKey ?? "").toString();
+    const expectedKey = (Deno.env.get("EVENTS_ADMIN_KEY") ?? "").toString().trim();
+    const providedKey = (body?.adminKey ?? "").toString().trim();
     if (!expectedKey || providedKey !== expectedKey) {
       return json(401, { error: "invalid admin key" }, headers);
     }

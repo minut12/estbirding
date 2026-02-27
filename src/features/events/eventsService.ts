@@ -144,7 +144,8 @@ export async function testEventsAdminHealth(adminKey?: string): Promise<{ ok: bo
     const text = await response.text();
     const data = text ? JSON.parse(text) : {};
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${data?.error || "health check failed"}`);
+      const preview = String(text || JSON.stringify(data) || "").slice(0, 200).replace(/\s+/g, " ");
+      throw new Error(`HTTP ${response.status}: ${preview || data?.error || "health check failed"}`);
     }
     return data as { ok: boolean; now?: string };
   } catch (error: any) {

@@ -41,7 +41,7 @@ export type ManualEventInput = {
 
 export type ManualEventPatch = Partial<ManualEventInput>;
 
-const READ_COLUMNS = "id,title,starts_at,ends_at,type,location_name,lat,lon,url,description,image_url,image_path,status,created_at,updated_at,archived_at,deleted_at";
+const READ_COLUMNS = "id,title,starts_at,ends_at,type,location_name,lat,lon,url,description,status,created_at,updated_at,archived_at,deleted_at";
 
 function sortByStartsAtAsc(list: ManualEventRow[]): ManualEventRow[] {
   return [...list].sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());

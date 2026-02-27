@@ -1,11 +1,12 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, RefreshCw, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { et } from "@/localization/et";
-import { sampleEvents, type EventItem } from "@/data/events";
+import { type EventItem } from "@/data/events";
 import { EventMapPreview } from "@/components/events/EventMapPreview";
 import { EventCard } from "@/components/events/EventCard";
-import { listPublishedEvents, type EventRow } from "@/features/events/eventsService";
+import { type EventRow } from "@/features/events/eventsService";
+import { useEvents } from "@/features/events/useEvents";
 import EventDetailsScreen from "./EventDetailsScreen";
 
 type MainTab = "tulevased" | "moodunud" | "muud";
@@ -16,7 +17,7 @@ const mapRowToEventItem = (row: EventRow): EventItem => ({
   title: row.title,
   startAt: row.start_at,
   endAt: row.end_at ?? undefined,
-  locationName: row.location_name ?? "Asukoht täpsustamisel",
+  locationName: row.location_name ?? "Asukoht tapsustamisel",
   lat: row.lat ?? 58.7,
   lng: row.lng ?? 25.0,
   category: row.category,
@@ -35,10 +36,10 @@ export default function EventsScreen() {
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("koik");
   const [searchValue, setSearchValue] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
   const [openedDetails, setOpenedDetails] = useState<EventItem | null>(null);
-  const [events, setEvents] = useState<EventItem[]>(sampleEvents);
+  const { events: loadedRows, loading: isLoading, errorMessage, emptyMessage, lastUpdated, refresh } = useEvents();
+  const events = useMemo(() => loadedRows.map(mapRowToEventItem), [loadedRows]);
 
   const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const todayStart = useMemo(() => {
@@ -46,23 +47,6 @@ export default function EventsScreen() {
     date.setHours(0, 0, 0, 0);
     return date;
   }, []);
-
-  const loadEvents = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const rows = await listPublishedEvents();
-      setEvents(rows.map(mapRowToEventItem));
-    } catch (error) {
-      console.warn("[EventsScreen] Failed to load Supabase events, falling back to seed data.", error);
-      setEvents(sampleEvents);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadEvents();
-  }, [loadEvents]);
 
   const filteredEvents = useMemo(() => {
     const searchTerm = searchValue.trim().toLowerCase();
@@ -116,11 +100,11 @@ export default function EventsScreen() {
     selectEvent(filteredEvents[nextIndex].id);
   };
 
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    await Promise.all([loadEvents(), new Promise((resolve) => setTimeout(resolve, 600))]);
+    await Promise.all([refresh(), new Promise((resolve) => setTimeout(resolve, 400))]);
     setIsRefreshing(false);
-  };
+  }, [refresh]);
 
   if (openedDetails) {
     return <EventDetailsScreen event={openedDetails} onBack={() => setOpenedDetails(null)} />;
@@ -208,12 +192,34 @@ export default function EventsScreen() {
       <div className="min-h-0 flex-1 overflow-hidden rounded-t-[28px] bg-white px-4 pt-4 shadow-[0_-8px_24px_rgba(38,64,52,0.08)]">
         {isLoading ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            Laen üritusi...
+            Laen uritusi...
+          </div>
+        ) : errorMessage ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+            <CalendarDays className="h-10 w-10 text-muted-foreground/45" />
+            <p className="text-sm text-muted-foreground">{errorMessage}</p>
+            <button
+              onClick={handleRefresh}
+              className="rounded-full border border-border px-4 py-1.5 text-xs font-medium text-foreground"
+            >
+              Varskenda
+            </button>
           </div>
         ) : filteredEvents.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             <CalendarDays className="h-10 w-10 text-muted-foreground/45" />
-            <p className="text-sm text-muted-foreground">{et.emptyByTab[mainTab]}</p>
+            <p className="text-sm text-muted-foreground">{emptyMessage || et.emptyByTab[mainTab]}</p>
+            <button
+              onClick={handleRefresh}
+              className="rounded-full border border-border px-4 py-1.5 text-xs font-medium text-foreground"
+            >
+              Varskenda
+            </button>
+            {lastUpdated && (
+              <p className="text-xs text-muted-foreground">
+                Viimane varskendus: {lastUpdated.toLocaleTimeString("et-EE", { hour: "2-digit", minute: "2-digit" })}
+              </p>
+            )}
           </div>
         ) : (
           <div className="h-full space-y-3 overflow-y-auto pb-6">

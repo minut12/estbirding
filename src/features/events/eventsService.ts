@@ -1,6 +1,6 @@
-import { getSupabaseClient, getSupabaseInitError } from "@/config/supabaseClient";
-import { getFunctionsBaseUrl, getSupabaseAnonKey, getSupabaseUrl, validateSupabaseConfig } from "@/config/supabaseConfig";
+import { getFunctionsBaseUrl, getSupabaseAnonKey, getSupabaseUrl, supabaseFetch, validateSupabaseConfig } from "@/config/supabaseConfig";
 import { getEventsAdminKey } from "./adminKey";
+import { type EventSourceConfig, loadEventSources } from "@/config/eventSources";
 
 export type EventCategory = "EstBirding" | "Muud";
 
@@ -29,20 +29,150 @@ export type EventPayload = Partial<Omit<EventRow, "id" | "created_at" | "updated
   start_at: string;
 };
 
-const EVENT_COLUMNS =
-  "id,title,description,start_at,end_at,location_name,lat,lng,category,organizer_name,url,image_url,is_published,is_archived,created_by,created_at,updated_at";
+export type EventSourceFetchResult = {
+  sourceId: string;
+  sourceName: string;
+  ok: boolean;
+  status?: number;
+  message: string;
+  events: EventRow[];
+  error?: string;
+};
+
+function normalizeCategory(raw: unknown): EventCategory {
+  const value = String(raw ?? "").toLowerCase();
+  return value === "estbirding" ? "EstBirding" : "Muud";
+}
+
+function toNumberOrNull(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function mapAnyToEventRow(raw: any): EventRow {
+  const startAt = String(raw?.start_at ?? "");
+  return {
+    id: String(raw?.id ?? raw?.guid ?? `${raw?.source_slug ?? "events"}:${startAt}:${raw?.title ?? ""}`),
+    title: String(raw?.title ?? "Nimetu üritus"),
+    description: raw?.description == null ? null : String(raw.description),
+    start_at: startAt,
+    end_at: raw?.end_at == null ? null : String(raw.end_at),
+    location_name: raw?.location_name == null ? null : String(raw.location_name),
+    lat: toNumberOrNull(raw?.lat ?? raw?.location_lat),
+    lng: toNumberOrNull(raw?.lng ?? raw?.location_lon),
+    category: normalizeCategory(raw?.category ?? raw?.source_slug),
+    organizer_name: raw?.organizer_name == null ? null : String(raw.organizer_name),
+    url: raw?.url == null ? null : String(raw.url),
+    image_url: raw?.image_url == null ? null : String(raw.image_url),
+    is_published: typeof raw?.is_published === "boolean" ? raw.is_published : true,
+    is_archived: typeof raw?.is_archived === "boolean" ? raw.is_archived : Boolean(raw?.is_cancelled),
+    created_by: raw?.created_by == null ? null : String(raw.created_by),
+    created_at: String(raw?.created_at ?? new Date().toISOString()),
+    updated_at: String(raw?.updated_at ?? raw?.created_at ?? new Date().toISOString()),
+  };
+}
+
+function getSourceFilterQuery(sourceId: string): string {
+  if (sourceId === "estbirding") return "source_slug=eq.estbirding";
+  return "source_slug=neq.estbirding";
+}
+
+function sortEventsAsc(list: EventRow[]): EventRow[] {
+  return [...list].sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+}
+
+function dedupeEvents(list: EventRow[]): EventRow[] {
+  const seen = new Set<string>();
+  const out: EventRow[] = [];
+  for (const item of list) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    out.push(item);
+  }
+  return out;
+}
+
+export async function fetchEventsForSource(source: EventSourceConfig): Promise<EventSourceFetchResult> {
+  const validation = validateSupabaseConfig();
+  if (!validation.ok || !validation.url) {
+    return {
+      sourceId: source.id,
+      sourceName: source.name,
+      ok: false,
+      message: "Supabase seadistus puudub või on vigane.",
+      events: [],
+      error: validation.error || "Supabase not configured",
+    };
+  }
+
+  const endpoint = `${validation.url.replace(/\/+$/, "")}/rest/v1/events?select=*&order=start_at.asc&${getSourceFilterQuery(source.id)}`;
+  try {
+    const response = await supabaseFetch(endpoint, { method: "GET" });
+    const text = await response.text();
+    const json = text ? JSON.parse(text) : [];
+    if (!response.ok) {
+      return {
+        sourceId: source.id,
+        sourceName: source.name,
+        ok: false,
+        status: response.status,
+        message: `HTTP ${response.status}`,
+        events: [],
+        error: typeof json?.message === "string" ? json.message : text || "Unknown error",
+      };
+    }
+    const mapped = Array.isArray(json) ? json.map(mapAnyToEventRow).filter((row) => !row.is_archived) : [];
+    return {
+      sourceId: source.id,
+      sourceName: source.name,
+      ok: true,
+      status: response.status,
+      message: `HTTP ${response.status}, ${mapped.length} kirjet`,
+      events: sortEventsAsc(mapped),
+    };
+  } catch (error: any) {
+    return {
+      sourceId: source.id,
+      sourceName: source.name,
+      ok: false,
+      message: "Päring ebaõnnestus",
+      events: [],
+      error: error?.message || String(error),
+    };
+  }
+}
+
+export async function fetchEventsBySources(
+  sources: EventSourceConfig[]
+): Promise<{ events: EventRow[]; results: EventSourceFetchResult[] }> {
+  const enabled = sources.filter((source) => source.enabled);
+  if (enabled.length === 0) return { events: [], results: [] };
+
+  const settled = await Promise.allSettled(enabled.map((source) => fetchEventsForSource(source)));
+  const results: EventSourceFetchResult[] = settled.map((entry, index) => {
+    if (entry.status === "fulfilled") return entry.value;
+    const source = enabled[index];
+    return {
+      sourceId: source.id,
+      sourceName: source.name,
+      ok: false,
+      message: "Päring ebaõnnestus",
+      events: [],
+      error: entry.reason?.message || String(entry.reason),
+    };
+  });
+
+  const merged = dedupeEvents(results.flatMap((entry) => entry.events));
+  return { events: sortEventsAsc(merged), results };
+}
 
 export async function listPublishedEvents(): Promise<EventRow[]> {
-  const supabase = getSupabaseClient();
-  if (!supabase) throw new Error(getSupabaseInitError() || "Supabase not configured");
-  const { data, error } = await (supabase as any)
-    .from("events")
-    .select(EVENT_COLUMNS)
-    .eq("is_published", true)
-    .eq("is_archived", false)
-    .order("start_at", { ascending: true });
-  if (error) throw error;
-  return (data ?? []) as EventRow[];
+  const { events } = await fetchEventsBySources(loadEventSources());
+  return events;
 }
 
 export async function listAllEventsAdmin(): Promise<EventRow[]> {

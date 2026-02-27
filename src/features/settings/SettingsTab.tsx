@@ -16,6 +16,7 @@ import { Trash2, RotateCcw } from 'lucide-react';
 import AvatarManager from './AvatarManager';
 import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
+import EventSourcesSettings from './EventSourcesSettings';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import {
   getEnvEndpoint,
@@ -320,6 +321,10 @@ export default function SettingsTab() {
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-6 max-h-[calc(100dvh-124px)] md:max-h-none pb-[calc(env(safe-area-inset-bottom)+1rem)]">
         <div ref={newsSourcesSectionRef} className="block">
           <NewsSourcesSettings />
+        </div>
+
+        <div className="block">
+          <EventSourcesSettings />
         </div>
 
         <div className="space-y-2">

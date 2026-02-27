@@ -83,7 +83,7 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
   }
   const endpoint = String(endpointOverride || resolveEndpoint() || '').trim();
   if (!endpoint) {
-    throw new Error('Translation backend not configured. Set it in Settings.');
+    return null;
   }
   if (!loggedEndpoint && import.meta.env.DEV) {
     loggedEndpoint = true;

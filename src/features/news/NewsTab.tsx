@@ -191,7 +191,13 @@ function formatErrorReason(error: unknown): string {
   return 'Viga';
 }
 
-function ensureImageUrl(item: NewsItem): NewsItem {
+const shownTranslationWarnings = new Set<string>();
+function notifyTranslationWarning(message: string): void {
+  const normalized = String(message || 'Viga').trim().slice(0, 160) || 'Viga';
+  if (shownTranslationWarnings.has(normalized)) return;
+  shownTranslationWarnings.add(normalized);
+  toast.warning(`Tılge ebaınnestus: ${normalized}`);
+}function ensureImageUrl(item: NewsItem): NewsItem {
   const decoded = decodeUrl(item.image_url);
   if (decoded) return { ...item, image_url: decoded };
   return { ...item, image_url: extractImageUrlFromRaw(item) };
@@ -271,6 +277,7 @@ function useEtTranslation({
       })
       .catch((error) => {
         if (cancelled) return;
+        notifyTranslationWarning(formatErrorReason(error));
         if (error instanceof TranslateEtHttpError) {
           setErrorStatus(error.status);
         } else {
@@ -439,7 +446,7 @@ export default function NewsTab() {
     if (!isError) return;
     const shortReason = formatErrorReason(newsQueryError);
     setLastNewsFetchErrorShort(shortReason.slice(0, 120));
-    toast.error(`Uudiste laadimine eba√µnnestus: ${shortReason.slice(0, 120)}`);
+    toast.error(`Uudiste laadimine ebaınnestus (fetch): ${shortReason.slice(0, 120)}`);
   }, [isError, newsQueryError]);
 
   // Toggle archive via DB update
@@ -493,7 +500,7 @@ export default function NewsTab() {
       if (failed.length > 0 && failed.length === resultList.length) {
         const failedSource = String(failed[0]?.source || 'allikas');
         const reason = String(failed[0]?.error || 'Viga').slice(0, 120);
-        toast.error(`Uudiste laadimine eba√µnnestus: ${failedSource}: ${reason}`);
+        toast.error(`Uudiste laadimine ebaınnestus (fetch): ${failedSource}: ${reason}`);
         return;
       }
       if (failed.length > 0) {
@@ -507,7 +514,7 @@ export default function NewsTab() {
     onError: (error) => {
       const reason = formatErrorReason(error);
       setLastNewsFetchErrorShort(reason.slice(0, 120));
-      toast.error(`Uudiste laadimine eba√µnnestus: ${reason.slice(0, 120)}`);
+      toast.error(`Uudiste laadimine ebaınnestus (fetch): ${reason.slice(0, 120)}`);
     },
   });
 
@@ -834,9 +841,14 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
       return;
     }
 
+    if (!translateEndpoint.trim()) {
+      toast.info('Tılke endpoint puudub. N‰itan originaali.');
+      return;
+    }
+
     setManualTranslateLoading(true);
     try {
-      toast.info(`Calling ${translateEndpoint}`);
+
       const result = await translateEt({
         id: item.id,
         title: item.title,
@@ -846,9 +858,9 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
       setManualTranslation(result);
       setShowManualTranslation(true);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = formatErrorReason(error);
       console.error('[translate] detail translate failed', error);
-      toast.error(`Translate failed. ${message}`);
+      notifyTranslationWarning(message);
     } finally {
       setManualTranslateLoading(false);
     }
@@ -946,3 +958,7 @@ function EmptyState({ tab }: { tab: string }) {
     </div>
   );
 }
+
+
+
+

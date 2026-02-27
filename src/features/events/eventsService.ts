@@ -1,4 +1,5 @@
-import { getFunctionsBaseUrl, getSupabaseUrl, supabaseFetch, validateSupabaseConfig } from "@/config/supabaseConfig";
+import { getSupabaseUrl, supabaseFetch, validateSupabaseConfig } from "@/config/supabaseConfig";
+import { supabase } from "@/config/supabaseClient";
 import { getEventsAdminKey } from "./adminKey";
 
 export type ManualEventType = "estbirding" | "muud";
@@ -112,20 +113,17 @@ function requireEventsAdminKey(): string {
 
 async function callEventsAdmin(action: "create" | "update" | "archive" | "unarchive" | "delete", payload: Record<string, unknown>): Promise<ManualEventRow> {
   const key = requireEventsAdminKey();
-  const url = `${getFunctionsBaseUrl()}/events-admin`;
-  const response = await supabaseFetch(url, {
-    method: "POST",
+  const { data, error } = await supabase.functions.invoke("events-admin", {
+    body: { action, ...payload },
     headers: {
-      "content-type": "application/json",
       "X-Events-Admin-Key": key,
     },
-    body: JSON.stringify({ action, ...payload }),
   });
-  const json = await parseJsonResponse(response);
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${json?.error || json?.message || "events-admin failed"}`);
+  if (error) {
+    const message = error.message || "events-admin failed";
+    throw new Error(`Ürituse salvestamine ebaõnnestus: ${message}`);
   }
-  return mapRow(json?.data || json);
+  return mapRow((data as any)?.data || data);
 }
 
 export async function createManualEvent(event: ManualEventInput): Promise<ManualEventRow> {

@@ -2,8 +2,8 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "content-type, x-events-admin-key, apikey, authorization",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info, x-events-admin-key",
 };
 
 function json(status: number, body: unknown) {
@@ -119,7 +119,9 @@ function validatePatch(input: any): { ok: true; value: Record<string, unknown> }
 
 Deno.serve(async (req) => {
   try {
-    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
+    if (req.method === "OPTIONS") {
+      return new Response("ok", { headers: corsHeaders });
+    }
 
     if (req.method === "GET") {
       const action = new URL(req.url).searchParams.get("action");

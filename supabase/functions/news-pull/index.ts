@@ -7,14 +7,63 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
+const COOLDOWN_MS = 10 * 60 * 1000;
 const BIRDING_POLAND_KEY = "facebook_birdingpoland";
 const IS_DEV = Deno.env.get("DENO_DEPLOYMENT_ID") == null;
 const AUTO_TRANSLATE_TO_ET = (Deno.env.get("AUTO_TRANSLATE_TO_ET") || "true").toLowerCase() !== "false";
 
+type PullResult = { source: string; fetched: number; inserted: number; skipped: boolean; error?: string };
+
 function decodeUrl(u: string | null | undefined): string | null {
   if (!u) return null;
   return u.replaceAll("&amp;", "&").replaceAll("&#38;", "&");
+}
+
+function toTimestamp(value: string | null): number {
+  if (!value) return 0;
+  const n = new Date(value).getTime();
+  return Number.isFinite(n) ? n : 0;
+}
+
+function shortError(reason: string): string {
+  const text = String(reason || "unknown").trim();
+  if (!text) return "unknown";
+  return text.slice(0, 120);
+}
+
+function normalizeProxyBase(raw: string): string {
+  const trimmed = String(raw || "").trim();
+  if (!trimmed) return "";
+  if (trimmed.includes("{url}")) return trimmed;
+  if (trimmed.includes("?url=") || trimmed.includes("&url=")) return trimmed;
+  if (trimmed.endsWith("/proxy") || trimmed.endsWith("/proxy/")) return `${trimmed.replace(/\/$/, "")}?url=`;
+  return trimmed.endsWith("/") ? `${trimmed}?url=` : `${trimmed}/?url=`;
+}
+
+function buildDefaultSupabaseProxyBase(): string {
+  const supabaseUrl = String(Deno.env.get("SUPABASE_URL") || "").trim();
+  if (!supabaseUrl) return "";
+  try {
+    const u = new URL(supabaseUrl);
+    return `${u.origin}/functions/v1/proxy?url=`;
+  } catch {
+    return "";
+  }
+}
+
+function resolveProxyBase(requestProxyBase: string | null | undefined): string {
+  const stored = normalizeProxyBase(String(requestProxyBase || ""));
+  if (stored) return stored;
+  const envProxy = normalizeProxyBase(String(Deno.env.get("NEWS_PROXY_BASE") || Deno.env.get("VITE_PROXY_BASE") || ""));
+  if (envProxy) return envProxy;
+  return buildDefaultSupabaseProxyBase();
+}
+
+function buildProxyUrl(targetUrl: string, proxyBase: string): string {
+  if (!proxyBase) return targetUrl;
+  const encoded = encodeURIComponent(targetUrl);
+  if (proxyBase.includes("{url}")) return proxyBase.replace("{url}", encoded);
+  return `${proxyBase}${encoded}`;
 }
 
 async function sha256Hex(input: string): Promise<string> {
@@ -23,13 +72,11 @@ async function sha256Hex(input: string): Promise<string> {
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function translateViaEdgeFunction(
-  id: string,
-): Promise<void> {
+async function translateViaEdgeFunction(id: string): Promise<void> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error("SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing");
+    return;
   }
 
   const res = await fetch(`${supabaseUrl}/functions/v1/translate-news-item-et`, {
@@ -39,14 +86,149 @@ async function translateViaEdgeFunction(
       "Authorization": `Bearer ${serviceRoleKey}`,
       "apikey": serviceRoleKey,
     },
-    body: JSON.stringify({
-      id,
-    }),
+    body: JSON.stringify({ id }),
   });
 
   if (!res.ok) {
-    throw new Error(`translate-news-item-et failed: HTTP ${res.status} ${await res.text()}`);
+    throw new Error(`translate-news-item-et HTTP ${res.status}`);
   }
+}
+
+async function pullRssSource({ source, supabase, proxyBase }: { source: any; supabase: any; proxyBase: string }): Promise<PullResult> {
+  const sourceKey = String(source.source_key || source.key || source.slug || "unknown").trim() || "unknown";
+  const feedUrl = String(source.feed_url || "").trim();
+  if (!feedUrl) {
+    return { source: source.slug || source.id || "unknown", fetched: 0, inserted: 0, skipped: false, error: "missing feed url" };
+  }
+
+  const targetUrl = buildProxyUrl(feedUrl, proxyBase);
+  const feedRes = await fetch(targetUrl, {
+    headers: { "User-Agent": "EstBirding/1.0" },
+  });
+
+  if (!feedRes.ok) {
+    return {
+      source: source.slug || source.id || "unknown",
+      fetched: 0,
+      inserted: 0,
+      skipped: false,
+      error: `HTTP ${feedRes.status} proxy`,
+    };
+  }
+
+  const text = await feedRes.text();
+  let normalized;
+  try {
+    normalized = parseRss(text).map(normalizeRssItem);
+  } catch {
+    return {
+      source: source.slug || source.id || "unknown",
+      fetched: 0,
+      inserted: 0,
+      skipped: false,
+      error: "RSS parse error",
+    };
+  }
+
+  const sorted = normalized.sort((a, b) => toTimestamp(b.published_at) - toTimestamp(a.published_at));
+  const items = sourceKey === BIRDING_POLAND_KEY ? sorted.slice(0, 1) : sorted.slice(0, 10);
+
+  let inserted = 0;
+  for (const item of items) {
+    const externalId = item.external_id?.trim();
+    if (!externalId) continue;
+
+    const guid = `${source.slug}:${externalId}`;
+    const lang = sourceKey === BIRDING_POLAND_KEY ? "pl" : "et";
+    const originalTitle = item.title || item.body.slice(0, 80) || "";
+    const originalBody = item.body || "";
+    const contentHash = await sha256Hex(`${originalTitle}\n${originalBody}`);
+
+    const row = {
+      source_id: source.id,
+      source_slug: source.slug,
+      source_key: sourceKey || "unknown",
+      external_id: externalId,
+      title: originalTitle,
+      summary: item.body.slice(0, 500) || null,
+      content_html: item.body_html || null,
+      body: originalBody || null,
+      url: item.permalink_url || "",
+      permalink_url: item.permalink_url,
+      published_at: item.published_at || new Date().toISOString(),
+      language: lang,
+      lang,
+      guid,
+      fetched_at: new Date().toISOString(),
+      raw_json: item.raw_json,
+      source_lang: lang,
+    };
+
+    const rowWithLang = lang === "et" ? { ...row, translation_status: "done" } : row;
+    const decodedImageUrl = decodeUrl(item.image_url);
+    const rowWithImage = decodedImageUrl ? { ...rowWithLang, image_url: decodedImageUrl } : rowWithLang;
+
+    const { data: upserted, error } = await supabase
+      .from("news_items")
+      .upsert(rowWithImage, { onConflict: "source_slug,external_id" })
+      .select("id, translate_hash, title_et, body_et")
+      .single();
+
+    if (error) {
+      console.error(`Upsert error for ${guid}:`, error);
+      continue;
+    }
+
+    inserted += 1;
+
+    if (lang !== "et" && AUTO_TRANSLATE_TO_ET && upserted?.id) {
+      const shouldTranslate = !upserted.title_et || !upserted.body_et || upserted.translate_hash !== contentHash;
+      if (shouldTranslate) {
+        try {
+          await translateViaEdgeFunction(upserted.id);
+        } catch (translateErr) {
+          console.error(`[translate] failed for ${guid}:`, translateErr);
+        }
+      } else if (IS_DEV) {
+        console.log("[translate] skip (hash match)", guid, contentHash);
+      }
+    }
+  }
+
+  return { source: source.slug, fetched: items.length, inserted, skipped: false };
+}
+
+async function pullScrapeSource({ source, supabase }: { source: any; supabase: any }): Promise<PullResult> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceRoleKey) {
+    return { source: source.slug || source.id || "unknown", fetched: 0, inserted: 0, skipped: false, error: "missing supabase env" };
+  }
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/fetch-eoy-news`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${serviceRoleKey}`,
+      "apikey": serviceRoleKey,
+    },
+    body: JSON.stringify({ dry_run: false, feed_url: source.feed_url || source.fetch_url || null }),
+  });
+
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return {
+      source: source.slug || source.id || "unknown",
+      fetched: 0,
+      inserted: 0,
+      skipped: false,
+      error: shortError(payload?.error || `scrape HTTP ${res.status}`),
+    };
+  }
+
+  const inserted = Number(payload?.inserted || 0) + Number(payload?.updated || 0);
+  const fetched = Number(payload?.parsed || inserted || 0);
+  return { source: source.slug || source.id || "unknown", fetched, inserted, skipped: false };
 }
 
 Deno.serve(async (req) => {
@@ -64,6 +246,7 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const force = body.force === true;
+    const proxyBase = resolveProxyBase(body?.proxyBase);
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -74,20 +257,23 @@ Deno.serve(async (req) => {
       .from("news_sources")
       .select("*")
       .eq("is_active", true)
-      .eq("is_enabled", true)
-      .not("feed_url", "is", null);
+      .eq("is_enabled", true);
 
     if (srcErr) throw srcErr;
     if (!sources || sources.length === 0) {
       return new Response(
-        JSON.stringify({ success: true, message: "No enabled sources with feed_url", results: [] }),
+        JSON.stringify({ success: true, message: "No enabled sources", results: [], debug: { resolvedProxyBase: proxyBase } }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    const results: Array<{ source: string; fetched: number; inserted: number; skipped: boolean; error?: string }> = [];
+    const enabledSources = sources.filter((source) => {
+      const kind = String(source.type || source.kind || "").toLowerCase();
+      if (kind === "scrape") return true;
+      return Boolean(String(source.feed_url || "").trim());
+    });
 
-    for (const source of sources) {
+    const tasks = enabledSources.map(async (source) => {
       if (!force) {
         const { data: recent } = await supabase
           .from("news_items")
@@ -100,117 +286,48 @@ Deno.serve(async (req) => {
         if (recent?.fetched_at) {
           const elapsed = Date.now() - new Date(recent.fetched_at).getTime();
           if (elapsed < COOLDOWN_MS) {
-            results.push({ source: source.slug, fetched: 0, inserted: 0, skipped: true });
-            continue;
+            return { source: source.slug, fetched: 0, inserted: 0, skipped: true } as PullResult;
           }
         }
       }
 
-      try {
-        const feedRes = await fetch(source.feed_url!, {
-          headers: { "User-Agent": "EstBirding/1.0" },
-        });
-        if (!feedRes.ok) {
-          results.push({ source: source.slug, fetched: 0, inserted: 0, skipped: false, error: `HTTP ${feedRes.status}` });
-          continue;
-        }
-
-        const text = await feedRes.text();
-        const sourceKey = String(source.source_key || source.key || source.slug || "unknown").trim() || "unknown";
-        const normalized = parseRss(text).map(normalizeRssItem);
-        const sorted = normalized.sort((a, b) => toTimestamp(b.published_at) - toTimestamp(a.published_at));
-        const items = sourceKey === BIRDING_POLAND_KEY ? sorted.slice(0, 1) : sorted.slice(0, 10);
-
-        let inserted = 0;
-        for (const item of items) {
-          const externalId = item.external_id?.trim();
-          if (!externalId) continue;
-
-          if (IS_DEV) {
-            console.log("[RSS] image_url", sourceKey, externalId, item.image_url || null);
-          }
-
-          const guid = `${source.slug}:${externalId}`;
-          const lang = sourceKey === BIRDING_POLAND_KEY ? "pl" : "et";
-          const originalTitle = item.title || item.body.slice(0, 80) || "";
-          const originalBody = item.body || "";
-          const contentHash = await sha256Hex(`${originalTitle}\n${originalBody}`);
-
-          const row = {
-            source_id: source.id,
-            source_slug: source.slug,
-            source_key: sourceKey || "unknown",
-            external_id: externalId,
-            title: originalTitle,
-            summary: item.body.slice(0, 500) || null,
-            content_html: item.body_html || null,
-            body: originalBody || null,
-            url: item.permalink_url || "",
-            permalink_url: item.permalink_url,
-            published_at: item.published_at || new Date().toISOString(),
-            language: lang,
-            lang,
-            guid,
-            fetched_at: new Date().toISOString(),
-            raw_json: item.raw_json,
-            source_lang: lang,
-          };
-          const rowWithLang = lang === "et"
-            ? { ...row, translation_status: "done" }
-            : row;
-
-          const decodedImageUrl = decodeUrl(item.image_url);
-          const rowWithImage = decodedImageUrl
-            ? { ...rowWithLang, image_url: decodedImageUrl }
-            : rowWithLang;
-
-          const { data: upserted, error } = await supabase
-            .from("news_items")
-            .upsert(rowWithImage, { onConflict: "source_slug,external_id" })
-            .select("id, translate_hash, title_et, body_et")
-            .single();
-
-          if (!error) inserted++;
-          else console.error(`Upsert error for ${guid}:`, error);
-
-          if (!error && upserted?.id) {
-            if (lang !== "et" && AUTO_TRANSLATE_TO_ET) {
-              const shouldTranslate = !upserted.title_et || !upserted.body_et || upserted.translate_hash !== contentHash;
-              if (shouldTranslate) {
-                if (IS_DEV) console.log("[translate] run", guid, contentHash);
-                try {
-                  await translateViaEdgeFunction(upserted.id);
-                } catch (translateErr) {
-                  console.error(`[translate] failed for ${guid}:`, translateErr);
-                }
-              } else if (IS_DEV) {
-                console.log("[translate] skip (hash match)", guid, contentHash);
-              }
-            }
-          }
-        }
-
-        results.push({ source: source.slug, fetched: items.length, inserted, skipped: false });
-      } catch (e) {
-        results.push({ source: source.slug, fetched: 0, inserted: 0, skipped: false, error: e.message });
+      const kind = String(source.type || source.kind || "rss").toLowerCase();
+      if (kind === "scrape") {
+        return pullScrapeSource({ source, supabase });
       }
-    }
+      return pullRssSource({ source, supabase, proxyBase });
+    });
+
+    const settled = await Promise.allSettled(tasks);
+    const results: PullResult[] = settled.map((entry, index) => {
+      if (entry.status === "fulfilled") return entry.value;
+      const source = enabledSources[index]?.slug || enabledSources[index]?.id || "unknown";
+      return {
+        source,
+        fetched: 0,
+        inserted: 0,
+        skipped: false,
+        error: shortError(entry.reason?.message || String(entry.reason || "unknown")),
+      };
+    });
 
     return new Response(
-      JSON.stringify({ success: true, results }),
+      JSON.stringify({
+        success: true,
+        results,
+        debug: {
+          resolvedProxyBase: proxyBase,
+          activeProxyName: proxyBase.includes("/functions/v1/proxy") ? "supabase" : "custom",
+          allFailed: results.length > 0 && results.every((item) => Boolean(item.error)),
+        },
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {
     console.error("news-pull error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: shortError(error?.message || String(error)) }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
-
-function toTimestamp(value: string | null): number {
-  if (!value) return 0;
-  const n = new Date(value).getTime();
-  return Number.isFinite(n) ? n : 0;
-}

@@ -12,7 +12,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { slug, source_key, feed_url, type, kind } = await req.json();
+    const { slug, source_key, feed_url, type, kind, proxyBase } = await req.json();
     if (!feed_url && slug !== "eoy" && source_key !== "eoy") {
       return new Response(JSON.stringify({ error: "Missing feed_url" }), {
         status: 400,
@@ -63,7 +63,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const res = await fetch(feed_url, {
+    const base = String(proxyBase || Deno.env.get("NEWS_PROXY_BASE") || "").trim();
+    const target = base ? `${base}${encodeURIComponent(String(feed_url || "").trim())}` : feed_url;
+    const res = await fetch(target, {
       headers: { "User-Agent": "EstBirding/1.0" },
     });
     if (!res.ok) {

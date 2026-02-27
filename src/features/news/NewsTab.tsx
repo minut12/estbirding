@@ -15,6 +15,7 @@ import { isEstonianLocale, normalizeLocale, resolveAppLocale } from '@/lib/local
 import { TranslateEtHttpError, translateEt, type TranslateEtOutput } from '@/lib/translateEt';
 import { toast } from 'sonner';
 import { resolveEndpoint, TRANSLATION_ENDPOINT_UPDATED_EVENT } from '@/config/translationEndpoint';
+import { getProxyMode, resolveProxyBase } from '@/config/proxyEndpoint';
 
 /* ── Types ──────────────────────────────────────── */
 interface NewsItem {
@@ -335,6 +336,9 @@ export default function NewsTab() {
   const showEtContent = isEstonianLocale(appLocale);
   const autoTranslateEnabled = isAutoTranslateNewsToEtEnabled();
   const [translateEndpoint, setTranslateEndpoint] = useState(() => resolveEndpoint());
+  const [resolvedProxyBase, setResolvedProxyBase] = useState(() => resolveProxyBase());
+  const [activeProxyName, setActiveProxyName] = useState(() => getProxyMode(resolveProxyBase()));
+  const [lastNewsFetchErrorShort, setLastNewsFetchErrorShort] = useState('');
   const endpointConfigured = Boolean(translateEndpoint);
 
   useEffect(() => {
@@ -345,6 +349,17 @@ export default function NewsTab() {
       window.removeEventListener('storage', refreshEndpoint);
       window.removeEventListener(TRANSLATION_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
     };
+  }, []);
+
+  useEffect(() => {
+    const refreshProxy = () => {
+      const resolved = resolveProxyBase();
+      setResolvedProxyBase(resolved);
+      setActiveProxyName(getProxyMode(resolved));
+    };
+    refreshProxy();
+    window.addEventListener('storage', refreshProxy);
+    return () => window.removeEventListener('storage', refreshProxy);
   }, []);
 
   // Sources
@@ -365,7 +380,7 @@ export default function NewsTab() {
   });
 
   const {
-    data: newsItems = [], isLoading, isError,
+    data: newsItems = [], isLoading, isError, error: newsQueryError,
   } = useQuery({
     queryKey: ['news-items', tab],
     queryFn: async () => {
@@ -414,8 +429,10 @@ export default function NewsTab() {
 
   useEffect(() => {
     if (!isError) return;
-    toast.error('Uudiste laadimine ebaõnnestus');
-  }, [isError]);
+    const shortReason = newsQueryError instanceof Error ? newsQueryError.message : 'unknown';
+    setLastNewsFetchErrorShort(shortReason.slice(0, 120));
+    toast.error(`Uudiste laadimine ebaõnnestus: ${shortReason.slice(0, 120)}`);
+  }, [isError, newsQueryError]);
 
   // Toggle archive via DB update
   const archiveMutation = useMutation({
@@ -441,19 +458,45 @@ export default function NewsTab() {
   const pullMutation = useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase.functions.invoke('news-pull', {
-        body: { force: false },
+        body: { force: false, proxyBase: resolveProxyBase() },
       });
       if (error) throw error;
       return data;
     },
     onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ['news-items'] });
-      const total = data?.results?.reduce((s: number, r: any) => s + (r.inserted || 0), 0) || 0;
+      const resultList = Array.isArray(data?.results) ? data.results : [];
+      const failed = resultList.filter((item: any) => item?.error);
+      const total = resultList.reduce((s: number, r: any) => s + (r.inserted || 0), 0);
+      if (data?.debug?.resolvedProxyBase) {
+        setResolvedProxyBase(String(data.debug.resolvedProxyBase));
+      }
+      if (data?.debug?.activeProxyName) {
+        setActiveProxyName(String(data.debug.activeProxyName));
+      } else {
+        setActiveProxyName(getProxyMode(resolveProxyBase()));
+      }
+      if (failed.length > 0) {
+        const reason = String(failed[0]?.error || 'unknown').slice(0, 120);
+        setLastNewsFetchErrorShort(reason);
+      } else {
+        setLastNewsFetchErrorShort('');
+      }
+      if (failed.length > 0 && failed.length === resultList.length) {
+        const reason = String(failed[0]?.error || 'unknown').slice(0, 120);
+        toast.error(`Uudiste laadimine ebaõnnestus: ${reason}`);
+        return;
+      }
+      if (failed.length > 0) {
+        toast.warning(`${failed.length} allikas ebaõnnestus`);
+      }
       if (total > 0) toast.success(`${total} uut uudist`);
       else toast.info('Uusi uudiseid pole');
     },
-    onError: () => {
-      toast.error('Uudiste tõmbamine ebaõnnestus');
+    onError: (error) => {
+      const reason = error instanceof Error ? error.message : 'unknown';
+      setLastNewsFetchErrorShort(reason.slice(0, 120));
+      toast.error(`Uudiste laadimine ebaõnnestus: ${reason.slice(0, 120)}`);
     },
   });
 
@@ -548,6 +591,11 @@ export default function NewsTab() {
             />
           </div>
         </div>
+        {import.meta.env.DEV && (
+          <p className="text-xs text-muted-foreground">
+            proxy={activeProxyName} base={resolvedProxyBase || '(empty)'} lastError={lastNewsFetchErrorShort || '(none)'}
+          </p>
+        )}
       </div>
 
       {/* List */}

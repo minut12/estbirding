@@ -114,8 +114,6 @@ function buildPayload(form: FormState): ManualEventInput {
     lon,
     url: form.url.trim() || null,
     description: form.description.trim() || null,
-    image_url: form.image_url || null,
-    image_path: form.image_path || null,
   };
 }
 
@@ -170,6 +168,7 @@ export default function EventsManagementSettings() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [imageChanged, setImageChanged] = useState(false);
   const [removeImage, setRemoveImage] = useState(false);
   const storedAdminKey = (getEventsAdminKey() ?? "").trim();
 
@@ -210,6 +209,7 @@ export default function EventsManagementSettings() {
     setEditingId(null);
     setForm(emptyForm);
     setImagePreviewUrl(null);
+    setImageChanged(false);
     setRemoveImage(false);
     setDialogOpen(true);
   };
@@ -218,6 +218,7 @@ export default function EventsManagementSettings() {
     setEditingId(event.id);
     setForm(eventToForm(event));
     setImagePreviewUrl(event.image_url);
+    setImageChanged(false);
     setRemoveImage(false);
     setDialogOpen(true);
   };
@@ -269,34 +270,29 @@ export default function EventsManagementSettings() {
         payload.image_url = null;
         payload.image_path = null;
       }
-      if (payload.image_url && payload.image_url.length > 300000) {
+      if (imageChanged && form.image_url && form.image_url.length > 300000) {
         toast.error("Pilt liiga suur — vähenda (või vali väiksem pilt).");
         return;
       }
 
       if (editingId) {
-        const patch: ManualEventPatch = {
-          ...payload,
-          image_url: payload.image_url ?? null,
-          image_path: payload.image_url ? "inline-base64" : null,
-        };
+        const patch: ManualEventPatch = { ...payload };
+        if (imageChanged) {
+          patch.image_url = form.image_url ?? null;
+          patch.image_path = form.image_url ? (form.image_path ?? "inline-base64") : null;
+        }
         await updateManualEvent(editingId, patch);
       } else {
-        const created = await createManualEvent({
+        await createManualEvent({
           ...payload,
-          image_url: null,
-          image_path: null,
+          image_url: form.image_url ?? null,
+          image_path: form.image_url ? (form.image_path ?? "inline-base64") : null,
         });
-        const patch: ManualEventPatch = {
-          ...payload,
-          image_url: payload.image_url ?? null,
-          image_path: payload.image_url ? "inline-base64" : null,
-        };
-        await updateManualEvent(created.id, patch);
       }
       toast.success("Üritus salvestatud");
       setDialogOpen(false);
       setImagePreviewUrl(null);
+      setImageChanged(false);
       setRemoveImage(false);
       await loadEvents();
     } catch (e) {
@@ -462,6 +458,7 @@ export default function EventsManagementSettings() {
                         return;
                       }
                       setImagePreviewUrl(preview);
+                      setImageChanged(true);
                       setForm((p) => ({ ...p, image_url: preview, image_path: "inline-base64" }));
                     } catch (err) {
                       toast.error(`Image processing failed: ${toErrorMessage(err)}`);
@@ -477,6 +474,7 @@ export default function EventsManagementSettings() {
                     variant="outline"
                     onClick={() => {
                       setImagePreviewUrl(null);
+                      setImageChanged(true);
                       setForm((p) => ({ ...p, image_url: null, image_path: null }));
                       setRemoveImage(true);
                     }}
@@ -484,7 +482,13 @@ export default function EventsManagementSettings() {
                     Remove image
                   </Button>
                 </div>
-              ) : null}
+              ) : (
+                <img
+                  src="https://images.unsplash.com/photo-1448375240586-882707db888b?w=360&h=280&fit=crop"
+                  alt="Placeholder"
+                  className="h-28 w-full rounded-md object-cover"
+                />
+              )}
             </div>
           </div>
 

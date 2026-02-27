@@ -77,11 +77,6 @@ async function parseJsonResponse(response: Response): Promise<any> {
   }
 }
 
-export function getEventsAdminUrl(): string {
-  const resolvedSupabaseUrl = getSupabaseUrl().replace(/\/+$/, "");
-  return `${resolvedSupabaseUrl}/functions/v1/events-admin`;
-}
-
 export async function listPublicEventsManual(): Promise<ManualEventRow[]> {
   const validation = validateSupabaseConfig();
   if (!validation.ok || !validation.url) {
@@ -116,81 +111,64 @@ function requireEventsAdminKey(): string {
   return key;
 }
 
-async function callEventsAdmin(action: "create" | "update" | "archive" | "unarchive" | "delete", payload: Record<string, unknown>): Promise<ManualEventRow> {
-  const key = requireEventsAdminKey();
-  const url = getEventsAdminUrl();
-  try {
-    const { data, error } = await supabase.functions.invoke("events-admin", {
-      body: { action, adminKey: key, ...payload },
-    });
-    if (error) {
-      const invokeError = error as any;
-      const status = Number(invokeError?.status || 0) || undefined;
-      const message = String(invokeError?.message || "events-admin failed");
-      console.log("[events-admin] invoke error", { method: "POST", url, action, status, error: invokeError });
-      throw new Error(`HTTP ${status ?? ""} ${message}`.trim());
-    }
-    return mapRow((data as any)?.data || data);
-  } catch (error: any) {
-    const errorName = String(error?.name || "");
-    const message = String(error?.message || "events-admin failed");
-    console.error("[events-admin] invoke failed", {
-      method: "POST",
-      url,
-      fn: "events-admin",
-      hasAdminKey: Boolean(key),
-      errorName,
-      errorMessage: message,
-    });
-    throw new Error(message);
-  }
+function ensureIso(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return new Date(value).toISOString();
+}
+
+async function callRpcRow(functionName: string, args: Record<string, unknown>): Promise<ManualEventRow> {
+  const { data, error } = await supabase.rpc(functionName as any, args as any);
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return mapRow(row);
 }
 
 export async function testEventsAdminHealth(adminKey?: string): Promise<{ ok: boolean; now?: string }> {
-  const endpoint = getEventsAdminUrl();
-  try {
-    const { data, error } = await supabase.functions.invoke("events-admin", {
-      body: { action: "health" },
-    });
-    if (error) {
-      const invokeError = error as any;
-      const status = Number(invokeError?.status || 0) || undefined;
-      const message = String(invokeError?.message || "health check failed");
-      console.log("[events-admin] health invoke error", { method: "POST", url: endpoint, status, error: invokeError });
-      throw new Error(`HTTP ${status ?? ""} ${message}`.trim());
-    }
-    return data as { ok: boolean; now?: string };
-  } catch (error: any) {
-    const errorName = String(error?.name || "");
-    const message = String(error?.message || "health check failed");
-    console.error("[events-admin] health failed", {
-      method: "POST",
-      url: endpoint,
-      fn: "events-admin",
-      hasAdminKey: Boolean(adminKey?.trim() || getEventsAdminKey()),
-      errorName,
-      errorMessage: message,
-    });
-    throw new Error(message);
+  const key = (adminKey || requireEventsAdminKey()).trim();
+  const { data, error } = await supabase.rpc("events_admin_health", { admin_key: key });
+  if (error) {
+    console.log("[events-admin-rpc] health error", { fn: "events_admin_health", error });
+    throw error;
   }
+  return (data as { ok: boolean; now?: string }) || { ok: true };
 }
 
 export async function createManualEvent(event: ManualEventInput): Promise<ManualEventRow> {
-  return callEventsAdmin("create", { event });
+  const adminKey = requireEventsAdminKey();
+  return callRpcRow("events_admin_create", {
+    admin_key: adminKey,
+    p_title: event.title,
+    p_starts_at: ensureIso(event.starts_at),
+    p_ends_at: ensureIso(event.ends_at ?? null),
+    p_type: event.type,
+    p_location_name: event.location_name ?? null,
+    p_lat: event.lat ?? null,
+    p_lon: event.lon ?? null,
+    p_url: event.url ?? null,
+    p_description: event.description ?? null,
+  });
 }
 
 export async function updateManualEvent(id: string, patch: ManualEventPatch): Promise<ManualEventRow> {
-  return callEventsAdmin("update", { id, patch });
+  const adminKey = requireEventsAdminKey();
+  return callRpcRow("events_admin_update", {
+    admin_key: adminKey,
+    p_id: id,
+    p_patch: patch,
+  });
 }
 
 export async function archiveManualEvent(id: string): Promise<ManualEventRow> {
-  return callEventsAdmin("archive", { id });
+  const adminKey = requireEventsAdminKey();
+  return callRpcRow("events_admin_archive", { admin_key: adminKey, p_id: id });
 }
 
 export async function unarchiveManualEvent(id: string): Promise<ManualEventRow> {
-  return callEventsAdmin("unarchive", { id });
+  const adminKey = requireEventsAdminKey();
+  return callRpcRow("events_admin_unarchive", { admin_key: adminKey, p_id: id });
 }
 
 export async function deleteManualEvent(id: string): Promise<ManualEventRow> {
-  return callEventsAdmin("delete", { id });
+  const adminKey = requireEventsAdminKey();
+  return callRpcRow("events_admin_delete", { admin_key: adminKey, p_id: id });
 }

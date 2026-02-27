@@ -16,6 +16,7 @@ import { TranslateEtHttpError, translateEt, type TranslateEtOutput } from '@/lib
 import { toast } from 'sonner';
 import { resolveEndpoint, TRANSLATION_ENDPOINT_UPDATED_EVENT } from '@/config/translationEndpoint';
 import { getProxyMode, resolveProxyBase } from '@/config/proxyEndpoint';
+import { getSupabaseUrl } from '@/config/supabaseConfig';
 
 /* ── Types ──────────────────────────────────────── */
 interface NewsItem {
@@ -191,13 +192,24 @@ function formatErrorReason(error: unknown): string {
   return 'Viga';
 }
 
+function getErrorHostLabel(): string {
+  try {
+    const host = new URL(getSupabaseUrl()).host;
+    return host || 'unknown-host';
+  } catch {
+    return 'unknown-host';
+  }
+}
+
 const shownTranslationWarnings = new Set<string>();
 function notifyTranslationWarning(message: string): void {
   const normalized = String(message || 'Viga').trim().slice(0, 160) || 'Viga';
   if (shownTranslationWarnings.has(normalized)) return;
   shownTranslationWarnings.add(normalized);
   toast.warning(`T�lge eba�nnestus: ${normalized}`);
-}function ensureImageUrl(item: NewsItem): NewsItem {
+}
+
+function ensureImageUrl(item: NewsItem): NewsItem {
   const decoded = decodeUrl(item.image_url);
   if (decoded) return { ...item, image_url: decoded };
   return { ...item, image_url: extractImageUrlFromRaw(item) };
@@ -446,7 +458,7 @@ export default function NewsTab() {
     if (!isError) return;
     const shortReason = formatErrorReason(newsQueryError);
     setLastNewsFetchErrorShort(shortReason.slice(0, 120));
-    toast.error(`Uudiste laadimine eba�nnestus (fetch): ${shortReason.slice(0, 120)}`);
+    toast.error('Uudiste laadimine eba�nnestus (fetch): ' + shortReason.slice(0, 120) + ' [' + getErrorHostLabel() + ']');
   }, [isError, newsQueryError]);
 
   // Toggle archive via DB update
@@ -500,7 +512,7 @@ export default function NewsTab() {
       if (failed.length > 0 && failed.length === resultList.length) {
         const failedSource = String(failed[0]?.source || 'allikas');
         const reason = String(failed[0]?.error || 'Viga').slice(0, 120);
-        toast.error(`Uudiste laadimine eba�nnestus (fetch): ${failedSource}: ${reason}`);
+        toast.error('Uudiste laadimine eba�nnestus (fetch): ' + failedSource + ': ' + reason + ' [' + getErrorHostLabel() + ']');
         return;
       }
       if (failed.length > 0) {
@@ -514,7 +526,7 @@ export default function NewsTab() {
     onError: (error) => {
       const reason = formatErrorReason(error);
       setLastNewsFetchErrorShort(reason.slice(0, 120));
-      toast.error(`Uudiste laadimine eba�nnestus (fetch): ${reason.slice(0, 120)}`);
+      toast.error('Uudiste laadimine eba�nnestus (fetch): ' + reason.slice(0, 120) + ' [' + getErrorHostLabel() + ']');
     },
   });
 
@@ -958,7 +970,3 @@ function EmptyState({ tab }: { tab: string }) {
     </div>
   );
 }
-
-
-
-

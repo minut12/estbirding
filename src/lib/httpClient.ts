@@ -1,4 +1,5 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
+import { getSupabaseAuthHeadersForUrl, supabaseFetch } from '@/config/supabaseConfig';
 
 export class HttpClientError extends Error {
   status: number;
@@ -35,16 +36,21 @@ export function isNativePlatform(): boolean {
   return Capacitor?.isNativePlatform?.() === true;
 }
 
-async function nativeRequest(method: 'GET' | 'POST', url: string, body?: any): Promise<HttpJsonResponse> {
+async function nativeRequest(method: 'GET' | 'POST', url: string, body?: any, headers?: Record<string, string>): Promise<HttpJsonResponse> {
   const endpoint = String(url || '').trim();
   if (!CapacitorHttp?.request) {
     throw new HttpClientError(0, endpoint, 'CapacitorHttp unavailable');
   }
+  const authHeaders = getSupabaseAuthHeadersForUrl(endpoint);
   try {
     const response = await CapacitorHttp.request({
       method,
       url: endpoint,
-      headers: method === 'POST' ? { 'Content-Type': 'text/plain;charset=UTF-8' } : undefined,
+      headers: {
+        ...(method === 'POST' ? { 'Content-Type': 'text/plain;charset=UTF-8' } : {}),
+        ...(headers || {}),
+        ...authHeaders,
+      },
       data: method === 'POST' ? JSON.stringify(body || {}) : undefined,
     });
     const parsed = parseMaybeJson(response?.data);
@@ -59,13 +65,16 @@ async function nativeRequest(method: 'GET' | 'POST', url: string, body?: any): P
   }
 }
 
-async function webRequest(method: 'GET' | 'POST', url: string, body?: any): Promise<HttpJsonResponse> {
+async function webRequest(method: 'GET' | 'POST', url: string, body?: any, headers?: Record<string, string>): Promise<HttpJsonResponse> {
   const endpoint = String(url || '').trim();
   let response: Response;
   try {
-    response = await fetch(endpoint, {
+    response = await supabaseFetch(endpoint, {
       method,
-      headers: method === 'POST' ? { 'content-type': 'text/plain;charset=UTF-8' } : undefined,
+      headers: {
+        ...(method === 'POST' ? { 'content-type': 'text/plain;charset=UTF-8' } : {}),
+        ...(headers || {}),
+      },
       body: method === 'POST' ? JSON.stringify(body || {}) : undefined,
     });
   } catch (error: any) {
@@ -85,12 +94,12 @@ async function webRequest(method: 'GET' | 'POST', url: string, body?: any): Prom
   };
 }
 
-export async function getJson(url: string): Promise<HttpJsonResponse> {
-  if (isNativePlatform()) return nativeRequest('GET', url);
-  return webRequest('GET', url);
+export async function getJson(url: string, headers?: Record<string, string>): Promise<HttpJsonResponse> {
+  if (isNativePlatform()) return nativeRequest('GET', url, undefined, headers);
+  return webRequest('GET', url, undefined, headers);
 }
 
-export async function postJson(url: string, body: any): Promise<HttpJsonResponse> {
-  if (isNativePlatform()) return nativeRequest('POST', url, body);
-  return webRequest('POST', url, body);
+export async function postJson(url: string, body: any, headers?: Record<string, string>): Promise<HttpJsonResponse> {
+  if (isNativePlatform()) return nativeRequest('POST', url, body, headers);
+  return webRequest('POST', url, body, headers);
 }

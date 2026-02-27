@@ -24,6 +24,48 @@ export function getSupabaseAnonKey(): string {
   return override || getEnvAnonKey();
 }
 
+function resolveRequestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.toString();
+  return input.url;
+}
+
+export function isSupabaseHttpUrl(url: string): boolean {
+  const input = String(url || "").trim();
+  if (!input) return false;
+  try {
+    const parsed = new URL(input);
+    return parsed.hostname.endsWith(".supabase.co");
+  } catch {
+    return false;
+  }
+}
+
+export function getSupabaseAuthHeaders(): Record<string, string> {
+  const anon = getSupabaseAnonKey();
+  if (!anon) {
+    throw new Error("Supabase anon key missing (check VITE_SUPABASE_ANON_KEY)");
+  }
+  return {
+    apikey: anon,
+    Authorization: `Bearer ${anon}`,
+  };
+}
+
+export function getSupabaseAuthHeadersForUrl(url: string): Record<string, string> {
+  return isSupabaseHttpUrl(url) ? getSupabaseAuthHeaders() : {};
+}
+
+export async function supabaseFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const url = resolveRequestUrl(input);
+  const authHeaders = getSupabaseAuthHeadersForUrl(url);
+  const mergedHeaders = new Headers(init.headers || {});
+  for (const [key, value] of Object.entries(authHeaders)) {
+    mergedHeaders.set(key, value);
+  }
+  return fetch(input, { ...init, headers: mergedHeaders });
+}
+
 export function getFunctionsBaseUrl(): string {
   const url = getSupabaseUrl().replace(/\/+$/, "");
   return `${url}/functions/v1`;

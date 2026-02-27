@@ -24,7 +24,7 @@ export class TranslateEtHttpError extends Error {
 
 const inFlight = new Map<string, Promise<TranslateEtOutput | null>>();
 let loggedEndpoint = false;
-const MAX_ERROR_PREVIEW_CHARS = 120;
+const MAX_ERROR_PREVIEW_CHARS = 200;
 
 function weakHash(input: string): string {
   let h = 2166136261;
@@ -104,6 +104,12 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
     .then((response) => {
       if (response.status !== 200) {
         const preview = String(response.rawText || JSON.stringify(response.data) || '').slice(0, MAX_ERROR_PREVIEW_CHARS).replace(/\s+/g, ' ');
+        try {
+          const host = new URL(endpoint).host;
+          console.error(`[translate] request failed host=${host} status=${response.status} body=${preview}`);
+        } catch {
+          console.error(`[translate] request failed status=${response.status} body=${preview}`);
+        }
         throw new TranslateEtHttpError(response.status, `status=${response.status}. endpoint=${endpoint}. ${preview || '[empty body]'}`);
       }
       const parsed = (response.data || {}) as Partial<TranslateEtOutput>;

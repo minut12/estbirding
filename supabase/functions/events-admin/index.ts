@@ -1,12 +1,16 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info, x-events-admin-key",
-};
+function getCorsHeaders(req: Request): Record<string, string> {
+  const reqOrigin = req.headers.get("origin") ?? "*";
+  return {
+    "Access-Control-Allow-Origin": reqOrigin,
+    Vary: "Origin",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info, x-events-admin-key",
+  };
+}
 
-function json(status: number, body: unknown) {
+function json(status: number, body: unknown, corsHeaders: Record<string, string>) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "content-type": "application/json" },
@@ -118,60 +122,66 @@ function validatePatch(input: any): { ok: true; value: Record<string, unknown> }
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   try {
     if (req.method === "OPTIONS") {
-      return new Response("ok", { headers: corsHeaders });
+      return new Response(null, { status: 204, headers: corsHeaders });
     }
 
     if (req.method === "GET") {
       const action = new URL(req.url).searchParams.get("action");
-      if (action === "health") return json(200, { ok: true });
-      return json(405, { error: "method_not_allowed" });
+      if (action === "health") return json(200, { ok: true, now: new Date().toISOString() }, corsHeaders);
+      return json(405, { error: "method_not_allowed" }, corsHeaders);
     }
 
-    if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
+    if (req.method !== "POST") return json(405, { error: "method_not_allowed" }, corsHeaders);
+
+    const body = await req.json().catch(() => ({}));
+    const action = asString(body?.action);
+
+    if (action === "health") {
+      return json(200, { ok: true, now: new Date().toISOString() }, corsHeaders);
+    }
 
     const expectedKey = Deno.env.get("EVENTS_ADMIN_KEY");
-    if (!expectedKey) return json(500, { error: "EVENTS_ADMIN_KEY missing" });
+    if (!expectedKey) return json(500, { error: "EVENTS_ADMIN_KEY missing" }, corsHeaders);
 
-    const provided = req.headers.get("X-Events-Admin-Key") ?? req.headers.get("x-events-admin-key") ?? "";
+    const provided = req.headers.get("x-events-admin-key") ?? "";
     if (!provided || provided !== expectedKey) {
-      return json(401, { error: "invalid admin key" });
+      return json(401, { error: "invalid admin key" }, corsHeaders);
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!supabaseUrl || !serviceKey) return json(500, { error: "service env missing" });
+    if (!supabaseUrl || !serviceKey) return json(500, { error: "service env missing" }, corsHeaders);
 
     const supabase = createClient(supabaseUrl, serviceKey);
-    const body = await req.json().catch(() => ({}));
-    const action = asString(body?.action);
 
     if (action === "create") {
       const valid = validateEventInput(body?.event);
-      if (!valid.ok) return json(400, { error: valid.error });
+      if (!valid.ok) return json(400, { error: valid.error }, corsHeaders);
       const row = {
         ...valid.value,
         status: "active",
       };
       const { data, error } = await supabase.from("events_manual").insert(row).select("*").single();
-      if (error) return json(500, { error: error.message });
-      return json(200, { data });
+      if (error) return json(500, { error: error.message }, corsHeaders);
+      return json(200, { data }, corsHeaders);
     }
 
     if (action === "update") {
       const id = asString(body?.id);
-      if (!id) return json(400, { error: "id is required" });
+      if (!id) return json(400, { error: "id is required" }, corsHeaders);
       const valid = validatePatch(body?.patch);
-      if (!valid.ok) return json(400, { error: valid.error });
+      if (!valid.ok) return json(400, { error: valid.error }, corsHeaders);
       const { data, error } = await supabase.from("events_manual").update(valid.value).eq("id", id).select("*").single();
-      if (error) return json(500, { error: error.message });
-      return json(200, { data });
+      if (error) return json(500, { error: error.message }, corsHeaders);
+      return json(200, { data }, corsHeaders);
     }
 
     if (action === "archive") {
       const id = asString(body?.id);
-      if (!id) return json(400, { error: "id is required" });
+      if (!id) return json(400, { error: "id is required" }, corsHeaders);
       const now = new Date().toISOString();
       const { data, error } = await supabase
         .from("events_manual")
@@ -179,13 +189,13 @@ Deno.serve(async (req) => {
         .eq("id", id)
         .select("*")
         .single();
-      if (error) return json(500, { error: error.message });
-      return json(200, { data });
+      if (error) return json(500, { error: error.message }, corsHeaders);
+      return json(200, { data }, corsHeaders);
     }
 
     if (action === "unarchive") {
       const id = asString(body?.id);
-      if (!id) return json(400, { error: "id is required" });
+      if (!id) return json(400, { error: "id is required" }, corsHeaders);
       const now = new Date().toISOString();
       const { data, error } = await supabase
         .from("events_manual")
@@ -193,13 +203,13 @@ Deno.serve(async (req) => {
         .eq("id", id)
         .select("*")
         .single();
-      if (error) return json(500, { error: error.message });
-      return json(200, { data });
+      if (error) return json(500, { error: error.message }, corsHeaders);
+      return json(200, { data }, corsHeaders);
     }
 
     if (action === "delete") {
       const id = asString(body?.id);
-      if (!id) return json(400, { error: "id is required" });
+      if (!id) return json(400, { error: "id is required" }, corsHeaders);
       const now = new Date().toISOString();
       const { data, error } = await supabase
         .from("events_manual")
@@ -207,12 +217,12 @@ Deno.serve(async (req) => {
         .eq("id", id)
         .select("*")
         .single();
-      if (error) return json(500, { error: error.message });
-      return json(200, { data });
+      if (error) return json(500, { error: error.message }, corsHeaders);
+      return json(200, { data }, corsHeaders);
     }
 
-    return json(400, { error: "unknown action" });
+    return json(400, { error: "unknown action" }, corsHeaders);
   } catch (error) {
-    return json(500, { error: String(error) });
+    return json(500, { error: String(error) }, corsHeaders);
   }
 });

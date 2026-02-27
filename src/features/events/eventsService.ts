@@ -113,17 +113,56 @@ function requireEventsAdminKey(): string {
 
 async function callEventsAdmin(action: "create" | "update" | "archive" | "unarchive" | "delete", payload: Record<string, unknown>): Promise<ManualEventRow> {
   const key = requireEventsAdminKey();
+  const resolvedSupabaseUrl = getSupabaseUrl().replace(/\/+$/, "");
   const { data, error } = await supabase.functions.invoke("events-admin", {
     body: { action, ...payload },
     headers: {
-      "X-Events-Admin-Key": key,
+      "x-events-admin-key": key,
     },
   });
   if (error) {
-    const message = error.message || "events-admin failed";
+    const errorName = String((error as any)?.name || "");
+    const message = String(error.message || "events-admin failed");
+    console.error("[events-admin] invoke failed", {
+      supabaseUrl: resolvedSupabaseUrl,
+      functionsBase: `${resolvedSupabaseUrl}/functions/v1`,
+      fn: "events-admin",
+      hasAdminKey: Boolean(key),
+      errorName,
+      errorMessage: message,
+    });
+    if (errorName.includes("FunctionsFetchError")) {
+      throw new Error("Ürituse salvestamine ebaõnnestus: ühendus Edge Functioniga ebaõnnestus (CORS või URL).");
+    }
     throw new Error(`Ürituse salvestamine ebaõnnestus: ${message}`);
   }
   return mapRow((data as any)?.data || data);
+}
+
+export async function testEventsAdminHealth(adminKey?: string): Promise<{ ok: boolean; now?: string }> {
+  const key = adminKey?.trim() || getEventsAdminKey() || "";
+  const resolvedSupabaseUrl = getSupabaseUrl().replace(/\/+$/, "");
+  const { data, error } = await supabase.functions.invoke("events-admin", {
+    body: { action: "health" },
+    headers: key ? { "x-events-admin-key": key } : undefined,
+  });
+  if (error) {
+    const errorName = String((error as any)?.name || "");
+    const message = String(error.message || "health check failed");
+    console.error("[events-admin] health failed", {
+      supabaseUrl: resolvedSupabaseUrl,
+      functionsBase: `${resolvedSupabaseUrl}/functions/v1`,
+      fn: "events-admin",
+      hasAdminKey: Boolean(key),
+      errorName,
+      errorMessage: message,
+    });
+    if (errorName.includes("FunctionsFetchError")) {
+      throw new Error("Ürituse salvestamine ebaõnnestus: ühendus Edge Functioniga ebaõnnestus (CORS või URL).");
+    }
+    throw new Error(message);
+  }
+  return (data as { ok: boolean; now?: string }) ?? { ok: false };
 }
 
 export async function createManualEvent(event: ManualEventInput): Promise<ManualEventRow> {

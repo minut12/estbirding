@@ -16,6 +16,7 @@ import {
   createManualEvent,
   deleteManualEvent,
   listPublicEventsManual,
+  testEventsAdminHealth,
   type ManualEventInput,
   type ManualEventPatch,
   type ManualEventRow,
@@ -171,6 +172,20 @@ export default function EventsManagementSettings() {
     toast.success("Events admin key eemaldatud");
   };
 
+  const testAdminEndpoint = async () => {
+    const adminKey = savedAdminKey.trim();
+    try {
+      const result = await testEventsAdminHealth(adminKey);
+      if (result.ok) {
+        toast.success("Test events admin: OK");
+        return;
+      }
+      toast.error("Test events admin ebaõnnestus");
+    } catch (error) {
+      toast.error(`Test events admin ebaõnnestus: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
   const submitForm = async () => {
     const error = validateForm(form);
     if (error) {
@@ -233,6 +248,9 @@ export default function EventsManagementSettings() {
           <Button onClick={saveKey} className="flex-1">Salvesta</Button>
           <Button variant="outline" onClick={clearKey} className="flex-1">Eemalda</Button>
         </div>
+        <Button variant="outline" onClick={testAdminEndpoint} className="w-full">
+          Test events admin
+        </Button>
       </div>
 
       <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">

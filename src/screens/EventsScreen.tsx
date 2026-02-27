@@ -3,7 +3,7 @@ import { CalendarDays, RefreshCw, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { et } from "@/localization/et";
 import { type EventItem } from "@/data/events";
-import { EventMapPreview } from "@/components/events/EventMapPreview";
+import { EventsMapMapLibre } from "@/components/events/EventsMapMapLibre";
 import { EventCard } from "@/components/events/EventCard";
 import {
   archiveManualEvent,
@@ -94,7 +94,7 @@ function toErrorMessage(err: unknown): string {
 }
 
 function parseCoord(value: string, min: number, max: number): number | null {
-  const trimmed = value?.trim();
+  const trimmed = value?.trim().replace(",", ".");
   if (!trimmed) return null;
   const parsed = Number.parseFloat(trimmed);
   if (!Number.isFinite(parsed)) return null;
@@ -200,16 +200,6 @@ export default function EventsScreen() {
   const selectEvent = (eventId: string) => {
     setHighlightedEventId(eventId);
     cardRefs.current[eventId]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  };
-
-  const cycleEvent = (direction: "prev" | "next") => {
-    if (filteredEvents.length === 0 || !highlightedEventId) return;
-    const currentIndex = filteredEvents.findIndex((event) => event.id === highlightedEventId);
-    const nextIndex =
-      direction === "next"
-        ? (currentIndex + 1) % filteredEvents.length
-        : (currentIndex - 1 + filteredEvents.length) % filteredEvents.length;
-    selectEvent(filteredEvents[nextIndex].id);
   };
 
   const handleRefresh = async () => {
@@ -355,12 +345,9 @@ export default function EventsScreen() {
 
       {mapEvents.length > 0 && (
         <div className="px-4 pb-3">
-          <EventMapPreview
-            events={mapEvents}
-            highlightedEventId={highlightedEventId}
-            onSelectEvent={selectEvent}
-            onPrev={() => cycleEvent("prev")}
-            onNext={() => cycleEvent("next")}
+          <EventsMapMapLibre
+            points={mapEvents.map((event) => ({ id: event.id, lat: event.lat, lon: event.lng, title: event.title }))}
+            selectedId={highlightedEventId || undefined}
           />
         </div>
       )}

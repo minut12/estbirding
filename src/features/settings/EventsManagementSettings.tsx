@@ -87,7 +87,7 @@ function validateForm(form: FormState): string | null {
 }
 
 function parseCoord(value: string, min: number, max: number): number | null {
-  const trimmed = value?.trim();
+  const trimmed = value?.trim().replace(",", ".");
   if (!trimmed) return null;
   const parsed = Number.parseFloat(trimmed);
   if (!Number.isFinite(parsed)) return null;

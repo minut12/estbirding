@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 
 // Hidden debug shortcut: ?reset=1 triggers full reset
 import { fullReset, doHardReload } from './lib/cache-reset';

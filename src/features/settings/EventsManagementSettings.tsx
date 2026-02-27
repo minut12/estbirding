@@ -76,10 +76,10 @@ function validateForm(form: FormState): string | null {
   if (Number.isNaN(starts)) return "Algusaeg on vigane.";
   if (form.ends_at) {
     const ends = new Date(form.ends_at).getTime();
-    if (Number.isNaN(ends)) return "Lopuaeg on vigane.";
-    if (ends < starts) return "Lopuaeg peab olema suurem voi vordne algusajaga.";
+    if (Number.isNaN(ends)) return "Lõpuaeg on vigane.";
+    if (ends < starts) return "Lõpuaeg peab olema suurem või võrdne algusajaga.";
   }
-  if ((form.lat && !form.lon) || (!form.lat && form.lon)) return "Lat ja Lon peavad olema molemad taidetud.";
+  if ((form.lat && !form.lon) || (!form.lat && form.lon)) return "Lat ja Lon peavad olema mõlemad täidetud.";
   if (form.lat && Number.isNaN(Number(form.lat))) return "Lat peab olema number.";
   if (form.lon && Number.isNaN(Number(form.lon))) return "Lon peab olema number.";
   return null;
@@ -155,7 +155,7 @@ export default function EventsManagementSettings() {
   const saveKey = () => {
     const next = adminKeyInput.trim();
     if (!next) {
-      toast.error("Sisesta voti.");
+      toast.error("Sisesta võti.");
       return;
     }
     setEventsAdminKey(next);
@@ -185,7 +185,7 @@ export default function EventsManagementSettings() {
       } else {
         await createManualEvent(buildPayload(form));
       }
-      toast.success("Uritus salvestatud");
+      toast.success("Üritus salvestatud");
       setDialogOpen(false);
       await loadEvents();
     } catch (e) {
@@ -198,18 +198,18 @@ export default function EventsManagementSettings() {
       if (event.status === "archived") await unarchiveManualEvent(event.id);
       else await archiveManualEvent(event.id);
       await loadEvents();
-      toast.success(event.status === "archived" ? "Uritus taastatud" : "Uritus arhiveeritud");
+      toast.success(event.status === "archived" ? "Üritus taastatud" : "Üritus arhiveeritud");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     }
   };
 
   const onDelete = async (event: ManualEventRow) => {
-    if (!window.confirm("Kustutan urituse?")) return;
+    if (!window.confirm("Kustutan ürituse?")) return;
     try {
       await deleteManualEvent(event.id);
       await loadEvents();
-      toast.success("Uritus kustutatud");
+      toast.success("Üritus kustutatud");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     }
@@ -217,7 +217,7 @@ export default function EventsManagementSettings() {
 
   return (
     <div className="space-y-4 rounded-lg border border-border bg-card p-4">
-      <h3 className="font-semibold text-foreground">Urituste haldus</h3>
+      <h3 className="font-semibold text-foreground">Ürituste haldus</h3>
 
       <div className="space-y-2">
         <Label htmlFor="eventsAdminKeyInput">Events admin key</Label>
@@ -228,26 +228,26 @@ export default function EventsManagementSettings() {
           value={adminKeyInput}
           onChange={(e) => setAdminKeyInput(e.target.value)}
         />
-        <p className="text-xs text-muted-foreground">Salvestatud voti mask: {maskKey(savedAdminKey)}</p>
+        <p className="text-xs text-muted-foreground">Salvestatud võtme mask: {maskKey(savedAdminKey)}</p>
         <div className="flex gap-2">
           <Button onClick={saveKey} className="flex-1">Salvesta</Button>
           <Button variant="outline" onClick={clearKey} className="flex-1">Eemalda</Button>
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <Button onClick={openCreate} disabled={!canWrite}>Lisa uritus</Button>
-        <Button variant="outline" onClick={() => setShowArchived((v) => !v)}>
+      <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
+        <Button onClick={openCreate} disabled={!canWrite} className="w-full sm:w-auto">Lisa üritus</Button>
+        <Button variant="outline" onClick={() => setShowArchived((v) => !v)} className="w-full sm:w-auto">
           {showArchived ? "Peida arhiveeritud" : "Kuva arhiveeritud"}
         </Button>
-        <Button variant="ghost" onClick={loadEvents} disabled={loading}>Varskenda</Button>
+        <Button variant="ghost" onClick={loadEvents} disabled={loading} className="w-full sm:w-auto">Värskenda</Button>
       </div>
 
       <div className="space-y-2">
         {loading ? (
-          <p className="text-sm text-muted-foreground">Laen uritusi...</p>
+          <p className="text-sm text-muted-foreground">Laen üritusi...</p>
         ) : visibleEvents.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Uritusi ei leitud.</p>
+          <p className="text-sm text-muted-foreground">Üritusi ei leitud.</p>
         ) : (
           visibleEvents.map((event) => (
             <div key={event.id} className="rounded-md border border-border p-3">
@@ -278,8 +278,8 @@ export default function EventsManagementSettings() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingId ? "Muuda uritust" : "Lisa uritus"}</DialogTitle>
-            <DialogDescription>Taita valjad ja salvesta.</DialogDescription>
+            <DialogTitle>{editingId ? "Muuda üritust" : "Lisa üritus"}</DialogTitle>
+            <DialogDescription>Täida väljad ja salvesta.</DialogDescription>
           </DialogHeader>
 
           <div className="grid grid-cols-1 gap-3">

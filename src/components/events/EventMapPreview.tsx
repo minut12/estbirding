@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, MapPin } from "lucide-react";
+﻿import { ChevronLeft, ChevronRight, MapPin } from "lucide-react";
 import { useMemo } from "react";
 import type { EventItem } from "@/data/events";
 
@@ -68,7 +68,7 @@ export function EventMapPreview({
     <div className="relative h-[300px] overflow-hidden rounded-2xl border border-border/70 bg-[#edf2ed] shadow-sm">
       <img
         src={mapUrl}
-        alt="Urituste kaart"
+        alt="Ürituste kaart"
         className="h-[300px] w-full object-cover"
         loading="lazy"
       />
@@ -98,14 +98,14 @@ export function EventMapPreview({
         <button
           className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-white/95 text-foreground shadow-sm"
           onClick={onPrev}
-          aria-label="Eelmine uritus"
+          aria-label="Eelmine üritus"
         >
           <ChevronLeft className="h-5 w-5" />
         </button>
         <button
           className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-white/95 text-foreground shadow-sm"
           onClick={onNext}
-          aria-label="Jargmine uritus"
+          aria-label="Järgmine üritus"
         >
           <ChevronRight className="h-5 w-5" />
         </button>
@@ -119,8 +119,9 @@ export function EventMapPreview({
       </div>
 
       <div className="absolute bottom-3 left-3 rounded bg-white/85 px-2 py-1 text-[11px] text-muted-foreground">
-        � OpenStreetMap contributors
+        © OpenStreetMap contributors
       </div>
     </div>
   );
 }
+

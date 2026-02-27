@@ -62,7 +62,7 @@ function toEventItem(row: ManualEventRow): EventItem {
     title: row.title,
     startAt: row.starts_at,
     endAt: row.ends_at || undefined,
-    locationName: row.location_name || "Asukoht tapsustamisel",
+    locationName: row.location_name || "Asukoht täpsustamisel",
     lat: row.lat == null ? Number.NaN : row.lat,
     lng: row.lon == null ? Number.NaN : row.lon,
     category: row.type === "muud" ? "Muud" : "EstBirding",
@@ -208,11 +208,11 @@ export default function EventsScreen() {
   const saveEdit = async () => {
     if (!editingId) return;
     if (!editForm.title.trim() || !editForm.starts_at) {
-      toast.error("Title ja start datetime on kohustuslikud.");
+      toast.error("Pealkiri ja algusaeg on kohustuslikud.");
       return;
     }
     if ((editForm.lat && !editForm.lon) || (!editForm.lat && editForm.lon)) {
-      toast.error("Lat ja lon peavad olema molemad.");
+      toast.error("Lat ja lon peavad olema mõlemad.");
       return;
     }
     const patch: ManualEventPatch = {
@@ -229,7 +229,7 @@ export default function EventsScreen() {
 
     try {
       await updateManualEvent(editingId, patch);
-      toast.success("Uritus uuendatud");
+      toast.success("Üritus uuendatud");
       setEditOpen(false);
       await loadEvents();
     } catch (error) {
@@ -301,7 +301,7 @@ export default function EventsScreen() {
         <div className="flex gap-2">
           {(
             [
-              ["koik", "Koik"],
+              ["koik", "Kõik"],
               ["active", "Aktiivsed"],
               ["archived", "Arhiveeritud"],
             ] as const
@@ -346,13 +346,13 @@ export default function EventsScreen() {
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-t-[28px] bg-white px-4 pt-4 shadow-[0_-8px_24px_rgba(38,64,52,0.08)]">
         {isLoading ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Laen uritusi...</div>
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Laen üritusi...</div>
         ) : filteredEvents.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             <CalendarDays className="h-10 w-10 text-muted-foreground/45" />
-            <p className="text-sm text-muted-foreground">Uritusi ei leitud. Proovi varskendada.</p>
+            <p className="text-sm text-muted-foreground">Üritusi ei leitud. Proovi värskendada.</p>
             <button onClick={handleRefresh} className="rounded-full border border-border px-4 py-1.5 text-xs font-medium text-foreground">
-              Varskenda
+              Värskenda
             </button>
           </div>
         ) : (

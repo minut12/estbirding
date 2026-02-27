@@ -240,7 +240,7 @@ export default function SettingsTab() {
       await new Promise((r) => setTimeout(r, 800));
       if (mode === 'soft') doSoftReload(); else doHardReload();
     } catch {
-      toast.error('Tuhjendamine ebaonnestus');
+      toast.error('Tühjendamine ebaõnnestus');
       setResetting(false);
     }
   };
@@ -417,8 +417,8 @@ export default function SettingsTab() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirmMode === 'hard'
-                ? 'Koik salvestatud seaded ja vahemalu kustutatakse. Rakendus laaditakse uuesti.'
-                : 'Vahemalu tuhjendatakse ja rakendus laaditakse uuesti. Seaded jaavad alles.'}
+                ? 'Kõik salvestatud seaded ja vahemälu kustutatakse. Rakendus laaditakse uuesti.'
+                : 'Vahemälu tühjendatakse ja rakendus laaditakse uuesti. Seaded jäävad alles.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

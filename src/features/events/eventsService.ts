@@ -86,7 +86,17 @@ export async function listPublicEventsManual(): Promise<ManualEventRow[]> {
   const response = await supabaseFetch(endpoint, { method: "GET" });
   const json = await parseJsonResponse(response);
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${json?.message || json?.error || "events read failed"}`);
+    const message = String(json?.message || json?.error || json?.hint || "");
+    const lower = message.toLowerCase();
+    if (
+      response.status === 404 &&
+      (lower.includes("schema cache") ||
+        lower.includes("could not find") ||
+        lower.includes("events_manual"))
+    ) {
+      throw new Error("Events table missing in Supabase. Run migration.");
+    }
+    throw new Error(`HTTP ${response.status}: ${message || "events read failed"}`);
   }
   const rows = Array.isArray(json) ? json.map(mapRow) : [];
   return sortByStartsAtAsc(rows);

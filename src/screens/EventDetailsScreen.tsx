@@ -52,7 +52,7 @@ export default function EventDetailsScreen({ event, onBack }: EventDetailsScreen
         </div>
 
         <p className="mt-4 text-sm leading-relaxed text-foreground">
-          {event.description ?? "Selle urituse kohta kuvatakse peagi lisainfo."}
+          {event.description ?? "Selle ürituse kohta kuvatakse peagi lisainfo."}
         </p>
       </div>
     </div>

@@ -161,7 +161,7 @@ function SourceCard({
           ) : (
             <div className="flex items-center gap-1.5">
               <X className="w-3.5 h-3.5" />
-              <span>{testResult.error || 'Allika lugemine ebaonnestus'}</span>
+              <span>{testResult.error || 'Allika lugemine ebaõnnestus'}</span>
             </div>
           )}
         </div>

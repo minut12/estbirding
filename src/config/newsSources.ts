@@ -18,8 +18,9 @@ export const DEFAULT_NEWS_SOURCES: NewsSourceConfigItem[] = [
     id: "birding_poland",
     name: "Birding Poland",
     kind: "rss",
-    url: "https://rss.app/feeds/mn6SuRIcMkSczPdv.xml",
+    url: "https://rss.app/feeds/oj8X6cpy0jWL7JNy.xml",
     enabled: true,
   },
 ];
+
 

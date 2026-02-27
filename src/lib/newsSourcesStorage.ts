@@ -18,15 +18,39 @@ interface LegacyNewsSourceShape {
   key?: unknown;
 }
 
+const BIRDING_POLAND_TARGET_URL = "https://rss.app/feeds/oj8X6cpy0jWL7JNy.xml";
+const BIRDING_POLAND_OLD_URLS = new Set([
+  "https://rss.app/feed/mn6SuRIcMkSczPdv",
+  "https://rss.app/feed/mn6SuRIcMkSczPdv/",
+  "https://rss.app/feeds/mn6SuRIcMkSczPdv",
+  "https://rss.app/feeds/mn6SuRIcMkSczPdv.xml",
+]);
 
 export function normalizeSourceUrl(url: string): string {
   const trimmed = String(url || "").trim();
-  const match = trimmed.match(/^https?:\/\/rss\.app\/feed\/([A-Za-z0-9_-]+)\/?$/);
-  if (match) {
-    return `https://rss.app/feeds/${match[1]}.xml`;
+  const feedMatch = trimmed.match(/^https?:\/\/rss\.app\/feed\/([A-Za-z0-9_-]+)\/?$/);
+  if (feedMatch) {
+    return `https://rss.app/feeds/${feedMatch[1]}.xml`;
   }
+
+  const feedsMatch = trimmed.match(/^https?:\/\/rss\.app\/feeds\/([A-Za-z0-9_-]+)\/?$/);
+  if (feedsMatch) {
+    return `https://rss.app/feeds/${feedsMatch[1]}.xml`;
+  }
+
   return trimmed;
 }
+
+function normalizeSourceEntry(source: NewsSourceConfigItem): NewsSourceConfigItem {
+  const normalizedUrl = normalizeSourceUrl(source.url);
+  const isBirdingPoland = source.id === "birding_poland" || source.name.trim().toLowerCase() === "birding poland";
+  const url = isBirdingPoland && BIRDING_POLAND_OLD_URLS.has(normalizedUrl)
+    ? BIRDING_POLAND_TARGET_URL
+    : normalizedUrl;
+
+  return { ...source, url };
+}
+
 function cloneDefaults(): NewsSourceConfigItem[] {
   return DEFAULT_NEWS_SOURCES.map((source) => ({ ...source }));
 }
@@ -48,23 +72,22 @@ function sanitizeSource(input: LegacyNewsSourceShape): NewsSourceConfigItem | nu
       : typeof input.feed_url === "string" ? input.feed_url
         : typeof input.homepage_url === "string" ? input.homepage_url
           : "";
-  const url = normalizeSourceUrl(urlCandidate);
   const enabledCandidate =
     typeof input.enabled === "boolean" ? input.enabled
       : typeof input.is_enabled === "boolean" ? input.is_enabled
         : null;
 
-  if (!id || !name || !kind || !url || enabledCandidate == null) {
+  if (!id || !name || !kind || !urlCandidate.trim() || enabledCandidate == null) {
     return null;
   }
 
-  return {
+  return normalizeSourceEntry({
     id,
     name,
     kind,
-    url,
+    url: urlCandidate,
     enabled: enabledCandidate,
-  };
+  });
 }
 
 function isCorruptedSingleEntry(list: NewsSourceConfigItem[]): boolean {
@@ -103,7 +126,7 @@ function mergeWithDefaults(list: NewsSourceConfigItem[]): NewsSourceConfigItem[]
 }
 
 export function saveNewsSources(list: NewsSourceConfigItem[]): void {
-  const normalized = mergeWithDefaults(list).map((source) => ({ ...source, url: normalizeSourceUrl(source.url) }));
+  const normalized = mergeWithDefaults(list).map((source) => normalizeSourceEntry(source));
   localStorage.setItem(NEWS_SOURCES_KEY, JSON.stringify(normalized));
 }
 
@@ -140,7 +163,7 @@ export function loadNewsSources(): { list: NewsSourceConfigItem[]; source: NewsS
     return { list: repaired, source: "repaired" };
   }
 
-  const merged = mergeWithDefaults(sanitized).map((source) => ({ ...source, url: normalizeSourceUrl(source.url) }));
+  const merged = mergeWithDefaults(sanitized).map((source) => normalizeSourceEntry(source));
   if (isCorruptedSingleEntry(merged) || isCorruptedSingleEntry(sanitized)) {
     const repaired = mergeWithDefaults(cloneDefaults());
     saveNewsSources(repaired);
@@ -152,6 +175,7 @@ export function loadNewsSources(): { list: NewsSourceConfigItem[]; source: NewsS
     const original = originalById.get(source.id);
     return typeof original === "string" && original !== source.url;
   });
+
   const missingDefault = DEFAULT_NEWS_SOURCES.some((defaultSource) => !merged.some((stored) => stored.id === defaultSource.id));
   if (missingDefault || merged.length !== sanitized.length || normalizedChanged) {
     saveNewsSources(merged);
@@ -171,4 +195,3 @@ export function resetNewsSourcesToDefaults(): NewsSourceConfigItem[] {
   saveNewsSources(defaults);
   return defaults;
 }
-

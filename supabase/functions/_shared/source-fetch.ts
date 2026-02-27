@@ -26,10 +26,16 @@ export class SourceFetchError extends Error {
 
 export function normalizeSourceUrl(url: string): string {
   const trimmed = String(url || "").trim();
-  const match = trimmed.match(/^https?:\/\/rss\.app\/feed\/([A-Za-z0-9_-]+)\/?$/);
-  if (match) {
-    return `https://rss.app/feeds/${match[1]}.xml`;
+  const feedMatch = trimmed.match(/^https?:\/\/rss\.app\/feed\/([A-Za-z0-9_-]+)\/?$/);
+  if (feedMatch) {
+    return `https://rss.app/feeds/${feedMatch[1]}.xml`;
   }
+
+  const feedsMatch = trimmed.match(/^https?:\/\/rss\.app\/feeds\/([A-Za-z0-9_-]+)\/?$/);
+  if (feedsMatch) {
+    return `https://rss.app/feeds/${feedsMatch[1]}.xml`;
+  }
+
   return trimmed;
 }
 

@@ -47,7 +47,7 @@ async function nativeRequest(method: 'GET' | 'POST', url: string, body?: any, he
       method,
       url: endpoint,
       headers: {
-        ...(method === 'POST' ? { 'Content-Type': 'text/plain;charset=UTF-8' } : {}),
+        ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
         ...(headers || {}),
         ...authHeaders,
       },
@@ -72,7 +72,7 @@ async function webRequest(method: 'GET' | 'POST', url: string, body?: any, heade
     response = await supabaseFetch(endpoint, {
       method,
       headers: {
-        ...(method === 'POST' ? { 'content-type': 'text/plain;charset=UTF-8' } : {}),
+        ...(method === 'POST' ? { 'content-type': 'application/json' } : {}),
         ...(headers || {}),
       },
       body: method === 'POST' ? JSON.stringify(body || {}) : undefined,

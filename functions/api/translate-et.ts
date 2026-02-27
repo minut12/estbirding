@@ -4,9 +4,9 @@ interface Env {
 }
 
 type TranslateRequestBody = {
-  id?: unknown;
-  title?: unknown;
-  body?: unknown;
+  text?: unknown;
+  targetLang?: unknown;
+  sourceLang?: unknown;
 };
 
 const MAX_TEXT_CHARS = 20_000;
@@ -27,11 +27,11 @@ function json(status: number, payload: Record<string, unknown>): Response {
   });
 }
 
-function normalizePayload(input: TranslateRequestBody): { id: string; title: string; body: string } {
+function normalizePayload(input: TranslateRequestBody): { text: string; targetLang: string; sourceLang: string } {
   return {
-    id: String(input.id || '').trim(),
-    title: String(input.title || '').trim(),
-    body: String(input.body || '').trim(),
+    text: String(input.text || '').trim(),
+    targetLang: String(input.targetLang || 'et').trim() || 'et',
+    sourceLang: String(input.sourceLang || 'auto').trim() || 'auto',
   };
 }
 
@@ -46,28 +46,29 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   }
 
   if (request.method !== 'POST') {
-    return json(405, { error: 'Method not allowed' });
+    return json(405, { ok: false, error: 'Method not allowed' });
   }
 
-  let body: TranslateRequestBody;
+  const raw = await request.text();
+  let body: TranslateRequestBody = {};
   try {
-    body = await request.json<TranslateRequestBody>();
+    body = raw ? JSON.parse(raw) as TranslateRequestBody : {};
   } catch {
-    return json(400, { error: 'Invalid JSON body' });
+    return json(400, { ok: false, error: 'Invalid JSON payload' });
   }
 
   const payload = normalizePayload(body);
-  if (!payload.id || (!payload.title && !payload.body)) {
-    return json(400, { error: 'Invalid payload' });
+  if (!payload.text) {
+    return json(400, { ok: false, error: 'text is required' });
   }
 
-  if (payload.title.length + payload.body.length > MAX_TEXT_CHARS) {
-    return json(413, { error: 'Payload too large' });
+  if (payload.text.length > MAX_TEXT_CHARS) {
+    return json(413, { ok: false, error: 'Payload too large' });
   }
 
   const apiKey = String(env.OPENAI_API_KEY || '').trim();
   if (!apiKey) {
-    return json(503, { error: 'OPENAI_API_KEY missing' });
+    return json(503, { ok: false, error: 'OPENAI_API_KEY missing' });
   }
 
   const model = String(env.OPENAI_TRANSLATION_MODEL || 'gpt-4.1-mini').trim();
@@ -87,7 +88,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             content: [
               {
                 type: 'input_text',
-                text: 'Translate to Estonian. If input is already Estonian, return unchanged. Preserve URLs, hashtags, @mentions, numbers, emojis, Latin species names, and paragraph breaks exactly. Return strict JSON only: {"title_et":"...","body_et":"..."}',
+                text: `Translate from ${payload.sourceLang} to ${payload.targetLang}. Preserve URLs, hashtags, @mentions, numbers, emojis, Latin species names, and paragraph breaks exactly. Return strict JSON only: {"translatedText":"..."}`,
               },
             ],
           },
@@ -96,7 +97,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             content: [
               {
                 type: 'input_text',
-                text: `id: ${payload.id}\n\nTitle:\n${payload.title}\n\nBody:\n${payload.body}`,
+                text: payload.text,
               },
             ],
           },
@@ -110,10 +111,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
               type: 'object',
               additionalProperties: false,
               properties: {
-                title_et: { type: 'string' },
-                body_et: { type: 'string' },
+                translatedText: { type: 'string' },
               },
-              required: ['title_et', 'body_et'],
+              required: ['translatedText'],
             },
           },
         },
@@ -122,28 +122,28 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     if (!openAiRes.ok) {
       const raw = (await openAiRes.text()).slice(0, 300);
-      return json(502, { error: `OpenAI error HTTP ${openAiRes.status}: ${raw}` });
+      return json(502, { ok: false, error: `OpenAI error HTTP ${openAiRes.status}: ${raw}` });
     }
 
     const data = await openAiRes.json<any>();
     const outputText = String(data?.output_text || '').trim();
     if (!outputText) {
-      return json(502, { error: 'OpenAI returned empty output' });
+      return json(502, { ok: false, error: 'OpenAI returned empty output' });
     }
 
-    let parsed: { title_et?: unknown; body_et?: unknown };
+    let parsed: { translatedText?: unknown };
     try {
       parsed = JSON.parse(outputText);
     } catch {
-      return json(502, { error: `OpenAI returned non-JSON output: ${outputText.slice(0, 300)}` });
+      return json(502, { ok: false, error: `OpenAI returned non-JSON output: ${outputText.slice(0, 300)}` });
     }
 
     return json(200, {
-      title_et: String(parsed.title_et || ''),
-      body_et: String(parsed.body_et || ''),
+      ok: true,
+      translatedText: String(parsed.translatedText || ''),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return json(502, { error: `Translation failed: ${message}` });
+    return json(502, { ok: false, error: `Translation failed: ${message}` });
   }
 };

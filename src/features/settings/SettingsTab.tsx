@@ -28,7 +28,7 @@ import {
   TRANSLATION_ENDPOINT_UPDATED_EVENT,
   WORKER_DEFAULT_ENDPOINT,
 } from '@/config/translationEndpoint';
-import { isNativePlatform, postJson } from '@/lib/httpClient';
+import { isNativePlatform } from '@/lib/httpClient';
 import {
   FALLBACK_PROXY_BASE,
   getEnvProxyBase,
@@ -162,21 +162,30 @@ export default function SettingsTab() {
       }
 
       const payload = {
-        id: 'dev-test-pl',
-        title: 'Jedna z dwoch mew wrocila na zbiornik',
-        body: 'Wrocila dzis rano. Szczegoly: https://example.com #ptaki',
+        text: 'Tere! This is a test.',
+        targetLang: 'et',
       };
-      const translateRes = await postJson(endpoint, payload);
-      if (translateRes.status !== 200) {
-        const preview = String(translateRes.rawText || JSON.stringify(translateRes.data) || '').slice(0, 120).replace(/\s+/g, ' ');
-        throw new Error(`status=${translateRes.status}. endpoint=${endpoint}. ${preview || '[empty body]'}`);
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const rawText = await response.text();
+      let data: any = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        const preview = rawText.slice(0, 200).replace(/\s+/g, ' ');
+        throw new Error(`Test failed (${response.status}): non-JSON response from ${endpoint}: ${preview || '[empty body]'}`);
       }
-      const result = (translateRes.data || {}) as { title_et?: unknown; body_et?: unknown; error?: unknown };
-      if (typeof result.title_et !== 'string' || typeof result.body_et !== 'string') {
-        throw new Error(`Invalid JSON payload from ${endpoint}`);
+
+      if (!response.ok || data?.ok !== true || typeof data?.translatedText !== 'string') {
+        const errorText = String(data?.error || data?.message || rawText.slice(0, 200) || 'Unknown error');
+        throw new Error(`Test failed (${response.status}): ${errorText} (${endpoint})`);
       }
-      setTestTranslateResult(JSON.stringify(result, null, 2));
-      toast.success(`Translation OK: ${(result.title_et || '').slice(0, 80)} (${baseEndpoint})`);
+
+      setTestTranslateResult(JSON.stringify(data, null, 2));
+      toast.success('OK');
     } catch (error: any) {
       const message = error?.message || 'Unknown error';
       setTestTranslateResult(`REQUEST FAILED\n${message}`);

@@ -236,22 +236,43 @@ export default function EventsManagementSettings() {
     try {
       const payload = buildPayload(form);
       const previousImagePath = imagePath;
-      if (selectedImageFile) {
-        const uploaded = await uploadEventImage(selectedImageFile);
-        payload.image_url = uploaded.image_url;
-        payload.image_path = uploaded.image_path;
-      } else if (removeImage) {
+      if (removeImage) {
         payload.image_url = null;
         payload.image_path = null;
       } else if (imagePreviewUrl || imagePath) {
         payload.image_url = imagePreviewUrl ?? null;
         payload.image_path = imagePath ?? null;
       }
+
       if (editingId) {
         const patch: ManualEventPatch = payload;
+        if (selectedImageFile) {
+          try {
+            const uploaded = await uploadEventImage(editingId, selectedImageFile);
+            patch.image_url = uploaded.image_url;
+            patch.image_path = uploaded.image_path;
+          } catch (uploadErr) {
+            toast.error(`Image upload failed: ${toErrorMessage(uploadErr)}`);
+            return;
+          }
+        }
         await updateManualEvent(editingId, patch);
       } else {
-        await createManualEvent(payload);
+        payload.image_url = null;
+        payload.image_path = null;
+        const created = await createManualEvent(payload);
+        if (selectedImageFile) {
+          try {
+            const uploaded = await uploadEventImage(created.id, selectedImageFile);
+            await updateManualEvent(created.id, {
+              image_url: uploaded.image_url,
+              image_path: uploaded.image_path,
+            });
+          } catch (uploadErr) {
+            toast.error(`Image upload failed: ${toErrorMessage(uploadErr)}`);
+            return;
+          }
+        }
       }
       if (previousImagePath && (removeImage || selectedImageFile)) {
         try {

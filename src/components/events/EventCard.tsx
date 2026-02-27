@@ -38,6 +38,7 @@ export function EventCard({
           <img
             src={event.imageUrl}
             alt={event.title}
+            loading="lazy"
             className="h-20 w-24 shrink-0 rounded-xl object-cover bg-muted"
           />
           <div className="min-w-0 flex-1">

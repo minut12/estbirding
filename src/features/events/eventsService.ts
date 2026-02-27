@@ -42,6 +42,7 @@ export type ManualEventInput = {
 export type ManualEventPatch = Partial<ManualEventInput>;
 
 const READ_COLUMNS = "id,title,starts_at,ends_at,type,location_name,lat,lon,url,description,status,created_at,updated_at,archived_at,deleted_at";
+const READ_COLUMNS_WITH_IMAGE = "id,title,starts_at,ends_at,type,location_name,lat,lon,url,description,image_url,image_path,status,created_at,updated_at,archived_at,deleted_at";
 
 function sortByStartsAtAsc(list: ManualEventRow[]): ManualEventRow[] {
   return [...list].sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
@@ -89,9 +90,24 @@ export async function listPublicEventsManual(): Promise<ManualEventRow[]> {
     throw new Error(validation.error || "Supabase config invalid");
   }
 
-  const endpoint = `${getSupabaseUrl().replace(/\/+$/, "")}/rest/v1/events_manual?select=${encodeURIComponent(READ_COLUMNS)}&status=neq.deleted&order=starts_at.asc`;
-  const response = await supabaseFetch(endpoint, { method: "GET" });
-  const json = await parseJsonResponse(response);
+  const base = `${getSupabaseUrl().replace(/\/+$/, "")}/rest/v1/events_manual`;
+  const query = `status=neq.deleted&order=starts_at.asc`;
+  const withImageEndpoint = `${base}?select=${encodeURIComponent(READ_COLUMNS_WITH_IMAGE)}&${query}`;
+  const fallbackEndpoint = `${base}?select=${encodeURIComponent(READ_COLUMNS)}&${query}`;
+
+  let response = await supabaseFetch(withImageEndpoint, { method: "GET" });
+  let json = await parseJsonResponse(response);
+  if (!response.ok) {
+    const firstMessage = String(json?.message || json?.error || json?.hint || "").toLowerCase();
+    const missingImageColumn =
+      response.status === 400 &&
+      firstMessage.includes("column") &&
+      (firstMessage.includes("image_url") || firstMessage.includes("image_path"));
+    if (missingImageColumn) {
+      response = await supabaseFetch(fallbackEndpoint, { method: "GET" });
+      json = await parseJsonResponse(response);
+    }
+  }
   if (!response.ok) {
     const message = String(json?.message || json?.error || json?.hint || "");
     const lower = message.toLowerCase();
@@ -182,43 +198,35 @@ export async function deleteManualEvent(id: string): Promise<ManualEventRow> {
   return callRpcRow("events_admin_delete", { admin_key: adminKey, p_id: id });
 }
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const value = String(reader.result || "");
-      const base64 = value.includes(",") ? value.split(",")[1] : value;
-      resolve(base64);
-    };
-    reader.onerror = () => reject(reader.error || new Error("File read failed"));
-    reader.readAsDataURL(file);
-  });
+function safeFileName(name: string): string {
+  const cleaned = String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, "-");
+  return cleaned || "image.jpg";
 }
 
-export async function uploadEventImage(file: File): Promise<{ image_url: string; image_path: string }> {
-  const adminKey = requireEventsAdminKey();
-  const base64 = await fileToBase64(file);
-  const { data, error } = await supabase.functions.invoke("events-image-upload", {
-    body: {
-      adminKey,
-      fileName: file.name || "event-image.jpg",
-      mimeType: file.type || "image/jpeg",
-      base64,
-    },
+export async function uploadEventImage(eventId: string, file: File): Promise<{ image_url: string; image_path: string }> {
+  const id = String(eventId || "").trim();
+  if (!id) throw new Error("event id is required for image upload");
+
+  const safeName = safeFileName(file.name || "image.jpg");
+  const path = `events/${id}/${Date.now()}_${safeName}`;
+  const { error } = await supabase.storage.from("event-images").upload(path, file, {
+    upsert: true,
+    contentType: file.type || "application/octet-stream",
   });
   if (error) throw error;
-  const image_url = String((data as any)?.publicUrl || "");
-  const image_path = String((data as any)?.path || "");
+  const { data } = supabase.storage.from("event-images").getPublicUrl(path);
+  const image_url = String(data?.publicUrl || "");
+  const image_path = path;
   if (!image_url || !image_path) throw new Error("Image upload failed");
   return { image_url, image_path };
 }
 
 export async function deleteEventImage(path: string): Promise<void> {
-  const adminKey = requireEventsAdminKey();
   const cleanPath = String(path || "").trim();
   if (!cleanPath) return;
-  const { error } = await supabase.functions.invoke("events-image-upload", {
-    body: { action: "delete", adminKey, path: cleanPath },
-  });
+  const { error } = await supabase.storage.from("event-images").remove([cleanPath]);
   if (error) throw error;
 }

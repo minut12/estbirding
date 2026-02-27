@@ -48,3 +48,16 @@ export function formatEventDate(startAtIso: string): string {
   const minutes = String(d.getMinutes()).padStart(2, "0");
   return `${day}. ${month} | ${hours}:${minutes}`;
 }
+
+export function formatEventCountdown(startsAtIso: string, now = new Date()): string {
+  const startsAt = new Date(startsAtIso);
+  const startDay = new Date(startsAt.getFullYear(), startsAt.getMonth(), startsAt.getDate());
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = Math.round((startDay.getTime() - today.getTime()) / 86400000);
+
+  if (diffDays === 0) return "Täna";
+  if (diffDays === 1) return "Homme";
+  if (diffDays > 1) return `${diffDays} päeva jäänud`;
+  if (diffDays === -1) return "Eile";
+  return `Toimus ${Math.abs(diffDays)} päeva tagasi`;
+}

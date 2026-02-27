@@ -1,6 +1,6 @@
 import { CalendarDays, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatEventDate, et } from "@/localization/et";
+import { formatEventCountdown, formatEventDate, et } from "@/localization/et";
 import type { EventItem } from "@/data/events";
 
 interface EventCardProps {
@@ -24,6 +24,7 @@ export function EventCard({
   onArchiveToggle,
   onDelete,
 }: EventCardProps) {
+  const countdown = formatEventCountdown(event.startAt);
   return (
     <div
       className={cn(
@@ -51,6 +52,7 @@ export function EventCard({
             <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
               <CalendarDays className="h-3.5 w-3.5" />
               {formatEventDate(event.startAt)}
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-foreground">{countdown}</span>
             </p>
             <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
               <MapPin className="h-3.5 w-3.5" />

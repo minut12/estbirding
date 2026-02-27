@@ -1,5 +1,5 @@
 import { ArrowLeft, CalendarDays, MapPin } from "lucide-react";
-import { formatEventDate, et } from "@/localization/et";
+import { formatEventCountdown, formatEventDate, et } from "@/localization/et";
 import type { EventItem } from "@/data/events";
 
 interface EventDetailsScreenProps {
@@ -8,6 +8,7 @@ interface EventDetailsScreenProps {
 }
 
 export default function EventDetailsScreen({ event, onBack }: EventDetailsScreenProps) {
+  const countdown = formatEventCountdown(event.startAt);
   return (
     <div className="flex h-full flex-col bg-background">
       <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-3">
@@ -34,6 +35,9 @@ export default function EventDetailsScreen({ event, onBack }: EventDetailsScreen
             <CalendarDays className="h-4 w-4" />
             {formatEventDate(event.startAt)}
           </p>
+          <div>
+            <span className="inline-flex rounded-full bg-muted px-2 py-1 text-xs text-foreground">{countdown}</span>
+          </div>
           <p className="flex items-center gap-2">
             <MapPin className="h-4 w-4" />
             {event.locationName}

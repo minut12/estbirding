@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,6 @@ import {
 import {
   archiveManualEvent,
   createManualEvent,
-  deleteEventImage,
   deleteManualEvent,
   listPublicEventsManual,
   testEventsAdminHealth,
@@ -22,7 +21,6 @@ import {
   type ManualEventPatch,
   type ManualEventRow,
   unarchiveManualEvent,
-  uploadEventImage,
   updateManualEvent,
 } from "@/features/events/eventsService";
 import { clearEventsAdminKey, getEventsAdminKey, setEventsAdminKey } from "@/features/events/adminKey";
@@ -37,6 +35,8 @@ type FormState = {
   lon: string;
   url: string;
   description: string;
+  image_url: string | null;
+  image_path: string | null;
 };
 
 const emptyForm: FormState = {
@@ -49,6 +49,8 @@ const emptyForm: FormState = {
   lon: "",
   url: "",
   description: "",
+  image_url: null,
+  image_path: null,
 };
 
 function toLocalDatetime(iso: string): string {
@@ -69,6 +71,8 @@ function eventToForm(event: ManualEventRow): FormState {
     lon: event.lon == null ? "" : String(event.lon),
     url: event.url || "",
     description: event.description || "",
+    image_url: event.image_url || null,
+    image_path: event.image_path || null,
   };
 }
 
@@ -79,10 +83,10 @@ function validateForm(form: FormState): string | null {
   if (Number.isNaN(starts)) return "Algusaeg on vigane.";
   if (form.ends_at) {
     const ends = new Date(form.ends_at).getTime();
-    if (Number.isNaN(ends)) return "Lõpuaeg on vigane.";
-    if (ends < starts) return "Lõpuaeg peab olema suurem või võrdne algusajaga.";
+    if (Number.isNaN(ends)) return "LÃµpuaeg on vigane.";
+    if (ends < starts) return "LÃµpuaeg peab olema suurem vÃµi vÃµrdne algusajaga.";
   }
-  if ((form.lat && !form.lon) || (!form.lat && form.lon)) return "Lat ja Lon peavad olema mõlemad täidetud.";
+  if ((form.lat && !form.lon) || (!form.lat && form.lon)) return "Lat ja Lon peavad olema mÃµlemad tÃ¤idetud.";
   if (form.lat && Number.isNaN(Number(form.lat))) return "Lat peab olema number.";
   if (form.lon && Number.isNaN(Number(form.lon))) return "Lon peab olema number.";
   return null;
@@ -110,7 +114,39 @@ function buildPayload(form: FormState): ManualEventInput {
     lon,
     url: form.url.trim() || null,
     description: form.description.trim() || null,
+    image_url: form.image_url || null,
+    image_path: form.image_path || null,
   };
+}
+
+async function fileToCompressedDataUrl(file: File): Promise<string> {
+  const fileDataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("file read failed"));
+    reader.readAsDataURL(file);
+  });
+
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("image decode failed"));
+    img.src = fileDataUrl;
+  });
+
+  const maxEdge = 800;
+  const longestEdge = Math.max(image.width, image.height);
+  const scale = longestEdge > maxEdge ? maxEdge / longestEdge : 1;
+  const targetW = Math.max(1, Math.round(image.width * scale));
+  const targetH = Math.max(1, Math.round(image.height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas not available");
+  ctx.drawImage(image, 0, 0, targetW, targetH);
+  return canvas.toDataURL("image/jpeg", 0.8);
 }
 
 function maskKey(value: string): string {
@@ -133,9 +169,7 @@ export default function EventsManagementSettings() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
-  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
-  const [imagePath, setImagePath] = useState<string | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
   const storedAdminKey = (getEventsAdminKey() ?? "").trim();
 
@@ -175,9 +209,7 @@ export default function EventsManagementSettings() {
   const openCreate = () => {
     setEditingId(null);
     setForm(emptyForm);
-    setSelectedImageFile(null);
     setImagePreviewUrl(null);
-    setImagePath(null);
     setRemoveImage(false);
     setDialogOpen(true);
   };
@@ -185,9 +217,7 @@ export default function EventsManagementSettings() {
   const openEdit = (event: ManualEventRow) => {
     setEditingId(event.id);
     setForm(eventToForm(event));
-    setSelectedImageFile(null);
     setImagePreviewUrl(event.image_url);
-    setImagePath(event.image_path);
     setRemoveImage(false);
     setDialogOpen(true);
   };
@@ -195,7 +225,7 @@ export default function EventsManagementSettings() {
   const saveKey = () => {
     const next = adminKeyInput.trim();
     if (!next) {
-      toast.error("Sisesta võti.");
+      toast.error("Sisesta vÃµti.");
       return;
     }
     setEventsAdminKey(next);
@@ -220,7 +250,7 @@ export default function EventsManagementSettings() {
         toast.success("OK");
         return;
       }
-      toast.error("Test events admin ebaõnnestus");
+      toast.error("Test events admin ebaÃµnnestus");
     } catch (error) {
       toast.error(toErrorMessage(error));
     }
@@ -235,58 +265,21 @@ export default function EventsManagementSettings() {
 
     try {
       const payload = buildPayload(form);
-      const previousImagePath = imagePath;
       if (removeImage) {
         payload.image_url = null;
         payload.image_path = null;
-      } else if (imagePreviewUrl || imagePath) {
-        payload.image_url = imagePreviewUrl ?? null;
-        payload.image_path = imagePath ?? null;
       }
 
       if (editingId) {
         const patch: ManualEventPatch = payload;
-        if (selectedImageFile) {
-          try {
-            const uploaded = await uploadEventImage(editingId, selectedImageFile);
-            patch.image_url = uploaded.image_url;
-            patch.image_path = uploaded.image_path;
-          } catch (uploadErr) {
-            toast.error(`Image upload failed: ${toErrorMessage(uploadErr)}`);
-            return;
-          }
-        }
         await updateManualEvent(editingId, patch);
       } else {
-        payload.image_url = null;
-        payload.image_path = null;
-        const created = await createManualEvent(payload);
-        if (selectedImageFile) {
-          try {
-            const uploaded = await uploadEventImage(created.id, selectedImageFile);
-            await updateManualEvent(created.id, {
-              image_url: uploaded.image_url,
-              image_path: uploaded.image_path,
-            });
-          } catch (uploadErr) {
-            toast.error(`Image upload failed: ${toErrorMessage(uploadErr)}`);
-            return;
-          }
-        }
-      }
-      if (previousImagePath && (removeImage || selectedImageFile)) {
-        try {
-          await deleteEventImage(previousImagePath);
-        } catch (cleanupError) {
-          console.warn("Old image cleanup failed", cleanupError);
-        }
+        await createManualEvent(payload);
       }
       toast.success("Üritus salvestatud");
       setDialogOpen(false);
-      setSelectedImageFile(null);
-      setImagePreviewUrl(null);
-      setImagePath(null);
-      setRemoveImage(false);
+            setImagePreviewUrl(null);
+            setRemoveImage(false);
       await loadEvents();
     } catch (e) {
       toast.error(toErrorMessage(e));
@@ -298,18 +291,18 @@ export default function EventsManagementSettings() {
       if (event.status === "archived") await unarchiveManualEvent(event.id);
       else await archiveManualEvent(event.id);
       await loadEvents();
-      toast.success(event.status === "archived" ? "Üritus taastatud" : "Üritus arhiveeritud");
+      toast.success(event.status === "archived" ? "Ãœritus taastatud" : "Ãœritus arhiveeritud");
     } catch (e) {
       toast.error(toErrorMessage(e));
     }
   };
 
   const onDelete = async (event: ManualEventRow) => {
-    if (!window.confirm("Kustutan ürituse?")) return;
+    if (!window.confirm("Kustutan Ã¼rituse?")) return;
     try {
       await deleteManualEvent(event.id);
       await loadEvents();
-      toast.success("Üritus kustutatud");
+      toast.success("Ãœritus kustutatud");
     } catch (e) {
       toast.error(toErrorMessage(e));
     }
@@ -317,7 +310,7 @@ export default function EventsManagementSettings() {
 
   return (
     <div className="space-y-4 rounded-lg border border-border bg-card p-4">
-      <h3 className="font-semibold text-foreground">Ürituste haldus</h3>
+      <h3 className="font-semibold text-foreground">Ãœrituste haldus</h3>
 
       <div className="space-y-2">
         <Label htmlFor="eventsAdminKeyInput">Events admin key</Label>
@@ -328,7 +321,7 @@ export default function EventsManagementSettings() {
           value={adminKeyInput}
           onChange={(e) => setAdminKeyInput(e.target.value)}
         />
-        <p className="text-xs text-muted-foreground">Salvestatud võtme mask: {maskKey(savedAdminKey)}</p>
+        <p className="text-xs text-muted-foreground">Salvestatud vÃµtme mask: {maskKey(savedAdminKey)}</p>
         {import.meta.env.DEV && (
           <p className="text-xs text-muted-foreground">Key length: {storedAdminKey.length}</p>
         )}
@@ -342,18 +335,18 @@ export default function EventsManagementSettings() {
       </div>
 
       <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
-        <Button onClick={openCreate} disabled={!canWrite} className="w-full sm:w-auto">Lisa üritus</Button>
+        <Button onClick={openCreate} disabled={!canWrite} className="w-full sm:w-auto">Lisa Ã¼ritus</Button>
         <Button variant="outline" onClick={() => setShowArchived((v) => !v)} className="w-full sm:w-auto">
           {showArchived ? "Peida arhiveeritud" : "Kuva arhiveeritud"}
         </Button>
-        <Button variant="ghost" onClick={loadEvents} disabled={loading} className="w-full sm:w-auto">Värskenda</Button>
+        <Button variant="ghost" onClick={loadEvents} disabled={loading} className="w-full sm:w-auto">VÃ¤rskenda</Button>
       </div>
 
       <div className="space-y-2">
         {loading ? (
-          <p className="text-sm text-muted-foreground">Laen üritusi...</p>
+          <p className="text-sm text-muted-foreground">Laen Ã¼ritusi...</p>
         ) : visibleEvents.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Üritusi ei leitud.</p>
+          <p className="text-sm text-muted-foreground">Ãœritusi ei leitud.</p>
         ) : (
           visibleEvents.map((event) => (
             <div key={event.id} className="rounded-md border border-border p-3">
@@ -384,8 +377,8 @@ export default function EventsManagementSettings() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingId ? "Muuda üritust" : "Lisa üritus"}</DialogTitle>
-            <DialogDescription>Täida väljad ja salvesta.</DialogDescription>
+            <DialogTitle>{editingId ? "Muuda Ã¼ritust" : "Lisa Ã¼ritus"}</DialogTitle>
+            <DialogDescription>TÃ¤ida vÃ¤ljad ja salvesta.</DialogDescription>
           </DialogHeader>
 
           <div className="grid grid-cols-1 gap-3">
@@ -440,14 +433,16 @@ export default function EventsManagementSettings() {
                 id="eventImage"
                 type="file"
                 accept="image/*"
-                onChange={(e) => {
+                onChange={async (e) => {
                   const file = e.target.files?.[0] ?? null;
-                  setSelectedImageFile(file);
-                  setRemoveImage(false);
+                                    setRemoveImage(false);
                   if (file) {
-                    const preview = URL.createObjectURL(file);
-                    setImagePreviewUrl(preview);
-                    setImagePath(null);
+                    try {
+                      const preview = await fileToCompressedDataUrl(file);
+                      setImagePreviewUrl(preview);                      setForm((p) => ({ ...p, image_url: preview, image_path: file.name || null }));
+                    } catch (err) {
+                      toast.error(`Image processing failed: ${toErrorMessage(err)}`);
+                    }
                   }
                 }}
               />
@@ -458,8 +453,8 @@ export default function EventsManagementSettings() {
                     type="button"
                     variant="outline"
                     onClick={() => {
-                      setSelectedImageFile(null);
-                      setImagePreviewUrl(null);
+                                            setImagePreviewUrl(null);
+                                            setForm((p) => ({ ...p, image_url: null, image_path: null }));
                       setRemoveImage(true);
                     }}
                   >
@@ -479,3 +474,5 @@ export default function EventsManagementSettings() {
     </div>
   );
 }
+
+

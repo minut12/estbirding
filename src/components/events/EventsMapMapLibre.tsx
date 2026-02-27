@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import maplibregl, { type GeoJSONSource, type LngLatBoundsLike, type Map as MapLibreMap } from "maplibre-gl";
+import maplibregl, { type LngLatBoundsLike, type Map as MapLibreMap } from "maplibre-gl";
 
 type MapPoint = {
   id: string;
@@ -15,12 +15,8 @@ type EventsMapMapLibreProps = {
 
 const ESTONIA_CENTER: [number, number] = [24.75, 59.44];
 const ESTONIA_ZOOM = 5;
-const SOURCE_ID = "events";
-const IMAGE_ID = "kingfisher";
-const LAYER_ICONS_ID = "events-icons";
-const LAYER_DEBUG_ID = "events-debug-circles";
-const LAYER_LABELS_ID = "events-labels";
-const KINGFISHER_ICON_URL = "/icons/kingfisher.svg";
+const KINGFISHER_PIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 64 64"><path fill="#1f6f4a" d="M32 2c-11 0-20 9-20 20 0 16 20 40 20 40s20-24 20-40C52 11 43 2 32 2z"/><path fill="#ffffff" d="M22 26c6-6 18-6 24 0-5 2-9 6-12 12-3-6-7-10-12-12z"/><circle cx="38" cy="22" r="2" fill="#ffffff"/></svg>`;
+const KINGFISHER_PIN_URI = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(KINGFISHER_PIN_SVG)}`;
 
 const MAP_STYLE = {
   version: 8,
@@ -53,56 +49,29 @@ function stableKey(points: MapPoint[]): string {
     .join("|");
 }
 
-function addDebugCircleLayer(map: MapLibreMap): void {
-  if (map.getLayer(LAYER_DEBUG_ID)) return;
-  map.addLayer({
-    id: LAYER_DEBUG_ID,
-    type: "circle",
-    source: SOURCE_ID,
-    paint: {
-      "circle-radius": ["case", ["boolean", ["get", "selected"], false], 8, 6],
-      "circle-color": "#0b5fa5",
-      "circle-stroke-color": "#ffffff",
-      "circle-stroke-width": 2,
-      "circle-opacity": 0.75,
-    },
-  });
-}
-
-function loadKingfisherIcon(map: MapLibreMap): Promise<maplibregl.StyleImage | null> {
-  return new Promise((resolve) => {
-    map.loadImage(KINGFISHER_ICON_URL, (error, image) => {
-      if (error || !image) {
-        console.warn("[events-map] kingfisher icon load failed", error);
-        resolve(null);
-        return;
-      }
-      resolve(image);
-    });
-  });
+function createMarkerElement(selected: boolean): HTMLDivElement {
+  const el = document.createElement("div");
+  const size = selected ? 36 : 32;
+  el.style.width = `${size}px`;
+  el.style.height = `${size}px`;
+  el.style.backgroundImage = `url('${KINGFISHER_PIN_URI}')`;
+  el.style.backgroundSize = "contain";
+  el.style.backgroundRepeat = "no-repeat";
+  el.style.transform = `translate(-${Math.round(size / 2)}px,-${size}px)`;
+  el.style.cursor = "pointer";
+  return el;
 }
 
 export function EventsMapMapLibre({ points, selectedId }: EventsMapMapLibreProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const loadedRef = useRef(false);
   const userMovedRef = useRef(false);
   const lastPointsKeyRef = useRef("");
 
   const validPoints = useMemo(() => points.filter(isValidPoint), [points]);
   const pointsKey = useMemo(() => stableKey(validPoints), [validPoints]);
-
-  const featureCollection = useMemo(
-    () => ({
-      type: "FeatureCollection" as const,
-      features: validPoints.map((p) => ({
-        type: "Feature" as const,
-        geometry: { type: "Point" as const, coordinates: [Number(p.lon), Number(p.lat)] as [number, number] },
-        properties: { id: p.id, title: p.title || "", selected: p.id === selectedId },
-      })),
-    }),
-    [validPoints, selectedId],
-  );
 
   const applyViewRef = useRef<(force?: boolean) => void>(() => {});
   applyViewRef.current = (force = false) => {
@@ -150,47 +119,8 @@ export function EventsMapMapLibre({ points, selectedId }: EventsMapMapLibreProps
       userMovedRef.current = true;
     });
 
-    map.on("load", async () => {
+    map.on("load", () => {
       loadedRef.current = true;
-      map.addSource(SOURCE_ID, { type: "geojson", data: featureCollection as any });
-
-      addDebugCircleLayer(map);
-
-      const iconImage = await loadKingfisherIcon(map);
-      if (iconImage && !map.hasImage(IMAGE_ID)) {
-        map.addImage(IMAGE_ID, iconImage);
-      }
-      if (map.hasImage(IMAGE_ID) && !map.getLayer(LAYER_ICONS_ID)) {
-        map.addLayer({
-          id: LAYER_ICONS_ID,
-          type: "symbol",
-          source: SOURCE_ID,
-          layout: {
-            "icon-image": IMAGE_ID,
-            "icon-size": ["case", ["boolean", ["get", "selected"], false], 1.15, 0.9],
-            "icon-allow-overlap": true,
-            "icon-ignore-placement": true,
-            "icon-anchor": "bottom",
-          },
-        });
-      }
-      map.addLayer({
-        id: LAYER_LABELS_ID,
-        type: "symbol",
-        source: SOURCE_ID,
-        layout: {
-          "text-field": ["get", "title"],
-          "text-size": 12,
-          "text-offset": [0, 1.2],
-          "text-anchor": "top",
-        },
-        paint: {
-          "text-color": "#1f2937",
-          "text-halo-color": "#ffffff",
-          "text-halo-width": 1,
-        },
-      });
-
       applyViewRef.current(true);
       lastPointsKeyRef.current = pointsKey;
     });
@@ -207,24 +137,38 @@ export function EventsMapMapLibre({ points, selectedId }: EventsMapMapLibreProps
       window.clearTimeout(timer);
       resizeObserver.disconnect();
       loadedRef.current = false;
+      markersRef.current.forEach((marker) => marker.remove());
+      markersRef.current.clear();
       map.remove();
       mapRef.current = null;
     };
-  }, [featureCollection, pointsKey, validPoints.length]);
+  }, []);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loadedRef.current) return;
-
-    const src = map.getSource(SOURCE_ID) as GeoJSONSource | undefined;
-    if (src) src.setData(featureCollection as any);
-
-    if (validPoints.length > 0 && !map.getLayer(LAYER_ICONS_ID) && !map.getLayer(LAYER_DEBUG_ID)) {
-      console.warn("[events-map] points exist but marker layer missing", {
-        points: validPoints.length,
-        zoom: map.getZoom(),
-        center: map.getCenter(),
-      });
+    const markerIds = new Set(validPoints.map((p) => p.id));
+    for (const [id, marker] of markersRef.current) {
+      if (!markerIds.has(id)) {
+        marker.remove();
+        markersRef.current.delete(id);
+      }
+    }
+    for (const point of validPoints) {
+      const existing = markersRef.current.get(point.id);
+      const selected = point.id === selectedId;
+      if (!existing) {
+        const marker = new maplibregl.Marker({ element: createMarkerElement(selected), anchor: "bottom" })
+          .setLngLat([point.lon, point.lat])
+          .addTo(map);
+        markersRef.current.set(point.id, marker);
+      } else {
+        const marker = new maplibregl.Marker({ element: createMarkerElement(selected), anchor: "bottom" })
+          .setLngLat([point.lon, point.lat])
+          .addTo(map);
+        existing.remove();
+        markersRef.current.set(point.id, marker);
+      }
     }
 
     const pointsChanged = pointsKey !== lastPointsKeyRef.current;
@@ -233,8 +177,13 @@ export function EventsMapMapLibre({ points, selectedId }: EventsMapMapLibreProps
       applyViewRef.current(true);
       lastPointsKeyRef.current = pointsKey;
     }
-  }, [featureCollection, pointsKey]);
+  }, [pointsKey, selectedId, validPoints]);
 
   if (validPoints.length === 0) return null;
-  return <div ref={containerRef} className="w-full h-[260px] sm:h-[320px] rounded-xl overflow-hidden bg-muted" />;
+  return (
+    <div>
+      <div ref={containerRef} className="w-full h-[260px] sm:h-[320px] rounded-xl overflow-hidden bg-muted" />
+      {import.meta.env.DEV ? <p className="mt-1 text-xs text-muted-foreground">Pins: {validPoints.length}</p> : null}
+    </div>
+  );
 }

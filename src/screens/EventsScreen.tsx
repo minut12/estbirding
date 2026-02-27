@@ -61,6 +61,11 @@ function toEventItem(row: ManualEventRow): EventItem {
   const lon = Number(row.lon);
   const safeLat = Number.isFinite(lat) && Math.abs(lat) <= 90 ? lat : Number.NaN;
   const safeLon = Number.isFinite(lon) && Math.abs(lon) <= 180 ? lon : Number.NaN;
+  const imageCandidate = String(row.image_url || "").trim();
+  const validImage =
+    imageCandidate.startsWith("data:image/") ||
+    imageCandidate.startsWith("http://") ||
+    imageCandidate.startsWith("https://");
   return {
     id: row.id,
     title: row.title,
@@ -70,7 +75,9 @@ function toEventItem(row: ManualEventRow): EventItem {
     lat: safeLat,
     lng: safeLon,
     category: row.type === "muud" ? "Muud" : "EstBirding",
-    imageUrl: row.image_url || "https://images.unsplash.com/photo-1448375240586-882707db888b?w=360&h=280&fit=crop",
+    imageUrl: validImage
+      ? imageCandidate
+      : "https://images.unsplash.com/photo-1448375240586-882707db888b?w=360&h=280&fit=crop",
     description: row.description || undefined,
     url: row.url || undefined,
     isPublished: row.status === "active",

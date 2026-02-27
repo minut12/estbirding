@@ -197,36 +197,3 @@ export async function deleteManualEvent(id: string): Promise<ManualEventRow> {
   const adminKey = requireEventsAdminKey();
   return callRpcRow("events_admin_delete", { admin_key: adminKey, p_id: id });
 }
-
-function safeFileName(name: string): string {
-  const cleaned = String(name || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]/g, "-");
-  return cleaned || "image.jpg";
-}
-
-export async function uploadEventImage(eventId: string, file: File): Promise<{ image_url: string; image_path: string }> {
-  const id = String(eventId || "").trim();
-  if (!id) throw new Error("event id is required for image upload");
-
-  const safeName = safeFileName(file.name || "image.jpg");
-  const path = `events/${id}/${Date.now()}_${safeName}`;
-  const { error } = await supabase.storage.from("event-images").upload(path, file, {
-    upsert: true,
-    contentType: file.type || "application/octet-stream",
-  });
-  if (error) throw error;
-  const { data } = supabase.storage.from("event-images").getPublicUrl(path);
-  const image_url = String(data?.publicUrl || "");
-  const image_path = path;
-  if (!image_url || !image_path) throw new Error("Image upload failed");
-  return { image_url, image_path };
-}
-
-export async function deleteEventImage(path: string): Promise<void> {
-  const cleanPath = String(path || "").trim();
-  if (!cleanPath) return;
-  const { error } = await supabase.storage.from("event-images").remove([cleanPath]);
-  if (error) throw error;
-}

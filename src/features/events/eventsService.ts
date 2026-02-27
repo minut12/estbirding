@@ -104,7 +104,8 @@ export async function listPublicEventsManual(): Promise<ManualEventRow[]> {
 }
 
 function requireEventsAdminKey(): string {
-  const key = getEventsAdminKey();
+  const eventsAdminKey = getEventsAdminKey();
+  const key = (eventsAdminKey ?? "").trim();
   if (!key) {
     throw new Error("events_admin_key puudub");
   }

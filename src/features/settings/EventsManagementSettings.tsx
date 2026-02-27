@@ -108,9 +108,7 @@ function maskKey(value: string): string {
 
 function toErrorMessage(err: unknown): string {
   const e = err as any;
-  if (e?.message) return String(e.message);
-  if (e && typeof e === "object") return JSON.stringify(e);
-  return String(e);
+  return String(e?.message ?? String(err));
 }
 
 export default function EventsManagementSettings() {
@@ -122,6 +120,7 @@ export default function EventsManagementSettings() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const storedAdminKey = (getEventsAdminKey() ?? "").trim();
 
   const canWrite = Boolean(savedAdminKey.trim());
 
@@ -167,8 +166,9 @@ export default function EventsManagementSettings() {
       return;
     }
     setEventsAdminKey(next);
-    setSavedAdminKey(next);
-    setAdminKeyInput(next);
+    const persisted = (getEventsAdminKey() ?? "").trim();
+    setSavedAdminKey(persisted);
+    setAdminKeyInput(persisted);
     toast.success("Events admin key salvestatud");
   };
 
@@ -180,8 +180,9 @@ export default function EventsManagementSettings() {
   };
 
   const testAdminEndpoint = async () => {
+    const key = (getEventsAdminKey() ?? "").trim();
     try {
-      const result = await testEventsAdminHealth(savedAdminKey.trim());
+      const result = await testEventsAdminHealth(key);
       if (result.ok) {
         toast.success("OK");
         return;
@@ -250,6 +251,9 @@ export default function EventsManagementSettings() {
           onChange={(e) => setAdminKeyInput(e.target.value)}
         />
         <p className="text-xs text-muted-foreground">Salvestatud võtme mask: {maskKey(savedAdminKey)}</p>
+        {import.meta.env.DEV && (
+          <p className="text-xs text-muted-foreground">Key length: {storedAdminKey.length}</p>
+        )}
         <div className="flex gap-2">
           <Button onClick={saveKey} className="flex-1">Salvesta</Button>
           <Button variant="outline" onClick={clearKey} className="flex-1">Eemalda</Button>

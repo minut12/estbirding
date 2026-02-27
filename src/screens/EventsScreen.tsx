@@ -90,9 +90,7 @@ function rowToForm(row: ManualEventRow): EditForm {
 
 function toErrorMessage(err: unknown): string {
   const e = err as any;
-  if (e?.message) return String(e.message);
-  if (e && typeof e === "object") return JSON.stringify(e);
-  return String(e);
+  return String(e?.message ?? String(err));
 }
 
 export default function EventsScreen() {

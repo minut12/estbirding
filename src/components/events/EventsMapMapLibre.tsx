@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
 import maplibregl, { type GeoJSONSource, type LngLatBoundsLike, type Map as MapLibreMap } from "maplibre-gl";
-import kingfisherSvg from "@/assets/icons/kingfisher.svg?raw";
 
 type MapPoint = {
   id: string;
@@ -19,8 +18,9 @@ const ESTONIA_ZOOM = 5;
 const SOURCE_ID = "events";
 const IMAGE_ID = "kingfisher";
 const LAYER_ICONS_ID = "events-icons";
-const LAYER_FALLBACK_ID = "events-fallback-points";
+const LAYER_DEBUG_ID = "events-debug-circles";
 const LAYER_LABELS_ID = "events-labels";
+const KINGFISHER_ICON_URL = "/icons/kingfisher.svg";
 
 const MAP_STYLE = {
   version: 8,
@@ -36,11 +36,13 @@ const MAP_STYLE = {
 } as const;
 
 function isValidPoint(point: MapPoint): boolean {
+  const lat = Number(point.lat);
+  const lon = Number(point.lon);
   return (
-    Number.isFinite(point.lat) &&
-    Number.isFinite(point.lon) &&
-    Math.abs(point.lat) <= 90 &&
-    Math.abs(point.lon) <= 180
+    Number.isFinite(lat) &&
+    Number.isFinite(lon) &&
+    Math.abs(lat) <= 90 &&
+    Math.abs(lon) <= 180
   );
 }
 
@@ -51,10 +53,10 @@ function stableKey(points: MapPoint[]): string {
     .join("|");
 }
 
-function addFallbackCircleLayer(map: MapLibreMap): void {
-  if (map.getLayer(LAYER_FALLBACK_ID)) return;
+function addDebugCircleLayer(map: MapLibreMap): void {
+  if (map.getLayer(LAYER_DEBUG_ID)) return;
   map.addLayer({
-    id: LAYER_FALLBACK_ID,
+    id: LAYER_DEBUG_ID,
     type: "circle",
     source: SOURCE_ID,
     paint: {
@@ -62,23 +64,21 @@ function addFallbackCircleLayer(map: MapLibreMap): void {
       "circle-color": "#0b5fa5",
       "circle-stroke-color": "#ffffff",
       "circle-stroke-width": 2,
-      "circle-opacity": 0.95,
+      "circle-opacity": 0.75,
     },
   });
 }
 
-function loadKingfisherIcon(map: MapLibreMap): Promise<boolean> {
+function loadKingfisherIcon(map: MapLibreMap): Promise<maplibregl.StyleImage | null> {
   return new Promise((resolve) => {
-    const svgUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(kingfisherSvg)}`;
-    const img = new Image();
-    img.onload = () => {
-      if (!map.hasImage(IMAGE_ID)) {
-        map.addImage(IMAGE_ID, img, { pixelRatio: 2 });
+    map.loadImage(KINGFISHER_ICON_URL, (error, image) => {
+      if (error || !image) {
+        console.warn("[events-map] kingfisher icon load failed", error);
+        resolve(null);
+        return;
       }
-      resolve(true);
-    };
-    img.onerror = () => resolve(false);
-    img.src = svgUri;
+      resolve(image);
+    });
   });
 }
 
@@ -97,7 +97,7 @@ export function EventsMapMapLibre({ points, selectedId }: EventsMapMapLibreProps
       type: "FeatureCollection" as const,
       features: validPoints.map((p) => ({
         type: "Feature" as const,
-        geometry: { type: "Point" as const, coordinates: [p.lon, p.lat] as [number, number] },
+        geometry: { type: "Point" as const, coordinates: [Number(p.lon), Number(p.lat)] as [number, number] },
         properties: { id: p.id, title: p.title || "", selected: p.id === selectedId },
       })),
     }),
@@ -153,8 +153,14 @@ export function EventsMapMapLibre({ points, selectedId }: EventsMapMapLibreProps
     map.on("load", async () => {
       loadedRef.current = true;
       map.addSource(SOURCE_ID, { type: "geojson", data: featureCollection as any });
-      const iconLoaded = await loadKingfisherIcon(map);
-      if (iconLoaded) {
+
+      addDebugCircleLayer(map);
+
+      const iconImage = await loadKingfisherIcon(map);
+      if (iconImage && !map.hasImage(IMAGE_ID)) {
+        map.addImage(IMAGE_ID, iconImage);
+      }
+      if (map.hasImage(IMAGE_ID) && !map.getLayer(LAYER_ICONS_ID)) {
         map.addLayer({
           id: LAYER_ICONS_ID,
           type: "symbol",
@@ -167,9 +173,6 @@ export function EventsMapMapLibre({ points, selectedId }: EventsMapMapLibreProps
             "icon-anchor": "bottom",
           },
         });
-      } else {
-        console.warn("[events-map] kingfisher icon failed to load, using circle fallback");
-        addFallbackCircleLayer(map);
       }
       map.addLayer({
         id: LAYER_LABELS_ID,
@@ -216,7 +219,7 @@ export function EventsMapMapLibre({ points, selectedId }: EventsMapMapLibreProps
     const src = map.getSource(SOURCE_ID) as GeoJSONSource | undefined;
     if (src) src.setData(featureCollection as any);
 
-    if (validPoints.length > 0 && !map.getLayer(LAYER_ICONS_ID) && !map.getLayer(LAYER_FALLBACK_ID)) {
+    if (validPoints.length > 0 && !map.getLayer(LAYER_ICONS_ID) && !map.getLayer(LAYER_DEBUG_ID)) {
       console.warn("[events-map] points exist but marker layer missing", {
         points: validPoints.length,
         zoom: map.getZoom(),

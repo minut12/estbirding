@@ -1,4 +1,4 @@
-import { getSupabaseUrl, supabaseFetch, validateSupabaseConfig } from "@/config/supabaseConfig";
+import { getFunctionsBaseUrl, getSupabaseUrl, supabaseFetch, validateSupabaseConfig } from "@/config/supabaseConfig";
 import { supabase } from "@/config/supabaseClient";
 import { getEventsAdminKey } from "./adminKey";
 
@@ -115,10 +115,7 @@ async function callEventsAdmin(action: "create" | "update" | "archive" | "unarch
   const key = requireEventsAdminKey();
   const resolvedSupabaseUrl = getSupabaseUrl().replace(/\/+$/, "");
   const { data, error } = await supabase.functions.invoke("events-admin", {
-    body: { action, ...payload },
-    headers: {
-      "x-events-admin-key": key,
-    },
+    body: { adminKey: key, action, ...payload },
   });
   if (error) {
     const errorName = String((error as any)?.name || "");
@@ -140,20 +137,24 @@ async function callEventsAdmin(action: "create" | "update" | "archive" | "unarch
 }
 
 export async function testEventsAdminHealth(adminKey?: string): Promise<{ ok: boolean; now?: string }> {
-  const key = adminKey?.trim() || getEventsAdminKey() || "";
   const resolvedSupabaseUrl = getSupabaseUrl().replace(/\/+$/, "");
-  const { data, error } = await supabase.functions.invoke("events-admin", {
-    body: { action: "health" },
-    headers: key ? { "x-events-admin-key": key } : undefined,
-  });
-  if (error) {
-    const errorName = String((error as any)?.name || "");
-    const message = String(error.message || "health check failed");
+  const endpoint = `${getFunctionsBaseUrl()}/events-admin`;
+  try {
+    const response = await fetch(endpoint, { method: "GET" });
+    const text = await response.text();
+    const data = text ? JSON.parse(text) : {};
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${data?.error || "health check failed"}`);
+    }
+    return data as { ok: boolean; now?: string };
+  } catch (error: any) {
+    const errorName = String(error?.name || "");
+    const message = String(error?.message || "health check failed");
     console.error("[events-admin] health failed", {
       supabaseUrl: resolvedSupabaseUrl,
       functionsBase: `${resolvedSupabaseUrl}/functions/v1`,
       fn: "events-admin",
-      hasAdminKey: Boolean(key),
+      hasAdminKey: Boolean(adminKey?.trim() || getEventsAdminKey()),
       errorName,
       errorMessage: message,
     });
@@ -162,7 +163,6 @@ export async function testEventsAdminHealth(adminKey?: string): Promise<{ ok: bo
     }
     throw new Error(message);
   }
-  return (data as { ok: boolean; now?: string }) ?? { ok: false };
 }
 
 export async function createManualEvent(event: ManualEventInput): Promise<ManualEventRow> {

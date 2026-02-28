@@ -212,60 +212,65 @@
     /* Marker styling */
     .leaflet-marker-icon{ overflow: visible !important; }
     .eb-marker{
-      --m: var(--mSize);
       position:relative;
-      width:var(--m);
-      height:var(--m);
       overflow:visible;
+      width:52px;
+      height:52px;
     }
-    .eb-marker.eb-marker--sm{ --m: 40px; }
-    .eb-marker.eb-marker--lg{ --m: 54px; }
     .eb-avatarWrap{
       position:relative;
-      width:var(--m);
-      height:var(--m);
+      width:52px;
+      height:52px;
       border-radius:9999px;
       overflow:hidden;
-    }
-    .eb-avatar{
-      position:absolute; inset:0;
-      border-radius:50%;
-      background-size:cover; background-position:center;
-      background-color:#29c;
+      border:4px solid #1f6f4a;
+      background:#ddd;
       box-sizing:border-box;
-      border: var(--mBorder) solid #999;
+    }
+    .eb-avatarImg{
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      display:block;
     }
     .eb-count{
-      position:absolute; left:50%;
-      bottom: calc(-0.22 * var(--m));
+      position:absolute;
+      left:50%;
+      bottom:-12px;
       transform:translateX(-50%);
-      min-width:20px;
-      padding: var(--badgePadY) var(--badgePadX);
-      border-radius:999px;
-      font-size:var(--badgeFont);
+      min-width:28px;
+      height:22px;
+      padding:0 8px;
+      border-radius:9999px;
+      background:#f57c00;
+      color:#fff;
       font-weight:800;
-      color:#fff; text-align:center;
-      box-shadow:0 1px 2px rgba(0,0,0,.25);
-      z-index:4;
+      font-size:12px;
+      line-height:22px;
+      text-align:center;
+      border:2px solid #fff;
+      box-shadow:0 2px 6px rgba(0,0,0,.25);
+      z-index:20;
+      pointer-events:none;
     }
     .eb-rarity{
       position:absolute;
-      top: calc(-0.25 * var(--m));
-      right: calc(-0.25 * var(--m));
-      z-index:6;
-      pointer-events:none;
-      min-width:20px;
-      font-size:10px;
-      font-weight:700;
-      padding:2px 7px;
-      line-height:1;
-      text-align:center;
+      left:50%;
+      top:-14px;
+      transform:translateX(-50%);
+      height:18px;
+      padding:0 10px;
       border-radius:9999px;
+      background:#111;
+      color:#fff;
+      font-weight:800;
+      font-size:10px;
+      line-height:18px;
       border:2px solid #fff;
       box-shadow:0 2px 6px rgba(0,0,0,.25);
+      z-index:30;
+      pointer-events:none;
     }
-    .eb-marker.eb-marker--sm .eb-rarity{ font-size:9px; }
-    .eb-marker.eb-marker--lg .eb-rarity{ font-size:11px; }
     .pulse-ring{
       animation: pulseRing 0.9s ease-out 0s 3 forwards;
       transform-origin:center center;
@@ -1228,13 +1233,12 @@ function makeIcon(url, border, rarityLevel, occ7, isMigr){
     ? `<div class="eb-rarity" style="background:${rarityStyle.badgeBg};color:${rarityStyle.badgeFg}">${rarityText}</div>`
     : ``;
   const badge = ((occ7===0)||Number.isFinite(occ7))
-    ? `<div class="eb-count" style="background:${isMigr ? "#16a34a" : "#f97316"}">${occ7}</div>`
+    ? `<div class="eb-count" style="background:${isMigr ? "#16a34a" : "#f57c00"}">${occ7}</div>`
     : ``;
-  const bg = url ? `background-image:url('${url}');` : "";
-  const size = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--mSize")) || 34;
-  const sizeClass = size <= 40 ? " eb-marker--sm" : (size >= 54 ? " eb-marker--lg" : "");
-  const html = `<div class="eb-marker${sizeClass}" style="--m:${size}px"><div class="eb-avatarWrap"><div class="eb-avatar" style="border-color:${ring};${bg}"></div>${badge}</div>${rarityBadge}</div>`;
-  return L.divIcon({ html, className:"", iconSize:[size,size], iconAnchor:[size/2, size/2], popupAnchor:[0, -size/2] });
+  const src = String(url || "").trim();
+  const safeSrc = src ? src.replace(/"/g, "&quot;") : "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+  const html = `<div class="eb-marker eb-marker--md"><div class="eb-avatarWrap" style="border-color:${ring || "#1f6f4a"}"><img class="eb-avatarImg" src="${safeSrc}" alt="" /></div>${rarityBadge}${badge}</div>`;
+  return L.divIcon({ html, className:"", iconSize:[52,52], iconAnchor:[26,26], popupAnchor:[0, -26] });
 }
 
 /* ========= Meta text ========= */

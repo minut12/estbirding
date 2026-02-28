@@ -32,6 +32,7 @@ interface NewsItem {
   url: string | null;
   permalink_url?: string | null;
   image_url?: string | null;
+  cached_image_url?: string | null;
   fetched_at?: string | null;
   raw_json?: Record<string, any> | null;
   published_at: string;
@@ -413,7 +414,7 @@ export default function NewsTab() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('news_items')
-        .select('id, source_key, source_slug, title, body, image_url, permalink_url, published_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang')
+        .select('id, source_key, source_slug, title, body, image_url, cached_image_url, permalink_url, published_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang')
         .eq('archived', tab === 'archive')
         .order('published_at', { ascending: false, nullsFirst: false })
         .order('fetched_at', { ascending: false })
@@ -681,7 +682,9 @@ function NewsCard({ item, sources, showEtContent, autoTranslateEnabled, endpoint
   const [imageFailed, setImageFailed] = useState(false);
   const [cardRef, isVisible] = useOnceVisible<HTMLDivElement>();
   const debouncedVisible = useDebouncedTrue(isVisible, 180);
-  const thumb = decodeUrl(item.image_url);
+  const cachedThumb = decodeUrl(item.cached_image_url);
+  const thumb = cachedThumb || decodeUrl(item.image_url);
+  const isBirdingPoland = item.source_key === BIRDING_POLAND_KEY || item.source_slug === BIRDING_POLAND_KEY || sourceLabel(item.source_key || item.source_slug, sources).trim().toLowerCase() === 'birding poland';
   const translation = useEtTranslation({
     enabled: showEtContent && autoTranslateEnabled && debouncedVisible,
     id: item.id,
@@ -716,10 +719,7 @@ function NewsCard({ item, sources, showEtContent, autoTranslateEnabled, endpoint
               referrerPolicy="no-referrer"
               loading="lazy"
               decoding="async"
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = 'none';
-                setImageFailed(true);
-              }}
+              onError={(e) => {`r`n                if (import.meta.env.DEV && isBirdingPoland) {`r`n                  console.warn('[news-image] birding-poland load failed', { thumb, cachedThumb, image_url: item.image_url, cached_image_url: item.cached_image_url });`r`n                }`r`n                (e.currentTarget as HTMLImageElement).style.display = 'none';`r`n                setImageFailed(true);`r`n              }}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
@@ -744,9 +744,7 @@ function NewsCard({ item, sources, showEtContent, autoTranslateEnabled, endpoint
             {isTranslated && <Badge variant="outline" className="text-xs px-1.5 py-0">Tõlgitud</Badge>}
             <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at)}</span>
           </div>
-          {snippet && (
-            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{snippet}</p>
-          )}
+          {snippet && (`r`n            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{snippet}</p>`r`n          )}`r`n          {import.meta.env.DEV && isBirdingPoland && (`r`n            <p className="text-[10px] text-muted-foreground mt-1 break-all">img: {item.image_url || '(empty)'} | cached: {item.cached_image_url || '(empty)'}</p>`r`n          )}
           <div className="flex gap-2 mt-2">
             <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onOpen}>
               Ava
@@ -970,3 +968,8 @@ function EmptyState({ tab }: { tab: string }) {
     </div>
   );
 }
+
+
+
+
+

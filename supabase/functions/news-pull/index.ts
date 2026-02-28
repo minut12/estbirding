@@ -102,6 +102,27 @@ async function translateViaEdgeFunction(id: string): Promise<void> {
   }
 }
 
+async function cacheNewsImageById(id: string): Promise<string | null> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceRoleKey) return null;
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/cache-news-image`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${serviceRoleKey}`,
+      "apikey": serviceRoleKey,
+    },
+    body: JSON.stringify({ news_item_id: id }),
+  });
+
+  if (!res.ok) return null;
+  const payload = await res.json().catch(() => ({}));
+  const cached = decodeUrl(payload?.cached_image_url);
+  return cached || null;
+}
+
 async function pullRssSource({ source, supabase, proxyBase }: { source: any; supabase: any; proxyBase: string }): Promise<PullResult> {
   const sourceKey = String(source.source_key || source.key || source.slug || "unknown").trim() || "unknown";
   const feedUrl = normalizeSourceUrl(String(source.feed_url || "").trim());
@@ -142,6 +163,20 @@ async function pullRssSource({ source, supabase, proxyBase }: { source: any; sup
 
   const sorted = normalized.sort((a, b) => toTimestamp(b.published_at) - toTimestamp(a.published_at));
   const items = sourceKey === BIRDING_POLAND_KEY ? sorted.slice(0, 1) : sorted.slice(0, 10);
+  if (sourceKey === BIRDING_POLAND_KEY && items.length > 0) {
+    const sample = items[0];
+    const raw = (sample.raw_json || {}) as Record<string, unknown>;
+    const desc = String((raw.description as string) || "").slice(0, 200);
+    console.log("[birding-poland:image-debug]", {
+      link: sample.permalink_url || raw.link || null,
+      enclosure: raw.enclosure || null,
+      mediaContent: raw["media:content"] || null,
+      mediaThumbnail: raw["media:thumbnail"] || null,
+      descriptionPreview: desc || null,
+      computedImageUrl: sample.image_url || null,
+      normalizedStoredImageUrl: sample.image_url || null,
+    });
+  }
   const externalIds = items.map((it) => String(it.external_id || "").trim()).filter(Boolean);
   const existingImageByExternalId = new Map<string, string>();
   if (externalIds.length > 0) {
@@ -197,7 +232,7 @@ async function pullRssSource({ source, supabase, proxyBase }: { source: any; sup
     const { data: upserted, error } = await supabase
       .from("news_items")
       .upsert(rowWithImage, { onConflict: "source_slug,external_id" })
-      .select("id, translate_hash, title_et, body_et")
+      .select("id, translate_hash, title_et, body_et, image_url, cached_image_url")
       .single();
 
     if (error) {
@@ -206,6 +241,17 @@ async function pullRssSource({ source, supabase, proxyBase }: { source: any; sup
     }
 
     inserted += 1;
+
+    if (sourceKey === BIRDING_POLAND_KEY && upserted?.id) {
+      try {
+        const cachedUrl = await cacheNewsImageById(upserted.id);
+        if (cachedUrl) {
+          await supabase.from("news_items").update({ cached_image_url: cachedUrl }).eq("id", upserted.id);
+        }
+      } catch (cacheErr) {
+        console.error(`[image-cache] failed for ${guid}:`, cacheErr);
+      }
+    }
 
     if (lang !== "et" && AUTO_TRANSLATE_TO_ET && upserted?.id) {
       const shouldTranslate = !upserted.title_et || !upserted.body_et || upserted.translate_hash !== contentHash;

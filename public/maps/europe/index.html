@@ -211,71 +211,6 @@
 
     /* Marker styling */
     .leaflet-marker-icon{ overflow: visible !important; }
-    .eb-marker{
-      --m: 52px;
-      --topPad: 18px;
-      --bottomPad: 28px;
-      position:relative;
-      width:var(--m);
-      height:calc(var(--topPad) + var(--m) + var(--bottomPad));
-      overflow:visible;
-    }
-    .eb-avatarWrap{
-      position:absolute;
-      left:0;
-      top:var(--topPad);
-      width:var(--m);
-      height:var(--m);
-      border-radius:9999px;
-      overflow:hidden;
-      border:4px solid #1f6f4a;
-      background:#ddd;
-      box-sizing:border-box;
-    }
-    .eb-avatarImg{
-      width:100%;
-      height:100%;
-      object-fit:cover;
-      display:block;
-    }
-    .eb-count{
-      position:absolute;
-      left:50%;
-      top:calc(var(--topPad) + var(--m) + 6px);
-      transform:translateX(-50%);
-      min-width:28px;
-      height:22px;
-      padding:0 8px;
-      border-radius:9999px;
-      background:#f57c00;
-      color:#fff;
-      font-weight:800;
-      font-size:12px;
-      line-height:22px;
-      text-align:center;
-      border:2px solid #fff;
-      box-shadow:0 2px 6px rgba(0,0,0,.25);
-      z-index:20;
-      pointer-events:none;
-    }
-    .eb-rarity{
-      position:absolute;
-      left:50%;
-      top:0;
-      transform:translateX(-50%);
-      height:18px;
-      padding:0 10px;
-      border-radius:9999px;
-      background:#111;
-      color:#fff;
-      font-weight:800;
-      font-size:10px;
-      line-height:18px;
-      border:2px solid #fff;
-      box-shadow:0 2px 6px rgba(0,0,0,.25);
-      z-index:30;
-      pointer-events:none;
-    }
     .pulse-ring{
       animation: pulseRing 0.9s ease-out 0s 3 forwards;
       transform-origin:center center;
@@ -1231,19 +1166,91 @@ function showPulseRing(lat, lon){
 window.addEventListener("beforeunload", clearPulseRing);
 
 function makeIcon(url, border, rarityLevel, occ7, isMigr){
+  const M = 52;
+  const TOP = 18;
+  const BOTTOM = 28;
+  const W = M;
+  const H = TOP + M + BOTTOM;
+
   const rarityStyle = window.getRarityStyle ? window.getRarityStyle(rarityLevel || "none") : null;
   const ring = (rarityStyle && rarityStyle.ringColor) ? rarityStyle.ringColor : border;
   const rarityText = rarityStyle && rarityStyle.badgeText ? rarityStyle.badgeText : "";
-  const rarityBadge = rarityText
-    ? `<div class="eb-rarity" style="background:${rarityStyle.badgeBg};color:${rarityStyle.badgeFg}">${rarityText}</div>`
-    : ``;
-  const badge = ((occ7===0)||Number.isFinite(occ7))
-    ? `<div class="eb-count" style="background:${isMigr ? "#16a34a" : "#f57c00"}">${occ7}</div>`
-    : ``;
-  const src = String(url || "").trim();
-  const safeSrc = src ? src.replace(/"/g, "&quot;") : "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
-  const html = `<div class="eb-marker eb-marker--md"><div class="eb-avatarWrap" style="border-color:${ring || "#1f6f4a"}"><img class="eb-avatarImg" src="${safeSrc}" alt="" /></div>${rarityBadge}${badge}</div>`;
-  return L.divIcon({ html, className:"", iconSize:[52,98], iconAnchor:[26,44], popupAnchor:[0, -44] });
+
+  const root = document.createElement("div");
+  root.style.position = "relative";
+  root.style.width = `${W}px`;
+  root.style.height = `${H}px`;
+  root.style.overflow = "visible";
+
+  const avatarWrap = document.createElement("div");
+  avatarWrap.style.position = "absolute";
+  avatarWrap.style.left = "0";
+  avatarWrap.style.top = `${TOP}px`;
+  avatarWrap.style.width = `${M}px`;
+  avatarWrap.style.height = `${M}px`;
+  avatarWrap.style.borderRadius = "9999px";
+  avatarWrap.style.overflow = "hidden";
+  avatarWrap.style.border = `4px solid ${ring || "#1f6f4a"}`;
+  avatarWrap.style.boxSizing = "border-box";
+  avatarWrap.style.background = "#ddd";
+
+  const avatarImg = document.createElement("img");
+  avatarImg.alt = "";
+  avatarImg.src = String(url || "").trim() || "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+  avatarImg.style.width = "100%";
+  avatarImg.style.height = "100%";
+  avatarImg.style.objectFit = "cover";
+  avatarImg.style.display = "block";
+  avatarWrap.appendChild(avatarImg);
+  root.appendChild(avatarWrap);
+
+  if (rarityText) {
+    const rarityEl = document.createElement("div");
+    rarityEl.textContent = rarityText;
+    rarityEl.style.position = "absolute";
+    rarityEl.style.left = "50%";
+    rarityEl.style.top = "0";
+    rarityEl.style.transform = "translateX(-50%)";
+    rarityEl.style.height = "18px";
+    rarityEl.style.padding = "0 10px";
+    rarityEl.style.borderRadius = "9999px";
+    rarityEl.style.background = (rarityStyle && rarityStyle.badgeBg) ? rarityStyle.badgeBg : "#111";
+    rarityEl.style.color = (rarityStyle && rarityStyle.badgeFg) ? rarityStyle.badgeFg : "#fff";
+    rarityEl.style.fontSize = "10px";
+    rarityEl.style.fontWeight = "800";
+    rarityEl.style.lineHeight = "18px";
+    rarityEl.style.border = "2px solid #fff";
+    rarityEl.style.boxShadow = "0 2px 6px rgba(0,0,0,.25)";
+    rarityEl.style.zIndex = "30";
+    rarityEl.style.pointerEvents = "none";
+    root.appendChild(rarityEl);
+  }
+
+  if ((occ7===0)||Number.isFinite(occ7)) {
+    const countEl = document.createElement("div");
+    countEl.textContent = String(occ7);
+    countEl.style.position = "absolute";
+    countEl.style.left = "50%";
+    countEl.style.top = `${TOP + M + 6}px`;
+    countEl.style.transform = "translateX(-50%)";
+    countEl.style.minWidth = "28px";
+    countEl.style.height = "22px";
+    countEl.style.padding = "0 8px";
+    countEl.style.borderRadius = "9999px";
+    countEl.style.background = isMigr ? "#16a34a" : "#f57c00";
+    countEl.style.color = "#fff";
+    countEl.style.fontSize = "12px";
+    countEl.style.fontWeight = "800";
+    countEl.style.lineHeight = "22px";
+    countEl.style.textAlign = "center";
+    countEl.style.border = "2px solid #fff";
+    countEl.style.boxShadow = "0 2px 6px rgba(0,0,0,.25)";
+    countEl.style.zIndex = "20";
+    countEl.style.pointerEvents = "none";
+    root.appendChild(countEl);
+  }
+
+  return L.divIcon({ html: root, className:"", iconSize:[W,H], iconAnchor:[W/2, TOP + M/2], popupAnchor:[0, -(TOP + M/2)] });
 }
 
 /* ========= Meta text ========= */

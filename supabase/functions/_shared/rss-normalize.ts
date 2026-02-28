@@ -56,12 +56,22 @@ export function parseRss(xml: string): ParsedRssItem[] {
       if (linkMatch) link = linkMatch[1].trim();
     }
 
-    const enclosureMatches = Array.from(block.matchAll(/<enclosure[^>]+url=["']([^"']+)["']/gi));
-    const mediaContentMatches = Array.from(block.matchAll(/<media:content[^>]+url=["']([^"']+)["']/gi));
-    const mediaThumbnailMatches = Array.from(block.matchAll(/<media:thumbnail[^>]+url=["']([^"']+)["']/gi));
-    const enclosureMatch = enclosureMatches[0];
-    const mediaContentMatch = mediaContentMatches[0];
-    const mediaThumbnailMatch = mediaThumbnailMatches[0];
+    const attr = (tag: string, name: string): string => {
+      const m = tag.match(new RegExp(`${name}=["']([^"']+)["']`, "i"));
+      return (m?.[1] || "").trim();
+    };
+    const enclosureTags = Array.from(block.matchAll(/<enclosure\b[^>]*>/gi)).map((m) => m[0]);
+    const mediaContentTags = Array.from(block.matchAll(/<media:content\b[^>]*>/gi)).map((m) => m[0]);
+    const mediaThumbnailTags = Array.from(block.matchAll(/<media:thumbnail\b[^>]*>/gi)).map((m) => m[0]);
+    const enclosureObjs = enclosureTags
+      .map((t) => ({ url: attr(t, "url"), type: attr(t, "type") }))
+      .filter((x) => x.url);
+    const mediaContentObjs = mediaContentTags
+      .map((t) => ({ url: attr(t, "url"), type: attr(t, "type") }))
+      .filter((x) => x.url);
+    const mediaThumbObjs = mediaThumbnailTags
+      .map((t) => ({ url: attr(t, "url") }))
+      .filter((x) => x.url);
     const imageTag = get("image");
     const imageUrlMatch = imageTag.match(/<url[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/url>/i);
     const imageUrl = (imageUrlMatch?.[1] || imageTag || "").trim() || undefined;
@@ -78,19 +88,13 @@ export function parseRss(xml: string): ParsedRssItem[] {
       isoDate: get("isoDate"),
       published: get("published"),
       updated: get("updated"),
-      enclosure: enclosureMatch ? { url: enclosureMatch[1] } : undefined,
-      enclosures: enclosureMatches.length > 0
-        ? enclosureMatches.map((m) => ({ url: m[1] }))
-        : undefined,
-      "media:content": mediaContentMatch ? { url: mediaContentMatch[1] } : undefined,
-      "media:content:list": mediaContentMatches.length > 0
-        ? mediaContentMatches.map((m) => ({ url: m[1] }))
-        : undefined,
-      "media:thumbnail": mediaThumbnailMatch ? { url: mediaThumbnailMatch[1] } : undefined,
-      "media:thumbnail:list": mediaThumbnailMatches.length > 0
-        ? mediaThumbnailMatches.map((m) => ({ url: m[1] }))
-        : undefined,
-      media: mediaContentMatch ? { content: { url: mediaContentMatch[1] } } : undefined,
+      enclosure: enclosureObjs[0] || undefined,
+      enclosures: enclosureObjs.length > 0 ? enclosureObjs : undefined,
+      "media:content": mediaContentObjs[0] || undefined,
+      "media:content:list": mediaContentObjs.length > 0 ? mediaContentObjs : undefined,
+      "media:thumbnail": mediaThumbObjs[0] || undefined,
+      "media:thumbnail:list": mediaThumbObjs.length > 0 ? mediaThumbObjs : undefined,
+      media: mediaContentObjs[0] ? { content: { url: mediaContentObjs[0].url } } : undefined,
       image: imageUrl ? { url: imageUrl } : undefined,
       _raw: block,
     });
@@ -175,6 +179,7 @@ function getImageFromRssItem(
       ...asArray(item.media?.content),
     ];
     for (const c of candidates) {
+      if (!isImageLike(c)) continue;
       const maybe = pickUrl(c);
       if (maybe && /^https?:\/\//i.test(maybe)) return maybe;
     }
@@ -313,7 +318,8 @@ function findMediaContentFromRaw(raw: string): string | null {
     const type = (extractAttribute(tag, "type") || "").toLowerCase();
     const url = extractAttribute(tag, "url");
     if (!url) continue;
-    if (!type || type.startsWith("image/")) return url;
+    const imageByExt = /\.(jpg|jpeg|png|webp|gif|avif)(\?|#|$)/i.test(url);
+    if (type.startsWith("image/") || imageByExt) return url;
   }
   return null;
 }

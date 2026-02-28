@@ -38,6 +38,7 @@ interface NewsItem {
   cached_image_url?: string | null;
   fetched_at?: string | null;
   raw_json?: Record<string, any> | null;
+  excerpt?: string | null;
   published_at: string | null;
   created_at?: string | null;
   language: string | null;
@@ -45,7 +46,7 @@ interface NewsItem {
   translated_at?: string | null;
   translation_status?: string | null;
   guid: string | null;
-  archived: boolean;
+  is_archived: boolean;
 }
 
 interface NewsSource {
@@ -470,56 +471,22 @@ const {
   } = useQuery({
     queryKey: ['news-items', tab],
     queryFn: async () => {
-      const baseCols = 'id, source_id, source_name, source_slug, source_key, title, body, image_url, display_image_url, permalink_url, published_at, created_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
-      const withCachedCols = 'id, source_id, source_name, source_slug, source_key, title, body, image_url, display_image_url, cached_image_url, permalink_url, published_at, created_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
+      const cols = 'id, source_id, source_name, source_slug, source_key, title, permalink_url, published_at, created_at, updated_at, is_archived, image_url, cached_image_url, display_image_url, image_strategy, excerpt';
 
-      const runSelect = async (cols: string, useView = true) => {
-        return await supabase
-          .from(useView ? 'news_items_v' : 'news_items')
-          .select(cols)
-          .eq('archived', tab === 'archive')
-          .order('published_at', { ascending: false, nullsFirst: false })
-          .order('created_at', { ascending: false, nullsFirst: false })
-          .order('fetched_at', { ascending: false })
-          .limit(50);
-      };
-
-      let { data, error } = await runSelect(withCachedCols, true);
-      if (error) {
-        const status = (error as any)?.status;
-        const msg = String((error as any)?.message || '');
-        const details = String((error as any)?.details || '');
-        const missingView = status === 404
-          && /news_items_v/i.test(`${msg} ${details}`)
-          && /(not found|schema cache|does not exist)/i.test(`${msg} ${details}`);
-        if (missingView) {
-          const retryViewless = await runSelect(withCachedCols.replace('source_name, ', '').replace('display_image_url, ', ''), false);
-          data = retryViewless.data;
-          error = retryViewless.error as any;
-        }
-        const missingCachedColumn = status === 400
-          && /cached_image_url/i.test(`${msg} ${details}`)
-          && /(does not exist|not found|unknown column|schema cache)/i.test(`${msg} ${details}`);
-
-        if (missingCachedColumn) {
-          if (import.meta.env.DEV) {
-            console.warn('[NEWS] cached_image_url missing; retrying without optional column');
-          }
-          const retry = await runSelect(baseCols, !missingView);
-          data = retry.data;
-          error = retry.error as any;
-        }
-      }
+      const { data, error } = await supabase
+        .from('news_items_v')
+        .select(cols)
+        .eq('is_archived', tab === 'archive')
+        .order('published_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false, nullsFirst: false })
+        .limit(50);
 
       if (error) {
         console.error('[NEWS] items query failed', error);
         throw error;
       }
       if (import.meta.env.DEV) console.log('[NEWS] first item', data?.[0]);
-      const items = ((data || []) as NewsItem[]).map((item) => ({
-        ...item,
-        source_name: item.source_name || (item as any).source?.name || null,
-      })).map(ensureImageUrl);
+      const items = ((data || []) as NewsItem[]).map(ensureImageUrl);
       return items.sort((a, b) => {
         const ta = new Date(a.published_at || a.created_at || '').getTime() || 0;
         const tb = new Date(b.published_at || b.created_at || '').getTime() || 0;
@@ -668,7 +635,7 @@ const {
         item={selected}
         sources={sources}
         onBack={closeArticle}
-        onToggleArchive={() => toggleArchive(selected.id, selected.archived)}
+        onToggleArchive={() => toggleArchive(selected.id, selected.is_archived)}
       />
     );
   }
@@ -781,7 +748,7 @@ const {
                 autoTranslateEnabled={autoTranslateEnabled}
                 endpointConfigured={endpointConfigured}
                 onOpen={() => openArticle(item)}
-                onToggleArchive={() => toggleArchive(item.id, item.archived)}
+                onToggleArchive={() => toggleArchive(item.id, item.is_archived)}
               />
             ))}
           </div>
@@ -829,8 +796,8 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
   });
   const displayTitle = showEtContent ? (translation.translated?.title_et || item.title_et || item.title) : item.title;
   const snippetSource = showEtContent
-    ? (translation.translated?.body_et || item.body_et || item.body || item.summary)
-    : (item.body || item.summary);
+    ? (translation.translated?.body_et || item.body_et || item.excerpt || '')
+    : (item.excerpt || '');
   const snippet = toPlainText(snippetSource).slice(0, 150);
   const originalUrl = item.permalink_url || item.url || '#';
   const isTranslated = Boolean(translation.translated?.title_et || translation.translated?.body_et || item.title_et || item.body_et);
@@ -903,9 +870,9 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
                 <ExternalLink className="w-3 h-3" /> Originaal
               </Button>
             </a>
-            <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onToggleArchive}>
-              {item.archived ? <ArchiveRestore className="w-3.5 h-3.5 mr-1" /> : <Archive className="w-3.5 h-3.5 mr-1" />}
-              {item.archived ? 'Taasta' : 'Arhiveeri'}
+              <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onToggleArchive}>
+              {item.is_archived ? <ArchiveRestore className="w-3.5 h-3.5 mr-1" /> : <Archive className="w-3.5 h-3.5 mr-1" />}
+              {item.is_archived ? 'Taasta' : 'Arhiveeri'}
             </Button>
           </div>
         </div>
@@ -978,12 +945,14 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     };
   }, []);
   const bodyText = toPlainText(contentHtml || item.body || item.summary);
+  const bodyFallback = item.excerpt || '';
+  const normalizedBodyText = toPlainText(contentHtml || bodyFallback);
   const hasTranslatedContent = showManualTranslation
     && Boolean(manualTranslation?.title_et || manualTranslation?.body_et);
   const displayTitle = hasTranslatedContent ? (manualTranslation?.title_et || item.title) : item.title;
   const displayBody = hasTranslatedContent
-    ? (manualTranslation?.body_et || bodyText)
-    : (contentHtml || bodyText);
+    ? (manualTranslation?.body_et || normalizedBodyText)
+    : (contentHtml || normalizedBodyText);
   const heroImageUrl = proxifyImageUrlIfNeeded(
     sourceName,
     decodeUrl(item.display_image_url) || decodeUrl(item.image_url) || decodeUrl(item.cached_image_url) || null,
@@ -1034,7 +1003,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     } finally {
       setManualTranslateLoading(false);
     }
-  }, [bodyText, item.id, item.title, manualTranslation, showManualTranslation, translateEndpoint]);
+  }, [bodyText, item.id, item.title, manualTranslation, normalizedBodyText, showManualTranslation, translateEndpoint]);
 
   return (
     <div className="flex flex-col h-full">
@@ -1109,8 +1078,8 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
             </Button>
           </a>
           <Button variant="outline" size="sm" className="gap-1.5" onClick={onToggleArchive}>
-            {item.archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
-            {item.archived ? 'Taasta' : 'Arhiveeri'}
+            {item.is_archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+            {item.is_archived ? 'Taasta' : 'Arhiveeri'}
           </Button>
           {canShowTranslate && (
             <Button

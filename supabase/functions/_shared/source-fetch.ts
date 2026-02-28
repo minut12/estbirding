@@ -137,6 +137,19 @@ export async function fetchSourceItems(source: FetchSourceInput, proxyBase = "")
   const xml = await response.text();
   try {
     const normalized = parseRss(xml).map(normalizeRssItem);
+    if (/birding poland|facebook_birdingpoland/i.test(sourceName) && normalized.length > 0) {
+      const s = normalized[0];
+      const raw = (s.raw_json || {}) as Record<string, unknown>;
+      console.log("[birding-poland:normalize-debug]", {
+        link: s.permalink_url || raw.link || null,
+        enclosure: raw.enclosure || null,
+        mediaContent: raw["media:content"] || null,
+        mediaThumbnail: raw["media:thumbnail"] || null,
+        descriptionPreview: String((raw.description as string) || "").slice(0, 200) || null,
+        computedImageUrl: s.image_url || null,
+        normalizedStoredImageUrl: s.image_url || null,
+      });
+    }
     return await enrichMissingImages(normalized, proxyBase);
   } catch {
     throw new SourceFetchError(sourceName, `${sourceName}: RSS parse error`);

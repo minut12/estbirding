@@ -102,7 +102,7 @@ async function translateViaEdgeFunction(id: string): Promise<void> {
   }
 }
 
-async function cacheNewsImageById(id: string): Promise<string | null> {
+async function cacheNewsImageById(id: string, source: string, itemUrl: string | null, imageUrl: string | null): Promise<string | null> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceRoleKey) return null;
@@ -114,7 +114,7 @@ async function cacheNewsImageById(id: string): Promise<string | null> {
       "Authorization": `Bearer ${serviceRoleKey}`,
       "apikey": serviceRoleKey,
     },
-    body: JSON.stringify({ news_item_id: id }),
+    body: JSON.stringify({ news_item_id: id, source, itemUrl, imageUrl }),
   });
 
   if (!res.ok) return null;
@@ -244,7 +244,12 @@ async function pullRssSource({ source, supabase, proxyBase }: { source: any; sup
 
     if (sourceKey === BIRDING_POLAND_KEY && upserted?.id) {
       try {
-        const cachedUrl = await cacheNewsImageById(upserted.id);
+        const cachedUrl = await cacheNewsImageById(
+          upserted.id,
+          "Birding Poland",
+          rowWithImage.permalink_url || rowWithImage.url || null,
+          rowWithImage.image_url || null,
+        );
         if (cachedUrl) {
           await supabase.from("news_items").update({ cached_image_url: cachedUrl }).eq("id", upserted.id);
         }

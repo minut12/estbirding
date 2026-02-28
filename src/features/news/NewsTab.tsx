@@ -34,6 +34,7 @@ interface NewsItem {
   url: string | null;
   permalink_url?: string | null;
   image_url?: string | null;
+  display_image_url?: string | null;
   cached_image_url?: string | null;
   fetched_at?: string | null;
   raw_json?: Record<string, any> | null;
@@ -217,8 +218,9 @@ function notifyTranslationWarning(message: string): void {
 }
 
 function ensureImageUrl(item: NewsItem): NewsItem {
-  const decoded = decodeUrl(item.image_url);
-  if (decoded) return { ...item, image_url: decoded };
+  const display = decodeUrl(item.display_image_url);
+  const decoded = display || decodeUrl(item.image_url);
+  if (decoded) return { ...item, image_url: decoded, display_image_url: display || decoded };
   return { ...item, image_url: extractImageUrlFromRaw(item) };
 }
 
@@ -468,12 +470,12 @@ const {
   } = useQuery({
     queryKey: ['news-items', tab],
     queryFn: async () => {
-      const baseCols = 'id, source_id, source_slug, source_key, source:news_sources(name), title, body, image_url, permalink_url, published_at, created_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
-      const withCachedCols = 'id, source_id, source_slug, source_key, source:news_sources(name), title, body, image_url, cached_image_url, permalink_url, published_at, created_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
+      const baseCols = 'id, source_id, source_name, source_slug, source_key, title, body, image_url, display_image_url, permalink_url, published_at, created_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
+      const withCachedCols = 'id, source_id, source_name, source_slug, source_key, title, body, image_url, display_image_url, cached_image_url, permalink_url, published_at, created_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
 
-      const runSelect = async (cols: string) => {
+      const runSelect = async (cols: string, useView = true) => {
         return await supabase
-          .from('news_items')
+          .from(useView ? 'news_items_v' : 'news_items')
           .select(cols)
           .eq('archived', tab === 'archive')
           .order('published_at', { ascending: false, nullsFirst: false })
@@ -482,11 +484,19 @@ const {
           .limit(50);
       };
 
-      let { data, error } = await runSelect(withCachedCols);
+      let { data, error } = await runSelect(withCachedCols, true);
       if (error) {
         const status = (error as any)?.status;
         const msg = String((error as any)?.message || '');
         const details = String((error as any)?.details || '');
+        const missingView = status === 404
+          && /news_items_v/i.test(`${msg} ${details}`)
+          && /(not found|schema cache|does not exist)/i.test(`${msg} ${details}`);
+        if (missingView) {
+          const retryViewless = await runSelect(withCachedCols.replace('source_name, ', '').replace('display_image_url, ', ''), false);
+          data = retryViewless.data;
+          error = retryViewless.error as any;
+        }
         const missingCachedColumn = status === 400
           && /cached_image_url/i.test(`${msg} ${details}`)
           && /(does not exist|not found|unknown column|schema cache)/i.test(`${msg} ${details}`);
@@ -495,7 +505,7 @@ const {
           if (import.meta.env.DEV) {
             console.warn('[NEWS] cached_image_url missing; retrying without optional column');
           }
-          const retry = await runSelect(baseCols);
+          const retry = await runSelect(baseCols, !missingView);
           data = retry.data;
           error = retry.error as any;
         }
@@ -508,7 +518,7 @@ const {
       if (import.meta.env.DEV) console.log('[NEWS] first item', data?.[0]);
       const items = ((data || []) as NewsItem[]).map((item) => ({
         ...item,
-        source_name: item.source_name || item.source?.name || null,
+        source_name: item.source_name || (item as any).source?.name || null,
       })).map(ensureImageUrl);
       return items.sort((a, b) => {
         const ta = new Date(a.published_at || a.created_at || '').getTime() || 0;
@@ -798,10 +808,11 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
   const [cardRef, isVisible] = useOnceVisible<HTMLDivElement>();
   const debouncedVisible = useDebouncedTrue(isVisible, 180);
   const cachedThumb = decodeUrl(item.cached_image_url);
+  const displayImageUrl = decodeUrl(item.display_image_url);
   const rawImageUrl = decodeUrl(item.image_url);
   const sourceName = sourceLabel(item, sources);
   const isBirdingPoland = sourceName === 'Birding Poland';
-  const thumbCandidate = cachedThumb || rawImageUrl;
+  const thumbCandidate = displayImageUrl || cachedThumb || rawImageUrl;
   const proxiedThumb = proxifyImageUrlIfNeeded(sourceName, thumbCandidate, proxyBase);
   const thumb = (!isBirdingPoland && triedProxyFallback && thumbCandidate)
     ? `${proxyBase}${encodeURIComponent(thumbCandidate)}`
@@ -975,7 +986,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     : (contentHtml || bodyText);
   const heroImageUrl = proxifyImageUrlIfNeeded(
     sourceName,
-    decodeUrl(item.image_url) || decodeUrl(item.cached_image_url) || null,
+    decodeUrl(item.display_image_url) || decodeUrl(item.image_url) || decodeUrl(item.cached_image_url) || null,
     proxyBase,
   );
   const [heroSrc, setHeroSrc] = useState<string | null>(heroImageUrl);

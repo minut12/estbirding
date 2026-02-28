@@ -24,10 +24,17 @@ Deno.serve(async (req) => {
       .select("id, name, slug, type, kind, feed_url, fetch_url, is_active, is_enabled")
       .eq("is_active", true)
       .eq("is_enabled", true);
+    let workingSources = (sources || []) as any[];
+    if (srcErr || workingSources.length === 0) {
+      console.error("[news-refresh] news_sources query failed, using fallback", srcErr);
+      const fallback = [
+        { slug: "eoy", name: "EOÜ", type: "scrape", fetch_url: "https://www.eoy.ee/ET/uudised/" },
+        { slug: "birding_poland", name: "Birding Poland", type: "rss", feed_url: "https://rss.app/feeds/oj8X6cpy0jWL7JNy.xml" },
+      ];
+      workingSources = fallback;
+    }
 
-    if (srcErr) throw srcErr;
-
-    const targetSources = (sources || []).filter((s: any) => {
+    const targetSources = (workingSources || []).filter((s: any) => {
       const n = String(s?.name || "").toLowerCase();
       const t = String(s?.type || s?.kind || "").toLowerCase();
       return (t === "scrape" && (n.includes("eoü") || n.includes("eoy"))) || (t === "rss" && n.includes("birding poland"));

@@ -587,10 +587,11 @@ const {
   // Pull / refresh
   const pullMutation = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke('news-refresh', {
-        body: { proxyBase: resolveProxyBase() },
+      const fnName = 'news-refresh';
+      const { data, error } = await supabase.functions.invoke(fnName, {
+        body: { force: true, proxyBase: resolveProxyBase() },
       });
-      if (error) throw error;
+      if (error) throw new Error(`${fnName}: ${formatErrorReason(error)}`);
       return data;
     },
     onSuccess: async (data) => {
@@ -634,7 +635,7 @@ const {
     onError: (error) => {
       const reason = formatErrorReason(error);
       setLastNewsFetchErrorShort(reason.slice(0, 120));
-      toast.error('Uudiste laadimine ebaõnnestus (fetch): ' + reason.slice(0, 120) + ' [' + getErrorHostLabel() + ']');
+      toast.error('Refresh failed: news-refresh - ' + reason.slice(0, 160));
     },
   });
 

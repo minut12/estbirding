@@ -1,8 +1,4 @@
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "content-type, authorization, apikey",
-};
+﻿import { corsHeaders, handleOptions } from "../_shared/cors.ts";
 
 // Add more domains here as needed.
 const ALLOWED_DOMAINS = [
@@ -20,7 +16,7 @@ const ALLOWED_DOMAINS = [
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "content-type": "application/json" },
+    headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" },
   });
 }
 
@@ -30,9 +26,8 @@ function isAllowedHost(hostname: string): boolean {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
+  const opt = handleOptions(req);
+  if (opt) return opt;
 
   if (req.method !== "GET") {
     return json(405, { error: "method_not_allowed" });

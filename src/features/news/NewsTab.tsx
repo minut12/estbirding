@@ -468,12 +468,12 @@ const {
   } = useQuery({
     queryKey: ['news-items', tab],
     queryFn: async () => {
-      const baseCols = 'id, source_id, source_name, source_slug, source_key, title, body, image_url, permalink_url, published_at, created_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
-      const withCachedCols = 'id, source_id, source_name, source_slug, source_key, title, body, image_url, cached_image_url, permalink_url, published_at, created_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
+      const baseCols = 'id, source_id, source_slug, source_key, source:news_sources(name), title, body, image_url, permalink_url, published_at, created_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
+      const withCachedCols = 'id, source_id, source_slug, source_key, source:news_sources(name), title, body, image_url, cached_image_url, permalink_url, published_at, created_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
 
       const runSelect = async (cols: string) => {
         return await supabase
-          .from('news_items_v')
+          .from('news_items')
           .select(cols)
           .eq('archived', tab === 'archive')
           .order('published_at', { ascending: false, nullsFirst: false })
@@ -506,7 +506,10 @@ const {
         throw error;
       }
       if (import.meta.env.DEV) console.log('[NEWS] first item', data?.[0]);
-      const items = ((data || []) as NewsItem[]).map(ensureImageUrl);
+      const items = ((data || []) as NewsItem[]).map((item) => ({
+        ...item,
+        source_name: item.source_name || item.source?.name || null,
+      })).map(ensureImageUrl);
       return items.sort((a, b) => {
         const ta = new Date(a.published_at || a.created_at || '').getTime() || 0;
         const tb = new Date(b.published_at || b.created_at || '').getTime() || 0;

@@ -311,8 +311,8 @@ async function pullScrapeSource({ source, supabase }: { source: any; supabase: a
     };
   }
 
-  const inserted = Number(payload?.inserted || 0) + Number(payload?.updated || 0);
-  const fetched = Number(payload?.parsed || inserted || 0);
+  const inserted = Number(payload?.insertedCount ?? payload?.inserted ?? 0);
+  const fetched = Number(payload?.foundCount ?? payload?.parsed ?? inserted || 0);
   return { source: source.slug || source.id || "unknown", fetched, inserted, skipped: false };
 }
 

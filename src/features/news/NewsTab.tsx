@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+﻿import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/config/supabaseClient';
 import {
@@ -18,7 +18,7 @@ import { resolveEndpoint, TRANSLATION_ENDPOINT_UPDATED_EVENT } from '@/config/tr
 import { getProxyMode, resolveProxyBase } from '@/config/proxyEndpoint';
 import { getSupabaseUrl } from '@/config/supabaseConfig';
 
-/* ── Types ──────────────────────────────────────── */
+/* â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 interface NewsItem {
   id: string;
   source_slug: string | null;
@@ -55,8 +55,8 @@ interface NewsSource {
   key?: string | null;
 }
 
-/* ── Format date ────────────────────────────────── */
-const ET_MONTHS = ['jaanuar','veebruar','märts','aprill','mai','juuni','juuli','august','september','oktoober','november','detsember'];
+/* â”€â”€ Format date â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+const ET_MONTHS = ['jaanuar','veebruar','mÃ¤rts','aprill','mai','juuni','juuli','august','september','oktoober','november','detsember'];
 function formatEstDate(iso: string): string {
   try {
     const d = new Date(iso);
@@ -64,7 +64,7 @@ function formatEstDate(iso: string): string {
   } catch { return iso; }
 }
 
-/* ── Source display names ───────────────────────── */
+/* â”€â”€ Source display names â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function sourceLabel(item: NewsItem, sources: NewsSource[]): string {
   const directName = String(item.source?.name || '').trim();
   if (directName) return directName;
@@ -213,7 +213,7 @@ function notifyTranslationWarning(message: string): void {
   const normalized = String(message || 'Viga').trim().slice(0, 160) || 'Viga';
   if (shownTranslationWarnings.has(normalized)) return;
   shownTranslationWarnings.add(normalized);
-  toast.warning(`T�lge eba�nnestus: ${normalized}`);
+  toast.warning(`Tõlge ebaõnnestus: ${normalized}`);
 }
 
 function ensureImageUrl(item: NewsItem): NewsItem {
@@ -223,6 +223,34 @@ function ensureImageUrl(item: NewsItem): NewsItem {
 }
 
 const BIRDING_POLAND_NAME = 'birding poland';
+
+function proxifyImageUrlIfNeeded(sourceName: string, url: string | null, proxyBase: string): string | null {
+  if (!url) return null;
+  const clean = url.trim();
+  if (!clean) return null;
+  if (clean.startsWith('data:') || clean.startsWith('blob:')) return clean;
+  if (sourceName === 'Birding Poland') {
+    return `${proxyBase}${encodeURIComponent(clean)}`;
+  }
+  return clean;
+}
+
+function rewriteImgSrcToProxy(html: string, sourceName: string, proxyBase: string): string {
+  if (!html) return html;
+  if (sourceName !== 'Birding Poland') return html;
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('img').forEach((img) => {
+      const src = (img.getAttribute('src') || img.getAttribute('data-src') || '').trim();
+      if (!src) return;
+      img.setAttribute('src', `${proxyBase}${encodeURIComponent(src)}`);
+      img.removeAttribute('data-src');
+    });
+    return doc.body.innerHTML;
+  } catch {
+    return html;
+  }
+}
 
 interface EtTranslationState {
   translated: TranslateEtOutput | null;
@@ -357,7 +385,7 @@ function useDebouncedTrue(value: boolean, delayMs: number): boolean {
   return debounced;
 }
 
-/* ── Main component ─────────────────────────────── */
+/* â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export default function NewsTab() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<'latest' | 'archive'>('latest');
@@ -496,7 +524,7 @@ const {
     if (!isError) return;
     const shortReason = formatErrorReason(newsQueryError);
     setLastNewsFetchErrorShort(shortReason.slice(0, 120));
-    toast.error('Uudiste laadimine eba�nnestus (fetch): ' + shortReason.slice(0, 120) + ' [' + getErrorHostLabel() + ']');
+    toast.error('Uudiste laadimine ebaõnnestus (fetch): ' + shortReason.slice(0, 120) + ' [' + getErrorHostLabel() + ']');
   }, [isError, newsQueryError]);
 
   // Toggle archive via DB update
@@ -550,13 +578,13 @@ const {
       if (failed.length > 0 && failed.length === resultList.length) {
         const failedSource = String(failed[0]?.source || 'allikas');
         const reason = String(failed[0]?.error || 'Viga').slice(0, 120);
-        toast.error('Uudiste laadimine eba�nnestus (fetch): ' + failedSource + ': ' + reason + ' [' + getErrorHostLabel() + ']');
+        toast.error('Uudiste laadimine ebaõnnestus (fetch): ' + failedSource + ': ' + reason + ' [' + getErrorHostLabel() + ']');
         return;
       }
       if (failed.length > 0) {
         const firstFailureSource = String(failed[0]?.source || 'allikas');
         const firstFailureReason = String(failed[0]?.error || 'Viga').slice(0, 120);
-        toast.warning(`${failed.length} allikas ebaõnnestus (${firstFailureSource}: ${firstFailureReason})`);
+        toast.warning(`${failed.length} allikas ebaÃµnnestus (${firstFailureSource}: ${firstFailureReason})`);
       }
       if (total > 0) toast.success(`${total} uut uudist`);
       else toast.info('Uusi uudiseid pole');
@@ -564,7 +592,7 @@ const {
     onError: (error) => {
       const reason = formatErrorReason(error);
       setLastNewsFetchErrorShort(reason.slice(0, 120));
-      toast.error('Uudiste laadimine eba�nnestus (fetch): ' + reason.slice(0, 120) + ' [' + getErrorHostLabel() + ']');
+      toast.error('Uudiste laadimine ebaõnnestus (fetch): ' + reason.slice(0, 120) + ' [' + getErrorHostLabel() + ']');
     },
   });
 
@@ -603,7 +631,7 @@ const {
             size="icon"
             onClick={() => pullMutation.mutate()}
             disabled={pullMutation.isPending}
-            title="Värskenda"
+            title="VÃ¤rskenda"
           >
             {pullMutation.isPending
               ? <Loader2 className="w-4 h-4 animate-spin" />
@@ -641,7 +669,7 @@ const {
               onChange={(e) => setSourceFilter(e.target.value)}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             >
-              <option value="all">Kõik allikad</option>
+              <option value="all">KÃµik allikad</option>
               {sources.map((s) => {
                 return <option key={s.id} value={s.id}>{s.name}</option>;
               })}
@@ -651,7 +679,7 @@ const {
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Otsi uudiseid…"
+              placeholder="Otsi uudiseidâ€¦"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9 h-9"
@@ -707,7 +735,7 @@ const {
   );
 }
 
-/* ── News Card ──────────────────────────────────── */
+/* â”€â”€ News Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtContent, autoTranslateEnabled, endpointConfigured, onOpen, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
@@ -720,12 +748,18 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
   onToggleArchive: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
+  const [triedProxyFallback, setTriedProxyFallback] = useState(false);
   const [cardRef, isVisible] = useOnceVisible<HTMLDivElement>();
   const debouncedVisible = useDebouncedTrue(isVisible, 180);
   const cachedThumb = decodeUrl(item.cached_image_url);
   const rawImageUrl = decodeUrl(item.image_url);
   const isBirdingPoland = !!birdingPolandSourceId && item.source_id === birdingPolandSourceId;
-  const thumb = (isBirdingPoland && proxyBase && rawImageUrl) ? `${proxyBase}${encodeURIComponent(rawImageUrl)}` : (cachedThumb || rawImageUrl);
+  const sourceName = sourceLabel(item, sources);
+  const thumbCandidate = cachedThumb || rawImageUrl;
+  const proxiedThumb = proxifyImageUrlIfNeeded(sourceName, thumbCandidate, proxyBase);
+  const thumb = (!isBirdingPoland && triedProxyFallback && thumbCandidate)
+    ? `${proxyBase}${encodeURIComponent(thumbCandidate)}`
+    : proxiedThumb;
   const translation = useEtTranslation({
     enabled: showEtContent && autoTranslateEnabled && debouncedVisible,
     id: item.id,
@@ -746,6 +780,7 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
 
   useEffect(() => {
     setImageFailed(false);
+    setTriedProxyFallback(false);
   }, [thumb]);
 
   return (
@@ -763,6 +798,10 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
               onError={(e) => {
                 if (import.meta.env.DEV && isBirdingPoland) {
                   console.warn('[news-image] birding-poland load failed', { thumb, cachedThumb, image_url: item.image_url, cached_image_url: item.cached_image_url });
+                }
+                if (!isBirdingPoland && !triedProxyFallback && thumbCandidate) {
+                  setTriedProxyFallback(true);
+                  return;
                 }
                 (e.currentTarget as HTMLImageElement).style.display = 'none';
                 setImageFailed(true);
@@ -785,10 +824,10 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
             {translation.loading && (
               <Badge variant="outline" className="text-xs px-1.5 py-0 flex items-center gap-1">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                Tõlgin...
+                TÃµlgin...
               </Badge>
             )}
-            {isTranslated && <Badge variant="outline" className="text-xs px-1.5 py-0">Tõlgitud</Badge>}
+            {isTranslated && <Badge variant="outline" className="text-xs px-1.5 py-0">TÃµlgitud</Badge>}
             <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at || item.created_at || item.fetched_at || '')}</span>
           </div>
           {snippet && (
@@ -817,7 +856,7 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
   );
 }
 
-/* ── Article View (lazy-loads content) ──────────── */
+/* â”€â”€ Article View (lazy-loads content) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function ArticleView({ item, sources, onBack, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
@@ -849,7 +888,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
           setContentError(data.error);
         }
       } catch (e: any) {
-        if (!cancelled) setContentError(e.message || 'Sisu laadimine ebaõnnestus');
+        if (!cancelled) setContentError(e.message || 'Sisu laadimine ebaÃµnnestus');
       } finally {
         if (!cancelled) setLoadingContent(false);
       }
@@ -865,6 +904,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
 
   const sourceName = sourceLabel(item, sources);
   const isBirdingPoland = sourceName.trim().toLowerCase() === BIRDING_POLAND_NAME;
+  const proxyBase = resolveProxyBase();
   const normalizedLang = normalizeLocale(item.source_lang || item.language || '');
   const isLikelyEstonian = normalizedLang === 'et';
   const canShowTranslate = !isLikelyEstonian || isBirdingPoland;
@@ -886,8 +926,13 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
   const displayBody = hasTranslatedContent
     ? (manualTranslation?.body_et || bodyText)
     : (contentHtml || bodyText);
-  const heroImageUrl = decodeUrl(item.image_url);
-  const bodyHtmlWithoutDuplicateHero = contentHtml ? stripLeadingSameImage(contentHtml, heroImageUrl) : null;
+  const heroImageUrl = proxifyImageUrlIfNeeded(
+    sourceName,
+    decodeUrl(item.image_url) || decodeUrl(item.cached_image_url) || null,
+    proxyBase,
+  );
+  const rewrittenContentHtml = contentHtml ? rewriteImgSrcToProxy(contentHtml, sourceName, proxyBase) : null;
+  const bodyHtmlWithoutDuplicateHero = rewrittenContentHtml ? stripLeadingSameImage(rewrittenContentHtml, heroImageUrl) : null;
   const originalUrl = item.permalink_url || item.url || '#';
   const isTranslated = Boolean(hasTranslatedContent);
 
@@ -902,7 +947,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     }
 
     if (!translateEndpoint.trim()) {
-      toast.info('T�lke endpoint puudub. N�itan originaali.');
+      toast.info('Tõlke endpoint puudub. Näitan originaali.');
       return;
     }
 
@@ -953,10 +998,10 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
           {manualTranslateLoading && (
             <Badge variant="outline" className="flex items-center gap-1">
               <Loader2 className="w-3 h-3 animate-spin" />
-              Tõlgin...
+              TÃµlgin...
             </Badge>
           )}
-          {isTranslated && <Badge variant="outline">Tõlgitud</Badge>}
+          {isTranslated && <Badge variant="outline">TÃµlgitud</Badge>}
           <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at || item.created_at || item.fetched_at || '')}</span>
         </div>
 
@@ -1007,17 +1052,18 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
   );
 }
 
-/* ── Empty States ───────────────────────────────── */
+/* â”€â”€ Empty States â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function EmptyState({ tab }: { tab: string }) {
   return (
     <div className="flex flex-col items-center justify-center h-full p-8 text-center gap-3">
       <Newspaper className="w-14 h-14 text-muted-foreground/40" />
       <p className="text-sm text-muted-foreground">
-        {tab === 'archive' ? 'Arhiivis pole ühtegi uudist.' : 'Uudiseid pole veel. Vajuta värskendamisnuppu.'}
+        {tab === 'archive' ? 'Arhiivis pole Ã¼htegi uudist.' : 'Uudiseid pole veel. Vajuta vÃ¤rskendamisnuppu.'}
       </p>
     </div>
   );
 }
+
 
 
 

@@ -31,6 +31,21 @@ function shortError(reason: string): string {
   return text.slice(0, 120);
 }
 
+function shouldUseSourceProxy(sourceKey: string): boolean {
+  return sourceKey === BIRDING_POLAND_KEY;
+}
+
+function applyImageProxyIfNeeded(imageUrl: string | null, sourceKey: string, proxyBase: string): string | null {
+  const clean = decodeUrl(imageUrl);
+  if (!clean) return null;
+  if (!shouldUseSourceProxy(sourceKey)) return clean;
+  if (!proxyBase) return clean;
+  if (clean.includes("/functions/v1/proxy?url=")) return clean;
+  const lower = clean.toLowerCase();
+  if (lower.startsWith("data:")) return clean;
+  return `${proxyBase}${encodeURIComponent(clean)}`;
+}
+
 function normalizeProxyBase(raw: string): string {
   const trimmed = String(raw || "").trim();
   if (!trimmed) return "";
@@ -127,6 +142,20 @@ async function pullRssSource({ source, supabase, proxyBase }: { source: any; sup
 
   const sorted = normalized.sort((a, b) => toTimestamp(b.published_at) - toTimestamp(a.published_at));
   const items = sourceKey === BIRDING_POLAND_KEY ? sorted.slice(0, 1) : sorted.slice(0, 10);
+  const externalIds = items.map((it) => String(it.external_id || "").trim()).filter(Boolean);
+  const existingImageByExternalId = new Map<string, string>();
+  if (externalIds.length > 0) {
+    const { data: existingRows } = await supabase
+      .from("news_items")
+      .select("external_id, image_url")
+      .eq("source_slug", source.slug)
+      .in("external_id", externalIds);
+    for (const row of (existingRows || [])) {
+      const id = String(row?.external_id || "").trim();
+      const img = decodeUrl(row?.image_url);
+      if (id && img) existingImageByExternalId.set(id, img);
+    }
+  }
 
   let inserted = 0;
   for (const item of items) {
@@ -160,8 +189,10 @@ async function pullRssSource({ source, supabase, proxyBase }: { source: any; sup
     };
 
     const rowWithLang = lang === "et" ? { ...row, translation_status: "done" } : row;
-    const decodedImageUrl = decodeUrl(item.image_url);
-    const rowWithImage = decodedImageUrl ? { ...rowWithLang, image_url: decodedImageUrl } : rowWithLang;
+    const cachedImage = existingImageByExternalId.get(externalId) || null;
+    const resolvedImage = decodeUrl(item.image_url) || cachedImage;
+    const proxiedImage = applyImageProxyIfNeeded(resolvedImage, sourceKey, proxyBase);
+    const rowWithImage = proxiedImage ? { ...rowWithLang, image_url: proxiedImage } : rowWithLang;
 
     const { data: upserted, error } = await supabase
       .from("news_items")

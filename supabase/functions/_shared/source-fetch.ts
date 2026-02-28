@@ -50,6 +50,69 @@ function buildProxyUrl(targetUrl: string, proxyBase: string): string {
   return `${proxyBase}${encoded}`;
 }
 
+function normalizeUrl(url: string, baseUrl: string): string {
+  const raw = String(url || "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("//")) return `https:${raw}`;
+  if (/^https?:\/\//i.test(raw) || /^data:/i.test(raw)) return raw;
+  try {
+    return new URL(raw, baseUrl).toString();
+  } catch {
+    return raw;
+  }
+}
+
+function extractMetaImage(html: string, pageUrl: string): string | null {
+  const og = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["'][^>]*>/i)
+    || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["'][^>]*>/i);
+  if (og?.[1]) return normalizeUrl(og[1], pageUrl);
+
+  const tw = html.match(/<meta[^>]+name=["']twitter:image(?::src)?["'][^>]+content=["']([^"']+)["'][^>]*>/i)
+    || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image(?::src)?["'][^>]*>/i);
+  if (tw?.[1]) return normalizeUrl(tw[1], pageUrl);
+  return null;
+}
+
+async function enrichMissingImages(items: NormalizedRssItem[], proxyBase: string): Promise<NormalizedRssItem[]> {
+  const cache = new Map<string, string | null>();
+  const out: NormalizedRssItem[] = [];
+
+  for (const item of items) {
+    if (item.image_url) {
+      out.push(item);
+      continue;
+    }
+    const link = String(item.permalink_url || "").trim();
+    if (!link) {
+      out.push(item);
+      continue;
+    }
+    if (cache.has(link)) {
+      out.push({ ...item, image_url: cache.get(link) || null });
+      continue;
+    }
+    try {
+      const target = buildProxyUrl(link, proxyBase);
+      const res = await fetch(target, {
+        headers: { "User-Agent": "EstBirding/1.0", "Accept": "text/html,application/xhtml+xml,*/*" },
+      });
+      if (!res.ok) {
+        cache.set(link, null);
+        out.push(item);
+        continue;
+      }
+      const html = await res.text();
+      const metaImg = extractMetaImage(html, link);
+      cache.set(link, metaImg);
+      out.push(metaImg ? { ...item, image_url: metaImg } : item);
+    } catch {
+      cache.set(link, null);
+      out.push(item);
+    }
+  }
+  return out;
+}
+
 export async function fetchSourceItems(source: FetchSourceInput, proxyBase = ""): Promise<NormalizedRssItem[]> {
   const kind = String(source.kind || source.type || "rss").toLowerCase();
   const sourceName = resolveSourceName(source);
@@ -73,7 +136,8 @@ export async function fetchSourceItems(source: FetchSourceInput, proxyBase = "")
 
   const xml = await response.text();
   try {
-    return parseRss(xml).map(normalizeRssItem);
+    const normalized = parseRss(xml).map(normalizeRssItem);
+    return await enrichMissingImages(normalized, proxyBase);
   } catch {
     throw new SourceFetchError(sourceName, `${sourceName}: RSS parse error`);
   }

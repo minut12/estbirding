@@ -16,6 +16,7 @@ export interface ParsedRssItem {
   "media:content:list"?: Array<{ url?: string }>;
   "media:thumbnail"?: { url?: string };
   "media:thumbnail:list"?: Array<{ url?: string }>;
+  "itunes:image"?: { href?: string; "@_href"?: string };
   media?: { content?: { url?: string } };
   image?: { url?: string };
   _raw?: string;
@@ -100,7 +101,7 @@ export function parseRss(xml: string): ParsedRssItem[] {
 export function normalizeRssItem(item: ParsedRssItem): NormalizedRssItem {
   const bodyHtml = item["content:encoded"] || item.content || item.description || item.summary || "";
   const bodyText = htmlToText(bodyHtml);
-  const imageUrl = extractImageUrl(item, bodyHtml);
+  const imageUrl = extractImageUrl(item, bodyHtml, item.link || undefined);
   const titleText = htmlToText(item.title || "");
   const title = titleText || bodyText.slice(0, 80) || "Untitled";
 
@@ -116,32 +117,38 @@ export function normalizeRssItem(item: ParsedRssItem): NormalizedRssItem {
   };
 }
 
-export function extractImageUrl(item: ParsedRssItem, bodyHtml?: string): string | null {
-  const fromEnclosure = cleanUrl(item.enclosure?.url) || cleanUrl(firstArrayUrl(item.enclosures));
-  if (fromEnclosure) return fromEnclosure;
-
+export function extractImageUrl(item: ParsedRssItem, bodyHtml?: string, baseUrl?: string): string | null {
+  const raw = String(item._raw || "");
   const fromMediaContent =
-    cleanUrl(item["media:content"]?.url)
-    || cleanUrl(firstArrayUrl(item["media:content:list"]))
-    || cleanUrl(item.media?.content?.url);
+    cleanImageCandidate(findMediaContentFromRaw(raw), baseUrl)
+    || cleanImageCandidate(cleanUrl(item["media:content"]?.url), baseUrl)
+    || cleanImageCandidate(firstArrayUrl(item["media:content:list"]), baseUrl)
+    || cleanImageCandidate(item.media?.content?.url, baseUrl);
   if (fromMediaContent) return fromMediaContent;
 
+  const fromEnclosure =
+    cleanImageCandidate(findEnclosureFromRaw(raw), baseUrl)
+    || cleanImageCandidate(item.enclosure?.url, baseUrl)
+    || cleanImageCandidate(firstArrayUrl(item.enclosures), baseUrl);
+  if (fromEnclosure) return fromEnclosure;
+
+  const fromItunes = cleanImageCandidate(item["itunes:image"]?.href || item["itunes:image"]?.["@_href"] || findItunesImageFromRaw(raw), baseUrl);
+  if (fromItunes) return fromItunes;
+
   const fromMediaThumbnail =
-    cleanUrl(item["media:thumbnail"]?.url)
-    || cleanUrl(firstArrayUrl(item["media:thumbnail:list"]));
+    cleanImageCandidate(findMediaThumbnailFromRaw(raw), baseUrl)
+    || cleanImageCandidate(item["media:thumbnail"]?.url, baseUrl)
+    || cleanImageCandidate(firstArrayUrl(item["media:thumbnail:list"]), baseUrl);
   if (fromMediaThumbnail) return fromMediaThumbnail;
 
   const htmlCandidates = [bodyHtml, item["content:encoded"], item.content, item.description, item.summary];
   for (const html of htmlCandidates) {
-    const fromHtml = extractFirstImageUrl(html || "");
+    const fromHtml = extractFirstImageUrl(html || "", baseUrl);
     if (fromHtml) return fromHtml;
   }
 
-  const fromImage = cleanUrl(item.image?.url);
+  const fromImage = cleanImageCandidate(item.image?.url, baseUrl);
   if (fromImage) return fromImage;
-
-  const fromThumbnail = cleanUrl(item["media:thumbnail"]?.url);
-  if (fromThumbnail) return fromThumbnail;
 
   return null;
 }
@@ -151,17 +158,19 @@ function decodeUrl(u: string | null | undefined): string | null {
   return u.replaceAll("&amp;", "&").replaceAll("&#38;", "&");
 }
 
-function extractFirstImageUrl(html: string): string | null {
+function extractFirstImageUrl(html: string, baseUrl?: string): string | null {
   if (!html) return null;
-  const imgTagMatch = html.match(/<img\b[^>]*>/i);
-  if (!imgTagMatch) return null;
-  const imgTag = imgTagMatch[0];
-
-  const directSrc = extractAttribute(imgTag, "src");
-  const lazySrc = extractAttribute(imgTag, "data-src") || extractAttribute(imgTag, "data-original");
-  const srcSet = extractSrcSetFirstUrl(extractAttribute(imgTag, "srcset"));
-
-  return cleanUrl(directSrc) || cleanUrl(lazySrc) || cleanUrl(srcSet) || null;
+  const imgTags = Array.from(html.matchAll(/<img\b[^>]*>/gi)).map((m) => m[0]);
+  for (const imgTag of imgTags) {
+    const directSrc = extractAttribute(imgTag, "src");
+    const lazySrc = extractAttribute(imgTag, "data-src") || extractAttribute(imgTag, "data-original");
+    const srcSet = extractSrcSetFirstUrl(extractAttribute(imgTag, "srcset"));
+    const candidate = cleanImageCandidate(directSrc, baseUrl)
+      || cleanImageCandidate(lazySrc, baseUrl)
+      || cleanImageCandidate(srcSet, baseUrl);
+    if (candidate && !isTrackingPixel(imgTag, candidate)) return candidate;
+  }
+  return null;
 }
 
 function extractAttribute(tag: string, attribute: string): string | null {
@@ -182,9 +191,76 @@ function firstArrayUrl(items: Array<{ url?: string }> | undefined): string | nul
   return items[0]?.url || null;
 }
 
+function cleanImageCandidate(value: string | undefined | null, baseUrl?: string): string | null {
+  const cleaned = cleanUrl(value);
+  if (!cleaned) return null;
+  return normalizeUrl(cleaned, baseUrl);
+}
+
 function cleanUrl(value: string | undefined | null): string | null {
   const trimmed = decodeUrl(value)?.trim();
   return trimmed ? trimmed : null;
+}
+
+function normalizeUrl(url: string, baseUrl?: string): string {
+  const raw = String(url || "").trim();
+  if (!raw) return raw;
+  if (raw.startsWith("//")) return `https:${raw}`;
+  if (/^https?:\/\//i.test(raw) || /^data:/i.test(raw)) return raw;
+  if (!baseUrl) return raw;
+  try {
+    return new URL(raw, baseUrl).toString();
+  } catch {
+    return raw;
+  }
+}
+
+function isTrackingPixel(imgTag: string, src: string): boolean {
+  const lower = String(src || "").toLowerCase();
+  if (lower.includes("pixel") || lower.includes("spacer") || lower.includes("tracking")) return true;
+  const width = Number.parseInt(extractAttribute(imgTag, "width") || "0", 10);
+  const height = Number.parseInt(extractAttribute(imgTag, "height") || "0", 10);
+  if ((width > 0 && width <= 2) || (height > 0 && height <= 2)) return true;
+  return false;
+}
+
+function findEnclosureFromRaw(raw: string): string | null {
+  if (!raw) return null;
+  const matches = Array.from(raw.matchAll(/<enclosure\b[^>]*>/gi));
+  for (const m of matches) {
+    const tag = m[0];
+    const type = (extractAttribute(tag, "type") || "").toLowerCase();
+    const url = extractAttribute(tag, "url");
+    if (!url) continue;
+    if (type.startsWith("image/")) return url;
+    if (/\.(jpg|jpeg|png|webp|gif|avif)(\?|#|$)/i.test(url)) return url;
+  }
+  return null;
+}
+
+function findMediaContentFromRaw(raw: string): string | null {
+  if (!raw) return null;
+  const matches = Array.from(raw.matchAll(/<media:content\b[^>]*>/gi));
+  for (const m of matches) {
+    const tag = m[0];
+    const type = (extractAttribute(tag, "type") || "").toLowerCase();
+    const url = extractAttribute(tag, "url");
+    if (!url) continue;
+    if (!type || type.startsWith("image/")) return url;
+  }
+  return null;
+}
+
+function findMediaThumbnailFromRaw(raw: string): string | null {
+  if (!raw) return null;
+  const tag = raw.match(/<media:thumbnail\b[^>]*>/i)?.[0];
+  return tag ? extractAttribute(tag, "url") : null;
+}
+
+function findItunesImageFromRaw(raw: string): string | null {
+  if (!raw) return null;
+  const tag = raw.match(/<itunes:image\b[^>]*>/i)?.[0];
+  return tag ? extractAttribute(tag, "href") : null;
 }
 
 function htmlToText(html: string): string {

@@ -937,14 +937,16 @@ let debugCountrySample = "-";
 let debugMax7d = "-";
 let debugExampleGt1 = "-";
 let debugLastCountryRows = "-";
-let debugLatviaRawRows = 0;
-let debugLatviaValidCoords = 0;
+let debugTotalFetchedRows = 0;
+let debugValidCoordsRows = 0;
 let debugLatviaBbox = 0;
 let debugLatviaCountryField = 0;
+let debugLatviaRegionRows = 0;
 let debugLatviaCounted7d = 0;
 let debugLatviaRenderedMarkers = 0;
 let debugLatviaSample = [];
 const LATVIA_BBOX = { latMin: 55.6, latMax: 58.2, lonMin: 20.9, lonMax: 28.3 };
+const DEV_DEBUG = /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname) || /[?&]debug=1(?:&|$)/.test(window.location.search);
 
 function parseObsDateToMs(obsDt){
   const raw = String(obsDt || "").trim();
@@ -1082,12 +1084,25 @@ function updateDebugPanel(){
     `countryTop5(7d): <b>${debugCountryTop5}</b>`,
     `lastCountryRows: <b>${debugLastCountryRows}</b>`,
     `countrySample(7d): <b>${debugCountrySample}</b>`,
-    `Latvia debug: <b>raw=${debugLatviaRawRows}, validCoords=${debugLatviaValidCoords}, bbox=${debugLatviaBbox}, countryField=${debugLatviaCountryField}, counted7d=${debugLatviaCounted7d}, rendered=${debugLatviaRenderedMarkers}</b>`,
+    `Latvia debug: <b>fetched=${debugTotalFetchedRows}, validCoords=${debugValidCoordsRows}, bbox=${debugLatviaBbox}, countryField=${debugLatviaCountryField}, lvRegionRows=${debugLatviaRegionRows}, counted7d=${debugLatviaCounted7d}, rendered=${debugLatviaRenderedMarkers}</b>`,
     `Latvia samples: <b>${debugLatviaSample.length ? debugLatviaSample.join(" | ") : "-"}</b>`,
+    `Latvia assert: <b>${(debugLatviaBbox > 0 && debugLatviaRenderedMarkers === 0) ? "FAIL (bbox>0 but rendered=0)" : "OK"}</b>`,
     `max7dCountThisRefresh: <b>${debugMax7d}</b>`,
     `Example >1: <b>${debugExampleGt1}</b>`,
     `snapshotNote: <b>${snapshotDebugNote || "-"}</b>`,
   ].join("<br>");
+  if (DEV_DEBUG && debugLatviaBbox > 0 && debugLatviaRenderedMarkers === 0) {
+    console.warn("[latvia-debug] bbox points exist but no rendered Latvia markers", {
+      fetched: debugTotalFetchedRows,
+      validCoords: debugValidCoordsRows,
+      bbox: debugLatviaBbox,
+      countryField: debugLatviaCountryField,
+      lvRegionRows: debugLatviaRegionRows,
+      counted7d: debugLatviaCounted7d,
+      rendered: debugLatviaRenderedMarkers,
+      samples: debugLatviaSample.slice(0, 10),
+    });
+  }
 }
 
 function showSnapshotBanner(msg, type){
@@ -1583,10 +1598,11 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
   let max7dSpecies = "-";
   let max7dCountry = "-";
   const totalCountsGlobalByCode = {};
-  debugLatviaRawRows = 0;
-  debugLatviaValidCoords = 0;
+  debugTotalFetchedRows = 0;
+  debugValidCoordsRows = 0;
   debugLatviaBbox = 0;
   debugLatviaCountryField = 0;
+  debugLatviaRegionRows = 0;
   debugLatviaCounted7d = 0;
   debugLatviaSample = [];
 
@@ -1615,6 +1631,7 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
       const perCountryCounts = {};
       const countrySampleRows = [];
       for (const obs of response.json) {
+        debugTotalFetchedRows++;
         const speciesCode = String(obs?.speciesCode || "");
         const speciesName = speciesByCode.get(speciesCode);
         if (!speciesName) continue;
@@ -1624,19 +1641,19 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
         const isValidDt = ts !== null && Number.isFinite(ts);
         const latRaw = Number(obs?.lat);
         const lonRaw = Number(obs?.lng);
-        if (region === "LV") {
-          debugLatviaRawRows++;
-          if (Number.isFinite(latRaw) && Number.isFinite(lonRaw)) {
-            debugLatviaValidCoords++;
-            if (isInsideLatviaBbox(latRaw, lonRaw)) debugLatviaBbox++;
-            if (debugLatviaSample.length < 10 && isInsideLatviaBbox(latRaw, lonRaw)) {
-              debugLatviaSample.push(`${speciesCode} ${latRaw.toFixed(3)},${lonRaw.toFixed(3)} ${String(obs?.countryCode || obs?.country || "").trim()}`.slice(0, 120));
+        const cCode = String(obs?.countryCode || "").trim().toUpperCase();
+        const cName = normalizeCountryName(obs?.country || obs?.countryName || obs?.subnational2Name || "");
+        if (region === "LV") debugLatviaRegionRows++;
+        if (Number.isFinite(latRaw) && Number.isFinite(lonRaw)) {
+          debugValidCoordsRows++;
+          if (isInsideLatviaBbox(latRaw, lonRaw)) {
+            debugLatviaBbox++;
+            if (debugLatviaSample.length < 10) {
+              debugLatviaSample.push(`${region} ${speciesCode} ${latRaw.toFixed(3)},${lonRaw.toFixed(3)} ${String(cCode || cName || "").trim()}`.slice(0, 120));
             }
           }
-          const cCode = String(obs?.countryCode || "").trim().toUpperCase();
-          const cName = normalizeCountryName(obs?.country || obs?.countryName || obs?.subnational2Name || "");
-          if (cCode === "LV" || cName === "latvia") debugLatviaCountryField++;
         }
+        if (cCode === "LV" || cName === "latvia") debugLatviaCountryField++;
         if (!perSpeciesRegionByCode[speciesCode]) {
           perSpeciesRegionByCode[speciesCode] = { occ7: 0, latestObs: null, latestTs: 0, speciesCode: speciesCode, sampleObsDt: obsDt };
         }
@@ -1793,10 +1810,11 @@ function resetEuropeDebugState(){
   lastErrorSnippet = null;
   lastBodySnippet = null;
   lastRequest = null;
-  debugLatviaRawRows = 0;
-  debugLatviaValidCoords = 0;
+  debugTotalFetchedRows = 0;
+  debugValidCoordsRows = 0;
   debugLatviaBbox = 0;
   debugLatviaCountryField = 0;
+  debugLatviaRegionRows = 0;
   debugLatviaCounted7d = 0;
   debugLatviaRenderedMarkers = 0;
   debugLatviaSample = [];
@@ -2051,6 +2069,10 @@ document.getElementById("toggle7days").addEventListener("change", (e)=>{
 document.getElementById("toggleLatviaBBox").addEventListener("change", (e)=>{
   setLatviaBBoxVisible(!!e.target.checked);
 });
+if (!DEV_DEBUG) {
+  const panel = document.getElementById("debugPanel");
+  if (panel) panel.style.display = "none";
+}
 
 /* ========= Init ========= */
 preloadAvatars();

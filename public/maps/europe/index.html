@@ -1137,6 +1137,7 @@ map.getPane("highlightPane").style.pointerEvents = "none";
 const markers = new Map();
 let activePulseRing = null;
 let activePulseTimeout = null;
+let markerZoomRefreshTimer = null;
 
 function clearPulseRing(){
   if (activePulseTimeout) {
@@ -1165,21 +1166,34 @@ function showPulseRing(lat, lon){
 }
 window.addEventListener("beforeunload", clearPulseRing);
 
-function makeIcon(url, border, rarityLevel, occ7, isMigr){
-  const M = 52;
-  const TOP = 18;
-  const BOTTOM = 28;
+function markerSizeForZoom(z){
+  if (z <= 4) return 30;
+  if (z <= 5) return 34;
+  if (z <= 6) return 40;
+  if (z <= 8) return 46;
+  return 54;
+}
+
+function markerLayoutForZoom(zoom){
+  const M = markerSizeForZoom(zoom);
+  const TOP = Math.round(M * 0.35);
+  const BOTTOM = Math.round(M * 0.55);
   const W = M;
   const H = TOP + M + BOTTOM;
+  const countHeight = Math.max(18, Math.round(M * 0.42));
+  const rarityHeight = Math.max(16, Math.round(M * 0.32));
+  const countFont = Math.max(10, Math.round(M * 0.28));
+  const rarityFont = Math.max(9, Math.round(M * 0.22));
+  const countPadX = Math.round(M * 0.15);
+  const rarityPadX = Math.round(M * 0.18);
+  return { M, TOP, BOTTOM, W, H, countHeight, rarityHeight, countFont, rarityFont, countPadX, rarityPadX };
+}
 
-  const rarityStyle = window.getRarityStyle ? window.getRarityStyle(rarityLevel || "none") : null;
-  const ring = (rarityStyle && rarityStyle.ringColor) ? rarityStyle.ringColor : border;
-  const rarityText = rarityStyle && rarityStyle.badgeText ? rarityStyle.badgeText : "";
-
+function buildMarkerElement({ M, TOP, BOTTOM, countHeight, rarityHeight, countFont, rarityFont, countPadX, rarityPadX, count, rarityText, rarityStyle, avatarUrl, ring, isMigr }){
   const root = document.createElement("div");
   root.style.position = "relative";
-  root.style.width = `${W}px`;
-  root.style.height = `${H}px`;
+  root.style.width = `${M}px`;
+  root.style.height = `${TOP + M + BOTTOM}px`;
   root.style.overflow = "visible";
 
   const avatarWrap = document.createElement("div");
@@ -1196,7 +1210,7 @@ function makeIcon(url, border, rarityLevel, occ7, isMigr){
 
   const avatarImg = document.createElement("img");
   avatarImg.alt = "";
-  avatarImg.src = String(url || "").trim() || "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+  avatarImg.src = String(avatarUrl || "").trim() || "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
   avatarImg.style.width = "100%";
   avatarImg.style.height = "100%";
   avatarImg.style.objectFit = "cover";
@@ -1211,14 +1225,14 @@ function makeIcon(url, border, rarityLevel, occ7, isMigr){
     rarityEl.style.left = "50%";
     rarityEl.style.top = "0";
     rarityEl.style.transform = "translateX(-50%)";
-    rarityEl.style.height = "18px";
-    rarityEl.style.padding = "0 10px";
+    rarityEl.style.height = `${rarityHeight}px`;
+    rarityEl.style.padding = `0 ${rarityPadX}px`;
     rarityEl.style.borderRadius = "9999px";
     rarityEl.style.background = (rarityStyle && rarityStyle.badgeBg) ? rarityStyle.badgeBg : "#111";
     rarityEl.style.color = (rarityStyle && rarityStyle.badgeFg) ? rarityStyle.badgeFg : "#fff";
-    rarityEl.style.fontSize = "10px";
+    rarityEl.style.fontSize = `${rarityFont}px`;
     rarityEl.style.fontWeight = "800";
-    rarityEl.style.lineHeight = "18px";
+    rarityEl.style.lineHeight = `${rarityHeight}px`;
     rarityEl.style.border = "2px solid #fff";
     rarityEl.style.boxShadow = "0 2px 6px rgba(0,0,0,.25)";
     rarityEl.style.zIndex = "30";
@@ -1226,22 +1240,22 @@ function makeIcon(url, border, rarityLevel, occ7, isMigr){
     root.appendChild(rarityEl);
   }
 
-  if ((occ7===0)||Number.isFinite(occ7)) {
+  if ((count===0) || Number.isFinite(count)) {
     const countEl = document.createElement("div");
-    countEl.textContent = String(occ7);
+    countEl.textContent = String(count);
     countEl.style.position = "absolute";
     countEl.style.left = "50%";
     countEl.style.top = `${TOP + M + 6}px`;
     countEl.style.transform = "translateX(-50%)";
-    countEl.style.minWidth = "28px";
-    countEl.style.height = "22px";
-    countEl.style.padding = "0 8px";
+    countEl.style.minWidth = `${Math.max(24, Math.round(M * 0.54))}px`;
+    countEl.style.height = `${countHeight}px`;
+    countEl.style.padding = `0 ${countPadX}px`;
     countEl.style.borderRadius = "9999px";
     countEl.style.background = isMigr ? "#16a34a" : "#f57c00";
     countEl.style.color = "#fff";
-    countEl.style.fontSize = "12px";
+    countEl.style.fontSize = `${countFont}px`;
     countEl.style.fontWeight = "800";
-    countEl.style.lineHeight = "22px";
+    countEl.style.lineHeight = `${countHeight}px`;
     countEl.style.textAlign = "center";
     countEl.style.border = "2px solid #fff";
     countEl.style.boxShadow = "0 2px 6px rgba(0,0,0,.25)";
@@ -1250,6 +1264,15 @@ function makeIcon(url, border, rarityLevel, occ7, isMigr){
     root.appendChild(countEl);
   }
 
+  return root;
+}
+
+function makeIcon(url, border, rarityLevel, occ7, isMigr){
+  const { M, TOP, BOTTOM, W, H, countHeight, rarityHeight, countFont, rarityFont, countPadX, rarityPadX } = markerLayoutForZoom(map.getZoom());
+  const rarityStyle = window.getRarityStyle ? window.getRarityStyle(rarityLevel || "none") : null;
+  const ring = (rarityStyle && rarityStyle.ringColor) ? rarityStyle.ringColor : border;
+  const rarityText = rarityStyle && rarityStyle.badgeText ? rarityStyle.badgeText : "";
+  const root = buildMarkerElement({ M, TOP, BOTTOM, countHeight, rarityHeight, countFont, rarityFont, countPadX, rarityPadX, count: occ7, rarityText, rarityStyle, avatarUrl: url, ring, isMigr });
   return L.divIcon({ html: root, className:"", iconSize:[W,H], iconAnchor:[W/2, TOP + M/2], popupAnchor:[0, -(TOP + M/2)] });
 }
 
@@ -1374,6 +1397,20 @@ function updateMarker(species){
 
   if (latestMarker) markers.set(species, latestMarker);
 }
+
+function refreshMarkerIcons(){
+  SPECIES.forEach(updateMarker);
+}
+
+function scheduleRefreshMarkerIcons(){
+  if (markerZoomRefreshTimer) return;
+  markerZoomRefreshTimer = setTimeout(() => {
+    markerZoomRefreshTimer = null;
+    refreshMarkerIcons();
+  }, 100);
+}
+
+map.on("zoomend", scheduleRefreshMarkerIcons);
 
 /* ========= UI ========= */
 const listEl = document.getElementById("list");

@@ -719,7 +719,13 @@ function NewsCard({ item, sources, showEtContent, autoTranslateEnabled, endpoint
               referrerPolicy="no-referrer"
               loading="lazy"
               decoding="async"
-              onError={(e) => {`r`n                if (import.meta.env.DEV && isBirdingPoland) {`r`n                  console.warn('[news-image] birding-poland load failed', { thumb, cachedThumb, image_url: item.image_url, cached_image_url: item.cached_image_url });`r`n                }`r`n                (e.currentTarget as HTMLImageElement).style.display = 'none';`r`n                setImageFailed(true);`r`n              }}
+              onError={(e) => {
+                if (import.meta.env.DEV && isBirdingPoland) {
+                  console.warn('[news-image] birding-poland load failed', { thumb, cachedThumb, image_url: item.image_url, cached_image_url: item.cached_image_url });
+                }
+                (e.currentTarget as HTMLImageElement).style.display = 'none';
+                setImageFailed(true);
+              }}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
@@ -744,7 +750,12 @@ function NewsCard({ item, sources, showEtContent, autoTranslateEnabled, endpoint
             {isTranslated && <Badge variant="outline" className="text-xs px-1.5 py-0">Tõlgitud</Badge>}
             <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at)}</span>
           </div>
-          {snippet && (`r`n            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{snippet}</p>`r`n          )}`r`n          {import.meta.env.DEV && isBirdingPoland && (`r`n            <p className="text-[10px] text-muted-foreground mt-1 break-all">img: {item.image_url || '(empty)'} | cached: {item.cached_image_url || '(empty)'}</p>`r`n          )}
+          {snippet && (
+            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{snippet}</p>
+          )}
+          {import.meta.env.DEV && isBirdingPoland && (
+            <p className="text-[10px] text-muted-foreground mt-1 break-all">img: {item.image_url || '(empty)'} | cached: {item.cached_image_url || '(empty)'}</p>
+          )}
           <div className="flex gap-2 mt-2">
             <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onOpen}>
               Ava
@@ -968,6 +979,7 @@ function EmptyState({ tab }: { tab: string }) {
     </div>
   );
 }
+
 
 
 

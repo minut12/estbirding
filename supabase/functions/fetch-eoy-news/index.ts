@@ -171,7 +171,9 @@ function parseEoyListPage(html: string, baseUrl: string, listingUrl: string): Pa
     const url = canonicalizeArticleUrl(rawUrl, baseUrl);
     if (!isValidArticleUrl(url, listingUrl)) continue;
 
-    const dateRaw = block.match(/\d{1,2}\.?\s+(?:jaanuar|veebruar|märts|aprill|mai|juuni|juuli|august|september|oktoober|november|detsember)\s+\d{4}/i)?.[0] || null;
+    const dateRaw = block.match(/\d{1,2}\.\d{1,2}\.\d{4}/i)?.[0]
+      || block.match(/\d{1,2}\.?\s+(?:jaanuar|veebruar|märts|aprill|mai|juuni|juuli|august|september|oktoober|november|detsember)\s+\d{4}/i)?.[0]
+      || null;
     const published_at = dateRaw ? parseEstonianDate(dateRaw) : null;
 
     const image_url_original = extractImageFromBlock(block, baseUrl);
@@ -329,6 +331,7 @@ Deno.serve(async (req) => {
     let updatedCount = 0;
     let imagesRehosted = 0;
     let newestDate: string | null = null;
+    let newestUrl: string | null = null;
 
     for (const item of normalizedItems) {
       if (!item.url) continue;
@@ -345,6 +348,7 @@ Deno.serve(async (req) => {
         : new Date().toISOString();
       if (!newestDate || new Date(publishedIso).getTime() > new Date(newestDate).getTime()) {
         newestDate = publishedIso;
+        newestUrl = item.url;
       }
 
       const row: Record<string, unknown> = {
@@ -367,7 +371,7 @@ Deno.serve(async (req) => {
 
       const { error } = await supabase
         .from("news_items")
-        .upsert(row, { onConflict: "source_slug,url" });
+        .upsert(row, { onConflict: "source_id,url" });
 
       if (error) {
         console.error(`Upsert error for ${item.url}:`, error);
@@ -388,6 +392,7 @@ Deno.serve(async (req) => {
       imagesRehosted,
       first3: normalizedItems.slice(0, 3).map((it) => it.url),
       newestDate,
+      newestUrl,
       parsed: normalizedItems.length,
       inserted: insertedCount,
       updated: updatedCount,

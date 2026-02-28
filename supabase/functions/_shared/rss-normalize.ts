@@ -10,12 +10,12 @@ export interface ParsedRssItem {
   isoDate?: string;
   published?: string;
   updated?: string;
-  enclosure?: { url?: string };
-  enclosures?: Array<{ url?: string }>;
-  "media:content"?: { url?: string };
-  "media:content:list"?: Array<{ url?: string }>;
-  "media:thumbnail"?: { url?: string };
-  "media:thumbnail:list"?: Array<{ url?: string }>;
+  enclosure?: { url?: string; "@_url"?: string; type?: string; "@_type"?: string } | Array<{ url?: string; "@_url"?: string; type?: string; "@_type"?: string }>;
+  enclosures?: Array<{ url?: string; "@_url"?: string; type?: string; "@_type"?: string }>;
+  "media:content"?: { url?: string; "@_url"?: string; type?: string; "@_type"?: string } | Array<{ url?: string; "@_url"?: string; type?: string; "@_type"?: string }>;
+  "media:content:list"?: Array<{ url?: string; "@_url"?: string; type?: string; "@_type"?: string }>;
+  "media:thumbnail"?: { url?: string; "@_url"?: string } | Array<{ url?: string; "@_url"?: string }>;
+  "media:thumbnail:list"?: Array<{ url?: string; "@_url"?: string }>;
   "itunes:image"?: { href?: string; "@_href"?: string };
   media?: { content?: { url?: string } };
   image?: { url?: string };
@@ -129,27 +129,17 @@ function extractImageInfo(
   bodyHtml?: string,
   baseUrl?: string,
 ): { url: string | null; strategy: string | null } {
-  const raw = String(item._raw || "");
-  const fromMediaContent =
-    cleanImageCandidate(findMediaContentFromRaw(raw), baseUrl)
-    || cleanImageCandidate(cleanUrl(item["media:content"]?.url), baseUrl)
-    || cleanImageCandidate(firstArrayUrl(item["media:content:list"]), baseUrl)
-    || cleanImageCandidate(item.media?.content?.url, baseUrl);
+  const fromMediaContent = getImageFromRssItem(item, bodyHtml, baseUrl, "media:content");
   if (fromMediaContent) return { url: fromMediaContent, strategy: "media:content" };
 
-  const fromEnclosure =
-    cleanImageCandidate(findEnclosureFromRaw(raw), baseUrl)
-    || cleanImageCandidate(item.enclosure?.url, baseUrl)
-    || cleanImageCandidate(firstArrayUrl(item.enclosures), baseUrl);
+  const fromEnclosure = getImageFromRssItem(item, bodyHtml, baseUrl, "enclosure");
   if (fromEnclosure) return { url: fromEnclosure, strategy: "enclosure" };
 
+  const raw = String(item._raw || "");
   const fromItunes = cleanImageCandidate(item["itunes:image"]?.href || item["itunes:image"]?.["@_href"] || findItunesImageFromRaw(raw), baseUrl);
   if (fromItunes) return { url: fromItunes, strategy: "itunes:image" };
 
-  const fromMediaThumbnail =
-    cleanImageCandidate(findMediaThumbnailFromRaw(raw), baseUrl)
-    || cleanImageCandidate(item["media:thumbnail"]?.url, baseUrl)
-    || cleanImageCandidate(firstArrayUrl(item["media:thumbnail:list"]), baseUrl);
+  const fromMediaThumbnail = getImageFromRssItem(item, bodyHtml, baseUrl, "media:thumbnail");
   if (fromMediaThumbnail) return { url: fromMediaThumbnail, strategy: "media:thumbnail" };
 
   const htmlCandidates = [bodyHtml, item["content:encoded"], item.content, item.description, item.summary];
@@ -162,6 +152,72 @@ function extractImageInfo(
   if (fromImage) return { url: fromImage, strategy: "image:url" };
 
   return { url: null, strategy: null };
+}
+
+function getImageFromRssItem(
+  item: ParsedRssItem,
+  bodyHtml: string | undefined,
+  baseUrl: string | undefined,
+  mode: "media:content" | "enclosure" | "media:thumbnail" | "html",
+): string | null {
+  const pickUrl = (v: any): string | null => cleanImageCandidate(v?.url || v?.["@_url"] || null, baseUrl);
+  const asArray = (v: any): any[] => Array.isArray(v) ? v : (v ? [v] : []);
+  const isImageLike = (v: any): boolean => {
+    const type = String(v?.type || v?.["@_type"] || "").toLowerCase();
+    const url = String(v?.url || v?.["@_url"] || "");
+    return type.startsWith("image/") || /\.(jpg|jpeg|png|webp)(\?|#|$)/i.test(url);
+  };
+
+  if (mode === "media:content") {
+    const candidates = [
+      ...asArray(item["media:content"]),
+      ...asArray(item["media:content:list"]),
+      ...asArray(item.media?.content),
+    ];
+    for (const c of candidates) {
+      const maybe = pickUrl(c);
+      if (maybe && /^https?:\/\//i.test(maybe)) return maybe;
+    }
+    const raw = String(item._raw || "");
+    const rawMatch = cleanImageCandidate(findMediaContentFromRaw(raw), baseUrl);
+    return rawMatch && /^https?:\/\//i.test(rawMatch) ? rawMatch : null;
+  }
+
+  if (mode === "enclosure") {
+    const candidates = [
+      ...asArray(item.enclosure),
+      ...asArray(item.enclosures),
+    ];
+    for (const c of candidates) {
+      if (!isImageLike(c)) continue;
+      const maybe = pickUrl(c);
+      if (maybe && /^https?:\/\//i.test(maybe)) return maybe;
+    }
+    const raw = String(item._raw || "");
+    const rawMatch = cleanImageCandidate(findEnclosureFromRaw(raw), baseUrl);
+    return rawMatch && /^https?:\/\//i.test(rawMatch) ? rawMatch : null;
+  }
+
+  if (mode === "media:thumbnail") {
+    const candidates = [
+      ...asArray(item["media:thumbnail"]),
+      ...asArray(item["media:thumbnail:list"]),
+    ];
+    for (const c of candidates) {
+      const maybe = pickUrl(c);
+      if (maybe && /^https?:\/\//i.test(maybe)) return maybe;
+    }
+    const raw = String(item._raw || "");
+    const rawMatch = cleanImageCandidate(findMediaThumbnailFromRaw(raw), baseUrl);
+    return rawMatch && /^https?:\/\//i.test(rawMatch) ? rawMatch : null;
+  }
+
+  const htmlCandidates = [bodyHtml, item["content:encoded"], item.description];
+  for (const html of htmlCandidates) {
+    const maybe = extractFirstImageUrl(html || "", baseUrl);
+    if (maybe && /^https?:\/\//i.test(maybe)) return maybe;
+  }
+  return null;
 }
 
 function decodeUrl(u: string | null | undefined): string | null {

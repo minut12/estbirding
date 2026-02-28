@@ -318,6 +318,7 @@ async function pullScrapeSource({ source, supabase }: { source: any; supabase: a
     upsertedCount: Number(payload?.upsertedCount ?? (payload?.insertedCount || 0) + (payload?.updatedCount || 0)),
     first3: Array.isArray(payload?.first3) ? payload.first3 : [],
     newestDate: payload?.newestDate || null,
+    newestUrl: payload?.newestUrl || null,
   };
   return { source: source.slug || source.id || "unknown", fetched, inserted, skipped: false, debug };
 }
@@ -402,9 +403,16 @@ Deno.serve(async (req) => {
       };
     });
 
+    const foundCount = results.reduce((sum, r) => sum + Number((r.debug?.foundCount as number) || r.fetched || 0), 0);
+    const upsertedCount = results.reduce((sum, r) => sum + Number((r.debug?.upsertedCount as number) || r.inserted || 0), 0);
+    const newestUrl = (results.find((r) => typeof r.debug?.newestUrl === "string" && String(r.debug?.newestUrl).trim())?.debug?.newestUrl as string | undefined) || null;
+
     return new Response(
       JSON.stringify({
         success: true,
+        foundCount,
+        upsertedCount,
+        newestUrl,
         results,
         debug: {
           resolvedProxyBase: proxyBase,

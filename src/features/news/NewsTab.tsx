@@ -535,6 +535,21 @@ const {
   }, [newsItems, sourceFilter, search, tab, birdingPolandSourceId]);
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const bp = newsItems.find((item) => String(item.source?.name || '').trim() === 'Birding Poland');
+    if (!bp) return;
+    const imageUrl = decodeUrl(bp.image_url);
+    const cached = decodeUrl(bp.cached_image_url);
+    const resolvedThumbnailSrc = proxifyImageUrlIfNeeded('Birding Poland', cached || imageUrl, resolvedProxyBase);
+    console.log('[news-image] birding-poland newest item', {
+      url: bp.url,
+      image_url: bp.image_url || null,
+      cached_image_url: bp.cached_image_url || null,
+      resolvedThumbnailSrc,
+    });
+  }, [newsItems, resolvedProxyBase]);
+
+  useEffect(() => {
     if (!isError) return;
     const shortReason = formatErrorReason(newsQueryError);
     setLastNewsFetchErrorShort(shortReason.slice(0, 120));
@@ -604,7 +619,12 @@ const {
         const eoy = resultList.find((r: any) => String(r?.source || '').toLowerCase() === 'eoy');
         const d = eoy?.debug || {};
         if (typeof d?.foundCount === 'number' || typeof d?.upsertedCount === 'number') {
-          toast.info(`EOÜ: found ${Number(d.foundCount || 0)}, upserted ${Number(d.upsertedCount || 0)}`);
+          const newestUrl = d?.newestUrl ? `, newest ${String(d.newestUrl).slice(0, 80)}` : '';
+          toast.info(`EOÜ: found ${Number(d.foundCount || 0)}, upserted ${Number(d.upsertedCount || 0)}${newestUrl}`);
+        }
+        if (typeof data?.foundCount === 'number' || typeof data?.upsertedCount === 'number') {
+          const newestUrl = data?.newestUrl ? `, newest ${String(data.newestUrl).slice(0, 80)}` : '';
+          toast.info(`Refresh: found ${Number(data.foundCount || 0)}, upserted ${Number(data.upsertedCount || 0)}${newestUrl}`);
         }
       }
       if (total > 0) toast.success(`${total} uut uudist`);
@@ -821,7 +841,8 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
               decoding="async"
               onError={(e) => {
                 if (import.meta.env.DEV && isBirdingPoland) {
-                  console.warn('[news-image] birding-poland load failed', { thumb, cachedThumb, image_url: item.image_url, cached_image_url: item.cached_image_url });
+                  const maybeStatus = (e as any)?.nativeEvent?.target?.status ?? (e.currentTarget as any)?.naturalWidth ?? null;
+                  console.warn('[news-image] birding-poland load failed', { thumb, cachedThumb, image_url: item.image_url, cached_image_url: item.cached_image_url, status: maybeStatus });
                 }
                 if (!isBirdingPoland && !triedProxyFallback && thumbCandidate) {
                   setTriedProxyFallback(true);

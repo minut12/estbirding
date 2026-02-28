@@ -396,8 +396,11 @@ export default function NewsTab() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('news_sources')
-        .select('id, name, slug, key')
-        .eq('is_enabled', true);
+        .select('id, name, slug, source_key, key')
+        .eq('is_active', true)
+        .eq('is_enabled', true)
+        .order('name', { ascending: true });
+
       if (error) {
         console.error('[NEWS] sources query failed', error);
         throw error;
@@ -412,13 +415,37 @@ export default function NewsTab() {
   } = useQuery({
     queryKey: ['news-items', tab],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('news_items')
-        .select('id, source_key, source_slug, title, body, image_url, cached_image_url, permalink_url, published_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang')
-        .eq('archived', tab === 'archive')
-        .order('published_at', { ascending: false, nullsFirst: false })
-        .order('fetched_at', { ascending: false })
-        .limit(50);
+      const baseCols = 'id, source_key, source_slug, title, body, image_url, permalink_url, published_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
+      const withCachedCols = 'id, source_key, source_slug, title, body, image_url, cached_image_url, permalink_url, published_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
+
+      const runSelect = async (cols: string) => {
+        return await supabase
+          .from('news_items')
+          .select(cols)
+          .eq('archived', tab === 'archive')
+          .order('published_at', { ascending: false, nullsFirst: false })
+          .order('fetched_at', { ascending: false })
+          .limit(50);
+      };
+
+      let { data, error } = await runSelect(withCachedCols);
+      if (error) {
+        const status = (error as any)?.status;
+        const msg = String((error as any)?.message || '');
+        const details = String((error as any)?.details || '');
+        const missingCachedColumn = status === 400
+          && /cached_image_url/i.test(`${msg} ${details}`)
+          && /(does not exist|not found|unknown column|schema cache)/i.test(`${msg} ${details}`);
+
+        if (missingCachedColumn) {
+          if (import.meta.env.DEV) {
+            console.warn('[NEWS] cached_image_url missing; retrying without optional column');
+          }
+          const retry = await runSelect(baseCols);
+          data = retry.data;
+          error = retry.error as any;
+        }
+      }
 
       if (error) {
         console.error('[NEWS] items query failed', error);
@@ -430,7 +457,6 @@ export default function NewsTab() {
     staleTime: 30_000,
     retry: 1,
   });
-
   const allItems = useMemo(() => {
     const filteredBySource = newsItems.filter((item) => {
       const displaySourceKey = item.source_key ?? 'eoy';
@@ -979,6 +1005,9 @@ function EmptyState({ tab }: { tab: string }) {
     </div>
   );
 }
+
+
+
 
 
 

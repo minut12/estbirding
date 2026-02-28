@@ -22,6 +22,7 @@ import { getSupabaseUrl } from '@/config/supabaseConfig';
 interface NewsItem {
   id: string;
   source_slug: string | null;
+  source_id?: string | null;
   source_key?: string | null;
   title: string;
   title_et?: string | null;
@@ -32,10 +33,12 @@ interface NewsItem {
   url: string | null;
   permalink_url?: string | null;
   image_url?: string | null;
+  source?: { name?: string | null } | null;
   cached_image_url?: string | null;
   fetched_at?: string | null;
   raw_json?: Record<string, any> | null;
-  published_at: string;
+  published_at: string | null;
+  created_at?: string | null;
   language: string | null;
   source_lang?: string | null;
   translated_at?: string | null;
@@ -62,10 +65,13 @@ function formatEstDate(iso: string): string {
 }
 
 /* ── Source display names ───────────────────────── */
-function sourceLabel(source: string | null | undefined, sources: NewsSource[]): string {
-  if (!source) return 'EOU';
-  const s = sources.find((it) => it.slug === source || it.source_key === source || it.key === source);
-  return s?.name || source.toUpperCase();
+function sourceLabel(item: NewsItem, sources: NewsSource[]): string {
+  const directName = String(item.source?.name || '').trim();
+  if (directName) return directName;
+  const byId = item.source_id ? sources.find((it) => it.id === item.source_id) : null;
+  if (byId?.name) return byId.name;
+  if (item.source_slug) return item.source_slug.toUpperCase();
+  return 'EOU';
 }
 
 function toPlainText(value: string | null | undefined): string {
@@ -216,7 +222,7 @@ function ensureImageUrl(item: NewsItem): NewsItem {
   return { ...item, image_url: extractImageUrlFromRaw(item) };
 }
 
-const BIRDING_POLAND_KEY = 'facebook_birdingpoland';
+const BIRDING_POLAND_NAME = 'birding poland';
 
 interface EtTranslationState {
   translated: TranslateEtOutput | null;
@@ -410,13 +416,18 @@ export default function NewsTab() {
     staleTime: 60_000,
   });
 
-  const {
+  const birdingPolandSourceId = useMemo(() => {
+    const hit = sources.find((s) => String(s.name || "").trim().toLowerCase() === BIRDING_POLAND_NAME);
+    return hit?.id || null;
+  }, [sources]);
+
+const {
     data: newsItems = [], isLoading, isError, error: newsQueryError,
   } = useQuery({
     queryKey: ['news-items', tab],
     queryFn: async () => {
-      const baseCols = 'id, source_key, source_slug, title, body, image_url, permalink_url, published_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
-      const withCachedCols = 'id, source_key, source_slug, title, body, image_url, cached_image_url, permalink_url, published_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
+      const baseCols = 'id, source_id, source_slug, source_key, source:news_sources(name), title, body, image_url, permalink_url, published_at, created_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
+      const withCachedCols = 'id, source_id, source_slug, source_key, source:news_sources(name), title, body, image_url, cached_image_url, permalink_url, published_at, created_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
 
       const runSelect = async (cols: string) => {
         return await supabase
@@ -424,6 +435,7 @@ export default function NewsTab() {
           .select(cols)
           .eq('archived', tab === 'archive')
           .order('published_at', { ascending: false, nullsFirst: false })
+          .order('created_at', { ascending: false, nullsFirst: false })
           .order('fetched_at', { ascending: false })
           .limit(50);
       };
@@ -459,10 +471,9 @@ export default function NewsTab() {
   });
   const allItems = useMemo(() => {
     const filteredBySource = newsItems.filter((item) => {
-      const displaySourceKey = item.source_key ?? 'eoy';
       if (sourceFilter === 'all') return true;
-      if (sourceFilter === 'legacy_null') return item.source_key == null;
-      return displaySourceKey === sourceFilter;
+      if (sourceFilter === 'legacy_null') return item.source_id == null;
+      return item.source_id === sourceFilter;
     });
 
     const filteredBySearch = search.trim()
@@ -473,13 +484,13 @@ export default function NewsTab() {
     if (tab === 'archive') return filteredBySearch;
     let seenBirdingPoland = false;
     return filteredBySearch.filter((item) => {
-      const displaySourceKey = item.source_key ?? 'eoy';
-      if (displaySourceKey !== BIRDING_POLAND_KEY) return true;
+      const displaySourceId = item.source_id || '';
+      if (displaySourceId !== birdingPolandSourceId) return true;
       if (seenBirdingPoland) return false;
       seenBirdingPoland = true;
       return true;
     });
-  }, [newsItems, sourceFilter, search, tab]);
+  }, [newsItems, sourceFilter, search, tab, birdingPolandSourceId]);
 
   useEffect(() => {
     if (!isError) return;
@@ -632,10 +643,9 @@ export default function NewsTab() {
             >
               <option value="all">Kõik allikad</option>
               {sources.map((s) => {
-                const sourceKey = s.source_key || s.key || s.slug;
-                return <option key={sourceKey} value={sourceKey}>{s.name}</option>;
+                return <option key={s.id} value={s.id}>{s.name}</option>;
               })}
-              <option value="legacy_null">Legacy (source_key puudub)</option>
+              <option value="legacy_null">Legacy (source_id puudub)</option>
             </select>
           )}
           <div className="relative flex-1">
@@ -681,6 +691,8 @@ export default function NewsTab() {
                 key={item.id}
                 item={item}
                 sources={sources}
+                proxyBase={resolvedProxyBase}
+                birdingPolandSourceId={birdingPolandSourceId}
                 showEtContent={showEtContent}
                 autoTranslateEnabled={autoTranslateEnabled}
                 endpointConfigured={endpointConfigured}
@@ -696,9 +708,11 @@ export default function NewsTab() {
 }
 
 /* ── News Card ──────────────────────────────────── */
-function NewsCard({ item, sources, showEtContent, autoTranslateEnabled, endpointConfigured, onOpen, onToggleArchive }: {
+function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtContent, autoTranslateEnabled, endpointConfigured, onOpen, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
+  proxyBase: string;
+  birdingPolandSourceId: string | null;
   showEtContent: boolean;
   autoTranslateEnabled: boolean;
   endpointConfigured: boolean;
@@ -709,8 +723,9 @@ function NewsCard({ item, sources, showEtContent, autoTranslateEnabled, endpoint
   const [cardRef, isVisible] = useOnceVisible<HTMLDivElement>();
   const debouncedVisible = useDebouncedTrue(isVisible, 180);
   const cachedThumb = decodeUrl(item.cached_image_url);
-  const thumb = cachedThumb || decodeUrl(item.image_url);
-  const isBirdingPoland = item.source_key === BIRDING_POLAND_KEY || item.source_slug === BIRDING_POLAND_KEY || sourceLabel(item.source_key || item.source_slug, sources).trim().toLowerCase() === 'birding poland';
+  const rawImageUrl = decodeUrl(item.image_url);
+  const isBirdingPoland = !!birdingPolandSourceId && item.source_id === birdingPolandSourceId;
+  const thumb = (isBirdingPoland && proxyBase && rawImageUrl) ? `${proxyBase}${encodeURIComponent(rawImageUrl)}` : (cachedThumb || rawImageUrl);
   const translation = useEtTranslation({
     enabled: showEtContent && autoTranslateEnabled && debouncedVisible,
     id: item.id,
@@ -765,7 +780,7 @@ function NewsCard({ item, sources, showEtContent, autoTranslateEnabled, endpoint
           </button>
           <div className="flex items-center gap-2 mt-1">
             <Badge variant="secondary" className="text-xs px-1.5 py-0">
-              {sourceLabel(item.source_key || item.source_slug, sources)}
+              {sourceLabel(item, sources)}
             </Badge>
             {translation.loading && (
               <Badge variant="outline" className="text-xs px-1.5 py-0 flex items-center gap-1">
@@ -774,7 +789,7 @@ function NewsCard({ item, sources, showEtContent, autoTranslateEnabled, endpoint
               </Badge>
             )}
             {isTranslated && <Badge variant="outline" className="text-xs px-1.5 py-0">Tõlgitud</Badge>}
-            <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at)}</span>
+            <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at || item.created_at || item.fetched_at || '')}</span>
           </div>
           {snippet && (
             <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{snippet}</p>
@@ -848,10 +863,8 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     setManualTranslateLoading(false);
   }, [item.id]);
 
-  const sourceName = sourceLabel(item.source_key || item.source_slug, sources);
-  const isBirdingPoland = item.source_key === BIRDING_POLAND_KEY
-    || item.source_slug === BIRDING_POLAND_KEY
-    || sourceName.trim().toLowerCase() === 'birding poland';
+  const sourceName = sourceLabel(item, sources);
+  const isBirdingPoland = sourceName.trim().toLowerCase() === BIRDING_POLAND_NAME;
   const normalizedLang = normalizeLocale(item.source_lang || item.language || '');
   const isLikelyEstonian = normalizedLang === 'et';
   const canShowTranslate = !isLikelyEstonian || isBirdingPoland;
@@ -944,7 +957,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
             </Badge>
           )}
           {isTranslated && <Badge variant="outline">Tõlgitud</Badge>}
-          <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at)}</span>
+          <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at || item.created_at || item.fetched_at || '')}</span>
         </div>
 
         {loadingContent ? (
@@ -1005,12 +1018,6 @@ function EmptyState({ tab }: { tab: string }) {
     </div>
   );
 }
-
-
-
-
-
-
 
 
 

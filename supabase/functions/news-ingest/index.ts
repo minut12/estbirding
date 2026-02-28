@@ -17,6 +17,14 @@ function normalizeLocale(value: string | null | undefined): string {
   return raw.split(/[-_]/)[0] || raw;
 }
 
+function normalizePublishedAt(value: string | null | undefined): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const ms = new Date(raw).getTime();
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms).toISOString();
+}
+
 async function sha256Hex(input: string): Promise<string> {
   const data = new TextEncoder().encode(input);
   const hash = await crypto.subtle.digest("SHA-256", data);
@@ -118,7 +126,7 @@ Deno.serve(async (req) => {
         body: bodyText || null,
         content_html: item.content_html || null,
         url: item.url || "",
-        published_at: item.published_at || new Date().toISOString(),
+        published_at: normalizePublishedAt(item.published_at) || new Date().toISOString(),
         language: sourceLang,
         lang: sourceLang,
         source_lang: sourceLang,

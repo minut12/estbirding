@@ -25,6 +25,14 @@ function toTimestamp(value: string | null): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function normalizePublishedAt(value: string | null | undefined): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const ms = new Date(raw).getTime();
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms).toISOString();
+}
+
 function shortError(reason: string): string {
   const text = String(reason || "unknown").trim();
   if (!text) return "unknown";
@@ -214,7 +222,7 @@ async function pullRssSource({ source, supabase, proxyBase }: { source: any; sup
       body: originalBody || null,
       url: item.permalink_url || "",
       permalink_url: item.permalink_url,
-      published_at: item.published_at || new Date().toISOString(),
+      published_at: normalizePublishedAt(item.published_at) || new Date().toISOString(),
       language: lang,
       lang,
       guid,

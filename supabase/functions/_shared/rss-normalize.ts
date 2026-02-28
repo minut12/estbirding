@@ -31,6 +31,7 @@ export interface NormalizedRssItem {
   body: string;
   body_html: string;
   raw_json: ParsedRssItem;
+  image_strategy?: string | null;
 }
 
 export function parseRss(xml: string): ParsedRssItem[] {
@@ -101,7 +102,8 @@ export function parseRss(xml: string): ParsedRssItem[] {
 export function normalizeRssItem(item: ParsedRssItem): NormalizedRssItem {
   const bodyHtml = item["content:encoded"] || item.content || item.description || item.summary || "";
   const bodyText = htmlToText(bodyHtml);
-  const imageUrl = extractImageUrl(item, bodyHtml, item.link || undefined);
+  const imageInfo = extractImageInfo(item, bodyHtml, item.link || undefined);
+  const imageUrl = imageInfo.url;
   const titleText = htmlToText(item.title || "");
   const title = titleText || bodyText.slice(0, 80) || "Untitled";
 
@@ -114,43 +116,52 @@ export function normalizeRssItem(item: ParsedRssItem): NormalizedRssItem {
     body: bodyText,
     body_html: bodyHtml,
     raw_json: item,
+    image_strategy: imageInfo.strategy,
   };
 }
 
 export function extractImageUrl(item: ParsedRssItem, bodyHtml?: string, baseUrl?: string): string | null {
+  return extractImageInfo(item, bodyHtml, baseUrl).url;
+}
+
+function extractImageInfo(
+  item: ParsedRssItem,
+  bodyHtml?: string,
+  baseUrl?: string,
+): { url: string | null; strategy: string | null } {
   const raw = String(item._raw || "");
   const fromMediaContent =
     cleanImageCandidate(findMediaContentFromRaw(raw), baseUrl)
     || cleanImageCandidate(cleanUrl(item["media:content"]?.url), baseUrl)
     || cleanImageCandidate(firstArrayUrl(item["media:content:list"]), baseUrl)
     || cleanImageCandidate(item.media?.content?.url, baseUrl);
-  if (fromMediaContent) return fromMediaContent;
+  if (fromMediaContent) return { url: fromMediaContent, strategy: "media:content" };
 
   const fromEnclosure =
     cleanImageCandidate(findEnclosureFromRaw(raw), baseUrl)
     || cleanImageCandidate(item.enclosure?.url, baseUrl)
     || cleanImageCandidate(firstArrayUrl(item.enclosures), baseUrl);
-  if (fromEnclosure) return fromEnclosure;
+  if (fromEnclosure) return { url: fromEnclosure, strategy: "enclosure" };
 
   const fromItunes = cleanImageCandidate(item["itunes:image"]?.href || item["itunes:image"]?.["@_href"] || findItunesImageFromRaw(raw), baseUrl);
-  if (fromItunes) return fromItunes;
+  if (fromItunes) return { url: fromItunes, strategy: "itunes:image" };
 
   const fromMediaThumbnail =
     cleanImageCandidate(findMediaThumbnailFromRaw(raw), baseUrl)
     || cleanImageCandidate(item["media:thumbnail"]?.url, baseUrl)
     || cleanImageCandidate(firstArrayUrl(item["media:thumbnail:list"]), baseUrl);
-  if (fromMediaThumbnail) return fromMediaThumbnail;
+  if (fromMediaThumbnail) return { url: fromMediaThumbnail, strategy: "media:thumbnail" };
 
   const htmlCandidates = [bodyHtml, item["content:encoded"], item.content, item.description, item.summary];
   for (const html of htmlCandidates) {
     const fromHtml = extractFirstImageUrl(html || "", baseUrl);
-    if (fromHtml) return fromHtml;
+    if (fromHtml) return { url: fromHtml, strategy: "html:first-img" };
   }
 
   const fromImage = cleanImageCandidate(item.image?.url, baseUrl);
-  if (fromImage) return fromImage;
+  if (fromImage) return { url: fromImage, strategy: "image:url" };
 
-  return null;
+  return { url: null, strategy: null };
 }
 
 function decodeUrl(u: string | null | undefined): string | null {

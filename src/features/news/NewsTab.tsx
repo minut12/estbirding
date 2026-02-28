@@ -56,7 +56,7 @@ interface NewsSource {
 }
 
 /* â”€â”€ Format date â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-const ET_MONTHS = ['jaanuar','veebruar','mÃ¤rts','aprill','mai','juuni','juuli','august','september','oktoober','november','detsember'];
+const ET_MONTHS = ['jaanuar','veebruar','märts','aprill','mai','juuni','juuli','august','september','oktoober','november','detsember'];
 function formatEstDate(iso: string): string {
   try {
     const d = new Date(iso);
@@ -402,6 +402,20 @@ export default function NewsTab() {
   const [activeProxyName, setActiveProxyName] = useState(() => getProxyMode(resolveProxyBase()));
   const [lastNewsFetchErrorShort, setLastNewsFetchErrorShort] = useState('');
   const endpointConfigured = Boolean(translateEndpoint);
+  const utf8Probe = 'Kõik allikad õäöü';
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const el = document.querySelector('[data-utf8-probe="news-tab"]');
+    const rendered = (el?.textContent || '').trim();
+    if (rendered && rendered !== utf8Probe) {
+      console.error('[utf8-check] Render mismatch detected', {
+        expected: utf8Probe,
+        rendered,
+        suspectedTransforms: ['decodeURIComponent(escape(...))', 'unescape(encodeURIComponent(...))', 'latin1/iso-8859-1 decoders'],
+      });
+    }
+  }, [utf8Probe]);
 
   useEffect(() => {
     const refreshEndpoint = () => setTranslateEndpoint(resolveEndpoint());
@@ -584,7 +598,14 @@ const {
       if (failed.length > 0) {
         const firstFailureSource = String(failed[0]?.source || 'allikas');
         const firstFailureReason = String(failed[0]?.error || 'Viga').slice(0, 120);
-        toast.warning(`${failed.length} allikas ebaÃµnnestus (${firstFailureSource}: ${firstFailureReason})`);
+        toast.warning(`${failed.length} allikas ebaõnnestus (${firstFailureSource}: ${firstFailureReason})`);
+      }
+      if (import.meta.env.DEV) {
+        const eoy = resultList.find((r: any) => String(r?.source || '').toLowerCase() === 'eoy');
+        const d = eoy?.debug || {};
+        if (typeof d?.foundCount === 'number' || typeof d?.upsertedCount === 'number') {
+          toast.info(`EOÜ: found ${Number(d.foundCount || 0)}, upserted ${Number(d.upsertedCount || 0)}`);
+        }
       }
       if (total > 0) toast.success(`${total} uut uudist`);
       else toast.info('Uusi uudiseid pole');
@@ -624,6 +645,9 @@ const {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="px-4 py-3 border-b border-border bg-card space-y-3">
+        {import.meta.env.DEV && (
+          <span data-utf8-probe="news-tab" className="sr-only">{utf8Probe}</span>
+        )}
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-foreground text-lg">Uudised</h2>
           <Button
@@ -631,7 +655,7 @@ const {
             size="icon"
             onClick={() => pullMutation.mutate()}
             disabled={pullMutation.isPending}
-            title="VÃ¤rskenda"
+            title="Värskenda"
           >
             {pullMutation.isPending
               ? <Loader2 className="w-4 h-4 animate-spin" />
@@ -669,7 +693,7 @@ const {
               onChange={(e) => setSourceFilter(e.target.value)}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             >
-              <option value="all">KÃµik allikad</option>
+              <option value="all">Kõik allikad</option>
               {sources.map((s) => {
                 return <option key={s.id} value={s.id}>{s.name}</option>;
               })}
@@ -824,10 +848,10 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
             {translation.loading && (
               <Badge variant="outline" className="text-xs px-1.5 py-0 flex items-center gap-1">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                TÃµlgin...
+                Tõlgin...
               </Badge>
             )}
-            {isTranslated && <Badge variant="outline" className="text-xs px-1.5 py-0">TÃµlgitud</Badge>}
+            {isTranslated && <Badge variant="outline" className="text-xs px-1.5 py-0">Tõlgitud</Badge>}
             <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at || item.created_at || item.fetched_at || '')}</span>
           </div>
           {snippet && (
@@ -888,7 +912,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
           setContentError(data.error);
         }
       } catch (e: any) {
-        if (!cancelled) setContentError(e.message || 'Sisu laadimine ebaÃµnnestus');
+        if (!cancelled) setContentError(e.message || 'Sisu laadimine ebaõnnestus');
       } finally {
         if (!cancelled) setLoadingContent(false);
       }
@@ -931,10 +955,17 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     decodeUrl(item.image_url) || decodeUrl(item.cached_image_url) || null,
     proxyBase,
   );
+  const [heroSrc, setHeroSrc] = useState<string | null>(heroImageUrl);
+  const [heroFailed, setHeroFailed] = useState(false);
   const rewrittenContentHtml = contentHtml ? rewriteImgSrcToProxy(contentHtml, sourceName, proxyBase) : null;
-  const bodyHtmlWithoutDuplicateHero = rewrittenContentHtml ? stripLeadingSameImage(rewrittenContentHtml, heroImageUrl) : null;
+  const bodyHtmlWithoutDuplicateHero = rewrittenContentHtml ? stripLeadingSameImage(rewrittenContentHtml, heroSrc) : null;
   const originalUrl = item.permalink_url || item.url || '#';
   const isTranslated = Boolean(hasTranslatedContent);
+
+  useEffect(() => {
+    setHeroSrc(heroImageUrl);
+    setHeroFailed(false);
+  }, [heroImageUrl, item.id]);
 
   const handleToggleTranslate = useCallback(async () => {
     if (showManualTranslation) {
@@ -980,12 +1011,25 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
         <span className="font-medium truncate text-sm flex-1">Uudis</span>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {heroImageUrl ? (
+        {heroSrc && !heroFailed ? (
           <img
-            src={heroImageUrl}
+            src={heroSrc}
             alt=""
             className="w-full rounded-xl object-cover max-h-56 bg-muted"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            onError={() => {
+              const raw = decodeUrl(item.image_url) || decodeUrl(item.cached_image_url) || null;
+              if (!raw) {
+                setHeroFailed(true);
+                return;
+              }
+              const proxied = `${proxyBase}${encodeURIComponent(raw)}`;
+              const alreadyProxied = (heroSrc || '').includes('/functions/v1/proxy?url=');
+              if (!alreadyProxied && heroSrc !== proxied) {
+                setHeroSrc(proxied);
+                return;
+              }
+              setHeroFailed(true);
+            }}
           />
         ) : (
           <div className="w-full rounded-xl bg-muted flex items-center justify-center h-40">
@@ -998,10 +1042,10 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
           {manualTranslateLoading && (
             <Badge variant="outline" className="flex items-center gap-1">
               <Loader2 className="w-3 h-3 animate-spin" />
-              TÃµlgin...
+              Tõlgin...
             </Badge>
           )}
-          {isTranslated && <Badge variant="outline">TÃµlgitud</Badge>}
+          {isTranslated && <Badge variant="outline">Tõlgitud</Badge>}
           <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at || item.created_at || item.fetched_at || '')}</span>
         </div>
 
@@ -1058,7 +1102,7 @@ function EmptyState({ tab }: { tab: string }) {
     <div className="flex flex-col items-center justify-center h-full p-8 text-center gap-3">
       <Newspaper className="w-14 h-14 text-muted-foreground/40" />
       <p className="text-sm text-muted-foreground">
-        {tab === 'archive' ? 'Arhiivis pole Ã¼htegi uudist.' : 'Uudiseid pole veel. Vajuta vÃ¤rskendamisnuppu.'}
+        {tab === 'archive' ? 'Arhiivis pole ühtegi uudist.' : 'Uudiseid pole veel. Vajuta värskendamisnuppu.'}
       </p>
     </div>
   );

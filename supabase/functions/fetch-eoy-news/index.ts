@@ -14,6 +14,12 @@ const ET_MONTHS: Record<string, string> = {
 };
 
 function parseEstonianDate(text: string): string | null {
+  const compact = text.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (compact) {
+    const day = compact[1].padStart(2, "0");
+    const month = compact[2].padStart(2, "0");
+    return `${compact[3]}-${month}-${day}`;
+  }
   const m = text.trim().match(/(\d{1,2})\.?\s+(\S+)\s+(\d{4})/i);
   if (!m) return null;
   const day = m[1].padStart(2, "0");
@@ -239,7 +245,7 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" },
     });
   }
 
@@ -255,7 +261,7 @@ Deno.serve(async (req) => {
     if (srcErr || !source) {
       return new Response(JSON.stringify({ error: "EOÜ source not found" }), {
         status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" },
       });
     }
 
@@ -302,7 +308,7 @@ Deno.serve(async (req) => {
         fetchMode,
         foundCount: normalizedItems.length,
         first3: normalizedItems.slice(0, 3).map((i) => i.url),
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }), { headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" } });
     }
 
     const urls = normalizedItems.map((i) => i.url).filter(Boolean);
@@ -322,6 +328,7 @@ Deno.serve(async (req) => {
     let insertedCount = 0;
     let updatedCount = 0;
     let imagesRehosted = 0;
+    let newestDate: string | null = null;
 
     for (const item of normalizedItems) {
       if (!item.url) continue;
@@ -336,6 +343,9 @@ Deno.serve(async (req) => {
       const publishedIso = item.published_at && Number.isFinite(new Date(item.published_at).getTime())
         ? new Date(item.published_at).toISOString()
         : new Date().toISOString();
+      if (!newestDate || new Date(publishedIso).getTime() > new Date(newestDate).getTime()) {
+        newestDate = publishedIso;
+      }
 
       const row: Record<string, unknown> = {
         source_id: source.id,
@@ -372,19 +382,21 @@ Deno.serve(async (req) => {
       success: true,
       fetchMode,
       foundCount: normalizedItems.length,
+      upsertedCount: insertedCount + updatedCount,
       insertedCount,
       updatedCount,
       imagesRehosted,
       first3: normalizedItems.slice(0, 3).map((it) => it.url),
+      newestDate,
       parsed: normalizedItems.length,
       inserted: insertedCount,
       updated: updatedCount,
-    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }), { headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" } });
   } catch (error) {
     console.error("fetch-eoy-news error:", error);
     return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" },
     });
   }
 });

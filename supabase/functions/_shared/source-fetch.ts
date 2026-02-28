@@ -138,16 +138,14 @@ export async function fetchSourceItems(source: FetchSourceInput, proxyBase = "")
   try {
     const normalized = parseRss(xml).map(normalizeRssItem);
     if (/birding poland|facebook_birdingpoland/i.test(sourceName) && normalized.length > 0) {
-      const s = normalized[0];
-      const raw = (s.raw_json || {}) as Record<string, unknown>;
-      console.log("[birding-poland:normalize-debug]", {
-        link: s.permalink_url || raw.link || null,
-        enclosure: raw.enclosure || null,
-        mediaContent: raw["media:content"] || null,
-        mediaThumbnail: raw["media:thumbnail"] || null,
-        descriptionPreview: String((raw.description as string) || "").slice(0, 200) || null,
-        computedImageUrl: s.image_url || null,
-        normalizedStoredImageUrl: s.image_url || null,
+      normalized.slice(0, 3).forEach((s) => {
+        const raw = (s.raw_json || {}) as Record<string, unknown>;
+        console.log("[birding-poland:image-debug]", {
+          title: s.title || null,
+          link: s.permalink_url || raw.link || null,
+          extractedImageUrl: s.image_url || null,
+          strategy: s.image_strategy || null,
+        });
       });
     }
     return await enrichMissingImages(normalized, proxyBase);

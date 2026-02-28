@@ -12,7 +12,7 @@ const BIRDING_POLAND_KEY = "facebook_birdingpoland";
 const IS_DEV = Deno.env.get("DENO_DEPLOYMENT_ID") == null;
 const AUTO_TRANSLATE_TO_ET = (Deno.env.get("AUTO_TRANSLATE_TO_ET") || "true").toLowerCase() !== "false";
 
-type PullResult = { source: string; fetched: number; inserted: number; skipped: boolean; error?: string };
+type PullResult = { source: string; fetched: number; inserted: number; skipped: boolean; error?: string; debug?: Record<string, unknown> };
 
 function decodeUrl(u: string | null | undefined): string | null {
   if (!u) return null;
@@ -313,7 +313,13 @@ async function pullScrapeSource({ source, supabase }: { source: any; supabase: a
 
   const inserted = Number(payload?.insertedCount ?? payload?.inserted ?? 0);
   const fetched = Number(payload?.foundCount ?? payload?.parsed ?? inserted || 0);
-  return { source: source.slug || source.id || "unknown", fetched, inserted, skipped: false };
+  const debug = {
+    foundCount: Number(payload?.foundCount ?? 0),
+    upsertedCount: Number(payload?.upsertedCount ?? (payload?.insertedCount || 0) + (payload?.updatedCount || 0)),
+    first3: Array.isArray(payload?.first3) ? payload.first3 : [],
+    newestDate: payload?.newestDate || null,
+  };
+  return { source: source.slug || source.id || "unknown", fetched, inserted, skipped: false, debug };
 }
 
 Deno.serve(async (req) => {
@@ -324,7 +330,7 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" },
     });
   }
 
@@ -348,7 +354,7 @@ Deno.serve(async (req) => {
     if (!sources || sources.length === 0) {
       return new Response(
         JSON.stringify({ success: true, message: "No enabled sources", results: [], debug: { resolvedProxyBase: proxyBase } }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" } },
       );
     }
 
@@ -406,13 +412,13 @@ Deno.serve(async (req) => {
           allFailed: results.length > 0 && results.every((item) => Boolean(item.error)),
         },
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" } },
     );
   } catch (error) {
     console.error("news-pull error:", error);
     return new Response(JSON.stringify({ error: shortError(error?.message || String(error)) }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" },
     });
   }
 });

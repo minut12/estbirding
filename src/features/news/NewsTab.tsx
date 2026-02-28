@@ -587,17 +587,18 @@ const {
   // Pull / refresh
   const pullMutation = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke('news-pull', {
-        body: { force: false, proxyBase: resolveProxyBase() },
+      const { data, error } = await supabase.functions.invoke('news-refresh', {
+        body: { proxyBase: resolveProxyBase() },
       });
       if (error) throw error;
       return data;
     },
     onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ['news-items'] });
+      const sourceSummaries = Array.isArray(data?.sources) ? data.sources : [];
       const resultList = Array.isArray(data?.results) ? data.results : [];
       const failed = resultList.filter((item: any) => item?.error);
-      const total = resultList.reduce((s: number, r: any) => s + (r.inserted || 0), 0);
+      const total = Number(data?.upsertedCount || sourceSummaries.reduce((s: number, r: any) => s + Number(r?.upserted || 0), 0));
       if (data?.debug?.resolvedProxyBase) {
         setResolvedProxyBase(String(data.debug.resolvedProxyBase));
       }
@@ -623,18 +624,10 @@ const {
         const firstFailureReason = String(failed[0]?.error || 'Viga').slice(0, 120);
         toast.warning(`${failed.length} allikas ebaõnnestus (${firstFailureSource}: ${firstFailureReason})`);
       }
-      if (import.meta.env.DEV) {
-        const eoy = resultList.find((r: any) => String(r?.source || '').toLowerCase() === 'eoy');
-        const d = eoy?.debug || {};
-        if (typeof d?.foundCount === 'number' || typeof d?.upsertedCount === 'number') {
-          const newestUrl = d?.newestUrl ? `, newest ${String(d.newestUrl).slice(0, 80)}` : '';
-          toast.info(`EOÜ: found ${Number(d.foundCount || 0)}, upserted ${Number(d.upsertedCount || 0)}${newestUrl}`);
-        }
-        if (typeof data?.foundCount === 'number' || typeof data?.upsertedCount === 'number') {
-          const newestUrl = data?.newestUrl ? `, newest ${String(data.newestUrl).slice(0, 80)}` : '';
-          toast.info(`Refresh: found ${Number(data.foundCount || 0)}, upserted ${Number(data.upsertedCount || 0)}${newestUrl}`);
-        }
-      }
+      const eoy = sourceSummaries.find((s: any) => String(s?.source || '').includes('EOÜ'));
+      const bp = sourceSummaries.find((s: any) => String(s?.source || '').includes('Birding Poland'));
+      if (eoy) toast.info(`EOÜ: found ${Number(eoy.found || 0)}, upserted ${Number(eoy.upserted || 0)}`);
+      if (bp) toast.info(`Birding Poland: found ${Number(bp.found || 0)}, upserted ${Number(bp.upserted || 0)}`);
       if (total > 0) toast.success(`${total} uut uudist`);
       else toast.info('Uusi uudiseid pole');
     },

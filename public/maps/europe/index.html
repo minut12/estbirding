@@ -212,7 +212,24 @@
     /* Marker styling */
     .leaflet-marker-icon{ overflow: visible !important; }
     .markerWrap{ position:relative; width:var(--mSize); height:var(--mSize); overflow:visible; }
-    .markerWrap .marker-rarity-badge{position:absolute;right:-2px;top:-4px;min-width:20px;height:16px;padding:0 5px;border-radius:999px;border:1px solid rgba(255,255,255,.9);font-size:10px;line-height:14px;font-weight:800;text-align:center;z-index:7}
+    .markerWrap .marker-rarity-badge{
+      position:absolute;
+      top:-8px;
+      right:-8px;
+      min-width:20px;
+      padding:2px 6px;
+      border-radius:9999px;
+      border:2px solid #fff;
+      font-size:10px;
+      line-height:1;
+      font-weight:800;
+      text-align:center;
+      box-shadow:0 1px 4px rgba(0,0,0,.25);
+      z-index:5;
+      pointer-events:none;
+    }
+    .markerWrap.marker--sm .marker-rarity-badge{ top:-6px; right:-6px; font-size:9px; }
+    .markerWrap.marker--lg .marker-rarity-badge{ top:-10px; right:-10px; font-size:11px; }
     .markerWrap .circle{
       position:absolute; inset:0;
       border-radius:50%;
@@ -356,7 +373,6 @@
         <button class="btn secondary" id="btnReloadSnapshot">Reload snapshot</button>
         <button class="btn on" id="perCountryBtn">Per-country: ON</button>
         <label class="chk"><input type="checkbox" id="toggle7days" checked/> 7 days only</label>
-        <label class="chk"><input type="checkbox" id="toggleLatviaBBox"/> Show Latvia bbox</label>
       </div>
 
       <div id="snapshotBanner" class="snapshot-banner"></div>
@@ -939,13 +955,6 @@ let debugExampleGt1 = "-";
 let debugLastCountryRows = "-";
 let debugTotalFetchedRows = 0;
 let debugValidCoordsRows = 0;
-let debugLatviaBbox = 0;
-let debugLatviaCountryField = 0;
-let debugLatviaRegionRows = 0;
-let debugLatviaCounted7d = 0;
-let debugLatviaRenderedMarkers = 0;
-let debugLatviaSample = [];
-const LATVIA_BBOX = { latMin: 55.6, latMax: 58.2, lonMin: 20.9, lonMax: 28.3 };
 const DEV_DEBUG = /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname) || /[?&]debug=1(?:&|$)/.test(window.location.search);
 
 function parseObsDateToMs(obsDt){
@@ -978,24 +987,6 @@ function isInLastNDaysTs(ts, days){
   if (!Number.isFinite(ts)) return false;
   const d = Math.max(1, Number(days) || 7);
   return ts >= (Date.now() - d * 86400000);
-}
-
-function isInsideLatviaBbox(lat, lon){
-  return (
-    Number.isFinite(lat) &&
-    Number.isFinite(lon) &&
-    lat >= LATVIA_BBOX.latMin &&
-    lat <= LATVIA_BBOX.latMax &&
-    lon >= LATVIA_BBOX.lonMin &&
-    lon <= LATVIA_BBOX.lonMax
-  );
-}
-
-function normalizeCountryName(name){
-  const raw = String(name || "").trim().toLowerCase();
-  if (!raw) return "";
-  if (raw === "latvia" || raw === "latvija" || raw === "läti" || raw === "lati") return "latvia";
-  return raw;
 }
 
 function getEbirdToken(){
@@ -1054,16 +1045,6 @@ function updateDebugPanel(){
   const el = document.getElementById("debugContent");
   if (!el) return;
   const counts = getSnapshotCounts();
-  debugLatviaRenderedMarkers = 0;
-  for (const p of Object.values(points || {})) {
-    const regions = (p && p.regions && typeof p.regions === "object") ? p.regions : null;
-    if (!regions) continue;
-    const lv = regions.LV;
-    if (!lv) continue;
-    const occ7 = Number(lv.occ7 || 0);
-    if (recentOnly && !(occ7 > 0)) continue;
-    if (Number.isFinite(lv.lat) && Number.isFinite(lv.lon)) debugLatviaRenderedMarkers++;
-  }
   el.innerHTML = [
     `active filters: <b>7 days only=${recentOnly ? "ON" : "OFF"}, per-country=${perCountry ? "ON" : "OFF"}</b>`,
     `dataMode: <b>${dataMode}</b>`,
@@ -1084,25 +1065,10 @@ function updateDebugPanel(){
     `countryTop5(7d): <b>${debugCountryTop5}</b>`,
     `lastCountryRows: <b>${debugLastCountryRows}</b>`,
     `countrySample(7d): <b>${debugCountrySample}</b>`,
-    `Latvia debug: <b>fetched=${debugTotalFetchedRows}, validCoords=${debugValidCoordsRows}, bbox=${debugLatviaBbox}, countryField=${debugLatviaCountryField}, lvRegionRows=${debugLatviaRegionRows}, counted7d=${debugLatviaCounted7d}, rendered=${debugLatviaRenderedMarkers}</b>`,
-    `Latvia samples: <b>${debugLatviaSample.length ? debugLatviaSample.join(" | ") : "-"}</b>`,
-    `Latvia assert: <b>${(debugLatviaBbox > 0 && debugLatviaRenderedMarkers === 0) ? "FAIL (bbox>0 but rendered=0)" : "OK"}</b>`,
     `max7dCountThisRefresh: <b>${debugMax7d}</b>`,
     `Example >1: <b>${debugExampleGt1}</b>`,
     `snapshotNote: <b>${snapshotDebugNote || "-"}</b>`,
   ].join("<br>");
-  if (DEV_DEBUG && debugLatviaBbox > 0 && debugLatviaRenderedMarkers === 0) {
-    console.warn("[latvia-debug] bbox points exist but no rendered Latvia markers", {
-      fetched: debugTotalFetchedRows,
-      validCoords: debugValidCoordsRows,
-      bbox: debugLatviaBbox,
-      countryField: debugLatviaCountryField,
-      lvRegionRows: debugLatviaRegionRows,
-      counted7d: debugLatviaCounted7d,
-      rendered: debugLatviaRenderedMarkers,
-      samples: debugLatviaSample.slice(0, 10),
-    });
-  }
 }
 
 function showSnapshotBanner(msg, type){
@@ -1211,7 +1177,6 @@ map.getPane("highlightPane").style.pointerEvents = "none";
 const markers = new Map();
 let activePulseRing = null;
 let activePulseTimeout = null;
-let latviaBBoxLayer = null;
 
 function clearPulseRing(){
   if (activePulseTimeout) {
@@ -1240,21 +1205,6 @@ function showPulseRing(lat, lon){
 }
 window.addEventListener("beforeunload", clearPulseRing);
 
-function setLatviaBBoxVisible(visible){
-  if (visible) {
-    if (latviaBBoxLayer) return;
-    latviaBBoxLayer = L.rectangle(
-      [[LATVIA_BBOX.latMin, LATVIA_BBOX.lonMin], [LATVIA_BBOX.latMax, LATVIA_BBOX.lonMax]],
-      { color: "#16a34a", weight: 2, fillOpacity: 0.04, dashArray: "6,4" }
-    ).addTo(map);
-    return;
-  }
-  if (latviaBBoxLayer) {
-    try { map.removeLayer(latviaBBoxLayer); } catch(e){}
-    latviaBBoxLayer = null;
-  }
-}
-
 function makeIcon(url, border, rarityLevel, occ7, isMigr){
   const rarityStyle = window.getRarityStyle ? window.getRarityStyle(rarityLevel || "none") : null;
   const ring = (rarityStyle && rarityStyle.ringColor) ? rarityStyle.ringColor : border;
@@ -1266,8 +1216,9 @@ function makeIcon(url, border, rarityLevel, occ7, isMigr){
     ? `<div class="countBadge" style="background:${isMigr ? "#16a34a" : "#f97316"}">${occ7}</div>`
     : ``;
   const bg = url ? `background-image:url('${url}');` : "";
-  const html = `<div class="markerWrap"><div class="circle" style="border-color:${ring};${bg}"></div>${rarityBadge}${badge}</div>`;
   const size = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--mSize")) || 34;
+  const sizeClass = size <= 30 ? " marker--sm" : (size >= 38 ? " marker--lg" : "");
+  const html = `<div class="markerWrap${sizeClass}"><div class="circle" style="border-color:${ring};${bg}"></div>${rarityBadge}${badge}</div>`;
   return L.divIcon({ html, className:"", iconSize:[size,size], iconAnchor:[size/2, size/2], popupAnchor:[0, -size/2] });
 }
 
@@ -1600,11 +1551,6 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
   const totalCountsGlobalByCode = {};
   debugTotalFetchedRows = 0;
   debugValidCoordsRows = 0;
-  debugLatviaBbox = 0;
-  debugLatviaCountryField = 0;
-  debugLatviaRegionRows = 0;
-  debugLatviaCounted7d = 0;
-  debugLatviaSample = [];
 
   for (const region of REGIONS) {
     if (signal?.aborted) break;
@@ -1641,19 +1587,9 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
         const isValidDt = ts !== null && Number.isFinite(ts);
         const latRaw = Number(obs?.lat);
         const lonRaw = Number(obs?.lng);
-        const cCode = String(obs?.countryCode || "").trim().toUpperCase();
-        const cName = normalizeCountryName(obs?.country || obs?.countryName || obs?.subnational2Name || "");
-        if (region === "LV") debugLatviaRegionRows++;
         if (Number.isFinite(latRaw) && Number.isFinite(lonRaw)) {
           debugValidCoordsRows++;
-          if (isInsideLatviaBbox(latRaw, lonRaw)) {
-            debugLatviaBbox++;
-            if (debugLatviaSample.length < 10) {
-              debugLatviaSample.push(`${region} ${speciesCode} ${latRaw.toFixed(3)},${lonRaw.toFixed(3)} ${String(cCode || cName || "").trim()}`.slice(0, 120));
-            }
-          }
         }
-        if (cCode === "LV" || cName === "latvia") debugLatviaCountryField++;
         if (!perSpeciesRegionByCode[speciesCode]) {
           perSpeciesRegionByCode[speciesCode] = { occ7: 0, latestObs: null, latestTs: 0, speciesCode: speciesCode, sampleObsDt: obsDt };
         }
@@ -1661,7 +1597,6 @@ async function refreshEuropeAggregated(keys, signal, onProgress){
           perCountryCounts[speciesCode] = (perCountryCounts[speciesCode] ?? 0) + 1;
           totalCountsGlobalByCode[speciesCode] = (totalCountsGlobalByCode[speciesCode] ?? 0) + 1;
           perSpeciesRegionByCode[speciesCode].occ7 = perCountryCounts[speciesCode];
-          if (region === "LV") debugLatviaCounted7d++;
           if (countrySampleRows.length < 5) countrySampleRows.push({ speciesCode, count: perCountryCounts[speciesCode], obsDt });
           if (perCountryCounts[speciesCode] > max7dCount) {
             max7dCount = perCountryCounts[speciesCode];
@@ -1812,12 +1747,6 @@ function resetEuropeDebugState(){
   lastRequest = null;
   debugTotalFetchedRows = 0;
   debugValidCoordsRows = 0;
-  debugLatviaBbox = 0;
-  debugLatviaCountryField = 0;
-  debugLatviaRegionRows = 0;
-  debugLatviaCounted7d = 0;
-  debugLatviaRenderedMarkers = 0;
-  debugLatviaSample = [];
 }
 
 function validateRefreshConfig(){
@@ -2065,9 +1994,6 @@ document.getElementById("toggle7days").addEventListener("change", (e)=>{
   recentOnly = !!e.target.checked;
   render();
   updateDebugPanel();
-});
-document.getElementById("toggleLatviaBBox").addEventListener("change", (e)=>{
-  setLatviaBBoxVisible(!!e.target.checked);
 });
 if (!DEV_DEBUG) {
   const panel = document.getElementById("debugPanel");

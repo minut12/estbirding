@@ -23,6 +23,7 @@ interface NewsItem {
   id: string;
   source_slug: string | null;
   source_id?: string | null;
+  source_name?: string | null;
   source_key?: string | null;
   title: string;
   title_et?: string | null;
@@ -33,7 +34,6 @@ interface NewsItem {
   url: string | null;
   permalink_url?: string | null;
   image_url?: string | null;
-  source?: { name?: string | null } | null;
   cached_image_url?: string | null;
   fetched_at?: string | null;
   raw_json?: Record<string, any> | null;
@@ -66,7 +66,7 @@ function formatEstDate(iso: string): string {
 
 /* â”€â”€ Source display names â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function sourceLabel(item: NewsItem, sources: NewsSource[]): string {
-  const directName = String(item.source?.name || '').trim();
+  const directName = String(item.source_name || '').trim();
   if (directName) return directName;
   const byId = item.source_id ? sources.find((it) => it.id === item.source_id) : null;
   if (byId?.name) return byId.name;
@@ -468,12 +468,12 @@ const {
   } = useQuery({
     queryKey: ['news-items', tab],
     queryFn: async () => {
-      const baseCols = 'id, source_id, source_slug, source_key, source:news_sources(name), title, body, image_url, permalink_url, published_at, created_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
-      const withCachedCols = 'id, source_id, source_slug, source_key, source:news_sources(name), title, body, image_url, cached_image_url, permalink_url, published_at, created_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
+      const baseCols = 'id, source_id, source_name, source_slug, source_key, title, body, image_url, permalink_url, published_at, created_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
+      const withCachedCols = 'id, source_id, source_name, source_slug, source_key, title, body, image_url, cached_image_url, permalink_url, published_at, created_at, fetched_at, archived, raw_json, summary, content_html, url, language, guid, title_et, body_et, translation_status, translated_at, source_lang';
 
       const runSelect = async (cols: string) => {
         return await supabase
-          .from('news_items')
+          .from('news_items_v')
           .select(cols)
           .eq('archived', tab === 'archive')
           .order('published_at', { ascending: false, nullsFirst: false })
@@ -506,7 +506,12 @@ const {
         throw error;
       }
       if (import.meta.env.DEV) console.log('[NEWS] first item', data?.[0]);
-      return ((data || []) as NewsItem[]).map(ensureImageUrl);
+      const items = ((data || []) as NewsItem[]).map(ensureImageUrl);
+      return items.sort((a, b) => {
+        const ta = new Date(a.published_at || a.created_at || '').getTime() || 0;
+        const tb = new Date(b.published_at || b.created_at || '').getTime() || 0;
+        return tb - ta;
+      });
     },
     staleTime: 30_000,
     retry: 1,
@@ -536,7 +541,7 @@ const {
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
-    const bp = newsItems.find((item) => String(item.source?.name || '').trim() === 'Birding Poland');
+    const bp = newsItems.find((item) => String(item.source_name || '').trim() === 'Birding Poland');
     if (!bp) return;
     const imageUrl = decodeUrl(bp.image_url);
     const cached = decodeUrl(bp.cached_image_url);
@@ -797,8 +802,8 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
   const debouncedVisible = useDebouncedTrue(isVisible, 180);
   const cachedThumb = decodeUrl(item.cached_image_url);
   const rawImageUrl = decodeUrl(item.image_url);
-  const isBirdingPoland = !!birdingPolandSourceId && item.source_id === birdingPolandSourceId;
   const sourceName = sourceLabel(item, sources);
+  const isBirdingPoland = sourceName === 'Birding Poland';
   const thumbCandidate = cachedThumb || rawImageUrl;
   const proxiedThumb = proxifyImageUrlIfNeeded(sourceName, thumbCandidate, proxyBase);
   const thumb = (!isBirdingPoland && triedProxyFallback && thumbCandidate)

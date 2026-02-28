@@ -33,6 +33,20 @@ function normalizePublishedAt(value: string | null | undefined): string | null {
   return new Date(ms).toISOString();
 }
 
+function canonicalizeUrl(raw: string | null | undefined): string {
+  const input = String(raw || "").trim();
+  if (!input) return "";
+  try {
+    const u = new URL(input);
+    const dropParams = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid", "gclid"];
+    for (const p of dropParams) u.searchParams.delete(p);
+    if (u.pathname.length > 1) u.pathname = u.pathname.replace(/\/+$/, "");
+    return u.toString();
+  } catch {
+    return input.replace(/\/+$/, "");
+  }
+}
+
 function shortError(reason: string): string {
   const text = String(reason || "unknown").trim();
   if (!text) return "unknown";
@@ -211,6 +225,9 @@ async function pullRssSource({ source, supabase, proxyBase }: { source: any; sup
     const originalBody = item.body || "";
     const contentHash = await sha256Hex(`${originalTitle}\n${originalBody}`);
 
+    const canonicalUrl = canonicalizeUrl(item.permalink_url || "");
+    if (!canonicalUrl) continue;
+
     const row = {
       source_id: source.id,
       source_slug: source.slug,
@@ -220,8 +237,8 @@ async function pullRssSource({ source, supabase, proxyBase }: { source: any; sup
       summary: item.body.slice(0, 500) || null,
       content_html: item.body_html || null,
       body: originalBody || null,
-      url: item.permalink_url || "",
-      permalink_url: item.permalink_url,
+      url: canonicalUrl,
+      permalink_url: canonicalUrl,
       published_at: normalizePublishedAt(item.published_at) || new Date().toISOString(),
       language: lang,
       lang,
@@ -239,7 +256,7 @@ async function pullRssSource({ source, supabase, proxyBase }: { source: any; sup
 
     const { data: upserted, error } = await supabase
       .from("news_items")
-      .upsert(rowWithImage, { onConflict: "source_slug,external_id" })
+      .upsert(rowWithImage, { onConflict: "source_id,url" })
       .select("id, translate_hash, title_et, body_et, image_url, cached_image_url")
       .single();
 

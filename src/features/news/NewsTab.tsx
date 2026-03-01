@@ -29,12 +29,12 @@ interface NewsItem {
   title_et?: string | null;
   summary: string | null;
   body: string | null;
+  content?: string | null;
   body_et?: string | null;
   content_html: string | null;
   url: string | null;
   permalink_url?: string | null;
   image_url?: string | null;
-  thumbnail_url?: string | null;
   display_image_url?: string | null;
   cached_image_url?: string | null;
   fetched_at?: string | null;
@@ -58,7 +58,7 @@ interface NewsSource {
   key?: string | null;
 }
 
-const NEWS_VIEW_SELECT = 'id,title,summary,body,content_html,thumbnail_url,image_url,url,permalink_url,published_at,created_at,fetched_at,archived,is_archived,source_slug,source_key,source_name,language,source_lang,guid,raw_json';
+const NEWS_VIEW_SELECT = 'id,title,url,permalink_url,summary,body,content,content_html,published_at,created_at,fetched_at,archived,is_archived,source_id,source_slug,source_name,source_key,image_url,image_cached_url,cached_image_url,cached_image_path,display_image_url,language,source_lang,guid,raw_json';
 const NEWS_TABLE_FALLBACK_SELECT = 'id, source_id, source_key, source_slug, title, url, permalink_url, summary, body, content_html, published_at, created_at, image_url, cached_image_url, image_cached_url, archived, language, source_lang, guid, raw_json, fetched_at';
 
 /* Format date */
@@ -223,11 +223,10 @@ function notifyTranslationWarning(message: string): void {
 }
 
 function ensureImageUrl(item: NewsItem): NewsItem {
-  const thumb = decodeUrl(item.thumbnail_url);
   const cached = decodeUrl(item.cached_image_url);
   const display = decodeUrl(item.display_image_url);
-  const decoded = thumb || cached || display || decodeUrl(item.image_url);
-  if (decoded) return { ...item, thumbnail_url: thumb || undefined, cached_image_url: cached || undefined, image_url: decoded, display_image_url: display || decoded };
+  const decoded = display || cached || decodeUrl(item.image_url);
+  if (decoded) return { ...item, cached_image_url: cached || undefined, image_url: decoded, display_image_url: display || decoded };
   return { ...item, image_url: extractImageUrlFromRaw(item) };
 }
 
@@ -517,6 +516,7 @@ const {
             source_name: source?.name || row?.source_slug || row?.source_key || 'Unknown source',
             cached_image_url: row?.cached_image_url || row?.image_cached_url || null,
             display_image_url: row?.cached_image_url || row?.image_cached_url || row?.image_url || null,
+            content: row?.content || row?.body || null,
             is_archived: Boolean(row?.archived),
           } as NewsItem;
         });
@@ -530,6 +530,7 @@ const {
       const mapped = ((data || []) as Array<Record<string, any>>).map((row) => ({
         ...row,
         is_archived: Boolean(row.is_archived ?? row.archived),
+        content: row.content || row.body || null,
         source_name: row.source_name || row.source_slug || row.source_key || 'Unknown source',
       })) as NewsItem[];
       if (import.meta.env.DEV) console.log('[NEWS] first item', mapped?.[0]);
@@ -613,51 +614,28 @@ const {
     mutationFn: async () => {
       const fnName = 'news-refresh';
       const { data, error } = await supabase.functions.invoke(fnName, {
-        body: { force: true },
+        method: 'POST',
+        body: { max_items_per_source: 15, cache_images: false },
       });
       if (error) throw new Error(error.message || `${fnName}: ${formatErrorReason(error)}`);
       return data;
     },
     onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ['news-items'] });
-      const sourceSummaries = Array.isArray(data?.sources) ? data.sources : [];
-      const resultList = Array.isArray(data?.results) ? data.results : [];
-      const failed = resultList.filter((item: any) => item?.error);
-      const total = Number(data?.upsertedCount || sourceSummaries.reduce((s: number, r: any) => s + Number(r?.upserted || 0), 0));
-      if (data?.debug?.resolvedProxyBase) {
-        setResolvedProxyBase(String(data.debug.resolvedProxyBase));
-      }
-      if (data?.debug?.activeProxyName) {
-        setActiveProxyName(String(data.debug.activeProxyName));
-      } else {
-        setActiveProxyName(getProxyMode(resolveProxyBase()));
-      }
-      if (failed.length > 0) {
-        const reason = String(failed[0]?.error || 'Viga').slice(0, 120);
+      const total = Number(data?.itemsUpserted ?? data?.upserts ?? data?.inserted ?? 0) || 0;
+      const errors = Array.isArray(data?.errors) ? data.errors : [];
+      if (errors.length > 0) {
+        const reason = String(errors[0]?.error || 'Viga').slice(0, 120);
         setLastNewsFetchErrorShort(reason);
+        toast.warning(`${errors.length} allika viga (${String(errors[0]?.source || 'allikas')}: ${reason})`);
       } else {
         setLastNewsFetchErrorShort('');
       }
-      if (failed.length > 0 && failed.length === resultList.length) {
-        const failedSource = String(failed[0]?.source || 'allikas');
-        const reason = String(failed[0]?.error || 'Viga').slice(0, 120);
-        toast.error('Uudiste laadimine ebaõnnestus (fetch): ' + failedSource + ': ' + reason + ' [' + getErrorHostLabel() + ']');
-        return;
-      }
-      if (failed.length > 0) {
-        const firstFailureSource = String(failed[0]?.source || 'allikas');
-        const firstFailureReason = String(failed[0]?.error || 'Viga').slice(0, 120);
-        toast.warning(`${failed.length} allikas ebaõnnestus (${firstFailureSource}: ${firstFailureReason})`);
-      }
-      const eoy = sourceSummaries.find((s: any) => String(s?.source || '').includes('EOÜ'));
-      const bp = sourceSummaries.find((s: any) => String(s?.source || '').includes('Birding Poland'));
-      if (eoy) toast.info(`EOÜ: found ${Number(eoy.found || 0)}, upserted ${Number(eoy.upserted || 0)}`);
-      if (bp) toast.info(`Birding Poland: found ${Number(bp.found || 0)}, upserted ${Number(bp.upserted || 0)}`);
-      if (total > 0) toast.success(`${total} uut uudist`);
+      if (total > 0) toast.success(`${total} uudist uuendatud`);
       else toast.info('Uusi uudiseid pole');
     },
     onError: (error) => {
-      const reason = formatErrorReason(error);
+      const reason = JSON.stringify(error);
       setLastNewsFetchErrorShort(reason.slice(0, 120));
       toast.error('Refresh failed: news-refresh - ' + reason.slice(0, 160));
     },
@@ -826,8 +804,7 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
   const rawImageUrl = decodeUrl(item.image_url);
   const sourceName = sourceLabel(item, sources);
   const isBirdingPoland = sourceName === 'Birding Poland';
-  const viewThumb = decodeUrl(item.thumbnail_url);
-  const thumbCandidate = viewThumb || displayImageUrl || cachedThumb || rawImageUrl || null;
+  const thumbCandidate = displayImageUrl || cachedThumb || rawImageUrl || null;
   const proxiedThumb = proxifyImageUrlIfNeeded(sourceName, thumbCandidate, proxyBase);
   const thumb = (!isBirdingPoland && triedProxyFallback && thumbCandidate)
     ? `${proxyBase}${encodeURIComponent(thumbCandidate)}`
@@ -836,7 +813,7 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
     enabled: showEtContent && autoTranslateEnabled && debouncedVisible,
     id: item.id,
     title: item.title,
-    body: item.body || item.summary,
+    body: item.content || item.body || item.summary,
     sourceLang: item.source_lang || item.language,
     fallbackTitleEt: item.title_et,
     fallbackBodyEt: item.body_et,
@@ -865,6 +842,7 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
               alt={item.title ?? 'news image'}
               className="w-full h-full object-cover"
               referrerPolicy="no-referrer"
+              crossOrigin="anonymous"
               loading="lazy"
               decoding="async"
               onError={(e) => {
@@ -992,7 +970,8 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
       window.removeEventListener(TRANSLATION_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
     };
   }, []);
-  const bodyText = toPlainText(contentHtml || item.body || item.summary);
+  const mergedBody = item.content || item.body || item.summary;
+  const bodyText = toPlainText(contentHtml || mergedBody);
   const bodyFallback = item.excerpt || '';
   const normalizedBodyText = toPlainText(contentHtml || bodyFallback);
   const hasTranslatedContent = showManualTranslation
@@ -1003,7 +982,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     : (contentHtml || normalizedBodyText);
   const heroImageUrl = proxifyImageUrlIfNeeded(
     sourceName,
-    decodeUrl(item.thumbnail_url) || decodeUrl(item.display_image_url) || decodeUrl(item.cached_image_url) || decodeUrl(item.image_url) || null,
+    decodeUrl(item.display_image_url) || decodeUrl(item.cached_image_url) || decodeUrl(item.image_url) || null,
     proxyBase,
   );
   const [heroSrc, setHeroSrc] = useState<string | null>(heroImageUrl);
@@ -1068,6 +1047,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
             alt=""
             className="w-full rounded-xl object-cover max-h-56 bg-muted"
             referrerPolicy="no-referrer"
+            crossOrigin="anonymous"
             onError={() => {
               const raw = decodeUrl(item.image_url) || decodeUrl(item.cached_image_url) || null;
               if (!raw) {

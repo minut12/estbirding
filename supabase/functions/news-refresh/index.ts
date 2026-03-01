@@ -4,7 +4,7 @@ import { parseRss, normalizeRssItem, type NormalizedRssItem } from "../_shared/r
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 type SourceRow = {
@@ -158,13 +158,18 @@ function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
-  if (req.method !== "POST" && req.method !== "GET") return json({ error: "Method not allowed" }, 405);
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceRoleKey) return json({ error: "Missing env: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" }, 500);
 
   try {
+    const body = await req.json().catch(() => ({}));
+    const maxItemsPerSource = Math.max(1, Math.min(100, Number(body?.max_items_per_source ?? 15) || 15));
+    const cacheImages = body?.cache_images === true;
+    const cacheLimit = Math.max(0, Number(body?.cache_limit ?? 0) || 0);
+
     const supabase = createClient(supabaseUrl, serviceRoleKey);
     const { data: sources, error: sourcesError } = await supabase
       .from("news_sources")
@@ -174,7 +179,7 @@ Deno.serve(async (req) => {
     if (sourcesError) return json({ error: sourcesError.message }, 500);
 
     const enabledSources = (sources || []) as SourceRow[];
-    const sourceErrors: Array<{ source: string; error: string }> = [];
+    const errors: Array<{ source: string; error: string }> = [];
     let inserted = 0;
     let updated = 0;
     let skipped = 0;
@@ -191,7 +196,7 @@ Deno.serve(async (req) => {
           inserted += counts.inserted;
           updated += counts.updated;
         } catch (e: any) {
-          sourceErrors.push({ source: source.slug, error: String(e?.message || e) });
+          errors.push({ source: source.slug, error: String(e?.message || e) });
         }
         continue;
       }
@@ -206,11 +211,12 @@ Deno.serve(async (req) => {
           headers: { "User-Agent": "EstBirding/1.0", "Accept": "application/rss+xml, application/xml, text/xml, */*" },
         });
         if (!feedRes.ok) {
-          sourceErrors.push({ source: source.slug, error: `RSS HTTP ${feedRes.status}` });
+          errors.push({ source: source.slug, error: `RSS HTTP ${feedRes.status}` });
           continue;
         }
         const xml = await feedRes.text();
-        const rows = normalizeRssItems(parseRss(xml).map((item) => normalizeRssItem(item)), source).slice(0, 50);
+        const rows = normalizeRssItems(parseRss(xml).map((item) => normalizeRssItem(item)), source).slice(0, maxItemsPerSource);
+        let cachedForSource = 0;
 
         for (const row of rows) {
           const existing = await supabase
@@ -226,17 +232,18 @@ Deno.serve(async (req) => {
             .select("id, source_slug, source_key, image_url, cached_image_url")
             .single();
           if (error || !upserted?.id) {
-            if (error) sourceErrors.push({ source: source.slug, error: error.message });
+            if (error) errors.push({ source: source.slug, error: error.message });
             continue;
           }
           if (existing?.data?.id) updated += 1;
           else inserted += 1;
-          if (upserted.image_url && !upserted.cached_image_url) {
+          if (cacheImages && upserted.image_url && !upserted.cached_image_url && (cacheLimit === 0 || cachedForSource < cacheLimit)) {
             await cacheImage(supabase, supabaseUrl, upserted);
+            cachedForSource += 1;
           }
         }
       } catch (e: any) {
-        sourceErrors.push({ source: source.slug, error: String(e?.message || e) });
+        errors.push({ source: source.slug, error: String(e?.message || e) });
       }
     }
 
@@ -249,7 +256,10 @@ Deno.serve(async (req) => {
       inserted,
       updated,
       skipped,
-      sourceErrors,
+      maxItemsPerSource,
+      cacheImages,
+      cacheLimit,
+      errors,
     });
   } catch (error) {
     return json({ error: (error as Error).message }, 500);

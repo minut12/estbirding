@@ -136,15 +136,15 @@ function extractImageInfo(
   const fromMediaContent = getImageFromRssItem(item, bodyHtml, baseUrl, "media:content");
   if (fromMediaContent) return { url: fromMediaContent, strategy: "media:content" };
 
+  const fromMediaThumbnail = getImageFromRssItem(item, bodyHtml, baseUrl, "media:thumbnail");
+  if (fromMediaThumbnail) return { url: fromMediaThumbnail, strategy: "media:thumbnail" };
+
   const fromEnclosure = getImageFromRssItem(item, bodyHtml, baseUrl, "enclosure");
   if (fromEnclosure) return { url: fromEnclosure, strategy: "enclosure" };
 
   const raw = String(item._raw || "");
   const fromItunes = cleanImageCandidate(item["itunes:image"]?.href || item["itunes:image"]?.["@_href"] || findItunesImageFromRaw(raw), baseUrl);
   if (fromItunes) return { url: fromItunes, strategy: "itunes:image" };
-
-  const fromMediaThumbnail = getImageFromRssItem(item, bodyHtml, baseUrl, "media:thumbnail");
-  if (fromMediaThumbnail) return { url: fromMediaThumbnail, strategy: "media:thumbnail" };
 
   const htmlCandidates = [bodyHtml, item["content:encoded"], item.content, item.description, item.summary];
   for (const html of htmlCandidates) {

@@ -4,7 +4,7 @@ import { parseRss, normalizeRssItem, type NormalizedRssItem } from "../_shared/r
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
 type SourceRow = {
@@ -92,7 +92,7 @@ async function cacheImage(
       cached_image_path: filePath,
     }).eq("id", item.id);
   } catch {
-    // best effort
+    // best-effort image caching
   }
 }
 
@@ -102,10 +102,6 @@ function normalizePublishedAt(value: string | null | undefined): string {
   const ms = new Date(raw).getTime();
   if (!Number.isFinite(ms)) return new Date().toISOString();
   return new Date(ms).toISOString();
-}
-
-function sourceType(source: SourceRow): string {
-  return String(source.type || "").toLowerCase();
 }
 
 async function refreshEoy(supabaseUrl: string, serviceRoleKey: string, source: SourceRow): Promise<{ inserted: number; updated: number }> {
@@ -134,9 +130,7 @@ async function cacheMissingImagesForSource(supabase: any, supabaseUrl: string, s
     .is("cached_image_url", null)
     .not("image_url", "is", null)
     .limit(30);
-  for (const row of (rows || [])) {
-    await cacheImage(supabase, supabaseUrl, row);
-  }
+  for (const row of (rows || [])) await cacheImage(supabase, supabaseUrl, row);
 }
 
 function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array<Record<string, unknown>> {
@@ -150,6 +144,10 @@ function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array
     const title = String(item.title || "").trim();
     if (!title) continue;
     const externalId = String(item.external_id || url).trim();
+    const deterministicGuid = externalId
+      || String(item.permalink_url || "").trim()
+      || `${source.slug}:${title}:${normalizePublishedAt(item.published_at)}`;
+
     out.push({
       source_id: source.id,
       source_slug: source.slug,
@@ -167,7 +165,8 @@ function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array
       lang: "pl",
       source_lang: "pl",
       fetched_at: now,
-      guid: `${source.slug}:${externalId}`,
+      // Deterministic identity fallback for unstable feed ids.
+      guid: `${source.slug}:${deterministicGuid}`,
       raw_json: item.raw_json,
     });
   }
@@ -175,12 +174,8 @@ function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
-  if (req.method !== "POST") {
-    return json({ error: "Method not allowed" }, 405);
-  }
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
+  if (req.method !== "POST" && req.method !== "GET") return json({ error: "Method not allowed" }, 405);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -193,21 +188,21 @@ Deno.serve(async (req) => {
     const { data: sources, error: sourcesError } = await supabase
       .from("news_sources")
       .select("id, slug, name, key, source_key, type, feed_url, fetch_url, is_active, is_enabled")
-      .eq("is_active", true)
-      .eq("is_enabled", true);
-
+      .eq("is_enabled", true)
+      .or("is_active.is.null,is_active.eq.true");
     if (sourcesError) return json({ error: sourcesError.message }, 500);
-    const enabledSources = (sources || []) as SourceRow[];
 
+    const enabledSources = (sources || []) as SourceRow[];
+    const sourcesProcessed = enabledSources.length;
     let inserted = 0;
     let updated = 0;
 
     for (const source of enabledSources) {
       const slug = String(source.slug || "").toLowerCase();
       const name = String(source.name || "").toLowerCase();
-      const kind = sourceType(source);
+      const type = String(source.type || "").toLowerCase();
       const isEoy = slug.includes("eoy") || slug.includes("eou") || name.includes("eoü") || String(source.fetch_url || "").includes("eoy.ee");
-      const isRss = kind === "rss";
+      const isRss = type === "rss";
 
       if (isEoy) {
         const result = await refreshEoy(supabaseUrl, serviceRoleKey, source);
@@ -217,19 +212,13 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      if (!isRss) continue;
-      const feedUrl = String(source.feed_url || "").trim();
-      if (!feedUrl) continue;
-
-      const feedRes = await fetch(feedUrl, {
+      if (!isRss || !source.feed_url) continue;
+      const feedRes = await fetch(String(source.feed_url).trim(), {
         headers: { "User-Agent": "EstBirding/1.0", "Accept": "application/rss+xml, application/xml, text/xml, */*" },
       });
       if (!feedRes.ok) continue;
-
       const xml = await feedRes.text();
-      const parsed = parseRss(xml);
-      const normalized = parsed.map((item) => normalizeRssItem(item));
-      const rows = normalizeRssItems(normalized, source);
+      const rows = normalizeRssItems(parseRss(xml).map((item) => normalizeRssItem(item)), source);
 
       for (const row of rows) {
         const existing = await supabase
@@ -238,8 +227,10 @@ Deno.serve(async (req) => {
           .eq("source_id", row.source_id)
           .eq("url", row.url)
           .maybeSingle();
+
         const { data: upserted, error } = await supabase
           .from("news_items")
+          // Uniqueness uses source_id + canonical url (migration index) while guid remains deterministic fallback identity.
           .upsert(row, { onConflict: "source_id,url" })
           .select("id, source_slug, source_key, image_url, cached_image_url")
           .single();
@@ -253,7 +244,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json({ ok: true, inserted, updated });
+    return json({
+      ok: true,
+      sourcesProcessed,
+      itemsUpserted: inserted + updated,
+      itemsInserted: inserted,
+      itemsUpdated: updated,
+      inserted,
+      updated,
+    });
   } catch (error) {
     return json({ error: (error as Error).message }, 500);
   }

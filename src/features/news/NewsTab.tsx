@@ -18,7 +18,7 @@ import { resolveEndpoint, TRANSLATION_ENDPOINT_UPDATED_EVENT } from '@/config/tr
 import { getProxyMode, resolveProxyBase } from '@/config/proxyEndpoint';
 import { getSupabaseUrl } from '@/config/supabaseConfig';
 
-/* â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* Types */
 interface NewsItem {
   id: string;
   source_slug: string | null;
@@ -57,9 +57,10 @@ interface NewsSource {
   key?: string | null;
 }
 
-const NEWS_TABLE_SELECT = 'id, source_id, source_key, source_slug, title, url, permalink_url, summary, body, published_at, created_at, image_url, cached_image_url, image_cached_url, archived';
+const NEWS_VIEW_SELECT = 'id, source_id, source_key, source_slug, source_name, title, url, permalink_url, summary, body, content_html, published_at, created_at, image_url, cached_image_url, display_image_url, is_archived, language, source_lang, guid, raw_json, fetched_at';
+const NEWS_TABLE_FALLBACK_SELECT = 'id, source_id, source_key, source_slug, title, url, permalink_url, summary, body, content_html, published_at, created_at, image_url, cached_image_url, image_cached_url, archived, language, source_lang, guid, raw_json, fetched_at';
 
-/* â”€â”€ Format date â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* Format date */
 const ET_MONTHS = ['jaanuar','veebruar','märts','aprill','mai','juuni','juuli','august','september','oktoober','november','detsember'];
 function formatEstDate(iso: string): string {
   try {
@@ -68,14 +69,14 @@ function formatEstDate(iso: string): string {
   } catch { return iso; }
 }
 
-/* â”€â”€ Source display names â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* Source display names */
 function sourceLabel(item: NewsItem, sources: NewsSource[]): string {
   const directName = String(item.source_name || '').trim();
   if (directName) return directName;
   const byId = item.source_id ? sources.find((it) => it.id === item.source_id) : null;
   if (byId?.name) return byId.name;
   if (item.source_slug) return item.source_slug.toUpperCase();
-  return 'EOU';
+  return 'EOÜ';
 }
 
 function toPlainText(value: string | null | undefined): string {
@@ -226,6 +227,15 @@ function ensureImageUrl(item: NewsItem): NewsItem {
   const decoded = cached || display || decodeUrl(item.image_url);
   if (decoded) return { ...item, cached_image_url: cached || undefined, image_url: decoded, display_image_url: display || decoded };
   return { ...item, image_url: extractImageUrlFromRaw(item) };
+}
+
+function shouldFallbackNewsQuery(error: unknown): boolean {
+  const reason = formatErrorReason(error).toLowerCase();
+  return reason.includes('does not exist')
+    || reason.includes('schema cache')
+    || reason.includes('could not find the table')
+    || reason.includes('relation')
+    || reason.includes('column');
 }
 
 const BIRDING_POLAND_NAME = 'birding poland';
@@ -391,7 +401,7 @@ function useDebouncedTrue(value: boolean, delayMs: number): boolean {
   return debounced;
 }
 
-/* â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* Main component */
 export default function NewsTab() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<'latest' | 'archive'>('latest');
@@ -475,29 +485,52 @@ const {
     queryKey: ['news-items', tab],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('news_items')
-        .select(NEWS_TABLE_SELECT)
-        .eq('archived', tab === 'archive')
+        .from('news_items_v')
+        .select(NEWS_VIEW_SELECT)
+        .eq('is_archived', tab === 'archive')
         .order('published_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false, nullsFirst: false })
         .limit(50);
 
       if (error) {
-        console.error('[NEWS] items query failed', error);
-        throw error;
+        if (!shouldFallbackNewsQuery(error)) {
+          console.error('[NEWS] items query failed', error);
+          throw error;
+        }
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('news_items')
+          .select(NEWS_TABLE_FALLBACK_SELECT)
+          .eq('archived', tab === 'archive')
+          .order('published_at', { ascending: false, nullsFirst: false })
+          .order('created_at', { ascending: false, nullsFirst: false })
+          .limit(50);
+        if (fallbackError) {
+          console.error('[NEWS] fallback items query failed', fallbackError);
+          throw fallbackError;
+        }
+        const bySourceId = new Map<string, NewsSource>();
+        for (const source of sources) bySourceId.set(source.id, source);
+        const fallbackMapped = ((fallbackData || []) as Array<Record<string, any>>).map((row) => {
+          const source = row?.source_id ? bySourceId.get(String(row.source_id)) : null;
+          return {
+            ...row,
+            source_name: source?.name || row?.source_slug || row?.source_key || 'Unknown source',
+            cached_image_url: row?.cached_image_url || row?.image_cached_url || null,
+            display_image_url: row?.cached_image_url || row?.image_cached_url || row?.image_url || null,
+            is_archived: Boolean(row?.archived),
+          } as NewsItem;
+        });
+        const items = fallbackMapped.map(ensureImageUrl);
+        return items.sort((a, b) => {
+          const ta = new Date(a.published_at || a.created_at || '').getTime() || 0;
+          const tb = new Date(b.published_at || b.created_at || '').getTime() || 0;
+          return tb - ta;
+        });
       }
-      const bySourceId = new Map<string, NewsSource>();
-      for (const source of sources) bySourceId.set(source.id, source);
-      const mapped = ((data || []) as Array<Record<string, any>>).map((row) => {
-        const source = row?.source_id ? bySourceId.get(String(row.source_id)) : null;
-        return {
-          ...row,
-          source_name: source?.name || row?.source_slug || row?.source_key || 'Unknown source',
-          source_key: source?.key || source?.source_key || row?.source_key || row?.source_slug || null,
-          cached_image_url: row?.cached_image_url || row?.image_cached_url || null,
-          is_archived: Boolean(row?.archived),
-        } as NewsItem;
-      });
+      const mapped = ((data || []) as NewsItem[]).map((row) => ({
+        ...row,
+        source_name: row.source_name || row.source_slug || row.source_key || 'Unknown source',
+      }));
       if (import.meta.env.DEV) console.log('[NEWS] first item', mapped?.[0]);
       const items = mapped.map(ensureImageUrl);
       return items.sort((a, b) => {
@@ -771,7 +804,7 @@ const {
   );
 }
 
-/* â”€â”€ News Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* News Card */
 function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtContent, autoTranslateEnabled, endpointConfigured, onOpen, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
@@ -792,7 +825,7 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
   const rawImageUrl = decodeUrl(item.image_url);
   const sourceName = sourceLabel(item, sources);
   const isBirdingPoland = sourceName === 'Birding Poland';
-  const thumbCandidate = cachedThumb || rawImageUrl || displayImageUrl || null;
+  const thumbCandidate = displayImageUrl || cachedThumb || rawImageUrl || null;
   const proxiedThumb = proxifyImageUrlIfNeeded(sourceName, thumbCandidate, proxyBase);
   const thumb = (!isBirdingPoland && triedProxyFallback && thumbCandidate)
     ? `${proxyBase}${encodeURIComponent(thumbCandidate)}`
@@ -894,7 +927,7 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
   );
 }
 
-/* â”€â”€ Article View (lazy-loads content) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* Article View (lazy-loads content) */
 function ArticleView({ item, sources, onBack, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
@@ -968,7 +1001,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     : (contentHtml || normalizedBodyText);
   const heroImageUrl = proxifyImageUrlIfNeeded(
     sourceName,
-    decodeUrl(item.cached_image_url) || decodeUrl(item.image_url) || decodeUrl(item.display_image_url) || null,
+    decodeUrl(item.display_image_url) || decodeUrl(item.cached_image_url) || decodeUrl(item.image_url) || null,
     proxyBase,
   );
   const [heroSrc, setHeroSrc] = useState<string | null>(heroImageUrl);
@@ -1113,7 +1146,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
   );
 }
 
-/* â”€â”€ Empty States â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* Empty States */
 function EmptyState({ tab }: { tab: string }) {
   return (
     <div className="flex flex-col items-center justify-center h-full p-8 text-center gap-3">

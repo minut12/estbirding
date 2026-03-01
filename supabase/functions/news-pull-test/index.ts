@@ -91,13 +91,16 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     if (error instanceof SourceFetchError) {
+      const details = (error.details || {}) as Record<string, unknown>;
       return new Response(
         JSON.stringify({
           ok: false,
           error: error.message,
           status: error.status || null,
+          finalUrl: String(details.finalUrl || ""),
+          snippet: String(details.snippet || details.bodySnippet || ""),
           source: error.sourceName,
-          details: error.details || null,
+          details: details || null,
           count: 0,
           sampleTitles: [],
           items: [],

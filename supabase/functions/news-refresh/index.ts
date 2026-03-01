@@ -119,7 +119,8 @@ function looksLikeHtmlChallenge(contentType: string, body: string): boolean {
 }
 
 function buildProxyUrl(targetUrl: string, supabaseUrl: string): string {
-  return `${supabaseUrl}/functions/v1/proxy?url=${encodeURIComponent(targetUrl)}`;
+  const base = `${supabaseUrl}/functions/v1/proxy`;
+  return `${base}?url=${encodeURIComponent(targetUrl)}`;
 }
 
 async function fetchRssText(url: string, supabaseUrl: string): Promise<RssFetchResult> {
@@ -193,7 +194,15 @@ async function ensureNewsImagesBucket(supabase: any): Promise<void> {
 async function cacheImage(
   supabase: any,
   supabaseUrl: string,
-  item: { id: string; source_slug?: string | null; source_key?: string | null; image_url?: string | null; cached_image_url?: string | null },
+  item: {
+    id: string;
+    source_slug?: string | null;
+    source_key?: string | null;
+    external_id?: string | null;
+    guid?: string | null;
+    image_url?: string | null;
+    cached_image_url?: string | null;
+  },
 ): Promise<{ ok: boolean; error?: string }> {
   const imageUrl = decodeUrl(item.image_url);
   if (!item.id || !imageUrl || item.cached_image_url) return { ok: false };
@@ -216,8 +225,9 @@ async function cacheImage(
     const bytes = await imageRes.arrayBuffer();
     const ext = extFromContentType(imageRes.headers.get("content-type"));
     const sourcePath = String(item.source_slug || item.source_key || "news").toLowerCase().replace(/[^a-z0-9_-]+/g, "-") || "news";
-    const hash = await sha1Hex(imageUrl);
-    const filePath = `${sourcePath}/${hash}.${ext}`;
+    const rawGuid = String(item.guid || item.external_id || item.id || "").trim();
+    const safeGuid = (rawGuid.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/-+/g, "-").slice(0, 120) || await sha1Hex(imageUrl));
+    const filePath = `${sourcePath}/${safeGuid}.${ext}`;
 
     const { error: uploadError } = await supabase.storage
       .from("news-images")
@@ -302,7 +312,7 @@ async function refreshEoy(
     if (cacheImages && cacheLimitLeft > 0 && itemIds.length > 0) {
       const { data: items } = await supabase
         .from("news_items")
-        .select("id,image_url,cached_image_url,source_slug,source_key")
+        .select("id,image_url,cached_image_url,source_slug,source_key,external_id,guid")
         .in("id", itemIds)
         .is("cached_image_url", null)
         .not("image_url", "is", null)
@@ -526,7 +536,7 @@ Deno.serve(async (req) => {
           const { data: upserted, error } = await supabase
             .from("news_items")
             .upsert(row, { onConflict: "guid" })
-            .select("id, image_url, cached_image_url, source_slug, source_key")
+            .select("id, image_url, cached_image_url, source_slug, source_key, external_id, guid")
             .single();
           if (error || !upserted?.id) {
             const msg = error?.message || "upsert failed";

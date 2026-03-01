@@ -9,7 +9,7 @@ export interface NewsSourceConfigItem {
 export const DEFAULT_NEWS_SOURCES: NewsSourceConfigItem[] = [
   {
     id: "eoy",
-    name: "EOÜ",
+    name: "EOÃœ",
     kind: "scrape",
     url: "https://www.eoy.ee/ET/uudised/",
     enabled: true,
@@ -18,9 +18,10 @@ export const DEFAULT_NEWS_SOURCES: NewsSourceConfigItem[] = [
     id: "birding_poland",
     name: "Birding Poland",
     kind: "rss",
-    url: "https://rss.app/feeds/oj8X6cpy0jWL7JNy.xml",
+    url: "https://rss.app/feeds/75MPfQwrc0XNIjzd.xml",
     enabled: true,
   },
 ];
+
 
 

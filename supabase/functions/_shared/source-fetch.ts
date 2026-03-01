@@ -38,7 +38,7 @@ export function normalizeSourceUrl(url: string): string {
     return `https://rss.app/feeds/${feedsMatch[1]}.xml`;
   }
 
-  return trimmed;
+  return trimmed.replace(/(\.(?:xml|rss|atom|json))(\/+)(?=$|[?#])/i, "$1");
 }
 
 function resolveSourceName(source: FetchSourceInput): string {
@@ -46,10 +46,12 @@ function resolveSourceName(source: FetchSourceInput): string {
 }
 
 function buildProxyUrl(targetUrl: string, proxyBase: string): string {
-  if (!proxyBase) return targetUrl;
+  const base = String(proxyBase || "").trim();
+  if (!base) return targetUrl;
   const encoded = encodeURIComponent(targetUrl);
-  if (proxyBase.includes("{url}")) return proxyBase.replace("{url}", encoded);
-  return `${proxyBase}${encoded}`;
+  if (base.includes("{url}")) return base.replace("{url}", encoded);
+  if (/[?&]url=/.test(base)) return `${base}${encoded}`;
+  return `${base}?url=${encoded}`;
 }
 
 type RssFetchResult = {
@@ -60,6 +62,7 @@ type RssFetchResult = {
   contentType: string;
   blocked: boolean;
   bodySnippet: string;
+  finalUrl: string;
 };
 
 function looksLikeHtmlChallenge(contentType: string, body: string): boolean {
@@ -82,48 +85,61 @@ async function fetchRssText(url: string, proxyBase = ""): Promise<RssFetchResult
     "Accept-Language": "en-US,en;q=0.9,et-EE;q=0.7",
   };
 
-  const direct = await fetch(url, { headers, redirect: "follow" });
-  const directText = await direct.text();
-  const directType = String(direct.headers.get("content-type") || "");
-  const directBlocked = looksLikeHtmlChallenge(directType, directText);
-  if (direct.ok && !directBlocked) {
+  const fetchDirect = async (targetUrl: string): Promise<RssFetchResult> => {
+    const direct = await fetch(targetUrl, { method: "GET", headers, redirect: "follow" });
+    const directText = await direct.text();
+    const directType = String(direct.headers.get("content-type") || "");
+    const directBlocked = looksLikeHtmlChallenge(directType, directText);
     return {
-      ok: true,
-      text: directText,
-      viaProxy: false,
-      status: direct.status,
-      contentType: directType,
-      blocked: false,
-      bodySnippet: bodySnippet(directText),
-    };
-  }
-
-  if (!proxyBase) {
-    return {
-      ok: false,
+      ok: direct.ok && !directBlocked,
       text: directText,
       viaProxy: false,
       status: direct.status,
       contentType: directType,
       blocked: directBlocked,
       bodySnippet: bodySnippet(directText),
+      finalUrl: targetUrl,
     };
-  }
-
-  const proxiedUrl = buildProxyUrl(url, proxyBase);
-  const proxied = await fetch(proxiedUrl, { headers, redirect: "follow" });
-  const proxiedText = await proxied.text();
-  const proxiedType = String(proxied.headers.get("content-type") || "");
-  const proxiedBlocked = looksLikeHtmlChallenge(proxiedType, proxiedText);
-  return {
-    ok: proxied.ok && !proxiedBlocked,
-    text: proxiedText,
-    viaProxy: true,
-    status: proxied.status,
-    contentType: proxiedType,
-    blocked: proxiedBlocked,
-    bodySnippet: bodySnippet(proxiedText),
   };
+
+  let directResult = await fetchDirect(url);
+  if (directResult.status === 404 && /\/$/.test(url)) {
+    directResult = await fetchDirect(url.replace(/\/+$/, ""));
+  }
+  if (directResult.ok) return directResult;
+  if (!proxyBase) return directResult;
+
+  const fetchViaProxy = async (targetUrl: string): Promise<RssFetchResult> => {
+    const proxiedUrl = buildProxyUrl(targetUrl, proxyBase);
+    const proxied = await fetch(proxiedUrl, { method: "GET", headers, redirect: "follow" });
+    const proxiedText = await proxied.text();
+    const proxiedType = String(proxied.headers.get("content-type") || "");
+    const proxiedBlocked = looksLikeHtmlChallenge(proxiedType, proxiedText);
+    return {
+      ok: proxied.ok && !proxiedBlocked,
+      text: proxiedText,
+      viaProxy: true,
+      status: proxied.status,
+      contentType: proxiedType,
+      blocked: proxiedBlocked,
+      bodySnippet: bodySnippet(proxiedText),
+      finalUrl: proxiedUrl,
+    };
+  };
+
+  let proxiedResult = await fetchViaProxy(url);
+  if (proxiedResult.status === 404 && /\/$/.test(url)) {
+    proxiedResult = await fetchViaProxy(url.replace(/\/+$/, ""));
+  }
+  if (!proxiedResult.ok) {
+    console.error("[source-fetch] RSS fetch failed", {
+      targetUrl: url,
+      finalUrl: proxiedResult.finalUrl,
+      status: proxiedResult.status,
+      snippet: proxiedResult.bodySnippet,
+    });
+  }
+  return proxiedResult;
 }
 
 function normalizeUrl(url: string, baseUrl: string): string {
@@ -203,6 +219,14 @@ export async function fetchSourceItems(source: FetchSourceInput, proxyBase = "")
 
   const fetched = await fetchRssText(sourceUrl, proxyBase);
   if (!fetched.ok) {
+    if (fetched.status >= 400) {
+      console.error("[source-fetch] feed HTTP failure", {
+        source: sourceName,
+        finalUrl: fetched.finalUrl,
+        status: fetched.status,
+        snippet: fetched.bodySnippet,
+      });
+    }
     const message = fetched.blocked
       ? `${sourceName}: Feed blocked / returned HTML challenge`
       : `${sourceName}: HTTP ${fetched.status}`;
@@ -213,6 +237,8 @@ export async function fetchSourceItems(source: FetchSourceInput, proxyBase = "")
       bodySnippet: fetched.bodySnippet,
       viaProxy: fetched.viaProxy,
       blocked: fetched.blocked,
+      finalUrl: fetched.finalUrl,
+      snippet: fetched.bodySnippet,
     });
   }
 
@@ -245,6 +271,13 @@ export async function fetchSourceItems(source: FetchSourceInput, proxyBase = "")
       contentType: fetched.contentType,
       bodySnippet: fetched.bodySnippet,
       viaProxy: fetched.viaProxy,
+      finalUrl: fetched.finalUrl,
+      snippet: fetched.bodySnippet,
     });
   }
+}
+
+const SOURCE_URL_NORMALIZATION_CHECK = "https://rss.app/feeds/75MPfQwrc0XNIjzd.xml";
+if (normalizeSourceUrl(` ${SOURCE_URL_NORMALIZATION_CHECK} `) !== SOURCE_URL_NORMALIZATION_CHECK) {
+  console.error("[source-fetch] normalizeSourceUrl check failed for Birding Poland URL");
 }

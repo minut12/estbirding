@@ -19,7 +19,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { id, feed_url, is_enabled } = await req.json();
+    const { id, slug, source_key, key, feed_url, is_enabled } = await req.json();
     if (!id) {
       return new Response(JSON.stringify({ error: "Missing id" }), {
         status: 400,
@@ -36,10 +36,16 @@ Deno.serve(async (req) => {
     if (feed_url !== undefined) updates.feed_url = feed_url;
     if (typeof is_enabled === "boolean") updates.is_enabled = is_enabled;
 
-    const { error } = await supabase
-      .from("news_sources")
-      .update(updates)
-      .eq("id", id);
+    let query = supabase.from("news_sources").update(updates);
+    if (id) {
+      query = query.or(`id.eq.${id},slug.eq.${id},source_key.eq.${id},key.eq.${id}`);
+    } else if (slug || source_key || key) {
+      const filters = [slug && `slug.eq.${slug}`, source_key && `source_key.eq.${source_key}`, key && `key.eq.${key}`]
+        .filter(Boolean)
+        .join(",");
+      query = query.or(filters);
+    }
+    const { error } = await query;
 
     if (error) throw error;
 

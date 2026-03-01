@@ -15,7 +15,7 @@ import { isEstonianLocale, normalizeLocale, resolveAppLocale } from '@/lib/local
 import { TranslateEtHttpError, translateEt, type TranslateEtOutput } from '@/lib/translateEt';
 import { toast } from 'sonner';
 import { resolveEndpoint, TRANSLATION_ENDPOINT_UPDATED_EVENT } from '@/config/translationEndpoint';
-import { getProxyMode, resolveProxyBase } from '@/config/proxyEndpoint';
+import { buildProxyUrl, getProxyMode, resolveProxyBase } from '@/config/proxyEndpoint';
 import { getSupabaseUrl } from '@/config/supabaseConfig';
 import { normalizeDisplayText } from '@/lib/textNormalize';
 
@@ -249,7 +249,7 @@ function proxifyImageUrlIfNeeded(_sourceName: string, url: string | null, proxyB
   if (!clean) return null;
   if (clean.startsWith('data:') || clean.startsWith('blob:')) return clean;
   const needsProxy = /fbcdn\.net|facebook\.com|scontent-|cdninstagram|fb\.com/i.test(clean);
-  if (needsProxy && proxyBase) return `${proxyBase}${encodeURIComponent(clean)}`;
+  if (needsProxy && proxyBase) return buildProxyUrl(clean, proxyBase);
   return clean;
 }
 
@@ -261,7 +261,7 @@ function rewriteImgSrcToProxy(html: string, sourceName: string, proxyBase: strin
     doc.querySelectorAll('img').forEach((img) => {
       const src = (img.getAttribute('src') || img.getAttribute('data-src') || '').trim();
       if (!src) return;
-      img.setAttribute('src', `${proxyBase}${encodeURIComponent(src)}`);
+      img.setAttribute('src', buildProxyUrl(src, proxyBase));
       img.removeAttribute('data-src');
     });
     return doc.body.innerHTML;

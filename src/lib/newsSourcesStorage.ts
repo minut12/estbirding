@@ -18,12 +18,13 @@ interface LegacyNewsSourceShape {
   key?: unknown;
 }
 
-const BIRDING_POLAND_TARGET_URL = "https://rss.app/feeds/oj8X6cpy0jWL7JNy.xml";
+const BIRDING_POLAND_TARGET_URL = "https://rss.app/feeds/75MPfQwrc0XNIjzd.xml";
 const BIRDING_POLAND_OLD_URLS = new Set([
   "https://rss.app/feed/mn6SuRIcMkSczPdv",
   "https://rss.app/feed/mn6SuRIcMkSczPdv/",
   "https://rss.app/feeds/mn6SuRIcMkSczPdv",
   "https://rss.app/feeds/mn6SuRIcMkSczPdv.xml",
+  "https://rss.app/feeds/oj8X6cpy0jWL7JNy.xml",
 ]);
 
 export function normalizeSourceUrl(url: string): string {
@@ -38,7 +39,7 @@ export function normalizeSourceUrl(url: string): string {
     return `https://rss.app/feeds/${feedsMatch[1]}.xml`;
   }
 
-  return trimmed;
+  return trimmed.replace(/(\.(?:xml|rss|atom|json))(\/+)(?=$|[?#])/i, "$1");
 }
 
 function normalizeSourceEntry(source: NewsSourceConfigItem): NewsSourceConfigItem {

@@ -5,11 +5,7 @@ export const FALLBACK_PROXY_BASE = "https://api.allorigins.win/raw?url=";
 function normalizeProxyBase(raw: string): string {
   const trimmed = String(raw || "").trim();
   if (!trimmed) return "";
-  if (trimmed.includes("{url}")) return trimmed;
-  if (trimmed.includes("?url=") || trimmed.includes("&url=")) return trimmed;
-  if (trimmed.endsWith("/proxy")) return `${trimmed}?url=`;
-  if (trimmed.endsWith("/proxy/")) return `${trimmed}?url=`;
-  return trimmed.endsWith("/") ? `${trimmed}?url=` : `${trimmed}/?url=`;
+  return trimmed;
 }
 
 function buildDefaultSupabaseProxyBase(): string {
@@ -51,7 +47,8 @@ export function buildProxyUrl(targetUrl: string, baseOverride?: string): string 
   const encodedTarget = encodeURIComponent(String(targetUrl || "").trim());
   if (!base) return String(targetUrl || "").trim();
   if (base.includes("{url}")) return base.replace("{url}", encodedTarget);
-  return `${base}${encodedTarget}`;
+  if (/[?&]url=/.test(base)) return `${base}${encodedTarget}`;
+  return `${base}?url=${encodedTarget}`;
 }
 
 export function getProxyMode(base?: string): "supabase" | "fallback" | "custom" | "none" {

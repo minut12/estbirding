@@ -77,9 +77,26 @@ function SourceCard({
   const [testResult, setTestResult] = useState<{ ok: boolean; count?: number; sampleTitles?: string[]; error?: string } | null>(null);
   const [testing, setTesting] = useState(false);
 
-  const saveChanges = () => {
-    onLocalUpdate({ ...source, url: normalizeSourceUrl(url), enabled });
-    toast.success(`${source.name} salvestatud`);
+  const saveChanges = async () => {
+    const normalizedUrl = normalizeSourceUrl(url);
+    onLocalUpdate({ ...source, url: normalizedUrl, enabled });
+    try {
+      const { error } = await supabase.functions.invoke('news-source-update', {
+        body: {
+          id: source.id,
+          slug: source.id,
+          source_key: source.id,
+          key: source.id,
+          feed_url: normalizedUrl,
+          is_enabled: enabled,
+        },
+      });
+      if (error) throw error;
+      toast.success(`${source.name} salvestatud`);
+    } catch (error: unknown) {
+      const maybeErr = error as { message?: string } | null;
+      toast.error(`${source.name}: DB salvestus ebaõnnestus (${maybeErr?.message || 'Viga'})`);
+    }
   };
 
   const testFeed = async () => {

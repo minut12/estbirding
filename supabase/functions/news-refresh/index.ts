@@ -4,7 +4,7 @@ import { parseRss, normalizeRssItem, type NormalizedRssItem } from "../_shared/r
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
 };
 
 type SourceRow = {
@@ -80,7 +80,11 @@ async function cacheImage(
   try {
     const imageRes = await fetch(imageUrl, {
       signal: controller.signal,
-      headers: { "User-Agent": "EstBirding/1.0" },
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "image/avif,image/webp,image/*,*/*;q=0.8",
+        "Referer": "https://www.facebook.com/",
+      },
     });
     if (!imageRes.ok) return false;
     const bytes = await imageRes.arrayBuffer();
@@ -170,15 +174,15 @@ function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
-  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST" && req.method !== "GET") return json({ error: "Method not allowed" }, 405);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceRoleKey) return json({ error: "Missing env: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" }, 500);
 
   try {
-    const body = await req.json().catch(() => ({}));
+    const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     const maxItemsPerSource = Math.max(1, Math.min(100, Number(body?.max_items_per_source ?? 15) || 15));
     const cacheImages = body?.cache_images === true;
     const cacheLimit = Math.max(0, Number(body?.cache_limit ?? 5) || 5);
@@ -186,13 +190,13 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, serviceRoleKey);
     const { data: sources, error: sourcesError } = await supabase
       .from("news_sources")
-      .select("id, slug, name, key, source_key, type, feed_url, fetch_url, is_enabled, is_active")
-      .eq("is_enabled", true)
-      .or("is_active.is.null,is_active.eq.true");
+      .select("*")
+      .eq("is_enabled", true);
     if (sourcesError) return json({ error: sourcesError.message }, 500);
 
     const enabledSources = (sources || []) as SourceRow[];
     const errors: Array<{ source: string; error: string }> = [];
+    const sourceCounts = new Map<string, { slug: string; inserted: number; updated: number; errors?: string[] }>();
     let inserted = 0;
     let updated = 0;
     let skipped = 0;
@@ -201,28 +205,34 @@ Deno.serve(async (req) => {
     for (const source of enabledSources) {
       const slug = String(source.slug || "").toLowerCase();
       const name = String(source.name || "").toLowerCase();
-      const type = String(source.type || "").toLowerCase();
-      const isEoy = slug.includes("eoy") || slug.includes("eou") || name.includes("eoü") || String(source.fetch_url || "").includes("eoy.ee");
+      const type = String(source.type || source.kind || "").toLowerCase();
+      const isEoy = slug.includes("eoy") || slug.includes("eou") || String(source.fetch_url || source.feed_url || "").includes("eoy.ee");
 
       if (isEoy) {
         const result = await refreshEoy(supabaseUrl, serviceRoleKey, source, maxItemsPerSource);
         inserted += result.inserted;
         updated += result.updated;
+        const acc = sourceCounts.get(source.slug)!;
+        acc.inserted += result.inserted;
+        acc.updated += result.updated;
         if (result.error) errors.push({ source: source.slug, error: result.error });
         continue;
       }
 
-      if (type !== "rss" || !source.feed_url) {
+      const sourceUrl = String(source.feed_url || source.url || "").trim();
+      if (type !== "rss" || !sourceUrl) {
         skipped += 1;
         continue;
       }
 
       try {
-        const feedRes = await fetch(String(source.feed_url).trim(), {
+        const feedRes = await fetch(sourceUrl, {
           headers: { "User-Agent": "EstBirding/1.0", "Accept": "application/rss+xml, application/xml, text/xml, */*" },
         });
         if (!feedRes.ok) {
           errors.push({ source: source.slug, error: `RSS HTTP ${feedRes.status}` });
+          const acc = sourceCounts.get(source.slug)!;
+          acc.errors?.push(`RSS HTTP ${feedRes.status}`);
           continue;
         }
         const xml = await feedRes.text();
@@ -235,10 +245,15 @@ Deno.serve(async (req) => {
             .select("id, image_url, cached_image_url, source_slug, source_key")
             .single();
           if (error || !upserted?.id) {
-            if (error) errors.push({ source: source.slug, error: error.message });
+            if (error) {
+              errors.push({ source: source.slug, error: error.message });
+              const acc = sourceCounts.get(source.slug)!;
+              acc.errors?.push(error.message);
+            }
             continue;
           }
           inserted += 1;
+          sourceCounts.get(source.slug)!.inserted += 1;
 
           if (cacheImages && cachedImages < cacheLimit && upserted.image_url && !upserted.cached_image_url) {
             const ok = await cacheImage(supabase, supabaseUrl, upserted);
@@ -247,12 +262,21 @@ Deno.serve(async (req) => {
         }
       } catch (e: any) {
         errors.push({ source: source.slug, error: String(e?.message || e) });
+        sourceCounts.get(source.slug)?.errors?.push(String(e?.message || e));
       }
     }
 
     return json({
       ok: true,
+      sources: Array.from(sourceCounts.values()).map((s) => ({
+        slug: s.slug,
+        inserted: s.inserted,
+        updated: s.updated,
+        errors: (s.errors || []).length > 0 ? s.errors : undefined,
+      })),
       sourcesProcessed: enabledSources.length,
+      totalInserted: inserted,
+      totalUpdated: updated,
       itemsInserted: inserted,
       itemsUpdated: updated,
       cachedImages,
@@ -263,3 +287,6 @@ Deno.serve(async (req) => {
     return json({ error: (error as Error).message }, 500);
   }
 });
+      if (!sourceCounts.has(source.slug)) {
+        sourceCounts.set(source.slug, { slug: source.slug, inserted: 0, updated: 0, errors: [] });
+      }

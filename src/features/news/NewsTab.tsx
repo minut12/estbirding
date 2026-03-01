@@ -58,7 +58,7 @@ interface NewsSource {
   key?: string | null;
 }
 
-const NEWS_VIEW_SELECT = 'id,title,url,permalink_url,summary,body,content_html,published_at,created_at,fetched_at,archived,source_id,source_slug,source_name,source_key,image_url,image_cached_url,cached_image_url,cached_image_path,display_image_url,language,source_lang,guid,raw_json';
+const NEWS_VIEW_SELECT = 'id,title,url,permalink_url,summary,body,content,content_html,published_at,created_at,fetched_at,archived,source_id,source_slug,source_name,source_key,image_url,image_cached_url,cached_image_url,cached_image_path,display_image_url,language,source_lang,guid,raw_json';
 const NEWS_TABLE_FALLBACK_SELECT = 'id, source_id, source_key, source_slug, title, url, permalink_url, summary, body, content_html, published_at, created_at, image_url, cached_image_url, image_cached_url, archived, language, source_lang, guid, raw_json, fetched_at';
 
 /* Format date */
@@ -241,12 +241,11 @@ function shouldFallbackNewsQuery(error: unknown): boolean {
 
 const BIRDING_POLAND_NAME = 'birding poland';
 
-function proxifyImageUrlIfNeeded(_sourceName: string, url: string | null, proxyBase: string): string | null {
+function proxifyImageUrlIfNeeded(_sourceName: string, url: string | null, _proxyBase: string): string | null {
   if (!url) return null;
   const clean = url.trim();
   if (!clean) return null;
   if (clean.startsWith('data:') || clean.startsWith('blob:')) return clean;
-  if (/^https?:\/\//i.test(clean) && proxyBase) return `${proxyBase}${encodeURIComponent(clean)}`;
   return clean;
 }
 
@@ -484,7 +483,7 @@ const {
     queryKey: ['news-items', tab],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('news_items_v')
+        .from('news_items')
         .select(NEWS_VIEW_SELECT)
         .eq('archived', tab === 'archive')
         .order('published_at', { ascending: false, nullsFirst: false })
@@ -529,7 +528,8 @@ const {
       }
       const mapped = ((data || []) as Array<Record<string, any>>).map((row) => ({
         ...row,
-        is_archived: Boolean(row.is_archived ?? row.archived),
+        is_archived: Boolean(row.archived),
+        display_image_url: row.display_image_url || row.cached_image_url || row.image_cached_url || row.image_url || null,
         content: row.content || row.body || null,
         source_name: row.source_name || row.source_slug || row.source_key || 'Unknown source',
       })) as NewsItem[];
@@ -615,7 +615,7 @@ const {
       const fnName = 'news-refresh';
       const { data, error } = await supabase.functions.invoke(fnName, {
         method: 'POST',
-        body: { max_items_per_source: 15, cache_images: false },
+        body: { force: true, max_items_per_source: 15, cache_images: false },
       });
       if (error) throw new Error(error.message || `${fnName}: ${formatErrorReason(error)}`);
       return data;
@@ -717,7 +717,7 @@ const {
               onChange={(e) => setSourceFilter(e.target.value)}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             >
-              <option value="all">Kõik allikad</option>
+              <option value="all">K\u00F5ik allikad</option>
               {sources.map((s) => {
                 return <option key={s.id} value={s.id}>{s.name}</option>;
               })}
@@ -796,7 +796,6 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
   onToggleArchive: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const [triedProxyFallback, setTriedProxyFallback] = useState(false);
   const [cardRef, isVisible] = useOnceVisible<HTMLDivElement>();
   const debouncedVisible = useDebouncedTrue(isVisible, 180);
   const cachedThumb = decodeUrl(item.cached_image_url);
@@ -806,9 +805,7 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
   const isBirdingPoland = sourceName === 'Birding Poland';
   const thumbCandidate = displayImageUrl || cachedThumb || rawImageUrl || null;
   const proxiedThumb = proxifyImageUrlIfNeeded(sourceName, thumbCandidate, proxyBase);
-  const thumb = (!isBirdingPoland && triedProxyFallback && thumbCandidate)
-    ? `${proxyBase}${encodeURIComponent(thumbCandidate)}`
-    : proxiedThumb;
+  const thumb = proxiedThumb;
   const translation = useEtTranslation({
     enabled: showEtContent && autoTranslateEnabled && debouncedVisible,
     id: item.id,
@@ -829,7 +826,6 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
 
   useEffect(() => {
     setImageFailed(false);
-    setTriedProxyFallback(false);
   }, [thumb]);
 
   return (
@@ -849,10 +845,6 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
                 if (import.meta.env.DEV && isBirdingPoland) {
                   const maybeStatus = (e as any)?.nativeEvent?.target?.status ?? (e.currentTarget as any)?.naturalWidth ?? null;
                   console.warn('[news-image] birding-poland load failed', { thumb, cachedThumb, image_url: item.image_url, cached_image_url: item.cached_image_url, status: maybeStatus });
-                }
-                if (!isBirdingPoland && !triedProxyFallback && thumbCandidate) {
-                  setTriedProxyFallback(true);
-                  return;
                 }
                 (e.currentTarget as HTMLImageElement).style.display = 'none';
                 setImageFailed(true);
@@ -1049,17 +1041,6 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
             referrerPolicy="no-referrer"
             crossOrigin="anonymous"
             onError={() => {
-              const raw = decodeUrl(item.image_url) || decodeUrl(item.cached_image_url) || null;
-              if (!raw) {
-                setHeroFailed(true);
-                return;
-              }
-              const proxied = `${proxyBase}${encodeURIComponent(raw)}`;
-              const alreadyProxied = (heroSrc || '').includes('/functions/v1/proxy?url=');
-              if (!alreadyProxied && heroSrc !== proxied) {
-                setHeroSrc(proxied);
-                return;
-              }
               setHeroFailed(true);
             }}
           />

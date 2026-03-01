@@ -254,8 +254,10 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const dryRun = body?.dry_run === true;
-    const feedUrlOverride = typeof body?.feed_url === "string" ? body.feed_url : null;
+    const dryRun = body?.dry_run === true || body?.dryRun === true;
+    const feedUrlOverride = typeof body?.url === "string"
+      ? body.url
+      : (typeof body?.feed_url === "string" ? body.feed_url : null);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabase = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -278,7 +280,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const listingUrl = String(feedUrlOverride || source.fetch_url || "https://www.eoy.ee/ET/uudised/").trim();
+    const listingUrl = String(feedUrlOverride || source.fetch_url || source.url || "https://www.eoy.ee/ET/uudised/").trim();
     const baseUrl = "https://www.eoy.ee";
     const fetchHeaders = {
       "Cache-Control": "no-store",
@@ -286,7 +288,8 @@ Deno.serve(async (req) => {
       "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)",
     };
 
-    const listRes = await fetch(noCacheUrl(listingUrl), { headers: fetchHeaders });
+    const url2 = listingUrl.includes("?") ? `${listingUrl}&_ts=${Date.now()}` : `${listingUrl}?_ts=${Date.now()}`;
+    const listRes = await fetch(url2, { headers: fetchHeaders });
     if (!listRes.ok) throw new Error(`Failed to fetch EOÜ page: ${listRes.status}`);
     const html = await listRes.text();
 

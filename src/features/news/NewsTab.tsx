@@ -59,6 +59,7 @@ interface NewsSource {
 }
 
 const NEWS_VIEW_SELECT = 'id,title,url,permalink_url,summary,body,content,content_html,published_at,created_at,fetched_at,archived,source_id,source_slug,source_name,source_key,image_url,image_cached_url,cached_image_url,cached_image_path,display_image_url,language,source_lang,guid,raw_json';
+const ALL_SOURCES_LABEL = "Kõik allikad";
 const NEWS_TABLE_FALLBACK_SELECT = 'id, source_id, source_key, source_slug, title, url, permalink_url, summary, body, content_html, published_at, created_at, image_url, cached_image_url, image_cached_url, archived, language, source_lang, guid, raw_json, fetched_at';
 
 /* Format date */
@@ -483,7 +484,7 @@ const {
     queryKey: ['news-items', tab],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('news_items')
+        .from('news_items_v')
         .select(NEWS_VIEW_SELECT)
         .eq('archived', tab === 'archive')
         .order('published_at', { ascending: false, nullsFirst: false })
@@ -622,7 +623,13 @@ const {
     },
     onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ['news-items'] });
-      const total = Number(data?.itemsUpserted ?? data?.upserts ?? data?.inserted ?? 0) || 0;
+      const total = Number(
+        data?.itemsUpserted
+        ?? ((Number(data?.totalInserted || 0) + Number(data?.totalUpdated || 0)) || 0)
+        ?? data?.upserts
+        ?? data?.inserted
+        ?? 0,
+      ) || 0;
       const errors = Array.isArray(data?.errors) ? data.errors : [];
       if (errors.length > 0) {
         const reason = String(errors[0]?.error || 'Viga').slice(0, 120);
@@ -717,7 +724,7 @@ const {
               onChange={(e) => setSourceFilter(e.target.value)}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             >
-              <option value="all">K\u00F5ik allikad</option>
+              <option value="all">{ALL_SOURCES_LABEL}</option>
               {sources.map((s) => {
                 return <option key={s.id} value={s.id}>{s.name}</option>;
               })}

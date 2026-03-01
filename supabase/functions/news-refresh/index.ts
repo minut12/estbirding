@@ -20,7 +20,13 @@ type SourceRow = {
   url?: string | null;
 };
 
-type StepError = { step: string; status?: number; bodySnippet?: string; message: string };
+type SourceSummary = {
+  slug: string;
+  inserted: number;
+  updated: number;
+  cachedImages: number;
+  errors: string[];
+};
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -72,6 +78,13 @@ function extFromContentType(contentType: string | null): string {
   return "jpg";
 }
 
+async function ensureNewsImagesBucket(supabase: any): Promise<void> {
+  await supabase.from("storage.buckets").upsert(
+    { id: "news-images", name: "news-images", public: true },
+    { onConflict: "id" },
+  );
+}
+
 async function cacheImage(
   supabase: any,
   supabaseUrl: string,
@@ -82,7 +95,7 @@ async function cacheImage(
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
-  const isFbCdn = /fbcdn\.net/i.test(imageUrl);
+  const isFbCdn = /fbcdn\.net|facebook\.com|scontent-/i.test(imageUrl);
   try {
     const imageRes = await fetch(imageUrl, {
       signal: controller.signal,
@@ -121,7 +134,15 @@ async function cacheImage(
   }
 }
 
-async function refreshEoy(supabaseUrl: string, serviceRoleKey: string, source: SourceRow): Promise<{ inserted: number; updated: number; error?: StepError }> {
+async function refreshEoy(
+  supabase: any,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  source: SourceRow,
+  cacheImages: boolean,
+  cacheLimitLeft: number,
+): Promise<SourceSummary> {
+  const summary: SourceSummary = { slug: source.slug, inserted: 0, updated: 0, cachedImages: 0, errors: [] };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
   try {
@@ -146,30 +167,37 @@ async function refreshEoy(supabaseUrl: string, serviceRoleKey: string, source: S
       try { return JSON.parse(rawBody || "{}"); } catch { return { error: rawBody || "EOÜ refresh failed" }; }
     })();
     if (!res.ok) {
-      return {
-        inserted: 0,
-        updated: 0,
-        error: {
-          step: "fetch-eoy-news",
-          status: res.status,
-          bodySnippet: String(rawBody || "").slice(0, 240),
-          message: payload?.error || `fetch-eoy-news HTTP ${res.status}`,
-        },
-      };
-    }
-    return {
-      inserted: Number(payload?.insertedCount ?? payload?.inserted ?? 0),
-      updated: Number(payload?.updatedCount ?? payload?.updated ?? 0),
-    };
-  } catch (e: any) {
-    return {
-      inserted: 0,
-      updated: 0,
-      error: {
+      summary.errors.push(JSON.stringify({
         step: "fetch-eoy-news",
-        message: String(e?.message || e),
-      },
-    };
+        status: res.status,
+        bodySnippet: String(rawBody || "").slice(0, 240),
+        message: payload?.error || `fetch-eoy-news HTTP ${res.status}`,
+      }));
+      return summary;
+    }
+
+    summary.inserted = Number(payload?.insertedCount ?? payload?.inserted ?? 0);
+    summary.updated = Number(payload?.updatedCount ?? payload?.updated ?? 0);
+
+    const itemIds = Array.isArray(payload?.itemIds) ? payload.itemIds.filter(Boolean) : [];
+    if (cacheImages && cacheLimitLeft > 0 && itemIds.length > 0) {
+      const { data: items } = await supabase
+        .from("news_items")
+        .select("id,image_url,cached_image_url,source_slug,source_key")
+        .in("id", itemIds)
+        .is("cached_image_url", null)
+        .not("image_url", "is", null)
+        .limit(cacheLimitLeft);
+      for (const item of items || []) {
+        if (summary.cachedImages >= cacheLimitLeft) break;
+        const ok = await cacheImage(supabase, supabaseUrl, item);
+        if (ok) summary.cachedImages += 1;
+      }
+    }
+    return summary;
+  } catch (e: any) {
+    summary.errors.push(JSON.stringify({ step: "fetch-eoy-news", message: String(e?.message || e) }));
+    return summary;
   } finally {
     clearTimeout(timer);
   }
@@ -193,6 +221,7 @@ function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array
       source_key: itemSourceKey,
       source_slug: source.slug,
       source_name: source.name,
+      external_id: guid,
       title,
       body: item.body || null,
       summary: item.body?.slice(0, 500) || null,
@@ -227,6 +256,8 @@ Deno.serve(async (req) => {
     const cacheLimit = Math.max(0, Number(body?.cache_limit ?? 5) || 5);
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
+    await ensureNewsImagesBucket(supabase);
+
     const { data: sources, error: sourcesError } = await supabase
       .from("news_sources")
       .select("id, slug, name, key, source_key, type, kind, feed_url, fetch_url, url, enabled, is_enabled")
@@ -234,8 +265,8 @@ Deno.serve(async (req) => {
     if (sourcesError) return json({ error: sourcesError.message }, 500);
 
     const enabledSources = (sources || []) as SourceRow[];
-    const errors: Array<{ source: string; error: string; step?: string; status?: number; bodySnippet?: string }> = [];
-    const sourceCounts = new Map<string, { slug: string; inserted: number; updated: number; errors: string[] }>();
+    const summaries: SourceSummary[] = [];
+    const errors: Array<{ source: string; error: string }> = [];
     let inserted = 0;
     let updated = 0;
     let cachedImages = 0;
@@ -244,77 +275,94 @@ Deno.serve(async (req) => {
     for (const source of enabledSources) {
       const slug = String(source.slug || "").toLowerCase();
       const type = String(source.type || source.kind || "").toLowerCase();
-      sourceCounts.set(source.slug, { slug: source.slug, inserted: 0, updated: 0, errors: [] });
 
-      const isEoy = slug.includes("eoy") || slug.includes("eou") || String(source.url || source.fetch_url || source.feed_url || "").includes("eoy.ee");
+      const isEoy = type === "scrape" && (slug === "eoy" || String(source.url || source.fetch_url || source.feed_url || "").includes("eoy.ee"));
       if (isEoy) {
-        const result = await refreshEoy(supabaseUrl, serviceRoleKey, source);
-        inserted += result.inserted;
-        updated += result.updated;
-        sourceCounts.get(source.slug)!.inserted += result.inserted;
-        sourceCounts.get(source.slug)!.updated += result.updated;
-        if (result.error) {
-          errors.push({ source: source.slug, error: result.error.message, step: result.error.step, status: result.error.status, bodySnippet: result.error.bodySnippet });
-          sourceCounts.get(source.slug)!.errors.push(result.error.message);
-        }
+        const summary = await refreshEoy(supabase, supabaseUrl, serviceRoleKey, source, cacheImages, Math.max(0, cacheLimit - cachedImages));
+        summaries.push(summary);
+        inserted += summary.inserted;
+        updated += summary.updated;
+        cachedImages += summary.cachedImages;
+        for (const err of summary.errors) errors.push({ source: source.slug, error: err });
         continue;
       }
 
       const sourceUrl = String(source.feed_url || source.url || "").trim();
+      if (type === "scrape") {
+        skipped += 1;
+        summaries.push({ slug: source.slug, inserted: 0, updated: 0, cachedImages: 0, errors: ["Unsupported scrape source"] });
+        continue;
+      }
       if (type !== "rss" || !sourceUrl) {
         skipped += 1;
+        summaries.push({ slug: source.slug, inserted: 0, updated: 0, cachedImages: 0, errors: [] });
         continue;
       }
 
+      const summary: SourceSummary = { slug: source.slug, inserted: 0, updated: 0, cachedImages: 0, errors: [] };
       try {
         const feedRes = await fetch(sourceUrl, {
           cache: "no-store",
           headers: { "User-Agent": "EstBirding/1.0", "Accept": "application/rss+xml, application/xml, text/xml, */*" },
         });
         if (!feedRes.ok) {
-          const msg = `RSS HTTP ${feedRes.status}`;
-          errors.push({ source: source.slug, error: msg });
-          sourceCounts.get(source.slug)!.errors.push(msg);
+          summary.errors.push(`RSS HTTP ${feedRes.status}`);
+          summaries.push(summary);
+          errors.push({ source: source.slug, error: `RSS HTTP ${feedRes.status}` });
           continue;
         }
 
         const xml = await feedRes.text();
         const rows = normalizeRssItems(parseRss(xml).map((it) => normalizeRssItem(it)), source).slice(0, maxItemsPerSource);
+        const externalIds = rows.map((row) => String(row.external_id || "")).filter(Boolean);
+        const { data: existingRows } = externalIds.length > 0
+          ? await supabase.from("news_items").select("external_id").in("external_id", externalIds)
+          : { data: [] };
+        const existingSet = new Set((existingRows || []).map((r: any) => String(r.external_id)));
+
         for (const row of rows) {
+          const extId = String(row.external_id || "");
           const { data: upserted, error } = await supabase
             .from("news_items")
-            .upsert(row, { onConflict: "source_key" })
+            .upsert(row, { onConflict: "external_id" })
             .select("id, image_url, cached_image_url, source_slug, source_key")
             .single();
           if (error || !upserted?.id) {
             const msg = error?.message || "upsert failed";
+            summary.errors.push(msg);
             errors.push({ source: source.slug, error: msg });
-            sourceCounts.get(source.slug)!.errors.push(msg);
             continue;
           }
 
-          inserted += 1;
-          sourceCounts.get(source.slug)!.inserted += 1;
+          if (extId && existingSet.has(extId)) {
+            summary.updated += 1;
+            updated += 1;
+          } else {
+            summary.inserted += 1;
+            inserted += 1;
+            if (extId) existingSet.add(extId);
+          }
+
           if (cacheImages && cachedImages < cacheLimit && upserted.image_url && !upserted.cached_image_url) {
             const ok = await cacheImage(supabase, supabaseUrl, upserted);
-            if (ok) cachedImages += 1;
+            if (ok) {
+              cachedImages += 1;
+              summary.cachedImages += 1;
+            }
           }
         }
       } catch (e: any) {
         const msg = String(e?.message || e);
+        summary.errors.push(msg);
         errors.push({ source: source.slug, error: msg });
-        sourceCounts.get(source.slug)!.errors.push(msg);
       }
+
+      summaries.push(summary);
     }
 
     return json({
       ok: true,
-      sources: Array.from(sourceCounts.values()).map((s) => ({
-        slug: s.slug,
-        inserted: s.inserted,
-        updated: s.updated,
-        errors: s.errors.length ? s.errors : undefined,
-      })),
+      sources: summaries,
       totalInserted: inserted,
       totalUpdated: updated,
       inserted,

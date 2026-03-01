@@ -370,6 +370,7 @@ Deno.serve(async (req) => {
         source_id: source.id,
         source_slug: source.slug || "eoy",
         source_key: guid,
+        external_id: guid,
         title: item.title,
         summary: item.summary || "",
         url: item.url,
@@ -386,7 +387,7 @@ Deno.serve(async (req) => {
 
       const { error } = await supabase
         .from("news_items")
-        .upsert(row, { onConflict: "source_key" });
+        .upsert(row, { onConflict: "external_id" });
 
       if (error) {
         console.error(`Upsert error for ${item.url}:`, error);

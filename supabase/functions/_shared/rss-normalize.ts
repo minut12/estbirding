@@ -133,29 +133,51 @@ function extractImageInfo(
   bodyHtml?: string,
   baseUrl?: string,
 ): { url: string | null; strategy: string | null } {
-  const fromMediaContent = getImageFromRssItem(item, bodyHtml, baseUrl, "media:content");
-  if (fromMediaContent) return { url: fromMediaContent, strategy: "media:content" };
+  const candidates: Array<{ url: string; strategy: string; rank: number }> = [];
+  const addCandidate = (url: string | null, strategy: string) => {
+    if (!url) return;
+    candidates.push({ url, strategy, rank: scoreImageCandidate(url, baseUrl) });
+  };
 
-  const fromMediaThumbnail = getImageFromRssItem(item, bodyHtml, baseUrl, "media:thumbnail");
-  if (fromMediaThumbnail) return { url: fromMediaThumbnail, strategy: "media:thumbnail" };
-
-  const fromEnclosure = getImageFromRssItem(item, bodyHtml, baseUrl, "enclosure");
-  if (fromEnclosure) return { url: fromEnclosure, strategy: "enclosure" };
+  addCandidate(getImageFromRssItem(item, bodyHtml, baseUrl, "media:content"), "media:content");
+  addCandidate(getImageFromRssItem(item, bodyHtml, baseUrl, "media:thumbnail"), "media:thumbnail");
+  addCandidate(getImageFromRssItem(item, bodyHtml, baseUrl, "enclosure"), "enclosure");
 
   const raw = String(item._raw || "");
-  const fromItunes = cleanImageCandidate(item["itunes:image"]?.href || item["itunes:image"]?.["@_href"] || findItunesImageFromRaw(raw), baseUrl);
-  if (fromItunes) return { url: fromItunes, strategy: "itunes:image" };
+  addCandidate(cleanImageCandidate(item["itunes:image"]?.href || item["itunes:image"]?.["@_href"] || findItunesImageFromRaw(raw), baseUrl), "itunes:image");
 
   const htmlCandidates = [bodyHtml, item["content:encoded"], item.content, item.description, item.summary];
   for (const html of htmlCandidates) {
-    const fromHtml = extractFirstImageUrl(html || "", baseUrl);
-    if (fromHtml) return { url: fromHtml, strategy: "html:first-img" };
+    addCandidate(extractFirstImageUrl(html || "", baseUrl), "html:first-img");
   }
 
-  const fromImage = cleanImageCandidate(item.image?.url, baseUrl);
-  if (fromImage) return { url: fromImage, strategy: "image:url" };
+  addCandidate(cleanImageCandidate(item.image?.url, baseUrl), "image:url");
 
-  return { url: null, strategy: null };
+  if (candidates.length === 0) return { url: null, strategy: null };
+  candidates.sort((a, b) => b.rank - a.rank);
+  return { url: candidates[0].url, strategy: candidates[0].strategy };
+}
+
+function scoreImageCandidate(url: string, baseUrl?: string): number {
+  let score = 10;
+  const host = hostname(url);
+  const baseHost = hostname(baseUrl || "");
+
+  if (host.includes("rss.app") || host.includes("rss2.app")) score += 100;
+  if (baseHost && host === baseHost) score += 80;
+  if (host.endsWith(".eoy.ee") || host === "eoy.ee" || host.endsWith(".estbirding.ee")) score += 60;
+  if (/fbcdn\.net|facebook\.com|scontent-|cdninstagram|fb\.com/i.test(host)) score -= 120;
+  if (/\.svg($|\?)/i.test(url)) score -= 10;
+
+  return score;
+}
+
+function hostname(value: string): string {
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
 }
 
 function getImageFromRssItem(

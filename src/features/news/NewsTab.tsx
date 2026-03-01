@@ -58,7 +58,7 @@ interface NewsSource {
   key?: string | null;
 }
 
-const NEWS_VIEW_SELECT = 'id,title,url,published_at,created_at,source_id,source_slug,source_name,image_url,cached_image_url,display_image_url';
+const NEWS_VIEW_SELECT = 'id,title,url,published_at,created_at,external_id,source_id,source_slug,source_name,image_url,cached_image_url,cached_image_path,display_image_url,summary,body,content,content_html,archived,fetched_at,guid,raw_json,language,source_lang';
 const ALL_SOURCES_LABEL = "Kõik allikad";
 const NEWS_TABLE_FALLBACK_SELECT = 'id, source_id, source_key, source_slug, title, url, permalink_url, summary, body, content_html, published_at, created_at, image_url, cached_image_url, image_cached_url, archived, language, source_lang, guid, raw_json, fetched_at';
 
@@ -497,6 +497,7 @@ const {
       const { data, error } = await supabase
         .from('news_items_v')
         .select(NEWS_VIEW_SELECT)
+        .eq('archived', tab === 'archive')
         .order('published_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false, nullsFirst: false })
         .limit(50);
@@ -629,7 +630,7 @@ const {
       const fnName = 'news-refresh';
       const { data, error } = await supabase.functions.invoke(fnName, {
         method: 'POST',
-        body: { force: true, max_items_per_source: 15, cache_images: false },
+        body: { force: true, sinceHours: 24 * 60, max_items_per_source: 15, cache_images: false },
       });
       if (error) throw new Error(error.message || `${fnName}: ${formatErrorReason(error)}`);
       return data;
@@ -655,7 +656,7 @@ const {
       else toast.info('Uusi uudiseid pole');
     },
     onError: (error) => {
-      const reason = formatErrorReason(error);
+      const reason = formatErrorReason(error) || JSON.stringify(error);
       setLastNewsFetchErrorShort(reason.slice(0, 120));
       toast.error('Refresh failed: news-refresh - ' + reason.slice(0, 160));
     },

@@ -78,21 +78,29 @@ function bodySnippet(body: string): string {
   return String(body || "").replace(/\s+/g, " ").trim().slice(0, 200);
 }
 
-const MOBILE_UA = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36";
-const DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36";
+const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+const DESKTOP_UA_RETRY = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36";
 
-function browserHeaders(userAgent: string, extra: Record<string, string> = {}): Record<string, string> {
+function makeBrowserHeaders(targetUrl: string, extra: Record<string, string> = {}): Record<string, string> {
+  const isRssApp = /(^|\.)rss\.app$/i.test((() => {
+    try { return new URL(targetUrl).hostname; } catch { return ""; }
+  })());
   return {
-    "user-agent": userAgent,
-    "accept-language": "en-US,en;q=0.9,et;q=0.8",
+    "user-agent": BROWSER_UA,
+    "accept": "application/rss+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5",
+    "accept-language": "en-US,en;q=0.9",
+    "cache-control": "no-cache",
+    ...(isRssApp ? { "referer": "https://rss.app/", "origin": "https://rss.app" } : {}),
     ...extra,
   };
 }
 
 async function fetchRssText(url: string, proxyBase = ""): Promise<RssFetchResult> {
-  const primaryAccept = "application/rss+xml, application/xml;q=0.9, text/xml;q=0.8, text/html;q=0.5, */*;q=0.1";
-  const mobileHeaders = browserHeaders(MOBILE_UA, { accept: primaryAccept, referer: "https://rss.app/" });
-  const desktopHeaders = browserHeaders(DESKTOP_UA, { accept: primaryAccept, referer: "https://rss.app/" });
+  const mobileHeaders = makeBrowserHeaders(url);
+  const desktopHeaders = {
+    ...makeBrowserHeaders(url),
+    "user-agent": DESKTOP_UA_RETRY,
+  };
 
   const fetchDirect = async (targetUrl: string): Promise<RssFetchResult> => {
     let direct = await fetch(targetUrl, { method: "GET", headers: mobileHeaders, redirect: "follow" });

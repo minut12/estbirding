@@ -43,7 +43,7 @@ export function getNewsImageSrc(item: NewsImageItem, proxyBase?: string): string
   const cached = cleanUrl(item.cached_image_url);
   const image = cleanUrl(item.image_url);
   if (display) return display;
+  if (cached) return cached;
   if (image) return getProxiedImageUrl(image, proxyBase);
-  return cached || image || "";
+  return "";
 }
-

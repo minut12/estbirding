@@ -61,13 +61,19 @@ type RssFetchResult = {
   bodySnippet: string;
 };
 
-const BROWSER_UA = "Mozilla/5.0 (Linux; Android 14; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36";
+const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
 
-function browserHeaders(extra: Record<string, string> = {}): Record<string, string> {
+function makeBrowserHeaders(targetUrl: string, extra: Record<string, string> = {}): Record<string, string> {
+  const isRssApp = /(^|\.)rss\.app$/i.test((() => {
+    try { return new URL(targetUrl).hostname; } catch { return ""; }
+  })());
   return {
     "user-agent": BROWSER_UA,
-    "accept-language": "en-US,en;q=0.9,et;q=0.8",
+    "accept": "application/rss+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5",
+    "accept-language": "en-US,en;q=0.9",
+    "cache-control": "no-cache",
+    ...(isRssApp ? { referer: "https://rss.app/", origin: "https://rss.app" } : {}),
     ...extra,
   };
 }
@@ -194,16 +200,13 @@ function buildProxyUrl(targetUrl: string, supabaseUrl: string): string {
 }
 
 async function fetchRssText(url: string, supabaseUrl: string): Promise<RssFetchResult> {
-  const rssHeaders = browserHeaders({
-    accept: "application/rss+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.1",
-    referer: "https://rss.app/",
-  });
+  const rssHeaders = makeBrowserHeaders(url);
   let direct = await fetch(url, { headers: rssHeaders, redirect: "follow" });
   if (!direct.ok && /rss\.app\/feeds\//i.test(url)) {
-    const htmlHeaders = browserHeaders({
-      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      referer: "https://rss.app/",
-    });
+    const htmlHeaders = {
+      ...makeBrowserHeaders(url),
+      "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    };
     direct = await fetch(url, { headers: htmlHeaders, redirect: "follow" });
   }
   const directText = await direct.text();
@@ -292,7 +295,7 @@ async function cacheImage(
       let res = await fetch(candidateUrl, {
         signal: controller.signal,
         method: "GET",
-        headers: browserHeaders({
+        headers: makeBrowserHeaders(imageUrl, {
           accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
           ...(isFbCdn ? { referer: "https://www.facebook.com/", origin: "https://www.facebook.com" } : {}),
         }),
@@ -306,7 +309,7 @@ async function cacheImage(
       const proxyRes = await fetch(buildProxyUrl(candidateUrl, supabaseUrl), {
         signal: controller.signal,
         method: "GET",
-        headers: browserHeaders({
+        headers: makeBrowserHeaders(candidateUrl, {
           accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
           ...(isFbCdn ? { referer: "https://www.facebook.com/", origin: "https://www.facebook.com" } : {}),
         }),
@@ -321,7 +324,7 @@ async function cacheImage(
       res = await fetch(wsrv, {
         signal: controller.signal,
         method: "GET",
-        headers: browserHeaders({
+        headers: makeBrowserHeaders(candidateUrl, {
           accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
         }),
         redirect: "follow",
@@ -347,7 +350,7 @@ async function cacheImage(
           const pageRes = await fetch(pageUrl, {
             signal: controller.signal,
             method: "GET",
-            headers: browserHeaders({ accept: "text/html,application/xhtml+xml,*/*;q=0.8" }),
+            headers: makeBrowserHeaders(pageUrl, { accept: "text/html,application/xhtml+xml,*/*;q=0.8" }),
             redirect: "follow",
           });
           if (pageRes.ok) {
@@ -804,3 +807,4 @@ Deno.serve(async (req) => {
     return jsonError("news-refresh", error, 500);
   }
 });
+

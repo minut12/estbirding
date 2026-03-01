@@ -11,6 +11,9 @@ const ALLOWED_DOMAINS = [
   "www.birdingpoland.com",
   "birdingpoland.org",
   "www.birdingpoland.org",
+  "fbcdn.net",
+  "facebook.com",
+  "external-preview.redd.it",
 ] as const;
 
 function json(status: number, body: unknown): Response {
@@ -23,6 +26,10 @@ function json(status: number, body: unknown): Response {
 function isAllowedHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
   return ALLOWED_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`));
+}
+
+function isImageContentType(contentType: string): boolean {
+  return contentType.toLowerCase().startsWith("image/");
 }
 
 Deno.serve(async (req) => {
@@ -56,14 +63,36 @@ Deno.serve(async (req) => {
 
   let upstream: Response;
   try {
-    upstream = await fetch(target.toString(), { method: "GET", redirect: "follow" });
+    const isFacebookCdn = /(^|\.)fbcdn\.net$|(^|\.)facebook\.com$|(^|\.)scontent\./i.test(target.hostname);
+    upstream = await fetch(target.toString(), {
+      method: "GET",
+      redirect: "follow",
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "image/avif,image/webp,image/*,*/*;q=0.8",
+        ...(isFacebookCdn ? { "Referer": "https://www.facebook.com/" } : {}),
+      },
+    });
   } catch (e) {
     return json(502, { error: "upstream_fetch_failed", message: String(e) });
   }
 
+  const bodyText = !upstream.ok ? await upstream.text().catch(() => "") : "";
+  if (!upstream.ok) {
+    return json(upstream.status, {
+      error: "upstream_non_ok",
+      status: upstream.status,
+      targetUrl: target.toString(),
+      snippet: String(bodyText || "").slice(0, 200),
+    });
+  }
+
   const contentType = upstream.headers.get("content-type") || "application/octet-stream";
+  const cacheControl = isImageContentType(contentType)
+    ? "public, max-age=86400"
+    : "public, max-age=300";
   return new Response(upstream.body, {
     status: upstream.status,
-    headers: { ...corsHeaders, "content-type": contentType },
+    headers: { ...corsHeaders, "content-type": contentType, "Cache-Control": cacheControl },
   });
 });

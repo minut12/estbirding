@@ -242,26 +242,46 @@ function shouldFallbackNewsQuery(error: unknown): boolean {
 }
 
 const BIRDING_POLAND_NAME = 'birding poland';
+const GENERIC_NEWS_FALLBACK = '/img/news-placeholder.png';
+const BIRDING_POLAND_FALLBACK = '/img/news-source-birdingpoland.png';
 
-function proxifyImageUrlIfNeeded(_sourceName: string, url: string | null, proxyBase: string): string | null {
-  if (!url) return null;
-  const clean = url.trim();
-  if (!clean) return null;
+function buildImageSrc(url: string | null | undefined, proxyBase: string): string {
+  const clean = decodeUrl(url)?.trim() || '';
+  if (!clean) return '';
   if (clean.startsWith('data:') || clean.startsWith('blob:')) return clean;
-  const needsProxy = /fbcdn\.net|facebook\.com|scontent-|cdninstagram|fb\.com/i.test(clean);
-  if (needsProxy && proxyBase) return buildProxyUrl(clean, proxyBase);
-  return clean;
+  try {
+    const parsed = new URL(clean);
+    const host = parsed.hostname.toLowerCase();
+    const isTrustedOwn = host.endsWith('.supabase.co') || host.endsWith('estbirding.ee');
+    if (isTrustedOwn || clean.includes('/storage/v1/object/public/')) return clean;
+    const shouldProxy = host === 'fbcdn.net'
+      || host.endsWith('.fbcdn.net')
+      || host.includes('scontent.')
+      || host === 'facebook.com'
+      || host.endsWith('.facebook.com')
+      || host === 'external-preview.redd.it'
+      || host === 'rss.app';
+    if (shouldProxy && proxyBase) return buildProxyUrl(clean, proxyBase);
+    return clean;
+  } catch {
+    return clean;
+  }
+}
+
+function getSourceFallbackImage(sourceName: string): string {
+  if (sourceName.trim().toLowerCase() === BIRDING_POLAND_NAME) return BIRDING_POLAND_FALLBACK;
+  return GENERIC_NEWS_FALLBACK;
 }
 
 function rewriteImgSrcToProxy(html: string, sourceName: string, proxyBase: string): string {
   if (!html) return html;
-  if (sourceName !== 'Birding Poland') return html;
   try {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     doc.querySelectorAll('img').forEach((img) => {
       const src = (img.getAttribute('src') || img.getAttribute('data-src') || '').trim();
       if (!src) return;
-      img.setAttribute('src', buildProxyUrl(src, proxyBase));
+      const rewritten = buildImageSrc(src, proxyBase);
+      if (rewritten) img.setAttribute('src', rewritten);
       img.removeAttribute('data-src');
     });
     return doc.body.innerHTML;
@@ -580,7 +600,7 @@ const {
     if (!bp) return;
     const imageUrl = decodeUrl(bp.image_url);
     const cached = decodeUrl(bp.cached_image_url);
-    const resolvedThumbnailSrc = proxifyImageUrlIfNeeded('Birding Poland', cached || imageUrl, resolvedProxyBase);
+    const resolvedThumbnailSrc = buildImageSrc(cached || imageUrl, resolvedProxyBase);
     console.log('[news-image] birding-poland newest item', {
       url: bp.url,
       image_url: bp.image_url || null,
@@ -817,8 +837,9 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
   const sourceName = sourceLabel(item, sources);
   const isBirdingPoland = sourceName === 'Birding Poland';
   const thumbCandidate = displayImageUrl ?? cachedThumb ?? rawImageUrl ?? null;
-  const primaryThumb = proxifyImageUrlIfNeeded(sourceName, thumbCandidate, proxyBase);
-  const fallbackThumb = proxifyImageUrlIfNeeded(sourceName, rawImageUrl, proxyBase);
+  const primaryThumb = buildImageSrc(thumbCandidate, proxyBase);
+  const fallbackThumb = buildImageSrc(rawImageUrl, proxyBase);
+  const sourceFallback = getSourceFallbackImage(sourceName);
   const [thumbSrc, setThumbSrc] = useState<string | null>(primaryThumb);
   const translation = useEtTranslation({
     enabled: showEtContent && autoTranslateEnabled && debouncedVisible,
@@ -862,9 +883,13 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
                   console.warn('[news-image] birding-poland load failed', { thumbSrc, cachedThumb, image_url: item.image_url, cached_image_url: item.cached_image_url, status: maybeStatus });
                 }
                 const currentSrc = (e.currentTarget as HTMLImageElement).src || '';
-                const cachedProxied = proxifyImageUrlIfNeeded(sourceName, cachedThumb, proxyBase) || '';
+                const cachedProxied = buildImageSrc(cachedThumb, proxyBase) || '';
                 if (fallbackThumb && currentSrc && cachedProxied && currentSrc === cachedProxied && fallbackThumb !== currentSrc) {
                   setThumbSrc(fallbackThumb);
+                  return;
+                }
+                if (currentSrc !== sourceFallback) {
+                  setThumbSrc(sourceFallback);
                   return;
                 }
                 setImageFailed(true);
@@ -989,11 +1014,11 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
   const displayBody = hasTranslatedContent
     ? (manualTranslation?.body_et || normalizedBodyText)
     : (contentHtml || normalizedBodyText);
-  const heroImageUrl = proxifyImageUrlIfNeeded(
-    sourceName,
+  const heroImageUrl = buildImageSrc(
     decodeUrl(item.display_image_url) || decodeUrl(item.cached_image_url) || decodeUrl(item.image_url) || null,
     proxyBase,
   );
+  const sourceFallback = getSourceFallbackImage(sourceName);
   const [heroSrc, setHeroSrc] = useState<string | null>(heroImageUrl);
   const [heroFailed, setHeroFailed] = useState(false);
   const rewrittenContentHtml = contentHtml ? rewriteImgSrcToProxy(contentHtml, sourceName, proxyBase) : null;
@@ -1058,6 +1083,10 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
             referrerPolicy="no-referrer"
             crossOrigin="anonymous"
             onError={() => {
+              if (heroSrc && heroSrc !== sourceFallback) {
+                setHeroSrc(sourceFallback);
+                return;
+              }
               setHeroFailed(true);
             }}
           />

@@ -267,11 +267,11 @@ async function pullRssSource({ source, supabase, proxyBase }: { source: any; sup
 
     inserted += 1;
 
-    if (sourceKey === BIRDING_POLAND_KEY && upserted?.id) {
+    if (upserted?.id && rowWithImage.image_url && !upserted.cached_image_url) {
       try {
         const cachedUrl = await cacheNewsImageById(
           upserted.id,
-          "Birding Poland",
+          String(source.name || source.slug || "news"),
           rowWithImage.permalink_url || rowWithImage.url || null,
           rowWithImage.image_url || null,
         );

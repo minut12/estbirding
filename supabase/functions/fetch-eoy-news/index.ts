@@ -155,32 +155,33 @@ interface ParsedItem {
 
 function parseEoyListPage(html: string, baseUrl: string, listingUrl: string): ParsedItem[] {
   const items: ParsedItem[] = [];
-  const blocks = html.split(/<(?:article|div\s+class=['"][^'"]*(?:news|article|post|entry)[^'"]*['"])/i);
-
-  for (let i = 1; i < blocks.length; i++) {
-    const block = blocks[i];
-    const title = stripHtml(block.match(/<h[2-4][^>]*>([\s\S]*?)<\/h[2-4]>/i)?.[1] || "");
-    if (!title) continue;
-
-    const linkMatch = block.match(/href=['"]([^'"]*\/ET\/[^'"]+)['"]/i)
-      || block.match(/href=['"]([^'"]*(?:uudised|news)\/[^'"]+)['"]/i)
-      || block.match(/href=['"](https?:\/\/[^'"]+)['"]/i);
-    const rawUrl = linkMatch?.[1] || "";
-    if (!rawUrl) continue;
-
+  const anchors = Array.from(html.matchAll(/<a\b[^>]*href=['"]([^'"]*\/ET\/[^'"]+)['"][^>]*>([\s\S]*?)<\/a>/gi));
+  const unique = new Set<string>();
+  for (const anchor of anchors) {
+    const rawUrl = anchor[1] || "";
     const url = canonicalizeArticleUrl(rawUrl, baseUrl);
     if (!isValidArticleUrl(url, listingUrl)) continue;
+    if (unique.has(url)) continue;
+    unique.add(url);
 
-    const dateRaw = block.match(/\d{1,2}\.\d{1,2}\.\d{4}/i)?.[0]
-      || block.match(/\d{1,2}\.?\s+(?:jaanuar|veebruar|märts|aprill|mai|juuni|juuli|august|september|oktoober|november|detsember)\s+\d{4}/i)?.[0]
+    const title = stripHtml(anchor[2] || "");
+    if (!title || title.length < 5) continue;
+
+    const anchorIndex = anchor.index ?? 0;
+    const contextStart = Math.max(0, anchorIndex - 900);
+    const contextEnd = Math.min(html.length, anchorIndex + 1200);
+    const context = html.slice(contextStart, contextEnd);
+
+    const dateRaw = context.match(/\d{1,2}\.\d{1,2}\.\d{4}/i)?.[0]
+      || context.match(/\d{1,2}\.?\s+(?:jaanuar|veebruar|märts|aprill|mai|juuni|juuli|august|september|oktoober|november|detsember)\s+\d{4}/i)?.[0]
       || null;
     const published_at = dateRaw ? parseEstonianDate(dateRaw) : null;
-
-    const image_url_original = extractImageFromBlock(block, baseUrl);
-    const pTexts = extractText(block, "p");
+    const image_url_original = extractImageFromBlock(context, baseUrl);
+    const pTexts = extractText(context, "p");
     const summary = pTexts.find((t) => t.length > 20) || pTexts[0] || "";
 
     items.push({ title, summary, url, image_url_original, published_at, published_raw: dateRaw });
+    if (items.length >= 4) break;
   }
 
   if (items.length === 0) {
@@ -193,7 +194,7 @@ function parseEoyListPage(html: string, baseUrl: string, listingUrl: string): Pa
     }
   }
 
-  return items;
+  return items.slice(0, 4);
 }
 
 function parseFeedItems(xml: string, baseUrl: string): ParsedItem[] {
@@ -259,7 +260,17 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabase = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    const { data: source, error: srcErr } = await supabase.from("news_sources").select("*").eq("slug", "eoy").single();
+    const { data: allSources, error: srcErr } = await supabase
+      .from("news_sources")
+      .select("*")
+      .eq("is_active", true)
+      .eq("is_enabled", true);
+    const source = (allSources || []).find((s: any) => {
+      const slug = String(s?.slug || "").toLowerCase();
+      const name = String(s?.name || "").toLowerCase();
+      const fetchUrl = String(s?.fetch_url || s?.feed_url || "").toLowerCase();
+      return slug.includes("eoy") || slug.includes("eou") || name.includes("eoü") || fetchUrl.includes("eoy.ee");
+    });
     if (srcErr || !source) {
       return new Response(JSON.stringify({ error: "EOÜ source not found" }), {
         status: 404,
@@ -319,7 +330,7 @@ Deno.serve(async (req) => {
       const { data: existingRows } = await supabase
         .from("news_items")
         .select("url")
-        .eq("source_slug", "eoy")
+        .eq("source_id", source.id)
         .in("url", urls);
       for (const row of (existingRows || [])) {
         const u = String(row?.url || "").trim();
@@ -353,7 +364,7 @@ Deno.serve(async (req) => {
 
       const row: Record<string, unknown> = {
         source_id: source.id,
-        source_slug: "eoy",
+        source_slug: source.slug || "eoy",
         source_key: source.source_key || source.key || "eoy",
         title: item.title,
         summary: item.summary || "",

@@ -15,8 +15,16 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const proxyBase = String(body?.proxyBase || "").trim() || null;
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!supabaseUrl || !serviceRoleKey) {
+      return new Response(JSON.stringify({
+        error: "Missing env: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY",
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" },
+      });
+    }
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     const { data: sources, error: srcErr } = await supabase
@@ -36,8 +44,10 @@ Deno.serve(async (req) => {
 
     const targetSources = (workingSources || []).filter((s: any) => {
       const n = String(s?.name || "").toLowerCase();
+      const slug = String(s?.slug || "").toLowerCase();
       const t = String(s?.type || s?.kind || "").toLowerCase();
-      return (t === "scrape" && (n.includes("eoü") || n.includes("eoy"))) || (t === "rss" && n.includes("birding poland"));
+      return (t === "scrape" && (n.includes("eoü") || n.includes("eoy") || slug.includes("eoy") || slug.includes("eou")))
+        || (t === "rss" && (n.includes("birding poland") || slug.includes("birding")));
     });
 
     const pullRes = await fetch(`${supabaseUrl}/functions/v1/news-pull`, {

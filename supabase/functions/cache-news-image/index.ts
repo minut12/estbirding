@@ -109,10 +109,11 @@ Deno.serve(async (req) => {
     if (item?.id) {
       await supabase.from("news_items").update({
         cached_image_url: cachedImageUrl,
+        cached_image_path: filePath,
       }).eq("id", item.id);
     }
 
-    return new Response(JSON.stringify({ cached_image_url: cachedImageUrl }), {
+    return new Response(JSON.stringify({ cached_image_url: cachedImageUrl, cached_image_path: filePath }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {

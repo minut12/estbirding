@@ -48,6 +48,17 @@ type RssFetchResult = {
   bodySnippet: string;
 };
 
+const BROWSER_UA = "Mozilla/5.0 (Linux; Android 14; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36";
+const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
+
+function browserHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    "user-agent": BROWSER_UA,
+    "accept-language": "en-US,en;q=0.9,et;q=0.8",
+    ...extra,
+  };
+}
+
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -124,13 +135,18 @@ function buildProxyUrl(targetUrl: string, supabaseUrl: string): string {
 }
 
 async function fetchRssText(url: string, supabaseUrl: string): Promise<RssFetchResult> {
-  const headers = {
-    "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)",
-    "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9,et-EE;q=0.7",
-  };
-
-  const direct = await fetch(url, { headers, redirect: "follow" });
+  const rssHeaders = browserHeaders({
+    accept: "application/rss+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.1",
+    referer: "https://rss.app/",
+  });
+  let direct = await fetch(url, { headers: rssHeaders, redirect: "follow" });
+  if (!direct.ok && /rss\.app\/feeds\//i.test(url)) {
+    const htmlHeaders = browserHeaders({
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      referer: "https://rss.app/",
+    });
+    direct = await fetch(url, { headers: htmlHeaders, redirect: "follow" });
+  }
   const directText = await direct.text();
   const directType = String(direct.headers.get("content-type") || "");
   const directBlocked = looksLikeHtmlChallenge(directType, directText);
@@ -147,7 +163,7 @@ async function fetchRssText(url: string, supabaseUrl: string): Promise<RssFetchR
     };
   }
 
-  const proxied = await fetch(buildProxyUrl(url, supabaseUrl), { headers, redirect: "follow" });
+  const proxied = await fetch(buildProxyUrl(url, supabaseUrl), { headers: rssHeaders, redirect: "follow" });
   const proxiedText = await proxied.text();
   const proxiedType = String(proxied.headers.get("content-type") || "");
   const proxiedBlocked = looksLikeHtmlChallenge(proxiedType, proxiedText);
@@ -171,12 +187,14 @@ async function sha1Hex(input: string): Promise<string> {
 
 function extFromContentType(contentType: string | null): string {
   const ct = String(contentType || "").toLowerCase();
+  if (!ct) return "bin";
+  if (ct.includes("jpeg") || ct.includes("jpg")) return "jpg";
   if (ct.includes("png")) return "png";
   if (ct.includes("webp")) return "webp";
   if (ct.includes("gif")) return "gif";
   if (ct.includes("avif")) return "avif";
   if (ct.includes("svg")) return "svg";
-  return "jpg";
+  return "bin";
 }
 
 async function ensureNewsImagesBucket(supabase: any): Promise<void> {
@@ -203,40 +221,47 @@ async function cacheImage(
     image_url?: string | null;
     cached_image_url?: string | null;
   },
+  options: { force?: boolean } = {},
 ): Promise<{ ok: boolean; error?: string }> {
   const imageUrl = decodeUrl(item.image_url);
-  if (!item.id || !imageUrl || item.cached_image_url) return { ok: false };
+  if (!item.id || !imageUrl || (item.cached_image_url && !options.force)) return { ok: false };
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 7000);
+  const timer = setTimeout(() => controller.abort(), 12000);
   const isFbCdn = /fbcdn\.net|facebook\.com|scontent-/i.test(imageUrl);
   try {
     let imageRes = await fetch(imageUrl, {
       signal: controller.signal,
       method: "GET",
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "image/*,*/*;q=0.8",
-        ...(isFbCdn ? { "Referer": "https://www.facebook.com/" } : {}),
-      },
+      headers: browserHeaders({
+        accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        referer: "https://www.facebook.com/",
+      }),
       redirect: "follow",
     });
-    if (!imageRes.ok) {
-      const proxiedUrl = buildProxyUrl(imageUrl, supabaseUrl);
-      imageRes = await fetch(proxiedUrl, {
+    const type1 = String(imageRes.headers.get("content-type") || "").toLowerCase();
+    const len1 = Number(imageRes.headers.get("content-length") || "0");
+    const directValid = imageRes.ok
+      && type1.startsWith("image/")
+      && (!Number.isFinite(len1) || len1 <= 0 || len1 <= MAX_IMAGE_BYTES);
+    if (!directValid) {
+      const wsrv = `https://images.weserv.nl/?url=${encodeURIComponent(imageUrl.replace(/^https?:\/\//i, ""))}`;
+      imageRes = await fetch(wsrv, {
         signal: controller.signal,
         method: "GET",
-        headers: {
-          "User-Agent": "Mozilla/5.0",
-          "Accept": "image/*,*/*;q=0.8",
-          ...(isFbCdn ? { "Referer": "https://www.facebook.com/" } : {}),
-        },
+        headers: browserHeaders({
+          accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        }),
         redirect: "follow",
       });
     }
-    if (!imageRes.ok) return { ok: false, error: `image fetch HTTP ${imageRes.status}` };
+    const finalType = String(imageRes.headers.get("content-type") || "").toLowerCase();
+    const finalLen = Number(imageRes.headers.get("content-length") || "0");
+    if (!imageRes.ok || !finalType.startsWith("image/")) return { ok: false, error: `image fetch invalid (${imageRes.status}, ${finalType || "unknown"})` };
+    if (Number.isFinite(finalLen) && finalLen > MAX_IMAGE_BYTES) return { ok: false, error: `image too large (${finalLen} bytes)` };
 
     const bytes = await imageRes.arrayBuffer();
+    if (bytes.byteLength > MAX_IMAGE_BYTES) return { ok: false, error: `image too large (${bytes.byteLength} bytes)` };
     const ext = extFromContentType(imageRes.headers.get("content-type"));
     const sourcePath = String(item.source_slug || item.source_key || "news").toLowerCase().replace(/[^a-z0-9_-]+/g, "-") || "news";
     const rawGuid = String(item.guid || item.external_id || item.id || "").trim();
@@ -433,6 +458,7 @@ Deno.serve(async (req) => {
     for (const source of enabledSources) {
       const slug = String(source.slug || "").toLowerCase();
       const type = String(source.type || "").toLowerCase();
+      const isBirdingPoland = slug === "birding_poland" || slug === "facebook_birdingpoland";
 
       const isEoy = type === "scrape" && (slug === "eoy" || String(source.fetch_url || source.feed_url || "").includes("eoy.ee"));
       if (isEoy) {
@@ -568,8 +594,8 @@ Deno.serve(async (req) => {
             if (extId) existingSet.add(extId);
           }
 
-          if (cacheImages && cachedImages < cacheLimit && upserted.image_url && !upserted.cached_image_url) {
-            const cacheResult = await cacheImage(supabase, supabaseUrl, upserted);
+          if (cacheImages && cachedImages < cacheLimit && upserted.image_url && (isBirdingPoland || !upserted.cached_image_url)) {
+            const cacheResult = await cacheImage(supabase, supabaseUrl, upserted, { force: isBirdingPoland });
             if (cacheResult.ok) {
               cachedImages += 1;
               summary.cachedImages += 1;
@@ -585,7 +611,7 @@ Deno.serve(async (req) => {
         errors.push({ source: source.slug, error: msg, status: summary.status, contentType: summary.contentType, bodySnippet: summary.bodySnippet });
       }
 
-      if (cacheImages && cachedImages < cacheLimit && String(source.slug || "").toLowerCase() === "birding_poland") {
+      if (cacheImages && cachedImages < cacheLimit && isBirdingPoland) {
         const remaining = Math.max(0, cacheLimit - cachedImages);
         if (remaining > 0) {
           const { data: existingUncached } = await supabase
@@ -598,7 +624,7 @@ Deno.serve(async (req) => {
             .limit(remaining);
           for (const item of existingUncached || []) {
             if (cachedImages >= cacheLimit) break;
-            const cacheResult = await cacheImage(supabase, supabaseUrl, item);
+            const cacheResult = await cacheImage(supabase, supabaseUrl, item, { force: true });
             if (cacheResult.ok) {
               cachedImages += 1;
               summary.cachedImages += 1;

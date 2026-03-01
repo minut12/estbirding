@@ -78,15 +78,31 @@ function bodySnippet(body: string): string {
   return String(body || "").replace(/\s+/g, " ").trim().slice(0, 200);
 }
 
-async function fetchRssText(url: string, proxyBase = ""): Promise<RssFetchResult> {
-  const headers = {
-    "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)",
-    "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9,et-EE;q=0.7",
+const BROWSER_UA = "Mozilla/5.0 (Linux; Android 14; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36";
+
+function browserHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    "user-agent": BROWSER_UA,
+    "accept-language": "en-US,en;q=0.9,et;q=0.8",
+    ...extra,
   };
+}
+
+async function fetchRssText(url: string, proxyBase = ""): Promise<RssFetchResult> {
+  const rssHeaders = browserHeaders({
+    accept: "application/rss+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.1",
+    referer: "https://rss.app/",
+  });
+  const htmlHeaders = browserHeaders({
+    accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    referer: "https://rss.app/",
+  });
 
   const fetchDirect = async (targetUrl: string): Promise<RssFetchResult> => {
-    const direct = await fetch(targetUrl, { method: "GET", headers, redirect: "follow" });
+    let direct = await fetch(targetUrl, { method: "GET", headers: rssHeaders, redirect: "follow" });
+    if (!direct.ok && /rss\.app\/feeds\//i.test(targetUrl)) {
+      direct = await fetch(targetUrl, { method: "GET", headers: htmlHeaders, redirect: "follow" });
+    }
     const directText = await direct.text();
     const directType = String(direct.headers.get("content-type") || "");
     const directBlocked = looksLikeHtmlChallenge(directType, directText);
@@ -111,7 +127,7 @@ async function fetchRssText(url: string, proxyBase = ""): Promise<RssFetchResult
 
   const fetchViaProxy = async (targetUrl: string): Promise<RssFetchResult> => {
     const proxiedUrl = buildProxyUrl(targetUrl, proxyBase);
-    const proxied = await fetch(proxiedUrl, { method: "GET", headers, redirect: "follow" });
+    const proxied = await fetch(proxiedUrl, { method: "GET", headers: rssHeaders, redirect: "follow" });
     const proxiedText = await proxied.text();
     const proxiedType = String(proxied.headers.get("content-type") || "");
     const proxiedBlocked = looksLikeHtmlChallenge(proxiedType, proxiedText);

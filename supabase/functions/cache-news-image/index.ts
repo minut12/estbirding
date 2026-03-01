@@ -5,13 +5,24 @@ const corsHeaders = {
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
+const BROWSER_UA = "Mozilla/5.0 (Linux; Android 14; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36";
+const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
+
+function browserHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    "user-agent": BROWSER_UA,
+    "accept-language": "en-US,en;q=0.9,et;q=0.8",
+    ...extra,
+  };
+}
 
 function getExtension(contentType: string | null): string {
-  if (!contentType) return "jpg";
+  if (!contentType) return "bin";
+  if (contentType.includes("jpeg") || contentType.includes("jpg")) return "jpg";
   if (contentType.includes("png")) return "png";
   if (contentType.includes("webp")) return "webp";
   if (contentType.includes("gif")) return "gif";
-  return "jpg";
+  return "bin";
 }
 
 async function sha1Hex(input: string): Promise<string> {
@@ -76,45 +87,59 @@ Deno.serve(async (req) => {
     const isFbCdn = /fbcdn\.net|facebook\.com|scontent-/i.test(targetImageUrl);
     let imageRes = await fetch(targetImageUrl, {
       method: "GET",
-      headers: {
-        "User-Agent": "EstBirding/1.0",
-        "Accept": "image/*,*/*;q=0.8",
-        ...(isFbCdn ? { "Referer": "https://www.facebook.com/" } : {}),
-      },
+      headers: browserHeaders({
+        "accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        "referer": "https://www.facebook.com/",
+      }),
       redirect: "follow",
     });
-    if (!imageRes.ok) {
-      const proxiedUrl = `${supabaseUrl}/functions/v1/proxy?url=${encodeURIComponent(targetImageUrl)}`;
-      imageRes = await fetch(proxiedUrl, {
+    const ct1 = String(imageRes.headers.get("content-type") || "").toLowerCase();
+    const len1 = Number(imageRes.headers.get("content-length") || "0");
+    const directValid = imageRes.ok
+      && ct1.startsWith("image/")
+      && (!Number.isFinite(len1) || len1 <= 0 || len1 <= MAX_IMAGE_BYTES);
+    if (!directValid) {
+      const wsrv = `https://images.weserv.nl/?url=${encodeURIComponent(targetImageUrl.replace(/^https?:\/\//i, ""))}`;
+      imageRes = await fetch(wsrv, {
         method: "GET",
-        headers: {
-          "User-Agent": "EstBirding/1.0",
-          "Accept": "image/*,*/*;q=0.8",
-          ...(isFbCdn ? { "Referer": "https://www.facebook.com/" } : {}),
-        },
+        headers: browserHeaders({
+          "accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        }),
         redirect: "follow",
       });
     }
-    if (!imageRes.ok) {
-      return new Response(JSON.stringify({ error: `Image fetch failed ${imageRes.status}` }), {
+    const contentType = String(imageRes.headers.get("content-type") || "").toLowerCase();
+    const contentLength = Number(imageRes.headers.get("content-length") || "0");
+    if (!imageRes.ok || !contentType.startsWith("image/")) {
+      return new Response(JSON.stringify({ error: `Image fetch failed ${imageRes.status} (${contentType || "unknown"})` }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const contentType = imageRes.headers.get("content-type");
+    if (Number.isFinite(contentLength) && contentLength > MAX_IMAGE_BYTES) {
+      return new Response(JSON.stringify({ error: `Image too large ${contentLength}` }), {
+        status: 413,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const ext = getExtension(contentType);
     const sourcePath = item?.source_key || sourceName.toLowerCase().replace(/[^a-z0-9_-]+/g, "-") || "news";
     const keyBasis = item?.external_id || item?.id || itemUrl || targetImageUrl;
     const keyHash = await sha1Hex(String(keyBasis));
     const filePath = `${sourcePath}/${keyHash}.${ext}`;
     const bytes = await imageRes.arrayBuffer();
+    if (bytes.byteLength > MAX_IMAGE_BYTES) {
+      return new Response(JSON.stringify({ error: `Image too large ${bytes.byteLength}` }), {
+        status: 413,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const { error: uploadError } = await supabase.storage
       .from("news-images")
       .upload(filePath, bytes, {
         upsert: true,
-        contentType: contentType || "image/jpeg",
+        contentType: contentType || "application/octet-stream",
       });
 
     if (uploadError) {

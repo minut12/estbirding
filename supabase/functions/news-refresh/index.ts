@@ -72,12 +72,17 @@ async function cacheImage(
   supabase: any,
   supabaseUrl: string,
   item: { id: string; source_slug?: string | null; source_key?: string | null; image_url?: string | null; cached_image_url?: string | null },
-): Promise<void> {
+): Promise<boolean> {
   const imageUrl = decodeUrl(item.image_url);
-  if (!item.id || !imageUrl || item.cached_image_url) return;
+  if (!item.id || !imageUrl || item.cached_image_url) return false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
   try {
-    const imageRes = await fetch(imageUrl, { headers: { "User-Agent": "EstBirding/1.0" } });
-    if (!imageRes.ok) return;
+    const imageRes = await fetch(imageUrl, {
+      signal: controller.signal,
+      headers: { "User-Agent": "EstBirding/1.0" },
+    });
+    if (!imageRes.ok) return false;
     const bytes = await imageRes.arrayBuffer();
     const ext = extFromContentType(imageRes.headers.get("content-type"));
     const sourcePath = String(item.source_slug || item.source_key || "news").toLowerCase().replace(/[^a-z0-9_-]+/g, "-") || "news";
@@ -90,34 +95,41 @@ async function cacheImage(
         upsert: true,
         contentType: imageRes.headers.get("content-type") || "image/jpeg",
       });
-    if (uploadError) return;
+    if (uploadError) return false;
 
     const cachedImageUrl = `${supabaseUrl}/storage/v1/object/public/news-images/${filePath}`;
     await supabase.from("news_items").update({
       cached_image_url: cachedImageUrl,
       cached_image_path: filePath,
     }).eq("id", item.id);
+    return true;
   } catch {
-    // best effort
+    return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
-async function refreshEoy(supabaseUrl: string, serviceRoleKey: string, source: SourceRow): Promise<{ inserted: number; updated: number }> {
-  const res = await fetch(`${supabaseUrl}/functions/v1/fetch-eoy-news`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${serviceRoleKey}`,
-      "apikey": serviceRoleKey,
-    },
-    body: JSON.stringify({ dry_run: false, feed_url: source.fetch_url || null }),
-  });
-  const payload = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(payload?.error || `fetch-eoy-news HTTP ${res.status}`);
-  return {
-    inserted: Number(payload?.insertedCount ?? payload?.inserted ?? 0),
-    updated: Number(payload?.updatedCount ?? payload?.updated ?? 0),
-  };
+async function refreshEoy(supabaseUrl: string, serviceRoleKey: string, source: SourceRow, maxItemsPerSource: number): Promise<{ inserted: number; updated: number; error?: string }> {
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/fetch-eoy-news`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${serviceRoleKey}`,
+        "apikey": serviceRoleKey,
+      },
+      body: JSON.stringify({ dry_run: false, feed_url: source.fetch_url || null, max_items: maxItemsPerSource }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) return { inserted: 0, updated: 0, error: payload?.error || `fetch-eoy-news HTTP ${res.status}` };
+    return {
+      inserted: Number(payload?.insertedCount ?? payload?.inserted ?? 0),
+      updated: Number(payload?.updatedCount ?? payload?.updated ?? 0),
+    };
+  } catch (e: any) {
+    return { inserted: 0, updated: 0, error: String(e?.message || e) };
+  }
 }
 
 function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array<Record<string, unknown>> {
@@ -137,6 +149,7 @@ function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array
       source_id: source.id,
       source_key: sourceKey,
       source_slug: source.slug,
+      source_name: source.name,
       title,
       body: item.body || null,
       summary: item.body?.slice(0, 500) || null,
@@ -168,7 +181,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const maxItemsPerSource = Math.max(1, Math.min(100, Number(body?.max_items_per_source ?? 15) || 15));
     const cacheImages = body?.cache_images === true;
-    const cacheLimit = Math.max(0, Number(body?.cache_limit ?? 0) || 0);
+    const cacheLimit = Math.max(0, Number(body?.cache_limit ?? 5) || 5);
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
     const { data: sources, error: sourcesError } = await supabase
@@ -183,6 +196,7 @@ Deno.serve(async (req) => {
     let inserted = 0;
     let updated = 0;
     let skipped = 0;
+    let cachedImages = 0;
 
     for (const source of enabledSources) {
       const slug = String(source.slug || "").toLowerCase();
@@ -191,13 +205,10 @@ Deno.serve(async (req) => {
       const isEoy = slug.includes("eoy") || slug.includes("eou") || name.includes("eoü") || String(source.fetch_url || "").includes("eoy.ee");
 
       if (isEoy) {
-        try {
-          const counts = await refreshEoy(supabaseUrl, serviceRoleKey, source);
-          inserted += counts.inserted;
-          updated += counts.updated;
-        } catch (e: any) {
-          errors.push({ source: source.slug, error: String(e?.message || e) });
-        }
+        const result = await refreshEoy(supabaseUrl, serviceRoleKey, source, maxItemsPerSource);
+        inserted += result.inserted;
+        updated += result.updated;
+        if (result.error) errors.push({ source: source.slug, error: result.error });
         continue;
       }
 
@@ -216,30 +227,22 @@ Deno.serve(async (req) => {
         }
         const xml = await feedRes.text();
         const rows = normalizeRssItems(parseRss(xml).map((item) => normalizeRssItem(item)), source).slice(0, maxItemsPerSource);
-        let cachedForSource = 0;
 
         for (const row of rows) {
-          const existing = await supabase
-            .from("news_items")
-            .select("id")
-            .eq("source_slug", row.source_slug)
-            .eq("guid", row.guid)
-            .maybeSingle();
-
           const { data: upserted, error } = await supabase
             .from("news_items")
             .upsert(row, { onConflict: "source_slug,guid" })
-            .select("id, source_slug, source_key, image_url, cached_image_url")
+            .select("id, image_url, cached_image_url, source_slug, source_key")
             .single();
           if (error || !upserted?.id) {
             if (error) errors.push({ source: source.slug, error: error.message });
             continue;
           }
-          if (existing?.data?.id) updated += 1;
-          else inserted += 1;
-          if (cacheImages && upserted.image_url && !upserted.cached_image_url && (cacheLimit === 0 || cachedForSource < cacheLimit)) {
-            await cacheImage(supabase, supabaseUrl, upserted);
-            cachedForSource += 1;
+          inserted += 1;
+
+          if (cacheImages && cachedImages < cacheLimit && upserted.image_url && !upserted.cached_image_url) {
+            const ok = await cacheImage(supabase, supabaseUrl, upserted);
+            if (ok) cachedImages += 1;
           }
         }
       } catch (e: any) {
@@ -250,16 +253,11 @@ Deno.serve(async (req) => {
     return json({
       ok: true,
       sourcesProcessed: enabledSources.length,
-      itemsUpserted: inserted + updated,
       itemsInserted: inserted,
       itemsUpdated: updated,
-      inserted,
-      updated,
-      skipped,
-      maxItemsPerSource,
-      cacheImages,
-      cacheLimit,
+      cachedImages,
       errors,
+      skipped,
     });
   } catch (error) {
     return json({ error: (error as Error).message }, 500);

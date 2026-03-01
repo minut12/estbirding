@@ -181,7 +181,7 @@ function parseEoyListPage(html: string, baseUrl: string, listingUrl: string): Pa
     const summary = pTexts.find((t) => t.length > 20) || pTexts[0] || "";
 
     items.push({ title, summary, url, image_url_original, published_at, published_raw: dateRaw });
-    if (items.length >= 4) break;
+    if (items.length >= 30) break;
   }
 
   if (items.length === 0) {
@@ -194,7 +194,7 @@ function parseEoyListPage(html: string, baseUrl: string, listingUrl: string): Pa
     }
   }
 
-  return items.slice(0, 4);
+  return items.slice(0, 30);
 }
 
 function parseFeedItems(xml: string, baseUrl: string): ParsedItem[] {
@@ -281,9 +281,9 @@ Deno.serve(async (req) => {
     const listingUrl = String(feedUrlOverride || source.fetch_url || "https://www.eoy.ee/ET/uudised/").trim();
     const baseUrl = "https://www.eoy.ee";
     const fetchHeaders = {
-      "Cache-Control": "no-cache, no-store, must-revalidate",
+      "Cache-Control": "no-store",
       "Pragma": "no-cache",
-      "User-Agent": "Mozilla/5.0",
+      "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)",
     };
 
     const listRes = await fetch(noCacheUrl(listingUrl), { headers: fetchHeaders });

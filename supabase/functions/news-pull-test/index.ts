@@ -56,8 +56,8 @@ Deno.serve(async (req) => {
 
       return new Response(JSON.stringify({
         ok: true,
-        count: Number(dryData?.count || 0),
-        sampleTitles: Array.isArray(dryData?.sampleTitles) ? dryData.sampleTitles : [],
+        count: Number(dryData?.count ?? dryData?.foundCount ?? 0),
+        sampleTitles: Array.isArray(dryData?.sampleTitles) ? dryData.sampleTitles : (Array.isArray(dryData?.first3) ? dryData.first3 : []),
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

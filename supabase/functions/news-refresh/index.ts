@@ -86,10 +86,13 @@ function extFromContentType(contentType: string | null): string {
 }
 
 async function ensureNewsImagesBucket(supabase: any): Promise<void> {
-  await supabase.from("storage.buckets").upsert(
-    { id: "news-images", name: "news-images", public: true },
-    { onConflict: "id" },
-  );
+  try {
+    await supabase.storage.getBucket("news-images");
+  } catch {
+    try {
+      await supabase.storage.createBucket("news-images", { public: true });
+    } catch { /* bucket likely already exists */ }
+  }
 }
 
 async function cacheImage(
@@ -330,7 +333,7 @@ Deno.serve(async (req) => {
           const extId = String(row.external_id || "");
           const { data: upserted, error } = await supabase
             .from("news_items")
-            .upsert(row, { onConflict: "external_id" })
+            .upsert(row, { onConflict: "guid" })
             .select("id, image_url, cached_image_url, source_slug, source_key")
             .single();
           if (error || !upserted?.id) {

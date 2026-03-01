@@ -156,8 +156,61 @@ interface ParsedItem {
 
 function parseEoyListPage(html: string, baseUrl: string, listingUrl: string): ParsedItem[] {
   const items: ParsedItem[] = [];
-  const anchors = Array.from(html.matchAll(/<a\b[^>]*href=['"]([^'"]*\/ET\/[^'"]+)['"][^>]*>([\s\S]*?)<\/a>/gi));
   const unique = new Set<string>();
+
+  // First try structured parsing: .ipost blocks (grid items)
+  const ipostBlocks = html.split(/<div\s+class=["']ipost\s+clearfix["']>/i).slice(1);
+  for (const block of ipostBlocks) {
+    // Try multiple patterns for the title link
+    let linkMatch = block.match(/<a\b[^>]*href=["']([^"']+)["'][^>]*>\s*<h3[^>]*>([\s\S]*?)<\/h3>\s*<\/a>/i);
+    if (!linkMatch) {
+      // Try: <h3><a href="...">title</a></h3>
+      linkMatch = block.match(/<h3[^>]*>\s*<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+    }
+    if (!linkMatch) continue;
+    const rawUrl = linkMatch[1];
+    const url = canonicalizeArticleUrl(rawUrl, baseUrl);
+    if (!url || !isValidArticleUrl(url, listingUrl)) continue;
+    if (unique.has(url)) continue;
+    unique.add(url);
+
+    const title = stripHtml(linkMatch[2] || "").trim();
+    if (!title || title.length < 5) continue;
+
+    const dateMatch = block.match(/<li><i[^>]*icon-calendar[^>]*><\/i>\s*([^<]+)<\/li>/i);
+    const dateRaw = dateMatch?.[1]?.trim() || null;
+    const published_at = dateRaw ? parseEstonianDate(dateRaw) : null;
+    const image_url_original = extractImageFromBlock(block, baseUrl);
+    const pTexts = extractText(block, "p");
+    const summary = pTexts.find((t) => t.length > 20) || pTexts[0] || "";
+
+    items.push({ title, summary, url, image_url_original, published_at, published_raw: dateRaw });
+    if (items.length >= 30) break;
+  }
+
+  // Also try the main/featured article (h1 in .small-thumbs)
+  const mainTitleMatch = html.match(/<div\s+class="entry-title"><h1>([\s\S]*?)<\/h1><\/div>/i);
+  if (mainTitleMatch) {
+    const mainTitle = stripHtml(mainTitleMatch[1]).trim();
+    const featuredBlock = html.match(/<div\s+id="current-news">([\s\S]*?)<div\s+class="clear-bottommargin/i);
+    if (featuredBlock && mainTitle.length >= 5) {
+      const featuredUrl = featuredBlock[1].match(/<a\b[^>]*href=["']([^"']+eoy\.ee[^"']+)["']/i)?.[1];
+      const image_url_original = extractImageFromBlock(featuredBlock[1], baseUrl);
+      const dateRaw = featuredBlock[1].match(/\d{1,2}\.\s+\S+\s+\d{4}/i)?.[0] || null;
+      const published_at = dateRaw ? parseEstonianDate(dateRaw) : null;
+      const url = featuredUrl ? canonicalizeArticleUrl(featuredUrl, baseUrl) : "";
+      if (url && !unique.has(url)) {
+        unique.add(url);
+        items.unshift({ title: mainTitle, summary: "", url, image_url_original, published_at, published_raw: dateRaw });
+      }
+    }
+  }
+
+  // If structured parsing found articles, return them (skip fallback which picks up nav links)
+  if (items.length > 0) return items.slice(0, 30);
+
+  // Fallback: generic anchor matching (only used when structured parsing found nothing)
+  const anchors = Array.from(html.matchAll(/<a\b[^>]*href=['"]([^'"]*\/ET\/[^'"]+)['"][^>]*>([\s\S]*?)<\/a>/gi));
   for (const anchor of anchors) {
     const rawUrl = anchor[1] || "";
     const url = canonicalizeArticleUrl(rawUrl, baseUrl);
@@ -325,6 +378,8 @@ Deno.serve(async (req) => {
         ok: true,
         fetchMode,
         foundCount: normalizedItems.length,
+        count: normalizedItems.length,
+        sampleTitles: normalizedItems.slice(0, 5).map((i) => i.title),
         first3: normalizedItems.slice(0, 3).map((i) => i.url),
       }), { headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" } });
     }
@@ -389,7 +444,7 @@ Deno.serve(async (req) => {
 
       const { error } = await supabase
         .from("news_items")
-        .upsert(row, { onConflict: "external_id" });
+        .upsert(row, { onConflict: "guid" });
 
       if (error) {
         console.error(`Upsert error for ${item.url}:`, error);

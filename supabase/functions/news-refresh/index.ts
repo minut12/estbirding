@@ -38,6 +38,19 @@ type ErrorInfo = {
   bodySnippet?: string;
 };
 
+type CacheableNewsItem = {
+  id: string;
+  source_slug?: string | null;
+  source_key?: string | null;
+  external_id?: string | null;
+  guid?: string | null;
+  image_url?: string | null;
+  cached_image_url?: string | null;
+  raw_json?: Record<string, unknown> | null;
+  url?: string | null;
+  permalink_url?: string | null;
+};
+
 type RssFetchResult = {
   ok: boolean;
   text: string;
@@ -93,6 +106,45 @@ function decodeHtmlEntitiesForUrl(u: string | null | undefined): string {
     .replace(/&#39;/gi, "'")
     .replace(/^['"]+|['"]+$/g, "")
     .trim();
+}
+
+function uniqueUrls(urls: Array<string | null | undefined>): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of urls) {
+    const clean = decodeHtmlEntitiesForUrl(raw);
+    if (!clean || !/^https?:\/\//i.test(clean)) continue;
+    if (seen.has(clean)) continue;
+    seen.add(clean);
+    out.push(clean);
+  }
+  return out;
+}
+
+function extractImageCandidatesFromRaw(raw: Record<string, unknown> | null | undefined): string[] {
+  if (!raw || typeof raw !== "object") return [];
+  const direct = Array.isArray((raw as any).__image_candidates) ? (raw as any).__image_candidates : [];
+  const scored = Array.isArray((raw as any).__image_candidate_scores) ? (raw as any).__image_candidate_scores : [];
+  const scoredUrls = scored.map((x: any) => x?.url).filter(Boolean);
+  return uniqueUrls([...direct, ...scoredUrls]);
+}
+
+function extractImageFromHtml(html: string, pageUrl: string): string | null {
+  const og = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+    || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+  if (og?.[1]) {
+    try { return new URL(decodeHtmlEntitiesForUrl(og[1]), pageUrl).toString(); } catch { /* ignore */ }
+  }
+  const tw = html.match(/<meta[^>]+name=["']twitter:image(?::src)?["'][^>]+content=["']([^"']+)["']/i)
+    || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image(?::src)?["']/i);
+  if (tw?.[1]) {
+    try { return new URL(decodeHtmlEntitiesForUrl(tw[1]), pageUrl).toString(); } catch { /* ignore */ }
+  }
+  const img = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+  if (img?.[1]) {
+    try { return new URL(decodeHtmlEntitiesForUrl(img[1]), pageUrl).toString(); } catch { /* ignore */ }
+  }
+  return null;
 }
 
 function canonicalizeUrl(raw: string | null | undefined): string {
@@ -219,40 +271,25 @@ async function ensureNewsImagesBucket(supabase: any): Promise<void> {
 async function cacheImage(
   supabase: any,
   supabaseUrl: string,
-  item: {
-    id: string;
-    source_slug?: string | null;
-    source_key?: string | null;
-    external_id?: string | null;
-    guid?: string | null;
-    image_url?: string | null;
-    cached_image_url?: string | null;
-  },
+  item: CacheableNewsItem,
   options: { force?: boolean } = {},
 ): Promise<{ ok: boolean; error?: string }> {
-  const imageUrl = decodeHtmlEntitiesForUrl(item.image_url);
-  if (!item.id || !imageUrl || (item.cached_image_url && !options.force)) return { ok: false };
+  const primaryImageUrl = decodeHtmlEntitiesForUrl(item.image_url);
+  if (!item.id || (!primaryImageUrl && !item.raw_json) || (item.cached_image_url && !options.force)) return { ok: false };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
-  const isFbCdn = /fbcdn\.net|facebook\.com|scontent-/i.test(imageUrl);
   try {
-    let imageRes = await fetch(imageUrl, {
-      signal: controller.signal,
-      method: "GET",
-      headers: browserHeaders({
-        accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-        referer: "https://www.facebook.com/",
-      }),
-      redirect: "follow",
-    });
-    const type1 = String(imageRes.headers.get("content-type") || "").toLowerCase();
-    const len1 = Number(imageRes.headers.get("content-length") || "0");
-    const directValid = imageRes.ok
-      && type1.startsWith("image/")
-      && (!Number.isFinite(len1) || len1 <= 0 || len1 <= MAX_IMAGE_BYTES);
-    if (!directValid) {
-      const proxyRes = await fetch(buildProxyUrl(imageUrl, supabaseUrl), {
+    const candidates = uniqueUrls([
+      primaryImageUrl,
+      ...extractImageCandidatesFromRaw(item.raw_json),
+    ]);
+    let imageRes: Response | null = null;
+    let resolvedImageUrl = "";
+
+    const tryFetch = async (candidateUrl: string): Promise<Response | null> => {
+      const isFbCdn = /fbcdn\.net|facebook\.com|scontent-/i.test(candidateUrl);
+      let res = await fetch(candidateUrl, {
         signal: controller.signal,
         method: "GET",
         headers: browserHeaders({
@@ -261,16 +298,27 @@ async function cacheImage(
         }),
         redirect: "follow",
       });
-      const proxyType = String(proxyRes.headers.get("content-type") || "").toLowerCase();
-      const proxyLen = Number(proxyRes.headers.get("content-length") || "0");
-      const proxyValid = proxyRes.ok
-        && proxyType.startsWith("image/")
-        && (!Number.isFinite(proxyLen) || proxyLen <= 0 || proxyLen <= MAX_IMAGE_BYTES);
-      if (proxyValid) {
-        imageRes = proxyRes;
-      } else {
-      const wsrv = `https://images.weserv.nl/?url=${encodeURIComponent(imageUrl.replace(/^https?:\/\//i, ""))}`;
-      imageRes = await fetch(wsrv, {
+      const type1 = String(res.headers.get("content-type") || "").toLowerCase();
+      const len1 = Number(res.headers.get("content-length") || "0");
+      const validDirect = res.ok && type1.startsWith("image/") && (!Number.isFinite(len1) || len1 <= 0 || len1 <= MAX_IMAGE_BYTES);
+      if (validDirect) return res;
+
+      const proxyRes = await fetch(buildProxyUrl(candidateUrl, supabaseUrl), {
+        signal: controller.signal,
+        method: "GET",
+        headers: browserHeaders({
+          accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+          ...(isFbCdn ? { referer: "https://www.facebook.com/", origin: "https://www.facebook.com" } : {}),
+        }),
+        redirect: "follow",
+      });
+      const pType = String(proxyRes.headers.get("content-type") || "").toLowerCase();
+      const pLen = Number(proxyRes.headers.get("content-length") || "0");
+      const validProxy = proxyRes.ok && pType.startsWith("image/") && (!Number.isFinite(pLen) || pLen <= 0 || pLen <= MAX_IMAGE_BYTES);
+      if (validProxy) return proxyRes;
+
+      const wsrv = `https://images.weserv.nl/?url=${encodeURIComponent(candidateUrl.replace(/^https?:\/\//i, ""))}`;
+      res = await fetch(wsrv, {
         signal: controller.signal,
         method: "GET",
         headers: browserHeaders({
@@ -278,8 +326,48 @@ async function cacheImage(
         }),
         redirect: "follow",
       });
+      const wType = String(res.headers.get("content-type") || "").toLowerCase();
+      const wLen = Number(res.headers.get("content-length") || "0");
+      const validWeserv = res.ok && wType.startsWith("image/") && (!Number.isFinite(wLen) || wLen <= 0 || wLen <= MAX_IMAGE_BYTES);
+      return validWeserv ? res : null;
+    };
+
+    for (const candidateUrl of candidates) {
+      const res = await tryFetch(candidateUrl);
+      if (!res) continue;
+      imageRes = res;
+      resolvedImageUrl = candidateUrl;
+      break;
+    }
+
+    if (!imageRes) {
+      const pageUrl = decodeHtmlEntitiesForUrl(item.permalink_url || item.url || "");
+      if (pageUrl && /^https?:\/\//i.test(pageUrl)) {
+        try {
+          const pageRes = await fetch(pageUrl, {
+            signal: controller.signal,
+            method: "GET",
+            headers: browserHeaders({ accept: "text/html,application/xhtml+xml,*/*;q=0.8" }),
+            redirect: "follow",
+          });
+          if (pageRes.ok) {
+            const pageHtml = await pageRes.text();
+            const discovered = extractImageFromHtml(pageHtml, pageUrl);
+            if (discovered) {
+              const res = await tryFetch(discovered);
+              if (res) {
+                imageRes = res;
+                resolvedImageUrl = discovered;
+              }
+            }
+          }
+        } catch {
+          // non-fatal fallback path
+        }
       }
     }
+
+    if (!imageRes) return { ok: false, error: "all image candidates failed" };
     const finalType = String(imageRes.headers.get("content-type") || "").toLowerCase();
     const finalLen = Number(imageRes.headers.get("content-length") || "0");
     if (!imageRes.ok || !finalType.startsWith("image/")) return { ok: false, error: `image fetch invalid (${imageRes.status}, ${finalType || "unknown"})` };
@@ -290,7 +378,7 @@ async function cacheImage(
     const ext = extFromContentType(imageRes.headers.get("content-type"));
     const sourcePath = String(item.source_slug || item.source_key || "news").toLowerCase().replace(/[^a-z0-9_-]+/g, "-") || "news";
     const rawGuid = String(item.guid || item.external_id || item.id || "").trim();
-    const safeGuid = (rawGuid.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/-+/g, "-").slice(0, 120) || await sha1Hex(imageUrl));
+    const safeGuid = (rawGuid.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/-+/g, "-").slice(0, 120) || await sha1Hex(resolvedImageUrl || primaryImageUrl || item.id));
     const filePath = `${sourcePath}/${safeGuid}.${ext}`;
 
     const { error: uploadError } = await supabase.storage
@@ -305,6 +393,7 @@ async function cacheImage(
     const { error: updateError } = await supabase.from("news_items").update({
       cached_image_url: cachedImageUrl,
       cached_image_path: filePath,
+      ...(resolvedImageUrl ? { image_url: resolvedImageUrl } : {}),
     }).eq("id", item.id);
     if (updateError) return { ok: false, error: `update failed: ${updateError.message}` };
 
@@ -376,7 +465,7 @@ async function refreshEoy(
     if (cacheImages && cacheLimitLeft > 0 && itemIds.length > 0) {
       const { data: items } = await supabase
         .from("news_items")
-        .select("id,image_url,cached_image_url,source_slug,source_key,external_id,guid")
+        .select("id,image_url,cached_image_url,source_slug,source_key,external_id,guid,raw_json,url,permalink_url")
         .in("id", itemIds)
         .is("cached_image_url", null)
         .not("image_url", "is", null)
@@ -436,6 +525,31 @@ function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array
   return out;
 }
 
+async function backfillBirdingPolandImages(
+  supabase: any,
+  supabaseUrl: string,
+  limit: number,
+): Promise<{ cached: number; failed: number }> {
+  const { data: rows } = await supabase
+    .from("news_items")
+    .select("id, image_url, cached_image_url, source_slug, source_key, external_id, guid, raw_json, url, permalink_url")
+    .in("source_slug", ["facebook_birdingpoland", "birding_poland", "birdingpoland"])
+    .is("cached_image_url", null)
+    .order("published_at", { ascending: false })
+    .limit(limit);
+
+  let cached = 0;
+  let failed = 0;
+  for (const row of rows || []) {
+    const candidateCount = extractImageCandidatesFromRaw((row as any).raw_json).length;
+    if (!row.image_url && candidateCount === 0) continue;
+    const res = await cacheImage(supabase, supabaseUrl, row as CacheableNewsItem, { force: true });
+    if (res.ok) cached += 1;
+    else failed += 1;
+  }
+  return { cached, failed };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -479,6 +593,7 @@ Deno.serve(async (req) => {
     let updated = 0;
     let cachedImages = 0;
     let skipped = 0;
+    let birdingCacheFailures = 0;
 
     for (const source of enabledSources) {
       const slug = String(source.slug || "").toLowerCase();
@@ -601,7 +716,7 @@ Deno.serve(async (req) => {
           const { data: upserted, error } = await supabase
             .from("news_items")
             .upsert(row, { onConflict: "guid" })
-            .select("id, image_url, cached_image_url, source_slug, source_key, external_id, guid")
+            .select("id, image_url, cached_image_url, source_slug, source_key, external_id, guid, raw_json, url, permalink_url")
             .single();
           if (error || !upserted?.id) {
             const msg = error?.message || "upsert failed";
@@ -626,6 +741,7 @@ Deno.serve(async (req) => {
               summary.cachedImages += 1;
             } else if (cacheResult.error) {
               summary.errors.push(`cacheImage: ${cacheResult.error}`);
+              if (isBirdingPoland) birdingCacheFailures += 1;
             }
           }
         }
@@ -641,7 +757,7 @@ Deno.serve(async (req) => {
         if (remaining > 0) {
           const { data: existingUncached } = await supabase
             .from("news_items")
-            .select("id, image_url, cached_image_url, source_slug, source_key, external_id, guid")
+            .select("id, image_url, cached_image_url, source_slug, source_key, external_id, guid, raw_json, url, permalink_url")
             .eq("source_slug", source.slug)
             .is("cached_image_url", null)
             .not("image_url", "is", null)
@@ -655,12 +771,19 @@ Deno.serve(async (req) => {
               summary.cachedImages += 1;
             } else if (cacheResult.error) {
               summary.errors.push(`cacheImage(backfill): ${cacheResult.error}`);
+              birdingCacheFailures += 1;
             }
           }
         }
       }
 
       perSource.push(summary);
+    }
+
+    if (cacheImages) {
+      const repair = await backfillBirdingPolandImages(supabase, supabaseUrl, 50);
+      cachedImages += repair.cached;
+      birdingCacheFailures += repair.failed;
     }
 
     return json({
@@ -673,6 +796,7 @@ Deno.serve(async (req) => {
       inserted,
       updated,
       cachedImages,
+      birdingCacheFailures,
       skipped,
       errors,
     });

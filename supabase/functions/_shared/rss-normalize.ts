@@ -134,9 +134,13 @@ function extractImageInfo(
   baseUrl?: string,
 ): { url: string | null; strategy: string | null } {
   const candidates: Array<{ url: string; strategy: string; rank: number }> = [];
+  const seen = new Set<string>();
   const addCandidate = (url: string | null, strategy: string) => {
     if (!url) return;
-    candidates.push({ url, strategy, rank: scoreImageCandidate(url, baseUrl) });
+    const clean = String(url).trim();
+    if (!clean || seen.has(clean)) return;
+    seen.add(clean);
+    candidates.push({ url: clean, strategy, rank: scoreImageCandidate(clean, baseUrl) });
   };
 
   addCandidate(getImageFromRssItem(item, bodyHtml, baseUrl, "media:content"), "media:content");
@@ -155,6 +159,10 @@ function extractImageInfo(
 
   if (candidates.length === 0) return { url: null, strategy: null };
   candidates.sort((a, b) => b.rank - a.rank);
+  // Keep top candidates on raw payload for downstream cache fallback diagnostics.
+  const rawRecord = item as Record<string, unknown>;
+  rawRecord.__image_candidates = candidates.slice(0, 8).map((c) => c.url);
+  rawRecord.__image_candidate_scores = candidates.slice(0, 8).map((c) => ({ url: c.url, strategy: c.strategy, score: c.rank }));
   return { url: candidates[0].url, strategy: candidates[0].strategy };
 }
 
@@ -166,9 +174,11 @@ function scoreImageCandidate(url: string, baseUrl?: string): number {
 
   // Prefer feed-hosted CDN images first (stable hotlink behavior).
   if (host.includes("images.rss.app") || host.includes("rss.app") || host.includes("rss2.app") || host.includes("rssapp.io")) score += 220;
+  if (host.includes("cloudfront.net") || host.includes("cdn")) score += 30;
   // Prefer any https non-facebook image candidate over social-CDN links.
   if (/^https:\/\//i.test(url) && !/fbcdn\.net|facebook\.com|scontent-/i.test(host)) score += 80;
   if (/\.(jpg|jpeg|png|webp|avif)(\?|#|$)/i.test(lowerUrl)) score += 30;
+  if (lowerUrl.startsWith("data:")) score -= 400;
   if (baseHost && host === baseHost) score += 80;
   if (host.endsWith(".eoy.ee") || host === "eoy.ee" || host.endsWith(".estbirding.ee")) score += 60;
   // Keep Facebook CDN candidates as last resort.

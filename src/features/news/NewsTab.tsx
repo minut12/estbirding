@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 import { resolveEndpoint, TRANSLATION_ENDPOINT_UPDATED_EVENT } from '@/config/translationEndpoint';
 import { getProxyMode, resolveProxyBase } from '@/config/proxyEndpoint';
 import { getSupabaseUrl } from '@/config/supabaseConfig';
+import { normalizeDisplayText } from '@/lib/textNormalize';
 
 /* Types */
 interface NewsItem {
@@ -59,7 +60,7 @@ interface NewsSource {
 }
 
 const NEWS_VIEW_SELECT = 'id,title,url,published_at,created_at,external_id,source_id,source_slug,source_name,image_url,cached_image_url,cached_image_path,display_image_url,summary,body,content_html,archived,fetched_at,guid,raw_json,language,source_lang,title_et,body_et,translated_title,translated_body,translation_status,source_key';
-const ALL_SOURCES_LABEL = "Kõik allikad";
+const ALL_SOURCES_LABEL = normalizeDisplayText("Kõik allikad");
 const NEWS_TABLE_FALLBACK_SELECT = 'id, source_id, source_key, source_slug, title, url, permalink_url, summary, body, content_html, published_at, created_at, image_url, cached_image_url, image_cached_url, archived, language, source_lang, guid, raw_json, fetched_at';
 
 /* Format date */
@@ -73,21 +74,12 @@ function formatEstDate(iso: string): string {
 
 /* Source display names */
 function sourceLabel(item: NewsItem, sources: NewsSource[]): string {
-  const directName = decodeUnicodeEscapes(String(item.source_name || '').trim());
+  const directName = normalizeDisplayText(String(item.source_name || '').trim());
   if (directName) return directName;
   const byId = item.source_id ? sources.find((it) => it.id === item.source_id) : null;
-  if (byId?.name) return decodeUnicodeEscapes(byId.name);
+  if (byId?.name) return normalizeDisplayText(byId.name);
   if (item.source_slug) return item.source_slug.toUpperCase();
-  return 'EOÜ';
-}
-
-function decodeUnicodeEscapes(input: string): string {
-  if (!input || !/\\u[0-9a-fA-F]{4}/.test(input)) return input;
-  try {
-    return JSON.parse(`"${input.replace(/"/g, '\\"')}"`);
-  } catch {
-    return input;
-  }
+  return normalizeDisplayText('EOÜ');
 }
 
 function toPlainText(value: string | null | undefined): string {
@@ -740,7 +732,7 @@ const {
             >
               <option value="all">{ALL_SOURCES_LABEL}</option>
               {sources.map((s) => {
-                return <option key={s.id} value={s.id}>{decodeUnicodeEscapes(s.name)}</option>;
+                return <option key={s.id} value={s.id}>{normalizeDisplayText(s.name)}</option>;
               })}
               <option value="legacy_null">Legacy (source_id puudub)</option>
             </select>
@@ -824,9 +816,10 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
   const rawImageUrl = decodeUrl(item.image_url);
   const sourceName = sourceLabel(item, sources);
   const isBirdingPoland = sourceName === 'Birding Poland';
-  const thumbCandidate = displayImageUrl || cachedThumb || rawImageUrl || null;
-  const proxiedThumb = proxifyImageUrlIfNeeded(sourceName, thumbCandidate, proxyBase);
-  const thumb = proxiedThumb;
+  const thumbCandidate = displayImageUrl ?? cachedThumb ?? rawImageUrl ?? null;
+  const primaryThumb = proxifyImageUrlIfNeeded(sourceName, thumbCandidate, proxyBase);
+  const fallbackThumb = proxifyImageUrlIfNeeded(sourceName, rawImageUrl, proxyBase);
+  const [thumbSrc, setThumbSrc] = useState<string | null>(primaryThumb);
   const translation = useEtTranslation({
     enabled: showEtContent && autoTranslateEnabled && debouncedVisible,
     id: item.id,
@@ -847,15 +840,16 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
 
   useEffect(() => {
     setImageFailed(false);
-  }, [thumb]);
+    setThumbSrc(primaryThumb);
+  }, [primaryThumb, item.id]);
 
   return (
     <div ref={cardRef} className="px-4 py-3 active:bg-muted/50 transition-colors">
       <div className="flex gap-3">
         <button onClick={onOpen} className="w-20 h-20 rounded-lg shrink-0 bg-muted overflow-hidden">
-          {thumb && !imageFailed ? (
+          {thumbSrc && !imageFailed ? (
             <img
-              src={thumb}
+              src={thumbSrc}
               alt={item.title ?? 'news image'}
               className="w-full h-full object-cover"
               referrerPolicy="no-referrer"
@@ -865,9 +859,14 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
               onError={(e) => {
                 if (import.meta.env.DEV && isBirdingPoland) {
                   const maybeStatus = (e as any)?.nativeEvent?.target?.status ?? (e.currentTarget as any)?.naturalWidth ?? null;
-                  console.warn('[news-image] birding-poland load failed', { thumb, cachedThumb, image_url: item.image_url, cached_image_url: item.cached_image_url, status: maybeStatus });
+                  console.warn('[news-image] birding-poland load failed', { thumbSrc, cachedThumb, image_url: item.image_url, cached_image_url: item.cached_image_url, status: maybeStatus });
                 }
-                (e.currentTarget as HTMLImageElement).style.display = 'none';
+                const currentSrc = (e.currentTarget as HTMLImageElement).src || '';
+                const cachedProxied = proxifyImageUrlIfNeeded(sourceName, cachedThumb, proxyBase) || '';
+                if (fallbackThumb && currentSrc && cachedProxied && currentSrc === cachedProxied && fallbackThumb !== currentSrc) {
+                  setThumbSrc(fallbackThumb);
+                  return;
+                }
                 setImageFailed(true);
               }}
             />

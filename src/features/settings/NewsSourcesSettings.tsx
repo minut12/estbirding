@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { supabase } from '@/config/supabaseClient';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,8 +10,9 @@ import { Loader2, TestTube, Check, X } from 'lucide-react';
 import { loadNewsSourcesWithOrigin, normalizeSourceUrl, resetNewsSourcesToDefaults, saveNewsSources, type NewsSourcesOrigin } from '@/lib/newsSourcesStorage';
 import type { NewsSourceConfigItem } from '@/config/newsSources';
 import { resolveProxyBase } from '@/config/proxyEndpoint';
+import { normalizeDisplayText } from '@/lib/textNormalize';
 
-interface NewsSource extends NewsSourceConfigItem {}
+type NewsSource = NewsSourceConfigItem;
 
 export default function NewsSourcesSettings() {
   const seeded = useMemo(() => loadNewsSourcesWithOrigin(), []);
@@ -108,10 +109,16 @@ function SourceCard({
           sampleTitles: Array.isArray(data?.sampleTitles) ? data.sampleTitles : [],
         });
       } else {
-        setTestResult({ ok: false, error: data?.error || `${source.name}: Viga` });
+        const details = data?.details && typeof data.details === 'object' ? data.details : null;
+        const status = details?.status ? `HTTP ${details.status}` : '';
+        const ctype = details?.contentType ? ` ${String(details.contentType)}` : '';
+        const snippet = details?.bodySnippet ? ` - ${String(details.bodySnippet)}` : '';
+        const reason = data?.error || `${source.name}: Viga`;
+        setTestResult({ ok: false, error: normalizeDisplayText(`${reason}${status ? ` (${status}${ctype})` : ''}${snippet}`) });
       }
-    } catch (error: any) {
-      const message = error?.message || (error?.status ? `HTTP ${error.status}` : 'Viga');
+    } catch (error: unknown) {
+      const maybeErr = error as { message?: string; status?: number } | null;
+      const message = maybeErr?.message || (maybeErr?.status ? `HTTP ${maybeErr.status}` : 'Viga');
       setTestResult({ ok: false, error: `${source.name}: ${message}` });
     } finally {
       setTesting(false);
@@ -122,7 +129,7 @@ function SourceCard({
     <div className="rounded-lg border border-border bg-card p-4 space-y-3">
       <div className="flex items-start justify-between gap-2 sm:items-center">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="font-medium text-sm text-foreground">{source.name}</span>
+          <span className="font-medium text-sm text-foreground">{normalizeDisplayText(source.name)}</span>
           <Badge variant="outline" className="text-xs">{source.kind}</Badge>
           {source.url && (
             <a
@@ -161,7 +168,7 @@ function SourceCard({
           ) : (
             <div className="flex items-center gap-1.5">
               <X className="w-3.5 h-3.5" />
-              <span>{testResult.error || 'Allika lugemine ebaõnnestus'}</span>
+              <span>{normalizeDisplayText(testResult.error || 'Allika lugemine ebaõnnestus')}</span>
             </div>
           )}
         </div>
@@ -189,3 +196,4 @@ function SourceCard({
     </div>
   );
 }
+

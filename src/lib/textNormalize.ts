@@ -15,6 +15,20 @@ export function fixMojibake(input: string): string {
   return s;
 }
 
+export function decodeUnicodeEscapes(input: string): string {
+  const s = String(input ?? "");
+  if (!s || !/\\u[0-9a-fA-F]{4}/.test(s)) return s;
+  try {
+    return JSON.parse(`"${s.replace(/"/g, '\\"')}"`);
+  } catch {
+    return s;
+  }
+}
+
+export function normalizeDisplayText(input: string): string {
+  return normalizeUiText(decodeUnicodeEscapes(input));
+}
+
 export function normalizeUiText(input: string): string {
   return fixMojibake(input).replace(/\uFFFD/g, "").trim();
 }

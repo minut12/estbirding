@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+﻿import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { parseRss, normalizeRssItem, type NormalizedRssItem } from "../_shared/rss-normalize.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 
@@ -17,10 +17,35 @@ type SourceRow = {
 
 type SourceSummary = {
   slug: string;
+  source: string;
+  ok: boolean;
   inserted: number;
   updated: number;
   cachedImages: number;
+  fetchedCount: number;
+  viaProxy?: boolean;
+  status?: number;
+  contentType?: string;
+  bodySnippet?: string;
   errors: string[];
+};
+
+type ErrorInfo = {
+  source: string;
+  error: string;
+  status?: number;
+  contentType?: string;
+  bodySnippet?: string;
+};
+
+type RssFetchResult = {
+  ok: boolean;
+  text: string;
+  viaProxy: boolean;
+  status: number;
+  contentType: string;
+  blocked: boolean;
+  bodySnippet: string;
 };
 
 function json(data: unknown, status = 200): Response {
@@ -30,12 +55,17 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-function jsonError(error: unknown, status = 500): Response {
+function jsonError(source: string, error: unknown, status = 500, extra: Partial<ErrorInfo> = {}): Response {
   const err = error as { message?: string; name?: string; stack?: string } | null;
   return json({
     ok: false,
-    error: {
-      message: err?.message || String(error),
+    perSource: [],
+    errors: [{
+      source,
+      error: err?.message || String(error),
+      ...extra,
+    }],
+    debug: {
       name: err?.name || "Error",
       stack: err?.stack,
     },
@@ -69,6 +99,69 @@ function normalizePublishedAt(value: string | null | undefined): string {
   return new Date(ms).toISOString();
 }
 
+function normalizeSourceName(raw: string | null | undefined): string {
+  const s = String(raw || "").trim();
+  if (!s) return s;
+  return s.replace(/EO\uFFFD|EO�|EOU/gi, "EOÜ");
+}
+
+function bodySnippet(body: string): string {
+  return String(body || "").replace(/\s+/g, " ").trim().slice(0, 200);
+}
+
+function looksLikeHtmlChallenge(contentType: string, body: string): boolean {
+  const sample = String(body || "").slice(0, 400).toLowerCase();
+  const ct = String(contentType || "").toLowerCase();
+  return ct.includes("text/html")
+    || sample.startsWith("<!doctype html")
+    || sample.includes("cf_chl")
+    || sample.includes("captcha");
+}
+
+function buildProxyUrl(targetUrl: string, supabaseUrl: string): string {
+  return `${supabaseUrl}/functions/v1/proxy?url=${encodeURIComponent(targetUrl)}`;
+}
+
+async function fetchRssText(url: string, supabaseUrl: string): Promise<RssFetchResult> {
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)",
+    "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9,et-EE;q=0.7",
+  };
+
+  const direct = await fetch(url, { headers, redirect: "follow" });
+  const directText = await direct.text();
+  const directType = String(direct.headers.get("content-type") || "");
+  const directBlocked = looksLikeHtmlChallenge(directType, directText);
+
+  if (direct.ok && !directBlocked) {
+    return {
+      ok: true,
+      text: directText,
+      viaProxy: false,
+      status: direct.status,
+      contentType: directType,
+      blocked: false,
+      bodySnippet: bodySnippet(directText),
+    };
+  }
+
+  const proxied = await fetch(buildProxyUrl(url, supabaseUrl), { headers, redirect: "follow" });
+  const proxiedText = await proxied.text();
+  const proxiedType = String(proxied.headers.get("content-type") || "");
+  const proxiedBlocked = looksLikeHtmlChallenge(proxiedType, proxiedText);
+
+  return {
+    ok: proxied.ok && !proxiedBlocked,
+    text: proxiedText,
+    viaProxy: true,
+    status: proxied.status,
+    contentType: proxiedType,
+    blocked: proxiedBlocked,
+    bodySnippet: bodySnippet(proxiedText),
+  };
+}
+
 async function sha1Hex(input: string): Promise<string> {
   const data = new TextEncoder().encode(input);
   const hash = await crypto.subtle.digest("SHA-1", data);
@@ -91,7 +184,9 @@ async function ensureNewsImagesBucket(supabase: any): Promise<void> {
   } catch {
     try {
       await supabase.storage.createBucket("news-images", { public: true });
-    } catch { /* bucket likely already exists */ }
+    } catch {
+      // bucket likely already exists
+    }
   }
 }
 
@@ -99,12 +194,12 @@ async function cacheImage(
   supabase: any,
   supabaseUrl: string,
   item: { id: string; source_slug?: string | null; source_key?: string | null; image_url?: string | null; cached_image_url?: string | null },
-): Promise<boolean> {
+): Promise<{ ok: boolean; error?: string }> {
   const imageUrl = decodeUrl(item.image_url);
-  if (!item.id || !imageUrl || item.cached_image_url) return false;
+  if (!item.id || !imageUrl || item.cached_image_url) return { ok: false };
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
+  const timer = setTimeout(() => controller.abort(), 7000);
   const isFbCdn = /fbcdn\.net|facebook\.com|scontent-/i.test(imageUrl);
   try {
     const imageRes = await fetch(imageUrl, {
@@ -114,8 +209,9 @@ async function cacheImage(
         "Accept": "image/*,*/*;q=0.8",
         ...(isFbCdn ? { "Referer": "https://www.facebook.com/" } : {}),
       },
+      redirect: "follow",
     });
-    if (!imageRes.ok) return false;
+    if (!imageRes.ok) return { ok: false, error: `image fetch HTTP ${imageRes.status}` };
 
     const bytes = await imageRes.arrayBuffer();
     const ext = extFromContentType(imageRes.headers.get("content-type"));
@@ -129,16 +225,18 @@ async function cacheImage(
         upsert: true,
         contentType: imageRes.headers.get("content-type") || "image/jpeg",
       });
-    if (uploadError) return false;
+    if (uploadError) return { ok: false, error: `upload failed: ${uploadError.message}` };
 
     const cachedImageUrl = `${supabaseUrl}/storage/v1/object/public/news-images/${filePath}`;
-    await supabase.from("news_items").update({
+    const { error: updateError } = await supabase.from("news_items").update({
       cached_image_url: cachedImageUrl,
       cached_image_path: filePath,
     }).eq("id", item.id);
-    return true;
-  } catch {
-    return false;
+    if (updateError) return { ok: false, error: `update failed: ${updateError.message}` };
+
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message || e) };
   } finally {
     clearTimeout(timer);
   }
@@ -152,9 +250,18 @@ async function refreshEoy(
   cacheImages: boolean,
   cacheLimitLeft: number,
 ): Promise<SourceSummary> {
-  const summary: SourceSummary = { slug: source.slug, inserted: 0, updated: 0, cachedImages: 0, errors: [] };
+  const summary: SourceSummary = {
+    slug: source.slug,
+    source: source.name || source.slug,
+    ok: true,
+    inserted: 0,
+    updated: 0,
+    cachedImages: 0,
+    fetchedCount: 0,
+    errors: [],
+  };
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12000);
+  const timer = setTimeout(() => controller.abort(), 15000);
   try {
     const sourceUrl = String(source.fetch_url || source.feed_url || "").trim();
     const cacheBusted = sourceUrl
@@ -174,20 +281,22 @@ async function refreshEoy(
     });
     const rawBody = await res.text().catch(() => "");
     const payload = (() => {
-      try { return JSON.parse(rawBody || "{}"); } catch { return { error: rawBody || "EOÜ refresh failed" }; }
+      try { return JSON.parse(rawBody || "{}"); } catch { return { error: rawBody || "fetch-eoy-news parse failed" }; }
     })();
+
+    summary.status = res.status;
+    summary.contentType = String(res.headers.get("content-type") || "");
+    summary.bodySnippet = bodySnippet(rawBody);
+
     if (!res.ok) {
-      summary.errors.push(JSON.stringify({
-        step: "fetch-eoy-news",
-        status: res.status,
-        bodySnippet: String(rawBody || "").slice(0, 240),
-        message: payload?.error || `fetch-eoy-news HTTP ${res.status}`,
-      }));
+      summary.ok = false;
+      summary.errors.push(payload?.error || `fetch-eoy-news HTTP ${res.status}`);
       return summary;
     }
 
     summary.inserted = Number(payload?.insertedCount ?? payload?.inserted ?? 0);
     summary.updated = Number(payload?.updatedCount ?? payload?.updated ?? 0);
+    summary.fetchedCount = Number(payload?.foundCount ?? payload?.count ?? summary.inserted + summary.updated);
 
     const itemIds = Array.isArray(payload?.itemIds) ? payload.itemIds.filter(Boolean) : [];
     if (cacheImages && cacheLimitLeft > 0 && itemIds.length > 0) {
@@ -200,13 +309,16 @@ async function refreshEoy(
         .limit(cacheLimitLeft);
       for (const item of items || []) {
         if (summary.cachedImages >= cacheLimitLeft) break;
-        const ok = await cacheImage(supabase, supabaseUrl, item);
-        if (ok) summary.cachedImages += 1;
+        const cacheResult = await cacheImage(supabase, supabaseUrl, item);
+        if (cacheResult.ok) summary.cachedImages += 1;
+        else if (cacheResult.error) summary.errors.push(`cacheImage: ${cacheResult.error}`);
       }
     }
+
     return summary;
   } catch (e: any) {
-    summary.errors.push(JSON.stringify({ step: "fetch-eoy-news", message: String(e?.message || e) }));
+    summary.ok = false;
+    summary.errors.push(String(e?.message || e));
     return summary;
   } finally {
     clearTimeout(timer);
@@ -251,12 +363,19 @@ function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method !== "POST" && req.method !== "GET") return jsonError(new Error("Method not allowed"), 405);
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" },
+    });
+  }
+  if (req.method !== "POST" && req.method !== "GET") return jsonError("news-refresh", new Error("Method not allowed"), 405);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) return jsonError(new Error("Missing env: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY"), 500);
+  if (!supabaseUrl || !serviceRoleKey) {
+    return jsonError("news-refresh", new Error("Missing env: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY"), 500);
+  }
 
   try {
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
@@ -267,15 +386,21 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, serviceRoleKey);
     await ensureNewsImagesBucket(supabase);
 
+    await supabase
+      .from("news_sources")
+      .update({ name: "EOÜ" })
+      .or("slug.eq.eoy,source_key.eq.eoy,key.eq.eoy")
+      .neq("name", "EOÜ");
+
     const { data: sources, error: sourcesError } = await supabase
       .from("news_sources")
       .select("id, slug, name, key, source_key, type, feed_url, fetch_url, is_enabled, is_active")
       .eq("is_enabled", true);
-    if (sourcesError) return jsonError(new Error(sourcesError.message), 500);
+    if (sourcesError) return jsonError("news-refresh", new Error(sourcesError.message), 500);
 
-    const enabledSources = (sources || []) as SourceRow[];
-    const summaries: SourceSummary[] = [];
-    const errors: Array<{ source: string; error: string }> = [];
+    const enabledSources = (sources || []).map((s: SourceRow) => ({ ...s, name: normalizeSourceName(s.name) })) as SourceRow[];
+    const perSource: SourceSummary[] = [];
+    const errors: ErrorInfo[] = [];
     let inserted = 0;
     let updated = 0;
     let cachedImages = 0;
@@ -288,41 +413,108 @@ Deno.serve(async (req) => {
       const isEoy = type === "scrape" && (slug === "eoy" || String(source.fetch_url || source.feed_url || "").includes("eoy.ee"));
       if (isEoy) {
         const summary = await refreshEoy(supabase, supabaseUrl, serviceRoleKey, source, cacheImages, Math.max(0, cacheLimit - cachedImages));
-        summaries.push(summary);
+        perSource.push(summary);
         inserted += summary.inserted;
         updated += summary.updated;
         cachedImages += summary.cachedImages;
-        for (const err of summary.errors) errors.push({ source: source.slug, error: err });
+        for (const err of summary.errors) {
+          errors.push({ source: source.slug, error: err, status: summary.status, contentType: summary.contentType, bodySnippet: summary.bodySnippet });
+        }
         continue;
       }
 
       const sourceUrl = String(source.feed_url || source.fetch_url || "").trim();
       if (type === "scrape") {
         skipped += 1;
-        summaries.push({ slug: source.slug, inserted: 0, updated: 0, cachedImages: 0, errors: ["Unsupported scrape source"] });
+        perSource.push({
+          slug: source.slug,
+          source: source.name || source.slug,
+          ok: false,
+          inserted: 0,
+          updated: 0,
+          cachedImages: 0,
+          fetchedCount: 0,
+          errors: ["Unsupported scrape source"],
+        });
         continue;
       }
       if (type !== "rss" || !sourceUrl) {
         skipped += 1;
-        summaries.push({ slug: source.slug, inserted: 0, updated: 0, cachedImages: 0, errors: [] });
+        perSource.push({
+          slug: source.slug,
+          source: source.name || source.slug,
+          ok: true,
+          inserted: 0,
+          updated: 0,
+          cachedImages: 0,
+          fetchedCount: 0,
+          errors: [],
+        });
         continue;
       }
 
-      const summary: SourceSummary = { slug: source.slug, inserted: 0, updated: 0, cachedImages: 0, errors: [] };
+      const summary: SourceSummary = {
+        slug: source.slug,
+        source: source.name || source.slug,
+        ok: true,
+        inserted: 0,
+        updated: 0,
+        cachedImages: 0,
+        fetchedCount: 0,
+        errors: [],
+      };
+
       try {
-        const feedRes = await fetch(sourceUrl, {
-          cache: "no-store",
-          headers: { "User-Agent": "EstBirding/1.0", "Accept": "application/rss+xml, application/xml, text/xml, */*" },
-        });
-        if (!feedRes.ok) {
-          summary.errors.push(`RSS HTTP ${feedRes.status}`);
-          summaries.push(summary);
-          errors.push({ source: source.slug, error: `RSS HTTP ${feedRes.status}` });
+        const fetched = await fetchRssText(sourceUrl, supabaseUrl);
+        summary.viaProxy = fetched.viaProxy;
+        summary.status = fetched.status;
+        summary.contentType = fetched.contentType;
+        summary.bodySnippet = fetched.bodySnippet;
+
+        if (!fetched.ok) {
+          summary.ok = false;
+          const msg = fetched.blocked
+            ? "Feed blocked / returned HTML challenge"
+            : `RSS HTTP ${fetched.status}`;
+          summary.errors.push(msg);
+          errors.push({
+            source: source.slug,
+            error: msg,
+            status: fetched.status,
+            contentType: fetched.contentType,
+            bodySnippet: fetched.bodySnippet,
+          });
+          perSource.push(summary);
           continue;
         }
 
-        const xml = await feedRes.text();
-        const rows = normalizeRssItems(parseRss(xml).map((it) => normalizeRssItem(it)), source).slice(0, maxItemsPerSource);
+        let parsed = parseRss(fetched.text).map((it) => normalizeRssItem(it));
+        if (parsed.length === 0 && !fetched.viaProxy) {
+          const retry = await fetchRssText(sourceUrl, supabaseUrl);
+          summary.viaProxy = retry.viaProxy;
+          summary.status = retry.status;
+          summary.contentType = retry.contentType;
+          summary.bodySnippet = retry.bodySnippet;
+          if (retry.ok) parsed = parseRss(retry.text).map((it) => normalizeRssItem(it));
+        }
+
+        if (parsed.length === 0) {
+          summary.ok = false;
+          const msg = "No RSS items parsed";
+          summary.errors.push(msg);
+          errors.push({
+            source: source.slug,
+            error: msg,
+            status: summary.status,
+            contentType: summary.contentType,
+            bodySnippet: summary.bodySnippet,
+          });
+          perSource.push(summary);
+          continue;
+        }
+
+        summary.fetchedCount = parsed.length;
+        const rows = normalizeRssItems(parsed, source).slice(0, maxItemsPerSource);
         const externalIds = rows.map((row) => String(row.external_id || "")).filter(Boolean);
         const { data: existingRows } = externalIds.length > 0
           ? await supabase.from("news_items").select("external_id").in("external_id", externalIds)
@@ -353,27 +545,32 @@ Deno.serve(async (req) => {
           }
 
           if (cacheImages && cachedImages < cacheLimit && upserted.image_url && !upserted.cached_image_url) {
-            const ok = await cacheImage(supabase, supabaseUrl, upserted);
-            if (ok) {
+            const cacheResult = await cacheImage(supabase, supabaseUrl, upserted);
+            if (cacheResult.ok) {
               cachedImages += 1;
               summary.cachedImages += 1;
+            } else if (cacheResult.error) {
+              summary.errors.push(`cacheImage: ${cacheResult.error}`);
             }
           }
         }
       } catch (e: any) {
         const msg = String(e?.message || e);
+        summary.ok = false;
         summary.errors.push(msg);
-        errors.push({ source: source.slug, error: msg });
+        errors.push({ source: source.slug, error: msg, status: summary.status, contentType: summary.contentType, bodySnippet: summary.bodySnippet });
       }
 
-      summaries.push(summary);
+      perSource.push(summary);
     }
 
     return json({
-      ok: true,
-      sources: summaries,
+      ok: errors.length === 0,
+      perSource,
+      sources: perSource,
       totalInserted: inserted,
       totalUpdated: updated,
+      itemsUpserted: inserted + updated,
       inserted,
       updated,
       cachedImages,
@@ -381,6 +578,6 @@ Deno.serve(async (req) => {
       errors,
     });
   } catch (error) {
-    return jsonError(error, 500);
+    return jsonError("news-refresh", error, 500);
   }
 });

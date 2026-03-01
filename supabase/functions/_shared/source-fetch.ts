@@ -15,12 +15,14 @@ export interface FetchSourceInput {
 export class SourceFetchError extends Error {
   status?: number;
   sourceName: string;
+  details?: Record<string, unknown>;
 
-  constructor(sourceName: string, message: string, status?: number) {
+  constructor(sourceName: string, message: string, status?: number, details?: Record<string, unknown>) {
     super(message);
     this.name = "SourceFetchError";
     this.sourceName = sourceName;
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -48,6 +50,80 @@ function buildProxyUrl(targetUrl: string, proxyBase: string): string {
   const encoded = encodeURIComponent(targetUrl);
   if (proxyBase.includes("{url}")) return proxyBase.replace("{url}", encoded);
   return `${proxyBase}${encoded}`;
+}
+
+type RssFetchResult = {
+  ok: boolean;
+  text: string;
+  viaProxy: boolean;
+  status: number;
+  contentType: string;
+  blocked: boolean;
+  bodySnippet: string;
+};
+
+function looksLikeHtmlChallenge(contentType: string, body: string): boolean {
+  const sample = String(body || "").slice(0, 400).toLowerCase();
+  const ct = String(contentType || "").toLowerCase();
+  return ct.includes("text/html")
+    || sample.startsWith("<!doctype html")
+    || sample.includes("cf_chl")
+    || sample.includes("captcha");
+}
+
+function bodySnippet(body: string): string {
+  return String(body || "").replace(/\s+/g, " ").trim().slice(0, 200);
+}
+
+async function fetchRssText(url: string, proxyBase = ""): Promise<RssFetchResult> {
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)",
+    "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9,et-EE;q=0.7",
+  };
+
+  const direct = await fetch(url, { headers, redirect: "follow" });
+  const directText = await direct.text();
+  const directType = String(direct.headers.get("content-type") || "");
+  const directBlocked = looksLikeHtmlChallenge(directType, directText);
+  if (direct.ok && !directBlocked) {
+    return {
+      ok: true,
+      text: directText,
+      viaProxy: false,
+      status: direct.status,
+      contentType: directType,
+      blocked: false,
+      bodySnippet: bodySnippet(directText),
+    };
+  }
+
+  if (!proxyBase) {
+    return {
+      ok: false,
+      text: directText,
+      viaProxy: false,
+      status: direct.status,
+      contentType: directType,
+      blocked: directBlocked,
+      bodySnippet: bodySnippet(directText),
+    };
+  }
+
+  const proxiedUrl = buildProxyUrl(url, proxyBase);
+  const proxied = await fetch(proxiedUrl, { headers, redirect: "follow" });
+  const proxiedText = await proxied.text();
+  const proxiedType = String(proxied.headers.get("content-type") || "");
+  const proxiedBlocked = looksLikeHtmlChallenge(proxiedType, proxiedText);
+  return {
+    ok: proxied.ok && !proxiedBlocked,
+    text: proxiedText,
+    viaProxy: true,
+    status: proxied.status,
+    contentType: proxiedType,
+    blocked: proxiedBlocked,
+    bodySnippet: bodySnippet(proxiedText),
+  };
 }
 
 function normalizeUrl(url: string, baseUrl: string): string {
@@ -125,18 +201,31 @@ export async function fetchSourceItems(source: FetchSourceInput, proxyBase = "")
     throw new SourceFetchError(sourceName, `${sourceName}: missing feed url`);
   }
 
-  const targetUrl = buildProxyUrl(sourceUrl, proxyBase);
-  const response = await fetch(targetUrl, {
-    headers: { "User-Agent": "EstBirding/1.0", "Accept": "application/rss+xml, application/xml, text/xml, */*" },
-  });
-
-  if (!response.ok) {
-    throw new SourceFetchError(sourceName, `${sourceName}: HTTP ${response.status}`, response.status);
+  const fetched = await fetchRssText(sourceUrl, proxyBase);
+  if (!fetched.ok) {
+    const message = fetched.blocked
+      ? `${sourceName}: Feed blocked / returned HTML challenge`
+      : `${sourceName}: HTTP ${fetched.status}`;
+    throw new SourceFetchError(sourceName, message, fetched.status, {
+      source: sourceName,
+      status: fetched.status,
+      contentType: fetched.contentType,
+      bodySnippet: fetched.bodySnippet,
+      viaProxy: fetched.viaProxy,
+      blocked: fetched.blocked,
+    });
   }
 
-  const xml = await response.text();
+  const xml = fetched.text;
   try {
     const normalized = parseRss(xml).map(normalizeRssItem);
+    if (normalized.length === 0 && proxyBase && !fetched.viaProxy) {
+      const proxyRetry = await fetchRssText(sourceUrl, proxyBase);
+      if (proxyRetry.ok) {
+        const retried = parseRss(proxyRetry.text).map(normalizeRssItem);
+        return await enrichMissingImages(retried, proxyBase);
+      }
+    }
     if (/birding poland|facebook_birdingpoland/i.test(sourceName) && normalized.length > 0) {
       normalized.slice(0, 3).forEach((s) => {
         const raw = (s.raw_json || {}) as Record<string, unknown>;
@@ -150,6 +239,12 @@ export async function fetchSourceItems(source: FetchSourceInput, proxyBase = "")
     }
     return await enrichMissingImages(normalized, proxyBase);
   } catch {
-    throw new SourceFetchError(sourceName, `${sourceName}: RSS parse error`);
+    throw new SourceFetchError(sourceName, `${sourceName}: RSS parse error`, fetched.status, {
+      source: sourceName,
+      status: fetched.status,
+      contentType: fetched.contentType,
+      bodySnippet: fetched.bodySnippet,
+      viaProxy: fetched.viaProxy,
+    });
   }
 }

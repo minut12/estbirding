@@ -92,7 +92,16 @@ Deno.serve(async (req) => {
   } catch (error) {
     if (error instanceof SourceFetchError) {
       return new Response(
-        JSON.stringify({ ok: false, error: error.message, status: error.status || null, source: error.sourceName, count: 0, sampleTitles: [], items: [] }),
+        JSON.stringify({
+          ok: false,
+          error: error.message,
+          status: error.status || null,
+          source: error.sourceName,
+          details: error.details || null,
+          count: 0,
+          sampleTitles: [],
+          items: [],
+        }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }

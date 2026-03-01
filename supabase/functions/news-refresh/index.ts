@@ -211,8 +211,9 @@ async function cacheImage(
   const timer = setTimeout(() => controller.abort(), 7000);
   const isFbCdn = /fbcdn\.net|facebook\.com|scontent-/i.test(imageUrl);
   try {
-    const imageRes = await fetch(imageUrl, {
+    let imageRes = await fetch(imageUrl, {
       signal: controller.signal,
+      method: "GET",
       headers: {
         "User-Agent": "Mozilla/5.0",
         "Accept": "image/*,*/*;q=0.8",
@@ -220,6 +221,19 @@ async function cacheImage(
       },
       redirect: "follow",
     });
+    if (!imageRes.ok) {
+      const proxiedUrl = buildProxyUrl(imageUrl, supabaseUrl);
+      imageRes = await fetch(proxiedUrl, {
+        signal: controller.signal,
+        method: "GET",
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+          "Accept": "image/*,*/*;q=0.8",
+          ...(isFbCdn ? { "Referer": "https://www.facebook.com/" } : {}),
+        },
+        redirect: "follow",
+      });
+    }
     if (!imageRes.ok) return { ok: false, error: `image fetch HTTP ${imageRes.status}` };
 
     const bytes = await imageRes.arrayBuffer();
@@ -569,6 +583,30 @@ Deno.serve(async (req) => {
         summary.ok = false;
         summary.errors.push(msg);
         errors.push({ source: source.slug, error: msg, status: summary.status, contentType: summary.contentType, bodySnippet: summary.bodySnippet });
+      }
+
+      if (cacheImages && cachedImages < cacheLimit && String(source.slug || "").toLowerCase() === "birding_poland") {
+        const remaining = Math.max(0, cacheLimit - cachedImages);
+        if (remaining > 0) {
+          const { data: existingUncached } = await supabase
+            .from("news_items")
+            .select("id, image_url, cached_image_url, source_slug, source_key, external_id, guid")
+            .eq("source_slug", source.slug)
+            .is("cached_image_url", null)
+            .not("image_url", "is", null)
+            .order("published_at", { ascending: false })
+            .limit(remaining);
+          for (const item of existingUncached || []) {
+            if (cachedImages >= cacheLimit) break;
+            const cacheResult = await cacheImage(supabase, supabaseUrl, item);
+            if (cacheResult.ok) {
+              cachedImages += 1;
+              summary.cachedImages += 1;
+            } else if (cacheResult.error) {
+              summary.errors.push(`cacheImage(backfill): ${cacheResult.error}`);
+            }
+          }
+        }
       }
 
       perSource.push(summary);

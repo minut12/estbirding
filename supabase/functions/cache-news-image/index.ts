@@ -73,9 +73,28 @@ Deno.serve(async (req) => {
       });
     }
 
-    const imageRes = await fetch(targetImageUrl, {
-      headers: { "User-Agent": "EstBirding/1.0" },
+    const isFbCdn = /fbcdn\.net|facebook\.com|scontent-/i.test(targetImageUrl);
+    let imageRes = await fetch(targetImageUrl, {
+      method: "GET",
+      headers: {
+        "User-Agent": "EstBirding/1.0",
+        "Accept": "image/*,*/*;q=0.8",
+        ...(isFbCdn ? { "Referer": "https://www.facebook.com/" } : {}),
+      },
+      redirect: "follow",
     });
+    if (!imageRes.ok) {
+      const proxiedUrl = `${supabaseUrl}/functions/v1/proxy?url=${encodeURIComponent(targetImageUrl)}`;
+      imageRes = await fetch(proxiedUrl, {
+        method: "GET",
+        headers: {
+          "User-Agent": "EstBirding/1.0",
+          "Accept": "image/*,*/*;q=0.8",
+          ...(isFbCdn ? { "Referer": "https://www.facebook.com/" } : {}),
+        },
+        redirect: "follow",
+      });
+    }
     if (!imageRes.ok) {
       return new Response(JSON.stringify({ error: `Image fetch failed ${imageRes.status}` }), {
         status: 500,

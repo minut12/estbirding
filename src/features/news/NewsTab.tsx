@@ -242,35 +242,43 @@ function shouldFallbackNewsQuery(error: unknown): boolean {
 }
 
 const BIRDING_POLAND_NAME = 'birding poland';
-const GENERIC_NEWS_FALLBACK = '/img/news-placeholder.png';
-const BIRDING_POLAND_FALLBACK = '/img/news-source-birdingpoland.png';
+const DEBUG_NEWS_IMAGE = import.meta.env.DEV
+  && typeof window !== 'undefined'
+  && (window.localStorage.getItem('debugNewsImg') === '1' || new URLSearchParams(window.location.search).has('debugNewsImg'));
 
-function buildImageSrc(url: string | null | undefined, proxyBase: string): string {
-  const clean = decodeUrl(url)?.trim() || '';
+function normalizeImageProxyBase(rawBase: string): string {
+  const base = String(rawBase || '').trim();
+  if (!base) return '';
+  if (/[?&]url=/.test(base) || base.includes('{url}')) return base;
+  if (base.includes('?')) return `${base}&url=`;
+  return `${base}?url=`;
+}
+
+function resolveNewsImageUrl(item: NewsItem, proxyBase: string): string {
+  const raw = decodeUrl(item.display_image_url) || decodeUrl(item.cached_image_url) || decodeUrl(item.image_url) || '';
+  const clean = String(raw || '').trim();
   if (!clean) return '';
   if (clean.startsWith('data:') || clean.startsWith('blob:')) return clean;
   try {
     const parsed = new URL(clean);
     const host = parsed.hostname.toLowerCase();
-    const isTrustedOwn = host.endsWith('.supabase.co') || host.endsWith('estbirding.ee');
-    if (isTrustedOwn || clean.includes('/storage/v1/object/public/')) return clean;
+    const isTrustedOwn = host.endsWith('.supabase.co')
+      || host.endsWith('estbirding.ee')
+      || clean.includes('/storage/v1/object/public/');
+    if (isTrustedOwn) return clean;
     const shouldProxy = host === 'fbcdn.net'
       || host.endsWith('.fbcdn.net')
       || host.includes('scontent.')
       || host === 'facebook.com'
       || host.endsWith('.facebook.com')
-      || host === 'external-preview.redd.it'
       || host === 'rss.app';
-    if (shouldProxy && proxyBase) return buildProxyUrl(clean, proxyBase);
-    return clean;
+    if (!shouldProxy) return clean;
+    const normalizedProxyBase = normalizeImageProxyBase(proxyBase);
+    if (!normalizedProxyBase) return clean;
+    return buildProxyUrl(clean, normalizedProxyBase);
   } catch {
     return clean;
   }
-}
-
-function getSourceFallbackImage(sourceName: string): string {
-  if (sourceName.trim().toLowerCase() === BIRDING_POLAND_NAME) return BIRDING_POLAND_FALLBACK;
-  return GENERIC_NEWS_FALLBACK;
 }
 
 function rewriteImgSrcToProxy(html: string, sourceName: string, proxyBase: string): string {
@@ -280,7 +288,20 @@ function rewriteImgSrcToProxy(html: string, sourceName: string, proxyBase: strin
     doc.querySelectorAll('img').forEach((img) => {
       const src = (img.getAttribute('src') || img.getAttribute('data-src') || '').trim();
       if (!src) return;
-      const rewritten = buildImageSrc(src, proxyBase);
+      const rewritten = resolveNewsImageUrl({
+        id: '',
+        source_slug: sourceName,
+        title: '',
+        summary: null,
+        body: null,
+        content_html: null,
+        url: null,
+        image_url: src,
+        published_at: null,
+        language: null,
+        guid: null,
+        is_archived: false,
+      }, proxyBase);
       if (rewritten) img.setAttribute('src', rewritten);
       img.removeAttribute('data-src');
     });
@@ -600,7 +621,7 @@ const {
     if (!bp) return;
     const imageUrl = decodeUrl(bp.image_url);
     const cached = decodeUrl(bp.cached_image_url);
-    const resolvedThumbnailSrc = buildImageSrc(cached || imageUrl, resolvedProxyBase);
+    const resolvedThumbnailSrc = resolveNewsImageUrl({ ...bp, display_image_url: cached || imageUrl }, resolvedProxyBase);
     console.log('[news-image] birding-poland newest item', {
       url: bp.url,
       image_url: bp.image_url || null,
@@ -836,10 +857,7 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
   const rawImageUrl = decodeUrl(item.image_url);
   const sourceName = sourceLabel(item, sources);
   const isBirdingPoland = sourceName === 'Birding Poland';
-  const thumbCandidate = displayImageUrl ?? cachedThumb ?? rawImageUrl ?? null;
-  const primaryThumb = buildImageSrc(thumbCandidate, proxyBase);
-  const fallbackThumb = buildImageSrc(rawImageUrl, proxyBase);
-  const sourceFallback = getSourceFallbackImage(sourceName);
+  const primaryThumb = resolveNewsImageUrl(item, proxyBase);
   const [thumbSrc, setThumbSrc] = useState<string | null>(primaryThumb);
   const translation = useEtTranslation({
     enabled: showEtContent && autoTranslateEnabled && debouncedVisible,
@@ -882,16 +900,6 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
                   const maybeStatus = (e as any)?.nativeEvent?.target?.status ?? (e.currentTarget as any)?.naturalWidth ?? null;
                   console.warn('[news-image] birding-poland load failed', { thumbSrc, cachedThumb, image_url: item.image_url, cached_image_url: item.cached_image_url, status: maybeStatus });
                 }
-                const currentSrc = (e.currentTarget as HTMLImageElement).src || '';
-                const cachedProxied = buildImageSrc(cachedThumb, proxyBase) || '';
-                if (fallbackThumb && currentSrc && cachedProxied && currentSrc === cachedProxied && fallbackThumb !== currentSrc) {
-                  setThumbSrc(fallbackThumb);
-                  return;
-                }
-                if (currentSrc !== sourceFallback) {
-                  setThumbSrc(sourceFallback);
-                  return;
-                }
                 setImageFailed(true);
               }}
             />
@@ -901,6 +909,11 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
             </div>
           )}
         </button>
+        {DEBUG_NEWS_IMAGE && (
+          <p className="text-[10px] text-muted-foreground break-all mt-1">
+            img: {(thumbSrc || '(empty)').slice(0, 80)} | source: {item.source_slug || 'unknown'}
+          </p>
+        )}
         <div className="flex-1 min-w-0">
           <button onClick={onOpen} className="text-left w-full">
             <p className="font-medium text-sm text-foreground line-clamp-2">{displayTitle}</p>
@@ -1014,11 +1027,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
   const displayBody = hasTranslatedContent
     ? (manualTranslation?.body_et || normalizedBodyText)
     : (contentHtml || normalizedBodyText);
-  const heroImageUrl = buildImageSrc(
-    decodeUrl(item.display_image_url) || decodeUrl(item.cached_image_url) || decodeUrl(item.image_url) || null,
-    proxyBase,
-  );
-  const sourceFallback = getSourceFallbackImage(sourceName);
+  const heroImageUrl = resolveNewsImageUrl(item, proxyBase);
   const [heroSrc, setHeroSrc] = useState<string | null>(heroImageUrl);
   const [heroFailed, setHeroFailed] = useState(false);
   const rewrittenContentHtml = contentHtml ? rewriteImgSrcToProxy(contentHtml, sourceName, proxyBase) : null;
@@ -1083,10 +1092,6 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
             referrerPolicy="no-referrer"
             crossOrigin="anonymous"
             onError={() => {
-              if (heroSrc && heroSrc !== sourceFallback) {
-                setHeroSrc(sourceFallback);
-                return;
-              }
               setHeroFailed(true);
             }}
           />

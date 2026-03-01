@@ -28,8 +28,23 @@ function isAllowedHost(hostname: string): boolean {
   return ALLOWED_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`));
 }
 
-function isImageContentType(contentType: string): boolean {
-  return contentType.toLowerCase().startsWith("image/");
+function inferContentTypeFromPath(pathname: string): string {
+  const lower = pathname.toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".avif")) return "image/avif";
+  return "application/octet-stream";
+}
+
+function sampleFromBytes(bytes: Uint8Array, maxChars = 300): string {
+  try {
+    const decoder = new TextDecoder("utf-8", { fatal: false });
+    return decoder.decode(bytes.slice(0, maxChars)).trim();
+  } catch {
+    return "";
+  }
 }
 
 Deno.serve(async (req) => {
@@ -70,29 +85,48 @@ Deno.serve(async (req) => {
       headers: {
         "User-Agent": "Mozilla/5.0",
         "Accept": "image/avif,image/webp,image/*,*/*;q=0.8",
-        ...(isFacebookCdn ? { "Referer": "https://www.facebook.com/" } : {}),
+        "Accept-Language": "en-US,en;q=0.9,et;q=0.8",
+        ...(isFacebookCdn ? { "Referer": "https://www.facebook.com/", "Origin": "https://www.facebook.com" } : {}),
       },
     });
   } catch (e) {
     return json(502, { error: "upstream_fetch_failed", message: String(e) });
   }
 
-  const bodyText = !upstream.ok ? await upstream.text().catch(() => "") : "";
+  const bytes = new Uint8Array(await upstream.arrayBuffer());
+  const rawContentType = (upstream.headers.get("content-type") || "").trim();
+  const contentType = rawContentType || inferContentTypeFromPath(target.pathname);
+  const sample = sampleFromBytes(bytes, 300);
+  const sampleLower = sample.slice(0, 40).toLowerCase();
+
   if (!upstream.ok) {
     return json(upstream.status, {
       error: "upstream_non_ok",
       status: upstream.status,
       targetUrl: target.toString(),
-      snippet: String(bodyText || "").slice(0, 200),
+      snippet: sample.slice(0, 200),
     });
   }
 
-  const contentType = upstream.headers.get("content-type") || "application/octet-stream";
-  const cacheControl = isImageContentType(contentType)
-    ? "public, max-age=86400"
-    : "public, max-age=300";
-  return new Response(upstream.body, {
+  const isHtmlByType = contentType.toLowerCase().startsWith("text/html");
+  const isHtmlByBody = sampleLower.startsWith("<!doctype html") || sampleLower.startsWith("<html");
+  if (isHtmlByType || isHtmlByBody) {
+    console.log("[proxy] upstream_not_image", {
+      status: upstream.status,
+      contentType,
+      sample: sample.slice(0, 300),
+      targetUrl: target.toString(),
+    });
+    return json(502, {
+      error: "upstream_not_image",
+      status: upstream.status,
+      contentType,
+      sample: sample.slice(0, 300),
+    });
+  }
+
+  return new Response(bytes, {
     status: upstream.status,
-    headers: { ...corsHeaders, "content-type": contentType, "Cache-Control": cacheControl },
+    headers: { ...corsHeaders, "content-type": contentType, "Cache-Control": "public, max-age=86400" },
   });
 });

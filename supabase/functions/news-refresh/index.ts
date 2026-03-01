@@ -246,17 +246,27 @@ async function sha1Hex(input: string): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-1", data);
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
+async function sha256Hex(input: string): Promise<string> {
+  const data = new TextEncoder().encode(input);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 function extFromContentType(contentType: string | null): string {
   const ct = String(contentType || "").toLowerCase();
-  if (!ct) return "bin";
+  if (!ct) return "jpg";
   if (ct.includes("jpeg") || ct.includes("jpg")) return "jpg";
   if (ct.includes("png")) return "png";
   if (ct.includes("webp")) return "webp";
   if (ct.includes("gif")) return "gif";
   if (ct.includes("avif")) return "avif";
   if (ct.includes("svg")) return "svg";
-  return "bin";
+  return "jpg";
+}
+
+function isBirdingSourceSlug(slug: string | null | undefined): boolean {
+  const s = String(slug || "").toLowerCase();
+  return s === "facebook_birdingpoland" || s === "birding_poland" || s === "birdingpoland";
 }
 
 async function ensureNewsImagesBucket(supabase: any): Promise<void> {
@@ -379,10 +389,15 @@ async function cacheImage(
     const bytes = await imageRes.arrayBuffer();
     if (bytes.byteLength > MAX_IMAGE_BYTES) return { ok: false, error: `image too large (${bytes.byteLength} bytes)` };
     const ext = extFromContentType(imageRes.headers.get("content-type"));
-    const sourcePath = String(item.source_slug || item.source_key || "news").toLowerCase().replace(/[^a-z0-9_-]+/g, "-") || "news";
+    const isBirding = isBirdingSourceSlug(item.source_slug);
+    const sourcePath = isBirding
+      ? "birdingpoland"
+      : (String(item.source_slug || item.source_key || "news").toLowerCase().replace(/[^a-z0-9_-]+/g, "-") || "news");
     const rawGuid = String(item.guid || item.external_id || item.id || "").trim();
     const safeGuid = (rawGuid.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/-+/g, "-").slice(0, 120) || await sha1Hex(resolvedImageUrl || primaryImageUrl || item.id));
-    const filePath = `${sourcePath}/${safeGuid}.${ext}`;
+    const filePath = isBirding
+      ? `${sourcePath}/${await sha256Hex(resolvedImageUrl || primaryImageUrl || item.id)}.${ext}`
+      : `${sourcePath}/${safeGuid}.${ext}`;
 
     const { error: uploadError } = await supabase.storage
       .from("news-images")
@@ -553,6 +568,31 @@ async function backfillBirdingPolandImages(
   return { cached, failed };
 }
 
+async function backfillMissingCachedImages(
+  supabase: any,
+  supabaseUrl: string,
+  sourceSlug: string,
+  limit = 25,
+): Promise<{ cached: number; failed: number }> {
+  const { data: rows } = await supabase
+    .from("news_items")
+    .select("id, image_url, cached_image_url, source_slug, source_key, external_id, guid, raw_json, url, permalink_url")
+    .eq("source_slug", sourceSlug)
+    .is("cached_image_url", null)
+    .not("image_url", "is", null)
+    .order("published_at", { ascending: false, nullsFirst: false })
+    .limit(limit);
+
+  let cached = 0;
+  let failed = 0;
+  for (const row of rows || []) {
+    const res = await cacheImage(supabase, supabaseUrl, row as CacheableNewsItem, { force: true });
+    if (res.ok) cached += 1;
+    else failed += 1;
+  }
+  return { cached, failed };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -602,6 +642,11 @@ Deno.serve(async (req) => {
       const slug = String(source.slug || "").toLowerCase();
       const type = String(source.type || "").toLowerCase();
       const isBirdingPoland = slug === "birding_poland" || slug === "facebook_birdingpoland";
+      if (cacheImages && isBirdingPoland) {
+        const pref = await backfillMissingCachedImages(supabase, supabaseUrl, source.slug, 25);
+        cachedImages += pref.cached;
+        birdingCacheFailures += pref.failed;
+      }
 
       const isEoy = type === "scrape" && (slug === "eoy" || String(source.fetch_url || source.feed_url || "").includes("eoy.ee"));
       if (isEoy) {
@@ -678,6 +723,11 @@ Deno.serve(async (req) => {
             bodySnippet: fetched.bodySnippet,
           });
           perSource.push(summary);
+          if (cacheImages && isBirdingPoland) {
+            const fin = await backfillMissingCachedImages(supabase, supabaseUrl, source.slug, 25);
+            cachedImages += fin.cached;
+            birdingCacheFailures += fin.failed;
+          }
           continue;
         }
 
@@ -703,6 +753,11 @@ Deno.serve(async (req) => {
             bodySnippet: summary.bodySnippet,
           });
           perSource.push(summary);
+          if (cacheImages && isBirdingPoland) {
+            const fin = await backfillMissingCachedImages(supabase, supabaseUrl, source.slug, 25);
+            cachedImages += fin.cached;
+            birdingCacheFailures += fin.failed;
+          }
           continue;
         }
 
@@ -755,29 +810,10 @@ Deno.serve(async (req) => {
         errors.push({ source: source.slug, error: msg, status: summary.status, contentType: summary.contentType, bodySnippet: summary.bodySnippet });
       }
 
-      if (cacheImages && cachedImages < cacheLimit && isBirdingPoland) {
-        const remaining = Math.max(0, cacheLimit - cachedImages);
-        if (remaining > 0) {
-          const { data: existingUncached } = await supabase
-            .from("news_items")
-            .select("id, image_url, cached_image_url, source_slug, source_key, external_id, guid, raw_json, url, permalink_url")
-            .eq("source_slug", source.slug)
-            .is("cached_image_url", null)
-            .not("image_url", "is", null)
-            .order("published_at", { ascending: false })
-            .limit(remaining);
-          for (const item of existingUncached || []) {
-            if (cachedImages >= cacheLimit) break;
-            const cacheResult = await cacheImage(supabase, supabaseUrl, item, { force: true });
-            if (cacheResult.ok) {
-              cachedImages += 1;
-              summary.cachedImages += 1;
-            } else if (cacheResult.error) {
-              summary.errors.push(`cacheImage(backfill): ${cacheResult.error}`);
-              birdingCacheFailures += 1;
-            }
-          }
-        }
+      if (cacheImages && isBirdingPoland) {
+        const fin = await backfillMissingCachedImages(supabase, supabaseUrl, source.slug, 25);
+        cachedImages += fin.cached;
+        birdingCacheFailures += fin.failed;
       }
 
       perSource.push(summary);
@@ -790,7 +826,7 @@ Deno.serve(async (req) => {
     }
 
     return json({
-      ok: errors.length === 0,
+      ok: true,
       perSource,
       sources: perSource,
       totalInserted: inserted,

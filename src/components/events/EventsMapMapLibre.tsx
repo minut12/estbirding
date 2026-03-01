@@ -104,7 +104,7 @@ export function EventsMapMapLibre({ points, selectedId }: EventsMapMapLibreProps
       center: ESTONIA_CENTER,
       zoom: ESTONIA_ZOOM,
       maxZoom: 12,
-      attributionControl: true,
+      attributionControl: { compact: true },
     });
     mapRef.current = map;
 

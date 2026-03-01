@@ -245,6 +245,7 @@ const BIRDING_POLAND_NAME = 'birding poland';
 const DEBUG_NEWS_IMAGE = import.meta.env.DEV
   && typeof window !== 'undefined'
   && (window.localStorage.getItem('debugNewsImg') === '1' || new URLSearchParams(window.location.search).has('debugNewsImg'));
+const IMAGE_PLACEHOLDER_LOCAL = '/placeholder.svg';
 
 function normalizeImageProxyBase(rawBase: string): string {
   const base = String(rawBase || '').trim();
@@ -254,7 +255,17 @@ function normalizeImageProxyBase(rawBase: string): string {
   return `${base}?url=`;
 }
 
-function resolveNewsImageUrl(item: NewsItem, proxyBase: string): string {
+function isBirdingPolandSource(sourceName: string, sourceSlug: string | null | undefined): boolean {
+  return String(sourceName || '').trim().toLowerCase() === BIRDING_POLAND_NAME
+    || String(sourceSlug || '').trim().toLowerCase() === 'birding_poland';
+}
+
+function toWeservUrl(rawUrl: string): string {
+  const withoutProtocol = rawUrl.replace(/^https?:\/\//i, '');
+  return `https://images.weserv.nl/?url=${encodeURIComponent(withoutProtocol)}&w=900&output=webp`;
+}
+
+function resolveNewsImageUrl(item: NewsItem, proxyBase: string, sourceName?: string): string {
   const raw = decodeUrl(item.display_image_url) || decodeUrl(item.cached_image_url) || decodeUrl(item.image_url) || '';
   const clean = String(raw || '').trim();
   if (!clean) return '';
@@ -262,16 +273,15 @@ function resolveNewsImageUrl(item: NewsItem, proxyBase: string): string {
   try {
     const parsed = new URL(clean);
     const host = parsed.hostname.toLowerCase();
+    const isBirdingPoland = isBirdingPolandSource(sourceName || '', item.source_slug);
+    const isFb = /fbcdn\.net|scontent-|facebook\.com/i.test(host);
     const isTrustedOwn = host.endsWith('.supabase.co')
       || host.endsWith('estbirding.ee')
       || clean.includes('/storage/v1/object/public/');
     if (isTrustedOwn) return clean;
-    const shouldProxy = host === 'fbcdn.net'
-      || host.endsWith('.fbcdn.net')
-      || host.includes('scontent.')
-      || host === 'facebook.com'
-      || host.endsWith('.facebook.com')
-      || host === 'rss.app';
+    if (isBirdingPoland && isFb) return toWeservUrl(clean);
+    if (!isBirdingPoland) return clean;
+    const shouldProxy = host === 'rss.app' || host.endsWith('.rss.app') || host === 'rss2.app' || host.endsWith('.rss2.app');
     if (!shouldProxy) return clean;
     const normalizedProxyBase = normalizeImageProxyBase(proxyBase);
     if (!normalizedProxyBase) return clean;
@@ -301,7 +311,7 @@ function rewriteImgSrcToProxy(html: string, sourceName: string, proxyBase: strin
         language: null,
         guid: null,
         is_archived: false,
-      }, proxyBase);
+      }, proxyBase, sourceName);
       if (rewritten) img.setAttribute('src', rewritten);
       img.removeAttribute('data-src');
     });
@@ -621,7 +631,7 @@ const {
     if (!bp) return;
     const imageUrl = decodeUrl(bp.image_url);
     const cached = decodeUrl(bp.cached_image_url);
-    const resolvedThumbnailSrc = resolveNewsImageUrl({ ...bp, display_image_url: cached || imageUrl }, resolvedProxyBase);
+    const resolvedThumbnailSrc = resolveNewsImageUrl({ ...bp, display_image_url: cached || imageUrl }, resolvedProxyBase, 'Birding Poland');
     console.log('[news-image] birding-poland newest item', {
       url: bp.url,
       image_url: bp.image_url || null,
@@ -857,7 +867,7 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
   const rawImageUrl = decodeUrl(item.image_url);
   const sourceName = sourceLabel(item, sources);
   const isBirdingPoland = sourceName === 'Birding Poland';
-  const primaryThumb = resolveNewsImageUrl(item, proxyBase);
+  const primaryThumb = resolveNewsImageUrl(item, proxyBase, sourceName);
   const [thumbSrc, setThumbSrc] = useState<string | null>(primaryThumb);
   const translation = useEtTranslation({
     enabled: showEtContent && autoTranslateEnabled && debouncedVisible,
@@ -899,6 +909,11 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
                 if (import.meta.env.DEV && isBirdingPoland) {
                   const maybeStatus = (e as any)?.nativeEvent?.target?.status ?? (e.currentTarget as any)?.naturalWidth ?? null;
                   console.warn('[news-image] birding-poland load failed', { thumbSrc, cachedThumb, image_url: item.image_url, cached_image_url: item.cached_image_url, status: maybeStatus });
+                }
+                const current = (e.currentTarget as HTMLImageElement).src || '';
+                if (current !== IMAGE_PLACEHOLDER_LOCAL) {
+                  setThumbSrc(IMAGE_PLACEHOLDER_LOCAL);
+                  return;
                 }
                 setImageFailed(true);
               }}
@@ -1027,7 +1042,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
   const displayBody = hasTranslatedContent
     ? (manualTranslation?.body_et || normalizedBodyText)
     : (contentHtml || normalizedBodyText);
-  const heroImageUrl = resolveNewsImageUrl(item, proxyBase);
+  const heroImageUrl = resolveNewsImageUrl(item, proxyBase, sourceName);
   const [heroSrc, setHeroSrc] = useState<string | null>(heroImageUrl);
   const [heroFailed, setHeroFailed] = useState(false);
   const rewrittenContentHtml = contentHtml ? rewriteImgSrcToProxy(contentHtml, sourceName, proxyBase) : null;
@@ -1092,6 +1107,10 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
             referrerPolicy="no-referrer"
             crossOrigin="anonymous"
             onError={() => {
+              if (heroSrc && heroSrc !== IMAGE_PLACEHOLDER_LOCAL) {
+                setHeroSrc(IMAGE_PLACEHOLDER_LOCAL);
+                return;
+              }
               setHeroFailed(true);
             }}
           />

@@ -162,11 +162,17 @@ function scoreImageCandidate(url: string, baseUrl?: string): number {
   let score = 10;
   const host = hostname(url);
   const baseHost = hostname(baseUrl || "");
+  const lowerUrl = String(url || "").toLowerCase();
 
-  if (host.includes("rss.app") || host.includes("rss2.app")) score += 100;
+  // Prefer feed-hosted CDN images first (stable hotlink behavior).
+  if (host.includes("images.rss.app") || host.includes("rss.app") || host.includes("rss2.app") || host.includes("rssapp.io")) score += 220;
+  // Prefer any https non-facebook image candidate over social-CDN links.
+  if (/^https:\/\//i.test(url) && !/fbcdn\.net|facebook\.com|scontent-/i.test(host)) score += 80;
+  if (/\.(jpg|jpeg|png|webp|avif)(\?|#|$)/i.test(lowerUrl)) score += 30;
   if (baseHost && host === baseHost) score += 80;
   if (host.endsWith(".eoy.ee") || host === "eoy.ee" || host.endsWith(".estbirding.ee")) score += 60;
-  if (/fbcdn\.net|facebook\.com|scontent-|cdninstagram|fb\.com/i.test(host)) score -= 120;
+  // Keep Facebook CDN candidates as last resort.
+  if (/fbcdn\.net|facebook\.com|scontent-|cdninstagram|fb\.com/i.test(host)) score -= 320;
   if (/\.svg($|\?)/i.test(url)) score -= 10;
 
   return score;

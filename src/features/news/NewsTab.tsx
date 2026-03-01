@@ -58,7 +58,7 @@ interface NewsSource {
   key?: string | null;
 }
 
-const NEWS_VIEW_SELECT = 'id,title,url,permalink_url,summary,body,content,content_html,published_at,created_at,fetched_at,archived,source_id,source_slug,source_name,source_key,image_url,image_cached_url,cached_image_url,cached_image_path,display_image_url,language,source_lang,guid,raw_json';
+const NEWS_VIEW_SELECT = 'id,title,url,published_at,created_at,source_id,source_slug,source_name,image_url,cached_image_url,display_image_url';
 const ALL_SOURCES_LABEL = "Kõik allikad";
 const NEWS_TABLE_FALLBACK_SELECT = 'id, source_id, source_key, source_slug, title, url, permalink_url, summary, body, content_html, published_at, created_at, image_url, cached_image_url, image_cached_url, archived, language, source_lang, guid, raw_json, fetched_at';
 
@@ -73,12 +73,21 @@ function formatEstDate(iso: string): string {
 
 /* Source display names */
 function sourceLabel(item: NewsItem, sources: NewsSource[]): string {
-  const directName = String(item.source_name || '').trim();
+  const directName = decodeUnicodeEscapes(String(item.source_name || '').trim());
   if (directName) return directName;
   const byId = item.source_id ? sources.find((it) => it.id === item.source_id) : null;
-  if (byId?.name) return byId.name;
+  if (byId?.name) return decodeUnicodeEscapes(byId.name);
   if (item.source_slug) return item.source_slug.toUpperCase();
   return 'EOÜ';
+}
+
+function decodeUnicodeEscapes(input: string): string {
+  if (!input || !/\\u[0-9a-fA-F]{4}/.test(input)) return input;
+  try {
+    return JSON.parse(`"${input.replace(/"/g, '\\"')}"`);
+  } catch {
+    return input;
+  }
 }
 
 function toPlainText(value: string | null | undefined): string {
@@ -242,11 +251,13 @@ function shouldFallbackNewsQuery(error: unknown): boolean {
 
 const BIRDING_POLAND_NAME = 'birding poland';
 
-function proxifyImageUrlIfNeeded(_sourceName: string, url: string | null, _proxyBase: string): string | null {
+function proxifyImageUrlIfNeeded(_sourceName: string, url: string | null, proxyBase: string): string | null {
   if (!url) return null;
   const clean = url.trim();
   if (!clean) return null;
   if (clean.startsWith('data:') || clean.startsWith('blob:')) return clean;
+  const needsProxy = /fbcdn\.net|facebook\.com|scontent-|cdninstagram|fb\.com/i.test(clean);
+  if (needsProxy && proxyBase) return `${proxyBase}${encodeURIComponent(clean)}`;
   return clean;
 }
 
@@ -486,7 +497,6 @@ const {
       const { data, error } = await supabase
         .from('news_items_v')
         .select(NEWS_VIEW_SELECT)
-        .eq('archived', tab === 'archive')
         .order('published_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false, nullsFirst: false })
         .limit(50);
@@ -531,7 +541,10 @@ const {
         ...row,
         is_archived: Boolean(row.archived),
         display_image_url: row.display_image_url || row.cached_image_url || row.image_cached_url || row.image_url || null,
-        content: row.content || row.body || null,
+        content: row.content || row.body || row.summary || null,
+        summary: row.summary || null,
+        body: row.body || row.summary || null,
+        content_html: row.content_html || null,
         source_name: row.source_name || row.source_slug || row.source_key || 'Unknown source',
       })) as NewsItem[];
       if (import.meta.env.DEV) console.log('[NEWS] first item', mapped?.[0]);
@@ -642,7 +655,7 @@ const {
       else toast.info('Uusi uudiseid pole');
     },
     onError: (error) => {
-      const reason = JSON.stringify(error);
+      const reason = formatErrorReason(error);
       setLastNewsFetchErrorShort(reason.slice(0, 120));
       toast.error('Refresh failed: news-refresh - ' + reason.slice(0, 160));
     },
@@ -726,7 +739,7 @@ const {
             >
               <option value="all">{ALL_SOURCES_LABEL}</option>
               {sources.map((s) => {
-                return <option key={s.id} value={s.id}>{s.name}</option>;
+                return <option key={s.id} value={s.id}>{decodeUnicodeEscapes(s.name)}</option>;
               })}
               <option value="legacy_null">Legacy (source_id puudub)</option>
             </select>

@@ -365,10 +365,11 @@ Deno.serve(async (req) => {
         newestUrl = item.url;
       }
 
+      const guid = `eoy:${item.url}`;
       const row: Record<string, unknown> = {
         source_id: source.id,
         source_slug: source.slug || "eoy",
-        source_key: source.source_key || source.key || "eoy",
+        source_key: guid,
         title: item.title,
         summary: item.summary || "",
         url: item.url,
@@ -376,7 +377,7 @@ Deno.serve(async (req) => {
         image_url_original: item.image_url_original,
         published_at: publishedIso,
         language: "et",
-        guid: `eoy:${item.url}`,
+        guid,
         raw_json: {
           fetch_mode: fetchMode,
           published_raw: item.published_raw,
@@ -385,7 +386,7 @@ Deno.serve(async (req) => {
 
       const { error } = await supabase
         .from("news_items")
-        .upsert(row, { onConflict: "source_id,url" });
+        .upsert(row, { onConflict: "source_key" });
 
       if (error) {
         console.error(`Upsert error for ${item.url}:`, error);

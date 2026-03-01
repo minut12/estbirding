@@ -20,6 +20,8 @@ type SourceRow = {
   url?: string | null;
 };
 
+type StepError = { step: string; status?: number; bodySnippet?: string; message: string };
+
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -119,37 +121,62 @@ async function cacheImage(
   }
 }
 
-async function refreshEoy(supabaseUrl: string, serviceRoleKey: string, source: SourceRow): Promise<{ inserted: number; updated: number; error?: string }> {
+async function refreshEoy(supabaseUrl: string, serviceRoleKey: string, source: SourceRow): Promise<{ inserted: number; updated: number; error?: StepError }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
   try {
+    const sourceUrl = String(source.url || source.fetch_url || source.feed_url || "").trim();
+    const cacheBusted = sourceUrl
+      ? (sourceUrl.includes("?") ? `${sourceUrl}&_ts=${Date.now()}` : `${sourceUrl}?_ts=${Date.now()}`)
+      : null;
     const res = await fetch(`${supabaseUrl}/functions/v1/fetch-eoy-news`, {
       signal: controller.signal,
       method: "POST",
+      cache: "no-store",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${serviceRoleKey}`,
         "apikey": serviceRoleKey,
+        "Cache-Control": "no-cache",
       },
-      body: JSON.stringify({ url: source.url || source.fetch_url || source.feed_url || null, dryRun: false }),
+      body: JSON.stringify({ url: cacheBusted, dryRun: false }),
     });
-    const payload = await res.json().catch(async () => ({ error: await res.text().catch(() => "EOÜ refresh failed") }));
+    const rawBody = await res.text().catch(() => "");
+    const payload = (() => {
+      try { return JSON.parse(rawBody || "{}"); } catch { return { error: rawBody || "EOÜ refresh failed" }; }
+    })();
     if (!res.ok) {
-      return { inserted: 0, updated: 0, error: payload?.error || `fetch-eoy-news HTTP ${res.status}` };
+      return {
+        inserted: 0,
+        updated: 0,
+        error: {
+          step: "fetch-eoy-news",
+          status: res.status,
+          bodySnippet: String(rawBody || "").slice(0, 240),
+          message: payload?.error || `fetch-eoy-news HTTP ${res.status}`,
+        },
+      };
     }
     return {
       inserted: Number(payload?.insertedCount ?? payload?.inserted ?? 0),
       updated: Number(payload?.updatedCount ?? payload?.updated ?? 0),
     };
   } catch (e: any) {
-    return { inserted: 0, updated: 0, error: String(e?.message || e) };
+    return {
+      inserted: 0,
+      updated: 0,
+      error: {
+        step: "fetch-eoy-news",
+        message: String(e?.message || e),
+      },
+    };
   } finally {
     clearTimeout(timer);
   }
 }
 
 function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array<Record<string, unknown>> {
-  const sourceKey = String(source.source_key || source.key || source.slug || "unknown");
+  const sourceIdentity = String(source.source_key || source.key || source.slug || "unknown");
   const now = new Date().toISOString();
   const out: Array<Record<string, unknown>> = [];
 
@@ -160,9 +187,10 @@ function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array
     if (!title) continue;
     const externalId = String(item.external_id || "").trim();
     const guid = externalId || String(item.permalink_url || "").trim() || `${source.slug}:${title}:${normalizePublishedAt(item.published_at)}`;
+    const itemSourceKey = `${sourceIdentity}:${guid}`;
     out.push({
       source_id: source.id,
-      source_key: sourceKey,
+      source_key: itemSourceKey,
       source_slug: source.slug,
       source_name: source.name,
       title,
@@ -206,7 +234,7 @@ Deno.serve(async (req) => {
     if (sourcesError) return json({ error: sourcesError.message }, 500);
 
     const enabledSources = (sources || []) as SourceRow[];
-    const errors: Array<{ source: string; error: string }> = [];
+    const errors: Array<{ source: string; error: string; step?: string; status?: number; bodySnippet?: string }> = [];
     const sourceCounts = new Map<string, { slug: string; inserted: number; updated: number; errors: string[] }>();
     let inserted = 0;
     let updated = 0;
@@ -226,8 +254,8 @@ Deno.serve(async (req) => {
         sourceCounts.get(source.slug)!.inserted += result.inserted;
         sourceCounts.get(source.slug)!.updated += result.updated;
         if (result.error) {
-          errors.push({ source: source.slug, error: result.error });
-          sourceCounts.get(source.slug)!.errors.push(result.error);
+          errors.push({ source: source.slug, error: result.error.message, step: result.error.step, status: result.error.status, bodySnippet: result.error.bodySnippet });
+          sourceCounts.get(source.slug)!.errors.push(result.error.message);
         }
         continue;
       }
@@ -240,6 +268,7 @@ Deno.serve(async (req) => {
 
       try {
         const feedRes = await fetch(sourceUrl, {
+          cache: "no-store",
           headers: { "User-Agent": "EstBirding/1.0", "Accept": "application/rss+xml, application/xml, text/xml, */*" },
         });
         if (!feedRes.ok) {
@@ -254,7 +283,7 @@ Deno.serve(async (req) => {
         for (const row of rows) {
           const { data: upserted, error } = await supabase
             .from("news_items")
-            .upsert(row, { onConflict: "source_slug,guid" })
+            .upsert(row, { onConflict: "source_key" })
             .select("id, image_url, cached_image_url, source_slug, source_key")
             .single();
           if (error || !upserted?.id) {

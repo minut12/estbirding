@@ -167,7 +167,6 @@ curl -i "https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/ebird_recent?regi
 ## News schema contract
 
 - `public.news_items` is the write-table used by ingestion/refresh functions.
-- `public.news_items_v` is the read-view used by frontend queries.
-- `news_items_v` must provide: `id`, `source_id`, `source_key`, `source_name`, `title`, `url`, `summary/body`, `published_at`, `created_at`, `image_url`, `cached_image_url`, `cached_image_path`.
-- `source_name` is always derived via `COALESCE(news_sources.name, news_sources.key, news_sources.slug, ...)` so UI can render safely.
-- Frontend falls back to querying `news_items` directly if `news_items_v` is missing or column-mismatched.
+- Frontend reads directly from `public.news_items` and resolves source labels from `public.news_sources`.
+- News image fields: `image_url`, `cached_image_url`, `cached_image_path`.
+- `news-refresh` upserts by `source_id + url` and caches images into `news-images`.

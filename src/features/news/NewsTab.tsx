@@ -57,7 +57,6 @@ interface NewsSource {
   key?: string | null;
 }
 
-const NEWS_SELECT = 'id, source_id, source_key, source_name, source_slug, title, url, permalink_url, summary, body, published_at, created_at, image_url, cached_image_url, cached_image_path, is_archived';
 const NEWS_TABLE_SELECT = 'id, source_id, source_key, source_slug, title, url, permalink_url, summary, body, published_at, created_at, image_url, cached_image_url, image_cached_url, archived';
 
 /* â”€â”€ Format date â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -227,15 +226,6 @@ function ensureImageUrl(item: NewsItem): NewsItem {
   const decoded = cached || display || decodeUrl(item.image_url);
   if (decoded) return { ...item, cached_image_url: cached || undefined, image_url: decoded, display_image_url: display || decoded };
   return { ...item, image_url: extractImageUrlFromRaw(item) };
-}
-
-function shouldFallbackNewsQuery(error: unknown): boolean {
-  const reason = formatErrorReason(error).toLowerCase();
-  return reason.includes('does not exist')
-    || reason.includes('schema cache')
-    || reason.includes('could not find the table')
-    || reason.includes('relation')
-    || reason.includes('column');
 }
 
 const BIRDING_POLAND_NAME = 'birding poland';
@@ -485,52 +475,31 @@ const {
     queryKey: ['news-items', tab],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('news_items_v')
-        .select(NEWS_SELECT)
-        .eq('is_archived', tab === 'archive')
+        .from('news_items')
+        .select(NEWS_TABLE_SELECT)
+        .eq('archived', tab === 'archive')
         .order('published_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false, nullsFirst: false })
         .limit(50);
-
-      if (error && shouldFallbackNewsQuery(error)) {
-        const { data: tableData, error: tableError } = await supabase
-          .from('news_items')
-          .select(NEWS_TABLE_SELECT)
-          .eq('archived', tab === 'archive')
-          .order('published_at', { ascending: false, nullsFirst: false })
-          .order('created_at', { ascending: false, nullsFirst: false })
-          .limit(50);
-        if (tableError) {
-          console.error('[NEWS] fallback items query failed', tableError);
-          throw tableError;
-        }
-
-        const bySourceId = new Map<string, NewsSource>();
-        for (const source of sources) bySourceId.set(source.id, source);
-        const mapped = ((tableData || []) as Array<Record<string, any>>).map((row) => {
-          const source = row?.source_id ? bySourceId.get(String(row.source_id)) : null;
-          return {
-            ...row,
-            source_name: source?.name || row?.source_slug || row?.source_key || 'Unknown source',
-            source_key: source?.key || source?.source_key || row?.source_key || row?.source_slug || null,
-            cached_image_url: row?.cached_image_url || row?.image_cached_url || null,
-            is_archived: Boolean(row?.archived),
-          } as NewsItem;
-        }).map(ensureImageUrl);
-
-        return mapped.sort((a, b) => {
-          const ta = new Date(a.published_at || a.created_at || '').getTime() || 0;
-          const tb = new Date(b.published_at || b.created_at || '').getTime() || 0;
-          return tb - ta;
-        });
-      }
 
       if (error) {
         console.error('[NEWS] items query failed', error);
         throw error;
       }
-      if (import.meta.env.DEV) console.log('[NEWS] first item', data?.[0]);
-      const items = ((data || []) as NewsItem[]).map(ensureImageUrl);
+      const bySourceId = new Map<string, NewsSource>();
+      for (const source of sources) bySourceId.set(source.id, source);
+      const mapped = ((data || []) as Array<Record<string, any>>).map((row) => {
+        const source = row?.source_id ? bySourceId.get(String(row.source_id)) : null;
+        return {
+          ...row,
+          source_name: source?.name || row?.source_slug || row?.source_key || 'Unknown source',
+          source_key: source?.key || source?.source_key || row?.source_key || row?.source_slug || null,
+          cached_image_url: row?.cached_image_url || row?.image_cached_url || null,
+          is_archived: Boolean(row?.archived),
+        } as NewsItem;
+      });
+      if (import.meta.env.DEV) console.log('[NEWS] first item', mapped?.[0]);
+      const items = mapped.map(ensureImageUrl);
       return items.sort((a, b) => {
         const ta = new Date(a.published_at || a.created_at || '').getTime() || 0;
         const tb = new Date(b.published_at || b.created_at || '').getTime() || 0;
@@ -610,9 +579,9 @@ const {
     mutationFn: async () => {
       const fnName = 'news-refresh';
       const { data, error } = await supabase.functions.invoke(fnName, {
-        body: { force: true, proxyBase: resolveProxyBase() },
+        body: { force: true },
       });
-      if (error) throw new Error(`${fnName}: ${formatErrorReason(error)}`);
+      if (error) throw new Error(error.message || `${fnName}: ${formatErrorReason(error)}`);
       return data;
     },
     onSuccess: async (data) => {
@@ -746,7 +715,7 @@ const {
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Otsi uudiseidâ€¦"
+              placeholder="Otsi uudiseid…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9 h-9"

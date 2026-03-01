@@ -1,106 +1,260 @@
-﻿import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { corsHeaders, handleOptions } from "../_shared/cors.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { parseRss, normalizeRssItem, type NormalizedRssItem } from "../_shared/rss-normalize.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+type SourceRow = {
+  id: string;
+  slug: string;
+  name: string;
+  key?: string | null;
+  source_key?: string | null;
+  type?: string | null;
+  feed_url?: string | null;
+  fetch_url?: string | null;
+  is_active?: boolean | null;
+  is_enabled?: boolean | null;
+};
+
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" },
+  });
+}
+
+function decodeUrl(u: string | null | undefined): string | null {
+  if (!u) return null;
+  return u.replaceAll("&amp;", "&").replaceAll("&#38;", "&");
+}
+
+function canonicalizeUrl(raw: string | null | undefined): string {
+  const input = String(raw || "").trim();
+  if (!input) return "";
+  try {
+    const u = new URL(input);
+    const dropParams = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid", "gclid"];
+    for (const p of dropParams) u.searchParams.delete(p);
+    if (u.pathname.length > 1) u.pathname = u.pathname.replace(/\/+$/, "");
+    return u.toString();
+  } catch {
+    return input.replace(/\/+$/, "");
+  }
+}
+
+async function sha1Hex(input: string): Promise<string> {
+  const data = new TextEncoder().encode(input);
+  const hash = await crypto.subtle.digest("SHA-1", data);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function extFromContentType(contentType: string | null): string {
+  const ct = String(contentType || "").toLowerCase();
+  if (ct.includes("png")) return "png";
+  if (ct.includes("webp")) return "webp";
+  if (ct.includes("gif")) return "gif";
+  if (ct.includes("avif")) return "avif";
+  if (ct.includes("svg")) return "svg";
+  return "jpg";
+}
+
+async function cacheImage(
+  supabase: any,
+  supabaseUrl: string,
+  item: { id: string; source_slug?: string | null; source_key?: string | null; image_url?: string | null; cached_image_url?: string | null },
+): Promise<void> {
+  const imageUrl = decodeUrl(item.image_url);
+  if (!item.id || !imageUrl || item.cached_image_url) return;
+  try {
+    const imageRes = await fetch(imageUrl, { headers: { "User-Agent": "EstBirding/1.0" } });
+    if (!imageRes.ok) return;
+    const bytes = await imageRes.arrayBuffer();
+    const ext = extFromContentType(imageRes.headers.get("content-type"));
+    const sourcePath = String(item.source_slug || item.source_key || "news").toLowerCase().replace(/[^a-z0-9_-]+/g, "-") || "news";
+    const hash = await sha1Hex(imageUrl);
+    const filePath = `${sourcePath}/${hash}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("news-images")
+      .upload(filePath, bytes, {
+        upsert: true,
+        contentType: imageRes.headers.get("content-type") || "image/jpeg",
+      });
+    if (uploadError) return;
+
+    const cachedImageUrl = `${supabaseUrl}/storage/v1/object/public/news-images/${filePath}`;
+    await supabase.from("news_items").update({
+      cached_image_url: cachedImageUrl,
+      cached_image_path: filePath,
+    }).eq("id", item.id);
+  } catch {
+    // best effort
+  }
+}
+
+function normalizePublishedAt(value: string | null | undefined): string {
+  const raw = String(value || "").trim();
+  if (!raw) return new Date().toISOString();
+  const ms = new Date(raw).getTime();
+  if (!Number.isFinite(ms)) return new Date().toISOString();
+  return new Date(ms).toISOString();
+}
+
+function sourceType(source: SourceRow): string {
+  return String(source.type || "").toLowerCase();
+}
+
+async function refreshEoy(supabaseUrl: string, serviceRoleKey: string, source: SourceRow): Promise<{ inserted: number; updated: number }> {
+  const res = await fetch(`${supabaseUrl}/functions/v1/fetch-eoy-news`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${serviceRoleKey}`,
+      "apikey": serviceRoleKey,
+    },
+    body: JSON.stringify({ dry_run: false, feed_url: source.fetch_url || null }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(payload?.error || `fetch-eoy-news HTTP ${res.status}`);
+  return {
+    inserted: Number(payload?.insertedCount ?? payload?.inserted ?? 0),
+    updated: Number(payload?.updatedCount ?? payload?.updated ?? 0),
+  };
+}
+
+async function cacheMissingImagesForSource(supabase: any, supabaseUrl: string, sourceId: string): Promise<void> {
+  const { data: rows } = await supabase
+    .from("news_items")
+    .select("id, source_slug, source_key, image_url, cached_image_url")
+    .eq("source_id", sourceId)
+    .is("cached_image_url", null)
+    .not("image_url", "is", null)
+    .limit(30);
+  for (const row of (rows || [])) {
+    await cacheImage(supabase, supabaseUrl, row);
+  }
+}
+
+function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array<Record<string, unknown>> {
+  const sourceKey = String(source.source_key || source.key || source.slug || "unknown");
+  const now = new Date().toISOString();
+  const out: Array<Record<string, unknown>> = [];
+
+  for (const item of items) {
+    const url = canonicalizeUrl(item.permalink_url || "");
+    if (!url) continue;
+    const title = String(item.title || "").trim();
+    if (!title) continue;
+    const externalId = String(item.external_id || url).trim();
+    out.push({
+      source_id: source.id,
+      source_slug: source.slug,
+      source_key: sourceKey,
+      external_id: externalId,
+      title,
+      summary: item.body?.slice(0, 500) || null,
+      body: item.body || null,
+      content_html: item.body_html || null,
+      url,
+      permalink_url: url,
+      published_at: normalizePublishedAt(item.published_at),
+      image_url: decodeUrl(item.image_url),
+      language: "pl",
+      lang: "pl",
+      source_lang: "pl",
+      fetched_at: now,
+      guid: `${source.slug}:${externalId}`,
+      raw_json: item.raw_json,
+    });
+  }
+  return out;
+}
 
 Deno.serve(async (req) => {
-  const opt = handleOptions(req);
-  if (opt) return opt;
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders });
+  }
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" },
-    });
+    return json({ error: "Method not allowed" }, 405);
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceRoleKey) {
+    return json({ error: "Missing env: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" }, 500);
   }
 
   try {
-    const body = await req.json().catch(() => ({}));
-    const proxyBase = String(body?.proxyBase || "").trim() || null;
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!supabaseUrl || !serviceRoleKey) {
-      return new Response(JSON.stringify({
-        error: "Missing env: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY",
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" },
-      });
-    }
     const supabase = createClient(supabaseUrl, serviceRoleKey);
-
-    const { data: sources, error: srcErr } = await supabase
+    const { data: sources, error: sourcesError } = await supabase
       .from("news_sources")
-      .select("id, name, slug, type, kind, feed_url, fetch_url, is_active, is_enabled")
+      .select("id, slug, name, key, source_key, type, feed_url, fetch_url, is_active, is_enabled")
       .eq("is_active", true)
       .eq("is_enabled", true);
-    let workingSources = (sources || []) as any[];
-    if (srcErr || workingSources.length === 0) {
-      console.error("[news-refresh] news_sources query failed, using fallback", srcErr);
-      const fallback = [
-        { slug: "eoy", name: "EOÜ", type: "scrape", fetch_url: "https://www.eoy.ee/ET/uudised/" },
-        { slug: "birding_poland", name: "Birding Poland", type: "rss", feed_url: "https://rss.app/feeds/oj8X6cpy0jWL7JNy.xml" },
-      ];
-      workingSources = fallback;
-    }
 
-    const targetSources = (workingSources || []).filter((s: any) => {
-      const n = String(s?.name || "").toLowerCase();
-      const slug = String(s?.slug || "").toLowerCase();
-      const t = String(s?.type || s?.kind || "").toLowerCase();
-      return (t === "scrape" && (n.includes("eoü") || n.includes("eoy") || slug.includes("eoy") || slug.includes("eou")))
-        || (t === "rss" && (n.includes("birding poland") || slug.includes("birding")));
-    });
+    if (sourcesError) return json({ error: sourcesError.message }, 500);
+    const enabledSources = (sources || []) as SourceRow[];
 
-    const pullRes = await fetch(`${supabaseUrl}/functions/v1/news-pull`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${serviceRoleKey}`,
-        "apikey": serviceRoleKey,
-      },
-      body: JSON.stringify({ force: true, proxyBase }),
-    });
+    let inserted = 0;
+    let updated = 0;
 
-    const pullPayload = await pullRes.json().catch(() => ({}));
-    if (!pullRes.ok) {
-      return new Response(JSON.stringify({ error: pullPayload?.error || `news-pull HTTP ${pullRes.status}` }), {
-        status: 502,
-        headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" },
+    for (const source of enabledSources) {
+      const slug = String(source.slug || "").toLowerCase();
+      const name = String(source.name || "").toLowerCase();
+      const kind = sourceType(source);
+      const isEoy = slug.includes("eoy") || slug.includes("eou") || name.includes("eoü") || String(source.fetch_url || "").includes("eoy.ee");
+      const isRss = kind === "rss";
+
+      if (isEoy) {
+        const result = await refreshEoy(supabaseUrl, serviceRoleKey, source);
+        inserted += result.inserted;
+        updated += result.updated;
+        await cacheMissingImagesForSource(supabase, supabaseUrl, source.id);
+        continue;
+      }
+
+      if (!isRss) continue;
+      const feedUrl = String(source.feed_url || "").trim();
+      if (!feedUrl) continue;
+
+      const feedRes = await fetch(feedUrl, {
+        headers: { "User-Agent": "EstBirding/1.0", "Accept": "application/rss+xml, application/xml, text/xml, */*" },
       });
+      if (!feedRes.ok) continue;
+
+      const xml = await feedRes.text();
+      const parsed = parseRss(xml);
+      const normalized = parsed.map((item) => normalizeRssItem(item));
+      const rows = normalizeRssItems(normalized, source);
+
+      for (const row of rows) {
+        const existing = await supabase
+          .from("news_items")
+          .select("id")
+          .eq("source_id", row.source_id)
+          .eq("url", row.url)
+          .maybeSingle();
+        const { data: upserted, error } = await supabase
+          .from("news_items")
+          .upsert(row, { onConflict: "source_id,url" })
+          .select("id, source_slug, source_key, image_url, cached_image_url")
+          .single();
+        if (error || !upserted?.id) continue;
+
+        if (existing?.data?.id) updated += 1;
+        else inserted += 1;
+        if (upserted.image_url && !upserted.cached_image_url) {
+          await cacheImage(supabase, supabaseUrl, upserted);
+        }
+      }
     }
 
-    const allResults = Array.isArray(pullPayload?.results) ? pullPayload.results : [];
-    const allowed = new Set(targetSources.map((s: any) => String(s.slug || "").toLowerCase()));
-    const sourceNameBySlug = new Map<string, string>(
-      targetSources.map((s: any) => [String(s.slug || "").toLowerCase(), String(s.name || s.slug || "")]),
-    );
-    const filteredResults = allResults.filter((r: any) => allowed.has(String(r?.source || "").toLowerCase()));
-
-    const sourcesSummary = filteredResults.map((r: any) => ({
-      source: sourceNameBySlug.get(String(r?.source || "").toLowerCase()) || String(r?.source || ""),
-      found: Number(r?.debug?.foundCount ?? r?.fetched ?? 0),
-      upserted: Number(r?.debug?.upsertedCount ?? r?.inserted ?? 0),
-      newestUrl: r?.debug?.newestUrl || null,
-      error: r?.error || null,
-    }));
-
-    const foundCount = sourcesSummary.reduce((s: number, r: any) => s + Number(r.found || 0), 0);
-    const upsertedCount = sourcesSummary.reduce((s: number, r: any) => s + Number(r.upserted || 0), 0);
-    const newestUrl = sourcesSummary.find((s: any) => s?.newestUrl)?.newestUrl || null;
-
-    return new Response(JSON.stringify({
-      success: true,
-      foundCount,
-      upsertedCount,
-      newestUrl,
-      sources: sourcesSummary,
-      results: filteredResults,
-    }), {
-      headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" },
-    });
+    return json({ ok: true, inserted, updated });
   } catch (error) {
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
-      status: 500,
-      headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" },
-    });
+    return json({ error: (error as Error).message }, 500);
   }
 });

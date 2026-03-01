@@ -14,6 +14,24 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_secrets: {
+        Row: {
+          created_at: string
+          hash: string
+          key: string
+        }
+        Insert: {
+          created_at?: string
+          hash: string
+          key: string
+        }
+        Update: {
+          created_at?: string
+          hash?: string
+          key?: string
+        }
+        Relationships: []
+      }
       bird_avatar_map: {
         Row: {
           file_path: string
@@ -181,6 +199,66 @@ export type Database = {
           },
         ]
       }
+      events_manual: {
+        Row: {
+          archived_at: string | null
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          ends_at: string | null
+          id: string
+          image_path: string | null
+          image_url: string | null
+          lat: number | null
+          location_name: string | null
+          lon: number | null
+          starts_at: string
+          status: string
+          title: string
+          type: string
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          archived_at?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          ends_at?: string | null
+          id?: string
+          image_path?: string | null
+          image_url?: string | null
+          lat?: number | null
+          location_name?: string | null
+          lon?: number | null
+          starts_at: string
+          status?: string
+          title: string
+          type?: string
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          archived_at?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          ends_at?: string | null
+          id?: string
+          image_path?: string | null
+          image_url?: string | null
+          lat?: number | null
+          location_name?: string | null
+          lon?: number | null
+          starts_at?: string
+          status?: string
+          title?: string
+          type?: string
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: []
+      }
       events_sources: {
         Row: {
           created_at: string
@@ -264,6 +342,8 @@ export type Database = {
           archived: boolean
           body: string | null
           body_et: string | null
+          cached_image_path: string | null
+          cached_image_url: string | null
           content_fetch_error: string | null
           content_fetched_at: string | null
           content_html: string | null
@@ -298,6 +378,8 @@ export type Database = {
           archived?: boolean
           body?: string | null
           body_et?: string | null
+          cached_image_path?: string | null
+          cached_image_url?: string | null
           content_fetch_error?: string | null
           content_fetched_at?: string | null
           content_html?: string | null
@@ -332,6 +414,8 @@ export type Database = {
           archived?: boolean
           body?: string | null
           body_et?: string | null
+          cached_image_path?: string | null
+          cached_image_url?: string | null
           content_fetch_error?: string | null
           content_fetched_at?: string | null
           content_html?: string | null
@@ -422,10 +506,231 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      news_items_v: {
+        Row: {
+          archived: boolean | null
+          body: string | null
+          body_et: string | null
+          cached_image_path: string | null
+          cached_image_url: string | null
+          content_fetch_error: string | null
+          content_fetched_at: string | null
+          content_html: string | null
+          created_at: string | null
+          display_image_url: string | null
+          external_id: string | null
+          fetched_at: string | null
+          guid: string | null
+          id: string | null
+          image_cached_url: string | null
+          image_url: string | null
+          image_url_original: string | null
+          language: string | null
+          permalink_url: string | null
+          published_at: string | null
+          raw_json: Json | null
+          source_id: string | null
+          source_key: string | null
+          source_lang: string | null
+          source_name: string | null
+          source_slug: string | null
+          summary: string | null
+          title: string | null
+          title_et: string | null
+          translated_at: string | null
+          translated_body: string | null
+          translated_title: string | null
+          translation_error: string | null
+          translation_status: string | null
+          updated_at: string | null
+          url: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "news_items_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "news_sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
-      [_ in never]: never
+      _events_admin_bootstrap_or_check: {
+        Args: { admin_key: string }
+        Returns: undefined
+      }
+      events_admin_archive: {
+        Args: { admin_key: string; p_id: string }
+        Returns: {
+          archived_at: string | null
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          ends_at: string | null
+          id: string
+          image_path: string | null
+          image_url: string | null
+          lat: number | null
+          location_name: string | null
+          lon: number | null
+          starts_at: string
+          status: string
+          title: string
+          type: string
+          updated_at: string
+          url: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "events_manual"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      events_admin_create:
+        | {
+            Args: {
+              admin_key: string
+              p_description?: string
+              p_ends_at?: string
+              p_lat?: number
+              p_location_name?: string
+              p_lon?: number
+              p_starts_at: string
+              p_title: string
+              p_type?: string
+              p_url?: string
+            }
+            Returns: {
+              archived_at: string | null
+              created_at: string
+              deleted_at: string | null
+              description: string | null
+              ends_at: string | null
+              id: string
+              image_path: string | null
+              image_url: string | null
+              lat: number | null
+              location_name: string | null
+              lon: number | null
+              starts_at: string
+              status: string
+              title: string
+              type: string
+              updated_at: string
+              url: string | null
+            }
+            SetofOptions: {
+              from: "*"
+              to: "events_manual"
+              isOneToOne: true
+              isSetofReturn: false
+            }
+          }
+        | {
+            Args: {
+              admin_key: string
+              p_description?: string
+              p_ends_at?: string
+              p_image_path?: string
+              p_image_url?: string
+              p_lat?: number
+              p_location_name?: string
+              p_lon?: number
+              p_starts_at: string
+              p_title: string
+              p_type?: string
+              p_url?: string
+            }
+            Returns: {
+              archived_at: string | null
+              created_at: string
+              deleted_at: string | null
+              description: string | null
+              ends_at: string | null
+              id: string
+              image_path: string | null
+              image_url: string | null
+              lat: number | null
+              location_name: string | null
+              lon: number | null
+              starts_at: string
+              status: string
+              title: string
+              type: string
+              updated_at: string
+              url: string | null
+            }
+            SetofOptions: {
+              from: "*"
+              to: "events_manual"
+              isOneToOne: true
+              isSetofReturn: false
+            }
+          }
+      events_admin_delete: {
+        Args: { admin_key: string; p_id: string }
+        Returns: Json
+      }
+      events_admin_health: { Args: { admin_key: string }; Returns: Json }
+      events_admin_unarchive: {
+        Args: { admin_key: string; p_id: string }
+        Returns: {
+          archived_at: string | null
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          ends_at: string | null
+          id: string
+          image_path: string | null
+          image_url: string | null
+          lat: number | null
+          location_name: string | null
+          lon: number | null
+          starts_at: string
+          status: string
+          title: string
+          type: string
+          updated_at: string
+          url: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "events_manual"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      events_admin_update: {
+        Args: { admin_key: string; p_id: string; p_patch: Json }
+        Returns: {
+          archived_at: string | null
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          ends_at: string | null
+          id: string
+          image_path: string | null
+          image_url: string | null
+          lat: number | null
+          location_name: string | null
+          lon: number | null
+          starts_at: string
+          status: string
+          title: string
+          type: string
+          updated_at: string
+          url: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "events_manual"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
     }
     Enums: {
       [_ in never]: never

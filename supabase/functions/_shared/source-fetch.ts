@@ -78,30 +78,26 @@ function bodySnippet(body: string): string {
   return String(body || "").replace(/\s+/g, " ").trim().slice(0, 200);
 }
 
-const BROWSER_UA = "Mozilla/5.0 (Linux; Android 14; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36";
+const MOBILE_UA = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36";
+const DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36";
 
-function browserHeaders(extra: Record<string, string> = {}): Record<string, string> {
+function browserHeaders(userAgent: string, extra: Record<string, string> = {}): Record<string, string> {
   return {
-    "user-agent": BROWSER_UA,
+    "user-agent": userAgent,
     "accept-language": "en-US,en;q=0.9,et;q=0.8",
     ...extra,
   };
 }
 
 async function fetchRssText(url: string, proxyBase = ""): Promise<RssFetchResult> {
-  const rssHeaders = browserHeaders({
-    accept: "application/rss+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.1",
-    referer: "https://rss.app/",
-  });
-  const htmlHeaders = browserHeaders({
-    accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    referer: "https://rss.app/",
-  });
+  const primaryAccept = "application/rss+xml, application/xml;q=0.9, text/xml;q=0.8, text/html;q=0.5, */*;q=0.1";
+  const mobileHeaders = browserHeaders(MOBILE_UA, { accept: primaryAccept, referer: "https://rss.app/" });
+  const desktopHeaders = browserHeaders(DESKTOP_UA, { accept: primaryAccept, referer: "https://rss.app/" });
 
   const fetchDirect = async (targetUrl: string): Promise<RssFetchResult> => {
-    let direct = await fetch(targetUrl, { method: "GET", headers: rssHeaders, redirect: "follow" });
-    if (!direct.ok && /rss\.app\/feeds\//i.test(targetUrl)) {
-      direct = await fetch(targetUrl, { method: "GET", headers: htmlHeaders, redirect: "follow" });
+    let direct = await fetch(targetUrl, { method: "GET", headers: mobileHeaders, redirect: "follow" });
+    if (!direct.ok && /rss\.app\/feeds\//i.test(targetUrl) && (direct.status === 403 || direct.status === 404)) {
+      direct = await fetch(targetUrl, { method: "GET", headers: desktopHeaders, redirect: "follow" });
     }
     const directText = await direct.text();
     const directType = String(direct.headers.get("content-type") || "");
@@ -127,7 +123,7 @@ async function fetchRssText(url: string, proxyBase = ""): Promise<RssFetchResult
 
   const fetchViaProxy = async (targetUrl: string): Promise<RssFetchResult> => {
     const proxiedUrl = buildProxyUrl(targetUrl, proxyBase);
-    const proxied = await fetch(proxiedUrl, { method: "GET", headers: rssHeaders, redirect: "follow" });
+    const proxied = await fetch(proxiedUrl, { method: "GET", headers: mobileHeaders, redirect: "follow" });
     const proxiedText = await proxied.text();
     const proxiedType = String(proxied.headers.get("content-type") || "");
     const proxiedBlocked = looksLikeHtmlChallenge(proxiedType, proxiedText);
@@ -152,7 +148,7 @@ async function fetchRssText(url: string, proxyBase = ""): Promise<RssFetchResult
       targetUrl: url,
       finalUrl: proxiedResult.finalUrl,
       status: proxiedResult.status,
-      snippet: proxiedResult.bodySnippet,
+      snippet: proxiedResult.bodySnippet.slice(0, 200),
     });
   }
   return proxiedResult;

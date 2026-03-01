@@ -15,9 +15,10 @@ import { isEstonianLocale, normalizeLocale, resolveAppLocale } from '@/lib/local
 import { TranslateEtHttpError, translateEt, type TranslateEtOutput } from '@/lib/translateEt';
 import { toast } from 'sonner';
 import { resolveEndpoint, TRANSLATION_ENDPOINT_UPDATED_EVENT } from '@/config/translationEndpoint';
-import { buildProxyUrl, getProxyMode, resolveProxyBase } from '@/config/proxyEndpoint';
+import { getProxyMode } from '@/config/proxyEndpoint';
 import { getSupabaseUrl } from '@/config/supabaseConfig';
 import { normalizeDisplayText } from '@/lib/textNormalize';
+import { getNewsImageSrc, getProxiedImageUrl, getProxyBase, isProxiedImageUrl } from './newsImage';
 
 /* Types */
 interface NewsItem {
@@ -247,50 +248,6 @@ const DEBUG_NEWS_IMAGE = import.meta.env.DEV
   && (window.localStorage.getItem('debugNewsImg') === '1' || new URLSearchParams(window.location.search).has('debugNewsImg'));
 const IMAGE_PLACEHOLDER_LOCAL = '/placeholder.svg';
 
-function normalizeImageProxyBase(rawBase: string): string {
-  const base = String(rawBase || '').trim();
-  if (!base) return '';
-  if (/[?&]url=/.test(base) || base.includes('{url}')) return base;
-  if (base.includes('?')) return `${base}&url=`;
-  return `${base}?url=`;
-}
-
-function isBirdingPolandSource(sourceName: string, sourceSlug: string | null | undefined): boolean {
-  return String(sourceName || '').trim().toLowerCase() === BIRDING_POLAND_NAME
-    || String(sourceSlug || '').trim().toLowerCase() === 'birding_poland';
-}
-
-function toWeservUrl(rawUrl: string): string {
-  const withoutProtocol = rawUrl.replace(/^https?:\/\//i, '');
-  return `https://images.weserv.nl/?url=${encodeURIComponent(withoutProtocol)}&w=900&output=webp`;
-}
-
-function resolveNewsImageUrl(item: NewsItem, proxyBase: string, sourceName?: string): string {
-  const raw = decodeUrl(item.display_image_url) || decodeUrl(item.cached_image_url) || decodeUrl(item.image_url) || '';
-  const clean = String(raw || '').trim();
-  if (!clean) return '';
-  if (clean.startsWith('data:') || clean.startsWith('blob:')) return clean;
-  try {
-    const parsed = new URL(clean);
-    const host = parsed.hostname.toLowerCase();
-    const isBirdingPoland = isBirdingPolandSource(sourceName || '', item.source_slug);
-    const isFb = /fbcdn\.net|scontent-|facebook\.com/i.test(host);
-    const isTrustedOwn = host.endsWith('.supabase.co')
-      || host.endsWith('estbirding.ee')
-      || clean.includes('/storage/v1/object/public/');
-    if (isTrustedOwn) return clean;
-    if (isBirdingPoland && isFb) return toWeservUrl(clean);
-    if (!isBirdingPoland) return clean;
-    const shouldProxy = host === 'rss.app' || host.endsWith('.rss.app') || host === 'rss2.app' || host.endsWith('.rss2.app');
-    if (!shouldProxy) return clean;
-    const normalizedProxyBase = normalizeImageProxyBase(proxyBase);
-    if (!normalizedProxyBase) return clean;
-    return buildProxyUrl(clean, normalizedProxyBase);
-  } catch {
-    return clean;
-  }
-}
-
 function rewriteImgSrcToProxy(html: string, sourceName: string, proxyBase: string): string {
   if (!html) return html;
   try {
@@ -298,20 +255,7 @@ function rewriteImgSrcToProxy(html: string, sourceName: string, proxyBase: strin
     doc.querySelectorAll('img').forEach((img) => {
       const src = (img.getAttribute('src') || img.getAttribute('data-src') || '').trim();
       if (!src) return;
-      const rewritten = resolveNewsImageUrl({
-        id: '',
-        source_slug: sourceName,
-        title: '',
-        summary: null,
-        body: null,
-        content_html: null,
-        url: null,
-        image_url: src,
-        published_at: null,
-        language: null,
-        guid: null,
-        is_archived: false,
-      }, proxyBase, sourceName);
+      const rewritten = getProxiedImageUrl(src, proxyBase);
       if (rewritten) img.setAttribute('src', rewritten);
       img.removeAttribute('data-src');
     });
@@ -467,8 +411,8 @@ export default function NewsTab() {
   const showEtContent = isEstonianLocale(appLocale);
   const autoTranslateEnabled = isAutoTranslateNewsToEtEnabled();
   const [translateEndpoint, setTranslateEndpoint] = useState(() => resolveEndpoint());
-  const [resolvedProxyBase, setResolvedProxyBase] = useState(() => resolveProxyBase());
-  const [activeProxyName, setActiveProxyName] = useState(() => getProxyMode(resolveProxyBase()));
+  const [resolvedProxyBase, setResolvedProxyBase] = useState(() => getProxyBase());
+  const [activeProxyName, setActiveProxyName] = useState(() => getProxyMode(getProxyBase()));
   const [lastNewsFetchErrorShort, setLastNewsFetchErrorShort] = useState('');
   const endpointConfigured = Boolean(translateEndpoint);
   const utf8Probe = 'Kõik allikad õäöü';
@@ -498,7 +442,7 @@ export default function NewsTab() {
 
   useEffect(() => {
     const refreshProxy = () => {
-      const resolved = resolveProxyBase();
+      const resolved = getProxyBase();
       setResolvedProxyBase(resolved);
       setActiveProxyName(getProxyMode(resolved));
     };
@@ -631,7 +575,7 @@ const {
     if (!bp) return;
     const imageUrl = decodeUrl(bp.image_url);
     const cached = decodeUrl(bp.cached_image_url);
-    const resolvedThumbnailSrc = resolveNewsImageUrl({ ...bp, display_image_url: cached || imageUrl }, resolvedProxyBase, 'Birding Poland');
+    const resolvedThumbnailSrc = getNewsImageSrc({ ...bp, display_image_url: cached || imageUrl }, resolvedProxyBase);
     console.log('[news-image] birding-poland newest item', {
       url: bp.url,
       image_url: bp.image_url || null,
@@ -862,12 +806,9 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
   const [imageFailed, setImageFailed] = useState(false);
   const [cardRef, isVisible] = useOnceVisible<HTMLDivElement>();
   const debouncedVisible = useDebouncedTrue(isVisible, 180);
-  const cachedThumb = decodeUrl(item.cached_image_url);
-  const displayImageUrl = decodeUrl(item.display_image_url);
-  const rawImageUrl = decodeUrl(item.image_url);
   const sourceName = sourceLabel(item, sources);
   const isBirdingPoland = sourceName === 'Birding Poland';
-  const primaryThumb = resolveNewsImageUrl(item, proxyBase, sourceName);
+  const primaryThumb = getNewsImageSrc(item, proxyBase);
   const [thumbSrc, setThumbSrc] = useState<string | null>(primaryThumb);
   const translation = useEtTranslation({
     enabled: showEtContent && autoTranslateEnabled && debouncedVisible,
@@ -908,9 +849,14 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
               onError={(e) => {
                 if (import.meta.env.DEV && isBirdingPoland) {
                   const maybeStatus = (e as any)?.nativeEvent?.target?.status ?? (e.currentTarget as any)?.naturalWidth ?? null;
-                  console.warn('[news-image] birding-poland load failed', { thumbSrc, cachedThumb, image_url: item.image_url, cached_image_url: item.cached_image_url, status: maybeStatus });
+                  console.warn('[news-image] birding-poland load failed', { thumbSrc, image_url: item.image_url, cached_image_url: item.cached_image_url, status: maybeStatus });
                 }
                 const current = (e.currentTarget as HTMLImageElement).src || '';
+                const proxiedFallback = getProxiedImageUrl(item.image_url, proxyBase);
+                if (!isProxiedImageUrl(current, proxyBase) && proxiedFallback && proxiedFallback !== current) {
+                  setThumbSrc(proxiedFallback);
+                  return;
+                }
                 if (current !== IMAGE_PLACEHOLDER_LOCAL) {
                   setThumbSrc(IMAGE_PLACEHOLDER_LOCAL);
                   return;
@@ -1017,7 +963,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
 
   const sourceName = sourceLabel(item, sources);
   const isBirdingPoland = sourceName.trim().toLowerCase() === BIRDING_POLAND_NAME;
-  const proxyBase = resolveProxyBase();
+  const proxyBase = getProxyBase();
   const normalizedLang = normalizeLocale(item.source_lang || item.language || '');
   const isLikelyEstonian = normalizedLang === 'et';
   const canShowTranslate = !isLikelyEstonian || isBirdingPoland;
@@ -1042,7 +988,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
   const displayBody = hasTranslatedContent
     ? (manualTranslation?.body_et || normalizedBodyText)
     : (contentHtml || normalizedBodyText);
-  const heroImageUrl = resolveNewsImageUrl(item, proxyBase, sourceName);
+  const heroImageUrl = getNewsImageSrc(item, proxyBase);
   const [heroSrc, setHeroSrc] = useState<string | null>(heroImageUrl);
   const [heroFailed, setHeroFailed] = useState(false);
   const rewrittenContentHtml = contentHtml ? rewriteImgSrcToProxy(contentHtml, sourceName, proxyBase) : null;
@@ -1107,6 +1053,11 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
             referrerPolicy="no-referrer"
             crossOrigin="anonymous"
             onError={() => {
+              const proxiedFallback = getProxiedImageUrl(item.image_url, proxyBase);
+              if (heroSrc && !isProxiedImageUrl(heroSrc, proxyBase) && proxiedFallback && proxiedFallback !== heroSrc) {
+                setHeroSrc(proxiedFallback);
+                return;
+              }
               if (heroSrc && heroSrc !== IMAGE_PLACEHOLDER_LOCAL) {
                 setHeroSrc(IMAGE_PLACEHOLDER_LOCAL);
                 return;

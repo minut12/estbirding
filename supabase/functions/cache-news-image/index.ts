@@ -34,6 +34,16 @@ function isFacebookHost(url: string): boolean {
   }
 }
 
+function decodeHtmlEntitiesForUrl(u: string | null | undefined): string {
+  return String(u || "")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#38;/gi, "&")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'")
+    .replace(/^['"]+|['"]+$/g, "")
+    .trim();
+}
+
 async function fetchImage(url: string): Promise<{ ok: true; response: Response } | { ok: false; status: number; url: string }> {
   const isFb = isFacebookHost(url);
   const res = await fetch(url, {
@@ -102,7 +112,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    const targetImageUrl = String(item?.image_url || directImageUrl || "").trim();
+    const targetImageUrl = decodeHtmlEntitiesForUrl(item?.image_url || directImageUrl || "");
     if (!targetImageUrl) {
       return new Response(JSON.stringify({ error: "image_url is empty" }), {
         status: 400,
@@ -112,13 +122,18 @@ Deno.serve(async (req) => {
 
     let attempt = await fetchImage(targetImageUrl);
     if (!attempt.ok) {
-      const wsrv = `https://images.weserv.nl/?url=${encodeURIComponent(targetImageUrl.replace(/^https?:\/\//i, ""))}`;
-      attempt = await fetchImage(wsrv);
-      if (!attempt.ok) {
-        return new Response(JSON.stringify(attempt), {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+      const proxyAttempt = await fetchImage(`${supabaseUrl}/functions/v1/proxy?url=${encodeURIComponent(targetImageUrl)}`);
+      if (proxyAttempt.ok) {
+        attempt = proxyAttempt;
+      } else {
+        const wsrv = `https://images.weserv.nl/?url=${encodeURIComponent(targetImageUrl.replace(/^https?:\/\//i, ""))}`;
+        attempt = await fetchImage(wsrv);
+        if (!attempt.ok) {
+          return new Response(JSON.stringify(attempt), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
       }
     }
     let imageRes = attempt.response;

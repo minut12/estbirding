@@ -87,6 +87,13 @@ function decodeUrl(u: string | null | undefined): string | null {
   if (!u) return null;
   return u.replaceAll("&amp;", "&").replaceAll("&#38;", "&");
 }
+function decodeHtmlEntitiesForUrl(u: string | null | undefined): string {
+  return String(decodeUrl(u) || "")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'")
+    .replace(/^['"]+|['"]+$/g, "")
+    .trim();
+}
 
 function canonicalizeUrl(raw: string | null | undefined): string {
   const input = String(raw || "").trim();
@@ -223,7 +230,7 @@ async function cacheImage(
   },
   options: { force?: boolean } = {},
 ): Promise<{ ok: boolean; error?: string }> {
-  const imageUrl = decodeUrl(item.image_url);
+  const imageUrl = decodeHtmlEntitiesForUrl(item.image_url);
   if (!item.id || !imageUrl || (item.cached_image_url && !options.force)) return { ok: false };
 
   const controller = new AbortController();
@@ -245,6 +252,23 @@ async function cacheImage(
       && type1.startsWith("image/")
       && (!Number.isFinite(len1) || len1 <= 0 || len1 <= MAX_IMAGE_BYTES);
     if (!directValid) {
+      const proxyRes = await fetch(buildProxyUrl(imageUrl, supabaseUrl), {
+        signal: controller.signal,
+        method: "GET",
+        headers: browserHeaders({
+          accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+          ...(isFbCdn ? { referer: "https://www.facebook.com/", origin: "https://www.facebook.com" } : {}),
+        }),
+        redirect: "follow",
+      });
+      const proxyType = String(proxyRes.headers.get("content-type") || "").toLowerCase();
+      const proxyLen = Number(proxyRes.headers.get("content-length") || "0");
+      const proxyValid = proxyRes.ok
+        && proxyType.startsWith("image/")
+        && (!Number.isFinite(proxyLen) || proxyLen <= 0 || proxyLen <= MAX_IMAGE_BYTES);
+      if (proxyValid) {
+        imageRes = proxyRes;
+      } else {
       const wsrv = `https://images.weserv.nl/?url=${encodeURIComponent(imageUrl.replace(/^https?:\/\//i, ""))}`;
       imageRes = await fetch(wsrv, {
         signal: controller.signal,
@@ -254,6 +278,7 @@ async function cacheImage(
         }),
         redirect: "follow",
       });
+      }
     }
     const finalType = String(imageRes.headers.get("content-type") || "").toLowerCase();
     const finalLen = Number(imageRes.headers.get("content-length") || "0");

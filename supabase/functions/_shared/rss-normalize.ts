@@ -294,11 +294,14 @@ function firstArrayUrl(items: Array<{ url?: string }> | undefined): string | nul
 function cleanImageCandidate(value: string | undefined | null, baseUrl?: string): string | null {
   const cleaned = cleanUrl(value);
   if (!cleaned) return null;
-  return normalizeUrl(cleaned, baseUrl);
+  const normalized = normalizeUrl(cleaned, baseUrl);
+  return /^https?:\/\//i.test(normalized) ? normalized : null;
 }
 
 function cleanUrl(value: string | undefined | null): string | null {
-  const trimmed = decodeUrl(value)?.trim();
+  const trimmed = decodeHtmlEntities(decodeUrl(value) || "")
+    .replace(/^['"]+|['"]+$/g, "")
+    .trim();
   return trimmed ? trimmed : null;
 }
 

@@ -1,6 +1,4 @@
-﻿import { corsHeaders, handleOptions } from "../_shared/cors.ts";
-
-// Add more domains here as needed.
+﻿// Add more domains here as needed.
 const ALLOWED_DOMAINS = [
   "eoy.ee",
   "www.eoy.ee",
@@ -13,13 +11,20 @@ const ALLOWED_DOMAINS = [
   "www.birdingpoland.org",
   "fbcdn.net",
   "facebook.com",
+  "fbsbx.com",
   "external-preview.redd.it",
 ] as const;
+const BROWSER_UA = "Mozilla/5.0 (Linux; Android 14; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36";
+const proxyCorsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,HEAD,OPTIONS",
+  "Access-Control-Allow-Headers": "*",
+};
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" },
+    headers: { ...proxyCorsHeaders, "content-type": "application/json; charset=utf-8" },
   });
 }
 
@@ -48,10 +53,11 @@ function sampleFromBytes(bytes: Uint8Array, maxChars = 300): string {
 }
 
 Deno.serve(async (req) => {
-  const opt = handleOptions(req);
-  if (opt) return opt;
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: proxyCorsHeaders });
+  }
 
-  if (req.method !== "GET") {
+  if (req.method !== "GET" && req.method !== "HEAD") {
     return json(405, { error: "method_not_allowed" });
   }
 
@@ -78,16 +84,20 @@ Deno.serve(async (req) => {
 
   let upstream: Response;
   try {
-    const isFacebookCdn = /(^|\.)fbcdn\.net$|(^|\.)facebook\.com$|(^|\.)scontent\./i.test(target.hostname);
+    const isFacebookCdn = /(^|\.)fbcdn\.net$|(^|\.)facebook\.com$|(^|\.)fbsbx\.com$|(^|\.)scontent\./i.test(target.hostname);
+    const fetchHeaders: Record<string, string> = {
+      "User-Agent": BROWSER_UA,
+      "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+    };
+    if (isFacebookCdn) {
+      fetchHeaders["Referer"] = "https://www.facebook.com/";
+      fetchHeaders["Origin"] = "https://www.facebook.com";
+    }
     upstream = await fetch(target.toString(), {
-      method: "GET",
+      method: req.method,
       redirect: "follow",
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "image/avif,image/webp,image/*,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9,et;q=0.8",
-        ...(isFacebookCdn ? { "Referer": "https://www.facebook.com/", "Origin": "https://www.facebook.com" } : {}),
-      },
+      headers: fetchHeaders,
     });
   } catch (e) {
     return json(502, { error: "upstream_fetch_failed", message: String(e) });
@@ -127,6 +137,7 @@ Deno.serve(async (req) => {
 
   return new Response(bytes, {
     status: upstream.status,
-    headers: { ...corsHeaders, "content-type": contentType, "Cache-Control": "public, max-age=86400" },
+    headers: { ...proxyCorsHeaders, "content-type": contentType, "Cache-Control": "public, max-age=86400" },
   });
 });
+

@@ -25,6 +25,32 @@ function getExtension(contentType: string | null): string {
   return "bin";
 }
 
+function isFacebookHost(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host.endsWith(".fbcdn.net") || host.endsWith(".facebook.com") || host.endsWith(".fbsbx.com") || host.includes("scontent");
+  } catch {
+    return /fbcdn\.net|facebook\.com|fbsbx\.com|scontent-/i.test(url);
+  }
+}
+
+async function fetchImage(url: string): Promise<{ ok: true; response: Response } | { ok: false; status: number; url: string }> {
+  const isFb = isFacebookHost(url);
+  const res = await fetch(url, {
+    method: "GET",
+    headers: browserHeaders({
+      accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+      ...(isFb ? { referer: "https://www.facebook.com/", origin: "https://www.facebook.com" } : {}),
+    }),
+    redirect: "follow",
+  });
+  if (!res.ok) {
+    console.log("[cache-news-image] fetch failed", { status: res.status, url });
+    return { ok: false, status: res.status, url };
+  }
+  return { ok: true, response: res };
+}
+
 async function sha1Hex(input: string): Promise<string> {
   const data = new TextEncoder().encode(input);
   const hash = await crypto.subtle.digest("SHA-1", data);
@@ -84,15 +110,18 @@ Deno.serve(async (req) => {
       });
     }
 
-    const isFbCdn = /fbcdn\.net|facebook\.com|scontent-/i.test(targetImageUrl);
-    let imageRes = await fetch(targetImageUrl, {
-      method: "GET",
-      headers: browserHeaders({
-        "accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-        "referer": "https://www.facebook.com/",
-      }),
-      redirect: "follow",
-    });
+    let attempt = await fetchImage(targetImageUrl);
+    if (!attempt.ok) {
+      const wsrv = `https://images.weserv.nl/?url=${encodeURIComponent(targetImageUrl.replace(/^https?:\/\//i, ""))}`;
+      attempt = await fetchImage(wsrv);
+      if (!attempt.ok) {
+        return new Response(JSON.stringify(attempt), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+    let imageRes = attempt.response;
     const ct1 = String(imageRes.headers.get("content-type") || "").toLowerCase();
     const len1 = Number(imageRes.headers.get("content-length") || "0");
     const directValid = imageRes.ok
@@ -100,13 +129,14 @@ Deno.serve(async (req) => {
       && (!Number.isFinite(len1) || len1 <= 0 || len1 <= MAX_IMAGE_BYTES);
     if (!directValid) {
       const wsrv = `https://images.weserv.nl/?url=${encodeURIComponent(targetImageUrl.replace(/^https?:\/\//i, ""))}`;
-      imageRes = await fetch(wsrv, {
-        method: "GET",
-        headers: browserHeaders({
-          "accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-        }),
-        redirect: "follow",
-      });
+      const wsrvAttempt = await fetchImage(wsrv);
+      if (!wsrvAttempt.ok) {
+        return new Response(JSON.stringify(wsrvAttempt), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      imageRes = wsrvAttempt.response;
     }
     const contentType = String(imageRes.headers.get("content-type") || "").toLowerCase();
     const contentLength = Number(imageRes.headers.get("content-length") || "0");

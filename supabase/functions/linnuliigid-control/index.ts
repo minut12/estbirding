@@ -23,7 +23,7 @@ function isMissingColumnError(err: unknown, col: string) {
   return msg.includes("column") && msg.includes(col.toLowerCase());
 }
 
-async function selectRunningRow(supabase: ReturnType<typeof createClient>) {
+async function selectRunningRow(supabase: any) {
   const primary = await supabase
     .from("linnuliigid_snapshot")
     .select("*")
@@ -52,7 +52,7 @@ async function selectRunningRow(supabase: ReturnType<typeof createClient>) {
 }
 
 async function updateRow(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   rowId: number,
   patch: Record<string, unknown>,
 ) {

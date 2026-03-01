@@ -54,9 +54,9 @@ Deno.serve(async (req) => {
         "Content-Type": response.headers.get("content-type") || "text/html",
       },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Proxy error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -116,8 +116,8 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ cached_image_url: cachedImageUrl, cached_image_path: filePath }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+  } catch (error: unknown) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

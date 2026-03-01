@@ -58,7 +58,7 @@ interface NewsSource {
   key?: string | null;
 }
 
-const NEWS_VIEW_SELECT = 'id,title,url,published_at,created_at,external_id,source_id,source_slug,source_name,image_url,cached_image_url,cached_image_path,display_image_url,summary,body,content,content_html,archived,fetched_at,guid,raw_json,language,source_lang';
+const NEWS_VIEW_SELECT = 'id,title,url,published_at,created_at,external_id,source_id,source_slug,source_name,image_url,cached_image_url,cached_image_path,display_image_url,summary,body,content_html,archived,fetched_at,guid,raw_json,language,source_lang,title_et,body_et,translated_title,translated_body,translation_status,source_key';
 const ALL_SOURCES_LABEL = "Kõik allikad";
 const NEWS_TABLE_FALLBACK_SELECT = 'id, source_id, source_key, source_slug, title, url, permalink_url, summary, body, content_html, published_at, created_at, image_url, cached_image_url, image_cached_url, archived, language, source_lang, guid, raw_json, fetched_at';
 
@@ -630,7 +630,7 @@ const {
       const fnName = 'news-refresh';
       const { data, error } = await supabase.functions.invoke(fnName, {
         method: 'POST',
-        body: { reason: 'manual' },
+        body: { reason: 'manual', cache_images: true, cache_limit: 10 },
       });
       if (error) throw new Error(error.message || `${fnName}: ${formatErrorReason(error)}`);
       return data;

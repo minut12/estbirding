@@ -197,7 +197,7 @@ function isMissingHeartbeatColumnError(err: unknown): boolean {
   return msg.includes("heartbeat_at") && msg.toLowerCase().includes("column");
 }
 
-async function selectSnapshotRow(supabase: ReturnType<typeof createClient>) {
+async function selectSnapshotRow(supabase: any) {
   if (heartbeatColumnAvailable) {
     const res = await supabase
       .from("linnuliigid_snapshot")
@@ -217,7 +217,7 @@ async function selectSnapshotRow(supabase: ReturnType<typeof createClient>) {
 }
 
 async function updateSnapshot(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   patch: Record<string, unknown>,
 ) {
   const payload = { ...patch };
@@ -242,7 +242,7 @@ async function updateSnapshot(
 
 // Run one refresh batch, updating progress after every item.
 async function runRefresh(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   opts?: { startIndex?: number; runId?: string }
 ) {
   const total = SPECIES.length;
@@ -585,9 +585,9 @@ Deno.serve(async (req) => {
       status: 405,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Snapshot error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

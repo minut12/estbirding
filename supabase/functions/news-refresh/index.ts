@@ -9,10 +9,10 @@ type SourceRow = {
   key?: string | null;
   source_key?: string | null;
   type?: string | null;
-  kind?: string | null;
   feed_url?: string | null;
   fetch_url?: string | null;
-  url?: string | null;
+  is_enabled?: boolean | null;
+  is_active?: boolean | null;
 };
 
 type SourceSummary = {
@@ -153,7 +153,7 @@ async function refreshEoy(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
   try {
-    const sourceUrl = String(source.url || source.fetch_url || source.feed_url || "").trim();
+    const sourceUrl = String(source.fetch_url || source.feed_url || "").trim();
     const cacheBusted = sourceUrl
       ? (sourceUrl.includes("?") ? `${sourceUrl}&_ts=${Date.now()}` : `${sourceUrl}?_ts=${Date.now()}`)
       : null;
@@ -227,7 +227,6 @@ function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array
       source_id: source.id,
       source_key: itemSourceKey,
       source_slug: source.slug,
-      source_name: source.name,
       external_id: guid,
       title,
       body: item.body || null,
@@ -267,8 +266,8 @@ Deno.serve(async (req) => {
 
     const { data: sources, error: sourcesError } = await supabase
       .from("news_sources")
-      .select("id, slug, name, key, source_key, type, kind, feed_url, fetch_url, url, enabled, is_enabled")
-      .or("enabled.eq.true,is_enabled.eq.true");
+      .select("id, slug, name, key, source_key, type, feed_url, fetch_url, is_enabled, is_active")
+      .eq("is_enabled", true);
     if (sourcesError) return jsonError(new Error(sourcesError.message), 500);
 
     const enabledSources = (sources || []) as SourceRow[];
@@ -281,9 +280,9 @@ Deno.serve(async (req) => {
 
     for (const source of enabledSources) {
       const slug = String(source.slug || "").toLowerCase();
-      const type = String(source.type || source.kind || "").toLowerCase();
+      const type = String(source.type || "").toLowerCase();
 
-      const isEoy = type === "scrape" && (slug === "eoy" || String(source.url || source.fetch_url || source.feed_url || "").includes("eoy.ee"));
+      const isEoy = type === "scrape" && (slug === "eoy" || String(source.fetch_url || source.feed_url || "").includes("eoy.ee"));
       if (isEoy) {
         const summary = await refreshEoy(supabase, supabaseUrl, serviceRoleKey, source, cacheImages, Math.max(0, cacheLimit - cachedImages));
         summaries.push(summary);
@@ -294,7 +293,7 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const sourceUrl = String(source.feed_url || source.url || "").trim();
+      const sourceUrl = String(source.feed_url || source.fetch_url || "").trim();
       if (type === "scrape") {
         skipped += 1;
         summaries.push({ slug: source.slug, inserted: 0, updated: 0, cachedImages: 0, errors: ["Unsupported scrape source"] });

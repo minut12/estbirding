@@ -1,5 +1,6 @@
-﻿import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encode as hexEncode } from "https://deno.land/std@0.208.0/encoding/hex.ts";
+import { DOMParser, Element } from "https://deno.land/x/deno_dom@v0.1.48/deno-dom-wasm.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -200,16 +201,19 @@ function parseEoyListPage(html: string, baseUrl: string, listingUrl: string): Pa
 function parseFeedItems(xml: string, baseUrl: string): ParsedItem[] {
   const items: ParsedItem[] = [];
   try {
-    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    const doc = new DOMParser().parseFromString(xml, "text/html");
+    if (!doc) return items;
     const entries = Array.from(doc.querySelectorAll("item, entry"));
 
-    for (const node of entries) {
+    for (const _node of entries) {
+      const node = _node as Element;
       const title = (node.querySelector("title")?.textContent || "").trim();
       if (!title) continue;
 
       let rawUrl = (node.querySelector("link")?.textContent || "").trim();
       if (!rawUrl) {
-        const linkHref = node.querySelector("link[href]")?.getAttribute("href") || "";
+        const linkEl = node.querySelector("link[href]") as Element | null;
+        const linkHref = linkEl?.getAttribute("href") || "";
         rawUrl = linkHref.trim();
       }
       if (!rawUrl) continue;
@@ -219,10 +223,8 @@ function parseFeedItems(xml: string, baseUrl: string): ParsedItem[] {
       const pubIso = pubRaw && Number.isFinite(new Date(pubRaw).getTime()) ? new Date(pubRaw).toISOString() : null;
 
       const summary = (node.querySelector("description, summary, content")?.textContent || "").trim();
-      const enclosureUrl = node.querySelector("enclosure[url]")?.getAttribute("url")
-        || node.querySelector("media\\:content[url]")?.getAttribute("url")
-        || node.querySelector("media\\:thumbnail[url]")?.getAttribute("url")
-        || null;
+      const enclosureEl = node.querySelector("enclosure[url]") as Element | null;
+      const enclosureUrl = enclosureEl?.getAttribute("url") || null;
 
       items.push({
         title,

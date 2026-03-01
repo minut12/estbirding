@@ -630,7 +630,7 @@ const {
       const fnName = 'news-refresh';
       const { data, error } = await supabase.functions.invoke(fnName, {
         method: 'POST',
-        body: { force: true, sinceHours: 24 * 60, max_items_per_source: 15, cache_images: false },
+        body: { reason: 'manual' },
       });
       if (error) throw new Error(error.message || `${fnName}: ${formatErrorReason(error)}`);
       return data;
@@ -656,7 +656,7 @@ const {
       else toast.info('Uusi uudiseid pole');
     },
     onError: (error) => {
-      const reason = formatErrorReason(error) || JSON.stringify(error);
+      const reason = formatErrorReason(error) || JSON.stringify(error, Object.getOwnPropertyNames(error as object));
       setLastNewsFetchErrorShort(reason.slice(0, 120));
       toast.error('Refresh failed: news-refresh - ' + reason.slice(0, 160));
     },
@@ -896,9 +896,6 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
           </div>
           {snippet && (
             <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{snippet}</p>
-          )}
-          {import.meta.env.DEV && isBirdingPoland && (
-            <p className="text-[10px] text-muted-foreground mt-1 break-all">img: {item.image_url || '(empty)'} | cached: {item.cached_image_url || '(empty)'}</p>
           )}
           <div className="flex gap-2 mt-2">
             <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onOpen}>

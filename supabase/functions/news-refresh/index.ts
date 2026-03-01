@@ -1,11 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { parseRss, normalizeRssItem, type NormalizedRssItem } from "../_shared/rss-normalize.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 type SourceRow = {
   id: string;
@@ -33,6 +28,18 @@ function json(data: unknown, status = 200): Response {
     status,
     headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" },
   });
+}
+
+function jsonError(error: unknown, status = 500): Response {
+  const err = error as { message?: string; name?: string; stack?: string } | null;
+  return json({
+    ok: false,
+    error: {
+      message: err?.message || String(error),
+      name: err?.name || "Error",
+      stack: err?.stack,
+    },
+  }, status);
 }
 
 function decodeUrl(u: string | null | undefined): string | null {
@@ -243,11 +250,11 @@ function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method !== "POST" && req.method !== "GET") return json({ error: "Method not allowed" }, 405);
+  if (req.method !== "POST" && req.method !== "GET") return jsonError(new Error("Method not allowed"), 405);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) return json({ error: "Missing env: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" }, 500);
+  if (!supabaseUrl || !serviceRoleKey) return jsonError(new Error("Missing env: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY"), 500);
 
   try {
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
@@ -262,7 +269,7 @@ Deno.serve(async (req) => {
       .from("news_sources")
       .select("id, slug, name, key, source_key, type, kind, feed_url, fetch_url, url, enabled, is_enabled")
       .or("enabled.eq.true,is_enabled.eq.true");
-    if (sourcesError) return json({ error: sourcesError.message }, 500);
+    if (sourcesError) return jsonError(new Error(sourcesError.message), 500);
 
     const enabledSources = (sources || []) as SourceRow[];
     const summaries: SourceSummary[] = [];
@@ -372,6 +379,6 @@ Deno.serve(async (req) => {
       errors,
     });
   } catch (error) {
-    return json({ error: (error as Error).message }, 500);
+    return jsonError(error, 500);
   }
 });

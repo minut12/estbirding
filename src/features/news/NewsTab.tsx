@@ -58,7 +58,7 @@ interface NewsSource {
   key?: string | null;
 }
 
-const NEWS_VIEW_SELECT = 'id,title,url,permalink_url,summary,body,content,content_html,published_at,created_at,fetched_at,archived,is_archived,source_id,source_slug,source_name,source_key,image_url,image_cached_url,cached_image_url,cached_image_path,display_image_url,language,source_lang,guid,raw_json';
+const NEWS_VIEW_SELECT = 'id,title,url,permalink_url,summary,body,content_html,published_at,created_at,fetched_at,archived,source_id,source_slug,source_name,source_key,image_url,image_cached_url,cached_image_url,cached_image_path,display_image_url,language,source_lang,guid,raw_json';
 const NEWS_TABLE_FALLBACK_SELECT = 'id, source_id, source_key, source_slug, title, url, permalink_url, summary, body, content_html, published_at, created_at, image_url, cached_image_url, image_cached_url, archived, language, source_lang, guid, raw_json, fetched_at';
 
 /* Format date */
@@ -486,7 +486,7 @@ const {
       const { data, error } = await supabase
         .from('news_items_v')
         .select(NEWS_VIEW_SELECT)
-        .eq('is_archived', tab === 'archive')
+        .eq('archived', tab === 'archive')
         .order('published_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false, nullsFirst: false })
         .limit(50);

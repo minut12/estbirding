@@ -34,6 +34,7 @@ interface NewsItem {
   url: string | null;
   permalink_url?: string | null;
   image_url?: string | null;
+  thumbnail_url?: string | null;
   display_image_url?: string | null;
   cached_image_url?: string | null;
   fetched_at?: string | null;
@@ -57,7 +58,7 @@ interface NewsSource {
   key?: string | null;
 }
 
-const NEWS_VIEW_SELECT = 'id, source_id, source_key, source_slug, source_name, title, url, permalink_url, summary, body, content_html, published_at, created_at, image_url, cached_image_url, display_image_url, is_archived, language, source_lang, guid, raw_json, fetched_at';
+const NEWS_VIEW_SELECT = 'id,title,summary,body,content_html,thumbnail_url,image_url,url,permalink_url,published_at,created_at,fetched_at,archived,is_archived,source_slug,source_key,source_name,language,source_lang,guid,raw_json';
 const NEWS_TABLE_FALLBACK_SELECT = 'id, source_id, source_key, source_slug, title, url, permalink_url, summary, body, content_html, published_at, created_at, image_url, cached_image_url, image_cached_url, archived, language, source_lang, guid, raw_json, fetched_at';
 
 /* Format date */
@@ -222,10 +223,11 @@ function notifyTranslationWarning(message: string): void {
 }
 
 function ensureImageUrl(item: NewsItem): NewsItem {
+  const thumb = decodeUrl(item.thumbnail_url);
   const cached = decodeUrl(item.cached_image_url);
   const display = decodeUrl(item.display_image_url);
-  const decoded = cached || display || decodeUrl(item.image_url);
-  if (decoded) return { ...item, cached_image_url: cached || undefined, image_url: decoded, display_image_url: display || decoded };
+  const decoded = thumb || cached || display || decodeUrl(item.image_url);
+  if (decoded) return { ...item, thumbnail_url: thumb || undefined, cached_image_url: cached || undefined, image_url: decoded, display_image_url: display || decoded };
   return { ...item, image_url: extractImageUrlFromRaw(item) };
 }
 
@@ -240,14 +242,12 @@ function shouldFallbackNewsQuery(error: unknown): boolean {
 
 const BIRDING_POLAND_NAME = 'birding poland';
 
-function proxifyImageUrlIfNeeded(sourceName: string, url: string | null, proxyBase: string): string | null {
+function proxifyImageUrlIfNeeded(_sourceName: string, url: string | null, proxyBase: string): string | null {
   if (!url) return null;
   const clean = url.trim();
   if (!clean) return null;
   if (clean.startsWith('data:') || clean.startsWith('blob:')) return clean;
-  if (sourceName === 'Birding Poland') {
-    return `${proxyBase}${encodeURIComponent(clean)}`;
-  }
+  if (/^https?:\/\//i.test(clean) && proxyBase) return `${proxyBase}${encodeURIComponent(clean)}`;
   return clean;
 }
 
@@ -527,10 +527,11 @@ const {
           return tb - ta;
         });
       }
-      const mapped = ((data || []) as NewsItem[]).map((row) => ({
+      const mapped = ((data || []) as Array<Record<string, any>>).map((row) => ({
         ...row,
+        is_archived: Boolean(row.is_archived ?? row.archived),
         source_name: row.source_name || row.source_slug || row.source_key || 'Unknown source',
-      }));
+      })) as NewsItem[];
       if (import.meta.env.DEV) console.log('[NEWS] first item', mapped?.[0]);
       const items = mapped.map(ensureImageUrl);
       return items.sort((a, b) => {
@@ -825,7 +826,8 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
   const rawImageUrl = decodeUrl(item.image_url);
   const sourceName = sourceLabel(item, sources);
   const isBirdingPoland = sourceName === 'Birding Poland';
-  const thumbCandidate = displayImageUrl || cachedThumb || rawImageUrl || null;
+  const viewThumb = decodeUrl(item.thumbnail_url);
+  const thumbCandidate = viewThumb || displayImageUrl || cachedThumb || rawImageUrl || null;
   const proxiedThumb = proxifyImageUrlIfNeeded(sourceName, thumbCandidate, proxyBase);
   const thumb = (!isBirdingPoland && triedProxyFallback && thumbCandidate)
     ? `${proxyBase}${encodeURIComponent(thumbCandidate)}`
@@ -1001,7 +1003,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     : (contentHtml || normalizedBodyText);
   const heroImageUrl = proxifyImageUrlIfNeeded(
     sourceName,
-    decodeUrl(item.display_image_url) || decodeUrl(item.cached_image_url) || decodeUrl(item.image_url) || null,
+    decodeUrl(item.thumbnail_url) || decodeUrl(item.display_image_url) || decodeUrl(item.cached_image_url) || decodeUrl(item.image_url) || null,
     proxyBase,
   );
   const [heroSrc, setHeroSrc] = useState<string | null>(heroImageUrl);

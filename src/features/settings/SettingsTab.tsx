@@ -42,6 +42,7 @@ import { isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supaba
 
 type ResetMode = 'soft' | 'hard' | null;
 type SettingsPage = 'home' | 'news' | 'events' | 'translations' | 'species';
+const LS_RESOLVED_PROXY_BASE = 'resolved_proxy_base_v1';
 
 // --- SAFE proxy translate derivation ---
 // Never throws, always returns '' on failure.
@@ -55,21 +56,25 @@ function deriveProxyTranslateEndpointFromBase(proxyBase: unknown): string {
   return `${base}/translate-et`;
 }
 
-function readResolvedProxyBaseFromDom(): string {
+function getResolvedProxyBaseSafe(): string {
   try {
-    const root = document.body;
-    if (!root) return '';
-    const txt = root.innerText || '';
-    const m = txt.match(/Resolved proxy base:\s*(https?:\/\/[^\s]+\/proxy\?url=)/i);
-    return m ? safeStr(m[1]) : '';
-  } catch {
-    return '';
-  }
+    const stored = safeStr(localStorage.getItem(LS_RESOLVED_PROXY_BASE));
+    if (stored) return stored;
+  } catch {}
+
+  try {
+    const maybeFn = (globalThis as any)?.getProxyBase;
+    if (typeof maybeFn === 'function') return safeStr(maybeFn());
+  } catch {}
+  try {
+    if (typeof resolveProxyBase === 'function') return safeStr(resolveProxyBase());
+  } catch {}
+
+  return '';
 }
 
 function getProxyTranslateEndpointSafe(): string {
-  const domBase = readResolvedProxyBaseFromDom();
-  return deriveProxyTranslateEndpointFromBase(domBase);
+  return deriveProxyTranslateEndpointFromBase(getResolvedProxyBaseSafe());
 }
 
 export default function SettingsTab() {
@@ -93,6 +98,10 @@ export default function SettingsTab() {
   const envProxyBase = getEnvProxyBase();
   const resolvedProxyBase = resolveProxyBase(proxyBaseUrl);
   const proxyMode = getProxyMode(resolvedProxyBase);
+
+  useEffect(() => {
+    try { localStorage.setItem(LS_RESOLVED_PROXY_BASE, String(resolvedProxyBase || '')); } catch {}
+  }, [resolvedProxyBase]);
 
   useEffect(() => {
     setForm(loadSettings());
@@ -281,7 +290,7 @@ export default function SettingsTab() {
       }
       let proxy: any;
       if (!proxyEndpoint) {
-        proxy = { ok: false, error: 'endpoint_missing', hint: 'Could not parse "Resolved proxy base" from Settings text' };
+        proxy = { ok: false, error: 'endpoint_missing', hint: 'no resolved proxy base stored' };
       } else {
         try {
           const r = await fetch(`${proxyEndpoint}?ping=1`, { method: 'GET' });

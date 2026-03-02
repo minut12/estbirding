@@ -204,17 +204,17 @@ export default function SettingsTab() {
         toast.error('Tõlke endpoint puudub. Ava Seaded → Tõlge ja salvesta URL.');
         throw new Error('TRANSLATE_ENDPOINT_MISSING');
       }
-      const pingUrl = endpoint.includes('?') ? `${endpoint}&ping=1` : `${endpoint}?ping=1`;
       const anon = String((import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || '').trim();
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (anon) {
         headers.apikey = anon;
         headers.Authorization = `Bearer ${anon}`;
       }
-      const response = await fetch(pingUrl, {
-        method: 'GET',
+      const response = await fetch(endpoint, {
+        method: 'POST',
         mode: 'cors',
         headers,
+        body: JSON.stringify({ text: 'Ping', targetLang: 'et' }),
       });
       const ct = (response.headers.get('content-type') || '').toLowerCase();
       const rawText = await response.text();

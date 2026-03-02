@@ -1,15 +1,42 @@
+import { resolveProxyBase } from './proxyEndpoint';
+
 export const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 export const TRANSLATION_ENDPOINT_UPDATED_EVENT = 'translation-endpoint-updated';
 export const WORKER_DEFAULT_ENDPOINT = '';
 
+function proxyBaseToTranslateEndpoint(proxyBase: string): string {
+  const raw = String(proxyBase || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    const pathname = parsed.pathname || '';
+    if (!pathname.includes('/functions/v1/proxy')) return '';
+    parsed.pathname = pathname.replace(/\/+$/, '').replace(/\/translate$/, '') + '/translate';
+    parsed.search = '';
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+}
+
+function normalizeTranslateEndpoint(raw: string): string {
+  const input = String(raw || '').trim();
+  if (!input) return '';
+  const fromProxy = proxyBaseToTranslateEndpoint(input);
+  return fromProxy || input;
+}
+
 export function getTranslateEndpoint(): string {
   const stored = (localStorage.getItem(LS_TRANSLATE_ENDPOINT) || '').trim();
-  if (stored) return stored;
+  if (stored) return normalizeTranslateEndpoint(stored);
 
   const env = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_TRANSLATE_API_URL
     ? String(import.meta.env.VITE_TRANSLATE_API_URL).trim()
     : '';
-  if (env) return env;
+  if (env) return normalizeTranslateEndpoint(env);
+
+  const proxyDerived = proxyBaseToTranslateEndpoint(resolveProxyBase());
+  if (proxyDerived) return proxyDerived;
 
   return '';
 }
@@ -29,7 +56,7 @@ export function getEnvEndpoint(): string {
 
 export function resolveBaseEndpoint(currentInput?: string): string {
   const input = String(currentInput || '').trim();
-  if (input) return input;
+  if (input) return normalizeTranslateEndpoint(input);
   return getTranslateEndpoint();
 }
 

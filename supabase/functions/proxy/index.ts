@@ -17,7 +17,7 @@ const ALLOWED_DOMAINS = [
 const BROWSER_UA = "Mozilla/5.0 (Linux; Android 14; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36";
 const proxyCorsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET,HEAD,OPTIONS",
+  "Access-Control-Allow-Methods": "GET,HEAD,POST,OPTIONS",
   "Access-Control-Allow-Headers": "*",
 };
 
@@ -57,11 +57,65 @@ Deno.serve(async (req) => {
     return new Response(null, { status: 204, headers: proxyCorsHeaders });
   }
 
+  const reqUrl = new URL(req.url);
+  const isTranslateRoute = reqUrl.pathname.endsWith("/translate");
+
+  if (isTranslateRoute) {
+    if (req.method !== "POST") {
+      return json(405, { ok: false, error: "method_not_allowed" });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const text = String(body?.text || "").trim();
+    const targetLang = String(body?.targetLang || "et").trim() || "et";
+    const sourceLang = String(body?.sourceLang || "").trim();
+
+    if (!text) return json(400, { ok: false, error: "missing_text" });
+    if (text.length > 12_000) return json(413, { ok: false, error: "text_too_large" });
+
+    const apiKey = Deno.env.get("OPENAI_API_KEY")?.trim();
+    if (!apiKey) return json(500, { ok: false, error: "openai_api_key_missing" });
+
+    const system = `Translate user text to ${targetLang}. Return only translation and preserve paragraphs.`;
+    const user = sourceLang
+      ? `Source language: ${sourceLang}\n\nText:\n${text}`
+      : `Text:\n${text}`;
+
+    let upstream: Response;
+    try {
+      upstream = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          temperature: 0.2,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+        }),
+      });
+    } catch (error) {
+      return json(502, { ok: false, error: "openai_request_failed", message: String(error) });
+    }
+
+    if (!upstream.ok) {
+      const details = await upstream.text().catch(() => "");
+      return json(502, { ok: false, error: "openai_error", status: upstream.status, details: details.slice(0, 400) });
+    }
+
+    const payload = await upstream.json().catch(() => ({}));
+    const translatedText = String(payload?.choices?.[0]?.message?.content || "").trim();
+    return json(200, { ok: true, translatedText });
+  }
+
   if (req.method !== "GET" && req.method !== "HEAD") {
     return json(405, { error: "method_not_allowed" });
   }
 
-  const reqUrl = new URL(req.url);
   const rawUrl = (reqUrl.searchParams.get("url") || "").trim();
   if (!rawUrl) {
     return json(400, { error: "missing_url" });

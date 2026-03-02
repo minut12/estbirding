@@ -177,6 +177,7 @@ const DATA = SPECIES.map(name => ({ est: name, url: 'https://elurikkus.ee/app/oc
 
 // Local storage keys
 const LS_AVATARS='bm_rari_avatars', LS_POINTS='bm_rari_points', LS_PROXY='bm_rari_proxy', LS_NAMES='bm_rari_names', LS_SPRING='bm_rari_spring_dates';
+const LS_SPRING_YEARFIRST = 'bm_rari_spring_yearfirst';
 
 // Default spring migration “usual/earliest” dates parsed from "Saabuvad rändlinnud 2025.a kevadel.txt"
 // Format: "D.MM" (day without leading zero, month 2-digit)
@@ -265,6 +266,7 @@ let springDates = (function(){
     return Object.assign({}, DEFAULT_SPRING_DATES);
   }
 })();
+let springYearFirst = JSON.parse(localStorage.getItem(LS_SPRING_YEARFIRST) || '{}');
 
 // Map
 const map = L.map('map').setView([58.7,25.3], 6.5);
@@ -292,6 +294,25 @@ function _isNewer(newD, oldD){
   const a = _toDay(newD), b = _toDay(oldD);
   if(a && b) return a > b;
   return !!newD && !oldD;
+}
+function earliestInYear(dates, year){
+  try{
+    const y = String(year);
+    if(!Array.isArray(dates) || !y) return null;
+    const inYear = dates.filter(d => typeof d === 'string' && d.startsWith(y + '-'));
+    if(!inYear.length) return null;
+    inYear.sort();
+    return inYear[0] || null;
+  }catch(e){ return null; }
+}
+function isEarlierIso(a,b){
+  try{
+    if(!a) return false;
+    if(!b) return true;
+    const am = _toDay(a), bm = _toDay(b);
+    if(Number.isFinite(am) && Number.isFinite(bm)) return am < bm;
+    return String(a) < String(b);
+  }catch(e){ return false; }
 }
   // --- Border color based on recency (<=7 days = green, older = orange) ---
   
@@ -334,6 +355,7 @@ function save() {
   localStorage.setItem(LS_POINTS, JSON.stringify(points));
   localStorage.setItem(LS_NAMES, JSON.stringify(nameCache));
   localStorage.setItem(LS_SPRING, JSON.stringify(springDates));
+  localStorage.setItem(LS_SPRING_YEARFIRST, JSON.stringify(springYearFirst));
 }
 
 // Icons (supports optional "Rarity" crown)
@@ -815,9 +837,20 @@ async function autoFetchCoords(key, searchUrl) {
     const shtml = await tryFetch(searchUrl);
     let coords = extractLatLon(shtml);
     let eventDate = extractEventDate(shtml);
+    const occDates = extractAllEventDates(shtml);
+    const year = new Date().getFullYear();
+    const earliestThisYear = earliestInYear(occDates, year);
 
     const occ7Meta = await countElurikkusRows7d(searchUrl, 7);
     const occ7 = Number.isFinite(occ7Meta.rowCount) ? occ7Meta.rowCount : null;
+    let changedYearFirst = false;
+    const prevYearFirst = (springYearFirst && springYearFirst[key]) ? springYearFirst[key] : '';
+    if (earliestThisYear) {
+      if (!prevYearFirst || isEarlierIso(earliestThisYear, prevYearFirst)) {
+        springYearFirst[key] = earliestThisYear;
+        changedYearFirst = true;
+      }
+    }
 
     if (!coords) {
       const detail = findFirstDetailLink(shtml);
@@ -827,7 +860,13 @@ async function autoFetchCoords(key, searchUrl) {
         if (!eventDate) eventDate = extractEventDate(dhtml);
       }
     }
-    if (!coords) throw new Error('No coordinates found on search/detail pages');
+    if (!coords){
+      if (changedYearFirst) {
+        save();
+        render();
+      }
+      throw new Error('No coordinates found on search/detail pages');
+    }
 
     const [lat, lon] = coords;
     points[key] = points[key] || {};
@@ -837,7 +876,7 @@ const changedCoords = !(Number.isFinite(prev.lat) && Number.isFinite(prev.lon)) 
 const newerDate = _isNewer(eventDate, prev.t);
 const changedOcc7 = Number.isFinite(occ7) && (prev.occ7 !== occ7);
 
-if (changedCoords || newerDate || changedOcc7){
+if (changedCoords || newerDate || changedOcc7 || changedYearFirst){
   points[key] = points[key] || {};
   points[key].lat = lat; points[key].lon = lon;
   // keep the newest date when available; otherwise keep previous
@@ -1452,7 +1491,11 @@ window.alert = function(msg){ notifySilent(msg); };
     <div class="springTableWrap">
       <table id="springTable">
         <thead>
-          <tr><th style="width:92px">Kuupäev</th><th>Liik</th></tr>
+          <tr>
+            <th style="width:92px">Kuupäev</th>
+            <th>Liik</th>
+            <th style="width:110px">Sel aastal</th>
+          </tr>
         </thead>
         <tbody id="springTableBody"></tbody>
       </table>
@@ -1593,7 +1636,8 @@ window.alert = function(msg){ notifySilent(msg); };
       if(!raw) continue;
       if(q && !String(name).toLowerCase().includes(q)) continue;
       const disp = (typeof _normSpringDDMM === 'function') ? (_normSpringDDMM(raw) || raw) : raw;
-      rows.push({name, disp, key: springSortKey(disp)});
+      const y = (springYearFirst && springYearFirst[name]) ? String(springYearFirst[name]).trim() : '';
+      rows.push({name, disp, y, key: springSortKey(disp)});
     }
 
     rows.sort((a,b)=> (a.key-b.key) || String(a.name).localeCompare(String(b.name)));
@@ -1604,6 +1648,7 @@ window.alert = function(msg){ notifySilent(msg); };
       return `<tr>
         <td><span class="springDateBtn" title="Muuda kuupäeva" onclick="editSpringDate('${safeName.replace(/'/g, "\\'")}')">${safeDisp}</span></td>
         <td><span class="springSpeciesBtn" title="Leia liigi kaart küljepaneelis" onclick="window.__springScrollToSpecies && window.__springScrollToSpecies('${safeName.replace(/'/g, "\\'")}')">${safeName}</span></td>
+        <td>${r.y || '\u2014'}</td>
       </tr>`;
     }).join('');
 

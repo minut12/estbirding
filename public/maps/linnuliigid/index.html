@@ -328,6 +328,7 @@ catch(e){ springYearFirst = {}; }
 
 let springQ = [];
 let springQRunning = false;
+let springEditKey = null;
 
 // Map
 const IS_MOBILE_DEVICE = matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -373,6 +374,42 @@ function isInvalidWinterValue(iso){
   const year = new Date().getFullYear();
   const cutoff = `${year}-${SPRING_CUTOFF_MMDD}`;
   return iso.startsWith(year + '-') && iso < cutoff;
+}
+function openSpringDateModal(key, speciesLabel, currentVal){
+  springEditKey = key;
+
+  const modal = document.getElementById('springDateModal');
+  const input = document.getElementById('springDateModalInput');
+  const label = document.getElementById('springDateModalSpecies');
+  const err = document.getElementById('springDateModalError');
+  if(!modal || !input || !label || !err) return;
+
+  label.textContent = speciesLabel ? `Liik: ${speciesLabel}` : '';
+  input.value = currentVal || '';
+  err.style.display = 'none';
+  err.textContent = '';
+
+  modal.style.display = 'flex';
+
+  // focus reliably on mobile
+  setTimeout(() => { try { input.focus(); input.select(); } catch(e){} }, 50);
+}
+
+function closeSpringDateModal(){
+  const modal = document.getElementById('springDateModal');
+  if(!modal) return;
+  modal.style.display = 'none';
+  springEditKey = null;
+}
+
+function normalizeSpringDate(v){
+  const t = (v || '').trim();
+  if(!t) return '';
+  const m = t.match(/^(\d{1,2})\.(\d{1,2})$/);
+  if(!m) return null;
+  const d = String(parseInt(m[1],10));          // keep 5.03 style like your list
+  const mm = String(parseInt(m[2],10)).padStart(2,'0');
+  return `${d}.${mm}`;
 }
 
 async function tryFetch(url){
@@ -2103,15 +2140,12 @@ document.addEventListener('DOMContentLoaded', function(){
       const safeName = String(r.name).replace(/"/g,'&quot;');
       const yIso = springYearFirst[r.name];
       const yDisp = yIso ? isoToDdMm(yIso) : '—';
-      return '<tr><td><button type="button" class="springDateBtn spring-date-btn" data-spring-key="'+safeName+'" style="cursor:pointer;pointer-events:auto">'+ r.disp+'</button></td><td><span class="springSpeciesBtn" onclick="window.__springScrollToSpecies && window.__springScrollToSpecies(\''+safeName.replace(/'/g, "\\'")+'\')">'+ safeName+'</span></td><td>'+yDisp+'</td></tr>';
+      return '<tr><td><button type="button" class="springDateBtn spring-date-btn" data-spring-key="'+safeName+'" data-spring-species="'+safeName+'" style="cursor:pointer;pointer-events:auto">'+ r.disp+'</button></td><td><span class="springSpeciesBtn" onclick="window.__springScrollToSpecies && window.__springScrollToSpecies(\''+safeName.replace(/'/g, "\\'")+'\')">'+ safeName+'</span></td><td>'+yDisp+'</td></tr>';
     }).join('');
     const panel = document.getElementById('springPanel');
     if(panel){
       panel.querySelectorAll('.spring-date-btn').forEach(btn => {
-        btn.style.cursor = 'pointer';
-        btn.style.pointerEvents = 'auto';
-        btn.addEventListener('click', onSpringDateEdit);
-        btn.addEventListener('touchend', onSpringDateEdit, { passive: false });
+        btn.onclick = onSpringDateEdit;
       });
     }
     const keysShown = rows.map(r=>r.name);
@@ -2124,32 +2158,13 @@ document.addEventListener('DOMContentLoaded', function(){
     e.preventDefault();
     e.stopPropagation();
 
-    const key = e.currentTarget.getAttribute('data-spring-key');
+    const btn = e.currentTarget;
+    const key = btn.getAttribute('data-spring-key');
+    const speciesLabel = btn.getAttribute('data-spring-species') || key;
     if(!key) return;
 
     const prev = (springDates && springDates[key]) ? springDates[key] : '';
-    const val = prompt('Uus kevadrände kuupäev (DD.MM, nt 05.03 või 5.03). Tühjaks = eemalda:', prev || '');
-    if(val === null) return;
-
-    const v = (val || '').trim();
-
-    if(!v){
-      delete springDates[key];
-    } else {
-      // normalize to D.MM or DD.MM
-      const m = v.match(/^(\d{1,2})\.(\d{1,2})$/);
-      if(!m){
-        alert('Vigane formaat. Kasuta DD.MM (nt 05.03).');
-        return;
-      }
-      const d = String(parseInt(m[1],10));
-      const mm = String(parseInt(m[2],10)).padStart(2,'0');
-      springDates[key] = `${d}.${mm}`;
-    }
-
-    // persist using existing save() function used by springDates
-    if(typeof save === 'function') save();
-    if(typeof renderSpringPanel === 'function') renderSpringPanel();
+    openSpringDateModal(key, speciesLabel, prev);
   }
 
   window.__springScrollToSpecies = function(name){
@@ -2294,6 +2309,77 @@ var __sharedDefaults = {};
       window.parent.postMessage({ type: 'SPECIES_META_REQUEST' }, '*');
     }
   }catch(e){}
+})();
+</script>
+
+<!-- Spring date edit modal -->
+<div id="springDateModal" style="display:none; position:fixed; inset:0; z-index:99999; background:rgba(0,0,0,.45); align-items:center; justify-content:center; padding:16px;">
+  <div style="width:min(420px, 100%); background:#fff; border-radius:14px; padding:14px; box-shadow:0 10px 30px rgba(0,0,0,.25);">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+      <div style="font-weight:700; font-size:16px;">Muuda kevadrände kuupäev</div>
+      <button id="springDateModalClose" style="border:0; background:#f2f2f2; border-radius:10px; padding:6px 10px; cursor:pointer;">✕</button>
+    </div>
+    <div id="springDateModalSpecies" style="margin-top:10px; color:#555; font-size:13px;"></div>
+
+    <label style="display:block; margin-top:10px; font-size:13px; color:#333;">Kuupäev (DD.MM)</label>
+    <input id="springDateModalInput" inputmode="numeric" placeholder="nt 05.03" style="width:100%; margin-top:6px; padding:10px 12px; border-radius:12px; border:1px solid #ddd; font-size:16px;" />
+
+    <div style="margin-top:8px; font-size:12px; color:#666;">
+      Tühjaks jätmine eemaldab kuupäeva.
+    </div>
+
+    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:14px;">
+      <button id="springDateModalCancel" style="border:0; background:#eee; border-radius:12px; padding:10px 14px; cursor:pointer;">Cancel</button>
+      <button id="springDateModalSave" style="border:0; background:#16a34a; color:#fff; border-radius:12px; padding:10px 14px; cursor:pointer;">Save</button>
+    </div>
+
+    <div id="springDateModalError" style="margin-top:10px; color:#b91c1c; font-size:12px; display:none;"></div>
+  </div>
+</div>
+<script>
+(function bindSpringDateModal(){
+  const modal = document.getElementById('springDateModal');
+  if(!modal) return;
+
+  const closeBtn = document.getElementById('springDateModalClose');
+  const cancelBtn = document.getElementById('springDateModalCancel');
+  const saveBtn = document.getElementById('springDateModalSave');
+
+  const onClose = () => closeSpringDateModal();
+
+  closeBtn.addEventListener('click', onClose);
+  cancelBtn.addEventListener('click', onClose);
+
+  modal.addEventListener('click', (e) => {
+    // click outside the dialog closes
+    if(e.target === modal) onClose();
+  });
+
+  saveBtn.addEventListener('click', () => {
+    const input = document.getElementById('springDateModalInput');
+    const err = document.getElementById('springDateModalError');
+    const val = input.value;
+
+    const norm = normalizeSpringDate(val);
+    if(norm === null){
+      err.textContent = 'Vigane formaat. Kasuta DD.MM (nt 05.03).';
+      err.style.display = 'block';
+      return;
+    }
+
+    if(!springEditKey) return;
+
+    if(!norm){
+      delete springDates[springEditKey];
+    } else {
+      springDates[springEditKey] = norm;
+    }
+
+    if(typeof save === 'function') save();
+    if(typeof renderSpringPanel === 'function') renderSpringPanel();
+
+    onClose();
+  });
 })();
 </script>
 

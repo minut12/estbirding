@@ -2,6 +2,7 @@ const KEY = 'estbirding.translationApiUrl';
 const LEGACY_KEY = 'translate_api_url_override';
 export const WORKER_DEFAULT_ENDPOINT = '';
 export const TRANSLATION_ENDPOINT_UPDATED_EVENT = 'translation-endpoint-updated';
+const FUNCTION_PATH = '/functions/v1/translate-et';
 
 export function getStoredEndpoint(): string {
   return (localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY) || '').trim();
@@ -23,10 +24,13 @@ function normalizeEndpoint(raw: string): string {
   if (!trimmed) return '';
   try {
     const parsed = new URL(trimmed);
-    const search = parsed.search || '';
-    return `${parsed.origin}/translate-et${search}`;
+    const pathname = (parsed.pathname || '').replace(/\/+$/, '');
+    if (pathname.endsWith('/translate-et')) return parsed.toString();
+    parsed.pathname = FUNCTION_PATH;
+    return parsed.toString();
   } catch {
-    return trimmed;
+    if (trimmed.endsWith('/translate-et')) return trimmed;
+    return `${trimmed}/translate-et`;
   }
 }
 
@@ -36,6 +40,7 @@ function normalizeBaseUrl(raw: string): string {
   try {
     const parsed = new URL(trimmed);
     let path = parsed.pathname || '/';
+    if (path.endsWith(FUNCTION_PATH)) path = path.slice(0, -FUNCTION_PATH.length) || '/';
     if (path.endsWith('/translate-et')) path = path.slice(0, -'/translate-et'.length) || '/';
     if (path.endsWith('/health')) path = path.slice(0, -'/health'.length) || '/';
     parsed.pathname = path;
@@ -61,6 +66,7 @@ export function resolveHealthUrl(endpoint?: string): string {
   const resolved = String(endpoint || resolveBaseEndpoint()).trim();
   try {
     const parsed = new URL(resolved);
+    if ((parsed.pathname || '').includes('/functions/v1/translate-et')) return '';
     const search = parsed.search || '';
     return `${parsed.origin}/health${search}`;
   } catch {

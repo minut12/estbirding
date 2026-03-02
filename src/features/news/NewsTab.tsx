@@ -330,6 +330,7 @@ function useEtTranslation({
       id,
       title,
       body: bodyText,
+      sourceLang: sourceLang || undefined,
     })
       .then((result) => {
         if (cancelled || !result) return;
@@ -1023,6 +1024,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
         id: item.id,
         title: item.title,
         body: bodyText,
+        sourceLang: item.source_lang || item.language || undefined,
       }, translateEndpoint);
       if (!result) return;
       setManualTranslation(result);

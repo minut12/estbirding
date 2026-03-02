@@ -5,6 +5,7 @@ export interface TranslateEtInput {
   id: string;
   title: string;
   body: string;
+  sourceLang?: string;
 }
 
 export interface TranslateEtOutput {
@@ -44,9 +45,9 @@ export async function hash(text: string): Promise<string> {
   return weakHash(text);
 }
 
-async function buildCacheKey(input: TranslateEtInput): Promise<string> {
-  const digest = await hash(`${input.title}\n\n${input.body}`);
-  return `tr_et:${input.id}:${digest}`;
+async function buildCacheKey(text: string): Promise<string> {
+  const digest = await hash(`et:${text}`);
+  return `tr_et_text:${digest}`;
 }
 
 function readCache(cacheKey: string): TranslateEtOutput | null {
@@ -71,6 +72,31 @@ function writeCache(cacheKey: string, value: TranslateEtOutput): void {
   }
 }
 
+async function translateText(endpoint: string, text: string, sourceLang?: string): Promise<string> {
+  const normalized = String(text || '').trim();
+  if (!normalized) return '';
+  const cacheKey = await buildCacheKey(normalized);
+  const cached = localStorage.getItem(cacheKey);
+  if (cached !== null) return cached;
+
+  const response = await postJson(endpoint, { text: normalized, targetLang: 'et', sourceLang: sourceLang || undefined });
+  if (response.status !== 200) {
+    const preview = String(response.rawText || JSON.stringify(response.data) || '').slice(0, MAX_ERROR_PREVIEW_CHARS).replace(/\s+/g, ' ');
+    throw new TranslateEtHttpError(response.status, `status=${response.status}. endpoint=${endpoint}. ${preview || '[empty body]'}`);
+  }
+  const parsed = (response.data || {}) as { ok?: boolean; translatedText?: unknown };
+  if (parsed.ok !== true || typeof parsed.translatedText !== 'string') {
+    const preview = String(response.rawText || JSON.stringify(response.data) || '').slice(0, MAX_ERROR_PREVIEW_CHARS).replace(/\s+/g, ' ');
+    throw new Error(`non-json/invalid response: ${preview || 'Invalid JSON payload: required ok=true and translatedText string'}`);
+  }
+  try {
+    localStorage.setItem(cacheKey, parsed.translatedText);
+  } catch {
+    // Ignore storage failures.
+  }
+  return parsed.translatedText;
+}
+
 export async function translateEt(input: TranslateEtInput, endpointOverride?: string): Promise<TranslateEtOutput | null> {
   const normalized: TranslateEtInput = {
     id: String(input.id || '').trim(),
@@ -93,34 +119,20 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
     console.info('[translate] stored=', stored, 'env=', env, 'resolved=', resolved);
   }
 
-  const cacheKey = await buildCacheKey(normalized);
+  const combinedCacheKey = await hash(`tr_et_pair:${normalized.id}:${normalized.title}\n\n${normalized.body}`);
+  const cacheKey = `tr_et_pair:${combinedCacheKey}`;
   const cached = readCache(cacheKey);
   if (cached) return cached;
 
   const pending = inFlight.get(cacheKey);
   if (pending) return pending;
 
-  const request = postJson(endpoint, normalized)
-    .then((response) => {
-      if (response.status !== 200) {
-        const preview = String(response.rawText || JSON.stringify(response.data) || '').slice(0, MAX_ERROR_PREVIEW_CHARS).replace(/\s+/g, ' ');
-        try {
-          const host = new URL(endpoint).host;
-          console.error(`[translate] request failed host=${host} status=${response.status} body=${preview}`);
-        } catch {
-          console.error(`[translate] request failed status=${response.status} body=${preview}`);
-        }
-        throw new TranslateEtHttpError(response.status, `status=${response.status}. endpoint=${endpoint}. ${preview || '[empty body]'}`);
-      }
-      const parsed = (response.data || {}) as Partial<TranslateEtOutput>;
-      if (typeof parsed.title_et !== 'string' || typeof parsed.body_et !== 'string') {
-        const preview = String(response.rawText || JSON.stringify(response.data) || '').slice(0, MAX_ERROR_PREVIEW_CHARS).replace(/\s+/g, ' ');
-        throw new Error(`non-json/invalid response: ${preview || 'Invalid JSON payload: required string fields title_et/body_et'}`);
-      }
-      const result = {
-        title_et: parsed.title_et,
-        body_et: parsed.body_et,
-      };
+  const request = Promise.all([
+    translateText(endpoint, normalized.title, normalized.sourceLang),
+    translateText(endpoint, normalized.body, normalized.sourceLang),
+  ])
+    .then(([title_et, body_et]) => {
+      const result = { title_et, body_et };
       writeCache(cacheKey, result);
       return result;
     })

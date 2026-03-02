@@ -154,14 +154,16 @@ export default function SettingsTab() {
     }
     try {
       const healthUrl = resolveHealthUrl(endpoint);
-      try {
-        const healthRes = await fetch(healthUrl, { method: 'GET' });
-        if (!healthRes.ok) {
-          const preview = (await healthRes.text()).slice(0, 120).replace(/\s+/g, ' ');
-          throw new Error(`status=${healthRes.status} ${preview || '[empty body]'}`);
+      if (healthUrl) {
+        try {
+          const healthRes = await fetch(healthUrl, { method: 'GET' });
+          if (!healthRes.ok) {
+            const preview = (await healthRes.text()).slice(0, 120).replace(/\s+/g, ' ');
+            throw new Error(`status=${healthRes.status} ${preview || '[empty body]'}`);
+          }
+        } catch {
+          throw new Error(`Translation backend blocked or unreachable. Open this URL in browser: ${healthUrl}`);
         }
-      } catch {
-        throw new Error(`Translation backend blocked or unreachable. Open this URL in browser: ${healthUrl}`);
       }
 
       const payload = {

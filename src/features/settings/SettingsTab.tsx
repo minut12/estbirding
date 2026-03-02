@@ -43,6 +43,44 @@ import { isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supaba
 type ResetMode = 'soft' | 'hard' | null;
 type SettingsPage = 'home' | 'news' | 'events' | 'translations' | 'species';
 
+// --- SAFE proxy translate derivation ---
+// Never throws, always returns '' on failure.
+function safeStr(x: unknown): string { try { return String(x ?? '').trim(); } catch { return ''; } }
+
+function deriveProxyTranslateEndpointFromBase(proxyBase: unknown): string {
+  const s = safeStr(proxyBase);
+  if (!s) return '';
+  const base = s.split('?')[0].replace(/\/+$/, '');
+  if (!base.endsWith('/proxy')) return '';
+  return `${base}/translate-et`;
+}
+
+function getResolvedProxyBaseSafe(): string {
+  try {
+    const maybeFn = (globalThis as any)?.getProxyBase;
+    if (typeof maybeFn === 'function') return safeStr(maybeFn());
+  } catch {}
+
+  try {
+    if (typeof resolveProxyBase === 'function') return safeStr(resolveProxyBase());
+  } catch {}
+
+  try {
+    if (typeof (globalThis as any)?.proxyBaseResolved !== 'undefined') return safeStr((globalThis as any).proxyBaseResolved);
+  } catch {}
+
+  try {
+    const ls = safeStr(localStorage.getItem('proxy_base') || localStorage.getItem('proxyBase') || localStorage.getItem('estbirding.proxyBase') || '');
+    if (ls) return ls;
+  } catch {}
+
+  return '';
+}
+
+function getProxyTranslateEndpointSafe(): string {
+  return deriveProxyTranslateEndpointFromBase(getResolvedProxyBaseSafe());
+}
+
 export default function SettingsTab() {
   const newsSourcesSectionRef = useRef<HTMLDivElement | null>(null);
   const [settingsPage, setSettingsPage] = useState<SettingsPage>('home');
@@ -60,7 +98,7 @@ export default function SettingsTab() {
   const [storedProxyBaseView, setStoredProxyBaseView] = useState('');
   const envEndpoint = getEnvEndpoint();
   const resolvedEndpoint = resolveEndpoint(translationApiUrl);
-  const resolvedProxyTranslateEndpoint = getProxyTranslateEndpoint();
+  const resolvedProxyTranslateEndpoint = getProxyTranslateEndpointSafe() || getProxyTranslateEndpoint();
   const envProxyBase = getEnvProxyBase();
   const resolvedProxyBase = resolveProxyBase(proxyBaseUrl);
   const proxyMode = getProxyMode(resolvedProxyBase);
@@ -149,7 +187,7 @@ export default function SettingsTab() {
     setTestTranslateLoading(true);
     setTestTranslateResult('');
     const endpoint = resolveEndpoint(translationApiUrl);
-    const proxyFallbackEndpoint = getProxyTranslateEndpoint();
+    const proxyFallbackEndpoint = getProxyTranslateEndpointSafe() || getProxyTranslateEndpoint();
     if (import.meta.env.DEV) {
       console.info('[translate] native=', isNativePlatform(), 'translate=', endpoint);
     }
@@ -215,7 +253,7 @@ export default function SettingsTab() {
     setTestTranslateResult('');
     try {
       const primaryEndpoint = resolveEndpoint(translationApiUrl);
-      const proxyEndpoint = getProxyTranslateEndpoint();
+      const proxyEndpoint = getProxyTranslateEndpointSafe() || getProxyTranslateEndpoint();
       if (!primaryEndpoint && !proxyEndpoint) {
         toast.error('Tõlke endpoint puudub. Ava Seaded → Tõlge ja salvesta URL.');
         throw new Error('TRANSLATE_ENDPOINT_MISSING');
@@ -228,7 +266,7 @@ export default function SettingsTab() {
       }
 
       const ping = async (endpoint: string) => {
-        if (!endpoint) return { ok: false, error: 'endpoint_missing' };
+        if (!endpoint) return { ok: false, error: 'endpoint_missing', hint: 'resolvedProxyBase empty or unparsable' };
         try {
           const pingUrl = endpoint.includes('?') ? `${endpoint}&ping=1` : `${endpoint}?ping=1`;
           const response = await fetch(pingUrl, { method: 'GET', mode: 'cors', headers });
@@ -250,7 +288,22 @@ export default function SettingsTab() {
         toast.success('Ping OK');
         return;
       }
-      const proxy = await ping(proxyEndpoint);
+      let proxy: any;
+      if (!proxyEndpoint) {
+        proxy = { ok: false, error: 'endpoint_missing', hint: 'resolvedProxyBase empty or unparsable' };
+      } else {
+        try {
+          const r = await fetch(`${proxyEndpoint}?ping=1`, { method: 'GET', mode: 'cors', headers });
+          const txt = await r.text();
+          let j: any = null;
+          try { j = JSON.parse(txt); } catch {}
+          proxy = r.ok
+            ? { ok: true, endpoint: proxyEndpoint, json: j || null }
+            : { ok: false, endpoint: proxyEndpoint, status: r.status, body: txt.slice(0, 160) };
+        } catch (error: any) {
+          proxy = { ok: false, endpoint: proxyEndpoint, error: String(error?.message || error) };
+        }
+      }
       setTestTranslateResult(JSON.stringify({ primary, proxy }, null, 2));
       if (proxy.ok) {
         toast.warning('Primary failed, proxy OK');
@@ -299,7 +352,7 @@ export default function SettingsTab() {
   };
 
   const handleUseProxyTranslateRecommended = () => {
-    const proxyTranslateEndpoint = getProxyTranslateEndpoint();
+    const proxyTranslateEndpoint = getProxyTranslateEndpointSafe() || getProxyTranslateEndpoint();
     if (!proxyTranslateEndpoint) {
       toast.error('Proxy translate endpoint puudub');
       return;

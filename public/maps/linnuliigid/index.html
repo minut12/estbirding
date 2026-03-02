@@ -384,79 +384,6 @@ function normalizeSpringDate(v){
   const mm = String(parseInt(m[2],10)).padStart(2,'0');
   return `${d}.${mm}`;
 }
-function startInlineKevadEdit(hostEl, key){
-  // prevent multiple editors
-  if(hostEl.querySelector('input')) return;
-
-  const prev = (springDates && springDates[key]) ? springDates[key] : '';
-
-  const wrap = document.createElement('span');
-  wrap.style.display = 'inline-flex';
-  wrap.style.gap = '6px';
-  wrap.style.alignItems = 'center';
-
-  const inp = document.createElement('input');
-  inp.value = prev;
-  inp.placeholder = 'DD.MM';
-  inp.inputMode = 'numeric';
-  inp.style.width = '70px';
-  inp.style.padding = '4px 6px';
-  inp.style.border = '1px solid #ddd';
-  inp.style.borderRadius = '10px';
-  inp.style.fontSize = '13px';
-
-  const ok = document.createElement('button');
-  ok.textContent = 'OK';
-  ok.style.border = '0';
-  ok.style.borderRadius = '10px';
-  ok.style.padding = '4px 8px';
-  ok.style.background = '#16a34a';
-  ok.style.color = '#fff';
-
-  const cancel = document.createElement('button');
-  cancel.textContent = 'X';
-  cancel.style.border = '0';
-  cancel.style.borderRadius = '10px';
-  cancel.style.padding = '4px 8px';
-  cancel.style.background = '#eee';
-  cancel.style.color = '#111';
-
-  // Replace content
-  const original = hostEl.textContent;
-  hostEl.textContent = '';
-  wrap.appendChild(document.createTextNode('Kevad: '));
-  wrap.appendChild(inp);
-  wrap.appendChild(ok);
-  wrap.appendChild(cancel);
-  hostEl.appendChild(wrap);
-
-  const restore = () => {
-    hostEl.textContent = original; // will be corrected on rerender
-  };
-
-  cancel.onclick = (ev) => {
-    ev.preventDefault(); ev.stopPropagation();
-    restore();
-  };
-
-  ok.onclick = (ev) => {
-    ev.preventDefault(); ev.stopPropagation();
-    const norm = normalizeSpringDate(inp.value);
-    if(norm === null){
-      inp.style.borderColor = '#b91c1c';
-      return;
-    }
-    if(!norm) delete springDates[key];
-    else springDates[key] = norm;
-
-    if(typeof save === 'function') save();
-    // rerender full UI so badge + spring panel updates
-    if(typeof render === 'function') render();
-    if(typeof renderSpringPanel === 'function') renderSpringPanel();
-  };
-
-  setTimeout(() => { try { inp.focus(); inp.select(); } catch(e){} }, 50);
-}
 
 async function tryFetch(url){
   const urls = [url];
@@ -1876,7 +1803,9 @@ function rowHTML(obj) {
   const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
   const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(metaCfg.rarityLevel) : '';
   const springVal = (springDates && springDates[key]) ? String(springDates[key]).trim() : '';
-  const springTxt = ' <span class="kevade-edit" data-spring-key="'+key+'" style="cursor:pointer; pointer-events:auto;">Kevad: '+(springVal || '-')+'</span>';
+  const springTxt = (springEditRowKey === key)
+    ? ' <span class="spring-edit-wrap" style="display:inline-flex; gap:6px; align-items:center;"><span class="pill">Kevad:</span><input class="spring-edit-input" data-key="'+key+'" value="'+springVal+'" placeholder="DD.MM" inputmode="numeric" style="width:70px; padding:4px 6px; border:1px solid #ddd; border-radius:10px; font-size:13px;" /><button class="spring-edit-save" data-key="'+key+'" style="border:0; border-radius:10px; padding:4px 8px; background:#16a34a; color:#fff;">OK</button><button class="spring-edit-cancel" data-key="'+key+'" style="border:0; border-radius:10px; padding:4px 8px; background:#eee; color:#111;">X</button></span>'
+    : ' <span class="spring-date-btn" data-key="'+key+'" style="cursor:pointer; pointer-events:auto; border:0; border-radius:999px; padding:6px 10px; background:#f3f4f6; color:#111;">Kevad: '+(springVal || '-')+'</span>';
 
   const noCoords = !hasPoint && occ7 > 0;
   const meta = hasPoint
@@ -1906,23 +1835,67 @@ function render() {
   for (const o of arr) list.insertAdjacentHTML('beforeend', rowHTML(o));
 }
 
-(function bindSpringDateDelegation(){
-  if (window.__springDateDelegationBound) return;
-  window.__springDateDelegationBound = true;
+(function bindSpringInlineEditDelegation(){
+  if (window.__springInlineEditBound) return;
+  window.__springInlineEditBound = true;
+
+  function stop(e){ e.preventDefault(); e.stopPropagation(); }
 
   document.addEventListener('click', (e) => {
-    const el = e.target.closest('.kevade-edit');
-    if(!el) return;
+    const t = e.target;
 
-    e.preventDefault();
-    e.stopPropagation();
+    // Start edit
+    const startBtn = t.closest?.('.spring-date-btn');
+    if (startBtn){
+      stop(e);
+      springEditRowKey = startBtn.getAttribute('data-key');
+      if (typeof renderSpringPanel === 'function') renderSpringPanel();
+      if (typeof render === 'function') render(); // if your main UI uses render()
+      setTimeout(() => {
+        const inp = document.querySelector(`.spring-edit-input[data-key="${springEditRowKey}"]`);
+        if(inp){ try{ inp.focus(); inp.select(); }catch(_){} }
+      }, 50);
+      return;
+    }
 
-    const key = el.getAttribute('data-spring-key');
-    if(!key) return;
+    // Cancel
+    const cancelBtn = t.closest?.('.spring-edit-cancel');
+    if (cancelBtn){
+      stop(e);
+      springEditRowKey = null;
+      if (typeof renderSpringPanel === 'function') renderSpringPanel();
+      if (typeof render === 'function') render();
+      return;
+    }
 
-    // Use a simple inline input overlay INSIDE the element (no prompt/modal)
-    startInlineKevadEdit(el, key);
-  }, true);
+    // Save
+    const saveBtn = t.closest?.('.spring-edit-save');
+    if (saveBtn){
+      stop(e);
+      const key = saveBtn.getAttribute('data-key');
+      const inp = document.querySelector(`.spring-edit-input[data-key="${key}"]`);
+      if(!inp) return;
+
+      const norm = normalizeSpringDate(inp.value);
+      if (norm === null){
+        inp.style.borderColor = '#b91c1c';
+        return;
+      }
+
+      if(!norm){
+        delete springDates[key];
+      } else {
+        springDates[key] = norm;
+      }
+
+      if (typeof save === 'function') save();
+      springEditRowKey = null;
+
+      if (typeof renderSpringPanel === 'function') renderSpringPanel();
+      if (typeof render === 'function') render();
+      return;
+    }
+  }, true); // capture=true helps on mobile overlays/leaflet
 })();
 
 // Restore existing markers from localStorage and render list
@@ -2229,61 +2202,6 @@ document.addEventListener('DOMContentLoaded', function(){
   `;
       return '<tr><td>'+dateCellHtml+'</td><td><span class="springSpeciesBtn" onclick="window.__springScrollToSpecies && window.__springScrollToSpecies(\''+safeName.replace(/'/g, "\\'")+'\')">'+ safeName+'</span></td><td>'+yDisp+'</td></tr>';
     }).join('');
-    const root = document.getElementById('springPanel') || document; // use your actual panel root if different
-
-    // Start editing
-    root.querySelectorAll('.spring-date-btn').forEach(btn => {
-      btn.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        springEditRowKey = btn.getAttribute('data-key');
-        renderSpringPanel();
-        // focus input (inline, should work on mobile)
-        setTimeout(() => {
-          const inp = root.querySelector(`.spring-edit-input[data-key="${springEditRowKey}"]`);
-          if(inp){ try{ inp.focus(); inp.select(); }catch(e){} }
-        }, 50);
-      };
-    });
-
-    // Cancel editing
-    root.querySelectorAll('.spring-edit-cancel').forEach(btn => {
-      btn.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        springEditRowKey = null;
-        renderSpringPanel();
-      };
-    });
-
-    // Save editing
-    root.querySelectorAll('.spring-edit-save').forEach(btn => {
-      btn.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        const key = btn.getAttribute('data-key');
-        const inp = root.querySelector(`.spring-edit-input[data-key="${key}"]`);
-        if(!inp) return;
-
-        const norm = normalizeSpringDate(inp.value);
-        if(norm === null){
-          // lightweight inline feedback
-          inp.style.borderColor = '#b91c1c';
-          return;
-        }
-
-        if(!norm){
-          delete springDates[key];
-        } else {
-          springDates[key] = norm;
-        }
-
-        if(typeof save === 'function') save();
-        springEditRowKey = null;
-        renderSpringPanel();
-      };
-    });
     const keysShown = rows.map(r=>r.name);
     enqueueSpringYearFirst(keysShown);
     countEl.textContent = rows.length;

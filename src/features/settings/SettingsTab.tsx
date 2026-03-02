@@ -60,7 +60,7 @@ export default function SettingsTab() {
   const [storedProxyBaseView, setStoredProxyBaseView] = useState('');
   const envEndpoint = getEnvEndpoint();
   const resolvedEndpoint = resolveEndpoint(translationApiUrl);
-  const resolvedProxyTranslateEndpoint = getProxyTranslateEndpoint();
+  const resolvedProxyTranslateEndpoint = getProxyTranslateEndpoint(resolvedProxyBase);
   const envProxyBase = getEnvProxyBase();
   const resolvedProxyBase = resolveProxyBase(proxyBaseUrl);
   const proxyMode = getProxyMode(resolvedProxyBase);
@@ -215,7 +215,7 @@ export default function SettingsTab() {
     setTestTranslateResult('');
     try {
       const primaryEndpoint = resolveEndpoint(translationApiUrl);
-      const proxyEndpoint = getProxyTranslateEndpoint();
+      const proxyEndpoint = getProxyTranslateEndpoint(resolvedProxyBase);
       if (!primaryEndpoint && !proxyEndpoint) {
         toast.error('Tõlke endpoint puudub. Ava Seaded → Tõlge ja salvesta URL.');
         throw new Error('TRANSLATE_ENDPOINT_MISSING');
@@ -228,7 +228,7 @@ export default function SettingsTab() {
       }
 
       const ping = async (endpoint: string) => {
-        if (!endpoint) return { ok: false, error: 'endpoint_missing' };
+        if (!endpoint) return { ok: false, error: 'endpoint_missing', hint: 'resolvedProxyBase empty or unparsable' };
         try {
           const pingUrl = endpoint.includes('?') ? `${endpoint}&ping=1` : `${endpoint}?ping=1`;
           const response = await fetch(pingUrl, { method: 'GET', mode: 'cors', headers });
@@ -299,7 +299,7 @@ export default function SettingsTab() {
   };
 
   const handleUseProxyTranslateRecommended = () => {
-    const proxyTranslateEndpoint = getProxyTranslateEndpoint();
+    const proxyTranslateEndpoint = getProxyTranslateEndpoint(resolvedProxyBase);
     if (!proxyTranslateEndpoint) {
       toast.error('Proxy translate endpoint puudub');
       return;
@@ -373,7 +373,7 @@ export default function SettingsTab() {
           Clear translation endpoint
         </Button>
         <Button variant="outline" onClick={handleUseProxyTranslateRecommended} className="w-full">
-          Use proxy translate (recommended)
+          Use proxy translate
         </Button>
         <p className="text-xs text-muted-foreground">
           Use your translation backend base URL (query params supported).

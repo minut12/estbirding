@@ -79,9 +79,17 @@ async function translateText(endpoint: string, text: string, sourceLang?: string
   const cached = localStorage.getItem(cacheKey);
   if (cached !== null) return cached;
 
+  const anon = String((import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || '').trim();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (anon) {
+    headers.apikey = anon;
+    headers.Authorization = `Bearer ${anon}`;
+  }
+
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    mode: 'cors',
+    headers,
     body: JSON.stringify({ text: normalized, targetLang: 'et', sourceLang: sourceLang || undefined }),
   });
   const contentType = String(response.headers.get('content-type') || '').toLowerCase();

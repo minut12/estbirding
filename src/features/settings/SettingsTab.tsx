@@ -51,6 +51,7 @@ export default function SettingsTab() {
   const [confirmMode, setConfirmMode] = useState<ResetMode>(null);
   const [resetting, setResetting] = useState(false);
   const [testTranslateLoading, setTestTranslateLoading] = useState(false);
+  const [pingTranslateLoading, setPingTranslateLoading] = useState(false);
   const [testTranslateResult, setTestTranslateResult] = useState('');
   const [translationApiUrl, setTranslationApiUrlInput] = useState('');
   const [storedEndpointView, setStoredEndpointView] = useState('');
@@ -159,9 +160,16 @@ export default function SettingsTab() {
         text: 'Tere! This is a test.',
         targetLang: 'et',
       };
+      const anon = String((import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || '').trim();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (anon) {
+        headers.apikey = anon;
+        headers.Authorization = `Bearer ${anon}`;
+      }
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        mode: 'cors',
+        headers,
         body: JSON.stringify(payload),
       });
       const ct = (response.headers.get('content-type') || '').toLowerCase();
@@ -184,6 +192,47 @@ export default function SettingsTab() {
       toast.error(`Test failed. ${message}`);
     } finally {
       setTestTranslateLoading(false);
+    }
+  };
+
+  const handlePingTranslate = async () => {
+    setPingTranslateLoading(true);
+    setTestTranslateResult('');
+    try {
+      const endpoint = resolveEndpoint(translationApiUrl);
+      if (!endpoint) {
+        toast.error('Tõlke endpoint puudub. Ava Seaded → Tõlge ja salvesta URL.');
+        throw new Error('TRANSLATE_ENDPOINT_MISSING');
+      }
+      const pingUrl = endpoint.includes('?') ? `${endpoint}&ping=1` : `${endpoint}?ping=1`;
+      const anon = String((import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || '').trim();
+      const headers: Record<string, string> = {};
+      if (anon) {
+        headers.apikey = anon;
+        headers.Authorization = `Bearer ${anon}`;
+      }
+      const response = await fetch(pingUrl, {
+        method: 'GET',
+        mode: 'cors',
+        headers,
+      });
+      const ct = (response.headers.get('content-type') || '').toLowerCase();
+      const rawText = await response.text();
+      if (!ct.includes('application/json')) {
+        throw new Error(`NON_JSON_RESPONSE_${response.status}: ${rawText.slice(0, 120)}`);
+      }
+      const data: any = rawText ? JSON.parse(rawText) : {};
+      setTestTranslateResult(JSON.stringify(data, null, 2));
+      if (!response.ok || data?.ok !== true) {
+        throw new Error('PING_FAILED');
+      }
+      toast.success('Ping OK');
+    } catch (error: any) {
+      const message = error?.message || 'Unknown error';
+      setTestTranslateResult(`REQUEST FAILED\n${message}`);
+      toast.error(`Ping failed. ${message}`);
+    } finally {
+      setPingTranslateLoading(false);
     }
   };
 
@@ -344,6 +393,14 @@ export default function SettingsTab() {
         </div>
         <div className="rounded-md border border-border p-3 space-y-2">
           <div className="text-sm font-medium">Admin test</div>
+          <Button
+            variant="outline"
+            onClick={handlePingTranslate}
+            disabled={pingTranslateLoading}
+            className="w-full"
+          >
+            {pingTranslateLoading ? 'Pingin...' : 'Ping translate'}
+          </Button>
           <Button
             variant="outline"
             onClick={handleTestTranslate}

@@ -221,7 +221,7 @@ const DATA = SPECIES.map(name => ({ est: _normText(name), url: 'https://elurikku
 
 // Local storage keys
 const LS_AVATARS='bm_rari_avatars', LS_POINTS='bm_rari_points', LS_PROXY='bm_rari_proxy', LS_NAMES='bm_rari_names', LS_SPRING='bm_rari_spring_dates';
-const LS_SPRING_YEARFIRST = 'bm_rari_spring_yearfirst';
+const LS_SPRING_YEARFIRST = 'bm_rari_spring_yearfirst_v2';
 
 // Default spring migration dates
 const DEFAULT_SPRING_DATES = {"Heletilder":"6.04","Herilaseviu":"5.05","HÃ¤nilane":"14.04","JÃµgitiir":"21.03","KadakatÃ¤ks":"22.04","KaelusrÃ¤stas":"17.04","Kalakotkas":"31.03","KaldapÃ¤Ã¤suke":"29.04","Karmiinleevike":"6.05","Kivirullija":"6.05","KivitÃ¤ks":"2.04","Koldvint":"6.04","Kukkurtihane":"1.04","KuldhÃ¤nilane":"12.04","KÃ¤osulane":"4.05","Lammitilder":"14.04","Lapi tsiitsitaja":"5.04","Lepalind":"12.04","LinavÃ¤strik":"18.03","LÃµopistrik":"19.04","Madukotkas":"26.04","Metskiur":"8.04","Metstilder":"24.03","Mudatilder":"9.04","Mustlagle":"30.03","Mustviires":"29.04","NÃµmmelÃµoke":"10.03","Peoleo":"6.05","Piiritaja":"3.05","PlÃ¼tt":"19.05","PlÃ¼Ã¼":"25.04","PÃµldtsiitsitaja":"4.05","Rabapistrik":"11.04","Randtiir":"16.04","Rohunepp":"28.04","RukkirÃ¤Ã¤k":"7.05","RÃ¤gapart":"25.03","RÃ¤usk":"4.04","RÃ¤Ã¤stapÃ¤Ã¤suke":"18.04","RÃ¼Ã¼t":"5.03","SarviklÃµoke":"6.03","Sinirind":"18.04","SoorÃ¤ts":"17.04","SoorÃ¼di":"27.03","SuitsupÃ¤Ã¤suke":"10.04","Suurkoovitaja":"25.03","SuurrÃ¼di":"4.05","Tundrakaur":"1.05","Tundrakiur":"23.04","Turteltuvi":"25.04","TÃ¤pikhuik":"18.04","TÃµmmukajakas":"8.03","VaenukÃ¤gu":"13.04","Veetallaja":"19.05","Vihitaja":"31.03","VÃ¤ikehuik":"24.04","VÃ¤ikehÃ¼Ã¼p":"30.05","VÃ¤ikekoovitaja":"12.04","VÃ¤ikerÃ¼di":"17.05","VÃ¤iketiir":"21.04","VÃ¤iketÃ¼ll":"6.04","VÃ¤rbrÃ¼di":"20.04","VÃ¤Ã¤nkael":"11.04","Ã–Ã¶bik":"28.04","Ã–Ã¶sorr":"24.04"};
@@ -368,6 +368,12 @@ function isoToDdMm(iso){
   if(!iso || iso.length < 10) return '';
   return `${iso.slice(8,10)}.${iso.slice(5,7)}`;
 }
+function isInvalidWinterValue(iso){
+  if(!iso || iso.length < 10) return false;
+  const year = new Date().getFullYear();
+  const cutoff = `${year}-${SPRING_CUTOFF_MMDD}`;
+  return iso.startsWith(year + '-') && iso < cutoff;
+}
 
 async function tryFetch(url){
   const urls = [url];
@@ -405,7 +411,7 @@ function extractAllEventDates(html){
 function enqueueSpringYearFirst(keys){
   const uniq = Array.from(new Set((keys||[]).filter(Boolean)));
   for (const k of uniq){
-    if (!springYearFirst[k]) springQ.push(k);
+    if (!springYearFirst[k] || isInvalidWinterValue(springYearFirst[k])) springQ.push(k);
   }
   if (!springQRunning) processSpringQ();
 }
@@ -428,10 +434,8 @@ async function fetchSpringYearFirstOne(key){
   const earliest = earliestInYearIsoAfterCutoff(dates, year, SPRING_CUTOFF_MMDD);
   if (!earliest) return;
 
-  const cutoff = `${year}-${SPRING_CUTOFF_MMDD}`;
   const prev = springYearFirst[key];
-  const prevIsInvalidWinter = prev && prev.startsWith(year + '-') && prev < cutoff;
-  if (earliest && (prevIsInvalidWinter || shouldUpdateToEarlier(prev, earliest))){
+  if (earliest && (isInvalidWinterValue(prev) || !prev || earliest < prev)){
     springYearFirst[key] = earliest;
     localStorage.setItem(LS_SPRING_YEARFIRST, JSON.stringify(springYearFirst));
     if (typeof renderSpringPanel === 'function') renderSpringPanel();

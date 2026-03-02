@@ -55,30 +55,21 @@ function deriveProxyTranslateEndpointFromBase(proxyBase: unknown): string {
   return `${base}/translate-et`;
 }
 
-function getResolvedProxyBaseSafe(): string {
+function readResolvedProxyBaseFromDom(): string {
   try {
-    const maybeFn = (globalThis as any)?.getProxyBase;
-    if (typeof maybeFn === 'function') return safeStr(maybeFn());
-  } catch {}
-
-  try {
-    if (typeof resolveProxyBase === 'function') return safeStr(resolveProxyBase());
-  } catch {}
-
-  try {
-    if (typeof (globalThis as any)?.proxyBaseResolved !== 'undefined') return safeStr((globalThis as any).proxyBaseResolved);
-  } catch {}
-
-  try {
-    const ls = safeStr(localStorage.getItem('proxy_base') || localStorage.getItem('proxyBase') || localStorage.getItem('estbirding.proxyBase') || '');
-    if (ls) return ls;
-  } catch {}
-
-  return '';
+    const root = document.body;
+    if (!root) return '';
+    const txt = root.innerText || '';
+    const m = txt.match(/Resolved proxy base:\s*(https?:\/\/[^\s]+\/proxy\?url=)/i);
+    return m ? safeStr(m[1]) : '';
+  } catch {
+    return '';
+  }
 }
 
 function getProxyTranslateEndpointSafe(): string {
-  return deriveProxyTranslateEndpointFromBase(getResolvedProxyBaseSafe());
+  const domBase = readResolvedProxyBaseFromDom();
+  return deriveProxyTranslateEndpointFromBase(domBase);
 }
 
 export default function SettingsTab() {
@@ -253,7 +244,7 @@ export default function SettingsTab() {
     setTestTranslateResult('');
     try {
       const primaryEndpoint = resolveEndpoint(translationApiUrl);
-      const proxyEndpoint = getProxyTranslateEndpointSafe() || getProxyTranslateEndpoint();
+      const proxyEndpoint = getProxyTranslateEndpointSafe();
       if (!primaryEndpoint && !proxyEndpoint) {
         toast.error('Tõlke endpoint puudub. Ava Seaded → Tõlge ja salvesta URL.');
         throw new Error('TRANSLATE_ENDPOINT_MISSING');
@@ -290,16 +281,16 @@ export default function SettingsTab() {
       }
       let proxy: any;
       if (!proxyEndpoint) {
-        proxy = { ok: false, error: 'endpoint_missing', hint: 'resolvedProxyBase empty or unparsable' };
+        proxy = { ok: false, error: 'endpoint_missing', hint: 'Could not parse "Resolved proxy base" from Settings text' };
       } else {
         try {
-          const r = await fetch(`${proxyEndpoint}?ping=1`, { method: 'GET', mode: 'cors', headers });
-          const txt = await r.text();
+          const r = await fetch(`${proxyEndpoint}?ping=1`, { method: 'GET' });
+          const body = await r.text();
           let j: any = null;
-          try { j = JSON.parse(txt); } catch {}
+          try { j = JSON.parse(body); } catch {}
           proxy = r.ok
             ? { ok: true, endpoint: proxyEndpoint, json: j || null }
-            : { ok: false, endpoint: proxyEndpoint, status: r.status, body: txt.slice(0, 160) };
+            : { ok: false, endpoint: proxyEndpoint, status: r.status, body: body.slice(0, 160) };
         } catch (error: any) {
           proxy = { ok: false, endpoint: proxyEndpoint, error: String(error?.message || error) };
         }

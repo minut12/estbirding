@@ -1,6 +1,16 @@
 const KEY = "estbirding.proxyBase";
+const LS_RESOLVED_PROXY_BASE = "resolved_proxy_base_v1";
 export const PROXY_ENDPOINT_UPDATED_EVENT = "proxy-endpoint-updated";
 export const FALLBACK_PROXY_BASE = "https://api.allorigins.win/raw?url=";
+
+function storeResolvedProxyBase(v: string): void {
+  try {
+    const s = String(v || "").trim();
+    if (s) localStorage.setItem(LS_RESOLVED_PROXY_BASE, s);
+  } catch {
+    // Ignore storage failures.
+  }
+}
 
 function normalizeProxyBase(raw: string): string {
   const trimmed = String(raw || "").trim();
@@ -39,7 +49,9 @@ export function getDefaultProxyBase(): string {
 
 export function resolveProxyBase(currentInput?: string): string {
   const raw = String(currentInput || "").trim() || getStoredProxyBase() || getDefaultProxyBase();
-  return normalizeProxyBase(raw);
+  const resolved = normalizeProxyBase(raw);
+  storeResolvedProxyBase(resolved);
+  return resolved;
 }
 
 export function buildProxyUrl(targetUrl: string, baseOverride?: string): string {

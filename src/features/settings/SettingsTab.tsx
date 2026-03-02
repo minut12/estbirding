@@ -56,20 +56,24 @@ function deriveProxyTranslateEndpointFromBase(proxyBase: unknown): string {
   return `${base}/translate-et`;
 }
 
+function storeResolvedProxyBase(v: unknown): void {
+  try {
+    const s = String(v || '').trim();
+    if (s) localStorage.setItem(LS_RESOLVED_PROXY_BASE, s);
+  } catch {}
+}
+
+function getResolvedProxyBaseFromLS(): string {
+  try {
+    return (localStorage.getItem(LS_RESOLVED_PROXY_BASE) || '').trim();
+  } catch {
+    return '';
+  }
+}
+
 function getResolvedProxyBaseSafe(): string {
-  try {
-    const stored = safeStr(localStorage.getItem(LS_RESOLVED_PROXY_BASE));
-    if (stored) return stored;
-  } catch {}
-
-  try {
-    const maybeFn = (globalThis as any)?.getProxyBase;
-    if (typeof maybeFn === 'function') return safeStr(maybeFn());
-  } catch {}
-  try {
-    if (typeof resolveProxyBase === 'function') return safeStr(resolveProxyBase());
-  } catch {}
-
+  const stored = getResolvedProxyBaseFromLS();
+  if (stored) return stored;
   return '';
 }
 
@@ -98,10 +102,6 @@ export default function SettingsTab() {
   const envProxyBase = getEnvProxyBase();
   const resolvedProxyBase = resolveProxyBase(proxyBaseUrl);
   const proxyMode = getProxyMode(resolvedProxyBase);
-
-  useEffect(() => {
-    try { localStorage.setItem(LS_RESOLVED_PROXY_BASE, String(resolvedProxyBase || '')); } catch {}
-  }, [resolvedProxyBase]);
 
   useEffect(() => {
     setForm(loadSettings());
@@ -348,6 +348,7 @@ export default function SettingsTab() {
     const saved = getStoredProxyBase();
     setStoredProxyBaseView(saved);
     setProxyBaseUrl(saved);
+    storeResolvedProxyBase(saved);
     toast.success('Proxy base saved');
   };
 

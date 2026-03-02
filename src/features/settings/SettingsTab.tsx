@@ -19,11 +19,10 @@ import NewsSourcesSettings from './NewsSourcesSettings';
 import EventsManagementSettings from './EventsManagementSettings';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import {
+  getTranslateEndpoint,
   getEnvEndpoint,
   getStoredEndpoint,
-  resolveBaseEndpoint,
   resolveEndpoint,
-  resolveHealthUrl,
   setStoredEndpoint,
   TRANSLATION_ENDPOINT_UPDATED_EVENT,
   WORKER_DEFAULT_ENDPOINT,
@@ -146,24 +145,14 @@ export default function SettingsTab() {
   const handleTestTranslate = async () => {
     setTestTranslateLoading(true);
     setTestTranslateResult('');
-    const baseEndpoint = resolveBaseEndpoint(translationApiUrl);
     const endpoint = resolveEndpoint(translationApiUrl);
     if (import.meta.env.DEV) {
-      const health = resolveHealthUrl(endpoint);
-      console.info('[translate] native=', isNativePlatform(), 'health=', health, 'translate=', endpoint);
+      console.info('[translate] native=', isNativePlatform(), 'translate=', endpoint);
     }
     try {
-      const healthUrl = resolveHealthUrl(endpoint);
-      if (healthUrl) {
-        try {
-          const healthRes = await fetch(healthUrl, { method: 'GET' });
-          if (!healthRes.ok) {
-            const preview = (await healthRes.text()).slice(0, 120).replace(/\s+/g, ' ');
-            throw new Error(`status=${healthRes.status} ${preview || '[empty body]'}`);
-          }
-        } catch {
-          throw new Error(`Translation backend blocked or unreachable. Open this URL in browser: ${healthUrl}`);
-        }
+      if (!endpoint) {
+        toast.error('Tõlke endpoint puudub. Ava Seaded → Tõlge ja salvesta URL.');
+        throw new Error('TRANSLATE_ENDPOINT_MISSING');
       }
 
       const payload = {
@@ -175,18 +164,16 @@ export default function SettingsTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+      const ct = (response.headers.get('content-type') || '').toLowerCase();
       const rawText = await response.text();
-      let data: any = null;
-      try {
-        data = rawText ? JSON.parse(rawText) : {};
-      } catch {
-        const preview = rawText.slice(0, 200).replace(/\s+/g, ' ');
-        throw new Error(`Test failed (${response.status}): non-JSON response from ${endpoint}: ${preview || '[empty body]'}`);
+
+      if (!ct.includes('application/json')) {
+        throw new Error(`NON_JSON_RESPONSE_${response.status}: ${rawText.slice(0, 120)}`);
       }
+      const data: any = rawText ? JSON.parse(rawText) : {};
 
       if (!response.ok || data?.ok !== true || typeof data?.translatedText !== 'string') {
-        const errorText = String(data?.error || data?.message || rawText.slice(0, 200) || 'Unknown error');
-        throw new Error(`Test failed (${response.status}): ${errorText} (${endpoint})`);
+        throw new Error('BAD_JSON_RESPONSE');
       }
 
       setTestTranslateResult(JSON.stringify(data, null, 2));
@@ -304,6 +291,9 @@ export default function SettingsTab() {
         </p>
         <p className="text-xs text-muted-foreground">
           Env endpoint: {envEndpoint || '(empty)'}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Active endpoint: {getTranslateEndpoint() || '(empty)'}
         </p>
       </div>
 

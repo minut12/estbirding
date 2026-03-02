@@ -338,6 +338,10 @@ function useEtTranslation({
       })
       .catch((error) => {
         if (cancelled) return;
+        if (formatErrorReason(error).includes('TRANSLATE_ENDPOINT_MISSING')) {
+          toast.error('Tõlke endpoint puudub. Ava Seaded → Tõlge ja salvesta URL.');
+          return;
+        }
         notifyTranslationWarning(formatErrorReason(error));
         if (error instanceof TranslateEtHttpError) {
           setErrorStatus(error.status);
@@ -1013,7 +1017,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
     }
 
     if (!translateEndpoint.trim()) {
-      toast.info('Tõlke endpoint puudub. Näitan originaali.');
+      toast.error('Tõlke endpoint puudub. Ava Seaded → Tõlge ja salvesta URL.');
       return;
     }
 

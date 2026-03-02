@@ -1,5 +1,4 @@
-import { getEnvEndpoint, getStoredEndpoint, resolveEndpoint } from '@/config/translationEndpoint';
-import { HttpClientError, postJson } from '@/lib/httpClient';
+import { getEnvEndpoint, getStoredEndpoint, getTranslateEndpoint } from '@/config/translationEndpoint';
 
 export interface TranslateEtInput {
   id: string;
@@ -26,6 +25,7 @@ export class TranslateEtHttpError extends Error {
 const inFlight = new Map<string, Promise<TranslateEtOutput | null>>();
 let loggedEndpoint = false;
 const MAX_ERROR_PREVIEW_CHARS = 200;
+const NON_JSON_PREVIEW_CHARS = 120;
 
 function weakHash(input: string): string {
   let h = 2166136261;
@@ -79,15 +79,28 @@ async function translateText(endpoint: string, text: string, sourceLang?: string
   const cached = localStorage.getItem(cacheKey);
   if (cached !== null) return cached;
 
-  const response = await postJson(endpoint, { text: normalized, targetLang: 'et', sourceLang: sourceLang || undefined });
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: normalized, targetLang: 'et', sourceLang: sourceLang || undefined }),
+  });
+  const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+  const raw = await response.text();
+  if (!contentType.includes('application/json')) {
+    throw new Error(`NON_JSON_RESPONSE_${response.status}: ${raw.slice(0, NON_JSON_PREVIEW_CHARS)}`);
+  }
+  let parsed: { ok?: boolean; translatedText?: unknown };
+  try {
+    parsed = raw ? JSON.parse(raw) : {};
+  } catch {
+    throw new Error(`NON_JSON_RESPONSE_${response.status}: ${raw.slice(0, NON_JSON_PREVIEW_CHARS)}`);
+  }
   if (response.status !== 200) {
-    const preview = String(response.rawText || JSON.stringify(response.data) || '').slice(0, MAX_ERROR_PREVIEW_CHARS).replace(/\s+/g, ' ');
+    const preview = String((parsed as any)?.error || raw || '').slice(0, MAX_ERROR_PREVIEW_CHARS).replace(/\s+/g, ' ');
     throw new TranslateEtHttpError(response.status, `status=${response.status}. endpoint=${endpoint}. ${preview || '[empty body]'}`);
   }
-  const parsed = (response.data || {}) as { ok?: boolean; translatedText?: unknown };
   if (parsed.ok !== true || typeof parsed.translatedText !== 'string') {
-    const preview = String(response.rawText || JSON.stringify(response.data) || '').slice(0, MAX_ERROR_PREVIEW_CHARS).replace(/\s+/g, ' ');
-    throw new Error(`non-json/invalid response: ${preview || 'Invalid JSON payload: required ok=true and translatedText string'}`);
+    throw new Error('BAD_JSON_RESPONSE');
   }
   try {
     localStorage.setItem(cacheKey, parsed.translatedText);
@@ -107,15 +120,15 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
   if (!normalized.id || (!normalized.title && !normalized.body)) {
     return null;
   }
-  const endpoint = String(endpointOverride || resolveEndpoint() || '').trim();
+  const endpoint = String(endpointOverride || getTranslateEndpoint() || '').trim();
   if (!endpoint) {
-    return null;
+    throw new Error('TRANSLATE_ENDPOINT_MISSING');
   }
   if (!loggedEndpoint && import.meta.env.DEV) {
     loggedEndpoint = true;
     const stored = getStoredEndpoint() || '(empty)';
     const env = getEnvEndpoint() || '(empty)';
-    const resolved = resolveEndpoint() || '(empty)';
+    const resolved = getTranslateEndpoint() || '(empty)';
     console.info('[translate] stored=', stored, 'env=', env, 'resolved=', resolved);
   }
 
@@ -139,9 +152,6 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
     .catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[translate] failed. URL=${endpoint}. Error=${message}`, error);
-      if (error instanceof HttpClientError) {
-        throw new TranslateEtHttpError(error.status || 0, `Translate failed. endpoint=${error.endpoint}. error=${message}`);
-      }
       if (error instanceof TranslateEtHttpError) throw error;
       throw new Error(`Translate failed. endpoint=${endpoint}. error=${message}`);
     })

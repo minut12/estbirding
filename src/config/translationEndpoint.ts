@@ -1,17 +1,25 @@
-const KEY = 'estbirding.translationApiUrl';
-const LEGACY_KEY = 'translate_api_url_override';
-export const WORKER_DEFAULT_ENDPOINT = '';
+export const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 export const TRANSLATION_ENDPOINT_UPDATED_EVENT = 'translation-endpoint-updated';
-const FUNCTION_PATH = '/functions/v1/translate-et';
+export const WORKER_DEFAULT_ENDPOINT = '';
+
+export function getTranslateEndpoint(): string {
+  const stored = (localStorage.getItem(LS_TRANSLATE_ENDPOINT) || '').trim();
+  if (stored) return stored;
+
+  const env = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_TRANSLATE_API_URL
+    ? String(import.meta.env.VITE_TRANSLATE_API_URL).trim()
+    : '';
+  if (env) return env;
+
+  return '';
+}
 
 export function getStoredEndpoint(): string {
-  return (localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY) || '').trim();
+  return (localStorage.getItem(LS_TRANSLATE_ENDPOINT) || '').trim();
 }
 
 export function setStoredEndpoint(v: string): void {
-  const input = String(v || '').trim();
-  const normalized = normalizeBaseUrl(input);
-  localStorage.setItem(KEY, normalized);
+  localStorage.setItem(LS_TRANSLATE_ENDPOINT, String(v || '').trim());
   window.dispatchEvent(new Event(TRANSLATION_ENDPOINT_UPDATED_EVENT));
 }
 
@@ -19,57 +27,16 @@ export function getEnvEndpoint(): string {
   return String((import.meta as any).env?.VITE_TRANSLATE_API_URL || '').trim();
 }
 
-function normalizeEndpoint(raw: string): string {
-  const trimmed = String(raw || '').trim().replace(/\/+$/, '');
-  if (!trimmed) return '';
-  try {
-    const parsed = new URL(trimmed);
-    const pathname = (parsed.pathname || '').replace(/\/+$/, '');
-    if (pathname.endsWith('/translate-et')) return parsed.toString();
-    parsed.pathname = FUNCTION_PATH;
-    return parsed.toString();
-  } catch {
-    if (trimmed.endsWith('/translate-et')) return trimmed;
-    return `${trimmed}/translate-et`;
-  }
-}
-
-function normalizeBaseUrl(raw: string): string {
-  const trimmed = String(raw || '').trim().replace(/\/+$/, '');
-  if (!trimmed) return '';
-  try {
-    const parsed = new URL(trimmed);
-    let path = parsed.pathname || '/';
-    if (path.endsWith(FUNCTION_PATH)) path = path.slice(0, -FUNCTION_PATH.length) || '/';
-    if (path.endsWith('/translate-et')) path = path.slice(0, -'/translate-et'.length) || '/';
-    if (path.endsWith('/health')) path = path.slice(0, -'/health'.length) || '/';
-    parsed.pathname = path;
-    return parsed.toString().replace(/\/+$/, '');
-  } catch {
-    return trimmed;
-  }
-}
-
 export function resolveBaseEndpoint(currentInput?: string): string {
-  const hardcoded = WORKER_DEFAULT_ENDPOINT;
-  const env = getEnvEndpoint();
-  const stored = (localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY) || '').trim();
-  const raw = (currentInput?.trim() || stored || env.trim() || hardcoded).trim();
-  return normalizeBaseUrl(raw);
+  const input = String(currentInput || '').trim();
+  if (input) return input;
+  return getTranslateEndpoint();
 }
 
 export function resolveEndpoint(currentInput?: string): string {
-  return normalizeEndpoint(resolveBaseEndpoint(currentInput));
+  return resolveBaseEndpoint(currentInput);
 }
 
-export function resolveHealthUrl(endpoint?: string): string {
-  const resolved = String(endpoint || resolveBaseEndpoint()).trim();
-  try {
-    const parsed = new URL(resolved);
-    if ((parsed.pathname || '').includes('/functions/v1/translate-et')) return '';
-    const search = parsed.search || '';
-    return `${parsed.origin}/health${search}`;
-  } catch {
-    return `${resolved.replace(/\/+$/, '')}/health`;
-  }
+export function resolveHealthUrl(_endpoint?: string): string {
+  return '';
 }

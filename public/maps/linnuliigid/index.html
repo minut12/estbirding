@@ -221,6 +221,7 @@ const DATA = SPECIES.map(name => ({ est: _normText(name), url: 'https://elurikku
 
 // Local storage keys
 const LS_AVATARS='bm_rari_avatars', LS_POINTS='bm_rari_points', LS_PROXY='bm_rari_proxy', LS_NAMES='bm_rari_names', LS_SPRING='bm_rari_spring_dates';
+const LS_SPRING_YEARFIRST = 'bm_rari_spring_yearfirst';
 
 // Default spring migration dates
 const DEFAULT_SPRING_DATES = {"Heletilder":"6.04","Herilaseviu":"5.05","HÃ¤nilane":"14.04","JÃµgitiir":"21.03","KadakatÃ¤ks":"22.04","KaelusrÃ¤stas":"17.04","Kalakotkas":"31.03","KaldapÃ¤Ã¤suke":"29.04","Karmiinleevike":"6.05","Kivirullija":"6.05","KivitÃ¤ks":"2.04","Koldvint":"6.04","Kukkurtihane":"1.04","KuldhÃ¤nilane":"12.04","KÃ¤osulane":"4.05","Lammitilder":"14.04","Lapi tsiitsitaja":"5.04","Lepalind":"12.04","LinavÃ¤strik":"18.03","LÃµopistrik":"19.04","Madukotkas":"26.04","Metskiur":"8.04","Metstilder":"24.03","Mudatilder":"9.04","Mustlagle":"30.03","Mustviires":"29.04","NÃµmmelÃµoke":"10.03","Peoleo":"6.05","Piiritaja":"3.05","PlÃ¼tt":"19.05","PlÃ¼Ã¼":"25.04","PÃµldtsiitsitaja":"4.05","Rabapistrik":"11.04","Randtiir":"16.04","Rohunepp":"28.04","RukkirÃ¤Ã¤k":"7.05","RÃ¤gapart":"25.03","RÃ¤usk":"4.04","RÃ¤Ã¤stapÃ¤Ã¤suke":"18.04","RÃ¼Ã¼t":"5.03","SarviklÃµoke":"6.03","Sinirind":"18.04","SoorÃ¤ts":"17.04","SoorÃ¼di":"27.03","SuitsupÃ¤Ã¤suke":"10.04","Suurkoovitaja":"25.03","SuurrÃ¼di":"4.05","Tundrakaur":"1.05","Tundrakiur":"23.04","Turteltuvi":"25.04","TÃ¤pikhuik":"18.04","TÃµmmukajakas":"8.03","VaenukÃ¤gu":"13.04","Veetallaja":"19.05","Vihitaja":"31.03","VÃ¤ikehuik":"24.04","VÃ¤ikehÃ¼Ã¼p":"30.05","VÃ¤ikekoovitaja":"12.04","VÃ¤ikerÃ¼di":"17.05","VÃ¤iketiir":"21.04","VÃ¤iketÃ¼ll":"6.04","VÃ¤rbrÃ¼di":"20.04","VÃ¤Ã¤nkael":"11.04","Ã–Ã¶bik":"28.04","Ã–Ã¶sorr":"24.04"};
@@ -321,6 +322,12 @@ let springDates = (function(){
     return Object.assign({}, DEFAULT_SPRING_DATES, (saved && typeof saved==='object' ? saved : {}));
   }catch(e){ return Object.assign({}, DEFAULT_SPRING_DATES); }
 })();
+let springYearFirst = {};
+try { springYearFirst = JSON.parse(localStorage.getItem(LS_SPRING_YEARFIRST) || '{}') || {}; }
+catch(e){ springYearFirst = {}; }
+
+let springQ = [];
+let springQRunning = false;
 
 // Map
 const IS_MOBILE_DEVICE = matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -337,6 +344,93 @@ function _toDay(s){
   const m = (''+s).match(/(\d{4})-(\d{2})-(\d{2})/);
   if(!m) return null;
   return new Date(+m[1], +m[2]-1, +m[3]).getTime();
+}
+function earliestInYearIso(datesIso, year){
+  if(!Array.isArray(datesIso)) return null;
+  const y = String(year) + '-';
+  let best = null;
+  for (const d of datesIso){
+    if (typeof d !== 'string') continue;
+    if (!d.startsWith(y)) continue;
+    if (!best || d < best) best = d;
+  }
+  return best;
+}
+function shouldUpdateToEarlier(existingIso, candidateIso){
+  if(!candidateIso) return false;
+  if(!existingIso) return true;
+  return candidateIso < existingIso;
+}
+function isoToDdMm(iso){
+  if(!iso || iso.length < 10) return '';
+  return `${iso.slice(8,10)}.${iso.slice(5,7)}`;
+}
+
+async function tryFetch(url){
+  const urls = [url];
+  const pb = String(proxyBase || '').trim();
+  if(pb) urls.push(pb + encodeURIComponent(url));
+  else urls.push('https://api.allorigins.win/raw?url=' + encodeURIComponent(url));
+  let lastErr = null;
+  for(const u of urls){
+    try{
+      const r = await fetch(u, { cache:'no-store' });
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return await r.text();
+    }catch(e){ lastErr = e; }
+  }
+  throw lastErr || new Error('Fetch failed');
+}
+function extractAllEventDates(html){
+  const out = [];
+  if(!html) return out;
+  let m;
+  const reJson = /"eventDate"\s*:\s*"?(\d{4}-\d{2}-\d{2})/ig;
+  while ((m = reJson.exec(html)) !== null) out.push(m[1]);
+  const reLbl = /(?:Kuupäev|Date)\s*[:\-–]\s*(\d{4}-\d{2}-\d{2})/ig;
+  while ((m = reLbl.exec(html)) !== null) out.push(m[1]);
+  if(out.length === 0){
+    const reAny = /(\d{4}-\d{2}-\d{2})/g;
+    while ((m = reAny.exec(html)) !== null){
+      out.push(m[1]);
+      if(out.length > 500) break;
+    }
+  }
+  return out;
+}
+
+function enqueueSpringYearFirst(keys){
+  const uniq = Array.from(new Set((keys||[]).filter(Boolean)));
+  for (const k of uniq){
+    if (!springYearFirst[k]) springQ.push(k);
+  }
+  if (!springQRunning) processSpringQ();
+}
+
+async function processSpringQ(){
+  springQRunning = true;
+  while(springQ.length){
+    const key = springQ.shift();
+    try { await fetchSpringYearFirstOne(key); } catch(e) {}
+    await new Promise(r=>setTimeout(r, 400));
+  }
+  springQRunning = false;
+}
+
+async function fetchSpringYearFirstOne(key){
+  const url = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(key);
+  const html = await tryFetch(url);
+  const dates = extractAllEventDates(html);
+  const year = new Date().getFullYear();
+  const earliest = earliestInYearIso(dates, year);
+  if (!earliest) return;
+
+  const prev = springYearFirst[key];
+  if (shouldUpdateToEarlier(prev, earliest)){
+    springYearFirst[key] = earliest;
+    localStorage.setItem(LS_SPRING_YEARFIRST, JSON.stringify(springYearFirst));
+    if (typeof renderSpringPanel === 'function') renderSpringPanel();
+  }
 }
 
 // Toggle state: 7 days only
@@ -1515,6 +1609,7 @@ function save() {
   localStorage.setItem(LS_POINTS, JSON.stringify(points));
   localStorage.setItem(LS_NAMES, JSON.stringify(nameCache));
   localStorage.setItem(LS_SPRING, JSON.stringify(springDates));
+  localStorage.setItem(LS_SPRING_YEARFIRST, JSON.stringify(springYearFirst));
 }
 
 // Icons
@@ -1818,7 +1913,11 @@ document.addEventListener('DOMContentLoaded', function(){
     <div class="springTableWrap">
       <table id="springTable">
         <thead>
-          <tr><th style="width:92px">Kuupäev</th><th>Liik</th></tr>
+          <tr>
+            <th style="width:92px">Kuupäev</th>
+            <th>Liik</th>
+            <th style="width:110px">Sel aastal</th>
+          </tr>
         </thead>
         <tbody id="springTableBody"></tbody>
       </table>
@@ -1962,10 +2061,15 @@ document.addEventListener('DOMContentLoaded', function(){
     rows.sort((a,b)=> (a.key-b.key) || String(a.name).localeCompare(String(b.name)));
     body.innerHTML = rows.map(r => {
       const safeName = String(r.name).replace(/"/g,'&quot;');
-      return '<tr><td><span class="springDateBtn" onclick="editSpringDate(\''+safeName.replace(/'/g, "\\'")+'\')">'+ r.disp+'</span></td><td><span class="springSpeciesBtn" onclick="window.__springScrollToSpecies && window.__springScrollToSpecies(\''+safeName.replace(/'/g, "\\'")+'\')">'+ safeName+'</span></td></tr>';
+      const yIso = springYearFirst[r.name];
+      const yDisp = yIso ? isoToDdMm(yIso) : '—';
+      return '<tr><td><span class="springDateBtn" onclick="editSpringDate(\''+safeName.replace(/'/g, "\\'")+'\')">'+ r.disp+'</span></td><td><span class="springSpeciesBtn" onclick="window.__springScrollToSpecies && window.__springScrollToSpecies(\''+safeName.replace(/'/g, "\\'")+'\')">'+ safeName+'</span></td><td>'+yDisp+'</td></tr>';
     }).join('');
+    const keysShown = rows.map(r=>r.name);
+    enqueueSpringYearFirst(keysShown);
     countEl.textContent = rows.length;
   }
+  window.renderSpringPanel = renderSpringPanel;
 
   window.__springScrollToSpecies = function(name){
     try{

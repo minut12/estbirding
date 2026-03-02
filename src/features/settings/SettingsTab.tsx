@@ -41,9 +41,11 @@ import {
 import { isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
 
 type ResetMode = 'soft' | 'hard' | null;
+type SettingsPage = 'home' | 'news' | 'events' | 'translations' | 'species';
 
 export default function SettingsTab() {
   const newsSourcesSectionRef = useRef<HTMLDivElement | null>(null);
+  const [settingsPage, setSettingsPage] = useState<SettingsPage>('home');
   const [devMode, setDevMode] = useState<boolean>(() => isDeveloperModeEnabled());
   const [devTapCount, setDevTapCount] = useState(0);
   const [form, setForm] = useState<AppSettings>(loadSettings);
@@ -100,10 +102,11 @@ export default function SettingsTab() {
   }, []);
 
   useEffect(() => {
-    if (import.meta.env.DEV && !newsSourcesSectionRef.current) {
-      console.warn('[Settings] News sources section did not render while settings is open');
+    if (!import.meta.env.DEV || settingsPage !== 'news') return;
+    if (!newsSourcesSectionRef.current) {
+      console.warn('[Settings] News sources section did not render while settings page is open');
     }
-  }, []);
+  }, [settingsPage]);
 
   const onVersionTap = () => {
     if (devMode) return;
@@ -254,168 +257,213 @@ export default function SettingsTab() {
     }
   };
 
+  const renderSettingsHeader = (title: string) => (
+    <div className="mb-3 mt-1 flex items-center justify-between gap-3">
+      <Button variant="outline" onClick={() => setSettingsPage('home')} className="rounded-xl px-3 py-2">
+        ← Tagasi
+      </Button>
+      <div className="text-lg font-extrabold">{title}</div>
+      <div className="w-11" />
+    </div>
+  );
+
+  const renderSettingsNews = () => (
+    <div ref={newsSourcesSectionRef} className="block">
+      <NewsSourcesSettings />
+    </div>
+  );
+
+  const renderSettingsEvents = () => <EventsManagementSettings />;
+
+  const renderSettingsTranslations = () => (
+    <>
+      <div className="space-y-2">
+        <Label htmlFor="translateApiUrl">Translation API URL</Label>
+        <Input
+          id="translateApiUrl"
+          placeholder="https://<backend-domain>/translate-et"
+          value={translationApiUrl}
+          onChange={(e) => setTranslationApiUrlInput(e.target.value)}
+        />
+        <Button variant="outline" onClick={handleSaveTranslateEndpoint} className="w-full">
+          Save translation endpoint
+        </Button>
+        <Button variant="outline" onClick={handleUseWorkerDefault} className="w-full">
+          Clear translation endpoint
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          Use your translation backend base URL (query params supported).
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Resolved endpoint: {resolvedEndpoint || '(empty)'}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Stored endpoint: {storedEndpointView || '(empty)'}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Env endpoint: {envEndpoint || '(empty)'}
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="proxyBaseUrl">Proxy Base URL</Label>
+        <Input
+          id="proxyBaseUrl"
+          placeholder="https://<project-ref>.supabase.co/functions/v1/proxy?url="
+          value={proxyBaseUrl}
+          onChange={(e) => setProxyBaseUrl(e.target.value)}
+        />
+        <Button variant="outline" onClick={handleSaveProxyBase} className="w-full">
+          Save proxy base
+        </Button>
+        <Button variant="outline" onClick={handleUseProxyFallback} className="w-full">
+          Use fallback proxy
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          Active proxy: {proxyMode}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Resolved proxy base: {resolvedProxyBase || '(empty)'}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Stored proxy base: {storedProxyBaseView || '(empty)'}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Env proxy base: {envProxyBase || '(empty)'}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          If this is empty or invalid, map data fetches may fail due to CORS.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between rounded-md border border-border p-3">
+          <div className="space-y-1">
+            <Label htmlFor="autoTranslate">Tolgi uudised automaatselt eesti keelde</Label>
+            <p className="text-xs text-muted-foreground">
+              Mojub ainult kliendipoolses kuvamises.
+            </p>
+          </div>
+          <Switch
+            id="autoTranslate"
+            checked={form.autoTranslateToEstonian}
+            onCheckedChange={handleAutoTranslateToggle}
+          />
+        </div>
+        <div className="rounded-md border border-border p-3 space-y-2">
+          <div className="text-sm font-medium">Admin test</div>
+          <Button
+            variant="outline"
+            onClick={handleTestTranslate}
+            disabled={testTranslateLoading}
+            className="w-full"
+          >
+            {testTranslateLoading ? 'Testin...' : 'Test translate'}
+          </Button>
+          {testTranslateResult && (
+            <pre className="max-h-40 overflow-auto rounded bg-muted p-2 text-xs whitespace-pre-wrap break-words">
+              {testTranslateResult}
+            </pre>
+          )}
+        </div>
+      </div>
+
+      <Button onClick={handleSave} className="w-full">Salvesta</Button>
+    </>
+  );
+
+  const renderSettingsSpecies = () => <AvatarManager />;
+
+  const renderDebugLite = () => (
+    <div className="space-y-3">
+      {devMode && <DeveloperSettings />}
+      <Separator />
+      <h3 className="font-semibold text-foreground">Torkeotsing</h3>
+      <p className="text-xs text-muted-foreground">
+        Kui rakendus ei laadi uusimat versiooni, tuhjenda vahemalu.
+      </p>
+      <div className="flex flex-col gap-2">
+        <Button
+          variant="outline"
+          disabled={resetting}
+          onClick={() => setConfirmMode('soft')}
+          className="w-full justify-start gap-2"
+        >
+          <RotateCcw className="w-4 h-4" />
+          Tuhjenda vahemalu
+        </Button>
+        <Button
+          variant="destructive"
+          disabled={resetting}
+          onClick={() => setConfirmMode('hard')}
+          className="w-full justify-start gap-2"
+        >
+          <Trash2 className="w-4 h-4" />
+          Taielik lahtestus
+        </Button>
+      </div>
+      {resetting && (
+        <p className="text-sm text-muted-foreground animate-pulse">Tuhjendamine...</p>
+      )}
+
+      <Separator className="my-2" />
+
+      <a
+        href="/reset/"
+        className="inline-flex items-center gap-1.5 text-sm text-primary underline underline-offset-4 hover:text-primary/80"
+      >
+        Ava lahtestusleht &rarr;
+      </a>
+      <p className="text-xs text-muted-foreground">
+        Kasuta seda linki, kui rakendus on taiesti kinni jaanud ja nupud ei toota.
+      </p>
+
+      <Separator className="my-2" />
+
+      <p className="text-xs text-muted-foreground cursor-default select-none" onClick={onVersionTap}>
+        Versioon: {APP_VERSION}
+      </p>
+    </div>
+  );
+
+  const renderSettingsHome = () => (
+    <>
+      <div className="flex flex-col gap-2">
+        <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('news')}>
+          Uudised
+        </Button>
+        <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('events')}>
+          Üritused
+        </Button>
+        <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('translations')}>
+          Tõlge
+        </Button>
+        <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('species')}>
+          Linnuliigid
+        </Button>
+      </div>
+      <div className="mt-2">
+        {renderDebugLite()}
+      </div>
+    </>
+  );
+
+  const renderSettings = () => {
+    if (settingsPage === 'home') return renderSettingsHome();
+    if (settingsPage === 'news') return <>{renderSettingsHeader('Uudised')}{renderSettingsNews()}</>;
+    if (settingsPage === 'events') return <>{renderSettingsHeader('Üritused')}{renderSettingsEvents()}</>;
+    if (settingsPage === 'translations') return <>{renderSettingsHeader('Tõlge')}{renderSettingsTranslations()}</>;
+    if (settingsPage === 'species') return <>{renderSettingsHeader('Linnuliigid')}{renderSettingsSpecies()}</>;
+    return renderSettingsHome();
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="px-4 py-3 border-b border-border bg-card">
         <h2 className="font-semibold text-foreground">Seaded</h2>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-6 max-h-[calc(100dvh-124px)] md:max-h-none pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-        <div ref={newsSourcesSectionRef} className="block">
-          <NewsSourcesSettings />
-        </div>
-
-        <EventsManagementSettings />
-
-        <div className="space-y-2">
-          <Label htmlFor="translateApiUrl">Translation API URL</Label>
-          <Input
-            id="translateApiUrl"
-            placeholder="https://<backend-domain>/translate-et"
-            value={translationApiUrl}
-            onChange={(e) => setTranslationApiUrlInput(e.target.value)}
-          />
-          <Button variant="outline" onClick={handleSaveTranslateEndpoint} className="w-full">
-            Save translation endpoint
-          </Button>
-          <Button variant="outline" onClick={handleUseWorkerDefault} className="w-full">
-            Clear translation endpoint
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            Use your translation backend base URL (query params supported).
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Resolved endpoint: {resolvedEndpoint || '(empty)'}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Stored endpoint: {storedEndpointView || '(empty)'}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Env endpoint: {envEndpoint || '(empty)'}
-          </p>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="proxyBaseUrl">Proxy Base URL</Label>
-          <Input
-            id="proxyBaseUrl"
-            placeholder="https://<project-ref>.supabase.co/functions/v1/proxy?url="
-            value={proxyBaseUrl}
-            onChange={(e) => setProxyBaseUrl(e.target.value)}
-          />
-          <Button variant="outline" onClick={handleSaveProxyBase} className="w-full">
-            Save proxy base
-          </Button>
-          <Button variant="outline" onClick={handleUseProxyFallback} className="w-full">
-            Use fallback proxy
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            Active proxy: {proxyMode}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Resolved proxy base: {resolvedProxyBase || '(empty)'}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Stored proxy base: {storedProxyBaseView || '(empty)'}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Env proxy base: {envProxyBase || '(empty)'}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            If this is empty or invalid, map data fetches may fail due to CORS.
-          </p>
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between rounded-md border border-border p-3">
-            <div className="space-y-1">
-              <Label htmlFor="autoTranslate">Tolgi uudised automaatselt eesti keelde</Label>
-              <p className="text-xs text-muted-foreground">
-                Mojub ainult kliendipoolses kuvamises.
-              </p>
-            </div>
-            <Switch
-              id="autoTranslate"
-              checked={form.autoTranslateToEstonian}
-              onCheckedChange={handleAutoTranslateToggle}
-            />
-          </div>
-          <div className="rounded-md border border-border p-3 space-y-2">
-            <div className="text-sm font-medium">Admin test</div>
-            <Button
-              variant="outline"
-              onClick={handleTestTranslate}
-              disabled={testTranslateLoading}
-              className="w-full"
-            >
-              {testTranslateLoading ? 'Testin...' : 'Test translate'}
-            </Button>
-            {testTranslateResult && (
-              <pre className="max-h-40 overflow-auto rounded bg-muted p-2 text-xs whitespace-pre-wrap break-words">
-                {testTranslateResult}
-              </pre>
-            )}
-          </div>
-        </div>
-
-        <Button onClick={handleSave} className="w-full">Salvesta</Button>
-
-        <Separator />
-
-        <AvatarManager />
-
-        <Separator />
-
-        {devMode && <DeveloperSettings />}
-
-        <Separator />
-
-        <div className="space-y-3">
-          <h3 className="font-semibold text-foreground">Torkeotsing</h3>
-          <p className="text-xs text-muted-foreground">
-            Kui rakendus ei laadi uusimat versiooni, tuhjenda vahemalu.
-          </p>
-          <div className="flex flex-col gap-2">
-            <Button
-              variant="outline"
-              disabled={resetting}
-              onClick={() => setConfirmMode('soft')}
-              className="w-full justify-start gap-2"
-            >
-              <RotateCcw className="w-4 h-4" />
-              Tuhjenda vahemalu
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={resetting}
-              onClick={() => setConfirmMode('hard')}
-              className="w-full justify-start gap-2"
-            >
-              <Trash2 className="w-4 h-4" />
-              Taielik lahtestus
-            </Button>
-          </div>
-          {resetting && (
-            <p className="text-sm text-muted-foreground animate-pulse">Tuhjendamine...</p>
-          )}
-
-          <Separator className="my-2" />
-
-          <a
-            href="/reset/"
-            className="inline-flex items-center gap-1.5 text-sm text-primary underline underline-offset-4 hover:text-primary/80"
-          >
-            Ava lahtestusleht &rarr;
-          </a>
-          <p className="text-xs text-muted-foreground">
-            Kasuta seda linki, kui rakendus on taiesti kinni jaanud ja nupud ei toota.
-          </p>
-
-          <Separator className="my-2" />
-
-          <p className="text-xs text-muted-foreground cursor-default select-none" onClick={onVersionTap}>
-            Versioon: {APP_VERSION}
-          </p>
-        </div>
+        {renderSettings()}
       </div>
 
       <AlertDialog open={confirmMode !== null} onOpenChange={(open) => { if (!open) setConfirmMode(null); }}>

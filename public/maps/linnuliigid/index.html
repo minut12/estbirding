@@ -2103,13 +2103,54 @@ document.addEventListener('DOMContentLoaded', function(){
       const safeName = String(r.name).replace(/"/g,'&quot;');
       const yIso = springYearFirst[r.name];
       const yDisp = yIso ? isoToDdMm(yIso) : '—';
-      return '<tr><td><span class="springDateBtn" onclick="editSpringDate(\''+safeName.replace(/'/g, "\\'")+'\')">'+ r.disp+'</span></td><td><span class="springSpeciesBtn" onclick="window.__springScrollToSpecies && window.__springScrollToSpecies(\''+safeName.replace(/'/g, "\\'")+'\')">'+ safeName+'</span></td><td>'+yDisp+'</td></tr>';
+      return '<tr><td><button type="button" class="springDateBtn spring-date-btn" data-spring-key="'+safeName+'" style="cursor:pointer;pointer-events:auto">'+ r.disp+'</button></td><td><span class="springSpeciesBtn" onclick="window.__springScrollToSpecies && window.__springScrollToSpecies(\''+safeName.replace(/'/g, "\\'")+'\')">'+ safeName+'</span></td><td>'+yDisp+'</td></tr>';
     }).join('');
+    const panel = document.getElementById('springPanel');
+    if(panel){
+      panel.querySelectorAll('.spring-date-btn').forEach(btn => {
+        btn.style.cursor = 'pointer';
+        btn.style.pointerEvents = 'auto';
+        btn.addEventListener('click', onSpringDateEdit);
+        btn.addEventListener('touchend', onSpringDateEdit, { passive: false });
+      });
+    }
     const keysShown = rows.map(r=>r.name);
     enqueueSpringYearFirst(keysShown);
     countEl.textContent = rows.length;
   }
   window.renderSpringPanel = renderSpringPanel;
+
+  function onSpringDateEdit(e){
+    e.preventDefault();
+    e.stopPropagation();
+
+    const key = e.currentTarget.getAttribute('data-spring-key');
+    if(!key) return;
+
+    const prev = (springDates && springDates[key]) ? springDates[key] : '';
+    const val = prompt('Uus kevadrände kuupäev (DD.MM, nt 05.03 või 5.03). Tühjaks = eemalda:', prev || '');
+    if(val === null) return;
+
+    const v = (val || '').trim();
+
+    if(!v){
+      delete springDates[key];
+    } else {
+      // normalize to D.MM or DD.MM
+      const m = v.match(/^(\d{1,2})\.(\d{1,2})$/);
+      if(!m){
+        alert('Vigane formaat. Kasuta DD.MM (nt 05.03).');
+        return;
+      }
+      const d = String(parseInt(m[1],10));
+      const mm = String(parseInt(m[2],10)).padStart(2,'0');
+      springDates[key] = `${d}.${mm}`;
+    }
+
+    // persist using existing save() function used by springDates
+    if(typeof save === 'function') save();
+    if(typeof renderSpringPanel === 'function') renderSpringPanel();
+  }
 
   window.__springScrollToSpecies = function(name){
     try{

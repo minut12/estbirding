@@ -177,7 +177,7 @@ const DATA = SPECIES.map(name => ({ est: name, url: 'https://elurikkus.ee/app/oc
 
 // Local storage keys
 const LS_AVATARS='bm_rari_avatars', LS_POINTS='bm_rari_points', LS_PROXY='bm_rari_proxy', LS_NAMES='bm_rari_names', LS_SPRING='bm_rari_spring_dates';
-const LS_SPRING_YEARFIRST = 'bm_rari_spring_yearfirst';
+const LS_SPRING_YEARFIRST = 'spring_yearfirst_v1';
 
 // Default spring migration “usual/earliest” dates parsed from "Saabuvad rändlinnud 2025.a kevadel.txt"
 // Format: "D.MM" (day without leading zero, month 2-digit)
@@ -266,7 +266,12 @@ let springDates = (function(){
     return Object.assign({}, DEFAULT_SPRING_DATES);
   }
 })();
-let springYearFirst = JSON.parse(localStorage.getItem(LS_SPRING_YEARFIRST) || '{}');
+let springYearFirst = (function(){
+  try{
+    const v = JSON.parse(localStorage.getItem(LS_SPRING_YEARFIRST) || '{}');
+    return (v && typeof v === 'object') ? v : {};
+  }catch(e){ return {}; }
+})();
 
 // Map
 const map = L.map('map').setView([58.7,25.3], 6.5);
@@ -295,24 +300,37 @@ function _isNewer(newD, oldD){
   if(a && b) return a > b;
   return !!newD && !oldD;
 }
-function earliestInYear(dates, year){
+function earliestInYearIso(datesIso, year){
   try{
     const y = String(year);
-    if(!Array.isArray(dates) || !y) return null;
-    const inYear = dates.filter(d => typeof d === 'string' && d.startsWith(y + '-'));
+    if(!Array.isArray(datesIso) || !y) return null;
+    const inYear = datesIso.filter(d => typeof d === 'string' && d.startsWith(y + '-'));
     if(!inYear.length) return null;
     inYear.sort();
     return inYear[0] || null;
   }catch(e){ return null; }
 }
-function isEarlierIso(a,b){
+function shouldUpdateToEarlier(existingIso, candidateIso){
   try{
-    if(!a) return false;
-    if(!b) return true;
-    const am = _toDay(a), bm = _toDay(b);
-    if(Number.isFinite(am) && Number.isFinite(bm)) return am < bm;
-    return String(a) < String(b);
+    if(!candidateIso) return false;
+    if(!existingIso) return true;
+    const em = _toDay(existingIso), cm = _toDay(candidateIso);
+    if(Number.isFinite(em) && Number.isFinite(cm)) return cm < em;
+    return String(candidateIso) < String(existingIso);
   }catch(e){ return false; }
+}
+function isoToDdMm(iso){
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return '';
+  return `${m[3]}.${m[2]}`;
+}
+function upsertSpringYearFirst(key, candidateIso){
+  const existingIso = (springYearFirst && springYearFirst[key]) ? String(springYearFirst[key]).trim() : '';
+  if(shouldUpdateToEarlier(existingIso, candidateIso)){
+    springYearFirst[key] = candidateIso;
+    return true;
+  }
+  return false;
 }
   // --- Border color based on recency (<=7 days = green, older = orange) ---
   
@@ -839,18 +857,12 @@ async function autoFetchCoords(key, searchUrl) {
     let eventDate = extractEventDate(shtml);
     const occDates = extractAllEventDates(shtml);
     const year = new Date().getFullYear();
-    const earliestThisYear = earliestInYear(occDates, year);
+    const earliestThisYear = earliestInYearIso(occDates, year);
 
     const occ7Meta = await countElurikkusRows7d(searchUrl, 7);
     const occ7 = Number.isFinite(occ7Meta.rowCount) ? occ7Meta.rowCount : null;
     let changedYearFirst = false;
-    const prevYearFirst = (springYearFirst && springYearFirst[key]) ? springYearFirst[key] : '';
-    if (earliestThisYear) {
-      if (!prevYearFirst || isEarlierIso(earliestThisYear, prevYearFirst)) {
-        springYearFirst[key] = earliestThisYear;
-        changedYearFirst = true;
-      }
-    }
+    changedYearFirst = upsertSpringYearFirst(key, earliestThisYear);
 
     if (!coords) {
       const detail = findFirstDetailLink(shtml);
@@ -1589,6 +1601,81 @@ window.alert = function(msg){ notifySilent(msg); };
 <!-- === Kevadrände paneel (top list) === -->
 <script>
 (function(){
+  const springYearFetchQueue = [];
+  const springYearFetchQueued = new Set();
+  const springYearFetchDone = new Set();
+  let springYearFetchRunning = false;
+  let springYearFetchLastAt = 0;
+
+  function _springDataKeyMaps(){
+    const byName = new Map();
+    const byKey = new Map();
+    try{
+      (DATA || []).forEach(o=>{
+        if(!o) return;
+        const key = String(o.est || o.key || o.name || o.nameEt || o.et || '').trim();
+        const url = String(o.url || '').trim();
+        if(!key || !url) return;
+        byKey.set(key, {key, url});
+        [o.est, o.key, o.name, o.nameEt, o.et].forEach(v=>{
+          const n = String(v || '').trim();
+          if(n) byName.set(n, {key, url});
+        });
+      });
+    }catch(e){}
+    return { byName, byKey };
+  }
+
+  function resolveSpringSpecies(name){
+    try{
+      const maps = _springDataKeyMaps();
+      const n = String(name || '').trim();
+      if(!n) return null;
+      return maps.byName.get(n) || maps.byKey.get(n) || null;
+    }catch(e){ return null; }
+  }
+
+  async function _runSpringYearQueue(){
+    if(springYearFetchRunning) return;
+    springYearFetchRunning = true;
+    while(springYearFetchQueue.length){
+      const item = springYearFetchQueue.shift();
+      if(!item || !item.key || !item.url) continue;
+      springYearFetchQueued.delete(item.key);
+
+      const wait = 380 - (Date.now() - springYearFetchLastAt);
+      if(wait > 0) await new Promise(r=>setTimeout(r, wait));
+      springYearFetchLastAt = Date.now();
+
+      try{
+        const shtml = await tryFetch(item.url);
+        const occDates = extractAllEventDates(shtml);
+        const year = new Date().getFullYear();
+        const earliestThisYear = earliestInYearIso(occDates, year);
+        if(upsertSpringYearFirst(item.key, earliestThisYear)){
+          save();
+          renderSpringPanel();
+        }
+        springYearFetchDone.add(item.key);
+      }catch(e){}
+    }
+    springYearFetchRunning = false;
+  }
+
+  function enqueueSpringYearFirstForRows(rows){
+    try{
+      rows.forEach(r=>{
+        const resolved = resolveSpringSpecies(r.name);
+        if(!resolved || !resolved.key || !resolved.url) return;
+        const k = resolved.key;
+        if((springYearFirst && springYearFirst[k]) || springYearFetchDone.has(k) || springYearFetchQueued.has(k)) return;
+        springYearFetchQueued.add(k);
+        springYearFetchQueue.push({key:k, url:resolved.url});
+      });
+      _runSpringYearQueue();
+    }catch(e){}
+  }
+
   function springSortKey(v){
     try{
       if(!v) return 999999;
@@ -1636,8 +1723,10 @@ window.alert = function(msg){ notifySilent(msg); };
       if(!raw) continue;
       if(q && !String(name).toLowerCase().includes(q)) continue;
       const disp = (typeof _normSpringDDMM === 'function') ? (_normSpringDDMM(raw) || raw) : raw;
-      const y = (springYearFirst && springYearFirst[name]) ? String(springYearFirst[name]).trim() : '';
-      rows.push({name, disp, y, key: springSortKey(disp)});
+      const resolved = resolveSpringSpecies(name);
+      const dataKey = resolved && resolved.key ? resolved.key : name;
+      const y = (springYearFirst && springYearFirst[dataKey]) ? String(springYearFirst[dataKey]).trim() : '';
+      rows.push({name, dataKey, disp, y, key: springSortKey(disp)});
     }
 
     rows.sort((a,b)=> (a.key-b.key) || String(a.name).localeCompare(String(b.name)));
@@ -1648,10 +1737,11 @@ window.alert = function(msg){ notifySilent(msg); };
       return `<tr>
         <td><span class="springDateBtn" title="Muuda kuupäeva" onclick="editSpringDate('${safeName.replace(/'/g, "\\'")}')">${safeDisp}</span></td>
         <td><span class="springSpeciesBtn" title="Leia liigi kaart küljepaneelis" onclick="window.__springScrollToSpecies && window.__springScrollToSpecies('${safeName.replace(/'/g, "\\'")}')">${safeName}</span></td>
-        <td>${r.y || '\u2014'}</td>
+        <td>${r.y ? isoToDdMm(r.y) : '\u2014'}</td>
       </tr>`;
     }).join('');
 
+    enqueueSpringYearFirstForRows(rows);
     countEl.textContent = rows.length;
   }
 

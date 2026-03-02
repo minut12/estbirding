@@ -384,6 +384,79 @@ function normalizeSpringDate(v){
   const mm = String(parseInt(m[2],10)).padStart(2,'0');
   return `${d}.${mm}`;
 }
+function startInlineKevadEdit(hostEl, key){
+  // prevent multiple editors
+  if(hostEl.querySelector('input')) return;
+
+  const prev = (springDates && springDates[key]) ? springDates[key] : '';
+
+  const wrap = document.createElement('span');
+  wrap.style.display = 'inline-flex';
+  wrap.style.gap = '6px';
+  wrap.style.alignItems = 'center';
+
+  const inp = document.createElement('input');
+  inp.value = prev;
+  inp.placeholder = 'DD.MM';
+  inp.inputMode = 'numeric';
+  inp.style.width = '70px';
+  inp.style.padding = '4px 6px';
+  inp.style.border = '1px solid #ddd';
+  inp.style.borderRadius = '10px';
+  inp.style.fontSize = '13px';
+
+  const ok = document.createElement('button');
+  ok.textContent = 'OK';
+  ok.style.border = '0';
+  ok.style.borderRadius = '10px';
+  ok.style.padding = '4px 8px';
+  ok.style.background = '#16a34a';
+  ok.style.color = '#fff';
+
+  const cancel = document.createElement('button');
+  cancel.textContent = 'X';
+  cancel.style.border = '0';
+  cancel.style.borderRadius = '10px';
+  cancel.style.padding = '4px 8px';
+  cancel.style.background = '#eee';
+  cancel.style.color = '#111';
+
+  // Replace content
+  const original = hostEl.textContent;
+  hostEl.textContent = '';
+  wrap.appendChild(document.createTextNode('Kevad: '));
+  wrap.appendChild(inp);
+  wrap.appendChild(ok);
+  wrap.appendChild(cancel);
+  hostEl.appendChild(wrap);
+
+  const restore = () => {
+    hostEl.textContent = original; // will be corrected on rerender
+  };
+
+  cancel.onclick = (ev) => {
+    ev.preventDefault(); ev.stopPropagation();
+    restore();
+  };
+
+  ok.onclick = (ev) => {
+    ev.preventDefault(); ev.stopPropagation();
+    const norm = normalizeSpringDate(inp.value);
+    if(norm === null){
+      inp.style.borderColor = '#b91c1c';
+      return;
+    }
+    if(!norm) delete springDates[key];
+    else springDates[key] = norm;
+
+    if(typeof save === 'function') save();
+    // rerender full UI so badge + spring panel updates
+    if(typeof render === 'function') render();
+    if(typeof renderSpringPanel === 'function') renderSpringPanel();
+  };
+
+  setTimeout(() => { try { inp.focus(); inp.select(); } catch(e){} }, 50);
+}
 
 async function tryFetch(url){
   const urls = [url];
@@ -1803,7 +1876,7 @@ function rowHTML(obj) {
   const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
   const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(metaCfg.rarityLevel) : '';
   const springVal = (springDates && springDates[key]) ? String(springDates[key]).trim() : '';
-  const springTxt = ' <span class="pill">Kevad:</span> <span class="clickable" title="Muuda kevadise saabumise kuupäeva" onclick="editSpringDate(\''+key+'\')">'+( springVal || '-')+'</span>';
+  const springTxt = ' <span class="kevade-edit" data-spring-key="'+key+'" style="cursor:pointer; pointer-events:auto;">Kevad: '+(springVal || '-')+'</span>';
 
   const noCoords = !hasPoint && occ7 > 0;
   const meta = hasPoint
@@ -1832,6 +1905,25 @@ function render() {
   const arr = DATA.filter(x=> x.est.toLowerCase().includes(q));
   for (const o of arr) list.insertAdjacentHTML('beforeend', rowHTML(o));
 }
+
+(function bindSpringDateDelegation(){
+  if (window.__springDateDelegationBound) return;
+  window.__springDateDelegationBound = true;
+
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('.kevade-edit');
+    if(!el) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const key = el.getAttribute('data-spring-key');
+    if(!key) return;
+
+    // Use a simple inline input overlay INSIDE the element (no prompt/modal)
+    startInlineKevadEdit(el, key);
+  }, true);
+})();
 
 // Restore existing markers from localStorage and render list
 refreshAllMarkers();

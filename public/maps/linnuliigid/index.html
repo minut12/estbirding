@@ -80,6 +80,34 @@
   .springDateBtn{cursor:pointer;display:inline-block;padding:2px 6px;border-radius:999px;border:1px solid #cbd5e1;background:#fff}
   .springSpeciesBtn{cursor:pointer;color:#0f172a;text-decoration:underline;text-underline-offset:2px}
   .springHint{margin-top:8px;font-size:11px;color:#64748b}
+  /* --- Fix Kevad overlap in sidebar cards --- */
+  .meta-grid{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .meta-row1{
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+    align-items:center;
+    min-width:0;
+  }
+  .meta-row2{
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+    align-items:center;
+    min-width:0;
+  }
+  .meta-row1 > * , .meta-row2 > *{
+    max-width:100%;
+  }
+  .meta-row2 .kevadi-chip,
+  .meta-row2 .spring-date-btn,
+  .meta-row2 .spring-edit-wrap{
+    flex:0 0 auto;
+  }
 
     /* Sidebar header */
     #sidebar{display:flex;flex-direction:column;height:100%;max-height:100vh;overflow:hidden}
@@ -1804,15 +1832,16 @@ function rowHTML(obj) {
   const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(metaCfg.rarityLevel) : '';
   const springVal = (springDates && springDates[key]) ? String(springDates[key]).trim() : '';
   const springTxt = (springEditRowKey === key)
-    ? ' <span class="spring-edit-wrap" style="display:inline-flex; gap:6px; align-items:center;"><span class="pill">Kevad:</span><input class="spring-edit-input" data-key="'+key+'" value="'+springVal+'" placeholder="DD.MM" inputmode="numeric" style="width:70px; padding:4px 6px; border:1px solid #ddd; border-radius:10px; font-size:13px;" /><button class="spring-edit-save" data-key="'+key+'" style="border:0; border-radius:10px; padding:4px 8px; background:#16a34a; color:#fff;">OK</button><button class="spring-edit-cancel" data-key="'+key+'" style="border:0; border-radius:10px; padding:4px 8px; background:#eee; color:#111;">X</button></span>'
-    : ' <span class="spring-date-btn" data-key="'+key+'" style="cursor:pointer; pointer-events:auto; border:0; border-radius:999px; padding:6px 10px; background:#f3f4f6; color:#111;">Kevad: '+(springVal || '-')+'</span>';
+    ? '<span class="kevadi-chip"><span class="spring-edit-wrap" style="display:inline-flex; gap:6px; align-items:center;"><span class="pill">Kevad:</span><input class="spring-edit-input" data-key="'+key+'" value="'+springVal+'" placeholder="DD.MM" inputmode="numeric" style="width:70px; padding:4px 6px; border:1px solid #ddd; border-radius:10px; font-size:13px;" /><button class="spring-edit-save" data-key="'+key+'" style="border:0; border-radius:10px; padding:4px 8px; background:#16a34a; color:#fff;">OK</button><button class="spring-edit-cancel" data-key="'+key+'" style="border:0; border-radius:10px; padding:4px 8px; background:#eee; color:#111;">X</button></span></span>'
+    : '<span class="kevadi-chip"><span class="spring-date-btn" data-key="'+key+'" style="cursor:pointer; pointer-events:auto; border:0; border-radius:999px; padding:6px 10px; background:#f3f4f6; color:#111;">Kevad: '+(springVal || '-')+'</span></span>';
 
   const noCoords = !hasPoint && occ7 > 0;
-  const meta = hasPoint
-    ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + (window.formatDateEE ? window.formatDateEE(p.t) : p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+springTxt
+  const metaRow1 = hasPoint
+    ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + (window.formatDateEE ? window.formatDateEE(p.t) : p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
     : noCoords
-      ? '<span class="pill" style="background:#fef3c7;color:#92400e">Koordinaadid peidetud</span>'+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+springTxt
-      : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+springTxt;
+      ? '<span class="pill" style="background:#fef3c7;color:#92400e">Koordinaadid peidetud</span>'+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
+      : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
+  const meta = '<div class="meta-grid"><div class="meta-row1">'+metaRow1+'</div><div class="meta-row2">'+springTxt+'</div></div>';
 
   return '<div class="row" data-key="'+key+'">' +
     '<div class="avatar" style="background-image:url(\''+getDisplayAvatar(key)+'\');border:3px solid '+bcol+'"></div>' +

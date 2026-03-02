@@ -345,13 +345,16 @@ function _toDay(s){
   if(!m) return null;
   return new Date(+m[1], +m[2]-1, +m[3]).getTime();
 }
-function earliestInYearIso(datesIso, year){
+const SPRING_CUTOFF_MMDD = '02-15'; // change if needed
+function earliestInYearIsoAfterCutoff(datesIso, year, mmddCutoff){
   if(!Array.isArray(datesIso)) return null;
-  const y = String(year) + '-';
+  const y = String(year);
+  const cutoff = `${y}-${mmddCutoff}`;
   let best = null;
   for (const d of datesIso){
     if (typeof d !== 'string') continue;
-    if (!d.startsWith(y)) continue;
+    if (!d.startsWith(y + '-')) continue;
+    if (d < cutoff) continue;         // IMPORTANT: ignore winter records
     if (!best || d < best) best = d;
   }
   return best;
@@ -422,11 +425,13 @@ async function fetchSpringYearFirstOne(key){
   const html = await tryFetch(url);
   const dates = extractAllEventDates(html);
   const year = new Date().getFullYear();
-  const earliest = earliestInYearIso(dates, year);
+  const earliest = earliestInYearIsoAfterCutoff(dates, year, SPRING_CUTOFF_MMDD);
   if (!earliest) return;
 
+  const cutoff = `${year}-${SPRING_CUTOFF_MMDD}`;
   const prev = springYearFirst[key];
-  if (shouldUpdateToEarlier(prev, earliest)){
+  const prevIsInvalidWinter = prev && prev.startsWith(year + '-') && prev < cutoff;
+  if (earliest && (prevIsInvalidWinter || shouldUpdateToEarlier(prev, earliest))){
     springYearFirst[key] = earliest;
     localStorage.setItem(LS_SPRING_YEARFIRST, JSON.stringify(springYearFirst));
     if (typeof renderSpringPanel === 'function') renderSpringPanel();

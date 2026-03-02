@@ -18,7 +18,7 @@ const BROWSER_UA = "Mozilla/5.0 (Linux; Android 14; SM-S908B) AppleWebKit/537.36
 const proxyCorsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET,HEAD,POST,OPTIONS",
-  "Access-Control-Allow-Headers": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
 function json(status: number, body: unknown): Response {
@@ -58,9 +58,13 @@ Deno.serve(async (req) => {
   }
 
   const reqUrl = new URL(req.url);
-  const isTranslateRoute = reqUrl.pathname.endsWith("/translate");
+  const isTranslateRoute = reqUrl.pathname.endsWith("/translate-et");
 
   if (isTranslateRoute) {
+    if (req.method === "GET" && reqUrl.searchParams.get("ping") === "1") {
+      return json(200, { ok: true, fn: "proxy/translate-et" });
+    }
+
     if (req.method !== "POST") {
       return json(405, { ok: false, error: "method_not_allowed" });
     }
@@ -76,7 +80,7 @@ Deno.serve(async (req) => {
     const apiKey = Deno.env.get("OPENAI_API_KEY")?.trim();
     if (!apiKey) return json(500, { ok: false, error: "openai_api_key_missing" });
 
-    const system = `Translate user text to ${targetLang}. Return only translation and preserve paragraphs.`;
+    const system = `Translate to Estonian. Return only translation.`;
     const user = sourceLang
       ? `Source language: ${sourceLang}\n\nText:\n${text}`
       : `Text:\n${text}`;

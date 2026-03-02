@@ -20,6 +20,7 @@ import EventsManagementSettings from './EventsManagementSettings';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import {
   getTranslateEndpoint,
+  getProxyTranslateEndpoint,
   getEnvEndpoint,
   getStoredEndpoint,
   resolveEndpoint,
@@ -59,6 +60,7 @@ export default function SettingsTab() {
   const [storedProxyBaseView, setStoredProxyBaseView] = useState('');
   const envEndpoint = getEnvEndpoint();
   const resolvedEndpoint = resolveEndpoint(translationApiUrl);
+  const resolvedProxyTranslateEndpoint = getProxyTranslateEndpoint();
   const envProxyBase = getEnvProxyBase();
   const resolvedProxyBase = resolveProxyBase(proxyBaseUrl);
   const proxyMode = getProxyMode(resolvedProxyBase);
@@ -147,6 +149,7 @@ export default function SettingsTab() {
     setTestTranslateLoading(true);
     setTestTranslateResult('');
     const endpoint = resolveEndpoint(translationApiUrl);
+    const proxyFallbackEndpoint = getProxyTranslateEndpoint();
     if (import.meta.env.DEV) {
       console.info('[translate] native=', isNativePlatform(), 'translate=', endpoint);
     }
@@ -166,22 +169,34 @@ export default function SettingsTab() {
         headers.apikey = anon;
         headers.Authorization = `Bearer ${anon}`;
       }
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        mode: 'cors',
-        headers,
-        body: JSON.stringify(payload),
-      });
-      const ct = (response.headers.get('content-type') || '').toLowerCase();
-      const rawText = await response.text();
 
-      if (!ct.includes('application/json')) {
-        throw new Error(`NON_JSON_RESPONSE_${response.status}: ${rawText.slice(0, 120)}`);
-      }
-      const data: any = rawText ? JSON.parse(rawText) : {};
+      const doTranslateFetch = async (targetEndpoint: string) => {
+        const response = await fetch(targetEndpoint, {
+          method: 'POST',
+          mode: 'cors',
+          headers,
+          body: JSON.stringify(payload),
+        });
+        const ct = (response.headers.get('content-type') || '').toLowerCase();
+        const rawText = await response.text();
+        if (!ct.includes('application/json')) {
+          throw new Error(`NON_JSON_RESPONSE_${response.status}: ${rawText.slice(0, 120)}`);
+        }
+        const data: any = rawText ? JSON.parse(rawText) : {};
+        if (!response.ok || data?.ok !== true || typeof data?.translatedText !== 'string') {
+          throw new Error('BAD_JSON_RESPONSE');
+        }
+        return data;
+      };
 
-      if (!response.ok || data?.ok !== true || typeof data?.translatedText !== 'string') {
-        throw new Error('BAD_JSON_RESPONSE');
+      let data: any;
+      try {
+        data = await doTranslateFetch(endpoint);
+      } catch (error: any) {
+        const message = String(error?.message || error || '');
+        const isNetwork = /networkerror|failed to fetch|abort/i.test(message);
+        if (!isNetwork || !proxyFallbackEndpoint || proxyFallbackEndpoint === endpoint) throw error;
+        data = await doTranslateFetch(proxyFallbackEndpoint);
       }
 
       setTestTranslateResult(JSON.stringify(data, null, 2));
@@ -199,34 +214,49 @@ export default function SettingsTab() {
     setPingTranslateLoading(true);
     setTestTranslateResult('');
     try {
-      const endpoint = resolveEndpoint(translationApiUrl);
-      if (!endpoint) {
+      const primaryEndpoint = resolveEndpoint(translationApiUrl);
+      const proxyEndpoint = getProxyTranslateEndpoint();
+      if (!primaryEndpoint && !proxyEndpoint) {
         toast.error('Tõlke endpoint puudub. Ava Seaded → Tõlge ja salvesta URL.');
         throw new Error('TRANSLATE_ENDPOINT_MISSING');
       }
       const anon = String((import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || '').trim();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const headers: Record<string, string> = {};
       if (anon) {
         headers.apikey = anon;
         headers.Authorization = `Bearer ${anon}`;
       }
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        mode: 'cors',
-        headers,
-        body: JSON.stringify({ text: 'Ping', targetLang: 'et' }),
-      });
-      const ct = (response.headers.get('content-type') || '').toLowerCase();
-      const rawText = await response.text();
-      if (!ct.includes('application/json')) {
-        throw new Error(`NON_JSON_RESPONSE_${response.status}: ${rawText.slice(0, 120)}`);
+
+      const ping = async (endpoint: string) => {
+        if (!endpoint) return { ok: false, error: 'endpoint_missing' };
+        try {
+          const pingUrl = endpoint.includes('?') ? `${endpoint}&ping=1` : `${endpoint}?ping=1`;
+          const response = await fetch(pingUrl, { method: 'GET', mode: 'cors', headers });
+          const ct = (response.headers.get('content-type') || '').toLowerCase();
+          const rawText = await response.text();
+          if (!ct.includes('application/json')) {
+            return { ok: false, error: `NON_JSON_RESPONSE_${response.status}: ${rawText.slice(0, 120)}` };
+          }
+          const data: any = rawText ? JSON.parse(rawText) : {};
+          return { ok: response.ok && data?.ok === true, data, error: response.ok ? undefined : 'PING_FAILED' };
+        } catch (error: any) {
+          return { ok: false, error: error?.message || String(error) };
+        }
+      };
+
+      const primary = await ping(primaryEndpoint);
+      if (primary.ok) {
+        setTestTranslateResult(JSON.stringify({ primary }, null, 2));
+        toast.success('Ping OK');
+        return;
       }
-      const data: any = rawText ? JSON.parse(rawText) : {};
-      setTestTranslateResult(JSON.stringify(data, null, 2));
-      if (!response.ok || data?.ok !== true) {
-        throw new Error('PING_FAILED');
+      const proxy = await ping(proxyEndpoint);
+      setTestTranslateResult(JSON.stringify({ primary, proxy }, null, 2));
+      if (proxy.ok) {
+        toast.warning('Primary failed, proxy OK');
+        return;
       }
-      toast.success('Ping OK');
+      toast.error('Both failed');
     } catch (error: any) {
       const message = error?.message || 'Unknown error';
       setTestTranslateResult(`REQUEST FAILED\n${message}`);
@@ -266,6 +296,19 @@ export default function SettingsTab() {
     setStoredProxyBaseView(saved);
     setProxyBaseUrl(saved);
     toast.success('Proxy base saved');
+  };
+
+  const handleUseProxyTranslateRecommended = () => {
+    const proxyTranslateEndpoint = getProxyTranslateEndpoint();
+    if (!proxyTranslateEndpoint) {
+      toast.error('Proxy translate endpoint puudub');
+      return;
+    }
+    setStoredEndpoint(proxyTranslateEndpoint);
+    const saved = getStoredEndpoint();
+    setStoredEndpointView(saved);
+    setTranslationApiUrlInput(saved);
+    toast.success('Proxy translate endpoint saved');
   };
 
   const showReport = (report: ResetReport) => {
@@ -329,6 +372,9 @@ export default function SettingsTab() {
         <Button variant="outline" onClick={handleUseWorkerDefault} className="w-full">
           Clear translation endpoint
         </Button>
+        <Button variant="outline" onClick={handleUseProxyTranslateRecommended} className="w-full">
+          Use proxy translate (recommended)
+        </Button>
         <p className="text-xs text-muted-foreground">
           Use your translation backend base URL (query params supported).
         </p>
@@ -343,6 +389,9 @@ export default function SettingsTab() {
         </p>
         <p className="text-xs text-muted-foreground">
           Active endpoint: {getTranslateEndpoint() || '(empty)'}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Proxy translate endpoint: {resolvedProxyTranslateEndpoint || '(empty)'}
         </p>
       </div>
 

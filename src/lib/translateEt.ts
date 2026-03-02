@@ -1,4 +1,4 @@
-import { getEnvEndpoint, getStoredEndpoint, getTranslateEndpoint } from '@/config/translationEndpoint';
+import { getEnvEndpoint, getProxyTranslateEndpoint, getStoredEndpoint, getTranslateEndpoint } from '@/config/translationEndpoint';
 
 export interface TranslateEtInput {
   id: string;
@@ -118,6 +118,15 @@ async function translateText(endpoint: string, text: string, sourceLang?: string
   return parsed.translatedText;
 }
 
+function isNetworkLikeError(error: unknown): boolean {
+  const message = String(error instanceof Error ? error.message : error || '').toLowerCase();
+  return message.includes('networkerror')
+    || message.includes('failed to fetch')
+    || message.includes('aborterror')
+    || message.includes('aborted')
+    || message.includes('load failed');
+}
+
 export async function translateEt(input: TranslateEtInput, endpointOverride?: string): Promise<TranslateEtOutput | null> {
   const normalized: TranslateEtInput = {
     id: String(input.id || '').trim(),
@@ -148,12 +157,21 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
   const pending = inFlight.get(cacheKey);
   if (pending) return pending;
 
-  const request = Promise.all([
-    translateText(endpoint, normalized.title, normalized.sourceLang),
-    translateText(endpoint, normalized.body, normalized.sourceLang),
-  ])
-    .then(([title_et, body_et]) => {
-      const result = { title_et, body_et };
+  const proxyFallbackEndpoint = getProxyTranslateEndpoint();
+  const tryTranslatePair = async (activeEndpoint: string): Promise<TranslateEtOutput> => {
+    const [title_et, body_et] = await Promise.all([
+      translateText(activeEndpoint, normalized.title, normalized.sourceLang),
+      translateText(activeEndpoint, normalized.body, normalized.sourceLang),
+    ]);
+    return { title_et, body_et };
+  };
+
+  const request = tryTranslatePair(endpoint)
+    .catch(async (error) => {
+      if (!proxyFallbackEndpoint || proxyFallbackEndpoint === endpoint || !isNetworkLikeError(error)) throw error;
+      return tryTranslatePair(proxyFallbackEndpoint);
+    })
+    .then((result) => {
       writeCache(cacheKey, result);
       return result;
     })

@@ -852,14 +852,16 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
     fallbackBodyEt: item.body_et,
     endpointConfigured,
   });
-  const useEtDisplay = showEtContent && autoTranslateEnabled;
+  const isNonEtSource = normalizeLocale(item.source_lang || item.language || '') !== 'et';
+  const hasTranslation = Boolean((item.title_et || '').trim() || (item.body_et || '').trim());
+  const isPending = isNonEtSource && !hasTranslation;
+  const useEtDisplay = isNonEtSource && hasTranslation;
   const displayTitle = useEtDisplay ? (item.title_et ?? item.title ?? '') : (item.title ?? '');
   const snippetSource = useEtDisplay
     ? (item.body_et ?? item.body ?? item.summary ?? '')
     : (item.body ?? item.summary ?? item.excerpt ?? '');
   const snippet = toPlainText(snippetSource).slice(0, 150);
   const originalUrl = item.permalink_url || item.url || '#';
-  const isTranslated = Boolean(translation.translated?.title_et || translation.translated?.body_et || item.title_et || item.body_et);
 
   useEffect(() => {
     setImageFailed(false);
@@ -916,13 +918,12 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
             <Badge variant="secondary" className="text-xs px-1.5 py-0">
               {sourceLabel(item, sources)}
             </Badge>
-            {translation.loading && (
-              <Badge variant="outline" className="text-xs px-1.5 py-0 flex items-center gap-1">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                Tõlgin...
+            {isPending && (
+              <Badge variant="outline" className="text-xs px-1.5 py-0 text-amber-600 border-amber-300">
+                Tõlkimisel…
               </Badge>
             )}
-            {isTranslated && <Badge variant="outline" className="text-xs px-1.5 py-0">Tõlgitud</Badge>}
+            {hasTranslation && <Badge variant="outline" className="text-xs px-1.5 py-0">Tõlgitud</Badge>}
             <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at || item.created_at || item.fetched_at || '')}</span>
           </div>
           {snippet && (
@@ -960,9 +961,24 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   const [contentHtml, setContentHtml] = useState<string | null>(item.content_html);
   const [loadingContent, setLoadingContent] = useState(!item.content_html && item.source_slug === 'eoy');
   const [contentError, setContentError] = useState<string | null>(null);
-  const [manualTranslation, setManualTranslation] = useState<TranslateEtOutput | null>(null);
-  const [showManualTranslation, setShowManualTranslation] = useState(false);
-  const [manualTranslateLoading, setManualTranslateLoading] = useState(false);
+
+  const normalizedLang = normalizeLocale(item.source_lang || item.language || '');
+  const isNonEtSource = normalizedLang !== 'et';
+  const hasTranslation = Boolean((item.title_et || '').trim() || (item.body_et || '').trim());
+
+  // Per-item view mode persisted in localStorage, default = translated when available
+  const storageKey = `news_view_mode_${item.id}`;
+  const [viewMode, setViewMode] = useState<'translated' | 'original'>(() => {
+    if (!isNonEtSource || !hasTranslation) return 'original';
+    const stored = localStorage.getItem(storageKey);
+    if (stored === 'original') return 'original';
+    return 'translated';
+  });
+
+  const handleViewMode = (mode: 'translated' | 'original') => {
+    setViewMode(mode);
+    localStorage.setItem(storageKey, mode);
+  };
 
   useEffect(() => {
     if (item.content_html || item.source_slug !== 'eoy') return;
@@ -990,92 +1006,30 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
     return () => { cancelled = true; };
   }, [item.id, item.content_html, item.source_slug]);
 
-  useEffect(() => {
-    setManualTranslation(null);
-    setShowManualTranslation(false);
-    setManualTranslateLoading(false);
-  }, [item.id]);
-
   const sourceName = sourceLabel(item, sources);
-  const isBirdingPoland = sourceName.trim().toLowerCase() === BIRDING_POLAND_NAME;
   const proxyBase = getProxyBase();
-  const normalizedLang = normalizeLocale(item.source_lang || item.language || '');
-  const isLikelyEstonian = normalizedLang === 'et';
-  const canShowTranslate = !isLikelyEstonian || isBirdingPoland;
-  const [translateEndpoint, setTranslateEndpoint] = useState(() => resolveEndpoint());
+  const showTranslated = isNonEtSource && hasTranslation && viewMode === 'translated';
+  const showToggle = isNonEtSource && hasTranslation;
 
-  useEffect(() => {
-    const refreshEndpoint = () => setTranslateEndpoint(resolveEndpoint());
-    window.addEventListener('storage', refreshEndpoint);
-    window.addEventListener(TRANSLATION_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
-    return () => {
-      window.removeEventListener('storage', refreshEndpoint);
-      window.removeEventListener(TRANSLATION_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
-    };
-  }, []);
+  const displayTitle = showTranslated ? (item.title_et ?? item.title ?? '') : (item.title ?? '');
   const mergedBody = item.body || item.summary;
   const bodyText = toPlainText(contentHtml || mergedBody);
-  const bodyFallback = item.excerpt || '';
-  const normalizedBodyText = toPlainText(contentHtml || bodyFallback);
-  const hasTranslatedContent = showManualTranslation
-    && Boolean(manualTranslation?.title_et || manualTranslation?.body_et);
-  const useEtDisplay = showEtContent && autoTranslateEnabled;
-  const showTitleBase = useEtDisplay ? (item.title_et ?? item.title ?? '') : (item.title ?? '');
-  const showBodyBase = useEtDisplay
-    ? (item.body_et ?? item.body ?? item.summary ?? '')
-    : (item.body ?? item.summary ?? '');
-  const displayTitle = hasTranslatedContent ? (manualTranslation?.title_et || showTitleBase) : showTitleBase;
-  const displayBody = hasTranslatedContent
-    ? (manualTranslation?.body_et || normalizedBodyText)
-    : (useEtDisplay ? showBodyBase : (contentHtml || normalizedBodyText));
+  const displayBody = showTranslated
+    ? (item.body_et ?? mergedBody ?? '')
+    : (contentHtml || bodyText);
+
   const heroImageUrl = getNewsImageSrc(item, proxyBase);
   const [heroSrc, setHeroSrc] = useState<string | null>(heroImageUrl);
   const [heroFailed, setHeroFailed] = useState(false);
   const rewrittenContentHtml = contentHtml ? rewriteImgSrcToProxy(contentHtml, sourceName, proxyBase) : null;
   const bodyHtmlWithoutDuplicateHero = rewrittenContentHtml ? stripLeadingSameImage(rewrittenContentHtml, heroSrc) : null;
   const originalUrl = item.permalink_url || item.url || '#';
-  const isTranslated = Boolean(hasTranslatedContent);
+  const isPending = isNonEtSource && !hasTranslation;
 
   useEffect(() => {
     setHeroSrc(heroImageUrl);
     setHeroFailed(false);
   }, [heroImageUrl, item.id]);
-
-  const handleToggleTranslate = useCallback(async () => {
-    if (showManualTranslation) {
-      setShowManualTranslation(false);
-      return;
-    }
-    if (manualTranslation) {
-      setShowManualTranslation(true);
-      return;
-    }
-
-    if (!translateEndpoint.trim()) {
-      toast.error('Tõlke endpoint puudub. Ava Seaded → Tõlge ja salvesta URL.');
-      return;
-    }
-
-    setManualTranslateLoading(true);
-    try {
-
-      const result = await translateEt({
-        id: item.id,
-        title: item.title,
-        body: bodyText,
-        sourceLang: item.source_lang || item.language || undefined,
-      }, translateEndpoint);
-      if (!result) return;
-      setManualTranslation(result);
-      setShowManualTranslation(true);
-    } catch (error) {
-      const message = formatErrorReason(error);
-      console.error('[translate] detail translate failed', error);
-      notifyTranslationWarning(message);
-    } finally {
-      setManualTranslateLoading(false);
-    }
-  }, [bodyText, item.id, item.title, manualTranslation, normalizedBodyText, showManualTranslation, translateEndpoint]);
 
   return (
     <div className="flex flex-col h-full">
@@ -1112,17 +1066,40 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
           </div>
         )}
         <h1 className="text-xl font-bold text-foreground">{displayTitle}</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="secondary">{sourceName}</Badge>
-          {manualTranslateLoading && (
-            <Badge variant="outline" className="flex items-center gap-1">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              Tõlgin...
+          {isPending && (
+            <Badge variant="outline" className="text-amber-600 border-amber-300">
+              Tõlkimisel…
             </Badge>
           )}
-          {isTranslated && <Badge variant="outline">Tõlgitud</Badge>}
+          {showTranslated && <Badge variant="outline">Tõlgitud</Badge>}
           <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at || item.created_at || item.fetched_at || '')}</span>
         </div>
+
+        {/* Tõlgitud / Originaal toggle */}
+        {showToggle && (
+          <div className="flex gap-1 bg-muted rounded-lg p-1 w-fit">
+            <button
+              onClick={() => handleViewMode('translated')}
+              className={cn(
+                'px-3 py-1 text-sm font-medium rounded-md transition-colors',
+                viewMode === 'translated' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
+              )}
+            >
+              Tõlgitud
+            </button>
+            <button
+              onClick={() => handleViewMode('original')}
+              className={cn(
+                'px-3 py-1 text-sm font-medium rounded-md transition-colors',
+                viewMode === 'original' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
+              )}
+            >
+              Originaal
+            </button>
+          </div>
+        )}
 
         {loadingContent ? (
           <div className="space-y-3">
@@ -1130,7 +1107,7 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
             <Skeleton className="h-4 w-5/6" />
             <Skeleton className="h-4 w-4/6" />
           </div>
-        ) : bodyHtmlWithoutDuplicateHero && !hasTranslatedContent && !useEtDisplay ? (
+        ) : !showTranslated && bodyHtmlWithoutDuplicateHero ? (
           <div
             className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
             dangerouslySetInnerHTML={{ __html: bodyHtmlWithoutDuplicateHero }}
@@ -1138,7 +1115,7 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
         ) : contentError ? (
           <p className="text-sm text-muted-foreground italic">{contentError}</p>
         ) : displayBody ? (
-          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{displayBody}</p>
+          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{toPlainText(displayBody)}</p>
         ) : (
           <p className="text-sm text-muted-foreground italic">Sisu pole saadaval. Ava originaal.</p>
         )}
@@ -1153,18 +1130,6 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
             {item.is_archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
             {item.is_archived ? 'Taasta' : 'Arhiveeri'}
           </Button>
-          {canShowTranslate && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={handleToggleTranslate}
-              disabled={manualTranslateLoading}
-            >
-              {manualTranslateLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-              {showManualTranslation ? 'Original' : (manualTranslateLoading ? 'Translating...' : 'Translate')}
-            </Button>
-          )}
         </div>
       </div>
     </div>

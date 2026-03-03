@@ -305,7 +305,7 @@ async function cacheImage(
       let res = await fetch(candidateUrl, {
         signal: controller.signal,
         method: "GET",
-        headers: makeBrowserHeaders(imageUrl, {
+        headers: makeBrowserHeaders(candidateUrl, {
           accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
           ...(isFbCdn ? { referer: "https://www.facebook.com/", origin: "https://www.facebook.com" } : {}),
         }),

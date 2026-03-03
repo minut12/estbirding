@@ -179,7 +179,7 @@ async function pullRssSource({ source, supabase, proxyBase }: { source: any; sup
       fetched: 0,
       inserted: 0,
       skipped: false,
-      error: shortError(error?.message || "RSS parse error"),
+      error: shortError((error as any)?.message || "RSS parse error"),
     };
   }
 
@@ -267,13 +267,13 @@ async function pullRssSource({ source, supabase, proxyBase }: { source: any; sup
 
     inserted += 1;
 
-    if (upserted?.id && rowWithImage.image_url && !upserted.cached_image_url) {
+    if (upserted?.id && (rowWithImage as any).image_url && !upserted.cached_image_url) {
       try {
         const cachedUrl = await cacheNewsImageById(
           upserted.id,
           String(source.name || source.slug || "news"),
-          rowWithImage.permalink_url || rowWithImage.url || null,
-          rowWithImage.image_url || null,
+          (rowWithImage as any).permalink_url || (rowWithImage as any).url || null,
+          (rowWithImage as any).image_url || null,
         );
         if (cachedUrl) {
           await supabase.from("news_items").update({ cached_image_url: cachedUrl }).eq("id", upserted.id);
@@ -329,7 +329,7 @@ async function pullScrapeSource({ source, supabase }: { source: any; supabase: a
   }
 
   const inserted = Number(payload?.insertedCount ?? payload?.inserted ?? 0);
-  const fetched = Number(payload?.foundCount ?? payload?.parsed ?? inserted || 0);
+  const fetched = Number(payload?.foundCount ?? payload?.parsed ?? (inserted || 0));
   const debug = {
     foundCount: Number(payload?.foundCount ?? 0),
     upsertedCount: Number(payload?.upsertedCount ?? (payload?.insertedCount || 0) + (payload?.updatedCount || 0)),
@@ -441,7 +441,7 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     console.error("news-pull error:", error);
-    return new Response(JSON.stringify({ error: shortError(error?.message || String(error)) }), {
+    return new Response(JSON.stringify({ error: shortError((error as any)?.message || String(error)) }), {
       status: 500,
       headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8" },
     });

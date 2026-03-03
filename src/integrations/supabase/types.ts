@@ -366,6 +366,7 @@ export type Database = {
           summary: string | null
           title: string
           title_et: string | null
+          translate_hash: string | null
           translated_at: string | null
           translated_body: string | null
           translated_title: string | null
@@ -402,6 +403,7 @@ export type Database = {
           summary?: string | null
           title: string
           title_et?: string | null
+          translate_hash?: string | null
           translated_at?: string | null
           translated_body?: string | null
           translated_title?: string | null
@@ -438,6 +440,7 @@ export type Database = {
           summary?: string | null
           title?: string
           title_et?: string | null
+          translate_hash?: string | null
           translated_at?: string | null
           translated_body?: string | null
           translated_title?: string | null

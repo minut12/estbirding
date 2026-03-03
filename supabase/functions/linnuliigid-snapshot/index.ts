@@ -487,6 +487,7 @@ Deno.serve(async (req) => {
               status: "building",
               snapshotId: String(state.last_snapshot_id || meta.snapshotId || ""),
               dataMaxAt: state.last_data_max_at || meta.dataMaxAt || null,
+              finishedAt: state.last_build_finished_at || null,
             }),
             { status: 202, headers: { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json" } }
           );
@@ -498,6 +499,7 @@ Deno.serve(async (req) => {
               status: "cooldown",
               snapshotId: String(state.last_snapshot_id || meta.snapshotId || ""),
               dataMaxAt: state.last_data_max_at || meta.dataMaxAt || null,
+              finishedAt: state.last_build_finished_at || null,
             }),
             { status: 200, headers: { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json" } }
           );
@@ -552,6 +554,7 @@ Deno.serve(async (req) => {
               status: "rebuilt",
               snapshotId: rebuiltMeta.snapshotId,
               dataMaxAt: rebuiltMeta.dataMaxAt,
+              finishedAt,
             }),
             { status: 200, headers: { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json" } }
           );

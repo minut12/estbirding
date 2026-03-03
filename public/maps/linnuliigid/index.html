@@ -167,6 +167,7 @@
 <div id="snapshotBanner" class="snapshot-banner" style="display:none"></div>
 <div class="fetch-controls">
   <button id="btnRefreshData" class="btn" title="Trigger server-side data refresh">Refresh data</button>
+  <button id="btnForceServerRefresh" class="btn secondary" title="Force server rebuild from upstream">Force server refresh</button>
   <button id="btnReloadSnapshot" class="btn secondary" title="Reload latest snapshot from server">Reload snapshot</button>
   <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index">Resume</button>
   <button id="btnSkipStuck" class="btn secondary" title="Skip current stuck item by resuming from next index">Skip stuck item</button>
@@ -1044,7 +1045,7 @@ function _shortId(id){
   return s.slice(0, 8) + '...' + s.slice(-4);
 }
 function _isServerDataStale(hours){
-  const limitHours = Number(hours || 6) || 6;
+  const limitHours = Number(hours || 12) || 12;
   if(!__serverDataMaxAt) return true;
   const ts = Date.parse(__serverDataMaxAt);
   if(!Number.isFinite(ts)) return true;
@@ -1056,13 +1057,16 @@ function _updateServerSnapshotStatus(){
   const gen = __serverGeneratedAt ? _fmtTs(__serverGeneratedAt) : '-';
   const chk = __serverCheckedAt ? _fmtTs(__serverCheckedAt) : '-';
   const latest = __serverDataMaxAt ? _fmtTs(__serverDataMaxAt) : '-';
+  const latestTs = __serverDataMaxAt ? Date.parse(__serverDataMaxAt) : NaN;
+  const latestAgeHours = Number.isFinite(latestTs) ? ((Date.now() - latestTs) / (60 * 60 * 1000)) : null;
   const id = _shortId(__serverSnapshotId);
-  const staleNote = __serverMetaAvailable ? (_isServerDataStale(6) ? 'Server data stale' : 'Server data fresh') : '';
+  const staleNote = __serverMetaAvailable ? (_isServerDataStale(12) ? 'Server snapshot is stale' : 'Server data fresh') : '';
   const freshness = !__serverMetaAvailable
     ? 'Server meta not available'
     : ((!__lastProcessedSnapshotId || __serverIsNewer) ? 'New server data available' : 'No new server data');
   const err = (__serverCheckStatus === 'error' && __serverCheckError) ? ('; check error: ' + __serverCheckError) : '';
-  el.textContent = 'Server snapshot: ' + gen + ' | ID: ' + id + ' | Bytes: ' + String(Number(__serverBytes || 0) || '-') + ' | Latest occurrence in snapshot: ' + latest + ' | Checked: ' + chk + ' | ' + freshness + (staleNote ? (' | ' + staleNote) : '') + err;
+  const ageText = (latestAgeHours == null) ? '-' : (latestAgeHours.toFixed(1) + 'h');
+  el.textContent = 'Server snapshot: ' + gen + ' | ID: ' + id + ' | Bytes: ' + String(Number(__serverBytes || 0) || '-') + ' | Latest occurrence in snapshot: ' + latest + ' (age: ' + ageText + ') | Checked: ' + chk + ' | ' + freshness + (staleNote ? (' | ' + staleNote) : '') + err;
 }
 async function fetchServerMeta(){
   __serverCheckStatus = 'checking';
@@ -1160,7 +1164,7 @@ async function triggerRefreshDataFlow(){
   try{
     const beforeMeta = await fetchServerMeta();
     const previousSnapshotId = String((beforeMeta && beforeMeta.snapshotId) || __serverSnapshotId || '');
-    const stale = _isServerDataStale(6);
+    const stale = _isServerDataStale(12);
     _showSnapshotBanner('Requesting server rebuild...');
     const rebuild = await requestServerRebuild();
     const rebuildStatus = String((rebuild && rebuild.status) || '');
@@ -1208,6 +1212,10 @@ function _resolveSupabaseUrlWithSource(){
     if(fromOverride) return { value: fromOverride, source: 'settings override' };
   }catch(e){}
   if(__resolvedSupabaseUrl) return { value: __resolvedSupabaseUrl, source: 'runtime config' };
+  const fromSnapshotApi = String(SNAPSHOT_API || '').trim();
+  if(fromSnapshotApi && fromSnapshotApi.indexOf('/functions/v1/linnuliigid-snapshot') > 0){
+    return { value: fromSnapshotApi.split('/functions/v1/linnuliigid-snapshot')[0], source: 'runtime snapshot api' };
+  }
   const inferred = _extractSnapshotApiFromLastRequest();
   if(inferred){
     const marker = '/functions/v1/linnuliigid-snapshot';
@@ -1752,7 +1760,8 @@ function _explainInclusion(key, p){
   if(!hasCoords) reasonsExcluded.push('MISSING_COORDS');
   if(!hasDate) reasonsExcluded.push('MISSING_DATE');
   if(is7daysOnly()){
-    if(!(withinByDate || withinByOcc7)) reasonsExcluded.push('OUTSIDE_7D');
+    if(!hasDate) reasonsExcluded.push('MISSING_DATE');
+    if(!withinByDate) reasonsExcluded.push('OUTSIDE_7D');
   }
   return {
     species: key,
@@ -1828,6 +1837,24 @@ function _computeSnapshotInspector(){
     histogram: hist,
     newestSamples: newestSamples,
     stalestSpecies: stalestSpecies,
+  };
+}
+function _calcDataRangeFromPointsJson(pointsJson){
+  let maxTs = 0;
+  let minTs = Number.POSITIVE_INFINITY;
+  const src = (pointsJson && typeof pointsJson === 'object') ? pointsJson : {};
+  for(const k in src){
+    if(!Object.prototype.hasOwnProperty.call(src, k)) continue;
+    const v = src[k] || {};
+    const ts = _toDay(v.t || v.date || v.observed_at || v.eventDate || '');
+    if(ts && ts > 0){
+      if(ts > maxTs) maxTs = ts;
+      if(ts < minTs) minTs = ts;
+    }
+  }
+  return {
+    dataMaxAt: maxTs > 0 ? new Date(maxTs).toISOString() : '',
+    dataMinAt: Number.isFinite(minTs) ? new Date(minTs).toISOString() : '',
   };
 }
 function _computeFilterVerifier(){
@@ -2088,6 +2115,9 @@ async function _loadSnapshotImpl(){
       index: __currentIndex
     });
     const snap = snapResp && snapResp.data ? snapResp.data : {};
+    const localRange = _calcDataRangeFromPointsJson(snap && snap.points_json ? snap.points_json : {});
+    if(localRange.dataMaxAt) __serverDataMaxAt = localRange.dataMaxAt;
+    if(localRange.dataMinAt) __serverDataMinAt = localRange.dataMinAt;
     if(snapResp && snapResp.meta){
       __serverSnapshotId = String(snapResp.meta.snapshotId || (snap && snap.snapshotId) || '');
       __serverGeneratedAt = String(snapResp.meta.snapshotGeneratedAt || (snap && (snap.snapshotGeneratedAt || snap.generatedAt || snap.generated_at)) || (__serverGeneratedAt || ''));
@@ -2497,6 +2527,7 @@ async function triggerRefresh(opts){
 // Wire buttons
 function _wireSnapshotButtons(){
   const btnRefresh = document.getElementById('btnRefreshData');
+  const btnForceRefresh = document.getElementById('btnForceServerRefresh');
   const btnReload = document.getElementById('btnReloadSnapshot');
   const btnResume = document.getElementById('btnResumeFetch');
   const btnSkip = document.getElementById('btnSkipStuck');
@@ -2511,8 +2542,12 @@ function _wireSnapshotButtons(){
   const toggle7d = document.getElementById('toggle7days');
 
   if(btnRefresh && !btnRefresh.__wired){
-    btnRefresh.addEventListener('click', function(){ triggerRefreshDataFlow(); });
+    btnRefresh.addEventListener('click', function(){ triggerRefresh({ newRun: true, force: true }); });
     btnRefresh.__wired = true;
+  }
+  if(btnForceRefresh && !btnForceRefresh.__wired){
+    btnForceRefresh.addEventListener('click', function(){ triggerRefreshDataFlow(); });
+    btnForceRefresh.__wired = true;
   }
   if(btnReload && !btnReload.__wired){
     btnReload.addEventListener('click', function(){ loadSnapshotIfNeeded(false); });
@@ -2800,7 +2835,7 @@ function updateMarker(key) {
 
   // Determine visibility based on 7-day toggle
   const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
-  const passesRecent = isRecent(p.t) || (Number.isFinite(p.occ7) && p.occ7 > 0);
+  const passesRecent = isRecent(p.t);
   const passesFilter = is7daysOnly() ? passesRecent : true;
   const isVisible = (p.visible !== false) && passesFilter && hasCoords;
 

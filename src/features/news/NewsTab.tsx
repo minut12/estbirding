@@ -960,8 +960,12 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   const [contentHtml, setContentHtml] = useState<string | null>(item.content_html);
   const [loadingContent, setLoadingContent] = useState(!item.content_html && item.source_slug === 'eoy');
   const [contentError, setContentError] = useState<string | null>(null);
-  const [manualTranslation, setManualTranslation] = useState<TranslateEtOutput | null>(null);
-  const [showManualTranslation, setShowManualTranslation] = useState(false);
+  const [manualTranslation, setManualTranslation] = useState<TranslateEtOutput | null>(() => {
+    const title_et = String(item.title_et || '').trim();
+    const body_et = String(item.body_et || '').trim();
+    return title_et || body_et ? { title_et, body_et } : null;
+  });
+  const [showManualTranslation, setShowManualTranslation] = useState(true);
   const [manualTranslateLoading, setManualTranslateLoading] = useState(false);
 
   useEffect(() => {
@@ -991,10 +995,12 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   }, [item.id, item.content_html, item.source_slug]);
 
   useEffect(() => {
-    setManualTranslation(null);
-    setShowManualTranslation(false);
+    const title_et = String(item.title_et || '').trim();
+    const body_et = String(item.body_et || '').trim();
+    setManualTranslation(title_et || body_et ? { title_et, body_et } : null);
+    setShowManualTranslation(true);
     setManualTranslateLoading(false);
-  }, [item.id]);
+  }, [item.id, item.title_et, item.body_et]);
 
   const sourceName = sourceLabel(item, sources);
   const isBirdingPoland = sourceName.trim().toLowerCase() === BIRDING_POLAND_NAME;
@@ -1002,24 +1008,12 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   const normalizedLang = normalizeLocale(item.source_lang || item.language || '');
   const isLikelyEstonian = normalizedLang === 'et';
   const canShowTranslate = !isLikelyEstonian || isBirdingPoland;
-  const [translateEndpoint, setTranslateEndpoint] = useState(() => resolveEndpoint());
-
-  useEffect(() => {
-    const refreshEndpoint = () => setTranslateEndpoint(resolveEndpoint());
-    window.addEventListener('storage', refreshEndpoint);
-    window.addEventListener(TRANSLATION_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
-    return () => {
-      window.removeEventListener('storage', refreshEndpoint);
-      window.removeEventListener(TRANSLATION_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
-    };
-  }, []);
   const mergedBody = item.body || item.summary;
-  const bodyText = toPlainText(contentHtml || mergedBody);
   const bodyFallback = item.excerpt || '';
   const normalizedBodyText = toPlainText(contentHtml || bodyFallback);
   const hasTranslatedContent = showManualTranslation
     && Boolean(manualTranslation?.title_et || manualTranslation?.body_et);
-  const useEtDisplay = showEtContent && autoTranslateEnabled;
+  const useEtDisplay = showManualTranslation;
   const showTitleBase = useEtDisplay ? (item.title_et ?? item.title ?? '') : (item.title ?? '');
   const showBodyBase = useEtDisplay
     ? (item.body_et ?? item.body ?? item.summary ?? '')
@@ -1034,12 +1028,40 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   const rewrittenContentHtml = contentHtml ? rewriteImgSrcToProxy(contentHtml, sourceName, proxyBase) : null;
   const bodyHtmlWithoutDuplicateHero = rewrittenContentHtml ? stripLeadingSameImage(rewrittenContentHtml, heroSrc) : null;
   const originalUrl = item.permalink_url || item.url || '#';
-  const isTranslated = Boolean(hasTranslatedContent);
+  const isTranslated = Boolean(manualTranslation?.title_et || manualTranslation?.body_et || item.title_et || item.body_et);
 
   useEffect(() => {
     setHeroSrc(heroImageUrl);
     setHeroFailed(false);
   }, [heroImageUrl, item.id]);
+
+  const runPersistedTranslate = useCallback(async () => {
+    const { data, error } = await supabase.functions.invoke('translate-news-item-et', {
+      body: { id: item.id },
+    });
+    if (error) throw error;
+    if (!data?.ok) throw new Error(String(data?.error || 'TRANSLATE_FAILED'));
+    const result: TranslateEtOutput = {
+      title_et: String(data?.title_et || '').trim(),
+      body_et: String(data?.body_et || '').trim(),
+    };
+    return result;
+  }, [item.id]);
+
+  useEffect(() => {
+    if (!autoTranslateEnabled) return;
+    if (manualTranslation?.title_et && manualTranslation?.body_et) return;
+    let cancelled = false;
+    void runPersistedTranslate()
+      .then((result) => {
+        if (cancelled) return;
+        setManualTranslation(result);
+      })
+      .catch((error) => {
+        if (!cancelled) console.warn('[translate] auto persisted translate failed', error);
+      });
+    return () => { cancelled = true; };
+  }, [autoTranslateEnabled, manualTranslation?.title_et, manualTranslation?.body_et, runPersistedTranslate]);
 
   const handleToggleTranslate = useCallback(async () => {
     if (showManualTranslation) {
@@ -1051,20 +1073,9 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
       return;
     }
 
-    if (!translateEndpoint.trim()) {
-      toast.error('Tõlke endpoint puudub. Ava Seaded → Tõlge ja salvesta URL.');
-      return;
-    }
-
     setManualTranslateLoading(true);
     try {
-
-      const result = await translateEt({
-        id: item.id,
-        title: item.title,
-        body: bodyText,
-        sourceLang: item.source_lang || item.language || undefined,
-      }, translateEndpoint);
+      const result = await runPersistedTranslate();
       if (!result) return;
       setManualTranslation(result);
       setShowManualTranslation(true);
@@ -1075,7 +1086,7 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
     } finally {
       setManualTranslateLoading(false);
     }
-  }, [bodyText, item.id, item.title, manualTranslation, normalizedBodyText, showManualTranslation, translateEndpoint]);
+  }, [manualTranslation, normalizedBodyText, runPersistedTranslate, showManualTranslation]);
 
   return (
     <div className="flex flex-col h-full">

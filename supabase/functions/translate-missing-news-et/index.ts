@@ -35,17 +35,17 @@ function hasText(value: string | null | undefined): boolean {
 }
 
 async function updateTranslatedRow(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   id: string,
   title_et: string,
   body_et: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const basePayload = {
+  const basePayload: Record<string, unknown> = {
     title_et: title_et || null,
     body_et: body_et || null,
-  } as Record<string, unknown>;
+  };
 
-  const fullPayload = {
+  const fullPayload: Record<string, unknown> = {
     ...basePayload,
     translated_at: new Date().toISOString(),
     translation_status: "done",
@@ -162,12 +162,12 @@ Deno.serve(async (req) => {
       } catch (e) {
         const errorText = String((e as Error)?.message || e || "TRANSLATE_FAILED").slice(0, 240);
         errors.push({ id: item.id, error: errorText });
-        await supabase
-          .from("news_items")
-          .update({ translation_status: "error", translation_error: errorText })
-          .eq("id", item.id)
-          .then(() => undefined)
-          .catch(() => undefined);
+        try {
+          await supabase
+            .from("news_items")
+            .update({ translation_status: "error", translation_error: errorText } as any)
+            .eq("id", item.id);
+        } catch { /* ignore */ }
       }
     }
 

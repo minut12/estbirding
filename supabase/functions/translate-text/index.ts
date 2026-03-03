@@ -56,6 +56,6 @@ Deno.serve(async (req) => {
     const translatedText = String(data?.output_text || "").trim();
     return jsonResponse(200, { translated_text: translatedText });
   } catch (error) {
-    return jsonResponse(500, { error: error.message });
+    return jsonResponse(500, { error: (error as any)?.message || String(error) });
   }
 });

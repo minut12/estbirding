@@ -5,6 +5,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers":
     "authorization, apikey, content-type, x-client-info",
   "Access-Control-Allow-Methods": "GET,HEAD,OPTIONS",
+  "Access-Control-Expose-Headers": "ETag, X-Snapshot-Generated-At, Content-Length",
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -210,6 +211,29 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
 }
 
 let heartbeatColumnAvailable = true;
+const SNAPSHOT_ETAG_VERSION = "v2";
+
+function buildSnapshotEtag(data: Record<string, unknown>): string {
+  const generatedAt = String((data as { generated_at?: string | null })?.generated_at || "");
+  const done = Number((data as { progress_done?: number | null })?.progress_done || 0);
+  const total = Number((data as { progress_total?: number | null })?.progress_total || 0);
+  const status = String((data as { status?: string | null })?.status || "");
+  const pointsJson = (data as { points_json?: unknown })?.points_json ?? null;
+  const payloadJson = JSON.stringify(pointsJson);
+  const payloadBytes = new TextEncoder().encode(payloadJson).length;
+  return `"snapshot-${SNAPSHOT_ETAG_VERSION}:${payloadBytes}:${generatedAt}:${status}:${done}:${total}"`;
+}
+
+function buildSnapshotResponseHeaders(data: Record<string, unknown>): Record<string, string> {
+  const generatedAt = String((data as { generated_at?: string | null })?.generated_at || "");
+  return {
+    ...corsHeaders,
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store",
+    "ETag": buildSnapshotEtag(data),
+    "X-Snapshot-Generated-At": generatedAt,
+  };
+}
 
 function isMissingHeartbeatColumnError(err: unknown): boolean {
   const msg = String((err as { message?: string })?.message || err || "");
@@ -385,18 +409,7 @@ Deno.serve(async (req) => {
         .single();
 
       if (error) throw error;
-      const generatedAt = String((data as { generated_at?: string | null })?.generated_at || "");
-      const done = Number((data as { progress_done?: number | null })?.progress_done || 0);
-      const total = Number((data as { progress_total?: number | null })?.progress_total || 0);
-      const status = String((data as { status?: string | null })?.status || "");
-      const snapshotHash = `"${generatedAt}:${status}:${done}:${total}"`;
-      const responseHeaders = {
-        ...corsHeaders,
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store",
-        "ETag": snapshotHash,
-        "X-Snapshot-Generated-At": generatedAt,
-      };
+      const responseHeaders = buildSnapshotResponseHeaders(data as Record<string, unknown>);
       if (req.method === "HEAD") {
         return new Response(null, { status: 200, headers: responseHeaders });
       }

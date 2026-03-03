@@ -686,7 +686,9 @@ let __serverSnapshotEtag = '';
 let __serverGeneratedAt = '';
 let __serverCheckedAt = '';
 let __lastProcessedServerEtag = '';
+let __lastLoadedServerEtag = '';
 let __serverIsNewer = false;
+let __serverMetaAvailable = false;
 let __serverCheckStatus = 'idle'; // idle | checking | ok | error
 let __serverCheckError = '';
 
@@ -758,6 +760,7 @@ function _copyDebugJson(){
     serverGeneratedAt: __serverGeneratedAt || '',
     serverCheckedAt: __serverCheckedAt || '',
     serverIsNewer: !!__serverIsNewer,
+    serverMetaAvailable: !!__serverMetaAvailable,
     serverCheckStatus: __serverCheckStatus || 'idle',
     serverCheckError: __serverCheckError || '',
     isReloading: __isReloading,
@@ -794,7 +797,9 @@ function _clearDebugEvents(){
   __serverGeneratedAt = '';
   __serverCheckedAt = '';
   __lastProcessedServerEtag = '';
+  __lastLoadedServerEtag = '';
   __serverIsNewer = false;
+  __serverMetaAvailable = false;
   __serverCheckStatus = 'idle';
   __serverCheckError = '';
   __snapshotProgressDone = 0;
@@ -950,7 +955,9 @@ function _updateServerSnapshotStatus(){
   const gen = __serverGeneratedAt ? _fmtTs(__serverGeneratedAt) : '-';
   const chk = __serverCheckedAt ? _fmtTs(__serverCheckedAt) : '-';
   const tag = _shortEtag(__serverSnapshotEtag);
-  const freshness = __serverIsNewer ? 'New server data available' : 'No new server data';
+  const freshness = !__serverMetaAvailable
+    ? 'Server meta unavailable (headers not exposed)'
+    : (__serverIsNewer ? 'New server data available' : 'No new server data');
   const err = (__serverCheckStatus === 'error' && __serverCheckError) ? ('; check error: ' + __serverCheckError) : '';
   el.textContent = 'Server snapshot: ' + gen + ' (ETag ' + tag + ') | Checked: ' + chk + ' | ' + freshness + err;
 }
@@ -967,11 +974,12 @@ async function checkServerSnapshot(){
     __serverSnapshotEtag = etag;
     __serverGeneratedAt = generatedAt;
     __serverCheckedAt = new Date().toISOString();
-    __serverIsNewer = !!(__serverSnapshotEtag && (__serverSnapshotEtag !== __lastProcessedServerEtag));
+    __serverMetaAvailable = !!etag;
+    __serverIsNewer = !!(__serverMetaAvailable && (__serverSnapshotEtag !== __lastProcessedServerEtag));
     __serverCheckStatus = 'ok';
     _updateServerSnapshotStatus();
     _updateDebugPanel();
-    return { etag: etag, generatedAt: generatedAt };
+    return { etag: etag, generatedAt: generatedAt, metaAvailable: __serverMetaAvailable };
   }catch(e){
     __serverCheckedAt = new Date().toISOString();
     __serverCheckStatus = 'error';
@@ -1511,6 +1519,7 @@ function _updateDebugPanel(){
     'serverGeneratedAt: <b>' + (_fmtTs(__serverGeneratedAt)) + '</b>',
     'serverCheckedAt: <b>' + (_fmtTs(__serverCheckedAt)) + '</b>',
     'serverCheckStatus: <b>' + (__serverCheckStatus || 'idle') + '</b>',
+    'serverMetaAvailable: <b>' + (__serverMetaAvailable ? 'true' : 'false') + '</b>',
     'serverIsNewer: <b>' + (__serverIsNewer ? 'true' : 'false') + '</b>',
     'serverCheckError: <b>' + (__serverCheckError || '-') + '</b>',
     'isReloading: <b>' + (__isReloading ? 'true' : 'false') + '</b>',
@@ -1610,6 +1619,9 @@ async function _loadSnapshotImpl(){
       __serverSnapshotEtag = String(snapResp.meta.etag || '');
       __serverGeneratedAt = String(snapResp.meta.generatedAt || (__serverGeneratedAt || ''));
       __serverCheckedAt = new Date().toISOString();
+      __serverMetaAvailable = !!__serverSnapshotEtag;
+      __lastLoadedServerEtag = __serverSnapshotEtag || '';
+      __serverIsNewer = !!(__serverMetaAvailable && (__serverSnapshotEtag !== __lastProcessedServerEtag));
       __serverCheckStatus = 'ok';
     }
     _setLoaderStage('processing');
@@ -1675,7 +1687,7 @@ async function _loadSnapshotImpl(){
       _stopPolling();
     }
 
-    __lastProcessedServerEtag = __serverSnapshotEtag || __lastProcessedServerEtag;
+    __lastProcessedServerEtag = __lastLoadedServerEtag || __serverSnapshotEtag || __lastProcessedServerEtag;
     __serverIsNewer = false;
     __resumeExplicitRequested = false;
     _updateServerSnapshotStatus();

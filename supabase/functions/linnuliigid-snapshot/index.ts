@@ -236,15 +236,58 @@ function buildSnapshotResponseHeaders(data: Record<string, unknown>): Record<str
 }
 
 function buildSnapshotMeta(data: Record<string, unknown>) {
-  const generatedAt = String((data as { generated_at?: string | null })?.generated_at || "");
+  const snapshotGeneratedAt = String((data as { generated_at?: string | null })?.generated_at || "");
   const pointsJson = (data as { points_json?: unknown })?.points_json ?? null;
   const totalItems = pointsJson && typeof pointsJson === "object"
     ? Object.keys(pointsJson as Record<string, unknown>).length
     : 0;
+  let maxTs = 0;
+  let minTs = Number.POSITIVE_INFINITY;
+  if (pointsJson && typeof pointsJson === "object") {
+    for (const value of Object.values(pointsJson as Record<string, unknown>)) {
+      const entry = (value && typeof value === "object") ? value as Record<string, unknown> : null;
+      const raw = String(entry?.t || entry?.date || entry?.observed_at || entry?.eventDate || "");
+      const ts = parseElurikkusDate(raw);
+      if (ts > 0) {
+        maxTs = Math.max(maxTs, ts);
+        minTs = Math.min(minTs, ts);
+      }
+    }
+  }
   const snapshotJson = JSON.stringify(data);
   const bytes = new TextEncoder().encode(snapshotJson).length;
-  const snapshotId = `${bytes}:${generatedAt}:${totalItems}`;
-  return { generatedAt, snapshotId, bytes, totalItems };
+  const snapshotId = `${bytes}:${snapshotGeneratedAt}:${totalItems}`;
+  const dataMaxAt = maxTs > 0 ? new Date(maxTs).toISOString() : null;
+  const dataMinAt = Number.isFinite(minTs) ? new Date(minTs).toISOString() : null;
+  return { snapshotGeneratedAt, snapshotId, bytes, totalItems, dataMaxAt, dataMinAt };
+}
+
+function isMissingSnapshotStateTableError(err: unknown): boolean {
+  const msg = String((err as { message?: string })?.message || err || "").toLowerCase();
+  return msg.includes("snapshot_state") && (msg.includes("relation") || msg.includes("does not exist"));
+}
+
+async function getSnapshotState(supabase: any, key: string) {
+  const res = await supabase
+    .from("snapshot_state")
+    .select("*")
+    .eq("key", key)
+    .maybeSingle();
+  if (res.error && isMissingSnapshotStateTableError(res.error)) {
+    return { data: null, error: null, missingTable: true };
+  }
+  return { data: res.data, error: res.error, missingTable: false };
+}
+
+async function upsertSnapshotState(supabase: any, key: string, patch: Record<string, unknown>) {
+  const payload = { key, ...patch };
+  const res = await supabase
+    .from("snapshot_state")
+    .upsert(payload, { onConflict: "key" });
+  if (res.error && isMissingSnapshotStateTableError(res.error)) {
+    return { error: null, missingTable: true };
+  }
+  return { error: res.error, missingTable: false };
 }
 
 function isMissingHeartbeatColumnError(err: unknown): boolean {
@@ -424,6 +467,103 @@ Deno.serve(async (req) => {
 
       if (error) throw error;
       const meta = buildSnapshotMeta(data as Record<string, unknown>);
+      const isRebuildRequest = req.method === "GET" && url.searchParams.get("rebuild") === "1";
+      if (isRebuildRequest) {
+        const stateKey = "linnuliigid_2026";
+        const now = new Date();
+        const nowIso = now.toISOString();
+        const stateRes = await getSnapshotState(supabaseAdmin, stateKey);
+        if (stateRes.error) throw stateRes.error;
+        const state = (stateRes.data || {}) as Record<string, unknown>;
+        const lastStarted = state.last_build_started_at ? new Date(String(state.last_build_started_at)).getTime() : 0;
+        const lastFinished = state.last_build_finished_at ? new Date(String(state.last_build_finished_at)).getTime() : 0;
+        const building = state.building === true;
+        const BUILD_LOCK_MS = 2 * 60 * 1000;
+        const BUILD_COOLDOWN_MS = 60 * 1000;
+
+        if (building && lastStarted > 0 && (now.getTime() - lastStarted) < BUILD_LOCK_MS) {
+          return new Response(
+            JSON.stringify({
+              status: "building",
+              snapshotId: String(state.last_snapshot_id || meta.snapshotId || ""),
+              dataMaxAt: state.last_data_max_at || meta.dataMaxAt || null,
+            }),
+            { status: 202, headers: { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json" } }
+          );
+        }
+
+        if (lastFinished > 0 && (now.getTime() - lastFinished) < BUILD_COOLDOWN_MS) {
+          return new Response(
+            JSON.stringify({
+              status: "cooldown",
+              snapshotId: String(state.last_snapshot_id || meta.snapshotId || ""),
+              dataMaxAt: state.last_data_max_at || meta.dataMaxAt || null,
+            }),
+            { status: 200, headers: { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json" } }
+          );
+        }
+
+        await upsertSnapshotState(supabaseAdmin, stateKey, {
+          building: true,
+          last_build_started_at: nowIso,
+        });
+
+        const runId = crypto.randomUUID();
+        const { error: startError } = await updateSnapshot(supabaseAdmin, {
+          status: "running",
+          progress_done: 0,
+          progress_total: SPECIES.length,
+          last_error: null,
+          running_started_at: nowIso,
+          heartbeat_at: nowIso,
+          run_id: runId,
+        });
+        if (startError) throw startError;
+
+        try {
+          const result = await runRefresh(supabaseAdmin, { startIndex: 0, runId });
+          const finishedAt = new Date().toISOString();
+          const { error: finalizeError } = await updateSnapshot(supabaseAdmin, {
+            points_json: result.points,
+            status: "ready",
+            progress_done: result.done,
+            progress_total: result.total,
+            last_error: result.lastError,
+            heartbeat_at: finishedAt,
+            run_id: result.runId,
+            generated_at: finishedAt,
+          });
+          if (finalizeError) throw finalizeError;
+
+          const { data: updatedRow } = await supabaseAdmin
+            .from("linnuliigid_snapshot")
+            .select("*")
+            .eq("id", 1)
+            .single();
+          const rebuiltMeta = buildSnapshotMeta((updatedRow || data) as Record<string, unknown>);
+          await upsertSnapshotState(supabaseAdmin, stateKey, {
+            building: false,
+            last_build_finished_at: finishedAt,
+            last_snapshot_id: rebuiltMeta.snapshotId,
+            last_data_max_at: rebuiltMeta.dataMaxAt,
+          });
+          return new Response(
+            JSON.stringify({
+              status: "rebuilt",
+              snapshotId: rebuiltMeta.snapshotId,
+              dataMaxAt: rebuiltMeta.dataMaxAt,
+            }),
+            { status: 200, headers: { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json" } }
+          );
+        } catch (rebuildError) {
+          await upsertSnapshotState(supabaseAdmin, stateKey, {
+            building: false,
+            last_build_finished_at: new Date().toISOString(),
+          });
+          throw rebuildError;
+        }
+      }
+
       if (req.method === "GET" && isMetaRequest) {
         return new Response(
           JSON.stringify(meta),
@@ -444,6 +584,9 @@ Deno.serve(async (req) => {
         snapshotId: meta.snapshotId,
         snapshotBytes: meta.bytes,
         totalItems: meta.totalItems,
+        snapshotGeneratedAt: meta.snapshotGeneratedAt,
+        dataMaxAt: meta.dataMaxAt,
+        dataMinAt: meta.dataMinAt,
       };
       return new Response(JSON.stringify(responseBody), {
         headers: responseHeaders,

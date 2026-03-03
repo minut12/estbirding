@@ -686,6 +686,8 @@ let __snapshotErrorRetryAttempt = 0;
 let __serverSnapshotId = '';
 let __serverGeneratedAt = '';
 let __serverBytes = 0;
+let __serverDataMaxAt = '';
+let __serverDataMinAt = '';
 let __serverCheckedAt = '';
 let __lastProcessedSnapshotId = '';
 let __lastProcessedGeneratedAt = '';
@@ -761,6 +763,8 @@ function _copyDebugJson(){
     serverSnapshotId: __serverSnapshotId || '',
     serverGeneratedAt: __serverGeneratedAt || '',
     serverBytes: Number(__serverBytes || 0),
+    serverDataMaxAt: __serverDataMaxAt || '',
+    serverDataMinAt: __serverDataMinAt || '',
     serverCheckedAt: __serverCheckedAt || '',
     serverIsNewer: !!__serverIsNewer,
     serverMetaAvailable: !!__serverMetaAvailable,
@@ -801,6 +805,8 @@ function _clearDebugEvents(){
   __serverSnapshotId = '';
   __serverGeneratedAt = '';
   __serverBytes = 0;
+  __serverDataMaxAt = '';
+  __serverDataMinAt = '';
   __serverCheckedAt = '';
   __lastProcessedSnapshotId = '';
   __lastProcessedGeneratedAt = '';
@@ -955,17 +961,26 @@ function _shortId(id){
   if(s.length <= 14) return s;
   return s.slice(0, 8) + '...' + s.slice(-4);
 }
+function _isServerDataStale(hours){
+  const limitHours = Number(hours || 6) || 6;
+  if(!__serverDataMaxAt) return true;
+  const ts = Date.parse(__serverDataMaxAt);
+  if(!Number.isFinite(ts)) return true;
+  return (Date.now() - ts) > (limitHours * 60 * 60 * 1000);
+}
 function _updateServerSnapshotStatus(){
   const el = document.getElementById('serverRefreshStatus');
   if(!el) return;
   const gen = __serverGeneratedAt ? _fmtTs(__serverGeneratedAt) : '-';
   const chk = __serverCheckedAt ? _fmtTs(__serverCheckedAt) : '-';
+  const latest = __serverDataMaxAt ? _fmtTs(__serverDataMaxAt) : '-';
   const id = _shortId(__serverSnapshotId);
+  const staleNote = __serverMetaAvailable ? (_isServerDataStale(6) ? 'Server data stale' : 'Server data fresh') : '';
   const freshness = !__serverMetaAvailable
     ? 'Server meta not available'
     : ((!__lastProcessedSnapshotId || __serverIsNewer) ? 'New server data available' : 'No new server data');
   const err = (__serverCheckStatus === 'error' && __serverCheckError) ? ('; check error: ' + __serverCheckError) : '';
-  el.textContent = 'Server snapshot: ' + gen + ' | ID: ' + id + ' | Bytes: ' + String(Number(__serverBytes || 0) || '-') + ' | Checked: ' + chk + ' | ' + freshness + err;
+  el.textContent = 'Server snapshot: ' + gen + ' | ID: ' + id + ' | Bytes: ' + String(Number(__serverBytes || 0) || '-') + ' | Latest occurrence in snapshot: ' + latest + ' | Checked: ' + chk + ' | ' + freshness + (staleNote ? (' | ' + staleNote) : '') + err;
 }
 async function fetchServerMeta(){
   __serverCheckStatus = 'checking';
@@ -982,8 +997,10 @@ async function fetchServerMeta(){
     if(!res.ok) throw new Error('Meta fetch failed (HTTP ' + res.status + ')');
     const meta = await res.json();
     __serverSnapshotId = String((meta && meta.snapshotId) || '').trim();
-    __serverGeneratedAt = String((meta && meta.generatedAt) || '').trim();
+    __serverGeneratedAt = String((meta && (meta.snapshotGeneratedAt || meta.generatedAt)) || '').trim();
     __serverBytes = Number((meta && meta.bytes) || 0) || 0;
+    __serverDataMaxAt = String((meta && meta.dataMaxAt) || '').trim();
+    __serverDataMinAt = String((meta && meta.dataMinAt) || '').trim();
     __serverCheckedAt = new Date().toISOString();
     __serverMetaAvailable = !!__serverSnapshotId;
     __serverIsNewer = !!(__serverMetaAvailable && __lastProcessedSnapshotId && (__serverSnapshotId !== __lastProcessedSnapshotId));
@@ -992,8 +1009,10 @@ async function fetchServerMeta(){
     _updateDebugPanel();
     return {
       snapshotId: __serverSnapshotId,
-      generatedAt: __serverGeneratedAt,
+      snapshotGeneratedAt: __serverGeneratedAt,
       bytes: __serverBytes,
+      dataMaxAt: __serverDataMaxAt,
+      dataMinAt: __serverDataMinAt,
       metaAvailable: __serverMetaAvailable
     };
   }catch(e){
@@ -1022,6 +1041,55 @@ async function loadSnapshotIfNeeded(force){
   _showSnapshotBanner('No new server data. Snapshot reload skipped.');
   setTimeout(_hideSnapshotBanner, 2500);
   return null;
+}
+async function requestServerRebuild(){
+  const snapshotUrl = _resolveSnapshotApi();
+  const rebuildUrl = _withCacheBuster(snapshotUrl + (snapshotUrl.indexOf('?') >= 0 ? '&' : '?') + 'rebuild=1');
+  const res = await fetch(rebuildUrl, {
+    method:'GET',
+    cache:'no-store',
+    headers: { 'Accept': 'application/json' }
+  });
+  const json = await res.json().catch(function(){ return {}; });
+  if(!(res.ok || res.status === 202)){
+    throw new Error('Rebuild request failed (HTTP ' + res.status + ')');
+  }
+  return json || {};
+}
+async function waitForSnapshotChange(previousSnapshotId, timeoutMs){
+  const started = Date.now();
+  const maxMs = Math.max(10000, Number(timeoutMs || 120000) || 120000);
+  while((Date.now() - started) < maxMs){
+    const meta = await fetchServerMeta();
+    const cur = String((meta && meta.snapshotId) || __serverSnapshotId || '');
+    if(cur && previousSnapshotId && cur !== previousSnapshotId) return true;
+    if(cur && !previousSnapshotId) return true;
+    await _delay(10000);
+  }
+  return false;
+}
+async function triggerRefreshDataFlow(){
+  try{
+    const beforeMeta = await fetchServerMeta();
+    const previousSnapshotId = String((beforeMeta && beforeMeta.snapshotId) || __serverSnapshotId || '');
+    const stale = _isServerDataStale(6);
+    _showSnapshotBanner('Requesting server rebuild...');
+    const rebuild = await requestServerRebuild();
+    const rebuildStatus = String((rebuild && rebuild.status) || '');
+    if(rebuildStatus === 'building' || rebuildStatus === 'rebuilt'){
+      await waitForSnapshotChange(previousSnapshotId, 120000);
+    } else if(rebuildStatus === 'cooldown'){
+      await fetchServerMeta();
+    } else if(stale){
+      await waitForSnapshotChange(previousSnapshotId, 120000);
+    }
+    await loadSnapshot(true);
+  }catch(e){
+    __lastErrorMessage = String((e && e.message) ? e.message : e || 'refresh data flow failed');
+    pushDebugEvent('REFRESH_FLOW_FALLBACK', 'Refresh flow failed, falling back to snapshot GET', { error: __lastErrorMessage }, 'warn');
+    _showSnapshotBanner('Rebuild check failed, loading latest snapshot...', 'warn');
+    await loadSnapshot(true);
+  }
 }
 
 function _setResumeIndex(i){
@@ -1062,20 +1130,34 @@ function _validateSupabaseLocal(){
   if(url.indexOf('.supabase.co') === -1) return { ok:false, error:'Supabase URL vigane: peab sisaldama .supabase.co (' + url + ')' };
   return { ok:true, url };
 }
+function _extractSnapshotApiFromLastRequest(){
+  const raw = String(__lastRequestUrl || SNAPSHOT_API || '').trim();
+  if(!raw) return '';
+  const marker = '/functions/v1/linnuliigid-snapshot';
+  const idx = raw.indexOf(marker);
+  if(idx < 0) return '';
+  return raw.slice(0, idx + marker.length).replace(/\/+$/, '');
+}
 function _resolveSnapshotApi(){
   const validation = _validateSupabaseLocal();
-  if(!validation.ok){
-    pushDebugEvent('CONFIG_WAIT', 'Snapshot API unresolved', {
-      error: validation.error,
-      resolvedSupabaseUrl: _resolveSupabaseUrlLocal() || '',
-      anonMasked: _maskKey(_resolveSupabaseAnonKeyLocal()),
-    }, 'warn');
-    throw new Error(validation.error);
+  if(validation.ok){
+    SNAPSHOT_API = validation.url + '/functions/v1/linnuliigid-snapshot';
+    SNAPSHOT_CONTROL_API = validation.url + '/functions/v1/linnuliigid-control';
+    pushDebugEvent('CONFIG_READY', 'Resolved snapshot API', { snapshotApi: SNAPSHOT_API });
+    return SNAPSHOT_API;
   }
-  SNAPSHOT_API = validation.url + '/functions/v1/linnuliigid-snapshot';
-  SNAPSHOT_CONTROL_API = validation.url + '/functions/v1/linnuliigid-control';
-  pushDebugEvent('CONFIG_READY', 'Resolved snapshot API', { snapshotApi: SNAPSHOT_API });
-  return SNAPSHOT_API;
+  const fallback = _extractSnapshotApiFromLastRequest();
+  if(fallback){
+    SNAPSHOT_API = fallback;
+    pushDebugEvent('CONFIG_FALLBACK', 'Resolved snapshot API from lastRequestUrl', { snapshotApi: SNAPSHOT_API }, 'warn');
+    return SNAPSHOT_API;
+  }
+  pushDebugEvent('CONFIG_WAIT', 'Snapshot API unresolved', {
+    error: validation.error,
+    resolvedSupabaseUrl: _resolveSupabaseUrlLocal() || '',
+    anonMasked: _maskKey(_resolveSupabaseAnonKeyLocal()),
+  }, 'warn');
+  throw new Error(validation.error);
 }
 function _resolveSnapshotControlApi(){
   const validation = _validateSupabaseLocal();
@@ -1189,8 +1271,10 @@ async function fetchJsonWithTimeout(url, opts){
       data: json,
       meta: {
         snapshotId: String((json && json.snapshotId) || '').trim(),
-        generatedAt: String((json && json.generatedAt) || (json && json.generated_at) || '').trim(),
+        snapshotGeneratedAt: String((json && (json.snapshotGeneratedAt || json.generatedAt || json.generated_at)) || '').trim(),
         bytes: Number((json && json.snapshotBytes) || __lastBodyBytes || 0) || 0,
+        dataMaxAt: String((json && json.dataMaxAt) || '').trim(),
+        dataMinAt: String((json && json.dataMinAt) || '').trim(),
       }
     };
   }catch(e){
@@ -1553,6 +1637,7 @@ function _updateDebugPanel(){
     'serverSnapshotId: <b>' + (_shortId(__serverSnapshotId)) + '</b>',
     'serverGeneratedAt: <b>' + (_fmtTs(__serverGeneratedAt)) + '</b>',
     'serverBytes: <b>' + (Number(__serverBytes || 0) || '-') + '</b>',
+    'latestOccurrenceInSnapshot: <b>' + (_fmtTs(__serverDataMaxAt)) + '</b>',
     'serverCheckedAt: <b>' + (_fmtTs(__serverCheckedAt)) + '</b>',
     'serverCheckStatus: <b>' + (__serverCheckStatus || 'idle') + '</b>',
     'serverMetaAvailable: <b>' + (__serverMetaAvailable ? 'true' : 'false') + '</b>',
@@ -1655,8 +1740,10 @@ async function _loadSnapshotImpl(){
     const snap = snapResp && snapResp.data ? snapResp.data : {};
     if(snapResp && snapResp.meta){
       __serverSnapshotId = String(snapResp.meta.snapshotId || (snap && snap.snapshotId) || '');
-      __serverGeneratedAt = String(snapResp.meta.generatedAt || (snap && (snap.generatedAt || snap.generated_at)) || (__serverGeneratedAt || ''));
+      __serverGeneratedAt = String(snapResp.meta.snapshotGeneratedAt || (snap && (snap.snapshotGeneratedAt || snap.generatedAt || snap.generated_at)) || (__serverGeneratedAt || ''));
       __serverBytes = Number(snapResp.meta.bytes || (snap && snap.snapshotBytes) || __lastBodyBytes || 0) || 0;
+      __serverDataMaxAt = String(snapResp.meta.dataMaxAt || (snap && snap.dataMaxAt) || (__serverDataMaxAt || ''));
+      __serverDataMinAt = String(snapResp.meta.dataMinAt || (snap && snap.dataMinAt) || (__serverDataMinAt || ''));
       __serverCheckedAt = new Date().toISOString();
       __serverMetaAvailable = !!__serverSnapshotId;
       __serverIsNewer = !!(__serverMetaAvailable && __lastProcessedSnapshotId && (__serverSnapshotId !== __lastProcessedSnapshotId));
@@ -1726,7 +1813,7 @@ async function _loadSnapshotImpl(){
     }
 
     __lastProcessedSnapshotId = String((snap && snap.snapshotId) || __serverSnapshotId || __lastProcessedSnapshotId || '');
-    __lastProcessedGeneratedAt = String((snap && (snap.generatedAt || snap.generated_at)) || __serverGeneratedAt || __lastProcessedGeneratedAt || '');
+    __lastProcessedGeneratedAt = String((snap && (snap.snapshotGeneratedAt || snap.generatedAt || snap.generated_at)) || __serverGeneratedAt || __lastProcessedGeneratedAt || '');
     __serverIsNewer = false;
     __resumeExplicitRequested = false;
     _updateServerSnapshotStatus();
@@ -2069,7 +2156,7 @@ function _wireSnapshotButtons(){
   const toggle7d = document.getElementById('toggle7days');
 
   if(btnRefresh && !btnRefresh.__wired){
-    btnRefresh.addEventListener('click', function(){ triggerRefresh({ newRun: true }); });
+    btnRefresh.addEventListener('click', function(){ triggerRefreshDataFlow(); });
     btnRefresh.__wired = true;
   }
   if(btnReload && !btnReload.__wired){

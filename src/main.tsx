@@ -5,7 +5,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 // Hidden debug shortcut: ?reset=1 triggers full reset
 import { fullReset, doHardReload } from './lib/cache-reset';
-const BUILTIN_TRANSLATE_ENDPOINT = '/.netlify/functions/translate-et';
+const BUILTIN_TRANSLATE_ENDPOINT = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/translate-et';
 
 if (new URLSearchParams(window.location.search).get('reset') === '1') {
   if (confirm('Täielik lähtestus – kõik andmed kustutatakse. Jätkata?')) {
@@ -21,26 +21,10 @@ void (async function autoFixTranslateEndpoint() {
     const key = 'translate_endpoint_v1';
     const cur = (localStorage.getItem(key) || '').trim();
 
-    // Only auto-fix if it points to supabase.co (known failing in this environment)
-    if (cur && cur.includes('.supabase.co/functions/v1/')) {
-      // Try a lightweight ping to current endpoint (GET ?ping=1)
-      let ok = false;
-      try {
-        const r = await fetch(cur + (cur.includes('?') ? '&' : '?') + 'ping=1', { method: 'GET' });
-        ok = r.ok;
-      } catch {
-        ok = false;
-      }
-
-      if (!ok) {
-        localStorage.setItem(key, BUILTIN_TRANSLATE_ENDPOINT);
-        console.log('[translate] auto-switched to', BUILTIN_TRANSLATE_ENDPOINT);
-      }
-    }
-
-    // If empty, set default
-    if (!cur) {
+    // If empty or pointing to old netlify/api paths, set to Supabase default
+    if (!cur || cur.startsWith('/') || cur.includes('/.netlify/') || cur.includes('/api/')) {
       localStorage.setItem(key, BUILTIN_TRANSLATE_ENDPOINT);
+      console.log('[translate] set endpoint to', BUILTIN_TRANSLATE_ENDPOINT);
     }
   } catch {}
 })();

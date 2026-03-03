@@ -61,8 +61,8 @@ interface NewsSource {
 
 const NEWS_VIEW_SELECT = 'id,source_key,title,title_et,body,body_et,summary,published_at,url,image_url,archived,translation_status,translation_error,translated_at,created_at,external_id,source_id,source_slug,source_name,cached_image_url,cached_image_path,display_image_url,content_html,fetched_at,guid,raw_json,language,source_lang,translated_title,translated_body';
 const ALL_SOURCES_LABEL = normalizeDisplayText("Kõik allikad");
-const NEWS_TABLE_FALLBACK_SELECT = 'id, source_key, title, title_et, body, body_et, summary, published_at, url, image_url, archived, translation_status, translation_error, translated_at, source_id, source_slug, permalink_url, content_html, created_at, cached_image_url, image_cached_url, language, source_lang, guid, raw_json, fetched_at';
-const NEWS_MIN_SELECT = 'id,source_key,title,body,summary,published_at,url,image_url,archived,source_id,source_slug,source_name,created_at,cached_image_url,content_html,fetched_at,guid,raw_json,language,source_lang';
+const NEWS_TABLE_FALLBACK_SELECT = 'id,source_key,title,title_et,body,body_et,summary,published_at,url,image_url,archived,translation_status,translation_error,translated_at,source_id,source_slug,permalink_url,content_html,created_at,cached_image_url,image_cached_url,language,source_lang,guid,raw_json,fetched_at';
+const NEWS_MIN_SELECT = 'id,source_key,title,body,summary,published_at,url,image_url,archived,source_id,source_slug,created_at,cached_image_url,content_html,fetched_at,guid,raw_json,language,source_lang';
 
 /* Format date */
 const ET_MONTHS = ['jaanuar','veebruar','märts','aprill','mai','juuni','juuli','august','september','oktoober','november','detsember'];
@@ -506,7 +506,7 @@ const {
           .eq('archived', tab === 'archive')
           .order('published_at', { ascending: false, nullsFirst: false })
           .order('created_at', { ascending: false, nullsFirst: false })
-          .limit(50);
+          .limit(50) as any;
       }
       const { data, error } = primaryResult;
 
@@ -530,7 +530,7 @@ const {
             .eq('archived', tab === 'archive')
             .order('published_at', { ascending: false, nullsFirst: false })
             .order('created_at', { ascending: false, nullsFirst: false })
-            .limit(50);
+            .limit(50) as any;
         }
         const { data: fallbackData, error: fallbackError } = fallbackResult;
         if (fallbackError) {

@@ -58,27 +58,52 @@ function deriveProxyTranslateEndpointFromBase(proxyBase: unknown): string {
 
 function storeResolvedProxyBase(v: unknown): void {
   try {
-    const s = String(v || '').trim();
+    const s = safeStr(v);
     if (s) localStorage.setItem(LS_RESOLVED_PROXY_BASE, s);
   } catch {}
 }
 
-function getResolvedProxyBaseFromLS(): string {
+// Finds first occurrence of a proxy base like: https://<ref>.supabase.co/functions/v1/proxy?url=
+function scanDomForProxyBase(): string {
   try {
-    return (localStorage.getItem(LS_RESOLVED_PROXY_BASE) || '').trim();
-  } catch {
-    return '';
-  }
+    const txt = document.body?.innerText || '';
+    const m = txt.match(/https?:\/\/[^\s]+\.supabase\.co\/functions\/v1\/proxy\?url=/i);
+    if (m) return safeStr(m[0]);
+  } catch {}
+
+  // also scan input values (Proxy Base URL field)
+  try {
+    const inputs = Array.from(document.querySelectorAll('input'));
+    for (const inp of inputs) {
+      const v = safeStr((inp as HTMLInputElement).value);
+      if (/\.supabase\.co\/functions\/v1\/proxy\?url=/.test(v)) return v;
+      const ph = safeStr(inp.getAttribute('placeholder'));
+      if (/\.supabase\.co\/functions\/v1\/proxy\?url=/.test(ph)) return ph;
+    }
+  } catch {}
+
+  return '';
 }
 
-function getResolvedProxyBaseSafe(): string {
-  const stored = getResolvedProxyBaseFromLS();
-  if (stored) return stored;
+function getResolvedProxyBaseAny(): string {
+  // 1) localStorage
+  try {
+    const stored = safeStr(localStorage.getItem(LS_RESOLVED_PROXY_BASE));
+    if (stored) return stored;
+  } catch {}
+
+  // 2) DOM scan fallback
+  const dom = scanDomForProxyBase();
+  if (dom) {
+    try { localStorage.setItem(LS_RESOLVED_PROXY_BASE, dom); } catch {}
+    return dom;
+  }
+
   return '';
 }
 
 function getProxyTranslateEndpointSafe(): string {
-  return deriveProxyTranslateEndpointFromBase(getResolvedProxyBaseSafe());
+  return deriveProxyTranslateEndpointFromBase(getResolvedProxyBaseAny());
 }
 
 export default function SettingsTab() {
@@ -112,6 +137,13 @@ export default function SettingsTab() {
     setStoredProxyBaseView(initialProxyStored);
     setProxyBaseUrl(initialProxyStored || getEnvProxyBase());
     refreshSpeciesMetaFromCloud({ force: true }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    try {
+      const dom = scanDomForProxyBase();
+      if (dom) localStorage.setItem(LS_RESOLVED_PROXY_BASE, dom);
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -266,7 +298,7 @@ export default function SettingsTab() {
       }
 
       const ping = async (endpoint: string) => {
-        if (!endpoint) return { ok: false, error: 'endpoint_missing', hint: 'resolvedProxyBase empty or unparsable' };
+        if (!endpoint) return { ok: false, error: 'endpoint_missing', hint: 'proxy base not found in DOM or localStorage' };
         try {
           const pingUrl = endpoint.includes('?') ? `${endpoint}&ping=1` : `${endpoint}?ping=1`;
           const response = await fetch(pingUrl, { method: 'GET', mode: 'cors', headers });
@@ -290,7 +322,7 @@ export default function SettingsTab() {
       }
       let proxy: any;
       if (!proxyEndpoint) {
-        proxy = { ok: false, error: 'endpoint_missing', hint: 'no resolved proxy base stored' };
+        proxy = { ok: false, error: 'endpoint_missing', hint: 'proxy base not found in DOM or localStorage' };
       } else {
         try {
           const r = await fetch(`${proxyEndpoint}?ping=1`, { method: 'GET' });

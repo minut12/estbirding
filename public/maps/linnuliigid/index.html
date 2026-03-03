@@ -761,6 +761,14 @@ let __nextIndex = 0;
 let __processedCount = 0;
 let __lastProcessedIndex = null;
 let __slowMode = false;
+let __elurikkusInFlight = false;
+let __elurikkusLastFetchAtMs = 0;
+const __elurikkusBySpecies = {};
+let __lastElurikkusSpeciesFetched = '';
+let __lastElurikkusUrl = '';
+let __lastElurikkusLatestOccurrenceAt = '';
+let __lastElurikkusItemsCount = 0;
+let __lastElurikkusError = '';
 
 function _safeData(v){
   try{
@@ -1314,6 +1322,74 @@ async function requestServerRebuild(){
   });
   return json || {};
 }
+async function fetchElurikkusSpecies(species){
+  const key = String(species || '').trim();
+  if(!key) return null;
+  const now = Date.now();
+  if(__elurikkusInFlight){
+    __lastInfoMessage = 'Upstream fetch already in progress';
+    return null;
+  }
+  const gapMs = now - __elurikkusLastFetchAtMs;
+  if(gapMs < 700) await _delay(700 - gapMs);
+  __elurikkusInFlight = true;
+  __elurikkusLastFetchAtMs = Date.now();
+  const row = __elurikkusBySpecies[key] = (__elurikkusBySpecies[key] || {});
+  row.status = 'loading';
+  row.error = '';
+  row.startedAt = new Date().toISOString();
+  row.durationMs = null;
+  row.bytes = null;
+  render();
+  try{
+    const base = _resolveElurikkusSpeciesApi();
+    const url = _withCacheBuster(base + '?text=' + encodeURIComponent(key) + '&days=7&limit=200');
+    __lastElurikkusUrl = url;
+    const traceId = _traceStart({ method: 'GET', url: url });
+    const t0 = performance.now();
+    const res = await fetch(url, {
+      method:'GET',
+      cache:'no-store',
+      headers: _withSupabaseAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    const text = await res.text();
+    const bytesRead = text ? (new TextEncoder().encode(text).length) : 0;
+    const durationMs = Math.round(performance.now() - t0);
+    let json = {};
+    try{ json = text ? JSON.parse(text) : {}; }catch(e){ json = {}; }
+    _traceEnd(traceId, { status: res.status, ok: !!res.ok, bytesRead: bytesRead, details: { responseKeys: json && typeof json === 'object' ? Object.keys(json) : [] } });
+    if(!res.ok) throw new Error('Elurikkus proxy failed (HTTP ' + res.status + ')');
+    const items = Array.isArray(json.items) ? json.items : [];
+    const restrictedCount = items.filter(function(it){ return String((it && it.coordsStatus) || '') !== 'public'; }).length;
+    row.status = 'ok';
+    row.durationMs = durationMs;
+    row.bytes = Number(json && json.trace && json.trace.upstreamBytes || bytesRead || 0);
+    row.latestOccurrenceAt = String((json && json.latestOccurrenceAt) || '').trim();
+    row.itemsCount = items.length;
+    row.restrictedCount = restrictedCount;
+    row.publicCount = Math.max(0, items.length - restrictedCount);
+    row.sourceUrl = String((json && json.sourceUrl) || '').trim();
+    row.updatedAt = new Date().toISOString();
+    __lastElurikkusSpeciesFetched = key;
+    __lastElurikkusLatestOccurrenceAt = row.latestOccurrenceAt || '';
+    __lastElurikkusItemsCount = row.itemsCount || 0;
+    __lastElurikkusError = '';
+    return json;
+  }catch(e){
+    const msg = String((e && e.message) ? e.message : e || 'Elurikkus fetch failed');
+    row.status = 'error';
+    row.error = msg;
+    row.updatedAt = new Date().toISOString();
+    __lastElurikkusSpeciesFetched = key;
+    __lastElurikkusError = msg;
+    logWarn('Elurikkus species fetch failed', { species: key, error: msg });
+    return null;
+  }finally{
+    __elurikkusInFlight = false;
+    _updateDebugPanel();
+    render();
+  }
+}
 async function waitForSnapshotChange(previousSnapshotId, timeoutMs){
   const started = Date.now();
   const maxMs = Math.max(10000, Number(timeoutMs || 120000) || 120000);
@@ -1492,6 +1568,19 @@ function _resolveSnapshotControlApi(){
   if(idx > 0){
     SNAPSHOT_CONTROL_API = String(snapApi).slice(0, idx) + '/functions/v1/linnuliigid-control';
     return SNAPSHOT_CONTROL_API;
+  }
+  throw new Error(validation.error);
+}
+function _resolveElurikkusSpeciesApi(){
+  const validation = _validateSupabaseLocal();
+  if(validation.ok){
+    return validation.url + '/functions/v1/elurikkus-species';
+  }
+  const snapApi = _resolveSnapshotApi();
+  const marker = '/functions/v1/linnuliigid-snapshot';
+  const idx = String(snapApi || '').indexOf(marker);
+  if(idx > 0){
+    return String(snapApi).slice(0, idx) + '/functions/v1/elurikkus-species';
   }
   throw new Error(validation.error);
 }
@@ -2234,6 +2323,7 @@ function _computeDebugProObject(){
       anonKeySource: keyInfo.source,
       snapshotGetUrl: _resolveSnapshotApi ? (function(){ try{return _resolveSnapshotApi();}catch(e){return _extractSnapshotApiFromLastRequest() || '';}})() : '',
       metaUrl: (SNAPSHOT_API ? (SNAPSHOT_API + '?meta=1') : ''),
+      elurikkusSpeciesUrl: (function(){ try { return _resolveElurikkusSpeciesApi(); } catch(e){ return ''; } })(),
       nowIso: nowIso,
       nowLocal: localNow,
       timezoneOffsetMin: new Date().getTimezoneOffset(),
@@ -2262,6 +2352,14 @@ function _computeDebugProObject(){
       trace: __indexTrace.slice(0, 30),
     },
     indexAudit: indexAudit,
+    upstreamDebug: {
+      inFlight: !!__elurikkusInFlight,
+      lastElurikkusSpeciesFetched: __lastElurikkusSpeciesFetched || '',
+      lastElurikkusUrl: __lastElurikkusUrl || '',
+      lastElurikkusLatestOccurrenceAt: __lastElurikkusLatestOccurrenceAt || '',
+      lastElurikkusItemsCount: Number(__lastElurikkusItemsCount || 0),
+      lastElurikkusError: __lastElurikkusError || '',
+    },
     logs: __internalLogs.slice(0,50),
   };
 }
@@ -2285,6 +2383,7 @@ function _updateDebugProPanel(){
     '<div>anonKeyPresent: <b>' + (dbg.config.anonKeyPresent ? 'true' : 'false') + '</b> (' + dbg.config.anonKeySource + ')</div>' +
     '<div>snapshot GET URL: <span class="debug-pro-code">' + (dbg.config.snapshotGetUrl || '-') + '</span></div>' +
     '<div>meta URL: <span class="debug-pro-code">' + (dbg.config.metaUrl || '-') + '</span></div>' +
+    '<div>elurikkus-species URL: <span class="debug-pro-code">' + (dbg.config.elurikkusSpeciesUrl || '-') + '</span></div>' +
     '<div>now: ' + dbg.config.nowIso + ' | local: ' + dbg.config.nowLocal + ' | tz offset(min): ' + dbg.config.timezoneOffsetMin + '</div>' +
     '<div>cutoff(7d): ' + dbg.config.cutoffIso + ' | filter7day: <b>' + (dbg.config.filter7day ? 'ON' : 'OFF') + '</b></div></div>' +
     '<div class="debug-pro-sec"><div class="debug-pro-title">Network trace (last 30)</div><table class="debug-pro-table"><thead><tr><th>ID</th><th>M</th><th>URL</th><th>Status</th><th>ms</th><th>Error</th></tr></thead><tbody>' + traceRows + '</tbody></table>' +
@@ -2322,6 +2421,13 @@ function _updateDebugProPanel(){
       '<div>duplicateDone(first20): <span class="debug-pro-code">' + JSON.stringify(ia.duplicateDonePreview || []).replace(/</g,'&lt;') + '</span></div>' +
       '<div>outOfRangeEvents(first20): <span class="debug-pro-code">' + JSON.stringify(ia.outOfRangePreview || []).replace(/</g,'&lt;') + '</span></div>' +
     '</details></div>' +
+    '<div class="debug-pro-sec"><div class="debug-pro-title">Upstream debug</div>' +
+    '<div>inFlight: <b>' + (dbg.upstreamDebug.inFlight ? 'true' : 'false') + '</b></div>' +
+    '<div>lastElurikkusSpeciesFetched: <b>' + (dbg.upstreamDebug.lastElurikkusSpeciesFetched || '-') + '</b></div>' +
+    '<div>lastElurikkusUrl: <span class="debug-pro-code">' + (dbg.upstreamDebug.lastElurikkusUrl || '-') + '</span></div>' +
+    '<div>lastElurikkusLatestOccurrenceAt: <b>' + (dbg.upstreamDebug.lastElurikkusLatestOccurrenceAt || '-') + '</b></div>' +
+    '<div>lastElurikkusItemsCount: <b>' + (dbg.upstreamDebug.lastElurikkusItemsCount || 0) + '</b></div>' +
+    '<div>lastElurikkusError: <b>' + (dbg.upstreamDebug.lastElurikkusError || '-') + '</b></div></div>' +
     '<div class="debug-pro-sec"><div class="debug-pro-title">Logs & Export</div>' +
     '<div>internal logs (last 50): <span class="debug-pro-code">' + JSON.stringify(dbg.logs).replace(/</g,'&lt;') + '</span></div></div>';
 }
@@ -3294,6 +3400,17 @@ function rowHTML(obj) {
       ? '<span class="pill" style="background:#fef3c7;color:#92400e">Koordinaadid peidetud</span>'+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
       : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
   const meta = '<div class="meta-grid"><div class="meta-row1">'+metaRow1+'</div><div class="meta-row2">'+springTxt+'</div></div>';
+  const up = __elurikkusBySpecies[key] || null;
+  const upLine = up
+    ? ('<div class="small" style="margin-top:4px">' +
+      'Elurikkus: ' + (up.status || '-') +
+      (up.durationMs != null ? (' | ' + up.durationMs + 'ms') : '') +
+      (up.bytes != null ? (' | ' + up.bytes + 'b') : '') +
+      (up.latestOccurrenceAt ? (' | latest: ' + formatDateTimeEE(up.latestOccurrenceAt)) : '') +
+      ((Number.isFinite(up.publicCount) || Number.isFinite(up.restrictedCount)) ? (' | coords public/restricted: ' + (up.publicCount || 0) + '/' + (up.restrictedCount || 0)) : '') +
+      (up.error ? (' | error: ' + up.error) : '') +
+      '</div>')
+    : '';
 
   return '<div class="row" data-key="'+key+'">' +
     '<div class="avatar" style="background-image:url(\''+getDisplayAvatar(key)+'\');border:3px solid '+bcol+'"></div>' +
@@ -3302,9 +3419,13 @@ function rowHTML(obj) {
         '<div class="name-row"><div class="name-label clickable '+muted+'" onclick="toggleVisibility(\''+key+'\')">'+key+'</div>' + (rarityText ? '<span class="rarity-badge" title="Haruldus">'+rarityText+'</span>' : '') + '</div>' +
       '</div>' +
       '<div class="small">'+meta+'</div>' +
+      upLine +
     '</div>' +
     '<div class="controls">' +
+      '<div style="display:flex;flex-direction:column;gap:6px">' +
       '<a class="btn" target="_blank" href="'+obj.url+'">Open</a>' +
+      '<button class="btn secondary fetch-elurikkus-btn" data-species="'+key+'" title="Fetch from Elurikkus via server proxy">Fetch (Elurikkus)</button>' +
+      '</div>' +
     '</div>' +
   '</div>';
 }
@@ -3324,6 +3445,14 @@ function render() {
 
   document.addEventListener('click', (e) => {
     const t = e.target;
+    const upstreamBtn = t.closest?.('.fetch-elurikkus-btn');
+    if (upstreamBtn){
+      e.preventDefault();
+      e.stopPropagation();
+      const species = upstreamBtn.getAttribute('data-species') || '';
+      fetchElurikkusSpecies(species);
+      return;
+    }
 
     // Start edit
     const startBtn = t.closest?.('.spring-date-btn');

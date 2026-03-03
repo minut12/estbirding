@@ -279,13 +279,18 @@ function buildSnapshotResponseHeaders(data: Record<string, unknown>): Record<str
 function buildSnapshotMeta(data: Record<string, unknown>) {
   const snapshotGeneratedAt = String((data as { generated_at?: string | null })?.generated_at || "");
   const pointsJson = (data as { points_json?: unknown })?.points_json ?? null;
-  const totalItems = pointsJson && typeof pointsJson === "object"
-    ? Object.keys(pointsJson as Record<string, unknown>).length
-    : 0;
+  const pointsObj = (pointsJson && typeof pointsJson === "object")
+    ? pointsJson as Record<string, unknown>
+    : null;
+  const totalItemsByPoints = pointsObj ? Object.keys(pointsObj).length : 0;
+  const totalItems = Math.max(
+    Number((data as { progress_total?: number | null })?.progress_total || 0),
+    totalItemsByPoints,
+  );
   let maxTs = 0;
   let minTs = Number.POSITIVE_INFINITY;
-  if (pointsJson && typeof pointsJson === "object") {
-    for (const value of Object.values(pointsJson as Record<string, unknown>)) {
+  if (pointsObj) {
+    for (const value of Object.values(pointsObj)) {
       const entry = (value && typeof value === "object") ? value as Record<string, unknown> : null;
       const raw = String(entry?.t || entry?.date || entry?.observed_at || entry?.eventDate || "");
       const ts = parseElurikkusDate(raw);
@@ -295,9 +300,9 @@ function buildSnapshotMeta(data: Record<string, unknown>) {
       }
     }
   }
-  const snapshotJson = JSON.stringify(data);
-  const bytes = new TextEncoder().encode(snapshotJson).length;
-  const hash = stableHash(snapshotJson);
+  const pointsJsonText = JSON.stringify(pointsObj || {});
+  const bytes = new TextEncoder().encode(pointsJsonText).length;
+  const hash = stableHash(pointsJsonText);
   const snapshotId = `${bytes}:${snapshotGeneratedAt}:${totalItems}:${hash}`;
   const dataMaxAt = maxTs > 0 ? new Date(maxTs).toISOString() : null;
   const dataMinAt = Number.isFinite(minTs) ? new Date(minTs).toISOString() : null;
@@ -674,8 +679,15 @@ Deno.serve(async (req) => {
       }
 
       if (req.method === "GET" && isMetaRequest) {
+        const metaBody = {
+          snapshotId: meta.snapshotId,
+          snapshotGeneratedAt: meta.snapshotGeneratedAt,
+          dataMaxAt: meta.dataMaxAt,
+          bytes: meta.bytes,
+          totalItems: meta.totalItems,
+        };
         return new Response(
-          JSON.stringify(meta),
+          JSON.stringify(metaBody),
           {
             status: 200,
             headers: { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json" },

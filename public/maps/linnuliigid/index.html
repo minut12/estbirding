@@ -764,6 +764,17 @@ let __slowMode = false;
 let __elurikkusInFlight = false;
 let __elurikkusLastFetchAtMs = 0;
 const __elurikkusBySpecies = {};
+const __elurikkusInFlightBySpecies = new Map();
+const __elurikkusResultCache = new Map();
+const __elurikkusFetchCountBySpecies = {};
+let __elurikkusFetchCountTotal = 0;
+let __elurikkusInFlightCount = 0;
+let __elurikkusLimiterActive = 0;
+const __elurikkusLimiterWaiters = [];
+let __elurikkusLastRequestStartedAtMs = 0;
+const ELURIKKUS_CACHE_TTL_MS = 10 * 60 * 1000;
+const ELURIKKUS_MAX_CONCURRENT = 2;
+const ELURIKKUS_MIN_DELAY_MS = 300;
 let __lastElurikkusSpeciesFetched = '';
 let __lastElurikkusUrl = '';
 let __lastElurikkusLatestOccurrenceAt = '';
@@ -1322,84 +1333,135 @@ async function requestServerRebuild(){
   });
   return json || {};
 }
-async function fetchElurikkusSpecies(species){
-  const key = String(species || '').trim();
-  if(!key) return null;
-  const now = Date.now();
-  if(__elurikkusInFlight){
-    __lastInfoMessage = 'Upstream fetch already in progress';
-    return null;
+function _normalizeSpeciesKey(species){
+  return String(species || '').trim().toLowerCase();
+}
+async function _acquireElurikkusLimiter(){
+  if(__elurikkusLimiterActive < ELURIKKUS_MAX_CONCURRENT){
+    __elurikkusLimiterActive++;
+    return;
   }
-  const gapMs = now - __elurikkusLastFetchAtMs;
-  if(gapMs < 700) await _delay(700 - gapMs);
-  __elurikkusInFlight = true;
-  __elurikkusLastFetchAtMs = Date.now();
-  const row = __elurikkusBySpecies[key] = (__elurikkusBySpecies[key] || {});
-  let traceId = 0;
+  await new Promise(function(resolve){ __elurikkusLimiterWaiters.push(resolve); });
+  __elurikkusLimiterActive++;
+}
+function _releaseElurikkusLimiter(){
+  __elurikkusLimiterActive = Math.max(0, __elurikkusLimiterActive - 1);
+  const next = __elurikkusLimiterWaiters.shift();
+  if(next) next();
+}
+async function _respectElurikkusMinDelay(){
+  const waitMs = ELURIKKUS_MIN_DELAY_MS - (Date.now() - __elurikkusLastRequestStartedAtMs);
+  if(waitMs > 0) await _delay(waitMs);
+  __elurikkusLastRequestStartedAtMs = Date.now();
+}
+async function fetchElurikkusSpecies(species){
+  const speciesName = String(species || '').trim();
+  const cacheKey = _normalizeSpeciesKey(speciesName);
+  if(!cacheKey) return null;
+  const row = __elurikkusBySpecies[speciesName] = (__elurikkusBySpecies[speciesName] || {});
+  const cached = __elurikkusResultCache.get(cacheKey);
+  if(cached && (Date.now() - Number(cached.ts || 0) < ELURIKKUS_CACHE_TTL_MS)){
+    const cachedData = cached.data || {};
+    const items = Array.isArray(cachedData.items) ? cachedData.items : [];
+    const restrictedCount = items.filter(function(it){ return String((it && it.coordsStatus) || '') !== 'public'; }).length;
+    row.status = 'cached';
+    row.error = '';
+    row.durationMs = Number(cachedData.durationMs || 0) || null;
+    row.bytes = Number(cachedData.upstreamBytes || 0) || null;
+    row.latestOccurrenceAt = String(cachedData.latestOccurrenceAt || '').trim();
+    row.itemsCount = items.length;
+    row.restrictedCount = restrictedCount;
+    row.publicCount = Math.max(0, items.length - restrictedCount);
+    row.sourceUrl = String(cachedData.sourceUrl || '').trim();
+    row.updatedAt = new Date().toISOString();
+    render();
+    return cachedData;
+  }
+  if(__elurikkusInFlightBySpecies.has(cacheKey)){
+    return __elurikkusInFlightBySpecies.get(cacheKey);
+  }
+
   row.status = 'loading';
   row.error = '';
   row.startedAt = new Date().toISOString();
   row.durationMs = null;
   row.bytes = null;
   render();
-  try{
-    const base = _resolveElurikkusSpeciesApi();
-    const anon = _resolveSupabaseAnonKeyLocal();
-    if(!anon) throw new Error('Supabase anon key missing for elurikkus-species');
-    const url = _withCacheBuster(base + '?text=' + encodeURIComponent(key) + '&days=7&limit=200');
-    __lastElurikkusUrl = url;
-    traceId = _traceStart({ method: 'GET', url: url });
-    const t0 = performance.now();
-    const res = await fetch(url, {
-      method:'GET',
-      cache:'no-store',
-      headers: {
-        'Accept': 'application/json',
-        'apikey': anon,
-        'Authorization': 'Bearer ' + anon,
-      },
-    });
-    const text = await res.text();
-    const bytesRead = text ? (new TextEncoder().encode(text).length) : 0;
-    const durationMs = Math.round(performance.now() - t0);
-    let json = {};
-    try{ json = text ? JSON.parse(text) : {}; }catch(e){ json = {}; }
-    _traceEnd(traceId, { status: res.status, ok: !!res.ok, bytesRead: bytesRead, details: { responseKeys: json && typeof json === 'object' ? Object.keys(json) : [] } });
-    logInfo('Elurikkus species response', { species: key, status: res.status, bodyPreview: String(text || '').slice(0,200) });
-    if(!res.ok) throw new Error('elurikkus-species HTTP ' + res.status + ': ' + String(text || '').slice(0,200));
-    const items = Array.isArray(json.items) ? json.items : [];
-    const restrictedCount = items.filter(function(it){ return String((it && it.coordsStatus) || '') !== 'public'; }).length;
-    row.status = 'ok';
-    row.durationMs = durationMs;
-    row.bytes = Number(json && json.trace && json.trace.upstreamBytes || bytesRead || 0);
-    row.latestOccurrenceAt = String((json && json.latestOccurrenceAt) || '').trim();
-    row.itemsCount = items.length;
-    row.restrictedCount = restrictedCount;
-    row.publicCount = Math.max(0, items.length - restrictedCount);
-    row.sourceUrl = String((json && json.sourceUrl) || '').trim();
-    row.updatedAt = new Date().toISOString();
-    __lastElurikkusSpeciesFetched = key;
-    __lastElurikkusLatestOccurrenceAt = row.latestOccurrenceAt || '';
-    __lastElurikkusItemsCount = row.itemsCount || 0;
-    __lastElurikkusError = '';
-    return json;
-  }catch(e){
-    const msg = String((e && e.message) ? e.message : e || 'Elurikkus fetch failed');
-    if(traceId){
-      _traceEnd(traceId, { errorType: 'network', details: { message: msg } });
+
+  const promise = (async function(){
+    let traceId = 0;
+    __elurikkusInFlightCount++;
+    __elurikkusInFlight = __elurikkusInFlightCount > 0;
+    try{
+      await _acquireElurikkusLimiter();
+      await _respectElurikkusMinDelay();
+      __elurikkusLastFetchAtMs = Date.now();
+      const base = _resolveElurikkusSpeciesApi();
+      const anon = _resolveSupabaseAnonKeyLocal();
+      if(!anon) throw new Error('Supabase anon key missing for elurikkus-species');
+      const url = _withCacheBuster(base + '?text=' + encodeURIComponent(speciesName) + '&days=7&limit=200');
+      __lastElurikkusUrl = url;
+      traceId = _traceStart({ method: 'GET', url: url });
+      const t0 = performance.now();
+      const res = await fetch(url, {
+        method:'GET',
+        cache:'no-store',
+        headers: {
+          'Accept': 'application/json',
+          'apikey': anon,
+          'Authorization': 'Bearer ' + anon,
+        },
+      });
+      const text = await res.text();
+      const bytesRead = text ? (new TextEncoder().encode(text).length) : 0;
+      const durationMs = Math.round(performance.now() - t0);
+      let json = {};
+      try{ json = text ? JSON.parse(text) : {}; }catch(e){ json = {}; }
+      _traceEnd(traceId, { status: res.status, ok: !!res.ok, bytesRead: bytesRead, details: { responseKeys: json && typeof json === 'object' ? Object.keys(json) : [] } });
+      logInfo('Elurikkus species response', { species: speciesName, status: res.status, bodyPreview: String(text || '').slice(0,200) });
+      if(!res.ok) throw new Error('elurikkus-species HTTP ' + res.status + ': ' + String(text || '').slice(0,200));
+      const items = Array.isArray(json.items) ? json.items : [];
+      const restrictedCount = items.filter(function(it){ return String((it && it.coordsStatus) || '') !== 'public'; }).length;
+      row.status = 'ok';
+      row.durationMs = durationMs;
+      row.bytes = Number(json && json.trace && json.trace.upstreamBytes || bytesRead || 0);
+      row.latestOccurrenceAt = String((json && json.latestOccurrenceAt) || '').trim();
+      row.itemsCount = items.length;
+      row.restrictedCount = restrictedCount;
+      row.publicCount = Math.max(0, items.length - restrictedCount);
+      row.sourceUrl = String((json && json.sourceUrl) || '').trim();
+      row.updatedAt = new Date().toISOString();
+      __elurikkusFetchCountTotal++;
+      __elurikkusFetchCountBySpecies[cacheKey] = Number(__elurikkusFetchCountBySpecies[cacheKey] || 0) + 1;
+      __lastElurikkusSpeciesFetched = speciesName;
+      __lastElurikkusLatestOccurrenceAt = row.latestOccurrenceAt || '';
+      __lastElurikkusItemsCount = row.itemsCount || 0;
+      __lastElurikkusError = '';
+      __elurikkusResultCache.set(cacheKey, { ts: Date.now(), data: json });
+      return json;
+    }catch(e){
+      const msg = String((e && e.message) ? e.message : e || 'Elurikkus fetch failed');
+      if(traceId){
+        _traceEnd(traceId, { errorType: 'network', details: { message: msg } });
+      }
+      row.status = 'error';
+      row.error = msg;
+      row.updatedAt = new Date().toISOString();
+      __lastElurikkusSpeciesFetched = speciesName;
+      __lastElurikkusError = msg;
+      logWarn('Elurikkus species fetch failed', { species: speciesName, error: msg });
+      return null;
+    }finally{
+      _releaseElurikkusLimiter();
+      __elurikkusInFlightCount = Math.max(0, __elurikkusInFlightCount - 1);
+      __elurikkusInFlight = __elurikkusInFlightCount > 0;
+      __elurikkusInFlightBySpecies.delete(cacheKey);
+      _updateDebugPanel();
+      render();
     }
-    row.status = 'error';
-    row.error = msg;
-    row.updatedAt = new Date().toISOString();
-    __lastElurikkusSpeciesFetched = key;
-    __lastElurikkusError = msg;
-    logWarn('Elurikkus species fetch failed', { species: key, error: msg });
-    return null;
-  }finally{
-    __elurikkusInFlight = false;
-    _updateDebugPanel();
-    render();
-  }
+  })();
+  __elurikkusInFlightBySpecies.set(cacheKey, promise);
+  return promise;
 }
 async function waitForSnapshotChange(previousSnapshotId, timeoutMs){
   const started = Date.now();
@@ -2318,6 +2380,10 @@ function _computeDebugProObject(){
     }
   }
   const indexAudit = _computeIndexAudit(__totalItems, __currentIndex, __nextIndex, __processedCount, __lastProcessedIndex, __indexTrace);
+  const elurikkusTopCounts = Object.entries(__elurikkusFetchCountBySpecies)
+    .map(function(row){ return { species: row[0], count: Number(row[1] || 0) }; })
+    .sort(function(a,b){ return b.count - a.count; })
+    .slice(0,10);
   return {
     lite: _safeData({
       serverSnapshotId: __serverSnapshotId,
@@ -2365,6 +2431,9 @@ function _computeDebugProObject(){
     indexAudit: indexAudit,
     upstreamDebug: {
       inFlight: !!__elurikkusInFlight,
+      elurikkusInFlightCount: Number(__elurikkusInFlightCount || 0),
+      elurikkusFetchCountTotal: Number(__elurikkusFetchCountTotal || 0),
+      elurikkusFetchCountBySpecies: elurikkusTopCounts,
       lastElurikkusSpeciesFetched: __lastElurikkusSpeciesFetched || '',
       lastElurikkusUrl: __lastElurikkusUrl || '',
       lastElurikkusLatestOccurrenceAt: __lastElurikkusLatestOccurrenceAt || '',
@@ -2434,6 +2503,9 @@ function _updateDebugProPanel(){
     '</details></div>' +
     '<div class="debug-pro-sec"><div class="debug-pro-title">Upstream debug</div>' +
     '<div>inFlight: <b>' + (dbg.upstreamDebug.inFlight ? 'true' : 'false') + '</b></div>' +
+    '<div>elurikkusInFlightCount: <b>' + (dbg.upstreamDebug.elurikkusInFlightCount || 0) + '</b></div>' +
+    '<div>elurikkusFetchCountTotal: <b>' + (dbg.upstreamDebug.elurikkusFetchCountTotal || 0) + '</b></div>' +
+    '<div>elurikkusFetchCountBySpecies(top10): <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.elurikkusFetchCountBySpecies || []).replace(/</g,'&lt;') + '</span></div>' +
     '<div>lastElurikkusSpeciesFetched: <b>' + (dbg.upstreamDebug.lastElurikkusSpeciesFetched || '-') + '</b></div>' +
     '<div>lastElurikkusUrl: <span class="debug-pro-code">' + (dbg.upstreamDebug.lastElurikkusUrl || '-') + '</span></div>' +
     '<div>lastElurikkusLatestOccurrenceAt: <b>' + (dbg.upstreamDebug.lastElurikkusLatestOccurrenceAt || '-') + '</b></div>' +
@@ -3412,16 +3484,19 @@ function rowHTML(obj) {
       : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
   const meta = '<div class="meta-grid"><div class="meta-row1">'+metaRow1+'</div><div class="meta-row2">'+springTxt+'</div></div>';
   const up = __elurikkusBySpecies[key] || null;
+  const isUpLoading = __elurikkusInFlightBySpecies.has(_normalizeSpeciesKey(key));
+  const fetchCount = Number(__elurikkusFetchCountBySpecies[_normalizeSpeciesKey(key)] || 0);
   const upLine = up
     ? ('<div class="small" style="margin-top:4px">' +
       'Elurikkus: ' + (up.status || '-') +
+      ' | fetched ' + fetchCount + 'x' +
       (up.durationMs != null ? (' | ' + up.durationMs + 'ms') : '') +
       (up.bytes != null ? (' | ' + up.bytes + 'b') : '') +
       (up.latestOccurrenceAt ? (' | latest: ' + formatDateTimeEE(up.latestOccurrenceAt)) : '') +
       ((Number.isFinite(up.publicCount) || Number.isFinite(up.restrictedCount)) ? (' | coords public/restricted: ' + (up.publicCount || 0) + '/' + (up.restrictedCount || 0)) : '') +
       (up.error ? (' | error: ' + up.error) : '') +
       '</div>')
-    : '';
+    : ('<div class="small" style="margin-top:4px">Elurikkus: - | fetched ' + fetchCount + 'x</div>');
 
   return '<div class="row" data-key="'+key+'">' +
     '<div class="avatar" style="background-image:url(\''+getDisplayAvatar(key)+'\');border:3px solid '+bcol+'"></div>' +
@@ -3435,7 +3510,7 @@ function rowHTML(obj) {
     '<div class="controls">' +
       '<div style="display:flex;flex-direction:column;gap:6px">' +
       '<a class="btn" target="_blank" href="'+obj.url+'">Open</a>' +
-      '<button class="btn secondary fetch-elurikkus-btn" data-species="'+key+'" title="Fetch from Elurikkus via server proxy">Fetch (Elurikkus)</button>' +
+      '<button class="btn secondary fetch-elurikkus-btn" data-species="'+key+'" '+(isUpLoading?'disabled':'')+' title="Fetch from Elurikkus via server proxy">Fetch (Elurikkus)</button>' +
       '</div>' +
     '</div>' +
   '</div>';

@@ -643,6 +643,7 @@ let __watchdogTimer = null;
 let __lastAutoKickAt = 0;
 let __forceRetryInFlight = false;
 let __supabaseConfigReady = false;
+let __bootLoadStarted = false;
 let __snapshotLoadRetryCount = 0;
 let __lastHangProgressDone = -1;
 let __hangKickCount = 0;
@@ -910,10 +911,11 @@ function _clearDebugEvents(){
 
 function _requestSupabaseConfigFromParent(){
   try{
+    const cfg = resolveSupabaseConfig();
     pushDebugEvent('CONFIG_REQUEST', 'Requesting SUPABASE_CONFIG from parent', {
-      resolvedSupabaseUrl: _resolveSupabaseUrlLocal() || '',
+      resolvedSupabaseUrl: cfg.supabaseUrl || '',
       resolvedFunctionsBase: SNAPSHOT_API || '',
-      anonKeyMasked: _maskKey(_resolveSupabaseAnonKeyLocal()),
+      anonKeyMasked: _maskKey(cfg.anonKey || ''),
     });
     if(window.parent && window.parent !== window){
       window.parent.postMessage({ type: 'SUPABASE_CONFIG_REQUEST' }, '*');
@@ -951,14 +953,10 @@ function _scheduleLoadSnapshotRetry(reason){
     __lastInfoMessage = 'Config update queued (' + reason + ')';
     pushDebugEvent('SNAPSHOT_RETRY', 'Queued snapshot reload from config update', { reason: reason, runId: __runId });
     if(__snapshotInFlightRef){
-      if(!__configReloadAbortIssued){
-        __configReloadAbortIssued = true;
-        try{ if(__activeStepController) __activeStepController.abort('config_retry'); }catch(e){}
-      }
+      // Keep single-flight deterministic: let current request finish, then run one follow-up reload.
       return;
     }
     __pendingReload = false;
-    __configReloadAbortIssued = false;
     loadSnapshot(false);
   }, CONFIG_RELOAD_DEBOUNCE_MS);
 }
@@ -1022,7 +1020,7 @@ function _scheduleRateLimitRetry(retryAfterSec){
   }, delayMs);
 }
 function _withSupabaseAuthHeaders(headers){
-  const anon = _resolveSupabaseAnonKeyLocal();
+  const anon = resolveSupabaseConfig().anonKey;
   const merged = Object.assign({}, headers || {});
   if(anon){
     merged['apikey'] = anon;
@@ -1198,54 +1196,75 @@ function _getResumeIndex(){
     return idx;
   } catch(e){ return 0; }
 }
-function _resolveSupabaseUrlLocal(){
+function resolveSupabaseConfig(){
+  let overrideUrl = '';
+  let overrideKey = '';
+  let legacyKey = '';
   try{
-    const fromOverride = (localStorage.getItem(SUPABASE_URL_OVERRIDE_KEY) || '').trim();
-    return fromOverride || (__resolvedSupabaseUrl || '');
-  }catch(e){
-    return (__resolvedSupabaseUrl || '');
-  }
-}
-function _resolveSupabaseUrlWithSource(){
-  try{
-    const fromOverride = (localStorage.getItem(SUPABASE_URL_OVERRIDE_KEY) || '').trim();
-    if(fromOverride) return { value: fromOverride, source: 'settings override' };
+    overrideUrl = String(localStorage.getItem(SUPABASE_URL_OVERRIDE_KEY) || '').trim();
+    overrideKey = String(localStorage.getItem(SUPABASE_KEY_OVERRIDE_KEY) || '').trim();
+    legacyKey = String(localStorage.getItem(SUPABASE_LEGACY_ANON_OVERRIDE_KEY) || '').trim();
   }catch(e){}
-  if(__resolvedSupabaseUrl) return { value: __resolvedSupabaseUrl, source: 'runtime config' };
+  if(overrideUrl){
+    return {
+      supabaseUrl: overrideUrl.replace(/\/+$/, ''),
+      anonKey: overrideKey || legacyKey || __resolvedSupabaseAnonKey || '',
+      anonKeyPresent: !!(overrideKey || legacyKey || __resolvedSupabaseAnonKey),
+      supabaseUrlSource: 'settings override',
+      anonKeySource: overrideKey ? 'settings override' : (legacyKey ? 'legacy settings override' : (__resolvedSupabaseAnonKey ? 'runtime config' : 'missing')),
+    };
+  }
+  if(__resolvedSupabaseUrl){
+    return {
+      supabaseUrl: String(__resolvedSupabaseUrl).replace(/\/+$/, ''),
+      anonKey: overrideKey || legacyKey || __resolvedSupabaseAnonKey || '',
+      anonKeyPresent: !!(overrideKey || legacyKey || __resolvedSupabaseAnonKey),
+      supabaseUrlSource: 'runtime config',
+      anonKeySource: overrideKey ? 'settings override' : (legacyKey ? 'legacy settings override' : (__resolvedSupabaseAnonKey ? 'runtime config' : 'missing')),
+    };
+  }
   const fromSnapshotApi = String(SNAPSHOT_API || '').trim();
   if(fromSnapshotApi && fromSnapshotApi.indexOf('/functions/v1/linnuliigid-snapshot') > 0){
-    return { value: fromSnapshotApi.split('/functions/v1/linnuliigid-snapshot')[0], source: 'runtime snapshot api' };
+    return {
+      supabaseUrl: fromSnapshotApi.split('/functions/v1/linnuliigid-snapshot')[0].replace(/\/+$/, ''),
+      anonKey: overrideKey || legacyKey || __resolvedSupabaseAnonKey || '',
+      anonKeyPresent: !!(overrideKey || legacyKey || __resolvedSupabaseAnonKey),
+      supabaseUrlSource: 'runtime snapshot api',
+      anonKeySource: overrideKey ? 'settings override' : (legacyKey ? 'legacy settings override' : (__resolvedSupabaseAnonKey ? 'runtime config' : 'missing')),
+    };
   }
   const inferred = _extractSnapshotApiFromLastRequest();
   if(inferred){
     const marker = '/functions/v1/linnuliigid-snapshot';
     const idx = inferred.indexOf(marker);
-    const base = idx > 0 ? inferred.slice(0, idx) : inferred;
-    return { value: base, source: 'inferred from snapshot URL' };
+    const base = (idx > 0 ? inferred.slice(0, idx) : inferred).replace(/\/+$/, '');
+    return {
+      supabaseUrl: base,
+      anonKey: overrideKey || legacyKey || __resolvedSupabaseAnonKey || '',
+      anonKeyPresent: !!(overrideKey || legacyKey || __resolvedSupabaseAnonKey),
+      supabaseUrlSource: 'inferred from snapshot URL',
+      anonKeySource: overrideKey ? 'settings override' : (legacyKey ? 'legacy settings override' : (__resolvedSupabaseAnonKey ? 'runtime config' : 'missing')),
+    };
   }
-  return { value: '', source: 'missing' };
+  return { supabaseUrl: '', anonKey: '', anonKeyPresent: false, supabaseUrlSource: 'missing', anonKeySource: 'missing' };
+}
+function _resolveSupabaseUrlLocal(){
+  return resolveSupabaseConfig().supabaseUrl || '';
+}
+function _resolveSupabaseUrlWithSource(){
+  const cfg = resolveSupabaseConfig();
+  return { value: cfg.supabaseUrl || '', source: cfg.supabaseUrlSource || 'missing' };
 }
 function _resolveSupabaseAnonKeyWithSource(){
-  try{
-    const k1 = (localStorage.getItem(SUPABASE_KEY_OVERRIDE_KEY) || '').trim();
-    if(k1) return { value: k1, source: 'settings override' };
-    const k2 = (localStorage.getItem(SUPABASE_LEGACY_ANON_OVERRIDE_KEY) || '').trim();
-    if(k2) return { value: k2, source: 'legacy settings override' };
-  }catch(e){}
-  if(__resolvedSupabaseAnonKey) return { value: __resolvedSupabaseAnonKey, source: 'runtime config' };
-  return { value: '', source: 'missing' };
+  const cfg = resolveSupabaseConfig();
+  return { value: cfg.anonKey || '', source: cfg.anonKeySource || 'missing' };
 }
 function _resolveSupabaseAnonKeyLocal(){
-  try{
-    const k1 = (localStorage.getItem(SUPABASE_KEY_OVERRIDE_KEY) || '').trim();
-    const k2 = (localStorage.getItem(SUPABASE_LEGACY_ANON_OVERRIDE_KEY) || '').trim();
-    return k1 || k2 || (__resolvedSupabaseAnonKey || '');
-  }catch(e){
-    return (__resolvedSupabaseAnonKey || '');
-  }
+  return resolveSupabaseConfig().anonKey || '';
 }
 function _validateSupabaseLocal(){
-  const url = String(_resolveSupabaseUrlWithSource().value || '').replace(/\/+$/, '');
+  const cfg = resolveSupabaseConfig();
+  const url = String(cfg.supabaseUrl || '').replace(/\/+$/, '');
   if(!url) return { ok:false, error:'Supabase URL puudub. Lisa see Settings override alt.' };
   if(!/^https:\/\//.test(url)) return { ok:false, error:'Supabase URL vigane: peab algama https:// (' + url + ')' };
   if(url.indexOf('.supabase.co') === -1) return { ok:false, error:'Supabase URL vigane: peab sisaldama .supabase.co (' + url + ')' };
@@ -1282,11 +1301,18 @@ function _resolveSnapshotApi(){
 }
 function _resolveSnapshotControlApi(){
   const validation = _validateSupabaseLocal();
-  if(!validation.ok){
-    throw new Error(validation.error);
+  if(validation.ok){
+    SNAPSHOT_CONTROL_API = validation.url + '/functions/v1/linnuliigid-control';
+    return SNAPSHOT_CONTROL_API;
   }
-  SNAPSHOT_CONTROL_API = validation.url + '/functions/v1/linnuliigid-control';
-  return SNAPSHOT_CONTROL_API;
+  const snapApi = _resolveSnapshotApi();
+  const marker = '/functions/v1/linnuliigid-snapshot';
+  const idx = String(snapApi || '').indexOf(marker);
+  if(idx > 0){
+    SNAPSHOT_CONTROL_API = String(snapApi).slice(0, idx) + '/functions/v1/linnuliigid-control';
+    return SNAPSHOT_CONTROL_API;
+  }
+  throw new Error(validation.error);
 }
 function _makeAbortError(reason, durationMs, timeoutMs){
   const err = new Error('Aborted (' + (reason || 'unknown') + ') after ' + Math.round(durationMs) + 'ms; timeout=' + timeoutMs + '; stopAborted=' + __stopSignalAbortedAtStart);
@@ -1407,7 +1433,7 @@ async function fetchJsonWithTimeout(url, opts){
       const reason = getAbortReason(combinedSignal) || getAbortReason(timeoutCtrl.signal) || 'aborted';
       const dur = performance.now() - t0;
       _traceEnd(traceId, { errorType: 'abort', abortReason: reason, details: { message: String(e && e.message ? e.message : e) } });
-      pushDebugEvent('FETCH_FAIL', 'Request aborted', {
+      pushDebugEvent('FETCH_ABORT', 'Request aborted', {
         url:fetchUrl, runId:runId, index:index, wasAbortError: (e && e.name === 'AbortError') || false,
         abortReason: reason,
         abortReasonStopSignal: getAbortReason(__stopController && __stopController.signal),
@@ -1454,7 +1480,7 @@ async function fetchWithTimeout(url, init, ms, runId){
   const stopRelay = function(){
     const sr = getAbortReason(localStopController && localStopController.signal);
     if(sr === 'stop' || __abortReasonHint === 'user') abortReason = 'stop';
-    else if(sr === 'replace' || sr === 'retry' || sr === 'config_retry') abortReason = sr;
+    else if(sr === 'replace' || sr === 'retry') abortReason = sr;
     else abortReason = 'replace';
     controller.abort(abortReason);
   };
@@ -1507,7 +1533,7 @@ async function fetchWithTimeout(url, init, ms, runId){
       const reason = (abortReason === 'unknown' && __abortReasonHint) ? __abortReasonHint : abortReason;
       __lastDurationMs = Math.round(durationMs);
       _traceEnd(traceId, { errorType: 'abort', abortReason: reason, details: { message: String(e && e.message ? e.message : e) } });
-      pushDebugEvent('FETCH_FAIL', 'Request aborted', {
+      pushDebugEvent('FETCH_ABORT', 'Request aborted', {
         url: url,
         wasAbortError: (e && e.name === 'AbortError') || false,
         abortReason: reason,
@@ -2270,10 +2296,6 @@ async function _loadSnapshotImpl(){
 
 function loadSnapshotOnce(force){
   if(force && __snapshotInFlightRef) __pendingReload = true;
-  if(force && __snapshotInFlightRef && !__configReloadAbortIssued){
-    __configReloadAbortIssued = true;
-    try{ if(__activeStepController) __activeStepController.abort('config_retry'); }catch(e){}
-  }
   if(__snapshotInFlightRef){
     pushDebugEvent('SNAPSHOT_LOAD_JOIN', 'Joining in-flight snapshot load', {
       startedAtMs: __snapshotInFlightStartedAtMs,
@@ -2678,8 +2700,11 @@ window.addEventListener('message', function(ev){
     if(t === 'SUPABASE_CONFIG'){
       const hadNoApi = !SNAPSHOT_API;
       const hadUrlMissingErr = ((__lastErrorMessage || '').indexOf('Supabase URL puudub') >= 0);
+      const prevCfg = resolveSupabaseConfig();
       __resolvedSupabaseUrl = String(ev.data.supabaseUrl || '').trim();
       __resolvedSupabaseAnonKey = String(ev.data.supabaseAnonKey || '').trim();
+      const nextCfg = resolveSupabaseConfig();
+      const materialChanged = (String(prevCfg.supabaseUrl || '') !== String(nextCfg.supabaseUrl || '')) || (String(prevCfg.anonKey || '') !== String(nextCfg.anonKey || ''));
       __configArrivedAtMs = Date.now();
       __supabaseConfigReady = !!__resolvedSupabaseUrl;
       if(hadUrlMissingErr) __lastErrorMessage = '';
@@ -2691,7 +2716,11 @@ window.addEventListener('message', function(ev){
       });
       __snapshotMeta.status = null;
       try { _resolveSnapshotApi(); } catch(e) {}
-      if(hadNoApi || hadUrlMissingErr || !__snapshotMeta.generated_at){
+      if(!__bootLoadStarted && __supabaseConfigReady){
+        __bootLoadStarted = true;
+        fetchServerMeta();
+        loadSnapshot();
+      } else if(materialChanged && (hadNoApi || hadUrlMissingErr || !__snapshotMeta.generated_at)){
         pushDebugEvent('SNAPSHOT_RETRY_REASON', 'Retry reason supabase_config', { hadNoApi: hadNoApi, hadUrlMissingErr: hadUrlMissingErr }, 'warn');
         _scheduleLoadSnapshotRetry('supabase_config');
       }
@@ -2964,11 +2993,32 @@ function render() {
 // Restore existing markers from localStorage and render list
 refreshAllMarkers();
 _wireSnapshotButtons();
-fetchServerMeta();
-_startServerMetaPolling();
-
-// Load snapshot from server (single request - replaces 369 client fetches)
-loadSnapshot();
+function _startSnapshotBoot(){
+  if(__bootLoadStarted) return;
+  const cfg = resolveSupabaseConfig();
+  if(cfg.supabaseUrl){
+    __supabaseConfigReady = true;
+    __bootLoadStarted = true;
+    fetchServerMeta();
+    _startServerMetaPolling();
+    loadSnapshot();
+    return;
+  }
+  __supabaseConfigReady = false;
+  _requestSupabaseConfigFromParent();
+  setTimeout(function(){
+    if(__bootLoadStarted) return;
+    const lateCfg = resolveSupabaseConfig();
+    if(lateCfg.supabaseUrl){
+      __supabaseConfigReady = true;
+      __bootLoadStarted = true;
+      fetchServerMeta();
+      _startServerMetaPolling();
+      loadSnapshot();
+    }
+  }, 1500);
+}
+_startSnapshotBoot();
 
 // Auto-detect avatar files for active species
 setTimeout(autoDetectAvatarsForActive, 3000);
@@ -3033,6 +3083,7 @@ try{
 }catch(e){}
 document.addEventListener('DOMContentLoaded', function(){
   _requestSupabaseConfigFromParent();
+  _startSnapshotBoot();
 });
 </script>
 

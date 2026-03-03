@@ -15,16 +15,22 @@ const ALLOWED_DOMAINS = [
   "external-preview.redd.it",
 ] as const;
 const BROWSER_UA = "Mozilla/5.0 (Linux; Android 14; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36";
-const proxyCorsHeaders = {
+const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET,HEAD,POST,OPTIONS",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
-function json(status: number, body: unknown): Response {
+function withCors(resp: Response): Response {
+  const h = new Headers(resp.headers);
+  for (const [k, v] of Object.entries(corsHeaders)) h.set(k, v);
+  return new Response(resp.body, { status: resp.status, headers: h });
+}
+
+function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...proxyCorsHeaders, "content-type": "application/json; charset=utf-8" },
+    headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
   });
 }
 
@@ -54,19 +60,22 @@ function sampleFromBytes(bytes: Uint8Array, maxChars = 300): string {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: proxyCorsHeaders });
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   const reqUrl = new URL(req.url);
+  if (req.method === "GET" && reqUrl.pathname.endsWith("/proxy") && reqUrl.searchParams.get("ping") === "1") {
+    return json({ ok: true, fn: "proxy" });
+  }
   const isTranslateRoute = reqUrl.pathname.endsWith("/proxy/translate-et");
 
     if (isTranslateRoute) {
       if (req.method === "GET" && reqUrl.searchParams.get("ping") === "1") {
-        return json(200, { ok: true, fn: "proxy/translate-et" });
+        return json({ ok: true, fn: "proxy/translate-et" });
       }
 
       if (req.method !== "POST") {
-        return json(405, { ok: false, error: "METHOD_NOT_ALLOWED" });
+        return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
       }
 
     const body = await req.json().catch(() => ({}));
@@ -74,11 +83,11 @@ Deno.serve(async (req) => {
     const targetLang = String(body?.targetLang || "et").trim() || "et";
     const sourceLang = String(body?.sourceLang || "").trim();
 
-    if (!text) return json(400, { ok: false, error: "MISSING_TEXT" });
-    if (text.length > 12_000) return json(413, { ok: false, error: "TEXT_TOO_LARGE" });
+    if (!text) return json({ ok: false, error: "MISSING_TEXT" }, 400);
+    if (text.length > 12_000) return json({ ok: false, error: "TEXT_TOO_LARGE" }, 413);
 
     const apiKey = Deno.env.get("OPENAI_API_KEY")?.trim();
-    if (!apiKey) return json(500, { ok: false, error: "OPENAI_API_KEY_MISSING" });
+    if (!apiKey) return json({ ok: false, error: "OPENAI_API_KEY_MISSING" }, 500);
 
     const system = `You are a translation engine. Translate the user text to ${targetLang}. Return ONLY the translation, preserve paragraphs.`;
     const user = sourceLang
@@ -103,41 +112,41 @@ Deno.serve(async (req) => {
         }),
       });
     } catch (error) {
-      return json(502, { ok: false, error: "OPENAI_ERROR", details: String(error).slice(0, 400) });
+      return json({ ok: false, error: "OPENAI_ERROR", details: String(error).slice(0, 400) }, 502);
     }
 
     if (!upstream.ok) {
       const details = await upstream.text().catch(() => "");
-      return json(502, { ok: false, error: "OPENAI_ERROR", status: upstream.status, details: details.slice(0, 400) });
+      return json({ ok: false, error: "OPENAI_ERROR", status: upstream.status, details: details.slice(0, 400) }, 502);
     }
 
     const payload = await upstream.json().catch(() => ({}));
     const translatedText = String(payload?.choices?.[0]?.message?.content || "").trim();
-    return json(200, { ok: true, translatedText });
+    return json({ ok: true, translatedText }, 200);
   }
 
-  if (req.method !== "GET" && req.method !== "HEAD") {
-    return json(405, { error: "method_not_allowed" });
+  if (req.method !== "GET") {
+    return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
   }
 
   const rawUrl = (reqUrl.searchParams.get("url") || "").trim();
   if (!rawUrl) {
-    return json(400, { error: "missing_url" });
+    return json({ ok: false, error: "MISSING_URL" }, 400);
   }
 
   let target: URL;
   try {
     target = new URL(rawUrl);
   } catch {
-    return json(400, { error: "invalid_url" });
+    return json({ ok: false, error: "INVALID_URL" }, 400);
   }
 
   if (target.protocol !== "https:") {
-    return json(400, { error: "only_https_allowed" });
+    return json({ ok: false, error: "ONLY_HTTPS_ALLOWED" }, 400);
   }
 
   if (!isAllowedHost(target.hostname)) {
-    return json(403, { error: "domain_not_allowed", host: target.hostname });
+    return json({ ok: false, error: "DOMAIN_NOT_ALLOWED", host: target.hostname }, 403);
   }
 
   let upstream: Response;
@@ -158,7 +167,7 @@ Deno.serve(async (req) => {
       headers: fetchHeaders,
     });
   } catch (e) {
-    return json(502, { error: "upstream_fetch_failed", message: String(e) });
+    return json({ ok: false, error: "UPSTREAM_FETCH_FAILED", message: String(e) }, 502);
   }
 
   const bytes = new Uint8Array(await upstream.arrayBuffer());
@@ -168,12 +177,13 @@ Deno.serve(async (req) => {
   const sampleLower = sample.slice(0, 40).toLowerCase();
 
   if (!upstream.ok) {
-    return json(upstream.status, {
+    return json({
+      ok: false,
       error: "upstream_non_ok",
       status: upstream.status,
       targetUrl: target.toString(),
       snippet: sample.slice(0, 200),
-    });
+    }, upstream.status);
   }
 
   const isHtmlByType = contentType.toLowerCase().startsWith("text/html");
@@ -185,17 +195,18 @@ Deno.serve(async (req) => {
       sample: sample.slice(0, 300),
       targetUrl: target.toString(),
     });
-    return json(502, {
+    return json({
+      ok: false,
       error: "upstream_not_image",
       status: upstream.status,
       contentType,
       sample: sample.slice(0, 300),
-    });
+    }, 502);
   }
 
-  return new Response(bytes, {
+  return withCors(new Response(bytes, {
     status: upstream.status,
-    headers: { ...proxyCorsHeaders, "content-type": contentType, "Cache-Control": "public, max-age=86400" },
-  });
+    headers: { "content-type": contentType, "Cache-Control": "public, max-age=86400" },
+  }));
 });
 

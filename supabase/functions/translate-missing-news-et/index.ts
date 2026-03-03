@@ -1,77 +1,178 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getOpenAIConfig } from "../_shared/openai.ts";
-import { jsonResponse, translateNewsItemToEt } from "../_shared/news-translation.ts";
+import { getOpenAIConfig, translateToEstonian } from "../_shared/openai.ts";
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
+};
+
+type MissingNewsItem = {
+  id: string;
+  source_key: string | null;
+  source_lang: string | null;
+  title: string | null;
+  body: string | null;
+  title_et: string | null;
+  body_et: string | null;
+};
+
+function jsonResponse(status: number, payload: unknown): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function normalizeLocaleCode(value: string | null | undefined): string {
+  const trimmed = String(value || "").trim().toLowerCase();
+  if (!trimmed) return "";
+  return trimmed.split(/[-_]/)[0] || trimmed;
+}
+
+function hasText(value: string | null | undefined): boolean {
+  return String(value || "").trim().length > 0;
+}
+
+async function updateTranslatedRow(
+  supabase: ReturnType<typeof createClient>,
+  id: string,
+  title_et: string,
+  body_et: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const basePayload = {
+    title_et: title_et || null,
+    body_et: body_et || null,
+  } as Record<string, unknown>;
+
+  const fullPayload = {
+    ...basePayload,
+    translated_at: new Date().toISOString(),
+    translation_status: "done",
+    translation_error: null,
+  };
+
+  const full = await supabase.from("news_items").update(fullPayload).eq("id", id);
+  if (!full.error) return { ok: true };
+
+  const message = String(full.error.message || "").toLowerCase();
+  const missingStatusColumn = message.includes("column") && (
+    message.includes("translation_status") || message.includes("translation_error") || message.includes("translated_at")
+  );
+
+  if (!missingStatusColumn) {
+    return { ok: false, error: String(full.error.message || "update failed") };
+  }
+
+  const retry = await supabase.from("news_items").update(basePayload).eq("id", id);
+  if (retry.error) {
+    return { ok: false, error: String(retry.error.message || "update failed") };
+  }
+  return { ok: true };
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return jsonResponse(200, null);
-  if (req.method !== "POST") return jsonResponse(405, { error: "Method not allowed" });
-
   try {
-    if (!getOpenAIConfig()) return jsonResponse(400, { error: "Translation not configured" });
+    if (req.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: corsHeaders });
+    }
+
+    const reqUrl = new URL(req.url);
+    if (req.method === "GET" && reqUrl.searchParams.get("ping") === "1") {
+      return jsonResponse(200, { ok: true });
+    }
+
+    if (req.method !== "POST") {
+      return jsonResponse(405, { ok: false, error: "METHOD_NOT_ALLOWED" });
+    }
+
+    const supabaseUrl = String(Deno.env.get("SUPABASE_URL") || "").trim();
+    const serviceRole = String(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+    if (!supabaseUrl || !serviceRole) {
+      return jsonResponse(500, { ok: false, error: "SERVICE_ROLE_MISSING" });
+    }
+
+    if (!getOpenAIConfig()) {
+      return jsonResponse(400, { ok: false, error: "OPENAI_API_KEY_MISSING" });
+    }
 
     const body = await req.json().catch(() => ({}));
-    const limit = Number.isFinite(body?.limit) ? Math.max(1, Math.min(100, Number(body.limit))) : 20;
-    const includeArchived = body?.include_archived === true;
-    const onlySourceKey = typeof body?.source_key === "string" && body.source_key.trim()
+    const limitRaw = Number(body?.limit);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(100, limitRaw)) : 20;
+    const sourceKey = typeof body?.source_key === "string" && body.source_key.trim()
       ? body.source_key.trim()
       : null;
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
+    const supabase = createClient(supabaseUrl, serviceRole);
 
     let query = supabase
       .from("news_items")
-      .select("id, source_key, title, body, source_lang, title_et, body_et, translate_hash")
-      .neq("source_key", "eoy")
-      .or("title_et.is.null,body_et.is.null,translation_status.eq.pending,translation_status.eq.error")
+      .select("id, source_key, source_lang, title, body, title_et, body_et")
+      .or("title_et.is.null,body_et.is.null")
       .order("published_at", { ascending: false })
-      .limit(limit);
+      .limit(limit * 2);
 
-    if (!includeArchived) query = query.eq("archived", false);
-    if (onlySourceKey) query = query.eq("source_key", onlySourceKey);
+    if (sourceKey) query = query.eq("source_key", sourceKey);
 
-    const { data: items, error } = await query;
-    if (error) throw error;
-    if (!items || items.length === 0) {
-      return jsonResponse(200, { success: true, scanned: 0, translated: 0, skipped: 0, failed: 0 });
+    const { data, error } = await query;
+    if (error) {
+      return jsonResponse(500, { ok: false, error: String(error.message || "QUERY_FAILED") });
     }
 
-    let translated = 0;
-    let skipped = 0;
-    let failed = 0;
-    let failureStreak = 0;
+    const candidates = ((data || []) as MissingNewsItem[])
+      .filter((row) => hasText(row.title) || hasText(row.body))
+      .slice(0, limit);
 
-    for (const item of items) {
-      const result = await translateNewsItemToEt(supabase, item);
-      if (result.status === "error") {
-        failed++;
-        failureStreak++;
-      } else if (result.skipped) {
-        skipped++;
-        failureStreak = 0;
-      } else {
-        translated++;
-        failureStreak = 0;
+    let processed = 0;
+    const updated: Array<{ id: string; title_et: string; body_et: string }> = [];
+    const errors: Array<{ id: string; error: string }> = [];
+
+    for (const item of candidates) {
+      processed += 1;
+      try {
+        if (hasText(item.title_et) && hasText(item.body_et)) {
+          updated.push({ id: item.id, title_et: String(item.title_et || ""), body_et: String(item.body_et || "") });
+          continue;
+        }
+
+        const title = String(item.title || "");
+        const bodyText = String(item.body || "");
+        const lang = normalizeLocaleCode(item.source_lang);
+        const isEstonian = item.source_key === "eoy" || lang === "et";
+
+        const translated = isEstonian
+          ? { title_et: title, body_et: bodyText }
+          : await translateToEstonian({
+            title,
+            body: bodyText,
+            sourceLang: lang || "auto",
+          });
+
+        const persist = await updateTranslatedRow(supabase, item.id, translated.title_et, translated.body_et);
+        if (!persist.ok) {
+          errors.push({ id: item.id, error: persist.error });
+          continue;
+        }
+
+        updated.push({
+          id: item.id,
+          title_et: String(translated.title_et || ""),
+          body_et: String(translated.body_et || ""),
+        });
+      } catch (e) {
+        const errorText = String((e as Error)?.message || e || "TRANSLATE_FAILED").slice(0, 240);
+        errors.push({ id: item.id, error: errorText });
+        await supabase
+          .from("news_items")
+          .update({ translation_status: "error", translation_error: errorText })
+          .eq("id", item.id)
+          .then(() => undefined)
+          .catch(() => undefined);
       }
-
-      const backoffMs = failureStreak > 0 ? Math.min(3000, 500 * failureStreak) : 200;
-      await sleep(backoffMs);
     }
 
-    return jsonResponse(200, {
-      success: true,
-      scanned: items.length,
-      translated,
-      skipped,
-      failed,
-    });
-  } catch (error) {
-    return jsonResponse(500, { error: (error as Error)?.message || String(error) });
+    return jsonResponse(200, { ok: true, processed, updated, errors });
+  } catch (e) {
+    return jsonResponse(500, { ok: false, error: String((e as Error)?.message || e || "UNEXPECTED_ERROR") });
   }
 });

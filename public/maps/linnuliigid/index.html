@@ -661,6 +661,7 @@ let __snapshotInFlightStartedAtMs = 0;
 let __activeFetchStartedAtMs = 0;
 let __pollLoopToken = 0;
 let __snapshotAutoRefreshTimer = null;
+let __serverMetaPollTimer = null;
 let __rateLimitRetryTimer = null;
 let __rateLimitCountdownTimer = null;
 let __rateLimitRetryAtMs = 0;
@@ -682,11 +683,12 @@ const SNAPSHOT_AUTO_REFRESH_MS = 180000;
 const CONFIG_RELOAD_DEBOUNCE_MS = 500;
 const WATCHDOG_MS = 15000;
 let __snapshotErrorRetryAttempt = 0;
-let __serverSnapshotEtag = '';
+let __serverSnapshotId = '';
 let __serverGeneratedAt = '';
+let __serverBytes = 0;
 let __serverCheckedAt = '';
-let __lastProcessedServerEtag = '';
-let __lastLoadedServerEtag = '';
+let __lastProcessedSnapshotId = '';
+let __lastProcessedGeneratedAt = '';
 let __serverIsNewer = false;
 let __serverMetaAvailable = false;
 let __serverCheckStatus = 'idle'; // idle | checking | ok | error
@@ -756,11 +758,14 @@ function _copyDebugJson(){
     lastHttp: (__lastHttpStatus === null ? null : { method: __lastHttpMethod || 'GET', status: __lastHttpStatus, ok: __lastHttpOk, durationMs: __lastDurationMs }),
     lastSnapshotBytes: __lastResponseBytes,
     lastSnapshotHash: __lastSnapshotHash,
-    serverSnapshotEtag: __serverSnapshotEtag || '',
+    serverSnapshotId: __serverSnapshotId || '',
     serverGeneratedAt: __serverGeneratedAt || '',
+    serverBytes: Number(__serverBytes || 0),
     serverCheckedAt: __serverCheckedAt || '',
     serverIsNewer: !!__serverIsNewer,
     serverMetaAvailable: !!__serverMetaAvailable,
+    lastProcessedSnapshotId: __lastProcessedSnapshotId || '',
+    lastProcessedGeneratedAt: __lastProcessedGeneratedAt || '',
     serverCheckStatus: __serverCheckStatus || 'idle',
     serverCheckError: __serverCheckError || '',
     isReloading: __isReloading,
@@ -793,11 +798,12 @@ function _clearDebugEvents(){
   __lastDurationMs = null;
   __lastResponseBytes = null;
   __lastSnapshotHash = null;
-  __serverSnapshotEtag = '';
+  __serverSnapshotId = '';
   __serverGeneratedAt = '';
+  __serverBytes = 0;
   __serverCheckedAt = '';
-  __lastProcessedServerEtag = '';
-  __lastLoadedServerEtag = '';
+  __lastProcessedSnapshotId = '';
+  __lastProcessedGeneratedAt = '';
   __serverIsNewer = false;
   __serverMetaAvailable = false;
   __serverCheckStatus = 'idle';
@@ -943,8 +949,8 @@ function _withCacheBuster(url){
   const sep = base.indexOf('?') >= 0 ? '&' : '?';
   return base + sep + '_ts=' + Date.now();
 }
-function _shortEtag(etag){
-  const s = String(etag || '').replace(/^W\//,'').replace(/^"|"$/g,'');
+function _shortId(id){
+  const s = String(id || '').replace(/^W\//,'').replace(/^"|"$/g,'');
   if(!s) return '-';
   if(s.length <= 14) return s;
   return s.slice(0, 8) + '...' + s.slice(-4);
@@ -954,40 +960,68 @@ function _updateServerSnapshotStatus(){
   if(!el) return;
   const gen = __serverGeneratedAt ? _fmtTs(__serverGeneratedAt) : '-';
   const chk = __serverCheckedAt ? _fmtTs(__serverCheckedAt) : '-';
-  const tag = _shortEtag(__serverSnapshotEtag);
+  const id = _shortId(__serverSnapshotId);
   const freshness = !__serverMetaAvailable
-    ? 'Server meta unavailable (headers not exposed)'
-    : (__serverIsNewer ? 'New server data available' : 'No new server data');
+    ? 'Server meta not available'
+    : ((!__lastProcessedSnapshotId || __serverIsNewer) ? 'New server data available' : 'No new server data');
   const err = (__serverCheckStatus === 'error' && __serverCheckError) ? ('; check error: ' + __serverCheckError) : '';
-  el.textContent = 'Server snapshot: ' + gen + ' (ETag ' + tag + ') | Checked: ' + chk + ' | ' + freshness + err;
+  el.textContent = 'Server snapshot: ' + gen + ' | ID: ' + id + ' | Bytes: ' + String(Number(__serverBytes || 0) || '-') + ' | Checked: ' + chk + ' | ' + freshness + err;
 }
-async function checkServerSnapshot(){
+async function fetchServerMeta(){
   __serverCheckStatus = 'checking';
   __serverCheckError = '';
   _updateServerSnapshotStatus();
   try{
     const snapshotUrl = _resolveSnapshotApi();
-    const headUrl = _withCacheBuster(snapshotUrl);
-    const res = await fetch(headUrl, { method:'HEAD', cache:'no-store' });
-    const etag = String(res.headers.get('etag') || '').trim();
-    const generatedAt = String(res.headers.get('x-snapshot-generated-at') || '').trim();
-    __serverSnapshotEtag = etag;
-    __serverGeneratedAt = generatedAt;
+    const metaUrl = _withCacheBuster(snapshotUrl + (snapshotUrl.indexOf('?') >= 0 ? '&' : '?') + 'meta=1');
+    const res = await fetch(metaUrl, {
+      method:'GET',
+      cache:'no-store',
+      headers: { 'Accept': 'application/json' }
+    });
+    if(!res.ok) throw new Error('Meta fetch failed (HTTP ' + res.status + ')');
+    const meta = await res.json();
+    __serverSnapshotId = String((meta && meta.snapshotId) || '').trim();
+    __serverGeneratedAt = String((meta && meta.generatedAt) || '').trim();
+    __serverBytes = Number((meta && meta.bytes) || 0) || 0;
     __serverCheckedAt = new Date().toISOString();
-    __serverMetaAvailable = !!etag;
-    __serverIsNewer = !!(__serverMetaAvailable && (__serverSnapshotEtag !== __lastProcessedServerEtag));
+    __serverMetaAvailable = !!__serverSnapshotId;
+    __serverIsNewer = !!(__serverMetaAvailable && __lastProcessedSnapshotId && (__serverSnapshotId !== __lastProcessedSnapshotId));
     __serverCheckStatus = 'ok';
     _updateServerSnapshotStatus();
     _updateDebugPanel();
-    return { etag: etag, generatedAt: generatedAt, metaAvailable: __serverMetaAvailable };
+    return {
+      snapshotId: __serverSnapshotId,
+      generatedAt: __serverGeneratedAt,
+      bytes: __serverBytes,
+      metaAvailable: __serverMetaAvailable
+    };
   }catch(e){
     __serverCheckedAt = new Date().toISOString();
+    __serverMetaAvailable = false;
     __serverCheckStatus = 'error';
-    __serverCheckError = String((e && e.message) ? e.message : e || 'HEAD failed');
+    __serverCheckError = String((e && e.message) ? e.message : e || 'meta fetch failed');
     _updateServerSnapshotStatus();
     _updateDebugPanel();
     return null;
   }
+}
+function _startServerMetaPolling(){
+  if(__serverMetaPollTimer) clearInterval(__serverMetaPollTimer);
+  __serverMetaPollTimer = setInterval(function(){
+    if(__isReloading || __isRefreshRunning) return;
+    fetchServerMeta();
+  }, 180000);
+}
+async function loadSnapshotIfNeeded(force){
+  const shouldForce = !!force;
+  await fetchServerMeta();
+  if(shouldForce || __serverIsNewer || !__lastProcessedSnapshotId || !__serverMetaAvailable){
+    return loadSnapshot();
+  }
+  _showSnapshotBanner('No new server data. Snapshot reload skipped.');
+  setTimeout(_hideSnapshotBanner, 2500);
+  return null;
 }
 
 function _setResumeIndex(i){
@@ -1154,8 +1188,9 @@ async function fetchJsonWithTimeout(url, opts){
     return {
       data: json,
       meta: {
-        etag: String(res.headers.get('etag') || '').trim(),
-        generatedAt: String(res.headers.get('x-snapshot-generated-at') || '').trim(),
+        snapshotId: String((json && json.snapshotId) || '').trim(),
+        generatedAt: String((json && json.generatedAt) || (json && json.generated_at) || '').trim(),
+        bytes: Number((json && json.snapshotBytes) || __lastBodyBytes || 0) || 0,
       }
     };
   }catch(e){
@@ -1515,12 +1550,15 @@ function _updateDebugPanel(){
     'lastHttp: <b>{ method: ' + (__lastHttpMethod ?? '-') + ', status: ' + (__lastHttpStatus ?? '-') + ', ok: ' + (__lastHttpOk ?? '-') + ', durationMs: ' + (__lastDurationMs ?? '-') + ' }</b>',
     'lastSnapshotBytes: <b>' + (__lastResponseBytes ?? '-') + '</b>',
     'lastSnapshotHash: <b>' + (__lastSnapshotHash ?? '-') + '</b>',
-    'serverSnapshotEtag: <b>' + (_shortEtag(__serverSnapshotEtag)) + '</b>',
+    'serverSnapshotId: <b>' + (_shortId(__serverSnapshotId)) + '</b>',
     'serverGeneratedAt: <b>' + (_fmtTs(__serverGeneratedAt)) + '</b>',
+    'serverBytes: <b>' + (Number(__serverBytes || 0) || '-') + '</b>',
     'serverCheckedAt: <b>' + (_fmtTs(__serverCheckedAt)) + '</b>',
     'serverCheckStatus: <b>' + (__serverCheckStatus || 'idle') + '</b>',
     'serverMetaAvailable: <b>' + (__serverMetaAvailable ? 'true' : 'false') + '</b>',
     'serverIsNewer: <b>' + (__serverIsNewer ? 'true' : 'false') + '</b>',
+    'lastProcessedSnapshotId: <b>' + (_shortId(__lastProcessedSnapshotId)) + '</b>',
+    'lastProcessedGeneratedAt: <b>' + (_fmtTs(__lastProcessedGeneratedAt)) + '</b>',
     'serverCheckError: <b>' + (__serverCheckError || '-') + '</b>',
     'isReloading: <b>' + (__isReloading ? 'true' : 'false') + '</b>',
     'loaderStage: <b>' + (__loaderStage || '-') + '</b>',
@@ -1616,12 +1654,12 @@ async function _loadSnapshotImpl(){
     });
     const snap = snapResp && snapResp.data ? snapResp.data : {};
     if(snapResp && snapResp.meta){
-      __serverSnapshotEtag = String(snapResp.meta.etag || '');
-      __serverGeneratedAt = String(snapResp.meta.generatedAt || (__serverGeneratedAt || ''));
+      __serverSnapshotId = String(snapResp.meta.snapshotId || (snap && snap.snapshotId) || '');
+      __serverGeneratedAt = String(snapResp.meta.generatedAt || (snap && (snap.generatedAt || snap.generated_at)) || (__serverGeneratedAt || ''));
+      __serverBytes = Number(snapResp.meta.bytes || (snap && snap.snapshotBytes) || __lastBodyBytes || 0) || 0;
       __serverCheckedAt = new Date().toISOString();
-      __serverMetaAvailable = !!__serverSnapshotEtag;
-      __lastLoadedServerEtag = __serverSnapshotEtag || '';
-      __serverIsNewer = !!(__serverMetaAvailable && (__serverSnapshotEtag !== __lastProcessedServerEtag));
+      __serverMetaAvailable = !!__serverSnapshotId;
+      __serverIsNewer = !!(__serverMetaAvailable && __lastProcessedSnapshotId && (__serverSnapshotId !== __lastProcessedSnapshotId));
       __serverCheckStatus = 'ok';
     }
     _setLoaderStage('processing');
@@ -1647,7 +1685,7 @@ async function _loadSnapshotImpl(){
         pushDebugEvent('SNAPSHOT_APPLY_START', 'Applying running snapshot', { runId: runId, index: __currentIndex });
         _applySnapshot(snap);
         const prevHashRun = __lastSnapshotHash;
-        __lastSnapshotHash = String(__serverSnapshotEtag || '-') + ':' + String(__lastResponseBytes || 0) + ':' + String(snap.generated_at || '') + ':' + String(Object.keys(snap.points_json || {}).length);
+        __lastSnapshotHash = String(__serverSnapshotId || '-') + ':' + String(__lastResponseBytes || 0) + ':' + String(snap.generated_at || '') + ':' + String(Object.keys(snap.points_json || {}).length);
         if(prevHashRun && prevHashRun !== __lastSnapshotHash && !__resumeExplicitRequested) _setResumeIndex(0);
         __lastProcessedAt = new Date().toISOString();
         pushDebugEvent('SNAPSHOT_APPLY_DONE', 'Applied running snapshot', { runId: runId, index: __currentIndex });
@@ -1664,7 +1702,7 @@ async function _loadSnapshotImpl(){
       pushDebugEvent('SNAPSHOT_APPLY_START', 'Applying snapshot', { runId: runId, index: __currentIndex });
       _applySnapshot(snap);
       const prevHash = __lastSnapshotHash;
-      __lastSnapshotHash = String(__serverSnapshotEtag || '-') + ':' + String(__lastResponseBytes || 0) + ':' + String(snap.generated_at || '') + ':' + String(Object.keys(snap.points_json || {}).length);
+      __lastSnapshotHash = String(__serverSnapshotId || '-') + ':' + String(__lastResponseBytes || 0) + ':' + String(snap.generated_at || '') + ':' + String(Object.keys(snap.points_json || {}).length);
       if(prevHash && prevHash !== __lastSnapshotHash && !__resumeExplicitRequested) _setResumeIndex(0);
       __lastProcessedAt = new Date().toISOString();
       pushDebugEvent('SNAPSHOT_APPLY_DONE', 'Applied snapshot', { runId: runId, index: __currentIndex });
@@ -1687,7 +1725,8 @@ async function _loadSnapshotImpl(){
       _stopPolling();
     }
 
-    __lastProcessedServerEtag = __lastLoadedServerEtag || __serverSnapshotEtag || __lastProcessedServerEtag;
+    __lastProcessedSnapshotId = String((snap && snap.snapshotId) || __serverSnapshotId || __lastProcessedSnapshotId || '');
+    __lastProcessedGeneratedAt = String((snap && (snap.generatedAt || snap.generated_at)) || __serverGeneratedAt || __lastProcessedGeneratedAt || '');
     __serverIsNewer = false;
     __resumeExplicitRequested = false;
     _updateServerSnapshotStatus();
@@ -1902,7 +1941,7 @@ async function triggerRefresh(opts){
   try{
     __refreshStartedAtMs = Date.now();
     __lastProgressAtMs = __refreshStartedAtMs;
-    await checkServerSnapshot();
+    await fetchServerMeta();
     pushDebugEvent((options.resumeFromSaved ? 'REFRESH_RESUME' : 'REFRESH_START'), 'Refresh requested', {
       runId: runId,
       startIndex: options.startIndex,
@@ -2034,7 +2073,7 @@ function _wireSnapshotButtons(){
     btnRefresh.__wired = true;
   }
   if(btnReload && !btnReload.__wired){
-    btnReload.addEventListener('click', function(){ loadSnapshot(); });
+    btnReload.addEventListener('click', function(){ loadSnapshotIfNeeded(false); });
     btnReload.__wired = true;
   }
   if(btnResume && !btnResume.__wired){
@@ -2395,6 +2434,8 @@ function render() {
 // Restore existing markers from localStorage and render list
 refreshAllMarkers();
 _wireSnapshotButtons();
+fetchServerMeta();
+_startServerMetaPolling();
 
 // Load snapshot from server (single request - replaces 369 client fetches)
 loadSnapshot();

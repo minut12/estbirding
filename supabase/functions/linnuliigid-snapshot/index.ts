@@ -235,6 +235,18 @@ function buildSnapshotResponseHeaders(data: Record<string, unknown>): Record<str
   };
 }
 
+function buildSnapshotMeta(data: Record<string, unknown>) {
+  const generatedAt = String((data as { generated_at?: string | null })?.generated_at || "");
+  const pointsJson = (data as { points_json?: unknown })?.points_json ?? null;
+  const totalItems = pointsJson && typeof pointsJson === "object"
+    ? Object.keys(pointsJson as Record<string, unknown>).length
+    : 0;
+  const snapshotJson = JSON.stringify(data);
+  const bytes = new TextEncoder().encode(snapshotJson).length;
+  const snapshotId = `${bytes}:${generatedAt}:${totalItems}`;
+  return { generatedAt, snapshotId, bytes, totalItems };
+}
+
 function isMissingHeartbeatColumnError(err: unknown): boolean {
   const msg = String((err as { message?: string })?.message || err || "");
   return msg.includes("heartbeat_at") && msg.toLowerCase().includes("column");
@@ -398,6 +410,8 @@ Deno.serve(async (req) => {
   }
 
   const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+  const url = new URL(req.url);
+  const isMetaRequest = url.searchParams.get("meta") === "1";
 
   try {
     if (req.method === "GET" || req.method === "HEAD") {
@@ -409,12 +423,29 @@ Deno.serve(async (req) => {
         .single();
 
       if (error) throw error;
+      const meta = buildSnapshotMeta(data as Record<string, unknown>);
+      if (req.method === "GET" && isMetaRequest) {
+        return new Response(
+          JSON.stringify(meta),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json" },
+          }
+        );
+      }
+
       const responseHeaders = buildSnapshotResponseHeaders(data as Record<string, unknown>);
       if (req.method === "HEAD") {
         return new Response(null, { status: 200, headers: responseHeaders });
       }
 
-      return new Response(JSON.stringify(data), {
+      const responseBody = {
+        ...(data as Record<string, unknown>),
+        snapshotId: meta.snapshotId,
+        snapshotBytes: meta.bytes,
+        totalItems: meta.totalItems,
+      };
+      return new Response(JSON.stringify(responseBody), {
         headers: responseHeaders,
       });
     }

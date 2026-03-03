@@ -106,6 +106,31 @@ function getProxyTranslateEndpointSafe(): string {
   return deriveProxyTranslateEndpointFromBase(getResolvedProxyBaseAny());
 }
 
+function _ss(x: unknown): string { try { return String(x ?? ''); } catch { return ''; } }
+function _trim(x: unknown): string { return _ss(x).trim(); }
+
+function _findAllProxyUrlsInText(txt: unknown): string[] {
+  const out: string[] = [];
+  const s = _ss(txt);
+  const re = /https?:\/\/[^\s'"]+\.supabase\.co\/functions\/v1\/proxy\?url=/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) !== null) out.push(m[0]);
+  return Array.from(new Set(out));
+}
+
+function _deriveProxyOriginFromProxyBase(proxyBase: unknown): string {
+  const s = _trim(proxyBase);
+  if (!s) return '';
+  const base = s.split('?')[0].replace(/\/+$/, '');
+  if (!base.endsWith('/proxy')) return '';
+  return base;
+}
+
+function _deriveProxyTranslateFromProxyBase(proxyBase: unknown): string {
+  const origin = _deriveProxyOriginFromProxyBase(proxyBase);
+  return origin ? `${origin}/translate-et` : '';
+}
+
 export default function SettingsTab() {
   const newsSourcesSectionRef = useRef<HTMLDivElement | null>(null);
   const [settingsPage, setSettingsPage] = useState<SettingsPage>('home');
@@ -144,6 +169,138 @@ export default function SettingsTab() {
       const dom = scanDomForProxyBase();
       if (dom) localStorage.setItem(LS_RESOLVED_PROXY_BASE, dom);
     } catch {}
+  }, []);
+
+  useEffect(() => {
+    const w = window as Window & { __dbgProxyDiscBound?: boolean };
+    if (w.__dbgProxyDiscBound) return;
+    w.__dbgProxyDiscBound = true;
+
+    const onClick = async (e: Event) => {
+      const target = e.target as Element | null;
+      const btn = target?.closest?.('#debugProxyDiscoveryBtn');
+      if (!btn) return;
+      e.preventDefault();
+
+      const report: any = {
+        now: new Date().toISOString(),
+        locationHref: _ss(window?.location?.href),
+        userAgent: _ss(window?.navigator?.userAgent),
+        localStorage: {},
+        dom: {
+          proxyUrlsInBodyText: [],
+          proxyUrlsInInputs: [],
+          inputValuesMatching: [],
+          inputPlaceholdersMatching: [],
+        },
+        chosen: {
+          storedTranslateEndpoint: '',
+          storedProxyBaseCandidates: [],
+          pickedProxyBase: '',
+          derivedProxyOrigin: '',
+          derivedProxyTranslate: '',
+        },
+        probe: {
+          proxyBaseFetchOk: null,
+          proxyBaseFetchStatus: null,
+          proxyBaseFetchError: null,
+          proxyBaseUsedForProbe: null,
+        },
+      };
+
+      const keysToCheck = [
+        'proxy_base', 'proxyBase', 'proxyBaseUrl', 'proxy_base_url',
+        'translate_endpoint_v1', 'translate_endpoint', 'translation_endpoint',
+        'resolved_proxy_base_v1', 'resolvedProxyBase',
+      ];
+      try {
+        for (const k of keysToCheck) {
+          const v = localStorage.getItem(k);
+          if (v !== null) report.localStorage[k] = v;
+        }
+      } catch (err) {
+        report.localStorageError = String(err);
+      }
+
+      try {
+        report.dom.proxyUrlsInBodyText = _findAllProxyUrlsInText(document.body ? document.body.innerText : '');
+      } catch (err) {
+        report.domBodyTextError = String(err);
+      }
+
+      try {
+        const inputs = Array.from(document.querySelectorAll('input'));
+        for (const inp of inputs) {
+          const v = _trim((inp as HTMLInputElement).value);
+          const ph = _trim(inp.getAttribute('placeholder'));
+          if (v.includes('.supabase.co/functions/v1/proxy?url=')) report.dom.inputValuesMatching.push(v);
+          if (ph.includes('.supabase.co/functions/v1/proxy?url=')) report.dom.inputPlaceholdersMatching.push(ph);
+        }
+        report.dom.proxyUrlsInInputs = Array.from(new Set([
+          ...report.dom.inputValuesMatching,
+          ...report.dom.inputPlaceholdersMatching,
+        ]));
+      } catch (err) {
+        report.domInputsError = String(err);
+      }
+
+      try {
+        report.chosen.storedTranslateEndpoint = _trim(localStorage.getItem('translate_endpoint_v1'));
+      } catch {}
+
+      const lsCandidates: string[] = [];
+      for (const k of ['proxy_base', 'proxyBase', 'proxy_base_url', 'proxyBaseUrl', 'resolved_proxy_base_v1']) {
+        const v = report.localStorage[k];
+        if (v && _trim(v).includes('/functions/v1/proxy')) lsCandidates.push(_trim(v));
+      }
+      report.chosen.storedProxyBaseCandidates = Array.from(new Set(lsCandidates));
+
+      const candidates = [
+        ...report.chosen.storedProxyBaseCandidates,
+        ...report.dom.inputValuesMatching,
+        ...report.dom.proxyUrlsInBodyText,
+      ].map(_trim).filter(Boolean);
+
+      report.chosen.pickedProxyBase = candidates[0] || '';
+      report.chosen.derivedProxyOrigin = _deriveProxyOriginFromProxyBase(report.chosen.pickedProxyBase);
+      report.chosen.derivedProxyTranslate = _deriveProxyTranslateFromProxyBase(report.chosen.pickedProxyBase);
+
+      try {
+        const base = report.chosen.pickedProxyBase;
+        if (base) {
+          report.probe.proxyBaseUsedForProbe = base;
+          const testUrl = base + encodeURIComponent('https://example.com/');
+          const r = await fetch(testUrl, { method: 'GET' });
+          report.probe.proxyBaseFetchOk = r.ok;
+          report.probe.proxyBaseFetchStatus = r.status;
+        } else {
+          report.probe.proxyBaseFetchOk = false;
+          report.probe.proxyBaseFetchError = 'NO_PROXY_BASE_CANDIDATE';
+        }
+      } catch (err) {
+        report.probe.proxyBaseFetchOk = false;
+        report.probe.proxyBaseFetchError = String(err);
+      }
+
+      const pretty = JSON.stringify(report, null, 2);
+      setTestTranslateResult(pretty);
+      const outEl =
+        document.querySelector('#translateAdminOutput') ||
+        document.querySelector('#adminTestOutput') ||
+        document.querySelector('pre');
+      if (outEl) {
+        (outEl as HTMLElement).textContent = pretty;
+      } else {
+        console.log('proxy discovery report', report);
+        alert('Debug report printed to console (no output element found).');
+      }
+    };
+
+    document.addEventListener('click', onClick, true);
+    return () => {
+      document.removeEventListener('click', onClick, true);
+      w.__dbgProxyDiscBound = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -544,8 +701,15 @@ export default function SettingsTab() {
           >
             {testTranslateLoading ? 'Testin...' : 'Test translate'}
           </Button>
+          <Button
+            id="debugProxyDiscoveryBtn"
+            variant="outline"
+            className="w-full"
+          >
+            Debug proxy discovery
+          </Button>
           {testTranslateResult && (
-            <pre className="max-h-40 overflow-auto rounded bg-muted p-2 text-xs whitespace-pre-wrap break-words">
+            <pre id="translateAdminOutput" className="max-h-40 overflow-auto rounded bg-muted p-2 text-xs whitespace-pre-wrap break-words">
               {testTranslateResult}
             </pre>
           )}

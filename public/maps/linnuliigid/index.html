@@ -2117,6 +2117,80 @@ function _computeFilterVerifier(){
     freshExcluded: freshExcluded.slice(0,20),
   };
 }
+function _computeIndexAudit(totalItems, currentIndex, nextIndex, processedCount, lastProcessedIndex, indexTrace){
+  const N = Math.max(0, Number(totalItems || 0) || 0);
+  const expected = [];
+  for(let i = 0; i < N; i++) expected.push(i);
+  const doneCounts = new Map();
+  const doneSet = new Set();
+  const startSet = new Set();
+  const outOfRangeEvents = [];
+  const trace = Array.isArray(indexTrace) ? indexTrace.slice() : [];
+  for(const ev of trace){
+    const idx = Number.isFinite(ev && ev.index) ? Number(ev.index) : null;
+    const action = String((ev && ev.action) || '');
+    if(idx != null){
+      if(idx < 0 || idx >= N){
+        outOfRangeEvents.push({ ts: ev && ev.ts || '', index: idx, action: action });
+      }
+      if(action === 'done'){
+        doneSet.add(idx);
+        doneCounts.set(idx, (doneCounts.get(idx) || 0) + 1);
+      }
+      if(action === 'start'){
+        startSet.add(idx);
+      }
+    }
+  }
+  const doneList = Array.from(doneSet.values()).sort(function(a,b){ return a - b; });
+  const minDone = doneList.length ? doneList[0] : null;
+  const maxDone = doneList.length ? doneList[doneList.length - 1] : null;
+  const missingDone = expected.filter(function(i){ return !doneSet.has(i); });
+  const duplicateDone = Array.from(doneCounts.entries()).filter(function(row){ return row[1] > 1; }).map(function(row){ return row[0]; }).sort(function(a,b){ return a - b; });
+
+  let lastIndexChangeAt = null;
+  let lastSeenIndex = null;
+  const chronological = trace.slice().sort(function(a,b){
+    return new Date(a && a.ts || 0).getTime() - new Date(b && b.ts || 0).getTime();
+  });
+  for(const ev of chronological){
+    const idx = Number.isFinite(ev && ev.index) ? Number(ev.index) : null;
+    if(idx == null) continue;
+    if(lastSeenIndex == null || idx !== lastSeenIndex){
+      lastSeenIndex = idx;
+      lastIndexChangeAt = ev && ev.ts ? String(ev.ts) : null;
+    }
+  }
+  let stuckSuspected = false;
+  let stuckIndex = null;
+  if(__loaderStage === 'processing' && Number.isFinite(currentIndex)){
+    const lastChangeMs = lastIndexChangeAt ? new Date(lastIndexChangeAt).getTime() : NaN;
+    if(Number.isFinite(lastChangeMs) && (Date.now() - lastChangeMs) > 10000){
+      stuckSuspected = true;
+      stuckIndex = Number(currentIndex);
+    }
+  }
+  return {
+    range: { start: 0, end: Math.max(0, N - 1) },
+    minDone: minDone,
+    maxDone: maxDone,
+    uniqueDoneCount: doneSet.size,
+    startUniqueCount: startSet.size,
+    missingDoneCount: missingDone.length,
+    missingDonePreview: missingDone.slice(0,20),
+    duplicateDoneCount: duplicateDone.length,
+    duplicateDonePreview: duplicateDone.slice(0,20),
+    outOfRangeCount: outOfRangeEvents.length,
+    outOfRangePreview: outOfRangeEvents.slice(0,20),
+    lastIndexChangeAt: lastIndexChangeAt,
+    stuckSuspected: stuckSuspected,
+    stuckIndex: stuckIndex,
+    currentIndex: Number.isFinite(currentIndex) ? Number(currentIndex) : null,
+    nextIndex: Number.isFinite(nextIndex) ? Number(nextIndex) : 0,
+    processedCount: Number.isFinite(processedCount) ? Number(processedCount) : 0,
+    lastProcessedIndex: Number.isFinite(lastProcessedIndex) ? Number(lastProcessedIndex) : null,
+  };
+}
 function _computeDebugProObject(){
   __snapshotInspector = _computeSnapshotInspector();
   __filterVerifier = _computeFilterVerifier();
@@ -2143,6 +2217,7 @@ function _computeDebugProObject(){
       }
     }
   }
+  const indexAudit = _computeIndexAudit(__totalItems, __currentIndex, __nextIndex, __processedCount, __lastProcessedIndex, __indexTrace);
   return {
     lite: _safeData({
       serverSnapshotId: __serverSnapshotId,
@@ -2186,6 +2261,7 @@ function _computeDebugProObject(){
       slowMode: !!__slowMode,
       trace: __indexTrace.slice(0, 30),
     },
+    indexAudit: indexAudit,
     logs: __internalLogs.slice(0,50),
   };
 }
@@ -2202,6 +2278,7 @@ function _updateDebugProPanel(){
   }).join('') || '<tr><td colspan="2">none</td></tr>';
   const hist = dbg.snapshotInspector && dbg.snapshotInspector.histogram ? dbg.snapshotInspector.histogram : {};
   const histRows = ['0-1d','1-2d','2-3d','3-7d','7-14d','14d+'].map(function(k){ return '<div>' + k + ': <b>' + (hist[k] || 0) + '</b></div>'; }).join('');
+  const ia = dbg.indexAudit || {};
   el.innerHTML =
     '<div class="debug-pro-sec"><div class="debug-pro-title">Config</div>' +
     '<div>supabaseUrl: <span class="debug-pro-code">' + (dbg.config.supabaseUrl || '(missing)') + '</span> (' + dbg.config.supabaseUrlSource + ')</div>' +
@@ -2231,7 +2308,20 @@ function _updateDebugProPanel(){
     '<div>likely mismatch causes: clustering/zoom, missing coords, hidden items, viewport bounds</div></div>' +
     '<div class="debug-pro-sec"><div class="debug-pro-title">Index trace</div>' +
     '<div>totalItems=' + dbg.indexProgress.totalItems + ' range=0..' + dbg.indexProgress.indexRange.end + ' current=' + (dbg.indexProgress.currentIndex==null?'-':dbg.indexProgress.currentIndex) + ' next=' + dbg.indexProgress.nextIndex + ' done=' + dbg.indexProgress.processedCount + '/' + dbg.indexProgress.totalItems + ' last=' + (dbg.indexProgress.lastProcessedIndex==null?'-':dbg.indexProgress.lastProcessedIndex) + '</div>' +
-    '<div>trace(last30): <span class="debug-pro-code">' + JSON.stringify(dbg.indexProgress.trace).replace(/</g,'&lt;') + '</span></div></div>' +
+    '<div>trace(last30): <span class="debug-pro-code">' + JSON.stringify(dbg.indexProgress.trace).replace(/</g,'&lt;') + '</span></div>' +
+    '<div style="margin-top:4px"><b>Index audit:</b> doneUnique ' + (ia.uniqueDoneCount || 0) + '/' + dbg.indexProgress.totalItems +
+      ', ' + ((ia.minDone == null || ia.maxDone == null) ? 'min..max -' : ('min..max ' + ia.minDone + '..' + ia.maxDone)) +
+      ', missing ' + (ia.missingDoneCount || 0) +
+      ', dupes ' + (ia.duplicateDoneCount || 0) +
+      ', outOfRange ' + (ia.outOfRangeCount || 0) +
+      ', stuck? ' + ((ia.stuckSuspected) ? ('yes (idx ' + ia.stuckIndex + ')') : 'no') + '</div>' +
+    '<details style="margin-top:4px"><summary>Audit details</summary>' +
+      '<div>range expected: ' + (ia.range ? (ia.range.start + '..' + ia.range.end) : '0..0') + '</div>' +
+      '<div>lastIndexChangeAt: ' + (ia.lastIndexChangeAt || '-') + '</div>' +
+      '<div>missingDone(first20): <span class="debug-pro-code">' + JSON.stringify(ia.missingDonePreview || []).replace(/</g,'&lt;') + '</span></div>' +
+      '<div>duplicateDone(first20): <span class="debug-pro-code">' + JSON.stringify(ia.duplicateDonePreview || []).replace(/</g,'&lt;') + '</span></div>' +
+      '<div>outOfRangeEvents(first20): <span class="debug-pro-code">' + JSON.stringify(ia.outOfRangePreview || []).replace(/</g,'&lt;') + '</span></div>' +
+    '</details></div>' +
     '<div class="debug-pro-sec"><div class="debug-pro-title">Logs & Export</div>' +
     '<div>internal logs (last 50): <span class="debug-pro-code">' + JSON.stringify(dbg.logs).replace(/</g,'&lt;') + '</span></div></div>';
 }

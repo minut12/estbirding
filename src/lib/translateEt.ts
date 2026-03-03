@@ -5,6 +5,7 @@ import {
   getStoredTranslationEndpoint,
   getTranslateEndpoint,
 } from '@/config/translationEndpoint';
+import { toast } from 'sonner';
 
 export interface TranslateEtInput {
   id: string;
@@ -198,6 +199,9 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
     .catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[translate] failed. URL=${endpoint}. Error=${message}`, error);
+      if (isNetworkLikeError(error)) {
+        toast.error('Võrgupoliitika (CSP) võib blokeerida supabase.co päringud. Kontrolli CSP connect-src.');
+      }
       if (error instanceof TranslateEtHttpError) throw error;
       throw new Error(`Translate failed. endpoint=${endpoint}. error=${message}`);
     })

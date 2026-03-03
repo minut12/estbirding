@@ -329,6 +329,7 @@ async function rebuildSnapshotNow(supabaseAdmin: any, currentRow: Record<string,
         status: "building",
         snapshotId: String(state.last_snapshot_id || currentMeta.snapshotId || ""),
         dataMaxAt: state.last_data_max_at || currentMeta.dataMaxAt || null,
+        upstreamDataMaxAt: state.last_upstream_data_max_at || null,
         snapshotGeneratedAt: currentMeta.snapshotGeneratedAt || null,
         bytes: Number(currentMeta.bytes || 0),
         totalItems: Number(currentMeta.totalItems || 0),
@@ -344,6 +345,7 @@ async function rebuildSnapshotNow(supabaseAdmin: any, currentRow: Record<string,
         status: "cooldown",
         snapshotId: String(state.last_snapshot_id || currentMeta.snapshotId || ""),
         dataMaxAt: state.last_data_max_at || currentMeta.dataMaxAt || null,
+        upstreamDataMaxAt: state.last_upstream_data_max_at || null,
         snapshotGeneratedAt: currentMeta.snapshotGeneratedAt || null,
         bytes: Number(currentMeta.bytes || 0),
         totalItems: Number(currentMeta.totalItems || 0),
@@ -398,6 +400,7 @@ async function rebuildSnapshotNow(supabaseAdmin: any, currentRow: Record<string,
       last_build_finished_at: finishedAt,
       last_snapshot_id: rebuiltMeta.snapshotId,
       last_data_max_at: rebuiltMeta.dataMaxAt,
+      last_upstream_data_max_at: result.upstreamDataMaxAt || null,
     });
     return {
       httpStatus: 200,
@@ -405,6 +408,7 @@ async function rebuildSnapshotNow(supabaseAdmin: any, currentRow: Record<string,
         status: "rebuilt",
         snapshotId: rebuiltMeta.snapshotId,
         dataMaxAt: rebuiltMeta.dataMaxAt,
+        upstreamDataMaxAt: result.upstreamDataMaxAt || null,
         snapshotGeneratedAt: rebuiltMeta.snapshotGeneratedAt,
         bytes: Number(rebuiltMeta.bytes || 0),
         totalItems: Number(rebuiltMeta.totalItems || 0),
@@ -502,6 +506,7 @@ async function runRefresh(
 
   let done = startIndex;
   let lastError: string | null = null;
+  let upstreamMaxTs = 0;
   const MAX_RETRIES = 2;
   const INDEX_TIMEOUT_MS = 30000;
   for (let i = startIndex; i < total; i++) {
@@ -533,6 +538,8 @@ async function runRefresh(
             }
             done++;
             if (data) {
+              const srcTs = parseElurikkusDate(String(data.latestDate || ""));
+              if (srcTs > upstreamMaxTs) upstreamMaxTs = srcTs;
               const entry: (typeof points)[string] = {
                 src: "Elurikkus",
                 visible: true,
@@ -571,11 +578,17 @@ async function runRefresh(
     });
     if (upd.error) throw upd.error;
     if (Date.now() - startedAt > MAX_RUN_MS) {
-      return { done, total, finished: false, timedOut: true, lastError, points, runId };
+      return {
+        done, total, finished: false, timedOut: true, lastError, points, runId,
+        upstreamDataMaxAt: upstreamMaxTs > 0 ? new Date(upstreamMaxTs).toISOString() : null,
+      };
     }
   }
 
-  return { done, total, finished: done >= total, timedOut: false, lastError, points, runId };
+  return {
+    done, total, finished: done >= total, timedOut: false, lastError, points, runId,
+    upstreamDataMaxAt: upstreamMaxTs > 0 ? new Date(upstreamMaxTs).toISOString() : null,
+  };
 }
 
 Deno.serve(async (req) => {

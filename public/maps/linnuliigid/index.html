@@ -174,6 +174,7 @@
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
 <div id="fetchProgress" class="fetch-progress"></div>
+<div id="indexProgress" class="fetch-progress"></div>
 <div id="serverRefreshStatus" class="fetch-progress"></div>
 <div id="fetchProgressBar" class="fetch-progress-bar" style="display:none"><div id="fetchProgressBarInner" class="fetch-progress-bar-inner" style="width:0%"></div></div>
 <div id="fetchError" class="fetch-error"></div>
@@ -192,7 +193,10 @@
     <button id="btnExportDebugProJson" class="btn secondary" style="font-size:11px;padding:2px 8px">Export debug JSON</button>
     <button id="btnClearTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Clear trace</button>
     <button id="btnCopySelectedTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy selected trace JSON</button>
+    <button id="btnCopyIndexTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy index trace</button>
+    <button id="btnClearIndexTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Clear index trace</button>
     <button id="btnRerunVerification" class="btn secondary" style="font-size:11px;padding:2px 8px">Re-run verification</button>
+    <label style="display:flex;align-items:center;gap:4px;font-size:11px"><input id="toggleSlowMode" type="checkbox" />Slow mode</label>
   </div>
   <div id="debugProContent" class="debug-pro-grid">Loading...</div>
 </details>
@@ -703,8 +707,10 @@ const __debugEvents = [];
 const __DEBUG_MAX_EVENTS = 120;
 const __NETWORK_TRACE_MAX = 30;
 const __LOG_RING_MAX = 50;
+const __INDEX_TRACE_MAX = 100;
 const __networkTrace = [];
 const __internalLogs = [];
+const __indexTrace = [];
 let __traceSeq = 0;
 let __snapshotInspector = null;
 let __filterVerifier = null;
@@ -750,6 +756,11 @@ let __serverIsNewer = false;
 let __serverMetaAvailable = false;
 let __serverCheckStatus = 'idle'; // idle | checking | ok | error
 let __serverCheckError = '';
+let __totalItems = 0;
+let __nextIndex = 0;
+let __processedCount = 0;
+let __lastProcessedIndex = null;
+let __slowMode = false;
 
 function _safeData(v){
   try{
@@ -834,6 +845,54 @@ function _traceEnd(id, patch){
 function _traceSetSelected(id){
   __selectedTraceId = id;
   _updateDebugProPanel();
+}
+function _pushIndexTrace(index, action, reason){
+  __indexTrace.unshift({
+    ts: new Date().toISOString(),
+    index: (Number.isFinite(index) ? Number(index) : null),
+    action: String(action || ''),
+    reason: reason ? String(reason) : '',
+  });
+  if(__indexTrace.length > __INDEX_TRACE_MAX) __indexTrace.length = __INDEX_TRACE_MAX;
+}
+function _setIndexStateFromCounts(done, total){
+  const N = Math.max(0, Number(total || 0) || 0);
+  const D = Math.max(0, Math.min(N, Number(done || 0) || 0));
+  __totalItems = N;
+  __processedCount = D;
+  __nextIndex = Math.max(0, Math.min(N, D));
+  __lastProcessedIndex = D > 0 ? (D - 1) : null;
+  if(__nextIndex >= N) __currentIndex = null;
+}
+function _guardIndexState(){
+  if(__processedCount > __totalItems || __nextIndex > __totalItems){
+    __loaderStage = 'error';
+    __lastErrorMessage = 'INDEX_OUT_OF_RANGE: index=' + String(__currentIndex) + ', totalItems=' + String(__totalItems);
+    logError(__lastErrorMessage, {
+      currentIndex: __currentIndex, nextIndex: __nextIndex, processedCount: __processedCount, resumeIndex: _getResumeIndex()
+    });
+    return false;
+  }
+  if(__currentIndex != null && (__currentIndex < 0 || __currentIndex >= __totalItems)){
+    __loaderStage = 'error';
+    __lastErrorMessage = 'INDEX_OUT_OF_RANGE: index=' + String(__currentIndex) + ', totalItems=' + String(__totalItems);
+    logError(__lastErrorMessage, {
+      currentIndex: __currentIndex, nextIndex: __nextIndex, processedCount: __processedCount, resumeIndex: _getResumeIndex()
+    });
+    return false;
+  }
+  return true;
+}
+function _updateIndexProgressLine(){
+  const el = document.getElementById('indexProgress');
+  if(!el) return;
+  const N = __totalItems || 0;
+  const end = N > 0 ? (N - 1) : 0;
+  const cur = (__currentIndex == null ? '-' : String(__currentIndex));
+  const next = String(__nextIndex || 0);
+  const done = String(__processedCount || 0);
+  const last = (__lastProcessedIndex == null ? '-' : String(__lastProcessedIndex));
+  el.textContent = 'Index: ' + cur + ' / ' + end + ' Next: ' + next + ' Done: ' + done + '/' + N + ' Last: ' + last;
 }
 function _maskKey(k){
   const s = String(k || '');
@@ -934,6 +993,11 @@ function _clearDebugEvents(){
   __snapshotInspector = null;
   __filterVerifier = null;
   __selectedTraceId = null;
+  __indexTrace.length = 0;
+  __totalItems = 0;
+  __nextIndex = 0;
+  __processedCount = 0;
+  __lastProcessedIndex = null;
   _updateDebugPanel();
 }
 
@@ -1793,6 +1857,7 @@ function _startWatchdog(){
     __lastFailedIndex = idx;
     __lastInfoMessage = 'Watchdog advanced stalled index ' + idx + ' -> ' + nextIndex;
     _recordWatchdogEvent(idx, nextIndex, 'watchdog');
+    _pushIndexTrace(idx, 'watchdog', 'watchdog_timeout');
     pushDebugEvent('INDEX_RETRY', 'Watchdog advanced stalled index', { from: idx, to: nextIndex, runId: __runId }, 'warn');
     _setResumeIndex(nextIndex);
     _showSnapshotBanner(__lastInfoMessage, 'warn');
@@ -1860,8 +1925,10 @@ function _updateProgressUI(done, total, status){
   } else if(status === 'running' && total > 0){
     __snapshotProgressDone = Number(done || 0);
     __snapshotProgressTotal = Number(total || 0);
-    __currentIndex = done;
     _setResumeIndex(done);
+    _setIndexStateFromCounts(done, total);
+    __currentIndex = (__processedCount < __totalItems ? __processedCount : null);
+    if(__currentIndex != null) _pushIndexTrace(__currentIndex, 'start');
     if(done > __lastProgressDone){
       __lastProgressDone = done;
       __lastProgressAt = Date.now();
@@ -1869,6 +1936,12 @@ function _updateProgressUI(done, total, status){
       __hangKickCount = 0;
       __lastHangProgressDone = done;
       pushDebugEvent('INDEX_SUCCESS', 'Progress advanced', { done: done, total: total, runId: __runId });
+      if(__lastProcessedIndex != null) _pushIndexTrace(__lastProcessedIndex, 'done');
+    }
+    if(!_guardIndexState()){
+      _updateIndexProgressLine();
+      _updateDebugPanel();
+      return;
     }
     prog.textContent = 'Client processing: ' + done + '/' + total;
     if(bar){ bar.style.display='block'; barInner.style.width = Math.round(done/total*100)+'%'; }
@@ -1878,11 +1951,18 @@ function _updateProgressUI(done, total, status){
       __snapshotProgressTotal = SPECIES.length;
       __snapshotProgressDone = __snapshotProgressTotal;
     }
+    _setIndexStateFromCounts(__snapshotProgressDone, __snapshotProgressTotal);
+    if(status === 'ready'){
+      __currentIndex = null;
+      __nextIndex = __totalItems;
+      __processedCount = __totalItems;
+    }
     prog.textContent = status === 'ready' ? 'Data loaded' : (status === 'error' ? 'Refresh failed' : '');
     if(bar) bar.style.display='none';
     if(stopBtn) stopBtn.style.display='none';
   }
   _updateServerSnapshotStatus();
+  _updateIndexProgressLine();
   _updateDebugPanel();
 }
 
@@ -2096,6 +2176,16 @@ function _computeDebugProObject(){
       mapBounds: bounds,
       outsideBoundsCount: outsideBounds,
     },
+    indexProgress: {
+      totalItems: __totalItems,
+      indexRange: { start: 0, end: Math.max(0, (__totalItems || 0) - 1) },
+      currentIndex: __currentIndex,
+      nextIndex: __nextIndex,
+      processedCount: __processedCount,
+      lastProcessedIndex: __lastProcessedIndex,
+      slowMode: !!__slowMode,
+      trace: __indexTrace.slice(0, 30),
+    },
     logs: __internalLogs.slice(0,50),
   };
 }
@@ -2139,6 +2229,9 @@ function _updateDebugProPanel(){
     '<div>raw items: ' + dbg.mapMarkers.rawItemsCount + ' | filtered items: ' + dbg.mapMarkers.filteredItemsCount + ' | marker map size: ' + dbg.mapMarkers.clusterMarkerCount + ' | markersRendered: ' + dbg.mapMarkers.markersRendered + '</div>' +
     '<div>outside bounds: ' + dbg.mapMarkers.outsideBoundsCount + ' | bounds: <span class="debug-pro-code">' + JSON.stringify(dbg.mapMarkers.mapBounds) + '</span></div>' +
     '<div>likely mismatch causes: clustering/zoom, missing coords, hidden items, viewport bounds</div></div>' +
+    '<div class="debug-pro-sec"><div class="debug-pro-title">Index trace</div>' +
+    '<div>totalItems=' + dbg.indexProgress.totalItems + ' range=0..' + dbg.indexProgress.indexRange.end + ' current=' + (dbg.indexProgress.currentIndex==null?'-':dbg.indexProgress.currentIndex) + ' next=' + dbg.indexProgress.nextIndex + ' done=' + dbg.indexProgress.processedCount + '/' + dbg.indexProgress.totalItems + ' last=' + (dbg.indexProgress.lastProcessedIndex==null?'-':dbg.indexProgress.lastProcessedIndex) + '</div>' +
+    '<div>trace(last30): <span class="debug-pro-code">' + JSON.stringify(dbg.indexProgress.trace).replace(/</g,'&lt;') + '</span></div></div>' +
     '<div class="debug-pro-sec"><div class="debug-pro-title">Logs & Export</div>' +
     '<div>internal logs (last 50): <span class="debug-pro-code">' + JSON.stringify(dbg.logs).replace(/</g,'&lt;') + '</span></div></div>';
 }
@@ -2189,17 +2282,23 @@ function _updateDebugPanel(){
   _updateDebugProPanel();
 }
 
-function _applySnapshot(snap){
+async function _applySnapshot(snap){
   if(!snap || !snap.points_json) return;
   const pts = snap.points_json;
   const keys = Object.keys(pts || {});
   __snapshotProgressTotal = keys.length;
   __snapshotProgressDone = 0;
+  _setIndexStateFromCounts(0, keys.length);
   __lastProgressDone = 0;
   __currentIndex = 0;
-  for(const key in pts){
-    if(!pts.hasOwnProperty(key)) continue;
+  for(let i = 0; i < keys.length; i++){
+    const key = keys[i];
+    __currentIndex = i;
+    __nextIndex = i;
+    if(!_guardIndexState()) return;
+    _pushIndexTrace(i, 'start');
     const s = pts[key];
+    if(!pts.hasOwnProperty(key)) continue;
     points[key] = points[key] || {};
     const p = points[key];
     if(typeof s.t === 'string' && s.t.trim()) p.t = s.t;
@@ -2223,8 +2322,24 @@ function _applySnapshot(snap){
     if(typeof p.visible !== 'boolean') p.visible = true;
     __snapshotProgressDone++;
     __lastProgressDone = __snapshotProgressDone;
-    __currentIndex = __snapshotProgressDone;
+    __lastProcessedIndex = i;
+    __processedCount = __snapshotProgressDone;
+    __nextIndex = Math.min(keys.length, i + 1);
+    if(!_guardIndexState()) return;
+    _pushIndexTrace(i, 'done');
+    if(__slowMode){
+      await _delay(20);
+    } else if(i % 10 === 0){
+      // Yield so UI updates index line live
+      await _delay(0);
+    }
+    if(i % 10 === 0 || __slowMode){
+      _updateIndexProgressLine();
+    }
   }
+  __currentIndex = null;
+  __nextIndex = keys.length;
+  __processedCount = keys.length;
   __snapshotMeta.status = snap.status || 'ready';
   __snapshotMeta.generated_at = snap.generated_at;
   _setResumeIndex(__snapshotProgressDone);
@@ -2314,7 +2429,7 @@ async function _loadSnapshotImpl(){
       _showSnapshotBanner('Server is refreshing data (' + snap.progress_done + '/' + snap.progress_total + ')...');
       if(snap.points_json && Object.keys(snap.points_json).length > 0){
         pushDebugEvent('SNAPSHOT_APPLY_START', 'Applying running snapshot', { runId: runId, index: __currentIndex });
-        _applySnapshot(snap);
+        await _applySnapshot(snap);
         const prevHashRun = __lastSnapshotHash;
         __lastSnapshotHash = String(__serverSnapshotId || '-') + ':' + String(__lastResponseBytes || 0) + ':' + String(snap.generated_at || '') + ':' + String(Object.keys(snap.points_json || {}).length);
         if(prevHashRun && prevHashRun !== __lastSnapshotHash && !__resumeExplicitRequested) _setResumeIndex(0);
@@ -2331,7 +2446,7 @@ async function _loadSnapshotImpl(){
 
     if(snap.points_json && Object.keys(snap.points_json).length > 0){
       pushDebugEvent('SNAPSHOT_APPLY_START', 'Applying snapshot', { runId: runId, index: __currentIndex });
-      _applySnapshot(snap);
+      await _applySnapshot(snap);
       const prevHash = __lastSnapshotHash;
       __lastSnapshotHash = String(__serverSnapshotId || '-') + ':' + String(__lastResponseBytes || 0) + ':' + String(snap.generated_at || '') + ':' + String(Object.keys(snap.points_json || {}).length);
       if(prevHash && prevHash !== __lastSnapshotHash && !__resumeExplicitRequested) _setResumeIndex(0);
@@ -2697,7 +2812,10 @@ function _wireSnapshotButtons(){
   const btnExportDebugPro = document.getElementById('btnExportDebugProJson');
   const btnClearTrace = document.getElementById('btnClearTrace');
   const btnCopySelectedTrace = document.getElementById('btnCopySelectedTrace');
+  const btnCopyIndexTrace = document.getElementById('btnCopyIndexTrace');
+  const btnClearIndexTrace = document.getElementById('btnClearIndexTrace');
   const btnRerunVerification = document.getElementById('btnRerunVerification');
+  const toggleSlowMode = document.getElementById('toggleSlowMode');
   const btnClearDebug = document.getElementById('btnClearDebugEvents');
   const toggle7d = document.getElementById('toggle7days');
 
@@ -2720,12 +2838,32 @@ function _wireSnapshotButtons(){
   if(btnSkip && !btnSkip.__wired){
     btnSkip.addEventListener('click', function(){
       _abortActiveRequest();
-      const nextIndex = _getResumeIndex() + 1;
-      __lastFailedIndex = nextIndex;
+      const totalItems = Math.max(0, Number(__totalItems || __snapshotProgressTotal || 0));
+      const oldNextIndex = Math.max(0, Math.min(totalItems, Number(__nextIndex || _getResumeIndex() || 0)));
+      if(totalItems > 0 && oldNextIndex >= totalItems){
+        __lastInfoMessage = 'Already finished (' + totalItems + '/' + totalItems + ')';
+        _showSnapshotBanner(__lastInfoMessage, 'warn');
+        _pushIndexTrace(oldNextIndex, 'skip', 'user_skip_done');
+        _updateIndexProgressLine();
+        _updateDebugPanel();
+        return;
+      }
+      const nextIndex = Math.min(oldNextIndex + 1, totalItems);
+      __lastFailedIndex = oldNextIndex;
       __lastInfoMessage = 'Skipped by user';
       pushDebugEvent('INDEX_SKIP', 'User skipped current index', { nextIndex: nextIndex, runId: __runId }, 'warn');
+      __currentIndex = null;
+      __nextIndex = nextIndex;
+      _pushIndexTrace(oldNextIndex, 'skip', 'user_skip');
+      if(!_guardIndexState()){
+        _updateIndexProgressLine();
+        _updateDebugPanel();
+        return;
+      }
       _setResumeIndex(nextIndex);
       _showSnapshotBanner('Skipping stuck item, resuming from ' + nextIndex + '...', 'warn');
+      _updateIndexProgressLine();
+      _updateDebugPanel();
       _controlSkipOnServer(nextIndex, 'user_click')
         .then(function(payload){
           if(Number(payload && payload.progress_done || 0) < nextIndex){
@@ -2812,6 +2950,21 @@ function _wireSnapshotButtons(){
     });
     btnCopySelectedTrace.__wired = true;
   }
+  if(btnCopyIndexTrace && !btnCopyIndexTrace.__wired){
+    btnCopyIndexTrace.addEventListener('click', function(){
+      const text = JSON.stringify(__indexTrace.slice(0, 100), null, 2);
+      if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text);
+    });
+    btnCopyIndexTrace.__wired = true;
+  }
+  if(btnClearIndexTrace && !btnClearIndexTrace.__wired){
+    btnClearIndexTrace.addEventListener('click', function(){
+      __indexTrace.length = 0;
+      _updateDebugProPanel();
+      _updateIndexProgressLine();
+    });
+    btnClearIndexTrace.__wired = true;
+  }
   if(btnRerunVerification && !btnRerunVerification.__wired){
     btnRerunVerification.addEventListener('click', function(){
       __snapshotInspector = _computeSnapshotInspector();
@@ -2819,6 +2972,11 @@ function _wireSnapshotButtons(){
       _updateDebugProPanel();
     });
     btnRerunVerification.__wired = true;
+  }
+  if(toggleSlowMode && !toggleSlowMode.__wired){
+    toggleSlowMode.checked = !!__slowMode;
+    toggleSlowMode.addEventListener('change', function(){ __slowMode = !!toggleSlowMode.checked; _updateDebugProPanel(); });
+    toggleSlowMode.__wired = true;
   }
   if(btnClearDebug && !btnClearDebug.__wired){
     btnClearDebug.addEventListener('click', _clearDebugEvents);

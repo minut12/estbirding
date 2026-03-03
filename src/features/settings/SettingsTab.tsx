@@ -390,16 +390,14 @@ export default function SettingsTab() {
       e.preventDefault();
 
       const candidates = [
-        '/api/ping',
+        '/.netlify/functions/ping',
         '/functions/api/ping',
         '/api/functions/ping',
-        '/.netlify/functions/ping',
         '/.netlify/functions/api-ping',
         '/_functions/ping',
-        '/api/translate-et?ping=1',
+        '/.netlify/functions/translate-et?ping=1',
         '/functions/api/translate-et?ping=1',
         '/api/functions/translate-et?ping=1',
-        '/.netlify/functions/translate-et?ping=1',
         '/_functions/translate-et?ping=1',
       ];
 
@@ -424,7 +422,7 @@ export default function SettingsTab() {
       const bestTranslate = results.find((r) => r.ok && r.isJson && String(r.url || '').includes('translate-et'));
       if (bestTranslate) {
         const endpointPath = String(bestTranslate.url || '').replace(location.origin, '');
-        const clean = endpointPath.split('?')[0] || '/api/translate-et';
+        const clean = endpointPath.split('?')[0] || '/.netlify/functions/translate-et';
         localStorage.setItem('translate_endpoint_v1', clean);
         setStoredEndpointView(getStoredEndpoint());
         setTranslationApiUrlInput(clean);
@@ -635,8 +633,8 @@ export default function SettingsTab() {
       };
 
       const primary = await ping(primaryEndpoint);
-      const apiPing = await endpointProbe('/api/ping');
-      const apiTranslatePing = await endpointProbe('/api/translate-et?ping=1');
+      const apiPing = await endpointProbe('/.netlify/functions/ping');
+      const apiTranslatePing = await endpointProbe('/.netlify/functions/translate-et?ping=1');
       if (primary.ok) {
         setTestTranslateResult(JSON.stringify({ apiPing, apiTranslatePing, primary }, null, 2));
         toast.success('Ping OK');
@@ -692,7 +690,7 @@ export default function SettingsTab() {
   };
 
   const handleUseBuiltInTranslateRecommended = () => {
-    const builtin = '/api/translate-et';
+    const builtin = '/.netlify/functions/translate-et';
     setStoredEndpoint(builtin);
     const saved = getStoredEndpoint();
     setStoredEndpointView(saved);
@@ -782,7 +780,7 @@ export default function SettingsTab() {
         <Label htmlFor="translateApiUrl">Translation API URL</Label>
         <Input
           id="translateApiUrl"
-          placeholder="/api/translate-et"
+          placeholder="/.netlify/functions/translate-et"
           value={translationApiUrl}
           onChange={(e) => setTranslationApiUrlInput(e.target.value)}
         />
@@ -796,7 +794,7 @@ export default function SettingsTab() {
           Use proxy translate (recommended)
         </Button>
         <p className="text-xs text-muted-foreground">
-          Recommended: /api/translate-et (same-origin). You can still use a full Supabase/custom URL.
+          Recommended: /.netlify/functions/translate-et (same-origin). You can still use a full Supabase/custom URL.
         </p>
         <p className="text-xs text-muted-foreground">
           Resolved endpoint: {resolvedEndpoint || '(empty)'}

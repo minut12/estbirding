@@ -5,7 +5,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 // Hidden debug shortcut: ?reset=1 triggers full reset
 import { fullReset, doHardReload } from './lib/cache-reset';
-const BUILTIN_TRANSLATE_ENDPOINT = '/api/translate-et';
+const BUILTIN_TRANSLATE_ENDPOINT = '/.netlify/functions/translate-et';
 
 if (new URLSearchParams(window.location.search).get('reset') === '1') {
   if (confirm('Täielik lähtestus – kõik andmed kustutatakse. Jätkata?')) {

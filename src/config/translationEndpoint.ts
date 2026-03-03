@@ -2,7 +2,7 @@ import { resolveProxyBase } from './proxyEndpoint';
 
 export const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 export const TRANSLATION_ENDPOINT_UPDATED_EVENT = 'translation-endpoint-updated';
-export const WORKER_DEFAULT_ENDPOINT = '/api/translate-et';
+export const WORKER_DEFAULT_ENDPOINT = '/.netlify/functions/translate-et';
 
 function proxyBaseToTranslateEndpoint(proxyBase: string): string {
   const raw = String(proxyBase || '').trim();

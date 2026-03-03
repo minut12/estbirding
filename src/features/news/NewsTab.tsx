@@ -60,9 +60,9 @@ interface NewsSource {
   key?: string | null;
 }
 
-const NEWS_VIEW_SELECT = 'id,title,url,published_at,created_at,external_id,source_id,source_slug,source_name,image_url,cached_image_url,cached_image_path,display_image_url,summary,body,content_html,archived,fetched_at,guid,raw_json,language,source_lang,title_et,body_et,translated_title,translated_body,translation_status,source_key';
+const NEWS_VIEW_SELECT = 'id,source_key,title,title_et,body,body_et,summary,published_at,url,image_url,archived,translation_status,translation_error,translated_at,created_at,external_id,source_id,source_slug,source_name,cached_image_url,cached_image_path,display_image_url,content_html,fetched_at,guid,raw_json,language,source_lang,translated_title,translated_body';
 const ALL_SOURCES_LABEL = normalizeDisplayText("Kõik allikad");
-const NEWS_TABLE_FALLBACK_SELECT = 'id, source_id, source_key, source_slug, title, url, permalink_url, summary, body, content_html, published_at, created_at, image_url, cached_image_url, image_cached_url, archived, language, source_lang, guid, raw_json, fetched_at';
+const NEWS_TABLE_FALLBACK_SELECT = 'id, source_key, title, title_et, body, body_et, summary, published_at, url, image_url, archived, translation_status, translation_error, translated_at, source_id, source_slug, permalink_url, content_html, created_at, cached_image_url, image_cached_url, language, source_lang, guid, raw_json, fetched_at';
 
 /* Format date */
 const ET_MONTHS = ['jaanuar','veebruar','märts','aprill','mai','juuni','juuli','august','september','oktoober','november','detsember'];
@@ -672,6 +672,8 @@ const {
       <ArticleView
         item={selected}
         sources={sources}
+        showEtContent={showEtContent}
+        autoTranslateEnabled={autoTranslateEnabled}
         onBack={closeArticle}
         onToggleArchive={() => toggleArchive(selected.id, selected.is_archived)}
       />
@@ -825,10 +827,11 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
     fallbackBodyEt: item.body_et,
     endpointConfigured,
   });
-  const displayTitle = showEtContent ? (translation.translated?.title_et || item.title_et || item.title) : item.title;
-  const snippetSource = showEtContent
-    ? (translation.translated?.body_et || item.body_et || item.excerpt || '')
-    : (item.excerpt || '');
+  const useEtDisplay = showEtContent && autoTranslateEnabled;
+  const displayTitle = useEtDisplay ? (item.title_et || item.title || '') : (item.title || '');
+  const snippetSource = useEtDisplay
+    ? (item.body_et || item.body || item.summary || '')
+    : (item.body || item.summary || item.excerpt || '');
   const snippet = toPlainText(snippetSource).slice(0, 150);
   const originalUrl = item.permalink_url || item.url || '#';
   const isTranslated = Boolean(translation.translated?.title_et || translation.translated?.body_et || item.title_et || item.body_et);
@@ -921,9 +924,11 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
 }
 
 /* Article View (lazy-loads content) */
-function ArticleView({ item, sources, onBack, onToggleArchive }: {
+function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBack, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
+  showEtContent: boolean;
+  autoTranslateEnabled: boolean;
   onBack: () => void;
   onToggleArchive: () => void;
 }) {
@@ -989,10 +994,15 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
   const normalizedBodyText = toPlainText(contentHtml || bodyFallback);
   const hasTranslatedContent = showManualTranslation
     && Boolean(manualTranslation?.title_et || manualTranslation?.body_et);
-  const displayTitle = hasTranslatedContent ? (manualTranslation?.title_et || item.title) : item.title;
+  const useEtDisplay = showEtContent && autoTranslateEnabled;
+  const showTitleBase = useEtDisplay ? (item.title_et || item.title || '') : (item.title || '');
+  const showBodyBase = useEtDisplay
+    ? (item.body_et || item.body || item.summary || '')
+    : (item.body || item.summary || '');
+  const displayTitle = hasTranslatedContent ? (manualTranslation?.title_et || showTitleBase) : showTitleBase;
   const displayBody = hasTranslatedContent
     ? (manualTranslation?.body_et || normalizedBodyText)
-    : (contentHtml || normalizedBodyText);
+    : (useEtDisplay ? showBodyBase : (contentHtml || normalizedBodyText));
   const heroImageUrl = getNewsImageSrc(item, proxyBase);
   const [heroSrc, setHeroSrc] = useState<string | null>(heroImageUrl);
   const [heroFailed, setHeroFailed] = useState(false);
@@ -1095,7 +1105,7 @@ function ArticleView({ item, sources, onBack, onToggleArchive }: {
             <Skeleton className="h-4 w-5/6" />
             <Skeleton className="h-4 w-4/6" />
           </div>
-        ) : bodyHtmlWithoutDuplicateHero && !hasTranslatedContent ? (
+        ) : bodyHtmlWithoutDuplicateHero && !hasTranslatedContent && !useEtDisplay ? (
           <div
             className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
             dangerouslySetInnerHTML={{ __html: bodyHtmlWithoutDuplicateHero }}

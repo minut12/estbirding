@@ -4,7 +4,7 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, apikey, content-type, x-client-info",
-  "Access-Control-Allow-Methods": "GET,OPTIONS",
+  "Access-Control-Allow-Methods": "GET,HEAD,OPTIONS",
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -376,7 +376,7 @@ Deno.serve(async (req) => {
   const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
   try {
-    if (req.method === "GET") {
+    if (req.method === "GET" || req.method === "HEAD") {
       // Return current snapshot
       const { data, error } = await supabaseAdmin
         .from("linnuliigid_snapshot")
@@ -385,13 +385,24 @@ Deno.serve(async (req) => {
         .single();
 
       if (error) throw error;
+      const generatedAt = String((data as { generated_at?: string | null })?.generated_at || "");
+      const done = Number((data as { progress_done?: number | null })?.progress_done || 0);
+      const total = Number((data as { progress_total?: number | null })?.progress_total || 0);
+      const status = String((data as { status?: string | null })?.status || "");
+      const snapshotHash = `"${generatedAt}:${status}:${done}:${total}"`;
+      const responseHeaders = {
+        ...corsHeaders,
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+        "ETag": snapshotHash,
+        "X-Snapshot-Generated-At": generatedAt,
+      };
+      if (req.method === "HEAD") {
+        return new Response(null, { status: 200, headers: responseHeaders });
+      }
 
       return new Response(JSON.stringify(data), {
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-          "Cache-Control": "public, max-age=30",
-        },
+        headers: responseHeaders,
       });
     }
 

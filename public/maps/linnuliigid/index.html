@@ -167,6 +167,7 @@
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
 <div id="fetchProgress" class="fetch-progress"></div>
+<div id="serverRefreshStatus" class="fetch-progress"></div>
 <div id="fetchProgressBar" class="fetch-progress-bar" style="display:none"><div id="fetchProgressBarInner" class="fetch-progress-bar-inner" style="width:0%"></div></div>
 <div id="fetchError" class="fetch-error"></div>
 <details class="debug-panel" id="debugPanel">
@@ -681,6 +682,13 @@ const SNAPSHOT_AUTO_REFRESH_MS = 180000;
 const CONFIG_RELOAD_DEBOUNCE_MS = 500;
 const WATCHDOG_MS = 15000;
 let __snapshotErrorRetryAttempt = 0;
+let __serverSnapshotEtag = '';
+let __serverGeneratedAt = '';
+let __serverCheckedAt = '';
+let __lastProcessedServerEtag = '';
+let __serverIsNewer = false;
+let __serverCheckStatus = 'idle'; // idle | checking | ok | error
+let __serverCheckError = '';
 
 function _safeData(v){
   try{
@@ -746,6 +754,12 @@ function _copyDebugJson(){
     lastHttp: (__lastHttpStatus === null ? null : { method: __lastHttpMethod || 'GET', status: __lastHttpStatus, ok: __lastHttpOk, durationMs: __lastDurationMs }),
     lastSnapshotBytes: __lastResponseBytes,
     lastSnapshotHash: __lastSnapshotHash,
+    serverSnapshotEtag: __serverSnapshotEtag || '',
+    serverGeneratedAt: __serverGeneratedAt || '',
+    serverCheckedAt: __serverCheckedAt || '',
+    serverIsNewer: !!__serverIsNewer,
+    serverCheckStatus: __serverCheckStatus || 'idle',
+    serverCheckError: __serverCheckError || '',
     isReloading: __isReloading,
     loaderStage: __loaderStage,
     lastFetchAt: __lastFetchAt,
@@ -776,6 +790,13 @@ function _clearDebugEvents(){
   __lastDurationMs = null;
   __lastResponseBytes = null;
   __lastSnapshotHash = null;
+  __serverSnapshotEtag = '';
+  __serverGeneratedAt = '';
+  __serverCheckedAt = '';
+  __lastProcessedServerEtag = '';
+  __serverIsNewer = false;
+  __serverCheckStatus = 'idle';
+  __serverCheckError = '';
   __snapshotProgressDone = 0;
   __snapshotProgressTotal = 0;
   __watchdogEvents = [];
@@ -916,6 +937,49 @@ function _withCacheBuster(url){
   const base = String(url || '');
   const sep = base.indexOf('?') >= 0 ? '&' : '?';
   return base + sep + '_ts=' + Date.now();
+}
+function _shortEtag(etag){
+  const s = String(etag || '').replace(/^W\//,'').replace(/^"|"$/g,'');
+  if(!s) return '-';
+  if(s.length <= 14) return s;
+  return s.slice(0, 8) + '...' + s.slice(-4);
+}
+function _updateServerSnapshotStatus(){
+  const el = document.getElementById('serverRefreshStatus');
+  if(!el) return;
+  const gen = __serverGeneratedAt ? _fmtTs(__serverGeneratedAt) : '-';
+  const chk = __serverCheckedAt ? _fmtTs(__serverCheckedAt) : '-';
+  const tag = _shortEtag(__serverSnapshotEtag);
+  const freshness = __serverIsNewer ? 'New server data available' : 'No new server data';
+  const err = (__serverCheckStatus === 'error' && __serverCheckError) ? ('; check error: ' + __serverCheckError) : '';
+  el.textContent = 'Server snapshot: ' + gen + ' (ETag ' + tag + ') | Checked: ' + chk + ' | ' + freshness + err;
+}
+async function checkServerSnapshot(){
+  __serverCheckStatus = 'checking';
+  __serverCheckError = '';
+  _updateServerSnapshotStatus();
+  try{
+    const snapshotUrl = _resolveSnapshotApi();
+    const headUrl = _withCacheBuster(snapshotUrl);
+    const res = await fetch(headUrl, { method:'HEAD', cache:'no-store' });
+    const etag = String(res.headers.get('etag') || '').trim();
+    const generatedAt = String(res.headers.get('x-snapshot-generated-at') || '').trim();
+    __serverSnapshotEtag = etag;
+    __serverGeneratedAt = generatedAt;
+    __serverCheckedAt = new Date().toISOString();
+    __serverIsNewer = !!(__serverSnapshotEtag && (__serverSnapshotEtag !== __lastProcessedServerEtag));
+    __serverCheckStatus = 'ok';
+    _updateServerSnapshotStatus();
+    _updateDebugPanel();
+    return { etag: etag, generatedAt: generatedAt };
+  }catch(e){
+    __serverCheckedAt = new Date().toISOString();
+    __serverCheckStatus = 'error';
+    __serverCheckError = String((e && e.message) ? e.message : e || 'HEAD failed');
+    _updateServerSnapshotStatus();
+    _updateDebugPanel();
+    return null;
+  }
 }
 
 function _setResumeIndex(i){
@@ -1079,7 +1143,13 @@ async function fetchJsonWithTimeout(url, opts){
       url:fetchUrl, runId:runId, index:index, parseMs: __lastParseDurationMs,
         topKeys: (json && typeof json === 'object') ? Object.keys(json).slice(0, 10) : null
       });
-    return json;
+    return {
+      data: json,
+      meta: {
+        etag: String(res.headers.get('etag') || '').trim(),
+        generatedAt: String(res.headers.get('x-snapshot-generated-at') || '').trim(),
+      }
+    };
   }catch(e){
     const isAbort = !!(e && (e.name === 'AbortError' || (combinedSignal && combinedSignal.aborted)));
     if(isAbort){
@@ -1400,7 +1470,7 @@ function _updateProgressUI(done, total, status){
       __lastHangProgressDone = done;
       pushDebugEvent('INDEX_SUCCESS', 'Progress advanced', { done: done, total: total, runId: __runId });
     }
-    prog.textContent = 'Server refresh: ' + done + '/' + total;
+    prog.textContent = 'Client processing: ' + done + '/' + total;
     if(bar){ bar.style.display='block'; barInner.style.width = Math.round(done/total*100)+'%'; }
     if(stopBtn) stopBtn.style.display='inline-block';
   } else {
@@ -1412,6 +1482,7 @@ function _updateProgressUI(done, total, status){
     if(bar) bar.style.display='none';
     if(stopBtn) stopBtn.style.display='none';
   }
+  _updateServerSnapshotStatus();
   _updateDebugPanel();
 }
 
@@ -1436,6 +1507,12 @@ function _updateDebugPanel(){
     'lastHttp: <b>{ method: ' + (__lastHttpMethod ?? '-') + ', status: ' + (__lastHttpStatus ?? '-') + ', ok: ' + (__lastHttpOk ?? '-') + ', durationMs: ' + (__lastDurationMs ?? '-') + ' }</b>',
     'lastSnapshotBytes: <b>' + (__lastResponseBytes ?? '-') + '</b>',
     'lastSnapshotHash: <b>' + (__lastSnapshotHash ?? '-') + '</b>',
+    'serverSnapshotEtag: <b>' + (_shortEtag(__serverSnapshotEtag)) + '</b>',
+    'serverGeneratedAt: <b>' + (_fmtTs(__serverGeneratedAt)) + '</b>',
+    'serverCheckedAt: <b>' + (_fmtTs(__serverCheckedAt)) + '</b>',
+    'serverCheckStatus: <b>' + (__serverCheckStatus || 'idle') + '</b>',
+    'serverIsNewer: <b>' + (__serverIsNewer ? 'true' : 'false') + '</b>',
+    'serverCheckError: <b>' + (__serverCheckError || '-') + '</b>',
     'isReloading: <b>' + (__isReloading ? 'true' : 'false') + '</b>',
     'loaderStage: <b>' + (__loaderStage || '-') + '</b>',
     'lastFetchAt: <b>' + (_fmtTs(__lastFetchAt)) + '</b>',
@@ -1522,12 +1599,19 @@ async function _loadSnapshotImpl(){
     __snapshotLoadRetryCount = 0;
     _showSnapshotBanner('Reloading... stage=' + __loaderStage + ' fetch=' + _fmtTs(__lastFetchAt) + ' processed=' + _fmtTs(__lastProcessedAt));
     __activeStepController = new AbortController();
-    const snap = await fetchJsonWithTimeout(snapshotUrl, {
+    const snapResp = await fetchJsonWithTimeout(snapshotUrl, {
       timeoutMs: 15000,
       signal: _combineSignals([__activeStepController.signal, __stopController && __stopController.signal, __runCancelController && __runCancelController.signal]),
       runId: runId,
       index: __currentIndex
     });
+    const snap = snapResp && snapResp.data ? snapResp.data : {};
+    if(snapResp && snapResp.meta){
+      __serverSnapshotEtag = String(snapResp.meta.etag || '');
+      __serverGeneratedAt = String(snapResp.meta.generatedAt || (__serverGeneratedAt || ''));
+      __serverCheckedAt = new Date().toISOString();
+      __serverCheckStatus = 'ok';
+    }
     _setLoaderStage('processing');
     __lastDurationMs = Date.now() - t0;
     __lastErrorMessage = '';
@@ -1551,7 +1635,7 @@ async function _loadSnapshotImpl(){
         pushDebugEvent('SNAPSHOT_APPLY_START', 'Applying running snapshot', { runId: runId, index: __currentIndex });
         _applySnapshot(snap);
         const prevHashRun = __lastSnapshotHash;
-        __lastSnapshotHash = String(__lastResponseBytes || 0) + ':' + String(snap.generated_at || '') + ':' + String(Object.keys(snap.points_json || {}).length);
+        __lastSnapshotHash = String(__serverSnapshotEtag || '-') + ':' + String(__lastResponseBytes || 0) + ':' + String(snap.generated_at || '') + ':' + String(Object.keys(snap.points_json || {}).length);
         if(prevHashRun && prevHashRun !== __lastSnapshotHash && !__resumeExplicitRequested) _setResumeIndex(0);
         __lastProcessedAt = new Date().toISOString();
         pushDebugEvent('SNAPSHOT_APPLY_DONE', 'Applied running snapshot', { runId: runId, index: __currentIndex });
@@ -1568,7 +1652,7 @@ async function _loadSnapshotImpl(){
       pushDebugEvent('SNAPSHOT_APPLY_START', 'Applying snapshot', { runId: runId, index: __currentIndex });
       _applySnapshot(snap);
       const prevHash = __lastSnapshotHash;
-      __lastSnapshotHash = String(__lastResponseBytes || 0) + ':' + String(snap.generated_at || '') + ':' + String(Object.keys(snap.points_json || {}).length);
+      __lastSnapshotHash = String(__serverSnapshotEtag || '-') + ':' + String(__lastResponseBytes || 0) + ':' + String(snap.generated_at || '') + ':' + String(Object.keys(snap.points_json || {}).length);
       if(prevHash && prevHash !== __lastSnapshotHash && !__resumeExplicitRequested) _setResumeIndex(0);
       __lastProcessedAt = new Date().toISOString();
       pushDebugEvent('SNAPSHOT_APPLY_DONE', 'Applied snapshot', { runId: runId, index: __currentIndex });
@@ -1591,7 +1675,10 @@ async function _loadSnapshotImpl(){
       _stopPolling();
     }
 
+    __lastProcessedServerEtag = __serverSnapshotEtag || __lastProcessedServerEtag;
+    __serverIsNewer = false;
     __resumeExplicitRequested = false;
+    _updateServerSnapshotStatus();
     if(snap.last_error && __loaderStage === 'error'){
       document.getElementById('fetchError').textContent = 'Last error: ' + snap.last_error;
     }
@@ -1803,6 +1890,7 @@ async function triggerRefresh(opts){
   try{
     __refreshStartedAtMs = Date.now();
     __lastProgressAtMs = __refreshStartedAtMs;
+    await checkServerSnapshot();
     pushDebugEvent((options.resumeFromSaved ? 'REFRESH_RESUME' : 'REFRESH_START'), 'Refresh requested', {
       runId: runId,
       startIndex: options.startIndex,
@@ -1869,6 +1957,7 @@ async function triggerRefresh(opts){
     }
 
     _startPolling();
+    loadSnapshot(false);
     pushDebugEvent('INDEX_SUCCESS', 'Refresh accepted', { runId: runId, index: startIndex, httpStatus: res.status });
     _updateDebugPanel();
   }catch(e){

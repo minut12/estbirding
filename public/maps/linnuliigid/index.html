@@ -1093,13 +1093,18 @@ async function fetchServerMeta(){
   try{
     const snapshotUrl = _resolveSnapshotApi();
     const metaUrl = _withCacheBuster(snapshotUrl + (snapshotUrl.indexOf('?') >= 0 ? '&' : '?') + 'meta=1');
+    const traceId = _traceStart({ method: 'GET', url: metaUrl });
     const res = await fetch(metaUrl, {
       method:'GET',
       cache:'no-store',
       headers: { 'Accept': 'application/json' }
     });
     if(!res.ok) throw new Error('Meta fetch failed (HTTP ' + res.status + ')');
-    const meta = await res.json();
+    const text = await res.text();
+    const bytesRead = text ? (new TextEncoder().encode(text).length) : 0;
+    let meta = {};
+    try{ meta = text ? JSON.parse(text) : {}; }catch(e){ meta = {}; }
+    _traceEnd(traceId, { status: res.status, ok: !!res.ok, bytesRead: bytesRead, details: { responseKeys: meta && typeof meta === 'object' ? Object.keys(meta) : [] } });
     const normalized = {
       snapshotId: String((meta && meta.snapshotId) || '').trim(),
       snapshotGeneratedAt: String((meta && (meta.snapshotGeneratedAt || meta.generatedAt)) || '').trim(),
@@ -1122,8 +1127,8 @@ async function fetchServerMeta(){
     const missing = [];
     if(!normalized.snapshotId) missing.push('snapshotId');
     if(!normalized.dataMaxAt) missing.push('dataMaxAt');
-    if(!normalized.bytes) missing.push('bytes');
-    if(!normalized.totalItems) missing.push('totalItems');
+    if(!(normalized.bytes >= 0)) missing.push('bytes');
+    if(!(normalized.totalItems >= 0)) missing.push('totalItems');
     if(missing.length){
       __serverMetaAvailable = false;
       __serverCheckStatus = 'error';
@@ -1200,6 +1205,11 @@ async function requestServerRebuild(){
     json = await res.json().catch(function(){ return {}; });
   }
   _traceEnd(traceId, { status: res.status, ok: !!res.ok, bytesRead: null, details: { responseKeys: json && typeof json === 'object' ? Object.keys(json) : [] } });
+  const keys = json && typeof json === 'object' ? Object.keys(json) : [];
+  const looksLikeRow = keys.indexOf('points_json') >= 0 && keys.indexOf('id') >= 0;
+  if(looksLikeRow){
+    throw new Error('Rebuild endpoint returned row-shape payload; expected status/snapshotId/dataMaxAt');
+  }
   if(!(res.ok || res.status === 202)){
     logError('Rebuild request failed', { status: res.status });
     throw new Error('Rebuild request failed (HTTP ' + res.status + ')');
@@ -1234,6 +1244,7 @@ async function triggerRefreshDataFlow(){
     const rebuild = await requestServerRebuild();
     const rebuildStatus = String((rebuild && rebuild.status) || '');
     const rebuildUpstreamDataMaxAt = String((rebuild && rebuild.upstreamDataMaxAt) || '');
+    const rebuildBuiltDataMaxAt = String((rebuild && rebuild.dataMaxAt) || '');
     if(rebuildStatus === 'building' || rebuildStatus === 'rebuilt'){
       await waitForSnapshotChange(previousSnapshotId, 120000);
     } else if(rebuildStatus === 'cooldown'){
@@ -1244,6 +1255,9 @@ async function triggerRefreshDataFlow(){
     const afterMeta = await fetchServerMeta();
     await loadSnapshot(true);
     const nextDataMaxAt = String((afterMeta && afterMeta.dataMaxAt) || __serverDataMaxAt || '');
+    if(rebuildBuiltDataMaxAt){
+      _showSnapshotBanner('Rebuild result: built dataMaxAt=' + _fmtTs(rebuildBuiltDataMaxAt) + (rebuildUpstreamDataMaxAt ? (', upstreamDataMaxAt=' + _fmtTs(rebuildUpstreamDataMaxAt)) : ''), 'warn');
+    }
     if(rebuildUpstreamDataMaxAt && previousDataMaxAt && rebuildUpstreamDataMaxAt === previousDataMaxAt){
       _showSnapshotBanner('Upstream unchanged (likely Elurikkus cache/stale): ' + _fmtTs(rebuildUpstreamDataMaxAt), 'warn');
     } else if(nextDataMaxAt && previousDataMaxAt && nextDataMaxAt === previousDataMaxAt){

@@ -592,6 +592,12 @@ async function runRefresh(
 }
 
 Deno.serve(async (req) => {
+  if (!SERVICE_ROLE_KEY) {
+    return new Response(JSON.stringify({ error: "SERVICE_ROLE_KEY missing" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }

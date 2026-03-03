@@ -521,9 +521,34 @@ export default function SettingsTab() {
         }
       };
 
+      const endpointProbe = async (url: string) => {
+        try {
+          const r = await fetch(url, { method: 'GET' });
+          const ct = String(r.headers.get('content-type') || '').toLowerCase();
+          const body = await r.text();
+          const preview = body.slice(0, 60);
+          return {
+            url,
+            ok: r.ok,
+            status: r.status,
+            contentType: ct || '(empty)',
+            bodyPreview: preview,
+            route_not_registered: ct.includes('text/html'),
+          };
+        } catch (error: any) {
+          return {
+            url,
+            ok: false,
+            error: String(error?.message || error),
+          };
+        }
+      };
+
       const primary = await ping(primaryEndpoint);
+      const apiPing = await endpointProbe('/api/ping');
+      const apiTranslatePing = await endpointProbe('/api/translate-et?ping=1');
       if (primary.ok) {
-        setTestTranslateResult(JSON.stringify({ primary }, null, 2));
+        setTestTranslateResult(JSON.stringify({ apiPing, apiTranslatePing, primary }, null, 2));
         toast.success('Ping OK');
         return;
       }
@@ -543,7 +568,7 @@ export default function SettingsTab() {
           proxy = { ok: false, endpoint: proxyEndpoint, error: String(error?.message || error) };
         }
       }
-      setTestTranslateResult(JSON.stringify({ primary, proxy }, null, 2));
+      setTestTranslateResult(JSON.stringify({ apiPing, apiTranslatePing, primary, proxy }, null, 2));
       if (proxy.ok) {
         toast.warning('Primary failed, proxy OK');
         return;

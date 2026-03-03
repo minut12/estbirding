@@ -1,11 +1,14 @@
 // functions/api/translate-et.ts
-export default async function handler(req: Request): Promise<Response> {
-  const json = (body: any, status = 200) =>
-    new Response(JSON.stringify(body), {
-      status,
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-    });
+export const config = { runtime: "edge" };
 
+function json(body: any, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+  });
+}
+
+export default async function handler(req: Request): Promise<Response> {
   try {
     const url = new URL(req.url);
 
@@ -13,9 +16,7 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ ok: true, fn: "api/translate-et" });
     }
 
-    if (req.method !== "POST") {
-      return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
-    }
+    if (req.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
 
     const body = await req.json().catch(() => ({} as any));
     const text = typeof body.text === "string" ? body.text : "";
@@ -38,17 +39,11 @@ export default async function handler(req: Request): Promise<Response> {
 
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "gpt-4o-mini",
         temperature: 0.2,
-        messages: [
-          { role: "system", content: sys },
-          { role: "user", content: user },
-        ],
+        messages: [{ role: "system", content: sys }, { role: "user", content: user }],
       }),
     });
 
@@ -64,9 +59,6 @@ export default async function handler(req: Request): Promise<Response> {
     const translatedText = (data?.choices?.[0]?.message?.content || "").trim();
     return json({ ok: true, translatedText });
   } catch (e: any) {
-    return new Response(JSON.stringify({ ok: false, error: "UNHANDLED", message: String(e) }), {
-      status: 500,
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-    });
+    return json({ ok: false, error: "UNHANDLED", message: String(e) }, 500);
   }
 }

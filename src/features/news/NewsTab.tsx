@@ -31,7 +31,6 @@ interface NewsItem {
   title_et?: string | null;
   summary: string | null;
   body: string | null;
-  content?: string | null;
   body_et?: string | null;
   content_html: string | null;
   url: string | null;
@@ -63,6 +62,7 @@ interface NewsSource {
 const NEWS_VIEW_SELECT = 'id,source_key,title,title_et,body,body_et,summary,published_at,url,image_url,archived,translation_status,translation_error,translated_at,created_at,external_id,source_id,source_slug,source_name,cached_image_url,cached_image_path,display_image_url,content_html,fetched_at,guid,raw_json,language,source_lang,translated_title,translated_body';
 const ALL_SOURCES_LABEL = normalizeDisplayText("Kõik allikad");
 const NEWS_TABLE_FALLBACK_SELECT = 'id, source_key, title, title_et, body, body_et, summary, published_at, url, image_url, archived, translation_status, translation_error, translated_at, source_id, source_slug, permalink_url, content_html, created_at, cached_image_url, image_cached_url, language, source_lang, guid, raw_json, fetched_at';
+const NEWS_MIN_SELECT = 'id,source_key,title,body,summary,published_at,url,image_url,archived,source_id,source_slug,source_name,created_at,cached_image_url,content_html,fetched_at,guid,raw_json,language,source_lang';
 
 /* Format date */
 const ET_MONTHS = ['jaanuar','veebruar','märts','aprill','mai','juuni','juuli','august','september','oktoober','november','detsember'];
@@ -240,6 +240,11 @@ function shouldFallbackNewsQuery(error: unknown): boolean {
     || reason.includes('could not find the table')
     || reason.includes('relation')
     || reason.includes('column');
+}
+
+function isColumnMismatchError(error: unknown): boolean {
+  const reason = formatErrorReason(error).toLowerCase();
+  return reason.includes('column') && reason.includes('does not exist');
 }
 
 const BIRDING_POLAND_NAME = 'birding poland';
@@ -486,26 +491,48 @@ const {
   } = useQuery({
     queryKey: ['news-items', tab],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let primaryResult = await supabase
         .from('news_items_v')
         .select(NEWS_VIEW_SELECT)
         .eq('archived', tab === 'archive')
         .order('published_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false, nullsFirst: false })
         .limit(50);
+      if (primaryResult.error && isColumnMismatchError(primaryResult.error)) {
+        console.warn('[news] selectWithEt failed on news_items_v, retrying minimal:', formatErrorReason(primaryResult.error));
+        primaryResult = await supabase
+          .from('news_items_v')
+          .select(NEWS_MIN_SELECT)
+          .eq('archived', tab === 'archive')
+          .order('published_at', { ascending: false, nullsFirst: false })
+          .order('created_at', { ascending: false, nullsFirst: false })
+          .limit(50);
+      }
+      const { data, error } = primaryResult;
 
       if (error) {
         if (!shouldFallbackNewsQuery(error)) {
           console.error('[NEWS] items query failed', error);
           throw error;
         }
-        const { data: fallbackData, error: fallbackError } = await supabase
+        let fallbackResult = await supabase
           .from('news_items')
           .select(NEWS_TABLE_FALLBACK_SELECT)
           .eq('archived', tab === 'archive')
           .order('published_at', { ascending: false, nullsFirst: false })
           .order('created_at', { ascending: false, nullsFirst: false })
           .limit(50);
+        if (fallbackResult.error && isColumnMismatchError(fallbackResult.error)) {
+          console.warn('[news] selectWithEt failed on news_items, retrying minimal:', formatErrorReason(fallbackResult.error));
+          fallbackResult = await supabase
+            .from('news_items')
+            .select(NEWS_MIN_SELECT)
+            .eq('archived', tab === 'archive')
+            .order('published_at', { ascending: false, nullsFirst: false })
+            .order('created_at', { ascending: false, nullsFirst: false })
+            .limit(50);
+        }
+        const { data: fallbackData, error: fallbackError } = fallbackResult;
         if (fallbackError) {
           console.error('[NEWS] fallback items query failed', fallbackError);
           throw fallbackError;
@@ -519,7 +546,6 @@ const {
             source_name: source?.name || row?.source_slug || row?.source_key || 'Unknown source',
             cached_image_url: row?.cached_image_url || row?.image_cached_url || null,
             display_image_url: row?.cached_image_url || row?.image_cached_url || row?.image_url || null,
-            content: row?.content || row?.body || null,
             is_archived: Boolean(row?.archived),
           } as NewsItem;
         });
@@ -534,7 +560,6 @@ const {
         ...row,
         is_archived: Boolean(row.archived),
         display_image_url: row.display_image_url || row.cached_image_url || row.image_cached_url || row.image_url || null,
-        content: row.content || row.body || row.summary || null,
         summary: row.summary || null,
         body: row.body || row.summary || null,
         content_html: row.content_html || null,
@@ -821,17 +846,17 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
     enabled: showEtContent && autoTranslateEnabled && debouncedVisible,
     id: item.id,
     title: item.title,
-    body: item.content || item.body || item.summary,
+    body: item.body || item.summary,
     sourceLang: item.source_lang || item.language,
     fallbackTitleEt: item.title_et,
     fallbackBodyEt: item.body_et,
     endpointConfigured,
   });
   const useEtDisplay = showEtContent && autoTranslateEnabled;
-  const displayTitle = useEtDisplay ? (item.title_et || item.title || '') : (item.title || '');
+  const displayTitle = useEtDisplay ? (item.title_et ?? item.title ?? '') : (item.title ?? '');
   const snippetSource = useEtDisplay
-    ? (item.body_et || item.body || item.summary || '')
-    : (item.body || item.summary || item.excerpt || '');
+    ? (item.body_et ?? item.body ?? item.summary ?? '')
+    : (item.body ?? item.summary ?? item.excerpt ?? '');
   const snippet = toPlainText(snippetSource).slice(0, 150);
   const originalUrl = item.permalink_url || item.url || '#';
   const isTranslated = Boolean(translation.translated?.title_et || translation.translated?.body_et || item.title_et || item.body_et);
@@ -988,17 +1013,17 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
       window.removeEventListener(TRANSLATION_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
     };
   }, []);
-  const mergedBody = item.content || item.body || item.summary;
+  const mergedBody = item.body || item.summary;
   const bodyText = toPlainText(contentHtml || mergedBody);
   const bodyFallback = item.excerpt || '';
   const normalizedBodyText = toPlainText(contentHtml || bodyFallback);
   const hasTranslatedContent = showManualTranslation
     && Boolean(manualTranslation?.title_et || manualTranslation?.body_et);
   const useEtDisplay = showEtContent && autoTranslateEnabled;
-  const showTitleBase = useEtDisplay ? (item.title_et || item.title || '') : (item.title || '');
+  const showTitleBase = useEtDisplay ? (item.title_et ?? item.title ?? '') : (item.title ?? '');
   const showBodyBase = useEtDisplay
-    ? (item.body_et || item.body || item.summary || '')
-    : (item.body || item.summary || '');
+    ? (item.body_et ?? item.body ?? item.summary ?? '')
+    : (item.body ?? item.summary ?? '');
   const displayTitle = hasTranslatedContent ? (manualTranslation?.title_et || showTitleBase) : showTitleBase;
   const displayBody = hasTranslatedContent
     ? (manualTranslation?.body_et || normalizedBodyText)

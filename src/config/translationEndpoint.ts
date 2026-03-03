@@ -1,8 +1,6 @@
-import { resolveProxyBase } from './proxyEndpoint';
-
 export const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 export const TRANSLATION_ENDPOINT_UPDATED_EVENT = 'translation-endpoint-updated';
-export const WORKER_DEFAULT_ENDPOINT = '';
+export const WORKER_DEFAULT_ENDPOINT = '/api/translate-et';
 
 function proxyBaseToTranslateEndpoint(proxyBase: string): string {
   const raw = String(proxyBase || '').trim();
@@ -29,16 +27,7 @@ function normalizeTranslateEndpoint(raw: string): string {
 export function getTranslateEndpoint(): string {
   const stored = (localStorage.getItem(LS_TRANSLATE_ENDPOINT) || '').trim();
   if (stored) return normalizeTranslateEndpoint(stored);
-
-  const env = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_TRANSLATE_API_URL
-    ? String(import.meta.env.VITE_TRANSLATE_API_URL).trim()
-    : '';
-  if (env) return normalizeTranslateEndpoint(env);
-
-  const proxyDerived = proxyBaseToTranslateEndpoint(resolveProxyBase());
-  if (proxyDerived) return proxyDerived;
-
-  return '';
+  return WORKER_DEFAULT_ENDPOINT;
 }
 
 export function getStoredEndpoint(): string {

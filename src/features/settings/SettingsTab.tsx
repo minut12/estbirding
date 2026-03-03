@@ -658,7 +658,7 @@ export default function SettingsTab() {
         <Label htmlFor="translateApiUrl">Translation API URL</Label>
         <Input
           id="translateApiUrl"
-          placeholder="https://<backend-domain>/translate-et"
+          placeholder="/api/translate-et"
           value={translationApiUrl}
           onChange={(e) => setTranslationApiUrlInput(e.target.value)}
         />
@@ -672,7 +672,7 @@ export default function SettingsTab() {
           Use proxy translate (recommended)
         </Button>
         <p className="text-xs text-muted-foreground">
-          Use your translation backend base URL (query params supported).
+          Recommended: /api/translate-et (same-origin). You can still use a full Supabase/custom URL.
         </p>
         <p className="text-xs text-muted-foreground">
           Resolved endpoint: {resolvedEndpoint || '(empty)'}

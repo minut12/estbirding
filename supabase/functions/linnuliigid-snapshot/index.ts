@@ -53,6 +53,11 @@ async function fetchSpeciesData(name: string): Promise<{
   lon: number | null;
   latestDate: string | null;
   occ7: number;
+  coordsStatus: "public" | "restricted" | "missing";
+  coordsSource: "exact" | "municipality" | "county" | "none";
+  locality: string | null;
+  municipality: string | null;
+  county: string | null;
 }> {
   const searchUrl = `https://elurikkus.ee/biocache-service/occurrences/search?q=${encodeURIComponent(name)}&sort=eventDate&dir=desc&pageSize=200&fq=country:Estonia&_ts=${Date.now()}`;
 
@@ -90,12 +95,20 @@ async function fetchSpeciesData(name: string): Promise<{
       .sort((a: { t: number }, b: { t: number }) => b.t - a.t);
 
     const latestTs = normalized[0]?.t || 0;
-    const latestDate = formatDateEEFromTs(latestTs);
+    const latestDate = latestTs > 0 ? new Date(latestTs).toISOString() : null;
     const occ7 = normalized.filter((x: { t: number }) => x.t >= (Date.now() - 7 * 24 * 60 * 60 * 1000)).length;
     let lat: number | null = null;
     let lon: number | null = null;
+    let coordsStatus: "public" | "restricted" | "missing" = "missing";
+    let coordsSource: "exact" | "municipality" | "county" | "none" = "none";
+    let locality: string | null = null;
+    let municipality: string | null = null;
+    let county: string | null = null;
 
     for (const occ of occurrences) {
+      if (!locality) locality = String((occ as Record<string, unknown>).locality || (occ as Record<string, unknown>).locationRemarks || "") || null;
+      if (!municipality) municipality = String((occ as Record<string, unknown>).municipality || (occ as Record<string, unknown>).stateProvince || "") || null;
+      if (!county) county = String((occ as Record<string, unknown>).county || (occ as Record<string, unknown>).stateProvince || "") || null;
       // Extract coordinates (prefer newest with Estonian coords)
       if (lat === null) {
         const olat = parseFloat(String(occ.decimalLatitude ?? ""));
@@ -103,7 +116,26 @@ async function fetchSpeciesData(name: string): Promise<{
         if (isEstoniaCoords(olat, olon)) {
           lat = olat;
           lon = olon;
+          coordsStatus = "public";
+          coordsSource = "exact";
         }
+      }
+    }
+    if (lat === null || lon === null) {
+      const mKey = normalizeName(municipality);
+      const cKey = normalizeName(county).replace(/_county$/, "");
+      const mCentroid = MUNICIPALITY_CENTROIDS[mKey];
+      const cCentroid = COUNTY_CENTROIDS[cKey];
+      if (mCentroid) {
+        lat = mCentroid.lat;
+        lon = mCentroid.lon;
+        coordsStatus = "restricted";
+        coordsSource = "municipality";
+      } else if (cCentroid) {
+        lat = cCentroid.lat;
+        lon = cCentroid.lon;
+        coordsStatus = "restricted";
+        coordsSource = "county";
       }
     }
 
@@ -115,7 +147,7 @@ async function fetchSpeciesData(name: string): Promise<{
       });
     }
 
-    return { lat, lon, latestDate, occ7 };
+    return { lat, lon, latestDate, occ7, coordsStatus, coordsSource, locality, municipality, county };
   } catch (e) {
     clearTimeout(timeout);
     // Fallback to HTML scraping
@@ -129,6 +161,11 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
   lon: number | null;
   latestDate: string | null;
   occ7: number;
+  coordsStatus: "public" | "restricted" | "missing";
+  coordsSource: "exact" | "municipality" | "county" | "none";
+  locality: string | null;
+  municipality: string | null;
+  county: string | null;
 }> {
   const url = `https://elurikkus.ee/app/occurrences/search?text=${encodeURIComponent(name)}&_ts=${Date.now()}`;
   const controller = new AbortController();
@@ -162,7 +199,7 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
       .filter((x) => x.t > 0)
       .sort((a, b) => b.t - a.t);
     const latestTs = normalized[0]?.t || 0;
-    const latestDate = formatDateEEFromTs(latestTs);
+    const latestDate = latestTs > 0 ? new Date(latestTs).toISOString() : null;
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const occ7 = normalized.filter((x) => x.t >= sevenDaysAgo).length;
 
@@ -191,10 +228,10 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
       }
     }
 
-    return { lat, lon, latestDate, occ7 };
+    return { lat, lon, latestDate, occ7, coordsStatus: "missing", coordsSource: "none", locality: null, municipality: null, county: null };
   } catch {
     clearTimeout(timeout);
-    return { lat: null, lon: null, latestDate: null, occ7: 0 };
+    return { lat: null, lon: null, latestDate: null, occ7: 0, coordsStatus: "missing", coordsSource: "none", locality: null, municipality: null, county: null };
   }
 }
 
@@ -499,9 +536,14 @@ async function runRefresh(
       occ7?: number;
       src?: string;
       visible?: boolean;
+      coords_status?: "public" | "restricted" | "missing";
+      coords_source?: "exact" | "municipality" | "county" | "none";
+      locality?: string | null;
+      municipality?: string | null;
+      county?: string | null;
     }
   > = (existingRow?.points_json && typeof existingRow.points_json === "object")
-    ? existingRow.points_json as Record<string, { lat?: number; lon?: number; t?: string; occ7?: number; src?: string; visible?: boolean; }>
+    ? existingRow.points_json as Record<string, { lat?: number; lon?: number; t?: string; occ7?: number; src?: string; visible?: boolean; coords_status?: "public" | "restricted" | "missing"; coords_source?: "exact" | "municipality" | "county" | "none"; locality?: string | null; municipality?: string | null; county?: string | null; }>
     : {};
 
   let done = startIndex;
@@ -550,6 +592,11 @@ async function runRefresh(
                 entry.lon = data.lon;
               }
               entry.occ7 = data.occ7;
+              entry.coords_status = data.coordsStatus;
+              entry.coords_source = data.coordsSource;
+              entry.locality = data.locality;
+              entry.municipality = data.municipality;
+              entry.county = data.county;
               points[name] = entry;
             } else {
               lastError = `${name}: ${lastErr?.message || "Unknown fetch error"}`;
@@ -884,3 +931,43 @@ Deno.serve(async (req) => {
   }
 });
 
+  const COUNTY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
+    harju: { lat: 59.40, lon: 24.80 },
+    hiiu: { lat: 58.92, lon: 22.60 },
+    ida_viru: { lat: 59.35, lon: 27.42 },
+    jõgeva: { lat: 58.75, lon: 26.40 },
+    järva: { lat: 58.89, lon: 25.57 },
+    lääne: { lat: 58.94, lon: 23.54 },
+    lääne_viru: { lat: 59.30, lon: 26.33 },
+    põlva: { lat: 58.05, lon: 27.05 },
+    pärnu: { lat: 58.38, lon: 24.53 },
+    rapla: { lat: 58.99, lon: 24.79 },
+    saare: { lat: 58.33, lon: 22.48 },
+    tartu: { lat: 58.38, lon: 26.73 },
+    valga: { lat: 57.78, lon: 26.04 },
+    viljandi: { lat: 58.36, lon: 25.60 },
+    võru: { lat: 57.84, lon: 27.00 },
+  };
+  const MUNICIPALITY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
+    tartu: { lat: 58.38, lon: 26.73 },
+    tallinn: { lat: 59.44, lon: 24.75 },
+    pärnu: { lat: 58.38, lon: 24.50 },
+    narva: { lat: 59.38, lon: 28.19 },
+    viljandi: { lat: 58.36, lon: 25.60 },
+    võru: { lat: 57.84, lon: 27.00 },
+    rakvere: { lat: 59.35, lon: 26.36 },
+    haapsalu: { lat: 58.94, lon: 23.54 },
+    kuressaare: { lat: 58.25, lon: 22.49 },
+    jõgeva: { lat: 58.75, lon: 26.40 },
+    paide: { lat: 58.88, lon: 25.56 },
+    rapla: { lat: 58.99, lon: 24.79 },
+    valga: { lat: 57.78, lon: 26.04 },
+    põlva: { lat: 58.05, lon: 27.05 },
+  };
+  const normalizeName = (v: unknown) => String(v || "").toLowerCase()
+    .replace(/[ä]/g, "a")
+    .replace(/[ö]/g, "o")
+    .replace(/[õ]/g, "o")
+    .replace(/[ü]/g, "u")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");

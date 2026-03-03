@@ -444,11 +444,39 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).
 const markers = new Map();
 
 // === Helpers ===
-function _toDay(s){
+const EE_TZ = 'Europe/Tallinn';
+function _parseObservedTs(v){
+  const s = String(v || '').trim();
   if(!s) return null;
-  const m = (''+s).match(/(\d{4})-(\d{2})-(\d{2})/);
-  if(!m) return null;
-  return new Date(+m[1], +m[2]-1, +m[3]).getTime();
+  // date-only: anchor to midday UTC to avoid day shifts around timezone boundaries
+  const d = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(d) return Date.UTC(+d[1], +d[2]-1, +d[3], 12, 0, 0);
+  const t = Date.parse(s);
+  if(Number.isFinite(t)) return t;
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if(m) return Date.UTC(+m[1], +m[2]-1, +m[3], +m[4], +m[5], 0);
+  return null;
+}
+function formatDateEE(v){
+  const ts = (typeof v === 'number') ? v : _parseObservedTs(v);
+  if(!Number.isFinite(ts)) return '-';
+  try{
+    return new Intl.DateTimeFormat('et-EE', {
+      timeZone: EE_TZ, year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(new Date(ts));
+  }catch(e){ return String(v || '-'); }
+}
+function formatDateTimeEE(v){
+  const ts = (typeof v === 'number') ? v : _parseObservedTs(v);
+  if(!Number.isFinite(ts)) return '-';
+  try{
+    return new Intl.DateTimeFormat('et-EE', {
+      timeZone: EE_TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour:'2-digit', minute:'2-digit'
+    }).format(new Date(ts));
+  }catch(e){ return String(v || '-'); }
+}
+function _toDay(s){
+  return _parseObservedTs(s);
 }
 const SPRING_CUTOFF_MMDD = '02-15'; // change if needed
 function earliestInYearIsoAfterCutoff(datesIso, year, mmddCutoff){
@@ -966,7 +994,7 @@ function _setLoaderStage(stage){
 }
 function _fmtTs(iso){
   if(!iso) return '-';
-  try{ return window.formatDateEE ? window.formatDateEE(iso) : String(iso); }catch(e){ return String(iso); }
+  try{ return formatDateTimeEE(iso); }catch(e){ return String(iso); }
 }
 function _scheduleNextSnapshotRefresh(delayMs){
   if(__rateLimitRetryTimer) return;
@@ -1882,9 +1910,13 @@ function _explainInclusion(key, p){
     species: key,
     included: reasonsExcluded.length === 0,
     reasonsExcluded: reasonsExcluded,
+    rawObserved: point.t || null,
     parsedDate: hasDate ? new Date(parsedTs).toISOString() : null,
+    displayedDate: point.t ? formatDateEE(point.t) : null,
     ageDays: ageDays,
     hasCoords: hasCoords,
+    coordsStatus: point.coords_status || (hasCoords ? 'public' : 'missing'),
+    coordsSource: point.coords_source || (hasCoords ? 'exact' : 'none'),
     occ7: Number(point.occ7 || 0) || 0,
     withinByDate: !!withinByDate,
     withinByOcc7: !!withinByOcc7,
@@ -1899,6 +1931,8 @@ function _computeSnapshotInspector(){
       t: String(p.t || ''),
       src: String(p.src || ''),
       hasCoords: Number.isFinite(p.lat) && Number.isFinite(p.lon),
+      coordsStatus: String(p.coords_status || (Number.isFinite(p.lat) && Number.isFinite(p.lon) ? 'public' : 'missing')),
+      coordsSource: String(p.coords_source || (Number.isFinite(p.lat) && Number.isFinite(p.lon) ? 'exact' : 'none')),
       occ7: Number(p.occ7 || 0) || 0,
       lat: p.lat,
       lon: p.lon,
@@ -1927,6 +1961,11 @@ function _computeSnapshotInspector(){
       date: new Date(r.ts).toISOString(),
       source: r.src || '',
       coordsPresent: !!r.hasCoords,
+      coordsStatus: r.coordsStatus,
+      coordsSource: r.coordsSource,
+      rawObserved: r.t || null,
+      parsedTimestamp: r.ts ? new Date(r.ts).toISOString() : null,
+      displayedDate: r.t ? formatDateEE(r.t) : null,
       id: r.species + ':' + (r.t || ''),
     };
   });
@@ -2116,7 +2155,7 @@ function _updateDebugPanel(){
   el.innerHTML = [
     'buildId: <b>' + MAP_BUILD_ID + '</b>',
     'status: <b>' + statusLabel + '</b>',
-    'generatedAt: <b>' + (__snapshotMeta.generated_at ? (window.formatDateEE ? window.formatDateEE(__snapshotMeta.generated_at) : __snapshotMeta.generated_at) : '-') + '</b>',
+    'generatedAt: <b>' + (__snapshotMeta.generated_at ? formatDateTimeEE(__snapshotMeta.generated_at) : '-') + '</b>',
     'progress: <b>' + progressDone + '/' + progressTotal + '</b>',
     'resumeIndex: <b>' + _getResumeIndex() + '</b>',
     'Species with coords: <b>' + totalWithCoords + '</b>',
@@ -2171,6 +2210,16 @@ function _applySnapshot(snap){
     else delete p.occ7;
     if(typeof s.src === 'string' && s.src.trim()) p.src = s.src;
     else delete p.src;
+    if(typeof s.coords_status === 'string') p.coords_status = s.coords_status;
+    else delete p.coords_status;
+    if(typeof s.coords_source === 'string') p.coords_source = s.coords_source;
+    else delete p.coords_source;
+    if(typeof s.locality === 'string' && s.locality.trim()) p.locality = s.locality;
+    else delete p.locality;
+    if(typeof s.municipality === 'string' && s.municipality.trim()) p.municipality = s.municipality;
+    else delete p.municipality;
+    if(typeof s.county === 'string' && s.county.trim()) p.county = s.county;
+    else delete p.county;
     if(typeof p.visible !== 'boolean') p.visible = true;
     __snapshotProgressDone++;
     __lastProgressDone = __snapshotProgressDone;
@@ -2963,10 +3012,13 @@ function updateMarker(key) {
     const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
     const c7 = Number.isFinite(p.occ7) ? p.occ7 : null;
     const icon = avatarIcon(getDisplayAvatar(key), bcol, c7, metaCfg.rarityLevel || 'none');
-    const when = p.t ? '<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.observationDate) || 'vaatluse kuup\u00e4ev') + ': ' + (window.formatDateEE ? window.formatDateEE(p.t) : p.t) + '</small>' : '';
+    const when = p.t ? '<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.observationDate) || 'vaatluse kuup\u00e4ev') + ': ' + formatDateEE(p.t) + '</small>' : '';
     const src = p.src ? '<br><small>allikas: '+p.src+'</small>' : '';
+    const precision = (p.coords_status === 'restricted' && p.coords_source && p.coords_source !== 'none')
+      ? ('<br><small>coords restricted \u2192 ' + p.coords_source + ' centroid</small>')
+      : '';
     const m = L.marker([p.lat,p.lon], {icon}).addTo(map)
-      .bindPopup('<b>'+key+'</b>'+when+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src);
+      .bindPopup('<b>'+key+'</b>'+when+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+precision);
     markers.set(key, m);
   }
 }
@@ -2989,7 +3041,7 @@ function rowHTML(obj) {
 
   const noCoords = !hasPoint && occ7 > 0;
   const metaRow1 = hasPoint
-    ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + (window.formatDateEE ? window.formatDateEE(p.t) : p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
+    ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+((p.coords_status==='restricted' && p.coords_source && p.coords_source!=='none') ? (' <span class="pill">coords:</span> restricted→'+p.coords_source) : '')
     : noCoords
       ? '<span class="pill" style="background:#fef3c7;color:#92400e">Koordinaadid peidetud</span>'+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
       : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');

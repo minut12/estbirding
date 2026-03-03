@@ -1227,10 +1227,14 @@ function _applySnapshot(snap){
     const s = pts[key];
     points[key] = points[key] || {};
     const p = points[key];
-    if(s.t) p.t = s.t;
+    if(typeof s.t === 'string' && s.t.trim()) p.t = s.t;
+    else delete p.t;
     if(Number.isFinite(s.lat) && Number.isFinite(s.lon)){ p.lat = s.lat; p.lon = s.lon; }
+    else { delete p.lat; delete p.lon; }
     if(Number.isFinite(s.occ7)) p.occ7 = s.occ7;
-    if(s.src) p.src = s.src;
+    else delete p.occ7;
+    if(typeof s.src === 'string' && s.src.trim()) p.src = s.src;
+    else delete p.src;
     if(typeof p.visible !== 'boolean') p.visible = true;
   }
   __snapshotMeta.status = snap.status || 'ready';

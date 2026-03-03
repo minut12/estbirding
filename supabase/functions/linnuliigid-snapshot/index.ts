@@ -10,6 +10,7 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const INGEST_KEY = Deno.env.get("EVENTS_INGEST_KEY"); // reuse same key
+const DEBUG_LITE = Deno.env.get("DEBUG_LITE") === "1";
 
 // All 369 species
 const SPECIES = ["Aed-põõsalind","Aed-roolind","Aedporr","Alk","Alverüdi","Ameerika piilpart","Atlantise tormilind","Aul","Baleaari tormilind","Euroopa kaelustäks","Habekakk","Habeviires","Hahk","Hakk","Hall-kärbsenäpp","Hallhaigur","Hallhani","Hallkibu","Hallpea-rähn","Hallpõsk-pütt","Hallrästas","Hallrüdi","Halltsiitsitaja","Hallvares","Hallõgija","Hangelind","Harakas","Haugaskotkas","Hele-urvalind","Heletilder","Herilaseviu","Hiireviu","Hoburästas","Händkakk","Hänilane","Hõbehaigur","Hõbehaugas","Hõbekajakas","Hüüp","Ida-mustvaeras","Jahipistrik","Jämejalg","Järvekaur","Jääkajakas","Jääkaur","Jääkoskel","Jõgi-ritsiklind","Jõgitiir","Jõgitilder","Jõgivästrik","Kadakatäks","Kaelus-kärbsenäpp","Kaelus-turteltuvi","Kaeluskotkas","Kaelusrästas","Kaelustuvi","Kalakajakas","Kalakotkas","Kalda-rädilind","Kaldapääsuke","Kaljukajakas","Kaljukotkas","Kanada lagle","Kanakull","Kanepilind","Karbuskajakas","Karkjalg","Karmiinleevike","Karvasjalg-kakk","Karvasjalg-viu","Kassikakk","Kiivitaja","Kiripugu-rüdi","Kirjuhahk","Kivikakk","Kivirullija","Kivitäks","Kodukakk","Kodutuvi","Koduvarblane","Koldhaigur","Koldjalg-hõbekajakas","Koldvint","Kormoran","Krüüsel","Kukkurtihane","Kuld-lehelind","Kuldhänilane","Kuldnokk","Kuldtsiitsitaja","Kuninghahk","Kuuse-käbilind","Käblik","Kägu","Käharpelikan","Käosulane","Kääbuskormoran","Kääbuskotkas","Kõnnuõgija","Kõrbe-kivitäks","Kõrbe-põõsalind","Kõrkja-roolind","Kõrvukräts","Kõvernokk-rüdi","Kühmnokk-luik","Künnivares","Laanenäär","Laanepüü","Laanerähn","Laisaba-änn","Lammitilder","Lapi tsiitsitaja","Lasuurtihane","Lauk","Laululuik","Laulurästas","Leeterüdi","Leevike","Liiv-kivitäks","Liivatüll","Linavästrik","Loorkakk","Luitsnokk-iibis","Luitsnokk-part","Lumehani","Lumekakk","Lääne-lehelind","Lääne-pöialpoiss","Lõopistrik","Lõuna-hõbekajakas","Lühinokk-hani","Madukotkas","Mandariinpart","Merikajakas","Merikotkas","Merirüdi","Merisk","Merivart","Mesilasenäpp","Mets-lehelind","Metsis","Metskiur","Metskurvits","Metstilder","Metsvint","Mudanepp","Mudatilder","Must-harksaba","Must-kärbsenäpp","Must-lepalind","Must-toonekurg","Mustjalg-tüll","Mustkael-pütt","Mustkurk-raat","Mustlagle","Mustlauk-õgija","Mustpea-põõsalind","Mustpea-tsiitsitaja","Mustpugu-rästas","Musträhn","Musträstas","Mustsaba-vigle","Musttihane","Mustvaeras","Mustvares","Mustviires","Mägi-kanepilind","Mägikiur","Männi-käbilind","Männileevike","Männitalvike","Mänsak","Naaskelnokk","Naerukajakas","Naerutiir","Niidu-kaelustäks","Niidu-ritsiklind","Niidukiur","Nunn-kivitäks","Nurmkana","Nõgipart","Nõlva-lehelind","Nõmmekiur","Nõmmelõoke","Ohakalind","Ohhoota hõbekajakas","Padu-roolind","Pasknäär","Peegel-tormilind","Pelikan","Peoleo","Piilpart","Piiritaja","Pikksaba-änn","Plütt","Plüü","Polaarkajakas","Porr","Prillvaeras","Pruunselg-põõsalind","Puna-harksaba","Puna-veetallaja","Punajalg-pistrik","Punajalg-tilder","Punakael-lagle","Punakurk-kaur","Punanokk-vart","Punapea-vart","Punapea-õgija","Punarind","Punasaba-õgija","Punaselg-õgija","Purpurhaigur","Puukoristaja","Põhja-kirjurästas","Põhja-lehelind","Põhja-tormipääsu","Põhjatihane","Põhjatsiitsitaja","Põhjavint","Põldlõoke","Põldtsiitsitaja","Põldvarblane","Põldvutt","Pöialpoiss","Rabapistrik","Rabapüü","Raisakotkas","Randkajakas","Randkiur","Randtiir","Rasvatihane","Raudkull","Ristpart","Roherähn","Rohevint","Rohukoskel","Rohunepp","Ronk","Roo-loorkull","Roo-ritsiklind","Roohabekas","Rooruik","Roosa-kuldnokk","Roosakajakas","Roosatiir","Roostepääsuke","Roosterind-tüll","Rootsiitsitaja","Rubiinööbik","Rukkirääk","Ruugerüdi","Rägapart","Rästas-roolind","Räusktiir","Rääkspart","Räästapääsuke","Rüüt","Sabatihane","Salu-lehelind","Salupäll","Salutihane","Sarviklõoke","Sarvikpütt","Siberi lehelind","Siberi raat","Siidhaigur","Siidisaba","Siisike","Sinikael-part","Siniraag","Sinirind","Sinisaba","Sinitihane","Soo-loorkull","Soo-roolind","Sookiur","Sookurg","Soopart","Sooräts","Soorüdi","Stepi-loorkull","Stepikajakas","Stepikiivitaja","Stepikotkas","Stepipistrik","Stepiviu","Suitsupääsuke","Suula","Suur-kirjurähn","Suur-konnakotkas","Suur-laukhani","Suurkoovitaja","Suurnokk-vint","Suurrüdi","Suuränn","Sõtkas","Söödikänn","Tait","Talvike","Tamme-kirjurähn","Teder","Tiigi-roolind","Tikutaja","Triip-ritsiklind","Tuhk-lehelind","Tumetilder","Tundra-rabahani","Tundrakaur","Tundrakiur","Tutkas","Tutt-tihane","Tutt-tiir","Tuttlõoke","Tuttpütt","Tuttvart","Tuuletallaja","Täpikhuik","Tõmmu-lehelind","Tõmmuiibis","Tõmmukajakas","Tõmmuvaeras","Urvalind","Vaaraohani","Vaenukägu","Vainurästas","Valge-toonekurg","Valgepõsk-lagle","Valgeselg-kirjurähn","Valgesilm-vart","Valgetiib-viires","Veetallaja","Veisehaigur","Vesipapp","Vihitaja","Viupart","Väike-kirjurähn","Väike-konnakotkas","Väike-käosulane","Väike-kärbsenäpp","Väike-laukhani","Väike-lehelind","Väike-põõsalind","Väikealk","Väikehuik","Väikehüüp","Väikekajakas","Väikekoovitaja","Väikekoskel","Väikeluik","Väikepistrik","Väikepütt","Väikerüdi","Väiketiir","Väiketrapp","Väiketsiitsitaja","Väiketüll","Välja-loorkull","Välja-väikelõoke","Värbkakk","Värbrüdi","Väänkael","Võsa-ritsiklind","Võsaraat","Vööt-käbilind","Vööt-põõsalind","Vööthani","Vöötkakk","Vöötnokk-kajakas","Vöötsaba-vigle","Õõnetuvi","Ööbik","Ööhaigur","Öösorr"];
@@ -24,6 +25,27 @@ function toDay(s: string): number | null {
   return new Date(+m[1], +m[2] - 1, +m[3]).getTime();
 }
 
+function parseElurikkusDate(v: string): number {
+  const s = String(v || "").trim();
+  if (!s) return 0;
+  const iso = s.includes("T") ? s : s.replace(" ", "T");
+  const t = Date.parse(iso);
+  if (Number.isFinite(t)) return t;
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return 0;
+  const fallback = Date.parse(`${m[1]}-${m[2]}-${m[3]}T00:00:00`);
+  return Number.isFinite(fallback) ? fallback : 0;
+}
+
+function formatDateEEFromTs(ts: number): string | null {
+  if (!Number.isFinite(ts) || ts <= 0) return null;
+  const d = new Date(ts);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 // Fetch occurrence data for one species from Elurikkus biocache API
 async function fetchSpeciesData(name: string): Promise<{
   lat: number | null;
@@ -31,7 +53,7 @@ async function fetchSpeciesData(name: string): Promise<{
   latestDate: string | null;
   occ7: number;
 }> {
-  const searchUrl = `https://elurikkus.ee/biocache-service/occurrences/search?q=${encodeURIComponent(name)}&sort=eventDate&dir=desc&pageSize=50&fq=country:Estonia`;
+  const searchUrl = `https://elurikkus.ee/biocache-service/occurrences/search?q=${encodeURIComponent(name)}&sort=eventDate&dir=desc&pageSize=200&fq=country:Estonia`;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
@@ -54,37 +76,40 @@ async function fetchSpeciesData(name: string): Promise<{
     const json = await res.json();
     const occurrences = json?.occurrences || [];
 
-    let latestDate: string | null = null;
-    let bestMs = -1;
-    let occ7 = 0;
+    const normalized = occurrences
+      .map((occ: Record<string, unknown>) => {
+        const rawDate = String(
+          occ.eventDate || occ.occurrenceDate || occ.observed_at || occ.datetime || "",
+        );
+        return { occ, rawDate, t: parseElurikkusDate(rawDate) };
+      })
+      .filter((x: { t: number }) => x.t > 0)
+      .sort((a: { t: number }, b: { t: number }) => b.t - a.t);
+
+    const latestTs = normalized[0]?.t || 0;
+    const latestDate = formatDateEEFromTs(latestTs);
+    const occ7 = normalized.filter((x: { t: number }) => x.t >= (Date.now() - 7 * 24 * 60 * 60 * 1000)).length;
     let lat: number | null = null;
     let lon: number | null = null;
-    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
     for (const occ of occurrences) {
-      // Extract date
-      const dateStr =
-        occ.eventDate || occ.occurrenceDate || occ.datetime || "";
-      const dateMatch = String(dateStr).match(/(\d{4}-\d{2}-\d{2})/);
-      if (dateMatch) {
-        const d = dateMatch[1];
-        const ms = toDay(d);
-        if (ms && ms > bestMs) {
-          bestMs = ms;
-          latestDate = d;
-        }
-        if (ms && ms >= sevenDaysAgo) occ7++;
-      }
-
       // Extract coordinates (prefer newest with Estonian coords)
       if (lat === null) {
-        const olat = parseFloat(occ.decimalLatitude);
-        const olon = parseFloat(occ.decimalLongitude);
+        const olat = parseFloat(String(occ.decimalLatitude ?? ""));
+        const olon = parseFloat(String(occ.decimalLongitude ?? ""));
         if (isEstoniaCoords(olat, olon)) {
           lat = olat;
           lon = olon;
         }
       }
+    }
+
+    if (DEBUG_LITE && name === "Metsis") {
+      console.log("[elurikkus latest]", name, {
+        latestRaw: normalized[0]?.rawDate || null,
+        latestFmt: latestDate,
+        top3: normalized.slice(0, 3).map((x: { t: number }) => new Date(x.t).toISOString()),
+      });
     }
 
     return { lat, lon, latestDate, occ7 };
@@ -127,20 +152,14 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
     const reTable = /(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}/g;
     while ((m = reTable.exec(html)) !== null) allDates.push(m[1]);
 
-    const unique = [...new Set(allDates)];
+    const normalized = allDates
+      .map((rawDate) => ({ rawDate, t: parseElurikkusDate(rawDate) }))
+      .filter((x) => x.t > 0)
+      .sort((a, b) => b.t - a.t);
+    const latestTs = normalized[0]?.t || 0;
+    const latestDate = formatDateEEFromTs(latestTs);
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    let bestMs = -1;
-    let latestDate: string | null = null;
-    let occ7 = 0;
-
-    for (const d of unique) {
-      const ms = toDay(d);
-      if (ms && ms > bestMs) {
-        bestMs = ms;
-        latestDate = d;
-      }
-      if (ms && ms >= sevenDaysAgo) occ7++;
-    }
+    const occ7 = normalized.filter((x) => x.t >= sevenDaysAgo).length;
 
     // Extract coords
     let lat: number | null = null;

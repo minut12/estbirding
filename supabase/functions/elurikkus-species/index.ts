@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
   if (req.method !== "GET") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+    return new Response(JSON.stringify({ ok: false, stage: "request", message: "Method not allowed" }), {
       status: 405,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
     const days = Math.max(1, Number(reqUrl.searchParams.get("days") || 7) || 7);
     const limit = Math.max(1, Math.min(500, Number(reqUrl.searchParams.get("limit") || 200) || 200));
     if (!species) {
-      return new Response(JSON.stringify({ error: "Missing text query parameter" }), {
+      return new Response(JSON.stringify({ ok: false, stage: "request", message: "Missing text query parameter" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -58,25 +58,52 @@ Deno.serve(async (req) => {
 
     const upstreamUrl = `https://elurikkus.ee/app/occurrences/search?text=${encodeURIComponent(species)}&_ts=${Date.now()}`;
     const startedAt = Date.now();
-    const upstreamRes = await fetch(upstreamUrl, {
-      method: "GET",
-      headers: {
-        "Accept": "application/json, text/plain, */*",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-        "User-Agent": "EstBirding/1.0",
-      },
-    });
-    const upstreamText = await upstreamRes.text();
-    const durationMs = Date.now() - startedAt;
-    const upstreamBytes = new TextEncoder().encode(upstreamText).length;
+    let upstreamRes: Response;
+    let upstreamText = "";
+    let durationMs = 0;
+    let upstreamBytes = 0;
+    try {
+      upstreamRes = await fetch(upstreamUrl, {
+        method: "GET",
+        headers: {
+          "Accept": "application/json, text/plain, */*",
+          "Cache-Control": "no-cache",
+          "Pragma": "no-cache",
+          "User-Agent": "EstBirding/1.0",
+        },
+      });
+      upstreamText = await upstreamRes.text();
+      durationMs = Date.now() - startedAt;
+      upstreamBytes = new TextEncoder().encode(upstreamText).length;
+    } catch (e) {
+      durationMs = Date.now() - startedAt;
+      return new Response(JSON.stringify({
+        ok: false,
+        stage: "upstream",
+        status: 0,
+        message: String((e as Error)?.message || e),
+        sourceUrl: upstreamUrl,
+        upstreamStatus: 0,
+        upstreamBytes: 0,
+        durationMs,
+      }), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (!upstreamRes.ok) {
       return new Response(JSON.stringify({
-        error: `Upstream HTTP ${upstreamRes.status}`,
+        ok: false,
+        stage: "upstream",
+        status: upstreamRes.status,
+        message: `Upstream HTTP ${upstreamRes.status}`,
         species,
         fetchedAt: new Date().toISOString(),
         sourceUrl: upstreamUrl,
+        upstreamStatus: upstreamRes.status,
+        upstreamBytes,
+        durationMs,
         trace: {
           upstreamStatus: upstreamRes.status,
           upstreamBytes,
@@ -126,10 +153,14 @@ Deno.serve(async (req) => {
     const latestTs = normalized.length ? normalized[0].ts : 0;
 
     return new Response(JSON.stringify({
+      ok: true,
       species,
       fetchedAt: new Date().toISOString(),
       sourceUrl: upstreamUrl,
       latestOccurrenceAt: latestTs > 0 ? new Date(latestTs).toISOString() : null,
+      upstreamStatus: upstreamRes.status,
+      upstreamBytes,
+      durationMs,
       items: normalized.slice(0, limit).map((x) => x.item),
       trace: {
         upstreamStatus: upstreamRes.status,
@@ -142,10 +173,13 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: String((error as Error)?.message || error) }), {
+    return new Response(JSON.stringify({
+      ok: false,
+      stage: "parse",
+      message: String((error as Error)?.message || error),
+    }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
-

@@ -1335,6 +1335,7 @@ async function fetchElurikkusSpecies(species){
   __elurikkusInFlight = true;
   __elurikkusLastFetchAtMs = Date.now();
   const row = __elurikkusBySpecies[key] = (__elurikkusBySpecies[key] || {});
+  let traceId = 0;
   row.status = 'loading';
   row.error = '';
   row.startedAt = new Date().toISOString();
@@ -1343,14 +1344,20 @@ async function fetchElurikkusSpecies(species){
   render();
   try{
     const base = _resolveElurikkusSpeciesApi();
+    const anon = _resolveSupabaseAnonKeyLocal();
+    if(!anon) throw new Error('Supabase anon key missing for elurikkus-species');
     const url = _withCacheBuster(base + '?text=' + encodeURIComponent(key) + '&days=7&limit=200');
     __lastElurikkusUrl = url;
-    const traceId = _traceStart({ method: 'GET', url: url });
+    traceId = _traceStart({ method: 'GET', url: url });
     const t0 = performance.now();
     const res = await fetch(url, {
       method:'GET',
       cache:'no-store',
-      headers: _withSupabaseAuthHeaders({ 'Accept': 'application/json' }),
+      headers: {
+        'Accept': 'application/json',
+        'apikey': anon,
+        'Authorization': 'Bearer ' + anon,
+      },
     });
     const text = await res.text();
     const bytesRead = text ? (new TextEncoder().encode(text).length) : 0;
@@ -1358,7 +1365,8 @@ async function fetchElurikkusSpecies(species){
     let json = {};
     try{ json = text ? JSON.parse(text) : {}; }catch(e){ json = {}; }
     _traceEnd(traceId, { status: res.status, ok: !!res.ok, bytesRead: bytesRead, details: { responseKeys: json && typeof json === 'object' ? Object.keys(json) : [] } });
-    if(!res.ok) throw new Error('Elurikkus proxy failed (HTTP ' + res.status + ')');
+    logInfo('Elurikkus species response', { species: key, status: res.status, bodyPreview: String(text || '').slice(0,200) });
+    if(!res.ok) throw new Error('elurikkus-species HTTP ' + res.status + ': ' + String(text || '').slice(0,200));
     const items = Array.isArray(json.items) ? json.items : [];
     const restrictedCount = items.filter(function(it){ return String((it && it.coordsStatus) || '') !== 'public'; }).length;
     row.status = 'ok';
@@ -1377,6 +1385,9 @@ async function fetchElurikkusSpecies(species){
     return json;
   }catch(e){
     const msg = String((e && e.message) ? e.message : e || 'Elurikkus fetch failed');
+    if(traceId){
+      _traceEnd(traceId, { errorType: 'network', details: { message: msg } });
+    }
     row.status = 'error';
     row.error = msg;
     row.updatedAt = new Date().toISOString();

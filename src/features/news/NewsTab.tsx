@@ -11,7 +11,10 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { isAutoTranslateNewsToEtEnabled } from '@/lib/settings';
+import { isEstonianLocale, normalizeLocale, resolveAppLocale } from '@/lib/locale';
+import { TranslateEtHttpError, translateEt, type TranslateEtOutput } from '@/lib/translateEt';
 import { toast } from 'sonner';
+import { resolveEndpoint, TRANSLATION_ENDPOINT_UPDATED_EVENT } from '@/config/translationEndpoint';
 import { getProxyMode } from '@/config/proxyEndpoint';
 import { getSupabaseUrl } from '@/config/supabaseConfig';
 import { normalizeDisplayText } from '@/lib/textNormalize';
@@ -60,7 +63,6 @@ const NEWS_VIEW_SELECT = 'id,source_key,title,title_et,body,body_et,summary,publ
 const ALL_SOURCES_LABEL = normalizeDisplayText("Kõik allikad");
 const NEWS_TABLE_FALLBACK_SELECT = 'id,source_key,title,title_et,body,body_et,summary,published_at,url,image_url,archived,translation_status,translation_error,translated_at,source_id,source_slug,permalink_url,content_html,created_at,cached_image_url,image_cached_url,language,source_lang,guid,raw_json,fetched_at';
 const NEWS_MIN_SELECT = 'id,source_key,title,body,summary,published_at,url,image_url,archived,source_id,source_slug,created_at,cached_image_url,content_html,fetched_at,guid,raw_json,language,source_lang';
-const NEWS_VIEW_MODE_KEY = 'news_item_view_mode_v1';
 
 /* Format date */
 const ET_MONTHS = ['jaanuar','veebruar','märts','aprill','mai','juuni','juuli','august','september','oktoober','november','detsember'];
@@ -215,6 +217,14 @@ function getErrorHostLabel(): string {
   }
 }
 
+const shownTranslationWarnings = new Set<string>();
+function notifyTranslationWarning(message: string): void {
+  const normalized = String(message || 'Viga').trim().slice(0, 160) || 'Viga';
+  if (shownTranslationWarnings.has(normalized)) return;
+  shownTranslationWarnings.add(normalized);
+  toast.warning(`Tõlge ebaõnnestus: ${normalized}`);
+}
+
 function ensureImageUrl(item: NewsItem): NewsItem {
   const cached = decodeUrl(item.cached_image_url);
   const display = decodeUrl(item.display_image_url);
@@ -260,17 +270,142 @@ function rewriteImgSrcToProxy(html: string, sourceName: string, proxyBase: strin
   }
 }
 
-type ViewMode = 'translated' | 'original';
-function loadViewModeMap(): Record<string, ViewMode> {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(NEWS_VIEW_MODE_KEY) || '{}') as Record<string, ViewMode>;
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
+interface EtTranslationState {
+  translated: TranslateEtOutput | null;
+  loading: boolean;
+  errorStatus: number | null;
 }
-function saveViewModeMap(value: Record<string, ViewMode>): void {
-  try { localStorage.setItem(NEWS_VIEW_MODE_KEY, JSON.stringify(value)); } catch { /* ignore */ }
+
+function useEtTranslation({
+  enabled,
+  id,
+  title,
+  body,
+  sourceLang,
+  fallbackTitleEt,
+  fallbackBodyEt,
+  endpointConfigured,
+}: {
+  enabled: boolean;
+  id: string;
+  title: string;
+  body: string | null | undefined;
+  sourceLang?: string | null;
+  fallbackTitleEt?: string | null;
+  fallbackBodyEt?: string | null;
+  endpointConfigured: boolean;
+}): EtTranslationState {
+  const hasFallback = Boolean((fallbackTitleEt || '').trim() || (fallbackBodyEt || '').trim());
+  const [translated, setTranslated] = useState<TranslateEtOutput | null>(
+    hasFallback ? {
+      title_et: (fallbackTitleEt || '').trim(),
+      body_et: (fallbackBodyEt || '').trim(),
+    } : null,
+  );
+  const [loading, setLoading] = useState(false);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
+  const bodyText = (body || '').trim();
+  const normalizedLang = normalizeLocale(sourceLang || '');
+  const isLikelyEstonian = normalizedLang === 'et';
+  const shouldTranslate = enabled && endpointConfigured && !isLikelyEstonian && Boolean(title.trim() || bodyText);
+
+  useEffect(() => {
+    if (!hasFallback) {
+      setTranslated(null);
+      return;
+    }
+    setTranslated({
+      title_et: (fallbackTitleEt || '').trim(),
+      body_et: (fallbackBodyEt || '').trim(),
+    });
+  }, [fallbackTitleEt, fallbackBodyEt, hasFallback]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!shouldTranslate) {
+      setLoading(false);
+      setErrorStatus(null);
+      return () => { cancelled = true; };
+    }
+
+    setLoading(true);
+    setErrorStatus(null);
+    translateEt({
+      id,
+      title,
+      body: bodyText,
+      sourceLang: sourceLang || undefined,
+    })
+      .then((result) => {
+        if (cancelled || !result) return;
+        setTranslated(result);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        if (formatErrorReason(error).includes('TRANSLATE_ENDPOINT_MISSING')) {
+          toast.error('Tõlke endpoint puudub. Ava Seaded → Tõlge ja salvesta URL.');
+          return;
+        }
+        notifyTranslationWarning(formatErrorReason(error));
+        if (error instanceof TranslateEtHttpError) {
+          setErrorStatus(error.status);
+        } else {
+          setErrorStatus(0);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldTranslate, id, title, bodyText]);
+
+  return { translated, loading, errorStatus };
+}
+
+function useOnceVisible<T extends HTMLElement>(rootMargin = '120px') {
+  const ref = useRef<T | null>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (visible) return;
+    const node = ref.current;
+    if (!node) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setVisible(true);
+        observer.disconnect();
+      }
+    }, { rootMargin, threshold: 0.01 });
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [visible, rootMargin]);
+
+  return [ref, visible] as const;
+}
+
+function useDebouncedTrue(value: boolean, delayMs: number): boolean {
+  const [debounced, setDebounced] = useState(false);
+
+  useEffect(() => {
+    if (!value) {
+      setDebounced(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setDebounced(true), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [value, delayMs]);
+
+  return debounced;
 }
 
 /* Main component */
@@ -280,13 +415,16 @@ export default function NewsTab() {
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [selected, setSelected] = useState<NewsItem | null>(null);
-  const [viewModeById, setViewModeById] = useState<Record<string, ViewMode>>(() => loadViewModeMap());
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollPosRef = useRef(0);
+  const appLocale = resolveAppLocale();
+  const showEtContent = isEstonianLocale(appLocale);
   const autoTranslateEnabled = isAutoTranslateNewsToEtEnabled();
+  const [translateEndpoint, setTranslateEndpoint] = useState(() => resolveEndpoint());
   const [resolvedProxyBase, setResolvedProxyBase] = useState(() => getProxyBase());
   const [activeProxyName, setActiveProxyName] = useState(() => getProxyMode(getProxyBase()));
   const [lastNewsFetchErrorShort, setLastNewsFetchErrorShort] = useState('');
+  const endpointConfigured = Boolean(translateEndpoint);
   const utf8Probe = 'Kõik allikad õäöü';
 
   useEffect(() => {
@@ -303,8 +441,14 @@ export default function NewsTab() {
   }, [utf8Probe]);
 
   useEffect(() => {
-    saveViewModeMap(viewModeById);
-  }, [viewModeById]);
+    const refreshEndpoint = () => setTranslateEndpoint(resolveEndpoint());
+    window.addEventListener('storage', refreshEndpoint);
+    window.addEventListener(TRANSLATION_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
+    return () => {
+      window.removeEventListener('storage', refreshEndpoint);
+      window.removeEventListener(TRANSLATION_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
+    };
+  }, []);
 
   useEffect(() => {
     const refreshProxy = () => {
@@ -471,20 +615,6 @@ const {
   }, [newsItems, resolvedProxyBase]);
 
   useEffect(() => {
-    if (!autoTranslateEnabled || allItems.length === 0) return;
-    const ids = allItems
-      .filter((item) => !item.title_et || !item.body_et)
-      .slice(0, 25)
-      .map((item) => item.id);
-    if (ids.length === 0) return;
-    void supabase.functions.invoke('translate-news-pending', {
-      body: { ids, enqueue_only: true, limit: 10 },
-    }).catch((error) => {
-      console.warn('[news] enqueue missing translations failed', error);
-    });
-  }, [autoTranslateEnabled, allItems]);
-
-  useEffect(() => {
     if (!isError) return;
     const shortReason = formatErrorReason(newsQueryError);
     setLastNewsFetchErrorShort(shortReason.slice(0, 120));
@@ -567,13 +697,8 @@ const {
       <ArticleView
         item={selected}
         sources={sources}
-        viewMode={viewModeById[selected.id] || 'translated'}
-        onToggleViewMode={() => {
-          setViewModeById((prev) => ({
-            ...prev,
-            [selected.id]: (prev[selected.id] || 'translated') === 'translated' ? 'original' : 'translated',
-          }));
-        }}
+        showEtContent={showEtContent}
+        autoTranslateEnabled={autoTranslateEnabled}
         onBack={closeArticle}
         onToggleArchive={() => toggleArchive(selected.id, selected.is_archived)}
       />
@@ -684,13 +809,9 @@ const {
                 sources={sources}
                 proxyBase={resolvedProxyBase}
                 birdingPolandSourceId={birdingPolandSourceId}
-                viewMode={viewModeById[item.id] || 'translated'}
-                onToggleViewMode={() => {
-                  setViewModeById((prev) => ({
-                    ...prev,
-                    [item.id]: (prev[item.id] || 'translated') === 'translated' ? 'original' : 'translated',
-                  }));
-                }}
+                showEtContent={showEtContent}
+                autoTranslateEnabled={autoTranslateEnabled}
+                endpointConfigured={endpointConfigured}
                 onOpen={() => openArticle(item)}
                 onToggleArchive={() => toggleArchive(item.id, item.is_archived)}
               />
@@ -703,29 +824,42 @@ const {
 }
 
 /* News Card */
-function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, viewMode, onToggleViewMode, onOpen, onToggleArchive }: {
+function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtContent, autoTranslateEnabled, endpointConfigured, onOpen, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
   proxyBase: string;
   birdingPolandSourceId: string | null;
-  viewMode: ViewMode;
-  onToggleViewMode: () => void;
+  showEtContent: boolean;
+  autoTranslateEnabled: boolean;
+  endpointConfigured: boolean;
   onOpen: () => void;
   onToggleArchive: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
+  const [cardRef, isVisible] = useOnceVisible<HTMLDivElement>();
+  const debouncedVisible = useDebouncedTrue(isVisible, 180);
   const sourceName = sourceLabel(item, sources);
   const isBirdingPoland = sourceName === 'Birding Poland';
   const primaryThumb = getNewsImageSrc(item, proxyBase);
   const [thumbSrc, setThumbSrc] = useState<string | null>(primaryThumb);
-  const useEtDisplay = viewMode === 'translated';
+  const translation = useEtTranslation({
+    enabled: showEtContent && autoTranslateEnabled && debouncedVisible,
+    id: item.id,
+    title: item.title,
+    body: item.body || item.summary,
+    sourceLang: item.source_lang || item.language,
+    fallbackTitleEt: item.title_et,
+    fallbackBodyEt: item.body_et,
+    endpointConfigured,
+  });
+  const useEtDisplay = showEtContent && autoTranslateEnabled;
   const displayTitle = useEtDisplay ? (item.title_et ?? item.title ?? '') : (item.title ?? '');
   const snippetSource = useEtDisplay
     ? (item.body_et ?? item.body ?? item.summary ?? '')
     : (item.body ?? item.summary ?? item.excerpt ?? '');
   const snippet = toPlainText(snippetSource).slice(0, 150);
   const originalUrl = item.permalink_url || item.url || '#';
-  const isTranslated = Boolean(item.title_et || item.body_et);
+  const isTranslated = Boolean(translation.translated?.title_et || translation.translated?.body_et || item.title_et || item.body_et);
 
   useEffect(() => {
     setImageFailed(false);
@@ -733,7 +867,7 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, viewMode, o
   }, [primaryThumb, item.id]);
 
   return (
-    <div className="px-4 py-3 active:bg-muted/50 transition-colors">
+    <div ref={cardRef} className="px-4 py-3 active:bg-muted/50 transition-colors">
       <div className="flex gap-3">
         <button onClick={onOpen} className="w-20 h-20 rounded-lg shrink-0 bg-muted overflow-hidden">
           {thumbSrc && !imageFailed ? (
@@ -782,6 +916,12 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, viewMode, o
             <Badge variant="secondary" className="text-xs px-1.5 py-0">
               {sourceLabel(item, sources)}
             </Badge>
+            {translation.loading && (
+              <Badge variant="outline" className="text-xs px-1.5 py-0 flex items-center gap-1">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Tõlgin...
+              </Badge>
+            )}
             {isTranslated && <Badge variant="outline" className="text-xs px-1.5 py-0">Tõlgitud</Badge>}
             <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at || item.created_at || item.fetched_at || '')}</span>
           </div>
@@ -797,11 +937,6 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, viewMode, o
                 <ExternalLink className="w-3 h-3" /> Originaal
               </Button>
             </a>
-            {isTranslated && (
-              <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onToggleViewMode}>
-                {useEtDisplay ? 'Original' : 'Tõlgitud'}
-              </Button>
-            )}
               <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onToggleArchive}>
               {item.is_archived ? <ArchiveRestore className="w-3.5 h-3.5 mr-1" /> : <Archive className="w-3.5 h-3.5 mr-1" />}
               {item.is_archived ? 'Taasta' : 'Arhiveeri'}
@@ -814,17 +949,20 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, viewMode, o
 }
 
 /* Article View (lazy-loads content) */
-function ArticleView({ item, sources, viewMode, onToggleViewMode, onBack, onToggleArchive }: {
+function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBack, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
-  viewMode: ViewMode;
-  onToggleViewMode: () => void;
+  showEtContent: boolean;
+  autoTranslateEnabled: boolean;
   onBack: () => void;
   onToggleArchive: () => void;
 }) {
   const [contentHtml, setContentHtml] = useState<string | null>(item.content_html);
   const [loadingContent, setLoadingContent] = useState(!item.content_html && item.source_slug === 'eoy');
   const [contentError, setContentError] = useState<string | null>(null);
+  const [manualTranslation, setManualTranslation] = useState<TranslateEtOutput | null>(null);
+  const [showManualTranslation, setShowManualTranslation] = useState(false);
+  const [manualTranslateLoading, setManualTranslateLoading] = useState(false);
 
   useEffect(() => {
     if (item.content_html || item.source_slug !== 'eoy') return;
@@ -852,30 +990,92 @@ function ArticleView({ item, sources, viewMode, onToggleViewMode, onBack, onTogg
     return () => { cancelled = true; };
   }, [item.id, item.content_html, item.source_slug]);
 
+  useEffect(() => {
+    setManualTranslation(null);
+    setShowManualTranslation(false);
+    setManualTranslateLoading(false);
+  }, [item.id]);
+
   const sourceName = sourceLabel(item, sources);
+  const isBirdingPoland = sourceName.trim().toLowerCase() === BIRDING_POLAND_NAME;
   const proxyBase = getProxyBase();
+  const normalizedLang = normalizeLocale(item.source_lang || item.language || '');
+  const isLikelyEstonian = normalizedLang === 'et';
+  const canShowTranslate = !isLikelyEstonian || isBirdingPoland;
+  const [translateEndpoint, setTranslateEndpoint] = useState(() => resolveEndpoint());
+
+  useEffect(() => {
+    const refreshEndpoint = () => setTranslateEndpoint(resolveEndpoint());
+    window.addEventListener('storage', refreshEndpoint);
+    window.addEventListener(TRANSLATION_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
+    return () => {
+      window.removeEventListener('storage', refreshEndpoint);
+      window.removeEventListener(TRANSLATION_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
+    };
+  }, []);
   const mergedBody = item.body || item.summary;
+  const bodyText = toPlainText(contentHtml || mergedBody);
   const bodyFallback = item.excerpt || '';
   const normalizedBodyText = toPlainText(contentHtml || bodyFallback);
-  const useEtDisplay = viewMode === 'translated';
+  const hasTranslatedContent = showManualTranslation
+    && Boolean(manualTranslation?.title_et || manualTranslation?.body_et);
+  const useEtDisplay = showEtContent && autoTranslateEnabled;
   const showTitleBase = useEtDisplay ? (item.title_et ?? item.title ?? '') : (item.title ?? '');
   const showBodyBase = useEtDisplay
     ? (item.body_et ?? item.body ?? item.summary ?? '')
     : (item.body ?? item.summary ?? '');
-  const displayTitle = showTitleBase;
-  const displayBody = useEtDisplay ? showBodyBase : (contentHtml || normalizedBodyText);
+  const displayTitle = hasTranslatedContent ? (manualTranslation?.title_et || showTitleBase) : showTitleBase;
+  const displayBody = hasTranslatedContent
+    ? (manualTranslation?.body_et || normalizedBodyText)
+    : (useEtDisplay ? showBodyBase : (contentHtml || normalizedBodyText));
   const heroImageUrl = getNewsImageSrc(item, proxyBase);
   const [heroSrc, setHeroSrc] = useState<string | null>(heroImageUrl);
   const [heroFailed, setHeroFailed] = useState(false);
   const rewrittenContentHtml = contentHtml ? rewriteImgSrcToProxy(contentHtml, sourceName, proxyBase) : null;
   const bodyHtmlWithoutDuplicateHero = rewrittenContentHtml ? stripLeadingSameImage(rewrittenContentHtml, heroSrc) : null;
   const originalUrl = item.permalink_url || item.url || '#';
-  const isTranslated = Boolean(item.title_et || item.body_et);
+  const isTranslated = Boolean(hasTranslatedContent);
 
   useEffect(() => {
     setHeroSrc(heroImageUrl);
     setHeroFailed(false);
   }, [heroImageUrl, item.id]);
+
+  const handleToggleTranslate = useCallback(async () => {
+    if (showManualTranslation) {
+      setShowManualTranslation(false);
+      return;
+    }
+    if (manualTranslation) {
+      setShowManualTranslation(true);
+      return;
+    }
+
+    if (!translateEndpoint.trim()) {
+      toast.error('Tõlke endpoint puudub. Ava Seaded → Tõlge ja salvesta URL.');
+      return;
+    }
+
+    setManualTranslateLoading(true);
+    try {
+
+      const result = await translateEt({
+        id: item.id,
+        title: item.title,
+        body: bodyText,
+        sourceLang: item.source_lang || item.language || undefined,
+      }, translateEndpoint);
+      if (!result) return;
+      setManualTranslation(result);
+      setShowManualTranslation(true);
+    } catch (error) {
+      const message = formatErrorReason(error);
+      console.error('[translate] detail translate failed', error);
+      notifyTranslationWarning(message);
+    } finally {
+      setManualTranslateLoading(false);
+    }
+  }, [bodyText, item.id, item.title, manualTranslation, normalizedBodyText, showManualTranslation, translateEndpoint]);
 
   return (
     <div className="flex flex-col h-full">
@@ -914,6 +1114,12 @@ function ArticleView({ item, sources, viewMode, onToggleViewMode, onBack, onTogg
         <h1 className="text-xl font-bold text-foreground">{displayTitle}</h1>
         <div className="flex items-center gap-2">
           <Badge variant="secondary">{sourceName}</Badge>
+          {manualTranslateLoading && (
+            <Badge variant="outline" className="flex items-center gap-1">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Tõlgin...
+            </Badge>
+          )}
           {isTranslated && <Badge variant="outline">Tõlgitud</Badge>}
           <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at || item.created_at || item.fetched_at || '')}</span>
         </div>
@@ -924,7 +1130,7 @@ function ArticleView({ item, sources, viewMode, onToggleViewMode, onBack, onTogg
             <Skeleton className="h-4 w-5/6" />
             <Skeleton className="h-4 w-4/6" />
           </div>
-        ) : bodyHtmlWithoutDuplicateHero && !useEtDisplay ? (
+        ) : bodyHtmlWithoutDuplicateHero && !hasTranslatedContent && !useEtDisplay ? (
           <div
             className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
             dangerouslySetInnerHTML={{ __html: bodyHtmlWithoutDuplicateHero }}
@@ -947,14 +1153,16 @@ function ArticleView({ item, sources, viewMode, onToggleViewMode, onBack, onTogg
             {item.is_archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
             {item.is_archived ? 'Taasta' : 'Arhiveeri'}
           </Button>
-          {isTranslated && (
+          {canShowTranslate && (
             <Button
               variant="outline"
               size="sm"
               className="gap-1.5"
-              onClick={onToggleViewMode}
+              onClick={handleToggleTranslate}
+              disabled={manualTranslateLoading}
             >
-              {useEtDisplay ? 'Original' : 'Tõlgitud'}
+              {manualTranslateLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+              {showManualTranslation ? 'Original' : (manualTranslateLoading ? 'Translating...' : 'Translate')}
             </Button>
           )}
         </div>

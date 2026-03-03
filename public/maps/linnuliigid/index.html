@@ -638,6 +638,11 @@ let __lastSnapshotLoadAtMs = 0;
 let __lastHttpStatus = null;
 let __lastHttpOk = null;
 let __lastResponseBytes = null;
+let __lastSnapshotHash = null;
+let __isReloading = false;
+let __lastFetchAt = null;
+let __lastProcessedAt = null;
+let __loaderStage = 'idle'; // idle | loading_config | loading_snapshot | processing | ready | error
 let __lastBodyDurationMs = null;
 let __lastParseDurationMs = null;
 let __lastContentType = null;
@@ -653,6 +658,8 @@ const VERBOSE_DEBUG = (function(){ try { return localStorage.getItem('debugVerbo
 let __snapshotInFlightRef = null;
 let __snapshotInFlightStartedAtMs = 0;
 let __pollLoopToken = 0;
+let __snapshotAutoRefreshTimer = null;
+const SNAPSHOT_AUTO_REFRESH_MS = 30000;
 
 function _safeData(v){
   try{
@@ -717,6 +724,11 @@ function _copyDebugJson(){
     lastRequestUrl: __lastRequestUrl || '',
     lastHttp: { status: __lastHttpStatus, ok: __lastHttpOk, durationMs: __lastDurationMs },
     lastSnapshotBytes: __lastResponseBytes,
+    lastSnapshotHash: __lastSnapshotHash,
+    isReloading: __isReloading,
+    loaderStage: __loaderStage,
+    lastFetchAt: __lastFetchAt,
+    lastProcessedAt: __lastProcessedAt,
     lastInfoMessage: __lastInfoMessage || '',
     lastErrorMessage: __lastErrorMessage || '',
     stopSignalAborted: !!(__stopController && __stopController.signal && __stopController.signal.aborted),
@@ -740,6 +752,11 @@ function _clearDebugEvents(){
   __lastHttpOk = null;
   __lastDurationMs = null;
   __lastResponseBytes = null;
+  __lastSnapshotHash = null;
+  __lastFetchAt = null;
+  __lastProcessedAt = null;
+  __isReloading = false;
+  __loaderStage = 'idle';
   if(VERBOSE_DEBUG) __debugEvents.length = 0;
   _updateDebugPanel();
 }
@@ -780,8 +797,28 @@ function _scheduleLoadSnapshotRetry(reason){
     __pendingConfigLoadRetry = null;
     __lastInfoMessage = 'Config arrived, retrying snapshot load (' + reason + ')';
     pushDebugEvent('SNAPSHOT_RETRY', 'Retrying snapshot load', { reason: reason, runId: __runId });
-    loadSnapshot();
+    loadSnapshot(true);
   }, 200);
+}
+
+function _setLoaderStage(stage){
+  __loaderStage = stage || 'idle';
+}
+function _fmtTs(iso){
+  if(!iso) return '-';
+  try{ return window.formatDateEE ? window.formatDateEE(iso) : String(iso); }catch(e){ return String(iso); }
+}
+function _scheduleNextSnapshotRefresh(delayMs){
+  if(__snapshotAutoRefreshTimer) clearTimeout(__snapshotAutoRefreshTimer);
+  __snapshotAutoRefreshTimer = setTimeout(function(){
+    if(__isReloading) return _scheduleNextSnapshotRefresh(SNAPSHOT_AUTO_REFRESH_MS);
+    loadSnapshot();
+  }, Math.max(1000, Number(delayMs) || SNAPSHOT_AUTO_REFRESH_MS));
+}
+function _withCacheBuster(url){
+  const base = String(url || '');
+  const sep = base.indexOf('?') >= 0 ? '&' : '?';
+  return base + sep + '_ts=' + Date.now();
 }
 
 function _setResumeIndex(i){
@@ -876,31 +913,39 @@ async function fetchJsonWithTimeout(url, opts){
   const timeoutMs = Math.max(Number(options.timeoutMs || 15000), 5000);
   const runId = options.runId;
   const index = options.index;
+  let fetchUrl = String(url || '');
   const timeoutCtrl = new AbortController();
   const combinedSignal = _combineSignals([options.signal, timeoutCtrl.signal]);
   const t0 = performance.now();
   let timeoutId = null;
   try{
     timeoutId = setTimeout(function(){ try{ timeoutCtrl.abort('timeout'); }catch(e){} }, timeoutMs);
-    pushDebugEvent('FETCH_START', 'Starting request', { url:url, timeoutMs:timeoutMs, runId:runId, index:index });
-    const res = await fetch(url, { signal: combinedSignal, cache:'no-store' });
+    fetchUrl = _withCacheBuster(url);
+    __lastRequestUrl = fetchUrl;
+    __lastFetchAt = new Date().toISOString();
+    pushDebugEvent('FETCH_START', 'Starting request', { url:fetchUrl, timeoutMs:timeoutMs, runId:runId, index:index });
+    const res = await fetch(fetchUrl, {
+      signal: combinedSignal,
+      cache:'no-store',
+      headers: { 'cache-control': 'no-cache', 'pragma': 'no-cache' }
+    });
     __lastHttpStatus = res.status;
     __lastHttpOk = res.ok;
     __lastContentType = res.headers.get('content-type') || '';
     pushDebugEvent('FETCH_HEADERS', 'Headers received', {
-      url:url, runId:runId, index:index, status:res.status, ok:res.ok,
+      url:fetchUrl, runId:runId, index:index, status:res.status, ok:res.ok,
       contentType: __lastContentType,
       durationMs: Math.round(performance.now() - t0),
     }, res.ok ? 'info' : 'warn');
 
     const b0 = performance.now();
-    pushDebugEvent('BODY_READ_START', 'Reading response body', { url:url, runId:runId, index:index });
+    pushDebugEvent('BODY_READ_START', 'Reading response body', { url:fetchUrl, runId:runId, index:index });
     const text = await res.text();
     __lastBodyDurationMs = Math.round(performance.now() - b0);
     __lastBodyBytes = text ? (new TextEncoder().encode(text).length) : 0;
     __lastResponseBytes = __lastBodyBytes;
     pushDebugEvent('BODY_READ_DONE', 'Body read done', {
-      url:url, runId:runId, index:index, bytes: __lastBodyBytes, durationMs: __lastBodyDurationMs, contentType: __lastContentType
+      url:fetchUrl, runId:runId, index:index, bytes: __lastBodyBytes, durationMs: __lastBodyDurationMs, contentType: __lastContentType
     });
 
     if(!res.ok){
@@ -910,13 +955,13 @@ async function fetchJsonWithTimeout(url, opts){
     }
 
     const p0 = performance.now();
-    pushDebugEvent('JSON_PARSE_START', 'Parsing JSON', { url:url, runId:runId, index:index });
+    pushDebugEvent('JSON_PARSE_START', 'Parsing JSON', { url:fetchUrl, runId:runId, index:index });
     const json = text ? JSON.parse(text) : null;
     __lastParseDurationMs = Math.round(performance.now() - p0);
     pushDebugEvent('JSON_PARSE_DONE', 'JSON parsed', {
-      url:url, runId:runId, index:index, parseMs: __lastParseDurationMs,
-      topKeys: (json && typeof json === 'object') ? Object.keys(json).slice(0, 10) : null
-    });
+      url:fetchUrl, runId:runId, index:index, parseMs: __lastParseDurationMs,
+        topKeys: (json && typeof json === 'object') ? Object.keys(json).slice(0, 10) : null
+      });
     return json;
   }catch(e){
     const isAbort = !!(e && (e.name === 'AbortError' || (combinedSignal && combinedSignal.aborted)));
@@ -924,7 +969,7 @@ async function fetchJsonWithTimeout(url, opts){
       const reason = getAbortReason(combinedSignal) || getAbortReason(timeoutCtrl.signal) || 'aborted';
       const dur = performance.now() - t0;
       pushDebugEvent('FETCH_FAIL', 'Request aborted', {
-        url:url, runId:runId, index:index, wasAbortError: (e && e.name === 'AbortError') || false,
+        url:fetchUrl, runId:runId, index:index, wasAbortError: (e && e.name === 'AbortError') || false,
         abortReason: reason,
         abortReasonStopSignal: getAbortReason(__stopController && __stopController.signal),
         abortReasonRequestSignal: getAbortReason(combinedSignal),
@@ -932,7 +977,7 @@ async function fetchJsonWithTimeout(url, opts){
       }, 'warn');
       throw _makeAbortError(reason, dur, timeoutMs);
     }
-    pushDebugEvent('FETCH_FAIL', 'Request failed', { url:url, runId:runId, index:index, message: String(e && e.message ? e.message : e) }, 'error');
+    pushDebugEvent('FETCH_FAIL', 'Request failed', { url:fetchUrl, runId:runId, index:index, message: String(e && e.message ? e.message : e) }, 'error');
     throw e;
   }finally{
     if(timeoutId) clearTimeout(timeoutId);
@@ -1172,7 +1217,11 @@ function _updateProgressUI(done, total, status){
   const barInner = document.getElementById('fetchProgressBarInner');
   const stopBtn = document.getElementById('btnStopFetch');
   if(!prog) return;
-  if(status === 'running' && total > 0){
+  if(__isReloading || __loaderStage === 'loading_config' || __loaderStage === 'loading_snapshot' || __loaderStage === 'processing'){
+    prog.textContent = 'Reloading... stage=' + __loaderStage + ' fetch=' + _fmtTs(__lastFetchAt) + ' processed=' + _fmtTs(__lastProcessedAt);
+    if(bar){ bar.style.display='none'; }
+    if(stopBtn && __isRefreshRunning) stopBtn.style.display='inline-block';
+  } else if(status === 'running' && total > 0){
     __currentIndex = done;
     _setResumeIndex(done);
     if(done > __lastProgressDone){
@@ -1211,6 +1260,11 @@ function _updateDebugPanel(){
     'lastRequestUrl: <b>' + (__lastRequestUrl || '-') + '</b>',
     'lastHttp: <b>{ status: ' + (__lastHttpStatus ?? '-') + ', ok: ' + (__lastHttpOk ?? '-') + ', durationMs: ' + (__lastDurationMs ?? '-') + ' }</b>',
     'lastSnapshotBytes: <b>' + (__lastResponseBytes ?? '-') + '</b>',
+    'lastSnapshotHash: <b>' + (__lastSnapshotHash ?? '-') + '</b>',
+    'isReloading: <b>' + (__isReloading ? 'true' : 'false') + '</b>',
+    'loaderStage: <b>' + (__loaderStage || '-') + '</b>',
+    'lastFetchAt: <b>' + (_fmtTs(__lastFetchAt)) + '</b>',
+    'lastProcessedAt: <b>' + (_fmtTs(__lastProcessedAt)) + '</b>',
     'lastInfoMessage: <b>' + (__lastInfoMessage || '-') + '</b>',
     'lastErrorMessage: <b>' + (__lastErrorMessage || '-') + '</b>',
     'stopSignalAborted: <b>' + (!!(__stopController && __stopController.signal && __stopController.signal.aborted)) + '</b>',
@@ -1264,11 +1318,14 @@ async function _loadSnapshotImpl(){
   const t0 = Date.now();
   const runId = (__runId || 0);
   try{
+    __isReloading = true;
     __snapshotLoadAttemptCount++;
     __lastSnapshotLoadAtMs = Date.now();
+    _setLoaderStage('loading_snapshot');
     pushDebugEvent('SNAPSHOT_LOAD_START', 'Loading snapshot', { runId: runId, attempt: __snapshotLoadAttemptCount, snapshotApi: SNAPSHOT_API || null });
     _ensureStopController();
     if(!_resolveSupabaseUrlLocal()){
+      _setLoaderStage('loading_config');
       __configWaitCount++;
       if(!__configWaitStartedAtMs) __configWaitStartedAtMs = Date.now();
       __lastInfoMessage = 'Waiting for config...';
@@ -1277,8 +1334,7 @@ async function _loadSnapshotImpl(){
     }
     const snapshotUrl = _resolveSnapshotApi();
     __snapshotLoadRetryCount = 0;
-    __lastRequestUrl = snapshotUrl;
-    _showSnapshotBanner('Loading data...');
+    _showSnapshotBanner('Reloading... stage=' + __loaderStage + ' fetch=' + _fmtTs(__lastFetchAt) + ' processed=' + _fmtTs(__lastProcessedAt));
     __activeStepController = new AbortController();
     const snap = await fetchJsonWithTimeout(snapshotUrl, {
       timeoutMs: 15000,
@@ -1286,6 +1342,7 @@ async function _loadSnapshotImpl(){
       runId: runId,
       index: __currentIndex
     });
+    _setLoaderStage('processing');
     __lastDurationMs = Date.now() - t0;
     pushDebugEvent('SNAPSHOT_LOAD_DONE', 'Snapshot loaded', { status: snap.status, progress_done: snap.progress_done, progress_total: snap.progress_total });
 
@@ -1295,8 +1352,11 @@ async function _loadSnapshotImpl(){
       if(snap.points_json && Object.keys(snap.points_json).length > 0){
         pushDebugEvent('SNAPSHOT_APPLY_START', 'Applying running snapshot', { runId: runId, index: __currentIndex });
         _applySnapshot(snap);
+        __lastSnapshotHash = String(__lastResponseBytes || 0) + ':' + String(snap.generated_at || '') + ':' + String(Object.keys(snap.points_json || {}).length);
+        __lastProcessedAt = new Date().toISOString();
         pushDebugEvent('SNAPSHOT_APPLY_DONE', 'Applied running snapshot', { runId: runId, index: __currentIndex });
       }
+      _setLoaderStage('ready');
       _startPolling();
       return;
     }
@@ -1304,6 +1364,8 @@ async function _loadSnapshotImpl(){
     if(snap.points_json && Object.keys(snap.points_json).length > 0){
       pushDebugEvent('SNAPSHOT_APPLY_START', 'Applying snapshot', { runId: runId, index: __currentIndex });
       _applySnapshot(snap);
+      __lastSnapshotHash = String(__lastResponseBytes || 0) + ':' + String(snap.generated_at || '') + ':' + String(Object.keys(snap.points_json || {}).length);
+      __lastProcessedAt = new Date().toISOString();
       pushDebugEvent('SNAPSHOT_APPLY_DONE', 'Applied snapshot', { runId: runId, index: __currentIndex });
       __lastProgressAtMs = Date.now();
       pushDebugEvent('PROGRESS_TICK', 'Snapshot apply completed', { runId: runId, index: __currentIndex, atMs: __lastProgressAtMs });
@@ -1314,6 +1376,7 @@ async function _loadSnapshotImpl(){
     } else {
       _showSnapshotBanner('No snapshot data yet. Press "Refresh data" to generate.', 'warn');
     }
+    _setLoaderStage('ready');
 
     if(__isRefreshRunning && snap.status !== 'running'){
       pushDebugEvent('REFRESH_COMPLETE', 'Snapshot reached terminal status', { status: snap.status, runId: runId });
@@ -1333,6 +1396,7 @@ async function _loadSnapshotImpl(){
     } else {
       __lastErrorMessage = String(e?.message || e || 'load failed');
     }
+    _setLoaderStage('error');
     __lastDurationMs = Date.now() - t0;
     if((__lastErrorMessage || '').indexOf('Supabase URL') >= 0){
       __lastInfoMessage = 'Waiting for config...';
@@ -1346,12 +1410,12 @@ async function _loadSnapshotImpl(){
           runId: runId,
         }, 'warn');
         _requestSupabaseConfigFromParent();
-        setTimeout(loadSnapshotOnce, 500);
+        setTimeout(function(){ loadSnapshot(true); }, 500);
       } else {
         _showSnapshotBanner('Missing Supabase config after retries', 'error');
       }
       _updateDebugPanel();
-      return;
+      throw e;
     }
     __lastErrorObj = {
       name: e && e.name ? e.name : 'Error',
@@ -1361,15 +1425,23 @@ async function _loadSnapshotImpl(){
       abortReason: e && e.abortReason ? e.abortReason : null,
     };
     pushDebugEvent('SNAPSHOT_LOAD_FAIL', 'Snapshot load failed', __lastErrorObj, 'error');
-    console.warn('[snapshot] Load failed:', e);
+    console.error('[snapshot] Load failed:', e);
     _showSnapshotBanner('Using cached data (server unavailable)', 'warn');
     refreshAllMarkers();
+    throw e;
   }finally{
     __activeStepController = null;
+    _updateProgressUI(0, 0, '');
+    _scheduleNextSnapshotRefresh(SNAPSHOT_AUTO_REFRESH_MS);
   }
 }
 
-function loadSnapshotOnce(){
+function loadSnapshotOnce(force){
+  if(force && __snapshotInFlightRef){
+    try{ if(__activeStepController) __activeStepController.abort('config_retry'); }catch(e){}
+    __snapshotInFlightRef = null;
+    __snapshotInFlightStartedAtMs = 0;
+  }
   if(__snapshotInFlightRef){
     pushDebugEvent('SNAPSHOT_LOAD_JOIN', 'Joining in-flight snapshot load', {
       startedAtMs: __snapshotInFlightStartedAtMs,
@@ -1379,19 +1451,31 @@ function loadSnapshotOnce(){
     return __snapshotInFlightRef;
   }
   __snapshotInFlightStartedAtMs = Date.now();
+  __isReloading = true;
   __snapshotInFlightRef = (async function(){
     try{
       return await _loadSnapshotImpl();
+    }catch(e){
+      __lastErrorMessage = String(e && e.message ? e.message : e);
+      _setLoaderStage('error');
+      throw e;
     } finally {
       __snapshotInFlightRef = null;
       __snapshotInFlightStartedAtMs = 0;
+      __isReloading = false;
+      _updateDebugPanel();
     }
   })();
   return __snapshotInFlightRef;
 }
 
-function loadSnapshot(){
-  return loadSnapshotOnce();
+function loadSnapshot(force){
+  return loadSnapshotOnce(!!force).catch(function(err){
+    __lastErrorMessage = String(err && err.message ? err.message : err);
+    _setLoaderStage('error');
+    _updateDebugPanel();
+    return null;
+  });
 }
 
 function _startPolling(){

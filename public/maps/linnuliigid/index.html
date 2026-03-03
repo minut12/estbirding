@@ -637,6 +637,7 @@ let __snapshotLoadAttemptCount = 0;
 let __lastSnapshotLoadAtMs = 0;
 let __lastHttpStatus = null;
 let __lastHttpOk = null;
+let __lastHttpMethod = null;
 let __lastResponseBytes = null;
 let __lastSnapshotHash = null;
 let __isReloading = false;
@@ -657,6 +658,7 @@ let __activeStepController = null;
 const VERBOSE_DEBUG = (function(){ try { return localStorage.getItem('debugVerbose') === '1'; } catch(e){ return false; } })();
 let __snapshotInFlightRef = null;
 let __snapshotInFlightStartedAtMs = 0;
+let __activeFetchStartedAtMs = 0;
 let __pollLoopToken = 0;
 let __snapshotAutoRefreshTimer = null;
 let __rateLimitRetryTimer = null;
@@ -664,7 +666,10 @@ let __rateLimitCountdownTimer = null;
 let __rateLimitRetryAtMs = 0;
 let __rateLimitAttempt = 0;
 const RATE_LIMIT_BACKOFF_MS = [2000, 5000, 15000, 30000, 60000, 120000];
+const SNAPSHOT_ERROR_BACKOFF_MS = [1000, 2000, 4000, 8000, 15000, 30000];
+const FETCH_INFLIGHT_TIMEOUT_MS = 25000;
 const SNAPSHOT_AUTO_REFRESH_MS = 180000;
+let __snapshotErrorRetryAttempt = 0;
 
 function _safeData(v){
   try{
@@ -727,7 +732,7 @@ function _copyDebugJson(){
     speciesWithCoords: SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.lat); }).length,
     markersRendered: __renderedMarkerCount,
     lastRequestUrl: __lastRequestUrl || '',
-    lastHttp: { status: __lastHttpStatus, ok: __lastHttpOk, durationMs: __lastDurationMs },
+    lastHttp: (__lastHttpStatus === null ? null : { method: __lastHttpMethod || 'GET', status: __lastHttpStatus, ok: __lastHttpOk, durationMs: __lastDurationMs }),
     lastSnapshotBytes: __lastResponseBytes,
     lastSnapshotHash: __lastSnapshotHash,
     isReloading: __isReloading,
@@ -755,6 +760,7 @@ function _clearDebugEvents(){
   __lastErrorMessage = '';
   __lastHttpStatus = null;
   __lastHttpOk = null;
+  __lastHttpMethod = null;
   __lastDurationMs = null;
   __lastResponseBytes = null;
   __lastSnapshotHash = null;
@@ -878,6 +884,9 @@ function _withSupabaseAuthHeaders(headers){
   }
   return merged;
 }
+function _withSnapshotGetHeaders(){
+  return _withSupabaseAuthHeaders({ 'Accept': 'application/json' });
+}
 function _withCacheBuster(url){
   const base = String(url || '');
   const sep = base.indexOf('?') >= 0 ? '&' : '?';
@@ -986,14 +995,14 @@ async function fetchJsonWithTimeout(url, opts){
     fetchUrl = _withCacheBuster(url);
     __lastRequestUrl = fetchUrl;
     __lastFetchAt = new Date().toISOString();
+    __activeFetchStartedAtMs = Date.now();
     pushDebugEvent('FETCH_START', 'Starting request', { url:fetchUrl, timeoutMs:timeoutMs, runId:runId, index:index });
     const res = await fetch(fetchUrl, {
+      method:'GET',
       signal: combinedSignal,
       cache:'no-store',
-      headers: _withSupabaseAuthHeaders({ 'cache-control': 'no-cache', 'pragma': 'no-cache' })
+      headers: _withSnapshotGetHeaders()
     });
-    __lastHttpStatus = res.status;
-    __lastHttpOk = res.ok;
     __lastContentType = res.headers.get('content-type') || '';
     pushDebugEvent('FETCH_HEADERS', 'Headers received', {
       url:fetchUrl, runId:runId, index:index, status:res.status, ok:res.ok,
@@ -1006,6 +1015,9 @@ async function fetchJsonWithTimeout(url, opts){
     const text = await res.text();
     __lastBodyDurationMs = Math.round(performance.now() - b0);
     __lastBodyBytes = text ? (new TextEncoder().encode(text).length) : 0;
+    __lastHttpMethod = 'GET';
+    __lastHttpStatus = res.status;
+    __lastHttpOk = res.ok;
     __lastResponseBytes = __lastBodyBytes;
     pushDebugEvent('BODY_READ_DONE', 'Body read done', {
       url:fetchUrl, runId:runId, index:index, bytes: __lastBodyBytes, durationMs: __lastBodyDurationMs, contentType: __lastContentType
@@ -1049,9 +1061,14 @@ async function fetchJsonWithTimeout(url, opts){
       }, 'warn');
       throw _makeAbortError(reason, dur, timeoutMs);
     }
-    pushDebugEvent('FETCH_FAIL', 'Request failed', { url:fetchUrl, runId:runId, index:index, message: String(e && e.message ? e.message : e) }, 'error');
+    __lastHttpMethod = 'GET';
+    __lastHttpStatus = null;
+    __lastHttpOk = false;
+    __lastResponseBytes = null;
+    pushDebugEvent('FETCH_FAIL', 'Request failed', { url:fetchUrl, runId:runId, index:index, method: 'GET', message: String(e && e.message ? e.message : e) }, 'error');
     throw e;
   }finally{
+    __activeFetchStartedAtMs = 0;
     if(timeoutId) clearTimeout(timeoutId);
   }
 }
@@ -1113,6 +1130,7 @@ async function fetchWithTimeout(url, init, ms, runId){
     const reqInit = Object.assign({}, init || {}, { signal: controller.signal });
     reqInit.headers = _withSupabaseAuthHeaders(reqInit.headers);
     const res = await fetch(url, reqInit);
+    __lastHttpMethod = String((reqInit.method || 'GET')).toUpperCase();
     __lastHttpStatus = res.status;
     __lastHttpOk = res.ok;
     const bytes = Number(res.headers.get('content-length') || 0) || null;
@@ -1140,6 +1158,9 @@ async function fetchWithTimeout(url, init, ms, runId){
       }, 'warn');
       throw _makeAbortError(reason, durationMs, ms);
     }
+    __lastHttpStatus = null;
+    __lastHttpOk = false;
+    __lastResponseBytes = null;
     __lastErrorObj = {
       name: e && e.name ? e.name : 'Error',
       message: e && e.message ? e.message : String(e),
@@ -1226,10 +1247,22 @@ async function _controlSkipOnServer(targetIndex, reason){
 function _delay(ms){
   return new Promise(function(resolve){ setTimeout(resolve, ms); });
 }
+function _isNetworkFetchError(err){
+  const msg = String((err && err.message) ? err.message : err || '');
+  return /networkerror|failed to fetch|load failed|typeerror/i.test(msg);
+}
+function _snapshotErrorBackoffMs(){
+  const idx = Math.min(__snapshotErrorRetryAttempt, SNAPSHOT_ERROR_BACKOFF_MS.length - 1);
+  const base = SNAPSHOT_ERROR_BACKOFF_MS[idx];
+  const jitter = Math.round(base * 0.2 * Math.random());
+  __snapshotErrorRetryAttempt = Math.min(__snapshotErrorRetryAttempt + 1, SNAPSHOT_ERROR_BACKOFF_MS.length - 1);
+  return base + jitter;
+}
 function _startWatchdog(){
   _stopWatchdog();
   __watchdogTimer = setInterval(function(){
     if(!__isRefreshRunning) return;
+    if(__activeFetchStartedAtMs > 0 && (Date.now() - __activeFetchStartedAtMs) < FETCH_INFLIGHT_TIMEOUT_MS) return;
     if(__lastProgressAt <= 0) return;
     if(Date.now() - __lastProgressAt <= 20000) return;
     const idx = _getResumeIndex();
@@ -1261,6 +1294,7 @@ function _startWatchdog(){
 }
 function _stopWatchdog(){
   if(__watchdogTimer){ clearInterval(__watchdogTimer); __watchdogTimer = null; }
+  __activeFetchStartedAtMs = 0;
 }
 
 function _showSnapshotBanner(msg, type, showAllBtn){
@@ -1338,7 +1372,7 @@ function _updateDebugPanel(){
     'Species with coords: <b>' + totalWithCoords + '</b>',
     'Markers rendered: <b>' + __renderedMarkerCount + '</b>',
     'lastRequestUrl: <b>' + (__lastRequestUrl || '-') + '</b>',
-    'lastHttp: <b>{ status: ' + (__lastHttpStatus ?? '-') + ', ok: ' + (__lastHttpOk ?? '-') + ', durationMs: ' + (__lastDurationMs ?? '-') + ' }</b>',
+    'lastHttp: <b>{ method: ' + (__lastHttpMethod ?? '-') + ', status: ' + (__lastHttpStatus ?? '-') + ', ok: ' + (__lastHttpOk ?? '-') + ', durationMs: ' + (__lastDurationMs ?? '-') + ' }</b>',
     'lastSnapshotBytes: <b>' + (__lastResponseBytes ?? '-') + '</b>',
     'lastSnapshotHash: <b>' + (__lastSnapshotHash ?? '-') + '</b>',
     'isReloading: <b>' + (__isReloading ? 'true' : 'false') + '</b>',
@@ -1437,6 +1471,7 @@ async function _loadSnapshotImpl(){
         pushDebugEvent('SNAPSHOT_APPLY_DONE', 'Applied running snapshot', { runId: runId, index: __currentIndex });
       }
       _setLoaderStage('ready');
+      __snapshotErrorRetryAttempt = 0;
       __rateLimitAttempt = 0;
       _clearRateLimitTimers();
       _startPolling();
@@ -1459,6 +1494,7 @@ async function _loadSnapshotImpl(){
       _showSnapshotBanner('No snapshot data yet. Press "Refresh data" to generate.', 'warn');
     }
     _setLoaderStage('ready');
+    __snapshotErrorRetryAttempt = 0;
     __rateLimitAttempt = 0;
     _clearRateLimitTimers();
 
@@ -1515,6 +1551,17 @@ async function _loadSnapshotImpl(){
     };
     pushDebugEvent('SNAPSHOT_LOAD_FAIL', 'Snapshot load failed', __lastErrorObj, 'error');
     console.error('[snapshot] Load failed:', e);
+    if(_isNetworkFetchError(e)){
+      const retryMs = _snapshotErrorBackoffMs();
+      __lastInfoMessage = 'Network/CORS fetch failed; retrying in ' + Math.round(retryMs / 1000) + 's';
+      pushDebugEvent('SNAPSHOT_RETRY', 'Retry after network/CORS fetch error', { retryMs: retryMs, runId: runId }, 'warn');
+      _showSnapshotBanner(__lastInfoMessage, 'warn');
+      if(__isRefreshRunning){
+        await _delay(retryMs);
+        refreshAllMarkers();
+        return;
+      }
+    }
     if(e && Number(e.httpStatus) >= 500){
       _showSnapshotBanner('Using cached data (server unavailable)', 'warn');
     } else {

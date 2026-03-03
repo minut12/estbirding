@@ -175,6 +175,33 @@ function _deriveProxyTranslateFromProxyBase(proxyBase: unknown): string {
   return origin ? `${origin}/translate-et` : '';
 }
 
+async function probeJson(url: string) {
+  try {
+    const r = await fetch(url, { method: 'GET' });
+    const ct = (r.headers.get('content-type') || '').toLowerCase();
+    const txt = await r.text();
+    const isJson = ct.includes('application/json');
+    let j: any = null;
+    if (isJson) {
+      try { j = JSON.parse(txt); } catch {}
+    }
+    const t = txt.trim().toLowerCase();
+    const looksHtml = t.startsWith('<!doctype') || t.startsWith('<html');
+    return {
+      url,
+      ok: r.ok,
+      status: r.status,
+      ct,
+      isJson,
+      looksHtml,
+      json: j,
+      head: txt.slice(0, 80),
+    };
+  } catch (e: any) {
+    return { url, ok: false, error: String(e?.message || e) };
+  }
+}
+
 export default function SettingsTab() {
   const newsSourcesSectionRef = useRef<HTMLDivElement | null>(null);
   const [settingsPage, setSettingsPage] = useState<SettingsPage>('home');
@@ -348,6 +375,69 @@ export default function SettingsTab() {
     return () => {
       document.removeEventListener('click', onClick, true);
       w.__dbgProxyDiscBound = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const w = window as Window & { __autoDetectTranslateBound?: boolean };
+    if (w.__autoDetectTranslateBound) return;
+    w.__autoDetectTranslateBound = true;
+
+    const onClick = async (e: Event) => {
+      const target = e.target as Element | null;
+      const btn = target?.closest?.('#autoDetectTranslateBtn');
+      if (!btn) return;
+      e.preventDefault();
+
+      const candidates = [
+        '/api/ping',
+        '/functions/api/ping',
+        '/api/functions/ping',
+        '/.netlify/functions/ping',
+        '/.netlify/functions/api-ping',
+        '/_functions/ping',
+        '/api/translate-et?ping=1',
+        '/functions/api/translate-et?ping=1',
+        '/api/functions/translate-et?ping=1',
+        '/.netlify/functions/translate-et?ping=1',
+        '/_functions/translate-et?ping=1',
+      ];
+
+      const results: any[] = [];
+      for (const path of candidates) {
+        const u = path.startsWith('http') ? path : `${location.origin}${path}`;
+        const res = await probeJson(u);
+        results.push(res);
+        if (res.ok && res.isJson && res.json && res.json.ok === true) break;
+      }
+
+      const payload = { results };
+      const pretty = JSON.stringify(payload, null, 2);
+      setTestTranslateResult(pretty);
+
+      const outEl =
+        document.querySelector('#translateAdminOutput') ||
+        document.querySelector('pre') ||
+        null;
+      if (outEl) (outEl as HTMLElement).textContent = pretty;
+
+      const bestTranslate = results.find((r) => r.ok && r.isJson && String(r.url || '').includes('translate-et'));
+      if (bestTranslate) {
+        const endpointPath = String(bestTranslate.url || '').replace(location.origin, '');
+        const clean = endpointPath.split('?')[0] || '/api/translate-et';
+        localStorage.setItem('translate_endpoint_v1', clean);
+        setStoredEndpointView(getStoredEndpoint());
+        setTranslationApiUrlInput(clean);
+        toast.success(`Translate endpoint set to: ${clean}`);
+      } else {
+        toast.error('No API endpoint detected (all returned HTML or errors).');
+      }
+    };
+
+    document.addEventListener('click', onClick, true);
+    return () => {
+      document.removeEventListener('click', onClick, true);
+      w.__autoDetectTranslateBound = false;
     };
   }, []);
 
@@ -787,6 +877,13 @@ export default function SettingsTab() {
             className="w-full"
           >
             {testTranslateLoading ? 'Testin...' : 'Test translate'}
+          </Button>
+          <Button
+            id="autoDetectTranslateBtn"
+            variant="outline"
+            className="w-full"
+          >
+            Auto-detect API base
           </Button>
           <Button
             variant="outline"

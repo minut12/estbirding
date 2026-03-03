@@ -252,8 +252,17 @@ const LS_AVATARS='bm_rari_avatars', LS_POINTS='bm_rari_points', LS_PROXY='bm_rar
 const LS_SPRING_YEARFIRST = 'bm_rari_spring_yearfirst_v3';
 const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 const LS_SUPABASE_PROXY_BASE = 'supabase_proxy_base_v1';
+const BUILTIN_TRANSLATE_ENDPOINT = '/.netlify/functions/translate-et';
+const BUILTIN_PING_ENDPOINT = '/.netlify/functions/ping';
+const BUILTIN_TRANSLATE_PING_ENDPOINT = '/.netlify/functions/translate-et?ping=1';
 
 function _trim(x){ try { return String(x ?? '').trim(); } catch(e){ return ''; } }
+
+try{
+  if(!_trim(localStorage.getItem(LS_TRANSLATE_ENDPOINT))){
+    localStorage.setItem(LS_TRANSLATE_ENDPOINT, BUILTIN_TRANSLATE_ENDPOINT);
+  }
+}catch(e){}
 
 function deriveSupabaseProxyBaseFromTranslateEndpoint(endpoint){
   const s = _trim(endpoint);

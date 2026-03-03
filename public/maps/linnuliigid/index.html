@@ -625,7 +625,6 @@ let __lastAutoKickAt = 0;
 let __forceRetryInFlight = false;
 let __supabaseConfigReady = false;
 let __snapshotLoadRetryCount = 0;
-let __pendingConfigLoadRetry = null;
 let __lastHangProgressDone = -1;
 let __hangKickCount = 0;
 let __currentIndex = null;
@@ -665,10 +664,22 @@ let __rateLimitRetryTimer = null;
 let __rateLimitCountdownTimer = null;
 let __rateLimitRetryAtMs = 0;
 let __rateLimitAttempt = 0;
+let __snapshotProgressDone = 0;
+let __snapshotProgressTotal = 0;
+let __watchdogEvents = [];
+let __watchdogActive = false;
+let __resumeLastAdvancedAtMs = 0;
+let __lastResumeIndexSeen = 0;
+let __pendingReload = false;
+let __configDebounceTimer = null;
+let __configReloadAbortIssued = false;
+let __resumeExplicitRequested = false;
 const RATE_LIMIT_BACKOFF_MS = [2000, 5000, 15000, 30000, 60000, 120000];
 const SNAPSHOT_ERROR_BACKOFF_MS = [1000, 2000, 4000, 8000, 15000, 30000];
 const FETCH_INFLIGHT_TIMEOUT_MS = 25000;
 const SNAPSHOT_AUTO_REFRESH_MS = 180000;
+const CONFIG_RELOAD_DEBOUNCE_MS = 500;
+const WATCHDOG_MS = 15000;
 let __snapshotErrorRetryAttempt = 0;
 
 function _safeData(v){
@@ -726,8 +737,8 @@ function _copyDebugJson(){
     buildId: MAP_BUILD_ID,
     status: __snapshotMeta.status || (__isRefreshRunning ? 'running' : 'stopped'),
     generatedAt: __snapshotMeta.generated_at || null,
-    progress_done: Number(__currentIndex || 0),
-    progress_total: Number(__lastProgressDone > 0 ? SPECIES.length : 0),
+    progress_done: Number(__snapshotProgressDone || 0),
+    progress_total: Number(__snapshotProgressTotal || 0),
     resumeIndex: _getResumeIndex(),
     speciesWithCoords: SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.lat); }).length,
     markersRendered: __renderedMarkerCount,
@@ -741,6 +752,7 @@ function _copyDebugJson(){
     lastProcessedAt: __lastProcessedAt,
     lastInfoMessage: __lastInfoMessage || '',
     lastErrorMessage: __lastErrorMessage || '',
+    watchdogEvents: __watchdogEvents.slice(-5),
     stopSignalAborted: !!(__stopController && __stopController.signal && __stopController.signal.aborted),
     filter7day: !!is7daysOnly(),
   };
@@ -764,6 +776,9 @@ function _clearDebugEvents(){
   __lastDurationMs = null;
   __lastResponseBytes = null;
   __lastSnapshotHash = null;
+  __snapshotProgressDone = 0;
+  __snapshotProgressTotal = 0;
+  __watchdogEvents = [];
   __lastFetchAt = null;
   __lastProcessedAt = null;
   __isReloading = false;
@@ -803,18 +818,28 @@ function _endRefreshRun(){
   __runningRef = false;
 }
 function _scheduleLoadSnapshotRetry(reason){
-  if(__pendingConfigLoadRetry) clearTimeout(__pendingConfigLoadRetry);
-  __pendingConfigLoadRetry = setTimeout(function(){
-    __pendingConfigLoadRetry = null;
+  __pendingReload = true;
+  if(__configDebounceTimer) clearTimeout(__configDebounceTimer);
+  __configDebounceTimer = setTimeout(function(){
+    __configDebounceTimer = null;
     if(__loaderStage === 'rate_limited' && __rateLimitRetryAtMs > Date.now()){
       __lastInfoMessage = 'Rate limited cooldown active; config retry deferred';
       _updateDebugPanel();
       return;
     }
-    __lastInfoMessage = 'Config arrived, retrying snapshot load (' + reason + ')';
-    pushDebugEvent('SNAPSHOT_RETRY', 'Retrying snapshot load', { reason: reason, runId: __runId });
-    loadSnapshot(true);
-  }, 200);
+    __lastInfoMessage = 'Config update queued (' + reason + ')';
+    pushDebugEvent('SNAPSHOT_RETRY', 'Queued snapshot reload from config update', { reason: reason, runId: __runId });
+    if(__snapshotInFlightRef){
+      if(!__configReloadAbortIssued){
+        __configReloadAbortIssued = true;
+        try{ if(__activeStepController) __activeStepController.abort('config_retry'); }catch(e){}
+      }
+      return;
+    }
+    __pendingReload = false;
+    __configReloadAbortIssued = false;
+    loadSnapshot(false);
+  }, CONFIG_RELOAD_DEBOUNCE_MS);
 }
 
 function _setLoaderStage(stage){
@@ -894,10 +919,18 @@ function _withCacheBuster(url){
 }
 
 function _setResumeIndex(i){
-  try { localStorage.setItem(ESTONIA_REFRESH_INDEX_KEY, String(Math.max(0, Number(i) || 0))); } catch(e){}
+  let next = Math.max(0, Number(i) || 0);
+  if(__snapshotProgressTotal > 0){
+    next = Math.min(next, Math.max(0, __snapshotProgressTotal - 1));
+  }
+  try { localStorage.setItem(ESTONIA_REFRESH_INDEX_KEY, String(next)); } catch(e){}
 }
 function _getResumeIndex(){
-  try { return Math.max(0, Number(localStorage.getItem(ESTONIA_REFRESH_INDEX_KEY) || 0) || 0); } catch(e){ return 0; }
+  try {
+    let idx = Math.max(0, Number(localStorage.getItem(ESTONIA_REFRESH_INDEX_KEY) || 0) || 0);
+    if(__snapshotProgressTotal > 0) idx = Math.min(idx, Math.max(0, __snapshotProgressTotal - 1));
+    return idx;
+  } catch(e){ return 0; }
 }
 function _resolveSupabaseUrlLocal(){
   try{
@@ -1251,6 +1284,14 @@ function _isNetworkFetchError(err){
   const msg = String((err && err.message) ? err.message : err || '');
   return /networkerror|failed to fetch|load failed|typeerror/i.test(msg);
 }
+function _isAbortLikeError(err){
+  const msg = String((err && err.message) ? err.message : err || '');
+  return !!(err && err.name === 'AbortError') || /Aborted \(/i.test(msg);
+}
+function _recordWatchdogEvent(fromIdx, toIdx, reason){
+  __watchdogEvents.push({ ts: new Date().toISOString(), from: fromIdx, to: toIdx, reason: reason || 'watchdog' });
+  if(__watchdogEvents.length > 5) __watchdogEvents = __watchdogEvents.slice(-5);
+}
 function _snapshotErrorBackoffMs(){
   const idx = Math.min(__snapshotErrorRetryAttempt, SNAPSHOT_ERROR_BACKOFF_MS.length - 1);
   const base = SNAPSHOT_ERROR_BACKOFF_MS[idx];
@@ -1260,34 +1301,47 @@ function _snapshotErrorBackoffMs(){
 }
 function _startWatchdog(){
   _stopWatchdog();
+  __watchdogActive = false;
+  __resumeLastAdvancedAtMs = Date.now();
+  __lastResumeIndexSeen = _getResumeIndex();
   __watchdogTimer = setInterval(function(){
     if(!__isRefreshRunning) return;
+    if(__loaderStage !== 'processing') return;
+    if(__snapshotProgressTotal <= 0) return;
     if(__activeFetchStartedAtMs > 0 && (Date.now() - __activeFetchStartedAtMs) < FETCH_INFLIGHT_TIMEOUT_MS) return;
-    if(__lastProgressAt <= 0) return;
-    if(Date.now() - __lastProgressAt <= 20000) return;
+    const now = Date.now();
     const idx = _getResumeIndex();
+    if(idx !== __lastResumeIndexSeen){
+      __lastResumeIndexSeen = idx;
+      __resumeLastAdvancedAtMs = now;
+      return;
+    }
+    if((now - __resumeLastAdvancedAtMs) < WATCHDOG_MS) return;
+    if(__watchdogActive) return;
+    __watchdogActive = true;
+    const nextIndex = Math.min(idx + 1, Math.max(0, __snapshotProgressTotal - 1));
     __lastFailedIndex = idx;
-    __lastInfoMessage = 'Watchdog timeout; forcing stale takeover';
-    pushDebugEvent('INDEX_RETRY', 'Watchdog triggered force takeover', { index: idx, runId: __runId }, 'warn');
-    _setResumeIndex(idx);
-    _showSnapshotBanner('Hang detected, retrying...', 'warn');
-    __lastProgressAt = Date.now();
+    __lastInfoMessage = 'Watchdog advanced stalled index ' + idx + ' -> ' + nextIndex;
+    _recordWatchdogEvent(idx, nextIndex, 'watchdog');
+    pushDebugEvent('INDEX_RETRY', 'Watchdog advanced stalled index', { from: idx, to: nextIndex, runId: __runId }, 'warn');
+    _setResumeIndex(nextIndex);
+    _showSnapshotBanner(__lastInfoMessage, 'warn');
+    __resumeLastAdvancedAtMs = now;
     pushDebugEvent('WATCHDOG_ABORT', 'Watchdog aborting active step', { index: idx, runId: __runId }, 'warn');
     try{ if(__activeStepController) __activeStepController.abort('watchdog_timeout'); }catch(e){}
     _abortActiveRequest();
-    const targetIndex = Math.max(_getResumeIndex(), idx, Number(__currentIndex) || 0) + 1;
-    _setResumeIndex(targetIndex);
-    _controlSkipOnServer(targetIndex, 'watchdog')
+    _controlSkipOnServer(nextIndex, 'watchdog')
       .then(function(payload){
-        if(Number(payload && payload.progress_done || 0) < targetIndex){
+        if(Number(payload && payload.progress_done || 0) < nextIndex){
           __lastInfoMessage = 'Skip command sent, but server did not advance. Check runner job storage.';
           _showSnapshotBanner(__lastInfoMessage, 'warn');
         }
       })
       .catch(function(err){
-        __lastErrorMessage = String(err && err.message ? err.message : err);
+        __lastInfoMessage = 'Watchdog control request failed: ' + String(err && err.message ? err.message : err);
       })
       .finally(function(){
+        __watchdogActive = false;
         loadSnapshotOnce();
       });
   }, 5000);
@@ -1295,6 +1349,7 @@ function _startWatchdog(){
 function _stopWatchdog(){
   if(__watchdogTimer){ clearInterval(__watchdogTimer); __watchdogTimer = null; }
   __activeFetchStartedAtMs = 0;
+  __watchdogActive = false;
 }
 
 function _showSnapshotBanner(msg, type, showAllBtn){
@@ -1333,6 +1388,8 @@ function _updateProgressUI(done, total, status){
     if(bar){ bar.style.display='none'; }
     if(stopBtn && __isRefreshRunning) stopBtn.style.display='inline-block';
   } else if(status === 'running' && total > 0){
+    __snapshotProgressDone = Number(done || 0);
+    __snapshotProgressTotal = Number(total || 0);
     __currentIndex = done;
     _setResumeIndex(done);
     if(done > __lastProgressDone){
@@ -1347,6 +1404,10 @@ function _updateProgressUI(done, total, status){
     if(bar){ bar.style.display='block'; barInner.style.width = Math.round(done/total*100)+'%'; }
     if(stopBtn) stopBtn.style.display='inline-block';
   } else {
+    if(status === 'ready' && __snapshotProgressTotal <= 0){
+      __snapshotProgressTotal = SPECIES.length;
+      __snapshotProgressDone = __snapshotProgressTotal;
+    }
     prog.textContent = status === 'ready' ? 'Data loaded' : (status === 'error' ? 'Refresh failed' : '');
     if(bar) bar.style.display='none';
     if(stopBtn) stopBtn.style.display='none';
@@ -1358,8 +1419,8 @@ function _updateDebugPanel(){
   const el = document.getElementById('debugContent');
   if(!el) return;
   const totalWithCoords = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.lat); }).length;
-  const progressDone = (__snapshotMeta.status === 'running') ? Number(__currentIndex || 0) : Number(__lastProgressDone > 0 ? __lastProgressDone : 0);
-  const progressTotal = (__snapshotMeta.status === 'running' || __lastProgressDone > 0) ? SPECIES.length : 0;
+  const progressDone = Number(__snapshotProgressDone || 0);
+  const progressTotal = Number(__snapshotProgressTotal || 0);
   const statusLabel = (__loaderStage === 'rate_limited')
     ? 'rate_limited'
     : (__snapshotMeta.status || (__isRefreshRunning ? 'running' : 'stopped'));
@@ -1381,6 +1442,7 @@ function _updateDebugPanel(){
     'lastProcessedAt: <b>' + (_fmtTs(__lastProcessedAt)) + '</b>',
     'lastInfoMessage: <b>' + (__lastInfoMessage || '-') + '</b>',
     'lastErrorMessage: <b>' + (__lastErrorMessage || '-') + '</b>',
+    'watchdogEvents: <b>' + (__watchdogEvents.length ? JSON.stringify(__watchdogEvents.slice(-5)) : '-') + '</b>',
     'stopSignalAborted: <b>' + (!!(__stopController && __stopController.signal && __stopController.signal.aborted)) + '</b>',
     '7-day filter: <b>' + (is7daysOnly() ? 'ON' : 'OFF') + '</b>',
     (VERBOSE_DEBUG ? ('verboseEvents: <b>' + __debugEvents.length + '</b>') : ''),
@@ -1390,6 +1452,11 @@ function _updateDebugPanel(){
 function _applySnapshot(snap){
   if(!snap || !snap.points_json) return;
   const pts = snap.points_json;
+  const keys = Object.keys(pts || {});
+  __snapshotProgressTotal = keys.length;
+  __snapshotProgressDone = 0;
+  __lastProgressDone = 0;
+  __currentIndex = 0;
   for(const key in pts){
     if(!pts.hasOwnProperty(key)) continue;
     const s = pts[key];
@@ -1404,9 +1471,13 @@ function _applySnapshot(snap){
     if(typeof s.src === 'string' && s.src.trim()) p.src = s.src;
     else delete p.src;
     if(typeof p.visible !== 'boolean') p.visible = true;
+    __snapshotProgressDone++;
+    __lastProgressDone = __snapshotProgressDone;
+    __currentIndex = __snapshotProgressDone;
   }
   __snapshotMeta.status = snap.status || 'ready';
   __snapshotMeta.generated_at = snap.generated_at;
+  _setResumeIndex(__snapshotProgressDone);
   save();
   refreshAllMarkers();
 }
@@ -1416,6 +1487,7 @@ function refreshAllMarkers(){
   Object.keys(points).forEach(updateMarker);
   render();
   _checkEmpty7dBanner();
+  if(__loaderStage === 'ready') __lastErrorMessage = '';
   _updateDebugPanel();
 }
 
@@ -1458,7 +1530,19 @@ async function _loadSnapshotImpl(){
     });
     _setLoaderStage('processing');
     __lastDurationMs = Date.now() - t0;
+    __lastErrorMessage = '';
+    var ferrOk = document.getElementById('fetchError');
+    if(ferrOk) ferrOk.textContent = '';
     pushDebugEvent('SNAPSHOT_LOAD_DONE', 'Snapshot loaded', { status: snap.status, progress_done: snap.progress_done, progress_total: snap.progress_total });
+    if(Number.isFinite(Number(snap.progress_total)) && Number(snap.progress_total) > 0){
+      __snapshotProgressTotal = Number(snap.progress_total);
+    }
+    if(Number.isFinite(Number(snap.progress_done)) && Number(snap.progress_done) >= 0){
+      __snapshotProgressDone = Number(snap.progress_done);
+      __lastProgressDone = __snapshotProgressDone;
+      __currentIndex = __snapshotProgressDone;
+      _setResumeIndex(__snapshotProgressDone);
+    }
 
     if(snap.status === 'running'){
       _updateProgressUI(snap.progress_done, snap.progress_total, 'running');
@@ -1466,7 +1550,9 @@ async function _loadSnapshotImpl(){
       if(snap.points_json && Object.keys(snap.points_json).length > 0){
         pushDebugEvent('SNAPSHOT_APPLY_START', 'Applying running snapshot', { runId: runId, index: __currentIndex });
         _applySnapshot(snap);
+        const prevHashRun = __lastSnapshotHash;
         __lastSnapshotHash = String(__lastResponseBytes || 0) + ':' + String(snap.generated_at || '') + ':' + String(Object.keys(snap.points_json || {}).length);
+        if(prevHashRun && prevHashRun !== __lastSnapshotHash && !__resumeExplicitRequested) _setResumeIndex(0);
         __lastProcessedAt = new Date().toISOString();
         pushDebugEvent('SNAPSHOT_APPLY_DONE', 'Applied running snapshot', { runId: runId, index: __currentIndex });
       }
@@ -1481,7 +1567,9 @@ async function _loadSnapshotImpl(){
     if(snap.points_json && Object.keys(snap.points_json).length > 0){
       pushDebugEvent('SNAPSHOT_APPLY_START', 'Applying snapshot', { runId: runId, index: __currentIndex });
       _applySnapshot(snap);
+      const prevHash = __lastSnapshotHash;
       __lastSnapshotHash = String(__lastResponseBytes || 0) + ':' + String(snap.generated_at || '') + ':' + String(Object.keys(snap.points_json || {}).length);
+      if(prevHash && prevHash !== __lastSnapshotHash && !__resumeExplicitRequested) _setResumeIndex(0);
       __lastProcessedAt = new Date().toISOString();
       pushDebugEvent('SNAPSHOT_APPLY_DONE', 'Applied snapshot', { runId: runId, index: __currentIndex });
       __lastProgressAtMs = Date.now();
@@ -1489,7 +1577,7 @@ async function _loadSnapshotImpl(){
       const age = snap.generated_at && window.formatAgeEE ? window.formatAgeEE(snap.generated_at) : null;
       _showSnapshotBanner('Data loaded' + (age ? ' (' + age + ')' : ''));
       setTimeout(_hideSnapshotBanner, 4000);
-      _updateProgressUI(0, 0, 'ready');
+      _updateProgressUI(__snapshotProgressDone, __snapshotProgressTotal, 'ready');
     } else {
       _showSnapshotBanner('No snapshot data yet. Press "Refresh data" to generate.', 'warn');
     }
@@ -1503,7 +1591,8 @@ async function _loadSnapshotImpl(){
       _stopPolling();
     }
 
-    if(snap.last_error){
+    __resumeExplicitRequested = false;
+    if(snap.last_error && __loaderStage === 'error'){
       document.getElementById('fetchError').textContent = 'Last error: ' + snap.last_error;
     }
   }catch(e){
@@ -1512,15 +1601,13 @@ async function _loadSnapshotImpl(){
       _scheduleRateLimitRetry(e.retryAfterSec);
       return;
     }
-    if(e && e.isAbort){
-      if(e.abortReason === 'user' || e.abortReason === 'new-run' || e.abortReason === 'stop' || e.abortReason === 'watchdog_timeout' || e.abortReason === 'replace' || e.abortReason === 'active_request_abort'){
-        pushDebugEvent('SNAPSHOT_LOAD_CANCELLED', 'Snapshot load cancelled', { runId: runId, reason: e.abortReason }, 'warn');
-        return;
-      }
-      __lastErrorMessage = e.message || String(e);
-    } else {
-      __lastErrorMessage = String(e?.message || e || 'load failed');
+    if(e && (e.isAbort || _isAbortLikeError(e))){
+      const abortReason = (e && e.abortReason) ? e.abortReason : 'abort';
+      __lastInfoMessage = 'Request cancelled (' + abortReason + ')';
+      pushDebugEvent('SNAPSHOT_LOAD_CANCELLED', 'Snapshot load cancelled', { runId: runId, reason: abortReason }, 'warn');
+      return;
     }
+    __lastErrorMessage = String(e?.message || e || 'load failed');
     _setLoaderStage('error');
     __lastDurationMs = Date.now() - t0;
     if((__lastErrorMessage || '').indexOf('Supabase URL') >= 0){
@@ -1535,7 +1622,7 @@ async function _loadSnapshotImpl(){
           runId: runId,
         }, 'warn');
         _requestSupabaseConfigFromParent();
-        setTimeout(function(){ loadSnapshot(true); }, 500);
+        setTimeout(function(){ loadSnapshot(false); }, 500);
       } else {
         _showSnapshotBanner('Missing Supabase config after retries', 'error');
       }
@@ -1571,16 +1658,16 @@ async function _loadSnapshotImpl(){
     throw e;
   }finally{
     __activeStepController = null;
-    _updateProgressUI(0, 0, '');
+    _updateProgressUI(__snapshotProgressDone, __snapshotProgressTotal, '');
     _scheduleNextSnapshotRefresh(SNAPSHOT_AUTO_REFRESH_MS);
   }
 }
 
 function loadSnapshotOnce(force){
-  if(force && __snapshotInFlightRef){
+  if(force && __snapshotInFlightRef) __pendingReload = true;
+  if(force && __snapshotInFlightRef && !__configReloadAbortIssued){
+    __configReloadAbortIssued = true;
     try{ if(__activeStepController) __activeStepController.abort('config_retry'); }catch(e){}
-    __snapshotInFlightRef = null;
-    __snapshotInFlightStartedAtMs = 0;
   }
   if(__snapshotInFlightRef){
     pushDebugEvent('SNAPSHOT_LOAD_JOIN', 'Joining in-flight snapshot load', {
@@ -1596,13 +1683,22 @@ function loadSnapshotOnce(force){
     try{
       return await _loadSnapshotImpl();
     }catch(e){
-      __lastErrorMessage = String(e && e.message ? e.message : e);
-      _setLoaderStage('error');
+      if(!_isAbortLikeError(e)){
+        __lastErrorMessage = String(e && e.message ? e.message : e);
+        _setLoaderStage('error');
+      }
       throw e;
     } finally {
       __snapshotInFlightRef = null;
       __snapshotInFlightStartedAtMs = 0;
       __isReloading = false;
+      if(__pendingReload){
+        __pendingReload = false;
+        __configReloadAbortIssued = false;
+        setTimeout(function(){ loadSnapshot(false); }, 0);
+      } else {
+        __configReloadAbortIssued = false;
+      }
       _updateDebugPanel();
     }
   })();
@@ -1611,8 +1707,10 @@ function loadSnapshotOnce(force){
 
 function loadSnapshot(force){
   return loadSnapshotOnce(!!force).catch(function(err){
-    __lastErrorMessage = String(err && err.message ? err.message : err);
-    _setLoaderStage('error');
+    if(!_isAbortLikeError(err)){
+      __lastErrorMessage = String(err && err.message ? err.message : err);
+      _setLoaderStage('error');
+    }
     _updateDebugPanel();
     return null;
   });
@@ -1648,32 +1746,7 @@ function _startPolling(){
           lastPhase: __lastPhase
         }, 'warn');
       }
-      if(__isRefreshRunning && __lastProgressAt > 0 && (now - __lastProgressAt) > 30000 && (now - __lastAutoKickAt) > 10000 && !__forceRetryInFlight){
-        const nextIndex = Math.max(_getResumeIndex(), Number(__currentIndex) || 0) + 1;
-        _setResumeIndex(nextIndex);
-        __lastFailedIndex = nextIndex;
-        __lastInfoMessage = 'Hang detected; auto-skip to ' + nextIndex + ' (force)';
-        __currentIndex = nextIndex;
-        __attemptForCurrentIndex++;
-        if(__attemptForCurrentIndex > 5){
-          __lastInfoMessage = 'Use Skip stuck item (attempts > 5)';
-        }
-        __lastProgressAt = now;
-        __lastAutoKickAt = now;
-        pushDebugEvent('INDEX_SKIP', 'Auto skip stuck index', { nextIndex: nextIndex, attempt: __attemptForCurrentIndex, runId: __runId }, 'warn');
-        _showSnapshotBanner('Hang detected, auto-skip to ' + nextIndex + ' (force)...', 'warn');
-        try{
-          const payload = await _controlSkipOnServer(nextIndex, 'poll_hang');
-          if(Number(payload && payload.progress_done || 0) < nextIndex){
-            __lastInfoMessage = 'Skip command sent, but server did not advance. Check runner job storage.';
-            _showSnapshotBanner(__lastInfoMessage, 'warn');
-          }
-        }catch(err){
-          __lastErrorMessage = String(err && err.message ? err.message : err);
-        }finally{
-          await loadSnapshotOnce();
-        }
-      }
+      // Watchdog logic is centralized in _startWatchdog to avoid duplicate force-advance spam.
     }catch(e){
       if(e && e.isAbort){
         if(e.abortReason === 'stop'){
@@ -1687,7 +1760,7 @@ function _startPolling(){
           await _delay(600);
           continue;
         }
-        __lastErrorMessage = e.message || String(e);
+        __lastInfoMessage = 'Request cancelled (' + (e.abortReason || 'abort') + ')';
       } else {
         __lastErrorMessage = String(e?.message || e || 'poll failed');
       }
@@ -1724,6 +1797,7 @@ function _stopPolling(){
 // Public refresh (no key needed)
 async function triggerRefresh(opts){
   const options = opts || {};
+  __resumeExplicitRequested = !!options.resumeFromSaved;
   const force = !!options.force;
   const runId = (options.newRun || !__runningRef) ? _beginRefreshRun(!!options.newRun) : __runId;
   try{
@@ -1799,7 +1873,7 @@ async function triggerRefresh(opts){
     _updateDebugPanel();
   }catch(e){
     var reason = (e && e.abortReason) || '';
-    if(e && e.isAbort){
+    if(e && (e.isAbort || _isAbortLikeError(e))){
       if(reason === 'user' || reason === 'new-run' || reason === 'stop'){
         _endRefreshRun();
         _updateProgressUI(0, 0, '');
@@ -1807,7 +1881,9 @@ async function triggerRefresh(opts){
         if(reason === 'user') _showSnapshotBanner('Stopped by user', 'warn');
         return;
       }
-      __lastErrorMessage = e.message || String(e);
+      __lastInfoMessage = 'Request cancelled (' + (reason || 'abort') + ')';
+      pushDebugEvent('REFRESH_STOP', 'Refresh request cancelled', { runId: runId, reason: reason || 'abort' }, 'warn');
+      return;
     } else {
       __lastErrorMessage = String(e?.message || e || 'start failed');
     }
@@ -1831,6 +1907,7 @@ async function triggerRefresh(opts){
         abortReason: reason || null,
       };
       pushDebugEvent('FETCH_FAIL', 'Refresh start failed', __lastErrorObj, 'error');
+      _setLoaderStage('error');
       _showSnapshotBanner('Failed to start refresh: ' + (__lastErrorMessage || 'Unknown error'), 'error');
       _stopPolling();
       _updateProgressUI(0, 0, '');

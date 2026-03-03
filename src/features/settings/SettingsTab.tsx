@@ -576,6 +576,15 @@ export default function SettingsTab() {
     toast.success('Translation endpoint saved');
   };
 
+  const handleUseBuiltInTranslateRecommended = () => {
+    const builtin = '/api/translate-et';
+    setStoredEndpoint(builtin);
+    const saved = getStoredEndpoint();
+    setStoredEndpointView(saved);
+    setTranslationApiUrlInput(saved || builtin);
+    toast.success('OK');
+  };
+
   const handleSaveProxyBase = () => {
     setStoredProxyBase(proxyBaseUrl);
     const saved = getStoredProxyBase();
@@ -753,6 +762,13 @@ export default function SettingsTab() {
             className="w-full"
           >
             {testTranslateLoading ? 'Testin...' : 'Test translate'}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleUseBuiltInTranslateRecommended}
+            className="w-full"
+          >
+            Use built-in translate (recommended)
           </Button>
           <Button
             id="debugProxyDiscoveryBtn"

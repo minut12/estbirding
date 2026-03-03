@@ -1,4 +1,10 @@
-import { getEnvEndpoint, getProxyTranslateEndpoint, getStoredEndpoint, getTranslateEndpoint } from '@/config/translationEndpoint';
+import {
+  getActiveTranslationEndpoint,
+  getDefaultTranslationEndpoint,
+  getEnvEndpoint,
+  getStoredTranslationEndpoint,
+  getTranslateEndpoint,
+} from '@/config/translationEndpoint';
 
 export interface TranslateEtInput {
   id: string;
@@ -122,9 +128,15 @@ function isNetworkLikeError(error: unknown): boolean {
   const message = String(error instanceof Error ? error.message : error || '').toLowerCase();
   return message.includes('networkerror')
     || message.includes('failed to fetch')
+    || message.includes('fetch resource')
     || message.includes('aborterror')
     || message.includes('aborted')
     || message.includes('load failed');
+}
+
+function isNonJsonError(error: unknown): boolean {
+  const message = String(error instanceof Error ? error.message : error || '');
+  return message.includes('NON_JSON_RESPONSE_') || message.startsWith('NON_JSON_');
 }
 
 export async function translateEt(input: TranslateEtInput, endpointOverride?: string): Promise<TranslateEtOutput | null> {
@@ -137,13 +149,15 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
   if (!normalized.id || (!normalized.title && !normalized.body)) {
     return null;
   }
-  const endpoint = String(endpointOverride || getTranslateEndpoint() || '').trim();
+  const storedEndpoint = getStoredTranslationEndpoint();
+  const builtinEndpoint = getDefaultTranslationEndpoint();
+  const endpoint = String(endpointOverride || getActiveTranslationEndpoint() || '').trim();
   if (!endpoint) {
     throw new Error('TRANSLATE_ENDPOINT_MISSING');
   }
   if (!loggedEndpoint && import.meta.env.DEV) {
     loggedEndpoint = true;
-    const stored = getStoredEndpoint() || '(empty)';
+    const stored = getStoredTranslationEndpoint() || '(empty)';
     const env = getEnvEndpoint() || '(empty)';
     const resolved = getTranslateEndpoint() || '(empty)';
     console.info('[translate] stored=', stored, 'env=', env, 'resolved=', resolved);
@@ -157,7 +171,6 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
   const pending = inFlight.get(cacheKey);
   if (pending) return pending;
 
-  const proxyFallbackEndpoint = getProxyTranslateEndpoint();
   const tryTranslatePair = async (activeEndpoint: string): Promise<TranslateEtOutput> => {
     const [title_et, body_et] = await Promise.all([
       translateText(activeEndpoint, normalized.title, normalized.sourceLang),
@@ -168,8 +181,15 @@ export async function translateEt(input: TranslateEtInput, endpointOverride?: st
 
   const request = tryTranslatePair(endpoint)
     .catch(async (error) => {
-      if (!proxyFallbackEndpoint || proxyFallbackEndpoint === endpoint || !isNetworkLikeError(error)) throw error;
-      return tryTranslatePair(proxyFallbackEndpoint);
+      const canFallbackToBuiltin = Boolean(
+        storedEndpoint
+        && builtinEndpoint
+        && endpoint === storedEndpoint
+        && storedEndpoint !== builtinEndpoint
+        && (isNetworkLikeError(error) || isNonJsonError(error)),
+      );
+      if (!canFallbackToBuiltin) throw error;
+      return tryTranslatePair(builtinEndpoint);
     })
     .then((result) => {
       writeCache(cacheKey, result);

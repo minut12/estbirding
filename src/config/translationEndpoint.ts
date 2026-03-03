@@ -1,3 +1,5 @@
+import { resolveProxyBase } from './proxyEndpoint';
+
 export const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 export const TRANSLATION_ENDPOINT_UPDATED_EVENT = 'translation-endpoint-updated';
 export const WORKER_DEFAULT_ENDPOINT = '/api/translate-et';
@@ -25,13 +27,11 @@ function normalizeTranslateEndpoint(raw: string): string {
 }
 
 export function getTranslateEndpoint(): string {
-  const stored = (localStorage.getItem(LS_TRANSLATE_ENDPOINT) || '').trim();
-  if (stored) return normalizeTranslateEndpoint(stored);
-  return WORKER_DEFAULT_ENDPOINT;
+  return getActiveTranslationEndpoint();
 }
 
 export function getStoredEndpoint(): string {
-  return (localStorage.getItem(LS_TRANSLATE_ENDPOINT) || '').trim();
+  return getStoredTranslationEndpoint();
 }
 
 export function setStoredEndpoint(v: string): void {
@@ -46,7 +46,7 @@ export function getEnvEndpoint(): string {
 export function resolveBaseEndpoint(currentInput?: string): string {
   const input = String(currentInput || '').trim();
   if (input) return normalizeTranslateEndpoint(input);
-  return getTranslateEndpoint();
+  return getActiveTranslationEndpoint();
 }
 
 export function resolveEndpoint(currentInput?: string): string {
@@ -76,4 +76,17 @@ export function getProxyTranslateEndpoint(): string {
 
 export function resolveHealthUrl(_endpoint?: string): string {
   return '';
+}
+
+export function getStoredTranslationEndpoint(): string {
+  const stored = (localStorage.getItem(LS_TRANSLATE_ENDPOINT) || '').trim();
+  return stored ? normalizeTranslateEndpoint(stored) : '';
+}
+
+export function getDefaultTranslationEndpoint(): string {
+  return WORKER_DEFAULT_ENDPOINT;
+}
+
+export function getActiveTranslationEndpoint(): string {
+  return getStoredTranslationEndpoint() || getDefaultTranslationEndpoint();
 }

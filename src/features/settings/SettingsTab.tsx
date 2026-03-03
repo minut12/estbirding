@@ -43,6 +43,8 @@ import { isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supaba
 type ResetMode = 'soft' | 'hard' | null;
 type SettingsPage = 'home' | 'news' | 'events' | 'translations' | 'species';
 const LS_RESOLVED_PROXY_BASE = 'resolved_proxy_base_v1';
+const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
+const LS_SUPABASE_PROXY_BASE = 'supabase_proxy_base_v1';
 
 // --- SAFE proxy translate derivation ---
 // Never throws, always returns '' on failure.
@@ -106,6 +108,48 @@ function getProxyTranslateEndpointSafe(): string {
   return deriveProxyTranslateEndpointFromBase(getResolvedProxyBaseAny());
 }
 
+function deriveSupabaseProxyBaseFromTranslateEndpoint(endpoint: unknown): string {
+  const s = safeStr(endpoint);
+  if (!s) return '';
+  try {
+    const u = new URL(s);
+    if (!u.hostname.endsWith('.supabase.co')) return '';
+    return `${u.origin}/functions/v1/proxy?url=`;
+  } catch {
+    return '';
+  }
+}
+
+function ensureSupabaseProxyBaseStored(): string {
+  try {
+    const existing = safeStr(localStorage.getItem(LS_SUPABASE_PROXY_BASE));
+    if (existing) return existing;
+    const te = safeStr(localStorage.getItem(LS_TRANSLATE_ENDPOINT));
+    const derived = deriveSupabaseProxyBaseFromTranslateEndpoint(te);
+    if (derived) {
+      localStorage.setItem(LS_SUPABASE_PROXY_BASE, derived);
+      return derived;
+    }
+  } catch {}
+  return '';
+}
+
+function getSupabaseProxyBase(): string {
+  try {
+    const v = safeStr(localStorage.getItem(LS_SUPABASE_PROXY_BASE));
+    if (v) return v;
+  } catch {}
+  return ensureSupabaseProxyBaseStored();
+}
+
+function getProxyTranslateEndpointFromSupabaseProxyBase(): string {
+  const base = safeStr(getSupabaseProxyBase());
+  if (!base) return '';
+  const origin = base.split('?')[0].replace(/\/+$/, '');
+  if (!origin.endsWith('/proxy')) return '';
+  return `${origin}/translate-et`;
+}
+
 function _ss(x: unknown): string { try { return String(x ?? ''); } catch { return ''; } }
 function _trim(x: unknown): string { return _ss(x).trim(); }
 
@@ -148,7 +192,7 @@ export default function SettingsTab() {
   const [storedProxyBaseView, setStoredProxyBaseView] = useState('');
   const envEndpoint = getEnvEndpoint();
   const resolvedEndpoint = resolveEndpoint(translationApiUrl);
-  const resolvedProxyTranslateEndpoint = getProxyTranslateEndpointSafe() || getProxyTranslateEndpoint();
+  const resolvedProxyTranslateEndpoint = getProxyTranslateEndpointFromSupabaseProxyBase() || getProxyTranslateEndpoint();
   const envProxyBase = getEnvProxyBase();
   const resolvedProxyBase = resolveProxyBase(proxyBaseUrl);
   const proxyMode = getProxyMode(resolvedProxyBase);
@@ -162,6 +206,10 @@ export default function SettingsTab() {
     setStoredProxyBaseView(initialProxyStored);
     setProxyBaseUrl(initialProxyStored || getEnvProxyBase());
     refreshSpeciesMetaFromCloud({ force: true }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    try { ensureSupabaseProxyBaseStored(); } catch {}
   }, []);
 
   useEffect(() => {
@@ -211,7 +259,7 @@ export default function SettingsTab() {
       const keysToCheck = [
         'proxy_base', 'proxyBase', 'proxyBaseUrl', 'proxy_base_url',
         'translate_endpoint_v1', 'translate_endpoint', 'translation_endpoint',
-        'resolved_proxy_base_v1', 'resolvedProxyBase',
+        'resolved_proxy_base_v1', 'resolvedProxyBase', 'supabase_proxy_base_v1',
       ];
       try {
         for (const k of keysToCheck) {
@@ -249,7 +297,7 @@ export default function SettingsTab() {
       } catch {}
 
       const lsCandidates: string[] = [];
-      for (const k of ['proxy_base', 'proxyBase', 'proxy_base_url', 'proxyBaseUrl', 'resolved_proxy_base_v1']) {
+      for (const k of ['supabase_proxy_base_v1', 'proxy_base', 'proxyBase', 'proxy_base_url', 'proxyBaseUrl', 'resolved_proxy_base_v1']) {
         const v = report.localStorage[k];
         if (v && _trim(v).includes('/functions/v1/proxy')) lsCandidates.push(_trim(v));
       }
@@ -351,6 +399,7 @@ export default function SettingsTab() {
 
   const handleSave = () => {
     setStoredEndpoint(translationApiUrl);
+    ensureSupabaseProxyBaseStored();
     setStoredEndpointView(getStoredEndpoint());
     setStoredProxyBase(proxyBaseUrl);
     setStoredProxyBaseView(getStoredProxyBase());
@@ -363,6 +412,7 @@ export default function SettingsTab() {
   const handleAutoTranslateToggle = (checked: boolean) => {
     const next = { ...form, autoTranslateToEstonian: checked };
     setStoredEndpoint(translationApiUrl);
+    ensureSupabaseProxyBaseStored();
     setStoredEndpointView(getStoredEndpoint());
     setForm(next);
     saveSettings(next);
@@ -376,7 +426,7 @@ export default function SettingsTab() {
     setTestTranslateLoading(true);
     setTestTranslateResult('');
     const endpoint = resolveEndpoint(translationApiUrl);
-    const proxyFallbackEndpoint = getProxyTranslateEndpointSafe() || getProxyTranslateEndpoint();
+    const proxyFallbackEndpoint = getProxyTranslateEndpointFromSupabaseProxyBase() || getProxyTranslateEndpoint();
     if (import.meta.env.DEV) {
       console.info('[translate] native=', isNativePlatform(), 'translate=', endpoint);
     }
@@ -442,7 +492,7 @@ export default function SettingsTab() {
     setTestTranslateResult('');
     try {
       const primaryEndpoint = resolveEndpoint(translationApiUrl);
-      const proxyEndpoint = getProxyTranslateEndpointSafe();
+      const proxyEndpoint = getProxyTranslateEndpointFromSupabaseProxyBase();
       if (!primaryEndpoint && !proxyEndpoint) {
         toast.error('Tõlke endpoint puudub. Ava Seaded → Tõlge ja salvesta URL.');
         throw new Error('TRANSLATE_ENDPOINT_MISSING');
@@ -455,7 +505,7 @@ export default function SettingsTab() {
       }
 
       const ping = async (endpoint: string) => {
-        if (!endpoint) return { ok: false, error: 'endpoint_missing', hint: 'proxy base not found in DOM or localStorage' };
+        if (!endpoint) return { ok: false, error: 'endpoint_missing', hint: 'supabase_proxy_base_v1 not set and cannot derive from translate endpoint' };
         try {
           const pingUrl = endpoint.includes('?') ? `${endpoint}&ping=1` : `${endpoint}?ping=1`;
           const response = await fetch(pingUrl, { method: 'GET', mode: 'cors', headers });
@@ -479,7 +529,7 @@ export default function SettingsTab() {
       }
       let proxy: any;
       if (!proxyEndpoint) {
-        proxy = { ok: false, error: 'endpoint_missing', hint: 'proxy base not found in DOM or localStorage' };
+        proxy = { ok: false, error: 'endpoint_missing', hint: 'supabase_proxy_base_v1 not set and cannot derive from translate endpoint' };
       } else {
         try {
           const r = await fetch(`${proxyEndpoint}?ping=1`, { method: 'GET' });
@@ -510,6 +560,7 @@ export default function SettingsTab() {
 
   const handleSaveTranslateEndpoint = () => {
     setStoredEndpoint(translationApiUrl);
+    ensureSupabaseProxyBaseStored();
     const saved = getStoredEndpoint();
     setStoredEndpointView(saved);
     setTranslationApiUrlInput(saved || getEnvEndpoint());
@@ -518,6 +569,7 @@ export default function SettingsTab() {
 
   const handleUseWorkerDefault = () => {
     setStoredEndpoint(WORKER_DEFAULT_ENDPOINT);
+    ensureSupabaseProxyBaseStored();
     const saved = getStoredEndpoint();
     setStoredEndpointView(saved);
     setTranslationApiUrlInput(saved);
@@ -542,12 +594,13 @@ export default function SettingsTab() {
   };
 
   const handleUseProxyTranslateRecommended = () => {
-    const proxyTranslateEndpoint = getProxyTranslateEndpointSafe() || getProxyTranslateEndpoint();
+    const proxyTranslateEndpoint = getProxyTranslateEndpointFromSupabaseProxyBase() || getProxyTranslateEndpoint();
     if (!proxyTranslateEndpoint) {
       toast.error('Proxy translate endpoint puudub');
       return;
     }
     setStoredEndpoint(proxyTranslateEndpoint);
+    ensureSupabaseProxyBaseStored();
     const saved = getStoredEndpoint();
     setStoredEndpointView(saved);
     setTranslationApiUrlInput(saved);

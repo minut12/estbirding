@@ -58,29 +58,29 @@ Deno.serve(async (req) => {
   }
 
   const reqUrl = new URL(req.url);
-  const isTranslateRoute = reqUrl.pathname.endsWith("/translate-et");
+  const isTranslateRoute = reqUrl.pathname.endsWith("/proxy/translate-et");
 
-  if (isTranslateRoute) {
-    if (req.method === "GET" && reqUrl.searchParams.get("ping") === "1") {
-      return json(200, { ok: true, fn: "proxy/translate-et" });
-    }
+    if (isTranslateRoute) {
+      if (req.method === "GET" && reqUrl.searchParams.get("ping") === "1") {
+        return json(200, { ok: true, fn: "proxy/translate-et" });
+      }
 
-    if (req.method !== "POST") {
-      return json(405, { ok: false, error: "method_not_allowed" });
-    }
+      if (req.method !== "POST") {
+        return json(405, { ok: false, error: "METHOD_NOT_ALLOWED" });
+      }
 
     const body = await req.json().catch(() => ({}));
     const text = String(body?.text || "").trim();
     const targetLang = String(body?.targetLang || "et").trim() || "et";
     const sourceLang = String(body?.sourceLang || "").trim();
 
-    if (!text) return json(400, { ok: false, error: "missing_text" });
-    if (text.length > 12_000) return json(413, { ok: false, error: "text_too_large" });
+    if (!text) return json(400, { ok: false, error: "MISSING_TEXT" });
+    if (text.length > 12_000) return json(413, { ok: false, error: "TEXT_TOO_LARGE" });
 
     const apiKey = Deno.env.get("OPENAI_API_KEY")?.trim();
-    if (!apiKey) return json(500, { ok: false, error: "openai_api_key_missing" });
+    if (!apiKey) return json(500, { ok: false, error: "OPENAI_API_KEY_MISSING" });
 
-    const system = `Translate to Estonian. Return only translation.`;
+    const system = `You are a translation engine. Translate the user text to ${targetLang}. Return ONLY the translation, preserve paragraphs.`;
     const user = sourceLang
       ? `Source language: ${sourceLang}\n\nText:\n${text}`
       : `Text:\n${text}`;
@@ -103,12 +103,12 @@ Deno.serve(async (req) => {
         }),
       });
     } catch (error) {
-      return json(502, { ok: false, error: "openai_request_failed", message: String(error) });
+      return json(502, { ok: false, error: "OPENAI_ERROR", details: String(error).slice(0, 400) });
     }
 
     if (!upstream.ok) {
       const details = await upstream.text().catch(() => "");
-      return json(502, { ok: false, error: "openai_error", status: upstream.status, details: details.slice(0, 400) });
+      return json(502, { ok: false, error: "OPENAI_ERROR", status: upstream.status, details: details.slice(0, 400) });
     }
 
     const payload = await upstream.json().catch(() => ({}));

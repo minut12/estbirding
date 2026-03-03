@@ -642,7 +642,7 @@ let __lastSnapshotHash = null;
 let __isReloading = false;
 let __lastFetchAt = null;
 let __lastProcessedAt = null;
-let __loaderStage = 'idle'; // idle | loading_config | loading_snapshot | processing | ready | error
+let __loaderStage = 'idle'; // idle | loading_config | loading_snapshot | processing | ready | rate_limited | error
 let __lastBodyDurationMs = null;
 let __lastParseDurationMs = null;
 let __lastContentType = null;
@@ -659,7 +659,12 @@ let __snapshotInFlightRef = null;
 let __snapshotInFlightStartedAtMs = 0;
 let __pollLoopToken = 0;
 let __snapshotAutoRefreshTimer = null;
-const SNAPSHOT_AUTO_REFRESH_MS = 30000;
+let __rateLimitRetryTimer = null;
+let __rateLimitCountdownTimer = null;
+let __rateLimitRetryAtMs = 0;
+let __rateLimitAttempt = 0;
+const RATE_LIMIT_BACKOFF_MS = [2000, 5000, 15000, 30000, 60000, 120000];
+const SNAPSHOT_AUTO_REFRESH_MS = 180000;
 
 function _safeData(v){
   try{
@@ -795,6 +800,11 @@ function _scheduleLoadSnapshotRetry(reason){
   if(__pendingConfigLoadRetry) clearTimeout(__pendingConfigLoadRetry);
   __pendingConfigLoadRetry = setTimeout(function(){
     __pendingConfigLoadRetry = null;
+    if(__loaderStage === 'rate_limited' && __rateLimitRetryAtMs > Date.now()){
+      __lastInfoMessage = 'Rate limited cooldown active; config retry deferred';
+      _updateDebugPanel();
+      return;
+    }
     __lastInfoMessage = 'Config arrived, retrying snapshot load (' + reason + ')';
     pushDebugEvent('SNAPSHOT_RETRY', 'Retrying snapshot load', { reason: reason, runId: __runId });
     loadSnapshot(true);
@@ -809,11 +819,64 @@ function _fmtTs(iso){
   try{ return window.formatDateEE ? window.formatDateEE(iso) : String(iso); }catch(e){ return String(iso); }
 }
 function _scheduleNextSnapshotRefresh(delayMs){
+  if(__rateLimitRetryTimer) return;
   if(__snapshotAutoRefreshTimer) clearTimeout(__snapshotAutoRefreshTimer);
   __snapshotAutoRefreshTimer = setTimeout(function(){
     if(__isReloading) return _scheduleNextSnapshotRefresh(SNAPSHOT_AUTO_REFRESH_MS);
     loadSnapshot();
   }, Math.max(1000, Number(delayMs) || SNAPSHOT_AUTO_REFRESH_MS));
+}
+function _clearRateLimitTimers(){
+  if(__rateLimitRetryTimer){ clearTimeout(__rateLimitRetryTimer); __rateLimitRetryTimer = null; }
+  if(__rateLimitCountdownTimer){ clearInterval(__rateLimitCountdownTimer); __rateLimitCountdownTimer = null; }
+  __rateLimitRetryAtMs = 0;
+}
+function _rateLimitRemainingSec(){
+  if(!__rateLimitRetryAtMs) return 0;
+  return Math.max(0, Math.ceil((__rateLimitRetryAtMs - Date.now()) / 1000));
+}
+function _calcRateLimitDelayMs(retryAfterSec){
+  if(Number.isFinite(retryAfterSec) && retryAfterSec > 0){
+    return Math.min(120000, Math.max(1000, Math.round(retryAfterSec * 1000)));
+  }
+  const base = RATE_LIMIT_BACKOFF_MS[Math.min(__rateLimitAttempt, RATE_LIMIT_BACKOFF_MS.length - 1)];
+  const jitter = Math.round(base * (0.15 * Math.random()));
+  return Math.min(120000, base + jitter);
+}
+function _scheduleRateLimitRetry(retryAfterSec){
+  const delayMs = _calcRateLimitDelayMs(retryAfterSec);
+  __rateLimitAttempt = Math.min(__rateLimitAttempt + 1, RATE_LIMIT_BACKOFF_MS.length - 1);
+  _clearRateLimitTimers();
+  __rateLimitRetryAtMs = Date.now() + delayMs;
+  __lastErrorMessage = 'Rate limited';
+  __lastInfoMessage = 'Rate limited, retrying in ' + _rateLimitRemainingSec() + 's';
+  _showSnapshotBanner(__lastInfoMessage, 'warn');
+  _updateDebugPanel();
+  __rateLimitCountdownTimer = setInterval(function(){
+    if(__loaderStage !== 'rate_limited'){
+      if(__rateLimitCountdownTimer){ clearInterval(__rateLimitCountdownTimer); __rateLimitCountdownTimer = null; }
+      return;
+    }
+    __lastInfoMessage = 'Rate limited, retrying in ' + _rateLimitRemainingSec() + 's';
+    _showSnapshotBanner(__lastInfoMessage, 'warn');
+    _updateProgressUI(0, 0, '');
+    _updateDebugPanel();
+  }, 1000);
+  __rateLimitRetryTimer = setTimeout(function(){
+    __rateLimitRetryTimer = null;
+    if(__rateLimitCountdownTimer){ clearInterval(__rateLimitCountdownTimer); __rateLimitCountdownTimer = null; }
+    _setLoaderStage('idle');
+    loadSnapshot(true);
+  }, delayMs);
+}
+function _withSupabaseAuthHeaders(headers){
+  const anon = _resolveSupabaseAnonKeyLocal();
+  const merged = Object.assign({}, headers || {});
+  if(anon){
+    merged['apikey'] = anon;
+    merged['Authorization'] = 'Bearer ' + anon;
+  }
+  return merged;
 }
 function _withCacheBuster(url){
   const base = String(url || '');
@@ -927,7 +990,7 @@ async function fetchJsonWithTimeout(url, opts){
     const res = await fetch(fetchUrl, {
       signal: combinedSignal,
       cache:'no-store',
-      headers: { 'cache-control': 'no-cache', 'pragma': 'no-cache' }
+      headers: _withSupabaseAuthHeaders({ 'cache-control': 'no-cache', 'pragma': 'no-cache' })
     });
     __lastHttpStatus = res.status;
     __lastHttpOk = res.ok;
@@ -948,8 +1011,17 @@ async function fetchJsonWithTimeout(url, opts){
       url:fetchUrl, runId:runId, index:index, bytes: __lastBodyBytes, durationMs: __lastBodyDurationMs, contentType: __lastContentType
     });
 
+    if(res.status === 429){
+      const ra = Number(res.headers.get('retry-after') || '');
+      const err429 = new Error('HTTP 429 Too Many Requests');
+      err429.httpStatus = 429;
+      err429.isRateLimited = true;
+      err429.retryAfterSec = Number.isFinite(ra) ? ra : null;
+      throw err429;
+    }
     if(!res.ok){
       const err = new Error('HTTP ' + res.status + ' ' + res.statusText);
+      err.httpStatus = res.status;
       err.bodySnippet = (text || '').slice(0, 300);
       throw err;
     }
@@ -1039,6 +1111,7 @@ async function fetchWithTimeout(url, init, ms, runId){
       runSignalReason: getAbortReason(localRunCancelController && localRunCancelController.signal),
     });
     const reqInit = Object.assign({}, init || {}, { signal: controller.signal });
+    reqInit.headers = _withSupabaseAuthHeaders(reqInit.headers);
     const res = await fetch(url, reqInit);
     __lastHttpStatus = res.status;
     __lastHttpOk = res.ok;
@@ -1217,7 +1290,11 @@ function _updateProgressUI(done, total, status){
   const barInner = document.getElementById('fetchProgressBarInner');
   const stopBtn = document.getElementById('btnStopFetch');
   if(!prog) return;
-  if(__isReloading || __loaderStage === 'loading_config' || __loaderStage === 'loading_snapshot' || __loaderStage === 'processing'){
+  if(__loaderStage === 'rate_limited'){
+    prog.textContent = 'Rate limited, retrying in ' + _rateLimitRemainingSec() + 's';
+    if(bar){ bar.style.display='none'; }
+    if(stopBtn && __isRefreshRunning) stopBtn.style.display='inline-block';
+  } else if(__isReloading || __loaderStage === 'loading_config' || __loaderStage === 'loading_snapshot' || __loaderStage === 'processing'){
     prog.textContent = 'Reloading... stage=' + __loaderStage + ' fetch=' + _fmtTs(__lastFetchAt) + ' processed=' + _fmtTs(__lastProcessedAt);
     if(bar){ bar.style.display='none'; }
     if(stopBtn && __isRefreshRunning) stopBtn.style.display='inline-block';
@@ -1249,9 +1326,12 @@ function _updateDebugPanel(){
   const totalWithCoords = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.lat); }).length;
   const progressDone = (__snapshotMeta.status === 'running') ? Number(__currentIndex || 0) : Number(__lastProgressDone > 0 ? __lastProgressDone : 0);
   const progressTotal = (__snapshotMeta.status === 'running' || __lastProgressDone > 0) ? SPECIES.length : 0;
+  const statusLabel = (__loaderStage === 'rate_limited')
+    ? 'rate_limited'
+    : (__snapshotMeta.status || (__isRefreshRunning ? 'running' : 'stopped'));
   el.innerHTML = [
     'buildId: <b>' + MAP_BUILD_ID + '</b>',
-    'status: <b>' + (__snapshotMeta.status || (__isRefreshRunning ? 'running' : 'stopped')) + '</b>',
+    'status: <b>' + statusLabel + '</b>',
     'generatedAt: <b>' + (__snapshotMeta.generated_at ? (window.formatDateEE ? window.formatDateEE(__snapshotMeta.generated_at) : __snapshotMeta.generated_at) : '-') + '</b>',
     'progress: <b>' + progressDone + '/' + progressTotal + '</b>',
     'resumeIndex: <b>' + _getResumeIndex() + '</b>',
@@ -1357,6 +1437,8 @@ async function _loadSnapshotImpl(){
         pushDebugEvent('SNAPSHOT_APPLY_DONE', 'Applied running snapshot', { runId: runId, index: __currentIndex });
       }
       _setLoaderStage('ready');
+      __rateLimitAttempt = 0;
+      _clearRateLimitTimers();
       _startPolling();
       return;
     }
@@ -1377,6 +1459,8 @@ async function _loadSnapshotImpl(){
       _showSnapshotBanner('No snapshot data yet. Press "Refresh data" to generate.', 'warn');
     }
     _setLoaderStage('ready');
+    __rateLimitAttempt = 0;
+    _clearRateLimitTimers();
 
     if(__isRefreshRunning && snap.status !== 'running'){
       pushDebugEvent('REFRESH_COMPLETE', 'Snapshot reached terminal status', { status: snap.status, runId: runId });
@@ -1387,6 +1471,11 @@ async function _loadSnapshotImpl(){
       document.getElementById('fetchError').textContent = 'Last error: ' + snap.last_error;
     }
   }catch(e){
+    if(e && e.isRateLimited){
+      _setLoaderStage('rate_limited');
+      _scheduleRateLimitRetry(e.retryAfterSec);
+      return;
+    }
     if(e && e.isAbort){
       if(e.abortReason === 'user' || e.abortReason === 'new-run' || e.abortReason === 'stop' || e.abortReason === 'watchdog_timeout' || e.abortReason === 'replace' || e.abortReason === 'active_request_abort'){
         pushDebugEvent('SNAPSHOT_LOAD_CANCELLED', 'Snapshot load cancelled', { runId: runId, reason: e.abortReason }, 'warn');
@@ -1426,7 +1515,11 @@ async function _loadSnapshotImpl(){
     };
     pushDebugEvent('SNAPSHOT_LOAD_FAIL', 'Snapshot load failed', __lastErrorObj, 'error');
     console.error('[snapshot] Load failed:', e);
-    _showSnapshotBanner('Using cached data (server unavailable)', 'warn');
+    if(e && Number(e.httpStatus) >= 500){
+      _showSnapshotBanner('Using cached data (server unavailable)', 'warn');
+    } else {
+      _showSnapshotBanner('Using cached data (snapshot request failed)', 'warn');
+    }
     refreshAllMarkers();
     throw e;
   }finally{
@@ -1479,6 +1572,7 @@ function loadSnapshot(force){
 }
 
 function _startPolling(){
+  if(__snapshotAutoRefreshTimer){ clearTimeout(__snapshotAutoRefreshTimer); __snapshotAutoRefreshTimer = null; }
   if(__isRefreshRunning){
     pushDebugEvent('POLL_JOIN', 'Polling already active; not starting another loop', { runId: __runId });
     return;
@@ -1570,6 +1664,7 @@ function _stopPolling(){
   if(__pollTimer){ clearInterval(__pollTimer); __pollTimer = null; }
   __pollLoopToken++;
   __isRefreshRunning = false;
+  _clearRateLimitTimers();
   _stopWatchdog();
   _abortActiveRequest();
   try{ __stopController.abort('replace'); }catch(e){}

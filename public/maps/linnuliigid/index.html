@@ -1064,7 +1064,7 @@ function _updateServerSnapshotStatus(){
     : ((!__lastProcessedSnapshotId || __serverIsNewer) ? 'New server data available' : 'No new server data');
   const err = (__serverCheckStatus === 'error' && __serverCheckError) ? ('; check error: ' + __serverCheckError) : '';
   const ageText = (latestAgeHours == null) ? '-' : (latestAgeHours.toFixed(1) + 'h');
-  el.textContent = 'Server snapshot: ' + gen + ' | ID: ' + id + ' | Bytes: ' + String(Number(__serverBytes || 0) || '-') + ' | Latest occurrence in snapshot: ' + latest + ' (age: ' + ageText + ') | Checked: ' + chk + ' | ' + freshness + (staleNote ? (' | ' + staleNote) : '') + err;
+  el.textContent = 'Snapshot built at: ' + gen + ' | ID: ' + id + ' | Bytes: ' + String(Number(__serverBytes || 0) || '-') + ' | Latest occurrence in snapshot: ' + latest + ' (age: ' + ageText + ') | Checked: ' + chk + ' | ' + freshness + (staleNote ? (' | ' + staleNote) : '') + err;
 }
 async function fetchServerMeta(){
   __serverCheckStatus = 'checking';
@@ -1080,13 +1080,27 @@ async function fetchServerMeta(){
     });
     if(!res.ok) throw new Error('Meta fetch failed (HTTP ' + res.status + ')');
     const meta = await res.json();
-    __serverSnapshotId = String((meta && meta.snapshotId) || '').trim();
-    __serverGeneratedAt = String((meta && (meta.snapshotGeneratedAt || meta.generatedAt)) || '').trim();
-    __serverBytes = Number((meta && meta.bytes) || 0) || 0;
-    __serverDataMaxAt = String((meta && meta.dataMaxAt) || '').trim();
-    __serverDataMinAt = String((meta && meta.dataMinAt) || '').trim();
+    const snapshotId = String((meta && meta.snapshotId) || '').trim();
+    const snapshotGeneratedAt = String((meta && (meta.snapshotGeneratedAt || meta.generatedAt)) || '').trim();
+    const bytes = Number((meta && meta.bytes) || 0) || 0;
+    const totalItems = Number((meta && meta.totalItems) || 0) || 0;
+    const dataMaxAt = String((meta && meta.dataMaxAt) || '').trim();
+    const dataMinAt = String((meta && meta.dataMinAt) || '').trim();
+    if(!snapshotId || !dataMaxAt || !bytes || !totalItems){
+      __serverMetaAvailable = false;
+      __serverCheckStatus = 'error';
+      __serverCheckError = 'Meta endpoint missing fields';
+      _updateServerSnapshotStatus();
+      _updateDebugPanel();
+      return null;
+    }
+    __serverSnapshotId = snapshotId;
+    __serverGeneratedAt = snapshotGeneratedAt;
+    __serverBytes = bytes;
+    __serverDataMaxAt = dataMaxAt;
+    __serverDataMinAt = dataMinAt;
     __serverCheckedAt = new Date().toISOString();
-    __serverMetaAvailable = !!__serverSnapshotId;
+    __serverMetaAvailable = true;
     __serverIsNewer = !!(__serverMetaAvailable && __lastProcessedSnapshotId && (__serverSnapshotId !== __lastProcessedSnapshotId));
     __serverCheckStatus = 'ok';
     logInfo('Server meta fetched', { snapshotId: __serverSnapshotId, dataMaxAt: __serverDataMaxAt, bytes: __serverBytes });
@@ -1132,12 +1146,21 @@ async function requestServerRebuild(){
   const snapshotUrl = _resolveSnapshotApi();
   const rebuildUrl = _withCacheBuster(snapshotUrl + (snapshotUrl.indexOf('?') >= 0 ? '&' : '?') + 'rebuild=1');
   const traceId = _traceStart({ method: 'GET', url: rebuildUrl });
-  const res = await fetch(rebuildUrl, {
+  let res = await fetch(rebuildUrl, {
     method:'GET',
     cache:'no-store',
     headers: { 'Accept': 'application/json' }
   });
-  const json = await res.json().catch(function(){ return {}; });
+  let json = await res.json().catch(function(){ return {}; });
+  if(!(res.ok || res.status === 202)){
+    res = await fetch(snapshotUrl, {
+      method:'POST',
+      cache:'no-store',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'rebuild' })
+    });
+    json = await res.json().catch(function(){ return {}; });
+  }
   _traceEnd(traceId, { status: res.status, ok: !!res.ok, bytesRead: null, details: { responseKeys: json && typeof json === 'object' ? Object.keys(json) : [] } });
   if(!(res.ok || res.status === 202)){
     logError('Rebuild request failed', { status: res.status });
@@ -1162,6 +1185,7 @@ async function triggerRefreshDataFlow(){
   try{
     const beforeMeta = await fetchServerMeta();
     const previousSnapshotId = String((beforeMeta && beforeMeta.snapshotId) || __serverSnapshotId || '');
+    const previousDataMaxAt = String((beforeMeta && beforeMeta.dataMaxAt) || __serverDataMaxAt || '');
     const stale = _isServerDataStale(12);
     _showSnapshotBanner('Requesting server rebuild...');
     const rebuild = await requestServerRebuild();
@@ -1173,7 +1197,12 @@ async function triggerRefreshDataFlow(){
     } else if(stale){
       await waitForSnapshotChange(previousSnapshotId, 120000);
     }
+    const afterMeta = await fetchServerMeta();
     await loadSnapshot(true);
+    const nextDataMaxAt = String((afterMeta && afterMeta.dataMaxAt) || __serverDataMaxAt || '');
+    if(nextDataMaxAt && previousDataMaxAt && nextDataMaxAt === previousDataMaxAt){
+      _showSnapshotBanner('Rebuilt, but upstream data unchanged (still ' + _fmtTs(nextDataMaxAt) + ')', 'warn');
+    }
   }catch(e){
     __lastErrorMessage = String((e && e.message) ? e.message : e || 'refresh data flow failed');
     pushDebugEvent('REFRESH_FLOW_FALLBACK', 'Refresh flow failed, falling back to snapshot GET', { error: __lastErrorMessage }, 'warn');

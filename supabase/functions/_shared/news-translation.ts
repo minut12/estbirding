@@ -9,7 +9,6 @@ export interface NewsTranslationItem {
   source_lang: string | null;
   title_et: string | null;
   body_et: string | null;
-  content_et?: string | null;
   translate_hash: string | null;
 }
 
@@ -120,11 +119,9 @@ export async function translateNewsItemToEt(
     return { id, status: "done", skipped: true, reason: "already_estonian", source_lang: "et" };
   }
 
-  const existingBodyEt = item.content_et || item.body_et;
-  if (item.title_et && existingBodyEt && item.translate_hash === contentHash) {
+  if (item.title_et && item.body_et && item.translate_hash === contentHash) {
     await supabase.from("news_items").update({
       source_lang: normalizedSourceLang || sourceLang,
-      content_et: existingBodyEt,
       translation_status: "done",
       translation_error: null,
     }).eq("id", id);
@@ -142,7 +139,6 @@ export async function translateNewsItemToEt(
       source_lang: normalizedSourceLang || sourceLang,
       title_et: translated.title_et || null,
       body_et: translated.body_et || null,
-      content_et: translated.body_et || null,
       translation_status: "done",
       translation_error: null,
       translated_at: new Date().toISOString(),

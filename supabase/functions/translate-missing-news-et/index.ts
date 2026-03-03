@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
     const includeArchived = body?.include_archived === true;
     const onlySourceKey = typeof body?.source_key === "string" && body.source_key.trim()
       ? body.source_key.trim()
-      : "birding_poland";
+      : null;
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -27,8 +27,9 @@ Deno.serve(async (req) => {
 
     let query = supabase
       .from("news_items")
-      .select("id, source_key, title, body, source_lang, title_et, body_et, content_et, translate_hash")
-      .or("content_et.is.null,title_et.is.null,body_et.is.null,translation_status.eq.pending,translation_status.eq.error")
+      .select("id, source_key, title, body, source_lang, title_et, body_et, translate_hash")
+      .neq("source_key", "eoy")
+      .or("title_et.is.null,body_et.is.null,translation_status.eq.pending,translation_status.eq.error")
       .order("published_at", { ascending: false })
       .limit(limit);
 

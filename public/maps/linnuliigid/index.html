@@ -1482,55 +1482,55 @@ async function refreshAllFromElurikkus(){
     if(progEl) progEl.textContent = line;
     if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = line; }
     try{
-      const res = await refreshSpeciesFromElurikkus(name, signal);
-      if(res && res.updated) updated++;
-      if(res && res.moved) moved++;
-      if(res && res.moved) try{ _applyLiveOverrideForSpecies(name); }catch(e){}
-      const foundTxt = (res && res.found && _hasFiniteCoord(res.found.lat) && _hasFiniteCoord(res.found.lon))
-        ? (Number(res.found.lat).toFixed(4) + ',' + Number(res.found.lon).toFixed(4))
-        : ((res && res.coordsFound && res.coordsFound !== '—') ? String(res.coordsFound) : '—');
-      const appTxt = (res && res.applied && _hasFiniteCoord(res.applied.lat) && _hasFiniteCoord(res.applied.lon))
-        ? (Number(res.applied.lat).toFixed(4) + ',' + Number(res.applied.lon).toFixed(4))
-        : '-';
+      const json = await fetchElurikkusSpecies(name, { force: true, signal: signal });
+      const upRow = __elurikkusBySpecies[name] || {};
+      const sel = upRow.lastSelectedApply || null;
+      if(sel && sel.applied) updated++;
+      if(sel && sel.moved) moved++;
+      if(sel && sel.moved) try{ _applyLiveOverrideForSpecies(name); }catch(e){}
+      const foundTxt = (sel && Number.isFinite(Number(sel.newLat)) && Number.isFinite(Number(sel.newLon)))
+        ? (Number(sel.newLat).toFixed(6) + ',' + Number(sel.newLon).toFixed(6))
+        : '—';
+      const appTxt = foundTxt === '—' ? '-' : foundTxt;
       if(eluLastCoord){
-        const durl = String((res && (res.usedDetailUrl || res.detailUrl || res.occUrl)) || '');
+        const durl = String((sel && sel.selectedOccurrenceUrl) || '');
         const dshort = durl ? (durl.split('/').slice(-2).join('/')) : 'no';
-        const occId = durl ? (durl.match(/occurrence\/(\d+)/i)?.[1] || dshort) : 'no';
-        const oldTxt = (res && res.old && _hasFiniteCoord(res.old.lat) && _hasFiniteCoord(res.old.lon))
-          ? (Number(res.old.lat).toFixed(4) + ',' + Number(res.old.lon).toFixed(4))
+        const occId = (sel && sel.selectedOccurrenceId) ? sel.selectedOccurrenceId : (durl ? (durl.match(/occurrence\/(\d+)/i)?.[1] || dshort) : 'no');
+        const oldTxt = (sel && Number.isFinite(Number(sel.oldLat)) && Number.isFinite(Number(sel.oldLon)))
+          ? (Number(sel.oldLat).toFixed(4) + ',' + Number(sel.oldLon).toFixed(4))
           : '-';
-        const moveTxt = (res && res.moved && oldTxt !== '-' && appTxt !== '-') ? (' yes ' + oldTxt + '->' + appTxt) : (' ' + ((res && res.moved) ? 'yes' : 'no'));
+        const moveTxt = (sel && sel.moved && oldTxt !== '-' && appTxt !== '-') ? (' yes ' + oldTxt + '->' + appTxt) : (' ' + ((sel && sel.moved) ? 'yes' : 'no'));
         eluLastCoord.textContent = (i + 1) + '/' + total + ' ' + name +
           ' coordsFound=' + foundTxt +
           ' coordsApplied=' + appTxt +
-          ' source=' + String((res && (res.coordsSource || (res.applied && res.applied.source))) || '-') +
+          ' source=' + String((sel && sel.applied) ? 'elurikkus_occurrence_detail' : '-') +
           ' pickedOccId=' + occId +
           ' detailUrl=' + dshort +
           ' moved=' + moveTxt;
       }
       if(progEl){
-        const dflag = (res && (res.usedDetailUrl || res.detailUrl)) ? 'yes' : 'no';
-        const durl = String((res && (res.usedDetailUrl || res.detailUrl)) || '');
-        const occId = durl ? (durl.match(/occurrence\/(\d+)/i)?.[1] || 'yes') : 'no';
-        progEl.textContent = (i + 1) + '/' + total + ' ' + name + ' pickedOccId=' + occId + ' detailUrl=' + dflag + ' coordsFound=' + foundTxt + ' moved=' + ((res && res.moved) ? 'yes' : 'no');
+        const dflag = (sel && sel.selectedOccurrenceUrl) ? 'yes' : 'no';
+        const durl = String((sel && sel.selectedOccurrenceUrl) || '');
+        const occId = (sel && sel.selectedOccurrenceId) ? sel.selectedOccurrenceId : (durl ? (durl.match(/occurrence\/(\d+)/i)?.[1] || 'yes') : 'no');
+        progEl.textContent = (i + 1) + '/' + total + ' ' + name + ' pickedOccId=' + occId + ' detailUrl=' + dflag + ' coordsFound=' + foundTxt + ' moved=' + ((sel && sel.moved) ? 'yes' : 'no');
       }
       pushEluCoordTrace({
         ts: new Date().toISOString(),
         i: i + 1,
         total: total,
         species: name,
-        found: (res && res.found) ? res.found : { lat: null, lon: null, source: String((res && res.coordsSource) || '-') },
-        applied: (res && res.applied) ? res.applied : { lat: null, lon: null, source: '-' },
-        old: (res && res.old) ? res.old : { lat: null, lon: null },
-        moved: !!(res && res.moved),
-        reason: String((res && res.reason) || ''),
-        occUrl: (res && (res.usedDetailUrl || res.detailUrl || res.occUrl)) ? (res.usedDetailUrl || res.detailUrl || res.occUrl) : null,
-        pickedRow: (res && res.pickedRow) || null,
-        pickedDateText: (res && res.pickedDateText) || '',
+        found: (sel && sel.applied) ? { lat: sel.newLat, lon: sel.newLon, source: 'detail' } : { lat: null, lon: null, source: '-' },
+        applied: (sel && sel.applied) ? { lat: sel.newLat, lon: sel.newLon, source: 'elurikkus_occurrence_detail' } : { lat: null, lon: null, source: '-' },
+        old: (sel && (Number.isFinite(Number(sel.oldLat)) || Number.isFinite(Number(sel.oldLon)))) ? { lat: sel.oldLat, lon: sel.oldLon } : { lat: null, lon: null },
+        moved: !!(sel && sel.moved),
+        reason: (sel && sel.applied) ? 'applied selected occurrence detail' : 'selected missing/restricted',
+        occUrl: (sel && sel.selectedOccurrenceUrl) ? sel.selectedOccurrenceUrl : null,
+        pickedRow: null,
+        pickedDateText: String((json && json.selected && json.selected.observedAt) || ''),
       });
-      window.__lastElurikkusBulkOutcomes.unshift(Object.assign({ species: name, i: i + 1 }, res || {}));
+      window.__lastElurikkusBulkOutcomes.unshift(Object.assign({ species: name, i: i + 1 }, (sel || {})));
       if(window.__lastElurikkusBulkOutcomes.length > 20) window.__lastElurikkusBulkOutcomes.length = 20;
-      pushDebugEvent('ELU_BULK_ITEM', 'Elurikkus bulk item', { i: i + 1, species: name, updated: !!(res && res.updated), moved: !!(res && res.moved), newest: res && res.newest ? res.newest : '', detailUrl: (res && (res.usedDetailUrl || res.detailUrl)) ? 'yes' : 'no', coordsFound: foundTxt });
+      pushDebugEvent('ELU_BULK_ITEM', 'Elurikkus bulk item', { i: i + 1, species: name, updated: !!(sel && sel.applied), moved: !!(sel && sel.moved), newest: String((json && json.selected && json.selected.date) || ''), detailUrl: (sel && sel.selectedOccurrenceUrl) ? 'yes' : 'no', coordsFound: foundTxt });
     }catch(e){
       errors++;
       const errMsg = String((e && e.message) ? e.message : e);
@@ -2391,6 +2391,39 @@ async function _respectElurikkusMinDelay(){
   if(waitMs > 0) await _delay(waitMs);
   __elurikkusLastRequestStartedAtMs = Date.now();
 }
+function _applySelectedOccurrenceFromServer(speciesName, json){
+  const selected = (json && typeof json === 'object') ? json.selected : null;
+  if(!selected || typeof selected !== 'object') return { applied:false, moved:false, reason:'no selected' };
+  const lat = Number(selected.lat);
+  const lon = Number(selected.lon);
+  if(!Number.isFinite(lat) || !Number.isFinite(lon)) return { applied:false, moved:false, reason:'selected without coords' };
+  const p = points[speciesName] = (points[speciesName] || {});
+  const oldLat = Number(p.lat);
+  const oldLon = Number(p.lon);
+  p.lat = lat;
+  p.lon = lon;
+  p.t = String((selected.date || '')).slice(0,10) || p.t || '';
+  p.t_dt = String((selected.observedAt || '')).trim() || p.t_dt || '';
+  p.src = 'live_elurikkus';
+  p.coordsSource = 'elurikkus_occurrence_detail';
+  p.coords_source = 'elurikkus_occurrence_detail';
+  p.coords_status = 'public';
+  p.openUrl = String(selected.url || '').trim() || p.openUrl || '';
+  if(p.openUrl) p.latestUrl = p.openUrl;
+  p.lastFetched = new Date().toISOString();
+  const moved = Number.isFinite(oldLat) && Number.isFinite(oldLon) ? (Math.abs(oldLat - lat) > 1e-6 || Math.abs(oldLon - lon) > 1e-6) : true;
+  try{ updateMarker(speciesName); }catch(e){}
+  return {
+    applied: true,
+    moved: moved,
+    oldLat: Number.isFinite(oldLat) ? oldLat : null,
+    oldLon: Number.isFinite(oldLon) ? oldLon : null,
+    newLat: lat,
+    newLon: lon,
+    selectedOccurrenceId: String((selected.occurrenceId || '')).trim(),
+    selectedOccurrenceUrl: String((selected.url || '')).trim(),
+  };
+}
 async function fetchElurikkusSpecies(species, opts){
   const options = Object.assign({ force: false, apply: false, signal: null }, opts || {});
   const speciesName = String(species || '').trim();
@@ -2456,6 +2489,8 @@ async function fetchElurikkusSpecies(species, opts){
         _rebuildMarkers({ reason: 'live_cache_applied', speciesKey: cacheKey });
       }
     }
+    const selApply = _applySelectedOccurrenceFromServer(speciesName, cachedData);
+    row.lastSelectedApply = selApply;
     render();
     return _returnPayload(cachedData);
     }
@@ -2526,6 +2561,7 @@ async function fetchElurikkusSpecies(species, opts){
       const reqUrl = new URL(base);
       reqUrl.searchParams.set('mode', 'elurikkus_species');
       reqUrl.searchParams.set('text', speciesName);
+      if(options.force) reqUrl.searchParams.set('force', '1');
       reqUrl.searchParams.set('_ts', String(Date.now()));
       const url = reqUrl.toString();
       __lastElurikkusUrl = url;
@@ -2543,10 +2579,9 @@ async function fetchElurikkusSpecies(species, opts){
       if(String(json && json.mode || '') !== 'elurikkus_species' || !Array.isArray(json && json.items)){
         const dbgKeys = json && typeof json === 'object' ? Object.keys(json) : [];
         const serverMode = String((json && json.mode) || 'unknown');
-        logWarn('Elurikkus route mismatch payload', { species: speciesName, keys: dbgKeys });
-        json = await _fetchElurikkusSpeciesViaHtml(speciesName);
-        sourceTag = 'client_html';
-        row.routeMismatch = 'server returned ' + serverMode + ', used client_html fallback';
+        const errMsg = 'Server returned mode=' + serverMode + ' instead of elurikkus_species; keys=' + dbgKeys.join(',');
+        row.routeMismatch = errMsg;
+        throw new Error(errMsg);
       }
       _traceEnd(traceId, { status: res.status, ok: !!res.ok, bytesRead: bytesRead, details: { responseKeys: json && typeof json === 'object' ? Object.keys(json) : [] } });
       logInfo('Elurikkus species response', { species: speciesName, status: res.status, bodyPreview: String(text || '').slice(0,200) });
@@ -2587,6 +2622,11 @@ async function fetchElurikkusSpecies(species, opts){
       liveStatsBySpecies[cacheKey] = stats;
       _persistLiveCaches();
       __elurikkusResultCache.set(cacheKey, { ts: Date.now(), data: json });
+      const selApply = _applySelectedOccurrenceFromServer(speciesName, json);
+      row.lastSelectedApply = selApply;
+      if(selApply && selApply.applied){
+        row.fetchSummary = 'Selected occurrence applied (moved=' + (selApply.moved ? 'yes' : 'no') + ')';
+      }
       // Bug 1 fix: always apply coords regardless of live-override toggle so marker always moves after fetch
       const _wasLiveEnabled = _isLiveOverrideEnabled(speciesName);
       _applyLiveOverrideForSpecies(speciesName);
@@ -4906,7 +4946,7 @@ function rowHTML(obj) {
   const speciesKey = _normalizeSpeciesKey(key);
   const isUpLoading = __elurikkusInFlightBySpecies.has(_normalizeSpeciesKey(key));
   const fetchCount = Number(__elurikkusFetchCountBySpecies[speciesKey] || 0);
-  const openUrl = String((p.latestUrl || p.searchUrl || obj.url) || obj.url);
+  const openUrl = String((p.openUrl || p.latestUrl || p.searchUrl || obj.url) || obj.url);
   const upLine = up
     ? ('<div class="small" style="margin-top:4px">' +
       'Elurikkus: ' + (up.status || '-') +

@@ -307,6 +307,13 @@ type LiveOccItem = {
   occurrenceUrl?: string;
   coordsStatus: "public" | "restricted" | "missing";
 };
+type EluSearchRow = {
+  dateText: string;
+  observedAt: string | null;
+  occUrl: string;
+  rowText: string;
+  ms: number | null;
+};
 
 function stripHtml(raw: string): string {
   return String(raw || "")
@@ -383,6 +390,60 @@ function parseElurikkusHtmlItems(html: string): LiveOccItem[] {
   }
   out.sort((a, b) => parseElurikkusDate(b.observedAt) - parseElurikkusDate(a.observedAt));
   return out.slice(0, 200);
+}
+
+function parseEluDateToMs(dateText: string): number | null {
+  const m = String(dateText || "").match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return null;
+  const y = Number(m[1]); const mo = Number(m[2]); const d = Number(m[3]);
+  const hh = Number(m[4]); const mm = Number(m[5]); const ss = Number(m[6] || "0");
+  const t = new Date(y, mo - 1, d, hh, mm, ss, 0).getTime();
+  return Number.isFinite(t) ? t : null;
+}
+
+function parseSearchRowsFromHtml(html: string): EluSearchRow[] {
+  const out: EluSearchRow[] = [];
+  const tbodyMatch = String(html || "").match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
+  if (!tbodyMatch) return out;
+  const tbody = String(tbodyMatch[1] || "");
+  const rows = Array.from(tbody.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/ig));
+  for (const rm of rows) {
+    const rowHtml = String(rm[1] || "");
+    const cells = Array.from(rowHtml.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/ig)).map((m) => stripHtml(String(m[1] || "")));
+    if (!cells.length) continue;
+    const dateText = String(cells[0] || "").trim();
+    const aMatch = rowHtml.match(/href=["']([^"']*\/app\/occurrences\/occurrence\/\d+[^"']*)["']/i);
+    if (!aMatch) continue;
+    const href = String(aMatch[1] || "").trim();
+    if (!href) continue;
+    const occUrl = href.startsWith("http")
+      ? href
+      : `https://elurikkus.ee${href.startsWith("/") ? "" : "/"}${href}`;
+    const ms = parseEluDateToMs(dateText);
+    out.push({
+      dateText,
+      observedAt: (ms && Number.isFinite(ms)) ? new Date(ms).toISOString() : null,
+      occUrl,
+      rowText: stripHtml(rowHtml),
+      ms,
+    });
+  }
+  return out;
+}
+
+function isLikelyEstoniaRow(row: EluSearchRow): boolean {
+  const t = String(row.rowText || "").toLowerCase();
+  return t.includes("estonia") || t.includes("eesti");
+}
+
+function countOcc7FromRows(rows: EluSearchRow[]): number {
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  let n = 0;
+  for (const r of rows) {
+    if (!Number.isFinite(r.ms || NaN)) continue;
+    if ((r.ms as number) >= cutoff) n++;
+  }
+  return n;
 }
 
 function parseOccurrenceDetailCoords(html: string): { lat?: number; lon?: number; hidden: boolean } {
@@ -470,7 +531,8 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
     );
   }
 
-  const sourceUrl = `https://elurikkus.ee/app/occurrences/search?text=${encodeURIComponent(species)}&_ts=${Date.now()}`;
+  const force = String(url.searchParams.get("force") || "").trim() === "1";
+  const sourceUrl = `https://elurikkus.ee/app/occurrences/search?text=${encodeURIComponent(species)}&_ts=${Date.now()}${force ? "&force=1" : ""}`;
   const startedAt = Date.now();
   try {
     const upstreamRes = await fetch(sourceUrl, {
@@ -485,8 +547,50 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
     const durationMs = Date.now() - startedAt;
     const upstreamBytes = new TextEncoder().encode(html).length;
     const items = parseElurikkusHtmlItems(html);
-    await enrichItemsWithDetailCoords(items, 5);
-    const dataMaxAt = items.length ? items[0].observedAt : null;
+    const parsedRows = parseSearchRowsFromHtml(html)
+      .filter((r) => Number.isFinite(r.ms || NaN))
+      .sort((a, b) => Number(b.ms || 0) - Number(a.ms || 0));
+    const estRows = parsedRows.filter((r) => isLikelyEstoniaRow(r));
+    const newestRows = (estRows.length ? estRows : parsedRows).slice(0, 50);
+    const dataMaxAt = newestRows.length ? (newestRows[0].observedAt || null) : (items.length ? items[0].observedAt : null);
+    const occ7 = countOcc7FromRows(estRows.length ? estRows : parsedRows);
+    let selected: Record<string, unknown> | null = null;
+    for (let i = 0; i < Math.min(10, newestRows.length); i++) {
+      const row = newestRows[i];
+      try {
+        const dRes = await fetch(row.occUrl + (row.occUrl.includes("?") ? "&" : "?") + "_ts=" + Date.now(), {
+          method: "GET",
+          headers: { "Cache-Control": "no-cache", "Pragma": "no-cache", "User-Agent": "EstBirding/1.0" },
+        });
+        const dHtml = await dRes.text();
+        const c = parseOccurrenceDetailCoords(dHtml);
+        const occIdMatch = row.occUrl.match(/occurrence\/(\d+)/i);
+        const occId = occIdMatch ? String(occIdMatch[1]) : "";
+        if (Number.isFinite(c.lat) && Number.isFinite(c.lon)) {
+          selected = {
+            occurrenceId: occId,
+            url: row.occUrl,
+            observedAt: row.observedAt,
+            date: row.dateText ? String(row.dateText).slice(0, 10) : null,
+            lat: Number(c.lat),
+            lon: Number(c.lon),
+            coordsStatus: "public",
+          };
+          break;
+        }
+        if (c.hidden && !selected) {
+          selected = {
+            occurrenceId: occId,
+            url: row.occUrl,
+            observedAt: row.observedAt,
+            date: row.dateText ? String(row.dateText).slice(0, 10) : null,
+            coordsStatus: "restricted",
+          };
+        }
+      } catch {
+        // continue to next row
+      }
+    }
     const totalMatch = html.match(/returns\s+([\d\s,\.]+)\s+results/i);
     const totalResults = totalMatch ? Number(String(totalMatch[1] || "").replace(/[^\d]/g, "")) || 0 : 0;
     if (!upstreamRes.ok) {
@@ -502,7 +606,9 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
           durationMs,
           htmlLength: html.length,
           dataMaxAt,
+          occ7,
           totalResults,
+          selected,
           items,
           message: `Upstream HTTP ${upstreamRes.status}`,
         })),
@@ -522,6 +628,8 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
         htmlLength: html.length,
         totalResults,
         dataMaxAt,
+        occ7,
+        selected,
         sample: html.slice(0, 200),
         items,
       })),

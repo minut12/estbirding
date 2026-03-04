@@ -1,8 +1,10 @@
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
   "Access-Control-Allow-Methods": "GET,OPTIONS",
+  "Access-Control-Allow-Headers": "content-type, x-client-info, apikey, authorization",
+  "Access-Control-Max-Age": "86400",
   "Cache-Control": "no-store",
+  "Content-Type": "application/json; charset=utf-8",
 };
 
 type OccItem = {
@@ -40,7 +42,7 @@ Deno.serve(async (req) => {
   if (req.method !== "GET") {
     return new Response(JSON.stringify({ ok: false, stage: "request", message: "Method not allowed" }), {
       status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: corsHeaders,
     });
   }
 
@@ -52,7 +54,7 @@ Deno.serve(async (req) => {
     if (!species) {
       return new Response(JSON.stringify({ ok: false, stage: "request", message: "Missing text query parameter" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: corsHeaders,
       });
     }
 
@@ -88,7 +90,7 @@ Deno.serve(async (req) => {
         durationMs,
       }), {
         status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: corsHeaders,
       });
     }
 
@@ -112,7 +114,7 @@ Deno.serve(async (req) => {
         },
       }), {
         status: upstreamRes.status,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: corsHeaders,
       });
     }
 
@@ -170,16 +172,16 @@ Deno.serve(async (req) => {
       },
     }), {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: corsHeaders,
     });
   } catch (error) {
     return new Response(JSON.stringify({
       ok: false,
-      stage: "parse",
+      stage: "handler",
       message: String((error as Error)?.message || error),
     }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: corsHeaders,
     });
   }
 });

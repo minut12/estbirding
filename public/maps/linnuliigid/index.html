@@ -1397,29 +1397,18 @@ async function fetchElurikkusSpecies(species){
       await _respectElurikkusMinDelay();
       __elurikkusLastFetchAtMs = Date.now();
       const base = _resolveElurikkusSpeciesApi();
-      const anon = _resolveSupabaseAnonKeyLocal();
-      if(!anon) throw new Error('Supabase anon key missing for elurikkus-species');
-      const url = _withCacheBuster(base + '?text=' + encodeURIComponent(speciesName) + '&days=7&limit=200');
+      const url = base + '?text=' + encodeURIComponent(speciesName) + '&days=7&limit=200&_ts=' + Date.now();
       __lastElurikkusUrl = url;
       traceId = _traceStart({ method: 'GET', url: url });
       const t0 = performance.now();
-      const res = await fetch(url, {
-        method:'GET',
-        cache:'no-store',
-        headers: {
-          'Accept': 'application/json',
-          'apikey': anon,
-          'Authorization': 'Bearer ' + anon,
-        },
-      });
+      const res = await fetch(url, { method: 'GET', cache: 'no-store' });
       const text = await res.text();
       const bytesRead = text ? (new TextEncoder().encode(text).length) : 0;
       const durationMs = Math.round(performance.now() - t0);
-      let json = {};
-      try{ json = text ? JSON.parse(text) : {}; }catch(e){ json = {}; }
+      if(!res.ok) throw new Error('HTTP ' + res.status + ': ' + String(text || '').slice(0,200));
+      const json = JSON.parse(text);
       _traceEnd(traceId, { status: res.status, ok: !!res.ok, bytesRead: bytesRead, details: { responseKeys: json && typeof json === 'object' ? Object.keys(json) : [] } });
       logInfo('Elurikkus species response', { species: speciesName, status: res.status, bodyPreview: String(text || '').slice(0,200) });
-      if(!res.ok) throw new Error('elurikkus-species HTTP ' + res.status + ': ' + String(text || '').slice(0,200));
       const items = Array.isArray(json.items) ? json.items : [];
       const restrictedCount = items.filter(function(it){ return String((it && it.coordsStatus) || '') !== 'public'; }).length;
       row.status = 'ok';
@@ -1440,16 +1429,23 @@ async function fetchElurikkusSpecies(species){
       __elurikkusResultCache.set(cacheKey, { ts: Date.now(), data: json });
       return json;
     }catch(e){
-      const msg = String((e && e.message) ? e.message : e || 'Elurikkus fetch failed');
+      const errName = String((e && e.name) ? e.name : 'Error');
+      const errMsg = String((e && e.message) ? e.message : e || 'Elurikkus fetch failed');
+      const msg = errName + ': ' + errMsg;
       if(traceId){
-        _traceEnd(traceId, { errorType: 'network', details: { message: msg } });
+        _traceEnd(traceId, { errorType: 'network', details: { name: errName, message: errMsg, status: 'unknown (fetch rejected before HTTP response)' } });
       }
       row.status = 'error';
       row.error = msg;
       row.updatedAt = new Date().toISOString();
       __lastElurikkusSpeciesFetched = speciesName;
       __lastElurikkusError = msg;
-      logWarn('Elurikkus species fetch failed', { species: speciesName, error: msg });
+      logWarn('Elurikkus species fetch failed', {
+        species: speciesName,
+        errorName: errName,
+        errorMessage: errMsg,
+        status: 'unknown (fetch rejected before HTTP response)'
+      });
       return null;
     }finally{
       _releaseElurikkusLimiter();

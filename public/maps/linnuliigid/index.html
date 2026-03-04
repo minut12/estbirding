@@ -1106,6 +1106,17 @@ async function refreshSpeciesFromElurikkus(key, signal){
   }
   save();
   updateMarker(species);
+  console.log('[fix] refreshSpeciesFromElurikkus: marker updated for', species, 'lat=', p.lat, 'lon=', p.lon, 'occ7=', p.occ7);
+  try{ map.invalidateSize(); }catch(_){}
+  // Bug 3 fix: update fetch counter and row data so "fetched Nx" and statusLine refresh
+  const _rsfNKey = _normalizeSpeciesKey(species);
+  __elurikkusFetchCountBySpecies[_rsfNKey] = Number(__elurikkusFetchCountBySpecies[_rsfNKey] || 0) + 1;
+  __elurikkusBySpecies[species] = Object.assign(__elurikkusBySpecies[species] || {}, {
+    status: 'ok',
+    fetchSummary: 'HTML fetch \u2713 (occ7=' + (Number.isFinite(p.occ7) ? p.occ7 : '-') + ')',
+    updatedAt: new Date().toISOString(),
+    latestOccurrenceAt: p.t || '',
+  });
   const moved = Number.isFinite(oldLat) && Number.isFinite(oldLon) && Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lon))
     ? (Math.abs(oldLat - Number(p.lat)) > 1e-9 || Math.abs(oldLon - Number(p.lon)) > 1e-9)
     : false;
@@ -1368,6 +1379,7 @@ let __lastProcessedSnapshotId = '';
 let __lastProcessedGeneratedAt = '';
 let __serverIsNewer = false;
 let __serverMetaAvailable = false;
+let __serverMetaFailCount = 0;
 let __serverCheckStatus = 'idle'; // idle | checking | ok | error
 let __serverCheckError = '';
 let __totalItems = 0;
@@ -1844,6 +1856,19 @@ async function fetchServerMeta(){
       dataMaxAt: String((meta && meta.dataMaxAt) || '').trim(),
       dataMinAt: String((meta && meta.dataMinAt) || '').trim(),
     };
+    // Bug 2 fix: explicitly detect row-shape payload (has points_json key) and derive meta from it
+    if(meta && typeof meta === 'object' && 'points_json' in meta){
+      console.log('[fix] fetchServerMeta: row-shape payload detected (has points_json), calling _deriveMetaFromRowShape');
+      const rowFallback = _deriveMetaFromRowShape(meta);
+      if(rowFallback){
+        if(rowFallback.snapshotId) normalized.snapshotId = rowFallback.snapshotId;
+        if(rowFallback.snapshotGeneratedAt) normalized.snapshotGeneratedAt = rowFallback.snapshotGeneratedAt;
+        if(rowFallback.bytes) normalized.bytes = rowFallback.bytes;
+        if(rowFallback.totalItems) normalized.totalItems = rowFallback.totalItems;
+        if(rowFallback.dataMaxAt) normalized.dataMaxAt = rowFallback.dataMaxAt;
+        if(rowFallback.dataMinAt) normalized.dataMinAt = rowFallback.dataMinAt;
+      }
+    }
     if(!normalized.snapshotId || !normalized.dataMaxAt || !normalized.bytes || !normalized.totalItems){
       const fallback = _deriveMetaFromRowShape(meta);
       if(fallback){
@@ -1862,8 +1887,10 @@ async function fetchServerMeta(){
     if(!(normalized.totalItems >= 0)) missing.push('totalItems');
     if(missing.length){
       __serverMetaAvailable = false;
+      __serverMetaFailCount++;
       __serverCheckStatus = 'error';
       __serverCheckError = 'Meta endpoint missing fields: ' + missing.join(', ');
+      console.log('[fix] fetchServerMeta: missing fields (fail#' + __serverMetaFailCount + '):', missing.join(', '), '— loadSnapshot will still run via !__serverMetaAvailable');
       _updateServerSnapshotStatus();
       _updateDebugPanel();
       return null;
@@ -1891,8 +1918,10 @@ async function fetchServerMeta(){
   }catch(e){
     __serverCheckedAt = new Date().toISOString();
     __serverMetaAvailable = false;
+    __serverMetaFailCount++;
     __serverCheckStatus = 'error';
     __serverCheckError = String((e && e.message) ? e.message : e || 'meta fetch failed');
+    console.log('[fix] fetchServerMeta: catch (fail#' + __serverMetaFailCount + '):', __serverCheckError, '— loadSnapshot will still run via !__serverMetaAvailable');
     logWarn('Server meta fetch failed', { error: __serverCheckError });
     _updateServerSnapshotStatus();
     _updateDebugPanel();
@@ -1910,6 +1939,7 @@ async function loadSnapshotIfNeeded(force){
   const shouldForce = !!force;
   await fetchServerMeta();
   if(shouldForce || __serverIsNewer || !__lastProcessedSnapshotId || !__serverMetaAvailable){
+    console.log('[fix] loadSnapshotIfNeeded: calling loadSnapshot (force=' + shouldForce + ' serverIsNewer=' + __serverIsNewer + ' noSnapshotId=' + !__lastProcessedSnapshotId + ' metaAvailable=' + __serverMetaAvailable + ' failCount=' + __serverMetaFailCount + ')');
     return loadSnapshot();
   }
   _showSnapshotBanner('No new server data. Snapshot reload skipped.');
@@ -2159,10 +2189,11 @@ async function fetchElurikkusSpecies(species){
       liveStatsBySpecies[cacheKey] = stats;
       _persistLiveCaches();
       __elurikkusResultCache.set(cacheKey, { ts: Date.now(), data: json });
-      if(_isLiveOverrideEnabled(speciesName)){
-        _applyLiveOverrideForSpecies(speciesName);
-        _rebuildMarkers({ reason: 'live_fetch_applied', speciesKey: cacheKey });
-      }
+      // Bug 1 fix: always apply coords regardless of live-override toggle so marker always moves after fetch
+      const _wasLiveEnabled = _isLiveOverrideEnabled(speciesName);
+      _applyLiveOverrideForSpecies(speciesName);
+      console.log('[fix] fetchElurikkusSpecies: applied live override for', speciesName, '(was enabled:', _wasLiveEnabled, ')');
+      _rebuildMarkers({ reason: 'live_fetch_applied', speciesKey: cacheKey });
       return json;
     }catch(e){
       const errName = String((e && e.name) ? e.name : 'Error');
@@ -4383,6 +4414,7 @@ function updateMarker(key) {
       markers.delete(key);
     }catch(_e){}
   }
+  console.log('[fix] updateMarker: placing', key, 'at lat=', p.lat, 'lon=', p.lon);
   const m = L.marker([p.lat,p.lon], {icon});
   if(clusterGroup && typeof clusterGroup.addLayer === 'function'){
     try{ clusterGroup.addLayer(m); }catch(e){ m.addTo(map); }

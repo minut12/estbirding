@@ -850,7 +850,7 @@ function findFirstDetailLink(html) {
 }
 
 // === Modified: auto-fetch stores occurrence date and sets default visible:true ===
-async function autoFetchCoords(key, searchUrl) {
+async function autoFetchCoords(key, searchUrl, force) {
   try {
     const shtml = await tryFetch(searchUrl);
     let coords = extractLatLon(shtml);
@@ -884,7 +884,9 @@ async function autoFetchCoords(key, searchUrl) {
     points[key] = points[key] || {};
     
 const prev = points[key] || {};
-const changedCoords = !(Number.isFinite(prev.lat) && Number.isFinite(prev.lon)) || prev.lat !== lat || prev.lon !== lon;
+// Bug 1 fix: bypass strict float equality check when called explicitly via Auto-coords button
+const changedCoords = !!force || !(Number.isFinite(prev.lat) && Number.isFinite(prev.lon)) || prev.lat !== lat || prev.lon !== lon;
+console.log('[fix] autoFetchCoords', key, 'force=' + !!force, 'changedCoords=' + changedCoords, 'lat=' + lat, 'lon=' + lon);
 const newerDate = _isNewer(eventDate, prev.t);
 const changedOcc7 = Number.isFinite(occ7) && (prev.occ7 !== occ7);
 
@@ -968,7 +970,7 @@ function rowHTML(obj) {
           <a class="btn" target="_blank" href="${obj.url}">Open</a>
           <button class="btn secondary" onclick="setAvatar('${key}')">Avatar</button>
           <button class="btn secondary" onclick="setLocation('${key}')">Set loc</button>
-          <button class="btn secondary" onclick="autoFetchCoords('${key}','${obj.url}')">Auto‑coords</button>
+          <button class="btn secondary" onclick="autoFetchCoords('${key}','${obj.url}',true)">Auto‑coords</button>
           <button class="btn secondary" onclick="clearOccurrence('${key}')">Clear</button>
           <label class="btn secondary" style="padding:4px 8px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><input type="checkbox" style="transform:translateY(1px)" ${mig?'checked':''} onchange="setMigration('${key}', this.checked)">Migration</label>
           <label style="margin-left:6px;font-size:12px;white-space:nowrap">

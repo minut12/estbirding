@@ -883,6 +883,76 @@ function extractElurikkusRecordDatesIso(html){
   }
   return out;
 }
+function _dateOnlyFromAny(v){
+  const s = String(v || '').trim();
+  const m = s.match(/(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : '';
+}
+function extractEventDate(html){
+  const s = String(html || '');
+  if(!s) return '';
+  let m = s.match(/(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)/);
+  if(m) return m[1] + ' ' + m[2];
+  m = s.match(/(?:eventDate|datetime|occurrenceDate|observedAt)"?\s*[:=]\s*"?(\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?)/i);
+  if(m) return String(m[1] || '').trim();
+  m = s.match(/(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : '';
+}
+function _isLikelyOccurrenceDetailUrl(href){
+  const h = String(href || '');
+  if(!h) return false;
+  if(/\/app\/occurrences\/search/i.test(h)) return false;
+  return /occurrence|occurrences\/\d+|\/record\//i.test(h);
+}
+function _absElurikkusUrl(href){
+  const h = String(href || '').trim();
+  if(!h) return '';
+  if(/^https?:\/\//i.test(h)) return h;
+  return 'https://elurikkus.ee' + (h.startsWith('/') ? '' : '/') + h;
+}
+function findFirstDetailLink(html){
+  const s = String(html || '');
+  if(!s) return '';
+  const links = Array.from(s.matchAll(/<a[^>]+href=["']([^"']+)["'][^>]*>/ig)).map(function(m){ return String(m[1] || ''); });
+  for(const href of links){
+    if(_isLikelyOccurrenceDetailUrl(href)) return _absElurikkusUrl(href);
+  }
+  return '';
+}
+function extractLatLon(html){
+  const s = String(html || '');
+  if(!s) return null;
+  let m = s.match(/"decimalLatitude"\s*:\s*(-?\d+(?:\.\d+)?)[\s\S]*?"decimalLongitude"\s*:\s*(-?\d+(?:\.\d+)?)/i);
+  if(m){
+    const lat = Number(m[1]), lon = Number(m[2]);
+    if(Number.isFinite(lat) && Number.isFinite(lon)) return [lat, lon];
+  }
+  m = s.match(/Latitude[\s\S]{0,120}?(-?\d+(?:\.\d+)?)[\s\S]{0,240}?Longitude[\s\S]{0,120}?(-?\d+(?:\.\d+)?)/i);
+  if(m){
+    const lat = Number(m[1]), lon = Number(m[2]);
+    if(Number.isFinite(lat) && Number.isFinite(lon)) return [lat, lon];
+  }
+  m = s.match(/([5-6]\d\.\d+)\s*[,;]\s*(2\d\.\d+)/);
+  if(m){
+    const lat = Number(m[1]), lon = Number(m[2]);
+    if(Number.isFinite(lat) && Number.isFinite(lon)) return [lat, lon];
+  }
+  return null;
+}
+function countInLastNDaysFromDates(dates, n){
+  const arr = Array.isArray(dates) ? dates : [];
+  const now = Date.now();
+  const maxMs = Number(n || 7) * 24 * 60 * 60 * 1000;
+  let c = 0;
+  for(const d of arr){
+    const dateOnly = _dateOnlyFromAny(d);
+    const ts = _toDayLocalTallinn(dateOnly);
+    if(!ts) continue;
+    const diff = now - ts;
+    if(diff >= 0 && diff <= maxMs) c++;
+  }
+  return c;
+}
 function extractElurikkusRecordRows(html){
   const out = [];
   if(!html) return out;
@@ -955,6 +1025,84 @@ async function _fetchElurikkusSpeciesViaHtml(speciesName){
     buildId: "client_html"
   };
 }
+async function refreshSpeciesFromElurikkus(key){
+  const species = String(key || '').trim();
+  if(!species) return null;
+  const searchUrl = "https://elurikkus.ee/app/occurrences/search?text=" + encodeURIComponent(species) + "&_ts=" + Date.now();
+  const shtml = await tryFetch(searchUrl);
+  const occ7Dates = extractAllEventDates(shtml);
+  const occ7 = Array.isArray(occ7Dates) ? countInLastNDaysFromDates(occ7Dates, 7) : null;
+
+  const detailUrl = findFirstDetailLink(shtml);
+  let dhtml = '';
+  let coords = null;
+  let eventDate = extractEventDate(shtml);
+  if(detailUrl){
+    try{
+      dhtml = await tryFetch(detailUrl);
+      coords = extractLatLon(dhtml) || extractLatLon(shtml);
+      const dDate = extractEventDate(dhtml);
+      if(dDate) eventDate = dDate;
+    }catch(e){
+      coords = extractLatLon(shtml);
+    }
+  } else {
+    coords = extractLatLon(shtml);
+  }
+  const restricted = /Latitude[\s\S]{0,200}?Restricted|Longitude[\s\S]{0,200}?Restricted|\bRestricted\b/i.test(String(dhtml || ''));
+
+  const p = (points[species] = points[species] || {});
+  p.src = 'Elurikkus';
+  p.lastFetched = new Date().toISOString();
+  if(Number.isFinite(occ7)) p.occ7 = occ7;
+  p.searchUrl = searchUrl;
+  if(detailUrl) p.latestUrl = detailUrl;
+  if(eventDate) p.t = eventDate;
+
+  if(!restricted && coords && coords.length === 2 && Number.isFinite(coords[0]) && Number.isFinite(coords[1])){
+    p.lat = Number(coords[0]);
+    p.lon = Number(coords[1]);
+    p.coords_status = 'public';
+    p.coords_source = 'detail';
+    p.coords_note = '';
+  } else {
+    p.coords_status = restricted ? 'restricted' : 'missing';
+    p.coords_source = 'snapshot';
+    p.coords_note = restricted ? 'coords restricted -> snapshot fallback' : 'coords missing -> snapshot fallback';
+  }
+  save();
+  updateMarker(species);
+  return { key: species, occ7: p.occ7, t: p.t || '', latestUrl: p.latestUrl || '', searchUrl: p.searchUrl || '' };
+}
+async function refreshAllSpeciesFromElurikkus(){
+  const prog = document.getElementById('fetchProgress');
+  const idx = document.getElementById('indexProgress');
+  const errEl = document.getElementById('fetchError');
+  const total = SPECIES.length;
+  let done = 0;
+  let lastError = '';
+  for(const name of SPECIES){
+    done++;
+    if(prog) prog.textContent = 'Refreshing from Elurikkus... ' + done + '/' + total + ' (' + name + ')';
+    if(idx) idx.textContent = 'Index: ' + done + '/' + total;
+    try{
+      await refreshSpeciesFromElurikkus(name);
+    }catch(e){
+      lastError = String((e && e.message) ? e.message : e);
+      if(errEl) errEl.textContent = 'Last error: ' + lastError;
+    }
+    await _delay(350);
+  }
+  refreshAllMarkers();
+  render();
+  _updateDebugPanel();
+  const latest = SPECIES.reduce(function(best, n){
+    const t = String((points[n] && points[n].t) || '');
+    const d = _dateOnlyFromAny(t);
+    return d && d > best ? d : best;
+  }, '');
+  if(prog) prog.textContent = 'Refresh done. Latest occurrence in dataset: ' + (latest || '-');
+}
 
 function enqueueSpringYearFirst(keys){
   const uniq = Array.from(new Set((keys||[]).filter(Boolean)));
@@ -1012,9 +1160,10 @@ function isWithin7d(p){
 
 function isRecent(isoDate){
   try{
-    const ms = _toDay(isoDate);
+    const ms = _toDayLocalTallinn(_dateOnlyFromAny(isoDate));
     if (!ms) return false;
-    return (Date.now() - ms) <= 7 * 24 * 60 * 60 * 1000;
+    const diff = Date.now() - ms;
+    return diff >= 0 && diff <= 7 * 24 * 60 * 60 * 1000;
   }catch(e){ return false; }
 }
 
@@ -3715,7 +3864,17 @@ function _wireSnapshotButtons(){
   const toggle7d = document.getElementById('toggle7days');
 
   if(btnRefresh && !btnRefresh.__wired){
-    btnRefresh.addEventListener('click', function(){ triggerRefresh({ newRun: true, force: true }); });
+    btnRefresh.addEventListener('click', async function(){
+      if(btnRefresh.__running) return;
+      btnRefresh.__running = true;
+      btnRefresh.disabled = true;
+      try{
+        await refreshAllSpeciesFromElurikkus();
+      }finally{
+        btnRefresh.__running = false;
+        btnRefresh.disabled = false;
+      }
+    });
     btnRefresh.__wired = true;
   }
   if(btnForceRefresh && !btnForceRefresh.__wired){
@@ -4178,6 +4337,7 @@ function rowHTML(obj) {
   const speciesKey = _normalizeSpeciesKey(key);
   const isUpLoading = __elurikkusInFlightBySpecies.has(_normalizeSpeciesKey(key));
   const fetchCount = Number(__elurikkusFetchCountBySpecies[speciesKey] || 0);
+  const openUrl = String((p.latestUrl || p.searchUrl || obj.url) || obj.url);
   const upLine = up
     ? ('<div class="small" style="margin-top:4px">' +
       'Elurikkus: ' + (up.status || '-') +
@@ -4212,7 +4372,7 @@ function rowHTML(obj) {
     '</div>' +
     '<div class="controls">' +
       '<div style="display:flex;flex-direction:column;gap:6px">' +
-      '<a class="btn" target="_blank" href="'+obj.url+'">Open</a>' +
+      '<button class="btn open-occ-btn" data-open-url="'+openUrl.replace(/"/g,'&quot;')+'">Open</button>' +
       '<button class="btn secondary fetch-elurikkus-btn" data-species="'+key+'" '+(isUpLoading?'disabled':'')+' title="Fetch latest from Elurikkus and apply to map">Auto-coords</button>' +
       '</div>' +
     '</div>' +
@@ -4235,6 +4395,14 @@ function render() {
 
   document.addEventListener('click', (e) => {
     const t = e.target;
+    const openBtn = t.closest?.('.open-occ-btn');
+    if(openBtn){
+      e.preventDefault();
+      e.stopPropagation();
+      const url = String(openBtn.getAttribute('data-open-url') || '').trim();
+      if(url) window.open(url, '_blank', 'noopener');
+      return;
+    }
     const upstreamBtn = t.closest?.('.fetch-elurikkus-btn');
     if (upstreamBtn){
       e.preventDefault();

@@ -1104,6 +1104,7 @@ async function refreshSpeciesFromElurikkus(key, signal){
     p.coords_source = 'snapshot';
     p.coords_note = restricted ? 'coords restricted -> snapshot fallback' : 'coords missing -> snapshot fallback';
   }
+  console.log('[coords-fix]', species, 'old:', oldLat, oldLon, 'new:', p.lat, p.lon);
   save();
   updateMarker(species);
   console.log('[fix] refreshSpeciesFromElurikkus: marker updated for', species, 'lat=', p.lat, 'lon=', p.lon, 'occ7=', p.occ7);
@@ -3474,7 +3475,17 @@ async function _applySnapshot(snap){
     __snapshotPointBySpecies[_speciesKey(key)] = Object.assign({}, snapPoint);
     const keepLive = __lockLiveOverridesDuringRefresh && _isLiveOverrideEnabled(key) && _readLiveEntry(key);
     if(!keepLive){
-      points[key] = Object.assign({}, snapPoint, { visible: (points[key] && points[key].visible === false) ? false : true });
+      // Race-condition fix: skip overwriting if we have a fresher Elurikkus-fetched value
+      const _existing = points[key];
+      const _snapTs = Date.parse(snap.generated_at || '');
+      const _fetchTs = Date.parse((_existing && _existing.lastFetched) || '');
+      if(Number.isFinite(_fetchTs) && Number.isFinite(_snapTs) && _fetchTs > _snapTs){
+        console.log('[coords-fix] _applySnapshot: keeping fresher fetch for', key, '| fetchedAt:', _existing.lastFetched, '> snapshotAt:', snap.generated_at);
+        // preserve the live fetch but restore visibility from snapshot logic
+        if(_existing.visible === undefined) _existing.visible = true;
+      } else {
+        points[key] = Object.assign({}, snapPoint, { visible: (_existing && _existing.visible === false) ? false : true });
+      }
     }else{
       _applyLiveOverrideForSpecies(key);
     }

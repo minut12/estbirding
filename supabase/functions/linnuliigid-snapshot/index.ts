@@ -276,6 +276,87 @@ function buildSnapshotResponseHeaders(data: Record<string, unknown>): Record<str
   };
 }
 
+function buildJsonNoStoreHeaders(): Record<string, string> {
+  return { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json; charset=utf-8" };
+}
+
+async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Response> {
+  if (req.method !== "GET") {
+    return new Response(
+      JSON.stringify({ ok: false, stage: "request", message: "Method not allowed" }),
+      { status: 405, headers: buildJsonNoStoreHeaders() },
+    );
+  }
+
+  const species = String(url.searchParams.get("text") || "").trim();
+  if (!species) {
+    return new Response(
+      JSON.stringify({ ok: false, stage: "request", message: "Missing text query parameter" }),
+      { status: 400, headers: buildJsonNoStoreHeaders() },
+    );
+  }
+
+  const sourceUrl = `https://elurikkus.ee/app/occurrences/search?text=${encodeURIComponent(species)}&_ts=${Date.now()}`;
+  const startedAt = Date.now();
+  try {
+    const upstreamRes = await fetch(sourceUrl, {
+      method: "GET",
+      headers: {
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "User-Agent": "EstBirding/1.0",
+      },
+    });
+    const html = await upstreamRes.text();
+    const durationMs = Date.now() - startedAt;
+    const upstreamBytes = new TextEncoder().encode(html).length;
+    if (!upstreamRes.ok) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          stage: "upstream",
+          species,
+          sourceUrl,
+          upstreamStatus: upstreamRes.status,
+          upstreamBytes,
+          durationMs,
+          htmlLength: html.length,
+          message: `Upstream HTTP ${upstreamRes.status}`,
+        }),
+        { status: upstreamRes.status, headers: buildJsonNoStoreHeaders() },
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        species,
+        sourceUrl,
+        upstreamStatus: upstreamRes.status,
+        upstreamBytes,
+        durationMs,
+        htmlLength: html.length,
+      }),
+      { status: 200, headers: buildJsonNoStoreHeaders() },
+    );
+  } catch (error) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        stage: "upstream",
+        species,
+        sourceUrl,
+        upstreamStatus: 0,
+        upstreamBytes: 0,
+        durationMs: Date.now() - startedAt,
+        htmlLength: 0,
+        message: String((error as Error)?.message || error),
+      }),
+      { status: 502, headers: buildJsonNoStoreHeaders() },
+    );
+  }
+}
+
 function buildSnapshotMeta(data: Record<string, unknown>) {
   const snapshotGeneratedAt = String((data as { generated_at?: string | null })?.generated_at || "");
   const pointsJson = (data as { points_json?: unknown })?.points_json ?? null;
@@ -644,18 +725,25 @@ async function runRefresh(
 }
 
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders });
+  }
+
+  const url = new URL(req.url);
+  const mode = String(url.searchParams.get("mode") || "").trim().toLowerCase();
+  const isElurikkusSpeciesMode = mode === "elurikkus_species" || url.searchParams.get("elurikkus") === "1";
+  if (isElurikkusSpeciesMode) {
+    return await handleElurikkusSpeciesRequest(req, url);
+  }
+
   if (!SERVICE_ROLE_KEY) {
     return new Response(JSON.stringify({ error: "SERVICE_ROLE_KEY missing" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
 
   const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-  const url = new URL(req.url);
   const isMetaRequest = url.searchParams.get("meta") === "1";
 
   try {

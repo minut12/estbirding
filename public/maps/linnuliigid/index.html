@@ -1397,7 +1397,7 @@ async function fetchElurikkusSpecies(species){
       await _respectElurikkusMinDelay();
       __elurikkusLastFetchAtMs = Date.now();
       const base = _resolveElurikkusSpeciesApi();
-      const url = base + '?text=' + encodeURIComponent(speciesName) + '&days=7&limit=200&_ts=' + Date.now();
+      const url = base + '?mode=elurikkus_species&text=' + encodeURIComponent(speciesName) + '&_ts=' + Date.now();
       __lastElurikkusUrl = url;
       traceId = _traceStart({ method: 'GET', url: url });
       const t0 = performance.now();
@@ -1643,13 +1643,13 @@ function _resolveSnapshotControlApi(){
 function _resolveElurikkusSpeciesApi(){
   const validation = _validateSupabaseLocal();
   if(validation.ok){
-    return validation.url + '/functions/v1/elurikkus-species';
+    return validation.url + '/functions/v1/linnuliigid-snapshot';
   }
   const snapApi = _resolveSnapshotApi();
   const marker = '/functions/v1/linnuliigid-snapshot';
   const idx = String(snapApi || '').indexOf(marker);
   if(idx > 0){
-    return String(snapApi).slice(0, idx) + '/functions/v1/elurikkus-species';
+    return String(snapApi).slice(0, idx) + '/functions/v1/linnuliigid-snapshot';
   }
   throw new Error(validation.error);
 }

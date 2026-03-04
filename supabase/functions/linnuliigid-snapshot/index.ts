@@ -282,45 +282,56 @@ function buildJsonNoStoreHeaders(): Record<string, string> {
 
 type LiveOccItem = {
   observedAt: string;
+  observedRaw?: string;
+  scientificName?: string;
+  commonName?: string;
+  individualCount?: number;
+  locality?: string;
   lat?: number;
   lon?: number;
   municipality?: string;
+  occurrenceUrl?: string;
   coordsStatus: "exact" | "restricted" | "missing";
 };
 
+function stripHtml(raw: string): string {
+  return String(raw || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function parseElurikkusHtmlItems(html: string): LiveOccItem[] {
   const out: LiveOccItem[] = [];
-  const dateRe = /"(?:eventDate|occurrenceDate|datetime|observed_at|observedAt)"\s*:\s*"([^"]+)"/gi;
-  const latRe = /"decimalLatitude"\s*:\s*(-?\d+(?:\.\d+)?)/gi;
-  const lonRe = /"decimalLongitude"\s*:\s*(-?\d+(?:\.\d+)?)/gi;
-  const muniRe = /"(?:municipality|county|stateProvince)"\s*:\s*"([^"]+)"/gi;
-
-  const dates: string[] = [];
-  const lats: (number | null)[] = [];
-  const lons: (number | null)[] = [];
-  const munis: (string | null)[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = dateRe.exec(html)) !== null) dates.push(String(m[1] || "").trim());
-  while ((m = latRe.exec(html)) !== null) {
-    const v = Number.parseFloat(String(m[1] || ""));
-    lats.push(Number.isFinite(v) ? v : null);
-  }
-  while ((m = lonRe.exec(html)) !== null) {
-    const v = Number.parseFloat(String(m[1] || ""));
-    lons.push(Number.isFinite(v) ? v : null);
-  }
-  while ((m = muniRe.exec(html)) !== null) {
-    const raw = String(m[1] || "").trim();
-    munis.push(raw || null);
-  }
-
-  const maxLen = Math.min(200, Math.max(dates.length, lats.length, lons.length, munis.length));
-  for (let i = 0; i < maxLen; i++) {
-    const ts = parseElurikkusDate(String(dates[i] || ""));
+  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let rowMatch: RegExpExecArray | null;
+  while ((rowMatch = rowRe.exec(html)) !== null) {
+    const rowHtml = String(rowMatch[1] || "");
+    const cells = Array.from(rowHtml.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)).map((m) => String(m[1] || ""));
+    if (cells.length < 2) continue;
+    const firstCell = stripHtml(cells[0]);
+    if (!/^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2})?/.test(firstCell)) continue;
+    const ts = parseElurikkusDate(firstCell);
     if (!(ts > 0)) continue;
-    const lat = i < lats.length ? lats[i] : null;
-    const lon = i < lons.length ? lons[i] : null;
-    const municipality = i < munis.length ? munis[i] : null;
+
+    const linkMatch = rowHtml.match(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    const scientificName = linkMatch ? stripHtml(linkMatch[2]) : stripHtml(cells[1] || "");
+    const occurrenceUrl = linkMatch ? String(linkMatch[1] || "").trim() : "";
+    const commonName = stripHtml(cells[2] || "");
+    const countRaw = stripHtml(cells[3] || "");
+    const localityText = stripHtml(cells[4] || cells[5] || "");
+    const countMatch = countRaw.match(/-?\d+/);
+    const individualCount = countMatch ? Number.parseInt(countMatch[0], 10) : undefined;
+    const municipality = localityText || null;
+
+    const latM = rowHtml.match(/(?:decimalLatitude|lat)[^0-9-]*(-?\d+(?:\.\d+)?)/i);
+    const lonM = rowHtml.match(/(?:decimalLongitude|lon)[^0-9-]*(-?\d+(?:\.\d+)?)/i);
+    const lat = latM ? Number.parseFloat(latM[1]) : null;
+    const lon = lonM ? Number.parseFloat(lonM[1]) : null;
     let hasCoords = Number.isFinite(lat) && Number.isFinite(lon);
     let resolvedLat = hasCoords ? Number(lat) : null;
     let resolvedLon = hasCoords ? Number(lon) : null;
@@ -339,6 +350,11 @@ function parseElurikkusHtmlItems(html: string): LiveOccItem[] {
     }
     const item: LiveOccItem = {
       observedAt: new Date(ts).toISOString(),
+      observedRaw: firstCell,
+      scientificName: scientificName || undefined,
+      commonName: commonName || undefined,
+      individualCount: Number.isFinite(individualCount as number) ? individualCount : undefined,
+      locality: localityText || undefined,
       coordsStatus: hasCoords ? ((Number.isFinite(lat) && Number.isFinite(lon)) ? "exact" : "restricted") : "missing",
     };
     if (hasCoords) {
@@ -346,9 +362,24 @@ function parseElurikkusHtmlItems(html: string): LiveOccItem[] {
       item.lon = Number(resolvedLon);
     }
     if (municipality) item.municipality = municipality;
+    if (occurrenceUrl) item.occurrenceUrl = occurrenceUrl.startsWith("http")
+      ? occurrenceUrl
+      : `https://elurikkus.ee${occurrenceUrl.startsWith("/") ? "" : "/"}${occurrenceUrl}`;
     out.push(item);
+    if (out.length >= 200) break;
   }
 
+  if (!out.length) {
+    const dateRe = /"(?:eventDate|occurrenceDate|datetime|observed_at|observedAt)"\s*:\s*"([^"]+)"/gi;
+    let m: RegExpExecArray | null;
+    while ((m = dateRe.exec(html)) !== null) {
+      const raw = String(m[1] || "").trim();
+      const ts = parseElurikkusDate(raw);
+      if (!(ts > 0)) continue;
+      out.push({ observedAt: new Date(ts).toISOString(), observedRaw: raw, coordsStatus: "missing" });
+      if (out.length >= 200) break;
+    }
+  }
   out.sort((a, b) => parseElurikkusDate(b.observedAt) - parseElurikkusDate(a.observedAt));
   return out.slice(0, 200);
 }
@@ -385,10 +416,14 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
     const upstreamBytes = new TextEncoder().encode(html).length;
     const items = parseElurikkusHtmlItems(html);
     const dataMaxAt = items.length ? items[0].observedAt : null;
+    const totalMatch = html.match(/returns\s+([\d\s,\.]+)\s+results/i);
+    const totalResults = totalMatch ? Number(String(totalMatch[1] || "").replace(/[^\d]/g, "")) || 0 : 0;
     if (!upstreamRes.ok) {
       return new Response(
         JSON.stringify({
           ok: false,
+          mode: "elurikkus_species",
+          query: species,
           stage: "upstream",
           species,
           sourceUrl,
@@ -397,6 +432,7 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
           durationMs,
           htmlLength: html.length,
           dataMaxAt,
+          totalResults,
           items,
           message: `Upstream HTTP ${upstreamRes.status}`,
         }),
@@ -407,12 +443,15 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
     return new Response(
       JSON.stringify({
         ok: true,
+        mode: "elurikkus_species",
+        query: species,
         species,
         sourceUrl,
         upstreamStatus: upstreamRes.status,
         upstreamBytes,
         durationMs,
         htmlLength: html.length,
+        totalResults,
         dataMaxAt,
         items,
       }),
@@ -422,6 +461,8 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
     return new Response(
       JSON.stringify({
         ok: false,
+        mode: "elurikkus_species",
+        query: species,
         stage: "upstream",
         species,
         sourceUrl,
@@ -429,6 +470,7 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
         upstreamBytes: 0,
         durationMs: Date.now() - startedAt,
         htmlLength: 0,
+        totalResults: 0,
         dataMaxAt: null,
         items: [],
         message: String((error as Error)?.message || error),

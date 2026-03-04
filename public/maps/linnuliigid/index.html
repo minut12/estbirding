@@ -1489,6 +1489,9 @@ async function fetchElurikkusSpecies(species){
   const cached = __elurikkusResultCache.get(cacheKey);
   if(cached && (Date.now() - Number(cached.ts || 0) < ELURIKKUS_CACHE_TTL_MS)){
     const cachedData = cached.data || {};
+    if(String(cachedData.mode || '') !== 'elurikkus_species' || !Array.isArray(cachedData.items)){
+      __elurikkusResultCache.delete(cacheKey);
+    } else {
     const items = Array.isArray(cachedData.items) ? cachedData.items : [];
     const stats = _computeLiveStats(items);
     const restrictedCount = items.filter(function(it){
@@ -1516,6 +1519,7 @@ async function fetchElurikkusSpecies(species){
     _persistLiveCaches();
     render();
     return cachedData;
+    }
   }
   if(__elurikkusInFlightBySpecies.has(cacheKey)){
     return __elurikkusInFlightBySpecies.get(cacheKey);
@@ -1547,6 +1551,11 @@ async function fetchElurikkusSpecies(species){
       const durationMs = Math.round(performance.now() - t0);
       if(!res.ok) throw new Error('HTTP ' + res.status + ': ' + String(text || '').slice(0,200));
       const json = JSON.parse(text);
+      if(String(json && json.mode || '') !== 'elurikkus_species' || !Array.isArray(json && json.items)){
+        const dbgKeys = json && typeof json === 'object' ? Object.keys(json) : [];
+        logWarn('Elurikkus route mismatch payload', { species: speciesName, keys: dbgKeys });
+        throw new Error('Server returned snapshot instead of elurikkus_species (wrong route)');
+      }
       _traceEnd(traceId, { status: res.status, ok: !!res.ok, bytesRead: bytesRead, details: { responseKeys: json && typeof json === 'object' ? Object.keys(json) : [] } });
       logInfo('Elurikkus species response', { species: speciesName, status: res.status, bodyPreview: String(text || '').slice(0,200) });
       const items = Array.isArray(json.items) ? json.items.slice() : [];
@@ -1560,11 +1569,14 @@ async function fetchElurikkusSpecies(species){
       row.bytes = Number((json && json.upstreamBytes) || (json && json.trace && json.trace.upstreamBytes) || bytesRead || 0);
       row.latestOccurrenceAt = String((json && (json.dataMaxAt || json.latestOccurrenceAt)) || '').trim();
       row.itemsCount = items.length;
+      row.totalResults = Number(json && json.totalResults || 0) || 0;
+      row.upstreamStatus = Number(json && json.upstreamStatus || res.status) || res.status;
       row.restrictedCount = restrictedCount;
       row.publicCount = Math.max(0, items.length - restrictedCount);
       row.sourceUrl = String((json && json.sourceUrl) || '').trim();
       row.updatedAt = new Date().toISOString();
       row.fetchSummary = 'Fetched ✓ (' + stats.itemsTotal + ' items, newest: ' + (row.latestOccurrenceAt ? formatDateTimeEE(row.latestOccurrenceAt) : '-') + ')';
+      row.routeMismatch = '';
       __elurikkusFetchCountTotal++;
       __elurikkusFetchCountBySpecies[cacheKey] = Number(__elurikkusFetchCountBySpecies[cacheKey] || 0) + 1;
       __lastElurikkusSpeciesFetched = speciesName;
@@ -1594,6 +1606,9 @@ async function fetchElurikkusSpecies(species){
       }
       row.status = 'error';
       row.error = msg;
+      if(String(errMsg || '').toLowerCase().includes('snapshot instead of elurikkus_species')){
+        row.routeMismatch = 'Server returned snapshot instead of elurikkus_species (wrong route)';
+      }
       row.updatedAt = new Date().toISOString();
       __lastElurikkusSpeciesFetched = speciesName;
       __lastElurikkusError = msg;
@@ -3654,6 +3669,7 @@ function rowHTML(obj) {
   const liveEntry = _readLiveEntry(key);
   const liveStats = liveStatsBySpecies[speciesKey] || null;
   const liveEnabled = _isLiveOverrideEnabled(key);
+  const canUseLive = !!(liveEnabled || (liveEntry && liveStats && Number(liveStats.itemsTotal || 0) > 0));
   const activeSource = liveEnabled ? 'live (Elurikkus)' : 'snapshot';
   const isUpLoading = __elurikkusInFlightBySpecies.has(_normalizeSpeciesKey(key));
   const fetchCount = Number(__elurikkusFetchCountBySpecies[speciesKey] || 0);
@@ -3661,11 +3677,16 @@ function rowHTML(obj) {
     ? ('<div class="small" style="margin-top:4px">' +
       'Elurikkus: ' + (up.status || '-') +
       ' | fetched ' + fetchCount + 'x' +
+      (Number.isFinite(up.upstreamStatus) ? (' | upstream: ' + up.upstreamStatus) : '') +
+      (Number.isFinite(up.totalResults) ? (' | total: ' + up.totalResults) : '') +
+      (Number.isFinite(up.itemsCount) ? (' | items: ' + up.itemsCount) : '') +
       (up.durationMs != null ? (' | ' + up.durationMs + 'ms') : '') +
       (up.bytes != null ? (' | ' + up.bytes + 'b') : '') +
       (up.latestOccurrenceAt ? (' | latest: ' + formatDateTimeEE(up.latestOccurrenceAt)) : '') +
+      (up.sourceUrl ? (' | source: <a target="_blank" href="' + up.sourceUrl + '">link</a>') : '') +
       ((Number.isFinite(up.publicCount) || Number.isFinite(up.restrictedCount)) ? (' | coords public/restricted: ' + (up.publicCount || 0) + '/' + (up.restrictedCount || 0)) : '') +
       (up.error ? (' | error: ' + up.error) : '') +
+      (up.routeMismatch ? (' | route: ' + up.routeMismatch) : '') +
       (up.fetchSummary ? (' | ' + up.fetchSummary) : '') +
       '</div>')
     : ('<div class="small" style="margin-top:4px">Elurikkus: - | fetched ' + fetchCount + 'x</div>');
@@ -3688,7 +3709,7 @@ function rowHTML(obj) {
       '<div style="display:flex;flex-direction:column;gap:6px">' +
       '<a class="btn" target="_blank" href="'+obj.url+'">Open</a>' +
       '<button class="btn secondary fetch-elurikkus-btn" data-species="'+key+'" '+(isUpLoading?'disabled':'')+' title="Fetch from Elurikkus via server proxy">Fetch (Elurikkus)</button>' +
-      '<button class="btn secondary toggle-live-elurikkus-btn" data-species="'+key+'" '+(!liveEntry?'disabled':'')+' title="Use fetched Elurikkus data for map markers">' + (liveEnabled ? 'Use snapshot data' : 'Use live data') + '</button>' +
+      '<button class="btn secondary toggle-live-elurikkus-btn" data-species="'+key+'" '+(canUseLive?'':'disabled')+' title="' + (canUseLive ? 'Use fetched Elurikkus data for map markers' : 'Live data unavailable: route mismatch or parse returned 0 items') + '">' + (liveEnabled ? 'Use snapshot data' : 'Use live data') + '</button>' +
       '</div>' +
     '</div>' +
     liveLine +

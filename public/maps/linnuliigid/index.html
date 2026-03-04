@@ -907,6 +907,9 @@ let __lastElurikkusUrl = '';
 let __lastElurikkusLatestOccurrenceAt = '';
 let __lastElurikkusItemsCount = 0;
 let __lastElurikkusError = '';
+let __lastElurikkusHeaderMode = '';
+let __lastElurikkusResponseKeys = [];
+let __lastElurikkusPing = null;
 
 function _safeData(v){
   try{
@@ -1541,20 +1544,27 @@ async function fetchElurikkusSpecies(species){
       await _respectElurikkusMinDelay();
       __elurikkusLastFetchAtMs = Date.now();
       const base = _resolveElurikkusSpeciesApi();
-      const url = base + '?mode=elurikkus_species&text=' + encodeURIComponent(speciesName) + '&_ts=' + Date.now();
+      const reqUrl = new URL(base);
+      reqUrl.searchParams.set('mode', 'elurikkus_species');
+      reqUrl.searchParams.set('text', speciesName);
+      reqUrl.searchParams.set('_ts', String(Date.now()));
+      const url = reqUrl.toString();
       __lastElurikkusUrl = url;
       traceId = _traceStart({ method: 'GET', url: url });
       const t0 = performance.now();
       const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+      const hdrMode = String(res.headers.get('x-estbirding-mode') || '').trim();
+      __lastElurikkusHeaderMode = hdrMode;
       const text = await res.text();
       const bytesRead = text ? (new TextEncoder().encode(text).length) : 0;
       const durationMs = Math.round(performance.now() - t0);
       if(!res.ok) throw new Error('HTTP ' + res.status + ': ' + String(text || '').slice(0,200));
       const json = JSON.parse(text);
+      __lastElurikkusResponseKeys = (json && typeof json === 'object') ? Object.keys(json).slice(0,20) : [];
       if(String(json && json.mode || '') !== 'elurikkus_species' || !Array.isArray(json && json.items)){
         const dbgKeys = json && typeof json === 'object' ? Object.keys(json) : [];
         logWarn('Elurikkus route mismatch payload', { species: speciesName, keys: dbgKeys });
-        throw new Error('Server returned snapshot instead of elurikkus_species (wrong route)');
+        throw new Error('Server returned ' + String((json && json.mode) || 'unknown') + ' instead of elurikkus_species. url=' + url + ' headerMode=' + hdrMode);
       }
       _traceEnd(traceId, { status: res.status, ok: !!res.ok, bytesRead: bytesRead, details: { responseKeys: json && typeof json === 'object' ? Object.keys(json) : [] } });
       logInfo('Elurikkus species response', { species: speciesName, status: res.status, bodyPreview: String(text || '').slice(0,200) });
@@ -1606,8 +1616,8 @@ async function fetchElurikkusSpecies(species){
       }
       row.status = 'error';
       row.error = msg;
-      if(String(errMsg || '').toLowerCase().includes('snapshot instead of elurikkus_species')){
-        row.routeMismatch = 'Server returned snapshot instead of elurikkus_species (wrong route)';
+      if(String(errMsg || '').toLowerCase().includes('instead of elurikkus_species')){
+        row.routeMismatch = errMsg;
       }
       row.updatedAt = new Date().toISOString();
       __lastElurikkusSpeciesFetched = speciesName;
@@ -1630,6 +1640,29 @@ async function fetchElurikkusSpecies(species){
   })();
   __elurikkusInFlightBySpecies.set(cacheKey, promise);
   return promise;
+}
+async function _debugPingElurikkus(species){
+  const speciesName = String(species || __lastElurikkusSpeciesFetched || 'Hakk').trim() || 'Hakk';
+  try{
+    const base = _resolveElurikkusSpeciesApi();
+    const reqUrl = new URL(base);
+    reqUrl.searchParams.set('ping', '1');
+    reqUrl.searchParams.set('mode', 'ping');
+    reqUrl.searchParams.set('text', speciesName);
+    reqUrl.searchParams.set('_ts', String(Date.now()));
+    const url = reqUrl.toString();
+    const traceId = _traceStart({ method: 'GET', url: url });
+    const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+    const txt = await res.text();
+    let json = {};
+    try{ json = txt ? JSON.parse(txt) : {}; }catch(e){ json = { parseError: String(e && e.message ? e.message : e), textPreview: String(txt||'').slice(0,200) }; }
+    __lastElurikkusPing = { ok: res.ok, status: res.status, headerMode: String(res.headers.get('x-estbirding-mode') || ''), url: url, json: json };
+    _traceEnd(traceId, { status: res.status, ok: !!res.ok, bytesRead: txt ? (new TextEncoder().encode(txt).length) : 0, details: { responseKeys: json && typeof json === 'object' ? Object.keys(json).slice(0,20) : [] } });
+  }catch(e){
+    __lastElurikkusPing = { ok: false, error: String(e && e.message ? e.message : e) };
+  }finally{
+    _updateDebugPanel();
+  }
 }
 async function waitForSnapshotChange(previousSnapshotId, timeoutMs){
   const started = Date.now();
@@ -2614,9 +2647,13 @@ function _computeDebugProObject(){
       elurikkusFetchCountBySpecies: elurikkusTopCounts,
       lastElurikkusSpeciesFetched: __lastElurikkusSpeciesFetched || '',
       lastElurikkusUrl: __lastElurikkusUrl || '',
+      lastElurikkusFetchUrl: __lastElurikkusUrl || '',
+      lastElurikkusHeaderMode: __lastElurikkusHeaderMode || '',
+      lastElurikkusResponseKeys: __lastElurikkusResponseKeys || [],
       lastElurikkusLatestOccurrenceAt: __lastElurikkusLatestOccurrenceAt || '',
       lastElurikkusItemsCount: Number(__lastElurikkusItemsCount || 0),
       lastElurikkusError: __lastElurikkusError || '',
+      lastElurikkusPing: __lastElurikkusPing || null,
       lockLiveOverridesDuringRefresh: __lockLiveOverridesDuringRefresh ? 'on' : 'off',
       liveOverridesActiveCount: Object.keys(useLiveElurikkusForSpecies || {}).filter(function(k){ return useLiveElurikkusForSpecies[k] === true; }).length,
       liveSpeciesActive: Object.keys(useLiveElurikkusForSpecies || {}).filter(function(k){ return useLiveElurikkusForSpecies[k] === true; }).slice(0,20),
@@ -2690,11 +2727,16 @@ function _updateDebugProPanel(){
     '<div>elurikkusFetchCountBySpecies(top10): <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.elurikkusFetchCountBySpecies || []).replace(/</g,'&lt;') + '</span></div>' +
     '<div>lastElurikkusSpeciesFetched: <b>' + (dbg.upstreamDebug.lastElurikkusSpeciesFetched || '-') + '</b></div>' +
     '<div>lastElurikkusUrl: <span class="debug-pro-code">' + (dbg.upstreamDebug.lastElurikkusUrl || '-') + '</span></div>' +
+    '<div>lastElurikkusFetchUrl: <span class="debug-pro-code">' + (dbg.upstreamDebug.lastElurikkusFetchUrl || '-') + '</span></div>' +
+    '<div>x-estbirding-mode: <b>' + (dbg.upstreamDebug.lastElurikkusHeaderMode || '-') + '</b></div>' +
+    '<div>responseKeys(top20): <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastElurikkusResponseKeys || []).replace(/</g,'&lt;') + '</span></div>' +
     '<div>lastElurikkusLatestOccurrenceAt: <b>' + (dbg.upstreamDebug.lastElurikkusLatestOccurrenceAt || '-') + '</b></div>' +
     '<div>lastElurikkusItemsCount: <b>' + (dbg.upstreamDebug.lastElurikkusItemsCount || 0) + '</b></div>' +
     '<div>lastElurikkusError: <b>' + (dbg.upstreamDebug.lastElurikkusError || '-') + '</b></div>' +
     '<div>liveOverridesActiveCount: <b>' + (dbg.upstreamDebug.liveOverridesActiveCount || 0) + '</b> | lockLiveOverridesDuringRefresh: <b>' + (dbg.upstreamDebug.lockLiveOverridesDuringRefresh || 'on') + '</b></div>' +
-    '<div>liveSpeciesActive(top20): <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.liveSpeciesActive || []).replace(/</g,'&lt;') + '</span></div></div>' +
+    '<div>liveSpeciesActive(top20): <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.liveSpeciesActive || []).replace(/</g,'&lt;') + '</span></div>' +
+    '<div style="margin-top:6px"><button class="btn secondary" onclick="_debugPingElurikkus()">Ping server</button></div>' +
+    '<div>lastPing: <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastElurikkusPing || null).replace(/</g,'&lt;') + '</span></div></div>' +
     '<div class="debug-pro-sec"><div class="debug-pro-title">Logs & Export</div>' +
     '<div>internal logs (last 50): <span class="debug-pro-code">' + JSON.stringify(dbg.logs).replace(/</g,'&lt;') + '</span></div></div>';
 }

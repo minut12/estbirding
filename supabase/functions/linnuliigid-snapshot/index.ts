@@ -279,6 +279,9 @@ function buildSnapshotResponseHeaders(data: Record<string, unknown>): Record<str
 function buildJsonNoStoreHeaders(): Record<string, string> {
   return { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json; charset=utf-8" };
 }
+function buildModeHeaders(mode: "ping" | "elurikkus_species" | "snapshot"): Record<string, string> {
+  return { ...buildJsonNoStoreHeaders(), "X-EstBirding-Mode": mode };
+}
 
 type LiveOccItem = {
   observedAt: string;
@@ -388,15 +391,21 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
   if (req.method !== "GET") {
     return new Response(
       JSON.stringify({ ok: false, stage: "request", message: "Method not allowed" }),
-      { status: 405, headers: buildJsonNoStoreHeaders() },
+      { status: 405, headers: buildModeHeaders("elurikkus_species") },
     );
   }
 
-  const species = String(url.searchParams.get("text") || "").trim();
+  const species = String(url.searchParams.get("text") || url.searchParams.get("q") || "").trim();
   if (!species) {
     return new Response(
       JSON.stringify({ ok: false, stage: "request", message: "Missing text query parameter" }),
-      { status: 400, headers: buildJsonNoStoreHeaders() },
+      { status: 400, headers: buildModeHeaders("elurikkus_species") },
+    );
+  }
+  if (species.length < 2) {
+    return new Response(
+      JSON.stringify({ ok: false, mode: "elurikkus_species", stage: "request", message: "text must be at least 2 chars" }),
+      { status: 400, headers: buildModeHeaders("elurikkus_species") },
     );
   }
 
@@ -436,7 +445,7 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
           items,
           message: `Upstream HTTP ${upstreamRes.status}`,
         }),
-        { status: upstreamRes.status, headers: buildJsonNoStoreHeaders() },
+        { status: upstreamRes.status, headers: buildModeHeaders("elurikkus_species") },
       );
     }
 
@@ -455,7 +464,7 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
         dataMaxAt,
         items,
       }),
-      { status: 200, headers: buildJsonNoStoreHeaders() },
+      { status: 200, headers: buildModeHeaders("elurikkus_species") },
     );
   } catch (error) {
     return new Response(
@@ -475,9 +484,15 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
         items: [],
         message: String((error as Error)?.message || error),
       }),
-      { status: 502, headers: buildJsonNoStoreHeaders() },
+      { status: 502, headers: buildModeHeaders("elurikkus_species") },
     );
   }
+}
+
+function searchParamsToObject(sp: URLSearchParams): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of sp.entries()) out[k] = v;
+  return out;
 }
 
 function buildSnapshotMeta(data: Record<string, unknown>) {
@@ -852,11 +867,31 @@ Deno.serve(async (req) => {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
 
-  const url = new URL(req.url);
-  const mode = String(url.searchParams.get("mode") || "").trim().toLowerCase();
-  const isElurikkusSpeciesMode = mode === "elurikkus_species" || url.searchParams.get("elurikkus") === "1";
+  const u = new URL(req.url);
+  const sp = u.searchParams;
+  const mode = String(sp.get("mode") || sp.get("m") || "").trim().toLowerCase();
+  const text = String(sp.get("text") || sp.get("q") || "").trim();
+  const ping = sp.get("ping") === "1" || mode === "ping" || mode === "echo";
+  console.log("[linnuliigid-snapshot] url=", u.toString(), "mode=", mode, "text=", text, "meta=", sp.get("meta"));
+  if (ping) {
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        mode: "ping",
+        received: {
+          url: u.toString(),
+          mode,
+          text,
+          meta: sp.get("meta"),
+          allParams: searchParamsToObject(sp),
+        },
+      }),
+      { status: 200, headers: buildModeHeaders("ping") },
+    );
+  }
+  const isElurikkusSpeciesMode = mode === "elurikkus_species";
   if (isElurikkusSpeciesMode) {
-    return await handleElurikkusSpeciesRequest(req, url);
+    return await handleElurikkusSpeciesRequest(req, u);
   }
 
   if (!SERVICE_ROLE_KEY) {
@@ -867,7 +902,7 @@ Deno.serve(async (req) => {
   }
 
   const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-  const isMetaRequest = url.searchParams.get("meta") === "1";
+  const isMetaRequest = sp.get("meta") === "1";
 
   try {
     if (req.method === "GET" || req.method === "HEAD") {
@@ -880,12 +915,13 @@ Deno.serve(async (req) => {
 
       if (error) throw error;
       const meta = buildSnapshotMeta(data as Record<string, unknown>);
-      const isRebuildRequest = req.method === "GET" && url.searchParams.get("rebuild") === "1";
+      const isRebuildRequest = req.method === "GET" && sp.get("rebuild") === "1";
       if (isRebuildRequest) {
         const rebuild = await rebuildSnapshotNow(supabaseAdmin, data as Record<string, unknown>);
+        const body = { mode: "snapshot", ...(rebuild.body || {}) };
         return new Response(
-          JSON.stringify(rebuild.body),
-          { status: rebuild.httpStatus, headers: { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json" } }
+          JSON.stringify(body),
+          { status: rebuild.httpStatus, headers: { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json", "X-EstBirding-Mode": "snapshot" } }
         );
       }
 
@@ -898,20 +934,21 @@ Deno.serve(async (req) => {
           totalItems: meta.totalItems,
         };
         return new Response(
-          JSON.stringify(metaBody),
+          JSON.stringify({ mode: "snapshot", ...metaBody }),
           {
             status: 200,
-            headers: { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json" },
+            headers: { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json", "X-EstBirding-Mode": "snapshot" },
           }
         );
       }
 
-      const responseHeaders = buildSnapshotResponseHeaders(data as Record<string, unknown>);
+      const responseHeaders = { ...buildSnapshotResponseHeaders(data as Record<string, unknown>), "X-EstBirding-Mode": "snapshot" };
       if (req.method === "HEAD") {
         return new Response(null, { status: 200, headers: responseHeaders });
       }
 
       const responseBody = {
+        mode: "snapshot",
         ...(data as Record<string, unknown>),
         snapshotId: meta.snapshotId,
         snapshotBytes: meta.bytes,
@@ -933,7 +970,7 @@ Deno.serve(async (req) => {
         body = {};
       }
       const action = String(body?.action || "").toLowerCase();
-      const isRebuildPost = url.searchParams.get("rebuild") === "1"
+      const isRebuildPost = sp.get("rebuild") === "1"
         || action === "rebuild"
         || (action === "" && !Object.prototype.hasOwnProperty.call(body, "start_index"));
 

@@ -1629,7 +1629,7 @@ function _clearDebugEvents(){
   __lastProcessedSnapshotId = '';
   __lastProcessedGeneratedAt = '';
   __serverIsNewer = false;
-  __serverMetaAvailable = false;
+  __serverMetaAvailable = false; console.log('[meta-trace]', '_clearDebugEvents → false', new Error().stack);
   __serverCheckStatus = 'idle';
   __serverCheckError = '';
   __snapshotProgressDone = 0;
@@ -1822,7 +1822,15 @@ function _deriveMetaFromRowShape(row){
   for(const k in payload){
     if(!Object.prototype.hasOwnProperty.call(payload, k)) continue;
     const v = payload[k] || {};
-    const ts = _toDay(v.t || v.date || v.observed_at || v.eventDate || '');
+    let ts = _toDay(v.t || v.date || v.observed_at || v.eventDate || '');
+    // Bug 2 fix: also scan items array — items may have fresher observedAt/rawObserved than top-level t
+    if(Array.isArray(v.items)){
+      for(let _ji = 0; _ji < v.items.length; _ji++){
+        const _it = v.items[_ji] || {};
+        const _its = _toDay(_it.observedAt || _it.rawObserved || _it.observed_at || _it.date || _it.t || '');
+        if(_its && _its > ts) ts = _its;
+      }
+    }
     if(ts && ts > maxTs) maxTs = ts;
   }
   const dataMaxAt = maxTs > 0 ? new Date(maxTs).toISOString() : '';
@@ -1887,7 +1895,7 @@ async function fetchServerMeta(){
     if(!(normalized.bytes >= 0)) missing.push('bytes');
     if(!(normalized.totalItems >= 0)) missing.push('totalItems');
     if(missing.length){
-      __serverMetaAvailable = false;
+      __serverMetaAvailable = false; console.log('[meta-trace]', 'fetchServerMeta missing-fields → false, missing=', missing.join(','), new Error().stack);
       __serverMetaFailCount++;
       __serverCheckStatus = 'error';
       __serverCheckError = 'Meta endpoint missing fields: ' + missing.join(', ');
@@ -1902,7 +1910,7 @@ async function fetchServerMeta(){
     __serverDataMaxAt = normalized.dataMaxAt;
     __serverDataMinAt = normalized.dataMinAt;
     __serverCheckedAt = new Date().toISOString();
-    __serverMetaAvailable = true;
+    __serverMetaAvailable = true; console.log('[meta-trace]', 'fetchServerMeta success → true, snapshotId=', __serverSnapshotId);
     __serverIsNewer = !!(__serverMetaAvailable && __lastProcessedSnapshotId && (__serverSnapshotId !== __lastProcessedSnapshotId));
     __serverCheckStatus = 'ok';
     logInfo('Server meta fetched', { snapshotId: __serverSnapshotId, dataMaxAt: __serverDataMaxAt, bytes: __serverBytes });
@@ -1918,7 +1926,7 @@ async function fetchServerMeta(){
     };
   }catch(e){
     __serverCheckedAt = new Date().toISOString();
-    __serverMetaAvailable = false;
+    __serverMetaAvailable = false; console.log('[meta-trace]', 'fetchServerMeta catch → false', new Error().stack);
     __serverMetaFailCount++;
     __serverCheckStatus = 'error';
     __serverCheckError = String((e && e.message) ? e.message : e || 'meta fetch failed');
@@ -2590,14 +2598,19 @@ async function fetchJsonWithTimeout(url, opts){
       url:fetchUrl, runId:runId, index:index, parseMs: __lastParseDurationMs,
         topKeys: (json && typeof json === 'object') ? Object.keys(json).slice(0, 10) : null
       });
+    // Bug 1 fix: for row-shape responses (points_json present, no snapshotId), derive meta
+    // so _loadSnapshotImpl gets a non-empty snapshotId and doesn't reset __serverMetaAvailable to false
+    const _fjtRowMeta = (json && json.points_json && !String((json && json.snapshotId) || '').trim())
+      ? _deriveMetaFromRowShape(json) : null;
+    if(_fjtRowMeta) console.log('[meta-trace] fetchJsonWithTimeout: row-shape detected, derived snapshotId=', _fjtRowMeta.snapshotId, 'dataMaxAt=', _fjtRowMeta.dataMaxAt);
     return {
       data: json,
       meta: {
-        snapshotId: String((json && json.snapshotId) || '').trim(),
-        snapshotGeneratedAt: String((json && (json.snapshotGeneratedAt || json.generatedAt || json.generated_at)) || '').trim(),
-        bytes: Number((json && json.snapshotBytes) || __lastBodyBytes || 0) || 0,
-        dataMaxAt: String((json && json.dataMaxAt) || '').trim(),
-        dataMinAt: String((json && json.dataMinAt) || '').trim(),
+        snapshotId: String((json && json.snapshotId) || (_fjtRowMeta && _fjtRowMeta.snapshotId) || '').trim(),
+        snapshotGeneratedAt: String((json && (json.snapshotGeneratedAt || json.generatedAt || json.generated_at)) || (_fjtRowMeta && _fjtRowMeta.snapshotGeneratedAt) || '').trim(),
+        bytes: Number((json && json.snapshotBytes) || (_fjtRowMeta && _fjtRowMeta.bytes) || __lastBodyBytes || 0) || 0,
+        dataMaxAt: String((json && json.dataMaxAt) || (_fjtRowMeta && _fjtRowMeta.dataMaxAt) || '').trim(),
+        dataMinAt: String((json && json.dataMinAt) || (_fjtRowMeta && _fjtRowMeta.dataMinAt) || '').trim(),
       }
     };
   }catch(e){
@@ -3573,7 +3586,7 @@ async function _loadSnapshotImpl(){
       __serverDataMaxAt = String(snapResp.meta.dataMaxAt || (snap && snap.dataMaxAt) || (__serverDataMaxAt || ''));
       __serverDataMinAt = String(snapResp.meta.dataMinAt || (snap && snap.dataMinAt) || (__serverDataMinAt || ''));
       __serverCheckedAt = new Date().toISOString();
-      __serverMetaAvailable = !!__serverSnapshotId;
+      __serverMetaAvailable = !!__serverSnapshotId; console.log('[meta-trace]', '_loadSnapshotImpl snapResp.meta → ', __serverMetaAvailable, 'snapshotId=', __serverSnapshotId, new Error().stack);
       __serverIsNewer = !!(__serverMetaAvailable && __lastProcessedSnapshotId && (__serverSnapshotId !== __lastProcessedSnapshotId));
       __serverCheckStatus = 'ok';
     }

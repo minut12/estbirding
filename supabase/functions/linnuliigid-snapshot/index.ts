@@ -125,8 +125,12 @@ async function fetchSpeciesData(name: string): Promise<{
       }
     }
     if (lat === null || lon === null) {
-      const mKey = normalizeName(municipality);
-      const cKey = normalizeName(county).replace(/_county$/, "");
+      // Bug 3 fix: Estonian API returns "X maakond" (county) and "X vald"/"X linn" (municipality)
+      // Strip these suffixes so they match the centroid map keys (e.g. "laane_maakond" → "laane")
+      const mKey = normalizeName(municipality)
+        .replace(/_linn$/, "").replace(/_vald$/, "").replace(/_alev$/, "").replace(/_alevik$/, "");
+      const cKey = normalizeName(county)
+        .replace(/_county$/, "").replace(/_maakond$/, "");
       const mCentroid = MUNICIPALITY_CENTROIDS[mKey];
       const cCentroid = COUNTY_CENTROIDS[cKey];
       if (mCentroid) {
@@ -805,7 +809,12 @@ async function runRefresh(
                 src: "Elurikkus",
                 visible: true,
               };
-              if (data.latestDate) entry.t = data.latestDate;
+              // Bug 2 fix: preserve existing t when new fetch returns no date, so snapshot doesn't lose stale date
+              if (data.latestDate) {
+                entry.t = data.latestDate;
+              } else if (points[name]?.t) {
+                entry.t = points[name].t;
+              }
               if (data.lat !== null && data.lon !== null) {
                 entry.lat = data.lat;
                 entry.lon = data.lon;

@@ -825,6 +825,7 @@ function normalizeSpringDate(v){
 async function tryFetch(url, opts){
   const options = opts || {};
   const signal = options.signal || undefined;
+  const requireOccLink = !!options.requireOccLink;
   const urls = [url];
   const pb = String(proxyBase || '').trim();
   if(pb) urls.push(pb + encodeURIComponent(url));
@@ -834,10 +835,33 @@ async function tryFetch(url, opts){
     try{
       const r = await fetch(u, { cache:'no-store', signal: signal });
       if(!r.ok) throw new Error('HTTP ' + r.status);
-      return await r.text();
+      let text = await r.text();
+      text = normalizeHtmlPayload(text);
+      if(requireOccLink){
+        const hasOcc = /\/app\/occurrences\/occurrence\/\d+/.test(String(text || ''));
+        window.__lastSearchHasOccLinks = !!hasOcc;
+        window.__lastSearchOccLinkCount = hasOcc ? ((String(text || '').match(/\/app\/occurrences\/occurrence\/\d+/g) || []).length) : 0;
+        window.__lastSearchSnippet = String(text || '').slice(0, 120);
+        if(!hasOcc) throw new Error('No occurrence links in payload');
+      }
+      return text;
     }catch(e){ lastErr = e; }
   }
   throw lastErr || new Error('Fetch failed');
+}
+function normalizeHtmlPayload(text){
+  const t = String(text || '').trim();
+  if(t.startsWith('{') && t.includes('"contents"')){
+    try{
+      const j = JSON.parse(t);
+      if(typeof j.contents === 'string') return String(j.contents);
+      if(typeof j.data === 'string') return String(j.data);
+    }catch(e){}
+  }
+  return t;
+}
+function isValidEE(lat, lon){
+  return Number.isFinite(lat) && Number.isFinite(lon) && lat > 50 && lat < 70 && lon > 10 && lon < 35;
 }
 function extractAllEventDates(html){
   const out = [];
@@ -1038,6 +1062,28 @@ function pickNewestRows(rows){
     .map(function(r){ return Object.assign({}, r, { ms: parseEluDateMs(r.dateText) }); })
     .filter(function(r){ return Number.isFinite(r.ms); })
     .sort(function(a,b){ return b.ms - a.ms; });
+}
+function extractOccurrenceCandidates(html){
+  const candidates = [];
+  const src = String(html || '');
+  const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let m;
+  while((m = trRe.exec(src)) !== null){
+    const tr = String(m[1] || '');
+    const urlM = tr.match(/href=["'](\/app\/occurrences\/occurrence\/\d+)[^"']*["']/i);
+    if(!urlM) continue;
+    const dtM = tr.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})(?::\d{2})?/);
+    const dateText = dtM ? (dtM[1] + ' ' + dtM[2]) : '';
+    const occUrl = 'https://elurikkus.ee' + String(urlM[1] || '');
+    candidates.push({ occUrl: occUrl, dateText: dateText, ms: parseEluDateMs(dateText) || 0 });
+  }
+  candidates.sort(function(a,b){ return (b.ms || 0) - (a.ms || 0); });
+  const seen = new Set();
+  return candidates.filter(function(c){
+    if(seen.has(c.occUrl)) return false;
+    seen.add(c.occUrl);
+    return true;
+  });
 }
 function countInLastNDaysFromDates(dates, n){
   const arr = Array.isArray(dates) ? dates : [];
@@ -1372,23 +1418,27 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
   const name = String(species || '').trim();
   if(!name) throw new Error('species missing');
   const searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(name) + '&_ts=' + Date.now();
-  const shtml = await tryFetch(searchUrl, { signal: signal });
-  const rows = pickNewestRows(parseEluSearchRows(shtml));
+  const shtml = await tryFetch(searchUrl, { signal: signal, requireOccLink: true });
+  const rows = extractOccurrenceCandidates(shtml);
   const dates = extractAllEventDates(shtml);
   const occ7 = countInLastNDaysFromDates(dates, 7);
   const newestDateText = rows[0] ? String(rows[0].dateText || '') : '';
+  let detailTried = 0;
   for(let k = 0; k < Math.min(10, rows.length); k++){
     if(signal && signal.aborted) throw new Error('aborted');
     const occUrl = String(rows[k].occUrl || '').trim();
     if(!occUrl) continue;
+    detailTried++;
     try{
       const dhtml = await tryFetch(occUrl + (occUrl.includes('?') ? '&' : '?') + '_ts=' + Date.now(), { signal: signal });
       const latlon = extractLatLonFromDetail(dhtml);
-      if(latlon && Number.isFinite(latlon[0]) && Number.isFinite(latlon[1])){
+      if(latlon && isValidEE(Number(latlon[0]), Number(latlon[1]))){
         return {
           mode: 'elurikkus_species',
           source: 'client_html_detail',
           searchUrl: searchUrl,
+          candidateCount: rows.length,
+          detailTried: detailTried,
           selected: {
             occurrenceId: (occUrl.match(/occurrence\/(\d+)/i) || [])[1] || '',
             url: occUrl,
@@ -1411,6 +1461,8 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
     mode: 'elurikkus_species',
     source: 'client_html_detail',
     searchUrl: searchUrl,
+    candidateCount: rows.length,
+    detailTried: detailTried,
     selected: {
       occurrenceId: (String((rows[0] && rows[0].occUrl) || '').match(/occurrence\/(\d+)/i) || [])[1] || '',
       url: rows[0] ? rows[0].occUrl : null,
@@ -1562,8 +1614,10 @@ async function refreshAllFromElurikkus(){
       const appTxt = foundTxt === '—' ? '-' : foundTxt;
       if(eluLastCoord){
         const durl = String((sel && sel.selectedOccurrenceUrl) || '');
-        const dshort = durl ? (durl.split('/').slice(-2).join('/')) : 'no';
-        const occId = (sel && sel.selectedOccurrenceId) ? sel.selectedOccurrenceId : (durl ? (durl.match(/occurrence\/(\d+)/i)?.[1] || dshort) : 'no');
+        const dshort = durl ? (durl.split('/').slice(-2).join('/')) : '—';
+        const occId = (sel && sel.selectedOccurrenceId) ? sel.selectedOccurrenceId : (durl ? (durl.match(/occurrence\/(\d+)/i)?.[1] || dshort) : '—');
+        const cands = Number(json && json.candidateCount || 0) || 0;
+        const tried = Number(json && json.detailTried || 0) || 0;
         const oldTxt = (sel && Number.isFinite(Number(sel.oldLat)) && Number.isFinite(Number(sel.oldLon)))
           ? (Number(sel.oldLat).toFixed(4) + ',' + Number(sel.oldLon).toFixed(4))
           : '-';
@@ -1572,6 +1626,8 @@ async function refreshAllFromElurikkus(){
           ' coordsFound=' + foundTxt +
           ' coordsApplied=' + appTxt +
           ' source=' + String((sel && sel.applied) ? 'elurikkus_occurrence_detail' : '-') +
+          ' candidates=' + cands +
+          ' detailTried=' + tried +
           ' pickedOccId=' + occId +
           ' detailUrl=' + dshort +
           ' moved=' + moveTxt;
@@ -1579,8 +1635,10 @@ async function refreshAllFromElurikkus(){
       if(progEl){
         const dflag = (sel && sel.selectedOccurrenceUrl) ? 'yes' : 'no';
         const durl = String((sel && sel.selectedOccurrenceUrl) || '');
-        const occId = (sel && sel.selectedOccurrenceId) ? sel.selectedOccurrenceId : (durl ? (durl.match(/occurrence\/(\d+)/i)?.[1] || 'yes') : 'no');
-        progEl.textContent = (i + 1) + '/' + total + ' ' + name + ' pickedOccId=' + occId + ' detailUrl=' + dflag + ' coordsFound=' + foundTxt + ' moved=' + ((sel && sel.moved) ? 'yes' : 'no');
+        const occId = (sel && sel.selectedOccurrenceId) ? sel.selectedOccurrenceId : (durl ? (durl.match(/occurrence\/(\d+)/i)?.[1] || 'yes') : '—');
+        const cands = Number(json && json.candidateCount || 0) || 0;
+        const tried = Number(json && json.detailTried || 0) || 0;
+        progEl.textContent = (i + 1) + '/' + total + ' ' + name + ' candidates=' + cands + ' detailTried=' + tried + ' pickedOccId=' + occId + ' detailUrl=' + dflag + ' coordsFound=' + foundTxt + ' moved=' + ((sel && sel.moved) ? 'yes' : 'no');
       }
       pushEluCoordTrace({
         ts: new Date().toISOString(),
@@ -2477,7 +2535,7 @@ function _applySelectedOccurrenceFromServer(speciesName, json){
   if(p.openUrl) p.latestUrl = p.openUrl;
   p.lastFetched = new Date().toISOString();
   let applied = false;
-  if(Number.isFinite(lat) && Number.isFinite(lon)){
+  if(isValidEE(lat, lon)){
     p.lat = lat;
     p.lon = lon;
     p.coordsSource = 'elurikkus_occurrence_detail';
@@ -2489,15 +2547,17 @@ function _applySelectedOccurrenceFromServer(speciesName, json){
     p.coords_source = 'snapshot_fallback';
     p.coords_status = String(selected.coordsStatus || 'restricted_or_missing');
   }
-  const moved = Number.isFinite(oldLat) && Number.isFinite(oldLon) ? (Math.abs(oldLat - lat) > 1e-6 || Math.abs(oldLon - lon) > 1e-6) : true;
+  const moved = applied && isValidEE(oldLat, oldLon) && isValidEE(lat, lon)
+    ? (Math.abs(oldLat - lat) > 1e-6 || Math.abs(oldLon - lon) > 1e-6)
+    : false;
   try{ updateMarker(speciesName); }catch(e){}
   return {
     applied: applied,
     moved: (applied ? moved : false),
     oldLat: Number.isFinite(oldLat) ? oldLat : null,
     oldLon: Number.isFinite(oldLon) ? oldLon : null,
-    newLat: applied ? lat : (Number.isFinite(Number(p.lat)) ? Number(p.lat) : null),
-    newLon: applied ? lon : (Number.isFinite(Number(p.lon)) ? Number(p.lon) : null),
+    newLat: applied ? lat : null,
+    newLon: applied ? lon : null,
     selectedOccurrenceId: String((selected.occurrenceId || '')).trim(),
     selectedOccurrenceUrl: occUrl,
     reason: applied ? 'applied detail coords' : 'selected restricted_or_missing'

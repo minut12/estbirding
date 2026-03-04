@@ -1510,6 +1510,7 @@ async function fetchElurikkusSpecies(species){
     row.restrictedCount = restrictedCount;
     row.publicCount = Math.max(0, items.length - restrictedCount);
     row.sourceUrl = String(cachedData.sourceUrl || '').trim();
+    row.buildId = String(cachedData.buildId || '').trim();
     row.fetchSummary = 'Fetched ✓ (' + stats.itemsTotal + ' items, newest: ' + (row.latestOccurrenceAt ? formatDateTimeEE(row.latestOccurrenceAt) : '-') + ')';
     row.updatedAt = new Date().toISOString();
     liveElurikkusBySpecies[cacheKey] = {
@@ -1564,7 +1565,7 @@ async function fetchElurikkusSpecies(species){
       if(String(json && json.mode || '') !== 'elurikkus_species' || !Array.isArray(json && json.items)){
         const dbgKeys = json && typeof json === 'object' ? Object.keys(json) : [];
         logWarn('Elurikkus route mismatch payload', { species: speciesName, keys: dbgKeys });
-        throw new Error('Server returned ' + String((json && json.mode) || 'unknown') + ' instead of elurikkus_species. url=' + url + ' headerMode=' + hdrMode + ' keys=' + JSON.stringify(dbgKeys));
+        throw new Error('Server returned ' + String((json && json.mode) || 'unknown') + ' instead of elurikkus_species. url=' + url + ' buildId=' + String((json && json.buildId) || '-') + ' headerMode=' + hdrMode + ' keys=' + JSON.stringify(dbgKeys));
       }
       _traceEnd(traceId, { status: res.status, ok: !!res.ok, bytesRead: bytesRead, details: { responseKeys: json && typeof json === 'object' ? Object.keys(json) : [] } });
       logInfo('Elurikkus species response', { species: speciesName, status: res.status, bodyPreview: String(text || '').slice(0,200) });
@@ -1584,6 +1585,7 @@ async function fetchElurikkusSpecies(species){
       row.restrictedCount = restrictedCount;
       row.publicCount = Math.max(0, items.length - restrictedCount);
       row.sourceUrl = String((json && json.sourceUrl) || '').trim();
+      row.buildId = String((json && json.buildId) || '').trim();
       row.updatedAt = new Date().toISOString();
       row.fetchSummary = 'Fetched ✓ (' + stats.itemsTotal + ' items, newest: ' + (row.latestOccurrenceAt ? formatDateTimeEE(row.latestOccurrenceAt) : '-') + ')';
       row.routeMismatch = '';
@@ -3719,6 +3721,7 @@ function rowHTML(obj) {
     ? ('<div class="small" style="margin-top:4px">' +
       'Elurikkus: ' + (up.status || '-') +
       ' | fetched ' + fetchCount + 'x' +
+      (up.buildId ? (' | buildId: ' + up.buildId) : '') +
       (Number.isFinite(up.upstreamStatus) ? (' | upstream: ' + up.upstreamStatus) : '') +
       (Number.isFinite(up.totalResults) ? (' | total: ' + up.totalResults) : '') +
       (Number.isFinite(up.itemsCount) ? (' | items: ' + up.itemsCount) : '') +

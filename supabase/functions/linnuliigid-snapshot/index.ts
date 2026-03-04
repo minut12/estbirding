@@ -14,6 +14,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const INGEST_KEY = Deno.env.get("EVENTS_INGEST_KEY"); // reuse same key
 const DEBUG_LITE = Deno.env.get("DEBUG_LITE") === "1";
+const BUILD_ID = "2026-03-04-1";
 
 // All 369 species
 const SPECIES = ["Aed-põõsalind","Aed-roolind","Aedporr","Alk","Alverüdi","Ameerika piilpart","Atlantise tormilind","Aul","Baleaari tormilind","Euroopa kaelustäks","Habekakk","Habeviires","Hahk","Hakk","Hall-kärbsenäpp","Hallhaigur","Hallhani","Hallkibu","Hallpea-rähn","Hallpõsk-pütt","Hallrästas","Hallrüdi","Halltsiitsitaja","Hallvares","Hallõgija","Hangelind","Harakas","Haugaskotkas","Hele-urvalind","Heletilder","Herilaseviu","Hiireviu","Hoburästas","Händkakk","Hänilane","Hõbehaigur","Hõbehaugas","Hõbekajakas","Hüüp","Ida-mustvaeras","Jahipistrik","Jämejalg","Järvekaur","Jääkajakas","Jääkaur","Jääkoskel","Jõgi-ritsiklind","Jõgitiir","Jõgitilder","Jõgivästrik","Kadakatäks","Kaelus-kärbsenäpp","Kaelus-turteltuvi","Kaeluskotkas","Kaelusrästas","Kaelustuvi","Kalakajakas","Kalakotkas","Kalda-rädilind","Kaldapääsuke","Kaljukajakas","Kaljukotkas","Kanada lagle","Kanakull","Kanepilind","Karbuskajakas","Karkjalg","Karmiinleevike","Karvasjalg-kakk","Karvasjalg-viu","Kassikakk","Kiivitaja","Kiripugu-rüdi","Kirjuhahk","Kivikakk","Kivirullija","Kivitäks","Kodukakk","Kodutuvi","Koduvarblane","Koldhaigur","Koldjalg-hõbekajakas","Koldvint","Kormoran","Krüüsel","Kukkurtihane","Kuld-lehelind","Kuldhänilane","Kuldnokk","Kuldtsiitsitaja","Kuninghahk","Kuuse-käbilind","Käblik","Kägu","Käharpelikan","Käosulane","Kääbuskormoran","Kääbuskotkas","Kõnnuõgija","Kõrbe-kivitäks","Kõrbe-põõsalind","Kõrkja-roolind","Kõrvukräts","Kõvernokk-rüdi","Kühmnokk-luik","Künnivares","Laanenäär","Laanepüü","Laanerähn","Laisaba-änn","Lammitilder","Lapi tsiitsitaja","Lasuurtihane","Lauk","Laululuik","Laulurästas","Leeterüdi","Leevike","Liiv-kivitäks","Liivatüll","Linavästrik","Loorkakk","Luitsnokk-iibis","Luitsnokk-part","Lumehani","Lumekakk","Lääne-lehelind","Lääne-pöialpoiss","Lõopistrik","Lõuna-hõbekajakas","Lühinokk-hani","Madukotkas","Mandariinpart","Merikajakas","Merikotkas","Merirüdi","Merisk","Merivart","Mesilasenäpp","Mets-lehelind","Metsis","Metskiur","Metskurvits","Metstilder","Metsvint","Mudanepp","Mudatilder","Must-harksaba","Must-kärbsenäpp","Must-lepalind","Must-toonekurg","Mustjalg-tüll","Mustkael-pütt","Mustkurk-raat","Mustlagle","Mustlauk-õgija","Mustpea-põõsalind","Mustpea-tsiitsitaja","Mustpugu-rästas","Musträhn","Musträstas","Mustsaba-vigle","Musttihane","Mustvaeras","Mustvares","Mustviires","Mägi-kanepilind","Mägikiur","Männi-käbilind","Männileevike","Männitalvike","Mänsak","Naaskelnokk","Naerukajakas","Naerutiir","Niidu-kaelustäks","Niidu-ritsiklind","Niidukiur","Nunn-kivitäks","Nurmkana","Nõgipart","Nõlva-lehelind","Nõmmekiur","Nõmmelõoke","Ohakalind","Ohhoota hõbekajakas","Padu-roolind","Pasknäär","Peegel-tormilind","Pelikan","Peoleo","Piilpart","Piiritaja","Pikksaba-änn","Plütt","Plüü","Polaarkajakas","Porr","Prillvaeras","Pruunselg-põõsalind","Puna-harksaba","Puna-veetallaja","Punajalg-pistrik","Punajalg-tilder","Punakael-lagle","Punakurk-kaur","Punanokk-vart","Punapea-vart","Punapea-õgija","Punarind","Punasaba-õgija","Punaselg-õgija","Purpurhaigur","Puukoristaja","Põhja-kirjurästas","Põhja-lehelind","Põhja-tormipääsu","Põhjatihane","Põhjatsiitsitaja","Põhjavint","Põldlõoke","Põldtsiitsitaja","Põldvarblane","Põldvutt","Pöialpoiss","Rabapistrik","Rabapüü","Raisakotkas","Randkajakas","Randkiur","Randtiir","Rasvatihane","Raudkull","Ristpart","Roherähn","Rohevint","Rohukoskel","Rohunepp","Ronk","Roo-loorkull","Roo-ritsiklind","Roohabekas","Rooruik","Roosa-kuldnokk","Roosakajakas","Roosatiir","Roostepääsuke","Roosterind-tüll","Rootsiitsitaja","Rubiinööbik","Rukkirääk","Ruugerüdi","Rägapart","Rästas-roolind","Räusktiir","Rääkspart","Räästapääsuke","Rüüt","Sabatihane","Salu-lehelind","Salupäll","Salutihane","Sarviklõoke","Sarvikpütt","Siberi lehelind","Siberi raat","Siidhaigur","Siidisaba","Siisike","Sinikael-part","Siniraag","Sinirind","Sinisaba","Sinitihane","Soo-loorkull","Soo-roolind","Sookiur","Sookurg","Soopart","Sooräts","Soorüdi","Stepi-loorkull","Stepikajakas","Stepikiivitaja","Stepikotkas","Stepipistrik","Stepiviu","Suitsupääsuke","Suula","Suur-kirjurähn","Suur-konnakotkas","Suur-laukhani","Suurkoovitaja","Suurnokk-vint","Suurrüdi","Suuränn","Sõtkas","Söödikänn","Tait","Talvike","Tamme-kirjurähn","Teder","Tiigi-roolind","Tikutaja","Triip-ritsiklind","Tuhk-lehelind","Tumetilder","Tundra-rabahani","Tundrakaur","Tundrakiur","Tutkas","Tutt-tihane","Tutt-tiir","Tuttlõoke","Tuttpütt","Tuttvart","Tuuletallaja","Täpikhuik","Tõmmu-lehelind","Tõmmuiibis","Tõmmukajakas","Tõmmuvaeras","Urvalind","Vaaraohani","Vaenukägu","Vainurästas","Valge-toonekurg","Valgepõsk-lagle","Valgeselg-kirjurähn","Valgesilm-vart","Valgetiib-viires","Veetallaja","Veisehaigur","Vesipapp","Vihitaja","Viupart","Väike-kirjurähn","Väike-konnakotkas","Väike-käosulane","Väike-kärbsenäpp","Väike-laukhani","Väike-lehelind","Väike-põõsalind","Väikealk","Väikehuik","Väikehüüp","Väikekajakas","Väikekoovitaja","Väikekoskel","Väikeluik","Väikepistrik","Väikepütt","Väikerüdi","Väiketiir","Väiketrapp","Väiketsiitsitaja","Väiketüll","Välja-loorkull","Välja-väikelõoke","Värbkakk","Värbrüdi","Väänkael","Võsa-ritsiklind","Võsaraat","Vööt-käbilind","Vööt-põõsalind","Vööthani","Vöötkakk","Vöötnokk-kajakas","Vöötsaba-vigle","Õõnetuvi","Ööbik","Ööhaigur","Öösorr"];
@@ -271,8 +272,9 @@ function buildSnapshotResponseHeaders(data: Record<string, unknown>): Record<str
   const generatedAt = String((data as { generated_at?: string | null })?.generated_at || "");
   return {
     ...corsHeaders,
-    "Content-Type": "application/json",
-    "Cache-Control": "no-store",
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store, max-age=0",
+    "Pragma": "no-cache",
     "ETag": buildSnapshotEtag(data),
     "X-Snapshot-Generated-At": generatedAt,
   };
@@ -281,8 +283,11 @@ function buildSnapshotResponseHeaders(data: Record<string, unknown>): Record<str
 function buildJsonNoStoreHeaders(): Record<string, string> {
   return { ...corsHeaders, "Cache-Control": "no-store, max-age=0", "Pragma": "no-cache", "Content-Type": "application/json; charset=utf-8" };
 }
-function buildModeHeaders(mode: "ping" | "elurikkus_species" | "snapshot"): Record<string, string> {
+function buildModeHeaders(mode: "ping" | "elurikkus_species" | "snapshot" | "meta" | "error"): Record<string, string> {
   return { ...buildJsonNoStoreHeaders(), "X-EstBirding-Mode": mode };
+}
+function withSignature(mode: "ping" | "elurikkus_species" | "snapshot" | "meta" | "error", payload: Record<string, unknown>) {
+  return { buildId: BUILD_ID, mode, ...payload };
 }
 
 type LiveOccItem = {
@@ -392,7 +397,7 @@ function parseElurikkusHtmlItems(html: string): LiveOccItem[] {
 async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Response> {
   if (req.method !== "GET") {
     return new Response(
-      JSON.stringify({ ok: false, stage: "request", message: "Method not allowed" }),
+      JSON.stringify(withSignature("elurikkus_species", { ok: false, stage: "request", message: "Method not allowed" })),
       { status: 405, headers: buildModeHeaders("elurikkus_species") },
     );
   }
@@ -400,13 +405,13 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
   const species = String(url.searchParams.get("text") || url.searchParams.get("q") || "").trim();
   if (!species) {
     return new Response(
-      JSON.stringify({ ok: false, stage: "request", message: "Missing text query parameter" }),
+      JSON.stringify(withSignature("elurikkus_species", { ok: false, stage: "request", message: "Missing text query parameter" })),
       { status: 400, headers: buildModeHeaders("elurikkus_species") },
     );
   }
   if (species.length < 2) {
     return new Response(
-      JSON.stringify({ ok: false, mode: "elurikkus_species", stage: "request", message: "text must be at least 2 chars" }),
+      JSON.stringify(withSignature("elurikkus_species", { ok: false, stage: "request", message: "text must be at least 2 chars" })),
       { status: 400, headers: buildModeHeaders("elurikkus_species") },
     );
   }
@@ -431,9 +436,8 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
     const totalResults = totalMatch ? Number(String(totalMatch[1] || "").replace(/[^\d]/g, "")) || 0 : 0;
     if (!upstreamRes.ok) {
       return new Response(
-        JSON.stringify({
+        JSON.stringify(withSignature("elurikkus_species", {
           ok: false,
-          mode: "elurikkus_species",
           query: species,
           stage: "upstream",
           species,
@@ -446,15 +450,14 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
           totalResults,
           items,
           message: `Upstream HTTP ${upstreamRes.status}`,
-        }),
+        })),
         { status: upstreamRes.status, headers: buildModeHeaders("elurikkus_species") },
       );
     }
 
     return new Response(
-      JSON.stringify({
+      JSON.stringify(withSignature("elurikkus_species", {
         ok: true,
-        mode: "elurikkus_species",
         query: species,
         species,
         sourceUrl,
@@ -466,14 +469,13 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
         dataMaxAt,
         sample: html.slice(0, 200),
         items,
-      }),
+      })),
       { status: 200, headers: buildModeHeaders("elurikkus_species") },
     );
   } catch (error) {
     return new Response(
-      JSON.stringify({
+      JSON.stringify(withSignature("elurikkus_species", {
         ok: false,
-        mode: "elurikkus_species",
         query: species,
         stage: "upstream",
         species,
@@ -486,7 +488,7 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
         dataMaxAt: null,
         items: [],
         message: String((error as Error)?.message || error),
-      }),
+      })),
       { status: 502, headers: buildModeHeaders("elurikkus_species") },
     );
   }
@@ -878,15 +880,14 @@ Deno.serve(async (req) => {
   console.log("[linnuliigid-snapshot] url=", u.toString(), "mode=", mode, "text=", text, "meta=", sp.get("meta"));
   if (ping) {
     return new Response(
-      JSON.stringify({
+      JSON.stringify(withSignature("ping", {
         ok: true,
-        mode: "ping",
         serverTime: new Date().toISOString(),
         received: {
           url: u.toString(),
           params: searchParamsToObject(sp),
         },
-      }),
+      })),
       { status: 200, headers: buildModeHeaders("ping") },
     );
   }
@@ -896,9 +897,9 @@ Deno.serve(async (req) => {
   }
 
   if (!SERVICE_ROLE_KEY) {
-    return new Response(JSON.stringify({ error: "SERVICE_ROLE_KEY missing" }), {
+    return new Response(JSON.stringify(withSignature("error", { ok: false, error: "SERVICE_ROLE_KEY missing" })), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: buildModeHeaders("error"),
     });
   }
 
@@ -919,17 +920,16 @@ Deno.serve(async (req) => {
       const isRebuildRequest = req.method === "GET" && sp.get("rebuild") === "1";
       if (isRebuildRequest) {
         const rebuild = await rebuildSnapshotNow(supabaseAdmin, data as Record<string, unknown>);
-        const body = { mode: "snapshot", ...(rebuild.body || {}) };
+        const body = withSignature("snapshot", { ...(rebuild.body || {}) });
         return new Response(
           JSON.stringify(body),
-          { status: rebuild.httpStatus, headers: { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json", "X-EstBirding-Mode": "snapshot" } }
+          { status: rebuild.httpStatus, headers: buildModeHeaders("snapshot") }
         );
       }
 
       if (req.method === "GET" && isMetaRequest) {
         const metaBody = {
           ok: true,
-          mode: "meta",
           snapshotId: meta.snapshotId,
           snapshotGeneratedAt: meta.snapshotGeneratedAt,
           dataMaxAt: meta.dataMaxAt,
@@ -937,10 +937,10 @@ Deno.serve(async (req) => {
           totalItems: meta.totalItems,
         };
         return new Response(
-          JSON.stringify(metaBody),
+          JSON.stringify(withSignature("meta", metaBody)),
           {
             status: 200,
-            headers: { ...buildJsonNoStoreHeaders(), "X-EstBirding-Mode": "meta" },
+            headers: buildModeHeaders("meta"),
           }
         );
       }
@@ -952,7 +952,6 @@ Deno.serve(async (req) => {
 
       const responseBody = {
         ok: true,
-        mode: "snapshot",
         ...(data as Record<string, unknown>),
         snapshotId: meta.snapshotId,
         snapshotBytes: meta.bytes,
@@ -961,7 +960,7 @@ Deno.serve(async (req) => {
         dataMaxAt: meta.dataMaxAt,
         dataMinAt: meta.dataMinAt,
       };
-      return new Response(JSON.stringify(responseBody), {
+      return new Response(JSON.stringify(withSignature("snapshot", responseBody)), {
         headers: responseHeaders,
       });
     }
@@ -990,10 +989,10 @@ Deno.serve(async (req) => {
 
       if (isRebuildPost) {
         const rebuild = await rebuildSnapshotNow(supabaseAdmin, (current || {}) as Record<string, unknown>);
-        const bodyWithMode = { mode: "snapshot", ...(rebuild.body || {}) };
+        const bodyWithMode = withSignature("snapshot", { ...(rebuild.body || {}) });
         return new Response(
           JSON.stringify(bodyWithMode),
-          { status: rebuild.httpStatus, headers: { ...buildJsonNoStoreHeaders(), "X-EstBirding-Mode": "snapshot" } }
+          { status: rebuild.httpStatus, headers: buildModeHeaders("snapshot") }
         );
       }
 
@@ -1022,7 +1021,7 @@ Deno.serve(async (req) => {
         if (updatedError) throw updatedError;
         const points = (updated as { points_json?: unknown })?.points_json || (current as { points_json?: unknown })?.points_json || {};
         return new Response(
-          JSON.stringify({
+          JSON.stringify(withSignature("snapshot", {
             ok: true,
             action: "force_advance",
             status: updated?.status || (nextDone >= progressTotal ? "ready" : "running"),
@@ -1032,10 +1031,10 @@ Deno.serve(async (req) => {
             points_json: points,
             last_error: updated?.last_error || nextError,
             heartbeat_at: heartbeatColumnAvailable ? ((updated as { heartbeat_at?: string | null })?.heartbeat_at || nowIso) : null,
-          }),
+          })),
           {
             status: 200,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            headers: buildModeHeaders("snapshot"),
           }
         );
       }
@@ -1054,7 +1053,7 @@ Deno.serve(async (req) => {
         const { data: updated, error: updatedError } = await selectSnapshotRow(supabaseAdmin);
         if (updatedError) throw updatedError;
         return new Response(
-          JSON.stringify({
+          JSON.stringify(withSignature("snapshot", {
             ok: true,
             action: "force_takeover",
             status: updated?.status || "running",
@@ -1062,17 +1061,17 @@ Deno.serve(async (req) => {
             progress_total: Number(updated?.progress_total || SPECIES.length),
             last_error: updated?.last_error || nextError,
             heartbeat_at: heartbeatColumnAvailable ? ((updated as { heartbeat_at?: string | null })?.heartbeat_at || nowIso) : null,
-          }),
+          })),
           {
             status: 200,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            headers: buildModeHeaders("snapshot"),
           }
         );
       }
       if (action && action !== "start_refresh") {
         return new Response(
-          JSON.stringify({ error: "unknown_action", action }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify(withSignature("snapshot", { ok: false, error: "unknown_action", action })),
+          { status: 400, headers: buildModeHeaders("snapshot") }
         );
       }
 
@@ -1082,13 +1081,14 @@ Deno.serve(async (req) => {
         if (elapsed < COOLDOWN_MS && current.status === "ready" && !force) {
           const retryAfter = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
           return new Response(
-            JSON.stringify({
+            JSON.stringify(withSignature("snapshot", {
+              ok: false,
               error: "Refresh recently completed. Try again later.",
               retry_after_seconds: retryAfter,
-            }),
+            })),
             {
               status: 429,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              headers: buildModeHeaders("snapshot"),
             }
           );
         }
@@ -1101,16 +1101,17 @@ Deno.serve(async (req) => {
       const allowTakeover = force || staleHeartbeat;
       if (current?.status === "running" && !allowTakeover) {
         return new Response(
-          JSON.stringify({
+          JSON.stringify(withSignature("snapshot", {
+            ok: false,
             error: "already running",
             status: "running",
             heartbeat_at: (current as { heartbeat_at?: string | null })?.heartbeat_at || null,
             progress_done: current?.progress_done || 0,
             progress_total: current?.progress_total || SPECIES.length,
-          }),
+          })),
           {
             status: 409,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            headers: buildModeHeaders("snapshot"),
           }
         );
       }
@@ -1152,10 +1153,10 @@ Deno.serve(async (req) => {
           heartbeat_at: heartbeatColumnAvailable ? new Date().toISOString() : null,
         };
         return new Response(
-          JSON.stringify(responseBody),
+          JSON.stringify(withSignature("snapshot", responseBody)),
           {
             status: result.timedOut && !result.finished ? 202 : 200,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            headers: buildModeHeaders("snapshot"),
           }
         );
       } catch (e) {
@@ -1167,7 +1168,8 @@ Deno.serve(async (req) => {
           run_id: runId,
         });
         return new Response(
-          JSON.stringify({
+          JSON.stringify(withSignature("snapshot", {
+            ok: false,
             status: "error",
             progress_done: Number(current?.progress_done || 0),
             progress_total: Number(current?.progress_total || SPECIES.length),
@@ -1175,23 +1177,23 @@ Deno.serve(async (req) => {
             points_json: (current as { points_json?: unknown })?.points_json || {},
             last_error: msg,
             heartbeat_at: heartbeatColumnAvailable ? new Date().toISOString() : null,
-          }),
+          })),
           {
             status: 500,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            headers: buildModeHeaders("snapshot"),
           }
         );
       }
     }
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+    return new Response(JSON.stringify(withSignature("error", { ok: false, error: "Method not allowed" })), {
       status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: buildModeHeaders("error"),
     });
   } catch (error: unknown) {
     console.error("Snapshot error:", error);
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
+    return new Response(JSON.stringify(withSignature("error", { ok: false, error: (error as Error).message })), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: buildModeHeaders("error"),
     });
   }
 });

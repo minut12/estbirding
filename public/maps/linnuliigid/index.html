@@ -906,7 +906,7 @@ async function fetchSpringYearFirstOne(key){
 
 // Toggle state: 7 days only
 window.__recentOnly = (localStorage.getItem(LS_RECENT_ONLY) === '1');
-function is7daysOnly(){ return window.__recentOnly; }
+function is7daysOnly(){ return !!window.__recentOnly; }
 function passes7d(p){
   const occ7 = (p && (p.occ7 === 0 || p.occ7)) ? Number(p.occ7) : NaN;
   if (Number.isFinite(occ7)) return occ7 > 0;
@@ -3692,7 +3692,7 @@ function _wireSnapshotButtons(){
     toggle7d.addEventListener('change', function(){
       window.__recentOnly = this.checked;
       try{ localStorage.setItem(LS_RECENT_ONLY, this.checked ? '1' : '0'); }catch(e){}
-      Object.keys(points || {}).forEach(updateMarker);
+      refreshAllMarkers();
       render();
       if(this.checked) _checkEmpty7dBanner();
       else _hideSnapshotBanner();
@@ -3955,48 +3955,49 @@ function editSpringDate(key){
 
 function updateMarker(key) {
   const p = points[key];
-  const existingMarker = markers.has(key) ? markers.get(key) : null;
+  const prevMarker = markers.has(key) ? markers.get(key) : null;
   if (!p) {
-    if(existingMarker){ map.removeLayer(existingMarker); markers.delete(key); }
+    if(prevMarker){ map.removeLayer(prevMarker); markers.delete(key); }
     return;
   }
 
-  // Determine visibility based on 7-day toggle
   const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
-  const passesFilter = is7daysOnly() ? passes7d(p) : true;
+  const occ7 = (p.occ7 === 0 || p.occ7) ? Number(p.occ7) : NaN;
+  const passes7dNow = Number.isFinite(occ7) ? (occ7 > 0) : isRecent(p.t);
+  const passesFilter = is7daysOnly() ? passes7dNow : true;
   const isVisible = (p.visible !== false) && passesFilter && hasCoords;
-
-  if (isVisible) {
-    __renderedMarkerCount++;
-    const bcol = _borderColorByDate(p.t);
-    const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
-    const c7 = Number.isFinite(p.occ7) ? p.occ7 : null;
-    const icon = avatarIcon(getDisplayAvatar(key), bcol, c7, metaCfg.rarityLevel || 'none');
-    const when = p.t ? '<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.observationDate) || 'vaatluse kuup\u00e4ev') + ': ' + formatDateEE(p.t) + '</small>' : '';
-    const src = p.src ? '<br><small>allikas: '+p.src+'</small>' : '';
-    const precision = (p.coords_status === 'restricted' && p.coords_source && p.coords_source !== 'none')
-      ? ('<br><small>coordsSource: ' + p.coords_source + '</small><br><small>' + (p.coords_note || ('coords restricted \u2192 ' + ((p.coords_source === 'snapshot' || p.coords_source === 'snapshot_fallback') ? 'snapshot fallback' : p.coords_source))) + '</small>')
-      : '';
-    const lastMove = p.lastMarkerMove || null;
-    const movedLine = lastMove
-      ? ('<br><small>moved: ' + (lastMove.changed ? 'yes' : 'no') + ' (' + Number(lastMove.oldLat || 0).toFixed(4) + ',' + Number(lastMove.oldLon || 0).toFixed(4) + ' \u2192 ' + Number(lastMove.newLat || p.lat).toFixed(4) + ',' + Number(lastMove.newLon || p.lon).toFixed(4) + ')</small>')
-      : '';
-    const popupHtml = '<b>'+key+'</b>'+when+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+precision+movedLine;
-    const old = existingMarker && existingMarker.getLatLng ? existingMarker.getLatLng() : null;
-    if(existingMarker){ try{ map.removeLayer(existingMarker); }catch(_e){} }
-    const m = L.marker([p.lat,p.lon], {icon}).addTo(map).bindPopup(popupHtml);
-    p.lastMarkerMove = {
-      oldLat: old ? Number(old.lat) : Number(p.lat),
-      oldLon: old ? Number(old.lng) : Number(p.lon),
-      newLat: Number(p.lat),
-      newLon: Number(p.lon),
-      changed: !old || Math.abs(old.lat - p.lat) > 1e-9 || Math.abs(old.lng - p.lon) > 1e-9,
-      atISO: new Date().toISOString()
-    };
-    markers.set(key, m);
-  } else {
-    if(existingMarker){ map.removeLayer(existingMarker); markers.delete(key); }
+  if (!isVisible) {
+    if(prevMarker){ map.removeLayer(prevMarker); markers.delete(key); }
+    return;
   }
+
+  __renderedMarkerCount++;
+  const bcol = _borderColorByDate(p.t);
+  const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
+  const c7 = Number.isFinite(occ7) && occ7 > 0 ? occ7 : null;
+  const icon = avatarIcon(getDisplayAvatar(key), bcol, c7, metaCfg.rarityLevel || 'none');
+  const when = p.t ? '<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.observationDate) || 'vaatluse kuup\u00e4ev') + ': ' + formatDateEE(p.t) + '</small>' : '';
+  const src = p.src ? '<br><small>allikas: '+p.src+'</small>' : '';
+  const precision = (p.coords_status === 'restricted' && p.coords_source && p.coords_source !== 'none')
+    ? ('<br><small>coordsSource: ' + p.coords_source + '</small><br><small>' + (p.coords_note || ('coords restricted \u2192 ' + ((p.coords_source === 'snapshot' || p.coords_source === 'snapshot_fallback') ? 'snapshot fallback' : p.coords_source))) + '</small>')
+    : '';
+  const lastMove = p.lastMarkerMove || null;
+  const movedLine = lastMove
+    ? ('<br><small>moved: ' + (lastMove.changed ? 'yes' : 'no') + ' (' + Number(lastMove.oldLat || 0).toFixed(4) + ',' + Number(lastMove.oldLon || 0).toFixed(4) + ' \u2192 ' + Number(lastMove.newLat || p.lat).toFixed(4) + ',' + Number(lastMove.newLon || p.lon).toFixed(4) + ')</small>')
+    : '';
+  const popupHtml = '<b>'+key+'</b>'+when+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+precision+movedLine;
+  const old = prevMarker && prevMarker.getLatLng ? prevMarker.getLatLng() : null;
+  if(prevMarker){ try{ map.removeLayer(prevMarker); markers.delete(key); }catch(_e){} }
+  const m = L.marker([p.lat,p.lon], {icon}).addTo(map).bindPopup(popupHtml);
+  p.lastMarkerMove = {
+    oldLat: old ? Number(old.lat) : Number(p.lat),
+    oldLon: old ? Number(old.lng) : Number(p.lon),
+    newLat: Number(p.lat),
+    newLon: Number(p.lon),
+    changed: !old || Math.abs(old.lat - p.lat) > 1e-9 || Math.abs(old.lng - p.lon) > 1e-9,
+    atISO: new Date().toISOString()
+  };
+  markers.set(key, m);
 }
 
 

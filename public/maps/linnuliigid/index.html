@@ -167,7 +167,7 @@
 </div>
 <div id="snapshotBanner" class="snapshot-banner" style="display:none"></div>
 <div class="fetch-controls">
-  <button id="btnRefreshElurikkus" class="btn" title="Refresh all species from Elurikkus">Refresh from Elurikkus</button>
+  <button id="btnRefreshData" class="btn" title="Refresh all species from Elurikkus">Refresh from Elurikkus</button>
   <button id="btnForceServerRefresh" class="btn secondary" title="Force server rebuild from upstream">Force server refresh</button>
   <button id="btnReloadSnapshot" class="btn secondary" title="Reload latest snapshot from server">Reload snapshot</button>
   <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index">Resume</button>
@@ -1039,6 +1039,76 @@ let __elurikkusBulkStats = { done: 0, total: 0, updated: 0, moved: 0, errors: 0,
 window.__lastElurikkusBulkErrors = [];
 window.__lastElurikkusBulkSummary = null;
 window.__lastElurikkusBulkOutcomes = [];
+let __eluBulkActive = false;
+let __eluBulkAbort = null;
+let __eluBulkSummary = null;
+function _getAllSpeciesList(){
+  try{
+    if(typeof SPECIES !== 'undefined' && Array.isArray(SPECIES) && SPECIES.length) return SPECIES.slice();
+  }catch(e){}
+  try{
+    if(Array.isArray(window.SPECIES) && window.SPECIES.length) return window.SPECIES.slice();
+  }catch(e){}
+  try{
+    const pts = (typeof points !== 'undefined') ? points : (window.points || {});
+    const keys = Object.keys(pts || {});
+    if(keys.length) return keys;
+  }catch(e){}
+  return [];
+}
+function _applyElurikkusPayloadToPoints(species, payload){
+  const items = Array.isArray(payload && payload.items) ? payload.items : [];
+  window.points = window.points || {};
+  window.points[species] = window.points[species] || {};
+  const row = window.points[species];
+  const prev = { lat: row.lat, lon: row.lon, t: row.t, occ7: row.occ7 };
+  let stats = null;
+  try{ stats = (typeof _computeLiveStats === 'function') ? _computeLiveStats(items) : null; }catch(e){}
+  const occ7raw = stats ? ((Number.isFinite(stats.items7d) ? stats.items7d : stats.itemsWithin7d)) : null;
+  const occ7 = Number.isFinite(Number(occ7raw)) ? Number(occ7raw) : null;
+  let newest = String((payload && (payload.dataMaxAt || payload.latestOccurrenceAt)) || '').slice(0,10);
+  if(!newest){
+    for(let i = 0; i < items.length; i++){
+      const itDate = String((items[i] && (items[i].eventDate || items[i].observedAt || items[i].rawObserved || items[i].date || items[i].t)) || '').slice(0,10);
+      if(itDate && (!newest || itDate > newest)) newest = itDate;
+    }
+  }
+  if(newest) row.t = newest;
+  if(Number.isFinite(occ7)) row.occ7 = occ7;
+  row.src = 'Elurikkus';
+  row.lastFetched = new Date().toISOString();
+  let best = null;
+  for(let i = 0; i < items.length; i++){
+    const it = items[i] || {};
+    const st = String((it.coordsStatus || it.coords_status || '')).toLowerCase();
+    if(st !== 'public') continue;
+    const lat = Number(it.lat), lon = Number(it.lon);
+    if(!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    if(!best) best = { lat: lat, lon: lon, dt: String(it.eventDate || it.observedAt || '') };
+    else{
+      const dt = String(it.eventDate || it.observedAt || '');
+      if(dt && dt > String(best.dt || '')) best = { lat: lat, lon: lon, dt: dt };
+    }
+  }
+  if(best){
+    row.lat = best.lat;
+    row.lon = best.lon;
+    row.coordsSource = 'live_elurikkus';
+    row.coords_source = 'live_elurikkus';
+    row.coords_status = 'public';
+  } else {
+    row.coordsSource = 'snapshot_fallback';
+    row.coords_source = 'snapshot_fallback';
+  }
+  const moved =
+    Number.isFinite(Number(prev.lat)) && Number.isFinite(Number(prev.lon)) &&
+    Number.isFinite(Number(row.lat)) && Number.isFinite(Number(row.lon)) &&
+    (Number(prev.lat) !== Number(row.lat) || Number(prev.lon) !== Number(row.lon));
+  const updated = (String(prev.t || '') !== String(row.t || '')) || (Number(prev.occ7 || 0) !== Number(row.occ7 || 0)) || moved;
+  try{ if(typeof save === 'function') save(); }catch(e){}
+  try{ if(typeof updateMarker === 'function') updateMarker(species); }catch(e){}
+  return { updated: updated, moved: moved, newest: row.t || '', occ7: row.occ7 };
+}
 function _buildEluFetchCandidates(url){
   const raw = String(url || '').trim();
   const baseUrl = raw + (raw.includes('?') ? '&' : '?') + '_ts=' + Date.now();
@@ -1150,160 +1220,76 @@ async function refreshSpeciesFromElurikkus(key, signal){
   console.log('[species-fetch] done', species, 'moved=', moved, 'lat=', p.lat, 'lon=', p.lon);
   return { key: species, moved: moved };
 }
-async function refreshAllFromElurikkus(opts){
-  const options = Object.assign({ force: false }, opts || {});
-  if(__elurikkusBulkActive) return;
-  const list = (window.SPECIES && window.SPECIES.length ? window.SPECIES.slice() : (Array.isArray(SPECIES) && SPECIES.length ? SPECIES.slice() : Object.keys(window.points || {})));
-  const total = list.length;
-  const startedAt = Date.now();
+async function refreshAllFromElurikkus(){
+  if(__eluBulkActive || __elurikkusBulkActive) return;
+  const list = _getAllSpeciesList();
+  if(!list.length){
+    const ferr = document.getElementById('fetchError');
+    if(ferr) ferr.textContent = 'Elurikkus refresh: species list is empty (SPECIES missing)';
+    pushDebugEvent('ELU_BULK_FAIL', 'No species list', {}, 'error');
+    return;
+  }
+  __eluBulkActive = true;
   __elurikkusBulkActive = true;
-  __elurikkusBulkAbortController = new AbortController();
-  __elurikkusBulkAbort = __elurikkusBulkAbortController;
-  const signal = __elurikkusBulkAbortController.signal;
-  __elurikkusBulkStats = { done: 0, total: total, updated: 0, moved: 0, errors: 0, lastKey: '' };
-  window.__lastElurikkusBulkErrors = [];
-  window.__lastElurikkusBulkOutcomes = [];
+  __eluBulkAbort = new AbortController();
+  __elurikkusBulkAbort = __eluBulkAbort;
+  __elurikkusBulkAbortController = __eluBulkAbort;
   const stopBtn = document.getElementById('btnStopFetch');
-  const errEl = document.getElementById('fetchError');
-  const eluProg = document.getElementById('eluProgress');
-  const prog = document.getElementById('fetchProgress');
-  const idx = document.getElementById('indexProgress');
-  const srv = document.getElementById('serverRefreshStatus');
   if(stopBtn) stopBtn.style.display = 'inline-block';
-  function setProgress(i, species){
-    const line = 'Elurikkus refresh: ' + i + '/' + total + ' | updated ' + __elurikkusBulkStats.updated + ' | moved ' + __elurikkusBulkStats.moved + ' | errors ' + __elurikkusBulkStats.errors + ' | last: ' + (species || '-');
-    if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = 'Elurikkus refresh running: ' + i + '/' + total + ' species'; }
-    if(prog) prog.textContent = line;
-    if(srv) srv.textContent = line;
-    if(idx) idx.textContent = 'Index: ' + i + '/' + total;
-  }
-  function pushOutcome(row){
-    window.__lastElurikkusBulkOutcomes.unshift(row);
-    if(window.__lastElurikkusBulkOutcomes.length > 20) window.__lastElurikkusBulkOutcomes.length = 20;
-  }
-  pushDebugEvent('ELU_BULK_START', 'Elurikkus bulk refresh started', { total: total, force: !!options.force });
-  setProgress(0, '');
-  try{
-    for(let i = 0; i < total; i++){
-      if(signal.aborted) throw new DOMException('Aborted', 'AbortError');
-      const species = String(list[i] || '').trim();
-      if(!species) continue;
-      __elurikkusBulkStats.lastKey = species;
-      setProgress(i, species);
-      const out = { i: i + 1, species: species, updated: false, moved: false, restrictedPublicCounts: { restricted: 0, public: 0 }, newest: '', usedCoords: false };
-      try{
-        const before = points[species] || {};
-        const prevLat = Number(before.lat);
-        const prevLon = Number(before.lon);
-        const prevT = String(before.t || '');
-        const prevOcc7 = Number(before.occ7 || 0) || 0;
-        const json = await fetchElurikkusSpecies(species, { force: !!options.force });
-        if(!(json && String(json.mode || '') === 'elurikkus_species' && Array.isArray(json.items))){
-          throw new Error('invalid elurikkus_species payload');
-        }
-        const items = Array.isArray(json.items) ? json.items : [];
-        const stats = (typeof _computeLiveStats === 'function') ? _computeLiveStats(items) : { itemsWithin7d: 0 };
-        const newest = _dateOnlyFromAny(String(json.dataMaxAt || json.latestOccurrenceAt || '')) ||
-          items.map(function(it){ return _dateOnlyFromAny((it && (it.eventDate || it.observedAt || it.rawObserved || it.date || it.t)) || ''); }).filter(Boolean).sort().slice(-1)[0] || '';
-        const sorted = items.slice().sort(function(a,b){
-          return (_toDay((b && (b.eventDate || b.observedAt || b.rawObserved || b.date || b.t)) || '') || 0) -
-                 (_toDay((a && (a.eventDate || a.observedAt || a.rawObserved || a.date || a.t)) || '') || 0);
-        });
-        let bestCoord = null;
-        let restricted = 0;
-        let pub = 0;
-        for(const it of sorted){
-          const s = String((it && (it.coordsStatus || it.coords_status)) || '');
-          const ilat = Number(it && it.lat);
-          const ilon = Number(it && it.lon);
-          if(s === 'public' && Number.isFinite(ilat) && Number.isFinite(ilon)){
-            if(!bestCoord) bestCoord = it;
-            pub++;
-          } else {
-            restricted++;
-          }
-        }
-        const p = points[species] = (points[species] || {});
-        if(newest) p.t = newest;
-        p.occ7 = Number(stats.itemsWithin7d || 0) || 0;
-        p.src = 'Elurikkus';
-        p.lastFetched = new Date().toISOString();
-        let coordsChanged = false;
-        if(bestCoord){
-          const nlat = Number(bestCoord.lat);
-          const nlon = Number(bestCoord.lon);
-          p.lat = nlat; p.lon = nlon;
-          p.coords_status = 'public';
-          p.coords_source = 'live_elurikkus';
-          out.usedCoords = true;
-          coordsChanged = !(Number.isFinite(prevLat) && Number.isFinite(prevLon)) || Math.abs(prevLat - nlat) > 1e-9 || Math.abs(prevLon - nlon) > 1e-9;
-        } else {
-          p.coords_source = 'snapshot_fallback';
-        }
-        const tChanged = String(p.t || '') !== prevT;
-        const occChanged = (Number(p.occ7 || 0) || 0) !== prevOcc7;
-        out.updated = !!(tChanged || occChanged || coordsChanged);
-        out.moved = !!coordsChanged;
-        out.newest = String(p.t || newest || '');
-        out.restrictedPublicCounts = { restricted: restricted, public: pub };
-        if(out.updated) __elurikkusBulkStats.updated++;
-        if(out.moved) __elurikkusBulkStats.moved++;
-        try{ updateMarker(species); }catch(_){}
-        pushDebugEvent('ELU_BULK_ITEM', 'Elurikkus bulk item', out);
-      }catch(e){
-        __elurikkusBulkStats.errors++;
-        const msg = String((e && e.message) ? e.message : e);
-        const err = { species: species, error: msg, i: i + 1 };
-        window.__lastElurikkusBulkErrors.unshift(err);
-        if(window.__lastElurikkusBulkErrors.length > 20) window.__lastElurikkusBulkErrors.length = 20;
-        if(errEl) errEl.textContent = 'Last error: ' + species + ': ' + msg;
-        out.error = msg;
-        pushDebugEvent('ELU_BULK_ITEM', 'Elurikkus bulk item error', out, 'warn');
-      }
-      pushOutcome(out);
-      __elurikkusBulkStats.done = i + 1;
-      setProgress(i + 1, species);
-      if(((i + 1) % 15) === 0) render();
+  let updated = 0, moved = 0, errors = 0;
+  const total = list.length;
+  const progEl = document.getElementById('indexProgress') || document.getElementById('fetchProgress');
+  const eluProg = document.getElementById('eluProgress');
+  const signal = __eluBulkAbort.signal;
+  const t0 = Date.now();
+  __elurikkusBulkStats = { done: 0, total: total, updated: 0, moved: 0, errors: 0, lastKey: '' };
+  pushDebugEvent('ELU_BULK_START', 'Elurikkus bulk refresh start', { total: total, force: true }, 'warn');
+  for(let i = 0; i < total; i++){
+    if(signal.aborted) break;
+    const name = String(list[i] || '').trim();
+    if(!name) continue;
+    __elurikkusBulkStats.lastKey = name;
+    const line = 'Elurikkus refresh: ' + (i + 1) + '/' + total + ' | updated:' + updated + ' moved:' + moved + ' errors:' + errors + ' | ' + name;
+    if(progEl) progEl.textContent = line;
+    if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = line; }
+    try{
+      const res = await fetchElurikkusSpecies(name, { force: true, apply: true, signal: signal });
+      if(res && res.updated) updated++;
+      if(res && res.moved) moved++;
+      window.__lastElurikkusBulkOutcomes.unshift(Object.assign({ species: name, i: i + 1 }, res || {}));
+      if(window.__lastElurikkusBulkOutcomes.length > 20) window.__lastElurikkusBulkOutcomes.length = 20;
+      pushDebugEvent('ELU_BULK_ITEM', 'Elurikkus bulk item', { i: i + 1, species: name, updated: !!(res && res.updated), moved: !!(res && res.moved), newest: res && res.newest ? res.newest : '' });
+    }catch(e){
+      errors++;
+      const errMsg = String((e && e.message) ? e.message : e);
+      window.__lastElurikkusBulkErrors.unshift({ species: name, error: errMsg, i: i + 1 });
+      if(window.__lastElurikkusBulkErrors.length > 20) window.__lastElurikkusBulkErrors.length = 20;
+      pushDebugEvent('ELU_BULK_ITEM_FAIL', 'Elurikkus item failed', { species: name, error: errMsg }, 'warn');
     }
-    save();
-    refreshAllMarkers();
-    render();
-    window.__lastElurikkusBulkSummary = {
-      at: new Date().toISOString(),
-      total: total,
-      done: __elurikkusBulkStats.done,
-      updated: __elurikkusBulkStats.updated,
-      moved: __elurikkusBulkStats.moved,
-      errors: __elurikkusBulkStats.errors,
-      force: !!options.force,
-      durationMs: Date.now() - startedAt,
-    };
-    pushDebugEvent('ELU_BULK_DONE', 'Elurikkus bulk refresh done', window.__lastElurikkusBulkSummary, (__elurikkusBulkStats.errors ? 'warn' : 'info'));
-    _showSnapshotBanner('Elurikkus refresh done: updated=' + __elurikkusBulkStats.updated + ' moved=' + __elurikkusBulkStats.moved + ' errors=' + __elurikkusBulkStats.errors, (__elurikkusBulkStats.errors ? 'warn' : ''));
-  }catch(e){
-    const aborted = !!(signal && signal.aborted) || (e && e.name === 'AbortError');
-    if(aborted){
-      _showSnapshotBanner('Elurikkus refresh cancelled', 'warn');
-      pushDebugEvent('ELU_BULK_DONE', 'Elurikkus bulk refresh cancelled', {
-        done: __elurikkusBulkStats.done,
-        total: total,
-        updated: __elurikkusBulkStats.updated,
-        moved: __elurikkusBulkStats.moved,
-        errors: __elurikkusBulkStats.errors,
-        durationMs: Date.now() - startedAt,
-      }, 'warn');
-    } else {
-      __elurikkusBulkStats.errors++;
-      if(errEl) errEl.textContent = 'Last error: ' + String((e && e.message) ? e.message : e);
-    }
-  }finally{
-    __elurikkusBulkActive = false;
-    __elurikkusBulkAbort = null;
-    __elurikkusBulkAbortController = null;
-    if(stopBtn) stopBtn.style.display = 'none';
-    _updateDebugPanel();
-    _updateServerSnapshotStatus();
+    __elurikkusBulkStats.done = i + 1;
+    __elurikkusBulkStats.updated = updated;
+    __elurikkusBulkStats.moved = moved;
+    __elurikkusBulkStats.errors = errors;
+    await new Promise(function(r){ setTimeout(r, 700); });
   }
+  __eluBulkActive = false;
+  __elurikkusBulkActive = false;
+  if(stopBtn) stopBtn.style.display = 'none';
+  const aborted = !!signal.aborted;
+  const msg = aborted
+    ? ('Elurikkus refresh cancelled: updated:' + updated + ' moved:' + moved + ' errors:' + errors)
+    : ('Elurikkus refresh done: updated:' + updated + ' moved:' + moved + ' errors:' + errors);
+  __eluBulkSummary = { updated: updated, moved: moved, errors: errors, total: total, aborted: aborted, at: new Date().toISOString() };
+  window.__lastElurikkusBulkSummary = Object.assign({ durationMs: Date.now() - t0 }, __eluBulkSummary);
+  pushDebugEvent('ELU_BULK_DONE', 'Elurikkus bulk refresh finished', __eluBulkSummary, 'warn');
+  _showSnapshotBanner(msg, errors ? 'warn' : '');
+  if(progEl) progEl.textContent = msg;
+  if(eluProg) eluProg.textContent = msg;
+  try{ if(typeof render === 'function') render(); }catch(e){}
+  __eluBulkAbort = null;
+  __elurikkusBulkAbort = null;
+  __elurikkusBulkAbortController = null;
+  _updateDebugPanel();
 }
 
 function enqueueSpringYearFirst(keys){
@@ -2130,10 +2116,20 @@ async function _respectElurikkusMinDelay(){
   __elurikkusLastRequestStartedAtMs = Date.now();
 }
 async function fetchElurikkusSpecies(species, opts){
-  const options = Object.assign({ force: false }, opts || {});
+  const options = Object.assign({ force: false, apply: false, signal: null }, opts || {});
   const speciesName = String(species || '').trim();
   const cacheKey = _normalizeSpeciesKey(speciesName);
   if(!cacheKey) return null;
+  function _returnPayload(payload){
+    if(options.apply && payload && String(payload.mode || '') === 'elurikkus_species' && Array.isArray(payload.items)){
+      const applied = _applyElurikkusPayloadToPoints(speciesName, payload);
+      try{
+        row.lastApply = Object.assign({ at: new Date().toISOString() }, applied || {});
+      }catch(e){}
+      return applied;
+    }
+    return payload;
+  }
   const row = __elurikkusBySpecies[speciesName] = (__elurikkusBySpecies[speciesName] || {});
   const cached = __elurikkusResultCache.get(cacheKey);
   if(!options.force && cached && (Date.now() - Number(cached.ts || 0) < ELURIKKUS_CACHE_TTL_MS)){
@@ -2185,7 +2181,7 @@ async function fetchElurikkusSpecies(species, opts){
       }
     }
     render();
-    return cachedData;
+    return _returnPayload(cachedData);
     }
   }
   if(__elurikkusInFlightBySpecies.has(cacheKey)){
@@ -2248,7 +2244,7 @@ async function fetchElurikkusSpecies(species, opts){
         liveStatsBySpecies[cacheKey] = stats;
         _persistLiveCaches();
         __elurikkusResultCache.set(cacheKey, { ts: Date.now(), data: json });
-        return json;
+        return _returnPayload(json);
       }
       const base = _resolveElurikkusSpeciesApi();
       const reqUrl = new URL(base);
@@ -2259,7 +2255,7 @@ async function fetchElurikkusSpecies(species, opts){
       __lastElurikkusUrl = url;
       traceId = _traceStart({ method: 'GET', url: url });
       const t0 = performance.now();
-      const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+      const res = await fetch(url, { method: 'GET', cache: 'no-store', signal: options.signal || undefined });
       const hdrMode = String(res.headers.get('x-estbirding-mode') || '').trim();
       __lastElurikkusHeaderMode = hdrMode;
       const text = await res.text();
@@ -2320,7 +2316,7 @@ async function fetchElurikkusSpecies(species, opts){
       _applyLiveOverrideForSpecies(speciesName);
       console.log('[fix] fetchElurikkusSpecies: applied live override for', speciesName, '(was enabled:', _wasLiveEnabled, ')');
       _rebuildMarkers({ reason: 'live_fetch_applied', speciesKey: cacheKey });
-      return json;
+      return _returnPayload(json);
     }catch(e){
       const errName = String((e && e.name) ? e.name : 'Error');
       const errMsg = String((e && e.message) ? e.message : e || 'Elurikkus fetch failed');
@@ -2360,7 +2356,7 @@ async function fetchElurikkusSpecies(species, opts){
         if(traceId){
           _traceEnd(traceId, { status: 200, ok: true, bytesRead: Number(json.upstreamBytes || 0), details: { fallback: 'client_html' } });
         }
-        return json;
+        return _returnPayload(json);
       }catch(fallbackErr){
         const msg = errName + ': ' + errMsg;
         if(traceId){
@@ -2381,7 +2377,7 @@ async function fetchElurikkusSpecies(species, opts){
           errorMessage: errMsg,
           status: 'unknown (fetch rejected before HTTP response)'
         });
-        return null;
+        return _returnPayload(null);
       }
     }finally{
       _releaseElurikkusLimiter();
@@ -4104,7 +4100,7 @@ async function triggerRefresh(opts){
 
 // Wire buttons
 function _wireSnapshotButtons(){
-  const btnElu = document.getElementById('btnRefreshElurikkus');
+  const btnElu = document.getElementById('btnRefreshData') || document.getElementById('btnRefreshElurikkus');
   const btnForceRefresh = document.getElementById('btnForceServerRefresh');
   const btnReload = document.getElementById('btnReloadSnapshot');
   const btnResume = document.getElementById('btnResumeFetch');
@@ -4128,7 +4124,7 @@ function _wireSnapshotButtons(){
       btnElu.__running = true;
       btnElu.disabled = true;
       try{
-        await refreshAllFromElurikkus({ force: true });
+        await refreshAllFromElurikkus();
       }finally{
         btnElu.__running = false;
         btnElu.disabled = false;
@@ -4195,11 +4191,13 @@ function _wireSnapshotButtons(){
   }
   if(btnStop && !btnStop.__wired){
     btnStop.addEventListener('click', function(){
-      if(__elurikkusBulkActive && (__elurikkusBulkAbortController || __elurikkusBulkAbort)){
+      if((__eluBulkActive && __eluBulkAbort) || (__elurikkusBulkActive && (__elurikkusBulkAbortController || __elurikkusBulkAbort))){
         try{
+          if(__eluBulkAbort) __eluBulkAbort.abort('user');
           if(__elurikkusBulkAbortController) __elurikkusBulkAbortController.abort('user');
-          else __elurikkusBulkAbort.abort('user');
+          else if(__elurikkusBulkAbort) __elurikkusBulkAbort.abort('user');
         }catch(e){}
+        __eluBulkActive = false;
         __elurikkusBulkActive = false;
         if(btnStop) btnStop.style.display = 'none';
         const eluProg = document.getElementById('eluProgress');

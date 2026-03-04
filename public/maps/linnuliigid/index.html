@@ -163,12 +163,52 @@
     <input type="checkbox" id="toggle7days" />
     <span>7 days only</span>
   </label>
+  <button id="btnToggle7p" class="btn secondary" title="Toggle 7-day filter">7p: OFF</button>
 </div>
+<div class="top-actions" style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px;align-items:center">
+  <button id="btnExportState" class="btn secondary">Export</button>
+  <button id="btnImportState" class="btn secondary">Import</button>
+  <button id="btnResetState" class="btn secondary">Reset</button>
+  <button id="btnSpringTxt" class="btn secondary">Spring .txt</button>
+  <button id="btnSpringExport" class="btn secondary">Spring export</button>
+  <input id="importStateInput" type="file" accept="application/json,.json" style="display:none" />
+</div>
+<div id="snapshotBanner" class="snapshot-banner" style="display:none"></div>
 <div class="fetch-controls">
-  <button id="btnFetchAllCoords" class="btn" title="Fetch coordinates sequentially from Elurikkus">Fetch ALL coords</button>
+  <button id="btnRefreshData" class="btn" title="Trigger server-side data refresh">Refresh data</button>
+  <button id="btnForceServerRefresh" class="btn secondary" title="Force server rebuild from upstream">Force server refresh</button>
+  <button id="btnReloadSnapshot" class="btn secondary" title="Reload latest snapshot from server">Reload snapshot</button>
+  <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index">Resume</button>
+  <button id="btnSkipStuck" class="btn secondary" title="Skip current stuck item by resuming from next index">Skip stuck item</button>
+  <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
 <div id="fetchProgress" class="fetch-progress"></div>
+<div id="indexProgress" class="fetch-progress"></div>
+<div id="serverRefreshStatus" class="fetch-progress"></div>
+<div id="fetchProgressBar" class="fetch-progress-bar" style="display:none"><div id="fetchProgressBarInner" class="fetch-progress-bar-inner" style="width:0%"></div></div>
 <div id="fetchError" class="fetch-error"></div>
+<details class="debug-panel" id="debugPanel">
+  <summary>Debug (lite)</summary>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px">
+    <button id="btnCopyDebugJson" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy debug (lite)</button>
+    <button id="btnClearDebugEvents" class="btn secondary" style="font-size:11px;padding:2px 8px">Reset debug</button>
+  </div>
+  <div id="debugContent">Loading...</div>
+</details>
+<details class="debug-panel" id="debugProPanel">
+  <summary>Debug (pro)</summary>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px">
+    <button id="btnCopyDebugProJson" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy debug (pro)</button>
+    <button id="btnExportDebugProJson" class="btn secondary" style="font-size:11px;padding:2px 8px">Export debug JSON</button>
+    <button id="btnClearTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Clear trace</button>
+    <button id="btnCopySelectedTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy selected trace JSON</button>
+    <button id="btnCopyIndexTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy index trace</button>
+    <button id="btnClearIndexTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Clear index trace</button>
+    <button id="btnRerunVerification" class="btn secondary" style="font-size:11px;padding:2px 8px">Re-run verification</button>
+    <label style="display:flex;align-items:center;gap:4px;font-size:11px"><input id="toggleSlowMode" type="checkbox" />Slow mode</label>
+  </div>
+  <div id="debugProContent" class="debug-pro-grid">Loading...</div>
+</details>
     <input id="filterBox" type="text" placeholder="Filter..." />
     <div id="list"></div>
     </div>
@@ -243,7 +283,7 @@ const DATA = SPECIES.map(name => ({ est: _normText(name), url: 'https://elurikku
 const LS_AVATARS='bm_rari_avatars', LS_POINTS='bm_rari_points', LS_PROXY='bm_rari_proxy', LS_NAMES='bm_rari_names', LS_SPRING='bm_rari_spring_dates';
 const LS_RECENT_ONLY = 'bm_recent_only';
 const LS_SPRING_YEARFIRST = 'bm_rari_spring_yearfirst_v3';
-const CLASSIC_MODE = true;
+const CLASSIC_MODE = false;
 const LS_LIVE_ELURIKKUS = 'bm_live_elurikkus_v1';
 const LS_LIVE_ELURIKKUS_USE = 'bm_live_elurikkus_use_v1';
 const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
@@ -907,10 +947,21 @@ async function fetchSpringYearFirstOne(key){
 // Toggle state: 7 days only
 window.__recentOnly = (localStorage.getItem(LS_RECENT_ONLY) === '1');
 function is7daysOnly(){ return !!window.__recentOnly; }
-function passes7d(p){
-  const occ7 = (p && (p.occ7 === 0 || p.occ7)) ? Number(p.occ7) : NaN;
-  if (Number.isFinite(occ7)) return occ7 > 0;
-  return !!(p && p.t && isRecent(p.t));
+function toDayLocal(v){
+  const s = String(v || '').trim();
+  if(!s) return null;
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(!m) return null;
+  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+  if(!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null;
+  return new Date(y, mo - 1, d, 12, 0, 0, 0).getTime();
+}
+function isWithin7d(p){
+  if(!p || !p.t) return false;
+  const ms = toDayLocal(p.t);
+  if(!ms) return false;
+  const delta = Date.now() - ms;
+  return delta >= 0 && delta <= 7 * 24 * 60 * 60 * 1000;
 }
 
 function isRecent(isoDate){
@@ -3040,6 +3091,8 @@ function _updateDebugPanel(){
   }).length;
   const progressDone = Number(__snapshotProgressDone || 0);
   const progressTotal = Number(__snapshotProgressTotal || 0);
+  const cutoffDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const cutoffStr = cutoffDate.getFullYear() + '-' + String(cutoffDate.getMonth() + 1).padStart(2, '0') + '-' + String(cutoffDate.getDate()).padStart(2, '0');
   const statusLabel = (__loaderStage === 'rate_limited')
     ? 'rate_limited'
     : (__snapshotMeta.status || (__isRefreshRunning ? 'running' : 'stopped'));
@@ -3076,6 +3129,7 @@ function _updateDebugPanel(){
     'watchdogEvents: <b>' + (__watchdogEvents.length ? JSON.stringify(__watchdogEvents.slice(-5)) : '-') + '</b>',
     'stopSignalAborted: <b>' + (!!(__stopController && __stopController.signal && __stopController.signal.aborted)) + '</b>',
     '7-day filter: <b>' + (is7daysOnly() ? 'ON' : 'OFF') + '</b>',
+    '7-day cutoff: <b>' + cutoffStr + '</b>',
     (VERBOSE_DEBUG ? ('verboseEvents: <b>' + __debugEvents.length + '</b>') : ''),
   ].join('<br>');
   _updateDebugProPanel();
@@ -3689,11 +3743,15 @@ function _wireSnapshotButtons(){
   }
   if(toggle7d && !toggle7d.__wired){
     toggle7d.checked = !!window.__recentOnly;
+    const btnToggle7p = document.getElementById('btnToggle7p');
+    if(btnToggle7p) btnToggle7p.textContent = '7p: ' + (window.__recentOnly ? 'ON' : 'OFF');
     toggle7d.addEventListener('change', function(){
       window.__recentOnly = this.checked;
       try{ localStorage.setItem(LS_RECENT_ONLY, this.checked ? '1' : '0'); }catch(e){}
+      if(btnToggle7p) btnToggle7p.textContent = '7p: ' + (window.__recentOnly ? 'ON' : 'OFF');
       refreshAllMarkers();
       render();
+      _updateDebugPanel();
       if(this.checked) _checkEmpty7dBanner();
       else _hideSnapshotBanner();
     });
@@ -3779,6 +3837,140 @@ function _wireSnapshotButtons(){
   if(btnClearDebug && !btnClearDebug.__wired){
     btnClearDebug.addEventListener('click', _clearDebugEvents);
     btnClearDebug.__wired = true;
+  }
+}
+
+function _wireSidebarSettingsRow(){
+  const btnExport = document.getElementById('btnExportState');
+  const btnImport = document.getElementById('btnImportState');
+  const btnReset = document.getElementById('btnResetState');
+  const btnSpringTxt = document.getElementById('btnSpringTxt');
+  const btnSpringExport = document.getElementById('btnSpringExport');
+  const btnToggle7p = document.getElementById('btnToggle7p');
+  const importInput = document.getElementById('importStateInput');
+
+  function refresh7pBtn(){
+    if(btnToggle7p) btnToggle7p.textContent = '7p: ' + (window.__recentOnly ? 'ON' : 'OFF');
+  }
+  refresh7pBtn();
+
+  if(btnToggle7p && !btnToggle7p.__wired){
+    btnToggle7p.addEventListener('click', function(){
+      window.__recentOnly = !window.__recentOnly;
+      try{ localStorage.setItem(LS_RECENT_ONLY, window.__recentOnly ? '1' : '0'); }catch(e){}
+      const cb = document.getElementById('toggle7days');
+      if(cb) cb.checked = !!window.__recentOnly;
+      refresh7pBtn();
+      refreshAllMarkers();
+      render();
+      _updateDebugPanel();
+    });
+    btnToggle7p.__wired = true;
+  }
+
+  if(btnExport && !btnExport.__wired){
+    btnExport.addEventListener('click', function(){
+      const payload = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        avatars: avatars || {},
+        points: points || {},
+        names: nameCache || {},
+        springDates: springDates || {},
+        springYearFirst: springYearFirst || {},
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = 'linnuliigid-state-' + new Date().toISOString().replace(/[:.]/g,'-') + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(href); }, 2000);
+    });
+    btnExport.__wired = true;
+  }
+
+  if(btnImport && importInput && !btnImport.__wired){
+    btnImport.addEventListener('click', function(){ importInput.click(); });
+    importInput.addEventListener('change', function(ev){
+      const f = ev && ev.target && ev.target.files ? ev.target.files[0] : null;
+      if(!f) return;
+      const r = new FileReader();
+      r.onload = function(){
+        try{
+          const json = JSON.parse(String(r.result || '{}'));
+          avatars = json.avatars && typeof json.avatars === 'object' ? json.avatars : avatars;
+          points = json.points && typeof json.points === 'object' ? json.points : points;
+          nameCache = json.names && typeof json.names === 'object' ? json.names : nameCache;
+          springDates = json.springDates && typeof json.springDates === 'object' ? json.springDates : springDates;
+          springYearFirst = json.springYearFirst && typeof json.springYearFirst === 'object' ? json.springYearFirst : springYearFirst;
+          save();
+          refreshAllMarkers();
+          render();
+          _updateDebugPanel();
+        }catch(err){
+          notifySilent('Import failed: ' + String(err && err.message ? err.message : err));
+        }finally{
+          importInput.value = '';
+        }
+      };
+      r.readAsText(f);
+    });
+    btnImport.__wired = true;
+  }
+
+  if(btnReset && !btnReset.__wired){
+    btnReset.addEventListener('click', function(){
+      if(!confirm('Reset local map state?')) return;
+      avatars = {};
+      points = {};
+      nameCache = {};
+      springDates = {};
+      springYearFirst = {};
+      localStorage.removeItem(LS_AVATARS);
+      localStorage.removeItem(LS_POINTS);
+      localStorage.removeItem(LS_NAMES);
+      localStorage.removeItem(LS_SPRING);
+      localStorage.removeItem(LS_SPRING_YEARFIRST);
+      refreshAllMarkers();
+      render();
+      _updateDebugPanel();
+    });
+    btnReset.__wired = true;
+  }
+
+  if(btnSpringTxt && !btnSpringTxt.__wired){
+    btnSpringTxt.addEventListener('click', function(){
+      const rows = Object.keys(springDates || {}).sort().map(function(k){ return k + ' - ' + springDates[k]; });
+      const blob = new Blob([rows.join('\n')], { type: 'text/plain;charset=utf-8' });
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = 'spring-dates.txt';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(href); }, 2000);
+    });
+    btnSpringTxt.__wired = true;
+  }
+
+  if(btnSpringExport && !btnSpringExport.__wired){
+    btnSpringExport.addEventListener('click', function(){
+      const payload = { exportedAt: new Date().toISOString(), springDates: springDates || {}, springYearFirst: springYearFirst || {} };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = 'spring-dates.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(href); }, 2000);
+    });
+    btnSpringExport.__wired = true;
   }
 }
 
@@ -3963,9 +4155,8 @@ function updateMarker(key) {
 
   const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
   const occ7 = (p.occ7 === 0 || p.occ7) ? Number(p.occ7) : NaN;
-  const passes7dNow = Number.isFinite(occ7) ? (occ7 > 0) : isRecent(p.t);
-  const passesFilter = is7daysOnly() ? passes7dNow : true;
-  const isVisible = (p.visible !== false) && passesFilter && hasCoords;
+  const passesRecent = (!window.__recentOnly) || isWithin7d(p);
+  const isVisible = (p.visible !== false) && passesRecent && hasCoords;
   if (!isVisible) {
     if(prevMarker){ map.removeLayer(prevMarker); markers.delete(key); }
     return;
@@ -4170,47 +4361,34 @@ function render() {
 
 // Restore existing markers from localStorage and render list
 refreshAllMarkers();
-function _wireClassicButtons(){
-  const btn = document.getElementById('btnFetchAllCoords');
-  const statusEl = document.getElementById('fetchProgress');
-  if(!btn || btn.__wiredClassic) return;
-  btn.__wiredClassic = true;
-  btn.addEventListener('click', async function(){
-    if(btn.__running) return;
-    btn.__running = true;
-    btn.disabled = true;
-    const speciesList = DATA.map(function(d){ return d.est; });
-    let done = 0;
-    let ok = 0;
-    try{
-      for(const species of speciesList){
-        done++;
-        if(statusEl) statusEl.textContent = 'Fetch ALL coords: ' + done + '/' + speciesList.length + ' (' + species + ')';
-        const liveEntry = _readLiveEntry(species);
-        const fetchedTs = Date.parse(String((liveEntry && liveEntry.fetchedAt) || '')) || 0;
-        const cooldownMs = 10 * 60 * 1000;
-        if(fetchedTs && (Date.now() - fetchedTs < cooldownMs)){
-          continue;
-        }
-        const json = await fetchElurikkusSpecies(species);
-        const hasItems = !!(json && Array.isArray(json.items) && json.items.length);
-        if(hasItems){
-          _applyLiveOverrideForSpecies(species);
-          try{ updateMarker(species); }catch(e){}
-          ok++;
-        }
-        save();
-        render();
-        await _delay(850);
-      }
-    }finally{
-      btn.__running = false;
-      btn.disabled = false;
-      if(statusEl) statusEl.textContent = 'Fetch ALL coords done: ' + ok + '/' + speciesList.length;
+_wireSnapshotButtons();
+_wireSidebarSettingsRow();
+function _startSnapshotBoot(){
+  if(__bootLoadStarted) return;
+  const cfg = resolveSupabaseConfig();
+  if(cfg.supabaseUrl){
+    __supabaseConfigReady = true;
+    __bootLoadStarted = true;
+    fetchServerMeta();
+    _startServerMetaPolling();
+    loadSnapshot();
+    return;
+  }
+  __supabaseConfigReady = false;
+  _requestSupabaseConfigFromParent();
+  setTimeout(function(){
+    if(__bootLoadStarted) return;
+    const lateCfg = resolveSupabaseConfig();
+    if(lateCfg.supabaseUrl){
+      __supabaseConfigReady = true;
+      __bootLoadStarted = true;
+      fetchServerMeta();
+      _startServerMetaPolling();
+      loadSnapshot();
     }
-  });
+  }, 1500);
 }
-_wireClassicButtons();
+_startSnapshotBoot();
 
 // Auto-detect avatar files for active species
 setTimeout(autoDetectAvatarsForActive, 3000);
@@ -4270,10 +4448,14 @@ window.addEventListener('message', function(ev){
 try{
   if(window.parent && window.parent !== window){
     window.parent.postMessage({ type: 'INSETS_REQUEST' }, '*');
+    window.parent.postMessage({ type: 'SUPABASE_CONFIG_REQUEST' }, '*');
   }
 }catch(e){}
 document.addEventListener('DOMContentLoaded', function(){
-  _wireClassicButtons();
+  _wireSnapshotButtons();
+  _wireSidebarSettingsRow();
+  _requestSupabaseConfigFromParent();
+  _startSnapshotBoot();
 });
 </script>
 

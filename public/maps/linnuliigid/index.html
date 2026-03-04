@@ -612,6 +612,32 @@ function resolveFallbackLatLon(input){
   }
   return null;
 }
+function _extractPlaceHintFromText(raw){
+  const txt = String(raw || '').replace(/\s+/g, ' ').trim();
+  if(!txt) return '';
+  const muni = txt.match(/([A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*(?:\s+[A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*)*\s+(?:vald|linn))/i);
+  if(muni && muni[1]) return String(muni[1]).trim();
+  const county = txt.match(/([A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*(?:\s+[A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*)*\s+maakond)/i);
+  if(county && county[1]) return String(county[1]).trim();
+  return txt;
+}
+function resolveCentroidFromPlace(placeText){
+  const place = _extractPlaceHintFromText(placeText || '');
+  if(!place) return null;
+  const norm = _normalizePlaceKey(place);
+  if(!norm) return null;
+  const dyn = _buildDynamicPlaceCentroids();
+  if(dyn.municipality[norm]){
+    return { lat: dyn.municipality[norm].lat, lon: dyn.municipality[norm].lon, source: 'municipality_centroid', placeText: place };
+  }
+  if(dyn.county[norm]){
+    return { lat: dyn.county[norm].lat, lon: dyn.county[norm].lon, source: 'county_centroid', placeText: place };
+  }
+  if(_countyCentroids[norm]){
+    return { lat: _countyCentroids[norm].lat, lon: _countyCentroids[norm].lon, source: /maakond$/i.test(place) ? 'county_centroid' : 'municipality_centroid', placeText: place };
+  }
+  return null;
+}
 function _persistLiveCaches(){
   try{
     const rows = Object.entries(liveElurikkusBySpecies)
@@ -640,7 +666,7 @@ function _livePointFromItems(speciesName, items){
     const ts = _parseObservedTs(it && it.observedAt ? it.observedAt : '');
     return Number.isFinite(ts) && ts >= cutoffTs;
   }).length;
-  let lat = null, lon = null, coordsStatus = 'missing', coordsSource = 'none', municipality = null, locality = null, county = null;
+  let lat = null, lon = null, coordsStatus = 'missing', coordsSource = 'none', municipality = null, locality = null, county = null, placeText = '';
   let chosenPlaceRow = null;
   for(const it of sorted){
     const ilat = Number(it && it.lat);
@@ -650,9 +676,10 @@ function _livePointFromItems(speciesName, items){
       municipality = it && it.municipality ? String(it.municipality).trim() : null;
       locality = it && it.locality ? String(it.locality).trim() : null;
       county = it && it.county ? String(it.county).trim() : null;
+      placeText = String((it && (it.placeText || it.locality || it.municipality || it.county)) || '').trim();
       break;
     }
-    if(!chosenPlaceRow && it && (it.municipality || it.locality || it.county)) chosenPlaceRow = it;
+    if(!chosenPlaceRow && it && (it.placeText || it.municipality || it.locality || it.county)) chosenPlaceRow = it;
   }
   const snap = __snapshotPointBySpecies[key] || {};
   if(!(Number.isFinite(lat) && Number.isFinite(lon))){
@@ -660,7 +687,15 @@ function _livePointFromItems(speciesName, items){
       municipality = chosenPlaceRow.municipality ? String(chosenPlaceRow.municipality).trim() : null;
       locality = chosenPlaceRow.locality ? String(chosenPlaceRow.locality).trim() : null;
       county = chosenPlaceRow.county ? String(chosenPlaceRow.county).trim() : null;
+      placeText = String((chosenPlaceRow.placeText || chosenPlaceRow.locality || chosenPlaceRow.municipality || chosenPlaceRow.county) || '').trim();
     }
+    const byPlace = resolveCentroidFromPlace(placeText || municipality || locality || county || '');
+    if(byPlace && Number.isFinite(byPlace.lat) && Number.isFinite(byPlace.lon)){
+      lat = Number(byPlace.lat);
+      lon = Number(byPlace.lon);
+      coordsStatus = 'restricted';
+      coordsSource = String(byPlace.source || 'municipality_centroid');
+    } else {
     const resolved = resolveFallbackLatLon({
       municipality: municipality,
       locality: locality,
@@ -674,6 +709,7 @@ function _livePointFromItems(speciesName, items){
       coordsStatus = 'restricted';
       coordsSource = resolved.source;
     }
+    }
   }
   const out = Object.assign({}, snap);
   if(newest && newest.observedAt) out.t = String(newest.observedAt);
@@ -685,8 +721,9 @@ function _livePointFromItems(speciesName, items){
   if(municipality) out.municipality = municipality;
   if(locality) out.locality = locality;
   if(county) out.county = county;
+  if(placeText) out.placeText = placeText;
   out.coords_note = (coordsStatus === 'restricted')
-    ? ('coords restricted \u2192 ' + (coordsSource === 'snapshot_fallback' ? 'snapshot fallback' : coordsSource))
+    ? ('coords restricted \u2192 ' + (coordsSource === 'snapshot_fallback' ? 'snapshot fallback' : coordsSource) + (placeText ? (' (' + placeText + ')') : ''))
     : '';
   const decision = {
     species: speciesName,
@@ -694,6 +731,7 @@ function _livePointFromItems(speciesName, items){
     municipality: municipality || '',
     county: county || '',
     locality: locality || '',
+    placeText: placeText || '',
     resolvedLatLon: (Number.isFinite(lat) && Number.isFinite(lon)) ? { lat: Number(lat), lon: Number(lon) } : null,
     coordsSource: coordsSource,
   };
@@ -706,7 +744,19 @@ function _applyLiveOverrideForSpecies(speciesName){
   const key = _speciesKey(speciesName);
   const liveEntry = _readLiveEntry(speciesName);
   if(!liveEntry || !Array.isArray(liveEntry.items) || !liveEntry.items.length) return;
+  const prev = points[speciesName] || {};
+  const oldLat = Number(prev.lat);
+  const oldLon = Number(prev.lon);
   points[speciesName] = _livePointFromItems(speciesName, liveEntry.items);
+  const newLat = Number(points[speciesName].lat);
+  const newLon = Number(points[speciesName].lon);
+  points[speciesName].lastCoordsDecision = Object.assign({}, points[speciesName].lastCoordsDecision || {}, {
+    oldLat: Number.isFinite(oldLat) ? oldLat : null,
+    oldLon: Number.isFinite(oldLon) ? oldLon : null,
+    newLat: Number.isFinite(newLat) ? newLat : null,
+    newLon: Number.isFinite(newLon) ? newLon : null,
+    atISO: new Date().toISOString(),
+  });
   points[speciesName].lastFetched = String(liveEntry.fetchedAt || new Date().toISOString());
   points[speciesName].coordsSource = points[speciesName].coords_source || '';
   points[speciesName].coordsNote = points[speciesName].coords_note || '';
@@ -852,14 +902,18 @@ function extractElurikkusRecordRows(html){
     const txt0 = (tds[0].textContent || '').trim();
     const m = txt0.match(/(\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?)/);
     if(!m) continue;
-    const placeText = (tds[tds.length - 1] && tds[tds.length - 1].textContent) ? String(tds[tds.length - 1].textContent).trim() : '';
-    const muni = placeText ? placeText.split(',')[0].trim() : '';
+    const rowText = String(tr.textContent || '').replace(/\s+/g, ' ').trim();
+    const placeCell = (tds[tds.length - 1] && tds[tds.length - 1].textContent) ? String(tds[tds.length - 1].textContent).trim() : '';
+    const placeText = _extractPlaceHintFromText(placeCell || rowText || '');
+    const muniMatch = String(placeText || rowText || '').match(/([A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*(?:\s+[A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*)*\s+(?:vald|linn))/i);
+    const countyMatch = String(placeText || rowText || '').match(/([A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*(?:\s+[A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*)*\s+maakond)/i);
+    const muni = muniMatch ? String(muniMatch[1]).trim() : (placeText ? placeText.split(',')[0].trim() : '');
     out.push({
       observedAt: m[1],
       placeText: placeText || '',
       municipality: muni || '',
-      locality: placeText || '',
-      county: /maakond/i.test(placeText || '') ? placeText : '',
+      locality: placeText || rowText || '',
+      county: countyMatch ? String(countyMatch[1]).trim() : (/maakond/i.test(placeText || '') ? placeText : ''),
       coordsStatus: 'restricted'
     });
   }
@@ -4029,8 +4083,15 @@ function editSpringDate(key){
 function updateMarker(key) {
   const p = points[key];
   const prevMarker = markers.has(key) ? markers.get(key) : null;
+  const clusterGroup = window.__markerClusterGroup || window.markerClusterGroup || null;
   if (!p) {
-    if(prevMarker){ map.removeLayer(prevMarker); markers.delete(key); }
+    if(prevMarker){
+      try{
+        if(clusterGroup && typeof clusterGroup.removeLayer === 'function') clusterGroup.removeLayer(prevMarker);
+        else map.removeLayer(prevMarker);
+      }catch(e){}
+      markers.delete(key);
+    }
     return;
   }
 
@@ -4039,7 +4100,13 @@ function updateMarker(key) {
   const passesRecent = (!window.__recentOnly) || isWithin7d(p);
   const isVisible = (p.visible !== false) && passesRecent && hasCoords;
   if (!isVisible) {
-    if(prevMarker){ map.removeLayer(prevMarker); markers.delete(key); }
+    if(prevMarker){
+      try{
+        if(clusterGroup && typeof clusterGroup.removeLayer === 'function') clusterGroup.removeLayer(prevMarker);
+        else map.removeLayer(prevMarker);
+      }catch(e){}
+      markers.delete(key);
+    }
     return;
   }
 
@@ -4052,15 +4119,27 @@ function updateMarker(key) {
   const src = p.src ? '<br><small>allikas: '+p.src+'</small>' : '';
   const precision = (p.coords_status === 'restricted' && p.coords_source && p.coords_source !== 'none')
     ? ('<br><small>coordsSource: ' + p.coords_source + '</small><br><small>' + (p.coords_note || ('coords restricted \u2192 ' + ((p.coords_source === 'snapshot' || p.coords_source === 'snapshot_fallback') ? 'snapshot fallback' : p.coords_source))) + '</small>')
-    : '';
+    : (p.coords_source ? ('<br><small>coordsSource: ' + p.coords_source + '</small>' + (p.coords_note ? ('<br><small>' + p.coords_note + '</small>') : '')) : '');
   const lastMove = p.lastMarkerMove || null;
   const movedLine = lastMove
     ? ('<br><small>moved: ' + (lastMove.changed ? 'yes' : 'no') + ' (' + Number(lastMove.oldLat || 0).toFixed(4) + ',' + Number(lastMove.oldLon || 0).toFixed(4) + ' \u2192 ' + Number(lastMove.newLat || p.lat).toFixed(4) + ',' + Number(lastMove.newLon || p.lon).toFixed(4) + ')</small>')
     : '';
   const popupHtml = '<b>'+key+'</b>'+when+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+precision+movedLine;
   const old = prevMarker && prevMarker.getLatLng ? prevMarker.getLatLng() : null;
-  if(prevMarker){ try{ map.removeLayer(prevMarker); markers.delete(key); }catch(_e){} }
-  const m = L.marker([p.lat,p.lon], {icon}).addTo(map).bindPopup(popupHtml);
+  if(prevMarker){
+    try{
+      if(clusterGroup && typeof clusterGroup.removeLayer === 'function') clusterGroup.removeLayer(prevMarker);
+      else map.removeLayer(prevMarker);
+      markers.delete(key);
+    }catch(_e){}
+  }
+  const m = L.marker([p.lat,p.lon], {icon});
+  if(clusterGroup && typeof clusterGroup.addLayer === 'function'){
+    try{ clusterGroup.addLayer(m); }catch(e){ m.addTo(map); }
+  } else {
+    m.addTo(map);
+  }
+  m.bindPopup(popupHtml);
   p.lastMarkerMove = {
     oldLat: old ? Number(old.lat) : Number(p.lat),
     oldLon: old ? Number(old.lng) : Number(p.lon),

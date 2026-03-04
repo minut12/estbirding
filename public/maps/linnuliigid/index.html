@@ -932,6 +932,12 @@ function extractLatLon(html){
     const lat = Number(m[1]), lon = Number(m[2]);
     if(Number.isFinite(lat) && Number.isFinite(lon)) return [lat, lon];
   }
+  const latM = s.match(/Latitude\s*<\/[^>]*>\s*([5-6]\d\.\d+)/i);
+  const lonM = s.match(/Longitude\s*<\/[^>]*>\s*(2\d\.\d+)/i);
+  if(latM && lonM){
+    const lat = Number(latM[1]), lon = Number(lonM[1]);
+    if(Number.isFinite(lat) && Number.isFinite(lon)) return [lat, lon];
+  }
   m = s.match(/([5-6]\d\.\d+)\s*[,;]\s*(2\d\.\d+)/);
   if(m){
     const lat = Number(m[1]), lon = Number(m[2]);
@@ -1025,45 +1031,73 @@ async function _fetchElurikkusSpeciesViaHtml(speciesName){
     buildId: "client_html"
   };
 }
-async function refreshSpeciesFromElurikkus(key){
+let __elurikkusBulkActive = false;
+let __elurikkusBulkAbort = null;
+let __elurikkusBulkStats = { done: 0, total: 0, updated: 0, moved: 0, errors: 0, lastKey: '' };
+window.__lastElurikkusBulkErrors = [];
+function _buildEluFetchCandidates(url){
+  const raw = String(url || '').trim();
+  const baseUrl = raw + (raw.includes('?') ? '&' : '?') + '_ts=' + Date.now();
+  const pb = String(proxyBase || '').trim();
+  const out = [];
+  function push(u){ if(u && !out.includes(u)) out.push(u); }
+  push(baseUrl);
+  if(pb) push(pb + encodeURIComponent(baseUrl));
+  push('https://api.allorigins.win/raw?url=' + encodeURIComponent(baseUrl));
+  push('https://cors.isomorphic-git.org/' + baseUrl);
+  return out;
+}
+async function _fetchHtmlWithFallback(url, signal){
+  const candidates = _buildEluFetchCandidates(url);
+  let lastErr = null;
+  for(const u of candidates){
+    try{
+      const r = await fetch(u, { cache: 'no-store', signal: signal });
+      if(!r.ok) throw new Error('HTTP ' + r.status + ' via ' + u);
+      const text = await r.text();
+      if(String(text || '').length > 400) return text;
+      throw new Error('Short response via ' + u);
+    }catch(e){
+      lastErr = e;
+      if(signal && signal.aborted) throw e;
+    }
+  }
+  throw (lastErr || new Error('All fetch attempts failed'));
+}
+function _findLatestRecordDetailLink(searchHtml){
+  const s = String(searchHtml || '');
+  if(!s) return null;
+  const m = s.match(/<tbody[^>]*>[\s\S]*?<tr[^>]*>[\s\S]*?<a[^>]+href=["']([^"']+)["']/i);
+  if(!m) return null;
+  return _absElurikkusUrl(m[1]);
+}
+async function refreshSpeciesFromElurikkus(key, signal){
   const species = String(key || '').trim();
   if(!species) return null;
-  const searchUrl = "https://elurikkus.ee/app/occurrences/search?text=" + encodeURIComponent(species) + "&_ts=" + Date.now();
-  const shtml = await tryFetch(searchUrl);
+  const searchUrlBase = "https://elurikkus.ee/app/occurrences/search?text=" + encodeURIComponent(species);
+  const shtml = await _fetchHtmlWithFallback(searchUrlBase, signal);
   const occ7Dates = extractAllEventDates(shtml);
-  const occ7 = Array.isArray(occ7Dates) ? countInLastNDaysFromDates(occ7Dates, 7) : null;
-
-  const detailUrl = findFirstDetailLink(shtml);
+  const occ7 = countInLastNDaysFromDates(occ7Dates, 7);
+  const detailUrl = _findLatestRecordDetailLink(shtml) || findFirstDetailLink(shtml) || null;
   let dhtml = '';
-  let coords = null;
-  let eventDate = extractEventDate(shtml);
-  if(detailUrl){
-    try{
-      dhtml = await tryFetch(detailUrl);
-      coords = extractLatLon(dhtml) || extractLatLon(shtml);
-      const dDate = extractEventDate(dhtml);
-      if(dDate) eventDate = dDate;
-    }catch(e){
-      coords = extractLatLon(shtml);
-    }
-  } else {
-    coords = extractLatLon(shtml);
-  }
-  const restricted = /Latitude[\s\S]{0,200}?Restricted|Longitude[\s\S]{0,200}?Restricted|\bRestricted\b/i.test(String(dhtml || ''));
+  if(detailUrl) dhtml = await _fetchHtmlWithFallback(detailUrl, signal);
+  const coords = extractLatLon(dhtml) || extractLatLon(shtml);
+  const restricted = /Latitude[\s\S]{0,200}?Restricted|Longitude[\s\S]{0,200}?Restricted|\bRestricted\b/i.test(String(dhtml || '')) && !coords;
 
   const p = (points[species] = points[species] || {});
+  const oldLat = Number(p.lat), oldLon = Number(p.lon);
+  p.searchUrl = searchUrlBase + '&_ts=' + Date.now();
+  if(detailUrl) p.latestUrl = detailUrl;
+  const dt = extractEventDate(dhtml) || extractEventDate(shtml);
+  if(dt) p.t = dt;
+  if(Number.isFinite(occ7)) p.occ7 = occ7;
   p.src = 'Elurikkus';
   p.lastFetched = new Date().toISOString();
-  if(Number.isFinite(occ7)) p.occ7 = occ7;
-  p.searchUrl = searchUrl;
-  if(detailUrl) p.latestUrl = detailUrl;
-  if(eventDate) p.t = eventDate;
-
-  if(!restricted && coords && coords.length === 2 && Number.isFinite(coords[0]) && Number.isFinite(coords[1])){
+  if(coords && coords.length === 2){
     p.lat = Number(coords[0]);
     p.lon = Number(coords[1]);
     p.coords_status = 'public';
-    p.coords_source = 'detail';
+    p.coords_source = detailUrl ? 'detail' : 'search';
     p.coords_note = '';
   } else {
     p.coords_status = restricted ? 'restricted' : 'missing';
@@ -1072,36 +1106,80 @@ async function refreshSpeciesFromElurikkus(key){
   }
   save();
   updateMarker(species);
-  return { key: species, occ7: p.occ7, t: p.t || '', latestUrl: p.latestUrl || '', searchUrl: p.searchUrl || '' };
+  const moved = Number.isFinite(oldLat) && Number.isFinite(oldLon) && Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lon))
+    ? (Math.abs(oldLat - Number(p.lat)) > 1e-9 || Math.abs(oldLon - Number(p.lon)) > 1e-9)
+    : false;
+  return { key: species, moved: moved };
 }
-async function refreshAllSpeciesFromElurikkus(){
+async function refreshAllFromElurikkus(){
+  if(__elurikkusBulkActive) return;
+  __elurikkusBulkActive = true;
+  __elurikkusBulkAbort = new AbortController();
+  const signal = __elurikkusBulkAbort.signal;
+  const stopBtn = document.getElementById('btnStopFetch');
+  if(stopBtn) stopBtn.style.display = 'inline-block';
+  const total = (window.SPECIES || []).length;
+  __elurikkusBulkStats = { done: 0, total: total, updated: 0, moved: 0, errors: 0, lastKey: '' };
+  const errors = [];
   const prog = document.getElementById('fetchProgress');
   const idx = document.getElementById('indexProgress');
   const errEl = document.getElementById('fetchError');
-  const total = SPECIES.length;
-  let done = 0;
-  let lastError = '';
-  for(const name of SPECIES){
-    done++;
-    if(prog) prog.textContent = 'Refreshing from Elurikkus... ' + done + '/' + total + ' (' + name + ')';
-    if(idx) idx.textContent = 'Index: ' + done + '/' + total;
+
+  for(let i = 0; i < total; i++){
+    if(signal.aborted) break;
+    const name = window.SPECIES[i];
+    __elurikkusBulkStats.lastKey = name;
+    _updateProgressUI(i, total, 'running');
+    if(prog) prog.textContent = 'Elurikkus refresh ' + (i + 1) + '/' + total + ' | ' + name;
+    if(idx) idx.textContent = 'Index: ' + (i + 1) + '/' + total;
+    let perCtrl = null;
+    let tId = null;
     try{
-      await refreshSpeciesFromElurikkus(name);
+      perCtrl = new AbortController();
+      tId = setTimeout(function(){ try{ perCtrl.abort('timeout'); }catch(e){} }, 15000);
+      const combo = new AbortController();
+      const onBulkAbort = function(){ try{ combo.abort('bulk'); }catch(e){} };
+      const onPerAbort = function(){ try{ combo.abort('timeout'); }catch(e){} };
+      signal.addEventListener('abort', onBulkAbort, { once: true });
+      perCtrl.signal.addEventListener('abort', onPerAbort, { once: true });
+
+      const res = await refreshSpeciesFromElurikkus(name, combo.signal);
+      __elurikkusBulkStats.updated++;
+      if(res && res.moved) __elurikkusBulkStats.moved++;
+      signal.removeEventListener('abort', onBulkAbort);
+      perCtrl.signal.removeEventListener('abort', onPerAbort);
+      clearTimeout(tId);
+      await _delay(700);
     }catch(e){
-      lastError = String((e && e.message) ? e.message : e);
-      if(errEl) errEl.textContent = 'Last error: ' + lastError;
+      clearTimeout(tId);
+      if(signal.aborted) break;
+      __elurikkusBulkStats.errors++;
+      const msg = String((e && e.message) ? e.message : e);
+      errors.push({ name: name, error: msg });
+      if(errEl) errEl.textContent = 'Last error: ' + msg;
+      await _delay(500);
     }
-    await _delay(350);
+    __elurikkusBulkStats.done = i + 1;
+    if(((i + 1) % 10) === 0) render();
   }
+
+  __elurikkusBulkActive = false;
+  if(stopBtn) stopBtn.style.display = 'none';
+  window.__lastElurikkusBulkErrors = errors.slice(0, 50);
   refreshAllMarkers();
   render();
-  _updateDebugPanel();
   const latest = SPECIES.reduce(function(best, n){
     const t = String((points[n] && points[n].t) || '');
     const d = _dateOnlyFromAny(t);
     return d && d > best ? d : best;
   }, '');
-  if(prog) prog.textContent = 'Refresh done. Latest occurrence in dataset: ' + (latest || '-');
+  _showSnapshotBanner(
+    'Elurikkus refresh done: updated=' + __elurikkusBulkStats.updated + ' moved=' + __elurikkusBulkStats.moved + ' errors=' + __elurikkusBulkStats.errors +
+    ' | latest=' + (latest || '-'),
+    (__elurikkusBulkStats.errors ? 'warn' : '')
+  );
+  _updateProgressUI(__elurikkusBulkStats.done, total, 'ready');
+  _updateDebugPanel();
 }
 
 function enqueueSpringYearFirst(keys){
@@ -3186,6 +3264,9 @@ function _computeDebugProObject(){
       lockLiveOverridesDuringRefresh: __lockLiveOverridesDuringRefresh ? 'on' : 'off',
       liveOverridesActiveCount: Object.keys(useLiveElurikkusForSpecies || {}).filter(function(k){ return useLiveElurikkusForSpecies[k] === true; }).length,
       liveSpeciesActive: Object.keys(useLiveElurikkusForSpecies || {}).filter(function(k){ return useLiveElurikkusForSpecies[k] === true; }).slice(0,20),
+      bulkActive: !!__elurikkusBulkActive,
+      bulkStats: __elurikkusBulkStats || null,
+      lastBulkErrors: (window.__lastElurikkusBulkErrors || []).slice(0, 20),
     },
     logs: __internalLogs.slice(0,50),
   };
@@ -3268,6 +3349,8 @@ function _updateDebugProPanel(){
     '<div>lastElurikkusError: <b>' + (dbg.upstreamDebug.lastElurikkusError || '-') + '</b></div>' +
     '<div>liveOverridesActiveCount: <b>' + (dbg.upstreamDebug.liveOverridesActiveCount || 0) + '</b> | lockLiveOverridesDuringRefresh: <b>' + (dbg.upstreamDebug.lockLiveOverridesDuringRefresh || 'on') + '</b></div>' +
     '<div>liveSpeciesActive(top20): <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.liveSpeciesActive || []).replace(/</g,'&lt;') + '</span></div>' +
+    '<div>bulkActive: <b>' + (dbg.upstreamDebug.bulkActive ? 'true' : 'false') + '</b> | bulkStats: <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.bulkStats || null).replace(/</g,'&lt;') + '</span></div>' +
+    '<div>lastBulkErrors(top20): <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastBulkErrors || []).replace(/</g,'&lt;') + '</span></div>' +
     '<div style="margin-top:6px"><button class="btn secondary" onclick="_debugPingElurikkus()">Ping server</button></div>' +
     '<div>lastPing: <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastElurikkusPing || null).replace(/</g,'&lt;') + '</span></div></div>' +
     '<div class="debug-pro-sec"><div class="debug-pro-title">Logs & Export</div>' +
@@ -3869,7 +3952,7 @@ function _wireSnapshotButtons(){
       btnRefresh.__running = true;
       btnRefresh.disabled = true;
       try{
-        await refreshAllSpeciesFromElurikkus();
+        await refreshAllFromElurikkus();
       }finally{
         btnRefresh.__running = false;
         btnRefresh.disabled = false;
@@ -3936,6 +4019,14 @@ function _wireSnapshotButtons(){
   }
   if(btnStop && !btnStop.__wired){
     btnStop.addEventListener('click', function(){
+      if(__elurikkusBulkActive && __elurikkusBulkAbort){
+        try{ __elurikkusBulkAbort.abort('user'); }catch(e){}
+        __elurikkusBulkActive = false;
+        if(btnStop) btnStop.style.display = 'none';
+        _showSnapshotBanner('Stopped by user', 'warn');
+        _updateDebugPanel();
+        return;
+      }
       __abortReasonHint = 'user';
       _abortActiveRequest();
       try{ __stopController.abort('stop'); }catch(e){}

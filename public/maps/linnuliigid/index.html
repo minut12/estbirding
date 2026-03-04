@@ -527,6 +527,88 @@ function _computeLiveStats(items){
   }
   return { itemsTotal: arr.length, itemsWithin7d: within, coordsMissing: missing };
 }
+function _normalizePlaceKey(v){
+  return String(v || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[õö]/g, 'o')
+    .replace(/[ä]/g, 'a')
+    .replace(/[ü]/g, 'u')
+    .replace(/[š]/g, 's')
+    .replace(/[ž]/g, 'z')
+    .replace(/\b(vald|linn|maakond)\b/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+const _countyCentroids = {
+  'harju': { lat: 59.40, lon: 24.80 },
+  'hiiu': { lat: 58.92, lon: 22.60 },
+  'ida viru': { lat: 59.35, lon: 27.42 },
+  'jogeva': { lat: 58.75, lon: 26.40 },
+  'jarva': { lat: 58.89, lon: 25.57 },
+  'laane': { lat: 58.94, lon: 23.54 },
+  'laane viru': { lat: 59.30, lon: 26.33 },
+  'polva': { lat: 58.05, lon: 27.05 },
+  'parnu': { lat: 58.38, lon: 24.53 },
+  'rapla': { lat: 58.99, lon: 24.79 },
+  'saare': { lat: 58.33, lon: 22.48 },
+  'tartu': { lat: 58.38, lon: 26.73 },
+  'valga': { lat: 57.78, lon: 26.04 },
+  'viljandi': { lat: 58.36, lon: 25.60 },
+  'voru': { lat: 57.84, lon: 27.00 },
+};
+function _buildDynamicPlaceCentroids(){
+  const muni = {};
+  const county = {};
+  Object.keys(points || {}).forEach(function(spec){
+    const p = points[spec] || {};
+    if(!(Number.isFinite(p.lat) && Number.isFinite(p.lon))) return;
+    const mk = _normalizePlaceKey(p.municipality || '');
+    const ck = _normalizePlaceKey(p.county || '');
+    if(mk){
+      muni[mk] = muni[mk] || { lat: 0, lon: 0, n: 0 };
+      muni[mk].lat += Number(p.lat);
+      muni[mk].lon += Number(p.lon);
+      muni[mk].n += 1;
+    }
+    if(ck){
+      county[ck] = county[ck] || { lat: 0, lon: 0, n: 0 };
+      county[ck].lat += Number(p.lat);
+      county[ck].lon += Number(p.lon);
+      county[ck].n += 1;
+    }
+  });
+  const muniAvg = {};
+  Object.keys(muni).forEach(function(k){ muniAvg[k] = { lat: muni[k].lat/muni[k].n, lon: muni[k].lon/muni[k].n }; });
+  const countyAvg = {};
+  Object.keys(county).forEach(function(k){ countyAvg[k] = { lat: county[k].lat/county[k].n, lon: county[k].lon/county[k].n }; });
+  return { municipality: muniAvg, county: countyAvg };
+}
+function resolveFallbackLatLon(input){
+  const x = input || {};
+  const snapLat = Number(x.snapshotLat);
+  const snapLon = Number(x.snapshotLon);
+  const muniKey = _normalizePlaceKey(x.municipality || x.locality || '');
+  const countyKey = _normalizePlaceKey(x.county || '');
+  const dynamic = _buildDynamicPlaceCentroids();
+  if(muniKey && dynamic.municipality[muniKey]){
+    return { lat: dynamic.municipality[muniKey].lat, lon: dynamic.municipality[muniKey].lon, source: 'municipality_centroid' };
+  }
+  if(countyKey && dynamic.county[countyKey]){
+    return { lat: dynamic.county[countyKey].lat, lon: dynamic.county[countyKey].lon, source: 'county_centroid' };
+  }
+  if(muniKey && _countyCentroids[muniKey]){
+    return { lat: _countyCentroids[muniKey].lat, lon: _countyCentroids[muniKey].lon, source: 'county_centroid' };
+  }
+  if(countyKey && _countyCentroids[countyKey]){
+    return { lat: _countyCentroids[countyKey].lat, lon: _countyCentroids[countyKey].lon, source: 'county_centroid' };
+  }
+  if(Number.isFinite(snapLat) && Number.isFinite(snapLon)){
+    return { lat: snapLat, lon: snapLon, source: 'snapshot_fallback' };
+  }
+  return null;
+}
 function _persistLiveCaches(){
   try{
     const rows = Object.entries(liveElurikkusBySpecies)
@@ -555,22 +637,40 @@ function _livePointFromItems(speciesName, items){
     const ts = _parseObservedTs(it && it.observedAt ? it.observedAt : '');
     return Number.isFinite(ts) && ts >= cutoffTs;
   }).length;
-  let lat = null, lon = null, coordsStatus = 'missing', coordsSource = 'none', municipality = null;
+  let lat = null, lon = null, coordsStatus = 'missing', coordsSource = 'none', municipality = null, locality = null, county = null;
+  let chosenPlaceRow = null;
   for(const it of sorted){
     const ilat = Number(it && it.lat);
     const ilon = Number(it && it.lon);
     if(Number.isFinite(ilat) && Number.isFinite(ilon)){
       lat = ilat; lon = ilon; coordsStatus = 'public'; coordsSource = 'exact';
+      municipality = it && it.municipality ? String(it.municipality).trim() : null;
+      locality = it && it.locality ? String(it.locality).trim() : null;
+      county = it && it.county ? String(it.county).trim() : null;
       break;
     }
-    if(!municipality && it && it.municipality) municipality = String(it.municipality || '').trim() || null;
+    if(!chosenPlaceRow && it && (it.municipality || it.locality || it.county)) chosenPlaceRow = it;
   }
   const snap = __snapshotPointBySpecies[key] || {};
-  if(!(Number.isFinite(lat) && Number.isFinite(lon)) && Number.isFinite(snap.lat) && Number.isFinite(snap.lon)){
-    lat = Number(snap.lat);
-    lon = Number(snap.lon);
-    coordsStatus = 'restricted';
-    coordsSource = municipality ? 'municipality' : 'snapshot';
+  if(!(Number.isFinite(lat) && Number.isFinite(lon))){
+    if(chosenPlaceRow){
+      municipality = chosenPlaceRow.municipality ? String(chosenPlaceRow.municipality).trim() : null;
+      locality = chosenPlaceRow.locality ? String(chosenPlaceRow.locality).trim() : null;
+      county = chosenPlaceRow.county ? String(chosenPlaceRow.county).trim() : null;
+    }
+    const resolved = resolveFallbackLatLon({
+      municipality: municipality,
+      locality: locality,
+      county: county,
+      snapshotLat: snap.lat,
+      snapshotLon: snap.lon,
+    });
+    if(resolved && Number.isFinite(resolved.lat) && Number.isFinite(resolved.lon)){
+      lat = Number(resolved.lat);
+      lon = Number(resolved.lon);
+      coordsStatus = 'restricted';
+      coordsSource = resolved.source;
+    }
   }
   const out = Object.assign({}, snap);
   if(newest && newest.observedAt) out.t = String(newest.observedAt);
@@ -580,6 +680,20 @@ function _livePointFromItems(speciesName, items){
   out.coords_status = coordsStatus;
   out.coords_source = coordsSource;
   if(municipality) out.municipality = municipality;
+  if(locality) out.locality = locality;
+  if(county) out.county = county;
+  out.coords_note = (coordsStatus === 'restricted')
+    ? ('coords restricted \u2192 ' + (coordsSource === 'snapshot_fallback' ? 'snapshot fallback' : coordsSource))
+    : '';
+  __lastLiveCoordsDecision = {
+    species: speciesName,
+    coordsStatus: coordsStatus,
+    municipality: municipality || '',
+    county: county || '',
+    locality: locality || '',
+    resolvedLatLon: (Number.isFinite(lat) && Number.isFinite(lon)) ? { lat: Number(lat), lon: Number(lon) } : null,
+    coordsSource: coordsSource,
+  };
   out.visible = out.visible !== false;
   return out;
 }
@@ -711,14 +825,56 @@ function extractElurikkusRecordDatesIso(html){
   }
   return out;
 }
+function extractElurikkusRecordRows(html){
+  const out = [];
+  if(!html) return out;
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const tables = Array.from(doc.querySelectorAll('table'));
+  if(!tables.length) return out;
+  let t = null;
+  for(const tb of tables){
+    const thText = (tb.querySelector('thead')?.innerText || tb.innerText || '').toLowerCase();
+    if(thText.includes('date')) { t = tb; break; }
+  }
+  if(!t) t = tables[0];
+  const rows = Array.from(t.querySelectorAll('tbody tr'));
+  for(const tr of rows){
+    const tds = Array.from(tr.querySelectorAll('td'));
+    if(!tds.length) continue;
+    const txt0 = (tds[0].textContent || '').trim();
+    const m = txt0.match(/(\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?)/);
+    if(!m) continue;
+    const placeText = (tds[tds.length - 1] && tds[tds.length - 1].textContent) ? String(tds[tds.length - 1].textContent).trim() : '';
+    const muni = placeText ? placeText.split(',')[0].trim() : '';
+    out.push({
+      observedAt: m[1],
+      municipality: muni || '',
+      locality: placeText || '',
+      county: /maakond/i.test(placeText || '') ? placeText : '',
+      coordsStatus: 'restricted'
+    });
+  }
+  return out;
+}
 async function _fetchElurikkusSpeciesViaHtml(speciesName){
   const t0 = performance.now();
   const url = "https://elurikkus.ee/app/occurrences/search?text=" + encodeURIComponent(speciesName) + "&_ts=" + Date.now();
   const html = await tryFetch(url);
-  let dates = extractElurikkusRecordDatesIso(html);
-  if(!dates || !dates.length) dates = extractAllEventDates(html);
-  const items = (dates || []).slice(0, 500).map(function(d){
-    return { observedAt: d, coordsStatus: "missing" };
+  let rows = extractElurikkusRecordRows(html);
+  let dates = rows.map(function(r){ return r.observedAt; });
+  if(!dates || !dates.length){
+    dates = extractElurikkusRecordDatesIso(html);
+    if(!dates || !dates.length) dates = extractAllEventDates(html);
+    rows = (dates || []).map(function(d){ return { observedAt: d, municipality: '', locality: '', county: '', coordsStatus: 'restricted' }; });
+  }
+  const items = (rows || []).slice(0, 500).map(function(r){
+    return {
+      observedAt: r.observedAt,
+      municipality: r.municipality || '',
+      locality: r.locality || '',
+      county: r.county || '',
+      coordsStatus: "restricted"
+    };
   });
   const newest = (dates || []).reduce(function(a,b){
     return (String(b || "") > String(a || "")) ? String(b) : String(a);
@@ -936,6 +1092,7 @@ let __lastElurikkusResponseKeys = [];
 let __lastElurikkusPing = null;
 let __lastElurikkusSource = '';
 let __lastElurikkusCacheHit = null;
+let __lastLiveCoordsDecision = null;
 
 function _safeData(v){
   try{
@@ -2746,6 +2903,7 @@ function _computeDebugProObject(){
       lastElurikkusError: __lastElurikkusError || '',
       lastElurikkusSource: __lastElurikkusSource || '',
       lastElurikkusCacheHit: __lastElurikkusCacheHit || null,
+      lastLiveCoordsDecision: __lastLiveCoordsDecision || null,
       lastElurikkusPing: __lastElurikkusPing || null,
       lockLiveOverridesDuringRefresh: __lockLiveOverridesDuringRefresh ? 'on' : 'off',
       liveOverridesActiveCount: Object.keys(useLiveElurikkusForSpecies || {}).filter(function(k){ return useLiveElurikkusForSpecies[k] === true; }).length,
@@ -2827,6 +2985,7 @@ function _updateDebugProPanel(){
     '<div>lastElurikkusItemsCount: <b>' + (dbg.upstreamDebug.lastElurikkusItemsCount || 0) + '</b></div>' +
     '<div>lastElurikkusSource: <b>' + (dbg.upstreamDebug.lastElurikkusSource || '-') + '</b></div>' +
     '<div>lastElurikkusCacheHit: <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastElurikkusCacheHit || null).replace(/</g,'&lt;') + '</span></div>' +
+    '<div>lastLiveCoordsDecision: <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastLiveCoordsDecision || null).replace(/</g,'&lt;') + '</span></div>' +
     '<div>lastElurikkusError: <b>' + (dbg.upstreamDebug.lastElurikkusError || '-') + '</b></div>' +
     '<div>liveOverridesActiveCount: <b>' + (dbg.upstreamDebug.liveOverridesActiveCount || 0) + '</b> | lockLiveOverridesDuringRefresh: <b>' + (dbg.upstreamDebug.lockLiveOverridesDuringRefresh || 'on') + '</b></div>' +
     '<div>liveSpeciesActive(top20): <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.liveSpeciesActive || []).replace(/</g,'&lt;') + '</span></div>' +
@@ -3752,8 +3911,11 @@ function editSpringDate(key){
 
 function updateMarker(key) {
   const p = points[key];
-  if (markers.has(key)) { map.removeLayer(markers.get(key)); markers.delete(key); }
-  if (!p) return;
+  const existingMarker = markers.has(key) ? markers.get(key) : null;
+  if (!p) {
+    if(existingMarker){ map.removeLayer(existingMarker); markers.delete(key); }
+    return;
+  }
 
   // Determine visibility based on 7-day toggle
   const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
@@ -3770,11 +3932,29 @@ function updateMarker(key) {
     const when = p.t ? '<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.observationDate) || 'vaatluse kuup\u00e4ev') + ': ' + formatDateEE(p.t) + '</small>' : '';
     const src = p.src ? '<br><small>allikas: '+p.src+'</small>' : '';
     const precision = (p.coords_status === 'restricted' && p.coords_source && p.coords_source !== 'none')
-      ? ('<br><small>coords restricted \u2192 ' + (p.coords_source === 'snapshot' ? 'snapshot fallback' : (p.coords_source + ' centroid')) + '</small>')
+      ? ('<br><small>' + (p.coords_note || ('coords restricted \u2192 ' + ((p.coords_source === 'snapshot' || p.coords_source === 'snapshot_fallback') ? 'snapshot fallback' : p.coords_source))) + '</small>')
       : '';
-    const m = L.marker([p.lat,p.lon], {icon}).addTo(map)
-      .bindPopup('<b>'+key+'</b>'+when+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+precision);
-    markers.set(key, m);
+    const popupHtml = '<b>'+key+'</b>'+when+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+precision;
+    if(existingMarker){
+      try{
+        const cur = existingMarker.getLatLng ? existingMarker.getLatLng() : null;
+        if(!cur || Math.abs(cur.lat - p.lat) > 1e-9 || Math.abs(cur.lng - p.lon) > 1e-9){
+          existingMarker.setLatLng([p.lat, p.lon]);
+        }
+        existingMarker.setIcon(icon);
+        existingMarker.bindPopup(popupHtml);
+        markers.set(key, existingMarker);
+      }catch(e){
+        try{ map.removeLayer(existingMarker); }catch(_e){}
+        const m = L.marker([p.lat,p.lon], {icon}).addTo(map).bindPopup(popupHtml);
+        markers.set(key, m);
+      }
+    } else {
+      const m = L.marker([p.lat,p.lon], {icon}).addTo(map).bindPopup(popupHtml);
+      markers.set(key, m);
+    }
+  } else {
+    if(existingMarker){ map.removeLayer(existingMarker); markers.delete(key); }
   }
 }
 
@@ -3796,7 +3976,7 @@ function rowHTML(obj) {
 
   const noCoords = !hasPoint && occ7 > 0;
   const metaRow1 = hasPoint
-    ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+((p.coords_status==='restricted' && p.coords_source && p.coords_source!=='none') ? (' <span class="pill">coords:</span> restricted→'+(p.coords_source==='snapshot' ? 'snapshot fallback' : p.coords_source)) : '')
+    ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+((p.coords_status==='restricted' && p.coords_source && p.coords_source!=='none') ? (' <span class="pill">coords:</span> restricted→'+((p.coords_source==='snapshot' || p.coords_source==='snapshot_fallback') ? 'snapshot fallback' : p.coords_source)) : '')+(p.municipality ? (' <span class="pill">municipality:</span> '+String(p.municipality)) : '')
     : noCoords
       ? '<span class="pill" style="background:#fef3c7;color:#92400e">Koordinaadid peidetud</span>'+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
       : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');

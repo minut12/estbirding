@@ -1074,6 +1074,9 @@ function _findLatestRecordDetailLink(searchHtml){
 async function refreshSpeciesFromElurikkus(key, signal){
   const species = String(key || '').trim();
   if(!species) return null;
+  // Root cause 2 fix: capture coords BEFORE any await so snapshot can't race-overwrite them
+  const oldLat = Number((points[species] || {}).lat);
+  const oldLon = Number((points[species] || {}).lon);
   const searchUrlBase = "https://elurikkus.ee/app/occurrences/search?text=" + encodeURIComponent(species);
   const shtml = await _fetchHtmlWithFallback(searchUrlBase, signal);
   const occ7Dates = extractAllEventDates(shtml);
@@ -1085,7 +1088,6 @@ async function refreshSpeciesFromElurikkus(key, signal){
   const restricted = /Latitude[\s\S]{0,200}?Restricted|Longitude[\s\S]{0,200}?Restricted|\bRestricted\b/i.test(String(dhtml || '')) && !coords;
 
   const p = (points[species] = points[species] || {});
-  const oldLat = Number(p.lat), oldLon = Number(p.lon);
   p.searchUrl = searchUrlBase + '&_ts=' + Date.now();
   if(detailUrl) p.latestUrl = detailUrl;
   const dt = extractEventDate(dhtml) || extractEventDate(shtml);
@@ -1156,8 +1158,11 @@ async function refreshAllFromElurikkus(){
       perCtrl.signal.addEventListener('abort', onPerAbort, { once: true });
 
       const res = await refreshSpeciesFromElurikkus(name, combo.signal);
+      // Root cause 1 fix: always move the marker regardless of lock state
+      try{ updateMarker(name); }catch(_){}
       __elurikkusBulkStats.updated++;
       if(res && res.moved) __elurikkusBulkStats.moved++;
+      console.log('[bulk-fix]', name, 'updated, moved=', !!(res && res.moved), 'lat=', (points[name]||{}).lat, 'lon=', (points[name]||{}).lon);
       signal.removeEventListener('abort', onBulkAbort);
       perCtrl.signal.removeEventListener('abort', onPerAbort);
       clearTimeout(tId);

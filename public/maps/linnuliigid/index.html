@@ -1030,9 +1030,12 @@ function parseEluDateToMs(dateText){
   const y=+m[1], mo=+m[2], d=+m[3], hh=+m[4], mm=+m[5], ss=+(m[6]||0);
   return new Date(y, mo-1, d, hh, mm, ss, 0).getTime();
 }
+function parseEluDateMs(dateText){
+  return parseEluDateToMs(dateText);
+}
 function pickNewestRows(rows){
   return (Array.isArray(rows) ? rows : [])
-    .map(function(r){ return Object.assign({}, r, { ms: parseEluDateToMs(r.dateText) }); })
+    .map(function(r){ return Object.assign({}, r, { ms: parseEluDateMs(r.dateText) }); })
     .filter(function(r){ return Number.isFinite(r.ms); })
     .sort(function(a,b){ return b.ms - a.ms; });
 }
@@ -1362,6 +1365,68 @@ function _findLatestRecordDetailLink(searchHtml){
   if(!m) return null;
   return _absElurikkusUrl(m[1]);
 }
+function extractLatLonFromDetail(html){
+  return extractLatLonFromOccurrenceDetail(html);
+}
+async function fetchElurikkusViaHtmlDetail(species, signal){
+  const name = String(species || '').trim();
+  if(!name) throw new Error('species missing');
+  const searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(name) + '&_ts=' + Date.now();
+  const shtml = await tryFetch(searchUrl, { signal: signal });
+  const rows = pickNewestRows(parseEluSearchRows(shtml));
+  const dates = extractAllEventDates(shtml);
+  const occ7 = countInLastNDaysFromDates(dates, 7);
+  const newestDateText = rows[0] ? String(rows[0].dateText || '') : '';
+  for(let k = 0; k < Math.min(10, rows.length); k++){
+    if(signal && signal.aborted) throw new Error('aborted');
+    const occUrl = String(rows[k].occUrl || '').trim();
+    if(!occUrl) continue;
+    try{
+      const dhtml = await tryFetch(occUrl + (occUrl.includes('?') ? '&' : '?') + '_ts=' + Date.now(), { signal: signal });
+      const latlon = extractLatLonFromDetail(dhtml);
+      if(latlon && Number.isFinite(latlon[0]) && Number.isFinite(latlon[1])){
+        return {
+          mode: 'elurikkus_species',
+          source: 'client_html_detail',
+          searchUrl: searchUrl,
+          selected: {
+            occurrenceId: (occUrl.match(/occurrence\/(\d+)/i) || [])[1] || '',
+            url: occUrl,
+            occUrl: occUrl,
+            observedAt: String(rows[k].dateText || ''),
+            dateText: String(rows[k].dateText || ''),
+            date: String(rows[k].dateText || '').slice(0, 10),
+            lat: Number(latlon[0]),
+            lon: Number(latlon[1]),
+            coordsStatus: 'public'
+          },
+          newestDateText: newestDateText,
+          occ7: occ7,
+          items: []
+        };
+      }
+    }catch(e){}
+  }
+  return {
+    mode: 'elurikkus_species',
+    source: 'client_html_detail',
+    searchUrl: searchUrl,
+    selected: {
+      occurrenceId: (String((rows[0] && rows[0].occUrl) || '').match(/occurrence\/(\d+)/i) || [])[1] || '',
+      url: rows[0] ? rows[0].occUrl : null,
+      occUrl: rows[0] ? rows[0].occUrl : null,
+      observedAt: newestDateText,
+      dateText: newestDateText,
+      date: newestDateText ? newestDateText.slice(0, 10) : '',
+      lat: null,
+      lon: null,
+      coordsStatus: 'restricted_or_missing'
+    },
+    newestDateText: newestDateText,
+    occ7: occ7,
+    items: []
+  };
+}
 async function refreshSpeciesFromElurikkus(key, signal){
   const species = String(key || '').trim();
   if(!species) return null;
@@ -1482,9 +1547,12 @@ async function refreshAllFromElurikkus(){
     if(progEl) progEl.textContent = line;
     if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = line; }
     try{
-      const json = await fetchElurikkusSpecies(name, { force: true, signal: signal });
-      const upRow = __elurikkusBySpecies[name] || {};
-      const sel = upRow.lastSelectedApply || null;
+      const json = await fetchElurikkusViaHtmlDetail(name, signal);
+      const sel = _applySelectedOccurrenceFromServer(name, json);
+      const upRow = __elurikkusBySpecies[name] = (__elurikkusBySpecies[name] || {});
+      upRow.lastSelectedApply = sel;
+      upRow.source = 'client_html_detail';
+      upRow.fetchSummary = 'Bulk HTML detail fallback';
       if(sel && sel.applied) updated++;
       if(sel && sel.moved) moved++;
       if(sel && sel.moved) try{ _applyLiveOverrideForSpecies(name); }catch(e){}
@@ -2394,34 +2462,45 @@ async function _respectElurikkusMinDelay(){
 function _applySelectedOccurrenceFromServer(speciesName, json){
   const selected = (json && typeof json === 'object') ? json.selected : null;
   if(!selected || typeof selected !== 'object') return { applied:false, moved:false, reason:'no selected' };
-  const lat = Number(selected.lat);
-  const lon = Number(selected.lon);
-  if(!Number.isFinite(lat) || !Number.isFinite(lon)) return { applied:false, moved:false, reason:'selected without coords' };
   const p = points[speciesName] = (points[speciesName] || {});
   const oldLat = Number(p.lat);
   const oldLon = Number(p.lon);
-  p.lat = lat;
-  p.lon = lon;
-  p.t = String((selected.date || '')).slice(0,10) || p.t || '';
-  p.t_dt = String((selected.observedAt || '')).trim() || p.t_dt || '';
+  const lat = Number(selected.lat);
+  const lon = Number(selected.lon);
+  const occUrl = String(selected.url || selected.occUrl || '').trim();
+  const selDate = String((selected.date || selected.dateText || selected.observedAt || '')).slice(0,10);
+  p.t = selDate || p.t || '';
+  p.t_dt = String((selected.observedAt || selected.dateText || '')).trim() || p.t_dt || '';
+  if(Number.isFinite(Number(json && json.occ7))) p.occ7 = Number(json.occ7);
   p.src = 'live_elurikkus';
-  p.coordsSource = 'elurikkus_occurrence_detail';
-  p.coords_source = 'elurikkus_occurrence_detail';
-  p.coords_status = 'public';
-  p.openUrl = String(selected.url || '').trim() || p.openUrl || '';
+  p.openUrl = occUrl || p.openUrl || '';
   if(p.openUrl) p.latestUrl = p.openUrl;
   p.lastFetched = new Date().toISOString();
+  let applied = false;
+  if(Number.isFinite(lat) && Number.isFinite(lon)){
+    p.lat = lat;
+    p.lon = lon;
+    p.coordsSource = 'elurikkus_occurrence_detail';
+    p.coords_source = 'elurikkus_occurrence_detail';
+    p.coords_status = 'public';
+    applied = true;
+  } else {
+    p.coordsSource = 'snapshot_fallback';
+    p.coords_source = 'snapshot_fallback';
+    p.coords_status = String(selected.coordsStatus || 'restricted_or_missing');
+  }
   const moved = Number.isFinite(oldLat) && Number.isFinite(oldLon) ? (Math.abs(oldLat - lat) > 1e-6 || Math.abs(oldLon - lon) > 1e-6) : true;
   try{ updateMarker(speciesName); }catch(e){}
   return {
-    applied: true,
-    moved: moved,
+    applied: applied,
+    moved: (applied ? moved : false),
     oldLat: Number.isFinite(oldLat) ? oldLat : null,
     oldLon: Number.isFinite(oldLon) ? oldLon : null,
-    newLat: lat,
-    newLon: lon,
+    newLat: applied ? lat : (Number.isFinite(Number(p.lat)) ? Number(p.lat) : null),
+    newLon: applied ? lon : (Number.isFinite(Number(p.lon)) ? Number(p.lon) : null),
     selectedOccurrenceId: String((selected.occurrenceId || '')).trim(),
-    selectedOccurrenceUrl: String((selected.url || '')).trim(),
+    selectedOccurrenceUrl: occUrl,
+    reason: applied ? 'applied detail coords' : 'selected restricted_or_missing'
   };
 }
 async function fetchElurikkusSpecies(species, opts){
@@ -2575,7 +2654,13 @@ async function fetchElurikkusSpecies(species, opts){
       const durationMs = Math.round(performance.now() - t0);
       if(!res.ok) throw new Error('HTTP ' + res.status + ': ' + String(text || '').slice(0,200));
       let json = JSON.parse(text);
-      __lastElurikkusResponseKeys = (json && typeof json === 'object') ? Object.keys(json).slice(0,20) : [];
+      const keys = (json && typeof json === 'object') ? Object.keys(json) : [];
+      __lastElurikkusResponseKeys = keys.slice(0,20);
+      const looksLikeSnapshotRow = keys.includes('points_json') || keys.includes('generated_at') || keys.includes('progress_total');
+      if(looksLikeSnapshotRow){
+        row.routeMismatch = 'Server returned snapshot row keys, forcing client_html_detail fallback';
+        throw new Error('Server returned snapshot row instead of elurikkus_species; keys=' + keys.join(','));
+      }
       if(String(json && json.mode || '') !== 'elurikkus_species' || !Array.isArray(json && json.items)){
         const dbgKeys = json && typeof json === 'object' ? Object.keys(json) : [];
         const serverMode = String((json && json.mode) || 'unknown');
@@ -2637,7 +2722,7 @@ async function fetchElurikkusSpecies(species, opts){
       const errName = String((e && e.name) ? e.name : 'Error');
       const errMsg = String((e && e.message) ? e.message : e || 'Elurikkus fetch failed');
       try{
-        const json = await _fetchElurikkusSpeciesViaHtml(speciesName);
+        const json = await fetchElurikkusViaHtmlDetail(speciesName, options.signal || null);
         sourceTag = 'client_html';
         const items = Array.isArray(json.items) ? json.items.slice() : [];
         const stats = _computeLiveStats(items);
@@ -2646,14 +2731,14 @@ async function fetchElurikkusSpecies(species, opts){
         row.routeMismatch = 'server fetch failed, used client_html fallback';
         row.durationMs = Number(json.durationMs || 0) || null;
         row.bytes = Number(json.upstreamBytes || 0) || null;
-        row.latestOccurrenceAt = String((json.dataMaxAt || json.latestOccurrenceAt) || '').trim();
+        row.latestOccurrenceAt = String((json.dataMaxAt || json.latestOccurrenceAt || (json.selected && (json.selected.dateText || json.selected.observedAt))) || '').trim();
         row.itemsCount = items.length;
         row.totalResults = Number(json.totalResults || 0) || 0;
         row.upstreamStatus = Number(json.upstreamStatus || 200) || 200;
         row.sourceUrl = String(json.sourceUrl || '').trim();
-        row.buildId = String(json.buildId || 'client_html');
+        row.buildId = String(json.buildId || 'client_html_detail');
         row.updatedAt = new Date().toISOString();
-        row.fetchSummary = 'Fetched ✓ (' + stats.itemsTotal + ' items, newest: ' + (row.latestOccurrenceAt ? formatDateTimeEE(row.latestOccurrenceAt) : '-') + ')';
+        row.fetchSummary = 'Fetched via HTML detail fallback (newest: ' + (row.latestOccurrenceAt ? formatDateTimeEE(row.latestOccurrenceAt) : '-') + ')';
         row.source = sourceTag;
         __lastElurikkusSpeciesFetched = speciesName;
         __lastElurikkusLatestOccurrenceAt = row.latestOccurrenceAt || '';
@@ -2669,6 +2754,8 @@ async function fetchElurikkusSpecies(species, opts){
         liveStatsBySpecies[cacheKey] = stats;
         _persistLiveCaches();
         __elurikkusResultCache.set(cacheKey, { ts: Date.now(), data: json });
+        const selApply = _applySelectedOccurrenceFromServer(speciesName, json);
+        row.lastSelectedApply = selApply;
         if(traceId){
           _traceEnd(traceId, { status: 200, ok: true, bytesRead: Number(json.upstreamBytes || 0), details: { fallback: 'client_html' } });
         }

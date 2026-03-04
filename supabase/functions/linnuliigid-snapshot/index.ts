@@ -2,10 +2,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, apikey, content-type, x-client-info",
-  "Access-Control-Allow-Methods": "GET,HEAD,OPTIONS",
-  "Access-Control-Expose-Headers": "ETag, X-Snapshot-Generated-At, Content-Length",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "content-type, x-client-info, apikey, authorization",
+  "Access-Control-Expose-Headers": "X-EstBirding-Mode, ETag, X-Snapshot-Generated-At, Content-Length",
+  "Cache-Control": "no-store, max-age=0",
+  "Pragma": "no-cache",
+  "Content-Type": "application/json; charset=utf-8",
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -277,7 +279,7 @@ function buildSnapshotResponseHeaders(data: Record<string, unknown>): Record<str
 }
 
 function buildJsonNoStoreHeaders(): Record<string, string> {
-  return { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json; charset=utf-8" };
+  return { ...corsHeaders, "Cache-Control": "no-store, max-age=0", "Pragma": "no-cache", "Content-Type": "application/json; charset=utf-8" };
 }
 function buildModeHeaders(mode: "ping" | "elurikkus_species" | "snapshot"): Record<string, string> {
   return { ...buildJsonNoStoreHeaders(), "X-EstBirding-Mode": mode };
@@ -927,6 +929,8 @@ Deno.serve(async (req) => {
 
       if (req.method === "GET" && isMetaRequest) {
         const metaBody = {
+          ok: true,
+          mode: "meta",
           snapshotId: meta.snapshotId,
           snapshotGeneratedAt: meta.snapshotGeneratedAt,
           dataMaxAt: meta.dataMaxAt,
@@ -934,10 +938,10 @@ Deno.serve(async (req) => {
           totalItems: meta.totalItems,
         };
         return new Response(
-          JSON.stringify({ mode: "snapshot", ...metaBody }),
+          JSON.stringify(metaBody),
           {
             status: 200,
-            headers: { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json", "X-EstBirding-Mode": "snapshot" },
+            headers: { ...buildJsonNoStoreHeaders(), "X-EstBirding-Mode": "meta" },
           }
         );
       }
@@ -948,6 +952,7 @@ Deno.serve(async (req) => {
       }
 
       const responseBody = {
+        ok: true,
         mode: "snapshot",
         ...(data as Record<string, unknown>),
         snapshotId: meta.snapshotId,
@@ -986,9 +991,10 @@ Deno.serve(async (req) => {
 
       if (isRebuildPost) {
         const rebuild = await rebuildSnapshotNow(supabaseAdmin, (current || {}) as Record<string, unknown>);
+        const bodyWithMode = { mode: "snapshot", ...(rebuild.body || {}) };
         return new Response(
-          JSON.stringify(rebuild.body),
-          { status: rebuild.httpStatus, headers: { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json" } }
+          JSON.stringify(bodyWithMode),
+          { status: rebuild.httpStatus, headers: { ...buildJsonNoStoreHeaders(), "X-EstBirding-Mode": "snapshot" } }
         );
       }
 

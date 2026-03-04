@@ -1564,7 +1564,7 @@ async function fetchElurikkusSpecies(species){
       if(String(json && json.mode || '') !== 'elurikkus_species' || !Array.isArray(json && json.items)){
         const dbgKeys = json && typeof json === 'object' ? Object.keys(json) : [];
         logWarn('Elurikkus route mismatch payload', { species: speciesName, keys: dbgKeys });
-        throw new Error('Server returned ' + String((json && json.mode) || 'unknown') + ' instead of elurikkus_species. url=' + url + ' headerMode=' + hdrMode);
+        throw new Error('Server returned ' + String((json && json.mode) || 'unknown') + ' instead of elurikkus_species. url=' + url + ' headerMode=' + hdrMode + ' keys=' + JSON.stringify(dbgKeys));
       }
       _traceEnd(traceId, { status: res.status, ok: !!res.ok, bytesRead: bytesRead, details: { responseKeys: json && typeof json === 'object' ? Object.keys(json) : [] } });
       logInfo('Elurikkus species response', { species: speciesName, status: res.status, bodyPreview: String(text || '').slice(0,200) });

@@ -935,6 +935,7 @@ let __lastElurikkusHeaderMode = '';
 let __lastElurikkusResponseKeys = [];
 let __lastElurikkusPing = null;
 let __lastElurikkusSource = '';
+let __lastElurikkusCacheHit = null;
 
 function _safeData(v){
   try{
@@ -1548,6 +1549,21 @@ async function fetchElurikkusSpecies(species){
     liveStatsBySpecies[cacheKey] = stats;
     __lastElurikkusSource = row.source;
     _persistLiveCaches();
+    const liveEnabled = _isLiveOverrideEnabled(speciesName);
+    __lastElurikkusCacheHit = {
+      speciesName: speciesName,
+      cacheKey: cacheKey,
+      appliedLive: !!liveEnabled,
+      at: new Date().toISOString(),
+    };
+    if(liveEnabled){
+      _applyLiveOverrideForSpecies(speciesName);
+      try{
+        updateMarker(speciesName);
+      }catch(e){
+        _rebuildMarkers({ reason: 'live_cache_applied', speciesKey: cacheKey });
+      }
+    }
     render();
     return cachedData;
     }
@@ -2729,6 +2745,7 @@ function _computeDebugProObject(){
       lastElurikkusItemsCount: Number(__lastElurikkusItemsCount || 0),
       lastElurikkusError: __lastElurikkusError || '',
       lastElurikkusSource: __lastElurikkusSource || '',
+      lastElurikkusCacheHit: __lastElurikkusCacheHit || null,
       lastElurikkusPing: __lastElurikkusPing || null,
       lockLiveOverridesDuringRefresh: __lockLiveOverridesDuringRefresh ? 'on' : 'off',
       liveOverridesActiveCount: Object.keys(useLiveElurikkusForSpecies || {}).filter(function(k){ return useLiveElurikkusForSpecies[k] === true; }).length,
@@ -2809,6 +2826,7 @@ function _updateDebugProPanel(){
     '<div>lastElurikkusLatestOccurrenceAt: <b>' + (dbg.upstreamDebug.lastElurikkusLatestOccurrenceAt || '-') + '</b></div>' +
     '<div>lastElurikkusItemsCount: <b>' + (dbg.upstreamDebug.lastElurikkusItemsCount || 0) + '</b></div>' +
     '<div>lastElurikkusSource: <b>' + (dbg.upstreamDebug.lastElurikkusSource || '-') + '</b></div>' +
+    '<div>lastElurikkusCacheHit: <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastElurikkusCacheHit || null).replace(/</g,'&lt;') + '</span></div>' +
     '<div>lastElurikkusError: <b>' + (dbg.upstreamDebug.lastElurikkusError || '-') + '</b></div>' +
     '<div>liveOverridesActiveCount: <b>' + (dbg.upstreamDebug.liveOverridesActiveCount || 0) + '</b> | lockLiveOverridesDuringRefresh: <b>' + (dbg.upstreamDebug.lockLiveOverridesDuringRefresh || 'on') + '</b></div>' +
     '<div>liveSpeciesActive(top20): <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.liveSpeciesActive || []).replace(/</g,'&lt;') + '</span></div>' +

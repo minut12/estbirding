@@ -1004,6 +1004,38 @@ function extractLatLonFromOccurrenceDetail(html){
   if(lat < 50 || lat > 70 || lon < 10 || lon > 35) return null;
   return [lat, lon];
 }
+function parseEluSearchRows(html){
+  const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+  const tbody = doc.querySelector('table tbody');
+  if(!tbody) return [];
+  const rows = [];
+  for(const tr of Array.from(tbody.querySelectorAll('tr'))){
+    const tds = tr.querySelectorAll('td');
+    if(!tds || tds.length < 2) continue;
+    const dateText = String((tds[0].textContent || '').trim());
+    const a = tr.querySelector('a[href*="/app/occurrences/occurrence/"]');
+    const href = a ? String(a.getAttribute('href') || '').trim() : '';
+    if(!href) continue;
+    rows.push({
+      dateText: dateText,
+      occUrl: href.startsWith('http') ? href : ('https://elurikkus.ee' + (href.startsWith('/') ? href : '/' + href)),
+      rowText: String((tr.textContent || '').trim()),
+    });
+  }
+  return rows;
+}
+function parseEluDateToMs(dateText){
+  const m = String(dateText || '').match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?/);
+  if(!m) return null;
+  const y=+m[1], mo=+m[2], d=+m[3], hh=+m[4], mm=+m[5], ss=+(m[6]||0);
+  return new Date(y, mo-1, d, hh, mm, ss, 0).getTime();
+}
+function pickNewestRows(rows){
+  return (Array.isArray(rows) ? rows : [])
+    .map(function(r){ return Object.assign({}, r, { ms: parseEluDateToMs(r.dateText) }); })
+    .filter(function(r){ return Number.isFinite(r.ms); })
+    .sort(function(a,b){ return b.ms - a.ms; });
+}
 function countInLastNDaysFromDates(dates, n){
   const arr = Array.isArray(dates) ? dates : [];
   const now = Date.now();
@@ -1340,20 +1372,25 @@ async function refreshSpeciesFromElurikkus(key, signal){
   const dates = extractAllEventDates(shtml);
   const occ7 = countInLastNDaysFromDates(dates, 7);
   const newest = (dates && dates.length) ? dates.reduce(function(a,b){ return b > a ? b : a; }, '') : '';
-  const latestUrl = getLatestOccurrenceDetailUrlFromSearchHtml(shtml);
-  const detailUrls = getTopOccurrenceDetailUrlsFromSearchHtml(shtml, 3);
-  if(latestUrl && detailUrls.indexOf(latestUrl) < 0) detailUrls.unshift(latestUrl);
+  const parsedRows = pickNewestRows(parseEluSearchRows(shtml));
+  if(!parsedRows.length) throw new Error('No occurrence rows found');
+  const latestUrl = parsedRows[0].occUrl || getLatestOccurrenceDetailUrlFromSearchHtml(shtml);
+  const detailRows = parsedRows.slice(0, Math.min(10, parsedRows.length));
   let usedDetailUrl = null;
+  let pickedRow = 0;
+  let pickedDateText = '';
   let latlon = null;
   let coordsSource = 'snapshot';
-  for(let i = 0; i < detailUrls.length && i < 3; i++){
-    const du = detailUrls[i];
+  for(let i = 0; i < detailRows.length; i++){
+    const du = detailRows[i].occUrl;
     try{
       const dhtml = await tryFetch(du + (du.includes('?') ? '&' : '?') + '_ts=' + Date.now(), { signal: signal });
       const c = extractLatLonFromOccurrenceDetail(dhtml);
       if(c && Number.isFinite(c[0]) && Number.isFinite(c[1])){
         latlon = [Number(c[0]), Number(c[1])];
         usedDetailUrl = du;
+        pickedRow = i + 1;
+        pickedDateText = String(detailRows[i].dateText || '');
         coordsSource = 'detail';
         break;
       }
@@ -1372,10 +1409,18 @@ async function refreshSpeciesFromElurikkus(key, signal){
     p.coords_source = 'detail';
     p.coords_note = '';
     if(usedDetailUrl) p.latestUrl = usedDetailUrl;
+    if(pickedDateText){
+      p.t_dt = pickedDateText;
+      p.t = String(pickedDateText).slice(0,10);
+    }
   } else {
     p.coords_source = 'snapshot';
     p.coords_status = /Koordinaadid peidetud|Coordinates hidden|Restricted/i.test(shtml) ? 'restricted' : 'missing';
     p.coords_note = p.coords_status === 'restricted' ? 'coords restricted -> snapshot fallback' : 'coords missing -> snapshot fallback';
+    if(parsedRows[0] && parsedRows[0].dateText){
+      p.t_dt = String(parsedRows[0].dateText);
+      p.t = String(parsedRows[0].dateText).slice(0,10);
+    }
   }
   save();
   updateMarker(species);
@@ -1389,6 +1434,8 @@ async function refreshSpeciesFromElurikkus(key, signal){
     updated: !!updated,
     detailUrl: latestUrl || null,
     usedDetailUrl: usedDetailUrl,
+    pickedRow: pickedRow || null,
+    pickedDateText: pickedDateText || (parsedRows[0] ? String(parsedRows[0].dateText || '') : ''),
     coordsFound: latlon ? (String(latlon[0]) + ',' + String(latlon[1])) : '—',
     coordsSource: coordsSource,
     moved: moved,
@@ -1448,6 +1495,7 @@ async function refreshAllFromElurikkus(){
       if(eluLastCoord){
         const durl = String((res && (res.usedDetailUrl || res.detailUrl || res.occUrl)) || '');
         const dshort = durl ? (durl.split('/').slice(-2).join('/')) : 'no';
+        const occId = durl ? (durl.match(/occurrence\/(\d+)/i)?.[1] || dshort) : 'no';
         const oldTxt = (res && res.old && _hasFiniteCoord(res.old.lat) && _hasFiniteCoord(res.old.lon))
           ? (Number(res.old.lat).toFixed(4) + ',' + Number(res.old.lon).toFixed(4))
           : '-';
@@ -1456,12 +1504,15 @@ async function refreshAllFromElurikkus(){
           ' coordsFound=' + foundTxt +
           ' coordsApplied=' + appTxt +
           ' source=' + String((res && (res.coordsSource || (res.applied && res.applied.source))) || '-') +
+          ' pickedOccId=' + occId +
           ' detailUrl=' + dshort +
           ' moved=' + moveTxt;
       }
       if(progEl){
         const dflag = (res && (res.usedDetailUrl || res.detailUrl)) ? 'yes' : 'no';
-        progEl.textContent = (i + 1) + '/' + total + ' ' + name + ' detailUrl=' + dflag + ' coordsFound=' + foundTxt + ' moved=' + ((res && res.moved) ? 'yes' : 'no');
+        const durl = String((res && (res.usedDetailUrl || res.detailUrl)) || '');
+        const occId = durl ? (durl.match(/occurrence\/(\d+)/i)?.[1] || 'yes') : 'no';
+        progEl.textContent = (i + 1) + '/' + total + ' ' + name + ' pickedOccId=' + occId + ' detailUrl=' + dflag + ' coordsFound=' + foundTxt + ' moved=' + ((res && res.moved) ? 'yes' : 'no');
       }
       pushEluCoordTrace({
         ts: new Date().toISOString(),
@@ -1474,6 +1525,8 @@ async function refreshAllFromElurikkus(){
         moved: !!(res && res.moved),
         reason: String((res && res.reason) || ''),
         occUrl: (res && (res.usedDetailUrl || res.detailUrl || res.occUrl)) ? (res.usedDetailUrl || res.detailUrl || res.occUrl) : null,
+        pickedRow: (res && res.pickedRow) || null,
+        pickedDateText: (res && res.pickedDateText) || '',
       });
       window.__lastElurikkusBulkOutcomes.unshift(Object.assign({ species: name, i: i + 1 }, res || {}));
       if(window.__lastElurikkusBulkOutcomes.length > 20) window.__lastElurikkusBulkOutcomes.length = 20;
@@ -4784,7 +4837,9 @@ function updateMarker(key) {
   const c7 = Number.isFinite(occ7) && occ7 > 0 ? occ7 : null;
   const icon = avatarIcon(getDisplayAvatar(key), bcol, c7, metaCfg.rarityLevel || 'none');
   const when = p.t ? '<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.observationDate) || 'vaatluse kuup\u00e4ev') + ': ' + formatDateEE(p.t) + '</small>' : '';
+  const whenDt = p.t_dt ? ('<br><small>pickedDateTime: ' + String(p.t_dt) + '</small>') : '';
   const src = p.src ? '<br><small>allikas: '+p.src+'</small>' : '';
+  const occLine = p.latestUrl ? ('<br><small>pickedOcc: ' + String(p.latestUrl).replace(/^.*occurrence\//,'') + '</small>') : '';
   const precision = (p.coords_status === 'restricted' && p.coords_source && p.coords_source !== 'none')
     ? ('<br><small>coordsSource: ' + p.coords_source + '</small><br><small>' + (p.coords_note || ('coords restricted \u2192 ' + ((p.coords_source === 'snapshot' || p.coords_source === 'snapshot_fallback') ? 'snapshot fallback' : p.coords_source))) + '</small>')
     : (p.coords_source ? ('<br><small>coordsSource: ' + p.coords_source + '</small>' + (p.coords_note ? ('<br><small>' + p.coords_note + '</small>') : '')) : '');
@@ -4793,7 +4848,7 @@ function updateMarker(key) {
   const movedLine = lastMove
     ? ('<br><small>moved: ' + (lastMove.changed ? 'yes' : 'no') + ' (' + Number(lastMove.oldLat || 0).toFixed(4) + ',' + Number(lastMove.oldLon || 0).toFixed(4) + ' \u2192 ' + Number(lastMove.newLat || p.lat).toFixed(4) + ',' + Number(lastMove.newLon || p.lon).toFixed(4) + ')' + (lastMove.changed ? '' : (lastDecision && lastDecision.reason ? (' reason: ' + lastDecision.reason) : '')) + '</small>')
     : '';
-  const popupHtml = '<b>'+key+'</b>'+when+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+precision+movedLine;
+  const popupHtml = '<b>'+key+'</b>'+when+whenDt+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+occLine+precision+movedLine;
   const old = prevMarker && prevMarker.getLatLng ? prevMarker.getLatLng() : null;
   if(prevMarker){
     try{
@@ -4842,7 +4897,7 @@ function rowHTML(obj) {
 
   const noCoords = !hasPoint && occ7 > 0;
   const metaRow1 = hasPoint
-    ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+((p.coords_status==='restricted' && p.coords_source && p.coords_source!=='none') ? (' <span class="pill">coords:</span> restricted→'+((p.coords_source==='snapshot' || p.coords_source==='snapshot_fallback') ? 'snapshot fallback' : p.coords_source)) : '')+(p.municipality ? (' <span class="pill">municipality:</span> '+String(p.municipality)) : '')
+    ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(p.t_dt?(' <span class="pill">dt:</span> '+String(p.t_dt)):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+((p.coords_status==='restricted' && p.coords_source && p.coords_source!=='none') ? (' <span class="pill">coords:</span> restricted→'+((p.coords_source==='snapshot' || p.coords_source==='snapshot_fallback') ? 'snapshot fallback' : p.coords_source)) : '')+(p.municipality ? (' <span class="pill">municipality:</span> '+String(p.municipality)) : '')
     : noCoords
       ? '<span class="pill" style="background:#fef3c7;color:#92400e">Koordinaadid peidetud</span>'+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
       : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');

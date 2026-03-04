@@ -167,13 +167,14 @@
 </div>
 <div id="snapshotBanner" class="snapshot-banner" style="display:none"></div>
 <div class="fetch-controls">
-  <button id="btnRefreshData" class="btn" title="Trigger server-side data refresh">Refresh data</button>
+  <button id="btnRefreshElurikkus" class="btn" title="Refresh all species from Elurikkus">Refresh from Elurikkus</button>
   <button id="btnForceServerRefresh" class="btn secondary" title="Force server rebuild from upstream">Force server refresh</button>
   <button id="btnReloadSnapshot" class="btn secondary" title="Reload latest snapshot from server">Reload snapshot</button>
   <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index">Resume</button>
   <button id="btnSkipStuck" class="btn secondary" title="Skip current stuck item by resuming from next index">Skip stuck item</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
+<div id="eluProgress" class="subtle"></div>
 <div id="fetchProgress" class="fetch-progress"></div>
 <div id="indexProgress" class="fetch-progress"></div>
 <div id="serverRefreshStatus" class="fetch-progress"></div>
@@ -1149,6 +1150,8 @@ async function refreshAllFromElurikkus(){
   const prog = document.getElementById('fetchProgress');
   const idx = document.getElementById('indexProgress');
   const errEl = document.getElementById('fetchError');
+  const eluProg = document.getElementById('eluProgress');
+  if(eluProg) eluProg.textContent = 'Elurikkus refresh running: 0/' + total + ' species';
 
   // Fix 1: detect pre-aborted signal before loop starts
   if(signal.aborted){
@@ -1165,25 +1168,15 @@ async function refreshAllFromElurikkus(){
       const name = window.SPECIES[i];
       __elurikkusBulkStats.lastKey = name;
       _updateProgressUI(i, total, 'running');
-      if(prog) prog.textContent = 'Elurikkus refresh ' + (i + 1) + '/' + total + ' | ' + name;
+      if(prog) prog.textContent = 'Elurikkus refresh running: ' + (i + 1) + '/' + total + ' species';
+      if(eluProg) eluProg.textContent = 'Elurikkus refresh: ' + (i + 1) + '/' + total + ' | ' + name + ' | moved:' + __elurikkusBulkStats.moved + ' | errors:' + __elurikkusBulkStats.errors;
       if(idx) idx.textContent = 'Index: ' + (i + 1) + '/' + total;
       try{
-        // Fix 3: use fetchElurikkusSpecies (server path) instead of refreshSpeciesFromElurikkus (CORS-blocked HTML scrape)
-        const oldPoint = __snapshotPointBySpecies[_speciesKey(name)] || {};
-        const json = await fetchElurikkusSpecies(name);
-        console.log('[bulk] species', i, name, 'json=', json ? { mode: json.mode, itemsLen: Array.isArray(json.items) ? json.items.length : null } : null);
-        if(json && Array.isArray(json.items) && json.items.length){
-          // Fix 4: ensure live override flag is set so loadSnapshot can't clobber fresh coords
-          useLiveElurikkusForSpecies[_speciesKey(name)] = true;
-          _applyLiveOverrideForSpecies(name);
-          try{ updateMarker(name); }catch(_){}
-          save();
+        const one = await refreshSpeciesFromElurikkus(name, signal);
+        if(one){
           __elurikkusBulkStats.updated++;
-          const p = points[name] || {};
-          const moved = (Math.abs(Number(p.lat) - Number(oldPoint.lat)) > 1e-9 ||
-                         Math.abs(Number(p.lon) - Number(oldPoint.lon)) > 1e-9);
+          const moved = !!one.moved;
           if(moved) __elurikkusBulkStats.moved++;
-          console.log('[bulk]', name, 'updated, moved=', moved, 'lat=', p.lat, 'lon=', p.lon);
         } else {
           __elurikkusBulkStats.errors++;
           const msg = 'no items returned';
@@ -1206,6 +1199,7 @@ async function refreshAllFromElurikkus(){
         await _delay(500);
       }
       __elurikkusBulkStats.done = i + 1;
+      if(eluProg) eluProg.textContent = 'Elurikkus refresh: ' + (i + 1) + '/' + total + ' | ' + name + ' | moved:' + __elurikkusBulkStats.moved + ' | errors:' + __elurikkusBulkStats.errors;
       if(((i + 1) % 10) === 0) render();
     }
   }finally{
@@ -1225,6 +1219,7 @@ async function refreshAllFromElurikkus(){
     ' | latest=' + (latest || '-'),
     (__elurikkusBulkStats.errors ? 'warn' : '')
   );
+  if(eluProg) eluProg.textContent = 'Elurikkus refresh done: updated=' + __elurikkusBulkStats.updated + ' moved=' + __elurikkusBulkStats.moved + ' errors=' + __elurikkusBulkStats.errors;
   _updateProgressUI(__elurikkusBulkStats.done, total, 'ready');
   _updateDebugPanel();
 }
@@ -1831,6 +1826,10 @@ function _isServerDataStale(hours){
 function _updateServerSnapshotStatus(){
   const el = document.getElementById('serverRefreshStatus');
   if(!el) return;
+  if(__elurikkusBulkActive){
+    el.textContent = 'Snapshot (server): paused while Elurikkus live refresh is running';
+    return;
+  }
   const gen = __serverGeneratedAt ? _fmtTs(__serverGeneratedAt) : '-';
   const chk = __serverCheckedAt ? _fmtTs(__serverCheckedAt) : '-';
   const latest = __serverDataMaxAt ? _fmtTs(__serverDataMaxAt) : '-';
@@ -1843,7 +1842,7 @@ function _updateServerSnapshotStatus(){
     : ((!__lastProcessedSnapshotId || __serverIsNewer) ? 'New server data available' : 'No new server data');
   const err = (__serverCheckStatus === 'error' && __serverCheckError) ? ('; check error: ' + __serverCheckError) : '';
   const ageText = (latestAgeHours == null) ? '-' : (latestAgeHours.toFixed(1) + 'h');
-  el.textContent = 'Snapshot built at: ' + gen + ' | ID: ' + id + ' | Bytes: ' + String(Number(__serverBytes || 0) || '-') + ' | Latest occurrence in snapshot: ' + latest + ' (age: ' + ageText + ') | Checked: ' + chk + ' | ' + freshness + (staleNote ? (' | ' + staleNote) : '') + err;
+  el.textContent = 'Snapshot (server): built at ' + gen + ' | ID: ' + id + ' | Bytes: ' + String(Number(__serverBytes || 0) || '-') + ' | Latest occurrence in snapshot: ' + latest + ' (age: ' + ageText + ') | Checked: ' + chk + ' | ' + freshness + (staleNote ? (' | ' + staleNote) : '') + err;
 }
 function _deriveMetaFromRowShape(row){
   if(!row || typeof row !== 'object') return null;
@@ -3676,7 +3675,7 @@ async function _loadSnapshotImpl(){
       setTimeout(_hideSnapshotBanner, 4000);
       _updateProgressUI(__snapshotProgressDone, __snapshotProgressTotal, 'ready');
     } else {
-      _showSnapshotBanner('No snapshot data yet. Press "Refresh data" to generate.', 'warn');
+      _showSnapshotBanner('No snapshot data yet. Press "Force server refresh" to generate.', 'warn');
     }
     _setLoaderStage('ready');
     __snapshotErrorRetryAttempt = 0;
@@ -4018,7 +4017,7 @@ async function triggerRefresh(opts){
 
 // Wire buttons
 function _wireSnapshotButtons(){
-  const btnRefresh = document.getElementById('btnRefreshData');
+  const btnElu = document.getElementById('btnRefreshElurikkus');
   const btnForceRefresh = document.getElementById('btnForceServerRefresh');
   const btnReload = document.getElementById('btnReloadSnapshot');
   const btnResume = document.getElementById('btnResumeFetch');
@@ -4036,19 +4035,19 @@ function _wireSnapshotButtons(){
   const btnClearDebug = document.getElementById('btnClearDebugEvents');
   const toggle7d = document.getElementById('toggle7days');
 
-  if(btnRefresh && !btnRefresh.__wired){
-    btnRefresh.addEventListener('click', async function(){
-      if(btnRefresh.__running) return;
-      btnRefresh.__running = true;
-      btnRefresh.disabled = true;
+  if(btnElu && !btnElu.__wired){
+    btnElu.addEventListener('click', async function(){
+      if(btnElu.__running) return;
+      btnElu.__running = true;
+      btnElu.disabled = true;
       try{
         await refreshAllFromElurikkus();
       }finally{
-        btnRefresh.__running = false;
-        btnRefresh.disabled = false;
+        btnElu.__running = false;
+        btnElu.disabled = false;
       }
     });
-    btnRefresh.__wired = true;
+    btnElu.__wired = true;
   }
   if(btnForceRefresh && !btnForceRefresh.__wired){
     btnForceRefresh.addEventListener('click', function(){ triggerRefreshDataFlow(); });
@@ -4113,6 +4112,10 @@ function _wireSnapshotButtons(){
         try{ __elurikkusBulkAbort.abort('user'); }catch(e){}
         __elurikkusBulkActive = false;
         if(btnStop) btnStop.style.display = 'none';
+        const eluProg = document.getElementById('eluProgress');
+        if(eluProg){
+          eluProg.textContent = 'Elurikkus refresh stopped: ' + Number(__elurikkusBulkStats.done || 0) + '/' + Number(__elurikkusBulkStats.total || 0) + ' species';
+        }
         _showSnapshotBanner('Stopped by user', 'warn');
         _updateDebugPanel();
         return;

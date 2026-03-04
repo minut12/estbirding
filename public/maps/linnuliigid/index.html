@@ -273,6 +273,8 @@ const DATA = SPECIES.map(name => ({ est: _normText(name), url: 'https://elurikku
 // Local storage keys
 const LS_AVATARS='bm_rari_avatars', LS_POINTS='bm_rari_points', LS_PROXY='bm_rari_proxy', LS_NAMES='bm_rari_names', LS_SPRING='bm_rari_spring_dates';
 const LS_SPRING_YEARFIRST = 'bm_rari_spring_yearfirst_v3';
+const LS_LIVE_ELURIKKUS = 'bm_live_elurikkus_v1';
+const LS_LIVE_ELURIKKUS_USE = 'bm_live_elurikkus_use_v1';
 const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 const LS_SUPABASE_PROXY_BASE = 'supabase_proxy_base_v1';
 const BUILTIN_TRANSLATE_ENDPOINT = '/.netlify/functions/translate-et';
@@ -422,6 +424,21 @@ preloadAvatars([PLACEHOLDER_AVATAR_URL]);
 let points  = JSON.parse(localStorage.getItem(LS_POINTS) || '{}');
 let proxyBase = localStorage.getItem(LS_PROXY) || '';
 let nameCache = JSON.parse(localStorage.getItem(LS_NAMES) || '{}');
+let liveElurikkusBySpecies = (function(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(LS_LIVE_ELURIKKUS) || '{}');
+    return raw && typeof raw === 'object' ? raw : {};
+  }catch(e){ return {}; }
+})();
+let useLiveElurikkusForSpecies = (function(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(LS_LIVE_ELURIKKUS_USE) || '{}');
+    return raw && typeof raw === 'object' ? raw : {};
+  }catch(e){ return {}; }
+})();
+let liveStatsBySpecies = {};
+let __snapshotPointBySpecies = {};
+let __lockLiveOverridesDuringRefresh = true;
 try { ensureSupabaseProxyBaseStored(); } catch(e) {}
 
 let springDates = (function(){
@@ -433,6 +450,12 @@ let springDates = (function(){
 let springYearFirst = {};
 try { springYearFirst = JSON.parse(localStorage.getItem(LS_SPRING_YEARFIRST) || '{}') || {}; }
 catch(e){ springYearFirst = {}; }
+try{
+  Object.keys(liveElurikkusBySpecies || {}).forEach(function(k){
+    const e = liveElurikkusBySpecies[k] || {};
+    liveStatsBySpecies[k] = _computeLiveStats(e.items || []);
+  });
+}catch(e){}
 
 let springQ = [];
 let springQRunning = false;
@@ -478,6 +501,110 @@ function formatDateTimeEE(v){
       timeZone: EE_TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour:'2-digit', minute:'2-digit'
     }).format(new Date(ts));
   }catch(e){ return String(v || '-'); }
+}
+function _speciesKey(name){
+  return String(name || '').trim().toLowerCase();
+}
+function _readLiveEntry(speciesName){
+  return liveElurikkusBySpecies[_speciesKey(speciesName)] || null;
+}
+function _isLiveOverrideEnabled(speciesName){
+  return useLiveElurikkusForSpecies[_speciesKey(speciesName)] === true;
+}
+function _days7CutoffTs(){
+  return Date.now() - 7 * 24 * 60 * 60 * 1000;
+}
+function _computeLiveStats(items){
+  const arr = Array.isArray(items) ? items : [];
+  const cutoffTs = _days7CutoffTs();
+  let within = 0;
+  let missing = 0;
+  for(const it of arr){
+    const ts = _parseObservedTs(it && it.observedAt ? it.observedAt : '');
+    if(Number.isFinite(ts) && ts >= cutoffTs) within++;
+    const hasCoords = Number.isFinite(Number(it && it.lat)) && Number.isFinite(Number(it && it.lon));
+    if(!hasCoords) missing++;
+  }
+  return { itemsTotal: arr.length, itemsWithin7d: within, coordsMissing: missing };
+}
+function _persistLiveCaches(){
+  try{
+    const rows = Object.entries(liveElurikkusBySpecies)
+      .sort(function(a,b){
+        const ta = Date.parse(String((a[1] && a[1].fetchedAt) || '')) || 0;
+        const tb = Date.parse(String((b[1] && b[1].fetchedAt) || '')) || 0;
+        return tb - ta;
+      })
+      .slice(0, 10);
+    const trimmed = {};
+    rows.forEach(function(r){ trimmed[r[0]] = r[1]; });
+    liveElurikkusBySpecies = trimmed;
+    localStorage.setItem(LS_LIVE_ELURIKKUS, JSON.stringify(liveElurikkusBySpecies));
+    localStorage.setItem(LS_LIVE_ELURIKKUS_USE, JSON.stringify(useLiveElurikkusForSpecies || {}));
+  }catch(e){}
+}
+function _livePointFromItems(speciesName, items){
+  const key = _speciesKey(speciesName);
+  const arr = Array.isArray(items) ? items.slice() : [];
+  const sorted = arr.slice().sort(function(a,b){
+    return (_parseObservedTs(b && b.observedAt) || 0) - (_parseObservedTs(a && a.observedAt) || 0);
+  });
+  const newest = sorted.length ? sorted[0] : null;
+  const cutoffTs = _days7CutoffTs();
+  const occ7 = sorted.filter(function(it){
+    const ts = _parseObservedTs(it && it.observedAt ? it.observedAt : '');
+    return Number.isFinite(ts) && ts >= cutoffTs;
+  }).length;
+  let lat = null, lon = null, coordsStatus = 'missing', coordsSource = 'none', municipality = null;
+  for(const it of sorted){
+    const ilat = Number(it && it.lat);
+    const ilon = Number(it && it.lon);
+    if(Number.isFinite(ilat) && Number.isFinite(ilon)){
+      lat = ilat; lon = ilon; coordsStatus = 'public'; coordsSource = 'exact';
+      break;
+    }
+    if(!municipality && it && it.municipality) municipality = String(it.municipality || '').trim() || null;
+  }
+  const snap = __snapshotPointBySpecies[key] || {};
+  if(!(Number.isFinite(lat) && Number.isFinite(lon)) && Number.isFinite(snap.lat) && Number.isFinite(snap.lon)){
+    lat = Number(snap.lat);
+    lon = Number(snap.lon);
+    coordsStatus = 'restricted';
+    coordsSource = municipality ? 'municipality' : 'snapshot';
+  }
+  const out = Object.assign({}, snap);
+  if(newest && newest.observedAt) out.t = String(newest.observedAt);
+  if(Number.isFinite(lat) && Number.isFinite(lon)){ out.lat = lat; out.lon = lon; } else { delete out.lat; delete out.lon; }
+  out.occ7 = occ7;
+  out.src = 'live_elurikkus';
+  out.coords_status = coordsStatus;
+  out.coords_source = coordsSource;
+  if(municipality) out.municipality = municipality;
+  out.visible = out.visible !== false;
+  return out;
+}
+function _applyLiveOverrideForSpecies(speciesName){
+  const key = _speciesKey(speciesName);
+  const liveEntry = _readLiveEntry(speciesName);
+  if(!liveEntry || !Array.isArray(liveEntry.items) || !liveEntry.items.length) return;
+  points[speciesName] = _livePointFromItems(speciesName, liveEntry.items);
+  useLiveElurikkusForSpecies[key] = true;
+  _persistLiveCaches();
+}
+function _restoreSnapshotForSpecies(speciesName){
+  const key = _speciesKey(speciesName);
+  const snap = __snapshotPointBySpecies[key];
+  if(snap && typeof snap === 'object'){
+    points[speciesName] = Object.assign({}, snap);
+  }
+  useLiveElurikkusForSpecies[key] = false;
+  _persistLiveCaches();
+}
+function _rebuildMarkers(opts){
+  refreshAllMarkers();
+  if(opts && opts.reason){
+    logInfo('rebuild_markers', opts);
+  }
 }
 function _toDay(s){
   return _parseObservedTs(s);
@@ -1363,17 +1490,30 @@ async function fetchElurikkusSpecies(species){
   if(cached && (Date.now() - Number(cached.ts || 0) < ELURIKKUS_CACHE_TTL_MS)){
     const cachedData = cached.data || {};
     const items = Array.isArray(cachedData.items) ? cachedData.items : [];
-    const restrictedCount = items.filter(function(it){ return String((it && it.coordsStatus) || '') !== 'public'; }).length;
+    const stats = _computeLiveStats(items);
+    const restrictedCount = items.filter(function(it){
+      const s = String((it && it.coordsStatus) || '');
+      return s === 'restricted' || s === 'missing';
+    }).length;
     row.status = 'cached';
     row.error = '';
     row.durationMs = Number(cachedData.durationMs || 0) || null;
     row.bytes = Number(cachedData.upstreamBytes || 0) || null;
-    row.latestOccurrenceAt = String(cachedData.latestOccurrenceAt || '').trim();
+    row.latestOccurrenceAt = String(cachedData.dataMaxAt || cachedData.latestOccurrenceAt || '').trim();
     row.itemsCount = items.length;
     row.restrictedCount = restrictedCount;
     row.publicCount = Math.max(0, items.length - restrictedCount);
     row.sourceUrl = String(cachedData.sourceUrl || '').trim();
+    row.fetchSummary = 'Fetched ✓ (' + stats.itemsTotal + ' items, newest: ' + (row.latestOccurrenceAt ? formatDateTimeEE(row.latestOccurrenceAt) : '-') + ')';
     row.updatedAt = new Date().toISOString();
+    liveElurikkusBySpecies[cacheKey] = {
+      fetchedAt: new Date().toISOString(),
+      dataMaxAt: String(cachedData.dataMaxAt || cachedData.latestOccurrenceAt || '').trim(),
+      items: items.slice(),
+      sourceUrl: row.sourceUrl || '',
+    };
+    liveStatsBySpecies[cacheKey] = stats;
+    _persistLiveCaches();
     render();
     return cachedData;
   }
@@ -1409,24 +1549,41 @@ async function fetchElurikkusSpecies(species){
       const json = JSON.parse(text);
       _traceEnd(traceId, { status: res.status, ok: !!res.ok, bytesRead: bytesRead, details: { responseKeys: json && typeof json === 'object' ? Object.keys(json) : [] } });
       logInfo('Elurikkus species response', { species: speciesName, status: res.status, bodyPreview: String(text || '').slice(0,200) });
-      const items = Array.isArray(json.items) ? json.items : [];
-      const restrictedCount = items.filter(function(it){ return String((it && it.coordsStatus) || '') !== 'public'; }).length;
+      const items = Array.isArray(json.items) ? json.items.slice() : [];
+      const stats = _computeLiveStats(items);
+      const restrictedCount = items.filter(function(it){
+        const s = String((it && it.coordsStatus) || '');
+        return s === 'restricted' || s === 'missing';
+      }).length;
       row.status = 'ok';
       row.durationMs = durationMs;
-      row.bytes = Number(json && json.trace && json.trace.upstreamBytes || bytesRead || 0);
-      row.latestOccurrenceAt = String((json && json.latestOccurrenceAt) || '').trim();
+      row.bytes = Number((json && json.upstreamBytes) || (json && json.trace && json.trace.upstreamBytes) || bytesRead || 0);
+      row.latestOccurrenceAt = String((json && (json.dataMaxAt || json.latestOccurrenceAt)) || '').trim();
       row.itemsCount = items.length;
       row.restrictedCount = restrictedCount;
       row.publicCount = Math.max(0, items.length - restrictedCount);
       row.sourceUrl = String((json && json.sourceUrl) || '').trim();
       row.updatedAt = new Date().toISOString();
+      row.fetchSummary = 'Fetched ✓ (' + stats.itemsTotal + ' items, newest: ' + (row.latestOccurrenceAt ? formatDateTimeEE(row.latestOccurrenceAt) : '-') + ')';
       __elurikkusFetchCountTotal++;
       __elurikkusFetchCountBySpecies[cacheKey] = Number(__elurikkusFetchCountBySpecies[cacheKey] || 0) + 1;
       __lastElurikkusSpeciesFetched = speciesName;
       __lastElurikkusLatestOccurrenceAt = row.latestOccurrenceAt || '';
       __lastElurikkusItemsCount = row.itemsCount || 0;
       __lastElurikkusError = '';
+      liveElurikkusBySpecies[cacheKey] = {
+        fetchedAt: new Date().toISOString(),
+        dataMaxAt: row.latestOccurrenceAt || '',
+        items: items,
+        sourceUrl: row.sourceUrl || '',
+      };
+      liveStatsBySpecies[cacheKey] = stats;
+      _persistLiveCaches();
       __elurikkusResultCache.set(cacheKey, { ts: Date.now(), data: json });
+      if(_isLiveOverrideEnabled(speciesName)){
+        _applyLiveOverrideForSpecies(speciesName);
+        _rebuildMarkers({ reason: 'live_fetch_applied', speciesKey: cacheKey });
+      }
       return json;
     }catch(e){
       const errName = String((e && e.name) ? e.name : 'Error');
@@ -2367,6 +2524,8 @@ function _computeDebugProObject(){
   const rawCount = SPECIES.length;
   const filteredCount = SPECIES.filter(function(k){ return _explainInclusion(k, points[k] || {}).included; }).length;
   let outsideBounds = 0;
+  let markersFromLive = 0;
+  let markersFromSnapshot = 0;
   if(bounds){
     for(const k of SPECIES){
       const p = points[k] || {};
@@ -2374,6 +2533,12 @@ function _computeDebugProObject(){
         if(p.lat < bounds.south || p.lat > bounds.north || p.lon < bounds.west || p.lon > bounds.east) outsideBounds++;
       }
     }
+  }
+  for(const k of SPECIES){
+    const p = points[k] || {};
+    if(!(Number.isFinite(p.lat) && Number.isFinite(p.lon))) continue;
+    if(String(p.src || '') === 'live_elurikkus') markersFromLive++;
+    else markersFromSnapshot++;
   }
   const indexAudit = _computeIndexAudit(__totalItems, __currentIndex, __nextIndex, __processedCount, __lastProcessedIndex, __indexTrace);
   const elurikkusTopCounts = Object.entries(__elurikkusFetchCountBySpecies)
@@ -2413,6 +2578,8 @@ function _computeDebugProObject(){
       markersRendered: __renderedMarkerCount,
       mapBounds: bounds,
       outsideBoundsCount: outsideBounds,
+      markersFromLive: markersFromLive,
+      markersFromSnapshot: markersFromSnapshot,
     },
     indexProgress: {
       totalItems: __totalItems,
@@ -2435,6 +2602,9 @@ function _computeDebugProObject(){
       lastElurikkusLatestOccurrenceAt: __lastElurikkusLatestOccurrenceAt || '',
       lastElurikkusItemsCount: Number(__lastElurikkusItemsCount || 0),
       lastElurikkusError: __lastElurikkusError || '',
+      lockLiveOverridesDuringRefresh: __lockLiveOverridesDuringRefresh ? 'on' : 'off',
+      liveOverridesActiveCount: Object.keys(useLiveElurikkusForSpecies || {}).filter(function(k){ return useLiveElurikkusForSpecies[k] === true; }).length,
+      liveSpeciesActive: Object.keys(useLiveElurikkusForSpecies || {}).filter(function(k){ return useLiveElurikkusForSpecies[k] === true; }).slice(0,20),
     },
     logs: __internalLogs.slice(0,50),
   };
@@ -2479,6 +2649,7 @@ function _updateDebugProPanel(){
     '<div>within-cutoff but excluded (top20): <span class="debug-pro-code">' + JSON.stringify(dbg.filterVerifier.freshExcluded).replace(/</g,'&lt;') + '</span></div></div>' +
     '<div class="debug-pro-sec"><div class="debug-pro-title">Map/markers</div>' +
     '<div>raw items: ' + dbg.mapMarkers.rawItemsCount + ' | filtered items: ' + dbg.mapMarkers.filteredItemsCount + ' | marker map size: ' + dbg.mapMarkers.clusterMarkerCount + ' | markersRendered: ' + dbg.mapMarkers.markersRendered + '</div>' +
+    '<div>markersFromLive: <b>' + (dbg.mapMarkers.markersFromLive || 0) + '</b> | markersFromSnapshot: <b>' + (dbg.mapMarkers.markersFromSnapshot || 0) + '</b></div>' +
     '<div>outside bounds: ' + dbg.mapMarkers.outsideBoundsCount + ' | bounds: <span class="debug-pro-code">' + JSON.stringify(dbg.mapMarkers.mapBounds) + '</span></div>' +
     '<div>likely mismatch causes: clustering/zoom, missing coords, hidden items, viewport bounds</div></div>' +
     '<div class="debug-pro-sec"><div class="debug-pro-title">Index trace</div>' +
@@ -2506,7 +2677,9 @@ function _updateDebugProPanel(){
     '<div>lastElurikkusUrl: <span class="debug-pro-code">' + (dbg.upstreamDebug.lastElurikkusUrl || '-') + '</span></div>' +
     '<div>lastElurikkusLatestOccurrenceAt: <b>' + (dbg.upstreamDebug.lastElurikkusLatestOccurrenceAt || '-') + '</b></div>' +
     '<div>lastElurikkusItemsCount: <b>' + (dbg.upstreamDebug.lastElurikkusItemsCount || 0) + '</b></div>' +
-    '<div>lastElurikkusError: <b>' + (dbg.upstreamDebug.lastElurikkusError || '-') + '</b></div></div>' +
+    '<div>lastElurikkusError: <b>' + (dbg.upstreamDebug.lastElurikkusError || '-') + '</b></div>' +
+    '<div>liveOverridesActiveCount: <b>' + (dbg.upstreamDebug.liveOverridesActiveCount || 0) + '</b> | lockLiveOverridesDuringRefresh: <b>' + (dbg.upstreamDebug.lockLiveOverridesDuringRefresh || 'on') + '</b></div>' +
+    '<div>liveSpeciesActive(top20): <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.liveSpeciesActive || []).replace(/</g,'&lt;') + '</span></div></div>' +
     '<div class="debug-pro-sec"><div class="debug-pro-title">Logs & Export</div>' +
     '<div>internal logs (last 50): <span class="debug-pro-code">' + JSON.stringify(dbg.logs).replace(/</g,'&lt;') + '</span></div></div>';
 }
@@ -2574,27 +2747,23 @@ async function _applySnapshot(snap){
     _pushIndexTrace(i, 'start');
     const s = pts[key];
     if(!pts.hasOwnProperty(key)) continue;
-    points[key] = points[key] || {};
-    const p = points[key];
-    if(typeof s.t === 'string' && s.t.trim()) p.t = s.t;
-    else delete p.t;
-    if(Number.isFinite(s.lat) && Number.isFinite(s.lon)){ p.lat = s.lat; p.lon = s.lon; }
-    else { delete p.lat; delete p.lon; }
-    if(Number.isFinite(s.occ7)) p.occ7 = s.occ7;
-    else delete p.occ7;
-    if(typeof s.src === 'string' && s.src.trim()) p.src = s.src;
-    else delete p.src;
-    if(typeof s.coords_status === 'string') p.coords_status = s.coords_status;
-    else delete p.coords_status;
-    if(typeof s.coords_source === 'string') p.coords_source = s.coords_source;
-    else delete p.coords_source;
-    if(typeof s.locality === 'string' && s.locality.trim()) p.locality = s.locality;
-    else delete p.locality;
-    if(typeof s.municipality === 'string' && s.municipality.trim()) p.municipality = s.municipality;
-    else delete p.municipality;
-    if(typeof s.county === 'string' && s.county.trim()) p.county = s.county;
-    else delete p.county;
-    if(typeof p.visible !== 'boolean') p.visible = true;
+    const snapPoint = {};
+    if(typeof s.t === 'string' && s.t.trim()) snapPoint.t = s.t;
+    if(Number.isFinite(s.lat) && Number.isFinite(s.lon)){ snapPoint.lat = s.lat; snapPoint.lon = s.lon; }
+    if(Number.isFinite(s.occ7)) snapPoint.occ7 = s.occ7;
+    if(typeof s.src === 'string' && s.src.trim()) snapPoint.src = s.src;
+    if(typeof s.coords_status === 'string') snapPoint.coords_status = s.coords_status;
+    if(typeof s.coords_source === 'string') snapPoint.coords_source = s.coords_source;
+    if(typeof s.locality === 'string' && s.locality.trim()) snapPoint.locality = s.locality;
+    if(typeof s.municipality === 'string' && s.municipality.trim()) snapPoint.municipality = s.municipality;
+    if(typeof s.county === 'string' && s.county.trim()) snapPoint.county = s.county;
+    __snapshotPointBySpecies[_speciesKey(key)] = Object.assign({}, snapPoint);
+    const keepLive = __lockLiveOverridesDuringRefresh && _isLiveOverrideEnabled(key) && _readLiveEntry(key);
+    if(!keepLive){
+      points[key] = Object.assign({}, snapPoint, { visible: (points[key] && points[key].visible === false) ? false : true });
+    }else{
+      _applyLiveOverrideForSpecies(key);
+    }
     __snapshotProgressDone++;
     __lastProgressDone = __snapshotProgressDone;
     __lastProcessedIndex = i;
@@ -3322,6 +3491,7 @@ function save() {
   localStorage.setItem(LS_NAMES, JSON.stringify(nameCache));
   localStorage.setItem(LS_SPRING, JSON.stringify(springDates));
   localStorage.setItem(LS_SPRING_YEARFIRST, JSON.stringify(springYearFirst));
+  _persistLiveCaches();
 }
 
 // Icons
@@ -3448,7 +3618,7 @@ function updateMarker(key) {
     const when = p.t ? '<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.observationDate) || 'vaatluse kuup\u00e4ev') + ': ' + formatDateEE(p.t) + '</small>' : '';
     const src = p.src ? '<br><small>allikas: '+p.src+'</small>' : '';
     const precision = (p.coords_status === 'restricted' && p.coords_source && p.coords_source !== 'none')
-      ? ('<br><small>coords restricted \u2192 ' + p.coords_source + ' centroid</small>')
+      ? ('<br><small>coords restricted \u2192 ' + (p.coords_source === 'snapshot' ? 'snapshot fallback' : (p.coords_source + ' centroid')) + '</small>')
       : '';
     const m = L.marker([p.lat,p.lon], {icon}).addTo(map)
       .bindPopup('<b>'+key+'</b>'+when+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+precision);
@@ -3474,14 +3644,19 @@ function rowHTML(obj) {
 
   const noCoords = !hasPoint && occ7 > 0;
   const metaRow1 = hasPoint
-    ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+((p.coords_status==='restricted' && p.coords_source && p.coords_source!=='none') ? (' <span class="pill">coords:</span> restricted→'+p.coords_source) : '')
+    ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+((p.coords_status==='restricted' && p.coords_source && p.coords_source!=='none') ? (' <span class="pill">coords:</span> restricted→'+(p.coords_source==='snapshot' ? 'snapshot fallback' : p.coords_source)) : '')
     : noCoords
       ? '<span class="pill" style="background:#fef3c7;color:#92400e">Koordinaadid peidetud</span>'+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
       : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
   const meta = '<div class="meta-grid"><div class="meta-row1">'+metaRow1+'</div><div class="meta-row2">'+springTxt+'</div></div>';
   const up = __elurikkusBySpecies[key] || null;
+  const speciesKey = _normalizeSpeciesKey(key);
+  const liveEntry = _readLiveEntry(key);
+  const liveStats = liveStatsBySpecies[speciesKey] || null;
+  const liveEnabled = _isLiveOverrideEnabled(key);
+  const activeSource = liveEnabled ? 'live (Elurikkus)' : 'snapshot';
   const isUpLoading = __elurikkusInFlightBySpecies.has(_normalizeSpeciesKey(key));
-  const fetchCount = Number(__elurikkusFetchCountBySpecies[_normalizeSpeciesKey(key)] || 0);
+  const fetchCount = Number(__elurikkusFetchCountBySpecies[speciesKey] || 0);
   const upLine = up
     ? ('<div class="small" style="margin-top:4px">' +
       'Elurikkus: ' + (up.status || '-') +
@@ -3491,8 +3666,14 @@ function rowHTML(obj) {
       (up.latestOccurrenceAt ? (' | latest: ' + formatDateTimeEE(up.latestOccurrenceAt)) : '') +
       ((Number.isFinite(up.publicCount) || Number.isFinite(up.restrictedCount)) ? (' | coords public/restricted: ' + (up.publicCount || 0) + '/' + (up.restrictedCount || 0)) : '') +
       (up.error ? (' | error: ' + up.error) : '') +
+      (up.fetchSummary ? (' | ' + up.fetchSummary) : '') +
       '</div>')
     : ('<div class="small" style="margin-top:4px">Elurikkus: - | fetched ' + fetchCount + 'x</div>');
+  const liveLine = '<div class="small" style="margin-top:3px">' +
+    'Source: <b>' + activeSource + '</b>' +
+    (liveStats ? (' | live items: ' + liveStats.itemsTotal + ' | 7d: ' + liveStats.itemsWithin7d + ' | missing coords: ' + liveStats.coordsMissing) : '') +
+    (liveEntry && liveEntry.dataMaxAt ? (' | newest: ' + formatDateTimeEE(liveEntry.dataMaxAt)) : '') +
+    '</div>';
 
   return '<div class="row" data-key="'+key+'">' +
     '<div class="avatar" style="background-image:url(\''+getDisplayAvatar(key)+'\');border:3px solid '+bcol+'"></div>' +
@@ -3507,8 +3688,10 @@ function rowHTML(obj) {
       '<div style="display:flex;flex-direction:column;gap:6px">' +
       '<a class="btn" target="_blank" href="'+obj.url+'">Open</a>' +
       '<button class="btn secondary fetch-elurikkus-btn" data-species="'+key+'" '+(isUpLoading?'disabled':'')+' title="Fetch from Elurikkus via server proxy">Fetch (Elurikkus)</button>' +
+      '<button class="btn secondary toggle-live-elurikkus-btn" data-species="'+key+'" '+(!liveEntry?'disabled':'')+' title="Use fetched Elurikkus data for map markers">' + (liveEnabled ? 'Use snapshot data' : 'Use live data') + '</button>' +
       '</div>' +
     '</div>' +
+    liveLine +
   '</div>';
 }
 
@@ -3533,6 +3716,22 @@ function render() {
       e.stopPropagation();
       const species = upstreamBtn.getAttribute('data-species') || '';
       fetchElurikkusSpecies(species);
+      return;
+    }
+    const liveBtn = t.closest?.('.toggle-live-elurikkus-btn');
+    if (liveBtn){
+      e.preventDefault();
+      e.stopPropagation();
+      const species = liveBtn.getAttribute('data-species') || '';
+      const key = _speciesKey(species);
+      if(_isLiveOverrideEnabled(species)){
+        _restoreSnapshotForSpecies(species);
+        _rebuildMarkers({ reason: 'live_override_disabled', speciesKey: key });
+      }else{
+        _applyLiveOverrideForSpecies(species);
+        _rebuildMarkers({ reason: 'live_override_enabled', speciesKey: key });
+      }
+      save();
       return;
     }
 

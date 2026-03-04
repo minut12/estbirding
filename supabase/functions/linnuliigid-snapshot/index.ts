@@ -280,6 +280,79 @@ function buildJsonNoStoreHeaders(): Record<string, string> {
   return { ...corsHeaders, "Cache-Control": "no-store", "Content-Type": "application/json; charset=utf-8" };
 }
 
+type LiveOccItem = {
+  observedAt: string;
+  lat?: number;
+  lon?: number;
+  municipality?: string;
+  coordsStatus: "exact" | "restricted" | "missing";
+};
+
+function parseElurikkusHtmlItems(html: string): LiveOccItem[] {
+  const out: LiveOccItem[] = [];
+  const dateRe = /"(?:eventDate|occurrenceDate|datetime|observed_at|observedAt)"\s*:\s*"([^"]+)"/gi;
+  const latRe = /"decimalLatitude"\s*:\s*(-?\d+(?:\.\d+)?)/gi;
+  const lonRe = /"decimalLongitude"\s*:\s*(-?\d+(?:\.\d+)?)/gi;
+  const muniRe = /"(?:municipality|county|stateProvince)"\s*:\s*"([^"]+)"/gi;
+
+  const dates: string[] = [];
+  const lats: (number | null)[] = [];
+  const lons: (number | null)[] = [];
+  const munis: (string | null)[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = dateRe.exec(html)) !== null) dates.push(String(m[1] || "").trim());
+  while ((m = latRe.exec(html)) !== null) {
+    const v = Number.parseFloat(String(m[1] || ""));
+    lats.push(Number.isFinite(v) ? v : null);
+  }
+  while ((m = lonRe.exec(html)) !== null) {
+    const v = Number.parseFloat(String(m[1] || ""));
+    lons.push(Number.isFinite(v) ? v : null);
+  }
+  while ((m = muniRe.exec(html)) !== null) {
+    const raw = String(m[1] || "").trim();
+    munis.push(raw || null);
+  }
+
+  const maxLen = Math.min(200, Math.max(dates.length, lats.length, lons.length, munis.length));
+  for (let i = 0; i < maxLen; i++) {
+    const ts = parseElurikkusDate(String(dates[i] || ""));
+    if (!(ts > 0)) continue;
+    const lat = i < lats.length ? lats[i] : null;
+    const lon = i < lons.length ? lons[i] : null;
+    const municipality = i < munis.length ? munis[i] : null;
+    let hasCoords = Number.isFinite(lat) && Number.isFinite(lon);
+    let resolvedLat = hasCoords ? Number(lat) : null;
+    let resolvedLon = hasCoords ? Number(lon) : null;
+    if (!hasCoords && municipality) {
+      try {
+        const mk = normalizeName(municipality).replace(/_county$/, "");
+        const centroid = MUNICIPALITY_CENTROIDS[mk] || COUNTY_CENTROIDS[mk] || null;
+        if (centroid && Number.isFinite(centroid.lat) && Number.isFinite(centroid.lon)) {
+          resolvedLat = centroid.lat;
+          resolvedLon = centroid.lon;
+          hasCoords = true;
+        }
+      } catch {
+        // ignore centroid lookup failures
+      }
+    }
+    const item: LiveOccItem = {
+      observedAt: new Date(ts).toISOString(),
+      coordsStatus: hasCoords ? ((Number.isFinite(lat) && Number.isFinite(lon)) ? "exact" : "restricted") : "missing",
+    };
+    if (hasCoords) {
+      item.lat = Number(resolvedLat);
+      item.lon = Number(resolvedLon);
+    }
+    if (municipality) item.municipality = municipality;
+    out.push(item);
+  }
+
+  out.sort((a, b) => parseElurikkusDate(b.observedAt) - parseElurikkusDate(a.observedAt));
+  return out.slice(0, 200);
+}
+
 async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Response> {
   if (req.method !== "GET") {
     return new Response(
@@ -310,6 +383,8 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
     const html = await upstreamRes.text();
     const durationMs = Date.now() - startedAt;
     const upstreamBytes = new TextEncoder().encode(html).length;
+    const items = parseElurikkusHtmlItems(html);
+    const dataMaxAt = items.length ? items[0].observedAt : null;
     if (!upstreamRes.ok) {
       return new Response(
         JSON.stringify({
@@ -321,6 +396,8 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
           upstreamBytes,
           durationMs,
           htmlLength: html.length,
+          dataMaxAt,
+          items,
           message: `Upstream HTTP ${upstreamRes.status}`,
         }),
         { status: upstreamRes.status, headers: buildJsonNoStoreHeaders() },
@@ -336,6 +413,8 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
         upstreamBytes,
         durationMs,
         htmlLength: html.length,
+        dataMaxAt,
+        items,
       }),
       { status: 200, headers: buildJsonNoStoreHeaders() },
     );
@@ -350,6 +429,8 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
         upstreamBytes: 0,
         durationMs: Date.now() - startedAt,
         htmlLength: 0,
+        dataMaxAt: null,
+        items: [],
         message: String((error as Error)?.message || error),
       }),
       { status: 502, headers: buildJsonNoStoreHeaders() },

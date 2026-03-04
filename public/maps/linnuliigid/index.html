@@ -160,7 +160,7 @@
     <div class="panel-content-scroll">
 <div class="top-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:center">
   <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px">
-    <input type="checkbox" id="toggle7days" checked />
+    <input type="checkbox" id="toggle7days" />
     <span>7 days only</span>
   </label>
 </div>
@@ -241,6 +241,7 @@ const DATA = SPECIES.map(name => ({ est: _normText(name), url: 'https://elurikku
 
 // Local storage keys
 const LS_AVATARS='bm_rari_avatars', LS_POINTS='bm_rari_points', LS_PROXY='bm_rari_proxy', LS_NAMES='bm_rari_names', LS_SPRING='bm_rari_spring_dates';
+const LS_RECENT_ONLY = 'bm_recent_only';
 const LS_SPRING_YEARFIRST = 'bm_rari_spring_yearfirst_v3';
 const CLASSIC_MODE = true;
 const LS_LIVE_ELURIKKUS = 'bm_live_elurikkus_v1';
@@ -904,8 +905,13 @@ async function fetchSpringYearFirstOne(key){
 }
 
 // Toggle state: 7 days only
-window.__recentOnly = true;
+window.__recentOnly = (localStorage.getItem(LS_RECENT_ONLY) === '1');
 function is7daysOnly(){ return window.__recentOnly; }
+function passes7d(p){
+  const occ7 = (p && (p.occ7 === 0 || p.occ7)) ? Number(p.occ7) : NaN;
+  if (Number.isFinite(occ7)) return occ7 > 0;
+  return !!(p && p.t && isRecent(p.t));
+}
 
 function isRecent(isoDate){
   try{
@@ -2532,9 +2538,11 @@ function _hideSnapshotBanner(){
 // "Show all" shortcut - turns off 7-day toggle
 window.__showAll = function(){
   window.__recentOnly = false;
+  try{ localStorage.setItem(LS_RECENT_ONLY, '0'); }catch(e){}
   const cb = document.getElementById('toggle7days');
   if(cb) cb.checked = false;
-  refreshAllMarkers();
+  Object.keys(points || {}).forEach(updateMarker);
+  render();
   _hideSnapshotBanner();
 };
 
@@ -2841,6 +2849,7 @@ function _computeDebugProObject(){
   let outsideBounds = 0;
   let markersFromLive = 0;
   let markersFromSnapshot = 0;
+  let visibleByOcc7 = 0;
   if(bounds){
     for(const k of SPECIES){
       const p = points[k] || {};
@@ -2852,7 +2861,9 @@ function _computeDebugProObject(){
   for(const k of SPECIES){
     const p = points[k] || {};
     if(!(Number.isFinite(p.lat) && Number.isFinite(p.lon))) continue;
-    if(String(p.src || '') === 'live_elurikkus') markersFromLive++;
+    const occ7 = (p.occ7 === 0 || p.occ7) ? Number(p.occ7) : NaN;
+    if(Number.isFinite(occ7) && occ7 > 0) visibleByOcc7++;
+    if(String(p.src || '') === 'live_elurikkus' || String(p.src || '') === 'Elurikkus') markersFromLive++;
     else markersFromSnapshot++;
   }
   const indexAudit = _computeIndexAudit(__totalItems, __currentIndex, __nextIndex, __processedCount, __lastProcessedIndex, __indexTrace);
@@ -2895,6 +2906,8 @@ function _computeDebugProObject(){
       outsideBoundsCount: outsideBounds,
       markersFromLive: markersFromLive,
       markersFromSnapshot: markersFromSnapshot,
+      visibleByOcc7: visibleByOcc7,
+      visibleMarkers: markers && markers.size ? markers.size : 0,
     },
     indexProgress: {
       totalItems: __totalItems,
@@ -2972,6 +2985,7 @@ function _updateDebugProPanel(){
     '<div class="debug-pro-sec"><div class="debug-pro-title">Map/markers</div>' +
     '<div>raw items: ' + dbg.mapMarkers.rawItemsCount + ' | filtered items: ' + dbg.mapMarkers.filteredItemsCount + ' | marker map size: ' + dbg.mapMarkers.clusterMarkerCount + ' | markersRendered: ' + dbg.mapMarkers.markersRendered + '</div>' +
     '<div>markersFromLive: <b>' + (dbg.mapMarkers.markersFromLive || 0) + '</b> | markersFromSnapshot: <b>' + (dbg.mapMarkers.markersFromSnapshot || 0) + '</b></div>' +
+    '<div>visibleByOcc7: <b>' + (dbg.mapMarkers.visibleByOcc7 || 0) + '</b> | visibleMarkers: <b>' + (dbg.mapMarkers.visibleMarkers || 0) + '</b></div>' +
     '<div>outside bounds: ' + dbg.mapMarkers.outsideBoundsCount + ' | bounds: <span class="debug-pro-code">' + JSON.stringify(dbg.mapMarkers.mapBounds) + '</span></div>' +
     '<div>likely mismatch causes: clustering/zoom, missing coords, hidden items, viewport bounds</div></div>' +
     '<div class="debug-pro-sec"><div class="debug-pro-title">Index trace</div>' +
@@ -3018,6 +3032,12 @@ function _updateDebugPanel(){
   const el = document.getElementById('debugContent');
   if(!el) return;
   const totalWithCoords = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.lat); }).length;
+  const visibleByOcc7 = SPECIES.filter(function(n){
+    const p = points[n];
+    if(!p || !(Number.isFinite(p.lat) && Number.isFinite(p.lon))) return false;
+    const occ7 = (p.occ7 === 0 || p.occ7) ? Number(p.occ7) : NaN;
+    return Number.isFinite(occ7) && occ7 > 0;
+  }).length;
   const progressDone = Number(__snapshotProgressDone || 0);
   const progressTotal = Number(__snapshotProgressTotal || 0);
   const statusLabel = (__loaderStage === 'rate_limited')
@@ -3031,6 +3051,7 @@ function _updateDebugPanel(){
     'resumeIndex: <b>' + _getResumeIndex() + '</b>',
     'Species with coords: <b>' + totalWithCoords + '</b>',
     'Markers rendered: <b>' + __renderedMarkerCount + '</b>',
+    'visibleByOcc7: <b>' + visibleByOcc7 + '</b> | visibleMarkers: <b>' + (markers && markers.size ? markers.size : 0) + '</b>',
     'lastRequestUrl: <b>' + (__lastRequestUrl || '-') + '</b>',
     'lastHttp: <b>{ method: ' + (__lastHttpMethod ?? '-') + ', status: ' + (__lastHttpStatus ?? '-') + ', ok: ' + (__lastHttpOk ?? '-') + ', durationMs: ' + (__lastDurationMs ?? '-') + ' }</b>',
     'lastSnapshotBytes: <b>' + (__lastResponseBytes ?? '-') + '</b>',
@@ -3667,9 +3688,12 @@ function _wireSnapshotButtons(){
     btnStop.__wired = true;
   }
   if(toggle7d && !toggle7d.__wired){
+    toggle7d.checked = !!window.__recentOnly;
     toggle7d.addEventListener('change', function(){
       window.__recentOnly = this.checked;
-      refreshAllMarkers();
+      try{ localStorage.setItem(LS_RECENT_ONLY, this.checked ? '1' : '0'); }catch(e){}
+      Object.keys(points || {}).forEach(updateMarker);
+      render();
       if(this.checked) _checkEmpty7dBanner();
       else _hideSnapshotBanner();
     });
@@ -3939,8 +3963,7 @@ function updateMarker(key) {
 
   // Determine visibility based on 7-day toggle
   const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
-  const passesRecent = isRecent(p.t);
-  const passesFilter = is7daysOnly() ? passesRecent : true;
+  const passesFilter = is7daysOnly() ? passes7d(p) : true;
   const isVisible = (p.visible !== false) && passesFilter && hasCoords;
 
   if (isVisible) {

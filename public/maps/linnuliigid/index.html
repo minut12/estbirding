@@ -165,14 +165,6 @@
   </label>
   <button id="btnToggle7p" class="btn secondary" title="Toggle 7-day filter">7p: OFF</button>
 </div>
-<div class="top-actions" style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px;align-items:center">
-  <button id="btnExportState" class="btn secondary">Export</button>
-  <button id="btnImportState" class="btn secondary">Import</button>
-  <button id="btnResetState" class="btn secondary">Reset</button>
-  <button id="btnSpringTxt" class="btn secondary">Spring .txt</button>
-  <button id="btnSpringExport" class="btn secondary">Spring export</button>
-  <input id="importStateInput" type="file" accept="application/json,.json" style="display:none" />
-</div>
 <div id="snapshotBanner" class="snapshot-banner" style="display:none"></div>
 <div class="fetch-controls">
   <button id="btnRefreshData" class="btn" title="Trigger server-side data refresh">Refresh data</button>
@@ -947,10 +939,10 @@ async function fetchSpringYearFirstOne(key){
 // Toggle state: 7 days only
 window.__recentOnly = (localStorage.getItem(LS_RECENT_ONLY) === '1');
 function is7daysOnly(){ return !!window.__recentOnly; }
-function toDayLocal(v){
+function _toDayLocalTallinn(v){
   const s = String(v || '').trim();
   if(!s) return null;
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if(!m) return null;
   const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
   if(!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null;
@@ -958,7 +950,7 @@ function toDayLocal(v){
 }
 function isWithin7d(p){
   if(!p || !p.t) return false;
-  const ms = toDayLocal(p.t);
+  const ms = _toDayLocalTallinn(String(p.t).slice(0, 10));
   if(!ms) return false;
   const delta = Date.now() - ms;
   return delta >= 0 && delta <= 7 * 24 * 60 * 60 * 1000;
@@ -3207,9 +3199,9 @@ function refreshAllMarkers(){
 
 function _checkEmpty7dBanner(){
   if(!is7daysOnly()) return;
-  const occ7Count = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.occ7) && p.occ7 > 0; }).length;
+  const recentCount = SPECIES.filter(n => { const p = points[n]; return p && isWithin7d(p); }).length;
   const totalWithCoords = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.lat); }).length;
-  if(occ7Count === 0 && totalWithCoords > 0){
+  if(recentCount === 0 && totalWithCoords > 0){
     _showSnapshotBanner('No observations in last 7 days in current dataset. Turn off "7 days only" to see all known locations.', 'warn', true);
   }
 }
@@ -3841,13 +3833,7 @@ function _wireSnapshotButtons(){
 }
 
 function _wireSidebarSettingsRow(){
-  const btnExport = document.getElementById('btnExportState');
-  const btnImport = document.getElementById('btnImportState');
-  const btnReset = document.getElementById('btnResetState');
-  const btnSpringTxt = document.getElementById('btnSpringTxt');
-  const btnSpringExport = document.getElementById('btnSpringExport');
   const btnToggle7p = document.getElementById('btnToggle7p');
-  const importInput = document.getElementById('importStateInput');
 
   function refresh7pBtn(){
     if(btnToggle7p) btnToggle7p.textContent = '7p: ' + (window.__recentOnly ? 'ON' : 'OFF');
@@ -3866,111 +3852,6 @@ function _wireSidebarSettingsRow(){
       _updateDebugPanel();
     });
     btnToggle7p.__wired = true;
-  }
-
-  if(btnExport && !btnExport.__wired){
-    btnExport.addEventListener('click', function(){
-      const payload = {
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        avatars: avatars || {},
-        points: points || {},
-        names: nameCache || {},
-        springDates: springDates || {},
-        springYearFirst: springYearFirst || {},
-      };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const href = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = href;
-      a.download = 'linnuliigid-state-' + new Date().toISOString().replace(/[:.]/g,'-') + '.json';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(function(){ URL.revokeObjectURL(href); }, 2000);
-    });
-    btnExport.__wired = true;
-  }
-
-  if(btnImport && importInput && !btnImport.__wired){
-    btnImport.addEventListener('click', function(){ importInput.click(); });
-    importInput.addEventListener('change', function(ev){
-      const f = ev && ev.target && ev.target.files ? ev.target.files[0] : null;
-      if(!f) return;
-      const r = new FileReader();
-      r.onload = function(){
-        try{
-          const json = JSON.parse(String(r.result || '{}'));
-          avatars = json.avatars && typeof json.avatars === 'object' ? json.avatars : avatars;
-          points = json.points && typeof json.points === 'object' ? json.points : points;
-          nameCache = json.names && typeof json.names === 'object' ? json.names : nameCache;
-          springDates = json.springDates && typeof json.springDates === 'object' ? json.springDates : springDates;
-          springYearFirst = json.springYearFirst && typeof json.springYearFirst === 'object' ? json.springYearFirst : springYearFirst;
-          save();
-          refreshAllMarkers();
-          render();
-          _updateDebugPanel();
-        }catch(err){
-          notifySilent('Import failed: ' + String(err && err.message ? err.message : err));
-        }finally{
-          importInput.value = '';
-        }
-      };
-      r.readAsText(f);
-    });
-    btnImport.__wired = true;
-  }
-
-  if(btnReset && !btnReset.__wired){
-    btnReset.addEventListener('click', function(){
-      if(!confirm('Reset local map state?')) return;
-      avatars = {};
-      points = {};
-      nameCache = {};
-      springDates = {};
-      springYearFirst = {};
-      localStorage.removeItem(LS_AVATARS);
-      localStorage.removeItem(LS_POINTS);
-      localStorage.removeItem(LS_NAMES);
-      localStorage.removeItem(LS_SPRING);
-      localStorage.removeItem(LS_SPRING_YEARFIRST);
-      refreshAllMarkers();
-      render();
-      _updateDebugPanel();
-    });
-    btnReset.__wired = true;
-  }
-
-  if(btnSpringTxt && !btnSpringTxt.__wired){
-    btnSpringTxt.addEventListener('click', function(){
-      const rows = Object.keys(springDates || {}).sort().map(function(k){ return k + ' - ' + springDates[k]; });
-      const blob = new Blob([rows.join('\n')], { type: 'text/plain;charset=utf-8' });
-      const href = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = href;
-      a.download = 'spring-dates.txt';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(function(){ URL.revokeObjectURL(href); }, 2000);
-    });
-    btnSpringTxt.__wired = true;
-  }
-
-  if(btnSpringExport && !btnSpringExport.__wired){
-    btnSpringExport.addEventListener('click', function(){
-      const payload = { exportedAt: new Date().toISOString(), springDates: springDates || {}, springYearFirst: springYearFirst || {} };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const href = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = href;
-      a.download = 'spring-dates.json';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(function(){ URL.revokeObjectURL(href); }, 2000);
-    });
-    btnSpringExport.__wired = true;
   }
 }
 

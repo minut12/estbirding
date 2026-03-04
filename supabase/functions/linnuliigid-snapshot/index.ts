@@ -283,10 +283,10 @@ function buildSnapshotResponseHeaders(data: Record<string, unknown>): Record<str
 function buildJsonNoStoreHeaders(): Record<string, string> {
   return { ...corsHeaders, "Cache-Control": "no-store, max-age=0", "Pragma": "no-cache", "Content-Type": "application/json; charset=utf-8" };
 }
-function buildModeHeaders(mode: "ping" | "elurikkus_species" | "snapshot" | "meta" | "error"): Record<string, string> {
+function buildModeHeaders(mode: "ping" | "elurikkus_species" | "snapshot" | "meta" | "rebuild" | "error"): Record<string, string> {
   return { ...buildJsonNoStoreHeaders(), "X-EstBirding-Mode": mode };
 }
-function withSignature(mode: "ping" | "elurikkus_species" | "snapshot" | "meta" | "error", payload: Record<string, unknown>) {
+function withSignature(mode: "ping" | "elurikkus_species" | "snapshot" | "meta" | "rebuild" | "error", payload: Record<string, unknown>) {
   return { buildId: BUILD_ID, mode, ...payload };
 }
 
@@ -526,20 +526,10 @@ function buildSnapshotMeta(data: Record<string, unknown>) {
   }
   const pointsJsonText = JSON.stringify(pointsObj || {});
   const bytes = new TextEncoder().encode(pointsJsonText).length;
-  const hash = stableHash(pointsJsonText);
-  const snapshotId = `${bytes}:${snapshotGeneratedAt}:${totalItems}:${hash}`;
-  const dataMaxAt = maxTs > 0 ? new Date(maxTs).toISOString() : null;
-  const dataMinAt = Number.isFinite(minTs) ? new Date(minTs).toISOString() : null;
+  const dataMaxAt = maxTs > 0 ? formatDateEEFromTs(maxTs) : null;
+  const dataMinAt = Number.isFinite(minTs) ? formatDateEEFromTs(minTs) : null;
+  const snapshotId = `${bytes}:${snapshotGeneratedAt}:${totalItems}:${dataMaxAt || ""}`;
   return { snapshotGeneratedAt, snapshotId, bytes, totalItems, dataMaxAt, dataMinAt };
-}
-
-function stableHash(input: string): string {
-  let hash = 2166136261;
-  for (let i = 0; i < input.length; i++) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16);
 }
 
 function isMissingSnapshotStateTableError(err: unknown): boolean {
@@ -920,10 +910,10 @@ Deno.serve(async (req) => {
       const isRebuildRequest = req.method === "GET" && sp.get("rebuild") === "1";
       if (isRebuildRequest) {
         const rebuild = await rebuildSnapshotNow(supabaseAdmin, data as Record<string, unknown>);
-        const body = withSignature("snapshot", { ...(rebuild.body || {}) });
+        const body = withSignature("rebuild", { ...(rebuild.body || {}) });
         return new Response(
           JSON.stringify(body),
-          { status: rebuild.httpStatus, headers: buildModeHeaders("snapshot") }
+          { status: rebuild.httpStatus, headers: buildModeHeaders("rebuild") }
         );
       }
 
@@ -989,10 +979,10 @@ Deno.serve(async (req) => {
 
       if (isRebuildPost) {
         const rebuild = await rebuildSnapshotNow(supabaseAdmin, (current || {}) as Record<string, unknown>);
-        const bodyWithMode = withSignature("snapshot", { ...(rebuild.body || {}) });
+        const bodyWithMode = withSignature("rebuild", { ...(rebuild.body || {}) });
         return new Response(
           JSON.stringify(bodyWithMode),
-          { status: rebuild.httpStatus, headers: buildModeHeaders("snapshot") }
+          { status: rebuild.httpStatus, headers: buildModeHeaders("rebuild") }
         );
       }
 

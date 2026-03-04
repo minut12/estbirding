@@ -1049,15 +1049,18 @@ function _buildEluFetchCandidates(url){
 }
 async function _fetchHtmlWithFallback(url, signal){
   const candidates = _buildEluFetchCandidates(url);
+  console.log('[fetch-fallback] trying', candidates.length, 'candidates for', url.slice(0,80));
   let lastErr = null;
   for(const u of candidates){
     try{
       const r = await fetch(u, { cache: 'no-store', signal: signal });
-      if(!r.ok) throw new Error('HTTP ' + r.status + ' via ' + u);
+      if(!r.ok) throw new Error('HTTP ' + r.status + ' via ' + u.slice(0,60));
       const text = await r.text();
+      console.log('[fetch-fallback] success via', u.slice(0,60), 'length=', text.length);
       if(String(text || '').length > 400) return text;
-      throw new Error('Short response via ' + u);
+      throw new Error('Short response via ' + u.slice(0,60));
     }catch(e){
+      console.warn('[fetch-fallback] failed via', u.slice(0,60), e && e.message);
       lastErr = e;
       if(signal && signal.aborted) throw e;
     }
@@ -1074,6 +1077,7 @@ function _findLatestRecordDetailLink(searchHtml){
 async function refreshSpeciesFromElurikkus(key, signal){
   const species = String(key || '').trim();
   if(!species) return null;
+  console.log('[species-fetch] start', species);
   // Root cause 2 fix: capture coords BEFORE any await so snapshot can't race-overwrite them
   const oldLat = Number((points[species] || {}).lat);
   const oldLon = Number((points[species] || {}).lon);
@@ -1085,6 +1089,7 @@ async function refreshSpeciesFromElurikkus(key, signal){
   let dhtml = '';
   if(detailUrl) dhtml = await _fetchHtmlWithFallback(detailUrl, signal);
   const coords = extractLatLon(dhtml) || extractLatLon(shtml);
+  console.log('[species-fetch]', species, 'shtml.length=', shtml && shtml.length, 'occ7=', occ7, 'coords=', coords);
   const restricted = /Latitude[\s\S]{0,200}?Restricted|Longitude[\s\S]{0,200}?Restricted|\bRestricted\b/i.test(String(dhtml || '')) && !coords;
 
   const p = (points[species] = points[species] || {});
@@ -1123,10 +1128,15 @@ async function refreshSpeciesFromElurikkus(key, signal){
   const moved = Number.isFinite(oldLat) && Number.isFinite(oldLon) && Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lon))
     ? (Math.abs(oldLat - Number(p.lat)) > 1e-9 || Math.abs(oldLon - Number(p.lon)) > 1e-9)
     : false;
+  console.log('[species-fetch] done', species, 'moved=', moved, 'lat=', p.lat, 'lon=', p.lon);
   return { key: species, moved: moved };
 }
 async function refreshAllFromElurikkus(){
-  if(__elurikkusBulkActive) return;
+  console.log('[bulk] refreshAllFromElurikkus called, __elurikkusBulkActive=', __elurikkusBulkActive);
+  if(__elurikkusBulkActive){
+    console.warn('[bulk] already active, returning early');
+    return;
+  }
   __elurikkusBulkActive = true;
   __elurikkusBulkAbort = new AbortController();
   const signal = __elurikkusBulkAbort.signal;
@@ -1134,6 +1144,7 @@ async function refreshAllFromElurikkus(){
   if(stopBtn) stopBtn.style.display = 'inline-block';
   const total = (window.SPECIES || []).length;
   __elurikkusBulkStats = { done: 0, total: total, updated: 0, moved: 0, errors: 0, lastKey: '' };
+  console.log('[bulk] starting loop, total=', total, 'SPECIES.length=', (window.SPECIES||[]).length);
   const errors = [];
   const prog = document.getElementById('fetchProgress');
   const idx = document.getElementById('indexProgress');
@@ -1160,6 +1171,7 @@ async function refreshAllFromElurikkus(){
         // Fix 3: use fetchElurikkusSpecies (server path) instead of refreshSpeciesFromElurikkus (CORS-blocked HTML scrape)
         const oldPoint = __snapshotPointBySpecies[_speciesKey(name)] || {};
         const json = await fetchElurikkusSpecies(name);
+        console.log('[bulk] species', i, name, 'json=', json ? { mode: json.mode, itemsLen: Array.isArray(json.items) ? json.items.length : null } : null);
         if(json && Array.isArray(json.items) && json.items.length){
           // Fix 4: ensure live override flag is set so loadSnapshot can't clobber fresh coords
           useLiveElurikkusForSpecies[_speciesKey(name)] = true;
@@ -1180,6 +1192,7 @@ async function refreshAllFromElurikkus(){
         }
         await _delay(1000);
       }catch(e){
+        console.warn('[bulk] error for', name, e && e.message, 'signal.aborted=', signal.aborted);
         // Fix 1: count errors even on abort; log the reason
         if(signal.aborted){
           console.log('[bulk] signal aborted at index', i, 'reason:', signal.reason);

@@ -822,7 +822,9 @@ function normalizeSpringDate(v){
   return `${d}.${mm}`;
 }
 
-async function tryFetch(url){
+async function tryFetch(url, opts){
+  const options = opts || {};
+  const signal = options.signal || undefined;
   const urls = [url];
   const pb = String(proxyBase || '').trim();
   if(pb) urls.push(pb + encodeURIComponent(url));
@@ -830,7 +832,7 @@ async function tryFetch(url){
   let lastErr = null;
   for(const u of urls){
     try{
-      const r = await fetch(u, { cache:'no-store' });
+      const r = await fetch(u, { cache:'no-store', signal: signal });
       if(!r.ok) throw new Error('HTTP ' + r.status);
       return await r.text();
     }catch(e){ lastErr = e; }
@@ -921,6 +923,41 @@ function findFirstDetailLink(html){
   }
   return '';
 }
+function getLatestOccurrenceDetailUrlFromSearchHtml(html){
+  const s = String(html || '');
+  if(!s) return null;
+  const tbodyMatch = s.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
+  if(!tbodyMatch) return null;
+  const tbody = String(tbodyMatch[1] || '');
+  const trMatch = tbody.match(/<tr[^>]*>([\s\S]*?)<\/tr>/i);
+  if(!trMatch) return null;
+  const tr = String(trMatch[1] || '');
+  const aMatch = tr.match(/href=["']([^"']*\/app\/occurrences\/occurrence\/\d+[^"']*)["']/i);
+  if(!aMatch) return null;
+  const href = String(aMatch[1] || '').trim();
+  if(!href) return null;
+  if(/^https?:\/\//i.test(href)) return href;
+  if(href.startsWith('/')) return 'https://elurikkus.ee' + href;
+  return 'https://elurikkus.ee/' + href;
+}
+function getTopOccurrenceDetailUrlsFromSearchHtml(html, maxN){
+  const out = [];
+  const n = Math.max(1, Number(maxN || 3) || 3);
+  const s = String(html || '');
+  if(!s) return out;
+  const tbodyMatch = s.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
+  if(!tbodyMatch) return out;
+  const tbody = String(tbodyMatch[1] || '');
+  const matches = Array.from(tbody.matchAll(/href=["']([^"']*\/app\/occurrences\/occurrence\/\d+[^"']*)["']/ig));
+  for(let i = 0; i < matches.length; i++){
+    const href = String(matches[i][1] || '').trim();
+    if(!href) continue;
+    const abs = _absElurikkusUrl(href);
+    if(abs && out.indexOf(abs) < 0) out.push(abs);
+    if(out.length >= n) break;
+  }
+  return out;
+}
 function extractLatLon(html){
   const s = String(html || '');
   if(!s) return null;
@@ -953,6 +990,19 @@ function extractLatLon(html){
     if(Number.isFinite(lat) && Number.isFinite(lon) && lat>50 && lat<70 && lon>20 && lon<30) return [lat, lon];
   }
   return null;
+}
+function extractLatLonFromOccurrenceDetail(html){
+  const s = String(html || '');
+  if(!s) return null;
+  if(/Koordinaadid peidetud|Coordinates hidden|Restricted/i.test(s)) return null;
+  const latM = s.match(/Latitude[^0-9\-]*([0-9]{2}\.[0-9]{4,})/i);
+  const lonM = s.match(/Longitude[^0-9\-]*([0-9]{2}\.[0-9]{4,})/i);
+  if(!latM || !lonM) return null;
+  const lat = parseFloat(latM[1]);
+  const lon = parseFloat(lonM[1]);
+  if(!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if(lat < 50 || lat > 70 || lon < 10 || lon > 35) return null;
+  return [lat, lon];
 }
 function countInLastNDaysFromDates(dates, n){
   const arr = Array.isArray(dates) ? dates : [];
@@ -1283,59 +1333,68 @@ function _findLatestRecordDetailLink(searchHtml){
 async function refreshSpeciesFromElurikkus(key, signal){
   const species = String(key || '').trim();
   if(!species) return null;
-  console.log('[species-fetch] start', species);
-  // Root cause 2 fix: capture coords BEFORE any await so snapshot can't race-overwrite them
-  const oldLat = Number((points[species] || {}).lat);
-  const oldLon = Number((points[species] || {}).lon);
-  const searchUrlBase = "https://elurikkus.ee/app/occurrences/search?text=" + encodeURIComponent(species);
-  const shtml = await _fetchHtmlWithFallback(searchUrlBase, signal);
-  const occ7Dates = extractAllEventDates(shtml);
-  const occ7 = countInLastNDaysFromDates(occ7Dates, 7);
-  const detailUrl = _findLatestRecordDetailLink(shtml) || findFirstDetailLink(shtml) || null;
-  let dhtml = '';
-  if(detailUrl) dhtml = await _fetchHtmlWithFallback(detailUrl, signal);
-  const coords = extractLatLon(dhtml) || extractLatLon(shtml);
-  console.log('[species-fetch]', species, 'shtml.length=', shtml && shtml.length, 'occ7=', occ7, 'coords=', coords);
-  const restricted = /Latitude[\s\S]{0,200}?Restricted|Longitude[\s\S]{0,200}?Restricted|\bRestricted\b/i.test(String(dhtml || '')) && !coords;
-
   const p = (points[species] = points[species] || {});
-  p.searchUrl = searchUrlBase + '&_ts=' + Date.now();
-  if(detailUrl) p.latestUrl = detailUrl;
-  const dt = extractEventDate(dhtml) || extractEventDate(shtml);
-  if(dt) p.t = dt;
-  if(Number.isFinite(occ7)) p.occ7 = occ7;
+  const oldLat = Number(p.lat), oldLon = Number(p.lon);
+  const searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(species) + '&_ts=' + Date.now();
+  const shtml = await tryFetch(searchUrl, { signal: signal });
+  const dates = extractAllEventDates(shtml);
+  const occ7 = countInLastNDaysFromDates(dates, 7);
+  const newest = (dates && dates.length) ? dates.reduce(function(a,b){ return b > a ? b : a; }, '') : '';
+  const latestUrl = getLatestOccurrenceDetailUrlFromSearchHtml(shtml);
+  const detailUrls = getTopOccurrenceDetailUrlsFromSearchHtml(shtml, 3);
+  if(latestUrl && detailUrls.indexOf(latestUrl) < 0) detailUrls.unshift(latestUrl);
+  let usedDetailUrl = null;
+  let latlon = null;
+  let coordsSource = 'snapshot';
+  for(let i = 0; i < detailUrls.length && i < 3; i++){
+    const du = detailUrls[i];
+    try{
+      const dhtml = await tryFetch(du + (du.includes('?') ? '&' : '?') + '_ts=' + Date.now(), { signal: signal });
+      const c = extractLatLonFromOccurrenceDetail(dhtml);
+      if(c && Number.isFinite(c[0]) && Number.isFinite(c[1])){
+        latlon = [Number(c[0]), Number(c[1])];
+        usedDetailUrl = du;
+        coordsSource = 'detail';
+        break;
+      }
+    }catch(e){}
+  }
+  p.searchUrl = searchUrl;
+  if(latestUrl) p.latestUrl = latestUrl;
   p.src = 'Elurikkus';
   p.lastFetched = new Date().toISOString();
-  if(coords && coords.length === 2){
-    p.lat = Number(coords[0]);
-    p.lon = Number(coords[1]);
+  if(newest) p.t = newest;
+  if(Number.isFinite(occ7)) p.occ7 = occ7;
+  if(latlon){
+    p.lat = latlon[0];
+    p.lon = latlon[1];
     p.coords_status = 'public';
-    p.coords_source = detailUrl ? 'detail' : 'search';
+    p.coords_source = 'detail';
     p.coords_note = '';
+    if(usedDetailUrl) p.latestUrl = usedDetailUrl;
   } else {
-    p.coords_status = restricted ? 'restricted' : 'missing';
     p.coords_source = 'snapshot';
-    p.coords_note = restricted ? 'coords restricted -> snapshot fallback' : 'coords missing -> snapshot fallback';
+    p.coords_status = /Koordinaadid peidetud|Coordinates hidden|Restricted/i.test(shtml) ? 'restricted' : 'missing';
+    p.coords_note = p.coords_status === 'restricted' ? 'coords restricted -> snapshot fallback' : 'coords missing -> snapshot fallback';
   }
-  console.log('[coords-fix]', species, 'old:', oldLat, oldLon, 'new:', p.lat, p.lon);
   save();
   updateMarker(species);
-  console.log('[fix] refreshSpeciesFromElurikkus: marker updated for', species, 'lat=', p.lat, 'lon=', p.lon, 'occ7=', p.occ7);
   try{ map.invalidateSize(); }catch(_){}
-  // Bug 3 fix: update fetch counter and row data so "fetched Nx" and statusLine refresh
-  const _rsfNKey = _normalizeSpeciesKey(species);
-  __elurikkusFetchCountBySpecies[_rsfNKey] = Number(__elurikkusFetchCountBySpecies[_rsfNKey] || 0) + 1;
-  __elurikkusBySpecies[species] = Object.assign(__elurikkusBySpecies[species] || {}, {
-    status: 'ok',
-    fetchSummary: 'HTML fetch \u2713 (occ7=' + (Number.isFinite(p.occ7) ? p.occ7 : '-') + ')',
-    updatedAt: new Date().toISOString(),
-    latestOccurrenceAt: p.t || '',
-  });
   const moved = Number.isFinite(oldLat) && Number.isFinite(oldLon) && Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lon))
-    ? (Math.abs(oldLat - Number(p.lat)) > 1e-9 || Math.abs(oldLon - Number(p.lon)) > 1e-9)
+    ? (Math.abs(oldLat - Number(p.lat)) > 1e-6 || Math.abs(oldLon - Number(p.lon)) > 1e-6)
     : false;
-  console.log('[species-fetch] done', species, 'moved=', moved, 'lat=', p.lat, 'lon=', p.lon);
-  return { key: species, moved: moved };
+  const updated = (!!newest && String(p.t || '') === String(newest)) || Number.isFinite(occ7) || moved;
+  return {
+    species: species,
+    updated: !!updated,
+    detailUrl: latestUrl || null,
+    usedDetailUrl: usedDetailUrl,
+    coordsFound: latlon ? (String(latlon[0]) + ',' + String(latlon[1])) : '—',
+    coordsSource: coordsSource,
+    moved: moved,
+    old: { lat: Number.isFinite(oldLat) ? oldLat : null, lon: Number.isFinite(oldLon) ? oldLon : null },
+    applied: { lat: Number.isFinite(Number(p.lat)) ? Number(p.lat) : null, lon: Number.isFinite(Number(p.lon)) ? Number(p.lon) : null, source: String(p.coords_source || '') },
+  };
 }
 async function refreshAllFromElurikkus(){
   if(__eluBulkActive || __elurikkusBulkActive) return;
@@ -1376,18 +1435,18 @@ async function refreshAllFromElurikkus(){
     if(progEl) progEl.textContent = line;
     if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = line; }
     try{
-      const res = await fetchElurikkusSpecies(name, { force: true, apply: true, signal: signal });
+      const res = await refreshSpeciesFromElurikkus(name, signal);
       if(res && res.updated) updated++;
       if(res && res.moved) moved++;
-      try{ _applyLiveOverrideForSpecies(name); }catch(e){}
+      if(res && res.moved) try{ _applyLiveOverrideForSpecies(name); }catch(e){}
       const foundTxt = (res && res.found && _hasFiniteCoord(res.found.lat) && _hasFiniteCoord(res.found.lon))
         ? (Number(res.found.lat).toFixed(4) + ',' + Number(res.found.lon).toFixed(4))
-        : '-';
+        : ((res && res.coordsFound && res.coordsFound !== '—') ? String(res.coordsFound) : '—');
       const appTxt = (res && res.applied && _hasFiniteCoord(res.applied.lat) && _hasFiniteCoord(res.applied.lon))
         ? (Number(res.applied.lat).toFixed(4) + ',' + Number(res.applied.lon).toFixed(4))
         : '-';
       if(eluLastCoord){
-        const durl = String((res && res.occUrl) || '');
+        const durl = String((res && (res.usedDetailUrl || res.detailUrl || res.occUrl)) || '');
         const dshort = durl ? (durl.split('/').slice(-2).join('/')) : 'no';
         const oldTxt = (res && res.old && _hasFiniteCoord(res.old.lat) && _hasFiniteCoord(res.old.lon))
           ? (Number(res.old.lat).toFixed(4) + ',' + Number(res.old.lon).toFixed(4))
@@ -1396,25 +1455,29 @@ async function refreshAllFromElurikkus(){
         eluLastCoord.textContent = (i + 1) + '/' + total + ' ' + name +
           ' coordsFound=' + foundTxt +
           ' coordsApplied=' + appTxt +
-          ' source=' + String((res && res.applied && res.applied.source) || '-') +
+          ' source=' + String((res && (res.coordsSource || (res.applied && res.applied.source))) || '-') +
           ' detailUrl=' + dshort +
           ' moved=' + moveTxt;
+      }
+      if(progEl){
+        const dflag = (res && (res.usedDetailUrl || res.detailUrl)) ? 'yes' : 'no';
+        progEl.textContent = (i + 1) + '/' + total + ' ' + name + ' detailUrl=' + dflag + ' coordsFound=' + foundTxt + ' moved=' + ((res && res.moved) ? 'yes' : 'no');
       }
       pushEluCoordTrace({
         ts: new Date().toISOString(),
         i: i + 1,
         total: total,
         species: name,
-        found: (res && res.found) ? res.found : { lat: null, lon: null, source: '-' },
+        found: (res && res.found) ? res.found : { lat: null, lon: null, source: String((res && res.coordsSource) || '-') },
         applied: (res && res.applied) ? res.applied : { lat: null, lon: null, source: '-' },
         old: (res && res.old) ? res.old : { lat: null, lon: null },
         moved: !!(res && res.moved),
         reason: String((res && res.reason) || ''),
-        occUrl: (res && res.occUrl) ? res.occUrl : null,
+        occUrl: (res && (res.usedDetailUrl || res.detailUrl || res.occUrl)) ? (res.usedDetailUrl || res.detailUrl || res.occUrl) : null,
       });
       window.__lastElurikkusBulkOutcomes.unshift(Object.assign({ species: name, i: i + 1 }, res || {}));
       if(window.__lastElurikkusBulkOutcomes.length > 20) window.__lastElurikkusBulkOutcomes.length = 20;
-      pushDebugEvent('ELU_BULK_ITEM', 'Elurikkus bulk item', { i: i + 1, species: name, updated: !!(res && res.updated), moved: !!(res && res.moved), newest: res && res.newest ? res.newest : '' });
+      pushDebugEvent('ELU_BULK_ITEM', 'Elurikkus bulk item', { i: i + 1, species: name, updated: !!(res && res.updated), moved: !!(res && res.moved), newest: res && res.newest ? res.newest : '', detailUrl: (res && (res.usedDetailUrl || res.detailUrl)) ? 'yes' : 'no', coordsFound: foundTxt });
     }catch(e){
       errors++;
       const errMsg = String((e && e.message) ? e.message : e);

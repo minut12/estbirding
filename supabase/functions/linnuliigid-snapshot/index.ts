@@ -189,7 +189,7 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
       },
     });
     clearTimeout(timeout);
-    if (!res.ok) return { lat: null, lon: null, latestDate: null, occ7: 0 };
+    if (!res.ok) return { lat: null, lon: null, latestDate: null, occ7: 0, coordsStatus: "missing" as const, coordsSource: "none" as const, locality: null, municipality: null, county: null };
 
     const html = await res.text();
 

@@ -174,7 +174,7 @@
   <button id="btnSkipStuck" class="btn secondary" title="Skip current stuck item by resuming from next index">Skip stuck item</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
-<div id="eluProgress" class="subtle"></div>
+<div id="eluProgress" class="snapshot-banner" style="display:none;font-weight:600"></div>
 <div id="fetchProgress" class="fetch-progress"></div>
 <div id="indexProgress" class="fetch-progress"></div>
 <div id="serverRefreshStatus" class="fetch-progress"></div>
@@ -1042,8 +1042,16 @@ function _buildEluFetchCandidates(url){
   const pb = String(proxyBase || '').trim();
   const out = [];
   function push(u){ if(u && !out.includes(u)) out.push(u); }
-  push(baseUrl);
+  // 1. Supabase elurikkus-proxy (most reliable)
+  var sbUrl = String(__resolvedSupabaseUrl || '').replace(/\/+$/, '');
+  if(sbUrl){
+    push(sbUrl + '/functions/v1/elurikkus-proxy?url=' + encodeURIComponent(baseUrl));
+  }
+  // 2. Old proxyBase from localStorage
   if(pb) push(pb + encodeURIComponent(baseUrl));
+  // 3. Direct (may fail CORS)
+  push(baseUrl);
+  // 4. Public CORS proxies as last resort
   push('https://api.allorigins.win/raw?url=' + encodeURIComponent(baseUrl));
   push('https://cors.isomorphic-git.org/' + baseUrl);
   return out;
@@ -1052,9 +1060,16 @@ async function _fetchHtmlWithFallback(url, signal){
   const candidates = _buildEluFetchCandidates(url);
   console.log('[fetch-fallback] trying', candidates.length, 'candidates for', url.slice(0,80));
   let lastErr = null;
+  var sbUrl = String(__resolvedSupabaseUrl || '').replace(/\/+$/, '');
+  var anonKey = String(__resolvedSupabaseAnonKey || '').trim();
   for(const u of candidates){
     try{
-      const r = await fetch(u, { cache: 'no-store', signal: signal });
+      // Add auth headers for Supabase proxy calls
+      var fetchOpts = { cache: 'no-store', signal: signal };
+      if(sbUrl && anonKey && u.indexOf(sbUrl) === 0){
+        fetchOpts.headers = { 'apikey': anonKey, 'Authorization': 'Bearer ' + anonKey };
+      }
+      const r = await fetch(u, fetchOpts);
       if(!r.ok) throw new Error('HTTP ' + r.status + ' via ' + u.slice(0,60));
       const text = await r.text();
       console.log('[fetch-fallback] success via', u.slice(0,60), 'length=', text.length);
@@ -1147,11 +1162,9 @@ async function refreshAllFromElurikkus(){
   __elurikkusBulkStats = { done: 0, total: total, updated: 0, moved: 0, errors: 0, lastKey: '' };
   console.log('[bulk] starting loop, total=', total, 'SPECIES.length=', (window.SPECIES||[]).length);
   const errors = [];
-  const prog = document.getElementById('fetchProgress');
-  const idx = document.getElementById('indexProgress');
   const errEl = document.getElementById('fetchError');
   const eluProg = document.getElementById('eluProgress');
-  if(eluProg) eluProg.textContent = 'Elurikkus refresh running: 0/' + total + ' species';
+  if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = 'Elurikkus refresh: 0/' + total + ' species'; }
 
   // Fix 1: detect pre-aborted signal before loop starts
   if(signal.aborted){
@@ -1167,10 +1180,8 @@ async function refreshAllFromElurikkus(){
       }
       const name = window.SPECIES[i];
       __elurikkusBulkStats.lastKey = name;
-      _updateProgressUI(i, total, 'running');
-      if(prog) prog.textContent = 'Elurikkus refresh running: ' + (i + 1) + '/' + total + ' species';
+      // Only update eluProgress — do NOT touch fetchProgress/indexProgress/snapshot state
       if(eluProg) eluProg.textContent = 'Elurikkus refresh: ' + (i + 1) + '/' + total + ' | ' + name + ' | moved:' + __elurikkusBulkStats.moved + ' | errors:' + __elurikkusBulkStats.errors;
-      if(idx) idx.textContent = 'Index: ' + (i + 1) + '/' + total;
       try{
         const one = await refreshSpeciesFromElurikkus(name, signal);
         if(one){
@@ -1183,10 +1194,9 @@ async function refreshAllFromElurikkus(){
           errors.push({ name: name, error: msg });
           if(errEl) errEl.textContent = 'Last error: ' + name + ': ' + msg;
         }
-        await _delay(1000);
+        await _delay(800);
       }catch(e){
         console.warn('[bulk] error for', name, e && e.message, 'signal.aborted=', signal.aborted);
-        // Fix 1: count errors even on abort; log the reason
         if(signal.aborted){
           console.log('[bulk] signal aborted at index', i, 'reason:', signal.reason);
           __elurikkusBulkStats.errors++;
@@ -1219,9 +1229,9 @@ async function refreshAllFromElurikkus(){
     ' | latest=' + (latest || '-'),
     (__elurikkusBulkStats.errors ? 'warn' : '')
   );
-  if(eluProg) eluProg.textContent = 'Elurikkus refresh done: updated=' + __elurikkusBulkStats.updated + ' moved=' + __elurikkusBulkStats.moved + ' errors=' + __elurikkusBulkStats.errors;
-  _updateProgressUI(__elurikkusBulkStats.done, total, 'ready');
+  if(eluProg) eluProg.textContent = 'Elurikkus refresh done: ' + __elurikkusBulkStats.updated + ' updated, ' + __elurikkusBulkStats.moved + ' moved, ' + __elurikkusBulkStats.errors + ' errors';
   _updateDebugPanel();
+  _updateServerSnapshotStatus();
 }
 
 function enqueueSpringYearFirst(keys){

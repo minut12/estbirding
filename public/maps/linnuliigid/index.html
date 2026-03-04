@@ -428,6 +428,8 @@ preloadAvatars([PLACEHOLDER_AVATAR_URL]);
 
 let points  = JSON.parse(localStorage.getItem(LS_POINTS) || '{}');
 let proxyBase = localStorage.getItem(LS_PROXY) || '';
+const LS_ELU_AUTO_30M = 'elu_auto_30m';
+let __eluAuto30mTimer = null;
 let nameCache = JSON.parse(localStorage.getItem(LS_NAMES) || '{}');
 let liveElurikkusBySpecies = (function(){
   try{
@@ -826,10 +828,7 @@ async function tryFetch(url, opts){
   const options = opts || {};
   const signal = options.signal || undefined;
   const requireOccLink = !!options.requireOccLink;
-  const urls = [url];
-  const pb = String(proxyBase || '').trim();
-  if(pb) urls.push(pb + encodeURIComponent(url));
-  else urls.push('https://api.allorigins.win/raw?url=' + encodeURIComponent(url));
+  const urls = makeFetchURL(url);
   let lastErr = null;
   for(const u of urls){
     try{
@@ -847,7 +846,20 @@ async function tryFetch(url, opts){
       return text;
     }catch(e){ lastErr = e; }
   }
-  throw lastErr || new Error('Fetch failed');
+  throw new Error((lastErr && lastErr.message ? String(lastErr.message) : 'Fetch failed') + ' - set a proxy base and try again.');
+}
+function makeFetchURL(url){
+  const raw = String(url || '').trim();
+  const withTs = raw + (raw.includes('?') ? '&' : '?') + '_ts=' + Date.now();
+  const pb = String(proxyBase || '').trim();
+  const bases = ['', pb, 'https://api.allorigins.win/raw?url=', 'https://cors.isomorphic-git.org/'];
+  const out = [];
+  for(const b of bases){
+    if(!b) out.push(withTs);
+    else if(b === 'https://cors.isomorphic-git.org/') out.push(b + withTs);
+    else out.push(b + encodeURIComponent(withTs));
+  }
+  return Array.from(new Set(out.filter(Boolean)));
 }
 function normalizeHtmlPayload(text){
   const t = String(text || '').trim();
@@ -943,7 +955,7 @@ function findFirstDetailLink(html){
   if(!s) return '';
   const links = Array.from(s.matchAll(/<a[^>]+href=["']([^"']+)["'][^>]*>/ig)).map(function(m){ return String(m[1] || ''); });
   for(const href of links){
-    if(_isLikelyOccurrenceDetailUrl(href)) return _absElurikkusUrl(href);
+    if(/\/app\/occurrences\/occurrence\/\d+/i.test(String(href || ''))) return _absElurikkusUrl(href);
   }
   return '';
 }
@@ -1552,228 +1564,143 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
     items: []
   };
 }
+async function autoFetchCoords(key, searchUrl, signal){
+  const species = String(key || '').trim();
+  if(!species) throw new Error('Species missing');
+  const url = String(searchUrl || ('https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(species))).trim();
+  const p = points[species] = (points[species] || {});
+  const oldLat = Number(p.lat), oldLon = Number(p.lon);
+  const oldT = String(p.t || '');
+  const oldOcc7 = Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : null;
+
+  const html = await tryFetch(url, { signal: signal, requireOccLink: true });
+  const dates = extractAllEventDates(html);
+  const occ7 = countInLastNDaysFromDates(dates, 7);
+  let eventDate = extractEventDate(html);
+  let coords = extractLatLon(html);
+  let detailTried = 0;
+  let detailUrl = findFirstDetailLink(html);
+  let candidatesCount = (String(html || '').match(/\/app\/occurrences\/occurrence\/\d+/g) || []).length;
+  if(!coords && detailUrl){
+    detailTried = 1;
+    const dhtml = await tryFetch(detailUrl, { signal: signal, requireOccLink: false });
+    coords = extractLatLonFromDetail(dhtml);
+    if(!eventDate) eventDate = extractEventDate(dhtml) || eventDate;
+  }
+
+  const dateOnly = _dateOnlyFromAny(eventDate);
+  let changed = false;
+  if(dateOnly && String(p.t || '') !== dateOnly){ p.t = dateOnly; changed = true; }
+  if(Number.isFinite(occ7) && Number(p.occ7) !== Number(occ7)){ p.occ7 = Number(occ7); changed = true; }
+  p.src = 'Elurikkus';
+  p.lastFetched = new Date().toISOString();
+  p.searchUrl = url;
+  if(detailUrl) p.latestUrl = detailUrl;
+  if(p.visible === false){ p.visible = true; changed = true; }
+
+  let appliedCoords = null;
+  if(coords && isValidEE(Number(coords[0]), Number(coords[1]))){
+    const nlat = Number(coords[0]), nlon = Number(coords[1]);
+    if(!isValidEE(oldLat, oldLon) || Math.abs(oldLat - nlat) > 1e-6 || Math.abs(oldLon - nlon) > 1e-6){
+      changed = true;
+    }
+    p.lat = nlat;
+    p.lon = nlon;
+    p.coordsSource = 'detail';
+    p.coords_source = 'detail';
+    p.coordsStatus = 'public';
+    p.coords_status = 'public';
+    appliedCoords = [nlat, nlon];
+  }
+  if(changed){
+    try{ save(); }catch(e){}
+    try{ updateMarker(species); }catch(e){}
+    try{ render(); }catch(e){}
+  }
+  const moved = !!(appliedCoords && isValidEE(oldLat, oldLon) &&
+    (Math.abs(oldLat - appliedCoords[0]) > 1e-6 || Math.abs(oldLon - appliedCoords[1]) > 1e-6));
+  const occId = detailUrl ? ((String(detailUrl).match(/occurrence\/(\d+)/i) || [])[1] || '') : '';
+  return {
+    species: species,
+    updated: changed || (oldT !== String(p.t || '')) || (oldOcc7 !== (Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : null)),
+    moved: moved,
+    candidatesCount: candidatesCount,
+    detailTried: detailTried,
+    pickedOccId: occId || '—',
+    pickedOccUrl: detailUrl || null,
+    detailUrl: !!detailUrl,
+    coordsFound: (coords && isValidEE(Number(coords[0]), Number(coords[1]))) ? [Number(coords[0]), Number(coords[1])] : null,
+    coordsApplied: appliedCoords
+  };
+}
 async function refreshSpeciesFromElurikkus(key, signal){
   const species = String(key || '').trim();
   if(!species) return null;
-  const p = (points[species] = points[species] || {});
-  const oldLat = Number(p.lat), oldLon = Number(p.lon);
-  const searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(species) + '&_ts=' + Date.now();
-  const shtml = await fetchElurikkusHtml(searchUrl, signal, { requireOccLinks: true });
-  const dates = extractAllEventDates(shtml);
-  const occ7 = countInLastNDaysFromDates(dates, 7);
-  let rows = extractOccurrenceRowsFromSearch(shtml);
-  if(!rows.length) rows = extractOccurrenceRowsRegex(shtml);
-  if(!rows.length) throw new Error('No occurrence rows found');
-  const newest = pickNewestOcc(rows);
-  const candidatesCount = rows.length;
-  const detailRows = rows
-    .map(function(r){ return Object.assign({}, r, { ms: parseEluDateMs(r.dateText) || 0 }); })
-    .sort(function(a,b){ return (b.ms || 0) - (a.ms || 0); })
-    .slice(0, 10);
-  let pickedOccUrl = newest ? String(newest.occUrl || '') : '';
-  let pickedOccId = pickedOccUrl ? ((pickedOccUrl.match(/occurrence\/(\d+)/i) || [])[1] || '') : '';
-  let detailTried = 0;
-  let latlon = null;
-  for(let i = 0; i < detailRows.length; i++){
-    const du = String(detailRows[i].occUrl || '').trim();
-    if(!du) continue;
-    detailTried++;
-    try{
-      const dhtml = await fetchElurikkusHtml(du + (du.includes('?') ? '&' : '?') + '_ts=' + Date.now(), signal, { requireOccLinks: false });
-      const c = extractLatLonFromDetail(dhtml);
-      if(c && isValidEE(Number(c[0]), Number(c[1]))){
-        latlon = [Number(c[0]), Number(c[1])];
-        pickedOccUrl = du;
-        pickedOccId = (du.match(/occurrence\/(\d+)/i) || [])[1] || pickedOccId;
-        break;
-      }
-    }catch(e){}
-  }
-  p.searchUrl = searchUrl;
-  if(pickedOccUrl) p.latestUrl = pickedOccUrl;
-  p.src = 'Elurikkus';
-  p.lastFetched = new Date().toISOString();
-  if(newest && newest.dateText) p.t = String(newest.dateText).slice(0,10);
-  if(Number.isFinite(occ7)) p.occ7 = occ7;
-  if(latlon && isValidEE(Number(latlon[0]), Number(latlon[1]))){
-    p.lat = latlon[0];
-    p.lon = latlon[1];
-    p.coordsSource = 'detail';
-    p.coordsStatus = 'public';
-    p.coords_status = 'public';
-    p.coords_source = 'detail';
-    p.coords_note = '';
-    if(newest && newest.dateText) p.t_dt = String(newest.dateText);
-  } else {
-    p.coordsSource = 'snapshot_fallback';
-    p.coordsStatus = /Koordinaadid peidetud|Coordinates hidden|Restricted/i.test(shtml) ? 'restricted' : 'missing';
-    p.coords_source = 'snapshot_fallback';
-    p.coords_status = p.coordsStatus;
-    p.coords_note = p.coordsStatus === 'restricted' ? 'coords restricted -> snapshot fallback' : 'coords missing -> snapshot fallback';
-    if(newest && newest.dateText) p.t_dt = String(newest.dateText);
-  }
-  try{ save(); }catch(e){}
-  try{ updateMarker(species); }catch(e){}
-  try{ map.invalidateSize(); }catch(_){}
-  const moved = !!(latlon && isValidEE(Number(p.lat), Number(p.lon)) && isValidEE(oldLat, oldLon) &&
-    (Math.abs(oldLat - Number(p.lat)) > 1e-6 || Math.abs(oldLon - Number(p.lon)) > 1e-6));
-  const updated = !!(newest || Number.isFinite(occ7) || moved);
-  return {
-    species: species,
-    updated: !!updated,
-    candidatesCount: candidatesCount,
-    detailTried: detailTried,
-    detailUrl: !!pickedOccUrl,
-    pickedOccId: pickedOccId || '—',
-    pickedOccUrl: pickedOccUrl || null,
-    coordsFound: (latlon && isValidEE(Number(latlon[0]), Number(latlon[1]))) ? [Number(latlon[0]), Number(latlon[1])] : null,
-    coordsApplied: (latlon && isValidEE(Number(p.lat), Number(p.lon))) ? [Number(p.lat), Number(p.lon)] : null,
-    moved: moved,
-    old: { lat: Number.isFinite(oldLat) ? oldLat : null, lon: Number.isFinite(oldLon) ? oldLon : null },
-    applied: { lat: Number.isFinite(Number(p.lat)) ? Number(p.lat) : null, lon: Number.isFinite(Number(p.lon)) ? Number(p.lon) : null, source: String(p.coords_source || '') }
-  };
+  const searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(species);
+  return await autoFetchCoords(species, searchUrl, signal);
 }
-async function refreshAllFromElurikkus(){
+async function refreshAllElurikkusOnce(){
   if(__eluBulkActive || __elurikkusBulkActive) return;
   const list = _getAllSpeciesList();
-  if(!list.length){
-    const ferr = document.getElementById('fetchError');
-    if(ferr) ferr.textContent = 'Elurikkus refresh: species list is empty (SPECIES missing)';
-    pushDebugEvent('ELU_BULK_FAIL', 'No species list', {}, 'error');
-    return;
-  }
+  if(!list.length) return;
   __eluBulkActive = true;
   __elurikkusBulkActive = true;
   __eluBulkAbort = new AbortController();
   __elurikkusBulkAbort = __eluBulkAbort;
   __elurikkusBulkAbortController = __eluBulkAbort;
+  const signal = __eluBulkAbort.signal;
   const stopBtn = document.getElementById('btnStopFetch');
   if(stopBtn) stopBtn.style.display = 'inline-block';
-  let updated = 0, moved = 0, errors = 0;
-  const total = list.length;
   const progEl = document.getElementById('indexProgress') || document.getElementById('fetchProgress');
   const eluProg = document.getElementById('eluProgress');
   const eluLastCoord = document.getElementById('eluLastCoord');
-  const signal = __eluBulkAbort.signal;
-  const t0 = Date.now();
-  __elurikkusBulkStats = { done: 0, total: total, updated: 0, moved: 0, errors: 0, lastKey: '' };
-  for(let j = 0; j < total; j++){
-    const k = _speciesKey(list[j]);
-    useLiveElurikkusForSpecies[k] = true;
-  }
-  try{ localStorage.setItem(LS_LIVE_ELURIKKUS_USE, JSON.stringify(useLiveElurikkusForSpecies || {})); }catch(e){}
-  pushDebugEvent('ELU_BULK_START', 'Elurikkus bulk refresh start', { total: total, force: true }, 'warn');
+  let updated = 0, moved = 0, errors = 0;
+  const total = list.length;
   for(let i = 0; i < total; i++){
     if(signal.aborted) break;
     const name = String(list[i] || '').trim();
     if(!name) continue;
-    __elurikkusBulkStats.lastKey = name;
-    const line = 'Elurikkus refresh: ' + (i + 1) + '/' + total + ' | updated:' + updated + ' moved:' + moved + ' errors:' + errors + ' | ' + name;
-    if(progEl) progEl.textContent = line;
-    if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = line; }
     try{
-      const r = await refreshSpeciesFromElurikkus(name, signal);
-      const sel = {
-        applied: !!(r && r.coordsApplied),
-        moved: !!(r && r.moved),
-        oldLat: r && r.old ? r.old.lat : null,
-        oldLon: r && r.old ? r.old.lon : null,
-        newLat: (r && r.coordsApplied) ? r.coordsApplied[0] : null,
-        newLon: (r && r.coordsApplied) ? r.coordsApplied[1] : null,
-        selectedOccurrenceId: (r && r.pickedOccId) ? r.pickedOccId : '',
-        selectedOccurrenceUrl: (r && r.pickedOccUrl) ? r.pickedOccUrl : '',
-      };
-      const upRow = __elurikkusBySpecies[name] = (__elurikkusBySpecies[name] || {});
-      upRow.lastSelectedApply = sel;
-      upRow.source = 'client_html_detail';
-      upRow.fetchSummary = 'Bulk HTML detail fallback';
-      if(sel && sel.applied) updated++;
-      if(sel && sel.moved) moved++;
-      if(sel && sel.moved) try{ _applyLiveOverrideForSpecies(name); }catch(e){}
-      const foundTxt = (sel && Number.isFinite(Number(sel.newLat)) && Number.isFinite(Number(sel.newLon)))
-        ? (Number(sel.newLat).toFixed(6) + ',' + Number(sel.newLon).toFixed(6))
-        : '—';
-      const appTxt = foundTxt === '—' ? '-' : foundTxt;
-      if(eluLastCoord){
-        const durl = String((sel && sel.selectedOccurrenceUrl) || '');
-        const dshort = durl ? (durl.split('/').slice(-2).join('/')) : '—';
-        const occId = (sel && sel.selectedOccurrenceId) ? sel.selectedOccurrenceId : (durl ? (durl.match(/occurrence\/(\d+)/i)?.[1] || dshort) : '—');
-        const cands = Number(r && r.candidatesCount || 0) || 0;
-        const tried = Number(r && r.detailTried || 0) || 0;
-        const oldTxt = (sel && Number.isFinite(Number(sel.oldLat)) && Number.isFinite(Number(sel.oldLon)))
-          ? (Number(sel.oldLat).toFixed(4) + ',' + Number(sel.oldLon).toFixed(4))
-          : '-';
-        const moveTxt = (sel && sel.moved && oldTxt !== '-' && appTxt !== '-') ? (' yes ' + oldTxt + '->' + appTxt) : (' ' + ((sel && sel.moved) ? 'yes' : 'no'));
-        eluLastCoord.textContent = (i + 1) + '/' + total + ' ' + name +
-          ' coordsFound=' + foundTxt +
-          ' coordsApplied=' + appTxt +
-          ' source=' + String((sel && sel.applied) ? 'elurikkus_occurrence_detail' : '-') +
-          ' candidates=' + cands +
-          ' detailTried=' + tried +
-          ' pickedOccId=' + occId +
-          ' detailUrl=' + dshort +
-          ' moved=' + moveTxt;
-      }
-      if(progEl){
-        const dflag = (sel && sel.selectedOccurrenceUrl) ? 'yes' : 'no';
-        const durl = String((sel && sel.selectedOccurrenceUrl) || '');
-        const occId = (sel && sel.selectedOccurrenceId) ? sel.selectedOccurrenceId : (durl ? (durl.match(/occurrence\/(\d+)/i)?.[1] || 'yes') : '—');
-        const cands = Number(r && r.candidatesCount || 0) || 0;
-        const tried = Number(r && r.detailTried || 0) || 0;
-        progEl.textContent = (i + 1) + '/' + total + ' ' + name + ' candidates=' + cands + ' detailTried=' + tried + ' pickedOccId=' + occId + ' detailUrl=' + dflag + ' coordsFound=' + foundTxt + ' moved=' + ((sel && sel.moved) ? 'yes' : 'no');
-      }
-      pushEluCoordTrace({
-        ts: new Date().toISOString(),
-        i: i + 1,
-        total: total,
-        species: name,
-        found: (sel && sel.applied) ? { lat: sel.newLat, lon: sel.newLon, source: 'detail' } : { lat: null, lon: null, source: '-' },
-        applied: (sel && sel.applied) ? { lat: sel.newLat, lon: sel.newLon, source: 'elurikkus_occurrence_detail' } : { lat: null, lon: null, source: '-' },
-        old: (sel && (Number.isFinite(Number(sel.oldLat)) || Number.isFinite(Number(sel.oldLon)))) ? { lat: sel.oldLat, lon: sel.oldLon } : { lat: null, lon: null },
-        moved: !!(sel && sel.moved),
-        reason: (sel && sel.applied) ? 'applied selected occurrence detail' : 'selected missing/restricted',
-        occUrl: (sel && sel.selectedOccurrenceUrl) ? sel.selectedOccurrenceUrl : null,
-        pickedRow: null,
-        pickedDateText: '',
-      });
-      window.__lastElurikkusBulkOutcomes.unshift(Object.assign({ species: name, i: i + 1 }, (sel || {})));
-      if(window.__lastElurikkusBulkOutcomes.length > 20) window.__lastElurikkusBulkOutcomes.length = 20;
-      pushDebugEvent('ELU_BULK_ITEM', 'Elurikkus bulk item', { i: i + 1, species: name, updated: !!(sel && sel.applied), moved: !!(sel && sel.moved), newest: String((points[name] && points[name].t) || ''), detailUrl: (sel && sel.selectedOccurrenceUrl) ? 'yes' : 'no', coordsFound: foundTxt, candidates: Number(r && r.candidatesCount || 0), detailTried: Number(r && r.detailTried || 0) });
+      const searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(name);
+      const r = await autoFetchCoords(name, searchUrl, signal);
+      if(r && r.updated) updated++;
+      if(r && r.moved) moved++;
+      const coordsTxt = (r && r.coordsFound) ? (Number(r.coordsFound[0]).toFixed(4) + ',' + Number(r.coordsFound[1]).toFixed(4)) : '—';
+      const appliedTxt = (r && r.coordsApplied) ? (Number(r.coordsApplied[0]).toFixed(4) + ',' + Number(r.coordsApplied[1]).toFixed(4)) : '—';
+      const line = 'Elurikkus refresh: ' + (i + 1) + '/' + total + ' | last:' + name + ' | updated:' + updated + ' | moved:' + moved + ' | errors:' + errors +
+        ' | candidates:' + Number((r && r.candidatesCount) || 0) + ' | occ:' + String((r && r.pickedOccId) || '—') +
+        ' | detail:' + (((r && r.detailUrl) ? 'yes' : 'no')) + ' | coordsFound:' + coordsTxt + ' | coordsApplied:' + appliedTxt + ' | moved:' + ((r && r.moved) ? 'yes' : 'no');
+      if(progEl) progEl.textContent = line;
+      if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = line; }
+      if(eluLastCoord) eluLastCoord.textContent = line;
     }catch(e){
       errors++;
-      const errMsg = String((e && e.message) ? e.message : e);
-      window.__lastElurikkusBulkErrors.unshift({ species: name, error: errMsg, i: i + 1 });
-      if(window.__lastElurikkusBulkErrors.length > 20) window.__lastElurikkusBulkErrors.length = 20;
-      pushDebugEvent('ELU_BULK_ITEM_FAIL', 'Elurikkus item failed', { species: name, error: errMsg }, 'warn');
+      const msg = 'Elurikkus refresh: ' + (i + 1) + '/' + total + ' | updated:' + updated + ' | moved:' + moved + ' | errors:' + errors + ' | ' + name + ' | ERROR:' + String(e && e.message ? e.message : e);
+      if(progEl) progEl.textContent = msg;
+      if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = msg; }
+      if(eluLastCoord) eluLastCoord.textContent = msg;
     }
-    __elurikkusBulkStats.done = i + 1;
-    __elurikkusBulkStats.updated = updated;
-    __elurikkusBulkStats.moved = moved;
-    __elurikkusBulkStats.errors = errors;
-    if(((i + 1) % 10) === 0){
-      try{ _rebuildMarkers({ reason: 'elu_bulk_batch', done: i + 1, total: total }); }catch(e){}
-    }
-    await new Promise(function(r){ setTimeout(r, 700); });
+    __elurikkusBulkStats = { done: i + 1, total: total, updated: updated, moved: moved, errors: errors, lastKey: name };
+    await new Promise(function(res){ setTimeout(res, 800); });
   }
+  const aborted = !!(signal && signal.aborted);
+  const doneMsg = aborted
+    ? ('Elurikkus refresh cancelled: updated:' + updated + ' moved:' + moved + ' errors:' + errors)
+    : ('Elurikkus refresh done: updated:' + updated + ' moved:' + moved + ' errors:' + errors);
+  if(progEl) progEl.textContent = doneMsg;
+  if(eluProg) eluProg.textContent = doneMsg;
+  _showSnapshotBanner(doneMsg, errors ? 'warn' : '');
+  __eluBulkSummary = { updated: updated, moved: moved, errors: errors, total: total, aborted: aborted, at: new Date().toISOString() };
+  window.__lastElurikkusBulkSummary = __eluBulkSummary;
   __eluBulkActive = false;
   __elurikkusBulkActive = false;
   if(stopBtn) stopBtn.style.display = 'none';
-  const aborted = !!signal.aborted;
-  const msg = aborted
-    ? ('Elurikkus refresh cancelled: updated:' + updated + ' moved:' + moved + ' errors:' + errors)
-    : ('Elurikkus refresh done: updated:' + updated + ' moved:' + moved + ' errors:' + errors);
-  __eluBulkSummary = { updated: updated, moved: moved, errors: errors, total: total, aborted: aborted, at: new Date().toISOString() };
-  window.__lastElurikkusBulkSummary = Object.assign({ durationMs: Date.now() - t0 }, __eluBulkSummary);
-  pushDebugEvent('ELU_BULK_DONE', 'Elurikkus bulk refresh finished', __eluBulkSummary, 'warn');
-  _showSnapshotBanner(msg, errors ? 'warn' : '');
-  if(progEl) progEl.textContent = msg;
-  if(eluProg) eluProg.textContent = msg;
-  try{ _rebuildMarkers({ reason: 'elu_bulk_done', done: total, total: total }); }catch(e){}
-  try{ if(typeof render === 'function') render(); }catch(e){}
   __eluBulkAbort = null;
   __elurikkusBulkAbort = null;
   __elurikkusBulkAbortController = null;
-  _updateDebugPanel();
+}
+async function refreshAllFromElurikkus(){
+  return refreshAllElurikkusOnce();
 }
 
 function enqueueSpringYearFirst(keys){
@@ -5252,27 +5179,13 @@ function render() {
       e.preventDefault();
       e.stopPropagation();
       const species = upstreamBtn.getAttribute('data-species') || '';
-      const liveEntry = _readLiveEntry(species);
-      const fetchedTs = Date.parse(String((liveEntry && liveEntry.fetchedAt) || '')) || 0;
-      const cooldownMs = 10 * 60 * 1000;
-      if(!e.shiftKey && fetchedTs && (Date.now() - fetchedTs < cooldownMs)){
-        const left = Math.max(0, Math.ceil((cooldownMs - (Date.now() - fetchedTs)) / 60000));
-        __elurikkusBySpecies[species] = Object.assign({}, __elurikkusBySpecies[species] || {}, {
-          status: 'cooldown',
-          error: '',
-          fetchSummary: 'Cooldown active (' + left + ' min left). Hold Shift to force.'
-        });
-        render();
-        return;
-      }
-      fetchElurikkusSpecies(species).then(function(json){
-        const hasItems = !!(json && Array.isArray(json.items) && json.items.length);
-        if(hasItems){
-          _applyLiveOverrideForSpecies(species);
-          try{ updateMarker(species); }catch(err){}
-          save();
-          render();
-        }
+      const searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(species);
+      autoFetchCoords(species, searchUrl).then(function(){
+        try{ updateMarker(species); }catch(err){}
+        try{ render(); }catch(err){}
+      }).catch(function(err){
+        const ferr = document.getElementById('fetchError');
+        if(ferr) ferr.textContent = 'Elurikkus fetch failed: ' + String(err && err.message ? err.message : err);
       });
       return;
     }
@@ -5360,7 +5273,20 @@ function _startSnapshotBoot(){
     }
   }, 1500);
 }
+function _initElurikkusAuto30m(){
+  try{
+    if(String(localStorage.getItem(LS_ELU_AUTO_30M) || '0') !== '1') return;
+    if(__eluAuto30mTimer) return;
+    setTimeout(function(){
+      refreshAllElurikkusOnce().catch(function(){});
+    }, 2000);
+    __eluAuto30mTimer = setInterval(function(){
+      refreshAllElurikkusOnce().catch(function(){});
+    }, 30 * 60 * 1000);
+  }catch(e){}
+}
 _startSnapshotBoot();
+_initElurikkusAuto30m();
 
 // Auto-detect avatar files for active species
 setTimeout(autoDetectAvatarsForActive, 3000);

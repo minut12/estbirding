@@ -1139,50 +1139,67 @@ async function refreshAllFromElurikkus(){
   const idx = document.getElementById('indexProgress');
   const errEl = document.getElementById('fetchError');
 
-  for(let i = 0; i < total; i++){
-    if(signal.aborted) break;
-    const name = window.SPECIES[i];
-    __elurikkusBulkStats.lastKey = name;
-    _updateProgressUI(i, total, 'running');
-    if(prog) prog.textContent = 'Elurikkus refresh ' + (i + 1) + '/' + total + ' | ' + name;
-    if(idx) idx.textContent = 'Index: ' + (i + 1) + '/' + total;
-    let perCtrl = null;
-    let tId = null;
-    try{
-      perCtrl = new AbortController();
-      tId = setTimeout(function(){ try{ perCtrl.abort('timeout'); }catch(e){} }, 15000);
-      const combo = new AbortController();
-      const onBulkAbort = function(){ try{ combo.abort('bulk'); }catch(e){} };
-      const onPerAbort = function(){ try{ combo.abort('timeout'); }catch(e){} };
-      signal.addEventListener('abort', onBulkAbort, { once: true });
-      perCtrl.signal.addEventListener('abort', onPerAbort, { once: true });
-
-      const res = await refreshSpeciesFromElurikkus(name, combo.signal);
-      // Root cause 1 fix: always move the marker regardless of lock state
-      try{ updateMarker(name); }catch(_){}
-      __elurikkusBulkStats.updated++;
-      if(res && res.moved) __elurikkusBulkStats.moved++;
-      console.log('[bulk-fix]', name, 'updated, moved=', !!(res && res.moved), 'lat=', (points[name]||{}).lat, 'lon=', (points[name]||{}).lon);
-      signal.removeEventListener('abort', onBulkAbort);
-      perCtrl.signal.removeEventListener('abort', onPerAbort);
-      clearTimeout(tId);
-      await _delay(700);
-    }catch(e){
-      clearTimeout(tId);
-      if(signal.aborted) break;
-      __elurikkusBulkStats.errors++;
-      const msg = String((e && e.message) ? e.message : e);
-      errors.push({ name: name, error: msg });
-      if(errEl) errEl.textContent = 'Last error: ' + msg;
-      await _delay(500);
-    }
-    __elurikkusBulkStats.done = i + 1;
-    if(((i + 1) % 10) === 0) render();
+  // Fix 1: detect pre-aborted signal before loop starts
+  if(signal.aborted){
+    console.warn('[bulk] signal already aborted before loop started!', signal.reason);
   }
 
-  __elurikkusBulkActive = false;
-  if(stopBtn) stopBtn.style.display = 'none';
-  window.__lastElurikkusBulkErrors = errors.slice(0, 50);
+  // Fix 2: wrap loop in try/finally so __elurikkusBulkActive is always reset
+  try{
+    for(let i = 0; i < total; i++){
+      if(signal.aborted){
+        console.log('[bulk] signal aborted at index', i, 'reason:', signal.reason);
+        break;
+      }
+      const name = window.SPECIES[i];
+      __elurikkusBulkStats.lastKey = name;
+      _updateProgressUI(i, total, 'running');
+      if(prog) prog.textContent = 'Elurikkus refresh ' + (i + 1) + '/' + total + ' | ' + name;
+      if(idx) idx.textContent = 'Index: ' + (i + 1) + '/' + total;
+      try{
+        // Fix 3: use fetchElurikkusSpecies (server path) instead of refreshSpeciesFromElurikkus (CORS-blocked HTML scrape)
+        const oldPoint = __snapshotPointBySpecies[_speciesKey(name)] || {};
+        const json = await fetchElurikkusSpecies(name);
+        if(json && Array.isArray(json.items) && json.items.length){
+          // Fix 4: ensure live override flag is set so loadSnapshot can't clobber fresh coords
+          useLiveElurikkusForSpecies[_speciesKey(name)] = true;
+          _applyLiveOverrideForSpecies(name);
+          try{ updateMarker(name); }catch(_){}
+          save();
+          __elurikkusBulkStats.updated++;
+          const p = points[name] || {};
+          const moved = (Math.abs(Number(p.lat) - Number(oldPoint.lat)) > 1e-9 ||
+                         Math.abs(Number(p.lon) - Number(oldPoint.lon)) > 1e-9);
+          if(moved) __elurikkusBulkStats.moved++;
+          console.log('[bulk]', name, 'updated, moved=', moved, 'lat=', p.lat, 'lon=', p.lon);
+        } else {
+          __elurikkusBulkStats.errors++;
+          const msg = 'no items returned';
+          errors.push({ name: name, error: msg });
+          if(errEl) errEl.textContent = 'Last error: ' + name + ': ' + msg;
+        }
+        await _delay(1000);
+      }catch(e){
+        // Fix 1: count errors even on abort; log the reason
+        if(signal.aborted){
+          console.log('[bulk] signal aborted at index', i, 'reason:', signal.reason);
+          __elurikkusBulkStats.errors++;
+          break;
+        }
+        __elurikkusBulkStats.errors++;
+        const msg = String((e && e.message) ? e.message : e);
+        errors.push({ name: name, error: msg });
+        if(errEl) errEl.textContent = 'Last error: ' + msg;
+        await _delay(500);
+      }
+      __elurikkusBulkStats.done = i + 1;
+      if(((i + 1) % 10) === 0) render();
+    }
+  }finally{
+    __elurikkusBulkActive = false;
+    if(stopBtn) stopBtn.style.display = 'none';
+    window.__lastElurikkusBulkErrors = errors.slice(0, 50);
+  }
   refreshAllMarkers();
   render();
   const latest = SPECIES.reduce(function(best, n){

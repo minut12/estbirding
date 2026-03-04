@@ -464,6 +464,7 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
         htmlLength: html.length,
         totalResults,
         dataMaxAt,
+        sample: html.slice(0, 200),
         items,
       }),
       { status: 200, headers: buildModeHeaders("elurikkus_species") },
@@ -880,12 +881,10 @@ Deno.serve(async (req) => {
       JSON.stringify({
         ok: true,
         mode: "ping",
+        serverTime: new Date().toISOString(),
         received: {
           url: u.toString(),
-          mode,
-          text,
-          meta: sp.get("meta"),
-          allParams: searchParamsToObject(sp),
+          params: searchParamsToObject(sp),
         },
       }),
       { status: 200, headers: buildModeHeaders("ping") },

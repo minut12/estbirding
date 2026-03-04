@@ -685,7 +685,7 @@ function _livePointFromItems(speciesName, items){
   out.coords_note = (coordsStatus === 'restricted')
     ? ('coords restricted \u2192 ' + (coordsSource === 'snapshot_fallback' ? 'snapshot fallback' : coordsSource))
     : '';
-  __lastLiveCoordsDecision = {
+  const decision = {
     species: speciesName,
     coordsStatus: coordsStatus,
     municipality: municipality || '',
@@ -694,6 +694,8 @@ function _livePointFromItems(speciesName, items){
     resolvedLatLon: (Number.isFinite(lat) && Number.isFinite(lon)) ? { lat: Number(lat), lon: Number(lon) } : null,
     coordsSource: coordsSource,
   };
+  __lastLiveCoordsDecision = decision;
+  out.lastCoordsDecision = decision;
   out.visible = out.visible !== false;
   return out;
 }
@@ -702,6 +704,8 @@ function _applyLiveOverrideForSpecies(speciesName){
   const liveEntry = _readLiveEntry(speciesName);
   if(!liveEntry || !Array.isArray(liveEntry.items) || !liveEntry.items.length) return;
   points[speciesName] = _livePointFromItems(speciesName, liveEntry.items);
+  points[speciesName].coordsSource = points[speciesName].coords_source || '';
+  points[speciesName].coordsNote = points[speciesName].coords_note || '';
   useLiveElurikkusForSpecies[key] = true;
   _persistLiveCaches();
 }
@@ -848,6 +852,7 @@ function extractElurikkusRecordRows(html){
     const muni = placeText ? placeText.split(',')[0].trim() : '';
     out.push({
       observedAt: m[1],
+      placeText: placeText || '',
       municipality: muni || '',
       locality: placeText || '',
       county: /maakond/i.test(placeText || '') ? placeText : '',
@@ -870,6 +875,7 @@ async function _fetchElurikkusSpeciesViaHtml(speciesName){
   const items = (rows || []).slice(0, 500).map(function(r){
     return {
       observedAt: r.observedAt,
+      placeText: r.placeText || r.locality || '',
       municipality: r.municipality || '',
       locality: r.locality || '',
       county: r.county || '',
@@ -3932,25 +3938,41 @@ function updateMarker(key) {
     const when = p.t ? '<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.observationDate) || 'vaatluse kuup\u00e4ev') + ': ' + formatDateEE(p.t) + '</small>' : '';
     const src = p.src ? '<br><small>allikas: '+p.src+'</small>' : '';
     const precision = (p.coords_status === 'restricted' && p.coords_source && p.coords_source !== 'none')
-      ? ('<br><small>' + (p.coords_note || ('coords restricted \u2192 ' + ((p.coords_source === 'snapshot' || p.coords_source === 'snapshot_fallback') ? 'snapshot fallback' : p.coords_source))) + '</small>')
+      ? ('<br><small>coordsSource: ' + p.coords_source + '</small><br><small>' + (p.coords_note || ('coords restricted \u2192 ' + ((p.coords_source === 'snapshot' || p.coords_source === 'snapshot_fallback') ? 'snapshot fallback' : p.coords_source))) + '</small>')
       : '';
-    const popupHtml = '<b>'+key+'</b>'+when+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+precision;
+    const lastMove = p.lastMarkerMove || null;
+    const movedLine = lastMove
+      ? ('<br><small>moved: ' + (lastMove.changed ? 'yes' : 'no') + ' (' + Number(lastMove.oldLat || 0).toFixed(4) + ',' + Number(lastMove.oldLon || 0).toFixed(4) + ' \u2192 ' + Number(lastMove.newLat || p.lat).toFixed(4) + ',' + Number(lastMove.newLon || p.lon).toFixed(4) + ')</small>')
+      : '';
+    const popupHtml = '<b>'+key+'</b>'+when+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+precision+movedLine;
     if(existingMarker){
       try{
         const cur = existingMarker.getLatLng ? existingMarker.getLatLng() : null;
+        const oldLat = cur ? Number(cur.lat) : Number(p.lat);
+        const oldLon = cur ? Number(cur.lng) : Number(p.lon);
+        const changed = !cur || Math.abs(cur.lat - p.lat) > 1e-9 || Math.abs(cur.lng - p.lon) > 1e-9;
         if(!cur || Math.abs(cur.lat - p.lat) > 1e-9 || Math.abs(cur.lng - p.lon) > 1e-9){
           existingMarker.setLatLng([p.lat, p.lon]);
         }
         existingMarker.setIcon(icon);
         existingMarker.bindPopup(popupHtml);
+        p.lastMarkerMove = {
+          oldLat: oldLat, oldLon: oldLon, newLat: Number(p.lat), newLon: Number(p.lon), changed: !!changed, atISO: new Date().toISOString()
+        };
         markers.set(key, existingMarker);
       }catch(e){
         try{ map.removeLayer(existingMarker); }catch(_e){}
         const m = L.marker([p.lat,p.lon], {icon}).addTo(map).bindPopup(popupHtml);
+        p.lastMarkerMove = {
+          oldLat: Number(p.lat), oldLon: Number(p.lon), newLat: Number(p.lat), newLon: Number(p.lon), changed: true, atISO: new Date().toISOString()
+        };
         markers.set(key, m);
       }
     } else {
       const m = L.marker([p.lat,p.lon], {icon}).addTo(map).bindPopup(popupHtml);
+      p.lastMarkerMove = {
+        oldLat: Number(p.lat), oldLon: Number(p.lon), newLat: Number(p.lat), newLon: Number(p.lon), changed: true, atISO: new Date().toISOString()
+      };
       markers.set(key, m);
     }
   } else {
@@ -4074,9 +4096,11 @@ function render() {
       const key = _speciesKey(species);
       if(_isLiveOverrideEnabled(species)){
         _restoreSnapshotForSpecies(species);
+        try{ updateMarker(species); }catch(e){}
         _rebuildMarkers({ reason: 'live_override_disabled', speciesKey: key });
       }else{
         _applyLiveOverrideForSpecies(species);
+        try{ updateMarker(species); }catch(e){}
         _rebuildMarkers({ reason: 'live_override_enabled', speciesKey: key });
       }
       save();

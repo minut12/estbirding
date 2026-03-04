@@ -164,42 +164,11 @@
     <span>7 days only</span>
   </label>
 </div>
-<div id="snapshotBanner" class="snapshot-banner" style="display:none"></div>
 <div class="fetch-controls">
-  <button id="btnRefreshData" class="btn" title="Trigger server-side data refresh">Refresh data</button>
-  <button id="btnForceServerRefresh" class="btn secondary" title="Force server rebuild from upstream">Force server refresh</button>
-  <button id="btnReloadSnapshot" class="btn secondary" title="Reload latest snapshot from server">Reload snapshot</button>
-  <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index">Resume</button>
-  <button id="btnSkipStuck" class="btn secondary" title="Skip current stuck item by resuming from next index">Skip stuck item</button>
-  <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
+  <button id="btnFetchAllCoords" class="btn" title="Fetch coordinates sequentially from Elurikkus">Fetch ALL coords</button>
 </div>
 <div id="fetchProgress" class="fetch-progress"></div>
-<div id="indexProgress" class="fetch-progress"></div>
-<div id="serverRefreshStatus" class="fetch-progress"></div>
-<div id="fetchProgressBar" class="fetch-progress-bar" style="display:none"><div id="fetchProgressBarInner" class="fetch-progress-bar-inner" style="width:0%"></div></div>
 <div id="fetchError" class="fetch-error"></div>
-<details class="debug-panel" id="debugPanel">
-  <summary>Debug (lite)</summary>
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px">
-    <button id="btnCopyDebugJson" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy debug (lite)</button>
-    <button id="btnClearDebugEvents" class="btn secondary" style="font-size:11px;padding:2px 8px">Reset debug</button>
-  </div>
-  <div id="debugContent">Loading...</div>
-</details>
-<details class="debug-panel" id="debugProPanel">
-  <summary>Debug (pro)</summary>
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px">
-    <button id="btnCopyDebugProJson" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy debug (pro)</button>
-    <button id="btnExportDebugProJson" class="btn secondary" style="font-size:11px;padding:2px 8px">Export debug JSON</button>
-    <button id="btnClearTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Clear trace</button>
-    <button id="btnCopySelectedTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy selected trace JSON</button>
-    <button id="btnCopyIndexTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy index trace</button>
-    <button id="btnClearIndexTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Clear index trace</button>
-    <button id="btnRerunVerification" class="btn secondary" style="font-size:11px;padding:2px 8px">Re-run verification</button>
-    <label style="display:flex;align-items:center;gap:4px;font-size:11px"><input id="toggleSlowMode" type="checkbox" />Slow mode</label>
-  </div>
-  <div id="debugProContent" class="debug-pro-grid">Loading...</div>
-</details>
     <input id="filterBox" type="text" placeholder="Filter..." />
     <div id="list"></div>
     </div>
@@ -273,6 +242,7 @@ const DATA = SPECIES.map(name => ({ est: _normText(name), url: 'https://elurikku
 // Local storage keys
 const LS_AVATARS='bm_rari_avatars', LS_POINTS='bm_rari_points', LS_PROXY='bm_rari_proxy', LS_NAMES='bm_rari_names', LS_SPRING='bm_rari_spring_dates';
 const LS_SPRING_YEARFIRST = 'bm_rari_spring_yearfirst_v3';
+const CLASSIC_MODE = true;
 const LS_LIVE_ELURIKKUS = 'bm_live_elurikkus_v1';
 const LS_LIVE_ELURIKKUS_USE = 'bm_live_elurikkus_use_v1';
 const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
@@ -676,7 +646,7 @@ function _livePointFromItems(speciesName, items){
   if(newest && newest.observedAt) out.t = String(newest.observedAt);
   if(Number.isFinite(lat) && Number.isFinite(lon)){ out.lat = lat; out.lon = lon; } else { delete out.lat; delete out.lon; }
   out.occ7 = occ7;
-  out.src = 'live_elurikkus';
+  out.src = 'Elurikkus';
   out.coords_status = coordsStatus;
   out.coords_source = coordsSource;
   if(municipality) out.municipality = municipality;
@@ -704,6 +674,7 @@ function _applyLiveOverrideForSpecies(speciesName){
   const liveEntry = _readLiveEntry(speciesName);
   if(!liveEntry || !Array.isArray(liveEntry.items) || !liveEntry.items.length) return;
   points[speciesName] = _livePointFromItems(speciesName, liveEntry.items);
+  points[speciesName].lastFetched = String(liveEntry.fetchedAt || new Date().toISOString());
   points[speciesName].coordsSource = points[speciesName].coords_source || '';
   points[speciesName].coordsNote = points[speciesName].coords_note || '';
   useLiveElurikkusForSpecies[key] = true;
@@ -1751,6 +1722,48 @@ async function fetchElurikkusSpecies(species){
       await _acquireElurikkusLimiter();
       await _respectElurikkusMinDelay();
       __elurikkusLastFetchAtMs = Date.now();
+      if(CLASSIC_MODE){
+        const json = await _fetchElurikkusSpeciesViaHtml(speciesName);
+        const items = Array.isArray(json.items) ? json.items.slice() : [];
+        const stats = _computeLiveStats(items);
+        const restrictedCount = items.filter(function(it){
+          const s = String((it && it.coordsStatus) || '');
+          return s === 'restricted' || s === 'missing';
+        }).length;
+        row.status = 'ok';
+        row.error = '';
+        row.routeMismatch = '';
+        row.durationMs = Number(json.durationMs || 0) || null;
+        row.bytes = Number(json.upstreamBytes || 0) || null;
+        row.latestOccurrenceAt = String((json.dataMaxAt || json.latestOccurrenceAt) || '').trim();
+        row.itemsCount = items.length;
+        row.totalResults = Number(json.totalResults || 0) || 0;
+        row.upstreamStatus = Number(json.upstreamStatus || 200) || 200;
+        row.restrictedCount = restrictedCount;
+        row.publicCount = Math.max(0, items.length - restrictedCount);
+        row.sourceUrl = String(json.sourceUrl || '').trim();
+        row.buildId = String(json.buildId || 'client_html');
+        row.updatedAt = new Date().toISOString();
+        row.fetchSummary = 'Fetched ✓ (' + stats.itemsTotal + ' items, newest: ' + (row.latestOccurrenceAt ? formatDateTimeEE(row.latestOccurrenceAt) : '-') + ')';
+        row.source = 'client_html';
+        __elurikkusFetchCountTotal++;
+        __elurikkusFetchCountBySpecies[cacheKey] = Number(__elurikkusFetchCountBySpecies[cacheKey] || 0) + 1;
+        __lastElurikkusSpeciesFetched = speciesName;
+        __lastElurikkusLatestOccurrenceAt = row.latestOccurrenceAt || '';
+        __lastElurikkusItemsCount = row.itemsCount || 0;
+        __lastElurikkusError = '';
+        __lastElurikkusSource = 'client_html';
+        liveElurikkusBySpecies[cacheKey] = {
+          fetchedAt: new Date().toISOString(),
+          dataMaxAt: row.latestOccurrenceAt || '',
+          items: items,
+          sourceUrl: row.sourceUrl || '',
+        };
+        liveStatsBySpecies[cacheKey] = stats;
+        _persistLiveCaches();
+        __elurikkusResultCache.set(cacheKey, { ts: Date.now(), data: json });
+        return json;
+      }
       const base = _resolveElurikkusSpeciesApi();
       const reqUrl = new URL(base);
       reqUrl.searchParams.set('mode', 'elurikkus_species');
@@ -3746,8 +3759,8 @@ function _wireSnapshotButtons(){
 }
 
 // === Auto-refresh via postMessage (parent app sends these) ===
-function refreshVisible(){ loadSnapshot(); }
-function refreshSelected(){ loadSnapshot(); }
+function refreshVisible(){ refreshAllMarkers(); render(); }
+function refreshSelected(){ refreshAllMarkers(); render(); }
 
 window.addEventListener('message', function(ev){
   try{
@@ -3755,6 +3768,7 @@ window.addEventListener('message', function(ev){
     var t = ev.data.type;
     if(t === 'SET_ADMIN_KEY') return; // no longer used
     if(t === 'SUPABASE_CONFIG'){
+      if(CLASSIC_MODE) return;
       const hadNoApi = !SNAPSHOT_API;
       const hadUrlMissingErr = ((__lastErrorMessage || '').indexOf('Supabase URL puudub') >= 0);
       const prevCfg = resolveSupabaseConfig();
@@ -3945,36 +3959,18 @@ function updateMarker(key) {
       ? ('<br><small>moved: ' + (lastMove.changed ? 'yes' : 'no') + ' (' + Number(lastMove.oldLat || 0).toFixed(4) + ',' + Number(lastMove.oldLon || 0).toFixed(4) + ' \u2192 ' + Number(lastMove.newLat || p.lat).toFixed(4) + ',' + Number(lastMove.newLon || p.lon).toFixed(4) + ')</small>')
       : '';
     const popupHtml = '<b>'+key+'</b>'+when+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+precision+movedLine;
-    if(existingMarker){
-      try{
-        const cur = existingMarker.getLatLng ? existingMarker.getLatLng() : null;
-        const oldLat = cur ? Number(cur.lat) : Number(p.lat);
-        const oldLon = cur ? Number(cur.lng) : Number(p.lon);
-        const changed = !cur || Math.abs(cur.lat - p.lat) > 1e-9 || Math.abs(cur.lng - p.lon) > 1e-9;
-        if(!cur || Math.abs(cur.lat - p.lat) > 1e-9 || Math.abs(cur.lng - p.lon) > 1e-9){
-          existingMarker.setLatLng([p.lat, p.lon]);
-        }
-        existingMarker.setIcon(icon);
-        existingMarker.bindPopup(popupHtml);
-        p.lastMarkerMove = {
-          oldLat: oldLat, oldLon: oldLon, newLat: Number(p.lat), newLon: Number(p.lon), changed: !!changed, atISO: new Date().toISOString()
-        };
-        markers.set(key, existingMarker);
-      }catch(e){
-        try{ map.removeLayer(existingMarker); }catch(_e){}
-        const m = L.marker([p.lat,p.lon], {icon}).addTo(map).bindPopup(popupHtml);
-        p.lastMarkerMove = {
-          oldLat: Number(p.lat), oldLon: Number(p.lon), newLat: Number(p.lat), newLon: Number(p.lon), changed: true, atISO: new Date().toISOString()
-        };
-        markers.set(key, m);
-      }
-    } else {
-      const m = L.marker([p.lat,p.lon], {icon}).addTo(map).bindPopup(popupHtml);
-      p.lastMarkerMove = {
-        oldLat: Number(p.lat), oldLon: Number(p.lon), newLat: Number(p.lat), newLon: Number(p.lon), changed: true, atISO: new Date().toISOString()
-      };
-      markers.set(key, m);
-    }
+    const old = existingMarker && existingMarker.getLatLng ? existingMarker.getLatLng() : null;
+    if(existingMarker){ try{ map.removeLayer(existingMarker); }catch(_e){} }
+    const m = L.marker([p.lat,p.lon], {icon}).addTo(map).bindPopup(popupHtml);
+    p.lastMarkerMove = {
+      oldLat: old ? Number(old.lat) : Number(p.lat),
+      oldLon: old ? Number(old.lng) : Number(p.lon),
+      newLat: Number(p.lat),
+      newLon: Number(p.lon),
+      changed: !old || Math.abs(old.lat - p.lat) > 1e-9 || Math.abs(old.lng - p.lon) > 1e-9,
+      atISO: new Date().toISOString()
+    };
+    markers.set(key, m);
   } else {
     if(existingMarker){ map.removeLayer(existingMarker); markers.delete(key); }
   }
@@ -4005,11 +4001,6 @@ function rowHTML(obj) {
   const meta = '<div class="meta-grid"><div class="meta-row1">'+metaRow1+'</div><div class="meta-row2">'+springTxt+'</div></div>';
   const up = __elurikkusBySpecies[key] || null;
   const speciesKey = _normalizeSpeciesKey(key);
-  const liveEntry = _readLiveEntry(key);
-  const liveStats = liveStatsBySpecies[speciesKey] || null;
-  const liveEnabled = _isLiveOverrideEnabled(key);
-  const canUseLive = !!(liveEnabled || (liveEntry && liveStats && Number(liveStats.itemsTotal || 0) > 0));
-  const activeSource = liveEnabled ? 'live (Elurikkus)' : 'snapshot';
   const isUpLoading = __elurikkusInFlightBySpecies.has(_normalizeSpeciesKey(key));
   const fetchCount = Number(__elurikkusFetchCountBySpecies[speciesKey] || 0);
   const upLine = up
@@ -4030,10 +4021,9 @@ function rowHTML(obj) {
       (up.fetchSummary ? (' | ' + up.fetchSummary) : '') +
       '</div>')
     : ('<div class="small" style="margin-top:4px">Elurikkus: - | fetched ' + fetchCount + 'x</div>');
-  const liveLine = '<div class="small" style="margin-top:3px">' +
-    'Source: <b>' + activeSource + '</b>' +
-    (liveStats ? (' | live items: ' + liveStats.itemsTotal + ' | 7d: ' + liveStats.itemsWithin7d + ' | missing coords: ' + liveStats.coordsMissing) : '') +
-    (liveEntry && liveEntry.dataMaxAt ? (' | newest: ' + formatDateTimeEE(liveEntry.dataMaxAt)) : '') +
+  const statusLine = '<div class="small" style="margin-top:3px">' +
+    'Source: <b>' + (p.src || '-') + '</b>' +
+    (p.lastFetched ? (' | fetched: ' + formatDateTimeEE(p.lastFetched)) : '') +
     '</div>';
 
   return '<div class="row" data-key="'+key+'">' +
@@ -4048,11 +4038,10 @@ function rowHTML(obj) {
     '<div class="controls">' +
       '<div style="display:flex;flex-direction:column;gap:6px">' +
       '<a class="btn" target="_blank" href="'+obj.url+'">Open</a>' +
-      '<button class="btn secondary fetch-elurikkus-btn" data-species="'+key+'" '+(isUpLoading?'disabled':'')+' title="Fetch from Elurikkus via server proxy">Fetch (Elurikkus)</button>' +
-      '<button class="btn secondary toggle-live-elurikkus-btn" data-species="'+key+'" '+(canUseLive?'':'disabled')+' title="' + (canUseLive ? 'Use fetched Elurikkus data for map markers' : 'Live data unavailable: route mismatch or parse returned 0 items') + '">' + (liveEnabled ? 'Use snapshot data' : 'Use live data') + '</button>' +
+      '<button class="btn secondary fetch-elurikkus-btn" data-species="'+key+'" '+(isUpLoading?'disabled':'')+' title="Fetch latest from Elurikkus and apply to map">Auto-coords</button>' +
       '</div>' +
     '</div>' +
-    liveLine +
+    statusLine +
   '</div>';
 }
 
@@ -4076,34 +4065,28 @@ function render() {
       e.preventDefault();
       e.stopPropagation();
       const species = upstreamBtn.getAttribute('data-species') || '';
+      const liveEntry = _readLiveEntry(species);
+      const fetchedTs = Date.parse(String((liveEntry && liveEntry.fetchedAt) || '')) || 0;
+      const cooldownMs = 10 * 60 * 1000;
+      if(!e.shiftKey && fetchedTs && (Date.now() - fetchedTs < cooldownMs)){
+        const left = Math.max(0, Math.ceil((cooldownMs - (Date.now() - fetchedTs)) / 60000));
+        __elurikkusBySpecies[species] = Object.assign({}, __elurikkusBySpecies[species] || {}, {
+          status: 'cooldown',
+          error: '',
+          fetchSummary: 'Cooldown active (' + left + ' min left). Hold Shift to force.'
+        });
+        render();
+        return;
+      }
       fetchElurikkusSpecies(species).then(function(json){
-        const key = _normalizeSpeciesKey(species);
         const hasItems = !!(json && Array.isArray(json.items) && json.items.length);
         if(hasItems){
           _applyLiveOverrideForSpecies(species);
-          _rebuildMarkers({ reason: "live_fetch_auto_enabled", speciesKey: key });
+          try{ updateMarker(species); }catch(err){}
           save();
           render();
         }
       });
-      return;
-    }
-    const liveBtn = t.closest?.('.toggle-live-elurikkus-btn');
-    if (liveBtn){
-      e.preventDefault();
-      e.stopPropagation();
-      const species = liveBtn.getAttribute('data-species') || '';
-      const key = _speciesKey(species);
-      if(_isLiveOverrideEnabled(species)){
-        _restoreSnapshotForSpecies(species);
-        try{ updateMarker(species); }catch(e){}
-        _rebuildMarkers({ reason: 'live_override_disabled', speciesKey: key });
-      }else{
-        _applyLiveOverrideForSpecies(species);
-        try{ updateMarker(species); }catch(e){}
-        _rebuildMarkers({ reason: 'live_override_enabled', speciesKey: key });
-      }
-      save();
       return;
     }
 
@@ -4163,33 +4146,47 @@ function render() {
 
 // Restore existing markers from localStorage and render list
 refreshAllMarkers();
-_wireSnapshotButtons();
-function _startSnapshotBoot(){
-  if(__bootLoadStarted) return;
-  const cfg = resolveSupabaseConfig();
-  if(cfg.supabaseUrl){
-    __supabaseConfigReady = true;
-    __bootLoadStarted = true;
-    fetchServerMeta();
-    _startServerMetaPolling();
-    loadSnapshot();
-    return;
-  }
-  __supabaseConfigReady = false;
-  _requestSupabaseConfigFromParent();
-  setTimeout(function(){
-    if(__bootLoadStarted) return;
-    const lateCfg = resolveSupabaseConfig();
-    if(lateCfg.supabaseUrl){
-      __supabaseConfigReady = true;
-      __bootLoadStarted = true;
-      fetchServerMeta();
-      _startServerMetaPolling();
-      loadSnapshot();
+function _wireClassicButtons(){
+  const btn = document.getElementById('btnFetchAllCoords');
+  const statusEl = document.getElementById('fetchProgress');
+  if(!btn || btn.__wiredClassic) return;
+  btn.__wiredClassic = true;
+  btn.addEventListener('click', async function(){
+    if(btn.__running) return;
+    btn.__running = true;
+    btn.disabled = true;
+    const speciesList = DATA.map(function(d){ return d.est; });
+    let done = 0;
+    let ok = 0;
+    try{
+      for(const species of speciesList){
+        done++;
+        if(statusEl) statusEl.textContent = 'Fetch ALL coords: ' + done + '/' + speciesList.length + ' (' + species + ')';
+        const liveEntry = _readLiveEntry(species);
+        const fetchedTs = Date.parse(String((liveEntry && liveEntry.fetchedAt) || '')) || 0;
+        const cooldownMs = 10 * 60 * 1000;
+        if(fetchedTs && (Date.now() - fetchedTs < cooldownMs)){
+          continue;
+        }
+        const json = await fetchElurikkusSpecies(species);
+        const hasItems = !!(json && Array.isArray(json.items) && json.items.length);
+        if(hasItems){
+          _applyLiveOverrideForSpecies(species);
+          try{ updateMarker(species); }catch(e){}
+          ok++;
+        }
+        save();
+        render();
+        await _delay(850);
+      }
+    }finally{
+      btn.__running = false;
+      btn.disabled = false;
+      if(statusEl) statusEl.textContent = 'Fetch ALL coords done: ' + ok + '/' + speciesList.length;
     }
-  }, 1500);
+  });
 }
-_startSnapshotBoot();
+_wireClassicButtons();
 
 // Auto-detect avatar files for active species
 setTimeout(autoDetectAvatarsForActive, 3000);
@@ -4249,12 +4246,10 @@ window.addEventListener('message', function(ev){
 try{
   if(window.parent && window.parent !== window){
     window.parent.postMessage({ type: 'INSETS_REQUEST' }, '*');
-    window.parent.postMessage({ type: 'SUPABASE_CONFIG_REQUEST' }, '*');
   }
 }catch(e){}
 document.addEventListener('DOMContentLoaded', function(){
-  _requestSupabaseConfigFromParent();
-  _startSnapshotBoot();
+  _wireClassicButtons();
 });
 </script>
 

@@ -175,6 +175,7 @@
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
 <div id="eluProgress" class="snapshot-banner" style="display:none;font-weight:600"></div>
+<div id="eluLastCoord" class="fetch-progress"></div>
 <div id="fetchProgress" class="fetch-progress"></div>
 <div id="indexProgress" class="fetch-progress"></div>
 <div id="serverRefreshStatus" class="fetch-progress"></div>
@@ -1042,6 +1043,16 @@ window.__lastElurikkusBulkOutcomes = [];
 let __eluBulkActive = false;
 let __eluBulkAbort = null;
 let __eluBulkSummary = null;
+window.__eluCoordTrace = window.__eluCoordTrace || [];
+function pushEluCoordTrace(entry){
+  window.__eluCoordTrace.unshift(entry);
+  if(window.__eluCoordTrace.length > 50) window.__eluCoordTrace.length = 50;
+}
+function coordsChanged(a, b){
+  if(!a || !b) return false;
+  if(!Number.isFinite(Number(a.lat)) || !Number.isFinite(Number(a.lon)) || !Number.isFinite(Number(b.lat)) || !Number.isFinite(Number(b.lon))) return false;
+  return (Math.abs(Number(a.lat) - Number(b.lat)) > 1e-6) || (Math.abs(Number(a.lon) - Number(b.lon)) > 1e-6);
+}
 function _getAllSpeciesList(){
   try{
     if(typeof SPECIES !== 'undefined' && Array.isArray(SPECIES) && SPECIES.length) return SPECIES.slice();
@@ -1061,7 +1072,7 @@ function _applyElurikkusPayloadToPoints(species, payload){
   window.points = window.points || {};
   window.points[species] = window.points[species] || {};
   const row = window.points[species];
-  const prev = { lat: row.lat, lon: row.lon, t: row.t, occ7: row.occ7 };
+  const prev = { lat: Number(row.lat), lon: Number(row.lon), t: row.t, occ7: row.occ7 };
   let stats = null;
   try{ stats = (typeof _computeLiveStats === 'function') ? _computeLiveStats(items) : null; }catch(e){}
   const occ7raw = stats ? ((Number.isFinite(stats.items7d) ? stats.items7d : stats.itemsWithin7d)) : null;
@@ -1078,36 +1089,75 @@ function _applyElurikkusPayloadToPoints(species, payload){
   row.src = 'Elurikkus';
   row.lastFetched = new Date().toISOString();
   let best = null;
+  let found = { lat: null, lon: null, source: '-', occUrl: null };
+  let reason = 'no public coords';
   for(let i = 0; i < items.length; i++){
     const it = items[i] || {};
     const st = String((it.coordsStatus || it.coords_status || '')).toLowerCase();
     if(st !== 'public') continue;
     const lat = Number(it.lat), lon = Number(it.lon);
     if(!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-    if(!best) best = { lat: lat, lon: lon, dt: String(it.eventDate || it.observedAt || '') };
+    const src = String(it.coordSource || it.source || it.coords_source || 'detail');
+    if(!best) best = { lat: lat, lon: lon, dt: String(it.eventDate || it.observedAt || ''), source: src, occUrl: String(it.occurrenceUrl || '') || null };
     else{
       const dt = String(it.eventDate || it.observedAt || '');
-      if(dt && dt > String(best.dt || '')) best = { lat: lat, lon: lon, dt: dt };
+      if(dt && dt > String(best.dt || '')) best = { lat: lat, lon: lon, dt: dt, source: src, occUrl: String(it.occurrenceUrl || '') || null };
     }
   }
+  const restrictedItem = items.find(function(it){
+    const s = String((it && (it.coordsStatus || it.coords_status)) || '').toLowerCase();
+    return s === 'restricted';
+  }) || null;
+  const placeHint = restrictedItem
+    ? String((restrictedItem.placeText || restrictedItem.municipality || restrictedItem.locality || restrictedItem.county) || '').trim()
+    : '';
+  const centroid = (!best && placeHint && typeof resolveCentroidFromPlace === 'function') ? resolveCentroidFromPlace(placeHint) : null;
   if(best){
     row.lat = best.lat;
     row.lon = best.lon;
     row.coordsSource = 'live_elurikkus';
     row.coords_source = 'live_elurikkus';
     row.coords_status = 'public';
+    found = { lat: Number(best.lat), lon: Number(best.lon), source: String(best.source || 'detail'), occUrl: best.occUrl || null };
+    reason = 'applied exact';
+  } else if(centroid && Number.isFinite(centroid.lat) && Number.isFinite(centroid.lon)) {
+    row.lat = Number(centroid.lat);
+    row.lon = Number(centroid.lon);
+    row.coordsSource = 'municipality_centroid';
+    row.coords_source = 'municipality_centroid';
+    row.coords_status = 'restricted';
+    reason = 'restricted->municipality_centroid:' + String(centroid.placeText || placeHint || '-');
   } else {
     row.coordsSource = 'snapshot_fallback';
     row.coords_source = 'snapshot_fallback';
+    reason = restrictedItem ? 'restricted->snapshot_fallback' : 'no public coords';
   }
-  const moved =
-    Number.isFinite(Number(prev.lat)) && Number.isFinite(Number(prev.lon)) &&
-    Number.isFinite(Number(row.lat)) && Number.isFinite(Number(row.lon)) &&
-    (Number(prev.lat) !== Number(row.lat) || Number(prev.lon) !== Number(row.lon));
+  const applied = { lat: Number(row.lat), lon: Number(row.lon), source: String(row.coords_source || row.coordsSource || '-') };
+  const moved = coordsChanged(prev, applied);
   const updated = (String(prev.t || '') !== String(row.t || '')) || (Number(prev.occ7 || 0) !== Number(row.occ7 || 0)) || moved;
+  row.lastCoordDecision = {
+    ts: new Date().toISOString(),
+    species: species,
+    found: found,
+    applied: applied,
+    old: { lat: Number.isFinite(prev.lat) ? prev.lat : null, lon: Number.isFinite(prev.lon) ? prev.lon : null },
+    moved: moved,
+    reason: reason,
+    occUrl: found.occUrl || null,
+  };
   try{ if(typeof save === 'function') save(); }catch(e){}
   try{ if(typeof updateMarker === 'function') updateMarker(species); }catch(e){}
-  return { updated: updated, moved: moved, newest: row.t || '', occ7: row.occ7 };
+  return {
+    updated: updated,
+    moved: moved,
+    newest: row.t || '',
+    occ7: row.occ7,
+    found: found,
+    applied: applied,
+    old: { lat: Number.isFinite(prev.lat) ? prev.lat : null, lon: Number.isFinite(prev.lon) ? prev.lon : null },
+    reason: reason,
+    occUrl: found.occUrl || null,
+  };
 }
 function _buildEluFetchCandidates(url){
   const raw = String(url || '').trim();
@@ -1240,6 +1290,7 @@ async function refreshAllFromElurikkus(){
   const total = list.length;
   const progEl = document.getElementById('indexProgress') || document.getElementById('fetchProgress');
   const eluProg = document.getElementById('eluProgress');
+  const eluLastCoord = document.getElementById('eluLastCoord');
   const signal = __eluBulkAbort.signal;
   const t0 = Date.now();
   __elurikkusBulkStats = { done: 0, total: total, updated: 0, moved: 0, errors: 0, lastKey: '' };
@@ -1262,6 +1313,31 @@ async function refreshAllFromElurikkus(){
       if(res && res.updated) updated++;
       if(res && res.moved) moved++;
       try{ _applyLiveOverrideForSpecies(name); }catch(e){}
+      const foundTxt = (res && res.found && Number.isFinite(Number(res.found.lat)) && Number.isFinite(Number(res.found.lon)))
+        ? (Number(res.found.lat).toFixed(4) + ',' + Number(res.found.lon).toFixed(4))
+        : '-';
+      const appTxt = (res && res.applied && Number.isFinite(Number(res.applied.lat)) && Number.isFinite(Number(res.applied.lon)))
+        ? (Number(res.applied.lat).toFixed(4) + ',' + Number(res.applied.lon).toFixed(4))
+        : '-';
+      if(eluLastCoord){
+        eluLastCoord.textContent = (i + 1) + '/' + total + ' ' + name +
+          ' coordsFound=' + foundTxt +
+          ' coordsApplied=' + appTxt +
+          ' source=' + String((res && res.applied && res.applied.source) || '-') +
+          ' moved=' + ((res && res.moved) ? 'yes' : 'no');
+      }
+      pushEluCoordTrace({
+        ts: new Date().toISOString(),
+        i: i + 1,
+        total: total,
+        species: name,
+        found: (res && res.found) ? res.found : { lat: null, lon: null, source: '-' },
+        applied: (res && res.applied) ? res.applied : { lat: null, lon: null, source: '-' },
+        old: (res && res.old) ? res.old : { lat: null, lon: null },
+        moved: !!(res && res.moved),
+        reason: String((res && res.reason) || ''),
+        occUrl: (res && res.occUrl) ? res.occUrl : null,
+      });
       window.__lastElurikkusBulkOutcomes.unshift(Object.assign({ species: name, i: i + 1 }, res || {}));
       if(window.__lastElurikkusBulkOutcomes.length > 20) window.__lastElurikkusBulkOutcomes.length = 20;
       pushDebugEvent('ELU_BULK_ITEM', 'Elurikkus bulk item', { i: i + 1, species: name, updated: !!(res && res.updated), moved: !!(res && res.moved), newest: res && res.newest ? res.newest : '' });
@@ -3437,6 +3513,7 @@ function _computeDebugProObject(){
       lastBulkSummary: window.__lastElurikkusBulkSummary || null,
       lastBulkOutcomes: (window.__lastElurikkusBulkOutcomes || []).slice(0, 20),
       lastBulkErrors: (window.__lastElurikkusBulkErrors || []).slice(0, 20),
+      eluCoordTrace: (window.__eluCoordTrace || []).slice(0, 20),
     },
     logs: __internalLogs.slice(0,50),
   };
@@ -3452,6 +3529,18 @@ function _updateDebugProPanel(){
   const reasonRows = Object.keys(dbg.filterVerifier.reasons || {}).map(function(k){
     return '<tr><td>' + k + '</td><td>' + dbg.filterVerifier.reasons[k] + '</td></tr>';
   }).join('') || '<tr><td colspan="2">none</td></tr>';
+  const coordRows = (dbg.upstreamDebug.eluCoordTrace || []).map(function(r){
+    const oldTxt = (Number.isFinite(Number(r.old && r.old.lat)) && Number.isFinite(Number(r.old && r.old.lon)))
+      ? (Number(r.old.lat).toFixed(4) + ',' + Number(r.old.lon).toFixed(4))
+      : '-';
+    const appTxt = (Number.isFinite(Number(r.applied && r.applied.lat)) && Number.isFinite(Number(r.applied && r.applied.lon)))
+      ? (Number(r.applied.lat).toFixed(4) + ',' + Number(r.applied.lon).toFixed(4))
+      : '-';
+    const foundTxt = (Number.isFinite(Number(r.found && r.found.lat)) && Number.isFinite(Number(r.found && r.found.lon)))
+      ? (Number(r.found.lat).toFixed(4) + ',' + Number(r.found.lon).toFixed(4))
+      : '-';
+    return '<tr><td>' + String(r.species || '-') + '</td><td>' + oldTxt + ' -> ' + appTxt + '</td><td>' + foundTxt + '</td><td>' + String((r.applied && r.applied.source) || '-') + '</td><td>' + (r.moved ? 'yes' : 'no') + '</td><td>' + String(r.reason || '-') + '</td></tr>';
+  }).join('') || '<tr><td colspan="6">none</td></tr>';
   const hist = dbg.snapshotInspector && dbg.snapshotInspector.histogram ? dbg.snapshotInspector.histogram : {};
   const histRows = ['0-1d','1-2d','2-3d','3-7d','7-14d','14d+'].map(function(k){ return '<div>' + k + ': <b>' + (hist[k] || 0) + '</b></div>'; }).join('');
   const ia = dbg.indexAudit || {};
@@ -3523,6 +3612,7 @@ function _updateDebugProPanel(){
     '<div>lastBulkSummary: <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastBulkSummary || null).replace(/</g,'&lt;') + '</span></div>' +
     '<div>lastBulkOutcomes(top20): <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastBulkOutcomes || []).replace(/</g,'&lt;') + '</span></div>' +
     '<div>lastBulkErrors(top20): <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastBulkErrors || []).replace(/</g,'&lt;') + '</span></div>' +
+    '<div>Elurikkus coord trace(last20)</div><table class="debug-pro-table"><thead><tr><th>species</th><th>old->applied</th><th>found</th><th>source</th><th>moved</th><th>reason</th></tr></thead><tbody>' + coordRows + '</tbody></table>' +
     '<div style="margin-top:6px"><button class="btn secondary" onclick="_debugPingElurikkus()">Ping server</button></div>' +
     '<div>lastPing: <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastElurikkusPing || null).replace(/</g,'&lt;') + '</span></div></div>' +
     '<div class="debug-pro-sec"><div class="debug-pro-title">Logs & Export</div>' +
@@ -4562,8 +4652,9 @@ function updateMarker(key) {
     ? ('<br><small>coordsSource: ' + p.coords_source + '</small><br><small>' + (p.coords_note || ('coords restricted \u2192 ' + ((p.coords_source === 'snapshot' || p.coords_source === 'snapshot_fallback') ? 'snapshot fallback' : p.coords_source))) + '</small>')
     : (p.coords_source ? ('<br><small>coordsSource: ' + p.coords_source + '</small>' + (p.coords_note ? ('<br><small>' + p.coords_note + '</small>') : '')) : '');
   const lastMove = p.lastMarkerMove || null;
+  const lastDecision = p.lastCoordDecision || null;
   const movedLine = lastMove
-    ? ('<br><small>moved: ' + (lastMove.changed ? 'yes' : 'no') + ' (' + Number(lastMove.oldLat || 0).toFixed(4) + ',' + Number(lastMove.oldLon || 0).toFixed(4) + ' \u2192 ' + Number(lastMove.newLat || p.lat).toFixed(4) + ',' + Number(lastMove.newLon || p.lon).toFixed(4) + ')</small>')
+    ? ('<br><small>moved: ' + (lastMove.changed ? 'yes' : 'no') + ' (' + Number(lastMove.oldLat || 0).toFixed(4) + ',' + Number(lastMove.oldLon || 0).toFixed(4) + ' \u2192 ' + Number(lastMove.newLat || p.lat).toFixed(4) + ',' + Number(lastMove.newLon || p.lon).toFixed(4) + ')' + (lastMove.changed ? '' : (lastDecision && lastDecision.reason ? (' reason: ' + lastDecision.reason) : '')) + '</small>')
     : '';
   const popupHtml = '<b>'+key+'</b>'+when+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+precision+movedLine;
   const old = prevMarker && prevMarker.getLatLng ? prevMarker.getLatLng() : null;
@@ -4587,9 +4678,12 @@ function updateMarker(key) {
     oldLon: old ? Number(old.lng) : Number(p.lon),
     newLat: Number(p.lat),
     newLon: Number(p.lon),
-    changed: !old || Math.abs(old.lat - p.lat) > 1e-9 || Math.abs(old.lng - p.lon) > 1e-9,
+    changed: !old || Math.abs(old.lat - p.lat) > 1e-6 || Math.abs(old.lng - p.lon) > 1e-6,
     atISO: new Date().toISOString()
   };
+  if(p.lastMarkerMove.changed && clusterGroup && typeof clusterGroup.removeLayer === 'function' && typeof clusterGroup.addLayer === 'function'){
+    try{ clusterGroup.removeLayer(m); clusterGroup.addLayer(m); }catch(e){}
+  }
   markers.set(key, m);
 }
 

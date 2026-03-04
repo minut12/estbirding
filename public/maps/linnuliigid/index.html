@@ -1243,6 +1243,11 @@ async function refreshAllFromElurikkus(){
   const signal = __eluBulkAbort.signal;
   const t0 = Date.now();
   __elurikkusBulkStats = { done: 0, total: total, updated: 0, moved: 0, errors: 0, lastKey: '' };
+  for(let j = 0; j < total; j++){
+    const k = _speciesKey(list[j]);
+    useLiveElurikkusForSpecies[k] = true;
+  }
+  try{ localStorage.setItem(LS_LIVE_ELURIKKUS_USE, JSON.stringify(useLiveElurikkusForSpecies || {})); }catch(e){}
   pushDebugEvent('ELU_BULK_START', 'Elurikkus bulk refresh start', { total: total, force: true }, 'warn');
   for(let i = 0; i < total; i++){
     if(signal.aborted) break;
@@ -1256,6 +1261,7 @@ async function refreshAllFromElurikkus(){
       const res = await fetchElurikkusSpecies(name, { force: true, apply: true, signal: signal });
       if(res && res.updated) updated++;
       if(res && res.moved) moved++;
+      try{ _applyLiveOverrideForSpecies(name); }catch(e){}
       window.__lastElurikkusBulkOutcomes.unshift(Object.assign({ species: name, i: i + 1 }, res || {}));
       if(window.__lastElurikkusBulkOutcomes.length > 20) window.__lastElurikkusBulkOutcomes.length = 20;
       pushDebugEvent('ELU_BULK_ITEM', 'Elurikkus bulk item', { i: i + 1, species: name, updated: !!(res && res.updated), moved: !!(res && res.moved), newest: res && res.newest ? res.newest : '' });
@@ -1270,6 +1276,9 @@ async function refreshAllFromElurikkus(){
     __elurikkusBulkStats.updated = updated;
     __elurikkusBulkStats.moved = moved;
     __elurikkusBulkStats.errors = errors;
+    if(((i + 1) % 10) === 0){
+      try{ _rebuildMarkers({ reason: 'elu_bulk_batch', done: i + 1, total: total }); }catch(e){}
+    }
     await new Promise(function(r){ setTimeout(r, 700); });
   }
   __eluBulkActive = false;
@@ -1285,6 +1294,7 @@ async function refreshAllFromElurikkus(){
   _showSnapshotBanner(msg, errors ? 'warn' : '');
   if(progEl) progEl.textContent = msg;
   if(eluProg) eluProg.textContent = msg;
+  try{ _rebuildMarkers({ reason: 'elu_bulk_done', done: total, total: total }); }catch(e){}
   try{ if(typeof render === 'function') render(); }catch(e){}
   __eluBulkAbort = null;
   __elurikkusBulkAbort = null;

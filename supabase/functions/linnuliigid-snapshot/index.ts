@@ -4,7 +4,7 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
   "Access-Control-Allow-Headers": "content-type, x-client-info, apikey, authorization",
-  "Access-Control-Expose-Headers": "X-EstBirding-Mode, ETag, X-Snapshot-Generated-At, Content-Length",
+  "Access-Control-Expose-Headers": "X-EstBirding-Mode, ETag, Last-Modified, X-Snapshot-Generated-At, Content-Length",
   "Cache-Control": "no-store, max-age=0",
   "Pragma": "no-cache",
   "Content-Type": "application/json; charset=utf-8",
@@ -305,7 +305,7 @@ type LiveOccItem = {
   lon?: number;
   municipality?: string;
   occurrenceUrl?: string;
-  coordsStatus: "exact" | "restricted" | "missing";
+  coordsStatus: "public" | "restricted" | "missing";
 };
 
 function stripHtml(raw: string): string {
@@ -332,7 +332,9 @@ function parseElurikkusHtmlItems(html: string): LiveOccItem[] {
     const ts = parseElurikkusDate(firstCell);
     if (!(ts > 0)) continue;
 
-    const linkMatch = rowHtml.match(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    const occLink = rowHtml.match(/<a[^>]+href="([^"]*\/app\/occurrences\/occurrence\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    const anyLink = rowHtml.match(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    const linkMatch = occLink || anyLink;
     const scientificName = linkMatch ? stripHtml(linkMatch[2]) : stripHtml(cells[1] || "");
     const occurrenceUrl = linkMatch ? String(linkMatch[1] || "").trim() : "";
     const commonName = stripHtml(cells[2] || "");
@@ -346,22 +348,7 @@ function parseElurikkusHtmlItems(html: string): LiveOccItem[] {
     const lonM = rowHtml.match(/(?:decimalLongitude|lon)[^0-9-]*(-?\d+(?:\.\d+)?)/i);
     const lat = latM ? Number.parseFloat(latM[1]) : null;
     const lon = lonM ? Number.parseFloat(lonM[1]) : null;
-    let hasCoords = Number.isFinite(lat) && Number.isFinite(lon);
-    let resolvedLat = hasCoords ? Number(lat) : null;
-    let resolvedLon = hasCoords ? Number(lon) : null;
-    if (!hasCoords && municipality) {
-      try {
-        const mk = normalizeName(municipality).replace(/_county$/, "");
-        const centroid = MUNICIPALITY_CENTROIDS[mk] || COUNTY_CENTROIDS[mk] || null;
-        if (centroid && Number.isFinite(centroid.lat) && Number.isFinite(centroid.lon)) {
-          resolvedLat = centroid.lat;
-          resolvedLon = centroid.lon;
-          hasCoords = true;
-        }
-      } catch {
-        // ignore centroid lookup failures
-      }
-    }
+    const hasCoords = Number.isFinite(lat) && Number.isFinite(lon);
     const item: LiveOccItem = {
       observedAt: new Date(ts).toISOString(),
       observedRaw: firstCell,
@@ -369,11 +356,11 @@ function parseElurikkusHtmlItems(html: string): LiveOccItem[] {
       commonName: commonName || undefined,
       individualCount: Number.isFinite(individualCount as number) ? individualCount : undefined,
       locality: localityText || undefined,
-      coordsStatus: hasCoords ? ((Number.isFinite(lat) && Number.isFinite(lon)) ? "exact" : "restricted") : "missing",
+      coordsStatus: hasCoords ? "public" : "missing",
     };
     if (hasCoords) {
-      item.lat = Number(resolvedLat);
-      item.lon = Number(resolvedLon);
+      item.lat = Number(lat);
+      item.lon = Number(lon);
     }
     if (municipality) item.municipality = municipality;
     if (occurrenceUrl) item.occurrenceUrl = occurrenceUrl.startsWith("http")
@@ -396,6 +383,69 @@ function parseElurikkusHtmlItems(html: string): LiveOccItem[] {
   }
   out.sort((a, b) => parseElurikkusDate(b.observedAt) - parseElurikkusDate(a.observedAt));
   return out.slice(0, 200);
+}
+
+function parseOccurrenceDetailCoords(html: string): { lat?: number; lon?: number; hidden: boolean } {
+  const raw = String(html || "");
+  if (!raw) return { hidden: false };
+  const hidden = /(coordinates?\s+hidden|koordinaadid\s+peidetud|sensitive\s+species|täpsed\s+koordinaadid\s+on\s+peidetud)/i.test(raw);
+  function pick(label: string): number | null {
+    const re = new RegExp(label + "[\\s\\S]{0,240}?(-?\\d{1,2}(?:[\\.,]\\d+))", "i");
+    const m = raw.match(re);
+    if (!m) return null;
+    const n = Number.parseFloat(String(m[1] || "").replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  }
+  let lat = pick("Latitude|Laius");
+  let lon = pick("Longitude|Pikkus");
+  if (!(Number.isFinite(lat) && Number.isFinite(lon))) {
+    const m = raw.match(/(-?\d{1,2}(?:\.\d+))\s*,\s*(-?\d{1,2}(?:\.\d+))/);
+    if (m) {
+      const a = Number.parseFloat(m[1]);
+      const b = Number.parseFloat(m[2]);
+      if (Number.isFinite(a) && Number.isFinite(b)) {
+        lat = a;
+        lon = b;
+      }
+    }
+  }
+  if (Number.isFinite(lat) && Number.isFinite(lon)) return { lat: Number(lat), lon: Number(lon), hidden };
+  return { hidden };
+}
+
+async function enrichItemsWithDetailCoords(items: LiveOccItem[], maxChecks = 5): Promise<void> {
+  const sorted = items
+    .map((it, idx) => ({ it, idx, ts: parseElurikkusDate(it.observedAt || it.observedRaw || "") }))
+    .sort((a, b) => b.ts - a.ts);
+  let checks = 0;
+  for (const row of sorted) {
+    if (checks >= maxChecks) break;
+    const item = row.it;
+    if (!item || !item.occurrenceUrl) continue;
+    if (Number.isFinite(item.lat) && Number.isFinite(item.lon) && item.coordsStatus === "public") continue;
+    checks++;
+    try {
+      const res = await fetch(item.occurrenceUrl, {
+        method: "GET",
+        headers: { "Cache-Control": "no-cache", "Pragma": "no-cache", "User-Agent": "EstBirding/1.0" },
+      });
+      const html = await res.text();
+      const parsed = parseOccurrenceDetailCoords(html);
+      if (Number.isFinite(parsed.lat) && Number.isFinite(parsed.lon)) {
+        item.lat = Number(parsed.lat);
+        item.lon = Number(parsed.lon);
+        item.coordsStatus = "public";
+      } else if (parsed.hidden) {
+        item.coordsStatus = "restricted";
+        delete item.lat;
+        delete item.lon;
+      } else if (item.coordsStatus !== "public") {
+        item.coordsStatus = "missing";
+      }
+    } catch {
+      if (item.coordsStatus !== "public") item.coordsStatus = item.coordsStatus || "missing";
+    }
+  }
 }
 
 async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Response> {
@@ -435,6 +485,7 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
     const durationMs = Date.now() - startedAt;
     const upstreamBytes = new TextEncoder().encode(html).length;
     const items = parseElurikkusHtmlItems(html);
+    await enrichItemsWithDetailCoords(items, 5);
     const dataMaxAt = items.length ? items[0].observedAt : null;
     const totalMatch = html.match(/returns\s+([\d\s,\.]+)\s+results/i);
     const totalResults = totalMatch ? Number(String(totalMatch[1] || "").replace(/[^\d]/g, "")) || 0 : 0;

@@ -983,6 +983,47 @@ function cutoffIso7d(){
   midnight.setDate(midnight.getDate() - 7);
   return isoDateLocal(midnight);
 }
+function buildEluSearchUrl(species, page){
+  const base = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(String(species || ''));
+  const p = (page && page > 1) ? ('&page=' + Number(page)) : '';
+  return base + p + '&_ts=' + Date.now();
+}
+function parseEluRowDatesFromSearchHtml(searchHtml){
+  const doc = new DOMParser().parseFromString(String(searchHtml||''), 'text/html');
+  const rows = Array.from(doc.querySelectorAll('table tbody tr'));
+  const dates = [];
+  for(const tr of rows){
+    const td0 = tr.querySelector('td');
+    if(!td0) continue;
+    const dt = String(td0.textContent || '').trim();
+    const iso = normDateISO(dt);
+    if(iso) dates.push(iso);
+  }
+  return dates;
+}
+async function computeOcc7MultiPage(species, maxPages, signal){
+  const cutoff = cutoffIso7d();
+  const pageLimit = Math.max(1, Number(maxPages || 10) || 10);
+  let total = 0;
+  let newest = '';
+  let pagesScanned = 0;
+  for(let page = 1; page <= pageLimit; page++){
+    if(signal && signal.aborted) break;
+    const url = buildEluSearchUrl(species, page);
+    const html = await tryFetch(url, { signal: signal, cache: 'no-store' });
+    const dates = parseEluRowDatesFromSearchHtml(html);
+    if(dates.length === 0) break;
+    pagesScanned = page;
+    if(page === 1){
+      newest = dates.reduce(function(a,b){ return b > a ? b : a; }, '');
+    }
+    total += dates.filter(function(d){ return d >= cutoff; }).length;
+    const oldest = dates.reduce(function(a,b){ return b < a ? b : a; }, dates[0]);
+    if(oldest < cutoff) break;
+    await new Promise(function(r){ setTimeout(r, 400); });
+  }
+  return { occ7: total, newest: newest, pagesScanned: pagesScanned };
+}
 function dateIsoFromAny(s){
   const str = String(s || '').trim();
   let m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -1881,8 +1922,8 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
   const rowExtra = parseEluSearchNewestRowExtras(shtml);
   const newestOccUrl = extractNewestOccurrenceUrlFromSearch(shtml);
   const rows = extractOccurrenceCandidates(shtml);
-  const dates = extractElurikkusRecordDatesIso(shtml);
-  const occ7 = countInLastNDaysFromDates(dates, 7);
+  const occ7Multi = await computeOcc7MultiPage(name, 10, signal);
+  const occ7 = Number.isFinite(Number(occ7Multi.occ7)) ? Number(occ7Multi.occ7) : 0;
   const newestDateText = rows[0] ? String(rows[0].dateText || '') : '';
   let detailTried = 0;
   for(let k = 0; k < Math.min(10, rows.length); k++){
@@ -1999,13 +2040,14 @@ async function autoFetchCoords(key, searchUrl, signal){
   let coords = extractLatLon(searchHtml);
   let eventDate = extractEventDate(searchHtml);
   const rows = extractOccurrenceCandidates(searchHtml);
-  const occ7Dates = extractElurikkusRecordDatesIso(searchHtml).map(dateIsoFromAny).filter(Boolean);
-  const occ7 = occ7Dates.filter(function(d){ return d >= cutoffIso7d(); }).length;
+  const occ7Dates = parseEluRowDatesFromSearchHtml(searchHtml).map(dateIsoFromAny).filter(Boolean);
+  const occ7Multi = await computeOcc7MultiPage(species, 10, signal);
+  const occ7 = Number.isFinite(Number(occ7Multi.occ7)) ? Number(occ7Multi.occ7) : 0;
   const newestFromRows = rows
     .map(function(r){ return dateIsoFromAny(String(r && r.dateText || '')); })
     .filter(Boolean)
     .reduce(function(a,b){ return b > a ? b : a; }, '');
-  const newest = occ7Dates.reduce(function(a,b){ return b > a ? b : a; }, '') || newestFromRows;
+  const newest = String((occ7Multi && occ7Multi.newest) || '') || occ7Dates.reduce(function(a,b){ return b > a ? b : a; }, '') || newestFromRows;
   let latestSeenDate = newest || '';
   let coordDate = '';
   let coordSource = '';
@@ -2202,6 +2244,7 @@ async function autoFetchCoords(key, searchUrl, signal){
     p.lastFetched = detailFetchedAt;
     p.occ7 = (nextOcc7 === null ? (Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : 0) : nextOcc7);
     p.occ7Source = 'elurikkus_records_table';
+    p.occ7PagesScanned = Number((occ7Multi && occ7Multi.pagesScanned) || 0) || 0;
     p.occ7DatesSample = (occ7Dates || []).slice(0, 10);
     changed = true;
   }
@@ -2214,6 +2257,7 @@ async function autoFetchCoords(key, searchUrl, signal){
   if(nextOcc7 !== null && Number(p.occ7) !== nextOcc7){
     p.occ7 = nextOcc7;
     p.occ7Source = 'elurikkus_records_table';
+    p.occ7PagesScanned = Number((occ7Multi && occ7Multi.pagesScanned) || 0) || 0;
     p.occ7DatesSample = (occ7Dates || []).slice(0, 10);
     changed = true;
   }

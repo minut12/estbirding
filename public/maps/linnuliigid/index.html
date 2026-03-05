@@ -24,6 +24,17 @@
     input[type="text"] {width:100%;padding:6px;box-sizing:border-box;margin:6px 0}
     .pill {display:inline-block;padding:2px 6px;border-radius:10px;background:#eef;font-size:11px}
     .pill.muted {opacity:.6;}
+    .chip{
+      display:inline-block;
+      padding:2px 6px;
+      border-radius:10px;
+      background:#eef2ff;
+      font-size:11px;
+      line-height:1.2;
+      opacity:.95;
+    }
+    .chip.muted{opacity:.65;}
+    .placeLine{font-size:12px;opacity:.85;}
     details summary {cursor:pointer}
     .latin {color:#888;font-size:12px;margin-left:6px}
     .clickable {cursor:pointer}
@@ -6074,40 +6085,31 @@ function rowHTML(obj) {
     ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
     : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
   const x = (p.eluExtra || {});
-  function pill(label, value, title){
-    const v = String(value || '').trim();
-    if(!v) return '';
-    const t = title ? (' title="' + escapeHtml(title) + '"') : '';
-    return '<span class="pill"' + t + '>' + escapeHtml(label) + ' ' + escapeHtml(v) + '</span>';
+  function esc(s){ return escapeHtml(String(s||'')); }
+  function clean(s){ return String(s||'').replace(/\s+/g,' ').trim(); }
+  function trunc(s,n){ const t=clean(s); return t.length>n ? t.slice(0,n-1)+'…' : t; }
+  function chip(text, title){
+    const t = title ? (' title="' + esc(title) + '"') : '';
+    return '<span class="chip"' + t + '>' + esc(text) + '</span>';
   }
-  function trunc(s, n){
-    const str = String(s || '').trim();
-    if(str.length <= n) return str;
-    return str.slice(0, n-1) + '…';
-  }
-  const placePills = [
-    pill('mun:', x.municipality),
-    pill('loc:', x.locality),
-    pill('county:', x.county),
-    pill('dist:', x.districts),
-    pill('comm:', x.communes),
-    pill('omav:', x.eestiOmavalitsused)
-  ].filter(Boolean).join('');
-  const obsPills = [
-    pill('count:', x.individualCount),
-    pill('beh:', x.behavior),
-    (x.collectors ? pill('coll:', trunc(x.collectors, 30), x.collectors) : '')
-  ].filter(Boolean).join('');
-  let extraBlock = '';
-  if(placePills || obsPills){
-    extraBlock =
-      '<div class="extra-pills" style="margin-top:6px;display:flex;flex-direction:column;gap:4px">' +
-        (placePills ? ('<div style="display:flex;flex-wrap:wrap;gap:6px">' + placePills + '</div>') : '') +
-        (obsPills ? ('<div style="display:flex;flex-wrap:wrap;gap:6px">' + obsPills + '</div>') : '') +
-      '</div>';
-  } else {
-    extraBlock = '<div style="margin-top:6px"><span class="pill muted">detail: -</span></div>';
-  }
+  const placeParts = [clean(x.municipality), clean(x.locality), clean(x.county)].filter(Boolean);
+  const placeFiltered = placeParts.filter(function(v){
+    const low = String(v || '').toLowerCase();
+    return low !== 'estonia' && low !== 'eesti';
+  });
+  const placeLine = placeFiltered.length
+    ? ('<div class="placeLine">' + esc(placeFiltered.join(' • ')) + '</div>')
+    : '';
+  const chips = [];
+  if(clean(x.individualCount)) chips.push(chip(clean(x.individualCount)));
+  if(clean(x.behavior)) chips.push(chip(clean(x.behavior)));
+  if(clean(x.collectors)) chips.push(chip(trunc(x.collectors, 24), clean(x.collectors)));
+  const metaLine = chips.length
+    ? ('<div class="metaLine" style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px">' + chips.join('') + '</div>')
+    : '';
+  const extraBlock = (placeLine || metaLine)
+    ? ('<div class="extraBlock" style="margin-top:6px">' + placeLine + metaLine + '</div>')
+    : '';
   const defaultSearchUrl = String((p.searchUrl || obj.url) || obj.url);
   const openUrl = String((p.openUrl || (x.detailUrl || defaultSearchUrl)) || defaultSearchUrl);
 

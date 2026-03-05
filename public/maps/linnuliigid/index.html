@@ -1082,7 +1082,6 @@ function extractLatLonFromOccurrenceDetail(html){
   return [lat, lon];
 }
 function parseElurikkusDetailFields(detailHtml, occurrenceUrl){
-  const src = String(detailHtml || '');
   const out = {
     occurrenceUrl: String(occurrenceUrl || '').trim(),
     occurrenceId: '',
@@ -1104,74 +1103,107 @@ function parseElurikkusDetailFields(detailHtml, occurrenceUrl){
     behavior: '',
     coordsStatus: 'missing'
   };
+  const src = String(detailHtml || '');
   if(!src) return out;
-  const idFromUrl = String(out.occurrenceUrl || '').match(/occurrence\/(\d+)/i);
-  if(idFromUrl) out.occurrenceId = String(idFromUrl[1] || '');
-  if(/Koordinaadid peidetud|Coordinates hidden|Restricted/i.test(src)) out.coordsStatus = 'restricted';
+  try{
+    const m = String(occurrenceUrl || '').match(/occurrence\/(\d+)/i);
+    if(m) out.occurrenceId = String(m[1] || '');
+  }catch(e){}
 
-  const keyVal = {};
-  function clean(v){ return String(v || '').replace(/\s+/g, ' ').trim(); }
-  function setKV(k, v){ if(k && v && !keyVal[k]) keyVal[k] = v; }
   try{
     const doc = new DOMParser().parseFromString(src, 'text/html');
+
+    const h1 = doc.querySelector('h1');
+    if(h1) out.taxonName = String(h1.textContent || '').trim();
+    const h2 = doc.querySelector('h2');
+    if(h2) out.commonName = String(h2.textContent || '').trim();
+
     const dts = Array.from(doc.querySelectorAll('dt'));
     for(const dt of dts){
-      const k = clean((dt.textContent || '').toLowerCase());
+      const key = String(dt.textContent || '').trim().toLowerCase();
       const dd = dt.nextElementSibling;
-      const v = clean(dd ? dd.textContent : '');
-      if(k && v) setKV(k, v);
+      const val = dd ? String(dd.textContent || '').trim() : '';
+      if(!val) continue;
+
+      if(key === 'taxon name') out.taxonName = val;
+      else if(key === 'common name') out.commonName = val;
+      else if(key === 'municipality') out.municipality = val;
+      else if(key === 'locality') out.locality = val;
+      else if(key === 'county') out.county = val;
+      else if(key === 'country') out.country = val;
+      else if(key === 'collectors') out.collectors = val;
+      else if(key === 'identified by') out.identifiedBy = val;
+      else if(key === 'dataset') out.dataset = val;
+      else if(key === 'project') out.project = val;
+      else if(key === 'behavior') out.behavior = val;
+      else if(key === 'latitude') out.latitude = parseFloat(val.replace(',', '.'));
+      else if(key === 'longitude') out.longitude = parseFloat(val.replace(',', '.'));
+      else if(key === 'date loaded' || key === 'event date' || key === 'observed at') out.observedAt = val;
+      else if(key === 'individual count') out.individualCount = parseFloat(val.replace(',', '.'));
     }
-    const trs = Array.from(doc.querySelectorAll('tr'));
-    for(const tr of trs){
-      const th = tr.querySelector('th,td');
-      const td = tr.querySelector('td+td,th+td');
-      const k = clean((th && th.textContent || '').toLowerCase().replace(/:$/,''));
-      const v = clean(td && td.textContent || '');
-      if(k && v) setKV(k, v);
+
+    const rows = Array.from(doc.querySelectorAll('tr'));
+    for(const tr of rows){
+      const cells = tr.querySelectorAll('th,td');
+      if(cells.length < 2) continue;
+      const key = String(cells[0].textContent || '').trim().toLowerCase();
+      const val = String(cells[1].textContent || '').trim();
+      if(!val) continue;
+
+      if(key === 'municipality' && !out.municipality) out.municipality = val;
+      else if(key === 'locality' && !out.locality) out.locality = val;
+      else if(key === 'county' && !out.county) out.county = val;
+      else if(key === 'country' && !out.country) out.country = val;
+      else if(key === 'collectors' && !out.collectors) out.collectors = val;
+      else if(key === 'identified by' && !out.identifiedBy) out.identifiedBy = val;
+      else if(key === 'dataset' && !out.dataset) out.dataset = val;
+      else if(key === 'project' && !out.project) out.project = val;
+      else if(key === 'behavior' && !out.behavior) out.behavior = val;
+      else if(key === 'individual count' && out.individualCount == null) out.individualCount = parseFloat(val.replace(',', '.'));
+      else if(key === 'latitude' && !Number.isFinite(out.latitude)) out.latitude = parseFloat(val.replace(',', '.'));
+      else if(key === 'longitude' && !Number.isFinite(out.longitude)) out.longitude = parseFloat(val.replace(',', '.'));
     }
   }catch(e){}
-  const taxonM = src.match(/(?:Taxon|Scientific name)[^<]*<\/[^>]*>\s*([^<]{2,120})</i);
-  const commonM = src.match(/(?:Common name|Vernacular)[^<]*<\/[^>]*>\s*([^<]{2,120})</i);
-  const obsM = src.match(/(\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?)/);
-  if(taxonM) out.taxonName = clean(taxonM[1]);
-  if(commonM) out.commonName = clean(commonM[1]);
-  if(obsM) out.observedAt = clean(obsM[1]);
 
-  function pick(keys){
-    for(const k of keys){
-      if(keyVal[k]) return keyVal[k];
-    }
-    return '';
+  function grab(label){
+    const re = new RegExp(label + '[\\s\\S]{0,120}?>([^<]{1,200})<', 'i');
+    const m = src.match(re);
+    return m ? String(m[1] || '').trim() : '';
   }
-  out.taxonName = out.taxonName || pick(['taxon', 'taxon name', 'scientific name']);
-  out.commonName = out.commonName || pick(['common name', 'vernacular name']);
-  out.observedAt = out.observedAt || pick(['date', 'eventdate', 'observed at', 'occurrence date', 'observation date']);
-  out.municipality = pick(['municipality', 'omavalitsus']);
-  out.locality = pick(['locality', 'asula']);
-  out.county = pick(['county', 'maakond']);
-  out.country = pick(['country', 'riik']);
-  out.collectors = pick(['recorded by', 'collector', 'collectors', 'recordedby']);
-  out.identifiedBy = pick(['identified by', 'identifiedby', 'determinavit']);
-  out.dataset = pick(['dataset', 'dataset name']);
-  out.project = pick(['project']);
-  out.behavior = pick(['behavior', 'behaviour', 'käitumine']);
-  const countRaw = pick(['individual count', 'individualcount', 'count']);
-  const countM = String(countRaw || '').match(/(\d+)/);
-  if(countM) out.individualCount = Number(countM[1]);
+  if(!out.municipality) out.municipality = grab('Municipality');
+  if(!out.locality) out.locality = grab('Locality');
+  if(!out.county) out.county = grab('County');
+  if(!out.country) out.country = grab('Country');
+  if(!out.collectors) out.collectors = grab('Collectors');
+  if(!out.identifiedBy) out.identifiedBy = grab('Identified by');
+  if(!out.dataset) out.dataset = grab('Dataset');
+  if(!out.project) out.project = grab('Project');
+  if(!out.behavior) out.behavior = grab('Behavior');
 
-  const latlon = extractLatLonFromOccurrenceDetail(src);
-  if(latlon && _hasFiniteCoord(Number(latlon[0])) && _hasFiniteCoord(Number(latlon[1]))){
-    out.latitude = Number(latlon[0]);
-    out.longitude = Number(latlon[1]);
+  if(!out.observedAt){
+    const m = src.match(/(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
+    if(m) out.observedAt = String(m[1] || '');
+  }
+  if(!Number.isFinite(out.latitude)){
+    const m = src.match(/Latitude[^0-9\-]*([0-9]{2}\.[0-9]{4,})/i);
+    if(m) out.latitude = parseFloat(String(m[1] || ''));
+  }
+  if(!Number.isFinite(out.longitude)){
+    const m = src.match(/Longitude[^0-9\-]*([0-9]{2}\.[0-9]{4,})/i);
+    if(m) out.longitude = parseFloat(String(m[1] || ''));
+  }
+  if(out.individualCount == null){
+    const m = src.match(/Individual count[^0-9\-]*(-?\d+(?:[.,]\d+)?)/i);
+    if(m) out.individualCount = parseFloat(String(m[1] || '').replace(',', '.'));
+  }
+  if(/Koordinaadid peidetud|Coordinates hidden|Restricted/i.test(src)){
+    out.coordsStatus = 'restricted';
+  } else if(Number.isFinite(out.latitude) && Number.isFinite(out.longitude)){
     out.coordsStatus = 'public';
-  }else if(out.coordsStatus !== 'restricted'){
+  } else {
     out.coordsStatus = 'missing';
   }
-  out.observedDate = normDateISO(out.observedAt || '') || dateIsoFromAny(out.observedAt || '') || '';
-  if(!out.occurrenceId){
-    const m = src.match(/Occurrence[^0-9]*ID[^0-9]*([0-9]+)/i);
-    if(m) out.occurrenceId = String(m[1] || '');
-  }
+  out.observedDate = normDateISO(out.observedAt);
   return out;
 }
 function parseEluSearchRows(html){
@@ -1806,7 +1838,33 @@ async function autoFetchCoords(key, searchUrl, signal){
       coordsStatus: detailCoordsStatus,
       fetchedAt: detailFetchedAt
     };
+    if(detailFields.observedDate) p.t = detailFields.observedDate;
+    if(detailFields.municipality) p.municipality = detailFields.municipality;
+    if(detailFields.locality) p.locality = detailFields.locality;
+    if(detailFields.county) p.county = detailFields.county;
+    if(detailFields.country) p.country = detailFields.country;
+    if(detailFields.collectors) p.collectors = detailFields.collectors;
+    if(detailFields.identifiedBy) p.identifiedBy = detailFields.identifiedBy;
+    if(detailFields.dataset) p.dataset = detailFields.dataset;
+    if(detailFields.project) p.project = detailFields.project;
+    if(detailFields.individualCount != null) p.individualCount = detailFields.individualCount;
+    if(detailFields.behavior) p.behavior = detailFields.behavior;
+    if(detailCoordsStatus === 'public' && Number.isFinite(detailFields.latitude) && Number.isFinite(detailFields.longitude)){
+      p.lat = Number(detailFields.latitude);
+      p.lon = Number(detailFields.longitude);
+    }
     p.coords_status = detailCoordsStatus;
+    p.src = 'Elurikkus';
+    p.lastFetched = detailFetchedAt;
+    pushDebugEvent('ELU_DETAIL_PARSED', 'Parsed detail fields', {
+      key: species,
+      occurrenceId: detailFields.occurrenceId || '',
+      observedDate: detailFields.observedDate || '',
+      municipality: detailFields.municipality || '',
+      locality: detailFields.locality || '',
+      county: detailFields.county || '',
+      coordsStatus: detailCoordsStatus
+    }, 'warn');
     changed = true;
   }
   if(shouldApply){
@@ -5606,8 +5664,9 @@ function rowHTML(obj) {
   const municipalityLine = p.municipality
     ? '<div class="small"><span class="pill">municipality:</span> <span>' + escapeHtml(p.municipality || '') + '</span></div>'
     : '';
-  const detailDebugLine = (p.elurikkus && (p.elurikkus.occurrenceId || p.municipality || p.locality || p.county))
-    ? '<div class="small">detail: ' + escapeHtml(p.elurikkus.occurrenceId || '-') + ' | ' + escapeHtml([p.municipality, p.locality, p.county].filter(Boolean).join(' / ')) + '</div>'
+  const detailSummary = [p.municipality, p.locality, p.county].filter(Boolean).join(' | ');
+  const detailDebugLine = detailSummary
+    ? '<div class="small">' + escapeHtml(detailSummary) + '</div>'
     : '';
   const openUrl = String((p.openUrl || p.latestUrl || p.searchUrl || obj.url) || obj.url);
 

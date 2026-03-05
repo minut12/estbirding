@@ -1001,28 +1001,59 @@ function parseEluRowDatesFromSearchHtml(searchHtml){
   }
   return dates;
 }
-async function computeOcc7MultiPage(species, maxPages, signal){
-  const cutoff = cutoffIso7d();
-  const pageLimit = Math.max(1, Number(maxPages || 10) || 10);
-  let total = 0;
-  let newest = '';
-  let pagesScanned = 0;
-  for(let page = 1; page <= pageLimit; page++){
+async function computeOcc7MultiPage(species, signal, maxPages){
+  const cutoffMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const pageLimit = Math.max(1, Number(maxPages || 20) || 20);
+  const seen = new Set();
+  let occ7 = 0;
+  let newestIso = '';
+  let pages = 0;
+  let url = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(String(species || '')) + '&_ts=' + Date.now();
+  let lastFirstId = '';
+  while(url && pages < pageLimit){
     if(signal && signal.aborted) break;
-    const url = buildEluSearchUrl(species, page);
-    const html = await tryFetch(url, { signal: signal, cache: 'no-store' });
-    const dates = parseEluRowDatesFromSearchHtml(html);
-    if(dates.length === 0) break;
-    pagesScanned = page;
-    if(page === 1){
-      newest = dates.reduce(function(a,b){ return b > a ? b : a; }, '');
+    const pageUrl = url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now();
+    const html = await tryFetch(pageUrl, { signal: signal, cache: 'no-store' });
+    const rows = parseEluSearchRows(html);
+    if(rows.length === 0) break;
+    pages++;
+    const firstId = rows[0].occId;
+    if(firstId && firstId === lastFirstId) break;
+    lastFirstId = firstId;
+    if(pages === 1){
+      newestIso = rows.reduce(function(a,r){ return (r.iso && r.iso > a) ? r.iso : a; }, '');
     }
-    total += dates.filter(function(d){ return d >= cutoff; }).length;
-    const oldest = dates.reduce(function(a,b){ return b < a ? b : a; }, dates[0]);
-    if(oldest < cutoff) break;
-    await new Promise(function(r){ setTimeout(r, 400); });
+    let anyWithin = false;
+    let oldestMs = null;
+    for(const r of rows){
+      if(seen.has(r.occId)) continue;
+      seen.add(r.occId);
+      if(Number.isFinite(r.ms)){
+        oldestMs = (oldestMs == null) ? r.ms : Math.min(oldestMs, r.ms);
+        if(r.ms >= cutoffMs){
+          occ7++;
+          anyWithin = true;
+        }
+      } else if(r.iso){
+        const dms = parseEluDateMs(r.iso + ' 00:00');
+        if(dms != null){
+          oldestMs = (oldestMs == null) ? dms : Math.min(oldestMs, dms);
+          if(dms >= cutoffMs){
+            occ7++;
+            anyWithin = true;
+          }
+        }
+      }
+    }
+    if(!anyWithin) break;
+    if(oldestMs != null && oldestMs < cutoffMs) break;
+    const nextUrl = extractNextPageUrl(html);
+    if(!nextUrl) break;
+    if(nextUrl === url) break;
+    url = nextUrl;
+    await new Promise(function(r){ setTimeout(r, 350); });
   }
-  return { occ7: total, newest: newest, pagesScanned: pagesScanned };
+  return { occ7: occ7, newestIso: newestIso, pagesScanned: pages, uniqueIds: seen.size };
 }
 function dateIsoFromAny(s){
   const str = String(s || '').trim();
@@ -1366,23 +1397,32 @@ function parseElurikkusExtraFromText(detailHtml, detailUrl){
 }
 function parseEluSearchRows(html){
   const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
-  const tbody = doc.querySelector('table tbody');
-  if(!tbody) return [];
   const rows = [];
-  for(const tr of Array.from(tbody.querySelectorAll('tr'))){
-    const tds = tr.querySelectorAll('td');
-    if(!tds || tds.length < 2) continue;
-    const dateText = String((tds[0].textContent || '').trim());
+  const trs = Array.from(doc.querySelectorAll('table tbody tr'));
+  for(const tr of trs){
     const a = tr.querySelector('a[href*="/app/occurrences/occurrence/"]');
-    const href = a ? String(a.getAttribute('href') || '').trim() : '';
-    if(!href) continue;
-    rows.push({
-      dateText: dateText,
-      occUrl: href.startsWith('http') ? href : ('https://elurikkus.ee' + (href.startsWith('/') ? href : '/' + href)),
-      rowText: String((tr.textContent || '').trim()),
-    });
+    const href = a ? (a.getAttribute('href') || '') : '';
+    const id = ((String(href).match(/occurrence\/(\d+)/i) || [])[1]) || '';
+    if(!id) continue;
+    const td0 = tr.querySelector('td');
+    const dateText = td0 ? String(td0.textContent || '').trim() : '';
+    const ms = parseEluDateMs(dateText);
+    const iso = normDateISO(dateText);
+    rows.push({ occId:id, occUrl: absOccUrl(href), ms: ms, iso: iso });
   }
   return rows;
+}
+function absOccUrl(href){
+  if(!href) return '';
+  const s = String(href);
+  if(s.startsWith('http')) return s;
+  return 'https://elurikkus.ee' + (s.startsWith('/') ? s : ('/' + s));
+}
+function absPageUrl(href){
+  if(!href) return '';
+  const s = String(href);
+  if(s.startsWith('http')) return s;
+  return 'https://elurikkus.ee' + (s.startsWith('/') ? s : ('/' + s));
 }
 function parseEluSearchNewestRowExtras(searchHtml){
   const out = { dateText:'', individualCount:'', behavior:'', locality:'', collectors:'' };
@@ -1415,6 +1455,22 @@ function extractNewestOccurrenceUrlFromSearch(searchHtml){
   const href = a ? a.getAttribute('href') : '';
   if(!href) return '';
   return href.startsWith('http') ? href : ('https://elurikkus.ee' + (href.startsWith('/') ? href : '/' + href));
+}
+function extractNextPageUrl(searchHtml){
+  const doc = new DOMParser().parseFromString(String(searchHtml || ''), 'text/html');
+  const linkNext = doc.querySelector('link[rel="next"]');
+  if(linkNext && linkNext.getAttribute('href')){
+    return absPageUrl(linkNext.getAttribute('href'));
+  }
+  const anchors = Array.from(doc.querySelectorAll('a'));
+  for(const a of anchors){
+    const txt = String(a.textContent || '').trim().toLowerCase();
+    if(txt === 'next' || txt === 'järgmine' || txt === '›' || txt === '>'){
+      const href = String(a.getAttribute('href') || '').trim();
+      if(href) return absPageUrl(href);
+    }
+  }
+  return '';
 }
 function extractFieldFromDetailText(detailHtml, labels){
   let text = '';
@@ -1922,7 +1978,7 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
   const rowExtra = parseEluSearchNewestRowExtras(shtml);
   const newestOccUrl = extractNewestOccurrenceUrlFromSearch(shtml);
   const rows = extractOccurrenceCandidates(shtml);
-  const occ7Multi = await computeOcc7MultiPage(name, 10, signal);
+  const occ7Multi = await computeOcc7MultiPage(name, signal, 20);
   const occ7 = Number.isFinite(Number(occ7Multi.occ7)) ? Number(occ7Multi.occ7) : 0;
   const newestDateText = rows[0] ? String(rows[0].dateText || '') : '';
   let detailTried = 0;
@@ -2041,13 +2097,13 @@ async function autoFetchCoords(key, searchUrl, signal){
   let eventDate = extractEventDate(searchHtml);
   const rows = extractOccurrenceCandidates(searchHtml);
   const occ7Dates = parseEluRowDatesFromSearchHtml(searchHtml).map(dateIsoFromAny).filter(Boolean);
-  const occ7Multi = await computeOcc7MultiPage(species, 10, signal);
+  const occ7Multi = await computeOcc7MultiPage(species, signal, 20);
   const occ7 = Number.isFinite(Number(occ7Multi.occ7)) ? Number(occ7Multi.occ7) : 0;
   const newestFromRows = rows
     .map(function(r){ return dateIsoFromAny(String(r && r.dateText || '')); })
     .filter(Boolean)
     .reduce(function(a,b){ return b > a ? b : a; }, '');
-  const newest = String((occ7Multi && occ7Multi.newest) || '') || occ7Dates.reduce(function(a,b){ return b > a ? b : a; }, '') || newestFromRows;
+  const newest = String((occ7Multi && occ7Multi.newestIso) || '') || occ7Dates.reduce(function(a,b){ return b > a ? b : a; }, '') || newestFromRows;
   let latestSeenDate = newest || '';
   let coordDate = '';
   let coordSource = '';
@@ -2218,8 +2274,10 @@ async function autoFetchCoords(key, searchUrl, signal){
   if(detailExtra){
     p.openUrl = String((p.eluExtra && p.eluExtra.detailUrl) || detailUrl || p.openUrl || '').trim();
     changed = true;
-    try{ save(); }catch(e){}
-    try{ render(); }catch(e){}
+  try{ save(); }catch(e){}
+  try{ render(); }catch(e){}
+  p.eluExtra = p.eluExtra || {};
+  p.eluExtra.__pages = Number((occ7Multi && occ7Multi.pagesScanned) || 0) || 0;
     console.log('ELU EXTRA', key, p.eluExtra);
   }
   if(shouldApply){

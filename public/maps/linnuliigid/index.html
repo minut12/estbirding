@@ -283,6 +283,7 @@ const LS_SPRING_YEARFIRST = 'bm_rari_spring_yearfirst_v3';
 const CLASSIC_MODE = false;
 const LS_LIVE_ELURIKKUS = 'bm_live_elurikkus_v1';
 const LS_LIVE_ELURIKKUS_USE = 'bm_live_elurikkus_use_v1';
+const LS_PUBLISH_TOKEN = 'dev_publish_token_override';
 const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 const LS_SUPABASE_PROXY_BASE = 'supabase_proxy_base_v1';
 const BUILTIN_TRANSLATE_ENDPOINT = '/.netlify/functions/translate-et';
@@ -927,10 +928,35 @@ function _dateOnlyFromAny(v){
   const m = s.match(/(\d{4}-\d{2}-\d{2})/);
   return m ? m[1] : '';
 }
+function isoDateLocal(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const da = String(d.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + da;
+}
+function cutoffIso7d(){
+  const today = new Date();
+  const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
+  midnight.setDate(midnight.getDate() - 7);
+  return isoDateLocal(midnight);
+}
+function dateIsoFromAny(s){
+  const str = String(s || '').trim();
+  let m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return m[1] + '-' + m[2] + '-' + m[3];
+  m = str.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if(m) return m[3] + '-' + m[2] + '-' + m[1];
+  return '';
+}
+function isWithin7d(dateIso){
+  const d = dateIsoFromAny(dateIso);
+  if(!d) return false;
+  return d >= cutoffIso7d();
+}
 function updateClientDataMaxAtFromPoints(){
   let best = '';
   Object.keys(points || {}).forEach(function(name){
-    const d = String((points[name] || {}).t || '');
+    const d = dateIsoFromAny((points[name] || {}).t || '');
     if(d && (!best || d > best)) best = d;
   });
   if(best) __clientDataMaxAt = best;
@@ -1110,12 +1136,20 @@ function extractOccurrenceCandidates(html){
 }
 function countInLastNDaysFromDates(dates, n){
   const arr = Array.isArray(dates) ? dates : [];
+  if(Number(n || 7) === 7){
+    const cutoff = cutoffIso7d();
+    let c = 0;
+    for(const d of arr){
+      const iso = dateIsoFromAny(d);
+      if(iso && iso >= cutoff) c++;
+    }
+    return c;
+  }
   const now = Date.now();
   const maxMs = Number(n || 7) * 24 * 60 * 60 * 1000;
   let c = 0;
   for(const d of arr){
-    const dateOnly = _dateOnlyFromAny(d);
-    const ts = _toDayLocalTallinn(dateOnly);
+    const ts = _toDayLocalTallinn(dateIsoFromAny(d));
     if(!ts) continue;
     const diff = now - ts;
     if(diff >= 0 && diff <= maxMs) c++;
@@ -1587,8 +1621,9 @@ async function autoFetchCoords(key, searchUrl, signal){
   const searchHtml = await tryFetch(url, { signal: signal });
   let coords = extractLatLon(searchHtml);
   let eventDate = extractEventDate(searchHtml);
-  const occ7Dates = extractElurikkusRecordDatesIso(searchHtml);
-  const occ7 = countInLastNDaysFromDates(occ7Dates, 7);
+  const occ7Dates = extractElurikkusRecordDatesIso(searchHtml).map(dateIsoFromAny).filter(Boolean);
+  const occ7 = occ7Dates.filter(function(d){ return d >= cutoffIso7d(); }).length;
+  const newest = occ7Dates.reduce(function(a,b){ return b > a ? b : a; }, '');
   let detailUrl = '';
   if(!coords){
     detailUrl = findFirstDetailLink(searchHtml);
@@ -1601,9 +1636,9 @@ async function autoFetchCoords(key, searchUrl, signal){
 
   const prevCoordsValid = _hasFiniteCoord(oldLat) && _hasFiniteCoord(oldLon);
   const nextCoordsValid = !!(coords && _hasFiniteCoord(Number(coords[0])) && _hasFiniteCoord(Number(coords[1])));
-  const nextEventDate = String(eventDate || '').trim();
-  const nextDate = _dateOnlyFromAny(nextEventDate);
-  const prevDate = _dateOnlyFromAny(oldT);
+  const nextEventDate = String(newest || eventDate || '').trim();
+  const nextDate = dateIsoFromAny(nextEventDate);
+  const prevDate = dateIsoFromAny(oldT);
   const nextOcc7 = Number.isFinite(Number(occ7)) ? Number(occ7) : null;
   const changedCoords = !!(nextCoordsValid && (!prevCoordsValid || Math.abs(oldLat - Number(coords[0])) > 1e-6 || Math.abs(oldLon - Number(coords[1])) > 1e-6));
   const newerDate = !!(nextDate && (!prevDate || nextDate > prevDate));
@@ -1707,6 +1742,19 @@ async function refreshAllElurikkusOnce(){
     await new Promise(function(res){ setTimeout(res, 900); });
   }
   updateClientDataMaxAtFromPoints();
+  if(updated > 0){
+    if(progEl) progEl.textContent = 'Publishing... clientLatest=' + (__clientDataMaxAt || '-');
+    if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = 'Publishing...'; }
+    try{
+      await publishSnapshotToServer(points, __clientDataMaxAt || updateClientDataMaxAtFromPoints());
+      await fetchServerMeta();
+      if(progEl) progEl.textContent = 'Published OK | clientLatest=' + (__clientDataMaxAt || '-');
+      if(eluProg) eluProg.textContent = 'Published OK';
+    }catch(e){
+      if(progEl) progEl.textContent = 'Publish failed: ' + String(e && e.message ? e.message : e);
+      if(eluProg) eluProg.textContent = 'Publish failed';
+    }
+  }
   rebuildAllMarkers();
   render();
   try{ _updateServerSnapshotStatus(); }catch(e){}
@@ -1776,7 +1824,7 @@ function _toDayLocalTallinn(v){
   if(!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null;
   return new Date(y, mo - 1, d, 12, 0, 0, 0).getTime();
 }
-function isWithin7d(p){
+function isWithin7dPoint(p){
   if(!p || !p.t) return false;
   const ms = _toDayLocalTallinn(String(p.t).slice(0, 10));
   if(!ms) return false;
@@ -1795,7 +1843,7 @@ function isRecent(isoDate){
 function hasRecentObservation(p){
   if(!p) return false;
   if(Number.isFinite(p.occ7)) return Number(p.occ7) > 0;
-  return isRecent(p.t);
+  return isWithin7d(p.t);
 }
 
 function _borderColorByDate(isoDate){
@@ -2491,6 +2539,41 @@ async function fetchServerMeta(){
     _updateDebugPanel();
     return null;
   }
+}
+function _resolvePublishToken(){
+  try{
+    const fromLs = String(localStorage.getItem(LS_PUBLISH_TOKEN) || '').trim();
+    if(fromLs) return fromLs;
+  }catch(e){}
+  try{
+    if(window.__EST_PUBLISH_TOKEN) return String(window.__EST_PUBLISH_TOKEN).trim();
+  }catch(e){}
+  return '';
+}
+async function publishSnapshotToServer(pointsJson, clientDataMaxAt){
+  const snapshotUrl = _resolveSnapshotApi();
+  const token = _resolvePublishToken();
+  const url = _withCacheBuster(snapshotUrl + (snapshotUrl.indexOf('?') >= 0 ? '&' : '?') + 'publish=1');
+  const payload = {
+    points_json: pointsJson || {},
+    clientDataMaxAt: String(clientDataMaxAt || updateClientDataMaxAtFromPoints() || ''),
+    generated_at: new Date().toISOString(),
+  };
+  const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+  if(token) headers['X-Publish-Token'] = token;
+  const res = await fetch(url, {
+    method: 'POST',
+    cache: 'no-store',
+    headers: headers,
+    body: JSON.stringify(payload),
+  });
+  if(!res.ok){
+    const text = await res.text().catch(function(){ return ''; });
+    throw new Error('Publish failed (HTTP ' + res.status + '): ' + (text || ''));
+  }
+  let json = {};
+  try{ json = await res.json(); }catch(e){ json = {}; }
+  return json;
 }
 function _startServerMetaPolling(){
   if(__serverMetaPollTimer) clearInterval(__serverMetaPollTimer);
@@ -3601,12 +3684,12 @@ function _updateProgressUI(done, total, status){
 }
 
 function _computeCutoffIso(){
-  return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  return cutoffIso7d() + 'T00:00:00.000Z';
 }
 function _explainInclusion(key, p){
   const point = p || {};
   const parsedTs = _toDay(point.t || '');
-  const cutoffTs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const cutoffTs = _toDay(cutoffIso7d() + 'T00:00:00') || 0;
   const hasCoords = Number.isFinite(point.lat) && Number.isFinite(point.lon);
   const hasDate = Number.isFinite(parsedTs) && parsedTs > 0;
   const ageDays = hasDate ? ((Date.now() - parsedTs) / (24 * 60 * 60 * 1000)) : null;
@@ -4205,9 +4288,13 @@ function refreshAllMarkers(){
 }
 function rebuildAllMarkers(){
   try{
+    const clusterGroup = window.__markerClusterGroup || window.markerClusterGroup || null;
     if(markers && typeof markers.forEach === 'function'){
       markers.forEach(function(m){
-        try{ map.removeLayer(m); }catch(e){}
+        try{
+          if(clusterGroup && typeof clusterGroup.removeLayer === 'function') clusterGroup.removeLayer(m);
+          else map.removeLayer(m);
+        }catch(e){}
       });
       markers.clear();
     }

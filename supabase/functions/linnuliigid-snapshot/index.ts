@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-  "Access-Control-Allow-Headers": "content-type, x-client-info, apikey, authorization",
+  "Access-Control-Allow-Headers": "content-type, x-client-info, apikey, authorization, x-publish-token",
   "Access-Control-Expose-Headers": "X-EstBirding-Mode, ETag, Last-Modified, X-Snapshot-Generated-At, Content-Length",
   "Cache-Control": "no-store, max-age=0",
   "Pragma": "no-cache",
@@ -13,6 +13,7 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const INGEST_KEY = Deno.env.get("EVENTS_INGEST_KEY"); // reuse same key
+const PUBLISH_TOKEN = Deno.env.get("PUBLISH_TOKEN") || "";
 const DEBUG_LITE = Deno.env.get("DEBUG_LITE") === "1";
 const BUILD_ID = "2026-03-04-1";
 
@@ -1129,6 +1130,47 @@ Deno.serve(async (req) => {
         body = await req.json();
       } catch {
         body = {};
+      }
+      const isPublishRequest = sp.get("publish") === "1";
+      if (isPublishRequest) {
+        const providedToken = String(req.headers.get("x-publish-token") || "");
+        if (!PUBLISH_TOKEN || providedToken !== PUBLISH_TOKEN) {
+          return new Response(
+            JSON.stringify(withSignature("error", { ok: false, error: "unauthorized_publish" })),
+            { status: 401, headers: buildModeHeaders("error") }
+          );
+        }
+        const nowIso = new Date().toISOString();
+        const pointsJson = (body && typeof body.points_json === "object" && body.points_json)
+          ? (body.points_json as Record<string, unknown>)
+          : {};
+        const generatedAt = String(body.generated_at || nowIso);
+        const { error: publishError } = await updateSnapshot(supabaseAdmin, {
+          points_json: pointsJson,
+          status: "ready",
+          progress_done: SPECIES.length,
+          progress_total: SPECIES.length,
+          generated_at: generatedAt,
+          last_error: null,
+          heartbeat_at: nowIso,
+          running_started_at: nowIso,
+        });
+        if (publishError) throw publishError;
+        const { data: updated, error: updatedError } = await selectSnapshotRow(supabaseAdmin);
+        if (updatedError) throw updatedError;
+        const meta = buildSnapshotMeta((updated || {}) as Record<string, unknown>);
+        return new Response(
+          JSON.stringify(withSignature("snapshot", {
+            ok: true,
+            action: "publish",
+            snapshotId: meta.snapshotId,
+            snapshotGeneratedAt: meta.snapshotGeneratedAt,
+            dataMaxAt: meta.dataMaxAt,
+            bytes: meta.bytes,
+            totalItems: meta.totalItems,
+          })),
+          { status: 200, headers: buildModeHeaders("snapshot") }
+        );
       }
       const action = String(body?.action || "").toLowerCase();
       const isRebuildPost = sp.get("rebuild") === "1"

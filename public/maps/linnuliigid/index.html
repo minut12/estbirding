@@ -1217,7 +1217,7 @@ function _getLabelValueRegex(html, labelVariants){
   }
   return '';
 }
-function parseElurikkusSidebarFields(detailHtml, detailUrl){
+function parseElurikkusExtraFromText(detailHtml, detailUrl){
   const out = {
     detailUrl: String(detailUrl || ''),
     occurrenceId: ((String(detailUrl || '').match(/occurrence\/(\d+)/i) || [])[1]) || '',
@@ -1231,31 +1231,61 @@ function parseElurikkusSidebarFields(detailHtml, detailUrl){
     districts: '',
     eestiOmavalitsused: ''
   };
-  if(/Koordinaadid peidetud|Coordinates hidden|Restricted/i.test(String(detailHtml || ''))){
-    // restricted usually affects only coordinates; textual fields may still exist
-  }
+  let text = '';
   try{
     const doc = new DOMParser().parseFromString(String(detailHtml || ''), 'text/html');
-    out.individualCount = _getLabelValueFromDoc(doc, ['Individual count', 'Isendite arv']) || out.individualCount;
-    out.collectors = _getLabelValueFromDoc(doc, ['Collectors', 'Kogujad']) || out.collectors;
-    out.behavior = _getLabelValueFromDoc(doc, ['Behavior', 'Käitumine']) || out.behavior;
-    out.communes = _getLabelValueFromDoc(doc, ['Communes', 'Kommuunid']) || out.communes;
-    out.municipality = _getLabelValueFromDoc(doc, ['Municipality', 'Omavalitsus']) || out.municipality;
-    out.county = _getLabelValueFromDoc(doc, ['County', 'Maakond']) || out.county;
-    out.locality = _getLabelValueFromDoc(doc, ['Locality', 'Asukoht']) || out.locality;
-    out.districts = _getLabelValueFromDoc(doc, ['Districts', 'Piirkonnad']) || out.districts;
-    out.eestiOmavalitsused = _getLabelValueFromDoc(doc, ['Eesti omavalitsused']) || out.eestiOmavalitsused;
+    text = (doc.body && doc.body.innerText) ? doc.body.innerText : '';
   }catch(e){}
-  const html = String(detailHtml || '');
-  out.individualCount ||= _getLabelValueRegex(html, ['Individual count','Isendite arv']);
-  out.collectors ||= _getLabelValueRegex(html, ['Collectors','Kogujad']);
-  out.behavior ||= _getLabelValueRegex(html, ['Behavior','Käitumine']);
-  out.communes ||= _getLabelValueRegex(html, ['Communes','Kommuunid']);
-  out.municipality ||= _getLabelValueRegex(html, ['Municipality','Omavalitsus']);
-  out.county ||= _getLabelValueRegex(html, ['County','Maakond']);
-  out.locality ||= _getLabelValueRegex(html, ['Locality','Asukoht']);
-  out.districts ||= _getLabelValueRegex(html, ['Districts','Piirkonnad']);
-  out.eestiOmavalitsused ||= _getLabelValueRegex(html, ['Eesti omavalitsused']);
+  if(!text) text = String(detailHtml || '');
+  const lines = text
+    .replace(/\r/g, '')
+    .split('\n')
+    .map(function(s){ return String(s || '').trim(); })
+    .filter(Boolean);
+  const allLabels = [
+    'Individual count','Isendite arv',
+    'Collectors','Kogujad',
+    'Behavior','Käitumine',
+    'Communes','Kommuunid',
+    'Municipality','Omavalitsus',
+    'County','Maakond',
+    'Locality','Asukoht',
+    'Districts','Piirkonnad',
+    'Eesti omavalitsused'
+  ];
+  const labsAll = new Set(allLabels.map(function(x){ return String(x).toLowerCase(); }));
+  function getAfter(labelVariants){
+    const labels = (labelVariants || []).map(function(l){ return String(l).toLowerCase(); });
+    for(let i = 0; i < lines.length; i++){
+      const line = lines[i];
+      const low = line.toLowerCase();
+      if(labels.includes(low)){
+        for(let j = i + 1; j < Math.min(i + 6, lines.length); j++){
+          const v = lines[j];
+          const vlow = String(v || '').toLowerCase();
+          if(!v) continue;
+          if(labsAll.has(vlow)) break;
+          return v;
+        }
+      }
+      for(const lab of (labelVariants || [])){
+        const re = new RegExp('^' + String(lab).replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '\\s+(.+)$', 'i');
+        const m = line.match(re);
+        if(m && m[1]) return String(m[1]).trim();
+      }
+    }
+    return '';
+  }
+  out.individualCount = getAfter(['Individual count','Isendite arv']);
+  out.collectors = getAfter(['Collectors','Kogujad']);
+  out.behavior = getAfter(['Behavior','Käitumine']);
+  out.communes = getAfter(['Communes','Kommuunid']);
+  out.municipality = getAfter(['Municipality','Omavalitsus']);
+  out.county = getAfter(['County','Maakond']);
+  out.locality = getAfter(['Locality','Asukoht']);
+  out.districts = getAfter(['Districts','Piirkonnad']);
+  out.eestiOmavalitsused = getAfter(['Eesti omavalitsused']);
+  out.__debugSample = lines.slice(0, 30).join(' | ');
   Object.keys(out).forEach(function(k){ if(typeof out[k] === 'string') out[k] = _clean(out[k]); });
   return out;
 }
@@ -1744,6 +1774,15 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
     try{
       const dhtml = await tryFetch(_withCacheBuster(occUrl), { signal: signal });
       const detail = parseElurikkusDetailFields(dhtml, occUrl);
+      const extra = parseElurikkusExtraFromText(dhtml, occUrl);
+      console.log('ELU EXTRA PARSED', name, extra);
+      detail.communes = extra.communes || detail.communes || '';
+      detail.districts = extra.districts || detail.districts || '';
+      detail.eestiOmavalitsused = extra.eestiOmavalitsused || detail.eestiOmavalitsused || '';
+      detail.collectors = detail.collectors || extra.collectors || '';
+      detail.behavior = detail.behavior || extra.behavior || '';
+      detail.individualCount = (detail.individualCount == null ? extra.individualCount : detail.individualCount);
+      detail.__debugSample = extra.__debugSample || '';
       const latlon = extractLatLonFromDetail(dhtml);
       if(latlon && isValidEE(Number(latlon[0]), Number(latlon[1]))){
         return {
@@ -1822,20 +1861,41 @@ async function autoFetchCoords(key, searchUrl, signal){
   let detailUrl = '';
   let detailFields = null;
   let detailExtra = null;
+  let detailHtml = '';
+  const newestDetailUrl = String((rows[0] && rows[0].occUrl) || findFirstDetailLink(searchHtml) || '').trim();
+  if(newestDetailUrl){
+    detailUrl = newestDetailUrl;
+    try{
+      detailHtml = await tryFetch(_withCacheBuster(newestDetailUrl), { signal: signal });
+      detailFields = parseElurikkusDetailFields(detailHtml, newestDetailUrl);
+      detailExtra = parseElurikkusExtraFromText(detailHtml, newestDetailUrl);
+      console.log('ELU EXTRA PARSED', species, detailExtra);
+      if(!coords){
+        const latlonAlways = extractLatLon(detailHtml);
+        if(latlonAlways && _hasFiniteCoord(Number(latlonAlways[0])) && _hasFiniteCoord(Number(latlonAlways[1]))){
+          coords = latlonAlways;
+          coordDate = dateIsoFromAny(String((rows[0] && rows[0].dateText) || '')) || dateIsoFromAny(extractEventDate(detailHtml) || '');
+          coordSource = 'elurikkus_occurrence_detail';
+          if(!eventDate) eventDate = extractEventDate(detailHtml);
+        }
+      }
+    }catch(e){}
+  }
   if(coords){
     coordDate = latestSeenDate || dateIsoFromAny(eventDate || '') || '';
     coordSource = 'elurikkus_search_page';
-  } else {
+  } else if(!detailHtml) {
     const probeRows = rows && rows.length ? rows : [{ occUrl: findFirstDetailLink(searchHtml), dateText: eventDate || '' }];
     for(let i = 0; i < Math.min(10, probeRows.length); i++){
       const occUrl = String((probeRows[i] && probeRows[i].occUrl) || '').trim();
       if(!occUrl) continue;
       detailUrl = occUrl;
       try{
-        const detailHtml = await tryFetch(occUrl, { signal: signal });
+        detailHtml = await tryFetch(_withCacheBuster(occUrl), { signal: signal });
         const latlon = extractLatLon(detailHtml);
         detailFields = parseElurikkusDetailFields(detailHtml, occUrl);
-        detailExtra = parseElurikkusSidebarFields(detailHtml, occUrl);
+        detailExtra = parseElurikkusExtraFromText(detailHtml, occUrl);
+        console.log('ELU EXTRA PARSED', species, detailExtra);
         if(latlon && _hasFiniteCoord(Number(latlon[0])) && _hasFiniteCoord(Number(latlon[1]))){
           coords = latlon;
           coordDate = dateIsoFromAny(String((probeRows[i] && probeRows[i].dateText) || '')) || dateIsoFromAny(extractEventDate(detailHtml) || '');
@@ -1864,9 +1924,10 @@ async function autoFetchCoords(key, searchUrl, signal){
     const fallbackDetailUrl = detailUrl || String((rows[0] && rows[0].occUrl) || findFirstDetailLink(searchHtml) || '').trim();
     if(fallbackDetailUrl){
       try{
-        const detailHtml = await tryFetch(fallbackDetailUrl, { signal: signal });
+        detailHtml = await tryFetch(_withCacheBuster(fallbackDetailUrl), { signal: signal });
         detailFields = parseElurikkusDetailFields(detailHtml, fallbackDetailUrl);
-        detailExtra = parseElurikkusSidebarFields(detailHtml, fallbackDetailUrl);
+        detailExtra = parseElurikkusExtraFromText(detailHtml, fallbackDetailUrl);
+        console.log('ELU EXTRA PARSED', species, detailExtra);
         if(!detailUrl) detailUrl = fallbackDetailUrl;
       }catch(e){}
     }
@@ -1935,6 +1996,8 @@ async function autoFetchCoords(key, searchUrl, signal){
     p.eluExtra = detailExtra;
     p.openUrl = String(detailExtra.detailUrl || detailUrl || p.openUrl || '').trim();
     changed = true;
+    try{ save(); }catch(e){}
+    try{ render(); }catch(e){}
   }
   if(shouldApply){
     if(nextCoordsValid){
@@ -5865,7 +5928,7 @@ function rowHTML(obj) {
   const x = (p.eluExtra || {});
   function showVal(v){ return (v && String(v).trim()) ? escapeHtml(String(v)) : '-'; }
   const extraBlock =
-    '<div class="species-extra" style="margin-top:6px;font-size:12px;line-height:1.35;opacity:.9">' +
+    '<div class="species-extra" style="margin-top:6px;font-size:12px;line-height:1.35;opacity:.95">' +
       '<div><b>Individual count:</b> ' + showVal(x.individualCount) + '</div>' +
       '<div><b>Collectors:</b> ' + showVal(x.collectors) + '</div>' +
       '<div><b>Behavior:</b> ' + showVal(x.behavior) + '</div>' +
@@ -5876,7 +5939,8 @@ function rowHTML(obj) {
       '<div><b>Districts:</b> ' + showVal(x.districts) + '</div>' +
       '<div><b>Eesti omavalitsused:</b> ' + showVal(x.eestiOmavalitsused) + '</div>' +
     '</div>';
-  const openUrl = String((p.openUrl || (p.eluExtra && p.eluExtra.detailUrl) || p.latestUrl || p.searchUrl || obj.url) || obj.url);
+  const defaultSearchUrl = String((p.searchUrl || obj.url) || obj.url);
+  const openUrl = String((p.openUrl || defaultSearchUrl) || defaultSearchUrl);
 
   return '<div class="row" data-key="'+key+'">' +
     '<div class="avatar" style="background-image:url(\''+getDisplayAvatar(key)+'\');border:3px solid '+bcol+'"></div>' +

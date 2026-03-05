@@ -1634,22 +1634,44 @@ async function autoFetchCoords(key, searchUrl, signal){
   const searchHtml = await tryFetch(url, { signal: signal });
   let coords = extractLatLon(searchHtml);
   let eventDate = extractEventDate(searchHtml);
+  const rows = extractOccurrenceCandidates(searchHtml);
   const occ7Dates = extractElurikkusRecordDatesIso(searchHtml).map(dateIsoFromAny).filter(Boolean);
   const occ7 = occ7Dates.filter(function(d){ return d >= cutoffIso7d(); }).length;
-  const newest = occ7Dates.reduce(function(a,b){ return b > a ? b : a; }, '');
+  const newestFromRows = rows
+    .map(function(r){ return dateIsoFromAny(String(r && r.dateText || '')); })
+    .filter(Boolean)
+    .reduce(function(a,b){ return b > a ? b : a; }, '');
+  const newest = occ7Dates.reduce(function(a,b){ return b > a ? b : a; }, '') || newestFromRows;
+  let latestSeenDate = newest || '';
+  let coordDate = '';
+  let coordSource = '';
   let detailUrl = '';
-  if(!coords){
-    detailUrl = findFirstDetailLink(searchHtml);
-    if(detailUrl){
-      const detailHtml = await tryFetch(detailUrl, { signal: signal });
-      coords = extractLatLon(detailHtml);
-      if(!eventDate) eventDate = extractEventDate(detailHtml);
+  if(coords){
+    coordDate = latestSeenDate || dateIsoFromAny(eventDate || '') || '';
+    coordSource = 'elurikkus_search_page';
+  } else {
+    const probeRows = rows && rows.length ? rows : [{ occUrl: findFirstDetailLink(searchHtml), dateText: eventDate || '' }];
+    for(let i = 0; i < Math.min(10, probeRows.length); i++){
+      const occUrl = String((probeRows[i] && probeRows[i].occUrl) || '').trim();
+      if(!occUrl) continue;
+      detailUrl = occUrl;
+      try{
+        const detailHtml = await tryFetch(occUrl, { signal: signal });
+        const latlon = extractLatLon(detailHtml);
+        if(latlon && _hasFiniteCoord(Number(latlon[0])) && _hasFiniteCoord(Number(latlon[1]))){
+          coords = latlon;
+          coordDate = dateIsoFromAny(String((probeRows[i] && probeRows[i].dateText) || '')) || dateIsoFromAny(extractEventDate(detailHtml) || '');
+          coordSource = 'elurikkus_occurrence_detail';
+          if(!eventDate) eventDate = extractEventDate(detailHtml);
+          break;
+        }
+      }catch(e){}
     }
   }
 
   const prevCoordsValid = _hasFiniteCoord(oldLat) && _hasFiniteCoord(oldLon);
   const nextCoordsValid = !!(coords && _hasFiniteCoord(Number(coords[0])) && _hasFiniteCoord(Number(coords[1])));
-  const nextEventDate = String(newest || eventDate || '').trim();
+  const nextEventDate = String(latestSeenDate || eventDate || '').trim();
   const nextDate = dateIsoFromAny(nextEventDate);
   const prevDate = dateIsoFromAny(oldT);
   const nextOcc7 = Number.isFinite(Number(occ7)) ? Number(occ7) : null;
@@ -1663,8 +1685,14 @@ async function autoFetchCoords(key, searchUrl, signal){
     if(nextCoordsValid){
       p.lat = Number(coords[0]);
       p.lon = Number(coords[1]);
+      p.coordDate = String(coordDate || p.coordDate || nextDate || '');
+      p.coordSource = String(coordSource || p.coordSource || 'elurikkus_occurrence_detail');
+      p.coords_source = p.coordSource;
     }
-    if(nextEventDate) p.t = nextEventDate;
+    if(nextEventDate){
+      p.latestSeenDate = nextDate || nextEventDate;
+      p.t = p.latestSeenDate;
+    }
     p.src = 'Elurikkus';
     p.lastFetched = new Date().toISOString();
     p.occ7 = (nextOcc7 === null ? (Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : 0) : nextOcc7);
@@ -1673,9 +1701,29 @@ async function autoFetchCoords(key, searchUrl, signal){
     changed = true;
   }
   p.searchUrl = url;
+  if(nextDate && String(p.latestSeenDate || '') !== nextDate){
+    p.latestSeenDate = nextDate;
+    p.t = nextDate;
+    changed = true;
+  }
+  if(nextOcc7 !== null && Number(p.occ7) !== nextOcc7){
+    p.occ7 = nextOcc7;
+    p.occ7Source = 'elurikkus_records_table';
+    p.occ7DatesSample = (occ7Dates || []).slice(0, 10);
+    changed = true;
+  }
   if(detailUrl){
     p.openUrl = detailUrl;
     p.latestUrl = detailUrl;
+  }
+  if(!nextCoordsValid){
+    p.coordDate = String(p.coordDate || '');
+    p.coordSource = String(p.coordSource || 'snapshot_fallback');
+    p.coords_source = p.coordSource;
+  }
+  if(nextDate && !p.latestSeenDate){
+    p.latestSeenDate = nextDate;
+    p.t = nextDate;
   }
   if(typeof p.visible === 'undefined'){ p.visible = true; changed = true; }
 
@@ -1853,8 +1901,12 @@ function isRecent(isoOrDdMmYyyy){
 }
 function hasRecentObservation(p){
   if(!p) return false;
-  if(Number.isFinite(p.occ7)) return Number(p.occ7) > 0;
-  return isWithin7d(p.t);
+  const d = getEffectiveRecentDate(p);
+  if(!d) return false;
+  return isWithin7d(d);
+}
+function getEffectiveRecentDate(p){
+  return String((p && (p.latestSeenDate || p.t)) || '').trim();
 }
 
 function _borderColorByDate(isoDate){
@@ -5285,13 +5337,19 @@ function updateMarker(key) {
   const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
   const c7 = Number.isFinite(occ7) && occ7 > 0 ? occ7 : null;
   const icon = avatarIcon(getDisplayAvatar(key), bcol, c7, metaCfg.rarityLevel || 'none');
-  const when = p.t ? '<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.observationDate) || 'vaatluse kuup\u00e4ev') + ': ' + formatDateEE(p.t) + '</small>' : '';
+  const latestDateVal = String(p.latestSeenDate || p.t || '').trim();
+  const coordDateVal = String(p.coordDate || '').trim();
+  const when = latestDateVal ? '<br><small>latest record: ' + formatDateEE(latestDateVal) + '</small>' : '';
+  const coordWhen = (coordDateVal && latestDateVal && coordDateVal !== latestDateVal)
+    ? ('<br><small>coords from record: ' + formatDateEE(coordDateVal) + '</small>')
+    : '';
   const whenDt = p.t_dt ? ('<br><small>pickedDateTime: ' + String(p.t_dt) + '</small>') : '';
   const src = p.src ? '<br><small>allikas: '+p.src+'</small>' : '';
   const occLine = p.latestUrl ? ('<br><small>pickedOcc: ' + String(p.latestUrl).replace(/^.*occurrence\//,'') + '</small>') : '';
-  const precision = (p.coords_status === 'restricted' && p.coords_source && p.coords_source !== 'none')
-    ? ('<br><small>coordsSource: ' + p.coords_source + '</small><br><small>' + (p.coords_note || ('coords restricted \u2192 ' + ((p.coords_source === 'snapshot' || p.coords_source === 'snapshot_fallback') ? 'snapshot fallback' : p.coords_source))) + '</small>')
-    : (p.coords_source ? ('<br><small>coordsSource: ' + p.coords_source + '</small>' + (p.coords_note ? ('<br><small>' + p.coords_note + '</small>') : '')) : '');
+  const effectiveCoordSource = String(p.coordSource || p.coords_source || '').trim();
+  const precision = (p.coords_status === 'restricted' && effectiveCoordSource && effectiveCoordSource !== 'none')
+    ? ('<br><small>coordsSource: ' + effectiveCoordSource + '</small><br><small>' + (p.coords_note || ('coords restricted \u2192 ' + ((effectiveCoordSource === 'snapshot' || effectiveCoordSource === 'snapshot_fallback') ? 'snapshot fallback' : effectiveCoordSource))) + '</small>')
+    : (effectiveCoordSource ? ('<br><small>coordsSource: ' + effectiveCoordSource + '</small>' + (p.coords_note ? ('<br><small>' + p.coords_note + '</small>') : '')) : '');
   const lastMove = p.lastMarkerMove || null;
   const lastDecision = p.lastCoordDecision || null;
   const oldMoveTxt = (lastMove && isValidEE(Number(lastMove.oldLat), Number(lastMove.oldLon)))
@@ -5303,7 +5361,7 @@ function updateMarker(key) {
   const movedLine = lastMove
     ? ('<br><small>moved: ' + (lastMove.changed ? 'yes' : 'no') + ' (' + oldMoveTxt + ' \u2192 ' + newMoveTxt + ')' + (lastMove.changed ? '' : (lastDecision && lastDecision.reason ? (' reason: ' + lastDecision.reason) : '')) + '</small>')
     : '';
-  const popupHtml = '<b>'+key+'</b>'+when+whenDt+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+occLine+precision+movedLine;
+  const popupHtml = '<b>'+key+'</b>'+when+coordWhen+whenDt+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+occLine+precision+movedLine;
   const old = prevMarker && prevMarker.getLatLng ? prevMarker.getLatLng() : null;
   if(prevMarker){
     try{

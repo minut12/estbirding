@@ -23,6 +23,7 @@
     .btn.secondary {background:#666}
     input[type="text"] {width:100%;padding:6px;box-sizing:border-box;margin:6px 0}
     .pill {display:inline-block;padding:2px 6px;border-radius:10px;background:#eef;font-size:11px}
+    .pill.muted {opacity:.6;}
     details summary {cursor:pointer}
     .latin {color:#888;font-size:12px;margin-left:6px}
     .clickable {cursor:pointer}
@@ -6073,19 +6074,40 @@ function rowHTML(obj) {
     ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
     : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
   const x = (p.eluExtra || {});
-  function showVal(v){ return (v && String(v).trim()) ? escapeHtml(String(v)) : '-'; }
-  const extraBlock =
-    '<div class="species-extra" style="margin-top:6px;font-size:12px;line-height:1.35;opacity:.95">' +
-      '<div><b>Individual count:</b> ' + showVal(x.individualCount) + '</div>' +
-      '<div><b>Collectors:</b> ' + showVal(x.collectors) + '</div>' +
-      '<div><b>Behavior:</b> ' + showVal(x.behavior) + '</div>' +
-      '<div><b>Communes:</b> ' + showVal(x.communes) + '</div>' +
-      '<div><b>Municipality:</b> ' + showVal(x.municipality) + '</div>' +
-      '<div><b>County:</b> ' + showVal(x.county) + '</div>' +
-      '<div><b>Locality:</b> ' + showVal(x.locality) + '</div>' +
-      '<div><b>Districts:</b> ' + showVal(x.districts) + '</div>' +
-      '<div><b>Eesti omavalitsused:</b> ' + showVal(x.eestiOmavalitsused) + '</div>' +
-    '</div>';
+  function pill(label, value, title){
+    const v = String(value || '').trim();
+    if(!v) return '';
+    const t = title ? (' title="' + escapeHtml(title) + '"') : '';
+    return '<span class="pill"' + t + '>' + escapeHtml(label) + ' ' + escapeHtml(v) + '</span>';
+  }
+  function trunc(s, n){
+    const str = String(s || '').trim();
+    if(str.length <= n) return str;
+    return str.slice(0, n-1) + '…';
+  }
+  const placePills = [
+    pill('mun:', x.municipality),
+    pill('loc:', x.locality),
+    pill('county:', x.county),
+    pill('dist:', x.districts),
+    pill('comm:', x.communes),
+    pill('omav:', x.eestiOmavalitsused)
+  ].filter(Boolean).join('');
+  const obsPills = [
+    pill('count:', x.individualCount),
+    pill('beh:', x.behavior),
+    (x.collectors ? pill('coll:', trunc(x.collectors, 30), x.collectors) : '')
+  ].filter(Boolean).join('');
+  let extraBlock = '';
+  if(placePills || obsPills){
+    extraBlock =
+      '<div class="extra-pills" style="margin-top:6px;display:flex;flex-direction:column;gap:4px">' +
+        (placePills ? ('<div style="display:flex;flex-wrap:wrap;gap:6px">' + placePills + '</div>') : '') +
+        (obsPills ? ('<div style="display:flex;flex-wrap:wrap;gap:6px">' + obsPills + '</div>') : '') +
+      '</div>';
+  } else {
+    extraBlock = '<div style="margin-top:6px"><span class="pill muted">detail: -</span></div>';
+  }
   const defaultSearchUrl = String((p.searchUrl || obj.url) || obj.url);
   const openUrl = String((p.openUrl || (x.detailUrl || defaultSearchUrl)) || defaultSearchUrl);
 

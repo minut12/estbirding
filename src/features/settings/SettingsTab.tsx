@@ -41,7 +41,7 @@ import {
 import { isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
 
 type ResetMode = 'soft' | 'hard' | null;
-type SettingsPage = 'home' | 'news' | 'events' | 'translations' | 'species';
+type SettingsPage = 'home' | 'news' | 'events' | 'translations' | 'species' | 'maps_debug';
 const LS_RESOLVED_PROXY_BASE = 'resolved_proxy_base_v1';
 const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 const LS_SUPABASE_PROXY_BASE = 'supabase_proxy_base_v1';
@@ -217,6 +217,8 @@ export default function SettingsTab() {
   const [storedEndpointView, setStoredEndpointView] = useState('');
   const [proxyBaseUrl, setProxyBaseUrl] = useState('');
   const [storedProxyBaseView, setStoredProxyBaseView] = useState('');
+  const [mapsDebugJson, setMapsDebugJson] = useState('');
+  const [mapsDebugPretty, setMapsDebugPretty] = useState('');
   const envEndpoint = getEnvEndpoint();
   const resolvedEndpoint = resolveEndpoint(translationApiUrl);
   const resolvedProxyTranslateEndpoint = getProxyTranslateEndpointFromSupabaseProxyBase() || getProxyTranslateEndpoint();
@@ -910,6 +912,64 @@ export default function SettingsTab() {
   );
 
   const renderSettingsSpecies = () => <AvatarManager />;
+  const renderSettingsMapsDebug = () => {
+    const handlePrettyPrint = () => {
+      const raw = mapsDebugJson.trim();
+      if (!raw) {
+        setMapsDebugPretty('');
+        return;
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        setMapsDebugPretty(JSON.stringify(parsed, null, 2));
+      } catch {
+        setMapsDebugPretty('Invalid JSON');
+      }
+    };
+
+    const handleCopy = async () => {
+      const text = (mapsDebugPretty || mapsDebugJson).trim();
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        toast.success('Debug JSON copied');
+      } catch {
+        toast.error('Copy failed');
+      }
+    };
+
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Paste map debug JSON copied from the map view (&quot;Copy debug JSON&quot;), then pretty print for review.
+        </p>
+        <div className="space-y-2">
+          <Label htmlFor="maps-debug-input">Paste debug JSON</Label>
+          <textarea
+            id="maps-debug-input"
+            className="min-h-40 w-full rounded-md border border-border bg-background p-3 text-xs font-mono"
+            value={mapsDebugJson}
+            onChange={(e) => setMapsDebugJson(e.target.value)}
+            placeholder='{"lastRun":"...","snapshotStatus":{}}'
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={handlePrettyPrint}>Pretty print</Button>
+          <Button variant="outline" onClick={handleCopy}>Copy</Button>
+          <Button variant="outline" onClick={() => { setMapsDebugJson(''); setMapsDebugPretty(''); }}>Clear</Button>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="maps-debug-output">Formatted output</Label>
+          <textarea
+            id="maps-debug-output"
+            className="min-h-64 w-full rounded-md border border-border bg-background p-3 text-xs font-mono"
+            readOnly
+            value={mapsDebugPretty}
+          />
+        </div>
+      </div>
+    );
+  };
 
   const renderDebugLite = () => (
     <div className="space-y-3">
@@ -978,6 +1038,9 @@ export default function SettingsTab() {
         <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('species')}>
           Linnuliigid
         </Button>
+        <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('maps_debug')}>
+          Kaardid
+        </Button>
       </div>
       <div className="mt-2">
         {renderDebugLite()}
@@ -991,6 +1054,7 @@ export default function SettingsTab() {
     if (settingsPage === 'events') return <>{renderSettingsHeader('Üritused')}{renderSettingsEvents()}</>;
     if (settingsPage === 'translations') return <>{renderSettingsHeader('Tõlge')}{renderSettingsTranslations()}</>;
     if (settingsPage === 'species') return <>{renderSettingsHeader('Linnuliigid')}{renderSettingsSpecies()}</>;
+    if (settingsPage === 'maps_debug') return <>{renderSettingsHeader('Maps Debugging / Kaardid')}{renderSettingsMapsDebug()}</>;
     return renderSettingsHome();
   };
 

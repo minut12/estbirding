@@ -177,6 +177,7 @@
   <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index">Resume</button>
   <button id="btnSkipStuck" class="btn secondary" title="Skip current stuck item by resuming from next index">Skip stuck item</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
+  <button id="btnCopyMapDebugJson" class="btn secondary" title="Copy map debug JSON">Copy debug JSON</button>
 </div>
 <div id="eluProgress" class="snapshot-banner" style="display:none;font-weight:600"></div>
 <div id="eluLastCoord" class="fetch-progress"></div>
@@ -185,27 +186,8 @@
 <div id="serverRefreshStatus" class="fetch-progress"></div>
 <div id="fetchProgressBar" class="fetch-progress-bar" style="display:none"><div id="fetchProgressBarInner" class="fetch-progress-bar-inner" style="width:0%"></div></div>
 <div id="fetchError" class="fetch-error"></div>
-<details class="debug-panel" id="debugPanel">
-  <summary>Debug (lite)</summary>
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px">
-    <button id="btnCopyDebugJson" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy debug (lite)</button>
-    <button id="btnClearDebugEvents" class="btn secondary" style="font-size:11px;padding:2px 8px">Reset debug</button>
-  </div>
-  <div id="debugContent">Loading...</div>
-</details>
-<details class="debug-panel" id="debugProPanel">
-  <summary>Debug (pro)</summary>
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px">
-    <button id="btnCopyDebugProJson" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy debug (pro)</button>
-    <button id="btnClearTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Clear trace</button>
-    <button id="btnCopySelectedTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy selected trace JSON</button>
-    <button id="btnCopyIndexTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy index trace</button>
-    <button id="btnClearIndexTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Clear index trace</button>
-    <button id="btnRerunVerification" class="btn secondary" style="font-size:11px;padding:2px 8px">Re-run verification</button>
-    <label style="display:flex;align-items:center;gap:4px;font-size:11px"><input id="toggleSlowMode" type="checkbox" />Slow mode</label>
-  </div>
-  <div id="debugProContent" class="debug-pro-grid">Loading...</div>
-</details>
+<div id="debugContent" style="display:none"></div>
+<div id="debugProContent" style="display:none"></div>
     <input id="filterBox" type="text" placeholder="Filter..." />
     <div id="list"></div>
     </div>
@@ -802,6 +784,15 @@ function _toDay(s){
   }
   return null;
 }
+function normDateISO(s){
+  if(!s) return '';
+  const str = String(s).trim();
+  let m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return m[1] + '-' + m[2] + '-' + m[3];
+  m = str.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if(m) return m[3] + '-' + m[2] + '-' + m[1];
+  return str.length >= 10 ? str.slice(0,10) : '';
+}
 const SPRING_CUTOFF_MMDD = '02-15'; // change if needed
 function earliestInYearIsoAfterCutoff(datesIso, year, mmddCutoff){
   if(!Array.isArray(datesIso)) return null;
@@ -1089,6 +1080,21 @@ function extractLatLonFromOccurrenceDetail(html){
   if(!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   if(lat < 50 || lat > 70 || lon < 10 || lon > 35) return null;
   return [lat, lon];
+}
+function extractPlaceMetaFromOccurrenceDetail(html){
+  const s = String(html || '');
+  if(!s) return { municipality: '', locality: '', county: '' };
+  function read(labelRe){
+    const m = s.match(labelRe);
+    return m ? String(m[1] || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() : '';
+  }
+  const municipality = read(/Municipality(?:<\/[^>]*>|[^:]*:)\s*([^<\n\r]+)/i)
+    || read(/Omavalitsus(?:<\/[^>]*>|[^:]*:)\s*([^<\n\r]+)/i);
+  const locality = read(/Locality(?:<\/[^>]*>|[^:]*:)\s*([^<\n\r]+)/i)
+    || read(/Asula(?:<\/[^>]*>|[^:]*:)\s*([^<\n\r]+)/i);
+  const county = read(/County(?:<\/[^>]*>|[^:]*:)\s*([^<\n\r]+)/i)
+    || read(/Maakond(?:<\/[^>]*>|[^:]*:)\s*([^<\n\r]+)/i);
+  return { municipality: municipality, locality: locality, county: county };
 }
 function parseEluSearchRows(html){
   const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
@@ -1630,6 +1636,7 @@ async function autoFetchCoords(key, searchUrl, signal){
   const oldLon = Number(p.lon);
   const oldT = String(p.t || '');
   const oldOcc7 = Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : null;
+  const prevT = String(p.t || '');
 
   const searchHtml = await tryFetch(url, { signal: signal });
   let coords = extractLatLon(searchHtml);
@@ -1646,6 +1653,7 @@ async function autoFetchCoords(key, searchUrl, signal){
   let coordDate = '';
   let coordSource = '';
   let detailUrl = '';
+  let detailPlace = { municipality: '', locality: '', county: '' };
   if(coords){
     coordDate = latestSeenDate || dateIsoFromAny(eventDate || '') || '';
     coordSource = 'elurikkus_search_page';
@@ -1660,6 +1668,7 @@ async function autoFetchCoords(key, searchUrl, signal){
         const latlon = extractLatLon(detailHtml);
         if(latlon && _hasFiniteCoord(Number(latlon[0])) && _hasFiniteCoord(Number(latlon[1]))){
           coords = latlon;
+          detailPlace = extractPlaceMetaFromOccurrenceDetail(detailHtml);
           coordDate = dateIsoFromAny(String((probeRows[i] && probeRows[i].dateText) || '')) || dateIsoFromAny(extractEventDate(detailHtml) || '');
           coordSource = 'elurikkus_occurrence_detail';
           if(!eventDate) eventDate = extractEventDate(detailHtml);
@@ -1681,6 +1690,7 @@ async function autoFetchCoords(key, searchUrl, signal){
 
   const shouldApply = changedCoords || newerDate || changedOcc7;
   let changed = false;
+  const normalizedEventDate = normDateISO(nextEventDate);
   if(shouldApply){
     if(nextCoordsValid){
       p.lat = Number(coords[0]);
@@ -1690,9 +1700,12 @@ async function autoFetchCoords(key, searchUrl, signal){
       p.coords_source = p.coordSource;
     }
     if(nextEventDate){
-      p.latestSeenDate = nextDate || nextEventDate;
-      p.t = p.latestSeenDate;
+      p.latestSeenDate = nextDate || normalizedEventDate || nextEventDate;
+      p.t = normalizedEventDate || prevT || '';
     }
+    if(detailPlace.municipality) p.municipality = detailPlace.municipality;
+    if(detailPlace.locality) p.locality = detailPlace.locality;
+    if(detailPlace.county) p.county = detailPlace.county;
     p.src = 'Elurikkus';
     p.lastFetched = new Date().toISOString();
     p.occ7 = (nextOcc7 === null ? (Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : 0) : nextOcc7);
@@ -1703,7 +1716,7 @@ async function autoFetchCoords(key, searchUrl, signal){
   p.searchUrl = url;
   if(nextDate && String(p.latestSeenDate || '') !== nextDate){
     p.latestSeenDate = nextDate;
-    p.t = nextDate;
+    p.t = normDateISO(nextDate) || prevT || '';
     changed = true;
   }
   if(nextOcc7 !== null && Number(p.occ7) !== nextOcc7){
@@ -4082,7 +4095,7 @@ function _computeDebugProObject(){
     .map(function(row){ return { species: row[0], count: Number(row[1] || 0) }; })
     .sort(function(a,b){ return b.count - a.count; })
     .slice(0,10);
-  return {
+  const out = {
     lite: _safeData({
       serverSnapshotId: __serverSnapshotId,
       serverGeneratedAt: __serverGeneratedAt,
@@ -4174,11 +4187,23 @@ function _computeDebugProObject(){
     },
     logs: __internalLogs.slice(0,50),
   };
+  try{
+    window.__mapsDebugState = {
+      lastRun: new Date().toISOString(),
+      errors: (window.__lastElurikkusBulkErrors || []).slice(0, 50),
+      trace: (__networkTrace || []).slice(0, 50),
+      config: out.config || {},
+      snapshotStatus: out.lite || {},
+      upstreamDebug: out.upstreamDebug || {},
+      lastBulkSummary: window.__lastElurikkusBulkSummary || null,
+    };
+  }catch(e){}
+  return out;
 }
 function _updateDebugProPanel(){
   const el = document.getElementById('debugProContent');
-  if(!el) return;
   const dbg = _computeDebugProObject();
+  if(!el) return dbg;
   const selected = __networkTrace.find(function(x){ return x.id === __selectedTraceId; }) || __networkTrace[0] || null;
   const traceRows = __networkTrace.map(function(r){
     return '<tr onclick="_traceSetSelected(' + r.id + ')" style="cursor:pointer"><td>' + r.id + '</td><td>' + (r.method || '-') + '</td><td class="debug-pro-code">' + String(r.url || '').replace(/</g,'&lt;') + '</td><td>' + (r.status == null ? '-' : r.status) + '</td><td>' + (r.durationMs == null ? '-' : r.durationMs) + '</td><td>' + (r.errorType || '-') + '</td></tr>';
@@ -4276,11 +4301,11 @@ function _updateDebugProPanel(){
     '<div>lastPing: <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastElurikkusPing || null).replace(/</g,'&lt;') + '</span></div></div>' +
     '<div class="debug-pro-sec"><div class="debug-pro-title">Logs & Export</div>' +
     '<div>internal logs (last 50): <span class="debug-pro-code">' + JSON.stringify(dbg.logs).replace(/</g,'&lt;') + '</span></div></div>';
+  return dbg;
 }
 
 function _updateDebugPanel(){
   const el = document.getElementById('debugContent');
-  if(!el) return;
   const totalWithCoords = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.lat); }).length;
   const visibleByOcc7 = SPECIES.filter(function(n){
     const p = points[n];
@@ -4295,7 +4320,7 @@ function _updateDebugPanel(){
   const statusLabel = (__loaderStage === 'rate_limited')
     ? 'rate_limited'
     : (__snapshotMeta.status || (__isRefreshRunning ? 'running' : 'stopped'));
-  el.innerHTML = [
+  const lines = [
     'buildId: <b>' + MAP_BUILD_ID + '</b>',
     'status: <b>' + statusLabel + '</b>',
     'generatedAt: <b>' + (__snapshotMeta.generated_at ? formatDateTimeEE(__snapshotMeta.generated_at) : '-') + '</b>',
@@ -4330,8 +4355,27 @@ function _updateDebugPanel(){
     '7-day filter: <b>' + (is7daysOnly() ? 'ON' : 'OFF') + '</b>',
     '7-day cutoff: <b>' + cutoffStr + '</b>',
     (VERBOSE_DEBUG ? ('verboseEvents: <b>' + __debugEvents.length + '</b>') : ''),
-  ].join('<br>');
-  _updateDebugProPanel();
+  ];
+  if(el) el.innerHTML = lines.join('<br>');
+  const dbg = _updateDebugProPanel();
+  try{
+    const prev = window.__mapsDebugState || {};
+    window.__mapsDebugState = Object.assign({}, prev, {
+      lastRun: new Date().toISOString(),
+      summary: {
+        buildId: MAP_BUILD_ID,
+        status: statusLabel,
+        generatedAt: (__snapshotMeta.generated_at || ''),
+        progressDone: progressDone,
+        progressTotal: progressTotal,
+        speciesWithCoords: totalWithCoords,
+        markersRendered: __renderedMarkerCount,
+        visibleByOcc7: visibleByOcc7,
+        latestOccurrenceInSnapshot: String(__serverDataMaxAt || ''),
+      },
+      debugPro: dbg || null,
+    });
+  }catch(e){}
 }
 
 async function _applySnapshot(snap){
@@ -4883,6 +4927,7 @@ function _wireSnapshotButtons(){
   const btnResume = document.getElementById('btnResumeFetch');
   const btnSkip = document.getElementById('btnSkipStuck');
   const btnStop = document.getElementById('btnStopFetch');
+  const btnCopyMapDebugJson = document.getElementById('btnCopyMapDebugJson');
   const btnCopyDebug = document.getElementById('btnCopyDebugJson');
   const btnCopyDebugPro = document.getElementById('btnCopyDebugProJson');
   const btnExportDebugPro = document.getElementById('btnExportDebugProJson');
@@ -5410,7 +5455,7 @@ function rowHTML(obj) {
 
   const noCoords = !hasPoint && occ7 > 0;
   const metaRow1 = hasPoint
-    ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(p.t_dt?(' <span class="pill">dt:</span> '+String(p.t_dt)):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+((p.coords_status==='restricted' && p.coords_source && p.coords_source!=='none') ? (' <span class="pill">coords:</span> restricted→'+((p.coords_source==='snapshot' || p.coords_source==='snapshot_fallback') ? 'snapshot fallback' : p.coords_source)) : '')+(p.municipality ? (' <span class="pill">municipality:</span> '+String(p.municipality)) : '')
+    ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(p.t_dt?(' <span class="pill">dt:</span> '+String(p.t_dt)):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+((p.coords_status==='restricted' && p.coords_source && p.coords_source!=='none') ? (' <span class="pill">coords:</span> restricted→'+((p.coords_source==='snapshot' || p.coords_source==='snapshot_fallback') ? 'snapshot fallback' : p.coords_source)) : '')+(p.municipality ? (' <span class="pill">municipality:</span> '+String(p.municipality)) : '')+(p.locality ? (' <span class="pill">locality:</span> '+String(p.locality)) : '')
     : noCoords
       ? '<span class="pill" style="background:#fef3c7;color:#92400e">Koordinaadid peidetud</span>'+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
       : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
@@ -5455,7 +5500,6 @@ function rowHTML(obj) {
     '<div class="controls">' +
       '<div style="display:flex;flex-direction:column;gap:6px">' +
       '<button class="btn open-occ-btn" data-open-url="'+openUrl.replace(/"/g,'&quot;')+'">Open</button>' +
-      '<button class="btn secondary fetch-elurikkus-btn" data-species="'+key+'" '+(isUpLoading?'disabled':'')+' title="Fetch latest from Elurikkus and apply to map">Auto-coords</button>' +
       '</div>' +
     '</div>' +
     statusLine +
@@ -6035,3 +6079,13 @@ var __sharedDefaults = {};
 
 
 
+  if(btnCopyMapDebugJson && !btnCopyMapDebugJson.__wired){
+    btnCopyMapDebugJson.addEventListener('click', function(){
+      const payload = _computeDebugProObject();
+      const text = JSON.stringify(payload, null, 2);
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(function(){ logInfo('Copied map debug JSON'); }).catch(function(err){ logWarn('Copy map debug failed', { err: String(err) }); });
+      }
+    });
+    btnCopyMapDebugJson.__wired = true;
+  }

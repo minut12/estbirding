@@ -986,10 +986,15 @@ function cutoffIso7d(){
 function cutoffMs7d(){
   return Date.now() - 7*24*60*60*1000;
 }
-function buildEluSearchUrl(species, page){
-  const base = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(String(species || ''));
-  const p = (page && page > 1) ? ('&page=' + Number(page)) : '';
-  return base + p + '&_ts=' + Date.now();
+function buildEluSearchUrl(text, offset, limit){
+  const u = new URL('https://elurikkus.ee/app/occurrences/search');
+  u.searchParams.set('text', String(text || ''));
+  u.searchParams.set('limit', String(limit));
+  u.searchParams.set('offset', String(offset));
+  u.searchParams.set('orderAscending', 'false');
+  u.searchParams.set('orderBy', 'event_date_naive');
+  u.searchParams.set('_ts', String(Date.now()));
+  return u.toString();
 }
 function parseEluRowDatesFromSearchHtml(searchHtml){
   const doc = new DOMParser().parseFromString(String(searchHtml||''), 'text/html');
@@ -1004,59 +1009,45 @@ function parseEluRowDatesFromSearchHtml(searchHtml){
   }
   return dates;
 }
-async function computeOcc7MultiPage(species, signal, maxPages){
-  const tryFetchHtml = function(u, sig){ return tryFetch(u, { signal: sig, cache: 'no-store' }); };
-  const cutoff = cutoffIso7d();
-  const base = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(String(species || ''));
-  let url = base + '&_ts=' + Date.now();
-  let page = 1;
-  let pagesScanned = 0;
-  const seenOcc = new Set();
-  const seenSig = new Set();
+async function computeOcc7Offset(text, tryFetchHtml, signal){
+  const cutoffIso = cutoffIso7d();
+  const limit = 100;
+  const maxPages = 30;
+  const seen = new Set();
   let occ7 = 0;
   let newestIso = '';
   let oldestIso = '';
-  let pagingMode = 'none';
+  let pages = 0;
   let rowsParsedTotal = 0;
-  const pageLimit = Math.max(1, Number(maxPages || 20) || 20);
-  while(url && pagesScanned < pageLimit){
+  for(let page = 0; page < maxPages; page++){
     if(signal && signal.aborted) break;
+    const offset = page * limit;
+    const url = buildEluSearchUrl(text, offset, limit);
     const html = await tryFetchHtml(url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now(), signal);
-    const rows = parseEluRowsIso(html);
+    const rows = parseSearchRows(html);
     rowsParsedTotal += rows.length;
+    pages++;
     if(rows.length === 0) break;
-    pagesScanned++;
-    const sig = String(rows[0].occId || '') + ':' + String(rows[rows.length-1].occId || '');
-    if(seenSig.has(sig)) break;
-    seenSig.add(sig);
-    const pageIsos = rows.map(function(r){ return r.iso; }).filter(Boolean);
-    const pageNewest = pageIsos.reduce(function(a,b){ return b>a?b:a; }, '');
-    const pageOldest = pageIsos.reduce(function(a,b){ return b<a?b:a; }, pageIsos[0]||'');
-    if(pagesScanned === 1) newestIso = pageNewest;
-    oldestIso = pageOldest || oldestIso;
+    if(page === 0) newestIso = rows[0].iso;
+    oldestIso = rows[rows.length - 1].iso;
     let anyWithin = false;
     for(const r of rows){
-      if(seenOcc.has(r.occId)) continue;
-      seenOcc.add(r.occId);
-      if(r.iso >= cutoff){
+      if(seen.has(r.occId)) continue;
+      seen.add(r.occId);
+      if(r.iso >= cutoffIso){
         occ7++;
         anyWithin = true;
       }
     }
     if(!anyWithin) break;
-    if(pageOldest && pageOldest < cutoff) break;
-    const next = extractNextUrl(html);
-    if(next){
-      pagingMode = 'next';
-      url = next;
-    } else {
-      pagingMode = 'page';
-      page++;
-      url = buildPageUrl(base, page);
-    }
-    await new Promise(function(r){ setTimeout(r, 350); });
+    if(oldestIso && oldestIso < cutoffIso) break;
+    await new Promise(function(r){ setTimeout(r, 250); });
   }
-  return { occ7: occ7, newestIso: newestIso, oldestIso: oldestIso, cutoff: cutoff, pagesScanned: pagesScanned, rowsParsedTotal: rowsParsedTotal, uniqueOcc: seenOcc.size, pagingMode: pagingMode };
+  return { occ7: occ7, newestIso: newestIso, oldestIso: oldestIso, cutoffIso: cutoffIso, pagesScanned: pages, rowsParsedTotal: rowsParsedTotal, unique: seen.size, pagingMode: 'offset' };
+}
+async function computeOcc7MultiPage(species, signal, maxPages){
+  const fetcher = function(u, sig){ return tryFetch(u, { signal: sig, cache:'no-store' }); };
+  return computeOcc7Offset(species, fetcher, signal);
 }
 function dateIsoFromAny(s){
   const str = String(s || '').trim();
@@ -1399,7 +1390,37 @@ function parseElurikkusExtraFromText(detailHtml, detailUrl){
   return out;
 }
 function parseEluSearchRows(html){
-  return parseEluRowsIso(html);
+  return parseSearchRows(html);
+}
+function parseSearchRows(html){
+  const out = [];
+  const doc = new DOMParser().parseFromString(String(html||''), 'text/html');
+  const trs = Array.from(doc.querySelectorAll('tr'));
+  for(const tr of trs){
+    const a = tr.querySelector('a[href*="/app/occurrences/occurrence/"]');
+    if(!a) continue;
+    const href = a.getAttribute('href') || '';
+    const occId = (String(href).match(/occurrence\/(\d+)/i)||[])[1];
+    if(!occId) continue;
+    const td0 = tr.querySelector('td');
+    const iso = normDateISO(td0 ? td0.textContent : '');
+    if(!iso) continue;
+    out.push({ occId: occId, iso: iso });
+  }
+  if(out.length) return out;
+  const text = String(html || '');
+  const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let m;
+  while((m = trRe.exec(text)) !== null){
+    const tr = String(m[1] || '');
+    const occId = (tr.match(/\/app\/occurrences\/occurrence\/(\d+)/i)||[])[1];
+    if(!occId) continue;
+    const dm = tr.match(/(\d{4}-\d{2}-\d{2})/);
+    const iso = dm ? dm[1] : '';
+    if(!iso) continue;
+    out.push({ occId: occId, iso: iso });
+  }
+  return out;
 }
 function parseEluRowsIso(html){
   const out = [];
@@ -2035,7 +2056,12 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
   const newestOccUrl = extractNewestOccurrenceUrlFromSearch(shtml);
   const rows = extractOccurrenceCandidates(shtml);
   const occ7Multi = await computeOcc7MultiPage(name, signal, 20);
-  const occ7 = Number.isFinite(Number(occ7Multi.occ7)) ? Number(occ7Multi.occ7) : 0;
+  const page1RowsIso = parseSearchRows(shtml);
+  const cutoffIso = cutoffIso7d();
+  const page1Occ7 = page1RowsIso.filter(function(r){ return r && r.iso && r.iso >= cutoffIso; }).length;
+  const occ7 = (Number(occ7Multi && occ7Multi.rowsParsedTotal || 0) === 0)
+    ? page1Occ7
+    : (Number.isFinite(Number(occ7Multi.occ7)) ? Number(occ7Multi.occ7) : page1Occ7);
   const newestDateText = rows[0] ? String(rows[0].dateText || '') : '';
   let detailTried = 0;
   for(let k = 0; k < Math.min(10, rows.length); k++){
@@ -2153,11 +2179,25 @@ async function autoFetchCoords(key, searchUrl, signal){
   let eventDate = extractEventDate(searchHtml);
   const rows = extractOccurrenceCandidates(searchHtml);
   const occ7Dates = parseEluRowDatesFromSearchHtml(searchHtml).map(dateIsoFromAny).filter(Boolean);
-  const occ7Multi = await computeOcc7MultiPage(species, signal, 20);
-  const occ7 = Number.isFinite(Number(occ7Multi.occ7)) ? Number(occ7Multi.occ7) : 0;
-  p.eluExtra = p.eluExtra || {};
-  p.eluExtra.__pages = Number((occ7Multi && occ7Multi.pagesScanned) || 0) || 0;
-  p.eluExtra.__occ7debug = occ7Multi || null;
+  const prevOcc7 = Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : null;
+  let occ7Multi = null;
+  let occ7 = prevOcc7;
+  try{
+    occ7Multi = await computeOcc7MultiPage(species, signal, 20);
+    p.eluExtra = p.eluExtra || {};
+    if(Number(occ7Multi && occ7Multi.rowsParsedTotal || 0) === 0){
+      p.eluExtra.__occ7debug = Object.assign({ error: 'rowsParsedTotal=0' }, occ7Multi || {});
+      occ7 = prevOcc7;
+    } else {
+      occ7 = Number.isFinite(Number(occ7Multi.occ7)) ? Number(occ7Multi.occ7) : prevOcc7;
+      p.eluExtra.__occ7debug = occ7Multi || null;
+    }
+    p.eluExtra.__pages = Number((occ7Multi && occ7Multi.pagesScanned) || 0) || 0;
+  }catch(e){
+    p.eluExtra = p.eluExtra || {};
+    occ7 = (prevOcc7 != null ? prevOcc7 : (Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : 0));
+    p.eluExtra.__occ7debug = { error: String((e && e.message) ? e.message : e), keptOcc7: occ7 };
+  }
   try{ save(); }catch(e){}
   try{ render(); }catch(e){}
   const newestFromRows = rows
@@ -6198,7 +6238,7 @@ function updateMarker(key) {
   const src = p.src ? '<br><small>allikas: '+p.src+'</small>' : '';
   const occLine = p.latestUrl ? ('<br><small>pickedOcc: ' + String(p.latestUrl).replace(/^.*occurrence\//,'') + '</small>') : '';
   const occDbg = (VERBOSE_DEBUG && p.eluExtra && p.eluExtra.__occ7debug)
-    ? ('<br><small>occ7Debug: pages=' + Number(p.eluExtra.__occ7debug.pagesScanned || 0) + ' rows=' + Number(p.eluExtra.__occ7debug.rowsParsedTotal || 0) + ' unique=' + Number(p.eluExtra.__occ7debug.uniqueOcc || 0) + ' mode=' + String(p.eluExtra.__occ7debug.pagingMode || '-') + '</small>')
+    ? ('<br><small>occ7Debug: occ7=' + Number(p.occ7 || 0) + ' pages=' + Number(p.eluExtra.__occ7debug.pagesScanned || 0) + ' rows=' + Number(p.eluExtra.__occ7debug.rowsParsedTotal || 0) + ' unique=' + Number((p.eluExtra.__occ7debug.uniqueOcc != null ? p.eluExtra.__occ7debug.uniqueOcc : p.eluExtra.__occ7debug.unique) || 0) + ' mode=' + String(p.eluExtra.__occ7debug.pagingMode || '-') + ' cutoff=' + String(p.eluExtra.__occ7debug.cutoffIso || p.eluExtra.__occ7debug.cutoff || '-') + ' newest=' + String(p.eluExtra.__occ7debug.newestIso || '-') + ' oldest=' + String(p.eluExtra.__occ7debug.oldestIso || '-') + '</small>')
     : '';
   const effectiveCoordSource = String(p.coordSource || p.coords_source || '').trim();
   const precision = (p.coords_status === 'restricted' && effectiveCoordSource && effectiveCoordSource !== 'none')

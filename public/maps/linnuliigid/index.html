@@ -1312,42 +1312,85 @@ function parseEluSearchRows(html){
 function parseEluSearchNewestRowExtras(searchHtml){
   const out = {
     dateText: '',
-    taxonName: '',
-    commonName: '',
     individualCount: '',
     behavior: '',
     locality: '',
-    collectors: '',
-    communes: '',
-    municipality: '',
-    county: '',
-    districts: '',
-    eestiOmavalitsused: ''
+    collectors: ''
   };
-  const doc = new DOMParser().parseFromString(String(searchHtml || ''), 'text/html');
-  const tbody = doc.querySelector('table tbody');
-  if(!tbody) return out;
-  const firstTr = tbody.querySelector('tr');
+  const doc = new DOMParser().parseFromString(String(searchHtml||''), 'text/html');
+  const table = doc.querySelector('table');
+  if(!table) return out;
+  const ths = Array.from(table.querySelectorAll('thead th, thead td')).map(function(x){ return _clean(x.textContent || ''); });
+  const idx = function(name){
+    return ths.findIndex(function(h){ return String(h).toLowerCase() === String(name).toLowerCase(); });
+  };
+  const iDate = idx('Date');
+  const iInd = idx('Individual count');
+  const iBeh = idx('Behavior');
+  const iLoc = idx('Locality');
+  const iCol = idx('Collectors');
+  const firstTr = table.querySelector('tbody tr');
   if(!firstTr) return out;
   const tds = Array.from(firstTr.querySelectorAll('td')).map(function(td){ return _clean(td.textContent || ''); });
-  out.dateText = tds[0] || '';
-  out.taxonName = tds[1] || '';
-  out.commonName = tds[2] || '';
-  out.individualCount = tds[3] || '';
-  out.behavior = tds[4] || '';
-  out.locality = tds[5] || '';
-  out.collectors = tds[6] || '';
+  out.dateText = (iDate >= 0 ? (tds[iDate] || '') : (tds[0] || ''));
+  out.individualCount = (iInd >= 0 ? (tds[iInd] || '') : '');
+  out.behavior = (iBeh >= 0 ? (tds[iBeh] || '') : '');
+  out.locality = (iLoc >= 0 ? (tds[iLoc] || '') : '');
+  out.collectors = (iCol >= 0 ? (tds[iCol] || '') : '');
   return out;
 }
 function extractNewestOccurrenceUrlFromSearch(searchHtml){
-  const doc = new DOMParser().parseFromString(String(searchHtml || ''), 'text/html');
-  const tbody = doc.querySelector('table tbody');
-  const firstTr = tbody ? tbody.querySelector('tr') : null;
+  const doc = new DOMParser().parseFromString(String(searchHtml||''), 'text/html');
+  const firstTr = doc.querySelector('table tbody tr');
   if(!firstTr) return '';
   const a = firstTr.querySelector('a[href*="/app/occurrences/occurrence/"]');
-  const href = a ? String(a.getAttribute('href') || '').trim() : '';
+  const href = a ? a.getAttribute('href') : '';
   if(!href) return '';
   return href.startsWith('http') ? href : ('https://elurikkus.ee' + (href.startsWith('/') ? href : '/' + href));
+}
+function parseDetailLabelValue(detailHtml, label){
+  const html = String(detailHtml || '');
+  try{
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const all = Array.from(doc.querySelectorAll('dt,th,strong,b,div,span'));
+    for(const el of all){
+      const t = _clean(el.textContent || '');
+      if(t !== label) continue;
+      let v = '';
+      if(el.nextElementSibling) v = _clean(el.nextElementSibling.textContent || '');
+      if(!v){
+        const p = el.parentElement;
+        if(p){
+          const kids = Array.from(p.children);
+          const kidx = kids.indexOf(el);
+          if(kidx >= 0 && kids[kidx + 1]) v = _clean(kids[kidx + 1].textContent || '');
+        }
+      }
+      if(v) return v;
+    }
+  }catch(e){}
+  const re = new RegExp('>' + String(label).replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '<[\\s\\S]{0,300}?>\\s*([^<]{1,120})\\s*<', 'i');
+  const m = html.match(re);
+  if(m && m[1]) return _clean(m[1]);
+  return '';
+}
+function parseEluDetailExtras(detailHtml, detailUrl){
+  const x = {
+    detailUrl: detailUrl || '',
+    communes: '',
+    municipality: '',
+    county: '',
+    locality: '',
+    districts: '',
+    eestiOmavalitsused: ''
+  };
+  x.communes = parseDetailLabelValue(detailHtml, 'Communes') || parseDetailLabelValue(detailHtml, 'Kommuunid');
+  x.municipality = parseDetailLabelValue(detailHtml, 'Municipality') || parseDetailLabelValue(detailHtml, 'Omavalitsus');
+  x.county = parseDetailLabelValue(detailHtml, 'County') || parseDetailLabelValue(detailHtml, 'Maakond');
+  x.locality = parseDetailLabelValue(detailHtml, 'Locality') || parseDetailLabelValue(detailHtml, 'Asukoht');
+  x.districts = parseDetailLabelValue(detailHtml, 'Districts') || parseDetailLabelValue(detailHtml, 'Piirkonnad');
+  x.eestiOmavalitsused = parseDetailLabelValue(detailHtml, 'Eesti omavalitsused');
+  return x;
 }
 function parseEluDateToMs(dateText){
   const m = String(dateText || '').match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?/);
@@ -1817,6 +1860,7 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
       const dhtml = await tryFetch(_withCacheBuster(occUrl), { signal: signal });
       const detail = parseElurikkusDetailFields(dhtml, occUrl);
       const extra = parseElurikkusExtraFromText(dhtml, occUrl);
+      const det = parseEluDetailExtras(dhtml, occUrl);
       console.log('ELU EXTRA PARSED', name, extra);
       detail.locality = detail.locality || rowExtra.locality || '';
       detail.collectors = detail.collectors || rowExtra.collectors || '';
@@ -1829,6 +1873,12 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
       detail.behavior = detail.behavior || extra.behavior || '';
       detail.individualCount = (detail.individualCount == null ? extra.individualCount : detail.individualCount);
       detail.__debugSample = extra.__debugSample || '';
+      detail.communes = det.communes || detail.communes || '';
+      detail.municipality = det.municipality || detail.municipality || '';
+      detail.county = det.county || detail.county || '';
+      detail.locality = det.locality || detail.locality || '';
+      detail.districts = det.districts || detail.districts || '';
+      detail.eestiOmavalitsused = det.eestiOmavalitsused || detail.eestiOmavalitsused || '';
       const latlon = extractLatLonFromDetail(dhtml);
       if(latlon && isValidEE(Number(latlon[0]), Number(latlon[1]))){
         return {
@@ -1936,14 +1986,16 @@ async function autoFetchCoords(key, searchUrl, signal){
       detailHtml = await tryFetch(_withCacheBuster(newestDetailUrl), { signal: signal });
       detailFields = parseElurikkusDetailFields(detailHtml, newestDetailUrl);
       detailExtra = parseElurikkusExtraFromText(detailHtml, newestDetailUrl);
+      const det = parseEluDetailExtras(detailHtml, newestDetailUrl);
       console.log('ELU EXTRA PARSED', species, detailExtra);
       if(p.eluExtra){
         p.eluExtra.detailUrl = newestDetailUrl || p.eluExtra.detailUrl || '';
-        if(detailExtra.communes) p.eluExtra.communes = detailExtra.communes;
-        if(detailExtra.municipality) p.eluExtra.municipality = detailExtra.municipality;
-        if(detailExtra.county) p.eluExtra.county = detailExtra.county;
-        if(detailExtra.districts) p.eluExtra.districts = detailExtra.districts;
-        if(detailExtra.eestiOmavalitsused) p.eluExtra.eestiOmavalitsused = detailExtra.eestiOmavalitsused;
+        if(det.communes) p.eluExtra.communes = det.communes;
+        if(det.municipality) p.eluExtra.municipality = det.municipality;
+        if(det.county) p.eluExtra.county = det.county;
+        if(det.districts) p.eluExtra.districts = det.districts;
+        if(det.eestiOmavalitsused) p.eluExtra.eestiOmavalitsused = det.eestiOmavalitsused;
+        if(det.locality) p.eluExtra.locality = det.locality;
       }
       if(!coords){
         const latlonAlways = extractLatLon(detailHtml);
@@ -1970,14 +2022,16 @@ async function autoFetchCoords(key, searchUrl, signal){
         const latlon = extractLatLon(detailHtml);
         detailFields = parseElurikkusDetailFields(detailHtml, occUrl);
         detailExtra = parseElurikkusExtraFromText(detailHtml, occUrl);
+        const det = parseEluDetailExtras(detailHtml, occUrl);
         console.log('ELU EXTRA PARSED', species, detailExtra);
         if(p.eluExtra){
           p.eluExtra.detailUrl = occUrl || p.eluExtra.detailUrl || '';
-          if(detailExtra.communes) p.eluExtra.communes = detailExtra.communes;
-          if(detailExtra.municipality) p.eluExtra.municipality = detailExtra.municipality;
-          if(detailExtra.county) p.eluExtra.county = detailExtra.county;
-          if(detailExtra.districts) p.eluExtra.districts = detailExtra.districts;
-          if(detailExtra.eestiOmavalitsused) p.eluExtra.eestiOmavalitsused = detailExtra.eestiOmavalitsused;
+          if(det.communes) p.eluExtra.communes = det.communes;
+          if(det.municipality) p.eluExtra.municipality = det.municipality;
+          if(det.county) p.eluExtra.county = det.county;
+          if(det.districts) p.eluExtra.districts = det.districts;
+          if(det.eestiOmavalitsused) p.eluExtra.eestiOmavalitsused = det.eestiOmavalitsused;
+          if(det.locality) p.eluExtra.locality = det.locality;
         }
         if(latlon && _hasFiniteCoord(Number(latlon[0])) && _hasFiniteCoord(Number(latlon[1]))){
           coords = latlon;
@@ -2010,14 +2064,16 @@ async function autoFetchCoords(key, searchUrl, signal){
         detailHtml = await tryFetch(_withCacheBuster(fallbackDetailUrl), { signal: signal });
         detailFields = parseElurikkusDetailFields(detailHtml, fallbackDetailUrl);
         detailExtra = parseElurikkusExtraFromText(detailHtml, fallbackDetailUrl);
+        const det = parseEluDetailExtras(detailHtml, fallbackDetailUrl);
         console.log('ELU EXTRA PARSED', species, detailExtra);
         if(p.eluExtra){
           p.eluExtra.detailUrl = fallbackDetailUrl || p.eluExtra.detailUrl || '';
-          if(detailExtra.communes) p.eluExtra.communes = detailExtra.communes;
-          if(detailExtra.municipality) p.eluExtra.municipality = detailExtra.municipality;
-          if(detailExtra.county) p.eluExtra.county = detailExtra.county;
-          if(detailExtra.districts) p.eluExtra.districts = detailExtra.districts;
-          if(detailExtra.eestiOmavalitsused) p.eluExtra.eestiOmavalitsused = detailExtra.eestiOmavalitsused;
+          if(det.communes) p.eluExtra.communes = det.communes;
+          if(det.municipality) p.eluExtra.municipality = det.municipality;
+          if(det.county) p.eluExtra.county = det.county;
+          if(det.districts) p.eluExtra.districts = det.districts;
+          if(det.eestiOmavalitsused) p.eluExtra.eestiOmavalitsused = det.eestiOmavalitsused;
+          if(det.locality) p.eluExtra.locality = det.locality;
         }
         if(!detailUrl) detailUrl = fallbackDetailUrl;
       }catch(e){}
@@ -6030,7 +6086,7 @@ function rowHTML(obj) {
       '<div><b>Eesti omavalitsused:</b> ' + showVal(x.eestiOmavalitsused) + '</div>' +
     '</div>';
   const defaultSearchUrl = String((p.searchUrl || obj.url) || obj.url);
-  const openUrl = String((p.openUrl || defaultSearchUrl) || defaultSearchUrl);
+  const openUrl = String((p.openUrl || (x.detailUrl || defaultSearchUrl)) || defaultSearchUrl);
 
   return '<div class="row" data-key="'+key+'">' +
     '<div class="avatar" style="background-image:url(\''+getDisplayAvatar(key)+'\');border:3px solid '+bcol+'"></div>' +

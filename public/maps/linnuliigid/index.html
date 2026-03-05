@@ -35,6 +35,28 @@
     }
     .chip.muted{opacity:.65;}
     .placeLine{font-size:12px;opacity:.85;}
+    .kvGrid{
+      margin-top:6px;
+      display:grid;
+      grid-template-columns:110px 1fr;
+      row-gap:4px;
+      column-gap:8px;
+      font-size:12px;
+      line-height:1.25;
+    }
+    .kvLabel{opacity:.75;}
+    .kvValue{font-weight:500;}
+    .kvValue .truncate{
+      display:inline-block;
+      max-width:220px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+      vertical-align:bottom;
+    }
+    @media (max-width: 900px){
+      .kvValue .truncate{max-width:160px;}
+    }
     details summary {cursor:pointer}
     .latin {color:#888;font-size:12px;margin-left:6px}
     .clickable {cursor:pointer}
@@ -6085,31 +6107,26 @@ function rowHTML(obj) {
     ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
     : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
   const x = (p.eluExtra || {});
-  function esc(s){ return escapeHtml(String(s||'')); }
-  function clean(s){ return String(s||'').replace(/\s+/g,' ').trim(); }
-  function trunc(s,n){ const t=clean(s); return t.length>n ? t.slice(0,n-1)+'…' : t; }
-  function chip(text, title){
-    const t = title ? (' title="' + esc(title) + '"') : '';
-    return '<span class="chip"' + t + '>' + esc(text) + '</span>';
-  }
-  const placeParts = [clean(x.municipality), clean(x.locality), clean(x.county)].filter(Boolean);
-  const placeFiltered = placeParts.filter(function(v){
-    const low = String(v || '').toLowerCase();
-    return low !== 'estonia' && low !== 'eesti';
-  });
-  const placeLine = placeFiltered.length
-    ? ('<div class="placeLine">' + esc(placeFiltered.join(' • ')) + '</div>')
-    : '';
-  const chips = [];
-  if(clean(x.individualCount)) chips.push(chip(clean(x.individualCount)));
-  if(clean(x.behavior)) chips.push(chip(clean(x.behavior)));
-  if(clean(x.collectors)) chips.push(chip(trunc(x.collectors, 24), clean(x.collectors)));
-  const metaLine = chips.length
-    ? ('<div class="metaLine" style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px">' + chips.join('') + '</div>')
-    : '';
-  const extraBlock = (placeLine || metaLine)
-    ? ('<div class="extraBlock" style="margin-top:6px">' + placeLine + metaLine + '</div>')
-    : '';
+  const get = function(v){ return (v && String(v).trim()) ? String(v).trim() : '-'; };
+  const trunc = function(s,n){
+    const t = (s && String(s).trim()) ? String(s).trim() : '';
+    return t.length>n ? t.slice(0,n-1)+'…' : t;
+  };
+  const collectorsFull = get(x.collectors);
+  const collectorsShort = collectorsFull === '-' ? '-' : trunc(collectorsFull, 30);
+  const extraBlock =
+    '<div class="kvGrid">' +
+      '<div class="kvLabel">Municipality:</div><div class="kvValue">' + escapeHtml(get(x.municipality)) + '</div>' +
+      '<div class="kvLabel">Locality:</div><div class="kvValue">' + escapeHtml(get(x.locality)) + '</div>' +
+      '<div class="kvLabel">County:</div><div class="kvValue">' + escapeHtml(get(x.county)) + '</div>' +
+      '<div class="kvLabel">Districts:</div><div class="kvValue">' + escapeHtml(get(x.districts)) + '</div>' +
+      '<div class="kvLabel">Communes:</div><div class="kvValue">' + escapeHtml(get(x.communes)) + '</div>' +
+      '<div class="kvLabel">Eesti omavalitsused:</div><div class="kvValue">' + escapeHtml(get(x.eestiOmavalitsused)) + '</div>' +
+      '<div class="kvLabel">Individual count:</div><div class="kvValue">' + escapeHtml(get(x.individualCount)) + '</div>' +
+      '<div class="kvLabel">Behavior:</div><div class="kvValue">' + escapeHtml(get(x.behavior)) + '</div>' +
+      '<div class="kvLabel">Collectors:</div>' +
+      '<div class="kvValue"><span class="truncate" title="' + escapeHtml(collectorsFull) + '">' + escapeHtml(collectorsShort) + '</span></div>' +
+    '</div>';
   const defaultSearchUrl = String((p.searchUrl || obj.url) || obj.url);
   const openUrl = String((p.openUrl || (x.detailUrl || defaultSearchUrl)) || defaultSearchUrl);
 

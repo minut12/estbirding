@@ -158,6 +158,7 @@
   <aside id="sidebar">
     <div class="panel-header">
     <div class="sidebar-header"><h2 style="margin:0">Linnuliigid 2026</h2><button id="closeSidebarBtn" class="btn icon close-sidebar" title="Sulge" aria-label="Sulge"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+    <div class="small" style="margin-top:4px;font-weight:700;color:#0f766e">BUILD TEST: 2026-03-05</div>
     </div>
     <div class="panel-content-scroll">
 <div class="top-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:center">
@@ -5679,6 +5680,7 @@ function escapeHtml(s){
 function rowHTML(obj) {
   const key = obj.est;
   const p = points[key] || {};
+  const elu = (p.elurikkus && typeof p.elurikkus === 'object') ? p.elurikkus : {};
   const bcol = _borderColorByDate(p.t);
   const hasPoint = Number.isFinite(p.lat) && Number.isFinite(p.lon);
   const muted = (p.visible===false) ? 'muted' : '';
@@ -5688,18 +5690,28 @@ function rowHTML(obj) {
   const meta = hasPoint
     ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
     : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
+  const observedAtView = p.observedAt || elu.observedAt || '';
+  const municipalityView = p.municipality || elu.municipality || '';
+  const localityView = p.locality || elu.locality || '';
+  const countyView = p.county || elu.county || '';
+  const countryView = p.country || elu.country || '';
+  const individualCountView = (p.individualCount != null ? p.individualCount : elu.individualCount);
+  const behaviorView = p.behavior || elu.behavior || '';
+  const collectorsView = p.collectors || elu.collectors || '';
+  const datasetView = p.dataset || elu.dataset || '';
+  const projectView = p.project || elu.project || '';
   const speciesExtra = (
-    (p.observedAt ? '<div>' + escapeHtml(p.observedAt) + '</div>' : '') +
-    ((p.municipality || p.locality || p.county) ? '<div>' + escapeHtml([p.municipality, p.locality, p.county].filter(Boolean).join(' | ')) + '</div>' : '') +
-    ((p.country || p.individualCount != null || p.behavior) ? '<div>' + escapeHtml([
-      p.country || '',
-      (p.individualCount != null ? ('count:' + p.individualCount) : ''),
-      (p.behavior ? ('behavior:' + p.behavior) : '')
+    (observedAtView ? '<div>' + escapeHtml(observedAtView) + '</div>' : '') +
+    ((municipalityView || localityView || countyView) ? '<div>' + escapeHtml([municipalityView, localityView, countyView].filter(Boolean).join(' | ')) + '</div>' : '') +
+    ((countryView || individualCountView != null || behaviorView) ? '<div>' + escapeHtml([
+      countryView || '',
+      (individualCountView != null ? ('count:' + individualCountView) : ''),
+      (behaviorView ? ('behavior:' + behaviorView) : '')
     ].filter(Boolean).join(' | ')) + '</div>' : '') +
-    ((p.collectors || p.dataset || p.project) ? '<div>' + escapeHtml([
-      p.collectors || '',
-      p.dataset || '',
-      p.project || ''
+    ((collectorsView || datasetView || projectView) ? '<div>' + escapeHtml([
+      collectorsView || '',
+      datasetView || '',
+      projectView || ''
     ].filter(Boolean).join(' | ')) + '</div>' : '')
   );
   const speciesExtraHtml = speciesExtra ? '<div class="small species-extra">' + speciesExtra + '</div>' : '';

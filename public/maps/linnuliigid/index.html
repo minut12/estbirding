@@ -1185,6 +1185,80 @@ function parseElurikkusDetailFields(detailHtml, occurrenceUrl){
   }
   return out;
 }
+function _clean(s){ return String(s||'').replace(/\s+/g,' ').trim(); }
+function _getLabelValueFromDoc(doc, labelVariants){
+  const labels = (labelVariants || []).map(function(x){ return String(x).toLowerCase(); });
+  const nodes = Array.from(doc.querySelectorAll('dt,th,td,strong,b,span,div'));
+  for(const n of nodes){
+    const t = _clean(n.textContent).toLowerCase();
+    if(!t) continue;
+    if(!labels.includes(t)) continue;
+    let v = '';
+    const next = n.nextElementSibling;
+    if(next) v = _clean(next.textContent);
+    if(!v){
+      const tr = n.closest('tr');
+      if(tr){
+        const cells = tr.querySelectorAll('th,td');
+        if(cells.length >= 2) v = _clean(cells[1].textContent);
+      }
+    }
+    if(v) return v;
+  }
+  return '';
+}
+function _getLabelValueRegex(html, labelVariants){
+  const h = String(html || '');
+  for(const lab of (labelVariants || [])){
+    const esc = String(lab).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const re = new RegExp(esc + '[\\s\\S]{0,180}?>\\s*([^<]{1,200})\\s*<', 'i');
+    const m = h.match(re);
+    if(m && m[1]) return _clean(m[1]);
+  }
+  return '';
+}
+function parseElurikkusSidebarFields(detailHtml, detailUrl){
+  const out = {
+    detailUrl: String(detailUrl || ''),
+    occurrenceId: ((String(detailUrl || '').match(/occurrence\/(\d+)/i) || [])[1]) || '',
+    individualCount: '',
+    collectors: '',
+    behavior: '',
+    communes: '',
+    municipality: '',
+    county: '',
+    locality: '',
+    districts: '',
+    eestiOmavalitsused: ''
+  };
+  if(/Koordinaadid peidetud|Coordinates hidden|Restricted/i.test(String(detailHtml || ''))){
+    // restricted usually affects only coordinates; textual fields may still exist
+  }
+  try{
+    const doc = new DOMParser().parseFromString(String(detailHtml || ''), 'text/html');
+    out.individualCount = _getLabelValueFromDoc(doc, ['Individual count', 'Isendite arv']) || out.individualCount;
+    out.collectors = _getLabelValueFromDoc(doc, ['Collectors', 'Kogujad']) || out.collectors;
+    out.behavior = _getLabelValueFromDoc(doc, ['Behavior', 'Käitumine']) || out.behavior;
+    out.communes = _getLabelValueFromDoc(doc, ['Communes', 'Kommuunid']) || out.communes;
+    out.municipality = _getLabelValueFromDoc(doc, ['Municipality', 'Omavalitsus']) || out.municipality;
+    out.county = _getLabelValueFromDoc(doc, ['County', 'Maakond']) || out.county;
+    out.locality = _getLabelValueFromDoc(doc, ['Locality', 'Asukoht']) || out.locality;
+    out.districts = _getLabelValueFromDoc(doc, ['Districts', 'Piirkonnad']) || out.districts;
+    out.eestiOmavalitsused = _getLabelValueFromDoc(doc, ['Eesti omavalitsused']) || out.eestiOmavalitsused;
+  }catch(e){}
+  const html = String(detailHtml || '');
+  out.individualCount ||= _getLabelValueRegex(html, ['Individual count','Isendite arv']);
+  out.collectors ||= _getLabelValueRegex(html, ['Collectors','Kogujad']);
+  out.behavior ||= _getLabelValueRegex(html, ['Behavior','Käitumine']);
+  out.communes ||= _getLabelValueRegex(html, ['Communes','Kommuunid']);
+  out.municipality ||= _getLabelValueRegex(html, ['Municipality','Omavalitsus']);
+  out.county ||= _getLabelValueRegex(html, ['County','Maakond']);
+  out.locality ||= _getLabelValueRegex(html, ['Locality','Asukoht']);
+  out.districts ||= _getLabelValueRegex(html, ['Districts','Piirkonnad']);
+  out.eestiOmavalitsused ||= _getLabelValueRegex(html, ['Eesti omavalitsused']);
+  Object.keys(out).forEach(function(k){ if(typeof out[k] === 'string') out[k] = _clean(out[k]); });
+  return out;
+}
 function parseEluSearchRows(html){
   const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
   const tbody = doc.querySelector('table tbody');
@@ -1747,6 +1821,7 @@ async function autoFetchCoords(key, searchUrl, signal){
   let coordSource = '';
   let detailUrl = '';
   let detailFields = null;
+  let detailExtra = null;
   if(coords){
     coordDate = latestSeenDate || dateIsoFromAny(eventDate || '') || '';
     coordSource = 'elurikkus_search_page';
@@ -1760,6 +1835,7 @@ async function autoFetchCoords(key, searchUrl, signal){
         const detailHtml = await tryFetch(occUrl, { signal: signal });
         const latlon = extractLatLon(detailHtml);
         detailFields = parseElurikkusDetailFields(detailHtml, occUrl);
+        detailExtra = parseElurikkusSidebarFields(detailHtml, occUrl);
         if(latlon && _hasFiniteCoord(Number(latlon[0])) && _hasFiniteCoord(Number(latlon[1]))){
           coords = latlon;
           coordDate = dateIsoFromAny(String((probeRows[i] && probeRows[i].dateText) || '')) || dateIsoFromAny(extractEventDate(detailHtml) || '');
@@ -1790,6 +1866,7 @@ async function autoFetchCoords(key, searchUrl, signal){
       try{
         const detailHtml = await tryFetch(fallbackDetailUrl, { signal: signal });
         detailFields = parseElurikkusDetailFields(detailHtml, fallbackDetailUrl);
+        detailExtra = parseElurikkusSidebarFields(detailHtml, fallbackDetailUrl);
         if(!detailUrl) detailUrl = fallbackDetailUrl;
       }catch(e){}
     }
@@ -1852,6 +1929,11 @@ async function autoFetchCoords(key, searchUrl, signal){
       county: detailFields.county || '',
       coordsStatus: detailCoordsStatus
     }, 'warn');
+    changed = true;
+  }
+  if(detailExtra){
+    p.eluExtra = detailExtra;
+    p.openUrl = String(detailExtra.detailUrl || detailUrl || p.openUrl || '').trim();
     changed = true;
   }
   if(shouldApply){
@@ -2651,7 +2733,7 @@ function _refreshBuildStampUi(){
   const stampEl = document.getElementById('buildStampLine');
   const badgeEl = document.getElementById('cacheStatusBadge');
   const nowIso = new Date().toISOString();
-  if(stampEl) stampEl.textContent = 'BUILD: ' + MAP_BUILD_ID + ' | stamp: ' + MAP_BUILD_STAMP + ' | now: ' + nowIso;
+  if(stampEl) stampEl.textContent = 'BUILD: ' + MAP_BUILD_ID + ' | stamp: ' + MAP_BUILD_STAMP + ' | EXTRA_FIELDS_V1 | now: ' + nowIso;
   if(badgeEl) badgeEl.textContent = 'cache: swController=' + (_swControllerActive() ? 'yes' : 'no');
 }
 async function _hardReloadNow(){
@@ -3051,6 +3133,20 @@ function _applySelectedOccurrenceFromServer(speciesName, json){
     }
     p.src = 'Elurikkus';
     p.lastFetched = fetchedAt;
+    p.eluExtra = {
+      detailUrl: String(detail.occurrenceUrl || occUrl || ''),
+      occurrenceId: String(detail.occurrenceId || selected.occurrenceId || ''),
+      individualCount: (detail.individualCount == null ? '' : String(detail.individualCount)),
+      collectors: String(detail.collectors || ''),
+      behavior: String(detail.behavior || ''),
+      communes: String(detail.communes || ''),
+      municipality: String(detail.municipality || ''),
+      county: String(detail.county || ''),
+      locality: String(detail.locality || ''),
+      districts: String(detail.districts || ''),
+      eestiOmavalitsused: String(detail.eestiOmavalitsused || '')
+    };
+    p.openUrl = p.eluExtra.detailUrl || p.openUrl || '';
     console.log('ELU DETAIL STORED', speciesName, p.elurikkus);
   }
   const moved = applied && isValidEE(oldLat, oldLon) && isValidEE(lat, lon)
@@ -5757,7 +5853,6 @@ function escapeHtml(s){
 function rowHTML(obj) {
   const key = obj.est;
   const p = points[key] || {};
-  const elu = (p.elurikkus && typeof p.elurikkus === 'object') ? p.elurikkus : {};
   const bcol = _borderColorByDate(p.t);
   const hasPoint = Number.isFinite(p.lat) && Number.isFinite(p.lon);
   const muted = (p.visible===false) ? 'muted' : '';
@@ -5767,26 +5862,21 @@ function rowHTML(obj) {
   const meta = hasPoint
     ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
     : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
-  const extraParts = [];
-  if (p.observedAt) extraParts.push('<div>' + escapeHtml(p.observedAt) + '</div>');
-  const placeLine = [p.municipality, p.locality, p.county].filter(Boolean).join(' | ');
-  if (placeLine) extraParts.push('<div>' + escapeHtml(placeLine) + '</div>');
-  const statsLine = [
-    p.country || '',
-    (p.individualCount != null ? 'count:' + p.individualCount : ''),
-    (p.behavior ? 'behavior:' + p.behavior : '')
-  ].filter(Boolean).join(' | ');
-  if (statsLine) extraParts.push('<div>' + escapeHtml(statsLine) + '</div>');
-  const sourceLine = [
-    p.collectors || '',
-    p.dataset || '',
-    p.project || ''
-  ].filter(Boolean).join(' | ');
-  if (sourceLine) extraParts.push('<div>' + escapeHtml(sourceLine) + '</div>');
-  const extraInfoLine = extraParts.length
-    ? ('<div class="small species-extra" style="margin-top:4px;line-height:1.35">' + extraParts.join('') + '</div>')
-    : '';
-  const openUrl = String((p.openUrl || p.latestUrl || p.searchUrl || obj.url) || obj.url);
+  const x = (p.eluExtra || {});
+  function showVal(v){ return (v && String(v).trim()) ? escapeHtml(String(v)) : '-'; }
+  const extraBlock =
+    '<div class="species-extra" style="margin-top:6px;font-size:12px;line-height:1.35;opacity:.9">' +
+      '<div><b>Individual count:</b> ' + showVal(x.individualCount) + '</div>' +
+      '<div><b>Collectors:</b> ' + showVal(x.collectors) + '</div>' +
+      '<div><b>Behavior:</b> ' + showVal(x.behavior) + '</div>' +
+      '<div><b>Communes:</b> ' + showVal(x.communes) + '</div>' +
+      '<div><b>Municipality:</b> ' + showVal(x.municipality) + '</div>' +
+      '<div><b>County:</b> ' + showVal(x.county) + '</div>' +
+      '<div><b>Locality:</b> ' + showVal(x.locality) + '</div>' +
+      '<div><b>Districts:</b> ' + showVal(x.districts) + '</div>' +
+      '<div><b>Eesti omavalitsused:</b> ' + showVal(x.eestiOmavalitsused) + '</div>' +
+    '</div>';
+  const openUrl = String((p.openUrl || (p.eluExtra && p.eluExtra.detailUrl) || p.latestUrl || p.searchUrl || obj.url) || obj.url);
 
   return '<div class="row" data-key="'+key+'">' +
     '<div class="avatar" style="background-image:url(\''+getDisplayAvatar(key)+'\');border:3px solid '+bcol+'"></div>' +
@@ -5795,7 +5885,7 @@ function rowHTML(obj) {
         '<div class="name-row"><div class="name-label clickable '+muted+'" onclick="toggleVisibility(\''+key+'\')">'+key+'</div>' + (rarityText ? '<span class="rarity-badge" title="Haruldus">'+rarityText+'</span>' : '') + '</div>' +
       '</div>' +
       '<div class="small">'+meta+'</div>' +
-      extraInfoLine +
+      extraBlock +
     '</div>' +
     '<div class="controls">' +
       '<div style="display:flex;flex-direction:column;gap:6px">' +

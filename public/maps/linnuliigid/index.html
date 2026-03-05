@@ -927,15 +927,17 @@ function _dateOnlyFromAny(v){
   const m = s.match(/(\d{4}-\d{2}-\d{2})/);
   return m ? m[1] : '';
 }
-function _recomputeClientDataMaxAt(){
-  let maxTs = 0;
-  Object.keys(points || {}).forEach(function(k){
-    const p = points[k] || {};
-    const ts = _parseObservedTs(p.t || p.date || p.observedAt || '');
-    if(Number.isFinite(ts) && ts > maxTs) maxTs = ts;
+function updateClientDataMaxAtFromPoints(){
+  let best = '';
+  Object.keys(points || {}).forEach(function(name){
+    const d = String((points[name] || {}).t || '');
+    if(d && (!best || d > best)) best = d;
   });
-  window.__clientDataMaxAt = maxTs > 0 ? new Date(maxTs).toISOString() : '';
-  return window.__clientDataMaxAt;
+  if(best) __clientDataMaxAt = best;
+  return __clientDataMaxAt || '';
+}
+function _recomputeClientDataMaxAt(){
+  return updateClientDataMaxAtFromPoints();
 }
 function extractEventDate(html){
   const s = String(html || '');
@@ -1164,7 +1166,6 @@ async function _fetchElurikkusSpeciesViaHtml(speciesName){
   let dates = rows.map(function(r){ return r.observedAt; });
   if(!dates || !dates.length){
     dates = extractElurikkusRecordDatesIso(html);
-    if(!dates || !dates.length) dates = extractAllEventDates(html);
     rows = (dates || []).map(function(d){ return { observedAt: d, municipality: '', locality: '', county: '', coordsStatus: 'restricted' }; });
   }
   const items = (rows || []).slice(0, 500).map(function(r){
@@ -1514,7 +1515,7 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
   const searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(name) + '&_ts=' + Date.now();
   const shtml = await tryFetch(searchUrl, { signal: signal, requireOccLink: true });
   const rows = extractOccurrenceCandidates(shtml);
-  const dates = extractAllEventDates(shtml);
+  const dates = extractElurikkusRecordDatesIso(shtml);
   const occ7 = countInLastNDaysFromDates(dates, 7);
   const newestDateText = rows[0] ? String(rows[0].dateText || '') : '';
   let detailTried = 0;
@@ -1586,7 +1587,8 @@ async function autoFetchCoords(key, searchUrl, signal){
   const searchHtml = await tryFetch(url, { signal: signal });
   let coords = extractLatLon(searchHtml);
   let eventDate = extractEventDate(searchHtml);
-  const occ7 = countInLastNDaysFromDates(extractAllEventDates(searchHtml), 7);
+  const occ7Dates = extractElurikkusRecordDatesIso(searchHtml);
+  const occ7 = countInLastNDaysFromDates(occ7Dates, 7);
   let detailUrl = '';
   if(!coords){
     detailUrl = findFirstDetailLink(searchHtml);
@@ -1618,6 +1620,8 @@ async function autoFetchCoords(key, searchUrl, signal){
     p.src = 'Elurikkus';
     p.lastFetched = new Date().toISOString();
     p.occ7 = (nextOcc7 === null ? (Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : 0) : nextOcc7);
+    p.occ7Source = 'elurikkus_records_table';
+    p.occ7DatesSample = (occ7Dates || []).slice(0, 10);
     changed = true;
   }
   p.searchUrl = url;
@@ -1688,13 +1692,13 @@ async function refreshAllElurikkusOnce(){
       const r = await autoFetchCoords(name, searchUrl, signal);
       if(r && r.updated) updated++;
       if(r && r.moved) moved++;
-      const line = 'Elurikkus refresh: ' + (i + 1) + '/' + total + ' | last:' + name + ' | updated:' + updated + ' | moved:' + moved + ' | errors:' + errors;
+      const line = 'Elurikkus refresh: ' + (i + 1) + '/' + total + ' | last:' + name + ' | updated:' + updated + ' | moved:' + moved + ' | errors:' + errors + ' | clientLatest=' + (updateClientDataMaxAtFromPoints() || '-');
       if(progEl) progEl.textContent = line;
       if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = line; }
       if(eluLastCoord) eluLastCoord.textContent = line;
     }catch(e){
       errors++;
-      const msg = 'Elurikkus refresh: ' + (i + 1) + '/' + total + ' | last:' + name + ' | updated:' + updated + ' | moved:' + moved + ' | errors:' + errors;
+      const msg = 'Elurikkus refresh: ' + (i + 1) + '/' + total + ' | last:' + name + ' | updated:' + updated + ' | moved:' + moved + ' | errors:' + errors + ' | clientLatest=' + (updateClientDataMaxAtFromPoints() || '-');
       if(progEl) progEl.textContent = msg;
       if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = msg; }
       if(eluLastCoord) eluLastCoord.textContent = msg;
@@ -1702,7 +1706,9 @@ async function refreshAllElurikkusOnce(){
     __elurikkusBulkStats = { done: i + 1, total: total, updated: updated, moved: moved, errors: errors, lastKey: name };
     await new Promise(function(res){ setTimeout(res, 900); });
   }
-  _recomputeClientDataMaxAt();
+  updateClientDataMaxAtFromPoints();
+  rebuildAllMarkers();
+  render();
   try{ _updateServerSnapshotStatus(); }catch(e){}
   const aborted = !!(signal && signal.aborted);
   const doneMsg = aborted
@@ -1785,6 +1791,11 @@ function isRecent(isoDate){
     const diff = Date.now() - ms;
     return diff >= 0 && diff <= 7 * 24 * 60 * 60 * 1000;
   }catch(e){ return false; }
+}
+function hasRecentObservation(p){
+  if(!p) return false;
+  if(Number.isFinite(p.occ7)) return Number(p.occ7) > 0;
+  return isRecent(p.t);
 }
 
 function _borderColorByDate(isoDate){
@@ -1904,7 +1915,7 @@ let __serverSnapshotId = '';
 let __serverGeneratedAt = '';
 let __serverBytes = 0;
 let __serverDataMaxAt = '';
-window.__clientDataMaxAt = '';
+let __clientDataMaxAt = '';
 let __serverDataMinAt = '';
 let __serverCheckedAt = '';
 let __lastProcessedSnapshotId = '';
@@ -2348,7 +2359,7 @@ function _updateServerSnapshotStatus(){
   const err = (__serverCheckStatus === 'error' && __serverCheckError) ? ('; check error: ' + __serverCheckError) : '';
   const ageText = (latestAgeHours == null) ? '-' : (latestAgeHours.toFixed(1) + 'h');
   if(clientWins){
-    el.textContent = 'Elurikkus (client): latest occurrence ' + latestClient + ' | Snapshot (server): latest occurrence ' + latest + ' (age: ' + ageText + ') | built at ' + gen + ' | Checked: ' + chk + err;
+    el.textContent = 'Elurikkus (client): latest occurrence ' + latestClient + ' | Snapshot (server): latest occurrence ' + latest + ' (age: ' + ageText + ') | built at ' + gen + ' | checked ' + chk + ' | Client data is fresher than current snapshot' + (staleNote ? (' | Secondary: ' + staleNote) : '') + err;
     return;
   }
   const clientPrefix = clientMax ? ('Elurikkus (client): latest occurrence ' + latestClient + ' | ') : '';
@@ -3601,13 +3612,13 @@ function _explainInclusion(key, p){
   const ageDays = hasDate ? ((Date.now() - parsedTs) / (24 * 60 * 60 * 1000)) : null;
   const withinByDate = hasDate && parsedTs >= cutoffTs;
   const withinByOcc7 = Number.isFinite(point.occ7) && point.occ7 > 0;
+  const withinEffective = hasRecentObservation(point);
   const reasonsExcluded = [];
   if(point.visible === false) reasonsExcluded.push('SOURCE_DISABLED');
   if(!hasCoords) reasonsExcluded.push('MISSING_COORDS');
   if(!hasDate) reasonsExcluded.push('MISSING_DATE');
   if(is7daysOnly()){
-    if(!hasDate) reasonsExcluded.push('MISSING_DATE');
-    if(!withinByDate) reasonsExcluded.push('OUTSIDE_7D');
+    if(!withinEffective) reasonsExcluded.push('OUTSIDE_7D');
   }
   return {
     species: key,
@@ -3621,8 +3632,11 @@ function _explainInclusion(key, p){
     coordsStatus: point.coords_status || (hasCoords ? 'public' : 'missing'),
     coordsSource: point.coords_source || (hasCoords ? 'exact' : 'none'),
     occ7: Number(point.occ7 || 0) || 0,
+    occ7Source: String(point.occ7Source || ''),
     withinByDate: !!withinByDate,
     withinByOcc7: !!withinByOcc7,
+    passesRecent: !!withinEffective,
+    usedFallback: !!(String(point.coords_source || '').indexOf('snapshot') >= 0 || String(point.coords_source || '').indexOf('centroid') >= 0),
   };
 }
 function _computeSnapshotInspector(){
@@ -3920,6 +3934,7 @@ function _computeDebugProObject(){
       lastElurikkusError: __lastElurikkusError || '',
       lastElurikkusSource: __lastElurikkusSource || '',
       lastElurikkusCacheHit: __lastElurikkusCacheHit || null,
+      clientDataMaxAt: __clientDataMaxAt || '',
       lastLiveCoordsDecision: __lastLiveCoordsDecision || null,
       lastElurikkusPing: __lastElurikkusPing || null,
       lockLiveOverridesDuringRefresh: __lockLiveOverridesDuringRefresh ? 'on' : 'off',
@@ -3931,6 +3946,19 @@ function _computeDebugProObject(){
       lastBulkOutcomes: (window.__lastElurikkusBulkOutcomes || []).slice(0, 20),
       lastBulkErrors: (window.__lastElurikkusBulkErrors || []).slice(0, 20),
       eluCoordTrace: (window.__eluCoordTrace || []).slice(0, 20),
+      speciesStateTop: Object.keys(points || {}).slice(0, 50).map(function(name){
+        const p = points[name] || {};
+        const coordsSource = String(p.coords_source || (Number.isFinite(p.lat) && Number.isFinite(p.lon) ? 'exact' : 'none'));
+        return {
+          species: name,
+          occ7: Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : null,
+          occ7Source: String(p.occ7Source || ''),
+          t: String(p.t || ''),
+          passesRecent: hasRecentObservation(p),
+          coordsSource: coordsSource,
+          usedFallback: !!(coordsSource.indexOf('snapshot') >= 0 || coordsSource.indexOf('centroid') >= 0),
+        };
+      }),
     },
     logs: __internalLogs.slice(0,50),
   };
@@ -4020,6 +4048,7 @@ function _updateDebugProPanel(){
     '<div>lastElurikkusLatestOccurrenceAt: <b>' + (dbg.upstreamDebug.lastElurikkusLatestOccurrenceAt || '-') + '</b></div>' +
     '<div>lastElurikkusItemsCount: <b>' + (dbg.upstreamDebug.lastElurikkusItemsCount || 0) + '</b></div>' +
     '<div>lastElurikkusSource: <b>' + (dbg.upstreamDebug.lastElurikkusSource || '-') + '</b></div>' +
+    '<div>clientDataMaxAt: <b>' + (dbg.upstreamDebug.clientDataMaxAt || '-') + '</b></div>' +
     '<div>lastElurikkusCacheHit: <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastElurikkusCacheHit || null).replace(/</g,'&lt;') + '</span></div>' +
     '<div>lastLiveCoordsDecision: <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastLiveCoordsDecision || null).replace(/</g,'&lt;') + '</span></div>' +
     '<div>lastElurikkusError: <b>' + (dbg.upstreamDebug.lastElurikkusError || '-') + '</b></div>' +
@@ -4029,6 +4058,7 @@ function _updateDebugProPanel(){
     '<div>lastBulkSummary: <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastBulkSummary || null).replace(/</g,'&lt;') + '</span></div>' +
     '<div>lastBulkOutcomes(top20): <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastBulkOutcomes || []).replace(/</g,'&lt;') + '</span></div>' +
     '<div>lastBulkErrors(top20): <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastBulkErrors || []).replace(/</g,'&lt;') + '</span></div>' +
+    '<div>speciesState(top50): <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.speciesStateTop || []).replace(/</g,'&lt;') + '</span></div>' +
     '<div>Elurikkus coord trace(last20)</div><table class="debug-pro-table"><thead><tr><th>species</th><th>old->applied</th><th>found</th><th>source</th><th>moved</th><th>reason</th></tr></thead><tbody>' + coordRows + '</tbody></table>' +
     '<div style="margin-top:6px"><button class="btn secondary" onclick="_debugPingElurikkus()">Ping server</button></div>' +
     '<div>lastPing: <span class="debug-pro-code">' + JSON.stringify(dbg.upstreamDebug.lastElurikkusPing || null).replace(/</g,'&lt;') + '</span></div></div>' +
@@ -4161,7 +4191,8 @@ async function _applySnapshot(snap){
   _setResumeIndex(__snapshotProgressDone);
   _recomputeClientDataMaxAt();
   save();
-  refreshAllMarkers();
+  rebuildAllMarkers();
+  render();
 }
 
 function refreshAllMarkers(){
@@ -4172,10 +4203,22 @@ function refreshAllMarkers(){
   if(__loaderStage === 'ready') __lastErrorMessage = '';
   _updateDebugPanel();
 }
+function rebuildAllMarkers(){
+  try{
+    if(markers && typeof markers.forEach === 'function'){
+      markers.forEach(function(m){
+        try{ map.removeLayer(m); }catch(e){}
+      });
+      markers.clear();
+    }
+  }catch(e){}
+  __renderedMarkerCount = 0;
+  Object.keys(points || {}).forEach(updateMarker);
+}
 
 function _checkEmpty7dBanner(){
   if(!is7daysOnly()) return;
-  const recentCount = SPECIES.filter(n => { const p = points[n]; return p && isWithin7d(p); }).length;
+  const recentCount = SPECIES.filter(n => { const p = points[n]; return p && hasRecentObservation(p); }).length;
   const totalWithCoords = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.lat); }).length;
   if(recentCount === 0 && totalWithCoords > 0){
     _showSnapshotBanner('No observations in last 7 days in current dataset. Turn off "7 days only" to see all known locations.', 'warn', true);
@@ -4745,7 +4788,7 @@ function _wireSnapshotButtons(){
       window.__recentOnly = this.checked;
       try{ localStorage.setItem(LS_RECENT_ONLY, this.checked ? '1' : '0'); }catch(e){}
       if(btnToggle7p) btnToggle7p.textContent = '7p: ' + (window.__recentOnly ? 'ON' : 'OFF');
-      refreshAllMarkers();
+      rebuildAllMarkers();
       render();
       _updateDebugPanel();
       if(this.checked) _checkEmpty7dBanner();
@@ -4864,7 +4907,7 @@ function _wireSidebarSettingsRow(){
       const cb = document.getElementById('toggle7days');
       if(cb) cb.checked = !!window.__recentOnly;
       refresh7pBtn();
-      refreshAllMarkers();
+      rebuildAllMarkers();
       render();
       _updateDebugPanel();
     });
@@ -4873,8 +4916,8 @@ function _wireSidebarSettingsRow(){
 }
 
 // === Auto-refresh via postMessage (parent app sends these) ===
-function refreshVisible(){ refreshAllMarkers(); render(); }
-function refreshSelected(){ refreshAllMarkers(); render(); }
+function refreshVisible(){ rebuildAllMarkers(); render(); }
+function refreshSelected(){ rebuildAllMarkers(); render(); }
 
 window.addEventListener('message', function(ev){
   try{
@@ -5060,7 +5103,7 @@ function updateMarker(key) {
 
   const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
   const occ7 = (p.occ7 === 0 || p.occ7) ? Number(p.occ7) : NaN;
-  const passesRecent = (!window.__recentOnly) || isWithin7d(p);
+  const passesRecent = (!window.__recentOnly) || hasRecentObservation(p);
   const isVisible = (p.visible !== false) && passesRecent && hasCoords;
   if (!isVisible) {
     if(prevMarker){
@@ -5291,7 +5334,9 @@ function render() {
 })();
 
 // Restore existing markers from localStorage and render list
+updateClientDataMaxAtFromPoints();
 refreshAllMarkers();
+_updateServerSnapshotStatus();
 _wireSnapshotButtons();
 _wireSidebarSettingsRow();
 function _startSnapshotBoot(){
@@ -5759,6 +5804,7 @@ var __sharedDefaults = {};
 
 </body>
 </html>
+
 
 
 

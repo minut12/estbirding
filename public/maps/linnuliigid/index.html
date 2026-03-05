@@ -825,10 +825,10 @@ function _toDay(s){
 }
 function normDateISO(s){
   if(!s) return '';
-  const str = String(s).trim();
+  const str = String(s).replace(/\u00a0/g,' ').trim();
   let m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if(m) return m[1] + '-' + m[2] + '-' + m[3];
-  m = str.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  m = str.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
   if(m) return m[3] + '-' + m[2] + '-' + m[1];
   return '';
 }
@@ -1005,76 +1005,58 @@ function parseEluRowDatesFromSearchHtml(searchHtml){
   return dates;
 }
 async function computeOcc7MultiPage(species, signal, maxPages){
-  const tryFetchHtml = function(u, sig){
-    return tryFetch(u, { signal: sig, cache: 'no-store' });
-  };
-  const cutoff = cutoffMs7d();
+  const tryFetchHtml = function(u, sig){ return tryFetch(u, { signal: sig, cache: 'no-store' }); };
+  const cutoff = cutoffIso7d();
+  const base = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(String(species || ''));
+  let url = base + '&_ts=' + Date.now();
+  let page = 1;
+  let pagesScanned = 0;
   const seenOcc = new Set();
-  const seenPageSig = new Set();
-  const pageLimit = Math.max(1, Number(maxPages || 20) || 20);
+  const seenSig = new Set();
   let occ7 = 0;
-  let pages = 0;
-  let rowsParsedTotal = 0;
   let newestIso = '';
   let oldestIso = '';
   let pagingMode = 'none';
-  const base = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(String(species || ''));
-  let url = base + '&_ts=' + Date.now();
-  let fallbackPage = 1;
-  while(url && pages < pageLimit){
+  let rowsParsedTotal = 0;
+  const pageLimit = Math.max(1, Number(maxPages || 20) || 20);
+  while(url && pagesScanned < pageLimit){
     if(signal && signal.aborted) break;
     const html = await tryFetchHtml(url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now(), signal);
-    const rows = parseEluRowsResilient(html);
+    const rows = parseEluRowsIso(html);
     rowsParsedTotal += rows.length;
     if(rows.length === 0) break;
-    pages++;
-    const first = rows[0].occId;
-    const last = rows[rows.length - 1].occId;
-    const sig = String(first || '') + ':' + String(last || '');
-    if(seenPageSig.has(sig)) break;
-    seenPageSig.add(sig);
+    pagesScanned++;
+    const sig = String(rows[0].occId || '') + ':' + String(rows[rows.length-1].occId || '');
+    if(seenSig.has(sig)) break;
+    seenSig.add(sig);
     const pageIsos = rows.map(function(r){ return r.iso; }).filter(Boolean);
-    const pageNewest = pageIsos.reduce(function(a,b){ return b > a ? b : a; }, '');
-    const pageOldest = pageIsos.reduce(function(a,b){ return b < a ? b : a; }, pageIsos[0] || '');
-    if(pages === 1) newestIso = pageNewest;
+    const pageNewest = pageIsos.reduce(function(a,b){ return b>a?b:a; }, '');
+    const pageOldest = pageIsos.reduce(function(a,b){ return b<a?b:a; }, pageIsos[0]||'');
+    if(pagesScanned === 1) newestIso = pageNewest;
     oldestIso = pageOldest || oldestIso;
     let anyWithin = false;
-    let minMs = null;
     for(const r of rows){
       if(seenOcc.has(r.occId)) continue;
       seenOcc.add(r.occId);
-      const ms = Number.isFinite(r.ms) ? r.ms : (r.iso ? parseEluDateMs(r.iso + ' 00:00:00') : null);
-      if(ms == null) continue;
-      minMs = (minMs == null) ? ms : Math.min(minMs, ms);
-      if(ms >= cutoff){
+      if(r.iso >= cutoff){
         occ7++;
         anyWithin = true;
       }
     }
     if(!anyWithin) break;
-    if(minMs != null && minMs < cutoff) break;
-    let next = extractNextUrl(html, url);
+    if(pageOldest && pageOldest < cutoff) break;
+    const next = extractNextUrl(html);
     if(next){
       pagingMode = 'next';
-      if(next === url) break;
       url = next;
     } else {
       pagingMode = 'page';
-      fallbackPage++;
-      url = buildPageUrl(base, fallbackPage);
+      page++;
+      url = buildPageUrl(base, page);
     }
     await new Promise(function(r){ setTimeout(r, 350); });
   }
-  return {
-    occ7: occ7,
-    newestIso: newestIso,
-    pagesScanned: pages,
-    rowsParsedTotal: rowsParsedTotal,
-    uniqueOcc: seenOcc.size,
-    pagingMode: pagingMode,
-    cutoffIso: normDateISO(new Date(cutoff).toISOString()),
-    oldestIso: oldestIso
-  };
+  return { occ7: occ7, newestIso: newestIso, oldestIso: oldestIso, cutoff: cutoff, pagesScanned: pagesScanned, rowsParsedTotal: rowsParsedTotal, uniqueOcc: seenOcc.size, pagingMode: pagingMode };
 }
 function dateIsoFromAny(s){
   const str = String(s || '').trim();
@@ -1417,9 +1399,9 @@ function parseElurikkusExtraFromText(detailHtml, detailUrl){
   return out;
 }
 function parseEluSearchRows(html){
-  return parseEluRowsResilient(html);
+  return parseEluRowsIso(html);
 }
-function parseEluRowsResilient(html){
+function parseEluRowsIso(html){
   const out = [];
   try{
     const doc = new DOMParser().parseFromString(String(html||''), 'text/html');
@@ -1427,13 +1409,13 @@ function parseEluRowsResilient(html){
     for(const tr of trs){
       const a = tr.querySelector('a[href*="/app/occurrences/occurrence/"]');
       const href = a ? (a.getAttribute('href')||'') : '';
-      const id = (String(href).match(/occurrence\/(\d+)/i) || [])[1];
+      const id = (String(href).match(/occurrence\/(\d+)/i)||[])[1];
       if(!id) continue;
       const td0 = tr.querySelector('td');
-      const dt = td0 ? String(td0.textContent||'').trim() : '';
-      const ms = parseEluDateMs(dt);
+      const dt = td0 ? (td0.textContent||'') : '';
       const iso = normDateISO(dt);
-      out.push({ occId:id, ms:ms, iso:iso });
+      if(!iso) continue;
+      out.push({ occId:id, iso:iso });
     }
   }catch(e){}
   if(out.length) return out;
@@ -1442,15 +1424,17 @@ function parseEluRowsResilient(html){
   let m;
   while((m = trRe.exec(text)) !== null){
     const tr = m[1];
-    const id = (String(tr).match(/\/app\/occurrences\/occurrence\/(\d+)/i) || [])[1];
+    const id = (String(tr).match(/\/app\/occurrences\/occurrence\/(\d+)/i)||[])[1];
     if(!id) continue;
-    const dm = String(tr).match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})(?::(\d{2}))?/);
-    const dt = dm ? (dm[1] + ' ' + dm[2] + ':' + (dm[3] || '00')) : '';
-    const ms = parseEluDateMs(dt);
-    const iso = normDateISO(dt);
-    out.push({ occId:id, ms:ms, iso:iso });
+    const dm = String(tr).match(/(\d{4}-\d{2}-\d{2})/);
+    const iso = dm ? dm[1] : '';
+    if(!iso) continue;
+    out.push({ occId:id, iso:iso });
   }
   return out;
+}
+function parseEluRowsResilient(html){
+  return parseEluRowsIso(html);
 }
 function absOccUrl(href){
   if(!href) return '';
@@ -1518,7 +1502,7 @@ function extractNextPageUrl(searchHtml){
   }
   return '';
 }
-function extractNextUrl(html, currentUrl){
+function extractNextUrl(html){
   try{
     const doc = new DOMParser().parseFromString(String(html||''), 'text/html');
     const ln = doc.querySelector('link[rel="next"]');
@@ -2171,6 +2155,11 @@ async function autoFetchCoords(key, searchUrl, signal){
   const occ7Dates = parseEluRowDatesFromSearchHtml(searchHtml).map(dateIsoFromAny).filter(Boolean);
   const occ7Multi = await computeOcc7MultiPage(species, signal, 20);
   const occ7 = Number.isFinite(Number(occ7Multi.occ7)) ? Number(occ7Multi.occ7) : 0;
+  p.eluExtra = p.eluExtra || {};
+  p.eluExtra.__pages = Number((occ7Multi && occ7Multi.pagesScanned) || 0) || 0;
+  p.eluExtra.__occ7debug = occ7Multi || null;
+  try{ save(); }catch(e){}
+  try{ render(); }catch(e){}
   const newestFromRows = rows
     .map(function(r){ return dateIsoFromAny(String(r && r.dateText || '')); })
     .filter(Boolean)
@@ -2346,11 +2335,6 @@ async function autoFetchCoords(key, searchUrl, signal){
   if(detailExtra){
     p.openUrl = String((p.eluExtra && p.eluExtra.detailUrl) || detailUrl || p.openUrl || '').trim();
     changed = true;
-  try{ save(); }catch(e){}
-  try{ render(); }catch(e){}
-  p.eluExtra = p.eluExtra || {};
-  p.eluExtra.__pages = Number((occ7Multi && occ7Multi.pagesScanned) || 0) || 0;
-  p.eluExtra.__occ7debug = occ7Multi || null;
     console.log('ELU EXTRA', key, p.eluExtra);
   }
   if(shouldApply){
@@ -6213,7 +6197,7 @@ function updateMarker(key) {
   const whenDt = p.t_dt ? ('<br><small>pickedDateTime: ' + String(p.t_dt) + '</small>') : '';
   const src = p.src ? '<br><small>allikas: '+p.src+'</small>' : '';
   const occLine = p.latestUrl ? ('<br><small>pickedOcc: ' + String(p.latestUrl).replace(/^.*occurrence\//,'') + '</small>') : '';
-  const occDbg = (p.eluExtra && p.eluExtra.__occ7debug)
+  const occDbg = (VERBOSE_DEBUG && p.eluExtra && p.eluExtra.__occ7debug)
     ? ('<br><small>occ7Debug: pages=' + Number(p.eluExtra.__occ7debug.pagesScanned || 0) + ' rows=' + Number(p.eluExtra.__occ7debug.rowsParsedTotal || 0) + ' unique=' + Number(p.eluExtra.__occ7debug.uniqueOcc || 0) + ' mode=' + String(p.eluExtra.__occ7debug.pagingMode || '-') + '</small>')
     : '';
   const effectiveCoordSource = String(p.coordSource || p.coords_source || '').trim();

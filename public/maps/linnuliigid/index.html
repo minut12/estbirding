@@ -284,6 +284,9 @@ const CLASSIC_MODE = false;
 const LS_LIVE_ELURIKKUS = 'bm_live_elurikkus_v1';
 const LS_LIVE_ELURIKKUS_USE = 'bm_live_elurikkus_use_v1';
 const LS_PUBLISH_TOKEN = 'dev_publish_token_override';
+const LS_SNAPSHOT_PREFIX = 'bm_ee_snapshot:';
+const LS_EE_LAST_GOOD = 'bm_ee_last_good_snapshot';
+const SNAPSHOT_VERSION = 'ee_map_v1';
 const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 const LS_SUPABASE_PROXY_BASE = 'supabase_proxy_base_v1';
 const BUILTIN_TRANSLATE_ENDPOINT = '/.netlify/functions/translate-et';
@@ -1742,19 +1745,6 @@ async function refreshAllElurikkusOnce(){
     await new Promise(function(res){ setTimeout(res, 900); });
   }
   updateClientDataMaxAtFromPoints();
-  if(updated > 0){
-    if(progEl) progEl.textContent = 'Publishing... clientLatest=' + (__clientDataMaxAt || '-');
-    if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = 'Publishing...'; }
-    try{
-      await publishSnapshotToServer(points, __clientDataMaxAt || updateClientDataMaxAtFromPoints());
-      await fetchServerMeta();
-      if(progEl) progEl.textContent = 'Published OK | clientLatest=' + (__clientDataMaxAt || '-');
-      if(eluProg) eluProg.textContent = 'Published OK';
-    }catch(e){
-      if(progEl) progEl.textContent = 'Publish failed: ' + String(e && e.message ? e.message : e);
-      if(eluProg) eluProg.textContent = 'Publish failed';
-    }
-  }
   rebuildAllMarkers();
   render();
   try{ _updateServerSnapshotStatus(); }catch(e){}
@@ -1764,7 +1754,17 @@ async function refreshAllElurikkusOnce(){
     : ('Elurikkus refresh done: updated:' + updated + ' moved:' + moved + ' errors:' + errors);
   if(progEl) progEl.textContent = doneMsg;
   if(eluProg) eluProg.textContent = doneMsg;
-  _showSnapshotBanner(doneMsg, errors ? 'warn' : '');
+  if(updated > 0){
+    dataMode = 'live';
+    saveSnapshotLocal();
+    showSnapshotBanner('Data loaded', '');
+    if(progEl) progEl.textContent = 'Elurikkus (client): latest occurrence ' + (updateClientDataMaxAtFromPoints() || '-');
+  } else if(errors > 0){
+    const loaded = reloadSnapshot();
+    showSnapshotBanner(loaded ? 'Refresh failed. Showing last snapshot.' : 'Refresh failed and no snapshot available', loaded ? 'warn' : 'error');
+  } else {
+    showSnapshotBanner(doneMsg, errors ? 'warn' : '');
+  }
   __eluBulkSummary = { updated: updated, moved: moved, errors: errors, total: total, aborted: aborted, at: new Date().toISOString() };
   window.__lastElurikkusBulkSummary = __eluBulkSummary;
   __eluBulkActive = false;
@@ -1973,6 +1973,9 @@ let __serverMetaAvailable = false;
 let __serverMetaFailCount = 0;
 let __serverCheckStatus = 'idle'; // idle | checking | ok | error
 let __serverCheckError = '';
+let dataMode = 'live';
+let lastSnapshotAt = null;
+let snapshotDebugNote = null;
 let __totalItems = 0;
 let __nextIndex = 0;
 let __processedCount = 0;
@@ -2387,7 +2390,7 @@ function _updateServerSnapshotStatus(){
   const el = document.getElementById('serverRefreshStatus');
   if(!el) return;
   if(__elurikkusBulkActive){
-    el.textContent = 'Snapshot (server): paused while Elurikkus live refresh is running';
+    el.textContent = 'Snapshot (server, secondary): paused while Elurikkus live refresh is running';
     return;
   }
   const gen = __serverGeneratedAt ? _fmtTs(__serverGeneratedAt) : '-';
@@ -2407,11 +2410,11 @@ function _updateServerSnapshotStatus(){
   const err = (__serverCheckStatus === 'error' && __serverCheckError) ? ('; check error: ' + __serverCheckError) : '';
   const ageText = (latestAgeHours == null) ? '-' : (latestAgeHours.toFixed(1) + 'h');
   if(clientWins){
-    el.textContent = 'Elurikkus (client): latest occurrence ' + latestClient + ' | Snapshot (server): latest occurrence ' + latest + ' (age: ' + ageText + ') | built at ' + gen + ' | checked ' + chk + ' | Client data is fresher than current snapshot' + (staleNote ? (' | Secondary: ' + staleNote) : '') + err;
+    el.textContent = 'Elurikkus (client): latest occurrence ' + latestClient + ' | Snapshot (server, secondary): latest occurrence ' + latest + ' (age: ' + ageText + ') | built at ' + gen + ' | checked ' + chk + (staleNote ? (' | secondary note: ' + staleNote) : '') + err;
     return;
   }
   const clientPrefix = clientMax ? ('Elurikkus (client): latest occurrence ' + latestClient + ' | ') : '';
-  el.textContent = clientPrefix + 'Snapshot (server): built at ' + gen + ' | ID: ' + id + ' | Bytes: ' + String(Number(__serverBytes || 0) || '-') + ' | Latest occurrence in snapshot: ' + latest + ' (age: ' + ageText + ') | Checked: ' + chk + ' | ' + freshness + (staleNote ? (' | ' + staleNote) : '') + err;
+  el.textContent = clientPrefix + 'Snapshot (server, secondary): built at ' + gen + ' | ID: ' + id + ' | Bytes: ' + String(Number(__serverBytes || 0) || '-') + ' | Latest occurrence in snapshot: ' + latest + ' (age: ' + ageText + ') | checked ' + chk + ' | ' + freshness + (staleNote ? (' | secondary note: ' + staleNote) : '') + err;
 }
 function _deriveMetaFromRowShape(row){
   if(!row || typeof row !== 'object') return null;
@@ -3613,6 +3616,69 @@ function _hideSnapshotBanner(){
   const el = document.getElementById('snapshotBanner');
   if(el) el.style.display = 'none';
 }
+function showSnapshotBanner(msg, type, showAllBtn){ _showSnapshotBanner(msg, type, showAllBtn); }
+function hideSnapshotBanner(){ _hideSnapshotBanner(); }
+function getSnapshotKey(){
+  return 'ee_map:v1:7days=' + (is7daysOnly() ? '1' : '0');
+}
+function getSnapshotStorageKey(){
+  return LS_SNAPSHOT_PREFIX + getSnapshotKey();
+}
+function saveSnapshotLocal(){
+  const snapshot = {
+    version: SNAPSHOT_VERSION,
+    createdAt: new Date().toISOString(),
+    payload: { points: points, species: SPECIES },
+    meta: { filters: { recentOnly: is7daysOnly() } },
+  };
+  localStorage.setItem(getSnapshotStorageKey(), JSON.stringify(snapshot));
+  localStorage.setItem(LS_EE_LAST_GOOD, JSON.stringify(snapshot));
+  lastSnapshotAt = snapshot.createdAt;
+  dataMode = 'live';
+  snapshotDebugNote = null;
+}
+function loadSnapshotLocal(){
+  const raw = localStorage.getItem(getSnapshotStorageKey()) || localStorage.getItem(LS_EE_LAST_GOOD);
+  if(!raw) return null;
+  try{ return JSON.parse(raw); }catch(e){ snapshotDebugNote = 'snapshot corrupted'; return null; }
+}
+function applySnapshot(snapshot){
+  if(!snapshot) return false;
+  if(snapshot.version !== SNAPSHOT_VERSION){ snapshotDebugNote = 'snapshot outdated'; return false; }
+  if(!snapshot.payload || typeof snapshot.payload !== 'object' || !snapshot.payload.points || typeof snapshot.payload.points !== 'object'){
+    snapshotDebugNote = 'snapshot corrupted';
+    return false;
+  }
+  points = snapshot.payload.points || {};
+  dataMode = 'snapshot';
+  lastSnapshotAt = snapshot.createdAt || null;
+  snapshotDebugNote = null;
+  updateClientDataMaxAtFromPoints();
+  try{ save(); }catch(e){}
+  rebuildAllMarkers();
+  render();
+  return true;
+}
+function reloadSnapshot(){
+  const snapshot = loadSnapshotLocal();
+  if(!snapshot){
+    showSnapshotBanner('No snapshot found', 'warn');
+    const prog = document.getElementById('indexProgress') || document.getElementById('fetchProgress');
+    if(prog) prog.textContent = 'No snapshot found.';
+    return false;
+  }
+  if(!applySnapshot(snapshot)){
+    const msg = (snapshotDebugNote === 'snapshot outdated') ? 'Snapshot outdated' : 'Snapshot corrupted';
+    showSnapshotBanner(msg, 'warn');
+    const prog = document.getElementById('indexProgress') || document.getElementById('fetchProgress');
+    if(prog) prog.textContent = msg;
+    return false;
+  }
+  showSnapshotBanner('Loaded snapshot', '');
+  const prog = document.getElementById('indexProgress') || document.getElementById('fetchProgress');
+  if(prog) prog.textContent = 'Loaded snapshot.';
+  return true;
+}
 
 // "Show all" shortcut - turns off 7-day toggle
 window.__showAll = function(){
@@ -4786,7 +4852,7 @@ function _wireSnapshotButtons(){
     btnForceRefresh.__wired = true;
   }
   if(btnReload && !btnReload.__wired){
-    btnReload.addEventListener('click', function(){ loadSnapshotIfNeeded(false); });
+    btnReload.addEventListener('click', function(){ reloadSnapshot(); });
     btnReload.__wired = true;
   }
   if(btnResume && !btnResume.__wired){
@@ -5463,7 +5529,12 @@ function _initElurikkusAuto30m(){
     }, 30 * 60 * 1000);
   }catch(e){}
 }
-_startSnapshotBoot();
+const __loadedLocalSnapshot = reloadSnapshot();
+if(!__loadedLocalSnapshot){
+  _startSnapshotBoot();
+} else {
+  dataMode = 'snapshot';
+}
 _initElurikkusAuto30m();
 
 // Auto-detect avatar files for active species

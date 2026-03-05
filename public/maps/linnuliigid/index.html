@@ -983,6 +983,9 @@ function cutoffIso7d(){
   midnight.setDate(midnight.getDate() - 7);
   return isoDateLocal(midnight);
 }
+function cutoffMs7d(){
+  return Date.now() - 7*24*60*60*1000;
+}
 function buildEluSearchUrl(species, page){
   const base = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(String(species || ''));
   const p = (page && page > 1) ? ('&page=' + Number(page)) : '';
@@ -1002,58 +1005,76 @@ function parseEluRowDatesFromSearchHtml(searchHtml){
   return dates;
 }
 async function computeOcc7MultiPage(species, signal, maxPages){
-  const cutoffMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const tryFetchHtml = function(u, sig){
+    return tryFetch(u, { signal: sig, cache: 'no-store' });
+  };
+  const cutoff = cutoffMs7d();
+  const seenOcc = new Set();
+  const seenPageSig = new Set();
   const pageLimit = Math.max(1, Number(maxPages || 20) || 20);
-  const seen = new Set();
   let occ7 = 0;
-  let newestIso = '';
   let pages = 0;
-  let url = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(String(species || '')) + '&_ts=' + Date.now();
-  let lastFirstId = '';
+  let rowsParsedTotal = 0;
+  let newestIso = '';
+  let oldestIso = '';
+  let pagingMode = 'none';
+  const base = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(String(species || ''));
+  let url = base + '&_ts=' + Date.now();
+  let fallbackPage = 1;
   while(url && pages < pageLimit){
     if(signal && signal.aborted) break;
-    const pageUrl = url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now();
-    const html = await tryFetch(pageUrl, { signal: signal, cache: 'no-store' });
-    const rows = parseEluSearchRows(html);
+    const html = await tryFetchHtml(url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now(), signal);
+    const rows = parseEluRowsResilient(html);
+    rowsParsedTotal += rows.length;
     if(rows.length === 0) break;
     pages++;
-    const firstId = rows[0].occId;
-    if(firstId && firstId === lastFirstId) break;
-    lastFirstId = firstId;
-    if(pages === 1){
-      newestIso = rows.reduce(function(a,r){ return (r.iso && r.iso > a) ? r.iso : a; }, '');
-    }
+    const first = rows[0].occId;
+    const last = rows[rows.length - 1].occId;
+    const sig = String(first || '') + ':' + String(last || '');
+    if(seenPageSig.has(sig)) break;
+    seenPageSig.add(sig);
+    const pageIsos = rows.map(function(r){ return r.iso; }).filter(Boolean);
+    const pageNewest = pageIsos.reduce(function(a,b){ return b > a ? b : a; }, '');
+    const pageOldest = pageIsos.reduce(function(a,b){ return b < a ? b : a; }, pageIsos[0] || '');
+    if(pages === 1) newestIso = pageNewest;
+    oldestIso = pageOldest || oldestIso;
     let anyWithin = false;
-    let oldestMs = null;
+    let minMs = null;
     for(const r of rows){
-      if(seen.has(r.occId)) continue;
-      seen.add(r.occId);
-      if(Number.isFinite(r.ms)){
-        oldestMs = (oldestMs == null) ? r.ms : Math.min(oldestMs, r.ms);
-        if(r.ms >= cutoffMs){
-          occ7++;
-          anyWithin = true;
-        }
-      } else if(r.iso){
-        const dms = parseEluDateMs(r.iso + ' 00:00');
-        if(dms != null){
-          oldestMs = (oldestMs == null) ? dms : Math.min(oldestMs, dms);
-          if(dms >= cutoffMs){
-            occ7++;
-            anyWithin = true;
-          }
-        }
+      if(seenOcc.has(r.occId)) continue;
+      seenOcc.add(r.occId);
+      const ms = Number.isFinite(r.ms) ? r.ms : (r.iso ? parseEluDateMs(r.iso + ' 00:00:00') : null);
+      if(ms == null) continue;
+      minMs = (minMs == null) ? ms : Math.min(minMs, ms);
+      if(ms >= cutoff){
+        occ7++;
+        anyWithin = true;
       }
     }
     if(!anyWithin) break;
-    if(oldestMs != null && oldestMs < cutoffMs) break;
-    const nextUrl = extractNextPageUrl(html);
-    if(!nextUrl) break;
-    if(nextUrl === url) break;
-    url = nextUrl;
+    if(minMs != null && minMs < cutoff) break;
+    let next = extractNextUrl(html, url);
+    if(next){
+      pagingMode = 'next';
+      if(next === url) break;
+      url = next;
+    } else {
+      pagingMode = 'page';
+      fallbackPage++;
+      url = buildPageUrl(base, fallbackPage);
+    }
     await new Promise(function(r){ setTimeout(r, 350); });
   }
-  return { occ7: occ7, newestIso: newestIso, pagesScanned: pages, uniqueIds: seen.size };
+  return {
+    occ7: occ7,
+    newestIso: newestIso,
+    pagesScanned: pages,
+    rowsParsedTotal: rowsParsedTotal,
+    uniqueOcc: seenOcc.size,
+    pagingMode: pagingMode,
+    cutoffIso: normDateISO(new Date(cutoff).toISOString()),
+    oldestIso: oldestIso
+  };
 }
 function dateIsoFromAny(s){
   const str = String(s || '').trim();
@@ -1396,21 +1417,40 @@ function parseElurikkusExtraFromText(detailHtml, detailUrl){
   return out;
 }
 function parseEluSearchRows(html){
-  const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
-  const rows = [];
-  const trs = Array.from(doc.querySelectorAll('table tbody tr'));
-  for(const tr of trs){
-    const a = tr.querySelector('a[href*="/app/occurrences/occurrence/"]');
-    const href = a ? (a.getAttribute('href') || '') : '';
-    const id = ((String(href).match(/occurrence\/(\d+)/i) || [])[1]) || '';
+  return parseEluRowsResilient(html);
+}
+function parseEluRowsResilient(html){
+  const out = [];
+  try{
+    const doc = new DOMParser().parseFromString(String(html||''), 'text/html');
+    const trs = Array.from(doc.querySelectorAll('table tbody tr'));
+    for(const tr of trs){
+      const a = tr.querySelector('a[href*="/app/occurrences/occurrence/"]');
+      const href = a ? (a.getAttribute('href')||'') : '';
+      const id = (String(href).match(/occurrence\/(\d+)/i) || [])[1];
+      if(!id) continue;
+      const td0 = tr.querySelector('td');
+      const dt = td0 ? String(td0.textContent||'').trim() : '';
+      const ms = parseEluDateMs(dt);
+      const iso = normDateISO(dt);
+      out.push({ occId:id, ms:ms, iso:iso });
+    }
+  }catch(e){}
+  if(out.length) return out;
+  const text = String(html||'');
+  const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let m;
+  while((m = trRe.exec(text)) !== null){
+    const tr = m[1];
+    const id = (String(tr).match(/\/app\/occurrences\/occurrence\/(\d+)/i) || [])[1];
     if(!id) continue;
-    const td0 = tr.querySelector('td');
-    const dateText = td0 ? String(td0.textContent || '').trim() : '';
-    const ms = parseEluDateMs(dateText);
-    const iso = normDateISO(dateText);
-    rows.push({ occId:id, occUrl: absOccUrl(href), ms: ms, iso: iso });
+    const dm = String(tr).match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})(?::(\d{2}))?/);
+    const dt = dm ? (dm[1] + ' ' + dm[2] + ':' + (dm[3] || '00')) : '';
+    const ms = parseEluDateMs(dt);
+    const iso = normDateISO(dt);
+    out.push({ occId:id, ms:ms, iso:iso });
   }
-  return rows;
+  return out;
 }
 function absOccUrl(href){
   if(!href) return '';
@@ -1419,6 +1459,12 @@ function absOccUrl(href){
   return 'https://elurikkus.ee' + (s.startsWith('/') ? s : ('/' + s));
 }
 function absPageUrl(href){
+  if(!href) return '';
+  const s = String(href);
+  if(s.startsWith('http')) return s;
+  return 'https://elurikkus.ee' + (s.startsWith('/') ? s : ('/' + s));
+}
+function absUrl(href){
   if(!href) return '';
   const s = String(href);
   if(s.startsWith('http')) return s;
@@ -1471,6 +1517,32 @@ function extractNextPageUrl(searchHtml){
     }
   }
   return '';
+}
+function extractNextUrl(html, currentUrl){
+  try{
+    const doc = new DOMParser().parseFromString(String(html||''), 'text/html');
+    const ln = doc.querySelector('link[rel="next"]');
+    if(ln && ln.getAttribute('href')) return absUrl(ln.getAttribute('href'));
+    const anchors = Array.from(doc.querySelectorAll('a'));
+    for(const a of anchors){
+      const t = String(a.textContent||'').trim().toLowerCase();
+      if(t === 'next' || t === 'järgmine' || t === '›' || t === '>'){
+        const href = a.getAttribute('href')||'';
+        if(href) return absUrl(href);
+      }
+    }
+    for(const a of anchors){
+      const href = a.getAttribute('href')||'';
+      if(/[\?&](page|offset)=/i.test(href)) return absUrl(href);
+    }
+  }catch(e){}
+  return '';
+}
+function buildPageUrl(baseSearchUrl, page){
+  const u = new URL(baseSearchUrl);
+  u.searchParams.set('page', String(page));
+  u.searchParams.set('_ts', String(Date.now()));
+  return u.toString();
 }
 function extractFieldFromDetailText(detailHtml, labels){
   let text = '';
@@ -2278,6 +2350,7 @@ async function autoFetchCoords(key, searchUrl, signal){
   try{ render(); }catch(e){}
   p.eluExtra = p.eluExtra || {};
   p.eluExtra.__pages = Number((occ7Multi && occ7Multi.pagesScanned) || 0) || 0;
+  p.eluExtra.__occ7debug = occ7Multi || null;
     console.log('ELU EXTRA', key, p.eluExtra);
   }
   if(shouldApply){
@@ -6140,6 +6213,9 @@ function updateMarker(key) {
   const whenDt = p.t_dt ? ('<br><small>pickedDateTime: ' + String(p.t_dt) + '</small>') : '';
   const src = p.src ? '<br><small>allikas: '+p.src+'</small>' : '';
   const occLine = p.latestUrl ? ('<br><small>pickedOcc: ' + String(p.latestUrl).replace(/^.*occurrence\//,'') + '</small>') : '';
+  const occDbg = (p.eluExtra && p.eluExtra.__occ7debug)
+    ? ('<br><small>occ7Debug: pages=' + Number(p.eluExtra.__occ7debug.pagesScanned || 0) + ' rows=' + Number(p.eluExtra.__occ7debug.rowsParsedTotal || 0) + ' unique=' + Number(p.eluExtra.__occ7debug.uniqueOcc || 0) + ' mode=' + String(p.eluExtra.__occ7debug.pagingMode || '-') + '</small>')
+    : '';
   const effectiveCoordSource = String(p.coordSource || p.coords_source || '').trim();
   const precision = (p.coords_status === 'restricted' && effectiveCoordSource && effectiveCoordSource !== 'none')
     ? ('<br><small>coordsSource: ' + effectiveCoordSource + '</small><br><small>' + (p.coords_note || ('coords restricted \u2192 ' + ((effectiveCoordSource === 'snapshot' || effectiveCoordSource === 'snapshot_fallback') ? 'snapshot fallback' : effectiveCoordSource))) + '</small>')
@@ -6155,7 +6231,7 @@ function updateMarker(key) {
   const movedLine = lastMove
     ? ('<br><small>moved: ' + (lastMove.changed ? 'yes' : 'no') + ' (' + oldMoveTxt + ' \u2192 ' + newMoveTxt + ')' + (lastMove.changed ? '' : (lastDecision && lastDecision.reason ? (' reason: ' + lastDecision.reason) : '')) + '</small>')
     : '';
-  const popupHtml = '<b>'+key+'</b>'+when+coordWhen+whenDt+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+occLine+precision+movedLine;
+  const popupHtml = '<b>'+key+'</b>'+when+coordWhen+whenDt+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+occLine+occDbg+precision+movedLine;
   const old = prevMarker && prevMarker.getLatLng ? prevMarker.getLatLng() : null;
   if(prevMarker){
     try{

@@ -938,11 +938,38 @@ export default function SettingsTab() {
       }
     };
 
+    const handleCopyCurrentMapDebug = async () => {
+      try {
+        const fn = (window as Window & { copyMapsDebugJson?: () => Promise<string> | string }).copyMapsDebugJson;
+        if (typeof fn === 'function') {
+          const raw = await fn();
+          const text = String(raw || '').trim();
+          if (text) {
+            setMapsDebugJson(text);
+            try {
+              const parsed = JSON.parse(text);
+              setMapsDebugPretty(JSON.stringify(parsed, null, 2));
+            } catch {
+              setMapsDebugPretty('');
+            }
+            toast.success('Current map debug copied');
+            return;
+          }
+        }
+        toast.message('Open map and click "Copy debug JSON", then paste here.');
+      } catch {
+        toast.error('Could not read map debug directly');
+      }
+    };
+
     return (
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">
           Paste map debug JSON copied from the map view (&quot;Copy debug JSON&quot;), then pretty print for review.
         </p>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={handleCopyCurrentMapDebug}>Copy current map debug JSON</Button>
+        </div>
         <div className="space-y-2">
           <Label htmlFor="maps-debug-input">Paste debug JSON</Label>
           <textarea

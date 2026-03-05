@@ -791,7 +791,7 @@ function normDateISO(s){
   if(m) return m[1] + '-' + m[2] + '-' + m[3];
   m = str.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
   if(m) return m[3] + '-' + m[2] + '-' + m[1];
-  return str.length >= 10 ? str.slice(0,10) : '';
+  return '';
 }
 const SPRING_CUTOFF_MMDD = '02-15'; // change if needed
 function earliestInYearIsoAfterCutoff(datesIso, year, mmddCutoff){
@@ -5278,7 +5278,7 @@ function setLocation(key) {
   if (m.length===2 && Number.isFinite(m[0]) && Number.isFinite(m[1])) {
     points[key] = points[key] || {};
     points[key].lat=m[0]; points[key].lon=m[1];
-    points[key].t = points[key].t || '(kuupäev puudub)';
+    points[key].t = normDateISO(points[key].t) || '';
     points[key].src='manual';
     if(typeof points[key].visible!=='boolean') points[key].visible=true;
     save(); updateMarker(key); render();
@@ -5448,45 +5448,10 @@ function rowHTML(obj) {
   const occ7 = Number.isFinite(p.occ7) ? p.occ7 : null;
   const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
   const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(metaCfg.rarityLevel) : '';
-  const springVal = (springDates && springDates[key]) ? String(springDates[key]).trim() : '';
-  const springTxt = (springEditRowKey === key)
-    ? '<span class="kevadi-chip"><span class="spring-edit-wrap" style="display:inline-flex; gap:6px; align-items:center;"><span class="pill">Kevad:</span><input class="spring-edit-input" data-key="'+key+'" value="'+springVal+'" placeholder="DD.MM" inputmode="numeric" style="width:70px; padding:4px 6px; border:1px solid #ddd; border-radius:10px; font-size:13px;" /><button class="spring-edit-save" data-key="'+key+'" style="border:0; border-radius:10px; padding:4px 8px; background:#16a34a; color:#fff;">OK</button><button class="spring-edit-cancel" data-key="'+key+'" style="border:0; border-radius:10px; padding:4px 8px; background:#eee; color:#111;">X</button></span></span>'
-    : '<span class="kevadi-chip"><span class="spring-date-btn" data-key="'+key+'" style="cursor:pointer; pointer-events:auto; border:0; border-radius:999px; padding:6px 10px; background:#f3f4f6; color:#111;">Kevad: '+(springVal || '-')+'</span></span>';
-
-  const noCoords = !hasPoint && occ7 > 0;
-  const metaRow1 = hasPoint
-    ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(p.t_dt?(' <span class="pill">dt:</span> '+String(p.t_dt)):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')+((p.coords_status==='restricted' && p.coords_source && p.coords_source!=='none') ? (' <span class="pill">coords:</span> restricted→'+((p.coords_source==='snapshot' || p.coords_source==='snapshot_fallback') ? 'snapshot fallback' : p.coords_source)) : '')+(p.municipality ? (' <span class="pill">municipality:</span> '+String(p.municipality)) : '')+(p.locality ? (' <span class="pill">locality:</span> '+String(p.locality)) : '')
-    : noCoords
-      ? '<span class="pill" style="background:#fef3c7;color:#92400e">Koordinaadid peidetud</span>'+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
-      : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
-  const meta = '<div class="meta-grid"><div class="meta-row1">'+metaRow1+'</div><div class="meta-row2">'+springTxt+'</div></div>';
-  const up = __elurikkusBySpecies[key] || null;
-  const speciesKey = _normalizeSpeciesKey(key);
-  const isUpLoading = __elurikkusInFlightBySpecies.has(_normalizeSpeciesKey(key));
-  const fetchCount = Number(__elurikkusFetchCountBySpecies[speciesKey] || 0);
+  const meta = hasPoint
+    ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
+    : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
   const openUrl = String((p.openUrl || p.latestUrl || p.searchUrl || obj.url) || obj.url);
-  const upLine = up
-    ? ('<div class="small" style="margin-top:4px">' +
-      'Elurikkus: ' + (up.status || '-') +
-      ' | fetched ' + fetchCount + 'x' +
-      (up.buildId ? (' | buildId: ' + up.buildId) : '') +
-      (Number.isFinite(up.upstreamStatus) ? (' | upstream: ' + up.upstreamStatus) : '') +
-      (Number.isFinite(up.totalResults) ? (' | total: ' + up.totalResults) : '') +
-      (Number.isFinite(up.itemsCount) ? (' | items: ' + up.itemsCount) : '') +
-      (up.durationMs != null ? (' | ' + up.durationMs + 'ms') : '') +
-      (up.bytes != null ? (' | ' + up.bytes + 'b') : '') +
-      (up.latestOccurrenceAt ? (' | latest: ' + formatDateTimeEE(up.latestOccurrenceAt)) : '') +
-      (up.sourceUrl ? (' | source: <a target="_blank" href="' + up.sourceUrl + '">link</a>') : '') +
-      ((Number.isFinite(up.publicCount) || Number.isFinite(up.restrictedCount)) ? (' | coords public/restricted: ' + (up.publicCount || 0) + '/' + (up.restrictedCount || 0)) : '') +
-      (up.error ? (' | error: ' + up.error) : '') +
-      (up.routeMismatch ? (' | route: ' + up.routeMismatch) : '') +
-      (up.fetchSummary ? (' | ' + up.fetchSummary) : '') +
-      '</div>')
-    : ('<div class="small" style="margin-top:4px">Elurikkus: - | fetched ' + fetchCount + 'x</div>');
-  const statusLine = '<div class="small" style="margin-top:3px">' +
-    'Source: <b>' + (p.src || '-') + '</b>' +
-    (p.lastFetched ? (' | fetched: ' + formatDateTimeEE(p.lastFetched)) : '') +
-    '</div>';
 
   return '<div class="row" data-key="'+key+'">' +
     '<div class="avatar" style="background-image:url(\''+getDisplayAvatar(key)+'\');border:3px solid '+bcol+'"></div>' +
@@ -5495,14 +5460,12 @@ function rowHTML(obj) {
         '<div class="name-row"><div class="name-label clickable '+muted+'" onclick="toggleVisibility(\''+key+'\')">'+key+'</div>' + (rarityText ? '<span class="rarity-badge" title="Haruldus">'+rarityText+'</span>' : '') + '</div>' +
       '</div>' +
       '<div class="small">'+meta+'</div>' +
-      upLine +
     '</div>' +
     '<div class="controls">' +
       '<div style="display:flex;flex-direction:column;gap:6px">' +
       '<button class="btn open-occ-btn" data-open-url="'+openUrl.replace(/"/g,'&quot;')+'">Open</button>' +
       '</div>' +
     '</div>' +
-    statusLine +
   '</div>';
 }
 
@@ -5529,22 +5492,6 @@ function render() {
       if(url) window.open(url, '_blank', 'noopener');
       return;
     }
-    const upstreamBtn = t.closest?.('.fetch-elurikkus-btn');
-    if (upstreamBtn){
-      e.preventDefault();
-      e.stopPropagation();
-      const species = upstreamBtn.getAttribute('data-species') || '';
-      const searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(species);
-      autoFetchCoords(species, searchUrl).then(function(){
-        try{ updateMarker(species); }catch(err){}
-        try{ render(); }catch(err){}
-      }).catch(function(err){
-        const ferr = document.getElementById('fetchError');
-        if(ferr) ferr.textContent = 'Elurikkus fetch failed: ' + String(err && err.message ? err.message : err);
-      });
-      return;
-    }
-
     // Start edit
     const startBtn = t.closest?.('.spring-date-btn');
     if (startBtn){
@@ -6089,3 +6036,12 @@ var __sharedDefaults = {};
     });
     btnCopyMapDebugJson.__wired = true;
   }
+
+  window.copyMapsDebugJson = async function(){
+    const payload = _computeDebugProObject();
+    const text = JSON.stringify(payload, null, 2);
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(text);
+    }
+    return text;
+  };

@@ -1665,6 +1665,7 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
     detailTried++;
     try{
       const dhtml = await tryFetch(occUrl + (occUrl.includes('?') ? '&' : '?') + '_ts=' + Date.now(), { signal: signal });
+      const detail = parseElurikkusDetailFields(dhtml, occUrl);
       const latlon = extractLatLonFromDetail(dhtml);
       if(latlon && isValidEE(Number(latlon[0]), Number(latlon[1]))){
         return {
@@ -1677,13 +1678,14 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
             occurrenceId: (occUrl.match(/occurrence\/(\d+)/i) || [])[1] || '',
             url: occUrl,
             occUrl: occUrl,
-            observedAt: String(rows[k].dateText || ''),
-            dateText: String(rows[k].dateText || ''),
-            date: String(rows[k].dateText || '').slice(0, 10),
+            observedAt: String(detail.observedAt || rows[k].dateText || ''),
+            dateText: String(detail.observedAt || rows[k].dateText || ''),
+            date: String(detail.observedDate || String(rows[k].dateText || '').slice(0, 10)),
             lat: Number(latlon[0]),
             lon: Number(latlon[1]),
             coordsStatus: 'public'
           },
+          detail: detail,
           newestDateText: newestDateText,
           occ7: occ7,
           items: []
@@ -1708,6 +1710,7 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
       lon: null,
       coordsStatus: 'restricted_or_missing'
     },
+    detail: null,
     newestDateText: newestDateText,
     occ7: occ7,
     items: []
@@ -2911,6 +2914,7 @@ async function _respectElurikkusMinDelay(){
 function _applySelectedOccurrenceFromServer(speciesName, json){
   const selected = (json && typeof json === 'object') ? json.selected : null;
   if(!selected || typeof selected !== 'object') return { applied:false, moved:false, reason:'no selected' };
+  const detail = (json && typeof json === 'object') ? (json.detail || json.selectedDetail || null) : null;
   const p = points[speciesName] = (points[speciesName] || {});
   const oldLat = Number(p.lat);
   const oldLon = Number(p.lon);
@@ -2938,10 +2942,56 @@ function _applySelectedOccurrenceFromServer(speciesName, json){
     p.coords_source = 'snapshot_fallback';
     p.coords_status = String(selected.coordsStatus || 'restricted_or_missing');
   }
+  if(detail && typeof detail === 'object'){
+    const fetchedAt = new Date().toISOString();
+    p.elurikkus = {
+      occurrenceUrl: String(detail.occurrenceUrl || occUrl || ''),
+      occurrenceId: String(detail.occurrenceId || selected.occurrenceId || ''),
+      taxonName: String(detail.taxonName || ''),
+      commonName: String(detail.commonName || ''),
+      observedAt: String(detail.observedAt || selected.observedAt || ''),
+      observedDate: String(detail.observedDate || selDate || ''),
+      latitude: Number.isFinite(Number(detail.latitude)) ? Number(detail.latitude) : null,
+      longitude: Number.isFinite(Number(detail.longitude)) ? Number(detail.longitude) : null,
+      country: String(detail.country || ''),
+      county: String(detail.county || ''),
+      municipality: String(detail.municipality || ''),
+      locality: String(detail.locality || ''),
+      collectors: String(detail.collectors || ''),
+      identifiedBy: String(detail.identifiedBy || ''),
+      dataset: String(detail.dataset || ''),
+      project: String(detail.project || ''),
+      individualCount: (detail.individualCount == null ? null : Number(detail.individualCount)),
+      behavior: String(detail.behavior || ''),
+      coordsStatus: String(detail.coordsStatus || p.coords_status || 'missing'),
+      fetchedAt: fetchedAt
+    };
+    if(detail.observedDate) p.t = detail.observedDate;
+    if(detail.observedAt) p.observedAt = detail.observedAt;
+    if(detail.country) p.country = detail.country;
+    if(detail.county) p.county = detail.county;
+    if(detail.municipality) p.municipality = detail.municipality;
+    if(detail.locality) p.locality = detail.locality;
+    if(detail.collectors) p.collectors = detail.collectors;
+    if(detail.identifiedBy) p.identifiedBy = detail.identifiedBy;
+    if(detail.dataset) p.dataset = detail.dataset;
+    if(detail.project) p.project = detail.project;
+    if(detail.behavior) p.behavior = detail.behavior;
+    if(detail.individualCount != null) p.individualCount = detail.individualCount;
+    if(String(detail.coordsStatus || '') === 'public' && Number.isFinite(Number(detail.latitude)) && Number.isFinite(Number(detail.longitude))){
+      p.lat = Number(detail.latitude);
+      p.lon = Number(detail.longitude);
+    }
+    p.src = 'Elurikkus';
+    p.lastFetched = fetchedAt;
+    console.log('ELU DETAIL STORED', speciesName, p.elurikkus);
+  }
   const moved = applied && isValidEE(oldLat, oldLon) && isValidEE(lat, lon)
     ? (Math.abs(oldLat - lat) > 1e-6 || Math.abs(oldLon - lon) > 1e-6)
     : false;
+  try{ save(); }catch(e){}
   try{ updateMarker(speciesName); }catch(e){}
+  try{ render(); }catch(e){}
   return {
     applied: applied,
     moved: (applied ? moved : false),

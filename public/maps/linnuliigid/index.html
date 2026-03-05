@@ -1081,20 +1081,36 @@ function extractLatLonFromOccurrenceDetail(html){
   if(lat < 50 || lat > 70 || lon < 10 || lon > 35) return null;
   return [lat, lon];
 }
-function extractPlaceMetaFromOccurrenceDetail(html){
-  const s = String(html || '');
-  if(!s) return { municipality: '', locality: '', county: '' };
-  function read(labelRe){
-    const m = s.match(labelRe);
-    return m ? String(m[1] || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() : '';
+function parseEluDetailPlaceInfo(detailHtml){
+  const out = { municipality:'', locality:'', county:'' };
+  const src = String(detailHtml || '');
+  if(!src) return out;
+  try{
+    const doc = new DOMParser().parseFromString(src, 'text/html');
+    const dts = Array.from(doc.querySelectorAll('dt'));
+    for(const dt of dts){
+      const k = String(dt.textContent || '').trim().toLowerCase();
+      const dd = dt.nextElementSibling;
+      const v = dd ? String(dd.textContent || '').trim() : '';
+      if(!v) continue;
+      if(k === 'municipality' || k === 'omavalitsus') out.municipality = v;
+      else if(k === 'locality' || k === 'asula') out.locality = v;
+      else if(k === 'county' || k === 'maakond') out.county = v;
+    }
+  }catch(e){}
+  if(!out.municipality){
+    const m = src.match(/Municipality[^<]*<\/[^>]*>\s*([^<]{2,80})</i);
+    if(m) out.municipality = String(m[1] || '').trim();
   }
-  const municipality = read(/Municipality(?:<\/[^>]*>|[^:]*:)\s*([^<\n\r]+)/i)
-    || read(/Omavalitsus(?:<\/[^>]*>|[^:]*:)\s*([^<\n\r]+)/i);
-  const locality = read(/Locality(?:<\/[^>]*>|[^:]*:)\s*([^<\n\r]+)/i)
-    || read(/Asula(?:<\/[^>]*>|[^:]*:)\s*([^<\n\r]+)/i);
-  const county = read(/County(?:<\/[^>]*>|[^:]*:)\s*([^<\n\r]+)/i)
-    || read(/Maakond(?:<\/[^>]*>|[^:]*:)\s*([^<\n\r]+)/i);
-  return { municipality: municipality, locality: locality, county: county };
+  if(!out.locality){
+    const m = src.match(/Locality[^<]*<\/[^>]*>\s*([^<]{2,80})</i);
+    if(m) out.locality = String(m[1] || '').trim();
+  }
+  if(!out.county){
+    const m = src.match(/County[^<]*<\/[^>]*>\s*([^<]{2,80})</i);
+    if(m) out.county = String(m[1] || '').trim();
+  }
+  return out;
 }
 function parseEluSearchRows(html){
   const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
@@ -1199,7 +1215,7 @@ function extractElurikkusRecordRows(html){
     const placeText = _extractPlaceHintFromText(placeCell || rowText || '');
     const muniMatch = String(placeText || rowText || '').match(/([A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*(?:\s+[A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*)*\s+(?:vald|linn))/i);
     const countyMatch = String(placeText || rowText || '').match(/([A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*(?:\s+[A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*)*\s+maakond)/i);
-    const muni = muniMatch ? String(muniMatch[1]).trim() : (placeText ? placeText.split(',')[0].trim() : '');
+    const muni = muniMatch ? String(muniMatch[1]).trim() : '';
     out.push({
       observedAt: m[1],
       placeText: placeText || '',
@@ -1668,7 +1684,7 @@ async function autoFetchCoords(key, searchUrl, signal){
         const latlon = extractLatLon(detailHtml);
         if(latlon && _hasFiniteCoord(Number(latlon[0])) && _hasFiniteCoord(Number(latlon[1]))){
           coords = latlon;
-          detailPlace = extractPlaceMetaFromOccurrenceDetail(detailHtml);
+          detailPlace = parseEluDetailPlaceInfo(detailHtml);
           coordDate = dateIsoFromAny(String((probeRows[i] && probeRows[i].dateText) || '')) || dateIsoFromAny(extractEventDate(detailHtml) || '');
           coordSource = 'elurikkus_occurrence_detail';
           if(!eventDate) eventDate = extractEventDate(detailHtml);
@@ -1691,6 +1707,17 @@ async function autoFetchCoords(key, searchUrl, signal){
   const shouldApply = changedCoords || newerDate || changedOcc7;
   let changed = false;
   const normalizedEventDate = normDateISO(nextEventDate);
+  if((!detailPlace.municipality && !detailPlace.locality && !detailPlace.county) && !String(p.municipality || '').trim()){
+    const fallbackDetailUrl = detailUrl || String((rows[0] && rows[0].occUrl) || findFirstDetailLink(searchHtml) || '').trim();
+    if(fallbackDetailUrl){
+      try{
+        const detailHtml = await tryFetch(fallbackDetailUrl, { signal: signal });
+        detailPlace = parseEluDetailPlaceInfo(detailHtml);
+        if(!detailUrl) detailUrl = fallbackDetailUrl;
+      }catch(e){}
+    }
+  }
+  const pickedMunicipality = String(detailPlace.municipality || detailPlace.locality || detailPlace.county || '').trim();
   if(shouldApply){
     if(nextCoordsValid){
       p.lat = Number(coords[0]);
@@ -1703,9 +1730,11 @@ async function autoFetchCoords(key, searchUrl, signal){
       p.latestSeenDate = nextDate || normalizedEventDate || nextEventDate;
       p.t = normalizedEventDate || prevT || '';
     }
-    if(detailPlace.municipality) p.municipality = detailPlace.municipality;
-    if(detailPlace.locality) p.locality = detailPlace.locality;
-    if(detailPlace.county) p.county = detailPlace.county;
+    if(pickedMunicipality){
+      if(String(p.municipality || '') !== pickedMunicipality){ p.municipality = pickedMunicipality; changed = true; }
+      if(String(p.locality || '') !== String(detailPlace.locality || '')){ p.locality = String(detailPlace.locality || ''); changed = true; }
+      if(String(p.county || '') !== String(detailPlace.county || '')){ p.county = String(detailPlace.county || ''); changed = true; }
+    }
     p.src = 'Elurikkus';
     p.lastFetched = new Date().toISOString();
     p.occ7 = (nextOcc7 === null ? (Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : 0) : nextOcc7);
@@ -1728,6 +1757,12 @@ async function autoFetchCoords(key, searchUrl, signal){
   if(detailUrl){
     p.openUrl = detailUrl;
     p.latestUrl = detailUrl;
+  }
+  if(pickedMunicipality && String(p.municipality || '') !== pickedMunicipality){
+    p.municipality = pickedMunicipality;
+    p.locality = String(detailPlace.locality || '');
+    p.county = String(detailPlace.county || '');
+    changed = true;
   }
   if(!nextCoordsValid){
     p.coordDate = String(p.coordDate || '');
@@ -5439,6 +5474,14 @@ function updateMarker(key) {
 
 
 // UI
+function escapeHtml(s){
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 function rowHTML(obj) {
   const key = obj.est;
   const p = points[key] || {};
@@ -5451,6 +5494,9 @@ function rowHTML(obj) {
   const meta = hasPoint
     ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
     : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
+  const municipalityLine = p.municipality
+    ? '<div class="small"><span class="pill">municipality:</span> <span>' + escapeHtml(p.municipality || '') + '</span></div>'
+    : '';
   const openUrl = String((p.openUrl || p.latestUrl || p.searchUrl || obj.url) || obj.url);
 
   return '<div class="row" data-key="'+key+'">' +
@@ -5460,6 +5506,7 @@ function rowHTML(obj) {
         '<div class="name-row"><div class="name-label clickable '+muted+'" onclick="toggleVisibility(\''+key+'\')">'+key+'</div>' + (rarityText ? '<span class="rarity-badge" title="Haruldus">'+rarityText+'</span>' : '') + '</div>' +
       '</div>' +
       '<div class="small">'+meta+'</div>' +
+      municipalityLine +
     '</div>' +
     '<div class="controls">' +
       '<div style="display:flex;flex-direction:column;gap:6px">' +

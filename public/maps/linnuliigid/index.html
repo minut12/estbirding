@@ -158,7 +158,8 @@
   <aside id="sidebar">
     <div class="panel-header">
     <div class="sidebar-header"><h2 style="margin:0">Linnuliigid 2026</h2><button id="closeSidebarBtn" class="btn icon close-sidebar" title="Sulge" aria-label="Sulge"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
-    <div class="small" style="margin-top:4px;font-weight:700;color:#0f766e">BUILD TEST: 2026-03-05</div>
+    <div id="buildStampLine" class="small" style="margin-top:4px;font-weight:700;color:#0f766e">BUILD: -</div>
+    <div id="cacheStatusBadge" class="small" style="margin-top:2px;color:#334155">cache: -</div>
     </div>
     <div class="panel-content-scroll">
 <div class="top-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:center">
@@ -177,6 +178,7 @@
   <button id="btnRefreshData" class="btn" title="Refresh all species from Elurikkus">Refresh from Elurikkus</button>
   <button id="btnForceServerRefresh" class="btn secondary" title="Force server rebuild from upstream">Force server refresh</button>
   <button id="btnReloadSnapshot" class="btn secondary" title="Reload latest snapshot from server">Reload snapshot</button>
+  <button id="btnHardReload" class="btn secondary" title="Clear caches and force fresh reload">Hard reload</button>
   <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index">Resume</button>
   <button id="btnSkipStuck" class="btn secondary" title="Skip current stuck item by resuming from next index">Skip stuck item</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
@@ -857,7 +859,7 @@ async function tryFetch(url, opts){
 }
 function makeFetchURL(url){
   const raw = String(url || '').trim();
-  const withTs = raw + (raw.includes('?') ? '&' : '?') + '_ts=' + Date.now();
+  const withTs = _withCacheBuster(raw);
   const pb = String(proxyBase || '').trim();
   const bases = ['', pb, 'https://api.allorigins.win/raw?url=', 'https://cors.isomorphic-git.org/'];
   const out = [];
@@ -1300,7 +1302,7 @@ function extractElurikkusRecordRows(html){
 }
 async function _fetchElurikkusSpeciesViaHtml(speciesName){
   const t0 = performance.now();
-  const url = "https://elurikkus.ee/app/occurrences/search?text=" + encodeURIComponent(speciesName) + "&_ts=" + Date.now();
+  const url = _withCacheBuster("https://elurikkus.ee/app/occurrences/search?text=" + encodeURIComponent(speciesName));
   const html = await tryFetch(url);
   let rows = extractElurikkusRecordRows(html);
   let dates = rows.map(function(r){ return r.observedAt; });
@@ -1447,7 +1449,7 @@ async function _applyElurikkusPayloadToPoints(species, payload){
     let detailUrls = _extractDetailUrlsFromItems(items, 3);
     if(!detailUrls.length){
       try{
-        const searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(species) + '&_ts=' + Date.now();
+        const searchUrl = _withCacheBuster('https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(species));
         const shtml = await tryFetch(searchUrl);
         detailUrls = _extractDetailUrlsFromSearchHtml(shtml, 3);
       }catch(e){}
@@ -1455,7 +1457,7 @@ async function _applyElurikkusPayloadToPoints(species, payload){
     for(let di = 0; di < detailUrls.length; di++){
       const du = detailUrls[di];
       try{
-        const dhtml = await tryFetch(du + (du.indexOf('?') >= 0 ? '&' : '?') + '_ts=' + Date.now());
+        const dhtml = await tryFetch(_withCacheBuster(du));
         if(/Koordinaadid peidetud|Coordinates hidden|Restricted/i.test(String(dhtml || ''))){
           reason = 'restricted detail';
           continue;
@@ -1521,14 +1523,15 @@ async function _applyElurikkusPayloadToPoints(species, payload){
 }
 function _buildEluFetchCandidates(url){
   const raw = String(url || '').trim();
-  const baseUrl = raw + (raw.includes('?') ? '&' : '?') + '_ts=' + Date.now();
+  const now = Date.now();
+  const baseUrl = raw + (raw.includes('?') ? '&' : '?') + '_ts=' + now + '&_cb=' + now;
   const pb = String(proxyBase || '').trim();
   const out = [];
   function push(u){ if(u && !out.includes(u)) out.push(u); }
   // 1. Supabase elurikkus-proxy (most reliable)
   var sbUrl = String(__resolvedSupabaseUrl || '').replace(/\/+$/, '');
   if(sbUrl){
-    push(sbUrl + '/functions/v1/elurikkus-proxy?url=' + encodeURIComponent(baseUrl));
+    push(_withCacheBuster(sbUrl + '/functions/v1/elurikkus-proxy?url=' + encodeURIComponent(baseUrl)));
   }
   // 2. Old proxyBase from localStorage
   if(pb) push(pb + encodeURIComponent(baseUrl));
@@ -1652,7 +1655,7 @@ function pickNewestOcc(rows){
 async function fetchElurikkusViaHtmlDetail(species, signal){
   const name = String(species || '').trim();
   if(!name) throw new Error('species missing');
-  const searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(name) + '&_ts=' + Date.now();
+  const searchUrl = _withCacheBuster('https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(name));
   const shtml = await tryFetch(searchUrl, { signal: signal, requireOccLink: true });
   const rows = extractOccurrenceCandidates(shtml);
   const dates = extractElurikkusRecordDatesIso(shtml);
@@ -1665,7 +1668,7 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
     if(!occUrl) continue;
     detailTried++;
     try{
-      const dhtml = await tryFetch(occUrl + (occUrl.includes('?') ? '&' : '?') + '_ts=' + Date.now(), { signal: signal });
+      const dhtml = await tryFetch(_withCacheBuster(occUrl), { signal: signal });
       const detail = parseElurikkusDetailFields(dhtml, occUrl);
       const latlon = extractLatLonFromDetail(dhtml);
       if(latlon && isValidEE(Number(latlon[0]), Number(latlon[1]))){
@@ -2146,7 +2149,8 @@ let __runId = 0;
 let __runningRef = false;
 let __abortReasonHint = '';
 let __isRefreshRunning = false;
-const MAP_BUILD_ID = '2026-02-26-1';
+const MAP_BUILD_ID = '2026-03-05-cachefix-1';
+const MAP_BUILD_STAMP = '2026-03-05';
 let __watchdogTimer = null;
 let __lastAutoKickAt = 0;
 let __forceRetryInFlight = false;
@@ -2213,6 +2217,7 @@ let __pendingReload = false;
 let __configDebounceTimer = null;
 let __configReloadAbortIssued = false;
 let __resumeExplicitRequested = false;
+let __loadedLocalSnapshot = false;
 const RATE_LIMIT_BACKOFF_MS = [2000, 5000, 15000, 30000, 60000, 120000];
 const SNAPSHOT_ERROR_BACKOFF_MS = [1000, 2000, 4000, 8000, 15000, 30000];
 const FETCH_INFLIGHT_TIMEOUT_MS = 25000;
@@ -2421,6 +2426,10 @@ function getAbortReason(signal){
 function _copyDebugJson(){
   const payload = {
     buildId: MAP_BUILD_ID,
+    buildStamp: MAP_BUILD_STAMP,
+    href: String(location.href || ''),
+    swControllerActive: _swControllerActive(),
+    loadedLocalSnapshot: !!__loadedLocalSnapshot,
     status: __snapshotMeta.status || (__isRefreshRunning ? 'running' : 'stopped'),
     generatedAt: __snapshotMeta.generated_at || null,
     progress_done: Number(__snapshotProgressDone || 0),
@@ -2632,7 +2641,58 @@ function _withSnapshotGetHeaders(){
 function _withCacheBuster(url){
   const base = String(url || '');
   const sep = base.indexOf('?') >= 0 ? '&' : '?';
-  return base + sep + '_ts=' + Date.now();
+  const now = Date.now();
+  return base + sep + '_ts=' + now + '&_cb=' + now;
+}
+function _swControllerActive(){
+  try{ return !!(navigator.serviceWorker && navigator.serviceWorker.controller); }catch(e){ return false; }
+}
+function _refreshBuildStampUi(){
+  const stampEl = document.getElementById('buildStampLine');
+  const badgeEl = document.getElementById('cacheStatusBadge');
+  const nowIso = new Date().toISOString();
+  if(stampEl) stampEl.textContent = 'BUILD: ' + MAP_BUILD_ID + ' | stamp: ' + MAP_BUILD_STAMP + ' | now: ' + nowIso;
+  if(badgeEl) badgeEl.textContent = 'cache: swController=' + (_swControllerActive() ? 'yes' : 'no');
+}
+async function _hardReloadNow(){
+  const btn = document.getElementById('btnHardReload');
+  try{
+    if(btn){ btn.disabled = true; btn.textContent = 'Hard reload...'; }
+    pushDebugEvent('HARD_RELOAD_START', 'Hard reload started', { buildId: MAP_BUILD_ID });
+    const lsKeys = [];
+    try{
+      for(let i = 0; i < localStorage.length; i++){
+        const k = String(localStorage.key(i) || '');
+        if(!k) continue;
+        if(k === LS_EE_LAST_GOOD || k.indexOf(LS_SNAPSHOT_PREFIX) === 0 || k === LS_POINTS || k === LS_LIVE_ELURIKKUS || k === LS_LIVE_ELURIKKUS_USE){
+          lsKeys.push(k);
+        }
+      }
+    }catch(e){}
+    for(let i = 0; i < lsKeys.length; i++){
+      try{ localStorage.removeItem(lsKeys[i]); }catch(e){}
+    }
+    try{
+      if(typeof caches !== 'undefined' && caches.keys){
+        const keys = await caches.keys();
+        await Promise.all(keys.map(function(k){ return caches.delete(k); }));
+      }
+    }catch(e){}
+    try{
+      if(navigator.serviceWorker && navigator.serviceWorker.getRegistrations){
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all((regs || []).map(function(r){ return r.unregister(); }));
+      }
+    }catch(e){}
+  }catch(e){
+    console.warn('Hard reload cleanup failed', e);
+  } finally {
+    const u = new URL(location.href);
+    u.searchParams.set('_ts', String(Date.now()));
+    u.searchParams.set('_cb', String(Date.now()));
+    u.searchParams.set('v', MAP_BUILD_ID + '-' + Date.now());
+    location.replace(u.toString());
+  }
 }
 function _shortId(id){
   const s = String(id || '').replace(/^W\//,'').replace(/^"|"$/g,'');
@@ -2868,7 +2928,7 @@ async function requestServerRebuild(){
   });
   let json = await res.json().catch(function(){ return {}; });
   if(!(res.ok || res.status === 202)){
-    res = await fetch(snapshotUrl, {
+    res = await fetch(_withCacheBuster(snapshotUrl), {
       method:'POST',
       cache:'no-store',
       headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
@@ -3150,7 +3210,8 @@ async function fetchElurikkusSpecies(species, opts){
       reqUrl.searchParams.set('text', speciesName);
       if(options.force) reqUrl.searchParams.set('force', '1');
       reqUrl.searchParams.set('_ts', String(Date.now()));
-      const url = reqUrl.toString();
+      reqUrl.searchParams.set('_cb', String(Date.now()));
+      const url = _withCacheBuster(reqUrl.toString());
       __lastElurikkusUrl = url;
       traceId = _traceStart({ method: 'GET', url: url });
       const t0 = performance.now();
@@ -3311,6 +3372,7 @@ async function _debugPingElurikkus(species){
     reqUrl.searchParams.set('mode', 'ping');
     reqUrl.searchParams.set('text', speciesName);
     reqUrl.searchParams.set('_ts', String(Date.now()));
+    reqUrl.searchParams.set('_cb', String(Date.now()));
     const url = reqUrl.toString();
     const traceId = _traceStart({ method: 'GET', url: url });
     const res = await fetch(url, { method: 'GET', cache: 'no-store' });
@@ -3674,6 +3736,7 @@ async function fetchWithTimeout(url, init, ms, runId){
 
   const controller = new AbortController();
   const startedAt = performance.now();
+  url = _withCacheBuster(String(url || ''));
   const traceId = _traceStart({ method: (init && init.method) || 'GET', url: String(url || '') });
   let abortReason = 'unknown';
   __activeRequestController = controller;
@@ -3720,7 +3783,7 @@ async function fetchWithTimeout(url, init, ms, runId){
       runSignalAborted: !!(localRunCancelController && localRunCancelController.signal.aborted),
       runSignalReason: getAbortReason(localRunCancelController && localRunCancelController.signal),
     });
-    const reqInit = Object.assign({}, init || {}, { signal: controller.signal });
+    const reqInit = Object.assign({}, init || {}, { signal: controller.signal, cache: 'no-store' });
     reqInit.headers = _withSupabaseAuthHeaders(reqInit.headers);
     const res = await fetch(url, reqInit);
     __lastHttpMethod = String((reqInit.method || 'GET')).toUpperCase();
@@ -4340,6 +4403,11 @@ function _computeDebugProObject(){
       lastSnapshotBytes: __lastResponseBytes,
     }),
     config: {
+      buildId: MAP_BUILD_ID,
+      buildStamp: MAP_BUILD_STAMP,
+      href: String(location.href || ''),
+      swControllerActive: _swControllerActive(),
+      loadedLocalSnapshot: !!__loadedLocalSnapshot,
       supabaseUrl: urlInfo.value || '',
       supabaseUrlSource: urlInfo.source,
       anonKeyPresent: !!keyInfo.value,
@@ -5160,6 +5228,7 @@ function _wireSnapshotButtons(){
   const btnElu = document.getElementById('btnRefreshData') || document.getElementById('btnRefreshElurikkus');
   const btnForceRefresh = document.getElementById('btnForceServerRefresh');
   const btnReload = document.getElementById('btnReloadSnapshot');
+  const btnHardReload = document.getElementById('btnHardReload');
   const btnResume = document.getElementById('btnResumeFetch');
   const btnSkip = document.getElementById('btnSkipStuck');
   const btnStop = document.getElementById('btnStopFetch');
@@ -5198,6 +5267,10 @@ function _wireSnapshotButtons(){
   if(btnReload && !btnReload.__wired){
     btnReload.addEventListener('click', function(){ reloadSnapshot(); });
     btnReload.__wired = true;
+  }
+  if(btnHardReload && !btnHardReload.__wired){
+    btnHardReload.addEventListener('click', function(){ _hardReloadNow(); });
+    btnHardReload.__wired = true;
   }
   if(btnResume && !btnResume.__wired){
     btnResume.addEventListener('click', function(){ triggerRefresh({ resumeFromSaved: true, force: true, newRun: true }); });
@@ -5442,9 +5515,7 @@ window.addEventListener('message', function(ev){
       __snapshotMeta.status = null;
       try { _resolveSnapshotApi(); } catch(e) {}
       if(!__bootLoadStarted && __supabaseConfigReady){
-        __bootLoadStarted = true;
-        fetchServerMeta();
-        loadSnapshot();
+        _startSnapshotBoot();
       } else if(materialChanged && (hadNoApi || hadUrlMissingErr || !__snapshotMeta.generated_at)){
         pushDebugEvent('SNAPSHOT_RETRY_REASON', 'Retry reason supabase_config', { hadNoApi: hadNoApi, hadUrlMissingErr: hadUrlMissingErr }, 'warn');
         _scheduleLoadSnapshotRetry('supabase_config');
@@ -5817,6 +5888,8 @@ refreshAllMarkers();
 _updateServerSnapshotStatus();
 _wireSnapshotButtons();
 _wireSidebarSettingsRow();
+_refreshBuildStampUi();
+setInterval(_refreshBuildStampUi, 10000);
 function _startSnapshotBoot(){
   if(__bootLoadStarted) return;
   const cfg = resolveSupabaseConfig();
@@ -5854,12 +5927,11 @@ function _initElurikkusAuto30m(){
     }, 30 * 60 * 1000);
   }catch(e){}
 }
-const __loadedLocalSnapshot = reloadSnapshot();
-if(!__loadedLocalSnapshot){
-  _startSnapshotBoot();
-} else {
+__loadedLocalSnapshot = reloadSnapshot();
+if(__loadedLocalSnapshot){
   dataMode = 'snapshot';
 }
+_startSnapshotBoot();
 _initElurikkusAuto30m();
 
 // Auto-detect avatar files for active species
@@ -5926,8 +5998,7 @@ try{
 document.addEventListener('DOMContentLoaded', function(){
   _wireSnapshotButtons();
   _wireSidebarSettingsRow();
-  _requestSupabaseConfigFromParent();
-  _startSnapshotBoot();
+  _refreshBuildStampUi();
 });
 </script>
 

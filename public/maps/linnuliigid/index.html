@@ -1081,34 +1081,96 @@ function extractLatLonFromOccurrenceDetail(html){
   if(lat < 50 || lat > 70 || lon < 10 || lon > 35) return null;
   return [lat, lon];
 }
-function parseEluDetailPlaceInfo(detailHtml){
-  const out = { municipality:'', locality:'', county:'' };
+function parseElurikkusDetailFields(detailHtml, occurrenceUrl){
   const src = String(detailHtml || '');
+  const out = {
+    occurrenceUrl: String(occurrenceUrl || '').trim(),
+    occurrenceId: '',
+    taxonName: '',
+    commonName: '',
+    observedAt: '',
+    observedDate: '',
+    latitude: null,
+    longitude: null,
+    municipality: '',
+    locality: '',
+    county: '',
+    country: '',
+    collectors: '',
+    identifiedBy: '',
+    dataset: '',
+    project: '',
+    individualCount: null,
+    behavior: '',
+    coordsStatus: 'missing'
+  };
   if(!src) return out;
+  const idFromUrl = String(out.occurrenceUrl || '').match(/occurrence\/(\d+)/i);
+  if(idFromUrl) out.occurrenceId = String(idFromUrl[1] || '');
+  if(/Koordinaadid peidetud|Coordinates hidden|Restricted/i.test(src)) out.coordsStatus = 'restricted';
+
+  const keyVal = {};
+  function clean(v){ return String(v || '').replace(/\s+/g, ' ').trim(); }
+  function setKV(k, v){ if(k && v && !keyVal[k]) keyVal[k] = v; }
   try{
     const doc = new DOMParser().parseFromString(src, 'text/html');
     const dts = Array.from(doc.querySelectorAll('dt'));
     for(const dt of dts){
-      const k = String(dt.textContent || '').trim().toLowerCase();
+      const k = clean((dt.textContent || '').toLowerCase());
       const dd = dt.nextElementSibling;
-      const v = dd ? String(dd.textContent || '').trim() : '';
-      if(!v) continue;
-      if(k === 'municipality' || k === 'omavalitsus') out.municipality = v;
-      else if(k === 'locality' || k === 'asula') out.locality = v;
-      else if(k === 'county' || k === 'maakond') out.county = v;
+      const v = clean(dd ? dd.textContent : '');
+      if(k && v) setKV(k, v);
+    }
+    const trs = Array.from(doc.querySelectorAll('tr'));
+    for(const tr of trs){
+      const th = tr.querySelector('th,td');
+      const td = tr.querySelector('td+td,th+td');
+      const k = clean((th && th.textContent || '').toLowerCase().replace(/:$/,''));
+      const v = clean(td && td.textContent || '');
+      if(k && v) setKV(k, v);
     }
   }catch(e){}
-  if(!out.municipality){
-    const m = src.match(/Municipality[^<]*<\/[^>]*>\s*([^<]{2,80})</i);
-    if(m) out.municipality = String(m[1] || '').trim();
+  const taxonM = src.match(/(?:Taxon|Scientific name)[^<]*<\/[^>]*>\s*([^<]{2,120})</i);
+  const commonM = src.match(/(?:Common name|Vernacular)[^<]*<\/[^>]*>\s*([^<]{2,120})</i);
+  const obsM = src.match(/(\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?)/);
+  if(taxonM) out.taxonName = clean(taxonM[1]);
+  if(commonM) out.commonName = clean(commonM[1]);
+  if(obsM) out.observedAt = clean(obsM[1]);
+
+  function pick(keys){
+    for(const k of keys){
+      if(keyVal[k]) return keyVal[k];
+    }
+    return '';
   }
-  if(!out.locality){
-    const m = src.match(/Locality[^<]*<\/[^>]*>\s*([^<]{2,80})</i);
-    if(m) out.locality = String(m[1] || '').trim();
+  out.taxonName = out.taxonName || pick(['taxon', 'taxon name', 'scientific name']);
+  out.commonName = out.commonName || pick(['common name', 'vernacular name']);
+  out.observedAt = out.observedAt || pick(['date', 'eventdate', 'observed at', 'occurrence date', 'observation date']);
+  out.municipality = pick(['municipality', 'omavalitsus']);
+  out.locality = pick(['locality', 'asula']);
+  out.county = pick(['county', 'maakond']);
+  out.country = pick(['country', 'riik']);
+  out.collectors = pick(['recorded by', 'collector', 'collectors', 'recordedby']);
+  out.identifiedBy = pick(['identified by', 'identifiedby', 'determinavit']);
+  out.dataset = pick(['dataset', 'dataset name']);
+  out.project = pick(['project']);
+  out.behavior = pick(['behavior', 'behaviour', 'käitumine']);
+  const countRaw = pick(['individual count', 'individualcount', 'count']);
+  const countM = String(countRaw || '').match(/(\d+)/);
+  if(countM) out.individualCount = Number(countM[1]);
+
+  const latlon = extractLatLonFromOccurrenceDetail(src);
+  if(latlon && _hasFiniteCoord(Number(latlon[0])) && _hasFiniteCoord(Number(latlon[1]))){
+    out.latitude = Number(latlon[0]);
+    out.longitude = Number(latlon[1]);
+    out.coordsStatus = 'public';
+  }else if(out.coordsStatus !== 'restricted'){
+    out.coordsStatus = 'missing';
   }
-  if(!out.county){
-    const m = src.match(/County[^<]*<\/[^>]*>\s*([^<]{2,80})</i);
-    if(m) out.county = String(m[1] || '').trim();
+  out.observedDate = normDateISO(out.observedAt || '') || dateIsoFromAny(out.observedAt || '') || '';
+  if(!out.occurrenceId){
+    const m = src.match(/Occurrence[^0-9]*ID[^0-9]*([0-9]+)/i);
+    if(m) out.occurrenceId = String(m[1] || '');
   }
   return out;
 }
@@ -1669,7 +1731,7 @@ async function autoFetchCoords(key, searchUrl, signal){
   let coordDate = '';
   let coordSource = '';
   let detailUrl = '';
-  let detailPlace = { municipality: '', locality: '', county: '' };
+  let detailFields = null;
   if(coords){
     coordDate = latestSeenDate || dateIsoFromAny(eventDate || '') || '';
     coordSource = 'elurikkus_search_page';
@@ -1682,9 +1744,9 @@ async function autoFetchCoords(key, searchUrl, signal){
       try{
         const detailHtml = await tryFetch(occUrl, { signal: signal });
         const latlon = extractLatLon(detailHtml);
+        detailFields = parseElurikkusDetailFields(detailHtml, occUrl);
         if(latlon && _hasFiniteCoord(Number(latlon[0])) && _hasFiniteCoord(Number(latlon[1]))){
           coords = latlon;
-          detailPlace = parseEluDetailPlaceInfo(detailHtml);
           coordDate = dateIsoFromAny(String((probeRows[i] && probeRows[i].dateText) || '')) || dateIsoFromAny(extractEventDate(detailHtml) || '');
           coordSource = 'elurikkus_occurrence_detail';
           if(!eventDate) eventDate = extractEventDate(detailHtml);
@@ -1707,36 +1769,66 @@ async function autoFetchCoords(key, searchUrl, signal){
   const shouldApply = changedCoords || newerDate || changedOcc7;
   let changed = false;
   const normalizedEventDate = normDateISO(nextEventDate);
-  if((!detailPlace.municipality && !detailPlace.locality && !detailPlace.county) && !String(p.municipality || '').trim()){
+  if((!detailFields || (!detailFields.municipality && !detailFields.locality && !detailFields.county)) && !String(p.municipality || '').trim()){
     const fallbackDetailUrl = detailUrl || String((rows[0] && rows[0].occUrl) || findFirstDetailLink(searchHtml) || '').trim();
     if(fallbackDetailUrl){
       try{
         const detailHtml = await tryFetch(fallbackDetailUrl, { signal: signal });
-        detailPlace = parseEluDetailPlaceInfo(detailHtml);
+        detailFields = parseElurikkusDetailFields(detailHtml, fallbackDetailUrl);
         if(!detailUrl) detailUrl = fallbackDetailUrl;
       }catch(e){}
     }
   }
-  const pickedMunicipality = String(detailPlace.municipality || detailPlace.locality || detailPlace.county || '').trim();
+  const fallbackObservedDate = normDateISO(String((detailFields && detailFields.observedDate) || (detailFields && detailFields.observedAt) || ''));
+  const pickedMunicipality = String((detailFields && (detailFields.municipality || detailFields.locality || detailFields.county)) || '').trim();
+  const detailCoordsStatus = String((detailFields && detailFields.coordsStatus) || (nextCoordsValid ? 'public' : 'missing'));
+  const detailFetchedAt = new Date().toISOString();
+  if(detailFields){
+    p.elurikkus = {
+      occurrenceUrl: String(detailFields.occurrenceUrl || detailUrl || ''),
+      occurrenceId: String(detailFields.occurrenceId || ''),
+      taxonName: String(detailFields.taxonName || ''),
+      commonName: String(detailFields.commonName || ''),
+      observedAt: String(detailFields.observedAt || ''),
+      observedDate: String(detailFields.observedDate || fallbackObservedDate || ''),
+      latitude: Number.isFinite(Number(detailFields.latitude)) ? Number(detailFields.latitude) : null,
+      longitude: Number.isFinite(Number(detailFields.longitude)) ? Number(detailFields.longitude) : null,
+      municipality: String(detailFields.municipality || ''),
+      locality: String(detailFields.locality || ''),
+      county: String(detailFields.county || ''),
+      country: String(detailFields.country || ''),
+      collectors: String(detailFields.collectors || ''),
+      identifiedBy: String(detailFields.identifiedBy || ''),
+      dataset: String(detailFields.dataset || ''),
+      project: String(detailFields.project || ''),
+      individualCount: Number.isFinite(Number(detailFields.individualCount)) ? Number(detailFields.individualCount) : null,
+      behavior: String(detailFields.behavior || ''),
+      coordsStatus: detailCoordsStatus,
+      fetchedAt: detailFetchedAt
+    };
+    p.coords_status = detailCoordsStatus;
+    changed = true;
+  }
   if(shouldApply){
     if(nextCoordsValid){
       p.lat = Number(coords[0]);
       p.lon = Number(coords[1]);
-      p.coordDate = String(coordDate || p.coordDate || nextDate || '');
+      p.coordDate = String(coordDate || p.coordDate || nextDate || fallbackObservedDate || '');
       p.coordSource = String(coordSource || p.coordSource || 'elurikkus_occurrence_detail');
       p.coords_source = p.coordSource;
     }
-    if(nextEventDate){
-      p.latestSeenDate = nextDate || normalizedEventDate || nextEventDate;
-      p.t = normalizedEventDate || prevT || '';
+    if(nextEventDate || fallbackObservedDate){
+      const bestObservedDate = nextDate || normalizedEventDate || fallbackObservedDate || '';
+      p.latestSeenDate = bestObservedDate || nextEventDate;
+      p.t = bestObservedDate || prevT || '';
     }
     if(pickedMunicipality){
       if(String(p.municipality || '') !== pickedMunicipality){ p.municipality = pickedMunicipality; changed = true; }
-      if(String(p.locality || '') !== String(detailPlace.locality || '')){ p.locality = String(detailPlace.locality || ''); changed = true; }
-      if(String(p.county || '') !== String(detailPlace.county || '')){ p.county = String(detailPlace.county || ''); changed = true; }
+      if(String(p.locality || '') !== String((detailFields && detailFields.locality) || '')){ p.locality = String((detailFields && detailFields.locality) || ''); changed = true; }
+      if(String(p.county || '') !== String((detailFields && detailFields.county) || '')){ p.county = String((detailFields && detailFields.county) || ''); changed = true; }
     }
     p.src = 'Elurikkus';
-    p.lastFetched = new Date().toISOString();
+    p.lastFetched = detailFetchedAt;
     p.occ7 = (nextOcc7 === null ? (Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : 0) : nextOcc7);
     p.occ7Source = 'elurikkus_records_table';
     p.occ7DatesSample = (occ7Dates || []).slice(0, 10);
@@ -1760,9 +1852,25 @@ async function autoFetchCoords(key, searchUrl, signal){
   }
   if(pickedMunicipality && String(p.municipality || '') !== pickedMunicipality){
     p.municipality = pickedMunicipality;
-    p.locality = String(detailPlace.locality || '');
-    p.county = String(detailPlace.county || '');
+    p.locality = String((detailFields && detailFields.locality) || '');
+    p.county = String((detailFields && detailFields.county) || '');
     changed = true;
+  }
+  if(fallbackObservedDate && String(p.t || '') !== fallbackObservedDate){
+    p.t = fallbackObservedDate;
+    p.latestSeenDate = fallbackObservedDate;
+    changed = true;
+  }
+  if(detailFields){
+    console.log('[elu-detail]', {
+      species: species,
+      occurrenceId: (p.elurikkus && p.elurikkus.occurrenceId) || '',
+      observedDate: (p.elurikkus && p.elurikkus.observedDate) || '',
+      municipality: p.municipality || '',
+      locality: p.locality || '',
+      county: p.county || '',
+      coordsStatus: (p.elurikkus && p.elurikkus.coordsStatus) || p.coords_status || 'missing'
+    });
   }
   if(!nextCoordsValid){
     p.coordDate = String(p.coordDate || '');
@@ -1790,7 +1898,7 @@ async function autoFetchCoords(key, searchUrl, signal){
   const moved = !!(nextCoordsValid && prevCoordsValid &&
     (Math.abs(oldLat - Number(coords[0])) > 1e-6 || Math.abs(oldLon - Number(coords[1])) > 1e-6));
   if(!nextCoordsValid){
-    throw new Error('No coordinates found on search/detail pages');
+    return { key: species, updated: changed, moved: false, found: false, date: String(p.t || ''), occ7: Number(p.occ7 || 0), detailUrl: detailUrl || '' };
   }
   return {
     species: species,
@@ -4440,6 +4548,7 @@ async function _applySnapshot(snap){
     if(typeof s.locality === 'string' && s.locality.trim()) snapPoint.locality = s.locality;
     if(typeof s.municipality === 'string' && s.municipality.trim()) snapPoint.municipality = s.municipality;
     if(typeof s.county === 'string' && s.county.trim()) snapPoint.county = s.county;
+    if(s.elurikkus && typeof s.elurikkus === 'object') snapPoint.elurikkus = Object.assign({}, s.elurikkus);
     __snapshotPointBySpecies[_speciesKey(key)] = Object.assign({}, snapPoint);
     const keepLive = false;
     if(!keepLive){
@@ -5497,6 +5606,9 @@ function rowHTML(obj) {
   const municipalityLine = p.municipality
     ? '<div class="small"><span class="pill">municipality:</span> <span>' + escapeHtml(p.municipality || '') + '</span></div>'
     : '';
+  const detailDebugLine = (p.elurikkus && (p.elurikkus.occurrenceId || p.municipality || p.locality || p.county))
+    ? '<div class="small">detail: ' + escapeHtml(p.elurikkus.occurrenceId || '-') + ' | ' + escapeHtml([p.municipality, p.locality, p.county].filter(Boolean).join(' / ')) + '</div>'
+    : '';
   const openUrl = String((p.openUrl || p.latestUrl || p.searchUrl || obj.url) || obj.url);
 
   return '<div class="row" data-key="'+key+'">' +
@@ -5507,6 +5619,7 @@ function rowHTML(obj) {
       '</div>' +
       '<div class="small">'+meta+'</div>' +
       municipalityLine +
+      detailDebugLine +
     '</div>' +
     '<div class="controls">' +
       '<div style="display:flex;flex-direction:column;gap:6px">' +

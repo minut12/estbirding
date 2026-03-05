@@ -790,7 +790,17 @@ function _rebuildMarkers(opts){
   }
 }
 function _toDay(s){
-  return _parseObservedTs(s);
+  if(!s) return null;
+  const str = String(s).trim();
+  let m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m){
+    return new Date(+m[1], +m[2]-1, +m[3], 12, 0, 0, 0).getTime();
+  }
+  m = str.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if(m){
+    return new Date(+m[3], +m[2]-1, +m[1], 12, 0, 0, 0).getTime();
+  }
+  return null;
 }
 const SPRING_CUTOFF_MMDD = '02-15'; // change if needed
 function earliestInYearIsoAfterCutoff(datesIso, year, mmddCutoff){
@@ -1832,12 +1842,13 @@ function isWithin7dPoint(p){
   return delta >= 0 && delta <= 7 * 24 * 60 * 60 * 1000;
 }
 
-function isRecent(isoDate){
+function isRecent(isoOrDdMmYyyy){
   try{
-    const ms = _toDayLocalTallinn(_dateOnlyFromAny(isoDate));
+    const ms = _toDay(isoOrDdMmYyyy);
     if (!ms) return false;
+    const seven = 7 * 24 * 60 * 60 * 1000;
     const diff = Date.now() - ms;
-    return diff >= 0 && diff <= 7 * 24 * 60 * 60 * 1000;
+    return diff >= 0 && diff <= seven;
   }catch(e){ return false; }
 }
 function hasRecentObservation(p){

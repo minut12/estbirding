@@ -1818,7 +1818,10 @@ async function autoFetchCoords(key, searchUrl, signal){
       coordsStatus: detailCoordsStatus,
       fetchedAt: detailFetchedAt
     };
-    if(detailFields.observedDate) p.t = detailFields.observedDate;
+    if(detailFields.observedDate){
+      p.t = detailFields.observedDate;
+      p.observedDate = detailFields.observedDate;
+    }
     if(detailFields.observedAt) p.observedAt = detailFields.observedAt;
     if(detailFields.municipality) p.municipality = detailFields.municipality;
     if(detailFields.locality) p.locality = detailFields.locality;
@@ -2967,7 +2970,10 @@ function _applySelectedOccurrenceFromServer(speciesName, json){
       coordsStatus: String(detail.coordsStatus || p.coords_status || 'missing'),
       fetchedAt: fetchedAt
     };
-    if(detail.observedDate) p.t = detail.observedDate;
+    if(detail.observedDate){
+      p.t = detail.observedDate;
+      p.observedDate = detail.observedDate;
+    }
     if(detail.observedAt) p.observedAt = detail.observedAt;
     if(detail.country) p.country = detail.country;
     if(detail.county) p.county = detail.county;
@@ -5690,31 +5696,25 @@ function rowHTML(obj) {
   const meta = hasPoint
     ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
     : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
-  const observedAtView = p.observedAt || elu.observedAt || '';
-  const municipalityView = p.municipality || elu.municipality || '';
-  const localityView = p.locality || elu.locality || '';
-  const countyView = p.county || elu.county || '';
-  const countryView = p.country || elu.country || '';
-  const individualCountView = (p.individualCount != null ? p.individualCount : elu.individualCount);
-  const behaviorView = p.behavior || elu.behavior || '';
-  const collectorsView = p.collectors || elu.collectors || '';
-  const datasetView = p.dataset || elu.dataset || '';
-  const projectView = p.project || elu.project || '';
-  const speciesExtra = (
-    (observedAtView ? '<div>' + escapeHtml(observedAtView) + '</div>' : '') +
-    ((municipalityView || localityView || countyView) ? '<div>' + escapeHtml([municipalityView, localityView, countyView].filter(Boolean).join(' | ')) + '</div>' : '') +
-    ((countryView || individualCountView != null || behaviorView) ? '<div>' + escapeHtml([
-      countryView || '',
-      (individualCountView != null ? ('count:' + individualCountView) : ''),
-      (behaviorView ? ('behavior:' + behaviorView) : '')
-    ].filter(Boolean).join(' | ')) + '</div>' : '') +
-    ((collectorsView || datasetView || projectView) ? '<div>' + escapeHtml([
-      collectorsView || '',
-      datasetView || '',
-      projectView || ''
-    ].filter(Boolean).join(' | ')) + '</div>' : '')
-  );
-  const speciesExtraHtml = speciesExtra ? '<div class="small species-extra">' + speciesExtra + '</div>' : '';
+  const extraParts = [];
+  if (p.observedAt) extraParts.push('<div>' + escapeHtml(p.observedAt) + '</div>');
+  const placeLine = [p.municipality, p.locality, p.county].filter(Boolean).join(' | ');
+  if (placeLine) extraParts.push('<div>' + escapeHtml(placeLine) + '</div>');
+  const statsLine = [
+    p.country || '',
+    (p.individualCount != null ? 'count:' + p.individualCount : ''),
+    (p.behavior ? 'behavior:' + p.behavior : '')
+  ].filter(Boolean).join(' | ');
+  if (statsLine) extraParts.push('<div>' + escapeHtml(statsLine) + '</div>');
+  const sourceLine = [
+    p.collectors || '',
+    p.dataset || '',
+    p.project || ''
+  ].filter(Boolean).join(' | ');
+  if (sourceLine) extraParts.push('<div>' + escapeHtml(sourceLine) + '</div>');
+  const extraInfoLine = extraParts.length
+    ? ('<div class="small species-extra" style="margin-top:4px;line-height:1.35">' + extraParts.join('') + '</div>')
+    : '';
   const openUrl = String((p.openUrl || p.latestUrl || p.searchUrl || obj.url) || obj.url);
 
   return '<div class="row" data-key="'+key+'">' +
@@ -5724,7 +5724,7 @@ function rowHTML(obj) {
         '<div class="name-row"><div class="name-label clickable '+muted+'" onclick="toggleVisibility(\''+key+'\')">'+key+'</div>' + (rarityText ? '<span class="rarity-badge" title="Haruldus">'+rarityText+'</span>' : '') + '</div>' +
       '</div>' +
       '<div class="small">'+meta+'</div>' +
-      speciesExtraHtml +
+      extraInfoLine +
     '</div>' +
     '<div class="controls">' +
       '<div style="display:flex;flex-direction:column;gap:6px">' +

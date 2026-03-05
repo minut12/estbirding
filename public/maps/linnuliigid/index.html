@@ -259,7 +259,7 @@ function clearOccurrence(key){
 
 <script>
 // === Species ===
-const SPECIES = ["Aed-pÃµÃµsalind","Aed-roolind","Aedporr","Alk","AlverÃ¼di","Ameerika piilpart","Atlantise tormilind","Aul","Baleaari tormilind","Euroopa kaelustÃ¤ks","Habekakk","Habeviires","Hahk","Hakk","Hall-kÃ¤rbsenÃ¤pp","Hallhaigur","Hallhani","Hallkibu","Hallpea-rÃ¤hn","HallpÃµsk-pÃ¼tt","HallrÃ¤stas","HallrÃ¼di","Halltsiitsitaja","Hallvares","HallÃµgija","Hangelind","Harakas","Haugaskotkas","Hele-urvalind","Heletilder","Herilaseviu","Hiireviu","HoburÃ¤stas","HÃ¤ndkakk","HÃ¤nilane","HÃµbehaigur","HÃµbehaugas","HÃµbekajakas","HÃ¼Ã¼p","Ida-mustvaeras","Jahipistrik","JÃ¤mejalg","JÃ¤rvekaur","JÃ¤Ã¤kajakas","JÃ¤Ã¤kaur","JÃ¤Ã¤koskel","JÃµgi-ritsiklind","JÃµgitiir","JÃµgitilder","JÃµgivÃ¤strik","KadakatÃ¤ks","Kaelus-kÃ¤rbsenÃ¤pp","Kaelus-turteltuvi","Kaeluskotkas","KaelusrÃ¤stas","Kaelustuvi","Kalakajakas","Kalakotkas","Kalda-rÃ¤dilind","KaldapÃ¤Ã¤suke","Kaljukajakas","Kaljukotkas","Kanada lagle","Kanakull","Kanepilind","Karbuskajakas","Karkjalg","Karmiinleevike","Karvasjalg-kakk","Karvasjalg-viu","Kassikakk","Kiivitaja","Kiripugu-rÃ¼di","Kirjuhahk","Kivikakk","Kivirullija","KivitÃ¤ks","Kodukakk","Kodutuvi","Koduvarblane","Koldhaigur","Koldjalg-hÃµbekajakas","Koldvint","Kormoran","KrÃ¼Ã¼sel","Kukkurtihane","Kuld-lehelind","KuldhÃ¤nilane","Kuldnokk","Kuldtsiitsitaja","Kuninghahk","Kuuse-kÃ¤bilind","KÃ¤blik","KÃ¤gu","KÃ¤harpelikan","KÃ¤osulane","KÃ¤Ã¤buskormoran","KÃ¤Ã¤buskotkas","KÃµnnuÃµgija","KÃµrbe-kivitÃ¤ks","KÃµrbe-pÃµÃµsalind","KÃµrkja-roolind","KÃµrvukrÃ¤ts","KÃµvernokk-rÃ¼di","KÃ¼hmnokk-luik","KÃ¼nnivares","LaanenÃ¤Ã¤r","LaanepÃ¼Ã¼","LaanerÃ¤hn","Laisaba-Ã¤nn","Lammitilder","Lapi tsiitsitaja","Lasuurtihane","Lauk","Laululuik","LaulurÃ¤stas","LeeterÃ¼di","Leevike","Liiv-kivitÃ¤ks","LiivatÃ¼ll","LinavÃ¤strik","Loorkakk","Luitsnokk-iibis","Luitsnokk-part","Lumehani","Lumekakk","LÃ¤Ã¤ne-lehelind","LÃ¤Ã¤ne-pÃ¶ialpoiss","LÃµopistrik","LÃµuna-hÃµbekajakas","LÃ¼hinokk-hani","Madukotkas","Mandariinpart","Merikajakas","Merikotkas","MerirÃ¼di","Merisk","Merivart","MesilasenÃ¤pp","Mets-lehelind","Metsis","Metskiur","Metskurvits","Metstilder","Metsvint","Mudanepp","Mudatilder","Must-harksaba","Must-kÃ¤rbsenÃ¤pp","Must-lepalind","Must-toonekurg","Mustjalg-tÃ¼ll","Mustkael-pÃ¼tt","Mustkurk-raat","Mustlagle","Mustlauk-Ãµgija","Mustpea-pÃµÃµsalind","Mustpea-tsiitsitaja","Mustpugu-rÃ¤stas","MustrÃ¤hn","MustrÃ¤stas","Mustsaba-vigle","Musttihane","Mustvaeras","Mustvares","Mustviires","MÃ¤gi-kanepilind","MÃ¤gikiur","MÃ¤nni-kÃ¤bilind","MÃ¤nnileevike","MÃ¤nnitalvike","MÃ¤nsak","Naaskelnokk","Naerukajakas","Naerutiir","Niidu-kaelustÃ¤ks","Niidu-ritsiklind","Niidukiur","Nunn-kivitÃ¤ks","Nurmkana","NÃµgipart","NÃµlva-lehelind","NÃµmmekiur","NÃµmmelÃµoke","Ohakalind","Ohhoota hÃµbekajakas","Padu-roolind","PasknÃ¤Ã¤r","Peegel-tormilind","Pelikan","Peoleo","Piilpart","Piiritaja","Pikksaba-Ã¤nn","PlÃ¼tt","PlÃ¼Ã¼","Polaarkajakas","Porr","Prillvaeras","Pruunselg-pÃµÃµsalind","Puna-harksaba","Puna-veetallaja","Punajalg-pistrik","Punajalg-tilder","Punakael-lagle","Punakurk-kaur","Punanokk-vart","Punapea-vart","Punapea-Ãµgija","Punarind","Punasaba-Ãµgija","Punaselg-Ãµgija","Purpurhaigur","Puukoristaja","PÃµhja-kirjurÃ¤stas","PÃµhja-lehelind","PÃµhja-tormipÃ¤Ã¤su","PÃµhjatihane","PÃµhjatsiitsitaja","PÃµhjavint","PÃµldlÃµoke","PÃµldtsiitsitaja","PÃµldvarblane","PÃµldvutt","PÃ¶ialpoiss","Rabapistrik","RabapÃ¼Ã¼","Raisakotkas","Randkajakas","Randkiur","Randtiir","Rasvatihane","Raudkull","Ristpart","RoherÃ¤hn","Rohevint","Rohukoskel","Rohunepp","Ronk","Roo-loorkull","Roo-ritsiklind","Roohabekas","Rooruik","Roosa-kuldnokk","Roosakajakas","Roosatiir","RoostepÃ¤Ã¤suke","Roosterind-tÃ¼ll","Rootsiitsitaja","RubiinÃ¶Ã¶bik","RukkirÃ¤Ã¤k","RuugerÃ¼di","RÃ¤gapart","RÃ¤stas-roolind","RÃ¤usktiir","RÃ¤Ã¤kspart","RÃ¤Ã¤stapÃ¤Ã¤suke","RÃ¼Ã¼t","Sabatihane","Salu-lehelind","SalupÃ¤ll","Salutihane","SarviklÃµoke","SarvikpÃ¼tt","Siberi lehelind","Siberi raat","Siidhaigur","Siidisaba","Siisike","Sinikael-part","Siniraag","Sinirind","Sinisaba","Sinitihane","Soo-loorkull","Soo-roolind","Sookiur","Sookurg","Soopart","SoorÃ¤ts","SoorÃ¼di","Stepi-loorkull","Stepikajakas","Stepikiivitaja","Stepikotkas","Stepipistrik","Stepiviu","SuitsupÃ¤Ã¤suke","Suula","Suur-kirjurÃ¤hn","Suur-konnakotkas","Suur-laukhani","Suurkoovitaja","Suurnokk-vint","SuurrÃ¼di","SuurÃ¤nn","SÃµtkas","SÃ¶Ã¶dikÃ¤nn","Tait","Talvike","Tamme-kirjurÃ¤hn","Teder","Tiigi-roolind","Tikutaja","Triip-ritsiklind","Tuhk-lehelind","Tumetilder","Tundra-rabahani","Tundrakaur","Tundrakiur","Tutkas","Tutt-tihane","Tutt-tiir","TuttlÃµoke","TuttpÃ¼tt","Tuttvart","Tuuletallaja","TÃ¤pikhuik","TÃµmmu-lehelind","TÃµmmuiibis","TÃµmmukajakas","TÃµmmuvaeras","Urvalind","Vaaraohani","VaenukÃ¤gu","VainurÃ¤stas","Valge-toonekurg","ValgepÃµsk-lagle","Valgeselg-kirjurÃ¤hn","Valgesilm-vart","Valgetiib-viires","Veetallaja","Veisehaigur","Vesipapp","Vihitaja","Viupart","VÃ¤ike-kirjurÃ¤hn","VÃ¤ike-konnakotkas","VÃ¤ike-kÃ¤osulane","VÃ¤ike-kÃ¤rbsenÃ¤pp","VÃ¤ike-laukhani","VÃ¤ike-lehelind","VÃ¤ike-pÃµÃµsalind","VÃ¤ikealk","VÃ¤ikehuik","VÃ¤ikehÃ¼Ã¼p","VÃ¤ikekajakas","VÃ¤ikekoovitaja","VÃ¤ikekoskel","VÃ¤ikeluik","VÃ¤ikepistrik","VÃ¤ikepÃ¼tt","VÃ¤ikerÃ¼di","VÃ¤iketiir","VÃ¤iketrapp","VÃ¤iketsiitsitaja","VÃ¤iketÃ¼ll","VÃ¤lja-loorkull","VÃ¤lja-vÃ¤ikelÃµoke","VÃ¤rbkakk","VÃ¤rbrÃ¼di","VÃ¤Ã¤nkael","VÃµsa-ritsiklind","VÃµsaraat","VÃ¶Ã¶t-kÃ¤bilind","VÃ¶Ã¶t-pÃµÃµsalind","VÃ¶Ã¶thani","VÃ¶Ã¶tkakk","VÃ¶Ã¶tnokk-kajakas","VÃ¶Ã¶tsaba-vigle","Ã•Ãµnetuvi","Ã–Ã¶bik","Ã–Ã¶haigur","Ã–Ã¶sorr"];
+const SPECIES = ["Aed-pÃµÃµsalind","Aed-roolind","Aedporr","Alk","AlverÃ¼di","Ameerika piilpart","Atlantise tormilind","Aul","Baleaari tormilind","Euroopa kaelustÃ¤ks","Habekakk","Habeviires","Hahk","Hakk","Hall-kÃ¤rbsenÃ¤pp","Hallhaigur","Hallhani","Hallkibu","Hallpea-rÃ¤hn","HallpÃµsk-pÃ¼tt","HallrÃ¤stas","HallrÃ¼di","Halltsiitsitaja","Hallvares","HallÃµgija","Hangelind","Harakas","Haugaskotkas","Hele-urvalind","Heletilder","Herilaseviu","Hiireviu","HoburÃ¤stas","HÃ¤ndkakk","HÃ¤nilane","HÃµbehaigur","HÃµbehaugas","HÃµbekajakas","HÃ¼Ã¼p","Ida-mustvaeras","Jahipistrik","JÃ¤mejalg","JÃ¤rvekaur","JÃ¤Ã¤kajakas","JÃ¤Ã¤kaur","JÃ¤Ã¤koskel","JÃµgi-ritsiklind","JÃµgitiir","JÃµgitilder","JÃµgivÃ¤strik","KadakatÃ¤ks","Kaelus-kÃ¤rbsenÃ¤pp","Kaelus-turteltuvi","Kaeluskotkas","KaelusrÃ¤stas","Kaelustuvi","Kalakajakas","Kalakotkas","Kalda-rÃ¤dilind","KaldapÃ¤Ã¤suke","Kaljukajakas","Kaljukotkas","Kanada lagle","Kanakull","Kanepilind","Karbuskajakas","Karkjalg","Karmiinleevike","Karvasjalg-kakk","Karvasjalg-viu","Kassikakk","Kiivitaja","Kiripugu-rÃ¼di","Kirjuhahk","Kivikakk","Kivirullija","KivitÃ¤ks","Kodukakk","Kodutuvi","Koduvarblane","Koldhaigur","Koldjalg-hÃµbekajakas","Koldvint","Kormoran","KrÃ¼Ã¼sel","Kukkurtihane","Kuld-lehelind","KuldhÃ¤nilane","Kuldnokk","Kuldtsiitsitaja","Kuninghahk","Kuuse-kÃ¤bilind","KÃ¤blik","KÃ¤gu","KÃ¤harpelikan","KÃ¤osulane","KÃ¤Ã¤buskormoran","KÃ¤Ã¤buskotkas","KÃµnnuÃµgija","KÃµrbe-kivitÃ¤ks","KÃµrbe-pÃµÃµsalind","KÃµrkja-roolind","KÃµrvukrÃ¤ts","KÃµvernokk-rÃ¼di","KÃ¼hmnokk-luik","KÃ¼nnivares","LaanenÃ¤Ã¤r","LaanepÃ¼Ã¼","LaanerÃ¤hn","Laisaba-Ã¤nn","Lammitilder","Lapi tsiitsitaja","Lasuurtihane","Lauk","Laululuik","LaulurÃ¤stas","LeeterÃ¼di","Leevike","Liiv-kivitÃ¤ks","LiivatÃ¼ll","LinavÃ¤strik","Loorkakk","Luitsnokk-iibis","Luitsnokk-part","Lumehani","Lumekakk","LÃ¤Ã¤ne-lehelind","LÃ¤Ã¤ne-pÃ¶ialpoiss","LÃµopistrik","LÃµuna-hÃµbekajakas","LÃ¼hinokk-hani","Madukotkas","Mandariinpart","Merikajakas","Merikotkas","MerirÃ¼di","Merisk","Merivart","MesilasenÃ¤pp","Mets-lehelind","Metsis","Metskiur","Metskurvits","Metstilder","Metsvint","Mudanepp","Mudatilder","Must-harksaba","Must-kÃ¤rbsenÃ¤pp","Must-lepalind","Must-toonekurg","Mustjalg-tÃ¼ll","Mustkael-pÃ¼tt","Mustkurk-raat","Mustlagle","Mustlauk-Ãµgija","Mustpea-pÃµÃµsalind","Mustpea-tsiitsitaja","Mustpugu-rÃ¤stas","MustrÃ¤hn","MustrÃ¤stas","Mustsaba-vigle","Musttihane","Mustvaeras","Mustvares","Mustviires","MÃ¤gi-kanepilind","MÃ¤gikiur","MÃ¤nni-kÃ¤bilind","MÃ¤nnileevike","MÃ¤nnitalvike","MÃ¤nsak","Naaskelnokk","Naerukajakas","Naerutiir","Niidu-kaelustÃ¤ks","Niidu-ritsiklind","Niidukiur","Nunn-kivitÃ¤ks","Nurmkana","NÃµgipart","NÃµlva-lehelind","NÃµmmekiur","NÃµmmelÃµoke","Ohakalind","Ohhoota hÃµbekajakas","Padu-roolind","PasknÃ¤Ã¤r","Peegel-tormilind","Pelikan","Peoleo","Piilpart","Piiritaja","Pikksaba-Ã¤nn","PlÃ¼tt","PlÃ¼Ã¼","Polaarkajakas","Porr","Prillvaeras","Pruunselg-pÃµÃµsalind","Puna-harksaba","Puna-veetallaja","Punajalg-pistrik","Punajalg-tilder","Punakael-lagle","Punakurk-kaur","Punanokk-vart","Punapea-vart","Punapea-Ãµgija","Punarind","Punasaba-Ãµgija","Punaselg-Ãµgija","Purpurhaigur","Puukoristaja","PÃµhja-kirjurÃ¤stas","PÃµhja-lehelind","PÃµhja-tormipÃ¤Ã¤su","PÃµhjatihane","PÃµhjatsiitsitaja","PÃµhjavint","PÃµldlÃµoke","PÃµldtsiitsitaja","PÃµldvarblane","PÃµldvutt","PÃ¶ialpoiss","Rabapistrik","RabapÃ¼Ã¼","Raisakotkas","Randkajakas","Randkiur","Randtiir","Rasvatihane","Raudkull","Ristpart","RoherÃ¤hn","Rohevint","Rohukoskel","Rohunepp","Ronk","Roo-loorkull","Roo-ritsiklind","Roohabekas","Rooruik","Roosa-kuldnokk","Roosakajakas","Roosatiir","RoostepÃ¤Ã¤suke","Roosterind-tÃ¼ll","Rootsiitsitaja","RubiinÃ¶Ã¶bik","RukkirÃ¤Ã¤k","RuugerÃ¼di","RÃ¤gapart","RÃ¤stas-roolind","RÃ¤usktiir","RÃ¤Ã¤kspart","RÃ¤Ã¤stapÃ¤Ã¤suke","RÃ¼Ã¼t","Sabatihane","Salu-lehelind","SalupÃ¤ll","Salutihane","SarviklÃµoke","SarvikpÃ¼tt","Siberi lehelind","Siberi raat","Siidhaigur","Siidisaba","Siisike","Sinikael-part","Siniraag","Sinirind","Sinisaba","Sinitihane","Soo-loorkull","Soo-roolind","Sookiur","Sookurg","Soopart","SoorÃ¤ts","SoorÃ¼di","Stepi-loorkull","Stepikajakas","Stepikiivitaja","Stepikotkas","Stepipistrik","Stepiviu","SuitsupÃ¤Ã¤suke","Suula","Suur-kirjurÃ¤hn","Suur-konnakotkas","Suur-laukhani","Suurkoovitaja","Suurnokk-vint","SuurrÃ¼di","SuurÃ¤nn","SÃµtkas","SÃ¶Ã¶dikÃ¤nn","Tait","Talvike","Tamme-kirjurÃ¤hn","Teder","Tiigi-roolind","Tikutaja","Triip-ritsiklind","Tuhk-lehelind","Tumetilder","Tundra-rabahani","Tundrakaur","Tundrakiur","Tutkas","Tutt-tihane","Tutt-tiir","TuttlÃµoke","TuttpÃ¼tt","Tuttvart","Tuuletallaja","TÃ¤pikhuik","TÃµmmu-lehelind","TÃµmmuiibis","TÃµmmukajakas","TÃµmmuvaeras","Urvalind","Vaaraohani","VaenukÃ¤gu","VainurÃ¤stas","Valge-toonekurg","ValgepÃµsk-lagle","Valgeselg-kirjurÃ¤hn","Valgesilm-vart","Valgetiib-viires","Veetallaja","Veisehaigur","Vesipapp","Vihitaja","Viupart","VÃ¤ike-kirjurÃ¤hn","VÃ¤ike-konnakotkas","VÃ¤ike-kÃ¤osulane","VÃ¤ike-kÃ¤rbsenÃ¤pp","VÃ¤ike-laukhani","VÃ¤ike-lehelind","VÃ¤ike-pÃµÃµsalind","VÃ¤ikealk","VÃ¤ikehuik","VÃ¤ikehÃ¼Ã¼p","VÃ¤ikekajakas","VÃ¤ikekoovitaja","VÃ¤ikekoskel","VÃ¤ikeluik","VÃ¤ikepistrik","VÃ¤ikepÃ¼tt","VÃ¤ikerÃ¼di","VÃ¤iketiir","VÃ¤iketrapp","VÃ¤iketsiitsitaja","VÃ¤iketÃ¼ll","VÃ¤lja-loorkull","VÃ¤lja-vÃ¤ikelÃµoke","VÃ¤rbkakk","VÃ¤rbrÃ¼di","VÃ¤Ã¤nkael","VÃµsa-ritsiklind","VÃµsaraat","VÃ¶Ã¶t-kÃ¤bilind","VÃ¶Ã¶t-pÃµÃµsalind","VÃ¶Ã¶thani","VÃ¶Ã¶tkakk","VÃ¶Ã¶tnokk-kajakas","VÃ¶Ã¶tsaba-vigle","Õõnetuvi","Ööbik","Ööhaigur","Öösorr"];
 
 function _fixMojibake(s){
   var v = String(s || "");
@@ -341,7 +341,7 @@ function getProxyTranslateEndpointFromSupabaseProxyBase(){
 }
 
 // Default spring migration dates
-const DEFAULT_SPRING_DATES = {"Heletilder":"6.04","Herilaseviu":"5.05","HÃ¤nilane":"14.04","JÃµgitiir":"21.03","KadakatÃ¤ks":"22.04","KaelusrÃ¤stas":"17.04","Kalakotkas":"31.03","KaldapÃ¤Ã¤suke":"29.04","Karmiinleevike":"6.05","Kivirullija":"6.05","KivitÃ¤ks":"2.04","Koldvint":"6.04","Kukkurtihane":"1.04","KuldhÃ¤nilane":"12.04","KÃ¤osulane":"4.05","Lammitilder":"14.04","Lapi tsiitsitaja":"5.04","Lepalind":"12.04","LinavÃ¤strik":"18.03","LÃµopistrik":"19.04","Madukotkas":"26.04","Metskiur":"8.04","Metstilder":"24.03","Mudatilder":"9.04","Mustlagle":"30.03","Mustviires":"29.04","NÃµmmelÃµoke":"10.03","Peoleo":"6.05","Piiritaja":"3.05","PlÃ¼tt":"19.05","PlÃ¼Ã¼":"25.04","PÃµldtsiitsitaja":"4.05","Rabapistrik":"11.04","Randtiir":"16.04","Rohunepp":"28.04","RukkirÃ¤Ã¤k":"7.05","RÃ¤gapart":"25.03","RÃ¤usk":"4.04","RÃ¤Ã¤stapÃ¤Ã¤suke":"18.04","RÃ¼Ã¼t":"5.03","SarviklÃµoke":"6.03","Sinirind":"18.04","SoorÃ¤ts":"17.04","SoorÃ¼di":"27.03","SuitsupÃ¤Ã¤suke":"10.04","Suurkoovitaja":"25.03","SuurrÃ¼di":"4.05","Tundrakaur":"1.05","Tundrakiur":"23.04","Turteltuvi":"25.04","TÃ¤pikhuik":"18.04","TÃµmmukajakas":"8.03","VaenukÃ¤gu":"13.04","Veetallaja":"19.05","Vihitaja":"31.03","VÃ¤ikehuik":"24.04","VÃ¤ikehÃ¼Ã¼p":"30.05","VÃ¤ikekoovitaja":"12.04","VÃ¤ikerÃ¼di":"17.05","VÃ¤iketiir":"21.04","VÃ¤iketÃ¼ll":"6.04","VÃ¤rbrÃ¼di":"20.04","VÃ¤Ã¤nkael":"11.04","Ã–Ã¶bik":"28.04","Ã–Ã¶sorr":"24.04"};
+const DEFAULT_SPRING_DATES = {"Heletilder":"6.04","Herilaseviu":"5.05","HÃ¤nilane":"14.04","JÃµgitiir":"21.03","KadakatÃ¤ks":"22.04","KaelusrÃ¤stas":"17.04","Kalakotkas":"31.03","KaldapÃ¤Ã¤suke":"29.04","Karmiinleevike":"6.05","Kivirullija":"6.05","KivitÃ¤ks":"2.04","Koldvint":"6.04","Kukkurtihane":"1.04","KuldhÃ¤nilane":"12.04","KÃ¤osulane":"4.05","Lammitilder":"14.04","Lapi tsiitsitaja":"5.04","Lepalind":"12.04","LinavÃ¤strik":"18.03","LÃµopistrik":"19.04","Madukotkas":"26.04","Metskiur":"8.04","Metstilder":"24.03","Mudatilder":"9.04","Mustlagle":"30.03","Mustviires":"29.04","NÃµmmelÃµoke":"10.03","Peoleo":"6.05","Piiritaja":"3.05","PlÃ¼tt":"19.05","PlÃ¼Ã¼":"25.04","PÃµldtsiitsitaja":"4.05","Rabapistrik":"11.04","Randtiir":"16.04","Rohunepp":"28.04","RukkirÃ¤Ã¤k":"7.05","RÃ¤gapart":"25.03","RÃ¤usk":"4.04","RÃ¤Ã¤stapÃ¤Ã¤suke":"18.04","RÃ¼Ã¼t":"5.03","SarviklÃµoke":"6.03","Sinirind":"18.04","SoorÃ¤ts":"17.04","SoorÃ¼di":"27.03","SuitsupÃ¤Ã¤suke":"10.04","Suurkoovitaja":"25.03","SuurrÃ¼di":"4.05","Tundrakaur":"1.05","Tundrakiur":"23.04","Turteltuvi":"25.04","TÃ¤pikhuik":"18.04","TÃµmmukajakas":"8.03","VaenukÃ¤gu":"13.04","Veetallaja":"19.05","Vihitaja":"31.03","VÃ¤ikehuik":"24.04","VÃ¤ikehÃ¼Ã¼p":"30.05","VÃ¤ikekoovitaja":"12.04","VÃ¤ikerÃ¼di":"17.05","VÃ¤iketiir":"21.04","VÃ¤iketÃ¼ll":"6.04","VÃ¤rbrÃ¼di":"20.04","VÃ¤Ã¤nkael":"11.04","Ööbik":"28.04","Öösorr":"24.04"};
 for (const _k of Object.keys(DEFAULT_SPRING_DATES)) {
   const _nk = _normText(_k);
   if (_nk !== _k) {
@@ -926,6 +926,16 @@ function _dateOnlyFromAny(v){
   const s = String(v || '').trim();
   const m = s.match(/(\d{4}-\d{2}-\d{2})/);
   return m ? m[1] : '';
+}
+function _recomputeClientDataMaxAt(){
+  let maxTs = 0;
+  Object.keys(points || {}).forEach(function(k){
+    const p = points[k] || {};
+    const ts = _parseObservedTs(p.t || p.date || p.observedAt || '');
+    if(Number.isFinite(ts) && ts > maxTs) maxTs = ts;
+  });
+  window.__clientDataMaxAt = maxTs > 0 ? new Date(maxTs).toISOString() : '';
+  return window.__clientDataMaxAt;
 }
 function extractEventDate(html){
   const s = String(html || '');
@@ -1597,33 +1607,36 @@ async function autoFetchCoords(key, searchUrl, signal){
   const newerDate = !!(nextDate && (!prevDate || nextDate > prevDate));
   const changedOcc7 = (nextOcc7 !== null && nextOcc7 !== oldOcc7);
 
+  const shouldApply = changedCoords || newerDate || changedOcc7;
   let changed = false;
-  if(nextCoordsValid && changedCoords){
-    p.lat = Number(coords[0]);
-    p.lon = Number(coords[1]);
+  if(shouldApply){
+    if(nextCoordsValid){
+      p.lat = Number(coords[0]);
+      p.lon = Number(coords[1]);
+    }
+    if(nextEventDate) p.t = nextEventDate;
+    p.src = 'Elurikkus';
+    p.lastFetched = new Date().toISOString();
+    p.occ7 = (nextOcc7 === null ? (Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : 0) : nextOcc7);
     changed = true;
   }
-  if(nextEventDate && (newerDate || !prevDate || String(p.t || '') !== nextEventDate)){
-    p.t = nextEventDate;
-    changed = true;
-  }
-  if(nextOcc7 !== null && changedOcc7){
-    p.occ7 = nextOcc7;
-    changed = true;
-  } else if(nextOcc7 !== null && !Number.isFinite(Number(p.occ7))){
-    p.occ7 = nextOcc7;
-    changed = true;
-  }
-  p.src = 'Elurikkus';
-  p.lastFetched = new Date().toISOString();
   p.searchUrl = url;
-  if(detailUrl) p.latestUrl = detailUrl;
+  if(detailUrl){
+    p.openUrl = detailUrl;
+    p.latestUrl = detailUrl;
+  }
   if(typeof p.visible === 'undefined'){ p.visible = true; changed = true; }
 
   if(changed){
+    _recomputeClientDataMaxAt();
     try{ save(); }catch(e){}
     try{ updateMarker(species); }catch(e){}
     try{ render(); }catch(e){}
+    try{ _updateServerSnapshotStatus(); }catch(e){}
+  }
+  if(!changed){
+    _recomputeClientDataMaxAt();
+    try{ _updateServerSnapshotStatus(); }catch(e){}
   }
 
   const moved = !!(nextCoordsValid && prevCoordsValid &&
@@ -1633,7 +1646,7 @@ async function autoFetchCoords(key, searchUrl, signal){
   }
   return {
     species: species,
-    updated: changed || newerDate || changedOcc7,
+    updated: shouldApply,
     moved: moved,
     changedCoords: changedCoords,
     newerDate: newerDate,
@@ -1687,8 +1700,10 @@ async function refreshAllElurikkusOnce(){
       if(eluLastCoord) eluLastCoord.textContent = msg;
     }
     __elurikkusBulkStats = { done: i + 1, total: total, updated: updated, moved: moved, errors: errors, lastKey: name };
-    await new Promise(function(res){ setTimeout(res, 800); });
+    await new Promise(function(res){ setTimeout(res, 900); });
   }
+  _recomputeClientDataMaxAt();
+  try{ _updateServerSnapshotStatus(); }catch(e){}
   const aborted = !!(signal && signal.aborted);
   const doneMsg = aborted
     ? ('Elurikkus refresh cancelled: updated:' + updated + ' moved:' + moved + ' errors:' + errors)
@@ -1889,6 +1904,7 @@ let __serverSnapshotId = '';
 let __serverGeneratedAt = '';
 let __serverBytes = 0;
 let __serverDataMaxAt = '';
+window.__clientDataMaxAt = '';
 let __serverDataMinAt = '';
 let __serverCheckedAt = '';
 let __lastProcessedSnapshotId = '';
@@ -2317,17 +2333,26 @@ function _updateServerSnapshotStatus(){
   }
   const gen = __serverGeneratedAt ? _fmtTs(__serverGeneratedAt) : '-';
   const chk = __serverCheckedAt ? _fmtTs(__serverCheckedAt) : '-';
+  const clientMax = _recomputeClientDataMaxAt();
   const latest = __serverDataMaxAt ? _fmtTs(__serverDataMaxAt) : '-';
+  const latestClient = clientMax ? _fmtTs(clientMax) : '-';
   const latestTs = __serverDataMaxAt ? Date.parse(__serverDataMaxAt) : NaN;
+  const latestClientTs = clientMax ? Date.parse(clientMax) : NaN;
   const latestAgeHours = Number.isFinite(latestTs) ? ((Date.now() - latestTs) / (60 * 60 * 1000)) : null;
   const id = _shortId(__serverSnapshotId);
+  const clientWins = Number.isFinite(latestClientTs) && (!Number.isFinite(latestTs) || latestClientTs > latestTs);
   const staleNote = __serverMetaAvailable ? (_isServerDataStale(12) ? 'Server snapshot is stale' : 'Server data fresh') : '';
   const freshness = !__serverMetaAvailable
     ? 'Server meta not available'
     : ((!__lastProcessedSnapshotId || __serverIsNewer) ? 'New server data available' : 'No new server data');
   const err = (__serverCheckStatus === 'error' && __serverCheckError) ? ('; check error: ' + __serverCheckError) : '';
   const ageText = (latestAgeHours == null) ? '-' : (latestAgeHours.toFixed(1) + 'h');
-  el.textContent = 'Snapshot (server): built at ' + gen + ' | ID: ' + id + ' | Bytes: ' + String(Number(__serverBytes || 0) || '-') + ' | Latest occurrence in snapshot: ' + latest + ' (age: ' + ageText + ') | Checked: ' + chk + ' | ' + freshness + (staleNote ? (' | ' + staleNote) : '') + err;
+  if(clientWins){
+    el.textContent = 'Elurikkus (client): latest occurrence ' + latestClient + ' | Snapshot (server): latest occurrence ' + latest + ' (age: ' + ageText + ') | built at ' + gen + ' | Checked: ' + chk + err;
+    return;
+  }
+  const clientPrefix = clientMax ? ('Elurikkus (client): latest occurrence ' + latestClient + ' | ') : '';
+  el.textContent = clientPrefix + 'Snapshot (server): built at ' + gen + ' | ID: ' + id + ' | Bytes: ' + String(Number(__serverBytes || 0) || '-') + ' | Latest occurrence in snapshot: ' + latest + ' (age: ' + ageText + ') | Checked: ' + chk + ' | ' + freshness + (staleNote ? (' | ' + staleNote) : '') + err;
 }
 function _deriveMetaFromRowShape(row){
   if(!row || typeof row !== 'object') return null;
@@ -4095,7 +4120,7 @@ async function _applySnapshot(snap){
     if(typeof s.municipality === 'string' && s.municipality.trim()) snapPoint.municipality = s.municipality;
     if(typeof s.county === 'string' && s.county.trim()) snapPoint.county = s.county;
     __snapshotPointBySpecies[_speciesKey(key)] = Object.assign({}, snapPoint);
-    const keepLive = __lockLiveOverridesDuringRefresh && _isLiveOverrideEnabled(key) && _readLiveEntry(key);
+    const keepLive = false;
     if(!keepLive){
       // Race-condition fix: skip overwriting if we have a fresher Elurikkus-fetched value
       const _existing = points[key];
@@ -4134,6 +4159,7 @@ async function _applySnapshot(snap){
   __snapshotMeta.status = snap.status || 'ready';
   __snapshotMeta.generated_at = snap.generated_at;
   _setResumeIndex(__snapshotProgressDone);
+  _recomputeClientDataMaxAt();
   save();
   refreshAllMarkers();
 }
@@ -5733,5 +5759,6 @@ var __sharedDefaults = {};
 
 </body>
 </html>
+
 
 

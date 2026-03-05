@@ -1310,33 +1310,26 @@ function parseEluSearchRows(html){
   return rows;
 }
 function parseEluSearchNewestRowExtras(searchHtml){
-  const out = {
-    dateText: '',
-    individualCount: '',
-    behavior: '',
-    locality: '',
-    collectors: ''
-  };
+  const out = { dateText:'', individualCount:'', behavior:'', locality:'', collectors:'' };
   const doc = new DOMParser().parseFromString(String(searchHtml||''), 'text/html');
   const table = doc.querySelector('table');
   if(!table) return out;
-  const ths = Array.from(table.querySelectorAll('thead th, thead td')).map(function(x){ return _clean(x.textContent || ''); });
-  const idx = function(name){
-    return ths.findIndex(function(h){ return String(h).toLowerCase() === String(name).toLowerCase(); });
-  };
-  const iDate = idx('Date');
-  const iInd = idx('Individual count');
-  const iBeh = idx('Behavior');
-  const iLoc = idx('Locality');
-  const iCol = idx('Collectors');
-  const firstTr = table.querySelector('tbody tr');
-  if(!firstTr) return out;
-  const tds = Array.from(firstTr.querySelectorAll('td')).map(function(td){ return _clean(td.textContent || ''); });
-  out.dateText = (iDate >= 0 ? (tds[iDate] || '') : (tds[0] || ''));
-  out.individualCount = (iInd >= 0 ? (tds[iInd] || '') : '');
-  out.behavior = (iBeh >= 0 ? (tds[iBeh] || '') : '');
-  out.locality = (iLoc >= 0 ? (tds[iLoc] || '') : '');
-  out.collectors = (iCol >= 0 ? (tds[iCol] || '') : '');
+  function _normHead(s){ return String(s||'').replace(/\s+/g,' ').trim().toLowerCase(); }
+  const headCells = Array.from(table.querySelectorAll('thead th, thead td')).map(function(x){ return _normHead(x.textContent); });
+  const findCol = function(needle){ return headCells.findIndex(function(h){ return h.includes(needle); }); };
+  const iDate = findCol('date');
+  const iInd = findCol('individual count');
+  const iBeh = findCol('behavior');
+  const iLoc = findCol('locality');
+  const iCol = findCol('collectors');
+  const tr = table.querySelector('tbody tr');
+  if(!tr) return out;
+  const tds = Array.from(tr.querySelectorAll('td')).map(function(td){ return String(td.textContent||'').replace(/\s+/g,' ').trim(); });
+  out.dateText = (iDate>=0 ? (tds[iDate]||'') : (tds[0]||''));
+  out.individualCount = (iInd>=0 ? (tds[iInd]||'') : '');
+  out.behavior = (iBeh>=0 ? (tds[iBeh]||'') : '');
+  out.locality = (iLoc>=0 ? (tds[iLoc]||'') : '');
+  out.collectors = (iCol>=0 ? (tds[iCol]||'') : '');
   return out;
 }
 function extractNewestOccurrenceUrlFromSearch(searchHtml){
@@ -1348,30 +1341,37 @@ function extractNewestOccurrenceUrlFromSearch(searchHtml){
   if(!href) return '';
   return href.startsWith('http') ? href : ('https://elurikkus.ee' + (href.startsWith('/') ? href : '/' + href));
 }
-function parseDetailLabelValue(detailHtml, label){
-  const html = String(detailHtml || '');
+function extractFieldFromDetailText(detailHtml, labels){
+  let text = '';
   try{
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    const all = Array.from(doc.querySelectorAll('dt,th,strong,b,div,span'));
-    for(const el of all){
-      const t = _clean(el.textContent || '');
-      if(t !== label) continue;
-      let v = '';
-      if(el.nextElementSibling) v = _clean(el.nextElementSibling.textContent || '');
-      if(!v){
-        const p = el.parentElement;
-        if(p){
-          const kids = Array.from(p.children);
-          const kidx = kids.indexOf(el);
-          if(kidx >= 0 && kids[kidx + 1]) v = _clean(kids[kidx + 1].textContent || '');
+    const doc = new DOMParser().parseFromString(String(detailHtml||''), 'text/html');
+    text = (doc.body && doc.body.innerText) ? doc.body.innerText : '';
+  }catch(e){}
+  if(!text) text = String(detailHtml||'');
+  text = text.replace(/\r/g,'');
+  const lines = text.split('\n').map(function(s){ return String(s||'').trim(); }).filter(Boolean);
+  const lowLines = lines.map(function(l){ return l.toLowerCase(); });
+  const labelSet = new Set((labels || []).map(function(l){ return String(l).toLowerCase(); }));
+  for(let i=0;i<lines.length;i++){
+    const ll = lowLines[i];
+    for(const lab of labelSet){
+      if(ll === lab || ll === (lab + ':')){
+        for(let j=i+1;j<Math.min(i+8, lines.length); j++){
+          const v = lines[j].trim();
+          const vLow = v.toLowerCase();
+          if(!v) continue;
+          if(labelSet.has(vLow) || labelSet.has(vLow.replace(/:$/,''))) break;
+          return v;
         }
       }
-      if(v) return v;
     }
-  }catch(e){}
-  const re = new RegExp('>' + String(label).replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '<[\\s\\S]{0,300}?>\\s*([^<]{1,120})\\s*<', 'i');
-  const m = html.match(re);
-  if(m && m[1]) return _clean(m[1]);
+  }
+  for(const rawLab of (labels || [])){
+    const lab = String(rawLab).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const re = new RegExp('(?:^|\\n)\\s*' + lab + '\\s*:?\\s*([^\\n]{1,120})', 'i');
+    const m = text.match(re);
+    if(m && m[1]) return m[1].trim();
+  }
   return '';
 }
 function parseEluDetailExtras(detailHtml, detailUrl){
@@ -1384,12 +1384,12 @@ function parseEluDetailExtras(detailHtml, detailUrl){
     districts: '',
     eestiOmavalitsused: ''
   };
-  x.communes = parseDetailLabelValue(detailHtml, 'Communes') || parseDetailLabelValue(detailHtml, 'Kommuunid');
-  x.municipality = parseDetailLabelValue(detailHtml, 'Municipality') || parseDetailLabelValue(detailHtml, 'Omavalitsus');
-  x.county = parseDetailLabelValue(detailHtml, 'County') || parseDetailLabelValue(detailHtml, 'Maakond');
-  x.locality = parseDetailLabelValue(detailHtml, 'Locality') || parseDetailLabelValue(detailHtml, 'Asukoht');
-  x.districts = parseDetailLabelValue(detailHtml, 'Districts') || parseDetailLabelValue(detailHtml, 'Piirkonnad');
-  x.eestiOmavalitsused = parseDetailLabelValue(detailHtml, 'Eesti omavalitsused');
+  x.communes = extractFieldFromDetailText(detailHtml, ['Communes','Kommuunid']);
+  x.municipality = extractFieldFromDetailText(detailHtml, ['Municipality','Omavalitsus']);
+  x.county = extractFieldFromDetailText(detailHtml, ['County','Maakond']);
+  x.locality = extractFieldFromDetailText(detailHtml, ['Locality','Asukoht']);
+  x.districts = extractFieldFromDetailText(detailHtml, ['Districts','Piirkonnad']);
+  x.eestiOmavalitsused = extractFieldFromDetailText(detailHtml, ['Eesti omavalitsused']);
   return x;
 }
 function parseEluDateToMs(dateText){
@@ -2144,6 +2144,7 @@ async function autoFetchCoords(key, searchUrl, signal){
     changed = true;
     try{ save(); }catch(e){}
     try{ render(); }catch(e){}
+    console.log('ELU EXTRA', key, p.eluExtra);
   }
   if(shouldApply){
     if(nextCoordsValid){

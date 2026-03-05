@@ -120,6 +120,8 @@
     .rarity-badge{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:18px;padding:0 6px;border-radius:999px;background:#e2e8f0;color:#334155;font-size:10px;font-weight:700;border:1px solid #cbd5e1;line-height:1}
     .controls{display:flex;align-items:flex-start;justify-content:flex-end}
     .controls .btn{min-width:68px}
+    .species-extra{margin-top:4px;opacity:.85}
+    .species-extra > div{margin-top:2px}
 
     /* Mobile drawer + backdrop */
     .leaflet-top,.leaflet-bottom{z-index:1000!important}
@@ -1103,107 +1105,81 @@ function parseElurikkusDetailFields(detailHtml, occurrenceUrl){
     behavior: '',
     coordsStatus: 'missing'
   };
-  const src = String(detailHtml || '');
-  if(!src) return out;
-  try{
-    const m = String(occurrenceUrl || '').match(/occurrence\/(\d+)/i);
-    if(m) out.occurrenceId = String(m[1] || '');
-  }catch(e){}
+  const txt = String(detailHtml || '');
+  if(!txt) return out;
+  let m = String(occurrenceUrl || '').match(/occurrence\/(\d+)/i);
+  if(m) out.occurrenceId = String(m[1] || '');
 
   try{
-    const doc = new DOMParser().parseFromString(src, 'text/html');
-
+    const doc = new DOMParser().parseFromString(txt, 'text/html');
     const h1 = doc.querySelector('h1');
     if(h1) out.taxonName = String(h1.textContent || '').trim();
     const h2 = doc.querySelector('h2');
     if(h2) out.commonName = String(h2.textContent || '').trim();
 
-    const dts = Array.from(doc.querySelectorAll('dt'));
-    for(const dt of dts){
-      const key = String(dt.textContent || '').trim().toLowerCase();
-      const dd = dt.nextElementSibling;
-      const val = dd ? String(dd.textContent || '').trim() : '';
-      if(!val) continue;
-
-      if(key === 'taxon name') out.taxonName = val;
-      else if(key === 'common name') out.commonName = val;
-      else if(key === 'municipality') out.municipality = val;
-      else if(key === 'locality') out.locality = val;
-      else if(key === 'county') out.county = val;
-      else if(key === 'country') out.country = val;
-      else if(key === 'collectors') out.collectors = val;
-      else if(key === 'identified by') out.identifiedBy = val;
-      else if(key === 'dataset') out.dataset = val;
-      else if(key === 'project') out.project = val;
-      else if(key === 'behavior') out.behavior = val;
-      else if(key === 'latitude') out.latitude = parseFloat(val.replace(',', '.'));
-      else if(key === 'longitude') out.longitude = parseFloat(val.replace(',', '.'));
-      else if(key === 'date loaded' || key === 'event date' || key === 'observed at') out.observedAt = val;
-      else if(key === 'individual count') out.individualCount = parseFloat(val.replace(',', '.'));
+    const all = Array.from(doc.querySelectorAll('div,dt,dd,th,td,p,span,strong,b'));
+    const texts = all.map(function(n){ return String(n.textContent || '').trim(); }).filter(Boolean);
+    function nextValue(label){
+      const idx = texts.findIndex(function(t){ return t.toLowerCase() === String(label).toLowerCase(); });
+      if(idx >= 0 && texts[idx+1]) return String(texts[idx+1] || '').trim();
+      return '';
     }
-
-    const rows = Array.from(doc.querySelectorAll('tr'));
-    for(const tr of rows){
-      const cells = tr.querySelectorAll('th,td');
-      if(cells.length < 2) continue;
-      const key = String(cells[0].textContent || '').trim().toLowerCase();
-      const val = String(cells[1].textContent || '').trim();
-      if(!val) continue;
-
-      if(key === 'municipality' && !out.municipality) out.municipality = val;
-      else if(key === 'locality' && !out.locality) out.locality = val;
-      else if(key === 'county' && !out.county) out.county = val;
-      else if(key === 'country' && !out.country) out.country = val;
-      else if(key === 'collectors' && !out.collectors) out.collectors = val;
-      else if(key === 'identified by' && !out.identifiedBy) out.identifiedBy = val;
-      else if(key === 'dataset' && !out.dataset) out.dataset = val;
-      else if(key === 'project' && !out.project) out.project = val;
-      else if(key === 'behavior' && !out.behavior) out.behavior = val;
-      else if(key === 'individual count' && out.individualCount == null) out.individualCount = parseFloat(val.replace(',', '.'));
-      else if(key === 'latitude' && !Number.isFinite(out.latitude)) out.latitude = parseFloat(val.replace(',', '.'));
-      else if(key === 'longitude' && !Number.isFinite(out.longitude)) out.longitude = parseFloat(val.replace(',', '.'));
-    }
+    out.country = out.country || nextValue('Country');
+    out.county = out.county || nextValue('County');
+    out.municipality = out.municipality || nextValue('Municipality');
+    out.locality = out.locality || nextValue('Locality');
+    out.collectors = out.collectors || nextValue('Collectors');
+    out.identifiedBy = out.identifiedBy || nextValue('Identified by');
+    out.dataset = out.dataset || nextValue('Dataset');
+    out.project = out.project || nextValue('Project');
+    out.behavior = out.behavior || nextValue('Behavior');
+    const ic = nextValue('Individual count');
+    if(ic) out.individualCount = parseFloat(ic.replace(',', '.'));
+    const lat = nextValue('Latitude');
+    const lon = nextValue('Longitude');
+    if(lat) out.latitude = parseFloat(lat.replace(',', '.'));
+    if(lon) out.longitude = parseFloat(lon.replace(',', '.'));
   }catch(e){}
 
   function grab(label){
     const re = new RegExp(label + '[\\s\\S]{0,120}?>([^<]{1,200})<', 'i');
-    const m = src.match(re);
-    return m ? String(m[1] || '').trim() : '';
+    const mm = txt.match(re);
+    return mm ? String(mm[1] || '').trim() : '';
   }
+  if(!out.country) out.country = grab('Country');
+  if(!out.county) out.county = grab('County');
   if(!out.municipality) out.municipality = grab('Municipality');
   if(!out.locality) out.locality = grab('Locality');
-  if(!out.county) out.county = grab('County');
-  if(!out.country) out.country = grab('Country');
   if(!out.collectors) out.collectors = grab('Collectors');
   if(!out.identifiedBy) out.identifiedBy = grab('Identified by');
   if(!out.dataset) out.dataset = grab('Dataset');
   if(!out.project) out.project = grab('Project');
   if(!out.behavior) out.behavior = grab('Behavior');
 
-  if(!out.observedAt){
-    const m = src.match(/(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
-    if(m) out.observedAt = String(m[1] || '');
+  if(out.individualCount == null){
+    m = txt.match(/Individual count[^0-9\-]*(-?\d+(?:[.,]\d+)?)/i);
+    if(m) out.individualCount = parseFloat(String(m[1] || '').replace(',', '.'));
   }
   if(!Number.isFinite(out.latitude)){
-    const m = src.match(/Latitude[^0-9\-]*([0-9]{2}\.[0-9]{4,})/i);
+    m = txt.match(/Latitude[^0-9\-]*([0-9]{2}\.[0-9]{4,})/i);
     if(m) out.latitude = parseFloat(String(m[1] || ''));
   }
   if(!Number.isFinite(out.longitude)){
-    const m = src.match(/Longitude[^0-9\-]*([0-9]{2}\.[0-9]{4,})/i);
+    m = txt.match(/Longitude[^0-9\-]*([0-9]{2}\.[0-9]{4,})/i);
     if(m) out.longitude = parseFloat(String(m[1] || ''));
   }
-  if(out.individualCount == null){
-    const m = src.match(/Individual count[^0-9\-]*(-?\d+(?:[.,]\d+)?)/i);
-    if(m) out.individualCount = parseFloat(String(m[1] || '').replace(',', '.'));
-  }
-  if(/Koordinaadid peidetud|Coordinates hidden|Restricted/i.test(src)){
+
+  m = txt.match(/(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
+  if(m) out.observedAt = String(m[1] || '');
+  out.observedDate = normDateISO(out.observedAt);
+
+  if(/Koordinaadid peidetud|Coordinates hidden|Restricted/i.test(txt)){
     out.coordsStatus = 'restricted';
   } else if(Number.isFinite(out.latitude) && Number.isFinite(out.longitude)){
     out.coordsStatus = 'public';
   } else {
     out.coordsStatus = 'missing';
   }
-  out.observedDate = normDateISO(out.observedAt);
   return out;
 }
 function parseEluSearchRows(html){
@@ -1839,6 +1815,7 @@ async function autoFetchCoords(key, searchUrl, signal){
       fetchedAt: detailFetchedAt
     };
     if(detailFields.observedDate) p.t = detailFields.observedDate;
+    if(detailFields.observedAt) p.observedAt = detailFields.observedAt;
     if(detailFields.municipality) p.municipality = detailFields.municipality;
     if(detailFields.locality) p.locality = detailFields.locality;
     if(detailFields.county) p.county = detailFields.county;
@@ -5661,13 +5638,21 @@ function rowHTML(obj) {
   const meta = hasPoint
     ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
     : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
-  const municipalityLine = p.municipality
-    ? '<div class="small"><span class="pill">municipality:</span> <span>' + escapeHtml(p.municipality || '') + '</span></div>'
-    : '';
-  const detailSummary = [p.municipality, p.locality, p.county].filter(Boolean).join(' | ');
-  const detailDebugLine = detailSummary
-    ? '<div class="small">' + escapeHtml(detailSummary) + '</div>'
-    : '';
+  const speciesExtra = (
+    (p.observedAt ? '<div>' + escapeHtml(p.observedAt) + '</div>' : '') +
+    ((p.municipality || p.locality || p.county) ? '<div>' + escapeHtml([p.municipality, p.locality, p.county].filter(Boolean).join(' | ')) + '</div>' : '') +
+    ((p.country || p.individualCount != null || p.behavior) ? '<div>' + escapeHtml([
+      p.country || '',
+      (p.individualCount != null ? ('count:' + p.individualCount) : ''),
+      (p.behavior ? ('behavior:' + p.behavior) : '')
+    ].filter(Boolean).join(' | ')) + '</div>' : '') +
+    ((p.collectors || p.dataset || p.project) ? '<div>' + escapeHtml([
+      p.collectors || '',
+      p.dataset || '',
+      p.project || ''
+    ].filter(Boolean).join(' | ')) + '</div>' : '')
+  );
+  const speciesExtraHtml = speciesExtra ? '<div class="small species-extra">' + speciesExtra + '</div>' : '';
   const openUrl = String((p.openUrl || p.latestUrl || p.searchUrl || obj.url) || obj.url);
 
   return '<div class="row" data-key="'+key+'">' +
@@ -5677,8 +5662,7 @@ function rowHTML(obj) {
         '<div class="name-row"><div class="name-label clickable '+muted+'" onclick="toggleVisibility(\''+key+'\')">'+key+'</div>' + (rarityText ? '<span class="rarity-badge" title="Haruldus">'+rarityText+'</span>' : '') + '</div>' +
       '</div>' +
       '<div class="small">'+meta+'</div>' +
-      municipalityLine +
-      detailDebugLine +
+      speciesExtraHtml +
     '</div>' +
     '<div class="controls">' +
       '<div style="display:flex;flex-direction:column;gap:6px">' +

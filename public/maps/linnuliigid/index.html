@@ -163,6 +163,10 @@
     <input type="checkbox" id="toggle7days" />
     <span>7 days only</span>
   </label>
+  <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px">
+    <input type="checkbox" id="toggleAutoElu30m" />
+    <span>Auto refresh (30m)</span>
+  </label>
   <button id="btnToggle7p" class="btn secondary" title="Toggle 7-day filter">7p: OFF</button>
 </div>
 <div id="snapshotBanner" class="snapshot-banner" style="display:none"></div>
@@ -193,7 +197,6 @@
   <summary>Debug (pro)</summary>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px">
     <button id="btnCopyDebugProJson" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy debug (pro)</button>
-    <button id="btnExportDebugProJson" class="btn secondary" style="font-size:11px;padding:2px 8px">Export debug JSON</button>
     <button id="btnClearTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Clear trace</button>
     <button id="btnCopySelectedTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy selected trace JSON</button>
     <button id="btnCopyIndexTrace" class="btn secondary" style="font-size:11px;padding:2px 8px">Copy index trace</button>
@@ -827,7 +830,6 @@ function normalizeSpringDate(v){
 async function tryFetch(url, opts){
   const options = opts || {};
   const signal = options.signal || undefined;
-  const requireOccLink = !!options.requireOccLink;
   const urls = makeFetchURL(url);
   let lastErr = null;
   for(const u of urls){
@@ -836,17 +838,14 @@ async function tryFetch(url, opts){
       if(!r.ok) throw new Error('HTTP ' + r.status);
       let text = await r.text();
       text = normalizeHtmlPayload(text);
-      if(requireOccLink){
-        const hasOcc = /\/app\/occurrences\/occurrence\/\d+/.test(String(text || ''));
-        window.__lastSearchHasOccLinks = !!hasOcc;
-        window.__lastSearchOccLinkCount = hasOcc ? ((String(text || '').match(/\/app\/occurrences\/occurrence\/\d+/g) || []).length) : 0;
-        window.__lastSearchSnippet = String(text || '').slice(0, 120);
-        if(!hasOcc) throw new Error('No occurrence links in payload');
-      }
+      if(String(text || '').length < 200) throw new Error('Response too short');
       return text;
-    }catch(e){ lastErr = e; }
+    }catch(e){
+      lastErr = e;
+      if(signal && signal.aborted) throw e;
+    }
   }
-  throw new Error((lastErr && lastErr.message ? String(lastErr.message) : 'Fetch failed') + ' - set a proxy base and try again.');
+  throw new Error(lastErr && lastErr.message ? String(lastErr.message) : 'Fetch failed');
 }
 function makeFetchURL(url){
   const raw = String(url || '').trim();
@@ -1569,68 +1568,79 @@ async function autoFetchCoords(key, searchUrl, signal){
   if(!species) throw new Error('Species missing');
   const url = String(searchUrl || ('https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(species))).trim();
   const p = points[species] = (points[species] || {});
-  const oldLat = Number(p.lat), oldLon = Number(p.lon);
+  const oldLat = Number(p.lat);
+  const oldLon = Number(p.lon);
   const oldT = String(p.t || '');
   const oldOcc7 = Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : null;
 
-  const html = await tryFetch(url, { signal: signal, requireOccLink: true });
-  const dates = extractAllEventDates(html);
-  const occ7 = countInLastNDaysFromDates(dates, 7);
-  let eventDate = extractEventDate(html);
-  let coords = extractLatLon(html);
-  let detailTried = 0;
-  let detailUrl = findFirstDetailLink(html);
-  let candidatesCount = (String(html || '').match(/\/app\/occurrences\/occurrence\/\d+/g) || []).length;
-  if(!coords && detailUrl){
-    detailTried = 1;
-    const dhtml = await tryFetch(detailUrl, { signal: signal, requireOccLink: false });
-    coords = extractLatLonFromDetail(dhtml);
-    if(!eventDate) eventDate = extractEventDate(dhtml) || eventDate;
+  const searchHtml = await tryFetch(url, { signal: signal });
+  let coords = extractLatLon(searchHtml);
+  let eventDate = extractEventDate(searchHtml);
+  const occ7 = countInLastNDaysFromDates(extractAllEventDates(searchHtml), 7);
+  let detailUrl = '';
+  if(!coords){
+    detailUrl = findFirstDetailLink(searchHtml);
+    if(detailUrl){
+      const detailHtml = await tryFetch(detailUrl, { signal: signal });
+      coords = extractLatLon(detailHtml);
+      if(!eventDate) eventDate = extractEventDate(detailHtml);
+    }
   }
 
-  const dateOnly = _dateOnlyFromAny(eventDate);
+  const prevCoordsValid = _hasFiniteCoord(oldLat) && _hasFiniteCoord(oldLon);
+  const nextCoordsValid = !!(coords && _hasFiniteCoord(Number(coords[0])) && _hasFiniteCoord(Number(coords[1])));
+  const nextEventDate = String(eventDate || '').trim();
+  const nextDate = _dateOnlyFromAny(nextEventDate);
+  const prevDate = _dateOnlyFromAny(oldT);
+  const nextOcc7 = Number.isFinite(Number(occ7)) ? Number(occ7) : null;
+  const changedCoords = !!(nextCoordsValid && (!prevCoordsValid || Math.abs(oldLat - Number(coords[0])) > 1e-6 || Math.abs(oldLon - Number(coords[1])) > 1e-6));
+  const newerDate = !!(nextDate && (!prevDate || nextDate > prevDate));
+  const changedOcc7 = (nextOcc7 !== null && nextOcc7 !== oldOcc7);
+
   let changed = false;
-  if(dateOnly && String(p.t || '') !== dateOnly){ p.t = dateOnly; changed = true; }
-  if(Number.isFinite(occ7) && Number(p.occ7) !== Number(occ7)){ p.occ7 = Number(occ7); changed = true; }
+  if(nextCoordsValid && changedCoords){
+    p.lat = Number(coords[0]);
+    p.lon = Number(coords[1]);
+    changed = true;
+  }
+  if(nextEventDate && (newerDate || !prevDate || String(p.t || '') !== nextEventDate)){
+    p.t = nextEventDate;
+    changed = true;
+  }
+  if(nextOcc7 !== null && changedOcc7){
+    p.occ7 = nextOcc7;
+    changed = true;
+  } else if(nextOcc7 !== null && !Number.isFinite(Number(p.occ7))){
+    p.occ7 = nextOcc7;
+    changed = true;
+  }
   p.src = 'Elurikkus';
   p.lastFetched = new Date().toISOString();
   p.searchUrl = url;
   if(detailUrl) p.latestUrl = detailUrl;
-  if(p.visible === false){ p.visible = true; changed = true; }
+  if(typeof p.visible === 'undefined'){ p.visible = true; changed = true; }
 
-  let appliedCoords = null;
-  if(coords && isValidEE(Number(coords[0]), Number(coords[1]))){
-    const nlat = Number(coords[0]), nlon = Number(coords[1]);
-    if(!isValidEE(oldLat, oldLon) || Math.abs(oldLat - nlat) > 1e-6 || Math.abs(oldLon - nlon) > 1e-6){
-      changed = true;
-    }
-    p.lat = nlat;
-    p.lon = nlon;
-    p.coordsSource = 'detail';
-    p.coords_source = 'detail';
-    p.coordsStatus = 'public';
-    p.coords_status = 'public';
-    appliedCoords = [nlat, nlon];
-  }
   if(changed){
     try{ save(); }catch(e){}
     try{ updateMarker(species); }catch(e){}
     try{ render(); }catch(e){}
   }
-  const moved = !!(appliedCoords && isValidEE(oldLat, oldLon) &&
-    (Math.abs(oldLat - appliedCoords[0]) > 1e-6 || Math.abs(oldLon - appliedCoords[1]) > 1e-6));
-  const occId = detailUrl ? ((String(detailUrl).match(/occurrence\/(\d+)/i) || [])[1] || '') : '';
+
+  const moved = !!(nextCoordsValid && prevCoordsValid &&
+    (Math.abs(oldLat - Number(coords[0])) > 1e-6 || Math.abs(oldLon - Number(coords[1])) > 1e-6));
+  if(!nextCoordsValid){
+    throw new Error('No coordinates found on search/detail pages');
+  }
   return {
     species: species,
-    updated: changed || (oldT !== String(p.t || '')) || (oldOcc7 !== (Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : null)),
+    updated: changed || newerDate || changedOcc7,
     moved: moved,
-    candidatesCount: candidatesCount,
-    detailTried: detailTried,
-    pickedOccId: occId || '—',
+    changedCoords: changedCoords,
+    newerDate: newerDate,
+    changedOcc7: changedOcc7,
     pickedOccUrl: detailUrl || null,
     detailUrl: !!detailUrl,
-    coordsFound: (coords && isValidEE(Number(coords[0]), Number(coords[1]))) ? [Number(coords[0]), Number(coords[1])] : null,
-    coordsApplied: appliedCoords
+    coordsFound: nextCoordsValid ? [Number(coords[0]), Number(coords[1])] : null
   };
 }
 async function refreshSpeciesFromElurikkus(key, signal){
@@ -1665,17 +1675,13 @@ async function refreshAllElurikkusOnce(){
       const r = await autoFetchCoords(name, searchUrl, signal);
       if(r && r.updated) updated++;
       if(r && r.moved) moved++;
-      const coordsTxt = (r && r.coordsFound) ? (Number(r.coordsFound[0]).toFixed(4) + ',' + Number(r.coordsFound[1]).toFixed(4)) : '—';
-      const appliedTxt = (r && r.coordsApplied) ? (Number(r.coordsApplied[0]).toFixed(4) + ',' + Number(r.coordsApplied[1]).toFixed(4)) : '—';
-      const line = 'Elurikkus refresh: ' + (i + 1) + '/' + total + ' | last:' + name + ' | updated:' + updated + ' | moved:' + moved + ' | errors:' + errors +
-        ' | candidates:' + Number((r && r.candidatesCount) || 0) + ' | occ:' + String((r && r.pickedOccId) || '—') +
-        ' | detail:' + (((r && r.detailUrl) ? 'yes' : 'no')) + ' | coordsFound:' + coordsTxt + ' | coordsApplied:' + appliedTxt + ' | moved:' + ((r && r.moved) ? 'yes' : 'no');
+      const line = 'Elurikkus refresh: ' + (i + 1) + '/' + total + ' | last:' + name + ' | updated:' + updated + ' | moved:' + moved + ' | errors:' + errors;
       if(progEl) progEl.textContent = line;
       if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = line; }
       if(eluLastCoord) eluLastCoord.textContent = line;
     }catch(e){
       errors++;
-      const msg = 'Elurikkus refresh: ' + (i + 1) + '/' + total + ' | updated:' + updated + ' | moved:' + moved + ' | errors:' + errors + ' | ' + name + ' | ERROR:' + String(e && e.message ? e.message : e);
+      const msg = 'Elurikkus refresh: ' + (i + 1) + '/' + total + ' | last:' + name + ' | updated:' + updated + ' | moved:' + moved + ' | errors:' + errors;
       if(progEl) progEl.textContent = msg;
       if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = msg; }
       if(eluLastCoord) eluLastCoord.textContent = msg;
@@ -4603,6 +4609,7 @@ function _wireSnapshotButtons(){
   const toggleSlowMode = document.getElementById('toggleSlowMode');
   const btnClearDebug = document.getElementById('btnClearDebugEvents');
   const toggle7d = document.getElementById('toggle7days');
+  const toggleAutoElu30m = document.getElementById('toggleAutoElu30m');
 
   if(btnElu && !btnElu.__wired){
     btnElu.addEventListener('click', async function(){
@@ -4719,6 +4726,19 @@ function _wireSnapshotButtons(){
       else _hideSnapshotBanner();
     });
     toggle7d.__wired = true;
+  }
+  if(toggleAutoElu30m && !toggleAutoElu30m.__wired){
+    toggleAutoElu30m.checked = (String(localStorage.getItem(LS_ELU_AUTO_30M) || '0') === '1');
+    toggleAutoElu30m.addEventListener('change', function(){
+      try{ localStorage.setItem(LS_ELU_AUTO_30M, this.checked ? '1' : '0'); }catch(e){}
+      if(this.checked){
+        _initElurikkusAuto30m();
+      } else if(__eluAuto30mTimer){
+        clearInterval(__eluAuto30mTimer);
+        __eluAuto30mTimer = null;
+      }
+    });
+    toggleAutoElu30m.__wired = true;
   }
   if(btnCopyDebug && !btnCopyDebug.__wired){
     btnCopyDebug.addEventListener('click', _copyDebugJson);
@@ -5396,35 +5416,7 @@ document.addEventListener('DOMContentLoaded', function(){
 </style>
 <div id="windToggleBar" class="hidden-in-export">
   <button id="toggleWind" class="btn secondary">Tuulekaart</button>
-  <button id="toggleSpring" class="btn secondary">Kevadränne</button>
   <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 päeva jooksul aktiivsed">7p liigid: 0</span>
-</div>
-<div id="springPanel" class="hidden-in-export">
-  <div id="springHeader">
-    <div class="title">Kevadränne - esimesed saabumised</div>
-    <div class="actions">
-      <button id="springClose" class="btn icon">X</button>
-    </div>
-  </div>
-  <div id="springBody">
-    <div class="springTopRow">
-      <input id="springSearch" type="text" placeholder="Otsi liiki..." />
-      <span id="springCount" title="Mitu liiki on nimekirjas">0</span>
-    </div>
-    <div class="springTableWrap">
-      <table id="springTable">
-        <thead>
-          <tr>
-            <th style="width:92px">Kuupäev</th>
-            <th>Liik</th>
-            <th style="width:110px">Sel aastal</th>
-          </tr>
-        </thead>
-        <tbody id="springTableBody"></tbody>
-      </table>
-    </div>
-    <div class="springHint">Klikka kuup\u00e4eval, et muuta (salvestub localStorage-sse).</div>
-  </div>
 </div>
 <div id="windPanel">
   <div id="windHeader">

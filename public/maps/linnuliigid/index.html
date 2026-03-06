@@ -1046,9 +1046,10 @@ function countOcc7FromRowsIso(rows){
   const seen = new Set();
   let n = 0;
   for(const r of rows || []){
-    if(!r || !r.occId || !r.iso) continue;
-    if(seen.has(r.occId)) continue;
-    seen.add(r.occId);
+    if(!r || !r.iso) continue;
+    const uniqueKey = getEluRowUniqueKey(r);
+    if(seen.has(uniqueKey)) continue;
+    seen.add(uniqueKey);
     if(r.iso >= cutoff) n++;
   }
   return n;
@@ -1108,8 +1109,9 @@ async function computeOcc7Offset(text, tryFetchHtml, signal){
     oldestIso = rows[rows.length - 1].iso;
     let anyWithin = false;
     for(const r of rows){
-      if(seen.has(r.occId)) continue;
-      seen.add(r.occId);
+      const uniqueKey = getEluRowUniqueKey(r);
+      if(seen.has(uniqueKey)) continue;
+      seen.add(uniqueKey);
       if(r.iso >= cutoffIso){
         occ7++;
         anyWithin = true;
@@ -1517,20 +1519,61 @@ function _getEluRecordsRows(doc){
   const table = _findEluRecordsTable(doc);
   return table ? Array.from(table.querySelectorAll('tbody tr')) : [];
 }
+function extractOccurrenceLinkFromRow(tr){
+  if(!tr) return { href:'', occId:'' };
+  const anchors = Array.from(tr.querySelectorAll('a[href]'));
+  for(const a of anchors){
+    const href = a.getAttribute('href') || '';
+    const abs = href.startsWith('http') ? href : ('https://elurikkus.ee' + (href.startsWith('/') ? href : '/' + href));
+    const m = abs.match(/occurrence\/(\d+)/i);
+    if(m){
+      return { href: abs, occId: m[1] };
+    }
+  }
+  const html = tr.innerHTML || '';
+  let m = html.match(/href\s*=\s*["']([^"']*occurrence\/\d+[^"']*)["']/i);
+  if(m && m[1]){
+    const href = m[1].startsWith('http') ? m[1] : ('https://elurikkus.ee' + (m[1].startsWith('/') ? m[1] : '/' + m[1]));
+    const idm = href.match(/occurrence\/(\d+)/i);
+    return { href: href, occId: idm ? idm[1] : '' };
+  }
+  m = html.match(/https?:\/\/[^"' <]*occurrence\/(\d+)/i);
+  if(m){
+    const href = m[0];
+    return { href: href, occId: m[1] || '' };
+  }
+  return { href:'', occId:'' };
+}
+function getEluRowUniqueKey(r){
+  return String((r && r.occId) || '') || [
+    String((r && r.iso) || ''),
+    String((r && r.rawDate) || ''),
+    String((r && r.taxon) || ''),
+    String((r && r.locality) || ''),
+    String((r && r.collectors) || '')
+  ].join('|');
+}
 function parseSearchRows(html){
   const out = [];
   const doc = new DOMParser().parseFromString(String(html||''), 'text/html');
   const trs = _getEluRecordsRows(doc);
   for(const tr of trs){
-    const a = tr.querySelector('a[href*="/app/occurrences/occurrence/"]');
-    if(!a) continue;
-    const href = a.getAttribute('href') || '';
-    const occId = (String(href).match(/occurrence\/(\d+)/i)||[])[1];
-    if(!occId) continue;
-    const td0 = tr.querySelector('td');
-    const iso = normDateISO(td0 ? td0.textContent : '');
+    const link = extractOccurrenceLinkFromRow(tr);
+    const tds = Array.from(tr.querySelectorAll('td')).map(function(td){ return (td.textContent || '').trim(); });
+    const iso = normDateISO(tds[0] || '');
     if(!iso) continue;
-    out.push({ occId: occId, iso: iso });
+    out.push({
+      occId: link.occId,
+      href: link.href,
+      iso: iso,
+      rawDate: tds[0] || '',
+      taxon: tds[1] || '',
+      commonName: tds[2] || '',
+      individualCount: tds[3] || '',
+      behavior: tds[4] || '',
+      locality: tds[5] || '',
+      collectors: tds[6] || ''
+    });
   }
   if(out.length) return out;
   const text = String(html || '');
@@ -1538,12 +1581,12 @@ function parseSearchRows(html){
   let m;
   while((m = trRe.exec(text)) !== null){
     const tr = String(m[1] || '');
-    const occId = (tr.match(/\/app\/occurrences\/occurrence\/(\d+)/i)||[])[1];
-    if(!occId) continue;
+    const href = (tr.match(/href\s*=\s*["']([^"']*occurrence\/\d+[^"']*)["']/i) || [])[1] || '';
+    const occId = (tr.match(/occurrence\/(\d+)/i)||[])[1] || '';
     const dm = tr.match(/(\d{4}-\d{2}-\d{2})/);
     const iso = dm ? dm[1] : '';
     if(!iso) continue;
-    out.push({ occId: occId, iso: iso });
+    out.push({ occId: occId, href: absOccUrl(href), iso: iso, rawDate: iso, taxon:'', commonName:'', individualCount:'', behavior:'', locality:'', collectors:'' });
   }
   return out;
 }
@@ -1553,15 +1596,12 @@ function parseEluRowsIso(html){
     const doc = new DOMParser().parseFromString(String(html||''), 'text/html');
     const trs = _getEluRecordsRows(doc);
     for(const tr of trs){
-      const a = tr.querySelector('a[href*="/app/occurrences/occurrence/"]');
-      const href = a ? (a.getAttribute('href')||'') : '';
-      const id = (String(href).match(/occurrence\/(\d+)/i)||[])[1];
-      if(!id) continue;
-      const td0 = tr.querySelector('td');
-      const dt = td0 ? (td0.textContent||'') : '';
+      const link = extractOccurrenceLinkFromRow(tr);
+      const tds = Array.from(tr.querySelectorAll('td')).map(function(td){ return (td.textContent || '').trim(); });
+      const dt = tds[0] || '';
       const iso = normDateISO(dt);
       if(!iso) continue;
-      out.push({ occId:id, iso:iso });
+      out.push({ occId:link.occId, href:link.href, iso:iso, rawDate:dt, taxon:tds[1]||'', commonName:tds[2]||'', individualCount:tds[3]||'', behavior:tds[4]||'', locality:tds[5]||'', collectors:tds[6]||'' });
     }
   }catch(e){}
   if(out.length) return out;
@@ -1571,11 +1611,10 @@ function parseEluRowsIso(html){
   while((m = trRe.exec(text)) !== null){
     const tr = m[1];
     const id = (String(tr).match(/\/app\/occurrences\/occurrence\/(\d+)/i)||[])[1];
-    if(!id) continue;
     const dm = String(tr).match(/(\d{4}-\d{2}-\d{2})/);
     const iso = dm ? dm[1] : '';
     if(!iso) continue;
-    out.push({ occId:id, iso:iso });
+    out.push({ occId:id || '', href:'', iso:iso, rawDate:iso, taxon:'', commonName:'', individualCount:'', behavior:'', locality:'', collectors:'' });
   }
   return out;
 }
@@ -1588,13 +1627,11 @@ function parseEluRowsForDebug(html){
     const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
     const trs = _getEluRecordsRows(doc);
     for(const tr of trs){
-      const a = tr.querySelector('a[href*="/app/occurrences/occurrence/"]');
-      const href = a ? (a.getAttribute('href') || '') : '';
-      const occId = (href.match(/occurrence\/(\d+)/i) || [])[1] || '';
+      const link = extractOccurrenceLinkFromRow(tr);
       const tds = Array.from(tr.querySelectorAll('td')).map(function(td){ return (td.textContent || '').trim(); });
       const iso = normDateISO(tds[0] || '');
       out.push({
-        occId: occId,
+        occId: link.occId,
         iso: iso,
         rawDate: tds[0] || '',
         taxon: tds[1] || '',
@@ -1603,7 +1640,7 @@ function parseEluRowsForDebug(html){
         behavior: tds[4] || '',
         locality: tds[5] || '',
         collectors: tds[6] || '',
-        href: href
+        href: link.href
       });
     }
   }catch(e){}
@@ -1653,10 +1690,7 @@ function extractNewestOccurrenceUrlFromSearch(searchHtml){
   const doc = new DOMParser().parseFromString(String(searchHtml||''), 'text/html');
   const firstTr = _getEluRecordsRows(doc)[0] || null;
   if(!firstTr) return '';
-  const a = firstTr.querySelector('a[href*="/app/occurrences/occurrence/"]');
-  const href = a ? a.getAttribute('href') : '';
-  if(!href) return '';
-  return href.startsWith('http') ? href : ('https://elurikkus.ee' + (href.startsWith('/') ? href : '/' + href));
+  return extractOccurrenceLinkFromRow(firstTr).href || '';
 }
 function extractNewestIsoFromSearch(searchHtml){
   const doc = new DOMParser().parseFromString(String(searchHtml||''), 'text/html');
@@ -1702,9 +1736,10 @@ async function debugOcc7Pages(species, maxPages){
     }
     let uniqueWithin = 0;
     for(const r of rows){
-      if(!r.occId || !r.iso) continue;
-      if(seen.has(r.occId)) continue;
-      seen.add(r.occId);
+      if(!r || !r.iso) continue;
+      const uniqueKey = getEluRowUniqueKey(r);
+      if(seen.has(uniqueKey)) continue;
+      seen.add(uniqueKey);
       if(r.iso >= cutoff) uniqueWithin++;
     }
     const oldestIso = rows[rows.length - 1] ? (rows[rows.length - 1].iso || '') : '';
@@ -1766,6 +1801,9 @@ async function debugElurikkusSpecies(species){
     const rows1 = parseEluRowsForDebug(shtml);
     dbg.rowsPage1 = rows1.slice(0, 10);
     dbg.newestRow = rows1[0] || null;
+    dbg.firstRowHref = rows1[0] ? (rows1[0].href || '') : '';
+    dbg.firstRowOccId = rows1[0] ? (rows1[0].occId || '') : '';
+    dbg.rowLinkSuccessCount = rows1.filter(function(r){ return !!(r && r.occId); }).length;
     dbg.occ7.cutoffIso = cutoffIso7dLocal();
     dbg.occ7.page1Count = rows1.filter(function(r){ return r.iso && r.iso >= dbg.occ7.cutoffIso; }).length;
     dbg.searchCoordsParsed = extractLatLon(shtml) || null;
@@ -1803,6 +1841,7 @@ async function debugElurikkusSpecies(species){
       lon: points && points[species] ? (points[species].lon ?? null) : null,
       coordsSource: points && points[species] ? (points[species].coordsSource || points[species].coords_source || '') : ''
     };
+    dbg.finalCoordsSource = dbg.markerAfter.coordsSource;
     dbg.finalPointAfter = points && points[species] ? JSON.parse(JSON.stringify(points[species])) : null;
     dbg.autoFetchResult = result || null;
     if(dbg.detailCoordsParsed && dbg.markerAfter.lat != null && dbg.markerAfter.lon != null){

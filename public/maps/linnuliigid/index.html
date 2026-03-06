@@ -205,43 +205,20 @@
 <div id="app">
   <aside id="sidebar">
     <div class="panel-header">
-    <div class="sidebar-header"><div><h2 style="margin:0">Linnuliigid 2026</h2><div style="font-size:10px;color:#dc2626;line-height:1.2;margin-top:2px">REAL_FILE_TEST_V4</div><div style="font-size:10px;color:#dc2626;line-height:1.2;margin-top:2px">REAL_RUNTIME_FIXED_V1</div></div><button id="closeSidebarBtn" class="btn icon close-sidebar" title="Sulge" aria-label="Sulge"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+    <div class="sidebar-header"><div><h2 style="margin:0">Linnuliigid 2026</h2></div><button id="closeSidebarBtn" class="btn icon close-sidebar" title="Sulge" aria-label="Sulge"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
     </div>
     <div class="panel-content-scroll" style="position:relative;z-index:9999;pointer-events:auto">
-<div class="top-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:center">
-  <button id="recentToggle" class="btn secondary" title="Toggle 7-day filter">7p: ON</button>
-  <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px">
-    <input type="checkbox" id="toggleAutoElu30m" />
-    <span>Auto refresh (30m)</span>
-  </label>
-</div>
 <div id="snapshotBanner" class="snapshot-banner" style="display:none"></div>
 <div class="fetch-controls">
   <button id="btnRefreshData" class="btn" title="Refresh all species from Elurikkus">Refresh from Elurikkus</button>
-  <button id="btnForceServerRefresh" class="btn secondary" title="Force server rebuild from upstream">Force server refresh</button>
-  <button id="btnReloadSnapshot" class="btn secondary" title="Reload latest snapshot from server">Reload snapshot</button>
-  <button id="btnHardReload" class="btn secondary" title="Clear caches and force fresh reload">Hard reload</button>
   <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index">Resume</button>
-  <button id="btnSkipStuck" class="btn secondary" title="Skip current stuck item by resuming from next index">Skip stuck item</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
-  <button id="debugCoordsBtn" onclick="window.openEluDebug && window.openEluDebug()" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:700;position:relative;z-index:99999;pointer-events:auto">Debug coords</button>
-  <button id="btnCopyMapDebugJson" class="btn secondary" title="Copy map debug JSON">Copy debug JSON</button>
 </div>
 <div id="eluProgress" class="snapshot-banner" style="display:none;font-weight:600"></div>
 <div id="eluLastCoord" class="fetch-progress"></div>
 <div id="fetchProgress" class="fetch-progress"></div>
 <div id="fetchProgressBar" class="fetch-progress-bar" style="display:none"><div id="fetchProgressBarInner" class="fetch-progress-bar-inner" style="width:0%"></div></div>
 <div id="fetchError" class="fetch-error"></div>
-<div id="eluDebugBox" class="elu-debug-box">
-  <div class="elu-debug-head">
-    <div id="eluDebugTitle" class="elu-debug-title">Elurikkus debug</div>
-    <div class="elu-debug-actions">
-      <button id="btnCopyEluDebug" class="btn secondary" type="button">Copy debug JSON</button>
-      <button id="btnCloseEluDebug" class="btn secondary" type="button">Close</button>
-    </div>
-  </div>
-  <textarea id="eluDebugText" class="elu-debug-text" spellcheck="false"></textarea>
-</div>
 <div id="debugContent" style="display:none"></div>
 <div id="debugProContent" style="display:none"></div>
     <input id="filterBox" type="text" placeholder="Filter..." />
@@ -1767,16 +1744,6 @@ async function debugOcc7Pages(species, maxPages){
   }
   return pages;
 }
-function showDebugModal(text, title){
-  const box = document.getElementById('eluDebugBox');
-  const area = document.getElementById('eluDebugText');
-  const head = document.getElementById('eluDebugTitle');
-  if(!box || !area) return;
-  if(head) head.textContent = title || 'Elurikkus debug';
-  area.value = String(text || '');
-  box.style.display = 'block';
-  area.scrollTop = 0;
-}
 async function debugElurikkusSpecies(species){
   const dbg = {
     species: species,
@@ -1888,53 +1855,6 @@ async function debugElurikkusSpecies(species){
   dbg.finishedAt = new Date().toISOString();
   return dbg;
 }
-window.openEluDebug = async function(){
-  try{
-    console.log('DEBUG_COORDS_CLICKED');
-    alert('Debug coords clicked');
-    const species = window.__selectedSpecies || prompt('Species to debug:');
-    if(!species) return;
-    const dbg = await debugElurikkusSpecies(species);
-    window.__lastEluDebug = dbg;
-    const txt = JSON.stringify(dbg, null, 2);
-    if(typeof showDebugModal === 'function'){
-      showDebugModal(txt, 'Elurikkus debug: ' + species);
-      return;
-    }
-    let box = document.getElementById('eluDebugBox');
-    if(!box){
-      box = document.createElement('div');
-      box.id = 'eluDebugBox';
-      box.style.cssText = 'position:fixed;inset:20px;z-index:100000;background:#fff;border:1px solid #999;border-radius:8px;padding:12px;overflow:auto';
-      box.innerHTML = `
-        <div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:8px">
-          <strong>Elurikkus debug</strong>
-          <button id="eluDebugCloseBtn">Close</button>
-        </div>
-        <textarea id="eluDebugText" style="width:100%;height:80%;min-height:400px"></textarea>
-        <div style="margin-top:8px;display:flex;gap:8px">
-          <button id="eluDebugCopyBtn">Copy debug JSON</button>
-        </div>
-      `;
-      document.body.appendChild(box);
-      document.getElementById('eluDebugCloseBtn').onclick = ()=> box.remove();
-      document.getElementById('eluDebugCopyBtn').onclick = async ()=>{
-        const val = document.getElementById('eluDebugText').value;
-        try{
-          await navigator.clipboard.writeText(val);
-        }catch(e){
-          window.prompt('Copy debug JSON:', val);
-        }
-      };
-    } else {
-      box.style.display = 'block';
-    }
-    document.getElementById('eluDebugText').value = txt;
-  } catch(err){
-    alert('Debug coords failed: ' + ((err && err.message) || err));
-    console.error('openEluDebug failed', err);
-  }
-};
 function extractNextPageUrl(searchHtml){
   const doc = new DOMParser().parseFromString(String(searchHtml || ''), 'text/html');
   const linkNext = doc.querySelector('link[rel="next"]');
@@ -6080,16 +6000,8 @@ async function triggerRefresh(opts){
 // Wire buttons
 function _wireSnapshotButtons(){
   const btnElu = document.getElementById('btnRefreshData') || document.getElementById('btnRefreshElurikkus');
-  const btnForceRefresh = document.getElementById('btnForceServerRefresh');
-  const btnReload = document.getElementById('btnReloadSnapshot');
-  const btnHardReload = document.getElementById('btnHardReload');
   const btnResume = document.getElementById('btnResumeFetch');
-  const btnSkip = document.getElementById('btnSkipStuck');
   const btnStop = document.getElementById('btnStopFetch');
-  const dbgBtn = document.getElementById('debugCoordsBtn');
-  const btnCopyMapDebugJson = document.getElementById('btnCopyMapDebugJson');
-  const btnCopyEluDebug = document.getElementById('btnCopyEluDebug');
-  const btnCloseEluDebug = document.getElementById('btnCloseEluDebug');
   const btnCopyDebug = document.getElementById('btnCopyDebugJson');
   const btnCopyDebugPro = document.getElementById('btnCopyDebugProJson');
   const btnExportDebugPro = document.getElementById('btnExportDebugProJson');
@@ -6117,66 +6029,9 @@ function _wireSnapshotButtons(){
     });
     btnElu.__wired = true;
   }
-  if(btnForceRefresh && !btnForceRefresh.__wired){
-    btnForceRefresh.addEventListener('click', function(){ triggerRefreshDataFlow(); });
-    btnForceRefresh.__wired = true;
-  }
-  if(btnReload && !btnReload.__wired){
-    btnReload.addEventListener('click', function(){ reloadSnapshot(); });
-    btnReload.__wired = true;
-  }
-  if(btnHardReload && !btnHardReload.__wired){
-    btnHardReload.addEventListener('click', function(){ _hardReloadNow(); });
-    btnHardReload.__wired = true;
-  }
   if(btnResume && !btnResume.__wired){
     btnResume.addEventListener('click', function(){ triggerRefresh({ resumeFromSaved: true, force: true, newRun: true }); });
     btnResume.__wired = true;
-  }
-  if(btnSkip && !btnSkip.__wired){
-    btnSkip.addEventListener('click', function(){
-      _abortActiveRequest();
-      const totalItems = Math.max(0, Number(__totalItems || __snapshotProgressTotal || 0));
-      const oldNextIndex = Math.max(0, Math.min(totalItems, Number(__nextIndex || _getResumeIndex() || 0)));
-      if(totalItems > 0 && oldNextIndex >= totalItems){
-        __lastInfoMessage = 'Already finished (' + totalItems + '/' + totalItems + ')';
-        _showSnapshotBanner(__lastInfoMessage, 'warn');
-        _pushIndexTrace(oldNextIndex, 'skip', 'user_skip_done');
-        _updateIndexProgressLine();
-        _updateDebugPanel();
-        return;
-      }
-      const nextIndex = Math.min(oldNextIndex + 1, totalItems);
-      __lastFailedIndex = oldNextIndex;
-      __lastInfoMessage = 'Skipped by user';
-      pushDebugEvent('INDEX_SKIP', 'User skipped current index', { nextIndex: nextIndex, runId: __runId }, 'warn');
-      __currentIndex = null;
-      __nextIndex = nextIndex;
-      _pushIndexTrace(oldNextIndex, 'skip', 'user_skip');
-      if(!_guardIndexState()){
-        _updateIndexProgressLine();
-        _updateDebugPanel();
-        return;
-      }
-      _setResumeIndex(nextIndex);
-      _showSnapshotBanner('Skipping stuck item, resuming from ' + nextIndex + '...', 'warn');
-      _updateIndexProgressLine();
-      _updateDebugPanel();
-      _controlSkipOnServer(nextIndex, 'user_click')
-        .then(function(payload){
-          if(Number(payload && payload.progress_done || 0) < nextIndex){
-            __lastInfoMessage = 'Skip command sent, but server did not advance. Check runner job storage.';
-            _showSnapshotBanner(__lastInfoMessage, 'warn');
-          }
-        })
-        .catch(function(err){
-          __lastErrorMessage = String(err && err.message ? err.message : err);
-        })
-        .finally(function(){
-          loadSnapshot();
-        });
-    });
-    btnSkip.__wired = true;
   }
   if(btnStop && !btnStop.__wired){
     btnStop.addEventListener('click', function(){
@@ -6470,22 +6325,25 @@ function _dateToDdmm(dt){
   return dt.getDate()+'.'+String(dt.getMonth()+1).padStart(2,'0');
 }
 function editSpringDate(key){
-  const prev = (springDates && springDates[key]) ? springDates[key] : '';
-  const v = prompt('Kevadine saabumise kuupäev (D.MM või YYYY-MM-DD)\n\n'+key, prev || '');
-  if(v === null) return;
-  if(String(v).trim() === ''){
+  const current = springDates[key] || '';
+  const val = prompt(`Kevadränne kuupäev (${key})`, current);
+  if(val === null) return;
+  const cleaned = String(val).trim();
+  if(cleaned){
+    const normalized = _normSpringDDMM(cleaned);
+    if(!normalized){
+      notifySilent('Vigane kuupäeva formaat. Kasuta D.MM (nt 5.04) või YYYY-MM-DD.');
+      return;
+    }
+    springDates[key] = normalized;
+  } else {
     delete springDates[key];
-    save(); render();
-    return;
   }
-  const n = _normSpringDDMM(v);
-  if(!n){
-    notifySilent('Vigane kuupäeva formaat. Kasuta D.MM (nt 5.04) või YYYY-MM-DD.');
-    return;
-  }
-  springDates[key] = n;
-  save(); render();
+  localStorage.setItem(LS_SPRING, JSON.stringify(springDates));
+  render();
+  if(typeof renderSpringPanel === 'function') renderSpringPanel();
 }
+window.editSpringDate = editSpringDate;
 
 function updateMarker(key) {
   const p = points[key];
@@ -6667,7 +6525,7 @@ function rowHTML(obj) {
   const springTxt = (typeof _normSpringDDMM === 'function' && springRaw) ? (_normSpringDDMM(springRaw) || springRaw) : (springRaw || '-');
   const springChip = '<div class="species-extra meta-row2">' +
     '<span class="chip kevadi-chip">Kevad: ' + escapeHtml(springTxt || '-') + '</span>' +
-    '<button class="spring-date-btn" data-key="' + key.replace(/"/g,'&quot;') + '" style="border:0; border-radius:999px; padding:4px 10px; background:#f3f4f6; color:#111;">Muuda</button>' +
+    '<button class="btn secondary spring-edit-btn" data-spring-key="' + escapeHtml(key) + '">Muuda</button>' +
   '</div>';
   const defaultSearchUrl = String((p.searchUrl || obj.url) || obj.url);
   const openUrl = String((p.openUrl || (x.detailUrl || defaultSearchUrl)) || defaultSearchUrl);
@@ -6717,6 +6575,15 @@ function render() {
       e.stopPropagation();
       const url = String(openBtn.getAttribute('data-open-url') || '').trim();
       if(url) window.open(url, '_blank', 'noopener');
+      return;
+    }
+    const rowSpringBtn = t.closest?.('.spring-edit-btn');
+    if(rowSpringBtn){
+      stop(e);
+      const key = rowSpringBtn.getAttribute('data-spring-key') || '';
+      if(key && typeof window.editSpringDate === 'function'){
+        window.editSpringDate(key);
+      }
       return;
     }
     // Start edit
@@ -6771,18 +6638,6 @@ function render() {
       return;
     }
   }, true); // capture=true helps on mobile overlays/leaflet
-})();
-
-(function bindDebugCoordsDelegation(){
-  if(window.__debugCoordsDelegationBound) return;
-  window.__debugCoordsDelegationBound = true;
-  document.addEventListener('click', function(e){
-    const btn = e.target && e.target.closest && e.target.closest('#debugCoordsBtn');
-    if(!btn) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if(window.openEluDebug) window.openEluDebug();
-  }, true);
 })();
 
 // Restore existing markers from localStorage and render list
@@ -7356,49 +7211,3 @@ var __sharedDefaults = {};
 
 </body>
 </html>
-
-
-
-
-  if(btnCopyMapDebugJson && !btnCopyMapDebugJson.__wired){
-    btnCopyMapDebugJson.addEventListener('click', function(){
-      const payload = _computeDebugProObject();
-      const text = JSON.stringify(payload, null, 2);
-      if(navigator.clipboard && navigator.clipboard.writeText){
-        navigator.clipboard.writeText(text).then(function(){ logInfo('Copied map debug JSON'); }).catch(function(err){ logWarn('Copy map debug failed', { err: String(err) }); });
-      }
-    });
-    btnCopyMapDebugJson.__wired = true;
-  }
-  if(dbgBtn && !dbgBtn.__wired){
-    dbgBtn.addEventListener('click', window.openEluDebug);
-    dbgBtn.__wired = true;
-  }
-  if(btnCopyEluDebug && !btnCopyEluDebug.__wired){
-    btnCopyEluDebug.addEventListener('click', function(){
-      const area = document.getElementById('eluDebugText');
-      const text = area ? String(area.value || '') : JSON.stringify(window.__lastEluDebug || {}, null, 2);
-      if(navigator.clipboard && navigator.clipboard.writeText){
-        navigator.clipboard.writeText(text).then(function(){ logInfo('Copied Elurikkus debug JSON'); }).catch(function(err){ logWarn('Copy Elurikkus debug failed', { err: String(err) }); });
-      } else {
-        window.prompt('Copy debug JSON:', text);
-      }
-    });
-    btnCopyEluDebug.__wired = true;
-  }
-  if(btnCloseEluDebug && !btnCloseEluDebug.__wired){
-    btnCloseEluDebug.addEventListener('click', function(){
-      const box = document.getElementById('eluDebugBox');
-      if(box) box.style.display = 'none';
-    });
-    btnCloseEluDebug.__wired = true;
-  }
-
-  window.copyMapsDebugJson = async function(){
-    const payload = _computeDebugProObject();
-    const text = JSON.stringify(payload, null, 2);
-    if(navigator.clipboard && navigator.clipboard.writeText){
-      await navigator.clipboard.writeText(text);
-    }
-    return text;
-  };

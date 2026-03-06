@@ -1791,6 +1791,7 @@ async function debugElurikkusSpecies(species){
     detailBytes: 0,
     detailCoordsRaw: { latitude: '', longitude: '' },
     detailCoordsParsed: null,
+    detailExact: null,
     searchCoordsParsed: null,
     finalPointBefore: null,
     finalPointAfter: null,
@@ -1822,23 +1823,36 @@ async function debugElurikkusSpecies(species){
     dbg.detailUrlResolved = detailUrl;
     if(detailUrl){
       const dhtml = await tryFetch(detailUrl + (detailUrl.includes('?') ? '&' : '?') + '_dbg=' + Date.now());
+      const detailExact = parseEluDetailExact(dhtml);
       dbg.detailOk = !!dhtml;
       dbg.detailBytes = String(dhtml || '').length;
       dbg.detailFetchStatus = dbg.detailOk ? 'ok' : 'empty';
       dbg.detailFetchBytes = dbg.detailBytes;
-      dbg.detailCoordsRaw.latitude = extractFromInnerText(dhtml, 'Latitude') || '';
-      dbg.detailCoordsRaw.longitude = extractFromInnerText(dhtml, 'Longitude') || '';
-      dbg.detailCoordsParsed = extractDetailCoords(dhtml) || (typeof extractLatLonFromOccurrenceDetail === 'function' ? extractLatLonFromOccurrenceDetail(dhtml) : null) || null;
+      dbg.detailCoordsRaw.latitude = detailExact.latitudeRaw || '';
+      dbg.detailCoordsRaw.longitude = detailExact.longitudeRaw || '';
+      dbg.detailCoordsParsed = (Number.isFinite(detailExact.lat) && Number.isFinite(detailExact.lon))
+        ? [detailExact.lat, detailExact.lon]
+        : (extractDetailCoords(dhtml) || (typeof extractLatLonFromOccurrenceDetail === 'function' ? extractLatLonFromOccurrenceDetail(dhtml) : null) || null);
+      dbg.detailExact = {
+        latitudeRaw: detailExact.latitudeRaw || '',
+        longitudeRaw: detailExact.longitudeRaw || '',
+        lat: Number.isFinite(detailExact.lat) ? detailExact.lat : null,
+        lon: Number.isFinite(detailExact.lon) ? detailExact.lon : null,
+        country: detailExact.country || '',
+        county: detailExact.county || '',
+        municipality: detailExact.municipality || '',
+        locality: detailExact.locality || ''
+      };
       dbg.detailFields = {
-        municipality: extractFromInnerText(dhtml, 'Municipality') || '',
-        locality: extractFromInnerText(dhtml, 'Locality') || '',
-        county: extractFromInnerText(dhtml, 'County') || '',
-        districts: extractFromInnerText(dhtml, 'Districts') || '',
-        communes: extractFromInnerText(dhtml, 'Communes') || '',
-        eestiOmavalitsused: extractFromInnerText(dhtml, 'Eesti omavalitsused') || '',
-        individualCount: extractFromInnerText(dhtml, 'Individual count') || '',
-        behavior: extractFromInnerText(dhtml, 'Behavior') || '',
-        collectors: extractFromInnerText(dhtml, 'Collectors') || ''
+        municipality: detailExact.municipality || '',
+        locality: detailExact.locality || '',
+        county: detailExact.county || '',
+        districts: detailExact.districts || '',
+        communes: detailExact.communes || '',
+        eestiOmavalitsused: detailExact.eestiOmavalitsused || '',
+        individualCount: rows1[0] ? (rows1[0].individualCount || '') : '',
+        behavior: rows1[0] ? (rows1[0].behavior || '') : '',
+        collectors: rows1[0] ? (rows1[0].collectors || '') : ''
       };
     }
     if(!detailUrl){
@@ -1995,6 +2009,47 @@ function extractFieldFromDetailText(detailHtml, labels){
     if(m && m[1]) return m[1].trim();
   }
   return '';
+}
+function getEluDetailText(detailHtml){
+  let text = '';
+  try{
+    const doc = new DOMParser().parseFromString(String(detailHtml || ''), 'text/html');
+    text = (doc.body && doc.body.innerText) ? doc.body.innerText : '';
+  }catch(e){}
+  if(!text) text = String(detailHtml || '');
+  return text.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function parseEluDetailExact(detailHtml){
+  const text = getEluDetailText(detailHtml);
+  function pick(re){
+    const m = text.match(re);
+    return m && m[1] ? m[1].trim() : '';
+  }
+  const latitude = pick(/Latitude\s+([0-9]{2}\.[0-9]+)/i);
+  const longitude = pick(/Longitude\s+([0-9]{2}\.[0-9]+)/i);
+  const country = pick(/Country\s+(.+?)\s+County\b/i);
+  const county = pick(/County\s+(.+?)\s+Municipality\b/i);
+  const municipality = pick(/Municipality\s+(.+?)\s+Locality\b/i);
+  const locality = pick(/Locality\s+(.+?)\s+(?:2x2 km IUCN grid|10x10 grid|Birdatlas|EEA reference grid|Districts|Communes|Eesti omavalitsused|Date loaded\b|$)/i);
+  const districts = pick(/Districts\s+(.+?)\s+(?:Eesti omavalitsused|$)/i);
+  const communes = pick(/Communes\s+(.+?)\s+(?:Birdatlas|Eesti omavalitsused|Districts|$)/i);
+  const eestiOmavalitsused = pick(/Eesti omavalitsused\s+(.+?)\s+(?:Districts|2x2 km IUCN grid|10x10 grid|Birdatlas|EEA reference grid|$)/i);
+  const lat = parseFloat(String(latitude).replace(',', '.'));
+  const lon = parseFloat(String(longitude).replace(',', '.'));
+  return {
+    text: text,
+    latitudeRaw: latitude,
+    longitudeRaw: longitude,
+    lat: Number.isFinite(lat) ? lat : null,
+    lon: Number.isFinite(lon) ? lon : null,
+    country: country,
+    county: county,
+    municipality: municipality,
+    locality: locality,
+    districts: districts,
+    communes: communes,
+    eestiOmavalitsused: eestiOmavalitsused
+  };
 }
 function parseEluDetailExtras(detailHtml, detailUrl){
   const x = {
@@ -2509,28 +2564,26 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
     detailTried++;
     try{
       const dhtml = await tryFetch(_withCacheBuster(occUrl), { signal: signal });
-      const detail = parseElurikkusDetailFields(dhtml, occUrl);
-      const extra = parseElurikkusExtraFromText(dhtml, occUrl);
-      const det = parseEluDetailExtras(dhtml, occUrl);
-      console.log('ELU EXTRA PARSED', name, extra);
-      detail.locality = detail.locality || rowExtra.locality || '';
-      detail.collectors = detail.collectors || rowExtra.collectors || '';
-      detail.behavior = detail.behavior || rowExtra.behavior || '';
-      detail.individualCount = (detail.individualCount == null ? rowExtra.individualCount : detail.individualCount);
-      detail.communes = extra.communes || detail.communes || '';
-      detail.districts = extra.districts || detail.districts || '';
-      detail.eestiOmavalitsused = extra.eestiOmavalitsused || detail.eestiOmavalitsused || '';
-      detail.collectors = detail.collectors || extra.collectors || '';
-      detail.behavior = detail.behavior || extra.behavior || '';
-      detail.individualCount = (detail.individualCount == null ? extra.individualCount : detail.individualCount);
-      detail.__debugSample = extra.__debugSample || '';
-      detail.communes = det.communes || detail.communes || '';
-      detail.municipality = det.municipality || detail.municipality || '';
-      detail.county = det.county || detail.county || '';
-      detail.locality = det.locality || detail.locality || '';
-      detail.districts = det.districts || detail.districts || '';
-      detail.eestiOmavalitsused = det.eestiOmavalitsused || detail.eestiOmavalitsused || '';
-      const latlon = extractLatLonFromDetail(dhtml);
+      const detailExact = parseEluDetailExact(dhtml);
+      const detail = {
+        locality: detailExact.locality || rowExtra.locality || '',
+        collectors: rowExtra.collectors || '',
+        behavior: rowExtra.behavior || '',
+        individualCount: rowExtra.individualCount,
+        communes: detailExact.communes || '',
+        districts: detailExact.districts || '',
+        eestiOmavalitsused: detailExact.eestiOmavalitsused || '',
+        municipality: detailExact.municipality || '',
+        county: detailExact.county || '',
+        country: detailExact.country || '',
+        observedAt: rows[k].dateText || '',
+        observedDate: String(rows[k].dateText || '').slice(0, 10),
+        latitudeRaw: detailExact.latitudeRaw || '',
+        longitudeRaw: detailExact.longitudeRaw || ''
+      };
+      const latlon = (Number.isFinite(detailExact.lat) && Number.isFinite(detailExact.lon))
+        ? [detailExact.lat, detailExact.lon]
+        : extractLatLonFromDetail(dhtml);
       if(latlon && isValidEE(Number(latlon[0]), Number(latlon[1]))){
         return {
           mode: 'elurikkus_species',
@@ -2584,6 +2637,7 @@ function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, oc
   const p = points[species] = points[species] || {};
   const oldLat = Number.isFinite(Number(p.lat)) ? Number(p.lat) : null;
   const oldLon = Number.isFinite(Number(p.lon)) ? Number(p.lon) : null;
+  const detailExact = parseEluDetailExact(detailHtml);
   if(newestIso) p.t = newestIso;
   if(Number.isFinite(Number(occ7))) p.occ7 = Number(occ7);
   p.src = 'Elurikkus';
@@ -2591,25 +2645,26 @@ function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, oc
   p.latestUrl = p.openUrl || p.latestUrl || '';
   p.lastFetched = new Date().toISOString();
   const det = detailFields || {};
-  if(det.municipality) p.municipality = det.municipality;
-  if(det.locality) p.locality = det.locality;
-  if(det.county) p.county = det.county;
-  if(det.country) p.country = det.country;
-  if(det.collectors) p.collectors = det.collectors;
-  if(det.behavior) p.behavior = det.behavior;
-  if(det.individualCount != null) p.individualCount = det.individualCount;
+  if(detailExact.country) p.country = detailExact.country;
+  if(detailExact.county) p.county = detailExact.county;
+  if(detailExact.municipality) p.municipality = detailExact.municipality;
+  if(detailExact.locality) p.locality = detailExact.locality;
+  if(rowExtra && rowExtra.collectors) p.collectors = rowExtra.collectors;
+  if(rowExtra && rowExtra.behavior) p.behavior = rowExtra.behavior;
+  if(rowExtra && rowExtra.individualCount !== undefined && rowExtra.individualCount !== null && String(rowExtra.individualCount).trim() !== '') p.individualCount = rowExtra.individualCount;
   p.eluExtra = p.eluExtra || {};
   p.eluExtra.detailUrl = String(detailUrl || '');
-  p.eluExtra.individualCount = String(det.individualCount ?? (rowExtra && rowExtra.individualCount) ?? p.eluExtra.individualCount ?? '');
-  p.eluExtra.collectors = String(det.collectors || (rowExtra && rowExtra.collectors) || p.eluExtra.collectors || '');
-  p.eluExtra.behavior = String(det.behavior || (rowExtra && rowExtra.behavior) || p.eluExtra.behavior || '');
-  p.eluExtra.municipality = String(det.municipality || p.eluExtra.municipality || '');
-  p.eluExtra.locality = String(det.locality || (rowExtra && rowExtra.locality) || p.eluExtra.locality || '');
-  p.eluExtra.county = String(det.county || p.eluExtra.county || '');
-  p.eluExtra.districts = String(det.districts || p.eluExtra.districts || '');
-  p.eluExtra.communes = String(det.communes || p.eluExtra.communes || '');
-  p.eluExtra.eestiOmavalitsused = String(det.eestiOmavalitsused || p.eluExtra.eestiOmavalitsused || '');
-  const latlon = extractLatLonFromOccurrenceDetail(detailHtml) || extractDetailCoords(detailHtml);
+  p.eluExtra.individualCount = String((rowExtra && rowExtra.individualCount) || p.eluExtra.individualCount || '');
+  p.eluExtra.collectors = String((rowExtra && rowExtra.collectors) || p.eluExtra.collectors || '');
+  p.eluExtra.behavior = String((rowExtra && rowExtra.behavior) || p.eluExtra.behavior || '');
+  p.eluExtra.municipality = String(detailExact.municipality || p.eluExtra.municipality || '');
+  p.eluExtra.locality = String(detailExact.locality || (rowExtra && rowExtra.locality) || p.eluExtra.locality || '');
+  p.eluExtra.county = String(detailExact.county || p.eluExtra.county || '');
+  p.eluExtra.districts = String(detailExact.districts || p.eluExtra.districts || '');
+  p.eluExtra.communes = String(detailExact.communes || p.eluExtra.communes || '');
+  p.eluExtra.eestiOmavalitsused = String(detailExact.eestiOmavalitsused || p.eluExtra.eestiOmavalitsused || '');
+  p.eluExtra.detailExact = detailExact;
+  const latlon = (Number.isFinite(detailExact.lat) && Number.isFinite(detailExact.lon)) ? [detailExact.lat, detailExact.lon] : null;
   let moved = false;
   if(latlon && Number.isFinite(Number(latlon[0])) && Number.isFinite(Number(latlon[1]))){
     const newLat = Number(latlon[0]);
@@ -2694,11 +2749,17 @@ async function autoFetchCoords(key, searchUrl, signal){
     return { updated:true, moved:false, detailUrl:'' };
   }
   const detailHtml = await tryFetch(_withCacheBuster(detailUrl), { signal });
-  const detailFields = parseElurikkusDetailFields(detailHtml, detailUrl);
-  const detailExtra = parseEluDetailExtras(detailHtml, detailUrl);
-  detailFields.communes = detailExtra.communes || detailFields.communes || '';
-  detailFields.districts = detailExtra.districts || detailFields.districts || '';
-  detailFields.eestiOmavalitsused = detailExtra.eestiOmavalitsused || detailFields.eestiOmavalitsused || '';
+  const detailExact = parseEluDetailExact(detailHtml);
+  const detailFields = {
+    country: detailExact.country || '',
+    county: detailExact.county || '',
+    municipality: detailExact.municipality || '',
+    locality: detailExact.locality || '',
+    communes: detailExact.communes || '',
+    districts: detailExact.districts || '',
+    eestiOmavalitsused: detailExact.eestiOmavalitsused || '',
+    coordsStatus: (Number.isFinite(detailExact.lat) && Number.isFinite(detailExact.lon)) ? 'public' : 'restricted_or_missing'
+  };
   const result = applyElurikkusExactCoords(species, detailHtml, detailUrl, latestIso, finalOcc7, detailFields, rowExtra);
   p.eluExtra = p.eluExtra || {};
   p.eluExtra.__coordDebug = {

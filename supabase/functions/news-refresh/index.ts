@@ -34,7 +34,14 @@ type SourceSummary = {
   contentType?: string;
   bodySnippet?: string;
   fetchOk?: boolean;
+  fetchStatus?: "success" | "error" | "skipped";
+  parsedCount?: number;
+  insertedCount?: number;
+  updatedCount?: number;
+  skippedCount?: number;
+  lastError?: string | null;
   visibleInLatest?: number;
+  visibleCountInNewsList?: number;
   visibleInArchive?: number;
   hiddenByActiveTab?: number;
   hiddenBySourceFilter?: number;
@@ -135,6 +142,33 @@ async function loadSourceVisibility(supabase: any, sourceId: string): Promise<{
     latestVisible: Number(latest.count || 0),
     archiveVisible: Number(archive.count || 0),
   };
+}
+
+async function loadVisibleCountsInActualNewsList(supabase: any): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  const { data } = await supabase
+    .from("news_items_v")
+    .select("source_id, source_slug, source_name, published_at, created_at")
+    .eq("archived", false)
+    .order("published_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false, nullsFirst: false })
+    .limit(50);
+
+  let seenBirdingPoland = false;
+  for (const row of data || []) {
+    const sourceName = String((row as any).source_name || "").trim().toLowerCase();
+    const sourceSlug = String((row as any).source_slug || "").trim().toLowerCase();
+    const isBirdingPoland = sourceName === "birding poland" || sourceSlug === "birding_poland" || sourceSlug === "facebook_birdingpoland";
+    if (isBirdingPoland) {
+      if (seenBirdingPoland) continue;
+      seenBirdingPoland = true;
+    }
+    const sourceId = String((row as any).source_id || "").trim();
+    if (!sourceId) continue;
+    counts.set(sourceId, (counts.get(sourceId) || 0) + 1);
+  }
+
+  return counts;
 }
 
 const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
@@ -522,7 +556,14 @@ async function refreshEoy(
     cachedImages: 0,
     fetchedCount: 0,
     fetchOk: false,
+    fetchStatus: "error",
+    parsedCount: 0,
+    insertedCount: 0,
+    updatedCount: 0,
+    skippedCount: 0,
+    lastError: null,
     visibleInLatest: 0,
+    visibleCountInNewsList: 0,
     visibleInArchive: 0,
     hiddenByActiveTab: 0,
     hiddenBySourceFilter: 0,
@@ -561,13 +602,20 @@ async function refreshEoy(
 
     if (!res.ok) {
       summary.ok = false;
-      summary.errors.push(payload?.error || `fetch-eoy-news HTTP ${res.status}`);
+      summary.fetchStatus = "error";
+      summary.lastError = payload?.error || `fetch-eoy-news HTTP ${res.status}`;
+      summary.errors.push(summary.lastError);
       return summary;
     }
 
     summary.inserted = Number(payload?.insertedCount ?? payload?.inserted ?? 0);
     summary.updated = Number(payload?.updatedCount ?? payload?.updated ?? 0);
     summary.fetchedCount = Number(payload?.foundCount ?? payload?.count ?? summary.inserted + summary.updated);
+    summary.fetchStatus = "success";
+    summary.parsedCount = summary.fetchedCount;
+    summary.insertedCount = summary.inserted;
+    summary.updatedCount = summary.updated;
+    summary.skippedCount = summary.skippedItems;
 
     const itemIds = Array.isArray(payload?.itemIds) ? payload.itemIds.filter(Boolean) : [];
     if (cacheImages && cacheLimitLeft > 0 && itemIds.length > 0) {
@@ -582,14 +630,19 @@ async function refreshEoy(
         if (summary.cachedImages >= cacheLimitLeft) break;
         const cacheResult = await cacheImage(supabase, supabaseUrl, item);
         if (cacheResult.ok) summary.cachedImages += 1;
-        else if (cacheResult.error) summary.errors.push(`cacheImage: ${cacheResult.error}`);
+        else if (cacheResult.error) {
+          summary.lastError = `cacheImage: ${cacheResult.error}`;
+          summary.errors.push(summary.lastError);
+        }
       }
     }
 
     return summary;
   } catch (e: any) {
     summary.ok = false;
-    summary.errors.push(String(e?.message || e));
+    summary.fetchStatus = "error";
+    summary.lastError = String(e?.message || e);
+    summary.errors.push(summary.lastError);
     return summary;
   } finally {
     clearTimeout(timer);
@@ -738,6 +791,7 @@ Deno.serve(async (req) => {
     const enabledSources = (sources || []).map((s: SourceRow) => ({ ...s, name: normalizeSourceName(s.name) })) as SourceRow[];
     const perSource: SourceSummary[] = [];
     const errors: ErrorInfo[] = [];
+    const visibleCountsInActualNewsList = await loadVisibleCountsInActualNewsList(supabase);
     let inserted = 0;
     let updated = 0;
     let cachedImages = 0;
@@ -757,6 +811,7 @@ Deno.serve(async (req) => {
       const isEoy = type === "scrape" && (slug === "eoy" || String(source.fetch_url || source.feed_url || "").includes("eoy.ee"));
       if (isEoy) {
         const summary = await refreshEoy(supabase, supabaseUrl, serviceRoleKey, source, cacheImages, Math.max(0, cacheLimit - cachedImages));
+        summary.visibleCountInNewsList = visibleCountsInActualNewsList.get(source.id) || 0;
         perSource.push(summary);
         inserted += summary.inserted;
         updated += summary.updated;
@@ -785,7 +840,14 @@ Deno.serve(async (req) => {
           cachedImages: 0,
           fetchedCount: 0,
           fetchOk: false,
+          fetchStatus: "skipped",
+          parsedCount: 0,
+          insertedCount: 0,
+          updatedCount: 0,
+          skippedCount: 0,
+          lastError: "Unsupported scrape source",
           visibleInLatest: 0,
+          visibleCountInNewsList: visibleCountsInActualNewsList.get(source.id) || 0,
           visibleInArchive: 0,
           hiddenByActiveTab: 0,
           hiddenBySourceFilter: 0,
@@ -812,7 +874,14 @@ Deno.serve(async (req) => {
           cachedImages: 0,
           fetchedCount: 0,
           fetchOk: false,
+          fetchStatus: "skipped",
+          parsedCount: 0,
+          insertedCount: 0,
+          updatedCount: 0,
+          skippedCount: 0,
+          lastError: null,
           visibleInLatest: 0,
+          visibleCountInNewsList: visibleCountsInActualNewsList.get(source.id) || 0,
           visibleInArchive: 0,
           hiddenByActiveTab: 0,
           hiddenBySourceFilter: 0,
@@ -838,7 +907,14 @@ Deno.serve(async (req) => {
         cachedImages: 0,
         fetchedCount: 0,
         fetchOk: false,
+        fetchStatus: "error",
+        parsedCount: 0,
+        insertedCount: 0,
+        updatedCount: 0,
+        skippedCount: 0,
+        lastError: null,
         visibleInLatest: 0,
+        visibleCountInNewsList: 0,
         visibleInArchive: 0,
         hiddenByActiveTab: 0,
         hiddenBySourceFilter: 0,
@@ -869,7 +945,9 @@ Deno.serve(async (req) => {
         }, `${supabaseUrl}/functions/v1/proxy?url=`);
 
         summary.fetchOk = true;
+        summary.fetchStatus = "success";
         summary.fetchedCount = parsed.length;
+        summary.parsedCount = parsed.length;
         const rows = normalizeRssItems(parsed, source).slice(0, maxItemsPerSource);
 
         for (const row of rows) {
@@ -887,6 +965,7 @@ Deno.serve(async (req) => {
           };
           if (!dedupeGuid && !dedupeUrl) {
             summary.skippedItems += 1;
+            summary.skippedCount = summary.skippedItems;
             summary.skipReasons.push("missing_guid_and_url");
             console.log("[news-refresh:item:skip]", {
               source_id: source.id,
@@ -917,6 +996,7 @@ Deno.serve(async (req) => {
             .single();
           if (error || !upserted?.id) {
             const msg = error?.message || "upsert failed";
+            summary.lastError = msg;
             summary.errors.push(msg);
             errors.push({ source: source.slug, error: msg });
             pushItemDebug({
@@ -934,9 +1014,8 @@ Deno.serve(async (req) => {
 
           if ((duplicateCount || 0) > 0) {
             summary.updated += 1;
+            summary.updatedCount = summary.updated;
             updated += 1;
-            summary.skippedItems += 1;
-            summary.skipReasons.push("duplicate_existing_item");
             console.log("[news-refresh:item:duplicate]", {
               source_id: source.id,
               source_name: source.name,
@@ -950,12 +1029,13 @@ Deno.serve(async (req) => {
               published_at: String(row.published_at || "") || null,
               dedupe_key: dedupeKey,
               status: "updated",
-              skip_reason: "duplicate",
+              skip_reason: null,
               db_error: null,
               translation_pending: false,
             });
           } else {
             summary.inserted += 1;
+            summary.insertedCount = summary.inserted;
             inserted += 1;
             pushItemDebug({
               title: String(row.title || ""),
@@ -975,6 +1055,7 @@ Deno.serve(async (req) => {
               cachedImages += 1;
               summary.cachedImages += 1;
             } else if (cacheResult.error) {
+              summary.lastError = `cacheImage: ${cacheResult.error}`;
               summary.errors.push(`cacheImage: ${cacheResult.error}`);
               if (isBirdingPoland) birdingCacheFailures += 1;
             }
@@ -999,6 +1080,7 @@ Deno.serve(async (req) => {
                 await translateNewsItemById(upserted.id, supabaseUrl, serviceRoleKey);
               } catch (translateError: any) {
                 const msg = String(translateError?.message || translateError);
+                summary.lastError = `translate: ${msg}`;
                 summary.errors.push(`translate: ${msg}`);
                 errors.push({ source: source.slug, error: msg });
               }
@@ -1007,10 +1089,15 @@ Deno.serve(async (req) => {
         }
         const visibility = await loadSourceVisibility(supabase, source.id);
         summary.visibleInLatest = visibility.latestVisible;
+        summary.visibleCountInNewsList = visibleCountsInActualNewsList.get(source.id) || 0;
         summary.visibleInArchive = visibility.archiveVisible;
         summary.hiddenByActiveTab = visibility.archiveVisible;
         summary.hiddenBySourceFilter = 0;
         summary.hiddenBySearch = 0;
+        summary.insertedCount = summary.inserted;
+        summary.updatedCount = summary.updated;
+        summary.skippedCount = summary.skippedItems;
+        if (!summary.lastError && summary.errors.length > 0) summary.lastError = summary.errors[summary.errors.length - 1];
         console.log("[news-refresh:source:end]", {
           source_id: source.id,
           source_name: source.name,
@@ -1023,6 +1110,7 @@ Deno.serve(async (req) => {
           skipped_item_count: summary.skippedItems,
           skip_reasons: summary.skipReasons,
           visible_count: summary.visibleInLatest,
+          visible_count_in_actual_news_list: summary.visibleCountInNewsList,
           error_count: summary.errors.length,
           has_translate_column: hasTranslateColumn,
         });
@@ -1030,9 +1118,11 @@ Deno.serve(async (req) => {
         if (e instanceof SourceFetchError) {
           summary.ok = false;
           summary.fetchOk = false;
+          summary.fetchStatus = "error";
           summary.status = e.status;
           summary.contentType = String(e.details?.contentType || "");
           summary.bodySnippet = String(e.details?.bodySnippet || e.details?.snippet || "");
+          summary.lastError = e.message;
           summary.errors.push(e.message);
           errors.push({
             source: source.slug,
@@ -1044,6 +1134,8 @@ Deno.serve(async (req) => {
         } else {
           const msg = String(e?.message || e);
           summary.ok = false;
+          summary.fetchStatus = "error";
+          summary.lastError = msg;
           summary.errors.push(msg);
           errors.push({ source: source.slug, error: msg, status: summary.status, contentType: summary.contentType, bodySnippet: summary.bodySnippet });
         }

@@ -14,6 +14,47 @@ import { normalizeDisplayText } from '@/lib/textNormalize';
 
 type NewsSource = NewsSourceConfigItem;
 
+type DiagnosticsItem = {
+  title: string;
+  link: string | null;
+  published_at: string | null;
+  dedupe_key: string | null;
+  status: 'inserted' | 'updated' | 'skipped' | 'error';
+  skip_reason: string | null;
+  db_error: string | null;
+  translation_pending: boolean;
+};
+
+type DiagnosticsSource = {
+  sourceId: string;
+  slug: string;
+  source: string;
+  enabled: boolean;
+  sourceType: string;
+  rssUrl: string;
+  ok: boolean;
+  inserted: number;
+  updated: number;
+  skippedItems: number;
+  skipReasons: string[];
+  cachedImages: number;
+  fetchedCount: number;
+  fetchOk?: boolean;
+  visibleInLatest?: number;
+  visibleInArchive?: number;
+  hiddenByActiveTab?: number;
+  hiddenBySourceFilter?: number;
+  hiddenBySearch?: number;
+  errors: string[];
+  latestItems?: DiagnosticsItem[];
+};
+
+type DiagnosticsReport = {
+  ok?: boolean;
+  perSource?: DiagnosticsSource[];
+  errors?: Array<{ source: string; error: string }>;
+};
+
 function slugifySourceId(value: string): string {
   return value
     .toLowerCase()
@@ -31,6 +72,9 @@ export default function NewsSourcesSettings() {
   const [newSourceName, setNewSourceName] = useState('');
   const [newSourceUrl, setNewSourceUrl] = useState('');
   const [newSourceTranslateToEt, setNewSourceTranslateToEt] = useState(true);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [diagnosticsReport, setDiagnosticsReport] = useState<DiagnosticsReport | null>(null);
 
   const onResetDefaults = () => {
     const defaults = resetNewsSourcesToDefaults();
@@ -85,6 +129,41 @@ export default function NewsSourcesSettings() {
   };
 
   const sources = localSources;
+  const birdingLatviaSummary = diagnosticsReport?.perSource?.find((source) => source.source.toLowerCase().includes('birding latvia'));
+
+  const runDiagnostics = async () => {
+    setDiagnosticsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('news-refresh', {
+        method: 'POST',
+        body: {
+          reason: 'diagnostics',
+          cache_images: true,
+          cache_limit: 10,
+          translateForeignNews: true,
+        },
+      });
+      if (error) throw error;
+      setDiagnosticsReport((data || null) as DiagnosticsReport);
+      setDiagnosticsOpen(true);
+      toast.success('Diagnostika käivitatud');
+    } catch (error: unknown) {
+      const maybeErr = error as { message?: string } | null;
+      toast.error(`Diagnostika ebaõnnestus (${maybeErr?.message || 'Viga'})`);
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  };
+
+  const copyDiagnostics = async () => {
+    if (!diagnosticsReport) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(diagnosticsReport, null, 2));
+      toast.success('Diagnostika kopeeritud');
+    } catch {
+      toast.error('Diagnostika kopeerimine ebaõnnestus');
+    }
+  };
 
   if (sources.length === 0) {
     return (
@@ -134,6 +213,62 @@ export default function NewsSourcesSettings() {
           onLocalUpdate={onLocalUpdate}
         />
       ))}
+      <details className="rounded-lg border border-border bg-card p-4" open={diagnosticsOpen} onToggle={(event) => setDiagnosticsOpen((event.target as HTMLDetailsElement).open)}>
+        <summary className="cursor-pointer list-none">
+          <div className="space-y-1">
+            <h3 className="font-semibold text-foreground">Uudiste diagnostika</h3>
+            <p className="text-xs text-muted-foreground">Näitab, kas allikas salvestati, loeti sisse, parsiti, salvestati andmebaasi ja kuvati uudiste loendis.</p>
+          </div>
+        </summary>
+        <div className="mt-4 space-y-4">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button onClick={runDiagnostics} disabled={diagnosticsLoading} className="w-full sm:w-auto">
+              {diagnosticsLoading ? 'Käivitan…' : 'Käivita diagnostika'}
+            </Button>
+            <Button variant="outline" onClick={copyDiagnostics} disabled={!diagnosticsReport} className="w-full sm:w-auto">
+              Kopeeri diagnostika
+            </Button>
+          </div>
+          {birdingLatviaSummary && (
+            <div className="rounded-md border border-border p-3 text-sm">
+              Birding Latvia: fetched {birdingLatviaSummary.fetchOk ? birdingLatviaSummary.fetchedCount : 0}, parsed {birdingLatviaSummary.fetchedCount}, inserted {birdingLatviaSummary.inserted}, visible in News {birdingLatviaSummary.visibleInLatest ?? 0}
+              {birdingLatviaSummary.errors[0] ? `, reason: ${birdingLatviaSummary.errors[0]}` : ''}
+            </div>
+          )}
+          {(diagnosticsReport?.perSource || []).map((source) => (
+            <div key={source.sourceId} className="rounded-lg border border-border p-4 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-sm">{source.source}</span>
+                <Badge variant={source.ok ? 'secondary' : 'outline'}>{source.ok ? 'OK' : 'Viga'}</Badge>
+              </div>
+              <div className="grid gap-1 text-xs text-muted-foreground">
+                <div>Slug/ID: {source.slug} / {source.sourceId}</div>
+                <div>Enabled: {String(source.enabled)} | Translate to ET: {String(source.source !== 'EOÜ' ? true : false)}</div>
+                <div>Feed URL: {source.rssUrl || '(puudub)'}</div>
+                <div>Fetch: {source.fetchOk ? 'OK' : 'Viga'}{source.errors[0] ? ` | ${source.errors[0]}` : ''}</div>
+                <div>Parsed: {source.fetchedCount} | Inserted: {source.inserted} | Updated: {source.updated} | Skipped: {source.skippedItems}</div>
+                <div>Visible latest: {source.visibleInLatest ?? 0} | Archive: {source.visibleInArchive ?? 0} | Hidden by tab: {source.hiddenByActiveTab ?? 0}</div>
+              </div>
+              {(source.latestItems || []).length > 0 && (
+                <div className="space-y-2">
+                  {(source.latestItems || []).map((item, index) => (
+                    <div key={`${source.sourceId}-${index}`} className="rounded-md border border-border p-2 text-xs space-y-1">
+                      <div className="font-medium text-foreground">{item.title || '(pealkiri puudub)'}</div>
+                      <div className="text-muted-foreground break-all">{item.link || '(link puudub)'}</div>
+                      <div className="text-muted-foreground">
+                        {item.published_at || '(kuupäev puudub)'} | {item.dedupe_key || '(dedupe puudub)'} | {item.status}
+                        {item.skip_reason ? ` | ${item.skip_reason}` : ''}
+                        {item.translation_pending ? ' | translation pending' : ''}
+                        {item.db_error ? ` | ${item.db_error}` : ''}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </details>
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">Allikad: {sources.length} (source: {origin})</p>
         <Button variant="ghost" size="sm" onClick={onResetDefaults}>Taasta vaikimisi allikad</Button>

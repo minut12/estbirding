@@ -34,7 +34,26 @@ type SourceSummary = {
   contentType?: string;
   bodySnippet?: string;
   fetchOk?: boolean;
+  visibleInLatest?: number;
+  visibleInArchive?: number;
+  hiddenByActiveTab?: number;
+  hiddenBySourceFilter?: number;
+  hiddenBySearch?: number;
+  latestItems?: ItemDebug[];
   errors: string[];
+};
+
+type ItemDebugStatus = "inserted" | "updated" | "skipped" | "error";
+
+type ItemDebug = {
+  title: string;
+  link: string | null;
+  published_at: string | null;
+  dedupe_key: string | null;
+  status: ItemDebugStatus;
+  skip_reason: string | null;
+  db_error: string | null;
+  translation_pending: boolean;
 };
 
 type ErrorInfo = {
@@ -95,6 +114,26 @@ async function selectNewsSources(supabase: any): Promise<{ data: SourceRow[] | n
     data: (fallback.data || []).map((row: SourceRow) => ({ ...row, translate_to_et: null })),
     error: fallback.error,
     hasTranslateColumn: false,
+  };
+}
+
+async function loadSourceVisibility(supabase: any, sourceId: string): Promise<{
+  latestVisible: number;
+  archiveVisible: number;
+}> {
+  const latest = await supabase
+    .from("news_items")
+    .select("id", { count: "exact", head: true })
+    .eq("source_id", sourceId)
+    .eq("archived", false);
+  const archive = await supabase
+    .from("news_items")
+    .select("id", { count: "exact", head: true })
+    .eq("source_id", sourceId)
+    .eq("archived", true);
+  return {
+    latestVisible: Number(latest.count || 0),
+    archiveVisible: Number(archive.count || 0),
   };
 }
 
@@ -483,6 +522,12 @@ async function refreshEoy(
     cachedImages: 0,
     fetchedCount: 0,
     fetchOk: false,
+    visibleInLatest: 0,
+    visibleInArchive: 0,
+    hiddenByActiveTab: 0,
+    hiddenBySourceFilter: 0,
+    hiddenBySearch: 0,
+    latestItems: [],
     errors: [],
   };
   const controller = new AbortController();
@@ -740,6 +785,12 @@ Deno.serve(async (req) => {
           cachedImages: 0,
           fetchedCount: 0,
           fetchOk: false,
+          visibleInLatest: 0,
+          visibleInArchive: 0,
+          hiddenByActiveTab: 0,
+          hiddenBySourceFilter: 0,
+          hiddenBySearch: 0,
+          latestItems: [],
           errors: ["Unsupported scrape source"],
         });
         continue;
@@ -761,6 +812,12 @@ Deno.serve(async (req) => {
           cachedImages: 0,
           fetchedCount: 0,
           fetchOk: false,
+          visibleInLatest: 0,
+          visibleInArchive: 0,
+          hiddenByActiveTab: 0,
+          hiddenBySourceFilter: 0,
+          hiddenBySearch: 0,
+          latestItems: [],
           errors: [],
         });
         continue;
@@ -781,6 +838,12 @@ Deno.serve(async (req) => {
         cachedImages: 0,
         fetchedCount: 0,
         fetchOk: false,
+        visibleInLatest: 0,
+        visibleInArchive: 0,
+        hiddenByActiveTab: 0,
+        hiddenBySourceFilter: 0,
+        hiddenBySearch: 0,
+        latestItems: [],
         errors: [],
       };
 
@@ -817,6 +880,11 @@ Deno.serve(async (req) => {
             : hasTranslateColumn ? source.translate_to_et === true : true;
           const dedupeGuid = String(row.guid || "").trim();
           const dedupeUrl = String(row.url || "").trim();
+          const dedupeKey = dedupeGuid || dedupeUrl || null;
+          const pushItemDebug = (entry: ItemDebug) => {
+            if ((summary.latestItems || []).length >= 10) return;
+            summary.latestItems?.push(entry);
+          };
           if (!dedupeGuid && !dedupeUrl) {
             summary.skippedItems += 1;
             summary.skipReasons.push("missing_guid_and_url");
@@ -825,6 +893,16 @@ Deno.serve(async (req) => {
               source_name: source.name,
               reason: "missing_guid_and_url",
               title: String(row.title || "").slice(0, 120),
+            });
+            pushItemDebug({
+              title: String(row.title || ""),
+              link: dedupeUrl || null,
+              published_at: String(row.published_at || "") || null,
+              dedupe_key: dedupeKey,
+              status: "skipped",
+              skip_reason: "missing_link",
+              db_error: null,
+              translation_pending: false,
             });
             continue;
           }
@@ -841,6 +919,16 @@ Deno.serve(async (req) => {
             const msg = error?.message || "upsert failed";
             summary.errors.push(msg);
             errors.push({ source: source.slug, error: msg });
+            pushItemDebug({
+              title: String(row.title || ""),
+              link: dedupeUrl || null,
+              published_at: String(row.published_at || "") || null,
+              dedupe_key: dedupeKey,
+              status: "error",
+              skip_reason: "DB error",
+              db_error: msg,
+              translation_pending: false,
+            });
             continue;
           }
 
@@ -856,9 +944,29 @@ Deno.serve(async (req) => {
               url: dedupeUrl || null,
               reason: "duplicate_existing_item",
             });
+            pushItemDebug({
+              title: String(row.title || ""),
+              link: dedupeUrl || null,
+              published_at: String(row.published_at || "") || null,
+              dedupe_key: dedupeKey,
+              status: "updated",
+              skip_reason: "duplicate",
+              db_error: null,
+              translation_pending: false,
+            });
           } else {
             summary.inserted += 1;
             inserted += 1;
+            pushItemDebug({
+              title: String(row.title || ""),
+              link: dedupeUrl || null,
+              published_at: String(row.published_at || "") || null,
+              dedupe_key: dedupeKey,
+              status: "inserted",
+              skip_reason: null,
+              db_error: null,
+              translation_pending: false,
+            });
           }
 
           if (cacheImages && cachedImages < cacheLimit && upserted.image_url && (isBirdingPoland || !upserted.cached_image_url)) {
@@ -874,6 +982,8 @@ Deno.serve(async (req) => {
 
           const contentHash = await sha256Hex(`${String(row.title || "")}\n${String(row.body || "")}`);
           const translationSkipped = sourceName === "EOÜ" || detectedLanguage === "et" || !sourceTranslateToEt || !globalTranslateSetting;
+          const itemDebug = summary.latestItems?.find((item) => item.dedupe_key === dedupeKey && item.title === String(row.title || ""));
+          if (itemDebug) itemDebug.translation_pending = !translationSkipped && !Boolean(upserted.title_et || upserted.body_et);
           console.log("[news-translate]", {
             source: sourceName,
             detected_language: detectedLanguage,
@@ -895,20 +1005,27 @@ Deno.serve(async (req) => {
             }
           }
         }
-          console.log("[news-refresh:source:end]", {
-            source_id: source.id,
-            source_name: source.name,
-            enabled: source.is_enabled !== false,
-            source_type: type,
-            rss_url: sourceUrl,
-            fetch_ok: summary.fetchOk,
-            parsed_item_count: summary.fetchedCount,
-            inserted_item_count: summary.inserted,
-            skipped_item_count: summary.skippedItems,
-            skip_reasons: summary.skipReasons,
-            error_count: summary.errors.length,
-            has_translate_column: hasTranslateColumn,
-          });
+        const visibility = await loadSourceVisibility(supabase, source.id);
+        summary.visibleInLatest = visibility.latestVisible;
+        summary.visibleInArchive = visibility.archiveVisible;
+        summary.hiddenByActiveTab = visibility.archiveVisible;
+        summary.hiddenBySourceFilter = 0;
+        summary.hiddenBySearch = 0;
+        console.log("[news-refresh:source:end]", {
+          source_id: source.id,
+          source_name: source.name,
+          enabled: source.is_enabled !== false,
+          source_type: type,
+          rss_url: sourceUrl,
+          fetch_ok: summary.fetchOk,
+          parsed_item_count: summary.fetchedCount,
+          inserted_item_count: summary.inserted,
+          skipped_item_count: summary.skippedItems,
+          skip_reasons: summary.skipReasons,
+          visible_count: summary.visibleInLatest,
+          error_count: summary.errors.length,
+          has_translate_column: hasTranslateColumn,
+        });
       } catch (e: any) {
         if (e instanceof SourceFetchError) {
           summary.ok = false;

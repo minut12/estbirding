@@ -6327,16 +6327,50 @@ function _dateToDdmm(dt){
 window.editSpringDateDirect = function(key){
   try{
     if(!key) return;
-    alert('Muuda clicked: ' + key);
-    const current = (window.springDates && window.springDates[key]) ? window.springDates[key] : ((typeof springDates !== 'undefined' && springDates[key]) ? springDates[key] : '');
-    const val = prompt('Kevadränne kuupäev (' + key + ')', current || '');
-    if(val === null) return;
-    const cleaned = String(val).trim();
+    const modal = document.getElementById('springEditModal');
+    const speciesEl = document.getElementById('springEditSpecies');
+    const inputEl = document.getElementById('springEditInput');
+    if(!modal || !speciesEl || !inputEl) return;
+    const store = (window.springDates && typeof window.springDates === 'object')
+      ? window.springDates
+      : (typeof springDates !== 'undefined' ? springDates : (window.springDates = {}));
+    window.springDates = store;
+    if(typeof springDates !== 'undefined') springDates = store;
+    const current = store[key] || '';
+    modal.setAttribute('data-spring-key', key);
+    speciesEl.textContent = key;
+    inputEl.value = current || '';
+    modal.style.display = 'flex';
+    setTimeout(function(){
+      try{
+        inputEl.focus();
+        inputEl.select();
+      }catch(e){}
+    }, 0);
+  }catch(err){
+    alert('Muuda failed: ' + ((err && err.message) || err));
+    console.error('editSpringDate failed', err);
+  }
+};
+window.closeSpringEditModal = function(){
+  const modal = document.getElementById('springEditModal');
+  if(!modal) return;
+  modal.style.display = 'none';
+  modal.removeAttribute('data-spring-key');
+};
+window.saveSpringEditModal = function(clearValue){
+  try{
+    const modal = document.getElementById('springEditModal');
+    const inputEl = document.getElementById('springEditInput');
+    if(!modal || !inputEl) return;
+    const key = String(modal.getAttribute('data-spring-key') || '').trim();
+    if(!key) return;
     const target = (window.springDates && typeof window.springDates === 'object')
       ? window.springDates
       : (typeof springDates !== 'undefined' ? springDates : (window.springDates = {}));
     window.springDates = target;
     if(typeof springDates !== 'undefined') springDates = target;
+    const cleaned = clearValue ? '' : String(inputEl.value || '').trim();
     if(cleaned){
       target[key] = cleaned;
     } else {
@@ -6344,11 +6378,12 @@ window.editSpringDateDirect = function(key){
     }
     const lsKey = (typeof LS_SPRING !== 'undefined' && LS_SPRING) ? LS_SPRING : 'bm_spring_dates';
     localStorage.setItem(lsKey, JSON.stringify(target));
+    window.closeSpringEditModal();
     if(typeof render === 'function') render();
     if(typeof renderSpringPanel === 'function') renderSpringPanel();
   }catch(err){
     alert('Muuda failed: ' + ((err && err.message) || err));
-    console.error('editSpringDate failed', err);
+    console.error('saveSpringEditModal failed', err);
   }
 };
 
@@ -7222,6 +7257,19 @@ var __sharedDefaults = {};
   }catch(e){}
 })();
 </script>
+
+<div id="springEditModal" style="display:none;position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.35);align-items:center;justify-content:center;" onclick="if(event.target===this){ window.closeSpringEditModal && window.closeSpringEditModal(); }">
+  <div style="background:#fff;border-radius:12px;padding:16px;min-width:280px;max-width:90vw;box-shadow:0 10px 30px rgba(0,0,0,.2)" onclick="event.stopPropagation();">
+    <div style="font-weight:700;margin-bottom:10px">Kevadränne kuupäev</div>
+    <div id="springEditSpecies" style="font-size:12px;opacity:.75;margin-bottom:8px"></div>
+    <input id="springEditInput" type="text" placeholder="nt 06.03" style="width:100%;padding:8px 10px;border:1px solid #ccc;border-radius:8px;box-sizing:border-box" />
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap">
+      <button type="button" class="btn secondary" onclick="window.closeSpringEditModal && window.closeSpringEditModal()">Cancel</button>
+      <button type="button" class="btn secondary" onclick="window.saveSpringEditModal && window.saveSpringEditModal(true)">Clear</button>
+      <button type="button" class="btn" onclick="window.saveSpringEditModal && window.saveSpringEditModal(false)">Save</button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>

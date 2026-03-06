@@ -302,6 +302,7 @@ const DATA = SPECIES.map(name => ({ est: _normText(name), url: 'https://elurikku
 const LS_AVATARS='bm_rari_avatars', LS_POINTS='bm_rari_points', LS_PROXY='bm_rari_proxy', LS_NAMES='bm_rari_names', LS_SPRING='bm_rari_spring_dates';
 const LS_RECENT_ONLY = 'bm_recent_only';
 const LS_SPRING_YEARFIRST = 'bm_rari_spring_yearfirst_v3';
+const LS_SPRING_PANEL_OPEN = 'bm_spring_panel_open';
 const CLASSIC_MODE = false;
 const LS_LIVE_ELURIKKUS = 'bm_live_elurikkus_v1';
 const LS_LIVE_ELURIKKUS_USE = 'bm_live_elurikkus_use_v1';
@@ -483,6 +484,9 @@ let springDates = (function(){
     return Object.assign({}, DEFAULT_SPRING_DATES, (saved && typeof saved==='object' ? saved : {}));
   }catch(e){ return Object.assign({}, DEFAULT_SPRING_DATES); }
 })();
+if(!springDates || typeof springDates !== 'object'){
+  springDates = Object.assign({}, DEFAULT_SPRING_DATES);
+}
 let springYearFirst = {};
 try { springYearFirst = JSON.parse(localStorage.getItem(LS_SPRING_YEARFIRST) || '{}') || {}; }
 catch(e){ springYearFirst = {}; }
@@ -6472,6 +6476,12 @@ function rowHTML(obj) {
       '<div class="kvLabel">Collectors:</div>' +
       '<div class="kvValue"><span class="truncate" title="' + escapeHtml(collectorsFull) + '">' + escapeHtml(collectorsShort) + '</span></div>' +
     '</div>';
+  const springRaw = (springDates && springDates[key] != null) ? String(springDates[key]).trim() : '';
+  const springTxt = (typeof _normSpringDDMM === 'function' && springRaw) ? (_normSpringDDMM(springRaw) || springRaw) : (springRaw || '-');
+  const springChip = '<div class="species-extra meta-row2">' +
+    '<span class="chip kevadi-chip">Kevad: ' + escapeHtml(springTxt || '-') + '</span>' +
+    '<button class="spring-date-btn" data-key="' + key.replace(/"/g,'&quot;') + '" style="border:0; border-radius:999px; padding:4px 10px; background:#f3f4f6; color:#111;">Muuda</button>' +
+  '</div>';
   const defaultSearchUrl = String((p.searchUrl || obj.url) || obj.url);
   const openUrl = String((p.openUrl || (x.detailUrl || defaultSearchUrl)) || defaultSearchUrl);
 
@@ -6482,6 +6492,7 @@ function rowHTML(obj) {
         '<div class="name-row"><div class="name-label clickable '+muted+'" onclick="toggleVisibility(\''+key+'\')">'+key+'</div>' + (rarityText ? '<span class="rarity-badge" title="Haruldus">'+rarityText+'</span>' : '') + '</div>' +
       '</div>' +
       '<div class="small">'+meta+'</div>' +
+      springChip +
       extraBlock +
     '</div>' +
     '<div class="controls">' +
@@ -6728,7 +6739,31 @@ document.addEventListener('DOMContentLoaded', function(){
 </style>
 <div id="windToggleBar" class="hidden-in-export">
   <button id="toggleWind" class="btn secondary">Tuulekaart</button>
+  <button id="toggleSpring" class="btn secondary">Kevadränne</button>
   <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 päeva jooksul aktiivsed">7p liigid: 0</span>
+</div>
+<div id="springPanel" class="hidden-in-export" style="display:none">
+  <div id="springHeader">
+    <div class="title">Kevadränne</div>
+    <div class="actions">
+      <button id="springClose" class="btn icon" type="button" aria-label="Sulge">X</button>
+    </div>
+  </div>
+  <div id="springBody">
+    <div class="springTopRow">
+      <input id="springSearch" type="text" placeholder="Otsi liiki..." />
+      <span id="springCount">0</span>
+    </div>
+    <div class="springTableWrap">
+      <table id="springTable">
+        <thead>
+          <tr><th>Kevad</th><th>Liik</th><th>2026</th></tr>
+        </thead>
+        <tbody id="springTableBody"></tbody>
+      </table>
+    </div>
+    <div class="springHint">Liigi nimel klikkimine kerib vastava liigi kaardini nimekirjas.</div>
+  </div>
 </div>
 <div id="windPanel">
   <div id="windHeader">
@@ -6747,20 +6782,36 @@ document.addEventListener('DOMContentLoaded', function(){
 </div>
 <script>
 (function(){
-  (function placeWindButton(){
+  function getSidebarHost(){
+    return document.querySelector('#sidebar .panel-content-scroll') || document.getElementById('sidebar') || document.body;
+  }
+  function placeSidebarTools(){
     const bar = document.getElementById('windToggleBar');
     const spring = document.getElementById('springPanel');
-    const exportRow = document.getElementById('exportBtn')?.parentElement;
+    const host = getSidebarHost();
+    const filterBox = document.getElementById('filterBox');
     try{
-      if (exportRow && exportRow.parentElement){
-        exportRow.parentElement.insertBefore(bar, exportRow.nextSibling);
-        if(spring){ exportRow.parentElement.insertBefore(spring, bar.nextSibling); }
-      } else {
-        const sb = (document.getElementById('sidebar')||document.body);
-        sb.prepend(bar);
-        if(spring){ sb.insertBefore(spring, bar.nextSibling); }
+      if(!bar || !host) return;
+      if(bar.parentElement !== host){
+        if(filterBox && filterBox.parentElement === host) host.insertBefore(bar, filterBox);
+        else host.prepend(bar);
+      } else if(filterBox && bar.nextElementSibling !== spring && filterBox.previousElementSibling !== bar){
+        host.insertBefore(bar, filterBox);
+      }
+      if(spring){
+        if(spring.parentElement !== host){
+          if(filterBox && filterBox.parentElement === host) host.insertBefore(spring, filterBox);
+          else host.appendChild(spring);
+        }
+        if(bar.nextElementSibling !== spring){
+          host.insertBefore(spring, bar.nextSibling);
+        }
       }
     }catch(e){}
+  }
+  (function placeWindButton(){
+    placeSidebarTools();
+    window.__placeSidebarTools = placeSidebarTools;
   })();
 
   const panel = document.getElementById('windPanel');
@@ -6827,6 +6878,17 @@ document.addEventListener('DOMContentLoaded', function(){
     bM.addEventListener('click', ()=>{ panel.style.width='420px'; panel.style.height='300px'; refreshWind(); });
     bL.addEventListener('click', ()=>{ panel.style.width='560px'; panel.style.height='420px'; refreshWind(); });
   }
+  try{
+    if (typeof window.render === 'function' && !window.__sidebar_tools_render_patch__){
+      const _r = window.render;
+      window.render = function(){
+        const out = _r.apply(this, arguments);
+        try{ placeSidebarTools(); }catch(e){}
+        return out;
+      };
+      window.__sidebar_tools_render_patch__ = true;
+    }
+  }catch(e){}
 })();
 </script>
 
@@ -6847,8 +6909,26 @@ document.addEventListener('DOMContentLoaded', function(){
   }
   function getSpringDates(){ try{ return (typeof springDates !== 'undefined') ? springDates : {}; }catch(e){ return {}; } }
   function getSpeciesList(){ try{ return (typeof SPECIES !== 'undefined') ? SPECIES : Object.keys(getSpringDates()); }catch(e){ return []; } }
+  function getSpringPanelOpen(){
+    try{ return localStorage.getItem(LS_SPRING_PANEL_OPEN) === '1'; }catch(e){ return false; }
+  }
+  function setSpringPanelOpen(on){
+    try{ localStorage.setItem(LS_SPRING_PANEL_OPEN, on ? '1' : '0'); }catch(e){}
+  }
+  function ensureSpringState(){
+    if(!springDates || typeof springDates !== 'object'){
+      springDates = Object.assign({}, DEFAULT_SPRING_DATES);
+    }
+  }
+  function ensureSpringUiPlaced(){
+    try{
+      if(typeof window.__placeSidebarTools === 'function') window.__placeSidebarTools();
+    }catch(e){}
+  }
 
   function renderSpringPanel(){
+    ensureSpringState();
+    ensureSpringUiPlaced();
     const body = document.getElementById('springTableBody');
     const countEl = document.getElementById('springCount');
     const q = (document.getElementById('springSearch')?.value || '').toLowerCase().trim();
@@ -6900,7 +6980,8 @@ document.addEventListener('DOMContentLoaded', function(){
 
   window.__springScrollToSpecies = function(name){
     try{
-      const row = document.querySelector('.row[data-key="'+CSS.escape(name)+'"]');
+      const escaped = (window.CSS && CSS.escape) ? CSS.escape(name) : String(name).replace(/"/g, '\\"');
+      const row = document.querySelector('.row[data-key="'+escaped+'"]') || document.querySelector('[data-key="'+escaped+'"]');
       if(row){
         row.scrollIntoView({behavior:'smooth', block:'nearest'});
         row.style.outline = '2px solid #93c5fd';
@@ -6914,10 +6995,19 @@ document.addEventListener('DOMContentLoaded', function(){
     const panel = document.getElementById('springPanel');
     if(!panel) return;
     const wantOpen = (open===true) ? true : (open===false ? false : (panel.style.display==='none' || !panel.style.display));
-    if(wantOpen){ panel.style.display = 'block'; renderSpringPanel(); } else { panel.style.display = 'none'; }
+    if(wantOpen){
+      panel.style.display = 'block';
+      setSpringPanelOpen(true);
+      renderSpringPanel();
+    } else {
+      panel.style.display = 'none';
+      setSpringPanelOpen(false);
+    }
   }
+  window.toggleSpring = toggleSpring;
 
   function wire(){
+    ensureSpringUiPlaced();
     const btn = document.getElementById('toggleSpring');
     const close = document.getElementById('springClose');
     const search = document.getElementById('springSearch');
@@ -6929,12 +7019,28 @@ document.addEventListener('DOMContentLoaded', function(){
   try{
     if (typeof window.render === 'function' && !window.__springpanel_render_patch__){
       const _r = window.render;
-      window.render = function(){ const out = _r.apply(this, arguments); try{ wire(); renderSpringPanel(); }catch(e){} return out; };
+      window.render = function(){
+        const out = _r.apply(this, arguments);
+        try{
+          wire();
+          if(getSpringPanelOpen()) toggleSpring(true);
+          else renderSpringPanel();
+        }catch(e){}
+        return out;
+      };
       window.__springpanel_render_patch__ = true;
     }
   }catch(e){}
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ()=>{ wire(); renderSpringPanel(); });
-  else { wire(); renderSpringPanel(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ()=>{
+    wire();
+    if(getSpringPanelOpen()) toggleSpring(true);
+    else renderSpringPanel();
+  });
+  else {
+    wire();
+    if(getSpringPanelOpen()) toggleSpring(true);
+    else renderSpringPanel();
+  }
 })();
 </script>
 

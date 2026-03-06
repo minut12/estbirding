@@ -192,15 +192,10 @@
   <aside id="sidebar">
     <div class="panel-header">
     <div class="sidebar-header"><h2 style="margin:0">Linnuliigid 2026</h2><button id="closeSidebarBtn" class="btn icon close-sidebar" title="Sulge" aria-label="Sulge"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
-    <div id="buildStampLine" class="small" style="margin-top:4px;font-weight:700;color:#0f766e">BUILD: -</div>
-    <div id="cacheStatusBadge" class="small" style="margin-top:2px;color:#334155">cache: -</div>
     </div>
     <div class="panel-content-scroll">
 <div class="top-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:center">
-  <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px">
-    <input type="checkbox" id="toggle7days" />
-    <span>7 days only</span>
-  </label>
+  <button id="recentToggle" class="btn secondary" title="Toggle 7-day filter">7p: ON</button>
   <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px">
     <input type="checkbox" id="toggleAutoElu30m" />
     <span>Auto refresh (30m)</span>
@@ -220,8 +215,6 @@
 <div id="eluProgress" class="snapshot-banner" style="display:none;font-weight:600"></div>
 <div id="eluLastCoord" class="fetch-progress"></div>
 <div id="fetchProgress" class="fetch-progress"></div>
-<div id="indexProgress" class="fetch-progress"></div>
-<div id="serverRefreshStatus" class="fetch-progress"></div>
 <div id="fetchProgressBar" class="fetch-progress-bar" style="display:none"><div id="fetchProgressBarInner" class="fetch-progress-bar-inner" style="width:0%"></div></div>
 <div id="fetchError" class="fetch-error"></div>
 <div id="debugContent" style="display:none"></div>
@@ -1388,6 +1381,29 @@ function parseElurikkusExtraFromText(detailHtml, detailUrl){
   Object.keys(out).forEach(function(k){ if(typeof out[k] === 'string') out[k] = _clean(out[k]); });
   return out;
 }
+
+function extractFromInnerText(detailHtml, label){
+  let text = '';
+  try{
+    const doc = new DOMParser().parseFromString(String(detailHtml || ''), 'text/html');
+    text = String((doc.body && doc.body.innerText) || '');
+  }catch(e){}
+  if(!text) text = String(detailHtml || '');
+  text = text.replace(/\r/g, '');
+  const lines = text.split('\n').map(function(s){ return String(s || '').trim(); }).filter(Boolean);
+  const labelText = String(label || '').trim();
+  const lab = labelText.toLowerCase();
+  const esc = labelText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const sameLineRe = new RegExp('^' + esc + '\\s*:?\\s*(.+)$', 'i');
+  for(let i = 0; i < lines.length; i++){
+    const line = lines[i];
+    const low = line.toLowerCase();
+    if(low === lab || low === (lab + ':')) return String(lines[i + 1] || '').trim();
+    const m = line.match(sameLineRe);
+    if(m && m[1]) return String(m[1]).trim();
+  }
+  return '';
+}
 function parseEluSearchRows(html){
   return parseSearchRows(html);
 }
@@ -2161,7 +2177,7 @@ async function autoFetchCoords(key, searchUrl, signal){
     individualCount: rowExtra.individualCount || '',
     collectors: rowExtra.collectors || '',
     behavior: rowExtra.behavior || '',
-    locality: rowExtra.locality || '',
+    locality: '',
     communes: '',
     municipality: '',
     county: '',
@@ -2174,7 +2190,7 @@ async function autoFetchCoords(key, searchUrl, signal){
   }
   try{ save(); }catch(e){}
   try{ render(); }catch(e){}
-  let coords = extractLatLon(searchHtml);
+  let coords = null;
   let eventDate = extractEventDate(searchHtml);
   const rows = extractOccurrenceCandidates(searchHtml);
   const occ7Dates = parseEluRowDatesFromSearchHtml(searchHtml).map(dateIsoFromAny).filter(Boolean);
@@ -2219,31 +2235,33 @@ async function autoFetchCoords(key, searchUrl, signal){
       detailFields = parseElurikkusDetailFields(detailHtml, newestDetailUrl);
       detailExtra = parseElurikkusExtraFromText(detailHtml, newestDetailUrl);
       const det = parseEluDetailExtras(detailHtml, newestDetailUrl);
+      const latStr = extractFromInnerText(detailHtml, 'Latitude');
+      const lonStr = extractFromInnerText(detailHtml, 'Longitude');
+      const parsedLat = parseFloat(String(latStr || '').replace(',', '.'));
+      const parsedLon = parseFloat(String(lonStr || '').replace(',', '.'));
+      const validDetailCoords = Number.isFinite(parsedLat) && Number.isFinite(parsedLon) && parsedLat > 56 && parsedLat < 60.5 && parsedLon > 20 && parsedLon < 29;
       console.log('ELU EXTRA PARSED', species, detailExtra);
       if(p.eluExtra){
         p.eluExtra.detailUrl = newestDetailUrl || p.eluExtra.detailUrl || '';
-        if(det.communes) p.eluExtra.communes = det.communes;
-        if(det.municipality) p.eluExtra.municipality = det.municipality;
-        if(det.county) p.eluExtra.county = det.county;
-        if(det.districts) p.eluExtra.districts = det.districts;
-        if(det.eestiOmavalitsused) p.eluExtra.eestiOmavalitsused = det.eestiOmavalitsused;
-        if(det.locality) p.eluExtra.locality = det.locality;
+        p.eluExtra.individualCount = extractFromInnerText(detailHtml,'Individual count') || p.eluExtra.individualCount || '';
+        p.eluExtra.behavior = extractFromInnerText(detailHtml,'Behavior') || p.eluExtra.behavior || '';
+        p.eluExtra.collectors = extractFromInnerText(detailHtml,'Collectors') || p.eluExtra.collectors || '';
+        p.eluExtra.municipality = extractFromInnerText(detailHtml,'Municipality') || det.municipality || '';
+        p.eluExtra.locality = extractFromInnerText(detailHtml,'Locality') || det.locality || '';
+        p.eluExtra.county = extractFromInnerText(detailHtml,'County') || det.county || '';
+        p.eluExtra.districts = extractFromInnerText(detailHtml,'Districts') || det.districts || '';
+        p.eluExtra.communes = extractFromInnerText(detailHtml,'Communes') || det.communes || '';
+        p.eluExtra.eestiOmavalitsused = extractFromInnerText(detailHtml,'Eesti omavalitsused') || det.eestiOmavalitsused || '';
       }
-      if(!coords){
-        const latlonAlways = extractLatLon(detailHtml);
-        if(latlonAlways && _hasFiniteCoord(Number(latlonAlways[0])) && _hasFiniteCoord(Number(latlonAlways[1]))){
-          coords = latlonAlways;
-          coordDate = dateIsoFromAny(String((rows[0] && rows[0].dateText) || '')) || dateIsoFromAny(extractEventDate(detailHtml) || '');
-          coordSource = 'elurikkus_occurrence_detail';
-          if(!eventDate) eventDate = extractEventDate(detailHtml);
-        }
+      if(!coords && validDetailCoords){
+        coords = [parsedLat, parsedLon];
+        coordDate = dateIsoFromAny(String((rows[0] && rows[0].dateText) || '')) || dateIsoFromAny(extractEventDate(detailHtml) || '');
+        coordSource = 'elurikkus_occurrence_detail';
+        if(!eventDate) eventDate = extractEventDate(detailHtml);
       }
     }catch(e){}
   }
-  if(coords){
-    coordDate = latestSeenDate || dateIsoFromAny(eventDate || '') || '';
-    coordSource = 'elurikkus_search_page';
-  } else if(!detailHtml) {
+  if(!coords && !detailHtml) {
     const probeRows = rows && rows.length ? rows : [{ occUrl: findFirstDetailLink(searchHtml), dateText: eventDate || '' }];
     for(let i = 0; i < Math.min(10, probeRows.length); i++){
       const occUrl = String((probeRows[i] && probeRows[i].occUrl) || '').trim();
@@ -2251,22 +2269,29 @@ async function autoFetchCoords(key, searchUrl, signal){
       detailUrl = occUrl;
       try{
         detailHtml = await tryFetch(_withCacheBuster(occUrl), { signal: signal });
-        const latlon = extractLatLon(detailHtml);
+        const latStr = extractFromInnerText(detailHtml, 'Latitude');
+        const lonStr = extractFromInnerText(detailHtml, 'Longitude');
+        const parsedLat = parseFloat(String(latStr || '').replace(',', '.'));
+        const parsedLon = parseFloat(String(lonStr || '').replace(',', '.'));
+        const validDetailCoords = Number.isFinite(parsedLat) && Number.isFinite(parsedLon) && parsedLat > 56 && parsedLat < 60.5 && parsedLon > 20 && parsedLon < 29;
         detailFields = parseElurikkusDetailFields(detailHtml, occUrl);
         detailExtra = parseElurikkusExtraFromText(detailHtml, occUrl);
         const det = parseEluDetailExtras(detailHtml, occUrl);
         console.log('ELU EXTRA PARSED', species, detailExtra);
         if(p.eluExtra){
           p.eluExtra.detailUrl = occUrl || p.eluExtra.detailUrl || '';
-          if(det.communes) p.eluExtra.communes = det.communes;
-          if(det.municipality) p.eluExtra.municipality = det.municipality;
-          if(det.county) p.eluExtra.county = det.county;
-          if(det.districts) p.eluExtra.districts = det.districts;
-          if(det.eestiOmavalitsused) p.eluExtra.eestiOmavalitsused = det.eestiOmavalitsused;
-          if(det.locality) p.eluExtra.locality = det.locality;
+          p.eluExtra.individualCount = extractFromInnerText(detailHtml,'Individual count') || p.eluExtra.individualCount || '';
+          p.eluExtra.behavior = extractFromInnerText(detailHtml,'Behavior') || p.eluExtra.behavior || '';
+          p.eluExtra.collectors = extractFromInnerText(detailHtml,'Collectors') || p.eluExtra.collectors || '';
+          p.eluExtra.municipality = extractFromInnerText(detailHtml,'Municipality') || det.municipality || '';
+          p.eluExtra.locality = extractFromInnerText(detailHtml,'Locality') || det.locality || '';
+          p.eluExtra.county = extractFromInnerText(detailHtml,'County') || det.county || '';
+          p.eluExtra.districts = extractFromInnerText(detailHtml,'Districts') || det.districts || '';
+          p.eluExtra.communes = extractFromInnerText(detailHtml,'Communes') || det.communes || '';
+          p.eluExtra.eestiOmavalitsused = extractFromInnerText(detailHtml,'Eesti omavalitsused') || det.eestiOmavalitsused || '';
         }
-        if(latlon && _hasFiniteCoord(Number(latlon[0])) && _hasFiniteCoord(Number(latlon[1]))){
-          coords = latlon;
+        if(validDetailCoords){
+          coords = [parsedLat, parsedLon];
           coordDate = dateIsoFromAny(String((probeRows[i] && probeRows[i].dateText) || '')) || dateIsoFromAny(extractEventDate(detailHtml) || '');
           coordSource = 'elurikkus_occurrence_detail';
           if(!eventDate) eventDate = extractEventDate(detailHtml);
@@ -2599,7 +2624,20 @@ async function fetchSpringYearFirstOne(key){
 }
 
 // Toggle state: 7 days only
-window.__recentOnly = (localStorage.getItem(LS_RECENT_ONLY) === '1');
+function getRecentOnly(){
+  const v = localStorage.getItem(LS_RECENT_ONLY);
+  return v === null ? true : (v === '1');
+}
+function setRecentOnly(val){
+  const on = !!val;
+  try{ localStorage.setItem(LS_RECENT_ONLY, on ? '1' : '0'); }catch(e){}
+  window.__recentOnly = on;
+  const btn = document.getElementById('recentToggle');
+  if(btn) btn.textContent = '7p: ' + (on ? 'ON' : 'OFF');
+  rebuildAllMarkers();
+  render();
+}
+window.__recentOnly = getRecentOnly();
 function is7daysOnly(){ return !!window.__recentOnly; }
 function _toDayLocalTallinn(v){
   const s = String(v || '').trim();
@@ -3175,11 +3213,7 @@ function _swControllerActive(){
   try{ return !!(navigator.serviceWorker && navigator.serviceWorker.controller); }catch(e){ return false; }
 }
 function _refreshBuildStampUi(){
-  const stampEl = document.getElementById('buildStampLine');
-  const badgeEl = document.getElementById('cacheStatusBadge');
-  const nowIso = new Date().toISOString();
-  if(stampEl) stampEl.textContent = 'BUILD: ' + MAP_BUILD_ID + ' | stamp: ' + MAP_BUILD_STAMP + ' | EXTRA_FIELDS_V1 | now: ' + nowIso;
-  if(badgeEl) badgeEl.textContent = 'cache: swController=' + (_swControllerActive() ? 'yes' : 'no');
+  // Intentionally no visible build/cache stamp in sidebar UI.
 }
 async function _hardReloadNow(){
   const btn = document.getElementById('btnHardReload');
@@ -4597,12 +4631,7 @@ function reloadSnapshot(){
 
 // "Show all" shortcut - turns off 7-day toggle
 window.__showAll = function(){
-  window.__recentOnly = false;
-  try{ localStorage.setItem(LS_RECENT_ONLY, '0'); }catch(e){}
-  const cb = document.getElementById('toggle7days');
-  if(cb) cb.checked = false;
-  Object.keys(points || {}).forEach(updateMarker);
-  render();
+  setRecentOnly(false);
   _hideSnapshotBanner();
 };
 
@@ -5784,7 +5813,7 @@ function _wireSnapshotButtons(){
   const btnRerunVerification = document.getElementById('btnRerunVerification');
   const toggleSlowMode = document.getElementById('toggleSlowMode');
   const btnClearDebug = document.getElementById('btnClearDebugEvents');
-  const toggle7d = document.getElementById('toggle7days');
+  const recentToggle = document.getElementById('recentToggle');
   const toggleAutoElu30m = document.getElementById('toggleAutoElu30m');
 
   if(btnElu && !btnElu.__wired){
@@ -5891,18 +5920,15 @@ function _wireSnapshotButtons(){
     });
     btnStop.__wired = true;
   }
-  if(toggle7d && !toggle7d.__wired){
-    toggle7d.checked = !!window.__recentOnly;
-    toggle7d.addEventListener('change', function(){
-      window.__recentOnly = this.checked;
-      try{ localStorage.setItem(LS_RECENT_ONLY, this.checked ? '1' : '0'); }catch(e){}
-      rebuildAllMarkers();
-      render();
+  if(recentToggle && !recentToggle.__wired){
+    recentToggle.textContent = '7p: ' + (window.__recentOnly ? 'ON' : 'OFF');
+    recentToggle.addEventListener('click', function(){
+      setRecentOnly(!window.__recentOnly);
       _updateDebugPanel();
-      if(this.checked) _checkEmpty7dBanner();
+      if(window.__recentOnly) _checkEmpty7dBanner();
       else _hideSnapshotBanner();
     });
-    toggle7d.__wired = true;
+    recentToggle.__wired = true;
   }
   if(toggleAutoElu30m && !toggleAutoElu30m.__wired){
     toggleAutoElu30m.checked = (String(localStorage.getItem(LS_ELU_AUTO_30M) || '0') === '1');
@@ -6001,7 +6027,8 @@ function _wireSnapshotButtons(){
 }
 
 function _wireSidebarSettingsRow(){
-  // Kept for backward compatibility; 7-day state is controlled only by #toggle7days.
+  const btn = document.getElementById('recentToggle');
+  if(btn) btn.textContent = '7p: ' + (window.__recentOnly ? 'ON' : 'OFF');
 }
 
 // === Auto-refresh via postMessage (parent app sends these) ===

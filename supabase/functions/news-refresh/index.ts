@@ -1,5 +1,5 @@
 ﻿import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { parseRss, normalizeRssItem, type NormalizedRssItem } from "../_shared/rss-normalize.ts";
+import { fetchSourceItems, normalizeSourceUrl, SourceFetchError } from "../_shared/source-fetch.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 
 type SourceRow = {
@@ -17,17 +17,23 @@ type SourceRow = {
 };
 
 type SourceSummary = {
+  sourceId: string;
   slug: string;
   source: string;
+  enabled: boolean;
+  sourceType: string;
+  rssUrl: string;
   ok: boolean;
   inserted: number;
   updated: number;
+  skippedItems: number;
+  skipReasons: string[];
   cachedImages: number;
   fetchedCount: number;
-  viaProxy?: boolean;
   status?: number;
   contentType?: string;
   bodySnippet?: string;
+  fetchOk?: boolean;
   errors: string[];
 };
 
@@ -433,13 +439,20 @@ async function refreshEoy(
   cacheLimitLeft: number,
 ): Promise<SourceSummary> {
   const summary: SourceSummary = {
+    sourceId: source.id,
     slug: source.slug,
     source: source.name || source.slug,
+    enabled: source.is_enabled !== false,
+    sourceType: String(source.type || "scrape"),
+    rssUrl: String(source.fetch_url || source.feed_url || "").trim(),
     ok: true,
     inserted: 0,
     updated: 0,
+    skippedItems: 0,
+    skipReasons: [],
     cachedImages: 0,
     fetchedCount: 0,
+    fetchOk: false,
     errors: [],
   };
   const controller = new AbortController();
@@ -469,6 +482,7 @@ async function refreshEoy(
     summary.status = res.status;
     summary.contentType = String(res.headers.get("content-type") || "");
     summary.bodySnippet = bodySnippet(rawBody);
+    summary.fetchOk = res.ok;
 
     if (!res.ok) {
       summary.ok = false;
@@ -507,8 +521,8 @@ async function refreshEoy(
   }
 }
 
-function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array<Record<string, unknown>> {
-  const sourceIdentity = String(source.source_key || source.key || source.slug || "unknown");
+function normalizeRssItems(items: Awaited<ReturnType<typeof fetchSourceItems>>, source: SourceRow): Array<Record<string, unknown>> {
+  const sourceIdentity = String(source.source_key || source.key || source.slug || source.id || "unknown");
   const now = new Date().toISOString();
   const out: Array<Record<string, unknown>> = [];
 
@@ -518,13 +532,17 @@ function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array
     const title = String(item.title || "").trim();
     if (!title) continue;
     const externalId = String(item.external_id || "").trim();
-    const guid = externalId || String(item.permalink_url || "").trim() || `${source.slug}:${title}:${normalizePublishedAt(item.published_at)}`;
+    const normalizedLink = canonicalizeUrl(item.permalink_url || item.raw_json?.link || "");
+    const dedupeKey = externalId || normalizedLink || `${title}:${normalizePublishedAt(item.published_at)}`;
+    const guid = `${source.id}:${dedupeKey}`;
     const itemSourceKey = `${sourceIdentity}:${guid}`;
+    const rawLang = String((item.raw_json as Record<string, unknown> | null)?.language || "").trim().toLowerCase();
+    const language = rawLang || (source.slug === "eoy" ? "et" : "unknown");
     out.push({
       source_id: source.id,
       source_key: itemSourceKey,
       source_slug: source.slug,
-      external_id: guid,
+      external_id: externalId || normalizedLink || null,
       title,
       body: item.body || null,
       summary: item.body?.slice(0, 500) || null,
@@ -536,8 +554,8 @@ function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array
       fetched_at: now,
       raw_json: item.raw_json,
       content_html: item.body_html || null,
-      language: "pl",
-      source_lang: "pl",
+      language,
+      source_lang: language,
       archived: false,
     });
   }
@@ -642,7 +660,8 @@ Deno.serve(async (req) => {
     const { data: sources, error: sourcesError } = await supabase
       .from("news_sources")
       .select("id, slug, name, key, source_key, type, feed_url, fetch_url, is_enabled, is_active, translate_to_et")
-      .eq("is_enabled", true);
+      .eq("is_enabled", true)
+      .eq("is_active", true);
     if (sourcesError) return jsonError("news-refresh", new Error(sourcesError.message), 500);
 
     const enabledSources = (sources || []).map((s: SourceRow) => ({ ...s, name: normalizeSourceName(s.name) })) as SourceRow[];
@@ -681,13 +700,20 @@ Deno.serve(async (req) => {
       if (type === "scrape") {
         skipped += 1;
         perSource.push({
+          sourceId: source.id,
           slug: source.slug,
           source: source.name || source.slug,
+          enabled: source.is_enabled !== false,
+          sourceType: type || "scrape",
+          rssUrl: sourceUrl,
           ok: false,
           inserted: 0,
           updated: 0,
+          skippedItems: 0,
+          skipReasons: ["unsupported_scrape_source"],
           cachedImages: 0,
           fetchedCount: 0,
+          fetchOk: false,
           errors: ["Unsupported scrape source"],
         });
         continue;
@@ -695,103 +721,90 @@ Deno.serve(async (req) => {
       if (type !== "rss" || !sourceUrl) {
         skipped += 1;
         perSource.push({
+          sourceId: source.id,
           slug: source.slug,
           source: source.name || source.slug,
+          enabled: source.is_enabled !== false,
+          sourceType: type || "unknown",
+          rssUrl: sourceUrl,
           ok: true,
           inserted: 0,
           updated: 0,
+          skippedItems: 0,
+          skipReasons: [!sourceUrl ? "missing_rss_url" : "unsupported_source_type"],
           cachedImages: 0,
           fetchedCount: 0,
+          fetchOk: false,
           errors: [],
         });
         continue;
       }
 
       const summary: SourceSummary = {
+        sourceId: source.id,
         slug: source.slug,
         source: source.name || source.slug,
+        enabled: source.is_enabled !== false,
+        sourceType: type || "rss",
+        rssUrl: sourceUrl,
         ok: true,
         inserted: 0,
         updated: 0,
+        skippedItems: 0,
+        skipReasons: [],
         cachedImages: 0,
         fetchedCount: 0,
+        fetchOk: false,
         errors: [],
       };
 
       try {
-        const fetched = await fetchRssText(sourceUrl, supabaseUrl);
-        summary.viaProxy = fetched.viaProxy;
-        summary.status = fetched.status;
-        summary.contentType = fetched.contentType;
-        summary.bodySnippet = fetched.bodySnippet;
+        console.log("[news-refresh:source:start]", {
+          source_id: source.id,
+          source_name: source.name,
+          enabled: source.is_enabled !== false,
+          source_type: type,
+          rss_url: sourceUrl,
+        });
 
-        if (!fetched.ok) {
-          summary.ok = false;
-          const msg = fetched.blocked
-            ? "Feed blocked / returned HTML challenge"
-            : `RSS HTTP ${fetched.status}`;
-          summary.errors.push(msg);
-          errors.push({
-            source: source.slug,
-            error: msg,
-            status: fetched.status,
-            contentType: fetched.contentType,
-            bodySnippet: fetched.bodySnippet,
-          });
-          perSource.push(summary);
-          if (cacheImages && isBirdingPoland) {
-            const fin = await backfillMissingCachedImages(supabase, supabaseUrl, source.slug, 25);
-            cachedImages += fin.cached;
-            birdingCacheFailures += fin.failed;
-          }
-          continue;
-        }
+        const parsed = await fetchSourceItems({
+          id: source.id,
+          slug: source.slug,
+          name: source.name,
+          source_key: source.source_key || undefined,
+          key: source.key || undefined,
+          type: "rss",
+          kind: "rss",
+          feed_url: normalizeSourceUrl(sourceUrl),
+        }, `${supabaseUrl}/functions/v1/proxy?url=`);
 
-        let parsed = parseRss(fetched.text).map((it) => normalizeRssItem(it));
-        if (parsed.length === 0 && !fetched.viaProxy) {
-          const retry = await fetchRssText(sourceUrl, supabaseUrl);
-          summary.viaProxy = retry.viaProxy;
-          summary.status = retry.status;
-          summary.contentType = retry.contentType;
-          summary.bodySnippet = retry.bodySnippet;
-          if (retry.ok) parsed = parseRss(retry.text).map((it) => normalizeRssItem(it));
-        }
-
-        if (parsed.length === 0) {
-          summary.ok = false;
-          const msg = "No RSS items parsed";
-          summary.errors.push(msg);
-          errors.push({
-            source: source.slug,
-            error: msg,
-            status: summary.status,
-            contentType: summary.contentType,
-            bodySnippet: summary.bodySnippet,
-          });
-          perSource.push(summary);
-          if (cacheImages && isBirdingPoland) {
-            const fin = await backfillMissingCachedImages(supabase, supabaseUrl, source.slug, 25);
-            cachedImages += fin.cached;
-            birdingCacheFailures += fin.failed;
-          }
-          continue;
-        }
-
+        summary.fetchOk = true;
         summary.fetchedCount = parsed.length;
         const rows = normalizeRssItems(parsed, source).slice(0, maxItemsPerSource);
-        const externalIds = rows.map((row) => String(row.external_id || "")).filter(Boolean);
-        const { data: existingRows } = externalIds.length > 0
-          ? await supabase.from("news_items").select("external_id").in("external_id", externalIds)
-          : { data: [] };
-        const existingSet = new Set((existingRows || []).map((r: any) => String(r.external_id)));
 
         for (const row of rows) {
-          const extId = String(row.external_id || "");
           const sourceName = String(source.name || source.slug || "unknown").trim() || "unknown";
           const detectedLanguage = String(row.source_lang || row.language || "").trim().toLowerCase() || "unknown";
           const sourceTranslateToEt = sourceName === "EOÜ" || source.slug === "eoy"
             ? false
             : source.translate_to_et === true;
+          const dedupeGuid = String(row.guid || "").trim();
+          const dedupeUrl = String(row.url || "").trim();
+          if (!dedupeGuid && !dedupeUrl) {
+            summary.skippedItems += 1;
+            summary.skipReasons.push("missing_guid_and_url");
+            console.log("[news-refresh:item:skip]", {
+              source_id: source.id,
+              source_name: source.name,
+              reason: "missing_guid_and_url",
+              title: String(row.title || "").slice(0, 120),
+            });
+            continue;
+          }
+          const duplicateQuery = dedupeGuid
+            ? supabase.from("news_items").select("id", { count: "exact", head: true }).eq("guid", dedupeGuid)
+            : supabase.from("news_items").select("id", { count: "exact", head: true }).eq("source_id", source.id).eq("url", dedupeUrl);
+          const { count: duplicateCount } = await duplicateQuery;
           const { data: upserted, error } = await supabase
             .from("news_items")
             .upsert(row, { onConflict: "guid" })
@@ -804,13 +817,21 @@ Deno.serve(async (req) => {
             continue;
           }
 
-          if (extId && existingSet.has(extId)) {
+          if ((duplicateCount || 0) > 0) {
             summary.updated += 1;
             updated += 1;
+            summary.skippedItems += 1;
+            summary.skipReasons.push("duplicate_existing_item");
+            console.log("[news-refresh:item:duplicate]", {
+              source_id: source.id,
+              source_name: source.name,
+              guid: dedupeGuid || null,
+              url: dedupeUrl || null,
+              reason: "duplicate_existing_item",
+            });
           } else {
             summary.inserted += 1;
             inserted += 1;
-            if (extId) existingSet.add(extId);
           }
 
           if (cacheImages && cachedImages < cacheLimit && upserted.image_url && (isBirdingPoland || !upserted.cached_image_url)) {
@@ -847,11 +868,40 @@ Deno.serve(async (req) => {
             }
           }
         }
+        console.log("[news-refresh:source:end]", {
+          source_id: source.id,
+          source_name: source.name,
+          enabled: source.is_enabled !== false,
+          source_type: type,
+          rss_url: sourceUrl,
+          fetch_ok: summary.fetchOk,
+          parsed_item_count: summary.fetchedCount,
+          inserted_item_count: summary.inserted,
+          skipped_item_count: summary.skippedItems,
+          skip_reasons: summary.skipReasons,
+          error_count: summary.errors.length,
+        });
       } catch (e: any) {
-        const msg = String(e?.message || e);
-        summary.ok = false;
-        summary.errors.push(msg);
-        errors.push({ source: source.slug, error: msg, status: summary.status, contentType: summary.contentType, bodySnippet: summary.bodySnippet });
+        if (e instanceof SourceFetchError) {
+          summary.ok = false;
+          summary.fetchOk = false;
+          summary.status = e.status;
+          summary.contentType = String(e.details?.contentType || "");
+          summary.bodySnippet = String(e.details?.bodySnippet || e.details?.snippet || "");
+          summary.errors.push(e.message);
+          errors.push({
+            source: source.slug,
+            error: e.message,
+            status: e.status,
+            contentType: summary.contentType,
+            bodySnippet: summary.bodySnippet,
+          });
+        } else {
+          const msg = String(e?.message || e);
+          summary.ok = false;
+          summary.errors.push(msg);
+          errors.push({ source: source.slug, error: msg, status: summary.status, contentType: summary.contentType, bodySnippet: summary.bodySnippet });
+        }
       }
 
       if (cacheImages && isBirdingPoland) {

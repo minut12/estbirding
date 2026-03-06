@@ -192,6 +192,11 @@
   .debug-pro-table{width:100%;border-collapse:collapse;font-size:11px}
   .debug-pro-table th,.debug-pro-table td{border-bottom:1px solid #eef2f7;padding:4px;text-align:left;vertical-align:top}
   .debug-pro-code{font-family:ui-monospace,Consolas,monospace;word-break:break-all}
+  .elu-debug-box{display:none;margin:8px 0;padding:8px;border:1px solid #cbd5e1;border-radius:8px;background:#fff}
+  .elu-debug-head{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .elu-debug-title{font-size:12px;font-weight:700;color:#334155}
+  .elu-debug-actions{display:flex;gap:6px;flex-wrap:wrap}
+  .elu-debug-text{width:100%;min-height:260px;resize:vertical;border:1px solid #cbd5e1;border-radius:8px;padding:8px;font:12px/1.4 ui-monospace,Consolas,monospace;background:#f8fafc;color:#0f172a}
 
 </style>
 </head>
@@ -200,7 +205,7 @@
 <div id="app">
   <aside id="sidebar">
     <div class="panel-header">
-    <div class="sidebar-header"><h2 style="margin:0">Linnuliigid 2026</h2><button id="closeSidebarBtn" class="btn icon close-sidebar" title="Sulge" aria-label="Sulge"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+    <div class="sidebar-header"><div><h2 style="margin:0">Linnuliigid 2026</h2><div style="font-size:10px;color:#dc2626;line-height:1.2;margin-top:2px">REAL_FILE_TEST_V4</div></div><button id="closeSidebarBtn" class="btn icon close-sidebar" title="Sulge" aria-label="Sulge"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
     </div>
     <div class="panel-content-scroll">
 <div class="top-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:center">
@@ -219,6 +224,7 @@
   <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index">Resume</button>
   <button id="btnSkipStuck" class="btn secondary" title="Skip current stuck item by resuming from next index">Skip stuck item</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
+  <button id="debugCoordsBtn" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:700">Debug coords</button>
   <button id="btnCopyMapDebugJson" class="btn secondary" title="Copy map debug JSON">Copy debug JSON</button>
 </div>
 <div id="eluProgress" class="snapshot-banner" style="display:none;font-weight:600"></div>
@@ -226,6 +232,16 @@
 <div id="fetchProgress" class="fetch-progress"></div>
 <div id="fetchProgressBar" class="fetch-progress-bar" style="display:none"><div id="fetchProgressBarInner" class="fetch-progress-bar-inner" style="width:0%"></div></div>
 <div id="fetchError" class="fetch-error"></div>
+<div id="eluDebugBox" class="elu-debug-box">
+  <div class="elu-debug-head">
+    <div id="eluDebugTitle" class="elu-debug-title">Elurikkus debug</div>
+    <div class="elu-debug-actions">
+      <button id="btnCopyEluDebug" class="btn secondary" type="button">Copy debug JSON</button>
+      <button id="btnCloseEluDebug" class="btn secondary" type="button">Close</button>
+    </div>
+  </div>
+  <textarea id="eluDebugText" class="elu-debug-text" spellcheck="false"></textarea>
+</div>
 <div id="debugContent" style="display:none"></div>
 <div id="debugProContent" style="display:none"></div>
     <input id="filterBox" type="text" placeholder="Filter..." />
@@ -1544,6 +1560,33 @@ function parseEluRowsIso(html){
 function parseEluRowsResilient(html){
   return parseEluRowsIso(html);
 }
+function parseEluRowsForDebug(html){
+  const out = [];
+  try{
+    const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+    const trs = Array.from(doc.querySelectorAll('table tbody tr'));
+    for(const tr of trs){
+      const a = tr.querySelector('a[href*="/app/occurrences/occurrence/"]');
+      const href = a ? (a.getAttribute('href') || '') : '';
+      const occId = (href.match(/occurrence\/(\d+)/i) || [])[1] || '';
+      const tds = Array.from(tr.querySelectorAll('td')).map(function(td){ return (td.textContent || '').trim(); });
+      const iso = normDateISO(tds[0] || '');
+      out.push({
+        occId: occId,
+        iso: iso,
+        rawDate: tds[0] || '',
+        taxon: tds[1] || '',
+        commonName: tds[2] || '',
+        individualCount: tds[3] || '',
+        behavior: tds[4] || '',
+        locality: tds[5] || '',
+        collectors: tds[6] || '',
+        href: href
+      });
+    }
+  }catch(e){}
+  return out;
+}
 function absOccUrl(href){
   if(!href) return '';
   const s = String(href);
@@ -1611,6 +1654,156 @@ function extractDetailCoords(detailHtml){
   }
   return null;
 }
+async function debugOcc7Pages(species, maxPages){
+  const pages = [];
+  const cutoff = cutoffIso7dLocal();
+  const seen = new Set();
+  for(let page = 0; page < maxPages; page++){
+    const offset = page * 100;
+    const u = new URL('https://elurikkus.ee/app/occurrences/search');
+    u.searchParams.set('text', species);
+    u.searchParams.set('limit', '100');
+    u.searchParams.set('offset', String(offset));
+    u.searchParams.set('orderAscending', 'false');
+    u.searchParams.set('orderBy', 'event_date_naive');
+    u.searchParams.set('_dbg', String(Date.now()));
+    let html = '';
+    try{
+      html = await tryFetch(u.toString());
+    }catch(e){
+      pages.push({ page: page + 1, url: u.toString(), error: String((e && e.message) || e) });
+      break;
+    }
+    const rows = parseEluRowsForDebug(html);
+    if(!rows.length){
+      pages.push({ page: page + 1, url: u.toString(), rows: 0, stop: 'no_rows' });
+      break;
+    }
+    let uniqueWithin = 0;
+    for(const r of rows){
+      if(!r.occId || !r.iso) continue;
+      if(seen.has(r.occId)) continue;
+      seen.add(r.occId);
+      if(r.iso >= cutoff) uniqueWithin++;
+    }
+    const oldestIso = rows[rows.length - 1] ? (rows[rows.length - 1].iso || '') : '';
+    pages.push({
+      page: page + 1,
+      url: u.toString(),
+      rows: rows.length,
+      firstOccId: rows[0] ? (rows[0].occId || '') : '',
+      lastOccId: rows[rows.length - 1] ? (rows[rows.length - 1].occId || '') : '',
+      newestIso: rows[0] ? (rows[0].iso || '') : '',
+      oldestIso: oldestIso,
+      within7dUnique: uniqueWithin
+    });
+    if(oldestIso && oldestIso < cutoff) break;
+  }
+  return pages;
+}
+function showDebugModal(text, title){
+  const box = document.getElementById('eluDebugBox');
+  const area = document.getElementById('eluDebugText');
+  const head = document.getElementById('eluDebugTitle');
+  if(!box || !area) return;
+  if(head) head.textContent = title || 'Elurikkus debug';
+  area.value = String(text || '');
+  box.style.display = 'block';
+  area.scrollTop = 0;
+}
+async function debugElurikkusSpecies(species){
+  const dbg = {
+    species: species,
+    startedAt: new Date().toISOString(),
+    searchPage1Url: '',
+    searchPage1Ok: false,
+    searchPage1Bytes: 0,
+    rowsPage1: [],
+    newestRow: null,
+    detailUrl: '',
+    detailOk: false,
+    detailBytes: 0,
+    detailCoordsRaw: { latitude: '', longitude: '' },
+    detailCoordsParsed: null,
+    searchCoordsParsed: null,
+    finalPointBefore: null,
+    finalPointAfter: null,
+    occ7: { cutoffIso: '', page1Count: 0, multipageCount: 0, pages: [] },
+    fallbackWritersSeen: [],
+    markerBefore: null,
+    markerAfter: null,
+    errors: []
+  };
+  try{
+    const p0 = (points && points[species]) ? JSON.parse(JSON.stringify(points[species])) : null;
+    dbg.finalPointBefore = p0;
+    const url1 = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(species) + '&_ts=' + Date.now();
+    dbg.searchPage1Url = url1;
+    const shtml = await tryFetch(url1);
+    dbg.searchPage1Ok = !!shtml;
+    dbg.searchPage1Bytes = String(shtml || '').length;
+    const rows1 = parseEluRowsForDebug(shtml);
+    dbg.rowsPage1 = rows1.slice(0, 10);
+    dbg.newestRow = rows1[0] || null;
+    dbg.occ7.cutoffIso = cutoffIso7dLocal();
+    dbg.occ7.page1Count = rows1.filter(function(r){ return r.iso && r.iso >= dbg.occ7.cutoffIso; }).length;
+    dbg.searchCoordsParsed = extractLatLon(shtml) || null;
+    const detailUrl = extractNewestOccurrenceUrlFromSearch(shtml) || findFirstDetailLink(shtml) || '';
+    dbg.detailUrl = detailUrl;
+    if(detailUrl){
+      const dhtml = await tryFetch(detailUrl + (detailUrl.includes('?') ? '&' : '?') + '_dbg=' + Date.now());
+      dbg.detailOk = !!dhtml;
+      dbg.detailBytes = String(dhtml || '').length;
+      dbg.detailCoordsRaw.latitude = extractFromInnerText(dhtml, 'Latitude') || '';
+      dbg.detailCoordsRaw.longitude = extractFromInnerText(dhtml, 'Longitude') || '';
+      dbg.detailCoordsParsed = extractDetailCoords(dhtml) || (typeof extractLatLonFromOccurrenceDetail === 'function' ? extractLatLonFromOccurrenceDetail(dhtml) : null) || null;
+      dbg.detailFields = {
+        municipality: extractFromInnerText(dhtml, 'Municipality') || '',
+        locality: extractFromInnerText(dhtml, 'Locality') || '',
+        county: extractFromInnerText(dhtml, 'County') || '',
+        districts: extractFromInnerText(dhtml, 'Districts') || '',
+        communes: extractFromInnerText(dhtml, 'Communes') || '',
+        eestiOmavalitsused: extractFromInnerText(dhtml, 'Eesti omavalitsused') || '',
+        individualCount: extractFromInnerText(dhtml, 'Individual count') || '',
+        behavior: extractFromInnerText(dhtml, 'Behavior') || '',
+        collectors: extractFromInnerText(dhtml, 'Collectors') || ''
+      };
+    }
+    dbg.occ7.pages = await debugOcc7Pages(species, 10);
+    dbg.occ7.multipageCount = dbg.occ7.pages.reduce(function(sum, page){ return sum + (page.within7dUnique || 0); }, 0);
+    dbg.markerBefore = {
+      lat: points && points[species] ? (points[species].lat ?? null) : null,
+      lon: points && points[species] ? (points[species].lon ?? null) : null,
+      coordsSource: points && points[species] ? (points[species].coordsSource || points[species].coords_source || '') : ''
+    };
+    const result = await autoFetchCoords(species, 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(species));
+    dbg.markerAfter = {
+      lat: points && points[species] ? (points[species].lat ?? null) : null,
+      lon: points && points[species] ? (points[species].lon ?? null) : null,
+      coordsSource: points && points[species] ? (points[species].coordsSource || points[species].coords_source || '') : ''
+    };
+    dbg.finalPointAfter = points && points[species] ? JSON.parse(JSON.stringify(points[species])) : null;
+    dbg.autoFetchResult = result || null;
+    if(dbg.detailCoordsParsed && dbg.markerAfter.lat != null && dbg.markerAfter.lon != null){
+      const dl = dbg.detailCoordsParsed[0];
+      const dn = dbg.detailCoordsParsed[1];
+      const exactMatch = Math.abs(dbg.markerAfter.lat - dl) < 0.00005 && Math.abs(dbg.markerAfter.lon - dn) < 0.00005;
+      dbg.detailCoordsMatchFinal = exactMatch;
+      if(!exactMatch) dbg.fallbackWritersSeen.push('FINAL_MARKER_DOES_NOT_MATCH_DETAIL_COORDS');
+    }
+  }catch(err){
+    dbg.errors.push(String((err && err.stack) || (err && err.message) || err));
+  }
+  dbg.finishedAt = new Date().toISOString();
+  return dbg;
+}
+window.openEluDebug = async function(){
+  const species = window.__selectedSpecies || prompt('Species to debug:');
+  if(!species) return;
+  const dbg = await debugElurikkusSpecies(species);
+  window.__lastEluDebug = dbg;
+  showDebugModal(JSON.stringify(dbg, null, 2), 'Elurikkus debug: ' + species);
+};
 function extractNextPageUrl(searchHtml){
   const doc = new DOMParser().parseFromString(String(searchHtml || ''), 'text/html');
   const linkNext = doc.querySelector('link[rel="next"]');
@@ -5715,7 +5908,10 @@ function _wireSnapshotButtons(){
   const btnResume = document.getElementById('btnResumeFetch');
   const btnSkip = document.getElementById('btnSkipStuck');
   const btnStop = document.getElementById('btnStopFetch');
+  const dbgBtn = document.getElementById('debugCoordsBtn');
   const btnCopyMapDebugJson = document.getElementById('btnCopyMapDebugJson');
+  const btnCopyEluDebug = document.getElementById('btnCopyEluDebug');
+  const btnCloseEluDebug = document.getElementById('btnCloseEluDebug');
   const btnCopyDebug = document.getElementById('btnCopyDebugJson');
   const btnCopyDebugPro = document.getElementById('btnCopyDebugProJson');
   const btnExportDebugPro = document.getElementById('btnExportDebugProJson');
@@ -6321,6 +6517,8 @@ function render() {
   const list = document.getElementById('list'); list.innerHTML='';
   const arr = DATA.filter(x=> x.est.toLowerCase().includes(q));
   for (const o of arr) list.insertAdjacentHTML('beforeend', rowHTML(o));
+  const firstRow = list.querySelector('.row[data-key]');
+  if(firstRow && !window.__selectedSpecies) window.__selectedSpecies = firstRow.getAttribute('data-key') || window.__selectedSpecies;
 }
 
 (function bindSpringInlineEditDelegation(){
@@ -6331,6 +6529,10 @@ function render() {
 
   document.addEventListener('click', (e) => {
     const t = e.target;
+    const row = t.closest?.('.row[data-key]');
+    if(row){
+      window.__selectedSpecies = row.getAttribute('data-key') || window.__selectedSpecies;
+    }
     const openBtn = t.closest?.('.open-occ-btn');
     if(openBtn){
       e.preventDefault();
@@ -6977,6 +7179,29 @@ var __sharedDefaults = {};
       }
     });
     btnCopyMapDebugJson.__wired = true;
+  }
+  if(dbgBtn && !dbgBtn.__wired){
+    dbgBtn.addEventListener('click', window.openEluDebug);
+    dbgBtn.__wired = true;
+  }
+  if(btnCopyEluDebug && !btnCopyEluDebug.__wired){
+    btnCopyEluDebug.addEventListener('click', function(){
+      const area = document.getElementById('eluDebugText');
+      const text = area ? String(area.value || '') : JSON.stringify(window.__lastEluDebug || {}, null, 2);
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(function(){ logInfo('Copied Elurikkus debug JSON'); }).catch(function(err){ logWarn('Copy Elurikkus debug failed', { err: String(err) }); });
+      } else {
+        window.prompt('Copy debug JSON:', text);
+      }
+    });
+    btnCopyEluDebug.__wired = true;
+  }
+  if(btnCloseEluDebug && !btnCloseEluDebug.__wired){
+    btnCloseEluDebug.addEventListener('click', function(){
+      const box = document.getElementById('eluDebugBox');
+      if(box) box.style.display = 'none';
+    });
+    btnCloseEluDebug.__wired = true;
   }
 
   window.copyMapsDebugJson = async function(){

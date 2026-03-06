@@ -70,6 +70,8 @@ Deno.serve(async (req) => {
       key ? `key.eq.${key}` : "",
     ].filter(Boolean);
 
+    console.log("[news-source-update:lookup]", { id, isUuid: isUuid(id), filters: lookupFilters });
+
     const { data: existingRows, error: lookupError } = lookupFilters.length > 0
       ? await supabase.from("news_sources").select("id, slug, name, source_key, key").or(lookupFilters.join(","))
       : await supabase.from("news_sources").select("id").limit(0);

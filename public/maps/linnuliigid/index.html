@@ -6324,29 +6324,26 @@ function _ddmmToDate(ddmm){
 function _dateToDdmm(dt){
   return dt.getDate()+'.'+String(dt.getMonth()+1).padStart(2,'0');
 }
-window.editSpringDate = function(key){
+window.editSpringDateDirect = function(key){
   try{
     if(!key) return;
-    const store = (window.springDates && typeof window.springDates === 'object')
-      ? window.springDates
-      : ((typeof springDates === 'object' && springDates) ? springDates : Object.assign({}, DEFAULT_SPRING_DATES || {}));
-    window.springDates = store;
-    springDates = store;
-    const current = store[key] || '';
-    const val = prompt(`Kevadränne kuupäev (${key})`, current);
+    alert('Muuda clicked: ' + key);
+    const current = (window.springDates && window.springDates[key]) ? window.springDates[key] : ((typeof springDates !== 'undefined' && springDates[key]) ? springDates[key] : '');
+    const val = prompt('Kevadränne kuupäev (' + key + ')', current || '');
     if(val === null) return;
     const cleaned = String(val).trim();
+    const target = (window.springDates && typeof window.springDates === 'object')
+      ? window.springDates
+      : (typeof springDates !== 'undefined' ? springDates : (window.springDates = {}));
+    window.springDates = target;
+    if(typeof springDates !== 'undefined') springDates = target;
     if(cleaned){
-      const normalized = _normSpringDDMM(cleaned);
-      if(!normalized){
-        notifySilent('Vigane kuupäeva formaat. Kasuta D.MM (nt 5.04) või YYYY-MM-DD.');
-        return;
-      }
-      store[key] = normalized;
+      target[key] = cleaned;
     } else {
-      delete store[key];
+      delete target[key];
     }
-    localStorage.setItem((typeof LS_SPRING !== 'undefined' ? LS_SPRING : 'bm_spring_dates'), JSON.stringify(store));
+    const lsKey = (typeof LS_SPRING !== 'undefined' && LS_SPRING) ? LS_SPRING : 'bm_spring_dates';
+    localStorage.setItem(lsKey, JSON.stringify(target));
     if(typeof render === 'function') render();
     if(typeof renderSpringPanel === 'function') renderSpringPanel();
   }catch(err){
@@ -6531,12 +6528,14 @@ function rowHTML(obj) {
       '<div class="kvLabel">Collectors:</div>' +
       '<div class="kvValue"><span class="truncate" title="' + escapeHtml(collectorsFull) + '">' + escapeHtml(collectorsShort) + '</span></div>' +
     '</div>';
-  const springRaw = (springDates && springDates[key] != null) ? String(springDates[key]).trim() : '';
-  const springTxt = (typeof _normSpringDDMM === 'function' && springRaw) ? (_normSpringDDMM(springRaw) || springRaw) : (springRaw || '-');
-  const springChip = '<div class="species-extra meta-row2">' +
-    '<span class="pill">Kevad: ' + escapeHtml(springTxt || '-') + '</span>' +
-    '<button type="button" class="btn secondary spring-edit-btn" data-spring-key="' + escapeHtml(key) + '" onclick="event.preventDefault(); event.stopPropagation(); window.editSpringDate && window.editSpringDate(this.dataset.springKey); return false;" style="position:relative;z-index:20;pointer-events:auto">Muuda</button>' +
-  '</div>';
+  const springVal = (springDates && springDates[key]) ? String(springDates[key]).trim() : '';
+  const springTxt = '' +
+    '<span class="kevadi-chip" style="display:inline-flex; gap:8px; align-items:center;">' +
+      '<span class="pill">Kevad:</span>' +
+      '<span class="pill">' + escapeHtml(springVal || '-') + '</span>' +
+      '<button type="button" class="btn secondary" style="position:relative;z-index:50;pointer-events:auto" onclick="event.preventDefault(); event.stopPropagation(); window.editSpringDateDirect && window.editSpringDateDirect(\'' + String(key).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\'); return false;">Muuda</button>' +
+    '</span>';
+  const springChip = '<div class="species-extra meta-row2">' + springTxt + '</div>';
   const defaultSearchUrl = String((p.searchUrl || obj.url) || obj.url);
   const openUrl = String((p.openUrl || (x.detailUrl || defaultSearchUrl)) || defaultSearchUrl);
 

@@ -165,7 +165,7 @@ function SourceCard({
       translate_to_et: translationLocked ? false : translateToEt,
     });
     try {
-      const { error } = await supabase.functions.invoke('news-source-update', {
+      const { data, error } = await supabase.functions.invoke('news-source-update', {
         body: {
           id: source.id,
           slug: source.id,
@@ -178,11 +178,29 @@ function SourceCard({
           translate_to_et: translationLocked ? false : translateToEt,
         },
       });
+      if ((data as { success?: boolean } | null)?.success === false) {
+        throw new Error(String((data as { error?: string } | null)?.error || 'Viga'));
+      }
       if (error) throw error;
       toast.success(`${source.name} salvestatud`);
     } catch (error: unknown) {
-      const maybeErr = error as { message?: string } | null;
-      toast.error(`${source.name}: DB salvestus ebaõnnestus (${maybeErr?.message || 'Viga'})`);
+      const maybeErr = error as { message?: string; context?: Response } | null;
+      let reason = maybeErr?.message || 'Viga';
+      if (maybeErr?.context instanceof Response) {
+        try {
+          const payload = await maybeErr.context.json();
+          const parts = [
+            payload?.error,
+            payload?.code ? `code=${payload.code}` : '',
+            payload?.details || '',
+            payload?.hint || '',
+          ].filter(Boolean);
+          if (parts.length > 0) reason = parts.join(' | ');
+        } catch {
+          // keep generic reason
+        }
+      }
+      toast.error(`${source.name}: DB salvestus ebaõnnestus (${reason})`);
     }
   };
 

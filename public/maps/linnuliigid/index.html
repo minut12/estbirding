@@ -1594,6 +1594,13 @@ function extractNewestOccurrenceUrlFromSearch(searchHtml){
   if(!href) return '';
   return href.startsWith('http') ? href : ('https://elurikkus.ee' + (href.startsWith('/') ? href : '/' + href));
 }
+function extractNewestIsoFromSearch(searchHtml){
+  const doc = new DOMParser().parseFromString(String(searchHtml||''), 'text/html');
+  const tr = doc.querySelector('table tbody tr');
+  if(!tr) return '';
+  const td0 = tr.querySelector('td');
+  return normDateISO(td0 ? td0.textContent : '');
+}
 function extractDetailCoords(detailHtml){
   const latStr = extractFromInnerText(detailHtml, 'Latitude');
   const lonStr = extractFromInnerText(detailHtml, 'Longitude');
@@ -2252,6 +2259,7 @@ async function autoFetchCoords(key, searchUrl, signal){
 
   const searchHtml = await tryFetch(url, { signal: signal });
   const rowExtra = parseEluSearchNewestRowExtras(searchHtml);
+  const newestIsoFromSearch = extractNewestIsoFromSearch(searchHtml);
   const newestDetailUrlFromSearch = extractNewestOccurrenceUrlFromSearch(searchHtml);
   p.openUrl = newestDetailUrlFromSearch || p.openUrl || '';
   p.eluExtra = {
@@ -2266,7 +2274,8 @@ async function autoFetchCoords(key, searchUrl, signal){
     districts: '',
     eestiOmavalitsused: ''
   };
-  if(rowExtra.dateText){
+  if(newestIsoFromSearch) p.t = newestIsoFromSearch;
+  else if(rowExtra.dateText){
     const normRowDate = normDateISO(rowExtra.dateText);
     if(normRowDate) p.t = normRowDate;
   }
@@ -2314,7 +2323,7 @@ async function autoFetchCoords(key, searchUrl, signal){
     .map(function(r){ return dateIsoFromAny(String(r && r.dateText || '')); })
     .filter(Boolean)
     .reduce(function(a,b){ return b > a ? b : a; }, '');
-  const newest = String((occ7Multi && occ7Multi.newestIso) || '') || newestIsoPage1 || occ7Dates.reduce(function(a,b){ return b > a ? b : a; }, '') || newestFromRows;
+  const newest = String((occ7Multi && occ7Multi.newestIso) || '') || newestIsoFromSearch || newestIsoPage1 || occ7Dates.reduce(function(a,b){ return b > a ? b : a; }, '') || newestFromRows;
   let occ7Computed = Number.isFinite(Number(occ7)) ? Number(occ7) : 0;
   if(isWithin7dAny(p.t || newest) && occ7Computed < 1) occ7Computed = 1;
   if(multipageRowsParsedTotal === 0 && occ7Page1 === 0 && prevOcc7 != null) occ7Computed = prevOcc7;
@@ -2373,7 +2382,7 @@ async function autoFetchCoords(key, searchUrl, signal){
   const nextDate = dateIsoFromAny(nextEventDate);
   const prevDate = dateIsoFromAny(oldT);
   const nextOcc7 = Number.isFinite(Number(occ7)) ? Number(occ7) : null;
-  const changedCoords = !!(nextCoordsValid && (!prevCoordsValid || Math.abs(oldLat - Number(coords[0])) > 1e-6 || Math.abs(oldLon - Number(coords[1])) > 1e-6));
+  const changedCoords = !!(nextCoordsValid && (!prevCoordsValid || Math.abs(oldLat - Number(coords[0])) > 0.00005 || Math.abs(oldLon - Number(coords[1])) > 0.00005));
   const newerDate = !!(nextDate && (!prevDate || nextDate > prevDate));
   const changedOcc7 = (nextOcc7 !== null && nextOcc7 !== oldOcc7);
 
@@ -2473,6 +2482,7 @@ async function autoFetchCoords(key, searchUrl, signal){
       p.lon = Number(coords[1]);
       p.coordDate = String(coordDate || p.coordDate || nextDate || fallbackObservedDate || '');
       p.coordSource = String(coordSource || p.coordSource || 'elurikkus_occurrence_detail');
+      p.coordsSource = p.coordSource;
       p.coords_source = p.coordSource;
     }
     if(nextEventDate || fallbackObservedDate){
@@ -2543,8 +2553,20 @@ async function autoFetchCoords(key, searchUrl, signal){
   if(!nextCoordsValid){
     p.coordDate = String(p.coordDate || '');
     p.coordSource = String(p.coordSource || 'snapshot_fallback');
+    p.coordsSource = p.coordSource;
     p.coords_source = p.coordSource;
   }
+  p.eluExtra = p.eluExtra || {};
+  p.eluExtra.__coordDebug = {
+    detailUrl: detailUrl || newestDetailUrlFromSearch || '',
+    newestIso: newest || newestIsoFromSearch || '',
+    oldLat: Number.isFinite(oldLat) ? oldLat : null,
+    oldLon: Number.isFinite(oldLon) ? oldLon : null,
+    newLat: nextCoordsValid ? Number(coords[0]) : null,
+    newLon: nextCoordsValid ? Number(coords[1]) : null,
+    moved: !!(nextCoordsValid && (!prevCoordsValid || Math.abs(oldLat - Number(coords[0])) > 0.00005 || Math.abs(oldLon - Number(coords[1])) > 0.00005))
+  };
+  console.log('ELU COORD UPDATE', key, p.eluExtra.__coordDebug);
   if(nextDate && !p.latestSeenDate){
     p.latestSeenDate = nextDate;
     p.t = nextDate;
@@ -2564,7 +2586,7 @@ async function autoFetchCoords(key, searchUrl, signal){
   }
 
   const moved = !!(nextCoordsValid && prevCoordsValid &&
-    (Math.abs(oldLat - Number(coords[0])) > 1e-6 || Math.abs(oldLon - Number(coords[1])) > 1e-6));
+    (Math.abs(oldLat - Number(coords[0])) > 0.00005 || Math.abs(oldLon - Number(coords[1])) > 0.00005));
   if(!nextCoordsValid){
     return { key: species, updated: changed, moved: false, found: false, date: String(p.t || ''), occ7: Number(p.occ7 || 0), detailUrl: detailUrl || '' };
   }

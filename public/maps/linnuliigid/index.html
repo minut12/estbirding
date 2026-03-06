@@ -1101,7 +1101,7 @@ async function computeOcc7Offset(text, tryFetchHtml, signal){
     const offset = page * limit;
     const url = buildEluSearchUrl(text, offset, limit);
     const html = await tryFetchHtml(url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now(), signal);
-    const rows = parseSearchRows(html);
+    const rows = parseSearchRows(html, url);
     rowsParsedTotal += rows.length;
     pages++;
     if(rows.length === 0) break;
@@ -1519,21 +1519,31 @@ function _getEluRecordsRows(doc){
   const table = _findEluRecordsTable(doc);
   return table ? Array.from(table.querySelectorAll('tbody tr')) : [];
 }
-function extractOccurrenceLinkFromRow(tr){
+function resolveEluHref(href, baseUrl){
+  const raw = String(href || '').trim();
+  if(!raw) return '';
+  try{
+    return new URL(raw, baseUrl || 'https://elurikkus.ee/app/occurrences/search').href;
+  }catch(e){}
+  let s = raw;
+  if(s.startsWith('http://') || s.startsWith('https://')) return s;
+  if(s.startsWith('/')) return 'https://elurikkus.ee' + s;
+  return 'https://elurikkus.ee/' + s.replace(/^\.?\//, '');
+}
+function extractOccurrenceLinkFromRow(tr, baseUrl){
   if(!tr) return { href:'', occId:'' };
   const anchors = Array.from(tr.querySelectorAll('a[href]'));
   for(const a of anchors){
-    const href = a.getAttribute('href') || '';
-    const abs = href.startsWith('http') ? href : ('https://elurikkus.ee' + (href.startsWith('/') ? href : '/' + href));
-    const m = abs.match(/occurrence\/(\d+)/i);
+    const href = resolveEluHref(a.getAttribute('href') || '', baseUrl);
+    const m = href.match(/occurrence\/(\d+)/i);
     if(m){
-      return { href: abs, occId: m[1] };
+      return { href: href, occId: m[1] };
     }
   }
   const html = tr.innerHTML || '';
   let m = html.match(/href\s*=\s*["']([^"']*occurrence\/\d+[^"']*)["']/i);
   if(m && m[1]){
-    const href = m[1].startsWith('http') ? m[1] : ('https://elurikkus.ee' + (m[1].startsWith('/') ? m[1] : '/' + m[1]));
+    const href = resolveEluHref(m[1], baseUrl);
     const idm = href.match(/occurrence\/(\d+)/i);
     return { href: href, occId: idm ? idm[1] : '' };
   }
@@ -1553,12 +1563,12 @@ function getEluRowUniqueKey(r){
     String((r && r.collectors) || '')
   ].join('|');
 }
-function parseSearchRows(html){
+function parseSearchRows(html, baseUrl){
   const out = [];
   const doc = new DOMParser().parseFromString(String(html||''), 'text/html');
   const trs = _getEluRecordsRows(doc);
   for(const tr of trs){
-    const link = extractOccurrenceLinkFromRow(tr);
+    const link = extractOccurrenceLinkFromRow(tr, baseUrl);
     const tds = Array.from(tr.querySelectorAll('td')).map(function(td){ return (td.textContent || '').trim(); });
     const iso = normDateISO(tds[0] || '');
     if(!iso) continue;
@@ -1586,17 +1596,17 @@ function parseSearchRows(html){
     const dm = tr.match(/(\d{4}-\d{2}-\d{2})/);
     const iso = dm ? dm[1] : '';
     if(!iso) continue;
-    out.push({ occId: occId, href: absOccUrl(href), iso: iso, rawDate: iso, taxon:'', commonName:'', individualCount:'', behavior:'', locality:'', collectors:'' });
+    out.push({ occId: occId, href: resolveEluHref(href, baseUrl), iso: iso, rawDate: iso, taxon:'', commonName:'', individualCount:'', behavior:'', locality:'', collectors:'' });
   }
   return out;
 }
-function parseEluRowsIso(html){
+function parseEluRowsIso(html, baseUrl){
   const out = [];
   try{
     const doc = new DOMParser().parseFromString(String(html||''), 'text/html');
     const trs = _getEluRecordsRows(doc);
     for(const tr of trs){
-      const link = extractOccurrenceLinkFromRow(tr);
+      const link = extractOccurrenceLinkFromRow(tr, baseUrl);
       const tds = Array.from(tr.querySelectorAll('td')).map(function(td){ return (td.textContent || '').trim(); });
       const dt = tds[0] || '';
       const iso = normDateISO(dt);
@@ -1618,16 +1628,16 @@ function parseEluRowsIso(html){
   }
   return out;
 }
-function parseEluRowsResilient(html){
-  return parseEluRowsIso(html);
+function parseEluRowsResilient(html, baseUrl){
+  return parseEluRowsIso(html, baseUrl);
 }
-function parseEluRowsForDebug(html){
+function parseEluRowsForDebug(html, baseUrl){
   const out = [];
   try{
     const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
     const trs = _getEluRecordsRows(doc);
     for(const tr of trs){
-      const link = extractOccurrenceLinkFromRow(tr);
+      const link = extractOccurrenceLinkFromRow(tr, baseUrl);
       const tds = Array.from(tr.querySelectorAll('td')).map(function(td){ return (td.textContent || '').trim(); });
       const iso = normDateISO(tds[0] || '');
       out.push({
@@ -1686,13 +1696,13 @@ function parseEluSearchNewestRowExtras(searchHtml){
   out.collectors = (iCol>=0 ? (tds[iCol]||'') : '');
   return out;
 }
-function extractNewestOccurrenceUrlFromSearch(searchHtml){
+function extractNewestOccurrenceUrlFromSearch(searchHtml, baseUrl){
   const doc = new DOMParser().parseFromString(String(searchHtml||''), 'text/html');
   const firstTr = _getEluRecordsRows(doc)[0] || null;
   if(!firstTr) return '';
-  return extractOccurrenceLinkFromRow(firstTr).href || '';
+  return extractOccurrenceLinkFromRow(firstTr, baseUrl).href || '';
 }
-function extractNewestIsoFromSearch(searchHtml){
+function extractNewestIsoFromSearch(searchHtml, baseUrl){
   const doc = new DOMParser().parseFromString(String(searchHtml||''), 'text/html');
   const tr = _getEluRecordsRows(doc)[0] || null;
   if(!tr) return '';
@@ -1729,7 +1739,7 @@ async function debugOcc7Pages(species, maxPages){
       pages.push({ page: page + 1, url: u.toString(), error: String((e && e.message) || e) });
       break;
     }
-    const rows = parseEluRowsForDebug(html);
+    const rows = parseEluRowsForDebug(html, u.toString());
     if(!rows.length){
       pages.push({ page: page + 1, url: u.toString(), rows: 0, stop: 'no_rows' });
       break;
@@ -1798,7 +1808,7 @@ async function debugElurikkusSpecies(species){
     const shtml = await tryFetch(url1);
     dbg.searchPage1Ok = !!shtml;
     dbg.searchPage1Bytes = String(shtml || '').length;
-    const rows1 = parseEluRowsForDebug(shtml);
+    const rows1 = parseEluRowsForDebug(shtml, url1);
     dbg.rowsPage1 = rows1.slice(0, 10);
     dbg.newestRow = rows1[0] || null;
     dbg.firstRowHref = rows1[0] ? (rows1[0].href || '') : '';
@@ -1807,12 +1817,15 @@ async function debugElurikkusSpecies(species){
     dbg.occ7.cutoffIso = cutoffIso7dLocal();
     dbg.occ7.page1Count = rows1.filter(function(r){ return r.iso && r.iso >= dbg.occ7.cutoffIso; }).length;
     dbg.searchCoordsParsed = extractLatLon(shtml) || null;
-    const detailUrl = extractNewestOccurrenceUrlFromSearch(shtml) || findFirstDetailLink(shtml) || '';
+    const detailUrl = extractNewestOccurrenceUrlFromSearch(shtml, url1) || findFirstDetailLink(shtml) || '';
     dbg.detailUrl = detailUrl;
+    dbg.detailUrlResolved = detailUrl;
     if(detailUrl){
       const dhtml = await tryFetch(detailUrl + (detailUrl.includes('?') ? '&' : '?') + '_dbg=' + Date.now());
       dbg.detailOk = !!dhtml;
       dbg.detailBytes = String(dhtml || '').length;
+      dbg.detailFetchStatus = dbg.detailOk ? 'ok' : 'empty';
+      dbg.detailFetchBytes = dbg.detailBytes;
       dbg.detailCoordsRaw.latitude = extractFromInnerText(dhtml, 'Latitude') || '';
       dbg.detailCoordsRaw.longitude = extractFromInnerText(dhtml, 'Longitude') || '';
       dbg.detailCoordsParsed = extractDetailCoords(dhtml) || (typeof extractLatLonFromOccurrenceDetail === 'function' ? extractLatLonFromOccurrenceDetail(dhtml) : null) || null;
@@ -1827,6 +1840,10 @@ async function debugElurikkusSpecies(species){
         behavior: extractFromInnerText(dhtml, 'Behavior') || '',
         collectors: extractFromInnerText(dhtml, 'Collectors') || ''
       };
+    }
+    if(!detailUrl){
+      dbg.detailFetchStatus = 'missing_url';
+      dbg.detailFetchBytes = 0;
     }
     dbg.occ7.pages = await debugOcc7Pages(species, 10);
     dbg.occ7.multipageCount = dbg.occ7.pages.reduce(function(sum, page){ return sum + (page.within7dUnique || 0); }, 0);
@@ -2474,10 +2491,10 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
   const searchUrl = _withCacheBuster('https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(name));
   const shtml = await tryFetch(searchUrl, { signal: signal, requireOccLink: true });
   const rowExtra = parseEluSearchNewestRowExtras(shtml);
-  const newestOccUrl = extractNewestOccurrenceUrlFromSearch(shtml);
+  const newestOccUrl = extractNewestOccurrenceUrlFromSearch(shtml, searchUrl);
   const rows = extractOccurrenceCandidates(shtml);
   const occ7Multi = await computeOcc7MultiPage(name, signal, 20);
-  const page1RowsIso = parseSearchRows(shtml);
+  const page1RowsIso = parseSearchRows(shtml, searchUrl);
   const cutoffIso = cutoffIso7d();
   const page1Occ7 = page1RowsIso.filter(function(r){ return r && r.iso && r.iso >= cutoffIso; }).length;
   const occ7 = (Number(occ7Multi && occ7Multi.rowsParsedTotal || 0) === 0)
@@ -2641,10 +2658,10 @@ async function autoFetchCoords(key, searchUrl, signal){
   const p = points[species] = (points[species] || {});
   const searchHtml = await tryFetch(url, { signal: signal });
   const rowExtra = parseEluSearchNewestRowExtras(searchHtml);
-  const newestIso = extractNewestIsoFromSearch(searchHtml) || normDateISO(rowExtra.dateText || '');
-  const detailUrl = extractNewestOccurrenceUrlFromSearch(searchHtml);
+  const newestIso = extractNewestIsoFromSearch(searchHtml, url) || normDateISO(rowExtra.dateText || '');
+  const detailUrl = extractNewestOccurrenceUrlFromSearch(searchHtml, url);
   const occ7Dates = parseEluRowDatesFromSearchHtml(searchHtml).map(dateIsoFromAny).filter(Boolean);
-  const rows1 = parseEluRowsResilient(searchHtml);
+  const rows1 = parseEluRowsResilient(searchHtml, url);
   const occ7Page1 = countOcc7FromRowsIso(rows1);
   const prevOcc7 = Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : null;
   let occ7Multi = null;

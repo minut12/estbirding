@@ -1979,17 +1979,9 @@ async function _applyElurikkusPayloadToPoints(species, payload){
     row.coords_status = 'public';
     found = { lat: Number(best.lat), lon: Number(best.lon), source: useSrc, occUrl: best.occUrl || null };
     reason = 'applied exact';
-  } else if(centroid && Number.isFinite(centroid.lat) && Number.isFinite(centroid.lon)) {
-    row.lat = Number(centroid.lat);
-    row.lon = Number(centroid.lon);
-    row.coordsSource = 'centroid';
-    row.coords_source = 'centroid';
-    row.coords_status = 'restricted';
-    reason = 'restricted->municipality_centroid:' + String(centroid.placeText || placeHint || '-');
   } else {
-    row.coordsSource = 'snapshot';
-    row.coords_source = 'snapshot';
-    reason = restrictedItem ? 'restricted->snapshot_fallback' : 'no public coords';
+    row.coords_status = 'restricted_or_missing';
+    reason = restrictedItem ? 'restricted->kept_existing' : 'no public coords';
   }
   const appliedLat = Number(row.lat);
   const appliedLon = Number(row.lon);
@@ -2246,361 +2238,138 @@ async function fetchElurikkusViaHtmlDetail(species, signal){
     items: []
   };
 }
+function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, occ7, detailFields, rowExtra){
+  const p = points[species] = points[species] || {};
+  const oldLat = Number.isFinite(Number(p.lat)) ? Number(p.lat) : null;
+  const oldLon = Number.isFinite(Number(p.lon)) ? Number(p.lon) : null;
+  if(newestIso) p.t = newestIso;
+  if(Number.isFinite(Number(occ7))) p.occ7 = Number(occ7);
+  p.src = 'Elurikkus';
+  p.openUrl = String(detailUrl || '').trim() || p.openUrl || '';
+  p.latestUrl = p.openUrl || p.latestUrl || '';
+  p.lastFetched = new Date().toISOString();
+  const det = detailFields || {};
+  if(det.municipality) p.municipality = det.municipality;
+  if(det.locality) p.locality = det.locality;
+  if(det.county) p.county = det.county;
+  if(det.country) p.country = det.country;
+  if(det.collectors) p.collectors = det.collectors;
+  if(det.behavior) p.behavior = det.behavior;
+  if(det.individualCount != null) p.individualCount = det.individualCount;
+  p.eluExtra = p.eluExtra || {};
+  p.eluExtra.detailUrl = String(detailUrl || '');
+  p.eluExtra.individualCount = String(det.individualCount ?? (rowExtra && rowExtra.individualCount) ?? p.eluExtra.individualCount ?? '');
+  p.eluExtra.collectors = String(det.collectors || (rowExtra && rowExtra.collectors) || p.eluExtra.collectors || '');
+  p.eluExtra.behavior = String(det.behavior || (rowExtra && rowExtra.behavior) || p.eluExtra.behavior || '');
+  p.eluExtra.municipality = String(det.municipality || p.eluExtra.municipality || '');
+  p.eluExtra.locality = String(det.locality || (rowExtra && rowExtra.locality) || p.eluExtra.locality || '');
+  p.eluExtra.county = String(det.county || p.eluExtra.county || '');
+  p.eluExtra.districts = String(det.districts || p.eluExtra.districts || '');
+  p.eluExtra.communes = String(det.communes || p.eluExtra.communes || '');
+  p.eluExtra.eestiOmavalitsused = String(det.eestiOmavalitsused || p.eluExtra.eestiOmavalitsused || '');
+  const latlon = extractLatLonFromOccurrenceDetail(detailHtml) || extractDetailCoords(detailHtml);
+  let moved = false;
+  if(latlon && Number.isFinite(Number(latlon[0])) && Number.isFinite(Number(latlon[1]))){
+    const newLat = Number(latlon[0]);
+    const newLon = Number(latlon[1]);
+    moved = (
+      oldLat === null || oldLon === null ||
+      Math.abs(newLat - oldLat) > 0.00005 ||
+      Math.abs(newLon - oldLon) > 0.00005
+    );
+    p.lat = newLat;
+    p.lon = newLon;
+    p.coordsSource = 'elurikkus_occurrence_detail';
+    p.coordSource = 'elurikkus_occurrence_detail';
+    p.coords_source = 'elurikkus_occurrence_detail';
+    p.coords_status = 'public';
+  } else {
+    p.coordsSource = p.coordsSource || 'kept_existing';
+    p.coordSource = p.coordSource || p.coordsSource;
+    p.coords_source = p.coords_source || p.coordsSource;
+    p.coords_status = String(det.coordsStatus || p.coords_status || 'restricted_or_missing');
+  }
+  save();
+  updateMarker(species);
+  console.log('FINAL ELU COORD', species, {
+    latestIso: newestIso,
+    detailUrl,
+    lat: points[species] ? points[species].lat : null,
+    lon: points[species] ? points[species].lon : null,
+    coordsSource: points[species] ? points[species].coordsSource : ''
+  });
+  return {
+    updated: true,
+    moved,
+    oldLat,
+    oldLon,
+    newLat: Number.isFinite(Number(p.lat)) ? Number(p.lat) : null,
+    newLon: Number.isFinite(Number(p.lon)) ? Number(p.lon) : null,
+    detailUrl: p.openUrl || ''
+  };
+}
 async function autoFetchCoords(key, searchUrl, signal){
   const species = String(key || '').trim();
   if(!species) throw new Error('Species missing');
   const url = String(searchUrl || ('https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(species))).trim();
   const p = points[species] = (points[species] || {});
-  const oldLat = Number(p.lat);
-  const oldLon = Number(p.lon);
-  const oldT = String(p.t || '');
-  const oldOcc7 = Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : null;
-  const prevT = String(p.t || '');
-
   const searchHtml = await tryFetch(url, { signal: signal });
   const rowExtra = parseEluSearchNewestRowExtras(searchHtml);
-  const newestIsoFromSearch = extractNewestIsoFromSearch(searchHtml);
-  const newestDetailUrlFromSearch = extractNewestOccurrenceUrlFromSearch(searchHtml);
-  p.openUrl = newestDetailUrlFromSearch || p.openUrl || '';
-  p.eluExtra = {
-    detailUrl: newestDetailUrlFromSearch || '',
-    individualCount: rowExtra.individualCount || '',
-    collectors: rowExtra.collectors || '',
-    behavior: rowExtra.behavior || '',
-    locality: '',
-    communes: '',
-    municipality: '',
-    county: '',
-    districts: '',
-    eestiOmavalitsused: ''
-  };
-  if(newestIsoFromSearch) p.t = newestIsoFromSearch;
-  else if(rowExtra.dateText){
-    const normRowDate = normDateISO(rowExtra.dateText);
-    if(normRowDate) p.t = normRowDate;
-  }
-  try{ save(); }catch(e){}
-  try{ render(); }catch(e){}
-  let coords = null;
-  let eventDate = extractEventDate(searchHtml);
-  const rows = extractOccurrenceCandidates(searchHtml);
+  const newestIso = extractNewestIsoFromSearch(searchHtml) || normDateISO(rowExtra.dateText || '');
+  const detailUrl = extractNewestOccurrenceUrlFromSearch(searchHtml);
   const occ7Dates = parseEluRowDatesFromSearchHtml(searchHtml).map(dateIsoFromAny).filter(Boolean);
   const rows1 = parseEluRowsResilient(searchHtml);
   const occ7Page1 = countOcc7FromRowsIso(rows1);
-  const newestIsoPage1 = (rows1[0] && rows1[0].iso) ? String(rows1[0].iso) : rows1.reduce(function(a, r){
-    const iso = String((r && r.iso) || '');
-    return iso > a ? iso : a;
-  }, '');
-  if(newestIsoPage1) p.t = newestIsoPage1;
   const prevOcc7 = Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : null;
   let occ7Multi = null;
   let occ7 = occ7Page1;
-  let multipageRowsParsedTotal = 0;
-  let pagingMode = 'page1';
   try{
     occ7Multi = await computeOcc7MultiPage(species, signal, 20);
-    p.eluExtra = p.eluExtra || {};
-    multipageRowsParsedTotal = Number(occ7Multi && occ7Multi.rowsParsedTotal || 0) || 0;
-    pagingMode = String((occ7Multi && occ7Multi.pagingMode) || 'page1');
-    if(multipageRowsParsedTotal > 0){
+    if(Number(occ7Multi && occ7Multi.rowsParsedTotal || 0) > 0){
       occ7 = Number.isFinite(Number(occ7Multi.occ7)) ? Number(occ7Multi.occ7) : occ7Page1;
-      p.eluExtra.__occ7debug = occ7Multi || null;
-    } else {
-      occ7 = occ7Page1;
-      p.eluExtra.__occ7debug = Object.assign({ warning: 'rowsParsedTotal=0', fallback: 'page1' }, occ7Multi || {});
     }
-    p.eluExtra.__pages = Number((occ7Multi && occ7Multi.pagesScanned) || 0) || 0;
   }catch(e){
-    p.eluExtra = p.eluExtra || {};
     occ7 = occ7Page1;
-    multipageRowsParsedTotal = 0;
-    pagingMode = 'error';
-    p.eluExtra.__occ7debug = { error: String((e && e.message) ? e.message : e), fallback: 'page1', occ7Page1: occ7Page1 };
   }
-  try{ save(); }catch(e){}
-  try{ render(); }catch(e){}
-  const newestFromRows = rows
-    .map(function(r){ return dateIsoFromAny(String(r && r.dateText || '')); })
-    .filter(Boolean)
-    .reduce(function(a,b){ return b > a ? b : a; }, '');
-  const newest = String((occ7Multi && occ7Multi.newestIso) || '') || newestIsoFromSearch || newestIsoPage1 || occ7Dates.reduce(function(a,b){ return b > a ? b : a; }, '') || newestFromRows;
-  let occ7Computed = Number.isFinite(Number(occ7)) ? Number(occ7) : 0;
-  if(isWithin7dAny(p.t || newest) && occ7Computed < 1) occ7Computed = 1;
-  if(multipageRowsParsedTotal === 0 && occ7Page1 === 0 && prevOcc7 != null) occ7Computed = prevOcc7;
-  if(isWithin7dAny(p.t || newest) && prevOcc7 != null && prevOcc7 > occ7Computed) occ7Computed = prevOcc7;
-  occ7 = occ7Computed;
-  p.eluExtra = p.eluExtra || {};
-  p.eluExtra.__occ7Debug = {
-    newestIso: newest || '',
-    occ7_page1: occ7Page1,
-    occ7Computed: occ7Computed,
-    rows1: rows1.length,
-    multipageRowsParsedTotal: multipageRowsParsedTotal,
-    pagingMode: pagingMode
-  };
-  let latestSeenDate = newest || '';
-  let coordDate = '';
-  let coordSource = '';
-  let detailUrl = '';
-  let detailFields = null;
-  let detailExtra = null;
-  let detailHtml = '';
-  const newestDetailUrl = String(newestDetailUrlFromSearch || (rows[0] && rows[0].occUrl) || findFirstDetailLink(searchHtml) || '').trim();
-  if(newestDetailUrl){
-    detailUrl = newestDetailUrl;
-    try{
-      detailHtml = await tryFetch(_withCacheBuster(newestDetailUrl), { signal: signal });
-      detailFields = parseElurikkusDetailFields(detailHtml, newestDetailUrl);
-      detailExtra = parseElurikkusExtraFromText(detailHtml, newestDetailUrl);
-      const det = parseEluDetailExtras(detailHtml, newestDetailUrl);
-      const newestDetailCoords = extractDetailCoords(detailHtml);
-      console.log('ELU EXTRA PARSED', species, detailExtra);
-      if(p.eluExtra){
-        p.eluExtra.detailUrl = newestDetailUrl || p.eluExtra.detailUrl || '';
-        p.eluExtra.individualCount = extractFromInnerText(detailHtml,'Individual count') || p.eluExtra.individualCount || '';
-        p.eluExtra.behavior = extractFromInnerText(detailHtml,'Behavior') || p.eluExtra.behavior || '';
-        p.eluExtra.collectors = extractFromInnerText(detailHtml,'Collectors') || p.eluExtra.collectors || '';
-        p.eluExtra.municipality = extractFromInnerText(detailHtml,'Municipality') || det.municipality || '';
-        p.eluExtra.locality = extractFromInnerText(detailHtml,'Locality') || det.locality || '';
-        p.eluExtra.county = extractFromInnerText(detailHtml,'County') || det.county || '';
-        p.eluExtra.districts = extractFromInnerText(detailHtml,'Districts') || det.districts || '';
-        p.eluExtra.communes = extractFromInnerText(detailHtml,'Communes') || det.communes || '';
-        p.eluExtra.eestiOmavalitsused = extractFromInnerText(detailHtml,'Eesti omavalitsused') || det.eestiOmavalitsused || '';
-      }
-      if(!coords && newestDetailCoords){
-        coords = newestDetailCoords;
-        coordDate = dateIsoFromAny(String((rows[0] && rows[0].dateText) || '')) || dateIsoFromAny(extractEventDate(detailHtml) || '');
-        coordSource = 'elurikkus_occurrence_detail';
-        if(!eventDate) eventDate = extractEventDate(detailHtml);
-      }
-    }catch(e){}
-  }
-
-  const prevCoordsValid = _hasFiniteCoord(oldLat) && _hasFiniteCoord(oldLon);
-  const nextCoordsValid = !!(coords && _hasFiniteCoord(Number(coords[0])) && _hasFiniteCoord(Number(coords[1])));
-  const nextEventDate = String(latestSeenDate || eventDate || '').trim();
-  const nextDate = dateIsoFromAny(nextEventDate);
-  const prevDate = dateIsoFromAny(oldT);
-  const nextOcc7 = Number.isFinite(Number(occ7)) ? Number(occ7) : null;
-  const changedCoords = !!(nextCoordsValid && (!prevCoordsValid || Math.abs(oldLat - Number(coords[0])) > 0.00005 || Math.abs(oldLon - Number(coords[1])) > 0.00005));
-  const newerDate = !!(nextDate && (!prevDate || nextDate > prevDate));
-  const changedOcc7 = (nextOcc7 !== null && nextOcc7 !== oldOcc7);
-
-  const shouldApply = changedCoords || newerDate || changedOcc7;
-  let changed = false;
-  const normalizedEventDate = normDateISO(nextEventDate);
-  if((!detailFields || (!detailFields.municipality && !detailFields.locality && !detailFields.county)) && !String(p.municipality || '').trim()){
-    const fallbackDetailUrl = detailUrl || String((rows[0] && rows[0].occUrl) || findFirstDetailLink(searchHtml) || '').trim();
-    if(fallbackDetailUrl){
-      try{
-        detailHtml = await tryFetch(_withCacheBuster(fallbackDetailUrl), { signal: signal });
-        detailFields = parseElurikkusDetailFields(detailHtml, fallbackDetailUrl);
-        detailExtra = parseElurikkusExtraFromText(detailHtml, fallbackDetailUrl);
-        const det = parseEluDetailExtras(detailHtml, fallbackDetailUrl);
-        console.log('ELU EXTRA PARSED', species, detailExtra);
-        if(p.eluExtra){
-          p.eluExtra.detailUrl = fallbackDetailUrl || p.eluExtra.detailUrl || '';
-          if(det.communes) p.eluExtra.communes = det.communes;
-          if(det.municipality) p.eluExtra.municipality = det.municipality;
-          if(det.county) p.eluExtra.county = det.county;
-          if(det.districts) p.eluExtra.districts = det.districts;
-          if(det.eestiOmavalitsused) p.eluExtra.eestiOmavalitsused = det.eestiOmavalitsused;
-          if(det.locality) p.eluExtra.locality = det.locality;
-        }
-        if(!detailUrl) detailUrl = fallbackDetailUrl;
-      }catch(e){}
-    }
-  }
-  const fallbackObservedDate = normDateISO(String((detailFields && detailFields.observedDate) || (detailFields && detailFields.observedAt) || ''));
-  const pickedMunicipality = String((detailFields && (detailFields.municipality || detailFields.locality || detailFields.county)) || '').trim();
-  const detailCoordsStatus = String((detailFields && detailFields.coordsStatus) || (nextCoordsValid ? 'public' : 'missing'));
-  const detailFetchedAt = new Date().toISOString();
-  if(detailFields){
-    p.elurikkus = {
-      occurrenceUrl: String(detailFields.occurrenceUrl || detailUrl || ''),
-      occurrenceId: String(detailFields.occurrenceId || ''),
-      taxonName: String(detailFields.taxonName || ''),
-      commonName: String(detailFields.commonName || ''),
-      observedAt: String(detailFields.observedAt || ''),
-      observedDate: String(detailFields.observedDate || fallbackObservedDate || ''),
-      latitude: Number.isFinite(Number(detailFields.latitude)) ? Number(detailFields.latitude) : null,
-      longitude: Number.isFinite(Number(detailFields.longitude)) ? Number(detailFields.longitude) : null,
-      municipality: String(detailFields.municipality || ''),
-      locality: String(detailFields.locality || ''),
-      county: String(detailFields.county || ''),
-      country: String(detailFields.country || ''),
-      collectors: String(detailFields.collectors || ''),
-      identifiedBy: String(detailFields.identifiedBy || ''),
-      dataset: String(detailFields.dataset || ''),
-      project: String(detailFields.project || ''),
-      individualCount: Number.isFinite(Number(detailFields.individualCount)) ? Number(detailFields.individualCount) : null,
-      behavior: String(detailFields.behavior || ''),
-      coordsStatus: detailCoordsStatus,
-      fetchedAt: detailFetchedAt
-    };
-    if(detailFields.observedDate){
-      p.t = detailFields.observedDate;
-      p.observedDate = detailFields.observedDate;
-    }
-    if(detailFields.observedAt) p.observedAt = detailFields.observedAt;
-    if(detailFields.municipality) p.municipality = detailFields.municipality;
-    if(detailFields.locality) p.locality = detailFields.locality;
-    if(detailFields.county) p.county = detailFields.county;
-    if(detailFields.country) p.country = detailFields.country;
-    if(detailFields.collectors) p.collectors = detailFields.collectors;
-    if(detailFields.identifiedBy) p.identifiedBy = detailFields.identifiedBy;
-    if(detailFields.dataset) p.dataset = detailFields.dataset;
-    if(detailFields.project) p.project = detailFields.project;
-    if(detailFields.individualCount != null) p.individualCount = detailFields.individualCount;
-    if(detailFields.behavior) p.behavior = detailFields.behavior;
-    if(detailCoordsStatus === 'public' && Number.isFinite(detailFields.latitude) && Number.isFinite(detailFields.longitude)){
-      p.lat = Number(detailFields.latitude);
-      p.lon = Number(detailFields.longitude);
-    }
-    p.coords_status = detailCoordsStatus;
-    p.src = 'Elurikkus';
-    p.lastFetched = detailFetchedAt;
-    pushDebugEvent('ELU_DETAIL_PARSED', 'Parsed detail fields', {
-      key: species,
-      occurrenceId: detailFields.occurrenceId || '',
-      observedDate: detailFields.observedDate || '',
-      municipality: detailFields.municipality || '',
-      locality: detailFields.locality || '',
-      county: detailFields.county || '',
-      coordsStatus: detailCoordsStatus
-    }, 'warn');
-    changed = true;
-  }
-  if(detailExtra){
-    p.openUrl = String((p.eluExtra && p.eluExtra.detailUrl) || detailUrl || p.openUrl || '').trim();
-    changed = true;
-    console.log('ELU EXTRA', key, p.eluExtra);
-  }
-  if(shouldApply){
-    if(nextCoordsValid){
-      p.lat = Number(coords[0]);
-      p.lon = Number(coords[1]);
-      p.coordDate = String(coordDate || p.coordDate || nextDate || fallbackObservedDate || '');
-      p.coordSource = String(coordSource || p.coordSource || 'elurikkus_occurrence_detail');
-      p.coordsSource = p.coordSource;
-      p.coords_source = p.coordSource;
-    }
-    if(nextEventDate || fallbackObservedDate){
-      const bestObservedDate = nextDate || normalizedEventDate || fallbackObservedDate || '';
-      p.latestSeenDate = bestObservedDate || nextEventDate;
-      p.t = bestObservedDate || prevT || '';
-    }
-    if(pickedMunicipality){
-      if(String(p.municipality || '') !== pickedMunicipality){ p.municipality = pickedMunicipality; changed = true; }
-      if(String(p.locality || '') !== String((detailFields && detailFields.locality) || '')){ p.locality = String((detailFields && detailFields.locality) || ''); changed = true; }
-      if(String(p.county || '') !== String((detailFields && detailFields.county) || '')){ p.county = String((detailFields && detailFields.county) || ''); changed = true; }
-    }
-    p.src = 'Elurikkus';
-    p.lastFetched = detailFetchedAt;
-    let occ7Write = (nextOcc7 === null ? 0 : nextOcc7);
-    const prev = Number.isFinite(p.occ7) ? p.occ7 : null;
-    if(isWithin7dAny(p.t) && occ7Write < 1) occ7Write = 1;
-    if(occ7Write === 0 && isWithin7dAny(p.t) && prev != null && prev > 0) occ7Write = prev;
-    p.occ7 = occ7Write;
-    p.occ7Source = 'elurikkus_records_table';
-    p.occ7PagesScanned = Number((occ7Multi && occ7Multi.pagesScanned) || 0) || 0;
-    p.occ7DatesSample = (occ7Dates || []).slice(0, 10);
-    changed = true;
-  }
+  const latestIso = String((occ7Multi && occ7Multi.newestIso) || '') || newestIso || occ7Dates.reduce(function(a,b){ return b > a ? b : a; }, '');
+  let finalOcc7 = Number.isFinite(Number(occ7)) ? Number(occ7) : 0;
+  if(latestIso && isWithin7dAny(latestIso) && finalOcc7 < 1) finalOcc7 = 1;
+  if(finalOcc7 === 0 && prevOcc7 != null && prevOcc7 > 0 && latestIso && isWithin7dAny(latestIso)) finalOcc7 = prevOcc7;
+  p.occ7 = finalOcc7;
+  p.occ7Source = 'elurikkus_records_table';
+  p.occ7PagesScanned = Number((occ7Multi && occ7Multi.pagesScanned) || 0) || 0;
+  p.occ7DatesSample = (occ7Dates || []).slice(0, 10);
+  p.src = 'Elurikkus';
   p.searchUrl = url;
-  if(nextDate && String(p.latestSeenDate || '') !== nextDate){
-    p.latestSeenDate = nextDate;
-    p.t = normDateISO(nextDate) || prevT || '';
-    changed = true;
+  p.openUrl = String(detailUrl || '').trim() || p.openUrl || '';
+  p.eluExtra = p.eluExtra || {};
+  p.eluExtra.__occ7debug = occ7Multi || { occ7_page1: occ7Page1 };
+  if(!detailUrl){
+    if(latestIso) p.t = latestIso;
+    save();
+    render();
+    return { updated:true, moved:false, detailUrl:'' };
   }
-  if(nextOcc7 !== null && Number(p.occ7) !== nextOcc7){
-    let occ7Write = nextOcc7;
-    const prev = Number.isFinite(p.occ7) ? p.occ7 : null;
-    if(isWithin7dAny(p.t) && occ7Write < 1) occ7Write = 1;
-    if(occ7Write === 0 && isWithin7dAny(p.t) && prev != null && prev > 0) occ7Write = prev;
-    p.occ7 = occ7Write;
-    p.occ7Source = 'elurikkus_records_table';
-    p.occ7PagesScanned = Number((occ7Multi && occ7Multi.pagesScanned) || 0) || 0;
-    p.occ7DatesSample = (occ7Dates || []).slice(0, 10);
-    changed = true;
-  }
-  if(detailUrl){
-    p.openUrl = detailUrl;
-    p.latestUrl = detailUrl;
-  }
-  if(pickedMunicipality && String(p.municipality || '') !== pickedMunicipality){
-    p.municipality = pickedMunicipality;
-    p.locality = String((detailFields && detailFields.locality) || '');
-    p.county = String((detailFields && detailFields.county) || '');
-    changed = true;
-  }
-  if(fallbackObservedDate && String(p.t || '') !== fallbackObservedDate){
-    p.t = fallbackObservedDate;
-    p.latestSeenDate = fallbackObservedDate;
-    changed = true;
-  }
-  if(detailFields){
-    console.log('[elu-detail]', {
-      species: species,
-      occurrenceId: (p.elurikkus && p.elurikkus.occurrenceId) || '',
-      observedDate: (p.elurikkus && p.elurikkus.observedDate) || '',
-      municipality: p.municipality || '',
-      locality: p.locality || '',
-      county: p.county || '',
-      coordsStatus: (p.elurikkus && p.elurikkus.coordsStatus) || p.coords_status || 'missing'
-    });
-  }
-  if(!nextCoordsValid){
-    p.coordDate = String(p.coordDate || '');
-    p.coordSource = String(p.coordSource || 'snapshot_fallback');
-    p.coordsSource = p.coordSource;
-    p.coords_source = p.coordSource;
-  }
+  const detailHtml = await tryFetch(_withCacheBuster(detailUrl), { signal });
+  const detailFields = parseElurikkusDetailFields(detailHtml, detailUrl);
+  const detailExtra = parseEluDetailExtras(detailHtml, detailUrl);
+  detailFields.communes = detailExtra.communes || detailFields.communes || '';
+  detailFields.districts = detailExtra.districts || detailFields.districts || '';
+  detailFields.eestiOmavalitsused = detailExtra.eestiOmavalitsused || detailFields.eestiOmavalitsused || '';
+  const result = applyElurikkusExactCoords(species, detailHtml, detailUrl, latestIso, finalOcc7, detailFields, rowExtra);
   p.eluExtra = p.eluExtra || {};
   p.eluExtra.__coordDebug = {
-    detailUrl: detailUrl || newestDetailUrlFromSearch || '',
-    newestIso: newest || newestIsoFromSearch || '',
-    oldLat: Number.isFinite(oldLat) ? oldLat : null,
-    oldLon: Number.isFinite(oldLon) ? oldLon : null,
-    newLat: nextCoordsValid ? Number(coords[0]) : null,
-    newLon: nextCoordsValid ? Number(coords[1]) : null,
-    moved: !!(nextCoordsValid && (!prevCoordsValid || Math.abs(oldLat - Number(coords[0])) > 0.00005 || Math.abs(oldLon - Number(coords[1])) > 0.00005))
+    detailUrl,
+    newestIso: latestIso || '',
+    oldLat: result.oldLat,
+    oldLon: result.oldLon,
+    newLat: result.newLat,
+    newLon: result.newLon,
+    moved: result.moved
   };
   console.log('ELU COORD UPDATE', key, p.eluExtra.__coordDebug);
-  if(nextDate && !p.latestSeenDate){
-    p.latestSeenDate = nextDate;
-    p.t = nextDate;
-  }
-  if(typeof p.visible === 'undefined'){ p.visible = true; changed = true; }
-
-  if(changed){
-    _recomputeClientDataMaxAt();
-    try{ save(); }catch(e){}
-    try{ updateMarker(species); }catch(e){}
-    try{ render(); }catch(e){}
-    try{ _updateServerSnapshotStatus(); }catch(e){}
-  }
-  if(!changed){
-    _recomputeClientDataMaxAt();
-    try{ _updateServerSnapshotStatus(); }catch(e){}
-  }
-
-  const moved = !!(nextCoordsValid && prevCoordsValid &&
-    (Math.abs(oldLat - Number(coords[0])) > 0.00005 || Math.abs(oldLon - Number(coords[1])) > 0.00005));
-  if(!nextCoordsValid){
-    return { key: species, updated: changed, moved: false, found: false, date: String(p.t || ''), occ7: Number(p.occ7 || 0), detailUrl: detailUrl || '' };
-  }
-  return {
-    species: species,
-    updated: shouldApply,
-    moved: moved,
-    changedCoords: changedCoords,
-    newerDate: newerDate,
-    changedOcc7: changedOcc7,
-    pickedOccUrl: detailUrl || null,
-    detailUrl: !!detailUrl,
-    coordsFound: nextCoordsValid ? [Number(coords[0]), Number(coords[1])] : null
-  };
+  render();
+  return result;
 }
 async function refreshSpeciesFromElurikkus(key, signal){
   const species = String(key || '').trim();

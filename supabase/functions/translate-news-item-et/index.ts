@@ -2,6 +2,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getOpenAIConfig } from "../_shared/openai.ts";
 import { jsonResponse, translateNewsItemToEt } from "../_shared/news-translation.ts";
 
+function isMissingTranslateColumnError(error: unknown): boolean {
+  const err = error as { message?: string; code?: string; details?: string } | null;
+  const text = `${err?.message || ""} ${err?.details || ""}`.toLowerCase();
+  return err?.code === "PGRST204" || (text.includes("translate_to_et") && text.includes("column"));
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return jsonResponse(200, null);
   if (req.method !== "POST") return jsonResponse(405, { error: "Method not allowed" });
@@ -18,11 +24,20 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { data: item, error } = await supabase
+    let item: any = null;
+    let error: any = null;
+    ({ data: item, error } = await supabase
       .from("news_items")
       .select("id, source_key, title, body, source_lang, title_et, body_et, translate_hash, source_id, news_sources(name, translate_to_et)")
       .eq("id", id)
-      .single();
+      .single());
+    if (error && isMissingTranslateColumnError(error)) {
+      ({ data: item, error } = await supabase
+        .from("news_items")
+        .select("id, source_key, title, body, source_lang, title_et, body_et, translate_hash, source_id, news_sources(name)")
+        .eq("id", id)
+        .single());
+    }
 
     if (error || !item) return jsonResponse(404, { error: "news_item not found" });
 
@@ -37,7 +52,7 @@ Deno.serve(async (req) => {
       body_et: item.body_et,
       translate_hash: item.translate_hash,
       source_name: sourceMeta?.name ?? null,
-      translate_to_et: sourceMeta?.translate_to_et ?? null,
+      translate_to_et: sourceMeta?.translate_to_et ?? true,
     });
     const statusCode = result.status === "error" ? 500 : 200;
     return jsonResponse(statusCode, result);

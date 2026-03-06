@@ -68,6 +68,36 @@ type RssFetchResult = {
   bodySnippet: string;
 };
 
+function isMissingTranslateColumnError(error: unknown): boolean {
+  const err = error as { message?: string; code?: string; details?: string } | null;
+  const text = `${err?.message || ""} ${err?.details || ""}`.toLowerCase();
+  return err?.code === "PGRST204" || (text.includes("translate_to_et") && text.includes("column"));
+}
+
+async function selectNewsSources(supabase: any): Promise<{ data: SourceRow[] | null; error: unknown; hasTranslateColumn: boolean }> {
+  const withTranslate = await supabase
+    .from("news_sources")
+    .select("id, slug, name, key, source_key, type, feed_url, fetch_url, is_enabled, is_active, translate_to_et")
+    .eq("is_enabled", true)
+    .eq("is_active", true);
+  if (!withTranslate.error) {
+    return { data: withTranslate.data as SourceRow[] | null, error: null, hasTranslateColumn: true };
+  }
+  if (!isMissingTranslateColumnError(withTranslate.error)) {
+    return { data: null, error: withTranslate.error, hasTranslateColumn: false };
+  }
+  const fallback = await supabase
+    .from("news_sources")
+    .select("id, slug, name, key, source_key, type, feed_url, fetch_url, is_enabled, is_active")
+    .eq("is_enabled", true)
+    .eq("is_active", true);
+  return {
+    data: (fallback.data || []).map((row: SourceRow) => ({ ...row, translate_to_et: null })),
+    error: fallback.error,
+    hasTranslateColumn: false,
+  };
+}
+
 const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
 
@@ -657,11 +687,7 @@ Deno.serve(async (req) => {
       .or("slug.eq.eoy,source_key.eq.eoy,key.eq.eoy")
       .neq("name", "EOÜ");
 
-    const { data: sources, error: sourcesError } = await supabase
-      .from("news_sources")
-      .select("id, slug, name, key, source_key, type, feed_url, fetch_url, is_enabled, is_active, translate_to_et")
-      .eq("is_enabled", true)
-      .eq("is_active", true);
+    const { data: sources, error: sourcesError, hasTranslateColumn } = await selectNewsSources(supabase);
     if (sourcesError) return jsonError("news-refresh", new Error(sourcesError.message), 500);
 
     const enabledSources = (sources || []).map((s: SourceRow) => ({ ...s, name: normalizeSourceName(s.name) })) as SourceRow[];
@@ -765,6 +791,7 @@ Deno.serve(async (req) => {
           enabled: source.is_enabled !== false,
           source_type: type,
           rss_url: sourceUrl,
+          has_translate_column: hasTranslateColumn,
         });
 
         const parsed = await fetchSourceItems({
@@ -787,7 +814,7 @@ Deno.serve(async (req) => {
           const detectedLanguage = String(row.source_lang || row.language || "").trim().toLowerCase() || "unknown";
           const sourceTranslateToEt = sourceName === "EOÜ" || source.slug === "eoy"
             ? false
-            : source.translate_to_et === true;
+            : hasTranslateColumn ? source.translate_to_et === true : true;
           const dedupeGuid = String(row.guid || "").trim();
           const dedupeUrl = String(row.url || "").trim();
           if (!dedupeGuid && !dedupeUrl) {
@@ -868,19 +895,20 @@ Deno.serve(async (req) => {
             }
           }
         }
-        console.log("[news-refresh:source:end]", {
-          source_id: source.id,
-          source_name: source.name,
-          enabled: source.is_enabled !== false,
-          source_type: type,
-          rss_url: sourceUrl,
-          fetch_ok: summary.fetchOk,
-          parsed_item_count: summary.fetchedCount,
-          inserted_item_count: summary.inserted,
-          skipped_item_count: summary.skippedItems,
-          skip_reasons: summary.skipReasons,
-          error_count: summary.errors.length,
-        });
+          console.log("[news-refresh:source:end]", {
+            source_id: source.id,
+            source_name: source.name,
+            enabled: source.is_enabled !== false,
+            source_type: type,
+            rss_url: sourceUrl,
+            fetch_ok: summary.fetchOk,
+            parsed_item_count: summary.fetchedCount,
+            inserted_item_count: summary.inserted,
+            skipped_item_count: summary.skippedItems,
+            skip_reasons: summary.skipReasons,
+            error_count: summary.errors.length,
+            has_translate_column: hasTranslateColumn,
+          });
       } catch (e: any) {
         if (e instanceof SourceFetchError) {
           summary.ok = false;

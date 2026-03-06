@@ -17,6 +17,12 @@ function isUuid(value: unknown): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
 }
 
+function isMissingTranslateColumnError(error: unknown): boolean {
+  const err = error as { message?: string; code?: string; details?: string } | null;
+  const text = `${err?.message || ""} ${err?.details || ""}`.toLowerCase();
+  return err?.code === "PGRST204" || (text.includes("translate_to_et") && text.includes("column"));
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse(405, { error: "Method not allowed" });
@@ -70,24 +76,33 @@ Deno.serve(async (req) => {
 
     if (lookupError) throw lookupError;
 
-    const payload: Record<string, unknown> = {
+    const payloadBase: Record<string, unknown> = {
       name,
       slug,
       type,
       is_enabled: isEnabled,
-      translate_to_et: translateToEt,
       source_key: sourceKey || null,
       key: key || null,
     };
-    if (feedUrl !== undefined) payload.feed_url = feedUrl;
+    if (feedUrl !== undefined) payloadBase.feed_url = feedUrl;
+    const payloadWithTranslate = { ...payloadBase, translate_to_et: translateToEt };
+    const payloadWithoutTranslate = { ...payloadBase };
 
     if ((existingRows || []).length === 0) {
-      const { data: inserted, error: insertError } = await supabase
+      let inserted: { id?: string; slug?: string; name?: string } | null = null;
+      let insertError: unknown = null;
+      ({ data: inserted, error: insertError } = await supabase
         .from("news_sources")
-        .insert(payload)
+        .insert(payloadWithTranslate)
         .select("id, slug, name")
-        .single();
-
+        .single());
+      if (insertError && isMissingTranslateColumnError(insertError)) {
+        ({ data: inserted, error: insertError } = await supabase
+          .from("news_sources")
+          .insert(payloadWithoutTranslate)
+          .select("id, slug, name")
+          .single());
+      }
       if (insertError) throw insertError;
 
       console.log("[news-source-update:inserted]", {
@@ -100,13 +115,22 @@ Deno.serve(async (req) => {
     }
 
     const existing = existingRows[0];
-    const { data: updated, error: updateError } = await supabase
+    let updated: { id?: string; slug?: string; name?: string } | null = null;
+    let updateError: unknown = null;
+    ({ data: updated, error: updateError } = await supabase
       .from("news_sources")
-      .update(payload)
+      .update(payloadWithTranslate)
       .eq("id", existing.id)
       .select("id, slug, name")
-      .single();
-
+      .single());
+    if (updateError && isMissingTranslateColumnError(updateError)) {
+      ({ data: updated, error: updateError } = await supabase
+        .from("news_sources")
+        .update(payloadWithoutTranslate)
+        .eq("id", existing.id)
+        .select("id, slug, name")
+        .single());
+    }
     if (updateError) throw updateError;
 
     console.log("[news-source-update:updated]", {

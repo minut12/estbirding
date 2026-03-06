@@ -79,6 +79,7 @@
   .snapshot-banner.warn{background:#fef3c7;border-color:#fde68a;color:#92400e}
   .snapshot-banner.error{background:#fee2e2;border-color:#fecaca;color:#dc2626}
   .snapshot-banner .btn-inline{font-size:11px;padding:2px 8px;margin-left:6px;border:none;border-radius:4px;background:#0a7;color:#fff;cursor:pointer}
+  .spring-edit-btn{position:relative;z-index:20;pointer-events:auto !important}
 
 .btn.on{background:#27ae60;color:#fff}
 
@@ -208,17 +209,17 @@
     <div class="sidebar-header"><div><h2 style="margin:0">Linnuliigid 2026</h2></div><button id="closeSidebarBtn" class="btn icon close-sidebar" title="Sulge" aria-label="Sulge"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
     </div>
     <div class="panel-content-scroll" style="position:relative;z-index:9999;pointer-events:auto">
-<div id="snapshotBanner" class="snapshot-banner" style="display:none"></div>
+<div id="snapshotBanner" class="snapshot-banner" style="display:none !important"></div>
 <div class="fetch-controls">
   <button id="btnRefreshData" class="btn" title="Refresh all species from Elurikkus">Refresh from Elurikkus</button>
   <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index">Resume</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
 <div id="eluProgress" class="snapshot-banner" style="display:none;font-weight:600"></div>
-<div id="eluLastCoord" class="fetch-progress"></div>
-<div id="fetchProgress" class="fetch-progress"></div>
-<div id="fetchProgressBar" class="fetch-progress-bar" style="display:none"><div id="fetchProgressBarInner" class="fetch-progress-bar-inner" style="width:0%"></div></div>
-<div id="fetchError" class="fetch-error"></div>
+<div id="eluLastCoord" class="fetch-progress" style="display:none !important"></div>
+<div id="fetchProgress" class="fetch-progress" style="display:none !important"></div>
+<div id="fetchProgressBar" class="fetch-progress-bar" style="display:none !important"><div id="fetchProgressBarInner" class="fetch-progress-bar-inner" style="width:0%"></div></div>
+<div id="fetchError" class="fetch-error" style="display:none !important"></div>
 <div id="debugContent" style="display:none"></div>
 <div id="debugProContent" style="display:none"></div>
     <input id="filterBox" type="text" placeholder="Filter..." />
@@ -4746,9 +4747,8 @@ function _stopWatchdog(){
 function _showSnapshotBanner(msg, type, showAllBtn){
   const el = document.getElementById('snapshotBanner');
   if(!el) return;
-  el.style.display = 'block';
-  el.className = 'snapshot-banner' + (type ? ' ' + type : '');
-  el.innerHTML = msg + (showAllBtn ? ' <button class="btn-inline" onclick="window.__showAll()">Show all</button>' : '');
+  el.style.display = 'none';
+  el.textContent = '';
 }
 function _hideSnapshotBanner(){
   const el = document.getElementById('snapshotBanner');
@@ -6324,26 +6324,36 @@ function _ddmmToDate(ddmm){
 function _dateToDdmm(dt){
   return dt.getDate()+'.'+String(dt.getMonth()+1).padStart(2,'0');
 }
-function editSpringDate(key){
-  const current = springDates[key] || '';
-  const val = prompt(`Kevadränne kuupäev (${key})`, current);
-  if(val === null) return;
-  const cleaned = String(val).trim();
-  if(cleaned){
-    const normalized = _normSpringDDMM(cleaned);
-    if(!normalized){
-      notifySilent('Vigane kuupäeva formaat. Kasuta D.MM (nt 5.04) või YYYY-MM-DD.');
-      return;
+window.editSpringDate = function(key){
+  try{
+    if(!key) return;
+    const store = (window.springDates && typeof window.springDates === 'object')
+      ? window.springDates
+      : ((typeof springDates === 'object' && springDates) ? springDates : Object.assign({}, DEFAULT_SPRING_DATES || {}));
+    window.springDates = store;
+    springDates = store;
+    const current = store[key] || '';
+    const val = prompt(`Kevadränne kuupäev (${key})`, current);
+    if(val === null) return;
+    const cleaned = String(val).trim();
+    if(cleaned){
+      const normalized = _normSpringDDMM(cleaned);
+      if(!normalized){
+        notifySilent('Vigane kuupäeva formaat. Kasuta D.MM (nt 5.04) või YYYY-MM-DD.');
+        return;
+      }
+      store[key] = normalized;
+    } else {
+      delete store[key];
     }
-    springDates[key] = normalized;
-  } else {
-    delete springDates[key];
+    localStorage.setItem((typeof LS_SPRING !== 'undefined' ? LS_SPRING : 'bm_spring_dates'), JSON.stringify(store));
+    if(typeof render === 'function') render();
+    if(typeof renderSpringPanel === 'function') renderSpringPanel();
+  }catch(err){
+    alert('Muuda failed: ' + ((err && err.message) || err));
+    console.error('editSpringDate failed', err);
   }
-  localStorage.setItem(LS_SPRING, JSON.stringify(springDates));
-  render();
-  if(typeof renderSpringPanel === 'function') renderSpringPanel();
-}
-window.editSpringDate = editSpringDate;
+};
 
 function updateMarker(key) {
   const p = points[key];
@@ -6524,8 +6534,8 @@ function rowHTML(obj) {
   const springRaw = (springDates && springDates[key] != null) ? String(springDates[key]).trim() : '';
   const springTxt = (typeof _normSpringDDMM === 'function' && springRaw) ? (_normSpringDDMM(springRaw) || springRaw) : (springRaw || '-');
   const springChip = '<div class="species-extra meta-row2">' +
-    '<span class="chip kevadi-chip">Kevad: ' + escapeHtml(springTxt || '-') + '</span>' +
-    '<button class="btn secondary spring-edit-btn" data-spring-key="' + escapeHtml(key) + '">Muuda</button>' +
+    '<span class="pill">Kevad: ' + escapeHtml(springTxt || '-') + '</span>' +
+    '<button type="button" class="btn secondary spring-edit-btn" data-spring-key="' + escapeHtml(key) + '" onclick="event.preventDefault(); event.stopPropagation(); window.editSpringDate && window.editSpringDate(this.dataset.springKey); return false;" style="position:relative;z-index:20;pointer-events:auto">Muuda</button>' +
   '</div>';
   const defaultSearchUrl = String((p.searchUrl || obj.url) || obj.url);
   const openUrl = String((p.openUrl || (x.detailUrl || defaultSearchUrl)) || defaultSearchUrl);
@@ -6575,15 +6585,6 @@ function render() {
       e.stopPropagation();
       const url = String(openBtn.getAttribute('data-open-url') || '').trim();
       if(url) window.open(url, '_blank', 'noopener');
-      return;
-    }
-    const rowSpringBtn = t.closest?.('.spring-edit-btn');
-    if(rowSpringBtn){
-      stop(e);
-      const key = rowSpringBtn.getAttribute('data-spring-key') || '';
-      if(key && typeof window.editSpringDate === 'function'){
-        window.editSpringDate(key);
-      }
       return;
     }
     // Start edit
@@ -6639,6 +6640,20 @@ function render() {
     }
   }, true); // capture=true helps on mobile overlays/leaflet
 })();
+
+if(!window.__springEditDelegatedBound){
+  document.addEventListener('click', function(e){
+    const btn = e.target && e.target.closest && e.target.closest('.spring-edit-btn');
+    if(!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const key = btn.getAttribute('data-spring-key') || '';
+    if(key && window.editSpringDate){
+      window.editSpringDate(key);
+    }
+  }, true);
+  window.__springEditDelegatedBound = true;
+}
 
 // Restore existing markers from localStorage and render list
 updateClientDataMaxAtFromPoints();

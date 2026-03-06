@@ -93,6 +93,15 @@
 .marker-count{position:absolute;left:50%;top:56px;transform:translateX(-50%);min-width:28px;padding:1px 6px;border-radius:10px;background:rgba(255,255,255,.92);border:1px solid #111;font-size:12px;line-height:14px;font-weight:700;text-align:center;box-shadow:0 1px 2px rgba(0,0,0,.2)}
 .marker-count.mig-on{background:rgba(40,180,70,.95);color:#fff;border-color:#1c6b25}
 .marker-count.mig-off{background:rgba(255,160,0,.95);color:#111;border-color:#8a5a00}
+.popupBtn{
+  padding:6px 10px;
+  border-radius:10px;
+  border:1px solid rgba(0,0,0,.12);
+  background:#ffffff;
+  font-size:12px;
+  cursor:pointer;
+}
+.leaflet-marker-icon, .leaflet-interactive { pointer-events: auto !important; }
 
 .rarity-select{font-size:12px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;vertical-align:middle}
 
@@ -6281,24 +6290,7 @@ function updateMarker(key) {
   const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
   const c7 = Number.isFinite(occ7) && occ7 > 0 ? occ7 : null;
   const icon = avatarIcon(getDisplayAvatar(key), bcol, c7, metaCfg.rarityLevel || 'none');
-  const latestDateVal = String(p.latestSeenDate || p.t || '').trim();
-  const when = latestDateVal ? '<br><small>latest record: ' + formatDateEE(latestDateVal) + '</small>' : '';
-  const src = p.src ? '<br><small>allikas: '+p.src+'</small>' : '';
-  const individualCount = (p && p.eluExtra && p.eluExtra.individualCount != null && String(p.eluExtra.individualCount).trim() !== '')
-    ? p.eluExtra.individualCount
-    : (((p && p.individualCount != null) && String(p.individualCount).trim() !== '') ? p.individualCount : '-');
-  const behavior = (p && p.eluExtra && p.eluExtra.behavior != null && String(p.eluExtra.behavior).trim() !== '')
-    ? p.eluExtra.behavior
-    : (((p && p.behavior != null) && String(p.behavior).trim() !== '') ? p.behavior : '-');
-  const collectors = (p && p.eluExtra && p.eluExtra.collectors != null && String(p.eluExtra.collectors).trim() !== '')
-    ? p.eluExtra.collectors
-    : (((p && p.collectors != null) && String(p.collectors).trim() !== '') ? p.collectors : '-');
-  const popupHtml = '<b>'+key+'</b>'+when
-    +(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')
-    +src
-    +'<br><small>Individual count: ' + escapeHtml(String(individualCount)) + '</small>'
-    +'<br><small>Behavior: ' + escapeHtml(String(behavior)) + '</small>'
-    +'<br><small>Collectors: ' + escapeHtml(String(collectors)) + '</small>';
+  const popupHtml = buildPopupHtml(key, p);
   const old = prevMarker && prevMarker.getLatLng ? prevMarker.getLatLng() : null;
   if(prevMarker){
     try{
@@ -6314,7 +6306,13 @@ function updateMarker(key) {
   } else {
     m.addTo(map);
   }
-  m.bindPopup(popupHtml);
+  if(m.getPopup()){
+    m.setPopupContent(popupHtml);
+  } else {
+    m.bindPopup(popupHtml, { closeButton:true, autoPan:true, closeOnClick:false, autoClose:false });
+  }
+  m.on('click', () => m.openPopup());
+  m.on('touchend', () => m.openPopup());
   p.lastMarkerMove = {
     oldLat: old ? Number(old.lat) : Number(p.lat),
     oldLon: old ? Number(old.lng) : Number(p.lon),
@@ -6338,6 +6336,63 @@ function escapeHtml(s){
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+function buildPopupHtml(key, p){
+  const x = (p && p.eluExtra) ? p.eluExtra : {};
+  const val = (v)=> (v===undefined || v===null || String(v).trim()==='') ? '-' : String(v).trim();
+  const ind = val(x.individualCount ?? p.individualCount);
+  const beh = val(x.behavior ?? p.behavior);
+  const col = val(x.collectors ?? p.collectors);
+  const latest = val(p.t);
+  const occ7 = Number.isFinite(p.occ7) ? p.occ7 : '-';
+  const src = val(p.src);
+  const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
+  const lat = hasCoords ? p.lat.toFixed(5) : '';
+  const lon = hasCoords ? p.lon.toFixed(5) : '';
+  const actions = hasCoords ? `
+    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="popupBtn" onclick="copyCoords(${p.lat},${p.lon})">Copy coords</button>
+      <button class="popupBtn" onclick="openWaze(${p.lat},${p.lon})">Open in Waze</button>
+    </div>
+    <div style="margin-top:6px;font-size:12px;opacity:.8">coords: ${lat},${lon}</div>
+  ` : '';
+  return `
+    <div style="min-width:210px">
+      <div style="font-weight:700;margin-bottom:4px">${escapeHtml(key)}</div>
+      <div>latest record: ${escapeHtml(latest)}</div>
+      <div>7 päeva vaatlused: ${escapeHtml(String(occ7))}</div>
+      <div>allikas: ${escapeHtml(src)}</div>
+      <div style="margin-top:6px">
+        <div>Individual count: ${escapeHtml(ind)}</div>
+        <div>Behavior: ${escapeHtml(beh)}</div>
+        <div>Collectors: ${escapeHtml(col)}</div>
+      </div>
+      ${actions}
+    </div>
+  `;
+}
+async function copyCoords(lat, lon){
+  if(!Number.isFinite(lat) || !Number.isFinite(lon)){
+    alert('No coordinates available');
+    return;
+  }
+  const text = lat.toFixed(5) + ',' + lon.toFixed(5);
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+  }catch(e){}
+  window.prompt('Copy coordinates (lat,lon):', text);
+}
+function openWaze(lat, lon){
+  if(!Number.isFinite(lat) || !Number.isFinite(lon)){
+    alert('No coordinates available');
+    return;
+  }
+  const url = `https://waze.com/ul?ll=${lat.toFixed(5)},${lon.toFixed(5)}&navigate=yes`;
+  try{ window.open(url, '_blank'); } catch(e){}
+  setTimeout(()=>{ try{ location.href = url; } catch(e){} }, 50);
 }
 function rowHTML(obj) {
   const key = obj.est;

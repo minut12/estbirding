@@ -1904,6 +1904,10 @@ async function _applyElurikkusPayloadToPoints(species, payload){
   window.points = window.points || {};
   window.points[species] = window.points[species] || {};
   const row = window.points[species];
+  const hadExactBefore =
+    String(row.coordsSource || row.coords_source || '') === 'elurikkus_occurrence_detail' &&
+    Number.isFinite(Number(row.lat)) &&
+    Number.isFinite(Number(row.lon));
   const prev = { lat: Number(row.lat), lon: Number(row.lon), t: row.t, occ7: row.occ7 };
   let stats = null;
   try{ stats = (typeof _computeLiveStats === 'function') ? _computeLiveStats(items) : null; }catch(e){}
@@ -1973,14 +1977,21 @@ async function _applyElurikkusPayloadToPoints(species, payload){
     row.lat = best.lat;
     row.lon = best.lon;
     const foundSrc = String(best.source || 'detail').toLowerCase();
-    const useSrc = foundSrc.indexOf('search') >= 0 ? 'search' : 'detail';
+    const useSrc = foundSrc.indexOf('search') >= 0 ? 'elurikkus_occurrence_detail' : 'elurikkus_occurrence_detail';
     row.coordsSource = useSrc;
     row.coords_source = useSrc;
     row.coords_status = 'public';
     found = { lat: Number(best.lat), lon: Number(best.lon), source: useSrc, occUrl: best.occUrl || null };
     reason = 'applied exact';
+  } else if(hadExactBefore){
+    row.coordsSource = 'elurikkus_occurrence_detail';
+    row.coords_source = 'elurikkus_occurrence_detail';
+    row.coords_status = row.coords_status || 'public';
+    reason = 'kept_existing_exact_detail';
   } else {
     row.coords_status = 'restricted_or_missing';
+    row.coordsSource = String(row.coordsSource || row.coords_source || 'kept_existing');
+    row.coords_source = row.coordsSource;
     reason = restrictedItem ? 'restricted->kept_existing' : 'no public coords';
   }
   const appliedLat = Number(row.lat);
@@ -1998,6 +2009,14 @@ async function _applyElurikkusPayloadToPoints(species, payload){
     reason: reason,
     occUrl: found.occUrl || null,
   };
+  console.log('APPLY_ELU', species, {
+    best: !!best,
+    centroid: !!centroid,
+    finalLat: row.lat,
+    finalLon: row.lon,
+    coordsSource: row.coordsSource || row.coords_source,
+    reason
+  });
   try{ if(typeof save === 'function') save(); }catch(e){}
   try{ if(typeof updateMarker === 'function') updateMarker(species); }catch(e){}
   return {

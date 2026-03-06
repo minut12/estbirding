@@ -508,8 +508,8 @@ export default function SettingsTab() {
     saveSettings(next);
     localStorage.setItem(NEWS_AUTO_TRANSLATE_ET_KEY, checked ? '1' : '0');
     toast.success(checked
-      ? 'Automaatne tolkimine sisse lulitatud'
-      : 'Automaatne tolkimine valja lulitatud');
+      ? 'Võõrkeelsete uudiste tõlge on sisse lülitatud'
+      : 'Võõrkeelsete uudiste tõlge on välja lülitatud');
   };
 
   const handleTestTranslate = async () => {
@@ -849,9 +849,9 @@ export default function SettingsTab() {
       <div className="space-y-2">
         <div className="flex items-center justify-between rounded-md border border-border p-3">
           <div className="space-y-1">
-            <Label htmlFor="autoTranslate">Tolgi uudised automaatselt eesti keelde</Label>
+            <Label htmlFor="autoTranslate">Tõlgi võõrkeelsed uudised eesti keelde</Label>
             <p className="text-xs text-muted-foreground">
-              Mojub ainult kliendipoolses kuvamises.
+              Kui väljas, siis võõrkeelseid uudiseid ei tõlgita ega kuvata tõlgituna News vaates.
             </p>
           </div>
           <Switch

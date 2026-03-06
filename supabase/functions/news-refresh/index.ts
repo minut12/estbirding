@@ -13,6 +13,7 @@ type SourceRow = {
   fetch_url?: string | null;
   is_enabled?: boolean | null;
   is_active?: boolean | null;
+  translate_to_et?: boolean | null;
 };
 
 type SourceSummary = {
@@ -543,6 +544,20 @@ function normalizeRssItems(items: NormalizedRssItem[], source: SourceRow): Array
   return out;
 }
 
+async function translateNewsItemById(id: string, supabaseUrl: string, serviceRoleKey: string): Promise<void> {
+  const canonicalFn = "translate-news-item-et";
+  const res = await fetch(`${supabaseUrl}/functions/v1/${canonicalFn}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${serviceRoleKey}`,
+      "apikey": serviceRoleKey,
+    },
+    body: JSON.stringify({ id }),
+  });
+  if (!res.ok) throw new Error(`${canonicalFn} HTTP ${res.status}`);
+}
+
 async function backfillBirdingPolandImages(
   supabase: any,
   supabaseUrl: string,
@@ -613,6 +628,7 @@ Deno.serve(async (req) => {
     const maxItemsPerSource = Math.max(1, Math.min(100, Number(body?.max_items_per_source ?? 15) || 15));
     const cacheImages = body?.cache_images === true;
     const cacheLimit = Math.max(0, Number(body?.cache_limit ?? 5) || 5);
+    const globalTranslateSetting = body?.translateForeignNews !== false;
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
     await ensureNewsImagesBucket(supabase);
@@ -625,7 +641,7 @@ Deno.serve(async (req) => {
 
     const { data: sources, error: sourcesError } = await supabase
       .from("news_sources")
-      .select("id, slug, name, key, source_key, type, feed_url, fetch_url, is_enabled, is_active")
+      .select("id, slug, name, key, source_key, type, feed_url, fetch_url, is_enabled, is_active, translate_to_et")
       .eq("is_enabled", true);
     if (sourcesError) return jsonError("news-refresh", new Error(sourcesError.message), 500);
 
@@ -771,10 +787,15 @@ Deno.serve(async (req) => {
 
         for (const row of rows) {
           const extId = String(row.external_id || "");
+          const sourceName = String(source.name || source.slug || "unknown").trim() || "unknown";
+          const detectedLanguage = String(row.source_lang || row.language || "").trim().toLowerCase() || "unknown";
+          const sourceTranslateToEt = sourceName === "EOÜ" || source.slug === "eoy"
+            ? false
+            : source.translate_to_et === true;
           const { data: upserted, error } = await supabase
             .from("news_items")
             .upsert(row, { onConflict: "guid" })
-            .select("id, image_url, cached_image_url, source_slug, source_key, external_id, guid, raw_json, url, permalink_url")
+            .select("id, image_url, cached_image_url, source_slug, source_key, external_id, guid, raw_json, url, permalink_url, title_et, body_et, translate_hash")
             .single();
           if (error || !upserted?.id) {
             const msg = error?.message || "upsert failed";
@@ -800,6 +821,29 @@ Deno.serve(async (req) => {
             } else if (cacheResult.error) {
               summary.errors.push(`cacheImage: ${cacheResult.error}`);
               if (isBirdingPoland) birdingCacheFailures += 1;
+            }
+          }
+
+          const contentHash = await sha256Hex(`${String(row.title || "")}\n${String(row.body || "")}`);
+          const translationSkipped = sourceName === "EOÜ" || detectedLanguage === "et" || !sourceTranslateToEt || !globalTranslateSetting;
+          console.log("[news-translate]", {
+            source: sourceName,
+            detected_language: detectedLanguage,
+            translate_to_et: sourceTranslateToEt,
+            global_translate_setting: globalTranslateSetting,
+            skipped: translationSkipped,
+            handler: "translate-news-item-et",
+          });
+          if (!translationSkipped) {
+            const shouldTranslate = !upserted.title_et || !upserted.body_et || upserted.translate_hash !== contentHash;
+            if (shouldTranslate) {
+              try {
+                await translateNewsItemById(upserted.id, supabaseUrl, serviceRoleKey);
+              } catch (translateError: any) {
+                const msg = String(translateError?.message || translateError);
+                summary.errors.push(`translate: ${msg}`);
+                errors.push({ source: source.slug, error: msg });
+              }
             }
           }
         }

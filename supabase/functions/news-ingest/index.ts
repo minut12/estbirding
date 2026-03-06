@@ -38,7 +38,8 @@ async function translateViaEdgeFunction(id: string): Promise<void> {
     throw new Error("SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing");
   }
 
-  const res = await fetch(`${supabaseUrl}/functions/v1/translate-news-item-et`, {
+  const canonicalFn = "translate-news-item-et";
+  const res = await fetch(`${supabaseUrl}/functions/v1/${canonicalFn}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -49,7 +50,7 @@ async function translateViaEdgeFunction(id: string): Promise<void> {
   });
 
   if (!res.ok) {
-    throw new Error(`translate-news-item-et failed: HTTP ${res.status} ${await res.text()}`);
+    throw new Error(`${canonicalFn} failed: HTTP ${res.status} ${await res.text()}`);
   }
 }
 
@@ -77,7 +78,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { source_slug, items } = body;
+    const { source_slug, items, translateForeignNews } = body;
 
     if (!source_slug || !Array.isArray(items) || items.length === 0) {
       return new Response(
@@ -94,7 +95,7 @@ Deno.serve(async (req) => {
     // Find source
     const { data: source, error: srcErr } = await supabase
       .from("news_sources")
-      .select("id, slug, source_key, key")
+      .select("id, slug, source_key, key, name, translate_to_et")
       .eq("slug", source_slug)
       .single();
 
@@ -104,6 +105,12 @@ Deno.serve(async (req) => {
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
+
+    const globalTranslateSetting = translateForeignNews !== false;
+    const sourceName = String(source.name || source.slug || "unknown").trim() || "unknown";
+    const sourceTranslateToEt = sourceName === "EOÜ" || source.slug === "eoy"
+      ? false
+      : source.translate_to_et === true;
 
     let inserted = 0;
     let updated = 0;
@@ -153,7 +160,16 @@ Deno.serve(async (req) => {
         if (status === 201) inserted++;
         else updated++;
 
-        if (upserted?.id && normalizedSourceLang !== "et") {
+        const translationSkipped = sourceName === "EOÜ" || normalizedSourceLang === "et" || !sourceTranslateToEt || !globalTranslateSetting;
+        console.log("[news-translate]", {
+          source: sourceName,
+          detected_language: normalizedSourceLang || "unknown",
+          translate_to_et: sourceTranslateToEt,
+          global_translate_setting: globalTranslateSetting,
+          skipped: translationSkipped,
+          handler: "translate-news-item-et",
+        });
+        if (upserted?.id && !translationSkipped) {
           const shouldTranslate = !upserted.title_et || !upserted.body_et || upserted.translate_hash !== contentHash;
           if (shouldTranslate) {
             try {

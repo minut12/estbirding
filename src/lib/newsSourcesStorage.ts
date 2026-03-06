@@ -14,6 +14,7 @@ interface LegacyNewsSourceShape {
   feed_url?: unknown;
   homepage_url?: unknown;
   is_enabled?: unknown;
+  translate_to_et?: unknown;
   slug?: unknown;
   key?: unknown;
 }
@@ -49,7 +50,11 @@ function normalizeSourceEntry(source: NewsSourceConfigItem): NewsSourceConfigIte
     ? BIRDING_POLAND_TARGET_URL
     : normalizedUrl;
 
-  return { ...source, url };
+  return {
+    ...source,
+    url,
+    translate_to_et: source.id === "eoy" ? false : source.translate_to_et === true,
+  };
 }
 
 function cloneDefaults(): NewsSourceConfigItem[] {
@@ -77,6 +82,11 @@ function sanitizeSource(input: LegacyNewsSourceShape): NewsSourceConfigItem | nu
     typeof input.enabled === "boolean" ? input.enabled
       : typeof input.is_enabled === "boolean" ? input.is_enabled
         : null;
+  const translateCandidate = typeof input.translate_to_et === "boolean"
+    ? input.translate_to_et
+    : id === "eoy"
+      ? false
+      : true;
 
   if (!id || !name || !kind || !urlCandidate.trim() || enabledCandidate == null) {
     return null;
@@ -88,6 +98,7 @@ function sanitizeSource(input: LegacyNewsSourceShape): NewsSourceConfigItem | nu
     kind,
     url: urlCandidate,
     enabled: enabledCandidate,
+    translate_to_et: translateCandidate,
   });
 }
 

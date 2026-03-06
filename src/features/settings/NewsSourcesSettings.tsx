@@ -14,10 +14,23 @@ import { normalizeDisplayText } from '@/lib/textNormalize';
 
 type NewsSource = NewsSourceConfigItem;
 
+function slugifySourceId(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48) || `rss_${Date.now()}`;
+}
+
 export default function NewsSourcesSettings() {
   const seeded = useMemo(() => loadNewsSourcesWithOrigin(), []);
   const [localSources, setLocalSources] = useState<NewsSource[]>(seeded.sources);
   const [origin, setOrigin] = useState<NewsSourcesOrigin>(seeded.source);
+  const [newSourceName, setNewSourceName] = useState('');
+  const [newSourceUrl, setNewSourceUrl] = useState('');
+  const [newSourceTranslateToEt, setNewSourceTranslateToEt] = useState(true);
 
   const onResetDefaults = () => {
     const defaults = resetNewsSourcesToDefaults();
@@ -35,6 +48,42 @@ export default function NewsSourcesSettings() {
     setOrigin('stored');
   };
 
+  const onAddSource = () => {
+    const name = newSourceName.trim();
+    const normalizedUrl = normalizeSourceUrl(newSourceUrl);
+    if (!name || !normalizedUrl) {
+      toast.error('Sisesta nimi ja RSS URL');
+      return;
+    }
+
+    const idBase = slugifySourceId(name);
+    const existingIds = new Set(localSources.map((source) => source.id));
+    let id = idBase;
+    let suffix = 2;
+    while (existingIds.has(id)) {
+      id = `${idBase}_${suffix}`;
+      suffix += 1;
+    }
+
+    const next: NewsSource = {
+      id,
+      name,
+      kind: 'rss',
+      url: normalizedUrl,
+      enabled: true,
+      translate_to_et: newSourceTranslateToEt,
+    };
+
+    const updated = [...localSources, next];
+    setLocalSources(updated);
+    saveNewsSources(updated);
+    setOrigin('stored');
+    setNewSourceName('');
+    setNewSourceUrl('');
+    setNewSourceTranslateToEt(true);
+    toast.success(`${name} lisatud`);
+  };
+
   const sources = localSources;
 
   if (sources.length === 0) {
@@ -50,6 +99,34 @@ export default function NewsSourcesSettings() {
   return (
     <div className="block space-y-4">
       <h3 className="font-semibold text-foreground">Uudiste allikad</h3>
+      <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Uue allika nimi</Label>
+          <Input
+            value={newSourceName}
+            onChange={(event) => setNewSourceName(event.target.value)}
+            placeholder="Näiteks BirdGuides"
+            className="h-9 text-sm"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Uue RSS allika URL</Label>
+          <Input
+            value={newSourceUrl}
+            onChange={(event) => setNewSourceUrl(event.target.value)}
+            placeholder="https://example.com/feed.xml"
+            className="h-9 text-sm"
+          />
+        </div>
+        <div className="flex items-center justify-between rounded-md border border-border p-3">
+          <div className="space-y-1">
+            <Label className="text-sm">Tõlgi eesti keelde</Label>
+            <p className="text-xs text-muted-foreground">Kasuta võõrkeelse RSS allika jaoks.</p>
+          </div>
+          <Switch checked={newSourceTranslateToEt} onCheckedChange={setNewSourceTranslateToEt} />
+        </div>
+        <Button onClick={onAddSource} className="w-full sm:w-auto">Lisa RSS allikas</Button>
+      </div>
       {sources.map((source) => (
         <SourceCard
           key={source.id}
@@ -74,12 +151,19 @@ function SourceCard({
 }) {
   const [url, setUrl] = useState(source.url || '');
   const [enabled, setEnabled] = useState(source.enabled);
+  const [translateToEt, setTranslateToEt] = useState(source.id === 'eoy' ? false : source.translate_to_et === true);
   const [testResult, setTestResult] = useState<{ ok: boolean; count?: number; sampleTitles?: string[]; error?: string } | null>(null);
   const [testing, setTesting] = useState(false);
+  const translationLocked = source.name === 'EOÜ' || source.id === 'eoy';
 
   const saveChanges = async () => {
     const normalizedUrl = normalizeSourceUrl(url);
-    onLocalUpdate({ ...source, url: normalizedUrl, enabled });
+    onLocalUpdate({
+      ...source,
+      url: normalizedUrl,
+      enabled,
+      translate_to_et: translationLocked ? false : translateToEt,
+    });
     try {
       const { error } = await supabase.functions.invoke('news-source-update', {
         body: {
@@ -87,8 +171,11 @@ function SourceCard({
           slug: source.id,
           source_key: source.id,
           key: source.id,
+          name: source.name,
+          type: source.kind,
           feed_url: normalizedUrl,
           is_enabled: enabled,
+          translate_to_et: translationLocked ? false : translateToEt,
         },
       });
       if (error) throw error;
@@ -169,6 +256,20 @@ function SourceCard({
           onChange={(event) => setUrl(event.target.value)}
           placeholder="https://example.com/feed.xml"
           className="h-9 text-sm"
+        />
+      </div>
+
+      <div className="flex items-center justify-between rounded-md border border-border p-3">
+        <div className="space-y-1">
+          <Label className="text-sm">Tõlgi eesti keelde</Label>
+          <p className="text-xs text-muted-foreground">
+            {translationLocked ? 'EOÜ jääb alati originaalsesse eesti keelde.' : 'Kasuta ainult võõrkeelsete uudisallikate jaoks.'}
+          </p>
+        </div>
+        <Switch
+          checked={translationLocked ? false : translateToEt}
+          onCheckedChange={setTranslateToEt}
+          disabled={translationLocked}
         />
       </div>
 

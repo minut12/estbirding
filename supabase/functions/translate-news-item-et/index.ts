@@ -20,13 +20,25 @@ Deno.serve(async (req) => {
 
     const { data: item, error } = await supabase
       .from("news_items")
-      .select("id, source_key, title, body, source_lang, title_et, body_et, translate_hash")
+      .select("id, source_key, title, body, source_lang, title_et, body_et, translate_hash, source_id, news_sources(name, translate_to_et)")
       .eq("id", id)
       .single();
 
     if (error || !item) return jsonResponse(404, { error: "news_item not found" });
 
-    const result = await translateNewsItemToEt(supabase, item);
+    const sourceMeta = Array.isArray((item as any).news_sources) ? (item as any).news_sources[0] : (item as any).news_sources;
+    const result = await translateNewsItemToEt(supabase, {
+      id: item.id,
+      source_key: item.source_key,
+      title: item.title,
+      body: item.body,
+      source_lang: item.source_lang,
+      title_et: item.title_et,
+      body_et: item.body_et,
+      translate_hash: item.translate_hash,
+      source_name: sourceMeta?.name ?? null,
+      translate_to_et: sourceMeta?.translate_to_et ?? null,
+    });
     const statusCode = result.status === "error" ? 500 : 200;
     return jsonResponse(statusCode, result);
   } catch (error) {

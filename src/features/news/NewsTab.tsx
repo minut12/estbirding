@@ -12,9 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { isAutoTranslateNewsToEtEnabled } from '@/lib/settings';
 import { isEstonianLocale, normalizeLocale, resolveAppLocale } from '@/lib/locale';
-import { TranslateEtHttpError, translateEt, type TranslateEtOutput } from '@/lib/translateEt';
 import { toast } from 'sonner';
-import { resolveEndpoint, TRANSLATION_ENDPOINT_UPDATED_EVENT } from '@/config/translationEndpoint';
 import { getProxyMode } from '@/config/proxyEndpoint';
 import { getSupabaseUrl } from '@/config/supabaseConfig';
 import { normalizeDisplayText } from '@/lib/textNormalize';
@@ -217,14 +215,6 @@ function getErrorHostLabel(): string {
   }
 }
 
-const shownTranslationWarnings = new Set<string>();
-function notifyTranslationWarning(message: string): void {
-  const normalized = String(message || 'Viga').trim().slice(0, 160) || 'Viga';
-  if (shownTranslationWarnings.has(normalized)) return;
-  shownTranslationWarnings.add(normalized);
-  toast.warning(`Tõlge ebaõnnestus: ${normalized}`);
-}
-
 function ensureImageUrl(item: NewsItem): NewsItem {
   const cached = decodeUrl(item.cached_image_url);
   const display = decodeUrl(item.display_image_url);
@@ -270,144 +260,6 @@ function rewriteImgSrcToProxy(html: string, sourceName: string, proxyBase: strin
   }
 }
 
-interface EtTranslationState {
-  translated: TranslateEtOutput | null;
-  loading: boolean;
-  errorStatus: number | null;
-}
-
-function useEtTranslation({
-  enabled,
-  id,
-  title,
-  body,
-  sourceLang,
-  fallbackTitleEt,
-  fallbackBodyEt,
-  endpointConfigured,
-}: {
-  enabled: boolean;
-  id: string;
-  title: string;
-  body: string | null | undefined;
-  sourceLang?: string | null;
-  fallbackTitleEt?: string | null;
-  fallbackBodyEt?: string | null;
-  endpointConfigured: boolean;
-}): EtTranslationState {
-  const hasFallback = Boolean((fallbackTitleEt || '').trim() || (fallbackBodyEt || '').trim());
-  const [translated, setTranslated] = useState<TranslateEtOutput | null>(
-    hasFallback ? {
-      title_et: (fallbackTitleEt || '').trim(),
-      body_et: (fallbackBodyEt || '').trim(),
-    } : null,
-  );
-  const [loading, setLoading] = useState(false);
-  const [errorStatus, setErrorStatus] = useState<number | null>(null);
-  const bodyText = (body || '').trim();
-  const normalizedLang = normalizeLocale(sourceLang || '');
-  const isLikelyEstonian = normalizedLang === 'et';
-  const shouldTranslate = enabled && endpointConfigured && !isLikelyEstonian && Boolean(title.trim() || bodyText);
-
-  useEffect(() => {
-    if (!hasFallback) {
-      setTranslated(null);
-      return;
-    }
-    setTranslated({
-      title_et: (fallbackTitleEt || '').trim(),
-      body_et: (fallbackBodyEt || '').trim(),
-    });
-  }, [fallbackTitleEt, fallbackBodyEt, hasFallback]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!shouldTranslate) {
-      setLoading(false);
-      setErrorStatus(null);
-      return () => { cancelled = true; };
-    }
-
-    setLoading(true);
-    setErrorStatus(null);
-    translateEt({
-      id,
-      title,
-      body: bodyText,
-      sourceLang: sourceLang || undefined,
-    })
-      .then((result) => {
-        if (cancelled || !result) return;
-        setTranslated(result);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        if (formatErrorReason(error).includes('TRANSLATE_ENDPOINT_MISSING')) {
-          toast.error('Tõlke endpoint puudub. Ava Seaded → Tõlge ja salvesta URL.');
-          return;
-        }
-        notifyTranslationWarning(formatErrorReason(error));
-        if (error instanceof TranslateEtHttpError) {
-          setErrorStatus(error.status);
-        } else {
-          setErrorStatus(0);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [shouldTranslate, id, title, bodyText]);
-
-  return { translated, loading, errorStatus };
-}
-
-function useOnceVisible<T extends HTMLElement>(rootMargin = '120px') {
-  const ref = useRef<T | null>(null);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    if (visible) return;
-    const node = ref.current;
-    if (!node) return;
-    if (typeof IntersectionObserver === 'undefined') {
-      setVisible(true);
-      return;
-    }
-
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        setVisible(true);
-        observer.disconnect();
-      }
-    }, { rootMargin, threshold: 0.01 });
-
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [visible, rootMargin]);
-
-  return [ref, visible] as const;
-}
-
-function useDebouncedTrue(value: boolean, delayMs: number): boolean {
-  const [debounced, setDebounced] = useState(false);
-
-  useEffect(() => {
-    if (!value) {
-      setDebounced(false);
-      return;
-    }
-    const timer = window.setTimeout(() => setDebounced(true), delayMs);
-    return () => window.clearTimeout(timer);
-  }, [value, delayMs]);
-
-  return debounced;
-}
-
 /* Main component */
 export default function NewsTab() {
   const queryClient = useQueryClient();
@@ -420,11 +272,9 @@ export default function NewsTab() {
   const appLocale = resolveAppLocale();
   const showEtContent = isEstonianLocale(appLocale);
   const autoTranslateEnabled = isAutoTranslateNewsToEtEnabled();
-  const [translateEndpoint, setTranslateEndpoint] = useState(() => resolveEndpoint());
   const [resolvedProxyBase, setResolvedProxyBase] = useState(() => getProxyBase());
   const [activeProxyName, setActiveProxyName] = useState(() => getProxyMode(getProxyBase()));
   const [lastNewsFetchErrorShort, setLastNewsFetchErrorShort] = useState('');
-  const endpointConfigured = Boolean(translateEndpoint);
   const utf8Probe = 'Kõik allikad õäöü';
 
   useEffect(() => {
@@ -439,16 +289,6 @@ export default function NewsTab() {
       });
     }
   }, [utf8Probe]);
-
-  useEffect(() => {
-    const refreshEndpoint = () => setTranslateEndpoint(resolveEndpoint());
-    window.addEventListener('storage', refreshEndpoint);
-    window.addEventListener(TRANSLATION_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
-    return () => {
-      window.removeEventListener('storage', refreshEndpoint);
-      window.removeEventListener(TRANSLATION_ENDPOINT_UPDATED_EVENT, refreshEndpoint);
-    };
-  }, []);
 
   useEffect(() => {
     const refreshProxy = () => {
@@ -647,7 +487,12 @@ const {
       const fnName = 'news-refresh';
       const { data, error } = await supabase.functions.invoke(fnName, {
         method: 'POST',
-        body: { reason: 'manual', cache_images: true, cache_limit: 10 },
+        body: {
+          reason: 'manual',
+          cache_images: true,
+          cache_limit: 10,
+          translateForeignNews: autoTranslateEnabled,
+        },
       });
       if (error) throw new Error(error.message || `${fnName}: ${formatErrorReason(error)}`);
       return data;
@@ -808,10 +653,8 @@ const {
                 item={item}
                 sources={sources}
                 proxyBase={resolvedProxyBase}
-                birdingPolandSourceId={birdingPolandSourceId}
                 showEtContent={showEtContent}
                 autoTranslateEnabled={autoTranslateEnabled}
-                endpointConfigured={endpointConfigured}
                 onOpen={() => openArticle(item)}
                 onToggleArchive={() => toggleArchive(item.id, item.is_archived)}
               />
@@ -824,38 +667,24 @@ const {
 }
 
 /* News Card */
-function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtContent, autoTranslateEnabled, endpointConfigured, onOpen, onToggleArchive }: {
+function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnabled, onOpen, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
   proxyBase: string;
-  birdingPolandSourceId: string | null;
   showEtContent: boolean;
   autoTranslateEnabled: boolean;
-  endpointConfigured: boolean;
   onOpen: () => void;
   onToggleArchive: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const [cardRef, isVisible] = useOnceVisible<HTMLDivElement>();
-  const debouncedVisible = useDebouncedTrue(isVisible, 180);
   const sourceName = sourceLabel(item, sources);
   const isBirdingPoland = sourceName === 'Birding Poland';
   const primaryThumb = getNewsImageSrc(item, proxyBase);
   const [thumbSrc, setThumbSrc] = useState<string | null>(primaryThumb);
-  const translation = useEtTranslation({
-    enabled: showEtContent && autoTranslateEnabled && debouncedVisible,
-    id: item.id,
-    title: item.title,
-    body: item.body || item.summary,
-    sourceLang: item.source_lang || item.language,
-    fallbackTitleEt: item.title_et,
-    fallbackBodyEt: item.body_et,
-    endpointConfigured,
-  });
   const isNonEtSource = normalizeLocale(item.source_lang || item.language || '') !== 'et';
   const hasTranslation = Boolean((item.title_et || '').trim() || (item.body_et || '').trim());
-  const isPending = isNonEtSource && !hasTranslation;
-  const useEtDisplay = isNonEtSource && hasTranslation;
+  const useEtDisplay = showEtContent && autoTranslateEnabled && isNonEtSource && hasTranslation && sourceName !== 'EOÜ';
+  const isPending = showEtContent && autoTranslateEnabled && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
   const displayTitle = useEtDisplay ? (item.title_et ?? item.title ?? '') : (item.title ?? '');
   const snippetSource = useEtDisplay
     ? (item.body_et ?? item.body ?? item.summary ?? '')
@@ -869,7 +698,7 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
   }, [primaryThumb, item.id]);
 
   return (
-    <div ref={cardRef} className="px-4 py-3 active:bg-muted/50 transition-colors">
+    <div className="px-4 py-3 active:bg-muted/50 transition-colors">
       <div className="flex gap-3">
         <button onClick={onOpen} className="w-20 h-20 rounded-lg shrink-0 bg-muted overflow-hidden">
           {thumbSrc && !imageFailed ? (
@@ -923,7 +752,7 @@ function NewsCard({ item, sources, proxyBase, birdingPolandSourceId, showEtConte
                 Tõlkimisel…
               </Badge>
             )}
-            {hasTranslation && <Badge variant="outline" className="text-xs px-1.5 py-0">Tõlgitud</Badge>}
+            {useEtDisplay && <Badge variant="outline" className="text-xs px-1.5 py-0">Tõlgitud</Badge>}
             <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at || item.created_at || item.fetched_at || '')}</span>
           </div>
           {snippet && (
@@ -961,15 +790,17 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   const [contentHtml, setContentHtml] = useState<string | null>(item.content_html);
   const [loadingContent, setLoadingContent] = useState(!item.content_html && item.source_slug === 'eoy');
   const [contentError, setContentError] = useState<string | null>(null);
+  const sourceName = sourceLabel(item, sources);
 
   const normalizedLang = normalizeLocale(item.source_lang || item.language || '');
   const isNonEtSource = normalizedLang !== 'et';
   const hasTranslation = Boolean((item.title_et || '').trim() || (item.body_et || '').trim());
+  const canShowTranslated = showEtContent && autoTranslateEnabled && isNonEtSource && hasTranslation && sourceName !== 'EOÜ';
 
   // Per-item view mode persisted in localStorage, default = translated when available
   const storageKey = `news_view_mode_${item.id}`;
   const [viewMode, setViewMode] = useState<'translated' | 'original'>(() => {
-    if (!isNonEtSource || !hasTranslation) return 'original';
+    if (!canShowTranslated) return 'original';
     const stored = localStorage.getItem(storageKey);
     if (stored === 'original') return 'original';
     return 'translated';
@@ -979,6 +810,12 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
     setViewMode(mode);
     localStorage.setItem(storageKey, mode);
   };
+
+  useEffect(() => {
+    if (canShowTranslated) return;
+    setViewMode('original');
+    localStorage.setItem(storageKey, 'original');
+  }, [canShowTranslated, storageKey]);
 
   useEffect(() => {
     if (item.content_html || item.source_slug !== 'eoy') return;
@@ -1006,10 +843,9 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
     return () => { cancelled = true; };
   }, [item.id, item.content_html, item.source_slug]);
 
-  const sourceName = sourceLabel(item, sources);
   const proxyBase = getProxyBase();
-  const showTranslated = isNonEtSource && hasTranslation && viewMode === 'translated';
-  const showToggle = isNonEtSource && hasTranslation;
+  const showTranslated = canShowTranslated && viewMode === 'translated';
+  const showToggle = canShowTranslated;
 
   const displayTitle = showTranslated ? (item.title_et ?? item.title ?? '') : (item.title ?? '');
   const mergedBody = item.body || item.summary;
@@ -1024,7 +860,7 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   const rewrittenContentHtml = contentHtml ? rewriteImgSrcToProxy(contentHtml, sourceName, proxyBase) : null;
   const bodyHtmlWithoutDuplicateHero = rewrittenContentHtml ? stripLeadingSameImage(rewrittenContentHtml, heroSrc) : null;
   const originalUrl = item.permalink_url || item.url || '#';
-  const isPending = isNonEtSource && !hasTranslation;
+  const isPending = showEtContent && autoTranslateEnabled && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
 
   useEffect(() => {
     setHeroSrc(heroImageUrl);

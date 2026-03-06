@@ -10,7 +10,7 @@ const corsHeaders = {
 const COOLDOWN_MS = 10 * 60 * 1000;
 const BIRDING_POLAND_KEY = "facebook_birdingpoland";
 const IS_DEV = Deno.env.get("DENO_DEPLOYMENT_ID") == null;
-const AUTO_TRANSLATE_TO_ET = (Deno.env.get("AUTO_TRANSLATE_TO_ET") || "true").toLowerCase() !== "false";
+const CANONICAL_NEWS_TRANSLATION_FUNCTION = "translate-news-item-et";
 
 type PullResult = { source: string; fetched: number; inserted: number; skipped: boolean; error?: string; debug?: Record<string, unknown> };
 
@@ -109,7 +109,7 @@ async function translateViaEdgeFunction(id: string): Promise<void> {
     return;
   }
 
-  const res = await fetch(`${supabaseUrl}/functions/v1/translate-news-item-et`, {
+  const res = await fetch(`${supabaseUrl}/functions/v1/${CANONICAL_NEWS_TRANSLATION_FUNCTION}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -120,7 +120,7 @@ async function translateViaEdgeFunction(id: string): Promise<void> {
   });
 
   if (!res.ok) {
-    throw new Error(`translate-news-item-et HTTP ${res.status}`);
+    throw new Error(`${CANONICAL_NEWS_TRANSLATION_FUNCTION} HTTP ${res.status}`);
   }
 }
 
@@ -145,7 +145,7 @@ async function cacheNewsImageById(id: string, source: string, itemUrl: string | 
   return cached || null;
 }
 
-async function pullRssSource({ source, supabase, proxyBase }: { source: any; supabase: any; proxyBase: string }): Promise<PullResult> {
+async function pullRssSource({ source, supabase, proxyBase, globalTranslateSetting }: { source: any; supabase: any; proxyBase: string; globalTranslateSetting: boolean }): Promise<PullResult> {
   const sourceKey = String(source.source_key || source.key || source.slug || "unknown").trim() || "unknown";
   const feedUrl = normalizeSourceUrl(String(source.feed_url || "").trim());
   if (!feedUrl) {
@@ -221,6 +221,10 @@ async function pullRssSource({ source, supabase, proxyBase }: { source: any; sup
 
     const guid = `${source.slug}:${externalId}`;
     const lang = sourceKey === BIRDING_POLAND_KEY ? "pl" : "et";
+    const sourceName = String(source.name || source.slug || "unknown").trim() || "unknown";
+    const sourceTranslateToEt = sourceName === "EOÜ" || source.slug === "eoy"
+      ? false
+      : source.translate_to_et === true;
     const originalTitle = item.title || item.body.slice(0, 80) || "";
     const originalBody = item.body || "";
     const contentHash = await sha256Hex(`${originalTitle}\n${originalBody}`);
@@ -283,7 +287,16 @@ async function pullRssSource({ source, supabase, proxyBase }: { source: any; sup
       }
     }
 
-    if (lang !== "et" && AUTO_TRANSLATE_TO_ET && upserted?.id) {
+    const translationSkipped = sourceName === "EOÜ" || lang === "et" || !sourceTranslateToEt || !globalTranslateSetting;
+    console.log("[news-translate]", {
+      source: sourceName,
+      detected_language: lang,
+      translate_to_et: sourceTranslateToEt,
+      global_translate_setting: globalTranslateSetting,
+      skipped: translationSkipped,
+      handler: CANONICAL_NEWS_TRANSLATION_FUNCTION,
+    });
+    if (!translationSkipped && upserted?.id) {
       const shouldTranslate = !upserted.title_et || !upserted.body_et || upserted.translate_hash !== contentHash;
       if (shouldTranslate) {
         try {
@@ -355,6 +368,7 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const force = body.force === true;
+    const globalTranslateSetting = body.translateForeignNews !== false;
     const proxyBase = resolveProxyBase(body?.proxyBase);
 
     const supabase = createClient(
@@ -404,7 +418,7 @@ Deno.serve(async (req) => {
       if (kind === "scrape") {
         return pullScrapeSource({ source, supabase });
       }
-      return pullRssSource({ source, supabase, proxyBase });
+      return pullRssSource({ source, supabase, proxyBase, globalTranslateSetting });
     });
 
     const settled = await Promise.allSettled(tasks);

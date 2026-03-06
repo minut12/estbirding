@@ -3,7 +3,9 @@ import { getOpenAIConfig, translateToEstonian } from "./openai.ts";
 
 export interface NewsTranslationItem {
   id: string;
+  source_name?: string | null;
   source_key: string | null;
+  translate_to_et?: boolean | null;
   title: string | null;
   body: string | null;
   source_lang: string | null;
@@ -16,6 +18,7 @@ export interface TranslateResult {
   id: string;
   status: "done" | "error";
   skipped: boolean;
+  handler: "translate-news-item-et";
   reason?: string;
   source_lang?: string;
   error?: string;
@@ -40,6 +43,10 @@ export function normalizeLocaleCode(value: string | null | undefined): string {
   const trimmed = String(value || "").trim().toLowerCase();
   if (!trimmed) return "";
   return trimmed.split(/[-_]/)[0] || trimmed;
+}
+
+function isEoySource(item: NewsTranslationItem): boolean {
+  return String(item.source_name || "").trim() === "EOÜ" || String(item.source_key || "").trim() === "eoy";
 }
 
 export async function sha256Hex(input: string): Promise<string> {
@@ -92,7 +99,7 @@ async function detectSourceLanguage(item: NewsTranslationItem, title: string, bo
   const known = normalizeLocaleCode(item.source_lang);
   if (known) return known;
   if (item.source_key === "facebook_birdingpoland") return "pl";
-  if (item.source_key === "eoy") return "et";
+  if (isEoySource(item)) return "et";
   return heuristicLanguage(title, body) || await classifyLanguageWithOpenAI(title, body);
 }
 
@@ -106,17 +113,50 @@ export async function translateNewsItemToEt(
   const contentHash = await sha256Hex(`${title}\n${bodyText}`);
   const sourceLang = await detectSourceLanguage(item, title, bodyText);
   const normalizedSourceLang = normalizeLocaleCode(sourceLang);
-  const isEstonianSource = item.source_key === "eoy" || normalizedSourceLang === "et";
+  const sourceName = String(item.source_name || item.source_key || "unknown").trim() || "unknown";
+  const translateToEt = isEoySource(item) ? false : item.translate_to_et === true;
+  const isEstonianSource = isEoySource(item) || normalizedSourceLang === "et";
+
+  console.log("[news-translate]", {
+    source: sourceName,
+    detected_language: normalizedSourceLang || "unknown",
+    translate_to_et: translateToEt,
+    global_translate_setting: "pipeline",
+    skipped: isEstonianSource || !translateToEt,
+    handler: "translate-news-item-et",
+  });
 
   if (isEstonianSource) {
     await supabase.from("news_items").update({
       source_lang: "et",
       translation_status: "done",
       translation_error: null,
-      translated_at: new Date().toISOString(),
+      title_et: null,
+      body_et: null,
+      translated_at: null,
       translate_hash: contentHash,
     }).eq("id", id);
-    return { id, status: "done", skipped: true, reason: "already_estonian", source_lang: "et" };
+    return { id, status: "done", skipped: true, handler: "translate-news-item-et", reason: "already_estonian", source_lang: "et" };
+  }
+
+  if (!translateToEt) {
+    await supabase.from("news_items").update({
+      source_lang: normalizedSourceLang || sourceLang,
+      title_et: null,
+      body_et: null,
+      translation_status: "done",
+      translation_error: null,
+      translated_at: null,
+      translate_hash: contentHash,
+    }).eq("id", id);
+    return {
+      id,
+      status: "done",
+      skipped: true,
+      handler: "translate-news-item-et",
+      reason: "source_translation_disabled",
+      source_lang: normalizedSourceLang || sourceLang,
+    };
   }
 
   if (item.title_et && item.body_et && item.translate_hash === contentHash) {
@@ -125,7 +165,14 @@ export async function translateNewsItemToEt(
       translation_status: "done",
       translation_error: null,
     }).eq("id", id);
-    return { id, status: "done", skipped: true, reason: "hash_match", source_lang: normalizedSourceLang || sourceLang };
+    return {
+      id,
+      status: "done",
+      skipped: true,
+      handler: "translate-news-item-et",
+      reason: "hash_match",
+      source_lang: normalizedSourceLang || sourceLang,
+    };
   }
 
   try {
@@ -145,7 +192,7 @@ export async function translateNewsItemToEt(
       translate_hash: contentHash,
     }).eq("id", id);
 
-    return { id, status: "done", skipped: false, source_lang: normalizedSourceLang || sourceLang };
+    return { id, status: "done", skipped: false, handler: "translate-news-item-et", source_lang: normalizedSourceLang || sourceLang };
   } catch (translateError) {
     const errorText = String((translateError as Error)?.message || translateError).slice(0, 240);
     await supabase.from("news_items").update({
@@ -154,7 +201,14 @@ export async function translateNewsItemToEt(
       translation_error: errorText,
     }).eq("id", id);
 
-    return { id, status: "error", skipped: false, source_lang: normalizedSourceLang || sourceLang, error: errorText };
+    return {
+      id,
+      status: "error",
+      skipped: false,
+      handler: "translate-news-item-et",
+      source_lang: normalizedSourceLang || sourceLang,
+      error: errorText,
+    };
   }
 }
 

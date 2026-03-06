@@ -19,7 +19,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { id, slug, source_key, key, feed_url, is_enabled } = await req.json();
+    const { id, slug, source_key, key, name, type, feed_url, is_enabled, translate_to_et } = await req.json();
     if (!id) {
       return new Response(JSON.stringify({ error: "Missing id" }), {
         status: 400,
@@ -35,8 +35,9 @@ Deno.serve(async (req) => {
     const updates: Record<string, any> = {};
     if (feed_url !== undefined) updates.feed_url = feed_url;
     if (typeof is_enabled === "boolean") updates.is_enabled = is_enabled;
+    if (typeof translate_to_et === "boolean") updates.translate_to_et = translate_to_et;
 
-    let query = supabase.from("news_sources").update(updates);
+    let query = supabase.from("news_sources").update(updates).select("id");
     if (id) {
       query = query.or(`id.eq.${id},slug.eq.${id},source_key.eq.${id},key.eq.${id}`);
     } else if (slug || source_key || key) {
@@ -45,9 +46,28 @@ Deno.serve(async (req) => {
         .join(",");
       query = query.or(filters);
     }
-    const { error } = await query;
+    const { data, error } = await query;
 
     if (error) throw error;
+    if ((data || []).length === 0) {
+      const insertPayload: Record<string, any> = {
+        name: String(name || id || slug || source_key || key || "").trim(),
+        slug: String(slug || id || "").trim(),
+        source_key: String(source_key || id || slug || "").trim() || null,
+        key: String(key || id || slug || "").trim() || null,
+        type: String(type || "rss").trim() || "rss",
+        is_enabled: typeof is_enabled === "boolean" ? is_enabled : true,
+        translate_to_et: String(name || "").trim() === "EOÜ" || String(slug || id || "").trim() === "eoy"
+          ? false
+          : translate_to_et === true,
+      };
+      if (feed_url !== undefined) insertPayload.feed_url = feed_url;
+      if (!insertPayload.name || !insertPayload.slug) {
+        throw new Error("Missing name or slug for new source");
+      }
+      const { error: insertError } = await supabase.from("news_sources").insert(insertPayload);
+      if (insertError) throw insertError;
+    }
 
     return new Response(
       JSON.stringify({ success: true }),

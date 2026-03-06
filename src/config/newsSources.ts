@@ -4,6 +4,7 @@ export interface NewsSourceConfigItem {
   kind: "scrape" | "rss";
   url: string;
   enabled: boolean;
+  translate_to_et: boolean;
 }
 
 export const DEFAULT_NEWS_SOURCES: NewsSourceConfigItem[] = [
@@ -13,6 +14,7 @@ export const DEFAULT_NEWS_SOURCES: NewsSourceConfigItem[] = [
     kind: "scrape",
     url: "https://www.eoy.ee/ET/uudised/",
     enabled: true,
+    translate_to_et: false,
   },
   {
     id: "birding_poland",
@@ -20,8 +22,6 @@ export const DEFAULT_NEWS_SOURCES: NewsSourceConfigItem[] = [
     kind: "rss",
     url: "https://rss.app/feeds/75MPfQwrc0XNIjzd.xml",
     enabled: true,
+    translate_to_et: true,
   },
 ];
-
-
-

@@ -205,7 +205,6 @@
     <input type="checkbox" id="toggleAutoElu30m" />
     <span>Auto refresh (30m)</span>
   </label>
-  <button id="btnToggle7p" class="btn secondary" title="Toggle 7-day filter">7p: OFF</button>
 </div>
 <div id="snapshotBanner" class="snapshot-banner" style="display:none"></div>
 <div class="fetch-controls">
@@ -2503,6 +2502,17 @@ async function refreshAllElurikkusOnce(){
   const progEl = document.getElementById('indexProgress') || document.getElementById('fetchProgress');
   const eluProg = document.getElementById('eluProgress');
   const eluLastCoord = document.getElementById('eluLastCoord');
+  function getClientLatestDateShort(){
+    const raw = String(updateClientDataMaxAtFromPoints() || '').trim();
+    const m = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    return m ? m[1] : '-';
+  }
+  function setEluRefreshStatus(done, total, updated, moved, errors){
+    const line = 'Elurikkus refresh: ' + done + '/' + total + ' | updated:' + updated + ' moved:' + moved + ' errors:' + errors + ' | clientLatest:' + getClientLatestDateShort();
+    if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = line; }
+    if(progEl) progEl.textContent = '';
+    if(eluLastCoord) eluLastCoord.textContent = '';
+  }
   let updated = 0, moved = 0, errors = 0;
   const total = list.length;
   for(let i = 0; i < total; i++){
@@ -2514,16 +2524,10 @@ async function refreshAllElurikkusOnce(){
       const r = await autoFetchCoords(name, searchUrl, signal);
       if(r && r.updated) updated++;
       if(r && r.moved) moved++;
-      const line = 'Elurikkus refresh: ' + (i + 1) + '/' + total + ' | last:' + name + ' | updated:' + updated + ' | moved:' + moved + ' | errors:' + errors + ' | clientLatest=' + (updateClientDataMaxAtFromPoints() || '-');
-      if(progEl) progEl.textContent = line;
-      if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = line; }
-      if(eluLastCoord) eluLastCoord.textContent = line;
+      setEluRefreshStatus(i + 1, total, updated, moved, errors);
     }catch(e){
       errors++;
-      const msg = 'Elurikkus refresh: ' + (i + 1) + '/' + total + ' | last:' + name + ' | updated:' + updated + ' | moved:' + moved + ' | errors:' + errors + ' | clientLatest=' + (updateClientDataMaxAtFromPoints() || '-');
-      if(progEl) progEl.textContent = msg;
-      if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = msg; }
-      if(eluLastCoord) eluLastCoord.textContent = msg;
+      setEluRefreshStatus(i + 1, total, updated, moved, errors);
     }
     __elurikkusBulkStats = { done: i + 1, total: total, updated: updated, moved: moved, errors: errors, lastKey: name };
     await new Promise(function(res){ setTimeout(res, 900); });
@@ -2536,13 +2540,11 @@ async function refreshAllElurikkusOnce(){
   const doneMsg = aborted
     ? ('Elurikkus refresh cancelled: updated:' + updated + ' moved:' + moved + ' errors:' + errors)
     : ('Elurikkus refresh done: updated:' + updated + ' moved:' + moved + ' errors:' + errors);
-  if(progEl) progEl.textContent = doneMsg;
-  if(eluProg) eluProg.textContent = doneMsg;
+  setEluRefreshStatus(Number(__elurikkusBulkStats.done || total), total, updated, moved, errors);
   if(updated > 0){
     dataMode = 'live';
     saveSnapshotLocal();
     showSnapshotBanner('Data loaded', '');
-    if(progEl) progEl.textContent = 'Elurikkus (client): latest occurrence ' + (updateClientDataMaxAtFromPoints() || '-');
   } else if(errors > 0){
     const loaded = reloadSnapshot();
     showSnapshotBanner(loaded ? 'Refresh failed. Showing last snapshot.' : 'Refresh failed and no snapshot available', loaded ? 'warn' : 'error');
@@ -5891,12 +5893,9 @@ function _wireSnapshotButtons(){
   }
   if(toggle7d && !toggle7d.__wired){
     toggle7d.checked = !!window.__recentOnly;
-    const btnToggle7p = document.getElementById('btnToggle7p');
-    if(btnToggle7p) btnToggle7p.textContent = '7p: ' + (window.__recentOnly ? 'ON' : 'OFF');
     toggle7d.addEventListener('change', function(){
       window.__recentOnly = this.checked;
       try{ localStorage.setItem(LS_RECENT_ONLY, this.checked ? '1' : '0'); }catch(e){}
-      if(btnToggle7p) btnToggle7p.textContent = '7p: ' + (window.__recentOnly ? 'ON' : 'OFF');
       rebuildAllMarkers();
       render();
       _updateDebugPanel();
@@ -6002,26 +6001,7 @@ function _wireSnapshotButtons(){
 }
 
 function _wireSidebarSettingsRow(){
-  const btnToggle7p = document.getElementById('btnToggle7p');
-
-  function refresh7pBtn(){
-    if(btnToggle7p) btnToggle7p.textContent = '7p: ' + (window.__recentOnly ? 'ON' : 'OFF');
-  }
-  refresh7pBtn();
-
-  if(btnToggle7p && !btnToggle7p.__wired){
-    btnToggle7p.addEventListener('click', function(){
-      window.__recentOnly = !window.__recentOnly;
-      try{ localStorage.setItem(LS_RECENT_ONLY, window.__recentOnly ? '1' : '0'); }catch(e){}
-      const cb = document.getElementById('toggle7days');
-      if(cb) cb.checked = !!window.__recentOnly;
-      refresh7pBtn();
-      rebuildAllMarkers();
-      render();
-      _updateDebugPanel();
-    });
-    btnToggle7p.__wired = true;
-  }
+  // Kept for backward compatibility; 7-day state is controlled only by #toggle7days.
 }
 
 // === Auto-refresh via postMessage (parent app sends these) ===
@@ -6229,33 +6209,23 @@ function updateMarker(key) {
   const c7 = Number.isFinite(occ7) && occ7 > 0 ? occ7 : null;
   const icon = avatarIcon(getDisplayAvatar(key), bcol, c7, metaCfg.rarityLevel || 'none');
   const latestDateVal = String(p.latestSeenDate || p.t || '').trim();
-  const coordDateVal = String(p.coordDate || '').trim();
   const when = latestDateVal ? '<br><small>latest record: ' + formatDateEE(latestDateVal) + '</small>' : '';
-  const coordWhen = (coordDateVal && latestDateVal && coordDateVal !== latestDateVal)
-    ? ('<br><small>coords from record: ' + formatDateEE(coordDateVal) + '</small>')
-    : '';
-  const whenDt = p.t_dt ? ('<br><small>pickedDateTime: ' + String(p.t_dt) + '</small>') : '';
   const src = p.src ? '<br><small>allikas: '+p.src+'</small>' : '';
-  const occLine = p.latestUrl ? ('<br><small>pickedOcc: ' + String(p.latestUrl).replace(/^.*occurrence\//,'') + '</small>') : '';
-  const occDbg = (VERBOSE_DEBUG && p.eluExtra && p.eluExtra.__occ7debug)
-    ? ('<br><small>occ7Debug: occ7=' + Number(p.occ7 || 0) + ' pages=' + Number(p.eluExtra.__occ7debug.pagesScanned || 0) + ' rows=' + Number(p.eluExtra.__occ7debug.rowsParsedTotal || 0) + ' unique=' + Number((p.eluExtra.__occ7debug.uniqueOcc != null ? p.eluExtra.__occ7debug.uniqueOcc : p.eluExtra.__occ7debug.unique) || 0) + ' mode=' + String(p.eluExtra.__occ7debug.pagingMode || '-') + ' cutoff=' + String(p.eluExtra.__occ7debug.cutoffIso || p.eluExtra.__occ7debug.cutoff || '-') + ' newest=' + String(p.eluExtra.__occ7debug.newestIso || '-') + ' oldest=' + String(p.eluExtra.__occ7debug.oldestIso || '-') + '</small>')
-    : '';
-  const effectiveCoordSource = String(p.coordSource || p.coords_source || '').trim();
-  const precision = (p.coords_status === 'restricted' && effectiveCoordSource && effectiveCoordSource !== 'none')
-    ? ('<br><small>coordsSource: ' + effectiveCoordSource + '</small><br><small>' + (p.coords_note || ('coords restricted \u2192 ' + ((effectiveCoordSource === 'snapshot' || effectiveCoordSource === 'snapshot_fallback') ? 'snapshot fallback' : effectiveCoordSource))) + '</small>')
-    : (effectiveCoordSource ? ('<br><small>coordsSource: ' + effectiveCoordSource + '</small>' + (p.coords_note ? ('<br><small>' + p.coords_note + '</small>') : '')) : '');
-  const lastMove = p.lastMarkerMove || null;
-  const lastDecision = p.lastCoordDecision || null;
-  const oldMoveTxt = (lastMove && isValidEE(Number(lastMove.oldLat), Number(lastMove.oldLon)))
-    ? (Number(lastMove.oldLat).toFixed(4) + ',' + Number(lastMove.oldLon).toFixed(4))
-    : '-';
-  const newMoveTxt = (lastMove && isValidEE(Number(lastMove.newLat), Number(lastMove.newLon)))
-    ? (Number(lastMove.newLat).toFixed(4) + ',' + Number(lastMove.newLon).toFixed(4))
-    : '-';
-  const movedLine = lastMove
-    ? ('<br><small>moved: ' + (lastMove.changed ? 'yes' : 'no') + ' (' + oldMoveTxt + ' \u2192 ' + newMoveTxt + ')' + (lastMove.changed ? '' : (lastDecision && lastDecision.reason ? (' reason: ' + lastDecision.reason) : '')) + '</small>')
-    : '';
-  const popupHtml = '<b>'+key+'</b>'+when+coordWhen+whenDt+(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')+src+occLine+occDbg+precision+movedLine;
+  const individualCount = (p && p.eluExtra && p.eluExtra.individualCount != null && String(p.eluExtra.individualCount).trim() !== '')
+    ? p.eluExtra.individualCount
+    : (((p && p.individualCount != null) && String(p.individualCount).trim() !== '') ? p.individualCount : '-');
+  const behavior = (p && p.eluExtra && p.eluExtra.behavior != null && String(p.eluExtra.behavior).trim() !== '')
+    ? p.eluExtra.behavior
+    : (((p && p.behavior != null) && String(p.behavior).trim() !== '') ? p.behavior : '-');
+  const collectors = (p && p.eluExtra && p.eluExtra.collectors != null && String(p.eluExtra.collectors).trim() !== '')
+    ? p.eluExtra.collectors
+    : (((p && p.collectors != null) && String(p.collectors).trim() !== '') ? p.collectors : '-');
+  const popupHtml = '<b>'+key+'</b>'+when
+    +(Number.isFinite(p.occ7)?'<br><small>' + ((window.ET_STRINGS && window.ET_STRINGS.days7) || '7 p\u00e4eva vaatlused') + ': '+p.occ7+'</small>':'')
+    +src
+    +'<br><small>Individual count: ' + escapeHtml(String(individualCount)) + '</small>'
+    +'<br><small>Behavior: ' + escapeHtml(String(behavior)) + '</small>'
+    +'<br><small>Collectors: ' + escapeHtml(String(collectors)) + '</small>';
   const old = prevMarker && prevMarker.getLatLng ? prevMarker.getLatLng() : null;
   if(prevMarker){
     try{

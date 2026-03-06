@@ -90,7 +90,7 @@
 .marker-crown{position:absolute;left:50%;top:0;transform:translateX(-50%);width:26px;height:26px;display:flex;align-items:center;justify-content:center;
   filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))}
 .marker-crown svg{width:26px;height:26px;display:block}
-.marker-count{position:absolute;left:50%;top:56px;transform:translateX(-50%);min-width:28px;padding:1px 6px;border-radius:10px;background:rgba(255,255,255,.92);border:1px solid #111;font-size:12px;line-height:14px;font-weight:700;text-align:center;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.marker-count{position:absolute;left:50%;transform:translateX(-50%);bottom:-8px;min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:#fff;border:2px solid #555;color:#000;font-size:13px;line-height:18px;font-weight:700;text-align:center;box-sizing:border-box;z-index:3;box-shadow:0 1px 2px rgba(0,0,0,.2)}
 .marker-count.mig-on{background:rgba(40,180,70,.95);color:#fff;border-color:#1c6b25}
 .marker-count.mig-off{background:rgba(255,160,0,.95);color:#111;border-color:#8a5a00}
 .popupBtn{
@@ -1031,6 +1031,12 @@ function countOcc7FromRowsIso(rows){
     seen.add(r.occId);
     if(r.iso >= cutoff) n++;
   }
+  return n;
+}
+function getMarkerCount(p){
+  let n = Number.isFinite(p && p.occ7) ? p.occ7 : 0;
+  const within7d = (typeof isWithin7dAny === 'function') ? isWithin7dAny(p && p.t) : false;
+  if(within7d && n < 1) n = 1;
   return n;
 }
 function cutoffMs7d(){
@@ -6201,7 +6207,7 @@ function rarityToBorder(level, fallback){
 function _markerIcon(avatarUrl, borderColor, count7d, rarityLevel){
   const color = rarityToBorder(rarityLevel, borderColor || '#222');
   const style = window.getRarityStyle ? window.getRarityStyle(rarityLevel || 'none') : null;
-  const count = Number.isFinite(count7d)
+  const count = Number.isFinite(count7d) && count7d >= 1
     ? '<div class="marker-count" title="Vaatlused viimase 7 päeva jooksul">' + count7d + '</div>'
     : '';
   const rarityBadge = rarityToBadge(rarityLevel)
@@ -6309,7 +6315,7 @@ function updateMarker(key) {
   }
 
   const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
-  const occ7 = (p.occ7 === 0 || p.occ7) ? Number(p.occ7) : NaN;
+  const markerCount = getMarkerCount(p);
   const passesRecent = (!window.__recentOnly) || hasRecentObservation(p);
   const isVisible = (p.visible !== false) && passesRecent && hasCoords;
   if (!isVisible) {
@@ -6326,7 +6332,7 @@ function updateMarker(key) {
   __renderedMarkerCount++;
   const bcol = _borderColorByDate(p.t);
   const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
-  const c7 = Number.isFinite(occ7) && occ7 > 0 ? occ7 : null;
+  const c7 = Number.isFinite(markerCount) && markerCount >= 1 ? markerCount : null;
   const icon = avatarIcon(getDisplayAvatar(key), bcol, c7, metaCfg.rarityLevel || 'none');
   const popupHtml = buildPopupHtml(key, p);
   const old = prevMarker && prevMarker.getLatLng ? prevMarker.getLatLng() : null;

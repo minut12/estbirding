@@ -1107,7 +1107,11 @@ async function computeOcc7Offset(text, tryFetchHtml, signal){
 }
 async function computeOcc7MultiPage(species, signal, maxPages){
   const fetcher = function(u, sig){ return tryFetch(u, { signal: sig, cache:'no-store' }); };
-  return computeOcc7Offset(species, fetcher, signal);
+  const res = await computeOcc7Offset(species, fetcher, signal);
+  if(Number.isFinite(maxPages) && Number.isFinite(res && res.pagesScanned)){
+    res.maxPages = maxPages;
+  }
+  return res;
 }
 function dateIsoFromAny(s){
   const str = String(s || '').trim();
@@ -1589,6 +1593,16 @@ function extractNewestOccurrenceUrlFromSearch(searchHtml){
   const href = a ? a.getAttribute('href') : '';
   if(!href) return '';
   return href.startsWith('http') ? href : ('https://elurikkus.ee' + (href.startsWith('/') ? href : '/' + href));
+}
+function extractDetailCoords(detailHtml){
+  const latStr = extractFromInnerText(detailHtml, 'Latitude');
+  const lonStr = extractFromInnerText(detailHtml, 'Longitude');
+  const lat = parseFloat(String(latStr || '').replace(',', '.'));
+  const lon = parseFloat(String(lonStr || '').replace(',', '.'));
+  if(Number.isFinite(lat) && Number.isFinite(lon) && lat > 57 && lat < 60.7 && lon > 21 && lon < 28.5){
+    return [lat, lon];
+  }
+  return null;
 }
 function extractNextPageUrl(searchHtml){
   const doc = new DOMParser().parseFromString(String(searchHtml || ''), 'text/html');
@@ -2330,11 +2344,7 @@ async function autoFetchCoords(key, searchUrl, signal){
       detailFields = parseElurikkusDetailFields(detailHtml, newestDetailUrl);
       detailExtra = parseElurikkusExtraFromText(detailHtml, newestDetailUrl);
       const det = parseEluDetailExtras(detailHtml, newestDetailUrl);
-      const latStr = extractFromInnerText(detailHtml, 'Latitude');
-      const lonStr = extractFromInnerText(detailHtml, 'Longitude');
-      const parsedLat = parseFloat(String(latStr || '').replace(',', '.'));
-      const parsedLon = parseFloat(String(lonStr || '').replace(',', '.'));
-      const validDetailCoords = Number.isFinite(parsedLat) && Number.isFinite(parsedLon) && parsedLat > 56 && parsedLat < 60.5 && parsedLon > 20 && parsedLon < 29;
+      const newestDetailCoords = extractDetailCoords(detailHtml);
       console.log('ELU EXTRA PARSED', species, detailExtra);
       if(p.eluExtra){
         p.eluExtra.detailUrl = newestDetailUrl || p.eluExtra.detailUrl || '';
@@ -2348,52 +2358,13 @@ async function autoFetchCoords(key, searchUrl, signal){
         p.eluExtra.communes = extractFromInnerText(detailHtml,'Communes') || det.communes || '';
         p.eluExtra.eestiOmavalitsused = extractFromInnerText(detailHtml,'Eesti omavalitsused') || det.eestiOmavalitsused || '';
       }
-      if(!coords && validDetailCoords){
-        coords = [parsedLat, parsedLon];
+      if(!coords && newestDetailCoords){
+        coords = newestDetailCoords;
         coordDate = dateIsoFromAny(String((rows[0] && rows[0].dateText) || '')) || dateIsoFromAny(extractEventDate(detailHtml) || '');
         coordSource = 'elurikkus_occurrence_detail';
         if(!eventDate) eventDate = extractEventDate(detailHtml);
       }
     }catch(e){}
-  }
-  if(!coords && !detailHtml) {
-    const probeRows = rows && rows.length ? rows : [{ occUrl: findFirstDetailLink(searchHtml), dateText: eventDate || '' }];
-    for(let i = 0; i < Math.min(10, probeRows.length); i++){
-      const occUrl = String((probeRows[i] && probeRows[i].occUrl) || '').trim();
-      if(!occUrl) continue;
-      detailUrl = occUrl;
-      try{
-        detailHtml = await tryFetch(_withCacheBuster(occUrl), { signal: signal });
-        const latStr = extractFromInnerText(detailHtml, 'Latitude');
-        const lonStr = extractFromInnerText(detailHtml, 'Longitude');
-        const parsedLat = parseFloat(String(latStr || '').replace(',', '.'));
-        const parsedLon = parseFloat(String(lonStr || '').replace(',', '.'));
-        const validDetailCoords = Number.isFinite(parsedLat) && Number.isFinite(parsedLon) && parsedLat > 56 && parsedLat < 60.5 && parsedLon > 20 && parsedLon < 29;
-        detailFields = parseElurikkusDetailFields(detailHtml, occUrl);
-        detailExtra = parseElurikkusExtraFromText(detailHtml, occUrl);
-        const det = parseEluDetailExtras(detailHtml, occUrl);
-        console.log('ELU EXTRA PARSED', species, detailExtra);
-        if(p.eluExtra){
-          p.eluExtra.detailUrl = occUrl || p.eluExtra.detailUrl || '';
-          p.eluExtra.individualCount = extractFromInnerText(detailHtml,'Individual count') || p.eluExtra.individualCount || '';
-          p.eluExtra.behavior = extractFromInnerText(detailHtml,'Behavior') || p.eluExtra.behavior || '';
-          p.eluExtra.collectors = extractFromInnerText(detailHtml,'Collectors') || p.eluExtra.collectors || '';
-          p.eluExtra.municipality = extractFromInnerText(detailHtml,'Municipality') || det.municipality || '';
-          p.eluExtra.locality = extractFromInnerText(detailHtml,'Locality') || det.locality || '';
-          p.eluExtra.county = extractFromInnerText(detailHtml,'County') || det.county || '';
-          p.eluExtra.districts = extractFromInnerText(detailHtml,'Districts') || det.districts || '';
-          p.eluExtra.communes = extractFromInnerText(detailHtml,'Communes') || det.communes || '';
-          p.eluExtra.eestiOmavalitsused = extractFromInnerText(detailHtml,'Eesti omavalitsused') || det.eestiOmavalitsused || '';
-        }
-        if(validDetailCoords){
-          coords = [parsedLat, parsedLon];
-          coordDate = dateIsoFromAny(String((probeRows[i] && probeRows[i].dateText) || '')) || dateIsoFromAny(extractEventDate(detailHtml) || '');
-          coordSource = 'elurikkus_occurrence_detail';
-          if(!eventDate) eventDate = extractEventDate(detailHtml);
-          break;
-        }
-      }catch(e){}
-    }
   }
 
   const prevCoordsValid = _hasFiniteCoord(oldLat) && _hasFiniteCoord(oldLon);
@@ -2516,7 +2487,7 @@ async function autoFetchCoords(key, searchUrl, signal){
     }
     p.src = 'Elurikkus';
     p.lastFetched = detailFetchedAt;
-    let occ7Write = (nextOcc7 === null ? (Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : 0) : nextOcc7);
+    let occ7Write = (nextOcc7 === null ? 0 : nextOcc7);
     const prev = Number.isFinite(p.occ7) ? p.occ7 : null;
     if(isWithin7dAny(p.t) && occ7Write < 1) occ7Write = 1;
     if(occ7Write === 0 && isWithin7dAny(p.t) && prev != null && prev > 0) occ7Write = prev;

@@ -998,6 +998,18 @@ function isIsoWithin7d(iso){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
   return v >= cutoffIso7dLocal();
 }
+function countOcc7FromRowsIso(rows){
+  const cutoff = cutoffIso7dLocal();
+  const seen = new Set();
+  let n = 0;
+  for(const r of rows || []){
+    if(!r || !r.occId || !r.iso) continue;
+    if(seen.has(r.occId)) continue;
+    seen.add(r.occId);
+    if(r.iso >= cutoff) n++;
+  }
+  return n;
+}
 function cutoffMs7d(){
   return Date.now() - 7*24*60*60*1000;
 }
@@ -2217,18 +2229,13 @@ async function autoFetchCoords(key, searchUrl, signal){
   let eventDate = extractEventDate(searchHtml);
   const rows = extractOccurrenceCandidates(searchHtml);
   const occ7Dates = parseEluRowDatesFromSearchHtml(searchHtml).map(dateIsoFromAny).filter(Boolean);
-  const rows1 = parseEluRowsIso(searchHtml);
-  const cutoffIso = cutoffIso7dLocal();
-  const seenPage1 = new Set();
-  for(let i = 0; i < rows1.length; i++){
-    const r = rows1[i] || {};
-    if(r.occId && r.iso && String(r.iso) >= cutoffIso) seenPage1.add(String(r.occId));
-  }
-  const occ7Page1 = seenPage1.size;
+  const rows1 = parseEluRowsResilient(searchHtml);
+  const occ7Page1 = countOcc7FromRowsIso(rows1);
   const newestIsoPage1 = (rows1[0] && rows1[0].iso) ? String(rows1[0].iso) : rows1.reduce(function(a, r){
     const iso = String((r && r.iso) || '');
     return iso > a ? iso : a;
   }, '');
+  if(newestIsoPage1) p.t = newestIsoPage1;
   const prevOcc7 = Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : null;
   let occ7Multi = null;
   let occ7 = occ7Page1;

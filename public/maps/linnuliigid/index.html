@@ -975,6 +975,20 @@ function cutoffIso7d(){
   midnight.setDate(midnight.getDate() - 7);
   return isoDateLocal(midnight);
 }
+function cutoffIso7dLocal(){
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  d.setDate(d.getDate() - 7);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const da = String(d.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + da;
+}
+function isIsoWithin7d(iso){
+  const v = String(iso || '').slice(0, 10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  return v >= cutoffIso7dLocal();
+}
 function cutoffMs7d(){
   return Date.now() - 7*24*60*60*1000;
 }
@@ -2194,24 +2208,42 @@ async function autoFetchCoords(key, searchUrl, signal){
   let eventDate = extractEventDate(searchHtml);
   const rows = extractOccurrenceCandidates(searchHtml);
   const occ7Dates = parseEluRowDatesFromSearchHtml(searchHtml).map(dateIsoFromAny).filter(Boolean);
+  const rows1 = parseEluRowsIso(searchHtml);
+  const cutoffIso = cutoffIso7dLocal();
+  const seenPage1 = new Set();
+  for(let i = 0; i < rows1.length; i++){
+    const r = rows1[i] || {};
+    if(r.occId && r.iso && String(r.iso) >= cutoffIso) seenPage1.add(String(r.occId));
+  }
+  const occ7Page1 = seenPage1.size;
+  const newestIsoPage1 = (rows1[0] && rows1[0].iso) ? String(rows1[0].iso) : rows1.reduce(function(a, r){
+    const iso = String((r && r.iso) || '');
+    return iso > a ? iso : a;
+  }, '');
   const prevOcc7 = Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : null;
   let occ7Multi = null;
-  let occ7 = prevOcc7;
+  let occ7 = occ7Page1;
+  let multipageRowsParsedTotal = 0;
+  let pagingMode = 'page1';
   try{
     occ7Multi = await computeOcc7MultiPage(species, signal, 20);
     p.eluExtra = p.eluExtra || {};
-    if(Number(occ7Multi && occ7Multi.rowsParsedTotal || 0) === 0){
-      p.eluExtra.__occ7debug = Object.assign({ error: 'rowsParsedTotal=0' }, occ7Multi || {});
-      occ7 = prevOcc7;
-    } else {
-      occ7 = Number.isFinite(Number(occ7Multi.occ7)) ? Number(occ7Multi.occ7) : prevOcc7;
+    multipageRowsParsedTotal = Number(occ7Multi && occ7Multi.rowsParsedTotal || 0) || 0;
+    pagingMode = String((occ7Multi && occ7Multi.pagingMode) || 'page1');
+    if(multipageRowsParsedTotal > 0){
+      occ7 = Number.isFinite(Number(occ7Multi.occ7)) ? Number(occ7Multi.occ7) : occ7Page1;
       p.eluExtra.__occ7debug = occ7Multi || null;
+    } else {
+      occ7 = occ7Page1;
+      p.eluExtra.__occ7debug = Object.assign({ warning: 'rowsParsedTotal=0', fallback: 'page1' }, occ7Multi || {});
     }
     p.eluExtra.__pages = Number((occ7Multi && occ7Multi.pagesScanned) || 0) || 0;
   }catch(e){
     p.eluExtra = p.eluExtra || {};
-    occ7 = (prevOcc7 != null ? prevOcc7 : (Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : 0));
-    p.eluExtra.__occ7debug = { error: String((e && e.message) ? e.message : e), keptOcc7: occ7 };
+    occ7 = occ7Page1;
+    multipageRowsParsedTotal = 0;
+    pagingMode = 'error';
+    p.eluExtra.__occ7debug = { error: String((e && e.message) ? e.message : e), fallback: 'page1', occ7Page1: occ7Page1 };
   }
   try{ save(); }catch(e){}
   try{ render(); }catch(e){}
@@ -2219,7 +2251,21 @@ async function autoFetchCoords(key, searchUrl, signal){
     .map(function(r){ return dateIsoFromAny(String(r && r.dateText || '')); })
     .filter(Boolean)
     .reduce(function(a,b){ return b > a ? b : a; }, '');
-  const newest = String((occ7Multi && occ7Multi.newestIso) || '') || occ7Dates.reduce(function(a,b){ return b > a ? b : a; }, '') || newestFromRows;
+  const newest = String((occ7Multi && occ7Multi.newestIso) || '') || newestIsoPage1 || occ7Dates.reduce(function(a,b){ return b > a ? b : a; }, '') || newestFromRows;
+  let occ7Computed = Number.isFinite(Number(occ7)) ? Number(occ7) : 0;
+  if(isIsoWithin7d(newest) && occ7Computed < 1) occ7Computed = 1;
+  if(multipageRowsParsedTotal === 0 && occ7Page1 === 0 && prevOcc7 != null) occ7Computed = prevOcc7;
+  if(isIsoWithin7d(newest) && prevOcc7 != null && prevOcc7 > occ7Computed) occ7Computed = prevOcc7;
+  occ7 = occ7Computed;
+  p.eluExtra = p.eluExtra || {};
+  p.eluExtra.__occ7Debug = {
+    newestIso: newest || '',
+    occ7_page1: occ7Page1,
+    occ7Computed: occ7Computed,
+    rows1: rows1.length,
+    multipageRowsParsedTotal: multipageRowsParsedTotal,
+    pagingMode: pagingMode
+  };
   let latestSeenDate = newest || '';
   let coordDate = '';
   let coordSource = '';

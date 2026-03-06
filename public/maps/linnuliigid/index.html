@@ -998,6 +998,29 @@ function isIsoWithin7d(iso){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
   return v >= cutoffIso7dLocal();
 }
+function fmtDateEE(s){
+  if(!s) return '-';
+  const str = String(s).trim();
+  let m = str.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
+  if(m) return `${m[1]}.${m[2]}.${m[3]}`;
+  m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return `${m[3]}.${m[2]}.${m[1]}`;
+  return str;
+}
+function isoFromAny(s){
+  if(!s) return '';
+  const str = String(s).trim();
+  let m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = str.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
+  if(m) return `${m[3]}-${m[2]}-${m[1]}`;
+  return '';
+}
+function isWithin7dAny(dateStr){
+  const iso = isoFromAny(dateStr);
+  if(!iso) return false;
+  return iso >= cutoffIso7dLocal();
+}
 function countOcc7FromRowsIso(rows){
   const cutoff = cutoffIso7dLocal();
   const seen = new Set();
@@ -2269,9 +2292,9 @@ async function autoFetchCoords(key, searchUrl, signal){
     .reduce(function(a,b){ return b > a ? b : a; }, '');
   const newest = String((occ7Multi && occ7Multi.newestIso) || '') || newestIsoPage1 || occ7Dates.reduce(function(a,b){ return b > a ? b : a; }, '') || newestFromRows;
   let occ7Computed = Number.isFinite(Number(occ7)) ? Number(occ7) : 0;
-  if(isIsoWithin7d(newest) && occ7Computed < 1) occ7Computed = 1;
+  if(isWithin7dAny(p.t || newest) && occ7Computed < 1) occ7Computed = 1;
   if(multipageRowsParsedTotal === 0 && occ7Page1 === 0 && prevOcc7 != null) occ7Computed = prevOcc7;
-  if(isIsoWithin7d(newest) && prevOcc7 != null && prevOcc7 > occ7Computed) occ7Computed = prevOcc7;
+  if(isWithin7dAny(p.t || newest) && prevOcc7 != null && prevOcc7 > occ7Computed) occ7Computed = prevOcc7;
   occ7 = occ7Computed;
   p.eluExtra = p.eluExtra || {};
   p.eluExtra.__occ7Debug = {
@@ -2483,7 +2506,11 @@ async function autoFetchCoords(key, searchUrl, signal){
     }
     p.src = 'Elurikkus';
     p.lastFetched = detailFetchedAt;
-    p.occ7 = (nextOcc7 === null ? (Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : 0) : nextOcc7);
+    let occ7Write = (nextOcc7 === null ? (Number.isFinite(Number(p.occ7)) ? Number(p.occ7) : 0) : nextOcc7);
+    const prev = Number.isFinite(p.occ7) ? p.occ7 : null;
+    if(isWithin7dAny(p.t) && occ7Write < 1) occ7Write = 1;
+    if(occ7Write === 0 && isWithin7dAny(p.t) && prev != null && prev > 0) occ7Write = prev;
+    p.occ7 = occ7Write;
     p.occ7Source = 'elurikkus_records_table';
     p.occ7PagesScanned = Number((occ7Multi && occ7Multi.pagesScanned) || 0) || 0;
     p.occ7DatesSample = (occ7Dates || []).slice(0, 10);
@@ -2496,7 +2523,11 @@ async function autoFetchCoords(key, searchUrl, signal){
     changed = true;
   }
   if(nextOcc7 !== null && Number(p.occ7) !== nextOcc7){
-    p.occ7 = nextOcc7;
+    let occ7Write = nextOcc7;
+    const prev = Number.isFinite(p.occ7) ? p.occ7 : null;
+    if(isWithin7dAny(p.t) && occ7Write < 1) occ7Write = 1;
+    if(occ7Write === 0 && isWithin7dAny(p.t) && prev != null && prev > 0) occ7Write = prev;
+    p.occ7 = occ7Write;
     p.occ7Source = 'elurikkus_records_table';
     p.occ7PagesScanned = Number((occ7Multi && occ7Multi.pagesScanned) || 0) || 0;
     p.occ7DatesSample = (occ7Dates || []).slice(0, 10);
@@ -6350,8 +6381,9 @@ function buildPopupHtml(key, p){
   const ind = val(x.individualCount ?? p.individualCount);
   const beh = val(x.behavior ?? p.behavior);
   const col = val(x.collectors ?? p.collectors);
-  const latest = val(p.t);
-  const occ7 = Number.isFinite(p.occ7) ? p.occ7 : '-';
+  const latest = fmtDateEE(val(p.t));
+  let occ7 = Number.isFinite(p.occ7) ? p.occ7 : 0;
+  if(isWithin7dAny(p.t) && occ7 < 1) occ7 = 1;
   const src = val(p.src);
   const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
   const lat = hasCoords ? p.lat.toFixed(5) : '';

@@ -50,7 +50,7 @@
 .rarity-select{font-size:12px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;vertical-align:middle}
 
 
-  /* === Kevadrände (esimesed saabumised) paneel === */
+  /* === KevadrÃ¤nde (esimesed saabumised) paneel === */
   #springPanel{display:none;margin:8px 0 0;background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,0.10);overflow:hidden}
   #springHeader{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:#f8fafc;border-bottom:1px solid #e5e7eb}
   #springHeader .title{font-size:13px;color:#334155}
@@ -75,10 +75,10 @@
   <aside id="sidebar">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <h2 style="margin:0">Linnuliigid 2026</h2>
-      <button id="sidebarToggle" class="btn secondary" style="display:none;font-size:11px;padding:4px 10px" onclick="document.getElementById('sidebar').classList.toggle('collapsed');this.textContent=this.textContent==='▲ Peida'?'▼ Näita':'▲ Peida'">▲ Peida</button>
+      <button id="sidebarToggle" class="btn secondary" style="display:none;font-size:11px;padding:4px 10px" onclick="document.getElementById('sidebar').classList.toggle('collapsed');this.textContent=this.textContent==='â–² Peida'?'â–¼ NÃ¤ita':'â–² Peida'">â–² Peida</button>
     </div>
     <details>
-      <summary>Auto‑fetch options</summary>
+      <summary>Autoâ€‘fetch options</summary>
       <div class="small">
        <label>Proxy base (optional): <input id="proxyBase" placeholder="e.g. https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/proxy?url=" style="width:100%"></label>
         <p>Leave empty to use the default Supabase proxy:<br>
@@ -92,12 +92,15 @@
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
       <button id="exportBtn" class="btn">Export</button>
       <button id="importBtn" class="btn secondary">Import</button>
-      <button id="springImportBtn" class="btn secondary" title="Impordi kevadise varaseima/tavapärase saabumise kuupäevad .txt failist">Spring .txt</button>
-      <button id="springExportBtn" class="btn secondary" title="Ekspordi kevadise varaseima/tavapärase saabumise kuupäevad JSON-ina">Spring export</button>
+      <button id="springImportBtn" class="btn secondary" title="Impordi kevadise varaseima/tavapÃ¤rase saabumise kuupÃ¤evad .txt failist">Spring .txt</button>
+      <button id="springExportBtn" class="btn secondary" title="Ekspordi kevadise varaseima/tavapÃ¤rase saabumise kuupÃ¤evad JSON-ina">Spring export</button>
       <button id="resetBtn" class="btn secondary">Reset</button>
-      <button id="recentToggle" class="btn secondary" title="Näita ainult viimase 7 päeva (rohelised) vaatlusmarkereid — vaikimisi VÄLJAS">7p: OFF</button>
+      <label class="btn secondary" style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap" title="Show markers from last 7 days only">
+        <input type="checkbox" id="toggle7days" style="transform:translateY(1px)" />
+        <span>7 days only</span>
+      </label>
     </div>
-    <input id="filterBox" type="text" placeholder="Filter…" />
+    <input id="filterBox" type="text" placeholder="Filterâ€¦" />
     <div id="list"></div>
   </aside>
   <main id="map"></main>
@@ -113,7 +116,7 @@ function notifySilent(msg){
 window._realAlert = window.alert;
 window.alert = function(msg){ notifySilent(msg); };
 
-// --- Per‑species clear: remove coords/date/occ/src and marker immediately ---
+// --- Perâ€‘species clear: remove coords/date/occ/src and marker immediately ---
 
 function clearOccurrence(key){
   try{
@@ -152,25 +155,25 @@ function clearOccurrence(key){
 <script>
 // === Species (Estonian labels used as the search term) ===
 const SPECIES = [
-"Aed-põõsalind", "Aed-roolind", "Aedporr", "Alk", "Alverüdi", "Ameerika piilpart", "Atlantise tormilind", "Aul", "Baleaari tormilind", "Euroopa kaelustäks", "Habekakk", "Habeviires", "Hahk", "Hakk", "Hall-kärbsenäpp", "Hallhaigur", "Hallhani", "Hallkibu", "Hallpea-rähn",
- "Hallpõsk-pütt", "Hallrästas", "Hallrüdi", "Halltsiitsitaja", "Hallvares", "Hallõgija", "Hangelind", "Harakas", "Haugaskotkas", "Hele-urvalind", "Heletilder", "Herilaseviu", "Hiireviu", "Hoburästas", "Händkakk", "Hänilane", "Hõbehaigur", "Hõbehaugas", "Hõbekajakas", "Hüüp",
- "Ida-mustvaeras", "Jahipistrik", "Jämejalg", "Järvekaur", "Jääkajakas", "Jääkaur", "Jääkoskel", "Jõgi-ritsiklind", "Jõgitiir", "Jõgitilder", "Jõgivästrik", "Kadakatäks", "Kaelus-kärbsenäpp", "Kaelus-turteltuvi", "Kaeluskotkas", "Kaelusrästas", "Kaelustuvi", "Kalakajakas", "Kalakotkas", "Kalda-rädilind",
- "Kaldapääsuke", "Kaljukajakas", "Kaljukotkas", "Kanada lagle", "Kanakull", "Kanepilind", "Karbuskajakas", "Karkjalg", "Karmiinleevike", "Karvasjalg-kakk", "Karvasjalg-viu", "Kassikakk", "Kiivitaja", "Kiripugu-rüdi", "Kirjuhahk", "Kivikakk", "Kivirullija", "Kivitäks", "Kodukakk", "Kodutuvi",
- "Koduvarblane", "Koldhaigur", "Koldjalg-hõbekajakas", "Koldvint", "Kormoran", "Krüüsel", "Kukkurtihane", "Kuld-lehelind", "Kuldhänilane", "Kuldnokk", "Kuldtsiitsitaja", "Kuninghahk", "Kuuse-käbilind", "Käblik", "Kägu", "Käharpelikan", "Käosulane", "Kääbuskormoran", "Kääbuskotkas", "Kõnnuõgija",
- "Kõrbe-kivitäks", "Kõrbe-põõsalind", "Kõrkja-roolind", "Kõrvukräts", "Kõvernokk-rüdi", "Kühmnokk-luik", "Künnivares", "Laanenäär", "Laanepüü", "Laanerähn", "Laisaba-änn", "Lammitilder", "Lapi tsiitsitaja", "Lasuurtihane", "Lauk", "Laululuik", "Laulurästas", "Leeterüdi", "Leevike", "Liiv-kivitäks",
- "Liivatüll", "Linavästrik", "Loorkakk", "Luitsnokk-iibis", "Luitsnokk-part", "Lumehani", "Lumekakk", "Lääne-lehelind", "Lääne-pöialpoiss", "Lõopistrik", "Lõuna-hõbekajakas", "Lühinokk-hani", "Madukotkas", "Mandariinpart", "Merikajakas", "Merikotkas", "Merirüdi", "Merisk", "Merivart", "Mesilasenäpp",
- "Mets-lehelind", "Metsis", "Metskiur", "Metskurvits", "Metstilder", "Metsvint", "Mudanepp", "Mudatilder", "Must-harksaba", "Must-kärbsenäpp", "Must-lepalind", "Must-toonekurg", "Mustjalg-tüll", "Mustkael-pütt", "Mustkurk-raat", "Mustlagle", "Mustlauk-õgija", "Mustpea-põõsalind", "Mustpea-tsiitsitaja", "Mustpugu-rästas",
- "Musträhn", "Musträstas", "Mustsaba-vigle", "Musttihane", "Mustvaeras", "Mustvares", "Mustviires", "Mägi-kanepilind", "Mägikiur", "Männi-käbilind", "Männileevike", "Männitalvike", "Mänsak", "Naaskelnokk", "Naerukajakas", "Naerutiir", "Niidu-kaelustäks", "Niidu-ritsiklind", "Niidukiur", "Nunn-kivitäks",
- "Nurmkana", "Nõgipart", "Nõlva-lehelind", "Nõmmekiur", "Nõmmelõoke", "Ohakalind", "Ohhoota hõbekajakas", "Padu-roolind", "Pasknäär", "Peegel-tormilind", "Pelikan", "Peoleo", "Piilpart", "Piiritaja", "Pikksaba-änn", "Plütt", "Plüü", "Polaarkajakas", "Porr", "Prillvaeras",
- "Pruunselg-põõsalind", "Puna-harksaba", "Puna-veetallaja", "Punajalg-pistrik", "Punajalg-tilder", "Punakael-lagle", "Punakurk-kaur", "Punanokk-vart", "Punapea-vart", "Punapea-õgija", "Punarind", "Punasaba-õgija", "Punaselg-õgija", "Purpurhaigur", "Puukoristaja", "Põhja-kirjurästas", "Põhja-lehelind", "Põhja-tormipääsu", "Põhjatihane", "Põhjatsiitsitaja",
- "Põhjavint", "Põldlõoke", "Põldtsiitsitaja", "Põldvarblane", "Põldvutt", "Pöialpoiss", "Rabapistrik", "Rabapüü", "Raisakotkas", "Randkajakas", "Randkiur", "Randtiir", "Rasvatihane", "Raudkull", "Ristpart", "Roherähn", "Rohevint", "Rohukoskel", "Rohunepp", "Ronk",
- "Roo-loorkull", "Roo-ritsiklind", "Roohabekas", "Rooruik", "Roosa-kuldnokk", "Roosakajakas", "Roosatiir", "Roostepääsuke", "Roosterind-tüll", "Rootsiitsitaja", "Rubiinööbik", "Rukkirääk", "Ruugerüdi", "Rägapart", "Rästas-roolind", "Räusktiir", "Rääkspart", "Räästapääsuke", "Rüüt", "Sabatihane",
- "Salu-lehelind", "Salupäll", "Salutihane", "Sarviklõoke", "Sarvikpütt", "Siberi lehelind", "Siberi raat", "Siidhaigur", "Siidisaba", "Siisike", "Sinikael-part", "Siniraag", "Sinirind", "Sinisaba", "Sinitihane", "Soo-loorkull", "Soo-roolind", "Sookiur", "Sookurg", "Soopart",
- "Sooräts", "Soorüdi", "Stepi-loorkull", "Stepikajakas", "Stepikiivitaja", "Stepikotkas", "Stepipistrik", "Stepiviu", "Suitsupääsuke", "Suula", "Suur-kirjurähn", "Suur-konnakotkas", "Suur-laukhani", "Suurkoovitaja", "Suurnokk-vint", "Suurrüdi", "Suuränn", "Sõtkas", "Söödikänn", "Tait",
- "Talvike", "Tamme-kirjurähn", "Teder", "Tiigi-roolind", "Tikutaja", "Triip-ritsiklind", "Tuhk-lehelind", "Tumetilder", "Tundra-rabahani", "Tundrakaur", "Tundrakiur", "Tutkas", "Tutt-tihane", "Tutt-tiir", "Tuttlõoke", "Tuttpütt", "Tuttvart", "Tuuletallaja", "Täpikhuik",
- "Tõmmu-lehelind", "Tõmmuiibis", "Tõmmukajakas", "Tõmmuvaeras", "Urvalind", "Vaaraohani", "Vaenukägu", "Vainurästas", "Valge-toonekurg", "Valgepõsk-lagle", "Valgeselg-kirjurähn", "Valgesilm-vart", "Valgetiib-viires", "Veetallaja", "Veisehaigur", "Vesipapp", "Vihitaja", "Viupart", "Väike-kirjurähn", "Väike-konnakotkas",
- "Väike-käosulane", "Väike-kärbsenäpp", "Väike-laukhani", "Väike-lehelind", "Väike-põõsalind", "Väikealk", "Väikehuik", "Väikehüüp", "Väikekajakas", "Väikekoovitaja", "Väikekoskel", "Väikeluik", "Väikepistrik", "Väikepütt", "Väikerüdi", "Väiketiir", "Väiketrapp", "Väiketsiitsitaja", "Väiketüll", "Välja-loorkull",
- "Välja-väikelõoke", "Värbkakk", "Värbrüdi", "Väänkael", "Võsa-ritsiklind", "Võsaraat", "Vööt-käbilind", "Vööt-põõsalind", "Vööthani", "Vöötkakk", "Vöötnokk-kajakas", "Vöötsaba-vigle", "Õõnetuvi", "Ööbik", "Ööhaigur", "Öösorr"];
+"Aed-pÃµÃµsalind", "Aed-roolind", "Aedporr", "Alk", "AlverÃ¼di", "Ameerika piilpart", "Atlantise tormilind", "Aul", "Baleaari tormilind", "Euroopa kaelustÃ¤ks", "Habekakk", "Habeviires", "Hahk", "Hakk", "Hall-kÃ¤rbsenÃ¤pp", "Hallhaigur", "Hallhani", "Hallkibu", "Hallpea-rÃ¤hn",
+ "HallpÃµsk-pÃ¼tt", "HallrÃ¤stas", "HallrÃ¼di", "Halltsiitsitaja", "Hallvares", "HallÃµgija", "Hangelind", "Harakas", "Haugaskotkas", "Hele-urvalind", "Heletilder", "Herilaseviu", "Hiireviu", "HoburÃ¤stas", "HÃ¤ndkakk", "HÃ¤nilane", "HÃµbehaigur", "HÃµbehaugas", "HÃµbekajakas", "HÃ¼Ã¼p",
+ "Ida-mustvaeras", "Jahipistrik", "JÃ¤mejalg", "JÃ¤rvekaur", "JÃ¤Ã¤kajakas", "JÃ¤Ã¤kaur", "JÃ¤Ã¤koskel", "JÃµgi-ritsiklind", "JÃµgitiir", "JÃµgitilder", "JÃµgivÃ¤strik", "KadakatÃ¤ks", "Kaelus-kÃ¤rbsenÃ¤pp", "Kaelus-turteltuvi", "Kaeluskotkas", "KaelusrÃ¤stas", "Kaelustuvi", "Kalakajakas", "Kalakotkas", "Kalda-rÃ¤dilind",
+ "KaldapÃ¤Ã¤suke", "Kaljukajakas", "Kaljukotkas", "Kanada lagle", "Kanakull", "Kanepilind", "Karbuskajakas", "Karkjalg", "Karmiinleevike", "Karvasjalg-kakk", "Karvasjalg-viu", "Kassikakk", "Kiivitaja", "Kiripugu-rÃ¼di", "Kirjuhahk", "Kivikakk", "Kivirullija", "KivitÃ¤ks", "Kodukakk", "Kodutuvi",
+ "Koduvarblane", "Koldhaigur", "Koldjalg-hÃµbekajakas", "Koldvint", "Kormoran", "KrÃ¼Ã¼sel", "Kukkurtihane", "Kuld-lehelind", "KuldhÃ¤nilane", "Kuldnokk", "Kuldtsiitsitaja", "Kuninghahk", "Kuuse-kÃ¤bilind", "KÃ¤blik", "KÃ¤gu", "KÃ¤harpelikan", "KÃ¤osulane", "KÃ¤Ã¤buskormoran", "KÃ¤Ã¤buskotkas", "KÃµnnuÃµgija",
+ "KÃµrbe-kivitÃ¤ks", "KÃµrbe-pÃµÃµsalind", "KÃµrkja-roolind", "KÃµrvukrÃ¤ts", "KÃµvernokk-rÃ¼di", "KÃ¼hmnokk-luik", "KÃ¼nnivares", "LaanenÃ¤Ã¤r", "LaanepÃ¼Ã¼", "LaanerÃ¤hn", "Laisaba-Ã¤nn", "Lammitilder", "Lapi tsiitsitaja", "Lasuurtihane", "Lauk", "Laululuik", "LaulurÃ¤stas", "LeeterÃ¼di", "Leevike", "Liiv-kivitÃ¤ks",
+ "LiivatÃ¼ll", "LinavÃ¤strik", "Loorkakk", "Luitsnokk-iibis", "Luitsnokk-part", "Lumehani", "Lumekakk", "LÃ¤Ã¤ne-lehelind", "LÃ¤Ã¤ne-pÃ¶ialpoiss", "LÃµopistrik", "LÃµuna-hÃµbekajakas", "LÃ¼hinokk-hani", "Madukotkas", "Mandariinpart", "Merikajakas", "Merikotkas", "MerirÃ¼di", "Merisk", "Merivart", "MesilasenÃ¤pp",
+ "Mets-lehelind", "Metsis", "Metskiur", "Metskurvits", "Metstilder", "Metsvint", "Mudanepp", "Mudatilder", "Must-harksaba", "Must-kÃ¤rbsenÃ¤pp", "Must-lepalind", "Must-toonekurg", "Mustjalg-tÃ¼ll", "Mustkael-pÃ¼tt", "Mustkurk-raat", "Mustlagle", "Mustlauk-Ãµgija", "Mustpea-pÃµÃµsalind", "Mustpea-tsiitsitaja", "Mustpugu-rÃ¤stas",
+ "MustrÃ¤hn", "MustrÃ¤stas", "Mustsaba-vigle", "Musttihane", "Mustvaeras", "Mustvares", "Mustviires", "MÃ¤gi-kanepilind", "MÃ¤gikiur", "MÃ¤nni-kÃ¤bilind", "MÃ¤nnileevike", "MÃ¤nnitalvike", "MÃ¤nsak", "Naaskelnokk", "Naerukajakas", "Naerutiir", "Niidu-kaelustÃ¤ks", "Niidu-ritsiklind", "Niidukiur", "Nunn-kivitÃ¤ks",
+ "Nurmkana", "NÃµgipart", "NÃµlva-lehelind", "NÃµmmekiur", "NÃµmmelÃµoke", "Ohakalind", "Ohhoota hÃµbekajakas", "Padu-roolind", "PasknÃ¤Ã¤r", "Peegel-tormilind", "Pelikan", "Peoleo", "Piilpart", "Piiritaja", "Pikksaba-Ã¤nn", "PlÃ¼tt", "PlÃ¼Ã¼", "Polaarkajakas", "Porr", "Prillvaeras",
+ "Pruunselg-pÃµÃµsalind", "Puna-harksaba", "Puna-veetallaja", "Punajalg-pistrik", "Punajalg-tilder", "Punakael-lagle", "Punakurk-kaur", "Punanokk-vart", "Punapea-vart", "Punapea-Ãµgija", "Punarind", "Punasaba-Ãµgija", "Punaselg-Ãµgija", "Purpurhaigur", "Puukoristaja", "PÃµhja-kirjurÃ¤stas", "PÃµhja-lehelind", "PÃµhja-tormipÃ¤Ã¤su", "PÃµhjatihane", "PÃµhjatsiitsitaja",
+ "PÃµhjavint", "PÃµldlÃµoke", "PÃµldtsiitsitaja", "PÃµldvarblane", "PÃµldvutt", "PÃ¶ialpoiss", "Rabapistrik", "RabapÃ¼Ã¼", "Raisakotkas", "Randkajakas", "Randkiur", "Randtiir", "Rasvatihane", "Raudkull", "Ristpart", "RoherÃ¤hn", "Rohevint", "Rohukoskel", "Rohunepp", "Ronk",
+ "Roo-loorkull", "Roo-ritsiklind", "Roohabekas", "Rooruik", "Roosa-kuldnokk", "Roosakajakas", "Roosatiir", "RoostepÃ¤Ã¤suke", "Roosterind-tÃ¼ll", "Rootsiitsitaja", "RubiinÃ¶Ã¶bik", "RukkirÃ¤Ã¤k", "RuugerÃ¼di", "RÃ¤gapart", "RÃ¤stas-roolind", "RÃ¤usktiir", "RÃ¤Ã¤kspart", "RÃ¤Ã¤stapÃ¤Ã¤suke", "RÃ¼Ã¼t", "Sabatihane",
+ "Salu-lehelind", "SalupÃ¤ll", "Salutihane", "SarviklÃµoke", "SarvikpÃ¼tt", "Siberi lehelind", "Siberi raat", "Siidhaigur", "Siidisaba", "Siisike", "Sinikael-part", "Siniraag", "Sinirind", "Sinisaba", "Sinitihane", "Soo-loorkull", "Soo-roolind", "Sookiur", "Sookurg", "Soopart",
+ "SoorÃ¤ts", "SoorÃ¼di", "Stepi-loorkull", "Stepikajakas", "Stepikiivitaja", "Stepikotkas", "Stepipistrik", "Stepiviu", "SuitsupÃ¤Ã¤suke", "Suula", "Suur-kirjurÃ¤hn", "Suur-konnakotkas", "Suur-laukhani", "Suurkoovitaja", "Suurnokk-vint", "SuurrÃ¼di", "SuurÃ¤nn", "SÃµtkas", "SÃ¶Ã¶dikÃ¤nn", "Tait",
+ "Talvike", "Tamme-kirjurÃ¤hn", "Teder", "Tiigi-roolind", "Tikutaja", "Triip-ritsiklind", "Tuhk-lehelind", "Tumetilder", "Tundra-rabahani", "Tundrakaur", "Tundrakiur", "Tutkas", "Tutt-tihane", "Tutt-tiir", "TuttlÃµoke", "TuttpÃ¼tt", "Tuttvart", "Tuuletallaja", "TÃ¤pikhuik",
+ "TÃµmmu-lehelind", "TÃµmmuiibis", "TÃµmmukajakas", "TÃµmmuvaeras", "Urvalind", "Vaaraohani", "VaenukÃ¤gu", "VainurÃ¤stas", "Valge-toonekurg", "ValgepÃµsk-lagle", "Valgeselg-kirjurÃ¤hn", "Valgesilm-vart", "Valgetiib-viires", "Veetallaja", "Veisehaigur", "Vesipapp", "Vihitaja", "Viupart", "VÃ¤ike-kirjurÃ¤hn", "VÃ¤ike-konnakotkas",
+ "VÃ¤ike-kÃ¤osulane", "VÃ¤ike-kÃ¤rbsenÃ¤pp", "VÃ¤ike-laukhani", "VÃ¤ike-lehelind", "VÃ¤ike-pÃµÃµsalind", "VÃ¤ikealk", "VÃ¤ikehuik", "VÃ¤ikehÃ¼Ã¼p", "VÃ¤ikekajakas", "VÃ¤ikekoovitaja", "VÃ¤ikekoskel", "VÃ¤ikeluik", "VÃ¤ikepistrik", "VÃ¤ikepÃ¼tt", "VÃ¤ikerÃ¼di", "VÃ¤iketiir", "VÃ¤iketrapp", "VÃ¤iketsiitsitaja", "VÃ¤iketÃ¼ll", "VÃ¤lja-loorkull",
+ "VÃ¤lja-vÃ¤ikelÃµoke", "VÃ¤rbkakk", "VÃ¤rbrÃ¼di", "VÃ¤Ã¤nkael", "VÃµsa-ritsiklind", "VÃµsaraat", "VÃ¶Ã¶t-kÃ¤bilind", "VÃ¶Ã¶t-pÃµÃµsalind", "VÃ¶Ã¶thani", "VÃ¶Ã¶tkakk", "VÃ¶Ã¶tnokk-kajakas", "VÃ¶Ã¶tsaba-vigle", "Ã•Ãµnetuvi", "Ã–Ã¶bik", "Ã–Ã¶haigur", "Ã–Ã¶sorr"];
 
 // Build species objects with direct links to /search
 const DATA = SPECIES.map(name => ({ est: name, url: 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(name) }));
@@ -179,74 +182,74 @@ const DATA = SPECIES.map(name => ({ est: name, url: 'https://elurikkus.ee/app/oc
 const LS_AVATARS='bm_rari_avatars', LS_POINTS='bm_rari_points', LS_PROXY='bm_rari_proxy', LS_NAMES='bm_rari_names', LS_SPRING='bm_rari_spring_dates';
 const LS_SPRING_YEARFIRST = 'spring_yearfirst_v1';
 
-// Default spring migration “usual/earliest” dates parsed from "Saabuvad rändlinnud 2025.a kevadel.txt"
+// Default spring migration â€œusual/earliestâ€ dates parsed from "Saabuvad rÃ¤ndlinnud 2025.a kevadel.txt"
 // Format: "D.MM" (day without leading zero, month 2-digit)
 const DEFAULT_SPRING_DATES = {
   "Heletilder": "6.04",
   "Herilaseviu": "5.05",
-  "Hänilane": "14.04",
-  "Jõgitiir": "21.03",
-  "Kadakatäks": "22.04",
-  "Kaelusrästas": "17.04",
+  "HÃ¤nilane": "14.04",
+  "JÃµgitiir": "21.03",
+  "KadakatÃ¤ks": "22.04",
+  "KaelusrÃ¤stas": "17.04",
   "Kalakotkas": "31.03",
-  "Kaldapääsuke": "29.04",
+  "KaldapÃ¤Ã¤suke": "29.04",
   "Karmiinleevike": "6.05",
   "Kivirullija": "6.05",
-  "Kivitäks": "2.04",
+  "KivitÃ¤ks": "2.04",
   "Koldvint": "6.04",
   "Kukkurtihane": "1.04",
-  "Kuldhänilane": "12.04",
-  "Käosulane": "4.05",
+  "KuldhÃ¤nilane": "12.04",
+  "KÃ¤osulane": "4.05",
   "Lammitilder": "14.04",
   "Lapi tsiitsitaja": "5.04",
   "Lepalind": "12.04",
-  "Linavästrik": "18.03",
-  "Lõopistrik": "19.04",
+  "LinavÃ¤strik": "18.03",
+  "LÃµopistrik": "19.04",
   "Madukotkas": "26.04",
   "Metskiur": "8.04",
   "Metstilder": "24.03",
   "Mudatilder": "9.04",
   "Mustlagle": "30.03",
   "Mustviires": "29.04",
-  "Nõmmelõoke": "10.03",
+  "NÃµmmelÃµoke": "10.03",
   "Peoleo": "6.05",
   "Piiritaja": "3.05",
-  "Plütt": "19.05",
-  "Plüü": "25.04",
-  "Põldtsiitsitaja": "4.05",
+  "PlÃ¼tt": "19.05",
+  "PlÃ¼Ã¼": "25.04",
+  "PÃµldtsiitsitaja": "4.05",
   "Rabapistrik": "11.04",
   "Randtiir": "16.04",
   "Rohunepp": "28.04",
-  "Rukkirääk": "7.05",
-  "Rägapart": "25.03",
-  "Räusk": "4.04",
-  "Räästapääsuke": "18.04",
-  "Rüüt": "5.03",
-  "Sarviklõoke": "6.03",
+  "RukkirÃ¤Ã¤k": "7.05",
+  "RÃ¤gapart": "25.03",
+  "RÃ¤usk": "4.04",
+  "RÃ¤Ã¤stapÃ¤Ã¤suke": "18.04",
+  "RÃ¼Ã¼t": "5.03",
+  "SarviklÃµoke": "6.03",
   "Sinirind": "18.04",
-  "Sooräts": "17.04",
-  "Soorüdi": "27.03",
-  "Suitsupääsuke": "10.04",
+  "SoorÃ¤ts": "17.04",
+  "SoorÃ¼di": "27.03",
+  "SuitsupÃ¤Ã¤suke": "10.04",
   "Suurkoovitaja": "25.03",
-  "Suurrüdi": "4.05",
+  "SuurrÃ¼di": "4.05",
   "Tundrakaur": "1.05",
   "Tundrakiur": "23.04",
   "Turteltuvi": "25.04",
-  "Täpikhuik": "18.04",
-  "Tõmmukajakas": "8.03",
-  "Vaenukägu": "13.04",
+  "TÃ¤pikhuik": "18.04",
+  "TÃµmmukajakas": "8.03",
+  "VaenukÃ¤gu": "13.04",
   "Veetallaja": "19.05",
   "Vihitaja": "31.03",
-  "Väikehuik": "24.04",
-  "Väikehüüp": "30.05",
-  "Väikekoovitaja": "12.04",
-  "Väikerüdi": "17.05",
-  "Väiketiir": "21.04",
-  "Väiketüll": "6.04",
-  "Värbrüdi": "20.04",
-  "Väänkael": "11.04",
-  "Ööbik": "28.04",
-  "Öösorr": "24.04"
+  "VÃ¤ikehuik": "24.04",
+  "VÃ¤ikehÃ¼Ã¼p": "30.05",
+  "VÃ¤ikekoovitaja": "12.04",
+  "VÃ¤ikerÃ¼di": "17.05",
+  "VÃ¤iketiir": "21.04",
+  "VÃ¤iketÃ¼ll": "6.04",
+  "VÃ¤rbrÃ¼di": "20.04",
+  "VÃ¤Ã¤nkael": "11.04",
+  "Ã–Ã¶bik": "28.04",
+  "Ã–Ã¶sorr": "24.04"
 };
 
 let avatars = JSON.parse(localStorage.getItem(LS_AVATARS) || '{}');
@@ -256,7 +259,7 @@ const FALLBACK_PROXY_BASE = 'https://api.allorigins.win/raw?url=';
 let proxyBase = localStorage.getItem(LS_PROXY) || DEFAULT_PROXY_BASE;
 let nameCache = JSON.parse(localStorage.getItem(LS_NAMES) || '{}'); // not really used here
 
-// Spring dates are editable and persisted separately (so they don't get wiped when you clear per‑species occurrence)
+// Spring dates are editable and persisted separately (so they don't get wiped when you clear perâ€‘species occurrence)
 let springDates = (function(){
   try{
     const saved = JSON.parse(localStorage.getItem(LS_SPRING) || 'null');
@@ -335,8 +338,8 @@ function upsertSpringYearFirst(key, candidateIso){
   // --- Border color based on recency (<=7 days = green, older = orange) ---
   
 // --- Recent-only (markers only) helpers ---
-const LS_RECENT_ONLY = 'bm_recent_only';
-window.__recentOnly = (localStorage.getItem(LS_RECENT_ONLY) === '1');
+const LS_7DAYS_ONLY = 'bm_7days_only';
+window.__sevenDaysOnly = (localStorage.getItem(LS_7DAYS_ONLY) === '1');
 function isRecent(isoDate){
   try{
     const ms = _toDay(isoDate);
@@ -390,7 +393,7 @@ function _markerIcon(avatarUrl, borderColor, isRare, count7d, isMigration){
   const color = borderColor || '#222';
   const crown = isRare ? `<div class="marker-crown">${_crownSvg()}</div>` : '';
   const migClass = isMigration ? 'mig-on' : 'mig-off';
-  const count = Number.isFinite(count7d) ? `<div class="marker-count ${migClass}" title="Vaatlused viimase 7 päeva jooksul">${count7d}</div>` : '';
+  const count = Number.isFinite(count7d) ? `<div class="marker-count ${migClass}" title="Vaatlused viimase 7 pÃ¤eva jooksul">${count7d}</div>` : '';
   const bg = avatarUrl ? `background-image:url('${avatarUrl}')` : `background-color:#29c`;
   const html = `<div class="marker-wrap">${crown}<div class="marker-circle" style="border-color:${color};${bg}"></div>${count}</div>`;
   return L.divIcon({html, className:'', iconSize:[44,72], iconAnchor:[22,36], popupAnchor:[0,-36]});
@@ -425,7 +428,7 @@ function setLocation(key) {
   if (m.length===2 && Number.isFinite(m[0]) && Number.isFinite(m[1])) {
     points[key] = points[key] || {};
     points[key].lat=m[0]; points[key].lon=m[1];
-    points[key].t = points[key].t || '(kuupäev puudub)';
+    points[key].t = points[key].t || '(kuupÃ¤ev puudub)';
     points[key].src='manual';
     if(typeof points[key].visible!=='boolean') points[key].visible=true;
     save(); updateMarker(key); render();
@@ -459,13 +462,13 @@ function setMigration(key, on){
 
 // === Spring migration dates (editable) ===
 const EE_NUM = {
-  "ühe":1,"üks":1,"kahe":2,"kaks":2,"kolme":3,"kolm":3,"nelja":4,"neli":4,"viie":5,"viis":5,
-  "kuue":6,"kuus":6,"seitsme":7,"seitse":7,"kaheksa":8,"üheksa":9,"kümme":10,"üksteist":11,
+  "Ã¼he":1,"Ã¼ks":1,"kahe":2,"kaks":2,"kolme":3,"kolm":3,"nelja":4,"neli":4,"viie":5,"viis":5,
+  "kuue":6,"kuus":6,"seitsme":7,"seitse":7,"kaheksa":8,"Ã¼heksa":9,"kÃ¼mme":10,"Ã¼ksteist":11,
   "kaksteist":12,"kolmteist":13,"neliteist":14,"viisteist":15,"kuusteist":16,"seitseteist":17,
-  "kaheksateist":18,"üheksateist":19,"kakskümmend":20,
-  "kakskümmend üks":21,"kakskümmend kaks":22,"kakskümmend kolm":23,"kakskümmend neli":24,
-  "kakskümmend viis":25,"kakskümmend kuus":26,"kakskümmend seitse":27,"kakskümmend kaheksa":28,
-  "kakskümmend üheksa":29,"kolmkümmend":30,"kolmkümmend üks":31
+  "kaheksateist":18,"Ã¼heksateist":19,"kakskÃ¼mmend":20,
+  "kakskÃ¼mmend Ã¼ks":21,"kakskÃ¼mmend kaks":22,"kakskÃ¼mmend kolm":23,"kakskÃ¼mmend neli":24,
+  "kakskÃ¼mmend viis":25,"kakskÃ¼mmend kuus":26,"kakskÃ¼mmend seitse":27,"kakskÃ¼mmend kaheksa":28,
+  "kakskÃ¼mmend Ã¼heksa":29,"kolmkÃ¼mmend":30,"kolmkÃ¼mmend Ã¼ks":31
 };
 
 function _normSpringDDMM(s){
@@ -497,7 +500,7 @@ function _dateToDdmm(dt){
 }
 function editSpringDate(key){
   const prev = (springDates && springDates[key]) ? springDates[key] : '';
-  const v = prompt(`Kevadine saabumise kuupäev (D.MM või YYYY-MM-DD)\n\n${key}`, prev || '');
+  const v = prompt(`Kevadine saabumise kuupÃ¤ev (D.MM vÃµi YYYY-MM-DD)\n\n${key}`, prev || '');
   if(v === null) return;
   if(String(v).trim() === ''){
     delete springDates[key];
@@ -506,7 +509,7 @@ function editSpringDate(key){
   }
   const n = _normSpringDDMM(v);
   if(!n){
-    notifySilent('Vigane kuupäeva formaat. Kasuta D.MM (nt 5.04) või YYYY-MM-DD.');
+    notifySilent('Vigane kuupÃ¤eva formaat. Kasuta D.MM (nt 5.04) vÃµi YYYY-MM-DD.');
     return;
   }
   springDates[key] = n;
@@ -527,7 +530,7 @@ function parseSpringDatesFromTxt(text){
   const out = {};
   const paras = String(text||'').split(/\n\s*\n/g).map(s=>s.trim()).filter(Boolean);
 
-  const entryRe = /^([A-ZÄÖÜÕŠŽ][^\n–-]{1,80}?)\s*(?:\([^)]*\))?\s*[–-]\s*([0-3]?\d\.[01]?\d)\b/;
+  const entryRe = /^([A-ZÃ„Ã–ÃœÃ•Å Å½][^\nâ€“-]{1,80}?)\s*(?:\([^)]*\))?\s*[â€“-]\s*([0-3]?\d\.[01]?\d)\b/;
   const avgParenRe = /keskmis(?:e|est|ega)[^()]{0,40}\((\d{1,2}\.\d{2})\)/i;
 
   for(const para of paras){
@@ -544,8 +547,8 @@ function parseSpringDatesFromTxt(text){
     if(mp){
       avg = _normSpringDDMM(mp[1]);
     } else {
-      // Find phrases like "... 5 päeva võrra hilisem/varasem" and compute "usual" date.
-      const re = /\b([0-9]+|[a-zäöüõšž]+)\s+p(?:äeva|äev)\b/ig;
+      // Find phrases like "... 5 pÃ¤eva vÃµrra hilisem/varasem" and compute "usual" date.
+      const re = /\b([0-9]+|[a-zÃ¤Ã¶Ã¼ÃµÅ¡Å¾]+)\s+p(?:Ã¤eva|Ã¤ev)\b/ig;
       let mm;
       while((mm = re.exec(para)) !== null){
         const token = mm[1];
@@ -612,7 +615,7 @@ function updateMarker(key) {
   const p = points[key];
   if (markers.has(key)) { map.removeLayer(markers.get(key)); markers.delete(key); }
   if (!p) return;
-  const passesRecent = (!window.__recentOnly) || isRecent(p.t);
+  const passesRecent = (!window.__sevenDaysOnly) || isRecent(p.t);
   const isVisible = (p.visible !== false) && passesRecent;
   if (isVisible && Number.isFinite(p.lat) && Number.isFinite(p.lon)) {
     const _bcol = _borderColorByDate(p.t);
@@ -620,15 +623,27 @@ function updateMarker(key) {
     const c7 = Number.isFinite(p.occ7) ? p.occ7 : null;
     const mig = !!p.migration;
     const icon = avatars[key] ? avatarIcon(avatars[key], _bcol, isRare, c7, mig) : defaultIcon(_bcol, isRare, c7, mig);
-    const when = p.t ? `<br><small>vaatluse kuupäev: ${p.t}</small>` : '';
-    const rarity = (p.rarity && String(p.rarity).trim()) ? `<br><small>rarity: ${String(p.rarity).trim()}</small>` : '';
-    const src = p.src?`<br><small>allikas: ${p.src}</small>`:'';
-    const m = L.marker([p.lat,p.lon], {icon}).addTo(map).bindPopup(`<b>${key}</b>${when}${rarity}${(Number.isFinite(p.occ7)?`<br><small>7 päeva vaatlused: ${p.occ7}</small>`:'')}${src}`);
+    const x = (p.eluExtra || {});
+    const ind = (x.individualCount ?? p.individualCount);
+    const beh = (x.behavior ?? p.behavior);
+    const colFull = (x.collectors ?? p.collectors);
+    const colText = colFull ? String(colFull) : '';
+    const colShort = colText ? (colText.length > 60 ? colText.slice(0,59)+'…' : colText) : '-';
+    const esc = (s)=>String(s==null?'-':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    const popupHtml =
+      `<b>${esc(key)}</b>` +
+      `<br><small>latest record: ${esc(p.t || '-')}</small>` +
+      `<br><small>7 päeva vaatlused: ${Number.isFinite(p.occ7) ? p.occ7 : '-'}</small>` +
+      `<br><small>allikas: ${esc(p.src || '-')}</small>` +
+      `<br><small>Individual count: ${esc(ind ?? '-')}</small>` +
+      `<br><small>Behavior: ${esc(beh || '-')}</small>` +
+      `<br><small>Collectors: <span title="${esc(colText || '-')}">${esc(colShort)}</span></small>`;
+    const m = L.marker([p.lat,p.lon], {icon}).addTo(map).bindPopup(popupHtml);
     markers.set(key, m);
   }
 }
 
-// ----- Fetch helpers (search → detail → coords + eventDate) -------
+// ----- Fetch helpers (search â†’ detail â†’ coords + eventDate) -------
 function makeFetchURL(url) {
   // cache-bust every request
   url = url + (url.includes('?') ? '&' : '?') + '_ts=' + Date.now();
@@ -661,9 +676,9 @@ function extractEstName(html) {
   let m = html.match(/"vernacularName"\s*:\s*"([^"]+)"/i);
   if (m) return m[1].trim();
   const txt = stripTags(html).replace(/\s+/g,' ').trim();
-  m = txt.match(/Tavanimetus\s*[:\-–]\s*([A-Za-zÄÖÜÕäöüõšžŠŽ\s\-']{2,80})/i);
+  m = txt.match(/Tavanimetus\s*[:\-â€“]\s*([A-Za-zÃ„Ã–ÃœÃ•Ã¤Ã¶Ã¼ÃµÅ¡Å¾Å Å½\s\-']{2,80})/i);
   if (m) return m[1].trim();
-  m = txt.match(/Tavanimetus\s+([A-Za-zÄÖÜÕäöüõšžŠŽ][A-Za-zÄÖÜÕäöüõšžŠŽ\s\-']{1,80})/i);
+  m = txt.match(/Tavanimetus\s+([A-Za-zÃ„Ã–ÃœÃ•Ã¤Ã¶Ã¼ÃµÅ¡Å¾Å Å½][A-Za-zÃ„Ã–ÃœÃ•Ã¤Ã¶Ã¼ÃµÅ¡Å¾Å Å½\s\-']{1,80})/i);
   if (m) return m[1].trim();
   return null;
 }
@@ -673,8 +688,8 @@ function extractEventDate(html) {
   // 1) DarwinCore JSON
   let m = html.match(/"eventDate"\s*:\s*"([^"]+)"/i);
   if (m) return m[1];
-  // 2) Label "Kuupäev: 2024-05-12" (or English Date:)
-  m = html.match(/(?:Kuupäev|Date)\s*[:\-–]\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/i);
+  // 2) Label "KuupÃ¤ev: 2024-05-12" (or English Date:)
+  m = html.match(/(?:KuupÃ¤ev|Date)\s*[:\-â€“]\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/i);
   if (m) return m[1];
   // 3) any yyyy-mm-dd as fallback
   m = html.match(/([0-9]{4}-[0-9]{2}-[0-9]{2})/);
@@ -688,7 +703,7 @@ function extractAllEventDates(html){
   let m;
   const reJson = /"eventDate"\s*:\s*"?(\d{4}-\d{2}-\d{2})/ig;
   while ((m = reJson.exec(html)) !== null) out.push(m[1]);
-  const reLbl = /(?:Kuupäev|Date)\s*[:\-–]\s*(\d{4}-\d{2}-\d{2})/ig;
+  const reLbl = /(?:KuupÃ¤ev|Date)\s*[:\-â€“]\s*(\d{4}-\d{2}-\d{2})/ig;
   while ((m = reLbl.exec(html)) !== null) out.push(m[1]);
   // fallback (less strict)
   if (out.length === 0){
@@ -894,7 +909,7 @@ if (changedCoords || newerDate || changedOcc7 || changedYearFirst){
   points[key] = points[key] || {};
   points[key].lat = lat; points[key].lon = lon;
   // keep the newest date when available; otherwise keep previous
-  if (newerDate || !prev.t) points[key].t = eventDate || '(kuupäev puudub)'; // <-- occurrence date from site
+  if (newerDate || !prev.t) points[key].t = eventDate || '(kuupÃ¤ev puudub)'; // <-- occurrence date from site
   points[key].src = 'Elurikkus';
   points[key].lastFetched = new Date().toISOString();
   if (Number.isFinite(occ7)) {
@@ -912,7 +927,7 @@ if (changedCoords || newerDate || changedOcc7 || changedYearFirst){
   console.log('[no change]', key);
 }
   } catch (e) {
-    notifySilent(key + ' — auto‑fetch failed: ' + e.message + '\nTip: set a proxy base and try again.');
+    notifySilent(key + ' â€” autoâ€‘fetch failed: ' + e.message + '\nTip: set a proxy base and try again.');
   }
 }
 
@@ -953,7 +968,7 @@ function rowHTML(obj) {
   const occ7 = Number.isFinite(p.occ7) ? p.occ7 : null;
   const rarityTxt = r ? ` <span class="pill">rarity:</span> ${r}` : '';
   const springVal = (springDates && springDates[key]) ? String(springDates[key]).trim() : '';
-  const springTxt = ` <span class="pill">Kevad:</span> <span class="clickable" title="Muuda kevadise saabumise kuupäeva" onclick="editSpringDate('${key}')">${springVal || '—'}</span>`;
+  const springTxt = ` <span class="pill">Kevad:</span> <span class="clickable" title="Muuda kevadise saabumise kuupÃ¤eva" onclick="editSpringDate('${key}')">${springVal || 'â€”'}</span>`;
 
   const meta = hasPoint
     ? `<span class="pill">lat:</span> ${p.lat.toFixed(4)} <span class="pill">lon:</span> ${p.lon.toFixed(4)}${p.t?` <span class="pill">date:</span> ${p.t}`:''}${(occ7!==null?` <span class="pill">7d:</span> ${occ7}`:'')}${rarityTxt}${springTxt}`
@@ -965,18 +980,18 @@ function rowHTML(obj) {
     <div class="avatar" style="background-image:url('${avatars[key]||''}');border:3px solid ${bcol}"></div>
     <div>
       <div class="top">
-        <div class="name-label clickable ${muted}" onclick="toggleVisibility('${key}')">${key}${r ? ' 👑' : ''}</div>
+        <div class="name-label clickable ${muted}" onclick="toggleVisibility('${key}')">${key}${r ? ' ðŸ‘‘' : ''}</div>
         <div class="controls">
           <a class="btn" target="_blank" href="${obj.url}">Open</a>
           <button class="btn secondary" onclick="setAvatar('${key}')">Avatar</button>
           <button class="btn secondary" onclick="setLocation('${key}')">Set loc</button>
-          <button class="btn secondary" onclick="autoFetchCoords('${key}','${obj.url}',true)">Auto‑coords</button>
+          <button class="btn secondary" onclick="autoFetchCoords('${key}','${obj.url}',true)">Autoâ€‘coords</button>
           <button class="btn secondary" onclick="clearOccurrence('${key}')">Clear</button>
           <label class="btn secondary" style="padding:4px 8px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><input type="checkbox" style="transform:translateY(1px)" ${mig?'checked':''} onchange="setMigration('${key}', this.checked)">Migration</label>
           <label style="margin-left:6px;font-size:12px;white-space:nowrap">
             Rarity:
             <select class="rarity-select" onchange="setRarity('${key}', this.value)">
-              <option value="" ${r===''?'selected':''}>—</option>
+              <option value="" ${r===''?'selected':''}>â€”</option>
               ${opt('Rare','Rare')}
               ${opt('Very rare','Very rare')}
               ${opt('Mega','Mega')}
@@ -985,7 +1000,7 @@ function rowHTML(obj) {
         </div>
       </div>
       <div class="small">${meta}</div>
-      ${p.lastFetched?`<div class="last-fetched-line">Värskendatud: ${new Date(p.lastFetched).toLocaleString([], {hour:'2-digit', minute:'2-digit', year:'numeric', month:'2-digit', day:'2-digit'}).replace(',', '')}</div>`:'' }
+      ${p.lastFetched?`<div class="last-fetched-line">VÃ¤rskendatud: ${new Date(p.lastFetched).toLocaleString([], {hour:'2-digit', minute:'2-digit', year:'numeric', month:'2-digit', day:'2-digit'}).replace(',', '')}</div>`:'' }
     </div>
   </div>`;
 }
@@ -1013,14 +1028,10 @@ try{
 
 document.getElementById('filterBox').addEventListener('input', render);
 
-// Recent-only toggle button (affects markers only)
+// 7-day checkbox (single control for recent-only marker filter)
 (function(){
-  const btn = document.getElementById('recentToggle');
-  if(!btn) return;
-  function syncBtn(){
-    if (window.__recentOnly){ btn.classList.add('on'); btn.classList.remove('secondary'); btn.textContent = '7p: ON'; }
-    else { btn.classList.remove('on'); btn.classList.add('secondary'); btn.textContent = '7p: OFF'; }
-  }
+  const cb = document.getElementById('toggle7days');
+  if(!cb) return;
   function refreshMarkersSafe(){
     try{
       if (typeof points !== 'undefined' && points){
@@ -1028,15 +1039,12 @@ document.getElementById('filterBox').addEventListener('input', render);
       }
     }catch(e){ /* no-op */ }
   }
-  btn.addEventListener('click', ()=>{
-    window.__recentOnly = !window.__recentOnly;
-    try{ localStorage.setItem(LS_RECENT_ONLY, window.__recentOnly ? '1' : '0'); }catch(e){}
-    syncBtn();
+  cb.checked = !!window.__sevenDaysOnly;
+  cb.addEventListener('change', ()=>{
+    window.__sevenDaysOnly = !!cb.checked;
+    try{ localStorage.setItem(LS_7DAYS_ONLY, window.__sevenDaysOnly ? '1' : '0'); }catch(e){}
     refreshMarkersSafe();
   });
-  // init
-  syncBtn();
-  // apply after everything is loaded
   window.addEventListener('DOMContentLoaded', refreshMarkersSafe);
   window.addEventListener('load', refreshMarkersSafe);
   setTimeout(refreshMarkersSafe, 0);
@@ -1050,7 +1058,7 @@ proxyInput.addEventListener('change', () => { proxyBase = proxyInput.value.trim(
 
 // Fetch-all buttons
 document.getElementById('fetchAllNames').onclick = async () => {
-  notifySilent('Names are already Estonian in this build – this button kept for compatibility.');
+  notifySilent('Names are already Estonian in this build â€“ this button kept for compatibility.');
 };
 document.getElementById('fetchAllCoords').onclick = async () => {
   const delay = ms => new Promise(r=>setTimeout(r, ms));
@@ -1119,21 +1127,21 @@ window.alert = function(msg){ notifySilent(msg); };
   const EBIRD_TOKEN = '9s72dc2jcjlq';
   const EBIRD_REGION = 'EE';
   const EBIRD_CODES = {
-    'Väikepistrik': 'merlin',
+    'VÃ¤ikepistrik': 'merlin',
     'Kanakull': 'norgos1', 
     'Kaljukotkas': 'goleag',
     'Rabapistrik': 'perfal',
-    'Valgeselg-kirjurähn': 'whbwoo1',
-    'Sooräts': 'sheowl',
-    'Väikehuik': 'litcra1',
-    'Laanerähn': 'ettwoo1',
+    'Valgeselg-kirjurÃ¤hn': 'whbwoo1',
+    'SoorÃ¤ts': 'sheowl',
+    'VÃ¤ikehuik': 'litcra1',
+    'LaanerÃ¤hn': 'ettwoo1',
     'Kivirullija': 'rudtur',
-    'Mägikiur': 'watpip1',
+    'MÃ¤gikiur': 'watpip1',
     'Roosa-kuldnokk': 'rossta2',
-    'Vöötkakk': 'nohowl',
-    'Väikekajakas': 'litgul',
+    'VÃ¶Ã¶tkakk': 'nohowl',
+    'VÃ¤ikekajakas': 'litgul',
     'Kanada lagle': 'cangoo',
-    'Mägi-kanepilind': 'twite1',
+    'MÃ¤gi-kanepilind': 'twite1',
     'Mudanepp': 'jacsni',
     'Kassikakk': 'eueowl1'
    
@@ -1267,9 +1275,9 @@ window.alert = function(msg){ notifySilent(msg); };
     <div class="body">
       <p style="margin:6px 0 12px 0;color:#475569">Fill the official eBird species code for each Estonian name. Leave blank to skip eBird for that species.</p>
       <div style="margin:6px 0 12px 0">
-        <button id="codesImport" class="btn small">Paste list…</button>
+        <button id="codesImport" class="btn small">Paste listâ€¦</button>
         <button id="codesExport" class="btn small">Export JSON</button>
-        <small style="color:#64748b;margin-left:8px">Format for paste: one per line → <code>Nimi, kood</code></small>
+        <small style="color:#64748b;margin-left:8px">Format for paste: one per line â†’ <code>Nimi, kood</code></small>
       </div>
       <div id="codesList"></div>
     </div>
@@ -1284,7 +1292,7 @@ window.alert = function(msg){ notifySilent(msg); };
   const REGION = 'EE';
   const LS_CODES = 'bm_ebird_codes';
   // Prefill one known mapping, rest to be filled via manager to avoid wrong codes
-  let EBIRD_CODES = Object.assign({'Väikepistrik':'merlin'}, JSON.parse(localStorage.getItem(LS_CODES)||'{}'));
+  let EBIRD_CODES = Object.assign({'VÃ¤ikepistrik':'merlin'}, JSON.parse(localStorage.getItem(LS_CODES)||'{}'));
 
   /* place toolbar under export row */
   (function placeBar(){
@@ -1319,7 +1327,7 @@ window.alert = function(msg){ notifySilent(msg); };
   };
 
   document.getElementById('codesImport').onclick = ()=>{
-    const raw = prompt('Paste lines like: Nimi, kood\\nVäikepistrik, merlin');
+    const raw = prompt('Paste lines like: Nimi, kood\\nVÃ¤ikepistrik, merlin');
     if (!raw) return;
     raw.split(/\\r?\\n/).forEach(line=>{
       const m = line.split(',');
@@ -1361,7 +1369,7 @@ window.alert = function(msg){ notifySilent(msg); };
   async function fetchEbirdFor(estName){
     try{
       const code = (window.points?.[estName]?.ebirdCode) || EBIRD_CODES[estName];
-      if (!code){ if (typeof notifySilent==='function') notifySilent('eBird: puudub kood — ava "Manage eBird codes".'); return; }
+      if (!code){ if (typeof notifySilent==='function') notifySilent('eBird: puudub kood â€” ava "Manage eBird codes".'); return; }
       const url = `https://api.ebird.org/v2/data/obs/${REGION}/recent/${encodeURIComponent(code)}?back=30&maxResults=1000&_ts=` + Date.now();
       const res = await fetch(url, { headers: { 'X-eBirdApiToken': TOKEN } });
       if (!res.ok){
@@ -1369,7 +1377,7 @@ window.alert = function(msg){ notifySilent(msg); };
         throw new Error('eBird HTTP '+res.status);
       }
       const arr = await res.json();
-      if (!Array.isArray(arr) || arr.length===0){ if (typeof notifySilent==='function') notifySilent(`eBird: 30 päeva jooksul pole vaatlust (${estName}).`); return; }
+      if (!Array.isArray(arr) || arr.length===0){ if (typeof notifySilent==='function') notifySilent(`eBird: 30 pÃ¤eva jooksul pole vaatlust (${estName}).`); return; }
       // NEW: count eBird occurrences within last 7 days
       let occ7 = 0;
       try{
@@ -1398,9 +1406,9 @@ window.alert = function(msg){ notifySilent(msg); };
       if (typeof save==='function') save();
       if (typeof updateMarker==='function') updateMarker(estName);
       if (typeof render==='function') render();
-      if (typeof notifySilent==='function') notifySilent(`eBird: ${estName} — ${lat.toFixed(4)}, ${lon.toFixed(4)}${dateOnly?(' ('+dateOnly+')'):''}`);
+      if (typeof notifySilent==='function') notifySilent(`eBird: ${estName} â€” ${lat.toFixed(4)}, ${lon.toFixed(4)}${dateOnly?(' ('+dateOnly+')'):''}`);
     }catch(e){
-      if (typeof notifySilent==='function') notifySilent('eBird tõrge: ' + (e && e.message? e.message : e));
+      if (typeof notifySilent==='function') notifySilent('eBird tÃµrge: ' + (e && e.message? e.message : e));
       console.warn(e);
     }
   }
@@ -1487,26 +1495,26 @@ window.alert = function(msg){ notifySilent(msg); };
 </style>
 <div id="windToggleBar" class="hidden-in-export">
   <button id="toggleWind" class="btn secondary">Tuulekaart</button>
-  <button id="toggleSpring" class="btn secondary">Kevadränne</button>
-  <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 päeva jooksul aktiivsed (7d vaatlustes &gt; 0 või kuupäev viimase 7 päeva sees).">7p liigid: 0</span>
+  <button id="toggleSpring" class="btn secondary">KevadrÃ¤nne</button>
+  <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 pÃ¤eva jooksul aktiivsed (7d vaatlustes &gt; 0 vÃµi kuupÃ¤ev viimase 7 pÃ¤eva sees).">7p liigid: 0</span>
 </div>
 <div id="springPanel" class="hidden-in-export">
   <div id="springHeader">
-    <div class="title">Kevadränne — esimesed saabumised</div>
+    <div class="title">KevadrÃ¤nne â€” esimesed saabumised</div>
     <div class="actions">
-      <button id="springClose" class="btn icon">✕</button>
+      <button id="springClose" class="btn icon">âœ•</button>
     </div>
   </div>
   <div id="springBody">
     <div class="springTopRow">
       <input id="springSearch" type="text" placeholder="Otsi liiki..." />
-      <span id="springCount" title="Mitu liiki on nimekirjas (pärast filtrit).">0</span>
+      <span id="springCount" title="Mitu liiki on nimekirjas (pÃ¤rast filtrit).">0</span>
     </div>
     <div class="springTableWrap">
       <table id="springTable">
         <thead>
           <tr>
-            <th style="width:92px">Kuupäev</th>
+            <th style="width:92px">KuupÃ¤ev</th>
             <th>Liik</th>
             <th style="width:110px">Sel aastal</th>
           </tr>
@@ -1514,17 +1522,17 @@ window.alert = function(msg){ notifySilent(msg); };
         <tbody id="springTableBody"></tbody>
       </table>
     </div>
-    <div class="springHint">Klikka kuupäeval, et muuta (salvestub localStorage-sse). Nimekiri on sorteeritud kuupäeva järgi.</div>
+    <div class="springHint">Klikka kuupÃ¤eval, et muuta (salvestub localStorage-sse). Nimekiri on sorteeritud kuupÃ¤eva jÃ¤rgi.</div>
   </div>
 </div>
 <div id="windPanel">
   <div id="windHeader">
-    <div class="title">Tuulekaart — Windy (pinnakiht)</div>
+    <div class="title">Tuulekaart â€” Windy (pinnakiht)</div>
     <div class="actions">
       <button id="windSmall" class="btn icon">S</button>
       <button id="windMedium" class="btn icon">M</button>
       <button id="windLarge" class="btn icon">L</button>
-      <button id="windClose" class="btn icon">✕</button>
+      <button id="windClose" class="btn icon">âœ•</button>
     </div>
   </div>
   <iframe id="windyFrame" src=""></iframe>
@@ -1600,7 +1608,7 @@ window.alert = function(msg){ notifySilent(msg); };
 </script>
 
 
-<!-- === Kevadrände paneel (top list) === -->
+<!-- === KevadrÃ¤nde paneel (top list) === -->
 <script>
 (function(){
   const springYearFetchQueue = [];
@@ -1737,8 +1745,8 @@ window.alert = function(msg){ notifySilent(msg); };
       const safeName = String(r.name).replace(/"/g,'&quot;');
       const safeDisp = String(r.disp).replace(/"/g,'&quot;');
       return `<tr>
-        <td><span class="springDateBtn" title="Muuda kuupäeva" onclick="editSpringDate('${safeName.replace(/'/g, "\\'")}')">${safeDisp}</span></td>
-        <td><span class="springSpeciesBtn" title="Leia liigi kaart küljepaneelis" onclick="window.__springScrollToSpecies && window.__springScrollToSpecies('${safeName.replace(/'/g, "\\'")}')">${safeName}</span></td>
+        <td><span class="springDateBtn" title="Muuda kuupÃ¤eva" onclick="editSpringDate('${safeName.replace(/'/g, "\\'")}')">${safeDisp}</span></td>
+        <td><span class="springSpeciesBtn" title="Leia liigi kaart kÃ¼ljepaneelis" onclick="window.__springScrollToSpecies && window.__springScrollToSpecies('${safeName.replace(/'/g, "\\'")}')">${safeName}</span></td>
         <td>${r.y ? isoToDdMm(r.y) : '\u2014'}</td>
       </tr>`;
     }).join('');
@@ -1812,7 +1820,7 @@ window.alert = function(msg){ notifySilent(msg); };
 })();
 </script>
 
-<!-- === 7 päeva aktiivsete liikide loendur (Tuulekaart riba) === -->
+<!-- === 7 pÃ¤eva aktiivsete liikide loendur (Tuulekaart riba) === -->
 <script>
 (function(){
   function computeActiveSpecies7d(){
@@ -1902,8 +1910,8 @@ window.alert = function(msg){ notifySilent(msg); };
         const t = p.lastFetched ? new Date(p.lastFetched).toLocaleString([], {hour:'2-digit', minute:'2-digit', year:'numeric', month:'2-digit', day:'2-digit'}).replace(',', '') : '';
         const inline = row.querySelector('.last-fetched-inline');
         const line = row.querySelector('.last-fetched-line');
-        if (inline) inline.textContent = t ? (' · uuendatud ' + t) : '';
-        if (line)   line.textContent   = t ? ('Värskendatud: ' + t) : '';
+        if (inline) inline.textContent = t ? (' Â· uuendatud ' + t) : '';
+        if (line)   line.textContent   = t ? ('VÃ¤rskendatud: ' + t) : '';
       });
     }catch(e){}
   }

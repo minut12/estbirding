@@ -17,7 +17,6 @@ import { getProxyMode } from '@/config/proxyEndpoint';
 import { getSupabaseUrl } from '@/config/supabaseConfig';
 import { normalizeDisplayText } from '@/lib/textNormalize';
 import { getNewsImageSrc, getProxiedImageUrl, getProxyBase, isProxiedImageUrl } from './newsImage';
-import { correctTranslatedBirdText } from './birdNameCorrection';
 
 /* Types */
 interface NewsItem {
@@ -130,6 +129,28 @@ function cleanupNewsText(value: string | null | undefined): string {
     .trim();
 }
 
+const NEWS_BIRD_NAME_REPLACEMENTS: Array<{ pattern: RegExp; replacement: string }> = [
+  { pattern: /\bNorthern Hawk(?:-|\s)Owl\b/gi, replacement: 'vöötkakk' },
+  { pattern: /\bSurnia ulula\b/gi, replacement: 'vöötkakk' },
+  { pattern: /\bpõhjapistrik\b/gi, replacement: 'vöötkakk' },
+  { pattern: /\bpõhjapõdra(?:-|\s)kakk\b/gi, replacement: 'vöötkakk' },
+  { pattern: /\bCrested Lark\b/gi, replacement: 'tuttlõoke' },
+  { pattern: /\bGalerida cristata\b/gi, replacement: 'tuttlõoke' },
+  { pattern: /\bKurekellukas\b/gi, replacement: 'tuttlõoke' },
+];
+
+function applySafeBirdNameCorrections(value: string | null | undefined): string {
+  let output = cleanupNewsText(value);
+  let changed = false;
+  for (const { pattern, replacement } of NEWS_BIRD_NAME_REPLACEMENTS) {
+    const next = output.replace(pattern, replacement);
+    if (next !== output) changed = true;
+    output = next;
+  }
+  if (changed && import.meta.env.DEV) console.info('[news-bird-names] applied safe post-processing replacements');
+  return output;
+}
+
 function isGeneratedFallbackTitle(value: string | null | undefined): boolean {
   const title = cleanupNewsText(value).toLowerCase();
   if (!title) return true;
@@ -196,11 +217,11 @@ function cleanupNewsHtml(html: string | null | undefined): string | null {
 }
 
 function getTranslatedTitle(item: NewsItem): string {
-  return cleanupNewsText(item.title_et || item.translated_title || '');
+  return applySafeBirdNameCorrections(item.title_et || item.translated_title || '');
 }
 
 function getTranslatedBody(item: NewsItem): string {
-  return cleanupNewsText(item.body_et || item.translated_body || '');
+  return applySafeBirdNameCorrections(item.body_et || item.translated_body || '');
 }
 
 function stripLeadingSameImage(html: string, heroUrl?: string | null): string {
@@ -1129,13 +1150,9 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   const mergedBody = useMemo(() => cleanupNewsText(item.body || item.summary), [item.body, item.summary]);
   const cleanedContentHtml = useMemo(() => cleanupNewsHtml(contentHtml), [contentHtml]);
   const bodyText = useMemo(() => toPlainText(cleanedContentHtml || mergedBody), [cleanedContentHtml, mergedBody]);
-  const correctedTranslatedBody = useMemo(() => {
-    const originalSourceText = toPlainText(cleanedContentHtml || item.body || item.summary || item.content_html || '');
-    return correctTranslatedBirdText(translatedBody, originalSourceText, item.id);
-  }, [translatedBody, cleanedContentHtml, item.body, item.summary, item.content_html, item.id]);
   const displayBody = useMemo(() => (
-    showTranslated ? correctedTranslatedBody : (cleanedContentHtml || bodyText)
-  ), [showTranslated, correctedTranslatedBody, cleanedContentHtml, bodyText]);
+    showTranslated ? translatedBody : (cleanedContentHtml || bodyText)
+  ), [showTranslated, translatedBody, cleanedContentHtml, bodyText]);
   const articleImages = useMemo(() => extractArticleImages({
     ...item,
     content_html: cleanedContentHtml,

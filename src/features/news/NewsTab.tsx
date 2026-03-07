@@ -111,6 +111,7 @@ function toPlainText(value: string | null | undefined): string {
 const NEWS_BOILERPLATE_PATTERNS = [
   /feed\s+generated\s+with\s+fetchrss/gi,
   /sisu\s+genereeritud\s+fetchrss\s+abil/gi,
+  /sööt\s+genereeritud\s+fetchrss-iga/gi,
   /content\s+generated\s+by\s+fetchrss/gi,
   /generated\s+by\s+fetchrss/gi,
 ];
@@ -1271,7 +1272,9 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
         ) : contentError ? (
           <p className="text-sm text-muted-foreground italic">{contentError}</p>
         ) : displayBody ? (
-          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{showTranslated ? displayBody : toPlainText(displayBody)}</p>
+          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">
+            {showTranslated ? displayBody : toPlainText(displayBody)}
+          </p>
         ) : (
           <p className="text-sm text-muted-foreground italic">Sisu pole saadaval. Ava originaal.</p>
         )}

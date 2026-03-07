@@ -45,21 +45,6 @@ export function normalizeLocaleCode(value: string | null | undefined): string {
   return trimmed.split(/[-_]/)[0] || trimmed;
 }
 
-const NEWS_BOILERPLATE_PATTERNS = [
-  /sisu\s+genereeritud\s+fetchrss\s+abil/gi,
-  /content\s+generated\s+by\s+fetchrss/gi,
-  /generated\s+by\s+fetchrss/gi,
-];
-
-function cleanupNewsText(value: string | null | undefined): string {
-  if (!value) return "";
-  return NEWS_BOILERPLATE_PATTERNS
-    .reduce((next, pattern) => next.replace(pattern, " "), String(value))
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
 function isEoySource(item: NewsTranslationItem): boolean {
   return String(item.source_name || "").trim() === "EOÜ" || String(item.source_key || "").trim() === "eoy";
 }
@@ -123,8 +108,8 @@ export async function translateNewsItemToEt(
   item: NewsTranslationItem,
 ): Promise<TranslateResult> {
   const id = item.id;
-  const title = cleanupNewsText(item.title || "");
-  const bodyText = cleanupNewsText(item.body || "");
+  const title = item.title || "";
+  const bodyText = item.body || "";
   const contentHash = await sha256Hex(`${title}\n${bodyText}`);
   const sourceLang = await detectSourceLanguage(item, title, bodyText);
   const normalizedSourceLang = normalizeLocaleCode(sourceLang);
@@ -199,8 +184,8 @@ export async function translateNewsItemToEt(
 
     await supabase.from("news_items").update({
       source_lang: normalizedSourceLang || sourceLang,
-      title_et: cleanupNewsText(translated.title_et) || null,
-      body_et: cleanupNewsText(translated.body_et) || null,
+      title_et: translated.title_et || null,
+      body_et: translated.body_et || null,
       translation_status: "done",
       translation_error: null,
       translated_at: new Date().toISOString(),

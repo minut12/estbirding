@@ -17,7 +17,6 @@ import { getProxyMode } from '@/config/proxyEndpoint';
 import { getSupabaseUrl } from '@/config/supabaseConfig';
 import { normalizeDisplayText } from '@/lib/textNormalize';
 import { getNewsImageSrc, getProxiedImageUrl, getProxyBase, isProxiedImageUrl } from './newsImage';
-import { correctTranslatedBirdSpecies } from './birdNameCorrection';
 
 /* Types */
 interface NewsItem {
@@ -112,7 +111,6 @@ function toPlainText(value: string | null | undefined): string {
 const NEWS_BOILERPLATE_PATTERNS = [
   /feed\s+generated\s+with\s+fetchrss/gi,
   /sisu\s+genereeritud\s+fetchrss\s+abil/gi,
-  /sööt\s+genereeritud\s+fetchrss-iga/gi,
   /content\s+generated\s+by\s+fetchrss/gi,
   /generated\s+by\s+fetchrss/gi,
 ];
@@ -222,9 +220,7 @@ function getTranslatedTitle(item: NewsItem): string {
 }
 
 function getTranslatedBody(item: NewsItem): string {
-  const translated = applySafeBirdNameCorrections(item.body_et || item.translated_body || '');
-  const original = toPlainText(item.body || item.summary || item.content_html || '');
-  return correctTranslatedBirdSpecies(translated, original, `${item.id}:body`);
+  return applySafeBirdNameCorrections(item.body_et || item.translated_body || '');
 }
 
 function stripLeadingSameImage(html: string, heroUrl?: string | null): string {
@@ -1269,6 +1265,10 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
         ) : (
           <p className="text-sm text-muted-foreground italic">Sisu pole saadaval. Ava originaal.</p>
         )}
+
+        {showTranslated && displayBody ? (
+          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{displayBody}</p>
+        ) : null}
 
         {showTranslated && articleImages.length > 0 ? (
           <div className="space-y-3">

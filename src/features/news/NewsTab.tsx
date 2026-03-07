@@ -70,6 +70,7 @@ const NEWS_MAX_AGE_DAYS = 14;
 const NEWS_LIST_STATE_KEY = 'estbirding.news.listState.v1';
 const NEWS_HASH_LIST = '#news';
 const NEWS_HASH_ARTICLE = '#news-article';
+const NEWS_LAST_REFRESH_KEY = 'estbirding.news.lastRefreshAt.v1';
 
 const NEWS_VIEW_SELECT = 'id,source_key,title,title_et,body,body_et,summary,published_at,url,image_url,archived,translation_status,translation_error,translated_at,created_at,external_id,source_id,source_slug,source_name,cached_image_url,cached_image_path,display_image_url,content_html,fetched_at,guid,raw_json,language,source_lang,translated_title,translated_body';
 const ALL_SOURCES_LABEL = normalizeDisplayText("Kõik allikad");
@@ -127,6 +128,84 @@ function cleanupNewsText(value: string | null | undefined): string {
     .trim();
 }
 
+const NEWS_BIRD_NAME_REPLACEMENTS: Array<{ pattern: RegExp; replacement: string }> = [
+  { pattern: /\bNorthern Hawk(?:-|\s)Owl\b/gi, replacement: 'vöötkakk' },
+  { pattern: /\bSurnia ulula\b/gi, replacement: 'vöötkakk' },
+  { pattern: /\bpõhjapistrik\b/gi, replacement: 'vöötkakk' },
+  { pattern: /\bpõhjapõdra(?:-|\s)kakk\b/gi, replacement: 'vöötkakk' },
+  { pattern: /\bCrested Lark\b/gi, replacement: 'tuttlõoke' },
+  { pattern: /\bGalerida cristata\b/gi, replacement: 'tuttlõoke' },
+  { pattern: /\bKurekellukas\b/gi, replacement: 'tuttlõoke' },
+];
+
+function applySafeBirdNameCorrections(value: string | null | undefined): string {
+  let output = cleanupNewsText(value);
+  let changed = false;
+  for (const { pattern, replacement } of NEWS_BIRD_NAME_REPLACEMENTS) {
+    const next = output.replace(pattern, replacement);
+    if (next !== output) changed = true;
+    output = next;
+  }
+  if (changed && import.meta.env.DEV) console.info('[news-bird-names] applied safe post-processing replacements');
+  return output;
+}
+
+function isGeneratedFallbackTitle(value: string | null | undefined): boolean {
+  const title = cleanupNewsText(value).toLowerCase();
+  if (!title) return true;
+  return title.includes('fotod')
+    || title.includes('postitusest')
+    || title.includes('postitused')
+    || title.includes('facebook post')
+    || title.includes('facebooki post')
+    || title.includes('instagram post')
+    || title.includes('rss app');
+}
+
+function buildSourceFallbackTitle(sourceName: string): string {
+  const source = normalizeDisplayText(sourceName || '').trim() || 'Linnuuudised';
+  if (/birding estonia/i.test(source)) return 'Birding Estonia linnuuudised';
+  if (/birding latvia/i.test(source)) return 'Birding Latvia linnuuudised';
+  if (/birding poland/i.test(source)) return 'Birding Poland linnuuudised';
+  if (/birding belgium/i.test(source)) return 'Birding Belgium linnuuudised';
+  return `${source} linnuuudised`;
+}
+
+function getDisplayTitleForSource(sourceName: string, title: string | null | undefined): string {
+  const cleanedTitle = cleanupNewsText(title);
+  return isGeneratedFallbackTitle(cleanedTitle) ? buildSourceFallbackTitle(sourceName) : cleanedTitle;
+}
+
+function getCanonicalSourceValue(source: Partial<NewsSource> | NewsItem): string {
+  const sourceKey = String((source as NewsItem).source_key || (source as NewsSource).source_key || '').trim().toLowerCase();
+  const slug = String((source as NewsItem).source_slug || (source as NewsSource).slug || '').trim().toLowerCase();
+  const name = String((source as NewsItem).source_name || (source as NewsSource).name || '').trim().toLowerCase();
+  return sourceKey || slug || name;
+}
+
+function readLastNewsRefreshAt(): string | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(NEWS_LAST_REFRESH_KEY);
+}
+
+function writeLastNewsRefreshAt(value: string): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(NEWS_LAST_REFRESH_KEY, value);
+}
+
+function formatNewsRefreshTimestamp(value: string | null): string {
+  if (!value) return 'Pole veel värskendatud';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return 'Pole veel värskendatud';
+  return date.toLocaleString('et-EE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 function cleanupNewsHtml(html: string | null | undefined): string | null {
   if (!html) return null;
   const cleaned = stripNewsBoilerplate(html)
@@ -137,11 +216,11 @@ function cleanupNewsHtml(html: string | null | undefined): string | null {
 }
 
 function getTranslatedTitle(item: NewsItem): string {
-  return cleanupNewsText(item.title_et || item.translated_title || '');
+  return applySafeBirdNameCorrections(item.title_et || item.translated_title || '');
 }
 
 function getTranslatedBody(item: NewsItem): string {
-  return cleanupNewsText(item.body_et || item.translated_body || '');
+  return applySafeBirdNameCorrections(item.body_et || item.translated_body || '');
 }
 
 function stripLeadingSameImage(html: string, heroUrl?: string | null): string {
@@ -407,6 +486,7 @@ export default function NewsTab() {
   const [resolvedProxyBase, setResolvedProxyBase] = useState(() => getProxyBase());
   const [activeProxyName, setActiveProxyName] = useState(() => getProxyMode(getProxyBase()));
   const [lastNewsFetchErrorShort, setLastNewsFetchErrorShort] = useState('');
+  const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(() => readLastNewsRefreshAt());
   const utf8Probe = 'Kõik allikad õäöü';
 
   const persistListState = useCallback((overrides: Partial<NewsListState> = {}) => {
@@ -493,9 +573,14 @@ export default function NewsTab() {
     staleTime: 60_000,
   });
 
-  const birdingPolandSourceId = useMemo(() => {
-    const hit = sources.find((s) => String(s.name || "").trim().toLowerCase() === BIRDING_POLAND_NAME);
-    return hit?.id || null;
+  const filterSources = useMemo(() => {
+    const seen = new Set<string>();
+    return sources.filter((source) => {
+      const canonical = getCanonicalSourceValue(source);
+      if (!canonical || seen.has(canonical)) return false;
+      seen.add(canonical);
+      return true;
+    });
   }, [sources]);
 
 const {
@@ -591,8 +676,7 @@ const {
   const allItems = useMemo(() => {
     const filteredBySource = newsItems.filter((item) => {
       if (sourceFilter === 'all') return true;
-      if (sourceFilter === 'legacy_null') return item.source_id == null;
-      return item.source_id === sourceFilter;
+      return getCanonicalSourceValue(item) === sourceFilter;
     });
 
     const ageFiltered = tab === 'latest'
@@ -604,16 +688,8 @@ const {
         (item.title || '').toLowerCase().includes(search.trim().toLowerCase()))
       : ageFiltered;
 
-    if (tab === 'archive') return filteredBySearch;
-    let seenBirdingPoland = false;
-    return filteredBySearch.filter((item) => {
-      const displaySourceId = item.source_id || '';
-      if (displaySourceId !== birdingPolandSourceId) return true;
-      if (seenBirdingPoland) return false;
-      seenBirdingPoland = true;
-      return true;
-    });
-  }, [newsItems, sourceFilter, search, tab, birdingPolandSourceId]);
+    return filteredBySearch;
+  }, [newsItems, sourceFilter, search, tab]);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -690,6 +766,9 @@ const {
       } else {
         setLastNewsFetchErrorShort('');
       }
+      const refreshedAt = new Date().toISOString();
+      writeLastNewsRefreshAt(refreshedAt);
+      setLastRefreshAt(refreshedAt);
       if (total > 0) toast.success(`${total} uudist uuendatud`);
       else toast.info('Uusi uudiseid pole');
     },
@@ -759,17 +838,22 @@ const {
         )}
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-foreground text-lg">Uudised</h2>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => pullMutation.mutate()}
-            disabled={pullMutation.isPending}
-            title="Värskenda"
-          >
-            {pullMutation.isPending
-              ? <Loader2 className="w-4 h-4 animate-spin" />
-              : <RefreshCw className="w-4 h-4" />}
-          </Button>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              {formatNewsRefreshTimestamp(lastRefreshAt)}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => pullMutation.mutate()}
+              disabled={pullMutation.isPending}
+              title="Värskenda"
+            >
+              {pullMutation.isPending
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <RefreshCw className="w-4 h-4" />}
+            </Button>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -796,17 +880,17 @@ const {
 
         {/* Filters */}
         <div className="flex gap-2">
-          {sources.length > 1 && (
+          {filterSources.length > 1 && (
             <select
               value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value)}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="all">{ALL_SOURCES_LABEL}</option>
-              {sources.map((s) => {
-                return <option key={s.id} value={s.id}>{normalizeDisplayText(s.name)}</option>;
+              {filterSources.map((s) => {
+                const canonical = getCanonicalSourceValue(s);
+                return <option key={canonical} value={canonical}>{normalizeDisplayText(s.name)}</option>;
               })}
-              <option value="legacy_null">Legacy (source_id puudub)</option>
             </select>
           )}
           <div className="relative flex-1">
@@ -887,7 +971,9 @@ function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnable
   const hasTranslation = Boolean(translatedTitle || translatedBody);
   const useEtDisplay = showEtContent && autoTranslateEnabled && isNonEtSource && hasTranslation && sourceName !== 'EOÜ';
   const isPending = showEtContent && autoTranslateEnabled && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
-  const displayTitle = useEtDisplay ? (translatedTitle || item.title || '') : (item.title ?? '');
+  const displayTitle = useEtDisplay
+    ? getDisplayTitleForSource(sourceName, translatedTitle || item.title || '')
+    : getDisplayTitleForSource(sourceName, item.title ?? '');
   const snippetSource = useEtDisplay
     ? (translatedBody || item.body || item.summary || '')
     : (item.body ?? item.summary ?? item.excerpt ?? '');
@@ -1051,7 +1137,9 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   const showTranslated = canShowTranslated && viewMode === 'translated';
   const showToggle = canShowTranslated;
 
-  const displayTitle = showTranslated ? (translatedTitle || item.title || '') : cleanupNewsText(item.title || '');
+  const displayTitle = showTranslated
+    ? getDisplayTitleForSource(sourceName, translatedTitle || item.title || '')
+    : getDisplayTitleForSource(sourceName, item.title || '');
   const mergedBody = cleanupNewsText(item.body || item.summary);
   const cleanedContentHtml = cleanupNewsHtml(contentHtml);
   const bodyText = toPlainText(cleanedContentHtml || mergedBody);

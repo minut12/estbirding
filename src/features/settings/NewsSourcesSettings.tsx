@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/config/supabaseClient';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,6 +14,19 @@ import { normalizeDisplayText } from '@/lib/textNormalize';
 import NewsDiagnosticsPanel from './NewsDiagnosticsPanel';
 
 type NewsSource = NewsSourceConfigItem;
+type CloudNewsSourceRow = {
+  id: string;
+  name: string;
+  slug: string;
+  type: string;
+  feed_url: string | null;
+  fetch_url?: string | null;
+  homepage_url?: string | null;
+  is_enabled: boolean;
+  source_key?: string | null;
+  key?: string | null;
+  translate_to_et?: boolean | null;
+};
 
 function slugifySourceId(value: string): string {
   return value
@@ -29,24 +42,95 @@ export default function NewsSourcesSettings() {
   const seeded = useMemo(() => loadNewsSourcesWithOrigin(), []);
   const [localSources, setLocalSources] = useState<NewsSource[]>(seeded.sources);
   const [origin, setOrigin] = useState<NewsSourcesOrigin>(seeded.source);
+  const [loadingCloud, setLoadingCloud] = useState(false);
   const [newSourceName, setNewSourceName] = useState('');
   const [newSourceUrl, setNewSourceUrl] = useState('');
   const [newSourceTranslateToEt, setNewSourceTranslateToEt] = useState(true);
 
+  const mapCloudRowToSource = (row: CloudNewsSourceRow): NewsSource => ({
+    id: String(row.slug || row.source_key || row.key || row.id || '').trim(),
+    name: String(row.name || '').trim(),
+    kind: String(row.type || 'rss').trim() === 'scrape' ? 'scrape' : 'rss',
+    url: normalizeSourceUrl(String(row.feed_url || row.fetch_url || row.homepage_url || '').trim()),
+    enabled: row.is_enabled !== false,
+    translate_to_et: String(row.slug || '').trim() === 'eoy' || String(row.name || '').trim() === 'EOÜ'
+      ? false
+      : row.translate_to_et === true,
+  });
+
+  const loadCloudSources = async () => {
+    setLoadingCloud(true);
+    try {
+      let rows: CloudNewsSourceRow[] | null = null;
+      let error: any = null;
+      ({ data: rows, error } = await supabase
+        .from('news_sources')
+        .select('id, name, slug, type, feed_url, fetch_url, homepage_url, is_enabled, source_key, key, translate_to_et')
+        .order('name', { ascending: true }) as any);
+
+      if (error) {
+        ({ data: rows, error } = await supabase
+          .from('news_sources')
+          .select('id, name, slug, type, feed_url, fetch_url, homepage_url, is_enabled, source_key, key')
+          .order('name', { ascending: true }) as any);
+      }
+
+      if (error) throw error;
+      const mapped = (rows || [])
+        .map(mapCloudRowToSource)
+        .filter((row) => row.id && row.name && row.url);
+
+      if (mapped.length > 0) {
+        setLocalSources(mapped);
+        setOrigin('stored');
+        saveNewsSources(mapped);
+      }
+    } catch (error) {
+      console.error('[news-settings] failed to load cloud news sources', error);
+      toast.error('Uudiste allikate laadimine pilvest ebaõnnestus');
+    } finally {
+      setLoadingCloud(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadCloudSources();
+  }, []);
+
   const onResetDefaults = () => {
     const defaults = resetNewsSourcesToDefaults();
-    setLocalSources(defaults);
-    setOrigin('default');
-    toast.success('Vaikimisi allikad taastatud');
+    void (async () => {
+      try {
+        for (const source of defaults) {
+          const normalizedUrl = normalizeSourceUrl(source.url);
+          const { data, error } = await supabase.functions.invoke('news-source-update', {
+            body: {
+              id: source.id,
+              slug: source.id,
+              source_key: source.id,
+              key: source.id,
+              name: source.name,
+              type: source.kind,
+              feed_url: normalizedUrl,
+              is_enabled: source.enabled,
+              translate_to_et: source.id === 'eoy' ? false : source.translate_to_et === true,
+            },
+          });
+          if ((data as { success?: boolean } | null)?.success === false) throw new Error(String((data as { error?: string } | null)?.error || 'Viga'));
+          if (error) throw error;
+        }
+        await loadCloudSources();
+        setOrigin('stored');
+        toast.success('Vaikimisi allikad taastatud');
+      } catch (error) {
+        console.error('[news-settings] failed to reset defaults in cloud', error);
+        toast.error('Vaikimisi allikate taastamine ebaõnnestus');
+      }
+    })();
   };
 
   const onLocalUpdate = (next: NewsSource) => {
-    setLocalSources((prev) => {
-      const updated = prev.map((source) => (source.id === next.id ? next : source));
-      saveNewsSources(updated);
-      return updated;
-    });
-    setOrigin('stored');
+    setLocalSources((prev) => prev.map((source) => (source.id === next.id ? next : source)));
   };
 
   const onAddSource = () => {
@@ -75,14 +159,33 @@ export default function NewsSourcesSettings() {
       translate_to_et: newSourceTranslateToEt,
     };
 
-    const updated = [...localSources, next];
-    setLocalSources(updated);
-    saveNewsSources(updated);
-    setOrigin('stored');
-    setNewSourceName('');
-    setNewSourceUrl('');
-    setNewSourceTranslateToEt(true);
-    toast.success(`${name} lisatud`);
+    void (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('news-source-update', {
+          body: {
+            id,
+            slug: id,
+            source_key: id,
+            key: id,
+            name,
+            type: 'rss',
+            feed_url: normalizedUrl,
+            is_enabled: true,
+            translate_to_et: newSourceTranslateToEt,
+          },
+        });
+        if ((data as { success?: boolean } | null)?.success === false) throw new Error(String((data as { error?: string } | null)?.error || 'Viga'));
+        if (error) throw error;
+        await loadCloudSources();
+        setNewSourceName('');
+        setNewSourceUrl('');
+        setNewSourceTranslateToEt(true);
+        toast.success(`${name} lisatud`);
+      } catch (error) {
+        console.error('[news-settings] failed to add cloud source', error);
+        toast.error(`${name}: salvestamine ebaõnnestus`);
+      }
+    })();
   };
 
   const sources = localSources;
@@ -90,7 +193,7 @@ export default function NewsSourcesSettings() {
   if (sources.length === 0) {
     return (
       <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">Uudiste allikaid pole.</p>
+        <p className="text-sm text-muted-foreground">{loadingCloud ? 'Laen uudiste allikaid…' : 'Uudiste allikaid pole.'}</p>
         <Button variant="outline" size="sm" onClick={onResetDefaults}>Taasta vaikimisi allikad</Button>
         <p className="text-xs text-muted-foreground">Allikad: 0 (source: {origin})</p>
       </div>
@@ -100,6 +203,12 @@ export default function NewsSourcesSettings() {
   return (
     <div className="block space-y-4">
       <h3 className="font-semibold text-foreground">Uudiste allikad</h3>
+      {loadingCloud && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>Laen allikaid pilvest</span>
+        </div>
+      )}
       <div className="rounded-lg border border-border bg-card p-4 space-y-3">
         <div className="space-y-1.5">
           <Label className="text-xs">Uue allika nimi</Label>
@@ -133,6 +242,7 @@ export default function NewsSourcesSettings() {
           key={source.id}
           source={source}
           onLocalUpdate={onLocalUpdate}
+          onSaved={loadCloudSources}
         />
       ))}
       <NewsDiagnosticsPanel />
@@ -147,9 +257,11 @@ export default function NewsSourcesSettings() {
 function SourceCard({
   source,
   onLocalUpdate,
+  onSaved,
 }: {
   source: NewsSource;
   onLocalUpdate: (next: NewsSource) => void;
+  onSaved: () => Promise<void>;
 }) {
   const [url, setUrl] = useState(source.url || '');
   const [enabled, setEnabled] = useState(source.enabled);
@@ -184,6 +296,7 @@ function SourceCard({
         throw new Error(String((data as { error?: string } | null)?.error || 'Viga'));
       }
       if (error) throw error;
+      await onSaved();
       toast.success(`${source.name} salvestatud`);
     } catch (error: unknown) {
       const maybeErr = error as { message?: string; context?: Response } | null;

@@ -57,6 +57,18 @@ interface NewsSource {
   key?: string | null;
 }
 
+type NewsListState = {
+  tab: 'latest' | 'archive';
+  sourceFilter: string;
+  search: string;
+  scrollTop: number;
+};
+
+const NEWS_MAX_AGE_DAYS = 14;
+const NEWS_LIST_STATE_KEY = 'estbirding.news.listState.v1';
+const NEWS_HASH_LIST = '#news';
+const NEWS_HASH_ARTICLE = '#news-article';
+
 const NEWS_VIEW_SELECT = 'id,source_key,title,title_et,body,body_et,summary,published_at,url,image_url,archived,translation_status,translation_error,translated_at,created_at,external_id,source_id,source_slug,source_name,cached_image_url,cached_image_path,display_image_url,content_html,fetched_at,guid,raw_json,language,source_lang,translated_title,translated_body';
 const ALL_SOURCES_LABEL = normalizeDisplayText("Kõik allikad");
 const NEWS_TABLE_FALLBACK_SELECT = 'id,source_key,title,title_et,body,body_et,summary,published_at,url,image_url,archived,translation_status,translation_error,translated_at,source_id,source_slug,permalink_url,content_html,created_at,cached_image_url,image_cached_url,language,source_lang,guid,raw_json,fetched_at';
@@ -215,6 +227,36 @@ function getErrorHostLabel(): string {
   }
 }
 
+function isWithinNewsMaxAge(value: string | null | undefined): boolean {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  const ms = new Date(raw).getTime();
+  if (!Number.isFinite(ms)) return false;
+  return ms >= Date.now() - NEWS_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+}
+
+function readNewsListState(): NewsListState | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(NEWS_LIST_STATE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<NewsListState>;
+    return {
+      tab: parsed.tab === 'archive' ? 'archive' : 'latest',
+      sourceFilter: typeof parsed.sourceFilter === 'string' ? parsed.sourceFilter : 'all',
+      search: typeof parsed.search === 'string' ? parsed.search : '',
+      scrollTop: typeof parsed.scrollTop === 'number' ? parsed.scrollTop : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeNewsListState(state: NewsListState): void {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.setItem(NEWS_LIST_STATE_KEY, JSON.stringify(state));
+}
+
 function ensureImageUrl(item: NewsItem): NewsItem {
   const cached = decodeUrl(item.cached_image_url);
   const display = decodeUrl(item.display_image_url);
@@ -263,9 +305,10 @@ function rewriteImgSrcToProxy(html: string, sourceName: string, proxyBase: strin
 /* Main component */
 export default function NewsTab() {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<'latest' | 'archive'>('latest');
-  const [search, setSearch] = useState('');
-  const [sourceFilter, setSourceFilter] = useState<string>('all');
+  const initialListState = useMemo(() => readNewsListState(), []);
+  const [tab, setTab] = useState<'latest' | 'archive'>(initialListState?.tab || 'latest');
+  const [search, setSearch] = useState(initialListState?.search || '');
+  const [sourceFilter, setSourceFilter] = useState<string>(initialListState?.sourceFilter || 'all');
   const [selected, setSelected] = useState<NewsItem | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollPosRef = useRef(0);
@@ -276,6 +319,16 @@ export default function NewsTab() {
   const [activeProxyName, setActiveProxyName] = useState(() => getProxyMode(getProxyBase()));
   const [lastNewsFetchErrorShort, setLastNewsFetchErrorShort] = useState('');
   const utf8Probe = 'Kõik allikad õäöü';
+
+  const persistListState = useCallback((overrides: Partial<NewsListState> = {}) => {
+    writeNewsListState({
+      tab,
+      sourceFilter,
+      search,
+      scrollTop: scrollRef.current?.scrollTop ?? scrollPosRef.current ?? 0,
+      ...overrides,
+    });
+  }, [tab, sourceFilter, search]);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -299,6 +352,36 @@ export default function NewsTab() {
     refreshProxy();
     window.addEventListener('storage', refreshProxy);
     return () => window.removeEventListener('storage', refreshProxy);
+  }, []);
+
+  useEffect(() => {
+    persistListState();
+  }, [persistListState]);
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      if (scrollRef.current && initialListState?.scrollTop) {
+        scrollRef.current.scrollTop = initialListState.scrollTop;
+        scrollPosRef.current = initialListState.scrollTop;
+      }
+    });
+  }, [initialListState]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const hash = window.location.hash;
+      if (hash === NEWS_HASH_LIST || hash === '') {
+        setSelected(null);
+        const saved = readNewsListState();
+        requestAnimationFrame(() => {
+          const scrollTop = saved?.scrollTop ?? scrollPosRef.current;
+          if (scrollRef.current) scrollRef.current.scrollTop = scrollTop;
+        });
+      }
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
   // Sources
@@ -423,10 +506,14 @@ const {
       return item.source_id === sourceFilter;
     });
 
-    const filteredBySearch = search.trim()
-      ? filteredBySource.filter((item) =>
-        (item.title || '').toLowerCase().includes(search.trim().toLowerCase()))
+    const ageFiltered = tab === 'latest'
+      ? filteredBySource.filter((item) => item.is_archived || isWithinNewsMaxAge(item.published_at || item.created_at || item.fetched_at || null))
       : filteredBySource;
+
+    const filteredBySearch = search.trim()
+      ? ageFiltered.filter((item) =>
+        (item.title || '').toLowerCase().includes(search.trim().toLowerCase()))
+      : ageFiltered;
 
     if (tab === 'archive') return filteredBySearch;
     let seenBirdingPoland = false;
@@ -527,10 +614,34 @@ const {
   // Save/restore scroll
   const openArticle = (item: NewsItem) => {
     scrollPosRef.current = scrollRef.current?.scrollTop ?? 0;
+    persistListState({ scrollTop: scrollPosRef.current });
+    window.history.pushState(
+      {
+        ...(window.history.state || {}),
+        estbirding: { ...(window.history.state?.estbirding || {}), activeTab: 'uudised' },
+        estbirdingNews: { view: 'article', articleId: item.id },
+      },
+      '',
+      NEWS_HASH_ARTICLE,
+    );
     setSelected(item);
   };
   const closeArticle = () => {
+    persistListState({ scrollTop: scrollPosRef.current });
+    if (window.location.hash === NEWS_HASH_ARTICLE) {
+      window.history.back();
+      return;
+    }
     setSelected(null);
+    window.history.replaceState(
+      {
+        ...(window.history.state || {}),
+        estbirding: { ...(window.history.state?.estbirding || {}), activeTab: 'uudised' },
+        estbirdingNews: { view: 'list' },
+      },
+      '',
+      NEWS_HASH_LIST,
+    );
     requestAnimationFrame(() => {
       if (scrollRef.current) scrollRef.current.scrollTop = scrollPosRef.current;
     });

@@ -94,6 +94,12 @@ type RssFetchResult = {
   bodySnippet: string;
 };
 
+const NEWS_MAX_AGE_DAYS = 14;
+
+type PublishedAtValidation =
+  | { ok: true; iso: string; reason: null }
+  | { ok: false; iso: null; reason: "missing_date" | "invalid_date" | "too_old" };
+
 function isMissingTranslateColumnError(error: unknown): boolean {
   const err = error as { message?: string; code?: string; details?: string } | null;
   const text = `${err?.message || ""} ${err?.details || ""}`.toLowerCase();
@@ -277,12 +283,27 @@ function canonicalizeUrl(raw: string | null | undefined): string {
   }
 }
 
-function normalizePublishedAt(value: string | null | undefined): string {
+function normalizePublishedAt(value: string | null | undefined): string | null {
   const raw = String(value || "").trim();
-  if (!raw) return new Date().toISOString();
+  if (!raw) return null;
   const ms = new Date(raw).getTime();
-  if (!Number.isFinite(ms)) return new Date().toISOString();
+  if (!Number.isFinite(ms)) return null;
   return new Date(ms).toISOString();
+}
+
+function validatePublishedAt(value: string | null | undefined, now = Date.now()): PublishedAtValidation {
+  const raw = String(value || "").trim();
+  if (!raw) return { ok: false, iso: null, reason: "missing_date" };
+
+  const iso = normalizePublishedAt(raw);
+  if (!iso) return { ok: false, iso: null, reason: "invalid_date" };
+
+  const maxAgeMs = NEWS_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+  if (new Date(iso).getTime() < now - maxAgeMs) {
+    return { ok: false, iso: null, reason: "too_old" };
+  }
+
+  return { ok: true, iso, reason: null };
 }
 
 function normalizeSourceName(raw: string | null | undefined): string {
@@ -652,6 +673,7 @@ async function refreshEoy(
 function normalizeRssItems(items: Awaited<ReturnType<typeof fetchSourceItems>>, source: SourceRow): Array<Record<string, unknown>> {
   const sourceIdentity = String(source.source_key || source.key || source.slug || source.id || "unknown");
   const now = new Date().toISOString();
+  const nowMs = Date.now();
   const out: Array<Record<string, unknown>> = [];
 
   for (const item of items) {
@@ -661,7 +683,19 @@ function normalizeRssItems(items: Awaited<ReturnType<typeof fetchSourceItems>>, 
     if (!title) continue;
     const externalId = String(item.external_id || "").trim();
     const normalizedLink = canonicalizeUrl(item.permalink_url || item.raw_json?.link || "");
-    const dedupeKey = externalId || normalizedLink || `${title}:${normalizePublishedAt(item.published_at)}`;
+    const publishedAt = validatePublishedAt(item.published_at, nowMs);
+    if (!publishedAt.ok) {
+      console.log("[news-refresh:item:skip]", {
+        source_id: source.id,
+        source_name: source.name,
+        title: title.slice(0, 120),
+        url,
+        published_at: item.published_at ?? null,
+        reason: publishedAt.reason,
+      });
+      continue;
+    }
+    const dedupeKey = externalId || normalizedLink || `${title}:${publishedAt.iso}`;
     const guid = `${source.id}:${dedupeKey}`;
     const itemSourceKey = `${sourceIdentity}:${guid}`;
     const rawLang = String((item.raw_json as Record<string, unknown> | null)?.language || "").trim().toLowerCase();
@@ -678,7 +712,7 @@ function normalizeRssItems(items: Awaited<ReturnType<typeof fetchSourceItems>>, 
       url,
       permalink_url: url,
       guid,
-      published_at: normalizePublishedAt(item.published_at),
+      published_at: publishedAt.iso,
       fetched_at: now,
       raw_json: item.raw_json,
       content_html: item.body_html || null,

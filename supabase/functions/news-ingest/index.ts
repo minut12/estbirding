@@ -6,6 +6,12 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-ingest-key, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const NEWS_MAX_AGE_DAYS = 14;
+
+type PublishedAtValidation =
+  | { ok: true; iso: string; reason: null }
+  | { ok: false; iso: null; reason: "missing_date" | "invalid_date" | "too_old" };
+
 function decodeUrl(u: string | null | undefined): string | null {
   if (!u) return null;
   return u.replaceAll("&amp;", "&").replaceAll("&#38;", "&");
@@ -23,6 +29,21 @@ function normalizePublishedAt(value: string | null | undefined): string | null {
   const ms = new Date(raw).getTime();
   if (!Number.isFinite(ms)) return null;
   return new Date(ms).toISOString();
+}
+
+function validatePublishedAt(value: string | null | undefined, now = Date.now()): PublishedAtValidation {
+  const raw = String(value || "").trim();
+  if (!raw) return { ok: false, iso: null, reason: "missing_date" };
+
+  const iso = normalizePublishedAt(raw);
+  if (!iso) return { ok: false, iso: null, reason: "invalid_date" };
+
+  const maxAgeMs = NEWS_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+  if (new Date(iso).getTime() < now - maxAgeMs) {
+    return { ok: false, iso: null, reason: "too_old" };
+  }
+
+  return { ok: true, iso, reason: null };
 }
 
 async function sha256Hex(input: string): Promise<string> {
@@ -116,6 +137,8 @@ Deno.serve(async (req) => {
     let updated = 0;
     let errors = 0;
 
+    const now = Date.now();
+
     for (const item of items) {
       const guid = item.guid || `${source_slug}:${item.url}`;
       const sourceKey = String(source.source_key || source.key || source.slug || source_slug || "unknown").trim() || "unknown";
@@ -124,6 +147,19 @@ Deno.serve(async (req) => {
       const title = item.title || "";
       const bodyText = item.body || "";
       const contentHash = await sha256Hex(`${title}\n${bodyText}`);
+      const publishedAt = validatePublishedAt(item.published_at, now);
+
+      if (!publishedAt.ok) {
+        console.log("[news-ingest:item:skip]", {
+          source_slug,
+          guid,
+          title: String(title || "").slice(0, 120),
+          published_at: item.published_at ?? null,
+          reason: publishedAt.reason,
+        });
+        continue;
+      }
+
       const row = {
         source_id: source.id,
         source_slug,
@@ -133,7 +169,7 @@ Deno.serve(async (req) => {
         body: bodyText || null,
         content_html: item.content_html || null,
         url: item.url || "",
-        published_at: normalizePublishedAt(item.published_at) || new Date().toISOString(),
+        published_at: publishedAt.iso,
         language: sourceLang,
         lang: sourceLang,
         source_lang: sourceLang,

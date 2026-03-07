@@ -13,6 +13,15 @@ import { getMyProfile } from '@/services/profile';
 
 type Tab = 'kaart' | 'uudised' | 'üritused' | 'seaded';
 
+const NEWS_HASHES = new Set(['#news', '#news-article']);
+
+function resolveInitialTab(): Tab {
+  const stateTab = window.history.state?.estbirding?.activeTab;
+  if (stateTab === 'uudised') return 'uudised';
+  if (NEWS_HASHES.has(window.location.hash)) return 'uudised';
+  return 'kaart';
+}
+
 const tabs: { id: Tab; label: string; icon: typeof Map }[] = [
   { id: 'kaart', label: 'Kaart', icon: Map },
   { id: 'uudised', label: 'Uudised', icon: Newspaper },
@@ -21,7 +30,7 @@ const tabs: { id: Tab; label: string; icon: typeof Map }[] = [
 ];
 
 export default function Index() {
-  const [active, setActive] = useState<Tab>('kaart');
+  const [active, setActive] = useState<Tab>(() => resolveInitialTab());
   const [selectedMapId, setSelectedMapId] = useState<string>('linnuliigid-ee');
 
   useEffect(() => {
@@ -33,13 +42,36 @@ export default function Index() {
     return () => window.clearInterval(id);
   }, []);
 
-  // goToSettings kept for potential future use
+  useEffect(() => {
+    const onPopState = () => {
+      const stateTab = window.history.state?.estbirding?.activeTab;
+      if (stateTab === 'uudised' || NEWS_HASHES.has(window.location.hash)) {
+        setActive('uudised');
+      }
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
+    if (active !== 'uudised') return;
+    const nextHash = NEWS_HASHES.has(window.location.hash) ? window.location.hash : '#news';
+    window.history.replaceState(
+      {
+        ...(window.history.state || {}),
+        estbirding: { ...(window.history.state?.estbirding || {}), activeTab: 'uudised' },
+        estbirdingNews: window.history.state?.estbirdingNews || { view: 'list' },
+      },
+      '',
+      nextHash,
+    );
+  }, [active]);
 
   return (
     <div className="flex flex-col h-[100dvh] min-h-[100dvh] bg-background overflow-hidden">
       <VersionBanner />
 
-      {/* Content area */}
       <div className="flex-1 min-h-0 overflow-hidden">
         {active === 'kaart' && <MapTab isActive={active === 'kaart'} onMapChange={setSelectedMapId} />}
         {active === 'uudised' && <NewsTab />}
@@ -47,7 +79,6 @@ export default function Index() {
         {active === 'seaded' && <SettingsTab />}
       </div>
 
-      {/* Bottom navigation */}
       <nav className="flex items-center border-t border-border bg-card pb-safe">
         {tabs.map(({ id, label, icon: Icon }) => (
           <button
@@ -66,7 +97,6 @@ export default function Index() {
         ))}
       </nav>
 
-      {/* Mobile-only cache reset FAB */}
       {active === 'kaart' && selectedMapId === 'linnuliigid-ee' && <CacheResetFab />}
     </div>
   );

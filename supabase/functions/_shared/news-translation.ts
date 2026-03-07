@@ -1,5 +1,6 @@
 ﻿import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getOpenAIConfig, translateToEstonian } from "./openai.ts";
+import { correctBirdNamesToOfficialEstonian } from "./bird-name-correction.ts";
 
 export interface NewsTranslationItem {
   id: string;
@@ -181,11 +182,13 @@ export async function translateNewsItemToEt(
       body: bodyText,
       sourceLang: normalizedSourceLang || sourceLang || "auto",
     });
+    const correctedTitle = correctBirdNamesToOfficialEstonian(translated.title_et);
+    const correctedBody = correctBirdNamesToOfficialEstonian(translated.body_et);
 
     await supabase.from("news_items").update({
       source_lang: normalizedSourceLang || sourceLang,
-      title_et: translated.title_et || null,
-      body_et: translated.body_et || null,
+      title_et: correctedTitle || null,
+      body_et: correctedBody || null,
       translation_status: "done",
       translation_error: null,
       translated_at: new Date().toISOString(),

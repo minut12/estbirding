@@ -966,18 +966,22 @@ function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnable
   const primaryThumb = getNewsImageSrc(item, proxyBase);
   const [thumbSrc, setThumbSrc] = useState<string | null>(primaryThumb);
   const isNonEtSource = normalizeLocale(item.source_lang || item.language || '') !== 'et';
-  const translatedTitle = getTranslatedTitle(item);
-  const translatedBody = getTranslatedBody(item);
+  const translatedTitle = useMemo(() => getTranslatedTitle(item), [item]);
+  const translatedBody = useMemo(() => getTranslatedBody(item), [item]);
   const hasTranslation = Boolean(translatedTitle || translatedBody);
   const useEtDisplay = showEtContent && autoTranslateEnabled && isNonEtSource && hasTranslation && sourceName !== 'EOÜ';
   const isPending = showEtContent && autoTranslateEnabled && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
-  const displayTitle = useEtDisplay
-    ? getDisplayTitleForSource(sourceName, translatedTitle || item.title || '')
-    : getDisplayTitleForSource(sourceName, item.title ?? '');
-  const snippetSource = useEtDisplay
-    ? (translatedBody || item.body || item.summary || '')
-    : (item.body ?? item.summary ?? item.excerpt ?? '');
-  const snippet = toPlainText(snippetSource).slice(0, 150);
+  const displayTitle = useMemo(() => (
+    useEtDisplay
+      ? getDisplayTitleForSource(sourceName, translatedTitle || item.title || '')
+      : getDisplayTitleForSource(sourceName, item.title ?? '')
+  ), [useEtDisplay, sourceName, translatedTitle, item.title]);
+  const snippet = useMemo(() => {
+    const snippetSource = useEtDisplay
+      ? (translatedBody || item.body || item.summary || '')
+      : (item.body ?? item.summary ?? item.excerpt ?? '');
+    return toPlainText(snippetSource).slice(0, 150);
+  }, [useEtDisplay, translatedBody, item.body, item.summary, item.excerpt]);
   const originalUrl = item.permalink_url || item.url || '#';
 
   useEffect(() => {
@@ -1082,8 +1086,8 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
 
   const normalizedLang = normalizeLocale(item.source_lang || item.language || '');
   const isNonEtSource = normalizedLang !== 'et';
-  const translatedTitle = getTranslatedTitle(item);
-  const translatedBody = getTranslatedBody(item);
+  const translatedTitle = useMemo(() => getTranslatedTitle(item), [item]);
+  const translatedBody = useMemo(() => getTranslatedBody(item), [item]);
   const hasTranslation = Boolean(translatedTitle || translatedBody);
   const canShowTranslated = showEtContent && autoTranslateEnabled && isNonEtSource && hasTranslation && sourceName !== 'EOÜ';
 
@@ -1137,25 +1141,31 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   const showTranslated = canShowTranslated && viewMode === 'translated';
   const showToggle = canShowTranslated;
 
-  const displayTitle = showTranslated
-    ? getDisplayTitleForSource(sourceName, translatedTitle || item.title || '')
-    : getDisplayTitleForSource(sourceName, item.title || '');
-  const mergedBody = cleanupNewsText(item.body || item.summary);
-  const cleanedContentHtml = cleanupNewsHtml(contentHtml);
-  const bodyText = toPlainText(cleanedContentHtml || mergedBody);
-  const displayBody = showTranslated
-    ? translatedBody
-    : (cleanedContentHtml || bodyText);
-  const articleImages = extractArticleImages({
+  const displayTitle = useMemo(() => (
+    showTranslated
+      ? getDisplayTitleForSource(sourceName, translatedTitle || item.title || '')
+      : getDisplayTitleForSource(sourceName, item.title || '')
+  ), [showTranslated, sourceName, translatedTitle, item.title]);
+  const mergedBody = useMemo(() => cleanupNewsText(item.body || item.summary), [item.body, item.summary]);
+  const cleanedContentHtml = useMemo(() => cleanupNewsHtml(contentHtml), [contentHtml]);
+  const bodyText = useMemo(() => toPlainText(cleanedContentHtml || mergedBody), [cleanedContentHtml, mergedBody]);
+  const displayBody = useMemo(() => (
+    showTranslated ? translatedBody : (cleanedContentHtml || bodyText)
+  ), [showTranslated, translatedBody, cleanedContentHtml, bodyText]);
+  const articleImages = useMemo(() => extractArticleImages({
     ...item,
     content_html: cleanedContentHtml,
-  });
+  }), [item, cleanedContentHtml]);
 
   const heroImageUrl = getNewsImageSrc(item, proxyBase);
   const [heroSrc, setHeroSrc] = useState<string | null>(heroImageUrl);
   const [heroFailed, setHeroFailed] = useState(false);
-  const rewrittenContentHtml = cleanedContentHtml ? rewriteImgSrcToProxy(cleanedContentHtml, sourceName, proxyBase) : null;
-  const bodyHtmlWithoutDuplicateHero = rewrittenContentHtml ? stripLeadingSameImage(rewrittenContentHtml, heroSrc) : null;
+  const rewrittenContentHtml = useMemo(() => (
+    cleanedContentHtml ? rewriteImgSrcToProxy(cleanedContentHtml, sourceName, proxyBase) : null
+  ), [cleanedContentHtml, sourceName, proxyBase]);
+  const bodyHtmlWithoutDuplicateHero = useMemo(() => (
+    rewrittenContentHtml ? stripLeadingSameImage(rewrittenContentHtml, heroSrc) : null
+  ), [rewrittenContentHtml, heroSrc]);
   const originalUrl = item.permalink_url || item.url || '#';
   const isPending = showEtContent && autoTranslateEnabled && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
 
@@ -1265,10 +1275,6 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
         ) : (
           <p className="text-sm text-muted-foreground italic">Sisu pole saadaval. Ava originaal.</p>
         )}
-
-        {showTranslated && displayBody ? (
-          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{displayBody}</p>
-        ) : null}
 
         {showTranslated && articleImages.length > 0 ? (
           <div className="space-y-3">

@@ -1165,7 +1165,24 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
             <Skeleton className="h-4 w-5/6" />
             <Skeleton className="h-4 w-4/6" />
           </div>
-        ) : showTranslated && articleImages.length > 0 ? (
+        ) : !showTranslated && bodyHtmlWithoutDuplicateHero ? (
+          <div
+            className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
+            dangerouslySetInnerHTML={{ __html: bodyHtmlWithoutDuplicateHero }}
+          />
+        ) : contentError ? (
+          <p className="text-sm text-muted-foreground italic">{contentError}</p>
+        ) : displayBody ? (
+          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{showTranslated ? displayBody : toPlainText(displayBody)}</p>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">Sisu pole saadaval. Ava originaal.</p>
+        )}
+
+        {showTranslated && displayBody ? (
+          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{displayBody}</p>
+        ) : null}
+
+        {showTranslated && articleImages.length > 0 ? (
           <div className="space-y-3">
             {articleImages.map((imageUrl, index) => {
               const src = getProxiedImageUrl(imageUrl, proxyBase) || imageUrl;
@@ -1184,21 +1201,6 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
               );
             })}
           </div>
-        ) : !showTranslated && bodyHtmlWithoutDuplicateHero ? (
-          <div
-            className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
-            dangerouslySetInnerHTML={{ __html: bodyHtmlWithoutDuplicateHero }}
-          />
-        ) : contentError ? (
-          <p className="text-sm text-muted-foreground italic">{contentError}</p>
-        ) : displayBody ? (
-          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{showTranslated ? displayBody : toPlainText(displayBody)}</p>
-        ) : (
-          <p className="text-sm text-muted-foreground italic">Sisu pole saadaval. Ava originaal.</p>
-        )}
-
-        {showTranslated && displayBody ? (
-          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{displayBody}</p>
         ) : null}
 
         <div className="flex gap-2 pt-2">

@@ -102,7 +102,105 @@ function toPlainText(value: string | null | undefined): string {
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'");
-  return decoded.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  return stripNewsBoilerplate(decoded.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+}
+
+const NEWS_BOILERPLATE_PATTERNS = [
+  /sisu\s+genereeritud\s+fetchrss\s+abil/gi,
+  /content\s+generated\s+by\s+fetchrss/gi,
+  /generated\s+by\s+fetchrss/gi,
+];
+
+function stripNewsBoilerplate(value: string | null | undefined): string {
+  if (!value) return '';
+  return NEWS_BOILERPLATE_PATTERNS.reduce((next, pattern) => next.replace(pattern, ' '), value);
+}
+
+function cleanupNewsText(value: string | null | undefined): string {
+  return stripNewsBoilerplate(value)
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\s+$/g, '')
+    .trim();
+}
+
+function cleanupNewsHtml(html: string | null | undefined): string | null {
+  if (!html) return null;
+
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const containsBoilerplate = (value: string) => NEWS_BOILERPLATE_PATTERNS.some((pattern) => {
+      pattern.lastIndex = 0;
+      return pattern.test(value);
+    });
+    doc.body.querySelectorAll('*').forEach((element) => {
+      const text = cleanupNewsText(element.textContent || '');
+      if (!text && !element.querySelector('img')) {
+        element.remove();
+        return;
+      }
+      if (containsBoilerplate(element.textContent || '')) {
+        if (element.querySelector('img')) {
+          element.childNodes.forEach((node) => {
+            if (node.nodeType === Node.TEXT_NODE) node.textContent = cleanupNewsText(node.textContent || '');
+          });
+        } else {
+          element.remove();
+        }
+      }
+    });
+    const cleaned = stripNewsBoilerplate(doc.body.innerHTML)
+      .replace(/(<br\s*\/?>\s*){3,}/gi, '<br /><br />')
+      .trim();
+    return cleaned || null;
+  } catch {
+    const cleaned = stripNewsBoilerplate(html).trim();
+    return cleaned || null;
+  }
+}
+
+function splitTranslatedParagraphs(value: string | null | undefined): string[] {
+  const cleaned = cleanupNewsText(value);
+  if (!cleaned) return [];
+  return cleaned
+    .split(/\n\s*\n/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildTranslatedArticleHtml(originalHtml: string | null | undefined, translatedText: string | null | undefined): string | null {
+  const cleanedOriginal = cleanupNewsHtml(originalHtml);
+  const translatedParagraphs = splitTranslatedParagraphs(translatedText);
+  if (!cleanedOriginal || translatedParagraphs.length === 0) return null;
+
+  try {
+    const doc = new DOMParser().parseFromString(cleanedOriginal, 'text/html');
+    const textBlocks = Array.from(doc.body.querySelectorAll('p, li, blockquote, h2, h3'))
+      .filter((element) => !element.closest('figure') && !element.querySelector('img'));
+
+    let paragraphIndex = 0;
+    textBlocks.forEach((element) => {
+      const nextParagraph = translatedParagraphs[paragraphIndex];
+      if (!nextParagraph) return;
+      element.innerHTML = escapeHtml(nextParagraph).replace(/\n/g, '<br />');
+      paragraphIndex += 1;
+    });
+
+    doc.body.querySelectorAll('h1').forEach((heading) => heading.remove());
+    const html = doc.body.innerHTML.trim();
+    return html || null;
+  } catch {
+    return translatedParagraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('');
+  }
 }
 
 function stripLeadingSameImage(html: string, heroUrl?: string | null): string {
@@ -288,7 +386,7 @@ const IMAGE_PLACEHOLDER_LOCAL = '/placeholder.svg';
 function rewriteImgSrcToProxy(html: string, sourceName: string, proxyBase: string): string {
   if (!html) return html;
   try {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const doc = new DOMParser().parseFromString(cleanupNewsHtml(html) || html, 'text/html');
     doc.querySelectorAll('img').forEach((img) => {
       const src = (img.getAttribute('src') || img.getAttribute('data-src') || '').trim();
       if (!src) return;
@@ -959,17 +1057,20 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   const showToggle = canShowTranslated;
 
   const displayTitle = showTranslated ? (item.title_et ?? item.title ?? '') : (item.title ?? '');
-  const mergedBody = item.body || item.summary;
+  const mergedBody = cleanupNewsText(item.body || item.summary);
   const bodyText = toPlainText(contentHtml || mergedBody);
   const displayBody = showTranslated
-    ? (item.body_et ?? mergedBody ?? '')
-    : (contentHtml || bodyText);
+    ? cleanupNewsText(item.body_et ?? mergedBody ?? '')
+    : (cleanupNewsHtml(contentHtml) || bodyText);
 
   const heroImageUrl = getNewsImageSrc(item, proxyBase);
   const [heroSrc, setHeroSrc] = useState<string | null>(heroImageUrl);
   const [heroFailed, setHeroFailed] = useState(false);
   const rewrittenContentHtml = contentHtml ? rewriteImgSrcToProxy(contentHtml, sourceName, proxyBase) : null;
   const bodyHtmlWithoutDuplicateHero = rewrittenContentHtml ? stripLeadingSameImage(rewrittenContentHtml, heroSrc) : null;
+  const translatedArticleHtml = showTranslated
+    ? buildTranslatedArticleHtml(bodyHtmlWithoutDuplicateHero || rewrittenContentHtml, item.body_et ?? mergedBody ?? '')
+    : null;
   const originalUrl = item.permalink_url || item.url || '#';
   const isPending = showEtContent && autoTranslateEnabled && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
 
@@ -1012,7 +1113,7 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
             <Newspaper className="w-12 h-12 text-muted-foreground/30" />
           </div>
         )}
-        <h1 className="text-xl font-bold text-foreground">{displayTitle}</h1>
+        <h1 className="text-xl font-bold text-foreground">{cleanupNewsText(displayTitle)}</h1>
         <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="secondary">{sourceName}</Badge>
           {isPending && (
@@ -1054,6 +1155,11 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
             <Skeleton className="h-4 w-5/6" />
             <Skeleton className="h-4 w-4/6" />
           </div>
+        ) : showTranslated && translatedArticleHtml ? (
+          <div
+            className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
+            dangerouslySetInnerHTML={{ __html: translatedArticleHtml }}
+          />
         ) : !showTranslated && bodyHtmlWithoutDuplicateHero ? (
           <div
             className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"

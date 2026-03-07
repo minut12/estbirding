@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getOpenAIConfig, translateToEstonian } from "../_shared/openai.ts";
+import { applyBirdNameCorrections, logBirdNameCorrections, prepareBirdNameCorrectionFromOriginalText } from "../_shared/bird-name-correction.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -32,6 +33,38 @@ function normalizeLocaleCode(value: string | null | undefined): string {
 
 function hasText(value: string | null | undefined): boolean {
   return String(value || "").trim().length > 0;
+}
+
+function correctBirdNamesSafely(
+  id: string,
+  title: string,
+  bodyText: string,
+  translatedTitle: string,
+  translatedBody: string,
+): { titleEt: string; bodyEt: string } {
+  try {
+    const preparedTitle = prepareBirdNameCorrectionFromOriginalText(title);
+    const preparedBody = prepareBirdNameCorrectionFromOriginalText(bodyText);
+    const correctedTitle = applyBirdNameCorrections(translatedTitle, preparedTitle.matches);
+    const correctedBody = applyBirdNameCorrections(translatedBody, preparedBody.matches);
+
+    logBirdNameCorrections(id, "title", correctedTitle.summary);
+    logBirdNameCorrections(id, "body", correctedBody.summary);
+
+    return {
+      titleEt: correctedTitle.correctedText,
+      bodyEt: correctedBody.correctedText,
+    };
+  } catch (error) {
+    console.warn("[news-bird-names] correction skipped", {
+      article_id: id,
+      error: String((error as Error)?.message || error),
+    });
+    return {
+      titleEt: translatedTitle,
+      bodyEt: translatedBody,
+    };
+  }
 }
 
 async function updateTranslatedRow(
@@ -148,7 +181,8 @@ Deno.serve(async (req) => {
             sourceLang: lang || "auto",
           });
 
-        const persist = await updateTranslatedRow(supabase, item.id, translated.title_et, translated.body_et);
+        const corrected = correctBirdNamesSafely(item.id, title, bodyText, translated.title_et, translated.body_et);
+        const persist = await updateTranslatedRow(supabase, item.id, corrected.titleEt, corrected.bodyEt);
         if (!persist.ok) {
           errors.push({ id: item.id, error: persist.error });
           continue;
@@ -156,8 +190,8 @@ Deno.serve(async (req) => {
 
         updated.push({
           id: item.id,
-          title_et: String(translated.title_et || ""),
-          body_et: String(translated.body_et || ""),
+          title_et: String(corrected.titleEt || ""),
+          body_et: String(corrected.bodyEt || ""),
         });
       } catch (e) {
         const errorText = String((e as Error)?.message || e || "TRANSLATE_FAILED").slice(0, 240);

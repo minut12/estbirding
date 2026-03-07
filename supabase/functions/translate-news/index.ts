@@ -1,4 +1,5 @@
 import { getOpenAIConfig, translateToEstonian } from "../_shared/openai.ts";
+import { applyBirdNameCorrections, prepareBirdNameCorrectionFromOriginalText } from "../_shared/bird-name-correction.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -49,11 +50,23 @@ Deno.serve(async (req) => {
     }
 
     const { title_et, body_et } = await translateToEstonian({
-      title,
-      body: articleBody,
+      title: prepareBirdNameCorrectionFromOriginalText(title).maskedText || title,
+      body: prepareBirdNameCorrectionFromOriginalText(articleBody).maskedText || articleBody,
       sourceLang: sourceLang || targetLang || "auto",
     });
-    return jsonResponse(200, { title_et, body_et, translate_hash: translateHash });
+    try {
+      const preparedTitle = prepareBirdNameCorrectionFromOriginalText(title);
+      const preparedBody = prepareBirdNameCorrectionFromOriginalText(articleBody);
+      const correctedTitle = applyBirdNameCorrections(title_et, preparedTitle.matches);
+      const correctedBody = applyBirdNameCorrections(body_et, preparedBody.matches);
+      return jsonResponse(200, {
+        title_et: correctedTitle.correctedText,
+        body_et: correctedBody.correctedText,
+        translate_hash: translateHash,
+      });
+    } catch {
+      return jsonResponse(200, { title_et, body_et, translate_hash: translateHash });
+    }
   } catch (error) {
     return jsonResponse(500, { error: (error as any)?.message || String(error) });
   }

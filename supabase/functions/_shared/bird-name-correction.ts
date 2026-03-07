@@ -16,6 +16,16 @@ export type PreparedBirdNameCorrection = {
   matches: BirdNameMatch[];
 };
 
+export type BirdNameCorrectionSummary = {
+  replacementCount: number;
+  replacements: Array<{
+    matchedToken: string;
+    matchType: MatchType;
+    estonianName: string;
+    replacementCount: number;
+  }>;
+};
+
 const LINNUD_TXT_RELATIVE_PATH = "../../../data/Linnud.txt";
 
 const FALLBACK_ROWS = [
@@ -161,29 +171,47 @@ export function prepareBirdNameCorrectionFromOriginalText(input: string | null |
   };
 }
 
-export function applyBirdNameCorrections(maskedTranslatedText: string | null | undefined, matches: BirdNameMatch[], context: string): string {
+export function applyBirdNameCorrections(maskedTranslatedText: string | null | undefined, matches: BirdNameMatch[]): {
+  correctedText: string;
+  summary: BirdNameCorrectionSummary;
+} {
   let output = String(maskedTranslatedText || "");
-  if (!output.trim() || matches.length === 0) return output;
+  if (!output.trim() || matches.length === 0) {
+    return { correctedText: output, summary: { replacementCount: 0, replacements: [] } };
+  }
 
-  const logs: Array<{ matched_token: string; match_type: MatchType; replacement: string; replacement_count: number }> = [];
+  const replacements: BirdNameCorrectionSummary["replacements"] = [];
+  let replacementCount = 0;
 
   matches.forEach((match, index) => {
     const placeholder = `__NEWS_BIRD_${index}__`;
     const pattern = new RegExp(escapeRegex(placeholder), "g");
-    const replacementCount = (output.match(pattern) || []).length;
+    const replaced = (output.match(pattern) || []).length;
     output = output.replace(pattern, match.estonianName);
-    logs.push({
-      matched_token: match.token,
-      match_type: match.matchType,
-      replacement: match.estonianName,
-      replacement_count: replacementCount,
+    replacementCount += replaced;
+    replacements.push({
+      matchedToken: match.token,
+      matchType: match.matchType,
+      estonianName: match.estonianName,
+      replacementCount: replaced,
     });
   });
 
-  const appliedLogs = logs.filter((entry) => entry.replacement_count > 0);
-  if (appliedLogs.length > 0) {
-    console.log("[news-bird-names]", { context, corrections: appliedLogs });
-  }
+  return {
+    correctedText: output,
+    summary: {
+      replacementCount,
+      replacements: replacements.filter((entry) => entry.replacementCount > 0),
+    },
+  };
+}
 
-  return output;
+export function logBirdNameCorrections(articleId: string, field: "title" | "body", summary: BirdNameCorrectionSummary): void {
+  if (summary.replacementCount <= 0) return;
+  console.log("[news-bird-names]", {
+    article_id: articleId,
+    field,
+    replacement_count: summary.replacementCount,
+    replacements_preview: summary.replacements.slice(0, 3),
+  });
 }

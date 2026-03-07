@@ -1,6 +1,6 @@
 ﻿import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getOpenAIConfig, translateToEstonian } from "./openai.ts";
-import { applyBirdNameCorrections, prepareBirdNameCorrectionFromOriginalText } from "./bird-name-correction.ts";
+import { applyBirdNameCorrections, logBirdNameCorrections, prepareBirdNameCorrectionFromOriginalText } from "./bird-name-correction.ts";
 
 export interface NewsTranslationItem {
   id: string;
@@ -104,6 +104,38 @@ async function detectSourceLanguage(item: NewsTranslationItem, title: string, bo
   return heuristicLanguage(title, body) || await classifyLanguageWithOpenAI(title, body);
 }
 
+function correctBirdNamesSafely(
+  id: string,
+  title: string,
+  bodyText: string,
+  translatedTitle: string,
+  translatedBody: string,
+): { titleEt: string; bodyEt: string } {
+  try {
+    const preparedTitle = prepareBirdNameCorrectionFromOriginalText(title);
+    const preparedBody = prepareBirdNameCorrectionFromOriginalText(bodyText);
+    const correctedTitle = applyBirdNameCorrections(translatedTitle, preparedTitle.matches);
+    const correctedBody = applyBirdNameCorrections(translatedBody, preparedBody.matches);
+
+    logBirdNameCorrections(id, "title", correctedTitle.summary);
+    logBirdNameCorrections(id, "body", correctedBody.summary);
+
+    return {
+      titleEt: correctedTitle.correctedText,
+      bodyEt: correctedBody.correctedText,
+    };
+  } catch (error) {
+    console.warn("[news-bird-names] correction skipped", {
+      article_id: id,
+      error: String((error as Error)?.message || error),
+    });
+    return {
+      titleEt: translatedTitle,
+      bodyEt: translatedBody,
+    };
+  }
+}
+
 export async function translateNewsItemToEt(
   supabase: SupabaseClient,
   item: NewsTranslationItem,
@@ -184,13 +216,12 @@ export async function translateNewsItemToEt(
       body: preparedBody.maskedText || bodyText,
       sourceLang: normalizedSourceLang || sourceLang || "auto",
     });
-    const correctedTitle = applyBirdNameCorrections(translated.title_et, preparedTitle.matches, `${id}:title`);
-    const correctedBody = applyBirdNameCorrections(translated.body_et, preparedBody.matches, `${id}:body`);
+    const corrected = correctBirdNamesSafely(id, title, bodyText, translated.title_et, translated.body_et);
 
     await supabase.from("news_items").update({
       source_lang: normalizedSourceLang || sourceLang,
-      title_et: correctedTitle || null,
-      body_et: correctedBody || null,
+      title_et: corrected.titleEt || null,
+      body_et: corrected.bodyEt || null,
       translation_status: "done",
       translation_error: null,
       translated_at: new Date().toISOString(),

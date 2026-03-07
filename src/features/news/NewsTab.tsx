@@ -27,9 +27,11 @@ interface NewsItem {
   source_key?: string | null;
   title: string;
   title_et?: string | null;
+  translated_title?: string | null;
   summary: string | null;
   body: string | null;
   body_et?: string | null;
+  translated_body?: string | null;
   content_html: string | null;
   url: string | null;
   permalink_url?: string | null;
@@ -102,7 +104,44 @@ function toPlainText(value: string | null | undefined): string {
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'");
-  return decoded.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  return stripNewsBoilerplate(decoded.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+}
+
+const NEWS_BOILERPLATE_PATTERNS = [
+  /feed\s+generated\s+with\s+fetchrss/gi,
+  /sisu\s+genereeritud\s+fetchrss\s+abil/gi,
+  /content\s+generated\s+by\s+fetchrss/gi,
+  /generated\s+by\s+fetchrss/gi,
+];
+
+function stripNewsBoilerplate(value: string | null | undefined): string {
+  if (!value) return '';
+  return NEWS_BOILERPLATE_PATTERNS.reduce((next, pattern) => next.replace(pattern, ' '), String(value));
+}
+
+function cleanupNewsText(value: string | null | undefined): string {
+  return stripNewsBoilerplate(value)
+    .replace(/\r/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function cleanupNewsHtml(html: string | null | undefined): string | null {
+  if (!html) return null;
+  const cleaned = stripNewsBoilerplate(html)
+    .replace(/<p>\s*<\/p>/gi, '')
+    .replace(/<div>\s*<\/div>/gi, '')
+    .trim();
+  return cleaned || null;
+}
+
+function getTranslatedTitle(item: NewsItem): string {
+  return cleanupNewsText(item.title_et || item.translated_title || '');
+}
+
+function getTranslatedBody(item: NewsItem): string {
+  return cleanupNewsText(item.body_et || item.translated_body || '');
 }
 
 function stripLeadingSameImage(html: string, heroUrl?: string | null): string {
@@ -183,6 +222,56 @@ function extractFirstImageFromHtml(html: string): string | null {
   const srcSet = extractFirstSrcsetUrl(extractAttribute(imgTag, 'srcset'));
 
   return cleanUrl(src) || cleanUrl(dataSrc) || cleanUrl(dataOriginal) || cleanUrl(srcSet) || null;
+}
+
+function extractAllImageUrlsFromHtml(html: string | null | undefined): string[] {
+  if (!html) return [];
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const urls = Array.from(doc.querySelectorAll('img'))
+      .map((img) => cleanUrl(
+        img.getAttribute('src')
+        || img.getAttribute('data-src')
+        || img.getAttribute('data-original')
+        || extractFirstSrcsetUrl(img.getAttribute('srcset')),
+      ))
+      .filter((url): url is string => Boolean(url));
+    return Array.from(new Set(urls));
+  } catch {
+    const urls: string[] = [];
+    const imgMatches = html.match(/<img\b[^>]*>/gi) || [];
+    for (const match of imgMatches) {
+      const src = cleanUrl(
+        extractAttribute(match, 'src')
+        || extractAttribute(match, 'data-src')
+        || extractAttribute(match, 'data-original')
+        || extractFirstSrcsetUrl(extractAttribute(match, 'srcset')),
+      );
+      if (src) urls.push(src);
+    }
+    return Array.from(new Set(urls));
+  }
+}
+
+function extractArticleImages(item: NewsItem): string[] {
+  const htmlCandidates = [
+    item.content_html,
+    item.body,
+    item.summary,
+    item.raw_json && typeof item.raw_json === 'object'
+      ? ((item.raw_json as any).rss_item?.['content:encoded']
+        || (item.raw_json as any).rss_item?.content
+        || (item.raw_json as any).rss_item?.description
+        || (item.raw_json as any)['content:encoded']
+        || (item.raw_json as any).content
+        || (item.raw_json as any).description)
+      : null,
+  ];
+
+  const images = htmlCandidates.flatMap((candidate) => extractAllImageUrlsFromHtml(candidate));
+  const hero = cleanUrl(item.display_image_url || item.cached_image_url || item.image_url);
+  const ordered = hero ? [hero, ...images] : images;
+  return Array.from(new Set(ordered.filter(Boolean)));
 }
 
 function extractAttribute(tag: string, attribute: string): string | null {
@@ -793,12 +882,14 @@ function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnable
   const primaryThumb = getNewsImageSrc(item, proxyBase);
   const [thumbSrc, setThumbSrc] = useState<string | null>(primaryThumb);
   const isNonEtSource = normalizeLocale(item.source_lang || item.language || '') !== 'et';
-  const hasTranslation = Boolean((item.title_et || '').trim() || (item.body_et || '').trim());
+  const translatedTitle = getTranslatedTitle(item);
+  const translatedBody = getTranslatedBody(item);
+  const hasTranslation = Boolean(translatedTitle || translatedBody);
   const useEtDisplay = showEtContent && autoTranslateEnabled && isNonEtSource && hasTranslation && sourceName !== 'EOÜ';
   const isPending = showEtContent && autoTranslateEnabled && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
-  const displayTitle = useEtDisplay ? (item.title_et ?? item.title ?? '') : (item.title ?? '');
+  const displayTitle = useEtDisplay ? (translatedTitle || item.title || '') : (item.title ?? '');
   const snippetSource = useEtDisplay
-    ? (item.body_et ?? item.body ?? item.summary ?? '')
+    ? (translatedBody || item.body || item.summary || '')
     : (item.body ?? item.summary ?? item.excerpt ?? '');
   const snippet = toPlainText(snippetSource).slice(0, 150);
   const originalUrl = item.permalink_url || item.url || '#';
@@ -905,7 +996,9 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
 
   const normalizedLang = normalizeLocale(item.source_lang || item.language || '');
   const isNonEtSource = normalizedLang !== 'et';
-  const hasTranslation = Boolean((item.title_et || '').trim() || (item.body_et || '').trim());
+  const translatedTitle = getTranslatedTitle(item);
+  const translatedBody = getTranslatedBody(item);
+  const hasTranslation = Boolean(translatedTitle || translatedBody);
   const canShowTranslated = showEtContent && autoTranslateEnabled && isNonEtSource && hasTranslation && sourceName !== 'EOÜ';
 
   // Per-item view mode persisted in localStorage, default = translated when available
@@ -958,20 +1051,38 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   const showTranslated = canShowTranslated && viewMode === 'translated';
   const showToggle = canShowTranslated;
 
-  const displayTitle = showTranslated ? (item.title_et ?? item.title ?? '') : (item.title ?? '');
-  const mergedBody = item.body || item.summary;
-  const bodyText = toPlainText(contentHtml || mergedBody);
+  const displayTitle = showTranslated ? (translatedTitle || item.title || '') : cleanupNewsText(item.title || '');
+  const mergedBody = cleanupNewsText(item.body || item.summary);
+  const cleanedContentHtml = cleanupNewsHtml(contentHtml);
+  const bodyText = toPlainText(cleanedContentHtml || mergedBody);
   const displayBody = showTranslated
-    ? (item.body_et ?? mergedBody ?? '')
-    : (contentHtml || bodyText);
+    ? translatedBody
+    : (cleanedContentHtml || bodyText);
+  const articleImages = extractArticleImages({
+    ...item,
+    content_html: cleanedContentHtml,
+  });
 
   const heroImageUrl = getNewsImageSrc(item, proxyBase);
   const [heroSrc, setHeroSrc] = useState<string | null>(heroImageUrl);
   const [heroFailed, setHeroFailed] = useState(false);
-  const rewrittenContentHtml = contentHtml ? rewriteImgSrcToProxy(contentHtml, sourceName, proxyBase) : null;
+  const rewrittenContentHtml = cleanedContentHtml ? rewriteImgSrcToProxy(cleanedContentHtml, sourceName, proxyBase) : null;
   const bodyHtmlWithoutDuplicateHero = rewrittenContentHtml ? stripLeadingSameImage(rewrittenContentHtml, heroSrc) : null;
   const originalUrl = item.permalink_url || item.url || '#';
   const isPending = showEtContent && autoTranslateEnabled && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
+
+  useEffect(() => {
+    if (showTranslated && !hasTranslation && import.meta.env.DEV) {
+      console.warn('[news-translation] translated mode requested without Estonian body', {
+        id: item.id,
+        source: sourceName,
+        title_et: item.title_et,
+        translated_title: item.translated_title,
+        body_et: item.body_et,
+        translated_body: item.translated_body,
+      });
+    }
+  }, [showTranslated, hasTranslation, item.id, item.title_et, item.translated_title, item.body_et, item.translated_body, sourceName]);
 
   useEffect(() => {
     setHeroSrc(heroImageUrl);
@@ -1054,6 +1165,25 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
             <Skeleton className="h-4 w-5/6" />
             <Skeleton className="h-4 w-4/6" />
           </div>
+        ) : showTranslated && articleImages.length > 0 ? (
+          <div className="space-y-3">
+            {articleImages.map((imageUrl, index) => {
+              const src = getProxiedImageUrl(imageUrl, proxyBase) || imageUrl;
+              const matchesHero = heroSrc && (src === heroSrc || imageUrl === heroSrc);
+              if (matchesHero) return null;
+              return (
+                <img
+                  key={`${imageUrl}-${index}`}
+                  src={src}
+                  alt=""
+                  className="w-full rounded-xl object-cover bg-muted"
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  crossOrigin="anonymous"
+                />
+              );
+            })}
+          </div>
         ) : !showTranslated && bodyHtmlWithoutDuplicateHero ? (
           <div
             className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
@@ -1062,10 +1192,14 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
         ) : contentError ? (
           <p className="text-sm text-muted-foreground italic">{contentError}</p>
         ) : displayBody ? (
-          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{toPlainText(displayBody)}</p>
+          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{showTranslated ? displayBody : toPlainText(displayBody)}</p>
         ) : (
           <p className="text-sm text-muted-foreground italic">Sisu pole saadaval. Ava originaal.</p>
         )}
+
+        {showTranslated && displayBody ? (
+          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{displayBody}</p>
+        ) : null}
 
         <div className="flex gap-2 pt-2">
           <a href={originalUrl} target="_blank" rel="noopener noreferrer">

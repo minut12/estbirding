@@ -2718,8 +2718,13 @@ async function _applyElurikkusPayloadToPoints(species, payload){
     coordLock: row.coordLock || '',
     reason
   });
-  try{ if(typeof save === 'function') save(); }catch(e){}
-  try{ if(typeof updateMarker === 'function') updateMarker(species); }catch(e){}
+  // Skip per-species save/render during bulk refresh (batched externally)
+  if(!__eluBulkActive){
+    try{ if(typeof save === 'function') save(); }catch(e){}
+    try{ if(typeof updateMarker === 'function') updateMarker(species); }catch(e){}
+  } else {
+    try{ if(typeof updateMarker === 'function') updateMarker(species); }catch(e){}
+  }
   return {
     updated: updated,
     moved: moved,

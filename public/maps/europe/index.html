@@ -326,23 +326,7 @@
 <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
 
 
-<div id="modalBackdrop">
-  <div id="modal">
-    <h3>Europe map settings</h3>
-    <div class="small" style="margin-top:0;">
-      Paste your eBird API token below. It is stored locally on this device.
-      <br/>Species list: one per line (default = 376 species).
-    </div>
-    <div class="grid">
-      <input id="tokenInput" type="text" placeholder="eBird API token"/>
-      <textarea id="speciesInput" placeholder="One species per line (Estonian names)..."></textarea>
-    </div>
-    <div class="rowBtns">
-      <button class="btn secondary" id="modalCancel">Cancel</button>
-      <button class="btn" id="modalSave">Save</button>
-    </div>
-  </div>
-</div>
+<!-- Settings modal removed — eBird token is now a server-side secret -->
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="/maps/shared/map-hamburger-control.js"></script>

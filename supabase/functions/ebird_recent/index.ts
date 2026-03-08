@@ -46,13 +46,11 @@ Deno.serve(async (req) => {
     return jsonResponse(400, { error: "invalid method" }, origin);
   }
 
-  const rawToken = Deno.env.get("EBIRD_API_TOKEN");
-  if (!rawToken) {
+  const token = Deno.env.get("EBIRD_API_TOKEN");
+  if (!token) {
     console.error("[ebird_recent] missing secret EBIRD_API_TOKEN");
     return jsonResponse(500, { error: "EBIRD_API_TOKEN secret not set" }, origin);
   }
-  // Trim whitespace/newlines that may have been pasted with the token
-  const token = rawToken.trim();
 
   const reqUrl = new URL(req.url);
   const regionCode = (reqUrl.searchParams.get("regionCode") || "").trim();
@@ -66,7 +64,7 @@ Deno.serve(async (req) => {
   const upstreamUrl = speciesCode
     ? `https://api.ebird.org/v2/data/obs/${encodeURIComponent(regionCode)}/recent/${encodeURIComponent(speciesCode)}?back=${back}&maxResults=${maxResults}`
     : `https://api.ebird.org/v2/data/obs/${encodeURIComponent(regionCode)}/recent?back=${back}&maxResults=${maxResults}`;
-  console.log(`[ebird_recent] request region=${regionCode} back=${back} maxResults=${maxResults} species=${speciesCode ? "yes" : "no"} tokenLen=${token.length} tokenStart=${token.slice(0,4)}...${token.slice(-4)}`);
+  console.log(`[ebird_recent] request region=${regionCode} back=${back} maxResults=${maxResults} species=${speciesCode ? "yes" : "no"}`);
 
   let upstream: Response;
   try {

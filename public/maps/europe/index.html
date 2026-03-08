@@ -1468,6 +1468,16 @@ function wireRows(){
     if (nameEl) nameEl.addEventListener("click", ()=>{
       p.visible = (p.visible === false) ? true : false;
       saveAll(); updateMarker(key); render();
+      // Notify parent app of visibility change
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({
+            type: 'SPECIES_VISIBILITY_CHANGED',
+            speciesKey: key,
+            isHidden: p.visible === false
+          }, '*');
+        }
+      } catch(e) {}
     });
 
     if (openBtn) openBtn.addEventListener("click", ()=>{

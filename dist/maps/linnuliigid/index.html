@@ -212,7 +212,7 @@
 <div id="snapshotBanner" class="snapshot-banner" style="display:none !important"></div>
 <div class="fetch-controls">
   <button id="btnRefreshData" class="btn" title="Refresh all species from Elurikkus">Refresh from Elurikkus</button>
-  <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index">Resume</button>
+  <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index" style="display:none">Resume</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
 <div id="eluProgress" class="snapshot-banner" style="display:none;font-weight:600"></div>
@@ -297,6 +297,7 @@ const LS_AVATARS='bm_rari_avatars', LS_POINTS='bm_rari_points', LS_PROXY='bm_rar
 const LS_RECENT_ONLY = 'bm_recent_only';
 const LS_SPRING_YEARFIRST = 'bm_rari_spring_yearfirst_v3';
 const LS_SPRING_PANEL_OPEN = 'bm_spring_panel_open';
+const LS_SPRING_META = 'bm_rari_spring_dates_meta_v1';
 const CLASSIC_MODE = false;
 const LS_LIVE_ELURIKKUS = 'bm_live_elurikkus_v1';
 const LS_LIVE_ELURIKKUS_USE = 'bm_live_elurikkus_use_v1';
@@ -370,6 +371,8 @@ for (const _k of Object.keys(DEFAULT_SPRING_DATES)) {
     delete DEFAULT_SPRING_DATES[_k];
   }
 }
+const SPRING_STORAGE_YEAR = 2026;
+const DEFAULT_SPRING_DATES_BY_KEY = {};
 
 // === Avatar defaults & preloading ===
 const DEFAULT_AVATARS = {};
@@ -475,12 +478,18 @@ try { ensureSupabaseProxyBaseStored(); } catch(e) {}
 let springDates = (function(){
   try{
     const saved = JSON.parse(localStorage.getItem(LS_SPRING) || 'null');
-    return Object.assign({}, DEFAULT_SPRING_DATES, (saved && typeof saved==='object' ? saved : {}));
-  }catch(e){ return Object.assign({}, DEFAULT_SPRING_DATES); }
+    return saved && typeof saved==='object' ? saved : {};
+  }catch(e){ return {}; }
 })();
 if(!springDates || typeof springDates !== 'object'){
-  springDates = Object.assign({}, DEFAULT_SPRING_DATES);
+  springDates = {};
 }
+let springMeta = (function(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(LS_SPRING_META) || '{}');
+    return raw && typeof raw === 'object' ? raw : {};
+  }catch(e){ return {}; }
+})();
 let springYearFirst = {};
 try { springYearFirst = JSON.parse(localStorage.getItem(LS_SPRING_YEARFIRST) || '{}') || {}; }
 catch(e){ springYearFirst = {}; }
@@ -494,6 +503,22 @@ try{
 let springQ = [];
 let springQRunning = false;
 let springEditRowKey = null;
+const SPRING_SYNC_TABLE = 'linnuliigid_spring_dates';
+let __springCloudLoaded = false;
+let __springCloudLoadedAt = '';
+let __springLastSyncAt = '';
+let __springLastSyncError = '';
+let __springSyncInFlight = null;
+let __springPendingSaves = new Map();
+const __springSpeciesNameByKey = {};
+for (let __si = 0; __si < SPECIES.length; __si++) {
+  __springSpeciesNameByKey[_speciesKey(SPECIES[__si])] = SPECIES[__si];
+}
+for (const __springName of Object.keys(DEFAULT_SPRING_DATES)) {
+  const __springKey = _speciesKey(__springName);
+  if (__springKey) DEFAULT_SPRING_DATES_BY_KEY[__springKey] = DEFAULT_SPRING_DATES[__springName];
+}
+springDates = _sanitizeSpringDateMap(springDates);
 
 // Map
 const IS_MOBILE_DEVICE = matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -861,13 +886,375 @@ function isInvalidWinterValue(iso){
   return iso.startsWith(year + '-') && iso < cutoff;
 }
 function normalizeSpringDate(v){
-  const t = (v || '').trim();
+  return _normalizeSpringDateValue(v);
+}
+function _normalizeSpringDateValue(v){
+  const t = String(v == null ? '' : v).trim();
   if(!t) return '';
-  const m = t.match(/^(\d{1,2})\.(\d{1,2})$/);
-  if(!m) return null;
-  const d = String(parseInt(m[1],10));          // keep 5.03 style like your list
-  const mm = String(parseInt(m[2],10)).padStart(2,'0');
-  return `${d}.${mm}`;
+  if(t === '0' || t.toLowerCase() === 'null' || t.toLowerCase() === 'undefined') return '';
+  let m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(m){
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    const dt = new Date(Date.UTC(y, mo - 1, d));
+    if(dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return '';
+    return `${String(y).padStart(4,'0')}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+  m = t.match(/^(\d{1,2})\.(\d{1,2})$/);
+  if(m){
+    const d = Number(m[1]);
+    const mo = Number(m[2]);
+    const dt = new Date(Date.UTC(SPRING_STORAGE_YEAR, mo - 1, d));
+    if(dt.getUTCFullYear() !== SPRING_STORAGE_YEAR || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return '';
+    return `${SPRING_STORAGE_YEAR}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+  return '';
+}
+function _springDisplayValue(v){
+  const normalized = _normalizeSpringDateValue(v);
+  return normalized ? isoToDdMm(normalized) : '';
+}
+function _springKey(name){
+  return _speciesKey(name);
+}
+function _getSpringValue(name){
+  const k = _springKey(name);
+  return k ? String((springDates && springDates[k]) || '').trim() : '';
+}
+function _setSpringValue(name, value){
+  const k = _springKey(name);
+  if(!k) return '';
+  const normalized = _normalizeSpringDateValue(value);
+  if(normalized) springDates[k] = normalized;
+  else delete springDates[k];
+  return normalized;
+}
+function _sanitizeSpringDateMap(rawMap){
+  const out = {};
+  for(const [speciesKey, defaultValue] of Object.entries(DEFAULT_SPRING_DATES_BY_KEY)){
+    const normalizedDefault = _normalizeSpringDateValue(defaultValue);
+    if(normalizedDefault) out[speciesKey] = normalizedDefault;
+  }
+  const src = rawMap && typeof rawMap === 'object' ? rawMap : {};
+  for(const [rawKey, rawValue] of Object.entries(src)){
+    const k = _springKey(rawKey);
+    if(!k) continue;
+    const normalized = _normalizeSpringDateValue(rawValue);
+    if(!normalized) continue;
+    out[k] = normalized;
+  }
+  return out;
+}
+function _readSpringMeta(key){
+  const k = _speciesKey(key);
+  const raw = springMeta && springMeta[k] && typeof springMeta[k] === 'object' ? springMeta[k] : {};
+  return {
+    speciesKey: k,
+    speciesName: __springSpeciesNameByKey[k] || key,
+    springDate: _normalizeSpringDateValue(typeof raw.springDate === 'string' ? raw.springDate : ''),
+    springTime: typeof raw.springTime === 'string' ? raw.springTime : '',
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : '',
+    dirty: raw.dirty === true,
+    source: typeof raw.source === 'string' ? raw.source : '',
+    updatedBy: typeof raw.updatedBy === 'string' ? raw.updatedBy : '',
+  };
+}
+function _writeSpringMetaEntry(key, patch){
+  const k = _speciesKey(key);
+  const prev = _readSpringMeta(k);
+  springMeta[k] = Object.assign({}, prev, patch || {}, { speciesKey: k, speciesName: __springSpeciesNameByKey[k] || key });
+  return springMeta[k];
+}
+function _persistSpringCache(){
+  springDates = _sanitizeSpringDateMap(springDates);
+  try{ localStorage.setItem(LS_SPRING, JSON.stringify(springDates)); }catch(e){}
+  try{ localStorage.setItem(LS_SPRING_META, JSON.stringify(springMeta || {})); }catch(e){}
+}
+function _setSpringSyncError(message){
+  __springLastSyncError = String(message || '').trim();
+  if(__springLastSyncError) console.warn('[spring-sync] error', __springLastSyncError);
+}
+function _markSpringSyncAt(){
+  __springLastSyncAt = new Date().toISOString();
+}
+function _springRestBase(){
+  const validation = _validateSupabaseLocal();
+  if(!validation.ok) throw new Error(validation.error || 'Supabase seadistus puudub.');
+  return validation.url.replace(/\/+$/, '') + '/rest/v1/' + SPRING_SYNC_TABLE;
+}
+function _springRestHeaders(extra){
+  const anonKey = _resolveSupabaseAnonKeyLocal();
+  const headers = Object.assign({
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'apikey': anonKey,
+    'Authorization': 'Bearer ' + anonKey,
+  }, extra || {});
+  return headers;
+}
+function _getSpringDeviceId(){
+  const key = 'bm_spring_device_id';
+  try{
+    let id = String(localStorage.getItem(key) || '').trim();
+    if(!id){
+      id = 'web-' + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem(key, id);
+    }
+    return id;
+  }catch(e){
+    return 'web-unknown';
+  }
+}
+function _parseSpringUpdatedAtMs(v){
+  const ms = Date.parse(String(v || ''));
+  return Number.isFinite(ms) ? ms : 0;
+}
+function _getSpringCloudRecordMap(records){
+  const out = {};
+  const arr = Array.isArray(records) ? records : [];
+  for(const row of arr){
+    const speciesKey = _speciesKey(row && (row.species_key || row.speciesKey || row.species_name || row.speciesName || ''));
+    if(!speciesKey) continue;
+    const normDate = normalizeSpringDate(row && (row.spring_date || row.springDate || ''));
+    if(!normDate && String(row && (row.spring_date || row.springDate || '') || '').trim()) continue;
+    out[speciesKey] = {
+      speciesKey: speciesKey,
+      speciesName: String(row && (row.species_name || row.speciesName || __springSpeciesNameByKey[speciesKey] || speciesKey)),
+      springDate: normDate || '',
+      springTime: String(row && (row.spring_time || row.springTime || '') || ''),
+      updatedAt: String(row && (row.updated_at || row.updatedAt || '') || ''),
+      updatedBy: String(row && (row.updated_by || row.updatedBy || '') || ''),
+      source: 'cloud',
+      dirty: false,
+    };
+  }
+  return out;
+}
+async function _fetchSpringCloudRecords(){
+  const url = _springRestBase() + '?select=species_key,species_name,spring_date,spring_time,updated_at,updated_by';
+  console.info('[spring-sync] load start', { url: url });
+  const res = await fetch(url, { method: 'GET', headers: _springRestHeaders(), cache: 'no-store' });
+  if(!res.ok) throw new Error('Kevadrände pilve laadimine ebaõnnestus (HTTP ' + res.status + ').');
+  const rows = await res.json();
+  console.info('[spring-sync] load end', { rows: Array.isArray(rows) ? rows.length : 0 });
+  return Array.isArray(rows) ? rows : [];
+}
+async function _upsertSpringCloudRecord(entry){
+  const url = _springRestBase() + '?on_conflict=species_key';
+  const payload = [{
+    species_key: entry.speciesKey,
+    species_name: entry.speciesName,
+    spring_date: entry.springDate,
+    spring_time: entry.springTime || null,
+    updated_at: entry.updatedAt || new Date().toISOString(),
+    updated_by: entry.updatedBy || _getSpringDeviceId(),
+  }];
+  console.info('[spring-sync] save start', { speciesKey: entry.speciesKey, updatedAt: payload[0].updated_at });
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: _springRestHeaders({ 'Prefer': 'resolution=merge-duplicates,return=representation' }),
+    body: JSON.stringify(payload),
+  });
+  if(!res.ok) throw new Error('Kevadrände pilve salvestamine ebaõnnestus (HTTP ' + res.status + ').');
+  const json = await res.json().catch(function(){ return []; });
+  console.info('[spring-sync] save end', { speciesKey: entry.speciesKey });
+  return Array.isArray(json) && json.length ? json[0] : payload[0];
+}
+async function _deleteSpringCloudRecord(speciesKey){
+  const url = _springRestBase() + '?species_key=eq.' + encodeURIComponent(speciesKey);
+  console.info('[spring-sync] save start', { speciesKey: speciesKey, delete: true });
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: _springRestHeaders({ 'Prefer': 'return=minimal' }),
+  });
+  if(!res.ok) throw new Error('Kevadrände pilvest kustutamine ebaõnnestus (HTTP ' + res.status + ').');
+  console.info('[spring-sync] save end', { speciesKey: speciesKey, delete: true });
+}
+function _applySpringEntryToState(entry){
+  const speciesName = entry.speciesName || __springSpeciesNameByKey[entry.speciesKey] || entry.speciesKey;
+  const normalizedDate = _normalizeSpringDateValue(entry.springDate);
+  _setSpringValue(entry.speciesKey || speciesName, normalizedDate);
+  _writeSpringMetaEntry(speciesName, {
+    springDate: normalizedDate || '',
+    springTime: entry.springTime || '',
+    updatedAt: entry.updatedAt || '',
+    dirty: !!entry.dirty,
+    source: entry.source || '',
+    updatedBy: entry.updatedBy || '',
+  });
+}
+function _collectDirtySpringEntries(){
+  const out = [];
+  for(const [speciesKey, raw] of Object.entries(springMeta || {})){
+    const row = raw && typeof raw === 'object' ? raw : {};
+    if(row.dirty !== true) continue;
+    const speciesName = row.speciesName || __springSpeciesNameByKey[speciesKey] || speciesKey;
+    const springDate = typeof row.springDate === 'string' ? row.springDate : '';
+    out.push({
+      speciesKey: speciesKey,
+      speciesName: speciesName,
+      springDate: springDate,
+      springTime: typeof row.springTime === 'string' ? row.springTime : '',
+      updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : '',
+      updatedBy: typeof row.updatedBy === 'string' ? row.updatedBy : _getSpringDeviceId(),
+      source: 'local',
+      dirty: true,
+    });
+  }
+  return out;
+}
+function _migrateLegacyLocalSpringOverrides(cloudMap){
+  let migrated = 0;
+  for(const [speciesName, springDate] of Object.entries(springDates || {})){
+    const speciesKey = _speciesKey(speciesName);
+    if(!speciesKey) continue;
+    const meta = _readSpringMeta(speciesKey);
+    if(meta.updatedAt) continue;
+    if(cloudMap && cloudMap[speciesKey]) continue;
+    const normDate = normalizeSpringDate(springDate);
+    if(!normDate && String(springDate || '').trim()) continue;
+    const defaultValue = DEFAULT_SPRING_DATES[speciesName] || '';
+    if(normDate === (defaultValue || '')) continue;
+    _writeSpringMetaEntry(speciesName, {
+      springDate: normDate || '',
+      springTime: '',
+      updatedAt: new Date().toISOString(),
+      updatedBy: _getSpringDeviceId(),
+      dirty: true,
+      source: 'local_legacy',
+    });
+    migrated++;
+  }
+  if(migrated){
+    _persistSpringCache();
+    console.info('[spring-sync] merge result', { legacyMigrated: migrated });
+  }
+}
+function _mergeSpringCloudAndLocal(records){
+  const cloudMap = _getSpringCloudRecordMap(records);
+  _migrateLegacyLocalSpringOverrides(cloudMap);
+  const dirtyLocal = _collectDirtySpringEntries();
+  let cloudWins = 0;
+  let localWins = 0;
+  for(const localEntry of dirtyLocal){
+    const cloudEntry = cloudMap[localEntry.speciesKey];
+    const localTs = _parseSpringUpdatedAtMs(localEntry.updatedAt);
+    const cloudTs = _parseSpringUpdatedAtMs(cloudEntry && cloudEntry.updatedAt);
+    if(cloudEntry && cloudTs >= localTs){
+      _applySpringEntryToState(Object.assign({}, cloudEntry, { dirty: false, source: 'cloud' }));
+      cloudWins++;
+      console.info('[spring-sync] conflict resolution', { speciesKey: localEntry.speciesKey, winner: 'cloud', localUpdatedAt: localEntry.updatedAt, cloudUpdatedAt: cloudEntry.updatedAt });
+      continue;
+    }
+    _applySpringEntryToState(localEntry);
+    localWins++;
+    console.info('[spring-sync] conflict resolution', { speciesKey: localEntry.speciesKey, winner: 'local', localUpdatedAt: localEntry.updatedAt, cloudUpdatedAt: cloudEntry ? cloudEntry.updatedAt : '' });
+  }
+  for(const cloudEntry of Object.values(cloudMap)){
+    const localMeta = _readSpringMeta(cloudEntry.speciesKey);
+    if(localMeta.dirty && _parseSpringUpdatedAtMs(localMeta.updatedAt) > _parseSpringUpdatedAtMs(cloudEntry.updatedAt)) continue;
+    _applySpringEntryToState(Object.assign({}, cloudEntry, { dirty: false, source: 'cloud' }));
+  }
+  _persistSpringCache();
+  console.info('[spring-sync] merge result', {
+    cloudRows: Object.keys(cloudMap).length,
+    dirtyLocal: dirtyLocal.length,
+    cloudWins: cloudWins,
+    localWins: localWins,
+  });
+  return { cloudRows: Object.keys(cloudMap).length, dirtyLocal: dirtyLocal.length, cloudWins: cloudWins, localWins: localWins };
+}
+async function _flushDirtySpringEntries(){
+  const dirty = _collectDirtySpringEntries();
+  if(!dirty.length) return;
+  for(const entry of dirty){
+    if(entry.springDate){
+      const saved = await _upsertSpringCloudRecord(entry);
+      _applySpringEntryToState({
+        speciesKey: entry.speciesKey,
+        speciesName: entry.speciesName,
+        springDate: normalizeSpringDate(saved.spring_date || saved.springDate || entry.springDate) || _normalizeSpringDateValue(entry.springDate),
+        springTime: String(saved.spring_time || saved.springTime || entry.springTime || ''),
+        updatedAt: String(saved.updated_at || saved.updatedAt || entry.updatedAt || new Date().toISOString()),
+        updatedBy: String(saved.updated_by || saved.updatedBy || entry.updatedBy || _getSpringDeviceId()),
+        source: 'cloud',
+        dirty: false,
+      });
+    } else {
+      await _deleteSpringCloudRecord(entry.speciesKey);
+      _applySpringEntryToState({
+        speciesKey: entry.speciesKey,
+        speciesName: entry.speciesName,
+        springDate: '',
+        springTime: '',
+        updatedAt: new Date().toISOString(),
+        updatedBy: _getSpringDeviceId(),
+        source: 'cloud',
+        dirty: false,
+      });
+    }
+    _persistSpringCache();
+  }
+}
+async function loadSpringDataFromCloud(force){
+  if(__springSyncInFlight && !force) return __springSyncInFlight;
+  __springSyncInFlight = (async function(){
+    try{
+      const rows = await _fetchSpringCloudRecords();
+      const merge = _mergeSpringCloudAndLocal(rows);
+      await _flushDirtySpringEntries();
+      __springCloudLoaded = true;
+      __springCloudLoadedAt = new Date().toISOString();
+      _setSpringSyncError('');
+      _markSpringSyncAt();
+      if(typeof renderSpringPanel === 'function') renderSpringPanel();
+      if(typeof render === 'function') render();
+      return merge;
+    }catch(err){
+      __springCloudLoaded = false;
+      _setSpringSyncError(String(err && err.message ? err.message : err || 'Kevadrände pilve laadimine ebaõnnestus.'));
+      _markSpringSyncAt();
+      try{ _showSnapshotBanner('Kevadrände andmete laadimine pilvest ebaõnnestus.', 'warn'); }catch(e){}
+      console.warn('[spring-sync] load failed', { error: __springLastSyncError });
+      return null;
+    }finally{
+      __springSyncInFlight = null;
+      _updateDebugPanel();
+    }
+  })();
+  return __springSyncInFlight;
+}
+async function saveSpringDateChange(key, nextValue){
+  const speciesName = __springSpeciesNameByKey[_speciesKey(key)] || key;
+  const speciesKey = _speciesKey(speciesName);
+  const prevDate = _getSpringValue(speciesKey);
+  const normalizedNextValue = _normalizeSpringDateValue(nextValue);
+  console.info(`[kevad] edit species=${speciesKey} raw=${String(nextValue == null ? '' : nextValue)}`);
+  console.info(`[kevad] old species=${speciesKey} raw=${prevDate || ''}`);
+  console.info(`[kevad] normalized=${normalizedNextValue || ''}`);
+  _setSpringValue(speciesKey, normalizedNextValue);
+  const nowIso = new Date().toISOString();
+  _writeSpringMetaEntry(speciesName, {
+    springDate: normalizedNextValue || '',
+    springTime: '',
+    updatedAt: nowIso,
+    dirty: true,
+    source: 'local',
+    updatedBy: _getSpringDeviceId(),
+  });
+  _persistSpringCache();
+  if(typeof renderSpringPanel === 'function') renderSpringPanel();
+  if(typeof render === 'function') render();
+  console.info(`[kevad] loaded after save=${_getSpringValue(speciesKey) || ''}`);
+  _setSpringSyncError('');
+  _markSpringSyncAt();
+  _updateDebugPanel();
+  return Promise.resolve({
+    speciesKey: speciesKey,
+    speciesName: speciesName,
+    springDate: normalizedNextValue || '',
+  });
 }
 
 async function tryFetch(url, opts){
@@ -2888,6 +3275,8 @@ let __pollCount = 0;
 let __snapshotMeta = { status: null, generated_at: null };
 let __renderedMarkerCount = 0;
 const ESTONIA_REFRESH_INDEX_KEY = "estonia_refresh_index";
+const ESTONIA_RESUME_STATE_KEY = "estonia_refresh_resume_v2";
+const ESTONIA_RESUME_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 let __lastProgressDone = -1;
 let __lastProgressAt = 0;
 let __lastRequestUrl = null;
@@ -4207,13 +4596,132 @@ function _setResumeIndex(i){
     next = Math.min(next, Math.max(0, __snapshotProgressTotal - 1));
   }
   try { localStorage.setItem(ESTONIA_REFRESH_INDEX_KEY, String(next)); } catch(e){}
+  _persistResumeState({
+    resumeIndex: next,
+    progress_done: (__snapshotProgressTotal > 0 ? Math.max(0, Number(__snapshotProgressDone || next) || 0) : next),
+    progress_total: Math.max(0, Number(__snapshotProgressTotal || 0) || 0),
+    status: String((__snapshotMeta && __snapshotMeta.status) || (__isRefreshRunning ? 'running' : '') || 'running'),
+  });
 }
 function _getResumeIndex(){
+  const valid = _validateAndSyncResumeState({ quiet: true });
+  if(valid) return Math.max(0, Number(valid.resumeIndex || valid.progress_done || 0) || 0);
   try {
     let idx = Math.max(0, Number(localStorage.getItem(ESTONIA_REFRESH_INDEX_KEY) || 0) || 0);
     if(__snapshotProgressTotal > 0) idx = Math.min(idx, Math.max(0, __snapshotProgressTotal - 1));
     return idx;
   } catch(e){ return 0; }
+}
+function _isResumeTerminalStatus(status){
+  const s = String(status || '').trim().toLowerCase();
+  return s === 'ready' || s === 'finished' || s === 'completed' || s === 'complete' || s === 'success';
+}
+function _resumeStorageKeys(){
+  return [ESTONIA_RESUME_STATE_KEY, ESTONIA_REFRESH_INDEX_KEY];
+}
+function _updateResumeButton(validState){
+  const btn = document.getElementById('btnResumeFetch');
+  if(!btn) return;
+  btn.style.display = validState ? 'inline-block' : 'none';
+}
+function _clearResumeState(reason, logLine){
+  const keys = _resumeStorageKeys();
+  for(let i = 0; i < keys.length; i++){
+    try{ localStorage.removeItem(keys[i]); }catch(e){}
+    try{ sessionStorage.removeItem(keys[i]); }catch(e){}
+  }
+  if(logLine) console.log(logLine);
+  pushDebugEvent('RESUME_CLEAR', 'Resume state cleared', { reason: reason || 'unknown', keys: keys });
+  _updateResumeButton(null);
+  return null;
+}
+function _persistResumeState(input){
+  const total = Math.max(0, Number(input && input.progress_total || 0) || 0);
+  const doneRaw = Math.max(0, Number(input && input.progress_done || 0) || 0);
+  const done = total > 0 ? Math.min(doneRaw, total) : doneRaw;
+  const resumeIndexRaw = Math.max(0, Number(input && input.resumeIndex != null ? input.resumeIndex : done) || 0);
+  const resumeIndex = total > 0 ? Math.min(resumeIndexRaw, Math.max(0, total - 1)) : resumeIndexRaw;
+  const status = String(input && input.status || (__isRefreshRunning ? 'running' : (__snapshotMeta && __snapshotMeta.status) || 'running'));
+  if(!total || done >= total || _isResumeTerminalStatus(status)){
+    return _clearResumeState('completed', '[resume] completed state, hiding resume');
+  }
+  const state = {
+    buildId: MAP_BUILD_ID,
+    buildStamp: MAP_BUILD_STAMP,
+    savedAt: new Date().toISOString(),
+    status: status,
+    progress_done: done,
+    progress_total: total,
+    resumeIndex: resumeIndex,
+  };
+  try{
+    localStorage.setItem(ESTONIA_RESUME_STATE_KEY, JSON.stringify(state));
+    localStorage.setItem(ESTONIA_REFRESH_INDEX_KEY, String(resumeIndex));
+  }catch(e){}
+  _updateResumeButton(_validateAndSyncResumeState({ quiet: true }));
+  return state;
+}
+function _readStoredResumeState(){
+  let raw = '';
+  try{ raw = String(localStorage.getItem(ESTONIA_RESUME_STATE_KEY) || sessionStorage.getItem(ESTONIA_RESUME_STATE_KEY) || '').trim(); }catch(e){}
+  if(raw){
+    try{ return JSON.parse(raw); }catch(e){
+      return { __invalidReason: 'malformed' };
+    }
+  }
+  const legacyIndex = Math.max(0, Number(localStorage.getItem(ESTONIA_REFRESH_INDEX_KEY) || 0) || 0);
+  if(legacyIndex > 0){
+    return { __invalidReason: 'legacy_index_only', resumeIndex: legacyIndex };
+  }
+  return null;
+}
+function _validateAndSyncResumeState(options){
+  const opts = options || {};
+  const state = _readStoredResumeState();
+  if(!state){
+    _updateResumeButton(null);
+    return null;
+  }
+  if(state.__invalidReason === 'malformed' || state.__invalidReason === 'legacy_index_only'){
+    return _clearResumeState(state.__invalidReason, '[resume] state stale, clearing');
+  }
+  const savedAtMs = Date.parse(String(state.savedAt || state.timestamp || ''));
+  const buildId = String(state.buildId || '').trim();
+  const status = String(state.status || '').trim().toLowerCase();
+  const total = Number(state.progress_total);
+  const done = Number(state.progress_done);
+  const resumeIndex = Number(state.resumeIndex);
+  const hasFields = Number.isFinite(savedAtMs) && buildId && Number.isFinite(total) && Number.isFinite(done) && Number.isFinite(resumeIndex);
+  if(!hasFields){
+    return _clearResumeState('missing_fields', '[resume] state stale, clearing');
+  }
+  if(buildId !== MAP_BUILD_ID){
+    return _clearResumeState('build_mismatch', '[resume] build mismatch, clearing');
+  }
+  if((Date.now() - savedAtMs) > ESTONIA_RESUME_MAX_AGE_MS){
+    return _clearResumeState('stale', '[resume] state stale, clearing');
+  }
+  if(total <= 0 || done < 0 || done >= total || resumeIndex < 0 || resumeIndex > Math.max(0, total - 1)){
+    return _clearResumeState('invalid_progress', '[resume] state stale, clearing');
+  }
+  if(_isResumeTerminalStatus(status)){
+    return _clearResumeState('completed', '[resume] completed state, hiding resume');
+  }
+  const valid = {
+    buildId: buildId,
+    savedAt: new Date(savedAtMs).toISOString(),
+    status: status || 'running',
+    progress_done: Math.max(0, Math.min(total, done)),
+    progress_total: Math.max(0, total),
+    resumeIndex: Math.max(0, Math.min(Math.max(0, total - 1), resumeIndex)),
+  };
+  try{
+    localStorage.setItem(ESTONIA_RESUME_STATE_KEY, JSON.stringify(valid));
+    localStorage.setItem(ESTONIA_REFRESH_INDEX_KEY, String(valid.resumeIndex));
+  }catch(e){}
+  if(!opts.quiet) console.log('[resume] state valid');
+  _updateResumeButton(valid);
+  return valid;
 }
 function resolveSupabaseConfig(){
   let overrideUrl = '';
@@ -4857,6 +5365,12 @@ function _updateProgressUI(done, total, status){
     __snapshotProgressDone = Number(done || 0);
     __snapshotProgressTotal = Number(total || 0);
     _setResumeIndex(done);
+    _persistResumeState({
+      progress_done: __snapshotProgressDone,
+      progress_total: __snapshotProgressTotal,
+      resumeIndex: Number(done || 0),
+      status: 'running',
+    });
     _setIndexStateFromCounts(done, total);
     __currentIndex = (__processedCount < __totalItems ? __processedCount : null);
     if(__currentIndex != null) _pushIndexTrace(__currentIndex, 'start');
@@ -4891,6 +5405,11 @@ function _updateProgressUI(done, total, status){
     prog.textContent = status === 'ready' ? 'Data loaded' : (status === 'error' ? 'Refresh failed' : '');
     if(bar) bar.style.display='none';
     if(stopBtn) stopBtn.style.display='none';
+    if(_isResumeTerminalStatus(status)){
+      _clearResumeState('completed', '[resume] completed state, hiding resume');
+    } else {
+      _updateResumeButton(_validateAndSyncResumeState({ quiet: true }));
+    }
   }
   _updateServerSnapshotStatus();
   _updateIndexProgressLine();
@@ -5427,6 +5946,9 @@ function _updateDebugPanel(){
     'lastProcessedAt: <b>' + (_fmtTs(__lastProcessedAt)) + '</b>',
     'lastInfoMessage: <b>' + (__lastInfoMessage || '-') + '</b>',
     'lastErrorMessage: <b>' + (__lastErrorMessage || '-') + '</b>',
+    'springCloudLoaded: <b>' + (__springCloudLoaded ? 'yes' : 'no') + '</b>',
+    'springLastSyncAt: <b>' + (_fmtTs(__springLastSyncAt || __springCloudLoadedAt)) + '</b>',
+    'springLastSyncError: <b>' + (__springLastSyncError || '-') + '</b>',
     'watchdogEvents: <b>' + (__watchdogEvents.length ? JSON.stringify(__watchdogEvents.slice(-5)) : '-') + '</b>',
     'stopSignalAborted: <b>' + (!!(__stopController && __stopController.signal && __stopController.signal.aborted)) + '</b>',
     '7-day filter: <b>' + (is7daysOnly() ? 'ON' : 'OFF') + '</b>',
@@ -5623,6 +6145,12 @@ async function _loadSnapshotImpl(){
     }
 
     if(snap.status === 'running'){
+      _persistResumeState({
+        progress_done: Number(snap.progress_done || 0),
+        progress_total: Number(snap.progress_total || 0),
+        resumeIndex: Number(snap.progress_done || 0),
+        status: 'running',
+      });
       _updateProgressUI(snap.progress_done, snap.progress_total, 'running');
       _showSnapshotBanner('Server is refreshing data (' + snap.progress_done + '/' + snap.progress_total + ')...');
       if(snap.points_json && Object.keys(snap.points_json).length > 0){
@@ -5655,9 +6183,11 @@ async function _loadSnapshotImpl(){
       const age = snap.generated_at && window.formatAgeEE ? window.formatAgeEE(snap.generated_at) : null;
       _showSnapshotBanner('Data loaded' + (age ? ' (' + age + ')' : ''));
       setTimeout(_hideSnapshotBanner, 4000);
+      _clearResumeState('completed', '[resume] completed state, hiding resume');
       _updateProgressUI(__snapshotProgressDone, __snapshotProgressTotal, 'ready');
     } else {
       _showSnapshotBanner('No snapshot data yet. Press "Force server refresh" to generate.', 'warn');
+      _updateResumeButton(_validateAndSyncResumeState({ quiet: true }));
     }
     _setLoaderStage('ready');
     __snapshotErrorRetryAttempt = 0;
@@ -5875,6 +6405,11 @@ function _stopPolling(){
 // Public refresh (no key needed)
 async function triggerRefresh(opts){
   const options = opts || {};
+  const validResume = _validateAndSyncResumeState({ quiet: false });
+  if(options.resumeFromSaved && !validResume){
+    _showSnapshotBanner('No valid resume state found.', 'warn');
+    return;
+  }
   __resumeExplicitRequested = !!options.resumeFromSaved;
   const force = !!options.force;
   const runId = (options.newRun || !__runningRef) ? _beginRefreshRun(!!options.newRun) : __runId;
@@ -5919,7 +6454,7 @@ async function triggerRefresh(opts){
     const explicitStart = Number(options.startIndex);
     const startIndex = Number.isFinite(explicitStart)
       ? Math.max(0, explicitStart)
-      : (options.resumeFromSaved ? _getResumeIndex() : 0);
+      : (options.resumeFromSaved ? Number(validResume && validResume.resumeIndex || 0) : 0);
     const prevIndex = __currentIndex;
     __currentIndex = startIndex;
     __attemptForCurrentIndex = (prevIndex === startIndex) ? (__attemptForCurrentIndex + 1) : 1;
@@ -6014,6 +6549,7 @@ function _wireSnapshotButtons(){
   const btnClearDebug = document.getElementById('btnClearDebugEvents');
   const recentToggle = document.getElementById('recentToggle');
   const toggleAutoElu30m = document.getElementById('toggleAutoElu30m');
+  _updateResumeButton(_validateAndSyncResumeState({ quiet: true }));
 
   if(btnElu && !btnElu.__wired){
     btnElu.addEventListener('click', async function(){
@@ -6234,6 +6770,7 @@ function save() {
   localStorage.setItem(LS_POINTS, JSON.stringify(points));
   localStorage.setItem(LS_NAMES, JSON.stringify(nameCache));
   localStorage.setItem(LS_SPRING, JSON.stringify(springDates));
+  localStorage.setItem(LS_SPRING_META, JSON.stringify(springMeta || {}));
   localStorage.setItem(LS_SPRING_YEARFIRST, JSON.stringify(springYearFirst));
   _persistLiveCaches();
 }
@@ -6336,10 +6873,11 @@ window.editSpringDateDirect = function(key){
       : (typeof springDates !== 'undefined' ? springDates : (window.springDates = {}));
     window.springDates = store;
     if(typeof springDates !== 'undefined') springDates = store;
-    const current = store[key] || '';
+    const current = _getSpringValue(key);
+    console.info(`[kevad] loaded after save=${current || ''}`);
     modal.setAttribute('data-spring-key', key);
     speciesEl.textContent = key;
-    inputEl.value = current || '';
+    inputEl.value = _springDisplayValue(current) || '';
     modal.style.display = 'flex';
     setTimeout(function(){
       try{
@@ -6371,16 +6909,13 @@ window.saveSpringEditModal = function(clearValue){
     window.springDates = target;
     if(typeof springDates !== 'undefined') springDates = target;
     const cleaned = clearValue ? '' : String(inputEl.value || '').trim();
-    if(cleaned){
-      target[key] = cleaned;
-    } else {
-      delete target[key];
+    const normalized = cleaned ? normalizeSpringDate(cleaned) : '';
+    if(cleaned && !normalized){
+      alert('Sisesta kuupäev kujul DD.MM');
+      return;
     }
-    const lsKey = (typeof LS_SPRING !== 'undefined' && LS_SPRING) ? LS_SPRING : 'bm_spring_dates';
-    localStorage.setItem(lsKey, JSON.stringify(target));
     window.closeSpringEditModal();
-    if(typeof render === 'function') render();
-    if(typeof renderSpringPanel === 'function') renderSpringPanel();
+    saveSpringDateChange(key, normalized || '').catch(function(){});
   }catch(err){
     alert('Muuda failed: ' + ((err && err.message) || err));
     console.error('saveSpringEditModal failed', err);
@@ -6563,7 +7098,7 @@ function rowHTML(obj) {
       '<div class="kvLabel">Collectors:</div>' +
       '<div class="kvValue"><span class="truncate" title="' + escapeHtml(collectorsFull) + '">' + escapeHtml(collectorsShort) + '</span></div>' +
     '</div>';
-  const springVal = (springDates && springDates[key]) ? String(springDates[key]).trim() : '';
+  const springVal = _springDisplayValue(_getSpringValue(key));
   const springTxt = '' +
     '<span class="kevadi-chip" style="display:inline-flex; gap:8px; align-items:center;">' +
       '<span class="pill">Kevad:</span>' +
@@ -6653,23 +7188,15 @@ function render() {
       const inp = document.querySelector(`.spring-edit-input[data-key="${key}"]`);
       if(!inp) return;
 
+      console.info(`[kevad] edit species=${_springKey(key)} raw=${String(inp.value || '').trim()}`);
       const norm = normalizeSpringDate(inp.value);
-      if (norm === null){
+      if (String(inp.value || '').trim() && !norm){
         inp.style.borderColor = '#b91c1c';
         return;
       }
 
-      if(!norm){
-        delete springDates[key];
-      } else {
-        springDates[key] = norm;
-      }
-
-      if (typeof save === 'function') save();
       springEditRowKey = null;
-
-      if (typeof renderSpringPanel === 'function') renderSpringPanel();
-      if (typeof render === 'function') render();
+      saveSpringDateChange(key, norm || '').catch(function(){});
       return;
     }
   }, true); // capture=true helps on mobile overlays/leaflet
@@ -6700,12 +7227,12 @@ setInterval(_refreshBuildStampUi, 10000);
 function _startSnapshotBoot(){
   if(__bootLoadStarted) return;
   const cfg = resolveSupabaseConfig();
-  if(cfg.supabaseUrl){
-    __supabaseConfigReady = true;
-    __bootLoadStarted = true;
-    fetchServerMeta();
-    _startServerMetaPolling();
-    loadSnapshot();
+    if(cfg.supabaseUrl){
+      __supabaseConfigReady = true;
+      __bootLoadStarted = true;
+      fetchServerMeta();
+      _startServerMetaPolling();
+      loadSnapshot();
     return;
   }
   __supabaseConfigReady = false;
@@ -6713,12 +7240,12 @@ function _startSnapshotBoot(){
   setTimeout(function(){
     if(__bootLoadStarted) return;
     const lateCfg = resolveSupabaseConfig();
-    if(lateCfg.supabaseUrl){
-      __supabaseConfigReady = true;
-      __bootLoadStarted = true;
-      fetchServerMeta();
-      _startServerMetaPolling();
-      loadSnapshot();
+      if(lateCfg.supabaseUrl){
+        __supabaseConfigReady = true;
+        __bootLoadStarted = true;
+        fetchServerMeta();
+        _startServerMetaPolling();
+        loadSnapshot();
     }
   }, 1500);
 }
@@ -6738,6 +7265,7 @@ __loadedLocalSnapshot = reloadSnapshot();
 if(__loadedLocalSnapshot){
   dataMode = 'snapshot';
 }
+_validateAndSyncResumeState({ quiet: false });
 _startSnapshotBoot();
 _initElurikkusAuto30m();
 
@@ -7026,8 +7554,9 @@ document.addEventListener('DOMContentLoaded', function(){
   }
   function ensureSpringState(){
     if(!springDates || typeof springDates !== 'object'){
-      springDates = Object.assign({}, DEFAULT_SPRING_DATES);
+      springDates = {};
     }
+    springDates = _sanitizeSpringDateMap(springDates);
   }
   function ensureSpringUiPlaced(){
     try{
@@ -7046,10 +7575,10 @@ document.addEventListener('DOMContentLoaded', function(){
     const list = getSpeciesList();
     const rows = [];
     for(const name of list){
-      const raw = (sd[name] !== undefined) ? String(sd[name]).trim() : '';
+      const raw = _getSpringValue(name);
       if(!raw) continue;
       if(q && !String(name).toLowerCase().includes(q)) continue;
-      const disp = (typeof _normSpringDDMM === 'function') ? (_normSpringDDMM(raw) || raw) : raw;
+      const disp = _springDisplayValue(raw);
       rows.push({name, disp, key: springSortKey(disp)});
     }
     rows.sort((a,b)=> (a.key-b.key) || String(a.name).localeCompare(String(b.name)));
@@ -7060,7 +7589,7 @@ document.addEventListener('DOMContentLoaded', function(){
       const key = safeName;
       const springDateText = r.disp;
       const isEditing = (springEditRowKey === key);
-      const currentVal = (springDates && springDates[key]) ? springDates[key] : '';
+      const currentVal = _springDisplayValue(_getSpringValue(key));
       const dateCellHtml = isEditing
         ? `
     <div class="spring-edit-wrap" style="display:flex; gap:6px; align-items:center;">

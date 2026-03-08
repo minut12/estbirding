@@ -371,6 +371,8 @@ for (const _k of Object.keys(DEFAULT_SPRING_DATES)) {
     delete DEFAULT_SPRING_DATES[_k];
   }
 }
+const SPRING_STORAGE_YEAR = 2026;
+const DEFAULT_SPRING_DATES_BY_KEY = {};
 
 // === Avatar defaults & preloading ===
 const DEFAULT_AVATARS = {};
@@ -476,11 +478,11 @@ try { ensureSupabaseProxyBaseStored(); } catch(e) {}
 let springDates = (function(){
   try{
     const saved = JSON.parse(localStorage.getItem(LS_SPRING) || 'null');
-    return Object.assign({}, DEFAULT_SPRING_DATES, (saved && typeof saved==='object' ? saved : {}));
-  }catch(e){ return Object.assign({}, DEFAULT_SPRING_DATES); }
+    return saved && typeof saved==='object' ? saved : {};
+  }catch(e){ return {}; }
 })();
 if(!springDates || typeof springDates !== 'object'){
-  springDates = Object.assign({}, DEFAULT_SPRING_DATES);
+  springDates = {};
 }
 let springMeta = (function(){
   try{
@@ -512,6 +514,11 @@ const __springSpeciesNameByKey = {};
 for (let __si = 0; __si < SPECIES.length; __si++) {
   __springSpeciesNameByKey[_speciesKey(SPECIES[__si])] = SPECIES[__si];
 }
+for (const __springName of Object.keys(DEFAULT_SPRING_DATES)) {
+  const __springKey = _speciesKey(__springName);
+  if (__springKey) DEFAULT_SPRING_DATES_BY_KEY[__springKey] = DEFAULT_SPRING_DATES[__springName];
+}
+springDates = _sanitizeSpringDateMap(springDates);
 
 // Map
 const IS_MOBILE_DEVICE = matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -879,13 +886,65 @@ function isInvalidWinterValue(iso){
   return iso.startsWith(year + '-') && iso < cutoff;
 }
 function normalizeSpringDate(v){
-  const t = (v || '').trim();
+  return _normalizeSpringDateValue(v);
+}
+function _normalizeSpringDateValue(v){
+  const t = String(v == null ? '' : v).trim();
   if(!t) return '';
-  const m = t.match(/^(\d{1,2})\.(\d{1,2})$/);
-  if(!m) return null;
-  const d = String(parseInt(m[1],10));          // keep 5.03 style like your list
-  const mm = String(parseInt(m[2],10)).padStart(2,'0');
-  return `${d}.${mm}`;
+  if(t === '0' || t.toLowerCase() === 'null' || t.toLowerCase() === 'undefined') return '';
+  let m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(m){
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    const dt = new Date(Date.UTC(y, mo - 1, d));
+    if(dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return '';
+    return `${String(y).padStart(4,'0')}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+  m = t.match(/^(\d{1,2})\.(\d{1,2})$/);
+  if(m){
+    const d = Number(m[1]);
+    const mo = Number(m[2]);
+    const dt = new Date(Date.UTC(SPRING_STORAGE_YEAR, mo - 1, d));
+    if(dt.getUTCFullYear() !== SPRING_STORAGE_YEAR || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return '';
+    return `${SPRING_STORAGE_YEAR}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+  return '';
+}
+function _springDisplayValue(v){
+  const normalized = _normalizeSpringDateValue(v);
+  return normalized ? isoToDdMm(normalized) : '';
+}
+function _springKey(name){
+  return _speciesKey(name);
+}
+function _getSpringValue(name){
+  const k = _springKey(name);
+  return k ? String((springDates && springDates[k]) || '').trim() : '';
+}
+function _setSpringValue(name, value){
+  const k = _springKey(name);
+  if(!k) return '';
+  const normalized = _normalizeSpringDateValue(value);
+  if(normalized) springDates[k] = normalized;
+  else delete springDates[k];
+  return normalized;
+}
+function _sanitizeSpringDateMap(rawMap){
+  const out = {};
+  for(const [speciesKey, defaultValue] of Object.entries(DEFAULT_SPRING_DATES_BY_KEY)){
+    const normalizedDefault = _normalizeSpringDateValue(defaultValue);
+    if(normalizedDefault) out[speciesKey] = normalizedDefault;
+  }
+  const src = rawMap && typeof rawMap === 'object' ? rawMap : {};
+  for(const [rawKey, rawValue] of Object.entries(src)){
+    const k = _springKey(rawKey);
+    if(!k) continue;
+    const normalized = _normalizeSpringDateValue(rawValue);
+    if(!normalized) continue;
+    out[k] = normalized;
+  }
+  return out;
 }
 function _readSpringMeta(key){
   const k = _speciesKey(key);
@@ -893,7 +952,7 @@ function _readSpringMeta(key){
   return {
     speciesKey: k,
     speciesName: __springSpeciesNameByKey[k] || key,
-    springDate: typeof raw.springDate === 'string' ? raw.springDate : '',
+    springDate: _normalizeSpringDateValue(typeof raw.springDate === 'string' ? raw.springDate : ''),
     springTime: typeof raw.springTime === 'string' ? raw.springTime : '',
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : '',
     dirty: raw.dirty === true,
@@ -908,6 +967,7 @@ function _writeSpringMetaEntry(key, patch){
   return springMeta[k];
 }
 function _persistSpringCache(){
+  springDates = _sanitizeSpringDateMap(springDates);
   try{ localStorage.setItem(LS_SPRING, JSON.stringify(springDates)); }catch(e){}
   try{ localStorage.setItem(LS_SPRING_META, JSON.stringify(springMeta || {})); }catch(e){}
 }
@@ -957,7 +1017,7 @@ function _getSpringCloudRecordMap(records){
     const speciesKey = _speciesKey(row && (row.species_key || row.speciesKey || row.species_name || row.speciesName || ''));
     if(!speciesKey) continue;
     const normDate = normalizeSpringDate(row && (row.spring_date || row.springDate || ''));
-    if(normDate === null) continue;
+    if(!normDate && String(row && (row.spring_date || row.springDate || '') || '').trim()) continue;
     out[speciesKey] = {
       speciesKey: speciesKey,
       speciesName: String(row && (row.species_name || row.speciesName || __springSpeciesNameByKey[speciesKey] || speciesKey)),
@@ -1013,13 +1073,10 @@ async function _deleteSpringCloudRecord(speciesKey){
 }
 function _applySpringEntryToState(entry){
   const speciesName = entry.speciesName || __springSpeciesNameByKey[entry.speciesKey] || entry.speciesKey;
-  if(entry.springDate){
-    springDates[speciesName] = entry.springDate;
-  } else {
-    delete springDates[speciesName];
-  }
+  const normalizedDate = _normalizeSpringDateValue(entry.springDate);
+  _setSpringValue(entry.speciesKey || speciesName, normalizedDate);
   _writeSpringMetaEntry(speciesName, {
-    springDate: entry.springDate || '',
+    springDate: normalizedDate || '',
     springTime: entry.springTime || '',
     updatedAt: entry.updatedAt || '',
     dirty: !!entry.dirty,
@@ -1056,7 +1113,7 @@ function _migrateLegacyLocalSpringOverrides(cloudMap){
     if(meta.updatedAt) continue;
     if(cloudMap && cloudMap[speciesKey]) continue;
     const normDate = normalizeSpringDate(springDate);
-    if(normDate === null) continue;
+    if(!normDate && String(springDate || '').trim()) continue;
     const defaultValue = DEFAULT_SPRING_DATES[speciesName] || '';
     if(normDate === (defaultValue || '')) continue;
     _writeSpringMetaEntry(speciesName, {
@@ -1117,7 +1174,7 @@ async function _flushDirtySpringEntries(){
       _applySpringEntryToState({
         speciesKey: entry.speciesKey,
         speciesName: entry.speciesName,
-        springDate: normalizeSpringDate(saved.spring_date || saved.springDate || entry.springDate) || entry.springDate,
+        springDate: normalizeSpringDate(saved.spring_date || saved.springDate || entry.springDate) || _normalizeSpringDateValue(entry.springDate),
         springTime: String(saved.spring_time || saved.springTime || entry.springTime || ''),
         updatedAt: String(saved.updated_at || saved.updatedAt || entry.updatedAt || new Date().toISOString()),
         updatedBy: String(saved.updated_by || saved.updatedBy || entry.updatedBy || _getSpringDeviceId()),
@@ -1171,16 +1228,15 @@ async function loadSpringDataFromCloud(force){
 async function saveSpringDateChange(key, nextValue){
   const speciesName = __springSpeciesNameByKey[_speciesKey(key)] || key;
   const speciesKey = _speciesKey(speciesName);
-  const prevDate = springDates[speciesName] || '';
-  const prevMeta = Object.assign({}, _readSpringMeta(speciesKey));
-  if(nextValue){
-    springDates[speciesName] = nextValue;
-  } else {
-    delete springDates[speciesName];
-  }
+  const prevDate = _getSpringValue(speciesKey);
+  const normalizedNextValue = _normalizeSpringDateValue(nextValue);
+  console.info(`[kevad] edit species=${speciesKey} raw=${String(nextValue == null ? '' : nextValue)}`);
+  console.info(`[kevad] old species=${speciesKey} raw=${prevDate || ''}`);
+  console.info(`[kevad] normalized=${normalizedNextValue || ''}`);
+  _setSpringValue(speciesKey, normalizedNextValue);
   const nowIso = new Date().toISOString();
   _writeSpringMetaEntry(speciesName, {
-    springDate: nextValue || '',
+    springDate: normalizedNextValue || '',
     springTime: '',
     updatedAt: nowIso,
     dirty: true,
@@ -1190,70 +1246,15 @@ async function saveSpringDateChange(key, nextValue){
   _persistSpringCache();
   if(typeof renderSpringPanel === 'function') renderSpringPanel();
   if(typeof render === 'function') render();
-  try{
-    if(!__springPendingSaves.has(speciesKey)){
-      __springPendingSaves.set(speciesKey, Promise.resolve());
-    }
-    const chain = __springPendingSaves.get(speciesKey).then(async function(){
-      if(nextValue){
-        const saved = await _upsertSpringCloudRecord({
-          speciesKey: speciesKey,
-          speciesName: speciesName,
-          springDate: nextValue,
-          springTime: '',
-          updatedAt: nowIso,
-          updatedBy: _getSpringDeviceId(),
-        });
-        _applySpringEntryToState({
-          speciesKey: speciesKey,
-          speciesName: speciesName,
-          springDate: normalizeSpringDate(saved.spring_date || saved.springDate || nextValue) || nextValue,
-          springTime: String(saved.spring_time || saved.springTime || ''),
-          updatedAt: String(saved.updated_at || saved.updatedAt || nowIso),
-          updatedBy: String(saved.updated_by || saved.updatedBy || _getSpringDeviceId()),
-          source: 'cloud',
-          dirty: false,
-        });
-      } else {
-        await _deleteSpringCloudRecord(speciesKey);
-        _applySpringEntryToState({
-          speciesKey: speciesKey,
-          speciesName: speciesName,
-          springDate: '',
-          springTime: '',
-          updatedAt: nowIso,
-          updatedBy: _getSpringDeviceId(),
-          source: 'cloud',
-          dirty: false,
-        });
-      }
-      _setSpringSyncError('');
-      _markSpringSyncAt();
-      _persistSpringCache();
-      if(typeof renderSpringPanel === 'function') renderSpringPanel();
-      if(typeof render === 'function') render();
-    }).catch(function(err){
-      if(prevDate) springDates[speciesName] = prevDate;
-      else delete springDates[speciesName];
-      springMeta[speciesKey] = prevMeta;
-      _persistSpringCache();
-      if(typeof renderSpringPanel === 'function') renderSpringPanel();
-      if(typeof render === 'function') render();
-      const msg = 'Kevadrände kuupäeva salvestamine pilve ebaõnnestus.';
-      _setSpringSyncError(String(err && err.message ? err.message : msg));
-      _markSpringSyncAt();
-      alert(msg);
-      console.warn('[spring-sync] save failed', { speciesKey: speciesKey, error: __springLastSyncError });
-      throw err;
-    }).finally(function(){
-      __springPendingSaves.delete(speciesKey);
-      _updateDebugPanel();
-    });
-    __springPendingSaves.set(speciesKey, chain);
-    return await chain;
-  } catch(err){
-    throw err;
-  }
+  console.info(`[kevad] loaded after save=${_getSpringValue(speciesKey) || ''}`);
+  _setSpringSyncError('');
+  _markSpringSyncAt();
+  _updateDebugPanel();
+  return Promise.resolve({
+    speciesKey: speciesKey,
+    speciesName: speciesName,
+    springDate: normalizedNextValue || '',
+  });
 }
 
 async function tryFetch(url, opts){
@@ -6743,7 +6744,6 @@ window.addEventListener('message', function(ev){
         pushDebugEvent('SNAPSHOT_RETRY_REASON', 'Retry reason supabase_config', { hadNoApi: hadNoApi, hadUrlMissingErr: hadUrlMissingErr }, 'warn');
         _scheduleLoadSnapshotRetry('supabase_config');
       }
-      if(__supabaseConfigReady) loadSpringDataFromCloud(false);
       _updateDebugPanel();
       return;
     }
@@ -6873,10 +6873,11 @@ window.editSpringDateDirect = function(key){
       : (typeof springDates !== 'undefined' ? springDates : (window.springDates = {}));
     window.springDates = store;
     if(typeof springDates !== 'undefined') springDates = store;
-    const current = store[key] || '';
+    const current = _getSpringValue(key);
+    console.info(`[kevad] loaded after save=${current || ''}`);
     modal.setAttribute('data-spring-key', key);
     speciesEl.textContent = key;
-    inputEl.value = current || '';
+    inputEl.value = _springDisplayValue(current) || '';
     modal.style.display = 'flex';
     setTimeout(function(){
       try{
@@ -6909,7 +6910,7 @@ window.saveSpringEditModal = function(clearValue){
     if(typeof springDates !== 'undefined') springDates = target;
     const cleaned = clearValue ? '' : String(inputEl.value || '').trim();
     const normalized = cleaned ? normalizeSpringDate(cleaned) : '';
-    if(cleaned && normalized === null){
+    if(cleaned && !normalized){
       alert('Sisesta kuupäev kujul DD.MM');
       return;
     }
@@ -7097,7 +7098,7 @@ function rowHTML(obj) {
       '<div class="kvLabel">Collectors:</div>' +
       '<div class="kvValue"><span class="truncate" title="' + escapeHtml(collectorsFull) + '">' + escapeHtml(collectorsShort) + '</span></div>' +
     '</div>';
-  const springVal = (springDates && springDates[key]) ? String(springDates[key]).trim() : '';
+  const springVal = _springDisplayValue(_getSpringValue(key));
   const springTxt = '' +
     '<span class="kevadi-chip" style="display:inline-flex; gap:8px; align-items:center;">' +
       '<span class="pill">Kevad:</span>' +
@@ -7187,8 +7188,9 @@ function render() {
       const inp = document.querySelector(`.spring-edit-input[data-key="${key}"]`);
       if(!inp) return;
 
+      console.info(`[kevad] edit species=${_springKey(key)} raw=${String(inp.value || '').trim()}`);
       const norm = normalizeSpringDate(inp.value);
-      if (norm === null){
+      if (String(inp.value || '').trim() && !norm){
         inp.style.borderColor = '#b91c1c';
         return;
       }
@@ -7225,13 +7227,12 @@ setInterval(_refreshBuildStampUi, 10000);
 function _startSnapshotBoot(){
   if(__bootLoadStarted) return;
   const cfg = resolveSupabaseConfig();
-  if(cfg.supabaseUrl){
-    __supabaseConfigReady = true;
-    __bootLoadStarted = true;
-    loadSpringDataFromCloud(false);
-    fetchServerMeta();
-    _startServerMetaPolling();
-    loadSnapshot();
+    if(cfg.supabaseUrl){
+      __supabaseConfigReady = true;
+      __bootLoadStarted = true;
+      fetchServerMeta();
+      _startServerMetaPolling();
+      loadSnapshot();
     return;
   }
   __supabaseConfigReady = false;
@@ -7239,13 +7240,12 @@ function _startSnapshotBoot(){
   setTimeout(function(){
     if(__bootLoadStarted) return;
     const lateCfg = resolveSupabaseConfig();
-    if(lateCfg.supabaseUrl){
-      __supabaseConfigReady = true;
-      __bootLoadStarted = true;
-      loadSpringDataFromCloud(false);
-      fetchServerMeta();
-      _startServerMetaPolling();
-      loadSnapshot();
+      if(lateCfg.supabaseUrl){
+        __supabaseConfigReady = true;
+        __bootLoadStarted = true;
+        fetchServerMeta();
+        _startServerMetaPolling();
+        loadSnapshot();
     }
   }, 1500);
 }
@@ -7554,8 +7554,9 @@ document.addEventListener('DOMContentLoaded', function(){
   }
   function ensureSpringState(){
     if(!springDates || typeof springDates !== 'object'){
-      springDates = Object.assign({}, DEFAULT_SPRING_DATES);
+      springDates = {};
     }
+    springDates = _sanitizeSpringDateMap(springDates);
   }
   function ensureSpringUiPlaced(){
     try{
@@ -7574,10 +7575,10 @@ document.addEventListener('DOMContentLoaded', function(){
     const list = getSpeciesList();
     const rows = [];
     for(const name of list){
-      const raw = (sd[name] !== undefined) ? String(sd[name]).trim() : '';
+      const raw = _getSpringValue(name);
       if(!raw) continue;
       if(q && !String(name).toLowerCase().includes(q)) continue;
-      const disp = (typeof _normSpringDDMM === 'function') ? (_normSpringDDMM(raw) || raw) : raw;
+      const disp = _springDisplayValue(raw);
       rows.push({name, disp, key: springSortKey(disp)});
     }
     rows.sort((a,b)=> (a.key-b.key) || String(a.name).localeCompare(String(b.name)));
@@ -7588,7 +7589,7 @@ document.addEventListener('DOMContentLoaded', function(){
       const key = safeName;
       const springDateText = r.disp;
       const isEditing = (springEditRowKey === key);
-      const currentVal = (springDates && springDates[key]) ? springDates[key] : '';
+      const currentVal = _springDisplayValue(_getSpringValue(key));
       const dateCellHtml = isEditing
         ? `
     <div class="spring-edit-wrap" style="display:flex; gap:6px; align-items:center;">

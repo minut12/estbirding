@@ -1841,20 +1841,14 @@ function resetEuropeDebugState(){
 
 function validateRefreshConfig(){
   const missing = [];
-  const token = getEbirdToken();
-  if (!token) missing.push("Missing eBird token. Open Settings and paste your eBird API token.");
+  if (!isProxyConfigured()) missing.push("Waiting for server configuration. Please wait a moment and try again.");
   return { ok: missing.length === 0, message: missing.join(" | ") };
 }
 
-function buildEbirdUrl(baseUrl, token){
-  const u = new URL(baseUrl);
-  u.searchParams.set("key", token);
-  return u.toString();
-}
-
-function buildEbirdCountryRecentUrl(regionCode, back, maxResults, token){
-  const base = `https://api.ebird.org/v2/data/obs/${encodeURIComponent(regionCode)}/recent?back=${back}&maxResults=${maxResults}&_ts=${Date.now()}`;
-  return buildEbirdUrl(base, token);
+function buildProxyUrl(regionCode, back, maxResults){
+  const base = getEbirdProxyBaseUrl();
+  if (!base) return "";
+  return `${base}?regionCode=${encodeURIComponent(regionCode)}&back=${back}&maxResults=${maxResults}&_ts=${Date.now()}`;
 }
 
 async function refreshKeys(keys, force=true){

@@ -337,6 +337,33 @@ export type Database = {
         }
         Relationships: []
       }
+      linnuliigid_spring_dates: {
+        Row: {
+          species_key: string
+          species_name: string
+          spring_date: string
+          spring_time: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          species_key: string
+          species_name?: string
+          spring_date?: string
+          spring_time?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          species_key?: string
+          species_name?: string
+          spring_date?: string
+          spring_time?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       news_items: {
         Row: {
           archived: boolean

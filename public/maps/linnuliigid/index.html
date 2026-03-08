@@ -5404,21 +5404,25 @@ function applySnapshot(snapshot){
     return false;
   }
   const incomingPoints = snapshot.payload.points || {};
-  const mergedPoints = Object.assign({}, points || {});
+  const cutoff = cutoffIso7d();
+
+  // FULL REPLACEMENT with 7-day revalidation
+  const cleanPoints = {};
   Object.keys(incomingPoints).forEach(function(key){
     const incoming = incomingPoints[key];
-    const existing = mergedPoints[key];
-    if(existing &&
-       String(existing.coordLock || '') === 'exact' &&
-       String(existing.coordsSource || existing.coords_source || '') === 'elurikkus_occurrence_detail' &&
-       Number.isFinite(Number(existing.lat)) &&
-       Number.isFinite(Number(existing.lon))){
-      if(existing.visible === undefined) existing.visible = true;
-      return;
+    if(!incoming) return;
+    const np = Object.assign({}, incoming);
+    // Revalidate occ7 against current 7-day cutoff
+    const dateIso = dateIsoFromAny(np.t || '');
+    if(dateIso && dateIso >= cutoff){
+      if(!Number.isFinite(np.occ7) || np.occ7 < 1) np.occ7 = 1;
+    } else {
+      np.occ7 = 0;
     }
-    mergedPoints[key] = incoming;
+    cleanPoints[key] = np;
   });
-  points = mergedPoints;
+
+  points = cleanPoints;
   dataMode = 'snapshot';
   lastSnapshotAt = snapshot.createdAt || null;
   snapshotDebugNote = null;
@@ -5426,6 +5430,7 @@ function applySnapshot(snapshot){
   try{ save(); }catch(e){}
   rebuildAllMarkers();
   render();
+  console.log('[snapshot] applied: species=' + Object.keys(cleanPoints).length + ' cutoff=' + cutoff);
   return true;
 }
 function reloadSnapshot(){

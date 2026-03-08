@@ -1073,7 +1073,20 @@ function applySnapshot(snapshot){
     updateDebugPanel();
     return false;
   }
+  // Preserve visibility flags from current points before overwriting
+  var savedVisibility = {};
+  for (var k in points) {
+    if (points[k] && typeof points[k].visible === "boolean") {
+      savedVisibility[k] = points[k].visible;
+    }
+  }
   points = snapshot.payload.points || {};
+  // Restore visibility flags
+  for (var k2 in savedVisibility) {
+    if (!points[k2]) points[k2] = {};
+    points[k2].visible = savedVisibility[k2];
+  }
+  console.log("[prefs] scope=europe_map snapshot applied, preserved visibility for", Object.keys(savedVisibility).length, "species");
   if (Array.isArray(snapshot.payload.species) && snapshot.payload.species.length) {
     SPECIES = snapshot.payload.species;
   }

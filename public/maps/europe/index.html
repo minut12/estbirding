@@ -2079,9 +2079,8 @@ recentOnly = (document.getElementById("toggle7days")?.checked !== false);
 if (!reloadSnapshot()) {
   dataMode = "live";
 }
-if (!EBIRD_TOKEN) {
-  showSnapshotBanner("Missing eBird token. Open Settings and paste your eBird API token.", "warn");
-  showWarn("Missing eBird token. Open Settings and paste your eBird API token.");
+if (!isProxyConfigured()) {
+  showSnapshotBanner("Waiting for server configuration…", "warn");
 }
 updateDebugPanel();
 

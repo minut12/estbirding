@@ -902,14 +902,14 @@ function isInLastNDaysTs(ts, days){
   return ts >= (Date.now() - d * 86400000);
 }
 
-function getEbirdToken(){
-  const raw = String(localStorage.getItem(LS_EBIRD_TOKEN) || "");
-  const tokenTrim = raw.trim();
-  const tokenClean = tokenTrim.replace(/[^A-Za-z0-9]/g, "");
-  tokenSanitized = tokenTrim !== tokenClean;
-  if (tokenTrim !== tokenClean) localStorage.setItem(LS_EBIRD_TOKEN, tokenClean);
-  EBIRD_TOKEN = tokenClean;
-  return tokenClean;
+function getEbirdProxyBaseUrl(){
+  const base = String(_supabaseUrl || "").replace(/\/+$/, "");
+  if (!base) return "";
+  return base + "/functions/v1/ebird_recent";
+}
+
+function isProxyConfigured(){
+  return Boolean(_supabaseUrl);
 }
 
 function saveAll(){

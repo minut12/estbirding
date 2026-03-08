@@ -3122,7 +3122,6 @@ async function refreshAllElurikkusOnce(){
   console.log('[elurikkus] refresh start (snapshot mode)');
   if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = 'Elurikkus refresh: loading snapshot...'; }
 
-  // Resolve edge function URL
   const cfg = resolveSupabaseConfig();
   const sbUrl = String(cfg.supabaseUrl || '').replace(/\/+$/, '');
   const anonKey = String(cfg.anonKey || '').trim();
@@ -3136,7 +3135,6 @@ async function refreshAllElurikkusOnce(){
   }
 
   try{
-    // Single GET request to fetch pre-computed server snapshot
     const tFetch = performance.now();
     const snapshotUrl = sbUrl + '/functions/v1/linnuliigid-snapshot?_ts=' + Date.now();
     const resp = await fetch(snapshotUrl, {
@@ -3154,67 +3152,87 @@ async function refreshAllElurikkusOnce(){
 
     if(eluProg) eluProg.textContent = 'Elurikkus refresh: applying data...';
 
-    // Apply snapshot in one shot
+    // Apply snapshot: REPLACE old points, don't merge
     const tApply = performance.now();
     const pts = snap.points_json;
-    const keys = Object.keys(pts);
-    let updated = 0, moved = 0;
+    const cutoff = cutoffIso7d(); // e.g. "2026-03-01"
+    const newPoints = {};
+    let totalRaw = 0, filtered7d = 0, withCoords = 0;
+    let oldestDate = '', newestDate = '';
 
-    for(let i = 0; i < keys.length; i++){
-      const key = keys[i];
+    for(let i = 0; i < SPECIES.length; i++){
+      const key = SPECIES[i];
       const s = pts[key];
       if(!s) continue;
-      const existing = points[key] || {};
-      const prev = { lat: Number(existing.lat), lon: Number(existing.lon), t: existing.t, occ7: existing.occ7 };
+      totalRaw++;
 
-      // Skip overwriting if client has a fresher fetch
-      const snapTs = Date.parse(snap.generated_at || '');
-      const fetchTs = Date.parse(existing.lastFetched || '');
-      if(Number.isFinite(fetchTs) && Number.isFinite(snapTs) && fetchTs > snapTs){
-        continue;
+      // Build clean point
+      const np = { visible: true, src: 'Elurikkus' };
+      if(typeof s.t === 'string' && s.t.trim()) np.t = s.t;
+      if(Number.isFinite(s.lat) && Number.isFinite(s.lon)){ np.lat = s.lat; np.lon = s.lon; withCoords++; }
+      if(typeof s.coords_status === 'string') np.coords_status = s.coords_status;
+      if(typeof s.coords_source === 'string') np.coords_source = s.coords_source;
+      if(typeof s.locality === 'string' && s.locality.trim()) np.locality = s.locality;
+      if(typeof s.municipality === 'string' && s.municipality.trim()) np.municipality = s.municipality;
+      if(typeof s.county === 'string' && s.county.trim()) np.county = s.county;
+
+      // CLIENT-SIDE 7-day revalidation of occ7
+      const dateIso = dateIsoFromAny(np.t || '');
+      const isRecent7d = dateIso && dateIso >= cutoff;
+      if(isRecent7d){
+        // Trust server occ7 if date is within 7 days, but ensure at least 1
+        np.occ7 = (Number.isFinite(s.occ7) && s.occ7 >= 1) ? s.occ7 : 1;
+        filtered7d++;
+      } else {
+        // Date is older than 7 days: force occ7=0 regardless of server value
+        np.occ7 = 0;
       }
 
-      // Preserve exact coord lock
-      if(String(existing.coordLock || '') === 'exact' &&
+      // Track date range for diagnostics
+      if(dateIso){
+        if(!oldestDate || dateIso < oldestDate) oldestDate = dateIso;
+        if(!newestDate || dateIso > newestDate) newestDate = dateIso;
+      }
+
+      // Preserve coord lock from previous data
+      const existing = points[key];
+      if(existing &&
+         String(existing.coordLock || '') === 'exact' &&
          String(existing.coordsSource || existing.coords_source || '') === 'elurikkus_occurrence_detail' &&
          Number.isFinite(Number(existing.lat)) && Number.isFinite(Number(existing.lon))){
-        // Keep locked coords but update date/occ7
-        if(typeof s.t === 'string' && s.t.trim()) existing.t = s.t;
-        if(Number.isFinite(s.occ7)) existing.occ7 = s.occ7;
-        existing.src = 'Elurikkus';
-        points[key] = existing;
-        continue;
+        np.lat = Number(existing.lat);
+        np.lon = Number(existing.lon);
+        np.coordLock = 'exact';
+        np.coordsSource = existing.coordsSource || existing.coords_source;
       }
 
-      const newPoint = { visible: true, src: 'Elurikkus' };
-      if(typeof s.t === 'string' && s.t.trim()) newPoint.t = s.t;
-      if(Number.isFinite(s.lat) && Number.isFinite(s.lon)){ newPoint.lat = s.lat; newPoint.lon = s.lon; }
-      if(Number.isFinite(s.occ7)) newPoint.occ7 = s.occ7;
-      if(typeof s.coords_status === 'string') newPoint.coords_status = s.coords_status;
-      if(typeof s.coords_source === 'string') newPoint.coords_source = s.coords_source;
-      if(typeof s.locality === 'string' && s.locality.trim()) newPoint.locality = s.locality;
-      if(typeof s.municipality === 'string' && s.municipality.trim()) newPoint.municipality = s.municipality;
-      if(typeof s.county === 'string' && s.county.trim()) newPoint.county = s.county;
-
-      points[key] = newPoint;
-      __snapshotPointBySpecies[_speciesKey(key)] = Object.assign({}, newPoint);
-
-      const appliedLat = Number(newPoint.lat);
-      const appliedLon = Number(newPoint.lon);
-      const prevLat = Number(prev.lat);
-      const prevLon = Number(prev.lon);
-      if(String(prev.t || '') !== String(newPoint.t || '') || Number(prev.occ7 || 0) !== Number(newPoint.occ7 || 0) ||
-         Math.abs((appliedLat || 0) - (prevLat || 0)) > 0.0001 || Math.abs((appliedLon || 0) - (prevLon || 0)) > 0.0001){
-        updated++;
-      }
-      if(Number.isFinite(prevLat) && Number.isFinite(appliedLat) &&
-         (Math.abs(appliedLat - prevLat) > 0.0001 || Math.abs((appliedLon || 0) - (prevLon || 0)) > 0.0001)){
-        moved++;
-      }
+      newPoints[key] = np;
+      __snapshotPointBySpecies[_speciesKey(key)] = Object.assign({}, np);
     }
 
+    // FULL REPLACEMENT: clear old points, set new ones
+    points = newPoints;
+
     const applyMs = Math.round(performance.now() - tApply);
-    console.log('[elurikkus] apply ms=' + applyMs + ' species=' + keys.length + ' updated=' + updated + ' moved=' + moved);
+
+    // Distinct species counts
+    const distinctAll = Object.keys(newPoints).length;
+    const distinctRecent = Object.keys(newPoints).filter(function(k){ return newPoints[k].occ7 > 0; }).length;
+
+    console.log('[elurikkus] apply ms=' + applyMs + ' raw=' + totalRaw + ' filtered7d=' + filtered7d + ' withCoords=' + withCoords);
+    console.log('[elurikkus] species: distinct=' + distinctAll + ' recent7d=' + distinctRecent + ' oldest=' + oldestDate + ' newest=' + newestDate);
+
+    // Validate: warn if any visible record is older than 7 days but has occ7>0
+    let staleWarnings = 0;
+    for(const k of Object.keys(newPoints)){
+      const p = newPoints[k];
+      const d = dateIsoFromAny(p.t || '');
+      if(d && d < cutoff && p.occ7 > 0){
+        staleWarnings++;
+        if(staleWarnings <= 3) console.warn('[elurikkus] STALE WARNING: ' + k + ' date=' + d + ' occ7=' + p.occ7);
+      }
+    }
+    if(staleWarnings > 3) console.warn('[elurikkus] ... and ' + (staleWarnings - 3) + ' more stale warnings');
 
     // Single save, single marker rebuild, single render
     const tMarkers = performance.now();
@@ -3230,13 +3248,13 @@ async function refreshAllElurikkusOnce(){
     saveSnapshotLocal();
 
     const totalMs = Math.round(performance.now() - t0);
-    const doneMsg = 'Elurikkus refresh done: ' + keys.length + ' species, updated:' + updated + ' moved:' + moved + ' (' + (totalMs/1000).toFixed(1) + 's)';
+    const doneMsg = 'Elurikkus refresh done: ' + distinctAll + ' species, 7d:' + distinctRecent + ' (' + (totalMs/1000).toFixed(1) + 's)';
     console.log('[elurikkus] total ms=' + totalMs);
     if(eluProg){ eluProg.textContent = doneMsg; }
     showSnapshotBanner(doneMsg, '');
-    __eluBulkSummary = { updated: updated, moved: moved, errors: 0, skipped: 0, total: keys.length, aborted: false, at: new Date().toISOString(), durationMs: totalMs };
+    __eluBulkSummary = { updated: distinctAll, moved: 0, errors: 0, skipped: 0, total: distinctAll, aborted: false, at: new Date().toISOString(), durationMs: totalMs };
     window.__lastElurikkusBulkSummary = __eluBulkSummary;
-    __elurikkusBulkStats = { done: keys.length, total: keys.length, updated: updated, moved: moved, errors: 0, lastKey: keys[keys.length-1] || '' };
+    __elurikkusBulkStats = { done: distinctAll, total: distinctAll, updated: distinctAll, moved: 0, errors: 0, lastKey: '' };
   }catch(e){
     const totalMs = Math.round(performance.now() - t0);
     console.error('[elurikkus] refresh failed ms=' + totalMs, e);

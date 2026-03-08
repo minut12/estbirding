@@ -916,9 +916,10 @@ function saveAll(){
   localStorage.setItem(LS_AVATARS, JSON.stringify(avatars));
   localStorage.setItem(LS_CODES, JSON.stringify(EBIRD_CODES));
   localStorage.setItem(LS_POINTS, JSON.stringify(points));
-  localStorage.setItem(LS_EBIRD_TOKEN, EBIRD_TOKEN || "");
   localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
   localStorage.setItem(LS_PER_COUNTRY, perCountry ? "1" : "0");
+  // Clean up old token storage if present
+  try { localStorage.removeItem("bm_ebird_token"); } catch(e){}
 }
 
 function getSnapshotKey(){

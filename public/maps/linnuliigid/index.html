@@ -7172,10 +7172,57 @@ function rowHTML(obj) {
 function render() {
   const q = (document.getElementById('filterBox').value||'').toLowerCase().trim();
   const list = document.getElementById('list'); list.innerHTML='';
-  const arr = DATA.filter(x=> x.est.toLowerCase().includes(q));
+  const recent7 = is7daysOnly();
+  const arr = DATA.filter(function(x){
+    if(!x.est.toLowerCase().includes(q)) return false;
+    if(recent7){
+      const p = points[x.est];
+      if(!p) return false;
+      const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
+      if(!hasCoords) return false;
+      if(!hasRecentObservation(p)) return false;
+    }
+    return true;
+  });
   for (const o of arr) list.insertAdjacentHTML('beforeend', rowHTML(o));
   const firstRow = list.querySelector('.row[data-key]');
   if(firstRow && !window.__selectedSpecies) window.__selectedSpecies = firstRow.getAttribute('data-key') || window.__selectedSpecies;
+
+  // --- 7-day validation logging ---
+  try {
+    const cutoff = new Date(_days7CutoffTs()).toISOString();
+    const rawCount = DATA.length;
+    const filteredCount = arr.length;
+    const visibleSpeciesKeys = arr.map(function(x){ return x.est; });
+    let oldestVisible = null, newestVisible = null;
+    for(const key of visibleSpeciesKeys){
+      const p = points[key];
+      if(!p) continue;
+      const d = getEffectiveRecentDate(p);
+      const ts = _parseObservedTs(d);
+      if(!Number.isFinite(ts)) continue;
+      if(oldestVisible === null || ts < oldestVisible) oldestVisible = ts;
+      if(newestVisible === null || ts > newestVisible) newestVisible = ts;
+    }
+    console.log('[7day] active=' + recent7);
+    console.log('[7day] cutoff=' + cutoff);
+    console.log('[7day] rawRecords=' + rawCount);
+    console.log('[7day] filteredRecords=' + filteredCount);
+    console.log('[7day] oldestVisible=' + (oldestVisible ? new Date(oldestVisible).toISOString() : 'none'));
+    console.log('[7day] newestVisible=' + (newestVisible ? new Date(newestVisible).toISOString() : 'none'));
+    if(recent7){
+      const cutoffTs = _days7CutoffTs();
+      for(const key of visibleSpeciesKeys){
+        const p = points[key];
+        if(!p) continue;
+        const d = getEffectiveRecentDate(p);
+        const ts = _parseObservedTs(d);
+        if(Number.isFinite(ts) && ts < cutoffTs){
+          console.warn('[7day] ERROR old record visible species=' + key + ' date=' + d);
+        }
+      }
+    }
+  } catch(e){ /* ignore logging errors */ }
 }
 
 (function bindSpringInlineEditDelegation(){

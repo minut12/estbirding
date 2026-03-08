@@ -6725,7 +6725,10 @@ function _wireSnapshotButtons(){
 
 function _wireSidebarSettingsRow(){
   const btn = document.getElementById('recentToggle');
-  if(btn) btn.textContent = '7p: ' + (window.__recentOnly ? 'ON' : 'OFF');
+  if(btn){
+    btn.textContent = '7p: ' + (window.__recentOnly ? 'ON' : 'OFF');
+    if(window.__recentOnly) btn.classList.add('on'); else btn.classList.remove('on');
+  }
 }
 
 // === Auto-refresh via postMessage (parent app sends these) ===

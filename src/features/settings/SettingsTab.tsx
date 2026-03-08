@@ -205,6 +205,8 @@ async function probeJson(url: string) {
 }
 
 export default function SettingsTab() {
+  const { user, role, isAdmin: isAdminUser, signOut } = useAuth();
+  const navigate = useNavigate();
   const newsSourcesSectionRef = useRef<HTMLDivElement | null>(null);
   const [settingsPage, setSettingsPage] = useState<SettingsPage>('home');
   const [devMode, setDevMode] = useState<boolean>(() => isDeveloperModeEnabled());

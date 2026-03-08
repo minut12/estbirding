@@ -1263,6 +1263,8 @@ async function saveSpringDateChange(key, nextValue){
   _setSpringSyncError('');
   _markSpringSyncAt();
   _updateDebugPanel();
+  // Flush dirty entry to cloud immediately after save
+  try{ _flushDirtySpringEntries().catch(function(e){ console.warn('[spring-sync] flush after save failed', e); }); }catch(e){}
   return Promise.resolve({
     speciesKey: speciesKey,
     speciesName: speciesName,

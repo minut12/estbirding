@@ -111,22 +111,26 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
 
   // === Species visibility persistence ===
   const sendSpeciesVisibilityToIframe = useCallback((hidden: Set<string>) => {
+    console.log(`[prefs] scope=${mapScope} sending SPECIES_VISIBILITY_RESTORE hiddenCount=${hidden.size}`, [...hidden].slice(0, 3));
     sendToIframe({
       type: 'SPECIES_VISIBILITY_RESTORE',
       hiddenSpecies: [...hidden],
     });
-  }, [sendToIframe]);
+  }, [sendToIframe, mapScope]);
 
   // On map load or user change, restore species visibility
   useEffect(() => {
     if (!user?.id || !mapScope || !iframeReadyRef.current) return;
+    console.log(`[prefs] scope=${mapScope} user=${user.id.slice(0,8)} restoring visibility...`);
     // Immediately send local cache for fast render
     const localHidden = loadLocalHidden(mapScope, user.id);
     if (localHidden.size > 0) {
+      console.log(`[prefs] scope=${mapScope} local cache has ${localHidden.size} hidden species`);
       sendSpeciesVisibilityToIframe(localHidden);
     }
     // Then load from cloud and reconcile
     loadSpeciesVisibility(mapScope, user.id).then((cloudHidden) => {
+      console.log(`[prefs] scope=${mapScope} cloud has ${cloudHidden.size} hidden species`);
       sendSpeciesVisibilityToIframe(cloudHidden);
     });
   }, [user?.id, mapScope, sendSpeciesVisibilityToIframe]);

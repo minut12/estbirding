@@ -16,14 +16,21 @@ import { type MapScope, loadSpeciesVisibility, saveSpeciesVisibility, loadLocalH
 
 const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
+const MAP_ID_TO_SCOPE: Record<string, MapScope> = {
+  'linnuliigid-ee': 'ee_map',
+  'europe': 'europe_map',
+};
+
 interface MapTabProps {
   isActive?: boolean;
   onMapChange?: (mapId: string) => void;
 }
 
 export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
+  const { user } = useAuth();
   const [selectedId, setSelectedId] = useState(getActiveMap().id);
   const current = maps.find((m) => m.id === selectedId) ?? getActiveMap();
+  const mapScope = MAP_ID_TO_SCOPE[selectedId] as MapScope | undefined;
   const iframeSrc = useMemo(() => {
     const proxyBase = resolveProxyBase();
     const params = new URLSearchParams();

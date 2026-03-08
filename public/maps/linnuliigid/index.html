@@ -2703,23 +2703,30 @@ async function _applyElurikkusPayloadToPoints(species, payload){
     reason: reason,
     occUrl: found.occUrl || null,
   };
-  console.log('APPLY_ELU', species, {
-    best: !!best,
-    centroid: !!centroid,
-    finalLat: row.lat,
-    finalLon: row.lon,
-    coordsSource: row.coordsSource || row.coords_source,
-    reason
-  });
-  console.log('FINAL_COORD_SOURCE', species, {
-    lat: row.lat,
-    lon: row.lon,
-    coordsSource: row.coordsSource || row.coords_source,
-    coordLock: row.coordLock || '',
-    reason
-  });
-  try{ if(typeof save === 'function') save(); }catch(e){}
-  try{ if(typeof updateMarker === 'function') updateMarker(species); }catch(e){}
+  if(!__eluBulkActive){
+    console.log('APPLY_ELU', species, {
+      best: !!best,
+      centroid: !!centroid,
+      finalLat: row.lat,
+      finalLon: row.lon,
+      coordsSource: row.coordsSource || row.coords_source,
+      reason
+    });
+    console.log('FINAL_COORD_SOURCE', species, {
+      lat: row.lat,
+      lon: row.lon,
+      coordsSource: row.coordsSource || row.coords_source,
+      coordLock: row.coordLock || '',
+      reason
+    });
+  }
+  // Skip per-species save/render during bulk refresh (batched externally)
+  if(!__eluBulkActive){
+    try{ if(typeof save === 'function') save(); }catch(e){}
+    try{ if(typeof updateMarker === 'function') updateMarker(species); }catch(e){}
+  } else {
+    try{ if(typeof updateMarker === 'function') updateMarker(species); }catch(e){}
+  }
   return {
     updated: updated,
     moved: moved,
@@ -3094,8 +3101,8 @@ async function autoFetchCoords(key, searchUrl, signal){
     newLon: result.newLon,
     moved: result.moved
   };
-  console.log('ELU COORD UPDATE', key, p.eluExtra.__coordDebug);
-  render();
+  if(!__eluBulkActive) console.log('ELU COORD UPDATE', key, p.eluExtra.__coordDebug);
+  if(!__eluBulkActive) render();
   return result;
 }
 async function refreshSpeciesFromElurikkus(key, signal){
@@ -3116,59 +3123,147 @@ async function refreshAllElurikkusOnce(){
   const signal = __eluBulkAbort.signal;
   const stopBtn = document.getElementById('btnStopFetch');
   if(stopBtn) stopBtn.style.display = 'inline-block';
-  const progEl = document.getElementById('indexProgress') || document.getElementById('fetchProgress');
   const eluProg = document.getElementById('eluProgress');
-  const eluLastCoord = document.getElementById('eluLastCoord');
-  function getClientLatestDateShort(){
-    const raw = String(updateClientDataMaxAtFromPoints() || '').trim();
-    const m = raw.match(/^(\d{4}-\d{2}-\d{2})/);
-    return m ? m[1] : '-';
-  }
-  function setEluRefreshStatus(done, total, updated, moved, errors){
-    const line = 'Elurikkus refresh: ' + done + '/' + total + ' | updated:' + updated + ' moved:' + moved + ' errors:' + errors + ' | clientLatest:' + getClientLatestDateShort();
+
+  const CONCURRENCY = 3;
+  const BATCH_SAVE_INTERVAL = 10;
+  const INTER_BATCH_DELAY = 120;
+  const SKIP_IF_FRESH_MS = 5 * 60 * 1000;
+  const t0 = performance.now();
+  console.log('[elurikkus] refresh start species=' + list.length);
+
+  // Resolve edge function URL
+  const cfg = resolveSupabaseConfig();
+  const sbUrl = String(cfg.supabaseUrl || '').replace(/\/+$/, '');
+  const anonKey = String(cfg.anonKey || '').trim();
+  const useEdgeFn = !!(sbUrl && anonKey);
+
+  function setEluRefreshStatus(done, total, updated, moved, errors, skipped){
+    const line = 'Elurikkus refresh: ' + done + '/' + total + ' | updated:' + updated + ' moved:' + moved + ' errors:' + errors + (skipped ? ' skipped:' + skipped : '');
     if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = line; }
-    if(progEl) progEl.textContent = '';
-    if(eluLastCoord) eluLastCoord.textContent = '';
   }
-  let updated = 0, moved = 0, errors = 0;
+
+  let updated = 0, moved = 0, errors = 0, skipped = 0;
   const total = list.length;
-  for(let i = 0; i < total; i++){
-    if(signal.aborted) break;
-    const name = String(list[i] || '').trim();
-    if(!name) continue;
-    try{
-      const searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(name);
-      const r = await autoFetchCoords(name, searchUrl, signal);
-      if(r && r.updated) updated++;
-      if(r && r.moved) moved++;
-      setEluRefreshStatus(i + 1, total, updated, moved, errors);
-    }catch(e){
-      errors++;
-      setEluRefreshStatus(i + 1, total, updated, moved, errors);
-    }
-    __elurikkusBulkStats = { done: i + 1, total: total, updated: updated, moved: moved, errors: errors, lastKey: name };
-    await new Promise(function(res){ setTimeout(res, 900); });
+  let completed = 0;
+  let _pendingSave = false;
+  let _pendingRender = false;
+  let _renderTimer = null;
+
+  function debouncedRender(){
+    if(_renderTimer) return;
+    _renderTimer = setTimeout(function(){
+      _renderTimer = null;
+      render();
+    }, 200);
   }
+
+  async function fetchOneSpecies(name){
+    if(signal.aborted) return;
+    const p = points[name] || {};
+    const lastFetched = p.lastFetched ? Date.parse(p.lastFetched) : 0;
+    if(lastFetched && (Date.now() - lastFetched) < SKIP_IF_FRESH_MS){
+      skipped++;
+      completed++;
+      setEluRefreshStatus(completed, total, updated, moved, errors, skipped);
+      __elurikkusBulkStats = { done: completed, total: total, updated: updated, moved: moved, errors: errors, lastKey: name };
+      return;
+    }
+
+    const speciesT0 = performance.now();
+    try{
+      if(useEdgeFn){
+        // Use the elurikkus-species edge function for JSON data (fast path)
+        const edgeUrl = sbUrl + '/functions/v1/elurikkus-species?text=' + encodeURIComponent(name) + '&days=7&limit=200&_ts=' + Date.now();
+        const resp = await fetch(edgeUrl, {
+          signal: signal,
+          cache: 'no-store',
+          headers: { 'apikey': anonKey, 'Authorization': 'Bearer ' + anonKey },
+        });
+        if(!resp.ok) throw new Error('Edge fn HTTP ' + resp.status);
+        const payload = await resp.json();
+        if(!payload.ok) throw new Error(payload.message || 'Edge fn error');
+        const result = await _applyElurikkusPayloadToPoints(name, payload);
+        if(result && result.updated) updated++;
+        if(result && result.moved) moved++;
+      } else {
+        // Fallback to HTML scraping
+        const searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(name);
+        const r = await autoFetchCoords(name, searchUrl, signal);
+        if(r && r.updated) updated++;
+        if(r && r.moved) moved++;
+      }
+      _pendingSave = true;
+      _pendingRender = true;
+    }catch(e){
+      if(signal.aborted) return;
+      errors++;
+    }
+    completed++;
+    const speciesMs = Math.round(performance.now() - speciesT0);
+    if(speciesMs > 2000) console.warn('[elurikkus] slow species=' + name + ' ms=' + speciesMs);
+    setEluRefreshStatus(completed, total, updated, moved, errors, skipped);
+    __elurikkusBulkStats = { done: completed, total: total, updated: updated, moved: moved, errors: errors, lastKey: name };
+
+    // Batch save/render
+    if(_pendingSave && (completed % BATCH_SAVE_INTERVAL === 0)){
+      try{ save(); }catch(e){}
+      _pendingSave = false;
+    }
+    if(_pendingRender && (completed % BATCH_SAVE_INTERVAL === 0)){
+      debouncedRender();
+      _pendingRender = false;
+    }
+  }
+
+  // Process with controlled concurrency
+  let idx = 0;
+  async function runWorker(){
+    while(idx < total && !signal.aborted){
+      const myIdx = idx++;
+      const name = String(list[myIdx] || '').trim();
+      if(!name) continue;
+      await fetchOneSpecies(name);
+      if(!signal.aborted && idx < total){
+        await new Promise(function(res){ setTimeout(res, INTER_BATCH_DELAY); });
+      }
+    }
+  }
+  const workers = [];
+  for(let w = 0; w < Math.min(CONCURRENCY, total); w++){
+    workers.push(runWorker());
+  }
+  await Promise.all(workers);
+
+  // Final save, render, markers
+  const tSave = performance.now();
+  try{ save(); }catch(e){}
+  console.log('[elurikkus] save ms=' + Math.round(performance.now() - tSave));
+  
+  const tMarkers = performance.now();
   updateClientDataMaxAtFromPoints();
   rebuildAllMarkers();
   render();
+  console.log('[elurikkus] markers+render ms=' + Math.round(performance.now() - tMarkers));
+
   try{ _updateServerSnapshotStatus(); }catch(e){}
   const aborted = !!(signal && signal.aborted);
-  const doneMsg = aborted
-    ? ('Elurikkus refresh cancelled: updated:' + updated + ' moved:' + moved + ' errors:' + errors)
-    : ('Elurikkus refresh done: updated:' + updated + ' moved:' + moved + ' errors:' + errors);
-  setEluRefreshStatus(Number(__elurikkusBulkStats.done || total), total, updated, moved, errors);
+  const totalMs = Math.round(performance.now() - t0);
+  const doneMsg = (aborted ? 'Elurikkus refresh cancelled' : 'Elurikkus refresh done') 
+    + ': updated:' + updated + ' moved:' + moved + ' errors:' + errors + ' skipped:' + skipped + ' (' + (totalMs/1000).toFixed(1) + 's)';
+  console.log('[elurikkus] total ms=' + totalMs + ' updated=' + updated + ' moved=' + moved + ' errors=' + errors + ' skipped=' + skipped);
+  setEluRefreshStatus(completed, total, updated, moved, errors, skipped);
   if(updated > 0){
     dataMode = 'live';
     saveSnapshotLocal();
-    showSnapshotBanner('Data loaded', '');
-  } else if(errors > 0){
+    showSnapshotBanner(doneMsg, '');
+  } else if(errors > 0 && updated === 0){
     const loaded = reloadSnapshot();
     showSnapshotBanner(loaded ? 'Refresh failed. Showing last snapshot.' : 'Refresh failed and no snapshot available', loaded ? 'warn' : 'error');
   } else {
     showSnapshotBanner(doneMsg, errors ? 'warn' : '');
   }
-  __eluBulkSummary = { updated: updated, moved: moved, errors: errors, total: total, aborted: aborted, at: new Date().toISOString() };
+  __eluBulkSummary = { updated: updated, moved: moved, errors: errors, skipped: skipped, total: total, aborted: aborted, at: new Date().toISOString(), durationMs: totalMs };
   window.__lastElurikkusBulkSummary = __eluBulkSummary;
   __eluBulkActive = false;
   __elurikkusBulkActive = false;
@@ -3176,6 +3271,7 @@ async function refreshAllElurikkusOnce(){
   __eluBulkAbort = null;
   __elurikkusBulkAbort = null;
   __elurikkusBulkAbortController = null;
+  if(_renderTimer){ clearTimeout(_renderTimer); _renderTimer = null; }
 }
 async function refreshAllFromElurikkus(){
   return refreshAllElurikkusOnce();
@@ -6984,7 +7080,7 @@ function updateMarker(key) {
       markers.delete(key);
     }catch(_e){}
   }
-  console.log('[fix] updateMarker: placing', key, 'at lat=', p.lat, 'lon=', p.lon);
+  if(!__eluBulkActive) console.log('[fix] updateMarker: placing', key, 'at lat=', p.lat, 'lon=', p.lon);
   const m = L.marker([p.lat,p.lon], {icon});
   if(clusterGroup && typeof clusterGroup.addLayer === 'function'){
     try{ clusterGroup.addLayer(m); }catch(e){ m.addTo(map); }

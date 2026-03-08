@@ -6076,14 +6076,12 @@ async function _applySnapshot(snap){
   _setIndexStateFromCounts(0, keys.length);
   __lastProgressDone = 0;
   __currentIndex = 0;
+
+  // Apply all points in one pass without yielding
   for(let i = 0; i < keys.length; i++){
     const key = keys[i];
-    __currentIndex = i;
-    __nextIndex = i;
-    if(!_guardIndexState()) return;
-    _pushIndexTrace(i, 'start');
-    const s = pts[key];
     if(!pts.hasOwnProperty(key)) continue;
+    const s = pts[key];
     const snapPoint = {};
     if(typeof s.t === 'string' && s.t.trim()) snapPoint.t = s.t;
     if(Number.isFinite(s.lat) && Number.isFinite(s.lon)){ snapPoint.lat = s.lat; snapPoint.lon = s.lon; }
@@ -6096,39 +6094,19 @@ async function _applySnapshot(snap){
     if(typeof s.county === 'string' && s.county.trim()) snapPoint.county = s.county;
     if(s.elurikkus && typeof s.elurikkus === 'object') snapPoint.elurikkus = Object.assign({}, s.elurikkus);
     __snapshotPointBySpecies[_speciesKey(key)] = Object.assign({}, snapPoint);
-    const keepLive = false;
-    if(!keepLive){
-      // Race-condition fix: skip overwriting if we have a fresher Elurikkus-fetched value
-      const _existing = points[key];
-      const _snapTs = Date.parse(snap.generated_at || '');
-      const _fetchTs = Date.parse((_existing && _existing.lastFetched) || '');
-      if(Number.isFinite(_fetchTs) && Number.isFinite(_snapTs) && _fetchTs > _snapTs){
-        console.log('[coords-fix] _applySnapshot: keeping fresher fetch for', key, '| fetchedAt:', _existing.lastFetched, '> snapshotAt:', snap.generated_at);
-        // preserve the live fetch but restore visibility from snapshot logic
-        if(_existing.visible === undefined) _existing.visible = true;
-      } else {
-        points[key] = Object.assign({}, snapPoint, { visible: (_existing && _existing.visible === false) ? false : true });
-      }
-    }else{
-      _applyLiveOverrideForSpecies(key);
+
+    const _existing = points[key];
+    const _snapTs = Date.parse(snap.generated_at || '');
+    const _fetchTs = Date.parse((_existing && _existing.lastFetched) || '');
+    if(Number.isFinite(_fetchTs) && Number.isFinite(_snapTs) && _fetchTs > _snapTs){
+      if(_existing.visible === undefined) _existing.visible = true;
+    } else {
+      points[key] = Object.assign({}, snapPoint, { visible: (_existing && _existing.visible === false) ? false : true });
     }
     __snapshotProgressDone++;
     __lastProgressDone = __snapshotProgressDone;
-    __lastProcessedIndex = i;
-    __processedCount = __snapshotProgressDone;
-    __nextIndex = Math.min(keys.length, i + 1);
-    if(!_guardIndexState()) return;
-    _pushIndexTrace(i, 'done');
-    if(__slowMode){
-      await _delay(20);
-    } else if(i % 10 === 0){
-      // Yield so UI updates index line live
-      await _delay(0);
-    }
-    if(i % 10 === 0 || __slowMode){
-      _updateIndexProgressLine();
-    }
   }
+
   __currentIndex = null;
   __nextIndex = keys.length;
   __processedCount = keys.length;

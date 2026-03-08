@@ -7221,10 +7221,39 @@ function rowHTML(obj) {
 function render() {
   const q = (document.getElementById('filterBox').value||'').toLowerCase().trim();
   const list = document.getElementById('list'); list.innerHTML='';
-  const arr = DATA.filter(x=> x.est.toLowerCase().includes(q));
+  const recentOnly = is7daysOnly();
+  const arr = DATA.filter(function(x){
+    if(!x.est.toLowerCase().includes(q)) return false;
+    // When 7-day filter is ON, only show species with recent observations
+    if(recentOnly){
+      const p = points[x.est];
+      if(!p) return false;
+      if(!hasRecentObservation(p)) return false;
+    }
+    return true;
+  });
   for (const o of arr) list.insertAdjacentHTML('beforeend', rowHTML(o));
   const firstRow = list.querySelector('.row[data-key]');
   if(firstRow && !window.__selectedSpecies) window.__selectedSpecies = firstRow.getAttribute('data-key') || window.__selectedSpecies;
+
+  // Debug validation: count rendered vs filtered
+  if(recentOnly){
+    const cutoff = cutoffIso7d();
+    let staleInSidebar = 0;
+    for(const o of arr){
+      const p = points[o.est];
+      if(!p) continue;
+      const d = dateIsoFromAny(p.t || '');
+      if(d && d < cutoff){
+        staleInSidebar++;
+        if(staleInSidebar <= 2) console.error('[7day] ERROR old record still visible in sidebar: ' + o.est + ' date=' + d);
+      }
+    }
+    const markerKeys = [];
+    markers.forEach(function(v, k){ markerKeys.push(k); });
+    console.log('[7day] cutoff=' + cutoff + ' sidebarRendered=' + arr.length + ' markersOnMap=' + markerKeys.length);
+    if(staleInSidebar > 0) console.warn('[7day] WARNING: ' + staleInSidebar + ' stale records in sidebar');
+  }
 }
 
 (function bindSpringInlineEditDelegation(){

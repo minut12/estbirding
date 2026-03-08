@@ -182,6 +182,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       if (ev.data?.type === 'SPECIES_VISIBILITY_CHANGED' && user?.id && mapScope) {
         const { speciesKey, isHidden } = ev.data;
         if (typeof speciesKey === 'string' && typeof isHidden === 'boolean') {
+          console.log(`[prefs] scope=${mapScope} user=${user.id.slice(0,8)} save species=${speciesKey} hidden=${isHidden}`);
           saveSpeciesVisibility(mapScope, user.id, speciesKey, isHidden);
         }
       }

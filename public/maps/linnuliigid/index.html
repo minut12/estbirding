@@ -2703,21 +2703,23 @@ async function _applyElurikkusPayloadToPoints(species, payload){
     reason: reason,
     occUrl: found.occUrl || null,
   };
-  console.log('APPLY_ELU', species, {
-    best: !!best,
-    centroid: !!centroid,
-    finalLat: row.lat,
-    finalLon: row.lon,
-    coordsSource: row.coordsSource || row.coords_source,
-    reason
-  });
-  console.log('FINAL_COORD_SOURCE', species, {
-    lat: row.lat,
-    lon: row.lon,
-    coordsSource: row.coordsSource || row.coords_source,
-    coordLock: row.coordLock || '',
-    reason
-  });
+  if(!__eluBulkActive){
+    console.log('APPLY_ELU', species, {
+      best: !!best,
+      centroid: !!centroid,
+      finalLat: row.lat,
+      finalLon: row.lon,
+      coordsSource: row.coordsSource || row.coords_source,
+      reason
+    });
+    console.log('FINAL_COORD_SOURCE', species, {
+      lat: row.lat,
+      lon: row.lon,
+      coordsSource: row.coordsSource || row.coords_source,
+      coordLock: row.coordLock || '',
+      reason
+    });
+  }
   // Skip per-species save/render during bulk refresh (batched externally)
   if(!__eluBulkActive){
     try{ if(typeof save === 'function') save(); }catch(e){}

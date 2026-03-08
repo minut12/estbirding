@@ -824,7 +824,9 @@ let EBIRD_CODES = (() => {
 
 let points = normalizeNameMap(safeParseJSON(localStorage.getItem(LS_POINTS) || "{}") || {});
 localStorage.setItem(LS_POINTS, JSON.stringify(points));
-let EBIRD_TOKEN = (localStorage.getItem(LS_EBIRD_TOKEN) || "").trim();
+/* eBird token removed — handled server-side via edge function */
+let _supabaseUrl = "";
+let _supabaseAnonKey = "";
 let tokenSanitized = false;
 normalizeSpeciesMetaStorage();
 

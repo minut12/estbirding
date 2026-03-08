@@ -6770,6 +6770,22 @@ window.addEventListener('message', function(ev){
       _updateDebugPanel();
       return;
     }
+    if(t === 'SPECIES_VISIBILITY_RESTORE' && Array.isArray(ev.data.hiddenSpecies)){
+      var hiddenSet = {};
+      ev.data.hiddenSpecies.forEach(function(k){ hiddenSet[k] = true; });
+      var changed = false;
+      SPECIES.forEach(function(name){
+        points[name] = points[name] || {};
+        var shouldHide = !!hiddenSet[name];
+        var isHidden = (points[name].visible === false);
+        if(shouldHide !== isHidden){
+          points[name].visible = !shouldHide;
+          changed = true;
+        }
+      });
+      if(changed){ save(); rebuildAllMarkers(); render(); }
+      return;
+    }
     if(ev.origin !== window.location.origin) return;
     if(t === 'MAP_REFRESH_VISIBLE') refreshVisible();
     if(t === 'MAP_REFRESH_SELECTED') refreshSelected();

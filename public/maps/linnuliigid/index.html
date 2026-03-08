@@ -1263,6 +1263,8 @@ async function saveSpringDateChange(key, nextValue){
   _setSpringSyncError('');
   _markSpringSyncAt();
   _updateDebugPanel();
+  // Flush dirty entry to cloud immediately after save
+  try{ _flushDirtySpringEntries().catch(function(e){ console.warn('[spring-sync] flush after save failed', e); }); }catch(e){}
   return Promise.resolve({
     speciesKey: speciesKey,
     speciesName: speciesName,
@@ -7281,6 +7283,19 @@ if(__loadedLocalSnapshot){
 _validateAndSyncResumeState({ quiet: false });
 _startSnapshotBoot();
 _initElurikkusAuto30m();
+
+// Trigger spring cloud sync after config is ready (with retry)
+(function _bootSpringSync(){
+  try{
+    var cfg = resolveSupabaseConfig();
+    if(cfg.supabaseUrl){
+      console.info('[spring-sync] boot: config ready, syncing...');
+      loadSpringDataFromCloud(true).catch(function(e){ console.warn('[spring-sync] boot sync failed', e); });
+    } else {
+      setTimeout(_bootSpringSync, 2000);
+    }
+  }catch(e){ setTimeout(_bootSpringSync, 2000); }
+})();
 
 // Auto-detect avatar files for active species
 setTimeout(autoDetectAvatarsForActive, 3000);

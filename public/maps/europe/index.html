@@ -1481,6 +1481,7 @@ function wireRows(){
     if (nameEl) nameEl.addEventListener("click", ()=>{
       p.visible = (p.visible === false) ? true : false;
       saveAll(); updateMarker(key); render();
+      console.log("[prefs] scope=europe_map save species=" + key + " hidden=" + (p.visible === false));
       // Notify parent app of visibility change
       try {
         if (window.parent && window.parent !== window) {

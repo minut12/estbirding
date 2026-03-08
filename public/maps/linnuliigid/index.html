@@ -519,6 +519,7 @@ for (const __springName of Object.keys(DEFAULT_SPRING_DATES)) {
   if (__springKey) DEFAULT_SPRING_DATES_BY_KEY[__springKey] = DEFAULT_SPRING_DATES[__springName];
 }
 springDates = _sanitizeSpringDateMap(springDates);
+window.springDates = springDates;
 
 // Map
 const IS_MOBILE_DEVICE = matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -920,14 +921,23 @@ function _springKey(name){
 }
 function _getSpringValue(name){
   const k = _springKey(name);
-  return k ? String((springDates && springDates[k]) || '').trim() : '';
+  if(!k) return '';
+  const raw = springDates && springDates[k];
+  // Guard against numeric 0 or other non-string falsy values
+  if(raw === 0 || raw === null || raw === undefined || raw === false) return '';
+  const s = String(raw).trim();
+  if(s === '0' || s === 'null' || s === 'undefined') return '';
+  return s;
 }
 function _setSpringValue(name, value){
   const k = _springKey(name);
   if(!k) return '';
   const normalized = _normalizeSpringDateValue(value);
+  console.info('[kevad] _setSpringValue', { key: k, raw: String(value == null ? '' : value), normalized: normalized || '' });
   if(normalized) springDates[k] = normalized;
   else delete springDates[k];
+  // Keep window.springDates in sync after mutation
+  window.springDates = springDates;
   return normalized;
 }
 function _sanitizeSpringDateMap(rawMap){
@@ -968,8 +978,11 @@ function _writeSpringMetaEntry(key, patch){
 }
 function _persistSpringCache(){
   springDates = _sanitizeSpringDateMap(springDates);
+  // CRITICAL: keep window.springDates in sync after reassignment
+  window.springDates = springDates;
   try{ localStorage.setItem(LS_SPRING, JSON.stringify(springDates)); }catch(e){}
   try{ localStorage.setItem(LS_SPRING_META, JSON.stringify(springMeta || {})); }catch(e){}
+  console.info('[kevad] _persistSpringCache done, keys:', Object.keys(springDates).length);
 }
 function _setSpringSyncError(message){
   __springLastSyncError = String(message || '').trim();
@@ -7557,6 +7570,8 @@ document.addEventListener('DOMContentLoaded', function(){
       springDates = {};
     }
     springDates = _sanitizeSpringDateMap(springDates);
+    // CRITICAL: keep window.springDates in sync after reassignment
+    window.springDates = springDates;
   }
   function ensureSpringUiPlaced(){
     try{

@@ -472,6 +472,7 @@ export type Database = {
           name: string
           slug: string
           source_key: string | null
+          translate_to_et: boolean
           type: string
           updated_at: string
         }
@@ -487,6 +488,7 @@ export type Database = {
           name: string
           slug: string
           source_key?: string | null
+          translate_to_et?: boolean
           type?: string
           updated_at?: string
         }
@@ -502,6 +504,7 @@ export type Database = {
           name?: string
           slug?: string
           source_key?: string | null
+          translate_to_et?: boolean
           type?: string
           updated_at?: string
         }

@@ -7078,7 +7078,7 @@ function updateMarker(key) {
       markers.delete(key);
     }catch(_e){}
   }
-  console.log('[fix] updateMarker: placing', key, 'at lat=', p.lat, 'lon=', p.lon);
+  if(!__eluBulkActive) console.log('[fix] updateMarker: placing', key, 'at lat=', p.lat, 'lon=', p.lon);
   const m = L.marker([p.lat,p.lon], {icon});
   if(clusterGroup && typeof clusterGroup.addLayer === 'function'){
     try{ clusterGroup.addLayer(m); }catch(e){ m.addTo(map); }

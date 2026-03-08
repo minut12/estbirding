@@ -1879,9 +1879,22 @@ async function refreshKeys(keys, force=true){
     return { done: 0, total: keys.length, successCount: 0, failureCount: keys.length, aborted: false };
   }
 
-  const healthUrl = buildEbirdCountryRecentUrl("EE", 1, 1, getEbirdToken());
+  const proxyHeaders = {};
+  if (_supabaseAnonKey) {
+    proxyHeaders["apikey"] = _supabaseAnonKey;
+    proxyHeaders["Authorization"] = "Bearer " + _supabaseAnonKey;
+  }
+  const healthUrl = buildProxyUrl("EE", 1, 1);
+  if (!healthUrl) {
+    const msg = "Server configuration not ready. Please wait and try again.";
+    showSnapshotBanner(msg, "warn");
+    showWarn(msg);
+    setRefreshError(msg, 0, "config");
+    updateDebugPanel();
+    return { done: 0, total: keys.length, successCount: 0, failureCount: 0, aborted: false };
+  }
   try {
-    const health = await safeFetchJson(healthUrl, { timeoutMs: 10000, retries: 0 });
+    const health = await safeFetchJson(healthUrl, { timeoutMs: 10000, retries: 0, headers: proxyHeaders });
     lastErrorStatus = health.status;
     lastBodySnippet = health.textSnippet || null;
     lastRequest = { url: health.url, status: health.status, timeMs: health.timeMs };
@@ -1891,16 +1904,8 @@ async function refreshKeys(keys, force=true){
     lastBodySnippet = String(e?.textSnippet || e?.message || "").slice(0, 200) || null;
     lastRequest = { url: e?.url || healthUrl, status: e?.status, timeMs: e?.timeMs };
     const status = Number(e?.status || 0);
-    if (status === 403) {
-      const msg = "eBird returned 403. Token may be malformed OR you may be temporarily blocked due to too many requests. Use Hard reset and try again with throttled refresh.";
-      showSnapshotBanner(msg, "error");
-      showWarn(msg);
-      setRefreshError(`${msg}. status=403 ${lastErrorSnippet || ""}`, 0, "health-check");
-      updateDebugPanel();
-      return { done: 0, total: keys.length, successCount: 0, failureCount: 0, aborted: false };
-    }
-    if (status === 401) {
-      const msg = "Token invalid (401). Open Settings and update your eBird token.";
+    if (status === 403 || status === 401) {
+      const msg = `eBird API error (${status}). The server token may need to be updated by the administrator.`;
       showSnapshotBanner(msg, "error");
       showWarn(msg);
       setRefreshError(`${msg}. status=${status} ${lastErrorSnippet || ""}`, 0, "health-check");

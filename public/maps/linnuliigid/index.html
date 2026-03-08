@@ -3113,165 +3113,144 @@ async function refreshSpeciesFromElurikkus(key, signal){
 }
 async function refreshAllElurikkusOnce(){
   if(__eluBulkActive || __elurikkusBulkActive) return;
-  const list = _getAllSpeciesList();
-  if(!list.length) return;
   __eluBulkActive = true;
   __elurikkusBulkActive = true;
-  __eluBulkAbort = new AbortController();
-  __elurikkusBulkAbort = __eluBulkAbort;
-  __elurikkusBulkAbortController = __eluBulkAbort;
-  const signal = __eluBulkAbort.signal;
   const stopBtn = document.getElementById('btnStopFetch');
   if(stopBtn) stopBtn.style.display = 'inline-block';
   const eluProg = document.getElementById('eluProgress');
-
-  const CONCURRENCY = 3;
-  const BATCH_SAVE_INTERVAL = 10;
-  const INTER_BATCH_DELAY = 120;
-  const SKIP_IF_FRESH_MS = 5 * 60 * 1000;
   const t0 = performance.now();
-  console.log('[elurikkus] refresh start species=' + list.length);
+  console.log('[elurikkus] refresh start (snapshot mode)');
+  if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = 'Elurikkus refresh: loading snapshot...'; }
 
   // Resolve edge function URL
   const cfg = resolveSupabaseConfig();
   const sbUrl = String(cfg.supabaseUrl || '').replace(/\/+$/, '');
   const anonKey = String(cfg.anonKey || '').trim();
-  const useEdgeFn = !!(sbUrl && anonKey);
 
-  function setEluRefreshStatus(done, total, updated, moved, errors, skipped){
-    const line = 'Elurikkus refresh: ' + done + '/' + total + ' | updated:' + updated + ' moved:' + moved + ' errors:' + errors + (skipped ? ' skipped:' + skipped : '');
-    if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = line; }
+  if(!sbUrl || !anonKey){
+    if(eluProg) eluProg.textContent = 'Elurikkus refresh: Supabase config missing';
+    __eluBulkActive = false;
+    __elurikkusBulkActive = false;
+    if(stopBtn) stopBtn.style.display = 'none';
+    return;
   }
 
-  let updated = 0, moved = 0, errors = 0, skipped = 0;
-  const total = list.length;
-  let completed = 0;
-  let _pendingSave = false;
-  let _pendingRender = false;
-  let _renderTimer = null;
+  try{
+    // Single GET request to fetch pre-computed server snapshot
+    const tFetch = performance.now();
+    const snapshotUrl = sbUrl + '/functions/v1/linnuliigid-snapshot?_ts=' + Date.now();
+    const resp = await fetch(snapshotUrl, {
+      cache: 'no-store',
+      headers: { 'apikey': anonKey, 'Authorization': 'Bearer ' + anonKey },
+    });
+    if(!resp.ok) throw new Error('Snapshot HTTP ' + resp.status);
+    const snap = await resp.json();
+    const fetchMs = Math.round(performance.now() - tFetch);
+    console.log('[elurikkus] fetch ms=' + fetchMs);
 
-  function debouncedRender(){
-    if(_renderTimer) return;
-    _renderTimer = setTimeout(function(){
-      _renderTimer = null;
-      render();
-    }, 200);
-  }
-
-  async function fetchOneSpecies(name){
-    if(signal.aborted) return;
-    const p = points[name] || {};
-    const lastFetched = p.lastFetched ? Date.parse(p.lastFetched) : 0;
-    if(lastFetched && (Date.now() - lastFetched) < SKIP_IF_FRESH_MS){
-      skipped++;
-      completed++;
-      setEluRefreshStatus(completed, total, updated, moved, errors, skipped);
-      __elurikkusBulkStats = { done: completed, total: total, updated: updated, moved: moved, errors: errors, lastKey: name };
-      return;
+    if(!snap || !snap.points_json || typeof snap.points_json !== 'object'){
+      throw new Error('Empty snapshot from server');
     }
 
-    const speciesT0 = performance.now();
-    try{
-      if(useEdgeFn){
-        // Use the elurikkus-species edge function for JSON data (fast path)
-        const edgeUrl = sbUrl + '/functions/v1/elurikkus-species?text=' + encodeURIComponent(name) + '&days=7&limit=200&_ts=' + Date.now();
-        const resp = await fetch(edgeUrl, {
-          signal: signal,
-          cache: 'no-store',
-          headers: { 'apikey': anonKey, 'Authorization': 'Bearer ' + anonKey },
-        });
-        if(!resp.ok) throw new Error('Edge fn HTTP ' + resp.status);
-        const payload = await resp.json();
-        if(!payload.ok) throw new Error(payload.message || 'Edge fn error');
-        const result = await _applyElurikkusPayloadToPoints(name, payload);
-        if(result && result.updated) updated++;
-        if(result && result.moved) moved++;
-      } else {
-        // Fallback to HTML scraping
-        const searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(name);
-        const r = await autoFetchCoords(name, searchUrl, signal);
-        if(r && r.updated) updated++;
-        if(r && r.moved) moved++;
+    if(eluProg) eluProg.textContent = 'Elurikkus refresh: applying data...';
+
+    // Apply snapshot in one shot
+    const tApply = performance.now();
+    const pts = snap.points_json;
+    const keys = Object.keys(pts);
+    let updated = 0, moved = 0;
+
+    for(let i = 0; i < keys.length; i++){
+      const key = keys[i];
+      const s = pts[key];
+      if(!s) continue;
+      const existing = points[key] || {};
+      const prev = { lat: Number(existing.lat), lon: Number(existing.lon), t: existing.t, occ7: existing.occ7 };
+
+      // Skip overwriting if client has a fresher fetch
+      const snapTs = Date.parse(snap.generated_at || '');
+      const fetchTs = Date.parse(existing.lastFetched || '');
+      if(Number.isFinite(fetchTs) && Number.isFinite(snapTs) && fetchTs > snapTs){
+        continue;
       }
-      _pendingSave = true;
-      _pendingRender = true;
-    }catch(e){
-      if(signal.aborted) return;
-      errors++;
-    }
-    completed++;
-    const speciesMs = Math.round(performance.now() - speciesT0);
-    if(speciesMs > 2000) console.warn('[elurikkus] slow species=' + name + ' ms=' + speciesMs);
-    setEluRefreshStatus(completed, total, updated, moved, errors, skipped);
-    __elurikkusBulkStats = { done: completed, total: total, updated: updated, moved: moved, errors: errors, lastKey: name };
 
-    // Batch save/render
-    if(_pendingSave && (completed % BATCH_SAVE_INTERVAL === 0)){
-      try{ save(); }catch(e){}
-      _pendingSave = false;
-    }
-    if(_pendingRender && (completed % BATCH_SAVE_INTERVAL === 0)){
-      debouncedRender();
-      _pendingRender = false;
-    }
-  }
+      // Preserve exact coord lock
+      if(String(existing.coordLock || '') === 'exact' &&
+         String(existing.coordsSource || existing.coords_source || '') === 'elurikkus_occurrence_detail' &&
+         Number.isFinite(Number(existing.lat)) && Number.isFinite(Number(existing.lon))){
+        // Keep locked coords but update date/occ7
+        if(typeof s.t === 'string' && s.t.trim()) existing.t = s.t;
+        if(Number.isFinite(s.occ7)) existing.occ7 = s.occ7;
+        existing.src = 'Elurikkus';
+        points[key] = existing;
+        continue;
+      }
 
-  // Process with controlled concurrency
-  let idx = 0;
-  async function runWorker(){
-    while(idx < total && !signal.aborted){
-      const myIdx = idx++;
-      const name = String(list[myIdx] || '').trim();
-      if(!name) continue;
-      await fetchOneSpecies(name);
-      if(!signal.aborted && idx < total){
-        await new Promise(function(res){ setTimeout(res, INTER_BATCH_DELAY); });
+      const newPoint = { visible: true, src: 'Elurikkus' };
+      if(typeof s.t === 'string' && s.t.trim()) newPoint.t = s.t;
+      if(Number.isFinite(s.lat) && Number.isFinite(s.lon)){ newPoint.lat = s.lat; newPoint.lon = s.lon; }
+      if(Number.isFinite(s.occ7)) newPoint.occ7 = s.occ7;
+      if(typeof s.coords_status === 'string') newPoint.coords_status = s.coords_status;
+      if(typeof s.coords_source === 'string') newPoint.coords_source = s.coords_source;
+      if(typeof s.locality === 'string' && s.locality.trim()) newPoint.locality = s.locality;
+      if(typeof s.municipality === 'string' && s.municipality.trim()) newPoint.municipality = s.municipality;
+      if(typeof s.county === 'string' && s.county.trim()) newPoint.county = s.county;
+
+      points[key] = newPoint;
+      __snapshotPointBySpecies[_speciesKey(key)] = Object.assign({}, newPoint);
+
+      const appliedLat = Number(newPoint.lat);
+      const appliedLon = Number(newPoint.lon);
+      const prevLat = Number(prev.lat);
+      const prevLon = Number(prev.lon);
+      if(String(prev.t || '') !== String(newPoint.t || '') || Number(prev.occ7 || 0) !== Number(newPoint.occ7 || 0) ||
+         Math.abs((appliedLat || 0) - (prevLat || 0)) > 0.0001 || Math.abs((appliedLon || 0) - (prevLon || 0)) > 0.0001){
+        updated++;
+      }
+      if(Number.isFinite(prevLat) && Number.isFinite(appliedLat) &&
+         (Math.abs(appliedLat - prevLat) > 0.0001 || Math.abs((appliedLon || 0) - (prevLon || 0)) > 0.0001)){
+        moved++;
       }
     }
-  }
-  const workers = [];
-  for(let w = 0; w < Math.min(CONCURRENCY, total); w++){
-    workers.push(runWorker());
-  }
-  await Promise.all(workers);
 
-  // Final save, render, markers
-  const tSave = performance.now();
-  try{ save(); }catch(e){}
-  console.log('[elurikkus] save ms=' + Math.round(performance.now() - tSave));
-  
-  const tMarkers = performance.now();
-  updateClientDataMaxAtFromPoints();
-  rebuildAllMarkers();
-  render();
-  console.log('[elurikkus] markers+render ms=' + Math.round(performance.now() - tMarkers));
+    const applyMs = Math.round(performance.now() - tApply);
+    console.log('[elurikkus] apply ms=' + applyMs + ' species=' + keys.length + ' updated=' + updated + ' moved=' + moved);
 
-  try{ _updateServerSnapshotStatus(); }catch(e){}
-  const aborted = !!(signal && signal.aborted);
-  const totalMs = Math.round(performance.now() - t0);
-  const doneMsg = (aborted ? 'Elurikkus refresh cancelled' : 'Elurikkus refresh done') 
-    + ': updated:' + updated + ' moved:' + moved + ' errors:' + errors + ' skipped:' + skipped + ' (' + (totalMs/1000).toFixed(1) + 's)';
-  console.log('[elurikkus] total ms=' + totalMs + ' updated=' + updated + ' moved=' + moved + ' errors=' + errors + ' skipped=' + skipped);
-  setEluRefreshStatus(completed, total, updated, moved, errors, skipped);
-  if(updated > 0){
+    // Single save, single marker rebuild, single render
+    const tMarkers = performance.now();
+    updateClientDataMaxAtFromPoints();
+    try{ save(); }catch(e){}
+    rebuildAllMarkers();
+    render();
+    const markersMs = Math.round(performance.now() - tMarkers);
+    console.log('[elurikkus] markers+render ms=' + markersMs);
+
+    // Save local snapshot
     dataMode = 'live';
     saveSnapshotLocal();
+
+    const totalMs = Math.round(performance.now() - t0);
+    const doneMsg = 'Elurikkus refresh done: ' + keys.length + ' species, updated:' + updated + ' moved:' + moved + ' (' + (totalMs/1000).toFixed(1) + 's)';
+    console.log('[elurikkus] total ms=' + totalMs);
+    if(eluProg){ eluProg.textContent = doneMsg; }
     showSnapshotBanner(doneMsg, '');
-  } else if(errors > 0 && updated === 0){
-    const loaded = reloadSnapshot();
-    showSnapshotBanner(loaded ? 'Refresh failed. Showing last snapshot.' : 'Refresh failed and no snapshot available', loaded ? 'warn' : 'error');
-  } else {
-    showSnapshotBanner(doneMsg, errors ? 'warn' : '');
+    __eluBulkSummary = { updated: updated, moved: moved, errors: 0, skipped: 0, total: keys.length, aborted: false, at: new Date().toISOString(), durationMs: totalMs };
+    window.__lastElurikkusBulkSummary = __eluBulkSummary;
+    __elurikkusBulkStats = { done: keys.length, total: keys.length, updated: updated, moved: moved, errors: 0, lastKey: keys[keys.length-1] || '' };
+  }catch(e){
+    const totalMs = Math.round(performance.now() - t0);
+    console.error('[elurikkus] refresh failed ms=' + totalMs, e);
+    if(eluProg) eluProg.textContent = 'Elurikkus refresh failed: ' + String(e.message || e);
+    showSnapshotBanner('Refresh failed: ' + String(e.message || e), 'error');
+    __eluBulkSummary = { updated: 0, moved: 0, errors: 1, skipped: 0, total: 0, aborted: false, at: new Date().toISOString(), durationMs: totalMs };
   }
-  __eluBulkSummary = { updated: updated, moved: moved, errors: errors, skipped: skipped, total: total, aborted: aborted, at: new Date().toISOString(), durationMs: totalMs };
-  window.__lastElurikkusBulkSummary = __eluBulkSummary;
+
   __eluBulkActive = false;
   __elurikkusBulkActive = false;
-  if(stopBtn) stopBtn.style.display = 'none';
   __eluBulkAbort = null;
   __elurikkusBulkAbort = null;
   __elurikkusBulkAbortController = null;
-  if(_renderTimer){ clearTimeout(_renderTimer); _renderTimer = null; }
+  if(stopBtn) stopBtn.style.display = 'none';
 }
 async function refreshAllFromElurikkus(){
   return refreshAllElurikkusOnce();
@@ -6097,14 +6076,12 @@ async function _applySnapshot(snap){
   _setIndexStateFromCounts(0, keys.length);
   __lastProgressDone = 0;
   __currentIndex = 0;
+
+  // Apply all points in one pass without yielding
   for(let i = 0; i < keys.length; i++){
     const key = keys[i];
-    __currentIndex = i;
-    __nextIndex = i;
-    if(!_guardIndexState()) return;
-    _pushIndexTrace(i, 'start');
-    const s = pts[key];
     if(!pts.hasOwnProperty(key)) continue;
+    const s = pts[key];
     const snapPoint = {};
     if(typeof s.t === 'string' && s.t.trim()) snapPoint.t = s.t;
     if(Number.isFinite(s.lat) && Number.isFinite(s.lon)){ snapPoint.lat = s.lat; snapPoint.lon = s.lon; }
@@ -6117,39 +6094,19 @@ async function _applySnapshot(snap){
     if(typeof s.county === 'string' && s.county.trim()) snapPoint.county = s.county;
     if(s.elurikkus && typeof s.elurikkus === 'object') snapPoint.elurikkus = Object.assign({}, s.elurikkus);
     __snapshotPointBySpecies[_speciesKey(key)] = Object.assign({}, snapPoint);
-    const keepLive = false;
-    if(!keepLive){
-      // Race-condition fix: skip overwriting if we have a fresher Elurikkus-fetched value
-      const _existing = points[key];
-      const _snapTs = Date.parse(snap.generated_at || '');
-      const _fetchTs = Date.parse((_existing && _existing.lastFetched) || '');
-      if(Number.isFinite(_fetchTs) && Number.isFinite(_snapTs) && _fetchTs > _snapTs){
-        console.log('[coords-fix] _applySnapshot: keeping fresher fetch for', key, '| fetchedAt:', _existing.lastFetched, '> snapshotAt:', snap.generated_at);
-        // preserve the live fetch but restore visibility from snapshot logic
-        if(_existing.visible === undefined) _existing.visible = true;
-      } else {
-        points[key] = Object.assign({}, snapPoint, { visible: (_existing && _existing.visible === false) ? false : true });
-      }
-    }else{
-      _applyLiveOverrideForSpecies(key);
+
+    const _existing = points[key];
+    const _snapTs = Date.parse(snap.generated_at || '');
+    const _fetchTs = Date.parse((_existing && _existing.lastFetched) || '');
+    if(Number.isFinite(_fetchTs) && Number.isFinite(_snapTs) && _fetchTs > _snapTs){
+      if(_existing.visible === undefined) _existing.visible = true;
+    } else {
+      points[key] = Object.assign({}, snapPoint, { visible: (_existing && _existing.visible === false) ? false : true });
     }
     __snapshotProgressDone++;
     __lastProgressDone = __snapshotProgressDone;
-    __lastProcessedIndex = i;
-    __processedCount = __snapshotProgressDone;
-    __nextIndex = Math.min(keys.length, i + 1);
-    if(!_guardIndexState()) return;
-    _pushIndexTrace(i, 'done');
-    if(__slowMode){
-      await _delay(20);
-    } else if(i % 10 === 0){
-      // Yield so UI updates index line live
-      await _delay(0);
-    }
-    if(i % 10 === 0 || __slowMode){
-      _updateIndexProgressLine();
-    }
   }
+
   __currentIndex = null;
   __nextIndex = keys.length;
   __processedCount = keys.length;

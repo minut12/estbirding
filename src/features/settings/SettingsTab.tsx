@@ -1056,6 +1056,27 @@ export default function SettingsTab() {
 
   const renderSettingsHome = () => (
     <>
+      {/* Account section */}
+      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-primary" />
+          <span className="font-medium text-foreground text-sm">{user?.email}</span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Roll: <span className="font-medium">{role === 'admin' ? 'Admin' : role === 'user_level_2' ? 'Tase 2' : 'Tase 1'}</span>
+        </p>
+        <div className="flex gap-2 flex-wrap">
+          {isAdminUser && (
+            <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate('/admin/users')}>
+              <Users className="w-4 h-4" /> Kasutajad
+            </Button>
+          )}
+          <Button variant="outline" size="sm" className="gap-1 text-destructive" onClick={() => signOut()}>
+            <LogOut className="w-4 h-4" /> Logi välja
+          </Button>
+        </div>
+      </div>
+
       <div className="flex flex-col gap-2">
         <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('news')}>
           Uudised

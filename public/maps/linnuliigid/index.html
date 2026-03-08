@@ -519,6 +519,7 @@ for (const __springName of Object.keys(DEFAULT_SPRING_DATES)) {
   if (__springKey) DEFAULT_SPRING_DATES_BY_KEY[__springKey] = DEFAULT_SPRING_DATES[__springName];
 }
 springDates = _sanitizeSpringDateMap(springDates);
+window.springDates = springDates;
 
 // Map
 const IS_MOBILE_DEVICE = matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);

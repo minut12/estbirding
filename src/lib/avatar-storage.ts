@@ -4,6 +4,7 @@
  */
 
 import { supabase } from '@/config/supabaseClient';
+import { validateSupabaseConfig } from '@/config/supabaseConfig';
 
 const LOCAL_OVERRIDES_KEY = 'linnuliigid_avatars_v1';
 const SHARED_CACHE_KEY = 'linnuliigid_avatar_defaults_v1';
@@ -76,14 +77,45 @@ export function slugifySpeciesKey(key: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+function dataUrlToBlob(dataUrl: string): Blob {
+  const raw = String(dataUrl || '').trim();
+  const match = raw.match(/^data:([^;,]+)?(;base64)?,(.*)$/);
+  if (!match) {
+    throw new Error('Avatari eelvaade on vigane.');
+  }
+
+  const mimeType = match[1] || 'application/octet-stream';
+  const isBase64 = Boolean(match[2]);
+  const payload = match[3] || '';
+
+  if (!payload) {
+    throw new Error('Avatari eelvaade on tühi.');
+  }
+
+  if (isBase64) {
+    const binary = atob(payload);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mimeType });
+  }
+
+  return new Blob([decodeURIComponent(payload)], { type: mimeType });
+}
+
 /** Upload avatar to Supabase storage + upsert DB row */
 export async function uploadSharedAvatar(speciesKey: string, dataUrl: string): Promise<string> {
+  const validation = validateSupabaseConfig();
+  if (!validation.ok) {
+    throw new Error(validation.error || 'Supabase seadistus puudub.');
+  }
+
   const slug = slugifySpeciesKey(speciesKey);
+  if (!slug) {
+    throw new Error('Liigi nimi puudub.');
+  }
   const filePath = `linnuliigid/${slug}.webp`;
 
-  // Convert data URL to blob
-  const res = await fetch(dataUrl);
-  const blob = await res.blob();
+  const blob = dataUrlToBlob(dataUrl);
 
   // Upload to storage (upsert)
   const { error: uploadError } = await supabase.storage

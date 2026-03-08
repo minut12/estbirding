@@ -1,4 +1,6 @@
 import { supabase } from '@/config/supabaseClient';
+import { getSupabaseInitError } from '@/config/supabaseClient';
+import { validateSupabaseConfig } from '@/config/supabaseConfig';
 import { loadSpeciesMeta, replaceSpeciesMeta, SPECIES_META_LOCAL_UPDATED_AT_KEY, type SpeciesMeta } from '@/lib/speciesMeta';
 import { normalizeSpeciesName, normalizeUiText } from '@/lib/textNormalize';
 
@@ -28,6 +30,44 @@ export type SpeciesMetaSyncStatus = {
   lastSyncAt: string;
   lastSyncError: string;
 };
+
+function setLastSyncError(message: string): void {
+  localStorage.setItem(LAST_SYNC_ERROR_KEY, message);
+}
+
+function clearLastSyncError(): void {
+  localStorage.setItem(LAST_SYNC_ERROR_KEY, '');
+}
+
+function validateCloudConfig(): void {
+  const initError = getSupabaseInitError();
+  if (initError) throw new Error(initError);
+
+  const validation = validateSupabaseConfig();
+  if (!validation.ok) throw new Error(validation.error || 'Supabase seadistus puudub.');
+
+  if (!BUCKET || !FILE_PATH) {
+    throw new Error('Linnuliikide pilvesalvestuse bucket või failitee puudub.');
+  }
+}
+
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error.trim()) return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return 'Tundmatu viga';
+  }
+}
+
+function toActionableCloudError(error: unknown, fallback: string): Error {
+  const message = extractErrorMessage(error);
+  if (/failed to fetch|networkerror|load failed|network request failed/i.test(message)) {
+    return new Error('Võrguühendus ebaõnnestus. Kontrolli Supabase URL-i, CORS-i ja internetiühendust.');
+  }
+  return new Error(message || fallback);
+}
 
 function normalizeRarityLevel(level: unknown): 'none' | 'rare' | 'super' | 'mega' {
   const v = String(level || '').trim().toLowerCase();
@@ -73,27 +113,32 @@ function mergeCloudOverLocal(localMap: Record<string, SpeciesMeta>, cloud: Speci
 
 export async function downloadSpeciesMetaJson(): Promise<SpeciesMetaCloudJson | null> {
   try {
-    const { data } = supabase.storage.from(BUCKET).getPublicUrl(FILE_PATH);
-    const url = `${data.publicUrl}?t=${Date.now()}`;
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return null;
-    const text = await res.text();
+    validateCloudConfig();
+    const { data, error } = await supabase.storage.from(BUCKET).download(FILE_PATH);
+    if (error) {
+      const message = extractErrorMessage(error);
+      if (/not found|404|object not found/i.test(message)) return null;
+      throw error;
+    }
+    const text = await data.text();
     if (!text) return null;
     const parsed = JSON.parse(text) as Partial<SpeciesMetaCloudJson>;
     localStorage.setItem(CLOUD_LOADED_KEY, '1');
-    localStorage.setItem(LAST_SYNC_ERROR_KEY, '');
+    clearLastSyncError();
     return {
       version: 1,
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
       items: normalizeCloudItems(parsed.items),
     };
-  } catch {
+  } catch (error) {
     localStorage.setItem(CLOUD_LOADED_KEY, '0');
+    setLastSyncError(extractErrorMessage(toActionableCloudError(error, 'Pilvest lugemine ebaõnnestus.')));
     return null;
   }
 }
 
 export async function uploadSpeciesMetaJson(payload: SpeciesMetaCloudJson): Promise<void> {
+  validateCloudConfig();
   const body: SpeciesMetaCloudJson = {
     version: 1,
     updatedAt: payload.updatedAt || new Date().toISOString(),
@@ -105,16 +150,21 @@ export async function uploadSpeciesMetaJson(payload: SpeciesMetaCloudJson): Prom
     cacheControl: '0',
     upsert: true,
   });
-  if (error) throw new Error(error.message || 'Cloud upload failed');
+  console.info('[species-meta-cloud] metadata save response', { path: FILE_PATH, error, updatedAt: body.updatedAt });
+  if (error) throw toActionableCloudError(error, 'Pilve salvestamine ebaõnnestus.');
 }
 
 export async function refreshSpeciesMetaFromCloud(options?: { force?: boolean }): Promise<{ updated: boolean; merged: Record<string, SpeciesMeta> }> {
   const force = !!options?.force;
   const local = loadSpeciesMeta();
+  console.info('[species-meta-cloud] refresh start', { force, bucket: BUCKET, path: FILE_PATH });
   const cloud = await downloadSpeciesMetaJson();
   if (!cloud) {
     localStorage.setItem(SPECIES_META_LAST_SYNC_AT_KEY, new Date().toISOString());
-    localStorage.setItem(LAST_SYNC_ERROR_KEY, 'Cloud download failed');
+    if (!localStorage.getItem(LAST_SYNC_ERROR_KEY)) {
+      setLastSyncError('Pilvest lugemine ebaõnnestus.');
+    }
+    console.warn('[species-meta-cloud] refresh skipped, cloud payload unavailable');
     return { updated: false, merged: local };
   }
 
@@ -124,12 +174,13 @@ export async function refreshSpeciesMetaFromCloud(options?: { force?: boolean })
     return { updated: false, merged: local };
   }
   const merged = mergeCloudOverLocal(local, cloud);
+  const updated = Boolean(cloud.updatedAt && cloud.updatedAt !== prevUpdatedAt);
   replaceSpeciesMeta(merged);
   localStorage.setItem(CLOUD_UPDATED_AT_KEY, cloud.updatedAt || '');
   localStorage.setItem(SPECIES_META_LAST_SYNC_AT_KEY, new Date().toISOString());
-  localStorage.setItem(LAST_SYNC_ERROR_KEY, '');
+  clearLastSyncError();
+  console.info('[species-meta-cloud] refresh end', { updatedAt: cloud.updatedAt, updated });
 
-  const updated = Boolean(cloud.updatedAt && cloud.updatedAt !== prevUpdatedAt);
   if (updated) {
     try { window.dispatchEvent(new CustomEvent('species-meta-updated')); } catch {}
   }
@@ -138,7 +189,19 @@ export async function refreshSpeciesMetaFromCloud(options?: { force?: boolean })
 
 export async function saveSpeciesMetaToCloud(speciesName: string, patch: Partial<SpeciesMeta>): Promise<Record<string, SpeciesMeta>> {
   const key = normalizeSpeciesName(speciesName);
-  if (!key) return loadSpeciesMeta();
+  if (!key) {
+    const error = new Error('Liik on valimata.');
+    setLastSyncError(error.message);
+    throw error;
+  }
+
+  validateCloudConfig();
+  console.info('[species-meta-cloud] metadata save start', {
+    species: key,
+    patch,
+    bucket: BUCKET,
+    path: FILE_PATH,
+  });
 
   const latest = (await downloadSpeciesMetaJson()) || { version: 1 as const, updatedAt: new Date().toISOString(), items: {} };
   const nextItems = { ...latest.items };
@@ -154,17 +217,31 @@ export async function saveSpeciesMetaToCloud(speciesName: string, patch: Partial
     items: nextItems,
   };
 
-  await uploadSpeciesMetaJson(nextPayload);
-
-  const confirmed = await downloadSpeciesMetaJson();
-  const cloudFinal = confirmed || nextPayload;
-  const merged = mergeCloudOverLocal(loadSpeciesMeta(), cloudFinal);
-  replaceSpeciesMeta(merged);
-  localStorage.setItem(CLOUD_UPDATED_AT_KEY, cloudFinal.updatedAt || '');
-  localStorage.setItem(SPECIES_META_LAST_SYNC_AT_KEY, new Date().toISOString());
-  localStorage.setItem(LAST_SYNC_ERROR_KEY, '');
-  try { window.dispatchEvent(new CustomEvent('species-meta-updated')); } catch {}
-  return merged;
+  try {
+    await uploadSpeciesMetaJson(nextPayload);
+    const merged = mergeCloudOverLocal(loadSpeciesMeta(), nextPayload);
+    replaceSpeciesMeta(merged);
+    localStorage.setItem(CLOUD_UPDATED_AT_KEY, nextPayload.updatedAt || '');
+    localStorage.setItem(SPECIES_META_LAST_SYNC_AT_KEY, new Date().toISOString());
+    clearLastSyncError();
+    console.info('[species-meta-cloud] metadata save end', {
+      species: key,
+      updatedAt: nextPayload.updatedAt,
+      items: Object.keys(nextPayload.items).length,
+    });
+    try { window.dispatchEvent(new CustomEvent('species-meta-updated')); } catch {}
+    return merged;
+  } catch (error) {
+    const actionableError = toActionableCloudError(error, 'Pilve salvestamine ebaõnnestus.');
+    setLastSyncError(actionableError.message);
+    console.error('[species-meta-cloud] metadata save error', {
+      species: key,
+      patch,
+      error,
+      message: actionableError.message,
+    });
+    throw actionableError;
+  }
 }
 
 export function getSpeciesMetaSyncStatus(): SpeciesMetaSyncStatus {

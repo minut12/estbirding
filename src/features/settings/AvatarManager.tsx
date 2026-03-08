@@ -88,21 +88,46 @@ export default function AvatarManager() {
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (!selected || !preview) return;
+    if (saving) return;
+    if (!selected) {
+      toast.error('Vali liik enne salvestamist.');
+      return;
+    }
+    if (!preview) {
+      toast.error('Avaatar puudub üleslaadimiseks.');
+      return;
+    }
     setSaving(true);
     try {
+      console.info('[avatar-manager] save start', { species: selected, hasPreview: true });
+      const patch = {
+        ebirdCode: ebirdCode.trim(),
+        rarityLevel,
+      } as const;
+      console.info('[avatar-manager] avatar upload start', { species: selected });
       const publicUrl = await uploadSharedAvatar(selected, preview);
+      console.info('[avatar-manager] avatar upload end', { species: selected, publicUrl });
+      console.info('[avatar-manager] metadata save start', { species: selected, patch: { ...patch, avatarUrl: publicUrl } });
+      const merged = await saveSpeciesMetaToCloud(selected, { ...patch, avatarUrl: publicUrl });
+      console.info('[avatar-manager] metadata save end', { species: selected, saved: Boolean(merged[selected]) });
       setCurrentAvatar(publicUrl);
       setPreview(null);
-      upsertSpeciesMeta(selected, { avatarUrl: publicUrl });
+      upsertSpeciesMeta(selected, { ...patch, avatarUrl: publicUrl });
       notifyIframeUpdate('update', selected, publicUrl);
-      toast.success('Avatar salvestatud pilve - nähtav kõigil seadmetel');
+      setLastSyncAt(localStorage.getItem(SPECIES_META_LAST_SYNC_AT_KEY) || '');
+      setSyncStatus(getSpeciesMetaSyncStatus());
+      toast.success('Liigi seaded salvestati pilve.');
     } catch (ex: any) {
-      toast.error(ex?.message || 'Salvestamine ebaõnnestus');
+      console.error('[avatar-manager] save error', { species: selected, error: ex });
+      setSyncStatus(getSpeciesMetaSyncStatus());
+      const message = String(ex?.message || '');
+      if (/eelvaade|avatar/i.test(message)) toast.error(message || 'Avatari üleslaadimine ebaõnnestus.');
+      else if (/võrguühendus|network/i.test(message)) toast.error(message || 'Võrguühendus ebaõnnestus.');
+      else toast.error(message || 'Pilve salvestamine ebaõnnestus.');
     } finally {
       setSaving(false);
     }
-  }, [selected, preview]);
+  }, [saving, selected, preview, ebirdCode, rarityLevel]);
 
   const handleRemove = useCallback(async () => {
     if (!selected) return;
@@ -136,7 +161,12 @@ export default function AvatarManager() {
   }, []);
 
   const handleMetaSave = useCallback(() => {
-    if (!selected) return;
+    if (saving) return;
+    if (!selected) {
+      toast.error('Vali liik enne salvestamist.');
+      return;
+    }
+    setSaving(true);
     const patch = {
       ebirdCode: ebirdCode.trim(),
       rarityLevel,
@@ -144,15 +174,26 @@ export default function AvatarManager() {
     };
     upsertSpeciesMeta(selected, patch);
     window.dispatchEvent(new CustomEvent('species-meta-updated'));
+    console.info('[avatar-manager] metadata-only save start', { species: selected, patch });
     saveSpeciesMetaToCloud(selected, patch)
       .then(async () => {
         await refreshSpeciesMetaFromCloud({ force: true }).catch(() => {});
         setLastSyncAt(localStorage.getItem(SPECIES_META_LAST_SYNC_AT_KEY) || '');
         setSyncStatus(getSpeciesMetaSyncStatus());
-        toast.success('Salvestatud pilve');
+        console.info('[avatar-manager] metadata-only save end', { species: selected });
+        toast.success('Liigi seaded salvestati pilve.');
       })
-      .catch(() => toast.warning('Salvestatud lokaalselt'));
-  }, [selected, ebirdCode, rarityLevel, currentAvatar]);
+      .catch((error) => {
+        console.error('[avatar-manager] metadata-only save error', { species: selected, error });
+        setSyncStatus(getSpeciesMetaSyncStatus());
+        const message = String(error?.message || '');
+        if (/võrguühendus|network/i.test(message)) toast.error(message || 'Võrguühendus ebaõnnestus.');
+        else toast.error(message || 'Liigi metaandmete salvestamine ebaõnnestus.');
+      })
+      .finally(() => {
+        setSaving(false);
+      });
+  }, [saving, selected, ebirdCode, rarityLevel, currentAvatar]);
 
   const handleSyncNow = useCallback(async () => {
     setSyncing(true);
@@ -270,7 +311,7 @@ export default function AvatarManager() {
               <option value="super">{ET_STRINGS.raritySuper}</option>
               <option value="mega">{ET_STRINGS.rarityMega}</option>
             </select>
-            <Button variant="outline" className="w-full" onClick={handleMetaSave}>
+            <Button variant="outline" className="w-full" onClick={handleMetaSave} disabled={saving}>
               {ET_STRINGS.saveSpeciesSettings}
             </Button>
             <Button variant="outline" className="w-full gap-2" onClick={handleSyncNow} disabled={syncing}>

@@ -2137,6 +2137,20 @@ window.addEventListener("message", function(ev){
   try{
     if (!ev.data || typeof ev.data !== "object") return;
     const t = ev.data.type;
+    // Receive Supabase config from parent app
+    if (t === "SUPABASE_CONFIG") {
+      const url = String(ev.data.supabaseUrl || "").replace(/\/+$/, "");
+      const key = String(ev.data.supabaseAnonKey || "").trim();
+      if (url && url !== _supabaseUrl) {
+        _supabaseUrl = url;
+        _supabaseAnonKey = key;
+        console.log("[europe] received SUPABASE_CONFIG url=" + url.slice(0, 40) + "...");
+        updateDebugPanel();
+        // If we were waiting for config, hide the waiting banner
+        hideSnapshotBanner();
+      }
+      return;
+    }
     // Species visibility restore from parent (before origin check since parent sends it)
     if (t === "SPECIES_VISIBILITY_RESTORE" && Array.isArray(ev.data.hiddenSpecies)){
       const hiddenSet = new Set(ev.data.hiddenSpecies);
@@ -2173,7 +2187,13 @@ window.addEventListener("message", function(ev){
     }
   }catch(e){}
 });
-try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: "SPECIES_META_REQUEST" }, "*"); } catch(e){}
+// Request Supabase config from parent on load
+try {
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage({ type: "SUPABASE_CONFIG_REQUEST" }, "*");
+    window.parent.postMessage({ type: "SPECIES_META_REQUEST" }, "*");
+  }
+} catch(e){}
 </script>
 </body>
 </html>

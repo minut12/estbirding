@@ -3220,7 +3220,12 @@ async function refreshAllElurikkusOnce(){
     const distinctRecent = Object.keys(newPoints).filter(function(k){ return newPoints[k].occ7 > 0; }).length;
 
     console.log('[elurikkus] apply ms=' + applyMs + ' raw=' + totalRaw + ' filtered7d=' + filtered7d + ' withCoords=' + withCoords);
-    console.log('[elurikkus] species: distinct=' + distinctAll + ' recent7d=' + distinctRecent + ' oldest=' + oldestDate + ' newest=' + newestDate);
+    console.log('[7day] cutoff=' + cutoff);
+    console.log('[7day] rawRecords=' + totalRaw);
+    console.log('[7day] filteredRecords=' + filtered7d);
+    console.log('[7day] distinctSpecies=' + distinctAll + ' recent7d=' + distinctRecent);
+    if(oldestDate) console.log('[7day] oldestVisible=' + oldestDate);
+    if(newestDate) console.log('[7day] newestVisible=' + newestDate);
 
     // Validate: warn if any visible record is older than 7 days but has occ7>0
     let staleWarnings = 0;
@@ -3229,10 +3234,10 @@ async function refreshAllElurikkusOnce(){
       const d = dateIsoFromAny(p.t || '');
       if(d && d < cutoff && p.occ7 > 0){
         staleWarnings++;
-        if(staleWarnings <= 3) console.warn('[elurikkus] STALE WARNING: ' + k + ' date=' + d + ' occ7=' + p.occ7);
+        if(staleWarnings <= 3) console.error('[7day] ERROR old record still visible: ' + k + ' date=' + d + ' occ7=' + p.occ7);
       }
     }
-    if(staleWarnings > 3) console.warn('[elurikkus] ... and ' + (staleWarnings - 3) + ' more stale warnings');
+    if(staleWarnings > 0) console.warn('[7day] WARNING: ' + staleWarnings + ' stale records with occ7>0');
 
     // Single save, single marker rebuild, single render
     const tMarkers = performance.now();

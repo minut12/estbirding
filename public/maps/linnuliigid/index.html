@@ -7569,6 +7569,8 @@ document.addEventListener('DOMContentLoaded', function(){
       springDates = {};
     }
     springDates = _sanitizeSpringDateMap(springDates);
+    // CRITICAL: keep window.springDates in sync after reassignment
+    window.springDates = springDates;
   }
   function ensureSpringUiPlaced(){
     try{

@@ -297,6 +297,7 @@ const LS_AVATARS='bm_rari_avatars', LS_POINTS='bm_rari_points', LS_PROXY='bm_rar
 const LS_RECENT_ONLY = 'bm_recent_only';
 const LS_SPRING_YEARFIRST = 'bm_rari_spring_yearfirst_v3';
 const LS_SPRING_PANEL_OPEN = 'bm_spring_panel_open';
+const LS_SPRING_META = 'bm_rari_spring_dates_meta_v1';
 const CLASSIC_MODE = false;
 const LS_LIVE_ELURIKKUS = 'bm_live_elurikkus_v1';
 const LS_LIVE_ELURIKKUS_USE = 'bm_live_elurikkus_use_v1';
@@ -481,6 +482,12 @@ let springDates = (function(){
 if(!springDates || typeof springDates !== 'object'){
   springDates = Object.assign({}, DEFAULT_SPRING_DATES);
 }
+let springMeta = (function(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(LS_SPRING_META) || '{}');
+    return raw && typeof raw === 'object' ? raw : {};
+  }catch(e){ return {}; }
+})();
 let springYearFirst = {};
 try { springYearFirst = JSON.parse(localStorage.getItem(LS_SPRING_YEARFIRST) || '{}') || {}; }
 catch(e){ springYearFirst = {}; }
@@ -494,6 +501,17 @@ try{
 let springQ = [];
 let springQRunning = false;
 let springEditRowKey = null;
+const SPRING_SYNC_TABLE = 'linnuliigid_spring_dates';
+let __springCloudLoaded = false;
+let __springCloudLoadedAt = '';
+let __springLastSyncAt = '';
+let __springLastSyncError = '';
+let __springSyncInFlight = null;
+let __springPendingSaves = new Map();
+const __springSpeciesNameByKey = {};
+for (let __si = 0; __si < SPECIES.length; __si++) {
+  __springSpeciesNameByKey[_speciesKey(SPECIES[__si])] = SPECIES[__si];
+}
 
 // Map
 const IS_MOBILE_DEVICE = matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -868,6 +886,374 @@ function normalizeSpringDate(v){
   const d = String(parseInt(m[1],10));          // keep 5.03 style like your list
   const mm = String(parseInt(m[2],10)).padStart(2,'0');
   return `${d}.${mm}`;
+}
+function _readSpringMeta(key){
+  const k = _speciesKey(key);
+  const raw = springMeta && springMeta[k] && typeof springMeta[k] === 'object' ? springMeta[k] : {};
+  return {
+    speciesKey: k,
+    speciesName: __springSpeciesNameByKey[k] || key,
+    springDate: typeof raw.springDate === 'string' ? raw.springDate : '',
+    springTime: typeof raw.springTime === 'string' ? raw.springTime : '',
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : '',
+    dirty: raw.dirty === true,
+    source: typeof raw.source === 'string' ? raw.source : '',
+    updatedBy: typeof raw.updatedBy === 'string' ? raw.updatedBy : '',
+  };
+}
+function _writeSpringMetaEntry(key, patch){
+  const k = _speciesKey(key);
+  const prev = _readSpringMeta(k);
+  springMeta[k] = Object.assign({}, prev, patch || {}, { speciesKey: k, speciesName: __springSpeciesNameByKey[k] || key });
+  return springMeta[k];
+}
+function _persistSpringCache(){
+  try{ localStorage.setItem(LS_SPRING, JSON.stringify(springDates)); }catch(e){}
+  try{ localStorage.setItem(LS_SPRING_META, JSON.stringify(springMeta || {})); }catch(e){}
+}
+function _setSpringSyncError(message){
+  __springLastSyncError = String(message || '').trim();
+  if(__springLastSyncError) console.warn('[spring-sync] error', __springLastSyncError);
+}
+function _markSpringSyncAt(){
+  __springLastSyncAt = new Date().toISOString();
+}
+function _springRestBase(){
+  const validation = _validateSupabaseLocal();
+  if(!validation.ok) throw new Error(validation.error || 'Supabase seadistus puudub.');
+  return validation.url.replace(/\/+$/, '') + '/rest/v1/' + SPRING_SYNC_TABLE;
+}
+function _springRestHeaders(extra){
+  const anonKey = _resolveSupabaseAnonKeyLocal();
+  const headers = Object.assign({
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'apikey': anonKey,
+    'Authorization': 'Bearer ' + anonKey,
+  }, extra || {});
+  return headers;
+}
+function _getSpringDeviceId(){
+  const key = 'bm_spring_device_id';
+  try{
+    let id = String(localStorage.getItem(key) || '').trim();
+    if(!id){
+      id = 'web-' + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem(key, id);
+    }
+    return id;
+  }catch(e){
+    return 'web-unknown';
+  }
+}
+function _parseSpringUpdatedAtMs(v){
+  const ms = Date.parse(String(v || ''));
+  return Number.isFinite(ms) ? ms : 0;
+}
+function _getSpringCloudRecordMap(records){
+  const out = {};
+  const arr = Array.isArray(records) ? records : [];
+  for(const row of arr){
+    const speciesKey = _speciesKey(row && (row.species_key || row.speciesKey || row.species_name || row.speciesName || ''));
+    if(!speciesKey) continue;
+    const normDate = normalizeSpringDate(row && (row.spring_date || row.springDate || ''));
+    if(normDate === null) continue;
+    out[speciesKey] = {
+      speciesKey: speciesKey,
+      speciesName: String(row && (row.species_name || row.speciesName || __springSpeciesNameByKey[speciesKey] || speciesKey)),
+      springDate: normDate || '',
+      springTime: String(row && (row.spring_time || row.springTime || '') || ''),
+      updatedAt: String(row && (row.updated_at || row.updatedAt || '') || ''),
+      updatedBy: String(row && (row.updated_by || row.updatedBy || '') || ''),
+      source: 'cloud',
+      dirty: false,
+    };
+  }
+  return out;
+}
+async function _fetchSpringCloudRecords(){
+  const url = _springRestBase() + '?select=species_key,species_name,spring_date,spring_time,updated_at,updated_by';
+  console.info('[spring-sync] load start', { url: url });
+  const res = await fetch(url, { method: 'GET', headers: _springRestHeaders(), cache: 'no-store' });
+  if(!res.ok) throw new Error('Kevadrände pilve laadimine ebaõnnestus (HTTP ' + res.status + ').');
+  const rows = await res.json();
+  console.info('[spring-sync] load end', { rows: Array.isArray(rows) ? rows.length : 0 });
+  return Array.isArray(rows) ? rows : [];
+}
+async function _upsertSpringCloudRecord(entry){
+  const url = _springRestBase() + '?on_conflict=species_key';
+  const payload = [{
+    species_key: entry.speciesKey,
+    species_name: entry.speciesName,
+    spring_date: entry.springDate,
+    spring_time: entry.springTime || null,
+    updated_at: entry.updatedAt || new Date().toISOString(),
+    updated_by: entry.updatedBy || _getSpringDeviceId(),
+  }];
+  console.info('[spring-sync] save start', { speciesKey: entry.speciesKey, updatedAt: payload[0].updated_at });
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: _springRestHeaders({ 'Prefer': 'resolution=merge-duplicates,return=representation' }),
+    body: JSON.stringify(payload),
+  });
+  if(!res.ok) throw new Error('Kevadrände pilve salvestamine ebaõnnestus (HTTP ' + res.status + ').');
+  const json = await res.json().catch(function(){ return []; });
+  console.info('[spring-sync] save end', { speciesKey: entry.speciesKey });
+  return Array.isArray(json) && json.length ? json[0] : payload[0];
+}
+async function _deleteSpringCloudRecord(speciesKey){
+  const url = _springRestBase() + '?species_key=eq.' + encodeURIComponent(speciesKey);
+  console.info('[spring-sync] save start', { speciesKey: speciesKey, delete: true });
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: _springRestHeaders({ 'Prefer': 'return=minimal' }),
+  });
+  if(!res.ok) throw new Error('Kevadrände pilvest kustutamine ebaõnnestus (HTTP ' + res.status + ').');
+  console.info('[spring-sync] save end', { speciesKey: speciesKey, delete: true });
+}
+function _applySpringEntryToState(entry){
+  const speciesName = entry.speciesName || __springSpeciesNameByKey[entry.speciesKey] || entry.speciesKey;
+  if(entry.springDate){
+    springDates[speciesName] = entry.springDate;
+  } else {
+    delete springDates[speciesName];
+  }
+  _writeSpringMetaEntry(speciesName, {
+    springDate: entry.springDate || '',
+    springTime: entry.springTime || '',
+    updatedAt: entry.updatedAt || '',
+    dirty: !!entry.dirty,
+    source: entry.source || '',
+    updatedBy: entry.updatedBy || '',
+  });
+}
+function _collectDirtySpringEntries(){
+  const out = [];
+  for(const [speciesKey, raw] of Object.entries(springMeta || {})){
+    const row = raw && typeof raw === 'object' ? raw : {};
+    if(row.dirty !== true) continue;
+    const speciesName = row.speciesName || __springSpeciesNameByKey[speciesKey] || speciesKey;
+    const springDate = typeof row.springDate === 'string' ? row.springDate : '';
+    out.push({
+      speciesKey: speciesKey,
+      speciesName: speciesName,
+      springDate: springDate,
+      springTime: typeof row.springTime === 'string' ? row.springTime : '',
+      updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : '',
+      updatedBy: typeof row.updatedBy === 'string' ? row.updatedBy : _getSpringDeviceId(),
+      source: 'local',
+      dirty: true,
+    });
+  }
+  return out;
+}
+function _migrateLegacyLocalSpringOverrides(cloudMap){
+  let migrated = 0;
+  for(const [speciesName, springDate] of Object.entries(springDates || {})){
+    const speciesKey = _speciesKey(speciesName);
+    if(!speciesKey) continue;
+    const meta = _readSpringMeta(speciesKey);
+    if(meta.updatedAt) continue;
+    if(cloudMap && cloudMap[speciesKey]) continue;
+    const normDate = normalizeSpringDate(springDate);
+    if(normDate === null) continue;
+    const defaultValue = DEFAULT_SPRING_DATES[speciesName] || '';
+    if(normDate === (defaultValue || '')) continue;
+    _writeSpringMetaEntry(speciesName, {
+      springDate: normDate || '',
+      springTime: '',
+      updatedAt: new Date().toISOString(),
+      updatedBy: _getSpringDeviceId(),
+      dirty: true,
+      source: 'local_legacy',
+    });
+    migrated++;
+  }
+  if(migrated){
+    _persistSpringCache();
+    console.info('[spring-sync] merge result', { legacyMigrated: migrated });
+  }
+}
+function _mergeSpringCloudAndLocal(records){
+  const cloudMap = _getSpringCloudRecordMap(records);
+  _migrateLegacyLocalSpringOverrides(cloudMap);
+  const dirtyLocal = _collectDirtySpringEntries();
+  let cloudWins = 0;
+  let localWins = 0;
+  for(const localEntry of dirtyLocal){
+    const cloudEntry = cloudMap[localEntry.speciesKey];
+    const localTs = _parseSpringUpdatedAtMs(localEntry.updatedAt);
+    const cloudTs = _parseSpringUpdatedAtMs(cloudEntry && cloudEntry.updatedAt);
+    if(cloudEntry && cloudTs >= localTs){
+      _applySpringEntryToState(Object.assign({}, cloudEntry, { dirty: false, source: 'cloud' }));
+      cloudWins++;
+      console.info('[spring-sync] conflict resolution', { speciesKey: localEntry.speciesKey, winner: 'cloud', localUpdatedAt: localEntry.updatedAt, cloudUpdatedAt: cloudEntry.updatedAt });
+      continue;
+    }
+    _applySpringEntryToState(localEntry);
+    localWins++;
+    console.info('[spring-sync] conflict resolution', { speciesKey: localEntry.speciesKey, winner: 'local', localUpdatedAt: localEntry.updatedAt, cloudUpdatedAt: cloudEntry ? cloudEntry.updatedAt : '' });
+  }
+  for(const cloudEntry of Object.values(cloudMap)){
+    const localMeta = _readSpringMeta(cloudEntry.speciesKey);
+    if(localMeta.dirty && _parseSpringUpdatedAtMs(localMeta.updatedAt) > _parseSpringUpdatedAtMs(cloudEntry.updatedAt)) continue;
+    _applySpringEntryToState(Object.assign({}, cloudEntry, { dirty: false, source: 'cloud' }));
+  }
+  _persistSpringCache();
+  console.info('[spring-sync] merge result', {
+    cloudRows: Object.keys(cloudMap).length,
+    dirtyLocal: dirtyLocal.length,
+    cloudWins: cloudWins,
+    localWins: localWins,
+  });
+  return { cloudRows: Object.keys(cloudMap).length, dirtyLocal: dirtyLocal.length, cloudWins: cloudWins, localWins: localWins };
+}
+async function _flushDirtySpringEntries(){
+  const dirty = _collectDirtySpringEntries();
+  if(!dirty.length) return;
+  for(const entry of dirty){
+    if(entry.springDate){
+      const saved = await _upsertSpringCloudRecord(entry);
+      _applySpringEntryToState({
+        speciesKey: entry.speciesKey,
+        speciesName: entry.speciesName,
+        springDate: normalizeSpringDate(saved.spring_date || saved.springDate || entry.springDate) || entry.springDate,
+        springTime: String(saved.spring_time || saved.springTime || entry.springTime || ''),
+        updatedAt: String(saved.updated_at || saved.updatedAt || entry.updatedAt || new Date().toISOString()),
+        updatedBy: String(saved.updated_by || saved.updatedBy || entry.updatedBy || _getSpringDeviceId()),
+        source: 'cloud',
+        dirty: false,
+      });
+    } else {
+      await _deleteSpringCloudRecord(entry.speciesKey);
+      _applySpringEntryToState({
+        speciesKey: entry.speciesKey,
+        speciesName: entry.speciesName,
+        springDate: '',
+        springTime: '',
+        updatedAt: new Date().toISOString(),
+        updatedBy: _getSpringDeviceId(),
+        source: 'cloud',
+        dirty: false,
+      });
+    }
+    _persistSpringCache();
+  }
+}
+async function loadSpringDataFromCloud(force){
+  if(__springSyncInFlight && !force) return __springSyncInFlight;
+  __springSyncInFlight = (async function(){
+    try{
+      const rows = await _fetchSpringCloudRecords();
+      const merge = _mergeSpringCloudAndLocal(rows);
+      await _flushDirtySpringEntries();
+      __springCloudLoaded = true;
+      __springCloudLoadedAt = new Date().toISOString();
+      _setSpringSyncError('');
+      _markSpringSyncAt();
+      if(typeof renderSpringPanel === 'function') renderSpringPanel();
+      if(typeof render === 'function') render();
+      return merge;
+    }catch(err){
+      __springCloudLoaded = false;
+      _setSpringSyncError(String(err && err.message ? err.message : err || 'Kevadrände pilve laadimine ebaõnnestus.'));
+      _markSpringSyncAt();
+      try{ _showSnapshotBanner('Kevadrände andmete laadimine pilvest ebaõnnestus.', 'warn'); }catch(e){}
+      console.warn('[spring-sync] load failed', { error: __springLastSyncError });
+      return null;
+    }finally{
+      __springSyncInFlight = null;
+      _updateDebugPanel();
+    }
+  })();
+  return __springSyncInFlight;
+}
+async function saveSpringDateChange(key, nextValue){
+  const speciesName = __springSpeciesNameByKey[_speciesKey(key)] || key;
+  const speciesKey = _speciesKey(speciesName);
+  const prevDate = springDates[speciesName] || '';
+  const prevMeta = Object.assign({}, _readSpringMeta(speciesKey));
+  if(nextValue){
+    springDates[speciesName] = nextValue;
+  } else {
+    delete springDates[speciesName];
+  }
+  const nowIso = new Date().toISOString();
+  _writeSpringMetaEntry(speciesName, {
+    springDate: nextValue || '',
+    springTime: '',
+    updatedAt: nowIso,
+    dirty: true,
+    source: 'local',
+    updatedBy: _getSpringDeviceId(),
+  });
+  _persistSpringCache();
+  if(typeof renderSpringPanel === 'function') renderSpringPanel();
+  if(typeof render === 'function') render();
+  try{
+    if(!__springPendingSaves.has(speciesKey)){
+      __springPendingSaves.set(speciesKey, Promise.resolve());
+    }
+    const chain = __springPendingSaves.get(speciesKey).then(async function(){
+      if(nextValue){
+        const saved = await _upsertSpringCloudRecord({
+          speciesKey: speciesKey,
+          speciesName: speciesName,
+          springDate: nextValue,
+          springTime: '',
+          updatedAt: nowIso,
+          updatedBy: _getSpringDeviceId(),
+        });
+        _applySpringEntryToState({
+          speciesKey: speciesKey,
+          speciesName: speciesName,
+          springDate: normalizeSpringDate(saved.spring_date || saved.springDate || nextValue) || nextValue,
+          springTime: String(saved.spring_time || saved.springTime || ''),
+          updatedAt: String(saved.updated_at || saved.updatedAt || nowIso),
+          updatedBy: String(saved.updated_by || saved.updatedBy || _getSpringDeviceId()),
+          source: 'cloud',
+          dirty: false,
+        });
+      } else {
+        await _deleteSpringCloudRecord(speciesKey);
+        _applySpringEntryToState({
+          speciesKey: speciesKey,
+          speciesName: speciesName,
+          springDate: '',
+          springTime: '',
+          updatedAt: nowIso,
+          updatedBy: _getSpringDeviceId(),
+          source: 'cloud',
+          dirty: false,
+        });
+      }
+      _setSpringSyncError('');
+      _markSpringSyncAt();
+      _persistSpringCache();
+      if(typeof renderSpringPanel === 'function') renderSpringPanel();
+      if(typeof render === 'function') render();
+    }).catch(function(err){
+      if(prevDate) springDates[speciesName] = prevDate;
+      else delete springDates[speciesName];
+      springMeta[speciesKey] = prevMeta;
+      _persistSpringCache();
+      if(typeof renderSpringPanel === 'function') renderSpringPanel();
+      if(typeof render === 'function') render();
+      const msg = 'Kevadrände kuupäeva salvestamine pilve ebaõnnestus.';
+      _setSpringSyncError(String(err && err.message ? err.message : msg));
+      _markSpringSyncAt();
+      alert(msg);
+      console.warn('[spring-sync] save failed', { speciesKey: speciesKey, error: __springLastSyncError });
+      throw err;
+    }).finally(function(){
+      __springPendingSaves.delete(speciesKey);
+      _updateDebugPanel();
+    });
+    __springPendingSaves.set(speciesKey, chain);
+    return await chain;
+  } catch(err){
+    throw err;
+  }
 }
 
 async function tryFetch(url, opts){
@@ -5559,6 +5945,9 @@ function _updateDebugPanel(){
     'lastProcessedAt: <b>' + (_fmtTs(__lastProcessedAt)) + '</b>',
     'lastInfoMessage: <b>' + (__lastInfoMessage || '-') + '</b>',
     'lastErrorMessage: <b>' + (__lastErrorMessage || '-') + '</b>',
+    'springCloudLoaded: <b>' + (__springCloudLoaded ? 'yes' : 'no') + '</b>',
+    'springLastSyncAt: <b>' + (_fmtTs(__springLastSyncAt || __springCloudLoadedAt)) + '</b>',
+    'springLastSyncError: <b>' + (__springLastSyncError || '-') + '</b>',
     'watchdogEvents: <b>' + (__watchdogEvents.length ? JSON.stringify(__watchdogEvents.slice(-5)) : '-') + '</b>',
     'stopSignalAborted: <b>' + (!!(__stopController && __stopController.signal && __stopController.signal.aborted)) + '</b>',
     '7-day filter: <b>' + (is7daysOnly() ? 'ON' : 'OFF') + '</b>',
@@ -6354,6 +6743,7 @@ window.addEventListener('message', function(ev){
         pushDebugEvent('SNAPSHOT_RETRY_REASON', 'Retry reason supabase_config', { hadNoApi: hadNoApi, hadUrlMissingErr: hadUrlMissingErr }, 'warn');
         _scheduleLoadSnapshotRetry('supabase_config');
       }
+      if(__supabaseConfigReady) loadSpringDataFromCloud(false);
       _updateDebugPanel();
       return;
     }
@@ -6380,6 +6770,7 @@ function save() {
   localStorage.setItem(LS_POINTS, JSON.stringify(points));
   localStorage.setItem(LS_NAMES, JSON.stringify(nameCache));
   localStorage.setItem(LS_SPRING, JSON.stringify(springDates));
+  localStorage.setItem(LS_SPRING_META, JSON.stringify(springMeta || {}));
   localStorage.setItem(LS_SPRING_YEARFIRST, JSON.stringify(springYearFirst));
   _persistLiveCaches();
 }
@@ -6517,16 +6908,13 @@ window.saveSpringEditModal = function(clearValue){
     window.springDates = target;
     if(typeof springDates !== 'undefined') springDates = target;
     const cleaned = clearValue ? '' : String(inputEl.value || '').trim();
-    if(cleaned){
-      target[key] = cleaned;
-    } else {
-      delete target[key];
+    const normalized = cleaned ? normalizeSpringDate(cleaned) : '';
+    if(cleaned && normalized === null){
+      alert('Sisesta kuupäev kujul DD.MM');
+      return;
     }
-    const lsKey = (typeof LS_SPRING !== 'undefined' && LS_SPRING) ? LS_SPRING : 'bm_spring_dates';
-    localStorage.setItem(lsKey, JSON.stringify(target));
     window.closeSpringEditModal();
-    if(typeof render === 'function') render();
-    if(typeof renderSpringPanel === 'function') renderSpringPanel();
+    saveSpringDateChange(key, normalized || '').catch(function(){});
   }catch(err){
     alert('Muuda failed: ' + ((err && err.message) || err));
     console.error('saveSpringEditModal failed', err);
@@ -6805,17 +7193,8 @@ function render() {
         return;
       }
 
-      if(!norm){
-        delete springDates[key];
-      } else {
-        springDates[key] = norm;
-      }
-
-      if (typeof save === 'function') save();
       springEditRowKey = null;
-
-      if (typeof renderSpringPanel === 'function') renderSpringPanel();
-      if (typeof render === 'function') render();
+      saveSpringDateChange(key, norm || '').catch(function(){});
       return;
     }
   }, true); // capture=true helps on mobile overlays/leaflet
@@ -6849,6 +7228,7 @@ function _startSnapshotBoot(){
   if(cfg.supabaseUrl){
     __supabaseConfigReady = true;
     __bootLoadStarted = true;
+    loadSpringDataFromCloud(false);
     fetchServerMeta();
     _startServerMetaPolling();
     loadSnapshot();
@@ -6862,6 +7242,7 @@ function _startSnapshotBoot(){
     if(lateCfg.supabaseUrl){
       __supabaseConfigReady = true;
       __bootLoadStarted = true;
+      loadSpringDataFromCloud(false);
       fetchServerMeta();
       _startServerMetaPolling();
       loadSnapshot();

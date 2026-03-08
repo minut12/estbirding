@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { loadSettings, saveSettings, NEWS_AUTO_TRANSLATE_ET_KEY, type AppSettings } from '@/lib/settings';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,7 +13,8 @@ import {
 import { toast } from 'sonner';
 import { clearAppCaches, fullReset, doSoftReload, doHardReload, type ResetReport } from '@/lib/cache-reset';
 import { APP_VERSION } from '@/lib/version';
-import { Trash2, RotateCcw } from 'lucide-react';
+import { Trash2, RotateCcw, LogOut, Users, ShieldCheck } from 'lucide-react';
+import { useAuth } from '@/features/auth/AuthContext';
 import AvatarManager from './AvatarManager';
 import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
@@ -203,6 +205,8 @@ async function probeJson(url: string) {
 }
 
 export default function SettingsTab() {
+  const { user, role, isAdmin: isAdminUser, signOut } = useAuth();
+  const navigate = useNavigate();
   const newsSourcesSectionRef = useRef<HTMLDivElement | null>(null);
   const [settingsPage, setSettingsPage] = useState<SettingsPage>('home');
   const [devMode, setDevMode] = useState<boolean>(() => isDeveloperModeEnabled());
@@ -1052,6 +1056,27 @@ export default function SettingsTab() {
 
   const renderSettingsHome = () => (
     <>
+      {/* Account section */}
+      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-primary" />
+          <span className="font-medium text-foreground text-sm">{user?.email}</span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Roll: <span className="font-medium">{role === 'admin' ? 'Admin' : role === 'user_level_2' ? 'Tase 2' : 'Tase 1'}</span>
+        </p>
+        <div className="flex gap-2 flex-wrap">
+          {isAdminUser && (
+            <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate('/admin/users')}>
+              <Users className="w-4 h-4" /> Kasutajad
+            </Button>
+          )}
+          <Button variant="outline" size="sm" className="gap-1 text-destructive" onClick={() => signOut()}>
+            <LogOut className="w-4 h-4" /> Logi välja
+          </Button>
+        </div>
+      </div>
+
       <div className="flex flex-col gap-2">
         <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('news')}>
           Uudised

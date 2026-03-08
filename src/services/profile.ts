@@ -1,9 +1,12 @@
-import { supabase } from "@/lib/supabase";
+// Legacy profile service - kept for backward compatibility
+// New code should use useAuth() from @/features/auth/AuthContext
+import { supabase } from "@/integrations/supabase/client";
 
 export type ProfileRow = {
   id: string;
+  email: string | null;
   display_name: string | null;
-  is_admin: boolean;
+  status: string;
   created_at: string;
 };
 
@@ -16,35 +19,10 @@ export async function getMyProfile(): Promise<ProfileRow | null> {
 
   const { data, error } = await (supabase as any)
     .from("profiles")
-    .select("id, display_name, is_admin, created_at")
+    .select("id, email, display_name, status, created_at")
     .eq("id", user.id)
     .maybeSingle();
 
-  if (error) throw error;
-
-  if (!data) {
-    const payload = {
-      id: user.id,
-      display_name: user.user_metadata?.display_name ?? user.email ?? null,
-      is_admin: false,
-    };
-    const { data: inserted, error: upsertError } = await (supabase as any)
-      .from("profiles")
-      .upsert(payload, { onConflict: "id" })
-      .select("id, display_name, is_admin, created_at")
-      .single();
-    if (upsertError) throw upsertError;
-    return inserted as ProfileRow;
-  }
-
-  return data as ProfileRow;
-}
-
-export async function isAdmin(): Promise<boolean> {
-  try {
-    const profile = await getMyProfile();
-    return Boolean(profile?.is_admin);
-  } catch {
-    return false;
-  }
+  if (error) return null;
+  return (data as ProfileRow | null) ?? null;
 }

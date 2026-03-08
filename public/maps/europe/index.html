@@ -1073,7 +1073,20 @@ function applySnapshot(snapshot){
     updateDebugPanel();
     return false;
   }
+  // Preserve visibility flags from current points before overwriting
+  var savedVisibility = {};
+  for (var k in points) {
+    if (points[k] && typeof points[k].visible === "boolean") {
+      savedVisibility[k] = points[k].visible;
+    }
+  }
   points = snapshot.payload.points || {};
+  // Restore visibility flags
+  for (var k2 in savedVisibility) {
+    if (!points[k2]) points[k2] = {};
+    points[k2].visible = savedVisibility[k2];
+  }
+  console.log("[prefs] scope=europe_map snapshot applied, preserved visibility for", Object.keys(savedVisibility).length, "species");
   if (Array.isArray(snapshot.payload.species) && snapshot.payload.species.length) {
     SPECIES = snapshot.payload.species;
   }
@@ -1468,6 +1481,7 @@ function wireRows(){
     if (nameEl) nameEl.addEventListener("click", ()=>{
       p.visible = (p.visible === false) ? true : false;
       saveAll(); updateMarker(key); render();
+      console.log("[prefs] scope=europe_map save species=" + key + " hidden=" + (p.visible === false));
       // Notify parent app of visibility change
       try {
         if (window.parent && window.parent !== window) {
@@ -2192,7 +2206,10 @@ window.addEventListener("message", function(ev){
     // Species visibility restore from parent (before origin check since parent sends it)
     if (t === "SPECIES_VISIBILITY_RESTORE" && Array.isArray(ev.data.hiddenSpecies)){
       const hiddenSet = new Set(ev.data.hiddenSpecies);
+      console.log("[prefs] scope=europe_map SPECIES_VISIBILITY_RESTORE received, hiddenCount=" + hiddenSet.size,
+        "first3=", Array.from(hiddenSet).slice(0, 3));
       let changed = false;
+      let appliedCount = 0;
       SPECIES.forEach(function(name){
         points[name] = points[name] || {};
         const shouldHide = hiddenSet.has(name);
@@ -2200,8 +2217,10 @@ window.addEventListener("message", function(ev){
         if (shouldHide !== isHidden){
           points[name].visible = !shouldHide;
           changed = true;
+          if (shouldHide) appliedCount++;
         }
       });
+      console.log("[prefs] scope=europe_map appliedHidden=" + appliedCount + " changed=" + changed);
       if (changed){ saveAll(); SPECIES.forEach(updateMarker); render(); }
       return;
     }

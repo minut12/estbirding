@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
   const upstreamUrl = speciesCode
     ? `https://api.ebird.org/v2/data/obs/${encodeURIComponent(regionCode)}/recent/${encodeURIComponent(speciesCode)}?back=${back}&maxResults=${maxResults}`
     : `https://api.ebird.org/v2/data/obs/${encodeURIComponent(regionCode)}/recent?back=${back}&maxResults=${maxResults}`;
-  console.log(`[ebird_recent] request region=${regionCode} back=${back} maxResults=${maxResults} species=${speciesCode ? "yes" : "no"}`);
+  console.log(`[ebird_recent] request region=${regionCode} back=${back} maxResults=${maxResults} species=${speciesCode ? "yes" : "no"} tokenLen=${token.length} tokenStart=${token.slice(0,4)}...${token.slice(-4)}`);
 
   let upstream: Response;
   try {

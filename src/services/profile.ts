@@ -17,8 +17,8 @@ export async function getMyProfile(): Promise<ProfileRow | null> {
   } = await supabase.auth.getUser();
   if (userError || !user) return null;
 
-  const { data, error } = await supabase
-    .from("profiles" as any)
+  const { data, error } = await (supabase as any)
+    .from("profiles")
     .select("id, email, display_name, status, created_at")
     .eq("id", user.id)
     .maybeSingle();

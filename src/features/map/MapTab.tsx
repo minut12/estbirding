@@ -240,6 +240,16 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     setTimeout(sendSupabaseConfigToIframe, 375);
     setTimeout(broadcastSupabaseConfigToMapIframes, 390);
     setTimeout(sendAppInsets, 400);
+    // Send species visibility preferences
+    if (user?.id && mapScope) {
+      setTimeout(() => {
+        const localHidden = loadLocalHidden(mapScope, user.id);
+        sendSpeciesVisibilityToIframe(localHidden);
+        loadSpeciesVisibility(mapScope, user.id).then((cloudHidden) => {
+          sendSpeciesVisibilityToIframe(cloudHidden);
+        });
+      }, 450);
+    }
     // Auto-refresh after initial load
     setTimeout(() => {
       lastAutoRefreshRef.current = Date.now();

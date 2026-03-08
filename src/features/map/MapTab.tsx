@@ -109,6 +109,28 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     });
   }, [sendToIframe]);
 
+  // === Species visibility persistence ===
+  const sendSpeciesVisibilityToIframe = useCallback((hidden: Set<string>) => {
+    sendToIframe({
+      type: 'SPECIES_VISIBILITY_RESTORE',
+      hiddenSpecies: [...hidden],
+    });
+  }, [sendToIframe]);
+
+  // On map load or user change, restore species visibility
+  useEffect(() => {
+    if (!user?.id || !mapScope || !iframeReadyRef.current) return;
+    // Immediately send local cache for fast render
+    const localHidden = loadLocalHidden(mapScope, user.id);
+    if (localHidden.size > 0) {
+      sendSpeciesVisibilityToIframe(localHidden);
+    }
+    // Then load from cloud and reconcile
+    loadSpeciesVisibility(mapScope, user.id).then((cloudHidden) => {
+      sendSpeciesVisibilityToIframe(cloudHidden);
+    });
+  }, [user?.id, mapScope, sendSpeciesVisibilityToIframe]);
+
   // Fetch shared avatars on mount, cache locally, then send to iframe
   useEffect(() => {
     const t0 = setTimeout(sendAvatarsToIframe, 600);

@@ -3226,7 +3226,10 @@ function setRecentOnly(val){
   try{ localStorage.setItem(LS_RECENT_ONLY, on ? '1' : '0'); }catch(e){}
   window.__recentOnly = on;
   const btn = document.getElementById('recentToggle');
-  if(btn) btn.textContent = '7p: ' + (on ? 'ON' : 'OFF');
+  if(btn){
+    btn.textContent = '7p: ' + (on ? 'ON' : 'OFF');
+    if(on) btn.classList.add('on'); else btn.classList.remove('on');
+  }
   rebuildAllMarkers();
   render();
 }

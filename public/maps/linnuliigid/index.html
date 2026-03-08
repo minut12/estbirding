@@ -977,8 +977,11 @@ function _writeSpringMetaEntry(key, patch){
 }
 function _persistSpringCache(){
   springDates = _sanitizeSpringDateMap(springDates);
+  // CRITICAL: keep window.springDates in sync after reassignment
+  window.springDates = springDates;
   try{ localStorage.setItem(LS_SPRING, JSON.stringify(springDates)); }catch(e){}
   try{ localStorage.setItem(LS_SPRING_META, JSON.stringify(springMeta || {})); }catch(e){}
+  console.info('[kevad] _persistSpringCache done, keys:', Object.keys(springDates).length);
 }
 function _setSpringSyncError(message){
   __springLastSyncError = String(message || '').trim();

@@ -1612,7 +1612,6 @@ async function safeFetchJson(url, options = {}){
 }
 
 async function refreshEuropeAggregated(keys, onProgress){
-  const token = getEbirdToken();
   const speciesByCode = new Map();
   for (const speciesName of keys) {
     const p = points[speciesName] = points[speciesName] || {};
@@ -1640,11 +1639,18 @@ async function refreshEuropeAggregated(keys, onProgress){
   debugTotalFetchedRows = 0;
   debugValidCoordsRows = 0;
 
+  const proxyHeaders = {};
+  if (_supabaseAnonKey) {
+    proxyHeaders["apikey"] = _supabaseAnonKey;
+    proxyHeaders["Authorization"] = "Bearer " + _supabaseAnonKey;
+  }
+
   for (const region of REGIONS) {
     if (refreshCancelled) break;
-    const url = buildEbirdCountryRecentUrl(region, BACK_DAYS, MAX_RESULTS, token);
+    const url = buildProxyUrl(region, BACK_DAYS, MAX_RESULTS);
+    if (!url) { failCountries++; continue; }
     try {
-      const raw = await safeFetchText(url, { headers: { "X-eBirdApiToken": token } }, 20000, 1);
+      const raw = await safeFetchText(url, { headers: proxyHeaders }, 20000, 1);
       let payload = null;
       try { payload = raw ? JSON.parse(raw) : null; } catch { payload = null; }
       lastRequest = { url, status: 200, timeMs: null };

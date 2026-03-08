@@ -968,10 +968,21 @@ function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnable
     setThumbSrc(primaryThumb);
   }, [primaryThumb, item.id]);
 
+  const handleCardClick = useCallback((e: React.MouseEvent) => {
+    // Don't open article if user clicked an interactive element (button, link)
+    const target = e.target as HTMLElement;
+    if (target.closest('a[href], button:not([data-card-trigger])')) return;
+    onOpen();
+  }, [onOpen]);
+
   return (
-    <div className="px-4 py-3 active:bg-muted/50 transition-colors">
+    <div
+      className="px-4 py-3 active:bg-muted/50 transition-colors cursor-pointer"
+      onClick={handleCardClick}
+      role="article"
+    >
       <div className="flex gap-3">
-        <button onClick={onOpen} className="w-20 h-20 rounded-lg shrink-0 bg-muted overflow-hidden">
+        <div className="w-20 h-20 rounded-lg shrink-0 bg-muted overflow-hidden" data-card-trigger="true">
           {thumbSrc && !imageFailed ? (
             <img
               src={thumbSrc}
@@ -1004,16 +1015,14 @@ function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnable
               <Newspaper className="w-8 h-8 text-muted-foreground/30" />
             </div>
           )}
-        </button>
+        </div>
         {DEBUG_NEWS_IMAGE && (
           <p className="text-[10px] text-muted-foreground break-all mt-1">
             img: {(thumbSrc || '(empty)').slice(0, 80)} | source: {item.source_slug || 'unknown'}
           </p>
         )}
         <div className="flex-1 min-w-0">
-          <button onClick={onOpen} className="text-left w-full">
-            <p className="font-medium text-sm text-foreground line-clamp-2">{displayTitle}</p>
-          </button>
+          <p className="font-medium text-sm text-foreground line-clamp-2">{displayTitle}</p>
           <div className="flex items-center gap-2 mt-1">
             <Badge variant="secondary" className="text-xs px-1.5 py-0">
               {sourceLabel(item, sources)}
@@ -1038,7 +1047,7 @@ function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnable
                 <ExternalLink className="w-3 h-3" /> Originaal
               </Button>
             </a>
-              <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onToggleArchive}>
+            <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onToggleArchive}>
               {item.is_archived ? <ArchiveRestore className="w-3.5 h-3.5 mr-1" /> : <Archive className="w-3.5 h-3.5 mr-1" />}
               {item.is_archived ? 'Taasta' : 'Arhiveeri'}
             </Button>

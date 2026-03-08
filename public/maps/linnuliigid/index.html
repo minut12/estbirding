@@ -212,7 +212,7 @@
 <div id="snapshotBanner" class="snapshot-banner" style="display:none !important"></div>
 <div class="fetch-controls">
   <button id="btnRefreshData" class="btn" title="Refresh all species from Elurikkus">Refresh from Elurikkus</button>
-  <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index">Resume</button>
+  <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index" style="display:none">Resume</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
 <div id="eluProgress" class="snapshot-banner" style="display:none;font-weight:600"></div>
@@ -2888,6 +2888,8 @@ let __pollCount = 0;
 let __snapshotMeta = { status: null, generated_at: null };
 let __renderedMarkerCount = 0;
 const ESTONIA_REFRESH_INDEX_KEY = "estonia_refresh_index";
+const ESTONIA_RESUME_STATE_KEY = "estonia_refresh_resume_v2";
+const ESTONIA_RESUME_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 let __lastProgressDone = -1;
 let __lastProgressAt = 0;
 let __lastRequestUrl = null;
@@ -4207,13 +4209,132 @@ function _setResumeIndex(i){
     next = Math.min(next, Math.max(0, __snapshotProgressTotal - 1));
   }
   try { localStorage.setItem(ESTONIA_REFRESH_INDEX_KEY, String(next)); } catch(e){}
+  _persistResumeState({
+    resumeIndex: next,
+    progress_done: (__snapshotProgressTotal > 0 ? Math.max(0, Number(__snapshotProgressDone || next) || 0) : next),
+    progress_total: Math.max(0, Number(__snapshotProgressTotal || 0) || 0),
+    status: String((__snapshotMeta && __snapshotMeta.status) || (__isRefreshRunning ? 'running' : '') || 'running'),
+  });
 }
 function _getResumeIndex(){
+  const valid = _validateAndSyncResumeState({ quiet: true });
+  if(valid) return Math.max(0, Number(valid.resumeIndex || valid.progress_done || 0) || 0);
   try {
     let idx = Math.max(0, Number(localStorage.getItem(ESTONIA_REFRESH_INDEX_KEY) || 0) || 0);
     if(__snapshotProgressTotal > 0) idx = Math.min(idx, Math.max(0, __snapshotProgressTotal - 1));
     return idx;
   } catch(e){ return 0; }
+}
+function _isResumeTerminalStatus(status){
+  const s = String(status || '').trim().toLowerCase();
+  return s === 'ready' || s === 'finished' || s === 'completed' || s === 'complete' || s === 'success';
+}
+function _resumeStorageKeys(){
+  return [ESTONIA_RESUME_STATE_KEY, ESTONIA_REFRESH_INDEX_KEY];
+}
+function _updateResumeButton(validState){
+  const btn = document.getElementById('btnResumeFetch');
+  if(!btn) return;
+  btn.style.display = validState ? 'inline-block' : 'none';
+}
+function _clearResumeState(reason, logLine){
+  const keys = _resumeStorageKeys();
+  for(let i = 0; i < keys.length; i++){
+    try{ localStorage.removeItem(keys[i]); }catch(e){}
+    try{ sessionStorage.removeItem(keys[i]); }catch(e){}
+  }
+  if(logLine) console.log(logLine);
+  pushDebugEvent('RESUME_CLEAR', 'Resume state cleared', { reason: reason || 'unknown', keys: keys });
+  _updateResumeButton(null);
+  return null;
+}
+function _persistResumeState(input){
+  const total = Math.max(0, Number(input && input.progress_total || 0) || 0);
+  const doneRaw = Math.max(0, Number(input && input.progress_done || 0) || 0);
+  const done = total > 0 ? Math.min(doneRaw, total) : doneRaw;
+  const resumeIndexRaw = Math.max(0, Number(input && input.resumeIndex != null ? input.resumeIndex : done) || 0);
+  const resumeIndex = total > 0 ? Math.min(resumeIndexRaw, Math.max(0, total - 1)) : resumeIndexRaw;
+  const status = String(input && input.status || (__isRefreshRunning ? 'running' : (__snapshotMeta && __snapshotMeta.status) || 'running'));
+  if(!total || done >= total || _isResumeTerminalStatus(status)){
+    return _clearResumeState('completed', '[resume] completed state, hiding resume');
+  }
+  const state = {
+    buildId: MAP_BUILD_ID,
+    buildStamp: MAP_BUILD_STAMP,
+    savedAt: new Date().toISOString(),
+    status: status,
+    progress_done: done,
+    progress_total: total,
+    resumeIndex: resumeIndex,
+  };
+  try{
+    localStorage.setItem(ESTONIA_RESUME_STATE_KEY, JSON.stringify(state));
+    localStorage.setItem(ESTONIA_REFRESH_INDEX_KEY, String(resumeIndex));
+  }catch(e){}
+  _updateResumeButton(_validateAndSyncResumeState({ quiet: true }));
+  return state;
+}
+function _readStoredResumeState(){
+  let raw = '';
+  try{ raw = String(localStorage.getItem(ESTONIA_RESUME_STATE_KEY) || sessionStorage.getItem(ESTONIA_RESUME_STATE_KEY) || '').trim(); }catch(e){}
+  if(raw){
+    try{ return JSON.parse(raw); }catch(e){
+      return { __invalidReason: 'malformed' };
+    }
+  }
+  const legacyIndex = Math.max(0, Number(localStorage.getItem(ESTONIA_REFRESH_INDEX_KEY) || 0) || 0);
+  if(legacyIndex > 0){
+    return { __invalidReason: 'legacy_index_only', resumeIndex: legacyIndex };
+  }
+  return null;
+}
+function _validateAndSyncResumeState(options){
+  const opts = options || {};
+  const state = _readStoredResumeState();
+  if(!state){
+    _updateResumeButton(null);
+    return null;
+  }
+  if(state.__invalidReason === 'malformed' || state.__invalidReason === 'legacy_index_only'){
+    return _clearResumeState(state.__invalidReason, '[resume] state stale, clearing');
+  }
+  const savedAtMs = Date.parse(String(state.savedAt || state.timestamp || ''));
+  const buildId = String(state.buildId || '').trim();
+  const status = String(state.status || '').trim().toLowerCase();
+  const total = Number(state.progress_total);
+  const done = Number(state.progress_done);
+  const resumeIndex = Number(state.resumeIndex);
+  const hasFields = Number.isFinite(savedAtMs) && buildId && Number.isFinite(total) && Number.isFinite(done) && Number.isFinite(resumeIndex);
+  if(!hasFields){
+    return _clearResumeState('missing_fields', '[resume] state stale, clearing');
+  }
+  if(buildId !== MAP_BUILD_ID){
+    return _clearResumeState('build_mismatch', '[resume] build mismatch, clearing');
+  }
+  if((Date.now() - savedAtMs) > ESTONIA_RESUME_MAX_AGE_MS){
+    return _clearResumeState('stale', '[resume] state stale, clearing');
+  }
+  if(total <= 0 || done < 0 || done >= total || resumeIndex < 0 || resumeIndex > Math.max(0, total - 1)){
+    return _clearResumeState('invalid_progress', '[resume] state stale, clearing');
+  }
+  if(_isResumeTerminalStatus(status)){
+    return _clearResumeState('completed', '[resume] completed state, hiding resume');
+  }
+  const valid = {
+    buildId: buildId,
+    savedAt: new Date(savedAtMs).toISOString(),
+    status: status || 'running',
+    progress_done: Math.max(0, Math.min(total, done)),
+    progress_total: Math.max(0, total),
+    resumeIndex: Math.max(0, Math.min(Math.max(0, total - 1), resumeIndex)),
+  };
+  try{
+    localStorage.setItem(ESTONIA_RESUME_STATE_KEY, JSON.stringify(valid));
+    localStorage.setItem(ESTONIA_REFRESH_INDEX_KEY, String(valid.resumeIndex));
+  }catch(e){}
+  if(!opts.quiet) console.log('[resume] state valid');
+  _updateResumeButton(valid);
+  return valid;
 }
 function resolveSupabaseConfig(){
   let overrideUrl = '';
@@ -4857,6 +4978,12 @@ function _updateProgressUI(done, total, status){
     __snapshotProgressDone = Number(done || 0);
     __snapshotProgressTotal = Number(total || 0);
     _setResumeIndex(done);
+    _persistResumeState({
+      progress_done: __snapshotProgressDone,
+      progress_total: __snapshotProgressTotal,
+      resumeIndex: Number(done || 0),
+      status: 'running',
+    });
     _setIndexStateFromCounts(done, total);
     __currentIndex = (__processedCount < __totalItems ? __processedCount : null);
     if(__currentIndex != null) _pushIndexTrace(__currentIndex, 'start');
@@ -4891,6 +5018,11 @@ function _updateProgressUI(done, total, status){
     prog.textContent = status === 'ready' ? 'Data loaded' : (status === 'error' ? 'Refresh failed' : '');
     if(bar) bar.style.display='none';
     if(stopBtn) stopBtn.style.display='none';
+    if(_isResumeTerminalStatus(status)){
+      _clearResumeState('completed', '[resume] completed state, hiding resume');
+    } else {
+      _updateResumeButton(_validateAndSyncResumeState({ quiet: true }));
+    }
   }
   _updateServerSnapshotStatus();
   _updateIndexProgressLine();
@@ -5623,6 +5755,12 @@ async function _loadSnapshotImpl(){
     }
 
     if(snap.status === 'running'){
+      _persistResumeState({
+        progress_done: Number(snap.progress_done || 0),
+        progress_total: Number(snap.progress_total || 0),
+        resumeIndex: Number(snap.progress_done || 0),
+        status: 'running',
+      });
       _updateProgressUI(snap.progress_done, snap.progress_total, 'running');
       _showSnapshotBanner('Server is refreshing data (' + snap.progress_done + '/' + snap.progress_total + ')...');
       if(snap.points_json && Object.keys(snap.points_json).length > 0){
@@ -5655,9 +5793,11 @@ async function _loadSnapshotImpl(){
       const age = snap.generated_at && window.formatAgeEE ? window.formatAgeEE(snap.generated_at) : null;
       _showSnapshotBanner('Data loaded' + (age ? ' (' + age + ')' : ''));
       setTimeout(_hideSnapshotBanner, 4000);
+      _clearResumeState('completed', '[resume] completed state, hiding resume');
       _updateProgressUI(__snapshotProgressDone, __snapshotProgressTotal, 'ready');
     } else {
       _showSnapshotBanner('No snapshot data yet. Press "Force server refresh" to generate.', 'warn');
+      _updateResumeButton(_validateAndSyncResumeState({ quiet: true }));
     }
     _setLoaderStage('ready');
     __snapshotErrorRetryAttempt = 0;
@@ -5875,6 +6015,11 @@ function _stopPolling(){
 // Public refresh (no key needed)
 async function triggerRefresh(opts){
   const options = opts || {};
+  const validResume = _validateAndSyncResumeState({ quiet: false });
+  if(options.resumeFromSaved && !validResume){
+    _showSnapshotBanner('No valid resume state found.', 'warn');
+    return;
+  }
   __resumeExplicitRequested = !!options.resumeFromSaved;
   const force = !!options.force;
   const runId = (options.newRun || !__runningRef) ? _beginRefreshRun(!!options.newRun) : __runId;
@@ -5919,7 +6064,7 @@ async function triggerRefresh(opts){
     const explicitStart = Number(options.startIndex);
     const startIndex = Number.isFinite(explicitStart)
       ? Math.max(0, explicitStart)
-      : (options.resumeFromSaved ? _getResumeIndex() : 0);
+      : (options.resumeFromSaved ? Number(validResume && validResume.resumeIndex || 0) : 0);
     const prevIndex = __currentIndex;
     __currentIndex = startIndex;
     __attemptForCurrentIndex = (prevIndex === startIndex) ? (__attemptForCurrentIndex + 1) : 1;
@@ -6014,6 +6159,7 @@ function _wireSnapshotButtons(){
   const btnClearDebug = document.getElementById('btnClearDebugEvents');
   const recentToggle = document.getElementById('recentToggle');
   const toggleAutoElu30m = document.getElementById('toggleAutoElu30m');
+  _updateResumeButton(_validateAndSyncResumeState({ quiet: true }));
 
   if(btnElu && !btnElu.__wired){
     btnElu.addEventListener('click', async function(){
@@ -6738,6 +6884,7 @@ __loadedLocalSnapshot = reloadSnapshot();
 if(__loadedLocalSnapshot){
   dataMode = 'snapshot';
 }
+_validateAndSyncResumeState({ quiet: false });
 _startSnapshotBoot();
 _initElurikkusAuto30m();
 

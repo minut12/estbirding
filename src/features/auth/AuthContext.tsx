@@ -86,33 +86,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user, loadRoleAndPermissions]);
 
   useEffect(() => {
-    // Set up listener BEFORE getSession per Supabase best practice
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
-      setSession(nextSession ?? null);
-      setUser(nextSession?.user ?? null);
+    let mounted = true;
 
-      if (nextSession?.user) {
-        await ensureProfileAndRole(nextSession.user);
-        await loadRoleAndPermissions(nextSession.user);
-      } else {
+    // Helper to load profile + role without blocking the auth listener
+    const handleUser = (u: User | null) => {
+      if (!u) {
         setRole(null);
         setPermissions([]);
+        if (mounted) setLoading(false);
+        return;
       }
-      setLoading(false);
+      // Fire-and-forget: do NOT await inside onAuthStateChange
+      ensureProfileAndRole(u)
+        .then(() => loadRoleAndPermissions(u))
+        .catch((err) => console.warn('[auth] handleUser error:', err))
+        .finally(() => { if (mounted) setLoading(false); });
+    };
+
+    // Set up listener BEFORE getSession per Supabase best practice
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession ?? null);
+      setUser(nextSession?.user ?? null);
+      handleUser(nextSession?.user ?? null);
     });
 
-    supabase.auth.getSession().then(async ({ data }) => {
+    supabase.auth.getSession().then(({ data }) => {
       setSession(data.session ?? null);
       setUser(data.session?.user ?? null);
-
-      if (data.session?.user) {
-        await ensureProfileAndRole(data.session.user);
-        await loadRoleAndPermissions(data.session.user);
-      }
-      setLoading(false);
+      handleUser(data.session?.user ?? null);
     });
 
     return () => {
+      mounted = false;
       sub.subscription.unsubscribe();
     };
   }, [loadRoleAndPermissions]);

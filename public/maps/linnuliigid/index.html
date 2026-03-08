@@ -3101,8 +3101,8 @@ async function autoFetchCoords(key, searchUrl, signal){
     newLon: result.newLon,
     moved: result.moved
   };
-  console.log('ELU COORD UPDATE', key, p.eluExtra.__coordDebug);
-  render();
+  if(!__eluBulkActive) console.log('ELU COORD UPDATE', key, p.eluExtra.__coordDebug);
+  if(!__eluBulkActive) render();
   return result;
 }
 async function refreshSpeciesFromElurikkus(key, signal){

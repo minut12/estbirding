@@ -1468,6 +1468,16 @@ function wireRows(){
     if (nameEl) nameEl.addEventListener("click", ()=>{
       p.visible = (p.visible === false) ? true : false;
       saveAll(); updateMarker(key); render();
+      // Notify parent app of visibility change
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({
+            type: 'SPECIES_VISIBILITY_CHANGED',
+            speciesKey: key,
+            isHidden: p.visible === false
+          }, '*');
+        }
+      } catch(e) {}
     });
 
     if (openBtn) openBtn.addEventListener("click", ()=>{
@@ -2178,8 +2188,24 @@ startAutoSync();
 window.addEventListener("message", function(ev){
   try{
     if (!ev.data || typeof ev.data !== "object") return;
-    if (ev.origin !== window.location.origin) return;
     const t = ev.data.type;
+    // Species visibility restore from parent (before origin check since parent sends it)
+    if (t === "SPECIES_VISIBILITY_RESTORE" && Array.isArray(ev.data.hiddenSpecies)){
+      const hiddenSet = new Set(ev.data.hiddenSpecies);
+      let changed = false;
+      SPECIES.forEach(function(name){
+        points[name] = points[name] || {};
+        const shouldHide = hiddenSet.has(name);
+        const isHidden = (points[name].visible === false);
+        if (shouldHide !== isHidden){
+          points[name].visible = !shouldHide;
+          changed = true;
+        }
+      });
+      if (changed){ saveAll(); SPECIES.forEach(updateMarker); render(); }
+      return;
+    }
+    if (ev.origin !== window.location.origin) return;
     if (t === "MAP_REFRESH_VISIBLE" || t === "MAP_REFRESH_SELECTED") {
       resetEuropeDebugState();
       document.getElementById("btnRefreshData")?.click();

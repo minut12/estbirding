@@ -11,8 +11,15 @@ import { resolveProxyBase } from '@/config/proxyEndpoint';
 import { loadSpeciesMeta } from '@/lib/speciesMeta';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import { broadcastSupabaseConfigToMapIframes, getSupabaseAnonKey, getSupabaseUrl, validateSupabaseConfig } from '@/config/supabaseConfig';
+import { useAuth } from '@/features/auth/AuthContext';
+import { type MapScope, loadSpeciesVisibility, saveSpeciesVisibility, loadLocalHidden } from '@/lib/speciesVisibility';
 
 const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+
+const MAP_ID_TO_SCOPE: Record<string, MapScope> = {
+  'linnuliigid-ee': 'ee_map',
+  'europe': 'europe_map',
+};
 
 interface MapTabProps {
   isActive?: boolean;
@@ -20,8 +27,10 @@ interface MapTabProps {
 }
 
 export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
+  const { user } = useAuth();
   const [selectedId, setSelectedId] = useState(getActiveMap().id);
   const current = maps.find((m) => m.id === selectedId) ?? getActiveMap();
+  const mapScope = MAP_ID_TO_SCOPE[selectedId] as MapScope | undefined;
   const iframeSrc = useMemo(() => {
     const proxyBase = resolveProxyBase();
     const params = new URLSearchParams();
@@ -100,6 +109,28 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     });
   }, [sendToIframe]);
 
+  // === Species visibility persistence ===
+  const sendSpeciesVisibilityToIframe = useCallback((hidden: Set<string>) => {
+    sendToIframe({
+      type: 'SPECIES_VISIBILITY_RESTORE',
+      hiddenSpecies: [...hidden],
+    });
+  }, [sendToIframe]);
+
+  // On map load or user change, restore species visibility
+  useEffect(() => {
+    if (!user?.id || !mapScope || !iframeReadyRef.current) return;
+    // Immediately send local cache for fast render
+    const localHidden = loadLocalHidden(mapScope, user.id);
+    if (localHidden.size > 0) {
+      sendSpeciesVisibilityToIframe(localHidden);
+    }
+    // Then load from cloud and reconcile
+    loadSpeciesVisibility(mapScope, user.id).then((cloudHidden) => {
+      sendSpeciesVisibilityToIframe(cloudHidden);
+    });
+  }, [user?.id, mapScope, sendSpeciesVisibilityToIframe]);
+
   // Fetch shared avatars on mount, cache locally, then send to iframe
   useEffect(() => {
     const t0 = setTimeout(sendAvatarsToIframe, 600);
@@ -145,6 +176,13 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
             type: 'SUPABASE_CONFIG_ERROR',
             error: validation.error || 'Supabase config invalid',
           });
+        }
+      }
+      // Species visibility changed from iframe
+      if (ev.data?.type === 'SPECIES_VISIBILITY_CHANGED' && user?.id && mapScope) {
+        const { speciesKey, isHidden } = ev.data;
+        if (typeof speciesKey === 'string' && typeof isHidden === 'boolean') {
+          saveSpeciesVisibility(mapScope, user.id, speciesKey, isHidden);
         }
       }
     };
@@ -202,6 +240,16 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     setTimeout(sendSupabaseConfigToIframe, 375);
     setTimeout(broadcastSupabaseConfigToMapIframes, 390);
     setTimeout(sendAppInsets, 400);
+    // Send species visibility preferences
+    if (user?.id && mapScope) {
+      setTimeout(() => {
+        const localHidden = loadLocalHidden(mapScope, user.id);
+        sendSpeciesVisibilityToIframe(localHidden);
+        loadSpeciesVisibility(mapScope, user.id).then((cloudHidden) => {
+          sendSpeciesVisibilityToIframe(cloudHidden);
+        });
+      }, 450);
+    }
     // Auto-refresh after initial load
     setTimeout(() => {
       lastAutoRefreshRef.current = Date.now();

@@ -178,6 +178,13 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
           });
         }
       }
+      // Species visibility changed from iframe
+      if (ev.data?.type === 'SPECIES_VISIBILITY_CHANGED' && user?.id && mapScope) {
+        const { speciesKey, isHidden } = ev.data;
+        if (typeof speciesKey === 'string' && typeof isHidden === 'boolean') {
+          saveSpeciesVisibility(mapScope, user.id, speciesKey, isHidden);
+        }
+      }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);

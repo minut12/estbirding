@@ -3220,7 +3220,12 @@ async function refreshAllElurikkusOnce(){
     const distinctRecent = Object.keys(newPoints).filter(function(k){ return newPoints[k].occ7 > 0; }).length;
 
     console.log('[elurikkus] apply ms=' + applyMs + ' raw=' + totalRaw + ' filtered7d=' + filtered7d + ' withCoords=' + withCoords);
-    console.log('[elurikkus] species: distinct=' + distinctAll + ' recent7d=' + distinctRecent + ' oldest=' + oldestDate + ' newest=' + newestDate);
+    console.log('[7day] cutoff=' + cutoff);
+    console.log('[7day] rawRecords=' + totalRaw);
+    console.log('[7day] filteredRecords=' + filtered7d);
+    console.log('[7day] distinctSpecies=' + distinctAll + ' recent7d=' + distinctRecent);
+    if(oldestDate) console.log('[7day] oldestVisible=' + oldestDate);
+    if(newestDate) console.log('[7day] newestVisible=' + newestDate);
 
     // Validate: warn if any visible record is older than 7 days but has occ7>0
     let staleWarnings = 0;
@@ -3229,10 +3234,10 @@ async function refreshAllElurikkusOnce(){
       const d = dateIsoFromAny(p.t || '');
       if(d && d < cutoff && p.occ7 > 0){
         staleWarnings++;
-        if(staleWarnings <= 3) console.warn('[elurikkus] STALE WARNING: ' + k + ' date=' + d + ' occ7=' + p.occ7);
+        if(staleWarnings <= 3) console.error('[7day] ERROR old record still visible: ' + k + ' date=' + d + ' occ7=' + p.occ7);
       }
     }
-    if(staleWarnings > 3) console.warn('[elurikkus] ... and ' + (staleWarnings - 3) + ' more stale warnings');
+    if(staleWarnings > 0) console.warn('[7day] WARNING: ' + staleWarnings + ' stale records with occ7>0');
 
     // Single save, single marker rebuild, single render
     const tMarkers = performance.now();
@@ -7221,10 +7226,39 @@ function rowHTML(obj) {
 function render() {
   const q = (document.getElementById('filterBox').value||'').toLowerCase().trim();
   const list = document.getElementById('list'); list.innerHTML='';
-  const arr = DATA.filter(x=> x.est.toLowerCase().includes(q));
+  const recentOnly = is7daysOnly();
+  const arr = DATA.filter(function(x){
+    if(!x.est.toLowerCase().includes(q)) return false;
+    // When 7-day filter is ON, only show species with recent observations
+    if(recentOnly){
+      const p = points[x.est];
+      if(!p) return false;
+      if(!hasRecentObservation(p)) return false;
+    }
+    return true;
+  });
   for (const o of arr) list.insertAdjacentHTML('beforeend', rowHTML(o));
   const firstRow = list.querySelector('.row[data-key]');
   if(firstRow && !window.__selectedSpecies) window.__selectedSpecies = firstRow.getAttribute('data-key') || window.__selectedSpecies;
+
+  // Debug validation: count rendered vs filtered
+  if(recentOnly){
+    const cutoff = cutoffIso7d();
+    let staleInSidebar = 0;
+    for(const o of arr){
+      const p = points[o.est];
+      if(!p) continue;
+      const d = dateIsoFromAny(p.t || '');
+      if(d && d < cutoff){
+        staleInSidebar++;
+        if(staleInSidebar <= 2) console.error('[7day] ERROR old record still visible in sidebar: ' + o.est + ' date=' + d);
+      }
+    }
+    const markerKeys = [];
+    markers.forEach(function(v, k){ markerKeys.push(k); });
+    console.log('[7day] cutoff=' + cutoff + ' sidebarRendered=' + arr.length + ' markersOnMap=' + markerKeys.length);
+    if(staleInSidebar > 0) console.warn('[7day] WARNING: ' + staleInSidebar + ' stale records in sidebar');
+  }
 }
 
 (function bindSpringInlineEditDelegation(){

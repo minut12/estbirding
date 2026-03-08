@@ -193,7 +193,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [sendAvatarsToIframe, sendAppInsets, sendSpeciesMetaToIframe, sendSupabaseConfigToIframe, sendToIframe]);
+  }, [sendAvatarsToIframe, sendAppInsets, sendSpeciesMetaToIframe, sendSupabaseConfigToIframe, sendToIframe, user, mapScope]);
 
   useEffect(() => {
     const t = setTimeout(sendMapShown, 500);

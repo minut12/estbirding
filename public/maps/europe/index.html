@@ -2006,30 +2006,8 @@ perCountryBtn.addEventListener("click", ()=>{
 });
 syncPerCountryBtn();
 
-/* ========= Settings modal ========= */
-const modalBackdrop = document.getElementById("modalBackdrop");
-const settingsBtn = document.getElementById("settingsBtn");
-const tokenInput = document.getElementById("tokenInput");
-const speciesInput = document.getElementById("speciesInput");
-
-function openSettings(){
-  tokenInput.value = EBIRD_TOKEN || "";
-  speciesInput.value = SPECIES.join("\n");
-  modalBackdrop.style.display = "flex";
-}
-function closeSettings(){ modalBackdrop.style.display = "none"; }
-
-settingsBtn.addEventListener("click", openSettings);
-document.getElementById("modalCancel").addEventListener("click", closeSettings);
-modalBackdrop.addEventListener("click", (e)=>{ if (e.target === modalBackdrop) closeSettings(); });
-
-document.getElementById("modalSave").addEventListener("click", ()=>{
-  EBIRD_TOKEN = (tokenInput.value || "").trim();
-  const lines = (speciesInput.value||"").split("\n").map(s=>s.trim()).filter(Boolean);
-  if (lines.length) SPECIES = lines;
-  saveAll(); render(); closeSettings();
-  updateDebugPanel();
-});
+/* ========= Settings modal removed — eBird token is server-side ========= */
+/* Species list editing is now available in the main app Settings > Linnuliigid */
 
 /* ========= Buttons ========= */
 document.getElementById("btnRefreshData").addEventListener("click", async ()=>{

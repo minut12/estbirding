@@ -202,6 +202,81 @@ function getTranslatedBody(item: NewsItem): string {
   return cleanupNewsText(item.body_et || item.translated_body || '');
 }
 
+type PreservedMediaBlock = {
+  afterTextBlock: number;
+  html: string;
+  key: string;
+};
+
+function isSocialEmbedBlock(node: Element): boolean {
+  if (node.tagName.toLowerCase() !== 'blockquote') return false;
+  return Boolean(
+    node.getAttribute('class')
+    || node.getAttribute('cite')
+    || node.getAttribute('data-instgrm-captioned')
+    || node.getAttribute('data-instgrm-permalink')
+    || node.querySelector('a[href]'),
+  );
+}
+
+function isEmbeddableMediaNode(node: Element): boolean {
+  const tag = node.tagName.toLowerCase();
+  if (['iframe', 'video', 'embed', 'object'].includes(tag)) return true;
+  if (isSocialEmbedBlock(node)) return true;
+  if (node.querySelector('iframe, video, embed, object')) return true;
+  if (tag === 'div' && node.querySelector('blockquote')) return true;
+  return false;
+}
+
+function isCountedTextBlock(node: Element): boolean {
+  const tag = node.tagName.toLowerCase();
+  if (!['p', 'li', 'ul', 'ol', 'h2', 'h3', 'blockquote', 'figcaption'].includes(tag)) return false;
+  if (isEmbeddableMediaNode(node)) return false;
+  return Boolean(node.textContent?.trim());
+}
+
+function extractPreservedMediaBlocks(html: string | null | undefined): PreservedMediaBlock[] {
+  if (!html) return [];
+
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const blocks: PreservedMediaBlock[] = [];
+    let textBlockCount = 0;
+
+    Array.from(doc.body.children).forEach((child, index) => {
+      if (!(child instanceof Element)) return;
+
+      if (isEmbeddableMediaNode(child)) {
+        const blockHtml = child.outerHTML.trim();
+        if (!blockHtml) return;
+        blocks.push({
+          afterTextBlock: textBlockCount,
+          html: blockHtml,
+          key: `${textBlockCount}:${index}:${child.tagName.toLowerCase()}`,
+        });
+        return;
+      }
+
+      if (isCountedTextBlock(child)) {
+        textBlockCount += 1;
+      }
+    });
+
+    return blocks;
+  } catch {
+    return [];
+  }
+}
+
+function splitTranslatedParagraphs(value: string | null | undefined): string[] {
+  const cleaned = cleanupNewsText(value);
+  if (!cleaned) return [];
+  return cleaned
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+}
+
 function stripLeadingSameImage(html: string, heroUrl?: string | null): string {
   if (!html) return html;
 
@@ -1140,6 +1215,7 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   const displayBody = useMemo(() => (
     showTranslated ? translatedBody : (cleanedContentHtml || bodyText)
   ), [showTranslated, translatedBody, cleanedContentHtml, bodyText]);
+  const translatedParagraphs = useMemo(() => splitTranslatedParagraphs(translatedBody), [translatedBody]);
   const articleImages = useMemo(() => extractArticleImages({
     ...item,
     content_html: cleanedContentHtml,
@@ -1154,6 +1230,11 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   const bodyHtmlWithoutDuplicateHero = useMemo(() => (
     rewrittenContentHtml ? stripLeadingSameImage(rewrittenContentHtml, heroSrc) : null
   ), [rewrittenContentHtml, heroSrc]);
+  const preservedMediaBlocks = useMemo(
+    () => extractPreservedMediaBlocks(bodyHtmlWithoutDuplicateHero),
+    [bodyHtmlWithoutDuplicateHero],
+  );
+  const hasTranslatedInlineMedia = showTranslated && preservedMediaBlocks.length > 0 && translatedParagraphs.length > 0;
   const originalUrl = item.permalink_url || item.url || '#';
   const isPending = showEtContent && autoTranslateEnabled && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
 
@@ -1253,9 +1334,37 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
           </div>
         ) : !showTranslated && bodyHtmlWithoutDuplicateHero ? (
           <div
-            className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
+            className="prose prose-sm max-w-none overflow-x-hidden text-foreground [&_a]:text-primary [&_iframe]:block [&_iframe]:w-full [&_iframe]:max-w-full [&_iframe]:aspect-video [&_iframe]:rounded-xl [&_iframe]:border-0 [&_video]:block [&_video]:w-full [&_video]:max-w-full [&_video]:h-auto [&_video]:rounded-xl [&_embed]:block [&_embed]:w-full [&_embed]:max-w-full [&_embed]:rounded-xl [&_object]:block [&_object]:w-full [&_object]:max-w-full [&_object]:rounded-xl [&_img]:max-w-full [&_figure]:max-w-full [&_.instagram-media]:max-w-full [&_.twitter-tweet]:max-w-full"
             dangerouslySetInnerHTML={{ __html: bodyHtmlWithoutDuplicateHero }}
           />
+        ) : hasTranslatedInlineMedia ? (
+          <div className="space-y-4 overflow-x-hidden text-sm leading-relaxed text-foreground">
+            {preservedMediaBlocks
+              .filter((block) => block.afterTextBlock === 0)
+              .map((block) => (
+                <div
+                  key={block.key}
+                  className="prose prose-sm max-w-none overflow-x-hidden [&_iframe]:block [&_iframe]:w-full [&_iframe]:max-w-full [&_iframe]:aspect-video [&_iframe]:rounded-xl [&_iframe]:border-0 [&_video]:block [&_video]:w-full [&_video]:max-w-full [&_video]:h-auto [&_video]:rounded-xl [&_embed]:block [&_embed]:w-full [&_embed]:max-w-full [&_embed]:rounded-xl [&_object]:block [&_object]:w-full [&_object]:max-w-full [&_object]:rounded-xl [&_img]:max-w-full [&_figure]:max-w-full [&_.instagram-media]:max-w-full [&_.twitter-tweet]:max-w-full"
+                  dangerouslySetInnerHTML={{ __html: block.html }}
+                />
+              ))}
+            {translatedParagraphs.map((paragraph, index) => (
+              <div key={`translated-block-${index}`} className="space-y-4">
+                <p className="whitespace-pre-line">
+                  {paragraph}
+                </p>
+                {preservedMediaBlocks
+                  .filter((block) => block.afterTextBlock === index + 1)
+                  .map((block) => (
+                    <div
+                      key={block.key}
+                      className="prose prose-sm max-w-none overflow-x-hidden [&_iframe]:block [&_iframe]:w-full [&_iframe]:max-w-full [&_iframe]:aspect-video [&_iframe]:rounded-xl [&_iframe]:border-0 [&_video]:block [&_video]:w-full [&_video]:max-w-full [&_video]:h-auto [&_video]:rounded-xl [&_embed]:block [&_embed]:w-full [&_embed]:max-w-full [&_embed]:rounded-xl [&_object]:block [&_object]:w-full [&_object]:max-w-full [&_object]:rounded-xl [&_img]:max-w-full [&_figure]:max-w-full [&_.instagram-media]:max-w-full [&_.twitter-tweet]:max-w-full"
+                      dangerouslySetInnerHTML={{ __html: block.html }}
+                    />
+                  ))}
+              </div>
+            ))}
+          </div>
         ) : contentError ? (
           <p className="text-sm text-muted-foreground italic">{contentError}</p>
         ) : displayBody ? (
@@ -1266,7 +1375,7 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
           <p className="text-sm text-muted-foreground italic">Sisu pole saadaval. Ava originaal.</p>
         )}
 
-        {showTranslated && articleImages.length > 0 ? (
+        {showTranslated && !hasTranslatedInlineMedia && articleImages.length > 0 ? (
           <div className="space-y-3">
             {articleImages.map((imageUrl, index) => {
               const src = getProxiedImageUrl(imageUrl, proxyBase) || imageUrl;

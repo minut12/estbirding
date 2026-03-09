@@ -202,13 +202,16 @@ function getTranslatedBody(item: NewsItem): string {
   return cleanupNewsText(item.body_et || item.translated_body || '');
 }
 
-type PreservedMediaBlock = {
-  afterTextBlock: number;
-  html: string;
-  key: string;
-};
-
 const ARTICLE_MEDIA_PROSE_CLASS = 'prose prose-sm max-w-none overflow-x-hidden text-foreground [&_a]:text-primary [&>*]:my-0 [&_p]:my-0 [&_div]:my-0 [&_figure]:my-0 [&_figcaption]:mt-2 [&_figcaption]:mb-0 [&_blockquote]:my-0 [&_iframe]:block [&_iframe]:w-full [&_iframe]:max-w-full [&_iframe]:aspect-video [&_iframe]:rounded-xl [&_iframe]:border-0 [&_video]:block [&_video]:w-full [&_video]:max-w-full [&_video]:h-auto [&_video]:rounded-xl [&_embed]:block [&_embed]:w-full [&_embed]:max-w-full [&_embed]:rounded-xl [&_object]:block [&_object]:w-full [&_object]:max-w-full [&_object]:rounded-xl [&_img]:max-w-full [&_figure]:max-w-full [&_.instagram-media]:max-w-full [&_.twitter-tweet]:max-w-full';
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 function isSocialEmbedBlock(node: Element): boolean {
   if (node.tagName.toLowerCase() !== 'blockquote') return false;
@@ -223,8 +226,9 @@ function isSocialEmbedBlock(node: Element): boolean {
 
 function isEmbeddableMediaNode(node: Element): boolean {
   const tag = node.tagName.toLowerCase();
-  if (['iframe', 'video', 'embed', 'object'].includes(tag)) return true;
+  if (['iframe', 'video', 'embed', 'object', 'img'].includes(tag)) return true;
   if (isSocialEmbedBlock(node)) return true;
+  if (tag === 'figure' && node.querySelector('img, iframe, video, embed, object')) return true;
   if (node.querySelector('iframe, video, embed, object')) return true;
   if (tag === 'div' && node.querySelector('blockquote')) return true;
   return false;
@@ -237,39 +241,6 @@ function isCountedTextBlock(node: Element): boolean {
   return Boolean(node.textContent?.trim());
 }
 
-function extractPreservedMediaBlocks(html: string | null | undefined): PreservedMediaBlock[] {
-  if (!html) return [];
-
-  try {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    const blocks: PreservedMediaBlock[] = [];
-    let textBlockCount = 0;
-
-    Array.from(doc.body.children).forEach((child, index) => {
-      if (!(child instanceof Element)) return;
-
-      if (isEmbeddableMediaNode(child)) {
-        const blockHtml = child.outerHTML.trim();
-        if (!blockHtml) return;
-        blocks.push({
-          afterTextBlock: textBlockCount,
-          html: blockHtml,
-          key: `${textBlockCount}:${index}:${child.tagName.toLowerCase()}`,
-        });
-        return;
-      }
-
-      if (isCountedTextBlock(child)) {
-        textBlockCount += 1;
-      }
-    });
-
-    return blocks;
-  } catch {
-    return [];
-  }
-}
-
 function splitTranslatedParagraphs(value: string | null | undefined): string[] {
   const cleaned = cleanupNewsText(value);
   if (!cleaned) return [];
@@ -277,6 +248,56 @@ function splitTranslatedParagraphs(value: string | null | undefined): string[] {
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.trim())
     .filter(Boolean);
+}
+
+function buildTranslatedInlineHtml(
+  originalHtml: string | null | undefined,
+  translatedText: string | null | undefined,
+): string | null {
+  if (!originalHtml) return null;
+
+  const translatedParagraphs = splitTranslatedParagraphs(translatedText);
+  if (translatedParagraphs.length === 0) return null;
+
+  try {
+    const doc = new DOMParser().parseFromString(originalHtml, 'text/html');
+    const blocks = Array.from(doc.body.children).filter((child): child is Element => child instanceof Element);
+    const htmlParts: string[] = [];
+    let translatedIndex = 0;
+
+    for (const block of blocks) {
+      const tag = block.tagName.toLowerCase();
+
+      if (isEmbeddableMediaNode(block)) {
+        const preserved = block.outerHTML.trim();
+        if (preserved) htmlParts.push(preserved);
+        continue;
+      }
+
+      if (isCountedTextBlock(block)) {
+        const translatedParagraph = translatedParagraphs[translatedIndex];
+        translatedIndex += 1;
+        if (!translatedParagraph) continue;
+
+        if (['h2', 'h3', 'figcaption'].includes(tag)) {
+          htmlParts.push(`<${tag}>${escapeHtml(translatedParagraph)}</${tag}>`);
+        } else if (tag === 'blockquote') {
+          htmlParts.push(`<blockquote><p>${escapeHtml(translatedParagraph).replace(/\n/g, '<br />')}</p></blockquote>`);
+        } else {
+          htmlParts.push(`<p>${escapeHtml(translatedParagraph).replace(/\n/g, '<br />')}</p>`);
+        }
+      }
+    }
+
+    for (; translatedIndex < translatedParagraphs.length; translatedIndex += 1) {
+      htmlParts.push(`<p>${escapeHtml(translatedParagraphs[translatedIndex]).replace(/\n/g, '<br />')}</p>`);
+    }
+
+    const result = htmlParts.join('');
+    return result || null;
+  } catch {
+    return null;
+  }
 }
 
 function stripLeadingSameImage(html: string, heroUrl?: string | null): string {
@@ -1217,7 +1238,6 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   const displayBody = useMemo(() => (
     showTranslated ? translatedBody : (cleanedContentHtml || bodyText)
   ), [showTranslated, translatedBody, cleanedContentHtml, bodyText]);
-  const translatedParagraphs = useMemo(() => splitTranslatedParagraphs(translatedBody), [translatedBody]);
   const articleImages = useMemo(() => extractArticleImages({
     ...item,
     content_html: cleanedContentHtml,
@@ -1232,11 +1252,11 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   const bodyHtmlWithoutDuplicateHero = useMemo(() => (
     rewrittenContentHtml ? stripLeadingSameImage(rewrittenContentHtml, heroSrc) : null
   ), [rewrittenContentHtml, heroSrc]);
-  const preservedMediaBlocks = useMemo(
-    () => extractPreservedMediaBlocks(bodyHtmlWithoutDuplicateHero),
-    [bodyHtmlWithoutDuplicateHero],
+  const translatedInlineHtml = useMemo(
+    () => buildTranslatedInlineHtml(bodyHtmlWithoutDuplicateHero, translatedBody),
+    [bodyHtmlWithoutDuplicateHero, translatedBody],
   );
-  const hasTranslatedInlineMedia = showTranslated && preservedMediaBlocks.length > 0 && translatedParagraphs.length > 0;
+  const hasTranslatedInlineMedia = showTranslated && Boolean(translatedInlineHtml);
   const originalUrl = item.permalink_url || item.url || '#';
   const isPending = showEtContent && autoTranslateEnabled && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
 
@@ -1340,33 +1360,10 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
             dangerouslySetInnerHTML={{ __html: bodyHtmlWithoutDuplicateHero }}
           />
         ) : hasTranslatedInlineMedia ? (
-          <div className="space-y-2 overflow-x-hidden text-sm leading-relaxed text-foreground">
-            {preservedMediaBlocks
-              .filter((block) => block.afterTextBlock === 0)
-              .map((block) => (
-                <div
-                  key={block.key}
-                  className={ARTICLE_MEDIA_PROSE_CLASS}
-                  dangerouslySetInnerHTML={{ __html: block.html }}
-                />
-              ))}
-            {translatedParagraphs.map((paragraph, index) => (
-              <div key={`translated-block-${index}`} className="space-y-2">
-                <p className="whitespace-pre-line my-0">
-                  {paragraph}
-                </p>
-                {preservedMediaBlocks
-                  .filter((block) => block.afterTextBlock === index + 1)
-                  .map((block) => (
-                    <div
-                      key={block.key}
-                      className={ARTICLE_MEDIA_PROSE_CLASS}
-                      dangerouslySetInnerHTML={{ __html: block.html }}
-                    />
-                  ))}
-              </div>
-            ))}
-          </div>
+          <div
+            className={ARTICLE_MEDIA_PROSE_CLASS}
+            dangerouslySetInnerHTML={{ __html: translatedInlineHtml || '' }}
+          />
         ) : contentError ? (
           <p className="text-sm text-muted-foreground italic">{contentError}</p>
         ) : displayBody ? (

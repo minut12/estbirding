@@ -202,6 +202,83 @@ function getTranslatedBody(item: NewsItem): string {
   return cleanupNewsText(item.body_et || item.translated_body || '');
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatTranslatedSegmentHtml(value: string): string {
+  return escapeHtml(value).replace(/\n/g, '<br />');
+}
+
+function splitTranslatedSegments(value: string): string[] {
+  return cleanupNewsText(value)
+    .split(/\n{2,}/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function isProtectedEmbedBlock(node: Element): boolean {
+  const tag = node.tagName.toLowerCase();
+  if (['iframe', 'video', 'embed', 'object'].includes(tag)) return true;
+  if (tag === 'blockquote') {
+    if (node.getAttribute('class') || node.getAttribute('cite')) return true;
+    if (node.querySelector('iframe, video, embed, object')) return true;
+    if (node.querySelector('a[href]') && (node.getAttribute('data-instgrm-permalink') || node.getAttribute('data-twitter-extracted-i18n'))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isTranslatableTextBlock(node: Element): boolean {
+  const tag = node.tagName.toLowerCase();
+  if (!['p', 'li', 'h2', 'h3', 'figcaption', 'blockquote'].includes(tag)) return false;
+  if (isProtectedEmbedBlock(node)) return false;
+  if (node.querySelector('iframe, video, embed, object')) return false;
+  return Boolean(node.textContent?.trim());
+}
+
+function composeTranslatedArticleHtml(
+  originalHtml: string | null | undefined,
+  translatedText: string | null | undefined,
+): string | null {
+  if (!originalHtml) return null;
+  const translatedSegments = splitTranslatedSegments(translatedText || '');
+  if (translatedSegments.length === 0) return originalHtml;
+
+  try {
+    const doc = new DOMParser().parseFromString(originalHtml, 'text/html');
+    const textBlocks = Array.from(doc.body.querySelectorAll('p, li, h2, h3, figcaption, blockquote'))
+      .filter((node): node is Element => isTranslatableTextBlock(node));
+
+    let segmentIndex = 0;
+    for (const block of textBlocks) {
+      if (segmentIndex >= translatedSegments.length) break;
+      block.innerHTML = formatTranslatedSegmentHtml(translatedSegments[segmentIndex]);
+      segmentIndex += 1;
+    }
+
+    if (segmentIndex < translatedSegments.length) {
+      const fragment = doc.createDocumentFragment();
+      for (const segment of translatedSegments.slice(segmentIndex)) {
+        const p = doc.createElement('p');
+        p.innerHTML = formatTranslatedSegmentHtml(segment);
+        fragment.appendChild(p);
+      }
+      doc.body.appendChild(fragment);
+    }
+
+    return doc.body.innerHTML.trim() || originalHtml;
+  } catch {
+    return null;
+  }
+}
+
 function stripLeadingSameImage(html: string, heroUrl?: string | null): string {
   if (!html) return html;
 
@@ -1154,6 +1231,10 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   const bodyHtmlWithoutDuplicateHero = useMemo(() => (
     rewrittenContentHtml ? stripLeadingSameImage(rewrittenContentHtml, heroSrc) : null
   ), [rewrittenContentHtml, heroSrc]);
+  const translatedBodyHtml = useMemo(() => {
+    if (!bodyHtmlWithoutDuplicateHero || !translatedBody) return null;
+    return composeTranslatedArticleHtml(bodyHtmlWithoutDuplicateHero, translatedBody);
+  }, [bodyHtmlWithoutDuplicateHero, translatedBody]);
   const originalUrl = item.permalink_url || item.url || '#';
   const isPending = showEtContent && autoTranslateEnabled && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
 
@@ -1251,10 +1332,10 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
             <Skeleton className="h-4 w-5/6" />
             <Skeleton className="h-4 w-4/6" />
           </div>
-        ) : !showTranslated && bodyHtmlWithoutDuplicateHero ? (
+        ) : ((!showTranslated && bodyHtmlWithoutDuplicateHero) || (showTranslated && translatedBodyHtml)) ? (
           <div
-            className="prose prose-sm max-w-none text-foreground [&_a]:text-primary"
-            dangerouslySetInnerHTML={{ __html: bodyHtmlWithoutDuplicateHero }}
+            className="prose prose-sm max-w-none text-foreground break-words [&_a]:text-primary [&_figure]:mx-0 [&_figure]:w-full [&_iframe]:block [&_iframe]:w-full [&_iframe]:max-w-full [&_iframe]:aspect-video [&_iframe]:rounded-xl [&_iframe]:border-0 [&_iframe]:overflow-hidden [&_video]:block [&_video]:w-full [&_video]:max-w-full [&_video]:rounded-xl [&_video]:h-auto [&_embed]:block [&_embed]:w-full [&_embed]:max-w-full [&_embed]:rounded-xl [&_object]:block [&_object]:w-full [&_object]:max-w-full [&_object]:rounded-xl [&_img]:max-w-full [&_.twitter-tweet]:max-w-full [&_.instagram-media]:max-w-full"
+            dangerouslySetInnerHTML={{ __html: showTranslated ? translatedBodyHtml || '' : bodyHtmlWithoutDuplicateHero || '' }}
           />
         ) : contentError ? (
           <p className="text-sm text-muted-foreground italic">{contentError}</p>
@@ -1266,7 +1347,7 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
           <p className="text-sm text-muted-foreground italic">Sisu pole saadaval. Ava originaal.</p>
         )}
 
-        {showTranslated && articleImages.length > 0 ? (
+        {showTranslated && !translatedBodyHtml && articleImages.length > 0 ? (
           <div className="space-y-3">
             {articleImages.map((imageUrl, index) => {
               const src = getProxiedImageUrl(imageUrl, proxyBase) || imageUrl;

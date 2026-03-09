@@ -11,6 +11,7 @@ const corsHeaders = {
 const ALLOWED_TAGS = new Set([
   "p", "a", "ul", "ol", "li", "strong", "em", "img",
   "h1", "h2", "h3", "blockquote", "br", "figure", "figcaption",
+  "div", "iframe", "video", "source", "embed", "object",
 ]);
 
 /* ── Footer headings that signal end of article ── */
@@ -24,12 +25,33 @@ function isStopHeading(text: string): boolean {
   return STOP_HEADINGS.some((s) => lower.includes(s));
 }
 
+function escapeAttribute(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function isSafeUrl(value: string | null | undefined): boolean {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith("//")) return true;
+  if (trimmed.startsWith("/")) return true;
+  return /^https?:\/\//i.test(trimmed);
+}
+
+function keepClassAttr(node: Element): string {
+  const className = node.getAttribute("class");
+  return className ? ` class="${escapeAttribute(className)}"` : "";
+}
+
 /* ── Sanitize: keep only allowed tags ──────────── */
 function sanitizeNode(node: Element): string {
   const tag = node.tagName.toLowerCase();
 
   // Skip dangerous tags entirely
-  if (["script", "iframe", "style", "object", "embed", "nav", "header", "footer", "form"].includes(tag)) {
+  if (["script", "style", "nav", "header", "footer", "form"].includes(tag)) {
     return "";
   }
 
@@ -43,20 +65,55 @@ function sanitizeNode(node: Element): string {
     .join("");
 
   if (ALLOWED_TAGS.has(tag)) {
-    // Keep href for <a>, src/alt for <img>
+    // Keep only safe, explicit attributes for supported content tags.
     let attrs = "";
     if (tag === "a") {
       const href = (node as Element).getAttribute("href");
-      if (href) attrs = ` href="${href}" target="_blank" rel="noopener noreferrer"`;
+      if (isSafeUrl(href)) attrs = ` href="${escapeAttribute(href!)}" target="_blank" rel="noopener noreferrer"`;
     } else if (tag === "img") {
       const src = (node as Element).getAttribute("src");
       const alt = (node as Element).getAttribute("alt") || "";
-      if (src) attrs = ` src="${src}" alt="${alt}" loading="lazy"`;
+      if (isSafeUrl(src)) attrs = ` src="${escapeAttribute(src!)}" alt="${escapeAttribute(alt)}" loading="lazy"`;
       else return ""; // skip images without src
+    } else if (tag === "iframe") {
+      const src = node.getAttribute("src");
+      if (!isSafeUrl(src)) return "";
+      const title = node.getAttribute("title") || "Embedded media";
+      const allow = node.getAttribute("allow");
+      const loading = node.getAttribute("loading") || "lazy";
+      const referrerPolicy = node.getAttribute("referrerpolicy");
+      const allowFullscreen = node.getAttribute("allowfullscreen") !== null ? " allowfullscreen" : "";
+      attrs = ` src="${escapeAttribute(src!)}" title="${escapeAttribute(title)}" loading="${escapeAttribute(loading)}"${allow ? ` allow="${escapeAttribute(allow)}"` : ""}${referrerPolicy ? ` referrerpolicy="${escapeAttribute(referrerPolicy)}"` : ""}${allowFullscreen}${keepClassAttr(node)}`;
+    } else if (tag === "video") {
+      const src = node.getAttribute("src");
+      const poster = node.getAttribute("poster");
+      const preload = node.getAttribute("preload");
+      const controls = " controls";
+      const playsInline = " playsinline";
+      const muted = node.getAttribute("muted") !== null ? " muted" : "";
+      const loop = node.getAttribute("loop") !== null ? " loop" : "";
+      attrs = `${src && isSafeUrl(src) ? ` src="${escapeAttribute(src)}"` : ""}${poster && isSafeUrl(poster) ? ` poster="${escapeAttribute(poster)}"` : ""}${preload ? ` preload="${escapeAttribute(preload)}"` : ""}${controls}${playsInline}${muted}${loop}${keepClassAttr(node)}`;
+    } else if (tag === "source") {
+      const src = node.getAttribute("src");
+      if (!isSafeUrl(src)) return "";
+      const type = node.getAttribute("type");
+      attrs = ` src="${escapeAttribute(src!)}"${type ? ` type="${escapeAttribute(type)}"` : ""}`;
+    } else if (tag === "embed") {
+      const src = node.getAttribute("src");
+      if (!isSafeUrl(src)) return "";
+      const type = node.getAttribute("type");
+      attrs = ` src="${escapeAttribute(src!)}"${type ? ` type="${escapeAttribute(type)}"` : ""}${keepClassAttr(node)}`;
+    } else if (tag === "object") {
+      const data = node.getAttribute("data");
+      if (!isSafeUrl(data)) return "";
+      const type = node.getAttribute("type");
+      attrs = ` data="${escapeAttribute(data!)}"${type ? ` type="${escapeAttribute(type)}"` : ""}${keepClassAttr(node)}`;
+    } else if (["div", "figure", "blockquote"].includes(tag)) {
+      attrs = keepClassAttr(node);
     }
 
     // Self-closing tags
-    if (tag === "br" || tag === "img") return `<${tag}${attrs} />`;
+    if (tag === "br" || tag === "img" || tag === "source" || tag === "embed") return `<${tag}${attrs} />`;
     return `<${tag}${attrs}>${childrenHtml}</${tag}>`;
   }
 
@@ -114,7 +171,7 @@ function extractArticleBody(html: string): string | null {
     if (text.includes("eoy@eoy.ee") || text.includes("Veski 4")) continue;
 
     // Process content elements (p, ul, ol, blockquote, etc.)
-    if (["p", "ul", "ol", "blockquote", "h2", "h3", "figure"].includes(tag)) {
+    if (["p", "ul", "ol", "blockquote", "h2", "h3", "figure", "iframe", "video", "embed", "object"].includes(tag) || (tag === "div" && hasEmbeddableMedia(el))) {
       const sanitized = sanitizeNode(el);
       if (sanitized.trim() && sanitized.trim() !== "<p></p>") parts.push(sanitized);
     } else if (tag === "div") {
@@ -137,6 +194,11 @@ function extractArticleBody(html: string): string | null {
   if (parts.length <= 1) return null;
 
   return parts.join("\n");
+}
+
+function hasEmbeddableMedia(el: Element): boolean {
+  return Boolean(el.querySelector("iframe, video, embed, object, blockquote"))
+    || ["iframe", "video", "embed", "object", "blockquote"].includes(el.tagName.toLowerCase());
 }
 
 Deno.serve(async (req) => {

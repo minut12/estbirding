@@ -211,6 +211,7 @@
     <div class="panel-content-scroll" style="position:relative;z-index:9999;pointer-events:auto">
 <div id="snapshotBanner" class="snapshot-banner" style="display:none !important"></div>
 <div class="fetch-controls">
+  <button id="recentToggle" class="btn on" title="7 päeva filter">7p: ON</button>
   <button id="btnRefreshData" class="btn" title="Refresh all species from Elurikkus">Refresh from Elurikkus</button>
   <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index" style="display:none">Resume</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
@@ -519,6 +520,7 @@ for (const __springName of Object.keys(DEFAULT_SPRING_DATES)) {
   if (__springKey) DEFAULT_SPRING_DATES_BY_KEY[__springKey] = DEFAULT_SPRING_DATES[__springName];
 }
 springDates = _sanitizeSpringDateMap(springDates);
+window.springDates = springDates;
 
 // Map
 const IS_MOBILE_DEVICE = matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -920,14 +922,23 @@ function _springKey(name){
 }
 function _getSpringValue(name){
   const k = _springKey(name);
-  return k ? String((springDates && springDates[k]) || '').trim() : '';
+  if(!k) return '';
+  const raw = springDates && springDates[k];
+  // Guard against numeric 0 or other non-string falsy values
+  if(raw === 0 || raw === null || raw === undefined || raw === false) return '';
+  const s = String(raw).trim();
+  if(s === '0' || s === 'null' || s === 'undefined') return '';
+  return s;
 }
 function _setSpringValue(name, value){
   const k = _springKey(name);
   if(!k) return '';
   const normalized = _normalizeSpringDateValue(value);
+  console.info('[kevad] _setSpringValue', { key: k, raw: String(value == null ? '' : value), normalized: normalized || '' });
   if(normalized) springDates[k] = normalized;
   else delete springDates[k];
+  // Keep window.springDates in sync after mutation
+  window.springDates = springDates;
   return normalized;
 }
 function _sanitizeSpringDateMap(rawMap){
@@ -968,8 +979,11 @@ function _writeSpringMetaEntry(key, patch){
 }
 function _persistSpringCache(){
   springDates = _sanitizeSpringDateMap(springDates);
+  // CRITICAL: keep window.springDates in sync after reassignment
+  window.springDates = springDates;
   try{ localStorage.setItem(LS_SPRING, JSON.stringify(springDates)); }catch(e){}
   try{ localStorage.setItem(LS_SPRING_META, JSON.stringify(springMeta || {})); }catch(e){}
+  console.info('[kevad] _persistSpringCache done, keys:', Object.keys(springDates).length);
 }
 function _setSpringSyncError(message){
   __springLastSyncError = String(message || '').trim();
@@ -1250,6 +1264,8 @@ async function saveSpringDateChange(key, nextValue){
   _setSpringSyncError('');
   _markSpringSyncAt();
   _updateDebugPanel();
+  // Flush dirty entry to cloud immediately after save
+  try{ _flushDirtySpringEntries().catch(function(e){ console.warn('[spring-sync] flush after save failed', e); }); }catch(e){}
   return Promise.resolve({
     speciesKey: speciesKey,
     speciesName: speciesName,
@@ -3210,7 +3226,10 @@ function setRecentOnly(val){
   try{ localStorage.setItem(LS_RECENT_ONLY, on ? '1' : '0'); }catch(e){}
   window.__recentOnly = on;
   const btn = document.getElementById('recentToggle');
-  if(btn) btn.textContent = '7p: ' + (on ? 'ON' : 'OFF');
+  if(btn){
+    btn.textContent = '7p: ' + (on ? 'ON' : 'OFF');
+    if(on) btn.classList.add('on'); else btn.classList.remove('on');
+  }
   rebuildAllMarkers();
   render();
 }
@@ -6706,7 +6725,10 @@ function _wireSnapshotButtons(){
 
 function _wireSidebarSettingsRow(){
   const btn = document.getElementById('recentToggle');
-  if(btn) btn.textContent = '7p: ' + (window.__recentOnly ? 'ON' : 'OFF');
+  if(btn){
+    btn.textContent = '7p: ' + (window.__recentOnly ? 'ON' : 'OFF');
+    if(window.__recentOnly) btn.classList.add('on'); else btn.classList.remove('on');
+  }
 }
 
 // === Auto-refresh via postMessage (parent app sends these) ===
@@ -6753,6 +6775,22 @@ window.addEventListener('message', function(ev){
       pushDebugEvent('CONFIG_ERROR', 'Received SUPABASE_CONFIG_ERROR', __lastErrorObj, 'error');
       _showSnapshotBanner(__lastErrorMessage, 'error');
       _updateDebugPanel();
+      return;
+    }
+    if(t === 'SPECIES_VISIBILITY_RESTORE' && Array.isArray(ev.data.hiddenSpecies)){
+      var hiddenSet = {};
+      ev.data.hiddenSpecies.forEach(function(k){ hiddenSet[k] = true; });
+      var changed = false;
+      SPECIES.forEach(function(name){
+        points[name] = points[name] || {};
+        var shouldHide = !!hiddenSet[name];
+        var isHidden = (points[name].visible === false);
+        if(shouldHide !== isHidden){
+          points[name].visible = !shouldHide;
+          changed = true;
+        }
+      });
+      if(changed){ save(); rebuildAllMarkers(); render(); }
       return;
     }
     if(ev.origin !== window.location.origin) return;
@@ -6821,6 +6859,16 @@ function toggleVisibility(key){
   points[key] = points[key] || {};
   points[key].visible = (points[key].visible === false) ? true : false;
   save(); updateMarker(key); render();
+  // Notify parent app of visibility change
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'SPECIES_VISIBILITY_CHANGED',
+        speciesKey: key,
+        isHidden: points[key].visible === false
+      }, '*');
+    }
+  } catch(e) {}
 }
 
 function setRarity(key, val){
@@ -7130,10 +7178,57 @@ function rowHTML(obj) {
 function render() {
   const q = (document.getElementById('filterBox').value||'').toLowerCase().trim();
   const list = document.getElementById('list'); list.innerHTML='';
-  const arr = DATA.filter(x=> x.est.toLowerCase().includes(q));
+  const recent7 = is7daysOnly();
+  const arr = DATA.filter(function(x){
+    if(!x.est.toLowerCase().includes(q)) return false;
+    if(recent7){
+      const p = points[x.est];
+      if(!p) return false;
+      const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
+      if(!hasCoords) return false;
+      if(!hasRecentObservation(p)) return false;
+    }
+    return true;
+  });
   for (const o of arr) list.insertAdjacentHTML('beforeend', rowHTML(o));
   const firstRow = list.querySelector('.row[data-key]');
   if(firstRow && !window.__selectedSpecies) window.__selectedSpecies = firstRow.getAttribute('data-key') || window.__selectedSpecies;
+
+  // --- 7-day validation logging ---
+  try {
+    const cutoff = new Date(_days7CutoffTs()).toISOString();
+    const rawCount = DATA.length;
+    const filteredCount = arr.length;
+    const visibleSpeciesKeys = arr.map(function(x){ return x.est; });
+    let oldestVisible = null, newestVisible = null;
+    for(const key of visibleSpeciesKeys){
+      const p = points[key];
+      if(!p) continue;
+      const d = getEffectiveRecentDate(p);
+      const ts = _parseObservedTs(d);
+      if(!Number.isFinite(ts)) continue;
+      if(oldestVisible === null || ts < oldestVisible) oldestVisible = ts;
+      if(newestVisible === null || ts > newestVisible) newestVisible = ts;
+    }
+    console.log('[7day] active=' + recent7);
+    console.log('[7day] cutoff=' + cutoff);
+    console.log('[7day] rawRecords=' + rawCount);
+    console.log('[7day] filteredRecords=' + filteredCount);
+    console.log('[7day] oldestVisible=' + (oldestVisible ? new Date(oldestVisible).toISOString() : 'none'));
+    console.log('[7day] newestVisible=' + (newestVisible ? new Date(newestVisible).toISOString() : 'none'));
+    if(recent7){
+      const cutoffTs = _days7CutoffTs();
+      for(const key of visibleSpeciesKeys){
+        const p = points[key];
+        if(!p) continue;
+        const d = getEffectiveRecentDate(p);
+        const ts = _parseObservedTs(d);
+        if(Number.isFinite(ts) && ts < cutoffTs){
+          console.warn('[7day] ERROR old record visible species=' + key + ' date=' + d);
+        }
+      }
+    }
+  } catch(e){ /* ignore logging errors */ }
 }
 
 (function bindSpringInlineEditDelegation(){
@@ -7268,6 +7363,19 @@ if(__loadedLocalSnapshot){
 _validateAndSyncResumeState({ quiet: false });
 _startSnapshotBoot();
 _initElurikkusAuto30m();
+
+// Trigger spring cloud sync after config is ready (with retry)
+(function _bootSpringSync(){
+  try{
+    var cfg = resolveSupabaseConfig();
+    if(cfg.supabaseUrl){
+      console.info('[spring-sync] boot: config ready, syncing...');
+      loadSpringDataFromCloud(true).catch(function(e){ console.warn('[spring-sync] boot sync failed', e); });
+    } else {
+      setTimeout(_bootSpringSync, 2000);
+    }
+  }catch(e){ setTimeout(_bootSpringSync, 2000); }
+})();
 
 // Auto-detect avatar files for active species
 setTimeout(autoDetectAvatarsForActive, 3000);
@@ -7557,6 +7665,8 @@ document.addEventListener('DOMContentLoaded', function(){
       springDates = {};
     }
     springDates = _sanitizeSpringDateMap(springDates);
+    // CRITICAL: keep window.springDates in sync after reassignment
+    window.springDates = springDates;
   }
   function ensureSpringUiPlaced(){
     try{

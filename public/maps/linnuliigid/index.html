@@ -513,9 +513,6 @@ let __springLastSyncError = '';
 let __springSyncInFlight = null;
 let __springPendingSaves = new Map();
 const __springSpeciesNameByKey = {};
-let __userPermissions = [];
-let __userRole = '';
-let __supabaseAccessToken = '';
 for (let __si = 0; __si < SPECIES.length; __si++) {
   __springSpeciesNameByKey[_speciesKey(SPECIES[__si])] = SPECIES[__si];
 }
@@ -1053,20 +1050,13 @@ function _springRestBase(){
 }
 function _springRestHeaders(extra){
   const anonKey = _resolveSupabaseAnonKeyLocal();
-  const bearerToken = __supabaseAccessToken || anonKey;
   const headers = Object.assign({
     'Content-Type': 'application/json',
     'Accept': 'application/json',
     'apikey': anonKey,
-    'Authorization': 'Bearer ' + bearerToken,
+    'Authorization': 'Bearer ' + anonKey,
   }, extra || {});
   return headers;
-}
-function _hasUserPermission(key){
-  return Array.isArray(__userPermissions) && __userPermissions.indexOf(String(key || '')) >= 0;
-}
-function _canEditSpringDates(){
-  return _hasUserPermission('kevadranne.edit') || __userRole === 'admin';
 }
 function _getSpringDeviceId(){
   const key = 'bm_spring_device_id';
@@ -1301,7 +1291,6 @@ async function loadSpringDataFromCloud(force){
   return __springSyncInFlight;
 }
 async function saveSpringDateChange(key, nextValue){
-  if(!_canEditSpringDates()) throw new Error('Sul puudub õigus kevadrännet muuta.');
   const speciesName = __springSpeciesNameByKey[_speciesKey(key)] || key;
   const speciesKey = _speciesKey(speciesName);
   const prevDate = _getSpringValue(speciesKey);
@@ -7056,17 +7045,6 @@ window.addEventListener('message', function(ev){
       _updateDebugPanel();
       return;
     }
-    if(t === 'USER_PERMISSIONS'){
-      __userPermissions = Array.isArray(ev.data.permissions) ? ev.data.permissions.slice() : [];
-      __userRole = String(ev.data.role || '').trim();
-      try{ render(); }catch(e){}
-      try{ renderSpringPanel(); }catch(e){}
-      return;
-    }
-    if(t === 'SUPABASE_AUTH'){
-      __supabaseAccessToken = String(ev.data.accessToken || '').trim();
-      return;
-    }
     if(t === 'SUPABASE_CONFIG_ERROR'){
       __lastErrorMessage = String(ev.data.error || 'Supabase config invalid');
       __lastErrorObj = { name: 'SupabaseConfigError', message: __lastErrorMessage, stack: '', cause: null, abortReason: null };
@@ -7209,7 +7187,6 @@ function _dateToDdmm(dt){
 }
 window.editSpringDateDirect = function(key){
   try{
-    if(!_canEditSpringDates()) return;
     if(!key) return;
     const modal = document.getElementById('springEditModal');
     const speciesEl = document.getElementById('springEditSpecies');
@@ -7245,7 +7222,6 @@ window.closeSpringEditModal = function(){
 };
 window.saveSpringEditModal = function(clearValue){
   try{
-    if(!_canEditSpringDates()) throw new Error('Sul puudub õigus kevadrännet muuta.');
     const modal = document.getElementById('springEditModal');
     const inputEl = document.getElementById('springEditInput');
     if(!modal || !inputEl) return;
@@ -7451,9 +7427,7 @@ function rowHTML(obj) {
     '<span class="kevadi-chip" style="display:inline-flex; gap:8px; align-items:center;">' +
       '<span class="pill">Kevad:</span>' +
       '<span class="pill">' + escapeHtml(springVal || '-') + '</span>' +
-      (_canEditSpringDates()
-        ? '<button type="button" class="btn secondary" style="position:relative;z-index:50;pointer-events:auto" onclick="event.preventDefault(); event.stopPropagation(); window.editSpringDateDirect && window.editSpringDateDirect(\'' + String(key).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\'); return false;">Muuda</button>'
-        : '') +
+      '<button type="button" class="btn secondary" style="position:relative;z-index:50;pointer-events:auto" onclick="event.preventDefault(); event.stopPropagation(); window.editSpringDateDirect && window.editSpringDateDirect(\'' + String(key).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\'); return false;">Muuda</button>' +
     '</span>';
   const springChip = '<div class="species-extra meta-row2">' + springTxt + '</div>';
   const defaultSearchUrl = String((p.searchUrl || obj.url) || obj.url);
@@ -7557,7 +7531,6 @@ function render() {
     const startBtn = t.closest?.('.spring-date-btn');
     if (startBtn){
       stop(e);
-      if(!_canEditSpringDates()) return;
       springEditRowKey = startBtn.getAttribute('data-key');
       if (typeof renderSpringPanel === 'function') renderSpringPanel();
       if (typeof render === 'function') render(); // if your main UI uses render()
@@ -7582,7 +7555,6 @@ function render() {
     const saveBtn = t.closest?.('.spring-edit-save');
     if (saveBtn){
       stop(e);
-      if(!_canEditSpringDates()) return;
       const key = saveBtn.getAttribute('data-key');
       const inp = document.querySelector(`.spring-edit-input[data-key="${key}"]`);
       if(!inp) return;
@@ -7740,8 +7712,6 @@ try{
   if(window.parent && window.parent !== window){
     window.parent.postMessage({ type: 'INSETS_REQUEST' }, '*');
     window.parent.postMessage({ type: 'SUPABASE_CONFIG_REQUEST' }, '*');
-    window.parent.postMessage({ type: 'USER_PERMISSIONS_REQUEST' }, '*');
-    window.parent.postMessage({ type: 'SUPABASE_AUTH_REQUEST' }, '*');
   }
 }catch(e){}
 document.addEventListener('DOMContentLoaded', function(){
@@ -8012,7 +7982,7 @@ document.addEventListener('DOMContentLoaded', function(){
       const springDateText = r.disp;
       const isEditing = (springEditRowKey === key);
       const currentVal = _springDisplayValue(_getSpringValue(key));
-      const dateCellHtml = _canEditSpringDates() && isEditing
+      const dateCellHtml = isEditing
         ? `
     <div class="spring-edit-wrap" style="display:flex; gap:6px; align-items:center;">
       <input class="spring-edit-input" data-key="${key}" value="${currentVal}" placeholder="DD.MM"

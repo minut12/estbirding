@@ -21,25 +21,15 @@ const MAP_ID_TO_SCOPE: Record<string, MapScope> = {
   'europe': 'europe_map',
 };
 
-const MAP_PERMISSION_BY_ID: Record<string, string> = {
-  'linnuliigid-ee': 'maps.view.ee',
-  'europe': 'maps.view.eu',
-};
-
 interface MapTabProps {
   isActive?: boolean;
   onMapChange?: (mapId: string) => void;
 }
 
 export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
-  const { user, session, role, permissions, hasPermission, isAdmin } = useAuth();
-  const availableMaps = useMemo(
-    () => maps.filter((map) => map.enabled && (isAdmin || hasPermission(MAP_PERMISSION_BY_ID[map.id] || ''))),
-    [hasPermission, isAdmin],
-  );
-  const fallbackMap = availableMaps[0] ?? getActiveMap();
-  const [selectedId, setSelectedId] = useState(fallbackMap.id);
-  const current = availableMaps.find((m) => m.id === selectedId) ?? fallbackMap;
+  const { user } = useAuth();
+  const [selectedId, setSelectedId] = useState(getActiveMap().id);
+  const current = maps.find((m) => m.id === selectedId) ?? getActiveMap();
   const mapScope = MAP_ID_TO_SCOPE[selectedId] as MapScope | undefined;
   const iframeSrc = useMemo(() => {
     const proxyBase = resolveProxyBase();
@@ -57,12 +47,6 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   useEffect(() => {
     onMapChange?.(selectedId);
   }, [onMapChange, selectedId]);
-
-  useEffect(() => {
-    if (!availableMaps.some((map) => map.id === selectedId)) {
-      setSelectedId(fallbackMap.id);
-    }
-  }, [availableMaps, fallbackMap.id, selectedId]);
 
   // Send a postMessage to the iframe (safe wrapper)
   const sendToIframe = useCallback((msg: Record<string, unknown>) => {
@@ -124,19 +108,6 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       error: validation.error || 'Supabase config invalid',
     });
   }, [sendToIframe]);
-  const sendUserPermissionsToIframe = useCallback(() => {
-    sendToIframe({
-      type: 'USER_PERMISSIONS',
-      role,
-      permissions,
-    });
-  }, [permissions, role, sendToIframe]);
-  const sendSupabaseAuthToIframe = useCallback(() => {
-    sendToIframe({
-      type: 'SUPABASE_AUTH',
-      accessToken: session?.access_token || '',
-    });
-  }, [sendToIframe, session?.access_token]);
 
   // === Species visibility persistence ===
   const sendSpeciesVisibilityToIframe = useCallback((hidden: Set<string>) => {
@@ -211,12 +182,6 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
           });
         }
       }
-      if (ev.data?.type === 'USER_PERMISSIONS_REQUEST') {
-        sendUserPermissionsToIframe();
-      }
-      if (ev.data?.type === 'SUPABASE_AUTH_REQUEST') {
-        sendSupabaseAuthToIframe();
-      }
       // Species visibility changed from iframe
       if (ev.data?.type === 'SPECIES_VISIBILITY_CHANGED' && user?.id && mapScope) {
         const { speciesKey, isHidden } = ev.data;
@@ -228,7 +193,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [mapScope, sendAppInsets, sendAvatarsToIframe, sendSpeciesMetaToIframe, sendSupabaseAuthToIframe, sendSupabaseConfigToIframe, sendToIframe, sendUserPermissionsToIframe, user]);
+  }, [sendAvatarsToIframe, sendAppInsets, sendSpeciesMetaToIframe, sendSupabaseConfigToIframe, sendToIframe, user, mapScope]);
 
   useEffect(() => {
     const t = setTimeout(sendMapShown, 500);
@@ -278,8 +243,6 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     setTimeout(sendAvatarsToIframe, 300);
     setTimeout(sendSpeciesMetaToIframe, 350);
     setTimeout(sendSupabaseConfigToIframe, 375);
-    setTimeout(sendUserPermissionsToIframe, 380);
-    setTimeout(sendSupabaseAuthToIframe, 385);
     setTimeout(broadcastSupabaseConfigToMapIframes, 390);
     setTimeout(sendAppInsets, 400);
     // Send species visibility preferences
@@ -302,9 +265,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   useEffect(() => {
     broadcastSupabaseConfigToMapIframes();
     sendSupabaseConfigToIframe();
-    sendUserPermissionsToIframe();
-    sendSupabaseAuthToIframe();
-  }, [selectedId, sendSupabaseAuthToIframe, sendSupabaseConfigToIframe, sendUserPermissionsToIframe]);
+  }, [selectedId, sendSupabaseConfigToIframe]);
 
   useEffect(() => {
     let prev = `${getSupabaseUrl()}|${getSupabaseAnonKey()}`;
@@ -357,7 +318,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {availableMaps.map((m) => (
+            {maps.map((m) => (
               <SelectItem key={m.id} value={m.id} disabled={!m.enabled}>
                 {m.name}
                 {!m.enabled && ' (varsti)'}

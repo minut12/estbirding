@@ -205,7 +205,7 @@ async function probeJson(url: string) {
 }
 
 export default function SettingsTab() {
-  const { user, role, isAdmin: isAdminUser, signOut, hasPermission } = useAuth();
+  const { user, role, isAdmin: isAdminUser, signOut } = useAuth();
   const navigate = useNavigate();
   const newsSourcesSectionRef = useRef<HTMLDivElement | null>(null);
   const [settingsPage, setSettingsPage] = useState<SettingsPage>('home');
@@ -229,7 +229,6 @@ export default function SettingsTab() {
   const envProxyBase = getEnvProxyBase();
   const resolvedProxyBase = resolveProxyBase(proxyBaseUrl);
   const proxyMode = getProxyMode(resolvedProxyBase);
-  const canManageSettings = isAdminUser || hasPermission('settings.edit');
 
   useEffect(() => {
     setForm(loadSettings());
@@ -479,12 +478,6 @@ export default function SettingsTab() {
       console.warn('[Settings] News sources section did not render while settings page is open');
     }
   }, [settingsPage]);
-
-  useEffect(() => {
-    if (!canManageSettings && settingsPage !== 'home') {
-      setSettingsPage('home');
-    }
-  }, [canManageSettings, settingsPage]);
 
   const onVersionTap = () => {
     if (devMode) return;
@@ -1084,25 +1077,23 @@ export default function SettingsTab() {
         </div>
       </div>
 
-      {canManageSettings && (
-        <div className="flex flex-col gap-2">
-          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('news')}>
-            Uudised
-          </Button>
-          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('events')}>
-            Üritused
-          </Button>
-          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('translations')}>
-            Tõlge
-          </Button>
-          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('species')}>
-            Linnuliigid
-          </Button>
-          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('maps_debug')}>
-            Kaardid
-          </Button>
-        </div>
-      )}
+      <div className="flex flex-col gap-2">
+        <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('news')}>
+          Uudised
+        </Button>
+        <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('events')}>
+          Üritused
+        </Button>
+        <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('translations')}>
+          Tõlge
+        </Button>
+        <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('species')}>
+          Linnuliigid
+        </Button>
+        <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('maps_debug')}>
+          Kaardid
+        </Button>
+      </div>
       <div className="mt-2">
         {renderDebugLite()}
       </div>
@@ -1111,7 +1102,6 @@ export default function SettingsTab() {
 
   const renderSettings = () => {
     if (settingsPage === 'home') return renderSettingsHome();
-    if (!canManageSettings) return renderSettingsHome();
     if (settingsPage === 'news') return <>{renderSettingsHeader('Uudised')}{renderSettingsNews()}</>;
     if (settingsPage === 'events') return <>{renderSettingsHeader('Üritused')}{renderSettingsEvents()}</>;
     if (settingsPage === 'translations') return <>{renderSettingsHeader('Tõlge')}{renderSettingsTranslations()}</>;

@@ -885,31 +885,43 @@ function uniqueIsoDates(values){
   }
   return out;
 }
-function getCurrentYearSpringCandidatesFromLive(speciesName){
-  const live = _getLiveElurikkusRecord(speciesName);
-  const items = Array.isArray(live && live.items) ? live.items : [];
-  return uniqueIsoDates(items.map(function(it){
-    return String((it && (it.eventDate || it.observedAt || it.rawObserved || it.observed_at || it.date || it.t)) || '').slice(0, 10);
-  }));
-}
-async function collectCurrentYearSpringCandidateDates(speciesName, signal){
+async function fetchCurrentYearSpringCandidateDates(speciesName, signal){
   const species = String(speciesName || '').trim();
   if(!species) return [];
+  const year = new Date().getFullYear();
+  const yearPrefix = String(year) + '-';
+  const limit = 100;
+  const maxPages = 30;
+  const collected = [];
 
-  const liveCandidates = getCurrentYearSpringCandidatesFromLive(species);
-  if(liveCandidates.length){
-    return liveCandidates;
+  for(let page = 0; page < maxPages; page++){
+    if(signal && signal.aborted) throw new Error('aborted');
+    const offset = page * limit;
+    const url = buildEluSearchUrl(species, offset, limit, false);
+    const html = await tryFetch(url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now(), { signal: signal });
+    const rows = parseSearchRows(html, url);
+    if(!rows.length) break;
+
+    let pageHasCurrentYear = false;
+    let pageHasOlderThanCurrentYear = false;
+    for(const row of rows){
+      const iso = String((row && row.iso) || '').slice(0, 10);
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(iso)) continue;
+      if(iso.startsWith(yearPrefix)){
+        collected.push(iso);
+        pageHasCurrentYear = true;
+      } else if(iso < yearPrefix + '01-01'){
+        pageHasOlderThanCurrentYear = true;
+      }
+    }
+
+    if(pageHasOlderThanCurrentYear && !pageHasCurrentYear) break;
+    if(pageHasOlderThanCurrentYear && rows[rows.length - 1] && String(rows[rows.length - 1].iso || '') < yearPrefix + '01-01') break;
+    if(rows.length < limit) break;
+    await new Promise(function(r){ setTimeout(r, 250); });
   }
 
-  const multi = await computeOcc7MultiPage(species, signal, 20);
-  const multiDates = uniqueIsoDates((multi && Array.isArray(multi.datesIso)) ? multi.datesIso : []);
-  if(multiDates.length){
-    return multiDates;
-  }
-
-  const url = buildEluSearchUrl(species, 0, 100);
-  const html = await tryFetch(url, { signal: signal });
-  return uniqueIsoDates(extractElurikkusRecordDatesIso(html));
+  return uniqueIsoDates(collected);
 }
 function shouldUpdateToEarlier(existingIso, candidateIso){
   if(!candidateIso) return false;
@@ -1483,12 +1495,12 @@ function getMarkerCount(p){
 function cutoffMs7d(){
   return Date.now() - 7*24*60*60*1000;
 }
-function buildEluSearchUrl(text, offset, limit){
+function buildEluSearchUrl(text, offset, limit, orderAscending){
   const u = new URL('https://elurikkus.ee/app/occurrences/search');
   u.searchParams.set('text', String(text || ''));
   u.searchParams.set('limit', String(limit));
   u.searchParams.set('offset', String(offset));
-  u.searchParams.set('orderAscending', 'false');
+  u.searchParams.set('orderAscending', orderAscending ? 'true' : 'false');
   u.searchParams.set('orderBy', 'event_date_naive');
   u.searchParams.set('_ts', String(Date.now()));
   return u.toString();
@@ -3246,26 +3258,31 @@ async function processSpringQ(){
 }
 
 async function fetchSpringYearFirstOne(key){
-  const dates = await collectCurrentYearSpringCandidateDates(key);
+  const dates = await fetchCurrentYearSpringCandidateDates(key);
   const year = new Date().getFullYear();
   const earliest = earliestInYearIsoAfterCutoff(dates, year, SPRING_CUTOFF_MMDD);
-  console.info('[kevad]', {
+  const prevDisp = springYearFirst[key] ? isoToDdMm(springYearFirst[key]) : '';
+  const nextDisp = earliest ? isoToDdMm(earliest) : '';
+  console.info('[kevad-2026]', {
     species: key,
     candidates: dates.filter(function(d){ return String(d || '').startsWith(String(year) + '-'); }).join(',') || '-',
+    count: dates.filter(function(d){ return String(d || '').startsWith(String(year) + '-'); }).length,
     selected: earliest || '',
-    previous: springYearFirst[key] || '',
+    prev: prevDisp || '',
+    next: nextDisp || '',
+    source: 'full-year not map-snapshot',
   });
   if (!earliest) return;
 
   const prev = springYearFirst[key];
   if (prev && !isInvalidWinterValue(prev) && earliest > prev){
-    console.warn('[kevad] prevented later overwrite', { species: key, previous: prev, candidate: earliest });
+    console.warn('[kevad-2026] prevented later overwrite', { species: key, previous: prev, candidate: earliest });
     return;
   }
   if (earliest && (isInvalidWinterValue(prev) || !prev || earliest < prev)){
     springYearFirst[key] = earliest;
     localStorage.setItem(LS_SPRING_YEARFIRST, JSON.stringify(springYearFirst));
-    console.info('[kevad] corrected', { species: key, previous: prev || '', corrected: isoToDdMm(earliest) });
+    console.info('[kevad-2026] updated', { species: key, previous: prevDisp || '', corrected: nextDisp || '' });
     if (typeof renderSpringPanel === 'function') renderSpringPanel();
   }
 }

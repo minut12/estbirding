@@ -208,6 +208,8 @@ type PreservedMediaBlock = {
   key: string;
 };
 
+const ARTICLE_MEDIA_PROSE_CLASS = 'prose prose-sm max-w-none overflow-x-hidden text-foreground [&_a]:text-primary [&>*]:my-0 [&_p]:my-0 [&_div]:my-0 [&_figure]:my-0 [&_figcaption]:mt-2 [&_figcaption]:mb-0 [&_blockquote]:my-0 [&_iframe]:block [&_iframe]:w-full [&_iframe]:max-w-full [&_iframe]:aspect-video [&_iframe]:rounded-xl [&_iframe]:border-0 [&_video]:block [&_video]:w-full [&_video]:max-w-full [&_video]:h-auto [&_video]:rounded-xl [&_embed]:block [&_embed]:w-full [&_embed]:max-w-full [&_embed]:rounded-xl [&_object]:block [&_object]:w-full [&_object]:max-w-full [&_object]:rounded-xl [&_img]:max-w-full [&_figure]:max-w-full [&_.instagram-media]:max-w-full [&_.twitter-tweet]:max-w-full';
+
 function isSocialEmbedBlock(node: Element): boolean {
   if (node.tagName.toLowerCase() !== 'blockquote') return false;
   return Boolean(
@@ -1334,23 +1336,23 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
           </div>
         ) : !showTranslated && bodyHtmlWithoutDuplicateHero ? (
           <div
-            className="prose prose-sm max-w-none overflow-x-hidden text-foreground [&_a]:text-primary [&_iframe]:block [&_iframe]:w-full [&_iframe]:max-w-full [&_iframe]:aspect-video [&_iframe]:rounded-xl [&_iframe]:border-0 [&_video]:block [&_video]:w-full [&_video]:max-w-full [&_video]:h-auto [&_video]:rounded-xl [&_embed]:block [&_embed]:w-full [&_embed]:max-w-full [&_embed]:rounded-xl [&_object]:block [&_object]:w-full [&_object]:max-w-full [&_object]:rounded-xl [&_img]:max-w-full [&_figure]:max-w-full [&_.instagram-media]:max-w-full [&_.twitter-tweet]:max-w-full"
+            className={ARTICLE_MEDIA_PROSE_CLASS}
             dangerouslySetInnerHTML={{ __html: bodyHtmlWithoutDuplicateHero }}
           />
         ) : hasTranslatedInlineMedia ? (
-          <div className="space-y-4 overflow-x-hidden text-sm leading-relaxed text-foreground">
+          <div className="space-y-2 overflow-x-hidden text-sm leading-relaxed text-foreground">
             {preservedMediaBlocks
               .filter((block) => block.afterTextBlock === 0)
               .map((block) => (
                 <div
                   key={block.key}
-                  className="prose prose-sm max-w-none overflow-x-hidden [&_iframe]:block [&_iframe]:w-full [&_iframe]:max-w-full [&_iframe]:aspect-video [&_iframe]:rounded-xl [&_iframe]:border-0 [&_video]:block [&_video]:w-full [&_video]:max-w-full [&_video]:h-auto [&_video]:rounded-xl [&_embed]:block [&_embed]:w-full [&_embed]:max-w-full [&_embed]:rounded-xl [&_object]:block [&_object]:w-full [&_object]:max-w-full [&_object]:rounded-xl [&_img]:max-w-full [&_figure]:max-w-full [&_.instagram-media]:max-w-full [&_.twitter-tweet]:max-w-full"
+                  className={ARTICLE_MEDIA_PROSE_CLASS}
                   dangerouslySetInnerHTML={{ __html: block.html }}
                 />
               ))}
             {translatedParagraphs.map((paragraph, index) => (
-              <div key={`translated-block-${index}`} className="space-y-4">
-                <p className="whitespace-pre-line">
+              <div key={`translated-block-${index}`} className="space-y-2">
+                <p className="whitespace-pre-line my-0">
                   {paragraph}
                 </p>
                 {preservedMediaBlocks
@@ -1358,7 +1360,7 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
                   .map((block) => (
                     <div
                       key={block.key}
-                      className="prose prose-sm max-w-none overflow-x-hidden [&_iframe]:block [&_iframe]:w-full [&_iframe]:max-w-full [&_iframe]:aspect-video [&_iframe]:rounded-xl [&_iframe]:border-0 [&_video]:block [&_video]:w-full [&_video]:max-w-full [&_video]:h-auto [&_video]:rounded-xl [&_embed]:block [&_embed]:w-full [&_embed]:max-w-full [&_embed]:rounded-xl [&_object]:block [&_object]:w-full [&_object]:max-w-full [&_object]:rounded-xl [&_img]:max-w-full [&_figure]:max-w-full [&_.instagram-media]:max-w-full [&_.twitter-tweet]:max-w-full"
+                      className={ARTICLE_MEDIA_PROSE_CLASS}
                       dangerouslySetInnerHTML={{ __html: block.html }}
                     />
                   ))}

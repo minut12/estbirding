@@ -504,6 +504,7 @@ try{
 let springQ = [];
 let springQRunning = false;
 let springEditRowKey = null;
+let springYearRefreshInFlight = false;
 const SPRING_SYNC_TABLE = 'linnuliigid_spring_dates';
 let __springCloudLoaded = false;
 let __springCloudLoadedAt = '';
@@ -871,6 +872,44 @@ function earliestInYearIsoAfterCutoff(datesIso, year, mmddCutoff){
     if (!best || d < best) best = d;
   }
   return best;
+}
+function uniqueIsoDates(values){
+  const seen = new Set();
+  const out = [];
+  for(const raw of (Array.isArray(values) ? values : [])){
+    const iso = String(raw || '').slice(0, 10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(iso)) continue;
+    if(seen.has(iso)) continue;
+    seen.add(iso);
+    out.push(iso);
+  }
+  return out;
+}
+function getCurrentYearSpringCandidatesFromLive(speciesName){
+  const live = _getLiveElurikkusRecord(speciesName);
+  const items = Array.isArray(live && live.items) ? live.items : [];
+  return uniqueIsoDates(items.map(function(it){
+    return String((it && (it.eventDate || it.observedAt || it.rawObserved || it.observed_at || it.date || it.t)) || '').slice(0, 10);
+  }));
+}
+async function collectCurrentYearSpringCandidateDates(speciesName, signal){
+  const species = String(speciesName || '').trim();
+  if(!species) return [];
+
+  const liveCandidates = getCurrentYearSpringCandidatesFromLive(species);
+  if(liveCandidates.length){
+    return liveCandidates;
+  }
+
+  const multi = await computeOcc7MultiPage(species, signal, 20);
+  const multiDates = uniqueIsoDates((multi && Array.isArray(multi.datesIso)) ? multi.datesIso : []);
+  if(multiDates.length){
+    return multiDates;
+  }
+
+  const url = buildEluSearchUrl(species, 0, 100);
+  const html = await tryFetch(url, { signal: signal });
+  return uniqueIsoDates(extractElurikkusRecordDatesIso(html));
 }
 function shouldUpdateToEarlier(existingIso, candidateIso){
   if(!candidateIso) return false;
@@ -1472,6 +1511,8 @@ async function computeOcc7Offset(text, tryFetchHtml, signal){
   const limit = 100;
   const maxPages = 30;
   const seen = new Set();
+  const datesSeen = new Set();
+  const datesIso = [];
   let occ7 = 0;
   let newestIso = '';
   let oldestIso = '';
@@ -1493,6 +1534,10 @@ async function computeOcc7Offset(text, tryFetchHtml, signal){
       const uniqueKey = getEluRowUniqueKey(r);
       if(seen.has(uniqueKey)) continue;
       seen.add(uniqueKey);
+      if(r && r.iso && !datesSeen.has(r.iso)){
+        datesSeen.add(r.iso);
+        datesIso.push(r.iso);
+      }
       if(r.iso >= cutoffIso){
         occ7++;
         anyWithin = true;
@@ -1502,7 +1547,7 @@ async function computeOcc7Offset(text, tryFetchHtml, signal){
     if(oldestIso && oldestIso < cutoffIso) break;
     await new Promise(function(r){ setTimeout(r, 250); });
   }
-  return { occ7: occ7, newestIso: newestIso, oldestIso: oldestIso, cutoffIso: cutoffIso, pagesScanned: pages, rowsParsedTotal: rowsParsedTotal, unique: seen.size, pagingMode: 'offset' };
+  return { occ7: occ7, newestIso: newestIso, oldestIso: oldestIso, cutoffIso: cutoffIso, pagesScanned: pages, rowsParsedTotal: rowsParsedTotal, unique: seen.size, pagingMode: 'offset', datesIso: datesIso };
 }
 async function computeOcc7MultiPage(species, signal, maxPages){
   const fetcher = function(u, sig){ return tryFetch(u, { signal: sig, cache:'no-store' }); };
@@ -3201,18 +3246,45 @@ async function processSpringQ(){
 }
 
 async function fetchSpringYearFirstOne(key){
-  const url = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(key);
-  const html = await tryFetch(url);
-  const dates = extractElurikkusRecordDatesIso(html);
+  const dates = await collectCurrentYearSpringCandidateDates(key);
   const year = new Date().getFullYear();
   const earliest = earliestInYearIsoAfterCutoff(dates, year, SPRING_CUTOFF_MMDD);
+  console.info('[kevad]', {
+    species: key,
+    candidates: dates.filter(function(d){ return String(d || '').startsWith(String(year) + '-'); }).join(',') || '-',
+    selected: earliest || '',
+    previous: springYearFirst[key] || '',
+  });
   if (!earliest) return;
 
   const prev = springYearFirst[key];
+  if (prev && !isInvalidWinterValue(prev) && earliest > prev){
+    console.warn('[kevad] prevented later overwrite', { species: key, previous: prev, candidate: earliest });
+    return;
+  }
   if (earliest && (isInvalidWinterValue(prev) || !prev || earliest < prev)){
     springYearFirst[key] = earliest;
     localStorage.setItem(LS_SPRING_YEARFIRST, JSON.stringify(springYearFirst));
+    console.info('[kevad] corrected', { species: key, previous: prev || '', corrected: isoToDdMm(earliest) });
     if (typeof renderSpringPanel === 'function') renderSpringPanel();
+  }
+}
+
+async function refreshSpringYearFirstForKeys(keys){
+  const uniq = Array.from(new Set((keys || []).filter(Boolean)));
+  if(!uniq.length) return;
+  springYearRefreshInFlight = true;
+  try{
+    for(const key of uniq){
+      try{
+        await fetchSpringYearFirstOne(key);
+      }catch(e){
+        console.warn('[kevad] refresh failed', { species: key, error: String((e && e.message) || e) });
+      }
+      await new Promise(function(r){ setTimeout(r, 250); });
+    }
+  } finally {
+    springYearRefreshInFlight = false;
   }
 }
 
@@ -7491,6 +7563,7 @@ document.addEventListener('DOMContentLoaded', function(){
   <div id="springHeader">
     <div class="title">Kevadränne</div>
     <div class="actions">
+      <button id="springRefresh" class="btn secondary" type="button">Värskenda kevadrännet</button>
       <button id="springClose" class="btn icon" type="button" aria-label="Sulge">X</button>
     </div>
   </div>
@@ -7679,8 +7752,13 @@ document.addEventListener('DOMContentLoaded', function(){
     ensureSpringUiPlaced();
     const body = document.getElementById('springTableBody');
     const countEl = document.getElementById('springCount');
+    const refreshBtn = document.getElementById('springRefresh');
     const q = (document.getElementById('springSearch')?.value || '').toLowerCase().trim();
     if(!body || !countEl) return;
+    if(refreshBtn){
+      refreshBtn.disabled = springYearRefreshInFlight;
+      refreshBtn.textContent = springYearRefreshInFlight ? 'Värskendan…' : 'Värskenda kevadrännet';
+    }
     const sd = getSpringDates();
     const list = getSpeciesList();
     const rows = [];
@@ -7759,9 +7837,27 @@ document.addEventListener('DOMContentLoaded', function(){
     const btn = document.getElementById('toggleSpring');
     const close = document.getElementById('springClose');
     const search = document.getElementById('springSearch');
+    const refreshBtn = document.getElementById('springRefresh');
     if(btn && !btn.__springBound){ btn.addEventListener('click', ()=> toggleSpring()); btn.__springBound = true; }
     if(close && !close.__springBound){ close.addEventListener('click', ()=> toggleSpring(false)); close.__springBound = true; }
     if(search && !search.__springBound){ search.addEventListener('input', renderSpringPanel); search.__springBound = true; }
+    if(refreshBtn && !refreshBtn.__springBound){
+      refreshBtn.addEventListener('click', async function(){
+        if(springYearRefreshInFlight) return;
+        const keys = getSpeciesList().filter(function(name){
+          return !!_getSpringValue(name);
+        });
+        springYearRefreshInFlight = true;
+        renderSpringPanel();
+        try{
+          await refreshSpringYearFirstForKeys(keys);
+        } finally {
+          springYearRefreshInFlight = false;
+          renderSpringPanel();
+        }
+      });
+      refreshBtn.__springBound = true;
+    }
   }
 
   try{

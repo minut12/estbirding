@@ -17,6 +17,7 @@ import { getProxyMode } from '@/config/proxyEndpoint';
 import { getSupabaseUrl } from '@/config/supabaseConfig';
 import { normalizeDisplayText } from '@/lib/textNormalize';
 import { getNewsImageSrc, getProxiedImageUrl, getProxyBase, isProxiedImageUrl } from './newsImage';
+import { useAuth } from '@/features/auth/AuthContext';
 
 /* Types */
 interface NewsItem {
@@ -574,6 +575,8 @@ function rewriteImgSrcToProxy(html: string, sourceName: string, proxyBase: strin
 
 /* Main component */
 export default function NewsTab() {
+  const { hasPermission, isAdmin } = useAuth();
+  const canArchiveNews = isAdmin || hasPermission('news.archive') || hasPermission('news.edit');
   const queryClient = useQueryClient();
   const initialListState = useMemo(() => readNewsListState(), []);
   const [tab, setTab] = useState<'latest' | 'archive'>(initialListState?.tab || 'latest');
@@ -832,8 +835,9 @@ const {
   });
 
   const toggleArchive = useCallback((id: string, currentArchived: boolean) => {
+    if (!canArchiveNews) return;
     archiveMutation.mutate({ id, archived: !currentArchived });
-  }, [archiveMutation]);
+  }, [archiveMutation, canArchiveNews]);
 
   // Pull / refresh
   const pullMutation = useMutation({
@@ -927,6 +931,7 @@ const {
         autoTranslateEnabled={autoTranslateEnabled}
         onBack={closeArticle}
         onToggleArchive={() => toggleArchive(selected.id, selected.is_archived)}
+        canArchive={canArchiveNews}
       />
     );
   }
@@ -1043,6 +1048,7 @@ const {
                 autoTranslateEnabled={autoTranslateEnabled}
                 onOpen={() => openArticle(item)}
                 onToggleArchive={() => toggleArchive(item.id, item.is_archived)}
+                canArchive={canArchiveNews}
               />
             ))}
           </div>
@@ -1053,7 +1059,7 @@ const {
 }
 
 /* News Card */
-function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnabled, onOpen, onToggleArchive }: {
+function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnabled, onOpen, onToggleArchive, canArchive }: {
   item: NewsItem;
   sources: NewsSource[];
   proxyBase: string;
@@ -1061,6 +1067,7 @@ function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnable
   autoTranslateEnabled: boolean;
   onOpen: () => void;
   onToggleArchive: () => void;
+  canArchive: boolean;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const sourceName = sourceLabel(item, sources);
@@ -1170,10 +1177,12 @@ function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnable
                 <ExternalLink className="w-3 h-3" /> Originaal
               </Button>
             </a>
-            <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onToggleArchive}>
-              {item.is_archived ? <ArchiveRestore className="w-3.5 h-3.5 mr-1" /> : <Archive className="w-3.5 h-3.5 mr-1" />}
-              {item.is_archived ? 'Taasta' : 'Arhiveeri'}
-            </Button>
+            {canArchive && (
+              <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onToggleArchive}>
+                {item.is_archived ? <ArchiveRestore className="w-3.5 h-3.5 mr-1" /> : <Archive className="w-3.5 h-3.5 mr-1" />}
+                {item.is_archived ? 'Taasta' : 'Arhiveeri'}
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -1182,13 +1191,14 @@ function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnable
 }
 
 /* Article View (lazy-loads content) */
-function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBack, onToggleArchive }: {
+function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBack, onToggleArchive, canArchive }: {
   item: NewsItem;
   sources: NewsSource[];
   showEtContent: boolean;
   autoTranslateEnabled: boolean;
   onBack: () => void;
   onToggleArchive: () => void;
+  canArchive: boolean;
 }) {
   const [contentHtml, setContentHtml] = useState<string | null>(item.content_html);
   const [loadingContent, setLoadingContent] = useState(!item.content_html && item.source_slug === 'eoy');
@@ -1454,10 +1464,12 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
               <ExternalLink className="w-3.5 h-3.5" /> Ava originaal
             </Button>
           </a>
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={onToggleArchive}>
-            {item.is_archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
-            {item.is_archived ? 'Taasta' : 'Arhiveeri'}
-          </Button>
+          {canArchive && (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={onToggleArchive}>
+              {item.is_archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+              {item.is_archived ? 'Taasta' : 'Arhiveeri'}
+            </Button>
+          )}
         </div>
       </div>
     </div>

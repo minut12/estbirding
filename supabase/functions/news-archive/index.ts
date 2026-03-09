@@ -27,6 +27,37 @@ Deno.serve(async (req) => {
       });
     }
 
+    const authHeader = req.headers.get("Authorization") || "";
+    const authedSupabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      authHeader
+        ? { global: { headers: { Authorization: authHeader } } }
+        : undefined,
+    );
+    const {
+      data: { user },
+      error: authError,
+    } = await authedSupabase.auth.getUser();
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { data: canArchive, error: permissionError } = await authedSupabase.rpc("has_permission", {
+      _user_id: user.id,
+      _permission: "news.archive",
+    });
+    if (permissionError) throw permissionError;
+    if (!canArchive) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,

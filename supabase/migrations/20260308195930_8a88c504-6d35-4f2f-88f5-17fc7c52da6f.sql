@@ -193,12 +193,14 @@ INSERT INTO public.role_permissions (role, permission_key) VALUES
   -- Admin permissions (full access)
   ('admin', 'news.view'),
   ('admin', 'news.edit'),
+  ('admin', 'news.archive'),
   ('admin', 'events.view'),
   ('admin', 'events.edit'),
   ('admin', 'maps.view.ee'),
   ('admin', 'maps.view.eu'),
   ('admin', 'users.manage'),
   ('admin', 'settings.edit'),
+  ('admin', 'kevadranne.edit'),
   ('admin', 'admin.access'),
   -- user_level_2 permissions
   ('user_level_2', 'news.view'),
@@ -208,4 +210,5 @@ INSERT INTO public.role_permissions (role, permission_key) VALUES
   -- user_level_1 permissions (basic)
   ('user_level_1', 'news.view'),
   ('user_level_1', 'events.view'),
-  ('user_level_1', 'maps.view.ee');
+  ('user_level_1', 'maps.view.ee'),
+  ('user_level_1', 'maps.view.eu');

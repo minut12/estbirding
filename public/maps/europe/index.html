@@ -333,6 +333,7 @@
         <button class="btn" id="btnRefreshData">Refresh data</button>
         <button class="btn secondary" id="btnReloadSnapshot">Reload snapshot</button>
         <button class="btn on" id="perCountryBtn">Per-country: ON</button>
+        <button class="btn off" id="rareOnlyBtn">Rare only: OFF</button>
         <label class="chk"><input type="checkbox" id="toggle7days" checked/> 7 days only</label>
       </div>
 
@@ -406,6 +407,7 @@ const LS_SPECIES_META = "estbirding.speciesMeta.v1";
 const LS_EBIRD_TOKEN = "bm_ebird_token";
 const LS_SPECIES     = "bm_species_list_global";
 const LS_PER_COUNTRY = "bm_eu_per_country";
+const LS_RARE_ONLY   = "bm_eu_rare_only";
 const LS_SNAPSHOT_PREFIX = "bm_map_snapshot:";
 const LS_EU_LAST_GOOD = "bm_eu_last_good_snapshot";
 const SNAPSHOT_VERSION = "europe_map_v2";
@@ -893,6 +895,7 @@ if (SPECIES.length === 0) {
 localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
 
 let perCountry = (localStorage.getItem(LS_PER_COUNTRY) || "1") === "1";
+let rareOnly = (localStorage.getItem(LS_RARE_ONLY) || "0") === "1";
 let recentOnly = true;
 let lastRefreshAt = null;
 let lastSnapshotAt = null;
@@ -967,6 +970,7 @@ function saveAll(){
   localStorage.setItem(LS_EBIRD_TOKEN, EBIRD_TOKEN || "");
   localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
   localStorage.setItem(LS_PER_COUNTRY, perCountry ? "1" : "0");
+  localStorage.setItem(LS_RARE_ONLY, rareOnly ? "1" : "0");
 }
 
 function getSnapshotKey(){
@@ -981,6 +985,7 @@ function getSnapshotCounts(){
   let markersCount = 0;
   let itemsCount = 0;
   for (const name of SPECIES){
+    if (!passesRareOnlyFilter(name)) continue;
     const p = points[name];
     if (!p) continue;
     const regions = (p.regions && typeof p.regions === "object") ? p.regions : null;
@@ -1007,7 +1012,7 @@ function updateDebugPanel(){
   if (!el) return;
   const counts = getSnapshotCounts();
   el.innerHTML = [
-    `active filters: <b>7 days only=${recentOnly ? "ON" : "OFF"}, per-country=${perCountry ? "ON" : "OFF"}</b>`,
+    `active filters: <b>7 days only=${recentOnly ? "ON" : "OFF"}, per-country=${perCountry ? "ON" : "OFF"}, rare only=${rareOnly ? "ON" : "OFF"}</b>`,
     `dataMode: <b>${dataMode}</b>`,
     `lastSnapshotAt: <b>${lastSnapshotAt ? formatDateTimeEt(lastSnapshotAt) : "-"}</b>`,
     `lastRefreshAt: <b>${lastRefreshAt ? formatDateTimeEt(lastRefreshAt) : "-"}</b>`,
@@ -1334,6 +1339,7 @@ function updateMarker(species){
 
   const p = points[species]; if (!p) return;
   if (p.visible === false) return;
+  if (!passesRareOnlyFilter(species)) return;
   const meta = getSpeciesMeta(species);
 
   const regionsObj = (p.regions && typeof p.regions === "object") ? p.regions : null;
@@ -1432,9 +1438,17 @@ const filterBox = document.getElementById("filterBox");
 const progressLine = document.getElementById("progressLine");
 const statusText = document.getElementById("statusText");
 const perCountryBtn = document.getElementById("perCountryBtn");
+const rareOnlyBtn = document.getElementById("rareOnlyBtn");
 
 function setStatus(s){ statusText.textContent = s || ""; }
 function norm(s){ return (s || "").toLowerCase().normalize("NFC"); }
+function isRareSpecies(name){
+  const meta = getSpeciesMeta(name);
+  return Boolean(meta && meta.rarityLevel && meta.rarityLevel !== "none");
+}
+function passesRareOnlyFilter(name){
+  return !rareOnly || isRareSpecies(name);
+}
 
 function rowHTML(name){
   const p = points[name] || {};
@@ -1464,7 +1478,10 @@ function rowHTML(name){
 function render(){
   const q = norm((filterBox.value || "").trim());
   listEl.innerHTML = "";
-  SPECIES.filter(n => norm(n).includes(q)).forEach(n => listEl.insertAdjacentHTML("beforeend", rowHTML(n)));
+  SPECIES
+    .filter(n => passesRareOnlyFilter(n))
+    .filter(n => norm(n).includes(q))
+    .forEach(n => listEl.insertAdjacentHTML("beforeend", rowHTML(n)));
   wireRows();
   // update markers for visible list quickly
   SPECIES.forEach(updateMarker);
@@ -2039,6 +2056,10 @@ function syncPerCountryBtn(){
   perCountryBtn.textContent = perCountry ? "Per-country: ON" : "Per-country: OFF";
   perCountryBtn.className = "btn " + (perCountry ? "on" : "off");
 }
+function syncRareOnlyBtn(){
+  rareOnlyBtn.textContent = rareOnly ? "Rare only: ON" : "Rare only: OFF";
+  rareOnlyBtn.className = "btn " + (rareOnly ? "on" : "off");
+}
 perCountryBtn.addEventListener("click", ()=>{
   perCountry = !perCountry;
   saveAll();
@@ -2048,6 +2069,14 @@ perCountryBtn.addEventListener("click", ()=>{
   updateDebugPanel();
 });
 syncPerCountryBtn();
+rareOnlyBtn.addEventListener("click", ()=>{
+  rareOnly = !rareOnly;
+  saveAll();
+  syncRareOnlyBtn();
+  render();
+  updateDebugPanel();
+});
+syncRareOnlyBtn();
 
 /* ========= Settings modal ========= */
 const modalBackdrop = document.getElementById("modalBackdrop");

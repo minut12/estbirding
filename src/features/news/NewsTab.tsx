@@ -279,6 +279,52 @@ function splitTranslatedParagraphs(value: string | null | undefined): string[] {
     .filter(Boolean);
 }
 
+function isEffectivelyEmptyNode(node: Element): boolean {
+  const html = (node.innerHTML || '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '')
+    .trim();
+  const text = (node.textContent || '').replace(/\s+/g, '');
+  return !html || !text;
+}
+
+function collapseEmbedSpacingHtml(html: string | null | undefined): string | null {
+  if (!html) return null;
+
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const body = doc.body;
+    const mediaNodes = Array.from(body.children).filter((child): child is Element => (
+      child instanceof Element && isEmbeddableMediaNode(child)
+    ));
+
+    for (const mediaNode of mediaNodes) {
+      let prev = mediaNode.previousElementSibling as Element | null;
+      while (prev && ['p', 'div', 'section'].includes(prev.tagName.toLowerCase()) && isEffectivelyEmptyNode(prev)) {
+        const nextPrev = prev.previousElementSibling as Element | null;
+        prev.remove();
+        prev = nextPrev;
+      }
+
+      let next = mediaNode.nextElementSibling as Element | null;
+      while (next && ['p', 'div', 'section'].includes(next.tagName.toLowerCase()) && isEffectivelyEmptyNode(next)) {
+        const nextNext = next.nextElementSibling as Element | null;
+        next.remove();
+        next = nextNext;
+      }
+    }
+
+    body.querySelectorAll('p, div, section').forEach((node) => {
+      if (!(node instanceof Element)) return;
+      if (!isEmbeddableMediaNode(node) && isEffectivelyEmptyNode(node)) node.remove();
+    });
+
+    return body.innerHTML.trim() || html;
+  } catch {
+    return html;
+  }
+}
+
 function stripLeadingSameImage(html: string, heroUrl?: string | null): string {
   if (!html) return html;
 
@@ -1229,9 +1275,13 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
   const rewrittenContentHtml = useMemo(() => (
     cleanedContentHtml ? rewriteImgSrcToProxy(cleanedContentHtml, sourceName, proxyBase) : null
   ), [cleanedContentHtml, sourceName, proxyBase]);
+  const compactedContentHtml = useMemo(
+    () => collapseEmbedSpacingHtml(rewrittenContentHtml),
+    [rewrittenContentHtml],
+  );
   const bodyHtmlWithoutDuplicateHero = useMemo(() => (
-    rewrittenContentHtml ? stripLeadingSameImage(rewrittenContentHtml, heroSrc) : null
-  ), [rewrittenContentHtml, heroSrc]);
+    compactedContentHtml ? stripLeadingSameImage(compactedContentHtml, heroSrc) : null
+  ), [compactedContentHtml, heroSrc]);
   const preservedMediaBlocks = useMemo(
     () => extractPreservedMediaBlocks(bodyHtmlWithoutDuplicateHero),
     [bodyHtmlWithoutDuplicateHero],

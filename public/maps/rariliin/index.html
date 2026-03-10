@@ -3612,19 +3612,26 @@ function getLocalDateStamp(){
   const d = String(now.getDate()).padStart(2, '0');
   return y + '-' + m + '-' + d;
 }
-function isRecentNoticeHiddenToday(signature){
+function getRecentNoticeDismissalRecord(){
   try{
     const raw = localStorage.getItem(LS_RECENT_NOTICE_HIDE_UNTIL);
-    if(!raw) return false;
+    if(!raw) return null;
     const parsed = JSON.parse(raw);
-    return parsed && parsed.signature === signature && parsed.date === getLocalDateStamp();
+    if(!parsed || typeof parsed !== 'object') return null;
+    return parsed;
   }catch(e){
-    return false;
+    return null;
   }
+}
+function isRecentNoticeHiddenToday(signature){
+  const parsed = getRecentNoticeDismissalRecord();
+  return !!(parsed && parsed.signature === signature && parsed.date === getLocalDateStamp());
 }
 function rememberRecentNoticeHiddenToday(signature){
   try{
-    localStorage.setItem(LS_RECENT_NOTICE_HIDE_UNTIL, JSON.stringify({ signature: signature, date: getLocalDateStamp() }));
+    const dismissedUntil = getLocalDateStamp();
+    localStorage.setItem(LS_RECENT_NOTICE_HIDE_UNTIL, JSON.stringify({ signature: signature, date: dismissedUntil }));
+    console.log('[rariliin-popup] dismissedUntil=' + dismissedUntil);
   }catch(e){}
 }
 function hideRecentRaritiesNotice(){
@@ -3632,6 +3639,7 @@ function hideRecentRaritiesNotice(){
   if(!card) return;
   card.classList.remove('show');
   card.hidden = true;
+  console.log('[rariliin-popup] popupShown=false');
 }
 function isRecentNoticeDismissedToday(signature){
   return !!(signature && isRecentNoticeHiddenToday(signature));
@@ -3736,6 +3744,7 @@ function evaluateRecentRaritiesNotice(options){
   console.log('[rariliin-recent] hiddenReason=' + hiddenReason);
   console.log('[rariliin-popup] recentCount=' + String(items.length));
   console.log('[rariliin-popup] dismissedToday=' + String(dismissedToday));
+  console.log('[rariliin-popup] popupShown=' + String(shownCard));
   if(window.__rariliinPopupForceVisible){
     renderRariliinPopupTest(items);
     return;
@@ -7891,7 +7900,7 @@ _wireSidebarSettingsRow();
   }
   if(hideTodayBtn && !hideTodayBtn.__wired){
     hideTodayBtn.addEventListener('click', function(){
-      console.log('[rariliin-popup] doNotShowToday clicked');
+      console.log('[rariliin-popup] dontShowToday clicked');
       const signature = currentSignature();
       if(signature){
         window.__rariliinRecentNoticeDismissedSignature = signature;
@@ -7913,9 +7922,14 @@ _wireSidebarSettingsRow();
     list.__wired = true;
   }
 })();
-window.__rariliinPopupForceVisible = true;
+try{
+  const _dismissal = getRecentNoticeDismissalRecord();
+  console.log('[rariliin-popup] onLoad dismissedToday=' + String(!!(_dismissal && _dismissal.date === getLocalDateStamp())));
+  console.log('[rariliin-popup] dismissedUntil=' + String((_dismissal && _dismissal.date) || ''));
+}catch(e){}
+window.__rariliinPopupForceVisible = false;
 window.__rariliinPopupTestVisible = false;
-renderRariliinPopupTest(getRecentRaritiesItems());
+evaluateRecentRaritiesNotice();
 _refreshBuildStampUi();
 setInterval(_refreshBuildStampUi, 10000);
 function _startSnapshotBoot(){

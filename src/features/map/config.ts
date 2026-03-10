@@ -7,6 +7,7 @@ export interface MapDefinition {
   type: 'asset' | 'remote';
   source: string;          // path to asset or remote URL
   enabled: boolean;
+  permissionKey: string;
 }
 
 export const maps: MapDefinition[] = [
@@ -17,6 +18,7 @@ export const maps: MapDefinition[] = [
     type: 'asset',
     source: '/maps/linnuliigid/index.html',
     enabled: true,
+    permissionKey: 'maps.view.ee',
   },
   {
     id: 'europe',
@@ -25,6 +27,16 @@ export const maps: MapDefinition[] = [
     type: 'asset',
     source: '/maps/europe/index.html',
     enabled: true,
+    permissionKey: 'maps.view.eu',
+  },
+  {
+    id: 'rariliin',
+    name: 'Rariliin',
+    region: 'Eesti',
+    type: 'asset',
+    source: '/maps/rariliin/index.html',
+    enabled: true,
+    permissionKey: 'maps.view.rariliin',
   },
 ];
 

@@ -1,15 +1,16 @@
 import { supabase } from '@/config/supabaseClient';
 import { getSupabaseInitError } from '@/config/supabaseClient';
 import { validateSupabaseConfig } from '@/config/supabaseConfig';
+import { LINNULIIGID_SCOPE, type SpeciesScopeConfig } from '@/lib/mapScope';
 import { loadSpeciesMeta, replaceSpeciesMeta, SPECIES_META_LOCAL_UPDATED_AT_KEY, type SpeciesMeta } from '@/lib/speciesMeta';
 import { normalizeSpeciesName, normalizeUiText } from '@/lib/textNormalize';
 
 const BUCKET = 'bird-avatars';
-const FILE_PATH = 'meta/species_meta_v1.json';
-const CLOUD_UPDATED_AT_KEY = 'estbirding.speciesMeta.cloud.updatedAt';
-export const SPECIES_META_LAST_SYNC_AT_KEY = 'estbirding.speciesMeta.lastSyncAt';
-const CLOUD_LOADED_KEY = 'estbirding.speciesMeta.cloud.loaded';
-const LAST_SYNC_ERROR_KEY = 'estbirding.speciesMeta.lastSyncError';
+const FILE_PATH = LINNULIIGID_SCOPE.speciesMetaCloudFilePath;
+const CLOUD_UPDATED_AT_KEY = LINNULIIGID_SCOPE.speciesMetaCloudUpdatedAtKey;
+export const SPECIES_META_LAST_SYNC_AT_KEY = LINNULIIGID_SCOPE.speciesMetaLastSyncAtKey;
+const CLOUD_LOADED_KEY = LINNULIIGID_SCOPE.speciesMetaCloudLoadedKey;
+const LAST_SYNC_ERROR_KEY = LINNULIIGID_SCOPE.speciesMetaLastSyncErrorKey;
 
 export type SpeciesMetaCloudItem = {
   ebirdCode?: string;
@@ -31,22 +32,22 @@ export type SpeciesMetaSyncStatus = {
   lastSyncError: string;
 };
 
-function setLastSyncError(message: string): void {
-  localStorage.setItem(LAST_SYNC_ERROR_KEY, message);
+function setLastSyncError(message: string, scope: SpeciesScopeConfig): void {
+  localStorage.setItem(scope.speciesMetaLastSyncErrorKey, message);
 }
 
-function clearLastSyncError(): void {
-  localStorage.setItem(LAST_SYNC_ERROR_KEY, '');
+function clearLastSyncError(scope: SpeciesScopeConfig): void {
+  localStorage.setItem(scope.speciesMetaLastSyncErrorKey, '');
 }
 
-function validateCloudConfig(): void {
+function validateCloudConfig(scope: SpeciesScopeConfig): void {
   const initError = getSupabaseInitError();
   if (initError) throw new Error(initError);
 
   const validation = validateSupabaseConfig();
   if (!validation.ok) throw new Error(validation.error || 'Supabase seadistus puudub.');
 
-  if (!BUCKET || !FILE_PATH) {
+  if (!BUCKET || !scope.speciesMetaCloudFilePath) {
     throw new Error('Linnuliikide pilvesalvestuse bucket või failitee puudub.');
   }
 }
@@ -111,10 +112,10 @@ function mergeCloudOverLocal(localMap: Record<string, SpeciesMeta>, cloud: Speci
   return merged;
 }
 
-export async function downloadSpeciesMetaJson(): Promise<SpeciesMetaCloudJson | null> {
+export async function downloadSpeciesMetaJson(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): Promise<SpeciesMetaCloudJson | null> {
   try {
-    validateCloudConfig();
-    const { data, error } = await supabase.storage.from(BUCKET).download(FILE_PATH);
+    validateCloudConfig(scope);
+    const { data, error } = await supabase.storage.from(BUCKET).download(scope.speciesMetaCloudFilePath);
     if (error) {
       const message = extractErrorMessage(error);
       if (/not found|404|object not found/i.test(message)) return null;
@@ -123,62 +124,63 @@ export async function downloadSpeciesMetaJson(): Promise<SpeciesMetaCloudJson | 
     const text = await data.text();
     if (!text) return null;
     const parsed = JSON.parse(text) as Partial<SpeciesMetaCloudJson>;
-    localStorage.setItem(CLOUD_LOADED_KEY, '1');
-    clearLastSyncError();
+    localStorage.setItem(scope.speciesMetaCloudLoadedKey, '1');
+    clearLastSyncError(scope);
     return {
       version: 1,
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
       items: normalizeCloudItems(parsed.items),
     };
   } catch (error) {
-    localStorage.setItem(CLOUD_LOADED_KEY, '0');
-    setLastSyncError(extractErrorMessage(toActionableCloudError(error, 'Pilvest lugemine ebaõnnestus.')));
+    localStorage.setItem(scope.speciesMetaCloudLoadedKey, '0');
+    setLastSyncError(extractErrorMessage(toActionableCloudError(error, 'Pilvest lugemine ebaõnnestus.')), scope);
     return null;
   }
 }
 
-export async function uploadSpeciesMetaJson(payload: SpeciesMetaCloudJson): Promise<void> {
-  validateCloudConfig();
+export async function uploadSpeciesMetaJson(payload: SpeciesMetaCloudJson, scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): Promise<void> {
+  validateCloudConfig(scope);
   const body: SpeciesMetaCloudJson = {
     version: 1,
     updatedAt: payload.updatedAt || new Date().toISOString(),
     items: normalizeCloudItems(payload.items),
   };
   const blob = new Blob([JSON.stringify(body)], { type: 'application/json' });
-  const { error } = await supabase.storage.from(BUCKET).upload(FILE_PATH, blob, {
+  const { error } = await supabase.storage.from(BUCKET).upload(scope.speciesMetaCloudFilePath, blob, {
     contentType: 'application/json',
     cacheControl: '0',
     upsert: true,
   });
-  console.info('[species-meta-cloud] metadata save response', { path: FILE_PATH, error, updatedAt: body.updatedAt });
+  console.info('[species-meta-cloud] metadata save response', { path: scope.speciesMetaCloudFilePath, error, updatedAt: body.updatedAt });
   if (error) throw toActionableCloudError(error, 'Pilve salvestamine ebaõnnestus.');
 }
 
-export async function refreshSpeciesMetaFromCloud(options?: { force?: boolean }): Promise<{ updated: boolean; merged: Record<string, SpeciesMeta> }> {
+export async function refreshSpeciesMetaFromCloud(options?: { force?: boolean; scope?: SpeciesScopeConfig }): Promise<{ updated: boolean; merged: Record<string, SpeciesMeta> }> {
+  const scope = options?.scope || LINNULIIGID_SCOPE;
   const force = !!options?.force;
-  const local = loadSpeciesMeta();
-  console.info('[species-meta-cloud] refresh start', { force, bucket: BUCKET, path: FILE_PATH });
-  const cloud = await downloadSpeciesMetaJson();
+  const local = loadSpeciesMeta(scope);
+  console.info('[species-meta-cloud] refresh start', { force, bucket: BUCKET, path: scope.speciesMetaCloudFilePath });
+  const cloud = await downloadSpeciesMetaJson(scope);
   if (!cloud) {
-    localStorage.setItem(SPECIES_META_LAST_SYNC_AT_KEY, new Date().toISOString());
-    if (!localStorage.getItem(LAST_SYNC_ERROR_KEY)) {
-      setLastSyncError('Pilvest lugemine ebaõnnestus.');
+    localStorage.setItem(scope.speciesMetaLastSyncAtKey, new Date().toISOString());
+    if (!localStorage.getItem(scope.speciesMetaLastSyncErrorKey)) {
+      setLastSyncError('Pilvest lugemine ebaõnnestus.', scope);
     }
     console.warn('[species-meta-cloud] refresh skipped, cloud payload unavailable');
     return { updated: false, merged: local };
   }
 
-  const prevUpdatedAt = localStorage.getItem(CLOUD_UPDATED_AT_KEY) || '';
+  const prevUpdatedAt = localStorage.getItem(scope.speciesMetaCloudUpdatedAtKey) || '';
   if (!force && cloud.updatedAt && prevUpdatedAt && cloud.updatedAt === prevUpdatedAt) {
-    localStorage.setItem(SPECIES_META_LAST_SYNC_AT_KEY, new Date().toISOString());
+    localStorage.setItem(scope.speciesMetaLastSyncAtKey, new Date().toISOString());
     return { updated: false, merged: local };
   }
   const merged = mergeCloudOverLocal(local, cloud);
   const updated = Boolean(cloud.updatedAt && cloud.updatedAt !== prevUpdatedAt);
-  replaceSpeciesMeta(merged);
-  localStorage.setItem(CLOUD_UPDATED_AT_KEY, cloud.updatedAt || '');
-  localStorage.setItem(SPECIES_META_LAST_SYNC_AT_KEY, new Date().toISOString());
-  clearLastSyncError();
+  replaceSpeciesMeta(merged, scope);
+  localStorage.setItem(scope.speciesMetaCloudUpdatedAtKey, cloud.updatedAt || '');
+  localStorage.setItem(scope.speciesMetaLastSyncAtKey, new Date().toISOString());
+  clearLastSyncError(scope);
   console.info('[species-meta-cloud] refresh end', { updatedAt: cloud.updatedAt, updated });
 
   if (updated) {
@@ -187,23 +189,23 @@ export async function refreshSpeciesMetaFromCloud(options?: { force?: boolean })
   return { updated, merged };
 }
 
-export async function saveSpeciesMetaToCloud(speciesName: string, patch: Partial<SpeciesMeta>): Promise<Record<string, SpeciesMeta>> {
+export async function saveSpeciesMetaToCloud(speciesName: string, patch: Partial<SpeciesMeta>, scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): Promise<Record<string, SpeciesMeta>> {
   const key = normalizeSpeciesName(speciesName);
   if (!key) {
     const error = new Error('Liik on valimata.');
-    setLastSyncError(error.message);
+    setLastSyncError(error.message, scope);
     throw error;
   }
 
-  validateCloudConfig();
+  validateCloudConfig(scope);
   console.info('[species-meta-cloud] metadata save start', {
     species: key,
     patch,
     bucket: BUCKET,
-    path: FILE_PATH,
+    path: scope.speciesMetaCloudFilePath,
   });
 
-  const latest = (await downloadSpeciesMetaJson()) || { version: 1 as const, updatedAt: new Date().toISOString(), items: {} };
+  const latest = (await downloadSpeciesMetaJson(scope)) || { version: 1 as const, updatedAt: new Date().toISOString(), items: {} };
   const nextItems = { ...latest.items };
   const prev = nextItems[key] || {};
   nextItems[key] = {
@@ -218,12 +220,12 @@ export async function saveSpeciesMetaToCloud(speciesName: string, patch: Partial
   };
 
   try {
-    await uploadSpeciesMetaJson(nextPayload);
-    const merged = mergeCloudOverLocal(loadSpeciesMeta(), nextPayload);
-    replaceSpeciesMeta(merged);
-    localStorage.setItem(CLOUD_UPDATED_AT_KEY, nextPayload.updatedAt || '');
-    localStorage.setItem(SPECIES_META_LAST_SYNC_AT_KEY, new Date().toISOString());
-    clearLastSyncError();
+    await uploadSpeciesMetaJson(nextPayload, scope);
+    const merged = mergeCloudOverLocal(loadSpeciesMeta(scope), nextPayload);
+    replaceSpeciesMeta(merged, scope);
+    localStorage.setItem(scope.speciesMetaCloudUpdatedAtKey, nextPayload.updatedAt || '');
+    localStorage.setItem(scope.speciesMetaLastSyncAtKey, new Date().toISOString());
+    clearLastSyncError(scope);
     console.info('[species-meta-cloud] metadata save end', {
       species: key,
       updatedAt: nextPayload.updatedAt,
@@ -233,7 +235,7 @@ export async function saveSpeciesMetaToCloud(speciesName: string, patch: Partial
     return merged;
   } catch (error) {
     const actionableError = toActionableCloudError(error, 'Pilve salvestamine ebaõnnestus.');
-    setLastSyncError(actionableError.message);
+    setLastSyncError(actionableError.message, scope);
     console.error('[species-meta-cloud] metadata save error', {
       species: key,
       patch,
@@ -244,12 +246,14 @@ export async function saveSpeciesMetaToCloud(speciesName: string, patch: Partial
   }
 }
 
-export function getSpeciesMetaSyncStatus(): SpeciesMetaSyncStatus {
+export function getSpeciesMetaSyncStatus(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): SpeciesMetaSyncStatus {
   return {
-    cloudLoaded: localStorage.getItem(CLOUD_LOADED_KEY) === '1',
-    cloudUpdatedAt: localStorage.getItem(CLOUD_UPDATED_AT_KEY) || '',
-    localUpdatedAt: localStorage.getItem(SPECIES_META_LOCAL_UPDATED_AT_KEY) || '',
-    lastSyncAt: localStorage.getItem(SPECIES_META_LAST_SYNC_AT_KEY) || '',
-    lastSyncError: localStorage.getItem(LAST_SYNC_ERROR_KEY) || '',
+    cloudLoaded: localStorage.getItem(scope.speciesMetaCloudLoadedKey || CLOUD_LOADED_KEY) === '1',
+    cloudUpdatedAt: localStorage.getItem(scope.speciesMetaCloudUpdatedAtKey || CLOUD_UPDATED_AT_KEY) || '',
+    localUpdatedAt: localStorage.getItem(scope.speciesMetaLocalUpdatedAtKey || SPECIES_META_LOCAL_UPDATED_AT_KEY) || '',
+    lastSyncAt: localStorage.getItem(scope.speciesMetaLastSyncAtKey || SPECIES_META_LAST_SYNC_AT_KEY) || '',
+    lastSyncError: localStorage.getItem(scope.speciesMetaLastSyncErrorKey || LAST_SYNC_ERROR_KEY) || '',
   };
 }
+
+export { FILE_PATH, CLOUD_UPDATED_AT_KEY, CLOUD_LOADED_KEY, LAST_SYNC_ERROR_KEY };

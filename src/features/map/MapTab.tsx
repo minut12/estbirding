@@ -7,6 +7,7 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { APP_VERSION } from '@/lib/version';
 import { fetchSharedAvatars, getMergedAvatars, notifyIframe } from '@/lib/avatar-storage';
+import { LINNULIIGID_SCOPE, RARILIIN_SCOPE } from '@/lib/mapScope';
 import { resolveProxyBase } from '@/config/proxyEndpoint';
 import { loadSpeciesMeta } from '@/lib/speciesMeta';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
@@ -20,6 +21,7 @@ const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const MAP_ID_TO_SCOPE: Record<string, MapScope> = {
   'linnuliigid-ee': 'ee_map',
   'europe': 'europe_map',
+  'rariliin': 'rariliin_map',
 };
 
 interface MapTabProps {
@@ -30,17 +32,13 @@ interface MapTabProps {
 export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   const { user, isAdmin, hasPermission } = useAuth();
   const availableMaps = useMemo(() => (
-    maps.filter((map) => {
-      if (isAdmin) return true;
-      if (map.id === 'linnuliigid-ee') return hasPermission(PERMISSIONS.mapViewEe);
-      if (map.id === 'europe') return hasPermission(PERMISSIONS.mapViewEurope);
-      return false;
-    })
+    maps.filter((map) => isAdmin || hasPermission(map.permissionKey))
   ), [hasPermission, isAdmin]);
   const [selectedId, setSelectedId] = useState(getActiveMap().id);
   const fallbackMap = availableMaps[0] ?? getActiveMap();
   const current = availableMaps.find((m) => m.id === selectedId) ?? fallbackMap;
   const mapScope = MAP_ID_TO_SCOPE[current.id] as MapScope | undefined;
+  const speciesScope = current.id === 'rariliin' ? RARILIIN_SCOPE : LINNULIIGID_SCOPE;
   const canEditKevadranne = isAdmin || hasPermission(PERMISSIONS.kevadranneEdit);
   const iframeSrc = useMemo(() => {
     const proxyBase = resolveProxyBase();
@@ -99,12 +97,12 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
 
   // Send shared avatars to iframe
   const sendAvatarsToIframe = useCallback(() => {
-    const avatars = getMergedAvatars();
-    notifyIframe(avatars);
-  }, []);
+    const avatars = getMergedAvatars(speciesScope);
+    notifyIframe(avatars, speciesScope);
+  }, [speciesScope]);
   const sendSpeciesMetaToIframe = useCallback(() => {
-    sendToIframe({ type: 'SPECIES_META_DEFAULTS', speciesMeta: loadSpeciesMeta() });
-  }, [sendToIframe]);
+    sendToIframe({ type: 'SPECIES_META_DEFAULTS', speciesMeta: loadSpeciesMeta(speciesScope) });
+  }, [sendToIframe, speciesScope]);
   const sendSupabaseConfigToIframe = useCallback(() => {
     const validation = validateSupabaseConfig();
     if (validation.ok) {
@@ -163,16 +161,16 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   // Fetch shared avatars on mount, cache locally, then send to iframe
   useEffect(() => {
     const t0 = setTimeout(sendAvatarsToIframe, 600);
-    fetchSharedAvatars().then(() => {
+    fetchSharedAvatars(speciesScope).then(() => {
       sendAvatarsToIframe();
     });
-    refreshSpeciesMetaFromCloud({ force: true })
+    refreshSpeciesMetaFromCloud({ force: true, scope: speciesScope })
       .then(() => sendSpeciesMetaToIframe())
       .catch(() => {
         sendSpeciesMetaToIframe();
       });
     return () => clearTimeout(t0);
-  }, [sendAvatarsToIframe, sendSpeciesMetaToIframe]);
+  }, [sendAvatarsToIframe, sendSpeciesMetaToIframe, speciesScope]);
 
   // Listen for AVATARS_REQUEST and INSETS_REQUEST from iframe
   useEffect(() => {
@@ -319,10 +317,10 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
 
   useEffect(() => {
     const id = window.setInterval(() => {
-      refreshSpeciesMetaFromCloud().catch(() => {});
+      refreshSpeciesMetaFromCloud({ scope: speciesScope }).catch(() => {});
     }, 60000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [speciesScope]);
 
   const handleError = () => {
     setError('Võrguühenduse viga või ressurss puudub');

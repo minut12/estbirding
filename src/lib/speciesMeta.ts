@@ -1,7 +1,8 @@
 import { normalizeSpeciesName, normalizeUiText } from "@/lib/textNormalize";
-export const SPECIES_META_KEY = "estbirding.speciesMeta.v1";
-const SPECIES_META_MIGRATED_KEY = "estbirding.speciesMeta.migrated.v1";
-export const SPECIES_META_LOCAL_UPDATED_AT_KEY = "estbirding.speciesMeta.local.updatedAt";
+import { LINNULIIGID_SCOPE, type SpeciesScopeConfig } from "@/lib/mapScope";
+export const SPECIES_META_KEY = LINNULIIGID_SCOPE.speciesMetaStorageKey;
+const SPECIES_META_MIGRATED_KEY = LINNULIIGID_SCOPE.speciesMetaMigratedKey;
+export const SPECIES_META_LOCAL_UPDATED_AT_KEY = LINNULIIGID_SCOPE.speciesMetaLocalUpdatedAtKey;
 
 export type SpeciesMeta = {
   name: string;
@@ -56,9 +57,10 @@ function mergeIn(map: SpeciesMetaMap, name: string, partial: Partial<SpeciesMeta
   map[key] = sanitizeMeta(key, { ...prev, ...partial });
 }
 
-function migrateLegacyIfNeeded(current: SpeciesMetaMap): SpeciesMetaMap {
+function migrateLegacyIfNeeded(current: SpeciesMetaMap, scope: SpeciesScopeConfig): SpeciesMetaMap {
   if (typeof window === "undefined" || typeof localStorage === "undefined") return current;
-  if (localStorage.getItem(SPECIES_META_MIGRATED_KEY) === "1") return current;
+  if (localStorage.getItem(scope.speciesMetaMigratedKey) === "1") return current;
+  if (scope.id !== "linnuliigid") return current;
 
   const next: SpeciesMetaMap = { ...current };
 
@@ -93,49 +95,49 @@ function migrateLegacyIfNeeded(current: SpeciesMetaMap): SpeciesMetaMap {
     mergeIn(next, name, { rarityLevel });
   }
 
-  localStorage.setItem(SPECIES_META_MIGRATED_KEY, "1");
+  localStorage.setItem(scope.speciesMetaMigratedKey, "1");
   return next;
 }
 
-export function saveSpeciesMeta(map: SpeciesMetaMap): void {
+export function saveSpeciesMeta(map: SpeciesMetaMap, scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): void {
   if (typeof window === "undefined" || typeof localStorage === "undefined") return;
   const out: SpeciesMetaMap = {};
   Object.entries(map || {}).forEach(([name, meta]) => {
     out[name] = sanitizeMeta(name, meta);
   });
-  localStorage.setItem(SPECIES_META_KEY, JSON.stringify(out));
-  localStorage.setItem(SPECIES_META_LOCAL_UPDATED_AT_KEY, new Date().toISOString());
+  localStorage.setItem(scope.speciesMetaStorageKey, JSON.stringify(out));
+  localStorage.setItem(scope.speciesMetaLocalUpdatedAtKey, new Date().toISOString());
 }
 
-export function loadSpeciesMeta(): SpeciesMetaMap {
+export function loadSpeciesMeta(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): SpeciesMetaMap {
   if (typeof window === "undefined" || typeof localStorage === "undefined") return {};
-  const raw = safeParseRecord(localStorage.getItem(SPECIES_META_KEY));
+  const raw = safeParseRecord(localStorage.getItem(scope.speciesMetaStorageKey));
   const cleaned: SpeciesMetaMap = {};
   Object.entries(raw).forEach(([name, meta]) => {
     const key = normalizeSpeciesName(name);
     if (!key) return;
     cleaned[key] = sanitizeMeta(key, meta);
   });
-  const migrated = migrateLegacyIfNeeded(cleaned);
-  saveSpeciesMeta(migrated);
+  const migrated = migrateLegacyIfNeeded(cleaned, scope);
+  saveSpeciesMeta(migrated, scope);
   return migrated;
 }
 
-export function getSpeciesMeta(name: string): SpeciesMeta {
-  const map = loadSpeciesMeta();
+export function getSpeciesMeta(name: string, scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): SpeciesMeta {
+  const map = loadSpeciesMeta(scope);
   const key = normalizeSpeciesName(name);
   return map[key] ?? { name: key };
 }
 
-export function upsertSpeciesMeta(name: string, partial: Partial<SpeciesMeta>): void {
+export function upsertSpeciesMeta(name: string, partial: Partial<SpeciesMeta>, scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): void {
   const key = normalizeSpeciesName(name);
   if (!key) return;
-  const map = loadSpeciesMeta();
+  const map = loadSpeciesMeta(scope);
   const prev = map[key] ?? { name: key };
   map[key] = sanitizeMeta(key, { ...prev, ...partial, name: key });
-  saveSpeciesMeta(map);
+  saveSpeciesMeta(map, scope);
 }
 
-export function replaceSpeciesMeta(map: SpeciesMetaMap): void {
-  saveSpeciesMeta(map);
+export function replaceSpeciesMeta(map: SpeciesMetaMap, scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): void {
+  saveSpeciesMeta(map, scope);
 }

@@ -9,6 +9,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { Upload, Trash2, Bird, RefreshCw, Check, Cloud, Loader2 } from 'lucide-react';
+import { LINNULIIGID_SCOPE, type SpeciesScopeConfig } from '@/lib/mapScope';
 import {
   getMergedAvatars, validateFile, processImage, notifyIframeUpdate,
   uploadSharedAvatar, removeSharedAvatar, fetchSpeciesList,
@@ -23,9 +24,14 @@ import {
 import { ET_STRINGS } from '@/lib/etStrings';
 import { normalizeUiText } from '@/lib/textNormalize';
 
-const PLACEHOLDER_URL = '/maps/linnuliigid/avatars/placeholder.webp';
+type ScopeSpeciesMeta = {
+  estonianName: string;
+  scientificName?: string;
+  rariliinCode?: string;
+  notificationNote?: string;
+};
 
-export default function AvatarManager() {
+export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: SpeciesScopeConfig }) {
   const [species, setSpecies] = useState<string[]>([]);
   const [selected, setSelected] = useState<string>('');
   const [search, setSearch] = useState('');
@@ -37,22 +43,40 @@ export default function AvatarManager() {
   const [ebirdCode, setEbirdCode] = useState('');
   const [rarityLevel, setRarityLevel] = useState<'none' | 'rare' | 'super' | 'mega'>('none');
   const [syncing, setSyncing] = useState(false);
-  const [lastSyncAt, setLastSyncAt] = useState<string>(() => localStorage.getItem(SPECIES_META_LAST_SYNC_AT_KEY) || '');
-  const [syncStatus, setSyncStatus] = useState(() => getSpeciesMetaSyncStatus());
+  const [lastSyncAt, setLastSyncAt] = useState<string>(() => localStorage.getItem(scope.speciesMetaLastSyncAtKey || SPECIES_META_LAST_SYNC_AT_KEY) || '');
+  const [syncStatus, setSyncStatus] = useState(() => getSpeciesMetaSyncStatus(scope));
+  const [scopeMetadata, setScopeMetadata] = useState<Record<string, ScopeSpeciesMeta>>({});
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    loadSpeciesMeta();
-    refreshSpeciesMetaFromCloud({ force: true }).catch(() => {});
-    setSyncStatus(getSpeciesMetaSyncStatus());
-    fetchSpeciesList().then((list) => { if (list.length > 0) setSpecies(list.map(normalizeUiText)); });
-  }, []);
+    loadSpeciesMeta(scope);
+    refreshSpeciesMetaFromCloud({ force: true, scope }).catch(() => {});
+    setSyncStatus(getSpeciesMetaSyncStatus(scope));
+    fetchSpeciesList(scope).then((list) => { if (list.length > 0) setSpecies(list.map(normalizeUiText)); });
+    if (scope.speciesMetaAssetPath) {
+      fetch(scope.speciesMetaAssetPath)
+        .then((res) => res.ok ? res.json() : {})
+        .then((items) => {
+          const next: Record<string, ScopeSpeciesMeta> = {};
+          if (Array.isArray(items)) {
+            items.forEach((item) => {
+              const key = normalizeUiText(String(item?.estonianName || ''));
+              if (key) next[key] = item;
+            });
+          }
+          setScopeMetadata(next);
+        })
+        .catch(() => {});
+    } else {
+      setScopeMetadata({});
+    }
+  }, [scope]);
 
   useEffect(() => {
-    const onMetaUpdated = () => setSyncStatus(getSpeciesMetaSyncStatus());
+    const onMetaUpdated = () => setSyncStatus(getSpeciesMetaSyncStatus(scope));
     window.addEventListener('species-meta-updated', onMetaUpdated as EventListener);
     return () => window.removeEventListener('species-meta-updated', onMetaUpdated as EventListener);
-  }, []);
+  }, [scope]);
 
   useEffect(() => {
     if (!selected) {
@@ -62,13 +86,13 @@ export default function AvatarManager() {
       setRarityLevel('none');
       return;
     }
-    const avatars = getMergedAvatars();
-    const meta = getSpeciesMeta(selected);
+    const avatars = getMergedAvatars(scope);
+    const meta = getSpeciesMeta(selected, scope);
     setCurrentAvatar(meta.avatarUrl || avatars[selected] || null);
     setEbirdCode(meta.ebirdCode || '');
     setRarityLevel(meta.rarityLevel || 'none');
     setPreview(null);
-  }, [selected]);
+  }, [scope, selected]);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -105,21 +129,21 @@ export default function AvatarManager() {
         rarityLevel,
       } as const;
       console.info('[avatar-manager] avatar upload start', { species: selected });
-      const publicUrl = await uploadSharedAvatar(selected, preview);
+      const publicUrl = await uploadSharedAvatar(selected, preview, scope);
       console.info('[avatar-manager] avatar upload end', { species: selected, publicUrl });
       console.info('[avatar-manager] metadata save start', { species: selected, patch: { ...patch, avatarUrl: publicUrl } });
-      const merged = await saveSpeciesMetaToCloud(selected, { ...patch, avatarUrl: publicUrl });
+      const merged = await saveSpeciesMetaToCloud(selected, { ...patch, avatarUrl: publicUrl }, scope);
       console.info('[avatar-manager] metadata save end', { species: selected, saved: Boolean(merged[selected]) });
       setCurrentAvatar(publicUrl);
       setPreview(null);
-      upsertSpeciesMeta(selected, { ...patch, avatarUrl: publicUrl });
-      notifyIframeUpdate('update', selected, publicUrl);
-      setLastSyncAt(localStorage.getItem(SPECIES_META_LAST_SYNC_AT_KEY) || '');
-      setSyncStatus(getSpeciesMetaSyncStatus());
+      upsertSpeciesMeta(selected, { ...patch, avatarUrl: publicUrl }, scope);
+      notifyIframeUpdate('update', selected, publicUrl, scope);
+      setLastSyncAt(localStorage.getItem(scope.speciesMetaLastSyncAtKey || SPECIES_META_LAST_SYNC_AT_KEY) || '');
+      setSyncStatus(getSpeciesMetaSyncStatus(scope));
       toast.success('Liigi seaded salvestati pilve.');
     } catch (ex: any) {
       console.error('[avatar-manager] save error', { species: selected, error: ex });
-      setSyncStatus(getSpeciesMetaSyncStatus());
+      setSyncStatus(getSpeciesMetaSyncStatus(scope));
       const message = String(ex?.message || '');
       if (/eelvaade|avatar/i.test(message)) toast.error(message || 'Avatari üleslaadimine ebaõnnestus.');
       else if (/võrguühendus|network/i.test(message)) toast.error(message || 'Võrguühendus ebaõnnestus.');
@@ -127,28 +151,28 @@ export default function AvatarManager() {
     } finally {
       setSaving(false);
     }
-  }, [saving, selected, preview, ebirdCode, rarityLevel]);
+  }, [saving, scope, selected, preview, ebirdCode, rarityLevel]);
 
   const handleRemove = useCallback(async () => {
     if (!selected) return;
     setSaving(true);
     try {
-      await removeSharedAvatar(selected);
+      await removeSharedAvatar(selected, scope);
       setCurrentAvatar(null);
       setPreview(null);
-      upsertSpeciesMeta(selected, { avatarUrl: '' });
-      notifyIframeUpdate('reset', selected);
+      upsertSpeciesMeta(selected, { avatarUrl: '' }, scope);
+      notifyIframeUpdate('reset', selected, undefined, scope);
       toast.success('Avatar eemaldatud');
     } catch (ex: any) {
       toast.error(ex?.message || 'Eemaldamine ebaõnnestus');
     } finally {
       setSaving(false);
     }
-  }, [selected]);
+  }, [scope, selected]);
 
   const handleRefreshMap = useCallback(() => {
     try {
-      const iframe = document.querySelector('iframe[src*="linnuliigid"]') as HTMLIFrameElement | null;
+      const iframe = document.querySelector(`iframe[src*="${scope.mapPath.replace('/index.html', '')}"]`) as HTMLIFrameElement | null;
       if (iframe) {
         const src = iframe.src;
         const base = src.replace(/[?&]v=[^&]*/, '');
@@ -158,7 +182,7 @@ export default function AvatarManager() {
     } catch {
       toast.error('Kaardi värskendamine ebaõnnestus');
     }
-  }, []);
+  }, [scope]);
 
   const handleMetaSave = useCallback(() => {
     if (saving) return;
@@ -172,20 +196,20 @@ export default function AvatarManager() {
       rarityLevel,
       avatarUrl: currentAvatar || undefined,
     };
-    upsertSpeciesMeta(selected, patch);
+    upsertSpeciesMeta(selected, patch, scope);
     window.dispatchEvent(new CustomEvent('species-meta-updated'));
     console.info('[avatar-manager] metadata-only save start', { species: selected, patch });
-    saveSpeciesMetaToCloud(selected, patch)
+    saveSpeciesMetaToCloud(selected, patch, scope)
       .then(async () => {
-        await refreshSpeciesMetaFromCloud({ force: true }).catch(() => {});
-        setLastSyncAt(localStorage.getItem(SPECIES_META_LAST_SYNC_AT_KEY) || '');
-        setSyncStatus(getSpeciesMetaSyncStatus());
+        await refreshSpeciesMetaFromCloud({ force: true, scope }).catch(() => {});
+        setLastSyncAt(localStorage.getItem(scope.speciesMetaLastSyncAtKey || SPECIES_META_LAST_SYNC_AT_KEY) || '');
+        setSyncStatus(getSpeciesMetaSyncStatus(scope));
         console.info('[avatar-manager] metadata-only save end', { species: selected });
         toast.success('Liigi seaded salvestati pilve.');
       })
       .catch((error) => {
         console.error('[avatar-manager] metadata-only save error', { species: selected, error });
-        setSyncStatus(getSpeciesMetaSyncStatus());
+        setSyncStatus(getSpeciesMetaSyncStatus(scope));
         const message = String(error?.message || '');
         if (/võrguühendus|network/i.test(message)) toast.error(message || 'Võrguühendus ebaõnnestus.');
         else toast.error(message || 'Liigi metaandmete salvestamine ebaõnnestus.');
@@ -193,22 +217,22 @@ export default function AvatarManager() {
       .finally(() => {
         setSaving(false);
       });
-  }, [saving, selected, ebirdCode, rarityLevel, currentAvatar]);
+  }, [saving, scope, selected, ebirdCode, rarityLevel, currentAvatar]);
 
   const handleSyncNow = useCallback(async () => {
     setSyncing(true);
     try {
-      await refreshSpeciesMetaFromCloud({ force: true });
-      setLastSyncAt(localStorage.getItem(SPECIES_META_LAST_SYNC_AT_KEY) || '');
-      setSyncStatus(getSpeciesMetaSyncStatus());
+      await refreshSpeciesMetaFromCloud({ force: true, scope });
+      setLastSyncAt(localStorage.getItem(scope.speciesMetaLastSyncAtKey || SPECIES_META_LAST_SYNC_AT_KEY) || '');
+      setSyncStatus(getSpeciesMetaSyncStatus(scope));
       toast.success('Sünkroonitud');
     } catch {
       toast.warning('Sünkroon ebaõnnestus (kasutan lokaalseid seadeid)');
-      setSyncStatus(getSpeciesMetaSyncStatus());
+      setSyncStatus(getSpeciesMetaSyncStatus(scope));
     } finally {
       setSyncing(false);
     }
-  }, []);
+  }, [scope]);
 
   const formatLastSync = useCallback((iso: string) => {
     if (!iso) return '-';
@@ -226,8 +250,9 @@ export default function AvatarManager() {
   }, []);
 
   const activeKey = selected || manualKey;
-  const displayUrl = preview || currentAvatar || PLACEHOLDER_URL;
+  const displayUrl = preview || currentAvatar || scope.placeholderAvatarUrl;
   const hasSpecies = species.length > 0;
+  const selectedScopeMeta = selected ? scopeMetadata[selected] : null;
 
   const filtered = search
     ? species.filter((s) => normalizeUiText(s).toLowerCase().includes(search.toLowerCase()))
@@ -237,7 +262,7 @@ export default function AvatarManager() {
     <div className="space-y-4">
       <h3 className="font-semibold text-foreground flex items-center gap-2">
         <Cloud className="w-4 h-4 text-primary" />
-        {ET_STRINGS.speciesSettings}
+        {scope.displayName} {ET_STRINGS.speciesSettings.toLowerCase()}
       </h3>
       <p className="text-xs text-muted-foreground">{ET_STRINGS.sharedManaged}</p>
 
@@ -292,6 +317,13 @@ export default function AvatarManager() {
           </div>
 
           <div className="space-y-2">
+            {selectedScopeMeta && (
+              <div className="rounded-md border border-border bg-muted/20 p-3 text-xs space-y-1">
+                {selectedScopeMeta.scientificName && <div>Teaduslik nimi: {selectedScopeMeta.scientificName}</div>}
+                {selectedScopeMeta.rariliinCode && <div>3+3 kood: {selectedScopeMeta.rariliinCode}</div>}
+                {selectedScopeMeta.notificationNote && <div>Teate märkus: {selectedScopeMeta.notificationNote}</div>}
+              </div>
+            )}
             <Label htmlFor="ebirdCode">eBird speciesCode</Label>
             <Input
               id="ebirdCode"

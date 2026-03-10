@@ -4,6 +4,7 @@ export const PERMISSIONS = {
   eventsView: "events.view",
   mapViewEe: "maps.view.ee",
   mapViewEurope: "maps.view.eu",
+  mapViewRariliin: "maps.view.rariliin",
   settingsManage: "settings.manage",
   settingsLinksAdmin: "settings.links.admin",
   kevadranneEdit: "kevadranne.edit",

@@ -1,0 +1,998 @@
+[
+  {
+    "estonianName": "Väike-lumehani",
+    "scientificName": "Anser rossii",
+    "rariliinCode": "ANSROS",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Väike-laukhani",
+    "scientificName": "Anser erythropus",
+    "rariliinCode": "ANSERY",
+    "notificationNote": "kõik teated (NB! Täpset kohta ei avalikustata, teatakse ainult valla täpsusega)"
+  },
+  {
+    "estonianName": "Tulipart",
+    "scientificName": "Tadorna ferruginea",
+    "rariliinCode": "TADFER",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kuninghahk",
+    "scientificName": "Somateria spectabilis",
+    "rariliinCode": "SOMSPE",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Ida-mustvaeras",
+    "scientificName": "Melanitta americana",
+    "rariliinCode": "MELAME",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Prillvaeras",
+    "scientificName": "Melanitta perspicillata",
+    "rariliinCode": "MELPER",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Siberi tõmmuvaeras",
+    "scientificName": "Melanitta stejnegeri",
+    "rariliinCode": "MELSTE",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Punanokk-vart",
+    "scientificName": "Netta rufina",
+    "rariliinCode": "NETRUF",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Valgesilm-vart",
+    "scientificName": "Aythya nyroca",
+    "rariliinCode": "AYTNYR",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Lannuvart",
+    "scientificName": "Aythya collaris",
+    "rariliinCode": "AYTCOL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Sini-rägapart",
+    "scientificName": "Spatula discors",
+    "rariliinCode": "SPADIS",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Ameerika viupart",
+    "scientificName": "Mareca americana",
+    "rariliinCode": "MARAME",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Mustkael-pütt",
+    "scientificName": "Podiceps nigricollis",
+    "rariliinCode": "PODNIG",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Suurtrapp",
+    "scientificName": "Otis tarda",
+    "rariliinCode": "OTITAR",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Väiketrapp",
+    "scientificName": "Tetrax tetrax",
+    "rariliinCode": "TETTET",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Stepivuril",
+    "scientificName": "Syrrhaptes paradoxus",
+    "rariliinCode": "SYRPAR",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Suur-turteltuvi",
+    "scientificName": "Streptopelia orientalis",
+    "rariliinCode": "STRORI",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kanada kurg",
+    "scientificName": "Antigone canadensis",
+    "rariliinCode": "ANTCAN",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Neitsikurg",
+    "scientificName": "Grus virgo",
+    "rariliinCode": "GRUVIR",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Väikehuik",
+    "scientificName": "Zapornia parva",
+    "rariliinCode": "ZAPPAR",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Värbhuik",
+    "scientificName": "Zapornia pusilla",
+    "rariliinCode": "ZAPPUS",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Jämejalg",
+    "scientificName": "Burhinus oedicnemus",
+    "rariliinCode": "BUROED",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Karkjalg",
+    "scientificName": "Himantopus himantopus",
+    "rariliinCode": "HIMHIM",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Tundrarüüt",
+    "scientificName": "Pluvialis fulva",
+    "rariliinCode": "PLUFUL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Roosterind-tüll",
+    "scientificName": "Eudromias morinellus",
+    "rariliinCode": "EUDMOR",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Stepikiivitaja",
+    "scientificName": "Vanellus gregarius",
+    "rariliinCode": "VANGRE",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Valgesaba-kiivitaja",
+    "scientificName": "Vanellus leucurus",
+    "rariliinCode": "VANLEU",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kõrbetüll",
+    "scientificName": "Anarhynchus leschenaultii",
+    "rariliinCode": "ANALES",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Mustjalg-tüll",
+    "scientificName": "Anarhynchus alexandrinus",
+    "rariliinCode": "ANAALE",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Tundra-neppvigle",
+    "scientificName": "Limnodromus scolopaceus",
+    "rariliinCode": "LIMSCO",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Hallkibu",
+    "scientificName": "Xenus cinereus",
+    "rariliinCode": "XENCIN",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Ameerika vihitaja",
+    "scientificName": "Actitis macularius",
+    "rariliinCode": "ACTMAC",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Suur-veetallaja",
+    "scientificName": "Phalaropus tricolor",
+    "rariliinCode": "PHATRI",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Puna-veetallaja",
+    "scientificName": "Phalaropus fulicarius",
+    "rariliinCode": "PHAFUL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Älverüdi",
+    "scientificName": "Calidris acuminata",
+    "rariliinCode": "CALACU",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Pikkjalg-rüdi",
+    "scientificName": "Calidris himantopus",
+    "rariliinCode": "CALHIM",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Ruugerüdi",
+    "scientificName": "Calidris subruficollis",
+    "rariliinCode": "CALSRU",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kiripugu-rüdi",
+    "scientificName": "Calidris melanotos",
+    "rariliinCode": "CALMEL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Hallrüdi",
+    "scientificName": "Calidris pusilla",
+    "rariliinCode": "CALPUS",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Stepi-pääsujooksur",
+    "scientificName": "Glareola nordmanni",
+    "rariliinCode": "GLANOR",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kõnnu-pääsujooksur",
+    "scientificName": "Glareola pratincola",
+    "rariliinCode": "GLAPRA",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Pikksaba-änn",
+    "scientificName": "Stercorarius longicaudus",
+    "rariliinCode": "STELON",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Laisaba-änn",
+    "scientificName": "Stercorarius pomarinus",
+    "rariliinCode": "STEPOM",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Suuränn",
+    "scientificName": "Stercorarius skua",
+    "rariliinCode": "STESKU",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Väikealk",
+    "scientificName": "Alle alle",
+    "rariliinCode": "ALLALL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Naerutiir",
+    "scientificName": "Gelochelidon nilotica",
+    "rariliinCode": "GELNIL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Habeviires",
+    "scientificName": "Chlidonias hybrida",
+    "rariliinCode": "CHLHYB",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Valgetiib-viires",
+    "scientificName": "Chlidonias leucopterus",
+    "rariliinCode": "CHLLEU",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Roosakajakas",
+    "scientificName": "Rhodostethia rosea",
+    "rariliinCode": "RHOROS",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kaljukajakas",
+    "scientificName": "Rissa tridactyla",
+    "rariliinCode": "RISTRI",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Harksaba-kajakas",
+    "scientificName": "Xema sabini",
+    "rariliinCode": "XEMSAB",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Vandelkajakas",
+    "scientificName": "Pagophila eburnea",
+    "rariliinCode": "PAGEBU",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Karbuskajakas",
+    "scientificName": "Ichthyaetus melanocephalus",
+    "rariliinCode": "ICHMEL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Lõuna-hõbekajakas",
+    "scientificName": "Larus michahellis",
+    "rariliinCode": "LARMIC",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Jääkajakas",
+    "scientificName": "Larus hyperboreus",
+    "rariliinCode": "LARHYP",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Ohhoota hõbekajakas",
+    "scientificName": "Larus schistisagus",
+    "rariliinCode": "LARSCH",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Polaarkajakas",
+    "scientificName": "Larus glaucoides",
+    "rariliinCode": "LARGLA",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Jääkaur",
+    "scientificName": "Gavia immer",
+    "rariliinCode": "GAVIMM",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Tundrakaur",
+    "scientificName": "Gavia adamsii",
+    "rariliinCode": "GAVADA",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Põhja-tormipääsu",
+    "scientificName": "Hydrobates leucorhous",
+    "rariliinCode": "HYDLEU",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Peegel-tormilind",
+    "scientificName": "Ardenna grisea",
+    "rariliinCode": "ARDGRI",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Põhja-tormilind",
+    "scientificName": "Puffinus puffinus",
+    "rariliinCode": "PUFPUF",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Vahemere tormilind",
+    "scientificName": "Puffinus yelkouan",
+    "rariliinCode": "PUFYEL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Suula",
+    "scientificName": "Morus bassanus",
+    "rariliinCode": "MORBAS",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Tõmmuiibis",
+    "scientificName": "Plegadis falcinellus",
+    "rariliinCode": "PLEFAL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Luitsnokk-iibis",
+    "scientificName": "Platalea leucorodia",
+    "rariliinCode": "PLALEU",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Pelikan",
+    "scientificName": "Pelecanus onocrotalus",
+    "rariliinCode": "PELONO",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Väikehüüp",
+    "scientificName": "Botaurus minutus",
+    "rariliinCode": "BOTMIN",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Siidhaigur",
+    "scientificName": "Egretta garzetta",
+    "rariliinCode": "EGRGAR",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Ööhaigur",
+    "scientificName": "Nycticorax nycticorax",
+    "rariliinCode": "NYCNYC",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Veisehaigur",
+    "scientificName": "Ardea ibis",
+    "rariliinCode": "ARDIBI",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Purpurhaigur",
+    "scientificName": "Ardea purpurea",
+    "rariliinCode": "ARDPUR",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Suurpiiritaja",
+    "scientificName": "Tachymarptis melba",
+    "rariliinCode": "TACMEL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Randpiiritaja",
+    "scientificName": "Apus pallidus",
+    "rariliinCode": "APUPAL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Loorkakk",
+    "scientificName": "Tyto alba",
+    "rariliinCode": "TYTALB",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kivikakk",
+    "scientificName": "Athene noctua",
+    "rariliinCode": "ATHNOC",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Vöötkakk",
+    "scientificName": "Surnia ulula",
+    "rariliinCode": "SURULU",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Lumekakk",
+    "scientificName": "Bubo scandiacus",
+    "rariliinCode": "BUBSCA",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Hõbehaugas",
+    "scientificName": "Elanus caeruleus",
+    "rariliinCode": "ELACAE",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Raipekotkas",
+    "scientificName": "Neophron percnopterus",
+    "rariliinCode": "NEOPER",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Raisakotkas",
+    "scientificName": "Aegypius monachus",
+    "rariliinCode": "AEGMON",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kumai-kaeluskotkas",
+    "scientificName": "Gyps himalayensis",
+    "rariliinCode": "GYPHIM",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kaeluskotkas",
+    "scientificName": "Gyps fulvus",
+    "rariliinCode": "GYPFUL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Madukotkas",
+    "scientificName": "Circaetus gallicus",
+    "rariliinCode": "CIRGAL",
+    "notificationNote": "kõik teated (v.a territoriaalsed linnud)"
+  },
+  {
+    "estonianName": "Kääbuskotkas",
+    "scientificName": "Hieraaetus pennatus",
+    "rariliinCode": "HIEPEN",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Stepikotkas",
+    "scientificName": "Aquila nipalensis",
+    "rariliinCode": "AQUNIP",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kääpakotkas",
+    "scientificName": "Aquila heliaca",
+    "rariliinCode": "AQUHEL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Stepi-loorkull",
+    "scientificName": "Circus macrourus",
+    "rariliinCode": "CIRMAC",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Stepiviu",
+    "scientificName": "Buteo rufinus",
+    "rariliinCode": "BUTRUF",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Siniraag",
+    "scientificName": "Coracias garrulus",
+    "rariliinCode": "CORGAR",
+    "notificationNote": "kõik teated (v.a territoriaalsed linnud)"
+  },
+  {
+    "estonianName": "Mesilasenäpp",
+    "scientificName": "Merops apiaster",
+    "rariliinCode": "MERAPI",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Roherähn",
+    "scientificName": "Picus viridis",
+    "rariliinCode": "PICVIR",
+    "notificationNote": "kõik teated (NB! Täpset kohta ei avalikustata, teatakse ainult valla täpsusega)"
+  },
+  {
+    "estonianName": "Stepi-tuuletallaja",
+    "scientificName": "Falco naumanni",
+    "rariliinCode": "FALNAU",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Jahipistrik",
+    "scientificName": "Falco rusticolus",
+    "rariliinCode": "FALRUS",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Stepipistrik",
+    "scientificName": "Falco cherrug",
+    "rariliinCode": "FALCHE",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Mustlauk-õgija",
+    "scientificName": "Lanius minor",
+    "rariliinCode": "LANMIN",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Punapea-õgija",
+    "scientificName": "Lanius senator",
+    "rariliinCode": "LANSEN",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Mongoolia kõnnuõgija",
+    "scientificName": "Lanius isabellinus",
+    "rariliinCode": "LANISA",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Punasaba-kõnnuõgija",
+    "scientificName": "Lanius phoenicuroides",
+    "rariliinCode": "LANPHO",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Laanenäär",
+    "scientificName": "Perisoreus infaustus",
+    "rariliinCode": "PERINF",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Lasuurtihane",
+    "scientificName": "Cyanistes cyanus",
+    "rariliinCode": "CYACYA",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Taigatihane",
+    "scientificName": "Poecile cinctus",
+    "rariliinCode": "POECIN",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Tuttlõoke",
+    "scientificName": "Galerida cristata",
+    "rariliinCode": "GALCRI",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Sarviklõoke",
+    "scientificName": "Eremophila alpestris",
+    "rariliinCode": "EREALP",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Välja-väikelõoke",
+    "scientificName": "Calandrella brachydactyla",
+    "rariliinCode": "CALBRA",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Stepilõoke",
+    "scientificName": "Melanocorypha calandra",
+    "rariliinCode": "MELCAL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Leet-käosulane",
+    "scientificName": "Iduna pallida",
+    "rariliinCode": "IDUPAL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Tarna-roolind",
+    "scientificName": "Acrocephalus paludicola",
+    "rariliinCode": "ACROLA",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Padu-roolind",
+    "scientificName": "Acrocephalus agricola",
+    "rariliinCode": "ACRAGR",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kivipääsuke",
+    "scientificName": "Ptyonoprogne rupestris",
+    "rariliinCode": "PTYRUP",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Roostepääsuke",
+    "scientificName": "Cecropis rufula",
+    "rariliinCode": "CECRUF",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Vööt-lehelind",
+    "scientificName": "Phylloscopus inornatus",
+    "rariliinCode": "PHYINO",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Tuhk-lehelind",
+    "scientificName": "Phylloscopus humei",
+    "rariliinCode": "PHYHUM",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kuld-lehelind",
+    "scientificName": "Phylloscopus proregulus",
+    "rariliinCode": "PHYPRO",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Siberi lehelind",
+    "scientificName": "Phylloscopus schwarzi",
+    "rariliinCode": "PHYSCH",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Tõmmu-lehelind",
+    "scientificName": "Phylloscopus fuscatus",
+    "rariliinCode": "PHYFUS",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Põhja-lehelind",
+    "scientificName": "Phylloscopus borealis",
+    "rariliinCode": "PHYBOR",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kõrbe-põõsalind",
+    "scientificName": "Curruca nana",
+    "rariliinCode": "CURNAN",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Punakurk-põõsalind",
+    "scientificName": "Curruca cantillans",
+    "rariliinCode": "CURCAN",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Roosa-kuldnokk",
+    "scientificName": "Pastor roseus",
+    "rariliinCode": "PASROS",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kaelusrästas",
+    "scientificName": "Turdus torquatus",
+    "rariliinCode": "TURTOR",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Mustpugu-rästas",
+    "scientificName": "Turdus atrogularis",
+    "rariliinCode": "TURATR",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Ruskerästas",
+    "scientificName": "Turdus naumanni",
+    "rariliinCode": "TURNAU",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Rubiinööbik",
+    "scientificName": "Calliope calliope",
+    "rariliinCode": "CALCAL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kaelus-kärbsenäpp",
+    "scientificName": "Ficedula albicollis",
+    "rariliinCode": "FICALB",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Sinisaba",
+    "scientificName": "Tarsiger cyanurus",
+    "rariliinCode": "TARCYA",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kivisiirak",
+    "scientificName": "Monticola saxatilis",
+    "rariliinCode": "MONSAX",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Niidu-kaelustäks",
+    "scientificName": "Saxicola maurus",
+    "rariliinCode": "SAXMAU",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Euroopa kaelustäks",
+    "scientificName": "Saxicola rubicola",
+    "rariliinCode": "SAXOLA",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kõrbe-kivitäks",
+    "scientificName": "Oenanthe deserti",
+    "rariliinCode": "OENDES",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Nunn-kivitäks",
+    "scientificName": "Oenanthe pleschanka",
+    "rariliinCode": "OENPLE",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Liiv-kivitäks",
+    "scientificName": "Oenanthe isabellina",
+    "rariliinCode": "OENISA",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Mägiraat",
+    "scientificName": "Prunella collaris",
+    "rariliinCode": "PRUCOL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Mustkurk-raat",
+    "scientificName": "Prunella atrogularis",
+    "rariliinCode": "PRUATR",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Siberi raat",
+    "scientificName": "Prunella montanella",
+    "rariliinCode": "PRUMON",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Idahänilane",
+    "scientificName": "Motacilla tschutschensis",
+    "rariliinCode": "MOTTSC",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Mongoolia kiur",
+    "scientificName": "Anthus godlewskii",
+    "rariliinCode": "ANTGOD",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Nõmmekiur",
+    "scientificName": "Anthus campestris",
+    "rariliinCode": "ANTCAM",
+    "notificationNote": "kõik teated (v.a territoriaalsed linnud)"
+  },
+  {
+    "estonianName": "Niidukiur",
+    "scientificName": "Anthus richardi",
+    "rariliinCode": "ANTRIC",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Taigakiur",
+    "scientificName": "Anthus hodgsoni",
+    "rariliinCode": "ANTHOD",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Mägikiur",
+    "scientificName": "Anthus spinoletta",
+    "rariliinCode": "ANTSPI",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Männileevike",
+    "scientificName": "Pinicola enucleator",
+    "rariliinCode": "PINENU",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kõrbeleevike",
+    "scientificName": "Bucanetes githagineus",
+    "rariliinCode": "BUCGIT",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Vööt-käbilind",
+    "scientificName": "Loxia leucoptera",
+    "rariliinCode": "LOXLEU",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kuldtsiitsitaja",
+    "scientificName": "Emberiza aureola",
+    "rariliinCode": "EMBAUR",
+    "notificationNote": "kõik teated (ka kõik \"tsik-tsiitsitaja\" (EMB AUR/PUS/RUS) teated)"
+  },
+  {
+    "estonianName": "Väiketsiitsitaja",
+    "scientificName": "Emberiza pusilla",
+    "rariliinCode": "EMBPUS",
+    "notificationNote": "kõik teated (ka kõik \"tsik-tsiitsitaja\" (EMB AUR/PUS/RUS) teated)"
+  },
+  {
+    "estonianName": "Põhjatsiitsitaja",
+    "scientificName": "Emberiza rustica",
+    "rariliinCode": "EMBRUS",
+    "notificationNote": "kõik teated (ka kõik \"tsik-tsiitsitaja\" (EMB AUR/PUS/RUS) teated)"
+  },
+  {
+    "estonianName": "Mustpea-tsiitsitaja",
+    "scientificName": "Emberiza melanocephala",
+    "rariliinCode": "EMBMEL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Punapea-tsiitsitaja",
+    "scientificName": "Emberiza bruniceps",
+    "rariliinCode": "EMBBRU",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Halltsiitsitaja",
+    "scientificName": "Emberiza calandra",
+    "rariliinCode": "EMBCAL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Rebassidrik",
+    "scientificName": "Passerella iliaca",
+    "rariliinCode": "PASILI",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Mustluik",
+    "scientificName": "Cygnus atratus",
+    "rariliinCode": "CYGATR",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Eskimo lagle",
+    "scientificName": "Branta hutchinsii",
+    "rariliinCode": "BRAHUT",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Vööthani",
+    "scientificName": "Anser indicus",
+    "rariliinCode": "ANSIND",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Lumehani",
+    "scientificName": "Anser caerulescens",
+    "rariliinCode": "ANSCAE",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Mõrsjapart",
+    "scientificName": "Aix sponsa",
+    "rariliinCode": "AIXSPO",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Vaaraohani",
+    "scientificName": "Alopochen aegyptiaca",
+    "rariliinCode": "ALOAEG",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Sõnnpea-sõtkas",
+    "scientificName": "Bucephala albeola",
+    "rariliinCode": "BUCALB",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Läänesõtkas",
+    "scientificName": "Bucephala islandica",
+    "rariliinCode": "BUCISL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kübarkoskel",
+    "scientificName": "Lophodytes cucullatus",
+    "rariliinCode": "LOPCUC",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Kuupart",
+    "scientificName": "Sibirionetta formosa",
+    "rariliinCode": "SIBFOR",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Puna-rägapart",
+    "scientificName": "Spatula cyanoptera",
+    "rariliinCode": "SPACYA",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Heleflamingo",
+    "scientificName": "Phoenicopterus roseus",
+    "rariliinCode": "PHOROS",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Hiid-merikotkas",
+    "scientificName": "Haliaeetus pelagicus",
+    "rariliinCode": "HALPEL",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Tutt-karakaara",
+    "scientificName": "Caracara plancus",
+    "rariliinCode": "CARPLA",
+    "notificationNote": "kõik teated"
+  },
+  {
+    "estonianName": "Ameerika tuuletallaja",
+    "scientificName": "Falco sparverius",
+    "rariliinCode": "FALSPA",
+    "notificationNote": "kõik teated"
+  }
+]

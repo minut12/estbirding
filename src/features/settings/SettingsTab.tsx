@@ -20,6 +20,7 @@ import AvatarManager from './AvatarManager';
 import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
 import EventsManagementSettings from './EventsManagementSettings';
+import { LINNULIIGID_SCOPE, RARILIIN_SCOPE } from '@/lib/mapScope';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import {
   getTranslateEndpoint,
@@ -44,7 +45,7 @@ import {
 import { isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
 
 type ResetMode = 'soft' | 'hard' | null;
-type SettingsPage = 'home' | 'news' | 'events' | 'translations' | 'species' | 'maps_debug';
+type SettingsPage = 'home' | 'news' | 'events' | 'translations' | 'species' | 'rariliin' | 'maps_debug';
 const LS_RESOLVED_PROXY_BASE = 'resolved_proxy_base_v1';
 const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 const LS_SUPABASE_PROXY_BASE = 'supabase_proxy_base_v1';
@@ -918,7 +919,8 @@ export default function SettingsTab() {
     </>
   );
 
-  const renderSettingsSpecies = () => <AvatarManager />;
+  const renderSettingsSpecies = () => <AvatarManager scope={LINNULIIGID_SCOPE} />;
+  const renderSettingsRariliin = () => <AvatarManager scope={RARILIIN_SCOPE} />;
   const renderSettingsMapsDebug = () => {
     const handlePrettyPrint = () => {
       const raw = mapsDebugJson.trim();
@@ -1090,12 +1092,15 @@ export default function SettingsTab() {
         <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('translations')}>
           Tõlge
         </Button>
-        <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('species')}>
-          Linnuliigid
-        </Button>
-        <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('maps_debug')}>
-          Kaardid
-        </Button>
+          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('species')}>
+            Linnuliigid
+          </Button>
+          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('rariliin')}>
+            Rariliin
+          </Button>
+          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('maps_debug')}>
+            Kaardid
+          </Button>
       </div>}
       <div className="mt-2">
         {renderDebugLite()}
@@ -1110,6 +1115,7 @@ export default function SettingsTab() {
     if (settingsPage === 'events') return <>{renderSettingsHeader('Üritused')}{renderSettingsEvents()}</>;
     if (settingsPage === 'translations') return <>{renderSettingsHeader('Tõlge')}{renderSettingsTranslations()}</>;
     if (settingsPage === 'species') return <>{renderSettingsHeader('Linnuliigid')}{renderSettingsSpecies()}</>;
+    if (settingsPage === 'rariliin') return <>{renderSettingsHeader('Rariliin')}{renderSettingsRariliin()}</>;
     if (settingsPage === 'maps_debug') return <>{renderSettingsHeader('Maps Debugging / Kaardid')}{renderSettingsMapsDebug()}</>;
     return renderSettingsHome();
   };

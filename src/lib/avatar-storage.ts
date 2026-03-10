@@ -1,74 +1,84 @@
 /**
- * Avatar storage utilities for Linnuliigid map.
+ * Avatar storage utilities for scoped species maps.
  * Supports both Supabase shared storage and localStorage overrides.
  */
 
 import { supabase } from '@/config/supabaseClient';
 import { validateSupabaseConfig } from '@/config/supabaseConfig';
+import { LINNULIIGID_SCOPE, type SpeciesScopeConfig } from '@/lib/mapScope';
 
-const LOCAL_OVERRIDES_KEY = 'linnuliigid_avatars_v1';
-const SHARED_CACHE_KEY = 'linnuliigid_avatar_defaults_v1';
 const MAX_SIZE = 256;
 const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
 
-export type AvatarMap = Record<string, string>; // speciesKey -> url
+export type AvatarMap = Record<string, string>;
 
-// ─── Local overrides (per-device, highest priority) ───
+function scopedSpeciesKey(speciesKey: string, scope: SpeciesScopeConfig): string {
+  return `${scope.avatarSpeciesKeyPrefix}${speciesKey}`;
+}
 
-export function loadLocalOverrides(): AvatarMap {
+function unscopedSpeciesKey(speciesKey: string, scope: SpeciesScopeConfig): string {
+  const prefix = scope.avatarSpeciesKeyPrefix;
+  return speciesKey.startsWith(prefix) ? speciesKey.slice(prefix.length) : speciesKey;
+}
+
+export function loadLocalOverrides(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): AvatarMap {
   try {
-    return JSON.parse(localStorage.getItem(LOCAL_OVERRIDES_KEY) || '{}');
-  } catch { return {}; }
-}
-
-function persistLocalOverrides(map: AvatarMap): void {
-  try { localStorage.setItem(LOCAL_OVERRIDES_KEY, JSON.stringify(map)); }
-  catch { throw new Error('Salvestusruum on täis.'); }
-}
-
-// ─── Shared cache (from Supabase, cached locally for fast startup) ───
-
-export function loadSharedCache(): AvatarMap {
-  try {
-    return JSON.parse(localStorage.getItem(SHARED_CACHE_KEY) || '{}');
-  } catch { return {}; }
-}
-
-function persistSharedCache(map: AvatarMap): void {
-  try { localStorage.setItem(SHARED_CACHE_KEY, JSON.stringify(map)); }
-  catch { /* ignore */ }
-}
-
-// ─── Merged view: local overrides > shared defaults > empty ───
-
-export function getMergedAvatars(): AvatarMap {
-  const shared = loadSharedCache();
-  const local = loadLocalOverrides();
-  return { ...shared, ...local };
-}
-
-// ─── Supabase operations ───
-
-/** Fetch all shared avatars from the database */
-export async function fetchSharedAvatars(): Promise<AvatarMap> {
-  try {
-    const { data, error } = await supabase
-      .from('bird_avatar_map')
-      .select('species_key, public_url');
-    if (error) throw error;
-    const map: AvatarMap = {};
-    for (const row of data || []) {
-      map[row.species_key] = row.public_url;
-    }
-    persistSharedCache(map);
-    return map;
-  } catch (e) {
-    console.warn('Failed to fetch shared avatars:', e);
-    return loadSharedCache(); // fallback to cache
+    return JSON.parse(localStorage.getItem(scope.avatarLocalOverridesKey) || '{}');
+  } catch {
+    return {};
   }
 }
 
-/** Slugify species key for filename */
+function persistLocalOverrides(map: AvatarMap, scope: SpeciesScopeConfig): void {
+  try {
+    localStorage.setItem(scope.avatarLocalOverridesKey, JSON.stringify(map));
+  } catch {
+    throw new Error('Salvestusruum on täis.');
+  }
+}
+
+export function loadSharedCache(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): AvatarMap {
+  try {
+    return JSON.parse(localStorage.getItem(scope.avatarSharedCacheKey) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function persistSharedCache(map: AvatarMap, scope: SpeciesScopeConfig): void {
+  try {
+    localStorage.setItem(scope.avatarSharedCacheKey, JSON.stringify(map));
+  } catch {
+    // ignore
+  }
+}
+
+export function getMergedAvatars(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): AvatarMap {
+  const shared = loadSharedCache(scope);
+  const local = loadLocalOverrides(scope);
+  return { ...shared, ...local };
+}
+
+export async function fetchSharedAvatars(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): Promise<AvatarMap> {
+  try {
+    const prefix = `${scope.avatarSpeciesKeyPrefix}%`;
+    const { data, error } = await supabase
+      .from('bird_avatar_map')
+      .select('species_key, public_url')
+      .like('species_key', prefix);
+    if (error) throw error;
+    const map: AvatarMap = {};
+    for (const row of data || []) {
+      map[unscopedSpeciesKey(row.species_key, scope)] = row.public_url;
+    }
+    persistSharedCache(map, scope);
+    return map;
+  } catch (e) {
+    console.warn('Failed to fetch shared avatars:', e);
+    return loadSharedCache(scope);
+  }
+}
+
 export function slugifySpeciesKey(key: string): string {
   return key.toLowerCase()
     .replace(/õ/g, 'o').replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u')
@@ -80,17 +90,12 @@ export function slugifySpeciesKey(key: string): string {
 function dataUrlToBlob(dataUrl: string): Blob {
   const raw = String(dataUrl || '').trim();
   const match = raw.match(/^data:([^;,]+)?(;base64)?,(.*)$/);
-  if (!match) {
-    throw new Error('Avatari eelvaade on vigane.');
-  }
+  if (!match) throw new Error('Avatari eelvaade on vigane.');
 
   const mimeType = match[1] || 'application/octet-stream';
   const isBase64 = Boolean(match[2]);
   const payload = match[3] || '';
-
-  if (!payload) {
-    throw new Error('Avatari eelvaade on tühi.');
-  }
+  if (!payload) throw new Error('Avatari eelvaade on tühi.');
 
   if (isBase64) {
     const binary = atob(payload);
@@ -102,108 +107,94 @@ function dataUrlToBlob(dataUrl: string): Blob {
   return new Blob([decodeURIComponent(payload)], { type: mimeType });
 }
 
-/** Upload avatar to Supabase storage + upsert DB row */
-export async function uploadSharedAvatar(speciesKey: string, dataUrl: string): Promise<string> {
+export async function uploadSharedAvatar(speciesKey: string, dataUrl: string, scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): Promise<string> {
   const validation = validateSupabaseConfig();
-  if (!validation.ok) {
-    throw new Error(validation.error || 'Supabase seadistus puudub.');
-  }
+  if (!validation.ok) throw new Error(validation.error || 'Supabase seadistus puudub.');
 
   const slug = slugifySpeciesKey(speciesKey);
-  if (!slug) {
-    throw new Error('Liigi nimi puudub.');
-  }
-  const filePath = `linnuliigid/${slug}.webp`;
+  if (!slug) throw new Error('Liigi nimi puudub.');
 
+  const filePath = `${scope.avatarFilePrefix}/${slug}.webp`;
   const blob = dataUrlToBlob(dataUrl);
 
-  // Upload to storage (upsert)
   const { error: uploadError } = await supabase.storage
     .from('bird-avatars')
     .upload(filePath, blob, { contentType: 'image/webp', upsert: true });
-  if (uploadError) throw new Error('Ülesladimine ebaõnnestus: ' + uploadError.message);
+  if (uploadError) throw new Error('Üleslaadimine ebaõnnestus: ' + uploadError.message);
 
-  // Get public URL
-  const { data: urlData } = supabase.storage
-    .from('bird-avatars')
-    .getPublicUrl(filePath);
+  const { data: urlData } = supabase.storage.from('bird-avatars').getPublicUrl(filePath);
   const publicUrl = urlData.publicUrl;
 
-  // Upsert DB row
   const { error: dbError } = await supabase
     .from('bird_avatar_map')
     .upsert({
-      species_key: speciesKey,
+      species_key: scopedSpeciesKey(speciesKey, scope),
       file_path: filePath,
       public_url: publicUrl,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'species_key' });
   if (dbError) throw new Error('Andmebaasi salvestamine ebaõnnestus: ' + dbError.message);
 
-  // Update local shared cache
-  const cache = loadSharedCache();
+  const cache = loadSharedCache(scope);
   cache[speciesKey] = publicUrl;
-  persistSharedCache(cache);
-
+  persistSharedCache(cache, scope);
   return publicUrl;
 }
 
-/** Remove shared avatar from Supabase */
-export async function removeSharedAvatar(speciesKey: string): Promise<void> {
+export async function removeSharedAvatar(speciesKey: string, scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): Promise<void> {
   const slug = slugifySpeciesKey(speciesKey);
-  const filePath = `linnuliigid/${slug}.webp`;
+  const filePath = `${scope.avatarFilePrefix}/${slug}.webp`;
 
   await supabase.storage.from('bird-avatars').remove([filePath]);
-  await supabase.from('bird_avatar_map').delete().eq('species_key', speciesKey);
+  await supabase.from('bird_avatar_map').delete().eq('species_key', scopedSpeciesKey(speciesKey, scope));
 
-  // Update caches
-  const cache = loadSharedCache();
+  const cache = loadSharedCache(scope);
   delete cache[speciesKey];
-  persistSharedCache(cache);
+  persistSharedCache(cache, scope);
 
-  const local = loadLocalOverrides();
+  const local = loadLocalOverrides(scope);
   delete local[speciesKey];
-  persistLocalOverrides(local);
+  persistLocalOverrides(local, scope);
 }
 
-// ─── Legacy compat: keep existing local avatar operations working ───
-
-export function loadAvatars(): AvatarMap {
-  return getMergedAvatars();
+export function loadAvatars(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): AvatarMap {
+  return getMergedAvatars(scope);
 }
 
-export function saveAvatar(key: string, dataUrl: string): void {
-  const m = loadLocalOverrides();
-  m[key] = dataUrl;
-  persistLocalOverrides(m);
-  syncToMapStorage(getMergedAvatars());
+export function saveAvatar(key: string, dataUrl: string, scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): void {
+  const map = loadLocalOverrides(scope);
+  map[key] = dataUrl;
+  persistLocalOverrides(map, scope);
+  syncToMapStorage(getMergedAvatars(scope), scope);
 }
 
-export function removeAvatar(key: string): void {
-  const m = loadLocalOverrides();
-  delete m[key];
-  persistLocalOverrides(m);
-  syncToMapStorage(getMergedAvatars());
+export function removeAvatar(key: string, scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): void {
+  const map = loadLocalOverrides(scope);
+  delete map[key];
+  persistLocalOverrides(map, scope);
+  syncToMapStorage(getMergedAvatars(scope), scope);
 }
 
-export function resetAvatar(key: string): void {
-  removeAvatar(key);
+export function resetAvatar(key: string, scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): void {
+  removeAvatar(key, scope);
   try {
-    const mapAvatars = JSON.parse(localStorage.getItem('bm_rari_avatars') || '{}');
+    const mapAvatars = JSON.parse(localStorage.getItem(scope.legacyAvatarStorageKey) || '{}');
     delete mapAvatars[key];
-    localStorage.setItem('bm_rari_avatars', JSON.stringify(mapAvatars));
-  } catch { /* ignore */ }
+    localStorage.setItem(scope.legacyAvatarStorageKey, JSON.stringify(mapAvatars));
+  } catch {
+    // ignore
+  }
 }
 
-function syncToMapStorage(avatars: AvatarMap): void {
+function syncToMapStorage(avatars: AvatarMap, scope: SpeciesScopeConfig): void {
   try {
-    const existing = JSON.parse(localStorage.getItem('bm_rari_avatars') || '{}');
+    const existing = JSON.parse(localStorage.getItem(scope.legacyAvatarStorageKey) || '{}');
     const merged = { ...existing, ...avatars };
-    localStorage.setItem('bm_rari_avatars', JSON.stringify(merged));
-  } catch { /* ignore */ }
+    localStorage.setItem(scope.legacyAvatarStorageKey, JSON.stringify(merged));
+  } catch {
+    // ignore
+  }
 }
-
-// ─── Image processing ───
 
 export function validateFile(file: File): string | null {
   const allowed = ['image/png', 'image/jpeg', 'image/webp'];
@@ -222,7 +213,8 @@ export function processImage(file: File): Promise<string> {
       img.onload = () => {
         try {
           const canvas = document.createElement('canvas');
-          let w = img.width, h = img.height;
+          let w = img.width;
+          let h = img.height;
           if (w > MAX_SIZE || h > MAX_SIZE) {
             const scale = MAX_SIZE / Math.max(w, h);
             w = Math.round(w * scale);
@@ -231,14 +223,19 @@ export function processImage(file: File): Promise<string> {
           canvas.width = w;
           canvas.height = h;
           const ctx = canvas.getContext('2d');
-          if (!ctx) { reject(new Error('Canvas ei ole saadaval')); return; }
+          if (!ctx) {
+            reject(new Error('Canvas ei ole saadaval'));
+            return;
+          }
           ctx.drawImage(img, 0, 0, w, h);
           let dataUrl = canvas.toDataURL('image/webp', 0.8);
           if (!dataUrl.startsWith('data:image/webp')) {
             dataUrl = canvas.toDataURL('image/jpeg', 0.8);
           }
           resolve(dataUrl);
-        } catch (e) { reject(e); }
+        } catch (e) {
+          reject(e);
+        }
       };
       img.src = reader.result as string;
     };
@@ -246,37 +243,46 @@ export function processImage(file: File): Promise<string> {
   });
 }
 
-// ─── iframe communication ───
-
-export function notifyIframe(avatars: AvatarMap): void {
-  try {
-    const iframe = document.querySelector('iframe[src*="linnuliigid"]') as HTMLIFrameElement | null;
-    if (!iframe?.contentWindow) return;
-    iframe.contentWindow.postMessage({ type: 'AVATARS_DEFAULTS', avatars }, '*');
-  } catch { /* cross-origin safety */ }
+function findMapIframe(scope: SpeciesScopeConfig): HTMLIFrameElement | null {
+  return document.querySelector(`iframe[src*="${scope.mapPath.replace('/index.html', '')}"]`) as HTMLIFrameElement | null;
 }
 
-export function notifyIframeUpdate(action: 'update' | 'reset', key: string, dataUrl?: string): void {
+export function notifyIframe(avatars: AvatarMap, scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): void {
   try {
-    const iframe = document.querySelector('iframe[src*="linnuliigid"]') as HTMLIFrameElement | null;
-    if (!iframe?.contentWindow) return;
-    const avatars = getMergedAvatars();
-    iframe.contentWindow.postMessage({ type: 'AVATARS_DEFAULTS', avatars }, '*');
-  } catch { /* cross-origin safety */ }
+    const iframe = findMapIframe(scope);
+    iframe?.contentWindow?.postMessage({ type: 'AVATARS_DEFAULTS', avatars }, '*');
+  } catch {
+    // ignore
+  }
 }
 
-export function requestAvatarsFromIframe(): void {
+export function notifyIframeUpdate(action: 'update' | 'reset', key: string, dataUrl?: string, scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): void {
+  void action;
+  void key;
+  void dataUrl;
   try {
-    const iframe = document.querySelector('iframe[src*="linnuliigid"]') as HTMLIFrameElement | null;
+    const iframe = findMapIframe(scope);
+    iframe?.contentWindow?.postMessage({ type: 'AVATARS_DEFAULTS', avatars: getMergedAvatars(scope) }, '*');
+  } catch {
+    // ignore
+  }
+}
+
+export function requestAvatarsFromIframe(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): void {
+  try {
+    const iframe = findMapIframe(scope);
     iframe?.contentWindow?.postMessage({ type: 'AVATARS_REQUEST' }, '*');
-  } catch { /* ignore */ }
+  } catch {
+    // ignore
+  }
 }
 
-/** Fetch the species list from the shared JSON */
-export async function fetchSpeciesList(): Promise<string[]> {
+export async function fetchSpeciesList(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): Promise<string[]> {
   try {
-    const res = await fetch('/maps/linnuliigid/species.json');
+    const res = await fetch(scope.speciesJsonPath);
     if (!res.ok) throw new Error('Failed');
     return await res.json();
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }

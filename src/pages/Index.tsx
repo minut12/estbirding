@@ -10,6 +10,9 @@ import VersionBanner from '@/components/VersionBanner';
 import { cn } from '@/lib/utils';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import { getMyProfile } from '@/services/profile';
+import { useAuth } from '@/features/auth/AuthContext';
+import { maps } from '@/features/map/config';
+import { resolveAllowedMapSelection } from '@/features/map/access';
 
 type Tab = 'kaart' | 'uudised' | 'üritused' | 'seaded';
 
@@ -30,8 +33,16 @@ const tabs: { id: Tab; label: string; icon: typeof Map }[] = [
 ];
 
 export default function Index() {
+  const { role, permissions } = useAuth();
   const [active, setActive] = useState<Tab>(() => resolveInitialTab());
-  const [selectedMapId, setSelectedMapId] = useState<string>('linnuliigid-ee');
+  const [selectedMapId, setSelectedMapId] = useState<string>('');
+
+  useEffect(() => {
+    const resolved = resolveAllowedMapSelection({ role, permissions, maps, requestedId: selectedMapId });
+    if (resolved && resolved.id !== selectedMapId) {
+      setSelectedMapId(resolved.id);
+    }
+  }, [permissions, role, selectedMapId]);
 
   useEffect(() => {
     getMyProfile().catch(() => {});

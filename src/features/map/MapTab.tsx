@@ -1,4 +1,5 @@
 import { maps, getActiveMap } from './config';
+import { getAllowedMapsForRole, resolveAllowedMapSelection } from './access';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -30,12 +31,16 @@ interface MapTabProps {
 }
 
 export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
-  const { user, isAdmin, hasPermission } = useAuth();
+  const { user, isAdmin, hasPermission, role, permissions } = useAuth();
   const availableMaps = useMemo(() => (
-    maps.filter((map) => isAdmin || hasPermission(map.permissionKey))
-  ), [hasPermission, isAdmin]);
-  const fallbackMap = availableMaps[0] ?? getActiveMap();
-  const [selectedId, setSelectedId] = useState(fallbackMap.id);
+    getAllowedMapsForRole(role, permissions, maps)
+  ), [permissions, role]);
+  const initialMap = useMemo(
+    () => resolveAllowedMapSelection({ role, permissions, maps, requestedId: getActiveMap().id }) ?? getActiveMap(),
+    [permissions, role],
+  );
+  const [selectedId, setSelectedId] = useState(initialMap.id);
+  const fallbackMap = resolveAllowedMapSelection({ role, permissions, maps, requestedId: selectedId }) ?? availableMaps[0] ?? getActiveMap();
   const current = availableMaps.find((m) => m.id === selectedId) ?? fallbackMap;
   const mapScope = MAP_ID_TO_SCOPE[current.id] as MapScope | undefined;
   const speciesScope = current.id === 'rariliin' ? RARILIIN_SCOPE : LINNULIIGID_SCOPE;
@@ -58,10 +63,11 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   }, [onMapChange, selectedId]);
 
   useEffect(() => {
-    if (!availableMaps.some((map) => map.id === selectedId) && availableMaps[0]) {
-      setSelectedId(availableMaps[0].id);
+    const resolved = resolveAllowedMapSelection({ role, permissions, maps, requestedId: selectedId });
+    if (resolved && resolved.id !== selectedId) {
+      setSelectedId(resolved.id);
     }
-  }, [availableMaps, selectedId]);
+  }, [permissions, role, selectedId]);
 
   // Send a postMessage to the iframe (safe wrapper)
   const sendToIframe = useCallback((msg: Record<string, unknown>) => {

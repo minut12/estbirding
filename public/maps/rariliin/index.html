@@ -151,9 +151,17 @@
     .leaflet-top,.leaflet-bottom{z-index:1000!important}
     .leaflet-control{z-index:1000!important}
     .sidebar-backdrop{display:none;position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,.35)}
-    .recent-rarities-wrap{margin:10px 0 8px}
+    .recent-rarities-wrap{
+      position:absolute;
+      top:16px;
+      right:16px;
+      z-index:1450;
+      width:min(360px,calc(100vw - 32px));
+      pointer-events:none;
+    }
     .recent-rarities-card{
-      display:block;
+      display:none;
+      pointer-events:auto;
       border-radius:20px;
       padding:16px 16px 14px;
       color:#0f172a;
@@ -162,13 +170,7 @@
       box-shadow:0 16px 40px rgba(15,23,42,.18);
       backdrop-filter:blur(8px);
     }
-    .recent-rarities-card.show{animation:rarityCardIn .24s ease-out}
-    .recent-rarities-card.compact{
-      padding:12px 14px;
-      border-radius:16px;
-      background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(248,250,252,.96));
-      box-shadow:0 8px 20px rgba(15,23,42,.08);
-    }
+    .recent-rarities-card.show{display:block;animation:rarityCardIn .24s ease-out}
     .recent-rarities-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
     .recent-rarities-kicker{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#ecfeff;color:#0f766e;font-size:11px;font-weight:700;letter-spacing:.02em}
     .recent-rarities-title{margin:10px 0 4px;font-size:18px;line-height:1.15;font-weight:800}
@@ -192,8 +194,6 @@
     .recent-rarities-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
     .recent-rarities-actions .btn{border-radius:999px;padding:7px 12px}
     .recent-rarities-actions .btn.secondary{background:#e2e8f0;color:#0f172a}
-    .recent-rarities-meta{margin-top:10px;font-size:11px;color:#64748b}
-    .recent-rarities-meta strong{color:#334155}
     .recent-rarities-close{
       width:34px;height:34px;border-radius:999px;border:none;background:rgba(255,255,255,.82);color:#334155;cursor:pointer;
       box-shadow:inset 0 0 0 1px rgba(148,163,184,.2)
@@ -213,6 +213,12 @@
       #sidebar.open{transform:translateX(0)}
       .sidebar-backdrop.show{display:block}
       .sidebar-backdrop{z-index:3500!important}
+      .recent-rarities-wrap{
+        top:calc(env(safe-area-inset-top, 0px) + 12px);
+        left:12px;
+        right:12px;
+        width:auto;
+      }
       .recent-rarities-card{border-radius:18px;padding:14px 14px 12px}
       .recent-rarities-title{font-size:17px}
       .recent-rarities-actions .btn{flex:1 1 120px;justify-content:center}
@@ -257,30 +263,31 @@
 <div id="fetchError" class="fetch-error" style="display:none !important"></div>
 <div id="debugContent" style="display:none"></div>
 <div id="debugProContent" style="display:none"></div>
-<div id="recentRaritiesWrap" class="recent-rarities-wrap" aria-live="polite">
-  <div id="recentRaritiesCard" class="recent-rarities-card compact">
-    <div class="recent-rarities-top">
-      <div>
-        <div class="recent-rarities-kicker">Rariliin • 7 päeva</div>
-        <h3 id="recentRaritiesTitle" class="recent-rarities-title">Viimase 7 päeva jooksul uusi Rariliini liike ei leitud</h3>
-        <p id="recentRaritiesSubtitle" class="recent-rarities-subtitle">Kontrollin aktiivset Rariliini andmestikku.</p>
-      </div>
-      <button id="recentRaritiesClose" class="recent-rarities-close" type="button" aria-label="Sulge">×</button>
-    </div>
-    <div id="recentRaritiesList" class="recent-rarities-list"></div>
-    <div id="recentRaritiesActions" class="recent-rarities-actions" hidden>
-      <button id="recentRaritiesShowMap" class="btn" type="button">Näita kaardil</button>
-      <button id="recentRaritiesHideToday" class="btn secondary" type="button">Ära näita uuesti täna</button>
-      <button id="recentRaritiesDismiss" class="btn secondary" type="button">Sulge</button>
-    </div>
-    <div id="recentRaritiesMeta" class="recent-rarities-meta">Recent Rariliin species: <strong>0</strong></div>
-  </div>
-</div>
     <input id="filterBox" type="text" placeholder="Filter..." />
     <div id="list"></div>
     </div>
   </aside>
-  <main id="mapWrap"><div id="map"></div></main>
+  <main id="mapWrap">
+    <div id="map"></div>
+    <div id="recentRaritiesWrap" class="recent-rarities-wrap" aria-live="polite">
+      <div id="recentRaritiesCard" class="recent-rarities-card" hidden>
+        <div class="recent-rarities-top">
+          <div>
+            <div class="recent-rarities-kicker">Rariliin • 7 päeva</div>
+            <h3 id="recentRaritiesTitle" class="recent-rarities-title">Uued leiud viimase 7 päeva jooksul</h3>
+            <p id="recentRaritiesSubtitle" class="recent-rarities-subtitle"></p>
+          </div>
+          <button id="recentRaritiesClose" class="recent-rarities-close" type="button" aria-label="Sulge">×</button>
+        </div>
+        <div id="recentRaritiesList" class="recent-rarities-list"></div>
+        <div id="recentRaritiesActions" class="recent-rarities-actions">
+          <button id="recentRaritiesShowMap" class="btn" type="button">Näita kaardil</button>
+          <button id="recentRaritiesHideToday" class="btn secondary" type="button">Ära näita uuesti täna</button>
+          <button id="recentRaritiesDismiss" class="btn secondary" type="button">Sulge</button>
+        </div>
+      </div>
+    </div>
+  </main>
 </div>
 </div>
 
@@ -374,7 +381,6 @@ function prunePointsToWhitelist(){
 // Local storage keys
 const LS_AVATARS='bm_rariliin_avatars', LS_POINTS='bm_rariliin_points', LS_PROXY='bm_rariliin_proxy', LS_NAMES='bm_rariliin_names';
 const LS_RECENT_ONLY = 'bm_rariliin_recent_only';
-const LS_RECENT_NOTICE_SEEN = 'bm_rariliin_recent_notice_seen_v1';
 const LS_RECENT_NOTICE_HIDE_UNTIL = 'bm_rariliin_recent_notice_hide_until';
 const CLASSIC_MODE = false;
 const LS_LIVE_ELURIKKUS = 'bm_live_elurikkus_v1';
@@ -3616,9 +3622,6 @@ function isRecentNoticeHiddenToday(signature){
     return false;
   }
 }
-function rememberRecentNoticeSeen(signature){
-  try{ localStorage.setItem(LS_RECENT_NOTICE_SEEN, signature); }catch(e){}
-}
 function rememberRecentNoticeHiddenToday(signature){
   try{
     localStorage.setItem(LS_RECENT_NOTICE_HIDE_UNTIL, JSON.stringify({ signature: signature, date: getLocalDateStamp() }));
@@ -3628,6 +3631,7 @@ function hideRecentRaritiesNotice(){
   const card = document.getElementById('recentRaritiesCard');
   if(!card) return;
   card.classList.remove('show');
+  card.hidden = true;
 }
 function focusRecentSpecies(species){
   if(!species) return;
@@ -3636,16 +3640,30 @@ function focusRecentSpecies(species){
   window.__selectedSpecies = species;
   try{ render(); }catch(e){}
 }
+function focusRecentMarkers(items){
+  if(!map || !items || !items.length || !window.L || !L.latLngBounds) return;
+  const coords = items.map(function(item){
+    const point = points[item.name];
+    if(!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return null;
+    return [Number(point.lat), Number(point.lon)];
+  }).filter(Boolean);
+  if(!coords.length) return;
+  try{
+    if(coords.length === 1){
+      map.setView(coords[0], Math.max(Number(map.getZoom ? map.getZoom() : 8) || 8, 8), { animate: true });
+    } else {
+      map.fitBounds(L.latLngBounds(coords), { padding: [36, 36], maxZoom: 8 });
+    }
+  }catch(e){}
+}
 function renderRecentRaritiesNotice(items, signature){
   const card = document.getElementById('recentRaritiesCard');
   const title = document.getElementById('recentRaritiesTitle');
   const subtitle = document.getElementById('recentRaritiesSubtitle');
   const list = document.getElementById('recentRaritiesList');
   const actions = document.getElementById('recentRaritiesActions');
-  const meta = document.getElementById('recentRaritiesMeta');
-  if(!card || !title || !subtitle || !list || !actions || !meta) return;
+  if(!card || !title || !subtitle || !list || !actions) return;
   const preview = items.slice(0, 5);
-  card.classList.remove('compact');
   title.textContent = 'Uued leiud viimase 7 päeva jooksul';
   subtitle.textContent = items.length === 1
     ? 'Rariliinis on 1 liik, mida tasub kaardilt vaadata.'
@@ -3656,51 +3674,22 @@ function renderRecentRaritiesNotice(items, signature){
       '<span>' + escapeHtml(item.formattedDate || 'Viimane vaatlus hiljuti') + '</span>' +
     '</button>';
   }).join('');
-  actions.hidden = false;
-  meta.innerHTML = 'Recent Rariliin species: <strong>' + String(items.length) + '</strong>';
   card.dataset.signature = signature;
+  actions.hidden = false;
+  card.hidden = false;
   card.classList.add('show');
-}
-function renderRecentRaritiesState(state){
-  const card = document.getElementById('recentRaritiesCard');
-  const title = document.getElementById('recentRaritiesTitle');
-  const subtitle = document.getElementById('recentRaritiesSubtitle');
-  const list = document.getElementById('recentRaritiesList');
-  const actions = document.getElementById('recentRaritiesActions');
-  const meta = document.getElementById('recentRaritiesMeta');
-  if(!card || !title || !subtitle || !list || !actions || !meta) return;
-  if(state.shownCard){
-    renderRecentRaritiesNotice(state.items, state.signature);
-  } else {
-    card.classList.remove('show');
-    card.classList.add('compact');
-    actions.hidden = true;
-    list.innerHTML = '';
-    if(state.hiddenReason === 'no_recent_species'){
-      title.textContent = 'Viimase 7 päeva jooksul uusi Rariliini liike ei leitud';
-      subtitle.textContent = 'Rariliini kaart on aktiivne, kuid värskeid 7 päeva leide praegu ei ole.';
-    } else if(state.hiddenReason === 'dismissed'){
-      title.textContent = 'Rariliini viimase 7 päeva teavitus on peidetud';
-      subtitle.textContent = 'Praegune leidude komplekt on märgitud nähtuks. Uute liikide ilmumisel näidatakse kaart uuesti.';
-    } else {
-      title.textContent = 'Rariliini viimase 7 päeva teavitus';
-      subtitle.textContent = 'Teavituse olekut uuendatakse aktiivse andmestiku põhjal.';
-    }
-    meta.innerHTML = 'Recent Rariliin species: <strong>' + String(state.recentSpeciesCount) + '</strong> · hiddenReason=<strong>' + escapeHtml(state.hiddenReason) + '</strong>';
-  }
 }
 function evaluateRecentRaritiesNotice(options){
   const opts = options || {};
   const items = getRecentRaritiesItems();
   const signature = getRecentRaritiesSignature(items);
   const active7d = is7daysOnly();
-  let seen = '';
-  try{ seen = localStorage.getItem(LS_RECENT_NOTICE_SEEN) || ''; }catch(e){}
+  const sessionDismissed = String(window.__rariliinRecentNoticeDismissedSignature || '');
   let shownCard = false;
   let hiddenReason = 'none';
   if(!items.length || !signature){
     hiddenReason = 'no_recent_species';
-  } else if(!opts.force && seen === signature){
+  } else if(sessionDismissed && sessionDismissed === signature){
     hiddenReason = 'dismissed';
   } else if(isRecentNoticeHiddenToday(signature)){
     hiddenReason = 'dismissed';
@@ -3720,7 +3709,8 @@ function evaluateRecentRaritiesNotice(options){
   console.log('[rariliin-recent] recentSpeciesCount=' + String(items.length));
   console.log('[rariliin-recent] shownCard=' + String(shownCard));
   console.log('[rariliin-recent] hiddenReason=' + hiddenReason);
-  renderRecentRaritiesState(state);
+  if(shownCard) renderRecentRaritiesNotice(items, signature);
+  else hideRecentRaritiesNotice();
 }
 
 function _borderColorByDate(isoDate){
@@ -7811,7 +7801,7 @@ _wireSidebarSettingsRow();
   }
   function markSeenAndHide(){
     const signature = currentSignature();
-    if(signature) rememberRecentNoticeSeen(signature);
+    if(signature) window.__rariliinRecentNoticeDismissedSignature = signature;
     hideRecentRaritiesNotice();
   }
   if(closeBtn && !closeBtn.__wired){
@@ -7825,7 +7815,10 @@ _wireSidebarSettingsRow();
   if(showMapBtn && !showMapBtn.__wired){
     showMapBtn.addEventListener('click', function(){
       const items = getRecentRaritiesItems();
-      if(items.length) focusRecentSpecies(items[0].name);
+      if(items.length){
+        focusRecentMarkers(items);
+        focusRecentSpecies(items[0].name);
+      }
       markSeenAndHide();
     });
     showMapBtn.__wired = true;
@@ -7834,7 +7827,7 @@ _wireSidebarSettingsRow();
     hideTodayBtn.addEventListener('click', function(){
       const signature = currentSignature();
       if(signature){
-        rememberRecentNoticeSeen(signature);
+        window.__rariliinRecentNoticeDismissedSignature = signature;
         rememberRecentNoticeHiddenToday(signature);
       }
       hideRecentRaritiesNotice();

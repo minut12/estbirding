@@ -459,6 +459,7 @@ let proxyBase = localStorage.getItem(LS_PROXY) || '';
 const LS_ELU_AUTO_30M = 'elu_auto_30m';
 let __eluAuto30mTimer = null;
 let nameCache = JSON.parse(localStorage.getItem(LS_NAMES) || '{}');
+window.__appPermissions = window.__appPermissions || { kevadranneEdit: false };
 let liveElurikkusBySpecies = (function(){
   try{
     const raw = JSON.parse(localStorage.getItem(LS_LIVE_ELURIKKUS) || '{}');
@@ -2584,6 +2585,11 @@ let __elurikkusBulkActive = false;
 let __elurikkusBulkAbort = null;
 let __elurikkusBulkAbortController = null;
 let __elurikkusBulkStats = { done: 0, total: 0, updated: 0, moved: 0, errors: 0, lastKey: '' };
+let __elurikkusBulkJobSeq = 0;
+let __elurikkusBulkCurrentJobId = 0;
+let __elurikkusBulkPromise = null;
+let __elurikkusRefreshListenerAttachCount = 0;
+let __eeRefreshContext = null;
 window.__lastElurikkusBulkErrors = [];
 window.__lastElurikkusBulkSummary = null;
 window.__lastElurikkusBulkOutcomes = [];
@@ -2594,6 +2600,49 @@ window.__eluCoordTrace = window.__eluCoordTrace || [];
 function pushEluCoordTrace(entry){
   window.__eluCoordTrace.unshift(entry);
   if(window.__eluCoordTrace.length > 50) window.__eluCoordTrace.length = 50;
+}
+function _getElurikkusRefreshView(){
+  try{
+    if(window.matchMedia && window.matchMedia('(max-width: 900px)').matches) return 'mobile';
+  }catch(e){}
+  return 'desktop';
+}
+function _logElurikkusRefresh(tag, payload){
+  try{
+    if(payload === undefined) console.info(tag);
+    else console.info(tag, payload);
+  }catch(e){}
+}
+function _getEeRefreshContext(){
+  return __eeRefreshContext || null;
+}
+function _shouldDeferEeRefreshUi(){
+  const ctx = _getEeRefreshContext();
+  return !!(ctx && ctx.deferUi);
+}
+function _logEeRefreshStage(payload){
+  try{
+    console.info('[ee-refresh]', payload);
+  }catch(e){}
+}
+function _safeEeRefreshUiApply(stage, fn){
+  try{
+    return fn();
+  }catch(e){
+    const ctx = _getEeRefreshContext();
+    _logEeRefreshStage({
+      view: ctx && ctx.view ? ctx.view : _getElurikkusRefreshView(),
+      jobId: ctx && ctx.jobId ? ctx.jobId : null,
+      index: ctx && Number.isFinite(ctx.index) ? ctx.index : null,
+      species: ctx && ctx.species ? ctx.species : '',
+      stage: stage,
+      kind: 'ui-error',
+      message: String((e && e.message) ? e.message : e || 'UI apply failed'),
+      stack: e && e.stack ? String(e.stack).slice(0, 600) : '',
+    });
+    if(ctx) ctx.uiErrors = Number(ctx.uiErrors || 0) + 1;
+    return null;
+  }
 }
 function coordsChanged(a, b){
   if(!a || !b) return false;
@@ -3068,8 +3117,19 @@ function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, oc
     p.coords_source = p.coords_source || p.coordsSource;
     p.coords_status = String(det.coordsStatus || p.coords_status || 'restricted_or_missing');
   }
-  save();
-  updateMarker(species);
+  if(_shouldDeferEeRefreshUi()){
+    _logEeRefreshStage({
+      view: (_getEeRefreshContext() && _getEeRefreshContext().view) || _getElurikkusRefreshView(),
+      jobId: (_getEeRefreshContext() && _getEeRefreshContext().jobId) || null,
+      index: (_getEeRefreshContext() && _getEeRefreshContext().index),
+      species: species,
+      stage: 'applyDataDeferredUi',
+      detailUrl: detailUrl || '',
+    });
+  } else {
+    _safeEeRefreshUiApply('savePoint', function(){ save(); });
+    _safeEeRefreshUiApply('updateMarker', function(){ updateMarker(species); });
+  }
   console.log('FINAL ELU COORD', species, {
     latestIso: newestIso,
     detailUrl,
@@ -3090,9 +3150,15 @@ function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, oc
 async function autoFetchCoords(key, searchUrl, signal){
   const species = String(key || '').trim();
   if(!species) throw new Error('Species missing');
+  const ctx = _getEeRefreshContext();
+  if(ctx){
+    ctx.species = species;
+    _logEeRefreshStage({ view: ctx.view, jobId: ctx.jobId, index: ctx.index, species: species, stage: 'fetch' });
+  }
   const url = String(searchUrl || ('https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(species))).trim();
   const p = points[species] = (points[species] || {});
   const searchHtml = await tryFetch(url, { signal: signal });
+  if(ctx) _logEeRefreshStage({ view: ctx.view, jobId: ctx.jobId, index: ctx.index, species: species, stage: 'normalize' });
   const rowExtra = parseEluSearchNewestRowExtras(searchHtml);
   const newestIso = extractNewestIsoFromSearch(searchHtml, url) || normDateISO(rowExtra.dateText || '');
   const detailUrl = extractNewestOccurrenceUrlFromSearch(searchHtml, url);
@@ -3125,8 +3191,12 @@ async function autoFetchCoords(key, searchUrl, signal){
   p.eluExtra.__occ7debug = occ7Multi || { occ7_page1: occ7Page1 };
   if(!detailUrl){
     if(latestIso) p.t = latestIso;
-    save();
-    render();
+    if(_shouldDeferEeRefreshUi()){
+      if(ctx) _logEeRefreshStage({ view: ctx.view, jobId: ctx.jobId, index: ctx.index, species: species, stage: 'applyDataNoDetailDeferredUi' });
+    } else {
+      _safeEeRefreshUiApply('savePointNoDetail', function(){ save(); });
+      _safeEeRefreshUiApply('renderNoDetail', function(){ render(); });
+    }
     return { updated:true, moved:false, detailUrl:'' };
   }
   const detailHtml = await tryFetch(_withCacheBuster(detailUrl), { signal });
@@ -3153,7 +3223,11 @@ async function autoFetchCoords(key, searchUrl, signal){
     moved: result.moved
   };
   console.log('ELU COORD UPDATE', key, p.eluExtra.__coordDebug);
-  render();
+  if(_shouldDeferEeRefreshUi()){
+    if(ctx) _logEeRefreshStage({ view: ctx.view, jobId: ctx.jobId, index: ctx.index, species: species, stage: 'applyDataCompleteDeferredUi' });
+  } else {
+    _safeEeRefreshUiApply('renderAppliedDetail', function(){ render(); });
+  }
   return result;
 }
 async function refreshSpeciesFromElurikkus(key, signal){
@@ -3163,77 +3237,179 @@ async function refreshSpeciesFromElurikkus(key, signal){
   return await autoFetchCoords(species, searchUrl, signal);
 }
 async function refreshAllElurikkusOnce(){
-  if(__eluBulkActive || __elurikkusBulkActive) return;
+  const view = _getElurikkusRefreshView();
+  if(__eluBulkActive || __elurikkusBulkActive){
+    _logElurikkusRefresh('[elurikkus] duplicate refresh prevented', {
+      view: view,
+      jobId: __elurikkusBulkCurrentJobId || null,
+      active: true,
+    });
+    return __elurikkusBulkPromise || null;
+  }
   const list = _getAllSpeciesList();
   if(!list.length) return;
+  const jobId = ++__elurikkusBulkJobSeq;
+  __elurikkusBulkCurrentJobId = jobId;
   __eluBulkActive = true;
   __elurikkusBulkActive = true;
   __eluBulkAbort = new AbortController();
   __elurikkusBulkAbort = __eluBulkAbort;
   __elurikkusBulkAbortController = __eluBulkAbort;
+  __elurikkusBulkStats = { done: 0, total: list.length, updated: 0, moved: 0, errors: 0, lastKey: '' };
+  window.__lastElurikkusBulkErrors = [];
+  window.__lastElurikkusBulkOutcomes = [];
+  window.__lastElurikkusBulkSummary = null;
+  _logElurikkusRefresh('[elurikkus] error count reset', { view: view, jobId: jobId });
   const signal = __eluBulkAbort.signal;
-  const stopBtn = document.getElementById('btnStopFetch');
-  if(stopBtn) stopBtn.style.display = 'inline-block';
-  const progEl = document.getElementById('indexProgress') || document.getElementById('fetchProgress');
-  const eluProg = document.getElementById('eluProgress');
-  const eluLastCoord = document.getElementById('eluLastCoord');
-  function getClientLatestDateShort(){
-    const raw = String(updateClientDataMaxAtFromPoints() || '').trim();
-    const m = raw.match(/^(\d{4}-\d{2}-\d{2})/);
-    return m ? m[1] : '-';
-  }
-  function setEluRefreshStatus(done, total, updated, moved, errors){
-    const line = 'Elurikkus refresh: ' + done + '/' + total + ' | updated:' + updated + ' moved:' + moved + ' errors:' + errors + ' | clientLatest:' + getClientLatestDateShort();
-    if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = line; }
-    if(progEl) progEl.textContent = '';
-    if(eluLastCoord) eluLastCoord.textContent = '';
-  }
-  let updated = 0, moved = 0, errors = 0;
-  const total = list.length;
-  for(let i = 0; i < total; i++){
-    if(signal.aborted) break;
-    const name = String(list[i] || '').trim();
-    if(!name) continue;
-    try{
-      const searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(name);
-      const r = await autoFetchCoords(name, searchUrl, signal);
-      if(r && r.updated) updated++;
-      if(r && r.moved) moved++;
-      setEluRefreshStatus(i + 1, total, updated, moved, errors);
-    }catch(e){
-      errors++;
-      setEluRefreshStatus(i + 1, total, updated, moved, errors);
+  const runPromise = (async function(){
+    const stopBtn = document.getElementById('btnStopFetch');
+    if(stopBtn) stopBtn.style.display = 'inline-block';
+    const progEl = document.getElementById('indexProgress') || document.getElementById('fetchProgress');
+    const eluProg = document.getElementById('eluProgress');
+    const eluLastCoord = document.getElementById('eluLastCoord');
+    const seenSpecies = new Set();
+    function getClientLatestDateShort(){
+      const raw = String(updateClientDataMaxAtFromPoints() || '').trim();
+      const m = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+      return m ? m[1] : '-';
     }
-    __elurikkusBulkStats = { done: i + 1, total: total, updated: updated, moved: moved, errors: errors, lastKey: name };
-    await new Promise(function(res){ setTimeout(res, 900); });
-  }
-  updateClientDataMaxAtFromPoints();
-  rebuildAllMarkers();
-  render();
-  try{ _updateServerSnapshotStatus(); }catch(e){}
-  const aborted = !!(signal && signal.aborted);
-  const doneMsg = aborted
-    ? ('Elurikkus refresh cancelled: updated:' + updated + ' moved:' + moved + ' errors:' + errors)
-    : ('Elurikkus refresh done: updated:' + updated + ' moved:' + moved + ' errors:' + errors);
-  setEluRefreshStatus(Number(__elurikkusBulkStats.done || total), total, updated, moved, errors);
-  if(updated > 0){
-    dataMode = 'live';
-    saveSnapshotLocal();
-    showSnapshotBanner('Data loaded', '');
-  } else if(errors > 0){
-    const loaded = reloadSnapshot();
-    showSnapshotBanner(loaded ? 'Refresh failed. Showing last snapshot.' : 'Refresh failed and no snapshot available', loaded ? 'warn' : 'error');
-  } else {
-    showSnapshotBanner(doneMsg, errors ? 'warn' : '');
-  }
-  __eluBulkSummary = { updated: updated, moved: moved, errors: errors, total: total, aborted: aborted, at: new Date().toISOString() };
-  window.__lastElurikkusBulkSummary = __eluBulkSummary;
-  __eluBulkActive = false;
-  __elurikkusBulkActive = false;
-  if(stopBtn) stopBtn.style.display = 'none';
-  __eluBulkAbort = null;
-  __elurikkusBulkAbort = null;
-  __elurikkusBulkAbortController = null;
+    function setEluRefreshStatus(done, total, updated, moved, errors){
+      const line = 'Elurikkus refresh: ' + done + '/' + total + ' | updated:' + updated + ' moved:' + moved + ' errors:' + errors + ' | clientLatest:' + getClientLatestDateShort();
+      if(eluProg){ eluProg.style.display = 'block'; eluProg.textContent = line; }
+      if(progEl) progEl.textContent = '';
+      if(eluLastCoord) eluLastCoord.textContent = '';
+    }
+    let updated = 0, moved = 0, errors = 0;
+    const total = list.length;
+    _logElurikkusRefresh('[elurikkus] refresh start view=' + view, { jobId: jobId, total: total });
+    __eeRefreshContext = { jobId: jobId, view: view, index: -1, species: '', deferUi: true, uiErrors: 0 };
+    try{
+      for(let i = 0; i < total; i++){
+        if(signal.aborted) break;
+        const name = String(list[i] || '').trim();
+        if(!name) continue;
+        __eeRefreshContext.index = i;
+        __eeRefreshContext.species = name;
+        if(seenSpecies.has(name)){
+          _logElurikkusRefresh('[elurikkus] same species processed twice', { view: view, jobId: jobId, species: name, index: i });
+          continue;
+        }
+        seenSpecies.add(name);
+        try{
+          _logEeRefreshStage({ view: view, jobId: jobId, index: i, species: name, stage: 'fetchStart' });
+          const searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(name);
+          const r = await autoFetchCoords(name, searchUrl, signal);
+          _logEeRefreshStage({ view: view, jobId: jobId, index: i, species: name, stage: 'counters', updated: !!(r && r.updated), moved: !!(r && r.moved) });
+          if(r && r.updated) updated++;
+          if(r && r.moved) moved++;
+          window.__lastElurikkusBulkOutcomes.unshift({
+            species: name,
+            ok: true,
+            updated: !!(r && r.updated),
+            moved: !!(r && r.moved),
+            at: new Date().toISOString(),
+            jobId: jobId,
+          });
+        }catch(e){
+          const isAbort = !!(signal && signal.aborted) || String((e && e.name) || '').toLowerCase() === 'aborterror';
+          _logEeRefreshStage({
+            view: view,
+            jobId: jobId,
+            index: i,
+            species: name,
+            stage: 'item-error',
+            message: String((e && e.message) ? e.message : e || 'Refresh failed'),
+            stack: e && e.stack ? String(e.stack).slice(0, 600) : '',
+            aborted: !!isAbort,
+          });
+          if(!isAbort){
+            errors++;
+            const errMsg = String((e && e.message) ? e.message : e || 'Refresh failed');
+            window.__lastElurikkusBulkErrors.unshift({
+              species: name,
+              message: errMsg,
+              at: new Date().toISOString(),
+              jobId: jobId,
+            });
+          }
+          window.__lastElurikkusBulkOutcomes.unshift({
+            species: name,
+            ok: false,
+            aborted: !!isAbort,
+            message: String((e && e.message) ? e.message : e || 'Refresh failed'),
+            at: new Date().toISOString(),
+            jobId: jobId,
+          });
+          if(isAbort) break;
+        }
+        if(window.__lastElurikkusBulkErrors.length > 50) window.__lastElurikkusBulkErrors.length = 50;
+        if(window.__lastElurikkusBulkOutcomes.length > 50) window.__lastElurikkusBulkOutcomes.length = 50;
+        __elurikkusBulkStats = { done: i + 1, total: total, updated: updated, moved: moved, errors: errors, lastKey: name };
+        _safeEeRefreshUiApply('updateProgressUi', function(){
+          _logEeRefreshStage({ view: view, jobId: jobId, index: i, species: name, stage: 'updateProgressUi' });
+          setEluRefreshStatus(i + 1, total, updated, moved, errors);
+        });
+        await new Promise(function(res){ setTimeout(res, 900); });
+      }
+      updateClientDataMaxAtFromPoints();
+      _safeEeRefreshUiApply('finalRebuildMarkers', function(){
+        _logEeRefreshStage({ view: view, jobId: jobId, index: total - 1, species: '', stage: 'finalRebuildMarkers' });
+        rebuildAllMarkers();
+      });
+      _safeEeRefreshUiApply('finalRenderSidebar', function(){
+        _logEeRefreshStage({ view: view, jobId: jobId, index: total - 1, species: '', stage: 'finalRenderSidebar' });
+        render();
+      });
+      try{ _updateServerSnapshotStatus(); }catch(e){}
+      const aborted = !!(signal && signal.aborted);
+      const doneMsg = aborted
+        ? ('Elurikkus refresh cancelled: updated:' + updated + ' moved:' + moved + ' errors:' + errors)
+        : ('Elurikkus refresh done: updated:' + updated + ' moved:' + moved + ' errors:' + errors);
+      setEluRefreshStatus(Number(__elurikkusBulkStats.done || total), total, updated, moved, errors);
+      if(updated > 0){
+        dataMode = 'live';
+        saveSnapshotLocal();
+        showSnapshotBanner('Data loaded', '');
+      } else if(errors > 0){
+        const loaded = reloadSnapshot();
+        showSnapshotBanner(loaded ? 'Refresh failed. Showing last snapshot.' : 'Refresh failed and no snapshot available', loaded ? 'warn' : 'error');
+      } else {
+        showSnapshotBanner(doneMsg, errors ? 'warn' : '');
+      }
+      __eluBulkSummary = {
+        updated: updated,
+        moved: moved,
+        errors: errors,
+        total: total,
+        aborted: aborted,
+        at: new Date().toISOString(),
+        jobId: jobId,
+        view: view,
+        uiErrors: Number((__eeRefreshContext && __eeRefreshContext.uiErrors) || 0),
+      };
+      window.__lastElurikkusBulkSummary = __eluBulkSummary;
+      _logElurikkusRefresh('[elurikkus] refresh complete moved=' + moved + ' errors=' + errors, {
+        view: view,
+        jobId: jobId,
+        updated: updated,
+        moved: moved,
+        errors: errors,
+        aborted: aborted,
+      });
+    } finally {
+      __eeRefreshContext = null;
+      __eluBulkActive = false;
+      __elurikkusBulkActive = false;
+      if(stopBtn) stopBtn.style.display = 'none';
+      __eluBulkAbort = null;
+      __elurikkusBulkAbort = null;
+      __elurikkusBulkAbortController = null;
+      if(__elurikkusBulkCurrentJobId === jobId) __elurikkusBulkCurrentJobId = 0;
+      __elurikkusBulkPromise = null;
+    }
+  })();
+  __elurikkusBulkPromise = runPromise;
+  return runPromise;
 }
 async function refreshAllFromElurikkus(){
   return refreshAllElurikkusOnce();
@@ -6660,8 +6836,20 @@ function _wireSnapshotButtons(){
   _updateResumeButton(_validateAndSyncResumeState({ quiet: true }));
 
   if(btnElu && !btnElu.__wired){
+    __elurikkusRefreshListenerAttachCount++;
+    _logElurikkusRefresh('[elurikkus] listener attached count=' + __elurikkusRefreshListenerAttachCount, {
+      target: btnElu.id || 'btnRefreshData',
+      view: _getElurikkusRefreshView(),
+    });
     btnElu.addEventListener('click', async function(){
-      if(btnElu.__running) return;
+      if(btnElu.__running || __elurikkusBulkActive || __eluBulkActive){
+        _logElurikkusRefresh('[elurikkus] duplicate refresh prevented', {
+          source: 'button',
+          view: _getElurikkusRefreshView(),
+          jobId: __elurikkusBulkCurrentJobId || null,
+        });
+        return;
+      }
       btnElu.__running = true;
       btnElu.disabled = true;
       try{
@@ -6998,8 +7186,14 @@ function _ddmmToDate(ddmm){
 function _dateToDdmm(dt){
   return dt.getDate()+'.'+String(dt.getMonth()+1).padStart(2,'0');
 }
+function _canEditKevadranne(){
+  try{
+    return !!(window.__appPermissions && window.__appPermissions.kevadranneEdit);
+  }catch(e){ return false; }
+}
 window.editSpringDateDirect = function(key){
   try{
+    if(!_canEditKevadranne()) return;
     if(!key) return;
     const modal = document.getElementById('springEditModal');
     const speciesEl = document.getElementById('springEditSpecies');
@@ -7240,7 +7434,9 @@ function rowHTML(obj) {
     '<span class="kevadi-chip" style="display:inline-flex; gap:8px; align-items:center;">' +
       '<span class="pill">Kevad:</span>' +
       '<span class="pill">' + escapeHtml(springVal || '-') + '</span>' +
-      '<button type="button" class="btn secondary" style="position:relative;z-index:50;pointer-events:auto" onclick="event.preventDefault(); event.stopPropagation(); window.editSpringDateDirect && window.editSpringDateDirect(\'' + String(key).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\'); return false;">Muuda</button>' +
+      (_canEditKevadranne()
+        ? '<button type="button" class="btn secondary" style="position:relative;z-index:50;pointer-events:auto" onclick="event.preventDefault(); event.stopPropagation(); window.editSpringDateDirect && window.editSpringDateDirect(\'' + String(key).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\'); return false;">Muuda</button>'
+        : '') +
     '</span>';
   const springChip = '<div class="species-extra meta-row2">' + springTxt + '</div>';
   const defaultSearchUrl = String((p.searchUrl || obj.url) || obj.url);
@@ -7343,6 +7539,7 @@ function render() {
     // Start edit
     const startBtn = t.closest?.('.spring-date-btn');
     if (startBtn){
+      if(!_canEditKevadranne()) return;
       stop(e);
       springEditRowKey = startBtn.getAttribute('data-key');
       if (typeof renderSpringPanel === 'function') renderSpringPanel();
@@ -7367,6 +7564,7 @@ function render() {
     // Save
     const saveBtn = t.closest?.('.spring-edit-save');
     if (saveBtn){
+      if(!_canEditKevadranne()) return;
       stop(e);
       const key = saveBtn.getAttribute('data-key');
       const inp = document.querySelector(`.spring-edit-input[data-key="${key}"]`);
@@ -7795,7 +7993,8 @@ document.addEventListener('DOMContentLoaded', function(){
       const springDateText = r.disp;
       const isEditing = (springEditRowKey === key);
       const currentVal = _springDisplayValue(_getSpringValue(key));
-      const dateCellHtml = isEditing
+      const canEdit = _canEditKevadranne();
+      const dateCellHtml = canEdit && isEditing
         ? `
     <div class="spring-edit-wrap" style="display:flex; gap:6px; align-items:center;">
       <input class="spring-edit-input" data-key="${key}" value="${currentVal}" placeholder="DD.MM"
@@ -7807,12 +8006,14 @@ document.addEventListener('DOMContentLoaded', function(){
         style="padding:6px 10px; border:0; border-radius:10px; background:#eee; color:#111;">X</button>
     </div>
   `
-        : `
+        : (canEdit
+          ? `
     <button class="spring-date-btn" data-key="${key}"
       style="border:0; border-radius:999px; padding:6px 10px; background:#f3f4f6; color:#111;">
       ${springDateText}
     </button>
-  `;
+  `
+          : `<span style="border-radius:999px; padding:6px 10px; background:#f3f4f6; color:#111; display:inline-block;">${springDateText}</span>`);
       return '<tr><td>'+dateCellHtml+'</td><td><span class="springSpeciesBtn" onclick="window.__springScrollToSpecies && window.__springScrollToSpecies(\''+safeName.replace(/'/g, "\\'")+'\')">'+ safeName+'</span></td><td>'+yDisp+'</td></tr>';
     }).join('');
     const keysShown = rows.map(r=>r.name);
@@ -7998,6 +8199,12 @@ var __sharedDefaults = {};
       if(type === 'SPECIES_META_REQUEST'){
         var src2 = ev.source;
         if(src2 && typeof src2.postMessage === 'function') src2.postMessage({ type: 'SPECIES_META_CURRENT', speciesMeta: JSON.parse(localStorage.getItem('estbirding.speciesMeta.v1') || '{}') }, '*');
+      }
+      if(type === 'APP_PERMISSIONS' && ev.data.permissions && typeof ev.data.permissions === 'object'){
+        window.__appPermissions = Object.assign({}, window.__appPermissions || {}, ev.data.permissions || {});
+        springEditRowKey = null;
+        try{ render(); }catch(e){}
+        try{ renderSpringPanel(); }catch(e){}
       }
     }catch(e){ console.warn('postMessage handler error', e); }
   });

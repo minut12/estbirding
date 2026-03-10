@@ -17,6 +17,8 @@ import { getProxyMode } from '@/config/proxyEndpoint';
 import { getSupabaseUrl } from '@/config/supabaseConfig';
 import { normalizeDisplayText } from '@/lib/textNormalize';
 import { getNewsImageSrc, getProxiedImageUrl, getProxyBase, isProxiedImageUrl } from './newsImage';
+import { useAuth } from '@/features/auth/AuthContext';
+import { PERMISSIONS } from '@/features/auth/permissions';
 
 /* Types */
 interface NewsItem {
@@ -574,6 +576,7 @@ function rewriteImgSrcToProxy(html: string, sourceName: string, proxyBase: strin
 
 /* Main component */
 export default function NewsTab() {
+  const { isAdmin, hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const initialListState = useMemo(() => readNewsListState(), []);
   const [tab, setTab] = useState<'latest' | 'archive'>(initialListState?.tab || 'latest');
@@ -590,6 +593,7 @@ export default function NewsTab() {
   const [lastNewsFetchErrorShort, setLastNewsFetchErrorShort] = useState('');
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(() => readLastNewsRefreshAt());
   const utf8Probe = 'Kõik allikad õäöü';
+  const canArchiveNews = isAdmin || hasPermission(PERMISSIONS.newsArchive);
 
   const persistListState = useCallback((overrides: Partial<NewsListState> = {}) => {
     writeNewsListState({
@@ -818,6 +822,9 @@ const {
   // Toggle archive via DB update
   const archiveMutation = useMutation({
     mutationFn: async ({ id, archived }: { id: string; archived: boolean }) => {
+      if (!canArchiveNews) {
+        throw new Error('Puudub õigus uudist arhiveerida');
+      }
       const { error } = await supabase.functions.invoke('news-archive', {
         body: { id, archived },
       });
@@ -925,6 +932,7 @@ const {
         sources={sources}
         showEtContent={showEtContent}
         autoTranslateEnabled={autoTranslateEnabled}
+        canArchiveNews={canArchiveNews}
         onBack={closeArticle}
         onToggleArchive={() => toggleArchive(selected.id, selected.is_archived)}
       />
@@ -1041,6 +1049,7 @@ const {
                 proxyBase={resolvedProxyBase}
                 showEtContent={showEtContent}
                 autoTranslateEnabled={autoTranslateEnabled}
+                canArchiveNews={canArchiveNews}
                 onOpen={() => openArticle(item)}
                 onToggleArchive={() => toggleArchive(item.id, item.is_archived)}
               />
@@ -1053,12 +1062,13 @@ const {
 }
 
 /* News Card */
-function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnabled, onOpen, onToggleArchive }: {
+function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnabled, canArchiveNews, onOpen, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
   proxyBase: string;
   showEtContent: boolean;
   autoTranslateEnabled: boolean;
+  canArchiveNews: boolean;
   onOpen: () => void;
   onToggleArchive: () => void;
 }) {
@@ -1170,10 +1180,12 @@ function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnable
                 <ExternalLink className="w-3 h-3" /> Originaal
               </Button>
             </a>
-            <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onToggleArchive}>
-              {item.is_archived ? <ArchiveRestore className="w-3.5 h-3.5 mr-1" /> : <Archive className="w-3.5 h-3.5 mr-1" />}
-              {item.is_archived ? 'Taasta' : 'Arhiveeri'}
-            </Button>
+            {canArchiveNews && (
+              <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onToggleArchive}>
+                {item.is_archived ? <ArchiveRestore className="w-3.5 h-3.5 mr-1" /> : <Archive className="w-3.5 h-3.5 mr-1" />}
+                {item.is_archived ? 'Taasta' : 'Arhiveeri'}
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -1182,11 +1194,12 @@ function NewsCard({ item, sources, proxyBase, showEtContent, autoTranslateEnable
 }
 
 /* Article View (lazy-loads content) */
-function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBack, onToggleArchive }: {
+function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, canArchiveNews, onBack, onToggleArchive }: {
   item: NewsItem;
   sources: NewsSource[];
   showEtContent: boolean;
   autoTranslateEnabled: boolean;
+  canArchiveNews: boolean;
   onBack: () => void;
   onToggleArchive: () => void;
 }) {
@@ -1454,10 +1467,12 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, onBac
               <ExternalLink className="w-3.5 h-3.5" /> Ava originaal
             </Button>
           </a>
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={onToggleArchive}>
-            {item.is_archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
-            {item.is_archived ? 'Taasta' : 'Arhiveeri'}
-          </Button>
+          {canArchiveNews && (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={onToggleArchive}>
+              {item.is_archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+              {item.is_archived ? 'Taasta' : 'Arhiveeri'}
+            </Button>
+          )}
         </div>
       </div>
     </div>

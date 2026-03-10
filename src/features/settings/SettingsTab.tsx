@@ -15,6 +15,7 @@ import { clearAppCaches, fullReset, doSoftReload, doHardReload, type ResetReport
 import { APP_VERSION } from '@/lib/version';
 import { Trash2, RotateCcw, LogOut, Users, ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/features/auth/AuthContext';
+import { PERMISSIONS } from '@/features/auth/permissions';
 import AvatarManager from './AvatarManager';
 import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
@@ -205,7 +206,7 @@ async function probeJson(url: string) {
 }
 
 export default function SettingsTab() {
-  const { user, role, isAdmin: isAdminUser, signOut } = useAuth();
+  const { user, role, isAdmin: isAdminUser, hasPermission, signOut } = useAuth();
   const navigate = useNavigate();
   const newsSourcesSectionRef = useRef<HTMLDivElement | null>(null);
   const [settingsPage, setSettingsPage] = useState<SettingsPage>('home');
@@ -229,6 +230,8 @@ export default function SettingsTab() {
   const envProxyBase = getEnvProxyBase();
   const resolvedProxyBase = resolveProxyBase(proxyBaseUrl);
   const proxyMode = getProxyMode(resolvedProxyBase);
+  const canManageSettings = isAdminUser || hasPermission(PERMISSIONS.settingsManage);
+  const canSeeAdminLinks = isAdminUser || hasPermission(PERMISSIONS.settingsLinksAdmin);
 
   useEffect(() => {
     setForm(loadSettings());
@@ -1066,7 +1069,7 @@ export default function SettingsTab() {
           Roll: <span className="font-medium">{role === 'admin' ? 'Admin' : role === 'user_level_2' ? 'Tase 2' : 'Tase 1'}</span>
         </p>
         <div className="flex gap-2 flex-wrap">
-          {isAdminUser && (
+          {canSeeAdminLinks && (
             <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate('/admin/users')}>
               <Users className="w-4 h-4" /> Kasutajad
             </Button>
@@ -1077,7 +1080,7 @@ export default function SettingsTab() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
+      {canManageSettings && <div className="flex flex-col gap-2">
         <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('news')}>
           Uudised
         </Button>
@@ -1093,7 +1096,7 @@ export default function SettingsTab() {
         <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('maps_debug')}>
           Kaardid
         </Button>
-      </div>
+      </div>}
       <div className="mt-2">
         {renderDebugLite()}
       </div>
@@ -1102,6 +1105,7 @@ export default function SettingsTab() {
 
   const renderSettings = () => {
     if (settingsPage === 'home') return renderSettingsHome();
+    if (!canManageSettings) return renderSettingsHome();
     if (settingsPage === 'news') return <>{renderSettingsHeader('Uudised')}{renderSettingsNews()}</>;
     if (settingsPage === 'events') return <>{renderSettingsHeader('Üritused')}{renderSettingsEvents()}</>;
     if (settingsPage === 'translations') return <>{renderSettingsHeader('Tõlge')}{renderSettingsTranslations()}</>;

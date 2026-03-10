@@ -459,6 +459,7 @@ let proxyBase = localStorage.getItem(LS_PROXY) || '';
 const LS_ELU_AUTO_30M = 'elu_auto_30m';
 let __eluAuto30mTimer = null;
 let nameCache = JSON.parse(localStorage.getItem(LS_NAMES) || '{}');
+window.__appPermissions = window.__appPermissions || { kevadranneEdit: false };
 let liveElurikkusBySpecies = (function(){
   try{
     const raw = JSON.parse(localStorage.getItem(LS_LIVE_ELURIKKUS) || '{}');
@@ -7185,8 +7186,14 @@ function _ddmmToDate(ddmm){
 function _dateToDdmm(dt){
   return dt.getDate()+'.'+String(dt.getMonth()+1).padStart(2,'0');
 }
+function _canEditKevadranne(){
+  try{
+    return !!(window.__appPermissions && window.__appPermissions.kevadranneEdit);
+  }catch(e){ return false; }
+}
 window.editSpringDateDirect = function(key){
   try{
+    if(!_canEditKevadranne()) return;
     if(!key) return;
     const modal = document.getElementById('springEditModal');
     const speciesEl = document.getElementById('springEditSpecies');
@@ -7427,7 +7434,9 @@ function rowHTML(obj) {
     '<span class="kevadi-chip" style="display:inline-flex; gap:8px; align-items:center;">' +
       '<span class="pill">Kevad:</span>' +
       '<span class="pill">' + escapeHtml(springVal || '-') + '</span>' +
-      '<button type="button" class="btn secondary" style="position:relative;z-index:50;pointer-events:auto" onclick="event.preventDefault(); event.stopPropagation(); window.editSpringDateDirect && window.editSpringDateDirect(\'' + String(key).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\'); return false;">Muuda</button>' +
+      (_canEditKevadranne()
+        ? '<button type="button" class="btn secondary" style="position:relative;z-index:50;pointer-events:auto" onclick="event.preventDefault(); event.stopPropagation(); window.editSpringDateDirect && window.editSpringDateDirect(\'' + String(key).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\'); return false;">Muuda</button>'
+        : '') +
     '</span>';
   const springChip = '<div class="species-extra meta-row2">' + springTxt + '</div>';
   const defaultSearchUrl = String((p.searchUrl || obj.url) || obj.url);
@@ -7530,6 +7539,7 @@ function render() {
     // Start edit
     const startBtn = t.closest?.('.spring-date-btn');
     if (startBtn){
+      if(!_canEditKevadranne()) return;
       stop(e);
       springEditRowKey = startBtn.getAttribute('data-key');
       if (typeof renderSpringPanel === 'function') renderSpringPanel();
@@ -7554,6 +7564,7 @@ function render() {
     // Save
     const saveBtn = t.closest?.('.spring-edit-save');
     if (saveBtn){
+      if(!_canEditKevadranne()) return;
       stop(e);
       const key = saveBtn.getAttribute('data-key');
       const inp = document.querySelector(`.spring-edit-input[data-key="${key}"]`);
@@ -7982,7 +7993,8 @@ document.addEventListener('DOMContentLoaded', function(){
       const springDateText = r.disp;
       const isEditing = (springEditRowKey === key);
       const currentVal = _springDisplayValue(_getSpringValue(key));
-      const dateCellHtml = isEditing
+      const canEdit = _canEditKevadranne();
+      const dateCellHtml = canEdit && isEditing
         ? `
     <div class="spring-edit-wrap" style="display:flex; gap:6px; align-items:center;">
       <input class="spring-edit-input" data-key="${key}" value="${currentVal}" placeholder="DD.MM"
@@ -7994,12 +8006,14 @@ document.addEventListener('DOMContentLoaded', function(){
         style="padding:6px 10px; border:0; border-radius:10px; background:#eee; color:#111;">X</button>
     </div>
   `
-        : `
+        : (canEdit
+          ? `
     <button class="spring-date-btn" data-key="${key}"
       style="border:0; border-radius:999px; padding:6px 10px; background:#f3f4f6; color:#111;">
       ${springDateText}
     </button>
-  `;
+  `
+          : `<span style="border-radius:999px; padding:6px 10px; background:#f3f4f6; color:#111; display:inline-block;">${springDateText}</span>`);
       return '<tr><td>'+dateCellHtml+'</td><td><span class="springSpeciesBtn" onclick="window.__springScrollToSpecies && window.__springScrollToSpecies(\''+safeName.replace(/'/g, "\\'")+'\')">'+ safeName+'</span></td><td>'+yDisp+'</td></tr>';
     }).join('');
     const keysShown = rows.map(r=>r.name);
@@ -8185,6 +8199,12 @@ var __sharedDefaults = {};
       if(type === 'SPECIES_META_REQUEST'){
         var src2 = ev.source;
         if(src2 && typeof src2.postMessage === 'function') src2.postMessage({ type: 'SPECIES_META_CURRENT', speciesMeta: JSON.parse(localStorage.getItem('estbirding.speciesMeta.v1') || '{}') }, '*');
+      }
+      if(type === 'APP_PERMISSIONS' && ev.data.permissions && typeof ev.data.permissions === 'object'){
+        window.__appPermissions = Object.assign({}, window.__appPermissions || {}, ev.data.permissions || {});
+        springEditRowKey = null;
+        try{ render(); }catch(e){}
+        try{ renderSpringPanel(); }catch(e){}
       }
     }catch(e){ console.warn('postMessage handler error', e); }
   });

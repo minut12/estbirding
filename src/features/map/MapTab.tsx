@@ -12,6 +12,7 @@ import { loadSpeciesMeta } from '@/lib/speciesMeta';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import { broadcastSupabaseConfigToMapIframes, getSupabaseAnonKey, getSupabaseUrl, validateSupabaseConfig } from '@/config/supabaseConfig';
 import { useAuth } from '@/features/auth/AuthContext';
+import { PERMISSIONS } from '@/features/auth/permissions';
 import { type MapScope, loadSpeciesVisibility, saveSpeciesVisibility, loadLocalHidden } from '@/lib/speciesVisibility';
 
 const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -27,10 +28,20 @@ interface MapTabProps {
 }
 
 export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
-  const { user } = useAuth();
+  const { user, isAdmin, hasPermission } = useAuth();
+  const availableMaps = useMemo(() => (
+    maps.filter((map) => {
+      if (isAdmin) return true;
+      if (map.id === 'linnuliigid-ee') return hasPermission(PERMISSIONS.mapViewEe);
+      if (map.id === 'europe') return hasPermission(PERMISSIONS.mapViewEurope);
+      return false;
+    })
+  ), [hasPermission, isAdmin]);
   const [selectedId, setSelectedId] = useState(getActiveMap().id);
-  const current = maps.find((m) => m.id === selectedId) ?? getActiveMap();
-  const mapScope = MAP_ID_TO_SCOPE[selectedId] as MapScope | undefined;
+  const fallbackMap = availableMaps[0] ?? getActiveMap();
+  const current = availableMaps.find((m) => m.id === selectedId) ?? fallbackMap;
+  const mapScope = MAP_ID_TO_SCOPE[current.id] as MapScope | undefined;
+  const canEditKevadranne = isAdmin || hasPermission(PERMISSIONS.kevadranneEdit);
   const iframeSrc = useMemo(() => {
     const proxyBase = resolveProxyBase();
     const params = new URLSearchParams();
@@ -47,6 +58,12 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   useEffect(() => {
     onMapChange?.(selectedId);
   }, [onMapChange, selectedId]);
+
+  useEffect(() => {
+    if (!availableMaps.some((map) => map.id === selectedId) && availableMaps[0]) {
+      setSelectedId(availableMaps[0].id);
+    }
+  }, [availableMaps, selectedId]);
 
   // Send a postMessage to the iframe (safe wrapper)
   const sendToIframe = useCallback((msg: Record<string, unknown>) => {
@@ -108,6 +125,14 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       error: validation.error || 'Supabase config invalid',
     });
   }, [sendToIframe]);
+  const sendPermissionsToIframe = useCallback(() => {
+    sendToIframe({
+      type: 'APP_PERMISSIONS',
+      permissions: {
+        kevadranneEdit: canEditKevadranne,
+      },
+    });
+  }, [canEditKevadranne, sendToIframe]);
 
   // === Species visibility persistence ===
   const sendSpeciesVisibilityToIframe = useCallback((hidden: Set<string>) => {
@@ -243,6 +268,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     setTimeout(sendAvatarsToIframe, 300);
     setTimeout(sendSpeciesMetaToIframe, 350);
     setTimeout(sendSupabaseConfigToIframe, 375);
+    setTimeout(sendPermissionsToIframe, 380);
     setTimeout(broadcastSupabaseConfigToMapIframes, 390);
     setTimeout(sendAppInsets, 400);
     // Send species visibility preferences
@@ -265,7 +291,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   useEffect(() => {
     broadcastSupabaseConfigToMapIframes();
     sendSupabaseConfigToIframe();
-  }, [selectedId, sendSupabaseConfigToIframe]);
+  }, [selectedId, sendPermissionsToIframe, sendSupabaseConfigToIframe]);
 
   useEffect(() => {
     let prev = `${getSupabaseUrl()}|${getSupabaseAnonKey()}`;
@@ -318,7 +344,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {maps.map((m) => (
+            {availableMaps.map((m) => (
               <SelectItem key={m.id} value={m.id} disabled={!m.enabled}>
                 {m.name}
                 {!m.enabled && ' (varsti)'}

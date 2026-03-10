@@ -272,10 +272,35 @@ function _normText(s){ return _fixMojibake(s).replace(/\uFFFD/g, "").trim(); }
 for (let i = 0; i < SPECIES.length; i++) SPECIES[i] = _normText(SPECIES[i]);
 
 const DATA = SPECIES.map(name => ({ est: _normText(name), url: 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(_normText(name)) }));
+const SPECIES_WHITELIST = new Set(SPECIES.map(function(name){ return _normText(name); }));
+
+function isWhitelistedSpecies(name){
+  return SPECIES_WHITELIST.has(_normText(name));
+}
+
+function prunePointsToWhitelist(){
+  if(!points || typeof points !== 'object') return;
+  Object.keys(points).forEach(function(key){
+    if(!isWhitelistedSpecies(key)){
+      try{
+        var prevMarker = markers && markers.has(key) ? markers.get(key) : null;
+        var clusterGroup = window.__markerClusterGroup || window.markerClusterGroup || null;
+        if(prevMarker){
+          try{
+            if(clusterGroup && typeof clusterGroup.removeLayer === 'function') clusterGroup.removeLayer(prevMarker);
+            else map.removeLayer(prevMarker);
+          }catch(e){}
+          try{ markers.delete(key); }catch(e){}
+        }
+      }catch(e){}
+      delete points[key];
+    }
+  });
+}
 
 // Local storage keys
 const LS_AVATARS='bm_rariliin_avatars', LS_POINTS='bm_rariliin_points', LS_PROXY='bm_rariliin_proxy', LS_NAMES='bm_rariliin_names';
-const LS_RECENT_ONLY = 'bm_recent_only';
+const LS_RECENT_ONLY = 'bm_rariliin_recent_only';
 const CLASSIC_MODE = false;
 const LS_LIVE_ELURIKKUS = 'bm_live_elurikkus_v1';
 const LS_LIVE_ELURIKKUS_USE = 'bm_live_elurikkus_use_v1';
@@ -5525,6 +5550,7 @@ function applySnapshot(snapshot){
   const incomingPoints = snapshot.payload.points || {};
   const mergedPoints = Object.assign({}, points || {});
   Object.keys(incomingPoints).forEach(function(key){
+    if(!isWhitelistedSpecies(key)) return;
     const incoming = incomingPoints[key];
     const existing = mergedPoints[key];
     if(existing &&
@@ -5538,6 +5564,7 @@ function applySnapshot(snapshot){
     mergedPoints[key] = incoming;
   });
   points = mergedPoints;
+  prunePointsToWhitelist();
   dataMode = 'snapshot';
   lastSnapshotAt = snapshot.createdAt || null;
   snapshotDebugNote = null;
@@ -6279,8 +6306,9 @@ async function _applySnapshot(snap){
 }
 
 function refreshAllMarkers(){
+  prunePointsToWhitelist();
   __renderedMarkerCount = 0;
-  Object.keys(points).forEach(updateMarker);
+  SPECIES.forEach(updateMarker);
   render();
   _checkEmpty7dBanner();
   if(__loaderStage === 'ready') __lastErrorMessage = '';
@@ -6299,8 +6327,9 @@ function rebuildAllMarkers(){
       markers.clear();
     }
   }catch(e){}
+  prunePointsToWhitelist();
   __renderedMarkerCount = 0;
-  Object.keys(points || {}).forEach(updateMarker);
+  SPECIES.forEach(updateMarker);
 }
 
 function _checkEmpty7dBanner(){
@@ -7194,6 +7223,18 @@ window.saveSpringEditModal = function(clearValue){
 };
 
 function updateMarker(key) {
+  if (!isWhitelistedSpecies(key)) {
+    const prevMarker = markers.has(key) ? markers.get(key) : null;
+    const clusterGroup = window.__markerClusterGroup || window.markerClusterGroup || null;
+    if(prevMarker){
+      try{
+        if(clusterGroup && typeof clusterGroup.removeLayer === 'function') clusterGroup.removeLayer(prevMarker);
+        else map.removeLayer(prevMarker);
+      }catch(e){}
+      markers.delete(key);
+    }
+    return;
+  }
   const p = points[key];
   const prevMarker = markers.has(key) ? markers.get(key) : null;
   const clusterGroup = window.__markerClusterGroup || window.markerClusterGroup || null;
@@ -7279,6 +7320,7 @@ function escapeHtml(s){
     .replace(/'/g, '&#39;');
 }
 function buildPopupHtml(key, p){
+  if(!isWhitelistedSpecies(key)) return '';
   const x = (p && p.eluExtra) ? p.eluExtra : {};
   const val = (v)=> (v===undefined || v===null || String(v).trim()==='') ? '-' : String(v).trim();
   const ind = val(x.individualCount ?? p.individualCount);
@@ -7338,6 +7380,7 @@ function openWaze(lat, lon){
 }
 function rowHTML(obj) {
   const key = obj.est;
+  if(!isWhitelistedSpecies(key)) return '';
   const p = points[key] || {};
   const bcol = _borderColorByDate(p.t);
   const hasPoint = Number.isFinite(p.lat) && Number.isFinite(p.lon);

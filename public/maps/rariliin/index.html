@@ -7702,7 +7702,11 @@ function render() {
   const list = document.getElementById('list'); list.innerHTML='';
   const recent7 = is7daysOnly();
   const arr = DATA.filter(function(x){
-    if(!x.est.toLowerCase().includes(q)) return false;
+    const meta = window.resolveSpeciesMetaShared ? window.resolveSpeciesMetaShared(x.est) : { rariliinCode: '' };
+    const speciesName = String(x.est || '').toLowerCase().trim();
+    const rariliinCode = String(meta.rariliinCode || '').toLowerCase().trim();
+    const matchesFilter = !q || speciesName.includes(q) || (rariliinCode && rariliinCode.includes(q));
+    if(!matchesFilter) return false;
     if(recent7){
       const p = points[x.est];
       if(!p) return false;

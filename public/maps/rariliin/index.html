@@ -7638,7 +7638,9 @@ function rowHTML(obj) {
   const hasPoint = Number.isFinite(p.lat) && Number.isFinite(p.lon);
   const muted = (p.visible===false) ? 'muted' : '';
   const occ7 = Number.isFinite(p.occ7) ? p.occ7 : null;
-  const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
+  const metaCfg = window.resolveSpeciesMetaShared ? window.resolveSpeciesMetaShared(key) : { rarityLevel: 'none', resolvedKey: key, found: false };
+  console.log('[rariliin-meta] sidebarSpecies="' + String(key) + '" key="' + String(metaCfg.resolvedKey || key) + '" found=' + String(!!metaCfg.found));
+  console.log('[rariliin-meta] scientificName="' + String(metaCfg.scientificName || '') + '" code="' + String(metaCfg.rariliinCode || '') + '" note="' + String(metaCfg.notificationNote || '') + '"');
   const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(metaCfg.rarityLevel) : '';
   const renderMetaRow = function(label, value){
     const clean = (value && String(value).trim()) ? String(value).trim() : '-';

@@ -1,5 +1,5 @@
 import { normalizeSpeciesName, normalizeUiText } from "@/lib/textNormalize";
-import { LINNULIIGID_SCOPE, type SpeciesScopeConfig } from "@/lib/mapScope";
+import { LINNULIIGID_SCOPE, RARILIIN_SCOPE, type SpeciesScopeConfig } from "@/lib/mapScope";
 export const SPECIES_META_KEY = LINNULIIGID_SCOPE.speciesMetaStorageKey;
 const SPECIES_META_MIGRATED_KEY = LINNULIIGID_SCOPE.speciesMetaMigratedKey;
 export const SPECIES_META_LOCAL_UPDATED_AT_KEY = LINNULIIGID_SCOPE.speciesMetaLocalUpdatedAtKey;
@@ -9,9 +9,17 @@ export type SpeciesMeta = {
   ebirdCode?: string;
   rarityLevel?: "none" | "rare" | "super" | "mega";
   avatarUrl?: string;
+  scientificName?: string;
+  rariliinCode?: string;
+  notificationNote?: string;
 };
 
-type SpeciesMetaMap = Record<string, SpeciesMeta>;
+export type SpeciesMetaMap = Record<string, SpeciesMeta>;
+export type SpeciesMetaLookupFallback = Record<string, Partial<SpeciesMeta>>;
+export type SpeciesMetaLookupResult = SpeciesMeta & {
+  resolvedKey: string;
+  found: boolean;
+};
 
 function safeParseRecord(value: string | null): Record<string, any> {
   if (!value) return {};
@@ -41,12 +49,18 @@ function sanitizeMeta(name: string, raw: any): SpeciesMeta {
   const normalizedName = normalizeSpeciesName(name);
   const ebirdCode = typeof raw?.ebirdCode === "string" ? normalizeUiText(raw.ebirdCode) : "";
   const avatarUrl = typeof raw?.avatarUrl === "string" ? normalizeUiText(raw.avatarUrl) : "";
+  const scientificName = typeof raw?.scientificName === "string" ? normalizeUiText(raw.scientificName) : "";
+  const rariliinCode = typeof raw?.rariliinCode === "string" ? normalizeUiText(raw.rariliinCode) : "";
+  const notificationNote = typeof raw?.notificationNote === "string" ? normalizeUiText(raw.notificationNote) : "";
   const rarityLevel = normalizeRarityLevel(raw);
   return {
     name: normalizedName,
     ...(ebirdCode ? { ebirdCode } : {}),
     rarityLevel,
     ...(avatarUrl ? { avatarUrl } : {}),
+    ...(scientificName ? { scientificName } : {}),
+    ...(rariliinCode ? { rariliinCode } : {}),
+    ...(notificationNote ? { notificationNote } : {}),
   };
 }
 
@@ -127,6 +141,27 @@ export function getSpeciesMeta(name: string, scope: SpeciesScopeConfig = LINNULI
   const map = loadSpeciesMeta(scope);
   const key = normalizeSpeciesName(name);
   return map[key] ?? { name: key };
+}
+
+export function getScopedSpeciesMeta(
+  name: string,
+  scope: SpeciesScopeConfig = LINNULIIGID_SCOPE,
+  fallbackMap?: SpeciesMetaLookupFallback,
+): SpeciesMetaLookupResult {
+  const key = normalizeSpeciesName(name);
+  const map = loadSpeciesMeta(scope);
+  const stored = map[key];
+  const fallback = fallbackMap?.[key];
+  const merged = sanitizeMeta(key, { ...(fallback || {}), ...(stored || {}), name: key });
+  return {
+    ...merged,
+    resolvedKey: key,
+    found: Boolean(stored || fallback),
+  };
+}
+
+export function getRariliinSpeciesMeta(name: string, fallbackMap?: SpeciesMetaLookupFallback): SpeciesMetaLookupResult {
+  return getScopedSpeciesMeta(name, RARILIIN_SCOPE, fallbackMap);
 }
 
 export function upsertSpeciesMeta(name: string, partial: Partial<SpeciesMeta>, scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): void {

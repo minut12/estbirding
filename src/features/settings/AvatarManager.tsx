@@ -14,7 +14,7 @@ import {
   getMergedAvatars, validateFile, processImage, notifyIframeUpdate,
   uploadSharedAvatar, removeSharedAvatar, fetchSpeciesList,
 } from '@/lib/avatar-storage';
-import { getSpeciesMeta, loadSpeciesMeta, upsertSpeciesMeta } from '@/lib/speciesMeta';
+import { getRariliinSpeciesMeta, getScopedSpeciesMeta, loadSpeciesMeta, replaceSpeciesMeta, upsertSpeciesMeta, type SpeciesMetaLookupFallback } from '@/lib/speciesMeta';
 import {
   SPECIES_META_LAST_SYNC_AT_KEY,
   getSpeciesMetaSyncStatus,
@@ -31,6 +31,21 @@ type ScopeSpeciesMeta = {
   notificationNote?: string;
 };
 
+function buildScopeMetadataFallback(items: unknown): SpeciesMetaLookupFallback {
+  const next: SpeciesMetaLookupFallback = {};
+  if (!Array.isArray(items)) return next;
+  items.forEach((item) => {
+    const key = normalizeUiText(String((item as ScopeSpeciesMeta | null)?.estonianName || ''));
+    if (!key) return;
+    next[key] = {
+      scientificName: normalizeUiText(String((item as ScopeSpeciesMeta | null)?.scientificName || '')) || undefined,
+      rariliinCode: normalizeUiText(String((item as ScopeSpeciesMeta | null)?.rariliinCode || '')) || undefined,
+      notificationNote: normalizeUiText(String((item as ScopeSpeciesMeta | null)?.notificationNote || '')) || undefined,
+    };
+  });
+  return next;
+}
+
 export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: SpeciesScopeConfig }) {
   const [species, setSpecies] = useState<string[]>([]);
   const [selected, setSelected] = useState<string>('');
@@ -45,7 +60,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
   const [syncing, setSyncing] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<string>(() => localStorage.getItem(scope.speciesMetaLastSyncAtKey || SPECIES_META_LAST_SYNC_AT_KEY) || '');
   const [syncStatus, setSyncStatus] = useState(() => getSpeciesMetaSyncStatus(scope));
-  const [scopeMetadata, setScopeMetadata] = useState<Record<string, ScopeSpeciesMeta>>({});
+  const [scopeMetadata, setScopeMetadata] = useState<SpeciesMetaLookupFallback>({});
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -57,14 +72,23 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
       fetch(scope.speciesMetaAssetPath)
         .then((res) => res.ok ? res.json() : {})
         .then((items) => {
-          const next: Record<string, ScopeSpeciesMeta> = {};
-          if (Array.isArray(items)) {
-            items.forEach((item) => {
-              const key = normalizeUiText(String(item?.estonianName || ''));
-              if (key) next[key] = item;
-            });
-          }
+          const next = buildScopeMetadataFallback(items);
           setScopeMetadata(next);
+          if (scope.id === 'rariliin') {
+            const current = loadSpeciesMeta(scope);
+            const merged = { ...current };
+            Object.entries(next).forEach(([key, fallback]) => {
+              merged[key] = {
+                ...(merged[key] || { name: key }),
+                name: key,
+                ...(fallback.scientificName ? { scientificName: fallback.scientificName } : {}),
+                ...(fallback.rariliinCode ? { rariliinCode: fallback.rariliinCode } : {}),
+                ...(fallback.notificationNote ? { notificationNote: fallback.notificationNote } : {}),
+              };
+            });
+            replaceSpeciesMeta(merged, scope);
+            window.dispatchEvent(new CustomEvent('species-meta-updated'));
+          }
         })
         .catch(() => {});
     } else {
@@ -87,12 +111,14 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
       return;
     }
     const avatars = getMergedAvatars(scope);
-    const meta = getSpeciesMeta(selected, scope);
+    const meta = scope.id === 'rariliin'
+      ? getRariliinSpeciesMeta(selected, scopeMetadata)
+      : getScopedSpeciesMeta(selected, scope);
     setCurrentAvatar(meta.avatarUrl || avatars[selected] || null);
     setEbirdCode(meta.ebirdCode || '');
     setRarityLevel(meta.rarityLevel || 'none');
     setPreview(null);
-  }, [scope, selected]);
+  }, [scope, selected, scopeMetadata]);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -252,7 +278,11 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
   const activeKey = selected || manualKey;
   const displayUrl = preview || currentAvatar || scope.placeholderAvatarUrl;
   const hasSpecies = species.length > 0;
-  const selectedScopeMeta = selected ? scopeMetadata[selected] : null;
+  const selectedScopeMeta = selected
+    ? (scope.id === 'rariliin'
+      ? getRariliinSpeciesMeta(selected, scopeMetadata)
+      : getScopedSpeciesMeta(selected, scope))
+    : null;
 
   const filtered = search
     ? species.filter((s) => normalizeUiText(s).toLowerCase().includes(search.toLowerCase()))

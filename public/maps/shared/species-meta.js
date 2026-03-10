@@ -1,5 +1,6 @@
 (function () {
-  var KEY = "estbirding.speciesMeta.v1";
+  var DEFAULT_KEY = "estbirding.speciesMeta.v1";
+  var RARILIIN_KEY = "estbirding.rariliin.speciesMeta.v1";
   function fixMojibake(s) {
     var v = String(s || "");
     if (!/[\u00C3\u00C2\u00E2]/.test(v)) return v;
@@ -14,6 +15,14 @@
   }
   function normalizeUiText(s) {
     return fixMojibake(s).replace(/\uFFFD/g, "").trim();
+  }
+
+  function getStorageKey() {
+    try {
+      var path = String((window.location && window.location.pathname) || "");
+      if (path.indexOf("/maps/rariliin/") >= 0) return RARILIIN_KEY;
+    } catch (e) {}
+    return DEFAULT_KEY;
   }
 
   function safeParse(value) {
@@ -51,14 +60,14 @@
   }
 
   function loadSpeciesMeta() {
-    var raw = safeParse(localStorage.getItem(KEY));
+    var raw = safeParse(localStorage.getItem(getStorageKey()));
     var out = {};
     Object.keys(raw).forEach(function (name) {
       var clean = normalizeUiText(name);
       if (!clean) return;
       out[clean] = sanitize(clean, raw[name] || {});
     });
-    try { localStorage.setItem(KEY, JSON.stringify(out)); } catch (e) {}
+    try { localStorage.setItem(getStorageKey(), JSON.stringify(out)); } catch (e) {}
     return out;
   }
 
@@ -66,6 +75,23 @@
     var map = loadSpeciesMeta();
     var clean = normalizeUiText(name);
     return map[clean] || { name: clean, rarityLevel: "none" };
+  }
+
+  function resolveSpeciesMeta(name) {
+    var map = loadSpeciesMeta();
+    var clean = normalizeUiText(name);
+    var meta = map[clean] || { name: clean, rarityLevel: "none" };
+    return {
+      name: meta.name || clean,
+      ebirdCode: meta.ebirdCode || "",
+      avatarUrl: meta.avatarUrl || "",
+      scientificName: meta.scientificName || "",
+      rariliinCode: meta.rariliinCode || "",
+      notificationNote: meta.notificationNote || "",
+      rarityLevel: meta.rarityLevel || "none",
+      resolvedKey: clean,
+      found: !!map[clean],
+    };
   }
 
   function rarityBadge(level) {
@@ -83,6 +109,8 @@
 
   window.loadSpeciesMetaShared = loadSpeciesMeta;
   window.getSpeciesMetaShared = getSpeciesMeta;
+  window.resolveSpeciesMetaShared = resolveSpeciesMeta;
+  window.getRariliinSpeciesMetaShared = resolveSpeciesMeta;
   window.getRarityBadgeText = rarityBadge;
   window.getRarityBadgeHtml = rarityBadgeHtml;
   window.fixMojibake = fixMojibake;

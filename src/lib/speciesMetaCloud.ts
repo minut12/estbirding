@@ -16,6 +16,9 @@ export type SpeciesMetaCloudItem = {
   ebirdCode?: string;
   rarityLevel?: 'none' | 'rare' | 'super' | 'mega';
   avatarUrl?: string;
+  scientificName?: string;
+  rariliinCode?: string;
+  notificationNote?: string;
 };
 
 export type SpeciesMetaCloudJson = {
@@ -82,6 +85,9 @@ function normalizeCloudItem(raw: unknown): SpeciesMetaCloudItem {
     ebirdCode: normalizeUiText(String(x.ebirdCode || '')) || undefined,
     rarityLevel: normalizeRarityLevel(x.rarityLevel),
     avatarUrl: normalizeUiText(String(x.avatarUrl || '')) || undefined,
+    scientificName: normalizeUiText(String(x.scientificName || '')) || undefined,
+    rariliinCode: normalizeUiText(String(x.rariliinCode || '')) || undefined,
+    notificationNote: normalizeUiText(String(x.notificationNote || '')) || undefined,
   };
 }
 
@@ -107,6 +113,9 @@ function mergeCloudOverLocal(localMap: Record<string, SpeciesMeta>, cloud: Speci
       ...(item.ebirdCode ? { ebirdCode: item.ebirdCode } : {}),
       rarityLevel: normalizeRarityLevel(item.rarityLevel),
       ...(item.avatarUrl ? { avatarUrl: item.avatarUrl } : {}),
+      ...(item.scientificName ? { scientificName: item.scientificName } : {}),
+      ...(item.rariliinCode ? { rariliinCode: item.rariliinCode } : {}),
+      ...(item.notificationNote ? { notificationNote: item.notificationNote } : {}),
     };
   }
   return merged;

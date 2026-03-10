@@ -3633,6 +3633,9 @@ function hideRecentRaritiesNotice(){
   card.classList.remove('show');
   card.hidden = true;
 }
+function isRecentNoticeDismissedToday(signature){
+  return !!(signature && isRecentNoticeHiddenToday(signature));
+}
 function focusRecentSpecies(species){
   if(!species) return;
   const input = document.getElementById('filterBox');
@@ -3678,6 +3681,27 @@ function renderRecentRaritiesNotice(items, signature){
   actions.hidden = false;
   card.hidden = false;
   card.classList.add('show');
+  console.log('[rariliin-popup] mounted');
+}
+function renderRariliinPopupTest(items){
+  const count = Array.isArray(items) ? items.length : 0;
+  const card = document.getElementById('recentRaritiesCard');
+  const title = document.getElementById('recentRaritiesTitle');
+  const subtitle = document.getElementById('recentRaritiesSubtitle');
+  const list = document.getElementById('recentRaritiesList');
+  const actions = document.getElementById('recentRaritiesActions');
+  if(!card || !title || !subtitle || !list || !actions) return;
+  console.log('[rariliin-popup] render start');
+  title.textContent = 'Rariliini teavitus töötab';
+  subtitle.textContent = 'Popup render test. Recent liigid: ' + String(count);
+  list.innerHTML = '';
+  actions.hidden = false;
+  card.dataset.signature = '__popup_test__';
+  card.hidden = false;
+  card.classList.add('show');
+  window.__rariliinPopupForceVisible = true;
+  window.__rariliinPopupTestVisible = true;
+  console.log('[rariliin-popup] mounted');
 }
 function evaluateRecentRaritiesNotice(options){
   const opts = options || {};
@@ -3685,13 +3709,14 @@ function evaluateRecentRaritiesNotice(options){
   const signature = getRecentRaritiesSignature(items);
   const active7d = is7daysOnly();
   const sessionDismissed = String(window.__rariliinRecentNoticeDismissedSignature || '');
+  const dismissedToday = isRecentNoticeDismissedToday(signature);
   let shownCard = false;
   let hiddenReason = 'none';
   if(!items.length || !signature){
     hiddenReason = 'no_recent_species';
   } else if(sessionDismissed && sessionDismissed === signature){
     hiddenReason = 'dismissed';
-  } else if(isRecentNoticeHiddenToday(signature)){
+  } else if(dismissedToday){
     hiddenReason = 'dismissed';
   } else {
     shownCard = true;
@@ -3709,8 +3734,23 @@ function evaluateRecentRaritiesNotice(options){
   console.log('[rariliin-recent] recentSpeciesCount=' + String(items.length));
   console.log('[rariliin-recent] shownCard=' + String(shownCard));
   console.log('[rariliin-recent] hiddenReason=' + hiddenReason);
+  console.log('[rariliin-popup] recentCount=' + String(items.length));
+  console.log('[rariliin-popup] dismissedToday=' + String(dismissedToday));
+  if(window.__rariliinPopupForceVisible){
+    renderRariliinPopupTest(items);
+    return;
+  }
   if(shownCard) renderRecentRaritiesNotice(items, signature);
-  else hideRecentRaritiesNotice();
+  else if(opts.force){
+    const fallbackItems = items.slice(0, 3);
+    renderRecentRaritiesNotice(fallbackItems, signature || '__popup_fallback__');
+    const title = document.getElementById('recentRaritiesTitle');
+    const subtitle = document.getElementById('recentRaritiesSubtitle');
+    const list = document.getElementById('recentRaritiesList');
+    if(title) title.textContent = 'Rariliini teavitus töötab';
+    if(subtitle) subtitle.textContent = 'Popup render test. Recent liigid: ' + String(items.length);
+    if(list && !items.length) list.innerHTML = '';
+  } else hideRecentRaritiesNotice();
 }
 
 function _borderColorByDate(isoDate){
@@ -7802,18 +7842,27 @@ _wireSidebarSettingsRow();
   function markSeenAndHide(){
     const signature = currentSignature();
     if(signature) window.__rariliinRecentNoticeDismissedSignature = signature;
+    window.__rariliinPopupForceVisible = false;
+    window.__rariliinPopupTestVisible = false;
     hideRecentRaritiesNotice();
   }
   if(closeBtn && !closeBtn.__wired){
-    closeBtn.addEventListener('click', markSeenAndHide);
+    closeBtn.addEventListener('click', function(){
+      console.log('[rariliin-popup] close clicked');
+      markSeenAndHide();
+    });
     closeBtn.__wired = true;
   }
   if(dismissBtn && !dismissBtn.__wired){
-    dismissBtn.addEventListener('click', markSeenAndHide);
+    dismissBtn.addEventListener('click', function(){
+      console.log('[rariliin-popup] close clicked');
+      markSeenAndHide();
+    });
     dismissBtn.__wired = true;
   }
   if(showMapBtn && !showMapBtn.__wired){
     showMapBtn.addEventListener('click', function(){
+      console.log('[rariliin-popup] close clicked');
       const items = getRecentRaritiesItems();
       if(items.length){
         focusRecentMarkers(items);
@@ -7825,11 +7874,14 @@ _wireSidebarSettingsRow();
   }
   if(hideTodayBtn && !hideTodayBtn.__wired){
     hideTodayBtn.addEventListener('click', function(){
+      console.log('[rariliin-popup] doNotShowToday clicked');
       const signature = currentSignature();
       if(signature){
         window.__rariliinRecentNoticeDismissedSignature = signature;
         rememberRecentNoticeHiddenToday(signature);
       }
+      window.__rariliinPopupForceVisible = false;
+      window.__rariliinPopupTestVisible = false;
       hideRecentRaritiesNotice();
     });
     hideTodayBtn.__wired = true;
@@ -7844,6 +7896,9 @@ _wireSidebarSettingsRow();
     list.__wired = true;
   }
 })();
+window.__rariliinPopupForceVisible = true;
+window.__rariliinPopupTestVisible = false;
+renderRariliinPopupTest(getRecentRaritiesItems());
 _refreshBuildStampUi();
 setInterval(_refreshBuildStampUi, 10000);
 function _startSnapshotBoot(){

@@ -34,8 +34,8 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   const availableMaps = useMemo(() => (
     maps.filter((map) => isAdmin || hasPermission(map.permissionKey))
   ), [hasPermission, isAdmin]);
-  const [selectedId, setSelectedId] = useState(getActiveMap().id);
   const fallbackMap = availableMaps[0] ?? getActiveMap();
+  const [selectedId, setSelectedId] = useState(fallbackMap.id);
   const current = availableMaps.find((m) => m.id === selectedId) ?? fallbackMap;
   const mapScope = MAP_ID_TO_SCOPE[current.id] as MapScope | undefined;
   const speciesScope = current.id === 'rariliin' ? RARILIIN_SCOPE : LINNULIIGID_SCOPE;

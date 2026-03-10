@@ -151,6 +151,57 @@
     .leaflet-top,.leaflet-bottom{z-index:1000!important}
     .leaflet-control{z-index:1000!important}
     .sidebar-backdrop{display:none;position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,.35)}
+    .recent-rarities-wrap{
+      position:absolute;
+      top:16px;
+      right:16px;
+      z-index:1450;
+      pointer-events:none;
+      max-width:min(380px,calc(100vw - 32px));
+    }
+    .recent-rarities-card{
+      display:none;
+      pointer-events:auto;
+      border-radius:20px;
+      padding:16px 16px 14px;
+      color:#0f172a;
+      background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(240,249,255,.96));
+      border:1px solid rgba(148,163,184,.22);
+      box-shadow:0 16px 40px rgba(15,23,42,.18);
+      backdrop-filter:blur(8px);
+    }
+    .recent-rarities-card.show{display:block;animation:rarityCardIn .24s ease-out}
+    .recent-rarities-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+    .recent-rarities-kicker{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#ecfeff;color:#0f766e;font-size:11px;font-weight:700;letter-spacing:.02em}
+    .recent-rarities-title{margin:10px 0 4px;font-size:18px;line-height:1.15;font-weight:800}
+    .recent-rarities-subtitle{margin:0;color:#475569;font-size:13px;line-height:1.4}
+    .recent-rarities-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+    .recent-rarity-chip{
+      border:none;
+      border-radius:999px;
+      padding:8px 10px;
+      background:#ffffff;
+      color:#0f172a;
+      box-shadow:inset 0 0 0 1px rgba(148,163,184,.18);
+      font-size:12px;
+      line-height:1.25;
+      text-align:left;
+      cursor:pointer;
+    }
+    .recent-rarity-chip strong{display:block;font-size:12px}
+    .recent-rarity-chip span{display:block;color:#64748b;font-size:11px;margin-top:2px}
+    .recent-rarity-chip:hover{background:#f8fafc}
+    .recent-rarities-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+    .recent-rarities-actions .btn{border-radius:999px;padding:7px 12px}
+    .recent-rarities-actions .btn.secondary{background:#e2e8f0;color:#0f172a}
+    .recent-rarities-close{
+      width:34px;height:34px;border-radius:999px;border:none;background:rgba(255,255,255,.82);color:#334155;cursor:pointer;
+      box-shadow:inset 0 0 0 1px rgba(148,163,184,.2)
+    }
+    @keyframes rarityCardIn{
+      from{opacity:0;transform:translateY(-6px) scale(.98)}
+      to{opacity:1;transform:translateY(0) scale(1)}
+    }
     @media (max-width: 900px){
       #app{flex-direction:column}
       #mapWrap{flex:1;min-height:0}
@@ -162,6 +213,15 @@
       #sidebar.open{transform:translateX(0)}
       .sidebar-backdrop.show{display:block}
       .sidebar-backdrop{z-index:3500!important}
+      .recent-rarities-wrap{
+        top:calc(env(safe-area-inset-top, 0px) + 12px);
+        left:12px;
+        right:12px;
+        max-width:none;
+      }
+      .recent-rarities-card{border-radius:18px;padding:14px 14px 12px}
+      .recent-rarities-title{font-size:17px}
+      .recent-rarities-actions .btn{flex:1 1 120px;justify-content:center}
     }
 
   /* Debug panel */
@@ -212,6 +272,24 @@
 </div>
 
 <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+<div id="recentRaritiesWrap" class="recent-rarities-wrap" aria-live="polite">
+  <div id="recentRaritiesCard" class="recent-rarities-card" hidden>
+    <div class="recent-rarities-top">
+      <div>
+        <div class="recent-rarities-kicker">Rariliin • 7 päeva</div>
+        <h3 id="recentRaritiesTitle" class="recent-rarities-title">Uued leiud viimase 7 päeva jooksul</h3>
+        <p id="recentRaritiesSubtitle" class="recent-rarities-subtitle"></p>
+      </div>
+      <button id="recentRaritiesClose" class="recent-rarities-close" type="button" aria-label="Sulge">×</button>
+    </div>
+    <div id="recentRaritiesList" class="recent-rarities-list"></div>
+    <div class="recent-rarities-actions">
+      <button id="recentRaritiesShowMap" class="btn" type="button">Näita kaardil</button>
+      <button id="recentRaritiesHideToday" class="btn secondary" type="button">Ära näita uuesti täna</button>
+      <button id="recentRaritiesDismiss" class="btn secondary" type="button">Sulge</button>
+    </div>
+  </div>
+</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="/maps/shared/map-hamburger-control.js"></script>
@@ -301,6 +379,8 @@ function prunePointsToWhitelist(){
 // Local storage keys
 const LS_AVATARS='bm_rariliin_avatars', LS_POINTS='bm_rariliin_points', LS_PROXY='bm_rariliin_proxy', LS_NAMES='bm_rariliin_names';
 const LS_RECENT_ONLY = 'bm_rariliin_recent_only';
+const LS_RECENT_NOTICE_SEEN = 'bm_rariliin_recent_notice_seen_v1';
+const LS_RECENT_NOTICE_HIDE_UNTIL = 'bm_rariliin_recent_notice_hide_until';
 const CLASSIC_MODE = false;
 const LS_LIVE_ELURIKKUS = 'bm_live_elurikkus_v1';
 const LS_LIVE_ELURIKKUS_USE = 'bm_live_elurikkus_use_v1';
@@ -3465,6 +3545,7 @@ function setRecentOnly(val){
   }
   rebuildAllMarkers();
   render();
+  evaluateRecentRaritiesNotice({ force: true });
 }
 window.__recentOnly = getRecentOnly();
 function is7daysOnly(){ return !!window.__recentOnly; }
@@ -3502,6 +3583,100 @@ function hasRecentObservation(p){
 }
 function getEffectiveRecentDate(p){
   return String((p && (p.latestSeenDate || p.t)) || '').trim();
+}
+function getRecentRaritiesItems(){
+  return SPECIES.map(function(name){
+    const point = points[name];
+    if(!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return null;
+    if(!hasRecentObservation(point)) return null;
+    const iso = getEffectiveRecentDate(point);
+    const ts = _parseObservedTs(iso);
+    return {
+      name: name,
+      iso: iso,
+      ts: Number.isFinite(ts) ? ts : 0,
+      formattedDate: iso ? formatDateEE(iso) : ''
+    };
+  }).filter(Boolean).sort(function(a, b){
+    return (b.ts || 0) - (a.ts || 0) || a.name.localeCompare(b.name, 'et');
+  });
+}
+function getRecentRaritiesSignature(items){
+  return items.map(function(item){ return item.name + '@' + String(item.iso || ''); }).join('|');
+}
+function getLocalDateStamp(){
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + d;
+}
+function isRecentNoticeHiddenToday(signature){
+  try{
+    const raw = localStorage.getItem(LS_RECENT_NOTICE_HIDE_UNTIL);
+    if(!raw) return false;
+    const parsed = JSON.parse(raw);
+    return parsed && parsed.signature === signature && parsed.date === getLocalDateStamp();
+  }catch(e){
+    return false;
+  }
+}
+function rememberRecentNoticeSeen(signature){
+  try{ localStorage.setItem(LS_RECENT_NOTICE_SEEN, signature); }catch(e){}
+}
+function rememberRecentNoticeHiddenToday(signature){
+  try{
+    localStorage.setItem(LS_RECENT_NOTICE_HIDE_UNTIL, JSON.stringify({ signature: signature, date: getLocalDateStamp() }));
+  }catch(e){}
+}
+function hideRecentRaritiesNotice(){
+  const card = document.getElementById('recentRaritiesCard');
+  if(!card) return;
+  card.classList.remove('show');
+  card.hidden = true;
+}
+function focusRecentSpecies(species){
+  if(!species) return;
+  const input = document.getElementById('filterBox');
+  if(input) input.value = species;
+  window.__selectedSpecies = species;
+  try{ render(); }catch(e){}
+}
+function renderRecentRaritiesNotice(items, signature){
+  const card = document.getElementById('recentRaritiesCard');
+  const title = document.getElementById('recentRaritiesTitle');
+  const subtitle = document.getElementById('recentRaritiesSubtitle');
+  const list = document.getElementById('recentRaritiesList');
+  if(!card || !title || !subtitle || !list) return;
+  const preview = items.slice(0, 5);
+  title.textContent = 'Uued leiud viimase 7 päeva jooksul';
+  subtitle.textContent = items.length === 1
+    ? 'Rariliinis on 1 liik, mida tasub kaardilt vaadata.'
+    : 'Rariliinis on ' + items.length + ' liiki, mida tasub kaardilt vaadata.';
+  list.innerHTML = preview.map(function(item){
+    return '<button class="recent-rarity-chip" type="button" data-recent-species="' + escapeHtml(item.name) + '">' +
+      '<strong>' + escapeHtml(item.name) + '</strong>' +
+      '<span>' + escapeHtml(item.formattedDate || 'Viimane vaatlus hiljuti') + '</span>' +
+    '</button>';
+  }).join('');
+  card.dataset.signature = signature;
+  card.hidden = false;
+  card.classList.add('show');
+}
+function evaluateRecentRaritiesNotice(options){
+  const opts = options || {};
+  const items = getRecentRaritiesItems();
+  const signature = getRecentRaritiesSignature(items);
+  window.__rariliinRecentNoticeState = { signature: signature, count: items.length };
+  if(!items.length || !signature){
+    hideRecentRaritiesNotice();
+    return;
+  }
+  let seen = '';
+  try{ seen = localStorage.getItem(LS_RECENT_NOTICE_SEEN) || ''; }catch(e){}
+  if(!opts.force && seen === signature) return;
+  if(isRecentNoticeHiddenToday(signature)) return;
+  renderRecentRaritiesNotice(items, signature);
 }
 
 function _borderColorByDate(isoDate){
@@ -5572,6 +5747,7 @@ function applySnapshot(snapshot){
   try{ save(); }catch(e){}
   rebuildAllMarkers();
   render();
+  evaluateRecentRaritiesNotice({ force: true });
   return true;
 }
 function reloadSnapshot(){
@@ -6303,6 +6479,7 @@ async function _applySnapshot(snap){
   save();
   rebuildAllMarkers();
   render();
+  evaluateRecentRaritiesNotice({ force: true });
 }
 
 function refreshAllMarkers(){
@@ -6310,6 +6487,7 @@ function refreshAllMarkers(){
   __renderedMarkerCount = 0;
   SPECIES.forEach(updateMarker);
   render();
+  evaluateRecentRaritiesNotice();
   _checkEmpty7dBanner();
   if(__loaderStage === 'ready') __lastErrorMessage = '';
   _updateDebugPanel();
@@ -7576,6 +7754,59 @@ refreshAllMarkers();
 _updateServerSnapshotStatus();
 _wireSnapshotButtons();
 _wireSidebarSettingsRow();
+
+(function wireRecentRaritiesNotice(){
+  const closeBtn = document.getElementById('recentRaritiesClose');
+  const dismissBtn = document.getElementById('recentRaritiesDismiss');
+  const showMapBtn = document.getElementById('recentRaritiesShowMap');
+  const hideTodayBtn = document.getElementById('recentRaritiesHideToday');
+  const list = document.getElementById('recentRaritiesList');
+  function currentSignature(){
+    const card = document.getElementById('recentRaritiesCard');
+    return String((card && card.dataset && card.dataset.signature) || (window.__rariliinRecentNoticeState && window.__rariliinRecentNoticeState.signature) || '');
+  }
+  function markSeenAndHide(){
+    const signature = currentSignature();
+    if(signature) rememberRecentNoticeSeen(signature);
+    hideRecentRaritiesNotice();
+  }
+  if(closeBtn && !closeBtn.__wired){
+    closeBtn.addEventListener('click', markSeenAndHide);
+    closeBtn.__wired = true;
+  }
+  if(dismissBtn && !dismissBtn.__wired){
+    dismissBtn.addEventListener('click', markSeenAndHide);
+    dismissBtn.__wired = true;
+  }
+  if(showMapBtn && !showMapBtn.__wired){
+    showMapBtn.addEventListener('click', function(){
+      const items = getRecentRaritiesItems();
+      if(items.length) focusRecentSpecies(items[0].name);
+      markSeenAndHide();
+    });
+    showMapBtn.__wired = true;
+  }
+  if(hideTodayBtn && !hideTodayBtn.__wired){
+    hideTodayBtn.addEventListener('click', function(){
+      const signature = currentSignature();
+      if(signature){
+        rememberRecentNoticeSeen(signature);
+        rememberRecentNoticeHiddenToday(signature);
+      }
+      hideRecentRaritiesNotice();
+    });
+    hideTodayBtn.__wired = true;
+  }
+  if(list && !list.__wired){
+    list.addEventListener('click', function(e){
+      const chip = e.target && e.target.closest ? e.target.closest('[data-recent-species]') : null;
+      if(!chip) return;
+      focusRecentSpecies(String(chip.getAttribute('data-recent-species') || '').trim());
+      markSeenAndHide();
+    });
+    list.__wired = true;
+  }
+})();
 _refreshBuildStampUi();
 setInterval(_refreshBuildStampUi, 10000);
 function _startSnapshotBoot(){

@@ -7640,6 +7640,10 @@ function rowHTML(obj) {
   const occ7 = Number.isFinite(p.occ7) ? p.occ7 : null;
   const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
   const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(metaCfg.rarityLevel) : '';
+  const renderMetaRow = function(label, value){
+    const clean = (value && String(value).trim()) ? String(value).trim() : '-';
+    return '<div class="kvLabel">' + escapeHtml(label) + ':</div><div class="kvValue">' + escapeHtml(clean) + '</div>';
+  };
   const meta = hasPoint
     ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
     : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
@@ -7651,6 +7655,12 @@ function rowHTML(obj) {
   };
   const collectorsFull = get(x.collectors);
   const collectorsShort = collectorsFull === '-' ? '-' : trunc(collectorsFull, 30);
+  const speciesMetaBlock =
+    '<div class="kvGrid" style="margin-top:8px;color:#5f6b7a">' +
+      renderMetaRow('Teaduslik nimi', metaCfg.scientificName) +
+      renderMetaRow('3+3 kood', metaCfg.rariliinCode) +
+      renderMetaRow('Teate märkus', metaCfg.notificationNote) +
+    '</div>';
   const extraBlock =
     '<div class="kvGrid">' +
       '<div class="kvLabel">Municipality:</div><div class="kvValue">' + escapeHtml(get(x.municipality)) + '</div>' +
@@ -7663,7 +7673,8 @@ function rowHTML(obj) {
       '<div class="kvLabel">Behavior:</div><div class="kvValue">' + escapeHtml(get(x.behavior)) + '</div>' +
       '<div class="kvLabel">Collectors:</div>' +
       '<div class="kvValue"><span class="truncate" title="' + escapeHtml(collectorsFull) + '">' + escapeHtml(collectorsShort) + '</span></div>' +
-    '</div>';
+    '</div>' +
+    speciesMetaBlock;
   const defaultSearchUrl = String((p.searchUrl || obj.url) || obj.url);
   const openUrl = String((p.openUrl || (x.detailUrl || defaultSearchUrl)) || defaultSearchUrl);
 

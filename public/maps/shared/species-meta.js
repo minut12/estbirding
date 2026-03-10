@@ -36,10 +36,16 @@
 
   function sanitize(name, raw) {
     var rarityLevel = toRarityLevel(raw);
+    var scientificName = typeof raw?.scientificName === "string" ? normalizeUiText(raw.scientificName) : "";
+    var rariliinCode = typeof raw?.rariliinCode === "string" ? normalizeUiText(raw.rariliinCode) : "";
+    var notificationNote = typeof raw?.notificationNote === "string" ? normalizeUiText(raw.notificationNote) : "";
     return {
       name: normalizeUiText(name),
       ebirdCode: typeof raw?.ebirdCode === "string" ? normalizeUiText(raw.ebirdCode) : "",
       avatarUrl: typeof raw?.avatarUrl === "string" ? normalizeUiText(raw.avatarUrl) : "",
+      scientificName: scientificName,
+      rariliinCode: rariliinCode,
+      notificationNote: notificationNote,
       rarityLevel: rarityLevel,
     };
   }

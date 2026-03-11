@@ -894,25 +894,30 @@ const SHARED_SPECIES_URL = "/maps/linnuliigid/species.json";
 const DEFAULT_SPECIES_NORMALIZED = normalizeNameArray(DEFAULT_SPECIES.slice());
 let MASTER_SPECIES = DEFAULT_SPECIES_NORMALIZED.slice();
 let speciesListSource = "fallback_default";
+let EUROPE_SPECIES_EXTRAS = [];
 
-let SPECIES = [];
-try {
-  const raw = (localStorage.getItem(LS_SPECIES) || "").trim();
-  SPECIES = raw ? normalizeNameArray(raw.split("\n").map(s=>s.trim()).filter(Boolean)) : [];
-} catch(e) {
-  SPECIES = [];
+function readStoredEuropeSpecies(){
+  try {
+    const raw = (localStorage.getItem(LS_SPECIES) || "").trim();
+    return raw ? normalizeNameArray(raw.split("\n").map(s=>s.trim()).filter(Boolean)) : [];
+  } catch(e) {
+    return [];
+  }
 }
-if (SPECIES.length === 0) {
-  SPECIES = DEFAULT_SPECIES_NORMALIZED.slice();
-  speciesListSource = "fallback_default";
-  localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
-} else {
-  speciesListSource = "stored";
+function deriveEuropeExtras(masterSpecies, speciesList){
+  const normalizedMaster = normalizeNameArray(masterSpecies && masterSpecies.length ? masterSpecies : DEFAULT_SPECIES_NORMALIZED);
+  const masterSet = new Set(normalizedMaster);
+  return normalizeNameArray((speciesList || []).filter(name => !masterSet.has(normalizeText(name))));
 }
-if (SPECIES.length === 0) {
-  localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
+function persistEuropeSpeciesExtras(){
+  localStorage.setItem(LS_SPECIES, EUROPE_SPECIES_EXTRAS.join("\n"));
 }
-localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
+
+const storedEuropeSpecies = readStoredEuropeSpecies();
+EUROPE_SPECIES_EXTRAS = deriveEuropeExtras(MASTER_SPECIES, storedEuropeSpecies);
+let SPECIES = mergeNameLists(MASTER_SPECIES, EUROPE_SPECIES_EXTRAS);
+speciesListSource = storedEuropeSpecies.length ? "master+stored_extras" : "fallback_default";
+persistEuropeSpeciesExtras();
 
 function countObservedSpecies(){
   let count = 0;
@@ -933,18 +938,20 @@ function logEuropeSpeciesDiagnostics(masterSpecies, previousSpecies, nextSpecies
 }
 function reconcileEuropeSpecies(masterSpecies, extraSpecies, sourceLabel){
   const normalizedMaster = normalizeNameArray(masterSpecies && masterSpecies.length ? masterSpecies : DEFAULT_SPECIES_NORMALIZED);
-  const normalizedExtra = normalizeNameArray(extraSpecies || []);
+  const normalizedExtra = deriveEuropeExtras(normalizedMaster, extraSpecies || []);
   MASTER_SPECIES = normalizedMaster.slice();
-  const nextSpecies = mergeNameLists(normalizedMaster, normalizedExtra);
+  EUROPE_SPECIES_EXTRAS = normalizedExtra.slice();
+  const nextSpecies = mergeNameLists(normalizedMaster, EUROPE_SPECIES_EXTRAS);
   if (sameNameList(SPECIES, nextSpecies)) {
     speciesListSource = sourceLabel;
+    persistEuropeSpeciesExtras();
     logEuropeSpeciesDiagnostics(normalizedMaster, SPECIES, nextSpecies);
     return false;
   }
   const previousSpecies = SPECIES.slice();
   SPECIES = nextSpecies;
   speciesListSource = sourceLabel;
-  localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
+  persistEuropeSpeciesExtras();
   logEuropeSpeciesDiagnostics(normalizedMaster, previousSpecies, nextSpecies);
   return true;
 }
@@ -956,11 +963,8 @@ async function loadSharedEuropeSpecies(){
     if (!Array.isArray(payload)) return;
     const sharedSpecies = normalizeNameArray(payload);
     if (!sharedSpecies.length) return;
-    if (dataMode === "snapshot") {
-      MASTER_SPECIES = sharedSpecies.slice();
-      return;
-    }
-    const changed = reconcileEuropeSpecies(sharedSpecies, SPECIES, "master+stored");
+    const storedExtras = deriveEuropeExtras(sharedSpecies, readStoredEuropeSpecies());
+    const changed = reconcileEuropeSpecies(sharedSpecies, mergeNameLists(EUROPE_SPECIES_EXTRAS, storedExtras), "master+stored_extras");
     if (changed) {
       saveAll();
       render();
@@ -1045,7 +1049,7 @@ function saveAll(){
   localStorage.setItem(LS_CODES, JSON.stringify(EBIRD_CODES));
   localStorage.setItem(LS_POINTS, JSON.stringify(points));
   localStorage.setItem(LS_EBIRD_TOKEN, EBIRD_TOKEN || "");
-  localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
+  persistEuropeSpeciesExtras();
   localStorage.setItem(LS_PER_COUNTRY, perCountry ? "1" : "0");
   localStorage.setItem(LS_RARE_ONLY, rareOnly ? "1" : "0");
 }
@@ -2176,9 +2180,7 @@ modalBackdrop.addEventListener("click", (e)=>{ if (e.target === modalBackdrop) c
 document.getElementById("modalSave").addEventListener("click", ()=>{
   EBIRD_TOKEN = (tokenInput.value || "").trim();
   const lines = normalizeNameArray((speciesInput.value||"").split("\n").map(s=>s.trim()).filter(Boolean));
-  if (lines.length) {
-    reconcileEuropeSpecies(MASTER_SPECIES, lines, "master+custom");
-  }
+  reconcileEuropeSpecies(MASTER_SPECIES, lines, "master+custom");
   saveAll(); render(); closeSettings();
   updateDebugPanel();
 });

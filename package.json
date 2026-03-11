@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "deploy:ebird-recent": "sh scripts/deploy-ebird-recent.sh"
+    "deploy:ebird-recent": "sh scripts/deploy-ebird-recent.sh",
+    "import:linnuliigid-ebird-codes": "node scripts/import-linnuliigid-ebird-codes.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",

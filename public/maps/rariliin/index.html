@@ -7724,6 +7724,38 @@ function rowHTML(obj) {
   '</div>';
 }
 
+const __rariliinSidebarSpeciesOrder = (function(){
+  const order = Object.create(null);
+  DATA.forEach(function(item, index){
+    const key = String(item && item.est ? item.est : '').trim();
+    if(key && order[key] === undefined) order[key] = index;
+  });
+  return order;
+})();
+
+const __rariliinSidebarCollator = (function(){
+  try{
+    return new Intl.Collator('et-EE', { usage: 'sort', sensitivity: 'base' });
+  }catch(e){
+    return null;
+  }
+})();
+
+function compareRariliinSidebarSpecies(a, b) {
+  const aName = String(a && a.est ? a.est : '').trim();
+  const bName = String(b && b.est ? b.est : '').trim();
+  let result = 0;
+  if(__rariliinSidebarCollator){
+    result = __rariliinSidebarCollator.compare(aName, bName);
+  } else {
+    result = aName.localeCompare(bName, 'et-EE', { sensitivity: 'base' });
+  }
+  if(result !== 0) return result;
+  const aIndex = __rariliinSidebarSpeciesOrder[aName];
+  const bIndex = __rariliinSidebarSpeciesOrder[bName];
+  return (Number.isFinite(aIndex) ? aIndex : Number.MAX_SAFE_INTEGER) - (Number.isFinite(bIndex) ? bIndex : Number.MAX_SAFE_INTEGER);
+}
+
 function render() {
   const q = (document.getElementById('filterBox').value||'').toLowerCase().trim();
   const list = document.getElementById('list'); list.innerHTML='';
@@ -7743,6 +7775,7 @@ function render() {
     }
     return true;
   });
+  arr.sort(compareRariliinSidebarSpecies);
   for (const o of arr) list.insertAdjacentHTML('beforeend', rowHTML(o));
   const firstRow = list.querySelector('.row[data-key]');
   if(firstRow && !window.__selectedSpecies) window.__selectedSpecies = firstRow.getAttribute('data-key') || window.__selectedSpecies;

@@ -31,6 +31,7 @@ export const LINNULIIGID_SCOPE: SpeciesScopeConfig = {
   mapScope: "ee_map",
   mapPath: "/maps/linnuliigid/index.html",
   speciesJsonPath: "/maps/linnuliigid/species.json",
+  speciesMetaAssetPath: "/maps/linnuliigid/species-meta.json",
   placeholderAvatarUrl: "/maps/linnuliigid/avatars/placeholder.webp",
   avatarLocalOverridesKey: "linnuliigid_avatars_v1",
   avatarSharedCacheKey: "linnuliigid_avatar_defaults_v1",

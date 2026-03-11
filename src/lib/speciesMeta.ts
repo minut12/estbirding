@@ -21,6 +21,13 @@ export type SpeciesMetaLookupResult = SpeciesMeta & {
   found: boolean;
 };
 
+type ScopeSpeciesMeta = {
+  estonianName: string;
+  scientificName?: string;
+  rariliinCode?: string;
+  notificationNote?: string;
+};
+
 function safeParseRecord(value: string | null): Record<string, any> {
   if (!value) return {};
   try {
@@ -162,6 +169,52 @@ export function getScopedSpeciesMeta(
 
 export function getRariliinSpeciesMeta(name: string, fallbackMap?: SpeciesMetaLookupFallback): SpeciesMetaLookupResult {
   return getScopedSpeciesMeta(name, RARILIIN_SCOPE, fallbackMap);
+}
+
+export function buildSpeciesMetaLookupFallback(items: unknown): SpeciesMetaLookupFallback {
+  const next: SpeciesMetaLookupFallback = {};
+  if (!Array.isArray(items)) return next;
+  items.forEach((item) => {
+    const key = normalizeUiText(String((item as ScopeSpeciesMeta | null)?.estonianName || ""));
+    if (!key) return;
+    next[key] = {
+      scientificName: normalizeUiText(String((item as ScopeSpeciesMeta | null)?.scientificName || "")) || undefined,
+      rariliinCode: normalizeUiText(String((item as ScopeSpeciesMeta | null)?.rariliinCode || "")) || undefined,
+      notificationNote: normalizeUiText(String((item as ScopeSpeciesMeta | null)?.notificationNote || "")) || undefined,
+    };
+  });
+  return next;
+}
+
+export function seedSpeciesMetaFallback(
+  fallbackMap: SpeciesMetaLookupFallback,
+  scope: SpeciesScopeConfig = LINNULIIGID_SCOPE,
+): { changed: boolean; map: SpeciesMetaMap } {
+  const current = loadSpeciesMeta(scope);
+  const next: SpeciesMetaMap = { ...current };
+  let changed = false;
+
+  Object.entries(fallbackMap || {}).forEach(([name, fallback]) => {
+    const key = normalizeSpeciesName(name);
+    if (!key) return;
+    const prev = next[key] ?? { name: key };
+    const patch: Partial<SpeciesMeta> = {};
+
+    if (!prev.scientificName && fallback.scientificName) patch.scientificName = fallback.scientificName;
+    if (!prev.rariliinCode && fallback.rariliinCode) patch.rariliinCode = fallback.rariliinCode;
+    if (!prev.notificationNote && fallback.notificationNote) patch.notificationNote = fallback.notificationNote;
+
+    if (Object.keys(patch).length === 0) {
+      if (!next[key]) next[key] = sanitizeMeta(key, prev);
+      return;
+    }
+
+    next[key] = sanitizeMeta(key, { ...prev, ...patch, name: key });
+    changed = true;
+  });
+
+  if (changed) saveSpeciesMeta(next, scope);
+  return { changed, map: changed ? next : current };
 }
 
 export function upsertSpeciesMeta(name: string, partial: Partial<SpeciesMeta>, scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): void {

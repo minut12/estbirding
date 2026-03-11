@@ -14,7 +14,15 @@ import {
   getMergedAvatars, validateFile, processImage, notifyIframeUpdate,
   uploadSharedAvatar, removeSharedAvatar, fetchSpeciesList,
 } from '@/lib/avatar-storage';
-import { getRariliinSpeciesMeta, getScopedSpeciesMeta, loadSpeciesMeta, replaceSpeciesMeta, upsertSpeciesMeta, type SpeciesMetaLookupFallback } from '@/lib/speciesMeta';
+import {
+  buildSpeciesMetaLookupFallback,
+  getRariliinSpeciesMeta,
+  getScopedSpeciesMeta,
+  loadSpeciesMeta,
+  seedSpeciesMetaFallback,
+  upsertSpeciesMeta,
+  type SpeciesMetaLookupFallback,
+} from '@/lib/speciesMeta';
 import {
   SPECIES_META_LAST_SYNC_AT_KEY,
   getSpeciesMetaSyncStatus,
@@ -23,28 +31,6 @@ import {
 } from '@/lib/speciesMetaCloud';
 import { ET_STRINGS } from '@/lib/etStrings';
 import { normalizeUiText } from '@/lib/textNormalize';
-
-type ScopeSpeciesMeta = {
-  estonianName: string;
-  scientificName?: string;
-  rariliinCode?: string;
-  notificationNote?: string;
-};
-
-function buildScopeMetadataFallback(items: unknown): SpeciesMetaLookupFallback {
-  const next: SpeciesMetaLookupFallback = {};
-  if (!Array.isArray(items)) return next;
-  items.forEach((item) => {
-    const key = normalizeUiText(String((item as ScopeSpeciesMeta | null)?.estonianName || ''));
-    if (!key) return;
-    next[key] = {
-      scientificName: normalizeUiText(String((item as ScopeSpeciesMeta | null)?.scientificName || '')) || undefined,
-      rariliinCode: normalizeUiText(String((item as ScopeSpeciesMeta | null)?.rariliinCode || '')) || undefined,
-      notificationNote: normalizeUiText(String((item as ScopeSpeciesMeta | null)?.notificationNote || '')) || undefined,
-    };
-  });
-  return next;
-}
 
 export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: SpeciesScopeConfig }) {
   const [species, setSpecies] = useState<string[]>([]);
@@ -72,21 +58,10 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
       fetch(scope.speciesMetaAssetPath)
         .then((res) => res.ok ? res.json() : {})
         .then((items) => {
-          const next = buildScopeMetadataFallback(items);
+          const next = buildSpeciesMetaLookupFallback(items);
           setScopeMetadata(next);
-          if (scope.id === 'rariliin') {
-            const current = loadSpeciesMeta(scope);
-            const merged = { ...current };
-            Object.entries(next).forEach(([key, fallback]) => {
-              merged[key] = {
-                ...(merged[key] || { name: key }),
-                name: key,
-                ...(fallback.scientificName ? { scientificName: fallback.scientificName } : {}),
-                ...(fallback.rariliinCode ? { rariliinCode: fallback.rariliinCode } : {}),
-                ...(fallback.notificationNote ? { notificationNote: fallback.notificationNote } : {}),
-              };
-            });
-            replaceSpeciesMeta(merged, scope);
+          const seeded = seedSpeciesMetaFallback(next, scope);
+          if (seeded.changed) {
             window.dispatchEvent(new CustomEvent('species-meta-updated'));
           }
         })

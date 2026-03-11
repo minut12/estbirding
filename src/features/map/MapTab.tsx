@@ -10,7 +10,7 @@ import { APP_VERSION } from '@/lib/version';
 import { fetchSharedAvatars, getMergedAvatars, notifyIframe } from '@/lib/avatar-storage';
 import { LINNULIIGID_SCOPE, RARILIIN_SCOPE } from '@/lib/mapScope';
 import { resolveProxyBase } from '@/config/proxyEndpoint';
-import { loadSpeciesMeta } from '@/lib/speciesMeta';
+import { buildSpeciesMetaLookupFallback, loadSpeciesMeta, seedSpeciesMetaFallback } from '@/lib/speciesMeta';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import { broadcastSupabaseConfigToMapIframes, getSupabaseAnonKey, getSupabaseUrl, validateSupabaseConfig } from '@/config/supabaseConfig';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -109,6 +109,20 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   const sendSpeciesMetaToIframe = useCallback(() => {
     sendToIframe({ type: 'SPECIES_META_DEFAULTS', speciesMeta: loadSpeciesMeta(speciesScope) });
   }, [sendToIframe, speciesScope]);
+  const seedScopeMetadata = useCallback(async () => {
+    if (!speciesScope.speciesMetaAssetPath) return;
+    try {
+      const res = await fetch(speciesScope.speciesMetaAssetPath);
+      if (!res.ok) return;
+      const items = await res.json();
+      const seeded = seedSpeciesMetaFallback(buildSpeciesMetaLookupFallback(items), speciesScope);
+      if (seeded.changed) {
+        window.dispatchEvent(new CustomEvent('species-meta-updated'));
+      }
+    } catch {
+      // ignore metadata asset fetch issues and keep current local/cloud state
+    }
+  }, [speciesScope]);
   const sendSupabaseConfigToIframe = useCallback(() => {
     const validation = validateSupabaseConfig();
     if (validation.ok) {
@@ -170,13 +184,15 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     fetchSharedAvatars(speciesScope).then(() => {
       sendAvatarsToIframe();
     });
-    refreshSpeciesMetaFromCloud({ force: true, scope: speciesScope })
+    seedScopeMetadata()
+      .then(() => refreshSpeciesMetaFromCloud({ force: true, scope: speciesScope }))
+      .then(() => seedScopeMetadata())
       .then(() => sendSpeciesMetaToIframe())
       .catch(() => {
         sendSpeciesMetaToIframe();
       });
     return () => clearTimeout(t0);
-  }, [sendAvatarsToIframe, sendSpeciesMetaToIframe, speciesScope]);
+  }, [seedScopeMetadata, sendAvatarsToIframe, sendSpeciesMetaToIframe, speciesScope]);
 
   // Listen for AVATARS_REQUEST and INSETS_REQUEST from iframe
   useEffect(() => {

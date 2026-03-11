@@ -780,6 +780,13 @@ function normalizeNameArray(arr){
   }
   return out;
 }
+function sameNameList(a, b){
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
 function normalizeNameMap(obj){
   const out = {};
   const src = (obj && typeof obj === "object" && !Array.isArray(obj)) ? obj : {};
@@ -880,6 +887,9 @@ let EBIRD_TOKEN = (localStorage.getItem(LS_EBIRD_TOKEN) || "").trim();
 let tokenSanitized = false;
 normalizeSpeciesMetaStorage();
 
+const SHARED_SPECIES_URL = "/maps/linnuliigid/species.json";
+const DEFAULT_SPECIES_NORMALIZED = normalizeNameArray(DEFAULT_SPECIES.slice());
+let speciesListSource = "empty";
 
 let SPECIES = [];
 try {
@@ -889,10 +899,41 @@ try {
   SPECIES = [];
 }
 if (SPECIES.length === 0) {
-  SPECIES = normalizeNameArray(DEFAULT_SPECIES.slice());
+  SPECIES = DEFAULT_SPECIES_NORMALIZED.slice();
+  speciesListSource = "empty";
+  localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
+} else if (sameNameList(SPECIES, DEFAULT_SPECIES_NORMALIZED)) {
+  speciesListSource = "stale_default";
+} else {
+  speciesListSource = "custom";
+}
+if (SPECIES.length === 0) {
   localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
 }
 localStorage.setItem(LS_SPECIES, SPECIES.join("\n"));
+
+async function loadSharedEuropeSpecies(){
+  try {
+    const res = await fetch(SHARED_SPECIES_URL, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = await res.json();
+    if (!Array.isArray(payload)) return;
+    const sharedSpecies = normalizeNameArray(payload);
+    if (!sharedSpecies.length) return;
+    if (speciesListSource === "custom" || dataMode === "snapshot") return;
+    if (sameNameList(SPECIES, sharedSpecies)) {
+      speciesListSource = "shared";
+      return;
+    }
+    SPECIES = sharedSpecies;
+    speciesListSource = "shared";
+    saveAll();
+    render();
+    updateDebugPanel();
+  } catch (e) {
+    console.warn("[species] europe shared species fallback failed", e);
+  }
+}
 
 let perCountry = (localStorage.getItem(LS_PER_COUNTRY) || "1") === "1";
 let rareOnly = (localStorage.getItem(LS_RARE_ONLY) || "0") === "1";
@@ -1094,6 +1135,7 @@ function applySnapshot(snapshot){
   console.log("[prefs] scope=europe_map snapshot applied, preserved visibility for", Object.keys(savedVisibility).length, "species");
   if (Array.isArray(snapshot.payload.species) && snapshot.payload.species.length) {
     SPECIES = snapshot.payload.species;
+    speciesListSource = "snapshot";
   }
   dataMode = "snapshot";
   lastSnapshotAt = snapshot.createdAt || null;
@@ -2097,8 +2139,11 @@ modalBackdrop.addEventListener("click", (e)=>{ if (e.target === modalBackdrop) c
 
 document.getElementById("modalSave").addEventListener("click", ()=>{
   EBIRD_TOKEN = (tokenInput.value || "").trim();
-  const lines = (speciesInput.value||"").split("\n").map(s=>s.trim()).filter(Boolean);
-  if (lines.length) SPECIES = lines;
+  const lines = normalizeNameArray((speciesInput.value||"").split("\n").map(s=>s.trim()).filter(Boolean));
+  if (lines.length) {
+    SPECIES = lines;
+    speciesListSource = "custom";
+  }
   saveAll(); render(); closeSettings();
   updateDebugPanel();
 });
@@ -2169,6 +2214,7 @@ if (!DEV_DEBUG) {
 preloadAvatars();
 updateProxyHint();
 render();
+loadSharedEuropeSpecies();
 recentOnly = (document.getElementById("toggle7days")?.checked !== false);
 if (!reloadSnapshot()) {
   dataMode = "live";

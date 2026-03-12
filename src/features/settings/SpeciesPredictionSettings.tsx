@@ -46,12 +46,9 @@ export default function SpeciesPredictionSettings() {
   const scope = SPECIES_SCOPES[scopeId];
   const selectedSpeciesKey = useMemo(() => normalizeSpeciesName(selectedSpecies), [selectedSpecies]);
   const hasValidSelectedSpecies = Boolean(selectedSpecies && selectedSpeciesKey);
-  const disableEditing = !predictionFeatureEnabled;
-  const saveBlockedMessage = !predictionFeatureEnabled
-    ? 'Feature is disabled'
-    : (!hasValidSelectedSpecies
-      ? 'Select a valid species before saving prediction settings'
-      : (!backendConfigured ? backendStatusMessage || 'Prediction backend is not configured yet' : ''));
+  const saveBlockedMessage = !hasValidSelectedSpecies
+    ? 'Select a valid species before saving prediction settings'
+    : (!backendConfigured ? backendStatusMessage || 'Prediction backend is not configured yet' : '');
 
   useEffect(() => {
     fetchSpeciesList(scope).then((list) => {
@@ -113,7 +110,7 @@ export default function SpeciesPredictionSettings() {
   }, [scopeId, selectedSpecies]);
 
   const saveForm = async () => {
-    if (disableEditing) return;
+    if (!predictionFeatureEnabled) return;
     if (!hasValidSelectedSpecies) {
       toast.error('Select a valid species before saving prediction settings');
       return;
@@ -155,63 +152,67 @@ export default function SpeciesPredictionSettings() {
         enabled={predictionFeatureEnabled}
         onEnabledChange={setPredictionFeatureEnabled}
       />
-      <p className="text-xs text-muted-foreground">
-        These settings apply only to the currently selected species.
-      </p>
-      {!canManage && (
-        <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-          Admin-managed species settings are visible here for review. Running prediction/research remains available from the maps.
-        </div>
-      )}
-
-      <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-        <div className="space-y-1.5">
-          <Label>Map scope</Label>
-          <Select value={scopeId} onValueChange={(value) => setScopeId(value as SpeciesScopeId)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={LINNULIIGID_SCOPE.id}>{LINNULIIGID_SCOPE.displayName}</SelectItem>
-              <SelectItem value={RARILIIN_SCOPE.id}>{RARILIIN_SCOPE.displayName}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label>Selected species</Label>
-          <Command className="rounded-md border border-input">
-            <CommandInput placeholder="Search species..." value={search} onValueChange={setSearch} />
-            <CommandList className="max-h-[200px]">
-              <CommandEmpty>No species found</CommandEmpty>
-              <CommandGroup>
-                {filtered.slice(0, 60).map((species) => (
-                  <CommandItem
-                    key={species}
-                    value={species}
-                    onSelect={() => {
-                      setSelectedSpecies(species);
-                      setSearch('');
-                    }}
-                    className="flex items-center justify-between gap-2"
-                  >
-                    <span>{species}</span>
-                    {selectedSpecies === species && <Badge variant="outline">Current</Badge>}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </div>
-      </div>
-
-      {loading || backendStatusLoading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span>{loading ? 'Loading species settings...' : 'Checking prediction backend...'}</span>
-        </div>
+      {!predictionFeatureEnabled ? (
+        <p className="text-xs text-muted-foreground">Turn on Species Prediction to edit these settings</p>
       ) : (
-        <div className={disableEditing ? 'opacity-60' : ''}>
+        <>
+          <p className="text-xs text-muted-foreground">
+            These settings apply only to the currently selected species.
+          </p>
+          {!canManage && (
+            <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+              Admin-managed species settings are visible here for review. Running prediction/research remains available from the maps.
+            </div>
+          )}
+
+          <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+            <div className="space-y-1.5">
+              <Label>Map scope</Label>
+              <Select value={scopeId} onValueChange={(value) => setScopeId(value as SpeciesScopeId)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={LINNULIIGID_SCOPE.id}>{LINNULIIGID_SCOPE.displayName}</SelectItem>
+                  <SelectItem value={RARILIIN_SCOPE.id}>{RARILIIN_SCOPE.displayName}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Selected species</Label>
+              <Command className="rounded-md border border-input">
+                <CommandInput placeholder="Search species..." value={search} onValueChange={setSearch} />
+                <CommandList className="max-h-[200px]">
+                  <CommandEmpty>No species found</CommandEmpty>
+                  <CommandGroup>
+                    {filtered.slice(0, 60).map((species) => (
+                      <CommandItem
+                        key={species}
+                        value={species}
+                        onSelect={() => {
+                          setSelectedSpecies(species);
+                          setSearch('');
+                        }}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <span>{species}</span>
+                        {selectedSpecies === species && <Badge variant="outline">Current</Badge>}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </div>
+          </div>
+
+          {loading || backendStatusLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>{loading ? 'Loading species settings...' : 'Checking prediction backend...'}</span>
+            </div>
+          ) : (
+            <div>
           <Accordion type="multiple" className="w-full space-y-2">
           <AccordionItem value="general" className="rounded-lg border border-border px-4">
             <AccordionTrigger>General</AccordionTrigger>
@@ -335,19 +336,18 @@ export default function SpeciesPredictionSettings() {
             </AccordionContent>
           </AccordionItem>
           </Accordion>
-        </div>
-      )}
+            </div>
+          )}
 
-      {saveBlockedMessage && (
-        <p className="text-xs text-destructive">{saveBlockedMessage}</p>
-      )}
-      {disableEditing && (
-        <p className="text-xs text-muted-foreground">Feature is disabled</p>
-      )}
+          {saveBlockedMessage && (
+            <p className="text-xs text-destructive">{saveBlockedMessage}</p>
+          )}
 
-      <Button onClick={saveForm} className="w-full" disabled={!canManage || saving || !hasValidSelectedSpecies || disableEditing || !backendConfigured}>
-        {saving ? 'Saving...' : 'Save species settings'}
-      </Button>
+          <Button onClick={saveForm} className="w-full" disabled={!canManage || saving || !hasValidSelectedSpecies || !backendConfigured}>
+            {saving ? 'Saving...' : 'Save species settings'}
+          </Button>
+        </>
+      )}
     </div>
   );
 }

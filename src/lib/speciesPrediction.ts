@@ -257,7 +257,7 @@ export function normalizeSpeciesPredictionResult(
       russia: toNumber(input?.countryScores?.russia),
       ...(input?.countryScores?.finlandContextOnly != null
         ? { finlandContextOnly: toNumber(input.countryScores.finlandContextOnly) }
-        : ((input?.countryScores as Record<string, unknown>)?.finlandContext != null ? { finlandContextOnly: toNumber((input?.countryScores as Record<string, unknown>).finlandContext) } : {})),
+        : (() => { const cs = input?.countryScores as Record<string, unknown> | undefined; return cs?.finlandContext != null ? { finlandContextOnly: toNumber(cs.finlandContext) } : {}; })()),
     },
     topPredictedPoints,
     ...(input?.insightSummary ? { insightSummary: normalizeUiText(input.insightSummary) } : {}),

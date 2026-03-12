@@ -196,7 +196,7 @@ export default function SpeciesPredictionSettings() {
           <span>Loading species settings...</span>
         </div>
       ) : (
-        <div className={disableEditing ? 'pointer-events-none opacity-60' : ''}>
+        <div className={disableEditing ? 'opacity-60' : ''}>
           <Accordion type="multiple" className="w-full space-y-2">
           <AccordionItem value="general" className="rounded-lg border border-border px-4">
             <AccordionTrigger>General</AccordionTrigger>

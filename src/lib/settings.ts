@@ -36,6 +36,10 @@ export function saveSettings(settings: AppSettings): void {
   localStorage.setItem(NEWS_AUTO_TRANSLATE_ET_KEY, settings.autoTranslateToEstonian ? '1' : '0');
 }
 
+export function isSpeciesPredictionEnabled(): boolean {
+  return loadSettings().enableSpeciesPredictionBeta === true;
+}
+
 export function isAutoTranslateNewsToEtEnabled(): boolean {
   const keyValue = localStorage.getItem(NEWS_AUTO_TRANSLATE_ET_KEY);
   if (keyValue != null) return keyValue === '1';

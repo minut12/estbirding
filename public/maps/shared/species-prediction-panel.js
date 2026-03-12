@@ -13,11 +13,12 @@
     error: '',
   };
 
-  var panel;
-  var speciesLine;
-  var statusLine;
-  var modeLine;
-  var resultWrap;
+  var panel = null;
+  var styleEl = null;
+  var speciesLine = null;
+  var statusLine = null;
+  var modeLine = null;
+  var resultWrap = null;
   var lastSelectionKey = '';
 
   function detectScope() {
@@ -25,7 +26,13 @@
     return path.indexOf('/maps/rariliin/') >= 0 ? 'rariliin' : 'linnuliigid';
   }
 
-  function init() {
+  function ensurePanel() {
+    if (!state.featureEnabled) {
+      destroyPanel();
+      return;
+    }
+    if (panel) return;
+
     panel = document.createElement('div');
     panel.id = 'speciesPredictionPanel';
     panel.innerHTML = '' +
@@ -47,8 +54,8 @@
       '</div>';
     document.body.appendChild(panel);
 
-    var style = document.createElement('style');
-    style.textContent = '' +
+    styleEl = document.createElement('style');
+    styleEl.textContent = '' +
       '#speciesPredictionPanel{position:absolute;right:12px;bottom:12px;z-index:860;width:min(400px,calc(100vw - 24px));font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:rgba(255,255,255,.96);border:1px solid #cbd5e1;border-radius:16px;box-shadow:0 12px 30px rgba(15,23,42,.18);backdrop-filter:blur(8px)}' +
       '#speciesPredictionPanel .spp-header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #e2e8f0}' +
       '#speciesPredictionPanel .spp-eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#475569}' +
@@ -58,7 +65,6 @@
       '#speciesPredictionPanel .spp-row{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:#475569}' +
       '#speciesPredictionPanel .spp-row strong{color:#0f172a;text-align:right}' +
       '#speciesPredictionPanel .spp-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}' +
-      '#speciesPredictionPanel .spp-actions button[disabled]{opacity:.45;cursor:not-allowed}' +
       '#speciesPredictionPanel .spp-results{display:grid;gap:10px}' +
       '#speciesPredictionPanel .spp-card{border:1px solid #dbe4ee;border-radius:12px;padding:10px;background:#fff}' +
       '#speciesPredictionPanel .spp-card h4{margin:0 0 6px;font-size:13px;color:#0f172a}' +
@@ -70,7 +76,7 @@
       '#speciesPredictionPanel.is-collapsed .spp-body{display:none}' +
       '#speciesPredictionPanel .spp-toggle{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:600;color:#0f172a;cursor:pointer}' +
       '@media (max-width: 900px){#speciesPredictionPanel{left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));width:auto}}';
-    document.head.appendChild(style);
+    document.head.appendChild(styleEl);
 
     speciesLine = panel.querySelector('[data-role="species-name"]');
     statusLine = panel.querySelector('[data-role="status-line"]');
@@ -85,17 +91,21 @@
         requestRun(String(btn.getAttribute('data-request-type') || 'prediction_and_insight'));
       });
     });
+  }
 
-    render();
-    notifySelection(true);
-    window.setInterval(notifySelection, 500);
+  function destroyPanel() {
+    if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
+    if (styleEl && styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
+    panel = null;
+    styleEl = null;
+    speciesLine = null;
+    statusLine = null;
+    modeLine = null;
+    resultWrap = null;
   }
 
   function requestRun(requestType) {
-    if (!state.featureEnabled) {
-      setError('Feature is disabled');
-      return;
-    }
+    if (!state.featureEnabled) return;
     if (!state.speciesKey || !state.speciesName) {
       setError('Select a species first');
       return;
@@ -116,6 +126,7 @@
   }
 
   function notifySelection(force) {
+    if (!state.featureEnabled) return;
     var speciesName = readSelectedSpecies();
     var speciesKey = String(speciesName || '').trim();
     var nextKey = state.scope + '|' + speciesKey;
@@ -145,43 +156,65 @@
     return row ? String(row.getAttribute('data-key') || '').trim() : '';
   }
 
+  function setFeatureFlags(payload) {
+    state.featureEnabled = !!(payload && payload.flags && payload.flags.speciesPredictionEnabled);
+    if (!state.featureEnabled) {
+      state.loading = false;
+      state.result = null;
+      state.error = '';
+      destroyPanel();
+      return;
+    }
+    ensurePanel();
+    render();
+    notifySelection(true);
+  }
+
   function setContext(payload) {
+    if (!state.featureEnabled) return;
     state.settings = payload && payload.settings ? payload.settings : null;
-    state.featureEnabled = !!(payload && payload.featureEnabled);
     if (payload && payload.speciesName) state.speciesName = String(payload.speciesName || '').trim();
     if (payload && payload.speciesKey) state.speciesKey = String(payload.speciesKey || '').trim();
+    ensurePanel();
     render();
   }
 
   function setLoading() {
+    if (!state.featureEnabled) return;
     state.loading = true;
     state.error = '';
     state.result = null;
+    ensurePanel();
     render();
   }
 
   function setResult(result) {
+    if (!state.featureEnabled) return;
     state.loading = false;
     state.error = '';
     state.result = result || null;
+    ensurePanel();
     render();
   }
 
   function setError(message) {
+    if (!state.featureEnabled) return;
     state.loading = false;
     state.result = null;
     state.error = String(message || 'Prediction request failed');
+    ensurePanel();
     render();
   }
 
   function render() {
+    if (!state.featureEnabled) {
+      destroyPanel();
+      return;
+    }
+    ensurePanel();
     if (!panel) return;
     speciesLine.textContent = state.speciesName || 'No species selected';
-    Array.prototype.slice.call(panel.querySelectorAll('[data-request-type]')).forEach(function (btn) {
-      btn.disabled = !state.featureEnabled;
-    });
     if (state.loading) statusLine.textContent = 'Loading...';
-    else if (!state.featureEnabled) statusLine.textContent = 'Feature is disabled';
     else if (state.error) statusLine.textContent = state.error;
     else if (state.result) statusLine.textContent = 'Ready';
     else statusLine.textContent = 'Idle';
@@ -190,10 +223,6 @@
       : 'Waiting for species settings';
     resultWrap.innerHTML = '';
 
-    if (!state.featureEnabled) {
-      resultWrap.innerHTML = '<div class="spp-card"><p>Feature is disabled</p></div>';
-      return;
-    }
     if (state.loading) {
       resultWrap.innerHTML = '<div class="spp-card"><p>Running species-specific prediction and research...</p></div>';
       return;
@@ -276,12 +305,18 @@
   window.addEventListener('message', function (ev) {
     var data = ev && ev.data ? ev.data : null;
     if (!data || typeof data !== 'object') return;
+    if (data.type === 'APP_FEATURE_FLAGS') setFeatureFlags(data);
     if (data.type === 'SPECIES_PREDICTION_CONTEXT') setContext(data);
     if (data.type === 'SPECIES_PREDICTION_LOADING') setLoading();
     if (data.type === 'SPECIES_PREDICTION_RESULT') setResult(data.result || null);
     if (data.type === 'SPECIES_PREDICTION_ERROR') setError(data.error || 'Prediction request failed');
   });
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
-  else init();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () {
+      destroyPanel();
+    }, { once: true });
+  } else {
+    destroyPanel();
+  }
 })();

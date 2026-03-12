@@ -17,7 +17,7 @@ import { normalizeSpeciesName, normalizeUiText } from '@/lib/textNormalize';
 import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
 import { isSpeciesPredictionEnabled, loadSettings, saveSettings } from '@/lib/settings';
-import { supabase } from '@/integrations/supabase/client';
+import { getFunctionsBaseUrl, getSupabaseAuthHeaders } from '@/config/supabaseConfig';
 
 type NumericFieldProps = {
   id: string;
@@ -86,18 +86,18 @@ export default function SpeciesPredictionSettings() {
       setBackendStatusMessage('Prediction backend is not configured yet');
       return;
     }
+
     setBackendStatusLoading(true);
-    supabase.functions.invoke('species-prediction?mode=status', { method: 'GET' as never })
-      .then(({ data, error }) => {
-        if (error) throw error;
-        const configured = data?.configured === true;
+    fetchSpeciesPredictionBackendStatus()
+      .then((data) => {
+        const configured = data.configured === true;
         setBackendConfigured(configured);
-        setBackendStatusMessage(configured ? '' : String(data?.reason || 'Prediction backend is not configured yet'));
+        setBackendStatusMessage(configured ? '' : String(data.message || 'Prediction backend is not configured yet'));
       })
       .catch((error: unknown) => {
-        const reason = error instanceof Error ? error.message : 'Prediction backend is not configured yet';
+        const reason = error instanceof Error ? error.message : 'Prediction backend status check failed';
         setBackendConfigured(false);
-        setBackendStatusMessage(reason || 'Prediction backend is not configured yet');
+        setBackendStatusMessage(reason || 'Prediction backend status check failed');
       })
       .finally(() => setBackendStatusLoading(false));
   }, [predictionFeatureEnabled, scopeId]);
@@ -350,6 +350,48 @@ export default function SpeciesPredictionSettings() {
       </Button>
     </div>
   );
+}
+
+type SpeciesPredictionBackendStatus = {
+  ok: boolean;
+  configured: boolean;
+  webhookConfigured: boolean;
+  message: string;
+};
+
+async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionBackendStatus> {
+  const response = await fetch(`${getFunctionsBaseUrl()}/species-prediction?mode=status`, {
+    method: 'GET',
+    headers: {
+      ...getSupabaseAuthHeaders(),
+    },
+  });
+
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error('Prediction backend status check returned invalid JSON');
+  }
+
+  if (!response.ok) {
+    const message = typeof data === 'object' && data && 'message' in data
+      ? String((data as { message?: unknown }).message || 'Prediction backend status check failed')
+      : 'Prediction backend status check failed';
+    throw new Error(message);
+  }
+
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('Prediction backend status check returned invalid JSON');
+  }
+
+  const status = data as Partial<SpeciesPredictionBackendStatus>;
+  return {
+    ok: status.ok === true,
+    configured: status.configured === true,
+    webhookConfigured: status.webhookConfigured === true,
+    message: String(status.message || 'Prediction backend is not configured yet'),
+  };
 }
 
 function PredictionFeatureToggle({

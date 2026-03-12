@@ -28,7 +28,7 @@ export async function runSpeciesPredictionRequest(
       return {
         ok: false,
         ...(data?.disabled ? { disabled: true } : {}),
-        error: String(data?.error || 'Prediction request failed'),
+        error: String(data?.message || data?.error || 'Prediction request failed'),
       };
     }
     const sourceResult = data?.result || data;

@@ -16,102 +16,132 @@ type PredictionRequest = {
 };
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  const url = new URL(req.url);
-  const webhookUrl = (Deno.env.get('SPECIES_PREDICTION_N8N_WEBHOOK_URL') || '').trim();
-  if (req.method === 'GET' && url.searchParams.get('mode') === 'status') {
-    return json({
-      ok: true,
-      configured: Boolean(webhookUrl),
-      ...(webhookUrl ? {} : { reason: 'Prediction backend is not configured yet' }),
-    }, 200);
-  }
-
-  if (req.method !== 'POST') {
-    return json({ ok: false, error: 'Method not allowed' }, 405);
-  }
-
-  if (!webhookUrl) {
-    return json({
-      ok: false,
-      disabled: true,
-      error: 'Species prediction webhook is not configured',
-    }, 200);
-  }
-
-  let rawPayload: unknown;
   try {
-    rawPayload = await req.json();
-  } catch {
-    return json({ ok: false, error: 'Invalid JSON body' }, 400);
-  }
-
-  const payload = normalizeRequest(rawPayload);
-  if (!payload.ok) {
-    return json({ ok: false, error: payload.error }, 400);
-  }
-
-  const timeoutMs = Math.max(5000, Math.min(30000, Number(Deno.env.get('SPECIES_PREDICTION_TIMEOUT_MS') || DEFAULT_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS));
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-    };
-    const authHeaderName = (Deno.env.get('SPECIES_PREDICTION_N8N_AUTH_HEADER') || '').trim();
-    const authHeaderValue = (Deno.env.get('SPECIES_PREDICTION_N8N_AUTH_VALUE') || '').trim();
-    if (authHeaderName && authHeaderValue) {
-      headers[authHeaderName] = authHeaderValue;
+    if (req.method === 'OPTIONS') {
+      return new Response(null, { headers: corsHeaders });
     }
 
-    const upstream = await fetch(webhookUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload.value),
-      signal: controller.signal,
-    });
-    const text = await upstream.text();
-    const parsed = parseJsonObject(text);
+    const url = new URL(req.url);
+    const webhookUrl = (Deno.env.get('SPECIES_PREDICTION_N8N_WEBHOOK_URL') || '').trim();
+    const webhookConfigured = Boolean(webhookUrl);
 
-    if (!upstream.ok) {
+    if (req.method === 'GET' && url.searchParams.get('mode') === 'status') {
+      const message = webhookConfigured
+        ? 'Prediction backend is configured'
+        : 'Prediction backend is not configured yet';
+      console.log('[species-prediction] status request', { configured: webhookConfigured });
+      return json({
+        ok: true,
+        configured: webhookConfigured,
+        webhookConfigured,
+        message,
+      }, 200);
+    }
+
+    if (req.method !== 'POST') {
+      return json({ ok: false, error: 'Method not allowed', message: 'Method not allowed' }, 405);
+    }
+
+    if (!webhookConfigured) {
+      console.warn('[species-prediction] missing webhook env');
       return json({
         ok: false,
-        error: `n8n request failed: ${upstream.status}`,
-        details: parsed.ok ? parsed.value : { raw: text },
-      }, 502);
+        disabled: true,
+        error: 'Species prediction webhook is not configured',
+        message: 'Prediction backend is not configured yet',
+      }, 200);
     }
 
-    if (!parsed.ok) {
+    let rawPayload: unknown;
+    try {
+      rawPayload = await req.json();
+    } catch {
+      return json({ ok: false, error: 'Invalid JSON body', message: 'Invalid JSON body' }, 400);
+    }
+
+    const payload = normalizeRequest(rawPayload);
+    if (!payload.ok) {
+      return json({ ok: false, error: payload.error, message: payload.error }, 400);
+    }
+
+    const timeoutMs = Math.max(5000, Math.min(30000, Number(Deno.env.get('SPECIES_PREDICTION_TIMEOUT_MS') || DEFAULT_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS));
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+      const authHeaderName = (Deno.env.get('SPECIES_PREDICTION_N8N_AUTH_HEADER') || '').trim();
+      const authHeaderValue = (Deno.env.get('SPECIES_PREDICTION_N8N_AUTH_VALUE') || '').trim();
+      if (authHeaderName && authHeaderValue) {
+        headers[authHeaderName] = authHeaderValue;
+      }
+
+      const upstream = await fetch(webhookUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload.value),
+        signal: controller.signal,
+      });
+      const text = await upstream.text();
+      const parsed = parseJsonObject(text);
+
+      if (!upstream.ok) {
+        console.error('[species-prediction] webhook request failed', { status: upstream.status });
+        return json({
+          ok: false,
+          error: `n8n request failed: ${upstream.status}`,
+          message: `n8n request failed: ${upstream.status}`,
+          details: parsed.ok ? parsed.value : { raw: text },
+        }, 502);
+      }
+
+      if (!parsed.ok) {
+        console.error('[species-prediction] webhook returned invalid JSON');
+        return json({
+          ok: false,
+          error: 'n8n response was not valid JSON',
+          message: 'n8n response was not valid JSON',
+        }, 502);
+      }
+
+      const normalizedResult = normalizeResult(parsed.value, payload.value);
+      if (!normalizedResult.ok) {
+        return json({
+          ok: false,
+          error: normalizedResult.error,
+          message: normalizedResult.error,
+        }, 502);
+      }
+
+      return json({
+        ok: true,
+        message: 'Species prediction request succeeded',
+        result: normalizedResult.value,
+      }, 200);
+    } catch (error) {
+      const isAbort = error instanceof DOMException && error.name === 'AbortError';
+      const message = isAbort
+        ? `Species prediction request timed out after ${timeoutMs}ms`
+        : String((error as Error)?.message || error);
+      console.error('[species-prediction] request failed', { message });
       return json({
         ok: false,
-        error: 'n8n response was not valid JSON',
-      }, 502);
+        error: message,
+        message,
+      }, isAbort ? 504 : 500);
+    } finally {
+      clearTimeout(timer);
     }
-
-    const normalizedResult = normalizeResult(parsed.value, payload.value);
-    if (!normalizedResult.ok) {
-      return json({
-        ok: false,
-        error: normalizedResult.error,
-      }, 502);
-    }
-
-    return json({
-      ok: true,
-      result: normalizedResult.value,
-    }, 200);
   } catch (error) {
-    const isAbort = error instanceof DOMException && error.name === 'AbortError';
+    const message = error instanceof Error ? error.message : 'Unexpected species prediction handler failure';
+    console.error('[species-prediction] unexpected handler failure', error);
     return json({
       ok: false,
-      error: isAbort ? `Species prediction request timed out after ${timeoutMs}ms` : String((error as Error)?.message || error),
-    }, isAbort ? 504 : 500);
-  } finally {
-    clearTimeout(timer);
+      error: message,
+      message,
+    }, 500);
   }
 });
 

@@ -44,6 +44,7 @@ export default function SpeciesPredictionSettings() {
   const [form, setForm] = useState<SpeciesPredictionSettingsModel>(() => normalizeSpeciesPredictionSettings(null, '', 'linnuliigid'));
 
   const scope = SPECIES_SCOPES[scopeId];
+  const predictionEnabled = isSpeciesPredictionEnabled();
   const selectedSpeciesKey = useMemo(() => normalizeSpeciesName(selectedSpecies), [selectedSpecies]);
   const hasValidSelectedSpecies = Boolean(selectedSpecies && selectedSpeciesKey);
   const saveBlockedMessage = !hasValidSelectedSpecies
@@ -51,6 +52,7 @@ export default function SpeciesPredictionSettings() {
     : (!backendConfigured ? backendStatusMessage || 'Prediction backend is not configured yet' : '');
 
   useEffect(() => {
+    if (!isSpeciesPredictionEnabled()) return;
     fetchSpeciesList(scope).then((list) => {
       const normalized = list.map(normalizeUiText).filter(Boolean);
       setSpeciesList(normalized);
@@ -59,6 +61,7 @@ export default function SpeciesPredictionSettings() {
   }, [scope, selectedSpecies]);
 
   const loadSpeciesSettings = useCallback(async (speciesName: string) => {
+    if (!isSpeciesPredictionEnabled()) return;
     if (!speciesName) return;
     setLoading(true);
     try {
@@ -73,12 +76,13 @@ export default function SpeciesPredictionSettings() {
   }, [scopeId]);
 
   useEffect(() => {
+    if (!isSpeciesPredictionEnabled()) return;
     if (!selectedSpecies) return;
     void loadSpeciesSettings(selectedSpecies);
   }, [selectedSpecies, loadSpeciesSettings]);
 
   useEffect(() => {
-    if (!predictionFeatureEnabled) {
+    if (!isSpeciesPredictionEnabled()) {
       setBackendConfigured(false);
       setBackendStatusMessage('Prediction backend is not configured yet');
       return;
@@ -110,6 +114,8 @@ export default function SpeciesPredictionSettings() {
   }, [scopeId, selectedSpecies]);
 
   const saveForm = async () => {
+    console.debug('[speciesPrediction] settings save requested', { enabled: isSpeciesPredictionEnabled() });
+    if (!isSpeciesPredictionEnabled()) return;
     if (!predictionFeatureEnabled) return;
     if (!hasValidSelectedSpecies) {
       toast.error('Select a valid species before saving prediction settings');
@@ -152,7 +158,7 @@ export default function SpeciesPredictionSettings() {
         enabled={predictionFeatureEnabled}
         onEnabledChange={setPredictionFeatureEnabled}
       />
-      {!predictionFeatureEnabled ? (
+      {!predictionEnabled ? (
         <p className="text-xs text-muted-foreground">Turn on Species Prediction to edit these settings</p>
       ) : (
         <>
@@ -405,7 +411,7 @@ function PredictionFeatureToggle({
     const next = { ...loadSettings(), enableSpeciesPredictionBeta: checked };
     saveSettings(next);
     onEnabledChange(checked);
-    console.debug('[speciesPrediction] master toggle changed', { enabled: checked });
+    console.debug('[speciesPrediction] feature flag', { enabled: checked });
   };
 
   return (

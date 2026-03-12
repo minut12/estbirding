@@ -104,7 +104,7 @@ export async function saveSpeciesPredictionSettings(scope: SpeciesScopeId, setti
     saveLocalSpeciesPredictionSettings(scope, next);
     return { settings: next, storage: 'backend' };
   } catch (error: unknown) {
-    const reason = error instanceof Error ? error.message : 'Unknown backend save error';
+    const reason = error instanceof Error && error.message ? error.message : 'Backend save unavailable';
     console.error('[speciesPredictionSettings] backend save failed', { scope, speciesKey: normalized.speciesKey, reason, error });
     saveLocalSpeciesPredictionSettings(scope, normalized);
     return {

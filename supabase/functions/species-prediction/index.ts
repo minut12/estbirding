@@ -20,11 +20,20 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const url = new URL(req.url);
+  const webhookUrl = (Deno.env.get('SPECIES_PREDICTION_N8N_WEBHOOK_URL') || '').trim();
+  if (req.method === 'GET' && url.searchParams.get('mode') === 'status') {
+    return json({
+      ok: true,
+      configured: Boolean(webhookUrl),
+      ...(webhookUrl ? {} : { reason: 'Prediction backend is not configured yet' }),
+    }, 200);
+  }
+
   if (req.method !== 'POST') {
     return json({ ok: false, error: 'Method not allowed' }, 405);
   }
 
-  const webhookUrl = (Deno.env.get('SPECIES_PREDICTION_N8N_WEBHOOK_URL') || '').trim();
   if (!webhookUrl) {
     return json({
       ok: false,

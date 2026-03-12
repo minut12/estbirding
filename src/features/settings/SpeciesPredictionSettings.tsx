@@ -17,6 +17,7 @@ import { normalizeSpeciesName, normalizeUiText } from '@/lib/textNormalize';
 import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
 import { isSpeciesPredictionEnabled, loadSettings, saveSettings } from '@/lib/settings';
+import { supabase } from '@/integrations/supabase/client';
 
 type NumericFieldProps = {
   id: string;
@@ -36,6 +37,9 @@ export default function SpeciesPredictionSettings() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [backendConfigured, setBackendConfigured] = useState(false);
+  const [backendStatusLoading, setBackendStatusLoading] = useState(false);
+  const [backendStatusMessage, setBackendStatusMessage] = useState('');
   const [predictionFeatureEnabled, setPredictionFeatureEnabled] = useState(isSpeciesPredictionEnabled);
   const [form, setForm] = useState<SpeciesPredictionSettingsModel>(() => normalizeSpeciesPredictionSettings(null, '', 'linnuliigid'));
 
@@ -43,7 +47,11 @@ export default function SpeciesPredictionSettings() {
   const selectedSpeciesKey = useMemo(() => normalizeSpeciesName(selectedSpecies), [selectedSpecies]);
   const hasValidSelectedSpecies = Boolean(selectedSpecies && selectedSpeciesKey);
   const disableEditing = !predictionFeatureEnabled;
-  const saveBlockedMessage = !hasValidSelectedSpecies ? 'Select a valid species before saving prediction settings' : '';
+  const saveBlockedMessage = !predictionFeatureEnabled
+    ? 'Feature is disabled'
+    : (!hasValidSelectedSpecies
+      ? 'Select a valid species before saving prediction settings'
+      : (!backendConfigured ? backendStatusMessage || 'Prediction backend is not configured yet' : ''));
 
   useEffect(() => {
     fetchSpeciesList(scope).then((list) => {
@@ -72,6 +80,28 @@ export default function SpeciesPredictionSettings() {
     void loadSpeciesSettings(selectedSpecies);
   }, [selectedSpecies, loadSpeciesSettings]);
 
+  useEffect(() => {
+    if (!predictionFeatureEnabled) {
+      setBackendConfigured(false);
+      setBackendStatusMessage('Prediction backend is not configured yet');
+      return;
+    }
+    setBackendStatusLoading(true);
+    supabase.functions.invoke('species-prediction?mode=status', { method: 'GET' as never })
+      .then(({ data, error }) => {
+        if (error) throw error;
+        const configured = data?.configured === true;
+        setBackendConfigured(configured);
+        setBackendStatusMessage(configured ? '' : String(data?.reason || 'Prediction backend is not configured yet'));
+      })
+      .catch((error: unknown) => {
+        const reason = error instanceof Error ? error.message : 'Prediction backend is not configured yet';
+        setBackendConfigured(false);
+        setBackendStatusMessage(reason || 'Prediction backend is not configured yet');
+      })
+      .finally(() => setBackendStatusLoading(false));
+  }, [predictionFeatureEnabled, scopeId]);
+
   const filtered = useMemo(() => (
     search
       ? speciesList.filter((species) => species.toLowerCase().includes(search.toLowerCase()))
@@ -88,6 +118,7 @@ export default function SpeciesPredictionSettings() {
       toast.error('Select a valid species before saving prediction settings');
       return;
     }
+    if (!backendConfigured) return;
     if (!canManage) {
       toast.error('Only admins can save species-specific prediction settings.');
       return;
@@ -101,7 +132,7 @@ export default function SpeciesPredictionSettings() {
       );
       setForm(saved.settings);
       if (saved.storage === 'local') {
-        toast.error(`Saved locally because backend save failed: ${saved.reason || 'Unknown error'}`);
+        toast.message(`Saved locally because backend save is unavailable: ${saved.reason || 'Backend save unavailable'}`);
       } else {
         toast.success('Species prediction settings saved');
       }
@@ -174,10 +205,10 @@ export default function SpeciesPredictionSettings() {
         </div>
       </div>
 
-      {loading ? (
+      {loading || backendStatusLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          <span>Loading species settings...</span>
+          <span>{loading ? 'Loading species settings...' : 'Checking prediction backend...'}</span>
         </div>
       ) : (
         <div className={disableEditing ? 'opacity-60' : ''}>
@@ -314,7 +345,7 @@ export default function SpeciesPredictionSettings() {
         <p className="text-xs text-muted-foreground">Feature is disabled</p>
       )}
 
-      <Button onClick={saveForm} className="w-full" disabled={!canManage || saving || !hasValidSelectedSpecies || disableEditing}>
+      <Button onClick={saveForm} className="w-full" disabled={!canManage || saving || !hasValidSelectedSpecies || disableEditing || !backendConfigured}>
         {saving ? 'Saving...' : 'Save species settings'}
       </Button>
     </div>

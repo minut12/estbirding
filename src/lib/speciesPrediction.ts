@@ -166,12 +166,13 @@ export function normalizeSpeciesPredictionSettings(
 ): SpeciesPredictionSettings {
   const defaults = getSpeciesPredictionDefaults(speciesName, scope);
   const normalizedName = normalizeUiText(input?.speciesName || speciesName || defaults.speciesName);
-  const legacySources = asRecord(input?.sources);
-  const legacyCountries = asRecord(input?.countries);
-  const legacyWindows = asRecord(input?.windows);
-  const legacyWeights = asRecord(input?.weights);
-  const legacyPrecision = asRecord(input?.precision);
-  const legacyAutomation = asRecord(input?.automation);
+  const inputAny = (input || {}) as Record<string, unknown>;
+  const legacySources = asRecord(inputAny.sources);
+  const legacyCountries = asRecord(inputAny.countries);
+  const legacyWindows = asRecord(inputAny.windows);
+  const legacyWeights = asRecord(inputAny.weights);
+  const legacyPrecision = asRecord(inputAny.precision);
+  const legacyAutomation = asRecord(inputAny.automation);
   const next: SpeciesPredictionSettings = {
     ...defaults,
     ...input,

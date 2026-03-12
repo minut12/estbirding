@@ -18,6 +18,7 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
 import { isSpeciesPredictionEnabled, loadSettings, saveSettings } from '@/lib/settings';
 import { getFunctionsBaseUrl, getSupabaseAuthHeaders } from '@/config/supabaseConfig';
+import { APP_VERSION } from '@/lib/version';
 
 type NumericFieldProps = {
   id: string;
@@ -158,6 +159,9 @@ export default function SpeciesPredictionSettings() {
         enabled={predictionFeatureEnabled}
         onEnabledChange={setPredictionFeatureEnabled}
       />
+      <p className="text-[11px] text-muted-foreground">
+        prediction-settings-build: {APP_VERSION} / species-settings-v2
+      </p>
       {!predictionEnabled ? (
         <p className="text-xs text-muted-foreground">Turn on Species Prediction to edit these settings</p>
       ) : (

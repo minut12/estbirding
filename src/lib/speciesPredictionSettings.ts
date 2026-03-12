@@ -50,12 +50,12 @@ function validateSpeciesSettings(scope: SpeciesScopeId, settings: SpeciesPredict
 export async function loadSpeciesPredictionSettings(scope: SpeciesScopeId, speciesName: string): Promise<SpeciesPredictionSettings> {
   const speciesKey = normalizeSpeciesName(speciesName);
   try {
-    const { data, error } = await supabase
-      .from('species_prediction_defaults')
+    const { data, error } = await (supabase
+      .from('species_prediction_defaults' as any)
       .select('map_scope, species_key, species_name, settings, updated_at, updated_by')
       .eq('map_scope', scope)
       .eq('species_key', speciesKey)
-      .maybeSingle();
+      .maybeSingle() as any);
     if (error) throw error;
     if (!data) return loadLocalSpeciesPredictionSettings(scope, speciesName);
     const normalized = normalizeSpeciesPredictionSettings(

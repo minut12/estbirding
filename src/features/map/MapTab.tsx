@@ -10,12 +10,15 @@ import { APP_VERSION } from '@/lib/version';
 import { fetchSharedAvatars, getMergedAvatars, notifyIframe } from '@/lib/avatar-storage';
 import { LINNULIIGID_SCOPE, RARILIIN_SCOPE } from '@/lib/mapScope';
 import { resolveProxyBase } from '@/config/proxyEndpoint';
-import { buildSpeciesMetaLookupFallback, loadSpeciesMeta, seedSpeciesMetaFallback } from '@/lib/speciesMeta';
+import { buildSpeciesMetaLookupFallback, getScopedSpeciesMeta, loadSpeciesMeta, seedSpeciesMetaFallback } from '@/lib/speciesMeta';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import { broadcastSupabaseConfigToMapIframes, getSupabaseAnonKey, getSupabaseUrl, validateSupabaseConfig } from '@/config/supabaseConfig';
 import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
 import { type MapScope, loadSpeciesVisibility, saveSpeciesVisibility, loadLocalHidden } from '@/lib/speciesVisibility';
+import { getSpeciesScopeByMapId, SPECIES_PREDICTION_EVENT_TYPES, type SpeciesPredictionRequestPayload } from '@/lib/speciesPrediction';
+import { loadSpeciesPredictionSettings } from '@/lib/speciesPredictionSettings';
+import { runSpeciesPredictionRequest } from '@/lib/speciesPredictionRunner';
 
 const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -235,10 +238,76 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
           saveSpeciesVisibility(mapScope, user.id, speciesKey, isHidden);
         }
       }
+      if (ev.data?.type === SPECIES_PREDICTION_EVENT_TYPES.selected) {
+        const scopeCfg = getSpeciesScopeByMapId(current.id);
+        const speciesName = typeof ev.data.speciesName === 'string' ? ev.data.speciesName : '';
+        const speciesKey = typeof ev.data.speciesKey === 'string' ? ev.data.speciesKey : '';
+        if (!scopeCfg || !speciesName) return;
+        loadSpeciesPredictionSettings(scopeCfg.id, speciesName)
+          .then((settings) => {
+            sendToIframe({
+              type: SPECIES_PREDICTION_EVENT_TYPES.context,
+              scope: scopeCfg.id,
+              speciesName,
+              speciesKey,
+              settings,
+            });
+          })
+          .catch(() => {
+            sendToIframe({
+              type: SPECIES_PREDICTION_EVENT_TYPES.error,
+              error: 'Prediction defaults could not be loaded',
+            });
+          });
+      }
+      if (ev.data?.type === SPECIES_PREDICTION_EVENT_TYPES.run) {
+        const scopeCfg = getSpeciesScopeByMapId(current.id);
+        const speciesName = typeof ev.data.speciesName === 'string' ? ev.data.speciesName : '';
+        const speciesKey = typeof ev.data.speciesKey === 'string' ? ev.data.speciesKey : '';
+        if (!scopeCfg || !speciesName || !speciesKey) {
+          sendToIframe({
+            type: SPECIES_PREDICTION_EVENT_TYPES.error,
+            error: 'Select a species before requesting prediction results',
+          });
+          return;
+        }
+        sendToIframe({ type: SPECIES_PREDICTION_EVENT_TYPES.loading });
+        loadSpeciesPredictionSettings(scopeCfg.id, speciesName)
+          .then(async (settings) => {
+            const meta = getScopedSpeciesMeta(speciesName, scopeCfg);
+            const payload: SpeciesPredictionRequestPayload = {
+              requestType: typeof ev.data.requestType === 'string' ? ev.data.requestType : 'prediction_and_insight',
+              species: {
+                key: speciesKey,
+                name: speciesName,
+                latinName: meta.scientificName || '',
+              },
+              settings,
+            };
+            const response = await runSpeciesPredictionRequest(payload, scopeCfg.id);
+            if (!response.ok || !response.result) {
+              sendToIframe({
+                type: SPECIES_PREDICTION_EVENT_TYPES.error,
+                error: response.disabled ? 'Prediction webhook is not configured' : (response.error || 'Prediction request failed'),
+              });
+              return;
+            }
+            sendToIframe({
+              type: SPECIES_PREDICTION_EVENT_TYPES.result,
+              result: response.result,
+            });
+          })
+          .catch((predictionError: unknown) => {
+            sendToIframe({
+              type: SPECIES_PREDICTION_EVENT_TYPES.error,
+              error: predictionError instanceof Error ? predictionError.message : 'Prediction request failed',
+            });
+          });
+      }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [sendAvatarsToIframe, sendAppInsets, sendSpeciesMetaToIframe, sendSupabaseConfigToIframe, sendToIframe, user, mapScope]);
+  }, [current.id, sendAvatarsToIframe, sendAppInsets, sendSpeciesMetaToIframe, sendSupabaseConfigToIframe, sendToIframe, user, mapScope]);
 
   useEffect(() => {
     const t = setTimeout(sendMapShown, 500);

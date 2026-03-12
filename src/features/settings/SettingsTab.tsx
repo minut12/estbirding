@@ -20,6 +20,7 @@ import AvatarManager from './AvatarManager';
 import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
 import EventsManagementSettings from './EventsManagementSettings';
+import SpeciesPredictionSettings from './SpeciesPredictionSettings';
 import { LINNULIIGID_SCOPE, RARILIIN_SCOPE } from '@/lib/mapScope';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import {
@@ -45,7 +46,7 @@ import {
 import { isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
 
 type ResetMode = 'soft' | 'hard' | null;
-type SettingsPage = 'home' | 'news' | 'events' | 'translations' | 'species' | 'rariliin' | 'maps_debug';
+type SettingsPage = 'home' | 'news' | 'events' | 'translations' | 'species' | 'rariliin' | 'species_prediction' | 'maps_debug';
 const LS_RESOLVED_PROXY_BASE = 'resolved_proxy_base_v1';
 const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 const LS_SUPABASE_PROXY_BASE = 'supabase_proxy_base_v1';
@@ -921,6 +922,7 @@ export default function SettingsTab() {
 
   const renderSettingsSpecies = () => <AvatarManager scope={LINNULIIGID_SCOPE} />;
   const renderSettingsRariliin = () => <AvatarManager scope={RARILIIN_SCOPE} />;
+  const renderSettingsSpeciesPrediction = () => <SpeciesPredictionSettings />;
   const renderSettingsMapsDebug = () => {
     const handlePrettyPrint = () => {
       const raw = mapsDebugJson.trim();
@@ -1098,6 +1100,9 @@ export default function SettingsTab() {
           <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('rariliin')}>
             Rariliin
           </Button>
+          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('species_prediction')}>
+            Species Prediction
+          </Button>
           <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('maps_debug')}>
             Kaardid
           </Button>
@@ -1116,6 +1121,7 @@ export default function SettingsTab() {
     if (settingsPage === 'translations') return <>{renderSettingsHeader('Tõlge')}{renderSettingsTranslations()}</>;
     if (settingsPage === 'species') return <>{renderSettingsHeader('Linnuliigid')}{renderSettingsSpecies()}</>;
     if (settingsPage === 'rariliin') return <>{renderSettingsHeader('Rariliin')}{renderSettingsRariliin()}</>;
+    if (settingsPage === 'species_prediction') return <>{renderSettingsHeader('Species Prediction & Research')}{renderSettingsSpeciesPrediction()}</>;
     if (settingsPage === 'maps_debug') return <>{renderSettingsHeader('Maps Debugging / Kaardid')}{renderSettingsMapsDebug()}</>;
     return renderSettingsHome();
   };

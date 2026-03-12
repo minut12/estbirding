@@ -166,12 +166,13 @@ export function normalizeSpeciesPredictionSettings(
 ): SpeciesPredictionSettings {
   const defaults = getSpeciesPredictionDefaults(speciesName, scope);
   const normalizedName = normalizeUiText(input?.speciesName || speciesName || defaults.speciesName);
-  const legacySources = asRecord(input?.sources);
-  const legacyCountries = asRecord(input?.countries);
-  const legacyWindows = asRecord(input?.windows);
-  const legacyWeights = asRecord(input?.weights);
-  const legacyPrecision = asRecord(input?.precision);
-  const legacyAutomation = asRecord(input?.automation);
+  const inputAny = (input || {}) as Record<string, unknown>;
+  const legacySources = asRecord(inputAny.sources);
+  const legacyCountries = asRecord(inputAny.countries);
+  const legacyWindows = asRecord(inputAny.windows);
+  const legacyWeights = asRecord(inputAny.weights);
+  const legacyPrecision = asRecord(inputAny.precision);
+  const legacyAutomation = asRecord(inputAny.automation);
   const next: SpeciesPredictionSettings = {
     ...defaults,
     ...input,
@@ -256,7 +257,7 @@ export function normalizeSpeciesPredictionResult(
       russia: toNumber(input?.countryScores?.russia),
       ...(input?.countryScores?.finlandContextOnly != null
         ? { finlandContextOnly: toNumber(input.countryScores.finlandContextOnly) }
-        : (input?.countryScores?.finlandContext != null ? { finlandContextOnly: toNumber(input.countryScores.finlandContext) } : {})),
+        : (() => { const cs = input?.countryScores as Record<string, unknown> | undefined; return cs?.finlandContext != null ? { finlandContextOnly: toNumber(cs.finlandContext) } : {}; })()),
     },
     topPredictedPoints,
     ...(input?.insightSummary ? { insightSummary: normalizeUiText(input.insightSummary) } : {}),

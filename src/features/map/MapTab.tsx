@@ -288,7 +288,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
             if (!response.ok || !response.result) {
               sendToIframe({
                 type: SPECIES_PREDICTION_EVENT_TYPES.error,
-                error: response.disabled ? 'Prediction webhook is not configured' : (response.error || 'Prediction request failed'),
+                error: response.disabled ? 'Species prediction integration is currently unavailable' : (response.error || 'Prediction request failed'),
               });
               return;
             }

@@ -96,6 +96,10 @@ export type SpeciesPredictionRequestPayload = {
   settings: SpeciesPredictionSettings;
 };
 
+export function isPredictionRequestType(value: unknown): value is PredictionRequestType {
+  return value === 'prediction' || value === 'insight' || value === 'prediction_and_insight';
+}
+
 export const SPECIES_PREDICTION_EVENT_TYPES = {
   selected: 'SPECIES_PREDICTION_SELECTED',
   context: 'SPECIES_PREDICTION_CONTEXT',
@@ -230,8 +234,14 @@ export function normalizeSpeciesPredictionResult(
   scope: SpeciesScopeId,
 ): SpeciesPredictionResult {
   const normalizedName = normalizeUiText(speciesName);
+  const speciesKey = normalizeSpeciesName(input?.speciesKey || normalizedName);
+  const topPredictedPoints = Array.isArray(input?.topPredictedPoints)
+    ? input.topPredictedPoints
+      .map((point, index) => normalizePredictedPoint(point, index))
+      .filter((point) => point.name || point.countyOrParish || (point.lat !== 0 || point.lon !== 0))
+    : [];
   return {
-    speciesKey: normalizeSpeciesName(input?.speciesKey || normalizedName),
+    speciesKey,
     speciesName: normalizeUiText(input?.speciesName || normalizedName),
     scope,
     generatedAt: normalizeUiText(input?.generatedAt || new Date().toISOString()),
@@ -251,23 +261,20 @@ export function normalizeSpeciesPredictionResult(
         ? { finlandContextOnly: toNumber(input.countryScores.finlandContextOnly) }
         : (input?.countryScores?.finlandContext != null ? { finlandContextOnly: toNumber(input.countryScores.finlandContext) } : {})),
     },
-    topPredictedPoints: Array.isArray(input?.topPredictedPoints)
-      ? input.topPredictedPoints.map((point, index) => ({
-        rank: clampNumber(point?.rank ?? index + 1, 1, 99, index + 1),
-        name: normalizeUiText(point?.name || ''),
-        countyOrParish: normalizeUiText(point?.countyOrParish || ''),
-        lat: toNumber(point?.lat),
-        lon: toNumber(point?.lon),
-        confidence: clampNumber(point?.confidence, 0, 100, 0),
-        eta: normalizeUiText(point?.eta || ''),
-        searchRadiusKm: clampNumber(point?.searchRadiusKm, 0, 500, 0),
-        habitatCue: normalizeUiText(point?.habitatCue || ''),
-        reason: normalizeUiText(point?.reason || ''),
-      }))
-      : [],
+    topPredictedPoints,
     ...(input?.insightSummary ? { insightSummary: normalizeUiText(input.insightSummary) } : {}),
     ...(input?.rawResearchPayload ? { rawResearchPayload: input.rawResearchPayload } : {}),
   };
+}
+
+export function hasUsableSpeciesPredictionResult(
+  input: Partial<SpeciesPredictionResult> | null | undefined,
+): boolean {
+  if (!input || typeof input !== 'object') return false;
+  const speciesKey = normalizeSpeciesName(input.speciesKey || '');
+  const speciesName = normalizeUiText(input.speciesName || '');
+  const generatedAt = normalizeUiText(input.generatedAt || '');
+  return Boolean(speciesKey && speciesName && generatedAt);
 }
 
 function toNumber(value: unknown): number {
@@ -306,4 +313,19 @@ function isPredictionMode(value: unknown): value is PredictionMode {
 
 function isSummaryStyle(value: unknown): value is SummaryStyle {
   return value === 'short' || value === 'analytical' || value === 'field_use';
+}
+
+function normalizePredictedPoint(point: Partial<PredictedPoint> | null | undefined, index: number): PredictedPoint {
+  return {
+    rank: clampNumber(point?.rank ?? index + 1, 1, 99, index + 1),
+    name: normalizeUiText(point?.name || ''),
+    countyOrParish: normalizeUiText(point?.countyOrParish || ''),
+    lat: toNumber(point?.lat),
+    lon: toNumber(point?.lon),
+    confidence: clampNumber(point?.confidence, 0, 100, 0),
+    eta: normalizeUiText(point?.eta || ''),
+    searchRadiusKm: clampNumber(point?.searchRadiusKm, 0, 500, 0),
+    habitatCue: normalizeUiText(point?.habitatCue || ''),
+    reason: normalizeUiText(point?.reason || ''),
+  };
 }

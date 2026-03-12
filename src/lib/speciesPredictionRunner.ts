@@ -1,5 +1,12 @@
 import { supabase } from '@/integrations/supabase/client';
-import { normalizeSpeciesPredictionResult, type PredictionRequestType, type SpeciesPredictionRequestPayload, type SpeciesPredictionResult } from '@/lib/speciesPrediction';
+import {
+  hasUsableSpeciesPredictionResult,
+  isPredictionRequestType,
+  normalizeSpeciesPredictionResult,
+  type PredictionRequestType,
+  type SpeciesPredictionRequestPayload,
+  type SpeciesPredictionResult,
+} from '@/lib/speciesPrediction';
 import type { SpeciesScopeId } from '@/lib/mapScope';
 
 export async function runSpeciesPredictionRequest(
@@ -7,6 +14,12 @@ export async function runSpeciesPredictionRequest(
   scope: SpeciesScopeId,
 ): Promise<{ ok: boolean; disabled?: boolean; error?: string; result?: SpeciesPredictionResult }> {
   try {
+    if (!isPredictionRequestType(payload.requestType)) {
+      return {
+        ok: false,
+        error: 'Prediction request type is invalid',
+      };
+    }
     const { data, error } = await supabase.functions.invoke('species-prediction', {
       body: payload,
     });
@@ -19,6 +32,12 @@ export async function runSpeciesPredictionRequest(
       };
     }
     const sourceResult = data?.result || data;
+    if (!hasUsableSpeciesPredictionResult(sourceResult)) {
+      return {
+        ok: false,
+        error: 'Prediction response payload is invalid',
+      };
+    }
     return {
       ok: true,
       result: normalizeSpeciesPredictionResult(sourceResult, payload.species.name, scope),

@@ -220,8 +220,8 @@
       result.topPredictedPoints.forEach(function (point) {
         html += '<div class="spp-point">' +
           '<p><strong>#' + escapeHtml(point.rank) + ' ' + escapeHtml(point.name) + '</strong></p>' +
-          '<p>' + escapeHtml(point.countyOrParish) + '</p>' +
-          '<p>' + escapeHtml(point.lat) + ', ' + escapeHtml(point.lon) + '</p>' +
+          '<p>' + escapeHtml(point.countyOrParish || 'County/parish unavailable') + '</p>' +
+          '<p>' + escapeHtml(formatCoords(point.lat, point.lon)) + '</p>' +
           '<div class="spp-meta">' +
           '<div>Confidence: <strong>' + escapeHtml(point.confidence) + '</strong></div>' +
           '<div>ETA: <strong>' + escapeHtml(point.eta) + '</strong></div>' +
@@ -238,6 +238,15 @@
 
   function scoreCell(label, value) {
     return '<div>' + escapeHtml(label) + ': <strong>' + escapeHtml(value == null ? 0 : value) + '</strong></div>';
+  }
+
+  function formatCoords(lat, lon) {
+    if (!isFiniteNumber(lat) || !isFiniteNumber(lon)) return 'Coordinates unavailable';
+    return String(Number(lat).toFixed(5)) + ', ' + String(Number(lon).toFixed(5));
+  }
+
+  function isFiniteNumber(value) {
+    return typeof value === 'number' && isFinite(value);
   }
 
   function escapeHtml(value) {

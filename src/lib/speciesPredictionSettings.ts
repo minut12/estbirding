@@ -14,6 +14,12 @@ type CloudRow = {
   updated_by?: string | null;
 };
 
+export type SpeciesPredictionSaveResult = {
+  settings: SpeciesPredictionSettings;
+  storage: 'backend' | 'local';
+  reason?: string;
+};
+
 function cacheKey(scope: SpeciesScopeId, speciesKey: string): string {
   return `${CACHE_PREFIX}.${scope}.${speciesKey}`;
 }
@@ -31,6 +37,14 @@ export function loadLocalSpeciesPredictionSettings(scope: SpeciesScopeId, specie
 
 function saveLocalSpeciesPredictionSettings(scope: SpeciesScopeId, settings: SpeciesPredictionSettings): void {
   localStorage.setItem(cacheKey(scope, settings.speciesKey), JSON.stringify(settings));
+}
+
+function validateSpeciesSettings(scope: SpeciesScopeId, settings: SpeciesPredictionSettings): SpeciesPredictionSettings {
+  const normalized = normalizeSpeciesPredictionSettings(settings, settings.speciesName, scope);
+  if (!scope || !normalized.speciesName || !normalized.speciesKey) {
+    throw new Error('Select a valid species before saving prediction settings');
+  }
+  return normalized;
 }
 
 export async function loadSpeciesPredictionSettings(scope: SpeciesScopeId, speciesName: string): Promise<SpeciesPredictionSettings> {
@@ -61,8 +75,8 @@ export async function loadSpeciesPredictionSettings(scope: SpeciesScopeId, speci
   }
 }
 
-export async function saveSpeciesPredictionSettings(scope: SpeciesScopeId, settings: SpeciesPredictionSettings, userId?: string): Promise<SpeciesPredictionSettings> {
-  const normalized = normalizeSpeciesPredictionSettings(settings, settings.speciesName, scope);
+export async function saveSpeciesPredictionSettings(scope: SpeciesScopeId, settings: SpeciesPredictionSettings, userId?: string): Promise<SpeciesPredictionSaveResult> {
+  const normalized = validateSpeciesSettings(scope, settings);
   const payload = {
     map_scope: scope,
     species_key: normalized.speciesKey,
@@ -70,22 +84,33 @@ export async function saveSpeciesPredictionSettings(scope: SpeciesScopeId, setti
     settings: normalized,
     ...(userId ? { updated_by: userId } : {}),
   };
-  const { data, error } = await supabase
-    .from('species_prediction_defaults')
-    .upsert(payload, { onConflict: 'map_scope,species_key' })
-    .select('map_scope, species_key, species_name, settings, updated_at, updated_by')
-    .single();
-  if (error) throw error;
-  const next = normalizeSpeciesPredictionSettings(
-    {
-      ...((data as CloudRow).settings || {}),
-      speciesKey: normalizeUiText((data as CloudRow).species_key || normalized.speciesKey),
-      speciesName: normalizeUiText((data as CloudRow).species_name || normalized.speciesName),
-      updatedAt: normalizeUiText((data as CloudRow).updated_at || normalized.updatedAt),
-    },
-    normalized.speciesName,
-    scope,
-  );
-  saveLocalSpeciesPredictionSettings(scope, next);
-  return next;
+  try {
+    const { data, error } = await supabase
+      .from('species_prediction_defaults')
+      .upsert(payload, { onConflict: 'map_scope,species_key' })
+      .select('map_scope, species_key, species_name, settings, updated_at, updated_by')
+      .single();
+    if (error) throw error;
+    const next = normalizeSpeciesPredictionSettings(
+      {
+        ...((data as CloudRow).settings || {}),
+        speciesKey: normalizeUiText((data as CloudRow).species_key || normalized.speciesKey),
+        speciesName: normalizeUiText((data as CloudRow).species_name || normalized.speciesName),
+        updatedAt: normalizeUiText((data as CloudRow).updated_at || normalized.updatedAt),
+      },
+      normalized.speciesName,
+      scope,
+    );
+    saveLocalSpeciesPredictionSettings(scope, next);
+    return { settings: next, storage: 'backend' };
+  } catch (error: unknown) {
+    const reason = error instanceof Error ? error.message : 'Unknown backend save error';
+    console.error('[speciesPredictionSettings] backend save failed', { scope, speciesKey: normalized.speciesKey, reason, error });
+    saveLocalSpeciesPredictionSettings(scope, normalized);
+    return {
+      settings: normalized,
+      storage: 'local',
+      reason,
+    };
+  }
 }

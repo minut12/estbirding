@@ -7,6 +7,7 @@
     speciesKey: '',
     scope: detectScope(),
     settings: null,
+    featureEnabled: false,
     loading: false,
     result: null,
     error: '',
@@ -57,6 +58,7 @@
       '#speciesPredictionPanel .spp-row{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:#475569}' +
       '#speciesPredictionPanel .spp-row strong{color:#0f172a;text-align:right}' +
       '#speciesPredictionPanel .spp-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}' +
+      '#speciesPredictionPanel .spp-actions button[disabled]{opacity:.45;cursor:not-allowed}' +
       '#speciesPredictionPanel .spp-results{display:grid;gap:10px}' +
       '#speciesPredictionPanel .spp-card{border:1px solid #dbe4ee;border-radius:12px;padding:10px;background:#fff}' +
       '#speciesPredictionPanel .spp-card h4{margin:0 0 6px;font-size:13px;color:#0f172a}' +
@@ -90,6 +92,10 @@
   }
 
   function requestRun(requestType) {
+    if (!state.featureEnabled) {
+      setError('Feature is disabled');
+      return;
+    }
     if (!state.speciesKey || !state.speciesName) {
       setError('Select a species first');
       return;
@@ -141,6 +147,7 @@
 
   function setContext(payload) {
     state.settings = payload && payload.settings ? payload.settings : null;
+    state.featureEnabled = !!(payload && payload.featureEnabled);
     if (payload && payload.speciesName) state.speciesName = String(payload.speciesName || '').trim();
     if (payload && payload.speciesKey) state.speciesKey = String(payload.speciesKey || '').trim();
     render();
@@ -170,7 +177,11 @@
   function render() {
     if (!panel) return;
     speciesLine.textContent = state.speciesName || 'No species selected';
-    if (state.loading) statusLine.textContent = 'Loading…';
+    Array.prototype.slice.call(panel.querySelectorAll('[data-request-type]')).forEach(function (btn) {
+      btn.disabled = !state.featureEnabled;
+    });
+    if (state.loading) statusLine.textContent = 'Loading...';
+    else if (!state.featureEnabled) statusLine.textContent = 'Feature is disabled';
     else if (state.error) statusLine.textContent = state.error;
     else if (state.result) statusLine.textContent = 'Ready';
     else statusLine.textContent = 'Idle';
@@ -179,8 +190,12 @@
       : 'Waiting for species settings';
     resultWrap.innerHTML = '';
 
+    if (!state.featureEnabled) {
+      resultWrap.innerHTML = '<div class="spp-card"><p>Feature is disabled</p></div>';
+      return;
+    }
     if (state.loading) {
-      resultWrap.innerHTML = '<div class="spp-card"><p>Running species-specific prediction and research…</p></div>';
+      resultWrap.innerHTML = '<div class="spp-card"><p>Running species-specific prediction and research...</p></div>';
       return;
     }
     if (state.error) {

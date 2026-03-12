@@ -4,6 +4,7 @@ export interface AppSettings {
   newsSourceUrl: string;
   eventsSourceUrl: string;
   autoTranslateToEstonian: boolean;
+  enableSpeciesPredictionBeta: boolean;
 }
 
 const STORAGE_KEY = 'estbirding-settings';
@@ -13,6 +14,7 @@ const defaults: AppSettings = {
   newsSourceUrl: '',          // TODO: set real news feed URL
   eventsSourceUrl: '',        // TODO: set real events feed URL
   autoTranslateToEstonian: true,
+  enableSpeciesPredictionBeta: false,
 };
 
 export function loadSettings(): AppSettings {

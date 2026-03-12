@@ -13,9 +13,10 @@ import { fetchSpeciesList } from '@/lib/avatar-storage';
 import { LINNULIIGID_SCOPE, RARILIIN_SCOPE, SPECIES_SCOPES, type SpeciesScopeId } from '@/lib/mapScope';
 import { loadSpeciesPredictionSettings, saveSpeciesPredictionSettings } from '@/lib/speciesPredictionSettings';
 import { normalizeSpeciesPredictionSettings, type SpeciesPredictionSettings as SpeciesPredictionSettingsModel } from '@/lib/speciesPrediction';
-import { normalizeUiText } from '@/lib/textNormalize';
+import { normalizeSpeciesName, normalizeUiText } from '@/lib/textNormalize';
 import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
+import { loadSettings, saveSettings } from '@/lib/settings';
 
 type NumericFieldProps = {
   id: string;
@@ -35,9 +36,14 @@ export default function SpeciesPredictionSettings() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [predictionFeatureEnabled, setPredictionFeatureEnabled] = useState(() => loadSettings().enableSpeciesPredictionBeta);
   const [form, setForm] = useState<SpeciesPredictionSettingsModel>(() => normalizeSpeciesPredictionSettings(null, '', 'linnuliigid'));
 
   const scope = SPECIES_SCOPES[scopeId];
+  const selectedSpeciesKey = useMemo(() => normalizeSpeciesName(selectedSpecies), [selectedSpecies]);
+  const hasValidSelectedSpecies = Boolean(selectedSpecies && selectedSpeciesKey);
+  const disableEditing = !predictionFeatureEnabled;
+  const saveBlockedMessage = !hasValidSelectedSpecies ? 'Select a valid species before saving prediction settings' : '';
 
   useEffect(() => {
     fetchSpeciesList(scope).then((list) => {
@@ -76,8 +82,18 @@ export default function SpeciesPredictionSettings() {
     setForm((prev) => normalizeSpeciesPredictionSettings({ ...prev, ...patch }, selectedSpecies || prev.speciesName, scopeId));
   }, [scopeId, selectedSpecies]);
 
+  const togglePredictionFeature = (checked: boolean) => {
+    const next = { ...loadSettings(), enableSpeciesPredictionBeta: checked };
+    saveSettings(next);
+    setPredictionFeatureEnabled(checked);
+  };
+
   const saveForm = async () => {
-    if (!selectedSpecies) return;
+    if (disableEditing) return;
+    if (!hasValidSelectedSpecies) {
+      toast.error('Select a valid species before saving prediction settings');
+      return;
+    }
     if (!canManage) {
       toast.error('Only admins can save species-specific prediction settings.');
       return;
@@ -89,10 +105,15 @@ export default function SpeciesPredictionSettings() {
         normalizeSpeciesPredictionSettings(form, selectedSpecies, scopeId),
         user?.id,
       );
-      setForm(saved);
-      toast.success('Species prediction settings saved');
+      setForm(saved.settings);
+      if (saved.storage === 'local') {
+        toast.error(`Saved locally because backend save failed: ${saved.reason || 'Unknown error'}`);
+      } else {
+        toast.success('Species prediction settings saved');
+      }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Prediction settings save failed';
+      console.error('[SpeciesPredictionSettings] save failed', error);
       toast.error(message);
     } finally {
       setSaving(false);
@@ -104,6 +125,20 @@ export default function SpeciesPredictionSettings() {
       <div className="flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-primary" />
         <h3 className="font-semibold text-foreground">Species Prediction &amp; Research</h3>
+      </div>
+      <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="space-y-1">
+            <Label className="text-sm font-medium">Enable Species Prediction (beta)</Label>
+            <p className="text-xs text-muted-foreground">
+              Prediction settings are beta and apply only to the selected species
+            </p>
+          </div>
+          <Switch checked={predictionFeatureEnabled} onCheckedChange={togglePredictionFeature} />
+        </div>
+        {!predictionFeatureEnabled && (
+          <Badge variant="outline">Feature is disabled</Badge>
+        )}
       </div>
       <p className="text-xs text-muted-foreground">
         These settings apply only to the currently selected species.
@@ -161,7 +196,8 @@ export default function SpeciesPredictionSettings() {
           <span>Loading species settings...</span>
         </div>
       ) : (
-        <Accordion type="multiple" className="w-full space-y-2">
+        <div className={disableEditing ? 'pointer-events-none opacity-60' : ''}>
+          <Accordion type="multiple" className="w-full space-y-2">
           <AccordionItem value="general" className="rounded-lg border border-border px-4">
             <AccordionTrigger>General</AccordionTrigger>
             <AccordionContent className="space-y-3">
@@ -283,10 +319,18 @@ export default function SpeciesPredictionSettings() {
               </p>
             </AccordionContent>
           </AccordionItem>
-        </Accordion>
+          </Accordion>
+        </div>
       )}
 
-      <Button onClick={saveForm} className="w-full" disabled={!canManage || saving || !selectedSpecies}>
+      {saveBlockedMessage && (
+        <p className="text-xs text-destructive">{saveBlockedMessage}</p>
+      )}
+      {disableEditing && (
+        <p className="text-xs text-muted-foreground">Feature is disabled</p>
+      )}
+
+      <Button onClick={saveForm} className="w-full" disabled={!canManage || saving || !hasValidSelectedSpecies || disableEditing}>
         {saving ? 'Saving...' : 'Save species settings'}
       </Button>
     </div>

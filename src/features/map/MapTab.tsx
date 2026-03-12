@@ -19,6 +19,7 @@ import { type MapScope, loadSpeciesVisibility, saveSpeciesVisibility, loadLocalH
 import { getSpeciesScopeByMapId, SPECIES_PREDICTION_EVENT_TYPES, type SpeciesPredictionRequestPayload } from '@/lib/speciesPrediction';
 import { loadSpeciesPredictionSettings } from '@/lib/speciesPredictionSettings';
 import { runSpeciesPredictionRequest } from '@/lib/speciesPredictionRunner';
+import { loadSettings } from '@/lib/settings';
 
 const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -243,6 +244,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
         const speciesName = typeof ev.data.speciesName === 'string' ? ev.data.speciesName : '';
         const speciesKey = typeof ev.data.speciesKey === 'string' ? ev.data.speciesKey : '';
         if (!scopeCfg || !speciesName) return;
+        const predictionFeatureEnabled = loadSettings().enableSpeciesPredictionBeta;
         loadSpeciesPredictionSettings(scopeCfg.id, speciesName)
           .then((settings) => {
             sendToIframe({
@@ -251,6 +253,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
               speciesName,
               speciesKey,
               settings,
+              featureEnabled: predictionFeatureEnabled,
             });
           })
           .catch(() => {
@@ -261,6 +264,18 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
           });
       }
       if (ev.data?.type === SPECIES_PREDICTION_EVENT_TYPES.run) {
+        const predictionFeatureEnabled = loadSettings().enableSpeciesPredictionBeta;
+        if (!predictionFeatureEnabled) {
+          sendToIframe({
+            type: SPECIES_PREDICTION_EVENT_TYPES.context,
+            featureEnabled: false,
+          });
+          sendToIframe({
+            type: SPECIES_PREDICTION_EVENT_TYPES.error,
+            error: 'Feature is disabled',
+          });
+          return;
+        }
         const scopeCfg = getSpeciesScopeByMapId(current.id);
         const speciesName = typeof ev.data.speciesName === 'string' ? ev.data.speciesName : '';
         const speciesKey = typeof ev.data.speciesKey === 'string' ? ev.data.speciesKey : '';

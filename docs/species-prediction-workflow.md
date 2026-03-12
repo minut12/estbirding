@@ -1,0 +1,192 @@
+# n8n Workflow: Species Prediction Real Sources (`POST /species-prediction`)
+
+## Goal
+- Receive one selected-species prediction request from the Supabase edge function.
+- Fetch species-specific research inputs from foreign sightings, Elurikkus history, Estonia recent records, and weather.
+- Score them into the same response shape the app already expects.
+- Keep everything single-species only. No aggregation across species.
+
+## Files
+- Workflow JSON import: `docs/species_prediction_api_real_sources.json`
+- Sample request payload: `docs/species_prediction_request_example.json`
+- Sample response payload: `docs/species_prediction_response_example.json`
+
+## Import In n8n
+1. Open n8n.
+2. Choose `Import from file`.
+3. Import `docs/species_prediction_api_real_sources.json`.
+4. Open the imported workflow and replace every `REPLACE_*` endpoint placeholder with your real source URLs.
+5. If your upstreams require auth, configure credentials or headers on each HTTP Request node.
+6. Activate the workflow and copy the production webhook URL.
+7. Set that webhook URL into Supabase as `SPECIES_PREDICTION_N8N_WEBHOOK_URL`.
+
+## Required External Config
+- `SPECIES_PREDICTION_N8N_WEBHOOK_URL`
+  - Stored in Supabase Edge Function env, not in the app.
+- Optional Supabase edge function auth passthrough:
+  - `SPECIES_PREDICTION_N8N_AUTH_HEADER`
+  - `SPECIES_PREDICTION_N8N_AUTH_VALUE`
+  - `SPECIES_PREDICTION_TIMEOUT_MS`
+
+## Workflow Nodes
+1. `prediction_request`
+- `Webhook`
+- Method: `POST`
+- Path: `species-prediction`
+- Response mode: `Using Respond to Webhook node`
+
+2. `normalize_input`
+- `Set`
+- Keeps only species-specific request fields used by the source fetches and scoring logic.
+
+3. `fetch_ebird_foreign`
+- `HTTP Request`
+- Expected to return foreign sightings for the selected species only.
+- Intended normalized row shape:
+```json
+{
+  "rows": [
+    {
+      "country": "latvia",
+      "daysAgo": 1,
+      "distanceToEstoniaKm": 120,
+      "recordCount": 4,
+      "lat": 57.95,
+      "lon": 24.11,
+      "hotspotName": "Cape Kolka",
+      "countyOrParish": "Kurzeme",
+      "habitatCue": "coastal migration bottleneck"
+    }
+  ]
+}
+```
+
+4. `fetch_elurikkus_history`
+- `HTTP Request`
+- Expected to return species-specific historical spring fit and hotspot hints.
+- Intended normalized shape:
+```json
+{
+  "springFitScore": 74,
+  "historicalHotspots": [],
+  "habitatHints": ["coastal lagoons", "flooded meadows"],
+  "arrivalWindow": "late March to mid April"
+}
+```
+
+5. `fetch_estonia_recent`
+- `HTTP Request`
+- Expected to return Estonia recent status for the selected species only.
+
+6. `fetch_weather`
+- `HTTP Request`
+- Expected to return route/weather support for the selected species only.
+
+7. `merge_research_inputs`
+- `Merge`
+- Combines normalized request context with all source responses.
+
+8. `calculate_species_parameters`
+- `Code`
+- Calculates:
+  - `countryScores`
+  - `externalPressureScore`
+  - `springFitScore`
+  - `windSupportScore`
+  - `routeVector`
+  - `bestEntryZone`
+  - `alreadyMissedRisk`
+  - `topPredictedPoints`
+- Rules preserved:
+  - source priority is Latvia, Lithuania, Belarus, Poland, Russia
+  - Finland is context only
+  - exact hotspots are preferred whenever coordinates exist
+  - request remains per selected species only
+
+9. `summary_placeholder_gate`
+- `IF`
+- Allows `prediction` requests to return directly while insight-capable requests pass through a placeholder summary step.
+
+10. `summary_placeholder`
+- `Set`
+- Placeholder only. Replace with an LLM/OpenAI step if you want richer natural-language summaries.
+
+11. `final_response`
+- `Respond to Webhook`
+- Returns the JSON payload expected by the Supabase edge function.
+
+## Expected Webhook Request
+The edge function posts this shape:
+```json
+{
+  "requestType": "prediction_and_insight",
+  "species": {
+    "key": "anser-albifrons",
+    "name": "Suur-laukhani",
+    "latinName": "Anser albifrons"
+  },
+  "settings": {
+    "speciesKey": "anser-albifrons",
+    "speciesName": "Suur-laukhani",
+    "scope": "linnuliigid",
+    "enablePrediction": true,
+    "enableResearchInsights": true,
+    "useEbirdForeignSightings": true,
+    "useElurikkusHistory": true,
+    "useEstoniaRecentRecords": true,
+    "useWeatherWind": true,
+    "useLatvia": true,
+    "useLithuania": true,
+    "useBelarus": true,
+    "usePoland": true,
+    "useRussia": true,
+    "useFinlandContextOnly": true,
+    "predictionMode": "precise_hotspot",
+    "outputCount": 5,
+    "searchRadiusKm": 35,
+    "hotspotRadiusKm": 5,
+    "hotspotCount": 5
+  }
+}
+```
+
+## Expected Response
+This must stay stable because the app and edge function already normalize it:
+```json
+{
+  "speciesKey": "anser-albifrons",
+  "speciesName": "Suur-laukhani",
+  "generatedAt": "2026-03-12T14:05:00.000Z",
+  "externalPressureScore": 72,
+  "springFitScore": 76,
+  "windSupportScore": 68,
+  "routeVector": "latvia->estonia SSE",
+  "bestEntryZone": "Southwest Estonia",
+  "alreadyMissedRisk": "low",
+  "countryScores": {
+    "latvia": 82,
+    "lithuania": 61,
+    "belarus": 33,
+    "poland": 28,
+    "russia": 19,
+    "finlandContextOnly": 11
+  },
+  "topPredictedPoints": [],
+  "insightSummary": "Suur-laukhani: strongest spring driver is latvia pressure, spring fit is 76/100, wind support is 68/100.",
+  "rawResearchPayload": {}
+}
+```
+
+## What Still Needs Real External Setup
+- Replace all placeholder source URLs:
+  - `REPLACE_EBIRD_FOREIGN_ENDPOINT`
+  - `REPLACE_ELURIKKUS_HISTORY_ENDPOINT`
+  - `REPLACE_ESTONIA_RECENT_ENDPOINT`
+  - `REPLACE_WEATHER_ENDPOINT`
+- Configure credentials or signed headers for those sources if needed.
+- Optionally replace `summary_placeholder` with a real OpenAI or other summary node.
+
+## Notes
+- This workflow artifact does not change the app contract.
+- The app still talks only to the Supabase edge function.
+- The edge function still talks only to the n8n webhook URL set in Supabase env.

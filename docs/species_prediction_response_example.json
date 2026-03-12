@@ -1,0 +1,98 @@
+{
+  "speciesKey": "anser-albifrons",
+  "speciesName": "Suur-laukhani",
+  "generatedAt": "2026-03-12T14:05:00.000Z",
+  "externalPressureScore": 72,
+  "springFitScore": 76,
+  "windSupportScore": 68,
+  "routeVector": "latvia->estonia SSE",
+  "bestEntryZone": "Southwest Estonia",
+  "alreadyMissedRisk": "low",
+  "countryScores": {
+    "latvia": 82,
+    "lithuania": 61,
+    "belarus": 33,
+    "poland": 28,
+    "russia": 19,
+    "finlandContextOnly": 11
+  },
+  "topPredictedPoints": [
+    {
+      "rank": 1,
+      "name": "Matsalu, Keemu vaatetorn",
+      "countyOrParish": "Laaneranna",
+      "lat": 58.7604,
+      "lon": 23.6219,
+      "confidence": 86,
+      "eta": "24-48h",
+      "searchRadiusKm": 5,
+      "habitatCue": "coastal wetlands and flooded meadows",
+      "reason": "High Latvia pressure, strong spring fit, and matching wetland stopover history"
+    },
+    {
+      "rank": 2,
+      "name": "Haeska vaatetorn",
+      "countyOrParish": "Haapsalu",
+      "lat": 58.8142,
+      "lon": 23.4789,
+      "confidence": 81,
+      "eta": "48-72h",
+      "searchRadiusKm": 5,
+      "habitatCue": "shallow bay feeding areas",
+      "reason": "Historical hotspot support and favorable SSE wind"
+    }
+  ],
+  "insightSummary": "Suur-laukhani: strongest spring driver is latvia pressure, spring fit is 76/100, wind support is 68/100.",
+  "rawResearchPayload": {
+    "request": {
+      "requestType": "prediction_and_insight",
+      "speciesKey": "anser-albifrons",
+      "speciesName": "Suur-laukhani",
+      "latinName": "Anser albifrons",
+      "predictionMode": "precise_hotspot"
+    },
+    "normalizedSources": {
+      "foreignSightings": [
+        {
+          "country": "latvia",
+          "daysAgo": 1,
+          "distanceToEstoniaKm": 120,
+          "recordCount": 4,
+          "lat": 57.95,
+          "lon": 24.11
+        }
+      ],
+      "elurikkusHistory": {
+        "springFitScore": 74,
+        "historicalHotspots": [
+          {
+            "name": "Matsalu, Keemu vaatetorn",
+            "countyOrParish": "Laaneranna",
+            "lat": 58.7604,
+            "lon": 23.6219,
+            "confidence": 84,
+            "habitatCue": "coastal wetlands and flooded meadows",
+            "reason": "Repeated spring arrivals in matching water levels"
+          }
+        ],
+        "habitatHints": [
+          "coastal wetlands",
+          "flooded meadows"
+        ],
+        "arrivalWindow": "late March to mid April"
+      },
+      "estoniaRecent": {
+        "alreadyPresent": false,
+        "alreadyPassed": false,
+        "recentCount7d": 1,
+        "recentCount30d": 4
+      },
+      "weather": {
+        "windSupportScore": 68,
+        "windDirection": "SSE",
+        "windSpeed": 8.2,
+        "precipitation": 0.6
+      }
+    }
+  }
+}

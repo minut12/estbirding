@@ -43,7 +43,7 @@ export async function runSpeciesPredictionRequest(
       result: normalizeSpeciesPredictionResult(sourceResult, payload.species.name, scope),
     };
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Prediction request failed';
+    const message = resolvePredictionErrorMessage(error);
     return {
       ok: false,
       error: message,
@@ -55,4 +55,29 @@ export function resolvePredictionRequestType(enablePrediction: boolean, enableRe
   if (enablePrediction && enableResearchInsights) return 'prediction_and_insight';
   if (enableResearchInsights) return 'insight';
   return 'prediction';
+}
+
+function resolvePredictionErrorMessage(error: unknown): string {
+  if (error && typeof error === 'object') {
+    const candidate = error as {
+      message?: unknown;
+      context?: unknown;
+      status?: unknown;
+      statusText?: unknown;
+    };
+    const status = Number(candidate.status);
+    const message = typeof candidate.message === 'string' ? candidate.message : '';
+    const context = typeof candidate.context === 'string' ? candidate.context : '';
+    const statusText = typeof candidate.statusText === 'string' ? candidate.statusText : '';
+
+    if (status === 404 || message.includes('404') || context.includes('404')) {
+      return 'Prediction backend is unavailable or not deployed';
+    }
+    if (status === 503) {
+      return 'Prediction backend is unavailable';
+    }
+    if (message) return message;
+    if (statusText) return statusText;
+  }
+  return error instanceof Error ? error.message : 'Prediction request failed';
 }

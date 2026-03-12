@@ -27,13 +27,16 @@ serve(async (req) => {
 
     if (req.method === 'GET' && url.searchParams.get('mode') === 'status') {
       const message = webhookConfigured
-        ? 'Prediction backend is configured'
-        : 'Prediction backend is not configured yet';
+        ? 'Prediction backend is deployed and configured'
+        : 'Prediction backend is deployed but SPECIES_PREDICTION_N8N_WEBHOOK_URL is missing';
       console.log('[species-prediction] status request', { configured: webhookConfigured });
       return json({
         ok: true,
+        available: true,
+        deployed: true,
         configured: webhookConfigured,
         webhookConfigured,
+        status: webhookConfigured ? 'configured' : 'missing_webhook_env',
         message,
       }, 200);
     }
@@ -47,8 +50,8 @@ serve(async (req) => {
       return json({
         ok: false,
         disabled: true,
-        error: 'Species prediction webhook is not configured',
-        message: 'Prediction backend is not configured yet',
+        error: 'SPECIES_PREDICTION_N8N_WEBHOOK_URL is not configured',
+        message: 'Prediction backend is deployed but SPECIES_PREDICTION_N8N_WEBHOOK_URL is missing',
       }, 200);
     }
 

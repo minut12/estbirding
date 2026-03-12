@@ -41,6 +41,7 @@ export default function SpeciesPredictionSettings() {
   const [backendConfigured, setBackendConfigured] = useState(false);
   const [backendStatusLoading, setBackendStatusLoading] = useState(false);
   const [backendStatusMessage, setBackendStatusMessage] = useState('');
+  const [backendAvailable, setBackendAvailable] = useState(false);
   const [predictionFeatureEnabled, setPredictionFeatureEnabled] = useState(isSpeciesPredictionEnabled);
   const [form, setForm] = useState<SpeciesPredictionSettingsModel>(() => normalizeSpeciesPredictionSettings(null, '', 'linnuliigid'));
 
@@ -84,6 +85,7 @@ export default function SpeciesPredictionSettings() {
 
   useEffect(() => {
     if (!isSpeciesPredictionEnabled()) {
+      setBackendAvailable(false);
       setBackendConfigured(false);
       setBackendStatusMessage('Prediction backend is not configured yet');
       return;
@@ -92,12 +94,14 @@ export default function SpeciesPredictionSettings() {
     setBackendStatusLoading(true);
     fetchSpeciesPredictionBackendStatus()
       .then((data) => {
+        setBackendAvailable(data.available === true);
         const configured = data.configured === true;
         setBackendConfigured(configured);
-        setBackendStatusMessage(configured ? '' : String(data.message || 'Prediction backend is not configured yet'));
+        setBackendStatusMessage(String(data.message || (configured ? 'Prediction backend is configured' : 'Prediction backend is not configured yet')));
       })
       .catch((error: unknown) => {
         const reason = error instanceof Error ? error.message : 'Prediction backend status check failed';
+        setBackendAvailable(false);
         setBackendConfigured(false);
         setBackendStatusMessage(reason || 'Prediction backend status check failed');
       })
@@ -169,6 +173,17 @@ export default function SpeciesPredictionSettings() {
           <p className="text-xs text-muted-foreground">
             These settings apply only to the currently selected species.
           </p>
+          <div className="rounded-lg border border-border bg-card p-4 text-xs">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-medium text-foreground">Prediction backend status</span>
+              <Badge variant={backendConfigured ? 'default' : 'outline'}>
+                {backendConfigured ? 'Configured' : (backendAvailable ? 'Missing env' : 'Unavailable')}
+              </Badge>
+            </div>
+            <p className="mt-2 text-muted-foreground">
+              {backendStatusMessage || 'Prediction backend is configured'}
+            </p>
+          </div>
           {!canManage && (
             <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
               Admin-managed species settings are visible here for review. Running prediction/research remains available from the maps.
@@ -320,11 +335,7 @@ export default function SpeciesPredictionSettings() {
           <AccordionItem value="automation" className="rounded-lg border border-border px-4">
             <AccordionTrigger>AI / n8n Integration</AccordionTrigger>
             <AccordionContent className="space-y-3">
-              <SwitchRow label="Enable n8n research" checked={form.enableN8nResearch} onCheckedChange={(checked) => patchForm({ enableN8nResearch: checked })} />
-              <div className="space-y-1.5">
-                <Label htmlFor="n8nWebhookUrl">n8n webhook URL</Label>
-                <Input id="n8nWebhookUrl" value={form.n8nWebhookUrl} onChange={(event) => patchForm({ n8nWebhookUrl: event.target.value })} placeholder="https://n8n.example/webhook/species-prediction" />
-              </div>
+              <SwitchRow label="Enable server-side research" checked={form.enableN8nResearch} onCheckedChange={(checked) => patchForm({ enableN8nResearch: checked })} />
               <SwitchRow label="Enable OpenAI summary" checked={form.enableOpenAISummary} onCheckedChange={(checked) => patchForm({ enableOpenAISummary: checked })} />
               <div className="space-y-1.5">
                 <Label htmlFor="summaryStyle">Summary style</Label>
@@ -364,27 +375,44 @@ export default function SpeciesPredictionSettings() {
 
 type SpeciesPredictionBackendStatus = {
   ok: boolean;
+  available: boolean;
+  deployed: boolean;
   configured: boolean;
   webhookConfigured: boolean;
+  status?: string;
   message: string;
 };
 
 async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionBackendStatus> {
-  const response = await fetch(`${getFunctionsBaseUrl()}/species-prediction?mode=status`, {
-    method: 'GET',
-    headers: {
-      ...getSupabaseAuthHeaders(),
-    },
-  });
-
-  let data: unknown;
+  let response: Response;
   try {
-    data = await response.json();
+    response = await fetch(`${getFunctionsBaseUrl()}/species-prediction?mode=status`, {
+      method: 'GET',
+      headers: {
+        ...getSupabaseAuthHeaders(),
+      },
+    });
   } catch {
-    throw new Error('Prediction backend status check returned invalid JSON');
+    throw new Error('Prediction backend status check failed');
+  }
+
+  const raw = await response.text();
+  let data: unknown = null;
+  if (raw) {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      if (response.status === 404) {
+        throw new Error('Prediction backend is unavailable or not deployed');
+      }
+      throw new Error('Prediction backend status check returned invalid JSON');
+    }
   }
 
   if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error('Prediction backend is unavailable or not deployed');
+    }
     const message = typeof data === 'object' && data && 'message' in data
       ? String((data as { message?: unknown }).message || 'Prediction backend status check failed')
       : 'Prediction backend status check failed';
@@ -398,8 +426,11 @@ async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionB
   const status = data as Partial<SpeciesPredictionBackendStatus>;
   return {
     ok: status.ok === true,
+    available: status.available === true || status.deployed === true,
+    deployed: status.deployed === true,
     configured: status.configured === true,
     webhookConfigured: status.webhookConfigured === true,
+    status: typeof status.status === 'string' ? status.status : undefined,
     message: String(status.message || 'Prediction backend is not configured yet'),
   };
 }

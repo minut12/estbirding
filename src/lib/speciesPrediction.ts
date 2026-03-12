@@ -42,7 +42,6 @@ export type SpeciesPredictionSettings = {
   mapShowSourceFlows: boolean;
   mapShowConfidenceRings: boolean;
   enableN8nResearch: boolean;
-  n8nWebhookUrl: string;
   enableOpenAISummary: boolean;
   summaryStyle: SummaryStyle;
   summaryMaxLength: number;
@@ -153,7 +152,6 @@ export function getSpeciesPredictionDefaults(speciesName = '', scope: SpeciesSco
     mapShowSourceFlows: true,
     mapShowConfidenceRings: true,
     enableN8nResearch: false,
-    n8nWebhookUrl: '',
     enableOpenAISummary: true,
     summaryStyle: 'field_use',
     summaryMaxLength: 450,
@@ -208,7 +206,6 @@ export function normalizeSpeciesPredictionSettings(
     mapShowSourceFlows: coalesceBoolean(input?.mapShowSourceFlows, legacyPrecision.showSourceFlows, defaults.mapShowSourceFlows),
     mapShowConfidenceRings: coalesceBoolean(input?.mapShowConfidenceRings, legacyPrecision.showConfidenceRings, defaults.mapShowConfidenceRings),
     enableN8nResearch: coalesceBoolean(input?.enableN8nResearch, legacyAutomation.enableN8nResearch, defaults.enableN8nResearch),
-    n8nWebhookUrl: normalizeUiText(String(input?.n8nWebhookUrl ?? legacyAutomation.n8nWebhookUrl ?? defaults.n8nWebhookUrl)),
     enableOpenAISummary: coalesceBoolean(input?.enableOpenAISummary, legacyAutomation.enableOpenAISummary, defaults.enableOpenAISummary),
     summaryStyle: isSummaryStyle(input?.summaryStyle) ? input.summaryStyle : (isSummaryStyle(legacyAutomation.summaryStyle) ? legacyAutomation.summaryStyle : defaults.summaryStyle),
     summaryMaxLength: coalesceNumber(input?.summaryMaxLength, legacyAutomation.summaryMaxLength, defaults.summaryMaxLength),

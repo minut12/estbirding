@@ -82,12 +82,6 @@ export default function SpeciesPredictionSettings() {
     setForm((prev) => normalizeSpeciesPredictionSettings({ ...prev, ...patch }, selectedSpecies || prev.speciesName, scopeId));
   }, [scopeId, selectedSpecies]);
 
-  const togglePredictionFeature = (checked: boolean) => {
-    const next = { ...loadSettings(), enableSpeciesPredictionBeta: checked };
-    saveSettings(next);
-    setPredictionFeatureEnabled(checked);
-  };
-
   const saveForm = async () => {
     if (disableEditing) return;
     if (!hasValidSelectedSpecies) {
@@ -126,20 +120,10 @@ export default function SpeciesPredictionSettings() {
         <Sparkles className="h-4 w-4 text-primary" />
         <h3 className="font-semibold text-foreground">Species Prediction &amp; Research</h3>
       </div>
-      <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="space-y-1">
-            <Label className="text-sm font-medium">Enable Species Prediction (beta)</Label>
-            <p className="text-xs text-muted-foreground">
-              Prediction settings are beta and apply only to the selected species
-            </p>
-          </div>
-          <Switch checked={predictionFeatureEnabled} onCheckedChange={togglePredictionFeature} />
-        </div>
-        {!predictionFeatureEnabled && (
-          <Badge variant="outline">Feature is disabled</Badge>
-        )}
-      </div>
+      <PredictionFeatureToggle
+        enabled={predictionFeatureEnabled}
+        onEnabledChange={setPredictionFeatureEnabled}
+      />
       <p className="text-xs text-muted-foreground">
         These settings apply only to the currently selected species.
       </p>
@@ -333,6 +317,38 @@ export default function SpeciesPredictionSettings() {
       <Button onClick={saveForm} className="w-full" disabled={!canManage || saving || !hasValidSelectedSpecies || disableEditing}>
         {saving ? 'Saving...' : 'Save species settings'}
       </Button>
+    </div>
+  );
+}
+
+function PredictionFeatureToggle({
+  enabled,
+  onEnabledChange,
+}: {
+  enabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+}) {
+  const togglePredictionFeature = (checked: boolean) => {
+    const next = { ...loadSettings(), enableSpeciesPredictionBeta: checked };
+    saveSettings(next);
+    onEnabledChange(checked);
+    console.debug('[speciesPrediction] master toggle changed', { enabled: checked });
+  };
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="space-y-1">
+          <Label className="text-sm font-medium">Enable Species Prediction (beta)</Label>
+          <p className="text-xs text-muted-foreground">
+            Prediction settings are beta and apply only to the selected species
+          </p>
+        </div>
+        <Switch checked={enabled} onCheckedChange={togglePredictionFeature} />
+      </div>
+      {!enabled && (
+        <Badge variant="outline">Feature is disabled</Badge>
+      )}
     </div>
   );
 }

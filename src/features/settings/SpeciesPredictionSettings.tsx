@@ -79,7 +79,7 @@ export default function SpeciesPredictionSettings() {
   const saveForm = async () => {
     if (!selectedSpecies) return;
     if (!canManage) {
-      toast.error('Only admins can save prediction defaults.');
+      toast.error('Only admins can save species-specific prediction settings.');
       return;
     }
     setSaving(true);
@@ -90,9 +90,9 @@ export default function SpeciesPredictionSettings() {
         user?.id,
       );
       setForm(saved);
-      toast.success('Species prediction defaults saved');
+      toast.success('Species prediction settings saved');
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Prediction defaults save failed';
+      const message = error instanceof Error ? error.message : 'Prediction settings save failed';
       toast.error(message);
     } finally {
       setSaving(false);
@@ -110,7 +110,7 @@ export default function SpeciesPredictionSettings() {
       </p>
       {!canManage && (
         <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-          Admin defaults are visible here for review. Running prediction/research remains available from the maps.
+          Admin-managed species settings are visible here for review. Running prediction/research remains available from the maps.
         </div>
       )}
 
@@ -158,7 +158,7 @@ export default function SpeciesPredictionSettings() {
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          <span>Loading species defaults…</span>
+          <span>Loading species settings...</span>
         </div>
       ) : (
         <Accordion type="multiple" className="w-full space-y-2">
@@ -201,33 +201,33 @@ export default function SpeciesPredictionSettings() {
           <AccordionItem value="sources" className="rounded-lg border border-border px-4">
             <AccordionTrigger>Sources &amp; Countries</AccordionTrigger>
             <AccordionContent className="space-y-3">
-              <SwitchRow label="Use eBird foreign sightings" checked={form.sources.ebirdForeign} onCheckedChange={(checked) => patchForm({ sources: { ...form.sources, ebirdForeign: checked } })} />
-              <SwitchRow label="Use Elurikkus history" checked={form.sources.elurikkusHistory} onCheckedChange={(checked) => patchForm({ sources: { ...form.sources, elurikkusHistory: checked } })} />
-              <SwitchRow label="Use Estonia recent records" checked={form.sources.estoniaRecent} onCheckedChange={(checked) => patchForm({ sources: { ...form.sources, estoniaRecent: checked } })} />
-              <SwitchRow label="Use weather and wind" checked={form.sources.weatherWind} onCheckedChange={(checked) => patchForm({ sources: { ...form.sources, weatherWind: checked } })} />
-              <SwitchRow label="Latvia" checked={form.countries.latvia} onCheckedChange={(checked) => patchForm({ countries: { ...form.countries, latvia: checked } })} />
-              <SwitchRow label="Lithuania" checked={form.countries.lithuania} onCheckedChange={(checked) => patchForm({ countries: { ...form.countries, lithuania: checked } })} />
-              <SwitchRow label="Belarus" checked={form.countries.belarus} onCheckedChange={(checked) => patchForm({ countries: { ...form.countries, belarus: checked } })} />
-              <SwitchRow label="Poland" checked={form.countries.poland} onCheckedChange={(checked) => patchForm({ countries: { ...form.countries, poland: checked } })} />
-              <SwitchRow label="Russia" checked={form.countries.russia} onCheckedChange={(checked) => patchForm({ countries: { ...form.countries, russia: checked } })} />
-              <SwitchRow label="Finland context only" checked={form.countries.finlandContextOnly} onCheckedChange={(checked) => patchForm({ countries: { ...form.countries, finlandContextOnly: checked } })} />
+              <SwitchRow label="Use eBird foreign sightings" checked={form.useEbirdForeignSightings} onCheckedChange={(checked) => patchForm({ useEbirdForeignSightings: checked })} />
+              <SwitchRow label="Use Elurikkus history" checked={form.useElurikkusHistory} onCheckedChange={(checked) => patchForm({ useElurikkusHistory: checked })} />
+              <SwitchRow label="Use Estonia recent records" checked={form.useEstoniaRecentRecords} onCheckedChange={(checked) => patchForm({ useEstoniaRecentRecords: checked })} />
+              <SwitchRow label="Use weather and wind" checked={form.useWeatherWind} onCheckedChange={(checked) => patchForm({ useWeatherWind: checked })} />
+              <SwitchRow label="Use Latvia as source country" checked={form.useLatvia} onCheckedChange={(checked) => patchForm({ useLatvia: checked })} />
+              <SwitchRow label="Use Lithuania as source country" checked={form.useLithuania} onCheckedChange={(checked) => patchForm({ useLithuania: checked })} />
+              <SwitchRow label="Use Belarus as source country" checked={form.useBelarus} onCheckedChange={(checked) => patchForm({ useBelarus: checked })} />
+              <SwitchRow label="Use Poland as source country" checked={form.usePoland} onCheckedChange={(checked) => patchForm({ usePoland: checked })} />
+              <SwitchRow label="Use Russia as source country" checked={form.useRussia} onCheckedChange={(checked) => patchForm({ useRussia: checked })} />
+              <SwitchRow label="Use Finland as optional context only" checked={form.useFinlandContextOnly} onCheckedChange={(checked) => patchForm({ useFinlandContextOnly: checked })} />
             </AccordionContent>
           </AccordionItem>
 
           <AccordionItem value="windows" className="rounded-lg border border-border px-4">
             <AccordionTrigger>Time Windows &amp; Weights</AccordionTrigger>
             <AccordionContent className="space-y-3">
-              <SwitchRow label="Foreign lookback 1d" checked={form.windows.foreign1d} onCheckedChange={(checked) => patchForm({ windows: { ...form.windows, foreign1d: checked } })} />
-              <SwitchRow label="Foreign lookback 3d" checked={form.windows.foreign3d} onCheckedChange={(checked) => patchForm({ windows: { ...form.windows, foreign3d: checked } })} />
-              <SwitchRow label="Foreign lookback 7d" checked={form.windows.foreign7d} onCheckedChange={(checked) => patchForm({ windows: { ...form.windows, foreign7d: checked } })} />
-              <SwitchRow label="Foreign lookback 14d" checked={form.windows.foreign14d} onCheckedChange={(checked) => patchForm({ windows: { ...form.windows, foreign14d: checked } })} />
-              <SwitchRow label="Estonia recent 7d" checked={form.windows.estonia7d} onCheckedChange={(checked) => patchForm({ windows: { ...form.windows, estonia7d: checked } })} />
-              <SwitchRow label="Estonia recent 30d" checked={form.windows.estonia30d} onCheckedChange={(checked) => patchForm({ windows: { ...form.windows, estonia30d: checked } })} />
-              <NumericField id="foreignPressureWeight" label="Foreign pressure weight" value={form.weights.foreignPressure} onChange={(value) => patchForm({ weights: { ...form.weights, foreignPressure: value } })} />
-              <NumericField id="elurikkusHistoryWeight" label="Elurikkus history weight" value={form.weights.elurikkusHistory} onChange={(value) => patchForm({ weights: { ...form.weights, elurikkusHistory: value } })} />
-              <NumericField id="springTimingWeight" label="Spring timing weight" value={form.weights.springTiming} onChange={(value) => patchForm({ weights: { ...form.weights, springTiming: value } })} />
-              <NumericField id="weatherWindWeight" label="Weather/wind weight" value={form.weights.weatherWind} onChange={(value) => patchForm({ weights: { ...form.weights, weatherWind: value } })} />
-              <NumericField id="hotspotHistoryWeight" label="Hotspot history weight" value={form.weights.hotspotHistory} onChange={(value) => patchForm({ weights: { ...form.weights, hotspotHistory: value } })} />
+              <SwitchRow label="Foreign lookback 1d" checked={form.foreignLookback1d} onCheckedChange={(checked) => patchForm({ foreignLookback1d: checked })} />
+              <SwitchRow label="Foreign lookback 3d" checked={form.foreignLookback3d} onCheckedChange={(checked) => patchForm({ foreignLookback3d: checked })} />
+              <SwitchRow label="Foreign lookback 7d" checked={form.foreignLookback7d} onCheckedChange={(checked) => patchForm({ foreignLookback7d: checked })} />
+              <SwitchRow label="Foreign lookback 14d" checked={form.foreignLookback14d} onCheckedChange={(checked) => patchForm({ foreignLookback14d: checked })} />
+              <SwitchRow label="Estonia recent 7d" checked={form.estoniaRecentWindow7d} onCheckedChange={(checked) => patchForm({ estoniaRecentWindow7d: checked })} />
+              <SwitchRow label="Estonia recent 30d" checked={form.estoniaRecentWindow30d} onCheckedChange={(checked) => patchForm({ estoniaRecentWindow30d: checked })} />
+              <NumericField id="foreignPressureWeight" label="Foreign pressure weight" value={form.foreignPressureWeight} onChange={(value) => patchForm({ foreignPressureWeight: value })} />
+              <NumericField id="elurikkusHistoryWeight" label="Elurikkus history weight" value={form.elurikkusHistoryWeight} onChange={(value) => patchForm({ elurikkusHistoryWeight: value })} />
+              <NumericField id="springTimingWeight" label="Spring timing weight" value={form.springTimingWeight} onChange={(value) => patchForm({ springTimingWeight: value })} />
+              <NumericField id="weatherWindWeight" label="Weather/wind weight" value={form.weatherWindWeight} onChange={(value) => patchForm({ weatherWindWeight: value })} />
+              <NumericField id="hotspotHistoryWeight" label="Hotspot history weight" value={form.hotspotHistoryWeight} onChange={(value) => patchForm({ hotspotHistoryWeight: value })} />
             </AccordionContent>
           </AccordionItem>
 
@@ -236,7 +236,7 @@ export default function SpeciesPredictionSettings() {
             <AccordionContent className="space-y-3">
               <div className="space-y-1.5">
                 <Label htmlFor="predictionMode">Prediction mode</Label>
-                <Select value={form.precision.mode} onValueChange={(value) => patchForm({ precision: { ...form.precision, mode: value as SpeciesPredictionSettingsModel['precision']['mode'] } })}>
+                <Select value={form.predictionMode} onValueChange={(value) => patchForm({ predictionMode: value as SpeciesPredictionSettingsModel['predictionMode'] })}>
                   <SelectTrigger id="predictionMode">
                     <SelectValue />
                   </SelectTrigger>
@@ -247,30 +247,26 @@ export default function SpeciesPredictionSettings() {
                   </SelectContent>
                 </Select>
               </div>
-              <NumericField id="searchRadiusKm" label="Search radius (km)" value={form.precision.searchRadiusKm} onChange={(value) => patchForm({ precision: { ...form.precision, searchRadiusKm: value } })} />
-              <NumericField id="hotspotRadiusKm" label="Hotspot radius (km)" value={form.precision.hotspotRadiusKm} onChange={(value) => patchForm({ precision: { ...form.precision, hotspotRadiusKm: value } })} />
-              <NumericField id="hotspotCount" label="Hotspot count" value={form.precision.hotspotCount} onChange={(value) => patchForm({ precision: { ...form.precision, hotspotCount: value } })} />
-              <SwitchRow label="Show source flows" checked={form.precision.showSourceFlows} onCheckedChange={(checked) => patchForm({ precision: { ...form.precision, showSourceFlows: checked } })} />
-              <SwitchRow label="Show confidence rings" checked={form.precision.showConfidenceRings} onCheckedChange={(checked) => patchForm({ precision: { ...form.precision, showConfidenceRings: checked } })} />
+              <NumericField id="searchRadiusKm" label="Search radius (km)" value={form.searchRadiusKm} onChange={(value) => patchForm({ searchRadiusKm: value })} />
+              <NumericField id="hotspotRadiusKm" label="Hotspot radius (km)" value={form.hotspotRadiusKm} onChange={(value) => patchForm({ hotspotRadiusKm: value })} />
+              <NumericField id="hotspotCount" label="Hotspot count" value={form.hotspotCount} onChange={(value) => patchForm({ hotspotCount: value })} />
+              <SwitchRow label="Show source flows on map" checked={form.mapShowSourceFlows} onCheckedChange={(checked) => patchForm({ mapShowSourceFlows: checked })} />
+              <SwitchRow label="Show confidence rings on map" checked={form.mapShowConfidenceRings} onCheckedChange={(checked) => patchForm({ mapShowConfidenceRings: checked })} />
             </AccordionContent>
           </AccordionItem>
 
           <AccordionItem value="automation" className="rounded-lg border border-border px-4">
             <AccordionTrigger>AI / n8n Integration</AccordionTrigger>
             <AccordionContent className="space-y-3">
-              <SwitchRow label="Enable n8n research" checked={form.automation.enableN8nResearch} onCheckedChange={(checked) => patchForm({ automation: { ...form.automation, enableN8nResearch: checked } })} />
+              <SwitchRow label="Enable n8n research" checked={form.enableN8nResearch} onCheckedChange={(checked) => patchForm({ enableN8nResearch: checked })} />
               <div className="space-y-1.5">
                 <Label htmlFor="n8nWebhookUrl">n8n webhook URL</Label>
-                <Input id="n8nWebhookUrl" value={form.automation.n8nWebhookUrl} onChange={(event) => patchForm({ automation: { ...form.automation, n8nWebhookUrl: event.target.value } })} placeholder="https://n8n.example/webhook/species-prediction" />
+                <Input id="n8nWebhookUrl" value={form.n8nWebhookUrl} onChange={(event) => patchForm({ n8nWebhookUrl: event.target.value })} placeholder="https://n8n.example/webhook/species-prediction" />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="n8nAuthHeader">n8n auth header</Label>
-                <Input id="n8nAuthHeader" value={form.automation.n8nAuthHeader} onChange={(event) => patchForm({ automation: { ...form.automation, n8nAuthHeader: event.target.value } })} placeholder="Optional. Prefer server-side env values." />
-              </div>
-              <SwitchRow label="Enable OpenAI summary" checked={form.automation.enableOpenAISummary} onCheckedChange={(checked) => patchForm({ automation: { ...form.automation, enableOpenAISummary: checked } })} />
+              <SwitchRow label="Enable OpenAI summary" checked={form.enableOpenAISummary} onCheckedChange={(checked) => patchForm({ enableOpenAISummary: checked })} />
               <div className="space-y-1.5">
                 <Label htmlFor="summaryStyle">Summary style</Label>
-                <Select value={form.automation.summaryStyle} onValueChange={(value) => patchForm({ automation: { ...form.automation, summaryStyle: value as SpeciesPredictionSettingsModel['automation']['summaryStyle'] } })}>
+                <Select value={form.summaryStyle} onValueChange={(value) => patchForm({ summaryStyle: value as SpeciesPredictionSettingsModel['summaryStyle'] })}>
                   <SelectTrigger id="summaryStyle">
                     <SelectValue />
                   </SelectTrigger>
@@ -281,7 +277,7 @@ export default function SpeciesPredictionSettings() {
                   </SelectContent>
                 </Select>
               </div>
-              <NumericField id="summaryMaxLength" label="Summary max length" value={form.automation.summaryMaxLength} min={100} max={5000} onChange={(value) => patchForm({ automation: { ...form.automation, summaryMaxLength: value } })} />
+              <NumericField id="summaryMaxLength" label="Summary max length" value={form.summaryMaxLength} min={100} max={5000} onChange={(value) => patchForm({ summaryMaxLength: value })} />
               <p className="text-xs text-muted-foreground">
                 Secrets should stay server-side. The app proxy function uses env vars if configured.
               </p>
@@ -291,7 +287,7 @@ export default function SpeciesPredictionSettings() {
       )}
 
       <Button onClick={saveForm} className="w-full" disabled={!canManage || saving || !selectedSpecies}>
-        {saving ? 'Saving…' : 'Save species defaults'}
+        {saving ? 'Saving...' : 'Save species settings'}
       </Button>
     </div>
   );

@@ -14,51 +14,38 @@ export type SpeciesPredictionSettings = {
   enableResearchInsights: boolean;
   refreshIntervalMinutes: number;
   outputCount: 3 | 5;
-  sources: {
-    ebirdForeign: boolean;
-    elurikkusHistory: boolean;
-    estoniaRecent: boolean;
-    weatherWind: boolean;
-  };
-  countries: {
-    latvia: boolean;
-    lithuania: boolean;
-    belarus: boolean;
-    poland: boolean;
-    russia: boolean;
-    finlandContextOnly: boolean;
-  };
-  windows: {
-    foreign1d: boolean;
-    foreign3d: boolean;
-    foreign7d: boolean;
-    foreign14d: boolean;
-    estonia7d: boolean;
-    estonia30d: boolean;
-  };
-  weights: {
-    foreignPressure: number;
-    elurikkusHistory: number;
-    springTiming: number;
-    weatherWind: number;
-    hotspotHistory: number;
-  };
-  precision: {
-    mode: PredictionMode;
-    searchRadiusKm: number;
-    hotspotRadiusKm: number;
-    hotspotCount: number;
-    showSourceFlows: boolean;
-    showConfidenceRings: boolean;
-  };
-  automation: {
-    enableN8nResearch: boolean;
-    n8nWebhookUrl: string;
-    n8nAuthHeader: string;
-    enableOpenAISummary: boolean;
-    summaryStyle: SummaryStyle;
-    summaryMaxLength: number;
-  };
+  useEbirdForeignSightings: boolean;
+  useElurikkusHistory: boolean;
+  useEstoniaRecentRecords: boolean;
+  useWeatherWind: boolean;
+  useLatvia: boolean;
+  useLithuania: boolean;
+  useBelarus: boolean;
+  usePoland: boolean;
+  useRussia: boolean;
+  useFinlandContextOnly: boolean;
+  foreignLookback1d: boolean;
+  foreignLookback3d: boolean;
+  foreignLookback7d: boolean;
+  foreignLookback14d: boolean;
+  estoniaRecentWindow7d: boolean;
+  estoniaRecentWindow30d: boolean;
+  foreignPressureWeight: number;
+  elurikkusHistoryWeight: number;
+  springTimingWeight: number;
+  weatherWindWeight: number;
+  hotspotHistoryWeight: number;
+  predictionMode: PredictionMode;
+  searchRadiusKm: number;
+  hotspotRadiusKm: number;
+  hotspotCount: number;
+  mapShowSourceFlows: boolean;
+  mapShowConfidenceRings: boolean;
+  enableN8nResearch: boolean;
+  n8nWebhookUrl: string;
+  enableOpenAISummary: boolean;
+  summaryStyle: SummaryStyle;
+  summaryMaxLength: number;
   updatedAt: string;
 };
 
@@ -92,7 +79,7 @@ export type SpeciesPredictionResult = {
     belarus: number;
     poland: number;
     russia: number;
-    finlandContext?: number;
+    finlandContextOnly?: number;
   };
   topPredictedPoints: PredictedPoint[];
   insightSummary?: string;
@@ -134,51 +121,38 @@ export function getSpeciesPredictionDefaults(speciesName = '', scope: SpeciesSco
     enableResearchInsights: true,
     refreshIntervalMinutes: 30,
     outputCount: 5,
-    sources: {
-      ebirdForeign: true,
-      elurikkusHistory: true,
-      estoniaRecent: true,
-      weatherWind: true,
-    },
-    countries: {
-      latvia: true,
-      lithuania: true,
-      belarus: true,
-      poland: true,
-      russia: true,
-      finlandContextOnly: true,
-    },
-    windows: {
-      foreign1d: true,
-      foreign3d: true,
-      foreign7d: true,
-      foreign14d: false,
-      estonia7d: true,
-      estonia30d: true,
-    },
-    weights: {
-      foreignPressure: 35,
-      elurikkusHistory: 20,
-      springTiming: 20,
-      weatherWind: 15,
-      hotspotHistory: 10,
-    },
-    precision: {
-      mode: 'precise_hotspot',
-      searchRadiusKm: 35,
-      hotspotRadiusKm: 5,
-      hotspotCount: 5,
-      showSourceFlows: true,
-      showConfidenceRings: true,
-    },
-    automation: {
-      enableN8nResearch: false,
-      n8nWebhookUrl: '',
-      n8nAuthHeader: '',
-      enableOpenAISummary: true,
-      summaryStyle: 'field_use',
-      summaryMaxLength: 450,
-    },
+    useEbirdForeignSightings: true,
+    useElurikkusHistory: true,
+    useEstoniaRecentRecords: true,
+    useWeatherWind: true,
+    useLatvia: true,
+    useLithuania: true,
+    useBelarus: true,
+    usePoland: true,
+    useRussia: true,
+    useFinlandContextOnly: true,
+    foreignLookback1d: true,
+    foreignLookback3d: true,
+    foreignLookback7d: true,
+    foreignLookback14d: false,
+    estoniaRecentWindow7d: true,
+    estoniaRecentWindow30d: true,
+    foreignPressureWeight: 35,
+    elurikkusHistoryWeight: 20,
+    springTimingWeight: 20,
+    weatherWindWeight: 15,
+    hotspotHistoryWeight: 10,
+    predictionMode: 'precise_hotspot',
+    searchRadiusKm: 35,
+    hotspotRadiusKm: 5,
+    hotspotCount: 5,
+    mapShowSourceFlows: true,
+    mapShowConfidenceRings: true,
+    enableN8nResearch: false,
+    n8nWebhookUrl: '',
+    enableOpenAISummary: true,
+    summaryStyle: 'field_use',
+    summaryMaxLength: 450,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -190,36 +164,63 @@ export function normalizeSpeciesPredictionSettings(
 ): SpeciesPredictionSettings {
   const defaults = getSpeciesPredictionDefaults(speciesName, scope);
   const normalizedName = normalizeUiText(input?.speciesName || speciesName || defaults.speciesName);
+  const legacySources = asRecord(input?.sources);
+  const legacyCountries = asRecord(input?.countries);
+  const legacyWindows = asRecord(input?.windows);
+  const legacyWeights = asRecord(input?.weights);
+  const legacyPrecision = asRecord(input?.precision);
+  const legacyAutomation = asRecord(input?.automation);
   const next: SpeciesPredictionSettings = {
     ...defaults,
     ...input,
     speciesName: normalizedName,
     speciesKey: normalizeSpeciesName(input?.speciesKey || normalizedName || defaults.speciesKey),
     scope,
-    sources: { ...defaults.sources, ...(input?.sources || {}) },
-    countries: { ...defaults.countries, ...(input?.countries || {}) },
-    windows: { ...defaults.windows, ...(input?.windows || {}) },
-    weights: { ...defaults.weights, ...(input?.weights || {}) },
-    precision: { ...defaults.precision, ...(input?.precision || {}) },
-    automation: {
-      ...defaults.automation,
-      ...(input?.automation || {}),
-      n8nWebhookUrl: normalizeUiText(input?.automation?.n8nWebhookUrl || defaults.automation.n8nWebhookUrl),
-      n8nAuthHeader: normalizeUiText(input?.automation?.n8nAuthHeader || defaults.automation.n8nAuthHeader),
-    },
+    useEbirdForeignSightings: coalesceBoolean(input?.useEbirdForeignSightings, legacySources.ebirdForeign, defaults.useEbirdForeignSightings),
+    useElurikkusHistory: coalesceBoolean(input?.useElurikkusHistory, legacySources.elurikkusHistory, defaults.useElurikkusHistory),
+    useEstoniaRecentRecords: coalesceBoolean(input?.useEstoniaRecentRecords, legacySources.estoniaRecent, defaults.useEstoniaRecentRecords),
+    useWeatherWind: coalesceBoolean(input?.useWeatherWind, legacySources.weatherWind, defaults.useWeatherWind),
+    useLatvia: coalesceBoolean(input?.useLatvia, legacyCountries.latvia, defaults.useLatvia),
+    useLithuania: coalesceBoolean(input?.useLithuania, legacyCountries.lithuania, defaults.useLithuania),
+    useBelarus: coalesceBoolean(input?.useBelarus, legacyCountries.belarus, defaults.useBelarus),
+    usePoland: coalesceBoolean(input?.usePoland, legacyCountries.poland, defaults.usePoland),
+    useRussia: coalesceBoolean(input?.useRussia, legacyCountries.russia, defaults.useRussia),
+    useFinlandContextOnly: coalesceBoolean(input?.useFinlandContextOnly, legacyCountries.finlandContextOnly, defaults.useFinlandContextOnly),
+    foreignLookback1d: coalesceBoolean(input?.foreignLookback1d, legacyWindows.foreign1d, defaults.foreignLookback1d),
+    foreignLookback3d: coalesceBoolean(input?.foreignLookback3d, legacyWindows.foreign3d, defaults.foreignLookback3d),
+    foreignLookback7d: coalesceBoolean(input?.foreignLookback7d, legacyWindows.foreign7d, defaults.foreignLookback7d),
+    foreignLookback14d: coalesceBoolean(input?.foreignLookback14d, legacyWindows.foreign14d, defaults.foreignLookback14d),
+    estoniaRecentWindow7d: coalesceBoolean(input?.estoniaRecentWindow7d, legacyWindows.estonia7d, defaults.estoniaRecentWindow7d),
+    estoniaRecentWindow30d: coalesceBoolean(input?.estoniaRecentWindow30d, legacyWindows.estonia30d, defaults.estoniaRecentWindow30d),
+    foreignPressureWeight: coalesceNumber(input?.foreignPressureWeight, legacyWeights.foreignPressure, defaults.foreignPressureWeight),
+    elurikkusHistoryWeight: coalesceNumber(input?.elurikkusHistoryWeight, legacyWeights.elurikkusHistory, defaults.elurikkusHistoryWeight),
+    springTimingWeight: coalesceNumber(input?.springTimingWeight, legacyWeights.springTiming, defaults.springTimingWeight),
+    weatherWindWeight: coalesceNumber(input?.weatherWindWeight, legacyWeights.weatherWind, defaults.weatherWindWeight),
+    hotspotHistoryWeight: coalesceNumber(input?.hotspotHistoryWeight, legacyWeights.hotspotHistory, defaults.hotspotHistoryWeight),
+    predictionMode: isPredictionMode(input?.predictionMode) ? input.predictionMode : (isPredictionMode(legacyPrecision.mode) ? legacyPrecision.mode : defaults.predictionMode),
+    searchRadiusKm: coalesceNumber(input?.searchRadiusKm, legacyPrecision.searchRadiusKm, defaults.searchRadiusKm),
+    hotspotRadiusKm: coalesceNumber(input?.hotspotRadiusKm, legacyPrecision.hotspotRadiusKm, defaults.hotspotRadiusKm),
+    hotspotCount: coalesceNumber(input?.hotspotCount, legacyPrecision.hotspotCount, defaults.hotspotCount),
+    mapShowSourceFlows: coalesceBoolean(input?.mapShowSourceFlows, legacyPrecision.showSourceFlows, defaults.mapShowSourceFlows),
+    mapShowConfidenceRings: coalesceBoolean(input?.mapShowConfidenceRings, legacyPrecision.showConfidenceRings, defaults.mapShowConfidenceRings),
+    enableN8nResearch: coalesceBoolean(input?.enableN8nResearch, legacyAutomation.enableN8nResearch, defaults.enableN8nResearch),
+    n8nWebhookUrl: normalizeUiText(String(input?.n8nWebhookUrl ?? legacyAutomation.n8nWebhookUrl ?? defaults.n8nWebhookUrl)),
+    enableOpenAISummary: coalesceBoolean(input?.enableOpenAISummary, legacyAutomation.enableOpenAISummary, defaults.enableOpenAISummary),
+    summaryStyle: isSummaryStyle(input?.summaryStyle) ? input.summaryStyle : (isSummaryStyle(legacyAutomation.summaryStyle) ? legacyAutomation.summaryStyle : defaults.summaryStyle),
+    summaryMaxLength: coalesceNumber(input?.summaryMaxLength, legacyAutomation.summaryMaxLength, defaults.summaryMaxLength),
     updatedAt: normalizeUiText(input?.updatedAt || defaults.updatedAt) || new Date().toISOString(),
   };
   next.outputCount = next.outputCount === 3 ? 3 : 5;
   next.refreshIntervalMinutes = clampNumber(next.refreshIntervalMinutes, 5, 1440, defaults.refreshIntervalMinutes);
-  next.weights.foreignPressure = clampNumber(next.weights.foreignPressure, 0, 100, defaults.weights.foreignPressure);
-  next.weights.elurikkusHistory = clampNumber(next.weights.elurikkusHistory, 0, 100, defaults.weights.elurikkusHistory);
-  next.weights.springTiming = clampNumber(next.weights.springTiming, 0, 100, defaults.weights.springTiming);
-  next.weights.weatherWind = clampNumber(next.weights.weatherWind, 0, 100, defaults.weights.weatherWind);
-  next.weights.hotspotHistory = clampNumber(next.weights.hotspotHistory, 0, 100, defaults.weights.hotspotHistory);
-  next.precision.searchRadiusKm = clampNumber(next.precision.searchRadiusKm, 1, 300, defaults.precision.searchRadiusKm);
-  next.precision.hotspotRadiusKm = clampNumber(next.precision.hotspotRadiusKm, 1, 100, defaults.precision.hotspotRadiusKm);
-  next.precision.hotspotCount = clampNumber(next.precision.hotspotCount, 1, 20, defaults.precision.hotspotCount);
-  next.automation.summaryMaxLength = clampNumber(next.automation.summaryMaxLength, 100, 5000, defaults.automation.summaryMaxLength);
+  next.foreignPressureWeight = clampNumber(next.foreignPressureWeight, 0, 100, defaults.foreignPressureWeight);
+  next.elurikkusHistoryWeight = clampNumber(next.elurikkusHistoryWeight, 0, 100, defaults.elurikkusHistoryWeight);
+  next.springTimingWeight = clampNumber(next.springTimingWeight, 0, 100, defaults.springTimingWeight);
+  next.weatherWindWeight = clampNumber(next.weatherWindWeight, 0, 100, defaults.weatherWindWeight);
+  next.hotspotHistoryWeight = clampNumber(next.hotspotHistoryWeight, 0, 100, defaults.hotspotHistoryWeight);
+  next.searchRadiusKm = clampNumber(next.searchRadiusKm, 1, 300, defaults.searchRadiusKm);
+  next.hotspotRadiusKm = clampNumber(next.hotspotRadiusKm, 1, 100, defaults.hotspotRadiusKm);
+  next.hotspotCount = clampNumber(next.hotspotCount, 1, 20, defaults.hotspotCount);
+  next.summaryMaxLength = clampNumber(next.summaryMaxLength, 100, 5000, defaults.summaryMaxLength);
   return next;
 }
 
@@ -246,7 +247,9 @@ export function normalizeSpeciesPredictionResult(
       belarus: toNumber(input?.countryScores?.belarus),
       poland: toNumber(input?.countryScores?.poland),
       russia: toNumber(input?.countryScores?.russia),
-      ...(input?.countryScores?.finlandContext != null ? { finlandContext: toNumber(input.countryScores.finlandContext) } : {}),
+      ...(input?.countryScores?.finlandContextOnly != null
+        ? { finlandContextOnly: toNumber(input.countryScores.finlandContextOnly) }
+        : (input?.countryScores?.finlandContext != null ? { finlandContextOnly: toNumber(input.countryScores.finlandContext) } : {})),
     },
     topPredictedPoints: Array.isArray(input?.topPredictedPoints)
       ? input.topPredictedPoints.map((point, index) => ({
@@ -276,4 +279,31 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : {};
+}
+
+function coalesceBoolean(...values: unknown[]): boolean {
+  for (const value of values) {
+    if (typeof value === 'boolean') return value;
+  }
+  return false;
+}
+
+function coalesceNumber(...values: unknown[]): number {
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
+
+function isPredictionMode(value: unknown): value is PredictionMode {
+  return value === 'broad_area' || value === 'hotspot' || value === 'precise_hotspot';
+}
+
+function isSummaryStyle(value: unknown): value is SummaryStyle {
+  return value === 'short' || value === 'analytical' || value === 'field_use';
 }

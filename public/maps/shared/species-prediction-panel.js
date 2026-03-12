@@ -36,7 +36,7 @@
       '  <div class="spp-chip">These settings apply only to the currently selected species</div>' +
       '  <div class="spp-row"><span>Species</span><strong data-role="species-name">No species selected</strong></div>' +
       '  <div class="spp-row"><span>Status</span><strong data-role="status-line">Idle</strong></div>' +
-      '  <div class="spp-row"><span>Mode</span><strong data-role="mode-line">Waiting for defaults</strong></div>' +
+      '  <div class="spp-row"><span>Mode</span><strong data-role="mode-line">Waiting for species settings</strong></div>' +
       '  <div class="spp-actions">' +
       '    <button type="button" class="btn secondary" data-request-type="prediction">Prediction</button>' +
       '    <button type="button" class="btn secondary" data-request-type="insight">Insight</button>' +
@@ -174,9 +174,9 @@
     else if (state.error) statusLine.textContent = state.error;
     else if (state.result) statusLine.textContent = 'Ready';
     else statusLine.textContent = 'Idle';
-    modeLine.textContent = state.settings && state.settings.precision
-      ? String(state.settings.precision.mode || 'precise_hotspot') + ' / top ' + String(state.settings.outputCount || 5)
-      : 'Waiting for defaults';
+    modeLine.textContent = state.settings && state.settings.predictionMode
+      ? String(state.settings.predictionMode || 'precise_hotspot') + ' / top ' + String(state.settings.outputCount || 5)
+      : 'Waiting for species settings';
     resultWrap.innerHTML = '';
 
     if (state.loading) {
@@ -211,7 +211,7 @@
       scoreCell('Belarus', result.countryScores && result.countryScores.belarus) +
       scoreCell('Poland', result.countryScores && result.countryScores.poland) +
       scoreCell('Russia', result.countryScores && result.countryScores.russia) +
-      (result.countryScores && result.countryScores.finlandContext != null ? scoreCell('Finland ctx', result.countryScores.finlandContext) : '') +
+      (result.countryScores && result.countryScores.finlandContextOnly != null ? scoreCell('Finland context only', result.countryScores.finlandContextOnly) : '') +
       '</div></div>';
     html += '<div class="spp-card"><h4>Top predicted points</h4>';
     if (!result.topPredictedPoints || !result.topPredictedPoints.length) {

@@ -256,7 +256,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
           .catch(() => {
             sendToIframe({
               type: SPECIES_PREDICTION_EVENT_TYPES.error,
-              error: 'Prediction defaults could not be loaded',
+              error: 'Species prediction settings could not be loaded',
             });
           });
       }

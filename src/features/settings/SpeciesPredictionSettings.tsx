@@ -16,7 +16,7 @@ import { normalizeSpeciesPredictionSettings, type SpeciesPredictionSettings as S
 import { normalizeSpeciesName, normalizeUiText } from '@/lib/textNormalize';
 import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
-import { loadSettings, saveSettings } from '@/lib/settings';
+import { isSpeciesPredictionEnabled, loadSettings, saveSettings } from '@/lib/settings';
 
 type NumericFieldProps = {
   id: string;
@@ -36,7 +36,7 @@ export default function SpeciesPredictionSettings() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [predictionFeatureEnabled, setPredictionFeatureEnabled] = useState(() => loadSettings().enableSpeciesPredictionBeta);
+  const [predictionFeatureEnabled, setPredictionFeatureEnabled] = useState(isSpeciesPredictionEnabled);
   const [form, setForm] = useState<SpeciesPredictionSettingsModel>(() => normalizeSpeciesPredictionSettings(null, '', 'linnuliigid'));
 
   const scope = SPECIES_SCOPES[scopeId];

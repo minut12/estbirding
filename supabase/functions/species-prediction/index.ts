@@ -4,25 +4,27 @@ import { corsHeaders } from '../_shared/cors.ts';
 const DEFAULT_TIMEOUT_MS = 15000;
 
 serve(async (req) => {
-  // CORS preflight
+  // CORS preflight – 204 must have NO body
   if (req.method === 'OPTIONS') {
-    return json({}, 204);
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   try {
     const url = new URL(req.url);
     const webhookUrl = (Deno.env.get('SPECIES_PREDICTION_N8N_WEBHOOK_URL') || '').trim();
-    const webhookConfigured = Boolean(webhookUrl);
+    const webhookConfigured = webhookUrl.length > 0;
 
     // ── GET ?mode=status ──
     if (req.method === 'GET' && url.searchParams.get('mode') === 'status') {
-      console.log('[species-prediction] status check', { configured: webhookConfigured });
+      console.log('[species-prediction] status check', { webhookConfigured });
       return json({
         ok: true,
+        available: true,
+        deployed: true,
         configured: webhookConfigured,
         webhookConfigured,
         message: webhookConfigured
-          ? 'Prediction backend is configured'
+          ? 'Prediction backend is deployed and configured'
           : 'Prediction backend is not configured yet',
       });
     }
@@ -69,6 +71,8 @@ serve(async (req) => {
       if (authHeader && authValue) {
         headers[authHeader] = authValue;
       }
+
+      console.log('[species-prediction] forwarding to webhook', { species: species.key });
 
       const upstream = await fetch(webhookUrl, {
         method: 'POST',

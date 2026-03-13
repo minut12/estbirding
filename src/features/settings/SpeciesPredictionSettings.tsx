@@ -94,16 +94,15 @@ export default function SpeciesPredictionSettings() {
     setBackendStatusLoading(true);
     fetchSpeciesPredictionBackendStatus()
       .then((data) => {
-        setBackendAvailable(data.available === true);
+        setBackendAvailable(true);
         const configured = data.configured === true;
         setBackendConfigured(configured);
         setBackendStatusMessage(String(data.message || (configured ? 'Prediction backend is configured' : 'Prediction backend is not configured yet')));
       })
-      .catch((error: unknown) => {
-        const reason = error instanceof Error ? error.message : 'Prediction backend status check failed';
+      .catch(() => {
         setBackendAvailable(false);
         setBackendConfigured(false);
-        setBackendStatusMessage(reason || 'Prediction backend status check failed');
+        setBackendStatusMessage('Prediction backend is not configured yet');
       })
       .finally(() => setBackendStatusLoading(false));
   }, [predictionFeatureEnabled, scopeId]);
@@ -375,11 +374,8 @@ export default function SpeciesPredictionSettings() {
 
 type SpeciesPredictionBackendStatus = {
   ok: boolean;
-  available: boolean;
-  deployed: boolean;
   configured: boolean;
   webhookConfigured: boolean;
-  status?: string;
   message: string;
 };
 
@@ -393,7 +389,7 @@ async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionB
       },
     });
   } catch {
-    throw new Error('Prediction backend status check failed');
+    throw new Error('Prediction backend is not configured yet');
   }
 
   const raw = await response.text();
@@ -405,7 +401,7 @@ async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionB
       if (response.status === 404) {
         throw new Error('Prediction backend is unavailable or not deployed');
       }
-      throw new Error('Prediction backend status check returned invalid JSON');
+      throw new Error('Prediction backend is not configured yet');
     }
   }
 
@@ -414,23 +410,20 @@ async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionB
       throw new Error('Prediction backend is unavailable or not deployed');
     }
     const message = typeof data === 'object' && data && 'message' in data
-      ? String((data as { message?: unknown }).message || 'Prediction backend status check failed')
-      : 'Prediction backend status check failed';
+      ? String((data as { message?: unknown }).message || 'Prediction backend is not configured yet')
+      : 'Prediction backend is not configured yet';
     throw new Error(message);
   }
 
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    throw new Error('Prediction backend status check returned invalid JSON');
+    throw new Error('Prediction backend is not configured yet');
   }
 
   const status = data as Partial<SpeciesPredictionBackendStatus>;
   return {
     ok: status.ok === true,
-    available: status.available === true || status.deployed === true,
-    deployed: status.deployed === true,
     configured: status.configured === true,
     webhookConfigured: status.webhookConfigured === true,
-    status: typeof status.status === 'string' ? status.status : undefined,
     message: String(status.message || 'Prediction backend is not configured yet'),
   };
 }

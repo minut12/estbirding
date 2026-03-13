@@ -19,12 +19,10 @@ serve(async (req) => {
       console.log('[species-prediction] status check', { configured: webhookConfigured });
       return json({
         ok: true,
-        available: true,
-        deployed: true,
         configured: webhookConfigured,
         webhookConfigured,
         message: webhookConfigured
-          ? 'Prediction backend is deployed and configured'
+          ? 'Prediction backend is configured'
           : 'Prediction backend is not configured yet',
       });
     }
@@ -110,7 +108,7 @@ serve(async (req) => {
         return json({ ok: false, message: 'Prediction backend returned an empty response' }, 502);
       }
 
-      return json({ ok: true, message: 'Species prediction request succeeded', result });
+      return json(result);
     } catch (err) {
       const isAbort = err instanceof DOMException && err.name === 'AbortError';
       if (isAbort) {

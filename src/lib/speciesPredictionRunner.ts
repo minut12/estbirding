@@ -24,18 +24,18 @@ export async function runSpeciesPredictionRequest(
       body: payload,
     });
     if (error) throw error;
-    if (data?.ok === false) {
+    if (isErrorEnvelope(data)) {
       return {
         ok: false,
-        ...(data?.disabled ? { disabled: true } : {}),
-        error: String(data?.message || data?.error || 'Prediction request failed'),
+        ...(data.disabled ? { disabled: true } : {}),
+        error: resolveUserFacingBackendMessage(String(data.message || data.error || 'Prediction request failed')),
       };
     }
-    const sourceResult = data?.result || data;
+    const sourceResult = isWrappedSuccessEnvelope(data) ? data.result : data;
     if (!hasUsableSpeciesPredictionResult(sourceResult)) {
       return {
         ok: false,
-        error: 'Prediction response payload is invalid',
+        error: 'Prediction service is temporarily unavailable',
       };
     }
     return {
@@ -74,10 +74,61 @@ function resolvePredictionErrorMessage(error: unknown): string {
       return 'Prediction backend is unavailable or not deployed';
     }
     if (status === 503) {
-      return 'Prediction backend is unavailable';
+      return 'Prediction backend is not configured yet';
     }
-    if (message) return message;
-    if (statusText) return statusText;
+    if (status >= 500) return 'Prediction service is temporarily unavailable';
+    if (message) return resolveUserFacingBackendMessage(message);
+    if (statusText) return resolveUserFacingBackendMessage(statusText);
   }
-  return error instanceof Error ? error.message : 'Prediction request failed';
+  if (error instanceof Error) {
+    return resolveUserFacingBackendMessage(error.message);
+  }
+  return 'Prediction service is temporarily unavailable';
+}
+
+type ErrorEnvelope = {
+  ok?: boolean;
+  error?: unknown;
+  message?: unknown;
+  disabled?: unknown;
+};
+
+type WrappedSuccessEnvelope = {
+  result?: unknown;
+};
+
+function isErrorEnvelope(value: unknown): value is ErrorEnvelope {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && (value as ErrorEnvelope).ok === false,
+  );
+}
+
+function isWrappedSuccessEnvelope(value: unknown): value is WrappedSuccessEnvelope {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && 'result' in (value as WrappedSuccessEnvelope),
+  );
+}
+
+function resolveUserFacingBackendMessage(message: string): string {
+  const normalized = String(message || '').trim().toLowerCase();
+  if (!normalized) return 'Prediction service is temporarily unavailable';
+  if (normalized.includes('not configured')) {
+    return 'Prediction backend is not configured yet';
+  }
+  if (
+    normalized.includes('fetch failed')
+    || normalized.includes('failed to fetch')
+    || normalized.includes('networkerror')
+    || normalized.includes('network request failed')
+    || normalized.includes('load failed')
+  ) {
+    return 'Prediction service is temporarily unavailable';
+  }
+  return message;
 }

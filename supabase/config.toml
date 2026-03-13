@@ -71,3 +71,6 @@ verify_jwt = false
 
 [functions.translate-et]
 verify_jwt = false
+
+[functions.species-prediction]
+verify_jwt = false

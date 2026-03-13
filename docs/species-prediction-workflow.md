@@ -19,10 +19,12 @@
 5. If your upstreams require auth, configure credentials or headers on each HTTP Request node.
 6. Activate the workflow and copy the production webhook URL.
 7. Set that webhook URL into Supabase as `SPECIES_PREDICTION_N8N_WEBHOOK_URL`.
+8. Production webhook target for this app is `https://estbirds.app.n8n.cloud/webhook/species-prediction`.
 
 ## Required External Config
 - `SPECIES_PREDICTION_N8N_WEBHOOK_URL`
   - Stored in Supabase Edge Function env, not in the app.
+  - Current production value: `https://estbirds.app.n8n.cloud/webhook/species-prediction`
 - Optional Supabase edge function auth passthrough:
   - `SPECIES_PREDICTION_N8N_AUTH_HEADER`
   - `SPECIES_PREDICTION_N8N_AUTH_VALUE`

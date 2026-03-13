@@ -625,7 +625,7 @@ async function refreshEoy(
       summary.ok = false;
       summary.fetchStatus = "error";
       summary.lastError = payload?.error || `fetch-eoy-news HTTP ${res.status}`;
-      summary.errors.push(summary.lastError);
+      if (summary.lastError) summary.errors.push(summary.lastError);
       return summary;
     }
 

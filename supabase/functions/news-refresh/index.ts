@@ -820,7 +820,7 @@ Deno.serve(async (req) => {
       .neq("name", "EOÜ");
 
     const { data: sources, error: sourcesError, hasTranslateColumn } = await selectNewsSources(supabase);
-    if (sourcesError) return jsonError("news-refresh", new Error(sourcesError.message), 500);
+    if (sourcesError) return jsonError("news-refresh", new Error((sourcesError as any).message || String(sourcesError)), 500);
 
     const enabledSources = (sources || []).map((s: SourceRow) => ({ ...s, name: normalizeSourceName(s.name) })) as SourceRow[];
     const perSource: SourceSummary[] = [];

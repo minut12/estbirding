@@ -359,6 +359,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
                 scope: scopeCfg.id,
                 speciesKey: payload.species.key,
                 speciesName: payload.species.name,
+                stage: response.stage || null,
                 message: response.error || 'Prediction request failed',
               });
               sendToIframe({

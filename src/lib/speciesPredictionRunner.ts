@@ -12,7 +12,7 @@ import type { SpeciesScopeId } from '@/lib/mapScope';
 export async function runSpeciesPredictionRequest(
   payload: SpeciesPredictionRequestPayload,
   scope: SpeciesScopeId,
-): Promise<{ ok: boolean; disabled?: boolean; error?: string; result?: SpeciesPredictionResult }> {
+): Promise<{ ok: boolean; disabled?: boolean; error?: string; stage?: string; result?: SpeciesPredictionResult }> {
   try {
     if (!isPredictionRequestType(payload.requestType)) {
       return {
@@ -28,6 +28,7 @@ export async function runSpeciesPredictionRequest(
       return {
         ok: false,
         ...(data.disabled ? { disabled: true } : {}),
+        ...(typeof data.stage === 'string' ? { stage: data.stage } : {}),
         error: resolveUserFacingBackendMessage(String(data.message || data.error || 'Prediction request failed')),
       };
     }
@@ -46,6 +47,7 @@ export async function runSpeciesPredictionRequest(
     const message = resolvePredictionErrorMessage(error);
     return {
       ok: false,
+      stage: resolvePredictionErrorStage(error),
       error: message,
     };
   }
@@ -101,6 +103,7 @@ type ErrorEnvelope = {
   error?: unknown;
   message?: unknown;
   disabled?: unknown;
+  stage?: unknown;
 };
 
 type WrappedSuccessEnvelope = {
@@ -166,6 +169,24 @@ function extractResponseMessage(response: unknown): string {
   if (typeof candidate.error === 'string' && candidate.error.trim()) return candidate.error.trim();
   if (typeof candidate.details === 'string' && candidate.details.trim()) return candidate.details.trim();
   return '';
+}
+
+function resolvePredictionErrorStage(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const candidate = error as { stage?: unknown; context?: unknown; response?: unknown };
+  if (typeof candidate.stage === 'string' && candidate.stage.trim()) return candidate.stage.trim();
+  const contextStage = extractStage(candidate.context);
+  if (contextStage) return contextStage;
+  const responseStage = extractStage(candidate.response);
+  if (responseStage) return responseStage;
+  return undefined;
+}
+
+function extractStage(value: unknown): string {
+  if (!value || typeof value !== 'object') return '';
+  const candidate = value as { stage?: unknown; json?: unknown; body?: unknown; response?: unknown };
+  if (typeof candidate.stage === 'string' && candidate.stage.trim()) return candidate.stage.trim();
+  return extractStage(candidate.json) || extractStage(candidate.body) || extractStage(candidate.response);
 }
 
 function extractContextMessage(context: unknown): string {

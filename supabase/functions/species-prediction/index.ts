@@ -35,12 +35,12 @@ serve(async (req) => {
     }
 
     if (req.method !== 'POST') {
-      return jsonError('Method not allowed', 405);
+      return jsonError('Method not allowed', 405, 'validation');
     }
 
     if (!webhookConfigured) {
       console.warn('[species-prediction] webhook env missing', { envKey: WEBHOOK_ENV_KEY });
-      return jsonError('Prediction backend is not configured yet', 503);
+      return jsonError('Prediction backend is not configured yet', 503, 'edge_function');
     }
 
     let body: unknown;
@@ -48,7 +48,7 @@ serve(async (req) => {
       body = await req.json();
     } catch {
       console.warn('[species-prediction] invalid JSON body');
-      return jsonError('Invalid request body', 400);
+      return jsonError('Invalid request body', 400, 'validation');
     }
 
     const payload = body as Record<string, unknown> | null;
@@ -59,7 +59,7 @@ serve(async (req) => {
 
     if (!speciesKey || !speciesName) {
       console.warn('[species-prediction] missing required species fields');
-      return jsonError('Missing required species information', 400);
+      return jsonError('Missing species information for prediction', 400, 'validation');
     }
 
     console.info('[species-prediction] request validated', {
@@ -106,8 +106,9 @@ serve(async (req) => {
           status: upstream.status,
           statusText: upstream.statusText,
           upstreamMessage: upstreamMessage || null,
+          upstreamBody: text || null,
         });
-        return jsonError(normalizeUpstreamMessage(upstreamMessage), 502);
+        return jsonError(normalizeUpstreamMessage(upstreamMessage), 502, 'n8n');
       }
 
       let data: unknown;
@@ -115,12 +116,12 @@ serve(async (req) => {
         data = text ? JSON.parse(text) : null;
       } catch {
         console.error('[species-prediction] upstream returned invalid JSON');
-        return jsonError('Prediction backend returned an invalid response', 502);
+        return jsonError('Prediction backend returned an invalid response', 502, 'upstream_json');
       }
 
       if (!data || typeof data !== 'object' || Array.isArray(data)) {
         console.error('[species-prediction] upstream response is not a JSON object');
-        return jsonError('Prediction backend returned an invalid response', 502);
+        return jsonError('Prediction backend returned an invalid response', 502, 'upstream_json');
       }
 
       return json(data as Record<string, unknown>);
@@ -128,16 +129,16 @@ serve(async (req) => {
       const isAbort = err instanceof DOMException && err.name === 'AbortError';
       if (isAbort) {
         console.error('[species-prediction] webhook timeout', { timeoutMs });
-        return jsonError('Prediction service is temporarily unavailable', 504);
+        return jsonError('Prediction service is temporarily unavailable', 504, 'edge_function');
       }
       console.error('[species-prediction] webhook request failed', { error: String(err) });
-      return jsonError('Prediction service is temporarily unavailable', 502);
+      return jsonError('Prediction service is temporarily unavailable', 502, 'edge_function');
     } finally {
       clearTimeout(timer);
     }
   } catch (err) {
     console.error('[species-prediction] unexpected error', { error: String(err) });
-    return jsonError('Prediction service encountered an unexpected error', 500);
+    return jsonError('Prediction service encountered an unexpected error', 500, 'edge_function');
   }
 });
 
@@ -145,8 +146,8 @@ function readWebhookUrl(): string {
   return (Deno.env.get(WEBHOOK_ENV_KEY) || '').trim();
 }
 
-function jsonError(message: string, status: number): Response {
-  return json({ ok: false, message }, status);
+function jsonError(message: string, status: number, stage: 'validation' | 'edge_function' | 'n8n' | 'upstream_json'): Response {
+  return json({ ok: false, message, stage }, status);
 }
 
 function json(body: Record<string, unknown>, status = 200): Response {

@@ -179,6 +179,16 @@
     render();
   }
 
+  function setActiveSpecies(payload) {
+    if (!state.featureEnabled) return;
+    if (payload && payload.speciesName) state.speciesName = String(payload.speciesName || '').trim();
+    if (payload && payload.speciesKey) state.speciesKey = String(payload.speciesKey || '').trim();
+    state.error = '';
+    state.result = null;
+    ensurePanel();
+    render();
+  }
+
   function setLoading() {
     if (!state.featureEnabled) return;
     state.loading = true;
@@ -306,6 +316,7 @@
     var data = ev && ev.data ? ev.data : null;
     if (!data || typeof data !== 'object') return;
     if (data.type === 'APP_FEATURE_FLAGS') setFeatureFlags(data);
+    if (data.type === 'SPECIES_PREDICTION_ACTIVE_SPECIES') setActiveSpecies(data);
     if (data.type === 'SPECIES_PREDICTION_CONTEXT') setContext(data);
     if (data.type === 'SPECIES_PREDICTION_LOADING') setLoading();
     if (data.type === 'SPECIES_PREDICTION_RESULT') setResult(data.result || null);

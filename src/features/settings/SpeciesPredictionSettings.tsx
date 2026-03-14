@@ -19,8 +19,7 @@ import { PERMISSIONS } from '@/features/auth/permissions';
 import { isSpeciesPredictionEnabled, loadSettings, saveSettings } from '@/lib/settings';
 import { getFunctionsBaseUrl, getSupabaseAuthHeaders } from '@/config/supabaseConfig';
 import { APP_VERSION } from '@/lib/version';
-
-const ACTIVE_SPECIES_STORAGE_PREFIX = 'speciesPredictionActiveSpecies';
+import { ACTIVE_PREDICTION_SPECIES_EVENT, getActivePredictionSpecies, setActivePredictionSpecies } from '@/lib/activePredictionSpecies';
 
 type NumericFieldProps = {
   id: string;
@@ -72,11 +71,8 @@ export default function SpeciesPredictionSettings() {
     : '';
 
   const setActiveSpecies = useCallback((speciesName: string) => {
-    const normalizedName = normalizeUiText(speciesName);
-    setActiveSpeciesName(normalizedName);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(activeSpeciesStorageKey(scopeId), normalizedName);
-    }
+    const next = setActivePredictionSpecies(scopeId, speciesName);
+    setActiveSpeciesName(next?.speciesName || normalizeUiText(speciesName));
   }, [scopeId]);
 
   useEffect(() => {
@@ -84,7 +80,7 @@ export default function SpeciesPredictionSettings() {
     fetchSpeciesList(scope).then((list) => {
       const normalized = list.map(normalizeUiText).filter(Boolean);
       setSpeciesList(normalized);
-      const persistedSpecies = loadPersistedActiveSpecies(scopeId);
+      const persistedSpecies = getActivePredictionSpecies(scopeId)?.speciesName || '';
       const nextSpecies = (
         (persistedSpecies && normalized.includes(persistedSpecies) && persistedSpecies)
         || (activeSpeciesName && normalized.includes(activeSpeciesName) && activeSpeciesName)
@@ -96,6 +92,23 @@ export default function SpeciesPredictionSettings() {
       }
     });
   }, [scope, scopeId, activeSpeciesName, setActiveSpecies]);
+
+  useEffect(() => {
+    const syncFromSharedState = () => {
+      const sharedSpecies = getActivePredictionSpecies(scopeId)?.speciesName || '';
+      if (sharedSpecies && sharedSpecies !== activeSpeciesName) {
+        setActiveSpeciesName(sharedSpecies);
+      }
+    };
+    syncFromSharedState();
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ scope: SpeciesScopeId; speciesName: string }>).detail;
+      if (!detail || detail.scope !== scopeId) return;
+      setActiveSpeciesName(normalizeUiText(detail.speciesName || ''));
+    };
+    window.addEventListener(ACTIVE_PREDICTION_SPECIES_EVENT, handler as EventListener);
+    return () => window.removeEventListener(ACTIVE_PREDICTION_SPECIES_EVENT, handler as EventListener);
+  }, [scopeId, activeSpeciesName]);
 
   const loadSpeciesSettings = useCallback(async (speciesName: string) => {
     if (!isSpeciesPredictionEnabled()) return;
@@ -558,13 +571,4 @@ function NumericField({ id, label, value, min, max, onChange }: NumericFieldProp
       />
     </div>
   );
-}
-
-function activeSpeciesStorageKey(scopeId: SpeciesScopeId): string {
-  return `${ACTIVE_SPECIES_STORAGE_PREFIX}.${scopeId}`;
-}
-
-function loadPersistedActiveSpecies(scopeId: SpeciesScopeId): string {
-  if (typeof window === 'undefined') return '';
-  return normalizeUiText(window.localStorage.getItem(activeSpeciesStorageKey(scopeId)) || '');
 }

@@ -7321,6 +7321,14 @@ window.addEventListener('message', function(ev){
       if(changed){ save(); rebuildAllMarkers(); render(); }
       return;
     }
+    if(t === 'SPECIES_PREDICTION_ACTIVE_SPECIES'){
+      var activeSpecies = String(ev.data.speciesName || ev.data.speciesKey || '').trim();
+      if(activeSpecies){
+        window.__selectedSpecies = activeSpecies;
+        if(typeof render === 'function') render();
+      }
+      return;
+    }
     if(ev.origin !== window.location.origin) return;
     if(t === 'MAP_REFRESH_VISIBLE') refreshVisible();
     if(t === 'MAP_REFRESH_SELECTED') refreshSelected();

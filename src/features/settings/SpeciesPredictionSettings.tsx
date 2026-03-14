@@ -60,11 +60,12 @@ export default function SpeciesPredictionSettings() {
     && backendStatus.available === true
     && backendStatus.deployed === true
   );
+  const canValidateSpeciesSettings = predictionEnabled && isBackendReadyForConfiguration;
   const backendBadgeLabel = isBackendReadyForConfiguration
     ? 'Configured'
     : (backendStatus.available && backendStatus.deployed ? 'Missing env' : 'Unavailable');
   const backendStatusMessage = backendStatus.message || 'Prediction backend is not configured yet';
-  const saveBlockedMessage = !hasValidSelectedSpecies
+  const saveBlockedMessage = canValidateSpeciesSettings && !hasValidSelectedSpecies
     ? 'Select a valid species before saving prediction settings'
     : '';
 
@@ -143,12 +144,12 @@ export default function SpeciesPredictionSettings() {
     console.debug('[speciesPrediction] settings save requested', { enabled: isSpeciesPredictionEnabled() });
     if (!isSpeciesPredictionEnabled()) return;
     if (!predictionFeatureEnabled) return;
-    if (!hasValidSelectedSpecies) {
-      toast.error('Select a valid species before saving prediction settings');
-      return;
-    }
     if (!isBackendReadyForConfiguration) {
       toast.error('Prediction backend is not configured yet');
+      return;
+    }
+    if (!hasValidSelectedSpecies) {
+      toast.error('Select a valid species before saving prediction settings');
       return;
     }
     if (!canManage) {

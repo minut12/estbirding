@@ -20,6 +20,7 @@
   var modeLine = null;
   var resultWrap = null;
   var lastSelectionKey = '';
+  var hasSyncedSpecies = false;
 
   function detectScope() {
     var path = String((window.location && window.location.pathname) || '');
@@ -127,6 +128,7 @@
 
   function notifySelection(force) {
     if (!state.featureEnabled) return;
+    if (hasSyncedSpecies && !force) return;
     var speciesName = readSelectedSpecies();
     var speciesKey = String(speciesName || '').trim();
     var nextKey = state.scope + '|' + speciesKey;
@@ -150,6 +152,7 @@
   }
 
   function readSelectedSpecies() {
+    if (hasSyncedSpecies && state.speciesName) return state.speciesName;
     var selected = String(window.__selectedSpecies || '').trim();
     if (selected) return selected;
     var row = document.querySelector('.row[data-key]');
@@ -167,6 +170,7 @@
     }
     ensurePanel();
     render();
+    sendReady();
     notifySelection(true);
   }
 
@@ -181,8 +185,10 @@
 
   function setActiveSpecies(payload) {
     if (!state.featureEnabled) return;
+    hasSyncedSpecies = true;
     if (payload && payload.speciesName) state.speciesName = String(payload.speciesName || '').trim();
     if (payload && payload.speciesKey) state.speciesKey = String(payload.speciesKey || '').trim();
+    console.debug('[speciesPrediction][iframe] active species received', { speciesName: state.speciesName, speciesKey: state.speciesKey });
     state.error = '';
     state.result = null;
     ensurePanel();
@@ -223,6 +229,7 @@
     }
     ensurePanel();
     if (!panel) return;
+    console.debug('[speciesPrediction][iframe] render species', { speciesName: state.speciesName, speciesKey: state.speciesKey, hasSyncedSpecies: hasSyncedSpecies });
     speciesLine.textContent = state.speciesName || 'No species selected';
     if (state.loading) statusLine.textContent = 'Loading...';
     else if (state.error) statusLine.textContent = state.error;
@@ -310,6 +317,18 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  function sendReady() {
+    try {
+      if (window.parent && window.parent !== window) {
+        console.debug('[speciesPrediction][iframe] READY sent');
+        window.parent.postMessage({
+          type: 'SPECIES_PREDICTION_IFRAME_READY',
+          scope: state.scope,
+        }, '*');
+      }
+    } catch (e) {}
   }
 
   window.addEventListener('message', function (ev) {

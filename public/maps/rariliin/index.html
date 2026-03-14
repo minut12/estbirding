@@ -7325,6 +7325,7 @@ window.addEventListener('message', function(ev){
       var activeSpecies = String(ev.data.speciesName || ev.data.speciesKey || '').trim();
       if(activeSpecies){
         window.__selectedSpecies = activeSpecies;
+        console.debug('[speciesPrediction][map:rariliin] active species applied', activeSpecies);
         if(typeof render === 'function') render();
       }
       return;

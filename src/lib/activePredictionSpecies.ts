@@ -3,6 +3,7 @@ import { normalizeSpeciesName, normalizeUiText } from '@/lib/textNormalize';
 
 export const ACTIVE_PREDICTION_SPECIES_EVENT = 'active-prediction-species-changed';
 export const ACTIVE_PREDICTION_SPECIES_MESSAGE = 'SPECIES_PREDICTION_ACTIVE_SPECIES';
+export const ACTIVE_PREDICTION_IFRAME_READY_MESSAGE = 'SPECIES_PREDICTION_IFRAME_READY';
 
 const STORAGE_PREFIX = 'speciesPrediction.activeSpecies';
 

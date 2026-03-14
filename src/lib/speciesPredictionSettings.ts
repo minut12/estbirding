@@ -1,18 +1,12 @@
 import { supabase } from '@/integrations/supabase/client';
+import type { Database } from '@/integrations/supabase/types';
 import { normalizeSpeciesName, normalizeUiText } from '@/lib/textNormalize';
 import { normalizeSpeciesPredictionSettings, type SpeciesPredictionSettings } from '@/lib/speciesPrediction';
 import type { SpeciesScopeId } from '@/lib/mapScope';
 
 const CACHE_PREFIX = 'speciesPredictionDefaults';
 
-type CloudRow = {
-  map_scope: string;
-  species_key: string;
-  species_name: string;
-  settings: SpeciesPredictionSettings;
-  updated_at: string;
-  updated_by?: string | null;
-};
+type CloudRow = Database['public']['Tables']['species_prediction_defaults']['Row'];
 
 export type SpeciesPredictionSaveResult = {
   settings: SpeciesPredictionSettings;
@@ -50,17 +44,17 @@ function validateSpeciesSettings(scope: SpeciesScopeId, settings: SpeciesPredict
 export async function loadSpeciesPredictionSettings(scope: SpeciesScopeId, speciesName: string): Promise<SpeciesPredictionSettings> {
   const speciesKey = normalizeSpeciesName(speciesName);
   try {
-    const { data, error } = await (supabase
-      .from('species_prediction_defaults' as any)
+    const { data, error } = await supabase
+      .from('species_prediction_defaults')
       .select('map_scope, species_key, species_name, settings, updated_at, updated_by')
       .eq('map_scope', scope)
       .eq('species_key', speciesKey)
-      .maybeSingle() as any);
+      .maybeSingle();
     if (error) throw error;
     if (!data) return loadLocalSpeciesPredictionSettings(scope, speciesName);
     const normalized = normalizeSpeciesPredictionSettings(
       {
-        ...((data as CloudRow).settings || {}),
+        ...((data as CloudRow).settings as SpeciesPredictionSettings || {}),
         speciesKey,
         speciesName: normalizeUiText((data as CloudRow).species_name || speciesName),
         updatedAt: normalizeUiText((data as CloudRow).updated_at || ''),
@@ -70,30 +64,35 @@ export async function loadSpeciesPredictionSettings(scope: SpeciesScopeId, speci
     );
     saveLocalSpeciesPredictionSettings(scope, normalized);
     return normalized;
-  } catch {
+  } catch (error) {
+    console.warn('[speciesPredictionSettings] backend load failed, using local fallback', {
+      scope,
+      speciesKey,
+      reason: error instanceof Error ? error.message : String(error),
+    });
     return loadLocalSpeciesPredictionSettings(scope, speciesName);
   }
 }
 
 export async function saveSpeciesPredictionSettings(scope: SpeciesScopeId, settings: SpeciesPredictionSettings, userId?: string): Promise<SpeciesPredictionSaveResult> {
   const normalized = validateSpeciesSettings(scope, settings);
-  const payload = {
+  const payload: Database['public']['Tables']['species_prediction_defaults']['Insert'] = {
     map_scope: scope,
     species_key: normalized.speciesKey,
     species_name: normalized.speciesName,
     settings: normalized,
-    ...(userId ? { updated_by: userId } : {}),
+    updated_by: userId ?? null,
   };
   try {
-    const { data, error } = await (supabase
-      .from('species_prediction_defaults' as any)
+    const { data, error } = await supabase
+      .from('species_prediction_defaults')
       .upsert(payload, { onConflict: 'map_scope,species_key' })
       .select('map_scope, species_key, species_name, settings, updated_at, updated_by')
-      .single() as any);
+      .single();
     if (error) throw error;
     const next = normalizeSpeciesPredictionSettings(
       {
-        ...((data as CloudRow).settings || {}),
+        ...((data as CloudRow).settings as SpeciesPredictionSettings || {}),
         speciesKey: normalizeUiText((data as CloudRow).species_key || normalized.speciesKey),
         speciesName: normalizeUiText((data as CloudRow).species_name || normalized.speciesName),
         updatedAt: normalizeUiText((data as CloudRow).updated_at || normalized.updatedAt),

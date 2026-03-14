@@ -636,6 +636,39 @@ export type Database = {
         }
         Relationships: []
       }
+      species_prediction_defaults: {
+        Row: {
+          created_at: string
+          id: string
+          map_scope: string
+          settings: Json
+          species_key: string
+          species_name: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          map_scope: string
+          settings?: Json
+          species_key: string
+          species_name?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          map_scope?: string
+          settings?: Json
+          species_key?: string
+          species_name?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       news_items_v: {

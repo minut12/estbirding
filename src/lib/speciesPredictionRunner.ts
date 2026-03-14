@@ -73,15 +73,19 @@ function resolvePredictionErrorMessage(error: unknown): string {
     const context = typeof candidate.context === 'string' ? candidate.context : '';
     const statusText = typeof candidate.statusText === 'string' ? candidate.statusText : '';
     const details = typeof candidate.details === 'string' ? candidate.details : '';
+    const contextMessage = extractContextMessage(candidate.context);
     const responseMessage = extractResponseMessage(candidate.response);
     const nestedError = typeof candidate.error === 'string' ? candidate.error : '';
-    const resolvedMessage = responseMessage || message || nestedError || details || context || statusText;
+    const resolvedMessage = contextMessage || responseMessage || message || nestedError || details || context || statusText;
 
     if (status === 404 || resolvedMessage.includes('404')) {
       return 'Prediction backend is unavailable or not deployed';
     }
     if (status === 503) {
       return 'Prediction backend is not configured yet';
+    }
+    if (status >= 500 && resolvedMessage) {
+      return resolveUserFacingBackendMessage(resolvedMessage);
     }
     if (status >= 500) return 'Prediction service is temporarily unavailable';
     if (resolvedMessage) return resolveUserFacingBackendMessage(resolvedMessage);
@@ -124,20 +128,27 @@ function isWrappedSuccessEnvelope(value: unknown): value is WrappedSuccessEnvelo
 function resolveUserFacingBackendMessage(message: string): string {
   const normalized = String(message || '').trim().toLowerCase();
   if (!normalized) return 'Prediction service is temporarily unavailable';
-  if (normalized.includes('non-2xx status code')) {
-    return 'Prediction request failed for this species';
+  if (normalized.includes('missing required species information') || normalized.includes('missing species information')) {
+    return 'Missing species information for prediction';
+  }
+  if (normalized.includes('invalid response')) {
+    return 'Prediction backend returned an invalid response';
   }
   if (normalized.includes('not configured')) {
     return 'Prediction backend is not configured yet';
   }
-  if (normalized.includes('temporarily unavailable')) {
-    return 'Prediction service is temporarily unavailable';
-  }
-  if (normalized.includes('invalid response')) {
+  if (
+    normalized.includes('temporarily unavailable')
+    || normalized.includes('error in workflow')
+    || normalized.includes('internal server error')
+    || normalized.includes('bad gateway')
+  ) {
     return 'Prediction service is temporarily unavailable';
   }
   if (
-    normalized.includes('fetch failed')
+    normalized.includes('non-2xx status code')
+    || normalized.includes('edge function returned')
+    || normalized.includes('fetch failed')
     || normalized.includes('failed to fetch')
     || normalized.includes('networkerror')
     || normalized.includes('network request failed')
@@ -150,8 +161,29 @@ function resolveUserFacingBackendMessage(message: string): string {
 
 function extractResponseMessage(response: unknown): string {
   if (!response || typeof response !== 'object') return '';
-  const candidate = response as { message?: unknown; error?: unknown };
+  const candidate = response as { message?: unknown; error?: unknown; details?: unknown };
   if (typeof candidate.message === 'string' && candidate.message.trim()) return candidate.message.trim();
   if (typeof candidate.error === 'string' && candidate.error.trim()) return candidate.error.trim();
+  if (typeof candidate.details === 'string' && candidate.details.trim()) return candidate.details.trim();
   return '';
+}
+
+function extractContextMessage(context: unknown): string {
+  if (!context) return '';
+  if (typeof context === 'string') return context.trim();
+  if (typeof context !== 'object') return '';
+  const candidate = context as {
+    json?: unknown;
+    body?: unknown;
+    response?: unknown;
+    message?: unknown;
+    error?: unknown;
+  };
+  return (
+    extractResponseMessage(candidate.json)
+    || extractResponseMessage(candidate.body)
+    || extractResponseMessage(candidate.response)
+    || (typeof candidate.message === 'string' ? candidate.message.trim() : '')
+    || (typeof candidate.error === 'string' ? candidate.error.trim() : '')
+  );
 }

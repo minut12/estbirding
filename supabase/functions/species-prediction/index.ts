@@ -55,11 +55,18 @@ serve(async (req) => {
     const species = payload?.species as Record<string, unknown> | undefined;
     const speciesKey = typeof species?.key === 'string' ? species.key.trim() : '';
     const speciesName = typeof species?.name === 'string' ? species.name.trim() : '';
+    const speciesLatinName = typeof species?.latinName === 'string' ? species.latinName.trim() : '';
 
     if (!speciesKey || !speciesName) {
       console.warn('[species-prediction] missing required species fields');
       return jsonError('Missing required species information', 400);
     }
+
+    console.info('[species-prediction] request validated', {
+      speciesKey,
+      speciesName,
+      latinName: speciesLatinName || null,
+    });
 
     const timeoutMs = clampNumber(
       Number(Deno.env.get(TIMEOUT_ENV_KEY) || DEFAULT_TIMEOUT_MS),
@@ -77,7 +84,12 @@ serve(async (req) => {
       const authValue = (Deno.env.get(AUTH_VALUE_ENV_KEY) || '').trim();
       if (authHeader && authValue) headers[authHeader] = authValue;
 
-      console.info('[species-prediction] forwarding request', { speciesKey, webhookConfigured: true });
+      console.info('[species-prediction] forwarding request', {
+        speciesKey,
+        speciesName,
+        latinName: speciesLatinName || null,
+        webhookConfigured: true,
+      });
 
       const upstream = await fetch(webhookUrl, {
         method: 'POST',
@@ -89,11 +101,13 @@ serve(async (req) => {
       const text = await upstream.text();
 
       if (!upstream.ok) {
+        const upstreamMessage = resolveReadableUpstreamMessage(text);
         console.error('[species-prediction] webhook forwarding failed', {
           status: upstream.status,
           statusText: upstream.statusText,
+          upstreamMessage: upstreamMessage || null,
         });
-        return jsonError('Prediction service is temporarily unavailable', 502);
+        return jsonError(normalizeUpstreamMessage(upstreamMessage), 502);
       }
 
       let data: unknown;
@@ -145,4 +159,38 @@ function json(body: Record<string, unknown>, status = 200): Response {
 function clampNumber(value: number, min: number, max: number, fallback: number): number {
   if (!Number.isFinite(value)) return fallback;
   return Math.min(max, Math.max(min, value));
+}
+
+function resolveReadableUpstreamMessage(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = JSON.parse(trimmed) as { message?: unknown; error?: unknown; details?: unknown };
+    if (typeof parsed.message === 'string' && parsed.message.trim()) return parsed.message.trim();
+    if (typeof parsed.error === 'string' && parsed.error.trim()) return parsed.error.trim();
+    if (typeof parsed.details === 'string' && parsed.details.trim()) return parsed.details.trim();
+  } catch {
+    // Fall back to plain text below.
+  }
+  return trimmed;
+}
+
+function normalizeUpstreamMessage(message: string): string {
+  const normalized = String(message || '').trim().toLowerCase();
+  if (!normalized) return 'Prediction service is temporarily unavailable';
+  if (normalized.includes('missing required species information') || normalized.includes('missing species information')) {
+    return 'Missing species information for prediction';
+  }
+  if (normalized.includes('invalid response')) {
+    return 'Prediction backend returned an invalid response';
+  }
+  if (
+    normalized.includes('temporarily unavailable')
+    || normalized.includes('error in workflow')
+    || normalized.includes('internal server error')
+    || normalized.includes('bad gateway')
+  ) {
+    return 'Prediction service is temporarily unavailable';
+  }
+  return message;
 }

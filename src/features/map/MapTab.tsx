@@ -21,6 +21,7 @@ import { loadSpeciesPredictionSettings } from '@/lib/speciesPredictionSettings';
 import { runSpeciesPredictionRequest } from '@/lib/speciesPredictionRunner';
 import { isSpeciesPredictionEnabled } from '@/lib/settings';
 import { ACTIVE_PREDICTION_IFRAME_READY_MESSAGE, ACTIVE_PREDICTION_SPECIES_EVENT, ACTIVE_PREDICTION_SPECIES_MESSAGE, getActivePredictionSpecies, setActivePredictionSpecies, type ActivePredictionSpecies } from '@/lib/activePredictionSpecies';
+import { normalizeSpeciesName } from '@/lib/textNormalize';
 
 const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -322,7 +323,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
         }
         const scopeCfg = getSpeciesScopeByMapId(current.id);
         const speciesName = typeof ev.data.speciesName === 'string' ? ev.data.speciesName : '';
-        const speciesKey = typeof ev.data.speciesKey === 'string' ? ev.data.speciesKey : '';
+        const speciesKey = normalizeSpeciesName(typeof ev.data.speciesKey === 'string' ? ev.data.speciesKey : speciesName);
         if (!scopeCfg || !speciesName || !speciesKey) {
           sendToIframe({
             type: SPECIES_PREDICTION_EVENT_TYPES.error,
@@ -343,8 +344,23 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
               },
               settings,
             };
+            console.info('[speciesPrediction] outgoing payload', {
+              scope: scopeCfg.id,
+              requestType: payload.requestType,
+              speciesKey: payload.species.key,
+              speciesName: payload.species.name,
+              latinName: payload.species.latinName || null,
+              predictionMode: payload.settings.predictionMode,
+              outputCount: payload.settings.outputCount,
+            });
             const response = await runSpeciesPredictionRequest(payload, scopeCfg.id);
             if (!response.ok || !response.result) {
+              console.warn('[speciesPrediction] runtime request failed', {
+                scope: scopeCfg.id,
+                speciesKey: payload.species.key,
+                speciesName: payload.species.name,
+                message: response.error || 'Prediction request failed',
+              });
               sendToIframe({
                 type: SPECIES_PREDICTION_EVENT_TYPES.error,
                 error: response.disabled ? 'Species prediction integration is currently unavailable' : (response.error || 'Prediction request failed'),

@@ -214,174 +214,176 @@ export default function SpeciesPredictionSettings() {
             </div>
           )}
 
-          <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-            <div className="space-y-1.5">
-              <Label>Map scope</Label>
-              <Select value={scopeId} onValueChange={(value) => setScopeId(value as SpeciesScopeId)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={LINNULIIGID_SCOPE.id}>{LINNULIIGID_SCOPE.displayName}</SelectItem>
-                  <SelectItem value={RARILIIN_SCOPE.id}>{RARILIIN_SCOPE.displayName}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Selected species</Label>
-              <Command className="rounded-md border border-input">
-                <CommandInput placeholder="Search species..." value={search} onValueChange={setSearch} />
-                <CommandList className="max-h-[200px]">
-                  <CommandEmpty>No species found</CommandEmpty>
-                  <CommandGroup>
-                    {filtered.slice(0, 60).map((species) => (
-                      <CommandItem
-                        key={species}
-                        value={species}
-                        onSelect={() => {
-                          setSelectedSpecies(species);
-                          setSearch('');
-                        }}
-                        className="flex items-center justify-between gap-2"
-                      >
-                        <span>{species}</span>
-                        {selectedSpecies === species && <Badge variant="outline">Current</Badge>}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </div>
-          </div>
-
           {loading || backendStatusLoading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>{loading ? 'Loading species settings...' : 'Checking prediction backend...'}</span>
             </div>
           ) : isBackendReadyForConfiguration ? (
-            <div>
-          <Accordion type="multiple" className="w-full space-y-2">
-          <AccordionItem value="general" className="rounded-lg border border-border px-4">
-            <AccordionTrigger>General</AccordionTrigger>
-            <AccordionContent className="space-y-3">
-              <SwitchRow
-                label="Enable prediction"
-                checked={form.enablePrediction}
-                onCheckedChange={(checked) => patchForm({ enablePrediction: checked })}
-              />
-              <SwitchRow
-                label="Enable research insights"
-                checked={form.enableResearchInsights}
-                onCheckedChange={(checked) => patchForm({ enableResearchInsights: checked })}
-              />
-              <NumericField
-                id="refreshIntervalMinutes"
-                label="Refresh interval (minutes)"
-                value={form.refreshIntervalMinutes}
-                min={5}
-                max={1440}
-                onChange={(value) => patchForm({ refreshIntervalMinutes: value })}
-              />
-              <div className="space-y-1.5">
-                <Label htmlFor="outputCount">Output count</Label>
-                <Select value={String(form.outputCount)} onValueChange={(value) => patchForm({ outputCount: Number(value) as 3 | 5 })}>
-                  <SelectTrigger id="outputCount">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="3">Top 3</SelectItem>
-                    <SelectItem value="5">Top 5</SelectItem>
-                  </SelectContent>
-                </Select>
+            <>
+              <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+                <div className="space-y-1.5">
+                  <Label>Map scope</Label>
+                  <Select value={scopeId} onValueChange={(value) => setScopeId(value as SpeciesScopeId)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={LINNULIIGID_SCOPE.id}>{LINNULIIGID_SCOPE.displayName}</SelectItem>
+                      <SelectItem value={RARILIIN_SCOPE.id}>{RARILIIN_SCOPE.displayName}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Selected species</Label>
+                  <Command className="rounded-md border border-input">
+                    <CommandInput placeholder="Search species..." value={search} onValueChange={setSearch} />
+                    <CommandList className="max-h-[200px]">
+                      <CommandEmpty>No species found</CommandEmpty>
+                      <CommandGroup>
+                        {filtered.slice(0, 60).map((species) => (
+                          <CommandItem
+                            key={species}
+                            value={species}
+                            onSelect={() => {
+                              setSelectedSpecies(species);
+                              setSearch('');
+                            }}
+                            className="flex items-center justify-between gap-2"
+                          >
+                            <span>{species}</span>
+                            {selectedSpecies === species && <Badge variant="outline">Current</Badge>}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </div>
               </div>
-            </AccordionContent>
-          </AccordionItem>
 
-          <AccordionItem value="sources" className="rounded-lg border border-border px-4">
-            <AccordionTrigger>Sources &amp; Countries</AccordionTrigger>
-            <AccordionContent className="space-y-3">
-              <SwitchRow label="Use eBird foreign sightings" checked={form.useEbirdForeignSightings} onCheckedChange={(checked) => patchForm({ useEbirdForeignSightings: checked })} />
-              <SwitchRow label="Use Elurikkus history" checked={form.useElurikkusHistory} onCheckedChange={(checked) => patchForm({ useElurikkusHistory: checked })} />
-              <SwitchRow label="Use Estonia recent records" checked={form.useEstoniaRecentRecords} onCheckedChange={(checked) => patchForm({ useEstoniaRecentRecords: checked })} />
-              <SwitchRow label="Use weather and wind" checked={form.useWeatherWind} onCheckedChange={(checked) => patchForm({ useWeatherWind: checked })} />
-              <SwitchRow label="Use Latvia as source country" checked={form.useLatvia} onCheckedChange={(checked) => patchForm({ useLatvia: checked })} />
-              <SwitchRow label="Use Lithuania as source country" checked={form.useLithuania} onCheckedChange={(checked) => patchForm({ useLithuania: checked })} />
-              <SwitchRow label="Use Belarus as source country" checked={form.useBelarus} onCheckedChange={(checked) => patchForm({ useBelarus: checked })} />
-              <SwitchRow label="Use Poland as source country" checked={form.usePoland} onCheckedChange={(checked) => patchForm({ usePoland: checked })} />
-              <SwitchRow label="Use Russia as source country" checked={form.useRussia} onCheckedChange={(checked) => patchForm({ useRussia: checked })} />
-              <SwitchRow label="Use Finland as optional context only" checked={form.useFinlandContextOnly} onCheckedChange={(checked) => patchForm({ useFinlandContextOnly: checked })} />
-            </AccordionContent>
-          </AccordionItem>
+              <div>
+                <Accordion type="multiple" className="w-full space-y-2">
+                  <AccordionItem value="general" className="rounded-lg border border-border px-4">
+                    <AccordionTrigger>General</AccordionTrigger>
+                    <AccordionContent className="space-y-3">
+                      <SwitchRow
+                        label="Enable prediction"
+                        checked={form.enablePrediction}
+                        onCheckedChange={(checked) => patchForm({ enablePrediction: checked })}
+                      />
+                      <SwitchRow
+                        label="Enable research insights"
+                        checked={form.enableResearchInsights}
+                        onCheckedChange={(checked) => patchForm({ enableResearchInsights: checked })}
+                      />
+                      <NumericField
+                        id="refreshIntervalMinutes"
+                        label="Refresh interval (minutes)"
+                        value={form.refreshIntervalMinutes}
+                        min={5}
+                        max={1440}
+                        onChange={(value) => patchForm({ refreshIntervalMinutes: value })}
+                      />
+                      <div className="space-y-1.5">
+                        <Label htmlFor="outputCount">Output count</Label>
+                        <Select value={String(form.outputCount)} onValueChange={(value) => patchForm({ outputCount: Number(value) as 3 | 5 })}>
+                          <SelectTrigger id="outputCount">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="3">Top 3</SelectItem>
+                            <SelectItem value="5">Top 5</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
 
-          <AccordionItem value="windows" className="rounded-lg border border-border px-4">
-            <AccordionTrigger>Time Windows &amp; Weights</AccordionTrigger>
-            <AccordionContent className="space-y-3">
-              <SwitchRow label="Foreign lookback 1d" checked={form.foreignLookback1d} onCheckedChange={(checked) => patchForm({ foreignLookback1d: checked })} />
-              <SwitchRow label="Foreign lookback 3d" checked={form.foreignLookback3d} onCheckedChange={(checked) => patchForm({ foreignLookback3d: checked })} />
-              <SwitchRow label="Foreign lookback 7d" checked={form.foreignLookback7d} onCheckedChange={(checked) => patchForm({ foreignLookback7d: checked })} />
-              <SwitchRow label="Foreign lookback 14d" checked={form.foreignLookback14d} onCheckedChange={(checked) => patchForm({ foreignLookback14d: checked })} />
-              <SwitchRow label="Estonia recent 7d" checked={form.estoniaRecentWindow7d} onCheckedChange={(checked) => patchForm({ estoniaRecentWindow7d: checked })} />
-              <SwitchRow label="Estonia recent 30d" checked={form.estoniaRecentWindow30d} onCheckedChange={(checked) => patchForm({ estoniaRecentWindow30d: checked })} />
-              <NumericField id="foreignPressureWeight" label="Foreign pressure weight" value={form.foreignPressureWeight} onChange={(value) => patchForm({ foreignPressureWeight: value })} />
-              <NumericField id="elurikkusHistoryWeight" label="Elurikkus history weight" value={form.elurikkusHistoryWeight} onChange={(value) => patchForm({ elurikkusHistoryWeight: value })} />
-              <NumericField id="springTimingWeight" label="Spring timing weight" value={form.springTimingWeight} onChange={(value) => patchForm({ springTimingWeight: value })} />
-              <NumericField id="weatherWindWeight" label="Weather/wind weight" value={form.weatherWindWeight} onChange={(value) => patchForm({ weatherWindWeight: value })} />
-              <NumericField id="hotspotHistoryWeight" label="Hotspot history weight" value={form.hotspotHistoryWeight} onChange={(value) => patchForm({ hotspotHistoryWeight: value })} />
-            </AccordionContent>
-          </AccordionItem>
+                  <AccordionItem value="sources" className="rounded-lg border border-border px-4">
+                    <AccordionTrigger>Sources &amp; Countries</AccordionTrigger>
+                    <AccordionContent className="space-y-3">
+                      <SwitchRow label="Use eBird foreign sightings" checked={form.useEbirdForeignSightings} onCheckedChange={(checked) => patchForm({ useEbirdForeignSightings: checked })} />
+                      <SwitchRow label="Use Elurikkus history" checked={form.useElurikkusHistory} onCheckedChange={(checked) => patchForm({ useElurikkusHistory: checked })} />
+                      <SwitchRow label="Use Estonia recent records" checked={form.useEstoniaRecentRecords} onCheckedChange={(checked) => patchForm({ useEstoniaRecentRecords: checked })} />
+                      <SwitchRow label="Use weather and wind" checked={form.useWeatherWind} onCheckedChange={(checked) => patchForm({ useWeatherWind: checked })} />
+                      <SwitchRow label="Use Latvia as source country" checked={form.useLatvia} onCheckedChange={(checked) => patchForm({ useLatvia: checked })} />
+                      <SwitchRow label="Use Lithuania as source country" checked={form.useLithuania} onCheckedChange={(checked) => patchForm({ useLithuania: checked })} />
+                      <SwitchRow label="Use Belarus as source country" checked={form.useBelarus} onCheckedChange={(checked) => patchForm({ useBelarus: checked })} />
+                      <SwitchRow label="Use Poland as source country" checked={form.usePoland} onCheckedChange={(checked) => patchForm({ usePoland: checked })} />
+                      <SwitchRow label="Use Russia as source country" checked={form.useRussia} onCheckedChange={(checked) => patchForm({ useRussia: checked })} />
+                      <SwitchRow label="Use Finland as optional context only" checked={form.useFinlandContextOnly} onCheckedChange={(checked) => patchForm({ useFinlandContextOnly: checked })} />
+                    </AccordionContent>
+                  </AccordionItem>
 
-          <AccordionItem value="precision" className="rounded-lg border border-border px-4">
-            <AccordionTrigger>Precision &amp; Map Output</AccordionTrigger>
-            <AccordionContent className="space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="predictionMode">Prediction mode</Label>
-                <Select value={form.predictionMode} onValueChange={(value) => patchForm({ predictionMode: value as SpeciesPredictionSettingsModel['predictionMode'] })}>
-                  <SelectTrigger id="predictionMode">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="broad_area">Broad area</SelectItem>
-                    <SelectItem value="hotspot">Hotspot</SelectItem>
-                    <SelectItem value="precise_hotspot">Precise hotspot</SelectItem>
-                  </SelectContent>
-                </Select>
+                  <AccordionItem value="windows" className="rounded-lg border border-border px-4">
+                    <AccordionTrigger>Time Windows &amp; Weights</AccordionTrigger>
+                    <AccordionContent className="space-y-3">
+                      <SwitchRow label="Foreign lookback 1d" checked={form.foreignLookback1d} onCheckedChange={(checked) => patchForm({ foreignLookback1d: checked })} />
+                      <SwitchRow label="Foreign lookback 3d" checked={form.foreignLookback3d} onCheckedChange={(checked) => patchForm({ foreignLookback3d: checked })} />
+                      <SwitchRow label="Foreign lookback 7d" checked={form.foreignLookback7d} onCheckedChange={(checked) => patchForm({ foreignLookback7d: checked })} />
+                      <SwitchRow label="Foreign lookback 14d" checked={form.foreignLookback14d} onCheckedChange={(checked) => patchForm({ foreignLookback14d: checked })} />
+                      <SwitchRow label="Estonia recent 7d" checked={form.estoniaRecentWindow7d} onCheckedChange={(checked) => patchForm({ estoniaRecentWindow7d: checked })} />
+                      <SwitchRow label="Estonia recent 30d" checked={form.estoniaRecentWindow30d} onCheckedChange={(checked) => patchForm({ estoniaRecentWindow30d: checked })} />
+                      <NumericField id="foreignPressureWeight" label="Foreign pressure weight" value={form.foreignPressureWeight} onChange={(value) => patchForm({ foreignPressureWeight: value })} />
+                      <NumericField id="elurikkusHistoryWeight" label="Elurikkus history weight" value={form.elurikkusHistoryWeight} onChange={(value) => patchForm({ elurikkusHistoryWeight: value })} />
+                      <NumericField id="springTimingWeight" label="Spring timing weight" value={form.springTimingWeight} onChange={(value) => patchForm({ springTimingWeight: value })} />
+                      <NumericField id="weatherWindWeight" label="Weather/wind weight" value={form.weatherWindWeight} onChange={(value) => patchForm({ weatherWindWeight: value })} />
+                      <NumericField id="hotspotHistoryWeight" label="Hotspot history weight" value={form.hotspotHistoryWeight} onChange={(value) => patchForm({ hotspotHistoryWeight: value })} />
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  <AccordionItem value="precision" className="rounded-lg border border-border px-4">
+                    <AccordionTrigger>Precision &amp; Map Output</AccordionTrigger>
+                    <AccordionContent className="space-y-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="predictionMode">Prediction mode</Label>
+                        <Select value={form.predictionMode} onValueChange={(value) => patchForm({ predictionMode: value as SpeciesPredictionSettingsModel['predictionMode'] })}>
+                          <SelectTrigger id="predictionMode">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="broad_area">Broad area</SelectItem>
+                            <SelectItem value="hotspot">Hotspot</SelectItem>
+                            <SelectItem value="precise_hotspot">Precise hotspot</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <NumericField id="searchRadiusKm" label="Search radius (km)" value={form.searchRadiusKm} onChange={(value) => patchForm({ searchRadiusKm: value })} />
+                      <NumericField id="hotspotRadiusKm" label="Hotspot radius (km)" value={form.hotspotRadiusKm} onChange={(value) => patchForm({ hotspotRadiusKm: value })} />
+                      <NumericField id="hotspotCount" label="Hotspot count" value={form.hotspotCount} onChange={(value) => patchForm({ hotspotCount: value })} />
+                      <SwitchRow label="Show source flows on map" checked={form.mapShowSourceFlows} onCheckedChange={(checked) => patchForm({ mapShowSourceFlows: checked })} />
+                      <SwitchRow label="Show confidence rings on map" checked={form.mapShowConfidenceRings} onCheckedChange={(checked) => patchForm({ mapShowConfidenceRings: checked })} />
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  <AccordionItem value="automation" className="rounded-lg border border-border px-4">
+                    <AccordionTrigger>AI / n8n Integration</AccordionTrigger>
+                    <AccordionContent className="space-y-3">
+                      <SwitchRow label="Enable server-side research" checked={form.enableN8nResearch} onCheckedChange={(checked) => patchForm({ enableN8nResearch: checked })} />
+                      <SwitchRow label="Enable OpenAI summary" checked={form.enableOpenAISummary} onCheckedChange={(checked) => patchForm({ enableOpenAISummary: checked })} />
+                      <div className="space-y-1.5">
+                        <Label htmlFor="summaryStyle">Summary style</Label>
+                        <Select value={form.summaryStyle} onValueChange={(value) => patchForm({ summaryStyle: value as SpeciesPredictionSettingsModel['summaryStyle'] })}>
+                          <SelectTrigger id="summaryStyle">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="short">Short</SelectItem>
+                            <SelectItem value="analytical">Analytical</SelectItem>
+                            <SelectItem value="field_use">Field use</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <NumericField id="summaryMaxLength" label="Summary max length" value={form.summaryMaxLength} min={100} max={5000} onChange={(value) => patchForm({ summaryMaxLength: value })} />
+                      <p className="text-xs text-muted-foreground">
+                        Secrets should stay server-side. The app proxy function uses env vars if configured.
+                      </p>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
               </div>
-              <NumericField id="searchRadiusKm" label="Search radius (km)" value={form.searchRadiusKm} onChange={(value) => patchForm({ searchRadiusKm: value })} />
-              <NumericField id="hotspotRadiusKm" label="Hotspot radius (km)" value={form.hotspotRadiusKm} onChange={(value) => patchForm({ hotspotRadiusKm: value })} />
-              <NumericField id="hotspotCount" label="Hotspot count" value={form.hotspotCount} onChange={(value) => patchForm({ hotspotCount: value })} />
-              <SwitchRow label="Show source flows on map" checked={form.mapShowSourceFlows} onCheckedChange={(checked) => patchForm({ mapShowSourceFlows: checked })} />
-              <SwitchRow label="Show confidence rings on map" checked={form.mapShowConfidenceRings} onCheckedChange={(checked) => patchForm({ mapShowConfidenceRings: checked })} />
-            </AccordionContent>
-          </AccordionItem>
-
-          <AccordionItem value="automation" className="rounded-lg border border-border px-4">
-            <AccordionTrigger>AI / n8n Integration</AccordionTrigger>
-            <AccordionContent className="space-y-3">
-              <SwitchRow label="Enable server-side research" checked={form.enableN8nResearch} onCheckedChange={(checked) => patchForm({ enableN8nResearch: checked })} />
-              <SwitchRow label="Enable OpenAI summary" checked={form.enableOpenAISummary} onCheckedChange={(checked) => patchForm({ enableOpenAISummary: checked })} />
-              <div className="space-y-1.5">
-                <Label htmlFor="summaryStyle">Summary style</Label>
-                <Select value={form.summaryStyle} onValueChange={(value) => patchForm({ summaryStyle: value as SpeciesPredictionSettingsModel['summaryStyle'] })}>
-                  <SelectTrigger id="summaryStyle">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="short">Short</SelectItem>
-                    <SelectItem value="analytical">Analytical</SelectItem>
-                    <SelectItem value="field_use">Field use</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <NumericField id="summaryMaxLength" label="Summary max length" value={form.summaryMaxLength} min={100} max={5000} onChange={(value) => patchForm({ summaryMaxLength: value })} />
-              <p className="text-xs text-muted-foreground">
-                Secrets should stay server-side. The app proxy function uses env vars if configured.
-              </p>
-            </AccordionContent>
-          </AccordionItem>
-          </Accordion>
-            </div>
+            </>
           ) : (
             <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
               Prediction backend is not configured yet. Add the webhook secret in Supabase and redeploy the Edge Function.

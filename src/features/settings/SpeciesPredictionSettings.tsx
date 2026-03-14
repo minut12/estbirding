@@ -38,10 +38,15 @@ export default function SpeciesPredictionSettings() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [backendConfigured, setBackendConfigured] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<SpeciesPredictionBackendStatus>({
+    ok: false,
+    configured: false,
+    webhookConfigured: false,
+    available: false,
+    deployed: false,
+    message: 'Prediction backend is not configured yet',
+  });
   const [backendStatusLoading, setBackendStatusLoading] = useState(false);
-  const [backendStatusMessage, setBackendStatusMessage] = useState('');
-  const [backendAvailable, setBackendAvailable] = useState(false);
   const [predictionFeatureEnabled, setPredictionFeatureEnabled] = useState(isSpeciesPredictionEnabled);
   const [form, setForm] = useState<SpeciesPredictionSettingsModel>(() => normalizeSpeciesPredictionSettings(null, '', 'linnuliigid'));
 
@@ -49,9 +54,19 @@ export default function SpeciesPredictionSettings() {
   const predictionEnabled = isSpeciesPredictionEnabled();
   const selectedSpeciesKey = useMemo(() => normalizeSpeciesName(selectedSpecies), [selectedSpecies]);
   const hasValidSelectedSpecies = Boolean(selectedSpecies && selectedSpeciesKey);
+  const isBackendReadyForConfiguration = (
+    backendStatus.configured === true
+    && backendStatus.webhookConfigured === true
+    && backendStatus.available === true
+    && backendStatus.deployed === true
+  );
+  const backendBadgeLabel = isBackendReadyForConfiguration
+    ? 'Configured'
+    : (backendStatus.available && backendStatus.deployed ? 'Missing env' : 'Unavailable');
+  const backendStatusMessage = backendStatus.message || 'Prediction backend is not configured yet';
   const saveBlockedMessage = !hasValidSelectedSpecies
     ? 'Select a valid species before saving prediction settings'
-    : (!backendConfigured ? backendStatusMessage || 'Prediction backend is not configured yet' : '');
+    : '';
 
   useEffect(() => {
     if (!isSpeciesPredictionEnabled()) return;
@@ -85,24 +100,31 @@ export default function SpeciesPredictionSettings() {
 
   useEffect(() => {
     if (!isSpeciesPredictionEnabled()) {
-      setBackendAvailable(false);
-      setBackendConfigured(false);
-      setBackendStatusMessage('Prediction backend is not configured yet');
+      setBackendStatus({
+        ok: false,
+        configured: false,
+        webhookConfigured: false,
+        available: false,
+        deployed: false,
+        message: 'Prediction backend is not configured yet',
+      });
       return;
     }
 
     setBackendStatusLoading(true);
     fetchSpeciesPredictionBackendStatus()
       .then((data) => {
-        setBackendAvailable(true);
-        const configured = data.configured === true;
-        setBackendConfigured(configured);
-        setBackendStatusMessage(String(data.message || (configured ? 'Prediction backend is configured' : 'Prediction backend is not configured yet')));
+        setBackendStatus(data);
       })
       .catch(() => {
-        setBackendAvailable(false);
-        setBackendConfigured(false);
-        setBackendStatusMessage('Prediction backend is not configured yet');
+        setBackendStatus({
+          ok: false,
+          configured: false,
+          webhookConfigured: false,
+          available: false,
+          deployed: false,
+          message: 'Prediction backend is not configured yet',
+        });
       })
       .finally(() => setBackendStatusLoading(false));
   }, [predictionFeatureEnabled, scopeId]);
@@ -125,7 +147,10 @@ export default function SpeciesPredictionSettings() {
       toast.error('Select a valid species before saving prediction settings');
       return;
     }
-    if (!backendConfigured) return;
+    if (!isBackendReadyForConfiguration) {
+      toast.error('Prediction backend is not configured yet');
+      return;
+    }
     if (!canManage) {
       toast.error('Only admins can save species-specific prediction settings.');
       return;
@@ -175,12 +200,12 @@ export default function SpeciesPredictionSettings() {
           <div className="rounded-lg border border-border bg-card p-4 text-xs">
             <div className="flex items-center justify-between gap-3">
               <span className="font-medium text-foreground">Prediction backend status</span>
-              <Badge variant={backendConfigured ? 'default' : 'outline'}>
-                {backendConfigured ? 'Configured' : (backendAvailable ? 'Missing env' : 'Unavailable')}
+              <Badge variant={isBackendReadyForConfiguration ? 'default' : 'outline'}>
+                {backendBadgeLabel}
               </Badge>
             </div>
             <p className="mt-2 text-muted-foreground">
-              {backendStatusMessage || 'Prediction backend is configured'}
+              {backendStatusMessage}
             </p>
           </div>
           {!canManage && (
@@ -235,7 +260,7 @@ export default function SpeciesPredictionSettings() {
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>{loading ? 'Loading species settings...' : 'Checking prediction backend...'}</span>
             </div>
-          ) : (
+          ) : isBackendReadyForConfiguration ? (
             <div>
           <Accordion type="multiple" className="w-full space-y-2">
           <AccordionItem value="general" className="rounded-lg border border-border px-4">
@@ -357,15 +382,21 @@ export default function SpeciesPredictionSettings() {
           </AccordionItem>
           </Accordion>
             </div>
+          ) : (
+            <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+              Prediction backend is not configured yet. Add the webhook secret in Supabase and redeploy the Edge Function.
+            </div>
           )}
 
           {saveBlockedMessage && (
             <p className="text-xs text-destructive">{saveBlockedMessage}</p>
           )}
 
-          <Button onClick={saveForm} className="w-full" disabled={!canManage || saving || !hasValidSelectedSpecies || !backendConfigured}>
-            {saving ? 'Saving...' : 'Save species settings'}
-          </Button>
+          {isBackendReadyForConfiguration && (
+            <Button onClick={saveForm} className="w-full" disabled={!canManage || saving || !hasValidSelectedSpecies || !isBackendReadyForConfiguration}>
+              {saving ? 'Saving...' : 'Save species settings'}
+            </Button>
+          )}
         </>
       )}
     </div>
@@ -376,6 +407,8 @@ type SpeciesPredictionBackendStatus = {
   ok: boolean;
   configured: boolean;
   webhookConfigured: boolean;
+  available: boolean;
+  deployed: boolean;
   message: string;
 };
 
@@ -424,6 +457,8 @@ async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionB
     ok: status.ok === true,
     configured: status.configured === true,
     webhookConfigured: status.webhookConfigured === true,
+    available: status.available === true,
+    deployed: status.deployed === true,
     message: String(status.message || 'Prediction backend is not configured yet'),
   };
 }

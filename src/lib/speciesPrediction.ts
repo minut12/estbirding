@@ -10,6 +10,7 @@ export type SpeciesPredictionSettings = {
   speciesKey: string;
   speciesName: string;
   scope: SpeciesScopeId;
+  ebirdSpeciesCodeOverride?: string;
   enablePrediction: boolean;
   enableResearchInsights: boolean;
   refreshIntervalMinutes: number;
@@ -120,6 +121,7 @@ export function getSpeciesPredictionDefaults(speciesName = '', scope: SpeciesSco
     speciesKey: normalizeSpeciesName(normalizedName),
     speciesName: normalizedName,
     scope,
+    ebirdSpeciesCodeOverride: undefined,
     enablePrediction: true,
     enableResearchInsights: true,
     refreshIntervalMinutes: 30,
@@ -179,6 +181,7 @@ export function normalizeSpeciesPredictionSettings(
     speciesName: normalizedName,
     speciesKey: normalizeSpeciesName(input?.speciesKey || normalizedName || defaults.speciesKey),
     scope,
+    ...(normalizeUiText(input?.ebirdSpeciesCodeOverride || '') ? { ebirdSpeciesCodeOverride: normalizeUiText(input?.ebirdSpeciesCodeOverride || '') } : {}),
     useEbirdForeignSightings: coalesceBoolean(input?.useEbirdForeignSightings, legacySources.ebirdForeign, defaults.useEbirdForeignSightings),
     useElurikkusHistory: coalesceBoolean(input?.useElurikkusHistory, legacySources.elurikkusHistory, defaults.useElurikkusHistory),
     useEstoniaRecentRecords: coalesceBoolean(input?.useEstoniaRecentRecords, legacySources.estoniaRecent, defaults.useEstoniaRecentRecords),

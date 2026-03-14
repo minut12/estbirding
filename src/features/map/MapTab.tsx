@@ -335,6 +335,14 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
         loadSpeciesPredictionSettings(scopeCfg.id, speciesName)
           .then(async (settings) => {
             const meta = getScopedSpeciesMeta(speciesName, scopeCfg);
+            const ebirdSpeciesCodeOverride = meta.ebirdCode || '';
+            if (!ebirdSpeciesCodeOverride) {
+              sendToIframe({
+                type: SPECIES_PREDICTION_EVENT_TYPES.error,
+                error: 'Missing eBird mapping for this species',
+              });
+              return;
+            }
             const payload: SpeciesPredictionRequestPayload = {
               requestType: typeof ev.data.requestType === 'string' ? ev.data.requestType : 'prediction_and_insight',
               species: {
@@ -342,7 +350,10 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
                 name: speciesName,
                 latinName: meta.scientificName || '',
               },
-              settings,
+              settings: {
+                ...settings,
+                ebirdSpeciesCodeOverride,
+              },
             };
             console.info('[speciesPrediction] outgoing payload', {
               scope: scopeCfg.id,
@@ -350,6 +361,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
               speciesKey: payload.species.key,
               speciesName: payload.species.name,
               latinName: payload.species.latinName || null,
+              ebirdSpeciesCodeOverride: payload.settings.ebirdSpeciesCodeOverride || null,
               predictionMode: payload.settings.predictionMode,
               outputCount: payload.settings.outputCount,
             });

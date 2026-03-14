@@ -53,9 +53,11 @@ serve(async (req) => {
 
     const payload = body as Record<string, unknown> | null;
     const species = payload?.species as Record<string, unknown> | undefined;
+    const settings = payload?.settings as Record<string, unknown> | undefined;
     const speciesKey = typeof species?.key === 'string' ? species.key.trim() : '';
     const speciesName = typeof species?.name === 'string' ? species.name.trim() : '';
     const speciesLatinName = typeof species?.latinName === 'string' ? species.latinName.trim() : '';
+    const ebirdSpeciesCodeOverride = typeof settings?.ebirdSpeciesCodeOverride === 'string' ? settings.ebirdSpeciesCodeOverride.trim() : '';
 
     if (!speciesKey || !speciesName) {
       console.warn('[species-prediction] missing required species fields');
@@ -66,6 +68,7 @@ serve(async (req) => {
       speciesKey,
       speciesName,
       latinName: speciesLatinName || null,
+      ebirdSpeciesCodeOverride: ebirdSpeciesCodeOverride || null,
     });
 
     const timeoutMs = clampNumber(
@@ -88,6 +91,7 @@ serve(async (req) => {
         speciesKey,
         speciesName,
         latinName: speciesLatinName || null,
+        ebirdSpeciesCodeOverride: ebirdSpeciesCodeOverride || null,
         webhookConfigured: true,
       });
 

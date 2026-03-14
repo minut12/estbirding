@@ -21,6 +21,10 @@ export type SpeciesMetaLookupResult = SpeciesMeta & {
   found: boolean;
 };
 
+const STATIC_EBIRD_CODE_FALLBACKS: Record<string, string> = {
+  'punakurk-kaur': 'retloo',
+};
+
 type ScopeSpeciesMeta = {
   estonianName: string;
   scientificName?: string;
@@ -159,11 +163,17 @@ export function getScopedSpeciesMeta(
   const map = loadSpeciesMeta(scope);
   const stored = map[key];
   const fallback = fallbackMap?.[key];
-  const merged = sanitizeMeta(key, { ...(fallback || {}), ...(stored || {}), name: key });
+  const ebirdFallback = STATIC_EBIRD_CODE_FALLBACKS[key];
+  const merged = sanitizeMeta(key, {
+    ...(fallback || {}),
+    ...(stored || {}),
+    ...(ebirdFallback && !stored?.ebirdCode && !(fallback as SpeciesMeta | undefined)?.ebirdCode ? { ebirdCode: ebirdFallback } : {}),
+    name: key,
+  });
   return {
     ...merged,
     resolvedKey: key,
-    found: Boolean(stored || fallback),
+    found: Boolean(stored || fallback || ebirdFallback),
   };
 }
 

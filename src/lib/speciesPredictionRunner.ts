@@ -64,21 +64,27 @@ function resolvePredictionErrorMessage(error: unknown): string {
       context?: unknown;
       status?: unknown;
       statusText?: unknown;
+      response?: unknown;
+      error?: unknown;
+      details?: unknown;
     };
     const status = Number(candidate.status);
     const message = typeof candidate.message === 'string' ? candidate.message : '';
     const context = typeof candidate.context === 'string' ? candidate.context : '';
     const statusText = typeof candidate.statusText === 'string' ? candidate.statusText : '';
+    const details = typeof candidate.details === 'string' ? candidate.details : '';
+    const responseMessage = extractResponseMessage(candidate.response);
+    const nestedError = typeof candidate.error === 'string' ? candidate.error : '';
+    const resolvedMessage = responseMessage || message || nestedError || details || context || statusText;
 
-    if (status === 404 || message.includes('404') || context.includes('404')) {
+    if (status === 404 || resolvedMessage.includes('404')) {
       return 'Prediction backend is unavailable or not deployed';
     }
     if (status === 503) {
       return 'Prediction backend is not configured yet';
     }
     if (status >= 500) return 'Prediction service is temporarily unavailable';
-    if (message) return resolveUserFacingBackendMessage(message);
-    if (statusText) return resolveUserFacingBackendMessage(statusText);
+    if (resolvedMessage) return resolveUserFacingBackendMessage(resolvedMessage);
   }
   if (error instanceof Error) {
     return resolveUserFacingBackendMessage(error.message);
@@ -118,8 +124,17 @@ function isWrappedSuccessEnvelope(value: unknown): value is WrappedSuccessEnvelo
 function resolveUserFacingBackendMessage(message: string): string {
   const normalized = String(message || '').trim().toLowerCase();
   if (!normalized) return 'Prediction service is temporarily unavailable';
+  if (normalized.includes('non-2xx status code')) {
+    return 'Prediction request failed for this species';
+  }
   if (normalized.includes('not configured')) {
     return 'Prediction backend is not configured yet';
+  }
+  if (normalized.includes('temporarily unavailable')) {
+    return 'Prediction service is temporarily unavailable';
+  }
+  if (normalized.includes('invalid response')) {
+    return 'Prediction service is temporarily unavailable';
   }
   if (
     normalized.includes('fetch failed')
@@ -131,4 +146,12 @@ function resolveUserFacingBackendMessage(message: string): string {
     return 'Prediction service is temporarily unavailable';
   }
   return message;
+}
+
+function extractResponseMessage(response: unknown): string {
+  if (!response || typeof response !== 'object') return '';
+  const candidate = response as { message?: unknown; error?: unknown };
+  if (typeof candidate.message === 'string' && candidate.message.trim()) return candidate.message.trim();
+  if (typeof candidate.error === 'string' && candidate.error.trim()) return candidate.error.trim();
+  return '';
 }

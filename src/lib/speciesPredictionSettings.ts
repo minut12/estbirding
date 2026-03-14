@@ -7,6 +7,13 @@ import type { SpeciesScopeId } from '@/lib/mapScope';
 const CACHE_PREFIX = 'speciesPredictionDefaults';
 
 type CloudRow = Database['public']['Tables']['species_prediction_defaults']['Row'];
+type PostgrestErrorLike = {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+  status?: number;
+};
 
 export type SpeciesPredictionSaveResult = {
   settings: SpeciesPredictionSettings;
@@ -41,6 +48,35 @@ function validateSpeciesSettings(scope: SpeciesScopeId, settings: SpeciesPredict
   return normalized;
 }
 
+function isMissingResourceError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as PostgrestErrorLike;
+  const combined = `${candidate.code || ''} ${candidate.message || ''} ${candidate.details || ''} ${candidate.hint || ''}`.toLowerCase();
+  return (
+    combined.includes('species_prediction_defaults')
+    && (
+      combined.includes('404')
+      || combined.includes('not found')
+      || combined.includes('could not find')
+      || combined.includes('relation')
+      || combined.includes('schema cache')
+      || combined.includes('pgrst')
+    )
+  );
+}
+
+function resolveCloudFailureReason(error: unknown): string {
+  if (isMissingResourceError(error)) {
+    return 'Prediction settings storage is not available in Supabase yet';
+  }
+  if (error instanceof Error && error.message) return error.message;
+  if (error && typeof error === 'object') {
+    const candidate = error as PostgrestErrorLike;
+    if (candidate.message) return candidate.message;
+  }
+  return 'Backend save unavailable';
+}
+
 export async function loadSpeciesPredictionSettings(scope: SpeciesScopeId, speciesName: string): Promise<SpeciesPredictionSettings> {
   const speciesKey = normalizeSpeciesName(speciesName);
   try {
@@ -65,10 +101,17 @@ export async function loadSpeciesPredictionSettings(scope: SpeciesScopeId, speci
     saveLocalSpeciesPredictionSettings(scope, normalized);
     return normalized;
   } catch (error) {
+    if (isMissingResourceError(error)) {
+      console.error('[speciesPredictionSettings] missing Supabase resource for species prediction settings', {
+        scope,
+        speciesKey,
+        error,
+      });
+    }
     console.warn('[speciesPredictionSettings] backend load failed, using local fallback', {
       scope,
       speciesKey,
-      reason: error instanceof Error ? error.message : String(error),
+      reason: resolveCloudFailureReason(error),
     });
     return loadLocalSpeciesPredictionSettings(scope, speciesName);
   }
@@ -103,7 +146,14 @@ export async function saveSpeciesPredictionSettings(scope: SpeciesScopeId, setti
     saveLocalSpeciesPredictionSettings(scope, next);
     return { settings: next, storage: 'backend' };
   } catch (error: unknown) {
-    const reason = error instanceof Error && error.message ? error.message : 'Backend save unavailable';
+    const reason = resolveCloudFailureReason(error);
+    if (isMissingResourceError(error)) {
+      console.error('[speciesPredictionSettings] missing Supabase resource for species prediction settings save', {
+        scope,
+        speciesKey: normalized.speciesKey,
+        error,
+      });
+    }
     console.error('[speciesPredictionSettings] backend save failed', { scope, speciesKey: normalized.speciesKey, reason, error });
     saveLocalSpeciesPredictionSettings(scope, normalized);
     return {

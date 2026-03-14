@@ -165,7 +165,7 @@ export default function SpeciesPredictionSettings() {
       );
       setForm(saved.settings);
       if (saved.storage === 'local') {
-        toast.message(`Saved locally because backend save is unavailable: ${saved.reason || 'Backend save unavailable'}`);
+        toast.message(`Saved locally because Supabase settings sync is unavailable: ${saved.reason || 'Backend save unavailable'}`);
       } else {
         toast.success('Species prediction settings saved');
       }

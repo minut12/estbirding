@@ -20,6 +20,8 @@ import { isSpeciesPredictionEnabled, loadSettings, saveSettings } from '@/lib/se
 import { getFunctionsBaseUrl, getSupabaseAuthHeaders } from '@/config/supabaseConfig';
 import { APP_VERSION } from '@/lib/version';
 
+const ACTIVE_SPECIES_STORAGE_PREFIX = 'speciesPredictionActiveSpecies';
+
 type NumericFieldProps = {
   id: string;
   label: string;
@@ -34,7 +36,7 @@ export default function SpeciesPredictionSettings() {
   const canManage = isAdmin || hasPermission(PERMISSIONS.settingsManage);
   const [scopeId, setScopeId] = useState<SpeciesScopeId>('linnuliigid');
   const [speciesList, setSpeciesList] = useState<string[]>([]);
-  const [selectedSpecies, setSelectedSpecies] = useState('');
+  const [activeSpeciesName, setActiveSpeciesName] = useState('');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -52,8 +54,8 @@ export default function SpeciesPredictionSettings() {
 
   const scope = SPECIES_SCOPES[scopeId];
   const predictionEnabled = isSpeciesPredictionEnabled();
-  const selectedSpeciesKey = useMemo(() => normalizeSpeciesName(selectedSpecies), [selectedSpecies]);
-  const hasValidSelectedSpecies = Boolean(selectedSpecies && selectedSpeciesKey);
+  const activeSpeciesKey = useMemo(() => normalizeSpeciesName(activeSpeciesName), [activeSpeciesName]);
+  const hasValidSelectedSpecies = Boolean(activeSpeciesName && activeSpeciesKey);
   const isBackendReadyForConfiguration = (
     backendStatus.configured === true
     && backendStatus.webhookConfigured === true
@@ -69,35 +71,62 @@ export default function SpeciesPredictionSettings() {
     ? 'Select a valid species before saving prediction settings'
     : '';
 
+  const setActiveSpecies = useCallback((speciesName: string) => {
+    const normalizedName = normalizeUiText(speciesName);
+    setActiveSpeciesName(normalizedName);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(activeSpeciesStorageKey(scopeId), normalizedName);
+    }
+  }, [scopeId]);
+
   useEffect(() => {
     if (!isSpeciesPredictionEnabled()) return;
     fetchSpeciesList(scope).then((list) => {
       const normalized = list.map(normalizeUiText).filter(Boolean);
       setSpeciesList(normalized);
-      if (!selectedSpecies && normalized[0]) setSelectedSpecies(normalized[0]);
+      const persistedSpecies = loadPersistedActiveSpecies(scopeId);
+      const nextSpecies = (
+        (persistedSpecies && normalized.includes(persistedSpecies) && persistedSpecies)
+        || (activeSpeciesName && normalized.includes(activeSpeciesName) && activeSpeciesName)
+        || normalized[0]
+        || ''
+      );
+      if (nextSpecies && nextSpecies !== activeSpeciesName) {
+        setActiveSpecies(nextSpecies);
+      }
     });
-  }, [scope, selectedSpecies]);
+  }, [scope, scopeId, activeSpeciesName, setActiveSpecies]);
 
   const loadSpeciesSettings = useCallback(async (speciesName: string) => {
     if (!isSpeciesPredictionEnabled()) return;
     if (!speciesName) return;
+    const normalizedSpeciesName = normalizeUiText(speciesName);
+    const speciesKey = normalizeSpeciesName(normalizedSpeciesName);
     setLoading(true);
     try {
-      const loaded = await loadSpeciesPredictionSettings(scopeId, speciesName);
-      setForm(loaded);
+      const loaded = await loadSpeciesPredictionSettings(scopeId, normalizedSpeciesName);
+      setForm((prev) => {
+        const currentSpeciesName = normalizeUiText(activeSpeciesName);
+        const currentSpeciesKey = normalizeSpeciesName(currentSpeciesName);
+        if (currentSpeciesName !== normalizedSpeciesName || currentSpeciesKey !== speciesKey) {
+          return prev;
+        }
+        return normalizeSpeciesPredictionSettings(loaded, normalizedSpeciesName, scopeId);
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Prediction settings load failed';
       toast.error(message);
     } finally {
       setLoading(false);
     }
-  }, [scopeId]);
+  }, [scopeId, activeSpeciesName]);
 
   useEffect(() => {
     if (!isSpeciesPredictionEnabled()) return;
-    if (!selectedSpecies) return;
-    void loadSpeciesSettings(selectedSpecies);
-  }, [selectedSpecies, loadSpeciesSettings]);
+    if (!activeSpeciesName) return;
+    setForm((prev) => normalizeSpeciesPredictionSettings(prev, activeSpeciesName, scopeId));
+    void loadSpeciesSettings(activeSpeciesName);
+  }, [activeSpeciesName, loadSpeciesSettings, scopeId]);
 
   useEffect(() => {
     if (!isSpeciesPredictionEnabled()) {
@@ -137,8 +166,8 @@ export default function SpeciesPredictionSettings() {
   ), [search, speciesList]);
 
   const patchForm = useCallback((patch: Partial<SpeciesPredictionSettingsModel>) => {
-    setForm((prev) => normalizeSpeciesPredictionSettings({ ...prev, ...patch }, selectedSpecies || prev.speciesName, scopeId));
-  }, [scopeId, selectedSpecies]);
+    setForm((prev) => normalizeSpeciesPredictionSettings({ ...prev, ...patch }, activeSpeciesName || prev.speciesName, scopeId));
+  }, [scopeId, activeSpeciesName]);
 
   const saveForm = async () => {
     console.debug('[speciesPrediction] settings save requested', { enabled: isSpeciesPredictionEnabled() });
@@ -160,7 +189,7 @@ export default function SpeciesPredictionSettings() {
     try {
       const saved = await saveSpeciesPredictionSettings(
         scopeId,
-        normalizeSpeciesPredictionSettings(form, selectedSpecies, scopeId),
+        normalizeSpeciesPredictionSettings(form, activeSpeciesName, scopeId),
         user?.id,
       );
       setForm(saved.settings);
@@ -248,13 +277,13 @@ export default function SpeciesPredictionSettings() {
                             key={species}
                             value={species}
                             onSelect={() => {
-                              setSelectedSpecies(species);
+                              setActiveSpecies(species);
                               setSearch('');
                             }}
-                            className="flex items-center justify-between gap-2"
+                            className={`flex items-center justify-between gap-2 ${activeSpeciesName === species ? 'bg-accent text-accent-foreground' : ''}`}
                           >
                             <span>{species}</span>
-                            {selectedSpecies === species && <Badge variant="outline">Current</Badge>}
+                            {activeSpeciesName === species && <Badge variant="outline">Current</Badge>}
                           </CommandItem>
                         ))}
                       </CommandGroup>
@@ -529,4 +558,13 @@ function NumericField({ id, label, value, min, max, onChange }: NumericFieldProp
       />
     </div>
   );
+}
+
+function activeSpeciesStorageKey(scopeId: SpeciesScopeId): string {
+  return `${ACTIVE_SPECIES_STORAGE_PREFIX}.${scopeId}`;
+}
+
+function loadPersistedActiveSpecies(scopeId: SpeciesScopeId): string {
+  if (typeof window === 'undefined') return '';
+  return normalizeUiText(window.localStorage.getItem(activeSpeciesStorageKey(scopeId)) || '');
 }

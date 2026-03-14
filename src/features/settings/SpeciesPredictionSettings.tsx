@@ -72,7 +72,6 @@ export default function SpeciesPredictionSettings() {
 
   const setActiveSpecies = useCallback((speciesName: string) => {
     const next = setActivePredictionSpecies(scopeId, speciesName);
-    console.debug('[speciesPrediction] settings active species', { scopeId, speciesName: next?.speciesName || speciesName });
     setActiveSpeciesName(next?.speciesName || normalizeUiText(speciesName));
   }, [scopeId]);
 
@@ -184,7 +183,6 @@ export default function SpeciesPredictionSettings() {
   }, [scopeId, activeSpeciesName]);
 
   const saveForm = async () => {
-    console.debug('[speciesPrediction] settings save requested', { enabled: isSpeciesPredictionEnabled() });
     if (!isSpeciesPredictionEnabled()) return;
     if (!predictionFeatureEnabled) return;
     if (!isBackendReadyForConfiguration) {

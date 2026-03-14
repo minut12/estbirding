@@ -21,6 +21,9 @@
   var resultWrap = null;
   var lastSelectionKey = '';
   var hasSyncedSpecies = false;
+  var fallbackSelectionTimer = 0;
+  var startupSyncPending = false;
+  var STORAGE_PREFIX = 'speciesPrediction.activeSpecies';
 
   function detectScope() {
     var path = String((window.location && window.location.pathname) || '');
@@ -153,25 +156,63 @@
 
   function readSelectedSpecies() {
     if (hasSyncedSpecies && state.speciesName) return state.speciesName;
+    var persisted = readPersistedPredictionSpecies();
+    if (persisted) return persisted;
     var selected = String(window.__selectedSpecies || '').trim();
     if (selected) return selected;
     var row = document.querySelector('.row[data-key]');
     return row ? String(row.getAttribute('data-key') || '').trim() : '';
   }
 
+  function readPersistedPredictionSpecies() {
+    try {
+      var stored = String(window.localStorage.getItem(STORAGE_PREFIX + '.' + state.scope) || '').trim();
+      return stored || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function clearFallbackSelectionTimer() {
+    if (!fallbackSelectionTimer) return;
+    window.clearTimeout(fallbackSelectionTimer);
+    fallbackSelectionTimer = 0;
+  }
+
+  function scheduleFallbackSelection() {
+    clearFallbackSelectionTimer();
+    fallbackSelectionTimer = window.setTimeout(function () {
+      fallbackSelectionTimer = 0;
+      if (!state.featureEnabled || hasSyncedSpecies) return;
+      notifySelection(true);
+    }, 250);
+  }
+
   function setFeatureFlags(payload) {
     state.featureEnabled = !!(payload && payload.flags && payload.flags.speciesPredictionEnabled);
     if (!state.featureEnabled) {
+      clearFallbackSelectionTimer();
+      startupSyncPending = false;
+      hasSyncedSpecies = false;
       state.loading = false;
       state.result = null;
       state.error = '';
       destroyPanel();
       return;
     }
+    var persistedSpecies = readPersistedPredictionSpecies();
+    if (persistedSpecies) {
+      state.speciesName = persistedSpecies;
+      state.speciesKey = persistedSpecies;
+      hasSyncedSpecies = true;
+    }
+    startupSyncPending = true;
     ensurePanel();
     render();
     sendReady();
-    notifySelection(true);
+    if (!persistedSpecies) {
+      scheduleFallbackSelection();
+    }
   }
 
   function setContext(payload) {
@@ -185,10 +226,11 @@
 
   function setActiveSpecies(payload) {
     if (!state.featureEnabled) return;
+    clearFallbackSelectionTimer();
+    startupSyncPending = false;
     hasSyncedSpecies = true;
     if (payload && payload.speciesName) state.speciesName = String(payload.speciesName || '').trim();
     if (payload && payload.speciesKey) state.speciesKey = String(payload.speciesKey || '').trim();
-    console.debug('[speciesPrediction][iframe] active species received', { speciesName: state.speciesName, speciesKey: state.speciesKey });
     state.error = '';
     state.result = null;
     ensurePanel();
@@ -229,7 +271,6 @@
     }
     ensurePanel();
     if (!panel) return;
-    console.debug('[speciesPrediction][iframe] render species', { speciesName: state.speciesName, speciesKey: state.speciesKey, hasSyncedSpecies: hasSyncedSpecies });
     speciesLine.textContent = state.speciesName || 'No species selected';
     if (state.loading) statusLine.textContent = 'Loading...';
     else if (state.error) statusLine.textContent = state.error;
@@ -322,7 +363,6 @@
   function sendReady() {
     try {
       if (window.parent && window.parent !== window) {
-        console.debug('[speciesPrediction][iframe] READY sent');
         window.parent.postMessage({
           type: 'SPECIES_PREDICTION_IFRAME_READY',
           scope: state.scope,
@@ -344,9 +384,11 @@
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () {
+      clearFallbackSelectionTimer();
       destroyPanel();
     }, { once: true });
   } else {
+    clearFallbackSelectionTimer();
     destroyPanel();
   }
 })();

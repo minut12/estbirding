@@ -7324,8 +7324,8 @@ window.addEventListener('message', function(ev){
     if(t === 'SPECIES_PREDICTION_ACTIVE_SPECIES'){
       var activeSpecies = String(ev.data.speciesName || ev.data.speciesKey || '').trim();
       if(activeSpecies){
+        window.__predictionSyncedSpecies = activeSpecies;
         window.__selectedSpecies = activeSpecies;
-        console.debug('[speciesPrediction][map:rariliin] active species applied', activeSpecies);
         if(typeof render === 'function') render();
       }
       return;
@@ -7787,7 +7787,12 @@ function render() {
   arr.sort(compareRariliinSidebarSpecies);
   for (const o of arr) list.insertAdjacentHTML('beforeend', rowHTML(o));
   const firstRow = list.querySelector('.row[data-key]');
-  if(firstRow && !window.__selectedSpecies) window.__selectedSpecies = firstRow.getAttribute('data-key') || window.__selectedSpecies;
+  const syncedPredictionSpecies = getPredictionSpeciesPreference();
+  if(syncedPredictionSpecies){
+    window.__selectedSpecies = syncedPredictionSpecies;
+  } else if(firstRow && !window.__selectedSpecies) {
+    window.__selectedSpecies = firstRow.getAttribute('data-key') || window.__selectedSpecies;
+  }
 
   // --- 7-day validation logging ---
   try {
@@ -7826,6 +7831,22 @@ function render() {
   } catch(e){ /* ignore logging errors */ }
 }
 
+function getPredictionSpeciesPreference(){
+  try{
+    const synced = String(window.__predictionSyncedSpecies || '').trim();
+    if(synced) return synced;
+    const persisted = String(localStorage.getItem('speciesPrediction.activeSpecies.rariliin') || '').trim();
+    return persisted || '';
+  }catch(e){
+    return String(window.__predictionSyncedSpecies || '').trim();
+  }
+}
+
+window.__predictionSyncedSpecies = getPredictionSpeciesPreference();
+if(window.__predictionSyncedSpecies && !window.__selectedSpecies){
+  window.__selectedSpecies = window.__predictionSyncedSpecies;
+}
+
 (function bindSpringInlineEditDelegation(){
   if (window.__springInlineEditBound) return;
   window.__springInlineEditBound = true;
@@ -7837,6 +7858,7 @@ function render() {
     const row = t.closest?.('.row[data-key]');
     if(row){
       window.__selectedSpecies = row.getAttribute('data-key') || window.__selectedSpecies;
+      window.__predictionSyncedSpecies = window.__selectedSpecies;
     }
     const openBtn = t.closest?.('.open-occ-btn');
     if(openBtn){

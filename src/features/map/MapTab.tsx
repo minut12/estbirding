@@ -62,6 +62,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   const [error, setError] = useState<string | null>(null);
   const iframeReadyRef = useRef(false);
   const iframePredictionReadyRef = useRef(false);
+  const iframePredictionStartupGuardRef = useRef<{ active: boolean; speciesName: string }>({ active: false, speciesName: '' });
   const lastAutoRefreshRef = useRef(0);
   const activePredictionSpecies = useMemo(() => {
     const scopeCfg = getSpeciesScopeByMapId(current.id);
@@ -172,7 +173,6 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   }, [sendToIframe]);
   const sendActivePredictionSpeciesToIframe = useCallback((species: ActivePredictionSpecies | null) => {
     if (!species || !iframePredictionReadyRef.current) return;
-    console.debug('[speciesPrediction] parent -> iframe species', { scope: species.scope, speciesName: species.speciesName, speciesKey: species.speciesKey });
     sendToIframe({
       type: ACTIVE_PREDICTION_SPECIES_MESSAGE,
       scope: species.scope,
@@ -279,9 +279,12 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       if (ev.data?.type === ACTIVE_PREDICTION_IFRAME_READY_MESSAGE) {
         iframePredictionReadyRef.current = true;
         const scopeCfg = getSpeciesScopeByMapId(current.id);
-        console.debug('[speciesPrediction] iframe READY', { mapId: current.id, scope: scopeCfg?.id || null });
         if (!scopeCfg) return;
         const species = getActivePredictionSpecies(scopeCfg.id);
+        iframePredictionStartupGuardRef.current = {
+          active: Boolean(species?.speciesName),
+          speciesName: species?.speciesName || '',
+        };
         if (species) {
           sendActivePredictionSpeciesToIframe(species);
           if (isSpeciesPredictionEnabled()) {
@@ -302,6 +305,11 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
         const speciesName = typeof ev.data.speciesName === 'string' ? ev.data.speciesName : '';
         const speciesKey = typeof ev.data.speciesKey === 'string' ? ev.data.speciesKey : '';
         if (!scopeCfg || !speciesName) return;
+        const startupGuard = iframePredictionStartupGuardRef.current;
+        if (startupGuard.active && startupGuard.speciesName && speciesName !== startupGuard.speciesName) {
+          return;
+        }
+        iframePredictionStartupGuardRef.current = { active: false, speciesName };
         setActivePredictionSpecies(scopeCfg.id, speciesName);
         const predictionFeatureEnabled = isSpeciesPredictionEnabled();
         if (!predictionFeatureEnabled) return;
@@ -365,6 +373,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     if (!scopeCfg) return;
     const syncSpecies = (species: ActivePredictionSpecies | null) => {
       if (!species || species.scope !== scopeCfg.id) return;
+      iframePredictionStartupGuardRef.current = { active: false, speciesName: species.speciesName };
       sendActivePredictionSpeciesToIframe(species);
       if (isSpeciesPredictionEnabled()) {
         sendPredictionContextToIframe(scopeCfg, species.speciesName, species.speciesKey);
@@ -423,6 +432,12 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     setError(null);
     iframeReadyRef.current = true;
     iframePredictionReadyRef.current = false;
+    const scopeCfg = getSpeciesScopeByMapId(current.id);
+    const species = scopeCfg ? getActivePredictionSpecies(scopeCfg.id) : null;
+    iframePredictionStartupGuardRef.current = {
+      active: Boolean(species?.speciesName),
+      speciesName: species?.speciesName || '',
+    };
     sendMapShown();
     // Send avatars and insets when iframe loads
     setTimeout(sendAvatarsToIframe, 300);

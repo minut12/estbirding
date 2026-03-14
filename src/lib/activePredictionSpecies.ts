@@ -38,3 +38,7 @@ export function setActivePredictionSpecies(scope: SpeciesScopeId, speciesName: s
 function storageKey(scope: SpeciesScopeId): string {
   return `${STORAGE_PREFIX}.${scope}`;
 }
+
+export function getActivePredictionSpeciesStorageKey(scope: SpeciesScopeId): string {
+  return storageKey(scope);
+}

@@ -62,6 +62,22 @@ export type PredictedPoint = {
   reason: string;
 };
 
+export type PredictionConsistencyChecks = {
+  routeLooksPlausible: boolean;
+  timingLooksPlausible: boolean;
+  weatherLooksSupportive: boolean;
+  foreignPressureMatchesNarrative: boolean;
+};
+
+export type SpeciesPredictionAnalysis = {
+  analysisVersion: string;
+  insightSummary: string;
+  confidenceNote?: string;
+  warnings?: string[];
+  rerankedTopPredictedPoints?: PredictedPoint[];
+  consistencyChecks: PredictionConsistencyChecks;
+};
+
 export type SpeciesPredictionResult = {
   speciesKey: string;
   speciesName: string;
@@ -83,6 +99,13 @@ export type SpeciesPredictionResult = {
   };
   topPredictedPoints: PredictedPoint[];
   insightSummary?: string;
+  analysisVersion?: string;
+  analysisFallbackUsed?: boolean;
+  confidenceNote?: string;
+  warnings?: string[];
+  rerankedTopPredictedPoints?: PredictedPoint[];
+  consistencyChecks?: PredictionConsistencyChecks;
+  openaiAnalysis?: SpeciesPredictionAnalysis;
   rawResearchPayload?: Record<string, unknown>;
 };
 
@@ -241,6 +264,15 @@ export function normalizeSpeciesPredictionResult(
       .map((point, index) => normalizePredictedPoint(point, index))
       .filter((point) => point.name || point.countyOrParish || (point.lat !== 0 || point.lon !== 0))
     : [];
+  const rerankedTopPredictedPoints = Array.isArray(input?.rerankedTopPredictedPoints)
+    ? input.rerankedTopPredictedPoints
+      .map((point, index) => normalizePredictedPoint(point, index))
+      .filter((point) => point.name || point.countyOrParish || (point.lat !== 0 || point.lon !== 0))
+    : [];
+  const warnings = Array.isArray(input?.warnings)
+    ? input.warnings.map((warning) => normalizeUiText(String(warning || ''))).filter(Boolean)
+    : [];
+  const openaiAnalysis = normalizeSpeciesPredictionAnalysis(input?.openaiAnalysis);
   return {
     speciesKey,
     speciesName: normalizeUiText(input?.speciesName || normalizedName),
@@ -264,6 +296,13 @@ export function normalizeSpeciesPredictionResult(
     },
     topPredictedPoints,
     ...(input?.insightSummary ? { insightSummary: normalizeUiText(input.insightSummary) } : {}),
+    ...(input?.analysisVersion ? { analysisVersion: normalizeUiText(input.analysisVersion) } : {}),
+    ...(typeof input?.analysisFallbackUsed === 'boolean' ? { analysisFallbackUsed: input.analysisFallbackUsed } : {}),
+    ...(input?.confidenceNote ? { confidenceNote: normalizeUiText(input.confidenceNote) } : {}),
+    ...(warnings.length ? { warnings } : {}),
+    ...(rerankedTopPredictedPoints.length ? { rerankedTopPredictedPoints } : {}),
+    ...(input?.consistencyChecks ? { consistencyChecks: normalizePredictionConsistencyChecks(input.consistencyChecks) } : {}),
+    ...(openaiAnalysis ? { openaiAnalysis } : {}),
     ...(input?.rawResearchPayload ? { rawResearchPayload: input.rawResearchPayload } : {}),
   };
 }
@@ -328,5 +367,41 @@ function normalizePredictedPoint(point: Partial<PredictedPoint> | null | undefin
     searchRadiusKm: clampNumber(point?.searchRadiusKm, 0, 500, 0),
     habitatCue: normalizeUiText(point?.habitatCue || ''),
     reason: normalizeUiText(point?.reason || ''),
+  };
+}
+
+function normalizePredictionConsistencyChecks(
+  input: Partial<PredictionConsistencyChecks> | null | undefined,
+): PredictionConsistencyChecks {
+  return {
+    routeLooksPlausible: input?.routeLooksPlausible === true,
+    timingLooksPlausible: input?.timingLooksPlausible === true,
+    weatherLooksSupportive: input?.weatherLooksSupportive === true,
+    foreignPressureMatchesNarrative: input?.foreignPressureMatchesNarrative === true,
+  };
+}
+
+function normalizeSpeciesPredictionAnalysis(
+  input: Partial<SpeciesPredictionAnalysis> | null | undefined,
+): SpeciesPredictionAnalysis | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const rerankedTopPredictedPoints = Array.isArray(input.rerankedTopPredictedPoints)
+    ? input.rerankedTopPredictedPoints
+      .map((point, index) => normalizePredictedPoint(point, index))
+      .filter((point) => point.name || point.countyOrParish || (point.lat !== 0 || point.lon !== 0))
+    : [];
+  const warnings = Array.isArray(input.warnings)
+    ? input.warnings.map((warning) => normalizeUiText(String(warning || ''))).filter(Boolean)
+    : [];
+  const analysisVersion = normalizeUiText(input.analysisVersion || '');
+  const insightSummary = normalizeUiText(input.insightSummary || '');
+  if (!analysisVersion || !insightSummary) return undefined;
+  return {
+    analysisVersion,
+    insightSummary,
+    ...(input.confidenceNote ? { confidenceNote: normalizeUiText(input.confidenceNote) } : {}),
+    ...(warnings.length ? { warnings } : {}),
+    ...(rerankedTopPredictedPoints.length ? { rerankedTopPredictedPoints } : {}),
+    consistencyChecks: normalizePredictionConsistencyChecks(input.consistencyChecks),
   };
 }

@@ -84,6 +84,16 @@ The app translates non-Estonian news into Estonian via a translation HTTP endpoi
 - Runtime override is also available in app Settings (`Translation API URL`) and is stored in localStorage.
 - The client never calls OpenAI directly.
 
+## Species prediction OpenAI analysis
+
+Species prediction keeps OpenAI server-side only:
+
+- App -> Supabase Edge Function -> n8n -> OpenAI
+- Never expose `OPENAI_API_KEY` in client-side code
+- Configure `OPENAI_API_KEY` in n8n or another server-side secret store
+- Optionally set `OPENAI_MODEL`; species prediction defaults to `gpt-5-mini`
+- If the OpenAI stage fails, the app falls back to the deterministic prediction result
+
 ## CORS Proxy (Supabase Edge Function)
 
 Use the Supabase Edge Function proxy for cross-origin bird data requests.

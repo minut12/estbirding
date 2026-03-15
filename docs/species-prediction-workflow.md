@@ -4,6 +4,7 @@
 - Receive one selected-species prediction request from the Supabase edge function.
 - Fetch species-specific research inputs from foreign sightings, Elurikkus history, Estonia recent records, and weather.
 - Score them into the same response shape the app already expects.
+- Run a server-side OpenAI refinement step on top of the deterministic result.
 - Keep everything single-species only. No aggregation across species.
 
 ## Files
@@ -25,6 +26,9 @@
 - `SPECIES_PREDICTION_N8N_WEBHOOK_URL`
   - Stored in Supabase Edge Function env, not in the app.
   - Current production value: `https://estbirds.app.n8n.cloud/webhook/species-prediction`
+- n8n/server-side OpenAI config:
+  - `OPENAI_API_KEY`
+  - `OPENAI_MODEL` optional, defaults to `gpt-5-mini`
 - Optional Supabase edge function auth passthrough:
   - `SPECIES_PREDICTION_N8N_AUTH_HEADER`
   - `SPECIES_PREDICTION_N8N_AUTH_VALUE`
@@ -99,23 +103,46 @@
   - `bestEntryZone`
   - `alreadyMissedRisk`
   - `topPredictedPoints`
+  - `openAIAnalysisInput`
 - Rules preserved:
   - source priority is Latvia, Lithuania, Belarus, Poland, Russia
   - Finland is context only
   - exact hotspots are preferred whenever coordinates exist
   - request remains per selected species only
 
-9. `summary_placeholder_gate`
+9. `openai_analysis_gate`
 - `IF`
-- Allows `prediction` requests to return directly while insight-capable requests pass through a placeholder summary step.
+- Allows `prediction` requests to return directly while insight-capable requests pass through a server-side OpenAI analysis step.
 
-10. `summary_placeholder`
-- `Set`
-- Placeholder only. Replace with an LLM/OpenAI step if you want richer natural-language summaries.
+10. `openai_analysis_request`
+- `HTTP Request`
+- Sends only the factual payload produced earlier plus `topPredictedPoints` to OpenAI.
+- Uses strict JSON schema instructions.
+- OpenAI may only rerank or rewrite the provided candidate points.
 
-11. `final_response`
+11. `parse_openai_analysis`
+- `Code`
+- Parses and validates the model response.
+- Rejects any coordinate pair not already present in deterministic `topPredictedPoints`.
+- Falls back to deterministic output if parsing or validation fails.
+
+12. `merge_openai_analysis`
+- `Code`
+- Mirrors successful OpenAI summary into top-level `insightSummary`.
+- Adds `analysisVersion`, `analysisFallbackUsed`, `confidenceNote`, `warnings`, `rerankedTopPredictedPoints`, `consistencyChecks`, and `openaiAnalysis`.
+- Keeps all existing deterministic fields unchanged.
+
+13. `final_response`
 - `Respond to Webhook`
 - Returns the JSON payload expected by the Supabase edge function.
+
+## OpenAI Constraints
+- Only use the provided evidence payload.
+- Never invent extra countries, coordinates, hotspots, or sightings.
+- Only reorder or adjust the provided deterministic candidate points.
+- Keep the summary short and useful for birding in the field.
+- If the signals are contradictory, flag that clearly in `warnings` and `confidenceNote`.
+- If OpenAI fails, return the deterministic result with `analysisFallbackUsed: true`.
 
 ## Expected Webhook Request
 The edge function posts this shape:
@@ -174,7 +201,35 @@ This must stay stable because the app and edge function already normalize it:
     "finlandContextOnly": 11
   },
   "topPredictedPoints": [],
-  "insightSummary": "Suur-laukhani: strongest spring driver is latvia pressure, spring fit is 76/100, wind support is 68/100.",
+  "insightSummary": "Southwest Estonia still looks best, especially wet coastal stopovers backed by Latvia pressure and supportive SSE winds.",
+  "analysisVersion": "openai_v1",
+  "analysisFallbackUsed": false,
+  "confidenceNote": "Confidence is moderate because the route setup is supportive, but Estonia still has limited recent presence.",
+  "warnings": [
+    "Recent Estonia confirmations are still sparse."
+  ],
+  "rerankedTopPredictedPoints": [],
+  "consistencyChecks": {
+    "routeLooksPlausible": true,
+    "timingLooksPlausible": true,
+    "weatherLooksSupportive": true,
+    "foreignPressureMatchesNarrative": true
+  },
+  "openaiAnalysis": {
+    "analysisVersion": "openai_v1",
+    "insightSummary": "Southwest Estonia still looks best, especially wet coastal stopovers backed by Latvia pressure and supportive SSE winds.",
+    "confidenceNote": "Confidence is moderate because the route setup is supportive, but Estonia still has limited recent presence.",
+    "warnings": [
+      "Recent Estonia confirmations are still sparse."
+    ],
+    "rerankedTopPredictedPoints": [],
+    "consistencyChecks": {
+      "routeLooksPlausible": true,
+      "timingLooksPlausible": true,
+      "weatherLooksSupportive": true,
+      "foreignPressureMatchesNarrative": true
+    }
+  },
   "rawResearchPayload": {}
 }
 ```
@@ -186,9 +241,11 @@ This must stay stable because the app and edge function already normalize it:
   - `REPLACE_ESTONIA_RECENT_ENDPOINT`
   - `REPLACE_WEATHER_ENDPOINT`
 - Configure credentials or signed headers for those sources if needed.
-- Optionally replace `summary_placeholder` with a real OpenAI or other summary node.
+- Configure OpenAI credentials in n8n and map `OPENAI_API_KEY`.
+- Optionally set `OPENAI_MODEL` if you do not want the default `gpt-5-mini`.
 
 ## Notes
 - This workflow artifact does not change the app contract.
 - The app still talks only to the Supabase edge function.
 - The edge function still talks only to the n8n webhook URL set in Supabase env.
+- The frontend never calls OpenAI directly.

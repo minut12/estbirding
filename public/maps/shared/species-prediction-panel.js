@@ -77,6 +77,9 @@
       '#speciesPredictionPanel .spp-country{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;font-size:11px;color:#334155}' +
       '#speciesPredictionPanel .spp-point{border-top:1px solid #eef2f7;padding-top:8px;margin-top:8px}' +
       '#speciesPredictionPanel .spp-point:first-child{border-top:0;padding-top:0;margin-top:0}' +
+      '#speciesPredictionPanel .spp-warning-list{display:grid;gap:6px;margin-top:8px;padding-left:18px;color:#7c2d12}' +
+      '#speciesPredictionPanel .spp-checks{display:grid;gap:6px;margin-top:8px;font-size:11px;color:#334155}' +
+      '#speciesPredictionPanel .spp-note{font-size:11px;color:#64748b;margin-top:8px}' +
       '#speciesPredictionPanel.is-collapsed .spp-body{display:none}' +
       '#speciesPredictionPanel .spp-toggle{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:600;color:#0f172a;cursor:pointer}' +
       '@media (max-width: 900px){#speciesPredictionPanel{left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));width:auto}}';
@@ -295,9 +298,25 @@
     }
 
     var result = state.result;
+    var analysis = result.openaiAnalysis || null;
+    var summaryText = (analysis && analysis.insightSummary) || result.insightSummary || '';
+    var confidenceNote = (analysis && analysis.confidenceNote) || result.confidenceNote || '';
+    var warnings = normalizeStringArray((analysis && analysis.warnings) || result.warnings);
+    var consistencyChecks = (analysis && analysis.consistencyChecks) || result.consistencyChecks || null;
+    var preferredPoints = Array.isArray((analysis && analysis.rerankedTopPredictedPoints) || result.rerankedTopPredictedPoints)
+      && ((analysis && analysis.rerankedTopPredictedPoints) || result.rerankedTopPredictedPoints).length
+      ? ((analysis && analysis.rerankedTopPredictedPoints) || result.rerankedTopPredictedPoints)
+      : result.topPredictedPoints;
     var html = '';
-    if (result.insightSummary) {
-      html += '<div class="spp-card"><h4>Insight summary</h4><p>' + escapeHtml(result.insightSummary) + '</p></div>';
+    if (summaryText) {
+      html += '<div class="spp-card"><h4>Insight summary</h4><p>' + escapeHtml(summaryText) + '</p>';
+      if (confidenceNote) {
+        html += '<p class="spp-note">' + escapeHtml(confidenceNote) + '</p>';
+      }
+      if (result.analysisFallbackUsed) {
+        html += '<p class="spp-note">OpenAI analysis unavailable; showing deterministic summary.</p>';
+      }
+      html += '</div>';
     }
     html += '<div class="spp-card"><h4>Route fit</h4><div class="spp-meta">' +
       '<div>External pressure: <strong>' + escapeHtml(result.externalPressureScore) + '</strong></div>' +
@@ -307,6 +326,21 @@
       '<div>Route vector: <strong>' + escapeHtml(result.routeVector) + '</strong></div>' +
       '<div>Best entry zone: <strong>' + escapeHtml(result.bestEntryZone) + '</strong></div>' +
       '</div></div>';
+    if (warnings.length) {
+      html += '<div class="spp-card"><h4>Warnings</h4><ul class="spp-warning-list">';
+      warnings.forEach(function (warning) {
+        html += '<li>' + escapeHtml(warning) + '</li>';
+      });
+      html += '</ul></div>';
+    }
+    if (consistencyChecks) {
+      html += '<div class="spp-card"><h4>Consistency checks</h4><div class="spp-checks">' +
+        checkCell('Route looks plausible', consistencyChecks.routeLooksPlausible) +
+        checkCell('Timing looks plausible', consistencyChecks.timingLooksPlausible) +
+        checkCell('Weather looks supportive', consistencyChecks.weatherLooksSupportive) +
+        checkCell('Foreign pressure matches narrative', consistencyChecks.foreignPressureMatchesNarrative) +
+        '</div></div>';
+    }
     html += '<div class="spp-card"><h4>Country scores</h4><div class="spp-country">' +
       scoreCell('Latvia', result.countryScores && result.countryScores.latvia) +
       scoreCell('Lithuania', result.countryScores && result.countryScores.lithuania) +
@@ -315,11 +349,11 @@
       scoreCell('Russia', result.countryScores && result.countryScores.russia) +
       (result.countryScores && result.countryScores.finlandContextOnly != null ? scoreCell('Finland context only', result.countryScores.finlandContextOnly) : '') +
       '</div></div>';
-    html += '<div class="spp-card"><h4>Top predicted points</h4>';
-    if (!result.topPredictedPoints || !result.topPredictedPoints.length) {
+    html += '<div class="spp-card"><h4>' + escapeHtml(preferredPoints !== result.topPredictedPoints ? 'Reranked predicted points' : 'Top predicted points') + '</h4>';
+    if (!preferredPoints || !preferredPoints.length) {
       html += '<p>No precise hotspot results returned.</p>';
     } else {
-      result.topPredictedPoints.forEach(function (point) {
+      preferredPoints.forEach(function (point) {
         html += '<div class="spp-point">' +
           '<p><strong>#' + escapeHtml(point.rank) + ' ' + escapeHtml(point.name) + '</strong></p>' +
           '<p>' + escapeHtml(point.countyOrParish || 'County/parish unavailable') + '</p>' +
@@ -342,9 +376,18 @@
     return '<div>' + escapeHtml(label) + ': <strong>' + escapeHtml(value == null ? 0 : value) + '</strong></div>';
   }
 
+  function checkCell(label, value) {
+    return '<div>' + escapeHtml(label) + ': <strong>' + escapeHtml(value ? 'Yes' : 'No') + '</strong></div>';
+  }
+
   function formatCoords(lat, lon) {
     if (!isFiniteNumber(lat) || !isFiniteNumber(lon)) return 'Coordinates unavailable';
     return String(Number(lat).toFixed(5)) + ', ' + String(Number(lon).toFixed(5));
+  }
+
+  function normalizeStringArray(values) {
+    if (!Array.isArray(values)) return [];
+    return values.map(function (value) { return String(value || '').trim(); }).filter(Boolean);
   }
 
   function isFiniteNumber(value) {

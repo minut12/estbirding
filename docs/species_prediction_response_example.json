@@ -42,7 +42,85 @@
       "reason": "Historical hotspot support and favorable SSE wind"
     }
   ],
-  "insightSummary": "Suur-laukhani: strongest spring driver is latvia pressure, spring fit is 76/100, wind support is 68/100.",
+  "insightSummary": "Southwest Estonia still looks best, especially Matsalu-type coastal wetlands if Latvia pressure remains active over the next 24-48 hours.",
+  "analysisVersion": "openai_v1",
+  "analysisFallbackUsed": false,
+  "confidenceNote": "Confidence is moderate because route pressure and wind align, but Estonia still has only light recent presence.",
+  "warnings": [
+    "Recent Estonia confirmations are still limited."
+  ],
+  "rerankedTopPredictedPoints": [
+    {
+      "rank": 1,
+      "name": "Matsalu, Keemu vaatetorn",
+      "countyOrParish": "Laaneranna",
+      "lat": 58.7604,
+      "lon": 23.6219,
+      "confidence": 88,
+      "eta": "24-48h",
+      "searchRadiusKm": 5,
+      "habitatCue": "coastal wetlands and flooded meadows",
+      "reason": "Best fit for the current Latvia pressure, spring timing, and shallow wetland feeding pattern."
+    },
+    {
+      "rank": 2,
+      "name": "Haeska vaatetorn",
+      "countyOrParish": "Haapsalu",
+      "lat": 58.8142,
+      "lon": 23.4789,
+      "confidence": 79,
+      "eta": "48-72h",
+      "searchRadiusKm": 5,
+      "habitatCue": "shallow bay feeding areas",
+      "reason": "Still strong, but slightly behind Matsalu because recent Estonia confirmation remains thin."
+    }
+  ],
+  "consistencyChecks": {
+    "routeLooksPlausible": true,
+    "timingLooksPlausible": true,
+    "weatherLooksSupportive": true,
+    "foreignPressureMatchesNarrative": true
+  },
+  "openaiAnalysis": {
+    "analysisVersion": "openai_v1",
+    "insightSummary": "Southwest Estonia still looks best, especially Matsalu-type coastal wetlands if Latvia pressure remains active over the next 24-48 hours.",
+    "confidenceNote": "Confidence is moderate because route pressure and wind align, but Estonia still has only light recent presence.",
+    "warnings": [
+      "Recent Estonia confirmations are still limited."
+    ],
+    "rerankedTopPredictedPoints": [
+      {
+        "rank": 1,
+        "name": "Matsalu, Keemu vaatetorn",
+        "countyOrParish": "Laaneranna",
+        "lat": 58.7604,
+        "lon": 23.6219,
+        "confidence": 88,
+        "eta": "24-48h",
+        "searchRadiusKm": 5,
+        "habitatCue": "coastal wetlands and flooded meadows",
+        "reason": "Best fit for the current Latvia pressure, spring timing, and shallow wetland feeding pattern."
+      },
+      {
+        "rank": 2,
+        "name": "Haeska vaatetorn",
+        "countyOrParish": "Haapsalu",
+        "lat": 58.8142,
+        "lon": 23.4789,
+        "confidence": 79,
+        "eta": "48-72h",
+        "searchRadiusKm": 5,
+        "habitatCue": "shallow bay feeding areas",
+        "reason": "Still strong, but slightly behind Matsalu because recent Estonia confirmation remains thin."
+      }
+    ],
+    "consistencyChecks": {
+      "routeLooksPlausible": true,
+      "timingLooksPlausible": true,
+      "weatherLooksSupportive": true,
+      "foreignPressureMatchesNarrative": true
+    }
+  },
   "rawResearchPayload": {
     "request": {
       "requestType": "prediction_and_insight",

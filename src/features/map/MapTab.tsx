@@ -64,6 +64,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   const iframeReadyRef = useRef(false);
   const iframePredictionReadyRef = useRef(false);
   const iframePredictionStartupGuardRef = useRef<{ active: boolean; speciesName: string }>({ active: false, speciesName: '' });
+  const latestPredictionRequestRef = useRef(0);
   const lastAutoRefreshRef = useRef(0);
   const activePredictionSpecies = useMemo(() => {
     const scopeCfg = getSpeciesScopeByMapId(current.id);
@@ -311,6 +312,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
           return;
         }
         iframePredictionStartupGuardRef.current = { active: false, speciesName };
+        latestPredictionRequestRef.current += 1;
         setActivePredictionSpecies(scopeCfg.id, speciesName);
         const predictionFeatureEnabled = isSpeciesPredictionEnabled();
         if (!predictionFeatureEnabled) return;
@@ -331,6 +333,8 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
           });
           return;
         }
+        const requestId = latestPredictionRequestRef.current + 1;
+        latestPredictionRequestRef.current = requestId;
         sendToIframe({ type: SPECIES_PREDICTION_EVENT_TYPES.loading });
         loadSpeciesPredictionSettings(scopeCfg.id, speciesName)
           .then(async (settings) => {
@@ -366,6 +370,15 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
               outputCount: payload.settings.outputCount,
             });
             const response = await runSpeciesPredictionRequest(payload, scopeCfg.id);
+            if (latestPredictionRequestRef.current !== requestId) {
+              console.debug('[speciesPrediction] ignoring stale response', {
+                scope: scopeCfg.id,
+                speciesKey: payload.species.key,
+                speciesName: payload.species.name,
+                requestId,
+              });
+              return;
+            }
             if (!response.ok || !response.result) {
               console.warn('[speciesPrediction] runtime request failed', {
                 scope: scopeCfg.id,
@@ -380,12 +393,29 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
               });
               return;
             }
+            console.debug('[speciesPrediction] parent -> iframe result', {
+              scope: scopeCfg.id,
+              speciesKey: response.result.speciesKey,
+              generatedAt: response.result.generatedAt,
+              analysisVersion: response.result.analysisVersion || response.result.openaiAnalysis?.analysisVersion || null,
+              hasInsightSummary: Boolean(response.result.insightSummary?.trim()),
+              countryScores: response.result.countryScores,
+              topPredictedPoints: response.result.topPredictedPoints.slice(0, 3).map((point) => ({
+                rank: point.rank,
+                name: point.name,
+                confidence: point.confidence,
+                reason: point.reason,
+              })),
+            });
             sendToIframe({
               type: SPECIES_PREDICTION_EVENT_TYPES.result,
               result: response.result,
             });
           })
           .catch((predictionError: unknown) => {
+            if (latestPredictionRequestRef.current !== requestId) {
+              return;
+            }
             sendToIframe({
               type: SPECIES_PREDICTION_EVENT_TYPES.error,
               error: predictionError instanceof Error ? predictionError.message : 'Prediction request failed',

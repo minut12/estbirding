@@ -253,7 +253,7 @@
     if (!state.featureEnabled) return;
     state.loading = false;
     state.error = '';
-    state.result = result || null;
+    state.result = result ? cloneResult(result) : null;
     ensurePanel();
     render();
   }
@@ -298,18 +298,36 @@
     }
 
     var result = state.result;
-    var analysis = result.openaiAnalysis || null;
-    var summaryText = (analysis && analysis.insightSummary) || result.insightSummary || '';
-    var confidenceNote = (analysis && analysis.confidenceNote) || result.confidenceNote || '';
-    var warnings = normalizeStringArray((analysis && analysis.warnings) || result.warnings);
-    var consistencyChecks = (analysis && analysis.consistencyChecks) || result.consistencyChecks || null;
-    var preferredPoints = Array.isArray((analysis && analysis.rerankedTopPredictedPoints) || result.rerankedTopPredictedPoints)
-      && ((analysis && analysis.rerankedTopPredictedPoints) || result.rerankedTopPredictedPoints).length
-      ? ((analysis && analysis.rerankedTopPredictedPoints) || result.rerankedTopPredictedPoints)
-      : result.topPredictedPoints;
+    var summaryText = normalizeText(result.insightSummary);
+    var fallbackSummaryText = normalizeText(result.openaiAnalysis && result.openaiAnalysis.insightSummary);
+    var confidenceNote = normalizeText(result.confidenceNote) || normalizeText(result.openaiAnalysis && result.openaiAnalysis.confidenceNote);
+    var warnings = normalizeStringArray(result.warnings);
+    if (!warnings.length) warnings = normalizeStringArray(result.openaiAnalysis && result.openaiAnalysis.warnings);
+    var consistencyChecks = result.consistencyChecks || (result.openaiAnalysis && result.openaiAnalysis.consistencyChecks) || null;
+    var preferredPoints = Array.isArray(result.topPredictedPoints) && result.topPredictedPoints.length
+      ? result.topPredictedPoints
+      : (Array.isArray(result.rerankedTopPredictedPoints) ? result.rerankedTopPredictedPoints : []);
+    if (!preferredPoints.length && result.openaiAnalysis && Array.isArray(result.openaiAnalysis.rerankedTopPredictedPoints)) {
+      preferredPoints = result.openaiAnalysis.rerankedTopPredictedPoints;
+    }
+    console.debug('[speciesPrediction] panel render state', {
+      speciesKey: result.speciesKey || state.speciesKey || '',
+      generatedAt: result.generatedAt || null,
+      analysisVersion: result.analysisVersion || (result.openaiAnalysis && result.openaiAnalysis.analysisVersion) || null,
+      insightSummary: (summaryText || fallbackSummaryText || '').slice(0, 140),
+      countryScores: result.countryScores || null,
+      topPredictedPoints: (preferredPoints || []).slice(0, 3).map(function (point) {
+        return {
+          rank: point && point.rank,
+          name: point && point.name,
+          confidence: point && point.confidence,
+          reason: point && point.reason,
+        };
+      }),
+    });
     var html = '';
-    if (summaryText) {
-      html += '<div class="spp-card"><h4>Insight summary</h4><p>' + escapeHtml(summaryText) + '</p>';
+    if (summaryText || fallbackSummaryText) {
+      html += '<div class="spp-card"><h4>Insight summary</h4><p>' + escapeHtml(summaryText || fallbackSummaryText) + '</p>';
       if (confidenceNote) {
         html += '<p class="spp-note">' + escapeHtml(confidenceNote) + '</p>';
       }
@@ -349,7 +367,7 @@
       scoreCell('Russia', result.countryScores && result.countryScores.russia) +
       (result.countryScores && result.countryScores.finlandContextOnly != null ? scoreCell('Finland context only', result.countryScores.finlandContextOnly) : '') +
       '</div></div>';
-    html += '<div class="spp-card"><h4>' + escapeHtml(preferredPoints !== result.topPredictedPoints ? 'Reranked predicted points' : 'Top predicted points') + '</h4>';
+    html += '<div class="spp-card"><h4>Top predicted points</h4>';
     if (!preferredPoints || !preferredPoints.length) {
       html += '<p>No precise hotspot results returned.</p>';
     } else {
@@ -359,7 +377,7 @@
           '<p>' + escapeHtml(point.countyOrParish || 'County/parish unavailable') + '</p>' +
           '<p>' + escapeHtml(formatCoords(point.lat, point.lon)) + '</p>' +
           '<div class="spp-meta">' +
-          '<div>Confidence: <strong>' + escapeHtml(point.confidence) + '</strong></div>' +
+          '<div>Confidence: <strong>' + escapeHtml(formatConfidence(point.confidence)) + '</strong></div>' +
           '<div>ETA: <strong>' + escapeHtml(point.eta) + '</strong></div>' +
           '<div>Radius: <strong>' + escapeHtml(point.searchRadiusKm) + ' km</strong></div>' +
           '<div>Habitat: <strong>' + escapeHtml(point.habitatCue) + '</strong></div>' +
@@ -390,8 +408,26 @@
     return values.map(function (value) { return String(value || '').trim(); }).filter(Boolean);
   }
 
+  function normalizeText(value) {
+    return String(value || '').trim();
+  }
+
   function isFiniteNumber(value) {
     return typeof value === 'number' && isFinite(value);
+  }
+
+  function formatConfidence(value) {
+    var n = Number(value);
+    if (!isFiniteNumber(n)) return '0%';
+    return String(Math.round(n * 100)) + '%';
+  }
+
+  function cloneResult(result) {
+    try {
+      return JSON.parse(JSON.stringify(result));
+    } catch (e) {
+      return result;
+    }
   }
 
   function escapeHtml(value) {

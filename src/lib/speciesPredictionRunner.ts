@@ -23,6 +23,7 @@ export async function runSpeciesPredictionRequest(
     const { data, error } = await supabase.functions.invoke('species-prediction', {
       body: payload,
     });
+    console.debug('[speciesPrediction] raw backend response', summarizePredictionPayload(data, payload.species.key));
     if (error) throw error;
     if (isErrorEnvelope(data)) {
       return {
@@ -41,7 +42,9 @@ export async function runSpeciesPredictionRequest(
     }
     return {
       ok: true,
-      result: normalizeSpeciesPredictionResult(sourceResult, payload.species.name, scope),
+      result: logNormalizedPredictionResult(
+        normalizeSpeciesPredictionResult(sourceResult, payload.species.name, scope),
+      ),
     };
   } catch (error: unknown) {
     const message = resolvePredictionErrorMessage(error);
@@ -51,6 +54,53 @@ export async function runSpeciesPredictionRequest(
       error: message,
     };
   }
+}
+
+function logNormalizedPredictionResult(result: SpeciesPredictionResult): SpeciesPredictionResult {
+  console.debug('[speciesPrediction] normalized response', summarizePredictionResult(result));
+  return result;
+}
+
+function summarizePredictionPayload(data: unknown, speciesKey: string) {
+  const candidate = (data && typeof data === 'object' && !Array.isArray(data)) ? data as Record<string, unknown> : {};
+  const result = isWrappedSuccessEnvelope(data)
+    ? candidate.result
+    : candidate;
+  const record = (result && typeof result === 'object' && !Array.isArray(result)) ? result as Record<string, unknown> : {};
+  const points = Array.isArray(record.topPredictedPoints) ? record.topPredictedPoints : [];
+  return {
+    speciesKey,
+    generatedAt: typeof record.generatedAt === 'string' ? record.generatedAt : null,
+    analysisVersion: typeof record.analysisVersion === 'string' ? record.analysisVersion : null,
+    hasInsightSummary: Boolean(typeof record.insightSummary === 'string' && record.insightSummary.trim()),
+    topPredictedPoints: points.slice(0, 3).map(summarizePoint),
+  };
+}
+
+function summarizePredictionResult(result: SpeciesPredictionResult) {
+  return {
+    speciesKey: result.speciesKey,
+    generatedAt: result.generatedAt,
+    analysisVersion: result.analysisVersion || result.openaiAnalysis?.analysisVersion || null,
+    hasInsightSummary: Boolean(result.insightSummary?.trim()),
+    topPredictedPointCount: Array.isArray(result.topPredictedPoints) ? result.topPredictedPoints.length : 0,
+    topPredictedPoints: result.topPredictedPoints.slice(0, 3).map((point) => ({
+      rank: point.rank,
+      name: point.name,
+      confidence: point.confidence,
+      reason: point.reason,
+    })),
+  };
+}
+
+function summarizePoint(point: unknown) {
+  const record = (point && typeof point === 'object' && !Array.isArray(point)) ? point as Record<string, unknown> : {};
+  return {
+    rank: typeof record.rank === 'number' ? record.rank : null,
+    name: typeof record.name === 'string' ? record.name : '',
+    confidence: typeof record.confidence === 'number' ? record.confidence : null,
+    reason: typeof record.reason === 'string' ? record.reason : '',
+  };
 }
 
 export function resolvePredictionRequestType(enablePrediction: boolean, enableResearchInsights: boolean): PredictionRequestType {

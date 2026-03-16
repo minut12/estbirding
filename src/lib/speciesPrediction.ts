@@ -328,6 +328,12 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
+function clampFloat(value: unknown, min: number, max: number, fallback: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {};
 }
@@ -362,7 +368,7 @@ function normalizePredictedPoint(point: Partial<PredictedPoint> | null | undefin
     countyOrParish: normalizeUiText(point?.countyOrParish || ''),
     lat: toNumber(point?.lat),
     lon: toNumber(point?.lon),
-    confidence: clampNumber(point?.confidence, 0, 100, 0),
+    confidence: clampFloat(point?.confidence, 0, 100, 0),
     eta: normalizeUiText(point?.eta || ''),
     searchRadiusKm: clampNumber(point?.searchRadiusKm, 0, 500, 0),
     habitatCue: normalizeUiText(point?.habitatCue || ''),

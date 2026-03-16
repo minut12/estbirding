@@ -34,6 +34,7 @@ export async function runSpeciesPredictionRequest(
       };
     }
     const sourceResult = isWrappedSuccessEnvelope(data) ? data.result : data;
+    console.debug('[speciesPrediction] compare raw backend', comparePredictionFields(sourceResult, payload.species.key));
     if (!hasUsableSpeciesPredictionResult(sourceResult)) {
       return {
         ok: false,
@@ -58,6 +59,7 @@ export async function runSpeciesPredictionRequest(
 
 function logNormalizedPredictionResult(result: SpeciesPredictionResult): SpeciesPredictionResult {
   console.debug('[speciesPrediction] normalized response', summarizePredictionResult(result));
+  console.debug('[speciesPrediction] compare normalized response', comparePredictionFields(result, result.speciesKey));
   return result;
 }
 
@@ -119,6 +121,22 @@ function summarizePoint(point: unknown) {
     confidence: typeof record.confidence === 'number' ? record.confidence : null,
     eta: typeof record.eta === 'string' ? record.eta : '',
     reason: typeof record.reason === 'string' ? record.reason : '',
+  };
+}
+
+function comparePredictionFields(value: unknown, speciesKey: string) {
+  const record = (value && typeof value === 'object' && !Array.isArray(value)) ? value as Record<string, unknown> : {};
+  const countryScores = (record.countryScores && typeof record.countryScores === 'object' && !Array.isArray(record.countryScores))
+    ? record.countryScores as Record<string, unknown>
+    : {};
+  const points = Array.isArray(record.topPredictedPoints) ? record.topPredictedPoints : [];
+  const firstPoint = (points[0] && typeof points[0] === 'object' && !Array.isArray(points[0])) ? points[0] as Record<string, unknown> : {};
+  return {
+    speciesKey,
+    insightSummary: typeof record.insightSummary === 'string' ? record.insightSummary : null,
+    externalPressureScore: record.externalPressureScore ?? null,
+    lithuania: countryScores.lithuania ?? null,
+    topPredictedPointReason: typeof firstPoint.reason === 'string' ? firstPoint.reason : null,
   };
 }
 

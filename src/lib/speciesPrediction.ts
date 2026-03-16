@@ -257,45 +257,63 @@ export function normalizeSpeciesPredictionResult(
   speciesName: string,
   scope: SpeciesScopeId,
 ): SpeciesPredictionResult {
+  const source = resolvePredictionSource(input);
   const normalizedName = normalizeUiText(speciesName);
-  const speciesKey = normalizeSpeciesName(input?.speciesKey || normalizedName);
-  const topPredictedPoints = Array.isArray(input?.topPredictedPoints)
-    ? input.topPredictedPoints
+  const speciesKey = normalizeSpeciesName(readString(source, ['speciesKey', 'species_key']) || normalizedName);
+  const topPredictedPointsSource = readArray(source, ['topPredictedPoints', 'top_predicted_points', 'points', 'candidates'])
+    ?? readArray(asRecord(source.openaiAnalysis), ['rerankedTopPredictedPoints'])
+    ?? readArray(source, ['rerankedTopPredictedPoints']);
+  const topPredictedPoints = Array.isArray(topPredictedPointsSource)
+    ? topPredictedPointsSource
       .map((point, index) => normalizePredictedPoint(point, index))
       .filter((point) => point.name || point.countyOrParish || (point.lat !== 0 || point.lon !== 0))
     : [];
-  const warnings = Array.isArray(input?.warnings)
-    ? input.warnings.map((warning) => normalizeUiText(String(warning || ''))).filter(Boolean)
+  const warningsSource = readArray(source, ['warnings'])
+    ?? readArray(asRecord(source.openaiAnalysis), ['warnings']);
+  const warnings = Array.isArray(warningsSource)
+    ? warningsSource.map((warning) => normalizeUiText(String(warning || ''))).filter(Boolean)
     : [];
+  const countryScoresSource = readRecord(source, ['countryScores', 'country_scores', 'countryScoreMap', 'country_score_map'])
+    ?? readRecord(asRecord(source.rawResearchPayload).openAIAnalysisInput, ['countryScores'])
+    ?? {};
+  const consistencyChecksSource = readRecord(source, ['consistencyChecks', 'consistency_checks'])
+    ?? readRecord(asRecord(source.openaiAnalysis), ['consistencyChecks'])
+    ?? null;
+  const insightSummary = readString(source, ['insightSummary', 'insight_summary', 'summary'])
+    || readString(asRecord(source.openaiAnalysis), ['insightSummary', 'insight_summary', 'summary']);
+  const confidenceNote = readString(source, ['confidenceNote', 'confidence_note'])
+    || readString(asRecord(source.openaiAnalysis), ['confidenceNote', 'confidence_note']);
+  const analysisVersion = readString(source, ['analysisVersion', 'analysis_version'])
+    || readString(asRecord(source.openaiAnalysis), ['analysisVersion', 'analysis_version']);
   return {
     speciesKey,
-    speciesName: normalizeUiText(input?.speciesName || normalizedName),
+    speciesName: normalizeUiText(readString(source, ['speciesName', 'species_name']) || normalizedName),
     scope,
-    generatedAt: normalizeUiText(input?.generatedAt || new Date().toISOString()),
-    externalPressureScore: toNumber(input?.externalPressureScore),
-    springFitScore: toNumber(input?.springFitScore),
-    windSupportScore: toNumber(input?.windSupportScore),
-    routeVector: normalizeUiText(input?.routeVector || ''),
-    bestEntryZone: normalizeUiText(input?.bestEntryZone || ''),
-    alreadyMissedRisk: input?.alreadyMissedRisk === 'high' || input?.alreadyMissedRisk === 'medium' ? input.alreadyMissedRisk : 'low',
+    generatedAt: normalizeUiText(readString(source, ['generatedAt', 'generated_at']) || new Date().toISOString()),
+    externalPressureScore: readNumber(source, ['externalPressureScore', 'external_pressure_score', 'pressureScore', 'pressure_score']),
+    springFitScore: readNumber(source, ['springFitScore', 'spring_fit_score']),
+    windSupportScore: readNumber(source, ['windSupportScore', 'wind_support_score']),
+    routeVector: normalizeUiText(readString(source, ['routeVector', 'route_vector']) || ''),
+    bestEntryZone: normalizeUiText(readString(source, ['bestEntryZone', 'best_entry_zone']) || ''),
+    alreadyMissedRisk: resolvePredictionRisk(readString(source, ['alreadyMissedRisk', 'already_missed_risk'])),
     countryScores: {
-      latvia: toNumber(input?.countryScores?.latvia),
-      lithuania: toNumber(input?.countryScores?.lithuania),
-      belarus: toNumber(input?.countryScores?.belarus),
-      poland: toNumber(input?.countryScores?.poland),
-      russia: toNumber(input?.countryScores?.russia),
-      ...(input?.countryScores?.finlandContextOnly != null
-        ? { finlandContextOnly: toNumber(input.countryScores.finlandContextOnly) }
-        : (() => { const cs = input?.countryScores as Record<string, unknown> | undefined; return cs?.finlandContext != null ? { finlandContextOnly: toNumber(cs.finlandContext) } : {}; })()),
+      latvia: readNumber(countryScoresSource, ['latvia']),
+      lithuania: readNumber(countryScoresSource, ['lithuania']),
+      belarus: readNumber(countryScoresSource, ['belarus']),
+      poland: readNumber(countryScoresSource, ['poland']),
+      russia: readNumber(countryScoresSource, ['russia']),
+      ...(hasValue(countryScoresSource, ['finlandContextOnly', 'finlandContext', 'finland_context_only', 'finland_context'])
+        ? { finlandContextOnly: readNumber(countryScoresSource, ['finlandContextOnly', 'finlandContext', 'finland_context_only', 'finland_context']) }
+        : {}),
     },
     topPredictedPoints,
-    ...(input?.insightSummary ? { insightSummary: normalizeUiText(input.insightSummary) } : {}),
-    ...(input?.analysisVersion ? { analysisVersion: normalizeUiText(input.analysisVersion) } : {}),
-    ...(typeof input?.analysisFallbackUsed === 'boolean' ? { analysisFallbackUsed: input.analysisFallbackUsed } : {}),
-    ...(input?.confidenceNote ? { confidenceNote: normalizeUiText(input.confidenceNote) } : {}),
+    ...(insightSummary ? { insightSummary: normalizeUiText(insightSummary) } : {}),
+    ...(analysisVersion ? { analysisVersion: normalizeUiText(analysisVersion) } : {}),
+    ...(typeof source.analysisFallbackUsed === 'boolean' ? { analysisFallbackUsed: source.analysisFallbackUsed } : {}),
+    ...(confidenceNote ? { confidenceNote: normalizeUiText(confidenceNote) } : {}),
     ...(warnings.length ? { warnings } : {}),
-    ...(input?.consistencyChecks ? { consistencyChecks: normalizePredictionConsistencyChecks(input.consistencyChecks) } : {}),
-    ...(input?.rawResearchPayload ? { rawResearchPayload: input.rawResearchPayload } : {}),
+    ...(consistencyChecksSource ? { consistencyChecks: normalizePredictionConsistencyChecks(consistencyChecksSource) } : {}),
+    ...(source.rawResearchPayload ? { rawResearchPayload: source.rawResearchPayload } : {}),
   };
 }
 
@@ -312,6 +330,63 @@ export function hasUsableSpeciesPredictionResult(
 function toNumber(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+function resolvePredictionSource(input: Partial<SpeciesPredictionResult> | null | undefined): Record<string, unknown> {
+  const source = asRecord(input);
+  const nestedResult = asRecord(source.result);
+  if (hasCanonicalPredictionFields(nestedResult)) return nestedResult;
+  return source;
+}
+
+function hasCanonicalPredictionFields(record: Record<string, unknown>): boolean {
+  return Boolean(
+    readString(record, ['insightSummary', 'insight_summary', 'summary'])
+    || hasValue(record, ['externalPressureScore', 'external_pressure_score', 'pressureScore', 'pressure_score'])
+    || hasValue(record, ['countryScores', 'country_scores', 'countryScoreMap', 'country_score_map'])
+    || hasValue(record, ['topPredictedPoints', 'top_predicted_points', 'points', 'candidates']),
+  );
+}
+
+function readString(record: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return '';
+}
+
+function readNumber(record: Record<string, unknown>, keys: string[]): number {
+  for (const key of keys) {
+    const value = record[key];
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
+
+function readRecord(record: Record<string, unknown>, keys: string[]): Record<string, unknown> | null {
+  for (const key of keys) {
+    const value = asRecord(record[key]);
+    if (Object.keys(value).length) return value;
+  }
+  return null;
+}
+
+function readArray(record: Record<string, unknown>, keys: string[]): unknown[] | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) return value;
+  }
+  return null;
+}
+
+function hasValue(record: Record<string, unknown>, keys: string[]): boolean {
+  return keys.some((key) => record[key] != null);
+}
+
+function resolvePredictionRisk(value: string): PredictionRisk {
+  return value === 'high' || value === 'medium' ? value : 'low';
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
@@ -354,17 +429,19 @@ function isSummaryStyle(value: unknown): value is SummaryStyle {
 }
 
 function normalizePredictedPoint(point: Partial<PredictedPoint> | null | undefined, index: number): PredictedPoint {
+  const source = asRecord(point);
+  const rankValue = hasValue(source, ['rank']) ? readNumber(source, ['rank']) : index + 1;
   return {
-    rank: clampNumber(point?.rank ?? index + 1, 1, 99, index + 1),
-    name: normalizeUiText(point?.name || ''),
-    countyOrParish: normalizeUiText(point?.countyOrParish || ''),
-    lat: toNumber(point?.lat),
-    lon: toNumber(point?.lon),
-    confidence: clampFloat(point?.confidence, 0, 100, 0),
-    eta: normalizeUiText(point?.eta || ''),
-    searchRadiusKm: clampNumber(point?.searchRadiusKm, 0, 500, 0),
-    habitatCue: normalizeUiText(point?.habitatCue || ''),
-    reason: normalizeUiText(point?.reason || ''),
+    rank: clampNumber(rankValue, 1, 99, index + 1),
+    name: normalizeUiText(readString(source, ['name']) || ''),
+    countyOrParish: normalizeUiText(readString(source, ['countyOrParish', 'county_or_parish', 'county', 'parish']) || ''),
+    lat: readNumber(source, ['lat', 'latitude']),
+    lon: readNumber(source, ['lon', 'lng', 'longitude']),
+    confidence: clampFloat(readNumber(source, ['confidence', 'score']), 0, 100, 0),
+    eta: normalizeUiText(readString(source, ['eta']) || ''),
+    searchRadiusKm: clampNumber(readNumber(source, ['searchRadiusKm', 'search_radius_km', 'radiusKm', 'radius_km']), 0, 500, 0),
+    habitatCue: normalizeUiText(readString(source, ['habitatCue', 'habitat_cue']) || ''),
+    reason: normalizeUiText(readString(source, ['reason', 'explanation']) || ''),
   };
 }
 

@@ -422,6 +422,14 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
                 reason: point.reason,
               })),
             });
+            console.debug('[speciesPrediction] compare iframe payload', {
+              scope: scopeCfg.id,
+              speciesKey: response.result.speciesKey,
+              insightSummary: response.result.insightSummary || null,
+              externalPressureScore: response.result.externalPressureScore,
+              lithuania: response.result.countryScores?.lithuania ?? null,
+              topPredictedPointReason: response.result.topPredictedPoints[0]?.reason || null,
+            });
             sendToIframe({
               type: SPECIES_PREDICTION_EVENT_TYPES.result,
               result: response.result,

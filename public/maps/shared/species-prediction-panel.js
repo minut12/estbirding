@@ -328,6 +328,13 @@
         };
       }),
     });
+    console.debug('[speciesPrediction] compare panel render', {
+      speciesKey: result.speciesKey || state.speciesKey || '',
+      insightSummary: summaryText || null,
+      externalPressureScore: result.externalPressureScore,
+      lithuania: result.countryScores && result.countryScores.lithuania != null ? result.countryScores.lithuania : null,
+      topPredictedPointReason: preferredPoints && preferredPoints[0] ? preferredPoints[0].reason || null : null,
+    });
     var html = '';
     if (summaryText) {
       html += '<div class="spp-card"><h4>Insight summary</h4><p>' + escapeHtml(summaryText) + '</p>';

@@ -8188,7 +8188,23 @@ var __sharedDefaults = {};
   }catch(e){}
 })();
 </script>
-<script src="/maps/shared/species-prediction-panel.js"></script>
+<script>
+(function(){
+  var params = new URLSearchParams(window.location.search || '');
+  var marker = String(params.get('spv') || params.get('v') || 'no-marker').trim();
+  var panelScript = '/maps/shared/species-prediction-panel.js?v=' + encodeURIComponent(marker);
+  window.__speciesPredictionRuntime = {
+    mapPage: 'rariliin',
+    marker: marker,
+    panelScript: panelScript
+  };
+  console.debug('[speciesPrediction] map runtime asset', window.__speciesPredictionRuntime);
+  var script = document.createElement('script');
+  script.src = panelScript;
+  script.defer = false;
+  document.body.appendChild(script);
+})();
+</script>
 
 </body>
 </html>

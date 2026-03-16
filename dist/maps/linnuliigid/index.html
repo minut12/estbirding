@@ -8282,7 +8282,23 @@ var __sharedDefaults = {};
   }catch(e){}
 })();
 </script>
-<script src="/maps/shared/species-prediction-panel.js"></script>
+<script>
+(function(){
+  var params = new URLSearchParams(window.location.search || '');
+  var marker = String(params.get('spv') || params.get('v') || 'no-marker').trim();
+  var panelScript = '/maps/shared/species-prediction-panel.js?v=' + encodeURIComponent(marker);
+  window.__speciesPredictionRuntime = {
+    mapPage: 'linnuliigid',
+    marker: marker,
+    panelScript: panelScript
+  };
+  console.debug('[speciesPrediction] map runtime asset', window.__speciesPredictionRuntime);
+  var script = document.createElement('script');
+  script.src = panelScript;
+  script.defer = false;
+  document.body.appendChild(script);
+})();
+</script>
 
 <div id="springEditModal" style="display:none;position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.35);align-items:center;justify-content:center;" onclick="if(event.target===this){ window.closeSpringEditModal && window.closeSpringEditModal(); }">
   <div style="background:#fff;border-radius:12px;padding:16px;min-width:280px;max-width:90vw;box-shadow:0 10px 30px rgba(0,0,0,.2)" onclick="event.stopPropagation();">

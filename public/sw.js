@@ -1,4 +1,4 @@
-const CACHE_NAME = 'estbirding-v1';
+const CACHE_NAME = 'estbirding-v2-runtime-diagnostics';
 const PRECACHE_URLS = [
   '/',
   '/manifest.json',
@@ -7,6 +7,7 @@ const PRECACHE_URLS = [
 
 // Never cache the reset page
 const DENY_CACHE = ['/reset/', '/reset/index.html'];
+const NETWORK_FIRST_PATHS = ['/maps/shared/species-prediction-panel.js', '/maps/'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -30,6 +31,15 @@ self.addEventListener('fetch', (event) => {
   // Always fetch /reset/ from network
   if (DENY_CACHE.some((p) => url.pathname.startsWith(p))) {
     event.respondWith(fetch(event.request));
+    return;
+  }
+
+  if (NETWORK_FIRST_PATHS.some((p) => url.pathname.startsWith(p))) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => response)
+        .catch(() => caches.match(event.request))
+    );
     return;
   }
 

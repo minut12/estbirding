@@ -51,14 +51,16 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   const mapScope = MAP_ID_TO_SCOPE[current.id] as MapScope | undefined;
   const speciesScope = current.id === 'rariliin' ? RARILIIN_SCOPE : LINNULIIGID_SCOPE;
   const canEditKevadranne = isAdmin || hasPermission(PERMISSIONS.kevadranneEdit);
+  const speciesPredictionRuntimeMarker = `${APP_VERSION}|panel-runtime-c92cfa2`;
   const iframeSrc = useMemo(() => {
     const proxyBase = resolveProxyBase();
     const params = new URLSearchParams();
     params.set('v', APP_VERSION);
+    params.set('spv', speciesPredictionRuntimeMarker);
     if (proxyBase) params.set('proxyBase', proxyBase);
     const sep = current.source.includes('?') ? '&' : '?';
     return `${current.source}${sep}${params.toString()}`;
-  }, [current.source]);
+  }, [current.source, speciesPredictionRuntimeMarker]);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [error, setError] = useState<string | null>(null);
   const iframeReadyRef = useRef(false);
@@ -75,6 +77,15 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   useEffect(() => {
     onMapChange?.(selectedId);
   }, [onMapChange, selectedId]);
+
+  useEffect(() => {
+    console.debug('[speciesPrediction] iframe runtime src', {
+      mapId: current.id,
+      source: current.source,
+      iframeSrc,
+      runtimeMarker: speciesPredictionRuntimeMarker,
+    });
+  }, [current.id, current.source, iframeSrc, speciesPredictionRuntimeMarker]);
 
   useEffect(() => {
     const resolved = resolveAllowedMapSelection({ role, permissions, maps, requestedId: selectedId });

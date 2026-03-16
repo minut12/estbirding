@@ -24,6 +24,9 @@
   var fallbackSelectionTimer = 0;
   var startupSyncPending = false;
   var STORAGE_PREFIX = 'speciesPrediction.activeSpecies';
+  var runtimeInfo = readRuntimeInfo();
+
+  console.debug('[speciesPrediction] panel script loaded', runtimeInfo);
 
   function detectScope() {
     var path = String((window.location && window.location.pathname) || '');
@@ -46,6 +49,7 @@
       '</div>' +
       '<div class="spp-body">' +
       '  <div class="spp-chip">These settings apply only to the currently selected species</div>' +
+      '  <div class="spp-row"><span>Panel build</span><strong data-role="runtime-marker">Unknown</strong></div>' +
       '  <div class="spp-row"><span>Species</span><strong data-role="species-name">No species selected</strong></div>' +
       '  <div class="spp-row"><span>Status</span><strong data-role="status-line">Idle</strong></div>' +
       '  <div class="spp-row"><span>Mode</span><strong data-role="mode-line">Waiting for species settings</strong></div>' +
@@ -274,6 +278,8 @@
     }
     ensurePanel();
     if (!panel) return;
+    var runtimeLine = panel.querySelector('[data-role="runtime-marker"]');
+    if (runtimeLine) runtimeLine.textContent = runtimeInfo.visibleMarker;
     speciesLine.textContent = state.speciesName || 'No species selected';
     if (state.loading) statusLine.textContent = 'Loading...';
     else if (state.error) statusLine.textContent = state.error;
@@ -424,6 +430,27 @@
       return JSON.parse(JSON.stringify(result));
     } catch (e) {
       return result;
+    }
+  }
+
+  function readRuntimeInfo() {
+    var payload = window.__speciesPredictionRuntime || {};
+    var marker = String(payload.marker || '').trim();
+    var panelScript = String(payload.panelScript || currentScriptSrc() || '').trim();
+    var page = String(payload.mapPage || detectScope()).trim();
+    return {
+      mapPage: page || detectScope(),
+      marker: marker || 'no-marker',
+      panelScript: panelScript || 'unknown-script',
+      visibleMarker: [page || detectScope(), marker || 'no-marker'].join(' | '),
+    };
+  }
+
+  function currentScriptSrc() {
+    try {
+      return (document.currentScript && document.currentScript.src) || '';
+    } catch (e) {
+      return '';
     }
   }
 

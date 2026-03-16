@@ -299,39 +299,36 @@
 
     var result = state.result;
     var summaryText = normalizeText(result.insightSummary);
-    var fallbackSummaryText = normalizeText(result.openaiAnalysis && result.openaiAnalysis.insightSummary);
-    var confidenceNote = normalizeText(result.confidenceNote) || normalizeText(result.openaiAnalysis && result.openaiAnalysis.confidenceNote);
+    var confidenceNote = normalizeText(result.confidenceNote);
     var warnings = normalizeStringArray(result.warnings);
-    if (!warnings.length) warnings = normalizeStringArray(result.openaiAnalysis && result.openaiAnalysis.warnings);
-    var consistencyChecks = result.consistencyChecks || (result.openaiAnalysis && result.openaiAnalysis.consistencyChecks) || null;
-    var preferredPoints = Array.isArray(result.topPredictedPoints) && result.topPredictedPoints.length
-      ? result.topPredictedPoints
-      : (Array.isArray(result.rerankedTopPredictedPoints) ? result.rerankedTopPredictedPoints : []);
-    if (!preferredPoints.length && result.openaiAnalysis && Array.isArray(result.openaiAnalysis.rerankedTopPredictedPoints)) {
-      preferredPoints = result.openaiAnalysis.rerankedTopPredictedPoints;
-    }
+    var consistencyChecks = result.consistencyChecks || null;
+    var preferredPoints = Array.isArray(result.topPredictedPoints) ? result.topPredictedPoints : [];
     console.debug('[speciesPrediction] panel render state', {
       speciesKey: result.speciesKey || state.speciesKey || '',
       generatedAt: result.generatedAt || null,
-      analysisVersion: result.analysisVersion || (result.openaiAnalysis && result.openaiAnalysis.analysisVersion) || null,
-      insightSummary: (summaryText || fallbackSummaryText || '').slice(0, 140),
+      analysisVersion: result.analysisVersion || null,
+      insightSummary: summaryText.slice(0, 140),
+      externalPressureScore: result.externalPressureScore,
+      springFitScore: result.springFitScore,
+      windSupportScore: result.windSupportScore,
       countryScores: result.countryScores || null,
       topPredictedPoints: (preferredPoints || []).slice(0, 3).map(function (point) {
         return {
           rank: point && point.rank,
           name: point && point.name,
           confidence: point && point.confidence,
+          eta: point && point.eta,
           reason: point && point.reason,
         };
       }),
     });
     var html = '';
-    if (summaryText || fallbackSummaryText) {
-      html += '<div class="spp-card"><h4>Insight summary</h4><p>' + escapeHtml(summaryText || fallbackSummaryText) + '</p>';
+    if (summaryText) {
+      html += '<div class="spp-card"><h4>Insight summary</h4><p>' + escapeHtml(summaryText) + '</p>';
       if (confidenceNote) {
         html += '<p class="spp-note">' + escapeHtml(confidenceNote) + '</p>';
       }
-      if (result.analysisFallbackUsed) {
+      if (result.analysisFallbackUsed && !summaryText) {
         html += '<p class="spp-note">OpenAI analysis unavailable; showing deterministic summary.</p>';
       }
       html += '</div>';

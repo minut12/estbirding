@@ -68,11 +68,25 @@ function summarizePredictionPayload(data: unknown, speciesKey: string) {
     : candidate;
   const record = (result && typeof result === 'object' && !Array.isArray(result)) ? result as Record<string, unknown> : {};
   const points = Array.isArray(record.topPredictedPoints) ? record.topPredictedPoints : [];
+  const countryScores = (record.countryScores && typeof record.countryScores === 'object' && !Array.isArray(record.countryScores))
+    ? record.countryScores as Record<string, unknown>
+    : null;
   return {
     speciesKey,
     generatedAt: typeof record.generatedAt === 'string' ? record.generatedAt : null,
     analysisVersion: typeof record.analysisVersion === 'string' ? record.analysisVersion : null,
-    hasInsightSummary: Boolean(typeof record.insightSummary === 'string' && record.insightSummary.trim()),
+    insightSummary: typeof record.insightSummary === 'string' ? record.insightSummary.slice(0, 140) : '',
+    externalPressureScore: typeof record.externalPressureScore === 'number' ? record.externalPressureScore : record.externalPressureScore ?? null,
+    springFitScore: typeof record.springFitScore === 'number' ? record.springFitScore : record.springFitScore ?? null,
+    windSupportScore: typeof record.windSupportScore === 'number' ? record.windSupportScore : record.windSupportScore ?? null,
+    countryScores: countryScores ? {
+      latvia: countryScores.latvia ?? null,
+      lithuania: countryScores.lithuania ?? null,
+      belarus: countryScores.belarus ?? null,
+      poland: countryScores.poland ?? null,
+      russia: countryScores.russia ?? null,
+      finlandContextOnly: countryScores.finlandContextOnly ?? null,
+    } : null,
     topPredictedPoints: points.slice(0, 3).map(summarizePoint),
   };
 }
@@ -81,8 +95,12 @@ function summarizePredictionResult(result: SpeciesPredictionResult) {
   return {
     speciesKey: result.speciesKey,
     generatedAt: result.generatedAt,
-    analysisVersion: result.analysisVersion || result.openaiAnalysis?.analysisVersion || null,
-    hasInsightSummary: Boolean(result.insightSummary?.trim()),
+    analysisVersion: result.analysisVersion || null,
+    insightSummary: String(result.insightSummary || '').slice(0, 140),
+    externalPressureScore: result.externalPressureScore,
+    springFitScore: result.springFitScore,
+    windSupportScore: result.windSupportScore,
+    countryScores: result.countryScores,
     topPredictedPointCount: Array.isArray(result.topPredictedPoints) ? result.topPredictedPoints.length : 0,
     topPredictedPoints: result.topPredictedPoints.slice(0, 3).map((point) => ({
       rank: point.rank,
@@ -99,6 +117,7 @@ function summarizePoint(point: unknown) {
     rank: typeof record.rank === 'number' ? record.rank : null,
     name: typeof record.name === 'string' ? record.name : '',
     confidence: typeof record.confidence === 'number' ? record.confidence : null,
+    eta: typeof record.eta === 'string' ? record.eta : '',
     reason: typeof record.reason === 'string' ? record.reason : '',
   };
 }

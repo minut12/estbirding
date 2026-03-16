@@ -264,15 +264,9 @@ export function normalizeSpeciesPredictionResult(
       .map((point, index) => normalizePredictedPoint(point, index))
       .filter((point) => point.name || point.countyOrParish || (point.lat !== 0 || point.lon !== 0))
     : [];
-  const rerankedTopPredictedPoints = Array.isArray(input?.rerankedTopPredictedPoints)
-    ? input.rerankedTopPredictedPoints
-      .map((point, index) => normalizePredictedPoint(point, index))
-      .filter((point) => point.name || point.countyOrParish || (point.lat !== 0 || point.lon !== 0))
-    : [];
   const warnings = Array.isArray(input?.warnings)
     ? input.warnings.map((warning) => normalizeUiText(String(warning || ''))).filter(Boolean)
     : [];
-  const openaiAnalysis = normalizeSpeciesPredictionAnalysis(input?.openaiAnalysis);
   return {
     speciesKey,
     speciesName: normalizeUiText(input?.speciesName || normalizedName),
@@ -300,9 +294,7 @@ export function normalizeSpeciesPredictionResult(
     ...(typeof input?.analysisFallbackUsed === 'boolean' ? { analysisFallbackUsed: input.analysisFallbackUsed } : {}),
     ...(input?.confidenceNote ? { confidenceNote: normalizeUiText(input.confidenceNote) } : {}),
     ...(warnings.length ? { warnings } : {}),
-    ...(rerankedTopPredictedPoints.length ? { rerankedTopPredictedPoints } : {}),
     ...(input?.consistencyChecks ? { consistencyChecks: normalizePredictionConsistencyChecks(input.consistencyChecks) } : {}),
-    ...(openaiAnalysis ? { openaiAnalysis } : {}),
     ...(input?.rawResearchPayload ? { rawResearchPayload: input.rawResearchPayload } : {}),
   };
 }
@@ -384,30 +376,5 @@ function normalizePredictionConsistencyChecks(
     timingLooksPlausible: input?.timingLooksPlausible === true,
     weatherLooksSupportive: input?.weatherLooksSupportive === true,
     foreignPressureMatchesNarrative: input?.foreignPressureMatchesNarrative === true,
-  };
-}
-
-function normalizeSpeciesPredictionAnalysis(
-  input: Partial<SpeciesPredictionAnalysis> | null | undefined,
-): SpeciesPredictionAnalysis | undefined {
-  if (!input || typeof input !== 'object') return undefined;
-  const rerankedTopPredictedPoints = Array.isArray(input.rerankedTopPredictedPoints)
-    ? input.rerankedTopPredictedPoints
-      .map((point, index) => normalizePredictedPoint(point, index))
-      .filter((point) => point.name || point.countyOrParish || (point.lat !== 0 || point.lon !== 0))
-    : [];
-  const warnings = Array.isArray(input.warnings)
-    ? input.warnings.map((warning) => normalizeUiText(String(warning || ''))).filter(Boolean)
-    : [];
-  const analysisVersion = normalizeUiText(input.analysisVersion || '');
-  const insightSummary = normalizeUiText(input.insightSummary || '');
-  if (!analysisVersion || !insightSummary) return undefined;
-  return {
-    analysisVersion,
-    insightSummary,
-    ...(input.confidenceNote ? { confidenceNote: normalizeUiText(input.confidenceNote) } : {}),
-    ...(warnings.length ? { warnings } : {}),
-    ...(rerankedTopPredictedPoints.length ? { rerankedTopPredictedPoints } : {}),
-    consistencyChecks: normalizePredictionConsistencyChecks(input.consistencyChecks),
   };
 }

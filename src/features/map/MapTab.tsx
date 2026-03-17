@@ -12,7 +12,7 @@ import { LINNULIIGID_SCOPE, RARILIIN_SCOPE } from '@/lib/mapScope';
 import { resolveProxyBase } from '@/config/proxyEndpoint';
 import { buildSpeciesMetaLookupFallback, getScopedSpeciesMeta, loadSpeciesMeta, seedSpeciesMetaFallback } from '@/lib/speciesMeta';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
-import { broadcastSupabaseConfigToMapIframes, getSupabaseAnonKey, getSupabaseUrl, isDeveloperModeEnabled, validateSupabaseConfig } from '@/config/supabaseConfig';
+import { broadcastSupabaseConfigToMapIframes, getFunctionsBaseUrl, getSupabaseAuthHeaders, getSupabaseAnonKey, getSupabaseUrl, isDeveloperModeEnabled, validateSupabaseConfig } from '@/config/supabaseConfig';
 import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
 import { type MapScope, loadSpeciesVisibility, saveSpeciesVisibility, loadLocalHidden } from '@/lib/speciesVisibility';
@@ -23,12 +23,17 @@ import { isSpeciesPredictionEnabled } from '@/lib/settings';
 import { ACTIVE_PREDICTION_IFRAME_READY_MESSAGE, ACTIVE_PREDICTION_SPECIES_EVENT, ACTIVE_PREDICTION_SPECIES_MESSAGE, getActivePredictionSpecies, setActivePredictionSpecies, type ActivePredictionSpecies } from '@/lib/activePredictionSpecies';
 import { normalizeSpeciesName } from '@/lib/textNormalize';
 import {
+  SPECIES_PREDICTION_DEBUG_HEALTHCHECK_EVENT,
   SPECIES_PREDICTION_DEBUG_PANEL_STATE_MESSAGE,
   SPECIES_PREDICTION_DEBUG_RESYNC_EVENT,
   SPECIES_PREDICTION_DEBUG_RERUN_EVENT,
   getSpeciesPredictionDebugSnapshot,
+  setSpeciesPredictionDebugBackendResponse,
+  setSpeciesPredictionHealthCheckResult,
   setSpeciesPredictionDebugPanelPayload,
   setSpeciesPredictionDebugPanelState,
+  setSpeciesPredictionTransportError,
+  updateSpeciesPredictionTransport,
   updateSpeciesPredictionDebugContext,
 } from '@/lib/speciesPredictionDebug';
 
@@ -381,6 +386,17 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
           lastPredictionRequestAt: new Date().toISOString(),
           predictionStatus: 'loading',
         });
+        updateSpeciesPredictionTransport({
+          requestTimestamp: new Date().toISOString(),
+          responseTimestamp: '',
+          requestId: String(requestId),
+          httpStatus: null,
+          responseBody: null,
+          error: null,
+        });
+        setSpeciesPredictionDebugBackendResponse(null);
+        setSpeciesPredictionDebugPanelPayload(null);
+        setSpeciesPredictionDebugPanelState(null);
         sendToIframe({ type: SPECIES_PREDICTION_EVENT_TYPES.loading });
         loadSpeciesPredictionSettings(scopeCfg.id, speciesName)
           .then(async (settings) => {
@@ -433,6 +449,19 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
                 stage: response.stage || null,
                 message: response.error || 'Prediction request failed',
               });
+              updateSpeciesPredictionTransport({
+                requestUrl: response.diagnostics.requestUrl,
+                requestTimestamp: response.diagnostics.requestTimestamp,
+                responseTimestamp: response.diagnostics.responseTimestamp,
+                requestId: response.diagnostics.requestId,
+                httpStatus: response.diagnostics.httpStatus,
+                responseBody: response.diagnostics.responseBody,
+                error: response.diagnostics.error,
+              });
+              setSpeciesPredictionDebugBackendResponse(null);
+              setSpeciesPredictionDebugPanelPayload(null);
+              setSpeciesPredictionDebugPanelState(null);
+              setSpeciesPredictionTransportError(response.diagnostics.error);
               sendToIframe({
                 type: SPECIES_PREDICTION_EVENT_TYPES.error,
                 error: response.disabled ? 'Species prediction integration is currently unavailable' : (response.error || 'Prediction request failed'),
@@ -466,6 +495,16 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
               result: response.result,
             };
             setSpeciesPredictionDebugPanelPayload(iframePayload.result);
+            updateSpeciesPredictionTransport({
+              requestUrl: response.diagnostics.requestUrl,
+              requestTimestamp: response.diagnostics.requestTimestamp,
+              responseTimestamp: response.diagnostics.responseTimestamp,
+              requestId: response.diagnostics.requestId,
+              httpStatus: response.diagnostics.httpStatus,
+              responseBody: response.diagnostics.responseBody,
+              error: null,
+            });
+            setSpeciesPredictionTransportError(null);
             updateSpeciesPredictionDebugContext({
               speciesName: response.result.speciesName,
               speciesKey: response.result.speciesKey,
@@ -497,13 +536,31 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
             if (latestPredictionRequestRef.current !== requestId) {
               return;
             }
+            const now = new Date().toISOString();
+            const message = predictionError instanceof Error ? predictionError.message : 'Prediction request failed';
+            updateSpeciesPredictionTransport({
+              responseTimestamp: now,
+              error: {
+                stage: 'unknown',
+                httpStatus: null,
+                message,
+                responseBody: null,
+                requestUrl: '',
+                requestId: String(requestId),
+                timestamp: now,
+                errorType: 'unknown',
+              },
+            });
+            setSpeciesPredictionDebugBackendResponse(null);
+            setSpeciesPredictionDebugPanelPayload(null);
+            setSpeciesPredictionDebugPanelState(null);
             updateSpeciesPredictionDebugContext({
               lastPredictionResponseAt: new Date().toISOString(),
               predictionStatus: 'error',
             });
             sendToIframe({
               type: SPECIES_PREDICTION_EVENT_TYPES.error,
-              error: predictionError instanceof Error ? predictionError.message : 'Prediction request failed',
+              error: message,
             });
           });
       }
@@ -534,11 +591,45 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
         result: snapshot.panelPayload,
       });
     };
+    const healthCheckHandler = async () => {
+      try {
+        const response = await fetch(`${getFunctionsBaseUrl()}/species-prediction?mode=status`, {
+          method: 'GET',
+          headers: {
+            ...getSupabaseAuthHeaders(),
+          },
+        });
+        const rawText = await response.text();
+        let body: unknown = rawText;
+        try {
+          body = rawText ? JSON.parse(rawText) : null;
+        } catch {
+          body = rawText;
+        }
+        setSpeciesPredictionHealthCheckResult({
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          body,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        setSpeciesPredictionHealthCheckResult({
+          ok: false,
+          status: null,
+          statusText: '',
+          body: error instanceof Error ? { message: error.message } : { message: 'Health check failed' },
+          timestamp: new Date().toISOString(),
+        });
+      }
+    };
     window.addEventListener(SPECIES_PREDICTION_DEBUG_RERUN_EVENT, rerunHandler as EventListener);
     window.addEventListener(SPECIES_PREDICTION_DEBUG_RESYNC_EVENT, resyncHandler as EventListener);
+    window.addEventListener(SPECIES_PREDICTION_DEBUG_HEALTHCHECK_EVENT, healthCheckHandler as EventListener);
     return () => {
       window.removeEventListener(SPECIES_PREDICTION_DEBUG_RERUN_EVENT, rerunHandler as EventListener);
       window.removeEventListener(SPECIES_PREDICTION_DEBUG_RESYNC_EVENT, resyncHandler as EventListener);
+      window.removeEventListener(SPECIES_PREDICTION_DEBUG_HEALTHCHECK_EVENT, healthCheckHandler as EventListener);
     };
   }, [current.id, sendToIframe]);
 

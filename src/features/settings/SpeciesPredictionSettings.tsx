@@ -25,7 +25,9 @@ import {
   clearSpeciesPredictionDebugStorage,
   getSpeciesPredictionDebugSnapshot,
   getSpeciesPredictionDebugStorageSnapshot,
+  setSpeciesPredictionHealthCheckResult,
   SPECIES_PREDICTION_DEBUG_EVENT,
+  SPECIES_PREDICTION_DEBUG_HEALTHCHECK_EVENT,
   SPECIES_PREDICTION_DEBUG_RERUN_EVENT,
   SPECIES_PREDICTION_DEBUG_RESYNC_EVENT,
   type SpeciesPredictionDebugSnapshot,
@@ -187,6 +189,12 @@ export default function SpeciesPredictionSettings() {
     fetchSpeciesPredictionBackendStatus()
       .then((data) => {
         setBackendStatus(data);
+        setSpeciesPredictionHealthCheckResult({
+          ok: true,
+          status: 200,
+          body: data,
+          timestamp: new Date().toISOString(),
+        });
       })
       .catch(() => {
         setBackendStatus({
@@ -289,10 +297,23 @@ export default function SpeciesPredictionSettings() {
     toast.success('Prediction rerun requested');
   }, []);
 
+  const runHealthCheck = useCallback(() => {
+    window.dispatchEvent(new Event(SPECIES_PREDICTION_DEBUG_HEALTHCHECK_EVENT));
+    toast.success('Backend health check requested');
+  }, []);
+
   const resyncPanel = useCallback(() => {
     window.dispatchEvent(new Event(SPECIES_PREDICTION_DEBUG_RESYNC_EVENT));
     toast.success('Panel resync requested');
   }, []);
+
+  const copyLastErrorJson = useCallback(() => {
+    void copyJson(debugSnapshot.transport.error, 'Last error JSON');
+  }, [copyJson, debugSnapshot.transport.error]);
+
+  const copyTransportDiagnostics = useCallback(() => {
+    void copyJson(debugSnapshot.transport, 'Transport diagnostics');
+  }, [copyJson, debugSnapshot.transport]);
 
   return (
     <div className="space-y-4">
@@ -530,6 +551,37 @@ export default function SpeciesPredictionSettings() {
                             </div>
                           </DebugSection>
 
+                          <DebugSection title="Last request metadata">
+                            <div className="grid gap-2 text-xs md:grid-cols-2">
+                              <DebugKeyValue label="Request URL used" value={debugSnapshot.transport.requestUrl || `${getFunctionsBaseUrl()}/species-prediction`} />
+                              <DebugKeyValue label="Request timestamp" value={debugSnapshot.transport.requestTimestamp || '(empty)'} />
+                              <DebugKeyValue label="Response timestamp" value={debugSnapshot.transport.responseTimestamp || '(empty)'} />
+                              <DebugKeyValue label="Request ID" value={debugSnapshot.transport.requestId || '(empty)'} />
+                              <DebugKeyValue label="Last HTTP status" value={String(debugSnapshot.transport.httpStatus ?? '(null)')} />
+                              <DebugKeyValue label="Error stage" value={debugSnapshot.transport.error?.stage || '(empty)'} />
+                              <DebugKeyValue label="Error type" value={debugSnapshot.transport.error?.errorType || '(empty)'} />
+                              <DebugKeyValue label="Last error message" value={debugSnapshot.transport.error?.message || '(empty)'} />
+                            </div>
+                          </DebugSection>
+
+                          <DebugSection
+                            title="Last error object"
+                            actions={<Button variant="outline" size="sm" onClick={copyLastErrorJson}>Copy last error JSON</Button>}
+                          >
+                            <JsonBox value={debugSnapshot.transport.error} />
+                          </DebugSection>
+
+                          <DebugSection
+                            title="Last response body"
+                            actions={<Button variant="outline" size="sm" onClick={copyTransportDiagnostics}>Copy transport diagnostics</Button>}
+                          >
+                            <JsonBox value={debugSnapshot.transport.responseBody} />
+                          </DebugSection>
+
+                          <DebugSection title="Backend health check">
+                            <JsonBox value={debugSnapshot.transport.healthCheck} />
+                          </DebugSection>
+
                           <DebugSection
                             title="Raw backend response"
                             actions={<Button variant="outline" size="sm" onClick={() => copyJson(debugSnapshot.rawBackendResponse, 'Backend JSON')}>Copy backend JSON</Button>}
@@ -576,9 +628,10 @@ export default function SpeciesPredictionSettings() {
                           </DebugSection>
 
                           <div className="grid gap-2 md:grid-cols-2">
+                            <Button variant="outline" onClick={runHealthCheck}>Run backend health check</Button>
                             <Button variant="outline" onClick={clearPredictionCache}>Clear prediction cache</Button>
                             <Button variant="outline" onClick={clearPredictionStorage}>Clear species prediction local storage</Button>
-                            <Button variant="outline" onClick={forceRerunPrediction}>Force rerun prediction</Button>
+                            <Button variant="outline" onClick={forceRerunPrediction}>Run prediction test now</Button>
                             <Button variant="outline" onClick={resyncPanel}>Resync panel from latest backend response</Button>
                           </div>
                         </div>
@@ -733,6 +786,12 @@ function buildDiagnosticsSummary(snapshot: SpeciesPredictionDebugSnapshot): stri
     `speciesKey=${snapshot.activeContext.speciesKey || '(empty)'}`,
     `scope=${snapshot.activeContext.mapScope || '(empty)'}`,
     `status=${snapshot.activeContext.predictionStatus}`,
+    `requestUrl=${snapshot.transport.requestUrl || '(empty)'}`,
+    `requestId=${snapshot.transport.requestId || '(empty)'}`,
+    `httpStatus=${snapshot.transport.httpStatus ?? '(null)'}`,
+    `errorStage=${snapshot.transport.error?.stage || '(empty)'}`,
+    `errorType=${snapshot.transport.error?.errorType || '(empty)'}`,
+    `errorMessage=${snapshot.transport.error?.message || '(empty)'}`,
     ...rows,
   ].join('\n');
 }
@@ -779,6 +838,13 @@ async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionB
     const message = typeof data === 'object' && data && 'message' in data
       ? String((data as { message?: unknown }).message || 'Prediction backend is not configured yet')
       : 'Prediction backend is not configured yet';
+    setSpeciesPredictionHealthCheckResult({
+      ok: false,
+      status: response.status,
+      statusText: response.statusText,
+      body: data,
+      timestamp: new Date().toISOString(),
+    });
     throw new Error(message);
   }
 
@@ -787,6 +853,13 @@ async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionB
   }
 
   const status = data as Partial<SpeciesPredictionBackendStatus>;
+  setSpeciesPredictionHealthCheckResult({
+    ok: true,
+    status: response.status,
+    statusText: response.statusText,
+    body: data,
+    timestamp: new Date().toISOString(),
+  });
   return {
     ok: status.ok === true,
     configured: status.configured === true,

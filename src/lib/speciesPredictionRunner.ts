@@ -7,44 +7,164 @@ import {
   type SpeciesPredictionRequestPayload,
   type SpeciesPredictionResult,
 } from '@/lib/speciesPrediction';
-import { setSpeciesPredictionDebugBackendResponse } from '@/lib/speciesPredictionDebug';
+import {
+  setSpeciesPredictionDebugBackendResponse,
+  setSpeciesPredictionTransportError,
+  updateSpeciesPredictionTransport,
+  type SpeciesPredictionTransportError,
+} from '@/lib/speciesPredictionDebug';
 import type { SpeciesScopeId } from '@/lib/mapScope';
-import { isDeveloperModeEnabled } from '@/config/supabaseConfig';
+import { getFunctionsBaseUrl, isDeveloperModeEnabled } from '@/config/supabaseConfig';
+
+export type SpeciesPredictionRequestDiagnostics = {
+  requestUrl: string;
+  requestTimestamp: string;
+  responseTimestamp: string;
+  requestId: string;
+  httpStatus: number | null;
+  responseBody: unknown;
+  error: SpeciesPredictionTransportError | null;
+};
 
 export async function runSpeciesPredictionRequest(
   payload: SpeciesPredictionRequestPayload,
   scope: SpeciesScopeId,
-): Promise<{ ok: boolean; disabled?: boolean; error?: string; stage?: string; result?: SpeciesPredictionResult }> {
+): Promise<{ ok: boolean; disabled?: boolean; error?: string; stage?: string; result?: SpeciesPredictionResult; diagnostics: SpeciesPredictionRequestDiagnostics }> {
+  const requestTimestamp = new Date().toISOString();
+  const requestId = `species-prediction-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const requestUrl = `${getFunctionsBaseUrl()}/species-prediction`;
+  updateSpeciesPredictionTransport({
+    requestUrl,
+    requestTimestamp,
+    responseTimestamp: '',
+    requestId,
+    httpStatus: null,
+    responseBody: null,
+    error: null,
+  });
   try {
     if (!isPredictionRequestType(payload.requestType)) {
+      const responseTimestamp = new Date().toISOString();
+      const transportError = createTransportError({
+        stage: 'validation',
+        httpStatus: null,
+        message: 'Prediction request type is invalid',
+        responseBody: null,
+        requestUrl,
+        requestId,
+        timestamp: responseTimestamp,
+        errorType: 'unknown',
+      });
+      updateSpeciesPredictionTransport({
+        responseTimestamp,
+        error: transportError,
+      });
       return {
         ok: false,
         error: 'Prediction request type is invalid',
+        stage: 'validation',
+        diagnostics: buildDiagnostics({
+          requestUrl,
+          requestTimestamp,
+          responseTimestamp,
+          requestId,
+          httpStatus: null,
+          responseBody: null,
+          error: transportError,
+        }),
       };
     }
     const { data, error } = await supabase.functions.invoke('species-prediction', {
       body: payload,
     });
+    const responseTimestamp = new Date().toISOString();
+    updateSpeciesPredictionTransport({
+      responseTimestamp,
+      responseBody: data ?? null,
+    });
     console.debug('[speciesPrediction] raw backend response', summarizePredictionPayload(data, payload.species.key));
-    if (error) throw error;
+    if (error) {
+      throw createInvokeError(error, {
+        requestUrl,
+        requestTimestamp,
+        responseTimestamp,
+        requestId,
+        responseBody: data ?? null,
+      });
+    }
     if (isErrorEnvelope(data)) {
+      const transportError = createTransportError({
+        stage: mapErrorStage(data.stage),
+        httpStatus: readNumber((data as Record<string, unknown>).status) ?? null,
+        message: String(data.message || data.error || 'Prediction request failed'),
+        responseBody: data,
+        requestUrl,
+        requestId,
+        timestamp: responseTimestamp,
+        errorType: 'server',
+      });
+      updateSpeciesPredictionTransport({
+        httpStatus: transportError.httpStatus,
+        responseBody: data,
+        error: transportError,
+      });
       return {
         ok: false,
         ...(data.disabled ? { disabled: true } : {}),
         ...(typeof data.stage === 'string' ? { stage: data.stage } : {}),
         error: resolveUserFacingBackendMessage(String(data.message || data.error || 'Prediction request failed')),
+        diagnostics: buildDiagnostics({
+          requestUrl,
+          requestTimestamp,
+          responseTimestamp,
+          requestId,
+          httpStatus: transportError.httpStatus,
+          responseBody: data,
+          error: transportError,
+        }),
       };
     }
     const sourceResult = isWrappedSuccessEnvelope(data) ? data.result : data;
     setSpeciesPredictionDebugBackendResponse(sourceResult);
+    updateSpeciesPredictionTransport({
+      httpStatus: 200,
+      responseBody: sourceResult,
+      error: null,
+    });
+    setSpeciesPredictionTransportError(null);
     console.debug('[speciesPrediction] compare raw backend', comparePredictionFields(sourceResult, payload.species.key));
     if (isDeveloperModeEnabled()) {
       console.debug('[SpeciesPredictionDebug] backend', comparePredictionFields(sourceResult, payload.species.key));
     }
     if (!hasUsableSpeciesPredictionResult(sourceResult)) {
+      const transportError = createTransportError({
+        stage: 'parse',
+        httpStatus: 200,
+        message: 'Prediction service is temporarily unavailable',
+        responseBody: sourceResult,
+        requestUrl,
+        requestId,
+        timestamp: responseTimestamp,
+        errorType: 'parse',
+      });
+      updateSpeciesPredictionTransport({
+        httpStatus: 200,
+        responseBody: sourceResult,
+        error: transportError,
+      });
       return {
         ok: false,
         error: 'Prediction service is temporarily unavailable',
+        stage: 'parse',
+        diagnostics: buildDiagnostics({
+          requestUrl,
+          requestTimestamp,
+          responseTimestamp,
+          requestId,
+          httpStatus: 200,
+          responseBody: sourceResult,
+          error: transportError,
+        }),
       };
     }
     return {
@@ -52,13 +172,34 @@ export async function runSpeciesPredictionRequest(
       result: logNormalizedPredictionResult(
         normalizeSpeciesPredictionResult(sourceResult, payload.species.name, scope),
       ),
+      diagnostics: buildDiagnostics({
+        requestUrl,
+        requestTimestamp,
+        responseTimestamp,
+        requestId,
+        httpStatus: 200,
+        responseBody: sourceResult,
+        error: null,
+      }),
     };
   } catch (error: unknown) {
     const message = resolvePredictionErrorMessage(error);
+    const diagnostics = resolveRequestDiagnostics(error, requestUrl, requestTimestamp, requestId);
+    updateSpeciesPredictionTransport({
+      requestUrl: diagnostics.requestUrl,
+      requestTimestamp: diagnostics.requestTimestamp,
+      responseTimestamp: diagnostics.responseTimestamp,
+      requestId: diagnostics.requestId,
+      httpStatus: diagnostics.httpStatus,
+      responseBody: diagnostics.responseBody,
+      error: diagnostics.error,
+    });
+    setSpeciesPredictionTransportError(diagnostics.error);
     return {
       ok: false,
       stage: resolvePredictionErrorStage(error),
       error: message,
+      diagnostics,
     };
   }
 }
@@ -199,6 +340,10 @@ function resolvePredictionErrorMessage(error: unknown): string {
   return 'Prediction service is temporarily unavailable';
 }
 
+function buildDiagnostics(input: SpeciesPredictionRequestDiagnostics): SpeciesPredictionRequestDiagnostics {
+  return input;
+}
+
 type ErrorEnvelope = {
   ok?: boolean;
   error?: unknown;
@@ -281,6 +426,106 @@ function resolvePredictionErrorStage(error: unknown): string | undefined {
   const responseStage = extractStage(candidate.response);
   if (responseStage) return responseStage;
   return undefined;
+}
+
+function createTransportError(error: SpeciesPredictionTransportError): SpeciesPredictionTransportError {
+  return error;
+}
+
+function resolveRequestDiagnostics(
+  error: unknown,
+  requestUrl: string,
+  requestTimestamp: string,
+  requestId: string,
+): SpeciesPredictionRequestDiagnostics {
+  const responseTimestamp = new Date().toISOString();
+  const candidate = (error && typeof error === 'object') ? error as Record<string, unknown> : {};
+  const responseBody = candidate.responseBody ?? candidate.context ?? candidate.response ?? null;
+  const httpStatus = readNumber(candidate.httpStatus) ?? readNumber(candidate.status) ?? null;
+  const transportError = createTransportError({
+    stage: mapErrorStage(resolvePredictionErrorStage(error)),
+    httpStatus,
+    message: resolvePredictionErrorMessage(error),
+    responseBody,
+    requestUrl: typeof candidate.requestUrl === 'string' ? candidate.requestUrl : requestUrl,
+    requestId: typeof candidate.requestId === 'string' ? candidate.requestId : requestId,
+    timestamp: typeof candidate.timestamp === 'string' ? candidate.timestamp : responseTimestamp,
+    errorType: resolveErrorType(error),
+  });
+  return {
+    requestUrl: transportError.requestUrl,
+    requestTimestamp: typeof candidate.requestTimestamp === 'string' ? candidate.requestTimestamp : requestTimestamp,
+    responseTimestamp,
+    requestId: transportError.requestId || requestId,
+    httpStatus,
+    responseBody,
+    error: transportError,
+  };
+}
+
+function createInvokeError(
+  error: unknown,
+  diagnostics: {
+    requestUrl: string;
+    requestTimestamp: string;
+    responseTimestamp: string;
+    requestId: string;
+    responseBody: unknown;
+  },
+): Error {
+  const message = resolvePredictionErrorMessage(error);
+  const err = new Error(message) as Error & Record<string, unknown>;
+  const candidate = (error && typeof error === 'object') ? error as Record<string, unknown> : {};
+  err.stage = resolvePredictionErrorStage(error) || 'frontend_fetch';
+  err.httpStatus = readNumber(candidate.status) ?? null;
+  err.status = readNumber(candidate.status) ?? null;
+  err.response = candidate.response ?? null;
+  err.responseBody = diagnostics.responseBody;
+  err.context = candidate.context ?? null;
+  err.requestUrl = diagnostics.requestUrl;
+  err.requestTimestamp = diagnostics.requestTimestamp;
+  err.responseTimestamp = diagnostics.responseTimestamp;
+  err.requestId = diagnostics.requestId;
+  err.timestamp = diagnostics.responseTimestamp;
+  return err;
+}
+
+function mapErrorStage(stage: unknown): SpeciesPredictionTransportError['stage'] {
+  switch (String(stage || '').trim()) {
+    case 'frontend_fetch':
+    case 'edge_function':
+    case 'n8n_upstream':
+    case 'n8n_timeout':
+    case 'n8n_non_2xx':
+    case 'invalid_upstream_json':
+    case 'missing_webhook_url':
+    case 'parse':
+    case 'validation':
+    case 'status':
+      return String(stage) as SpeciesPredictionTransportError['stage'];
+    case 'n8n':
+      return 'n8n_upstream';
+    case 'upstream_json':
+      return 'invalid_upstream_json';
+    default:
+      return 'unknown';
+  }
+}
+
+function resolveErrorType(error: unknown): SpeciesPredictionTransportError['errorType'] {
+  const candidate = (error && typeof error === 'object') ? error as Record<string, unknown> : {};
+  const message = resolvePredictionErrorMessage(error).toLowerCase();
+  const stage = mapErrorStage(resolvePredictionErrorStage(error));
+  if (stage === 'n8n_timeout' || message.includes('timeout')) return 'timeout';
+  if (stage === 'parse' || stage === 'invalid_upstream_json' || message.includes('invalid response')) return 'parse';
+  if (message.includes('fetch failed') || message.includes('network') || message.includes('load failed')) return 'network';
+  if (readNumber(candidate.status) != null || stage === 'edge_function' || stage === 'n8n_non_2xx' || stage === 'n8n_upstream') return 'server';
+  return 'unknown';
+}
+
+function readNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function extractStage(value: unknown): string {

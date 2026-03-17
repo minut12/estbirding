@@ -24,10 +24,12 @@ serve(async (req) => {
       });
       return json({
         ok: true,
+        stage: 'status',
         available: true,
         deployed: true,
         configured: webhookConfigured,
         webhookConfigured,
+        timestamp: new Date().toISOString(),
         message: webhookConfigured
           ? 'Prediction backend is deployed and configured'
           : 'Prediction backend is not configured yet',
@@ -35,12 +37,12 @@ serve(async (req) => {
     }
 
     if (req.method !== 'POST') {
-      return jsonError('Method not allowed', 405, 'validation');
+      return jsonError({ message: 'Method not allowed', status: 405, stage: 'validation' });
     }
 
     if (!webhookConfigured) {
       console.warn('[species-prediction] webhook env missing', { envKey: WEBHOOK_ENV_KEY });
-      return jsonError('Prediction backend is not configured yet', 503, 'edge_function');
+      return jsonError({ message: 'Prediction backend is not configured yet', status: 503, stage: 'missing_webhook_url' });
     }
 
     let body: unknown;
@@ -48,7 +50,7 @@ serve(async (req) => {
       body = await req.json();
     } catch {
       console.warn('[species-prediction] invalid JSON body');
-      return jsonError('Invalid request body', 400, 'validation');
+      return jsonError({ message: 'Invalid request body', status: 400, stage: 'validation' });
     }
 
     const payload = body as Record<string, unknown> | null;
@@ -61,7 +63,7 @@ serve(async (req) => {
 
     if (!speciesKey || !speciesName) {
       console.warn('[species-prediction] missing required species fields');
-      return jsonError('Missing species information for prediction', 400, 'validation');
+      return jsonError({ message: 'Missing species information for prediction', status: 400, stage: 'validation' });
     }
 
     console.info('[species-prediction] request validated', {
@@ -112,7 +114,14 @@ serve(async (req) => {
           upstreamMessage: upstreamMessage || null,
           upstreamBody: text || null,
         });
-        return jsonError(normalizeUpstreamMessage(upstreamMessage), 502, 'n8n');
+        return jsonError({
+          message: normalizeUpstreamMessage(upstreamMessage),
+          status: 502,
+          stage: 'n8n_non_2xx',
+          upstreamStatus: upstream.status,
+          upstreamStatusText: upstream.statusText,
+          upstreamBody: safeJson(text),
+        });
       }
 
       let data: unknown;
@@ -120,12 +129,22 @@ serve(async (req) => {
         data = text ? JSON.parse(text) : null;
       } catch {
         console.error('[species-prediction] upstream returned invalid JSON');
-        return jsonError('Prediction backend returned an invalid response', 502, 'upstream_json');
+        return jsonError({
+          message: 'Prediction backend returned an invalid response',
+          status: 502,
+          stage: 'invalid_upstream_json',
+          upstreamBody: text || null,
+        });
       }
 
       if (!data || typeof data !== 'object' || Array.isArray(data)) {
         console.error('[species-prediction] upstream response is not a JSON object');
-        return jsonError('Prediction backend returned an invalid response', 502, 'upstream_json');
+        return jsonError({
+          message: 'Prediction backend returned an invalid response',
+          status: 502,
+          stage: 'invalid_upstream_json',
+          upstreamBody: data,
+        });
       }
 
       return json(data as Record<string, unknown>);
@@ -133,16 +152,31 @@ serve(async (req) => {
       const isAbort = err instanceof DOMException && err.name === 'AbortError';
       if (isAbort) {
         console.error('[species-prediction] webhook timeout', { timeoutMs });
-        return jsonError('Prediction service is temporarily unavailable', 504, 'edge_function');
+        return jsonError({
+          message: 'Prediction service is temporarily unavailable',
+          status: 504,
+          stage: 'n8n_timeout',
+          upstreamBody: { timeoutMs },
+        });
       }
       console.error('[species-prediction] webhook request failed', { error: String(err) });
-      return jsonError('Prediction service is temporarily unavailable', 502, 'edge_function');
+      return jsonError({
+        message: 'Prediction service is temporarily unavailable',
+        status: 502,
+        stage: 'n8n_upstream',
+        upstreamBody: { error: String(err) },
+      });
     } finally {
       clearTimeout(timer);
     }
   } catch (err) {
     console.error('[species-prediction] unexpected error', { error: String(err) });
-    return jsonError('Prediction service encountered an unexpected error', 500, 'edge_function');
+    return jsonError({
+      message: 'Prediction service encountered an unexpected error',
+      status: 500,
+      stage: 'edge_function',
+      upstreamBody: { error: String(err) },
+    });
   }
 });
 
@@ -150,8 +184,24 @@ function readWebhookUrl(): string {
   return (Deno.env.get(WEBHOOK_ENV_KEY) || '').trim();
 }
 
-function jsonError(message: string, status: number, stage: 'validation' | 'edge_function' | 'n8n' | 'upstream_json'): Response {
-  return json({ ok: false, message, stage }, status);
+function jsonError(input: {
+  message: string;
+  status: number;
+  stage: string;
+  upstreamStatus?: number;
+  upstreamStatusText?: string;
+  upstreamBody?: unknown;
+}): Response {
+  return json({
+    ok: false,
+    message: input.message,
+    stage: input.stage,
+    ...(typeof input.upstreamStatus === 'number' ? { upstreamStatus: input.upstreamStatus } : {}),
+    ...(typeof input.upstreamStatusText === 'string' && input.upstreamStatusText ? { upstreamStatusText: input.upstreamStatusText } : {}),
+    ...(typeof input.upstreamBody !== 'undefined' ? { upstreamBody: input.upstreamBody } : {}),
+    status: input.status,
+    timestamp: new Date().toISOString(),
+  }, input.status);
 }
 
 function json(body: Record<string, unknown>, status = 200): Response {
@@ -198,4 +248,14 @@ function normalizeUpstreamMessage(message: string): string {
     return 'Prediction service is temporarily unavailable';
   }
   return message;
+}
+
+function safeJson(value: string): unknown {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return trimmed;
+  }
 }

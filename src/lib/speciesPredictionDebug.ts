@@ -4,8 +4,45 @@ export const SPECIES_PREDICTION_DEBUG_EVENT = 'species-prediction-debug-updated'
 export const SPECIES_PREDICTION_DEBUG_RERUN_EVENT = 'species-prediction-debug-rerun';
 export const SPECIES_PREDICTION_DEBUG_RESYNC_EVENT = 'species-prediction-debug-resync';
 export const SPECIES_PREDICTION_DEBUG_PANEL_STATE_MESSAGE = 'SPECIES_PREDICTION_PANEL_STATE';
+export const SPECIES_PREDICTION_DEBUG_HEALTHCHECK_EVENT = 'species-prediction-debug-healthcheck';
 
 type DebugStatus = 'idle' | 'loading' | 'success' | 'error';
+export type SpeciesPredictionErrorStage =
+  | 'frontend_fetch'
+  | 'edge_function'
+  | 'n8n_upstream'
+  | 'n8n_timeout'
+  | 'n8n_non_2xx'
+  | 'invalid_upstream_json'
+  | 'missing_webhook_url'
+  | 'parse'
+  | 'validation'
+  | 'status'
+  | 'unknown';
+
+export type SpeciesPredictionErrorType = 'timeout' | 'network' | 'server' | 'parse' | 'unknown';
+
+export type SpeciesPredictionTransportError = {
+  stage: SpeciesPredictionErrorStage;
+  httpStatus: number | null;
+  message: string;
+  responseBody: unknown;
+  requestUrl: string;
+  requestId: string | null;
+  timestamp: string;
+  errorType: SpeciesPredictionErrorType;
+};
+
+export type SpeciesPredictionTransportSnapshot = {
+  requestUrl: string;
+  requestTimestamp: string;
+  responseTimestamp: string;
+  requestId: string | null;
+  httpStatus: number | null;
+  responseBody: unknown;
+  error: SpeciesPredictionTransportError | null;
+  healthCheck: unknown | null;
+};
 
 export type SpeciesPredictionPanelStateSnapshot = {
   speciesName?: string;
@@ -34,6 +71,7 @@ export type SpeciesPredictionDebugSnapshot = {
   panelPayload: unknown | null;
   panelState: SpeciesPredictionPanelStateSnapshot | null;
   latestBackendResponseForResync: unknown | null;
+  transport: SpeciesPredictionTransportSnapshot;
 };
 
 const state: SpeciesPredictionDebugSnapshot = {
@@ -50,6 +88,16 @@ const state: SpeciesPredictionDebugSnapshot = {
   panelPayload: null,
   panelState: null,
   latestBackendResponseForResync: null,
+  transport: {
+    requestUrl: '',
+    requestTimestamp: '',
+    responseTimestamp: '',
+    requestId: null,
+    httpStatus: null,
+    responseBody: null,
+    error: null,
+    healthCheck: null,
+  },
 };
 
 function emit(): void {
@@ -84,6 +132,21 @@ export function setSpeciesPredictionDebugPanelState(panelState: SpeciesPredictio
   emit();
 }
 
+export function updateSpeciesPredictionTransport(patch: Partial<SpeciesPredictionTransportSnapshot>): void {
+  Object.assign(state.transport, patch);
+  emit();
+}
+
+export function setSpeciesPredictionTransportError(error: SpeciesPredictionTransportError | null): void {
+  state.transport.error = error ?? null;
+  emit();
+}
+
+export function setSpeciesPredictionHealthCheckResult(result: unknown): void {
+  state.transport.healthCheck = result ?? null;
+  emit();
+}
+
 export function clearSpeciesPredictionDebugMemory(): void {
   state.rawBackendResponse = null;
   state.panelPayload = null;
@@ -92,6 +155,14 @@ export function clearSpeciesPredictionDebugMemory(): void {
   state.activeContext.lastPredictionRequestAt = '';
   state.activeContext.lastPredictionResponseAt = '';
   state.activeContext.predictionStatus = 'idle';
+  state.transport.requestUrl = '';
+  state.transport.requestTimestamp = '';
+  state.transport.responseTimestamp = '';
+  state.transport.requestId = null;
+  state.transport.httpStatus = null;
+  state.transport.responseBody = null;
+  state.transport.error = null;
+  state.transport.healthCheck = null;
   emit();
 }
 

@@ -258,6 +258,13 @@
     state.loading = false;
     state.error = '';
     state.result = result ? cloneResult(result) : null;
+    console.debug('[speciesPrediction] compare panel state replacement', {
+      speciesKey: state.result && state.result.speciesKey ? state.result.speciesKey : state.speciesKey || '',
+      insightSummary: state.result && state.result.insightSummary ? state.result.insightSummary : null,
+      externalPressureScore: state.result ? state.result.externalPressureScore : null,
+      lithuania: state.result && state.result.countryScores && state.result.countryScores.lithuania != null ? state.result.countryScores.lithuania : null,
+      topPredictedPointReason: state.result && state.result.topPredictedPoints && state.result.topPredictedPoints[0] ? state.result.topPredictedPoints[0].reason || null : null,
+    });
     ensurePanel();
     render();
   }
@@ -340,9 +347,6 @@
       html += '<div class="spp-card"><h4>Insight summary</h4><p>' + escapeHtml(summaryText) + '</p>';
       if (confidenceNote) {
         html += '<p class="spp-note">' + escapeHtml(confidenceNote) + '</p>';
-      }
-      if (result.analysisFallbackUsed && !summaryText) {
-        html += '<p class="spp-note">OpenAI analysis unavailable; showing deterministic summary.</p>';
       }
       html += '</div>';
     }

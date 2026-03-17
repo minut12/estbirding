@@ -260,9 +260,13 @@ export function normalizeSpeciesPredictionResult(
   const source = resolvePredictionSource(input);
   const normalizedName = normalizeUiText(speciesName);
   const speciesKey = normalizeSpeciesName(readString(source, ['speciesKey', 'species_key']) || normalizedName);
-  const topPredictedPointsSource = readArray(source, ['topPredictedPoints', 'top_predicted_points', 'points', 'candidates'])
-    ?? readArray(asRecord(source.openaiAnalysis), ['rerankedTopPredictedPoints'])
-    ?? readArray(source, ['rerankedTopPredictedPoints']);
+  const canonicalTopPredictedPointsSource = readArray(source, ['topPredictedPoints']);
+  const legacyTopPredictedPointsSource = readArray(source, ['top_predicted_points', 'points', 'candidates']);
+  const rerankedTopPredictedPointsSource = readArray(source, ['rerankedTopPredictedPoints'])
+    ?? readArray(asRecord(source.openaiAnalysis), ['rerankedTopPredictedPoints']);
+  const topPredictedPointsSource = canonicalTopPredictedPointsSource
+    ?? legacyTopPredictedPointsSource
+    ?? rerankedTopPredictedPointsSource;
   const topPredictedPoints = Array.isArray(topPredictedPointsSource)
     ? topPredictedPointsSource
       .map((point, index) => normalizePredictedPoint(point, index))
@@ -273,17 +277,25 @@ export function normalizeSpeciesPredictionResult(
   const warnings = Array.isArray(warningsSource)
     ? warningsSource.map((warning) => normalizeUiText(String(warning || ''))).filter(Boolean)
     : [];
-  const countryScoresSource = readRecord(source, ['countryScores', 'country_scores', 'countryScoreMap', 'country_score_map'])
-    ?? readRecord(asRecord(source.rawResearchPayload).openAIAnalysisInput, ['countryScores'])
+  const canonicalCountryScoresSource = readRecord(source, ['countryScores']);
+  const legacyCountryScoresSource = readRecord(source, ['country_scores', 'countryScoreMap', 'country_score_map']);
+  const fallbackCountryScoresSource = readRecord(asRecord(source.rawResearchPayload).openAIAnalysisInput, ['countryScores']);
+  const countryScoresSource = canonicalCountryScoresSource
+    ?? legacyCountryScoresSource
+    ?? fallbackCountryScoresSource
     ?? {};
-  const consistencyChecksSource = readRecord(source, ['consistencyChecks', 'consistency_checks'])
+  const consistencyChecksSource = readRecord(source, ['consistencyChecks'])
+    ?? readRecord(source, ['consistency_checks'])
     ?? readRecord(asRecord(source.openaiAnalysis), ['consistencyChecks'])
     ?? null;
-  const insightSummary = readString(source, ['insightSummary', 'insight_summary', 'summary'])
+  const insightSummary = readString(source, ['insightSummary'])
+    || readString(source, ['insight_summary', 'summary'])
     || readString(asRecord(source.openaiAnalysis), ['insightSummary', 'insight_summary', 'summary']);
-  const confidenceNote = readString(source, ['confidenceNote', 'confidence_note'])
+  const confidenceNote = readString(source, ['confidenceNote'])
+    || readString(source, ['confidence_note'])
     || readString(asRecord(source.openaiAnalysis), ['confidenceNote', 'confidence_note']);
-  const analysisVersion = readString(source, ['analysisVersion', 'analysis_version'])
+  const analysisVersion = readString(source, ['analysisVersion'])
+    || readString(source, ['analysis_version'])
     || readString(asRecord(source.openaiAnalysis), ['analysisVersion', 'analysis_version']);
   return {
     speciesKey,
@@ -313,6 +325,7 @@ export function normalizeSpeciesPredictionResult(
     ...(confidenceNote ? { confidenceNote: normalizeUiText(confidenceNote) } : {}),
     ...(warnings.length ? { warnings } : {}),
     ...(consistencyChecksSource ? { consistencyChecks: normalizePredictionConsistencyChecks(consistencyChecksSource) } : {}),
+    ...(source.openaiAnalysis ? { openaiAnalysis: source.openaiAnalysis as SpeciesPredictionAnalysis } : {}),
     ...(source.rawResearchPayload ? { rawResearchPayload: source.rawResearchPayload } : {}),
   };
 }
@@ -341,48 +354,61 @@ function resolvePredictionSource(input: Partial<SpeciesPredictionResult> | null 
 
 function hasCanonicalPredictionFields(record: Record<string, unknown>): boolean {
   return Boolean(
-    readString(record, ['insightSummary', 'insight_summary', 'summary'])
-    || hasValue(record, ['externalPressureScore', 'external_pressure_score', 'pressureScore', 'pressure_score'])
-    || hasValue(record, ['countryScores', 'country_scores', 'countryScoreMap', 'country_score_map'])
-    || hasValue(record, ['topPredictedPoints', 'top_predicted_points', 'points', 'candidates']),
+    readString(record, ['insightSummary'])
+    || hasValue(record, ['confidenceNote'])
+    || hasValue(record, ['warnings'])
+    || hasValue(record, ['consistencyChecks'])
+    || hasValue(record, ['externalPressureScore'])
+    || hasValue(record, ['springFitScore'])
+    || hasValue(record, ['windSupportScore'])
+    || hasValue(record, ['routeVector'])
+    || hasValue(record, ['bestEntryZone'])
+    || hasValue(record, ['alreadyMissedRisk'])
+    || hasValue(record, ['countryScores'])
+    || hasValue(record, ['topPredictedPoints']),
   );
 }
 
-function readString(record: Record<string, unknown>, keys: string[]): string {
+function readString(record: Record<string, unknown> | null | undefined, keys: string[]): string {
+  const source = asRecord(record);
   for (const key of keys) {
-    const value = record[key];
+    const value = source[key];
     if (typeof value === 'string' && value.trim()) return value;
   }
   return '';
 }
 
-function readNumber(record: Record<string, unknown>, keys: string[]): number {
+function readNumber(record: Record<string, unknown> | null | undefined, keys: string[]): number {
+  const source = asRecord(record);
   for (const key of keys) {
-    const value = record[key];
+    const value = source[key];
     const n = Number(value);
     if (Number.isFinite(n)) return n;
   }
   return 0;
 }
 
-function readRecord(record: Record<string, unknown>, keys: string[]): Record<string, unknown> | null {
+function readRecord(record: Record<string, unknown> | null | undefined, keys: string[]): Record<string, unknown> | null {
+  const source = asRecord(record);
   for (const key of keys) {
-    const value = asRecord(record[key]);
+    const value = asRecord(source[key]);
     if (Object.keys(value).length) return value;
   }
   return null;
 }
 
-function readArray(record: Record<string, unknown>, keys: string[]): unknown[] | null {
+function readArray(record: Record<string, unknown> | null | undefined, keys: string[]): unknown[] | null {
+  const source = asRecord(record);
   for (const key of keys) {
-    const value = record[key];
+    const value = source[key];
     if (Array.isArray(value)) return value;
   }
   return null;
 }
 
-function hasValue(record: Record<string, unknown>, keys: string[]): boolean {
-  return keys.some((key) => record[key] != null);
+function hasValue(record: Record<string, unknown> | null | undefined, keys: string[]): boolean {
+  const source = asRecord(record);
+  return keys.some((key) => source[key] != null);
 }
 
 function resolvePredictionRisk(value: string): PredictionRisk {

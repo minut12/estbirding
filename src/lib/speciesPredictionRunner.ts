@@ -128,13 +128,21 @@ function comparePredictionFields(value: unknown, speciesKey: string) {
   const record = (value && typeof value === 'object' && !Array.isArray(value)) ? value as Record<string, unknown> : {};
   const countryScores = (record.countryScores && typeof record.countryScores === 'object' && !Array.isArray(record.countryScores))
     ? record.countryScores as Record<string, unknown>
-    : {};
-  const points = Array.isArray(record.topPredictedPoints) ? record.topPredictedPoints : [];
+    : ((record.countryScoreMap && typeof record.countryScoreMap === 'object' && !Array.isArray(record.countryScoreMap))
+      ? record.countryScoreMap as Record<string, unknown>
+      : {});
+  const points = Array.isArray(record.topPredictedPoints)
+    ? record.topPredictedPoints
+    : (Array.isArray(record.points)
+      ? record.points
+      : (Array.isArray(record.candidates) ? record.candidates : []));
   const firstPoint = (points[0] && typeof points[0] === 'object' && !Array.isArray(points[0])) ? points[0] as Record<string, unknown> : {};
   return {
     speciesKey,
-    insightSummary: typeof record.insightSummary === 'string' ? record.insightSummary : null,
-    externalPressureScore: record.externalPressureScore ?? null,
+    insightSummary: typeof record.insightSummary === 'string'
+      ? record.insightSummary
+      : (typeof record.summary === 'string' ? record.summary : null),
+    externalPressureScore: record.externalPressureScore ?? record.pressureScore ?? null,
     lithuania: countryScores.lithuania ?? null,
     topPredictedPointReason: typeof firstPoint.reason === 'string' ? firstPoint.reason : null,
   };

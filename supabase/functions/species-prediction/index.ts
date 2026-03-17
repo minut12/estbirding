@@ -304,21 +304,26 @@ async function buildMapFirstPredictionResult(opts: {
   const { payload, speciesKey, speciesName, webhookConfigured, webhookUrl, signal } = opts;
   const payloadSpecies = asRecord(payload.species);
   const settings = asRecord(payload.settings);
+  const latinName = stringOr(payloadSpecies.latinName);
   const ebirdSpeciesCode = stringOr(settings.ebirdSpeciesCodeOverride, payloadSpecies.ebirdSpeciesCode, payloadSpecies.ebirdSpeciesCodeOverride);
   const horizonDays = clampInt(toNumber(settings.horizonDays) || 7, 1, 30);
 
-  const estoniaHistoryPoints = await fetchGbifEstoniaHistory(speciesName, signal);
+  const estoniaHistorySource = settings.useElurikkusHistory === false ? 'GBIF' : 'Elurikkus';
+  const elurikkusHistoryPoints = settings.useElurikkusHistory === false ? [] : await fetchElurikkusEstoniaHistory(speciesName, signal);
+  const gbifHistoryPoints = elurikkusHistoryPoints.length ? [] : await fetchGbifEstoniaHistory(latinName || speciesName, signal);
+  const estoniaHistoryPoints = dedupeEstoniaHistoryPoints(elurikkusHistoryPoints.length ? elurikkusHistoryPoints : gbifHistoryPoints);
+  const estoniaHistoryClusters = clusterEstoniaHistory(estoniaHistoryPoints);
   const foreignRecentPoints = ebirdSpeciesCode
     ? await fetchForeignRecentPoints(ebirdSpeciesCode, settings, signal)
     : [];
   const foreignClusters = clusterForeignRecentPoints(foreignRecentPoints);
   const weather = await fetchWeatherForPrediction(foreignClusters, signal);
   const estoniaEvidence = buildEstoniaEvidenceFromHistory(estoniaHistoryPoints);
-  const historicalEvidence = buildHistoricalEvidenceFromHistory(estoniaHistoryPoints);
+  const historicalEvidence = buildHistoricalEvidenceFromHistory(estoniaHistoryClusters);
   const foreignEvidence = buildForeignEvidenceFromPointsAndClusters(foreignRecentPoints, foreignClusters);
   const predictedTargets = buildPredictedTargets({
     speciesName,
-    estoniaHistoryPoints,
+    estoniaHistoryClusters,
     foreignClusters,
     weather,
     estoniaEvidence,
@@ -328,9 +333,11 @@ async function buildMapFirstPredictionResult(opts: {
   const rawLinks = buildRawLinks(speciesName, foreignEvidence);
   const sourceHealth = buildSourceHealthMapFirst({
     estoniaHistoryPoints,
+    estoniaHistoryClusters,
     foreignRecentPoints,
     foreignClusters,
     webhookConfigured,
+    estoniaHistorySourceUsed: elurikkusHistoryPoints.length ? 'Elurikkus' : (estoniaHistoryPoints.length ? 'GBIF' : estoniaHistorySource),
   });
   const warnings = Array.from(new Set(sourceHealth.sourceWarnings as string[]));
   const aiSummary = webhookConfigured && (settings.enableOpenAISummary === true || settings.enableN8nResearch === true)
@@ -348,11 +355,12 @@ async function buildMapFirstPredictionResult(opts: {
     species: {
       speciesKey,
       speciesName,
-      latinName: stringOr(payloadSpecies.latinName),
+      latinName,
       ebirdSpeciesCode,
     },
     sourceHealth,
     estoniaHistoryPoints,
+    estoniaHistoryClusters,
     foreignRecentPoints,
     foreignClusters,
     weather,
@@ -390,11 +398,12 @@ async function buildMapFirstPredictionResult(opts: {
       request: {
         speciesKey,
         speciesName,
-        latinName: stringOr(payloadSpecies.latinName),
+        latinName,
         ebirdSpeciesCode,
       },
       normalizedSources: {
         estoniaHistoryPoints,
+        estoniaHistoryClusters,
         foreignRecentPoints,
         foreignClusters,
         weather,
@@ -444,6 +453,59 @@ async function fetchGbifEstoniaHistory(speciesName: string, signal: AbortSignal)
   } catch {
     return [];
   }
+}
+
+async function fetchElurikkusEstoniaHistory(speciesName: string, signal: AbortSignal): Promise<Record<string, unknown>[]> {
+  const url = `https://elurikkus.ee/biocache-service/occurrences/search?q=${encodeURIComponent(speciesName)}&sort=eventDate&dir=desc&pageSize=200&fq=country:Estonia&_ts=${Date.now()}`;
+  try {
+    const resp = await fetch(url, {
+      signal,
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (compatible; EstBirding/1.0)',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+      },
+    });
+    if (!resp.ok) return [];
+    const data = await resp.json() as Record<string, unknown>;
+    const occurrences = Array.isArray(data.occurrences) ? data.occurrences : [];
+    return occurrences.map((row) => {
+      const item = asRecord(row);
+      const lat = toNumber(item.decimalLatitude);
+      const lon = toNumber(item.decimalLongitude);
+      const eventDate = normalizeDateString(stringOr(item.eventDate, item.occurrenceDate, item.observed_at, item.datetime));
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || !isEstoniaCoords(lat, lon)) return null;
+      return {
+        lat,
+        lon,
+        eventDate,
+        daysAgo: daysAgoFromIso(eventDate),
+        ageClass: (daysAgoFromIso(eventDate) ?? 9999) <= 7 ? 'recent' : 'historical',
+        source: 'Elurikkus',
+        occurrenceId: stringOr(item.uuid, item.id, item.occurrenceID),
+        locality: stringOr(item.locality, item.locationRemarks),
+        municipality: stringOr(item.municipality, item.stateProvince, item.county),
+        count: Math.max(1, Math.round(toNumber(item.individualCount) || 1)),
+      };
+    }).filter(Boolean) as Record<string, unknown>[];
+  } catch {
+    return [];
+  }
+}
+
+function dedupeEstoniaHistoryPoints(points: Record<string, unknown>[]): Record<string, unknown>[] {
+  const seen = new Set<string>();
+  return points.filter((point) => {
+    const lat = toNumber(point.lat);
+    const lon = toNumber(point.lon);
+    const eventDate = stringOr(point.eventDate).slice(0, 10);
+    const source = stringOr(point.source);
+    const key = `${source}:${roundCoord(lat, 3)}:${roundCoord(lon, 3)}:${eventDate}`;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).sort((left, right) => Date.parse(String(right.eventDate || '')) - Date.parse(String(left.eventDate || '')));
 }
 
 async function fetchForeignRecentPoints(ebirdSpeciesCode: string, settings: Record<string, unknown>, signal: AbortSignal): Promise<Record<string, unknown>[]> {
@@ -574,12 +636,21 @@ function buildEstoniaEvidenceFromHistory(points: Record<string, unknown>[]): Rec
   };
 }
 
-function buildHistoricalEvidenceFromHistory(points: Record<string, unknown>[]): Record<string, unknown> {
-  const hotspots = clusterEstoniaHistory(points)
+function buildHistoricalEvidenceFromHistory(clusters: Array<{
+  id: string;
+  lat: number;
+  lon: number;
+  count: number;
+  recentCount: number;
+  locality: string;
+  municipality: string;
+  newestEventDate: string;
+}>): Record<string, unknown> {
+  const hotspots = clusters
     .slice(0, 6)
     .map((cluster, index) => ({
       rank: index + 1,
-      name: cluster.label,
+      name: cluster.locality,
       countyOrParish: cluster.municipality,
       lat: cluster.lat,
       lon: cluster.lon,
@@ -588,9 +659,13 @@ function buildHistoricalEvidenceFromHistory(points: Record<string, unknown>[]): 
       searchRadiusKm: 12,
       habitatCue: 'Historical occurrence density',
       reason: `${cluster.count} historical records in Estonia`,
+      derivedFromClusterId: cluster.id,
+      supportingEstoniaHistoryCount: cluster.count,
+      latestSupportingEstoniaDate: cluster.newestEventDate,
+      windAdjusted: false,
     }));
   return {
-    springWindow: points.some((point) => toNumber(point.daysAgo) <= 30) ? 'Active in recent historical window' : 'Historical Estonia context only',
+    springWindow: clusters.some((cluster) => stringOr(cluster.newestEventDate)) ? 'Derived from Estonia occurrence clusters' : 'Historical Estonia context only',
     topHistoricalHotspots: hotspots,
     habitatHints: ['coastal movement', 'known Estonia occurrence density'],
   };
@@ -646,40 +721,54 @@ function buildForeignEvidenceFromPointsAndClusters(points: Record<string, unknow
 
 function buildPredictedTargets(opts: {
   speciesName: string;
-  estoniaHistoryPoints: Record<string, unknown>[];
+  estoniaHistoryClusters: Array<{
+    id: string;
+    lat: number;
+    lon: number;
+    count: number;
+    recentCount: number;
+    locality: string;
+    municipality: string;
+    newestEventDate: string;
+    oldestEventDate: string;
+    source: 'GBIF' | 'Elurikkus' | 'mixed';
+    sourceBreakdown: Record<string, number>;
+  }>;
   foreignClusters: Record<string, unknown>[];
   weather: Record<string, unknown>;
   estoniaEvidence: Record<string, unknown>;
   horizonDays: number;
 }): Record<string, unknown>[] {
-  const { speciesName, estoniaHistoryPoints, foreignClusters, weather, estoniaEvidence, horizonDays } = opts;
-  const hotspots = clusterEstoniaHistory(estoniaHistoryPoints);
-  const usableHotspots = hotspots.length ? hotspots : buildFallbackEstoniaTargets();
+  const { speciesName, estoniaHistoryClusters, foreignClusters, weather, estoniaEvidence, horizonDays } = opts;
   const supportingCountries = Array.from(new Set(foreignClusters.flatMap((cluster) => Array.isArray(cluster.countries) ? cluster.countries.map(String) : []))).slice(0, 4);
   const latestRelevantForeignDate = foreignClusters.map((cluster) => stringOr(cluster.newestObsDt)).filter(Boolean).sort().slice(-1)[0] || '';
   const nearestRelevantClusterKm = foreignClusters.length ? Math.min(...foreignClusters.map((cluster) => toNumber(cluster.nearestDistanceKm)).filter((value) => value > 0)) : null;
-  return usableHotspots.slice(0, 5).map((hotspot, index) => {
-    const routeAlignment = foreignClusters[0] ? computeAlignmentScore(foreignClusters[0], hotspot, weather) : 35;
-    const historyScore = clampInt(hotspot.count * 10, 10, 60);
+  return estoniaHistoryClusters.slice(0, 5).map((cluster, index) => {
+    const routeAlignment = foreignClusters[0] ? computeAlignmentScore(foreignClusters[0], cluster, weather) : 35;
+    const historyScore = clampInt(cluster.count * 8 + cluster.recentCount * 10, 10, 70);
     const windBoost = clampInt(Math.round(computeWindSupport(weather) / 2), 0, 35);
     const confidence = clampInt(historyScore + routeAlignment + windBoost, 10, 99);
-    const etaHours = Math.max(6, Math.round((toNumber(hotspot.distanceFromClusterKm) || 120) / Math.max(20, toNumber(weather.windSpeedKph) + 18)));
+    const etaHours = Math.max(6, Math.round((toNumber(cluster.distanceFromClusterKm) || 120) / Math.max(20, toNumber(weather.windSpeedKph) + 18)));
     return {
       rank: index + 1,
-      name: hotspot.label,
-      countyOrParish: hotspot.municipality,
-      lat: hotspot.lat,
-      lon: hotspot.lon,
+      name: cluster.locality,
+      countyOrParish: cluster.municipality,
+      lat: cluster.lat,
+      lon: cluster.lon,
       confidence,
       eta: `${Math.min(horizonDays, Math.max(1, Math.ceil(etaHours / 24)))}d / ~${etaHours}h`,
-      searchRadiusKm: clampInt(10 + hotspot.count, 8, 30),
+      searchRadiusKm: clampInt(10 + cluster.count, 8, 30),
       habitatCue: 'Estonia hotspot density',
-      reason: buildTargetReason(speciesName, hotspot, foreignClusters[0], weather),
+      reason: buildTargetReason(speciesName, cluster, foreignClusters[0], weather),
       supportingCountries,
       ...(nearestRelevantClusterKm != null ? { nearestRelevantClusterKm: Number(nearestRelevantClusterKm.toFixed(1)) } : {}),
       ...(latestRelevantForeignDate ? { latestRelevantForeignDate } : {}),
-      historicalMatch: `${hotspot.count} Estonia history points nearby`,
+      derivedFromClusterId: cluster.id,
+      supportingEstoniaHistoryCount: cluster.count,
+      latestSupportingEstoniaDate: cluster.newestEventDate,
+      historicalMatch: `${cluster.count} Estonia history points nearby`,
       estoniaPresenceSignal: estoniaEvidence.alreadyPresent === true ? 'recent_estonia_records' : 'history_only',
+      windAdjusted: true,
     };
   });
 }
@@ -1042,77 +1131,110 @@ function enrichPredictedTargets(
 
 function buildSourceHealthMapFirst(input: {
   estoniaHistoryPoints: Record<string, unknown>[];
+  estoniaHistoryClusters: Array<{ source: string }>;
   foreignRecentPoints: Record<string, unknown>[];
   foreignClusters: Record<string, unknown>[];
   webhookConfigured: boolean;
+  estoniaHistorySourceUsed: string;
 }): Record<string, unknown> {
   const warnings: string[] = [];
-  if (!input.estoniaHistoryPoints.length) warnings.push('GBIF Estonia history returned no coordinate-backed points.');
+  if (!input.estoniaHistoryPoints.length) warnings.push('Estonia history returned no coordinate-backed points.');
   if (!input.foreignRecentPoints.length) warnings.push('Foreign eBird evidence is sparse or unavailable.');
   if (!input.foreignClusters.length) warnings.push('No foreign-country clusters were available to display.');
   if (!input.webhookConfigured) warnings.push('Secondary AI summary is unavailable because no webhook is configured.');
+  if (!input.estoniaHistoryClusters.length) warnings.push('No Estonia history clusters were available, so predicted targets remain empty.');
   return {
-    primarySourceUsed: input.estoniaHistoryPoints.length ? 'GBIF + eBird + Open-Meteo' : 'eBird + Open-Meteo',
+    primarySourceUsed: input.estoniaHistoryPoints.length ? `${input.estoniaHistorySourceUsed} + eBird + Open-Meteo` : 'eBird + Open-Meteo',
     sourceWarnings: warnings,
-    elurikkusAvailable: false,
+    elurikkusAvailable: input.estoniaHistorySourceUsed === 'Elurikkus' || input.estoniaHistoryClusters.some((cluster) => String(cluster.source || '') === 'mixed'),
     ebirdAvailable: input.foreignRecentPoints.length > 0,
-    gbifFallbackUsed: false,
+    gbifFallbackUsed: input.estoniaHistorySourceUsed === 'GBIF',
   };
 }
 
 function clusterEstoniaHistory(points: Record<string, unknown>[]): Array<{
+  id: string;
   lat: number;
   lon: number;
   count: number;
-  label: string;
+  recentCount: number;
+  locality: string;
   municipality: string;
   distanceFromClusterKm: number;
+  newestEventDate: string;
+  oldestEventDate: string;
+  source: 'GBIF' | 'Elurikkus' | 'mixed';
+  sourceBreakdown: Record<string, number>;
 }> {
-  const grouped = new Map<string, { lat: number; lon: number; count: number; locality: string; municipality: string }>();
+  const grouped = new Map<string, {
+    id: string;
+    lat: number;
+    lon: number;
+    count: number;
+    recentCount: number;
+    locality: string;
+    municipality: string;
+    newestEventDate: string;
+    oldestEventDate: string;
+    sourceBreakdown: Record<string, number>;
+  }>();
   for (const point of points) {
     const lat = toNumber(point.lat);
     const lon = toNumber(point.lon);
     const bucket = `${roundCoord(lat, 1)}:${roundCoord(lon, 1)}`;
     if (!grouped.has(bucket)) {
       grouped.set(bucket, {
+        id: `ee-cluster-${grouped.size + 1}`,
         lat: roundCoord(lat, 2),
         lon: roundCoord(lon, 2),
         count: 0,
+        recentCount: 0,
         locality: stringOr(point.locality, point.municipality, 'Estonia hotspot'),
         municipality: stringOr(point.municipality, point.locality, 'Estonia'),
+        newestEventDate: '',
+        oldestEventDate: '',
+        sourceBreakdown: {},
       });
     }
-    grouped.get(bucket)!.count += 1;
+    const group = grouped.get(bucket)!;
+    group.count += 1;
+    if ((toNumber(point.daysAgo) || 9999) <= 30) group.recentCount += 1;
+    const eventDate = stringOr(point.eventDate);
+    if (!group.newestEventDate || Date.parse(eventDate) > Date.parse(group.newestEventDate)) group.newestEventDate = eventDate;
+    if (!group.oldestEventDate || Date.parse(eventDate) < Date.parse(group.oldestEventDate)) group.oldestEventDate = eventDate;
+    const source = stringOr(point.source, 'GBIF');
+    group.sourceBreakdown[source] = Number(group.sourceBreakdown[source] || 0) + 1;
   }
   return Array.from(grouped.values()).map((cluster) => ({
+    id: cluster.id,
     lat: cluster.lat,
     lon: cluster.lon,
     count: cluster.count,
-    label: cluster.locality,
+    recentCount: cluster.recentCount,
+    locality: cluster.locality,
     municipality: cluster.municipality,
     distanceFromClusterKm: distanceToEstonia(cluster.lat, cluster.lon),
-  })).sort((left, right) => right.count - left.count);
-}
-
-function buildFallbackEstoniaTargets(): Array<{ lat: number; lon: number; count: number; label: string; municipality: string; distanceFromClusterKm: number }> {
-  return [
-    { lat: 59.45, lon: 24.75, count: 4, label: 'Tallinn coast', municipality: 'Harjumaa', distanceFromClusterKm: 110 },
-    { lat: 58.38, lon: 24.5, count: 3, label: 'Parnu coast', municipality: 'Parnumaa', distanceFromClusterKm: 95 },
-    { lat: 58.95, lon: 23.53, count: 3, label: 'Haapsalu bay', municipality: 'Laanemaa', distanceFromClusterKm: 88 },
-    { lat: 58.25, lon: 22.48, count: 2, label: 'Saaremaa west coast', municipality: 'Saaremaa', distanceFromClusterKm: 130 },
-    { lat: 58.55, lon: 27.12, count: 2, label: 'Lake Peipsi edge', municipality: 'Tartumaa', distanceFromClusterKm: 120 },
-  ];
+    newestEventDate: cluster.newestEventDate,
+    oldestEventDate: cluster.oldestEventDate,
+    source: resolveClusterSource(cluster.sourceBreakdown),
+    sourceBreakdown: cluster.sourceBreakdown,
+  })).sort((left, right) =>
+    right.count - left.count
+    || right.recentCount - left.recentCount
+    || Date.parse(right.newestEventDate || '') - Date.parse(left.newestEventDate || '')
+  );
 }
 
 function buildTargetReason(
   speciesName: string,
-  hotspot: { count: number; label: string; municipality: string },
+  hotspot: { count: number; recentCount: number; locality: string; municipality: string; newestEventDate: string },
   cluster: Record<string, unknown> | undefined,
   weather: Record<string, unknown>,
 ): string {
   const countries = cluster && Array.isArray(cluster.countries) ? cluster.countries.join(', ') : 'nearby foreign evidence';
   const windText = `${bearingToCompass(toNumber(weather.windDirectionDeg))} ${Math.round(toNumber(weather.windSpeedKph))} km/h`;
-  return `${speciesName} has fresh movement from ${countries}, this Estonia hotspot has ${hotspot.count} historical records, and current wind (${windText}) supports the route.`;
+  const latestHistory = hotspot.newestEventDate ? hotspot.newestEventDate.slice(0, 10) : 'unknown date';
+  return `${speciesName} target is derived from ${hotspot.count} Estonia history points (${hotspot.recentCount} recent), latest supporting date ${latestHistory}, with fresh movement from ${countries}; wind (${windText}) adjusts route plausibility only.`;
 }
 
 function buildCountryScores(foreignEvidence: Record<string, unknown>[]): Record<string, number> {
@@ -1124,6 +1246,13 @@ function buildCountryScores(foreignEvidence: Record<string, unknown>[]): Record<
     russia: clampInt(toNumber(foreignEvidence.find((entry) => entry.countryCode === 'ru')?.recordCount7d) * 8, 0, 100),
     finlandContextOnly: clampInt(toNumber(foreignEvidence.find((entry) => entry.countryCode === 'fi')?.recordCount7d) * 8, 0, 100),
   };
+}
+
+function resolveClusterSource(sourceBreakdown: Record<string, number>): 'GBIF' | 'Elurikkus' | 'mixed' {
+  const keys = Object.keys(sourceBreakdown).filter((key) => Number(sourceBreakdown[key] || 0) > 0);
+  if (keys.length > 1) return 'mixed';
+  if (keys[0] === 'Elurikkus') return 'Elurikkus';
+  return 'GBIF';
 }
 
 function getEnabledForeignRegions(settings: Record<string, unknown>): Array<{ countryCode: string; countryName: string; regionCode: string; regionName: string }> {
@@ -1150,6 +1279,10 @@ function distanceToEstonia(lat: number, lon: number): number {
     haversineKm(lat, lon, 58.3776, 26.729),
     haversineKm(lat, lon, 58.3859, 24.4971),
   );
+}
+
+function isEstoniaCoords(lat: number, lon: number): boolean {
+  return Number.isFinite(lat) && Number.isFinite(lon) && lat >= 57 && lat <= 60.5 && lon >= 21 && lon <= 29;
 }
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {

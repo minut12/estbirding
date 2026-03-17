@@ -72,6 +72,20 @@ export type SpeciesPredictionEstoniaHistoryPoint = {
   count?: number;
 };
 
+export type SpeciesPredictionEstoniaHistoryCluster = {
+  id: string;
+  lat: number;
+  lon: number;
+  count: number;
+  recentCount: number;
+  newestEventDate: string;
+  oldestEventDate: string;
+  locality?: string;
+  municipality?: string;
+  source: 'GBIF' | 'Elurikkus' | 'mixed';
+  sourceBreakdown?: Record<string, number>;
+};
+
 export type SpeciesPredictionForeignRecentPoint = {
   lat: number;
   lon: number;
@@ -151,6 +165,10 @@ export type PredictedPoint = {
   latestRelevantForeignDate?: string;
   historicalMatch?: string;
   estoniaPresenceSignal?: string;
+  derivedFromClusterId?: string;
+  supportingEstoniaHistoryCount?: number;
+  latestSupportingEstoniaDate?: string;
+  windAdjusted?: boolean;
 };
 
 export type SpeciesPredictionEvidenceCluster = {
@@ -226,6 +244,7 @@ export type SpeciesPredictionResult = {
   };
   sourceHealth?: SpeciesPredictionSourceHealth;
   estoniaHistoryPoints?: SpeciesPredictionEstoniaHistoryPoint[];
+  estoniaHistoryClusters?: SpeciesPredictionEstoniaHistoryCluster[];
   foreignRecentPoints?: SpeciesPredictionForeignRecentPoint[];
   foreignClusters?: SpeciesPredictionForeignCluster[];
   weather?: SpeciesPredictionWeather;
@@ -499,6 +518,10 @@ export function normalizeSpeciesPredictionResult(
     readArray(source, ['estoniaHistoryPoints', 'estonia_history_points'])
       ?? readArray(rawResearchPayload, ['estoniaHistoryPoints', 'estonia_history_points']),
   );
+  const estoniaHistoryClusters = normalizeEstoniaHistoryClusters(
+    readArray(source, ['estoniaHistoryClusters', 'estonia_history_clusters'])
+      ?? readArray(rawResearchPayload, ['estoniaHistoryClusters', 'estonia_history_clusters']),
+  );
   const foreignRecentPoints = normalizeForeignRecentPoints(
     readArray(source, ['foreignRecentPoints', 'foreign_recent_points'])
       ?? readArray(rawResearchPayload, ['foreignRecentPoints', 'foreign_recent_points']),
@@ -533,6 +556,7 @@ export function normalizeSpeciesPredictionResult(
     species: evidenceSpecies,
     ...(sourceHealth ? { sourceHealth } : {}),
     ...(estoniaHistoryPoints.length ? { estoniaHistoryPoints } : {}),
+    ...(estoniaHistoryClusters.length ? { estoniaHistoryClusters } : {}),
     ...(foreignRecentPoints.length ? { foreignRecentPoints } : {}),
     ...(foreignClusters.length ? { foreignClusters } : {}),
     ...(weather ? { weather } : {}),
@@ -591,6 +615,7 @@ export function hasUsableSpeciesPredictionResult(
     || hasValue(evidenceRecord, ['topPredictedPoints'])
     || hasValue(evidenceRecord, ['predictedTargets'])
     || hasValue(evidenceRecord, ['estoniaHistoryPoints'])
+    || hasValue(evidenceRecord, ['estoniaHistoryClusters'])
     || hasValue(evidenceRecord, ['foreignRecentPoints'])
     || hasValue(evidenceRecord, ['foreignClusters'])
     || hasValue(evidenceRecord, ['predictionVectors'])
@@ -631,6 +656,7 @@ function hasCanonicalPredictionFields(record: Record<string, unknown>): boolean 
     || hasValue(record, ['sourceHealth'])
     || hasValue(record, ['predictedTargets'])
     || hasValue(record, ['estoniaHistoryPoints'])
+    || hasValue(record, ['estoniaHistoryClusters'])
     || hasValue(record, ['foreignRecentPoints'])
     || hasValue(record, ['foreignClusters'])
     || hasValue(record, ['predictionVectors'])
@@ -755,6 +781,18 @@ function normalizePredictedPoint(point: Partial<PredictedPoint> | null | undefin
       : {}),
     ...(readString(source, ['estoniaPresenceSignal', 'estonia_presence_signal'])
       ? { estoniaPresenceSignal: normalizeUiText(readString(source, ['estoniaPresenceSignal', 'estonia_presence_signal'])) }
+      : {}),
+    ...(readString(source, ['derivedFromClusterId', 'derived_from_cluster_id'])
+      ? { derivedFromClusterId: normalizeUiText(readString(source, ['derivedFromClusterId', 'derived_from_cluster_id'])) }
+      : {}),
+    ...(hasValue(source, ['supportingEstoniaHistoryCount', 'supporting_estonia_history_count'])
+      ? { supportingEstoniaHistoryCount: clampNumber(readNumber(source, ['supportingEstoniaHistoryCount', 'supporting_estonia_history_count']), 0, 999999, 0) }
+      : {}),
+    ...(readString(source, ['latestSupportingEstoniaDate', 'latest_supporting_estonia_date'])
+      ? { latestSupportingEstoniaDate: normalizeUiText(readString(source, ['latestSupportingEstoniaDate', 'latest_supporting_estonia_date'])) }
+      : {}),
+    ...(typeof source.windAdjusted === 'boolean'
+      ? { windAdjusted: source.windAdjusted === true }
       : {}),
   };
 }
@@ -901,6 +939,29 @@ function normalizeForeignRecentPoints(input: unknown[] | null): SpeciesPredictio
   }).filter((point) => point.countryCode && (point.lat !== 0 || point.lon !== 0));
 }
 
+function normalizeEstoniaHistoryClusters(input: unknown[] | null): SpeciesPredictionEstoniaHistoryCluster[] {
+  if (!Array.isArray(input)) return [];
+  return input.map((entry, index) => {
+    const source = asRecord(entry);
+    const sourceBreakdown = readRecord(source, ['sourceBreakdown', 'source_breakdown']) ?? {};
+    return {
+      id: normalizeUiText(readString(source, ['id']) || `ee-cluster-${index + 1}`),
+      lat: clampFloat(readNumber(source, ['lat', 'latitude']), -90, 90, 0),
+      lon: clampFloat(readNumber(source, ['lon', 'lng', 'longitude']), -180, 180, 0),
+      count: clampNumber(readNumber(source, ['count']), 1, 999999, 1),
+      recentCount: clampNumber(readNumber(source, ['recentCount', 'recent_count']), 0, 999999, 0),
+      newestEventDate: normalizeUiText(readString(source, ['newestEventDate', 'newest_event_date']) || ''),
+      oldestEventDate: normalizeUiText(readString(source, ['oldestEventDate', 'oldest_event_date']) || ''),
+      ...(readString(source, ['locality']) ? { locality: normalizeUiText(readString(source, ['locality'])) } : {}),
+      ...(readString(source, ['municipality']) ? { municipality: normalizeUiText(readString(source, ['municipality'])) } : {}),
+      source: normalizeClusterSource(readString(source, ['source'])),
+      ...(Object.keys(sourceBreakdown).length
+        ? { sourceBreakdown: Object.fromEntries(Object.entries(sourceBreakdown).map(([key, value]) => [normalizeUiText(key), clampNumber(Number(value), 0, 999999, 0)])) }
+        : {}),
+    };
+  }).filter((cluster) => cluster.id && (cluster.lat !== 0 || cluster.lon !== 0));
+}
+
 function normalizeForeignClusters(input: unknown[] | null): SpeciesPredictionForeignCluster[] {
   if (!Array.isArray(input)) return [];
   return input.map((entry, index) => {
@@ -967,6 +1028,12 @@ function normalizePredictionVectors(input: unknown[] | null): SpeciesPredictionV
 function normalizeVectorKind(value: string): SpeciesPredictionVector['kind'] {
   if (value === 'cone' || value === 'target_link') return value;
   return 'route';
+}
+
+function normalizeClusterSource(value: string): SpeciesPredictionEstoniaHistoryCluster['source'] {
+  if (value === 'Elurikkus' || value === 'elurikkus') return 'Elurikkus';
+  if (value === 'mixed') return 'mixed';
+  return 'GBIF';
 }
 
 function normalizeMapLayers(input: Record<string, unknown> | null): SpeciesPredictionLayerToggles | undefined {

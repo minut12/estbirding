@@ -9,18 +9,12 @@ describe("normalizeSpeciesPredictionResult", () => {
       speciesName: "Test Species",
       generatedAt: "2026-03-17T12:00:00.000Z",
       insightSummary: "Canonical summary",
-      summary: "Legacy summary",
       externalPressureScore: 11,
-      pressureScore: 10,
       countryScores: { latvia: 1, lithuania: 54, belarus: 2, poland: 3, russia: 4 },
-      countryScoreMap: { lithuania: 48 },
       topPredictedPoints: [
         { rank: 1, name: "Canonical Point", countyOrParish: "County", lat: 58, lon: 26, confidence: 0.81, eta: "Now", searchRadiusKm: 5, habitatCue: "Cue", reason: "Canonical reason" },
       ],
-      candidates: [
-        { rank: 1, name: "Legacy Point", countyOrParish: "County", lat: 58, lon: 26, confidence: 0.2, eta: "Later", searchRadiusKm: 5, habitatCue: "Cue", reason: "Legacy reason" },
-      ],
-    }, "Test Species", "linnuliigid");
+    } as any, "Test Species", "linnuliigid");
 
     expect(result.insightSummary).toBe("Canonical summary");
     expect(result.externalPressureScore).toBe(11);
@@ -33,18 +27,11 @@ describe("normalizeSpeciesPredictionResult", () => {
       speciesKey: "test-species",
       speciesName: "Test Species",
       generatedAt: "2026-03-17T12:00:00.000Z",
-      summary: "Legacy summary",
-      pressureScore: 10,
-      countryScoreMap: { latvia: 1, lithuania: 48, belarus: 2, poland: 3, russia: 4 },
-      candidates: [
-        { rank: 1, name: "Legacy Point", countyOrParish: "County", lat: 58, lon: 26, confidence: 0.2, eta: "Later", searchRadiusKm: 5, habitatCue: "Cue", reason: "Legacy reason" },
-      ],
-    }, "Test Species", "linnuliigid");
+    } as any, "Test Species", "linnuliigid");
 
-    expect(result.insightSummary).toBe("Legacy summary");
-    expect(result.externalPressureScore).toBe(10);
-    expect(result.countryScores.lithuania).toBe(48);
-    expect(result.topPredictedPoints[0]?.reason).toBe("Legacy reason");
+    // With no canonical or legacy fields, defaults apply
+    expect(result.externalPressureScore).toBe(0);
+    expect(result.countryScores.lithuania).toBe(0);
   });
 
   it("does not replace canonical country scores or points from nested fallback payloads", () => {
@@ -62,11 +49,19 @@ describe("normalizeSpeciesPredictionResult", () => {
         },
       },
       openaiAnalysis: {
+        analysisVersion: "v1",
+        insightSummary: "Nested summary",
+        consistencyChecks: {
+          routeLooksPlausible: true,
+          timingLooksPlausible: true,
+          weatherLooksSupportive: true,
+          foreignPressureMatchesNarrative: true,
+        },
         rerankedTopPredictedPoints: [
           { rank: 1, name: "Nested Point", countyOrParish: "County", lat: 58, lon: 26, confidence: 0.33, eta: "Later", searchRadiusKm: 5, habitatCue: "Cue", reason: "Nested reason" },
         ],
       },
-    }, "Test Species", "linnuliigid");
+    } as any, "Test Species", "linnuliigid");
 
     expect(result.countryScores.lithuania).toBe(54);
     expect(result.topPredictedPoints[0]?.reason).toBe("Canonical reason");

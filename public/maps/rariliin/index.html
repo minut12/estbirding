@@ -391,9 +391,9 @@ const LS_EE_LAST_GOOD = 'bm_rariliin_last_good_snapshot';
 const SNAPSHOT_VERSION = 'ee_map_v1';
 const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 const LS_SUPABASE_PROXY_BASE = 'supabase_proxy_base_v1';
-const BUILTIN_TRANSLATE_ENDPOINT = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/translate-et';
-const BUILTIN_PING_ENDPOINT = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/translate-et?ping=1';
-const BUILTIN_TRANSLATE_PING_ENDPOINT = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/translate-et?ping=1';
+const BUILTIN_TRANSLATE_ENDPOINT = '/.netlify/functions/translate-et';
+const BUILTIN_PING_ENDPOINT = '/.netlify/functions/ping';
+const BUILTIN_TRANSLATE_PING_ENDPOINT = '/.netlify/functions/translate-et?ping=1';
 
 function _trim(x){ try { return String(x ?? '').trim(); } catch(e){ return ''; } }
 

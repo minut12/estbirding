@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { corsHeaders } from '../_shared/cors.ts';
 
-const DEFAULT_TIMEOUT_MS = 15000;
+const DEFAULT_TIMEOUT_MS = 120000;
 const WEBHOOK_ENV_KEY = 'SPECIES_PREDICTION_N8N_WEBHOOK_URL';
 const AUTH_HEADER_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_HEADER';
 const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
@@ -76,7 +76,7 @@ serve(async (req) => {
     const timeoutMs = clampNumber(
       Number(Deno.env.get(TIMEOUT_ENV_KEY) || DEFAULT_TIMEOUT_MS),
       5000,
-      30000,
+      180000,
       DEFAULT_TIMEOUT_MS,
     );
 
@@ -153,7 +153,7 @@ serve(async (req) => {
       if (isAbort) {
         console.error('[species-prediction] webhook timeout', { timeoutMs });
         return jsonError({
-          message: 'Prediction service is temporarily unavailable',
+          message: 'Prediction request timed out',
           status: 504,
           stage: 'n8n_timeout',
           upstreamBody: { timeoutMs },

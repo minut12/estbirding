@@ -40,6 +40,9 @@ export type SpeciesPredictionTransportSnapshot = {
   requestId: string | null;
   httpStatus: number | null;
   responseBody: unknown;
+  timeoutMs: number | null;
+  abortedByClientTimeout: boolean;
+  likelyReachedEdgeFunction: boolean;
   error: SpeciesPredictionTransportError | null;
   healthCheck: unknown | null;
 };
@@ -95,6 +98,9 @@ const state: SpeciesPredictionDebugSnapshot = {
     requestId: null,
     httpStatus: null,
     responseBody: null,
+    timeoutMs: null,
+    abortedByClientTimeout: false,
+    likelyReachedEdgeFunction: false,
     error: null,
     healthCheck: null,
   },
@@ -161,6 +167,9 @@ export function clearSpeciesPredictionDebugMemory(): void {
   state.transport.requestId = null;
   state.transport.httpStatus = null;
   state.transport.responseBody = null;
+  state.transport.timeoutMs = null;
+  state.transport.abortedByClientTimeout = false;
+  state.transport.likelyReachedEdgeFunction = false;
   state.transport.error = null;
   state.transport.healthCheck = null;
   emit();

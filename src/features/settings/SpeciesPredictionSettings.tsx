@@ -558,6 +558,9 @@ export default function SpeciesPredictionSettings() {
                               <DebugKeyValue label="Response timestamp" value={debugSnapshot.transport.responseTimestamp || '(empty)'} />
                               <DebugKeyValue label="Request ID" value={debugSnapshot.transport.requestId || '(empty)'} />
                               <DebugKeyValue label="Last HTTP status" value={String(debugSnapshot.transport.httpStatus ?? '(null)')} />
+                              <DebugKeyValue label="Timeout budget (ms)" value={String(debugSnapshot.transport.timeoutMs ?? '(null)')} />
+                              <DebugKeyValue label="Client timeout abort" value={debugSnapshot.transport.abortedByClientTimeout ? 'Yes' : 'No'} />
+                              <DebugKeyValue label="Likely reached Edge Function" value={debugSnapshot.transport.likelyReachedEdgeFunction ? 'Yes' : 'No'} />
                               <DebugKeyValue label="Error stage" value={debugSnapshot.transport.error?.stage || '(empty)'} />
                               <DebugKeyValue label="Error type" value={debugSnapshot.transport.error?.errorType || '(empty)'} />
                               <DebugKeyValue label="Last error message" value={debugSnapshot.transport.error?.message || '(empty)'} />
@@ -789,6 +792,9 @@ function buildDiagnosticsSummary(snapshot: SpeciesPredictionDebugSnapshot): stri
     `requestUrl=${snapshot.transport.requestUrl || '(empty)'}`,
     `requestId=${snapshot.transport.requestId || '(empty)'}`,
     `httpStatus=${snapshot.transport.httpStatus ?? '(null)'}`,
+    `timeoutMs=${snapshot.transport.timeoutMs ?? '(null)'}`,
+    `abortedByClientTimeout=${snapshot.transport.abortedByClientTimeout ? 'yes' : 'no'}`,
+    `likelyReachedEdgeFunction=${snapshot.transport.likelyReachedEdgeFunction ? 'yes' : 'no'}`,
     `errorStage=${snapshot.transport.error?.stage || '(empty)'}`,
     `errorType=${snapshot.transport.error?.errorType || '(empty)'}`,
     `errorMessage=${snapshot.transport.error?.message || '(empty)'}`,

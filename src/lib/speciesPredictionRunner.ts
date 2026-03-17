@@ -16,6 +16,8 @@ import {
 import type { SpeciesScopeId } from '@/lib/mapScope';
 import { getFunctionsBaseUrl, isDeveloperModeEnabled } from '@/config/supabaseConfig';
 
+const SPECIES_PREDICTION_TIMEOUT_MS = 120000;
+
 export type SpeciesPredictionRequestDiagnostics = {
   requestUrl: string;
   requestTimestamp: string;
@@ -40,6 +42,9 @@ export async function runSpeciesPredictionRequest(
     requestId,
     httpStatus: null,
     responseBody: null,
+    timeoutMs: SPECIES_PREDICTION_TIMEOUT_MS,
+    abortedByClientTimeout: false,
+    likelyReachedEdgeFunction: false,
     error: null,
   });
   try {
@@ -57,6 +62,7 @@ export async function runSpeciesPredictionRequest(
       });
       updateSpeciesPredictionTransport({
         responseTimestamp,
+        timeoutMs: SPECIES_PREDICTION_TIMEOUT_MS,
         error: transportError,
       });
       return {
@@ -106,6 +112,9 @@ export async function runSpeciesPredictionRequest(
       updateSpeciesPredictionTransport({
         httpStatus: transportError.httpStatus,
         responseBody: data,
+        timeoutMs: readTimeoutMs(data) ?? SPECIES_PREDICTION_TIMEOUT_MS,
+        abortedByClientTimeout: false,
+        likelyReachedEdgeFunction: reachedEdgeFunction(transportError.stage),
         error: transportError,
       });
       return {
@@ -129,6 +138,9 @@ export async function runSpeciesPredictionRequest(
     updateSpeciesPredictionTransport({
       httpStatus: 200,
       responseBody: sourceResult,
+      timeoutMs: SPECIES_PREDICTION_TIMEOUT_MS,
+      abortedByClientTimeout: false,
+      likelyReachedEdgeFunction: true,
       error: null,
     });
     setSpeciesPredictionTransportError(null);
@@ -150,6 +162,9 @@ export async function runSpeciesPredictionRequest(
       updateSpeciesPredictionTransport({
         httpStatus: 200,
         responseBody: sourceResult,
+        timeoutMs: SPECIES_PREDICTION_TIMEOUT_MS,
+        abortedByClientTimeout: false,
+        likelyReachedEdgeFunction: true,
         error: transportError,
       });
       return {
@@ -192,6 +207,9 @@ export async function runSpeciesPredictionRequest(
       requestId: diagnostics.requestId,
       httpStatus: diagnostics.httpStatus,
       responseBody: diagnostics.responseBody,
+      timeoutMs: readTimeoutMs(diagnostics.responseBody) ?? SPECIES_PREDICTION_TIMEOUT_MS,
+      abortedByClientTimeout: diagnostics.error?.stage === 'frontend_fetch' && diagnostics.error?.errorType === 'timeout',
+      likelyReachedEdgeFunction: reachedEdgeFunction(diagnostics.error?.stage),
       error: diagnostics.error,
     });
     setSpeciesPredictionTransportError(diagnostics.error);
@@ -321,12 +339,16 @@ function resolvePredictionErrorMessage(error: unknown): string {
     const responseMessage = extractResponseMessage(candidate.response);
     const nestedError = typeof candidate.error === 'string' ? candidate.error : '';
     const resolvedMessage = contextMessage || responseMessage || message || nestedError || details || context || statusText;
+    const stage = mapErrorStage(resolvePredictionErrorStage(error));
 
     if (status === 404 || resolvedMessage.includes('404')) {
       return 'Prediction backend is unavailable or not deployed';
     }
     if (status === 503) {
       return 'Prediction backend is not configured yet';
+    }
+    if (stage === 'n8n_timeout' || resolvedMessage.toLowerCase().includes('timed out')) {
+      return 'Prediction request timed out';
     }
     if (status >= 500 && resolvedMessage) {
       return resolveUserFacingBackendMessage(resolvedMessage);
@@ -521,6 +543,27 @@ function resolveErrorType(error: unknown): SpeciesPredictionTransportError['erro
   if (message.includes('fetch failed') || message.includes('network') || message.includes('load failed')) return 'network';
   if (readNumber(candidate.status) != null || stage === 'edge_function' || stage === 'n8n_non_2xx' || stage === 'n8n_upstream') return 'server';
   return 'unknown';
+}
+
+function readTimeoutMs(value: unknown): number | null {
+  const record = (value && typeof value === 'object' && !Array.isArray(value)) ? value as Record<string, unknown> : {};
+  const upstreamBody = (record.upstreamBody && typeof record.upstreamBody === 'object' && !Array.isArray(record.upstreamBody))
+    ? record.upstreamBody as Record<string, unknown>
+    : {};
+  return readNumber(upstreamBody.timeoutMs) ?? readNumber(record.timeoutMs);
+}
+
+function reachedEdgeFunction(stage: unknown): boolean {
+  const normalized = mapErrorStage(stage);
+  return normalized === 'edge_function'
+    || normalized === 'n8n_timeout'
+    || normalized === 'n8n_non_2xx'
+    || normalized === 'n8n_upstream'
+    || normalized === 'invalid_upstream_json'
+    || normalized === 'missing_webhook_url'
+    || normalized === 'parse'
+    || normalized === 'validation'
+    || normalized === 'status';
 }
 
 function readNumber(value: unknown): number | null {

@@ -7,7 +7,9 @@ import {
   type SpeciesPredictionRequestPayload,
   type SpeciesPredictionResult,
 } from '@/lib/speciesPrediction';
+import { setSpeciesPredictionDebugBackendResponse } from '@/lib/speciesPredictionDebug';
 import type { SpeciesScopeId } from '@/lib/mapScope';
+import { isDeveloperModeEnabled } from '@/config/supabaseConfig';
 
 export async function runSpeciesPredictionRequest(
   payload: SpeciesPredictionRequestPayload,
@@ -34,7 +36,11 @@ export async function runSpeciesPredictionRequest(
       };
     }
     const sourceResult = isWrappedSuccessEnvelope(data) ? data.result : data;
+    setSpeciesPredictionDebugBackendResponse(sourceResult);
     console.debug('[speciesPrediction] compare raw backend', comparePredictionFields(sourceResult, payload.species.key));
+    if (isDeveloperModeEnabled()) {
+      console.debug('[SpeciesPredictionDebug] backend', comparePredictionFields(sourceResult, payload.species.key));
+    }
     if (!hasUsableSpeciesPredictionResult(sourceResult)) {
       return {
         ok: false,

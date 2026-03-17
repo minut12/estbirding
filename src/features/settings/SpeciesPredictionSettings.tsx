@@ -20,6 +20,17 @@ import { isSpeciesPredictionEnabled, loadSettings, saveSettings } from '@/lib/se
 import { getFunctionsBaseUrl, getSupabaseAuthHeaders } from '@/config/supabaseConfig';
 import { APP_VERSION } from '@/lib/version';
 import { ACTIVE_PREDICTION_SPECIES_EVENT, getActivePredictionSpecies, setActivePredictionSpecies } from '@/lib/activePredictionSpecies';
+import {
+  clearSpeciesPredictionDebugMemory,
+  clearSpeciesPredictionDebugStorage,
+  getSpeciesPredictionDebugSnapshot,
+  getSpeciesPredictionDebugStorageSnapshot,
+  SPECIES_PREDICTION_DEBUG_EVENT,
+  SPECIES_PREDICTION_DEBUG_RERUN_EVENT,
+  SPECIES_PREDICTION_DEBUG_RESYNC_EVENT,
+  type SpeciesPredictionDebugSnapshot,
+} from '@/lib/speciesPredictionDebug';
+import { isDeveloperModeEnabled } from '@/config/supabaseConfig';
 
 type NumericFieldProps = {
   id: string;
@@ -50,6 +61,9 @@ export default function SpeciesPredictionSettings() {
   const [backendStatusLoading, setBackendStatusLoading] = useState(false);
   const [predictionFeatureEnabled, setPredictionFeatureEnabled] = useState(isSpeciesPredictionEnabled);
   const [form, setForm] = useState<SpeciesPredictionSettingsModel>(() => normalizeSpeciesPredictionSettings(null, '', 'linnuliigid'));
+  const [showDebugData, setShowDebugData] = useState(false);
+  const [debugSnapshot, setDebugSnapshot] = useState<SpeciesPredictionDebugSnapshot>(() => getSpeciesPredictionDebugSnapshot());
+  const [storageSnapshot, setStorageSnapshot] = useState(() => getSpeciesPredictionDebugStorageSnapshot());
 
   const scope = SPECIES_SCOPES[scopeId];
   const predictionEnabled = isSpeciesPredictionEnabled();
@@ -69,6 +83,7 @@ export default function SpeciesPredictionSettings() {
   const saveBlockedMessage = canValidateSpeciesSettings && !hasValidSelectedSpecies
     ? 'Select a valid species before saving prediction settings'
     : '';
+  const canSeeDebugDiagnostics = canManage || isDeveloperModeEnabled();
 
   const setActiveSpecies = useCallback((speciesName: string) => {
     const next = setActivePredictionSpecies(scopeId, speciesName);
@@ -109,6 +124,20 @@ export default function SpeciesPredictionSettings() {
     window.addEventListener(ACTIVE_PREDICTION_SPECIES_EVENT, handler as EventListener);
     return () => window.removeEventListener(ACTIVE_PREDICTION_SPECIES_EVENT, handler as EventListener);
   }, [scopeId, activeSpeciesName]);
+
+  useEffect(() => {
+    const refreshDebugState = () => {
+      setDebugSnapshot(getSpeciesPredictionDebugSnapshot());
+      setStorageSnapshot(getSpeciesPredictionDebugStorageSnapshot());
+    };
+    refreshDebugState();
+    window.addEventListener(SPECIES_PREDICTION_DEBUG_EVENT, refreshDebugState as EventListener);
+    window.addEventListener('storage', refreshDebugState);
+    return () => {
+      window.removeEventListener(SPECIES_PREDICTION_DEBUG_EVENT, refreshDebugState as EventListener);
+      window.removeEventListener('storage', refreshDebugState);
+    };
+  }, []);
 
   const loadSpeciesSettings = useCallback(async (speciesName: string) => {
     if (!isSpeciesPredictionEnabled()) return;
@@ -218,6 +247,52 @@ export default function SpeciesPredictionSettings() {
       setSaving(false);
     }
   };
+
+  const refreshDebugSnapshots = useCallback(() => {
+    setDebugSnapshot(getSpeciesPredictionDebugSnapshot());
+    setStorageSnapshot(getSpeciesPredictionDebugStorageSnapshot());
+  }, []);
+
+  const copyJson = useCallback(async (value: unknown, label: string) => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(value ?? null, null, 2));
+      toast.success(`${label} copied`);
+    } catch {
+      toast.error(`Copy failed: ${label}`);
+    }
+  }, []);
+
+  const copyDiagnosticsSummary = useCallback(async () => {
+    const summary = buildDiagnosticsSummary(debugSnapshot);
+    try {
+      await navigator.clipboard.writeText(summary);
+      toast.success('Diagnostics summary copied');
+    } catch {
+      toast.error('Copy failed: diagnostics summary');
+    }
+  }, [debugSnapshot]);
+
+  const clearPredictionCache = useCallback(() => {
+    clearSpeciesPredictionDebugMemory();
+    refreshDebugSnapshots();
+    toast.success('Prediction debug cache cleared');
+  }, [refreshDebugSnapshots]);
+
+  const clearPredictionStorage = useCallback(() => {
+    clearSpeciesPredictionDebugStorage();
+    refreshDebugSnapshots();
+    toast.success('Species prediction storage cleared');
+  }, [refreshDebugSnapshots]);
+
+  const forceRerunPrediction = useCallback(() => {
+    window.dispatchEvent(new Event(SPECIES_PREDICTION_DEBUG_RERUN_EVENT));
+    toast.success('Prediction rerun requested');
+  }, []);
+
+  const resyncPanel = useCallback(() => {
+    window.dispatchEvent(new Event(SPECIES_PREDICTION_DEBUG_RESYNC_EVENT));
+    toast.success('Panel resync requested');
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -425,6 +500,93 @@ export default function SpeciesPredictionSettings() {
                   </AccordionItem>
                 </Accordion>
               </div>
+
+              {canSeeDebugDiagnostics && (
+                <Accordion type="single" collapsible className="w-full">
+                  <AccordionItem value="debug-diagnostics" className="rounded-lg border border-border px-4">
+                    <AccordionTrigger>Debug / Diagnostics</AccordionTrigger>
+                    <AccordionContent className="space-y-4">
+                      <div className="flex items-center justify-between rounded-md border border-border p-3">
+                        <div className="space-y-1">
+                          <Label className="text-sm">Show debug data</Label>
+                          <p className="text-xs text-muted-foreground">
+                            Temporary diagnostics for backend vs payload vs panel state comparison
+                          </p>
+                        </div>
+                        <Switch checked={showDebugData} onCheckedChange={setShowDebugData} />
+                      </div>
+
+                      {showDebugData && (
+                        <div className="space-y-4">
+                          <DebugSection title="Active context">
+                            <div className="grid gap-2 text-xs md:grid-cols-2">
+                              <DebugKeyValue label="Selected species name" value={debugSnapshot.activeContext.speciesName || activeSpeciesName || '(empty)'} />
+                              <DebugKeyValue label="Selected species key" value={debugSnapshot.activeContext.speciesKey || activeSpeciesKey || '(empty)'} />
+                              <DebugKeyValue label="Map scope" value={debugSnapshot.activeContext.mapScope || scopeId} />
+                              <DebugKeyValue label="Panel build/version marker" value={debugSnapshot.activeContext.panelRuntimeMarker || '(empty)'} />
+                              <DebugKeyValue label="Last prediction request time" value={debugSnapshot.activeContext.lastPredictionRequestAt || '(empty)'} />
+                              <DebugKeyValue label="Last prediction response time" value={debugSnapshot.activeContext.lastPredictionResponseAt || '(empty)'} />
+                              <DebugKeyValue label="Prediction status" value={debugSnapshot.activeContext.predictionStatus} />
+                            </div>
+                          </DebugSection>
+
+                          <DebugSection
+                            title="Raw backend response"
+                            actions={<Button variant="outline" size="sm" onClick={() => copyJson(debugSnapshot.rawBackendResponse, 'Backend JSON')}>Copy backend JSON</Button>}
+                          >
+                            <JsonBox value={debugSnapshot.rawBackendResponse} />
+                          </DebugSection>
+
+                          <DebugSection
+                            title="Panel payload"
+                            actions={<Button variant="outline" size="sm" onClick={() => copyJson(debugSnapshot.panelPayload, 'Panel payload JSON')}>Copy panel payload JSON</Button>}
+                          >
+                            <JsonBox value={debugSnapshot.panelPayload} />
+                          </DebugSection>
+
+                          <DebugSection
+                            title="Final panel state"
+                            actions={<Button variant="outline" size="sm" onClick={() => copyJson(debugSnapshot.panelState, 'Panel state JSON')}>Copy panel state JSON</Button>}
+                          >
+                            <JsonBox value={debugSnapshot.panelState} />
+                          </DebugSection>
+
+                          <DebugSection
+                            title="Derived comparison summary"
+                            actions={<Button variant="outline" size="sm" onClick={copyDiagnosticsSummary}>Copy diagnostics summary</Button>}
+                          >
+                            <DebugComparisonTable snapshot={debugSnapshot} />
+                          </DebugSection>
+
+                          <DebugSection title="Storage / Cache diagnostics">
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <div>
+                                <div className="mb-1 text-xs font-medium">localStorage</div>
+                                <JsonBox value={storageSnapshot.localStorage} />
+                              </div>
+                              <div>
+                                <div className="mb-1 text-xs font-medium">sessionStorage</div>
+                                <JsonBox value={storageSnapshot.sessionStorage} />
+                              </div>
+                            </div>
+                            <div>
+                              <div className="mb-1 text-xs font-medium">In-memory debug store</div>
+                              <JsonBox value={debugSnapshot} />
+                            </div>
+                          </DebugSection>
+
+                          <div className="grid gap-2 md:grid-cols-2">
+                            <Button variant="outline" onClick={clearPredictionCache}>Clear prediction cache</Button>
+                            <Button variant="outline" onClick={clearPredictionStorage}>Clear species prediction local storage</Button>
+                            <Button variant="outline" onClick={forceRerunPrediction}>Force rerun prediction</Button>
+                            <Button variant="outline" onClick={resyncPanel}>Resync panel from latest backend response</Button>
+                          </div>
+                        </div>
+                      )}
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              )}
             </>
           ) : (
             <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
@@ -445,6 +607,134 @@ export default function SpeciesPredictionSettings() {
       )}
     </div>
   );
+}
+
+function DebugSection({
+  title,
+  actions,
+  children,
+}: {
+  title: string;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-3">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="text-sm font-medium text-foreground">{title}</div>
+        {actions}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function DebugKeyValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border p-2">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="break-all font-mono text-xs">{value}</div>
+    </div>
+  );
+}
+
+function JsonBox({ value }: { value: unknown }) {
+  return (
+    <pre className="max-h-60 overflow-auto rounded-md bg-muted p-3 text-xs whitespace-pre-wrap break-words font-mono">
+      {JSON.stringify(value ?? null, null, 2)}
+    </pre>
+  );
+}
+
+function DebugComparisonTable({ snapshot }: { snapshot: SpeciesPredictionDebugSnapshot }) {
+  const rows = [
+    ['insightSummary', readDebugField(snapshot.rawBackendResponse, ['insightSummary']), readDebugField(snapshot.panelPayload, ['insightSummary']), readDebugField(snapshot.panelState, ['insightSummary'])],
+    ['externalPressureScore', readDebugField(snapshot.rawBackendResponse, ['externalPressureScore']), readDebugField(snapshot.panelPayload, ['externalPressureScore']), readDebugField(snapshot.panelState, ['externalPressureScore'])],
+    ['countryScores.lithuania', readDebugField(snapshot.rawBackendResponse, ['countryScores', 'lithuania']), readDebugField(snapshot.panelPayload, ['countryScores', 'lithuania']), readDebugField(snapshot.panelState, ['countryScores', 'lithuania'])],
+    ['topPredictedPoints[0].reason', readDebugField(snapshot.rawBackendResponse, ['topPredictedPoints', 0, 'reason']), readDebugField(snapshot.panelPayload, ['topPredictedPoints', 0, 'reason']), readDebugField(snapshot.panelState, ['topPredictedPoints', 0, 'reason'])],
+    ['topPredictedPoints[0].confidence', readDebugField(snapshot.rawBackendResponse, ['topPredictedPoints', 0, 'confidence']), readDebugField(snapshot.panelPayload, ['topPredictedPoints', 0, 'confidence']), readDebugField(snapshot.panelState, ['topPredictedPoints', 0, 'confidence'])],
+    ['analysisVersion', readDebugField(snapshot.rawBackendResponse, ['analysisVersion']), readDebugField(snapshot.panelPayload, ['analysisVersion']), readDebugField(snapshot.panelState, ['analysisVersion'])],
+    ['generatedAt', readDebugField(snapshot.rawBackendResponse, ['generatedAt']), readDebugField(snapshot.panelPayload, ['generatedAt']), readDebugField(snapshot.panelState, ['generatedAt'])],
+  ] as const;
+
+  return (
+    <div className="overflow-auto rounded-md border border-border">
+      <table className="w-full text-xs">
+        <thead className="bg-muted">
+          <tr>
+            <th className="p-2 text-left">Field</th>
+            <th className="p-2 text-left">Backend</th>
+            <th className="p-2 text-left">Panel payload</th>
+            <th className="p-2 text-left">Final panel state</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([label, backend, payload, panel]) => (
+            <tr key={label} className="border-t border-border">
+              <td className="p-2 font-medium">{label}</td>
+              <td className="p-2">{formatDebugValue(backend)}</td>
+              <td className={`p-2 ${isEqualValue(backend, payload) ? 'text-green-600' : 'text-red-600'}`}>{formatDebugValue(payload)}</td>
+              <td className={`p-2 ${isEqualValue(backend, panel) ? 'text-green-600' : 'text-red-600'}`}>{formatDebugValue(panel)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function readDebugField(source: unknown, path: Array<string | number>): unknown {
+  let current = source as any;
+  for (const key of path) {
+    if (current == null) return null;
+    current = current[key as any];
+  }
+  return current ?? null;
+}
+
+function isEqualValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function formatDebugValue(value: unknown): string {
+  if (value == null) return '(null)';
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value);
+}
+
+function buildDiagnosticsSummary(snapshot: SpeciesPredictionDebugSnapshot): string {
+  const fields = [
+    'insightSummary',
+    'externalPressureScore',
+    'countryScores.lithuania',
+    'topPredictedPoints[0].reason',
+    'topPredictedPoints[0].confidence',
+    'analysisVersion',
+    'generatedAt',
+  ];
+  const rows = fields.map((field) => {
+    const path = field === 'countryScores.lithuania'
+      ? ['countryScores', 'lithuania']
+      : field === 'topPredictedPoints[0].reason'
+        ? ['topPredictedPoints', 0, 'reason']
+        : field === 'topPredictedPoints[0].confidence'
+          ? ['topPredictedPoints', 0, 'confidence']
+          : [field];
+    return [
+      field,
+      formatDebugValue(readDebugField(snapshot.rawBackendResponse, path)),
+      formatDebugValue(readDebugField(snapshot.panelPayload, path)),
+      formatDebugValue(readDebugField(snapshot.panelState, path)),
+    ].join(' | ');
+  });
+
+  return [
+    `species=${snapshot.activeContext.speciesName || '(empty)'}`,
+    `speciesKey=${snapshot.activeContext.speciesKey || '(empty)'}`,
+    `scope=${snapshot.activeContext.mapScope || '(empty)'}`,
+    `status=${snapshot.activeContext.predictionStatus}`,
+    ...rows,
+  ].join('\n');
 }
 
 type SpeciesPredictionBackendStatus = {

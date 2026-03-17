@@ -12,7 +12,7 @@ import { LINNULIIGID_SCOPE, RARILIIN_SCOPE } from '@/lib/mapScope';
 import { resolveProxyBase } from '@/config/proxyEndpoint';
 import { buildSpeciesMetaLookupFallback, getScopedSpeciesMeta, loadSpeciesMeta, seedSpeciesMetaFallback } from '@/lib/speciesMeta';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
-import { broadcastSupabaseConfigToMapIframes, getSupabaseAnonKey, getSupabaseUrl, validateSupabaseConfig } from '@/config/supabaseConfig';
+import { broadcastSupabaseConfigToMapIframes, getSupabaseAnonKey, getSupabaseUrl, isDeveloperModeEnabled, validateSupabaseConfig } from '@/config/supabaseConfig';
 import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
 import { type MapScope, loadSpeciesVisibility, saveSpeciesVisibility, loadLocalHidden } from '@/lib/speciesVisibility';
@@ -22,6 +22,15 @@ import { runSpeciesPredictionRequest } from '@/lib/speciesPredictionRunner';
 import { isSpeciesPredictionEnabled } from '@/lib/settings';
 import { ACTIVE_PREDICTION_IFRAME_READY_MESSAGE, ACTIVE_PREDICTION_SPECIES_EVENT, ACTIVE_PREDICTION_SPECIES_MESSAGE, getActivePredictionSpecies, setActivePredictionSpecies, type ActivePredictionSpecies } from '@/lib/activePredictionSpecies';
 import { normalizeSpeciesName } from '@/lib/textNormalize';
+import {
+  SPECIES_PREDICTION_DEBUG_PANEL_STATE_MESSAGE,
+  SPECIES_PREDICTION_DEBUG_RESYNC_EVENT,
+  SPECIES_PREDICTION_DEBUG_RERUN_EVENT,
+  getSpeciesPredictionDebugSnapshot,
+  setSpeciesPredictionDebugPanelPayload,
+  setSpeciesPredictionDebugPanelState,
+  updateSpeciesPredictionDebugContext,
+} from '@/lib/speciesPredictionDebug';
 
 const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -84,6 +93,10 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       source: current.source,
       iframeSrc,
       runtimeMarker: speciesPredictionRuntimeMarker,
+    });
+    updateSpeciesPredictionDebugContext({
+      mapScope: getSpeciesScopeByMapId(current.id)?.id || '',
+      panelRuntimeMarker: `${current.id} | ${speciesPredictionRuntimeMarker}`,
     });
   }, [current.id, current.source, iframeSrc, speciesPredictionRuntimeMarker]);
 
@@ -305,6 +318,20 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
           }
         }
       }
+      if (ev.data?.type === SPECIES_PREDICTION_DEBUG_PANEL_STATE_MESSAGE) {
+        setSpeciesPredictionDebugPanelState({
+          speciesName: typeof ev.data.speciesName === 'string' ? ev.data.speciesName : '',
+          speciesKey: typeof ev.data.speciesKey === 'string' ? ev.data.speciesKey : '',
+          scope: typeof ev.data.scope === 'string' ? ev.data.scope : '',
+          generatedAt: typeof ev.data.generatedAt === 'string' ? ev.data.generatedAt : '',
+          analysisVersion: typeof ev.data.analysisVersion === 'string' ? ev.data.analysisVersion : '',
+          insightSummary: typeof ev.data.insightSummary === 'string' ? ev.data.insightSummary : '',
+          externalPressureScore: typeof ev.data.externalPressureScore === 'number' ? ev.data.externalPressureScore : undefined,
+          countryScores: ev.data.countryScores && typeof ev.data.countryScores === 'object' ? ev.data.countryScores as Record<string, unknown> : undefined,
+          topPredictedPoints: Array.isArray(ev.data.topPredictedPoints) ? ev.data.topPredictedPoints : [],
+          runtimeMarker: typeof ev.data.runtimeMarker === 'string' ? ev.data.runtimeMarker : '',
+        });
+      }
       // Species visibility changed from iframe
       if (ev.data?.type === 'SPECIES_VISIBILITY_CHANGED' && user?.id && mapScope) {
         const { speciesKey, isHidden } = ev.data;
@@ -346,6 +373,14 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
         }
         const requestId = latestPredictionRequestRef.current + 1;
         latestPredictionRequestRef.current = requestId;
+        updateSpeciesPredictionDebugContext({
+          speciesName,
+          speciesKey,
+          mapScope: scopeCfg.id,
+          panelRuntimeMarker: `${current.id} | ${speciesPredictionRuntimeMarker}`,
+          lastPredictionRequestAt: new Date().toISOString(),
+          predictionStatus: 'loading',
+        });
         sendToIframe({ type: SPECIES_PREDICTION_EVENT_TYPES.loading });
         loadSpeciesPredictionSettings(scopeCfg.id, speciesName)
           .then(async (settings) => {
@@ -402,6 +437,10 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
                 type: SPECIES_PREDICTION_EVENT_TYPES.error,
                 error: response.disabled ? 'Species prediction integration is currently unavailable' : (response.error || 'Prediction request failed'),
               });
+              updateSpeciesPredictionDebugContext({
+                lastPredictionResponseAt: new Date().toISOString(),
+                predictionStatus: 'error',
+              });
               return;
             }
             console.debug('[speciesPrediction] parent -> iframe result', {
@@ -426,6 +465,15 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
               type: SPECIES_PREDICTION_EVENT_TYPES.result,
               result: response.result,
             };
+            setSpeciesPredictionDebugPanelPayload(iframePayload.result);
+            updateSpeciesPredictionDebugContext({
+              speciesName: response.result.speciesName,
+              speciesKey: response.result.speciesKey,
+              mapScope: scopeCfg.id,
+              panelRuntimeMarker: `${current.id} | ${speciesPredictionRuntimeMarker}`,
+              lastPredictionResponseAt: new Date().toISOString(),
+              predictionStatus: 'success',
+            });
             console.debug('[speciesPrediction] compare iframe payload', {
               scope: scopeCfg.id,
               speciesKey: iframePayload.result.speciesKey,
@@ -434,12 +482,25 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
               lithuania: iframePayload.result.countryScores?.lithuania ?? null,
               topPredictedPointReason: iframePayload.result.topPredictedPoints[0]?.reason || null,
             });
+            if (isDeveloperModeEnabled()) {
+              console.debug('[SpeciesPredictionDebug] payload', {
+                speciesKey: iframePayload.result.speciesKey,
+                insightSummary: iframePayload.result.insightSummary || null,
+                externalPressureScore: iframePayload.result.externalPressureScore,
+                lithuania: iframePayload.result.countryScores?.lithuania ?? null,
+                topPredictedPointReason: iframePayload.result.topPredictedPoints[0]?.reason || null,
+              });
+            }
             sendToIframe(iframePayload);
           })
           .catch((predictionError: unknown) => {
             if (latestPredictionRequestRef.current !== requestId) {
               return;
             }
+            updateSpeciesPredictionDebugContext({
+              lastPredictionResponseAt: new Date().toISOString(),
+              predictionStatus: 'error',
+            });
             sendToIframe({
               type: SPECIES_PREDICTION_EVENT_TYPES.error,
               error: predictionError instanceof Error ? predictionError.message : 'Prediction request failed',
@@ -450,6 +511,36 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
   }, [current.id, sendAvatarsToIframe, sendAppInsets, sendSpeciesMetaToIframe, sendSupabaseConfigToIframe, sendToIframe, user, mapScope, sendPredictionContextToIframe, sendActivePredictionSpeciesToIframe]);
+
+  useEffect(() => {
+    const rerunHandler = () => {
+      if (!iframePredictionReadyRef.current) return;
+      const scopeCfg = getSpeciesScopeByMapId(current.id);
+      const species = scopeCfg ? getActivePredictionSpecies(scopeCfg.id) : null;
+      if (!scopeCfg || !species) return;
+      sendToIframe({
+        type: SPECIES_PREDICTION_EVENT_TYPES.run,
+        scope: scopeCfg.id,
+        speciesName: species.speciesName,
+        speciesKey: species.speciesKey,
+        requestType: 'prediction_and_insight',
+      });
+    };
+    const resyncHandler = () => {
+      const snapshot = getSpeciesPredictionDebugSnapshot();
+      if (!snapshot.panelPayload || !iframePredictionReadyRef.current) return;
+      sendToIframe({
+        type: SPECIES_PREDICTION_EVENT_TYPES.result,
+        result: snapshot.panelPayload,
+      });
+    };
+    window.addEventListener(SPECIES_PREDICTION_DEBUG_RERUN_EVENT, rerunHandler as EventListener);
+    window.addEventListener(SPECIES_PREDICTION_DEBUG_RESYNC_EVENT, resyncHandler as EventListener);
+    return () => {
+      window.removeEventListener(SPECIES_PREDICTION_DEBUG_RERUN_EVENT, rerunHandler as EventListener);
+      window.removeEventListener(SPECIES_PREDICTION_DEBUG_RESYNC_EVENT, resyncHandler as EventListener);
+    };
+  }, [current.id, sendToIframe]);
 
   useEffect(() => {
     const scopeCfg = getSpeciesScopeByMapId(current.id);

@@ -265,6 +265,15 @@
       lithuania: state.result && state.result.countryScores && state.result.countryScores.lithuania != null ? state.result.countryScores.lithuania : null,
       topPredictedPointReason: state.result && state.result.topPredictedPoints && state.result.topPredictedPoints[0] ? state.result.topPredictedPoints[0].reason || null : null,
     });
+    if (isSpeciesPredictionDebugEnabled()) {
+      console.debug('[SpeciesPredictionDebug] panelState', {
+        speciesKey: state.result && state.result.speciesKey ? state.result.speciesKey : state.speciesKey || '',
+        insightSummary: state.result && state.result.insightSummary ? state.result.insightSummary : null,
+        externalPressureScore: state.result ? state.result.externalPressureScore : null,
+        lithuania: state.result && state.result.countryScores && state.result.countryScores.lithuania != null ? state.result.countryScores.lithuania : null,
+        topPredictedPointReason: state.result && state.result.topPredictedPoints && state.result.topPredictedPoints[0] ? state.result.topPredictedPoints[0].reason || null : null,
+      });
+    }
     ensurePanel();
     render();
   }
@@ -342,6 +351,7 @@
       lithuania: result.countryScores && result.countryScores.lithuania != null ? result.countryScores.lithuania : null,
       topPredictedPointReason: preferredPoints && preferredPoints[0] ? preferredPoints[0].reason || null : null,
     });
+    publishPanelState(result, preferredPoints);
     var html = '';
     if (summaryText) {
       html += '<div class="spp-card"><h4>Insight summary</h4><p>' + escapeHtml(summaryText) + '</p>';
@@ -441,6 +451,34 @@
       return JSON.parse(JSON.stringify(result));
     } catch (e) {
       return result;
+    }
+  }
+
+  function publishPanelState(result, preferredPoints) {
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({
+          type: 'SPECIES_PREDICTION_PANEL_STATE',
+          speciesName: result && result.speciesName ? result.speciesName : state.speciesName || '',
+          speciesKey: result && result.speciesKey ? result.speciesKey : state.speciesKey || '',
+          scope: state.scope,
+          generatedAt: result && result.generatedAt ? result.generatedAt : '',
+          analysisVersion: result && result.analysisVersion ? result.analysisVersion : '',
+          insightSummary: result && result.insightSummary ? result.insightSummary : '',
+          externalPressureScore: result ? result.externalPressureScore : null,
+          countryScores: result && result.countryScores ? result.countryScores : null,
+          topPredictedPoints: Array.isArray(preferredPoints) ? preferredPoints : [],
+          runtimeMarker: runtimeInfo.visibleMarker,
+        }, '*');
+      }
+    } catch (e) {}
+  }
+
+  function isSpeciesPredictionDebugEnabled() {
+    try {
+      return window.localStorage.getItem('estbirding.devMode') === '1';
+    } catch (e) {
+      return false;
     }
   }
 

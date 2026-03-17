@@ -279,7 +279,7 @@ export function normalizeSpeciesPredictionResult(
     : [];
   const canonicalCountryScoresSource = readRecord(source, ['countryScores']);
   const legacyCountryScoresSource = readRecord(source, ['country_scores', 'countryScoreMap', 'country_score_map']);
-  const fallbackCountryScoresSource = readRecord(asRecord(source.rawResearchPayload).openAIAnalysisInput, ['countryScores']);
+  const fallbackCountryScoresSource = readRecord(asRecord(asRecord(source.rawResearchPayload).openAIAnalysisInput), ['countryScores']);
   const countryScoresSource = canonicalCountryScoresSource
     ?? legacyCountryScoresSource
     ?? fallbackCountryScoresSource

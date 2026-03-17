@@ -401,6 +401,7 @@ export default function SettingsTab() {
       e.preventDefault();
 
       const candidates = [
+        `${location.origin}/functions/v1/translate-et?ping=1`,
         '/.netlify/functions/ping',
         '/functions/api/ping',
         '/api/functions/ping',
@@ -433,7 +434,7 @@ export default function SettingsTab() {
       const bestTranslate = results.find((r) => r.ok && r.isJson && String(r.url || '').includes('translate-et'));
       if (bestTranslate) {
         const endpointPath = String(bestTranslate.url || '').replace(location.origin, '');
-        const clean = endpointPath.split('?')[0] || '/.netlify/functions/translate-et';
+        const clean = endpointPath.split('?')[0] || WORKER_DEFAULT_ENDPOINT;
         localStorage.setItem('translate_endpoint_v1', clean);
         setStoredEndpointView(getStoredEndpoint());
         setTranslationApiUrlInput(clean);
@@ -701,7 +702,7 @@ export default function SettingsTab() {
   };
 
   const handleUseBuiltInTranslateRecommended = () => {
-    const builtin = '/.netlify/functions/translate-et';
+    const builtin = WORKER_DEFAULT_ENDPOINT;
     setStoredEndpoint(builtin);
     const saved = getStoredEndpoint();
     setStoredEndpointView(saved);
@@ -791,7 +792,7 @@ export default function SettingsTab() {
         <Label htmlFor="translateApiUrl">Translation API URL</Label>
         <Input
           id="translateApiUrl"
-          placeholder="/.netlify/functions/translate-et"
+          placeholder="https://<project-ref>.supabase.co/functions/v1/translate-et"
           value={translationApiUrl}
           onChange={(e) => setTranslationApiUrlInput(e.target.value)}
         />
@@ -805,7 +806,7 @@ export default function SettingsTab() {
           Use proxy translate (recommended)
         </Button>
         <p className="text-xs text-muted-foreground">
-          Recommended: /.netlify/functions/translate-et (same-origin). You can still use a full Supabase/custom URL.
+          Recommended: https://<project-ref>.supabase.co/functions/v1/translate-et. You can still use a custom endpoint.
         </p>
         <p className="text-xs text-muted-foreground">
           Resolved endpoint: {resolvedEndpoint || '(empty)'}
@@ -899,7 +900,7 @@ export default function SettingsTab() {
             onClick={handleUseBuiltInTranslateRecommended}
             className="w-full"
           >
-            Use built-in translate (recommended)
+            Use Supabase translate (recommended)
           </Button>
           <Button
             id="debugProxyDiscoveryBtn"

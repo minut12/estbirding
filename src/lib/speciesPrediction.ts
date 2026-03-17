@@ -60,6 +60,55 @@ export type PredictedPoint = {
   searchRadiusKm: number;
   habitatCue: string;
   reason: string;
+  supportingCountries?: string[];
+  nearestRelevantClusterKm?: number;
+  latestRelevantForeignDate?: string;
+  historicalMatch?: string;
+  estoniaPresenceSignal?: string;
+};
+
+export type SpeciesPredictionEvidenceCluster = {
+  lat: number;
+  lon: number;
+  lastDate: string;
+  count7d: number;
+  source: string;
+  label?: string;
+};
+
+export type SpeciesPredictionForeignEvidenceGroup = {
+  countryCode: string;
+  countryName: string;
+  recordCount7d: number;
+  recordCount30d: number;
+  nearestDistanceKm: number;
+  latestDate: string;
+  clusterCount: number;
+  topClusters: SpeciesPredictionEvidenceCluster[];
+};
+
+export type SpeciesPredictionHistoricalEvidence = {
+  springWindow: string;
+  topHistoricalHotspots: PredictedPoint[];
+  habitatHints: string[];
+};
+
+export type SpeciesPredictionEstoniaEvidence = {
+  recentCount7d: number;
+  recentCount30d: number;
+  latestEstoniaDate: string;
+  latestEstoniaLat: number | null;
+  latestEstoniaLon: number | null;
+  alreadyPresent: boolean;
+  alreadyPassed: boolean;
+};
+
+export type SpeciesPredictionSourceHealth = {
+  primarySourceUsed: string;
+  sourceWarnings: string[];
+  elurikkusAvailable: boolean;
+  ebirdAvailable: boolean;
+  gbifFallbackUsed: boolean;
 };
 
 export type PredictionConsistencyChecks = {
@@ -83,6 +132,20 @@ export type SpeciesPredictionResult = {
   speciesName: string;
   scope: SpeciesScopeId;
   generatedAt: string;
+  species?: {
+    speciesKey: string;
+    speciesName: string;
+    latinName: string;
+    ebirdSpeciesCode: string;
+  };
+  sourceHealth?: SpeciesPredictionSourceHealth;
+  foreignEvidence?: SpeciesPredictionForeignEvidenceGroup[];
+  estoniaEvidence?: SpeciesPredictionEstoniaEvidence;
+  historicalEvidence?: SpeciesPredictionHistoricalEvidence;
+  rawLinks?: {
+    elurikkusSearchUrl: string;
+    countrySourceUrls?: Record<string, string>;
+  };
   externalPressureScore: number;
   springFitScore: number;
   windSupportScore: number;
@@ -297,11 +360,48 @@ export function normalizeSpeciesPredictionResult(
   const analysisVersion = readString(source, ['analysisVersion'])
     || readString(source, ['analysis_version'])
     || readString(asRecord(source.openaiAnalysis), ['analysisVersion', 'analysis_version']);
-  return {
+  const rawResearchPayload = source.rawResearchPayload ? asRecord(source.rawResearchPayload) : {};
+  const normalizedSources = readRecord(rawResearchPayload, ['normalizedSources']) ?? {};
+  const requestMeta = readRecord(rawResearchPayload, ['request']) ?? {};
+  const evidenceSpecies = {
     speciesKey,
     speciesName: normalizeUiText(readString(source, ['speciesName', 'species_name']) || normalizedName),
+    latinName: normalizeUiText(readString(source, ['latinName', 'latin_name']) || readString(requestMeta, ['latinName', 'latin_name']) || ''),
+    ebirdSpeciesCode: normalizeUiText(
+      readString(source, ['ebirdSpeciesCode', 'ebird_species_code'])
+      || readString(requestMeta, ['ebirdSpeciesCode', 'ebird_species_code'])
+      || readString(asRecord(source.species), ['ebirdSpeciesCode', 'ebird_species_code'])
+      || '',
+    ),
+  };
+  const foreignEvidence = normalizeForeignEvidence(
+    readArray(source, ['foreignEvidence']) ?? readArray(rawResearchPayload, ['foreignEvidence']),
+  );
+  const estoniaEvidence = normalizeEstoniaEvidence(
+    readRecord(source, ['estoniaEvidence']) ?? readRecord(rawResearchPayload, ['estoniaEvidence']) ?? readRecord(normalizedSources, ['estoniaRecent']),
+  );
+  const historicalEvidence = normalizeHistoricalEvidence(
+    readRecord(source, ['historicalEvidence']) ?? readRecord(rawResearchPayload, ['historicalEvidence']) ?? readRecord(normalizedSources, ['elurikkusHistory']),
+  );
+  const sourceHealth = normalizeSourceHealth(
+    readRecord(source, ['sourceHealth']) ?? readRecord(rawResearchPayload, ['sourceHealth']),
+  );
+  const rawLinks = normalizeRawLinks(
+    readRecord(source, ['rawLinks']) ?? readRecord(rawResearchPayload, ['rawLinks']),
+    evidenceSpecies,
+    foreignEvidence,
+  );
+  return {
+    speciesKey,
+    speciesName: evidenceSpecies.speciesName,
     scope,
     generatedAt: normalizeUiText(readString(source, ['generatedAt', 'generated_at']) || new Date().toISOString()),
+    species: evidenceSpecies,
+    ...(sourceHealth ? { sourceHealth } : {}),
+    ...(foreignEvidence.length ? { foreignEvidence } : {}),
+    ...(estoniaEvidence ? { estoniaEvidence } : {}),
+    ...(historicalEvidence ? { historicalEvidence } : {}),
+    ...(rawLinks ? { rawLinks } : {}),
     externalPressureScore: readNumber(source, ['externalPressureScore', 'external_pressure_score', 'pressureScore', 'pressure_score']),
     springFitScore: readNumber(source, ['springFitScore', 'spring_fit_score']),
     windSupportScore: readNumber(source, ['windSupportScore', 'wind_support_score']),
@@ -326,7 +426,7 @@ export function normalizeSpeciesPredictionResult(
     ...(warnings.length ? { warnings } : {}),
     ...(consistencyChecksSource ? { consistencyChecks: normalizePredictionConsistencyChecks(consistencyChecksSource) } : {}),
     ...(source.openaiAnalysis ? { openaiAnalysis: source.openaiAnalysis as SpeciesPredictionAnalysis } : {}),
-    ...(source.rawResearchPayload ? { rawResearchPayload: asRecord(source.rawResearchPayload) } : {}),
+    ...(source.rawResearchPayload ? { rawResearchPayload: rawResearchPayload } : {}),
   };
 }
 
@@ -337,7 +437,15 @@ export function hasUsableSpeciesPredictionResult(
   const speciesKey = normalizeSpeciesName(input.speciesKey || '');
   const speciesName = normalizeUiText(input.speciesName || '');
   const generatedAt = normalizeUiText(input.generatedAt || '');
-  return Boolean(speciesKey && speciesName && generatedAt);
+  const evidenceRecord = asRecord(input);
+  const hasEvidencePayload = Boolean(
+    hasValue(evidenceRecord, ['foreignEvidence'])
+    || hasValue(evidenceRecord, ['estoniaEvidence'])
+    || hasValue(evidenceRecord, ['historicalEvidence'])
+    || hasValue(evidenceRecord, ['sourceHealth'])
+    || hasValue(evidenceRecord, ['topPredictedPoints']),
+  );
+  return Boolean(speciesKey && speciesName && generatedAt && hasEvidencePayload);
 }
 
 function toNumber(value: unknown): number {
@@ -366,6 +474,10 @@ function hasCanonicalPredictionFields(record: Record<string, unknown>): boolean 
     || hasValue(record, ['alreadyMissedRisk'])
     || hasValue(record, ['countryScores'])
     || hasValue(record, ['topPredictedPoints']),
+    || hasValue(record, ['foreignEvidence'])
+    || hasValue(record, ['estoniaEvidence'])
+    || hasValue(record, ['historicalEvidence'])
+    || hasValue(record, ['sourceHealth']),
   );
 }
 
@@ -468,6 +580,21 @@ function normalizePredictedPoint(point: Partial<PredictedPoint> | null | undefin
     searchRadiusKm: clampNumber(readNumber(source, ['searchRadiusKm', 'search_radius_km', 'radiusKm', 'radius_km']), 0, 500, 0),
     habitatCue: normalizeUiText(readString(source, ['habitatCue', 'habitat_cue']) || ''),
     reason: normalizeUiText(readString(source, ['reason', 'explanation']) || ''),
+    ...(Array.isArray(source.supportingCountries)
+      ? { supportingCountries: source.supportingCountries.map((value) => normalizeUiText(String(value || ''))).filter(Boolean) }
+      : {}),
+    ...(hasValue(source, ['nearestRelevantClusterKm', 'nearest_relevant_cluster_km'])
+      ? { nearestRelevantClusterKm: clampFloat(readNumber(source, ['nearestRelevantClusterKm', 'nearest_relevant_cluster_km']), 0, 5000, 0) }
+      : {}),
+    ...(readString(source, ['latestRelevantForeignDate', 'latest_relevant_foreign_date'])
+      ? { latestRelevantForeignDate: normalizeUiText(readString(source, ['latestRelevantForeignDate', 'latest_relevant_foreign_date'])) }
+      : {}),
+    ...(readString(source, ['historicalMatch', 'historical_match'])
+      ? { historicalMatch: normalizeUiText(readString(source, ['historicalMatch', 'historical_match'])) }
+      : {}),
+    ...(readString(source, ['estoniaPresenceSignal', 'estonia_presence_signal'])
+      ? { estoniaPresenceSignal: normalizeUiText(readString(source, ['estoniaPresenceSignal', 'estonia_presence_signal'])) }
+      : {}),
   };
 }
 
@@ -479,5 +606,94 @@ function normalizePredictionConsistencyChecks(
     timingLooksPlausible: input?.timingLooksPlausible === true,
     weatherLooksSupportive: input?.weatherLooksSupportive === true,
     foreignPressureMatchesNarrative: input?.foreignPressureMatchesNarrative === true,
+  };
+}
+
+function normalizeForeignEvidence(input: unknown[] | null): SpeciesPredictionForeignEvidenceGroup[] {
+  if (!Array.isArray(input)) return [];
+  return input.map((entry) => {
+    const source = asRecord(entry);
+    const topClustersSource = readArray(source, ['topClusters', 'top_clusters']) ?? [];
+    return {
+      countryCode: normalizeUiText(readString(source, ['countryCode', 'country_code']) || '').toLowerCase(),
+      countryName: normalizeUiText(readString(source, ['countryName', 'country_name']) || ''),
+      recordCount7d: clampNumber(readNumber(source, ['recordCount7d', 'record_count_7d']), 0, 999999, 0),
+      recordCount30d: clampNumber(readNumber(source, ['recordCount30d', 'record_count_30d']), 0, 999999, 0),
+      nearestDistanceKm: clampFloat(readNumber(source, ['nearestDistanceKm', 'nearest_distance_km']), 0, 999999, 0),
+      latestDate: normalizeUiText(readString(source, ['latestDate', 'latest_date']) || ''),
+      clusterCount: clampNumber(readNumber(source, ['clusterCount', 'cluster_count']), 0, 999999, 0),
+      topClusters: topClustersSource.slice(0, 3).map((cluster) => {
+        const clusterRecord = asRecord(cluster);
+        return {
+          lat: readNumber(clusterRecord, ['lat', 'latitude']),
+          lon: readNumber(clusterRecord, ['lon', 'lng', 'longitude']),
+          lastDate: normalizeUiText(readString(clusterRecord, ['lastDate', 'last_date']) || ''),
+          count7d: clampNumber(readNumber(clusterRecord, ['count7d', 'count_7d']), 0, 999999, 0),
+          source: normalizeUiText(readString(clusterRecord, ['source']) || ''),
+          ...(readString(clusterRecord, ['label']) ? { label: normalizeUiText(readString(clusterRecord, ['label'])) } : {}),
+        };
+      }),
+    };
+  }).filter((entry) => entry.countryCode || entry.countryName);
+}
+
+function normalizeEstoniaEvidence(input: Record<string, unknown> | null): SpeciesPredictionEstoniaEvidence | undefined {
+  if (!input || !Object.keys(input).length) return undefined;
+  return {
+    recentCount7d: clampNumber(readNumber(input, ['recentCount7d', 'recent_count_7d']), 0, 999999, 0),
+    recentCount30d: clampNumber(readNumber(input, ['recentCount30d', 'recent_count_30d']), 0, 999999, 0),
+    latestEstoniaDate: normalizeUiText(readString(input, ['latestEstoniaDate', 'latest_estonia_date', 'latestDate', 'latest_date']) || ''),
+    latestEstoniaLat: hasValue(input, ['latestEstoniaLat', 'latest_estonia_lat', 'latestLat', 'latest_lat'])
+      ? clampFloat(readNumber(input, ['latestEstoniaLat', 'latest_estonia_lat', 'latestLat', 'latest_lat']), -90, 90, 0)
+      : null,
+    latestEstoniaLon: hasValue(input, ['latestEstoniaLon', 'latest_estonia_lon', 'latestLon', 'latest_lon'])
+      ? clampFloat(readNumber(input, ['latestEstoniaLon', 'latest_estonia_lon', 'latestLon', 'latest_lon']), -180, 180, 0)
+      : null,
+    alreadyPresent: input.alreadyPresent === true,
+    alreadyPassed: input.alreadyPassed === true,
+  };
+}
+
+function normalizeHistoricalEvidence(input: Record<string, unknown> | null): SpeciesPredictionHistoricalEvidence | undefined {
+  if (!input || !Object.keys(input).length) return undefined;
+  const topHistoricalHotspotsSource = readArray(input, ['topHistoricalHotspots', 'top_historical_hotspots', 'historicalHotspots', 'historical_hotspots']) ?? [];
+  const habitatHintsSource = readArray(input, ['habitatHints', 'habitat_hints']) ?? [];
+  return {
+    springWindow: normalizeUiText(readString(input, ['springWindow', 'spring_window', 'arrivalWindow', 'arrival_window']) || ''),
+    topHistoricalHotspots: topHistoricalHotspotsSource.map((point, index) => normalizePredictedPoint(asRecord(point), index)).filter((point) => point.name || point.reason),
+    habitatHints: habitatHintsSource.map((hint) => normalizeUiText(String(hint || ''))).filter(Boolean),
+  };
+}
+
+function normalizeSourceHealth(input: Record<string, unknown> | null): SpeciesPredictionSourceHealth | undefined {
+  if (!input || !Object.keys(input).length) return undefined;
+  const warnings = readArray(input, ['sourceWarnings', 'source_warnings']) ?? [];
+  return {
+    primarySourceUsed: normalizeUiText(readString(input, ['primarySourceUsed', 'primary_source_used']) || ''),
+    sourceWarnings: warnings.map((warning) => normalizeUiText(String(warning || ''))).filter(Boolean),
+    elurikkusAvailable: input.elurikkusAvailable === true,
+    ebirdAvailable: input.ebirdAvailable === true,
+    gbifFallbackUsed: input.gbifFallbackUsed === true,
+  };
+}
+
+function normalizeRawLinks(
+  input: Record<string, unknown> | null,
+  species: { speciesName: string },
+  foreignEvidence: SpeciesPredictionForeignEvidenceGroup[],
+): SpeciesPredictionResult['rawLinks'] | undefined {
+  const source = input ?? {};
+  const elurikkusSearchUrl = normalizeUiText(readString(source, ['elurikkusSearchUrl', 'elurikkus_search_url']) || '')
+    || (species.speciesName ? `https://elurikkus.ee/app/occurrences/search?text=${encodeURIComponent(species.speciesName)}` : '');
+  const countrySourceUrls = readRecord(source, ['countrySourceUrls', 'country_source_urls']) ?? {};
+  const normalizedCountryUrls = Object.fromEntries(
+    Object.entries(countrySourceUrls)
+      .map(([key, value]) => [key, normalizeUiText(String(value || ''))])
+      .filter((entry) => entry[1]),
+  );
+  if (!elurikkusSearchUrl && !Object.keys(normalizedCountryUrls).length && !foreignEvidence.length) return undefined;
+  return {
+    elurikkusSearchUrl,
+    ...(Object.keys(normalizedCountryUrls).length ? { countrySourceUrls: normalizedCountryUrls } : {}),
   };
 }

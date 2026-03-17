@@ -323,20 +323,24 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
           }
         }
       }
-      if (ev.data?.type === SPECIES_PREDICTION_DEBUG_PANEL_STATE_MESSAGE) {
-        setSpeciesPredictionDebugPanelState({
-          speciesName: typeof ev.data.speciesName === 'string' ? ev.data.speciesName : '',
-          speciesKey: typeof ev.data.speciesKey === 'string' ? ev.data.speciesKey : '',
-          scope: typeof ev.data.scope === 'string' ? ev.data.scope : '',
-          generatedAt: typeof ev.data.generatedAt === 'string' ? ev.data.generatedAt : '',
-          analysisVersion: typeof ev.data.analysisVersion === 'string' ? ev.data.analysisVersion : '',
-          insightSummary: typeof ev.data.insightSummary === 'string' ? ev.data.insightSummary : '',
-          externalPressureScore: typeof ev.data.externalPressureScore === 'number' ? ev.data.externalPressureScore : undefined,
-          countryScores: ev.data.countryScores && typeof ev.data.countryScores === 'object' ? ev.data.countryScores as Record<string, unknown> : undefined,
-          topPredictedPoints: Array.isArray(ev.data.topPredictedPoints) ? ev.data.topPredictedPoints : [],
-          runtimeMarker: typeof ev.data.runtimeMarker === 'string' ? ev.data.runtimeMarker : '',
-        });
-      }
+        if (ev.data?.type === SPECIES_PREDICTION_DEBUG_PANEL_STATE_MESSAGE) {
+          setSpeciesPredictionDebugPanelState({
+            speciesName: typeof ev.data.speciesName === 'string' ? ev.data.speciesName : '',
+            speciesKey: typeof ev.data.speciesKey === 'string' ? ev.data.speciesKey : '',
+            scope: typeof ev.data.scope === 'string' ? ev.data.scope : '',
+            generatedAt: typeof ev.data.generatedAt === 'string' ? ev.data.generatedAt : '',
+            analysisVersion: typeof ev.data.analysisVersion === 'string' ? ev.data.analysisVersion : '',
+            insightSummary: typeof ev.data.insightSummary === 'string' ? ev.data.insightSummary : '',
+            externalPressureScore: typeof ev.data.externalPressureScore === 'number' ? ev.data.externalPressureScore : undefined,
+            countryScores: ev.data.countryScores && typeof ev.data.countryScores === 'object' ? ev.data.countryScores as Record<string, unknown> : undefined,
+            topPredictedPoints: Array.isArray(ev.data.topPredictedPoints) ? ev.data.topPredictedPoints : [],
+            sourceHealth: ev.data.sourceHealth && typeof ev.data.sourceHealth === 'object' ? ev.data.sourceHealth as Record<string, unknown> : undefined,
+            foreignEvidence: Array.isArray(ev.data.foreignEvidence) ? ev.data.foreignEvidence : [],
+            estoniaEvidence: ev.data.estoniaEvidence && typeof ev.data.estoniaEvidence === 'object' ? ev.data.estoniaEvidence as Record<string, unknown> : undefined,
+            historicalEvidence: ev.data.historicalEvidence && typeof ev.data.historicalEvidence === 'object' ? ev.data.historicalEvidence as Record<string, unknown> : undefined,
+            runtimeMarker: typeof ev.data.runtimeMarker === 'string' ? ev.data.runtimeMarker : '',
+          });
+        }
       // Species visibility changed from iframe
       if (ev.data?.type === 'SPECIES_VISIBILITY_CHANGED' && user?.id && mapScope) {
         const { speciesKey, isHidden } = ev.data;

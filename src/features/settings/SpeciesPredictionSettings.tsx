@@ -714,6 +714,9 @@ function DebugComparisonTable({ snapshot }: { snapshot: SpeciesPredictionDebugSn
   const rows = [
     ['insightSummary', readDebugField(snapshot.rawBackendResponse, ['insightSummary']), readDebugField(snapshot.panelPayload, ['insightSummary']), readDebugField(snapshot.panelState, ['insightSummary'])],
     ['externalPressureScore', readDebugField(snapshot.rawBackendResponse, ['externalPressureScore']), readDebugField(snapshot.panelPayload, ['externalPressureScore']), readDebugField(snapshot.panelState, ['externalPressureScore'])],
+    ['sourceHealth.primarySourceUsed', readDebugField(snapshot.rawBackendResponse, ['sourceHealth', 'primarySourceUsed']), readDebugField(snapshot.panelPayload, ['sourceHealth', 'primarySourceUsed']), readDebugField(snapshot.panelState, ['sourceHealth', 'primarySourceUsed'])],
+    ['foreignEvidence[0].recordCount7d', readDebugField(snapshot.rawBackendResponse, ['foreignEvidence', 0, 'recordCount7d']), readDebugField(snapshot.panelPayload, ['foreignEvidence', 0, 'recordCount7d']), readDebugField(snapshot.panelState, ['foreignEvidence', 0, 'recordCount7d'])],
+    ['estoniaEvidence.recentCount7d', readDebugField(snapshot.rawBackendResponse, ['estoniaEvidence', 'recentCount7d']), readDebugField(snapshot.panelPayload, ['estoniaEvidence', 'recentCount7d']), readDebugField(snapshot.panelState, ['estoniaEvidence', 'recentCount7d'])],
     ['countryScores.lithuania', readDebugField(snapshot.rawBackendResponse, ['countryScores', 'lithuania']), readDebugField(snapshot.panelPayload, ['countryScores', 'lithuania']), readDebugField(snapshot.panelState, ['countryScores', 'lithuania'])],
     ['topPredictedPoints[0].reason', readDebugField(snapshot.rawBackendResponse, ['topPredictedPoints', 0, 'reason']), readDebugField(snapshot.panelPayload, ['topPredictedPoints', 0, 'reason']), readDebugField(snapshot.panelState, ['topPredictedPoints', 0, 'reason'])],
     ['topPredictedPoints[0].confidence', readDebugField(snapshot.rawBackendResponse, ['topPredictedPoints', 0, 'confidence']), readDebugField(snapshot.panelPayload, ['topPredictedPoints', 0, 'confidence']), readDebugField(snapshot.panelState, ['topPredictedPoints', 0, 'confidence'])],
@@ -770,6 +773,9 @@ function buildDiagnosticsSummary(snapshot: SpeciesPredictionDebugSnapshot): stri
   const fields = [
     'insightSummary',
     'externalPressureScore',
+    'sourceHealth.primarySourceUsed',
+    'foreignEvidence[0].recordCount7d',
+    'estoniaEvidence.recentCount7d',
     'countryScores.lithuania',
     'topPredictedPoints[0].reason',
     'topPredictedPoints[0].confidence',
@@ -779,6 +785,12 @@ function buildDiagnosticsSummary(snapshot: SpeciesPredictionDebugSnapshot): stri
   const rows = fields.map((field) => {
     const path = field === 'countryScores.lithuania'
       ? ['countryScores', 'lithuania']
+      : field === 'sourceHealth.primarySourceUsed'
+        ? ['sourceHealth', 'primarySourceUsed']
+        : field === 'foreignEvidence[0].recordCount7d'
+          ? ['foreignEvidence', 0, 'recordCount7d']
+          : field === 'estoniaEvidence.recentCount7d'
+            ? ['estoniaEvidence', 'recentCount7d']
       : field === 'topPredictedPoints[0].reason'
         ? ['topPredictedPoints', 0, 'reason']
         : field === 'topPredictedPoints[0].confidence'

@@ -66,6 +66,10 @@ export type SpeciesPredictionPanelStateSnapshot = {
   externalPressureScore?: number;
   countryScores?: Record<string, unknown>;
   topPredictedPoints?: unknown[];
+  sourceHealth?: Record<string, unknown>;
+  foreignEvidence?: unknown[];
+  estoniaEvidence?: Record<string, unknown>;
+  historicalEvidence?: Record<string, unknown>;
   runtimeMarker?: string;
 };
 

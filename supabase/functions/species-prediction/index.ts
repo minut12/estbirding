@@ -1,37 +1,21 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 
-const EDGE_FUNCTION_VERSION = 'species-prediction-2026-03-17-a';
+const EDGE_FUNCTION_VERSION = 'species-prediction-2026-03-17-async';
 const DEFAULT_TIMEOUT_MS = 120000;
 const WEBHOOK_ENV_KEY = 'SPECIES_PREDICTION_N8N_WEBHOOK_URL';
 const AUTH_HEADER_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_HEADER';
 const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
-const SUCCESS_STAGE = 'completed';
 
-type FailureStage =
-  | 'parse'
-  | 'missing_webhook'
-  | 'upstream_fetch'
-  | 'upstream_timeout'
-  | 'upstream_non_2xx'
-  | 'invalid_upstream_json'
-  | 'unexpected';
-
-type DebugDetails = {
-  requestId: string;
-  elapsedMs: number;
-  timeoutMsUsed: number;
-  edgeFunctionVersion: string;
-  webhook?: {
-    configured: boolean;
-    host: string | null;
-    pathname: string | null;
-  };
-  upstreamStatus?: number | null;
-  upstreamResponsePreview?: unknown;
-};
+function getSupabaseAdmin() {
+  return createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  );
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -44,13 +28,9 @@ serve(async (req) => {
     const webhookConfigured = webhookUrl.length > 0;
     const timeoutMsUsed = resolveTimeoutMs();
 
+    // ── GET ?mode=status ──
     if (req.method === 'GET' && url.searchParams.get('mode') === 'status') {
-      console.info('[species-prediction] status check', {
-        edgeFunctionVersion: EDGE_FUNCTION_VERSION,
-        timeoutMsUsed,
-        webhookConfigured,
-        envKey: WEBHOOK_ENV_KEY,
-      });
+      console.info(`${LOG_PREFIX} status check`, { webhookConfigured, edgeFunctionVersion: EDGE_FUNCTION_VERSION });
       return json({
         ok: true,
         stage: 'status',
@@ -67,367 +47,284 @@ serve(async (req) => {
       });
     }
 
+    // ── GET ?mode=poll&requestId=X ──
+    if (req.method === 'GET' && url.searchParams.get('mode') === 'poll') {
+      const requestId = (url.searchParams.get('requestId') || '').trim();
+      if (!requestId) {
+        return json({ ok: false, message: 'Missing requestId parameter' }, 400);
+      }
+      console.info(`${LOG_PREFIX} poll`, { requestId });
+      const admin = getSupabaseAdmin();
+      const { data: job, error: jobError } = await admin
+        .from('prediction_jobs')
+        .select('*')
+        .eq('request_id', requestId)
+        .maybeSingle();
+
+      if (jobError) {
+        console.error(`${LOG_PREFIX} poll db error`, { requestId, error: String(jobError) });
+        return json({ ok: false, message: 'Failed to retrieve job status' }, 500);
+      }
+      if (!job) {
+        return json({ ok: false, message: `Job ${requestId} not found` }, 404);
+      }
+
+      const response: Record<string, unknown> = {
+        ok: true,
+        requestId: job.request_id,
+        status: job.status,
+        speciesKey: job.species_key,
+        speciesName: job.species_name,
+        scope: job.scope,
+        createdAt: job.created_at,
+        updatedAt: job.updated_at,
+        generatedAt: job.generated_at,
+        analysisVersion: job.analysis_version,
+      };
+
+      if (job.status === 'completed' && job.result_json) {
+        response.result = job.result_json;
+      }
+      if (job.status === 'failed' && job.error_json) {
+        response.error = job.error_json;
+      }
+
+      return json(response);
+    }
+
+    // ── POST: create async prediction job ──
     if (req.method !== 'POST') {
-      return json({ message: 'Method not allowed' }, 405);
+      return json({ ok: false, message: 'Method not allowed' }, 405);
     }
 
     const requestId = crypto.randomUUID();
     const startedAt = Date.now();
-    logLifecycle(requestId, 'request_received', {
-      method: req.method,
-      url: req.url,
-      edgeFunctionVersion: EDGE_FUNCTION_VERSION,
-    });
+    console.info(`${LOG_PREFIX} request_received`, { requestId, edgeFunctionVersion: EDGE_FUNCTION_VERSION });
 
     let body: unknown;
     try {
       body = await req.json();
-      logLifecycle(requestId, 'body_parsed', {
-        bodyType: body === null ? 'null' : Array.isArray(body) ? 'array' : typeof body,
-      });
     } catch (err) {
       console.warn(`${LOG_PREFIX} invalid JSON body`, { requestId, error: String(err) });
-      return postJsonError({
-        requestId,
-        startedAt,
+      return json({
+        ok: false,
         message: 'Invalid request body',
-        status: 400,
-        stage: 'parse',
-        webhookConfigured,
-        timeoutMsUsed,
-      });
+        requestId,
+        edgeFunctionVersion: EDGE_FUNCTION_VERSION,
+      }, 400);
     }
-
-    const payload = body as Record<string, unknown> | null;
-    const debugMode = payload?.debug === true;
-    const safeWebhook = toSafeWebhook(webhookUrl);
-    logLifecycle(requestId, 'webhook_loaded', {
-      webhookConfigured,
-      webhook: safeWebhook,
-      debugMode,
-    });
 
     if (!webhookConfigured) {
       console.warn(`${LOG_PREFIX} webhook env missing`, { requestId, envKey: WEBHOOK_ENV_KEY });
-      return postJsonError({
-        requestId,
-        startedAt,
+      return json({
+        ok: false,
         message: 'Prediction backend is not configured yet',
-        status: 503,
+        requestId,
         stage: 'missing_webhook',
-        webhookConfigured,
-        timeoutMsUsed,
-        debugMode,
-        debugDetails: buildDebugDetails({
-          requestId,
-          startedAt,
-          webhookUrl,
-          timeoutMsUsed,
-        }),
-      });
+        edgeFunctionVersion: EDGE_FUNCTION_VERSION,
+      }, 503);
     }
 
+    const payload = body as Record<string, unknown> | null;
     const species = payload?.species as Record<string, unknown> | undefined;
     const settings = payload?.settings as Record<string, unknown> | undefined;
     const speciesKey = typeof species?.key === 'string' ? species.key.trim() : '';
     const speciesName = typeof species?.name === 'string' ? species.name.trim() : '';
-    const speciesLatinName = typeof species?.latinName === 'string' ? species.latinName.trim() : '';
-    const ebirdSpeciesCodeOverride = typeof settings?.ebirdSpeciesCodeOverride === 'string' ? settings.ebirdSpeciesCodeOverride.trim() : '';
+    const scope = typeof payload?.scope === 'string' ? payload.scope.trim() : 'linnuliigid';
 
     if (!speciesKey || !speciesName) {
-      console.warn(`${LOG_PREFIX} missing required species fields`, { requestId });
-      return postJsonError({
-        requestId,
-        startedAt,
+      return json({
+        ok: false,
         message: 'Missing species information for prediction',
-        status: 400,
+        requestId,
         stage: 'parse',
-        webhookConfigured,
-        timeoutMsUsed,
-        debugMode,
-        debugDetails: buildDebugDetails({
-          requestId,
-          startedAt,
-          webhookUrl,
-          timeoutMsUsed,
-        }),
-      });
+        edgeFunctionVersion: EDGE_FUNCTION_VERSION,
+      }, 400);
     }
 
-    logLifecycle(requestId, 'request_validated', {
+    // Create job record
+    const admin = getSupabaseAdmin();
+    const { error: insertError } = await admin
+      .from('prediction_jobs')
+      .insert({
+        request_id: requestId,
+        species_key: speciesKey,
+        species_name: speciesName,
+        scope,
+        status: 'running',
+        settings: settings ?? null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+    if (insertError) {
+      console.error(`${LOG_PREFIX} failed to create job`, { requestId, error: String(insertError) });
+      return json({
+        ok: false,
+        message: 'Failed to create prediction job',
+        requestId,
+        edgeFunctionVersion: EDGE_FUNCTION_VERSION,
+      }, 500);
+    }
+
+    console.info(`${LOG_PREFIX} job created, starting background n8n call`, {
+      requestId,
       speciesKey,
       speciesName,
-      latinName: speciesLatinName || null,
-      ebirdSpeciesCodeOverride: ebirdSpeciesCodeOverride || null,
-    });
-
-    logLifecycle(requestId, 'timeout_ms_used', {
       timeoutMsUsed,
-      timeoutEnvKey: TIMEOUT_ENV_KEY,
-      edgeFunctionVersion: EDGE_FUNCTION_VERSION,
     });
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMsUsed);
+    // Fire-and-forget background work
+    const backgroundWork = executeN8nAndPersist({
+      requestId,
+      webhookUrl,
+      payload: payload ?? {},
+      speciesKey,
+      speciesName,
+      timeoutMsUsed,
+      admin,
+    });
 
+    // Keep background work alive via waitUntil if available
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      const authHeader = (Deno.env.get(AUTH_HEADER_ENV_KEY) || '').trim();
-      const authValue = (Deno.env.get(AUTH_VALUE_ENV_KEY) || '').trim();
-      if (authHeader && authValue) headers[authHeader] = authValue;
-
-      const upstreamStartedAt = new Date().toISOString();
-      logLifecycle(requestId, 'upstream_request_start', {
-        speciesKey,
-        speciesName,
-        latinName: speciesLatinName || null,
-        ebirdSpeciesCodeOverride: ebirdSpeciesCodeOverride || null,
-        webhookConfigured,
-        webhook: safeWebhook,
-        timeoutMsUsed,
-        upstreamStartedAt,
-      });
-
-      const upstream = await fetch(webhookUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-
-      const text = await upstream.text();
-      const upstreamBodyPreview = toPreview(safeJson(text));
-      logLifecycle(requestId, 'upstream_response_received', {
-        status: upstream.status,
-        statusText: upstream.statusText,
-        upstreamBodyPreview,
-      });
-
-      if (!upstream.ok) {
-        const upstreamMessage = resolveReadableUpstreamMessage(text);
-        console.error(`${LOG_PREFIX} webhook forwarding failed`, {
-          requestId,
-          status: upstream.status,
-          statusText: upstream.statusText,
-          upstreamMessage: upstreamMessage || null,
-          upstreamBodyPreview,
-        });
-        return postJsonError({
-          requestId,
-          startedAt,
-          message: normalizeUpstreamMessage(upstreamMessage),
-          status: 502,
-          stage: 'upstream_non_2xx',
-          webhookConfigured,
-          timeoutMsUsed,
-          upstreamStatus: upstream.status,
-          upstreamBody: safeJson(text),
-          debugMode,
-          debugDetails: buildDebugDetails({
-            requestId,
-            startedAt,
-            webhookUrl,
-            timeoutMsUsed,
-            upstreamStatus: upstream.status,
-            upstreamResponsePreview: upstreamBodyPreview,
-          }),
-        });
+      const runtime = (globalThis as Record<string, unknown>).EdgeRuntime as
+        | { waitUntil?: (p: Promise<unknown>) => void }
+        | undefined;
+      if (runtime?.waitUntil) {
+        runtime.waitUntil(backgroundWork);
       }
-
-      let data: unknown;
-      try {
-        data = text ? JSON.parse(text) : null;
-      } catch {
-        console.error(`${LOG_PREFIX} upstream returned invalid JSON`, { requestId, upstreamBodyPreview });
-        return postJsonError({
-          requestId,
-          startedAt,
-          message: 'Prediction backend returned an invalid response',
-          status: 502,
-          stage: 'invalid_upstream_json',
-          webhookConfigured,
-          timeoutMsUsed,
-          upstreamBody: text || null,
-          debugMode,
-          debugDetails: buildDebugDetails({
-            requestId,
-            startedAt,
-            webhookUrl,
-            timeoutMsUsed,
-            upstreamStatus: upstream.status,
-            upstreamResponsePreview: upstreamBodyPreview,
-          }),
-        });
-      }
-
-      if (!data || typeof data !== 'object' || Array.isArray(data)) {
-        console.error(`${LOG_PREFIX} upstream response is not a JSON object`, { requestId, upstreamBodyPreview });
-        return postJsonError({
-          requestId,
-          startedAt,
-          message: 'Prediction backend returned an invalid response',
-          status: 502,
-          stage: 'invalid_upstream_json',
-          webhookConfigured,
-          timeoutMsUsed,
-          upstreamBody: data,
-          debugMode,
-          debugDetails: buildDebugDetails({
-            requestId,
-            startedAt,
-            webhookUrl,
-            timeoutMsUsed,
-            upstreamStatus: upstream.status,
-            upstreamResponsePreview: upstreamBodyPreview,
-          }),
-        });
-      }
-
-      const responseBody = data as Record<string, unknown>;
-      const elapsedMs = Date.now() - startedAt;
-      const finalBody = debugMode
-        ? {
-          ...responseBody,
-          stage: SUCCESS_STAGE,
-          elapsedMs,
-          timeoutMsUsed,
-          edgeFunctionVersion: EDGE_FUNCTION_VERSION,
-          debug: buildDebugDetails({
-            requestId,
-            startedAt,
-            webhookUrl,
-            timeoutMsUsed,
-            upstreamStatus: upstream.status,
-            upstreamResponsePreview: upstreamBodyPreview,
-          }),
-        }
-        : {
-          ...responseBody,
-          stage: SUCCESS_STAGE,
-          elapsedMs,
-          timeoutMsUsed,
-          edgeFunctionVersion: EDGE_FUNCTION_VERSION,
-        };
-      logLifecycle(requestId, 'response_returned', {
-        ok: true,
-        status: 200,
-        stage: SUCCESS_STAGE,
-        elapsedMs,
-        timeoutMsUsed,
-        edgeFunctionVersion: EDGE_FUNCTION_VERSION,
-      });
-      return json(finalBody);
-    } catch (err) {
-      const isAbort = err instanceof DOMException && err.name === 'AbortError';
-      if (isAbort) {
-        logLifecycle(requestId, 'upstream_timeout', {
-          timeoutMsUsed,
-          edgeFunctionVersion: EDGE_FUNCTION_VERSION,
-        });
-        console.error(`${LOG_PREFIX} webhook timeout`, { requestId, timeoutMsUsed });
-        return postJsonError({
-          requestId,
-          startedAt,
-          message: 'Prediction request timed out',
-          status: 504,
-          stage: 'upstream_timeout',
-          webhookConfigured,
-          timeoutMsUsed,
-          upstreamBody: { timeoutMsUsed },
-          debugMode,
-          debugDetails: buildDebugDetails({
-            requestId,
-            startedAt,
-            webhookUrl,
-            timeoutMsUsed,
-            upstreamResponsePreview: { timeoutMsUsed },
-          }),
-        });
-      }
-      console.error(`${LOG_PREFIX} webhook request failed`, { requestId, error: String(err) });
-      return postJsonError({
-        requestId,
-        startedAt,
-        message: 'Prediction service is temporarily unavailable',
-        status: 502,
-        stage: 'upstream_fetch',
-        webhookConfigured,
-        timeoutMsUsed,
-        upstreamBody: { error: String(err) },
-        debugMode,
-        debugDetails: buildDebugDetails({
-          requestId,
-          startedAt,
-          webhookUrl,
-          timeoutMsUsed,
-          upstreamResponsePreview: { error: String(err) },
-        }),
-      });
-    } finally {
-      clearTimeout(timer);
+    } catch {
+      // waitUntil not available - background work may get killed
     }
-  } catch (err) {
-    logLifecycle('untracked', 'unexpected_error', {
-      error: String(err),
+
+    // Return immediately with 202 Accepted
+    return json({
+      ok: true,
+      accepted: true,
+      requestId,
+      status: 'running',
+      speciesKey,
+      speciesName,
+      scope,
       edgeFunctionVersion: EDGE_FUNCTION_VERSION,
-    });
+      message: 'Prediction job accepted and running',
+    }, 202);
+
+  } catch (err) {
     console.error(`${LOG_PREFIX} unexpected error`, { error: String(err) });
-    return postJsonError({
-      requestId: crypto.randomUUID(),
-      startedAt: Date.now(),
+    return json({
+      ok: false,
       message: 'Prediction service encountered an unexpected error',
-      status: 500,
-      stage: 'unexpected',
-      webhookConfigured: readWebhookUrl().length > 0,
-      timeoutMsUsed: resolveTimeoutMs(),
-      upstreamBody: { error: String(err) },
-    });
+      edgeFunctionVersion: EDGE_FUNCTION_VERSION,
+    }, 500);
   }
 });
+
+// ── Background worker: call n8n and persist result ──
+async function executeN8nAndPersist(opts: {
+  requestId: string;
+  webhookUrl: string;
+  payload: Record<string, unknown>;
+  speciesKey: string;
+  speciesName: string;
+  timeoutMsUsed: number;
+  admin: ReturnType<typeof getSupabaseAdmin>;
+}): Promise<void> {
+  const { requestId, webhookUrl, payload, speciesKey, speciesName, timeoutMsUsed, admin } = opts;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMsUsed);
+
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const authHeader = (Deno.env.get(AUTH_HEADER_ENV_KEY) || '').trim();
+    const authValue = (Deno.env.get(AUTH_VALUE_ENV_KEY) || '').trim();
+    if (authHeader && authValue) headers[authHeader] = authValue;
+
+    console.info(`${LOG_PREFIX} upstream_request_start`, { requestId, speciesKey });
+
+    const upstream = await fetch(webhookUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    const text = await upstream.text();
+
+    if (!upstream.ok) {
+      console.error(`${LOG_PREFIX} upstream non-2xx`, { requestId, status: upstream.status });
+      await admin.from('prediction_jobs').update({
+        status: 'failed',
+        error_json: { message: 'Upstream returned non-2xx', status: upstream.status, body: safeJsonParse(text) },
+        updated_at: new Date().toISOString(),
+      }).eq('request_id', requestId);
+      return;
+    }
+
+    let data: unknown;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      console.error(`${LOG_PREFIX} invalid upstream JSON`, { requestId });
+      await admin.from('prediction_jobs').update({
+        status: 'failed',
+        error_json: { message: 'Invalid JSON from upstream', bodyPreview: text?.slice(0, 500) },
+        updated_at: new Date().toISOString(),
+      }).eq('request_id', requestId);
+      return;
+    }
+
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      await admin.from('prediction_jobs').update({
+        status: 'failed',
+        error_json: { message: 'Upstream returned non-object response' },
+        updated_at: new Date().toISOString(),
+      }).eq('request_id', requestId);
+      return;
+    }
+
+    const resultObj = data as Record<string, unknown>;
+    const analysisVersion = typeof resultObj.analysisVersion === 'string' ? resultObj.analysisVersion : null;
+    const generatedAt = typeof resultObj.generatedAt === 'string' ? resultObj.generatedAt : new Date().toISOString();
+
+    console.info(`${LOG_PREFIX} upstream_success`, {
+      requestId,
+      speciesKey,
+      analysisVersion,
+      generatedAt,
+    });
+
+    await admin.from('prediction_jobs').update({
+      status: 'completed',
+      result_json: resultObj,
+      analysis_version: analysisVersion,
+      generated_at: generatedAt,
+      updated_at: new Date().toISOString(),
+    }).eq('request_id', requestId);
+
+  } catch (err) {
+    const isAbort = err instanceof DOMException && err.name === 'AbortError';
+    const errorMessage = isAbort ? 'Prediction request timed out' : 'Prediction service upstream error';
+    console.error(`${LOG_PREFIX} background_error`, { requestId, isAbort, error: String(err) });
+
+    await admin.from('prediction_jobs').update({
+      status: 'failed',
+      error_json: { message: errorMessage, detail: String(err) },
+      updated_at: new Date().toISOString(),
+    }).eq('request_id', requestId).catch(() => {});
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function readWebhookUrl(): string {
   return (Deno.env.get(WEBHOOK_ENV_KEY) || '').trim();
 }
 
-function postJsonError(input: {
-  requestId: string;
-  startedAt: number;
-  message: string;
-  status: number;
-  stage: FailureStage;
-  webhookConfigured: boolean;
-  timeoutMsUsed: number;
-  upstreamStatus?: number;
-  upstreamBody?: unknown;
-  debugMode?: boolean;
-  debugDetails?: DebugDetails;
-}): Response {
-  const elapsedMs = Date.now() - input.startedAt;
-  const body: Record<string, unknown> = {
-    ok: false,
-    message: input.message,
-    stage: input.stage,
-    upstreamStatus: typeof input.upstreamStatus === 'number' ? input.upstreamStatus : null,
-    upstreamBody: typeof input.upstreamBody !== 'undefined' ? input.upstreamBody : null,
-    elapsedMs,
-    timeoutMsUsed: input.timeoutMsUsed,
-    edgeFunctionVersion: EDGE_FUNCTION_VERSION,
-    webhookConfigured: input.webhookConfigured,
-    status: input.status,
-    requestId: input.requestId,
-    timestamp: new Date().toISOString(),
-  };
-  if (input.debugMode) body.debug = input.debugDetails || null;
-  logLifecycle(input.requestId, 'response_returned', {
-    ok: false,
-    status: input.status,
-    stage: input.stage,
-    elapsedMs,
-    timeoutMsUsed: input.timeoutMsUsed,
-    webhookConfigured: input.webhookConfigured,
-    edgeFunctionVersion: EDGE_FUNCTION_VERSION,
-  });
-  return json(body, input.status);
+function resolveTimeoutMs(): number {
+  const value = Number(Deno.env.get(TIMEOUT_ENV_KEY) || DEFAULT_TIMEOUT_MS);
+  if (!Number.isFinite(value)) return DEFAULT_TIMEOUT_MS;
+  return Math.min(180000, Math.max(5000, value));
 }
 
 function json(body: Record<string, unknown>, status = 200): Response {
@@ -437,113 +334,10 @@ function json(body: Record<string, unknown>, status = 200): Response {
   });
 }
 
-function clampNumber(value: number, min: number, max: number, fallback: number): number {
-  if (!Number.isFinite(value)) return fallback;
-  return Math.min(max, Math.max(min, value));
-}
-
-function resolveTimeoutMs(): number {
-  return clampNumber(
-    Number(Deno.env.get(TIMEOUT_ENV_KEY) || DEFAULT_TIMEOUT_MS),
-    5000,
-    180000,
-    DEFAULT_TIMEOUT_MS,
-  );
-}
-
-function resolveReadableUpstreamMessage(text: string): string {
-  const trimmed = text.trim();
-  if (!trimmed) return '';
+function safeJsonParse(text: string): unknown {
   try {
-    const parsed = JSON.parse(trimmed) as { message?: unknown; error?: unknown; details?: unknown };
-    if (typeof parsed.message === 'string' && parsed.message.trim()) return parsed.message.trim();
-    if (typeof parsed.error === 'string' && parsed.error.trim()) return parsed.error.trim();
-    if (typeof parsed.details === 'string' && parsed.details.trim()) return parsed.details.trim();
+    return JSON.parse(text);
   } catch {
-    // Fall back to plain text below.
+    return text?.slice(0, 500) || '';
   }
-  return trimmed;
-}
-
-function normalizeUpstreamMessage(message: string): string {
-  const normalized = String(message || '').trim().toLowerCase();
-  if (!normalized) return 'Prediction service is temporarily unavailable';
-  if (normalized.includes('missing required species information') || normalized.includes('missing species information')) {
-    return 'Missing species information for prediction';
-  }
-  if (normalized.includes('invalid response')) {
-    return 'Prediction backend returned an invalid response';
-  }
-  if (
-    normalized.includes('temporarily unavailable')
-    || normalized.includes('error in workflow')
-    || normalized.includes('internal server error')
-    || normalized.includes('bad gateway')
-  ) {
-    return 'Prediction service is temporarily unavailable';
-  }
-  return message;
-}
-
-function safeJson(value: string): unknown {
-  const trimmed = value.trim();
-  if (!trimmed) return '';
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    return trimmed;
-  }
-}
-
-function toSafeWebhook(value: string): { configured: boolean; host: string | null; pathname: string | null } {
-  if (!value) return { configured: false, host: null, pathname: null };
-  try {
-    const url = new URL(value);
-    return {
-      configured: true,
-      host: url.host || null,
-      pathname: url.pathname || null,
-    };
-  } catch {
-    return {
-      configured: true,
-      host: null,
-      pathname: null,
-    };
-  }
-}
-
-function toPreview(value: unknown): unknown {
-  if (typeof value === 'string') {
-    return value.length > 500 ? `${value.slice(0, 500)}...` : value;
-  }
-  return value;
-}
-
-function buildDebugDetails(input: {
-  requestId: string;
-  startedAt: number;
-  webhookUrl: string;
-  timeoutMsUsed: number;
-  upstreamStatus?: number | null;
-  upstreamResponsePreview?: unknown;
-}): DebugDetails {
-  return {
-    requestId: input.requestId,
-    elapsedMs: Date.now() - input.startedAt,
-    timeoutMsUsed: input.timeoutMsUsed,
-    edgeFunctionVersion: EDGE_FUNCTION_VERSION,
-    webhook: toSafeWebhook(input.webhookUrl),
-    upstreamStatus: typeof input.upstreamStatus === 'number' ? input.upstreamStatus : null,
-    upstreamResponsePreview: typeof input.upstreamResponsePreview === 'undefined'
-      ? null
-      : input.upstreamResponsePreview,
-  };
-}
-
-function logLifecycle(requestId: string, event: string, details: Record<string, unknown>): void {
-  console.info(`${LOG_PREFIX} ${event}`, {
-    requestId,
-    ...details,
-  });
 }

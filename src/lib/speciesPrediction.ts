@@ -326,7 +326,7 @@ export function normalizeSpeciesPredictionResult(
     ...(warnings.length ? { warnings } : {}),
     ...(consistencyChecksSource ? { consistencyChecks: normalizePredictionConsistencyChecks(consistencyChecksSource) } : {}),
     ...(source.openaiAnalysis ? { openaiAnalysis: source.openaiAnalysis as SpeciesPredictionAnalysis } : {}),
-    ...(source.rawResearchPayload ? { rawResearchPayload: source.rawResearchPayload } : {}),
+    ...(source.rawResearchPayload ? { rawResearchPayload: asRecord(source.rawResearchPayload) } : {}),
   };
 }
 

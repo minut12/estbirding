@@ -14,7 +14,7 @@ import {
   type SpeciesPredictionTransportError,
 } from '@/lib/speciesPredictionDebug';
 import type { SpeciesScopeId } from '@/lib/mapScope';
-import { getFunctionsBaseUrl, isDeveloperModeEnabled } from '@/config/supabaseConfig';
+import { getFunctionsBaseUrl, getSupabaseAnonKey, isDeveloperModeEnabled } from '@/config/supabaseConfig';
 
 const SPECIES_PREDICTION_TIMEOUT_MS = 120000;
 
@@ -35,11 +35,23 @@ export async function runSpeciesPredictionRequest(
   const requestTimestamp = new Date().toISOString();
   const requestId = `species-prediction-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const requestUrl = `${getFunctionsBaseUrl()}/species-prediction`;
+  const anonKeyPresent = Boolean(getSupabaseAnonKey());
+  const session = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+  const authSessionPresent = Boolean(session.data.session);
   updateSpeciesPredictionTransport({
     requestUrl,
     requestTimestamp,
     responseTimestamp: '',
     requestId,
+    invocationMethod: 'supabase.functions.invoke',
+    authSessionPresent,
+    anonKeyPresent,
+    intendedHeaders: {
+      apikey: anonKeyPresent,
+      authorization: anonKeyPresent || authSessionPresent,
+      contentType: 'application/json',
+    },
+    failedBeforeResponse: false,
     httpStatus: null,
     responseBody: null,
     timeoutMs: SPECIES_PREDICTION_TIMEOUT_MS,
@@ -62,6 +74,7 @@ export async function runSpeciesPredictionRequest(
       });
       updateSpeciesPredictionTransport({
         responseTimestamp,
+        failedBeforeResponse: true,
         timeoutMs: SPECIES_PREDICTION_TIMEOUT_MS,
         error: transportError,
       });
@@ -112,6 +125,7 @@ export async function runSpeciesPredictionRequest(
       updateSpeciesPredictionTransport({
         httpStatus: transportError.httpStatus,
         responseBody: data,
+        failedBeforeResponse: false,
         timeoutMs: readTimeoutMs(data) ?? SPECIES_PREDICTION_TIMEOUT_MS,
         abortedByClientTimeout: false,
         likelyReachedEdgeFunction: reachedEdgeFunction(transportError.stage),
@@ -138,6 +152,7 @@ export async function runSpeciesPredictionRequest(
     updateSpeciesPredictionTransport({
       httpStatus: 200,
       responseBody: sourceResult,
+      failedBeforeResponse: false,
       timeoutMs: SPECIES_PREDICTION_TIMEOUT_MS,
       abortedByClientTimeout: false,
       likelyReachedEdgeFunction: true,
@@ -162,6 +177,7 @@ export async function runSpeciesPredictionRequest(
       updateSpeciesPredictionTransport({
         httpStatus: 200,
         responseBody: sourceResult,
+        failedBeforeResponse: false,
         timeoutMs: SPECIES_PREDICTION_TIMEOUT_MS,
         abortedByClientTimeout: false,
         likelyReachedEdgeFunction: true,
@@ -205,6 +221,15 @@ export async function runSpeciesPredictionRequest(
       requestTimestamp: diagnostics.requestTimestamp,
       responseTimestamp: diagnostics.responseTimestamp,
       requestId: diagnostics.requestId,
+      invocationMethod: 'supabase.functions.invoke',
+      authSessionPresent,
+      anonKeyPresent,
+      intendedHeaders: {
+        apikey: anonKeyPresent,
+        authorization: anonKeyPresent || authSessionPresent,
+        contentType: 'application/json',
+      },
+      failedBeforeResponse: diagnostics.httpStatus == null && isFailureBeforeResponse(diagnostics.responseBody),
       httpStatus: diagnostics.httpStatus,
       responseBody: diagnostics.responseBody,
       timeoutMs: readTimeoutMs(diagnostics.responseBody) ?? SPECIES_PREDICTION_TIMEOUT_MS,
@@ -509,6 +534,7 @@ function createInvokeError(
   err.responseTimestamp = diagnostics.responseTimestamp;
   err.requestId = diagnostics.requestId;
   err.timestamp = diagnostics.responseTimestamp;
+  err.failedBeforeResponse = diagnostics.responseBody == null;
   return err;
 }
 
@@ -564,6 +590,12 @@ function reachedEdgeFunction(stage: unknown): boolean {
     || normalized === 'parse'
     || normalized === 'validation'
     || normalized === 'status';
+}
+
+function isFailureBeforeResponse(responseBody: unknown): boolean {
+  if (responseBody == null) return true;
+  if (typeof responseBody !== 'object') return false;
+  return !Object.keys(responseBody as Record<string, unknown>).length;
 }
 
 function readNumber(value: unknown): number | null {

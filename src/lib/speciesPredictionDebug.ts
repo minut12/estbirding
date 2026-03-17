@@ -38,6 +38,15 @@ export type SpeciesPredictionTransportSnapshot = {
   requestTimestamp: string;
   responseTimestamp: string;
   requestId: string | null;
+  invocationMethod: 'supabase.functions.invoke' | 'raw_fetch' | '';
+  authSessionPresent: boolean;
+  anonKeyPresent: boolean;
+  intendedHeaders: {
+    apikey: boolean;
+    authorization: boolean;
+    contentType: string | null;
+  };
+  failedBeforeResponse: boolean;
   httpStatus: number | null;
   responseBody: unknown;
   timeoutMs: number | null;
@@ -96,6 +105,15 @@ const state: SpeciesPredictionDebugSnapshot = {
     requestTimestamp: '',
     responseTimestamp: '',
     requestId: null,
+    invocationMethod: '',
+    authSessionPresent: false,
+    anonKeyPresent: false,
+    intendedHeaders: {
+      apikey: false,
+      authorization: false,
+      contentType: null,
+    },
+    failedBeforeResponse: false,
     httpStatus: null,
     responseBody: null,
     timeoutMs: null,
@@ -165,6 +183,13 @@ export function clearSpeciesPredictionDebugMemory(): void {
   state.transport.requestTimestamp = '';
   state.transport.responseTimestamp = '';
   state.transport.requestId = null;
+  state.transport.invocationMethod = '';
+  state.transport.authSessionPresent = false;
+  state.transport.anonKeyPresent = false;
+  state.transport.intendedHeaders.apikey = false;
+  state.transport.intendedHeaders.authorization = false;
+  state.transport.intendedHeaders.contentType = null;
+  state.transport.failedBeforeResponse = false;
   state.transport.httpStatus = null;
   state.transport.responseBody = null;
   state.transport.timeoutMs = null;

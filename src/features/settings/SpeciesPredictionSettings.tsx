@@ -554,9 +554,13 @@ export default function SpeciesPredictionSettings() {
                           <DebugSection title="Last request metadata">
                             <div className="grid gap-2 text-xs md:grid-cols-2">
                               <DebugKeyValue label="Request URL used" value={debugSnapshot.transport.requestUrl || `${getFunctionsBaseUrl()}/species-prediction`} />
+                              <DebugKeyValue label="Invocation method" value={debugSnapshot.transport.invocationMethod || '(empty)'} />
+                              <DebugKeyValue label="Auth session present" value={debugSnapshot.transport.authSessionPresent ? 'Yes' : 'No'} />
+                              <DebugKeyValue label="Anon key present" value={debugSnapshot.transport.anonKeyPresent ? 'Yes' : 'No'} />
                               <DebugKeyValue label="Request timestamp" value={debugSnapshot.transport.requestTimestamp || '(empty)'} />
                               <DebugKeyValue label="Response timestamp" value={debugSnapshot.transport.responseTimestamp || '(empty)'} />
                               <DebugKeyValue label="Request ID" value={debugSnapshot.transport.requestId || '(empty)'} />
+                              <DebugKeyValue label="Failed before response object" value={debugSnapshot.transport.failedBeforeResponse ? 'Yes' : 'No'} />
                               <DebugKeyValue label="Last HTTP status" value={String(debugSnapshot.transport.httpStatus ?? '(null)')} />
                               <DebugKeyValue label="Timeout budget (ms)" value={String(debugSnapshot.transport.timeoutMs ?? '(null)')} />
                               <DebugKeyValue label="Client timeout abort" value={debugSnapshot.transport.abortedByClientTimeout ? 'Yes' : 'No'} />
@@ -565,6 +569,10 @@ export default function SpeciesPredictionSettings() {
                               <DebugKeyValue label="Error type" value={debugSnapshot.transport.error?.errorType || '(empty)'} />
                               <DebugKeyValue label="Last error message" value={debugSnapshot.transport.error?.message || '(empty)'} />
                             </div>
+                          </DebugSection>
+
+                          <DebugSection title="Invocation / Safe Headers">
+                            <JsonBox value={debugSnapshot.transport.intendedHeaders} />
                           </DebugSection>
 
                           <DebugSection
@@ -790,7 +798,11 @@ function buildDiagnosticsSummary(snapshot: SpeciesPredictionDebugSnapshot): stri
     `scope=${snapshot.activeContext.mapScope || '(empty)'}`,
     `status=${snapshot.activeContext.predictionStatus}`,
     `requestUrl=${snapshot.transport.requestUrl || '(empty)'}`,
+    `invocationMethod=${snapshot.transport.invocationMethod || '(empty)'}`,
+    `authSessionPresent=${snapshot.transport.authSessionPresent ? 'yes' : 'no'}`,
+    `anonKeyPresent=${snapshot.transport.anonKeyPresent ? 'yes' : 'no'}`,
     `requestId=${snapshot.transport.requestId || '(empty)'}`,
+    `failedBeforeResponse=${snapshot.transport.failedBeforeResponse ? 'yes' : 'no'}`,
     `httpStatus=${snapshot.transport.httpStatus ?? '(null)'}`,
     `timeoutMs=${snapshot.transport.timeoutMs ?? '(null)'}`,
     `abortedByClientTimeout=${snapshot.transport.abortedByClientTimeout ? 'yes' : 'no'}`,

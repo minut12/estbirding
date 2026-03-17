@@ -40,6 +40,10 @@ describe('speciesPredictionDebug', () => {
     expect(snapshot.panelPayload).toEqual({ insightSummary: 'payload summary' });
     expect(snapshot.panelState).toEqual({ insightSummary: 'panel summary' });
     expect(snapshot.latestBackendResponseForResync).toEqual({ insightSummary: 'backend summary' });
+    expect(snapshot.transport.invocationMethod).toBe('');
+    expect(snapshot.transport.authSessionPresent).toBe(false);
+    expect(snapshot.transport.anonKeyPresent).toBe(false);
+    expect(snapshot.transport.failedBeforeResponse).toBe(false);
     expect(emitSpy).toHaveBeenCalled();
 
     window.removeEventListener('species-prediction-debug-updated', emitSpy);

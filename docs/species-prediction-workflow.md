@@ -1,4 +1,4 @@
-# n8n Workflow: Species Prediction Real Sources (`POST /species-prediction`)
+# n8n Workflow: Species Prediction Real Sources (`POST /species-prediction-openai`)
 
 ## Goal
 - Receive one selected-species prediction request from the Supabase edge function.
@@ -20,12 +20,12 @@
 5. If your upstreams require auth, configure credentials or headers on each HTTP Request node.
 6. Activate the workflow and copy the production webhook URL.
 7. Set that webhook URL into Supabase as `SPECIES_PREDICTION_N8N_WEBHOOK_URL`.
-8. Production webhook target for this app is `https://estbirds.app.n8n.cloud/webhook/species-prediction`.
+8. Production webhook target for this app is `https://estbirds.app.n8n.cloud/webhook/species-prediction-openai`.
 
 ## Required External Config
 - `SPECIES_PREDICTION_N8N_WEBHOOK_URL`
   - Stored in Supabase Edge Function env, not in the app.
-  - Current production value: `https://estbirds.app.n8n.cloud/webhook/species-prediction`
+  - Current production value: `https://estbirds.app.n8n.cloud/webhook/species-prediction-openai`
 - n8n/server-side OpenAI config:
   - `OPENAI_API_KEY`
   - `OPENAI_MODEL` optional, defaults to `gpt-5-mini`
@@ -38,7 +38,7 @@
 1. `prediction_request`
 - `Webhook`
 - Method: `POST`
-- Path: `species-prediction`
+- Path: `species-prediction-openai`
 - Response mode: `Using Respond to Webhook node`
 
 2. `normalize_input`
@@ -249,3 +249,4 @@ This must stay stable because the app and edge function already normalize it:
 - The app still talks only to the Supabase edge function.
 - The edge function still talks only to the n8n webhook URL set in Supabase env.
 - The frontend never calls OpenAI directly.
+- Use a unique webhook path for the OpenAI workflow so production cannot accidentally route back to the older starter workflow.

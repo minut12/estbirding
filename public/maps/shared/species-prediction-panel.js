@@ -11,6 +11,24 @@
     loading: false,
     result: null,
     error: '',
+    controls: {
+      horizonDays: 7,
+      useWeatherWind: true,
+      showPredictionCone: true,
+      useRegionalTargets: true,
+      recentOnlyMapMarkers: false,
+      snapToBestTarget: true,
+      autoFeedEnabled: false,
+      countryFilter: 'all'
+    },
+    layerToggles: {
+      estoniaHistory: true,
+      foreignEvidence: true,
+      predictedLines: true,
+      predictedCone: true,
+      predictedTargets: true,
+      recentOnly: false
+    }
   };
 
   var panel = null;
@@ -20,6 +38,7 @@
   var modeLine = null;
   var resultWrap = null;
   var debugWrap = null;
+  var overlayGroup = null;
   var lastSelectionKey = '';
   var hasSyncedSpecies = false;
   var fallbackSelectionTimer = 0;
@@ -66,6 +85,7 @@
       '    <button type="button" class="btn secondary" data-request-type="insight">Insight</button>' +
       '    <button type="button" class="btn" data-request-type="prediction_and_insight">Both</button>' +
       '  </div>' +
+      '  <div class="spp-card spp-controls" data-role="controls"></div>' +
       '  <div class="spp-results" data-role="results"></div>' +
       '  <details class="spp-debug" data-role="debug-wrap">' +
       '    <summary>Developer diagnostics</summary>' +
@@ -90,6 +110,12 @@
       '#speciesPredictionPanel .spp-fact span{flex:0 0 auto}',
       '#speciesPredictionPanel .spp-fact strong{color:#0f172a;text-align:right;line-height:1.4}',
       '#speciesPredictionPanel .spp-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}',
+      '#speciesPredictionPanel .spp-controls{display:grid;gap:10px}',
+      '#speciesPredictionPanel .spp-control-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}',
+      '#speciesPredictionPanel .spp-control-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:#334155;padding:8px 10px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc}',
+      '#speciesPredictionPanel .spp-control-row input,#speciesPredictionPanel .spp-control-row select{max-width:110px;border:1px solid #cbd5e1;border-radius:8px;padding:4px 6px;background:#fff;font-size:12px}',
+      '#speciesPredictionPanel .spp-layer-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}',
+      '#speciesPredictionPanel .spp-layer-chip{display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid #e2e8f0;border-radius:999px;background:#fff;font-size:11px;color:#334155}',
       '#speciesPredictionPanel .spp-results{display:grid;gap:12px}',
       '#speciesPredictionPanel .spp-card{border:1px solid #dbe4ee;border-radius:16px;padding:12px;background:#fff;box-shadow:0 1px 0 rgba(255,255,255,.75) inset}',
       '#speciesPredictionPanel .spp-card h4{margin:0 0 8px;font-size:13px;font-weight:700;color:#0f172a}',
@@ -157,6 +183,7 @@
     modeLine = panel.querySelector('[data-role="mode-line"]');
     resultWrap = panel.querySelector('[data-role="results"]');
     debugWrap = panel.querySelector('[data-role="debug-wrap"]');
+    bindControlEvents();
 
     panel.querySelector('.spp-toggle').addEventListener('click', function () {
       var isCollapsed = panel.classList.toggle('is-collapsed');
@@ -190,6 +217,7 @@
     modeLine = null;
     resultWrap = null;
     debugWrap = null;
+    clearPredictionOverlay();
   }
 
   function requestRun(requestType) {
@@ -206,11 +234,52 @@
           speciesKey: state.speciesKey,
           speciesName: state.speciesName,
           requestType: requestType,
+          runtimeSettingsOverride: buildRuntimeSettingsOverride(),
         }, '*');
       }
     } catch (e) {
       setError(String((e && e.message) || e || 'Prediction request failed'));
     }
+  }
+
+  function bindControlEvents() {
+    if (!panel) return;
+    panel.addEventListener('change', function (event) {
+      var target = event && event.target;
+      if (!target || !target.getAttribute) return;
+      var control = target.getAttribute('data-control');
+      if (control) {
+        state.controls[control] = target.type === 'checkbox' ? !!target.checked : target.value;
+      }
+      var layer = target.getAttribute('data-layer-toggle');
+      if (layer) {
+        state.layerToggles[layer] = !!target.checked;
+        applyResultToMap();
+      }
+    });
+  }
+
+  function syncControlsFromSettings() {
+    var settings = state.settings || {};
+    state.controls.horizonDays = Number(settings.horizonDays || state.controls.horizonDays || 7);
+    state.controls.useWeatherWind = settings.useWeatherWind !== false;
+    state.controls.showPredictionCone = settings.showPredictionCone !== false;
+    state.controls.useRegionalTargets = settings.useRegionalTargets !== false;
+    state.controls.recentOnlyMapMarkers = settings.recentOnlyMapMarkers === true;
+    state.controls.snapToBestTarget = settings.snapToBestTarget !== false;
+    state.controls.autoFeedEnabled = settings.autoFeedEnabled === true;
+  }
+
+  function buildRuntimeSettingsOverride() {
+    return {
+      horizonDays: Number(state.controls.horizonDays || 7),
+      useWeatherWind: state.controls.useWeatherWind !== false,
+      showPredictionCone: state.controls.showPredictionCone !== false,
+      useRegionalTargets: state.controls.useRegionalTargets !== false,
+      recentOnlyMapMarkers: state.controls.recentOnlyMapMarkers === true,
+      snapToBestTarget: state.controls.snapToBestTarget !== false,
+      autoFeedEnabled: state.controls.autoFeedEnabled === true,
+    };
   }
 
   function notifySelection(force) {
@@ -302,6 +371,7 @@
   function setContext(payload) {
     if (!state.featureEnabled) return;
     state.settings = payload && payload.settings ? payload.settings : null;
+    syncControlsFromSettings();
     if (payload && payload.speciesName) state.speciesName = String(payload.speciesName || '').trim();
     if (payload && payload.speciesKey) state.speciesKey = String(payload.speciesKey || '').trim();
     ensurePanel();
@@ -352,6 +422,7 @@
       });
     }
     ensurePanel();
+    applyResultToMap();
     render();
   }
 
@@ -360,6 +431,7 @@
     state.loading = false;
     state.result = null;
     state.error = String(message || 'Prediction request failed');
+    clearPredictionOverlay();
     ensurePanel();
     render();
   }
@@ -376,6 +448,7 @@
     statusLine.textContent = getStatusText();
     modeLine.textContent = formatMode(state.settings);
     if (debugWrap) debugWrap.open = shouldOpenDebugDetails();
+    renderControls();
     resultWrap.innerHTML = '';
 
     if (state.loading) {
@@ -413,6 +486,11 @@
     var consistencyChecks = result.consistencyChecks || null;
     var preferredPoints = Array.isArray(result.topPredictedPoints) ? result.topPredictedPoints : [];
     var foreignEvidence = Array.isArray(result.foreignEvidence) ? result.foreignEvidence : [];
+    var foreignRecentPoints = Array.isArray(result.foreignRecentPoints) ? result.foreignRecentPoints : [];
+    var foreignClusters = Array.isArray(result.foreignClusters) ? result.foreignClusters : [];
+    var estoniaHistoryPoints = Array.isArray(result.estoniaHistoryPoints) ? result.estoniaHistoryPoints : [];
+    var predictedTargets = Array.isArray(result.predictedTargets) && result.predictedTargets.length ? result.predictedTargets : preferredPoints;
+    var weather = result.weather || null;
     var estoniaEvidence = result.estoniaEvidence || null;
     var historicalEvidence = result.historicalEvidence || null;
     var sourceHealth = result.sourceHealth || null;
@@ -447,6 +525,14 @@
 
     var html = '';
     html += renderStateCard('spp-state-success', 'Prediction complete', 'Rendering the latest backend evidence and target ranking for this species.');
+    html += '<div class="spp-card"><h4>Evidence summary</h4><div class="spp-grid">' +
+      metricCell('Freshest foreign record', foreignRecentPoints[0] && foreignRecentPoints[0].obsDt ? foreignRecentPoints[0].obsDt : 'Unavailable') +
+      metricCell('Nearest foreign cluster', formatDistance(findNearestClusterDistance(foreignEvidence) || (foreignClusters[0] && foreignClusters[0].nearestDistanceKm))) +
+      metricCell('Foreign countries', summarizeCountries(foreignEvidence, foreignClusters)) +
+      metricCell('Historical Estonia total', estoniaHistoryPoints.length) +
+      metricCell('Recent Estonia count', estoniaEvidence ? estoniaEvidence.recentCount7d : 0) +
+      metricCell('Weather / wind', weather ? ((weather.windDirectionLabel || '') + ' ' + String(weather.windSpeedKph || 0) + ' km/h') : 'Unavailable') +
+      '</div></div>';
     html += '<div class="spp-card"><h4>Species header</h4><div class="spp-grid">' +
       metricCell('Species', speciesInfo && speciesInfo.speciesName ? speciesInfo.speciesName : (result.speciesName || state.speciesName || 'Unavailable')) +
       metricCell('Source', sourceHealth && sourceHealth.primarySourceUsed ? sourceHealth.primarySourceUsed : 'Partial upstream payload') +
@@ -517,11 +603,11 @@
       scoreCell('Russia', result.countryScores && result.countryScores.russia) +
       (result.countryScores && result.countryScores.finlandContextOnly != null ? scoreCell('Finland context only', result.countryScores.finlandContextOnly) : '') +
       '</div></div>';
-    html += '<div class="spp-card"><h4>Top predicted points</h4><div class="spp-points">';
-    if (!preferredPoints.length) {
+    html += '<div class="spp-card"><h4>Predicted targets</h4><div class="spp-points">';
+    if (!predictedTargets.length) {
       html += '<div class="spp-point"><div class="spp-point-reason-text">No precise hotspot results returned.</div></div>';
     } else {
-      preferredPoints.forEach(function (point) {
+      predictedTargets.forEach(function (point) {
         html += renderPredictedPoint(point);
       });
     }
@@ -573,6 +659,51 @@
       '</div>' +
       '<div class="spp-debug-grid">' + debugItems + '</div>' +
       '<pre class="spp-debug-pre">' + escapeHtml(formatJson(state.result)) + '</pre>';
+  }
+
+  function renderControls() {
+    if (!panel) return;
+    var host = panel.querySelector('[data-role="controls"]');
+    if (!host) return;
+    host.innerHTML = '' +
+      '<h4>Map prediction mode</h4>' +
+      '<div class="spp-control-grid">' +
+      controlInput('Horizon', '<input type="number" min="1" max="30" data-control="horizonDays" value="' + escapeHtml(state.controls.horizonDays) + '">') +
+      controlInput('Country filter', renderCountryFilter()) +
+      controlInput('Use wind', checkboxControl('useWeatherWind', state.controls.useWeatherWind)) +
+      controlInput('Show cone', checkboxControl('showPredictionCone', state.controls.showPredictionCone)) +
+      controlInput('Regional', checkboxControl('useRegionalTargets', state.controls.useRegionalTargets)) +
+      controlInput('Recent only', checkboxControl('recentOnlyMapMarkers', state.controls.recentOnlyMapMarkers)) +
+      controlInput('Snap target', checkboxControl('snapToBestTarget', state.controls.snapToBestTarget)) +
+      controlInput('Auto feed', checkboxControl('autoFeedEnabled', state.controls.autoFeedEnabled)) +
+      '</div>' +
+      '<div class="spp-layer-grid">' +
+      layerChip('estoniaHistory', 'EE history', state.layerToggles.estoniaHistory) +
+      layerChip('foreignEvidence', 'Foreign eBird', state.layerToggles.foreignEvidence) +
+      layerChip('predictedLines', 'Prediction lines', state.layerToggles.predictedLines) +
+      layerChip('predictedCone', 'Prediction cone', state.layerToggles.predictedCone) +
+      layerChip('predictedTargets', 'Targets', state.layerToggles.predictedTargets) +
+      layerChip('recentOnly', 'Recent only', state.layerToggles.recentOnly) +
+      '</div>';
+  }
+
+  function applyResultToMap() {
+    clearPredictionOverlay();
+    if (!state.result || !window.map || !window.L) return;
+    var result = state.result;
+    overlayGroup = L.layerGroup().addTo(window.map);
+    if (state.layerToggles.estoniaHistory !== false) renderEstoniaHistory(result.estoniaHistoryPoints || []);
+    if (state.layerToggles.foreignEvidence !== false) renderForeignEvidencePoints(result.foreignRecentPoints || [], result.foreignClusters || []);
+    if (state.layerToggles.predictedLines !== false) renderPredictionVectors(result.predictionVectors || [], false);
+    if (state.layerToggles.predictedCone !== false) renderPredictionVectors(result.predictionVectors || [], true);
+    if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap(result.predictedTargets || result.topPredictedPoints || []);
+  }
+
+  function clearPredictionOverlay() {
+    if (overlayGroup && window.map) {
+      try { overlayGroup.remove(); } catch (e) {}
+    }
+    overlayGroup = null;
   }
 
   function renderPredictedPoint(point) {
@@ -675,6 +806,110 @@
       '  <div class="spp-check-label">' + escapeHtml(label) + '</div>' +
       '  <div class="spp-check-badge ' + (value ? 'is-yes' : 'is-no') + '">' + (value ? 'Yes' : 'No') + '</div>' +
       '</div>';
+  }
+
+  function controlInput(label, controlHtml) {
+    return '<label class="spp-control-row"><span>' + escapeHtml(label) + '</span><span>' + controlHtml + '</span></label>';
+  }
+
+  function checkboxControl(name, checked) {
+    return '<input type="checkbox" data-control="' + escapeHtml(name) + '"' + (checked ? ' checked' : '') + '>';
+  }
+
+  function layerChip(name, label, checked) {
+    return '<label class="spp-layer-chip"><input type="checkbox" data-layer-toggle="' + escapeHtml(name) + '"' + (checked ? ' checked' : '') + '><span>' + escapeHtml(label) + '</span></label>';
+  }
+
+  function renderCountryFilter() {
+    var options = ['all'];
+    var groups = Array.isArray(state.result && state.result.foreignEvidence) ? state.result.foreignEvidence : [];
+    groups.forEach(function (group) {
+      var code = String(group.countryCode || '').toLowerCase();
+      if (code && options.indexOf(code) < 0) options.push(code);
+    });
+    return '<select data-control="countryFilter">' + options.map(function (code) {
+      var selected = state.controls.countryFilter === code ? ' selected' : '';
+      return '<option value="' + escapeHtml(code) + '"' + selected + '>' + escapeHtml(code === 'all' ? 'All' : String(code).toUpperCase()) + '</option>';
+    }).join('') + '</select>';
+  }
+
+  function summarizeCountries(foreignEvidence, foreignClusters) {
+    var names = [];
+    foreignEvidence.forEach(function (group) { if (group.countryName) names.push(String(group.countryName)); });
+    if (!names.length) {
+      foreignClusters.forEach(function (cluster) {
+        (cluster.countries || []).forEach(function (country) { names.push(String(country)); });
+      });
+    }
+    names = names.filter(function (name, index) { return name && names.indexOf(name) === index; });
+    return names.join(', ') || 'Unavailable';
+  }
+
+  function renderEstoniaHistory(points) {
+    points.filter(filterRecentHistoryPoint).forEach(function (point) {
+      var color = point.ageClass === 'recent' ? '#0f766e' : '#64748b';
+      L.circleMarker([point.lat, point.lon], {
+        radius: point.ageClass === 'recent' ? 6 : 4,
+        color: color,
+        weight: 2,
+        fillColor: color,
+        fillOpacity: point.ageClass === 'recent' ? 0.8 : 0.45
+      }).bindPopup('<strong>Estonia history</strong><br>' + escapeHtml(point.locality || point.municipality || 'GBIF point') + '<br>' + escapeHtml(point.eventDate || 'Unknown date')).addTo(overlayGroup);
+    });
+  }
+
+  function renderForeignEvidencePoints(points, clusters) {
+    var freshestClusterId = clusters[0] && clusters[0].id ? clusters[0].id : '';
+    points.filter(filterCountryPoint).filter(filterRecentForeignPoint).forEach(function (point) {
+      var isFreshest = freshestClusterId && point.clusterId === freshestClusterId;
+      L.circleMarker([point.lat, point.lon], {
+        radius: isFreshest ? 7 : 5,
+        color: isFreshest ? '#dc2626' : '#2563eb',
+        weight: 2,
+        fillColor: isFreshest ? '#f97316' : '#60a5fa',
+        fillOpacity: 0.85
+      }).bindPopup('<strong>Foreign eBird evidence</strong><br>' + escapeHtml(point.countryName || point.countryCode || '') + '<br>' + escapeHtml(point.locName || 'Location unavailable') + '<br>' + escapeHtml(point.obsDt || '')).addTo(overlayGroup);
+    });
+  }
+
+  function renderPredictionVectors(vectors, conesOnly) {
+    vectors.forEach(function (vector) {
+      if (!!conesOnly !== (vector.kind === 'cone')) return;
+      var points = Array.isArray(vector.points) ? vector.points : [];
+      if (points.length < 2) return;
+      L.polyline(points.map(function (point) { return [point.lat, point.lon]; }), {
+        color: vector.kind === 'cone' ? 'rgba(251,146,60,0.65)' : '#ef4444',
+        weight: vector.kind === 'cone' ? 2 : 3,
+        fill: vector.kind === 'cone',
+        fillOpacity: vector.kind === 'cone' ? 0.1 : 0
+      }).addTo(overlayGroup);
+    });
+  }
+
+  function renderPredictedTargetsOnMap(points) {
+    points.forEach(function (point) {
+      L.circleMarker([point.lat, point.lon], {
+        radius: 8,
+        color: '#15803d',
+        weight: 3,
+        fillColor: '#4ade80',
+        fillOpacity: 0.9
+      }).bindPopup('<strong>#' + escapeHtml(point.rank) + ' ' + escapeHtml(point.name || 'Target') + '</strong><br>' + escapeHtml(point.reason || '')).addTo(overlayGroup);
+    });
+  }
+
+  function filterCountryPoint(point) {
+    return state.controls.countryFilter === 'all' || String(point.countryCode || '').toLowerCase() === String(state.controls.countryFilter || '').toLowerCase();
+  }
+
+  function filterRecentForeignPoint(point) {
+    if (state.layerToggles.recentOnly === true || state.controls.recentOnlyMapMarkers === true) return Number(point.daysAgo || 999) <= 7;
+    return true;
+  }
+
+  function filterRecentHistoryPoint(point) {
+    if (state.layerToggles.recentOnly === true || state.controls.recentOnlyMapMarkers === true) return point.ageClass === 'recent';
+    return true;
   }
 
   function formatCoords(lat, lon) {

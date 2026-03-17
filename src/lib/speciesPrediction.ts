@@ -5,6 +5,7 @@ export type PredictionMode = 'broad_area' | 'hotspot' | 'precise_hotspot';
 export type SummaryStyle = 'short' | 'analytical' | 'field_use';
 export type PredictionRequestType = 'prediction' | 'insight' | 'prediction_and_insight';
 export type PredictionRisk = 'low' | 'medium' | 'high';
+export type PredictionLayerMode = 'legacy' | 'map_first';
 
 export type SpeciesPredictionSettings = {
   speciesKey: string;
@@ -46,7 +47,92 @@ export type SpeciesPredictionSettings = {
   enableOpenAISummary: boolean;
   summaryStyle: SummaryStyle;
   summaryMaxLength: number;
+  predictionLayerMode: PredictionLayerMode;
+  horizonDays: number;
+  showPredictionCone: boolean;
+  useRegionalTargets: boolean;
+  recentOnlyMapMarkers: boolean;
+  snapToBestTarget: boolean;
+  autoFeedEnabled: boolean;
   updatedAt: string;
+};
+
+export type SpeciesPredictionPointAge = 'recent' | 'historical';
+
+export type SpeciesPredictionEstoniaHistoryPoint = {
+  lat: number;
+  lon: number;
+  eventDate: string;
+  daysAgo: number | null;
+  ageClass: SpeciesPredictionPointAge;
+  source: 'GBIF' | 'Elurikkus';
+  occurrenceId?: string;
+  locality?: string;
+  municipality?: string;
+  count?: number;
+};
+
+export type SpeciesPredictionForeignRecentPoint = {
+  lat: number;
+  lon: number;
+  obsDt: string;
+  locName: string;
+  howMany: number | null;
+  countryCode: string;
+  countryName: string;
+  regionCode?: string;
+  regionName?: string;
+  source: 'eBird';
+  daysAgo: number;
+  clusterId?: string;
+  distanceToEstoniaKm?: number;
+};
+
+export type SpeciesPredictionForeignCluster = {
+  id: string;
+  lat: number;
+  lon: number;
+  pointCount: number;
+  newestObsDt: string;
+  oldestObsDt: string;
+  freshestDaysAgo: number;
+  averageDaysAgo: number;
+  totalHowMany: number;
+  countries: string[];
+  countryCodes: string[];
+  locNames: string[];
+  nearestDistanceKm: number;
+  isFreshest: boolean;
+};
+
+export type SpeciesPredictionWeather = {
+  fetchedAt: string;
+  windSpeedKph: number;
+  windDirectionDeg: number;
+  windDirectionLabel: string;
+  precipitationMm?: number;
+  temperatureC?: number;
+  source: 'Open-Meteo';
+};
+
+export type SpeciesPredictionVector = {
+  id: string;
+  kind: 'route' | 'cone' | 'target_link';
+  sourceClusterId?: string;
+  targetRank?: number;
+  confidence: number;
+  bearingDeg: number;
+  distanceKm: number;
+  points: Array<{ lat: number; lon: number }>;
+};
+
+export type SpeciesPredictionLayerToggles = {
+  estoniaHistory: boolean;
+  foreignEvidence: boolean;
+  predictedLines: boolean;
+  predictedCone: boolean;
+  predictedTargets: boolean;
+  recentOnly: boolean;
 };
 
 export type PredictedPoint = {
@@ -139,6 +225,13 @@ export type SpeciesPredictionResult = {
     ebirdSpeciesCode: string;
   };
   sourceHealth?: SpeciesPredictionSourceHealth;
+  estoniaHistoryPoints?: SpeciesPredictionEstoniaHistoryPoint[];
+  foreignRecentPoints?: SpeciesPredictionForeignRecentPoint[];
+  foreignClusters?: SpeciesPredictionForeignCluster[];
+  weather?: SpeciesPredictionWeather;
+  predictionVectors?: SpeciesPredictionVector[];
+  predictedTargets?: PredictedPoint[];
+  mapLayers?: SpeciesPredictionLayerToggles;
   foreignEvidence?: SpeciesPredictionForeignEvidenceGroup[];
   estoniaEvidence?: SpeciesPredictionEstoniaEvidence;
   historicalEvidence?: SpeciesPredictionHistoricalEvidence;
@@ -169,6 +262,7 @@ export type SpeciesPredictionResult = {
   rerankedTopPredictedPoints?: PredictedPoint[];
   consistencyChecks?: PredictionConsistencyChecks;
   openaiAnalysis?: SpeciesPredictionAnalysis;
+  aiSummary?: string;
   rawResearchPayload?: Record<string, unknown>;
 };
 
@@ -243,6 +337,13 @@ export function getSpeciesPredictionDefaults(speciesName = '', scope: SpeciesSco
     enableOpenAISummary: true,
     summaryStyle: 'field_use',
     summaryMaxLength: 450,
+    predictionLayerMode: 'map_first',
+    horizonDays: 7,
+    showPredictionCone: true,
+    useRegionalTargets: true,
+    recentOnlyMapMarkers: false,
+    snapToBestTarget: true,
+    autoFeedEnabled: false,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -299,6 +400,13 @@ export function normalizeSpeciesPredictionSettings(
     enableOpenAISummary: coalesceBoolean(input?.enableOpenAISummary, legacyAutomation.enableOpenAISummary, defaults.enableOpenAISummary),
     summaryStyle: isSummaryStyle(input?.summaryStyle) ? input.summaryStyle : (isSummaryStyle(legacyAutomation.summaryStyle) ? legacyAutomation.summaryStyle : defaults.summaryStyle),
     summaryMaxLength: coalesceNumber(input?.summaryMaxLength, legacyAutomation.summaryMaxLength, defaults.summaryMaxLength),
+    predictionLayerMode: isPredictionLayerMode(input?.predictionLayerMode) ? input.predictionLayerMode : defaults.predictionLayerMode,
+    horizonDays: coalesceNumber(input?.horizonDays, legacyAutomation.horizonDays, defaults.horizonDays),
+    showPredictionCone: coalesceBoolean(input?.showPredictionCone, legacyAutomation.showPredictionCone, defaults.showPredictionCone),
+    useRegionalTargets: coalesceBoolean(input?.useRegionalTargets, legacyAutomation.useRegionalTargets, defaults.useRegionalTargets),
+    recentOnlyMapMarkers: coalesceBoolean(input?.recentOnlyMapMarkers, legacyAutomation.recentOnlyMapMarkers, defaults.recentOnlyMapMarkers),
+    snapToBestTarget: coalesceBoolean(input?.snapToBestTarget, legacyAutomation.snapToBestTarget, defaults.snapToBestTarget),
+    autoFeedEnabled: coalesceBoolean(input?.autoFeedEnabled, legacyAutomation.autoFeedEnabled, defaults.autoFeedEnabled),
     updatedAt: normalizeUiText(input?.updatedAt || defaults.updatedAt) || new Date().toISOString(),
   };
   next.outputCount = next.outputCount === 3 ? 3 : 5;
@@ -312,6 +420,7 @@ export function normalizeSpeciesPredictionSettings(
   next.hotspotRadiusKm = clampNumber(next.hotspotRadiusKm, 1, 100, defaults.hotspotRadiusKm);
   next.hotspotCount = clampNumber(next.hotspotCount, 1, 20, defaults.hotspotCount);
   next.summaryMaxLength = clampNumber(next.summaryMaxLength, 100, 5000, defaults.summaryMaxLength);
+  next.horizonDays = clampNumber(next.horizonDays, 1, 30, defaults.horizonDays);
   return next;
 }
 
@@ -386,6 +495,31 @@ export function normalizeSpeciesPredictionResult(
   const sourceHealth = normalizeSourceHealth(
     readRecord(source, ['sourceHealth']) ?? readRecord(rawResearchPayload, ['sourceHealth']),
   );
+  const estoniaHistoryPoints = normalizeEstoniaHistoryPoints(
+    readArray(source, ['estoniaHistoryPoints', 'estonia_history_points'])
+      ?? readArray(rawResearchPayload, ['estoniaHistoryPoints', 'estonia_history_points']),
+  );
+  const foreignRecentPoints = normalizeForeignRecentPoints(
+    readArray(source, ['foreignRecentPoints', 'foreign_recent_points'])
+      ?? readArray(rawResearchPayload, ['foreignRecentPoints', 'foreign_recent_points']),
+  );
+  const foreignClusters = normalizeForeignClusters(
+    readArray(source, ['foreignClusters', 'foreign_clusters'])
+      ?? readArray(rawResearchPayload, ['foreignClusters', 'foreign_clusters']),
+  );
+  const weather = normalizeWeather(
+    readRecord(source, ['weather']) ?? readRecord(rawResearchPayload, ['weather']),
+  );
+  const predictionVectors = normalizePredictionVectors(
+    readArray(source, ['predictionVectors', 'prediction_vectors'])
+      ?? readArray(rawResearchPayload, ['predictionVectors', 'prediction_vectors']),
+  );
+  const predictedTargets = Array.isArray(readArray(source, ['predictedTargets', 'predicted_targets']))
+    ? (readArray(source, ['predictedTargets', 'predicted_targets']) as unknown[]).map((point, index) => normalizePredictedPoint(asRecord(point), index))
+    : [];
+  const mapLayers = normalizeMapLayers(
+    readRecord(source, ['mapLayers', 'map_layers']) ?? readRecord(rawResearchPayload, ['mapLayers', 'map_layers']),
+  );
   const rawLinks = normalizeRawLinks(
     readRecord(source, ['rawLinks']) ?? readRecord(rawResearchPayload, ['rawLinks']),
     evidenceSpecies,
@@ -398,6 +532,13 @@ export function normalizeSpeciesPredictionResult(
     generatedAt: normalizeUiText(readString(source, ['generatedAt', 'generated_at']) || new Date().toISOString()),
     species: evidenceSpecies,
     ...(sourceHealth ? { sourceHealth } : {}),
+    ...(estoniaHistoryPoints.length ? { estoniaHistoryPoints } : {}),
+    ...(foreignRecentPoints.length ? { foreignRecentPoints } : {}),
+    ...(foreignClusters.length ? { foreignClusters } : {}),
+    ...(weather ? { weather } : {}),
+    ...(predictionVectors.length ? { predictionVectors } : {}),
+    ...(predictedTargets.length ? { predictedTargets } : {}),
+    ...(mapLayers ? { mapLayers } : {}),
     ...(foreignEvidence.length ? { foreignEvidence } : {}),
     ...(estoniaEvidence ? { estoniaEvidence } : {}),
     ...(historicalEvidence ? { historicalEvidence } : {}),
@@ -419,6 +560,7 @@ export function normalizeSpeciesPredictionResult(
         : {}),
     },
     topPredictedPoints,
+    ...(predictedTargets.length && !topPredictedPoints.length ? { topPredictedPoints: predictedTargets } : {}),
     ...(insightSummary ? { insightSummary: normalizeUiText(insightSummary) } : {}),
     ...(analysisVersion ? { analysisVersion: normalizeUiText(analysisVersion) } : {}),
     ...(typeof source.analysisFallbackUsed === 'boolean' ? { analysisFallbackUsed: source.analysisFallbackUsed } : {}),
@@ -426,6 +568,9 @@ export function normalizeSpeciesPredictionResult(
     ...(warnings.length ? { warnings } : {}),
     ...(consistencyChecksSource ? { consistencyChecks: normalizePredictionConsistencyChecks(consistencyChecksSource) } : {}),
     ...(source.openaiAnalysis ? { openaiAnalysis: source.openaiAnalysis as SpeciesPredictionAnalysis } : {}),
+    ...(normalizeUiText(readString(source, ['aiSummary', 'ai_summary']) || readString(asRecord(source.openaiAnalysis), ['insightSummary']))
+      ? { aiSummary: normalizeUiText(readString(source, ['aiSummary', 'ai_summary']) || readString(asRecord(source.openaiAnalysis), ['insightSummary'])) }
+      : {}),
     ...(source.rawResearchPayload ? { rawResearchPayload: rawResearchPayload } : {}),
   };
 }
@@ -443,7 +588,13 @@ export function hasUsableSpeciesPredictionResult(
     || hasValue(evidenceRecord, ['estoniaEvidence'])
     || hasValue(evidenceRecord, ['historicalEvidence'])
     || hasValue(evidenceRecord, ['sourceHealth'])
-    || hasValue(evidenceRecord, ['topPredictedPoints']),
+    || hasValue(evidenceRecord, ['topPredictedPoints'])
+    || hasValue(evidenceRecord, ['predictedTargets'])
+    || hasValue(evidenceRecord, ['estoniaHistoryPoints'])
+    || hasValue(evidenceRecord, ['foreignRecentPoints'])
+    || hasValue(evidenceRecord, ['foreignClusters'])
+    || hasValue(evidenceRecord, ['predictionVectors'])
+    || hasValue(evidenceRecord, ['weather'])
   );
   return Boolean(speciesKey && speciesName && generatedAt && hasEvidencePayload);
 }
@@ -473,11 +624,17 @@ function hasCanonicalPredictionFields(record: Record<string, unknown>): boolean 
     || hasValue(record, ['bestEntryZone'])
     || hasValue(record, ['alreadyMissedRisk'])
     || hasValue(record, ['countryScores'])
-    || hasValue(record, ['topPredictedPoints']),
+    || hasValue(record, ['topPredictedPoints'])
     || hasValue(record, ['foreignEvidence'])
     || hasValue(record, ['estoniaEvidence'])
     || hasValue(record, ['historicalEvidence'])
-    || hasValue(record, ['sourceHealth']),
+    || hasValue(record, ['sourceHealth'])
+    || hasValue(record, ['predictedTargets'])
+    || hasValue(record, ['estoniaHistoryPoints'])
+    || hasValue(record, ['foreignRecentPoints'])
+    || hasValue(record, ['foreignClusters'])
+    || hasValue(record, ['predictionVectors'])
+    || hasValue(record, ['weather'])
   );
 }
 
@@ -564,6 +721,10 @@ function isPredictionMode(value: unknown): value is PredictionMode {
 
 function isSummaryStyle(value: unknown): value is SummaryStyle {
   return value === 'short' || value === 'analytical' || value === 'field_use';
+}
+
+function isPredictionLayerMode(value: unknown): value is PredictionLayerMode {
+  return value === 'legacy' || value === 'map_first';
 }
 
 function normalizePredictedPoint(point: Partial<PredictedPoint> | null | undefined, index: number): PredictedPoint {
@@ -695,5 +856,127 @@ function normalizeRawLinks(
   return {
     elurikkusSearchUrl,
     ...(Object.keys(normalizedCountryUrls).length ? { countrySourceUrls: normalizedCountryUrls } : {}),
+  };
+}
+
+function normalizeEstoniaHistoryPoints(input: unknown[] | null): SpeciesPredictionEstoniaHistoryPoint[] {
+  if (!Array.isArray(input)) return [];
+  return input.map((entry) => {
+    const source = asRecord(entry);
+    const daysAgo = hasValue(source, ['daysAgo', 'days_ago']) ? clampNumber(readNumber(source, ['daysAgo', 'days_ago']), 0, 100000, 0) : null;
+    return {
+      lat: clampFloat(readNumber(source, ['lat', 'latitude']), -90, 90, 0),
+      lon: clampFloat(readNumber(source, ['lon', 'lng', 'longitude']), -180, 180, 0),
+      eventDate: normalizeUiText(readString(source, ['eventDate', 'event_date', 'obsDt']) || ''),
+      daysAgo,
+      ageClass: normalizeUiText(readString(source, ['ageClass', 'age_class']) || '') === 'recent' ? 'recent' : 'historical',
+      source: normalizeUiText(readString(source, ['source']) || '') === 'Elurikkus' ? 'Elurikkus' : 'GBIF',
+      ...(readString(source, ['occurrenceId', 'occurrence_id']) ? { occurrenceId: normalizeUiText(readString(source, ['occurrenceId', 'occurrence_id'])) } : {}),
+      ...(readString(source, ['locality']) ? { locality: normalizeUiText(readString(source, ['locality'])) } : {}),
+      ...(readString(source, ['municipality']) ? { municipality: normalizeUiText(readString(source, ['municipality'])) } : {}),
+      ...(hasValue(source, ['count']) ? { count: clampNumber(readNumber(source, ['count']), 1, 999999, 1) } : {}),
+    };
+  }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon) && (point.lat !== 0 || point.lon !== 0));
+}
+
+function normalizeForeignRecentPoints(input: unknown[] | null): SpeciesPredictionForeignRecentPoint[] {
+  if (!Array.isArray(input)) return [];
+  return input.map((entry) => {
+    const source = asRecord(entry);
+    return {
+      lat: clampFloat(readNumber(source, ['lat', 'latitude']), -90, 90, 0),
+      lon: clampFloat(readNumber(source, ['lon', 'lng', 'longitude']), -180, 180, 0),
+      obsDt: normalizeUiText(readString(source, ['obsDt', 'obs_dt', 'eventDate', 'event_date']) || ''),
+      locName: normalizeUiText(readString(source, ['locName', 'loc_name', 'label']) || ''),
+      howMany: hasValue(source, ['howMany', 'how_many']) ? clampNumber(readNumber(source, ['howMany', 'how_many']), 0, 999999, 0) : null,
+      countryCode: normalizeUiText(readString(source, ['countryCode', 'country_code']) || '').toLowerCase(),
+      countryName: normalizeUiText(readString(source, ['countryName', 'country_name']) || ''),
+      ...(readString(source, ['regionCode', 'region_code']) ? { regionCode: normalizeUiText(readString(source, ['regionCode', 'region_code'])) } : {}),
+      ...(readString(source, ['regionName', 'region_name']) ? { regionName: normalizeUiText(readString(source, ['regionName', 'region_name'])) } : {}),
+      source: 'eBird',
+      daysAgo: clampNumber(readNumber(source, ['daysAgo', 'days_ago']), 0, 100000, 0),
+      ...(readString(source, ['clusterId', 'cluster_id']) ? { clusterId: normalizeUiText(readString(source, ['clusterId', 'cluster_id'])) } : {}),
+      ...(hasValue(source, ['distanceToEstoniaKm', 'distance_to_estonia_km']) ? { distanceToEstoniaKm: clampFloat(readNumber(source, ['distanceToEstoniaKm', 'distance_to_estonia_km']), 0, 999999, 0) } : {}),
+    };
+  }).filter((point) => point.countryCode && (point.lat !== 0 || point.lon !== 0));
+}
+
+function normalizeForeignClusters(input: unknown[] | null): SpeciesPredictionForeignCluster[] {
+  if (!Array.isArray(input)) return [];
+  return input.map((entry, index) => {
+    const source = asRecord(entry);
+    const countries = readArray(source, ['countries']) ?? [];
+    const countryCodes = readArray(source, ['countryCodes', 'country_codes']) ?? [];
+    const locNames = readArray(source, ['locNames', 'loc_names']) ?? [];
+    return {
+      id: normalizeUiText(readString(source, ['id']) || `cluster-${index + 1}`),
+      lat: clampFloat(readNumber(source, ['lat', 'latitude']), -90, 90, 0),
+      lon: clampFloat(readNumber(source, ['lon', 'lng', 'longitude']), -180, 180, 0),
+      pointCount: clampNumber(readNumber(source, ['pointCount', 'point_count']), 1, 999999, 1),
+      newestObsDt: normalizeUiText(readString(source, ['newestObsDt', 'newest_obs_dt']) || ''),
+      oldestObsDt: normalizeUiText(readString(source, ['oldestObsDt', 'oldest_obs_dt']) || ''),
+      freshestDaysAgo: clampNumber(readNumber(source, ['freshestDaysAgo', 'freshest_days_ago']), 0, 100000, 0),
+      averageDaysAgo: clampFloat(readNumber(source, ['averageDaysAgo', 'average_days_ago']), 0, 100000, 0),
+      totalHowMany: clampNumber(readNumber(source, ['totalHowMany', 'total_how_many']), 0, 999999, 0),
+      countries: countries.map((item) => normalizeUiText(String(item || ''))).filter(Boolean),
+      countryCodes: countryCodes.map((item) => normalizeUiText(String(item || '')).toLowerCase()).filter(Boolean),
+      locNames: locNames.map((item) => normalizeUiText(String(item || ''))).filter(Boolean),
+      nearestDistanceKm: clampFloat(readNumber(source, ['nearestDistanceKm', 'nearest_distance_km']), 0, 999999, 0),
+      isFreshest: source.isFreshest === true,
+    };
+  }).filter((cluster) => cluster.id && (cluster.lat !== 0 || cluster.lon !== 0));
+}
+
+function normalizeWeather(input: Record<string, unknown> | null): SpeciesPredictionWeather | undefined {
+  if (!input || !Object.keys(input).length) return undefined;
+  return {
+    fetchedAt: normalizeUiText(readString(input, ['fetchedAt', 'fetched_at']) || ''),
+    windSpeedKph: clampFloat(readNumber(input, ['windSpeedKph', 'wind_speed_kph', 'windspeed']), 0, 500, 0),
+    windDirectionDeg: clampFloat(readNumber(input, ['windDirectionDeg', 'wind_direction_deg', 'winddirection']), 0, 360, 0),
+    windDirectionLabel: normalizeUiText(readString(input, ['windDirectionLabel', 'wind_direction_label']) || ''),
+    ...(hasValue(input, ['precipitationMm', 'precipitation_mm']) ? { precipitationMm: clampFloat(readNumber(input, ['precipitationMm', 'precipitation_mm']), 0, 500, 0) } : {}),
+    ...(hasValue(input, ['temperatureC', 'temperature_c']) ? { temperatureC: clampFloat(readNumber(input, ['temperatureC', 'temperature_c']), -80, 80, 0) } : {}),
+    source: 'Open-Meteo',
+  };
+}
+
+function normalizePredictionVectors(input: unknown[] | null): SpeciesPredictionVector[] {
+  if (!Array.isArray(input)) return [];
+  return input.map((entry, index) => {
+    const source = asRecord(entry);
+    const pointsSource = readArray(source, ['points']) ?? [];
+    return {
+      id: normalizeUiText(readString(source, ['id']) || `vector-${index + 1}`),
+      kind: normalizeVectorKind(readString(source, ['kind'])),
+      ...(readString(source, ['sourceClusterId', 'source_cluster_id']) ? { sourceClusterId: normalizeUiText(readString(source, ['sourceClusterId', 'source_cluster_id'])) } : {}),
+      ...(hasValue(source, ['targetRank', 'target_rank']) ? { targetRank: clampNumber(readNumber(source, ['targetRank', 'target_rank']), 1, 99, 1) } : {}),
+      confidence: clampFloat(readNumber(source, ['confidence']), 0, 100, 0),
+      bearingDeg: clampFloat(readNumber(source, ['bearingDeg', 'bearing_deg']), 0, 360, 0),
+      distanceKm: clampFloat(readNumber(source, ['distanceKm', 'distance_km']), 0, 999999, 0),
+      points: pointsSource.map((point) => {
+        const pointSource = asRecord(point);
+        return {
+          lat: clampFloat(readNumber(pointSource, ['lat', 'latitude']), -90, 90, 0),
+          lon: clampFloat(readNumber(pointSource, ['lon', 'lng', 'longitude']), -180, 180, 0),
+        };
+      }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon)),
+    };
+  }).filter((vector) => vector.points.length >= 2);
+}
+
+function normalizeVectorKind(value: string): SpeciesPredictionVector['kind'] {
+  if (value === 'cone' || value === 'target_link') return value;
+  return 'route';
+}
+
+function normalizeMapLayers(input: Record<string, unknown> | null): SpeciesPredictionLayerToggles | undefined {
+  if (!input || !Object.keys(input).length) return undefined;
+  return {
+    estoniaHistory: input.estoniaHistory !== false,
+    foreignEvidence: input.foreignEvidence !== false,
+    predictedLines: input.predictedLines !== false,
+    predictedCone: input.predictedCone !== false,
+    predictedTargets: input.predictedTargets !== false,
+    recentOnly: input.recentOnly === true,
   };
 }

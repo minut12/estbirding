@@ -422,6 +422,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
               },
               settings: {
                 ...settings,
+                ...((ev.data.runtimeSettingsOverride && typeof ev.data.runtimeSettingsOverride === 'object') ? ev.data.runtimeSettingsOverride : {}),
                 ebirdSpeciesCodeOverride,
               },
             };

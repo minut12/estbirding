@@ -490,8 +490,13 @@ export default function SpeciesPredictionSettings() {
                       <NumericField id="searchRadiusKm" label="Search radius (km)" value={form.searchRadiusKm} onChange={(value) => patchForm({ searchRadiusKm: value })} />
                       <NumericField id="hotspotRadiusKm" label="Hotspot radius (km)" value={form.hotspotRadiusKm} onChange={(value) => patchForm({ hotspotRadiusKm: value })} />
                       <NumericField id="hotspotCount" label="Hotspot count" value={form.hotspotCount} onChange={(value) => patchForm({ hotspotCount: value })} />
+                      <NumericField id="horizonDays" label="Prediction horizon (days)" value={form.horizonDays} min={1} max={30} onChange={(value) => patchForm({ horizonDays: value })} />
                       <SwitchRow label="Show source flows on map" checked={form.mapShowSourceFlows} onCheckedChange={(checked) => patchForm({ mapShowSourceFlows: checked })} />
                       <SwitchRow label="Show confidence rings on map" checked={form.mapShowConfidenceRings} onCheckedChange={(checked) => patchForm({ mapShowConfidenceRings: checked })} />
+                      <SwitchRow label="Show prediction cone" checked={form.showPredictionCone} onCheckedChange={(checked) => patchForm({ showPredictionCone: checked })} />
+                      <SwitchRow label="Use regional target mode" checked={form.useRegionalTargets} onCheckedChange={(checked) => patchForm({ useRegionalTargets: checked })} />
+                      <SwitchRow label="Recent-only map markers" checked={form.recentOnlyMapMarkers} onCheckedChange={(checked) => patchForm({ recentOnlyMapMarkers: checked })} />
+                      <SwitchRow label="Snap to best target" checked={form.snapToBestTarget} onCheckedChange={(checked) => patchForm({ snapToBestTarget: checked })} />
                     </AccordionContent>
                   </AccordionItem>
 
@@ -500,6 +505,7 @@ export default function SpeciesPredictionSettings() {
                     <AccordionContent className="space-y-3">
                       <SwitchRow label="Enable server-side research" checked={form.enableN8nResearch} onCheckedChange={(checked) => patchForm({ enableN8nResearch: checked })} />
                       <SwitchRow label="Enable OpenAI summary" checked={form.enableOpenAISummary} onCheckedChange={(checked) => patchForm({ enableOpenAISummary: checked })} />
+                      <SwitchRow label="Enable auto feed" checked={form.autoFeedEnabled} onCheckedChange={(checked) => patchForm({ autoFeedEnabled: checked })} />
                       <div className="space-y-1.5">
                         <Label htmlFor="summaryStyle">Summary style</Label>
                         <Select value={form.summaryStyle} onValueChange={(value) => patchForm({ summaryStyle: value as SpeciesPredictionSettingsModel['summaryStyle'] })}>

@@ -422,19 +422,18 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
                 reason: point.reason,
               })),
             });
-            const iframePayload = {
-              type: SPECIES_PREDICTION_EVENT_TYPES.result,
-              result: response.result,
-            };
             console.debug('[speciesPrediction] compare iframe payload', {
               scope: scopeCfg.id,
-              speciesKey: iframePayload.result.speciesKey,
-              insightSummary: iframePayload.result.insightSummary || null,
-              externalPressureScore: iframePayload.result.externalPressureScore,
-              lithuania: iframePayload.result.countryScores?.lithuania ?? null,
-              topPredictedPointReason: iframePayload.result.topPredictedPoints[0]?.reason || null,
+              speciesKey: response.result.speciesKey,
+              insightSummary: response.result.insightSummary || null,
+              externalPressureScore: response.result.externalPressureScore,
+              lithuania: response.result.countryScores?.lithuania ?? null,
+              topPredictedPointReason: response.result.topPredictedPoints[0]?.reason || null,
             });
-            sendToIframe(iframePayload);
+            sendToIframe({
+              type: SPECIES_PREDICTION_EVENT_TYPES.result,
+              result: response.result,
+            });
           })
           .catch((predictionError: unknown) => {
             if (latestPredictionRequestRef.current !== requestId) {

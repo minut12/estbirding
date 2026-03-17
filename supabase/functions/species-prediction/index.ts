@@ -6,6 +6,28 @@ const WEBHOOK_ENV_KEY = 'SPECIES_PREDICTION_N8N_WEBHOOK_URL';
 const AUTH_HEADER_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_HEADER';
 const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
+const LOG_PREFIX = '[species-prediction]';
+
+type FailureStage =
+  | 'parse'
+  | 'missing_webhook'
+  | 'upstream_fetch'
+  | 'upstream_timeout'
+  | 'upstream_non_2xx'
+  | 'invalid_upstream_json'
+  | 'unexpected';
+
+type DebugDetails = {
+  requestId: string;
+  elapsedMs: number;
+  webhook?: {
+    configured: boolean;
+    host: string | null;
+    pathname: string | null;
+  };
+  upstreamStatus?: number | null;
+  upstreamResponsePreview?: unknown;
+};
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -37,23 +59,61 @@ serve(async (req) => {
     }
 
     if (req.method !== 'POST') {
-      return jsonError({ message: 'Method not allowed', status: 405, stage: 'validation' });
+      return json({ message: 'Method not allowed' }, 405);
     }
 
-    if (!webhookConfigured) {
-      console.warn('[species-prediction] webhook env missing', { envKey: WEBHOOK_ENV_KEY });
-      return jsonError({ message: 'Prediction backend is not configured yet', status: 503, stage: 'missing_webhook_url' });
-    }
+    const requestId = crypto.randomUUID();
+    const startedAt = Date.now();
+    logLifecycle(requestId, 'request_received', {
+      method: req.method,
+      url: req.url,
+    });
 
     let body: unknown;
     try {
       body = await req.json();
-    } catch {
-      console.warn('[species-prediction] invalid JSON body');
-      return jsonError({ message: 'Invalid request body', status: 400, stage: 'validation' });
+      logLifecycle(requestId, 'body_parsed', {
+        bodyType: body === null ? 'null' : Array.isArray(body) ? 'array' : typeof body,
+      });
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} invalid JSON body`, { requestId, error: String(err) });
+      return postJsonError({
+        requestId,
+        startedAt,
+        message: 'Invalid request body',
+        status: 400,
+        stage: 'parse',
+        webhookConfigured,
+      });
     }
 
     const payload = body as Record<string, unknown> | null;
+    const debugMode = payload?.debug === true;
+    const safeWebhook = toSafeWebhook(webhookUrl);
+    logLifecycle(requestId, 'webhook_loaded', {
+      webhookConfigured,
+      webhook: safeWebhook,
+      debugMode,
+    });
+
+    if (!webhookConfigured) {
+      console.warn(`${LOG_PREFIX} webhook env missing`, { requestId, envKey: WEBHOOK_ENV_KEY });
+      return postJsonError({
+        requestId,
+        startedAt,
+        message: 'Prediction backend is not configured yet',
+        status: 503,
+        stage: 'missing_webhook',
+        webhookConfigured,
+        debugMode,
+        debugDetails: buildDebugDetails({
+          requestId,
+          startedAt,
+          webhookUrl,
+        }),
+      });
+    }
+
     const species = payload?.species as Record<string, unknown> | undefined;
     const settings = payload?.settings as Record<string, unknown> | undefined;
     const speciesKey = typeof species?.key === 'string' ? species.key.trim() : '';
@@ -62,11 +122,24 @@ serve(async (req) => {
     const ebirdSpeciesCodeOverride = typeof settings?.ebirdSpeciesCodeOverride === 'string' ? settings.ebirdSpeciesCodeOverride.trim() : '';
 
     if (!speciesKey || !speciesName) {
-      console.warn('[species-prediction] missing required species fields');
-      return jsonError({ message: 'Missing species information for prediction', status: 400, stage: 'validation' });
+      console.warn(`${LOG_PREFIX} missing required species fields`, { requestId });
+      return postJsonError({
+        requestId,
+        startedAt,
+        message: 'Missing species information for prediction',
+        status: 400,
+        stage: 'parse',
+        webhookConfigured,
+        debugMode,
+        debugDetails: buildDebugDetails({
+          requestId,
+          startedAt,
+          webhookUrl,
+        }),
+      });
     }
 
-    console.info('[species-prediction] request validated', {
+    logLifecycle(requestId, 'request_validated', {
       speciesKey,
       speciesName,
       latinName: speciesLatinName || null,
@@ -89,12 +162,16 @@ serve(async (req) => {
       const authValue = (Deno.env.get(AUTH_VALUE_ENV_KEY) || '').trim();
       if (authHeader && authValue) headers[authHeader] = authValue;
 
-      console.info('[species-prediction] forwarding request', {
+      const upstreamStartedAt = new Date().toISOString();
+      logLifecycle(requestId, 'upstream_request_start', {
         speciesKey,
         speciesName,
         latinName: speciesLatinName || null,
         ebirdSpeciesCodeOverride: ebirdSpeciesCodeOverride || null,
-        webhookConfigured: true,
+        webhookConfigured,
+        webhook: safeWebhook,
+        timeoutMs,
+        upstreamStartedAt,
       });
 
       const upstream = await fetch(webhookUrl, {
@@ -105,22 +182,39 @@ serve(async (req) => {
       });
 
       const text = await upstream.text();
+      const upstreamBodyPreview = toPreview(safeJson(text));
+      logLifecycle(requestId, 'upstream_response_received', {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        upstreamBodyPreview,
+      });
 
       if (!upstream.ok) {
         const upstreamMessage = resolveReadableUpstreamMessage(text);
-        console.error('[species-prediction] webhook forwarding failed', {
+        console.error(`${LOG_PREFIX} webhook forwarding failed`, {
+          requestId,
           status: upstream.status,
           statusText: upstream.statusText,
           upstreamMessage: upstreamMessage || null,
-          upstreamBody: text || null,
+          upstreamBodyPreview,
         });
-        return jsonError({
+        return postJsonError({
+          requestId,
+          startedAt,
           message: normalizeUpstreamMessage(upstreamMessage),
           status: 502,
-          stage: 'n8n_non_2xx',
+          stage: 'upstream_non_2xx',
+          webhookConfigured,
           upstreamStatus: upstream.status,
-          upstreamStatusText: upstream.statusText,
           upstreamBody: safeJson(text),
+          debugMode,
+          debugDetails: buildDebugDetails({
+            requestId,
+            startedAt,
+            webhookUrl,
+            upstreamStatus: upstream.status,
+            upstreamResponsePreview: upstreamBodyPreview,
+          }),
         });
       }
 
@@ -128,53 +222,116 @@ serve(async (req) => {
       try {
         data = text ? JSON.parse(text) : null;
       } catch {
-        console.error('[species-prediction] upstream returned invalid JSON');
-        return jsonError({
+        console.error(`${LOG_PREFIX} upstream returned invalid JSON`, { requestId, upstreamBodyPreview });
+        return postJsonError({
+          requestId,
+          startedAt,
           message: 'Prediction backend returned an invalid response',
           status: 502,
           stage: 'invalid_upstream_json',
+          webhookConfigured,
           upstreamBody: text || null,
+          debugMode,
+          debugDetails: buildDebugDetails({
+            requestId,
+            startedAt,
+            webhookUrl,
+            upstreamStatus: upstream.status,
+            upstreamResponsePreview: upstreamBodyPreview,
+          }),
         });
       }
 
       if (!data || typeof data !== 'object' || Array.isArray(data)) {
-        console.error('[species-prediction] upstream response is not a JSON object');
-        return jsonError({
+        console.error(`${LOG_PREFIX} upstream response is not a JSON object`, { requestId, upstreamBodyPreview });
+        return postJsonError({
+          requestId,
+          startedAt,
           message: 'Prediction backend returned an invalid response',
           status: 502,
           stage: 'invalid_upstream_json',
+          webhookConfigured,
           upstreamBody: data,
+          debugMode,
+          debugDetails: buildDebugDetails({
+            requestId,
+            startedAt,
+            webhookUrl,
+            upstreamStatus: upstream.status,
+            upstreamResponsePreview: upstreamBodyPreview,
+          }),
         });
       }
 
-      return json(data as Record<string, unknown>);
+      const responseBody = data as Record<string, unknown>;
+      const finalBody = debugMode
+        ? {
+          ...responseBody,
+          debug: buildDebugDetails({
+            requestId,
+            startedAt,
+            webhookUrl,
+            upstreamStatus: upstream.status,
+            upstreamResponsePreview: upstreamBodyPreview,
+          }),
+        }
+        : responseBody;
+      logLifecycle(requestId, 'response_returned', {
+        ok: true,
+        status: 200,
+        elapsedMs: Date.now() - startedAt,
+      });
+      return json(finalBody);
     } catch (err) {
       const isAbort = err instanceof DOMException && err.name === 'AbortError';
       if (isAbort) {
-        console.error('[species-prediction] webhook timeout', { timeoutMs });
-        return jsonError({
+        console.error(`${LOG_PREFIX} webhook timeout`, { requestId, timeoutMs });
+        return postJsonError({
+          requestId,
+          startedAt,
           message: 'Prediction request timed out',
           status: 504,
-          stage: 'n8n_timeout',
+          stage: 'upstream_timeout',
+          webhookConfigured,
           upstreamBody: { timeoutMs },
+          debugMode,
+          debugDetails: buildDebugDetails({
+            requestId,
+            startedAt,
+            webhookUrl,
+            upstreamResponsePreview: { timeoutMs },
+          }),
         });
       }
-      console.error('[species-prediction] webhook request failed', { error: String(err) });
-      return jsonError({
+      console.error(`${LOG_PREFIX} webhook request failed`, { requestId, error: String(err) });
+      return postJsonError({
+        requestId,
+        startedAt,
         message: 'Prediction service is temporarily unavailable',
         status: 502,
-        stage: 'n8n_upstream',
+        stage: 'upstream_fetch',
+        webhookConfigured,
         upstreamBody: { error: String(err) },
+        debugMode,
+        debugDetails: buildDebugDetails({
+          requestId,
+          startedAt,
+          webhookUrl,
+          upstreamResponsePreview: { error: String(err) },
+        }),
       });
     } finally {
       clearTimeout(timer);
     }
   } catch (err) {
-    console.error('[species-prediction] unexpected error', { error: String(err) });
-    return jsonError({
+    console.error(`${LOG_PREFIX} unexpected error`, { error: String(err) });
+    return postJsonError({
+      requestId: crypto.randomUUID(),
+      startedAt: Date.now(),
       message: 'Prediction service encountered an unexpected error',
       status: 500,
-      stage: 'edge_function',
+      stage: 'unexpected',
+      webhookConfigured: readWebhookUrl().length > 0,
       upstreamBody: { error: String(err) },
     });
   }
@@ -184,24 +341,40 @@ function readWebhookUrl(): string {
   return (Deno.env.get(WEBHOOK_ENV_KEY) || '').trim();
 }
 
-function jsonError(input: {
+function postJsonError(input: {
+  requestId: string;
+  startedAt: number;
   message: string;
   status: number;
-  stage: string;
+  stage: FailureStage;
+  webhookConfigured: boolean;
   upstreamStatus?: number;
-  upstreamStatusText?: string;
   upstreamBody?: unknown;
+  debugMode?: boolean;
+  debugDetails?: DebugDetails;
 }): Response {
-  return json({
+  const elapsedMs = Date.now() - input.startedAt;
+  const body: Record<string, unknown> = {
     ok: false,
     message: input.message,
     stage: input.stage,
-    ...(typeof input.upstreamStatus === 'number' ? { upstreamStatus: input.upstreamStatus } : {}),
-    ...(typeof input.upstreamStatusText === 'string' && input.upstreamStatusText ? { upstreamStatusText: input.upstreamStatusText } : {}),
-    ...(typeof input.upstreamBody !== 'undefined' ? { upstreamBody: input.upstreamBody } : {}),
+    upstreamStatus: typeof input.upstreamStatus === 'number' ? input.upstreamStatus : null,
+    upstreamBody: typeof input.upstreamBody !== 'undefined' ? input.upstreamBody : null,
+    elapsedMs,
+    webhookConfigured: input.webhookConfigured,
     status: input.status,
+    requestId: input.requestId,
     timestamp: new Date().toISOString(),
-  }, input.status);
+  };
+  if (input.debugMode) body.debug = input.debugDetails || null;
+  logLifecycle(input.requestId, 'response_returned', {
+    ok: false,
+    status: input.status,
+    stage: input.stage,
+    elapsedMs,
+    webhookConfigured: input.webhookConfigured,
+  });
+  return json(body, input.status);
 }
 
 function json(body: Record<string, unknown>, status = 200): Response {
@@ -258,4 +431,54 @@ function safeJson(value: string): unknown {
   } catch {
     return trimmed;
   }
+}
+
+function toSafeWebhook(value: string): { configured: boolean; host: string | null; pathname: string | null } {
+  if (!value) return { configured: false, host: null, pathname: null };
+  try {
+    const url = new URL(value);
+    return {
+      configured: true,
+      host: url.host || null,
+      pathname: url.pathname || null,
+    };
+  } catch {
+    return {
+      configured: true,
+      host: null,
+      pathname: null,
+    };
+  }
+}
+
+function toPreview(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return value.length > 500 ? `${value.slice(0, 500)}...` : value;
+  }
+  return value;
+}
+
+function buildDebugDetails(input: {
+  requestId: string;
+  startedAt: number;
+  webhookUrl: string;
+  upstreamStatus?: number | null;
+  upstreamResponsePreview?: unknown;
+}): DebugDetails {
+  return {
+    requestId: input.requestId,
+    elapsedMs: Date.now() - input.startedAt,
+    webhook: toSafeWebhook(input.webhookUrl),
+    upstreamStatus: typeof input.upstreamStatus === 'number' ? input.upstreamStatus : null,
+    upstreamResponsePreview: typeof input.upstreamResponsePreview === 'undefined'
+      ? null
+      : input.upstreamResponsePreview,
+  };
+}
+
+function logLifecycle(requestId: string, event: string, details: Record<string, unknown>): void {
+  console.info(`${LOG_PREFIX} ${event}`, {
+    requestId,
+    ...details,
+  });
 }

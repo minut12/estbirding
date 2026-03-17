@@ -1,12 +1,14 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { corsHeaders } from '../_shared/cors.ts';
 
+const EDGE_FUNCTION_VERSION = 'species-prediction-2026-03-17-a';
 const DEFAULT_TIMEOUT_MS = 120000;
 const WEBHOOK_ENV_KEY = 'SPECIES_PREDICTION_N8N_WEBHOOK_URL';
 const AUTH_HEADER_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_HEADER';
 const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
+const SUCCESS_STAGE = 'completed';
 
 type FailureStage =
   | 'parse'
@@ -20,6 +22,8 @@ type FailureStage =
 type DebugDetails = {
   requestId: string;
   elapsedMs: number;
+  timeoutMsUsed: number;
+  edgeFunctionVersion: string;
   webhook?: {
     configured: boolean;
     host: string | null;
@@ -38,9 +42,12 @@ serve(async (req) => {
     const url = new URL(req.url);
     const webhookUrl = readWebhookUrl();
     const webhookConfigured = webhookUrl.length > 0;
+    const timeoutMsUsed = resolveTimeoutMs();
 
     if (req.method === 'GET' && url.searchParams.get('mode') === 'status') {
       console.info('[species-prediction] status check', {
+        edgeFunctionVersion: EDGE_FUNCTION_VERSION,
+        timeoutMsUsed,
         webhookConfigured,
         envKey: WEBHOOK_ENV_KEY,
       });
@@ -51,6 +58,8 @@ serve(async (req) => {
         deployed: true,
         configured: webhookConfigured,
         webhookConfigured,
+        timeoutMsUsed,
+        edgeFunctionVersion: EDGE_FUNCTION_VERSION,
         timestamp: new Date().toISOString(),
         message: webhookConfigured
           ? 'Prediction backend is deployed and configured'
@@ -67,6 +76,7 @@ serve(async (req) => {
     logLifecycle(requestId, 'request_received', {
       method: req.method,
       url: req.url,
+      edgeFunctionVersion: EDGE_FUNCTION_VERSION,
     });
 
     let body: unknown;
@@ -84,6 +94,7 @@ serve(async (req) => {
         status: 400,
         stage: 'parse',
         webhookConfigured,
+        timeoutMsUsed,
       });
     }
 
@@ -105,11 +116,13 @@ serve(async (req) => {
         status: 503,
         stage: 'missing_webhook',
         webhookConfigured,
+        timeoutMsUsed,
         debugMode,
         debugDetails: buildDebugDetails({
           requestId,
           startedAt,
           webhookUrl,
+          timeoutMsUsed,
         }),
       });
     }
@@ -130,11 +143,13 @@ serve(async (req) => {
         status: 400,
         stage: 'parse',
         webhookConfigured,
+        timeoutMsUsed,
         debugMode,
         debugDetails: buildDebugDetails({
           requestId,
           startedAt,
           webhookUrl,
+          timeoutMsUsed,
         }),
       });
     }
@@ -146,15 +161,14 @@ serve(async (req) => {
       ebirdSpeciesCodeOverride: ebirdSpeciesCodeOverride || null,
     });
 
-    const timeoutMs = clampNumber(
-      Number(Deno.env.get(TIMEOUT_ENV_KEY) || DEFAULT_TIMEOUT_MS),
-      5000,
-      180000,
-      DEFAULT_TIMEOUT_MS,
-    );
+    logLifecycle(requestId, 'timeout_ms_used', {
+      timeoutMsUsed,
+      timeoutEnvKey: TIMEOUT_ENV_KEY,
+      edgeFunctionVersion: EDGE_FUNCTION_VERSION,
+    });
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMsUsed);
 
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -170,7 +184,7 @@ serve(async (req) => {
         ebirdSpeciesCodeOverride: ebirdSpeciesCodeOverride || null,
         webhookConfigured,
         webhook: safeWebhook,
-        timeoutMs,
+        timeoutMsUsed,
         upstreamStartedAt,
       });
 
@@ -205,6 +219,7 @@ serve(async (req) => {
           status: 502,
           stage: 'upstream_non_2xx',
           webhookConfigured,
+          timeoutMsUsed,
           upstreamStatus: upstream.status,
           upstreamBody: safeJson(text),
           debugMode,
@@ -212,6 +227,7 @@ serve(async (req) => {
             requestId,
             startedAt,
             webhookUrl,
+            timeoutMsUsed,
             upstreamStatus: upstream.status,
             upstreamResponsePreview: upstreamBodyPreview,
           }),
@@ -230,12 +246,14 @@ serve(async (req) => {
           status: 502,
           stage: 'invalid_upstream_json',
           webhookConfigured,
+          timeoutMsUsed,
           upstreamBody: text || null,
           debugMode,
           debugDetails: buildDebugDetails({
             requestId,
             startedAt,
             webhookUrl,
+            timeoutMsUsed,
             upstreamStatus: upstream.status,
             upstreamResponsePreview: upstreamBodyPreview,
           }),
@@ -251,12 +269,14 @@ serve(async (req) => {
           status: 502,
           stage: 'invalid_upstream_json',
           webhookConfigured,
+          timeoutMsUsed,
           upstreamBody: data,
           debugMode,
           debugDetails: buildDebugDetails({
             requestId,
             startedAt,
             webhookUrl,
+            timeoutMsUsed,
             upstreamStatus: upstream.status,
             upstreamResponsePreview: upstreamBodyPreview,
           }),
@@ -264,28 +284,47 @@ serve(async (req) => {
       }
 
       const responseBody = data as Record<string, unknown>;
+      const elapsedMs = Date.now() - startedAt;
       const finalBody = debugMode
         ? {
           ...responseBody,
+          stage: SUCCESS_STAGE,
+          elapsedMs,
+          timeoutMsUsed,
+          edgeFunctionVersion: EDGE_FUNCTION_VERSION,
           debug: buildDebugDetails({
             requestId,
             startedAt,
             webhookUrl,
+            timeoutMsUsed,
             upstreamStatus: upstream.status,
             upstreamResponsePreview: upstreamBodyPreview,
           }),
         }
-        : responseBody;
+        : {
+          ...responseBody,
+          stage: SUCCESS_STAGE,
+          elapsedMs,
+          timeoutMsUsed,
+          edgeFunctionVersion: EDGE_FUNCTION_VERSION,
+        };
       logLifecycle(requestId, 'response_returned', {
         ok: true,
         status: 200,
-        elapsedMs: Date.now() - startedAt,
+        stage: SUCCESS_STAGE,
+        elapsedMs,
+        timeoutMsUsed,
+        edgeFunctionVersion: EDGE_FUNCTION_VERSION,
       });
       return json(finalBody);
     } catch (err) {
       const isAbort = err instanceof DOMException && err.name === 'AbortError';
       if (isAbort) {
-        console.error(`${LOG_PREFIX} webhook timeout`, { requestId, timeoutMs });
+        logLifecycle(requestId, 'upstream_timeout', {
+          timeoutMsUsed,
+          edgeFunctionVersion: EDGE_FUNCTION_VERSION,
+        });
+        console.error(`${LOG_PREFIX} webhook timeout`, { requestId, timeoutMsUsed });
         return postJsonError({
           requestId,
           startedAt,
@@ -293,13 +332,15 @@ serve(async (req) => {
           status: 504,
           stage: 'upstream_timeout',
           webhookConfigured,
-          upstreamBody: { timeoutMs },
+          timeoutMsUsed,
+          upstreamBody: { timeoutMsUsed },
           debugMode,
           debugDetails: buildDebugDetails({
             requestId,
             startedAt,
             webhookUrl,
-            upstreamResponsePreview: { timeoutMs },
+            timeoutMsUsed,
+            upstreamResponsePreview: { timeoutMsUsed },
           }),
         });
       }
@@ -311,12 +352,14 @@ serve(async (req) => {
         status: 502,
         stage: 'upstream_fetch',
         webhookConfigured,
+        timeoutMsUsed,
         upstreamBody: { error: String(err) },
         debugMode,
         debugDetails: buildDebugDetails({
           requestId,
           startedAt,
           webhookUrl,
+          timeoutMsUsed,
           upstreamResponsePreview: { error: String(err) },
         }),
       });
@@ -324,6 +367,10 @@ serve(async (req) => {
       clearTimeout(timer);
     }
   } catch (err) {
+    logLifecycle('untracked', 'unexpected_error', {
+      error: String(err),
+      edgeFunctionVersion: EDGE_FUNCTION_VERSION,
+    });
     console.error(`${LOG_PREFIX} unexpected error`, { error: String(err) });
     return postJsonError({
       requestId: crypto.randomUUID(),
@@ -332,6 +379,7 @@ serve(async (req) => {
       status: 500,
       stage: 'unexpected',
       webhookConfigured: readWebhookUrl().length > 0,
+      timeoutMsUsed: resolveTimeoutMs(),
       upstreamBody: { error: String(err) },
     });
   }
@@ -348,6 +396,7 @@ function postJsonError(input: {
   status: number;
   stage: FailureStage;
   webhookConfigured: boolean;
+  timeoutMsUsed: number;
   upstreamStatus?: number;
   upstreamBody?: unknown;
   debugMode?: boolean;
@@ -361,6 +410,8 @@ function postJsonError(input: {
     upstreamStatus: typeof input.upstreamStatus === 'number' ? input.upstreamStatus : null,
     upstreamBody: typeof input.upstreamBody !== 'undefined' ? input.upstreamBody : null,
     elapsedMs,
+    timeoutMsUsed: input.timeoutMsUsed,
+    edgeFunctionVersion: EDGE_FUNCTION_VERSION,
     webhookConfigured: input.webhookConfigured,
     status: input.status,
     requestId: input.requestId,
@@ -372,7 +423,9 @@ function postJsonError(input: {
     status: input.status,
     stage: input.stage,
     elapsedMs,
+    timeoutMsUsed: input.timeoutMsUsed,
     webhookConfigured: input.webhookConfigured,
+    edgeFunctionVersion: EDGE_FUNCTION_VERSION,
   });
   return json(body, input.status);
 }
@@ -387,6 +440,15 @@ function json(body: Record<string, unknown>, status = 200): Response {
 function clampNumber(value: number, min: number, max: number, fallback: number): number {
   if (!Number.isFinite(value)) return fallback;
   return Math.min(max, Math.max(min, value));
+}
+
+function resolveTimeoutMs(): number {
+  return clampNumber(
+    Number(Deno.env.get(TIMEOUT_ENV_KEY) || DEFAULT_TIMEOUT_MS),
+    5000,
+    180000,
+    DEFAULT_TIMEOUT_MS,
+  );
 }
 
 function resolveReadableUpstreamMessage(text: string): string {
@@ -462,12 +524,15 @@ function buildDebugDetails(input: {
   requestId: string;
   startedAt: number;
   webhookUrl: string;
+  timeoutMsUsed: number;
   upstreamStatus?: number | null;
   upstreamResponsePreview?: unknown;
 }): DebugDetails {
   return {
     requestId: input.requestId,
     elapsedMs: Date.now() - input.startedAt,
+    timeoutMsUsed: input.timeoutMsUsed,
+    edgeFunctionVersion: EDGE_FUNCTION_VERSION,
     webhook: toSafeWebhook(input.webhookUrl),
     upstreamStatus: typeof input.upstreamStatus === 'number' ? input.upstreamStatus : null,
     upstreamResponsePreview: typeof input.upstreamResponsePreview === 'undefined'

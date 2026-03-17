@@ -567,6 +567,54 @@ export type Database = {
         }
         Relationships: []
       }
+      prediction_jobs: {
+        Row: {
+          analysis_version: string | null
+          created_at: string
+          error_json: Json | null
+          generated_at: string | null
+          id: string
+          request_id: string
+          result_json: Json | null
+          scope: string
+          settings: Json | null
+          species_key: string
+          species_name: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          analysis_version?: string | null
+          created_at?: string
+          error_json?: Json | null
+          generated_at?: string | null
+          id?: string
+          request_id: string
+          result_json?: Json | null
+          scope?: string
+          settings?: Json | null
+          species_key: string
+          species_name: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          analysis_version?: string | null
+          created_at?: string
+          error_json?: Json | null
+          generated_at?: string | null
+          id?: string
+          request_id?: string
+          result_json?: Json | null
+          scope?: string
+          settings?: Json | null
+          species_key?: string
+          species_name?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string

@@ -18,7 +18,6 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
 import { isSpeciesPredictionEnabled, loadSettings, saveSettings } from '@/lib/settings';
 import { getFunctionsBaseUrl, getSupabaseAuthHeaders } from '@/config/supabaseConfig';
-import { APP_VERSION } from '@/lib/version';
 import { ACTIVE_PREDICTION_SPECIES_EVENT, getActivePredictionSpecies, setActivePredictionSpecies } from '@/lib/activePredictionSpecies';
 import {
   clearSpeciesPredictionDebugMemory,
@@ -338,7 +337,7 @@ export default function SpeciesPredictionSettings() {
         onEnabledChange={setPredictionFeatureEnabled}
       />
       <p className="text-[11px] text-muted-foreground">
-        prediction-settings-build: {APP_VERSION} / species-settings-v2
+        prediction-settings-build: 2026-03-18-fix2
       </p>
       {!predictionEnabled ? (
         <p className="text-xs text-muted-foreground">Turn on Species Prediction to edit these settings</p>
@@ -885,10 +884,8 @@ type SpeciesPredictionBackendStatus = {
 
 type SpeciesPredictionDisplayState =
   | 'NOT_CONFIGURED'
-  | 'DEPLOYED_NOT_CONFIGURED'
   | 'CONFIGURED_AVAILABLE'
-  | 'CONFIGURED_UNAVAILABLE'
-  | 'RUNTIME_ERROR';
+  | 'CONFIGURED_UNAVAILABLE';
 
 type SpeciesPredictionStatusCardModel = {
   badge: 'Configured' | 'Unavailable' | 'Missing config';
@@ -999,11 +996,20 @@ function normalizeBackendStatus(status: SpeciesPredictionBackendStatus) {
 function deriveSpeciesPredictionDisplayState(
   status: ReturnType<typeof normalizeBackendStatus>,
 ): SpeciesPredictionDisplayState {
-  if (status.statusCode === 'NOT_CONFIGURED') return 'NOT_CONFIGURED';
-  if (status.statusCode === 'DEPLOYED_NOT_CONFIGURED') return 'DEPLOYED_NOT_CONFIGURED';
-  if (status.statusCode === 'CONFIGURED_AVAILABLE') return 'CONFIGURED_AVAILABLE';
-  if (status.statusCode === 'CONFIGURED_UNAVAILABLE') return 'CONFIGURED_UNAVAILABLE';
-  return 'RUNTIME_ERROR';
+  if (!status.isConfigured) return 'NOT_CONFIGURED';
+  if (
+    status.isDeployed
+    && status.isConfigured
+    && (
+      status.isRuntimeAvailable !== true
+      || status.isHealthy !== true
+      || status.reasonCode === 'N8N_WEBHOOK_INACTIVE'
+      || status.backend.productionWebhookInactive === true
+    )
+  ) {
+    return 'CONFIGURED_UNAVAILABLE';
+  }
+  return 'CONFIGURED_AVAILABLE';
 }
 
 function buildSpeciesPredictionStatusCard(
@@ -1017,27 +1023,14 @@ function buildSpeciesPredictionStatusCard(
       helperText: 'The species prediction backend passed runtime verification and is ready for use.',
     };
   }
-  if (displayState === 'CONFIGURED_UNAVAILABLE' && status.reasonCode === 'N8N_WEBHOOK_INACTIVE') {
+  if (displayState === 'CONFIGURED_UNAVAILABLE') {
     return {
       badge: 'Unavailable',
       primaryText: 'Prediction backend is configured but currently unavailable',
-      helperText: 'The n8n production webhook for species prediction is inactive or not registered.',
-    };
-  }
-  if (displayState === 'RUNTIME_ERROR') {
-    return {
-      badge: 'Unavailable',
-      primaryText: 'Prediction backend is configured but currently unavailable',
-      helperText: 'Runtime verification of the prediction backend failed. Check the latest upstream diagnostics.',
-    };
-  }
-  if (displayState === 'DEPLOYED_NOT_CONFIGURED') {
-    return {
-      badge: 'Missing config',
-      primaryText: 'Prediction backend is deployed but not fully configured',
-      helperText: status.reasonCode === 'INVALID_WEBHOOK_PATH'
-        ? 'The configured n8n webhook path is invalid or does not match the expected production path.'
-        : 'Add or correct the species prediction webhook configuration in Supabase and redeploy the Edge Function.',
+      helperText: status.reasonCode === 'N8N_WEBHOOK_INACTIVE'
+        || status.backend.productionWebhookInactive === true
+        ? 'The n8n production webhook for species prediction is inactive or not registered.'
+        : 'The prediction runtime is unavailable. Check the latest backend diagnostics for the exact upstream reason.',
     };
   }
   return {

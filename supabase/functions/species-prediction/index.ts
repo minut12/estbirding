@@ -355,11 +355,13 @@ async function executeN8nAndPersist(opts: {
       : (upstreamError?.message || 'Prediction service evidence assembly error');
     console.error(`${LOG_PREFIX} background_error`, { requestId, isAbort, error: String(err) });
 
-    await admin.from('prediction_jobs').update({
-      status: 'failed',
-      error_json: upstreamError ?? { message: errorMessage, detail: String(err) },
-      updated_at: new Date().toISOString(),
-    }).eq('request_id', requestId).catch(() => {});
+    try {
+      await admin.from('prediction_jobs').update({
+        status: 'failed',
+        error_json: upstreamError ?? { message: errorMessage, detail: String(err) },
+        updated_at: new Date().toISOString(),
+      }).eq('request_id', requestId);
+    } catch { /* ignore */ }
   } finally {
     clearTimeout(timer);
   }

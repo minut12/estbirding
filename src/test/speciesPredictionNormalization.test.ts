@@ -244,4 +244,45 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.predictedTargets?.[0]?.confidenceBeforeCap).toBe(0.86);
     expect(result.predictedTargets?.[0]?.confidenceAfterCap).toBe(0.7);
   });
+
+  it("keeps coastal locality-backed targets for Estonia-history-only marine species payloads", () => {
+    const result = normalizeSpeciesPredictionResult({
+      speciesKey: "punakurk-kaur",
+      speciesName: "Punakurk-kaur",
+      generatedAt: "2026-03-18T12:00:00.000Z",
+      evidenceSummary: {
+        activeEvidenceUsed: ["Elurikkus Estonia"],
+        rankingMode: "estonia_history_only",
+        foreignEbirdAvailable: false,
+      },
+      predictedTargets: [
+        {
+          rank: 1,
+          name: "Põõsaspea",
+          displayName: "Põõsaspea",
+          displayNameSource: "normalized_locality",
+          countyOrParish: "Lääne-Nigula",
+          lat: 59.0021,
+          lon: 23.4987,
+          confidence: 0.7,
+          eta: "1d",
+          searchRadiusKm: 12,
+          habitatCue: "coastal open water",
+          reason: "Estonia evidence centers on Põõsaspea for Punakurk-kaur.",
+          rankingMode: "estonia_history_only",
+          representativePointMethod: "hotspot_coordinate",
+          coordinateSource: "hotspot_coordinate",
+          rawClusterId: "ee-cluster-7",
+          supportingEstoniaHistoryCount: 5,
+          latestSupportingEstoniaDate: "2026-03-17T00:00:00.000Z",
+          confidenceAfterCap: 0.7,
+        },
+      ],
+    } as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.predictedTargets?.[0]?.displayName).toBe("Põõsaspea");
+    expect(result.predictedTargets?.[0]?.coordinateSource).toBe("hotspot_coordinate");
+    expect(result.predictedTargets?.[0]?.confidence).toBeLessThanOrEqual(0.7);
+    expect(result.predictedTargets?.[0]?.latestSupportingEstoniaDate).toBe("2026-03-17T00:00:00.000Z");
+  });
 });

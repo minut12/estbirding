@@ -765,6 +765,8 @@ function buildPredictedTargets(opts: {
     representativeLon?: number;
     representativePointMethod?: string;
     representativeLocality?: string;
+    latestSupportingLocality?: string;
+    nearestNamedCoastalLocality?: string;
     supportingPoints?: Record<string, unknown>[];
     localityNames?: string[];
     localityAliases?: string[];
@@ -790,6 +792,8 @@ function buildPredictedTargets(opts: {
   const hasForeignPressure = foreignClusters.length > 0 && hasRecentForeignSupport;
   const hasWeatherSupport = weatherLooksAvailable(weather);
   const hasRecentEstoniaSupport = toNumber(estoniaEvidence.recentCount30d) > 0 || estoniaHistoryClusters.some((cluster) => cluster.recentCount > 0);
+  const hasRecentCoastalEstoniaSupport = ecology.prefersCoast
+    && estoniaHistoryClusters.some((cluster) => cluster.recentCount > 0 && isCoastalCluster(cluster));
   const rankingMode = determineRankingMode(hasForeignPressure, hasWeatherSupport);
   weather.wasWeatherUsedInRanking = rankingMode === 'estonia_history_plus_weather' || rankingMode === 'estonia_history_plus_foreign_plus_weather';
   const supportingCountries = hasForeignPressure
@@ -805,16 +809,19 @@ function buildPredictedTargets(opts: {
     const routeAlignment = hasForeignPressure ? computeAlignmentScore(foreignClusters[0], cluster, weather) : 0;
     const ecologyScore = scoreClusterEcology(cluster, ecology);
     const historyScore = historyScoreForDebug(cluster);
+    const clusterIsCoastal = isCoastalCluster(cluster);
     const foreignBoost = hasForeignPressure ? clampInt(routeAlignment, 0, 20) : 0;
     const weatherBoost = hasWeatherSupport ? clampInt(Math.round(computeWindSupport(weather) / 10), 0, 8) : 0;
+    const recentCoastalBonus = hasRecentCoastalEstoniaSupport && clusterIsCoastal ? 18 : 0;
+    const inlandRecentPenalty = hasRecentCoastalEstoniaSupport && !clusterIsCoastal ? 30 : 0;
     const noRecentEstoniaPenalty = cluster.recentCount > 0 ? 0 : (hasRecentEstoniaSupport ? 8 : 14);
     const looseClusterPenalty = toNumber(cluster.clusterTightnessKm) > 12 ? 8 : (toNumber(cluster.clusterTightnessKm) > 6 ? 4 : 0);
     const weakHabitatPenalty = ecologyScore.score < 0 ? Math.abs(ecologyScore.score) : (ecologyScore.adjustedRanking ? 6 : 0);
     const weatherPenalty = weather.weatherPartial === true || !stringOr(weather.fetchedAt) ? 6 : 0;
     const foreignPenalty = hasForeignPressure ? 0 : 10;
-    const confidenceBeforeCap = historyScore + ecologyScore.score + foreignBoost + weatherBoost
-      - noRecentEstoniaPenalty - looseClusterPenalty - weakHabitatPenalty - weatherPenalty - foreignPenalty;
-    const confidenceCap = getConfidenceCapForRankingMode(rankingMode);
+    const confidenceBeforeCap = historyScore + ecologyScore.score + foreignBoost + weatherBoost + recentCoastalBonus
+      - inlandRecentPenalty - noRecentEstoniaPenalty - looseClusterPenalty - weakHabitatPenalty - weatherPenalty - foreignPenalty;
+    const confidenceCap = hasForeignPressure ? getConfidenceCapForRankingMode(rankingMode) : 0.70;
     const normalizedConfidence = Math.max(0.18, Math.min(confidenceCap, confidenceBeforeCap / 100));
     const confidence = Number(normalizedConfidence.toFixed(2));
     const etaHours = hasForeignPressure
@@ -829,7 +836,7 @@ function buildPredictedTargets(opts: {
       routeAlignment,
       etaHours,
       habitatFilterAdjustedRanking: ecologyScore.adjustedRanking,
-      excluded: ecologyScore.excluded,
+      excluded: ecologyScore.excluded || Boolean(hasRecentCoastalEstoniaSupport && !clusterIsCoastal && ecology.prefersCoast && cluster.recentCount <= 0),
     };
   }).filter((entry) => !entry.excluded)
     .sort((left, right) =>
@@ -1331,6 +1338,8 @@ function clusterEstoniaHistory(points: Record<string, unknown>[]): Array<{
   representativeLon: number;
   representativePointMethod: string;
   representativeLocality?: string;
+  latestSupportingLocality?: string;
+  nearestNamedCoastalLocality?: string;
   supportingPoints: Record<string, unknown>[];
   localityNames: string[];
   localityAliases: string[];
@@ -1373,10 +1382,19 @@ function clusterEstoniaHistory(points: Record<string, unknown>[]): Array<{
     const localityAliases = collectLocalityAliases(pointsInCluster);
     const municipality = mostCommonValue(pointsInCluster.map((point) => stringOr(point.municipality)).filter(Boolean)) || 'Estonia';
     const representative = selectRepresentativePoint(pointsInCluster, centroid, localityNames, localityAliases);
+    const latestSupportingLocality = getLatestSupportingLocality(pointsInCluster);
     const newestEventDate = pointsInCluster.map((point) => stringOr(point.eventDate)).filter(Boolean).sort().slice(-1)[0] || '';
     const oldestEventDate = pointsInCluster.map((point) => stringOr(point.eventDate)).filter(Boolean).sort()[0] || '';
     const habitat = inferHabitatFromCluster(pointsInCluster, centroid, localityNames);
-    const displayNameInfo = buildTargetDisplayName(localityNames, localityAliases, representative.point, habitat.type, municipality);
+    const nearestNamedCoastalLocality = getNearestNamedCoastalLocality(pointsInCluster, representative.lat, representative.lon);
+    const displayNameInfo = buildTargetDisplayName(
+      localityNames,
+      latestSupportingLocality,
+      nearestNamedCoastalLocality,
+      representative.point,
+      habitat.type,
+      municipality,
+    );
     const clusterTightnessKm = computeClusterTightnessKm(pointsInCluster, representative.lat, representative.lon);
     return {
       id: cluster.id,
@@ -1392,6 +1410,8 @@ function clusterEstoniaHistory(points: Record<string, unknown>[]): Array<{
       representativeLon: representative.lon,
       representativePointMethod: representative.method,
       representativeLocality: representative.locality,
+      latestSupportingLocality,
+      nearestNamedCoastalLocality,
       supportingPoints: pointsInCluster,
       localityNames,
       localityAliases,
@@ -1426,6 +1446,8 @@ function buildTargetReason(input: {
     habitatCue?: string;
     representativePointMethod?: string;
     representativeLocality?: string;
+    latestSupportingLocality?: string;
+    nearestNamedCoastalLocality?: string;
   };
   foreignCluster?: Record<string, unknown>;
   weather: Record<string, unknown>;
@@ -1437,11 +1459,18 @@ function buildTargetReason(input: {
   const { speciesName, hotspot, foreignCluster, weather, ecology, ecologyScore, hasForeignPressure, hasWeatherSupport } = input;
   const latestHistory = hotspot.newestEventDate ? hotspot.newestEventDate.slice(0, 10) : 'unknown date';
   const habitatText = stringOr(hotspot.habitatCue, ecologyScore.habitatCue, ecology.mode);
-  const localityText = stringOr(hotspot.displayName, hotspot.locality, hotspot.municipality, 'a known hotspot');
+  const localityText = stringOr(
+    hotspot.displayName,
+    hotspot.latestSupportingLocality,
+    hotspot.nearestNamedCoastalLocality,
+    hotspot.locality,
+    hotspot.municipality,
+    'a known hotspot',
+  );
   const representativeText = describeRepresentativeMethod(stringOr(hotspot.representativePointMethod), stringOr(hotspot.representativeLocality, localityText));
-  const historyText = `Repeated Estonia history around ${localityText} for ${speciesName} (${hotspot.count} records, ${hotspot.recentCount} recent; latest ${latestHistory}). ${representativeText}`;
+  const historyText = `Estonia evidence centers on ${localityText} for ${speciesName} (${hotspot.count} records, ${hotspot.recentCount} recent; latest ${latestHistory}). ${representativeText}`;
   if (!hasForeignPressure) {
-    return `${historyText} Habitat relevance: ${habitatText}. Ranking uses Estonia history and habitat fit only because no usable foreign eBird support was available.`;
+    return `${historyText} Coastal/open-water relevance: ${habitatText}. Ranking is based mainly on Estonia evidence because no usable foreign support was available.`;
   }
   const countries = foreignCluster && Array.isArray(foreignCluster.countries) ? foreignCluster.countries.join(', ') : 'foreign eBird';
   const hotspotRecord = hotspot as Record<string, unknown>;
@@ -1451,7 +1480,7 @@ function buildTargetReason(input: {
   const weatherText = hasWeatherSupport
     ? ` Weather support contributed to ranking (${bearingToCompass(toNumber(weather.windDirectionDeg))} ${Math.round(toNumber(weather.windSpeedKph))} km/h, ${stringOr(weather.fetchedAt, 'timestamp unavailable')}).`
     : '';
-  return `${historyText} Habitat relevance: ${habitatText}. Recent foreign eBird support from ${countries}${foreignDistanceKm != null ? ` is about ${Math.round(foreignDistanceKm)} km from this representative point` : ''}.${weatherText}`;
+  return `${historyText} Coastal/open-water relevance: ${habitatText}. Recent foreign eBird support from ${countries}${foreignDistanceKm != null ? ` is about ${Math.round(foreignDistanceKm)} km from this representative point` : ''}.${weatherText}`;
 }
 
 function buildCountryScores(foreignEvidence: Record<string, unknown>[]): Record<string, number> {
@@ -1555,7 +1584,7 @@ function scoreClusterEcology(
       return { score: -48, adjustedRanking: true, excluded: true, habitatCue: cue || 'Unsuitable inland habitat' };
     }
     return {
-      score: coastalMatch ? 34 : -34,
+      score: coastalMatch ? 40 : -38,
       adjustedRanking: !coastalMatch || coastalDistanceKm > 8,
       excluded: false,
       habitatCue: coastalMatch ? (cue || 'Coastal or open-water habitat') : (cue || 'Habitat uncertain away from coast'),
@@ -1673,6 +1702,24 @@ function collectLocalityAliases(points: Record<string, unknown>[]): string[] {
     .map(([label]) => label);
 }
 
+function getLatestSupportingLocality(points: Record<string, unknown>[]): string {
+  const latestPoint = [...points]
+    .filter((point) => sanitizeDisplayLabel(stringOr(point.locality, point.municipality)))
+    .sort((left, right) => Date.parse(stringOr(right.eventDate)) - Date.parse(stringOr(left.eventDate)))[0];
+  return sanitizeDisplayLabel(stringOr(latestPoint?.locality, latestPoint?.municipality));
+}
+
+function getNearestNamedCoastalLocality(points: Record<string, unknown>[], lat: number, lon: number): string {
+  const nearest = points
+    .map((point) => ({
+      locality: sanitizeDisplayLabel(stringOr(point.locality, point.municipality)),
+      distanceKm: haversineKm(toNumber(point.lat), toNumber(point.lon), lat, lon),
+    }))
+    .filter((entry) => entry.locality && isLikelyCoastalLocality(entry.locality))
+    .sort((left, right) => left.distanceKm - right.distanceKm)[0];
+  return nearest?.locality || '';
+}
+
 function mostCommonValue(values: string[]): string {
   const counts = new Map<string, number>();
   for (const value of values) counts.set(value, Number(counts.get(value) || 0) + 1);
@@ -1688,20 +1735,23 @@ function buildDisplayClusterName(localityNames: string[], municipality: string):
 
 function buildTargetDisplayName(
   localityNames: string[],
-  localityAliases: string[],
+  latestSupportingLocality: string,
+  nearestNamedCoastalLocality: string,
   representativePoint: Record<string, unknown> | undefined,
   habitatType: string,
   municipality: string,
 ): { displayName: string; source: string } {
   const primaryLocality = sanitizeDisplayLabel(localityNames[0] || '');
   if (primaryLocality) return { displayName: primaryLocality, source: 'normalized_locality' };
-  const alias = sanitizeDisplayLabel(localityAliases[0] || '');
-  if (alias) return { displayName: alias, source: 'locality_alias' };
+  const latestLocality = sanitizeDisplayLabel(latestSupportingLocality);
+  if (latestLocality) return { displayName: latestLocality, source: 'latest_supporting_locality' };
+  const nearestCoastalLocality = sanitizeDisplayLabel(nearestNamedCoastalLocality);
+  if (nearestCoastalLocality) return { displayName: nearestCoastalLocality, source: 'nearest_named_coastal_locality' };
   const representativeLocality = sanitizeDisplayLabel(stringOr(representativePoint?.locality, representativePoint?.municipality));
   if (representativeLocality) return { displayName: representativeLocality, source: 'representative_point_locality' };
-  if (habitatType === 'coastal_open_water') return { displayName: 'Unnamed coastal history cluster', source: 'fallback_label' };
-  if (habitatType === 'wetland_inland_water') return { displayName: 'Unnamed inland lake history cluster', source: 'fallback_label' };
-  return { displayName: sanitizeDisplayLabel(municipality) || 'Unnamed history cluster', source: 'fallback_label' };
+  if (habitatType === 'coastal_open_water') return { displayName: 'Unnamed coastal cluster', source: 'fallback_label' };
+  if (habitatType === 'wetland_inland_water') return { displayName: 'Unnamed inland cluster', source: 'fallback_label' };
+  return { displayName: sanitizeDisplayLabel(municipality) || 'Unnamed inland cluster', source: 'fallback_label' };
 }
 
 function sanitizeDisplayLabel(value: string): string {
@@ -1711,12 +1761,29 @@ function sanitizeDisplayLabel(value: string): string {
   if (/^\d{2}[d.,]\d+\s+\d{2}[d.,]\d+$/i.test(label)) return '';
   if (/^\d{2}[d.,]\d+\s+\d{2}[d.,]\d+.*$/i.test(label)) return '';
   if (/^\d+[a-z]?\d*\s+\d+[a-z]?\d*$/i.test(label)) return '';
+  if (/^\d+[a-z]\d+\s+\d+[a-z]\d+$/i.test(label)) return '';
   if (/^ee-cluster-\d+$/i.test(label)) return '';
   if (/^cluster-\d+$/i.test(label)) return '';
   if (/^\d+(?::\d+)?$/.test(label)) return '';
   if (/^[a-z]{1,4}-?cluster-\d+$/i.test(label)) return '';
   if (/^[0-9]{2}[a-z]?[0-9]{2,}.*$/i.test(label)) return '';
   return label;
+}
+
+function isLikelyCoastalLocality(value: string): boolean {
+  return /\b(rand|meri|laht|sadam|poolsaar|ranna|laid|neem|spithami|spithamn|poosaspea|põõsaspea|ristna|tagaranna|tahkuna)\b/i.test(value);
+}
+
+function isCoastalCluster(cluster: { habitatType?: string; habitatCue?: string; coastalDistanceKm?: number; displayName?: string; locality?: string; latestSupportingLocality?: string; nearestNamedCoastalLocality?: string }): boolean {
+  if (stringOr(cluster.habitatType) === 'coastal_open_water') return true;
+  if (toNumber(cluster.coastalDistanceKm) <= 8) return true;
+  return isLikelyCoastalLocality(stringOr(
+    cluster.habitatCue,
+    cluster.displayName,
+    cluster.latestSupportingLocality,
+    cluster.nearestNamedCoastalLocality,
+    cluster.locality,
+  ));
 }
 
 function computeWeightedCentroid(points: Record<string, unknown>[]): { lat: number; lon: number } {

@@ -10,6 +10,10 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
+const PREDICTION_BACKEND_BUILD = '2026-03-18-fix7';
+// If health/status reports an outdated webhook path, update the Supabase secret
+// SPECIES_PREDICTION_N8N_WEBHOOK_URL to:
+// https://estbirds.app.n8n.cloud/webhook/species-prediction-evidence-first
 
 type WebhookValidationErrorCode =
   | 'MISSING_WEBHOOK_URL'
@@ -88,6 +92,9 @@ serve(async (req) => {
       const probe = shouldProbeWebhookTarget(webhookTarget)
         ? await probeWebhookTarget(webhookTarget, verifyRequested)
         : buildSkippedProbe();
+      const configuredWebhookPath = webhookTarget.resolvedWebhookPath;
+      const expectedWebhookPath = EXPECTED_PRODUCTION_WEBHOOK_PATH;
+      const hasOutdatedWebhook = configuredWebhookPath !== expectedWebhookPath;
       const available = webhookTarget.valid
         && webhookTarget.looksLikeProductionWebhook
         && probe.productionWebhookInactive !== true;
@@ -102,13 +109,18 @@ serve(async (req) => {
         webhookValid: webhookTarget.valid,
         statusCode,
         reasonCode,
+        expectedWebhookPath,
+        configuredWebhookPath,
+        hasOutdatedWebhook,
         resolvedWebhookPath: webhookTarget.resolvedWebhookPath,
         productionWebhookInactive: probe.productionWebhookInactive,
         edgeFunctionVersion: EDGE_FUNCTION_VERSION,
+        predictionBackendBuild: PREDICTION_BACKEND_BUILD,
       });
       return json({
         ok: true,
         stage: 'status',
+        predictionBackendBuild: PREDICTION_BACKEND_BUILD,
         available,
         deployed: true,
         configured: webhookConfigured,
@@ -117,6 +129,9 @@ serve(async (req) => {
         runtimeAvailable,
         statusCode,
         reasonCode,
+        expectedWebhookPath,
+        configuredWebhookPath,
+        hasOutdatedWebhook,
         resolvedWebhookUrl: webhookTarget.resolvedWebhookUrl,
         resolvedWebhookPath: webhookTarget.resolvedWebhookPath,
         expectedMethod: webhookTarget.expectedMethod,
@@ -134,7 +149,7 @@ serve(async (req) => {
         timeoutMsUsed,
         edgeFunctionVersion: EDGE_FUNCTION_VERSION,
         timestamp: new Date().toISOString(),
-        message: buildStatusMessage(webhookTarget, probe, verifyRequested, statusCode),
+        message: buildStatusMessage(webhookTarget, probe, verifyRequested, statusCode, hasOutdatedWebhook),
       });
     }
 
@@ -1325,13 +1340,14 @@ function buildStatusMessage(
   probe: UpstreamProbeResult,
   verifyRequested: boolean,
   statusCode: StatusCode,
+  hasOutdatedWebhook: boolean,
 ): string {
   if (statusCode === 'NOT_CONFIGURED') {
     return 'Prediction backend is not configured yet because the n8n webhook URL is missing.';
   }
   if (statusCode === 'DEPLOYED_NOT_CONFIGURED') {
-    if (!webhookTarget.looksLikeProductionWebhook) {
-      return `Prediction backend configuration is invalid because the Supabase prediction function is still pointing to the outdated n8n webhook path "${webhookTarget.resolvedWebhookPath}" instead of "${EXPECTED_PRODUCTION_WEBHOOK_PATH}".`;
+    if (hasOutdatedWebhook) {
+      return `Prediction backend configuration is invalid because the Supabase secret ${WEBHOOK_ENV_KEY} still points to "${webhookTarget.resolvedWebhookPath}" instead of "${EXPECTED_PRODUCTION_WEBHOOK_PATH}".`;
     }
     return webhookTarget.validationMessage || 'Prediction backend has an invalid n8n webhook configuration.';
   }

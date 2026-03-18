@@ -61,6 +61,10 @@ export default function SpeciesPredictionSettings() {
     deployed: false,
     statusCode: 'NOT_CONFIGURED',
     reasonCode: 'MISSING_WEBHOOK_URL',
+    predictionBackendBuild: '',
+    expectedWebhookPath: '',
+    configuredWebhookPath: '',
+    hasOutdatedWebhook: false,
     productionWebhookReachable: null,
     productionWebhookInactive: false,
     message: 'Prediction backend is not configured yet',
@@ -342,7 +346,7 @@ export default function SpeciesPredictionSettings() {
         onEnabledChange={setPredictionFeatureEnabled}
       />
       <p className="text-[11px] text-muted-foreground">
-        prediction-settings-build: 2026-03-18-fix6
+        prediction-settings-build: 2026-03-18-fix7
       </p>
       {!predictionEnabled ? (
         <p className="text-xs text-muted-foreground">Turn on Species Prediction to edit these settings</p>
@@ -635,12 +639,14 @@ export default function SpeciesPredictionSettings() {
 
                           <DebugSection title="Backend health check">
                             <JsonBox value={debugSnapshot.transport.healthCheck} />
-                            {canSeeDebugDiagnostics && backendStatus.reasonCode === 'N8N_WEBHOOK_INACTIVE' && (
+                            {canSeeDebugDiagnostics && (
                               <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
-                                <DebugKeyValue label="Upstream source" value="n8n" />
-                                <DebugKeyValue label="Upstream status" value={String(backendStatus.upstreamStatus ?? '(null)')} />
-                                <DebugKeyValue label="Error code" value={backendStatus.reasonCode || '(empty)'} />
-                                <DebugKeyValue label="Short reason" value="production webhook not registered / workflow inactive" />
+                                <DebugKeyValue label="Backend build" value={backendStatus.predictionBackendBuild || '(empty)'} />
+                                <DebugKeyValue label="Expected webhook path" value={backendStatus.expectedWebhookPath || '(empty)'} />
+                                <DebugKeyValue label="Configured webhook path" value={backendStatus.configuredWebhookPath || '(empty)'} />
+                                <DebugKeyValue label="Health mismatch" value={backendStatus.hasOutdatedWebhook ? 'Yes' : 'No'} />
+                                <DebugKeyValue label="Diagnostics mismatch" value={diagnosticWebhookError.detected ? 'Yes' : 'No'} />
+                                <DebugKeyValue label="Mismatch source" value={backendStatus.hasOutdatedWebhook ? 'health_check' : (diagnosticWebhookError.detected ? 'latest_prediction_diagnostics' : 'none')} />
                               </div>
                             )}
                           </DebugSection>
@@ -889,6 +895,10 @@ type SpeciesPredictionBackendStatus = {
   deployed: boolean;
   statusCode: 'NOT_CONFIGURED' | 'DEPLOYED_NOT_CONFIGURED' | 'CONFIGURED_AVAILABLE' | 'CONFIGURED_UNAVAILABLE' | 'RUNTIME_ERROR';
   reasonCode: string | null;
+  predictionBackendBuild?: string;
+  expectedWebhookPath?: string;
+  configuredWebhookPath?: string;
+  hasOutdatedWebhook?: boolean;
   resolvedWebhookUrl?: string;
   resolvedWebhookPath?: string;
   expectedMethod?: string;
@@ -977,6 +987,10 @@ async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionB
     deployed: status.deployed === true,
     statusCode: isBackendStatusCode(status.statusCode) ? status.statusCode : 'NOT_CONFIGURED',
     reasonCode: typeof status.reasonCode === 'string' ? status.reasonCode : null,
+    predictionBackendBuild: typeof status.predictionBackendBuild === 'string' ? status.predictionBackendBuild : '',
+    expectedWebhookPath: typeof status.expectedWebhookPath === 'string' ? status.expectedWebhookPath : '',
+    configuredWebhookPath: typeof status.configuredWebhookPath === 'string' ? status.configuredWebhookPath : '',
+    hasOutdatedWebhook: status.hasOutdatedWebhook === true,
     resolvedWebhookUrl: typeof status.resolvedWebhookUrl === 'string' ? status.resolvedWebhookUrl : '',
     resolvedWebhookPath: typeof status.resolvedWebhookPath === 'string' ? status.resolvedWebhookPath : '',
     expectedMethod: typeof status.expectedMethod === 'string' ? status.expectedMethod : '',
@@ -1009,12 +1023,13 @@ function normalizeBackendStatus(status: SpeciesPredictionBackendStatus) {
     lastRuntimeErrorMessage: status.upstreamMessage || status.message,
     statusCode: status.statusCode,
     reasonCode: status.reasonCode,
-    hasOutdatedWebhookPathError: outdatedWebhookPathError,
+    hasOutdatedWebhookPathError: outdatedWebhookPathError || status.hasOutdatedWebhook === true,
     backend: status,
   };
 }
 
 function hasOutdatedWebhookPathError(status: SpeciesPredictionBackendStatus): boolean {
+  if (status.hasOutdatedWebhook === true) return true;
   if (status.reasonCode === 'INVALID_WEBHOOK_PATH') return true;
   const upstreamStatus = status.upstreamStatus;
   const haystacks = [

@@ -93,6 +93,8 @@ Species prediction keeps OpenAI server-side only:
 - Configure `OPENAI_API_KEY` in n8n or another server-side secret store
 - Optionally set `OPENAI_MODEL`; species prediction defaults to `gpt-5-mini`
 - If the OpenAI stage fails, the app falls back to the deterministic prediction result
+- The species prediction edge function reads the n8n webhook target from the Supabase secret `SPECIES_PREDICTION_N8N_WEBHOOK_URL`
+- Required production value: `https://estbirds.app.n8n.cloud/webhook/species-prediction-evidence-first`
 
 ## CORS Proxy (Supabase Edge Function)
 

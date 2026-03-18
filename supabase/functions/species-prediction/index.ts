@@ -321,6 +321,11 @@ async function buildMapFirstPredictionResult(opts: {
   const estoniaEvidence = buildEstoniaEvidenceFromHistory(estoniaHistoryPoints);
   const historicalEvidence = buildHistoricalEvidenceFromHistory(estoniaHistoryClusters);
   const foreignEvidence = buildForeignEvidenceFromPointsAndClusters(foreignRecentPoints, foreignClusters);
+  const evidenceSummary = buildEvidenceSummary({
+    foreignClusters,
+    weather,
+    sourceHealthLabel: elurikkusHistoryPoints.length ? 'Elurikkus' : (estoniaHistoryPoints.length ? 'GBIF fallback' : estoniaHistorySource),
+  });
   const predictedTargets = buildPredictedTargets({
     speciesName,
     estoniaHistoryClusters,
@@ -359,6 +364,7 @@ async function buildMapFirstPredictionResult(opts: {
       ebirdSpeciesCode,
     },
     sourceHealth,
+    evidenceSummary,
     estoniaHistoryPoints,
     estoniaHistoryClusters,
     foreignRecentPoints,
@@ -368,10 +374,14 @@ async function buildMapFirstPredictionResult(opts: {
     predictedTargets,
     mapLayers: {
       estoniaHistory: true,
+      estoniaHistoryClusters: true,
+      foreignRecentPoints: true,
       foreignEvidence: true,
+      foreignPressureClusters: true,
       predictedLines: true,
       predictedCone: settings.showPredictionCone !== false,
       predictedTargets: true,
+      diagnostics: false,
       recentOnly: settings.recentOnlyMapMarkers === true,
     },
     foreignEvidence,
@@ -381,7 +391,7 @@ async function buildMapFirstPredictionResult(opts: {
     externalPressureScore: clampInt(Math.round(sum(foreignEvidence.map((entry) => toNumber(entry.recordCount7d) * 4))), 0, 100),
     springFitScore: clampInt(estoniaHistoryPoints.length ? 78 : 42, 0, 100),
     windSupportScore: clampInt(Math.round(computeWindSupport(weather)), 0, 100),
-    routeVector: latestCluster ? `${joinCountries(latestCluster.countryCodes)} -> Estonia` : 'Insufficient foreign evidence',
+    routeVector: latestCluster ? `${joinCountries(latestCluster.countryCodes)} -> Estonia` : 'Unavailable',
     bestEntryZone: topPredictedPoints[0]?.countyOrParish || topPredictedPoints[0]?.name || 'Unavailable',
     alreadyMissedRisk: estoniaEvidence.alreadyPresent ? 'medium' : 'low',
     countryScores,
@@ -408,6 +418,7 @@ async function buildMapFirstPredictionResult(opts: {
         foreignClusters,
         weather,
       },
+      evidenceSummary,
       sourceHealth,
       foreignEvidence,
       estoniaEvidence,
@@ -526,7 +537,7 @@ async function fetchForeignRecentPoints(ebirdSpeciesCode: string, settings: Reco
         const obsDt = normalizeDateString(stringOr(item.obsDt, item.obsTime));
         return {
           lat: toNumber(item.lat),
-          lon: toNumber(item.lng, item.lon),
+          lon: hasNumber(item.lng) ? toNumber(item.lng) : toNumber(item.lon),
           obsDt,
           locName: stringOr(item.locName),
           howMany: hasNumber(item.howMany) ? Math.round(toNumber(item.howMany)) : null,
@@ -536,7 +547,7 @@ async function fetchForeignRecentPoints(ebirdSpeciesCode: string, settings: Reco
           regionName: entry.regionName,
           source: 'eBird',
           daysAgo: Math.max(0, daysAgoFromIso(obsDt) ?? 30),
-          distanceToEstoniaKm: distanceToEstonia(toNumber(item.lat), toNumber(item.lng, item.lon)),
+          distanceToEstoniaKm: distanceToEstonia(toNumber(item.lat), hasNumber(item.lng) ? toNumber(item.lng) : toNumber(item.lon)),
         };
       }).filter((point) => Number.isFinite(toNumber(point.lat)) && Number.isFinite(toNumber(point.lon)));
     } catch {
@@ -644,20 +655,24 @@ function buildHistoricalEvidenceFromHistory(clusters: Array<{
   recentCount: number;
   locality: string;
   municipality: string;
+  displayName?: string;
+  representativeLat?: number;
+  representativeLon?: number;
+  habitatCue?: string;
   newestEventDate: string;
 }>): Record<string, unknown> {
   const hotspots = clusters
     .slice(0, 6)
     .map((cluster, index) => ({
       rank: index + 1,
-      name: cluster.locality,
+      name: stringOr(cluster.displayName, cluster.locality, 'Estonia hotspot'),
       countyOrParish: cluster.municipality,
-      lat: cluster.lat,
-      lon: cluster.lon,
+      lat: Number.isFinite(Number(cluster.representativeLat)) ? toNumber(cluster.representativeLat) : toNumber(cluster.lat),
+      lon: Number.isFinite(Number(cluster.representativeLon)) ? toNumber(cluster.representativeLon) : toNumber(cluster.lon),
       confidence: clampInt(40 + cluster.count * 6, 0, 100),
       eta: 'Historical hotspot',
       searchRadiusKm: 12,
-      habitatCue: 'Historical occurrence density',
+      habitatCue: stringOr(cluster.habitatCue, 'Historical occurrence density'),
       reason: `${cluster.count} historical records in Estonia`,
       derivedFromClusterId: cluster.id,
       supportingEstoniaHistoryCount: cluster.count,
@@ -729,6 +744,16 @@ function buildPredictedTargets(opts: {
     recentCount: number;
     locality: string;
     municipality: string;
+    displayName?: string;
+    representativeLat?: number;
+    representativeLon?: number;
+    representativePointMethod?: string;
+    supportingPoints?: Record<string, unknown>[];
+    localityNames?: string[];
+    habitatCue?: string;
+    habitatType?: string;
+    habitatScore?: number;
+    coastalDistanceKm?: number;
     newestEventDate: string;
     oldestEventDate: string;
     source: 'GBIF' | 'Elurikkus' | 'mixed';
@@ -740,35 +765,113 @@ function buildPredictedTargets(opts: {
   horizonDays: number;
 }): Record<string, unknown>[] {
   const { speciesName, estoniaHistoryClusters, foreignClusters, weather, estoniaEvidence, horizonDays } = opts;
-  const supportingCountries = Array.from(new Set(foreignClusters.flatMap((cluster) => Array.isArray(cluster.countries) ? cluster.countries.map(String) : []))).slice(0, 4);
-  const latestRelevantForeignDate = foreignClusters.map((cluster) => stringOr(cluster.newestObsDt)).filter(Boolean).sort().slice(-1)[0] || '';
-  const nearestRelevantClusterKm = foreignClusters.length ? Math.min(...foreignClusters.map((cluster) => toNumber(cluster.nearestDistanceKm)).filter((value) => value > 0)) : null;
-  return estoniaHistoryClusters.slice(0, 5).map((cluster, index) => {
-    const routeAlignment = foreignClusters[0] ? computeAlignmentScore(foreignClusters[0], cluster, weather) : 35;
-    const historyScore = clampInt(cluster.count * 8 + cluster.recentCount * 10, 10, 70);
-    const windBoost = clampInt(Math.round(computeWindSupport(weather) / 2), 0, 35);
-    const confidence = clampInt(historyScore + routeAlignment + windBoost, 10, 99);
-    const etaHours = Math.max(6, Math.round((toNumber(cluster.distanceFromClusterKm) || 120) / Math.max(20, toNumber(weather.windSpeedKph) + 18)));
+  const ecology = classifySpeciesEcology(speciesName);
+  const hasForeignPressure = foreignClusters.length > 0;
+  const hasWeatherSupport = hasForeignPressure && weatherLooksAvailable(weather);
+  const supportingCountries = hasForeignPressure
+    ? Array.from(new Set(foreignClusters.flatMap((cluster) => Array.isArray(cluster.countries) ? cluster.countries.map(String) : []))).slice(0, 4)
+    : [];
+  const latestRelevantForeignDate = hasForeignPressure
+    ? foreignClusters.map((cluster) => stringOr(cluster.newestObsDt)).filter(Boolean).sort().slice(-1)[0] || ''
+    : '';
+  const nearestRelevantClusterKm = hasForeignPressure
+    ? Math.min(...foreignClusters.map((cluster) => toNumber(cluster.nearestDistanceKm)).filter((value) => value > 0))
+    : null;
+  const scored = estoniaHistoryClusters.map((cluster) => {
+    const routeAlignment = hasForeignPressure ? computeAlignmentScore(foreignClusters[0], cluster, weather) : 0;
+    const ecologyScore = scoreClusterEcology(cluster, ecology);
+    const historyScore = clampInt(cluster.count * 7 + cluster.recentCount * 9, 10, 65);
+    const foreignBoost = hasForeignPressure ? clampInt(routeAlignment, 0, 25) : 0;
+    const weatherBoost = hasWeatherSupport ? clampInt(Math.round(computeWindSupport(weather) / 5), 0, 15) : 0;
+    const baseConfidence = historyScore + ecologyScore.score + foreignBoost + weatherBoost;
+    const confidence = hasForeignPressure && hasWeatherSupport
+      ? clampInt(baseConfidence, 15, 92)
+      : Math.min(0.65, Number((Math.max(0.15, Math.min(0.65, baseConfidence / 100))).toFixed(2)));
+    const etaHours = hasForeignPressure
+      ? Math.max(6, Math.round((toNumber(cluster.distanceFromClusterKm) || 120) / Math.max(20, toNumber(weather.windSpeedKph) + 18)))
+      : Math.max(12, Math.round(Math.max(20, toNumber(cluster.distanceFromClusterKm) || 90) / 12));
+    return {
+      cluster,
+      ecologyScore,
+      confidence,
+      routeAlignment,
+      etaHours,
+      habitatFilterAdjustedRanking: ecologyScore.adjustedRanking,
+      excluded: ecologyScore.excluded,
+    };
+  }).filter((entry) => !entry.excluded)
+    .sort((left, right) =>
+      sortPredictedConfidence(right.confidence) - sortPredictedConfidence(left.confidence)
+      || right.ecologyScore.score - left.ecologyScore.score
+      || right.cluster.count - left.cluster.count
+      || Date.parse(right.cluster.newestEventDate || '') - Date.parse(left.cluster.newestEventDate || '')
+    )
+    .slice(0, 5);
+
+  return scored.map((entry, index) => {
+    const cluster = entry.cluster;
+    const nearestForeignForTarget = hasForeignPressure
+      ? foreignClusters
+        .map((foreignCluster) => ({
+          cluster: foreignCluster,
+          distanceKm: haversineKm(
+            toNumber(foreignCluster.lat),
+            toNumber(foreignCluster.lon),
+            Number.isFinite(Number(cluster.representativeLat)) ? toNumber(cluster.representativeLat) : toNumber(cluster.lat),
+            Number.isFinite(Number(cluster.representativeLon)) ? toNumber(cluster.representativeLon) : toNumber(cluster.lon),
+          ),
+        }))
+        .sort((left, right) => left.distanceKm - right.distanceKm)[0]
+      : null;
+    const reason = buildTargetReason({
+      speciesName,
+      hotspot: cluster,
+      foreignCluster: nearestForeignForTarget?.cluster,
+      weather,
+      ecology,
+      ecologyScore: entry.ecologyScore,
+      hasForeignPressure,
+      hasWeatherSupport,
+    });
     return {
       rank: index + 1,
-      name: cluster.locality,
-      countyOrParish: cluster.municipality,
-      lat: cluster.lat,
-      lon: cluster.lon,
-      confidence,
-      eta: `${Math.min(horizonDays, Math.max(1, Math.ceil(etaHours / 24)))}d / ~${etaHours}h`,
-      searchRadiusKm: clampInt(10 + cluster.count, 8, 30),
-      habitatCue: 'Estonia hotspot density',
-      reason: buildTargetReason(speciesName, cluster, foreignClusters[0], weather),
-      supportingCountries,
-      ...(nearestRelevantClusterKm != null ? { nearestRelevantClusterKm: Number(nearestRelevantClusterKm.toFixed(1)) } : {}),
-      ...(latestRelevantForeignDate ? { latestRelevantForeignDate } : {}),
+      name: stringOr(cluster.displayName, cluster.locality, 'Estonia hotspot'),
+      displayName: stringOr(cluster.displayName, cluster.locality, 'Estonia hotspot'),
+      countyOrParish: stringOr(cluster.municipality, 'Unavailable'),
+      displayCountyOrParish: stringOr(cluster.municipality, 'Unavailable'),
+      lat: Number.isFinite(Number(cluster.representativeLat)) ? toNumber(cluster.representativeLat) : toNumber(cluster.lat),
+      lon: Number.isFinite(Number(cluster.representativeLon)) ? toNumber(cluster.representativeLon) : toNumber(cluster.lon),
+      confidence: entry.confidence,
+      eta: `${Math.min(horizonDays, Math.max(1, Math.ceil(entry.etaHours / 24)))}d / ~${entry.etaHours}h`,
+      searchRadiusKm: clampInt(8 + cluster.count, 6, 30),
+      radius: clampInt(8 + cluster.count, 6, 30),
+      habitatCue: stringOr(cluster.habitatCue, entry.ecologyScore.habitatCue, 'Habitat uncertain'),
+      reason,
+      supportingCountries: supportingCountries.length ? supportingCountries : undefined,
+      ...(nearestRelevantClusterKm != null && hasForeignPressure ? { nearestRelevantClusterKm: Number(nearestRelevantClusterKm.toFixed(1)) } : {}),
+      ...(latestRelevantForeignDate && hasForeignPressure ? { latestRelevantForeignDate } : {}),
       derivedFromClusterId: cluster.id,
       supportingEstoniaHistoryCount: cluster.count,
       latestSupportingEstoniaDate: cluster.newestEventDate,
       historicalMatch: `${cluster.count} Estonia history points nearby`,
       estoniaPresenceSignal: estoniaEvidence.alreadyPresent === true ? 'recent_estonia_records' : 'history_only',
-      windAdjusted: true,
+      windAdjusted: hasWeatherSupport,
+      sourceType: 'estonia_history_cluster',
+      representativePointMethod: stringOr(cluster.representativePointMethod, 'nearest_real_point'),
+      supportingPointCount: Array.isArray(cluster.supportingPoints) ? cluster.supportingPoints.length : cluster.count,
+      usedForeignPressure: hasForeignPressure,
+      habitatFilterAdjustedRanking: entry.habitatFilterAdjustedRanking,
+      vectorsSuppressed: !hasForeignPressure,
+      habitatType: stringOr(cluster.habitatType, ecology.mode),
+      habitatScore: entry.ecologyScore.score,
+      debug: {
+        renderedPredictedTargetSourceType: 'estonia_history_cluster',
+        representativePointSelectionMethod: stringOr(cluster.representativePointMethod, 'nearest_real_point'),
+        supportingPointCount: Array.isArray(cluster.supportingPoints) ? cluster.supportingPoints.length : cluster.count,
+        habitatFilterChangedRanking: entry.habitatFilterAdjustedRanking,
+        foreignPressureUsed: hasForeignPressure,
+        vectorsSuppressedDueToMissingForeignData: !hasForeignPressure,
+      },
     };
   });
 }
@@ -779,6 +882,7 @@ function buildPredictionVectors(
   weather: Record<string, unknown>,
   settings: Record<string, unknown>,
 ): Record<string, unknown>[] {
+  if (!foreignClusters.length || !predictedTargets.length) return [];
   const vectors: Record<string, unknown>[] = [];
   for (const cluster of foreignClusters.slice(0, 3)) {
     for (const target of predictedTargets.slice(0, 2)) {
@@ -1160,6 +1264,16 @@ function clusterEstoniaHistory(points: Record<string, unknown>[]): Array<{
   recentCount: number;
   locality: string;
   municipality: string;
+  displayName: string;
+  representativeLat: number;
+  representativeLon: number;
+  representativePointMethod: string;
+  supportingPoints: Record<string, unknown>[];
+  localityNames: string[];
+  habitatCue: string;
+  habitatType: string;
+  habitatScore: number;
+  coastalDistanceKm: number;
   distanceFromClusterKm: number;
   newestEventDate: string;
   oldestEventDate: string;
@@ -1168,14 +1282,7 @@ function clusterEstoniaHistory(points: Record<string, unknown>[]): Array<{
 }> {
   const grouped = new Map<string, {
     id: string;
-    lat: number;
-    lon: number;
-    count: number;
-    recentCount: number;
-    locality: string;
-    municipality: string;
-    newestEventDate: string;
-    oldestEventDate: string;
+    points: Record<string, unknown>[];
     sourceBreakdown: Record<string, number>;
   }>();
   for (const point of points) {
@@ -1185,56 +1292,79 @@ function clusterEstoniaHistory(points: Record<string, unknown>[]): Array<{
     if (!grouped.has(bucket)) {
       grouped.set(bucket, {
         id: `ee-cluster-${grouped.size + 1}`,
-        lat: roundCoord(lat, 2),
-        lon: roundCoord(lon, 2),
-        count: 0,
-        recentCount: 0,
-        locality: stringOr(point.locality, point.municipality, 'Estonia hotspot'),
-        municipality: stringOr(point.municipality, point.locality, 'Estonia'),
-        newestEventDate: '',
-        oldestEventDate: '',
+        points: [],
         sourceBreakdown: {},
       });
     }
     const group = grouped.get(bucket)!;
-    group.count += 1;
-    if ((toNumber(point.daysAgo) || 9999) <= 30) group.recentCount += 1;
-    const eventDate = stringOr(point.eventDate);
-    if (!group.newestEventDate || Date.parse(eventDate) > Date.parse(group.newestEventDate)) group.newestEventDate = eventDate;
-    if (!group.oldestEventDate || Date.parse(eventDate) < Date.parse(group.oldestEventDate)) group.oldestEventDate = eventDate;
+    group.points.push(point);
     const source = stringOr(point.source, 'GBIF');
     group.sourceBreakdown[source] = Number(group.sourceBreakdown[source] || 0) + 1;
   }
-  return Array.from(grouped.values()).map((cluster) => ({
-    id: cluster.id,
-    lat: cluster.lat,
-    lon: cluster.lon,
-    count: cluster.count,
-    recentCount: cluster.recentCount,
-    locality: cluster.locality,
-    municipality: cluster.municipality,
-    distanceFromClusterKm: distanceToEstonia(cluster.lat, cluster.lon),
-    newestEventDate: cluster.newestEventDate,
-    oldestEventDate: cluster.oldestEventDate,
-    source: resolveClusterSource(cluster.sourceBreakdown),
-    sourceBreakdown: cluster.sourceBreakdown,
-  })).sort((left, right) =>
+  return Array.from(grouped.values()).map((cluster) => {
+    const pointsInCluster = cluster.points.filter((point) => Number.isFinite(toNumber(point.lat)) && Number.isFinite(toNumber(point.lon)));
+    const centroid = computeCentroid(pointsInCluster);
+    const localityNames = collectCommonLocalityNames(pointsInCluster);
+    const municipality = mostCommonValue(pointsInCluster.map((point) => stringOr(point.municipality)).filter(Boolean)) || 'Estonia';
+    const representative = selectRepresentativePoint(pointsInCluster, centroid);
+    const newestEventDate = pointsInCluster.map((point) => stringOr(point.eventDate)).filter(Boolean).sort().slice(-1)[0] || '';
+    const oldestEventDate = pointsInCluster.map((point) => stringOr(point.eventDate)).filter(Boolean).sort()[0] || '';
+    const habitat = inferHabitatFromCluster(pointsInCluster, centroid, localityNames);
+    return {
+      id: cluster.id,
+      lat: centroid.lat,
+      lon: centroid.lon,
+      count: pointsInCluster.length,
+      recentCount: pointsInCluster.filter((point) => (toNumber(point.daysAgo) || 9999) <= 30).length,
+      locality: localityNames[0] || municipality || 'Estonia hotspot',
+      municipality,
+      displayName: buildDisplayClusterName(localityNames, municipality),
+      representativeLat: representative.lat,
+      representativeLon: representative.lon,
+      representativePointMethod: representative.method,
+      supportingPoints: pointsInCluster,
+      localityNames,
+      habitatCue: habitat.cue,
+      habitatType: habitat.type,
+      habitatScore: habitat.score,
+      coastalDistanceKm: habitat.coastalDistanceKm,
+      distanceFromClusterKm: distanceToEstonia(representative.lat, representative.lon),
+      newestEventDate,
+      oldestEventDate,
+      source: resolveClusterSource(cluster.sourceBreakdown),
+      sourceBreakdown: cluster.sourceBreakdown,
+    };
+  }).sort((left, right) =>
     right.count - left.count
     || right.recentCount - left.recentCount
     || Date.parse(right.newestEventDate || '') - Date.parse(left.newestEventDate || '')
   );
 }
 
-function buildTargetReason(
-  speciesName: string,
-  hotspot: { count: number; recentCount: number; locality: string; municipality: string; newestEventDate: string },
-  cluster: Record<string, unknown> | undefined,
-  weather: Record<string, unknown>,
-): string {
-  const countries = cluster && Array.isArray(cluster.countries) ? cluster.countries.join(', ') : 'nearby foreign evidence';
-  const windText = `${bearingToCompass(toNumber(weather.windDirectionDeg))} ${Math.round(toNumber(weather.windSpeedKph))} km/h`;
+function buildTargetReason(input: {
+  speciesName: string;
+  hotspot: { count: number; recentCount: number; displayName?: string; locality: string; municipality: string; newestEventDate: string; habitatCue?: string };
+  foreignCluster?: Record<string, unknown>;
+  weather: Record<string, unknown>;
+  ecology: { mode: string };
+  ecologyScore: { habitatCue: string };
+  hasForeignPressure: boolean;
+  hasWeatherSupport: boolean;
+}): string {
+  const { speciesName, hotspot, foreignCluster, weather, ecology, ecologyScore, hasForeignPressure, hasWeatherSupport } = input;
   const latestHistory = hotspot.newestEventDate ? hotspot.newestEventDate.slice(0, 10) : 'unknown date';
-  return `${speciesName} target is derived from ${hotspot.count} Estonia history points (${hotspot.recentCount} recent), latest supporting date ${latestHistory}, with fresh movement from ${countries}; wind (${windText}) adjusts route plausibility only.`;
+  const habitatText = stringOr(hotspot.habitatCue, ecologyScore.habitatCue, ecology.mode);
+  const historyText = `${speciesName} target is anchored to ${hotspot.count} Estonia records (${hotspot.recentCount} recent) around ${stringOr(hotspot.displayName, hotspot.locality, hotspot.municipality, 'a known hotspot')}, latest support ${latestHistory}.`;
+  if (!hasForeignPressure) {
+    return `${historyText} Ranking is based on Estonia history and habitat fit only; foreign eBird pressure was unavailable in this run. Habitat cue: ${habitatText}.`;
+  }
+  const countries = foreignCluster && Array.isArray(foreignCluster.countries) ? foreignCluster.countries.join(', ') : 'foreign eBird';
+  const hotspotRecord = hotspot as Record<string, unknown>;
+  const targetLat = Number.isFinite(Number(hotspotRecord.representativeLat)) ? toNumber(hotspotRecord.representativeLat) : toNumber(hotspotRecord.lat);
+  const targetLon = Number.isFinite(Number(hotspotRecord.representativeLon)) ? toNumber(hotspotRecord.representativeLon) : toNumber(hotspotRecord.lon);
+  const foreignDistanceKm = foreignCluster ? haversineKm(toNumber(foreignCluster.lat), toNumber(foreignCluster.lon), targetLat, targetLon) : null;
+  const weatherText = hasWeatherSupport ? ` Weather support is available (${bearingToCompass(toNumber(weather.windDirectionDeg))} ${Math.round(toNumber(weather.windSpeedKph))} km/h).` : ' Weather data was unavailable or not used for route support.';
+  return `${historyText} Foreign eBird pressure from ${countries}${foreignDistanceKm != null ? ` is ${Math.round(foreignDistanceKm)} km from this target` : ''}, and habitat fit favors ${habitatText}.${weatherText}`;
 }
 
 function buildCountryScores(foreignEvidence: Record<string, unknown>[]): Record<string, number> {
@@ -1246,6 +1376,177 @@ function buildCountryScores(foreignEvidence: Record<string, unknown>[]): Record<
     russia: clampInt(toNumber(foreignEvidence.find((entry) => entry.countryCode === 'ru')?.recordCount7d) * 8, 0, 100),
     finlandContextOnly: clampInt(toNumber(foreignEvidence.find((entry) => entry.countryCode === 'fi')?.recordCount7d) * 8, 0, 100),
   };
+}
+
+function buildEvidenceSummary(input: {
+  foreignClusters: Record<string, unknown>[];
+  weather: Record<string, unknown>;
+  sourceHealthLabel: string;
+}): Record<string, unknown> {
+  const foreignAvailable = input.foreignClusters.length > 0;
+  const weatherAvailable = weatherLooksAvailable(input.weather);
+  const rankingMode = foreignAvailable
+    ? (weatherAvailable ? 'Estonia history + foreign eBird + weather' : 'Estonia history + foreign eBird')
+    : 'Estonia history only';
+  return {
+    dataSourcesUsed: [input.sourceHealthLabel, foreignAvailable ? 'eBird foreign' : '', weatherAvailable ? 'Open-Meteo' : '']
+      .filter(Boolean),
+    foreignEbirdAvailable: foreignAvailable,
+    weatherAvailable,
+    rankingMode,
+    summaryText: foreignAvailable
+      ? (weatherAvailable
+        ? 'Target ranking used Estonia occurrence geometry, foreign eBird pressure, and weather support.'
+        : 'Target ranking used Estonia occurrence geometry and foreign eBird pressure; weather was unavailable or not used.')
+      : 'Target ranking used Estonia occurrence geometry only because foreign eBird pressure was unavailable.',
+  };
+}
+
+function classifySpeciesEcology(speciesName: string): { mode: string; prefersCoast: boolean } {
+  const value = normalizeComparableText(speciesName);
+  if (/(kaur|loon|diver|aul|vaeras|sotkas|kajakas|tiir|hahk|part|meri|merisk|viires)/.test(value)) {
+    return { mode: 'marine_coastal_waterbird', prefersCoast: true };
+  }
+  if (/(luik|hani|lagle|pütt|haigur|ruik|sookurg|ibis)/.test(value)) {
+    return { mode: 'wetland_waterbird', prefersCoast: false };
+  }
+  if (/(kotkas|viu|loorkull|pistrik|kull)/.test(value)) {
+    return { mode: 'raptor', prefersCoast: false };
+  }
+  return { mode: 'passerine_general', prefersCoast: false };
+}
+
+function scoreClusterEcology(
+  cluster: { count: number; habitatCue?: string; habitatType?: string; coastalDistanceKm?: number; localityNames?: string[]; representativeLat?: number; representativeLon?: number },
+  ecology: { mode: string; prefersCoast: boolean },
+): { score: number; adjustedRanking: boolean; excluded: boolean; habitatCue: string } {
+  const cue = stringOr(cluster.habitatCue, Array.isArray(cluster.localityNames) ? cluster.localityNames.join(' / ') : '', cluster.habitatType, 'Habitat uncertain');
+  const coastalDistanceKm = toNumber(cluster.coastalDistanceKm);
+  if (ecology.mode === 'marine_coastal_waterbird') {
+    const coastalMatch = coastalDistanceKm <= 8 || /\b(rand|laht|meri|sadam|poolsaar|ranna|järv|veehoidla|laid|sorve|tahkuna|poosaspea|spithami|ristna|kalana|tagaranna|puise)\b/i.test(cue);
+    const inlandMismatch = coastalDistanceKm > 18 && !/\b(järv|veehoidla|paisjärv|laht)\b/i.test(cue);
+    if (inlandMismatch && cluster.count < 3) {
+      return { score: -40, adjustedRanking: true, excluded: true, habitatCue: cue || 'Unsuitable inland habitat' };
+    }
+    return {
+      score: coastalMatch ? 28 : -18,
+      adjustedRanking: !coastalMatch || coastalDistanceKm > 8,
+      excluded: false,
+      habitatCue: coastalMatch ? (cue || 'Coastal or open-water habitat') : (cue || 'Habitat uncertain away from coast'),
+    };
+  }
+  if (ecology.mode === 'wetland_waterbird') {
+    const waterMatch = /\b(järv|soo|raba|laht|laak|märgala|tiik|vee|rand)\b/i.test(cue);
+    return { score: waterMatch ? 18 : 2, adjustedRanking: !waterMatch, excluded: false, habitatCue: cue || 'Wetland-associated habitat' };
+  }
+  return { score: 8, adjustedRanking: false, excluded: false, habitatCue: cue };
+}
+
+function sortPredictedConfidence(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return n <= 1 ? n * 100 : n;
+}
+
+function weatherLooksAvailable(weather: Record<string, unknown>): boolean {
+  return Number.isFinite(toNumber(weather.windSpeedKph)) && (toNumber(weather.windSpeedKph) > 0 || toNumber(weather.windDirectionDeg) > 0);
+}
+
+function computeCentroid(points: Record<string, unknown>[]): { lat: number; lon: number } {
+  if (!points.length) return { lat: 0, lon: 0 };
+  return {
+    lat: roundCoord(sum(points.map((point) => toNumber(point.lat))) / points.length, 5),
+    lon: roundCoord(sum(points.map((point) => toNumber(point.lon))) / points.length, 5),
+  };
+}
+
+function selectRepresentativePoint(points: Record<string, unknown>[], centroid: { lat: number; lon: number }): { lat: number; lon: number; method: string } {
+  if (!points.length) return { lat: centroid.lat, lon: centroid.lon, method: 'centroid_fallback' };
+  const medoid = points
+    .map((point) => ({
+      point,
+      totalDistance: sum(points.map((other) => haversineKm(toNumber(point.lat), toNumber(point.lon), toNumber(other.lat), toNumber(other.lon)))),
+    }))
+    .sort((left, right) => left.totalDistance - right.totalDistance)[0];
+  if (medoid?.point) {
+    return { lat: toNumber(medoid.point.lat), lon: toNumber(medoid.point.lon), method: 'medoid' };
+  }
+  const nearest = points
+    .map((point) => ({
+      point,
+      distance: haversineKm(toNumber(point.lat), toNumber(point.lon), centroid.lat, centroid.lon),
+    }))
+    .sort((left, right) => left.distance - right.distance)[0];
+  if (nearest?.point) {
+    return { lat: toNumber(nearest.point.lat), lon: toNumber(nearest.point.lon), method: 'nearest_real_point' };
+  }
+  return { lat: centroid.lat, lon: centroid.lon, method: 'centroid_fallback' };
+}
+
+function collectCommonLocalityNames(points: Record<string, unknown>[]): string[] {
+  const localities = points
+    .map((point) => stringOr(point.locality))
+    .map((value) => sanitizeDisplayLabel(value))
+    .filter(Boolean);
+  const counts = new Map<string, number>();
+  for (const locality of localities) counts.set(locality, Number(counts.get(locality) || 0) + 1);
+  return Array.from(counts.entries())
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, 3)
+    .map(([label]) => label);
+}
+
+function mostCommonValue(values: string[]): string {
+  const counts = new Map<string, number>();
+  for (const value of values) counts.set(value, Number(counts.get(value) || 0) + 1);
+  return Array.from(counts.entries()).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0]?.[0] || '';
+}
+
+function buildDisplayClusterName(localityNames: string[], municipality: string): string {
+  const cleaned = localityNames.map((value) => sanitizeDisplayLabel(value)).filter(Boolean);
+  if (cleaned.length >= 2) return `${cleaned[0]} / ${cleaned[1]}`;
+  if (cleaned.length === 1) return cleaned[0];
+  return sanitizeDisplayLabel(municipality) || 'Estonia hotspot';
+}
+
+function sanitizeDisplayLabel(value: string): string {
+  const label = stringOr(value).replace(/\s+/g, ' ').trim();
+  if (!label) return '';
+  if (/^\d+(?:[d.]\d+)?\s+\d+(?:[d.]\d+)?$/i.test(label)) return '';
+  if (/^\d{2}[d.]\d+\s+\d{2}[d.]\d+$/i.test(label)) return '';
+  return label;
+}
+
+function inferHabitatFromCluster(
+  points: Record<string, unknown>[],
+  centroid: { lat: number; lon: number },
+  localityNames: string[],
+): { cue: string; type: string; score: number; coastalDistanceKm: number } {
+  const text = normalizeComparableText(localityNames.join(' '));
+  const coastalDistanceKm = estimateCoastalDistanceKm(centroid.lat, centroid.lon);
+  if (/\b(rand|meri|laht|sadam|poolsaar|ranna|laid)\b/.test(text) || coastalDistanceKm <= 8) {
+    return { cue: buildDisplayClusterName(localityNames, 'Coastal hotspot'), type: 'coastal_open_water', score: 28, coastalDistanceKm };
+  }
+  if (/\b(järv|veehoidla|paisj|tiik|märgala|soo|raba)\b/.test(text)) {
+    return { cue: buildDisplayClusterName(localityNames, 'Wetland hotspot'), type: 'wetland_inland_water', score: 18, coastalDistanceKm };
+  }
+  return { cue: buildDisplayClusterName(localityNames, 'Habitat uncertain'), type: 'terrestrial_or_unknown', score: 4, coastalDistanceKm };
+}
+
+function estimateCoastalDistanceKm(lat: number, lon: number): number {
+  const anchors = [
+    { lat: 59.082, lon: 23.536 },
+    { lat: 58.985, lon: 22.046 },
+    { lat: 58.595, lon: 21.97 },
+    { lat: 58.430, lon: 23.106 },
+    { lat: 58.382, lon: 24.497 },
+    { lat: 58.372, lon: 26.73 },
+  ];
+  return anchors.reduce((best, anchor) => Math.min(best, haversineKm(lat, lon, anchor.lat, anchor.lon)), Number.POSITIVE_INFINITY);
+}
+
+function normalizeComparableText(value: string): string {
+  return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
 function resolveClusterSource(sourceBreakdown: Record<string, number>): 'GBIF' | 'Elurikkus' | 'mixed' {

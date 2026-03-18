@@ -22,11 +22,14 @@
       countryFilter: 'all'
     },
     layerToggles: {
-      estoniaHistory: true,
-      foreignEvidence: true,
+      estoniaHistoryPoints: true,
+      estoniaHistoryClusters: true,
+      foreignRecentPoints: true,
+      foreignPressureClusters: true,
       predictedLines: true,
       predictedCone: true,
       predictedTargets: true,
+      diagnostics: false,
       recentOnly: false
     }
   };
@@ -38,7 +41,7 @@
   var modeLine = null;
   var resultWrap = null;
   var debugWrap = null;
-  var overlayGroup = null;
+  var overlayGroups = null;
   var lastSelectionKey = '';
   var hasSyncedSpecies = false;
   var fallbackSelectionTimer = 0;
@@ -494,6 +497,7 @@
     var estoniaEvidence = result.estoniaEvidence || null;
     var historicalEvidence = result.historicalEvidence || null;
     var sourceHealth = result.sourceHealth || null;
+    var evidenceSummary = result.evidenceSummary || null;
     var speciesInfo = result.species || null;
     console.debug('[speciesPrediction] panel render state', {
       speciesKey: result.speciesKey || state.speciesKey || '',
@@ -525,13 +529,17 @@
 
     var html = '';
     html += renderStateCard('spp-state-success', 'Prediction complete', 'Rendering the latest backend evidence and target ranking for this species.');
-    html += '<div class="spp-card"><h4>Evidence summary</h4><div class="spp-grid">' +
+    html += '<div class="spp-card"><h4>Summary</h4><p class="spp-summary-text">' + escapeHtml(summarySentence(evidenceSummary, sourceHealth, weather, foreignClusters)) + '</p><div class="spp-grid">' +
+      metricCell('Ranking mode', evidenceSummary && evidenceSummary.rankingMode ? evidenceSummary.rankingMode : inferRankingMode(foreignClusters, weather)) +
+      metricCell('Foreign eBird available', foreignClusters.length ? 'Yes' : 'No') +
+      metricCell('Weather available', weatherLooksUsable(weather) ? 'Yes' : 'No') +
+      metricCell('Data sources used', summarizeSources(evidenceSummary, sourceHealth)) +
       metricCell('Freshest foreign record', foreignRecentPoints[0] && foreignRecentPoints[0].obsDt ? foreignRecentPoints[0].obsDt : 'Unavailable') +
-      metricCell('Nearest foreign cluster', formatDistance(findNearestClusterDistance(foreignEvidence) || (foreignClusters[0] && foreignClusters[0].nearestDistanceKm))) +
-      metricCell('Foreign countries', summarizeCountries(foreignEvidence, foreignClusters)) +
+      metricCell('Nearest foreign cluster', foreignClusters.length ? formatDistance(findNearestClusterDistance(foreignEvidence) || (foreignClusters[0] && foreignClusters[0].nearestDistanceKm)) : 'Unavailable') +
+      metricCell('Foreign countries', foreignClusters.length ? summarizeCountries(foreignEvidence, foreignClusters) : 'Unavailable') +
       metricCell('Historical Estonia total', estoniaHistoryPoints.length) +
       metricCell('Recent Estonia count', estoniaEvidence ? estoniaEvidence.recentCount7d : 0) +
-      metricCell('Weather / wind', weather ? ((weather.windDirectionLabel || '') + ' ' + String(weather.windSpeedKph || 0) + ' km/h') : 'Unavailable') +
+      metricCell('Weather / wind', weatherLooksUsable(weather) ? ((weather.windDirectionLabel || '') + ' ' + String(weather.windSpeedKph || 0) + ' km/h') : 'Unavailable') +
       '</div></div>';
     html += '<div class="spp-card"><h4>Species header</h4><div class="spp-grid">' +
       metricCell('Species', speciesInfo && speciesInfo.speciesName ? speciesInfo.speciesName : (result.speciesName || state.speciesName || 'Unavailable')) +
@@ -603,6 +611,7 @@
       scoreCell('Russia', result.countryScores && result.countryScores.russia) +
       (result.countryScores && result.countryScores.finlandContextOnly != null ? scoreCell('Finland context only', result.countryScores.finlandContextOnly) : '') +
       '</div></div>';
+    html += renderPayloadSections(result);
     html += '<div class="spp-card"><h4>Predicted targets</h4><div class="spp-points">';
     if (!predictedTargets.length) {
       html += '<div class="spp-point"><div class="spp-point-reason-text">No precise hotspot results returned.</div></div>';
@@ -647,17 +656,30 @@
       debugItem('Timeout budget (ms)', result.timeoutMsUsed != null ? String(result.timeoutMsUsed) : '(empty)'),
       debugItem('Edge function version', result.edgeFunctionVersion || '(empty)'),
       debugItem('Primary source', result.sourceHealth && result.sourceHealth.primarySourceUsed ? result.sourceHealth.primarySourceUsed : '(empty)'),
+      debugItem('Ranking mode', result.evidenceSummary && result.evidenceSummary.rankingMode ? result.evidenceSummary.rankingMode : '(empty)'),
       debugItem('Foreign groups', String(Array.isArray(result.foreignEvidence) ? result.foreignEvidence.length : 0)),
       debugItem('Estonia recent 7d', result.estoniaEvidence && result.estoniaEvidence.recentCount7d != null ? String(result.estoniaEvidence.recentCount7d) : '(empty)'),
       debugItem('Warning count', String(normalizeStringArray(result.warnings).length)),
       debugItem('Top points', String(points.length)),
     ].join('');
+    var targetDiagnostics = points.map(function (point) {
+      return '<div class="spp-debug-item">' +
+        '<div class="spp-debug-label">#' + escapeHtml(point.rank || '?') + ' ' + escapeHtml(point.displayName || point.name || 'Target') + '</div>' +
+        '<div class="spp-debug-value">source=' + escapeHtml(point.sourceType || 'Unavailable') +
+        ' | representative=' + escapeHtml(point.representativePointMethod || 'Unavailable') +
+        ' | support=' + escapeHtml(point.supportingPointCount || point.supportingEstoniaHistoryCount || 'Unavailable') +
+        ' | habitatFilter=' + escapeHtml(point.habitatFilterAdjustedRanking ? 'Yes' : 'No') +
+        ' | foreign=' + escapeHtml(point.usedForeignPressure ? 'Yes' : 'No') +
+        ' | vectorsSuppressed=' + escapeHtml(point.vectorsSuppressed ? 'Yes' : 'No') +
+        '</div></div>';
+    }).join('');
     debugBody.innerHTML = '' +
       '<div class="spp-debug-copy">' +
       '  <button type="button" class="btn secondary" data-copy-target="result-json">Copy result JSON</button>' +
       '  <button type="button" class="btn secondary" data-copy-target="summary">Copy summary</button>' +
       '</div>' +
       '<div class="spp-debug-grid">' + debugItems + '</div>' +
+      (targetDiagnostics ? '<div class="spp-debug-grid">' + targetDiagnostics + '</div>' : '') +
       '<pre class="spp-debug-pre">' + escapeHtml(formatJson(state.result)) + '</pre>';
   }
 
@@ -678,45 +700,67 @@
       controlInput('Auto feed', checkboxControl('autoFeedEnabled', state.controls.autoFeedEnabled)) +
       '</div>' +
       '<div class="spp-layer-grid">' +
-      layerChip('estoniaHistory', 'EE history', state.layerToggles.estoniaHistory) +
-      layerChip('foreignEvidence', 'Foreign eBird', state.layerToggles.foreignEvidence) +
-      layerChip('predictedLines', 'Prediction lines', state.layerToggles.predictedLines) +
+      layerChip('estoniaHistoryPoints', 'EE history points', state.layerToggles.estoniaHistoryPoints) +
+      layerChip('estoniaHistoryClusters', 'EE history clusters', state.layerToggles.estoniaHistoryClusters) +
+      layerChip('foreignRecentPoints', 'Foreign eBird points', state.layerToggles.foreignRecentPoints) +
+      layerChip('foreignPressureClusters', 'Foreign pressure clusters', state.layerToggles.foreignPressureClusters) +
+      layerChip('predictedLines', 'Prediction vectors', state.layerToggles.predictedLines) +
       layerChip('predictedCone', 'Prediction cone', state.layerToggles.predictedCone) +
-      layerChip('predictedTargets', 'Targets', state.layerToggles.predictedTargets) +
+      layerChip('predictedTargets', 'Predicted targets', state.layerToggles.predictedTargets) +
+      layerChip('diagnostics', 'Diagnostics', state.layerToggles.diagnostics) +
       layerChip('recentOnly', 'Recent only', state.layerToggles.recentOnly) +
       '</div>';
+  }
+
+  function createOverlayGroups() {
+    return {
+      estoniaHistoryPoints: L.layerGroup().addTo(window.map),
+      estoniaHistoryClusters: L.layerGroup().addTo(window.map),
+      foreignRecentPoints: L.layerGroup().addTo(window.map),
+      foreignPressureClusters: L.layerGroup().addTo(window.map),
+      predictedLines: L.layerGroup().addTo(window.map),
+      predictedCone: L.layerGroup().addTo(window.map),
+      predictedTargets: L.layerGroup().addTo(window.map),
+      diagnostics: L.layerGroup().addTo(window.map)
+    };
   }
 
   function applyResultToMap() {
     clearPredictionOverlay();
     if (!state.result || !window.map || !window.L) return;
     var result = state.result;
-    overlayGroup = L.layerGroup().addTo(window.map);
-    if (state.layerToggles.estoniaHistory !== false) renderEstoniaHistory(result.estoniaHistoryPoints || []);
-    if (state.layerToggles.foreignEvidence !== false) renderForeignEvidencePoints(result.foreignRecentPoints || [], result.foreignClusters || []);
+    overlayGroups = createOverlayGroups();
+    if (state.layerToggles.estoniaHistoryPoints !== false) renderEstoniaHistory(result.estoniaHistoryPoints || []);
+    if (state.layerToggles.estoniaHistoryClusters !== false) renderEstoniaHistoryClusters(result.estoniaHistoryClusters || []);
+    if (state.layerToggles.foreignRecentPoints !== false) renderForeignEvidencePoints(result.foreignRecentPoints || [], result.foreignClusters || []);
+    if (state.layerToggles.foreignPressureClusters !== false) renderForeignPressureClusters(result.foreignClusters || []);
     if (state.layerToggles.predictedLines !== false) renderPredictionVectors(result.predictionVectors || [], false);
     if (state.layerToggles.predictedCone !== false) renderPredictionVectors(result.predictionVectors || [], true);
     if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap(result.predictedTargets || result.topPredictedPoints || []);
+    if (state.layerToggles.diagnostics === true && shouldOpenDebugDetails()) renderDiagnostics(result.predictedTargets || result.topPredictedPoints || []);
   }
 
   function clearPredictionOverlay() {
-    if (overlayGroup && window.map) {
-      try { overlayGroup.remove(); } catch (e) {}
+    if (overlayGroups && window.map) {
+      Object.keys(overlayGroups).forEach(function (key) {
+        try { overlayGroups[key].remove(); } catch (e) {}
+      });
     }
-    overlayGroup = null;
+    overlayGroups = null;
   }
 
   function renderPredictedPoint(point) {
     var confidencePct = formatConfidence(point && point.confidence);
     var fillPct = String(clampConfidencePercent(point && point.confidence)) + '%';
+    var hasForeignEvidence = Array.isArray(point && point.supportingCountries) && point.supportingCountries.length;
     return '' +
       '<div class="spp-point">' +
       '  <div class="spp-point-head">' +
       '    <div class="spp-point-title">' +
       '      <div class="spp-point-rank">#' + escapeHtml(point && point.rank) + '</div>' +
       '      <div>' +
-      '        <div class="spp-point-name">' + escapeHtml(point && point.name) + '</div>' +
-      '        <div class="spp-point-place">' + escapeHtml(point && point.countyOrParish ? point.countyOrParish : 'County/parish unavailable') + '</div>' +
+      '        <div class="spp-point-name">' + escapeHtml(point && (point.displayName || point.name)) + '</div>' +
+      '        <div class="spp-point-place">' + escapeHtml(point && (point.displayCountyOrParish || point.countyOrParish) ? (point.displayCountyOrParish || point.countyOrParish) : 'Unavailable') + '</div>' +
       '        <div class="spp-point-place">' + escapeHtml(formatCoords(point && point.lat, point && point.lon)) + '</div>' +
       '      </div>' +
       '    </div>' +
@@ -730,15 +774,18 @@
       metricCell('Radius', appendKm(point && point.searchRadiusKm)) +
       metricCell('Habitat', point && point.habitatCue) +
       metricCell('Confidence', confidencePct) +
-      metricCell('Supporting countries', Array.isArray(point && point.supportingCountries) ? point.supportingCountries.join(', ') : 'Unavailable') +
-      metricCell('Nearest cluster', formatDistance(point && point.nearestRelevantClusterKm)) +
-      metricCell('Latest foreign date', point && point.latestRelevantForeignDate ? point.latestRelevantForeignDate : 'Unavailable') +
+      metricCell('EE support count', point && point.supportingEstoniaHistoryCount) +
+      metricCell('Latest EE date', point && point.latestSupportingEstoniaDate ? point.latestSupportingEstoniaDate : 'Unavailable') +
+      metricCell('Supporting countries', hasForeignEvidence ? point.supportingCountries.join(', ') : 'Unavailable') +
+      metricCell('Nearest foreign cluster', hasForeignEvidence ? formatDistance(point && point.nearestRelevantClusterKm) : 'Unavailable') +
+      metricCell('Latest foreign date', hasForeignEvidence && point && point.latestRelevantForeignDate ? point.latestRelevantForeignDate : 'Unavailable') +
       metricCell('Estonia signal', point && point.estoniaPresenceSignal ? point.estoniaPresenceSignal : 'Unavailable') +
       '</div>' +
       '  <div class="spp-point-reason">' +
       '    <div class="spp-point-reason-label">Reason</div>' +
-      '    <div class="spp-point-reason-text">' + escapeHtml(point && point.reason) + '</div>' +
+      '    <div class="spp-point-reason-text">' + escapeHtml(cleanReasonText(point && point.reason, hasForeignEvidence)) + '</div>' +
       (point && point.historicalMatch ? '<div class="spp-point-reason-text" style="margin-top:6px"><strong>Historical match:</strong> ' + escapeHtml(point.historicalMatch) + '</div>' : '') +
+      (point && point.representativePointMethod ? '<div class="spp-point-reason-text" style="margin-top:6px"><strong>Representative point:</strong> ' + escapeHtml(point.representativePointMethod) + '</div>' : '') +
       '  </div>' +
       '</div>';
   }
@@ -847,14 +894,26 @@
 
   function renderEstoniaHistory(points) {
     points.filter(filterRecentHistoryPoint).forEach(function (point) {
-      var color = point.ageClass === 'recent' ? '#0f766e' : '#64748b';
+      var color = '#6b7280';
       L.circleMarker([point.lat, point.lon], {
-        radius: point.ageClass === 'recent' ? 6 : 4,
+        radius: point.ageClass === 'recent' ? 4 : 3,
         color: color,
-        weight: 2,
+        weight: 1,
         fillColor: color,
-        fillOpacity: point.ageClass === 'recent' ? 0.8 : 0.45
-      }).bindPopup('<strong>Estonia history</strong><br>' + escapeHtml(point.locality || point.municipality || 'GBIF point') + '<br>' + escapeHtml(point.eventDate || 'Unknown date')).addTo(overlayGroup);
+        fillOpacity: point.ageClass === 'recent' ? 0.55 : 0.35
+      }).bindPopup('<strong>Estonia history</strong><br>' + escapeHtml(point.locality || point.municipality || 'GBIF point') + '<br>' + escapeHtml(point.eventDate || 'Unknown date')).addTo(overlayGroups.estoniaHistoryPoints);
+    });
+  }
+
+  function renderEstoniaHistoryClusters(clusters) {
+    clusters.forEach(function (cluster) {
+      L.circleMarker([cluster.representativeLat || cluster.lat, cluster.representativeLon || cluster.lon], {
+        radius: Math.max(5, Math.min(11, Number(cluster.count || 1) + 3)),
+        color: '#475569',
+        weight: 2,
+        fillColor: '#94a3b8',
+        fillOpacity: 0.28
+      }).bindPopup('<strong>Estonia history cluster</strong><br>' + escapeHtml(cluster.displayName || cluster.locality || 'Cluster') + '<br>' + escapeHtml(formatCoords(cluster.representativeLat || cluster.lat, cluster.representativeLon || cluster.lon)) + '<br>Support: ' + escapeHtml(cluster.count || 0)).addTo(overlayGroups.estoniaHistoryClusters);
     });
   }
 
@@ -863,12 +922,24 @@
     points.filter(filterCountryPoint).filter(filterRecentForeignPoint).forEach(function (point) {
       var isFreshest = freshestClusterId && point.clusterId === freshestClusterId;
       L.circleMarker([point.lat, point.lon], {
-        radius: isFreshest ? 7 : 5,
-        color: isFreshest ? '#dc2626' : '#2563eb',
+        radius: isFreshest ? 6 : 5,
+        color: isFreshest ? '#ea580c' : '#f59e0b',
         weight: 2,
-        fillColor: isFreshest ? '#f97316' : '#60a5fa',
+        fillColor: isFreshest ? '#fb923c' : '#fdba74',
         fillOpacity: 0.85
-      }).bindPopup('<strong>Foreign eBird evidence</strong><br>' + escapeHtml(point.countryName || point.countryCode || '') + '<br>' + escapeHtml(point.locName || 'Location unavailable') + '<br>' + escapeHtml(point.obsDt || '')).addTo(overlayGroup);
+      }).bindPopup('<strong>Foreign eBird evidence</strong><br>' + escapeHtml(point.countryName || point.countryCode || '') + '<br>' + escapeHtml(point.locName || 'Location unavailable') + '<br>' + escapeHtml(point.obsDt || '')).addTo(overlayGroups.foreignRecentPoints);
+    });
+  }
+
+  function renderForeignPressureClusters(clusters) {
+    clusters.forEach(function (cluster) {
+      L.circleMarker([cluster.lat, cluster.lon], {
+        radius: Math.max(6, Math.min(12, Number(cluster.pointCount || 1) + 4)),
+        color: '#c2410c',
+        weight: 2,
+        fillColor: '#fb923c',
+        fillOpacity: 0.2
+      }).bindPopup('<strong>Foreign pressure cluster</strong><br>' + escapeHtml((cluster.locNames || []).join(', ') || 'Cluster') + '<br>' + escapeHtml(formatCoords(cluster.lat, cluster.lon)) + '<br>Points: ' + escapeHtml(cluster.pointCount || 0)).addTo(overlayGroups.foreignPressureClusters);
     });
   }
 
@@ -882,19 +953,37 @@
         weight: vector.kind === 'cone' ? 2 : 3,
         fill: vector.kind === 'cone',
         fillOpacity: vector.kind === 'cone' ? 0.1 : 0
-      }).addTo(overlayGroup);
+      }).addTo(vector.kind === 'cone' ? overlayGroups.predictedCone : overlayGroups.predictedLines);
     });
   }
 
   function renderPredictedTargetsOnMap(points) {
     points.forEach(function (point) {
+      var icon = L.divIcon({
+        className: 'species-prediction-target',
+        html: '<div style="width:28px;height:28px;border-radius:999px;background:#111827;color:#fff;border:3px solid #facc15;display:flex;align-items:center;justify-content:center;font:700 12px/1 system-ui;">' + escapeHtml(point.rank || '?') + '</div>',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
+      L.marker([point.lat, point.lon], { icon: icon }).bindPopup('<strong>#' + escapeHtml(point.rank) + ' ' + escapeHtml(point.displayName || point.name || 'Target') + '</strong><br>' + escapeHtml(cleanReasonText(point.reason || '', Array.isArray(point.supportingCountries) && point.supportingCountries.length))).addTo(overlayGroups.predictedTargets);
+    });
+  }
+
+  function renderDiagnostics(points) {
+    points.forEach(function (point) {
+      if (!point || !isFiniteNumber(Number(point.lat)) || !isFiniteNumber(Number(point.lon))) return;
       L.circleMarker([point.lat, point.lon], {
-        radius: 8,
-        color: '#15803d',
-        weight: 3,
-        fillColor: '#4ade80',
-        fillOpacity: 0.9
-      }).bindPopup('<strong>#' + escapeHtml(point.rank) + ' ' + escapeHtml(point.name || 'Target') + '</strong><br>' + escapeHtml(point.reason || '')).addTo(overlayGroup);
+        radius: 14,
+        color: '#7c3aed',
+        weight: 1,
+        fillOpacity: 0
+      }).bindPopup('<strong>Diagnostics</strong><br>' +
+        'Source: ' + escapeHtml(point.sourceType || 'Unavailable') + '<br>' +
+        'Representative point: ' + escapeHtml(point.representativePointMethod || 'Unavailable') + '<br>' +
+        'Support points: ' + escapeHtml(point.supportingPointCount || 'Unavailable') + '<br>' +
+        'Habitat filter adjusted ranking: ' + escapeHtml(point.habitatFilterAdjustedRanking ? 'Yes' : 'No') + '<br>' +
+        'Foreign pressure used: ' + escapeHtml(point.usedForeignPressure ? 'Yes' : 'No') + '<br>' +
+        'Vectors suppressed: ' + escapeHtml(point.vectorsSuppressed ? 'Yes' : 'No')).addTo(overlayGroups.diagnostics);
     });
   }
 
@@ -968,6 +1057,59 @@
     });
     if (!distances.length) return null;
     return Math.min.apply(Math, distances);
+  }
+
+  function renderPayloadSections(result) {
+    var html = '';
+    html += renderOptionalSection('Source health', result && result.sourceHealth);
+    html += renderOptionalSection('Evidence summary', result && result.evidenceSummary);
+    html += renderOptionalSection('Estonia evidence', result && result.estoniaEvidence);
+    html += renderOptionalSection('Foreign evidence', result && result.foreignEvidence);
+    html += renderOptionalSection('Foreign clusters', result && result.foreignClusters);
+    html += renderOptionalSection('Foreign recent points', result && result.foreignRecentPoints);
+    html += renderOptionalSection('Weather payload', result && result.weather);
+    html += renderOptionalSection('Prediction vectors', result && result.predictionVectors);
+    html += renderOptionalSection('AI summary', result && (result.aiSummary || result.insightSummary));
+    return html;
+  }
+
+  function renderOptionalSection(title, value) {
+    if (value == null) return '';
+    if (Array.isArray(value) && !value.length) return '';
+    if (typeof value === 'string' && !String(value).trim()) return '';
+    return '<details class="spp-card"><summary style="cursor:pointer;font-weight:700;color:#0f172a">' + escapeHtml(title) + '</summary><pre class="spp-debug-pre" style="margin-top:10px">' + escapeHtml(formatJson(value)) + '</pre></details>';
+  }
+
+  function summarizeSources(evidenceSummary, sourceHealth) {
+    var sources = Array.isArray(evidenceSummary && evidenceSummary.dataSourcesUsed) ? evidenceSummary.dataSourcesUsed : [];
+    if (!sources.length && sourceHealth && sourceHealth.primarySourceUsed) sources = [sourceHealth.primarySourceUsed];
+    return sources.length ? sources.join(', ') : 'Unavailable';
+  }
+
+  function summarySentence(evidenceSummary, sourceHealth, weather, foreignClusters) {
+    if (evidenceSummary && evidenceSummary.summaryText) return evidenceSummary.summaryText;
+    return inferRankingMode(foreignClusters, weather) + ' using ' + summarizeSources(evidenceSummary, sourceHealth) + '.';
+  }
+
+  function inferRankingMode(foreignClusters, weather) {
+    if (foreignClusters && foreignClusters.length) return weatherLooksUsable(weather) ? 'Estonia history + foreign eBird + weather' : 'Estonia history + foreign eBird';
+    return 'Estonia history only';
+  }
+
+  function weatherLooksUsable(weather) {
+    return !!(weather && (Number(weather.windSpeedKph || 0) > 0 || Number(weather.windDirectionDeg || 0) > 0));
+  }
+
+  function cleanReasonText(reason, hasForeignEvidence) {
+    var text = String(reason || '').trim();
+    if (hasForeignEvidence) return text || 'Unavailable';
+    return text
+      .replace(/nearest relevant foreign cluster[^.]*\./ig, '')
+      .replace(/foreign eBird pressure[^.]*\./ig, '')
+      .replace(/flow bearing[^.]*\./ig, '')
+      .replace(/wind is aligned[^.]*\./ig, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim() || 'Unavailable';
   }
 
   function getStatusText() {

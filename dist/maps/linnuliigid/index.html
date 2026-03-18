@@ -562,7 +562,7 @@ window.springDates = springDates;
 // Map
 const IS_MOBILE_DEVICE = matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 const IS_MOBILE = IS_MOBILE_DEVICE;
-const map = L.map('map', { zoomControl: !IS_MOBILE_DEVICE }).setView([58.7,25.3], 6.5);
+const map = window.map = L.map('map', { zoomControl: !IS_MOBILE_DEVICE }).setView([58.7,25.3], 6.5);
 if (IS_MOBILE_DEVICE) { L.control.zoom({ position: 'topright' }).addTo(map); }
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).addTo(map);
 

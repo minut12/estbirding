@@ -56,8 +56,11 @@ export default function SpeciesPredictionSettings() {
     ok: false,
     configured: false,
     webhookConfigured: false,
+    webhookValid: false,
     available: false,
     deployed: false,
+    productionWebhookReachable: null,
+    productionWebhookInactive: false,
     message: 'Prediction backend is not configured yet',
   });
   const [backendStatusLoading, setBackendStatusLoading] = useState(false);
@@ -74,13 +77,15 @@ export default function SpeciesPredictionSettings() {
   const isBackendReadyForConfiguration = (
     backendStatus.configured === true
     && backendStatus.webhookConfigured === true
+    && backendStatus.webhookValid === true
     && backendStatus.available === true
     && backendStatus.deployed === true
+    && backendStatus.productionWebhookInactive !== true
   );
   const canValidateSpeciesSettings = predictionEnabled && isBackendReadyForConfiguration;
   const backendBadgeLabel = isBackendReadyForConfiguration
     ? 'Configured'
-    : (backendStatus.available && backendStatus.deployed ? 'Missing env' : 'Unavailable');
+    : (!backendStatus.configured || !backendStatus.webhookConfigured ? 'Missing env' : 'Unavailable');
   const backendStatusMessage = backendStatus.message || 'Prediction backend is not configured yet';
   const saveBlockedMessage = canValidateSpeciesSettings && !hasValidSelectedSpecies
     ? 'Select a valid species before saving prediction settings'
@@ -178,8 +183,11 @@ export default function SpeciesPredictionSettings() {
         ok: false,
         configured: false,
         webhookConfigured: false,
+        webhookValid: false,
         available: false,
         deployed: false,
+        productionWebhookReachable: null,
+        productionWebhookInactive: false,
         message: 'Prediction backend is not configured yet',
       });
       return;
@@ -201,8 +209,11 @@ export default function SpeciesPredictionSettings() {
           ok: false,
           configured: false,
           webhookConfigured: false,
+          webhookValid: false,
           available: false,
           deployed: false,
+          productionWebhookReachable: null,
+          productionWebhookInactive: false,
           message: 'Prediction backend is not configured yet',
         });
       })
@@ -572,8 +583,13 @@ export default function SpeciesPredictionSettings() {
                               <DebugKeyValue label="Client timeout abort" value={debugSnapshot.transport.abortedByClientTimeout ? 'Yes' : 'No'} />
                               <DebugKeyValue label="Likely reached Edge Function" value={debugSnapshot.transport.likelyReachedEdgeFunction ? 'Yes' : 'No'} />
                               <DebugKeyValue label="Error stage" value={debugSnapshot.transport.error?.stage || '(empty)'} />
+                              <DebugKeyValue label="Error code" value={debugSnapshot.transport.error?.code || '(empty)'} />
                               <DebugKeyValue label="Error type" value={debugSnapshot.transport.error?.errorType || '(empty)'} />
                               <DebugKeyValue label="Last error message" value={debugSnapshot.transport.error?.message || '(empty)'} />
+                              <DebugKeyValue label="Upstream status" value={String(debugSnapshot.transport.error?.upstreamStatus ?? '(null)')} />
+                              <DebugKeyValue label="Resolved webhook path" value={debugSnapshot.transport.error?.resolvedWebhookPath || backendStatus.resolvedWebhookPath || '(empty)'} />
+                              <DebugKeyValue label="Resolved webhook URL" value={debugSnapshot.transport.error?.resolvedWebhookUrl || backendStatus.resolvedWebhookUrl || '(empty)'} />
+                              <DebugKeyValue label="Webhook inactive" value={debugSnapshot.transport.error?.productionWebhookInactive ? 'Yes' : 'No'} />
                             </div>
                           </DebugSection>
 
@@ -826,8 +842,13 @@ function buildDiagnosticsSummary(snapshot: SpeciesPredictionDebugSnapshot): stri
     `abortedByClientTimeout=${snapshot.transport.abortedByClientTimeout ? 'yes' : 'no'}`,
     `likelyReachedEdgeFunction=${snapshot.transport.likelyReachedEdgeFunction ? 'yes' : 'no'}`,
     `errorStage=${snapshot.transport.error?.stage || '(empty)'}`,
+    `errorCode=${snapshot.transport.error?.code || '(empty)'}`,
     `errorType=${snapshot.transport.error?.errorType || '(empty)'}`,
     `errorMessage=${snapshot.transport.error?.message || '(empty)'}`,
+    `upstreamStatus=${snapshot.transport.error?.upstreamStatus ?? '(null)'}`,
+    `resolvedWebhookPath=${snapshot.transport.error?.resolvedWebhookPath || '(empty)'}`,
+    `resolvedWebhookUrl=${snapshot.transport.error?.resolvedWebhookUrl || '(empty)'}`,
+    `productionWebhookInactive=${snapshot.transport.error?.productionWebhookInactive ? 'yes' : 'no'}`,
     ...rows,
   ].join('\n');
 }
@@ -836,15 +857,25 @@ type SpeciesPredictionBackendStatus = {
   ok: boolean;
   configured: boolean;
   webhookConfigured: boolean;
+  webhookValid: boolean;
   available: boolean;
   deployed: boolean;
+  resolvedWebhookUrl?: string;
+  resolvedWebhookPath?: string;
+  expectedMethod?: string;
+  productionWebhookReachable?: boolean | null;
+  productionWebhookInactive?: boolean;
+  upstreamStatus?: number | null;
+  upstreamMessage?: string;
+  validationErrorCode?: string | null;
+  validationMessage?: string;
   message: string;
 };
 
 async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionBackendStatus> {
   let response: Response;
   try {
-    response = await fetch(`${getFunctionsBaseUrl()}/species-prediction?mode=status`, {
+    response = await fetch(`${getFunctionsBaseUrl()}/species-prediction?mode=status&verify=1`, {
       method: 'GET',
       headers: {
         ...getSupabaseAuthHeaders(),
@@ -900,8 +931,18 @@ async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionB
     ok: status.ok === true,
     configured: status.configured === true,
     webhookConfigured: status.webhookConfigured === true,
+    webhookValid: status.webhookValid === true,
     available: status.available === true,
     deployed: status.deployed === true,
+    resolvedWebhookUrl: typeof status.resolvedWebhookUrl === 'string' ? status.resolvedWebhookUrl : '',
+    resolvedWebhookPath: typeof status.resolvedWebhookPath === 'string' ? status.resolvedWebhookPath : '',
+    expectedMethod: typeof status.expectedMethod === 'string' ? status.expectedMethod : '',
+    productionWebhookReachable: typeof status.productionWebhookReachable === 'boolean' ? status.productionWebhookReachable : null,
+    productionWebhookInactive: status.productionWebhookInactive === true,
+    upstreamStatus: typeof status.upstreamStatus === 'number' ? status.upstreamStatus : null,
+    upstreamMessage: typeof status.upstreamMessage === 'string' ? status.upstreamMessage : '',
+    validationErrorCode: typeof status.validationErrorCode === 'string' ? status.validationErrorCode : null,
+    validationMessage: typeof status.validationMessage === 'string' ? status.validationMessage : '',
     message: String(status.message || 'Prediction backend is not configured yet'),
   };
 }

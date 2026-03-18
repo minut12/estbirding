@@ -21,12 +21,25 @@ export type SpeciesPredictionErrorStage =
   | 'unknown';
 
 export type SpeciesPredictionErrorType = 'timeout' | 'network' | 'server' | 'parse' | 'unknown';
+export type SpeciesPredictionErrorCode =
+  | 'N8N_WEBHOOK_INACTIVE'
+  | 'N8N_UPSTREAM_NON_2XX'
+  | 'N8N_UPSTREAM_INVALID_RESPONSE'
+  | 'MISSING_WEBHOOK_URL'
+  | 'INVALID_WEBHOOK_URL'
+  | 'INVALID_WEBHOOK_PATH';
 
 export type SpeciesPredictionTransportError = {
   stage: SpeciesPredictionErrorStage;
+  code?: SpeciesPredictionErrorCode | string | null;
   httpStatus: number | null;
   message: string;
   responseBody: unknown;
+  upstreamStatus?: number | null;
+  upstreamMessage?: string | null;
+  resolvedWebhookUrl?: string | null;
+  resolvedWebhookPath?: string | null;
+  productionWebhookInactive?: boolean;
   requestUrl: string;
   requestId: string | null;
   timestamp: string;

@@ -598,7 +598,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     };
     const healthCheckHandler = async () => {
       try {
-        const response = await fetch(`${getFunctionsBaseUrl()}/species-prediction?mode=status`, {
+        const response = await fetch(`${getFunctionsBaseUrl()}/species-prediction?mode=status&verify=1`, {
           method: 'GET',
           headers: {
             ...getSupabaseAuthHeaders(),

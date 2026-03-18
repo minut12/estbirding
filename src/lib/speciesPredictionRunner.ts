@@ -142,7 +142,17 @@ export async function runSpeciesPredictionRequest(
     // Check if edge returned error envelope
     if (data && typeof data === 'object' && data.ok === false) {
       const msg = String(data.message || 'Prediction request failed');
-      const transportError = createTransportError(mapStage(data.stage), safeNumber(data.status), resolveUserMessage(msg), data, requestUrl, requestId, responseTimestamp, 'server');
+      const transportError = createTransportError(
+        mapStage(data.stage),
+        safeNumber(data.status),
+        resolveUserMessage(msg),
+        data,
+        requestUrl,
+        requestId,
+        responseTimestamp,
+        'server',
+        extractBackendErrorDetails(data),
+      );
       updateTransportOnError(transportError, responseTimestamp);
       jobState.status = 'failed';
       jobState.error = resolveUserMessage(msg);
@@ -282,15 +292,24 @@ async function pollForResult(
       }
 
       if (pollData.status === 'failed') {
-        const errorMsg = typeof pollData.error === 'object' && pollData.error
-          ? (pollData.error as Record<string, unknown>).message as string || 'Prediction failed'
-          : typeof pollData.error === 'string' ? pollData.error : 'Prediction failed';
+        const errorDetails = extractBackendErrorDetails(pollData.error);
+        const errorMsg = errorDetails.message || (typeof pollData.error === 'string' ? pollData.error : 'Prediction failed');
         const responseTimestamp = new Date().toISOString();
-        const transportError = createTransportError('n8n_upstream', null, resolveUserMessage(errorMsg), pollData.error, requestUrl, requestId, responseTimestamp, 'server');
+        const transportError = createTransportError(
+          mapStage((pollData.error as Record<string, unknown> | null | undefined)?.stage),
+          errorDetails.upstreamStatus ?? null,
+          resolveUserMessage(errorMsg),
+          pollData.error,
+          requestUrl,
+          requestId,
+          responseTimestamp,
+          'server',
+          errorDetails,
+        );
         updateTransportOnError(transportError, responseTimestamp);
 
         jobState.status = 'failed';
-        jobState.error = resolveUserMessage(errorMsg);
+        jobState.error = transportError.message;
         jobState.errorJson = pollData.error;
         jobState.failedAt = responseTimestamp;
         jobState.lastUpdatedAt = responseTimestamp;
@@ -298,9 +317,9 @@ async function pollForResult(
 
         return {
           ok: false,
-          error: resolveUserMessage(errorMsg),
-          stage: 'n8n_upstream',
-          diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, null, pollData, transportError, jobState),
+          error: transportError.message,
+          stage: transportError.stage,
+          diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, transportError.httpStatus, pollData, transportError, jobState),
         };
       }
 
@@ -345,8 +364,9 @@ function createTransportError(
   requestId: string,
   timestamp: string,
   errorType: SpeciesPredictionTransportError['errorType'],
+  extra: Partial<SpeciesPredictionTransportError> = {},
 ): SpeciesPredictionTransportError {
-  return { stage, httpStatus, message, responseBody, requestUrl, requestId, timestamp, errorType };
+  return { ...extra, stage, httpStatus, message, responseBody, requestUrl, requestId, timestamp, errorType };
 }
 
 function updateTransportOnError(error: SpeciesPredictionTransportError, responseTimestamp: string): void {
@@ -385,6 +405,20 @@ function buildDiagnostics(
   return { requestUrl, requestTimestamp, responseTimestamp, requestId, httpStatus, responseBody, error, jobState };
 }
 
+function extractBackendErrorDetails(input: unknown): Partial<SpeciesPredictionTransportError> & { message?: string; upstreamStatus?: number | null } {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const record = input as Record<string, unknown>;
+  return {
+    code: typeof record.code === 'string' ? record.code : null,
+    message: typeof record.message === 'string' ? record.message : undefined,
+    upstreamStatus: safeNumber(record.upstreamStatus),
+    upstreamMessage: typeof record.upstreamMessage === 'string' ? record.upstreamMessage : null,
+    resolvedWebhookUrl: typeof record.resolvedWebhookUrl === 'string' ? record.resolvedWebhookUrl : null,
+    resolvedWebhookPath: typeof record.resolvedWebhookPath === 'string' ? record.resolvedWebhookPath : null,
+    productionWebhookInactive: record.productionWebhookInactive === true,
+  };
+}
+
 function resolveInvokeTransportError(
   error: unknown,
   data: unknown,
@@ -419,6 +453,9 @@ function extractContextMessage(context: unknown): string {
 function resolveUserMessage(message: string): string {
   const n = String(message || '').trim().toLowerCase();
   if (!n) return 'Prediction service is temporarily unavailable';
+  if (n.includes('workflow must be active') || (n.includes('webhook') && n.includes('not registered'))) {
+    return 'Prediction backend is configured, but the n8n production webhook is not active or not registered.';
+  }
   if (n.includes('not configured')) return 'Prediction backend is not configured yet';
   if (n.includes('timed out') || n.includes('timeout')) return 'Prediction request timed out';
   if (n.includes('temporarily unavailable') || n.includes('internal server error') || n.includes('bad gateway') || n.includes('error in workflow')) return 'Prediction service is temporarily unavailable';

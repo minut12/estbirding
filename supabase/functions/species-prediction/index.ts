@@ -9,6 +9,52 @@ const AUTH_HEADER_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_HEADER';
 const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
+const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-openai';
+
+type WebhookValidationErrorCode =
+  | 'MISSING_WEBHOOK_URL'
+  | 'INVALID_WEBHOOK_URL'
+  | 'INVALID_WEBHOOK_PATH';
+
+type UpstreamErrorCode =
+  | 'N8N_WEBHOOK_INACTIVE'
+  | 'N8N_UPSTREAM_NON_2XX'
+  | 'N8N_UPSTREAM_INVALID_RESPONSE';
+
+type WebhookTargetInfo = {
+  configured: boolean;
+  valid: boolean;
+  resolvedWebhookUrl: string;
+  resolvedWebhookPath: string;
+  expectedMethod: 'POST';
+  looksLikeProductionWebhook: boolean;
+  validationErrorCode: WebhookValidationErrorCode | null;
+  validationMessage: string;
+};
+
+type UpstreamProbeResult = {
+  checked: boolean;
+  ok: boolean;
+  status: number | null;
+  statusText: string;
+  message: string;
+  body: unknown;
+  productionWebhookReachable: boolean | null;
+  productionWebhookInactive: boolean;
+};
+
+type SpeciesPredictionUpstreamError = {
+  stage: 'missing_webhook_url' | 'n8n_upstream' | 'n8n_non_2xx' | 'invalid_upstream_json';
+  code: WebhookValidationErrorCode | UpstreamErrorCode;
+  message: string;
+  upstreamStatus: number | null;
+  upstreamStatusText?: string;
+  upstreamMessage?: string;
+  upstreamBody: unknown;
+  resolvedWebhookUrl: string;
+  resolvedWebhookPath: string;
+  productionWebhookInactive: boolean;
+};
 
 function getSupabaseAdmin() {
   return createClient(
@@ -24,26 +70,53 @@ serve(async (req) => {
 
   try {
     const url = new URL(req.url);
-    const webhookUrl = readWebhookUrl();
-    const webhookConfigured = webhookUrl.length > 0;
+    const webhookTarget = resolveWebhookTarget();
+    const webhookUrl = webhookTarget.resolvedWebhookUrl;
+    const webhookConfigured = webhookTarget.configured;
     const timeoutMsUsed = resolveTimeoutMs();
 
     // ── GET ?mode=status ──
     if (req.method === 'GET' && url.searchParams.get('mode') === 'status') {
-      console.info(`${LOG_PREFIX} status check`, { webhookConfigured, edgeFunctionVersion: EDGE_FUNCTION_VERSION });
+      const verifyRequested = ['1', 'true', 'yes'].includes((url.searchParams.get('verify') || '').trim().toLowerCase());
+      const probe = shouldProbeWebhookTarget(webhookTarget)
+        ? await probeWebhookTarget(webhookTarget, verifyRequested)
+        : buildSkippedProbe();
+      const available = webhookTarget.valid
+        && webhookTarget.looksLikeProductionWebhook
+        && probe.productionWebhookInactive !== true;
+      console.info(`${LOG_PREFIX} status check`, {
+        webhookConfigured,
+        webhookValid: webhookTarget.valid,
+        resolvedWebhookPath: webhookTarget.resolvedWebhookPath,
+        productionWebhookInactive: probe.productionWebhookInactive,
+        edgeFunctionVersion: EDGE_FUNCTION_VERSION,
+      });
       return json({
         ok: true,
         stage: 'status',
-        available: true,
+        available,
         deployed: true,
         configured: webhookConfigured,
         webhookConfigured,
+        webhookValid: webhookTarget.valid,
+        resolvedWebhookUrl: webhookTarget.resolvedWebhookUrl,
+        resolvedWebhookPath: webhookTarget.resolvedWebhookPath,
+        expectedMethod: webhookTarget.expectedMethod,
+        looksLikeProductionWebhook: webhookTarget.looksLikeProductionWebhook,
+        validationErrorCode: webhookTarget.validationErrorCode,
+        validationMessage: webhookTarget.validationMessage,
+        verificationAttempted: probe.checked,
+        verificationSafeMode: !verifyRequested,
+        productionWebhookReachable: probe.productionWebhookReachable,
+        productionWebhookInactive: probe.productionWebhookInactive,
+        upstreamStatus: probe.status,
+        upstreamStatusText: probe.statusText,
+        upstreamMessage: probe.message,
+        upstreamBody: probe.body,
         timeoutMsUsed,
         edgeFunctionVersion: EDGE_FUNCTION_VERSION,
         timestamp: new Date().toISOString(),
-        message: webhookConfigured
-          ? 'Prediction backend is deployed and configured'
-          : 'Prediction backend is not configured yet',
+        message: buildStatusMessage(webhookTarget, probe, verifyRequested),
       });
     }
 
@@ -168,6 +241,7 @@ serve(async (req) => {
       requestId,
       webhookUrl,
       webhookConfigured,
+      webhookTarget,
       payload: payload ?? {},
       speciesKey,
       speciesName,
@@ -215,13 +289,14 @@ async function executeN8nAndPersist(opts: {
   requestId: string;
   webhookUrl: string;
   webhookConfigured: boolean;
+  webhookTarget: WebhookTargetInfo;
   payload: Record<string, unknown>;
   speciesKey: string;
   speciesName: string;
   timeoutMsUsed: number;
   admin: ReturnType<typeof getSupabaseAdmin>;
 }): Promise<void> {
-  const { requestId, webhookUrl, webhookConfigured, payload, speciesKey, speciesName, timeoutMsUsed, admin } = opts;
+  const { requestId, webhookUrl, webhookConfigured, webhookTarget, payload, speciesKey, speciesName, timeoutMsUsed, admin } = opts;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMsUsed);
 
@@ -232,6 +307,7 @@ async function executeN8nAndPersist(opts: {
       speciesKey,
       speciesName,
       webhookConfigured,
+      webhookTarget,
       webhookUrl,
       signal: controller.signal,
     });
@@ -255,12 +331,15 @@ async function executeN8nAndPersist(opts: {
 
   } catch (err) {
     const isAbort = err instanceof DOMException && err.name === 'AbortError';
-    const errorMessage = isAbort ? 'Prediction request timed out' : 'Prediction service evidence assembly error';
+    const upstreamError = normalizePredictionError(err, webhookTarget);
+    const errorMessage = isAbort
+      ? 'Prediction request timed out'
+      : (upstreamError?.message || 'Prediction service evidence assembly error');
     console.error(`${LOG_PREFIX} background_error`, { requestId, isAbort, error: String(err) });
 
     await admin.from('prediction_jobs').update({
       status: 'failed',
-      error_json: { message: errorMessage, detail: String(err) },
+      error_json: upstreamError ?? { message: errorMessage, detail: String(err) },
       updated_at: new Date().toISOString(),
     }).eq('request_id', requestId).catch(() => {});
   } finally {
@@ -298,10 +377,11 @@ async function buildMapFirstPredictionResult(opts: {
   speciesKey: string;
   speciesName: string;
   webhookConfigured: boolean;
+  webhookTarget: WebhookTargetInfo;
   webhookUrl: string;
   signal: AbortSignal;
 }): Promise<Record<string, unknown>> {
-  const { payload, speciesKey, speciesName, webhookConfigured, webhookUrl, signal } = opts;
+  const { payload, speciesKey, speciesName, webhookConfigured, webhookTarget, webhookUrl, signal } = opts;
   const payloadSpecies = asRecord(payload.species);
   const settings = asRecord(payload.settings);
   const latinName = stringOr(payloadSpecies.latinName);
@@ -355,8 +435,9 @@ async function buildMapFirstPredictionResult(opts: {
       : (elurikkusHistoryPoints.length ? 'EELURIKKUS' : (estoniaHistoryPoints.length ? 'GBIF' : estoniaHistorySource)),
   });
   const warnings = Array.from(new Set(sourceHealth.sourceWarnings as string[]));
-  const aiSummary = webhookConfigured && (settings.enableOpenAISummary === true || settings.enableN8nResearch === true)
-    ? await maybeFetchSecondarySummary({ webhookUrl, payload, signal, foreignEvidence, predictedTargets, weather, sourceHealth })
+  const requiresN8nSummary = settings.enableOpenAISummary === true || settings.enableN8nResearch === true;
+  const aiSummary = requiresN8nSummary
+    ? await maybeFetchSecondarySummary({ webhookTarget, webhookUrl, payload, signal, foreignEvidence, predictedTargets, weather, sourceHealth })
     : '';
   const countryScores = buildCountryScores(foreignEvidence);
   const topPredictedPoints = predictedTargets.slice(0, Math.min(5, clampInt(toNumber(settings.outputCount) || 5, 1, 5)));
@@ -1025,6 +1106,7 @@ function buildConeVector(cluster: Record<string, unknown>, target: Record<string
 }
 
 async function maybeFetchSecondarySummary(opts: {
+  webhookTarget: WebhookTargetInfo;
   webhookUrl: string;
   payload: Record<string, unknown>;
   signal: AbortSignal;
@@ -1033,29 +1115,273 @@ async function maybeFetchSecondarySummary(opts: {
   weather: Record<string, unknown>;
   sourceHealth: Record<string, unknown>;
 }): Promise<string> {
-  const { webhookUrl, payload, signal, foreignEvidence, predictedTargets, weather, sourceHealth } = opts;
+  const { webhookTarget, webhookUrl, payload, signal, foreignEvidence, predictedTargets, weather, sourceHealth } = opts;
+  if (!webhookTarget.configured || !webhookTarget.valid) {
+    throw createWebhookConfigError(webhookTarget);
+  }
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   const authHeader = (Deno.env.get(AUTH_HEADER_ENV_KEY) || '').trim();
   const authValue = (Deno.env.get(AUTH_VALUE_ENV_KEY) || '').trim();
   if (authHeader && authValue) headers[authHeader] = authValue;
-  try {
-    const upstream = await fetch(webhookUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        ...payload,
-        evidenceSummary: { sourceHealth, foreignEvidence, predictedTargets, weather },
-      }),
-      signal,
+  const upstream = await fetch(webhookUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      ...payload,
+      evidenceSummary: { sourceHealth, foreignEvidence, predictedTargets, weather },
+    }),
+    signal,
+  });
+  const text = await upstream.text();
+  const data = safeJsonParse(text);
+  if (!upstream.ok) {
+    throw createUpstreamError({
+      stage: 'n8n_upstream',
+      webhookTarget,
+      upstreamStatus: upstream.status,
+      upstreamStatusText: upstream.statusText,
+      upstreamBody: data,
     });
-    if (!upstream.ok) return '';
-    const text = await upstream.text();
-    const data = safeJsonParse(text);
-    const record = asRecord(data);
-    return stringOr(record.aiSummary, record.insightSummary, record.summary, asRecord(record.openaiAnalysis).insightSummary);
-  } catch {
-    return '';
   }
+  const record = asRecord(data);
+  const summary = stringOr(record.aiSummary, record.insightSummary, record.summary, asRecord(record.openaiAnalysis).insightSummary);
+  if (!summary) {
+    throw createUpstreamError({
+      stage: 'invalid_upstream_json',
+      webhookTarget,
+      upstreamStatus: upstream.status,
+      upstreamStatusText: upstream.statusText,
+      upstreamBody: data,
+      fallbackCode: 'N8N_UPSTREAM_INVALID_RESPONSE',
+      fallbackMessage: 'n8n returned success but no AI summary payload was present',
+    });
+  }
+  return summary;
+}
+
+function resolveWebhookTarget(): WebhookTargetInfo {
+  const raw = readWebhookUrl();
+  if (!raw) {
+    return {
+      configured: false,
+      valid: false,
+      resolvedWebhookUrl: '',
+      resolvedWebhookPath: '',
+      expectedMethod: 'POST',
+      looksLikeProductionWebhook: false,
+      validationErrorCode: 'MISSING_WEBHOOK_URL',
+      validationMessage: 'SPECIES_PREDICTION_N8N_WEBHOOK_URL is missing or empty.',
+    };
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return {
+      configured: true,
+      valid: false,
+      resolvedWebhookUrl: raw,
+      resolvedWebhookPath: '',
+      expectedMethod: 'POST',
+      looksLikeProductionWebhook: false,
+      validationErrorCode: 'INVALID_WEBHOOK_URL',
+      validationMessage: 'SPECIES_PREDICTION_N8N_WEBHOOK_URL is not a valid absolute URL.',
+    };
+  }
+  const match = parsed.pathname.match(/\/webhook(?:-test)?\/([^/?#]+)/);
+  const webhookPath = match?.[1]?.trim() || '';
+  if (!webhookPath) {
+    return {
+      configured: true,
+      valid: false,
+      resolvedWebhookUrl: parsed.toString(),
+      resolvedWebhookPath: '',
+      expectedMethod: 'POST',
+      looksLikeProductionWebhook: false,
+      validationErrorCode: 'INVALID_WEBHOOK_PATH',
+      validationMessage: 'Configured n8n URL must include a webhook path segment after /webhook/.',
+    };
+  }
+  return {
+    configured: true,
+    valid: true,
+    resolvedWebhookUrl: parsed.toString(),
+    resolvedWebhookPath: webhookPath,
+    expectedMethod: 'POST',
+    looksLikeProductionWebhook: webhookPath === EXPECTED_PRODUCTION_WEBHOOK_PATH,
+    validationErrorCode: null,
+    validationMessage: '',
+  };
+}
+
+function shouldProbeWebhookTarget(webhookTarget: WebhookTargetInfo): boolean {
+  return webhookTarget.configured && webhookTarget.valid;
+}
+
+function buildSkippedProbe(): UpstreamProbeResult {
+  return {
+    checked: false,
+    ok: false,
+    status: null,
+    statusText: '',
+    message: '',
+    body: null,
+    productionWebhookReachable: null,
+    productionWebhookInactive: false,
+  };
+}
+
+async function probeWebhookTarget(webhookTarget: WebhookTargetInfo, verifyRequested: boolean): Promise<UpstreamProbeResult> {
+  if (!verifyRequested) {
+    return {
+      checked: true,
+      ok: true,
+      status: null,
+      statusText: '',
+      message: 'Lightweight verification skipped. Pass verify=1 to probe the exact configured webhook target.',
+      body: null,
+      productionWebhookReachable: null,
+      productionWebhookInactive: false,
+    };
+  }
+  const headers: Record<string, string> = {};
+  const authHeader = (Deno.env.get(AUTH_HEADER_ENV_KEY) || '').trim();
+  const authValue = (Deno.env.get(AUTH_VALUE_ENV_KEY) || '').trim();
+  if (authHeader && authValue) headers[authHeader] = authValue;
+  try {
+    const resp = await fetch(webhookTarget.resolvedWebhookUrl, { method: 'GET', headers });
+    const text = await resp.text();
+    const body = safeJsonParse(text);
+    const message = extractUpstreamMessage(body) || text.slice(0, 300);
+    const productionWebhookInactive = isInactiveWebhookMessage(message);
+    const productionWebhookReachable = productionWebhookInactive
+      ? false
+      : (resp.ok || resp.status === 400 || resp.status === 401 || resp.status === 403 || resp.status === 405);
+    return {
+      checked: true,
+      ok: resp.ok,
+      status: resp.status,
+      statusText: resp.statusText,
+      message,
+      body,
+      productionWebhookReachable,
+      productionWebhookInactive,
+    };
+  } catch (error) {
+    return {
+      checked: true,
+      ok: false,
+      status: null,
+      statusText: '',
+      message: error instanceof Error ? error.message : 'Webhook verification failed',
+      body: null,
+      productionWebhookReachable: false,
+      productionWebhookInactive: false,
+    };
+  }
+}
+
+function buildStatusMessage(webhookTarget: WebhookTargetInfo, probe: UpstreamProbeResult, verifyRequested: boolean): string {
+  if (!webhookTarget.configured) return 'Prediction backend is not configured yet because the n8n webhook URL is missing.';
+  if (!webhookTarget.valid) return webhookTarget.validationMessage || 'Prediction backend has an invalid n8n webhook configuration.';
+  if (!webhookTarget.looksLikeProductionWebhook) {
+    return `Prediction backend is configured, but the webhook path "${webhookTarget.resolvedWebhookPath}" does not match the expected production path "${EXPECTED_PRODUCTION_WEBHOOK_PATH}".`;
+  }
+  if (probe.productionWebhookInactive) {
+    return 'Prediction backend is configured, but the n8n production webhook is not active or not registered.';
+  }
+  if (verifyRequested && probe.productionWebhookReachable === false) {
+    return 'Prediction backend is configured, but the n8n production webhook could not be verified.';
+  }
+  if (!verifyRequested) {
+    return 'Prediction backend configuration is valid. Exact webhook verification is available with verify=1.';
+  }
+  return 'Prediction backend is deployed, configured, and the resolved n8n webhook target responded to verification.';
+}
+
+function createWebhookConfigError(webhookTarget: WebhookTargetInfo): SpeciesPredictionUpstreamError {
+  return {
+    stage: 'missing_webhook_url',
+    code: webhookTarget.validationErrorCode || 'INVALID_WEBHOOK_URL',
+    message: webhookTarget.validationMessage || 'n8n webhook URL is invalid or missing.',
+    upstreamStatus: null,
+    upstreamBody: null,
+    resolvedWebhookUrl: webhookTarget.resolvedWebhookUrl,
+    resolvedWebhookPath: webhookTarget.resolvedWebhookPath,
+    productionWebhookInactive: false,
+  };
+}
+
+function createUpstreamError(input: {
+  stage: SpeciesPredictionUpstreamError['stage'];
+  webhookTarget: WebhookTargetInfo;
+  upstreamStatus: number | null;
+  upstreamStatusText?: string;
+  upstreamBody: unknown;
+  fallbackCode?: UpstreamErrorCode;
+  fallbackMessage?: string;
+}): SpeciesPredictionUpstreamError {
+  const upstreamMessage = extractUpstreamMessage(input.upstreamBody);
+  const productionWebhookInactive = isInactiveWebhookMessage(upstreamMessage);
+  return {
+    stage: input.stage,
+    code: productionWebhookInactive ? 'N8N_WEBHOOK_INACTIVE' : (input.fallbackCode || 'N8N_UPSTREAM_NON_2XX'),
+    message: productionWebhookInactive
+      ? 'Prediction backend is configured, but the n8n production webhook is not active or not registered.'
+      : (input.fallbackMessage || upstreamMessage || 'n8n upstream request failed'),
+    upstreamStatus: input.upstreamStatus,
+    upstreamStatusText: input.upstreamStatusText,
+    upstreamMessage,
+    upstreamBody: input.upstreamBody,
+    resolvedWebhookUrl: input.webhookTarget.resolvedWebhookUrl,
+    resolvedWebhookPath: input.webhookTarget.resolvedWebhookPath,
+    productionWebhookInactive,
+  };
+}
+
+function normalizePredictionError(error: unknown, webhookTarget: WebhookTargetInfo): SpeciesPredictionUpstreamError | null {
+  if (isUpstreamErrorRecord(error)) return error;
+  if (error instanceof Error && error.message) {
+    return {
+      stage: 'n8n_upstream',
+      code: 'N8N_UPSTREAM_NON_2XX',
+      message: error.message,
+      upstreamStatus: null,
+      upstreamBody: { detail: error.message },
+      resolvedWebhookUrl: webhookTarget.resolvedWebhookUrl,
+      resolvedWebhookPath: webhookTarget.resolvedWebhookPath,
+      productionWebhookInactive: false,
+    };
+  }
+  return null;
+}
+
+function isUpstreamErrorRecord(value: unknown): value is SpeciesPredictionUpstreamError {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.stage === 'string'
+    && typeof candidate.code === 'string'
+    && typeof candidate.message === 'string'
+    && typeof candidate.resolvedWebhookUrl === 'string'
+    && typeof candidate.resolvedWebhookPath === 'string';
+}
+
+function extractUpstreamMessage(body: unknown): string {
+  if (!body) return '';
+  if (typeof body === 'string') return body.trim();
+  if (typeof body === 'object' && !Array.isArray(body)) {
+    const record = body as Record<string, unknown>;
+    const direct = stringOr(record.message, record.error, record.detail, record.reason);
+    if (direct) return direct;
+    if (record.data && typeof record.data === 'object') return extractUpstreamMessage(record.data);
+  }
+  return '';
+}
+
+function isInactiveWebhookMessage(message: string): boolean {
+  const normalized = String(message || '').toLowerCase();
+  return normalized.includes('workflow must be active')
+    || (normalized.includes('webhook') && normalized.includes('not registered'));
 }
 
 function enrichPredictionResult(

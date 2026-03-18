@@ -316,6 +316,31 @@ type EluSearchRow = {
   ms: number | null;
 };
 
+type ElurikkusParsedRecord = {
+  id: string;
+  date: string | null;
+  locality: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  individualCount: number | null;
+  behavior: string | null;
+  recordedBy: string | null;
+  taxonName: string | null;
+  commonNameEst: string | null;
+  commonNameEng: string | null;
+};
+
+type ElurikkusParserDebug = {
+  inputWasArray: boolean;
+  usedEmbeddedJson: boolean;
+  usedTableFallback: boolean;
+  embeddedResultCount: number;
+  tableRowCount: number;
+  freshestParsedDate: string | null;
+  freshestParsedLocality: string | null;
+  parserWarnings: string[];
+};
+
 function stripHtml(raw: string): string {
   return String(raw || "")
     .replace(/<[^>]+>/g, " ")
@@ -325,6 +350,162 @@ function stripHtml(raw: string): string {
     .replace(/&#39;/gi, "'")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function extractElurikkusHtml(raw: unknown): { html: string; inputWasArray: boolean } {
+  const inputWasArray = Array.isArray(raw);
+  const html = Array.isArray(raw) && typeof raw[0] === "string"
+    ? raw[0]
+    : (typeof raw === "string" ? raw : "");
+  return { html: String(html || "").trim(), inputWasArray };
+}
+
+function looksLikeHtml(value: string): boolean {
+  return /<!doctype html|<html\b|<body\b|<script\b|<table\b/i.test(String(value || ""));
+}
+
+function safeJsonParse(raw: string): unknown {
+  try {
+    return JSON.parse(String(raw || ""));
+  } catch {
+    return null;
+  }
+}
+
+function firstNonEmpty(...values: unknown[]): string | null {
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (text) return text;
+  }
+  return null;
+}
+
+function normalizeEmbeddedResult(row: Record<string, unknown>): ElurikkusParsedRecord {
+  const latitude = Number.parseFloat(String(row.latitude ?? row.decimalLatitude ?? row.lat ?? ""));
+  const longitude = Number.parseFloat(String(row.longitude ?? row.decimalLongitude ?? row.lon ?? ""));
+  const individualCountRaw = Number.parseFloat(String(row.individual_count ?? row.individualCount ?? row.count ?? ""));
+  return {
+    id: String(row.id ?? row.uuid ?? row.occurrenceID ?? row.occurrenceId ?? "").trim(),
+    date: firstNonEmpty(row.event_datetime_point, row.eventDate, row.event_date, row.occurrenceDate),
+    locality: firstNonEmpty(row.locality, row.location, row.locationRemarks, row.municipality, row.county),
+    latitude: Number.isFinite(latitude) ? latitude : null,
+    longitude: Number.isFinite(longitude) ? longitude : null,
+    individualCount: Number.isFinite(individualCountRaw) ? individualCountRaw : null,
+    behavior: firstNonEmpty(row.behavior, row.occurrenceRemarks),
+    recordedBy: firstNonEmpty(row.recorded_by, row.recordedBy, row.collector, row.collectors),
+    taxonName: firstNonEmpty(row.taxon_name, row.scientificName, row.scientific_name),
+    commonNameEst: firstNonEmpty(row.vernacular_name_et, row.common_name_est, row.commonNameEst),
+    commonNameEng: firstNonEmpty(row.vernacular_name_en, row.common_name_eng, row.commonNameEng),
+  };
+}
+
+function parseEmbeddedSearchPayload(doc: Document): { results: ElurikkusParsedRecord[]; count: number; warning?: string } {
+  const scripts = Array.from(doc.querySelectorAll('script[type="application/json"][data-sveltekit-fetched]'));
+  const target = scripts.find((script) => String(script.getAttribute("data-url") || "").includes("/api/occurrences/search"))
+    || scripts[0];
+  if (!target) return { results: [], count: 0, warning: "embedded search payload script not found" };
+  const outer = safeJsonParse(target.textContent || "");
+  if (!outer || typeof outer !== "object") return { results: [], count: 0, warning: "embedded outer payload was not valid JSON" };
+  const body = (outer as Record<string, unknown>).body;
+  const inner = typeof body === "string" ? safeJsonParse(body) : body;
+  if (!inner || typeof inner !== "object") return { results: [], count: 0, warning: "embedded inner payload was not valid JSON" };
+  const resultRows = Array.isArray((inner as Record<string, unknown>).results) ? (inner as Record<string, unknown>).results as Record<string, unknown>[] : [];
+  const count = Number((inner as Record<string, unknown>).count || resultRows.length || 0);
+  return {
+    results: resultRows.map((row) => normalizeEmbeddedResult(row)).filter((row) => row.date || row.locality || (row.latitude != null && row.longitude != null)),
+    count,
+  };
+}
+
+function parseOccurrenceSearchTable(doc: Document): ElurikkusParsedRecord[] {
+  const tables = Array.from(doc.querySelectorAll("table"));
+  for (const table of tables) {
+    const headers = Array.from(table.querySelectorAll("thead th, tr th")).map((cell) => stripHtml(cell.textContent || "").toLowerCase());
+    const headerText = headers.join(" | ");
+    if (!/(date|kuup|locality|asukoht|collectors|koguja|taxon|teaduslik|common)/i.test(headerText)) continue;
+    const rows = Array.from(table.querySelectorAll("tbody tr, tr")).map((row) => Array.from(row.querySelectorAll("td")).map((cell) => stripHtml(cell.textContent || ""))).filter((cells) => cells.length >= 5);
+    const mapped = rows.map((cells, index) => ({
+      id: `table-row-${index + 1}`,
+      date: firstNonEmpty(cells[0]),
+      locality: firstNonEmpty(cells[5], cells[4]),
+      latitude: null,
+      longitude: null,
+      individualCount: Number.isFinite(Number(cells[3])) ? Number(cells[3]) : null,
+      behavior: firstNonEmpty(cells[4]),
+      recordedBy: firstNonEmpty(cells[6], cells[5]),
+      taxonName: firstNonEmpty(cells[1]),
+      commonNameEst: firstNonEmpty(cells[2]),
+      commonNameEng: null,
+    })).filter((row) => row.date || row.locality);
+    if (mapped.length) return mapped;
+  }
+  return [];
+}
+
+function summarizeParsedElurikkusRecords(records: ElurikkusParsedRecord[]) {
+  const sorted = [...records].sort((left, right) => parseElurikkusDate(String(right.date || "")) - parseElurikkusDate(String(left.date || "")));
+  const freshest = sorted[0] || null;
+  const freshestTs = freshest ? parseElurikkusDate(String(freshest.date || "")) : 0;
+  const localityCounts = new Map<string, number>();
+  for (const record of sorted) {
+    const locality = String(record.locality || "").trim();
+    if (!locality) continue;
+    localityCounts.set(locality, Number(localityCounts.get(locality) || 0) + 1);
+  }
+  return {
+    records: sorted,
+    freshestElurikkusDate: freshestTs > 0 ? new Date(freshestTs).toISOString() : null,
+    freshestElurikkusLocality: freshest ? freshest.locality : null,
+    topElurikkusLocalities: Array.from(localityCounts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 5).map(([label]) => label),
+  };
+}
+
+function parseElurikkusSearchPage(raw: unknown): { records: ElurikkusParsedRecord[]; available: boolean; debug: ElurikkusParserDebug } {
+  const extracted = extractElurikkusHtml(raw);
+  const debug: ElurikkusParserDebug = {
+    inputWasArray: extracted.inputWasArray,
+    usedEmbeddedJson: false,
+    usedTableFallback: false,
+    embeddedResultCount: 0,
+    tableRowCount: 0,
+    freshestParsedDate: null,
+    freshestParsedLocality: null,
+    parserWarnings: [],
+  };
+  if (!extracted.html || !looksLikeHtml(extracted.html)) {
+    debug.parserWarnings.push("input did not look like HTML");
+    return { records: [], available: false, debug };
+  }
+  const doc = new DOMParser().parseFromString(extracted.html, "text/html");
+  if (!doc) {
+    debug.parserWarnings.push("DOMParser failed to parse HTML");
+    return { records: [], available: false, debug };
+  }
+
+  const embedded = parseEmbeddedSearchPayload(doc);
+  debug.embeddedResultCount = embedded.results.length;
+  if (embedded.warning) debug.parserWarnings.push(embedded.warning);
+  let records = embedded.results;
+  if (embedded.results.length || embedded.count > 0) debug.usedEmbeddedJson = true;
+
+  if (!records.length) {
+    const tableRecords = parseOccurrenceSearchTable(doc);
+    debug.tableRowCount = tableRecords.length;
+    if (tableRecords.length) {
+      debug.usedTableFallback = true;
+      records = tableRecords;
+    }
+  }
+
+  const summary = summarizeParsedElurikkusRecords(records);
+  debug.freshestParsedDate = summary.freshestElurikkusDate;
+  debug.freshestParsedLocality = summary.freshestElurikkusLocality;
+  if (!records.length) debug.parserWarnings.push("no valid occurrence rows parsed from embedded JSON or table");
+  return {
+    records: summary.records,
+    available: embedded.count > 0 || summary.records.length > 0,
+    debug,
+  };
 }
 
 function parseElurikkusHtmlItems(html: string): LiveOccItem[] {
@@ -548,6 +729,8 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
     const durationMs = Date.now() - startedAt;
     const upstreamBytes = new TextEncoder().encode(html).length;
     const items = parseElurikkusHtmlItems(html);
+    const parsedSearch = parseElurikkusSearchPage([html]);
+    const parsedSummary = summarizeParsedElurikkusRecords(parsedSearch.records);
     const parsedRows = parseSearchRowsFromHtml(html)
       .filter((r) => Number.isFinite(r.ms || NaN))
       .sort((a, b) => Number(b.ms || 0) - Number(a.ms || 0));
@@ -608,6 +791,12 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
           htmlLength: html.length,
           dataMaxAt,
           occ7,
+          elurikkusAvailable: parsedSearch.available,
+          elurikkusRecentRecords: parsedSummary.records,
+          freshestElurikkusDate: parsedSummary.freshestElurikkusDate,
+          freshestElurikkusLocality: parsedSummary.freshestElurikkusLocality,
+          topElurikkusLocalities: parsedSummary.topElurikkusLocalities,
+          parserDebug: parsedSearch.debug,
           totalResults,
           selected,
           items,
@@ -630,6 +819,12 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
         totalResults,
         dataMaxAt,
         occ7,
+        elurikkusAvailable: parsedSearch.available,
+        elurikkusRecentRecords: parsedSummary.records,
+        freshestElurikkusDate: parsedSummary.freshestElurikkusDate,
+        freshestElurikkusLocality: parsedSummary.freshestElurikkusLocality,
+        topElurikkusLocalities: parsedSummary.topElurikkusLocalities,
+        parserDebug: parsedSearch.debug,
         selected,
         sample: html.slice(0, 200),
         items,
@@ -650,6 +845,21 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
         htmlLength: 0,
         totalResults: 0,
         dataMaxAt: null,
+        elurikkusAvailable: false,
+        elurikkusRecentRecords: [],
+        freshestElurikkusDate: null,
+        freshestElurikkusLocality: null,
+        topElurikkusLocalities: [],
+        parserDebug: {
+          inputWasArray: false,
+          usedEmbeddedJson: false,
+          usedTableFallback: false,
+          embeddedResultCount: 0,
+          tableRowCount: 0,
+          freshestParsedDate: null,
+          freshestParsedLocality: null,
+          parserWarnings: [String((error as Error)?.message || error)],
+        },
         items: [],
         message: String((error as Error)?.message || error),
       })),

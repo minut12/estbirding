@@ -84,18 +84,19 @@ describe("normalizeSpeciesPredictionResult", () => {
       foreignClusters: [
         { id: "cluster-1", lat: 57.9, lon: 24.1, pointCount: 2, newestObsDt: "2026-03-16T00:00:00.000Z", oldestObsDt: "2026-03-15T00:00:00.000Z", freshestDaysAgo: 1, averageDaysAgo: 1.5, totalHowMany: 4, countries: ["Latvia"], countryCodes: ["lv"], locNames: ["Coast"], nearestDistanceKm: 90, isFreshest: true },
       ],
-      weather: { fetchedAt: "2026-03-17T12:00:00.000Z", windSpeedKph: 22, windDirectionDeg: 210, windDirectionLabel: "SW", source: "Open-Meteo" },
+      weather: { fetchedAt: "2026-03-17T12:00:00.000Z", windSpeedKph: 22, windDirectionDeg: 210, windDirectionLabel: "SW", weatherAvailable: true, weatherPartial: false, wasWeatherUsedInRanking: true, source: "Open-Meteo" },
       predictionVectors: [
         { id: "v1", kind: "route", confidence: 78, bearingDeg: 25, distanceKm: 140, points: [{ lat: 57.9, lon: 24.1 }, { lat: 58.5, lon: 24.5 }] },
       ],
-      evidenceSummary: { dataSourcesUsed: ["Elurikkus", "eBird foreign", "Open-Meteo"], foreignEbirdAvailable: true, weatherAvailable: true, rankingMode: "Estonia history + foreign eBird + weather", summaryText: "Evidence-first summary" },
+      evidenceSummary: { dataSourcesUsed: ["Elurikkus", "eBird foreign", "Open-Meteo weather"], activeEvidenceUsed: ["Elurikkus", "eBird foreign", "Open-Meteo weather"], attemptedButNotUsed: [], foreignEbirdAvailable: true, weatherAvailable: true, weatherPartial: false, wasWeatherUsedInRanking: true, rankingMode: "estonia_history_plus_foreign_plus_weather", summaryText: "Evidence-first summary" },
       predictedTargets: [
-        { rank: 1, name: "Target", displayName: "Põõsaspea / Spithami", countyOrParish: "County", displayCountyOrParish: "Lääne-Nigula", lat: 58.51, lon: 24.49, confidence: 0.65, eta: "1d", searchRadiusKm: 12, habitatCue: "History", reason: "Evidence-based target", derivedFromClusterId: "ee-cluster-1", supportingEstoniaHistoryCount: 3, latestSupportingEstoniaDate: "2026-03-10T00:00:00.000Z", windAdjusted: true, representativePointMethod: "medoid", sourceType: "estonia_history_cluster", supportingPointCount: 3, usedForeignPressure: false, habitatFilterAdjustedRanking: true, vectorsSuppressed: true },
+        { rank: 1, name: "Target", displayName: "Põõsaspea / Spithami", countyOrParish: "County", displayCountyOrParish: "Lääne-Nigula", lat: 58.51, lon: 24.49, confidence: 0.65, eta: "1d", searchRadiusKm: 12, habitatCue: "History", reason: "Evidence-based target", rankingMode: "estonia_history_only", derivedFromClusterId: "ee-cluster-1", supportingEstoniaHistoryCount: 3, latestSupportingEstoniaDate: "2026-03-10T00:00:00.000Z", windAdjusted: true, representativePointMethod: "medoid", sourceType: "estonia_history_cluster", supportingPointCount: 3, usedForeignPressure: false, habitatFilterAdjustedRanking: true, vectorsSuppressed: true },
       ],
       mapLayers: { estoniaHistory: true, estoniaHistoryPoints: true, estoniaHistoryClusters: true, foreignEvidence: true, foreignRecentPoints: true, foreignPressureClusters: true, predictedLines: true, predictedCone: true, predictedTargets: true, diagnostics: true, recentOnly: false },
     } as any, "Test Species", "linnuliigid");
 
-    expect(result.evidenceSummary?.rankingMode).toBe("Estonia history + foreign eBird + weather");
+    expect(result.evidenceSummary?.rankingMode).toBe("estonia_history_plus_foreign_plus_weather");
+    expect(result.evidenceSummary?.wasWeatherUsedInRanking).toBe(true);
     expect(result.estoniaHistoryPoints?.length).toBe(1);
     expect(result.estoniaHistoryClusters?.[0]?.id).toBe("ee-cluster-1");
     expect(result.estoniaHistoryClusters?.[0]?.displayName).toBe("Põõsaspea / Spithami");
@@ -103,11 +104,13 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.foreignRecentPoints?.length).toBe(1);
     expect(result.foreignClusters?.[0]?.id).toBe("cluster-1");
     expect(result.weather?.windDirectionLabel).toBe("SW");
+    expect(result.weather?.weatherAvailable).toBe(true);
     expect(result.predictionVectors?.[0]?.kind).toBe("route");
     expect(result.predictedTargets?.[0]?.reason).toBe("Evidence-based target");
     expect(result.predictedTargets?.[0]?.displayName).toBe("Põõsaspea / Spithami");
     expect(result.predictedTargets?.[0]?.representativePointMethod).toBe("medoid");
     expect(result.predictedTargets?.[0]?.sourceType).toBe("estonia_history_cluster");
+    expect(result.predictedTargets?.[0]?.rankingMode).toBe("estonia_history_only");
     expect(result.predictedTargets?.[0]?.vectorsSuppressed).toBe(true);
     expect(result.predictedTargets?.[0]?.derivedFromClusterId).toBe("ee-cluster-1");
     expect(result.predictedTargets?.[0]?.supportingEstoniaHistoryCount).toBe(3);

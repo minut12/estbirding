@@ -134,6 +134,10 @@ export type SpeciesPredictionWeather = {
   windDirectionLabel: string;
   precipitationMm?: number;
   temperatureC?: number;
+  weatherAvailable?: boolean;
+  weatherPartial?: boolean;
+  wasWeatherUsedInRanking?: boolean;
+  error?: string;
   source: 'Open-Meteo';
 };
 
@@ -190,12 +194,17 @@ export type PredictedPoint = {
   usedForeignPressure?: boolean;
   habitatFilterAdjustedRanking?: boolean;
   vectorsSuppressed?: boolean;
+  rankingMode?: string;
 };
 
 export type SpeciesPredictionEvidenceSummary = {
   dataSourcesUsed?: string[];
+  activeEvidenceUsed?: string[];
+  attemptedButNotUsed?: string[];
   foreignEbirdAvailable?: boolean;
   weatherAvailable?: boolean;
+  weatherPartial?: boolean;
+  wasWeatherUsedInRanking?: boolean;
   rankingMode?: string;
   summaryText?: string;
 };
@@ -838,6 +847,7 @@ function normalizePredictedPoint(point: Partial<PredictedPoint> | null | undefin
     ...(typeof source.usedForeignPressure === 'boolean' ? { usedForeignPressure: source.usedForeignPressure === true } : {}),
     ...(typeof source.habitatFilterAdjustedRanking === 'boolean' ? { habitatFilterAdjustedRanking: source.habitatFilterAdjustedRanking === true } : {}),
     ...(typeof source.vectorsSuppressed === 'boolean' ? { vectorsSuppressed: source.vectorsSuppressed === true } : {}),
+    ...(readString(source, ['rankingMode', 'ranking_mode']) ? { rankingMode: normalizeUiText(readString(source, ['rankingMode', 'ranking_mode'])) } : {}),
   };
 }
 
@@ -848,8 +858,12 @@ function normalizeEvidenceSummary(input: Record<string, unknown> | null): Specie
     .filter(Boolean);
   return {
     ...(dataSourcesUsed.length ? { dataSourcesUsed } : {}),
+    ...(Array.isArray(readArray(input, ['activeEvidenceUsed', 'active_evidence_used'])) ? { activeEvidenceUsed: (readArray(input, ['activeEvidenceUsed', 'active_evidence_used']) || []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean) } : {}),
+    ...(Array.isArray(readArray(input, ['attemptedButNotUsed', 'attempted_but_not_used'])) ? { attemptedButNotUsed: (readArray(input, ['attemptedButNotUsed', 'attempted_but_not_used']) || []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean) } : {}),
     ...(typeof input.foreignEbirdAvailable === 'boolean' ? { foreignEbirdAvailable: input.foreignEbirdAvailable === true } : {}),
     ...(typeof input.weatherAvailable === 'boolean' ? { weatherAvailable: input.weatherAvailable === true } : {}),
+    ...(typeof input.weatherPartial === 'boolean' ? { weatherPartial: input.weatherPartial === true } : {}),
+    ...(typeof input.wasWeatherUsedInRanking === 'boolean' ? { wasWeatherUsedInRanking: input.wasWeatherUsedInRanking === true } : {}),
     ...(readString(input, ['rankingMode', 'ranking_mode']) ? { rankingMode: normalizeUiText(readString(input, ['rankingMode', 'ranking_mode'])) } : {}),
     ...(readString(input, ['summaryText', 'summary_text']) ? { summaryText: normalizeUiText(readString(input, ['summaryText', 'summary_text'])) } : {}),
   };
@@ -1063,6 +1077,10 @@ function normalizeWeather(input: Record<string, unknown> | null): SpeciesPredict
     windDirectionLabel: normalizeUiText(readString(input, ['windDirectionLabel', 'wind_direction_label']) || ''),
     ...(hasValue(input, ['precipitationMm', 'precipitation_mm']) ? { precipitationMm: clampFloat(readNumber(input, ['precipitationMm', 'precipitation_mm']), 0, 500, 0) } : {}),
     ...(hasValue(input, ['temperatureC', 'temperature_c']) ? { temperatureC: clampFloat(readNumber(input, ['temperatureC', 'temperature_c']), -80, 80, 0) } : {}),
+    ...(typeof input.weatherAvailable === 'boolean' ? { weatherAvailable: input.weatherAvailable === true } : {}),
+    ...(typeof input.weatherPartial === 'boolean' ? { weatherPartial: input.weatherPartial === true } : {}),
+    ...(typeof input.wasWeatherUsedInRanking === 'boolean' ? { wasWeatherUsedInRanking: input.wasWeatherUsedInRanking === true } : {}),
+    ...(readString(input, ['error']) ? { error: normalizeUiText(readString(input, ['error'])) } : {}),
     source: 'Open-Meteo',
   };
 }

@@ -789,6 +789,7 @@ function buildPredictedTargets(opts: {
   const hasRecentForeignSupport = foreignRecentPoints.some((point) => toNumber(point.daysAgo) <= 14);
   const hasForeignPressure = foreignClusters.length > 0 && hasRecentForeignSupport;
   const hasWeatherSupport = weatherLooksAvailable(weather);
+  const hasRecentEstoniaSupport = toNumber(estoniaEvidence.recentCount30d) > 0 || estoniaHistoryClusters.some((cluster) => cluster.recentCount > 0);
   const rankingMode = determineRankingMode(hasForeignPressure, hasWeatherSupport);
   weather.wasWeatherUsedInRanking = rankingMode === 'estonia_history_plus_weather' || rankingMode === 'estonia_history_plus_foreign_plus_weather';
   const supportingCountries = hasForeignPressure
@@ -806,11 +807,11 @@ function buildPredictedTargets(opts: {
     const historyScore = historyScoreForDebug(cluster);
     const foreignBoost = hasForeignPressure ? clampInt(routeAlignment, 0, 20) : 0;
     const weatherBoost = hasWeatherSupport ? clampInt(Math.round(computeWindSupport(weather) / 10), 0, 8) : 0;
-    const noRecentEstoniaPenalty = cluster.recentCount > 0 ? 0 : 8;
+    const noRecentEstoniaPenalty = cluster.recentCount > 0 ? 0 : (hasRecentEstoniaSupport ? 8 : 14);
     const looseClusterPenalty = toNumber(cluster.clusterTightnessKm) > 12 ? 8 : (toNumber(cluster.clusterTightnessKm) > 6 ? 4 : 0);
-    const weakHabitatPenalty = ecologyScore.score < 0 ? Math.abs(ecologyScore.score) : (ecologyScore.adjustedRanking ? 4 : 0);
+    const weakHabitatPenalty = ecologyScore.score < 0 ? Math.abs(ecologyScore.score) : (ecologyScore.adjustedRanking ? 6 : 0);
     const weatherPenalty = weather.weatherPartial === true || !stringOr(weather.fetchedAt) ? 6 : 0;
-    const foreignPenalty = hasForeignPressure ? 0 : 8;
+    const foreignPenalty = hasForeignPressure ? 0 : 10;
     const confidenceBeforeCap = historyScore + ecologyScore.score + foreignBoost + weatherBoost
       - noRecentEstoniaPenalty - looseClusterPenalty - weakHabitatPenalty - weatherPenalty - foreignPenalty;
     const confidenceCap = getConfidenceCapForRankingMode(rankingMode);
@@ -866,8 +867,8 @@ function buildPredictedTargets(opts: {
     });
     return {
       rank: index + 1,
-      name: stringOr(cluster.displayName, cluster.locality, 'Estonia hotspot'),
-      displayName: stringOr(cluster.displayName, cluster.locality, 'Estonia hotspot'),
+      name: stringOr(cluster.displayName, 'Unnamed history cluster'),
+      displayName: stringOr(cluster.displayName, 'Unnamed history cluster'),
       countyOrParish: stringOr(cluster.municipality, 'Unavailable'),
       displayCountyOrParish: stringOr(cluster.municipality, 'Unavailable'),
       lat: Number.isFinite(Number(cluster.representativeLat)) ? toNumber(cluster.representativeLat) : toNumber(cluster.lat),
@@ -902,7 +903,7 @@ function buildPredictedTargets(opts: {
       historySupportScore: historyScoreForDebug(cluster),
       foreignSupportScore: hasForeignPressure ? entry.routeAlignment : 0,
       weatherSupportScore: hasWeatherSupport ? clampInt(Math.round(computeWindSupport(weather) / 10), 0, 8) : 0,
-      confidenceBeforeCap: Number(entry.confidenceBeforeCap.toFixed(2)),
+      confidenceBeforeCap: Number((Math.max(0, entry.confidenceBeforeCap) / 100).toFixed(2)),
       confidenceAfterCap: entry.confidenceAfterCap,
       debug: {
         rawClusterId: cluster.id,
@@ -918,7 +919,7 @@ function buildPredictedTargets(opts: {
         historySupportScore: historyScoreForDebug(cluster),
         foreignSupportScore: hasForeignPressure ? entry.routeAlignment : 0,
         weatherSupportScore: hasWeatherSupport ? clampInt(Math.round(computeWindSupport(weather) / 10), 0, 8) : 0,
-        confidenceBeforeCap: Number(entry.confidenceBeforeCap.toFixed(2)),
+        confidenceBeforeCap: Number((Math.max(0, entry.confidenceBeforeCap) / 100).toFixed(2)),
         confidenceAfterCap: entry.confidenceAfterCap,
         finalConfidenceComponents: {
           confidenceCap,
@@ -1438,9 +1439,9 @@ function buildTargetReason(input: {
   const habitatText = stringOr(hotspot.habitatCue, ecologyScore.habitatCue, ecology.mode);
   const localityText = stringOr(hotspot.displayName, hotspot.locality, hotspot.municipality, 'a known hotspot');
   const representativeText = describeRepresentativeMethod(stringOr(hotspot.representativePointMethod), stringOr(hotspot.representativeLocality, localityText));
-  const historyText = `${speciesName} is supported by ${hotspot.count} Estonia records (${hotspot.recentCount} recent) around ${localityText}, latest support ${latestHistory}. ${representativeText}`;
+  const historyText = `Repeated Estonia history around ${localityText} for ${speciesName} (${hotspot.count} records, ${hotspot.recentCount} recent; latest ${latestHistory}). ${representativeText}`;
   if (!hasForeignPressure) {
-    return `${historyText} Ranking uses Estonia history and habitat fit only because no usable foreign eBird support was available. Habitat relevance: ${habitatText}.`;
+    return `${historyText} Habitat relevance: ${habitatText}. Ranking uses Estonia history and habitat fit only because no usable foreign eBird support was available.`;
   }
   const countries = foreignCluster && Array.isArray(foreignCluster.countries) ? foreignCluster.countries.join(', ') : 'foreign eBird';
   const hotspotRecord = hotspot as Record<string, unknown>;
@@ -1450,7 +1451,7 @@ function buildTargetReason(input: {
   const weatherText = hasWeatherSupport
     ? ` Weather support contributed to ranking (${bearingToCompass(toNumber(weather.windDirectionDeg))} ${Math.round(toNumber(weather.windSpeedKph))} km/h, ${stringOr(weather.fetchedAt, 'timestamp unavailable')}).`
     : '';
-  return `${historyText} Recent foreign eBird support from ${countries}${foreignDistanceKm != null ? ` is about ${Math.round(foreignDistanceKm)} km from this representative point` : ''}. Habitat relevance: ${habitatText}.${weatherText}`;
+  return `${historyText} Habitat relevance: ${habitatText}. Recent foreign eBird support from ${countries}${foreignDistanceKm != null ? ` is about ${Math.round(foreignDistanceKm)} km from this representative point` : ''}.${weatherText}`;
 }
 
 function buildCountryScores(foreignEvidence: Record<string, unknown>[]): Record<string, number> {
@@ -1475,13 +1476,23 @@ function buildEvidenceSummary(input: {
   const weatherAvailable = weatherLooksAvailable(input.weather);
   const weatherPartial = input.weather.weatherPartial === true || !stringOr(input.weather.fetchedAt);
   const rankingMode = determineRankingMode(foreignAvailable, weatherAvailable);
-  const activeEvidenceUsed = [input.activeHistorySource, foreignAvailable ? 'eBird foreign' : '', weatherAvailable ? 'Open-Meteo weather' : ''].filter(Boolean);
+  const availableSources = [
+    input.activeHistorySource,
+    foreignAvailable ? 'eBird foreign' : '',
+    input.weather.weatherAvailable === true ? 'Open-Meteo weather' : '',
+  ].filter(Boolean);
+  const activeEvidenceUsed = [
+    input.activeHistorySource,
+    foreignAvailable ? 'eBird foreign' : '',
+    weatherAvailable ? 'Open-Meteo weather' : '',
+  ].filter(Boolean);
   const attemptedButNotUsed = [
     input.attemptedForeign && !foreignAvailable ? 'eBird foreign' : '',
-    input.weather.weatherAvailable === false || weatherPartial ? 'Open-Meteo weather' : '',
+    input.weather.weatherAvailable === false || weatherPartial || (input.weather.weatherAvailable === true && !weatherAvailable) ? 'Open-Meteo weather' : '',
   ].filter(Boolean);
   return {
-    dataSourcesUsed: activeEvidenceUsed,
+    dataSourcesUsed: availableSources,
+    availableSources,
     activeEvidenceUsed,
     attemptedButNotUsed,
     foreignEbirdAvailable: foreignAvailable,
@@ -1544,7 +1555,7 @@ function scoreClusterEcology(
       return { score: -48, adjustedRanking: true, excluded: true, habitatCue: cue || 'Unsuitable inland habitat' };
     }
     return {
-      score: coastalMatch ? 30 : -26,
+      score: coastalMatch ? 34 : -34,
       adjustedRanking: !coastalMatch || coastalDistanceKm > 8,
       excluded: false,
       habitatCue: coastalMatch ? (cue || 'Coastal or open-water habitat') : (cue || 'Habitat uncertain away from coast'),
@@ -1702,6 +1713,9 @@ function sanitizeDisplayLabel(value: string): string {
   if (/^\d+[a-z]?\d*\s+\d+[a-z]?\d*$/i.test(label)) return '';
   if (/^ee-cluster-\d+$/i.test(label)) return '';
   if (/^cluster-\d+$/i.test(label)) return '';
+  if (/^\d+(?::\d+)?$/.test(label)) return '';
+  if (/^[a-z]{1,4}-?cluster-\d+$/i.test(label)) return '';
+  if (/^[0-9]{2}[a-z]?[0-9]{2,}.*$/i.test(label)) return '';
   return label;
 }
 

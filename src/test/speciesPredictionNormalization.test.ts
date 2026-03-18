@@ -181,4 +181,67 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.predictedTargets?.[0]?.confidenceBeforeCap).toBe(0.82);
     expect(result.predictedTargets?.[0]?.confidenceAfterCap).toBe(0.7);
   });
+
+  it("normalizes available sources separately from active evidence", () => {
+    const result = normalizeSpeciesPredictionResult({
+      speciesKey: "test-species",
+      speciesName: "Test Species",
+      generatedAt: "2026-03-18T12:00:00.000Z",
+      evidenceSummary: {
+        dataSourcesUsed: ["GBIF Estonia", "Open-Meteo weather"],
+        availableSources: ["GBIF Estonia", "Open-Meteo weather"],
+        activeEvidenceUsed: ["GBIF Estonia"],
+        attemptedButNotUsed: ["eBird foreign", "Open-Meteo weather"],
+        foreignEbirdAvailable: false,
+        weatherAvailable: false,
+        weatherPartial: true,
+        wasWeatherUsedInRanking: false,
+        rankingMode: "estonia_history_only",
+      },
+    } as any, "Test Species", "linnuliigid");
+
+    expect(result.evidenceSummary?.availableSources).toEqual(["GBIF Estonia", "Open-Meteo weather"]);
+    expect(result.evidenceSummary?.activeEvidenceUsed).toEqual(["GBIF Estonia"]);
+    expect(result.evidenceSummary?.attemptedButNotUsed).toEqual(["eBird foreign", "Open-Meteo weather"]);
+  });
+
+  it("preserves confidence cap metadata and coordinate source fields for predicted targets", () => {
+    const result = normalizeSpeciesPredictionResult({
+      speciesKey: "test-species",
+      speciesName: "Test Species",
+      generatedAt: "2026-03-18T12:00:00.000Z",
+      predictedTargets: [
+        {
+          rank: 1,
+          name: "Põõsaspea",
+          displayName: "Põõsaspea",
+          displayNameSource: "normalized_locality",
+          countyOrParish: "Lääne-Nigula",
+          lat: 58.9,
+          lon: 23.5,
+          confidence: 0.7,
+          eta: "2d",
+          searchRadiusKm: 12,
+          habitatCue: "coastal corridor",
+          reason: "Repeated spring records around Põõsaspea.",
+          rankingMode: "estonia_history_only",
+          representativePointMethod: "medoid",
+          coordinateSource: "medoid",
+          rawClusterId: "ee-cluster-4",
+          habitatFitScore: 34,
+          historySupportScore: 51,
+          foreignSupportScore: 0,
+          weatherSupportScore: 0,
+          confidenceBeforeCap: 0.86,
+          confidenceAfterCap: 0.7,
+        },
+      ],
+    } as any, "Test Species", "linnuliigid");
+
+    expect(result.predictedTargets?.[0]?.displayName).toBe("Põõsaspea");
+    expect(result.predictedTargets?.[0]?.displayNameSource).toBe("normalized_locality");
+    expect(result.predictedTargets?.[0]?.coordinateSource).toBe("medoid");
+    expect(result.predictedTargets?.[0]?.confidenceBeforeCap).toBe(0.86);
+    expect(result.predictedTargets?.[0]?.confidenceAfterCap).toBe(0.7);
+  });
 });

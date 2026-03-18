@@ -531,13 +531,14 @@
     html += renderStateCard('spp-state-success', 'Prediction complete', 'Rendering the latest backend evidence and target ranking for this species.');
     html += '<div class="spp-card"><h4>Summary</h4><p class="spp-summary-text">' + escapeHtml(summarySentence(evidenceSummary, sourceHealth, weather, foreignClusters)) + '</p><div class="spp-grid">' +
       metricCell('Ranking mode', formatRankingMode(evidenceSummary && evidenceSummary.rankingMode ? evidenceSummary.rankingMode : 'estonia_history_only')) +
+      metricCell('Available sources', summarizeAvailableSources(evidenceSummary, sourceHealth)) +
       metricCell('Active evidence used', summarizeActiveEvidence(evidenceSummary, sourceHealth)) +
       metricCell('Attempted but not used', summarizeAttemptedButNotUsed(evidenceSummary)) +
       metricCell('Foreign eBird available', evidenceSummary && evidenceSummary.foreignEbirdAvailable ? 'Yes' : 'No') +
       metricCell('Weather used in ranking', formatWeatherUsage(evidenceSummary, weather)) +
-      metricCell('Freshest foreign record', evidenceSummary && evidenceSummary.foreignEbirdAvailable && foreignRecentPoints[0] && foreignRecentPoints[0].obsDt ? foreignRecentPoints[0].obsDt : 'Unavailable') +
-      metricCell('Nearest foreign cluster', evidenceSummary && evidenceSummary.foreignEbirdAvailable ? formatDistance(findNearestClusterDistance(foreignEvidence) || (foreignClusters[0] && foreignClusters[0].nearestDistanceKm)) : 'Unavailable') +
-      metricCell('Foreign countries', evidenceSummary && evidenceSummary.foreignEbirdAvailable ? summarizeCountries(foreignEvidence, foreignClusters) : 'Unavailable') +
+      metricCell('Freshest foreign record', evidenceSummary && evidenceSummary.foreignEbirdAvailable && foreignRecentPoints[0] && foreignRecentPoints[0].obsDt ? foreignRecentPoints[0].obsDt : 'Not used') +
+      metricCell('Nearest foreign cluster', evidenceSummary && evidenceSummary.foreignEbirdAvailable ? formatDistance(findNearestClusterDistance(foreignEvidence) || (foreignClusters[0] && foreignClusters[0].nearestDistanceKm)) : 'Not used') +
+      metricCell('Foreign countries', evidenceSummary && evidenceSummary.foreignEbirdAvailable ? summarizeCountries(foreignEvidence, foreignClusters) : 'Not used') +
       metricCell('Historical Estonia total', estoniaHistoryPoints.length) +
       metricCell('Recent Estonia count', estoniaEvidence ? estoniaEvidence.recentCount7d : 0) +
       metricCell('Weather / wind', weatherLine(weather, evidenceSummary)) +
@@ -766,7 +767,7 @@
     var hasForeignEvidence = Array.isArray(point && point.supportingCountries) && point.supportingCountries.length;
     var rankingMode = String(point && point.rankingMode || '');
     var showForeignFields = rankingMode.indexOf('plus_foreign') >= 0 && hasForeignEvidence;
-    var isEstoniaHistoryOnly = rankingMode === 'estonia_history_only';
+    var foreignSupportNote = compactForeignSupportNote(point);
     var metrics = '' +
       metricCell('ETA', point && point.eta) +
       metricCell('Radius', appendKm(point && point.searchRadiusKm)) +
@@ -804,7 +805,7 @@
       '    <div class="spp-point-reason-text">' + escapeHtml(cleanReasonText(point && point.reason, hasForeignEvidence)) + '</div>' +
       (point && point.historicalMatch ? '<div class="spp-point-reason-text" style="margin-top:6px"><strong>Historical match:</strong> ' + escapeHtml(point.historicalMatch) + '</div>' : '') +
       (point && point.representativePointMethod ? '<div class="spp-point-reason-text" style="margin-top:6px"><strong>Representative point:</strong> ' + escapeHtml(formatCoordinateSource(point.coordinateSource || point.representativePointMethod)) + '</div>' : '') +
-      (isEstoniaHistoryOnly ? '<div class="spp-point-reason-text" style="margin-top:6px"><strong>Foreign support:</strong> No usable foreign eBird support in this result.</div>' : '') +
+      (foreignSupportNote ? '<div class="spp-point-reason-text" style="margin-top:6px"><strong>Foreign support:</strong> ' + escapeHtml(foreignSupportNote) + '</div>' : '') +
       '  </div>' +
       '</div>';
   }
@@ -1118,6 +1119,12 @@
     return sources.join(', ');
   }
 
+  function summarizeAvailableSources(evidenceSummary, sourceHealth) {
+    var sources = Array.isArray(evidenceSummary && evidenceSummary.availableSources) ? evidenceSummary.availableSources : [];
+    if (!sources.length) return summarizeSources(evidenceSummary, sourceHealth);
+    return sources.join(', ');
+  }
+
   function summarizeAttemptedButNotUsed(evidenceSummary) {
     var items = Array.isArray(evidenceSummary && evidenceSummary.attemptedButNotUsed) ? evidenceSummary.attemptedButNotUsed : [];
     return items.length ? items.join(', ') : 'None';
@@ -1180,6 +1187,14 @@
       .replace(/wind is aligned[^.]*\./ig, '')
       .replace(/\s{2,}/g, ' ')
       .trim() || 'Unavailable';
+  }
+
+  function compactForeignSupportNote(point) {
+    var rankingMode = String(point && point.rankingMode || '');
+    if (rankingMode === 'estonia_history_only' || rankingMode === 'estonia_history_plus_weather') {
+      return 'No usable foreign eBird support in this result.';
+    }
+    return '';
   }
 
   function getStatusText() {

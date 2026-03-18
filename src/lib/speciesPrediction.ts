@@ -208,6 +208,7 @@ export type PredictedPoint = {
 
 export type SpeciesPredictionEvidenceSummary = {
   dataSourcesUsed?: string[];
+  availableSources?: string[];
   activeEvidenceUsed?: string[];
   attemptedButNotUsed?: string[];
   foreignEbirdAvailable?: boolean;
@@ -876,6 +877,7 @@ function normalizeEvidenceSummary(input: Record<string, unknown> | null): Specie
     .filter(Boolean);
   return {
     ...(dataSourcesUsed.length ? { dataSourcesUsed } : {}),
+    ...(Array.isArray(readArray(input, ['availableSources', 'available_sources'])) ? { availableSources: (readArray(input, ['availableSources', 'available_sources']) || []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean) } : {}),
     ...(Array.isArray(readArray(input, ['activeEvidenceUsed', 'active_evidence_used'])) ? { activeEvidenceUsed: (readArray(input, ['activeEvidenceUsed', 'active_evidence_used']) || []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean) } : {}),
     ...(Array.isArray(readArray(input, ['attemptedButNotUsed', 'attempted_but_not_used'])) ? { attemptedButNotUsed: (readArray(input, ['attemptedButNotUsed', 'attempted_but_not_used']) || []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean) } : {}),
     ...(typeof input.foreignEbirdAvailable === 'boolean' ? { foreignEbirdAvailable: input.foreignEbirdAvailable === true } : {}),

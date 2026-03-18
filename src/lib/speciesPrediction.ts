@@ -170,6 +170,7 @@ export type PredictedPoint = {
   rank: number;
   name: string;
   displayName?: string;
+  displayNameSource?: string;
   countyOrParish: string;
   displayCountyOrParish?: string;
   lat: number;
@@ -190,11 +191,19 @@ export type PredictedPoint = {
   windAdjusted?: boolean;
   sourceType?: string;
   representativePointMethod?: string;
+  coordinateSource?: string;
   supportingPointCount?: number;
   usedForeignPressure?: boolean;
   habitatFilterAdjustedRanking?: boolean;
   vectorsSuppressed?: boolean;
   rankingMode?: string;
+  rawClusterId?: string;
+  habitatFitScore?: number;
+  historySupportScore?: number;
+  foreignSupportScore?: number;
+  weatherSupportScore?: number;
+  confidenceBeforeCap?: number;
+  confidenceAfterCap?: number;
 };
 
 export type SpeciesPredictionEvidenceSummary = {
@@ -803,6 +812,7 @@ function normalizePredictedPoint(point: Partial<PredictedPoint> | null | undefin
     rank: clampNumber(rankValue, 1, 99, index + 1),
     name: normalizeUiText(readString(source, ['name']) || ''),
     ...(readString(source, ['displayName', 'display_name']) ? { displayName: normalizeUiText(readString(source, ['displayName', 'display_name'])) } : {}),
+    ...(readString(source, ['displayNameSource', 'display_name_source']) ? { displayNameSource: normalizeUiText(readString(source, ['displayNameSource', 'display_name_source'])) } : {}),
     countyOrParish: normalizeUiText(readString(source, ['countyOrParish', 'county_or_parish', 'county', 'parish']) || ''),
     ...(readString(source, ['displayCountyOrParish', 'display_county_or_parish']) ? { displayCountyOrParish: normalizeUiText(readString(source, ['displayCountyOrParish', 'display_county_or_parish'])) } : {}),
     lat: readNumber(source, ['lat', 'latitude']),
@@ -841,6 +851,7 @@ function normalizePredictedPoint(point: Partial<PredictedPoint> | null | undefin
       : {}),
     ...(readString(source, ['sourceType', 'source_type']) ? { sourceType: normalizeUiText(readString(source, ['sourceType', 'source_type'])) } : {}),
     ...(readString(source, ['representativePointMethod', 'representative_point_method']) ? { representativePointMethod: normalizeUiText(readString(source, ['representativePointMethod', 'representative_point_method'])) } : {}),
+    ...(readString(source, ['coordinateSource', 'coordinate_source']) ? { coordinateSource: normalizeUiText(readString(source, ['coordinateSource', 'coordinate_source'])) } : {}),
     ...(hasValue(source, ['supportingPointCount', 'supporting_point_count'])
       ? { supportingPointCount: clampNumber(readNumber(source, ['supportingPointCount', 'supporting_point_count']), 0, 999999, 0) }
       : {}),
@@ -848,6 +859,13 @@ function normalizePredictedPoint(point: Partial<PredictedPoint> | null | undefin
     ...(typeof source.habitatFilterAdjustedRanking === 'boolean' ? { habitatFilterAdjustedRanking: source.habitatFilterAdjustedRanking === true } : {}),
     ...(typeof source.vectorsSuppressed === 'boolean' ? { vectorsSuppressed: source.vectorsSuppressed === true } : {}),
     ...(readString(source, ['rankingMode', 'ranking_mode']) ? { rankingMode: normalizeUiText(readString(source, ['rankingMode', 'ranking_mode'])) } : {}),
+    ...(readString(source, ['rawClusterId', 'raw_cluster_id']) ? { rawClusterId: normalizeUiText(readString(source, ['rawClusterId', 'raw_cluster_id'])) } : {}),
+    ...(hasValue(source, ['habitatFitScore', 'habitat_fit_score']) ? { habitatFitScore: clampFloat(readNumber(source, ['habitatFitScore', 'habitat_fit_score']), -999999, 999999, 0) } : {}),
+    ...(hasValue(source, ['historySupportScore', 'history_support_score']) ? { historySupportScore: clampFloat(readNumber(source, ['historySupportScore', 'history_support_score']), -999999, 999999, 0) } : {}),
+    ...(hasValue(source, ['foreignSupportScore', 'foreign_support_score']) ? { foreignSupportScore: clampFloat(readNumber(source, ['foreignSupportScore', 'foreign_support_score']), -999999, 999999, 0) } : {}),
+    ...(hasValue(source, ['weatherSupportScore', 'weather_support_score']) ? { weatherSupportScore: clampFloat(readNumber(source, ['weatherSupportScore', 'weather_support_score']), -999999, 999999, 0) } : {}),
+    ...(hasValue(source, ['confidenceBeforeCap', 'confidence_before_cap']) ? { confidenceBeforeCap: clampFloat(readNumber(source, ['confidenceBeforeCap', 'confidence_before_cap']), -999999, 999999, 0) } : {}),
+    ...(hasValue(source, ['confidenceAfterCap', 'confidence_after_cap']) ? { confidenceAfterCap: clampFloat(readNumber(source, ['confidenceAfterCap', 'confidence_after_cap']), -999999, 999999, 0) } : {}),
   };
 }
 

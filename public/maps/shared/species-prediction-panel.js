@@ -530,17 +530,17 @@
     var html = '';
     html += renderStateCard('spp-state-success', 'Prediction complete', 'Rendering the latest backend evidence and target ranking for this species.');
     html += '<div class="spp-card"><h4>Summary</h4><p class="spp-summary-text">' + escapeHtml(summarySentence(evidenceSummary, sourceHealth, weather, foreignClusters)) + '</p><div class="spp-grid">' +
-      metricCell('Ranking mode', formatRankingMode(evidenceSummary && evidenceSummary.rankingMode ? evidenceSummary.rankingMode : inferRankingMode(foreignClusters, weather))) +
+      metricCell('Ranking mode', formatRankingMode(evidenceSummary && evidenceSummary.rankingMode ? evidenceSummary.rankingMode : 'estonia_history_only')) +
       metricCell('Active evidence used', summarizeActiveEvidence(evidenceSummary, sourceHealth)) +
       metricCell('Attempted but not used', summarizeAttemptedButNotUsed(evidenceSummary)) +
-      metricCell('Foreign eBird available', foreignClusters.length ? 'Yes' : 'No') +
-      metricCell('Weather used', evidenceSummary && evidenceSummary.wasWeatherUsedInRanking ? 'Yes' : (weatherLooksUsable(weather) ? 'Partial' : 'No')) +
-      metricCell('Freshest foreign record', foreignRecentPoints[0] && foreignRecentPoints[0].obsDt ? foreignRecentPoints[0].obsDt : 'Unavailable') +
-      metricCell('Nearest foreign cluster', foreignClusters.length ? formatDistance(findNearestClusterDistance(foreignEvidence) || (foreignClusters[0] && foreignClusters[0].nearestDistanceKm)) : 'Unavailable') +
-      metricCell('Foreign countries', foreignClusters.length ? summarizeCountries(foreignEvidence, foreignClusters) : 'Unavailable') +
+      metricCell('Foreign eBird available', evidenceSummary && evidenceSummary.foreignEbirdAvailable ? 'Yes' : 'No') +
+      metricCell('Weather used in ranking', formatWeatherUsage(evidenceSummary, weather)) +
+      metricCell('Freshest foreign record', evidenceSummary && evidenceSummary.foreignEbirdAvailable && foreignRecentPoints[0] && foreignRecentPoints[0].obsDt ? foreignRecentPoints[0].obsDt : 'Unavailable') +
+      metricCell('Nearest foreign cluster', evidenceSummary && evidenceSummary.foreignEbirdAvailable ? formatDistance(findNearestClusterDistance(foreignEvidence) || (foreignClusters[0] && foreignClusters[0].nearestDistanceKm)) : 'Unavailable') +
+      metricCell('Foreign countries', evidenceSummary && evidenceSummary.foreignEbirdAvailable ? summarizeCountries(foreignEvidence, foreignClusters) : 'Unavailable') +
       metricCell('Historical Estonia total', estoniaHistoryPoints.length) +
       metricCell('Recent Estonia count', estoniaEvidence ? estoniaEvidence.recentCount7d : 0) +
-      metricCell('Weather / wind', weatherLooksUsable(weather) ? weatherLine(weather, evidenceSummary) : 'Unavailable') +
+      metricCell('Weather / wind', weatherLine(weather, evidenceSummary)) +
       '</div></div>';
     html += '<div class="spp-card"><h4>Species header</h4><div class="spp-grid">' +
       metricCell('Species', speciesInfo && speciesInfo.speciesName ? speciesInfo.speciesName : (result.speciesName || state.speciesName || 'Unavailable')) +
@@ -667,8 +667,18 @@
       return '<div class="spp-debug-item">' +
         '<div class="spp-debug-label">#' + escapeHtml(point.rank || '?') + ' ' + escapeHtml(point.displayName || point.name || 'Target') + '</div>' +
         '<div class="spp-debug-value">source=' + escapeHtml(point.sourceType || 'Unavailable') +
+        ' | rawClusterId=' + escapeHtml(point.rawClusterId || point.derivedFromClusterId || 'Unavailable') +
+        ' | displayNameSource=' + escapeHtml(point.displayNameSource || 'Unavailable') +
+        ' | coordinateSource=' + escapeHtml(point.coordinateSource || point.representativePointMethod || 'Unavailable') +
+        ' | rankingMode=' + escapeHtml(point.rankingMode || 'Unavailable') +
         ' | representative=' + escapeHtml(point.representativePointMethod || 'Unavailable') +
         ' | support=' + escapeHtml(point.supportingPointCount || point.supportingEstoniaHistoryCount || 'Unavailable') +
+        ' | habitatFit=' + escapeHtml(point.habitatFitScore != null ? point.habitatFitScore : 'Unavailable') +
+        ' | historyScore=' + escapeHtml(point.historySupportScore != null ? point.historySupportScore : 'Unavailable') +
+        ' | foreignScore=' + escapeHtml(point.foreignSupportScore != null ? point.foreignSupportScore : 'Unavailable') +
+        ' | weatherScore=' + escapeHtml(point.weatherSupportScore != null ? point.weatherSupportScore : 'Unavailable') +
+        ' | confBeforeCap=' + escapeHtml(point.confidenceBeforeCap != null ? point.confidenceBeforeCap : 'Unavailable') +
+        ' | confAfterCap=' + escapeHtml(point.confidenceAfterCap != null ? point.confidenceAfterCap : 'Unavailable') +
         ' | habitatFilter=' + escapeHtml(point.habitatFilterAdjustedRanking ? 'Yes' : 'No') +
         ' | foreign=' + escapeHtml(point.usedForeignPressure ? 'Yes' : 'No') +
         ' | vectorsSuppressed=' + escapeHtml(point.vectorsSuppressed ? 'Yes' : 'No') +
@@ -756,6 +766,7 @@
     var hasForeignEvidence = Array.isArray(point && point.supportingCountries) && point.supportingCountries.length;
     var rankingMode = String(point && point.rankingMode || '');
     var showForeignFields = rankingMode.indexOf('plus_foreign') >= 0 && hasForeignEvidence;
+    var isEstoniaHistoryOnly = rankingMode === 'estonia_history_only';
     var metrics = '' +
       metricCell('ETA', point && point.eta) +
       metricCell('Radius', appendKm(point && point.searchRadiusKm)) +
@@ -792,8 +803,8 @@
       '    <div class="spp-point-reason-label">Reason</div>' +
       '    <div class="spp-point-reason-text">' + escapeHtml(cleanReasonText(point && point.reason, hasForeignEvidence)) + '</div>' +
       (point && point.historicalMatch ? '<div class="spp-point-reason-text" style="margin-top:6px"><strong>Historical match:</strong> ' + escapeHtml(point.historicalMatch) + '</div>' : '') +
-      (point && point.representativePointMethod ? '<div class="spp-point-reason-text" style="margin-top:6px"><strong>Representative point:</strong> ' + escapeHtml(point.representativePointMethod) + '</div>' : '') +
-      (!showForeignFields ? '<div class="spp-point-reason-text" style="margin-top:6px"><strong>Foreign support:</strong> No usable foreign eBird support in current result.</div>' : '') +
+      (point && point.representativePointMethod ? '<div class="spp-point-reason-text" style="margin-top:6px"><strong>Representative point:</strong> ' + escapeHtml(formatCoordinateSource(point.coordinateSource || point.representativePointMethod)) + '</div>' : '') +
+      (isEstoniaHistoryOnly ? '<div class="spp-point-reason-text" style="margin-top:6px"><strong>Foreign support:</strong> No usable foreign eBird support in this result.</div>' : '') +
       '  </div>' +
       '</div>';
   }
@@ -973,12 +984,12 @@
         iconSize: [28, 28],
         iconAnchor: [14, 14]
       });
-      L.marker([point.lat, point.lon], { icon: icon }).bindPopup(
+      L.marker([point.lat, point.lon], { icon: icon, zIndexOffset: 1000 }).bindPopup(
         '<strong>#' + escapeHtml(point.rank) + ' ' + escapeHtml(point.displayName || point.name || 'Target') + '</strong><br>' +
-        'Representative point: ' + escapeHtml(point.representativePointMethod || 'Unavailable') + '<br>' +
+        'Confidence: ' + escapeHtml(formatConfidence(point.confidence)) + '<br>' +
         'EE support: ' + escapeHtml(point.supportingEstoniaHistoryCount || point.supportingPointCount || 'Unavailable') + '<br>' +
         'Latest EE date: ' + escapeHtml(point.latestSupportingEstoniaDate || 'Unavailable') + '<br>' +
-        'Habitat fit: ' + escapeHtml(point.habitatCue || 'Unavailable') + '<br>' +
+        'Representative point: ' + escapeHtml(formatCoordinateSource(point.coordinateSource || point.representativePointMethod)) + '<br>' +
         escapeHtml(cleanReasonText(point.reason || '', Array.isArray(point.supportingCountries) && point.supportingCountries.length))
       ).addTo(overlayGroups.predictedTargets);
     });
@@ -1114,7 +1125,7 @@
 
   function summarySentence(evidenceSummary, sourceHealth, weather, foreignClusters) {
     if (evidenceSummary && evidenceSummary.summaryText) return evidenceSummary.summaryText;
-    return inferRankingMode(foreignClusters, weather) + ' using ' + summarizeSources(evidenceSummary, sourceHealth) + '.';
+    return formatRankingMode(evidenceSummary && evidenceSummary.rankingMode ? evidenceSummary.rankingMode : 'estonia_history_only') + ' using ' + summarizeSources(evidenceSummary, sourceHealth) + '.';
   }
 
   function inferRankingMode(foreignClusters, weather) {
@@ -1123,13 +1134,30 @@
   }
 
   function weatherLooksUsable(weather) {
-    return !!(weather && weather.fetchedAt && weather.weatherAvailable === true && (Number(weather.windSpeedKph || 0) > 0 || Number(weather.windDirectionDeg || 0) > 0));
+    return !!(weather && weather.fetchedAt && weather.weatherAvailable === true && weather.weatherPartial !== true && (Number(weather.windSpeedKph || 0) > 0 || Number(weather.windDirectionDeg || 0) > 0));
   }
 
   function weatherLine(weather, evidenceSummary) {
-    if (!weatherLooksUsable(weather)) return 'Unavailable';
-    var status = evidenceSummary && evidenceSummary.wasWeatherUsedInRanking ? 'used' : 'partial';
+    if (!weather) return 'Unavailable';
+    if (weather.weatherAvailable !== true) return weather.error ? 'Unavailable (' + String(weather.error) + ')' : 'Unavailable';
+    if (weather.weatherPartial === true || !weather.fetchedAt) return 'Partial or unreliable weather payload';
+    var status = evidenceSummary && evidenceSummary.wasWeatherUsedInRanking ? 'used' : 'available';
     return String(weather.windDirectionLabel || '') + ' ' + String(weather.windSpeedKph || 0) + ' km/h (' + status + ', ' + String(weather.fetchedAt || 'no timestamp') + ')';
+  }
+
+  function formatWeatherUsage(evidenceSummary, weather) {
+    if (evidenceSummary && evidenceSummary.wasWeatherUsedInRanking) return 'Yes';
+    if (weather && (weather.weatherPartial === true || !weather.fetchedAt)) return 'Partial';
+    return 'No';
+  }
+
+  function formatCoordinateSource(value) {
+    var method = String(value || '').trim();
+    if (method === 'hotspot_coordinate') return 'Named hotspot coordinate';
+    if (method === 'medoid') return 'Medoid of real support points';
+    if (method === 'nearest_real_point') return 'Nearest real supporting point';
+    if (method === 'centroid_fallback') return 'Centroid fallback';
+    return method || 'Unavailable';
   }
 
   function formatRankingMode(value) {

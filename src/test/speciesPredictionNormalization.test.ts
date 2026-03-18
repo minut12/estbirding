@@ -117,4 +117,68 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.predictedTargets?.[0]?.windAdjusted).toBe(true);
     expect(result.mapLayers?.diagnostics).toBe(true);
   });
+
+  it("normalizes honesty-oriented predicted target metadata", () => {
+    const result = normalizeSpeciesPredictionResult({
+      speciesKey: "test-species",
+      speciesName: "Test Species",
+      generatedAt: "2026-03-17T12:00:00.000Z",
+      weather: {
+        fetchedAt: "",
+        windSpeedKph: 0,
+        windDirectionDeg: 0,
+        windDirectionLabel: "",
+        weatherAvailable: false,
+        weatherPartial: true,
+        wasWeatherUsedInRanking: false,
+        error: "weather fetch failed",
+        source: "Open-Meteo",
+      },
+      evidenceSummary: {
+        activeEvidenceUsed: ["GBIF Estonia"],
+        attemptedButNotUsed: ["eBird foreign", "Open-Meteo weather"],
+        foreignEbirdAvailable: false,
+        weatherAvailable: false,
+        weatherPartial: true,
+        wasWeatherUsedInRanking: false,
+        rankingMode: "estonia_history_only",
+      },
+      predictedTargets: [
+        {
+          rank: 1,
+          name: "Unnamed coastal history cluster",
+          displayName: "Unnamed coastal history cluster",
+          displayNameSource: "fallback_label",
+          countyOrParish: "Lääne",
+          lat: 58.9,
+          lon: 23.5,
+          confidence: 0.7,
+          eta: "2d",
+          searchRadiusKm: 10,
+          habitatCue: "coastal_open_water",
+          reason: "Repeated spring records around a coastal migration corridor.",
+          rankingMode: "estonia_history_only",
+          representativePointMethod: "hotspot_coordinate",
+          coordinateSource: "hotspot_coordinate",
+          rawClusterId: "ee-cluster-2",
+          habitatFitScore: 30,
+          historySupportScore: 42,
+          foreignSupportScore: 0,
+          weatherSupportScore: 0,
+          confidenceBeforeCap: 0.82,
+          confidenceAfterCap: 0.7,
+        },
+      ],
+    } as any, "Test Species", "linnuliigid");
+
+    expect(result.weather?.weatherPartial).toBe(true);
+    expect(result.evidenceSummary?.rankingMode).toBe("estonia_history_only");
+    expect(result.predictedTargets?.[0]?.displayNameSource).toBe("fallback_label");
+    expect(result.predictedTargets?.[0]?.coordinateSource).toBe("hotspot_coordinate");
+    expect(result.predictedTargets?.[0]?.rawClusterId).toBe("ee-cluster-2");
+    expect(result.predictedTargets?.[0]?.habitatFitScore).toBe(30);
+    expect(result.predictedTargets?.[0]?.historySupportScore).toBe(42);
+    expect(result.predictedTargets?.[0]?.confidenceBeforeCap).toBe(0.82);
+    expect(result.predictedTargets?.[0]?.confidenceAfterCap).toBe(0.7);
+  });
 });

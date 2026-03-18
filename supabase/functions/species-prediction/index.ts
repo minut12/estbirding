@@ -21,6 +21,13 @@ type UpstreamErrorCode =
   | 'N8N_UPSTREAM_NON_2XX'
   | 'N8N_UPSTREAM_INVALID_RESPONSE';
 
+type StatusCode =
+  | 'NOT_CONFIGURED'
+  | 'DEPLOYED_NOT_CONFIGURED'
+  | 'CONFIGURED_AVAILABLE'
+  | 'CONFIGURED_UNAVAILABLE'
+  | 'RUNTIME_ERROR';
+
 type WebhookTargetInfo = {
   configured: boolean;
   valid: boolean;
@@ -84,9 +91,17 @@ serve(async (req) => {
       const available = webhookTarget.valid
         && webhookTarget.looksLikeProductionWebhook
         && probe.productionWebhookInactive !== true;
+      const runtimeAvailable = webhookTarget.valid
+        && webhookTarget.looksLikeProductionWebhook
+        && probe.productionWebhookReachable === true
+        && probe.productionWebhookInactive !== true;
+      const statusCode = resolveStatusCode(webhookTarget, probe, verifyRequested);
+      const reasonCode = resolveReasonCode(webhookTarget, probe, verifyRequested);
       console.info(`${LOG_PREFIX} status check`, {
         webhookConfigured,
         webhookValid: webhookTarget.valid,
+        statusCode,
+        reasonCode,
         resolvedWebhookPath: webhookTarget.resolvedWebhookPath,
         productionWebhookInactive: probe.productionWebhookInactive,
         edgeFunctionVersion: EDGE_FUNCTION_VERSION,
@@ -99,6 +114,9 @@ serve(async (req) => {
         configured: webhookConfigured,
         webhookConfigured,
         webhookValid: webhookTarget.valid,
+        runtimeAvailable,
+        statusCode,
+        reasonCode,
         resolvedWebhookUrl: webhookTarget.resolvedWebhookUrl,
         resolvedWebhookPath: webhookTarget.resolvedWebhookPath,
         expectedMethod: webhookTarget.expectedMethod,
@@ -116,7 +134,7 @@ serve(async (req) => {
         timeoutMsUsed,
         edgeFunctionVersion: EDGE_FUNCTION_VERSION,
         timestamp: new Date().toISOString(),
-        message: buildStatusMessage(webhookTarget, probe, verifyRequested),
+        message: buildStatusMessage(webhookTarget, probe, verifyRequested, statusCode),
       });
     }
 
@@ -1281,22 +1299,52 @@ async function probeWebhookTarget(webhookTarget: WebhookTargetInfo, verifyReques
   }
 }
 
-function buildStatusMessage(webhookTarget: WebhookTargetInfo, probe: UpstreamProbeResult, verifyRequested: boolean): string {
-  if (!webhookTarget.configured) return 'Prediction backend is not configured yet because the n8n webhook URL is missing.';
-  if (!webhookTarget.valid) return webhookTarget.validationMessage || 'Prediction backend has an invalid n8n webhook configuration.';
-  if (!webhookTarget.looksLikeProductionWebhook) {
-    return `Prediction backend is configured, but the webhook path "${webhookTarget.resolvedWebhookPath}" does not match the expected production path "${EXPECTED_PRODUCTION_WEBHOOK_PATH}".`;
+function resolveStatusCode(webhookTarget: WebhookTargetInfo, probe: UpstreamProbeResult, verifyRequested: boolean): StatusCode {
+  if (!webhookTarget.configured) return 'NOT_CONFIGURED';
+  if (!webhookTarget.valid || !webhookTarget.looksLikeProductionWebhook) return 'DEPLOYED_NOT_CONFIGURED';
+  if (probe.productionWebhookInactive) return 'CONFIGURED_UNAVAILABLE';
+  if (verifyRequested && probe.productionWebhookReachable === false) return 'RUNTIME_ERROR';
+  if (probe.productionWebhookReachable === true) return 'CONFIGURED_AVAILABLE';
+  return verifyRequested ? 'RUNTIME_ERROR' : 'CONFIGURED_AVAILABLE';
+}
+
+function resolveReasonCode(webhookTarget: WebhookTargetInfo, probe: UpstreamProbeResult, verifyRequested: boolean): string | null {
+  if (!webhookTarget.configured) return webhookTarget.validationErrorCode || 'MISSING_WEBHOOK_URL';
+  if (!webhookTarget.valid) return webhookTarget.validationErrorCode;
+  if (!webhookTarget.looksLikeProductionWebhook) return 'INVALID_WEBHOOK_PATH';
+  if (probe.productionWebhookInactive) return 'N8N_WEBHOOK_INACTIVE';
+  if (verifyRequested && probe.productionWebhookReachable === false) return 'N8N_UPSTREAM_NON_2XX';
+  return null;
+}
+
+function buildStatusMessage(
+  webhookTarget: WebhookTargetInfo,
+  probe: UpstreamProbeResult,
+  verifyRequested: boolean,
+  statusCode: StatusCode,
+): string {
+  if (statusCode === 'NOT_CONFIGURED') {
+    return 'Prediction backend is not configured yet because the n8n webhook URL is missing.';
   }
-  if (probe.productionWebhookInactive) {
-    return 'Prediction backend is configured, but the n8n production webhook is not active or not registered.';
+  if (statusCode === 'DEPLOYED_NOT_CONFIGURED') {
+    if (!webhookTarget.looksLikeProductionWebhook) {
+      return `Prediction backend configuration is invalid because the webhook path "${webhookTarget.resolvedWebhookPath}" does not match the expected production path "${EXPECTED_PRODUCTION_WEBHOOK_PATH}".`;
+    }
+    return webhookTarget.validationMessage || 'Prediction backend has an invalid n8n webhook configuration.';
   }
-  if (verifyRequested && probe.productionWebhookReachable === false) {
-    return 'Prediction backend is configured, but the n8n production webhook could not be verified.';
+  if (statusCode === 'CONFIGURED_UNAVAILABLE') {
+    return 'Prediction backend is configured but the n8n production webhook is inactive or not registered.';
+  }
+  if (statusCode === 'RUNTIME_ERROR') {
+    if (verifyRequested && probe.productionWebhookReachable === false) {
+      return 'Prediction backend is configured but the runtime verification of the n8n production webhook failed.';
+    }
+    return 'Prediction backend is configured but currently unavailable.';
   }
   if (!verifyRequested) {
-    return 'Prediction backend configuration is valid. Exact webhook verification is available with verify=1.';
+    return 'Prediction backend is configured. Exact runtime verification is available with verify=1.';
   }
-  return 'Prediction backend is deployed, configured, and the resolved n8n webhook target responded to verification.';
+  return 'Prediction backend is deployed, configured, and currently available.';
 }
 
 function createWebhookConfigError(webhookTarget: WebhookTargetInfo): SpeciesPredictionUpstreamError {

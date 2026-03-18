@@ -58,7 +58,10 @@ export default function SpeciesPredictionSettings() {
     webhookConfigured: false,
     webhookValid: false,
     available: false,
+    runtimeAvailable: false,
     deployed: false,
+    statusCode: 'NOT_CONFIGURED',
+    reasonCode: 'MISSING_WEBHOOK_URL',
     productionWebhookReachable: null,
     productionWebhookInactive: false,
     message: 'Prediction backend is not configured yet',
@@ -74,19 +77,11 @@ export default function SpeciesPredictionSettings() {
   const predictionEnabled = isSpeciesPredictionEnabled();
   const activeSpeciesKey = useMemo(() => normalizeSpeciesName(activeSpeciesName), [activeSpeciesName]);
   const hasValidSelectedSpecies = Boolean(activeSpeciesName && activeSpeciesKey);
-  const isBackendReadyForConfiguration = (
-    backendStatus.configured === true
-    && backendStatus.webhookConfigured === true
-    && backendStatus.webhookValid === true
-    && backendStatus.available === true
-    && backendStatus.deployed === true
-    && backendStatus.productionWebhookInactive !== true
-  );
+  const normalizedBackendStatus = useMemo(() => normalizeBackendStatus(backendStatus), [backendStatus]);
+  const displayState = useMemo(() => deriveSpeciesPredictionDisplayState(normalizedBackendStatus), [normalizedBackendStatus]);
+  const statusCard = useMemo(() => buildSpeciesPredictionStatusCard(displayState, normalizedBackendStatus), [displayState, normalizedBackendStatus]);
+  const isBackendReadyForConfiguration = displayState === 'CONFIGURED_AVAILABLE';
   const canValidateSpeciesSettings = predictionEnabled && isBackendReadyForConfiguration;
-  const backendBadgeLabel = isBackendReadyForConfiguration
-    ? 'Configured'
-    : (!backendStatus.configured || !backendStatus.webhookConfigured ? 'Missing env' : 'Unavailable');
-  const backendStatusMessage = backendStatus.message || 'Prediction backend is not configured yet';
   const saveBlockedMessage = canValidateSpeciesSettings && !hasValidSelectedSpecies
     ? 'Select a valid species before saving prediction settings'
     : '';
@@ -185,7 +180,10 @@ export default function SpeciesPredictionSettings() {
         webhookConfigured: false,
         webhookValid: false,
         available: false,
+        runtimeAvailable: false,
         deployed: false,
+        statusCode: 'NOT_CONFIGURED',
+        reasonCode: 'MISSING_WEBHOOK_URL',
         productionWebhookReachable: null,
         productionWebhookInactive: false,
         message: 'Prediction backend is not configured yet',
@@ -211,7 +209,10 @@ export default function SpeciesPredictionSettings() {
           webhookConfigured: false,
           webhookValid: false,
           available: false,
+          runtimeAvailable: false,
           deployed: false,
+          statusCode: 'NOT_CONFIGURED',
+          reasonCode: 'MISSING_WEBHOOK_URL',
           productionWebhookReachable: null,
           productionWebhookInactive: false,
           message: 'Prediction backend is not configured yet',
@@ -350,11 +351,14 @@ export default function SpeciesPredictionSettings() {
             <div className="flex items-center justify-between gap-3">
               <span className="font-medium text-foreground">Prediction backend status</span>
               <Badge variant={isBackendReadyForConfiguration ? 'default' : 'outline'}>
-                {backendBadgeLabel}
+                {statusCard.badge}
               </Badge>
             </div>
-            <p className="mt-2 text-muted-foreground">
-              {backendStatusMessage}
+            <p className="mt-2 font-medium text-foreground">
+              {statusCard.primaryText}
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              {statusCard.helperText}
             </p>
           </div>
           {!canManage && (
@@ -613,6 +617,14 @@ export default function SpeciesPredictionSettings() {
 
                           <DebugSection title="Backend health check">
                             <JsonBox value={debugSnapshot.transport.healthCheck} />
+                            {canSeeDebugDiagnostics && backendStatus.reasonCode === 'N8N_WEBHOOK_INACTIVE' && (
+                              <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
+                                <DebugKeyValue label="Upstream source" value="n8n" />
+                                <DebugKeyValue label="Upstream status" value={String(backendStatus.upstreamStatus ?? '(null)')} />
+                                <DebugKeyValue label="Error code" value={backendStatus.reasonCode || '(empty)'} />
+                                <DebugKeyValue label="Short reason" value="production webhook not registered / workflow inactive" />
+                              </div>
+                            )}
                           </DebugSection>
 
                           <DebugSection
@@ -674,11 +686,7 @@ export default function SpeciesPredictionSettings() {
                 </Accordion>
               )}
             </>
-          ) : (
-            <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-              Prediction backend is not configured yet. Add the webhook secret in Supabase and redeploy the Edge Function.
-            </div>
-          )}
+          ) : null}
 
           {saveBlockedMessage && (
             <p className="text-xs text-destructive">{saveBlockedMessage}</p>
@@ -859,7 +867,10 @@ type SpeciesPredictionBackendStatus = {
   webhookConfigured: boolean;
   webhookValid: boolean;
   available: boolean;
+  runtimeAvailable: boolean;
   deployed: boolean;
+  statusCode: 'NOT_CONFIGURED' | 'DEPLOYED_NOT_CONFIGURED' | 'CONFIGURED_AVAILABLE' | 'CONFIGURED_UNAVAILABLE' | 'RUNTIME_ERROR';
+  reasonCode: string | null;
   resolvedWebhookUrl?: string;
   resolvedWebhookPath?: string;
   expectedMethod?: string;
@@ -870,6 +881,19 @@ type SpeciesPredictionBackendStatus = {
   validationErrorCode?: string | null;
   validationMessage?: string;
   message: string;
+};
+
+type SpeciesPredictionDisplayState =
+  | 'NOT_CONFIGURED'
+  | 'DEPLOYED_NOT_CONFIGURED'
+  | 'CONFIGURED_AVAILABLE'
+  | 'CONFIGURED_UNAVAILABLE'
+  | 'RUNTIME_ERROR';
+
+type SpeciesPredictionStatusCardModel = {
+  badge: 'Configured' | 'Unavailable' | 'Missing config';
+  primaryText: string;
+  helperText: string;
 };
 
 async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionBackendStatus> {
@@ -933,7 +957,10 @@ async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionB
     webhookConfigured: status.webhookConfigured === true,
     webhookValid: status.webhookValid === true,
     available: status.available === true,
+    runtimeAvailable: status.runtimeAvailable === true,
     deployed: status.deployed === true,
+    statusCode: isBackendStatusCode(status.statusCode) ? status.statusCode : 'NOT_CONFIGURED',
+    reasonCode: typeof status.reasonCode === 'string' ? status.reasonCode : null,
     resolvedWebhookUrl: typeof status.resolvedWebhookUrl === 'string' ? status.resolvedWebhookUrl : '',
     resolvedWebhookPath: typeof status.resolvedWebhookPath === 'string' ? status.resolvedWebhookPath : '',
     expectedMethod: typeof status.expectedMethod === 'string' ? status.expectedMethod : '',
@@ -944,6 +971,79 @@ async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionB
     validationErrorCode: typeof status.validationErrorCode === 'string' ? status.validationErrorCode : null,
     validationMessage: typeof status.validationMessage === 'string' ? status.validationMessage : '',
     message: String(status.message || 'Prediction backend is not configured yet'),
+  };
+}
+
+function isBackendStatusCode(value: unknown): value is SpeciesPredictionBackendStatus['statusCode'] {
+  return value === 'NOT_CONFIGURED'
+    || value === 'DEPLOYED_NOT_CONFIGURED'
+    || value === 'CONFIGURED_AVAILABLE'
+    || value === 'CONFIGURED_UNAVAILABLE'
+    || value === 'RUNTIME_ERROR';
+}
+
+function normalizeBackendStatus(status: SpeciesPredictionBackendStatus) {
+  return {
+    isConfigured: status.configured === true,
+    isDeployed: status.deployed === true,
+    isHealthy: status.available === true,
+    isRuntimeAvailable: status.runtimeAvailable === true,
+    lastRuntimeErrorCode: status.reasonCode,
+    lastRuntimeErrorMessage: status.upstreamMessage || status.message,
+    statusCode: status.statusCode,
+    reasonCode: status.reasonCode,
+    backend: status,
+  };
+}
+
+function deriveSpeciesPredictionDisplayState(
+  status: ReturnType<typeof normalizeBackendStatus>,
+): SpeciesPredictionDisplayState {
+  if (status.statusCode === 'NOT_CONFIGURED') return 'NOT_CONFIGURED';
+  if (status.statusCode === 'DEPLOYED_NOT_CONFIGURED') return 'DEPLOYED_NOT_CONFIGURED';
+  if (status.statusCode === 'CONFIGURED_AVAILABLE') return 'CONFIGURED_AVAILABLE';
+  if (status.statusCode === 'CONFIGURED_UNAVAILABLE') return 'CONFIGURED_UNAVAILABLE';
+  return 'RUNTIME_ERROR';
+}
+
+function buildSpeciesPredictionStatusCard(
+  displayState: SpeciesPredictionDisplayState,
+  status: ReturnType<typeof normalizeBackendStatus>,
+): SpeciesPredictionStatusCardModel {
+  if (displayState === 'CONFIGURED_AVAILABLE') {
+    return {
+      badge: 'Configured',
+      primaryText: 'Prediction backend is configured and available',
+      helperText: 'The species prediction backend passed runtime verification and is ready for use.',
+    };
+  }
+  if (displayState === 'CONFIGURED_UNAVAILABLE' && status.reasonCode === 'N8N_WEBHOOK_INACTIVE') {
+    return {
+      badge: 'Unavailable',
+      primaryText: 'Prediction backend is configured but currently unavailable',
+      helperText: 'The n8n production webhook for species prediction is inactive or not registered.',
+    };
+  }
+  if (displayState === 'RUNTIME_ERROR') {
+    return {
+      badge: 'Unavailable',
+      primaryText: 'Prediction backend is configured but currently unavailable',
+      helperText: 'Runtime verification of the prediction backend failed. Check the latest upstream diagnostics.',
+    };
+  }
+  if (displayState === 'DEPLOYED_NOT_CONFIGURED') {
+    return {
+      badge: 'Missing config',
+      primaryText: 'Prediction backend is deployed but not fully configured',
+      helperText: status.reasonCode === 'INVALID_WEBHOOK_PATH'
+        ? 'The configured n8n webhook path is invalid or does not match the expected production path.'
+        : 'Add or correct the species prediction webhook configuration in Supabase and redeploy the Edge Function.',
+    };
+  }
+  return {
+    badge: 'Missing config',
+    primaryText: 'Prediction backend is not configured yet',
+    helperText: 'Add the webhook secret in Supabase and redeploy the Edge Function.',
   };
 }
 

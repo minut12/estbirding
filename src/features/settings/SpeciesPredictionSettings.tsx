@@ -77,8 +77,13 @@ export default function SpeciesPredictionSettings() {
   const activeSpeciesKey = useMemo(() => normalizeSpeciesName(activeSpeciesName), [activeSpeciesName]);
   const hasValidSelectedSpecies = Boolean(activeSpeciesName && activeSpeciesKey);
   const normalizedBackendStatus = useMemo(() => normalizeBackendStatus(backendStatus), [backendStatus]);
-  const displayState = useMemo(() => deriveSpeciesPredictionDisplayState(normalizedBackendStatus), [normalizedBackendStatus]);
-  const statusCard = useMemo(() => buildSpeciesPredictionStatusCard(displayState, normalizedBackendStatus), [displayState, normalizedBackendStatus]);
+  const diagnosticWebhookError = useMemo(() => detectOutdatedWebhookFromDiagnostics(debugSnapshot), [debugSnapshot]);
+  const effectiveStatus = useMemo(() => ({
+    ...normalizedBackendStatus,
+    hasOutdatedWebhookPathError: normalizedBackendStatus.hasOutdatedWebhookPathError || diagnosticWebhookError.detected,
+  }), [normalizedBackendStatus, diagnosticWebhookError]);
+  const displayState = useMemo(() => deriveSpeciesPredictionDisplayState(effectiveStatus), [effectiveStatus]);
+  const statusCard = useMemo(() => buildSpeciesPredictionStatusCard(displayState, effectiveStatus), [displayState, effectiveStatus]);
   const isBackendReadyForConfiguration = displayState === 'CONFIGURED_AVAILABLE';
   const canValidateSpeciesSettings = predictionEnabled && isBackendReadyForConfiguration;
   const saveBlockedMessage = canValidateSpeciesSettings && !hasValidSelectedSpecies

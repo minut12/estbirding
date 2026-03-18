@@ -1059,7 +1059,7 @@ function buildPredictedTargets(opts: {
         confidenceBeforeCap: Number((Math.max(0, entry.confidenceBeforeCap) / 100).toFixed(2)),
         confidenceAfterCap: entry.confidenceAfterCap,
         finalConfidenceComponents: {
-          confidenceCap,
+          confidenceCap: entry.confidenceAfterCap,
           habitat: entry.ecologyScore.score,
           history: historyScoreForDebug(cluster),
           foreign: hasForeignPressure ? entry.routeAlignment : 0,

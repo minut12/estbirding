@@ -1031,7 +1031,7 @@ function normalizeForeignRecentPoints(input: unknown[] | null): SpeciesPredictio
       countryName: normalizeUiText(readString(source, ['countryName', 'country_name']) || ''),
       ...(readString(source, ['regionCode', 'region_code']) ? { regionCode: normalizeUiText(readString(source, ['regionCode', 'region_code'])) } : {}),
       ...(readString(source, ['regionName', 'region_name']) ? { regionName: normalizeUiText(readString(source, ['regionName', 'region_name'])) } : {}),
-      source: 'eBird',
+      source: 'eBird' as const,
       daysAgo: clampNumber(readNumber(source, ['daysAgo', 'days_ago']), 0, 100000, 0),
       ...(readString(source, ['clusterId', 'cluster_id']) ? { clusterId: normalizeUiText(readString(source, ['clusterId', 'cluster_id'])) } : {}),
       ...(hasValue(source, ['distanceToEstoniaKm', 'distance_to_estonia_km']) ? { distanceToEstoniaKm: clampFloat(readNumber(source, ['distanceToEstoniaKm', 'distance_to_estonia_km']), 0, 999999, 0) } : {}),

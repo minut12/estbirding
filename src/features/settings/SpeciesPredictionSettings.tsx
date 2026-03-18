@@ -1032,6 +1032,69 @@ function hasOutdatedWebhookPathError(status: SpeciesPredictionBackendStatus): bo
     || value.includes('webhook post species-prediction is not registered'));
 }
 
+type DiagnosticWebhookDetection = {
+  detected: boolean;
+  stage: string;
+  code: number | string | null;
+  message: string;
+  matchedReason: string;
+};
+
+function detectOutdatedWebhookFromDiagnostics(snapshot: SpeciesPredictionDebugSnapshot): DiagnosticWebhookDetection {
+  const none: DiagnosticWebhookDetection = { detected: false, stage: '', code: null, message: '', matchedReason: '' };
+
+  // Collect all candidate objects from snapshot
+  const transport = snapshot.transport;
+  const transportError = transport?.error;
+
+  // Gather all searchable strings and codes from deeply nested paths
+  const candidates: Array<{ stage?: string; code?: number | string | null; message?: string; source: string }> = [];
+
+  function extractFromObj(obj: unknown, source: string) {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
+    const r = obj as Record<string, unknown>;
+    const msg = typeof r.message === 'string' ? r.message : '';
+    const hint = typeof r.hint === 'string' ? r.hint : '';
+    const stage = typeof r.stage === 'string' ? r.stage : '';
+    const code = typeof r.code === 'number' ? r.code : (typeof r.status === 'number' ? r.status : null);
+    if (msg || hint || stage || code != null) {
+      candidates.push({ stage, code, message: msg || hint, source });
+    }
+    // Recurse into known nested keys
+    for (const key of ['body', 'responseBody', 'error', 'json', 'context']) {
+      if (r[key] && typeof r[key] === 'object') extractFromObj(r[key], `${source}.${key}`);
+    }
+  }
+
+  if (transportError) extractFromObj(transportError, 'transportError');
+  if (transport?.responseBody) extractFromObj(transport.responseBody, 'responseBody');
+
+  // Also check the stored result from last prediction
+  const lastResponse = snapshot.lastBackendResponse;
+  if (lastResponse) extractFromObj(lastResponse, 'lastBackendResponse');
+
+  // Check each candidate for outdated webhook signature
+  for (const c of candidates) {
+    const lower = (c.message || '').toLowerCase();
+    const is404 = c.code === 404;
+    const hasNotRegistered = lower.includes('not registered');
+    const hasSpeciesPrediction = lower.includes('species-prediction');
+    const hasWebhookMention = lower.includes('webhook');
+
+    if (hasNotRegistered && (hasSpeciesPrediction || hasWebhookMention)) {
+      return { detected: true, stage: c.stage || '', code: c.code, message: c.message || '', matchedReason: `message contains "not registered" + webhook ref (${c.source})` };
+    }
+    if (is404 && (hasSpeciesPrediction || hasNotRegistered)) {
+      return { detected: true, stage: c.stage || '', code: c.code, message: c.message || '', matchedReason: `code=404 + species-prediction/not-registered (${c.source})` };
+    }
+    if (c.stage === 'n8n_upstream' && is404) {
+      return { detected: true, stage: c.stage, code: c.code, message: c.message || '', matchedReason: `stage=n8n_upstream + code=404 (${c.source})` };
+    }
+  }
+
+  return none;
+}
+
 function deriveSpeciesPredictionDisplayState(
   status: ReturnType<typeof normalizeBackendStatus>,
 ): SpeciesPredictionDisplayState {

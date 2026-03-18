@@ -337,7 +337,7 @@ export default function SpeciesPredictionSettings() {
         onEnabledChange={setPredictionFeatureEnabled}
       />
       <p className="text-[11px] text-muted-foreground">
-        prediction-settings-build: 2026-03-18-fix4
+        prediction-settings-build: 2026-03-18-fix5
       </p>
       {!predictionEnabled ? (
         <p className="text-xs text-muted-foreground">Turn on Species Prediction to edit these settings</p>
@@ -980,6 +980,7 @@ function isBackendStatusCode(value: unknown): value is SpeciesPredictionBackendS
 }
 
 function normalizeBackendStatus(status: SpeciesPredictionBackendStatus) {
+  const outdatedWebhookPathError = hasOutdatedWebhookPathError(status);
   return {
     isConfigured: status.configured === true,
     isDeployed: status.deployed === true,
@@ -989,8 +990,27 @@ function normalizeBackendStatus(status: SpeciesPredictionBackendStatus) {
     lastRuntimeErrorMessage: status.upstreamMessage || status.message,
     statusCode: status.statusCode,
     reasonCode: status.reasonCode,
+    hasOutdatedWebhookPathError: outdatedWebhookPathError,
     backend: status,
   };
+}
+
+function hasOutdatedWebhookPathError(status: SpeciesPredictionBackendStatus): boolean {
+  if (status.reasonCode === 'INVALID_WEBHOOK_PATH') return true;
+  const upstreamStatus = status.upstreamStatus;
+  const haystacks = [
+    status.upstreamMessage,
+    status.message,
+    status.validationMessage,
+    typeof status.resolvedWebhookPath === 'string' ? status.resolvedWebhookPath : '',
+  ]
+    .map((value) => String(value || '').toLowerCase())
+    .filter(Boolean);
+  if (upstreamStatus === 404 && haystacks.some((value) => value.includes('species-prediction') || value.includes('not registered'))) {
+    return true;
+  }
+  return haystacks.some((value) => value.includes('webhook \"post species-prediction\" is not registered')
+    || value.includes('webhook post species-prediction is not registered'));
 }
 
 function deriveSpeciesPredictionDisplayState(
@@ -1005,6 +1025,7 @@ function deriveSpeciesPredictionDisplayState(
       || status.isHealthy !== true
       || status.reasonCode === 'N8N_WEBHOOK_INACTIVE'
       || status.backend.productionWebhookInactive === true
+      || status.hasOutdatedWebhookPathError === true
     )
   ) {
     return 'CONFIGURED_UNAVAILABLE';
@@ -1027,7 +1048,7 @@ function buildSpeciesPredictionStatusCard(
     return {
       badge: 'Unavailable',
       primaryText: 'Prediction backend is configured but currently unavailable',
-      helperText: status.reasonCode === 'INVALID_WEBHOOK_PATH'
+      helperText: status.hasOutdatedWebhookPathError === true
         ? 'The Supabase prediction function is still pointing to an outdated n8n webhook path.'
         : 'The prediction runtime is unavailable. Check the latest backend diagnostics for the exact upstream reason.',
     };

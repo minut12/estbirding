@@ -453,7 +453,10 @@ function extractContextMessage(context: unknown): string {
 function resolveUserMessage(message: string): string {
   const n = String(message || '').trim().toLowerCase();
   if (!n) return 'Prediction service is temporarily unavailable';
-  if (n.includes('workflow must be active') || (n.includes('webhook') && n.includes('not registered'))) {
+  if (n.includes('species-prediction') && n.includes('not registered')) {
+    return 'The Supabase prediction function is still pointing to an outdated n8n webhook path.';
+  }
+  if (n.includes('workflow must be active')) {
     return 'Prediction backend is configured, but the n8n production webhook is not active or not registered.';
   }
   if (n.includes('not configured')) return 'Prediction backend is not configured yet';

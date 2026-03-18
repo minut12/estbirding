@@ -953,9 +953,10 @@ function buildPredictedTargets(opts: {
     const confidenceCap = hasForeignPressure ? getConfidenceCapForRankingMode(rankingMode) : 0.70;
     const normalizedConfidence = Math.max(0.18, Math.min(confidenceCap, confidenceBeforeCap / 100));
     const confidence = Number(normalizedConfidence.toFixed(2));
+    const clusterDistanceKm = toNumber((cluster as Record<string, unknown>).nearestDistanceKm);
     const etaHours = hasForeignPressure
-      ? Math.max(6, Math.round((toNumber(cluster.distanceFromClusterKm) || 120) / Math.max(20, toNumber(weather.windSpeedKph) + 18)))
-      : Math.max(12, Math.round(Math.max(20, toNumber(cluster.distanceFromClusterKm) || 90) / 12));
+      ? Math.max(6, Math.round((clusterDistanceKm || 120) / Math.max(20, toNumber(weather.windSpeedKph) + 18)))
+      : Math.max(12, Math.round(Math.max(20, clusterDistanceKm || 90) / 12));
     return {
       cluster,
       ecologyScore,

@@ -23,11 +23,11 @@
     },
     layerToggles: {
       estoniaHistoryPoints: true,
-      estoniaHistoryClusters: true,
-      foreignRecentPoints: true,
-      foreignPressureClusters: true,
-      predictedLines: true,
-      predictedCone: true,
+      estoniaHistoryClusters: false,
+      foreignRecentPoints: false,
+      foreignPressureClusters: false,
+      predictedLines: false,
+      predictedCone: false,
       predictedTargets: true,
       diagnostics: false,
       recentOnly: false
@@ -424,6 +424,19 @@
         topPredictedPointReason: state.result && state.result.topPredictedPoints && state.result.topPredictedPoints[0] ? state.result.topPredictedPoints[0].reason || null : null,
       });
     }
+    if (state.result && state.result.mapLayers && typeof state.result.mapLayers === 'object') {
+      state.layerToggles = Object.assign({}, state.layerToggles, {
+        estoniaHistoryPoints: state.result.mapLayers.estoniaHistoryPoints !== false,
+        estoniaHistoryClusters: state.result.mapLayers.estoniaHistoryClusters === true,
+        foreignRecentPoints: state.result.mapLayers.foreignRecentPoints === true,
+        foreignPressureClusters: state.result.mapLayers.foreignPressureClusters === true,
+        predictedLines: state.result.mapLayers.predictedLines === true,
+        predictedCone: state.result.mapLayers.predictedCone === true,
+        predictedTargets: state.result.mapLayers.predictedTargets !== false,
+        diagnostics: state.result.mapLayers.diagnostics === true,
+        recentOnly: state.result.mapLayers.recentOnly === true
+      });
+    }
     ensurePanel();
     applyResultToMap();
     render();
@@ -487,15 +500,11 @@
     var confidenceNote = normalizeText(result.confidenceNote);
     var warnings = normalizeStringArray(result.warnings);
     var consistencyChecks = result.consistencyChecks || null;
-    var preferredPoints = Array.isArray(result.topPredictedPoints) ? result.topPredictedPoints : [];
-    var foreignEvidence = Array.isArray(result.foreignEvidence) ? result.foreignEvidence : [];
-    var foreignRecentPoints = Array.isArray(result.foreignRecentPoints) ? result.foreignRecentPoints : [];
+    var preferredPoints = Array.isArray(result.topPredictedPoints) ? result.topPredictedPoints.slice(0, 5) : [];
     var foreignClusters = Array.isArray(result.foreignClusters) ? result.foreignClusters : [];
-    var estoniaHistoryPoints = Array.isArray(result.estoniaHistoryPoints) ? result.estoniaHistoryPoints : [];
-    var predictedTargets = Array.isArray(result.predictedTargets) && result.predictedTargets.length ? result.predictedTargets : preferredPoints;
+    var predictedTargets = Array.isArray(result.predictedTargets) && result.predictedTargets.length ? result.predictedTargets.slice(0, 5) : preferredPoints;
     var weather = result.weather || null;
     var estoniaEvidence = result.estoniaEvidence || null;
-    var historicalEvidence = result.historicalEvidence || null;
     var sourceHealth = result.sourceHealth || null;
     var evidenceSummary = result.evidenceSummary || null;
     var speciesInfo = result.species || null;
@@ -530,68 +539,45 @@
     var html = '';
     html += renderStateCard('spp-state-success', 'Prediction complete', 'Rendering the latest backend evidence and target ranking for this species.');
     html += '<div class="spp-card"><h4>Summary</h4><p class="spp-summary-text">' + escapeHtml(summarySentence(evidenceSummary, sourceHealth, weather, foreignClusters)) + '</p><div class="spp-grid">' +
+      metricCell('Species', speciesInfo && speciesInfo.speciesName ? speciesInfo.speciesName : (result.speciesName || state.speciesName || 'Unavailable')) +
+      meaningfulMetricCell('Sources used', summarizeAvailableSources(evidenceSummary, sourceHealth)) +
       metricCell('Ranking mode', formatRankingMode(evidenceSummary && evidenceSummary.rankingMode ? evidenceSummary.rankingMode : 'estonia_history_only')) +
       metricCell('Active evidence used', summarizeActiveEvidence(evidenceSummary, sourceHealth)) +
+      meaningfulMetricCell('Freshest EE localities', summarizeFreshestEstoniaLocalities(estoniaEvidence)) +
       meaningfulMetricCell('Latest EE date', estoniaEvidence ? estoniaEvidence.latestEstoniaDate : '') +
+      meaningfulMetricCell('Latest EE source', estoniaEvidence ? estoniaEvidence.latestEstoniaSource : '') +
       meaningfulMetricCell('Recent EE count', estoniaEvidence ? estoniaEvidence.recentCount7d : '') +
       meaningfulMetricCell('Weather', evidenceSummary && evidenceSummary.wasWeatherUsedInRanking ? weatherLine(weather, evidenceSummary) : '') +
       meaningfulMetricCell('Attempted but unavailable', summarizeAttemptedButNotUsed(evidenceSummary)) +
       '</div></div>';
-    html += '<div class="spp-card"><h4>Species header</h4><div class="spp-grid">' +
-      metricCell('Species', speciesInfo && speciesInfo.speciesName ? speciesInfo.speciesName : (result.speciesName || state.speciesName || 'Unavailable')) +
-      metricCell('Source', sourceHealth && sourceHealth.primarySourceUsed ? sourceHealth.primarySourceUsed : 'Partial upstream payload') +
-      metricCell('Status', getStatusText()) +
-      metricCell('Last updated', result.generatedAt || 'Unavailable') +
-      (speciesInfo && speciesInfo.latinName ? metricCell('Latin name', speciesInfo.latinName) : '') +
-      (speciesInfo && speciesInfo.ebirdSpeciesCode ? metricCell('eBird code', speciesInfo.ebirdSpeciesCode) : '') +
-      '</div></div>';
-    if (foreignEvidence.length) {
-      html += '<div class="spp-card"><h4>Foreign-country evidence</h4><div class="spp-points">';
-      foreignEvidence.forEach(function (group) {
-        html += renderForeignEvidenceGroup(group);
-      });
-      html += '</div></div>';
-    }
     if (estoniaEvidence) {
-      html += '<div class="spp-card"><h4>Estonia latest / recent</h4><div class="spp-grid">' +
-        metricCell('Recent count (7d)', estoniaEvidence.recentCount7d) +
-        metricCell('Recent count (30d)', estoniaEvidence.recentCount30d) +
-        metricCell('Latest Estonia date', estoniaEvidence.latestEstoniaDate || 'Unavailable') +
-        metricCell('Latest Estonia coords', formatCoords(estoniaEvidence.latestEstoniaLat, estoniaEvidence.latestEstoniaLon)) +
-        metricCell('Already present', estoniaEvidence.alreadyPresent ? 'Yes' : 'No') +
-        metricCell('Already passed', estoniaEvidence.alreadyPassed ? 'Yes' : 'No') +
+      html += '<div class="spp-card"><h4>Fresh Estonia evidence</h4><div class="spp-grid">' +
+        meaningfulMetricCell('Freshest localities', summarizeFreshestEstoniaLocalities(estoniaEvidence)) +
+        meaningfulMetricCell('Latest EE date', estoniaEvidence.latestEstoniaDate || '') +
+        meaningfulMetricCell('Latest EE coords', formatCoords(estoniaEvidence.latestEstoniaLat, estoniaEvidence.latestEstoniaLon)) +
+        meaningfulMetricCell('Source mix', summarizeSourceMix(estoniaEvidence)) +
+        meaningfulMetricCell('Recent count (7d)', estoniaEvidence.recentCount7d) +
+        meaningfulMetricCell('Recent count (30d)', estoniaEvidence.recentCount30d) +
         '</div></div>';
     }
-    if (historicalEvidence && (historicalEvidence.springWindow || (Array.isArray(historicalEvidence.topHistoricalHotspots) && historicalEvidence.topHistoricalHotspots.length) || (Array.isArray(historicalEvidence.habitatHints) && historicalEvidence.habitatHints.length))) {
-      html += '<div class="spp-card"><h4>Historical hotspots</h4><div class="spp-grid">' +
-        metricCell('Spring window', historicalEvidence.springWindow || 'Unavailable') +
-        metricCell('Habitat hints', normalizeStringArray(historicalEvidence.habitatHints).join(', ') || 'Unavailable') +
-        '</div>';
-      if (Array.isArray(historicalEvidence.topHistoricalHotspots) && historicalEvidence.topHistoricalHotspots.length) {
-        html += '<div class="spp-points">';
-        historicalEvidence.topHistoricalHotspots.slice(0, 3).forEach(function (point) {
-          html += renderHistoricalHotspot(point);
+    if (shouldOpenDebugDetails()) {
+      if (warnings.length) {
+        html += '<div class="spp-card spp-warning-card"><h4>Warnings</h4><ul class="spp-warning-list">';
+        warnings.forEach(function (warning) {
+          html += '<li class="spp-warning-item">' + escapeHtml(warning) + '</li>';
         });
-        html += '</div>';
+        html += '</ul></div>';
       }
-      html += '</div>';
+      if (consistencyChecks) {
+        html += '<div class="spp-card"><h4>Consistency checks</h4><div class="spp-checks">' +
+          checkCell('Route looks plausible', consistencyChecks.routeLooksPlausible) +
+          checkCell('Timing looks plausible', consistencyChecks.timingLooksPlausible) +
+          checkCell('Weather looks supportive', consistencyChecks.weatherLooksSupportive) +
+          checkCell('Foreign pressure matches narrative', consistencyChecks.foreignPressureMatchesNarrative) +
+          '</div></div>';
+      }
+      html += renderPayloadSections(result);
     }
-    if (warnings.length) {
-      html += '<div class="spp-card spp-warning-card"><h4>Warnings</h4><ul class="spp-warning-list">';
-      warnings.forEach(function (warning) {
-        html += '<li class="spp-warning-item">' + escapeHtml(warning) + '</li>';
-      });
-      html += '</ul></div>';
-    }
-    if (consistencyChecks) {
-      html += '<div class="spp-card"><h4>Consistency checks</h4><div class="spp-checks">' +
-        checkCell('Route looks plausible', consistencyChecks.routeLooksPlausible) +
-        checkCell('Timing looks plausible', consistencyChecks.timingLooksPlausible) +
-        checkCell('Weather looks supportive', consistencyChecks.weatherLooksSupportive) +
-        checkCell('Foreign pressure matches narrative', consistencyChecks.foreignPressureMatchesNarrative) +
-        '</div></div>';
-    }
-    html += renderPayloadSections(result);
     html += '<div class="spp-card"><h4>Predicted targets</h4><div class="spp-points">';
     if (!predictedTargets.length) {
       html += '<div class="spp-point"><div class="spp-point-reason-text">No precise hotspot results returned.</div></div>';
@@ -726,8 +712,8 @@
     if (state.layerToggles.foreignPressureClusters !== false) renderForeignPressureClusters(result.foreignClusters || []);
     if (state.layerToggles.predictedLines !== false) renderPredictionVectors(result.predictionVectors || [], false);
     if (state.layerToggles.predictedCone !== false) renderPredictionVectors(result.predictionVectors || [], true);
-    if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap(result.predictedTargets || result.topPredictedPoints || []);
-    if (state.layerToggles.diagnostics === true && shouldOpenDebugDetails()) renderDiagnostics(result.predictedTargets || result.topPredictedPoints || []);
+    if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap((result.predictedTargets || result.topPredictedPoints || []).slice(0, 5));
+    if (state.layerToggles.diagnostics === true && shouldOpenDebugDetails()) renderDiagnostics((result.predictedTargets || result.topPredictedPoints || []).slice(0, 5));
   }
 
   function clearPredictionOverlay() {
@@ -1083,6 +1069,17 @@
     var sources = Array.isArray(evidenceSummary && evidenceSummary.availableSources) ? evidenceSummary.availableSources : [];
     if (!sources.length) return summarizeSources(evidenceSummary, sourceHealth);
     return sources.join(', ');
+  }
+
+  function summarizeFreshestEstoniaLocalities(estoniaEvidence) {
+    var localities = Array.isArray(estoniaEvidence && estoniaEvidence.freshestLocalities) ? estoniaEvidence.freshestLocalities : [];
+    if (localities.length) return localities.slice(0, 5).join(', ');
+    return String(estoniaEvidence && estoniaEvidence.latestEstoniaLocality || '').trim();
+  }
+
+  function summarizeSourceMix(estoniaEvidence) {
+    var sources = Array.isArray(estoniaEvidence && estoniaEvidence.sourceMix) ? estoniaEvidence.sourceMix : [];
+    return sources.length ? sources.join(', ') : String(estoniaEvidence && estoniaEvidence.latestEstoniaSource || '').trim();
   }
 
   function summarizeAttemptedButNotUsed(evidenceSummary) {

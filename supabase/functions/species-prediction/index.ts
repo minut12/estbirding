@@ -308,10 +308,13 @@ async function buildMapFirstPredictionResult(opts: {
   const ebirdSpeciesCode = stringOr(settings.ebirdSpeciesCodeOverride, payloadSpecies.ebirdSpeciesCode, payloadSpecies.ebirdSpeciesCodeOverride);
   const horizonDays = clampInt(toNumber(settings.horizonDays) || 7, 1, 30);
 
-  const estoniaHistorySource = settings.useElurikkusHistory === false ? 'GBIF' : 'Elurikkus';
+  const estoniaHistorySource = settings.useElurikkusHistory === false ? 'GBIF' : 'EELURIKKUS';
   const elurikkusHistoryPoints = settings.useElurikkusHistory === false ? [] : await fetchElurikkusEstoniaHistory(speciesName, signal);
-  const gbifHistoryPoints = elurikkusHistoryPoints.length ? [] : await fetchGbifEstoniaHistory(latinName || speciesName, signal);
-  const estoniaHistoryPoints = dedupeEstoniaHistoryPoints(elurikkusHistoryPoints.length ? elurikkusHistoryPoints : gbifHistoryPoints);
+  const gbifHistoryPoints = await fetchGbifEstoniaHistory(latinName || speciesName, signal);
+  const mergedEstoniaHistoryPoints = elurikkusHistoryPoints.length
+    ? [...elurikkusHistoryPoints, ...gbifHistoryPoints]
+    : gbifHistoryPoints;
+  const estoniaHistoryPoints = dedupeEstoniaHistoryPoints(mergedEstoniaHistoryPoints);
   const estoniaHistoryClusters = clusterEstoniaHistory(estoniaHistoryPoints);
   const foreignRecentPoints = ebirdSpeciesCode
     ? await fetchForeignRecentPoints(ebirdSpeciesCode, settings, signal)
@@ -325,7 +328,9 @@ async function buildMapFirstPredictionResult(opts: {
     foreignClusters,
     foreignRecentPoints,
     weather,
-    activeHistorySource: elurikkusHistoryPoints.length ? 'Elurikkus Estonia' : (estoniaHistoryPoints.length ? 'GBIF Estonia' : estoniaHistorySource),
+    activeHistorySource: elurikkusHistoryPoints.length && gbifHistoryPoints.length
+      ? 'eElurikkus + GBIF Estonia'
+      : (elurikkusHistoryPoints.length ? 'eElurikkus Estonia' : (estoniaHistoryPoints.length ? 'GBIF Estonia' : estoniaHistorySource)),
     attemptedForeign: settings.useEbirdForeignSightings !== false || !!ebirdSpeciesCode,
   });
   const predictedTargets = buildPredictedTargets({
@@ -345,14 +350,16 @@ async function buildMapFirstPredictionResult(opts: {
     foreignRecentPoints,
     foreignClusters,
     webhookConfigured,
-    estoniaHistorySourceUsed: elurikkusHistoryPoints.length ? 'Elurikkus' : (estoniaHistoryPoints.length ? 'GBIF' : estoniaHistorySource),
+    estoniaHistorySourceUsed: elurikkusHistoryPoints.length && gbifHistoryPoints.length
+      ? 'mixed'
+      : (elurikkusHistoryPoints.length ? 'EELURIKKUS' : (estoniaHistoryPoints.length ? 'GBIF' : estoniaHistorySource)),
   });
   const warnings = Array.from(new Set(sourceHealth.sourceWarnings as string[]));
   const aiSummary = webhookConfigured && (settings.enableOpenAISummary === true || settings.enableN8nResearch === true)
     ? await maybeFetchSecondarySummary({ webhookUrl, payload, signal, foreignEvidence, predictedTargets, weather, sourceHealth })
     : '';
   const countryScores = buildCountryScores(foreignEvidence);
-  const topPredictedPoints = predictedTargets.slice(0, clampInt(toNumber(settings.outputCount) || 5, 1, 10));
+  const topPredictedPoints = predictedTargets.slice(0, Math.min(5, clampInt(toNumber(settings.outputCount) || 5, 1, 5)));
   const latestCluster = foreignClusters[0] ?? null;
 
   return {
@@ -374,14 +381,15 @@ async function buildMapFirstPredictionResult(opts: {
     foreignClusters,
     weather,
     predictionVectors,
-    predictedTargets,
+    predictedTargets: topPredictedPoints,
     mapLayers: {
       estoniaHistory: true,
-      estoniaHistoryClusters: true,
-      foreignRecentPoints: true,
-      foreignEvidence: true,
-      foreignPressureClusters: true,
-      predictedLines: true,
+      estoniaHistoryPoints: true,
+      estoniaHistoryClusters: false,
+      foreignRecentPoints: false,
+      foreignEvidence: foreignRecentPoints.length > 0 && foreignClusters.length > 0,
+      foreignPressureClusters: false,
+      predictedLines: settings.showPredictionCone !== false,
       predictedCone: settings.showPredictionCone !== false,
       predictedTargets: true,
       diagnostics: false,
@@ -427,7 +435,7 @@ async function buildMapFirstPredictionResult(opts: {
       estoniaEvidence,
       historicalEvidence,
       predictionVectors,
-      predictedTargets,
+      predictedTargets: topPredictedPoints,
       rawLinks,
       ...(aiSummary ? { aiSummary } : {}),
     },
@@ -496,7 +504,7 @@ async function fetchElurikkusEstoniaHistory(speciesName: string, signal: AbortSi
         eventDate,
         daysAgo: daysAgoFromIso(eventDate),
         ageClass: (daysAgoFromIso(eventDate) ?? 9999) <= 7 ? 'recent' : 'historical',
-        source: 'Elurikkus',
+        source: 'EELURIKKUS',
         occurrenceId: stringOr(item.uuid, item.id, item.occurrenceID),
         locality: stringOr(item.locality, item.locationRemarks),
         municipality: stringOr(item.municipality, item.stateProvince, item.county),
@@ -509,17 +517,27 @@ async function fetchElurikkusEstoniaHistory(speciesName: string, signal: AbortSi
 }
 
 function dedupeEstoniaHistoryPoints(points: Record<string, unknown>[]): Record<string, unknown>[] {
-  const seen = new Set<string>();
-  return points.filter((point) => {
+  const bestByKey = new Map<string, Record<string, unknown>>();
+  for (const point of points) {
     const lat = toNumber(point.lat);
     const lon = toNumber(point.lon);
     const eventDate = stringOr(point.eventDate).slice(0, 10);
-    const source = stringOr(point.source);
-    const key = `${source}:${roundCoord(lat, 3)}:${roundCoord(lon, 3)}:${eventDate}`;
-    if (!Number.isFinite(lat) || !Number.isFinite(lon) || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).sort((left, right) => Date.parse(String(right.eventDate || '')) - Date.parse(String(left.eventDate || '')));
+    const locality = sanitizeDisplayLabel(stringOr(point.locality, point.municipality)) || 'unknown-locality';
+    const key = `${roundCoord(lat, 2)}:${roundCoord(lon, 2)}:${eventDate}:${normalizeComparableText(locality)}`;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    const current = bestByKey.get(key);
+    if (!current) {
+      bestByKey.set(key, point);
+      continue;
+    }
+    const currentSource = stringOr(current.source).toUpperCase();
+    const nextSource = stringOr(point.source).toUpperCase();
+    const currentScore = (currentSource === 'EELURIKKUS' ? 3 : 0) + (sanitizeDisplayLabel(stringOr(current.locality)) ? 1 : 0) + (toNumber(current.count) || 0);
+    const nextScore = (nextSource === 'EELURIKKUS' ? 3 : 0) + (sanitizeDisplayLabel(stringOr(point.locality)) ? 1 : 0) + (toNumber(point.count) || 0);
+    if (nextScore > currentScore) bestByKey.set(key, point);
+  }
+  return Array.from(bestByKey.values())
+    .sort((left, right) => Date.parse(String(right.eventDate || '')) - Date.parse(String(left.eventDate || '')));
 }
 
 async function fetchForeignRecentPoints(ebirdSpeciesCode: string, settings: Record<string, unknown>, signal: AbortSignal): Promise<Record<string, unknown>[]> {
@@ -651,12 +669,22 @@ function buildEstoniaEvidenceFromHistory(points: Record<string, unknown>[]): Rec
   const latest = sorted[0];
   const recentCount7d = points.filter((point) => toNumber(point.daysAgo) <= 7).length;
   const recentCount30d = points.filter((point) => toNumber(point.daysAgo) <= 30).length;
+  const freshestLocalities = Array.from(new Set(
+    sorted
+      .map((point) => sanitizeDisplayLabel(stringOr(point.locality, point.municipality)))
+      .filter(Boolean),
+  )).slice(0, 5);
+  const sourceMix = Array.from(new Set(points.map((point) => stringOr(point.source).toUpperCase()).filter(Boolean)));
   return {
     recentCount7d,
     recentCount30d,
     latestEstoniaDate: latest ? stringOr(latest.eventDate) : '',
     latestEstoniaLat: latest ? toNumber(latest.lat) : null,
     latestEstoniaLon: latest ? toNumber(latest.lon) : null,
+    latestEstoniaLocality: latest ? sanitizeDisplayLabel(stringOr(latest.locality, latest.municipality)) : '',
+    latestEstoniaSource: latest ? stringOr(latest.source).toUpperCase() : '',
+    freshestLocalities,
+    sourceMix,
     alreadyPresent: recentCount7d > 0,
     alreadyPassed: false,
   };
@@ -777,7 +805,7 @@ function buildPredictedTargets(opts: {
     clusterTightnessKm?: number;
     newestEventDate: string;
     oldestEventDate: string;
-    source: 'GBIF' | 'Elurikkus' | 'mixed';
+    source: 'GBIF' | 'EELURIKKUS' | 'mixed';
     sourceBreakdown: Record<string, number>;
   }>;
   foreignClusters: Record<string, unknown>[];
@@ -1312,13 +1340,15 @@ function buildSourceHealthMapFirst(input: {
   if (!input.foreignClusters.length) warnings.push('No foreign-country clusters were available to display.');
   if (!input.webhookConfigured) warnings.push('Secondary AI summary is unavailable because no webhook is configured.');
   if (!input.estoniaHistoryClusters.length) warnings.push('No Estonia history clusters were available, so predicted targets remain empty.');
-  const primarySources = [input.estoniaHistorySourceUsed === 'GBIF' ? 'GBIF Estonia' : 'Elurikkus Estonia'];
+  const primarySources = [input.estoniaHistorySourceUsed === 'GBIF'
+    ? 'GBIF Estonia'
+    : (input.estoniaHistorySourceUsed === 'mixed' ? 'eElurikkus + GBIF Estonia' : 'eElurikkus Estonia')];
   if (input.foreignRecentPoints.length) primarySources.push('eBird foreign');
   if (input.foreignClusters.length) primarySources.push('Open-Meteo weather');
   return {
     primarySourceUsed: primarySources.join(' + '),
     sourceWarnings: warnings,
-    elurikkusAvailable: input.estoniaHistorySourceUsed === 'Elurikkus' || input.estoniaHistoryClusters.some((cluster) => String(cluster.source || '') === 'mixed'),
+    elurikkusAvailable: input.estoniaHistorySourceUsed === 'EELURIKKUS' || input.estoniaHistorySourceUsed === 'mixed' || input.estoniaHistoryClusters.some((cluster) => String(cluster.source || '') === 'mixed'),
     ebirdAvailable: input.foreignRecentPoints.length > 0,
     gbifFallbackUsed: input.estoniaHistorySourceUsed === 'GBIF',
   };
@@ -1351,7 +1381,7 @@ function clusterEstoniaHistory(points: Record<string, unknown>[]): Array<{
   distanceFromClusterKm: number;
   newestEventDate: string;
   oldestEventDate: string;
-  source: 'GBIF' | 'Elurikkus' | 'mixed';
+  source: 'GBIF' | 'EELURIKKUS' | 'mixed';
   sourceBreakdown: Record<string, number>;
 }> {
   const grouped = new Map<string, {
@@ -1840,10 +1870,10 @@ function normalizeComparableText(value: string): string {
   return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
-function resolveClusterSource(sourceBreakdown: Record<string, number>): 'GBIF' | 'Elurikkus' | 'mixed' {
+function resolveClusterSource(sourceBreakdown: Record<string, number>): 'GBIF' | 'EELURIKKUS' | 'mixed' {
   const keys = Object.keys(sourceBreakdown).filter((key) => Number(sourceBreakdown[key] || 0) > 0);
   if (keys.length > 1) return 'mixed';
-  if (keys[0] === 'Elurikkus') return 'Elurikkus';
+  if (keys[0] === 'EELURIKKUS') return 'EELURIKKUS';
   return 'GBIF';
 }
 

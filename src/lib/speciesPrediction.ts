@@ -65,7 +65,7 @@ export type SpeciesPredictionEstoniaHistoryPoint = {
   eventDate: string;
   daysAgo: number | null;
   ageClass: SpeciesPredictionPointAge;
-  source: 'GBIF' | 'Elurikkus';
+  source: 'GBIF' | 'EELURIKKUS';
   occurrenceId?: string;
   locality?: string;
   municipality?: string;
@@ -90,7 +90,7 @@ export type SpeciesPredictionEstoniaHistoryCluster = {
   habitatType?: string;
   habitatScore?: number;
   coastalDistanceKm?: number;
-  source: 'GBIF' | 'Elurikkus' | 'mixed';
+  source: 'GBIF' | 'EELURIKKUS' | 'mixed';
   sourceBreakdown?: Record<string, number>;
 };
 
@@ -251,6 +251,10 @@ export type SpeciesPredictionEstoniaEvidence = {
   latestEstoniaDate: string;
   latestEstoniaLat: number | null;
   latestEstoniaLon: number | null;
+  latestEstoniaLocality?: string;
+  latestEstoniaSource?: string;
+  freshestLocalities?: string[];
+  sourceMix?: string[];
   alreadyPresent: boolean;
   alreadyPassed: boolean;
 };
@@ -940,6 +944,10 @@ function normalizeEstoniaEvidence(input: Record<string, unknown> | null): Specie
     latestEstoniaLon: hasValue(input, ['latestEstoniaLon', 'latest_estonia_lon', 'latestLon', 'latest_lon'])
       ? clampFloat(readNumber(input, ['latestEstoniaLon', 'latest_estonia_lon', 'latestLon', 'latest_lon']), -180, 180, 0)
       : null,
+    ...(readString(input, ['latestEstoniaLocality', 'latest_estonia_locality']) ? { latestEstoniaLocality: normalizeUiText(readString(input, ['latestEstoniaLocality', 'latest_estonia_locality'])) } : {}),
+    ...(readString(input, ['latestEstoniaSource', 'latest_estonia_source']) ? { latestEstoniaSource: normalizeUiText(readString(input, ['latestEstoniaSource', 'latest_estonia_source'])) } : {}),
+    ...(Array.isArray(readArray(input, ['freshestLocalities', 'freshest_localities'])) ? { freshestLocalities: (readArray(input, ['freshestLocalities', 'freshest_localities']) || []).map((value) => normalizeUiText(String(value || ''))).filter(Boolean) } : {}),
+    ...(Array.isArray(readArray(input, ['sourceMix', 'source_mix'])) ? { sourceMix: (readArray(input, ['sourceMix', 'source_mix']) || []).map((value) => normalizeUiText(String(value || ''))).filter(Boolean) } : {}),
     alreadyPresent: input.alreadyPresent === true,
     alreadyPassed: input.alreadyPassed === true,
   };
@@ -1000,7 +1008,7 @@ function normalizeEstoniaHistoryPoints(input: unknown[] | null): SpeciesPredicti
       eventDate: normalizeUiText(readString(source, ['eventDate', 'event_date', 'obsDt']) || ''),
       daysAgo,
       ageClass: normalizeUiText(readString(source, ['ageClass', 'age_class']) || '') === 'recent' ? 'recent' : 'historical',
-      source: normalizeUiText(readString(source, ['source']) || '') === 'Elurikkus' ? 'Elurikkus' : 'GBIF',
+      source: normalizeComparableSource(readString(source, ['source'])) === 'EELURIKKUS' ? 'EELURIKKUS' : 'GBIF',
       ...(readString(source, ['occurrenceId', 'occurrence_id']) ? { occurrenceId: normalizeUiText(readString(source, ['occurrenceId', 'occurrence_id'])) } : {}),
       ...(readString(source, ['locality']) ? { locality: normalizeUiText(readString(source, ['locality'])) } : {}),
       ...(readString(source, ['municipality']) ? { municipality: normalizeUiText(readString(source, ['municipality'])) } : {}),
@@ -1135,8 +1143,14 @@ function normalizeVectorKind(value: string): SpeciesPredictionVector['kind'] {
 }
 
 function normalizeClusterSource(value: string): SpeciesPredictionEstoniaHistoryCluster['source'] {
-  if (value === 'Elurikkus' || value === 'elurikkus') return 'Elurikkus';
+  if (normalizeComparableSource(value) === 'EELURIKKUS') return 'EELURIKKUS';
   if (value === 'mixed') return 'mixed';
+  return 'GBIF';
+}
+
+function normalizeComparableSource(value: string): 'GBIF' | 'EELURIKKUS' {
+  const normalized = normalizeUiText(value || '').toUpperCase();
+  if (normalized === 'ELURIKKUS' || normalized === 'EELURIKKUS') return 'EELURIKKUS';
   return 'GBIF';
 }
 

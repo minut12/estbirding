@@ -285,4 +285,62 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.predictedTargets?.[0]?.confidence).toBeLessThanOrEqual(0.7);
     expect(result.predictedTargets?.[0]?.latestSupportingEstoniaDate).toBe("2026-03-17T00:00:00.000Z");
   });
+
+  it("preserves freshest Estonia evidence summary and clean layer defaults", () => {
+    const result = normalizeSpeciesPredictionResult({
+      speciesKey: "punakurk-kaur",
+      speciesName: "Punakurk-kaur",
+      generatedAt: "2026-03-18T12:00:00.000Z",
+      estoniaEvidence: {
+        recentCount7d: 4,
+        recentCount30d: 6,
+        latestEstoniaDate: "2026-03-17T00:00:00.000Z",
+        latestEstoniaLat: 59.0021,
+        latestEstoniaLon: 23.4987,
+        latestEstoniaLocality: "Põõsaspea",
+        latestEstoniaSource: "EELURIKKUS",
+        freshestLocalities: ["Põõsaspea", "Ristna", "Tagaranna"],
+        sourceMix: ["EELURIKKUS", "GBIF"],
+        alreadyPresent: true,
+        alreadyPassed: false,
+      },
+      mapLayers: {
+        estoniaHistory: true,
+        estoniaHistoryPoints: true,
+        estoniaHistoryClusters: false,
+        foreignEvidence: false,
+        foreignRecentPoints: false,
+        foreignPressureClusters: false,
+        predictedLines: false,
+        predictedCone: false,
+        predictedTargets: true,
+        diagnostics: false,
+        recentOnly: false,
+      },
+    } as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.estoniaEvidence?.latestEstoniaLocality).toBe("Põõsaspea");
+    expect(result.estoniaEvidence?.freshestLocalities).toEqual(["Põõsaspea", "Ristna", "Tagaranna"]);
+    expect(result.estoniaEvidence?.sourceMix).toEqual(["EELURIKKUS", "GBIF"]);
+    expect(result.mapLayers?.estoniaHistoryClusters).toBe(false);
+    expect(result.mapLayers?.foreignRecentPoints).toBe(false);
+    expect(result.mapLayers?.predictedTargets).toBe(true);
+  });
+
+  it("normalizes uppercase EELURIKKUS sources for Estonia points and clusters", () => {
+    const result = normalizeSpeciesPredictionResult({
+      speciesKey: "punakurk-kaur",
+      speciesName: "Punakurk-kaur",
+      generatedAt: "2026-03-18T12:00:00.000Z",
+      estoniaHistoryPoints: [
+        { lat: 59.0021, lon: 23.4987, eventDate: "2026-03-17T00:00:00.000Z", ageClass: "recent", source: "EELURIKKUS" },
+      ],
+      estoniaHistoryClusters: [
+        { id: "ee-cluster-1", lat: 59.0, lon: 23.5, count: 2, recentCount: 2, newestEventDate: "2026-03-17T00:00:00.000Z", oldestEventDate: "2026-03-10T00:00:00.000Z", source: "EELURIKKUS" },
+      ],
+    } as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.estoniaHistoryPoints?.[0]?.source).toBe("EELURIKKUS");
+    expect(result.estoniaHistoryClusters?.[0]?.source).toBe("EELURIKKUS");
+  });
 });

@@ -1070,7 +1070,7 @@ function detectOutdatedWebhookFromDiagnostics(snapshot: SpeciesPredictionDebugSn
   if (transport?.responseBody) extractFromObj(transport.responseBody, 'responseBody');
 
   // Also check the stored result from last prediction
-  const lastResponse = snapshot.lastBackendResponse;
+  const lastResponse = snapshot.rawBackendResponse;
   if (lastResponse) extractFromObj(lastResponse, 'lastBackendResponse');
 
   // Check each candidate for outdated webhook signature

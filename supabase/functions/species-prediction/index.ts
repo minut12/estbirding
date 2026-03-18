@@ -512,7 +512,7 @@ async function buildMapFirstPredictionResult(opts: {
     ...(aiSummary ? { insightSummary: aiSummary, aiSummary } : {}),
     consistencyChecks: {
       routeLooksPlausible: predictionVectors.some((vector) => vector.kind === 'route'),
-      timingLooksPlausible: foreignRecentPoints.some((point) => point.daysAgo <= 7),
+      timingLooksPlausible: foreignRecentPoints.some((point: Record<string, unknown>) => toNumber(point.daysAgo) <= 7),
       weatherLooksSupportive: evidenceSummary.wasWeatherUsedInRanking && computeWindSupport(weather) >= 45,
       foreignPressureMatchesNarrative: foreignClusters.length > 0,
     },

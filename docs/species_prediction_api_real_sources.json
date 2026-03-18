@@ -4,7 +4,7 @@
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "species-prediction-openai",
+        "path": "species-prediction-evidence-first",
         "responseMode": "responseNode",
         "options": {}
       },
@@ -16,7 +16,7 @@
         220,
         300
       ],
-      "webhookId": "species-prediction-openai"
+      "webhookId": "species-prediction-evidence-first"
     },
     {
       "parameters": {

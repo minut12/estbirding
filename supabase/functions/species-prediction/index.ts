@@ -9,7 +9,7 @@ const AUTH_HEADER_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_HEADER';
 const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
-const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-openai';
+const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
 
 type WebhookValidationErrorCode =
   | 'MISSING_WEBHOOK_URL'
@@ -1328,7 +1328,7 @@ function buildStatusMessage(
   }
   if (statusCode === 'DEPLOYED_NOT_CONFIGURED') {
     if (!webhookTarget.looksLikeProductionWebhook) {
-      return `Prediction backend configuration is invalid because the webhook path "${webhookTarget.resolvedWebhookPath}" does not match the expected production path "${EXPECTED_PRODUCTION_WEBHOOK_PATH}".`;
+      return `Prediction backend configuration is invalid because the Supabase prediction function is still pointing to the outdated n8n webhook path "${webhookTarget.resolvedWebhookPath}" instead of "${EXPECTED_PRODUCTION_WEBHOOK_PATH}".`;
     }
     return webhookTarget.validationMessage || 'Prediction backend has an invalid n8n webhook configuration.';
   }

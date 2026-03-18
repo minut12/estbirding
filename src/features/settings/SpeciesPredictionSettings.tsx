@@ -337,7 +337,7 @@ export default function SpeciesPredictionSettings() {
         onEnabledChange={setPredictionFeatureEnabled}
       />
       <p className="text-[11px] text-muted-foreground">
-        prediction-settings-build: 2026-03-18-fix2
+        prediction-settings-build: 2026-03-18-fix4
       </p>
       {!predictionEnabled ? (
         <p className="text-xs text-muted-foreground">Turn on Species Prediction to edit these settings</p>
@@ -1027,9 +1027,8 @@ function buildSpeciesPredictionStatusCard(
     return {
       badge: 'Unavailable',
       primaryText: 'Prediction backend is configured but currently unavailable',
-      helperText: status.reasonCode === 'N8N_WEBHOOK_INACTIVE'
-        || status.backend.productionWebhookInactive === true
-        ? 'The n8n production webhook for species prediction is inactive or not registered.'
+      helperText: status.reasonCode === 'INVALID_WEBHOOK_PATH'
+        ? 'The Supabase prediction function is still pointing to an outdated n8n webhook path.'
         : 'The prediction runtime is unavailable. Check the latest backend diagnostics for the exact upstream reason.',
     };
   }

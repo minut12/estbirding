@@ -355,11 +355,13 @@ async function executeN8nAndPersist(opts: {
       : (upstreamError?.message || 'Prediction service evidence assembly error');
     console.error(`${LOG_PREFIX} background_error`, { requestId, isAbort, error: String(err) });
 
-    await admin.from('prediction_jobs').update({
-      status: 'failed',
-      error_json: upstreamError ?? { message: errorMessage, detail: String(err) },
-      updated_at: new Date().toISOString(),
-    }).eq('request_id', requestId).catch(() => {});
+    try {
+      await admin.from('prediction_jobs').update({
+        status: 'failed',
+        error_json: upstreamError ?? { message: errorMessage, detail: String(err) },
+        updated_at: new Date().toISOString(),
+      }).eq('request_id', requestId);
+    } catch { /* ignore */ }
   } finally {
     clearTimeout(timer);
   }
@@ -510,7 +512,7 @@ async function buildMapFirstPredictionResult(opts: {
     ...(aiSummary ? { insightSummary: aiSummary, aiSummary } : {}),
     consistencyChecks: {
       routeLooksPlausible: predictionVectors.some((vector) => vector.kind === 'route'),
-      timingLooksPlausible: foreignRecentPoints.some((point) => point.daysAgo <= 7),
+      timingLooksPlausible: foreignRecentPoints.some((point: Record<string, unknown>) => toNumber(point.daysAgo) <= 7),
       weatherLooksSupportive: evidenceSummary.wasWeatherUsedInRanking && computeWindSupport(weather) >= 45,
       foreignPressureMatchesNarrative: foreignClusters.length > 0,
     },
@@ -951,9 +953,10 @@ function buildPredictedTargets(opts: {
     const confidenceCap = hasForeignPressure ? getConfidenceCapForRankingMode(rankingMode) : 0.70;
     const normalizedConfidence = Math.max(0.18, Math.min(confidenceCap, confidenceBeforeCap / 100));
     const confidence = Number(normalizedConfidence.toFixed(2));
+    const clusterDistanceKm = toNumber((cluster as Record<string, unknown>).nearestDistanceKm);
     const etaHours = hasForeignPressure
-      ? Math.max(6, Math.round((toNumber(cluster.distanceFromClusterKm) || 120) / Math.max(20, toNumber(weather.windSpeedKph) + 18)))
-      : Math.max(12, Math.round(Math.max(20, toNumber(cluster.distanceFromClusterKm) || 90) / 12));
+      ? Math.max(6, Math.round((clusterDistanceKm || 120) / Math.max(20, toNumber(weather.windSpeedKph) + 18)))
+      : Math.max(12, Math.round(Math.max(20, clusterDistanceKm || 90) / 12));
     return {
       cluster,
       ecologyScore,
@@ -1056,7 +1059,7 @@ function buildPredictedTargets(opts: {
         confidenceBeforeCap: Number((Math.max(0, entry.confidenceBeforeCap) / 100).toFixed(2)),
         confidenceAfterCap: entry.confidenceAfterCap,
         finalConfidenceComponents: {
-          confidenceCap,
+          confidenceCap: entry.confidenceAfterCap,
           habitat: entry.ecologyScore.score,
           history: historyScoreForDebug(cluster),
           foreign: hasForeignPressure ? entry.routeAlignment : 0,

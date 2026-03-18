@@ -77,8 +77,13 @@ export default function SpeciesPredictionSettings() {
   const activeSpeciesKey = useMemo(() => normalizeSpeciesName(activeSpeciesName), [activeSpeciesName]);
   const hasValidSelectedSpecies = Boolean(activeSpeciesName && activeSpeciesKey);
   const normalizedBackendStatus = useMemo(() => normalizeBackendStatus(backendStatus), [backendStatus]);
-  const displayState = useMemo(() => deriveSpeciesPredictionDisplayState(normalizedBackendStatus), [normalizedBackendStatus]);
-  const statusCard = useMemo(() => buildSpeciesPredictionStatusCard(displayState, normalizedBackendStatus), [displayState, normalizedBackendStatus]);
+  const diagnosticWebhookError = useMemo(() => detectOutdatedWebhookFromDiagnostics(debugSnapshot), [debugSnapshot]);
+  const effectiveStatus = useMemo(() => ({
+    ...normalizedBackendStatus,
+    hasOutdatedWebhookPathError: normalizedBackendStatus.hasOutdatedWebhookPathError || diagnosticWebhookError.detected,
+  }), [normalizedBackendStatus, diagnosticWebhookError]);
+  const displayState = useMemo(() => deriveSpeciesPredictionDisplayState(effectiveStatus), [effectiveStatus]);
+  const statusCard = useMemo(() => buildSpeciesPredictionStatusCard(displayState, effectiveStatus), [displayState, effectiveStatus]);
   const isBackendReadyForConfiguration = displayState === 'CONFIGURED_AVAILABLE';
   const canValidateSpeciesSettings = predictionEnabled && isBackendReadyForConfiguration;
   const saveBlockedMessage = canValidateSpeciesSettings && !hasValidSelectedSpecies
@@ -337,7 +342,7 @@ export default function SpeciesPredictionSettings() {
         onEnabledChange={setPredictionFeatureEnabled}
       />
       <p className="text-[11px] text-muted-foreground">
-        prediction-settings-build: 2026-03-18-fix5
+        prediction-settings-build: 2026-03-18-fix6
       </p>
       {!predictionEnabled ? (
         <p className="text-xs text-muted-foreground">Turn on Species Prediction to edit these settings</p>
@@ -360,6 +365,20 @@ export default function SpeciesPredictionSettings() {
               {statusCard.helperText}
             </p>
           </div>
+          {/* Temporary debug: derived status mapper values */}
+          {canSeeDebugDiagnostics && (
+            <div className="rounded border border-border bg-muted/20 p-2 text-[10px] font-mono text-muted-foreground space-y-0.5">
+              <p className="font-semibold text-foreground text-[11px]">Status mapper debug (fix6)</p>
+              <p>healthCheck.hasOutdatedWebhook: {String(normalizedBackendStatus.hasOutdatedWebhookPathError)}</p>
+              <p>diagnostics.detected: {String(diagnosticWebhookError.detected)}</p>
+              <p>diagnostics.stage: {diagnosticWebhookError.stage || '–'}</p>
+              <p>diagnostics.code: {diagnosticWebhookError.code != null ? String(diagnosticWebhookError.code) : '–'}</p>
+              <p>diagnostics.message: {diagnosticWebhookError.message || '–'}</p>
+              <p>diagnostics.matchedReason: {diagnosticWebhookError.matchedReason || '–'}</p>
+              <p>effective.hasOutdatedWebhookPathError: {String(effectiveStatus.hasOutdatedWebhookPathError)}</p>
+              <p>displayState: {displayState}</p>
+            </div>
+          )}
           {!canManage && (
             <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
               Admin-managed species settings are visible here for review. Running prediction/research remains available from the maps.
@@ -1011,6 +1030,69 @@ function hasOutdatedWebhookPathError(status: SpeciesPredictionBackendStatus): bo
   }
   return haystacks.some((value) => value.includes('webhook \"post species-prediction\" is not registered')
     || value.includes('webhook post species-prediction is not registered'));
+}
+
+type DiagnosticWebhookDetection = {
+  detected: boolean;
+  stage: string;
+  code: number | string | null;
+  message: string;
+  matchedReason: string;
+};
+
+function detectOutdatedWebhookFromDiagnostics(snapshot: SpeciesPredictionDebugSnapshot): DiagnosticWebhookDetection {
+  const none: DiagnosticWebhookDetection = { detected: false, stage: '', code: null, message: '', matchedReason: '' };
+
+  // Collect all candidate objects from snapshot
+  const transport = snapshot.transport;
+  const transportError = transport?.error;
+
+  // Gather all searchable strings and codes from deeply nested paths
+  const candidates: Array<{ stage?: string; code?: number | string | null; message?: string; source: string }> = [];
+
+  function extractFromObj(obj: unknown, source: string) {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
+    const r = obj as Record<string, unknown>;
+    const msg = typeof r.message === 'string' ? r.message : '';
+    const hint = typeof r.hint === 'string' ? r.hint : '';
+    const stage = typeof r.stage === 'string' ? r.stage : '';
+    const code = typeof r.code === 'number' ? r.code : (typeof r.status === 'number' ? r.status : null);
+    if (msg || hint || stage || code != null) {
+      candidates.push({ stage, code, message: msg || hint, source });
+    }
+    // Recurse into known nested keys
+    for (const key of ['body', 'responseBody', 'error', 'json', 'context']) {
+      if (r[key] && typeof r[key] === 'object') extractFromObj(r[key], `${source}.${key}`);
+    }
+  }
+
+  if (transportError) extractFromObj(transportError, 'transportError');
+  if (transport?.responseBody) extractFromObj(transport.responseBody, 'responseBody');
+
+  // Also check the stored result from last prediction
+  const lastResponse = snapshot.rawBackendResponse;
+  if (lastResponse) extractFromObj(lastResponse, 'lastBackendResponse');
+
+  // Check each candidate for outdated webhook signature
+  for (const c of candidates) {
+    const lower = (c.message || '').toLowerCase();
+    const is404 = c.code === 404;
+    const hasNotRegistered = lower.includes('not registered');
+    const hasSpeciesPrediction = lower.includes('species-prediction');
+    const hasWebhookMention = lower.includes('webhook');
+
+    if (hasNotRegistered && (hasSpeciesPrediction || hasWebhookMention)) {
+      return { detected: true, stage: c.stage || '', code: c.code, message: c.message || '', matchedReason: `message contains "not registered" + webhook ref (${c.source})` };
+    }
+    if (is404 && (hasSpeciesPrediction || hasNotRegistered)) {
+      return { detected: true, stage: c.stage || '', code: c.code, message: c.message || '', matchedReason: `code=404 + species-prediction/not-registered (${c.source})` };
+    }
+    if (c.stage === 'n8n_upstream' && is404) {
+      return { detected: true, stage: c.stage, code: c.code, message: c.message || '', matchedReason: `stage=n8n_upstream + code=404 (${c.source})` };
+    }
+  }
+
+  return none;
 }
 
 function deriveSpeciesPredictionDisplayState(

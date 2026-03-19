@@ -399,12 +399,12 @@ function normalizeEmbeddedResult(row: Record<string, unknown>): ElurikkusParsedR
   };
 }
 
-function parseEmbeddedSearchPayload(doc: Document): { results: ElurikkusParsedRecord[]; count: number; warning?: string } {
-  const scripts = Array.from(doc.querySelectorAll('script[type="application/json"][data-sveltekit-fetched]'));
-  const target = scripts.find((script) => String(script.getAttribute("data-url") || "").includes("/api/occurrences/search"))
+function parseEmbeddedSearchPayload(doc: any): { results: ElurikkusParsedRecord[]; count: number; warning?: string } {
+  const scripts = Array.from(doc.querySelectorAll('script[type="application/json"][data-sveltekit-fetched]')) as any[];
+  const target = scripts.find((script: any) => String(script.getAttribute("data-url") || "").includes("/api/occurrences/search"))
     || scripts[0];
   if (!target) return { results: [], count: 0, warning: "embedded search payload script not found" };
-  const outer = safeJsonParse(target.textContent || "");
+  const outer = safeJsonParse((target as any).textContent || "");
   if (!outer || typeof outer !== "object") return { results: [], count: 0, warning: "embedded outer payload was not valid JSON" };
   const body = (outer as Record<string, unknown>).body;
   const inner = typeof body === "string" ? safeJsonParse(body) : body;
@@ -417,13 +417,13 @@ function parseEmbeddedSearchPayload(doc: Document): { results: ElurikkusParsedRe
   };
 }
 
-function parseOccurrenceSearchTable(doc: Document): ElurikkusParsedRecord[] {
-  const tables = Array.from(doc.querySelectorAll("table"));
+function parseOccurrenceSearchTable(doc: any): ElurikkusParsedRecord[] {
+  const tables = Array.from(doc.querySelectorAll("table")) as any[];
   for (const table of tables) {
-    const headers = Array.from(table.querySelectorAll("thead th, tr th")).map((cell) => stripHtml(cell.textContent || "").toLowerCase());
+    const headers = Array.from((table as any).querySelectorAll("thead th, tr th") as any[]).map((cell: any) => stripHtml(cell.textContent || "").toLowerCase());
     const headerText = headers.join(" | ");
     if (!/(date|kuup|locality|asukoht|collectors|koguja|taxon|teaduslik|common)/i.test(headerText)) continue;
-    const rows = Array.from(table.querySelectorAll("tbody tr, tr")).map((row) => Array.from(row.querySelectorAll("td")).map((cell) => stripHtml(cell.textContent || ""))).filter((cells) => cells.length >= 5);
+    const rows = Array.from((table as any).querySelectorAll("tbody tr, tr") as any[]).map((row: any) => Array.from((row as any).querySelectorAll("td") as any[]).map((cell: any) => stripHtml(cell.textContent || ""))).filter((cells) => cells.length >= 5);
     const mapped = rows.map((cells, index) => ({
       id: `table-row-${index + 1}`,
       date: firstNonEmpty(cells[0]),

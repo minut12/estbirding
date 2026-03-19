@@ -330,12 +330,16 @@ export type SpeciesPredictionResult = {
   analysisVersion?: string;
   analysisFallbackUsed?: boolean;
   confidenceNote?: string;
+  rankingNotes?: string;
   warnings?: string[];
   rerankedTopPredictedPoints?: PredictedPoint[];
   consistencyChecks?: PredictionConsistencyChecks;
   openaiAnalysis?: SpeciesPredictionAnalysis;
   aiSummary?: string;
   rawResearchPayload?: Record<string, unknown>;
+  recoveredFromErrorEnvelope?: boolean;
+  summarySourcePath?: string;
+  normalizedPredictionShape?: string;
 };
 
 export type SpeciesPredictionRequestPayload = {

@@ -459,7 +459,7 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.hasAiSummaryObject).toBeUndefined();
     expect(result.hasNestedInsightSummary).toBeUndefined();
     expect(result.summarySourcePath).toBeUndefined();
-    expect(result.analysisVersion).toBeUndefined();
+    expect(result.analysisVersion).toBe("n8n_aiSummary_normalized");
     expect(result.foreignClusters).toEqual([]);
     expect(result.predictedTargets).toEqual([]);
     expect(result.weather?.observedAt).toBe("2026-03-19T18:26:52.847Z");
@@ -552,7 +552,7 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.foreignClusters).toEqual([]);
     expect(result.predictedTargets).toEqual([]);
   });
-  it("keeps wrapped upstreamBody aiSummary payloads usable while preserving species identity", () => {
+  it("normalizes wrapped upstreamBody aiSummary payloads as clean success", () => {
     const result = normalizeSpeciesPredictionResult({
       responseBody: {
         upstreamBody: {
@@ -608,8 +608,12 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.confidenceNote).toBe("Wrapped confidence.");
     expect(result.rankingNotes).toBe("Wrapped ranking notes.");
     expect(result.warnings).toEqual(["Wrapped warning."]);
-    expect(result.summarySourcePath).toBe("responseBody.upstreamBody.aiSummary");
-    expect(result.recoveredFromErrorEnvelope).toBe(true);
+    expect(result.summarySourcePath).toBeUndefined();
+    expect(result.recoveredFromErrorEnvelope).toBeUndefined();
+    expect(result.normalizedPredictionShape).toBeUndefined();
+    expect(result.rawTopLevelCode).toBeUndefined();
+    expect(result.rawTopLevelStage).toBeUndefined();
+    expect(result.analysisVersion).toBe("n8n_aiSummary_normalized");
     expect(result.speciesKey).toBe("punakurk-kaur");
     expect(result.speciesName).toBe("Punakurk-kaur");
     expect(result.scope).toBe("linnuliigid");
@@ -671,9 +675,13 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.warnings).toEqual(["Flat warning."]);
     expect(result.summarySourcePath).toBeUndefined();
     expect(result.recoveredFromErrorEnvelope).toBeUndefined();
+    expect(result.normalizedPredictionShape).toBeUndefined();
+    expect(result.rawTopLevelCode).toBeUndefined();
+    expect(result.rawTopLevelStage).toBeUndefined();
     expect(result.speciesKey).toBe("punakurk-kaur");
     expect(result.speciesName).toBe("Punakurk-kaur");
     expect(result.scope).toBe("linnuliigid");
+    expect(result.analysisVersion).toBe("n8n-flat-success");
     expect(result.mapLayers?.predictedTargets).toBe(true);
   });
 

@@ -590,6 +590,7 @@ export function normalizeSpeciesPredictionResult(
   const analysisVersion = readString(source, ['analysisVersion'])
     || readString(source, ['analysis_version'])
     || (resolvedSource.recoveredFromErrorEnvelope ? 'n8n_aiSummary_recovered' : '')
+    || (insightSummary ? 'n8n_aiSummary_normalized' : '')
     || readString(asRecord(source.openaiAnalysis), ['analysisVersion', 'analysis_version']);
   const rawResearchPayload = source.rawResearchPayload ? asRecord(source.rawResearchPayload) : {};
   const normalizedSources = readRecord(rawResearchPayload, ['normalizedSources']) ?? {};
@@ -874,8 +875,20 @@ export function extractUsablePayloadFromErrorEnvelope(
 export function resolveSpeciesPredictionSource(
   input: Partial<SpeciesPredictionResult> | null | undefined,
 ): ResolvedSpeciesPredictionSource {
-  const source = resolvePredictionSource(input);
   const inputRecord = asRecord(input);
+  const source = resolvePredictionSource(input);
+  const wrappedSuccessSource = resolveWrappedSuccessSource(inputRecord);
+  if (wrappedSuccessSource) {
+    return {
+      source: wrappedSuccessSource,
+      summarySourcePath: '',
+      insightSummary: '',
+      recoveredFromErrorEnvelope: false,
+      normalizedPredictionShape: '',
+      rawTopLevelCode: '',
+      rawTopLevelStage: '',
+    };
+  }
   const recovered = extractUsablePayloadFromErrorEnvelope(asRecord(input));
   if (recovered) return recovered;
   const directSummary = readString(source, ['insightSummary'])
@@ -907,6 +920,24 @@ function resolvePredictionSource(input: Partial<SpeciesPredictionResult> | null 
   const nestedResult = asRecord(source.result);
   if (hasCanonicalPredictionFields(nestedResult)) return nestedResult;
   return source;
+}
+
+function resolveWrappedSuccessSource(input: Record<string, unknown>): Record<string, unknown> | null {
+  if (readString(input, ['code']) || readString(input, ['stage'])) return null;
+  const queue: Record<string, unknown>[] = [input];
+  const seen = new Set<Record<string, unknown>>();
+  while (queue.length) {
+    const current = queue.shift()!;
+    if (seen.has(current)) continue;
+    seen.add(current);
+    if (hasCanonicalPredictionFields(current)) return current;
+    for (const key of ['body', 'data', 'result', 'responseBody', 'upstreamBody']) {
+      const next = asRecord(current[key]);
+      if (!Object.keys(next).length) continue;
+      queue.push(next);
+    }
+  }
+  return null;
 }
 
 function hasCanonicalPredictionFields(record: Record<string, unknown>): boolean {

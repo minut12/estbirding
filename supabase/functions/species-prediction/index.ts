@@ -166,14 +166,6 @@ type NormalizedUpstreamResponse = {
   species: Record<string, unknown>;
   weather: Record<string, unknown>;
   raw: Record<string, unknown>;
-  summaryShapeUsed: 'nested_aiSummary' | 'flat_legacy' | 'missing';
-  summarySourcePath?: string;
-  hasAiSummaryObject?: boolean;
-  hasNestedInsightSummary?: boolean;
-  normalizedInsightLength?: number;
-  normalizedWarningsCount?: number;
-  normalizedRankingNotesType?: string;
-  upstreamTopLevelKeys?: string[];
 };
 
 type LastInvocationEvidence = {
@@ -1051,16 +1043,10 @@ async function buildMapFirstPredictionResult(opts: {
     countryScores: normalizedN8nResponse.countryScores,
     estoniaEvidence: normalizedN8nResponse.estoniaEvidence,
     elurikkusRecentRecords: normalizedN8nResponse.elurikkusRecentRecords,
+    mapLayers: Object.keys(normalizedN8nResponse.mapLayers).length ? normalizedN8nResponse.mapLayers : baseResult.mapLayers,
     mapLayersDefault: normalizedN8nResponse.mapLayersDefault,
     species: normalizedN8nResponse.species,
-    summarySourcePath: normalizedN8nResponse.summarySourcePath,
-    hasAiSummaryObject: normalizedN8nResponse.hasAiSummaryObject,
-    hasNestedInsightSummary: normalizedN8nResponse.hasNestedInsightSummary,
-    normalizedInsightLength: normalizedN8nResponse.normalizedInsightLength,
-    normalizedWarningsCount: normalizedN8nResponse.normalizedWarningsCount,
-    normalizedRankingNotesType: normalizedN8nResponse.normalizedRankingNotesType,
-    upstreamTopLevelKeys: normalizedN8nResponse.upstreamTopLevelKeys,
-  }, extractNormalizedAiSummary(normalizedN8nResponse.raw));
+  }, null);
 }
 
 async function fetchGbifEstoniaHistory(speciesName: string, signal: AbortSignal): Promise<Record<string, unknown>[]> {
@@ -2210,7 +2196,7 @@ function normalizeN8nPredictionSuccessPayload(data: unknown): NormalizedUpstream
     rankingNotes: summary.rankingNotes,
     warnings: summary.warnings,
     generatedAt: stringOr(record.generatedAt) || new Date().toISOString(),
-    analysisVersion: stringOr(record.analysisVersion) || 'n8n_aiSummary_recovered',
+    analysisVersion: stringOr(record.analysisVersion) || 'n8n_aiSummary_normalized',
     sourceHealth: asRecord(record.sourceHealth),
     countryScores: asRecord(record.countryScores),
     estoniaEvidence: asRecord(record.estoniaEvidence),
@@ -2246,14 +2232,6 @@ function normalizeN8nPredictionSuccessPayload(data: unknown): NormalizedUpstream
       ...(weather.windDirectionDeg != null ? { windDirectionDeg: toNumber(weather.windDirectionDeg) } : {}),
     },
     raw: record,
-    summaryShapeUsed: summary.summaryShapeUsed,
-    summarySourcePath: summary.summarySourcePath || 'aiSummary.insightSummary',
-    hasAiSummaryObject: summary.hasAiSummaryObject === true,
-    hasNestedInsightSummary: summary.hasNestedInsightSummary === true,
-    normalizedInsightLength: summary.normalizedInsightLength,
-    normalizedWarningsCount: summary.normalizedWarningsCount,
-    normalizedRankingNotesType: summary.normalizedRankingNotesType || 'string',
-    upstreamTopLevelKeys: summary.topLevelKeys,
   };
 }
 

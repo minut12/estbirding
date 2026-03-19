@@ -142,6 +142,9 @@ type NormalizedUpstreamResponse = {
   ok: true;
   status: 'completed';
   error: null;
+  speciesKey: string;
+  speciesName: string;
+  scope: string;
   insightSummary: string;
   confidenceNote: string;
   rankingNotes: string;
@@ -158,6 +161,7 @@ type NormalizedUpstreamResponse = {
   estoniaHistoryPoints: unknown[];
   elurikkusRecentRecords: unknown[];
   estoniaHistoryClusters: unknown[];
+  mapLayers: Record<string, unknown>;
   mapLayersDefault: Record<string, unknown>;
   species: Record<string, unknown>;
   weather: Record<string, unknown>;
@@ -2191,10 +2195,16 @@ function normalizeN8nPredictionSuccessPayload(data: unknown): NormalizedUpstream
   if (!summary) return null;
   const species = asRecord(record.species);
   const weather = asRecord(record.weather);
+  const speciesKey = stringOr(record.speciesKey, species.speciesKey, species.key);
+  const speciesName = stringOr(record.speciesName, species.speciesName, species.name);
+  const scope = stringOr(record.scope) || 'linnuliigid';
   return {
     ok: true,
     status: 'completed',
     error: null,
+    speciesKey,
+    speciesName,
+    scope,
     insightSummary: summary.insightSummary,
     confidenceNote: summary.confidenceNote,
     rankingNotes: summary.rankingNotes,
@@ -2211,13 +2221,14 @@ function normalizeN8nPredictionSuccessPayload(data: unknown): NormalizedUpstream
     estoniaHistoryPoints: Array.isArray(record.estoniaHistoryPoints) ? record.estoniaHistoryPoints : [],
     elurikkusRecentRecords: Array.isArray(record.elurikkusRecentRecords) ? record.elurikkusRecentRecords : [],
     estoniaHistoryClusters: Array.isArray(record.estoniaHistoryClusters) ? record.estoniaHistoryClusters : [],
+    mapLayers: asRecord(record.mapLayers),
     mapLayersDefault: asRecord(record.mapLayersDefault),
     species: {
       ...species,
       ...(stringOr(species.key) ? { key: stringOr(species.key) } : {}),
       ...(stringOr(species.name) ? { name: stringOr(species.name) } : {}),
-      ...(stringOr(species.speciesKey, species.key) ? { speciesKey: stringOr(species.speciesKey, species.key) } : {}),
-      ...(stringOr(species.speciesName, species.name) ? { speciesName: stringOr(species.speciesName, species.name) } : {}),
+      ...(speciesKey ? { speciesKey } : {}),
+      ...(speciesName ? { speciesName } : {}),
       ...(stringOr(species.latinName) ? { latinName: stringOr(species.latinName) } : {}),
       ...(stringOr(species.ebirdSpeciesCode) ? { ebirdSpeciesCode: stringOr(species.ebirdSpeciesCode) } : {}),
     },
@@ -2345,6 +2356,9 @@ function enrichPredictionResult(
 
   return attachNormalizationMarkers({
     ...raw,
+    ...(canonicalSpecies.speciesKey ? { speciesKey: canonicalSpecies.speciesKey } : {}),
+    ...(canonicalSpecies.speciesName ? { speciesName: canonicalSpecies.speciesName } : {}),
+    ...(stringOr(raw.scope, payloadSettings.scope) ? { scope: stringOr(raw.scope, payloadSettings.scope) } : {}),
     species: canonicalSpecies,
     insightSummary: normalizedUpstream?.insightSummary || normalizedSummary?.insightSummary || stringOr(raw.insightSummary),
     confidenceNote: normalizedUpstream?.confidenceNote || stringOr(raw.confidenceNote),
@@ -2364,6 +2378,7 @@ function enrichPredictionResult(
     estoniaHistoryPoints: canonicalEstoniaHistoryPoints,
     elurikkusRecentRecords: canonicalElurikkusRecentRecords,
     estoniaHistoryClusters: canonicalEstoniaHistoryClusters,
+    mapLayers: Object.keys(normalizedUpstream?.mapLayers || {}).length ? normalizedUpstream!.mapLayers : asRecord(raw.mapLayers),
     mapLayersDefault: canonicalMapLayersDefault,
     weather: canonicalWeather,
     historicalEvidence,

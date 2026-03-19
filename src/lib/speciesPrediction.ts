@@ -538,7 +538,12 @@ export function normalizeSpeciesPredictionResult(
   const resolvedSource = resolveSpeciesPredictionSource(input);
   const source = resolvedSource.source;
   const normalizedName = normalizeUiText(speciesName);
-  const speciesKey = normalizeSpeciesName(readString(source, ['speciesKey', 'species_key']) || normalizedName);
+  const sourceSpecies = asRecord(source.species);
+  const speciesKey = normalizeSpeciesName(
+    readString(source, ['speciesKey', 'species_key'])
+    || readString(sourceSpecies, ['speciesKey', 'species_key', 'key'])
+    || normalizedName,
+  );
   const canonicalTopPredictedPointsSource = readArray(source, ['topPredictedPoints']);
   const legacyTopPredictedPointsSource = readArray(source, ['top_predicted_points', 'points', 'candidates']);
   const rerankedTopPredictedPointsSource = readArray(source, ['rerankedTopPredictedPoints'])
@@ -591,16 +596,20 @@ export function normalizeSpeciesPredictionResult(
   const requestMeta = readRecord(rawResearchPayload, ['request']) ?? {};
   const evidenceSpecies = {
     speciesKey,
-    speciesName: normalizeUiText(readString(source, ['speciesName', 'species_name']) || normalizedName),
+    speciesName: normalizeUiText(
+      readString(source, ['speciesName', 'species_name'])
+      || readString(sourceSpecies, ['speciesName', 'species_name', 'name'])
+      || normalizedName,
+    ),
     latinName: normalizeUiText(readString(source, ['latinName', 'latin_name']) || readString(requestMeta, ['latinName', 'latin_name']) || ''),
     ebirdSpeciesCode: normalizeUiText(
       readString(source, ['ebirdSpeciesCode', 'ebird_species_code'])
       || readString(requestMeta, ['ebirdSpeciesCode', 'ebird_species_code'])
-      || readString(asRecord(source.species), ['ebirdSpeciesCode', 'ebird_species_code'])
+      || readString(sourceSpecies, ['ebirdSpeciesCode', 'ebird_species_code'])
       || '',
     ),
-    key: normalizeUiText(readString(asRecord(source.species), ['key']) || speciesKey),
-    name: normalizeUiText(readString(asRecord(source.species), ['name']) || readString(source, ['speciesName', 'species_name']) || normalizedName),
+    key: normalizeUiText(readString(sourceSpecies, ['key']) || speciesKey),
+    name: normalizeUiText(readString(sourceSpecies, ['name']) || readString(source, ['speciesName', 'species_name']) || normalizedName),
   };
   const foreignEvidence = normalizeForeignEvidence(
     readArray(source, ['foreignEvidence']) ?? readArray(rawResearchPayload, ['foreignEvidence']),
@@ -782,6 +791,16 @@ export function extractUsablePayloadFromErrorEnvelope(
   const r = raw as Record<string, unknown>;
   const rawTopLevelCode = readString(r, ['code']);
   const rawTopLevelStage = readString(r, ['stage']);
+  const looksLikeEnvelope = Boolean(
+    rawTopLevelCode
+    || rawTopLevelStage
+    || hasValue(r, ['body'])
+    || hasValue(r, ['data'])
+    || hasValue(r, ['result'])
+    || hasValue(r, ['responseBody'])
+    || hasValue(r, ['upstreamBody']),
+  );
+  if (!looksLikeEnvelope) return null;
 
   const candidates: Array<{ sourceObj: Record<string, unknown>; path: string }> = [];
   const queue: Array<{ sourceObj: Record<string, unknown>; path: string }> = [{ sourceObj: r, path: '' }];

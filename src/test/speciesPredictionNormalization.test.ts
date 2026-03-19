@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeSpeciesPredictionResult } from "@/lib/speciesPrediction";
+import { hasUsableSpeciesPredictionResult, normalizeSpeciesPredictionResult } from "@/lib/speciesPrediction";
 
 describe("normalizeSpeciesPredictionResult", () => {
   it("prefers canonical fields over legacy aliases", () => {
@@ -456,10 +456,10 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.confidenceNote).toBe("High confidence that there are no recent Estonian detections.");
     expect(result.rankingNotes).toContain("Ranking drivers: none present");
     expect(result.warnings).toHaveLength(4);
-    expect(result.hasAiSummaryObject).toBe(true);
-    expect(result.hasNestedInsightSummary).toBe(true);
-    expect(result.summarySourcePath).toBe("aiSummary");
-    expect(result.analysisVersion).toBe("n8n_aiSummary_recovered");
+    expect(result.hasAiSummaryObject).toBeUndefined();
+    expect(result.hasNestedInsightSummary).toBeUndefined();
+    expect(result.summarySourcePath).toBeUndefined();
+    expect(result.analysisVersion).toBeUndefined();
     expect(result.foreignClusters).toEqual([]);
     expect(result.predictedTargets).toEqual([]);
     expect(result.weather?.observedAt).toBe("2026-03-19T18:26:52.847Z");
@@ -551,5 +551,151 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.weather?.windSpeedKph).toBe(6.1);
     expect(result.foreignClusters).toEqual([]);
     expect(result.predictedTargets).toEqual([]);
+  });
+  it("keeps wrapped upstreamBody aiSummary payloads usable while preserving species identity", () => {
+    const result = normalizeSpeciesPredictionResult({
+      responseBody: {
+        upstreamBody: {
+          ok: true,
+          status: "completed",
+          speciesKey: "punakurk-kaur",
+          speciesName: "Punakurk-kaur",
+          scope: "linnuliigid",
+          species: {
+            key: "Punakurk-kaur",
+            name: "Punakurk-kaur",
+            latinName: "",
+            ebirdSpeciesCode: "retloo",
+          },
+          weather: {
+            source: "Open-Meteo",
+            observedAt: "2026-03-19T17:03:54.650Z",
+            windSpeedKmh: 6.1,
+            windDirectionDeg: 263,
+          },
+          aiSummary: {
+            warnings: ["Wrapped warning."],
+            rankingNotes: "Wrapped ranking notes.",
+            confidenceNote: "Wrapped confidence.",
+            insightSummary: "Wrapped upstreamBody summary.",
+          },
+          generatedAt: "2026-03-19T17:03:55.249Z",
+          sourceHealth: {
+            primarySourceUsed: "eElurikkus recent table + GBIF Estonia coordinates + eBird foreign + Open-Meteo",
+            sourceWarnings: [],
+          },
+          estoniaEvidence: {
+            recentCount7d: 0,
+            recentCount30d: 0,
+            alreadyPresent: false,
+          },
+          evidenceSummary: {
+            totalForeignRecentPoints: 0,
+          },
+          foreignClusters: [],
+          predictedTargets: [],
+          foreignRecentPoints: [],
+          estoniaHistoryPoints: [],
+          estoniaHistoryClusters: [],
+          mapLayersDefault: {
+            showPredictedTargets: true,
+          },
+        },
+      },
+    } as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.insightSummary).toBe("Wrapped upstreamBody summary.");
+    expect(result.confidenceNote).toBe("Wrapped confidence.");
+    expect(result.rankingNotes).toBe("Wrapped ranking notes.");
+    expect(result.warnings).toEqual(["Wrapped warning."]);
+    expect(result.summarySourcePath).toBe("responseBody.upstreamBody.aiSummary");
+    expect(result.recoveredFromErrorEnvelope).toBe(true);
+    expect(result.speciesKey).toBe("punakurk-kaur");
+    expect(result.speciesName).toBe("Punakurk-kaur");
+    expect(result.scope).toBe("linnuliigid");
+  });
+
+  it("normalizes canonical success payloads without relying on recovery flags", () => {
+    const result = normalizeSpeciesPredictionResult({
+      ok: true,
+      status: "completed",
+      speciesKey: "punakurk-kaur",
+      speciesName: "Punakurk-kaur",
+      scope: "linnuliigid",
+      species: {
+        key: "Punakurk-kaur",
+        name: "Punakurk-kaur",
+      },
+      generatedAt: "2026-03-19T20:00:00.000Z",
+      analysisVersion: "n8n-flat-success",
+      insightSummary: "Flat wrapped success summary.",
+      confidenceNote: "Flat confidence.",
+      rankingNotes: "Flat ranking notes.",
+      warnings: ["Flat warning."],
+      sourceHealth: {
+        primarySourceUsed: "n8n",
+        sourceWarnings: [],
+      },
+      estoniaEvidence: {
+        recentCount7d: 1,
+        recentCount30d: 2,
+        alreadyPresent: true,
+      },
+      evidenceSummary: {
+        totalForeignRecentPoints: 3,
+      },
+      foreignRecentPoints: [],
+      foreignClusters: [],
+      estoniaHistoryPoints: [],
+      estoniaHistoryClusters: [],
+      predictedTargets: [],
+      weather: {
+        source: "Open-Meteo",
+        observedAt: "2026-03-19T19:55:00.000Z",
+      },
+      countryScores: {
+        latvia: 1,
+        lithuania: 2,
+        belarus: 3,
+        poland: 4,
+        russia: 5,
+      },
+      mapLayersDefault: {
+        showPredictedTargets: true,
+      },
+    } as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.insightSummary).toBe("Flat wrapped success summary.");
+    expect(result.confidenceNote).toBe("Flat confidence.");
+    expect(result.rankingNotes).toBe("Flat ranking notes.");
+    expect(result.warnings).toEqual(["Flat warning."]);
+    expect(result.summarySourcePath).toBeUndefined();
+    expect(result.recoveredFromErrorEnvelope).toBeUndefined();
+    expect(result.speciesKey).toBe("punakurk-kaur");
+    expect(result.speciesName).toBe("Punakurk-kaur");
+    expect(result.scope).toBe("linnuliigid");
+    expect(result.mapLayers?.predictedTargets).toBe(true);
+  });
+
+  it("does not treat wrapped payloads without any usable summary as valid", () => {
+    const raw = {
+      responseBody: {
+        upstreamBody: {
+          ok: true,
+          species: {
+            key: "punakurk-kaur",
+            name: "Punakurk-kaur",
+          },
+          aiSummary: {
+            confidenceNote: "Missing summary body.",
+          },
+        },
+      },
+    } as any;
+
+    expect(hasUsableSpeciesPredictionResult(raw)).toBe(false);
+    const result = normalizeSpeciesPredictionResult(raw, "Punakurk-kaur", "linnuliigid");
+    expect(result.insightSummary).toBeUndefined();
+    expect(result.recoveredFromErrorEnvelope).toBeUndefined();
   });
 });

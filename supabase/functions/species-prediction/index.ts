@@ -168,6 +168,12 @@ type NormalizedUpstreamResponse = {
   raw: Record<string, unknown>;
 };
 
+type CleanPredictionContext = {
+  speciesKey?: string;
+  speciesName?: string;
+  scope?: string;
+};
+
 type LastInvocationEvidence = {
   lastInvocationStatus: string;
   lastInvocationAt: string;
@@ -576,15 +582,30 @@ serve(async (req) => {
         analysisVersion: job.analysis_version,
       };
 
+      const normalizedStoredError = job.error_json && typeof job.error_json === 'object' && !Array.isArray(job.error_json)
+        ? buildCleanPredictionResult(job.error_json as Record<string, unknown>, {
+          speciesKey: typeof job.species_key === 'string' ? job.species_key : '',
+          speciesName: typeof job.species_name === 'string' ? job.species_name : '',
+          scope: typeof job.scope === 'string' ? job.scope : 'linnuliigid',
+        })
+        : null;
+
       if (job.status === 'completed' && job.result_json) {
         response.result = typeof job.result_json === 'object' && job.result_json && !Array.isArray(job.result_json)
           ? withEdgeResponseMarkers(job.result_json as Record<string, unknown>)
           : job.result_json;
       }
       if (job.status === 'failed' && job.error_json) {
-        response.error = typeof job.error_json === 'object' && job.error_json && !Array.isArray(job.error_json)
-          ? withEdgeResponseMarkers(job.error_json as Record<string, unknown>)
-          : job.error_json;
+        if (normalizedStoredError) {
+          response.status = 'completed';
+          response.generatedAt = typeof normalizedStoredError.generatedAt === 'string' ? normalizedStoredError.generatedAt : job.generated_at;
+          response.analysisVersion = typeof normalizedStoredError.analysisVersion === 'string' ? normalizedStoredError.analysisVersion : job.analysis_version;
+          response.result = withEdgeResponseMarkers(normalizedStoredError as Record<string, unknown>);
+        } else {
+          response.error = typeof job.error_json === 'object' && job.error_json && !Array.isArray(job.error_json)
+            ? withEdgeResponseMarkers(job.error_json as Record<string, unknown>)
+            : job.error_json;
+        }
       }
 
       return json(response);
@@ -757,13 +778,27 @@ async function executeN8nAndPersist(opts: {
   } catch (err) {
     const isAbort = err instanceof DOMException && err.name === 'AbortError';
     const upstreamError = normalizePredictionError(err, webhookTarget);
+    const recoveredResult = upstreamError
+      ? buildCleanPredictionResult(upstreamError.upstreamBody, {
+        speciesKey,
+        speciesName,
+        scope: typeof payload.scope === 'string' ? payload.scope : 'linnuliigid',
+      })
+      : null;
     const errorMessage = isAbort
       ? 'Prediction request timed out'
       : (upstreamError?.message || 'Prediction service evidence assembly error');
     console.error(`${LOG_PREFIX} background_error`, { requestId, isAbort, error: String(err) });
 
     try {
-      await admin.from('prediction_jobs').update({
+      await admin.from('prediction_jobs').update(recoveredResult ? {
+        status: 'completed',
+        result_json: recoveredResult,
+        analysis_version: typeof recoveredResult.analysisVersion === 'string' ? recoveredResult.analysisVersion : null,
+        generated_at: typeof recoveredResult.generatedAt === 'string' ? recoveredResult.generatedAt : new Date().toISOString(),
+        error_json: null,
+        updated_at: new Date().toISOString(),
+      } : {
         status: 'failed',
         error_json: upstreamError ?? { message: errorMessage, detail: String(err) },
         updated_at: new Date().toISOString(),
@@ -2179,17 +2214,66 @@ function extractNormalizedAiSummary(data: unknown): NormalizedUpstreamSummary | 
   };
 }
 
-function normalizeN8nPredictionSuccessPayload(data: unknown): NormalizedUpstreamResponse | null {
+function sanitizeSuccessfulPredictionPayload(body: Record<string, unknown>): Record<string, unknown> {
+  const cleaned = { ...body };
+  for (const key of [
+    'recoveredFromErrorEnvelope',
+    'summarySourcePath',
+    'normalizedPredictionShape',
+    'rawTopLevelCode',
+    'rawTopLevelStage',
+    'hasAiSummaryObject',
+    'hasNestedInsightSummary',
+    'rankingNotesInputType',
+    'warningsInputType',
+    'summaryShapeUsed',
+    'hasTopLevelInsightSummary',
+    'hasNestedAiSummaryObject',
+    'hasNestedAiSummaryInsight',
+    'upstreamTopLevelKeys',
+    'topLevelKeys',
+    'nestedAiSummaryKeys',
+    'normalizedInsightLength',
+    'normalizedWarningsCount',
+    'normalizedRankingNotesType',
+    'summaryAcceptedBy',
+    'liveInvokeAcceptedNestedAiSummary',
+    'normalizationProof',
+    'insightSummaryValuePreview',
+    'nestedInsightSummaryType',
+    'topLevelInsightSummaryType',
+    'throwFile',
+    'throwFunction',
+    'throwBranch',
+    'code',
+    'stage',
+    'message',
+    'errorProofBuild',
+  ]) {
+    delete cleaned[key];
+  }
+  if (typeof cleaned.insightSummary === 'string' && cleaned.insightSummary.trim()) {
+    cleaned.ok = true;
+    cleaned.status = 'completed';
+    cleaned.error = null;
+  }
+  return cleaned;
+}
+
+function buildCleanPredictionResult(
+  data: unknown,
+  context: CleanPredictionContext = {},
+): NormalizedUpstreamResponse | null {
   const resolvedSource = resolveUpstreamResponseSource(data);
   const record = resolvedSource?.source ?? asRecord(data);
   const summary = extractNormalizedAiSummary(data);
   if (!summary) return null;
   const species = asRecord(record.species);
   const weather = asRecord(record.weather);
-  const speciesKey = stringOr(record.speciesKey, species.speciesKey, species.key);
-  const speciesName = stringOr(record.speciesName, species.speciesName, species.name);
-  const scope = stringOr(record.scope) || 'linnuliigid';
-  return {
+  const speciesKey = stringOr(record.speciesKey, species.speciesKey, species.key, context.speciesKey);
+  const speciesName = stringOr(record.speciesName, species.speciesName, species.name, context.speciesName);
+  const scope = stringOr(record.scope, context.scope) || 'linnuliigid';
+  return sanitizeSuccessfulPredictionPayload({
     ok: true,
     status: 'completed',
     error: null,
@@ -2237,7 +2321,11 @@ function normalizeN8nPredictionSuccessPayload(data: unknown): NormalizedUpstream
       ...(weather.windDirectionDeg != null ? { windDirectionDeg: toNumber(weather.windDirectionDeg) } : {}),
     },
     raw: record,
-  };
+  }) as NormalizedUpstreamResponse;
+}
+
+function normalizeN8nPredictionSuccessPayload(data: unknown): NormalizedUpstreamResponse | null {
+  return buildCleanPredictionResult(data);
 }
 
 function normalizeUpstreamResponse(data: unknown): NormalizedUpstreamResponse | null {

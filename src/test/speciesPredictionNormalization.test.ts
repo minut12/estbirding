@@ -459,6 +459,8 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.hasAiSummaryObject).toBeUndefined();
     expect(result.hasNestedInsightSummary).toBeUndefined();
     expect(result.summarySourcePath).toBeUndefined();
+    expect(result.rankingNotesInputType).toBeUndefined();
+    expect(result.warningsInputType).toBeUndefined();
     expect(result.analysisVersion).toBe("n8n_aiSummary_normalized");
     expect(result.foreignClusters).toEqual([]);
     expect(result.predictedTargets).toEqual([]);
@@ -613,6 +615,10 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.normalizedPredictionShape).toBeUndefined();
     expect(result.rawTopLevelCode).toBeUndefined();
     expect(result.rawTopLevelStage).toBeUndefined();
+    expect(result.hasAiSummaryObject).toBeUndefined();
+    expect(result.hasNestedInsightSummary).toBeUndefined();
+    expect(result.rankingNotesInputType).toBeUndefined();
+    expect(result.warningsInputType).toBeUndefined();
     expect(result.analysisVersion).toBe("n8n_aiSummary_normalized");
     expect(result.speciesKey).toBe("punakurk-kaur");
     expect(result.speciesName).toBe("Punakurk-kaur");
@@ -678,6 +684,10 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.normalizedPredictionShape).toBeUndefined();
     expect(result.rawTopLevelCode).toBeUndefined();
     expect(result.rawTopLevelStage).toBeUndefined();
+    expect(result.hasAiSummaryObject).toBeUndefined();
+    expect(result.hasNestedInsightSummary).toBeUndefined();
+    expect(result.rankingNotesInputType).toBeUndefined();
+    expect(result.warningsInputType).toBeUndefined();
     expect(result.speciesKey).toBe("punakurk-kaur");
     expect(result.speciesName).toBe("Punakurk-kaur");
     expect(result.scope).toBe("linnuliigid");

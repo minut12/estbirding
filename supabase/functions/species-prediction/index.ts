@@ -88,11 +88,20 @@ type SpeciesPredictionUpstreamError = {
   backendBuild: string;
   invokeRouteVersion: string;
   summaryShapeUsed: 'nested_aiSummary' | 'flat_legacy' | 'missing';
+  summarySourcePath?: string;
   hasTopLevelInsightSummary: boolean;
   hasNestedAiSummaryObject: boolean;
   hasNestedAiSummaryInsight: boolean;
+  hasAiSummaryObject?: boolean;
+  hasNestedInsightSummary?: boolean;
   topLevelKeys: string[];
   nestedAiSummaryKeys: string[];
+  normalizedInsightLength?: number;
+  normalizedWarningsCount?: number;
+  normalizedRankingNotesType?: string;
+  rankingNotesInputType?: string;
+  warningsInputType?: string;
+  normalizedPredictionShape?: string;
   errorProofBuild: string;
   entrypointFile?: string;
   entrypointFunction?: string;
@@ -115,6 +124,7 @@ type NormalizedUpstreamSummary = {
   summarySourcePath?: string;
   normalizedInsightLength: number;
   normalizedWarningsCount: number;
+  normalizedRankingNotesType?: string;
   hasTopLevelInsightSummary: boolean;
   hasNestedAiSummaryObject: boolean;
   hasNestedAiSummaryInsight: boolean;
@@ -797,6 +807,9 @@ function withEdgeResponseMarkers(body: Record<string, unknown>): Record<string, 
     ...(body.hasNestedInsightSummary === true ? { hasNestedInsightSummary: true } : {}),
     topLevelKeys: Array.isArray(body.topLevelKeys) ? body.topLevelKeys : [],
     nestedAiSummaryKeys: Array.isArray(body.nestedAiSummaryKeys) ? body.nestedAiSummaryKeys : [],
+    ...(typeof body.normalizedInsightLength === 'number' ? { normalizedInsightLength: body.normalizedInsightLength } : {}),
+    ...(typeof body.normalizedWarningsCount === 'number' ? { normalizedWarningsCount: body.normalizedWarningsCount } : {}),
+    ...(typeof body.normalizedRankingNotesType === 'string' ? { normalizedRankingNotesType: body.normalizedRankingNotesType } : {}),
     ...(typeof body.rankingNotesInputType === 'string' ? { rankingNotesInputType: body.rankingNotesInputType } : {}),
     ...(typeof body.warningsInputType === 'string' ? { warningsInputType: body.warningsInputType } : {}),
     ...(typeof body.normalizedPredictionShape === 'string' ? { normalizedPredictionShape: body.normalizedPredictionShape } : {}),
@@ -1648,7 +1661,7 @@ async function maybeFetchSecondarySummary(opts: {
   const upstreamRecord = asRecord(data);
   const shapeDiagnostics = buildSummaryShapeDiagnostics(data);
   const extractedSummary = extractNormalizedAiSummary(data);
-  const normalizedResponse = normalizeUpstreamResponse(data);
+  const normalizedResponse = normalizeN8nPredictionSuccessPayload(data);
   console.info(`${LOG_PREFIX} upstream_normalization`, {
     branch: 'maybeFetchSecondarySummary.upstream_normalization',
     functionName: 'maybeFetchSecondarySummary',
@@ -1659,6 +1672,7 @@ async function maybeFetchSecondarySummary(opts: {
     summaryShapeUsed: extractedSummary?.summaryShapeUsed || 'missing',
     normalizedInsightLength: extractedSummary?.normalizedInsightLength || 0,
     normalizedWarningsCount: extractedSummary?.normalizedWarningsCount || 0,
+    normalizedRankingNotesType: extractedSummary?.normalizedRankingNotesType || '',
     summarySourcePath: extractedSummary?.summarySourcePath || '',
     rankingNotesInputType: extractedSummary?.rankingNotesInputType || '',
     warningsInputType: extractedSummary?.warningsInputType || '',
@@ -1677,6 +1691,9 @@ async function maybeFetchSecondarySummary(opts: {
       topLevelKeys: shapeDiagnostics.topLevelKeys,
       nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
       insightSummaryType: shapeDiagnostics.insightSummaryType,
+      normalizedInsightLength: extractedSummary?.normalizedInsightLength || 0,
+      normalizedWarningsCount: extractedSummary?.normalizedWarningsCount || 0,
+      normalizedRankingNotesType: extractedSummary?.normalizedRankingNotesType || '',
       summarySourcePath: extractedSummary?.summarySourcePath || '',
       hasAiSummaryObject: extractedSummary?.hasAiSummaryObject ?? shapeDiagnostics.hasNestedAiSummaryObject,
       hasNestedInsightSummary: extractedSummary?.hasNestedInsightSummary ?? shapeDiagnostics.hasNestedAiSummaryInsight,
@@ -1702,6 +1719,9 @@ async function maybeFetchSecondarySummary(opts: {
         topLevelKeys: shapeDiagnostics.topLevelKeys,
         nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
         insightSummaryType: shapeDiagnostics.insightSummaryType,
+        normalizedInsightLength: extractedSummary?.normalizedInsightLength || 0,
+        normalizedWarningsCount: extractedSummary?.normalizedWarningsCount || 0,
+        normalizedRankingNotesType: extractedSummary?.normalizedRankingNotesType || '',
         summarySourcePath: extractedSummary?.summarySourcePath || '',
         hasAiSummaryObject: extractedSummary?.hasAiSummaryObject ?? shapeDiagnostics.hasNestedAiSummaryObject,
         hasNestedInsightSummary: extractedSummary?.hasNestedInsightSummary ?? shapeDiagnostics.hasNestedAiSummaryInsight,
@@ -1896,6 +1916,23 @@ function createUpstreamError(input: {
     deployedProjectRef: getDeployedProjectRef(),
     ...(input.stage === 'invalid_upstream_json'
       ? {
+        summarySourcePath: (input.upstreamBody as Record<string, unknown> | null)?.summarySourcePath,
+        hasAiSummaryObject: (input.upstreamBody as Record<string, unknown> | null)?.hasAiSummaryObject === true,
+        hasNestedInsightSummary: (input.upstreamBody as Record<string, unknown> | null)?.hasNestedInsightSummary === true,
+        normalizedInsightLength: (input.upstreamBody as Record<string, unknown> | null)?.normalizedInsightLength,
+        normalizedWarningsCount: (input.upstreamBody as Record<string, unknown> | null)?.normalizedWarningsCount,
+        normalizedRankingNotesType: typeof (input.upstreamBody as Record<string, unknown> | null)?.normalizedRankingNotesType === 'string'
+          ? (input.upstreamBody as Record<string, unknown>).normalizedRankingNotesType
+          : undefined,
+        rankingNotesInputType: typeof (input.upstreamBody as Record<string, unknown> | null)?.rankingNotesInputType === 'string'
+          ? (input.upstreamBody as Record<string, unknown>).rankingNotesInputType
+          : undefined,
+        warningsInputType: typeof (input.upstreamBody as Record<string, unknown> | null)?.warningsInputType === 'string'
+          ? (input.upstreamBody as Record<string, unknown>).warningsInputType
+          : undefined,
+        normalizedPredictionShape: typeof (input.upstreamBody as Record<string, unknown> | null)?.normalizedPredictionShape === 'string'
+          ? (input.upstreamBody as Record<string, unknown>).normalizedPredictionShape
+          : undefined,
         insightSummaryValuePreview: buildInsightSummaryPreview(input.upstreamBody),
         nestedInsightSummaryType: typeof asRecord(asRecord(input.upstreamBody).aiSummary).insightSummary,
         topLevelInsightSummaryType: typeof asRecord(input.upstreamBody).insightSummary,
@@ -2107,6 +2144,9 @@ function extractNormalizedAiSummary(data: unknown): NormalizedUpstreamSummary | 
     summaryShapeUsed: resolvedSource.summaryShapeUsed,
     normalizedInsightLength: resolvedSource.insightSummary.length,
     normalizedWarningsCount: warnings.length,
+    normalizedRankingNotesType: rankingNotes ? 'string' : typeof (resolvedSource.summaryShapeUsed === 'nested_aiSummary'
+      ? aiSummaryRecord.rankingNotes ?? aiSummaryRecord.ranking_notes
+      : record.rankingNotes ?? record.ranking_notes),
     summarySourcePath: resolvedSource.summarySourcePath,
     hasTopLevelInsightSummary: resolvedSource.hasTopLevelInsightSummary,
     hasNestedAiSummaryObject: resolvedSource.hasNestedAiSummaryObject,
@@ -2121,7 +2161,7 @@ function extractNormalizedAiSummary(data: unknown): NormalizedUpstreamSummary | 
   };
 }
 
-function normalizeUpstreamResponse(data: unknown): NormalizedUpstreamResponse | null {
+function normalizeN8nPredictionSuccessPayload(data: unknown): NormalizedUpstreamResponse | null {
   const resolvedSource = resolveUpstreamResponseSource(data);
   const record = resolvedSource?.source ?? asRecord(data);
   const summary = extractNormalizedAiSummary(data);
@@ -2151,6 +2191,10 @@ function normalizeUpstreamResponse(data: unknown): NormalizedUpstreamResponse | 
   };
 }
 
+function normalizeUpstreamResponse(data: unknown): NormalizedUpstreamResponse | null {
+  return normalizeN8nPredictionSuccessPayload(data);
+}
+
 function attachNormalizationMarkers(
   body: Record<string, unknown>,
   summary: NormalizedUpstreamSummary | null,
@@ -2178,7 +2222,7 @@ function enrichPredictionResult(
   raw: Record<string, unknown>,
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
-  const normalizedUpstream = normalizeUpstreamResponse(raw);
+  const normalizedUpstream = normalizeN8nPredictionSuccessPayload(raw);
   const normalizedSummary = extractNormalizedAiSummary(raw);
   const species = asRecord(raw.species);
   const payloadSpecies = asRecord(payload.species);

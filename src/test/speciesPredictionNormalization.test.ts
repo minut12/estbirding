@@ -346,10 +346,12 @@ describe("normalizeSpeciesPredictionResult", () => {
 
   it("accepts nested aiSummary payloads from the live invoke path", () => {
     const result = normalizeSpeciesPredictionResult({
-      backendBuild: "2026-03-19-fix15",
-      invokeRouteVersion: "fix15",
+      backendBuild: "2026-03-19-fix16",
+      invokeRouteVersion: "fix16",
       summaryShapeUsed: "nested_aiSummary",
+      summaryAcceptedBy: "live_post_route",
       normalizationProof: "nested aiSummary accepted by live POST invoke route",
+      liveInvokeAcceptedNestedAiSummary: true,
       species: {
         key: "Punakurk-kaur",
         name: "Punakurk-kaur",

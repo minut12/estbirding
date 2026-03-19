@@ -10,8 +10,8 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-19-fix15';
-const INVOKE_ROUTE_VERSION = 'fix15';
+const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-19-fix16';
+const INVOKE_ROUTE_VERSION = 'fix16';
 const EDGE_FUNCTION_FILE = 'supabase/functions/species-prediction/index.ts';
 const WEBHOOK_CONFIG_SOURCE = `env:${WEBHOOK_ENV_KEY}`;
 const STATUS_NO_CACHE_HEADERS = {
@@ -89,6 +89,9 @@ type SpeciesPredictionUpstreamError = {
   topLevelKeys: string[];
   nestedAiSummaryKeys: string[];
   errorProofBuild: string;
+  throwFile?: string;
+  throwFunction?: string;
+  throwBranch?: string;
 };
 
 type NormalizedUpstreamSummary = {
@@ -376,6 +379,7 @@ serve(async (req) => {
       headers: {
         ...corsHeaders,
         'x-species-prediction-build': SPECIES_PREDICTION_BACKEND_BUILD,
+        'x-species-prediction-route': 'live-post-invoke-fix16',
       },
     });
   }
@@ -730,6 +734,7 @@ function json(body: Record<string, unknown>, status = 200, extraHeaders: Record<
       ...corsHeaders,
       'Content-Type': 'application/json',
       'x-species-prediction-build': SPECIES_PREDICTION_BACKEND_BUILD,
+      'x-species-prediction-route': 'live-post-invoke-fix16',
       ...extraHeaders,
     },
   });
@@ -748,6 +753,11 @@ function withEdgeResponseMarkers(body: Record<string, unknown>): Record<string, 
     hasNestedAiSummaryInsight: body.hasNestedAiSummaryInsight === true,
     topLevelKeys: Array.isArray(body.topLevelKeys) ? body.topLevelKeys : [],
     nestedAiSummaryKeys: Array.isArray(body.nestedAiSummaryKeys) ? body.nestedAiSummaryKeys : [],
+    ...(typeof body.summaryAcceptedBy === 'string' ? { summaryAcceptedBy: body.summaryAcceptedBy } : {}),
+    ...(body.liveInvokeAcceptedNestedAiSummary === true ? { liveInvokeAcceptedNestedAiSummary: true } : {}),
+    ...(typeof body.throwFile === 'string' ? { throwFile: body.throwFile } : {}),
+    ...(typeof body.throwFunction === 'string' ? { throwFunction: body.throwFunction } : {}),
+    ...(typeof body.throwBranch === 'string' ? { throwBranch: body.throwBranch } : {}),
     ...(body.ok === false || typeof body.error === 'string' || typeof body.message === 'string' && String(body.message).toLowerCase().includes('error')
       ? { errorProofBuild: typeof body.errorProofBuild === 'string' ? body.errorProofBuild : SPECIES_PREDICTION_BACKEND_BUILD }
       : {}),
@@ -1759,6 +1769,9 @@ function createWebhookConfigError(webhookTarget: WebhookTargetInfo): SpeciesPred
     topLevelKeys: [],
     nestedAiSummaryKeys: [],
     errorProofBuild: SPECIES_PREDICTION_BACKEND_BUILD,
+    throwFile: EDGE_FUNCTION_FILE,
+    throwFunction: 'createWebhookConfigError',
+    throwBranch: 'createWebhookConfigError',
   };
 }
 
@@ -1798,6 +1811,13 @@ function createUpstreamError(input: {
     topLevelKeys: shapeDiagnostics.topLevelKeys,
     nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
     errorProofBuild: SPECIES_PREDICTION_BACKEND_BUILD,
+    ...(input.stage === 'invalid_upstream_json'
+      ? {
+        throwFile: EDGE_FUNCTION_FILE,
+        throwFunction: 'maybeFetchSecondarySummary',
+        throwBranch: 'maybeFetchSecondarySummary.throw.invalid_upstream_json',
+      }
+      : {}),
   };
 }
 
@@ -1822,6 +1842,9 @@ function normalizePredictionError(error: unknown, webhookTarget: WebhookTargetIn
       topLevelKeys: [],
       nestedAiSummaryKeys: [],
       errorProofBuild: SPECIES_PREDICTION_BACKEND_BUILD,
+      throwFile: EDGE_FUNCTION_FILE,
+      throwFunction: 'normalizePredictionError',
+      throwBranch: 'normalizePredictionError',
     };
   }
   return null;
@@ -1942,7 +1965,11 @@ function attachNormalizationMarkers(
     hasNestedAiSummaryInsight: summary?.hasNestedAiSummaryInsight ?? false,
     topLevelKeys: summary?.topLevelKeys ?? [],
     nestedAiSummaryKeys: summary?.nestedAiSummaryKeys ?? [],
-    ...(summary ? { normalizationProof: 'nested aiSummary accepted by live POST invoke route' } : {}),
+    ...(summary ? {
+      normalizationProof: 'nested aiSummary accepted by live POST invoke route',
+      summaryAcceptedBy: 'live_post_route',
+      liveInvokeAcceptedNestedAiSummary: summary.summaryShapeUsed === 'nested_aiSummary',
+    } : {}),
   };
 }
 

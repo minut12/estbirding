@@ -140,8 +140,28 @@ export async function runSpeciesPredictionRequest(
       return { ok: false, error: transportError.message, stage: transportError.stage, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, null, data, transportError, jobState) };
     }
 
-    // Check if edge returned error envelope
+    // Check if edge returned error envelope — but try to recover usable payload first
     if (data && typeof data === 'object' && data.ok === false) {
+      const recovered = extractUsablePayloadFromErrorEnvelope(data as Record<string, unknown>);
+      if (recovered) {
+        console.debug('[speciesPrediction] recovered usable payload from error envelope', { path: recovered.summarySourcePath });
+        setSpeciesPredictionDebugBackendResponse(data);
+        updateSuccessTransport(data);
+        const normalizedResult = normalizeSpeciesPredictionResult(
+          recovered.source as Partial<SpeciesPredictionResult>,
+          payload.species.name,
+          scope,
+        );
+        normalizedResult.recoveredFromErrorEnvelope = true;
+        normalizedResult.summarySourcePath = recovered.summarySourcePath;
+        normalizedResult.normalizedPredictionShape = 'nested-aiSummary-error-envelope';
+        jobState.status = 'completed';
+        jobState.result = normalizedResult;
+        jobState.completedAt = responseTimestamp;
+        onJobUpdate?.(jobState);
+        return { ok: true, result: normalizedResult, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, 200, data, null, jobState) };
+      }
+
       const msg = String(data.message || 'Prediction request failed');
       const transportError = createTransportError(
         mapStage(data.stage),

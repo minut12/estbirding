@@ -2189,6 +2189,8 @@ function normalizeN8nPredictionSuccessPayload(data: unknown): NormalizedUpstream
   const record = resolvedSource?.source ?? asRecord(data);
   const summary = extractNormalizedAiSummary(data);
   if (!summary) return null;
+  const species = asRecord(record.species);
+  const weather = asRecord(record.weather);
   return {
     ok: true,
     status: 'completed',
@@ -2198,7 +2200,7 @@ function normalizeN8nPredictionSuccessPayload(data: unknown): NormalizedUpstream
     rankingNotes: summary.rankingNotes,
     warnings: summary.warnings,
     generatedAt: stringOr(record.generatedAt) || new Date().toISOString(),
-    analysisVersion: stringOr(record.analysisVersion) || 'n8n_aiSummary',
+    analysisVersion: stringOr(record.analysisVersion) || 'n8n_aiSummary_recovered',
     sourceHealth: asRecord(record.sourceHealth),
     countryScores: asRecord(record.countryScores),
     estoniaEvidence: asRecord(record.estoniaEvidence),
@@ -2210,8 +2212,28 @@ function normalizeN8nPredictionSuccessPayload(data: unknown): NormalizedUpstream
     elurikkusRecentRecords: Array.isArray(record.elurikkusRecentRecords) ? record.elurikkusRecentRecords : [],
     estoniaHistoryClusters: Array.isArray(record.estoniaHistoryClusters) ? record.estoniaHistoryClusters : [],
     mapLayersDefault: asRecord(record.mapLayersDefault),
-    species: asRecord(record.species),
-    weather: asRecord(record.weather),
+    species: {
+      ...species,
+      ...(stringOr(species.key) ? { key: stringOr(species.key) } : {}),
+      ...(stringOr(species.name) ? { name: stringOr(species.name) } : {}),
+      ...(stringOr(species.speciesKey, species.key) ? { speciesKey: stringOr(species.speciesKey, species.key) } : {}),
+      ...(stringOr(species.speciesName, species.name) ? { speciesName: stringOr(species.speciesName, species.name) } : {}),
+      ...(stringOr(species.latinName) ? { latinName: stringOr(species.latinName) } : {}),
+      ...(stringOr(species.ebirdSpeciesCode) ? { ebirdSpeciesCode: stringOr(species.ebirdSpeciesCode) } : {}),
+    },
+    weather: {
+      ...weather,
+      ...(stringOr(weather.source) ? { source: stringOr(weather.source) } : {}),
+      ...(stringOr(weather.observedAt, weather.fetchedAt) ? {
+        observedAt: stringOr(weather.observedAt, weather.fetchedAt),
+        fetchedAt: stringOr(weather.fetchedAt, weather.observedAt),
+      } : {}),
+      ...(weather.windSpeedKmh != null || weather.windSpeedKph != null ? {
+        windSpeedKmh: toNumber(weather.windSpeedKmh ?? weather.windSpeedKph),
+        windSpeedKph: toNumber(weather.windSpeedKph ?? weather.windSpeedKmh),
+      } : {}),
+      ...(weather.windDirectionDeg != null ? { windDirectionDeg: toNumber(weather.windDirectionDeg) } : {}),
+    },
     raw: record,
     summaryShapeUsed: summary.summaryShapeUsed,
     summarySourcePath: summary.summarySourcePath || 'aiSummary.insightSummary',
@@ -2313,15 +2335,23 @@ function enrichPredictionResult(
   const canonicalWeather = Object.keys(normalizedUpstream?.weather || {}).length ? normalizedUpstream!.weather : asRecord(raw.weather);
   const generatedAt = normalizedUpstream?.generatedAt || stringOr(raw.generatedAt) || new Date().toISOString();
   const analysisVersion = normalizedUpstream?.analysisVersion || stringOr(raw.analysisVersion);
+  const canonicalSpecies = Object.keys(normalizedUpstream?.species || {}).length
+    ? normalizedUpstream!.species
+    : {
+      ...speciesInfo,
+      key: speciesInfo.speciesKey,
+      name: speciesInfo.speciesName,
+    };
 
   return attachNormalizationMarkers({
     ...raw,
-    species: speciesInfo,
+    species: canonicalSpecies,
     insightSummary: normalizedUpstream?.insightSummary || normalizedSummary?.insightSummary || stringOr(raw.insightSummary),
     confidenceNote: normalizedUpstream?.confidenceNote || stringOr(raw.confidenceNote),
     rankingNotes: normalizedUpstream?.rankingNotes || stringOr(raw.rankingNotes),
     generatedAt,
     ...(analysisVersion ? { analysisVersion } : {}),
+    edgeFunctionVersion: EDGE_FUNCTION_VERSION,
     ...(normalizedUpstream ? { summaryShapeUsed: normalizedUpstream.summaryShapeUsed } : {}),
     sourceHealth: canonicalSourceHealth,
     countryScores: canonicalCountryScores,
@@ -2341,6 +2371,7 @@ function enrichPredictionResult(
     topPredictedPoints,
     ...(rerankedTopPredictedPoints.length ? { rerankedTopPredictedPoints } : {}),
     warnings: Array.from(new Set([...existingWarnings, ...sourceWarnings])),
+    timeoutMsUsed: resolveTimeoutMs(),
     rawResearchPayload: {
       ...rawResearchPayload,
       sourceHealth,

@@ -459,8 +459,15 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.hasAiSummaryObject).toBe(true);
     expect(result.hasNestedInsightSummary).toBe(true);
     expect(result.summarySourcePath).toBe("aiSummary");
+    expect(result.analysisVersion).toBe("n8n_aiSummary_recovered");
     expect(result.foreignClusters).toEqual([]);
     expect(result.predictedTargets).toEqual([]);
+    expect(result.weather?.observedAt).toBe("2026-03-19T18:26:52.847Z");
+    expect(result.weather?.windSpeedKmh).toBe(5);
+    expect(result.weather?.windSpeedKph).toBe(5);
+    expect(result.evidenceSummary?.totalForeignRecentPoints).toBe(0);
+    expect(result.species?.key).toBe("Punakurk-kaur");
+    expect(result.species?.name).toBe("Punakurk-kaur");
   });
 
   it("recovers nested aiSummary from an invalid_upstream_json error envelope", () => {
@@ -536,7 +543,12 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.normalizedPredictionShape).toBe("nested-aiSummary-error-envelope");
     expect(result.rawTopLevelCode).toBe("N8N_UPSTREAM_INVALID_RESPONSE");
     expect(result.rawTopLevelStage).toBe("invalid_upstream_json");
+    expect(result.analysisVersion).toBe("n8n_aiSummary_recovered");
     expect(result.sourceHealth?.primarySourceUsed).toBe("eElurikkus recent table + GBIF Estonia coordinates + eBird foreign + Open-Meteo");
+    expect(result.evidenceSummary?.totalForeignRecentPoints).toBe(0);
+    expect(result.weather?.observedAt).toBe("2026-03-19T17:03:54.650Z");
+    expect(result.weather?.windSpeedKmh).toBe(6.1);
+    expect(result.weather?.windSpeedKph).toBe(6.1);
     expect(result.foreignClusters).toEqual([]);
     expect(result.predictedTargets).toEqual([]);
   });

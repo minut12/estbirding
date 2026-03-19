@@ -129,16 +129,20 @@ export type SpeciesPredictionForeignCluster = {
 
 export type SpeciesPredictionWeather = {
   fetchedAt: string;
+  observedAt?: string;
   windSpeedKph: number;
+  windSpeedKmh?: number;
   windDirectionDeg: number;
   windDirectionLabel: string;
+  precipitation?: number;
   precipitationMm?: number;
   temperatureC?: number;
   weatherAvailable?: boolean;
   weatherPartial?: boolean;
   wasWeatherUsedInRanking?: boolean;
   error?: string;
-  source: 'Open-Meteo';
+  source: string;
+  [key: string]: unknown;
 };
 
 export type SpeciesPredictionVector = {
@@ -217,6 +221,7 @@ export type SpeciesPredictionEvidenceSummary = {
   wasWeatherUsedInRanking?: boolean;
   rankingMode?: string;
   summaryText?: string;
+  [key: string]: unknown;
 };
 
 export type SpeciesPredictionEvidenceCluster = {
@@ -293,6 +298,9 @@ export type SpeciesPredictionResult = {
     speciesName: string;
     latinName: string;
     ebirdSpeciesCode: string;
+    key?: string;
+    name?: string;
+    [key: string]: unknown;
   };
   sourceHealth?: SpeciesPredictionSourceHealth;
   evidenceSummary?: SpeciesPredictionEvidenceSummary;
@@ -336,6 +344,8 @@ export type SpeciesPredictionResult = {
   consistencyChecks?: PredictionConsistencyChecks;
   openaiAnalysis?: SpeciesPredictionAnalysis;
   aiSummary?: string;
+  edgeFunctionVersion?: string;
+  timeoutMsUsed?: number;
   rawResearchPayload?: Record<string, unknown>;
   recoveredFromErrorEnvelope?: boolean;
   summarySourcePath?: string;
@@ -574,6 +584,7 @@ export function normalizeSpeciesPredictionResult(
     || readString(source, ['ranking_notes']);
   const analysisVersion = readString(source, ['analysisVersion'])
     || readString(source, ['analysis_version'])
+    || (resolvedSource.recoveredFromErrorEnvelope ? 'n8n_aiSummary_recovered' : '')
     || readString(asRecord(source.openaiAnalysis), ['analysisVersion', 'analysis_version']);
   const rawResearchPayload = source.rawResearchPayload ? asRecord(source.rawResearchPayload) : {};
   const normalizedSources = readRecord(rawResearchPayload, ['normalizedSources']) ?? {};
@@ -588,6 +599,8 @@ export function normalizeSpeciesPredictionResult(
       || readString(asRecord(source.species), ['ebirdSpeciesCode', 'ebird_species_code'])
       || '',
     ),
+    key: normalizeUiText(readString(asRecord(source.species), ['key']) || speciesKey),
+    name: normalizeUiText(readString(asRecord(source.species), ['name']) || readString(source, ['speciesName', 'species_name']) || normalizedName),
   };
   const foreignEvidence = normalizeForeignEvidence(
     readArray(source, ['foreignEvidence']) ?? readArray(rawResearchPayload, ['foreignEvidence']),
@@ -689,6 +702,8 @@ export function normalizeSpeciesPredictionResult(
     ...(predictedTargets.length && !topPredictedPoints.length ? { topPredictedPoints: predictedTargets } : {}),
     ...(insightSummary ? { insightSummary: normalizeUiText(insightSummary) } : {}),
     ...(analysisVersion ? { analysisVersion: normalizeUiText(analysisVersion) } : {}),
+    ...(readString(source, ['edgeFunctionVersion']) ? { edgeFunctionVersion: normalizeUiText(readString(source, ['edgeFunctionVersion'])) } : {}),
+    ...(hasValue(source, ['timeoutMsUsed']) ? { timeoutMsUsed: clampNumber(readNumber(source, ['timeoutMsUsed']), 0, 9999999, 0) } : {}),
     ...(typeof source.analysisFallbackUsed === 'boolean' ? { analysisFallbackUsed: source.analysisFallbackUsed } : {}),
     ...(confidenceNote ? { confidenceNote: normalizeUiText(confidenceNote) } : {}),
     ...(rankingNotes ? { rankingNotes: normalizeUiText(rankingNotes) } : {}),
@@ -1082,6 +1097,7 @@ function normalizeEvidenceSummary(input: Record<string, unknown> | null): Specie
     .map((item) => normalizeUiText(String(item || '')))
     .filter(Boolean);
   return {
+    ...input,
     ...(dataSourcesUsed.length ? { dataSourcesUsed } : {}),
     ...(Array.isArray(readArray(input, ['availableSources', 'available_sources'])) ? { availableSources: (readArray(input, ['availableSources', 'available_sources']) || []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean) } : {}),
     ...(Array.isArray(readArray(input, ['activeEvidenceUsed', 'active_evidence_used'])) ? { activeEvidenceUsed: (readArray(input, ['activeEvidenceUsed', 'active_evidence_used']) || []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean) } : {}),
@@ -1300,18 +1316,32 @@ function normalizeForeignClusters(input: unknown[] | null): SpeciesPredictionFor
 
 function normalizeWeather(input: Record<string, unknown> | null): SpeciesPredictionWeather | undefined {
   if (!input || !Object.keys(input).length) return undefined;
+  const observedAt = normalizeUiText(readString(input, ['observedAt', 'observed_at']) || '');
+  const fetchedAt = normalizeUiText(readString(input, ['fetchedAt', 'fetched_at']) || observedAt);
+  const windSpeedKmh = hasValue(input, ['windSpeedKmh', 'wind_speed_kmh'])
+    ? clampFloat(readNumber(input, ['windSpeedKmh', 'wind_speed_kmh']), 0, 500, 0)
+    : clampFloat(readNumber(input, ['windSpeedKph', 'wind_speed_kph', 'windspeed']), 0, 500, 0);
+  const windSpeedKph = hasValue(input, ['windSpeedKph', 'wind_speed_kph', 'windspeed'])
+    ? clampFloat(readNumber(input, ['windSpeedKph', 'wind_speed_kph', 'windspeed']), 0, 500, 0)
+    : windSpeedKmh;
+  const derivedWeatherAvailable = Boolean(fetchedAt && (windSpeedKph > 0 || readNumber(input, ['windDirectionDeg', 'wind_direction_deg', 'winddirection']) > 0));
+  const derivedWeatherPartial = !fetchedAt;
   return {
-    fetchedAt: normalizeUiText(readString(input, ['fetchedAt', 'fetched_at']) || ''),
-    windSpeedKph: clampFloat(readNumber(input, ['windSpeedKph', 'wind_speed_kph', 'windspeed']), 0, 500, 0),
+    ...input,
+    fetchedAt,
+    ...(observedAt ? { observedAt } : {}),
+    windSpeedKph,
+    ...(hasValue(input, ['windSpeedKmh', 'wind_speed_kmh']) || windSpeedKmh ? { windSpeedKmh } : {}),
     windDirectionDeg: clampFloat(readNumber(input, ['windDirectionDeg', 'wind_direction_deg', 'winddirection']), 0, 360, 0),
     windDirectionLabel: normalizeUiText(readString(input, ['windDirectionLabel', 'wind_direction_label']) || ''),
+    ...(hasValue(input, ['precipitation']) ? { precipitation: clampFloat(readNumber(input, ['precipitation']), 0, 500, 0) } : {}),
     ...(hasValue(input, ['precipitationMm', 'precipitation_mm']) ? { precipitationMm: clampFloat(readNumber(input, ['precipitationMm', 'precipitation_mm']), 0, 500, 0) } : {}),
     ...(hasValue(input, ['temperatureC', 'temperature_c']) ? { temperatureC: clampFloat(readNumber(input, ['temperatureC', 'temperature_c']), -80, 80, 0) } : {}),
-    ...(typeof input.weatherAvailable === 'boolean' ? { weatherAvailable: input.weatherAvailable === true } : {}),
-    ...(typeof input.weatherPartial === 'boolean' ? { weatherPartial: input.weatherPartial === true } : {}),
+    weatherAvailable: typeof input.weatherAvailable === 'boolean' ? input.weatherAvailable === true : derivedWeatherAvailable,
+    weatherPartial: typeof input.weatherPartial === 'boolean' ? input.weatherPartial === true : derivedWeatherPartial,
     ...(typeof input.wasWeatherUsedInRanking === 'boolean' ? { wasWeatherUsedInRanking: input.wasWeatherUsedInRanking === true } : {}),
     ...(readString(input, ['error']) ? { error: normalizeUiText(readString(input, ['error'])) } : {}),
-    source: 'Open-Meteo',
+    source: normalizeUiText(readString(input, ['source']) || 'Open-Meteo') || 'Open-Meteo',
   };
 }
 

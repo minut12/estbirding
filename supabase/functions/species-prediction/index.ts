@@ -10,7 +10,7 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const PREDICTION_BACKEND_BUILD = '2026-03-19-fix11';
+const PREDICTION_BACKEND_BUILD = '2026-03-19-fix12';
 const WEBHOOK_CONFIG_SOURCE = `env:${WEBHOOK_ENV_KEY}`;
 const STATUS_NO_CACHE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
@@ -86,6 +86,8 @@ type NormalizedUpstreamSummary = {
   rankingNotes: string;
   warnings: string[];
   summaryShapeUsed: 'nested_aiSummary' | 'flat_legacy';
+  normalizedInsightLength: number;
+  normalizedWarningsCount: number;
 };
 
 type NormalizedUpstreamResponse = {
@@ -1475,21 +1477,32 @@ async function maybeFetchSecondarySummary(opts: {
       upstreamBody: data,
     });
   }
+  const upstreamRecord = asRecord(data);
   const shapeDiagnostics = summarizeUpstreamShape(data);
+  const extractedSummary = extractNormalizedAiSummary(data);
   const normalizedResponse = normalizeUpstreamResponse(data);
   console.info(`${LOG_PREFIX} upstream_normalization`, {
-    summaryShapeUsed: normalizedResponse?.summaryShapeUsed || 'missing',
+    branch: 'maybeFetchSecondarySummary.upstream_normalization',
     topLevelKeys: shapeDiagnostics.topLevelKeys,
-    aiSummaryKeys: shapeDiagnostics.aiSummaryKeys,
+    aiSummaryType: typeof upstreamRecord.aiSummary,
+    nestedInsightSummaryType: typeof asRecord(upstreamRecord.aiSummary).insightSummary,
+    summaryShapeUsed: extractedSummary?.summaryShapeUsed || 'missing',
+    normalizedInsightLength: extractedSummary?.normalizedInsightLength || 0,
+    normalizedWarningsCount: extractedSummary?.normalizedWarningsCount || 0,
+    topLevelKeysCount: shapeDiagnostics.topLevelKeys.length,
+    topLevelKeys: shapeDiagnostics.topLevelKeys,
+    nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
     backendBuild: PREDICTION_BACKEND_BUILD,
   });
   if (!normalizedResponse) {
     console.warn(`${LOG_PREFIX} upstream_normalization_failed`, {
+      branch: 'maybeFetchSecondarySummary.throw.invalid_upstream_json',
       hasTopLevelInsightSummary: shapeDiagnostics.hasTopLevelInsightSummary,
-      hasNestedAiSummary: shapeDiagnostics.hasNestedAiSummary,
-      hasNestedInsightSummary: shapeDiagnostics.hasNestedInsightSummary,
+      hasNestedAiSummaryObject: shapeDiagnostics.hasNestedAiSummaryObject,
+      hasNestedAiSummaryInsight: shapeDiagnostics.hasNestedAiSummaryInsight,
       topLevelKeys: shapeDiagnostics.topLevelKeys,
-      aiSummaryKeys: shapeDiagnostics.aiSummaryKeys,
+      nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
+      insightSummaryType: shapeDiagnostics.insightSummaryType,
       backendBuild: PREDICTION_BACKEND_BUILD,
     });
     throw createUpstreamError({
@@ -1500,10 +1513,11 @@ async function maybeFetchSecondarySummary(opts: {
       upstreamBody: {
         ...asRecord(data),
         hasTopLevelInsightSummary: shapeDiagnostics.hasTopLevelInsightSummary,
-        hasNestedAiSummary: shapeDiagnostics.hasNestedAiSummary,
-        hasNestedInsightSummary: shapeDiagnostics.hasNestedInsightSummary,
+        hasNestedAiSummaryObject: shapeDiagnostics.hasNestedAiSummaryObject,
+        hasNestedAiSummaryInsight: shapeDiagnostics.hasNestedAiSummaryInsight,
         topLevelKeys: shapeDiagnostics.topLevelKeys,
-        aiSummaryKeys: shapeDiagnostics.aiSummaryKeys,
+        nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
+        insightSummaryType: shapeDiagnostics.insightSummaryType,
         backendBuild: PREDICTION_BACKEND_BUILD,
       },
       fallbackCode: 'N8N_UPSTREAM_INVALID_RESPONSE',
@@ -1709,43 +1723,52 @@ function normalizeWarnings(value: unknown): string[] {
 
 function summarizeUpstreamShape(data: unknown): {
   hasTopLevelInsightSummary: boolean;
-  hasNestedAiSummary: boolean;
-  hasNestedInsightSummary: boolean;
+  hasNestedAiSummaryObject: boolean;
+  hasNestedAiSummaryInsight: boolean;
   topLevelKeys: string[];
-  aiSummaryKeys: string[];
+  nestedAiSummaryKeys: string[];
+  insightSummaryType: string;
 } {
   const record = asRecord(data);
   const aiSummaryRecord = asRecord(record.aiSummary);
+  const nestedInsight = aiSummaryRecord.insightSummary;
   return {
     hasTopLevelInsightSummary: Boolean(stringOr(record.insightSummary).trim()),
-    hasNestedAiSummary: Object.keys(aiSummaryRecord).length > 0,
-    hasNestedInsightSummary: Boolean(stringOr(aiSummaryRecord.insightSummary).trim()),
+    hasNestedAiSummaryObject: Object.keys(aiSummaryRecord).length > 0,
+    hasNestedAiSummaryInsight: Boolean(stringOr(nestedInsight).trim()),
     topLevelKeys: Object.keys(record),
-    aiSummaryKeys: Object.keys(aiSummaryRecord),
+    nestedAiSummaryKeys: Object.keys(aiSummaryRecord),
+    insightSummaryType: typeof nestedInsight,
   };
 }
 
-function normalizeUpstreamSummary(data: unknown): NormalizedUpstreamSummary | null {
+function extractNormalizedAiSummary(data: unknown): NormalizedUpstreamSummary | null {
   const record = asRecord(data);
   const aiSummaryRecord = asRecord(record.aiSummary);
   const nestedInsightSummary = stringOr(aiSummaryRecord.insightSummary).trim();
   if (nestedInsightSummary) {
+    const warnings = normalizeWarnings(aiSummaryRecord.warnings);
     return {
       insightSummary: nestedInsightSummary,
       confidenceNote: stringOr(aiSummaryRecord.confidenceNote).trim(),
       rankingNotes: stringOr(aiSummaryRecord.rankingNotes).trim(),
-      warnings: normalizeWarnings(aiSummaryRecord.warnings),
+      warnings,
       summaryShapeUsed: 'nested_aiSummary',
+      normalizedInsightLength: nestedInsightSummary.length,
+      normalizedWarningsCount: warnings.length,
     };
   }
   const flatInsightSummary = stringOr(record.insightSummary, record.summary, asRecord(record.openaiAnalysis).insightSummary).trim();
   if (flatInsightSummary) {
+    const warnings = normalizeWarnings(record.warnings);
     return {
       insightSummary: flatInsightSummary,
       confidenceNote: stringOr(record.confidenceNote).trim(),
       rankingNotes: stringOr(record.rankingNotes).trim(),
-      warnings: normalizeWarnings(record.warnings),
+      warnings,
       summaryShapeUsed: 'flat_legacy',
+      normalizedInsightLength: flatInsightSummary.length,
+      normalizedWarningsCount: warnings.length,
     };
   }
   return null;
@@ -1753,7 +1776,7 @@ function normalizeUpstreamSummary(data: unknown): NormalizedUpstreamSummary | nu
 
 function normalizeUpstreamResponse(data: unknown): NormalizedUpstreamResponse | null {
   const record = asRecord(data);
-  const summary = normalizeUpstreamSummary(record);
+  const summary = extractNormalizedAiSummary(record);
   if (!summary) return null;
   return {
     insightSummary: summary.insightSummary,

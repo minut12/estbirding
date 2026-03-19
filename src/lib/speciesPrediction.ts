@@ -516,7 +516,9 @@ export function normalizeSpeciesPredictionResult(
       .map((point, index) => normalizePredictedPoint(point, index))
       .filter((point) => point.name || point.countyOrParish || (point.lat !== 0 || point.lon !== 0))
     : [];
+  const aiSummaryRecord = readRecord(source, ['aiSummary']) ?? {};
   const warningsSource = readArray(source, ['warnings'])
+    ?? readArray(aiSummaryRecord, ['warnings'])
     ?? readArray(asRecord(source.openaiAnalysis), ['warnings']);
   const warnings = Array.isArray(warningsSource)
     ? warningsSource.map((warning) => normalizeUiText(String(warning || ''))).filter(Boolean)
@@ -533,11 +535,16 @@ export function normalizeSpeciesPredictionResult(
     ?? readRecord(asRecord(source.openaiAnalysis), ['consistencyChecks'])
     ?? null;
   const insightSummary = readString(source, ['insightSummary'])
+    || readString(aiSummaryRecord, ['insightSummary', 'insight_summary', 'summary'])
     || readString(source, ['insight_summary', 'summary'])
     || readString(asRecord(source.openaiAnalysis), ['insightSummary', 'insight_summary', 'summary']);
   const confidenceNote = readString(source, ['confidenceNote'])
+    || readString(aiSummaryRecord, ['confidenceNote', 'confidence_note'])
     || readString(source, ['confidence_note'])
     || readString(asRecord(source.openaiAnalysis), ['confidenceNote', 'confidence_note']);
+  const rankingNotes = readString(source, ['rankingNotes'])
+    || readString(aiSummaryRecord, ['rankingNotes', 'ranking_notes'])
+    || readString(source, ['ranking_notes']);
   const analysisVersion = readString(source, ['analysisVersion'])
     || readString(source, ['analysis_version'])
     || readString(asRecord(source.openaiAnalysis), ['analysisVersion', 'analysis_version']);
@@ -646,11 +653,12 @@ export function normalizeSpeciesPredictionResult(
     ...(analysisVersion ? { analysisVersion: normalizeUiText(analysisVersion) } : {}),
     ...(typeof source.analysisFallbackUsed === 'boolean' ? { analysisFallbackUsed: source.analysisFallbackUsed } : {}),
     ...(confidenceNote ? { confidenceNote: normalizeUiText(confidenceNote) } : {}),
+    ...(rankingNotes ? { rankingNotes: normalizeUiText(rankingNotes) } : {}),
     ...(warnings.length ? { warnings } : {}),
     ...(consistencyChecksSource ? { consistencyChecks: normalizePredictionConsistencyChecks(consistencyChecksSource) } : {}),
     ...(source.openaiAnalysis ? { openaiAnalysis: source.openaiAnalysis as SpeciesPredictionAnalysis } : {}),
-    ...(normalizeUiText(readString(source, ['aiSummary', 'ai_summary']) || readString(asRecord(source.openaiAnalysis), ['insightSummary']))
-      ? { aiSummary: normalizeUiText(readString(source, ['aiSummary', 'ai_summary']) || readString(asRecord(source.openaiAnalysis), ['insightSummary'])) }
+    ...(normalizeUiText(readString(source, ['aiSummary', 'ai_summary']) || readString(aiSummaryRecord, ['insightSummary']) || readString(asRecord(source.openaiAnalysis), ['insightSummary']))
+      ? { aiSummary: normalizeUiText(readString(source, ['aiSummary', 'ai_summary']) || readString(aiSummaryRecord, ['insightSummary']) || readString(asRecord(source.openaiAnalysis), ['insightSummary'])) }
       : {}),
     ...(source.rawResearchPayload ? { rawResearchPayload: rawResearchPayload } : {}),
   };

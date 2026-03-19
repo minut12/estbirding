@@ -798,32 +798,37 @@ function json(body: Record<string, unknown>, status = 200, extraHeaders: Record<
 }
 
 function withEdgeResponseMarkers(body: Record<string, unknown>): Record<string, unknown> {
+  const isErrorLike = body.ok === false
+    || typeof body.error === 'string'
+    || (typeof body.message === 'string' && String(body.message).toLowerCase().includes('error'));
   return {
     ...body,
     ...buildEntrypointMarkers(),
     backendBuild: typeof body.backendBuild === 'string' ? body.backendBuild : SPECIES_PREDICTION_BACKEND_BUILD,
     invokeRouteVersion: typeof body.invokeRouteVersion === 'string' ? body.invokeRouteVersion : INVOKE_ROUTE_VERSION,
-    summaryShapeUsed: body.summaryShapeUsed === 'nested_aiSummary' || body.summaryShapeUsed === 'flat_legacy' || body.summaryShapeUsed === 'missing'
-      ? body.summaryShapeUsed
-      : 'missing',
-    ...(typeof body.summarySourcePath === 'string' ? { summarySourcePath: body.summarySourcePath } : {}),
-    hasTopLevelInsightSummary: body.hasTopLevelInsightSummary === true,
-    hasNestedAiSummaryObject: body.hasNestedAiSummaryObject === true,
-    hasNestedAiSummaryInsight: body.hasNestedAiSummaryInsight === true,
-    ...(body.hasAiSummaryObject === true ? { hasAiSummaryObject: true } : {}),
-    ...(body.hasNestedInsightSummary === true ? { hasNestedInsightSummary: true } : {}),
-    ...(Array.isArray(body.upstreamTopLevelKeys) ? { upstreamTopLevelKeys: body.upstreamTopLevelKeys } : {}),
-    topLevelKeys: Array.isArray(body.topLevelKeys) ? body.topLevelKeys : [],
-    nestedAiSummaryKeys: Array.isArray(body.nestedAiSummaryKeys) ? body.nestedAiSummaryKeys : [],
-    ...(typeof body.normalizedInsightLength === 'number' ? { normalizedInsightLength: body.normalizedInsightLength } : {}),
-    ...(typeof body.normalizedWarningsCount === 'number' ? { normalizedWarningsCount: body.normalizedWarningsCount } : {}),
-    ...(typeof body.normalizedRankingNotesType === 'string' ? { normalizedRankingNotesType: body.normalizedRankingNotesType } : {}),
-    ...(typeof body.rankingNotesInputType === 'string' ? { rankingNotesInputType: body.rankingNotesInputType } : {}),
-    ...(typeof body.warningsInputType === 'string' ? { warningsInputType: body.warningsInputType } : {}),
-    ...(typeof body.normalizedPredictionShape === 'string' ? { normalizedPredictionShape: body.normalizedPredictionShape } : {}),
-    ...(typeof body.summaryAcceptedBy === 'string' ? { summaryAcceptedBy: body.summaryAcceptedBy } : {}),
-    ...(body.liveInvokeAcceptedNestedAiSummary === true ? { liveInvokeAcceptedNestedAiSummary: true } : {}),
-    ...(typeof body.normalizationProof === 'string' ? { normalizationProof: body.normalizationProof } : {}),
+    ...(isErrorLike ? {
+      summaryShapeUsed: body.summaryShapeUsed === 'nested_aiSummary' || body.summaryShapeUsed === 'flat_legacy' || body.summaryShapeUsed === 'missing'
+        ? body.summaryShapeUsed
+        : 'missing',
+      ...(typeof body.summarySourcePath === 'string' ? { summarySourcePath: body.summarySourcePath } : {}),
+      hasTopLevelInsightSummary: body.hasTopLevelInsightSummary === true,
+      hasNestedAiSummaryObject: body.hasNestedAiSummaryObject === true,
+      hasNestedAiSummaryInsight: body.hasNestedAiSummaryInsight === true,
+      ...(body.hasAiSummaryObject === true ? { hasAiSummaryObject: true } : {}),
+      ...(body.hasNestedInsightSummary === true ? { hasNestedInsightSummary: true } : {}),
+      ...(Array.isArray(body.upstreamTopLevelKeys) ? { upstreamTopLevelKeys: body.upstreamTopLevelKeys } : {}),
+      topLevelKeys: Array.isArray(body.topLevelKeys) ? body.topLevelKeys : [],
+      nestedAiSummaryKeys: Array.isArray(body.nestedAiSummaryKeys) ? body.nestedAiSummaryKeys : [],
+      ...(typeof body.normalizedInsightLength === 'number' ? { normalizedInsightLength: body.normalizedInsightLength } : {}),
+      ...(typeof body.normalizedWarningsCount === 'number' ? { normalizedWarningsCount: body.normalizedWarningsCount } : {}),
+      ...(typeof body.normalizedRankingNotesType === 'string' ? { normalizedRankingNotesType: body.normalizedRankingNotesType } : {}),
+      ...(typeof body.rankingNotesInputType === 'string' ? { rankingNotesInputType: body.rankingNotesInputType } : {}),
+      ...(typeof body.warningsInputType === 'string' ? { warningsInputType: body.warningsInputType } : {}),
+      ...(typeof body.normalizedPredictionShape === 'string' ? { normalizedPredictionShape: body.normalizedPredictionShape } : {}),
+      ...(typeof body.summaryAcceptedBy === 'string' ? { summaryAcceptedBy: body.summaryAcceptedBy } : {}),
+      ...(body.liveInvokeAcceptedNestedAiSummary === true ? { liveInvokeAcceptedNestedAiSummary: true } : {}),
+      ...(typeof body.normalizationProof === 'string' ? { normalizationProof: body.normalizationProof } : {}),
+    } : {}),
     ...(typeof body.entrypointFile === 'string' ? { entrypointFile: body.entrypointFile } : {}),
     ...(typeof body.entrypointFunction === 'string' ? { entrypointFunction: body.entrypointFunction } : {}),
     ...(typeof body.responseProof === 'string' ? { responseProof: body.responseProof } : {}),
@@ -834,7 +839,7 @@ function withEdgeResponseMarkers(body: Record<string, unknown>): Record<string, 
     ...(typeof body.throwFile === 'string' ? { throwFile: body.throwFile } : {}),
     ...(typeof body.throwFunction === 'string' ? { throwFunction: body.throwFunction } : {}),
     ...(typeof body.throwBranch === 'string' ? { throwBranch: body.throwBranch } : {}),
-    ...(body.ok === false || typeof body.error === 'string' || typeof body.message === 'string' && String(body.message).toLowerCase().includes('error')
+    ...(isErrorLike
       ? { errorProofBuild: typeof body.errorProofBuild === 'string' ? body.errorProofBuild : SPECIES_PREDICTION_BACKEND_BUILD }
       : {}),
   };
@@ -1018,7 +1023,7 @@ async function buildMapFirstPredictionResult(opts: {
     },
   };
   if (!normalizedN8nResponse) {
-    return attachNormalizationMarkers(baseResult, null);
+    return attachNormalizationMarkers(baseResult);
   }
   return attachNormalizationMarkers({
     ...baseResult,
@@ -1046,7 +1051,7 @@ async function buildMapFirstPredictionResult(opts: {
     mapLayers: Object.keys(normalizedN8nResponse.mapLayers).length ? normalizedN8nResponse.mapLayers : baseResult.mapLayers,
     mapLayersDefault: normalizedN8nResponse.mapLayersDefault,
     species: normalizedN8nResponse.species,
-  }, null);
+  });
 }
 
 async function fetchGbifEstoniaHistory(speciesName: string, signal: AbortSignal): Promise<Record<string, unknown>[]> {
@@ -2239,33 +2244,12 @@ function normalizeUpstreamResponse(data: unknown): NormalizedUpstreamResponse | 
   return normalizeN8nPredictionSuccessPayload(data);
 }
 
-function attachNormalizationMarkers(
-  body: Record<string, unknown>,
-  summary: NormalizedUpstreamSummary | null,
-): Record<string, unknown> {
+function attachNormalizationMarkers(body: Record<string, unknown>): Record<string, unknown> {
   return {
     ...body,
     ...buildEntrypointMarkers(),
     backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
     invokeRouteVersion: INVOKE_ROUTE_VERSION,
-    summaryShapeUsed: summary?.summaryShapeUsed || 'missing',
-    hasTopLevelInsightSummary: summary?.hasTopLevelInsightSummary ?? false,
-    hasNestedAiSummaryObject: summary?.hasNestedAiSummaryObject ?? false,
-    hasNestedAiSummaryInsight: summary?.hasNestedAiSummaryInsight ?? false,
-    ...(typeof summary?.summarySourcePath === 'string' ? { summarySourcePath: summary.summarySourcePath } : {}),
-    ...(summary?.hasAiSummaryObject === true ? { hasAiSummaryObject: true } : {}),
-    ...(summary?.hasNestedInsightSummary === true ? { hasNestedInsightSummary: true } : {}),
-    ...(typeof summary?.normalizedInsightLength === 'number' ? { normalizedInsightLength: summary.normalizedInsightLength } : {}),
-    ...(typeof summary?.normalizedWarningsCount === 'number' ? { normalizedWarningsCount: summary.normalizedWarningsCount } : {}),
-    ...(typeof summary?.normalizedRankingNotesType === 'string' ? { normalizedRankingNotesType: summary.normalizedRankingNotesType } : {}),
-    upstreamTopLevelKeys: summary?.topLevelKeys ?? [],
-    topLevelKeys: summary?.topLevelKeys ?? [],
-    nestedAiSummaryKeys: summary?.nestedAiSummaryKeys ?? [],
-    ...(summary ? {
-      normalizationProof: 'nested aiSummary accepted by live POST invoke route',
-      summaryAcceptedBy: 'live_post_route',
-      liveInvokeAcceptedNestedAiSummary: true,
-    } : {}),
   };
 }
 
@@ -2274,7 +2258,6 @@ function enrichPredictionResult(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
   const normalizedUpstream = normalizeN8nPredictionSuccessPayload(raw);
-  const normalizedSummary = extractNormalizedAiSummary(raw);
   const species = asRecord(raw.species);
   const payloadSpecies = asRecord(payload.species);
   const payloadSettings = asRecord(payload.settings);
@@ -2344,7 +2327,6 @@ function enrichPredictionResult(
     generatedAt,
     ...(analysisVersion ? { analysisVersion } : {}),
     edgeFunctionVersion: EDGE_FUNCTION_VERSION,
-    ...(normalizedUpstream ? { summaryShapeUsed: normalizedUpstream.summaryShapeUsed } : {}),
     sourceHealth: canonicalSourceHealth,
     countryScores: canonicalCountryScores,
     foreignEvidence,
@@ -2373,7 +2355,7 @@ function enrichPredictionResult(
       historicalEvidence,
       rawLinks,
     },
-  }, normalizedSummary);
+  });
 }
 
 function buildForeignEvidence(rows: unknown[]): Record<string, unknown>[] {

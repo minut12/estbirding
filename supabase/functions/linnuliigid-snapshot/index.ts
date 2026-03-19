@@ -476,7 +476,7 @@ function parseElurikkusSearchPage(raw: unknown): { records: ElurikkusParsedRecor
     debug.parserWarnings.push("input did not look like HTML");
     return { records: [], available: false, debug };
   }
-  const doc = new DOMParser().parseFromString(extracted.html, "text/html");
+  const doc = new (globalThis as any).DOMParser().parseFromString(extracted.html, "text/html");
   if (!doc) {
     debug.parserWarnings.push("DOMParser failed to parse HTML");
     return { records: [], available: false, debug };

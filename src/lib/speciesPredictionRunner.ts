@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import {
+  extractUsablePayloadFromErrorEnvelope,
   hasUsableSpeciesPredictionResult,
   isPredictionRequestType,
   normalizeSpeciesPredictionResult,
@@ -130,6 +131,28 @@ export async function runSpeciesPredictionRequest(
     console.debug('[speciesPrediction] async POST response', data);
 
     if (error) {
+      // Even with SDK error, try to recover usable payload from data
+      if (data && typeof data === 'object') {
+        const recoveredFromSdkError = extractUsablePayloadFromErrorEnvelope(data as Record<string, unknown>);
+        if (recoveredFromSdkError) {
+          console.debug('[speciesPrediction] recovered usable payload despite SDK error', { path: recoveredFromSdkError.summarySourcePath });
+          setSpeciesPredictionDebugBackendResponse(data);
+          updateSuccessTransport(data);
+          const normalizedResult = normalizeSpeciesPredictionResult(
+            recoveredFromSdkError.source as Partial<SpeciesPredictionResult>,
+            payload.species.name,
+            scope,
+          );
+          normalizedResult.recoveredFromErrorEnvelope = true;
+          normalizedResult.summarySourcePath = recoveredFromSdkError.summarySourcePath;
+          normalizedResult.normalizedPredictionShape = 'nested-aiSummary-error-envelope';
+          jobState.status = 'completed';
+          jobState.result = normalizedResult;
+          jobState.completedAt = responseTimestamp;
+          onJobUpdate?.(jobState);
+          return { ok: true, result: normalizedResult, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, 200, data, null, jobState) };
+        }
+      }
       const transportError = resolveInvokeTransportError(error, data, requestUrl, requestId, responseTimestamp);
       updateTransportOnError(transportError, responseTimestamp);
       jobState.status = 'failed';
@@ -139,8 +162,28 @@ export async function runSpeciesPredictionRequest(
       return { ok: false, error: transportError.message, stage: transportError.stage, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, null, data, transportError, jobState) };
     }
 
-    // Check if edge returned error envelope
+    // Check if edge returned error envelope — but try to recover usable payload first
     if (data && typeof data === 'object' && data.ok === false) {
+      const recovered = extractUsablePayloadFromErrorEnvelope(data as Record<string, unknown>);
+      if (recovered) {
+        console.debug('[speciesPrediction] recovered usable payload from error envelope', { path: recovered.summarySourcePath });
+        setSpeciesPredictionDebugBackendResponse(data);
+        updateSuccessTransport(data);
+        const normalizedResult = normalizeSpeciesPredictionResult(
+          recovered.source as Partial<SpeciesPredictionResult>,
+          payload.species.name,
+          scope,
+        );
+        normalizedResult.recoveredFromErrorEnvelope = true;
+        normalizedResult.summarySourcePath = recovered.summarySourcePath;
+        normalizedResult.normalizedPredictionShape = 'nested-aiSummary-error-envelope';
+        jobState.status = 'completed';
+        jobState.result = normalizedResult;
+        jobState.completedAt = responseTimestamp;
+        onJobUpdate?.(jobState);
+        return { ok: true, result: normalizedResult, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, 200, data, null, jobState) };
+      }
+
       const msg = String(data.message || 'Prediction request failed');
       const transportError = createTransportError(
         mapStage(data.stage),
@@ -292,6 +335,30 @@ async function pollForResult(
       }
 
       if (pollData.status === 'failed') {
+        // Try to recover usable payload from error
+        const errorRecord = (pollData.error && typeof pollData.error === 'object') ? pollData.error as Record<string, unknown> : null;
+        const recoveredFromPoll = errorRecord ? extractUsablePayloadFromErrorEnvelope(errorRecord) : null;
+        if (recoveredFromPoll) {
+          console.debug('[speciesPrediction] recovered usable payload from polled error', { path: recoveredFromPoll.summarySourcePath });
+          setSpeciesPredictionDebugBackendResponse(pollData.error);
+          updateSuccessTransport(pollData.error);
+          const normalizedResult = normalizeSpeciesPredictionResult(
+            recoveredFromPoll.source as Partial<SpeciesPredictionResult>,
+            payload.species.name,
+            scope,
+          );
+          normalizedResult.recoveredFromErrorEnvelope = true;
+          normalizedResult.summarySourcePath = recoveredFromPoll.summarySourcePath;
+          normalizedResult.normalizedPredictionShape = 'nested-aiSummary-error-envelope';
+          jobState.status = 'completed';
+          jobState.result = normalizedResult;
+          jobState.completedAt = new Date().toISOString();
+          jobState.lastUpdatedAt = new Date().toISOString();
+          onJobUpdate?.(jobState);
+          const responseTimestamp = new Date().toISOString();
+          return { ok: true, result: normalizedResult, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, 200, pollData.error, null, jobState) };
+        }
+
         const errorDetails = extractBackendErrorDetails(pollData.error);
         const errorMsg = errorDetails.message || (typeof pollData.error === 'string' ? pollData.error : 'Prediction failed');
         const responseTimestamp = new Date().toISOString();

@@ -1940,11 +1940,12 @@ function extractUpstreamMessage(body: unknown): string {
 
 function buildInsightSummaryPreview(body: unknown): string {
   const record = asRecord(body);
-  const nestedSummary = typeof asRecord(record.aiSummary).insightSummary === 'string'
-    ? asRecord(record.aiSummary).insightSummary.trim()
+  const aiSummaryRec = asRecord(record.aiSummary);
+  const nestedSummary = typeof aiSummaryRec.insightSummary === 'string'
+    ? (aiSummaryRec.insightSummary as string).trim()
     : '';
   const topLevelSummary = typeof record.insightSummary === 'string'
-    ? record.insightSummary.trim()
+    ? (record.insightSummary as string).trim()
     : '';
   return (nestedSummary || topLevelSummary).slice(0, 160);
 }

@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import { fetchSpeciesList } from '@/lib/avatar-storage';
 import { LINNULIIGID_SCOPE, RARILIIN_SCOPE, SPECIES_SCOPES, type SpeciesScopeId } from '@/lib/mapScope';
 import { loadSpeciesPredictionSettings, saveSpeciesPredictionSettings } from '@/lib/speciesPredictionSettings';
-import { normalizeSpeciesPredictionSettings, type SpeciesPredictionSettings as SpeciesPredictionSettingsModel } from '@/lib/speciesPrediction';
+import { extractUsablePayloadFromErrorEnvelope, normalizeSpeciesPredictionSettings, type SpeciesPredictionSettings as SpeciesPredictionSettingsModel } from '@/lib/speciesPrediction';
 import { normalizeSpeciesName, normalizeUiText } from '@/lib/textNormalize';
 import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
@@ -342,7 +342,7 @@ export default function SpeciesPredictionSettings() {
         onEnabledChange={setPredictionFeatureEnabled}
       />
       <p className="text-[11px] text-muted-foreground">
-        prediction-settings-build: 2026-03-19-fix17
+        prediction-settings-build: 2026-03-19-fix18
       </p>
       {!predictionEnabled ? (
         <p className="text-xs text-muted-foreground">Turn on Species Prediction to edit these settings</p>
@@ -368,7 +368,7 @@ export default function SpeciesPredictionSettings() {
           {/* Temporary debug: derived status mapper values */}
           {canSeeDebugDiagnostics && (
             <div className="rounded border border-border bg-muted/20 p-2 text-[10px] font-mono text-muted-foreground space-y-0.5">
-              <p className="font-semibold text-foreground text-[11px]">Status mapper debug (fix6)</p>
+              <p className="font-semibold text-foreground text-[11px]">Status mapper debug (fix18)</p>
               <p>healthCheck.hasOutdatedWebhook: {String(normalizedBackendStatus.hasOutdatedWebhookPathError)}</p>
               <p>diagnostics.detected: {String(diagnosticWebhookError.detected)}</p>
               <p>diagnostics.stage: {diagnosticWebhookError.stage || '–'}</p>
@@ -377,6 +377,20 @@ export default function SpeciesPredictionSettings() {
               <p>diagnostics.matchedReason: {diagnosticWebhookError.matchedReason || '–'}</p>
               <p>effective.hasOutdatedWebhookPathError: {String(normalizedBackendStatus.hasOutdatedWebhookPathError)}</p>
               <p>displayState: {displayState}</p>
+              {(() => {
+                const rawResp = debugSnapshot?.rawBackendResponse;
+                const topCode = rawResp && typeof rawResp === 'object' ? (rawResp as Record<string, unknown>).code : undefined;
+                const recovered = rawResp ? extractUsablePayloadFromErrorEnvelope(rawResp as Record<string, unknown>) : null;
+                return (
+                  <>
+                    <p className="mt-1 font-semibold text-foreground text-[11px]">Response envelope recovery</p>
+                    <p>raw top-level code: {typeof topCode === 'string' ? topCode : '–'}</p>
+                    <p>summarySourcePath: {recovered?.summarySourcePath || '–'}</p>
+                    <p>insightSummary recovered: {recovered?.insightSummary ? 'yes' : 'no'}</p>
+                    <p>normalizedPredictionShape: {recovered ? 'nested-aiSummary-error-envelope' : '–'}</p>
+                  </>
+                );
+              })()}
             </div>
           )}
           {!canManage && (

@@ -330,12 +330,16 @@ export type SpeciesPredictionResult = {
   analysisVersion?: string;
   analysisFallbackUsed?: boolean;
   confidenceNote?: string;
+  rankingNotes?: string;
   warnings?: string[];
   rerankedTopPredictedPoints?: PredictedPoint[];
   consistencyChecks?: PredictionConsistencyChecks;
   openaiAnalysis?: SpeciesPredictionAnalysis;
   aiSummary?: string;
   rawResearchPayload?: Record<string, unknown>;
+  recoveredFromErrorEnvelope?: boolean;
+  summarySourcePath?: string;
+  normalizedPredictionShape?: string;
 };
 
 export type SpeciesPredictionRequestPayload = {
@@ -542,7 +546,10 @@ export function normalizeSpeciesPredictionResult(
     || readString(aiSummaryRecord, ['confidenceNote', 'confidence_note'])
     || readString(source, ['confidence_note'])
     || readString(asRecord(source.openaiAnalysis), ['confidenceNote', 'confidence_note']);
-  const rankingNotes = readString(source, ['rankingNotes'])
+  const rankingNotes = normalizeRankingNotes(source.rankingNotes)
+    || normalizeRankingNotes(aiSummaryRecord.rankingNotes)
+    || normalizeRankingNotes(aiSummaryRecord.ranking_notes)
+    || readString(source, ['rankingNotes'])
     || readString(aiSummaryRecord, ['rankingNotes', 'ranking_notes'])
     || readString(source, ['ranking_notes']);
   const analysisVersion = readString(source, ['analysisVersion'])
@@ -677,6 +684,15 @@ export function hasUsableSpeciesPredictionResult(
   input: Partial<SpeciesPredictionResult> | null | undefined,
 ): boolean {
   if (!input || typeof input !== 'object') return false;
+  // Try direct shape first
+  if (hasUsableDirectShape(input)) return true;
+  // Try recovering from error envelope
+  const recovered = extractUsablePayloadFromErrorEnvelope(input as Record<string, unknown>);
+  if (recovered) return true;
+  return false;
+}
+
+function hasUsableDirectShape(input: Partial<SpeciesPredictionResult>): boolean {
   const speciesKey = normalizeSpeciesName(input.speciesKey || '');
   const speciesName = normalizeUiText(input.speciesName || '');
   const generatedAt = normalizeUiText(input.generatedAt || '');
@@ -694,8 +710,59 @@ export function hasUsableSpeciesPredictionResult(
     || hasValue(evidenceRecord, ['foreignClusters'])
     || hasValue(evidenceRecord, ['predictionVectors'])
     || hasValue(evidenceRecord, ['weather'])
+    || hasValue(evidenceRecord, ['aiSummary'])
+    || hasValue(evidenceRecord, ['insightSummary'])
   );
-  return Boolean(speciesKey && speciesName && generatedAt && hasEvidencePayload);
+  return Boolean((speciesKey || speciesName) && (generatedAt || hasEvidencePayload) && hasEvidencePayload);
+}
+
+/**
+ * Extracts a usable prediction payload from an error envelope.
+ * Probes these paths in order:
+ *   A) raw.aiSummary.insightSummary
+ *   B) raw.responseBody.aiSummary.insightSummary
+ *   C) raw.responseBody.upstreamBody.aiSummary.insightSummary
+ *   D) raw.insightSummary
+ *   E) raw.responseBody.insightSummary
+ *   F) raw.responseBody.upstreamBody.insightSummary
+ * Returns the best usable source object + path, or null.
+ */
+export function extractUsablePayloadFromErrorEnvelope(
+  raw: Record<string, unknown> | null | undefined,
+): { source: Record<string, unknown>; summarySourcePath: string; insightSummary: string } | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const responseBody = asRecord(r.responseBody);
+  const upstreamBody = asRecord(responseBody.upstreamBody);
+
+  const probes: Array<{ obj: Record<string, unknown>; aiPath: string; directPath: string; sourceObj: Record<string, unknown> }> = [
+    { obj: asRecord(r.aiSummary), aiPath: 'aiSummary', directPath: '', sourceObj: r },
+    { obj: asRecord(responseBody.aiSummary), aiPath: 'responseBody.aiSummary', directPath: '', sourceObj: responseBody },
+    { obj: asRecord(upstreamBody.aiSummary), aiPath: 'responseBody.upstreamBody.aiSummary', directPath: '', sourceObj: upstreamBody },
+  ];
+
+  // Check nested aiSummary objects first (A, B, C)
+  for (const probe of probes) {
+    const summary = typeof probe.obj.insightSummary === 'string' ? probe.obj.insightSummary.trim() : '';
+    if (summary) {
+      return { source: probe.sourceObj, summarySourcePath: probe.aiPath, insightSummary: summary };
+    }
+  }
+
+  // Check direct insightSummary (D, E, F)
+  const directProbes: Array<{ obj: Record<string, unknown>; path: string }> = [
+    { obj: r, path: 'insightSummary' },
+    { obj: responseBody, path: 'responseBody.insightSummary' },
+    { obj: upstreamBody, path: 'responseBody.upstreamBody.insightSummary' },
+  ];
+  for (const probe of directProbes) {
+    const summary = typeof probe.obj.insightSummary === 'string' ? probe.obj.insightSummary.trim() : '';
+    if (summary) {
+      return { source: probe.obj, summarySourcePath: probe.path, insightSummary: summary };
+    }
+  }
+
+  return null;
 }
 
 function toNumber(value: unknown): number {
@@ -736,6 +803,15 @@ function hasCanonicalPredictionFields(record: Record<string, unknown>): boolean 
     || hasValue(record, ['predictionVectors'])
     || hasValue(record, ['weather'])
   );
+}
+
+function normalizeRankingNotes(value: unknown): string {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (Array.isArray(value)) {
+    const joined = value.map((item) => String(item || '').trim()).filter(Boolean).join(' • ');
+    return joined || '';
+  }
+  return '';
 }
 
 function readString(record: Record<string, unknown> | null | undefined, keys: string[]): string {

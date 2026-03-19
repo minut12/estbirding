@@ -313,6 +313,30 @@ async function pollForResult(
       }
 
       if (pollData.status === 'failed') {
+        // Try to recover usable payload from error
+        const errorRecord = (pollData.error && typeof pollData.error === 'object') ? pollData.error as Record<string, unknown> : null;
+        const recoveredFromPoll = errorRecord ? extractUsablePayloadFromErrorEnvelope(errorRecord) : null;
+        if (recoveredFromPoll) {
+          console.debug('[speciesPrediction] recovered usable payload from polled error', { path: recoveredFromPoll.summarySourcePath });
+          setSpeciesPredictionDebugBackendResponse(pollData.error);
+          updateSuccessTransport(pollData.error);
+          const normalizedResult = normalizeSpeciesPredictionResult(
+            recoveredFromPoll.source as Partial<SpeciesPredictionResult>,
+            payload.species.name,
+            scope,
+          );
+          normalizedResult.recoveredFromErrorEnvelope = true;
+          normalizedResult.summarySourcePath = recoveredFromPoll.summarySourcePath;
+          normalizedResult.normalizedPredictionShape = 'nested-aiSummary-error-envelope';
+          jobState.status = 'completed';
+          jobState.result = normalizedResult;
+          jobState.completedAt = new Date().toISOString();
+          jobState.lastUpdatedAt = new Date().toISOString();
+          onJobUpdate?.(jobState);
+          const responseTimestamp = new Date().toISOString();
+          return { ok: true, result: normalizedResult, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, 200, pollData.error, null, jobState) };
+        }
+
         const errorDetails = extractBackendErrorDetails(pollData.error);
         const errorMsg = errorDetails.message || (typeof pollData.error === 'string' ? pollData.error : 'Prediction failed');
         const responseTimestamp = new Date().toISOString();

@@ -1146,6 +1146,12 @@ function detectOutdatedWebhookFromDiagnostics(snapshot: SpeciesPredictionDebugSn
     const hasNotRegistered = lower.includes('not registered');
     const hasSpeciesPrediction = lower.includes('species-prediction');
     const hasWebhookMention = lower.includes('webhook');
+    const isGetMethodMismatch = lower.includes('not registered for get requests')
+      || lower.includes('did you mean to make a post request');
+
+    if (isGetMethodMismatch) {
+      continue;
+    }
 
     if (hasNotRegistered && (hasSpeciesPrediction || hasWebhookMention)) {
       return { detected: true, stage: c.stage || '', code: c.code, message: c.message || '', matchedReason: `message contains "not registered" + webhook ref (${c.source})` };

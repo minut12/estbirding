@@ -342,6 +342,10 @@ export type SpeciesPredictionResult = {
   normalizedPredictionShape?: string;
   rawTopLevelCode?: string;
   rawTopLevelStage?: string;
+  hasAiSummaryObject?: boolean;
+  hasNestedInsightSummary?: boolean;
+  rankingNotesInputType?: string;
+  warningsInputType?: string;
 };
 
 export type ResolvedSpeciesPredictionSource = {
@@ -352,6 +356,10 @@ export type ResolvedSpeciesPredictionSource = {
   normalizedPredictionShape: string;
   rawTopLevelCode: string;
   rawTopLevelStage: string;
+  hasAiSummaryObject?: boolean;
+  hasNestedInsightSummary?: boolean;
+  rankingNotesInputType?: string;
+  warningsInputType?: string;
 };
 
 export type SpeciesPredictionRequestPayload = {
@@ -534,12 +542,11 @@ export function normalizeSpeciesPredictionResult(
       .filter((point) => point.name || point.countyOrParish || (point.lat !== 0 || point.lon !== 0))
     : [];
   const aiSummaryRecord = readRecord(source, ['aiSummary']) ?? {};
-  const warningsSource = readArray(source, ['warnings'])
-    ?? readArray(aiSummaryRecord, ['warnings'])
-    ?? readArray(asRecord(source.openaiAnalysis), ['warnings']);
-  const warnings = Array.isArray(warningsSource)
-    ? warningsSource.map((warning) => normalizeUiText(String(warning || ''))).filter(Boolean)
-    : [];
+  const warnings = normalizeWarningsInput(source.warnings).length
+    ? normalizeWarningsInput(source.warnings)
+    : normalizeWarningsInput(aiSummaryRecord.warnings).length
+      ? normalizeWarningsInput(aiSummaryRecord.warnings)
+      : normalizeWarningsInput(asRecord(source.openaiAnalysis).warnings);
   const canonicalCountryScoresSource = readRecord(source, ['countryScores']);
   const legacyCountryScoresSource = readRecord(source, ['country_scores', 'countryScoreMap', 'country_score_map']);
   const fallbackCountryScoresSource = readRecord(asRecord(asRecord(source.rawResearchPayload).openAIAnalysisInput), ['countryScores']);
@@ -698,6 +705,10 @@ export function normalizeSpeciesPredictionResult(
       normalizedPredictionShape: resolvedSource.normalizedPredictionShape,
       rawTopLevelCode: resolvedSource.rawTopLevelCode,
       rawTopLevelStage: resolvedSource.rawTopLevelStage,
+      hasAiSummaryObject: resolvedSource.hasAiSummaryObject === true,
+      hasNestedInsightSummary: resolvedSource.hasNestedInsightSummary === true,
+      ...(resolvedSource.rankingNotesInputType ? { rankingNotesInputType: resolvedSource.rankingNotesInputType } : {}),
+      ...(resolvedSource.warningsInputType ? { warningsInputType: resolvedSource.warningsInputType } : {}),
     } : {}),
   };
 }
@@ -754,16 +765,30 @@ export function extractUsablePayloadFromErrorEnvelope(
 ): ResolvedSpeciesPredictionSource | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
-  const responseBody = asRecord(r.responseBody);
-  const upstreamBody = asRecord(responseBody.upstreamBody);
   const rawTopLevelCode = readString(r, ['code']);
   const rawTopLevelStage = readString(r, ['stage']);
 
-  const probes: Array<{ obj: Record<string, unknown>; aiPath: string; directPath: string; sourceObj: Record<string, unknown> }> = [
-    { obj: asRecord(r.aiSummary), aiPath: 'aiSummary', directPath: '', sourceObj: r },
-    { obj: asRecord(responseBody.aiSummary), aiPath: 'responseBody.aiSummary', directPath: '', sourceObj: responseBody },
-    { obj: asRecord(upstreamBody.aiSummary), aiPath: 'responseBody.upstreamBody.aiSummary', directPath: '', sourceObj: upstreamBody },
-  ];
+  const candidates: Array<{ sourceObj: Record<string, unknown>; path: string }> = [];
+  const queue: Array<{ sourceObj: Record<string, unknown>; path: string }> = [{ sourceObj: r, path: '' }];
+  const seen = new Set<Record<string, unknown>>();
+
+  while (queue.length) {
+    const current = queue.shift()!;
+    if (seen.has(current.sourceObj)) continue;
+    seen.add(current.sourceObj);
+    candidates.push(current);
+    for (const key of ['body', 'data', 'result', 'responseBody', 'upstreamBody']) {
+      const next = asRecord(current.sourceObj[key]);
+      if (!Object.keys(next).length) continue;
+      queue.push({ sourceObj: next, path: current.path ? `${current.path}.${key}` : key });
+    }
+  }
+
+  const probes = candidates.map((candidate) => ({
+    obj: asRecord(candidate.sourceObj.aiSummary),
+    aiPath: candidate.path ? `${candidate.path}.aiSummary` : 'aiSummary',
+    sourceObj: candidate.sourceObj,
+  }));
 
   // Check nested aiSummary objects first (A, B, C)
   for (const probe of probes) {
@@ -777,16 +802,19 @@ export function extractUsablePayloadFromErrorEnvelope(
         normalizedPredictionShape: 'nested-aiSummary-error-envelope',
         rawTopLevelCode,
         rawTopLevelStage,
+        hasAiSummaryObject: Object.keys(probe.obj).length > 0,
+        hasNestedInsightSummary: true,
+        rankingNotesInputType: typeof (probe.obj.rankingNotes ?? probe.obj.ranking_notes),
+        warningsInputType: Array.isArray(probe.obj.warnings) ? 'array' : typeof probe.obj.warnings,
       };
     }
   }
 
   // Check direct insightSummary (D, E, F)
-  const directProbes: Array<{ obj: Record<string, unknown>; path: string }> = [
-    { obj: r, path: 'insightSummary' },
-    { obj: responseBody, path: 'responseBody.insightSummary' },
-    { obj: upstreamBody, path: 'responseBody.upstreamBody.insightSummary' },
-  ];
+  const directProbes = candidates.map((candidate) => ({
+    obj: candidate.sourceObj,
+    path: candidate.path ? `${candidate.path}.insightSummary` : 'insightSummary',
+  }));
   for (const probe of directProbes) {
     const summary = typeof probe.obj.insightSummary === 'string' ? probe.obj.insightSummary.trim() : '';
     if (summary) {
@@ -798,6 +826,10 @@ export function extractUsablePayloadFromErrorEnvelope(
         normalizedPredictionShape: 'flat-error-envelope',
         rawTopLevelCode,
         rawTopLevelStage,
+        hasAiSummaryObject: Object.keys(asRecord(probe.obj.aiSummary)).length > 0,
+        hasNestedInsightSummary: typeof asRecord(probe.obj.aiSummary).insightSummary === 'string' && asRecord(probe.obj.aiSummary).insightSummary.trim().length > 0,
+        rankingNotesInputType: typeof (probe.obj.rankingNotes ?? probe.obj.ranking_notes),
+        warningsInputType: Array.isArray(probe.obj.warnings) ? 'array' : typeof probe.obj.warnings,
       };
     }
   }
@@ -910,6 +942,17 @@ function readArray(record: Record<string, unknown> | null | undefined, keys: str
     if (Array.isArray(value)) return value;
   }
   return null;
+}
+
+function normalizeWarningsInput(value: unknown): string[] {
+  if (typeof value === 'string') {
+    const normalized = normalizeUiText(value);
+    return normalized ? [normalized] : [];
+  }
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((warning) => normalizeUiText(String(warning || '')))
+    .filter(Boolean);
 }
 
 function hasValue(record: Record<string, unknown> | null | undefined, keys: string[]): boolean {

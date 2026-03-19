@@ -112,13 +112,19 @@ type NormalizedUpstreamSummary = {
   rankingNotes: string;
   warnings: string[];
   summaryShapeUsed: 'nested_aiSummary' | 'flat_legacy' | 'missing';
+  summarySourcePath?: string;
   normalizedInsightLength: number;
   normalizedWarningsCount: number;
   hasTopLevelInsightSummary: boolean;
   hasNestedAiSummaryObject: boolean;
   hasNestedAiSummaryInsight: boolean;
+  hasAiSummaryObject?: boolean;
+  hasNestedInsightSummary?: boolean;
   topLevelKeys: string[];
   nestedAiSummaryKeys: string[];
+  rankingNotesInputType?: string;
+  warningsInputType?: string;
+  normalizedPredictionShape?: string;
 };
 
 type NormalizedUpstreamResponse = {
@@ -783,11 +789,17 @@ function withEdgeResponseMarkers(body: Record<string, unknown>): Record<string, 
     summaryShapeUsed: body.summaryShapeUsed === 'nested_aiSummary' || body.summaryShapeUsed === 'flat_legacy' || body.summaryShapeUsed === 'missing'
       ? body.summaryShapeUsed
       : 'missing',
+    ...(typeof body.summarySourcePath === 'string' ? { summarySourcePath: body.summarySourcePath } : {}),
     hasTopLevelInsightSummary: body.hasTopLevelInsightSummary === true,
     hasNestedAiSummaryObject: body.hasNestedAiSummaryObject === true,
     hasNestedAiSummaryInsight: body.hasNestedAiSummaryInsight === true,
+    ...(body.hasAiSummaryObject === true ? { hasAiSummaryObject: true } : {}),
+    ...(body.hasNestedInsightSummary === true ? { hasNestedInsightSummary: true } : {}),
     topLevelKeys: Array.isArray(body.topLevelKeys) ? body.topLevelKeys : [],
     nestedAiSummaryKeys: Array.isArray(body.nestedAiSummaryKeys) ? body.nestedAiSummaryKeys : [],
+    ...(typeof body.rankingNotesInputType === 'string' ? { rankingNotesInputType: body.rankingNotesInputType } : {}),
+    ...(typeof body.warningsInputType === 'string' ? { warningsInputType: body.warningsInputType } : {}),
+    ...(typeof body.normalizedPredictionShape === 'string' ? { normalizedPredictionShape: body.normalizedPredictionShape } : {}),
     ...(typeof body.summaryAcceptedBy === 'string' ? { summaryAcceptedBy: body.summaryAcceptedBy } : {}),
     ...(body.liveInvokeAcceptedNestedAiSummary === true ? { liveInvokeAcceptedNestedAiSummary: true } : {}),
     ...(typeof body.normalizationProof === 'string' ? { normalizationProof: body.normalizationProof } : {}),
@@ -1647,6 +1659,10 @@ async function maybeFetchSecondarySummary(opts: {
     summaryShapeUsed: extractedSummary?.summaryShapeUsed || 'missing',
     normalizedInsightLength: extractedSummary?.normalizedInsightLength || 0,
     normalizedWarningsCount: extractedSummary?.normalizedWarningsCount || 0,
+    summarySourcePath: extractedSummary?.summarySourcePath || '',
+    rankingNotesInputType: extractedSummary?.rankingNotesInputType || '',
+    warningsInputType: extractedSummary?.warningsInputType || '',
+    normalizedPredictionShape: extractedSummary?.normalizedPredictionShape || '',
     nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
     backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
   });
@@ -1661,6 +1677,12 @@ async function maybeFetchSecondarySummary(opts: {
       topLevelKeys: shapeDiagnostics.topLevelKeys,
       nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
       insightSummaryType: shapeDiagnostics.insightSummaryType,
+      summarySourcePath: extractedSummary?.summarySourcePath || '',
+      hasAiSummaryObject: extractedSummary?.hasAiSummaryObject ?? shapeDiagnostics.hasNestedAiSummaryObject,
+      hasNestedInsightSummary: extractedSummary?.hasNestedInsightSummary ?? shapeDiagnostics.hasNestedAiSummaryInsight,
+      rankingNotesInputType: extractedSummary?.rankingNotesInputType || '',
+      warningsInputType: extractedSummary?.warningsInputType || '',
+      normalizedPredictionShape: extractedSummary?.normalizedPredictionShape || '',
       insightSummaryValuePreview: buildInsightSummaryPreview(data),
       aiSummaryType: typeof upstreamRecord.aiSummary,
       nestedInsightSummaryType: typeof asRecord(upstreamRecord.aiSummary).insightSummary,
@@ -1680,6 +1702,12 @@ async function maybeFetchSecondarySummary(opts: {
         topLevelKeys: shapeDiagnostics.topLevelKeys,
         nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
         insightSummaryType: shapeDiagnostics.insightSummaryType,
+        summarySourcePath: extractedSummary?.summarySourcePath || '',
+        hasAiSummaryObject: extractedSummary?.hasAiSummaryObject ?? shapeDiagnostics.hasNestedAiSummaryObject,
+        hasNestedInsightSummary: extractedSummary?.hasNestedInsightSummary ?? shapeDiagnostics.hasNestedAiSummaryInsight,
+        rankingNotesInputType: extractedSummary?.rankingNotesInputType || '',
+        warningsInputType: extractedSummary?.warningsInputType || '',
+        normalizedPredictionShape: extractedSummary?.normalizedPredictionShape || '',
         insightSummaryValuePreview: buildInsightSummaryPreview(data),
         nestedInsightSummaryType: typeof asRecord(upstreamRecord.aiSummary).insightSummary,
         topLevelInsightSummaryType: typeof upstreamRecord.insightSummary,
@@ -1950,13 +1978,24 @@ function buildInsightSummaryPreview(body: unknown): string {
   return (nestedSummary || topLevelSummary).slice(0, 160);
 }
 
+function isPostOnlyWebhookMessage(message: string): boolean {
+  const normalized = String(message || '').toLowerCase();
+  return normalized.includes('not registered for get requests')
+    || normalized.includes('did you mean to make a post request');
+}
+
 function isInactiveWebhookMessage(message: string): boolean {
   const normalized = String(message || '').toLowerCase();
+  if (isPostOnlyWebhookMessage(normalized)) return false;
   return normalized.includes('workflow must be active')
     || (normalized.includes('webhook') && normalized.includes('not registered'));
 }
 
 function normalizeWarnings(value: unknown): string[] {
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return normalized ? [normalized] : [];
+  }
   if (!Array.isArray(value)) return [];
   return value.map((item) => String(item || '').trim()).filter(Boolean);
 }
@@ -1969,6 +2008,27 @@ function normalizeRankingNotes(value: unknown): string {
   return '';
 }
 
+function buildWrappedPredictionCandidates(data: unknown): Array<{ source: Record<string, unknown>; path: string }> {
+  const root = asRecord(data);
+  const candidates: Array<{ source: Record<string, unknown>; path: string }> = [];
+  const queue: Array<{ source: Record<string, unknown>; path: string }> = [{ source: root, path: '' }];
+  const seen = new Set<Record<string, unknown>>();
+
+  while (queue.length) {
+    const current = queue.shift()!;
+    if (seen.has(current.source)) continue;
+    seen.add(current.source);
+    candidates.push(current);
+    for (const key of ['body', 'data', 'result', 'responseBody', 'upstreamBody']) {
+      const next = asRecord(current.source[key]);
+      if (!Object.keys(next).length) continue;
+      queue.push({ source: next, path: current.path ? `${current.path}.${key}` : key });
+    }
+  }
+
+  return candidates;
+}
+
 function resolveUpstreamResponseSource(data: unknown): {
   source: Record<string, unknown>;
   summarySourcePath: string;
@@ -1979,18 +2039,22 @@ function resolveUpstreamResponseSource(data: unknown): {
   hasNestedAiSummaryInsight: boolean;
   topLevelKeys: string[];
   nestedAiSummaryKeys: string[];
+  rankingNotesInputType: string;
+  warningsInputType: string;
+  normalizedPredictionShape: string;
 } | null {
-  const record = asRecord(data);
-  const responseBody = asRecord(record.responseBody);
-  const upstreamBody = asRecord(responseBody.upstreamBody);
-  const probes: Array<{ source: Record<string, unknown>; summarySourcePath: string; summaryShapeUsed: 'nested_aiSummary' | 'flat_legacy' }> = [
-    { source: record, summarySourcePath: 'aiSummary', summaryShapeUsed: 'nested_aiSummary' },
-    { source: responseBody, summarySourcePath: 'responseBody.aiSummary', summaryShapeUsed: 'nested_aiSummary' },
-    { source: upstreamBody, summarySourcePath: 'responseBody.upstreamBody.aiSummary', summaryShapeUsed: 'nested_aiSummary' },
-    { source: record, summarySourcePath: 'insightSummary', summaryShapeUsed: 'flat_legacy' },
-    { source: responseBody, summarySourcePath: 'responseBody.insightSummary', summaryShapeUsed: 'flat_legacy' },
-    { source: upstreamBody, summarySourcePath: 'responseBody.upstreamBody.insightSummary', summaryShapeUsed: 'flat_legacy' },
-  ];
+  const probes = buildWrappedPredictionCandidates(data).flatMap((candidate) => ([
+    {
+      source: candidate.source,
+      summarySourcePath: candidate.path ? `${candidate.path}.aiSummary` : 'aiSummary',
+      summaryShapeUsed: 'nested_aiSummary' as const,
+    },
+    {
+      source: candidate.source,
+      summarySourcePath: candidate.path ? `${candidate.path}.insightSummary` : 'insightSummary',
+      summaryShapeUsed: 'flat_legacy' as const,
+    },
+  ]));
 
   for (const probe of probes) {
     const aiSummaryRecord = asRecord(probe.source.aiSummary);
@@ -2008,6 +2072,13 @@ function resolveUpstreamResponseSource(data: unknown): {
       hasNestedAiSummaryInsight: typeof aiSummaryRecord.insightSummary === 'string' && aiSummaryRecord.insightSummary.trim().length > 0,
       topLevelKeys: Object.keys(probe.source),
       nestedAiSummaryKeys: Object.keys(aiSummaryRecord),
+      rankingNotesInputType: typeof (probe.summaryShapeUsed === 'nested_aiSummary' ? aiSummaryRecord.rankingNotes ?? aiSummaryRecord.ranking_notes : probe.source.rankingNotes ?? probe.source.ranking_notes),
+      warningsInputType: Array.isArray(probe.summaryShapeUsed === 'nested_aiSummary' ? aiSummaryRecord.warnings : probe.source.warnings)
+        ? 'array'
+        : typeof (probe.summaryShapeUsed === 'nested_aiSummary' ? aiSummaryRecord.warnings : probe.source.warnings),
+      normalizedPredictionShape: probe.summaryShapeUsed === 'nested_aiSummary'
+        ? (probe.summarySourcePath.includes('.') ? 'nested-aiSummary-wrapped-envelope' : 'nested-aiSummary-direct')
+        : (probe.summarySourcePath.includes('.') ? 'flat-wrapped-envelope' : 'flat-direct'),
     };
   }
 
@@ -2036,11 +2107,17 @@ function extractNormalizedAiSummary(data: unknown): NormalizedUpstreamSummary | 
     summaryShapeUsed: resolvedSource.summaryShapeUsed,
     normalizedInsightLength: resolvedSource.insightSummary.length,
     normalizedWarningsCount: warnings.length,
+    summarySourcePath: resolvedSource.summarySourcePath,
     hasTopLevelInsightSummary: resolvedSource.hasTopLevelInsightSummary,
     hasNestedAiSummaryObject: resolvedSource.hasNestedAiSummaryObject,
     hasNestedAiSummaryInsight: resolvedSource.hasNestedAiSummaryInsight,
+    hasAiSummaryObject: resolvedSource.hasNestedAiSummaryObject,
+    hasNestedInsightSummary: resolvedSource.hasNestedAiSummaryInsight,
     topLevelKeys: resolvedSource.topLevelKeys,
     nestedAiSummaryKeys: resolvedSource.nestedAiSummaryKeys,
+    rankingNotesInputType: resolvedSource.rankingNotesInputType,
+    warningsInputType: resolvedSource.warningsInputType,
+    normalizedPredictionShape: resolvedSource.normalizedPredictionShape,
   };
 }
 

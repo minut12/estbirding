@@ -400,6 +400,66 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.predictedTargets).toEqual([]);
   });
 
+  it("accepts direct wrapped n8n success payloads with nested aiSummary", () => {
+    const result = normalizeSpeciesPredictionResult({
+      ok: true,
+      species: {
+        key: "Punakurk-kaur",
+        name: "Punakurk-kaur",
+        latinName: "",
+        ebirdSpeciesCode: "retloo",
+      },
+      weather: {
+        source: "Open-Meteo",
+        observedAt: "2026-03-19T18:26:52.847Z",
+        windSpeedKmh: 5,
+        precipitation: 0,
+        windDirectionDeg: 268,
+      },
+      aiSummary: {
+        warnings: [
+          "No recent or historical Estonia records in the dataset",
+          "No foreign pressure recorded to indicate incoming birds",
+          "Weather is a single snapshot and may change rapidly",
+          "Update assessment as soon as any new records are reported",
+        ],
+        rankingNotes: "Ranking drivers: none present — no fresh Estonia records, no Estonia history clusters, and no recent foreign pressure. Weather is neutral and does not provide evidence of increased arrival risk. Expect a very low ranking until fresh local or foreign records appear.",
+        confidenceNote: "High confidence that there are no recent Estonian detections.",
+        insightSummary: "No recent or historical evidence of Punakurk-kaur in Estonia.",
+      },
+      generatedAt: "2026-03-19T18:26:53.531Z",
+      sourceHealth: {
+        primarySourceUsed: "eElurikkus recent table + GBIF Estonia coordinates + eBird foreign + Open-Meteo",
+        sourceWarnings: [],
+      },
+      countryScores: {},
+      estoniaEvidence: {
+        recentCount7d: 0,
+        recentCount30d: 0,
+        alreadyPresent: false,
+      },
+      evidenceSummary: {
+        totalForeignRecentPoints: 0,
+      },
+      foreignClusters: [],
+      mapLayersDefault: {
+        showPredictedTargets: true,
+      },
+      predictedTargets: [],
+      foreignRecentPoints: [],
+      estoniaHistoryPoints: [],
+      elurikkusRecentRecords: [],
+      estoniaHistoryClusters: [],
+    } as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.insightSummary).toBe("No recent or historical evidence of Punakurk-kaur in Estonia.");
+    expect(result.confidenceNote).toBe("High confidence that there are no recent Estonian detections.");
+    expect(result.rankingNotes).toContain("Ranking drivers: none present");
+    expect(result.warnings).toHaveLength(4);
+    expect(result.foreignClusters).toEqual([]);
+    expect(result.predictedTargets).toEqual([]);
+  });
+
   it("recovers nested aiSummary from an invalid_upstream_json error envelope", () => {
     const result = normalizeSpeciesPredictionResult({
       code: "N8N_UPSTREAM_INVALID_RESPONSE",

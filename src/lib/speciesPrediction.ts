@@ -340,6 +340,18 @@ export type SpeciesPredictionResult = {
   recoveredFromErrorEnvelope?: boolean;
   summarySourcePath?: string;
   normalizedPredictionShape?: string;
+  rawTopLevelCode?: string;
+  rawTopLevelStage?: string;
+};
+
+export type ResolvedSpeciesPredictionSource = {
+  source: Record<string, unknown>;
+  summarySourcePath: string;
+  insightSummary: string;
+  recoveredFromErrorEnvelope: boolean;
+  normalizedPredictionShape: string;
+  rawTopLevelCode: string;
+  rawTopLevelStage: string;
 };
 
 export type SpeciesPredictionRequestPayload = {
@@ -505,7 +517,8 @@ export function normalizeSpeciesPredictionResult(
   speciesName: string,
   scope: SpeciesScopeId,
 ): SpeciesPredictionResult {
-  const source = resolvePredictionSource(input);
+  const resolvedSource = resolveSpeciesPredictionSource(input);
+  const source = resolvedSource.source;
   const normalizedName = normalizeUiText(speciesName);
   const speciesKey = normalizeSpeciesName(readString(source, ['speciesKey', 'species_key']) || normalizedName);
   const canonicalTopPredictedPointsSource = readArray(source, ['topPredictedPoints']);
@@ -620,7 +633,9 @@ export function normalizeSpeciesPredictionResult(
     : [];
   const hasPredictedTargets = hasValue(source, ['predictedTargets', 'predicted_targets']);
   const mapLayers = normalizeMapLayers(
-    readRecord(source, ['mapLayers', 'map_layers']) ?? readRecord(rawResearchPayload, ['mapLayers', 'map_layers']),
+    readRecord(source, ['mapLayers', 'map_layers'])
+      ?? readRecord(source, ['mapLayersDefault', 'map_layers_default'])
+      ?? readRecord(rawResearchPayload, ['mapLayers', 'map_layers']),
   );
   const rawLinks = normalizeRawLinks(
     readRecord(source, ['rawLinks']) ?? readRecord(rawResearchPayload, ['rawLinks']),
@@ -677,6 +692,13 @@ export function normalizeSpeciesPredictionResult(
       ? { aiSummary: normalizeUiText(readString(source, ['aiSummary', 'ai_summary']) || readString(aiSummaryRecord, ['insightSummary']) || readString(asRecord(source.openaiAnalysis), ['insightSummary'])) }
       : {}),
     ...(source.rawResearchPayload ? { rawResearchPayload: rawResearchPayload } : {}),
+    ...(resolvedSource.recoveredFromErrorEnvelope ? {
+      recoveredFromErrorEnvelope: true,
+      summarySourcePath: resolvedSource.summarySourcePath,
+      normalizedPredictionShape: resolvedSource.normalizedPredictionShape,
+      rawTopLevelCode: resolvedSource.rawTopLevelCode,
+      rawTopLevelStage: resolvedSource.rawTopLevelStage,
+    } : {}),
   };
 }
 
@@ -729,11 +751,13 @@ function hasUsableDirectShape(input: Partial<SpeciesPredictionResult>): boolean 
  */
 export function extractUsablePayloadFromErrorEnvelope(
   raw: Record<string, unknown> | null | undefined,
-): { source: Record<string, unknown>; summarySourcePath: string; insightSummary: string } | null {
+): ResolvedSpeciesPredictionSource | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   const responseBody = asRecord(r.responseBody);
   const upstreamBody = asRecord(responseBody.upstreamBody);
+  const rawTopLevelCode = readString(r, ['code']);
+  const rawTopLevelStage = readString(r, ['stage']);
 
   const probes: Array<{ obj: Record<string, unknown>; aiPath: string; directPath: string; sourceObj: Record<string, unknown> }> = [
     { obj: asRecord(r.aiSummary), aiPath: 'aiSummary', directPath: '', sourceObj: r },
@@ -745,7 +769,15 @@ export function extractUsablePayloadFromErrorEnvelope(
   for (const probe of probes) {
     const summary = typeof probe.obj.insightSummary === 'string' ? probe.obj.insightSummary.trim() : '';
     if (summary) {
-      return { source: probe.sourceObj, summarySourcePath: probe.aiPath, insightSummary: summary };
+      return {
+        source: probe.sourceObj,
+        summarySourcePath: probe.aiPath,
+        insightSummary: summary,
+        recoveredFromErrorEnvelope: true,
+        normalizedPredictionShape: 'nested-aiSummary-error-envelope',
+        rawTopLevelCode,
+        rawTopLevelStage,
+      };
     }
   }
 
@@ -758,11 +790,40 @@ export function extractUsablePayloadFromErrorEnvelope(
   for (const probe of directProbes) {
     const summary = typeof probe.obj.insightSummary === 'string' ? probe.obj.insightSummary.trim() : '';
     if (summary) {
-      return { source: probe.obj, summarySourcePath: probe.path, insightSummary: summary };
+      return {
+        source: probe.obj,
+        summarySourcePath: probe.path,
+        insightSummary: summary,
+        recoveredFromErrorEnvelope: true,
+        normalizedPredictionShape: 'flat-error-envelope',
+        rawTopLevelCode,
+        rawTopLevelStage,
+      };
     }
   }
 
   return null;
+}
+
+export function resolveSpeciesPredictionSource(
+  input: Partial<SpeciesPredictionResult> | null | undefined,
+): ResolvedSpeciesPredictionSource {
+  const source = resolvePredictionSource(input);
+  const recovered = extractUsablePayloadFromErrorEnvelope(asRecord(input));
+  if (recovered) return recovered;
+  const directSummary = readString(source, ['insightSummary'])
+    || readString(readRecord(source, ['aiSummary']) ?? {}, ['insightSummary', 'insight_summary', 'summary'])
+    || readString(source, ['insight_summary', 'summary'])
+    || readString(asRecord(source.openaiAnalysis), ['insightSummary', 'insight_summary', 'summary']);
+  return {
+    source,
+    summarySourcePath: directSummary ? 'direct' : '',
+    insightSummary: directSummary,
+    recoveredFromErrorEnvelope: false,
+    normalizedPredictionShape: directSummary ? 'direct-success' : '',
+    rawTopLevelCode: '',
+    rawTopLevelStage: '',
+  };
 }
 
 function toNumber(value: unknown): number {

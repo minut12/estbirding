@@ -399,4 +399,82 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.foreignClusters).toEqual([]);
     expect(result.predictedTargets).toEqual([]);
   });
+
+  it("recovers nested aiSummary from an invalid_upstream_json error envelope", () => {
+    const result = normalizeSpeciesPredictionResult({
+      code: "N8N_UPSTREAM_INVALID_RESPONSE",
+      message: "n8n returned success but no AI summary payload was present",
+      stage: "invalid_upstream_json",
+      httpStatus: 200,
+      responseBody: {
+        upstreamBody: {
+          ok: true,
+          species: {
+            key: "Punakurk-kaur",
+            name: "Punakurk-kaur",
+            latinName: "",
+            ebirdSpeciesCode: "retloo",
+          },
+          weather: {
+            source: "Open-Meteo",
+            observedAt: "2026-03-19T17:03:54.650Z",
+            windSpeedKmh: 6.1,
+            precipitation: 0.1,
+            windDirectionDeg: 263,
+          },
+          aiSummary: {
+            warnings: [
+              "No recent or historical Estonian records — expect low immediate arrival pressure.",
+              "No foreign observations — incoming pressure absent.",
+            ],
+            rankingNotes: [
+              "Fresh Estonia evidence (priority 1): recentCount7d=0, recentCount30d=0, alreadyPresent=false.",
+              "Weather (priority 4): wind 263° at 6.1 km/h, precipitation 0.1 mm — weak conditions for long-distance displacement.",
+            ],
+            confidenceNote: "High confidence in low immediate arrival pressure.",
+            insightSummary: "Immediate arrival pressure is low based on the provided evidence.",
+          },
+          generatedAt: "2026-03-19T17:03:55.249Z",
+          sourceHealth: {
+            primarySourceUsed: "eElurikkus recent table + GBIF Estonia coordinates + eBird foreign + Open-Meteo",
+            sourceWarnings: [],
+          },
+          estoniaEvidence: {
+            recentCount7d: 0,
+            recentCount30d: 0,
+            alreadyPresent: false,
+          },
+          evidenceSummary: {
+            totalForeignRecentPoints: 0,
+          },
+          foreignClusters: [],
+          predictedTargets: [],
+          foreignRecentPoints: [],
+          estoniaHistoryPoints: [],
+          elurikkusRecentRecords: [],
+          estoniaHistoryClusters: [],
+          mapLayersDefault: {
+            showPredictedTargets: true,
+          },
+        },
+      },
+    } as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.insightSummary).toBe("Immediate arrival pressure is low based on the provided evidence.");
+    expect(result.confidenceNote).toBe("High confidence in low immediate arrival pressure.");
+    expect(result.rankingNotes).toContain("Fresh Estonia evidence");
+    expect(result.rankingNotes).toContain("Weather (priority 4)");
+    expect(result.warnings).toEqual([
+      "No recent or historical Estonian records — expect low immediate arrival pressure.",
+      "No foreign observations — incoming pressure absent.",
+    ]);
+    expect(result.summarySourcePath).toBe("responseBody.upstreamBody.aiSummary");
+    expect(result.recoveredFromErrorEnvelope).toBe(true);
+    expect(result.normalizedPredictionShape).toBe("nested-aiSummary-error-envelope");
+    expect(result.rawTopLevelCode).toBe("N8N_UPSTREAM_INVALID_RESPONSE");
+    expect(result.rawTopLevelStage).toBe("invalid_upstream_json");
+    expect(result.sourceHealth?.primarySourceUsed).toBe("eElurikkus recent table + GBIF Estonia coordinates + eBird foreign + Open-Meteo");
+    expect(result.foreignClusters).toEqual([]);
+    expect(result.predictedTargets).toEqual([]);
+  });
 });

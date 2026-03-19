@@ -498,6 +498,7 @@
     var result = state.result;
     var summaryText = normalizeText(result.insightSummary);
     var confidenceNote = normalizeText(result.confidenceNote);
+    var rankingNotes = normalizeText(result.rankingNotes);
     var warnings = normalizeStringArray(result.warnings);
     var consistencyChecks = result.consistencyChecks || null;
     var preferredPoints = Array.isArray(result.topPredictedPoints) ? result.topPredictedPoints.slice(0, 5) : [];
@@ -594,6 +595,9 @@
       }
       if (confidenceNote) {
         html += '<div class="spp-confidence-note" style="margin-top:10px"><h5>Confidence note</h5><p>' + escapeHtml(confidenceNote) + '</p></div>';
+      }
+      if (rankingNotes) {
+        html += '<div class="spp-confidence-note" style="margin-top:10px"><h5>Ranking notes</h5><p>' + escapeHtml(rankingNotes) + '</p></div>';
       }
       html += '</details>';
     }

@@ -94,6 +94,7 @@ type SpeciesPredictionUpstreamError = {
   hasNestedAiSummaryInsight: boolean;
   hasAiSummaryObject?: boolean;
   hasNestedInsightSummary?: boolean;
+  upstreamTopLevelKeys?: string[];
   topLevelKeys: string[];
   nestedAiSummaryKeys: string[];
   normalizedInsightLength?: number;
@@ -138,6 +139,9 @@ type NormalizedUpstreamSummary = {
 };
 
 type NormalizedUpstreamResponse = {
+  ok: true;
+  status: 'completed';
+  error: null;
   insightSummary: string;
   confidenceNote: string;
   rankingNotes: string;
@@ -159,6 +163,13 @@ type NormalizedUpstreamResponse = {
   weather: Record<string, unknown>;
   raw: Record<string, unknown>;
   summaryShapeUsed: 'nested_aiSummary' | 'flat_legacy' | 'missing';
+  summarySourcePath?: string;
+  hasAiSummaryObject?: boolean;
+  hasNestedInsightSummary?: boolean;
+  normalizedInsightLength?: number;
+  normalizedWarningsCount?: number;
+  normalizedRankingNotesType?: string;
+  upstreamTopLevelKeys?: string[];
 };
 
 type LastInvocationEvidence = {
@@ -805,6 +816,7 @@ function withEdgeResponseMarkers(body: Record<string, unknown>): Record<string, 
     hasNestedAiSummaryInsight: body.hasNestedAiSummaryInsight === true,
     ...(body.hasAiSummaryObject === true ? { hasAiSummaryObject: true } : {}),
     ...(body.hasNestedInsightSummary === true ? { hasNestedInsightSummary: true } : {}),
+    ...(Array.isArray(body.upstreamTopLevelKeys) ? { upstreamTopLevelKeys: body.upstreamTopLevelKeys } : {}),
     topLevelKeys: Array.isArray(body.topLevelKeys) ? body.topLevelKeys : [],
     nestedAiSummaryKeys: Array.isArray(body.nestedAiSummaryKeys) ? body.nestedAiSummaryKeys : [],
     ...(typeof body.normalizedInsightLength === 'number' ? { normalizedInsightLength: body.normalizedInsightLength } : {}),
@@ -1014,6 +1026,9 @@ async function buildMapFirstPredictionResult(opts: {
   }
   return attachNormalizationMarkers({
     ...baseResult,
+    ok: normalizedN8nResponse.ok,
+    status: normalizedN8nResponse.status,
+    error: normalizedN8nResponse.error,
     insightSummary: normalizedN8nResponse.insightSummary,
     aiSummary: normalizedN8nResponse.insightSummary,
     confidenceNote: normalizedN8nResponse.confidenceNote,
@@ -1034,6 +1049,13 @@ async function buildMapFirstPredictionResult(opts: {
     elurikkusRecentRecords: normalizedN8nResponse.elurikkusRecentRecords,
     mapLayersDefault: normalizedN8nResponse.mapLayersDefault,
     species: normalizedN8nResponse.species,
+    summarySourcePath: normalizedN8nResponse.summarySourcePath,
+    hasAiSummaryObject: normalizedN8nResponse.hasAiSummaryObject,
+    hasNestedInsightSummary: normalizedN8nResponse.hasNestedInsightSummary,
+    normalizedInsightLength: normalizedN8nResponse.normalizedInsightLength,
+    normalizedWarningsCount: normalizedN8nResponse.normalizedWarningsCount,
+    normalizedRankingNotesType: normalizedN8nResponse.normalizedRankingNotesType,
+    upstreamTopLevelKeys: normalizedN8nResponse.upstreamTopLevelKeys,
   }, extractNormalizedAiSummary(normalizedN8nResponse.raw));
 }
 
@@ -1908,6 +1930,7 @@ function createUpstreamError(input: {
     hasNestedAiSummaryObject: shapeDiagnostics.hasNestedAiSummaryObject,
     hasNestedAiSummaryInsight: shapeDiagnostics.hasNestedAiSummaryInsight,
     topLevelKeys: shapeDiagnostics.topLevelKeys,
+    upstreamTopLevelKeys: shapeDiagnostics.topLevelKeys,
     nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
     errorProofBuild: SPECIES_PREDICTION_BACKEND_BUILD,
     entrypointFile: EDGE_FUNCTION_FILE,
@@ -2083,7 +2106,7 @@ function resolveUpstreamResponseSource(data: unknown): {
   const probes = buildWrappedPredictionCandidates(data).flatMap((candidate) => ([
     {
       source: candidate.source,
-      summarySourcePath: candidate.path ? `${candidate.path}.aiSummary` : 'aiSummary',
+      summarySourcePath: candidate.path ? `${candidate.path}.aiSummary.insightSummary` : 'aiSummary.insightSummary',
       summaryShapeUsed: 'nested_aiSummary' as const,
     },
     {
@@ -2114,8 +2137,8 @@ function resolveUpstreamResponseSource(data: unknown): {
         ? 'array'
         : typeof (probe.summaryShapeUsed === 'nested_aiSummary' ? aiSummaryRecord.warnings : probe.source.warnings),
       normalizedPredictionShape: probe.summaryShapeUsed === 'nested_aiSummary'
-        ? (probe.summarySourcePath.includes('.') ? 'nested-aiSummary-wrapped-envelope' : 'nested-aiSummary-direct')
-        : (probe.summarySourcePath.includes('.') ? 'flat-wrapped-envelope' : 'flat-direct'),
+        ? (probe.summarySourcePath === 'aiSummary.insightSummary' ? 'nested-aiSummary-direct' : 'nested-aiSummary-wrapped-envelope')
+        : (probe.summarySourcePath === 'insightSummary' ? 'flat-direct' : 'flat-wrapped-envelope'),
     };
   }
 
@@ -2167,12 +2190,15 @@ function normalizeN8nPredictionSuccessPayload(data: unknown): NormalizedUpstream
   const summary = extractNormalizedAiSummary(data);
   if (!summary) return null;
   return {
+    ok: true,
+    status: 'completed',
+    error: null,
     insightSummary: summary.insightSummary,
     confidenceNote: summary.confidenceNote,
     rankingNotes: summary.rankingNotes,
     warnings: summary.warnings,
     generatedAt: stringOr(record.generatedAt) || new Date().toISOString(),
-    analysisVersion: stringOr(record.analysisVersion) || `n8n|${summary.summaryShapeUsed}`,
+    analysisVersion: stringOr(record.analysisVersion) || 'n8n_aiSummary',
     sourceHealth: asRecord(record.sourceHealth),
     countryScores: asRecord(record.countryScores),
     estoniaEvidence: asRecord(record.estoniaEvidence),
@@ -2188,6 +2214,13 @@ function normalizeN8nPredictionSuccessPayload(data: unknown): NormalizedUpstream
     weather: asRecord(record.weather),
     raw: record,
     summaryShapeUsed: summary.summaryShapeUsed,
+    summarySourcePath: summary.summarySourcePath || 'aiSummary.insightSummary',
+    hasAiSummaryObject: summary.hasAiSummaryObject === true,
+    hasNestedInsightSummary: summary.hasNestedInsightSummary === true,
+    normalizedInsightLength: summary.normalizedInsightLength,
+    normalizedWarningsCount: summary.normalizedWarningsCount,
+    normalizedRankingNotesType: summary.normalizedRankingNotesType || 'string',
+    upstreamTopLevelKeys: summary.topLevelKeys,
   };
 }
 
@@ -2208,6 +2241,13 @@ function attachNormalizationMarkers(
     hasTopLevelInsightSummary: summary?.hasTopLevelInsightSummary ?? false,
     hasNestedAiSummaryObject: summary?.hasNestedAiSummaryObject ?? false,
     hasNestedAiSummaryInsight: summary?.hasNestedAiSummaryInsight ?? false,
+    ...(typeof summary?.summarySourcePath === 'string' ? { summarySourcePath: summary.summarySourcePath } : {}),
+    ...(summary?.hasAiSummaryObject === true ? { hasAiSummaryObject: true } : {}),
+    ...(summary?.hasNestedInsightSummary === true ? { hasNestedInsightSummary: true } : {}),
+    ...(typeof summary?.normalizedInsightLength === 'number' ? { normalizedInsightLength: summary.normalizedInsightLength } : {}),
+    ...(typeof summary?.normalizedWarningsCount === 'number' ? { normalizedWarningsCount: summary.normalizedWarningsCount } : {}),
+    ...(typeof summary?.normalizedRankingNotesType === 'string' ? { normalizedRankingNotesType: summary.normalizedRankingNotesType } : {}),
+    upstreamTopLevelKeys: summary?.topLevelKeys ?? [],
     topLevelKeys: summary?.topLevelKeys ?? [],
     nestedAiSummaryKeys: summary?.nestedAiSummaryKeys ?? [],
     ...(summary ? {

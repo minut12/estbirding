@@ -456,6 +456,9 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.confidenceNote).toBe("High confidence that there are no recent Estonian detections.");
     expect(result.rankingNotes).toContain("Ranking drivers: none present");
     expect(result.warnings).toHaveLength(4);
+    expect(result.hasAiSummaryObject).toBe(true);
+    expect(result.hasNestedInsightSummary).toBe(true);
+    expect(result.summarySourcePath).toBe("aiSummary");
     expect(result.foreignClusters).toEqual([]);
     expect(result.predictedTargets).toEqual([]);
   });

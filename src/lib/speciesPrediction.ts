@@ -841,6 +841,7 @@ export function resolveSpeciesPredictionSource(
   input: Partial<SpeciesPredictionResult> | null | undefined,
 ): ResolvedSpeciesPredictionSource {
   const source = resolvePredictionSource(input);
+  const inputRecord = asRecord(input);
   const recovered = extractUsablePayloadFromErrorEnvelope(asRecord(input));
   if (recovered) return recovered;
   const directSummary = readString(source, ['insightSummary'])
@@ -849,12 +850,16 @@ export function resolveSpeciesPredictionSource(
     || readString(asRecord(source.openaiAnalysis), ['insightSummary', 'insight_summary', 'summary']);
   return {
     source,
-    summarySourcePath: directSummary ? 'direct' : '',
+    summarySourcePath: directSummary ? readString(inputRecord, ['summarySourcePath']) || 'direct' : '',
     insightSummary: directSummary,
     recoveredFromErrorEnvelope: false,
-    normalizedPredictionShape: directSummary ? 'direct-success' : '',
-    rawTopLevelCode: '',
-    rawTopLevelStage: '',
+    normalizedPredictionShape: directSummary ? readString(inputRecord, ['normalizedPredictionShape']) || 'direct-success' : '',
+    rawTopLevelCode: readString(inputRecord, ['rawTopLevelCode']),
+    rawTopLevelStage: readString(inputRecord, ['rawTopLevelStage']),
+    hasAiSummaryObject: inputRecord.hasAiSummaryObject === true,
+    hasNestedInsightSummary: inputRecord.hasNestedInsightSummary === true,
+    rankingNotesInputType: readString(inputRecord, ['rankingNotesInputType']),
+    warningsInputType: readString(inputRecord, ['warningsInputType']),
   };
 }
 

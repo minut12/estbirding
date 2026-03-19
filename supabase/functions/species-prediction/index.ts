@@ -10,9 +10,12 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-19-fix16';
-const INVOKE_ROUTE_VERSION = 'fix16';
+const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-19-fix17';
+const INVOKE_ROUTE_VERSION = 'fix17';
 const EDGE_FUNCTION_FILE = 'supabase/functions/species-prediction/index.ts';
+const EDGE_FUNCTION_ENTRYPOINT = 'serve(async (req) => { ... })';
+const EDGE_RESPONSE_PROOF = 'served by live species-prediction invoke route';
+const EDGE_ROUTE_HEADER = 'live-post-invoke-fix17';
 const WEBHOOK_CONFIG_SOURCE = `env:${WEBHOOK_ENV_KEY}`;
 const STATUS_NO_CACHE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
@@ -22,6 +25,8 @@ const INVOCATION_DIAGNOSTICS_FRESHNESS_MS = 30 * 60 * 1000;
 // If health/status reports an outdated webhook path, update the Supabase secret
 // SPECIES_PREDICTION_N8N_WEBHOOK_URL to:
 // https://estbirds.app.n8n.cloud/webhook/species-prediction-evidence-first
+
+console.error(`SPECIES_PREDICTION_BOOT ${INVOKE_ROUTE_VERSION} ${EDGE_FUNCTION_FILE} ${EDGE_FUNCTION_ENTRYPOINT}`);
 
 type WebhookValidationErrorCode =
   | 'MISSING_WEBHOOK_URL'
@@ -89,6 +94,13 @@ type SpeciesPredictionUpstreamError = {
   topLevelKeys: string[];
   nestedAiSummaryKeys: string[];
   errorProofBuild: string;
+  entrypointFile?: string;
+  entrypointFunction?: string;
+  responseProof?: string;
+  deployedProjectRef?: string;
+  insightSummaryValuePreview?: string;
+  nestedInsightSummaryType?: string;
+  topLevelInsightSummaryType?: string;
   throwFile?: string;
   throwFunction?: string;
   throwBranch?: string;
@@ -229,6 +241,29 @@ function getSupabaseAdmin() {
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
+}
+
+function getDeployedProjectRef(): string {
+  const explicit = (Deno.env.get('SUPABASE_PROJECT_REF') || '').trim();
+  if (explicit) return explicit;
+  const supabaseUrl = (Deno.env.get('SUPABASE_URL') || '').trim();
+  if (!supabaseUrl) return '';
+  try {
+    return new URL(supabaseUrl).hostname.split('.')[0] || '';
+  } catch {
+    return '';
+  }
+}
+
+function buildEntrypointMarkers(): Record<string, unknown> {
+  return {
+    backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
+    invokeRouteVersion: INVOKE_ROUTE_VERSION,
+    entrypointFile: EDGE_FUNCTION_FILE,
+    entrypointFunction: EDGE_FUNCTION_ENTRYPOINT,
+    responseProof: EDGE_RESPONSE_PROOF,
+    ...(getDeployedProjectRef() ? { deployedProjectRef: getDeployedProjectRef() } : {}),
+  };
 }
 
 async function getLastInvocationEvidence(admin: ReturnType<typeof getSupabaseAdmin>): Promise<LastInvocationEvidence> {
@@ -379,7 +414,7 @@ serve(async (req) => {
       headers: {
         ...corsHeaders,
         'x-species-prediction-build': SPECIES_PREDICTION_BACKEND_BUILD,
-        'x-species-prediction-route': 'live-post-invoke-fix16',
+        'x-species-prediction-route': EDGE_ROUTE_HEADER,
       },
     });
   }
@@ -420,8 +455,7 @@ serve(async (req) => {
         ok: true,
         stage: 'status',
         predictionBackendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
-        backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
-        invokeRouteVersion: INVOKE_ROUTE_VERSION,
+        ...buildEntrypointMarkers(),
         summaryShapeUsed: 'missing',
         hasTopLevelInsightSummary: false,
         hasNestedAiSummaryObject: false,
@@ -734,7 +768,7 @@ function json(body: Record<string, unknown>, status = 200, extraHeaders: Record<
       ...corsHeaders,
       'Content-Type': 'application/json',
       'x-species-prediction-build': SPECIES_PREDICTION_BACKEND_BUILD,
-      'x-species-prediction-route': 'live-post-invoke-fix16',
+      'x-species-prediction-route': EDGE_ROUTE_HEADER,
       ...extraHeaders,
     },
   });
@@ -743,6 +777,7 @@ function json(body: Record<string, unknown>, status = 200, extraHeaders: Record<
 function withEdgeResponseMarkers(body: Record<string, unknown>): Record<string, unknown> {
   return {
     ...body,
+    ...buildEntrypointMarkers(),
     backendBuild: typeof body.backendBuild === 'string' ? body.backendBuild : SPECIES_PREDICTION_BACKEND_BUILD,
     invokeRouteVersion: typeof body.invokeRouteVersion === 'string' ? body.invokeRouteVersion : INVOKE_ROUTE_VERSION,
     summaryShapeUsed: body.summaryShapeUsed === 'nested_aiSummary' || body.summaryShapeUsed === 'flat_legacy' || body.summaryShapeUsed === 'missing'
@@ -755,6 +790,14 @@ function withEdgeResponseMarkers(body: Record<string, unknown>): Record<string, 
     nestedAiSummaryKeys: Array.isArray(body.nestedAiSummaryKeys) ? body.nestedAiSummaryKeys : [],
     ...(typeof body.summaryAcceptedBy === 'string' ? { summaryAcceptedBy: body.summaryAcceptedBy } : {}),
     ...(body.liveInvokeAcceptedNestedAiSummary === true ? { liveInvokeAcceptedNestedAiSummary: true } : {}),
+    ...(typeof body.normalizationProof === 'string' ? { normalizationProof: body.normalizationProof } : {}),
+    ...(typeof body.entrypointFile === 'string' ? { entrypointFile: body.entrypointFile } : {}),
+    ...(typeof body.entrypointFunction === 'string' ? { entrypointFunction: body.entrypointFunction } : {}),
+    ...(typeof body.responseProof === 'string' ? { responseProof: body.responseProof } : {}),
+    ...(typeof body.deployedProjectRef === 'string' && body.deployedProjectRef ? { deployedProjectRef: body.deployedProjectRef } : {}),
+    ...(typeof body.insightSummaryValuePreview === 'string' ? { insightSummaryValuePreview: body.insightSummaryValuePreview } : {}),
+    ...(typeof body.nestedInsightSummaryType === 'string' ? { nestedInsightSummaryType: body.nestedInsightSummaryType } : {}),
+    ...(typeof body.topLevelInsightSummaryType === 'string' ? { topLevelInsightSummaryType: body.topLevelInsightSummaryType } : {}),
     ...(typeof body.throwFile === 'string' ? { throwFile: body.throwFile } : {}),
     ...(typeof body.throwFunction === 'string' ? { throwFunction: body.throwFunction } : {}),
     ...(typeof body.throwBranch === 'string' ? { throwBranch: body.throwBranch } : {}),
@@ -1618,6 +1661,7 @@ async function maybeFetchSecondarySummary(opts: {
       topLevelKeys: shapeDiagnostics.topLevelKeys,
       nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
       insightSummaryType: shapeDiagnostics.insightSummaryType,
+      insightSummaryValuePreview: buildInsightSummaryPreview(data),
       aiSummaryType: typeof upstreamRecord.aiSummary,
       nestedInsightSummaryType: typeof asRecord(upstreamRecord.aiSummary).insightSummary,
       topLevelInsightSummaryType: typeof upstreamRecord.insightSummary,
@@ -1636,6 +1680,9 @@ async function maybeFetchSecondarySummary(opts: {
         topLevelKeys: shapeDiagnostics.topLevelKeys,
         nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
         insightSummaryType: shapeDiagnostics.insightSummaryType,
+        insightSummaryValuePreview: buildInsightSummaryPreview(data),
+        nestedInsightSummaryType: typeof asRecord(upstreamRecord.aiSummary).insightSummary,
+        topLevelInsightSummaryType: typeof upstreamRecord.insightSummary,
         backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
       },
       fallbackCode: 'N8N_UPSTREAM_INVALID_RESPONSE',
@@ -1769,6 +1816,10 @@ function createWebhookConfigError(webhookTarget: WebhookTargetInfo): SpeciesPred
     topLevelKeys: [],
     nestedAiSummaryKeys: [],
     errorProofBuild: SPECIES_PREDICTION_BACKEND_BUILD,
+    entrypointFile: EDGE_FUNCTION_FILE,
+    entrypointFunction: EDGE_FUNCTION_ENTRYPOINT,
+    responseProof: EDGE_RESPONSE_PROOF,
+    deployedProjectRef: getDeployedProjectRef(),
     throwFile: EDGE_FUNCTION_FILE,
     throwFunction: 'createWebhookConfigError',
     throwBranch: 'createWebhookConfigError',
@@ -1811,6 +1862,17 @@ function createUpstreamError(input: {
     topLevelKeys: shapeDiagnostics.topLevelKeys,
     nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
     errorProofBuild: SPECIES_PREDICTION_BACKEND_BUILD,
+    entrypointFile: EDGE_FUNCTION_FILE,
+    entrypointFunction: EDGE_FUNCTION_ENTRYPOINT,
+    responseProof: EDGE_RESPONSE_PROOF,
+    deployedProjectRef: getDeployedProjectRef(),
+    ...(input.stage === 'invalid_upstream_json'
+      ? {
+        insightSummaryValuePreview: buildInsightSummaryPreview(input.upstreamBody),
+        nestedInsightSummaryType: typeof asRecord(asRecord(input.upstreamBody).aiSummary).insightSummary,
+        topLevelInsightSummaryType: typeof asRecord(input.upstreamBody).insightSummary,
+      }
+      : {}),
     ...(input.stage === 'invalid_upstream_json'
       ? {
         throwFile: EDGE_FUNCTION_FILE,
@@ -1842,6 +1904,10 @@ function normalizePredictionError(error: unknown, webhookTarget: WebhookTargetIn
       topLevelKeys: [],
       nestedAiSummaryKeys: [],
       errorProofBuild: SPECIES_PREDICTION_BACKEND_BUILD,
+      entrypointFile: EDGE_FUNCTION_FILE,
+      entrypointFunction: EDGE_FUNCTION_ENTRYPOINT,
+      responseProof: EDGE_RESPONSE_PROOF,
+      deployedProjectRef: getDeployedProjectRef(),
       throwFile: EDGE_FUNCTION_FILE,
       throwFunction: 'normalizePredictionError',
       throwBranch: 'normalizePredictionError',
@@ -1870,6 +1936,17 @@ function extractUpstreamMessage(body: unknown): string {
     if (record.data && typeof record.data === 'object') return extractUpstreamMessage(record.data);
   }
   return '';
+}
+
+function buildInsightSummaryPreview(body: unknown): string {
+  const record = asRecord(body);
+  const nestedSummary = typeof asRecord(record.aiSummary).insightSummary === 'string'
+    ? asRecord(record.aiSummary).insightSummary.trim()
+    : '';
+  const topLevelSummary = typeof record.insightSummary === 'string'
+    ? record.insightSummary.trim()
+    : '';
+  return (nestedSummary || topLevelSummary).slice(0, 160);
 }
 
 function isInactiveWebhookMessage(message: string): boolean {
@@ -1957,6 +2034,7 @@ function attachNormalizationMarkers(
 ): Record<string, unknown> {
   return {
     ...body,
+    ...buildEntrypointMarkers(),
     backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
     invokeRouteVersion: INVOKE_ROUTE_VERSION,
     summaryShapeUsed: summary?.summaryShapeUsed || 'missing',
@@ -1968,7 +2046,7 @@ function attachNormalizationMarkers(
     ...(summary ? {
       normalizationProof: 'nested aiSummary accepted by live POST invoke route',
       summaryAcceptedBy: 'live_post_route',
-      liveInvokeAcceptedNestedAiSummary: summary.summaryShapeUsed === 'nested_aiSummary',
+      liveInvokeAcceptedNestedAiSummary: true,
     } : {}),
   };
 }

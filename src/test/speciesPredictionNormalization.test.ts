@@ -346,8 +346,8 @@ describe("normalizeSpeciesPredictionResult", () => {
 
   it("accepts nested aiSummary payloads from the live invoke path", () => {
     const result = normalizeSpeciesPredictionResult({
-      backendBuild: "2026-03-19-fix16",
-      invokeRouteVersion: "fix16",
+      backendBuild: "2026-03-19-fix17",
+      invokeRouteVersion: "fix17",
       summaryShapeUsed: "nested_aiSummary",
       summaryAcceptedBy: "live_post_route",
       normalizationProof: "nested aiSummary accepted by live POST invoke route",

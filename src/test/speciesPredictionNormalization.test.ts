@@ -343,4 +343,58 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.estoniaHistoryPoints?.[0]?.source).toBe("EELURIKKUS");
     expect(result.estoniaHistoryClusters?.[0]?.source).toBe("EELURIKKUS");
   });
+
+  it("accepts nested aiSummary payloads from the live invoke path", () => {
+    const result = normalizeSpeciesPredictionResult({
+      backendBuild: "2026-03-19-fix13",
+      invokeRouteVersion: "fix13",
+      summaryShapeUsed: "nested_aiSummary",
+      normalizationProof: "nested aiSummary accepted by invoke path",
+      species: {
+        key: "Punakurk-kaur",
+        name: "Punakurk-kaur",
+        latinName: "",
+        ebirdSpeciesCode: "retloo",
+      },
+      weather: {
+        source: "Open-Meteo",
+        observedAt: "2026-03-19T11:47:40.961Z",
+        windSpeedKmh: 10.1,
+        precipitation: 0,
+        windDirectionDeg: 230,
+      },
+      aiSummary: {
+        warnings: [
+          "No fresh Estonia records in last 7 or 30 days",
+          "No Estonia historical clusters to support a forecast",
+          "No recent foreign pressure detected",
+          "Weather neutral — not a supporting signal",
+        ],
+        rankingNotes: "Ranking is not driven by Estonia history.",
+        confidenceNote: "Low confidence for imminent occurrence.",
+        insightSummary: "Overall, current evidence does not support an imminent presence in Estonia.",
+      },
+      generatedAt: "2026-03-19T11:47:41.623Z",
+      sourceHealth: {
+        primarySourceUsed: "eElurikkus recent table + GBIF Estonia coordinates + eBird foreign + Open-Meteo",
+        sourceWarnings: [],
+      },
+      estoniaEvidence: {
+        recentCount7d: 0,
+        recentCount30d: 0,
+      },
+      foreignClusters: [],
+      predictedTargets: [],
+    } as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.insightSummary).toBe("Overall, current evidence does not support an imminent presence in Estonia.");
+    expect(result.confidenceNote).toBe("Low confidence for imminent occurrence.");
+    expect(result.rankingNotes).toBe("Ranking is not driven by Estonia history.");
+    expect(result.warnings).toHaveLength(4);
+    expect(result.generatedAt).toBe("2026-03-19T11:47:41.623Z");
+    expect(result.sourceHealth?.primarySourceUsed).toBe("eElurikkus recent table + GBIF Estonia coordinates + eBird foreign + Open-Meteo");
+    expect(result.estoniaEvidence?.recentCount7d).toBe(0);
+    expect(result.foreignClusters).toEqual([]);
+    expect(result.predictedTargets).toEqual([]);
+  });
 });

@@ -581,18 +581,26 @@ export function normalizeSpeciesPredictionResult(
     readArray(source, ['estoniaHistoryPoints', 'estonia_history_points'])
       ?? readArray(rawResearchPayload, ['estoniaHistoryPoints', 'estonia_history_points']),
   );
+  const hasEstoniaHistoryPoints = hasValue(source, ['estoniaHistoryPoints', 'estonia_history_points'])
+    || hasValue(rawResearchPayload, ['estoniaHistoryPoints', 'estonia_history_points']);
   const estoniaHistoryClusters = normalizeEstoniaHistoryClusters(
     readArray(source, ['estoniaHistoryClusters', 'estonia_history_clusters'])
       ?? readArray(rawResearchPayload, ['estoniaHistoryClusters', 'estonia_history_clusters']),
   );
+  const hasEstoniaHistoryClusters = hasValue(source, ['estoniaHistoryClusters', 'estonia_history_clusters'])
+    || hasValue(rawResearchPayload, ['estoniaHistoryClusters', 'estonia_history_clusters']);
   const foreignRecentPoints = normalizeForeignRecentPoints(
     readArray(source, ['foreignRecentPoints', 'foreign_recent_points'])
       ?? readArray(rawResearchPayload, ['foreignRecentPoints', 'foreign_recent_points']),
   );
+  const hasForeignRecentPoints = hasValue(source, ['foreignRecentPoints', 'foreign_recent_points'])
+    || hasValue(rawResearchPayload, ['foreignRecentPoints', 'foreign_recent_points']);
   const foreignClusters = normalizeForeignClusters(
     readArray(source, ['foreignClusters', 'foreign_clusters'])
       ?? readArray(rawResearchPayload, ['foreignClusters', 'foreign_clusters']),
   );
+  const hasForeignClusters = hasValue(source, ['foreignClusters', 'foreign_clusters'])
+    || hasValue(rawResearchPayload, ['foreignClusters', 'foreign_clusters']);
   const weather = normalizeWeather(
     readRecord(source, ['weather']) ?? readRecord(rawResearchPayload, ['weather']),
   );
@@ -603,6 +611,7 @@ export function normalizeSpeciesPredictionResult(
   const predictedTargets = Array.isArray(readArray(source, ['predictedTargets', 'predicted_targets']))
     ? (readArray(source, ['predictedTargets', 'predicted_targets']) as unknown[]).map((point, index) => normalizePredictedPoint(asRecord(point), index))
     : [];
+  const hasPredictedTargets = hasValue(source, ['predictedTargets', 'predicted_targets']);
   const mapLayers = normalizeMapLayers(
     readRecord(source, ['mapLayers', 'map_layers']) ?? readRecord(rawResearchPayload, ['mapLayers', 'map_layers']),
   );
@@ -619,13 +628,13 @@ export function normalizeSpeciesPredictionResult(
     species: evidenceSpecies,
     ...(sourceHealth ? { sourceHealth } : {}),
     ...(evidenceSummary ? { evidenceSummary } : {}),
-    ...(estoniaHistoryPoints.length ? { estoniaHistoryPoints } : {}),
-    ...(estoniaHistoryClusters.length ? { estoniaHistoryClusters } : {}),
-    ...(foreignRecentPoints.length ? { foreignRecentPoints } : {}),
-    ...(foreignClusters.length ? { foreignClusters } : {}),
+    ...((estoniaHistoryPoints.length || hasEstoniaHistoryPoints) ? { estoniaHistoryPoints } : {}),
+    ...((estoniaHistoryClusters.length || hasEstoniaHistoryClusters) ? { estoniaHistoryClusters } : {}),
+    ...((foreignRecentPoints.length || hasForeignRecentPoints) ? { foreignRecentPoints } : {}),
+    ...((foreignClusters.length || hasForeignClusters) ? { foreignClusters } : {}),
     ...(weather ? { weather } : {}),
     ...(predictionVectors.length ? { predictionVectors } : {}),
-    ...(predictedTargets.length ? { predictedTargets } : {}),
+    ...((predictedTargets.length || hasPredictedTargets) ? { predictedTargets } : {}),
     ...(mapLayers ? { mapLayers } : {}),
     ...(foreignEvidence.length ? { foreignEvidence } : {}),
     ...(estoniaEvidence ? { estoniaEvidence } : {}),

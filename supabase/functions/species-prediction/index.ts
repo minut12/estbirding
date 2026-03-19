@@ -10,7 +10,8 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const PREDICTION_BACKEND_BUILD = '2026-03-19-fix12';
+const PREDICTION_BACKEND_BUILD = '2026-03-19-fix13';
+const INVOKE_ROUTE_VERSION = 'fix13';
 const WEBHOOK_CONFIG_SOURCE = `env:${WEBHOOK_ENV_KEY}`;
 const STATUS_NO_CACHE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
@@ -78,6 +79,14 @@ type SpeciesPredictionUpstreamError = {
   resolvedWebhookUrl: string;
   resolvedWebhookPath: string;
   productionWebhookInactive: boolean;
+  backendBuild: string;
+  invokeRouteVersion: string;
+  summaryShapeUsed: 'nested_aiSummary' | 'flat_legacy' | 'missing';
+  hasTopLevelInsightSummary: boolean;
+  hasNestedAiSummaryObject: boolean;
+  hasNestedAiSummaryInsight: boolean;
+  topLevelKeys: string[];
+  nestedAiSummaryKeys: string[];
 };
 
 type NormalizedUpstreamSummary = {
@@ -85,9 +94,14 @@ type NormalizedUpstreamSummary = {
   confidenceNote: string;
   rankingNotes: string;
   warnings: string[];
-  summaryShapeUsed: 'nested_aiSummary' | 'flat_legacy';
+  summaryShapeUsed: 'nested_aiSummary' | 'flat_legacy' | 'missing';
   normalizedInsightLength: number;
   normalizedWarningsCount: number;
+  hasTopLevelInsightSummary: boolean;
+  hasNestedAiSummaryObject: boolean;
+  hasNestedAiSummaryInsight: boolean;
+  topLevelKeys: string[];
+  nestedAiSummaryKeys: string[];
 };
 
 type NormalizedUpstreamResponse = {
@@ -111,7 +125,7 @@ type NormalizedUpstreamResponse = {
   species: Record<string, unknown>;
   weather: Record<string, unknown>;
   raw: Record<string, unknown>;
-  summaryShapeUsed: 'nested_aiSummary' | 'flat_legacy';
+  summaryShapeUsed: 'nested_aiSummary' | 'flat_legacy' | 'missing';
 };
 
 type LastInvocationEvidence = {
@@ -355,7 +369,13 @@ function buildStatusDecision(webhookTarget: WebhookTargetInfo, lastInvocation: L
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: corsHeaders });
+    return new Response(null, {
+      status: 204,
+      headers: {
+        ...corsHeaders,
+        'x-species-prediction-build': PREDICTION_BACKEND_BUILD,
+      },
+    });
   }
 
   try {
@@ -395,6 +415,13 @@ serve(async (req) => {
         stage: 'status',
         predictionBackendBuild: PREDICTION_BACKEND_BUILD,
         backendBuild: PREDICTION_BACKEND_BUILD,
+        invokeRouteVersion: INVOKE_ROUTE_VERSION,
+        summaryShapeUsed: 'missing',
+        hasTopLevelInsightSummary: false,
+        hasNestedAiSummaryObject: false,
+        hasNestedAiSummaryInsight: false,
+        topLevelKeys: [],
+        nestedAiSummaryKeys: [],
         available: statusDecision.available,
         deployed: webhookTarget.deployed,
         configured: statusDecision.configured,
@@ -487,10 +514,14 @@ serve(async (req) => {
       };
 
       if (job.status === 'completed' && job.result_json) {
-        response.result = job.result_json;
+        response.result = typeof job.result_json === 'object' && job.result_json && !Array.isArray(job.result_json)
+          ? withEdgeResponseMarkers(job.result_json as Record<string, unknown>)
+          : job.result_json;
       }
       if (job.status === 'failed' && job.error_json) {
-        response.error = job.error_json;
+        response.error = typeof job.error_json === 'object' && job.error_json && !Array.isArray(job.error_json)
+          ? withEdgeResponseMarkers(job.error_json as Record<string, unknown>)
+          : job.error_json;
       }
 
       return json(response);
@@ -691,10 +722,52 @@ function resolveTimeoutMs(): number {
 }
 
 function json(body: Record<string, unknown>, status = 200, extraHeaders: Record<string, string> = {}): Response {
-  return new Response(JSON.stringify(body), {
+  return new Response(JSON.stringify(withEdgeResponseMarkers(body)), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json', ...extraHeaders },
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'application/json',
+      'x-species-prediction-build': PREDICTION_BACKEND_BUILD,
+      ...extraHeaders,
+    },
   });
+}
+
+function withEdgeResponseMarkers(body: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...body,
+    backendBuild: typeof body.backendBuild === 'string' ? body.backendBuild : PREDICTION_BACKEND_BUILD,
+    invokeRouteVersion: typeof body.invokeRouteVersion === 'string' ? body.invokeRouteVersion : INVOKE_ROUTE_VERSION,
+    summaryShapeUsed: body.summaryShapeUsed === 'nested_aiSummary' || body.summaryShapeUsed === 'flat_legacy' || body.summaryShapeUsed === 'missing'
+      ? body.summaryShapeUsed
+      : 'missing',
+    hasTopLevelInsightSummary: body.hasTopLevelInsightSummary === true,
+    hasNestedAiSummaryObject: body.hasNestedAiSummaryObject === true,
+    hasNestedAiSummaryInsight: body.hasNestedAiSummaryInsight === true,
+    topLevelKeys: Array.isArray(body.topLevelKeys) ? body.topLevelKeys : [],
+    nestedAiSummaryKeys: Array.isArray(body.nestedAiSummaryKeys) ? body.nestedAiSummaryKeys : [],
+  };
+}
+
+function buildSummaryShapeDiagnostics(data: unknown): {
+  hasTopLevelInsightSummary: boolean;
+  hasNestedAiSummaryObject: boolean;
+  hasNestedAiSummaryInsight: boolean;
+  topLevelKeys: string[];
+  nestedAiSummaryKeys: string[];
+  insightSummaryType: string;
+} {
+  const record = asRecord(data);
+  const aiSummaryRecord = asRecord(record.aiSummary);
+  const nestedInsight = aiSummaryRecord.insightSummary;
+  return {
+    hasTopLevelInsightSummary: typeof record.insightSummary === 'string' && record.insightSummary.trim().length > 0,
+    hasNestedAiSummaryObject: Object.keys(aiSummaryRecord).length > 0,
+    hasNestedAiSummaryInsight: typeof nestedInsight === 'string' && nestedInsight.trim().length > 0,
+    topLevelKeys: Object.keys(record),
+    nestedAiSummaryKeys: Object.keys(aiSummaryRecord),
+    insightSummaryType: typeof nestedInsight,
+  };
 }
 
 function safeJsonParse(text: string): unknown {
@@ -769,14 +842,14 @@ async function buildMapFirstPredictionResult(opts: {
   });
   const warnings = Array.from(new Set(sourceHealth.sourceWarnings as string[]));
   const requiresN8nSummary = settings.enableOpenAISummary === true || settings.enableN8nResearch === true;
-  const aiSummary = requiresN8nSummary
+  const normalizedN8nResponse = requiresN8nSummary
     ? await maybeFetchSecondarySummary({ webhookTarget, webhookUrl, payload, signal, foreignEvidence, predictedTargets, weather, sourceHealth })
-    : '';
+    : null;
   const countryScores = buildCountryScores(foreignEvidence);
   const topPredictedPoints = predictedTargets.slice(0, Math.min(5, clampInt(toNumber(settings.outputCount) || 5, 1, 5)));
   const latestCluster = foreignClusters[0] ?? null;
 
-  return {
+  const baseResult = {
     speciesKey,
     speciesName,
     generatedAt: new Date().toISOString(),
@@ -822,7 +895,6 @@ async function buildMapFirstPredictionResult(opts: {
     countryScores,
     topPredictedPoints,
     warnings,
-    ...(aiSummary ? { insightSummary: aiSummary, aiSummary } : {}),
     consistencyChecks: {
       routeLooksPlausible: predictionVectors.some((vector) => vector.kind === 'route'),
       timingLooksPlausible: foreignRecentPoints.some((point: Record<string, unknown>) => toNumber(point.daysAgo) <= 7),
@@ -851,9 +923,35 @@ async function buildMapFirstPredictionResult(opts: {
       predictionVectors,
       predictedTargets: topPredictedPoints,
       rawLinks,
-      ...(aiSummary ? { aiSummary } : {}),
+      ...(normalizedN8nResponse ? { aiSummary: normalizedN8nResponse.insightSummary } : {}),
     },
   };
+  if (!normalizedN8nResponse) {
+    return attachNormalizationMarkers(baseResult, null);
+  }
+  return attachNormalizationMarkers({
+    ...baseResult,
+    insightSummary: normalizedN8nResponse.insightSummary,
+    aiSummary: normalizedN8nResponse.insightSummary,
+    confidenceNote: normalizedN8nResponse.confidenceNote,
+    rankingNotes: normalizedN8nResponse.rankingNotes,
+    warnings: normalizedN8nResponse.warnings,
+    generatedAt: normalizedN8nResponse.generatedAt,
+    analysisVersion: normalizedN8nResponse.analysisVersion,
+    sourceHealth: normalizedN8nResponse.sourceHealth,
+    evidenceSummary: normalizedN8nResponse.evidenceSummary,
+    estoniaHistoryPoints: normalizedN8nResponse.estoniaHistoryPoints,
+    estoniaHistoryClusters: normalizedN8nResponse.estoniaHistoryClusters,
+    foreignRecentPoints: normalizedN8nResponse.foreignRecentPoints,
+    foreignClusters: normalizedN8nResponse.foreignClusters,
+    weather: normalizedN8nResponse.weather,
+    predictedTargets: normalizedN8nResponse.predictedTargets,
+    countryScores: normalizedN8nResponse.countryScores,
+    estoniaEvidence: normalizedN8nResponse.estoniaEvidence,
+    elurikkusRecentRecords: normalizedN8nResponse.elurikkusRecentRecords,
+    mapLayersDefault: normalizedN8nResponse.mapLayersDefault,
+    species: normalizedN8nResponse.species,
+  }, extractNormalizedAiSummary(normalizedN8nResponse.raw));
 }
 
 async function fetchGbifEstoniaHistory(speciesName: string, signal: AbortSignal): Promise<Record<string, unknown>[]> {
@@ -1448,7 +1546,7 @@ async function maybeFetchSecondarySummary(opts: {
   predictedTargets: Record<string, unknown>[];
   weather: Record<string, unknown>;
   sourceHealth: Record<string, unknown>;
-}): Promise<string> {
+}): Promise<NormalizedUpstreamResponse> {
   const { webhookTarget, webhookUrl, payload, signal, foreignEvidence, predictedTargets, weather, sourceHealth } = opts;
   if (!webhookTarget.webhookConfigured || !webhookTarget.valid) {
     throw createWebhookConfigError(webhookTarget);
@@ -1478,24 +1576,25 @@ async function maybeFetchSecondarySummary(opts: {
     });
   }
   const upstreamRecord = asRecord(data);
-  const shapeDiagnostics = summarizeUpstreamShape(data);
+  const shapeDiagnostics = buildSummaryShapeDiagnostics(data);
   const extractedSummary = extractNormalizedAiSummary(data);
   const normalizedResponse = normalizeUpstreamResponse(data);
   console.info(`${LOG_PREFIX} upstream_normalization`, {
     branch: 'maybeFetchSecondarySummary.upstream_normalization',
+    functionName: 'maybeFetchSecondarySummary',
     topLevelKeys: shapeDiagnostics.topLevelKeys,
     aiSummaryType: typeof upstreamRecord.aiSummary,
     nestedInsightSummaryType: typeof asRecord(upstreamRecord.aiSummary).insightSummary,
+    topLevelInsightSummaryType: typeof upstreamRecord.insightSummary,
     summaryShapeUsed: extractedSummary?.summaryShapeUsed || 'missing',
     normalizedInsightLength: extractedSummary?.normalizedInsightLength || 0,
     normalizedWarningsCount: extractedSummary?.normalizedWarningsCount || 0,
-    topLevelKeysCount: shapeDiagnostics.topLevelKeys.length,
-    topLevelKeys: shapeDiagnostics.topLevelKeys,
     nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
     backendBuild: PREDICTION_BACKEND_BUILD,
   });
   if (!normalizedResponse) {
     console.warn(`${LOG_PREFIX} upstream_normalization_failed`, {
+      functionName: 'maybeFetchSecondarySummary',
       branch: 'maybeFetchSecondarySummary.throw.invalid_upstream_json',
       hasTopLevelInsightSummary: shapeDiagnostics.hasTopLevelInsightSummary,
       hasNestedAiSummaryObject: shapeDiagnostics.hasNestedAiSummaryObject,
@@ -1503,6 +1602,9 @@ async function maybeFetchSecondarySummary(opts: {
       topLevelKeys: shapeDiagnostics.topLevelKeys,
       nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
       insightSummaryType: shapeDiagnostics.insightSummaryType,
+      aiSummaryType: typeof upstreamRecord.aiSummary,
+      nestedInsightSummaryType: typeof asRecord(upstreamRecord.aiSummary).insightSummary,
+      topLevelInsightSummaryType: typeof upstreamRecord.insightSummary,
       backendBuild: PREDICTION_BACKEND_BUILD,
     });
     throw createUpstreamError({
@@ -1522,9 +1624,10 @@ async function maybeFetchSecondarySummary(opts: {
       },
       fallbackCode: 'N8N_UPSTREAM_INVALID_RESPONSE',
       fallbackMessage: 'n8n returned success but no AI summary payload was present',
+      shapeDiagnostics,
     });
   }
-  return normalizedResponse.insightSummary;
+  return normalizedResponse;
 }
 
 function resolveWebhookTarget(): WebhookTargetInfo {
@@ -1641,6 +1744,14 @@ function createWebhookConfigError(webhookTarget: WebhookTargetInfo): SpeciesPred
     resolvedWebhookUrl: webhookTarget.configuredWebhookUrl,
     resolvedWebhookPath: webhookTarget.configuredWebhookPath,
     productionWebhookInactive: false,
+    backendBuild: PREDICTION_BACKEND_BUILD,
+    invokeRouteVersion: INVOKE_ROUTE_VERSION,
+    summaryShapeUsed: 'missing',
+    hasTopLevelInsightSummary: false,
+    hasNestedAiSummaryObject: false,
+    hasNestedAiSummaryInsight: false,
+    topLevelKeys: [],
+    nestedAiSummaryKeys: [],
   };
 }
 
@@ -1652,9 +1763,12 @@ function createUpstreamError(input: {
   upstreamBody: unknown;
   fallbackCode?: UpstreamErrorCode;
   fallbackMessage?: string;
+  summary?: NormalizedUpstreamSummary | null;
+  shapeDiagnostics?: ReturnType<typeof buildSummaryShapeDiagnostics>;
 }): SpeciesPredictionUpstreamError {
   const upstreamMessage = extractUpstreamMessage(input.upstreamBody);
   const productionWebhookInactive = isInactiveWebhookMessage(upstreamMessage);
+  const shapeDiagnostics = input.shapeDiagnostics || buildSummaryShapeDiagnostics(input.upstreamBody);
   return {
     stage: input.stage,
     code: productionWebhookInactive ? 'N8N_WEBHOOK_INACTIVE' : (input.fallbackCode || 'N8N_UPSTREAM_NON_2XX'),
@@ -1668,6 +1782,14 @@ function createUpstreamError(input: {
     resolvedWebhookUrl: input.webhookTarget.configuredWebhookUrl,
     resolvedWebhookPath: input.webhookTarget.configuredWebhookPath,
     productionWebhookInactive,
+    backendBuild: PREDICTION_BACKEND_BUILD,
+    invokeRouteVersion: INVOKE_ROUTE_VERSION,
+    summaryShapeUsed: input.summary?.summaryShapeUsed || 'missing',
+    hasTopLevelInsightSummary: shapeDiagnostics.hasTopLevelInsightSummary,
+    hasNestedAiSummaryObject: shapeDiagnostics.hasNestedAiSummaryObject,
+    hasNestedAiSummaryInsight: shapeDiagnostics.hasNestedAiSummaryInsight,
+    topLevelKeys: shapeDiagnostics.topLevelKeys,
+    nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
   };
 }
 
@@ -1683,6 +1805,14 @@ function normalizePredictionError(error: unknown, webhookTarget: WebhookTargetIn
       resolvedWebhookUrl: webhookTarget.configuredWebhookUrl,
       resolvedWebhookPath: webhookTarget.configuredWebhookPath,
       productionWebhookInactive: false,
+      backendBuild: PREDICTION_BACKEND_BUILD,
+      invokeRouteVersion: INVOKE_ROUTE_VERSION,
+      summaryShapeUsed: 'missing',
+      hasTopLevelInsightSummary: false,
+      hasNestedAiSummaryObject: false,
+      hasNestedAiSummaryInsight: false,
+      topLevelKeys: [],
+      nestedAiSummaryKeys: [],
     };
   }
   return null;
@@ -1721,31 +1851,13 @@ function normalizeWarnings(value: unknown): string[] {
   return value.map((item) => String(item || '').trim()).filter(Boolean);
 }
 
-function summarizeUpstreamShape(data: unknown): {
-  hasTopLevelInsightSummary: boolean;
-  hasNestedAiSummaryObject: boolean;
-  hasNestedAiSummaryInsight: boolean;
-  topLevelKeys: string[];
-  nestedAiSummaryKeys: string[];
-  insightSummaryType: string;
-} {
-  const record = asRecord(data);
-  const aiSummaryRecord = asRecord(record.aiSummary);
-  const nestedInsight = aiSummaryRecord.insightSummary;
-  return {
-    hasTopLevelInsightSummary: Boolean(stringOr(record.insightSummary).trim()),
-    hasNestedAiSummaryObject: Object.keys(aiSummaryRecord).length > 0,
-    hasNestedAiSummaryInsight: Boolean(stringOr(nestedInsight).trim()),
-    topLevelKeys: Object.keys(record),
-    nestedAiSummaryKeys: Object.keys(aiSummaryRecord),
-    insightSummaryType: typeof nestedInsight,
-  };
-}
-
 function extractNormalizedAiSummary(data: unknown): NormalizedUpstreamSummary | null {
   const record = asRecord(data);
   const aiSummaryRecord = asRecord(record.aiSummary);
-  const nestedInsightSummary = stringOr(aiSummaryRecord.insightSummary).trim();
+  const shapeDiagnostics = buildSummaryShapeDiagnostics(record);
+  const nestedInsightSummary = typeof aiSummaryRecord.insightSummary === 'string'
+    ? aiSummaryRecord.insightSummary.trim()
+    : '';
   if (nestedInsightSummary) {
     const warnings = normalizeWarnings(aiSummaryRecord.warnings);
     return {
@@ -1756,9 +1868,12 @@ function extractNormalizedAiSummary(data: unknown): NormalizedUpstreamSummary | 
       summaryShapeUsed: 'nested_aiSummary',
       normalizedInsightLength: nestedInsightSummary.length,
       normalizedWarningsCount: warnings.length,
+      ...shapeDiagnostics,
     };
   }
-  const flatInsightSummary = stringOr(record.insightSummary, record.summary, asRecord(record.openaiAnalysis).insightSummary).trim();
+  const flatInsightSummary = typeof record.insightSummary === 'string'
+    ? record.insightSummary.trim()
+    : '';
   if (flatInsightSummary) {
     const warnings = normalizeWarnings(record.warnings);
     return {
@@ -1769,6 +1884,7 @@ function extractNormalizedAiSummary(data: unknown): NormalizedUpstreamSummary | 
       summaryShapeUsed: 'flat_legacy',
       normalizedInsightLength: flatInsightSummary.length,
       normalizedWarningsCount: warnings.length,
+      ...shapeDiagnostics,
     };
   }
   return null;
@@ -1803,11 +1919,30 @@ function normalizeUpstreamResponse(data: unknown): NormalizedUpstreamResponse | 
   };
 }
 
+function attachNormalizationMarkers(
+  body: Record<string, unknown>,
+  summary: NormalizedUpstreamSummary | null,
+): Record<string, unknown> {
+  return {
+    ...body,
+    backendBuild: PREDICTION_BACKEND_BUILD,
+    invokeRouteVersion: INVOKE_ROUTE_VERSION,
+    summaryShapeUsed: summary?.summaryShapeUsed || 'missing',
+    hasTopLevelInsightSummary: summary?.hasTopLevelInsightSummary ?? false,
+    hasNestedAiSummaryObject: summary?.hasNestedAiSummaryObject ?? false,
+    hasNestedAiSummaryInsight: summary?.hasNestedAiSummaryInsight ?? false,
+    topLevelKeys: summary?.topLevelKeys ?? [],
+    nestedAiSummaryKeys: summary?.nestedAiSummaryKeys ?? [],
+    ...(summary ? { normalizationProof: 'nested aiSummary accepted by invoke path' } : {}),
+  };
+}
+
 function enrichPredictionResult(
   raw: Record<string, unknown>,
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
   const normalizedUpstream = normalizeUpstreamResponse(raw);
+  const normalizedSummary = extractNormalizedAiSummary(raw);
   const species = asRecord(raw.species);
   const payloadSpecies = asRecord(payload.species);
   const payloadSettings = asRecord(payload.settings);
@@ -1858,10 +1993,10 @@ function enrichPredictionResult(
   const generatedAt = normalizedUpstream?.generatedAt || stringOr(raw.generatedAt) || new Date().toISOString();
   const analysisVersion = normalizedUpstream?.analysisVersion || stringOr(raw.analysisVersion);
 
-  return {
+  return attachNormalizationMarkers({
     ...raw,
     species: speciesInfo,
-    insightSummary: normalizedUpstream?.insightSummary || stringOr(raw.insightSummary, raw.aiSummary),
+    insightSummary: normalizedUpstream?.insightSummary || normalizedSummary?.insightSummary || stringOr(raw.insightSummary),
     confidenceNote: normalizedUpstream?.confidenceNote || stringOr(raw.confidenceNote),
     rankingNotes: normalizedUpstream?.rankingNotes || stringOr(raw.rankingNotes),
     generatedAt,
@@ -1893,7 +2028,7 @@ function enrichPredictionResult(
       historicalEvidence,
       rawLinks,
     },
-  };
+  }, normalizedSummary);
 }
 
 function buildForeignEvidence(rows: unknown[]): Record<string, unknown>[] {

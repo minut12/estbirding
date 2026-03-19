@@ -346,7 +346,7 @@ export default function SpeciesPredictionSettings() {
         onEnabledChange={setPredictionFeatureEnabled}
       />
       <p className="text-[11px] text-muted-foreground">
-        prediction-settings-build: 2026-03-18-fix7
+        prediction-settings-build: 2026-03-18-fix8
       </p>
       {!predictionEnabled ? (
         <p className="text-xs text-muted-foreground">Turn on Species Prediction to edit these settings</p>
@@ -898,7 +898,9 @@ type SpeciesPredictionBackendStatus = {
   predictionBackendBuild?: string;
   expectedWebhookPath?: string;
   configuredWebhookPath?: string;
+  configuredWebhookUrlPreview?: string;
   hasOutdatedWebhook?: boolean;
+  configSource?: string;
   resolvedWebhookUrl?: string;
   resolvedWebhookPath?: string;
   expectedMethod?: string;
@@ -990,7 +992,9 @@ async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionB
     predictionBackendBuild: typeof status.predictionBackendBuild === 'string' ? status.predictionBackendBuild : '',
     expectedWebhookPath: typeof status.expectedWebhookPath === 'string' ? status.expectedWebhookPath : '',
     configuredWebhookPath: typeof status.configuredWebhookPath === 'string' ? status.configuredWebhookPath : '',
+    configuredWebhookUrlPreview: typeof status.configuredWebhookUrlPreview === 'string' ? status.configuredWebhookUrlPreview : '',
     hasOutdatedWebhook: status.hasOutdatedWebhook === true,
+    configSource: typeof status.configSource === 'string' ? status.configSource : '',
     resolvedWebhookUrl: typeof status.resolvedWebhookUrl === 'string' ? status.resolvedWebhookUrl : '',
     resolvedWebhookPath: typeof status.resolvedWebhookPath === 'string' ? status.resolvedWebhookPath : '',
     expectedMethod: typeof status.expectedMethod === 'string' ? status.expectedMethod : '',

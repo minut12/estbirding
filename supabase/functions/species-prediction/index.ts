@@ -10,7 +10,8 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const PREDICTION_BACKEND_BUILD = '2026-03-18-fix7';
+const PREDICTION_BACKEND_BUILD = '2026-03-18-fix8';
+const WEBHOOK_CONFIG_SOURCE = `env:${WEBHOOK_ENV_KEY}`;
 // If health/status reports an outdated webhook path, update the Supabase secret
 // SPECIES_PREDICTION_N8N_WEBHOOK_URL to:
 // https://estbirds.app.n8n.cloud/webhook/species-prediction-evidence-first
@@ -33,10 +34,16 @@ type StatusCode =
   | 'RUNTIME_ERROR';
 
 type WebhookTargetInfo = {
-  configured: boolean;
+  configSource: string;
+  webhookConfigured: boolean;
   valid: boolean;
-  resolvedWebhookUrl: string;
-  resolvedWebhookPath: string;
+  configuredWebhookUrl: string;
+  configuredWebhookUrlPreview: string;
+  configuredWebhookPath: string;
+  expectedWebhookPath: string;
+  hasOutdatedWebhook: boolean;
+  deployed: true;
+  available: boolean;
   expectedMethod: 'POST';
   looksLikeProductionWebhook: boolean;
   validationErrorCode: WebhookValidationErrorCode | null;
@@ -67,6 +74,42 @@ type SpeciesPredictionUpstreamError = {
   productionWebhookInactive: boolean;
 };
 
+function buildWebhookTargetInfo(input: Partial<WebhookTargetInfo>): WebhookTargetInfo {
+  const configuredWebhookPath = input.configuredWebhookPath || '';
+  const expectedWebhookPath = EXPECTED_PRODUCTION_WEBHOOK_PATH;
+  const hasOutdatedWebhook = configuredWebhookPath === 'species-prediction';
+  return {
+    configSource: WEBHOOK_CONFIG_SOURCE,
+    webhookConfigured: input.webhookConfigured === true,
+    valid: input.valid === true,
+    configuredWebhookUrl: input.configuredWebhookUrl || '',
+    configuredWebhookUrlPreview: input.configuredWebhookUrlPreview || '',
+    configuredWebhookPath,
+    expectedWebhookPath,
+    hasOutdatedWebhook,
+    deployed: true,
+    available: input.available === true,
+    expectedMethod: 'POST',
+    looksLikeProductionWebhook: input.looksLikeProductionWebhook === true,
+    validationErrorCode: input.validationErrorCode || null,
+    validationMessage: input.validationMessage || '',
+  };
+}
+
+function redactWebhookUrlPreview(raw: string): string {
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    parsed.username = '';
+    parsed.password = '';
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return raw.replace(/[?#].*$/, '');
+  }
+}
+
 function getSupabaseAdmin() {
   return createClient(
     Deno.env.get('SUPABASE_URL')!,
@@ -82,8 +125,8 @@ serve(async (req) => {
   try {
     const url = new URL(req.url);
     const webhookTarget = resolveWebhookTarget();
-    const webhookUrl = webhookTarget.resolvedWebhookUrl;
-    const webhookConfigured = webhookTarget.configured;
+    const webhookUrl = webhookTarget.configuredWebhookUrl;
+    const webhookConfigured = webhookTarget.webhookConfigured;
     const timeoutMsUsed = resolveTimeoutMs();
 
     // ── GET ?mode=status ──
@@ -92,9 +135,6 @@ serve(async (req) => {
       const probe = shouldProbeWebhookTarget(webhookTarget)
         ? await probeWebhookTarget(webhookTarget, verifyRequested)
         : buildSkippedProbe();
-      const configuredWebhookPath = webhookTarget.resolvedWebhookPath;
-      const expectedWebhookPath = EXPECTED_PRODUCTION_WEBHOOK_PATH;
-      const hasOutdatedWebhook = configuredWebhookPath !== expectedWebhookPath;
       const available = webhookTarget.valid
         && webhookTarget.looksLikeProductionWebhook
         && probe.productionWebhookInactive !== true;
@@ -104,15 +144,21 @@ serve(async (req) => {
         && probe.productionWebhookInactive !== true;
       const statusCode = resolveStatusCode(webhookTarget, probe, verifyRequested);
       const reasonCode = resolveReasonCode(webhookTarget, probe, verifyRequested);
+      console.info(`${LOG_PREFIX} webhook_config`, {
+        parsedEnvVariableName: WEBHOOK_ENV_KEY,
+        parsedConfiguredPath: webhookTarget.configuredWebhookPath,
+        expectedPath: webhookTarget.expectedWebhookPath,
+        configSource: webhookTarget.configSource,
+      });
       console.info(`${LOG_PREFIX} status check`, {
         webhookConfigured,
         webhookValid: webhookTarget.valid,
         statusCode,
         reasonCode,
-        expectedWebhookPath,
-        configuredWebhookPath,
-        hasOutdatedWebhook,
-        resolvedWebhookPath: webhookTarget.resolvedWebhookPath,
+        expectedWebhookPath: webhookTarget.expectedWebhookPath,
+        configuredWebhookPath: webhookTarget.configuredWebhookPath,
+        hasOutdatedWebhook: webhookTarget.hasOutdatedWebhook,
+        resolvedWebhookPath: webhookTarget.configuredWebhookPath,
         productionWebhookInactive: probe.productionWebhookInactive,
         edgeFunctionVersion: EDGE_FUNCTION_VERSION,
         predictionBackendBuild: PREDICTION_BACKEND_BUILD,
@@ -122,18 +168,20 @@ serve(async (req) => {
         stage: 'status',
         predictionBackendBuild: PREDICTION_BACKEND_BUILD,
         available,
-        deployed: true,
+        deployed: webhookTarget.deployed,
         configured: webhookConfigured,
         webhookConfigured,
         webhookValid: webhookTarget.valid,
         runtimeAvailable,
         statusCode,
         reasonCode,
-        expectedWebhookPath,
-        configuredWebhookPath,
-        hasOutdatedWebhook,
-        resolvedWebhookUrl: webhookTarget.resolvedWebhookUrl,
-        resolvedWebhookPath: webhookTarget.resolvedWebhookPath,
+        expectedWebhookPath: webhookTarget.expectedWebhookPath,
+        configuredWebhookPath: webhookTarget.configuredWebhookPath,
+        configuredWebhookUrlPreview: webhookTarget.configuredWebhookUrlPreview,
+        hasOutdatedWebhook: webhookTarget.hasOutdatedWebhook,
+        configSource: webhookTarget.configSource,
+        resolvedWebhookUrl: webhookTarget.configuredWebhookUrl,
+        resolvedWebhookPath: webhookTarget.configuredWebhookPath,
         expectedMethod: webhookTarget.expectedMethod,
         looksLikeProductionWebhook: webhookTarget.looksLikeProductionWebhook,
         validationErrorCode: webhookTarget.validationErrorCode,
@@ -149,7 +197,7 @@ serve(async (req) => {
         timeoutMsUsed,
         edgeFunctionVersion: EDGE_FUNCTION_VERSION,
         timestamp: new Date().toISOString(),
-        message: buildStatusMessage(webhookTarget, probe, verifyRequested, statusCode, hasOutdatedWebhook),
+        message: buildStatusMessage(webhookTarget, probe, verifyRequested, statusCode),
       });
     }
 
@@ -1152,7 +1200,7 @@ async function maybeFetchSecondarySummary(opts: {
   sourceHealth: Record<string, unknown>;
 }): Promise<string> {
   const { webhookTarget, webhookUrl, payload, signal, foreignEvidence, predictedTargets, weather, sourceHealth } = opts;
-  if (!webhookTarget.configured || !webhookTarget.valid) {
+  if (!webhookTarget.webhookConfigured || !webhookTarget.valid) {
     throw createWebhookConfigError(webhookTarget);
   }
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -1198,60 +1246,65 @@ async function maybeFetchSecondarySummary(opts: {
 function resolveWebhookTarget(): WebhookTargetInfo {
   const raw = readWebhookUrl();
   if (!raw) {
-    return {
-      configured: false,
+    return buildWebhookTargetInfo({
+      webhookConfigured: false,
       valid: false,
-      resolvedWebhookUrl: '',
-      resolvedWebhookPath: '',
-      expectedMethod: 'POST',
+      configuredWebhookUrl: '',
+      configuredWebhookUrlPreview: '',
+      configuredWebhookPath: '',
       looksLikeProductionWebhook: false,
+      available: false,
       validationErrorCode: 'MISSING_WEBHOOK_URL',
-      validationMessage: 'SPECIES_PREDICTION_N8N_WEBHOOK_URL is missing or empty.',
-    };
+      validationMessage: `${WEBHOOK_ENV_KEY} is missing or empty.`,
+    });
   }
   let parsed: URL;
   try {
     parsed = new URL(raw);
   } catch {
-    return {
-      configured: true,
+    return buildWebhookTargetInfo({
+      webhookConfigured: true,
       valid: false,
-      resolvedWebhookUrl: raw,
-      resolvedWebhookPath: '',
-      expectedMethod: 'POST',
+      configuredWebhookUrl: raw,
+      configuredWebhookUrlPreview: redactWebhookUrlPreview(raw),
+      configuredWebhookPath: '',
       looksLikeProductionWebhook: false,
+      available: false,
       validationErrorCode: 'INVALID_WEBHOOK_URL',
-      validationMessage: 'SPECIES_PREDICTION_N8N_WEBHOOK_URL is not a valid absolute URL.',
-    };
+      validationMessage: `${WEBHOOK_ENV_KEY} is not a valid absolute URL.`,
+    });
   }
   const match = parsed.pathname.match(/\/webhook(?:-test)?\/([^/?#]+)/);
   const webhookPath = match?.[1]?.trim() || '';
   if (!webhookPath) {
-    return {
-      configured: true,
+    return buildWebhookTargetInfo({
+      webhookConfigured: true,
       valid: false,
-      resolvedWebhookUrl: parsed.toString(),
-      resolvedWebhookPath: '',
-      expectedMethod: 'POST',
+      configuredWebhookUrl: parsed.toString(),
+      configuredWebhookUrlPreview: redactWebhookUrlPreview(parsed.toString()),
+      configuredWebhookPath: '',
       looksLikeProductionWebhook: false,
+      available: false,
       validationErrorCode: 'INVALID_WEBHOOK_PATH',
-      validationMessage: 'Configured n8n URL must include a webhook path segment after /webhook/.',
-    };
+      validationMessage: `${WEBHOOK_ENV_KEY} must include a webhook path segment after /webhook/.`,
+    });
   }
-  return {
-    configured: true,
+  const looksLikeProductionWebhook = webhookPath === EXPECTED_PRODUCTION_WEBHOOK_PATH;
+  return buildWebhookTargetInfo({
+    webhookConfigured: true,
     valid: true,
-    resolvedWebhookUrl: parsed.toString(),
-    resolvedWebhookPath: webhookPath,
-    expectedMethod: 'POST',
-    looksLikeProductionWebhook: webhookPath === EXPECTED_PRODUCTION_WEBHOOK_PATH,
+    configuredWebhookUrl: parsed.toString(),
+    configuredWebhookUrlPreview: redactWebhookUrlPreview(parsed.toString()),
+    configuredWebhookPath: webhookPath,
+    looksLikeProductionWebhook,
+    available: looksLikeProductionWebhook,
     validationErrorCode: null,
     validationMessage: '',
-  };
+  });
 }
 
 function shouldProbeWebhookTarget(webhookTarget: WebhookTargetInfo): boolean {
-  return webhookTarget.configured && webhookTarget.valid;
+  return webhookTarget.webhookConfigured && webhookTarget.valid;
 }
 
 function buildSkippedProbe(): UpstreamProbeResult {
@@ -1285,7 +1338,7 @@ async function probeWebhookTarget(webhookTarget: WebhookTargetInfo, verifyReques
   const authValue = (Deno.env.get(AUTH_VALUE_ENV_KEY) || '').trim();
   if (authHeader && authValue) headers[authHeader] = authValue;
   try {
-    const resp = await fetch(webhookTarget.resolvedWebhookUrl, { method: 'GET', headers });
+    const resp = await fetch(webhookTarget.configuredWebhookUrl, { method: 'GET', headers });
     const text = await resp.text();
     const body = safeJsonParse(text);
     const message = extractUpstreamMessage(body) || text.slice(0, 300);
@@ -1318,7 +1371,7 @@ async function probeWebhookTarget(webhookTarget: WebhookTargetInfo, verifyReques
 }
 
 function resolveStatusCode(webhookTarget: WebhookTargetInfo, probe: UpstreamProbeResult, verifyRequested: boolean): StatusCode {
-  if (!webhookTarget.configured) return 'NOT_CONFIGURED';
+  if (!webhookTarget.webhookConfigured) return 'NOT_CONFIGURED';
   if (!webhookTarget.valid || !webhookTarget.looksLikeProductionWebhook) return 'DEPLOYED_NOT_CONFIGURED';
   if (probe.productionWebhookInactive) return 'CONFIGURED_UNAVAILABLE';
   if (verifyRequested && probe.productionWebhookReachable === false) return 'RUNTIME_ERROR';
@@ -1327,7 +1380,7 @@ function resolveStatusCode(webhookTarget: WebhookTargetInfo, probe: UpstreamProb
 }
 
 function resolveReasonCode(webhookTarget: WebhookTargetInfo, probe: UpstreamProbeResult, verifyRequested: boolean): string | null {
-  if (!webhookTarget.configured) return webhookTarget.validationErrorCode || 'MISSING_WEBHOOK_URL';
+  if (!webhookTarget.webhookConfigured) return webhookTarget.validationErrorCode || 'MISSING_WEBHOOK_URL';
   if (!webhookTarget.valid) return webhookTarget.validationErrorCode;
   if (!webhookTarget.looksLikeProductionWebhook) return 'INVALID_WEBHOOK_PATH';
   if (probe.productionWebhookInactive) return 'N8N_WEBHOOK_INACTIVE';
@@ -1340,16 +1393,15 @@ function buildStatusMessage(
   probe: UpstreamProbeResult,
   verifyRequested: boolean,
   statusCode: StatusCode,
-  hasOutdatedWebhook: boolean,
 ): string {
   if (statusCode === 'NOT_CONFIGURED') {
-    return 'Prediction backend is not configured yet because the n8n webhook URL is missing.';
+    return `Prediction backend is not configured yet because Supabase secret ${WEBHOOK_ENV_KEY} is missing.`;
   }
   if (statusCode === 'DEPLOYED_NOT_CONFIGURED') {
-    if (hasOutdatedWebhook) {
-      return `Prediction backend configuration is invalid because the Supabase secret ${WEBHOOK_ENV_KEY} still points to "${webhookTarget.resolvedWebhookPath}" instead of "${EXPECTED_PRODUCTION_WEBHOOK_PATH}".`;
+    if (webhookTarget.hasOutdatedWebhook) {
+      return `Supabase secret ${WEBHOOK_ENV_KEY} is still configured with webhook path ${webhookTarget.configuredWebhookPath}, expected ${webhookTarget.expectedWebhookPath}`;
     }
-    return webhookTarget.validationMessage || 'Prediction backend has an invalid n8n webhook configuration.';
+    return webhookTarget.validationMessage || `Prediction backend has an invalid n8n webhook configuration in ${WEBHOOK_ENV_KEY}.`;
   }
   if (statusCode === 'CONFIGURED_UNAVAILABLE') {
     return 'Prediction backend is configured but the n8n production webhook is inactive or not registered.';
@@ -1373,8 +1425,8 @@ function createWebhookConfigError(webhookTarget: WebhookTargetInfo): SpeciesPred
     message: webhookTarget.validationMessage || 'n8n webhook URL is invalid or missing.',
     upstreamStatus: null,
     upstreamBody: null,
-    resolvedWebhookUrl: webhookTarget.resolvedWebhookUrl,
-    resolvedWebhookPath: webhookTarget.resolvedWebhookPath,
+    resolvedWebhookUrl: webhookTarget.configuredWebhookUrl,
+    resolvedWebhookPath: webhookTarget.configuredWebhookPath,
     productionWebhookInactive: false,
   };
 }
@@ -1400,8 +1452,8 @@ function createUpstreamError(input: {
     upstreamStatusText: input.upstreamStatusText,
     upstreamMessage,
     upstreamBody: input.upstreamBody,
-    resolvedWebhookUrl: input.webhookTarget.resolvedWebhookUrl,
-    resolvedWebhookPath: input.webhookTarget.resolvedWebhookPath,
+    resolvedWebhookUrl: input.webhookTarget.configuredWebhookUrl,
+    resolvedWebhookPath: input.webhookTarget.configuredWebhookPath,
     productionWebhookInactive,
   };
 }
@@ -1415,8 +1467,8 @@ function normalizePredictionError(error: unknown, webhookTarget: WebhookTargetIn
       message: error.message,
       upstreamStatus: null,
       upstreamBody: { detail: error.message },
-      resolvedWebhookUrl: webhookTarget.resolvedWebhookUrl,
-      resolvedWebhookPath: webhookTarget.resolvedWebhookPath,
+      resolvedWebhookUrl: webhookTarget.configuredWebhookUrl,
+      resolvedWebhookPath: webhookTarget.configuredWebhookPath,
       productionWebhookInactive: false,
     };
   }

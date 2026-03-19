@@ -10,8 +10,9 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const PREDICTION_BACKEND_BUILD = '2026-03-19-fix13';
-const INVOKE_ROUTE_VERSION = 'fix13';
+const PREDICTION_BACKEND_BUILD = '2026-03-19-fix14';
+const INVOKE_ROUTE_VERSION = 'fix14';
+const EDGE_FUNCTION_FILE = 'supabase/functions/species-prediction/index.ts';
 const WEBHOOK_CONFIG_SOURCE = `env:${WEBHOOK_ENV_KEY}`;
 const STATUS_NO_CACHE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
@@ -87,6 +88,7 @@ type SpeciesPredictionUpstreamError = {
   hasNestedAiSummaryInsight: boolean;
   topLevelKeys: string[];
   nestedAiSummaryKeys: string[];
+  errorProofBuild: string;
 };
 
 type NormalizedUpstreamSummary = {
@@ -746,6 +748,9 @@ function withEdgeResponseMarkers(body: Record<string, unknown>): Record<string, 
     hasNestedAiSummaryInsight: body.hasNestedAiSummaryInsight === true,
     topLevelKeys: Array.isArray(body.topLevelKeys) ? body.topLevelKeys : [],
     nestedAiSummaryKeys: Array.isArray(body.nestedAiSummaryKeys) ? body.nestedAiSummaryKeys : [],
+    ...(body.ok === false || typeof body.error === 'string' || typeof body.message === 'string' && String(body.message).toLowerCase().includes('error')
+      ? { errorProofBuild: typeof body.errorProofBuild === 'string' ? body.errorProofBuild : PREDICTION_BACKEND_BUILD }
+      : {}),
   };
 }
 
@@ -1594,6 +1599,7 @@ async function maybeFetchSecondarySummary(opts: {
   });
   if (!normalizedResponse) {
     console.warn(`${LOG_PREFIX} upstream_normalization_failed`, {
+      fileName: EDGE_FUNCTION_FILE,
       functionName: 'maybeFetchSecondarySummary',
       branch: 'maybeFetchSecondarySummary.throw.invalid_upstream_json',
       hasTopLevelInsightSummary: shapeDiagnostics.hasTopLevelInsightSummary,
@@ -1752,6 +1758,7 @@ function createWebhookConfigError(webhookTarget: WebhookTargetInfo): SpeciesPred
     hasNestedAiSummaryInsight: false,
     topLevelKeys: [],
     nestedAiSummaryKeys: [],
+    errorProofBuild: PREDICTION_BACKEND_BUILD,
   };
 }
 
@@ -1790,6 +1797,7 @@ function createUpstreamError(input: {
     hasNestedAiSummaryInsight: shapeDiagnostics.hasNestedAiSummaryInsight,
     topLevelKeys: shapeDiagnostics.topLevelKeys,
     nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
+    errorProofBuild: PREDICTION_BACKEND_BUILD,
   };
 }
 
@@ -1813,6 +1821,7 @@ function normalizePredictionError(error: unknown, webhookTarget: WebhookTargetIn
       hasNestedAiSummaryInsight: false,
       topLevelKeys: [],
       nestedAiSummaryKeys: [],
+      errorProofBuild: PREDICTION_BACKEND_BUILD,
     };
   }
   return null;
@@ -1933,7 +1942,7 @@ function attachNormalizationMarkers(
     hasNestedAiSummaryInsight: summary?.hasNestedAiSummaryInsight ?? false,
     topLevelKeys: summary?.topLevelKeys ?? [],
     nestedAiSummaryKeys: summary?.nestedAiSummaryKeys ?? [],
-    ...(summary ? { normalizationProof: 'nested aiSummary accepted by invoke path' } : {}),
+    ...(summary ? { normalizationProof: 'nested aiSummary accepted by live invoke route' } : {}),
   };
 }
 

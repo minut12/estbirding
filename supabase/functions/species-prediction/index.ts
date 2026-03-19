@@ -1961,48 +1961,93 @@ function normalizeWarnings(value: unknown): string[] {
   return value.map((item) => String(item || '').trim()).filter(Boolean);
 }
 
-function extractNormalizedAiSummary(data: unknown): NormalizedUpstreamSummary | null {
+function normalizeRankingNotes(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean).join(' • ');
+  }
+  return '';
+}
+
+function resolveUpstreamResponseSource(data: unknown): {
+  source: Record<string, unknown>;
+  summarySourcePath: string;
+  insightSummary: string;
+  summaryShapeUsed: 'nested_aiSummary' | 'flat_legacy' | 'missing';
+  hasTopLevelInsightSummary: boolean;
+  hasNestedAiSummaryObject: boolean;
+  hasNestedAiSummaryInsight: boolean;
+  topLevelKeys: string[];
+  nestedAiSummaryKeys: string[];
+} | null {
   const record = asRecord(data);
-  const aiSummaryRecord = asRecord(record.aiSummary);
-  const shapeDiagnostics = buildSummaryShapeDiagnostics(record);
-  const nestedInsightSummary = typeof aiSummaryRecord.insightSummary === 'string'
-    ? aiSummaryRecord.insightSummary.trim()
-    : '';
-  if (nestedInsightSummary) {
-    const warnings = normalizeWarnings(aiSummaryRecord.warnings);
+  const responseBody = asRecord(record.responseBody);
+  const upstreamBody = asRecord(responseBody.upstreamBody);
+  const probes: Array<{ source: Record<string, unknown>; summarySourcePath: string; summaryShapeUsed: 'nested_aiSummary' | 'flat_legacy' }> = [
+    { source: record, summarySourcePath: 'aiSummary', summaryShapeUsed: 'nested_aiSummary' },
+    { source: responseBody, summarySourcePath: 'responseBody.aiSummary', summaryShapeUsed: 'nested_aiSummary' },
+    { source: upstreamBody, summarySourcePath: 'responseBody.upstreamBody.aiSummary', summaryShapeUsed: 'nested_aiSummary' },
+    { source: record, summarySourcePath: 'insightSummary', summaryShapeUsed: 'flat_legacy' },
+    { source: responseBody, summarySourcePath: 'responseBody.insightSummary', summaryShapeUsed: 'flat_legacy' },
+    { source: upstreamBody, summarySourcePath: 'responseBody.upstreamBody.insightSummary', summaryShapeUsed: 'flat_legacy' },
+  ];
+
+  for (const probe of probes) {
+    const aiSummaryRecord = asRecord(probe.source.aiSummary);
+    const summary = probe.summaryShapeUsed === 'nested_aiSummary'
+      ? (typeof aiSummaryRecord.insightSummary === 'string' ? aiSummaryRecord.insightSummary.trim() : '')
+      : (typeof probe.source.insightSummary === 'string' ? probe.source.insightSummary.trim() : '');
+    if (!summary) continue;
     return {
-      insightSummary: nestedInsightSummary,
-      confidenceNote: stringOr(aiSummaryRecord.confidenceNote).trim(),
-      rankingNotes: stringOr(aiSummaryRecord.rankingNotes).trim(),
-      warnings,
-      summaryShapeUsed: 'nested_aiSummary',
-      normalizedInsightLength: nestedInsightSummary.length,
-      normalizedWarningsCount: warnings.length,
-      ...shapeDiagnostics,
+      source: probe.source,
+      summarySourcePath: probe.summarySourcePath,
+      insightSummary: summary,
+      summaryShapeUsed: probe.summaryShapeUsed,
+      hasTopLevelInsightSummary: typeof probe.source.insightSummary === 'string' && probe.source.insightSummary.trim().length > 0,
+      hasNestedAiSummaryObject: Object.keys(aiSummaryRecord).length > 0,
+      hasNestedAiSummaryInsight: typeof aiSummaryRecord.insightSummary === 'string' && aiSummaryRecord.insightSummary.trim().length > 0,
+      topLevelKeys: Object.keys(probe.source),
+      nestedAiSummaryKeys: Object.keys(aiSummaryRecord),
     };
   }
-  const flatInsightSummary = typeof record.insightSummary === 'string'
-    ? record.insightSummary.trim()
-    : '';
-  if (flatInsightSummary) {
-    const warnings = normalizeWarnings(record.warnings);
-    return {
-      insightSummary: flatInsightSummary,
-      confidenceNote: stringOr(record.confidenceNote).trim(),
-      rankingNotes: stringOr(record.rankingNotes).trim(),
-      warnings,
-      summaryShapeUsed: 'flat_legacy',
-      normalizedInsightLength: flatInsightSummary.length,
-      normalizedWarningsCount: warnings.length,
-      ...shapeDiagnostics,
-    };
-  }
+
   return null;
 }
 
+function extractNormalizedAiSummary(data: unknown): NormalizedUpstreamSummary | null {
+  const resolvedSource = resolveUpstreamResponseSource(data);
+  if (!resolvedSource) return null;
+  const record = resolvedSource.source;
+  const aiSummaryRecord = asRecord(record.aiSummary);
+  const warnings = resolvedSource.summaryShapeUsed === 'nested_aiSummary'
+    ? normalizeWarnings(aiSummaryRecord.warnings)
+    : normalizeWarnings(record.warnings);
+  const confidenceNote = resolvedSource.summaryShapeUsed === 'nested_aiSummary'
+    ? stringOr(aiSummaryRecord.confidenceNote).trim()
+    : stringOr(record.confidenceNote).trim();
+  const rankingNotes = resolvedSource.summaryShapeUsed === 'nested_aiSummary'
+    ? normalizeRankingNotes(aiSummaryRecord.rankingNotes ?? aiSummaryRecord.ranking_notes)
+    : normalizeRankingNotes(record.rankingNotes ?? record.ranking_notes);
+  return {
+    insightSummary: resolvedSource.insightSummary,
+    confidenceNote,
+    rankingNotes,
+    warnings,
+    summaryShapeUsed: resolvedSource.summaryShapeUsed,
+    normalizedInsightLength: resolvedSource.insightSummary.length,
+    normalizedWarningsCount: warnings.length,
+    hasTopLevelInsightSummary: resolvedSource.hasTopLevelInsightSummary,
+    hasNestedAiSummaryObject: resolvedSource.hasNestedAiSummaryObject,
+    hasNestedAiSummaryInsight: resolvedSource.hasNestedAiSummaryInsight,
+    topLevelKeys: resolvedSource.topLevelKeys,
+    nestedAiSummaryKeys: resolvedSource.nestedAiSummaryKeys,
+  };
+}
+
 function normalizeUpstreamResponse(data: unknown): NormalizedUpstreamResponse | null {
-  const record = asRecord(data);
-  const summary = extractNormalizedAiSummary(record);
+  const resolvedSource = resolveUpstreamResponseSource(data);
+  const record = resolvedSource?.source ?? asRecord(data);
+  const summary = extractNormalizedAiSummary(data);
   if (!summary) return null;
   return {
     insightSummary: summary.insightSummary,

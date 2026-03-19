@@ -82,12 +82,8 @@ export default function SpeciesPredictionSettings() {
   const hasValidSelectedSpecies = Boolean(activeSpeciesName && activeSpeciesKey);
   const normalizedBackendStatus = useMemo(() => normalizeBackendStatus(backendStatus), [backendStatus]);
   const diagnosticWebhookError = useMemo(() => detectOutdatedWebhookFromDiagnostics(debugSnapshot), [debugSnapshot]);
-  const effectiveStatus = useMemo(() => ({
-    ...normalizedBackendStatus,
-    hasOutdatedWebhookPathError: normalizedBackendStatus.hasOutdatedWebhookPathError || diagnosticWebhookError.detected,
-  }), [normalizedBackendStatus, diagnosticWebhookError]);
-  const displayState = useMemo(() => deriveSpeciesPredictionDisplayState(effectiveStatus), [effectiveStatus]);
-  const statusCard = useMemo(() => buildSpeciesPredictionStatusCard(displayState, effectiveStatus), [displayState, effectiveStatus]);
+  const displayState = useMemo(() => deriveSpeciesPredictionDisplayState(normalizedBackendStatus), [normalizedBackendStatus]);
+  const statusCard = useMemo(() => buildSpeciesPredictionStatusCard(displayState, normalizedBackendStatus), [displayState, normalizedBackendStatus]);
   const isBackendReadyForConfiguration = displayState === 'CONFIGURED_AVAILABLE';
   const canValidateSpeciesSettings = predictionEnabled && isBackendReadyForConfiguration;
   const saveBlockedMessage = canValidateSpeciesSettings && !hasValidSelectedSpecies
@@ -346,7 +342,7 @@ export default function SpeciesPredictionSettings() {
         onEnabledChange={setPredictionFeatureEnabled}
       />
       <p className="text-[11px] text-muted-foreground">
-        prediction-settings-build: 2026-03-18-fix8
+        prediction-settings-build: 2026-03-18-fix9
       </p>
       {!predictionEnabled ? (
         <p className="text-xs text-muted-foreground">Turn on Species Prediction to edit these settings</p>
@@ -379,7 +375,7 @@ export default function SpeciesPredictionSettings() {
               <p>diagnostics.code: {diagnosticWebhookError.code != null ? String(diagnosticWebhookError.code) : '–'}</p>
               <p>diagnostics.message: {diagnosticWebhookError.message || '–'}</p>
               <p>diagnostics.matchedReason: {diagnosticWebhookError.matchedReason || '–'}</p>
-              <p>effective.hasOutdatedWebhookPathError: {String(effectiveStatus.hasOutdatedWebhookPathError)}</p>
+              <p>effective.hasOutdatedWebhookPathError: {String(normalizedBackendStatus.hasOutdatedWebhookPathError)}</p>
               <p>displayState: {displayState}</p>
             </div>
           )}
@@ -642,11 +638,19 @@ export default function SpeciesPredictionSettings() {
                             {canSeeDebugDiagnostics && (
                               <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
                                 <DebugKeyValue label="Backend build" value={backendStatus.predictionBackendBuild || '(empty)'} />
+                                <DebugKeyValue label="Env present" value={backendStatus.envPresent ? 'Yes' : 'No'} />
+                                <DebugKeyValue label="Config source" value={backendStatus.configSource || '(empty)'} />
+                                <DebugKeyValue label="Parsed URL ok" value={backendStatus.parsedUrlOk ? 'Yes' : 'No'} />
+                                <DebugKeyValue label="Configured pathname" value={backendStatus.configuredPathname || '(empty)'} />
+                                <DebugKeyValue label="Normalized configured path" value={backendStatus.normalizedConfiguredPath || '(empty)'} />
+                                <DebugKeyValue label="Expected path" value={backendStatus.expectedPath || '(empty)'} />
+                                <DebugKeyValue label="Fallback used" value={backendStatus.fallbackUsed ? 'Yes' : 'No'} />
+                                <DebugKeyValue label="Fallback value" value={backendStatus.fallbackValue || '(empty)'} />
                                 <DebugKeyValue label="Expected webhook path" value={backendStatus.expectedWebhookPath || '(empty)'} />
                                 <DebugKeyValue label="Configured webhook path" value={backendStatus.configuredWebhookPath || '(empty)'} />
                                 <DebugKeyValue label="Health mismatch" value={backendStatus.hasOutdatedWebhook ? 'Yes' : 'No'} />
                                 <DebugKeyValue label="Diagnostics mismatch" value={diagnosticWebhookError.detected ? 'Yes' : 'No'} />
-                                <DebugKeyValue label="Mismatch source" value={backendStatus.hasOutdatedWebhook ? 'health_check' : (diagnosticWebhookError.detected ? 'latest_prediction_diagnostics' : 'none')} />
+                                <DebugKeyValue label="Mismatch source" value={backendStatus.hasOutdatedWebhook ? 'health_check' : 'none'} />
                               </div>
                             )}
                           </DebugSection>
@@ -896,6 +900,18 @@ type SpeciesPredictionBackendStatus = {
   statusCode: 'NOT_CONFIGURED' | 'DEPLOYED_NOT_CONFIGURED' | 'CONFIGURED_AVAILABLE' | 'CONFIGURED_UNAVAILABLE' | 'RUNTIME_ERROR';
   reasonCode: string | null;
   predictionBackendBuild?: string;
+  envVarName?: string;
+  envPresent?: boolean;
+  envLength?: number;
+  rawWebhookPreview?: string;
+  parsedUrlOk?: boolean;
+  configuredPathname?: string;
+  normalizedConfiguredPath?: string;
+  expectedPath?: string;
+  fallbackUsed?: boolean;
+  fallbackValue?: string;
+  missingWebhookEnv?: boolean;
+  invalidWebhookUrl?: boolean;
   expectedWebhookPath?: string;
   configuredWebhookPath?: string;
   configuredWebhookUrlPreview?: string;
@@ -927,8 +943,9 @@ type SpeciesPredictionStatusCardModel = {
 async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionBackendStatus> {
   let response: Response;
   try {
-    response = await fetch(`${getFunctionsBaseUrl()}/species-prediction?mode=status&verify=1`, {
+    response = await fetch(`${getFunctionsBaseUrl()}/species-prediction?mode=status&verify=1&_ts=${Date.now()}`, {
       method: 'GET',
+      cache: 'no-store',
       headers: {
         ...getSupabaseAuthHeaders(),
       },
@@ -990,6 +1007,18 @@ async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionB
     statusCode: isBackendStatusCode(status.statusCode) ? status.statusCode : 'NOT_CONFIGURED',
     reasonCode: typeof status.reasonCode === 'string' ? status.reasonCode : null,
     predictionBackendBuild: typeof status.predictionBackendBuild === 'string' ? status.predictionBackendBuild : '',
+    envVarName: typeof status.envVarName === 'string' ? status.envVarName : '',
+    envPresent: status.envPresent === true,
+    envLength: typeof status.envLength === 'number' ? status.envLength : 0,
+    rawWebhookPreview: typeof status.rawWebhookPreview === 'string' ? status.rawWebhookPreview : '',
+    parsedUrlOk: status.parsedUrlOk === true,
+    configuredPathname: typeof status.configuredPathname === 'string' ? status.configuredPathname : '',
+    normalizedConfiguredPath: typeof status.normalizedConfiguredPath === 'string' ? status.normalizedConfiguredPath : '',
+    expectedPath: typeof status.expectedPath === 'string' ? status.expectedPath : '',
+    fallbackUsed: status.fallbackUsed === true,
+    fallbackValue: typeof status.fallbackValue === 'string' ? status.fallbackValue : '',
+    missingWebhookEnv: status.missingWebhookEnv === true,
+    invalidWebhookUrl: status.invalidWebhookUrl === true,
     expectedWebhookPath: typeof status.expectedWebhookPath === 'string' ? status.expectedWebhookPath : '',
     configuredWebhookPath: typeof status.configuredWebhookPath === 'string' ? status.configuredWebhookPath : '',
     configuredWebhookUrlPreview: typeof status.configuredWebhookUrlPreview === 'string' ? status.configuredWebhookUrlPreview : '',
@@ -1017,9 +1046,8 @@ function isBackendStatusCode(value: unknown): value is SpeciesPredictionBackendS
 }
 
 function normalizeBackendStatus(status: SpeciesPredictionBackendStatus) {
-  const outdatedWebhookPathError = hasOutdatedWebhookPathError(status);
   return {
-    isConfigured: status.configured === true,
+    isConfigured: status.configured === true && status.missingWebhookEnv !== true,
     isDeployed: status.deployed === true,
     isHealthy: status.available === true,
     isRuntimeAvailable: status.runtimeAvailable === true,
@@ -1027,28 +1055,11 @@ function normalizeBackendStatus(status: SpeciesPredictionBackendStatus) {
     lastRuntimeErrorMessage: status.upstreamMessage || status.message,
     statusCode: status.statusCode,
     reasonCode: status.reasonCode,
-    hasOutdatedWebhookPathError: outdatedWebhookPathError || status.hasOutdatedWebhook === true,
+    missingWebhookEnv: status.missingWebhookEnv === true,
+    invalidWebhookUrl: status.invalidWebhookUrl === true,
+    hasOutdatedWebhookPathError: status.hasOutdatedWebhook === true,
     backend: status,
   };
-}
-
-function hasOutdatedWebhookPathError(status: SpeciesPredictionBackendStatus): boolean {
-  if (status.hasOutdatedWebhook === true) return true;
-  if (status.reasonCode === 'INVALID_WEBHOOK_PATH') return true;
-  const upstreamStatus = status.upstreamStatus;
-  const haystacks = [
-    status.upstreamMessage,
-    status.message,
-    status.validationMessage,
-    typeof status.resolvedWebhookPath === 'string' ? status.resolvedWebhookPath : '',
-  ]
-    .map((value) => String(value || '').toLowerCase())
-    .filter(Boolean);
-  if (upstreamStatus === 404 && haystacks.some((value) => value.includes('species-prediction') || value.includes('not registered'))) {
-    return true;
-  }
-  return haystacks.some((value) => value.includes('webhook \"post species-prediction\" is not registered')
-    || value.includes('webhook post species-prediction is not registered'));
 }
 
 type DiagnosticWebhookDetection = {
@@ -1117,16 +1128,17 @@ function detectOutdatedWebhookFromDiagnostics(snapshot: SpeciesPredictionDebugSn
 function deriveSpeciesPredictionDisplayState(
   status: ReturnType<typeof normalizeBackendStatus>,
 ): SpeciesPredictionDisplayState {
-  if (!status.isConfigured) return 'NOT_CONFIGURED';
+  if (status.missingWebhookEnv === true || !status.isConfigured) return 'NOT_CONFIGURED';
   if (
     status.isDeployed
-    && status.isConfigured
+    && (status.isConfigured || status.invalidWebhookUrl === true)
     && (
-      status.isRuntimeAvailable !== true
+      status.invalidWebhookUrl === true
+      || status.hasOutdatedWebhookPathError === true
+      || status.isRuntimeAvailable !== true
       || status.isHealthy !== true
       || status.reasonCode === 'N8N_WEBHOOK_INACTIVE'
       || status.backend.productionWebhookInactive === true
-      || status.hasOutdatedWebhookPathError === true
     )
   ) {
     return 'CONFIGURED_UNAVAILABLE';
@@ -1146,12 +1158,15 @@ function buildSpeciesPredictionStatusCard(
     };
   }
   if (displayState === 'CONFIGURED_UNAVAILABLE') {
+    const helperText = status.invalidWebhookUrl === true
+      ? 'The Supabase webhook URL is invalid. Check the backend config debug values below.'
+      : status.hasOutdatedWebhookPathError === true
+        ? 'The Supabase prediction function is still pointing to an outdated n8n webhook path.'
+        : 'The prediction runtime is unavailable. Check the latest backend diagnostics for the exact upstream reason.';
     return {
       badge: 'Unavailable',
       primaryText: 'Prediction backend is configured but currently unavailable',
-      helperText: status.hasOutdatedWebhookPathError === true
-        ? 'The Supabase prediction function is still pointing to an outdated n8n webhook path.'
-        : 'The prediction runtime is unavailable. Check the latest backend diagnostics for the exact upstream reason.',
+      helperText,
     };
   }
   return {

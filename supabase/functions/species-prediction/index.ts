@@ -10,8 +10,12 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const PREDICTION_BACKEND_BUILD = '2026-03-18-fix8';
+const PREDICTION_BACKEND_BUILD = '2026-03-18-fix9';
 const WEBHOOK_CONFIG_SOURCE = `env:${WEBHOOK_ENV_KEY}`;
+const STATUS_NO_CACHE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
+  'Pragma': 'no-cache',
+} as const;
 // If health/status reports an outdated webhook path, update the Supabase secret
 // SPECIES_PREDICTION_N8N_WEBHOOK_URL to:
 // https://estbirds.app.n8n.cloud/webhook/species-prediction-evidence-first
@@ -34,7 +38,19 @@ type StatusCode =
   | 'RUNTIME_ERROR';
 
 type WebhookTargetInfo = {
+  envVarName: string;
+  envPresent: boolean;
+  envLength: number;
   configSource: string;
+  rawWebhookPreview: string;
+  parsedUrlOk: boolean;
+  configuredPathname: string;
+  normalizedConfiguredPath: string;
+  expectedPath: string;
+  fallbackUsed: boolean;
+  fallbackValue: string;
+  missingWebhookEnv: boolean;
+  invalidWebhookUrl: boolean;
   webhookConfigured: boolean;
   valid: boolean;
   configuredWebhookUrl: string;
@@ -75,16 +91,28 @@ type SpeciesPredictionUpstreamError = {
 };
 
 function buildWebhookTargetInfo(input: Partial<WebhookTargetInfo>): WebhookTargetInfo {
-  const configuredWebhookPath = input.configuredWebhookPath || '';
+  const normalizedConfiguredPath = input.normalizedConfiguredPath || '';
   const expectedWebhookPath = EXPECTED_PRODUCTION_WEBHOOK_PATH;
-  const hasOutdatedWebhook = configuredWebhookPath === 'species-prediction';
+  const hasOutdatedWebhook = normalizedConfiguredPath === 'species-prediction';
   return {
+    envVarName: WEBHOOK_ENV_KEY,
+    envPresent: input.envPresent === true,
+    envLength: input.envLength || 0,
     configSource: WEBHOOK_CONFIG_SOURCE,
+    rawWebhookPreview: input.rawWebhookPreview || '',
+    parsedUrlOk: input.parsedUrlOk === true,
+    configuredPathname: input.configuredPathname || '',
+    normalizedConfiguredPath,
+    expectedPath: expectedWebhookPath,
+    fallbackUsed: input.fallbackUsed === true,
+    fallbackValue: input.fallbackValue || '',
+    missingWebhookEnv: input.missingWebhookEnv === true,
+    invalidWebhookUrl: input.invalidWebhookUrl === true,
     webhookConfigured: input.webhookConfigured === true,
     valid: input.valid === true,
     configuredWebhookUrl: input.configuredWebhookUrl || '',
     configuredWebhookUrlPreview: input.configuredWebhookUrlPreview || '',
-    configuredWebhookPath,
+    configuredWebhookPath: input.configuredWebhookPath || normalizedConfiguredPath,
     expectedWebhookPath,
     hasOutdatedWebhook,
     deployed: true,
@@ -108,6 +136,28 @@ function redactWebhookUrlPreview(raw: string): string {
   } catch {
     return raw.replace(/[?#].*$/, '');
   }
+}
+
+function stripWrappingQuotes(value: string): string {
+  if (value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+function stripTrailingSlashes(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
+function normalizeWebhookPath(pathname: string): string {
+  const trimmed = String(pathname || '').trim();
+  const withoutSlashes = trimmed.replace(/^\/+|\/+$/g, '');
+  const segments = withoutSlashes.split('/').filter(Boolean);
+  const webhookIndex = segments.findIndex((segment) => segment === 'webhook' || segment === 'webhook-test');
+  if (webhookIndex >= 0) {
+    return segments.slice(webhookIndex + 1).join('/');
+  }
+  return segments.join('/');
 }
 
 function getSupabaseAdmin() {
@@ -179,7 +229,19 @@ serve(async (req) => {
         configuredWebhookPath: webhookTarget.configuredWebhookPath,
         configuredWebhookUrlPreview: webhookTarget.configuredWebhookUrlPreview,
         hasOutdatedWebhook: webhookTarget.hasOutdatedWebhook,
+        envVarName: webhookTarget.envVarName,
+        envPresent: webhookTarget.envPresent,
+        envLength: webhookTarget.envLength,
         configSource: webhookTarget.configSource,
+        rawWebhookPreview: webhookTarget.rawWebhookPreview,
+        parsedUrlOk: webhookTarget.parsedUrlOk,
+        configuredPathname: webhookTarget.configuredPathname,
+        normalizedConfiguredPath: webhookTarget.normalizedConfiguredPath,
+        expectedPath: webhookTarget.expectedPath,
+        fallbackUsed: webhookTarget.fallbackUsed,
+        fallbackValue: webhookTarget.fallbackValue,
+        missingWebhookEnv: webhookTarget.missingWebhookEnv,
+        invalidWebhookUrl: webhookTarget.invalidWebhookUrl,
         resolvedWebhookUrl: webhookTarget.configuredWebhookUrl,
         resolvedWebhookPath: webhookTarget.configuredWebhookPath,
         expectedMethod: webhookTarget.expectedMethod,
@@ -198,7 +260,7 @@ serve(async (req) => {
         edgeFunctionVersion: EDGE_FUNCTION_VERSION,
         timestamp: new Date().toISOString(),
         message: buildStatusMessage(webhookTarget, probe, verifyRequested, statusCode),
-      });
+      }, 200, STATUS_NO_CACHE_HEADERS);
     }
 
     // ── GET ?mode=poll&requestId=X ──
@@ -440,10 +502,10 @@ function resolveTimeoutMs(): number {
   return Math.min(180000, Math.max(5000, value));
 }
 
-function json(body: Record<string, unknown>, status = 200): Response {
+function json(body: Record<string, unknown>, status = 200, extraHeaders: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders, 'Content-Type': 'application/json', ...extraHeaders },
   });
 }
 
@@ -1245,8 +1307,22 @@ async function maybeFetchSecondarySummary(opts: {
 
 function resolveWebhookTarget(): WebhookTargetInfo {
   const raw = readWebhookUrl();
-  if (!raw) {
+  const envPresent = raw.length > 0;
+  const normalizedRaw = stripTrailingSlashes(stripWrappingQuotes(raw.trim()));
+  const rawWebhookPreview = redactWebhookUrlPreview(normalizedRaw);
+
+  if (!normalizedRaw) {
     return buildWebhookTargetInfo({
+      envPresent,
+      envLength: raw.length,
+      rawWebhookPreview,
+      parsedUrlOk: false,
+      configuredPathname: '',
+      normalizedConfiguredPath: '',
+      fallbackUsed: false,
+      fallbackValue: '',
+      missingWebhookEnv: true,
+      invalidWebhookUrl: false,
       webhookConfigured: false,
       valid: false,
       configuredWebhookUrl: '',
@@ -1260,13 +1336,23 @@ function resolveWebhookTarget(): WebhookTargetInfo {
   }
   let parsed: URL;
   try {
-    parsed = new URL(raw);
+    parsed = new URL(normalizedRaw);
   } catch {
     return buildWebhookTargetInfo({
+      envPresent,
+      envLength: raw.length,
+      rawWebhookPreview,
+      parsedUrlOk: false,
+      configuredPathname: '',
+      normalizedConfiguredPath: '',
+      fallbackUsed: false,
+      fallbackValue: '',
+      missingWebhookEnv: false,
+      invalidWebhookUrl: true,
       webhookConfigured: true,
       valid: false,
-      configuredWebhookUrl: raw,
-      configuredWebhookUrlPreview: redactWebhookUrlPreview(raw),
+      configuredWebhookUrl: normalizedRaw,
+      configuredWebhookUrlPreview: rawWebhookPreview,
       configuredWebhookPath: '',
       looksLikeProductionWebhook: false,
       available: false,
@@ -1274,10 +1360,20 @@ function resolveWebhookTarget(): WebhookTargetInfo {
       validationMessage: `${WEBHOOK_ENV_KEY} is not a valid absolute URL.`,
     });
   }
-  const match = parsed.pathname.match(/\/webhook(?:-test)?\/([^/?#]+)/);
-  const webhookPath = match?.[1]?.trim() || '';
+  const configuredPathname = stripTrailingSlashes(parsed.pathname || '');
+  const webhookPath = normalizeWebhookPath(configuredPathname);
   if (!webhookPath) {
     return buildWebhookTargetInfo({
+      envPresent,
+      envLength: raw.length,
+      rawWebhookPreview,
+      parsedUrlOk: true,
+      configuredPathname,
+      normalizedConfiguredPath: '',
+      fallbackUsed: false,
+      fallbackValue: '',
+      missingWebhookEnv: false,
+      invalidWebhookUrl: true,
       webhookConfigured: true,
       valid: false,
       configuredWebhookUrl: parsed.toString(),
@@ -1291,6 +1387,16 @@ function resolveWebhookTarget(): WebhookTargetInfo {
   }
   const looksLikeProductionWebhook = webhookPath === EXPECTED_PRODUCTION_WEBHOOK_PATH;
   return buildWebhookTargetInfo({
+    envPresent,
+    envLength: raw.length,
+    rawWebhookPreview,
+    parsedUrlOk: true,
+    configuredPathname,
+    normalizedConfiguredPath: webhookPath,
+    fallbackUsed: false,
+    fallbackValue: '',
+    missingWebhookEnv: false,
+    invalidWebhookUrl: false,
     webhookConfigured: true,
     valid: true,
     configuredWebhookUrl: parsed.toString(),
@@ -1398,6 +1504,9 @@ function buildStatusMessage(
     return `Prediction backend is not configured yet because Supabase secret ${WEBHOOK_ENV_KEY} is missing.`;
   }
   if (statusCode === 'DEPLOYED_NOT_CONFIGURED') {
+    if (webhookTarget.invalidWebhookUrl) {
+      return `Prediction backend has an invalid n8n webhook configuration in ${WEBHOOK_ENV_KEY}.`;
+    }
     if (webhookTarget.hasOutdatedWebhook) {
       return `Supabase secret ${WEBHOOK_ENV_KEY} is still configured with webhook path ${webhookTarget.configuredWebhookPath}, expected ${webhookTarget.expectedWebhookPath}`;
     }

@@ -10,8 +10,8 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const PREDICTION_BACKEND_BUILD = '2026-03-19-fix14';
-const INVOKE_ROUTE_VERSION = 'fix14';
+const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-19-fix15';
+const INVOKE_ROUTE_VERSION = 'fix15';
 const EDGE_FUNCTION_FILE = 'supabase/functions/species-prediction/index.ts';
 const WEBHOOK_CONFIG_SOURCE = `env:${WEBHOOK_ENV_KEY}`;
 const STATUS_NO_CACHE_HEADERS = {
@@ -375,7 +375,7 @@ serve(async (req) => {
       status: 204,
       headers: {
         ...corsHeaders,
-        'x-species-prediction-build': PREDICTION_BACKEND_BUILD,
+        'x-species-prediction-build': SPECIES_PREDICTION_BACKEND_BUILD,
       },
     });
   }
@@ -410,13 +410,13 @@ serve(async (req) => {
         statusDecisionReason: statusDecision.statusDecisionReason,
         lastInvocationStatus: lastInvocation.lastInvocationStatus,
         edgeFunctionVersion: EDGE_FUNCTION_VERSION,
-        predictionBackendBuild: PREDICTION_BACKEND_BUILD,
+        predictionBackendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
       });
       return json({
         ok: true,
         stage: 'status',
-        predictionBackendBuild: PREDICTION_BACKEND_BUILD,
-        backendBuild: PREDICTION_BACKEND_BUILD,
+        predictionBackendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
+        backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
         invokeRouteVersion: INVOKE_ROUTE_VERSION,
         summaryShapeUsed: 'missing',
         hasTopLevelInsightSummary: false,
@@ -729,7 +729,7 @@ function json(body: Record<string, unknown>, status = 200, extraHeaders: Record<
     headers: {
       ...corsHeaders,
       'Content-Type': 'application/json',
-      'x-species-prediction-build': PREDICTION_BACKEND_BUILD,
+      'x-species-prediction-build': SPECIES_PREDICTION_BACKEND_BUILD,
       ...extraHeaders,
     },
   });
@@ -738,7 +738,7 @@ function json(body: Record<string, unknown>, status = 200, extraHeaders: Record<
 function withEdgeResponseMarkers(body: Record<string, unknown>): Record<string, unknown> {
   return {
     ...body,
-    backendBuild: typeof body.backendBuild === 'string' ? body.backendBuild : PREDICTION_BACKEND_BUILD,
+    backendBuild: typeof body.backendBuild === 'string' ? body.backendBuild : SPECIES_PREDICTION_BACKEND_BUILD,
     invokeRouteVersion: typeof body.invokeRouteVersion === 'string' ? body.invokeRouteVersion : INVOKE_ROUTE_VERSION,
     summaryShapeUsed: body.summaryShapeUsed === 'nested_aiSummary' || body.summaryShapeUsed === 'flat_legacy' || body.summaryShapeUsed === 'missing'
       ? body.summaryShapeUsed
@@ -749,7 +749,7 @@ function withEdgeResponseMarkers(body: Record<string, unknown>): Record<string, 
     topLevelKeys: Array.isArray(body.topLevelKeys) ? body.topLevelKeys : [],
     nestedAiSummaryKeys: Array.isArray(body.nestedAiSummaryKeys) ? body.nestedAiSummaryKeys : [],
     ...(body.ok === false || typeof body.error === 'string' || typeof body.message === 'string' && String(body.message).toLowerCase().includes('error')
-      ? { errorProofBuild: typeof body.errorProofBuild === 'string' ? body.errorProofBuild : PREDICTION_BACKEND_BUILD }
+      ? { errorProofBuild: typeof body.errorProofBuild === 'string' ? body.errorProofBuild : SPECIES_PREDICTION_BACKEND_BUILD }
       : {}),
   };
 }
@@ -1595,13 +1595,13 @@ async function maybeFetchSecondarySummary(opts: {
     normalizedInsightLength: extractedSummary?.normalizedInsightLength || 0,
     normalizedWarningsCount: extractedSummary?.normalizedWarningsCount || 0,
     nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
-    backendBuild: PREDICTION_BACKEND_BUILD,
+    backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
   });
   if (!normalizedResponse) {
     console.warn(`${LOG_PREFIX} upstream_normalization_failed`, {
-      fileName: EDGE_FUNCTION_FILE,
+      filePath: EDGE_FUNCTION_FILE,
       functionName: 'maybeFetchSecondarySummary',
-      branch: 'maybeFetchSecondarySummary.throw.invalid_upstream_json',
+      branchName: 'maybeFetchSecondarySummary.throw.invalid_upstream_json',
       hasTopLevelInsightSummary: shapeDiagnostics.hasTopLevelInsightSummary,
       hasNestedAiSummaryObject: shapeDiagnostics.hasNestedAiSummaryObject,
       hasNestedAiSummaryInsight: shapeDiagnostics.hasNestedAiSummaryInsight,
@@ -1611,7 +1611,7 @@ async function maybeFetchSecondarySummary(opts: {
       aiSummaryType: typeof upstreamRecord.aiSummary,
       nestedInsightSummaryType: typeof asRecord(upstreamRecord.aiSummary).insightSummary,
       topLevelInsightSummaryType: typeof upstreamRecord.insightSummary,
-      backendBuild: PREDICTION_BACKEND_BUILD,
+      backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
     });
     throw createUpstreamError({
       stage: 'invalid_upstream_json',
@@ -1626,7 +1626,7 @@ async function maybeFetchSecondarySummary(opts: {
         topLevelKeys: shapeDiagnostics.topLevelKeys,
         nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
         insightSummaryType: shapeDiagnostics.insightSummaryType,
-        backendBuild: PREDICTION_BACKEND_BUILD,
+        backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
       },
       fallbackCode: 'N8N_UPSTREAM_INVALID_RESPONSE',
       fallbackMessage: 'n8n returned success but no AI summary payload was present',
@@ -1750,7 +1750,7 @@ function createWebhookConfigError(webhookTarget: WebhookTargetInfo): SpeciesPred
     resolvedWebhookUrl: webhookTarget.configuredWebhookUrl,
     resolvedWebhookPath: webhookTarget.configuredWebhookPath,
     productionWebhookInactive: false,
-    backendBuild: PREDICTION_BACKEND_BUILD,
+    backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
     invokeRouteVersion: INVOKE_ROUTE_VERSION,
     summaryShapeUsed: 'missing',
     hasTopLevelInsightSummary: false,
@@ -1758,7 +1758,7 @@ function createWebhookConfigError(webhookTarget: WebhookTargetInfo): SpeciesPred
     hasNestedAiSummaryInsight: false,
     topLevelKeys: [],
     nestedAiSummaryKeys: [],
-    errorProofBuild: PREDICTION_BACKEND_BUILD,
+    errorProofBuild: SPECIES_PREDICTION_BACKEND_BUILD,
   };
 }
 
@@ -1789,7 +1789,7 @@ function createUpstreamError(input: {
     resolvedWebhookUrl: input.webhookTarget.configuredWebhookUrl,
     resolvedWebhookPath: input.webhookTarget.configuredWebhookPath,
     productionWebhookInactive,
-    backendBuild: PREDICTION_BACKEND_BUILD,
+    backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
     invokeRouteVersion: INVOKE_ROUTE_VERSION,
     summaryShapeUsed: input.summary?.summaryShapeUsed || 'missing',
     hasTopLevelInsightSummary: shapeDiagnostics.hasTopLevelInsightSummary,
@@ -1797,7 +1797,7 @@ function createUpstreamError(input: {
     hasNestedAiSummaryInsight: shapeDiagnostics.hasNestedAiSummaryInsight,
     topLevelKeys: shapeDiagnostics.topLevelKeys,
     nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
-    errorProofBuild: PREDICTION_BACKEND_BUILD,
+    errorProofBuild: SPECIES_PREDICTION_BACKEND_BUILD,
   };
 }
 
@@ -1813,7 +1813,7 @@ function normalizePredictionError(error: unknown, webhookTarget: WebhookTargetIn
       resolvedWebhookUrl: webhookTarget.configuredWebhookUrl,
       resolvedWebhookPath: webhookTarget.configuredWebhookPath,
       productionWebhookInactive: false,
-      backendBuild: PREDICTION_BACKEND_BUILD,
+      backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
       invokeRouteVersion: INVOKE_ROUTE_VERSION,
       summaryShapeUsed: 'missing',
       hasTopLevelInsightSummary: false,
@@ -1821,7 +1821,7 @@ function normalizePredictionError(error: unknown, webhookTarget: WebhookTargetIn
       hasNestedAiSummaryInsight: false,
       topLevelKeys: [],
       nestedAiSummaryKeys: [],
-      errorProofBuild: PREDICTION_BACKEND_BUILD,
+      errorProofBuild: SPECIES_PREDICTION_BACKEND_BUILD,
     };
   }
   return null;
@@ -1934,7 +1934,7 @@ function attachNormalizationMarkers(
 ): Record<string, unknown> {
   return {
     ...body,
-    backendBuild: PREDICTION_BACKEND_BUILD,
+    backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
     invokeRouteVersion: INVOKE_ROUTE_VERSION,
     summaryShapeUsed: summary?.summaryShapeUsed || 'missing',
     hasTopLevelInsightSummary: summary?.hasTopLevelInsightSummary ?? false,
@@ -1942,7 +1942,7 @@ function attachNormalizationMarkers(
     hasNestedAiSummaryInsight: summary?.hasNestedAiSummaryInsight ?? false,
     topLevelKeys: summary?.topLevelKeys ?? [],
     nestedAiSummaryKeys: summary?.nestedAiSummaryKeys ?? [],
-    ...(summary ? { normalizationProof: 'nested aiSummary accepted by live invoke route' } : {}),
+    ...(summary ? { normalizationProof: 'nested aiSummary accepted by live POST invoke route' } : {}),
   };
 }
 

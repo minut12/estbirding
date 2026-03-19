@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import {
+  extractUsablePayloadFromErrorEnvelope,
   hasUsableSpeciesPredictionResult,
   isPredictionRequestType,
   normalizeSpeciesPredictionResult,

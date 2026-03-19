@@ -546,7 +546,10 @@ export function normalizeSpeciesPredictionResult(
     || readString(aiSummaryRecord, ['confidenceNote', 'confidence_note'])
     || readString(source, ['confidence_note'])
     || readString(asRecord(source.openaiAnalysis), ['confidenceNote', 'confidence_note']);
-  const rankingNotes = readString(source, ['rankingNotes'])
+  const rankingNotes = normalizeRankingNotes(source.rankingNotes)
+    || normalizeRankingNotes(aiSummaryRecord.rankingNotes)
+    || normalizeRankingNotes(aiSummaryRecord.ranking_notes)
+    || readString(source, ['rankingNotes'])
     || readString(aiSummaryRecord, ['rankingNotes', 'ranking_notes'])
     || readString(source, ['ranking_notes']);
   const analysisVersion = readString(source, ['analysisVersion'])

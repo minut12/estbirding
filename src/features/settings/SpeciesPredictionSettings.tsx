@@ -342,7 +342,7 @@ export default function SpeciesPredictionSettings() {
         onEnabledChange={setPredictionFeatureEnabled}
       />
       <p className="text-[11px] text-muted-foreground">
-        prediction-settings-build: 2026-03-18-fix9
+        prediction-settings-build: 2026-03-18-fix10
       </p>
       {!predictionEnabled ? (
         <p className="text-xs text-muted-foreground">Turn on Species Prediction to edit these settings</p>
@@ -637,20 +637,17 @@ export default function SpeciesPredictionSettings() {
                             <JsonBox value={debugSnapshot.transport.healthCheck} />
                             {canSeeDebugDiagnostics && (
                               <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
-                                <DebugKeyValue label="Backend build" value={backendStatus.predictionBackendBuild || '(empty)'} />
-                                <DebugKeyValue label="Env present" value={backendStatus.envPresent ? 'Yes' : 'No'} />
-                                <DebugKeyValue label="Config source" value={backendStatus.configSource || '(empty)'} />
-                                <DebugKeyValue label="Parsed URL ok" value={backendStatus.parsedUrlOk ? 'Yes' : 'No'} />
-                                <DebugKeyValue label="Configured pathname" value={backendStatus.configuredPathname || '(empty)'} />
-                                <DebugKeyValue label="Normalized configured path" value={backendStatus.normalizedConfiguredPath || '(empty)'} />
-                                <DebugKeyValue label="Expected path" value={backendStatus.expectedPath || '(empty)'} />
-                                <DebugKeyValue label="Fallback used" value={backendStatus.fallbackUsed ? 'Yes' : 'No'} />
-                                <DebugKeyValue label="Fallback value" value={backendStatus.fallbackValue || '(empty)'} />
-                                <DebugKeyValue label="Expected webhook path" value={backendStatus.expectedWebhookPath || '(empty)'} />
-                                <DebugKeyValue label="Configured webhook path" value={backendStatus.configuredWebhookPath || '(empty)'} />
-                                <DebugKeyValue label="Health mismatch" value={backendStatus.hasOutdatedWebhook ? 'Yes' : 'No'} />
+                                <DebugKeyValue label="Configured" value={backendStatus.configured ? 'Yes' : 'No'} />
+                                <DebugKeyValue label="Available" value={backendStatus.available ? 'Yes' : 'No'} />
+                                <DebugKeyValue label="Runtime probe used" value={backendStatus.runtimeProbeUsed ? 'Yes' : 'No'} />
+                                <DebugKeyValue label="Runtime probe method" value={backendStatus.runtimeProbeMethod || '(empty)'} />
+                                <DebugKeyValue label="Runtime probe reason" value={backendStatus.runtimeProbeReason || '(empty)'} />
+                                <DebugKeyValue label="Status decision reason" value={backendStatus.statusDecisionReason || '(empty)'} />
                                 <DebugKeyValue label="Diagnostics mismatch" value={diagnosticWebhookError.detected ? 'Yes' : 'No'} />
-                                <DebugKeyValue label="Mismatch source" value={backendStatus.hasOutdatedWebhook ? 'health_check' : 'none'} />
+                                <DebugKeyValue label="Diagnostics age (ms)" value={String(backendStatus.diagnosticsAgeMs ?? '(null)')} />
+                                <DebugKeyValue label="Last invocation status" value={backendStatus.lastInvocationStatus || '(empty)'} />
+                                <DebugKeyValue label="Last invocation error stage" value={backendStatus.lastInvocationErrorStage || '(empty)'} />
+                                <DebugKeyValue label="Backend build" value={backendStatus.backendBuild || backendStatus.predictionBackendBuild || '(empty)'} />
                               </div>
                             )}
                           </DebugSection>
@@ -900,6 +897,17 @@ type SpeciesPredictionBackendStatus = {
   statusCode: 'NOT_CONFIGURED' | 'DEPLOYED_NOT_CONFIGURED' | 'CONFIGURED_AVAILABLE' | 'CONFIGURED_UNAVAILABLE' | 'RUNTIME_ERROR';
   reasonCode: string | null;
   predictionBackendBuild?: string;
+  backendBuild?: string;
+  runtimeReachable?: boolean | null;
+  runtimeProbeUsed?: boolean;
+  runtimeProbeMethod?: string;
+  runtimeProbeReason?: string;
+  lastInvocationStatus?: string;
+  lastInvocationAt?: string;
+  lastInvocationErrorStage?: string;
+  lastInvocationMessage?: string;
+  diagnosticsAgeMs?: number | null;
+  statusDecisionReason?: string;
   envVarName?: string;
   envPresent?: boolean;
   envLength?: number;
@@ -1007,6 +1015,17 @@ async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionB
     statusCode: isBackendStatusCode(status.statusCode) ? status.statusCode : 'NOT_CONFIGURED',
     reasonCode: typeof status.reasonCode === 'string' ? status.reasonCode : null,
     predictionBackendBuild: typeof status.predictionBackendBuild === 'string' ? status.predictionBackendBuild : '',
+    backendBuild: typeof status.backendBuild === 'string' ? status.backendBuild : '',
+    runtimeReachable: typeof status.runtimeReachable === 'boolean' ? status.runtimeReachable : null,
+    runtimeProbeUsed: status.runtimeProbeUsed === true,
+    runtimeProbeMethod: typeof status.runtimeProbeMethod === 'string' ? status.runtimeProbeMethod : '',
+    runtimeProbeReason: typeof status.runtimeProbeReason === 'string' ? status.runtimeProbeReason : '',
+    lastInvocationStatus: typeof status.lastInvocationStatus === 'string' ? status.lastInvocationStatus : '',
+    lastInvocationAt: typeof status.lastInvocationAt === 'string' ? status.lastInvocationAt : '',
+    lastInvocationErrorStage: typeof status.lastInvocationErrorStage === 'string' ? status.lastInvocationErrorStage : '',
+    lastInvocationMessage: typeof status.lastInvocationMessage === 'string' ? status.lastInvocationMessage : '',
+    diagnosticsAgeMs: typeof status.diagnosticsAgeMs === 'number' ? status.diagnosticsAgeMs : null,
+    statusDecisionReason: typeof status.statusDecisionReason === 'string' ? status.statusDecisionReason : '',
     envVarName: typeof status.envVarName === 'string' ? status.envVarName : '',
     envPresent: status.envPresent === true,
     envLength: typeof status.envLength === 'number' ? status.envLength : 0,
@@ -1051,8 +1070,11 @@ function normalizeBackendStatus(status: SpeciesPredictionBackendStatus) {
     isDeployed: status.deployed === true,
     isHealthy: status.available === true,
     isRuntimeAvailable: status.runtimeAvailable === true,
+    statusDecisionReason: status.statusDecisionReason || '',
+    diagnosticsAgeMs: status.diagnosticsAgeMs ?? null,
+    hasFreshInvocationFailure: status.statusDecisionReason === 'recent_real_invocation_failure',
     lastRuntimeErrorCode: status.reasonCode,
-    lastRuntimeErrorMessage: status.upstreamMessage || status.message,
+    lastRuntimeErrorMessage: status.lastInvocationMessage || status.upstreamMessage || status.message,
     statusCode: status.statusCode,
     reasonCode: status.reasonCode,
     missingWebhookEnv: status.missingWebhookEnv === true,
@@ -1129,16 +1151,15 @@ function deriveSpeciesPredictionDisplayState(
   status: ReturnType<typeof normalizeBackendStatus>,
 ): SpeciesPredictionDisplayState {
   if (status.missingWebhookEnv === true || !status.isConfigured) return 'NOT_CONFIGURED';
+  if (status.statusDecisionReason === 'configured_valid_no_runtime_probe') return 'CONFIGURED_AVAILABLE';
   if (
     status.isDeployed
     && (status.isConfigured || status.invalidWebhookUrl === true)
     && (
       status.invalidWebhookUrl === true
       || status.hasOutdatedWebhookPathError === true
-      || status.isRuntimeAvailable !== true
-      || status.isHealthy !== true
-      || status.reasonCode === 'N8N_WEBHOOK_INACTIVE'
-      || status.backend.productionWebhookInactive === true
+      || status.hasFreshInvocationFailure === true
+      || (status.isHealthy !== true && status.statusDecisionReason === 'recent_real_invocation_failure')
     )
   ) {
     return 'CONFIGURED_UNAVAILABLE';
@@ -1154,7 +1175,9 @@ function buildSpeciesPredictionStatusCard(
     return {
       badge: 'Configured',
       primaryText: 'Prediction backend is configured and available',
-      helperText: 'The species prediction backend passed runtime verification and is ready for use.',
+      helperText: status.statusDecisionReason === 'configured_valid_no_runtime_probe'
+        ? 'The species prediction backend is configured. No dedicated runtime probe is required for the POST webhook.'
+        : 'The species prediction backend is configured and ready for use.',
     };
   }
   if (displayState === 'CONFIGURED_UNAVAILABLE') {
@@ -1162,7 +1185,7 @@ function buildSpeciesPredictionStatusCard(
       ? 'The Supabase webhook URL is invalid. Check the backend config debug values below.'
       : status.hasOutdatedWebhookPathError === true
         ? 'The Supabase prediction function is still pointing to an outdated n8n webhook path.'
-        : 'The prediction runtime is unavailable. Check the latest backend diagnostics for the exact upstream reason.';
+        : (status.backend.lastInvocationMessage || 'The latest real prediction invocation failed. Check the backend diagnostics below.');
     return {
       badge: 'Unavailable',
       primaryText: 'Prediction backend is configured but currently unavailable',

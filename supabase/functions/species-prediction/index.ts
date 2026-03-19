@@ -10,12 +10,13 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const PREDICTION_BACKEND_BUILD = '2026-03-18-fix9';
+const PREDICTION_BACKEND_BUILD = '2026-03-18-fix10';
 const WEBHOOK_CONFIG_SOURCE = `env:${WEBHOOK_ENV_KEY}`;
 const STATUS_NO_CACHE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
   'Pragma': 'no-cache',
 } as const;
+const INVOCATION_DIAGNOSTICS_FRESHNESS_MS = 30 * 60 * 1000;
 // If health/status reports an outdated webhook path, update the Supabase secret
 // SPECIES_PREDICTION_N8N_WEBHOOK_URL to:
 // https://estbirds.app.n8n.cloud/webhook/species-prediction-evidence-first
@@ -66,17 +67,6 @@ type WebhookTargetInfo = {
   validationMessage: string;
 };
 
-type UpstreamProbeResult = {
-  checked: boolean;
-  ok: boolean;
-  status: number | null;
-  statusText: string;
-  message: string;
-  body: unknown;
-  productionWebhookReachable: boolean | null;
-  productionWebhookInactive: boolean;
-};
-
 type SpeciesPredictionUpstreamError = {
   stage: 'missing_webhook_url' | 'n8n_upstream' | 'n8n_non_2xx' | 'invalid_upstream_json';
   code: WebhookValidationErrorCode | UpstreamErrorCode;
@@ -88,6 +78,27 @@ type SpeciesPredictionUpstreamError = {
   resolvedWebhookUrl: string;
   resolvedWebhookPath: string;
   productionWebhookInactive: boolean;
+};
+
+type LastInvocationEvidence = {
+  lastInvocationStatus: string;
+  lastInvocationAt: string;
+  lastInvocationErrorStage: string;
+  lastInvocationMessage: string;
+  diagnosticsAgeMs: number | null;
+};
+
+type StatusDecision = {
+  configured: boolean;
+  available: boolean;
+  runtimeReachable: boolean | null;
+  runtimeProbeUsed: boolean;
+  runtimeProbeMethod: string;
+  runtimeProbeReason: string;
+  statusDecisionReason: string;
+  statusCode: StatusCode;
+  reasonCode: string | null;
+  message: string;
 };
 
 function buildWebhookTargetInfo(input: Partial<WebhookTargetInfo>): WebhookTargetInfo {
@@ -167,6 +178,147 @@ function getSupabaseAdmin() {
   );
 }
 
+async function getLastInvocationEvidence(admin: ReturnType<typeof getSupabaseAdmin>): Promise<LastInvocationEvidence> {
+  try {
+    const { data, error } = await admin
+      .from('prediction_jobs')
+      .select('status, updated_at, error_json')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) {
+      return {
+        lastInvocationStatus: '',
+        lastInvocationAt: '',
+        lastInvocationErrorStage: '',
+        lastInvocationMessage: '',
+        diagnosticsAgeMs: null,
+      };
+    }
+    const errorJson = data.error_json && typeof data.error_json === 'object' && !Array.isArray(data.error_json)
+      ? data.error_json as Record<string, unknown>
+      : {};
+    const lastInvocationAt = typeof data.updated_at === 'string' ? data.updated_at : '';
+    const parsedTime = lastInvocationAt ? new Date(lastInvocationAt).getTime() : Number.NaN;
+    return {
+      lastInvocationStatus: typeof data.status === 'string' ? data.status : '',
+      lastInvocationAt,
+      lastInvocationErrorStage: typeof errorJson.stage === 'string' ? errorJson.stage : '',
+      lastInvocationMessage: typeof errorJson.message === 'string' ? errorJson.message : '',
+      diagnosticsAgeMs: Number.isFinite(parsedTime) ? Math.max(0, Date.now() - parsedTime) : null,
+    };
+  } catch {
+    return {
+      lastInvocationStatus: '',
+      lastInvocationAt: '',
+      lastInvocationErrorStage: '',
+      lastInvocationMessage: '',
+      diagnosticsAgeMs: null,
+    };
+  }
+}
+
+function buildStatusDecision(webhookTarget: WebhookTargetInfo, lastInvocation: LastInvocationEvidence): StatusDecision {
+  if (!webhookTarget.webhookConfigured || webhookTarget.missingWebhookEnv) {
+    return {
+      configured: false,
+      available: false,
+      runtimeReachable: null,
+      runtimeProbeUsed: false,
+      runtimeProbeMethod: 'none',
+      runtimeProbeReason: 'no_runtime_probe_for_invalid_config',
+      statusDecisionReason: 'missing_webhook_env',
+      statusCode: 'NOT_CONFIGURED',
+      reasonCode: webhookTarget.validationErrorCode || 'MISSING_WEBHOOK_URL',
+      message: `Prediction backend is not configured yet because Supabase secret ${WEBHOOK_ENV_KEY} is missing.`,
+    };
+  }
+  if (!webhookTarget.valid || webhookTarget.invalidWebhookUrl) {
+    return {
+      configured: false,
+      available: false,
+      runtimeReachable: null,
+      runtimeProbeUsed: false,
+      runtimeProbeMethod: 'none',
+      runtimeProbeReason: 'no_runtime_probe_for_invalid_config',
+      statusDecisionReason: 'invalid_webhook_url',
+      statusCode: 'DEPLOYED_NOT_CONFIGURED',
+      reasonCode: webhookTarget.validationErrorCode || 'INVALID_WEBHOOK_URL',
+      message: `Prediction backend has an invalid n8n webhook configuration in ${WEBHOOK_ENV_KEY}.`,
+    };
+  }
+  if (webhookTarget.hasOutdatedWebhook || !webhookTarget.looksLikeProductionWebhook) {
+    return {
+      configured: false,
+      available: false,
+      runtimeReachable: null,
+      runtimeProbeUsed: false,
+      runtimeProbeMethod: 'none',
+      runtimeProbeReason: 'no_runtime_probe_for_invalid_config',
+      statusDecisionReason: 'outdated_webhook_path',
+      statusCode: 'DEPLOYED_NOT_CONFIGURED',
+      reasonCode: 'INVALID_WEBHOOK_PATH',
+      message: `Supabase secret ${WEBHOOK_ENV_KEY} is still configured with webhook path ${webhookTarget.configuredWebhookPath}, expected ${webhookTarget.expectedWebhookPath}`,
+    };
+  }
+
+  const diagnosticsAreFresh = lastInvocation.diagnosticsAgeMs != null && lastInvocation.diagnosticsAgeMs <= INVOCATION_DIAGNOSTICS_FRESHNESS_MS;
+  if (diagnosticsAreFresh && lastInvocation.lastInvocationStatus === 'failed') {
+    return {
+      configured: true,
+      available: false,
+      runtimeReachable: false,
+      runtimeProbeUsed: false,
+      runtimeProbeMethod: 'none',
+      runtimeProbeReason: 'recent_real_invocation_evidence',
+      statusDecisionReason: 'recent_real_invocation_failure',
+      statusCode: 'CONFIGURED_UNAVAILABLE',
+      reasonCode: 'RUNTIME_ERROR',
+      message: lastInvocation.lastInvocationMessage || 'Prediction backend is configured but the latest real invocation failed.',
+    };
+  }
+  if (diagnosticsAreFresh && lastInvocation.lastInvocationStatus === 'completed') {
+    return {
+      configured: true,
+      available: true,
+      runtimeReachable: true,
+      runtimeProbeUsed: false,
+      runtimeProbeMethod: 'none',
+      runtimeProbeReason: 'recent_real_invocation_evidence',
+      statusDecisionReason: 'recent_real_invocation_success',
+      statusCode: 'CONFIGURED_AVAILABLE',
+      reasonCode: null,
+      message: 'Prediction backend is deployed, configured, and recently succeeded on a real invocation.',
+    };
+  }
+  if (lastInvocation.lastInvocationStatus === 'failed' && lastInvocation.diagnosticsAgeMs != null && lastInvocation.diagnosticsAgeMs > INVOCATION_DIAGNOSTICS_FRESHNESS_MS) {
+    return {
+      configured: true,
+      available: true,
+      runtimeReachable: null,
+      runtimeProbeUsed: false,
+      runtimeProbeMethod: 'none',
+      runtimeProbeReason: 'no_dedicated_runtime_probe_configured',
+      statusDecisionReason: 'stale_invocation_failure_ignored',
+      statusCode: 'CONFIGURED_AVAILABLE',
+      reasonCode: null,
+      message: 'Prediction backend is configured. Older invocation failures are outside the active diagnostics window.',
+    };
+  }
+  return {
+    configured: true,
+    available: true,
+    runtimeReachable: null,
+    runtimeProbeUsed: false,
+    runtimeProbeMethod: 'none',
+    runtimeProbeReason: 'no_dedicated_runtime_probe_configured',
+    statusDecisionReason: 'configured_valid_no_runtime_probe',
+    statusCode: 'CONFIGURED_AVAILABLE',
+    reasonCode: null,
+    message: 'Prediction backend is configured and no dedicated runtime probe is required.',
+  };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -181,19 +333,9 @@ serve(async (req) => {
 
     // ── GET ?mode=status ──
     if (req.method === 'GET' && url.searchParams.get('mode') === 'status') {
-      const verifyRequested = ['1', 'true', 'yes'].includes((url.searchParams.get('verify') || '').trim().toLowerCase());
-      const probe = shouldProbeWebhookTarget(webhookTarget)
-        ? await probeWebhookTarget(webhookTarget, verifyRequested)
-        : buildSkippedProbe();
-      const available = webhookTarget.valid
-        && webhookTarget.looksLikeProductionWebhook
-        && probe.productionWebhookInactive !== true;
-      const runtimeAvailable = webhookTarget.valid
-        && webhookTarget.looksLikeProductionWebhook
-        && probe.productionWebhookReachable === true
-        && probe.productionWebhookInactive !== true;
-      const statusCode = resolveStatusCode(webhookTarget, probe, verifyRequested);
-      const reasonCode = resolveReasonCode(webhookTarget, probe, verifyRequested);
+      const admin = getSupabaseAdmin();
+      const lastInvocation = await getLastInvocationEvidence(admin);
+      const statusDecision = buildStatusDecision(webhookTarget, lastInvocation);
       console.info(`${LOG_PREFIX} webhook_config`, {
         parsedEnvVariableName: WEBHOOK_ENV_KEY,
         parsedConfiguredPath: webhookTarget.configuredWebhookPath,
@@ -203,13 +345,14 @@ serve(async (req) => {
       console.info(`${LOG_PREFIX} status check`, {
         webhookConfigured,
         webhookValid: webhookTarget.valid,
-        statusCode,
-        reasonCode,
+        statusCode: statusDecision.statusCode,
+        reasonCode: statusDecision.reasonCode,
         expectedWebhookPath: webhookTarget.expectedWebhookPath,
         configuredWebhookPath: webhookTarget.configuredWebhookPath,
         hasOutdatedWebhook: webhookTarget.hasOutdatedWebhook,
         resolvedWebhookPath: webhookTarget.configuredWebhookPath,
-        productionWebhookInactive: probe.productionWebhookInactive,
+        statusDecisionReason: statusDecision.statusDecisionReason,
+        lastInvocationStatus: lastInvocation.lastInvocationStatus,
         edgeFunctionVersion: EDGE_FUNCTION_VERSION,
         predictionBackendBuild: PREDICTION_BACKEND_BUILD,
       });
@@ -217,14 +360,25 @@ serve(async (req) => {
         ok: true,
         stage: 'status',
         predictionBackendBuild: PREDICTION_BACKEND_BUILD,
-        available,
+        backendBuild: PREDICTION_BACKEND_BUILD,
+        available: statusDecision.available,
         deployed: webhookTarget.deployed,
-        configured: webhookConfigured,
+        configured: statusDecision.configured,
         webhookConfigured,
         webhookValid: webhookTarget.valid,
-        runtimeAvailable,
-        statusCode,
-        reasonCode,
+        runtimeAvailable: statusDecision.runtimeReachable === true,
+        runtimeReachable: statusDecision.runtimeReachable,
+        runtimeProbeUsed: statusDecision.runtimeProbeUsed,
+        runtimeProbeMethod: statusDecision.runtimeProbeMethod,
+        runtimeProbeReason: statusDecision.runtimeProbeReason,
+        lastInvocationStatus: lastInvocation.lastInvocationStatus,
+        lastInvocationAt: lastInvocation.lastInvocationAt,
+        lastInvocationErrorStage: lastInvocation.lastInvocationErrorStage,
+        lastInvocationMessage: lastInvocation.lastInvocationMessage,
+        diagnosticsAgeMs: lastInvocation.diagnosticsAgeMs,
+        statusDecisionReason: statusDecision.statusDecisionReason,
+        statusCode: statusDecision.statusCode,
+        reasonCode: statusDecision.reasonCode,
         expectedWebhookPath: webhookTarget.expectedWebhookPath,
         configuredWebhookPath: webhookTarget.configuredWebhookPath,
         configuredWebhookUrlPreview: webhookTarget.configuredWebhookUrlPreview,
@@ -248,18 +402,18 @@ serve(async (req) => {
         looksLikeProductionWebhook: webhookTarget.looksLikeProductionWebhook,
         validationErrorCode: webhookTarget.validationErrorCode,
         validationMessage: webhookTarget.validationMessage,
-        verificationAttempted: probe.checked,
-        verificationSafeMode: !verifyRequested,
-        productionWebhookReachable: probe.productionWebhookReachable,
-        productionWebhookInactive: probe.productionWebhookInactive,
-        upstreamStatus: probe.status,
-        upstreamStatusText: probe.statusText,
-        upstreamMessage: probe.message,
-        upstreamBody: probe.body,
+        verificationAttempted: false,
+        verificationSafeMode: true,
+        productionWebhookReachable: null,
+        productionWebhookInactive: false,
+        upstreamStatus: null,
+        upstreamStatusText: '',
+        upstreamMessage: '',
+        upstreamBody: null,
         timeoutMsUsed,
         edgeFunctionVersion: EDGE_FUNCTION_VERSION,
         timestamp: new Date().toISOString(),
-        message: buildStatusMessage(webhookTarget, probe, verifyRequested, statusCode),
+        message: statusDecision.message,
       }, 200, STATUS_NO_CACHE_HEADERS);
     }
 
@@ -1407,124 +1561,6 @@ function resolveWebhookTarget(): WebhookTargetInfo {
     validationErrorCode: null,
     validationMessage: '',
   });
-}
-
-function shouldProbeWebhookTarget(webhookTarget: WebhookTargetInfo): boolean {
-  return webhookTarget.webhookConfigured && webhookTarget.valid;
-}
-
-function buildSkippedProbe(): UpstreamProbeResult {
-  return {
-    checked: false,
-    ok: false,
-    status: null,
-    statusText: '',
-    message: '',
-    body: null,
-    productionWebhookReachable: null,
-    productionWebhookInactive: false,
-  };
-}
-
-async function probeWebhookTarget(webhookTarget: WebhookTargetInfo, verifyRequested: boolean): Promise<UpstreamProbeResult> {
-  if (!verifyRequested) {
-    return {
-      checked: true,
-      ok: true,
-      status: null,
-      statusText: '',
-      message: 'Lightweight verification skipped. Pass verify=1 to probe the exact configured webhook target.',
-      body: null,
-      productionWebhookReachable: null,
-      productionWebhookInactive: false,
-    };
-  }
-  const headers: Record<string, string> = {};
-  const authHeader = (Deno.env.get(AUTH_HEADER_ENV_KEY) || '').trim();
-  const authValue = (Deno.env.get(AUTH_VALUE_ENV_KEY) || '').trim();
-  if (authHeader && authValue) headers[authHeader] = authValue;
-  try {
-    const resp = await fetch(webhookTarget.configuredWebhookUrl, { method: 'GET', headers });
-    const text = await resp.text();
-    const body = safeJsonParse(text);
-    const message = extractUpstreamMessage(body) || text.slice(0, 300);
-    const productionWebhookInactive = isInactiveWebhookMessage(message);
-    const productionWebhookReachable = productionWebhookInactive
-      ? false
-      : (resp.ok || resp.status === 400 || resp.status === 401 || resp.status === 403 || resp.status === 405);
-    return {
-      checked: true,
-      ok: resp.ok,
-      status: resp.status,
-      statusText: resp.statusText,
-      message,
-      body,
-      productionWebhookReachable,
-      productionWebhookInactive,
-    };
-  } catch (error) {
-    return {
-      checked: true,
-      ok: false,
-      status: null,
-      statusText: '',
-      message: error instanceof Error ? error.message : 'Webhook verification failed',
-      body: null,
-      productionWebhookReachable: false,
-      productionWebhookInactive: false,
-    };
-  }
-}
-
-function resolveStatusCode(webhookTarget: WebhookTargetInfo, probe: UpstreamProbeResult, verifyRequested: boolean): StatusCode {
-  if (!webhookTarget.webhookConfigured) return 'NOT_CONFIGURED';
-  if (!webhookTarget.valid || !webhookTarget.looksLikeProductionWebhook) return 'DEPLOYED_NOT_CONFIGURED';
-  if (probe.productionWebhookInactive) return 'CONFIGURED_UNAVAILABLE';
-  if (verifyRequested && probe.productionWebhookReachable === false) return 'RUNTIME_ERROR';
-  if (probe.productionWebhookReachable === true) return 'CONFIGURED_AVAILABLE';
-  return verifyRequested ? 'RUNTIME_ERROR' : 'CONFIGURED_AVAILABLE';
-}
-
-function resolveReasonCode(webhookTarget: WebhookTargetInfo, probe: UpstreamProbeResult, verifyRequested: boolean): string | null {
-  if (!webhookTarget.webhookConfigured) return webhookTarget.validationErrorCode || 'MISSING_WEBHOOK_URL';
-  if (!webhookTarget.valid) return webhookTarget.validationErrorCode;
-  if (!webhookTarget.looksLikeProductionWebhook) return 'INVALID_WEBHOOK_PATH';
-  if (probe.productionWebhookInactive) return 'N8N_WEBHOOK_INACTIVE';
-  if (verifyRequested && probe.productionWebhookReachable === false) return 'N8N_UPSTREAM_NON_2XX';
-  return null;
-}
-
-function buildStatusMessage(
-  webhookTarget: WebhookTargetInfo,
-  probe: UpstreamProbeResult,
-  verifyRequested: boolean,
-  statusCode: StatusCode,
-): string {
-  if (statusCode === 'NOT_CONFIGURED') {
-    return `Prediction backend is not configured yet because Supabase secret ${WEBHOOK_ENV_KEY} is missing.`;
-  }
-  if (statusCode === 'DEPLOYED_NOT_CONFIGURED') {
-    if (webhookTarget.invalidWebhookUrl) {
-      return `Prediction backend has an invalid n8n webhook configuration in ${WEBHOOK_ENV_KEY}.`;
-    }
-    if (webhookTarget.hasOutdatedWebhook) {
-      return `Supabase secret ${WEBHOOK_ENV_KEY} is still configured with webhook path ${webhookTarget.configuredWebhookPath}, expected ${webhookTarget.expectedWebhookPath}`;
-    }
-    return webhookTarget.validationMessage || `Prediction backend has an invalid n8n webhook configuration in ${WEBHOOK_ENV_KEY}.`;
-  }
-  if (statusCode === 'CONFIGURED_UNAVAILABLE') {
-    return 'Prediction backend is configured but the n8n production webhook is inactive or not registered.';
-  }
-  if (statusCode === 'RUNTIME_ERROR') {
-    if (verifyRequested && probe.productionWebhookReachable === false) {
-      return 'Prediction backend is configured but the runtime verification of the n8n production webhook failed.';
-    }
-    return 'Prediction backend is configured but currently unavailable.';
-  }
-  if (!verifyRequested) {
-    return 'Prediction backend is configured. Exact runtime verification is available with verify=1.';
-  }
-  return 'Prediction backend is deployed, configured, and currently available.';
 }
 
 function createWebhookConfigError(webhookTarget: WebhookTargetInfo): SpeciesPredictionUpstreamError {

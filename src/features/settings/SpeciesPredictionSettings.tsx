@@ -380,7 +380,7 @@ export default function SpeciesPredictionSettings() {
               {(() => {
                 const rawResp = debugSnapshot?.rawBackendResponse;
                 const topCode = rawResp && typeof rawResp === 'object' ? (rawResp as Record<string, unknown>).code : undefined;
-                const recovered = rawResp ? (() => { try { const { extractUsablePayloadFromErrorEnvelope } = require('@/lib/speciesPrediction'); return extractUsablePayloadFromErrorEnvelope(rawResp as Record<string, unknown>); } catch { return null; } })() : null;
+                const recovered = rawResp ? extractUsablePayloadFromErrorEnvelope(rawResp as Record<string, unknown>) : null;
                 return (
                   <>
                     <p className="mt-1 font-semibold text-foreground text-[11px]">Response envelope recovery</p>

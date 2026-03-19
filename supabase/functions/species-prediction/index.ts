@@ -10,7 +10,7 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const PREDICTION_BACKEND_BUILD = '2026-03-18-fix10';
+const PREDICTION_BACKEND_BUILD = '2026-03-19-fix11';
 const WEBHOOK_CONFIG_SOURCE = `env:${WEBHOOK_ENV_KEY}`;
 const STATUS_NO_CACHE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
@@ -78,6 +78,38 @@ type SpeciesPredictionUpstreamError = {
   resolvedWebhookUrl: string;
   resolvedWebhookPath: string;
   productionWebhookInactive: boolean;
+};
+
+type NormalizedUpstreamSummary = {
+  insightSummary: string;
+  confidenceNote: string;
+  rankingNotes: string;
+  warnings: string[];
+  summaryShapeUsed: 'nested_aiSummary' | 'flat_legacy';
+};
+
+type NormalizedUpstreamResponse = {
+  insightSummary: string;
+  confidenceNote: string;
+  rankingNotes: string;
+  warnings: string[];
+  generatedAt: string;
+  analysisVersion: string;
+  sourceHealth: Record<string, unknown>;
+  countryScores: Record<string, unknown>;
+  estoniaEvidence: Record<string, unknown>;
+  evidenceSummary: Record<string, unknown>;
+  foreignClusters: unknown[];
+  predictedTargets: unknown[];
+  foreignRecentPoints: unknown[];
+  estoniaHistoryPoints: unknown[];
+  elurikkusRecentRecords: unknown[];
+  estoniaHistoryClusters: unknown[];
+  mapLayersDefault: Record<string, unknown>;
+  species: Record<string, unknown>;
+  weather: Record<string, unknown>;
+  raw: Record<string, unknown>;
+  summaryShapeUsed: 'nested_aiSummary' | 'flat_legacy';
 };
 
 type LastInvocationEvidence = {
@@ -1443,20 +1475,42 @@ async function maybeFetchSecondarySummary(opts: {
       upstreamBody: data,
     });
   }
-  const record = asRecord(data);
-  const summary = stringOr(record.aiSummary, record.insightSummary, record.summary, asRecord(record.openaiAnalysis).insightSummary);
-  if (!summary) {
+  const shapeDiagnostics = summarizeUpstreamShape(data);
+  const normalizedResponse = normalizeUpstreamResponse(data);
+  console.info(`${LOG_PREFIX} upstream_normalization`, {
+    summaryShapeUsed: normalizedResponse?.summaryShapeUsed || 'missing',
+    topLevelKeys: shapeDiagnostics.topLevelKeys,
+    aiSummaryKeys: shapeDiagnostics.aiSummaryKeys,
+    backendBuild: PREDICTION_BACKEND_BUILD,
+  });
+  if (!normalizedResponse) {
+    console.warn(`${LOG_PREFIX} upstream_normalization_failed`, {
+      hasTopLevelInsightSummary: shapeDiagnostics.hasTopLevelInsightSummary,
+      hasNestedAiSummary: shapeDiagnostics.hasNestedAiSummary,
+      hasNestedInsightSummary: shapeDiagnostics.hasNestedInsightSummary,
+      topLevelKeys: shapeDiagnostics.topLevelKeys,
+      aiSummaryKeys: shapeDiagnostics.aiSummaryKeys,
+      backendBuild: PREDICTION_BACKEND_BUILD,
+    });
     throw createUpstreamError({
       stage: 'invalid_upstream_json',
       webhookTarget,
       upstreamStatus: upstream.status,
       upstreamStatusText: upstream.statusText,
-      upstreamBody: data,
+      upstreamBody: {
+        ...asRecord(data),
+        hasTopLevelInsightSummary: shapeDiagnostics.hasTopLevelInsightSummary,
+        hasNestedAiSummary: shapeDiagnostics.hasNestedAiSummary,
+        hasNestedInsightSummary: shapeDiagnostics.hasNestedInsightSummary,
+        topLevelKeys: shapeDiagnostics.topLevelKeys,
+        aiSummaryKeys: shapeDiagnostics.aiSummaryKeys,
+        backendBuild: PREDICTION_BACKEND_BUILD,
+      },
       fallbackCode: 'N8N_UPSTREAM_INVALID_RESPONSE',
       fallbackMessage: 'n8n returned success but no AI summary payload was present',
     });
   }
-  return summary;
+  return normalizedResponse.insightSummary;
 }
 
 function resolveWebhookTarget(): WebhookTargetInfo {
@@ -1648,10 +1702,89 @@ function isInactiveWebhookMessage(message: string): boolean {
     || (normalized.includes('webhook') && normalized.includes('not registered'));
 }
 
+function normalizeWarnings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+function summarizeUpstreamShape(data: unknown): {
+  hasTopLevelInsightSummary: boolean;
+  hasNestedAiSummary: boolean;
+  hasNestedInsightSummary: boolean;
+  topLevelKeys: string[];
+  aiSummaryKeys: string[];
+} {
+  const record = asRecord(data);
+  const aiSummaryRecord = asRecord(record.aiSummary);
+  return {
+    hasTopLevelInsightSummary: Boolean(stringOr(record.insightSummary).trim()),
+    hasNestedAiSummary: Object.keys(aiSummaryRecord).length > 0,
+    hasNestedInsightSummary: Boolean(stringOr(aiSummaryRecord.insightSummary).trim()),
+    topLevelKeys: Object.keys(record),
+    aiSummaryKeys: Object.keys(aiSummaryRecord),
+  };
+}
+
+function normalizeUpstreamSummary(data: unknown): NormalizedUpstreamSummary | null {
+  const record = asRecord(data);
+  const aiSummaryRecord = asRecord(record.aiSummary);
+  const nestedInsightSummary = stringOr(aiSummaryRecord.insightSummary).trim();
+  if (nestedInsightSummary) {
+    return {
+      insightSummary: nestedInsightSummary,
+      confidenceNote: stringOr(aiSummaryRecord.confidenceNote).trim(),
+      rankingNotes: stringOr(aiSummaryRecord.rankingNotes).trim(),
+      warnings: normalizeWarnings(aiSummaryRecord.warnings),
+      summaryShapeUsed: 'nested_aiSummary',
+    };
+  }
+  const flatInsightSummary = stringOr(record.insightSummary, record.summary, asRecord(record.openaiAnalysis).insightSummary).trim();
+  if (flatInsightSummary) {
+    return {
+      insightSummary: flatInsightSummary,
+      confidenceNote: stringOr(record.confidenceNote).trim(),
+      rankingNotes: stringOr(record.rankingNotes).trim(),
+      warnings: normalizeWarnings(record.warnings),
+      summaryShapeUsed: 'flat_legacy',
+    };
+  }
+  return null;
+}
+
+function normalizeUpstreamResponse(data: unknown): NormalizedUpstreamResponse | null {
+  const record = asRecord(data);
+  const summary = normalizeUpstreamSummary(record);
+  if (!summary) return null;
+  return {
+    insightSummary: summary.insightSummary,
+    confidenceNote: summary.confidenceNote,
+    rankingNotes: summary.rankingNotes,
+    warnings: summary.warnings,
+    generatedAt: stringOr(record.generatedAt) || new Date().toISOString(),
+    analysisVersion: stringOr(record.analysisVersion) || `n8n|${summary.summaryShapeUsed}`,
+    sourceHealth: asRecord(record.sourceHealth),
+    countryScores: asRecord(record.countryScores),
+    estoniaEvidence: asRecord(record.estoniaEvidence),
+    evidenceSummary: asRecord(record.evidenceSummary),
+    foreignClusters: Array.isArray(record.foreignClusters) ? record.foreignClusters : [],
+    predictedTargets: Array.isArray(record.predictedTargets) ? record.predictedTargets : [],
+    foreignRecentPoints: Array.isArray(record.foreignRecentPoints) ? record.foreignRecentPoints : [],
+    estoniaHistoryPoints: Array.isArray(record.estoniaHistoryPoints) ? record.estoniaHistoryPoints : [],
+    elurikkusRecentRecords: Array.isArray(record.elurikkusRecentRecords) ? record.elurikkusRecentRecords : [],
+    estoniaHistoryClusters: Array.isArray(record.estoniaHistoryClusters) ? record.estoniaHistoryClusters : [],
+    mapLayersDefault: asRecord(record.mapLayersDefault),
+    species: asRecord(record.species),
+    weather: asRecord(record.weather),
+    raw: record,
+    summaryShapeUsed: summary.summaryShapeUsed,
+  };
+}
+
 function enrichPredictionResult(
   raw: Record<string, unknown>,
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
+  const normalizedUpstream = normalizeUpstreamResponse(raw);
   const species = asRecord(raw.species);
   const payloadSpecies = asRecord(payload.species);
   const payloadSettings = asRecord(payload.settings);
@@ -1685,14 +1818,45 @@ function enrichPredictionResult(
     historicalEvidence,
   );
   const sourceWarnings = Array.isArray(sourceHealth.sourceWarnings) ? sourceHealth.sourceWarnings : [];
-  const existingWarnings = Array.isArray(raw.warnings) ? raw.warnings.map((item) => String(item || '').trim()).filter(Boolean) : [];
+  const existingWarnings = normalizedUpstream?.warnings
+    ?? (Array.isArray(raw.warnings) ? raw.warnings.map((item) => String(item || '').trim()).filter(Boolean) : []);
+  const canonicalForeignClusters = normalizedUpstream?.foreignClusters ?? (Array.isArray(raw.foreignClusters) ? raw.foreignClusters : []);
+  const canonicalPredictedTargets = normalizedUpstream?.predictedTargets ?? (Array.isArray(raw.predictedTargets) ? raw.predictedTargets : []);
+  const canonicalForeignRecentPoints = normalizedUpstream?.foreignRecentPoints ?? (Array.isArray(raw.foreignRecentPoints) ? raw.foreignRecentPoints : []);
+  const canonicalEstoniaHistoryPoints = normalizedUpstream?.estoniaHistoryPoints ?? (Array.isArray(raw.estoniaHistoryPoints) ? raw.estoniaHistoryPoints : []);
+  const canonicalElurikkusRecentRecords = normalizedUpstream?.elurikkusRecentRecords ?? (Array.isArray(raw.elurikkusRecentRecords) ? raw.elurikkusRecentRecords : []);
+  const canonicalEstoniaHistoryClusters = normalizedUpstream?.estoniaHistoryClusters ?? (Array.isArray(raw.estoniaHistoryClusters) ? raw.estoniaHistoryClusters : []);
+  const canonicalMapLayersDefault = normalizedUpstream?.mapLayersDefault ?? asRecord(raw.mapLayersDefault);
+  const canonicalSourceHealth = Object.keys(normalizedUpstream?.sourceHealth || {}).length ? normalizedUpstream!.sourceHealth : sourceHealth;
+  const canonicalEstoniaEvidence = Object.keys(normalizedUpstream?.estoniaEvidence || {}).length ? normalizedUpstream!.estoniaEvidence : estoniaEvidence;
+  const canonicalEvidenceSummary = Object.keys(normalizedUpstream?.evidenceSummary || {}).length ? normalizedUpstream!.evidenceSummary : asRecord(raw.evidenceSummary);
+  const canonicalCountryScores = Object.keys(normalizedUpstream?.countryScores || {}).length ? normalizedUpstream!.countryScores : asRecord(raw.countryScores);
+  const canonicalWeather = Object.keys(normalizedUpstream?.weather || {}).length ? normalizedUpstream!.weather : asRecord(raw.weather);
+  const generatedAt = normalizedUpstream?.generatedAt || stringOr(raw.generatedAt) || new Date().toISOString();
+  const analysisVersion = normalizedUpstream?.analysisVersion || stringOr(raw.analysisVersion);
 
   return {
     ...raw,
     species: speciesInfo,
-    sourceHealth,
+    insightSummary: normalizedUpstream?.insightSummary || stringOr(raw.insightSummary, raw.aiSummary),
+    confidenceNote: normalizedUpstream?.confidenceNote || stringOr(raw.confidenceNote),
+    rankingNotes: normalizedUpstream?.rankingNotes || stringOr(raw.rankingNotes),
+    generatedAt,
+    ...(analysisVersion ? { analysisVersion } : {}),
+    ...(normalizedUpstream ? { summaryShapeUsed: normalizedUpstream.summaryShapeUsed } : {}),
+    sourceHealth: canonicalSourceHealth,
+    countryScores: canonicalCountryScores,
     foreignEvidence,
-    estoniaEvidence,
+    estoniaEvidence: canonicalEstoniaEvidence,
+    evidenceSummary: canonicalEvidenceSummary,
+    foreignClusters: canonicalForeignClusters,
+    predictedTargets: canonicalPredictedTargets,
+    foreignRecentPoints: canonicalForeignRecentPoints,
+    estoniaHistoryPoints: canonicalEstoniaHistoryPoints,
+    elurikkusRecentRecords: canonicalElurikkusRecentRecords,
+    estoniaHistoryClusters: canonicalEstoniaHistoryClusters,
+    mapLayersDefault: canonicalMapLayersDefault,
+    weather: canonicalWeather,
     historicalEvidence,
     rawLinks,
     topPredictedPoints,

@@ -805,6 +805,15 @@ function hasCanonicalPredictionFields(record: Record<string, unknown>): boolean 
   );
 }
 
+function normalizeRankingNotes(value: unknown): string {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (Array.isArray(value)) {
+    const joined = value.map((item) => String(item || '').trim()).filter(Boolean).join(' • ');
+    return joined || '';
+  }
+  return '';
+}
+
 function readString(record: Record<string, unknown> | null | undefined, keys: string[]): string {
   const source = asRecord(record);
   for (const key of keys) {

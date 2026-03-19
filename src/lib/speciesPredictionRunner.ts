@@ -131,6 +131,28 @@ export async function runSpeciesPredictionRequest(
     console.debug('[speciesPrediction] async POST response', data);
 
     if (error) {
+      // Even with SDK error, try to recover usable payload from data
+      if (data && typeof data === 'object') {
+        const recoveredFromSdkError = extractUsablePayloadFromErrorEnvelope(data as Record<string, unknown>);
+        if (recoveredFromSdkError) {
+          console.debug('[speciesPrediction] recovered usable payload despite SDK error', { path: recoveredFromSdkError.summarySourcePath });
+          setSpeciesPredictionDebugBackendResponse(data);
+          updateSuccessTransport(data);
+          const normalizedResult = normalizeSpeciesPredictionResult(
+            recoveredFromSdkError.source as Partial<SpeciesPredictionResult>,
+            payload.species.name,
+            scope,
+          );
+          normalizedResult.recoveredFromErrorEnvelope = true;
+          normalizedResult.summarySourcePath = recoveredFromSdkError.summarySourcePath;
+          normalizedResult.normalizedPredictionShape = 'nested-aiSummary-error-envelope';
+          jobState.status = 'completed';
+          jobState.result = normalizedResult;
+          jobState.completedAt = responseTimestamp;
+          onJobUpdate?.(jobState);
+          return { ok: true, result: normalizedResult, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, 200, data, null, jobState) };
+        }
+      }
       const transportError = resolveInvokeTransportError(error, data, requestUrl, requestId, responseTimestamp);
       updateTransportOnError(transportError, responseTimestamp);
       jobState.status = 'failed';

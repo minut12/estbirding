@@ -48,6 +48,10 @@
 3. `fetch_ebird_foreign`
 - `HTTP Request`
 - Expected to return foreign sightings for the selected species only.
+- Availability semantics:
+  - `ebirdAvailable` means at least one attempted region returned a valid parsed array response.
+  - `ebirdHasPressure` means actual foreign points or clusters were produced.
+  - Empty-but-valid region arrays must be treated as available, not unavailable.
 - Intended normalized row shape:
 ```json
 {
@@ -70,6 +74,9 @@
 4. `fetch_elurikkus_history`
 - `HTTP Request`
 - Expected to return species-specific historical spring fit and hotspot hints.
+- Availability semantics:
+  - `gbifAvailable` means the history endpoint responded with a valid GBIF/history structure, even if it was empty.
+  - `gbifHasHistoryPoints` means actual Estonia history points or clusters exist.
 - Intended normalized shape:
 ```json
 {
@@ -83,6 +90,10 @@
 5. `fetch_estonia_recent`
 - `HTTP Request`
 - Expected to return Estonia recent status for the selected species only.
+- Current workflow artifact now fetches the Elurikkus search-results HTML directly.
+- The parser must preserve locality-only rows when public coordinates are hidden.
+- `elurikkusAvailable` means the fetch succeeded and the page was usable, even when the result table is empty.
+- `elurikkusHasRecentRecords` means parsed Elurikkus rows were found.
 
 6. `fetch_weather`
 - `HTTP Request`
@@ -104,6 +115,15 @@
   - `alreadyMissedRisk`
   - `topPredictedPoints`
   - `openAIAnalysisInput`
+- Also normalizes and returns:
+  - `elurikkusRecentRecords`
+  - `sourceHealth`
+  - `sourceDiagnostics`
+  - `hasRecentEstoniaEvidence`
+  - `hasEstoniaHistory`
+  - `hasForeignPressure`
+  - `hasUnavailableCoreSources`
+  - `evidenceState`
 - Rules preserved:
   - source priority is Latvia, Lithuania, Belarus, Poland, Russia
   - Finland is context only
@@ -143,14 +163,42 @@
 - Keep the summary short and useful for birding in the field.
 - If the signals are contradictory, flag that clearly in `warnings` and `confidenceNote`.
 - Distinguish confirmed negative evidence from empty datasets and unavailable sources.
+- Treat available-but-empty sources as different from unavailable sources.
+- Treat locality-only recent Estonia evidence from eElurikkus as real recent evidence even when public coordinates are hidden.
 - If any core source availability flag is `false`, do not describe the result as high-confidence absence.
 - If Estonia recent evidence, Estonia history, and foreign pressure are all empty or unavailable, say `insufficient evidence` or `no positive signal detected`.
 - Only say `already present in Estonia` when `recentCount7d > 0` or `alreadyPresent === true`.
 - Only say Estonia history drives ranking when `estoniaHistoryClusters` has items.
 - Only say foreign pressure exists when foreign recent points or clusters are present.
+- If eBird is reachable but empty, say foreign pressure was not detected, not that eBird was unavailable.
 - Treat weather alone as weak or neutral unless stronger evidence supports it.
-- Warnings must explicitly mention unavailable datasets when applicable.
+- Warnings must explicitly mention unavailable datasets when applicable and should mention available-but-empty sources separately.
 - If OpenAI fails, return the deterministic result with `analysisFallbackUsed: true`.
+
+## Source Diagnostics
+- Every source parser now returns:
+  - `fetchOk`
+  - `httpStatus`
+  - `bodyLength`
+  - `parsedRowCount`
+  - `available`
+  - `hasData`
+  - `unavailableReason`
+- eBird also returns per-region diagnostics with:
+  - `region`
+  - `httpStatus`
+  - `reachable`
+  - `parsedArray`
+  - `rowCount`
+  - `unavailableReason`
+
+## Evidence State Rules
+- `supported`
+  - Any recent Estonia evidence, Estonia history, or foreign pressure exists.
+- `insufficient_evidence`
+  - No positive evidence exists and one or more core sources were unavailable.
+- `no_positive_signal`
+  - Core sources were available but empty.
 
 ## Expected Webhook Request
 The edge function posts this shape:

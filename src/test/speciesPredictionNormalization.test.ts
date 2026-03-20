@@ -34,24 +34,31 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.countryScores.lithuania).toBe(0);
   });
 
-  it("marks empty unavailable payloads as insufficient evidence and carries guardrail fields", () => {
+  it("marks weather-only payloads as insufficient and preserves usable-evidence semantics", () => {
     const result = normalizeSpeciesPredictionResult({
       speciesKey: "punakurk-kaur",
       speciesName: "Punakurk-kaur",
       generatedAt: "2026-03-20T12:00:00.000Z",
-      insightSummary: "No usable recent Estonia evidence, Estonia history clusters, or foreign pressure points were available in this payload. Weather alone does not provide a strong migration signal. This result should be treated as insufficient evidence, not strong evidence of absence.",
-      confidenceNote: "Low confidence. Key source streams are unavailable or empty, so the result is limited by missing evidence rather than supported by strong negative signals.",
-      rankingNotes: "Fresh Estonia evidence: unavailable or empty. Estonia history clusters: unavailable or empty. Foreign pressure: unavailable or empty. Weather: neutral. Interpret this as no positive signal detected, not confirmed absence.",
-      warnings: ["Do not treat this as confirmed absence"],
-      evidenceState: "insufficient_evidence",
-      hasRecentEstoniaEvidence: false,
-      hasEstoniaHistory: false,
-      hasForeignPressure: false,
-      hasUnavailableCoreSources: true,
+      insightSummary: "Usable prediction evidence is currently missing. No recent Estonia records, Estonia history clusters, foreign pressure points, or predicted targets were available in this result. Weather alone is not enough to support a meaningful arrival prediction.",
+      confidenceNote: "Confidence is limited because the result is driven by missing usable evidence rather than positive signals.",
+      rankingNotes: "Ranking was not supported by usable Estonia recent evidence, Estonia history, or foreign pressure. Weather was available but is insufficient on its own for ranking.",
+      warnings: ["No usable recent Estonia evidence", "No usable Estonia history clusters", "No usable foreign pressure", "No predicted targets returned", "Weather alone is insufficient for prediction"],
+      evidenceState: "weather_only_insufficient",
+      hasUsableRecentEstoniaEvidence: false,
+      hasUsableEstoniaHistory: false,
+      hasUsableForeignPressure: false,
+      hasUsablePredictedTargets: false,
+      hasOnlyWeather: true,
+      hasOnlySourceAvailabilityWithoutUsableEvidence: true,
+      activeEvidenceSources: ["Open-Meteo weather"],
+      availableSources: ["EELURIKKUS Estonia", "Open-Meteo weather"],
+      attemptedButUnavailable: ["eBird foreign"],
+      attemptedButReturnedNoUsableEvidence: ["EELURIKKUS Estonia"],
+      effectiveRankingMode: "Weather only (insufficient)",
       summaryGuardrailApplied: true,
-      summaryGuardrailReason: "insufficient_evidence_fallback",
+      summaryGuardrailReason: "weather_only_insufficient_fallback",
       sourceHealth: {
-        elurikkusAvailable: false,
+        elurikkusAvailable: true,
         ebirdAvailable: false,
         gbifAvailable: false,
         gbifFallbackUsed: false,
@@ -84,16 +91,23 @@ describe("normalizeSpeciesPredictionResult", () => {
       topPredictedPoints: [],
     } as any, "Punakurk-kaur", "linnuliigid");
 
-    expect(result.evidenceState).toBe("insufficient_evidence");
-    expect(result.hasRecentEstoniaEvidence).toBe(false);
-    expect(result.hasEstoniaHistory).toBe(false);
-    expect(result.hasForeignPressure).toBe(false);
-    expect(result.hasUnavailableCoreSources).toBe(true);
+    expect(result.evidenceState).toBe("weather_only_insufficient");
+    expect(result.hasUsableRecentEstoniaEvidence).toBe(false);
+    expect(result.hasUsableEstoniaHistory).toBe(false);
+    expect(result.hasUsableForeignPressure).toBe(false);
+    expect(result.hasUsablePredictedTargets).toBe(false);
+    expect(result.hasOnlyWeather).toBe(true);
+    expect(result.activeEvidenceSources).toEqual(["Open-Meteo weather"]);
+    expect(result.availableSources).toEqual(["EELURIKKUS Estonia", "Open-Meteo weather"]);
+    expect(result.attemptedButUnavailable).toEqual(["eBird foreign"]);
+    expect(result.attemptedButReturnedNoUsableEvidence).toEqual(["EELURIKKUS Estonia"]);
+    expect(result.effectiveRankingMode).toBe("Weather only (insufficient)");
     expect(result.summaryGuardrailApplied).toBe(true);
-    expect(result.summaryGuardrailReason).toBe("insufficient_evidence_fallback");
-    expect(result.confidenceNote?.toLowerCase()).not.toContain("high confidence absence");
+    expect(result.summaryGuardrailReason).toBe("weather_only_insufficient_fallback");
+    expect(result.insightSummary).toContain("Usable prediction evidence is currently missing");
+    expect(result.confidenceNote?.toLowerCase()).not.toContain("immediate likelihood is low");
     expect(result.rankingNotes?.toLowerCase()).not.toContain("ranking is based mainly on estonia evidence");
-    expect(result.rankingNotes?.toLowerCase()).not.toContain("estonia history only");
+    expect(result.rankingNotes?.toLowerCase()).not.toContain("estonia history + weather");
   });
 
   it("preserves recovered nested aiSummary while carrying evidence-state guardrails", () => {
@@ -113,18 +127,25 @@ describe("normalizeSpeciesPredictionResult", () => {
           primarySourceUsed: "",
           sourceWarnings: [],
         },
-        evidenceState: "insufficient_evidence",
-        hasRecentEstoniaEvidence: false,
-        hasEstoniaHistory: false,
-        hasForeignPressure: false,
-        hasUnavailableCoreSources: true,
+        evidenceState: "insufficient",
+        hasUsableRecentEstoniaEvidence: false,
+        hasUsableEstoniaHistory: false,
+        hasUsableForeignPressure: false,
+        hasUsablePredictedTargets: false,
+        hasOnlyWeather: false,
+        hasOnlySourceAvailabilityWithoutUsableEvidence: true,
+        activeEvidenceSources: [],
+        availableSources: ["EELURIKKUS Estonia"],
+        attemptedButUnavailable: ["eBird foreign"],
+        attemptedButReturnedNoUsableEvidence: ["EELURIKKUS Estonia"],
+        effectiveRankingMode: "Insufficient evidence",
         summaryGuardrailApplied: true,
-        summaryGuardrailReason: "insufficient_evidence_fallback",
+        summaryGuardrailReason: "insufficient_evidence_fallback,missing_usable_prediction_evidence",
       },
     } as any, "Punakurk-kaur", "linnuliigid");
 
     expect(result.insightSummary).toContain("No usable recent Estonia evidence");
-    expect(result.evidenceState).toBe("insufficient_evidence");
+    expect(result.evidenceState).toBe("insufficient");
     expect(result.summaryGuardrailApplied).toBe(true);
   });
 
@@ -133,11 +154,18 @@ describe("normalizeSpeciesPredictionResult", () => {
       speciesKey: "test-species",
       speciesName: "Test Species",
       generatedAt: "2026-03-20T12:00:00.000Z",
-      evidenceState: "positive_signal",
-      hasRecentEstoniaEvidence: false,
-      hasEstoniaHistory: true,
-      hasForeignPressure: true,
-      hasUnavailableCoreSources: false,
+      evidenceState: "foreign_pressure",
+      hasUsableRecentEstoniaEvidence: false,
+      hasUsableEstoniaHistory: true,
+      hasUsableForeignPressure: true,
+      hasUsablePredictedTargets: false,
+      hasOnlyWeather: false,
+      hasOnlySourceAvailabilityWithoutUsableEvidence: false,
+      activeEvidenceSources: ["eBird foreign"],
+      availableSources: ["eBird foreign"],
+      attemptedButUnavailable: [],
+      attemptedButReturnedNoUsableEvidence: [],
+      effectiveRankingMode: "Foreign pressure",
       sourceHealth: {
         elurikkusAvailable: true,
         ebirdAvailable: true,
@@ -152,8 +180,8 @@ describe("normalizeSpeciesPredictionResult", () => {
       topPredictedPoints: [],
     } as any, "Test Species", "linnuliigid");
 
-    expect(result.evidenceState).toBe("positive_signal");
-    expect(result.hasForeignPressure).toBe(true);
+    expect(result.evidenceState).toBe("foreign_pressure");
+    expect(result.hasUsableForeignPressure).toBe(true);
   });
 
   it("allows negative-signal only when core sources are available", () => {
@@ -161,11 +189,18 @@ describe("normalizeSpeciesPredictionResult", () => {
       speciesKey: "test-species",
       speciesName: "Test Species",
       generatedAt: "2026-03-20T12:00:00.000Z",
-      evidenceState: "negative_signal",
-      hasRecentEstoniaEvidence: false,
-      hasEstoniaHistory: true,
-      hasForeignPressure: false,
-      hasUnavailableCoreSources: false,
+      evidenceState: "estonia_history",
+      hasUsableRecentEstoniaEvidence: false,
+      hasUsableEstoniaHistory: true,
+      hasUsableForeignPressure: false,
+      hasUsablePredictedTargets: false,
+      hasOnlyWeather: false,
+      hasOnlySourceAvailabilityWithoutUsableEvidence: false,
+      activeEvidenceSources: ["GBIF Estonia"],
+      availableSources: ["GBIF Estonia"],
+      attemptedButUnavailable: [],
+      attemptedButReturnedNoUsableEvidence: [],
+      effectiveRankingMode: "Estonia history",
       sourceHealth: {
         elurikkusAvailable: true,
         ebirdAvailable: true,
@@ -180,8 +215,8 @@ describe("normalizeSpeciesPredictionResult", () => {
       topPredictedPoints: [],
     } as any, "Test Species", "linnuliigid");
 
-    expect(result.evidenceState).toBe("negative_signal");
-    expect(result.hasUnavailableCoreSources).toBe(false);
+    expect(result.evidenceState).toBe("estonia_history");
+    expect(result.hasOnlyWeather).toBe(false);
   });
 
   it("does not replace canonical country scores or points from nested fallback payloads", () => {

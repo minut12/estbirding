@@ -784,6 +784,11 @@ function DebugComparisonTable({ snapshot }: { snapshot: SpeciesPredictionDebugSn
     ['insightSummary', readDebugField(snapshot.rawBackendResponse, ['insightSummary']), readDebugField(snapshot.panelPayload, ['insightSummary']), readDebugField(snapshot.panelState, ['insightSummary'])],
     ['externalPressureScore', readDebugField(snapshot.rawBackendResponse, ['externalPressureScore']), readDebugField(snapshot.panelPayload, ['externalPressureScore']), readDebugField(snapshot.panelState, ['externalPressureScore'])],
     ['sourceHealth.primarySourceUsed', readDebugField(snapshot.rawBackendResponse, ['sourceHealth', 'primarySourceUsed']), readDebugField(snapshot.panelPayload, ['sourceHealth', 'primarySourceUsed']), readDebugField(snapshot.panelState, ['sourceHealth', 'primarySourceUsed'])],
+    ['evidenceState', readDebugField(snapshot.rawBackendResponse, ['evidenceState']), readDebugField(snapshot.panelPayload, ['evidenceState']), readDebugField(snapshot.panelState, ['evidenceState'])],
+    ['effectiveRankingMode', readDebugField(snapshot.rawBackendResponse, ['effectiveRankingMode']), readDebugField(snapshot.panelPayload, ['effectiveRankingMode']), readDebugField(snapshot.panelState, ['effectiveRankingMode'])],
+    ['activeEvidenceSources', readDebugField(snapshot.rawBackendResponse, ['activeEvidenceSources']), readDebugField(snapshot.panelPayload, ['activeEvidenceSources']), readDebugField(snapshot.panelState, ['activeEvidenceSources'])],
+    ['attemptedButUnavailable', readDebugField(snapshot.rawBackendResponse, ['attemptedButUnavailable']), readDebugField(snapshot.panelPayload, ['attemptedButUnavailable']), readDebugField(snapshot.panelState, ['attemptedButUnavailable'])],
+    ['attemptedButReturnedNoUsableEvidence', readDebugField(snapshot.rawBackendResponse, ['attemptedButReturnedNoUsableEvidence']), readDebugField(snapshot.panelPayload, ['attemptedButReturnedNoUsableEvidence']), readDebugField(snapshot.panelState, ['attemptedButReturnedNoUsableEvidence'])],
     ['foreignEvidence[0].recordCount7d', readDebugField(snapshot.rawBackendResponse, ['foreignEvidence', 0, 'recordCount7d']), readDebugField(snapshot.panelPayload, ['foreignEvidence', 0, 'recordCount7d']), readDebugField(snapshot.panelState, ['foreignEvidence', 0, 'recordCount7d'])],
     ['estoniaEvidence.recentCount7d', readDebugField(snapshot.rawBackendResponse, ['estoniaEvidence', 'recentCount7d']), readDebugField(snapshot.panelPayload, ['estoniaEvidence', 'recentCount7d']), readDebugField(snapshot.panelState, ['estoniaEvidence', 'recentCount7d'])],
     ['countryScores.lithuania', readDebugField(snapshot.rawBackendResponse, ['countryScores', 'lithuania']), readDebugField(snapshot.panelPayload, ['countryScores', 'lithuania']), readDebugField(snapshot.panelState, ['countryScores', 'lithuania'])],
@@ -843,6 +848,11 @@ function buildDiagnosticsSummary(snapshot: SpeciesPredictionDebugSnapshot): stri
     'insightSummary',
     'externalPressureScore',
     'sourceHealth.primarySourceUsed',
+    'evidenceState',
+    'effectiveRankingMode',
+    'activeEvidenceSources',
+    'attemptedButUnavailable',
+    'attemptedButReturnedNoUsableEvidence',
     'foreignEvidence[0].recordCount7d',
     'estoniaEvidence.recentCount7d',
     'countryScores.lithuania',
@@ -856,6 +866,16 @@ function buildDiagnosticsSummary(snapshot: SpeciesPredictionDebugSnapshot): stri
       ? ['countryScores', 'lithuania']
       : field === 'sourceHealth.primarySourceUsed'
         ? ['sourceHealth', 'primarySourceUsed']
+        : field === 'evidenceState'
+          ? ['evidenceState']
+          : field === 'effectiveRankingMode'
+            ? ['effectiveRankingMode']
+            : field === 'activeEvidenceSources'
+              ? ['activeEvidenceSources']
+              : field === 'attemptedButUnavailable'
+                ? ['attemptedButUnavailable']
+                : field === 'attemptedButReturnedNoUsableEvidence'
+                  ? ['attemptedButReturnedNoUsableEvidence']
         : field === 'foreignEvidence[0].recordCount7d'
           ? ['foreignEvidence', 0, 'recordCount7d']
           : field === 'estoniaEvidence.recentCount7d'

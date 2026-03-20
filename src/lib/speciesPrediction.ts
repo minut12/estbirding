@@ -213,13 +213,19 @@ export type PredictedPoint = {
 export type SpeciesPredictionEvidenceSummary = {
   dataSourcesUsed?: string[];
   availableSources?: string[];
+  sourcesResponded?: string[];
   activeEvidenceUsed?: string[];
   attemptedButNotUsed?: string[];
+  attemptedButUnavailable?: string[];
+  attemptedButReturnedNoUsableEvidence?: string[];
+  totalForeignRecentPoints?: number;
+  primaryCountries?: string[];
   foreignEbirdAvailable?: boolean;
   weatherAvailable?: boolean;
   weatherPartial?: boolean;
   wasWeatherUsedInRanking?: boolean;
   rankingMode?: string;
+  effectiveRankingMode?: string;
   summaryText?: string;
   [key: string]: unknown;
 };
@@ -273,7 +279,13 @@ export type SpeciesPredictionSourceHealth = {
   gbifFallbackUsed: boolean;
 };
 
-export type SpeciesPredictionEvidenceState = 'positive_signal' | 'negative_signal' | 'insufficient_evidence';
+export type SpeciesPredictionEvidenceState =
+  | 'recent_estonia'
+  | 'estonia_history'
+  | 'foreign_pressure'
+  | 'mixed'
+  | 'weather_only_insufficient'
+  | 'insufficient';
 
 export type PredictionConsistencyChecks = {
   routeLooksPlausible: boolean;
@@ -360,10 +372,17 @@ export type SpeciesPredictionResult = {
   rankingNotesInputType?: string;
   warningsInputType?: string;
   evidenceState?: SpeciesPredictionEvidenceState;
-  hasRecentEstoniaEvidence?: boolean;
-  hasEstoniaHistory?: boolean;
-  hasForeignPressure?: boolean;
-  hasUnavailableCoreSources?: boolean;
+  hasUsableRecentEstoniaEvidence?: boolean;
+  hasUsableEstoniaHistory?: boolean;
+  hasUsableForeignPressure?: boolean;
+  hasUsablePredictedTargets?: boolean;
+  hasOnlyWeather?: boolean;
+  hasOnlySourceAvailabilityWithoutUsableEvidence?: boolean;
+  activeEvidenceSources?: string[];
+  availableSources?: string[];
+  attemptedButUnavailable?: string[];
+  attemptedButReturnedNoUsableEvidence?: string[];
+  effectiveRankingMode?: string;
   summaryGuardrailApplied?: boolean;
   summaryGuardrailReason?: string;
 };
@@ -665,10 +684,19 @@ export function normalizeSpeciesPredictionResult(
     readRecord(source, ['weather']) ?? readRecord(rawResearchPayload, ['weather']),
   );
   const evidenceState = readString(source, ['evidenceState', 'evidence_state']) as SpeciesPredictionEvidenceState | '';
-  const hasRecentEstoniaEvidence = typeof source.hasRecentEstoniaEvidence === 'boolean' ? source.hasRecentEstoniaEvidence : undefined;
-  const hasEstoniaHistory = typeof source.hasEstoniaHistory === 'boolean' ? source.hasEstoniaHistory : undefined;
-  const hasForeignPressure = typeof source.hasForeignPressure === 'boolean' ? source.hasForeignPressure : undefined;
-  const hasUnavailableCoreSources = typeof source.hasUnavailableCoreSources === 'boolean' ? source.hasUnavailableCoreSources : undefined;
+  const hasUsableRecentEstoniaEvidence = typeof source.hasUsableRecentEstoniaEvidence === 'boolean' ? source.hasUsableRecentEstoniaEvidence : undefined;
+  const hasUsableEstoniaHistory = typeof source.hasUsableEstoniaHistory === 'boolean' ? source.hasUsableEstoniaHistory : undefined;
+  const hasUsableForeignPressure = typeof source.hasUsableForeignPressure === 'boolean' ? source.hasUsableForeignPressure : undefined;
+  const hasUsablePredictedTargets = typeof source.hasUsablePredictedTargets === 'boolean' ? source.hasUsablePredictedTargets : undefined;
+  const hasOnlyWeather = typeof source.hasOnlyWeather === 'boolean' ? source.hasOnlyWeather : undefined;
+  const hasOnlySourceAvailabilityWithoutUsableEvidence = typeof source.hasOnlySourceAvailabilityWithoutUsableEvidence === 'boolean'
+    ? source.hasOnlySourceAvailabilityWithoutUsableEvidence
+    : undefined;
+  const activeEvidenceSources = (readArray(source, ['activeEvidenceSources', 'active_evidence_sources']) ?? []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean);
+  const availableSourceList = (readArray(source, ['availableSources', 'available_sources']) ?? []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean);
+  const attemptedButUnavailable = (readArray(source, ['attemptedButUnavailable', 'attempted_but_unavailable']) ?? []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean);
+  const attemptedButReturnedNoUsableEvidence = (readArray(source, ['attemptedButReturnedNoUsableEvidence', 'attempted_but_returned_no_usable_evidence']) ?? []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean);
+  const effectiveRankingMode = readString(source, ['effectiveRankingMode', 'effective_ranking_mode']);
   const summaryGuardrailApplied = typeof source.summaryGuardrailApplied === 'boolean' ? source.summaryGuardrailApplied : undefined;
   const summaryGuardrailReason = readString(source, ['summaryGuardrailReason', 'summary_guardrail_reason']);
   const predictionVectors = normalizePredictionVectors(
@@ -735,11 +763,18 @@ export function normalizeSpeciesPredictionResult(
     ...(confidenceNote ? { confidenceNote: normalizeUiText(confidenceNote) } : {}),
     ...(rankingNotes ? { rankingNotes: normalizeUiText(rankingNotes) } : {}),
     ...(warnings.length ? { warnings } : {}),
-    ...((evidenceState === 'positive_signal' || evidenceState === 'negative_signal' || evidenceState === 'insufficient_evidence') ? { evidenceState } : {}),
-    ...(typeof hasRecentEstoniaEvidence === 'boolean' ? { hasRecentEstoniaEvidence } : {}),
-    ...(typeof hasEstoniaHistory === 'boolean' ? { hasEstoniaHistory } : {}),
-    ...(typeof hasForeignPressure === 'boolean' ? { hasForeignPressure } : {}),
-    ...(typeof hasUnavailableCoreSources === 'boolean' ? { hasUnavailableCoreSources } : {}),
+    ...((evidenceState === 'recent_estonia' || evidenceState === 'estonia_history' || evidenceState === 'foreign_pressure' || evidenceState === 'mixed' || evidenceState === 'weather_only_insufficient' || evidenceState === 'insufficient') ? { evidenceState } : {}),
+    ...(typeof hasUsableRecentEstoniaEvidence === 'boolean' ? { hasUsableRecentEstoniaEvidence } : {}),
+    ...(typeof hasUsableEstoniaHistory === 'boolean' ? { hasUsableEstoniaHistory } : {}),
+    ...(typeof hasUsableForeignPressure === 'boolean' ? { hasUsableForeignPressure } : {}),
+    ...(typeof hasUsablePredictedTargets === 'boolean' ? { hasUsablePredictedTargets } : {}),
+    ...(typeof hasOnlyWeather === 'boolean' ? { hasOnlyWeather } : {}),
+    ...(typeof hasOnlySourceAvailabilityWithoutUsableEvidence === 'boolean' ? { hasOnlySourceAvailabilityWithoutUsableEvidence } : {}),
+    ...(activeEvidenceSources.length ? { activeEvidenceSources } : {}),
+    ...(availableSourceList.length ? { availableSources: availableSourceList } : {}),
+    ...(attemptedButUnavailable.length ? { attemptedButUnavailable } : {}),
+    ...(attemptedButReturnedNoUsableEvidence.length ? { attemptedButReturnedNoUsableEvidence } : {}),
+    ...(effectiveRankingMode ? { effectiveRankingMode: normalizeUiText(effectiveRankingMode) } : {}),
     ...(typeof summaryGuardrailApplied === 'boolean' ? { summaryGuardrailApplied } : {}),
     ...(summaryGuardrailReason ? { summaryGuardrailReason: normalizeUiText(summaryGuardrailReason) } : {}),
     ...(consistencyChecksSource ? { consistencyChecks: normalizePredictionConsistencyChecks(consistencyChecksSource) } : {}),
@@ -1174,13 +1209,19 @@ function normalizeEvidenceSummary(input: Record<string, unknown> | null): Specie
     ...input,
     ...(dataSourcesUsed.length ? { dataSourcesUsed } : {}),
     ...(Array.isArray(readArray(input, ['availableSources', 'available_sources'])) ? { availableSources: (readArray(input, ['availableSources', 'available_sources']) || []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean) } : {}),
+    ...(Array.isArray(readArray(input, ['sourcesResponded', 'sources_responded'])) ? { sourcesResponded: (readArray(input, ['sourcesResponded', 'sources_responded']) || []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean) } : {}),
     ...(Array.isArray(readArray(input, ['activeEvidenceUsed', 'active_evidence_used'])) ? { activeEvidenceUsed: (readArray(input, ['activeEvidenceUsed', 'active_evidence_used']) || []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean) } : {}),
     ...(Array.isArray(readArray(input, ['attemptedButNotUsed', 'attempted_but_not_used'])) ? { attemptedButNotUsed: (readArray(input, ['attemptedButNotUsed', 'attempted_but_not_used']) || []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean) } : {}),
+    ...(Array.isArray(readArray(input, ['attemptedButUnavailable', 'attempted_but_unavailable'])) ? { attemptedButUnavailable: (readArray(input, ['attemptedButUnavailable', 'attempted_but_unavailable']) || []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean) } : {}),
+    ...(Array.isArray(readArray(input, ['attemptedButReturnedNoUsableEvidence', 'attempted_but_returned_no_usable_evidence'])) ? { attemptedButReturnedNoUsableEvidence: (readArray(input, ['attemptedButReturnedNoUsableEvidence', 'attempted_but_returned_no_usable_evidence']) || []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean) } : {}),
+    ...(hasValue(input, ['totalForeignRecentPoints', 'total_foreign_recent_points']) ? { totalForeignRecentPoints: clampNumber(readNumber(input, ['totalForeignRecentPoints', 'total_foreign_recent_points']), 0, 999999, 0) } : {}),
+    ...(Array.isArray(readArray(input, ['primaryCountries', 'primary_countries'])) ? { primaryCountries: (readArray(input, ['primaryCountries', 'primary_countries']) || []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean) } : {}),
     ...(typeof input.foreignEbirdAvailable === 'boolean' ? { foreignEbirdAvailable: input.foreignEbirdAvailable === true } : {}),
     ...(typeof input.weatherAvailable === 'boolean' ? { weatherAvailable: input.weatherAvailable === true } : {}),
     ...(typeof input.weatherPartial === 'boolean' ? { weatherPartial: input.weatherPartial === true } : {}),
     ...(typeof input.wasWeatherUsedInRanking === 'boolean' ? { wasWeatherUsedInRanking: input.wasWeatherUsedInRanking === true } : {}),
     ...(readString(input, ['rankingMode', 'ranking_mode']) ? { rankingMode: normalizeUiText(readString(input, ['rankingMode', 'ranking_mode'])) } : {}),
+    ...(readString(input, ['effectiveRankingMode', 'effective_ranking_mode']) ? { effectiveRankingMode: normalizeUiText(readString(input, ['effectiveRankingMode', 'effective_ranking_mode'])) } : {}),
     ...(readString(input, ['summaryText', 'summary_text']) ? { summaryText: normalizeUiText(readString(input, ['summaryText', 'summary_text'])) } : {}),
   };
 }

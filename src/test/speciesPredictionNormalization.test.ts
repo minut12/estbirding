@@ -34,6 +34,156 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.countryScores.lithuania).toBe(0);
   });
 
+  it("marks empty unavailable payloads as insufficient evidence and carries guardrail fields", () => {
+    const result = normalizeSpeciesPredictionResult({
+      speciesKey: "punakurk-kaur",
+      speciesName: "Punakurk-kaur",
+      generatedAt: "2026-03-20T12:00:00.000Z",
+      insightSummary: "No usable recent Estonia evidence, Estonia history clusters, or foreign pressure points were available in this payload. Weather alone does not provide a strong migration signal. This result should be treated as insufficient evidence, not strong evidence of absence.",
+      confidenceNote: "Low confidence. Key source streams are unavailable or empty, so the result is limited by missing evidence rather than supported by strong negative signals.",
+      rankingNotes: "Fresh Estonia evidence: unavailable or empty. Estonia history clusters: unavailable or empty. Foreign pressure: unavailable or empty. Weather: neutral. Interpret this as no positive signal detected, not confirmed absence.",
+      warnings: ["Do not treat this as confirmed absence"],
+      evidenceState: "insufficient_evidence",
+      hasRecentEstoniaEvidence: false,
+      hasEstoniaHistory: false,
+      hasForeignPressure: false,
+      hasUnavailableCoreSources: true,
+      summaryGuardrailApplied: true,
+      summaryGuardrailReason: "insufficient_evidence_fallback",
+      sourceHealth: {
+        elurikkusAvailable: false,
+        ebirdAvailable: false,
+        gbifAvailable: false,
+        gbifFallbackUsed: false,
+        primarySourceUsed: "",
+        sourceWarnings: [],
+      },
+      estoniaEvidence: {
+        recentCount7d: 0,
+        recentCount30d: 0,
+        latestEstoniaDate: "",
+        latestEstoniaLat: null,
+        latestEstoniaLon: null,
+        alreadyPresent: false,
+        alreadyPassed: false,
+      },
+      estoniaHistoryPoints: [],
+      estoniaHistoryClusters: [],
+      foreignRecentPoints: [],
+      foreignClusters: [],
+      weather: {
+        fetchedAt: "2026-03-20T12:00:00.000Z",
+        windSpeedKph: 9,
+        windDirectionDeg: 220,
+        windDirectionLabel: "SW",
+        weatherAvailable: true,
+        weatherPartial: true,
+        wasWeatherUsedInRanking: false,
+        source: "Open-Meteo",
+      },
+      topPredictedPoints: [],
+    } as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.evidenceState).toBe("insufficient_evidence");
+    expect(result.hasRecentEstoniaEvidence).toBe(false);
+    expect(result.hasEstoniaHistory).toBe(false);
+    expect(result.hasForeignPressure).toBe(false);
+    expect(result.hasUnavailableCoreSources).toBe(true);
+    expect(result.summaryGuardrailApplied).toBe(true);
+    expect(result.summaryGuardrailReason).toBe("insufficient_evidence_fallback");
+    expect(result.confidenceNote?.toLowerCase()).not.toContain("high confidence absence");
+    expect(result.rankingNotes?.toLowerCase()).not.toContain("ranking is based mainly on estonia evidence");
+    expect(result.rankingNotes?.toLowerCase()).not.toContain("estonia history only");
+  });
+
+  it("preserves recovered nested aiSummary while carrying evidence-state guardrails", () => {
+    const result = normalizeSpeciesPredictionResult({
+      responseBody: {
+        aiSummary: {
+          insightSummary: "No usable recent Estonia evidence, Estonia history clusters, or foreign pressure points were available in this payload.",
+          confidenceNote: "Low confidence.",
+          rankingNotes: "Fresh Estonia evidence: unavailable or empty.",
+          warnings: ["Do not treat this as confirmed absence"],
+        },
+        sourceHealth: {
+          elurikkusAvailable: false,
+          ebirdAvailable: false,
+          gbifAvailable: false,
+          gbifFallbackUsed: false,
+          primarySourceUsed: "",
+          sourceWarnings: [],
+        },
+        evidenceState: "insufficient_evidence",
+        hasRecentEstoniaEvidence: false,
+        hasEstoniaHistory: false,
+        hasForeignPressure: false,
+        hasUnavailableCoreSources: true,
+        summaryGuardrailApplied: true,
+        summaryGuardrailReason: "insufficient_evidence_fallback",
+      },
+    } as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.insightSummary).toContain("No usable recent Estonia evidence");
+    expect(result.evidenceState).toBe("insufficient_evidence");
+    expect(result.summaryGuardrailApplied).toBe(true);
+  });
+
+  it("keeps positive-signal evidence state when foreign pressure exists", () => {
+    const result = normalizeSpeciesPredictionResult({
+      speciesKey: "test-species",
+      speciesName: "Test Species",
+      generatedAt: "2026-03-20T12:00:00.000Z",
+      evidenceState: "positive_signal",
+      hasRecentEstoniaEvidence: false,
+      hasEstoniaHistory: true,
+      hasForeignPressure: true,
+      hasUnavailableCoreSources: false,
+      sourceHealth: {
+        elurikkusAvailable: true,
+        ebirdAvailable: true,
+        gbifAvailable: true,
+        gbifFallbackUsed: false,
+        primarySourceUsed: "eBird foreign",
+        sourceWarnings: [],
+      },
+      foreignClusters: [
+        { id: "cluster-1", lat: 57.9, lon: 24.1, pointCount: 2, newestObsDt: "2026-03-16T00:00:00.000Z", oldestObsDt: "2026-03-15T00:00:00.000Z", freshestDaysAgo: 1, averageDaysAgo: 1.5, totalHowMany: 4, countries: ["Latvia"], countryCodes: ["lv"], locNames: ["Coast"], nearestDistanceKm: 90, isFreshest: true },
+      ],
+      topPredictedPoints: [],
+    } as any, "Test Species", "linnuliigid");
+
+    expect(result.evidenceState).toBe("positive_signal");
+    expect(result.hasForeignPressure).toBe(true);
+  });
+
+  it("allows negative-signal only when core sources are available", () => {
+    const result = normalizeSpeciesPredictionResult({
+      speciesKey: "test-species",
+      speciesName: "Test Species",
+      generatedAt: "2026-03-20T12:00:00.000Z",
+      evidenceState: "negative_signal",
+      hasRecentEstoniaEvidence: false,
+      hasEstoniaHistory: true,
+      hasForeignPressure: false,
+      hasUnavailableCoreSources: false,
+      sourceHealth: {
+        elurikkusAvailable: true,
+        ebirdAvailable: true,
+        gbifAvailable: true,
+        gbifFallbackUsed: false,
+        primarySourceUsed: "GBIF Estonia",
+        sourceWarnings: [],
+      },
+      estoniaHistoryClusters: [
+        { id: "ee-cluster-1", lat: 58.5, lon: 24.5, count: 3, recentCount: 0, newestEventDate: "2025-03-10T00:00:00.000Z", oldestEventDate: "2024-03-10T00:00:00.000Z", source: "GBIF" },
+      ],
+      topPredictedPoints: [],
+    } as any, "Test Species", "linnuliigid");
+
+    expect(result.evidenceState).toBe("negative_signal");
+    expect(result.hasUnavailableCoreSources).toBe(false);
+  });
+
   it("does not replace canonical country scores or points from nested fallback payloads", () => {
     const result = normalizeSpeciesPredictionResult({
       speciesKey: "test-species",

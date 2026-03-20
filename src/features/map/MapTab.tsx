@@ -338,6 +338,13 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
             foreignEvidence: Array.isArray(ev.data.foreignEvidence) ? ev.data.foreignEvidence : [],
             estoniaEvidence: ev.data.estoniaEvidence && typeof ev.data.estoniaEvidence === 'object' ? ev.data.estoniaEvidence as Record<string, unknown> : undefined,
             historicalEvidence: ev.data.historicalEvidence && typeof ev.data.historicalEvidence === 'object' ? ev.data.historicalEvidence as Record<string, unknown> : undefined,
+            evidenceState: typeof ev.data.evidenceState === 'string' ? ev.data.evidenceState : '',
+            hasRecentEstoniaEvidence: typeof ev.data.hasRecentEstoniaEvidence === 'boolean' ? ev.data.hasRecentEstoniaEvidence : undefined,
+            hasEstoniaHistory: typeof ev.data.hasEstoniaHistory === 'boolean' ? ev.data.hasEstoniaHistory : undefined,
+            hasForeignPressure: typeof ev.data.hasForeignPressure === 'boolean' ? ev.data.hasForeignPressure : undefined,
+            hasUnavailableCoreSources: typeof ev.data.hasUnavailableCoreSources === 'boolean' ? ev.data.hasUnavailableCoreSources : undefined,
+            summaryGuardrailApplied: typeof ev.data.summaryGuardrailApplied === 'boolean' ? ev.data.summaryGuardrailApplied : undefined,
+            summaryGuardrailReason: typeof ev.data.summaryGuardrailReason === 'string' ? ev.data.summaryGuardrailReason : '',
             runtimeMarker: typeof ev.data.runtimeMarker === 'string' ? ev.data.runtimeMarker : '',
           });
         }

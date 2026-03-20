@@ -128,6 +128,7 @@
       '#speciesPredictionPanel .spp-state-copy{font-size:12px;line-height:1.55;color:#475569}',
       '#speciesPredictionPanel .spp-state-loading{border-color:#bfdbfe;background:#f8fbff}',
       '#speciesPredictionPanel .spp-state-success{border-color:#bbf7d0;background:#f6fff9}',
+      '#speciesPredictionPanel .spp-state-caution{border-color:#fde68a;background:#fffbeb}',
       '#speciesPredictionPanel .spp-state-error{border-color:#fed7aa;background:#fffaf5}',
       '#speciesPredictionPanel .spp-state-idle{border-color:#e2e8f0;background:#fbfdff}',
       '#speciesPredictionPanel .spp-summary{display:grid;gap:10px}',
@@ -508,6 +509,7 @@
     var estoniaEvidence = result.estoniaEvidence || null;
     var sourceHealth = result.sourceHealth || null;
     var evidenceSummary = result.evidenceSummary || null;
+    var evidenceState = String(result.evidenceState || '').trim();
     var speciesInfo = result.species || null;
     console.debug('[speciesPrediction] panel render state', {
       speciesKey: result.speciesKey || state.speciesKey || '',
@@ -538,9 +540,12 @@
     publishPanelState(result, preferredPoints);
 
     var html = '';
-    html += renderStateCard('spp-state-success', 'Prediction complete', 'Rendering the latest backend evidence and target ranking for this species.');
+    var cautionState = evidenceState === 'insufficient_evidence';
+    html += renderStateCard(cautionState ? 'spp-state-caution' : 'spp-state-success', 'Prediction complete', cautionState ? 'Completed with limited evidence. Interpret the result cautiously.' : 'Rendering the latest backend evidence and target ranking for this species.');
     html += '<div class="spp-card"><h4>Summary</h4><p class="spp-summary-text">' + escapeHtml(summarySentence(evidenceSummary, sourceHealth, weather, foreignClusters)) + '</p><div class="spp-grid">' +
       metricCell('Species', speciesInfo && speciesInfo.speciesName ? speciesInfo.speciesName : (result.speciesName || state.speciesName || 'Unavailable')) +
+      metricCell('Evidence state', formatEvidenceState(evidenceState)) +
+      metricCell('Confidence', cautionState ? 'Low' : deriveConfidenceLabel(confidenceNote)) +
       meaningfulMetricCell('Sources used', summarizeAvailableSources(evidenceSummary, sourceHealth)) +
       metricCell('Ranking mode', formatRankingMode(evidenceSummary && evidenceSummary.rankingMode ? evidenceSummary.rankingMode : 'estonia_history_only')) +
       metricCell('Active evidence used', summarizeActiveEvidence(evidenceSummary, sourceHealth)) +
@@ -551,6 +556,9 @@
       meaningfulMetricCell('Weather', evidenceSummary && evidenceSummary.wasWeatherUsedInRanking ? weatherLine(weather, evidenceSummary) : '') +
       meaningfulMetricCell('Attempted but unavailable', summarizeAttemptedButNotUsed(evidenceSummary)) +
       '</div></div>';
+    if (cautionState) {
+      html += '<div class="spp-card spp-warning-card"><h4>Completion status</h4><p class="spp-summary-text">Status: Completed. Evidence state: Insufficient evidence. Confidence: Low.</p></div>';
+    }
     if (estoniaEvidence) {
       html += '<div class="spp-card"><h4>Fresh Estonia evidence</h4><div class="spp-grid">' +
         meaningfulMetricCell('Freshest localities', summarizeFreshestEstoniaLocalities(estoniaEvidence)) +
@@ -627,6 +635,13 @@
       debugItem('Edge function version', result.edgeFunctionVersion || 'Not provided'),
       debugItem('Primary source', result.sourceHealth && result.sourceHealth.primarySourceUsed ? result.sourceHealth.primarySourceUsed : '(empty)'),
       debugItem('Ranking mode', result.evidenceSummary && result.evidenceSummary.rankingMode ? result.evidenceSummary.rankingMode : '(empty)'),
+      debugItem('Evidence state', result.evidenceState || '(empty)'),
+      debugItem('Has recent Estonia evidence', typeof result.hasRecentEstoniaEvidence === 'boolean' ? String(result.hasRecentEstoniaEvidence) : '(empty)'),
+      debugItem('Has Estonia history', typeof result.hasEstoniaHistory === 'boolean' ? String(result.hasEstoniaHistory) : '(empty)'),
+      debugItem('Has foreign pressure', typeof result.hasForeignPressure === 'boolean' ? String(result.hasForeignPressure) : '(empty)'),
+      debugItem('Has unavailable core sources', typeof result.hasUnavailableCoreSources === 'boolean' ? String(result.hasUnavailableCoreSources) : '(empty)'),
+      debugItem('Summary guardrail applied', typeof result.summaryGuardrailApplied === 'boolean' ? String(result.summaryGuardrailApplied) : '(empty)'),
+      debugItem('Summary guardrail reason', result.summaryGuardrailReason || '(empty)'),
       debugItem('Foreign groups', String(Array.isArray(result.foreignEvidence) ? result.foreignEvidence.length : 0)),
       debugItem('Estonia recent 7d', result.estoniaEvidence && result.estoniaEvidence.recentCount7d != null ? String(result.estoniaEvidence.recentCount7d) : '(empty)'),
       debugItem('Warning count', String(normalizeStringArray(result.warnings).length)),
@@ -1092,13 +1107,35 @@
   }
 
   function summarySentence(evidenceSummary, sourceHealth, weather, foreignClusters) {
+    if (state.result && String(state.result.evidenceState || '') === 'insufficient_evidence') {
+      return 'Completed with limited evidence. No positive signal was detected in the available Estonia or foreign datasets, and unavailable sources limit confidence.';
+    }
     if (evidenceSummary && evidenceSummary.summaryText) return evidenceSummary.summaryText;
     var rankingMode = String(evidenceSummary && evidenceSummary.rankingMode || 'estonia_history_only');
     var evidence = summarizeActiveEvidence(evidenceSummary, sourceHealth);
     if (rankingMode === 'estonia_history_only' || rankingMode === 'estonia_history_plus_weather') {
-      return 'Ranking is based mainly on Estonia evidence' + (evidence ? ' using ' + evidence : '') + '.';
+      if (state.result && state.result.hasEstoniaHistory !== true) {
+        return 'No Estonia history clusters were available to drive ranking in this payload.';
+      }
+      return 'Ranking is based on available Estonia history evidence' + (evidence ? ' using ' + evidence : '') + '.';
     }
     return formatRankingMode(rankingMode) + (evidence ? ' using ' + evidence + '.' : '.');
+  }
+
+  function formatEvidenceState(value) {
+    var stateValue = String(value || '').trim();
+    if (stateValue === 'insufficient_evidence') return 'Insufficient evidence';
+    if (stateValue === 'positive_signal') return 'Positive signal';
+    if (stateValue === 'negative_signal') return 'Negative signal';
+    return 'Unavailable';
+  }
+
+  function deriveConfidenceLabel(confidenceNote) {
+    var text = String(confidenceNote || '').toLowerCase();
+    if (text.indexOf('low confidence') >= 0) return 'Low';
+    if (text.indexOf('moderate') >= 0) return 'Moderate';
+    if (text.indexOf('high') >= 0) return 'High';
+    return 'Limited';
   }
 
   function inferRankingMode(foreignClusters, weather) {
@@ -1271,6 +1308,13 @@
           foreignEvidence: result && Array.isArray(result.foreignEvidence) ? result.foreignEvidence : [],
           estoniaEvidence: result && result.estoniaEvidence ? result.estoniaEvidence : null,
           historicalEvidence: result && result.historicalEvidence ? result.historicalEvidence : null,
+          evidenceState: result && result.evidenceState ? result.evidenceState : '',
+          hasRecentEstoniaEvidence: result && typeof result.hasRecentEstoniaEvidence === 'boolean' ? result.hasRecentEstoniaEvidence : undefined,
+          hasEstoniaHistory: result && typeof result.hasEstoniaHistory === 'boolean' ? result.hasEstoniaHistory : undefined,
+          hasForeignPressure: result && typeof result.hasForeignPressure === 'boolean' ? result.hasForeignPressure : undefined,
+          hasUnavailableCoreSources: result && typeof result.hasUnavailableCoreSources === 'boolean' ? result.hasUnavailableCoreSources : undefined,
+          summaryGuardrailApplied: result && typeof result.summaryGuardrailApplied === 'boolean' ? result.summaryGuardrailApplied : undefined,
+          summaryGuardrailReason: result && result.summaryGuardrailReason ? result.summaryGuardrailReason : '',
           runtimeMarker: runtimeInfo.visibleMarker,
         }, '*');
       }

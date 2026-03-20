@@ -269,8 +269,11 @@ export type SpeciesPredictionSourceHealth = {
   sourceWarnings: string[];
   elurikkusAvailable: boolean;
   ebirdAvailable: boolean;
+  gbifAvailable?: boolean;
   gbifFallbackUsed: boolean;
 };
+
+export type SpeciesPredictionEvidenceState = 'positive_signal' | 'negative_signal' | 'insufficient_evidence';
 
 export type PredictionConsistencyChecks = {
   routeLooksPlausible: boolean;
@@ -356,6 +359,13 @@ export type SpeciesPredictionResult = {
   hasNestedInsightSummary?: boolean;
   rankingNotesInputType?: string;
   warningsInputType?: string;
+  evidenceState?: SpeciesPredictionEvidenceState;
+  hasRecentEstoniaEvidence?: boolean;
+  hasEstoniaHistory?: boolean;
+  hasForeignPressure?: boolean;
+  hasUnavailableCoreSources?: boolean;
+  summaryGuardrailApplied?: boolean;
+  summaryGuardrailReason?: string;
 };
 
 export type ResolvedSpeciesPredictionSource = {
@@ -654,6 +664,13 @@ export function normalizeSpeciesPredictionResult(
   const weather = normalizeWeather(
     readRecord(source, ['weather']) ?? readRecord(rawResearchPayload, ['weather']),
   );
+  const evidenceState = readString(source, ['evidenceState', 'evidence_state']) as SpeciesPredictionEvidenceState | '';
+  const hasRecentEstoniaEvidence = typeof source.hasRecentEstoniaEvidence === 'boolean' ? source.hasRecentEstoniaEvidence : undefined;
+  const hasEstoniaHistory = typeof source.hasEstoniaHistory === 'boolean' ? source.hasEstoniaHistory : undefined;
+  const hasForeignPressure = typeof source.hasForeignPressure === 'boolean' ? source.hasForeignPressure : undefined;
+  const hasUnavailableCoreSources = typeof source.hasUnavailableCoreSources === 'boolean' ? source.hasUnavailableCoreSources : undefined;
+  const summaryGuardrailApplied = typeof source.summaryGuardrailApplied === 'boolean' ? source.summaryGuardrailApplied : undefined;
+  const summaryGuardrailReason = readString(source, ['summaryGuardrailReason', 'summary_guardrail_reason']);
   const predictionVectors = normalizePredictionVectors(
     readArray(source, ['predictionVectors', 'prediction_vectors'])
       ?? readArray(rawResearchPayload, ['predictionVectors', 'prediction_vectors']),
@@ -718,6 +735,13 @@ export function normalizeSpeciesPredictionResult(
     ...(confidenceNote ? { confidenceNote: normalizeUiText(confidenceNote) } : {}),
     ...(rankingNotes ? { rankingNotes: normalizeUiText(rankingNotes) } : {}),
     ...(warnings.length ? { warnings } : {}),
+    ...((evidenceState === 'positive_signal' || evidenceState === 'negative_signal' || evidenceState === 'insufficient_evidence') ? { evidenceState } : {}),
+    ...(typeof hasRecentEstoniaEvidence === 'boolean' ? { hasRecentEstoniaEvidence } : {}),
+    ...(typeof hasEstoniaHistory === 'boolean' ? { hasEstoniaHistory } : {}),
+    ...(typeof hasForeignPressure === 'boolean' ? { hasForeignPressure } : {}),
+    ...(typeof hasUnavailableCoreSources === 'boolean' ? { hasUnavailableCoreSources } : {}),
+    ...(typeof summaryGuardrailApplied === 'boolean' ? { summaryGuardrailApplied } : {}),
+    ...(summaryGuardrailReason ? { summaryGuardrailReason: normalizeUiText(summaryGuardrailReason) } : {}),
     ...(consistencyChecksSource ? { consistencyChecks: normalizePredictionConsistencyChecks(consistencyChecksSource) } : {}),
     ...(source.openaiAnalysis ? { openaiAnalysis: source.openaiAnalysis as SpeciesPredictionAnalysis } : {}),
     ...(normalizeUiText(readString(source, ['aiSummary', 'ai_summary']) || readString(aiSummaryRecord, ['insightSummary']) || readString(asRecord(source.openaiAnalysis), ['insightSummary']))
@@ -1240,6 +1264,7 @@ function normalizeSourceHealth(input: Record<string, unknown> | null): SpeciesPr
     sourceWarnings: warnings.map((warning) => normalizeUiText(String(warning || ''))).filter(Boolean),
     elurikkusAvailable: input.elurikkusAvailable === true,
     ebirdAvailable: input.ebirdAvailable === true,
+    ...(typeof input.gbifAvailable === 'boolean' ? { gbifAvailable: input.gbifAvailable === true } : {}),
     gbifFallbackUsed: input.gbifFallbackUsed === true,
   };
 }

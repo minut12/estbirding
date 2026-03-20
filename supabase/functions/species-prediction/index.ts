@@ -165,8 +165,50 @@ type NormalizedUpstreamResponse = {
   mapLayersDefault: Record<string, unknown>;
   species: Record<string, unknown>;
   weather: Record<string, unknown>;
+  evidenceState: EvidenceState;
+  hasRecentEstoniaEvidence: boolean;
+  hasEstoniaHistory: boolean;
+  hasForeignPressure: boolean;
+  hasUnavailableCoreSources: boolean;
+  summaryGuardrailApplied: boolean;
+  summaryGuardrailReason: string;
   raw: Record<string, unknown>;
 };
+
+type EvidenceState = 'positive_signal' | 'negative_signal' | 'insufficient_evidence';
+
+type EvidenceStateSnapshot = {
+  hasRecentEstoniaEvidence: boolean;
+  hasEstoniaHistory: boolean;
+  hasForeignPressure: boolean;
+  hasAnyPositiveEvidence: boolean;
+  hasUnavailableCoreSources: boolean;
+  evidenceState: EvidenceState;
+};
+
+type SummaryGuardrailResult = {
+  insightSummary: string;
+  confidenceNote: string;
+  rankingNotes: string;
+  warnings: string[];
+  summaryGuardrailApplied: boolean;
+  summaryGuardrailReason: string;
+  originalAiSummarySnippet: string;
+  finalAiSummarySnippet: string;
+};
+
+const INSUFFICIENT_EVIDENCE_FALLBACK = {
+  insightSummary: 'No usable recent Estonia evidence, Estonia history clusters, or foreign pressure points were available in this payload. Weather alone does not provide a strong migration signal. This result should be treated as insufficient evidence, not strong evidence of absence.',
+  confidenceNote: 'Low confidence. Key source streams are unavailable or empty, so the result is limited by missing evidence rather than supported by strong negative signals.',
+  rankingNotes: 'Fresh Estonia evidence: unavailable or empty. Estonia history clusters: unavailable or empty. Foreign pressure: unavailable or empty. Weather: neutral. Interpret this as no positive signal detected, not confirmed absence.',
+  warnings: [
+    'Estonia recent evidence unavailable or empty',
+    'Estonia history unavailable or empty',
+    'Foreign pressure unavailable or empty',
+    'Weather alone is insufficient',
+    'Do not treat this as confirmed absence',
+  ],
+} as const;
 
 type CleanPredictionContext = {
   speciesKey?: string;
@@ -971,10 +1013,34 @@ async function buildMapFirstPredictionResult(opts: {
       ? 'mixed'
       : (elurikkusHistoryPoints.length ? 'EELURIKKUS' : (estoniaHistoryPoints.length ? 'GBIF' : estoniaHistorySource)),
   });
+  const evidenceStateSnapshot = computeEvidenceState({
+    estoniaEvidence,
+    estoniaHistoryPoints,
+    estoniaHistoryClusters,
+    foreignRecentPoints,
+    foreignClusters,
+    foreignEvidence,
+    sourceHealth,
+  });
   const warnings = Array.from(new Set(sourceHealth.sourceWarnings as string[]));
   const requiresN8nSummary = settings.enableOpenAISummary === true || settings.enableN8nResearch === true;
   const normalizedN8nResponse = requiresN8nSummary
-    ? await maybeFetchSecondarySummary({ webhookTarget, webhookUrl, payload, signal, foreignEvidence, predictedTargets, weather, sourceHealth })
+    ? await maybeFetchSecondarySummary({
+      webhookTarget,
+      webhookUrl,
+      payload,
+      signal,
+      foreignEvidence,
+      predictedTargets,
+      weather,
+      sourceHealth,
+      estoniaEvidence,
+      estoniaHistoryPoints,
+      estoniaHistoryClusters,
+      foreignRecentPoints,
+      foreignClusters,
+      evidenceStateSnapshot,
+    })
     : null;
   const countryScores = buildCountryScores(foreignEvidence);
   const topPredictedPoints = predictedTargets.slice(0, Math.min(5, clampInt(toNumber(settings.outputCount) || 5, 1, 5)));
@@ -1000,6 +1066,13 @@ async function buildMapFirstPredictionResult(opts: {
     weather,
     predictionVectors,
     predictedTargets: topPredictedPoints,
+    evidenceState: evidenceStateSnapshot.evidenceState,
+    hasRecentEstoniaEvidence: evidenceStateSnapshot.hasRecentEstoniaEvidence,
+    hasEstoniaHistory: evidenceStateSnapshot.hasEstoniaHistory,
+    hasForeignPressure: evidenceStateSnapshot.hasForeignPressure,
+    hasUnavailableCoreSources: evidenceStateSnapshot.hasUnavailableCoreSources,
+    summaryGuardrailApplied: false,
+    summaryGuardrailReason: '',
     mapLayers: {
       estoniaHistory: true,
       estoniaHistoryPoints: true,
@@ -1054,6 +1127,7 @@ async function buildMapFirstPredictionResult(opts: {
       predictionVectors,
       predictedTargets: topPredictedPoints,
       rawLinks,
+      evidenceState: evidenceStateSnapshot,
       ...(normalizedN8nResponse ? { aiSummary: normalizedN8nResponse.insightSummary } : {}),
     },
   };
@@ -1083,6 +1157,13 @@ async function buildMapFirstPredictionResult(opts: {
     countryScores: normalizedN8nResponse.countryScores,
     estoniaEvidence: normalizedN8nResponse.estoniaEvidence,
     elurikkusRecentRecords: normalizedN8nResponse.elurikkusRecentRecords,
+    evidenceState: normalizedN8nResponse.evidenceState,
+    hasRecentEstoniaEvidence: normalizedN8nResponse.hasRecentEstoniaEvidence,
+    hasEstoniaHistory: normalizedN8nResponse.hasEstoniaHistory,
+    hasForeignPressure: normalizedN8nResponse.hasForeignPressure,
+    hasUnavailableCoreSources: normalizedN8nResponse.hasUnavailableCoreSources,
+    summaryGuardrailApplied: normalizedN8nResponse.summaryGuardrailApplied,
+    summaryGuardrailReason: normalizedN8nResponse.summaryGuardrailReason,
     mapLayers: Object.keys(normalizedN8nResponse.mapLayers).length ? normalizedN8nResponse.mapLayers : baseResult.mapLayers,
     mapLayersDefault: normalizedN8nResponse.mapLayersDefault,
     species: normalizedN8nResponse.species,
@@ -1681,8 +1762,29 @@ async function maybeFetchSecondarySummary(opts: {
   predictedTargets: Record<string, unknown>[];
   weather: Record<string, unknown>;
   sourceHealth: Record<string, unknown>;
+  estoniaEvidence: Record<string, unknown>;
+  estoniaHistoryPoints: Record<string, unknown>[];
+  estoniaHistoryClusters: Record<string, unknown>[];
+  foreignRecentPoints: Record<string, unknown>[];
+  foreignClusters: Record<string, unknown>[];
+  evidenceStateSnapshot: EvidenceStateSnapshot;
 }): Promise<NormalizedUpstreamResponse> {
-  const { webhookTarget, webhookUrl, payload, signal, foreignEvidence, predictedTargets, weather, sourceHealth } = opts;
+  const {
+    webhookTarget,
+    webhookUrl,
+    payload,
+    signal,
+    foreignEvidence,
+    predictedTargets,
+    weather,
+    sourceHealth,
+    estoniaEvidence,
+    estoniaHistoryPoints,
+    estoniaHistoryClusters,
+    foreignRecentPoints,
+    foreignClusters,
+    evidenceStateSnapshot,
+  } = opts;
   if (!webhookTarget.webhookConfigured || !webhookTarget.valid) {
     throw createWebhookConfigError(webhookTarget);
   }
@@ -1695,7 +1797,23 @@ async function maybeFetchSecondarySummary(opts: {
     headers,
     body: JSON.stringify({
       ...payload,
-      evidenceSummary: { sourceHealth, foreignEvidence, predictedTargets, weather },
+      evidenceSummary: {
+        sourceHealth,
+        foreignEvidence,
+        predictedTargets,
+        weather,
+        estoniaEvidence,
+        estoniaHistoryPoints,
+        estoniaHistoryClusters,
+        foreignRecentPoints,
+        foreignClusters,
+        evidenceState: evidenceStateSnapshot,
+        hardRules: {
+          distinguishNegativeEvidenceFromMissingData: true,
+          doNotUseHighConfidenceAbsenceWhenSourcesUnavailable: true,
+          weatherAloneIsWeakOrNeutral: true,
+        },
+      },
     }),
     signal,
   });
@@ -1790,7 +1908,19 @@ async function maybeFetchSecondarySummary(opts: {
       shapeDiagnostics,
     });
   }
-  return normalizedResponse;
+  const guardedResponse = applyEvidenceStateSummaryGuardrails(normalizedResponse, evidenceStateSnapshot);
+  console.info(`${LOG_PREFIX} summary_guardrails`, {
+    evidenceState: guardedResponse.evidenceState,
+    hasRecentEstoniaEvidence: guardedResponse.hasRecentEstoniaEvidence,
+    hasEstoniaHistory: guardedResponse.hasEstoniaHistory,
+    hasForeignPressure: guardedResponse.hasForeignPressure,
+    hasUnavailableCoreSources: guardedResponse.hasUnavailableCoreSources,
+    summaryGuardrailApplied: guardedResponse.summaryGuardrailApplied,
+    summaryGuardrailReason: guardedResponse.summaryGuardrailReason,
+    originalAiSummarySnippet: buildInsightSummaryPreview(data),
+    finalAiSummarySnippet: guardedResponse.insightSummary.slice(0, 160),
+  });
+  return guardedResponse;
 }
 
 function resolveWebhookTarget(): WebhookTargetInfo {
@@ -2273,7 +2403,25 @@ function buildCleanPredictionResult(
   const speciesKey = stringOr(record.speciesKey, species.speciesKey, species.key, context.speciesKey);
   const speciesName = stringOr(record.speciesName, species.speciesName, species.name, context.speciesName);
   const scope = stringOr(record.scope, context.scope) || 'linnuliigid';
-  return sanitizeSuccessfulPredictionPayload({
+  const sourceHealth = asRecord(record.sourceHealth);
+  const estoniaEvidence = asRecord(record.estoniaEvidence);
+  const evidenceSummary = asRecord(record.evidenceSummary);
+  const foreignClusters = Array.isArray(record.foreignClusters) ? record.foreignClusters : [];
+  const predictedTargets = Array.isArray(record.predictedTargets) ? record.predictedTargets : [];
+  const foreignRecentPoints = Array.isArray(record.foreignRecentPoints) ? record.foreignRecentPoints : [];
+  const estoniaHistoryPoints = Array.isArray(record.estoniaHistoryPoints) ? record.estoniaHistoryPoints : [];
+  const elurikkusRecentRecords = Array.isArray(record.elurikkusRecentRecords) ? record.elurikkusRecentRecords : [];
+  const estoniaHistoryClusters = Array.isArray(record.estoniaHistoryClusters) ? record.estoniaHistoryClusters : [];
+  const evidenceStateSnapshot = computeEvidenceState({
+    estoniaEvidence,
+    estoniaHistoryPoints,
+    estoniaHistoryClusters,
+    foreignRecentPoints,
+    foreignClusters,
+    foreignEvidence: [],
+    sourceHealth,
+  });
+  const cleaned = sanitizeSuccessfulPredictionPayload({
     ok: true,
     status: 'completed',
     error: null,
@@ -2286,16 +2434,16 @@ function buildCleanPredictionResult(
     warnings: summary.warnings,
     generatedAt: stringOr(record.generatedAt) || new Date().toISOString(),
     analysisVersion: stringOr(record.analysisVersion) || 'n8n_aiSummary_normalized',
-    sourceHealth: asRecord(record.sourceHealth),
+    sourceHealth,
     countryScores: asRecord(record.countryScores),
-    estoniaEvidence: asRecord(record.estoniaEvidence),
-    evidenceSummary: asRecord(record.evidenceSummary),
-    foreignClusters: Array.isArray(record.foreignClusters) ? record.foreignClusters : [],
-    predictedTargets: Array.isArray(record.predictedTargets) ? record.predictedTargets : [],
-    foreignRecentPoints: Array.isArray(record.foreignRecentPoints) ? record.foreignRecentPoints : [],
-    estoniaHistoryPoints: Array.isArray(record.estoniaHistoryPoints) ? record.estoniaHistoryPoints : [],
-    elurikkusRecentRecords: Array.isArray(record.elurikkusRecentRecords) ? record.elurikkusRecentRecords : [],
-    estoniaHistoryClusters: Array.isArray(record.estoniaHistoryClusters) ? record.estoniaHistoryClusters : [],
+    estoniaEvidence,
+    evidenceSummary,
+    foreignClusters,
+    predictedTargets,
+    foreignRecentPoints,
+    estoniaHistoryPoints,
+    elurikkusRecentRecords,
+    estoniaHistoryClusters,
     mapLayers: asRecord(record.mapLayers),
     mapLayersDefault: asRecord(record.mapLayersDefault),
     species: {
@@ -2320,8 +2468,28 @@ function buildCleanPredictionResult(
       } : {}),
       ...(weather.windDirectionDeg != null ? { windDirectionDeg: toNumber(weather.windDirectionDeg) } : {}),
     },
+    evidenceState: evidenceStateSnapshot.evidenceState,
+    hasRecentEstoniaEvidence: evidenceStateSnapshot.hasRecentEstoniaEvidence,
+    hasEstoniaHistory: evidenceStateSnapshot.hasEstoniaHistory,
+    hasForeignPressure: evidenceStateSnapshot.hasForeignPressure,
+    hasUnavailableCoreSources: evidenceStateSnapshot.hasUnavailableCoreSources,
+    summaryGuardrailApplied: false,
+    summaryGuardrailReason: '',
     raw: record,
   }) as NormalizedUpstreamResponse;
+  const guarded = applyEvidenceStateSummaryGuardrails(cleaned, evidenceStateSnapshot);
+  console.info(`${LOG_PREFIX} recovered_summary_guardrails`, {
+    evidenceState: guarded.evidenceState,
+    hasRecentEstoniaEvidence: guarded.hasRecentEstoniaEvidence,
+    hasEstoniaHistory: guarded.hasEstoniaHistory,
+    hasForeignPressure: guarded.hasForeignPressure,
+    hasUnavailableCoreSources: guarded.hasUnavailableCoreSources,
+    summaryGuardrailApplied: guarded.summaryGuardrailApplied,
+    summaryGuardrailReason: guarded.summaryGuardrailReason,
+    originalAiSummarySnippet: buildInsightSummaryPreview(data),
+    finalAiSummarySnippet: guarded.insightSummary.slice(0, 160),
+  });
+  return guarded;
 }
 
 function normalizeN8nPredictionSuccessPayload(data: unknown): NormalizedUpstreamResponse | null {
@@ -2395,6 +2563,15 @@ function enrichPredictionResult(
   const canonicalWeather = Object.keys(normalizedUpstream?.weather || {}).length ? normalizedUpstream!.weather : asRecord(raw.weather);
   const generatedAt = normalizedUpstream?.generatedAt || stringOr(raw.generatedAt) || new Date().toISOString();
   const analysisVersion = normalizedUpstream?.analysisVersion || stringOr(raw.analysisVersion);
+  const evidenceStateSnapshot = computeEvidenceState({
+    estoniaEvidence: canonicalEstoniaEvidence,
+    estoniaHistoryPoints: canonicalEstoniaHistoryPoints,
+    estoniaHistoryClusters: canonicalEstoniaHistoryClusters,
+    foreignRecentPoints: canonicalForeignRecentPoints,
+    foreignClusters: canonicalForeignClusters,
+    foreignEvidence,
+    sourceHealth: canonicalSourceHealth,
+  });
   const canonicalSpecies = Object.keys(normalizedUpstream?.species || {}).length
     ? normalizedUpstream!.species
     : {
@@ -2409,7 +2586,7 @@ function enrichPredictionResult(
     ...(canonicalSpecies.speciesName ? { speciesName: canonicalSpecies.speciesName } : {}),
     ...(stringOr(raw.scope, payloadSettings.scope) ? { scope: stringOr(raw.scope, payloadSettings.scope) } : {}),
     species: canonicalSpecies,
-    insightSummary: normalizedUpstream?.insightSummary || normalizedSummary?.insightSummary || stringOr(raw.insightSummary),
+    insightSummary: normalizedUpstream?.insightSummary || stringOr(raw.insightSummary),
     confidenceNote: normalizedUpstream?.confidenceNote || stringOr(raw.confidenceNote),
     rankingNotes: normalizedUpstream?.rankingNotes || stringOr(raw.rankingNotes),
     generatedAt,
@@ -2432,6 +2609,13 @@ function enrichPredictionResult(
     historicalEvidence,
     rawLinks,
     topPredictedPoints,
+    evidenceState: normalizedUpstream?.evidenceState || evidenceStateSnapshot.evidenceState,
+    hasRecentEstoniaEvidence: normalizedUpstream?.hasRecentEstoniaEvidence ?? evidenceStateSnapshot.hasRecentEstoniaEvidence,
+    hasEstoniaHistory: normalizedUpstream?.hasEstoniaHistory ?? evidenceStateSnapshot.hasEstoniaHistory,
+    hasForeignPressure: normalizedUpstream?.hasForeignPressure ?? evidenceStateSnapshot.hasForeignPressure,
+    hasUnavailableCoreSources: normalizedUpstream?.hasUnavailableCoreSources ?? evidenceStateSnapshot.hasUnavailableCoreSources,
+    summaryGuardrailApplied: normalizedUpstream?.summaryGuardrailApplied === true,
+    summaryGuardrailReason: normalizedUpstream?.summaryGuardrailReason || '',
     ...(rerankedTopPredictedPoints.length ? { rerankedTopPredictedPoints } : {}),
     warnings: Array.from(new Set([...existingWarnings, ...sourceWarnings])),
     timeoutMsUsed: resolveTimeoutMs(),
@@ -2581,9 +2765,11 @@ function buildSourceHealth(
     || toNumber(estoniaEvidence.recentCount30d) > 0,
   );
   const ebirdAvailable = foreignSightings.length > 0 || foreignEvidence.length > 0;
+  const gbifAvailable = gbifFallbackUsed || (Array.isArray(historicalEvidence.topHistoricalHotspots) && historicalEvidence.topHistoricalHotspots.length > 0);
   const primarySourceUsed = elurikkusAvailable ? 'Elurikkus' : (ebirdAvailable ? 'eBird' : (gbifFallbackUsed ? 'GBIF fallback' : 'Partial upstream payload'));
   if (!elurikkusAvailable) sourceWarnings.push('Elurikkus evidence is missing or incomplete for this run.');
   if (!ebirdAvailable) sourceWarnings.push('Foreign-country evidence is sparse or unavailable.');
+  if (!gbifAvailable) sourceWarnings.push('GBIF Estonia history is missing or incomplete for this run.');
   if (gbifFallbackUsed) sourceWarnings.push('GBIF fallback context was used; treat foreign evidence with extra caution.');
   if (!Array.isArray(historicalEvidence.topHistoricalHotspots) || !historicalEvidence.topHistoricalHotspots.length) {
     sourceWarnings.push('Historical hotspot evidence is limited.');
@@ -2596,6 +2782,7 @@ function buildSourceHealth(
     sourceWarnings: Array.from(new Set(sourceWarnings)),
     elurikkusAvailable,
     ebirdAvailable,
+    gbifAvailable,
     gbifFallbackUsed,
   };
 }
@@ -2677,6 +2864,7 @@ function buildSourceHealthMapFirst(input: {
     sourceWarnings: warnings,
     elurikkusAvailable: input.estoniaHistorySourceUsed === 'EELURIKKUS' || input.estoniaHistorySourceUsed === 'mixed' || input.estoniaHistoryClusters.some((cluster) => String(cluster.source || '') === 'mixed'),
     ebirdAvailable: input.foreignRecentPoints.length > 0,
+    gbifAvailable: input.estoniaHistorySourceUsed === 'GBIF' || input.estoniaHistorySourceUsed === 'mixed' || input.estoniaHistoryPoints.length > 0,
     gbifFallbackUsed: input.estoniaHistorySourceUsed === 'GBIF',
   };
 }
@@ -2894,6 +3082,163 @@ function buildEvidenceSummary(input: {
           ? `Ranking mode: Estonia history + weather. Active evidence used: ${activeEvidenceUsed.join(', ')}.`
           : `Ranking mode: Estonia history only. Active evidence used: ${activeEvidenceUsed.join(', ')}.`,
   };
+}
+
+function computeEvidenceState(input: {
+  estoniaEvidence: Record<string, unknown>;
+  estoniaHistoryPoints: unknown[];
+  estoniaHistoryClusters: unknown[];
+  foreignRecentPoints: unknown[];
+  foreignClusters: unknown[];
+  foreignEvidence: Record<string, unknown>[];
+  sourceHealth: Record<string, unknown>;
+}): EvidenceStateSnapshot {
+  const hasRecentEstoniaEvidence = toNumber(input.estoniaEvidence.recentCount7d) > 0
+    || toNumber(input.estoniaEvidence.recentCount30d) > 0
+    || input.estoniaEvidence.alreadyPresent === true;
+  const hasEstoniaHistory = input.estoniaHistoryClusters.length > 0 || input.estoniaHistoryPoints.length > 0;
+  const totalForeignRecentPoints = input.foreignEvidence.reduce((sumSoFar, entry) => (
+    sumSoFar + Math.max(
+      toNumber(entry.totalForeignRecentPoints),
+      toNumber(entry.recordCount7d),
+      0,
+    )
+  ), 0);
+  const hasForeignPressure = input.foreignRecentPoints.length > 0
+    || input.foreignClusters.length > 0
+    || totalForeignRecentPoints > 0;
+  const hasAnyPositiveEvidence = hasRecentEstoniaEvidence || hasForeignPressure;
+  const hasUnavailableCoreSources = input.sourceHealth.elurikkusAvailable === false
+    || input.sourceHealth.ebirdAvailable === false
+    || input.sourceHealth.gbifAvailable === false;
+  return {
+    hasRecentEstoniaEvidence,
+    hasEstoniaHistory,
+    hasForeignPressure,
+    hasAnyPositiveEvidence,
+    hasUnavailableCoreSources,
+    evidenceState: hasAnyPositiveEvidence
+      ? 'positive_signal'
+      : (hasUnavailableCoreSources ? 'insufficient_evidence' : 'negative_signal'),
+  };
+}
+
+function applyEvidenceStateSummaryGuardrails(
+  response: NormalizedUpstreamResponse,
+  evidenceStateSnapshot: EvidenceStateSnapshot,
+): NormalizedUpstreamResponse {
+  const summary = sanitizeSummaryFields({
+    insightSummary: response.insightSummary,
+    confidenceNote: response.confidenceNote,
+    rankingNotes: response.rankingNotes,
+    warnings: response.warnings,
+    evidenceStateSnapshot,
+  });
+  return {
+    ...response,
+    insightSummary: summary.insightSummary,
+    confidenceNote: summary.confidenceNote,
+    rankingNotes: summary.rankingNotes,
+    warnings: summary.warnings,
+    evidenceState: evidenceStateSnapshot.evidenceState,
+    hasRecentEstoniaEvidence: evidenceStateSnapshot.hasRecentEstoniaEvidence,
+    hasEstoniaHistory: evidenceStateSnapshot.hasEstoniaHistory,
+    hasForeignPressure: evidenceStateSnapshot.hasForeignPressure,
+    hasUnavailableCoreSources: evidenceStateSnapshot.hasUnavailableCoreSources,
+    summaryGuardrailApplied: summary.summaryGuardrailApplied,
+    summaryGuardrailReason: summary.summaryGuardrailReason,
+  };
+}
+
+function sanitizeSummaryFields(input: {
+  insightSummary: string;
+  confidenceNote: string;
+  rankingNotes: string;
+  warnings: string[];
+  evidenceStateSnapshot: EvidenceStateSnapshot;
+}): SummaryGuardrailResult {
+  const originalAiSummarySnippet = [input.insightSummary, input.confidenceNote, input.rankingNotes]
+    .filter(Boolean)
+    .join(' ')
+    .slice(0, 160);
+  const disallowedPattern = /high confidence in the absence signal|high confidence absence|ranking is based mainly on estonia evidence|estonia history only|species absent|confirmed absence/i;
+  const missingCoreText = !input.insightSummary.trim() || !input.confidenceNote.trim() || !input.rankingNotes.trim();
+  const noHistoryButClaimed = !input.evidenceStateSnapshot.hasEstoniaHistory && /estonia history|local historical ranking/i.test(input.rankingNotes);
+  const noForeignButClaimed = !input.evidenceStateSnapshot.hasForeignPressure && /foreign pressure/i.test(input.rankingNotes);
+  const needsFallback = input.evidenceStateSnapshot.evidenceState === 'insufficient_evidence'
+    && (disallowedPattern.test(`${input.insightSummary} ${input.confidenceNote} ${input.rankingNotes}`) || missingCoreText || noHistoryButClaimed || noForeignButClaimed);
+  if (needsFallback) {
+    return {
+      ...INSUFFICIENT_EVIDENCE_FALLBACK,
+      summaryGuardrailApplied: true,
+      summaryGuardrailReason: 'insufficient_evidence_fallback',
+      originalAiSummarySnippet,
+      finalAiSummarySnippet: INSUFFICIENT_EVIDENCE_FALLBACK.insightSummary.slice(0, 160),
+    };
+  }
+
+  let insightSummary = replaceUnsafeSummaryPhrases(input.insightSummary, input.evidenceStateSnapshot.evidenceState);
+  let confidenceNote = replaceUnsafeSummaryPhrases(input.confidenceNote, input.evidenceStateSnapshot.evidenceState);
+  let rankingNotes = replaceUnsafeSummaryPhrases(input.rankingNotes, input.evidenceStateSnapshot.evidenceState);
+  const warnings = new Set((input.warnings || []).map((item) => String(item || '').trim()).filter(Boolean));
+  let summaryGuardrailApplied = false;
+  const reasons: string[] = [];
+
+  if (input.evidenceStateSnapshot.evidenceState === 'insufficient_evidence') {
+    if (!confidenceNote || /high confidence|absence|absent/i.test(confidenceNote)) {
+      confidenceNote = INSUFFICIENT_EVIDENCE_FALLBACK.confidenceNote;
+      summaryGuardrailApplied = true;
+      reasons.push('confidence_note_rewritten');
+    }
+    warnings.add('Do not treat this as confirmed absence');
+    if (input.evidenceStateSnapshot.hasUnavailableCoreSources) {
+      warnings.add('One or more core datasets were unavailable during this run');
+    }
+  }
+  if (!input.evidenceStateSnapshot.hasEstoniaHistory && /estonia history|local historical ranking/i.test(rankingNotes)) {
+    rankingNotes = 'Fresh Estonia evidence: unavailable or empty. Estonia history clusters: unavailable or empty.';
+    summaryGuardrailApplied = true;
+    reasons.push('history_claim_removed');
+  }
+  if (!input.evidenceStateSnapshot.hasForeignPressure && /foreign pressure/i.test(rankingNotes)) {
+    rankingNotes = rankingNotes.replace(/foreign pressure[^.]*\.?/ig, '').trim();
+    rankingNotes = `${rankingNotes ? `${rankingNotes} ` : ''}No foreign pressure detected in provided data.`.trim();
+    summaryGuardrailApplied = true;
+    reasons.push('foreign_claim_softened');
+  }
+  if (!insightSummary) insightSummary = input.evidenceStateSnapshot.evidenceState === 'insufficient_evidence'
+    ? INSUFFICIENT_EVIDENCE_FALLBACK.insightSummary
+    : 'No positive signal detected in the provided summary text.';
+  if (!confidenceNote) confidenceNote = input.evidenceStateSnapshot.evidenceState === 'insufficient_evidence'
+    ? INSUFFICIENT_EVIDENCE_FALLBACK.confidenceNote
+    : 'Confidence remains limited and should be interpreted with caution.';
+  if (!rankingNotes) rankingNotes = input.evidenceStateSnapshot.evidenceState === 'insufficient_evidence'
+    ? INSUFFICIENT_EVIDENCE_FALLBACK.rankingNotes
+    : 'Ranking reflects the provided evidence only.';
+
+  return {
+    insightSummary,
+    confidenceNote,
+    rankingNotes,
+    warnings: Array.from(warnings),
+    summaryGuardrailApplied,
+    summaryGuardrailReason: reasons.join(','),
+    originalAiSummarySnippet,
+    finalAiSummarySnippet: insightSummary.slice(0, 160),
+  };
+}
+
+function replaceUnsafeSummaryPhrases(value: string, evidenceState: EvidenceState): string {
+  return String(value || '')
+    .trim()
+    .replace(/high confidence in the absence signal/ig, evidenceState === 'insufficient_evidence' ? 'insufficient evidence in the current payload' : 'negative signal in the provided evidence')
+    .replace(/high confidence absence/ig, evidenceState === 'insufficient_evidence' ? 'insufficient evidence' : 'negative signal')
+    .replace(/ranking is based mainly on estonia evidence/ig, evidenceState === 'insufficient_evidence' ? 'no positive signal was detected in the available Estonia data' : 'ranking reflects the provided Estonia evidence')
+    .replace(/estonia history only/ig, evidenceState === 'insufficient_evidence' ? 'Estonia history was unavailable or empty in this payload' : 'Estonia history context')
+    .replace(/species absent/ig, 'no positive signal detected')
+    .replace(/confirmed absence/ig, evidenceState === 'insufficient_evidence' ? 'insufficient evidence' : 'negative signal')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 function determineRankingMode(hasForeignPressure: boolean, hasWeatherSupport: boolean): string {

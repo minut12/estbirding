@@ -83,6 +83,13 @@ export type SpeciesPredictionPanelStateSnapshot = {
   foreignEvidence?: unknown[];
   estoniaEvidence?: Record<string, unknown>;
   historicalEvidence?: Record<string, unknown>;
+  evidenceState?: string;
+  hasRecentEstoniaEvidence?: boolean;
+  hasEstoniaHistory?: boolean;
+  hasForeignPressure?: boolean;
+  hasUnavailableCoreSources?: boolean;
+  summaryGuardrailApplied?: boolean;
+  summaryGuardrailReason?: string;
   runtimeMarker?: string;
 };
 

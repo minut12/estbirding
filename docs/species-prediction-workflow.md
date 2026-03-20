@@ -142,6 +142,14 @@
 - Only reorder or adjust the provided deterministic candidate points.
 - Keep the summary short and useful for birding in the field.
 - If the signals are contradictory, flag that clearly in `warnings` and `confidenceNote`.
+- Distinguish confirmed negative evidence from empty datasets and unavailable sources.
+- If any core source availability flag is `false`, do not describe the result as high-confidence absence.
+- If Estonia recent evidence, Estonia history, and foreign pressure are all empty or unavailable, say `insufficient evidence` or `no positive signal detected`.
+- Only say `already present in Estonia` when `recentCount7d > 0` or `alreadyPresent === true`.
+- Only say Estonia history drives ranking when `estoniaHistoryClusters` has items.
+- Only say foreign pressure exists when foreign recent points or clusters are present.
+- Treat weather alone as weak or neutral unless stronger evidence supports it.
+- Warnings must explicitly mention unavailable datasets when applicable.
 - If OpenAI fails, return the deterministic result with `analysisFallbackUsed: true`.
 
 ## Expected Webhook Request

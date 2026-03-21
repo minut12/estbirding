@@ -709,6 +709,46 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.payloadSourceState).toBe("legacy_or_unverified_source");
   });
 
+  it("replaces stale nested narrative on legacy or unverified payloads with a safe deterministic summary", () => {
+    const result = normalizeSpeciesPredictionResult({
+      insightSummary: "ALREADY PRESENT — 12 records in 7 days at Sääre küla, Ristna, and Põõsaspea with PL, SE, and FI pressure.",
+      aiSummary: {
+        insightSummary: "ALREADY PRESENT — 12 records in 7 days at Sääre küla, Ristna, and Põõsaspea with PL, SE, and FI pressure.",
+      },
+      rawResearchPayload: {
+        aiSummary: "ALREADY PRESENT — 12 records in 7 days at Sääre küla, Ristna, and Põõsaspea with PL, SE, and FI pressure.",
+      },
+      sourceHealth: {
+        ebirdAvailable: false,
+      },
+      estoniaEvidence: {
+        recentCount7d: 0,
+        recentCount30d: 0,
+        alreadyPresent: false,
+        freshestLocalities: [],
+      },
+      estoniaHistoryPoints: [],
+      estoniaHistoryClusters: [],
+      foreignRecentPoints: [],
+      foreignClusters: [],
+      predictedTargets: [],
+      countryScores: {
+        latvia: 0,
+        lithuania: 0,
+        belarus: 0,
+        poland: 0,
+        russia: 0,
+        finlandContextOnly: 0,
+      },
+      externalPressureScore: 0,
+    } as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.payloadSourceState).toBe("legacy_or_unverified_source");
+    expect(result.insightSummary).toBe("No recent Estonia records were confirmed in the last 7 days, and no coordinate-backed Estonia history or foreign pressure was available in this run. This output should be treated as incomplete evidence rather than an already-present signal.");
+    expect(result.aiSummary).toBe(result.insightSummary);
+    expect(result.insightSummary).not.toMatch(/ALREADY PRESENT|Sääre|Ristna|Põõsaspea|\bPL\b|\bSE\b|\bFI\b/i);
+  });
+
   it("does not let finalized payloads reuse rawResearchPayload aiSummary over top-level summary", () => {
     const result = normalizeSpeciesPredictionResult({
       backendBuild: "2026-03-21-fix18",

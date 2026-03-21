@@ -653,10 +653,55 @@ export function normalizeSpeciesPredictionResult(
   const responseProof = readString(source, ['responseProof', 'response_proof']);
   const summaryOrigin = readString(source, ['summaryOrigin', 'summary_origin']);
   const isCurrentFinalizedBackendOutput = Boolean(backendBuild && invokeRouteVersion && responseProof);
+  const rawResearchPayload = source.rawResearchPayload ? asRecord(source.rawResearchPayload) : {};
+  const normalizedSources = readRecord(rawResearchPayload, ['normalizedSources']) ?? {};
+  const requestMeta = readRecord(rawResearchPayload, ['request']) ?? {};
   const consistencyChecksSource = readRecord(source, ['consistencyChecks'])
     ?? readRecord(source, ['consistency_checks'])
     ?? readRecord(asRecord(source.openaiAnalysis), ['consistencyChecks'])
     ?? null;
+  const deriveSafeLegacySummary = () => {
+    const safeRecentCount7d = clampNumber(readNumber(readRecord(source, ['estoniaEvidence']) ?? readRecord(rawResearchPayload, ['estoniaEvidence']) ?? {}, ['recentCount7d']), 0, 999999, 0);
+    const safeEstoniaHistoryPoints = normalizeEstoniaHistoryPoints(
+      readArray(source, ['estoniaHistoryPoints', 'estonia_history_points'])
+        ?? readArray(rawResearchPayload, ['estoniaHistoryPoints', 'estonia_history_points']),
+    );
+    const safeEstoniaHistoryClusters = normalizeEstoniaHistoryClusters(
+      readArray(source, ['estoniaHistoryClusters', 'estonia_history_clusters'])
+        ?? readArray(rawResearchPayload, ['estoniaHistoryClusters', 'estonia_history_clusters']),
+    );
+    const safeForeignRecentPoints = normalizeForeignRecentPoints(
+      readArray(source, ['foreignRecentPoints', 'foreign_recent_points'])
+        ?? readArray(rawResearchPayload, ['foreignRecentPoints', 'foreign_recent_points']),
+    );
+    const safeForeignClusters = normalizeForeignClusters(
+      readArray(source, ['foreignClusters', 'foreign_clusters'])
+        ?? readArray(rawResearchPayload, ['foreignClusters', 'foreign_clusters']),
+    );
+    const legacyCandidateSummary =
+      readString(source, ['insightSummary'])
+      || readString(aiSummaryRecord, ['insightSummary', 'insight_summary', 'summary'])
+      || readString(source, ['insight_summary', 'summary'])
+      || readString(asRecord(source.openaiAnalysis), ['insightSummary', 'insight_summary', 'summary'])
+      || readString(source, ['openAiResultValid']);
+    const hasEmptyEvidence =
+      safeRecentCount7d === 0
+      && safeEstoniaHistoryPoints.length === 0
+      && safeEstoniaHistoryClusters.length === 0
+      && safeForeignRecentPoints.length === 0
+      && safeForeignClusters.length === 0;
+    const contradictsEvidence =
+      (/ALREADY PRESENT/i.test(legacyCandidateSummary) && safeRecentCount7d === 0)
+      || (/(Sääre|Ristna|Põõsaspea|Spithami|Tagaranna|Mikoszewo|Zatoka Pomorska|Helsinki|Kalmar|\bPL\b|\bSE\b|\bFI\b|Poland|Sweden|Finland)/i.test(legacyCandidateSummary) && hasEmptyEvidence);
+    if (!legacyCandidateSummary) return '';
+    if (!contradictsEvidence) return legacyCandidateSummary;
+    if (safeRecentCount7d > 0) return `ALREADY PRESENT — ${safeRecentCount7d} records in 7 days.`;
+    if (safeEstoniaHistoryPoints.length > 0 || safeEstoniaHistoryClusters.length > 0) return 'No recent Estonia records were confirmed in the last 7 days.';
+    if (safeForeignRecentPoints.length === 0 && safeForeignClusters.length === 0) {
+      return 'No recent Estonia records were confirmed in the last 7 days, and no coordinate-backed Estonia history or foreign pressure was available in this run. This output should be treated as incomplete evidence rather than an already-present signal.';
+    }
+    return 'No recent Estonia records were confirmed in the last 7 days.';
+  };
   const insightSummary = isCurrentFinalizedBackendOutput
     ? (
       readString(source, ['insightSummary'])
@@ -665,13 +710,7 @@ export function normalizeSpeciesPredictionResult(
       || readString(asRecord(source.openaiAnalysis), ['insightSummary', 'insight_summary', 'summary'])
       || readString(source, ['openAiResultValid'])
     )
-    : (
-      readString(source, ['insightSummary'])
-      || readString(aiSummaryRecord, ['insightSummary', 'insight_summary', 'summary'])
-      || readString(source, ['insight_summary', 'summary'])
-      || readString(asRecord(source.openaiAnalysis), ['insightSummary', 'insight_summary', 'summary'])
-      || readString(source, ['openAiResultValid'])
-    );
+    : deriveSafeLegacySummary();
   const confidenceNote = readString(source, ['confidenceNote'])
     || readString(aiSummaryRecord, ['confidenceNote', 'confidence_note'])
     || readString(source, ['confidence_note'])
@@ -687,9 +726,6 @@ export function normalizeSpeciesPredictionResult(
     || (resolvedSource.recoveredFromErrorEnvelope ? 'n8n_aiSummary_recovered' : '')
     || (insightSummary ? 'n8n_aiSummary_normalized' : '')
     || readString(asRecord(source.openaiAnalysis), ['analysisVersion', 'analysis_version']);
-  const rawResearchPayload = source.rawResearchPayload ? asRecord(source.rawResearchPayload) : {};
-  const normalizedSources = readRecord(rawResearchPayload, ['normalizedSources']) ?? {};
-  const requestMeta = readRecord(rawResearchPayload, ['request']) ?? {};
   const evidenceSpecies = {
     speciesKey,
     speciesName: normalizeUiText(
@@ -893,12 +929,12 @@ export function normalizeSpeciesPredictionResult(
     ...(normalizeUiText(
       isCurrentFinalizedBackendOutput
         ? (insightSummary || readString(source, ['aiSummary', 'ai_summary']))
-        : (readString(source, ['aiSummary', 'ai_summary']) || readString(aiSummaryRecord, ['insightSummary']) || readString(asRecord(source.openaiAnalysis), ['insightSummary']))
+        : insightSummary
     )
       ? { aiSummary: normalizeUiText(
         isCurrentFinalizedBackendOutput
           ? (insightSummary || readString(source, ['aiSummary', 'ai_summary']))
-          : (readString(source, ['aiSummary', 'ai_summary']) || readString(aiSummaryRecord, ['insightSummary']) || readString(asRecord(source.openaiAnalysis), ['insightSummary']))
+          : insightSummary
       ) }
       : {}),
     ...(source.rawResearchPayload ? { rawResearchPayload: rawResearchPayload } : {}),

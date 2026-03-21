@@ -3578,7 +3578,7 @@ function buildFinalConsistencyChecksFromCanonical(input: {
   foreignPressureMatchesNarrative: boolean;
 } {
   const summary = stringOr(input.insightSummary);
-  const mentionsForeign = /foreign pressure|poland|sweden|finland|latvia|lithuania|belarus|russia|pl\b|se\b|fi\b/i.test(summary);
+  const mentionsForeign = /foreign pressure is active|pressure is building|poland|sweden|finland|latvia|lithuania|belarus|russia|pl\b|se\b|fi\b/i.test(summary);
   return {
     routeLooksPlausible: input.predictedTargets.length > 0,
     timingLooksPlausible: input.foreignRecentPoints.some((point) => toNumber(asRecord(point).daysAgo) <= 7) || !mentionsForeign,
@@ -3747,6 +3747,21 @@ type NarrativeConsistencyResult = {
   reasons: string[];
 };
 
+type FinalPayloadConsistencyResult = {
+  summaryMatchesEvidence: boolean;
+  estoniaNarrativeMatchesEvidence: boolean;
+  foreignNarrativeMatchesEvidence: boolean;
+  targetNarrativeMatchesEvidence: boolean;
+  rawPayloadMatchesFinalPayload: boolean;
+  reasons: string[];
+};
+
+const SAFE_INCOMPLETE_EVIDENCE_SUMMARY =
+  'No recent Estonia records were confirmed in the last 7 days, and no coordinate-backed Estonia history or foreign pressure was available in this run. This output should be treated as incomplete evidence rather than an already-present signal.';
+
+const STALE_NARRATIVE_WARNING =
+  'Narrative regenerated because stale summary text conflicted with structured evidence.';
+
 function collectEvidenceLocalities(response: Record<string, unknown>): string[] {
   return [
     stringOr(asRecord(response.estoniaEvidence).latestEstoniaLocality),
@@ -3766,6 +3781,209 @@ function collectEvidenceLocalities(response: Record<string, unknown>): string[] 
       ? response.predictedTargets.map((item) => stringOr(asRecord(item).displayName, asRecord(item).name))
       : []),
   ].filter(Boolean);
+}
+
+function buildDeterministicSummaryFromStructuredEvidence(payload: Record<string, unknown>): string {
+  const estoniaEvidence = asRecord(payload.estoniaEvidence);
+  const foreignRecentPoints = Array.isArray(payload.foreignRecentPoints) ? payload.foreignRecentPoints : [];
+  const foreignClusters = Array.isArray(payload.foreignClusters) ? payload.foreignClusters : [];
+  const estoniaHistoryPoints = Array.isArray(payload.estoniaHistoryPoints) ? payload.estoniaHistoryPoints : [];
+  const estoniaHistoryClusters = Array.isArray(payload.estoniaHistoryClusters) ? payload.estoniaHistoryClusters : [];
+  const recentCount7d = Math.max(0, Math.round(toNumber(estoniaEvidence.recentCount7d)));
+  const hasHistory = estoniaHistoryPoints.length > 0 || estoniaHistoryClusters.length > 0;
+  const hasForeign = foreignRecentPoints.length > 0 || foreignClusters.length > 0;
+
+  if (recentCount7d > 0) return `ALREADY PRESENT — ${recentCount7d} records in 7 days.`;
+  if (hasHistory) return 'No recent Estonia records were confirmed in the last 7 days.';
+  if (!hasForeign) return SAFE_INCOMPLETE_EVIDENCE_SUMMARY;
+  return 'No recent Estonia records were confirmed in the last 7 days.';
+}
+
+function scrubStaleNarrativeFromStructuredEvidence(payload: Record<string, unknown>): {
+  safeSummary: string;
+  reasons: string[];
+  warning: string | null;
+} {
+  const estoniaEvidence = asRecord(payload.estoniaEvidence);
+  const sourceHealth = asRecord(payload.sourceHealth);
+  const foreignRecentPoints = Array.isArray(payload.foreignRecentPoints) ? payload.foreignRecentPoints : [];
+  const foreignClusters = Array.isArray(payload.foreignClusters) ? payload.foreignClusters : [];
+  const estoniaHistoryPoints = Array.isArray(payload.estoniaHistoryPoints) ? payload.estoniaHistoryPoints : [];
+  const estoniaHistoryClusters = Array.isArray(payload.estoniaHistoryClusters) ? payload.estoniaHistoryClusters : [];
+  const predictedTargets = Array.isArray(payload.predictedTargets) ? payload.predictedTargets : [];
+  const freshestLocalities = Array.isArray(estoniaEvidence.freshestLocalities) ? estoniaEvidence.freshestLocalities : [];
+  const summary = stringOr(payload.insightSummary, payload.aiSummary, asRecord(payload.rawResearchPayload).aiSummary);
+  const recentCount7d = Math.max(0, Math.round(toNumber(estoniaEvidence.recentCount7d)));
+  const reasons: string[] = [];
+
+  if (/^ALREADY PRESENT/i.test(summary) && recentCount7d <= 0) reasons.push('summary_claims_already_present_without_recent_evidence');
+  if (sourceHealth.ebirdAvailable !== true && /(PL|SE|FI|Poland|Sweden|Finland|foreign pressure)/i.test(summary)) reasons.push('summary_mentions_foreign_pressure_without_ebird');
+  if (foreignRecentPoints.length === 0 && foreignClusters.length === 0 && /(Mikoszewo|Zatoka Pomorska|Brittas väg|Helsinki|Kalmar|Rezerwat przyrody Mewia Łacha|Hel|Dziwn[oó]w)/i.test(summary)) reasons.push('summary_mentions_foreign_locality_without_evidence');
+  if (estoniaHistoryPoints.length === 0 && estoniaHistoryClusters.length === 0 && freshestLocalities.length === 0 && /(Sääre|Ristna|Põõsaspea|Spithami|Tagaranna)/i.test(summary)) reasons.push('summary_mentions_estonia_locality_without_evidence');
+  if (predictedTargets.length === 0 && /(watchers should focus|focus on|target hotspots|top hotspots|hotspot ranking|Ristna|Põõsaspea|Spithami|Tagaranna|Sääre)/i.test(summary)) reasons.push('summary_mentions_targets_without_predicted_targets');
+  if (stringOr(payload.payloadSourceState) === 'legacy_or_unverified_source') reasons.push('legacy_or_unverified_source_reused_stale_narrative');
+
+  return {
+    safeSummary: buildDeterministicSummaryFromStructuredEvidence(payload),
+    reasons,
+    warning: reasons.length ? STALE_NARRATIVE_WARNING : null,
+  };
+}
+
+function validatePredictionPayloadConsistency(finalPayload: Record<string, unknown>): FinalPayloadConsistencyResult {
+  const narrative = validateNarrativeConsistency(finalPayload);
+  const rawResearchPayload = asRecord(finalPayload.rawResearchPayload);
+  const normalizedSources = asRecord(rawResearchPayload.normalizedSources);
+  const rawPayloadMatchesFinalPayload =
+    stringOr(rawResearchPayload.aiSummary) === stringOr(finalPayload.aiSummary)
+    && JSON.stringify(asRecord(rawResearchPayload.estoniaEvidence)) === JSON.stringify(asRecord(finalPayload.estoniaEvidence))
+    && JSON.stringify(Array.isArray(rawResearchPayload.foreignEvidence) ? rawResearchPayload.foreignEvidence : []) === JSON.stringify(Array.isArray(finalPayload.foreignRecentPoints) ? finalPayload.foreignRecentPoints : [])
+    && JSON.stringify(Array.isArray(rawResearchPayload.predictedTargets) ? rawResearchPayload.predictedTargets : []) === JSON.stringify(Array.isArray(finalPayload.predictedTargets) ? finalPayload.predictedTargets : [])
+    && JSON.stringify(Array.isArray(normalizedSources.foreignRecentPoints) ? normalizedSources.foreignRecentPoints : []) === JSON.stringify(Array.isArray(finalPayload.foreignRecentPoints) ? finalPayload.foreignRecentPoints : [])
+    && JSON.stringify(Array.isArray(normalizedSources.foreignClusters) ? normalizedSources.foreignClusters : []) === JSON.stringify(Array.isArray(finalPayload.foreignClusters) ? finalPayload.foreignClusters : [])
+    && JSON.stringify(Array.isArray(normalizedSources.estoniaHistoryPoints) ? normalizedSources.estoniaHistoryPoints : []) === JSON.stringify(Array.isArray(finalPayload.estoniaHistoryPoints) ? finalPayload.estoniaHistoryPoints : [])
+    && JSON.stringify(Array.isArray(normalizedSources.estoniaHistoryClusters) ? normalizedSources.estoniaHistoryClusters : []) === JSON.stringify(Array.isArray(finalPayload.estoniaHistoryClusters) ? finalPayload.estoniaHistoryClusters : []);
+
+  return {
+    summaryMatchesEvidence: narrative.summaryMatchesEvidence,
+    estoniaNarrativeMatchesEvidence: narrative.estoniaPresenceMatchesNarrative,
+    foreignNarrativeMatchesEvidence: narrative.foreignPressureMatchesNarrative,
+    targetNarrativeMatchesEvidence: narrative.targetsMatchEvidence,
+    rawPayloadMatchesFinalPayload,
+    reasons: [
+      ...narrative.reasons,
+      ...(rawPayloadMatchesFinalPayload ? [] : ['raw_payload_does_not_match_final_payload']),
+    ],
+  };
+}
+
+function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown>): Record<string, unknown> {
+  const estoniaEvidence = { ...asRecord(payload.estoniaEvidence) };
+  const foreignRecentPoints = Array.isArray(payload.foreignRecentPoints) ? payload.foreignRecentPoints : [];
+  const foreignClusters = Array.isArray(payload.foreignClusters) ? payload.foreignClusters : [];
+  const estoniaHistoryPoints = Array.isArray(payload.estoniaHistoryPoints) ? payload.estoniaHistoryPoints : [];
+  const estoniaHistoryClusters = Array.isArray(payload.estoniaHistoryClusters) ? payload.estoniaHistoryClusters : [];
+  const predictedTargets = Array.isArray(payload.predictedTargets) ? payload.predictedTargets : [];
+  const scrubbed = scrubStaleNarrativeFromStructuredEvidence(payload);
+  const recentCount7d = Math.max(0, Math.round(toNumber(estoniaEvidence.recentCount7d)));
+  const recentCount30d = Math.max(0, Math.round(toNumber(estoniaEvidence.recentCount30d)));
+  estoniaEvidence.recentCount7d = recentCount7d;
+  estoniaEvidence.recentCount30d = recentCount30d;
+  estoniaEvidence.alreadyPresent = recentCount7d > 0;
+
+  const finalWarnings = Array.from(new Set([
+    ...(recentCount7d > 0 ? [] : ['No recent Estonia records were confirmed in the last 7 days.']),
+    ...(estoniaHistoryPoints.length || estoniaHistoryClusters.length ? [] : ['No coordinate-backed Estonia history was available in this run.']),
+    ...((asRecord(payload.sourceHealth).ebirdAvailable === true && (foreignRecentPoints.length || foreignClusters.length)) ? [] : ['No foreign pressure was available in this run.']),
+    ...(predictedTargets.length ? [] : ['No predicted targets were retained from the final structured evidence.']),
+    ...(scrubbed.warning ? [scrubbed.warning] : []),
+  ]));
+  const finalConsistencyChecks = buildFinalConsistencyChecksFromCanonical({
+    foreignRecentPoints,
+    foreignClusters,
+    predictedTargets,
+    weather: asRecord(payload.weather),
+    insightSummary: scrubbed.safeSummary,
+  });
+  const rawResearchPayload = asRecord(payload.rawResearchPayload);
+  const normalizedSources = asRecord(rawResearchPayload.normalizedSources);
+  const finalPayload: Record<string, unknown> = {
+    speciesKey: payload.speciesKey,
+    speciesName: payload.speciesName,
+    scope: payload.scope,
+    generatedAt: payload.generatedAt,
+    analysisVersion: payload.analysisVersion,
+    species: asRecord(payload.species),
+    sourceHealth: asRecord(payload.sourceHealth),
+    evidenceSummary: asRecord(payload.evidenceSummary),
+    elurikkusRecentRecords: Array.isArray(payload.elurikkusRecentRecords) ? payload.elurikkusRecentRecords : [],
+    estoniaHistoryPoints,
+    estoniaHistoryClusters,
+    foreignRecentPoints,
+    foreignClusters,
+    weather: asRecord(payload.weather),
+    predictionVectors: Array.isArray(payload.predictionVectors) ? payload.predictionVectors : [],
+    predictedTargets,
+    mapLayers: asRecord(payload.mapLayers),
+    foreignEvidence: Array.isArray(payload.foreignEvidence) ? payload.foreignEvidence : [],
+    historicalEvidence: asRecord(payload.historicalEvidence),
+    rawLinks: asRecord(payload.rawLinks),
+    estoniaEvidence,
+    externalPressureScore: 0,
+    springFitScore: payload.springFitScore,
+    windSupportScore: payload.windSupportScore,
+    routeVector: payload.routeVector,
+    bestEntryZone: payload.bestEntryZone,
+    alreadyMissedRisk: payload.alreadyMissedRisk,
+    countryScores: {
+      latvia: 0,
+      lithuania: 0,
+      belarus: 0,
+      poland: 0,
+      russia: 0,
+      finlandContextOnly: 0,
+    },
+    topPredictedPoints: predictedTargets,
+    insightSummary: scrubbed.safeSummary,
+    aiSummary: scrubbed.safeSummary,
+    confidenceNote: payload.confidenceNote,
+    rankingNotes: payload.rankingNotes,
+    warnings: finalWarnings,
+    payloadSourceState: payload.payloadSourceState,
+    consistencyChecks: {
+      ...finalConsistencyChecks,
+      legacyStateSafe: true,
+    },
+    summaryOrigin: scrubbed.reasons.length ? 'neutral_sanitizer_fallback' : 'regenerated_from_structured',
+    summaryRegeneratedFromStructuredEvidence: true,
+    backendBuild: payload.backendBuild,
+    invokeRouteVersion: payload.invokeRouteVersion,
+    responseProof: payload.responseProof,
+    summaryGuardrailApplied: payload.summaryGuardrailApplied,
+    summaryGuardrailReason: payload.summaryGuardrailReason,
+    evidenceState: payload.evidenceState,
+    hasUsableRecentEstoniaEvidence: payload.hasUsableRecentEstoniaEvidence,
+    hasUsableEstoniaHistory: payload.hasUsableEstoniaHistory,
+    hasUsableForeignPressure: payload.hasUsableForeignPressure,
+    hasUsablePredictedTargets: payload.hasUsablePredictedTargets,
+    hasOnlyWeather: payload.hasOnlyWeather,
+    hasOnlySourceAvailabilityWithoutUsableEvidence: payload.hasOnlySourceAvailabilityWithoutUsableEvidence,
+    activeEvidenceSources: payload.activeEvidenceSources,
+    availableSources: payload.availableSources,
+    attemptedButUnavailable: payload.attemptedButUnavailable,
+    attemptedButReturnedNoUsableEvidence: payload.attemptedButReturnedNoUsableEvidence,
+    effectiveRankingMode: payload.effectiveRankingMode,
+    rawResearchPayload: {
+      ...rawResearchPayload,
+      aiSummary: scrubbed.safeSummary,
+      insightSummary: scrubbed.safeSummary,
+      estoniaEvidence,
+      foreignEvidence: foreignRecentPoints,
+      predictedTargets,
+      warnings: finalWarnings,
+      consistencyChecks: {
+        ...finalConsistencyChecks,
+        legacyStateSafe: true,
+      },
+      countryScores: {
+        latvia: 0,
+        lithuania: 0,
+        belarus: 0,
+        poland: 0,
+        russia: 0,
+        finlandContextOnly: 0,
+      },
+      externalPressureScore: 0,
+      normalizedSources: {
+        ...normalizedSources,
+        foreignRecentPoints,
+        foreignClusters,
+        estoniaHistoryPoints,
+        estoniaHistoryClusters,
+      },
+    },
+  };
+  return finalPayload;
 }
 
 function buildDeterministicFinalPayloadFields(payload: Record<string, unknown>) {
@@ -3867,96 +4085,29 @@ function finalizePredictionResponse(
   branch: string,
 ): Record<string, unknown> {
   logPredictionSummaryState('canonical_response_built', branch, canonicalResponse);
-  const deterministic = buildDeterministicFinalPayloadFields(canonicalResponse);
-  let finalSummary = deterministic.insightSummary;
-  const sourceValidation = validateNarrativeConsistency({
-    ...canonicalResponse,
-    payloadSourceState: stringOr(canonicalResponse.payloadSourceState),
-  });
-  const finalValidation = (() => {
-    const result = validateNarrativeConsistency({
-      ...canonicalResponse,
-      ...deterministic,
-      insightSummary: deterministic.insightSummary,
-      aiSummary: deterministic.aiSummary,
-      rawResearchPayload: {
-        ...asRecord(canonicalResponse.rawResearchPayload),
-        aiSummary: deterministic.aiSummary,
-        insightSummary: deterministic.insightSummary,
-      },
-      payloadSourceState: '',
+  const finalPayload = buildFinalPredictionPayloadFromEvidence(canonicalResponse);
+  const finalValidation = validatePredictionPayloadConsistency(finalPayload);
+  if (finalValidation.reasons.length) {
+    finalPayload.insightSummary = buildDeterministicSummaryFromStructuredEvidence(finalPayload);
+    finalPayload.aiSummary = stringOr(finalPayload.insightSummary);
+    finalPayload.warnings = Array.from(new Set([...(Array.isArray(finalPayload.warnings) ? finalPayload.warnings.map((item) => String(item || '')) : []), STALE_NARRATIVE_WARNING]));
+    finalPayload.consistencyChecks = buildFinalConsistencyChecksFromCanonical({
+      foreignRecentPoints: Array.isArray(finalPayload.foreignRecentPoints) ? finalPayload.foreignRecentPoints : [],
+      foreignClusters: Array.isArray(finalPayload.foreignClusters) ? finalPayload.foreignClusters : [],
+      predictedTargets: Array.isArray(finalPayload.predictedTargets) ? finalPayload.predictedTargets : [],
+      weather: asRecord(finalPayload.weather),
+      insightSummary: stringOr(finalPayload.insightSummary),
     });
-    const summary = stringOr(deterministic.insightSummary);
-    const mentionsPositiveForeignNarrative = /(\bPL\b|\bSE\b|\bFI\b|Poland|Sweden|Finland|Mikoszewo|Kalmar|Helsinki|Zatoka Pomorska|Hel|foreign pressure is active|pressure is building|foreign sites|foreign scores)/i.test(summary);
-    const safeForeignPressureMatchesNarrative = !(mentionsPositiveForeignNarrative
-      && (asRecord(canonicalResponse.sourceHealth).ebirdAvailable !== true
-        || (!(Array.isArray(canonicalResponse.foreignRecentPoints) ? canonicalResponse.foreignRecentPoints.length : 0)
-          && !(Array.isArray(canonicalResponse.foreignClusters) ? canonicalResponse.foreignClusters.length : 0))));
-    return {
-      ...result,
-      foreignPressureMatchesNarrative: safeForeignPressureMatchesNarrative,
-      reasons: result.reasons.filter((reason) => reason !== 'summary_mentions_foreign_pressure_without_evidence'),
-    };
-  })();
-  const validationReasons = [...sourceValidation.reasons];
-  if (validationReasons.length) {
-    finalSummary = deterministic.insightSummary;
+    asRecord(finalPayload.consistencyChecks).legacyStateSafe = true;
+    const rawResearchPayload = asRecord(finalPayload.rawResearchPayload);
+    rawResearchPayload.aiSummary = stringOr(finalPayload.aiSummary);
+    rawResearchPayload.insightSummary = stringOr(finalPayload.insightSummary);
+    rawResearchPayload.warnings = finalPayload.warnings;
+    rawResearchPayload.consistencyChecks = finalPayload.consistencyChecks;
   }
-  const finalWarnings = validationReasons.length
-    ? Array.from(new Set([...deterministic.warnings, 'Narrative was regenerated from structured evidence due to consistency mismatch.']))
-    : deterministic.warnings;
-  const rawResearchPayload = asRecord(canonicalResponse.rawResearchPayload);
-  const normalizedSources = asRecord(rawResearchPayload.normalizedSources);
-  const finalPayload: Record<string, unknown> = {
-    ...canonicalResponse,
-    insightSummary: finalSummary,
-    aiSummary: finalSummary,
-    warnings: finalWarnings,
-    consistencyChecks: {
-      ...deterministic.consistencyChecks,
-      summaryMatchesEvidence: finalValidation.summaryMatchesEvidence,
-      foreignPressureMatchesNarrative: finalValidation.foreignPressureMatchesNarrative,
-      estoniaPresenceMatchesNarrative: finalValidation.estoniaPresenceMatchesNarrative,
-      targetsMatchEvidence: finalValidation.targetsMatchEvidence,
-      legacyStateSafe: finalValidation.legacyStateSafe,
-      reasons: validationReasons,
-    },
-    estoniaEvidence: deterministic.estoniaEvidence,
-    predictedTargets: deterministic.predictedTargets,
-    countryScores: deterministic.countryScores,
-    externalPressureScore: deterministic.externalPressureScore,
-    summaryOrigin: validationReasons.length ? 'neutral_sanitizer_fallback' : 'regenerated_from_structured',
-    summaryRegeneratedFromStructuredEvidence: true,
-    rawResearchPayload: {
-      ...rawResearchPayload,
-      aiSummary: finalSummary,
-      insightSummary: finalSummary,
-      warnings: finalWarnings,
-      consistencyChecks: {
-        ...deterministic.consistencyChecks,
-        summaryMatchesEvidence: finalValidation.summaryMatchesEvidence,
-        foreignPressureMatchesNarrative: finalValidation.foreignPressureMatchesNarrative,
-        estoniaPresenceMatchesNarrative: finalValidation.estoniaPresenceMatchesNarrative,
-        targetsMatchEvidence: finalValidation.targetsMatchEvidence,
-        legacyStateSafe: finalValidation.legacyStateSafe,
-        reasons: validationReasons,
-      },
-      estoniaEvidence: deterministic.estoniaEvidence,
-      predictedTargets: deterministic.predictedTargets,
-      countryScores: deterministic.countryScores,
-      externalPressureScore: deterministic.externalPressureScore,
-      normalizedSources: {
-        ...normalizedSources,
-        foreignRecentPoints: Array.isArray(canonicalResponse.foreignRecentPoints) ? canonicalResponse.foreignRecentPoints : [],
-        foreignClusters: Array.isArray(canonicalResponse.foreignClusters) ? canonicalResponse.foreignClusters : [],
-        estoniaHistoryPoints: Array.isArray(canonicalResponse.estoniaHistoryPoints) ? canonicalResponse.estoniaHistoryPoints : [],
-        estoniaHistoryClusters: Array.isArray(canonicalResponse.estoniaHistoryClusters) ? canonicalResponse.estoniaHistoryClusters : [],
-      },
-    },
-  };
   logPredictionSummaryState('before_return', branch, finalPayload, {
-    returnedObjectIsSanitizedObject: false,
-    validationReasons,
+    returnedObjectIsSanitizedObject: true,
+    validationReasons: finalValidation.reasons,
   });
   return finalPayload;
 }

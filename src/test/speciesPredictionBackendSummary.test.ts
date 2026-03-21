@@ -105,7 +105,7 @@ function buildBaseResponse(overrides: Record<string, unknown> = {}): Record<stri
 
 describe("species-prediction backend summary finalizer", () => {
   const hooks = loadBackendHooks();
-  const emptyEvidenceSummary = "No recent Estonia records were confirmed in the last 7 days, and no coordinate-backed Estonia history or foreign pressure was available in this run. This result should be treated as incomplete evidence, not as an already-present signal.";
+  const emptyEvidenceSummary = "No recent Estonia records were confirmed in the last 7 days, and no coordinate-backed Estonia history or foreign pressure was available in this run. This output should be treated as incomplete evidence rather than an already-present signal.";
 
   it("replaces stale already-present summary when structured evidence is empty", () => {
     const response = buildBaseResponse({
@@ -193,6 +193,7 @@ describe("species-prediction backend summary finalizer", () => {
 
     expect((finalized.rawResearchPayload as Record<string, unknown>).aiSummary).toBe(finalized.insightSummary);
     expect((finalized.rawResearchPayload as Record<string, unknown>).insightSummary).toBe(finalized.insightSummary);
+    expect((finalized.rawResearchPayload as Record<string, unknown>).foreignEvidence).toEqual([]);
   });
 
   it("prevents late legacy merge text from surviving after sanitize", () => {
@@ -245,6 +246,7 @@ describe("species-prediction backend summary finalizer", () => {
     expect(String(finalized.insightSummary)).not.toMatch(/ALREADY PRESENT|Tagaranna|\bPL\b|Finland/i);
     expect(finalized.aiSummary).toBe(finalized.insightSummary);
     expect((finalized.rawResearchPayload as Record<string, unknown>).aiSummary).toBe(finalized.insightSummary);
+    expect((finalized.rawResearchPayload as Record<string, unknown>).predictedTargets).toEqual([]);
   });
 
   it("overwrites evidence-derived fields from structured evidence", () => {

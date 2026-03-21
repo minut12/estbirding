@@ -1290,24 +1290,62 @@ async function buildMapFirstPredictionResult(opts: {
     summaryRegeneratedFromStructuredEvidence: canonical.summaryRegeneratedFromStructuredEvidence,
     mapLayers: canonical.mapLayers,
     mapLayersDefault: canonical.mapLayersDefault,
-    rawResearchPayload: {
-      ...asRecord(baseResult.rawResearchPayload),
-      sourceHealth: canonical.sourceHealth,
-      evidenceSummary: canonical.evidenceSummary,
-      estoniaEvidence: canonical.estoniaEvidence,
-      foreignRecentPoints: canonical.foreignRecentPoints,
-      foreignClusters: canonical.foreignClusters,
-      predictedTargets: canonical.predictedTargets,
-      topTarget: canonical.topTarget,
-      insightSummary: canonical.insightSummary,
-      aiSummary: canonical.insightSummary,
-      confidenceNote: canonical.confidenceNote,
-      rankingNotes: canonical.rankingNotes,
-      warnings: canonical.warnings,
-      consistencyChecks: canonical.consistencyChecks,
-      summaryRegeneratedFromStructuredEvidence: canonical.summaryRegeneratedFromStructuredEvidence,
-    },
+    rawResearchPayload: (() => {
+      // Safe carry-forwards from base: species metadata, URLs, vectors, historical structured data only.
+      // No field from baseResult.rawResearchPayload survives unless listed explicitly here.
+      const baseRaw = asRecord(baseResult.rawResearchPayload);
+      return {
+        request: asRecord(baseRaw.request),
+        rawLinks: asRecord(baseRaw.rawLinks),
+        historicalEvidence: asRecord(baseRaw.historicalEvidence),
+        predictionVectors: Array.isArray(baseRaw.predictionVectors) ? baseRaw.predictionVectors as unknown[] : [],
+        // All contested fields — canonical wins over deterministic base
+        sourceHealth: canonical.sourceHealth,
+        evidenceSummary: canonical.evidenceSummary,
+        estoniaEvidence: canonical.estoniaEvidence,
+        foreignEvidence: canonical.foreignRecentPoints,
+        foreignRecentPoints: canonical.foreignRecentPoints,
+        foreignClusters: canonical.foreignClusters,
+        predictedTargets: canonical.predictedTargets,
+        topTarget: canonical.topTarget,
+        topPredictedPoints: canonical.predictedTargets,
+        elurikkusRecentRecords: canonical.elurikkusRecentRecords,
+        evidenceState: canonical.evidenceState,
+        countryScores: canonical.countryScores,
+        externalPressureScore: canonical.externalPressureScore ?? 0,
+        // Narrative fields — always from canonical, never from base
+        insightSummary: canonical.insightSummary,
+        aiSummary: canonical.insightSummary,
+        confidenceNote: canonical.confidenceNote,
+        rankingNotes: canonical.rankingNotes,
+        warnings: canonical.warnings,
+        consistencyChecks: canonical.consistencyChecks,
+        summaryOrigin: canonical.summaryOrigin,
+        summaryRegeneratedFromStructuredEvidence: canonical.summaryRegeneratedFromStructuredEvidence,
+        summaryGuardrailApplied: canonical.summaryGuardrailApplied,
+        summaryGuardrailReason: canonical.summaryGuardrailReason,
+        normalizedSources: {
+          estoniaHistoryPoints: canonical.estoniaHistoryPoints,
+          estoniaHistoryClusters: canonical.estoniaHistoryClusters,
+          foreignRecentPoints: canonical.foreignRecentPoints,
+          foreignClusters: canonical.foreignClusters,
+          weather: canonical.weather,
+        },
+      };
+    })(),
   });
+  // Scrub rawResearchPayload narrative fields before finalization so finalizePredictionResponse
+  // starts from a clean state rather than inheriting any stale narrative from the canonical merge.
+  const preScrub = scrubStaleNarrativeFromStructuredEvidence(asRecord(canonicalResponse));
+  const preRwp = asRecord(canonicalResponse.rawResearchPayload);
+  preRwp.aiSummary = preScrub.safeSummary;
+  preRwp.insightSummary = preScrub.safeSummary;
+  if (preScrub.warning) {
+    preRwp.warnings = Array.from(new Set([
+      ...(Array.isArray(preRwp.warnings) ? preRwp.warnings.map((w) => String(w || '')) : []),
+      preScrub.warning,
+    ]));
+  }
   canonicalResponse = finalizePredictionResponse(canonicalResponse, 'main_buildMapFirstPredictionResult');
   console.info(`${LOG_PREFIX} canonical_response`, {
     species: canonicalResponse.speciesName,
@@ -3812,7 +3850,7 @@ function scrubStaleNarrativeFromStructuredEvidence(payload: Record<string, unkno
   const estoniaHistoryClusters = Array.isArray(payload.estoniaHistoryClusters) ? payload.estoniaHistoryClusters : [];
   const predictedTargets = Array.isArray(payload.predictedTargets) ? payload.predictedTargets : [];
   const freshestLocalities = Array.isArray(estoniaEvidence.freshestLocalities) ? estoniaEvidence.freshestLocalities : [];
-  const summary = stringOr(payload.insightSummary, payload.aiSummary, asRecord(payload.rawResearchPayload).aiSummary);
+  const summary = stringOr(payload.insightSummary, payload.aiSummary) ?? '';
   const recentCount7d = Math.max(0, Math.round(toNumber(estoniaEvidence.recentCount7d)));
   const reasons: string[] = [];
 
@@ -3824,7 +3862,16 @@ function scrubStaleNarrativeFromStructuredEvidence(payload: Record<string, unkno
   if (stringOr(payload.payloadSourceState) === 'legacy_or_unverified_source') reasons.push('legacy_or_unverified_source_reused_stale_narrative');
 
   return {
-    safeSummary: buildDeterministicSummaryFromStructuredEvidence(payload),
+    // Pass the already-extracted locals — never re-read from payload — so the deterministic
+    // summary is built from the same arrays the stale checks ran against, not from whatever
+    // rawResearchPayload or a legacy payload might still carry at those keys.
+    safeSummary: buildDeterministicSummaryFromStructuredEvidence({
+      estoniaEvidence,
+      foreignRecentPoints,
+      foreignClusters,
+      estoniaHistoryPoints,
+      estoniaHistoryClusters,
+    }),
     reasons,
     warning: reasons.length ? STALE_NARRATIVE_WARNING : null,
   };
@@ -3954,9 +4001,20 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     attemptedButReturnedNoUsableEvidence: payload.attemptedButReturnedNoUsableEvidence,
     effectiveRankingMode: payload.effectiveRankingMode,
     rawResearchPayload: {
-      ...rawResearchPayload,
+      // Safe carry-forwards: species metadata, structured data, coordinates, URLs
+      request: asRecord(rawResearchPayload.request),
+      evidenceState: rawResearchPayload.evidenceState,
+      rawLinks: asRecord(rawResearchPayload.rawLinks),
+      historicalEvidence: asRecord(rawResearchPayload.historicalEvidence),
+      predictionVectors: Array.isArray(rawResearchPayload.predictionVectors) ? rawResearchPayload.predictionVectors : [],
+      sourceHealth: asRecord(payload.sourceHealth),
+      evidenceSummary: asRecord(payload.evidenceSummary),
+      // Fresh computed values — never carried from rawResearchPayload
       aiSummary: scrubbed.safeSummary,
       insightSummary: scrubbed.safeSummary,
+      confidenceNote: '',
+      rankingNotes: [],
+      topPredictedPoints: predictedTargets,
       estoniaEvidence,
       foreignEvidence: foreignRecentPoints,
       predictedTargets,
@@ -3975,11 +4033,11 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
       },
       externalPressureScore: 0,
       normalizedSources: {
-        ...normalizedSources,
-        foreignRecentPoints,
-        foreignClusters,
         estoniaHistoryPoints,
         estoniaHistoryClusters,
+        foreignRecentPoints,
+        foreignClusters,
+        weather: asRecord(payload.weather),
       },
     },
   };
@@ -4047,7 +4105,7 @@ function buildDeterministicFinalPayloadFields(payload: Record<string, unknown>) 
 }
 
 function validateNarrativeConsistency(payload: Record<string, unknown>): NarrativeConsistencyResult {
-  const summary = stringOr(payload.insightSummary, payload.aiSummary, asRecord(payload.rawResearchPayload).aiSummary);
+  const summary = stringOr(payload.insightSummary, payload.aiSummary) ?? '';
   const recentCount7d = Math.max(0, Math.round(toNumber(asRecord(payload.estoniaEvidence).recentCount7d)));
   const foreignRecentPoints = Array.isArray(payload.foreignRecentPoints) ? payload.foreignRecentPoints : [];
   const foreignClusters = Array.isArray(payload.foreignClusters) ? payload.foreignClusters : [];

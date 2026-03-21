@@ -3738,34 +3738,234 @@ function enforceCanonicalSummaryConsistency(
   };
 }
 
+type NarrativeConsistencyResult = {
+  summaryMatchesEvidence: boolean;
+  foreignPressureMatchesNarrative: boolean;
+  estoniaPresenceMatchesNarrative: boolean;
+  targetsMatchEvidence: boolean;
+  legacyStateSafe: boolean;
+  reasons: string[];
+};
+
+function collectEvidenceLocalities(response: Record<string, unknown>): string[] {
+  return [
+    stringOr(asRecord(response.estoniaEvidence).latestEstoniaLocality),
+    ...(Array.isArray(asRecord(response.estoniaEvidence).freshestLocalities)
+      ? asRecord(response.estoniaEvidence).freshestLocalities.map((item) => stringOr(item))
+      : []),
+    ...(Array.isArray(response.estoniaHistoryPoints)
+      ? response.estoniaHistoryPoints.map((item) => stringOr(asRecord(item).locality, asRecord(item).municipality))
+      : []),
+    ...(Array.isArray(response.estoniaHistoryClusters)
+      ? response.estoniaHistoryClusters.map((item) => stringOr(asRecord(item).label, asRecord(item).name, asRecord(item).locality, asRecord(item).municipality))
+      : []),
+    ...(Array.isArray(response.elurikkusRecentRecords)
+      ? response.elurikkusRecentRecords.map((item) => stringOr(asRecord(item).locality, asRecord(item).locName))
+      : []),
+    ...(Array.isArray(response.predictedTargets)
+      ? response.predictedTargets.map((item) => stringOr(asRecord(item).displayName, asRecord(item).name))
+      : []),
+  ].filter(Boolean);
+}
+
+function buildDeterministicFinalPayloadFields(payload: Record<string, unknown>) {
+  const estoniaEvidence = { ...asRecord(payload.estoniaEvidence) };
+  const foreignRecentPoints = Array.isArray(payload.foreignRecentPoints) ? payload.foreignRecentPoints : [];
+  const foreignClusters = Array.isArray(payload.foreignClusters) ? payload.foreignClusters : [];
+  const estoniaHistoryPoints = Array.isArray(payload.estoniaHistoryPoints) ? payload.estoniaHistoryPoints : [];
+  const estoniaHistoryClusters = Array.isArray(payload.estoniaHistoryClusters) ? payload.estoniaHistoryClusters : [];
+  const predictedTargets = Array.isArray(payload.predictedTargets) ? payload.predictedTargets : [];
+  const recentCount7d = Math.max(0, Math.round(toNumber(estoniaEvidence.recentCount7d)));
+  const recentCount30d = Math.max(0, Math.round(toNumber(estoniaEvidence.recentCount30d)));
+  const hasHistory = estoniaHistoryPoints.length > 0 || estoniaHistoryClusters.length > 0;
+  const hasForeign = foreignRecentPoints.length > 0 || foreignClusters.length > 0;
+  const ebirdAvailable = asRecord(payload.sourceHealth).ebirdAvailable === true;
+  estoniaEvidence.alreadyPresent = recentCount7d > 0;
+  estoniaEvidence.recentCount7d = recentCount7d;
+  estoniaEvidence.recentCount30d = recentCount30d;
+
+  let insightSummary = '';
+  if (recentCount7d > 0) {
+    insightSummary = `ALREADY PRESENT — ${recentCount7d} records in 7 days.`;
+  } else if (hasHistory) {
+    insightSummary = 'No recent Estonia records were confirmed in the last 7 days.';
+  } else if (!hasForeign) {
+    insightSummary = 'No recent Estonia records were confirmed in the last 7 days, and no coordinate-backed Estonia history or foreign pressure was available in this run. This result should be treated as incomplete evidence, not as an already-present signal.';
+  } else {
+    insightSummary = 'No recent Estonia records were confirmed in the last 7 days.';
+  }
+
+  const warnings = Array.from(new Set([
+    ...(recentCount7d > 0 ? [] : ['No recent Estonia records were confirmed in the last 7 days.']),
+    ...(hasHistory ? [] : ['No coordinate-backed Estonia history was available in this run.']),
+    ...(ebirdAvailable && hasForeign ? [] : ['No foreign pressure was available in this run.']),
+    ...(predictedTargets.length ? [] : ['No predicted targets were retained from the final structured evidence.']),
+  ]));
+  const consistencyChecks = buildFinalConsistencyChecksFromCanonical({
+    foreignRecentPoints,
+    foreignClusters,
+    predictedTargets,
+    weather: asRecord(payload.weather),
+    insightSummary,
+  });
+
+  return {
+    insightSummary,
+    aiSummary: insightSummary,
+    warnings,
+    consistencyChecks,
+    estoniaEvidence,
+    predictedTargets,
+    countryScores: {
+      latvia: 0,
+      lithuania: 0,
+      belarus: 0,
+      poland: 0,
+      russia: 0,
+      finlandContextOnly: 0,
+    },
+    externalPressureScore: 0,
+  };
+}
+
+function validateNarrativeConsistency(payload: Record<string, unknown>): NarrativeConsistencyResult {
+  const summary = stringOr(payload.insightSummary, payload.aiSummary, asRecord(payload.rawResearchPayload).aiSummary);
+  const recentCount7d = Math.max(0, Math.round(toNumber(asRecord(payload.estoniaEvidence).recentCount7d)));
+  const foreignRecentPoints = Array.isArray(payload.foreignRecentPoints) ? payload.foreignRecentPoints : [];
+  const foreignClusters = Array.isArray(payload.foreignClusters) ? payload.foreignClusters : [];
+  const estoniaHistoryPoints = Array.isArray(payload.estoniaHistoryPoints) ? payload.estoniaHistoryPoints : [];
+  const estoniaHistoryClusters = Array.isArray(payload.estoniaHistoryClusters) ? payload.estoniaHistoryClusters : [];
+  const predictedTargets = Array.isArray(payload.predictedTargets) ? payload.predictedTargets : [];
+  const evidenceLocalities = collectEvidenceLocalities(payload).join(' ').toLowerCase();
+  const reasons: string[] = [];
+  const summaryMatchesEvidence = !(/^ALREADY PRESENT/i.test(summary) && recentCount7d <= 0);
+  if (!summaryMatchesEvidence) reasons.push('summary_claims_already_present_without_recent_evidence');
+  const foreignPressureMatchesNarrative = !(/(PL|SE|FI|Poland|Sweden|Finland|Mikoszewo|Kalmar|Helsinki|Zatoka Pomorska|Hel|Dziwnów|foreign pressure)/i.test(summary)
+    && (asRecord(payload.sourceHealth).ebirdAvailable !== true || (!foreignRecentPoints.length && !foreignClusters.length)));
+  if (!foreignPressureMatchesNarrative) reasons.push('summary_mentions_foreign_pressure_without_evidence');
+  const estoniaPresenceMatchesNarrative = !(/(Sääre|Ristna|Põõsaspea|Spithami|Tagaranna|Saaremaa|Hiiu|Lääne counties)/i.test(summary)
+    && !estoniaHistoryPoints.length
+    && !estoniaHistoryClusters.length
+    && !evidenceLocalities);
+  if (!estoniaPresenceMatchesNarrative) reasons.push('summary_mentions_estonia_locality_without_evidence');
+  const targetsMatchEvidence = !(/(watchers should focus|focus on|top targets|hotspot|target sites)/i.test(summary) && !predictedTargets.length);
+  if (!targetsMatchEvidence) reasons.push('summary_mentions_targets_without_predicted_targets');
+  const legacyStateSafe = stringOr(payload.payloadSourceState) !== 'legacy_or_unverified_source' || !summary;
+  if (!legacyStateSafe) reasons.push('legacy_or_unverified_source_reused_stale_narrative');
+  return {
+    summaryMatchesEvidence,
+    foreignPressureMatchesNarrative,
+    estoniaPresenceMatchesNarrative,
+    targetsMatchEvidence,
+    legacyStateSafe,
+    reasons,
+  };
+}
+
 function finalizePredictionResponse(
   canonicalResponse: Record<string, unknown>,
   branch: string,
 ): Record<string, unknown> {
   logPredictionSummaryState('canonical_response_built', branch, canonicalResponse);
-  const beforeSanitize = canonicalResponse;
-  logPredictionSummaryState('before_sanitize', branch, canonicalResponse);
-  canonicalResponse = sanitizeSummaryAgainstEvidence(canonicalResponse);
-  logPredictionSummaryState('after_sanitize', branch, canonicalResponse, {
-    sameObjectBeforeAfterSanitize: beforeSanitize === canonicalResponse,
+  const deterministic = buildDeterministicFinalPayloadFields(canonicalResponse);
+  let finalSummary = deterministic.insightSummary;
+  const sourceValidation = validateNarrativeConsistency({
+    ...canonicalResponse,
+    payloadSourceState: stringOr(canonicalResponse.payloadSourceState),
   });
-
-  const finalSummary =
-    stringOr(canonicalResponse.insightSummary)
-    || stringOr(canonicalResponse.aiSummary)
-    || stringOr(asRecord(canonicalResponse.rawResearchPayload).aiSummary)
-    || '';
-
-  canonicalResponse.insightSummary = finalSummary;
-  canonicalResponse.aiSummary = finalSummary;
-  canonicalResponse.rawResearchPayload = asRecord(canonicalResponse.rawResearchPayload);
-  asRecord(canonicalResponse.rawResearchPayload).aiSummary = finalSummary;
-  asRecord(canonicalResponse.rawResearchPayload).insightSummary = finalSummary;
-
-  logPredictionSummaryState('before_return', branch, canonicalResponse, {
-    returnedObjectIsSanitizedObject: beforeSanitize === canonicalResponse,
+  const finalValidation = (() => {
+    const result = validateNarrativeConsistency({
+      ...canonicalResponse,
+      ...deterministic,
+      insightSummary: deterministic.insightSummary,
+      aiSummary: deterministic.aiSummary,
+      rawResearchPayload: {
+        ...asRecord(canonicalResponse.rawResearchPayload),
+        aiSummary: deterministic.aiSummary,
+        insightSummary: deterministic.insightSummary,
+      },
+      payloadSourceState: '',
+    });
+    const summary = stringOr(deterministic.insightSummary);
+    const mentionsPositiveForeignNarrative = /(\bPL\b|\bSE\b|\bFI\b|Poland|Sweden|Finland|Mikoszewo|Kalmar|Helsinki|Zatoka Pomorska|Hel|foreign pressure is active|pressure is building|foreign sites|foreign scores)/i.test(summary);
+    const safeForeignPressureMatchesNarrative = !(mentionsPositiveForeignNarrative
+      && (asRecord(canonicalResponse.sourceHealth).ebirdAvailable !== true
+        || (!(Array.isArray(canonicalResponse.foreignRecentPoints) ? canonicalResponse.foreignRecentPoints.length : 0)
+          && !(Array.isArray(canonicalResponse.foreignClusters) ? canonicalResponse.foreignClusters.length : 0))));
+    return {
+      ...result,
+      foreignPressureMatchesNarrative: safeForeignPressureMatchesNarrative,
+      reasons: result.reasons.filter((reason) => reason !== 'summary_mentions_foreign_pressure_without_evidence'),
+    };
+  })();
+  const validationReasons = [...sourceValidation.reasons];
+  if (validationReasons.length) {
+    finalSummary = deterministic.insightSummary;
+  }
+  const finalWarnings = validationReasons.length
+    ? Array.from(new Set([...deterministic.warnings, 'Narrative was regenerated from structured evidence due to consistency mismatch.']))
+    : deterministic.warnings;
+  const rawResearchPayload = asRecord(canonicalResponse.rawResearchPayload);
+  const normalizedSources = asRecord(rawResearchPayload.normalizedSources);
+  const finalPayload: Record<string, unknown> = {
+    ...canonicalResponse,
+    insightSummary: finalSummary,
+    aiSummary: finalSummary,
+    warnings: finalWarnings,
+    consistencyChecks: {
+      ...deterministic.consistencyChecks,
+      summaryMatchesEvidence: finalValidation.summaryMatchesEvidence,
+      foreignPressureMatchesNarrative: finalValidation.foreignPressureMatchesNarrative,
+      estoniaPresenceMatchesNarrative: finalValidation.estoniaPresenceMatchesNarrative,
+      targetsMatchEvidence: finalValidation.targetsMatchEvidence,
+      legacyStateSafe: finalValidation.legacyStateSafe,
+      reasons: validationReasons,
+    },
+    estoniaEvidence: deterministic.estoniaEvidence,
+    predictedTargets: deterministic.predictedTargets,
+    countryScores: deterministic.countryScores,
+    externalPressureScore: deterministic.externalPressureScore,
+    summaryOrigin: validationReasons.length ? 'neutral_sanitizer_fallback' : 'regenerated_from_structured',
+    summaryRegeneratedFromStructuredEvidence: true,
+    rawResearchPayload: {
+      ...rawResearchPayload,
+      aiSummary: finalSummary,
+      insightSummary: finalSummary,
+      warnings: finalWarnings,
+      consistencyChecks: {
+        ...deterministic.consistencyChecks,
+        summaryMatchesEvidence: finalValidation.summaryMatchesEvidence,
+        foreignPressureMatchesNarrative: finalValidation.foreignPressureMatchesNarrative,
+        estoniaPresenceMatchesNarrative: finalValidation.estoniaPresenceMatchesNarrative,
+        targetsMatchEvidence: finalValidation.targetsMatchEvidence,
+        legacyStateSafe: finalValidation.legacyStateSafe,
+        reasons: validationReasons,
+      },
+      estoniaEvidence: deterministic.estoniaEvidence,
+      predictedTargets: deterministic.predictedTargets,
+      countryScores: deterministic.countryScores,
+      externalPressureScore: deterministic.externalPressureScore,
+      normalizedSources: {
+        ...normalizedSources,
+        foreignRecentPoints: Array.isArray(canonicalResponse.foreignRecentPoints) ? canonicalResponse.foreignRecentPoints : [],
+        foreignClusters: Array.isArray(canonicalResponse.foreignClusters) ? canonicalResponse.foreignClusters : [],
+        estoniaHistoryPoints: Array.isArray(canonicalResponse.estoniaHistoryPoints) ? canonicalResponse.estoniaHistoryPoints : [],
+        estoniaHistoryClusters: Array.isArray(canonicalResponse.estoniaHistoryClusters) ? canonicalResponse.estoniaHistoryClusters : [],
+      },
+    },
+  };
+  logPredictionSummaryState('before_return', branch, finalPayload, {
+    returnedObjectIsSanitizedObject: false,
+    validationReasons,
   });
-  return canonicalResponse;
+  return finalPayload;
+}
+
+function finalizePredictionPayload(
+  payload: Record<string, unknown>,
+  branch: string,
+): Record<string, unknown> {
+  return finalizePredictionResponse(payload, branch);
 }
 
 function buildCanonicalPredictionRecord(input: {

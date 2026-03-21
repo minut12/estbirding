@@ -662,7 +662,6 @@ export function normalizeSpeciesPredictionResult(
       readString(source, ['insightSummary'])
       || readString(source, ['insight_summary', 'summary'])
       || readString(source, ['aiSummary', 'ai_summary'])
-      || readString(asRecord(source.rawResearchPayload), ['aiSummary', 'insightSummary'])
       || readString(asRecord(source.openaiAnalysis), ['insightSummary', 'insight_summary', 'summary'])
       || readString(source, ['openAiResultValid'])
     )
@@ -891,8 +890,16 @@ export function normalizeSpeciesPredictionResult(
     payloadSourceState: isCurrentFinalizedBackendOutput ? 'current_finalized_backend_output' : 'legacy_or_unverified_source',
     ...(consistencyChecksSource ? { consistencyChecks: normalizePredictionConsistencyChecks(consistencyChecksSource) } : {}),
     ...(source.openaiAnalysis ? { openaiAnalysis: source.openaiAnalysis as SpeciesPredictionAnalysis } : {}),
-    ...(normalizeUiText(readString(source, ['aiSummary', 'ai_summary']) || readString(aiSummaryRecord, ['insightSummary']) || readString(asRecord(source.openaiAnalysis), ['insightSummary']))
-      ? { aiSummary: normalizeUiText(readString(source, ['aiSummary', 'ai_summary']) || readString(aiSummaryRecord, ['insightSummary']) || readString(asRecord(source.openaiAnalysis), ['insightSummary'])) }
+    ...(normalizeUiText(
+      isCurrentFinalizedBackendOutput
+        ? (insightSummary || readString(source, ['aiSummary', 'ai_summary']))
+        : (readString(source, ['aiSummary', 'ai_summary']) || readString(aiSummaryRecord, ['insightSummary']) || readString(asRecord(source.openaiAnalysis), ['insightSummary']))
+    )
+      ? { aiSummary: normalizeUiText(
+        isCurrentFinalizedBackendOutput
+          ? (insightSummary || readString(source, ['aiSummary', 'ai_summary']))
+          : (readString(source, ['aiSummary', 'ai_summary']) || readString(aiSummaryRecord, ['insightSummary']) || readString(asRecord(source.openaiAnalysis), ['insightSummary']))
+      ) }
       : {}),
     ...(source.rawResearchPayload ? { rawResearchPayload: rawResearchPayload } : {}),
     ...(resolvedSource.recoveredFromErrorEnvelope ? {

@@ -709,6 +709,22 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.payloadSourceState).toBe("legacy_or_unverified_source");
   });
 
+  it("does not let finalized payloads reuse rawResearchPayload aiSummary over top-level summary", () => {
+    const result = normalizeSpeciesPredictionResult({
+      backendBuild: "2026-03-21-fix18",
+      invokeRouteVersion: "fix18",
+      responseProof: "served by live species-prediction invoke route",
+      insightSummary: "No recent Estonia records were confirmed in the last 7 days, and no coordinate-backed Estonia history or foreign pressure was available in this run. This result should be treated as incomplete evidence, not as an already-present signal.",
+      aiSummary: "No recent Estonia records were confirmed in the last 7 days, and no coordinate-backed Estonia history or foreign pressure was available in this run. This result should be treated as incomplete evidence, not as an already-present signal.",
+      rawResearchPayload: {
+        aiSummary: "ALREADY PRESENT — 12 records in 7 days at Sääre küla with PL and FI pressure.",
+      },
+    } as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.insightSummary).not.toContain("ALREADY PRESENT");
+    expect(result.aiSummary).toBe(result.insightSummary);
+  });
+
   it("accepts direct wrapped n8n success payloads with nested aiSummary", () => {
     const result = normalizeSpeciesPredictionResult({
       ok: true,

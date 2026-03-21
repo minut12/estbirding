@@ -105,20 +105,22 @@ function buildBaseResponse(overrides: Record<string, unknown> = {}): Record<stri
 
 describe("species-prediction backend summary finalizer", () => {
   const hooks = loadBackendHooks();
+  const emptyEvidenceSummary = "No recent Estonia records were confirmed in the last 7 days, and no coordinate-backed Estonia history or foreign pressure was available in this run. This result should be treated as incomplete evidence, not as an already-present signal.";
 
   it("replaces stale already-present summary when structured evidence is empty", () => {
     const response = buildBaseResponse({
-      insightSummary: "ALREADY PRESENT - 12 records in 7 days near Sääre küla.",
-      aiSummary: "ALREADY PRESENT - 12 records in 7 days near Sääre küla.",
-      rawResearchPayload: { aiSummary: "ALREADY PRESENT - 12 records in 7 days near Sääre küla." },
+      insightSummary: "ALREADY PRESENT - 12 records in 7 days near Saare village.",
+      aiSummary: "ALREADY PRESENT - 12 records in 7 days near Saare village.",
+      rawResearchPayload: { aiSummary: "ALREADY PRESENT - 12 records in 7 days near Saare village." },
     });
 
     const finalized = hooks.finalizePredictionResponse(response, "test_exact_contradiction");
 
-    expect(finalized.insightSummary).toContain("Structured evidence is currently incomplete in the final payload");
+    expect(String(finalized.insightSummary)).toBe(emptyEvidenceSummary);
     expect(finalized.aiSummary).toBe(finalized.insightSummary);
     expect((finalized.rawResearchPayload as Record<string, unknown>).aiSummary).toBe(finalized.insightSummary);
     expect(finalized.summaryRegeneratedFromStructuredEvidence).toBe(true);
+    expect(finalized.predictedTargets).toEqual([]);
   });
 
   it("removes foreign narrative when foreign arrays are empty", () => {
@@ -129,24 +131,24 @@ describe("species-prediction backend summary finalizer", () => {
 
     const finalized = hooks.finalizePredictionResponse(response, "test_foreign_narrative");
 
-    expect(String(finalized.insightSummary)).not.toMatch(/PL|SE|FI|Mikoszewo|Kalmar|Helsinki/);
+    expect(String(finalized.insightSummary)).toBe(emptyEvidenceSummary);
     expect(finalized.summaryOrigin).toBe("neutral_sanitizer_fallback");
   });
 
   it("removes hotspot narrative when there are no predicted targets", () => {
     const response = buildBaseResponse({
-      insightSummary: "Ristna and Põõsaspea remain the top hotspot ranking right now.",
-      aiSummary: "Ristna and Põõsaspea remain the top hotspot ranking right now.",
+      insightSummary: "Ristna and Poosaspea remain the top hotspot ranking right now.",
+      aiSummary: "Ristna and Poosaspea remain the top hotspot ranking right now.",
     });
 
     const finalized = hooks.finalizePredictionResponse(response, "test_hotspot_narrative");
 
-    expect(String(finalized.insightSummary)).not.toMatch(/Ristna|Põõsaspea/i);
-    expect(String(finalized.insightSummary)).toContain("cannot be confirmed");
+    expect(String(finalized.insightSummary)).toContain("incomplete evidence");
+    expect(String(finalized.insightSummary)).not.toMatch(/Ristna|Poosaspea/i);
     expect(finalized.aiSummary).toBe(finalized.insightSummary);
   });
 
-  it("preserves a valid upstream summary that matches structured evidence", () => {
+  it("recomputes even previously valid upstream summaries from structured evidence", () => {
     const response = buildBaseResponse({
       insightSummary: "Punakurk-kaur is supported by canonical structured evidence: Estonia history is present; foreign pressure is present from Finland.",
       aiSummary: "Punakurk-kaur is supported by canonical structured evidence: Estonia history is present; foreign pressure is present from Finland.",
@@ -174,15 +176,13 @@ describe("species-prediction backend summary finalizer", () => {
 
     const finalized = hooks.finalizePredictionResponse(response, "test_valid_upstream");
 
-    expect(finalized.insightSummary).toContain("supported by canonical structured evidence");
-    expect(finalized.summaryOrigin).toBe("normalized_upstream");
-    expect(finalized.summaryRegeneratedFromStructuredEvidence).toBe(false);
+    expect(finalized.insightSummary).toBe("No recent Estonia records were confirmed in the last 7 days.");
+    expect(finalized.summaryOrigin).toBe("regenerated_from_structured");
+    expect(finalized.summaryRegeneratedFromStructuredEvidence).toBe(true);
   });
 
   it("overwrites legacy rawResearchPayload.aiSummary with canonical summary", () => {
     const response = buildBaseResponse({
-      insightSummary: "Structured evidence is currently unavailable or incomplete for this species, so recent Estonia presence and foreign pressure could not be confirmed from the final response payload.",
-      aiSummary: "Structured evidence is currently unavailable or incomplete for this species, so recent Estonia presence and foreign pressure could not be confirmed from the final response payload.",
       rawResearchPayload: {
         aiSummary: "stale raw summary mentioning Finland",
         insightSummary: "stale raw summary mentioning Finland",
@@ -197,16 +197,16 @@ describe("species-prediction backend summary finalizer", () => {
 
   it("prevents late legacy merge text from surviving after sanitize", () => {
     const response = buildBaseResponse({
-      insightSummary: "ALREADY PRESENT - 12 records in 7 days around Sääre küla and Helsinki.",
-      aiSummary: "ALREADY PRESENT - 12 records in 7 days around Sääre küla and Helsinki.",
+      insightSummary: "ALREADY PRESENT - 12 records in 7 days around Saare village and Helsinki.",
+      aiSummary: "ALREADY PRESENT - 12 records in 7 days around Saare village and Helsinki.",
       rawResearchPayload: {
-        aiSummary: "ALREADY PRESENT - 12 records in 7 days around Sääre küla and Helsinki.",
+        aiSummary: "ALREADY PRESENT - 12 records in 7 days around Saare village and Helsinki.",
       },
     });
 
     const finalized = hooks.finalizePredictionResponse(response, "test_late_merge");
 
-    expect(String(finalized.insightSummary)).not.toMatch(/ALREADY PRESENT|Helsinki|Sääre/i);
+    expect(String(finalized.insightSummary)).not.toMatch(/ALREADY PRESENT|Helsinki|Saare/i);
     expect(finalized.aiSummary).toBe(finalized.insightSummary);
     expect((finalized.rawResearchPayload as Record<string, unknown>).aiSummary).toBe(finalized.insightSummary);
     expect(finalized.summaryOrigin).toBe("neutral_sanitizer_fallback");
@@ -227,6 +227,59 @@ describe("species-prediction backend summary finalizer", () => {
     expect(String(finalized.insightSummary)).not.toMatch(/ALREADY PRESENT|Poland|Sweden|Finland|\bPL\b|\bSE\b|\bFI\b/i);
     expect(finalized.aiSummary).toBe(finalized.insightSummary);
     expect((finalized.rawResearchPayload as Record<string, unknown>).aiSummary).toBe(finalized.insightSummary);
+  });
+
+  it("sanitizes legacy_or_unverified_source payloads with stale narrative", () => {
+    const response = buildBaseResponse({
+      payloadSourceState: "legacy_or_unverified_source",
+      insightSummary: "ALREADY PRESENT - 12 records in 7 days at Tagaranna with PL and Finland pressure.",
+      aiSummary: "ALREADY PRESENT - 12 records in 7 days at Tagaranna with PL and Finland pressure.",
+      rawResearchPayload: {
+        aiSummary: "ALREADY PRESENT - 12 records in 7 days at Tagaranna with PL and Finland pressure.",
+      },
+    });
+
+    const finalized = hooks.finalizePredictionResponse(response, "test_legacy_unverified");
+
+    expect(String(finalized.insightSummary)).toBe(emptyEvidenceSummary);
+    expect(String(finalized.insightSummary)).not.toMatch(/ALREADY PRESENT|Tagaranna|\bPL\b|Finland/i);
+    expect(finalized.aiSummary).toBe(finalized.insightSummary);
+    expect((finalized.rawResearchPayload as Record<string, unknown>).aiSummary).toBe(finalized.insightSummary);
+  });
+
+  it("overwrites evidence-derived fields from structured evidence", () => {
+    const response = buildBaseResponse({
+      warnings: ["stale warning"],
+      consistencyChecks: {
+        routeLooksPlausible: true,
+        timingLooksPlausible: true,
+        weatherLooksSupportive: true,
+        foreignPressureMatchesNarrative: false,
+      },
+      countryScores: {
+        latvia: 9,
+        lithuania: 9,
+        belarus: 9,
+        poland: 9,
+        russia: 9,
+        finlandContextOnly: 9,
+      },
+      externalPressureScore: 99,
+      estoniaEvidence: {
+        recentCount7d: 0,
+        recentCount30d: 0,
+        alreadyPresent: true,
+      },
+    });
+
+    const finalized = hooks.finalizePredictionResponse(response, "test_overwrite_derived_fields");
+
+    expect((finalized.estoniaEvidence as Record<string, unknown>).alreadyPresent).toBe(false);
+    expect(finalized.externalPressureScore).toBe(0);
+    expect((finalized.countryScores as Record<string, unknown>).latvia).toBe(0);
+    expect((finalized.consistencyChecks as Record<string, unknown>).foreignPressureMatchesNarrative).toBe(true);
+    expect((finalized.consistencyChecks as Record<string, unknown>).legacyStateSafe).toBe(true);
+    expect(finalized.warnings).not.toEqual(["stale warning"]);
   });
 
   it("does not let poll marker wrapping reintroduce stale summary text", () => {

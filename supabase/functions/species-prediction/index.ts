@@ -3466,10 +3466,13 @@ function canonicalSummaryMatchesEvidence(input: {
   const reasons: string[] = [];
   const recentCount7d = Math.max(0, Math.round(toNumber(input.estoniaEvidence.recentCount7d)));
   const recentCount30d = Math.max(0, Math.round(toNumber(input.estoniaEvidence.recentCount30d)));
+  const foreignMentionPattern = /foreign pressure|poland|sweden|finland|latvia|lithuania|belarus|russia|\bpl\b|\bse\b|\bfi\b/i;
+  const namedLocalityPattern = /p(?:õ|o)õsaspea|ristna|s(?:ä|a)äre/i;
+  const hotspotPattern = /hotspot|target|ranking|p(?:õ|o)õsaspea|ristna|s(?:ä|a)äre/i;
   const countMatch = summary.match(/(\d+)\s+records?\s+in\s+7\s+days/i);
   if ((/already present/i.test(summary) || countMatch) && recentCount7d <= 0) reasons.push('summary_claims_recent_estonia_but_recentCount7d_is_zero');
   if (countMatch && Number(countMatch[1]) !== recentCount7d) reasons.push('summary_recentCount7d_does_not_match_structured_recentCount7d');
-  if (/foreign pressure|poland|sweden|finland|latvia|lithuania|belarus|russia/i.test(summary) && !input.foreignRecentPoints.length && !input.foreignClusters.length) {
+  if (foreignMentionPattern.test(summary) && !input.foreignRecentPoints.length && !input.foreignClusters.length) {
     reasons.push('summary_mentions_foreign_pressure_without_structured_foreign_evidence');
   }
   if (/põõsaspea|ristna|sääre/i.test(summary)) {
@@ -3485,6 +3488,22 @@ function canonicalSummaryMatchesEvidence(input: {
     }
   }
   if ((/hotspot|target|põõsaspea|ristna|sääre/i.test(summary)) && !input.predictedTargets.length) {
+    reasons.push('summary_mentions_hotspot_structure_without_predicted_targets');
+  }
+  if (namedLocalityPattern.test(summary)) {
+    const structuredLocalityPool = [
+      ...((input.predictedTargets || []).map((item) => stringOr(asRecord(item).displayName, asRecord(item).name))),
+      ...((input.elurikkusRecentRecords || []).map((item) => stringOr(asRecord(item).locality, asRecord(item).locName))),
+      ...(Array.isArray(input.estoniaEvidence.freshestLocalities) ? input.estoniaEvidence.freshestLocalities.map((item) => stringOr(item)) : []),
+      stringOr(input.estoniaEvidence.latestEstoniaLocality),
+    ].filter(Boolean).join(' ').toLowerCase();
+    if ((/p(?:\u00F5|o)\u00F5saspea/i.test(summary) && !/p(?:\u00F5|o)\u00F5saspea/i.test(structuredLocalityPool))
+      || (/ristna/i.test(summary) && !/ristna/i.test(structuredLocalityPool))
+      || (/s(?:\u00E4|a)\u00E4re/i.test(summary) && !/s(?:\u00E4|a)\u00E4re/i.test(structuredLocalityPool))) {
+      reasons.push('summary_mentions_specific_estonia_localities_without_structured_match');
+    }
+  }
+  if (hotspotPattern.test(summary) && !input.predictedTargets.length && !reasons.includes('summary_mentions_hotspot_structure_without_predicted_targets')) {
     reasons.push('summary_mentions_hotspot_structure_without_predicted_targets');
   }
   if (/30\s+days/i.test(summary) && recentCount30d <= 0) reasons.push('summary_claims_recent_30d_presence_but_recentCount30d_is_zero');

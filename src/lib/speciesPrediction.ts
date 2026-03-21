@@ -704,11 +704,11 @@ export function normalizeSpeciesPredictionResult(
   };
   const insightSummary = isCurrentFinalizedBackendOutput
     ? (
+      // Only the top-level authoritative fields. No legacy aliases, no openaiAnalysis fallback,
+      // no rawResearchPayload.aiSummary. If both are absent, deriveSafeLegacySummary is not
+      // appropriate here — caller should treat an empty string as missing summary.
       readString(source, ['insightSummary'])
-      || readString(source, ['insight_summary', 'summary'])
-      || readString(source, ['aiSummary', 'ai_summary'])
-      || readString(asRecord(source.openaiAnalysis), ['insightSummary', 'insight_summary', 'summary'])
-      || readString(source, ['openAiResultValid'])
+      || readString(aiSummaryRecord, ['insightSummary'])
     )
     : deriveSafeLegacySummary();
   const confidenceNote = readString(source, ['confidenceNote'])
@@ -758,44 +758,42 @@ export function normalizeSpeciesPredictionResult(
   const evidenceSummary = normalizeEvidenceSummary(
     readRecord(source, ['evidenceSummary']) ?? readRecord(rawResearchPayload, ['evidenceSummary']),
   );
+  // Two levels only: top-level payload field, then payload.estoniaEvidence.
+  // The evidenceSummary fallback is removed — if the canonical fields are absent, return undefined.
+  const sourceEstoniaEvidence = readRecord(source, ['estoniaEvidence']) ?? {};
   const recentCount7d = hasValue(source, ['recentCount7d', 'recent_count_7d'])
     ? clampNumber(readNumber(source, ['recentCount7d', 'recent_count_7d']), 0, 999999, 0)
-    : hasValue(evidenceSummary, ['recentCount7d', 'recent_count_7d'])
-      ? clampNumber(readNumber(evidenceSummary, ['recentCount7d', 'recent_count_7d']), 0, 999999, 0)
+    : hasValue(sourceEstoniaEvidence, ['recentCount7d', 'recent_count_7d'])
+      ? clampNumber(readNumber(sourceEstoniaEvidence, ['recentCount7d', 'recent_count_7d']), 0, 999999, 0)
       : undefined;
   const recentCount30d = hasValue(source, ['recentCount30d', 'recent_count_30d'])
     ? clampNumber(readNumber(source, ['recentCount30d', 'recent_count_30d']), 0, 999999, 0)
-    : hasValue(evidenceSummary, ['recentCount30d', 'recent_count_30d'])
-      ? clampNumber(readNumber(evidenceSummary, ['recentCount30d', 'recent_count_30d']), 0, 999999, 0)
+    : hasValue(sourceEstoniaEvidence, ['recentCount30d', 'recent_count_30d'])
+      ? clampNumber(readNumber(sourceEstoniaEvidence, ['recentCount30d', 'recent_count_30d']), 0, 999999, 0)
       : undefined;
   const elurikkusRecentRecords = normalizeElurikkusRecentRecords(
     readArray(source, ['elurikkusRecentRecords']) ?? readArray(rawResearchPayload, ['elurikkusRecentRecords']),
   );
   const hasElurikkusRecentRecords = hasValue(source, ['elurikkusRecentRecords']) || hasValue(rawResearchPayload, ['elurikkusRecentRecords']);
+  // Top-level source fields only. rawResearchPayload fallbacks removed: if the canonical
+  // arrays are absent, normalizers return [] — we do not dig into rawResearchPayload to
+  // surface older data that would misrepresent the current run.
   const estoniaHistoryPoints = normalizeEstoniaHistoryPoints(
-    readArray(source, ['estoniaHistoryPoints', 'estonia_history_points'])
-      ?? readArray(rawResearchPayload, ['estoniaHistoryPoints', 'estonia_history_points']),
+    readArray(source, ['estoniaHistoryPoints', 'estonia_history_points']),
   );
-  const hasEstoniaHistoryPoints = hasValue(source, ['estoniaHistoryPoints', 'estonia_history_points'])
-    || hasValue(rawResearchPayload, ['estoniaHistoryPoints', 'estonia_history_points']);
+  const hasEstoniaHistoryPoints = hasValue(source, ['estoniaHistoryPoints', 'estonia_history_points']);
   const estoniaHistoryClusters = normalizeEstoniaHistoryClusters(
-    readArray(source, ['estoniaHistoryClusters', 'estonia_history_clusters'])
-      ?? readArray(rawResearchPayload, ['estoniaHistoryClusters', 'estonia_history_clusters']),
+    readArray(source, ['estoniaHistoryClusters', 'estonia_history_clusters']),
   );
-  const hasEstoniaHistoryClusters = hasValue(source, ['estoniaHistoryClusters', 'estonia_history_clusters'])
-    || hasValue(rawResearchPayload, ['estoniaHistoryClusters', 'estonia_history_clusters']);
+  const hasEstoniaHistoryClusters = hasValue(source, ['estoniaHistoryClusters', 'estonia_history_clusters']);
   const foreignRecentPoints = normalizeForeignRecentPoints(
-    readArray(source, ['foreignRecentPoints', 'foreign_recent_points'])
-      ?? readArray(rawResearchPayload, ['foreignRecentPoints', 'foreign_recent_points']),
+    readArray(source, ['foreignRecentPoints', 'foreign_recent_points']),
   );
-  const hasForeignRecentPoints = hasValue(source, ['foreignRecentPoints', 'foreign_recent_points'])
-    || hasValue(rawResearchPayload, ['foreignRecentPoints', 'foreign_recent_points']);
+  const hasForeignRecentPoints = hasValue(source, ['foreignRecentPoints', 'foreign_recent_points']);
   const foreignClusters = normalizeForeignClusters(
-    readArray(source, ['foreignClusters', 'foreign_clusters'])
-      ?? readArray(rawResearchPayload, ['foreignClusters', 'foreign_clusters']),
+    readArray(source, ['foreignClusters', 'foreign_clusters']),
   );
-  const hasForeignClusters = hasValue(source, ['foreignClusters', 'foreign_clusters'])
-    || hasValue(rawResearchPayload, ['foreignClusters', 'foreign_clusters']);
+  const hasForeignClusters = hasValue(source, ['foreignClusters', 'foreign_clusters']);
   const weather = normalizeWeather(
     readRecord(source, ['weather']) ?? readRecord(rawResearchPayload, ['weather']),
   );

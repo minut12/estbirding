@@ -4145,6 +4145,32 @@ function finalizePredictionResponse(
   logPredictionSummaryState('canonical_response_built', branch, canonicalResponse);
   const finalPayload = buildFinalPredictionPayloadFromEvidence(canonicalResponse);
   const finalValidation = validatePredictionPayloadConsistency(finalPayload);
+  if (!finalValidation.rawPayloadMatchesFinalPayload) {
+    // Change 1: surface the mismatch visibly in the API response so callers can detect it.
+    finalPayload.warnings = Array.from(new Set([
+      ...(Array.isArray(finalPayload.warnings) ? finalPayload.warnings.map((w) => String(w || '')) : []),
+      'raw_payload_mismatch_detected',
+    ]));
+    // Change 2: if the narrative also contradicts the structured arrays, force-apply the
+    // scrubber now — do not let a mismatched payload leave with stale text intact.
+    const mismatchScrub = scrubStaleNarrativeFromStructuredEvidence(finalPayload);
+    if (mismatchScrub.reasons.length) {
+      finalPayload.insightSummary = mismatchScrub.safeSummary;
+      finalPayload.aiSummary = mismatchScrub.safeSummary;
+      finalPayload.summaryOrigin = 'neutral_sanitizer_fallback';
+      finalPayload.summaryRegeneratedFromStructuredEvidence = true;
+      if (mismatchScrub.warning) {
+        finalPayload.warnings = Array.from(new Set([
+          ...(Array.isArray(finalPayload.warnings) ? finalPayload.warnings.map((w) => String(w || '')) : []),
+          mismatchScrub.warning,
+        ]));
+      }
+    }
+    const mismatchRwp = asRecord(finalPayload.rawResearchPayload);
+    mismatchRwp.aiSummary = stringOr(finalPayload.aiSummary);
+    mismatchRwp.insightSummary = stringOr(finalPayload.insightSummary);
+    mismatchRwp.warnings = finalPayload.warnings;
+  }
   if (finalValidation.reasons.length) {
     finalPayload.insightSummary = buildDeterministicSummaryFromStructuredEvidence(finalPayload);
     finalPayload.aiSummary = stringOr(finalPayload.insightSummary);

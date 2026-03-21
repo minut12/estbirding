@@ -1336,15 +1336,18 @@ async function buildMapFirstPredictionResult(opts: {
   });
   // Scrub rawResearchPayload narrative fields before finalization so finalizePredictionResponse
   // starts from a clean state rather than inheriting any stale narrative from the canonical merge.
-  const preScrub = scrubStaleNarrativeFromStructuredEvidence(asRecord(canonicalResponse));
-  const preRwp = asRecord(canonicalResponse.rawResearchPayload);
-  preRwp.aiSummary = preScrub.safeSummary;
-  preRwp.insightSummary = preScrub.safeSummary;
-  if (preScrub.warning) {
-    preRwp.warnings = Array.from(new Set([
-      ...(Array.isArray(preRwp.warnings) ? preRwp.warnings.map((w) => String(w || '')) : []),
-      preScrub.warning,
-    ]));
+  // Skip scrubbing for v3 passthrough payloads — their evidence is authoritative.
+  if (canonical.payloadSourceState !== 'n8n_v3_passthrough') {
+    const preScrub = scrubStaleNarrativeFromStructuredEvidence(asRecord(canonicalResponse));
+    const preRwp = asRecord(canonicalResponse.rawResearchPayload);
+    preRwp.aiSummary = preScrub.safeSummary;
+    preRwp.insightSummary = preScrub.safeSummary;
+    if (preScrub.warning) {
+      preRwp.warnings = Array.from(new Set([
+        ...(Array.isArray(preRwp.warnings) ? preRwp.warnings.map((w) => String(w || '')) : []),
+        preScrub.warning,
+      ]));
+    }
   }
   canonicalResponse = finalizePredictionResponse(canonicalResponse, 'main_buildMapFirstPredictionResult');
   console.info(`${LOG_PREFIX} canonical_response`, {
@@ -2013,6 +2016,8 @@ async function maybeFetchSecondarySummary(opts: {
   });
   const text = await upstream.text();
   const data = safeJsonParse(text);
+  // Unwrap array responses: n8n v3 returns [{ok:true, analysisVersion:"v3_recency_first", ...}]
+  const effectiveData = Array.isArray(data) && data.length > 0 ? data[0] : data;
   if (!upstream.ok) {
     throw createUpstreamError({
       stage: 'n8n_upstream',
@@ -2022,10 +2027,10 @@ async function maybeFetchSecondarySummary(opts: {
       upstreamBody: data,
     });
   }
-  const upstreamRecord = asRecord(data);
-  const shapeDiagnostics = buildSummaryShapeDiagnostics(data);
-  const extractedSummary = extractNormalizedAiSummary(data);
-  const normalizedResponse = normalizeN8nPredictionSuccessPayload(data);
+  const upstreamRecord = asRecord(effectiveData);
+  const shapeDiagnostics = buildSummaryShapeDiagnostics(effectiveData);
+  const extractedSummary = extractNormalizedAiSummary(effectiveData);
+  const normalizedResponse = normalizeN8nPredictionSuccessPayload(effectiveData);
   console.info(`${LOG_PREFIX} upstream_normalization`, {
     branch: 'maybeFetchSecondarySummary.upstream_normalization',
     functionName: 'maybeFetchSecondarySummary',
@@ -2064,7 +2069,7 @@ async function maybeFetchSecondarySummary(opts: {
       rankingNotesInputType: extractedSummary?.rankingNotesInputType || '',
       warningsInputType: extractedSummary?.warningsInputType || '',
       normalizedPredictionShape: extractedSummary?.normalizedPredictionShape || '',
-      insightSummaryValuePreview: buildInsightSummaryPreview(data),
+      insightSummaryValuePreview: buildInsightSummaryPreview(effectiveData),
       aiSummaryType: typeof upstreamRecord.aiSummary,
       nestedInsightSummaryType: typeof asRecord(upstreamRecord.aiSummary).insightSummary,
       topLevelInsightSummaryType: typeof upstreamRecord.insightSummary,
@@ -2076,7 +2081,7 @@ async function maybeFetchSecondarySummary(opts: {
       upstreamStatus: upstream.status,
       upstreamStatusText: upstream.statusText,
       upstreamBody: {
-        ...asRecord(data),
+        ...asRecord(effectiveData),
         hasTopLevelInsightSummary: shapeDiagnostics.hasTopLevelInsightSummary,
         hasNestedAiSummaryObject: shapeDiagnostics.hasNestedAiSummaryObject,
         hasNestedAiSummaryInsight: shapeDiagnostics.hasNestedAiSummaryInsight,
@@ -2092,7 +2097,7 @@ async function maybeFetchSecondarySummary(opts: {
         rankingNotesInputType: extractedSummary?.rankingNotesInputType || '',
         warningsInputType: extractedSummary?.warningsInputType || '',
         normalizedPredictionShape: extractedSummary?.normalizedPredictionShape || '',
-        insightSummaryValuePreview: buildInsightSummaryPreview(data),
+        insightSummaryValuePreview: buildInsightSummaryPreview(effectiveData),
         nestedInsightSummaryType: typeof asRecord(upstreamRecord.aiSummary).insightSummary,
         topLevelInsightSummaryType: typeof upstreamRecord.insightSummary,
         backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
@@ -2101,6 +2106,28 @@ async function maybeFetchSecondarySummary(opts: {
       fallbackMessage: 'n8n returned success but no AI summary payload was present',
       shapeDiagnostics,
     });
+  }
+  // v3 passthrough: n8n returned a fully-resolved response with structured evidence —
+  // use it directly and skip the guardrails scrubber which would erase valid presence signals.
+  const effectiveRecord = asRecord(effectiveData);
+  const isV3Passthrough =
+    effectiveRecord.ok === true &&
+    (String(effectiveRecord.analysisVersion ?? '').includes('v3') ||
+      typeof extractedSummary?.summarySourcePath === 'string');
+  if (isV3Passthrough) {
+    console.info(`${LOG_PREFIX} v3_passthrough`, {
+      branch: 'maybeFetchSecondarySummary.v3_passthrough',
+      analysisVersion: String(effectiveRecord.analysisVersion ?? ''),
+      summarySourcePath: extractedSummary?.summarySourcePath ?? '',
+      insightSummarySnippet: normalizedResponse.insightSummary.slice(0, 160),
+      backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
+    });
+    return {
+      ...normalizedResponse,
+      payloadSourceState: 'n8n_v3_passthrough',
+      analysisVersion: String(effectiveRecord.analysisVersion ?? ''),
+      summarySourcePath: String(extractedSummary?.summarySourcePath ?? ''),
+    };
   }
   const guardedResponse = applyEvidenceStateSummaryGuardrails(normalizedResponse, evidenceStateSnapshot);
   console.info(`${LOG_PREFIX} summary_guardrails`, {
@@ -2112,7 +2139,7 @@ async function maybeFetchSecondarySummary(opts: {
     hasOnlyWeather: guardedResponse.hasOnlyWeather,
     summaryGuardrailApplied: guardedResponse.summaryGuardrailApplied,
     summaryGuardrailReason: guardedResponse.summaryGuardrailReason,
-    originalAiSummarySnippet: buildInsightSummaryPreview(data),
+    originalAiSummarySnippet: buildInsightSummaryPreview(effectiveData),
     finalAiSummarySnippet: guardedResponse.insightSummary.slice(0, 160),
   });
   return guardedResponse;

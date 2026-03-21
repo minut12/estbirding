@@ -901,4 +901,192 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.insightSummary).toBeUndefined();
     expect(result.recoveredFromErrorEnvelope).toBeUndefined();
   });
+
+  it("unwraps array payloads and preserves current evidence-state values", () => {
+    const result = normalizeSpeciesPredictionResult([
+      {
+        speciesKey: "punakurk-kaur",
+        species: { name: "Punakurk-kaur" },
+        generatedAt: "2026-03-21T08:00:00.000Z",
+        evidenceState: "already_present_recent_evidence",
+        sourceHealth: {
+          elurikkusAvailable: true,
+          ebirdAvailable: true,
+          gbifAvailable: true,
+          gbifFallbackUsed: false,
+          primarySourceUsed: "eElurikkus recent Estonia",
+          activeEvidenceUsed: ["EELURIKKUS", "GBIF Estonia coordinates", "Open-Meteo weather"],
+          sourceWarnings: [],
+        },
+        estoniaEvidence: {
+          recentCount7d: 12,
+          recentCount30d: 12,
+          latestEstoniaDate: "2026-03-20T00:00:00.000Z",
+          latestEstoniaLat: null,
+          latestEstoniaLon: null,
+          alreadyPresent: true,
+          alreadyPassed: false,
+        },
+        evidenceSummary: {
+          freshestElurikkusDate: "2026-03-20T00:00:00.000Z",
+          freshestElurikkusLocality: "Põõsaspea neem",
+        },
+        elurikkusRecentRecords: [
+          {
+            id: "rec-1",
+            date: "2026-03-20T00:00:00.000Z",
+            locality: "Põõsaspea neem",
+            hasCoords: true,
+            coordinates: { lat: 59.2054, lon: 23.5164 },
+          },
+        ],
+        predictedTargets: [
+          {
+            rank: 1,
+            name: "Põõsaspea neem",
+            countyOrParish: "Lääne-Nigula",
+            lat: 59.2054,
+            lon: 23.5164,
+            confidence: 0.88,
+            eta: "already in Estonia",
+            searchRadiusKm: 5,
+            habitatCue: "coastal",
+            reason: "Recent Estonia evidence",
+          },
+        ],
+        aiSummary: {
+          insightSummary: "Nested fallback should not override top-level summary",
+        },
+        insightSummary: "Top-level summary wins",
+      } as any,
+    ], "Punakurk-kaur", "linnuliigid");
+
+    expect(result.species?.name).toBe("Punakurk-kaur");
+    expect(result.evidenceState).toBe("already_present_recent_evidence");
+    expect(result.sourceHealth?.activeEvidenceUsed).toEqual(["EELURIKKUS", "GBIF Estonia coordinates", "Open-Meteo weather"]);
+    expect(result.estoniaEvidence?.recentCount7d).toBe(12);
+    expect(result.estoniaEvidence?.recentCount30d).toBe(12);
+    expect(result.evidenceSummary?.freshestElurikkusDate).toBe("2026-03-20T00:00:00.000Z");
+    expect(result.evidenceSummary?.freshestElurikkusLocality).toBe("Põõsaspea neem");
+    expect(result.elurikkusRecentRecords?.[0]?.coordinates).toEqual({ lat: 59.2054, lon: 23.5164 });
+    expect(result.insightSummary).toBe("Top-level summary wins");
+  });
+
+  it("falls back to nested aiSummary summary and preserves current schema recent evidence fields", () => {
+    const result = normalizeSpeciesPredictionResult({
+      speciesKey: "punakurk-kaur",
+      speciesName: "Punakurk-kaur",
+      generatedAt: "2026-03-21T08:00:00.000Z",
+      evidenceState: "weather_only",
+      sourceHealth: {
+        elurikkusAvailable: true,
+        ebirdAvailable: true,
+        gbifAvailable: true,
+        gbifFallbackUsed: false,
+        primarySourceUsed: "Open-Meteo weather",
+        activeEvidenceUsed: ["Open-Meteo weather"],
+        sourceWarnings: ["Foreign eBird was empty"],
+      },
+      estoniaEvidence: {
+        recentCount7d: 0,
+        recentCount30d: 0,
+        latestEstoniaDate: "",
+        latestEstoniaLat: null,
+        latestEstoniaLon: null,
+        alreadyPresent: false,
+        alreadyPassed: false,
+      },
+      aiSummary: {
+        insightSummary: "Nested summary text",
+      },
+      predictedTargets: [],
+    } as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.evidenceState).toBe("weather_only");
+    expect(result.sourceHealth?.activeEvidenceUsed).toEqual(["Open-Meteo weather"]);
+    expect(result.insightSummary).toBe("Nested summary text");
+  });
+
+  it("uses openAiResultValid as a last summary fallback when no insight summary exists", () => {
+    const result = normalizeSpeciesPredictionResult({
+      speciesKey: "punakurk-kaur",
+      speciesName: "Punakurk-kaur",
+      generatedAt: "2026-03-21T08:00:00.000Z",
+      openAiResultValid: "Fallback summary text",
+      predictedTargets: [],
+    } as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.insightSummary).toBe("Fallback summary text");
+  });
+
+  it("keeps punakurk-kaur current-schema values needed by the summary panel", () => {
+    const result = normalizeSpeciesPredictionResult({
+      speciesKey: "punakurk-kaur",
+      species: { name: "Punakurk-kaur" },
+      generatedAt: "2026-03-21T08:00:00.000Z",
+      evidenceState: "already_present_recent_evidence",
+      sourceHealth: {
+        elurikkusAvailable: true,
+        ebirdAvailable: false,
+        gbifAvailable: true,
+        gbifFallbackUsed: false,
+        primarySourceUsed: "eElurikkus recent Estonia",
+        activeEvidenceUsed: ["EELURIKKUS", "GBIF Estonia coordinates", "Open-Meteo weather"],
+        sourceWarnings: ["Foreign eBird evidence was unavailable in this run."],
+      },
+      estoniaEvidence: {
+        recentCount7d: 12,
+        recentCount30d: 12,
+        latestEstoniaDate: "2026-03-20T00:00:00.000Z",
+        latestEstoniaLat: null,
+        latestEstoniaLon: null,
+        alreadyPresent: true,
+        alreadyPassed: false,
+      },
+      evidenceSummary: {
+        freshestElurikkusDate: "2026-03-20T00:00:00.000Z",
+        freshestElurikkusLocality: "Põõsaspea neem",
+      },
+      elurikkusRecentRecords: [
+        {
+          id: "rec-no-coords",
+          date: "2026-03-20T00:00:00.000Z",
+          locality: "Põõsaspea neem",
+          hasCoords: false,
+          coordinates: { lat: null, lon: null },
+        },
+        {
+          id: "rec-with-coords",
+          date: "2026-03-19T00:00:00.000Z",
+          locality: "Dirhami",
+          hasCoords: true,
+          coordinates: { lat: 59.21001, lon: 23.49991 },
+        },
+      ],
+      predictedTargets: [
+        {
+          rank: 1,
+          name: "Põõsaspea neem",
+          countyOrParish: "Lääne-Nigula",
+          lat: 59.2054,
+          lon: 23.5164,
+          confidence: 0.88,
+          eta: "already in Estonia",
+          searchRadiusKm: 5,
+          habitatCue: "coastal",
+          reason: "Recent Estonia evidence",
+        },
+      ],
+      insightSummary: "OpenAI summary text",
+    } as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.evidenceState).not.toBe("unavailable");
+    expect(result.estoniaEvidence?.recentCount7d).toBe(12);
+    expect(result.estoniaEvidence?.recentCount30d).toBe(12);
+    expect(result.sourceHealth?.activeEvidenceUsed).toContain("EELURIKKUS");
+    expect(result.sourceHealth?.activeEvidenceUsed).toContain("GBIF Estonia coordinates");
+    expect(result.sourceHealth?.activeEvidenceUsed).toContain("Open-Meteo weather");
+    const freshestCoords = result.elurikkusRecentRecords?.find((record) => record?.hasCoords)?.coordinates;
+    expect(freshestCoords).toEqual({ lat: 59.21001, lon: 23.49991 });
+  });
 });

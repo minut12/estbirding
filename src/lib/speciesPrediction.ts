@@ -227,6 +227,20 @@ export type SpeciesPredictionEvidenceSummary = {
   rankingMode?: string;
   effectiveRankingMode?: string;
   summaryText?: string;
+  freshestElurikkusDate?: string;
+  freshestElurikkusLocality?: string;
+  [key: string]: unknown;
+};
+
+export type SpeciesPredictionElurikkusRecentRecord = {
+  id?: string;
+  date?: string;
+  locality?: string;
+  hasCoords?: boolean;
+  coordinates?: {
+    lat: number | null;
+    lon: number | null;
+  };
   [key: string]: unknown;
 };
 
@@ -277,6 +291,7 @@ export type SpeciesPredictionSourceHealth = {
   ebirdAvailable: boolean;
   gbifAvailable?: boolean;
   gbifFallbackUsed: boolean;
+  activeEvidenceUsed?: string[];
 };
 
 export type SpeciesPredictionEvidenceState =
@@ -285,7 +300,12 @@ export type SpeciesPredictionEvidenceState =
   | 'foreign_pressure'
   | 'mixed'
   | 'weather_only_insufficient'
-  | 'insufficient';
+  | 'insufficient'
+  | 'already_present_recent_evidence'
+  | 'weather_only'
+  | 'insufficient_evidence'
+  | 'unavailable'
+  | (string & {});
 
 export type PredictionConsistencyChecks = {
   routeLooksPlausible: boolean;
@@ -319,6 +339,7 @@ export type SpeciesPredictionResult = {
   };
   sourceHealth?: SpeciesPredictionSourceHealth;
   evidenceSummary?: SpeciesPredictionEvidenceSummary;
+  elurikkusRecentRecords?: SpeciesPredictionElurikkusRecentRecord[];
   estoniaHistoryPoints?: SpeciesPredictionEstoniaHistoryPoint[];
   estoniaHistoryClusters?: SpeciesPredictionEstoniaHistoryCluster[];
   foreignRecentPoints?: SpeciesPredictionForeignRecentPoint[];
@@ -564,7 +585,8 @@ export function normalizeSpeciesPredictionResult(
   speciesName: string,
   scope: SpeciesScopeId,
 ): SpeciesPredictionResult {
-  const resolvedSource = resolveSpeciesPredictionSource(input);
+  const normalizedInput = Array.isArray(input) ? (input[0] as Partial<SpeciesPredictionResult> | undefined) ?? null : input;
+  const resolvedSource = resolveSpeciesPredictionSource(normalizedInput);
   const source = resolvedSource.source;
   const normalizedName = normalizeUiText(speciesName);
   const sourceSpecies = asRecord(source.species);
@@ -605,7 +627,8 @@ export function normalizeSpeciesPredictionResult(
   const insightSummary = readString(source, ['insightSummary'])
     || readString(aiSummaryRecord, ['insightSummary', 'insight_summary', 'summary'])
     || readString(source, ['insight_summary', 'summary'])
-    || readString(asRecord(source.openaiAnalysis), ['insightSummary', 'insight_summary', 'summary']);
+    || readString(asRecord(source.openaiAnalysis), ['insightSummary', 'insight_summary', 'summary'])
+    || readString(source, ['openAiResultValid']);
   const confidenceNote = readString(source, ['confidenceNote'])
     || readString(aiSummaryRecord, ['confidenceNote', 'confidence_note'])
     || readString(source, ['confidence_note'])
@@ -656,6 +679,10 @@ export function normalizeSpeciesPredictionResult(
   const evidenceSummary = normalizeEvidenceSummary(
     readRecord(source, ['evidenceSummary']) ?? readRecord(rawResearchPayload, ['evidenceSummary']),
   );
+  const elurikkusRecentRecords = normalizeElurikkusRecentRecords(
+    readArray(source, ['elurikkusRecentRecords']) ?? readArray(rawResearchPayload, ['elurikkusRecentRecords']),
+  );
+  const hasElurikkusRecentRecords = hasValue(source, ['elurikkusRecentRecords']) || hasValue(rawResearchPayload, ['elurikkusRecentRecords']);
   const estoniaHistoryPoints = normalizeEstoniaHistoryPoints(
     readArray(source, ['estoniaHistoryPoints', 'estonia_history_points'])
       ?? readArray(rawResearchPayload, ['estoniaHistoryPoints', 'estonia_history_points']),
@@ -725,6 +752,7 @@ export function normalizeSpeciesPredictionResult(
     species: evidenceSpecies,
     ...(sourceHealth ? { sourceHealth } : {}),
     ...(evidenceSummary ? { evidenceSummary } : {}),
+    ...((elurikkusRecentRecords.length || hasElurikkusRecentRecords) ? { elurikkusRecentRecords } : {}),
     ...((estoniaHistoryPoints.length || hasEstoniaHistoryPoints) ? { estoniaHistoryPoints } : {}),
     ...((estoniaHistoryClusters.length || hasEstoniaHistoryClusters) ? { estoniaHistoryClusters } : {}),
     ...((foreignRecentPoints.length || hasForeignRecentPoints) ? { foreignRecentPoints } : {}),
@@ -763,7 +791,7 @@ export function normalizeSpeciesPredictionResult(
     ...(confidenceNote ? { confidenceNote: normalizeUiText(confidenceNote) } : {}),
     ...(rankingNotes ? { rankingNotes: normalizeUiText(rankingNotes) } : {}),
     ...(warnings.length ? { warnings } : {}),
-    ...((evidenceState === 'recent_estonia' || evidenceState === 'estonia_history' || evidenceState === 'foreign_pressure' || evidenceState === 'mixed' || evidenceState === 'weather_only_insufficient' || evidenceState === 'insufficient') ? { evidenceState } : {}),
+    ...(evidenceState ? { evidenceState } : {}),
     ...(typeof hasUsableRecentEstoniaEvidence === 'boolean' ? { hasUsableRecentEstoniaEvidence } : {}),
     ...(typeof hasUsableEstoniaHistory === 'boolean' ? { hasUsableEstoniaHistory } : {}),
     ...(typeof hasUsableForeignPressure === 'boolean' ? { hasUsableForeignPressure } : {}),
@@ -1223,7 +1251,34 @@ function normalizeEvidenceSummary(input: Record<string, unknown> | null): Specie
     ...(readString(input, ['rankingMode', 'ranking_mode']) ? { rankingMode: normalizeUiText(readString(input, ['rankingMode', 'ranking_mode'])) } : {}),
     ...(readString(input, ['effectiveRankingMode', 'effective_ranking_mode']) ? { effectiveRankingMode: normalizeUiText(readString(input, ['effectiveRankingMode', 'effective_ranking_mode'])) } : {}),
     ...(readString(input, ['summaryText', 'summary_text']) ? { summaryText: normalizeUiText(readString(input, ['summaryText', 'summary_text'])) } : {}),
+    ...(readString(input, ['freshestElurikkusDate', 'freshest_elurikkus_date']) ? { freshestElurikkusDate: normalizeUiText(readString(input, ['freshestElurikkusDate', 'freshest_elurikkus_date'])) } : {}),
+    ...(readString(input, ['freshestElurikkusLocality', 'freshest_elurikkus_locality']) ? { freshestElurikkusLocality: normalizeUiText(readString(input, ['freshestElurikkusLocality', 'freshest_elurikkus_locality'])) } : {}),
   };
+}
+
+function normalizeElurikkusRecentRecords(input: unknown[] | null): SpeciesPredictionElurikkusRecentRecord[] {
+  if (!Array.isArray(input)) return [];
+  return input.map((entry, index) => {
+    const source = asRecord(entry);
+    const coordinatesSource = readRecord(source, ['coordinates']);
+    const lat = hasValue(coordinatesSource, ['lat', 'latitude']) || hasValue(source, ['lat', 'latitude', 'decimalLatitude'])
+      ? clampFloat(readNumber(coordinatesSource ?? source, ['lat', 'latitude', 'decimalLatitude']), -90, 90, 0)
+      : null;
+    const lon = hasValue(coordinatesSource, ['lon', 'lng', 'longitude', 'decimalLongitude']) || hasValue(source, ['lon', 'lng', 'longitude', 'decimalLongitude'])
+      ? clampFloat(readNumber(coordinatesSource ?? source, ['lon', 'lng', 'longitude', 'decimalLongitude']), -180, 180, 0)
+      : null;
+    const hasCoords = typeof source.hasCoords === 'boolean'
+      ? source.hasCoords === true
+      : lat != null && lon != null;
+    return {
+      ...(readString(source, ['id']) ? { id: normalizeUiText(readString(source, ['id'])) } : { id: `elurikkus-record-${index + 1}` }),
+      ...(readString(source, ['date', 'observedAt', 'eventDate']) ? { date: normalizeUiText(readString(source, ['date', 'observedAt', 'eventDate'])) } : {}),
+      ...(readString(source, ['locality', 'locName']) ? { locality: normalizeUiText(readString(source, ['locality', 'locName'])) } : {}),
+      hasCoords,
+      coordinates: { lat, lon },
+      ...source,
+    };
+  });
 }
 
 function normalizePredictionConsistencyChecks(
@@ -1307,6 +1362,9 @@ function normalizeSourceHealth(input: Record<string, unknown> | null): SpeciesPr
     ebirdAvailable: input.ebirdAvailable === true,
     ...(typeof input.gbifAvailable === 'boolean' ? { gbifAvailable: input.gbifAvailable === true } : {}),
     gbifFallbackUsed: input.gbifFallbackUsed === true,
+    ...(Array.isArray(readArray(input, ['activeEvidenceUsed', 'active_evidence_used']))
+      ? { activeEvidenceUsed: (readArray(input, ['activeEvidenceUsed', 'active_evidence_used']) || []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean) }
+      : {}),
   };
 }
 

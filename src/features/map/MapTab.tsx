@@ -17,6 +17,7 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
 import { type MapScope, loadSpeciesVisibility, saveSpeciesVisibility, loadLocalHidden } from '@/lib/speciesVisibility';
 import { getSpeciesScopeByMapId, SPECIES_PREDICTION_EVENT_TYPES, type SpeciesPredictionRequestPayload } from '@/lib/speciesPrediction';
+import { normalizePrediction } from '@/lib/speciesPrediction';
 import { loadSpeciesPredictionSettings } from '@/lib/speciesPredictionSettings';
 import { runSpeciesPredictionRequest } from '@/lib/speciesPredictionRunner';
 import { isSpeciesPredictionEnabled } from '@/lib/settings';
@@ -508,9 +509,13 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
                 reason: point.reason,
               })),
             });
+            const normalizedPrediction = normalizePrediction(response.result);
             const iframePayload = {
               type: SPECIES_PREDICTION_EVENT_TYPES.result,
-              result: response.result,
+              result: {
+                ...response.result,
+                normalizedPrediction,
+              },
             };
             setSpeciesPredictionDebugPanelPayload(iframePayload.result);
             updateSpeciesPredictionTransport({

@@ -497,21 +497,35 @@
     }
 
     var result = state.result;
-    var prediction = buildPanelPredictionModel(result);
+    var prediction = normalizePrediction(result);
+    console.log('[speciesPrediction] normalized after normalizePrediction', {
+      evidenceState: prediction.evidenceState,
+      confidenceValue: prediction.confidenceValue,
+      recentCount7d: prediction.recentCount7d,
+      recentCount30d: prediction.recentCount30d,
+      predictedTargetsLength: prediction.predictedTargets.length,
+      activeEvidenceUsed: prediction.activeEvidenceUsed,
+      latestEeCoords: prediction.latestEeCoords,
+    });
+    console.log('[speciesPrediction] normalized before render props', {
+      evidenceState: prediction.evidenceState,
+      confidenceValue: prediction.confidenceValue,
+      recentCount7d: prediction.recentCount7d,
+      recentCount30d: prediction.recentCount30d,
+      predictedTargetsLength: prediction.predictedTargets.length,
+      activeEvidenceUsed: prediction.activeEvidenceUsed,
+      latestEeCoords: prediction.latestEeCoords,
+    });
     var summaryText = normalizeText(prediction.summaryText);
-    var confidenceNote = normalizeText(prediction.confidenceNote || result.confidenceNote);
+    var confidenceNote = normalizeText(result.confidenceNote);
     var rankingNotes = normalizeText(result.rankingNotes);
     var warnings = normalizeStringArray(result.warnings);
     var consistencyChecks = result.consistencyChecks || null;
-    var preferredPoints = Array.isArray(result.topPredictedPoints) ? result.topPredictedPoints.slice(0, 5) : [];
-    var foreignClusters = Array.isArray(result.foreignClusters) ? result.foreignClusters : [];
-    var predictedTargets = Array.isArray(prediction.predictedTargets) && prediction.predictedTargets.length ? prediction.predictedTargets.slice(0, 5) : preferredPoints;
-    var weather = prediction.weather || result.weather || null;
-    var estoniaEvidence = prediction.estoniaEvidence || result.estoniaEvidence || null;
-    var evidenceSummary = prediction.evidenceSummary || result.evidenceSummary || null;
+    var preferredPoints = Array.isArray(prediction.predictedTargets) ? prediction.predictedTargets.slice(0, 5) : [];
+    var predictedTargets = preferredPoints;
     var evidenceState = String(prediction.evidenceState || '').trim();
-    var effectiveRankingMode = String(prediction.effectiveRankingMode || result.effectiveRankingMode || (evidenceSummary && evidenceSummary.effectiveRankingMode) || '').trim();
-    var activeEvidenceSources = prediction.activeEvidenceSources;
+    var effectiveRankingMode = String(prediction.rankingMode || '').trim();
+    var activeEvidenceSources = Array.isArray(prediction.activeEvidenceUsed) ? prediction.activeEvidenceUsed : [];
     var availableSources = prediction.sourcesContacted;
     var attemptedButUnavailable = Array.isArray(result.attemptedButUnavailable) ? result.attemptedButUnavailable : [];
     var attemptedButReturnedNoUsableEvidence = Array.isArray(result.attemptedButReturnedNoUsableEvidence) ? result.attemptedButReturnedNoUsableEvidence : [];
@@ -547,30 +561,28 @@
     var cautionState = evidenceState === 'insufficient' || evidenceState === 'weather_only_insufficient' || evidenceState === 'insufficient_evidence' || evidenceState === 'unavailable';
     html += renderStateCard(cautionState ? 'spp-state-caution' : 'spp-state-success', 'Prediction complete', cautionState ? 'Completed with limited evidence. Interpret the result cautiously.' : 'Rendering the latest backend evidence and target ranking for this species.');
     html += '<div class="spp-card"><h4>Summary</h4><p class="spp-summary-text">' + escapeHtml(summarySentence(evidenceState, summaryText, result, prediction)) + '</p><div class="spp-grid">' +
-      metricCell('Species', prediction.speciesName || state.speciesName || 'Unavailable') +
-      metricCell('Evidence state', formatEvidenceState(evidenceState)) +
-      metricCell('Confidence', prediction.confidenceDisplay) +
-      meaningfulMetricCell('Sources contacted', availableSources.length ? availableSources.join(', ') : 'None') +
-      metricCell('Ranking mode', effectiveRankingMode || formatRankingMode(evidenceSummary && evidenceSummary.rankingMode ? evidenceSummary.rankingMode : 'estonia_history_only')) +
-      metricCell('Active evidence used', activeEvidenceSources.length ? activeEvidenceSources.join(', ') : 'None') +
-      meaningfulMetricCell('Freshest EE locality', prediction.freshestLocality) +
-      meaningfulMetricCell('Latest EE date', prediction.freshestDate) +
-      meaningfulMetricCell('Latest EE coords', prediction.freshestCoordsText) +
+      metricCell('Species', prediction.speciesName || state.speciesName || '—') +
+      metricCell('Evidence state', prediction.evidenceState || '—') +
+      metricCell('Confidence', prediction.confidenceLabel) +
+      metricCell('Sources contacted', availableSources.length ? availableSources.join(', ') : '—') +
+      metricCell('Ranking mode', effectiveRankingMode || '—') +
+      metricCell('Active evidence used', activeEvidenceSources.length ? activeEvidenceSources.join(', ') : '—') +
+      metricCell('Latest EE locality', prediction.latestEeLocality || '—') +
+      metricCell('Latest EE coords', prediction.latestEeCoords || '—') +
       meaningfulMetricCell('Recent EE count (7d)', prediction.recentCount7d) +
       meaningfulMetricCell('Recent EE count (30d)', prediction.recentCount30d) +
-      meaningfulMetricCell('Weather', weatherLine(weather, evidenceSummary)) +
+      metricCell('Weather', prediction.weatherLabel || '—') +
       meaningfulMetricCell('Attempted but unavailable', attemptedButUnavailable.length ? attemptedButUnavailable.join(', ') : '') +
       meaningfulMetricCell('Attempted but no usable evidence', attemptedButReturnedNoUsableEvidence.length ? attemptedButReturnedNoUsableEvidence.join(', ') : '') +
       '</div></div>';
     if (cautionState) {
       html += '<div class="spp-card spp-warning-card"><h4>Completion status</h4><p class="spp-summary-text">Status: Completed. Evidence state: ' + escapeHtml(formatEvidenceState(evidenceState)) + '. Confidence: Low.</p></div>';
     }
-    if (estoniaEvidence || prediction.freshestDate || prediction.freshestLocality || prediction.recentCount7d || prediction.recentCount30d) {
+    if (prediction.latestEeLocality !== '—' || prediction.latestEeCoords !== '—' || prediction.recentCount7d || prediction.recentCount30d) {
       html += '<div class="spp-card"><h4>Fresh Estonia evidence</h4><div class="spp-grid">' +
-        meaningfulMetricCell('Freshest locality', prediction.freshestLocality) +
-        meaningfulMetricCell('Latest EE date', prediction.freshestDate) +
-        meaningfulMetricCell('Latest EE coords', prediction.freshestCoordsText) +
-        meaningfulMetricCell('Active evidence', activeEvidenceSources.length ? activeEvidenceSources.join(', ') : 'None') +
+        metricCell('Freshest locality', prediction.latestEeLocality || '—') +
+        metricCell('Latest EE coords', prediction.latestEeCoords || '—') +
+        metricCell('Active evidence', activeEvidenceSources.length ? activeEvidenceSources.join(', ') : '—') +
         meaningfulMetricCell('Recent count (7d)', prediction.recentCount7d) +
         meaningfulMetricCell('Recent count (30d)', prediction.recentCount30d) +
         '</div></div>';
@@ -595,7 +607,7 @@
     }
     html += '<div class="spp-card"><h4>Predicted targets</h4><div class="spp-points">';
     if (!predictedTargets.length) {
-      html += '<div class="spp-point"><div class="spp-point-reason-text">No precise hotspot results returned.</div></div>';
+      html += '<div class="spp-point"><div class="spp-point-reason-text">—</div></div>';
     } else {
       predictedTargets.forEach(function (point) {
         html += renderPredictedPoint(point);
@@ -1385,48 +1397,25 @@
     return result || null;
   }
 
-  function buildPanelPredictionModel(result) {
-    var normalizedPrediction = normalizePredictionPayload(result) || {};
-    console.log("prediction-normalized", normalizedPrediction);
-    var species = normalizedPrediction.species || {};
-    var sourceHealth = normalizedPrediction.sourceHealth || {};
-    var evidenceSummary = normalizedPrediction.evidenceSummary || {};
-    var estoniaEvidence = normalizedPrediction.estoniaEvidence || {};
-    var predictedTargets = Array.isArray(normalizedPrediction.predictedTargets) && normalizedPrediction.predictedTargets.length
-      ? normalizedPrediction.predictedTargets
-      : (Array.isArray(normalizedPrediction.topPredictedPoints) ? normalizedPrediction.topPredictedPoints : []);
-    var topTarget = normalizedPrediction.topTarget || (predictedTargets.length ? predictedTargets[0] : null);
-    var activeEvidence = Array.isArray(sourceHealth.activeEvidenceUsed) ? sourceHealth.activeEvidenceUsed.filter(Boolean) : [];
-    var availableSources = Array.isArray(evidenceSummary.availableSources) ? evidenceSummary.availableSources.filter(Boolean) : [];
-    var sourcesContacted = availableSources.length ? availableSources.slice() : activeEvidence.slice();
-    var recentRecords = Array.isArray(normalizedPrediction.elurikkusRecentRecords) ? normalizedPrediction.elurikkusRecentRecords.slice() : [];
-    var freshestRecordWithCoords = findFreshestRecentEeRecordWithCoords(recentRecords);
-    var freshestCoords = getRecentRecordCoords(freshestRecordWithCoords);
-    var recentCount7d = firstDefinedNumber(normalizedPrediction.recentCount7d, evidenceSummary.recentCount7d, estoniaEvidence.recentCount7d);
-    var recentCount30d = firstDefinedNumber(normalizedPrediction.recentCount30d, evidenceSummary.recentCount30d, estoniaEvidence.recentCount30d);
-    var openAiSummaryFallback = typeof normalizedPrediction.openAiResultValid === 'string' || typeof normalizedPrediction.openAiResultValid === 'number'
-      ? normalizedPrediction.openAiResultValid
-      : '';
-    return {
-      speciesName: String((species && species.name) || normalizedPrediction.speciesName || '').trim(),
-      evidenceState: String(normalizedPrediction.evidenceState || '').trim(),
-      activeEvidenceSources: activeEvidence,
-      sourcesContacted: sourcesContacted,
-      recentEeCount: recentCount7d,
-      recentCount7d: recentCount7d,
-      recentCount30d: recentCount30d,
-      summaryText: normalizeText(normalizedPrediction.insightSummary || (normalizedPrediction.aiSummary && normalizedPrediction.aiSummary.insightSummary) || openAiSummaryFallback),
-      confidenceNote: normalizeText(normalizedPrediction.confidenceNote || ''),
-      freshestDate: normalizeText((freshestRecordWithCoords && (freshestRecordWithCoords.event_datetime_point || freshestRecordWithCoords.date || freshestRecordWithCoords.eventDate)) || evidenceSummary.freshestElurikkusDate || estoniaEvidence.latestEstoniaDate || ''),
-      freshestLocality: normalizeText((freshestRecordWithCoords && (freshestRecordWithCoords.locality || freshestRecordWithCoords.locName)) || evidenceSummary.freshestElurikkusLocality || estoniaEvidence.latestEstoniaLocality || ''),
-      freshestCoordsText: freshestCoords ? formatCoords(freshestCoords.lat, freshestCoords.lon) : 'Coordinates unavailable',
-      confidenceDisplay: formatConfidenceDisplay(topTarget && topTarget.confidence, normalizedPrediction.confidenceNote),
-      effectiveRankingMode: activeEvidence.length ? activeEvidence.join(' + ') : '',
-      evidenceSummary: evidenceSummary,
-      estoniaEvidence: estoniaEvidence,
-      weather: normalizedPrediction.weather || null,
-      predictedTargets: predictedTargets,
+  function normalizePrediction(raw) {
+    var root = normalizePredictionPayload(raw) || {};
+    var normalized = root && root.normalizedPrediction ? root.normalizedPrediction : {
+      speciesName: String(root.speciesName || (root.species && root.species.name) || root.speciesKey || '').trim(),
+      evidenceState: String(root.evidenceState || '').trim(),
+      confidenceValue: root.topTarget && typeof root.topTarget.confidence === 'number' ? root.topTarget.confidence : null,
+      confidenceLabel: '—',
+      sourcesContacted: [],
+      rankingMode: '—',
+      activeEvidenceUsed: [],
+      latestEeCoords: '—',
+      latestEeLocality: '—',
+      recentCount7d: 0,
+      recentCount30d: 0,
+      predictedTargets: Array.isArray(root.predictedTargets) ? root.predictedTargets : [],
+      weatherLabel: '—',
+      summaryText: String(root.insightSummary || '').trim()
     };
+    return normalized;
   }
 
   function toTitleCase(value) {
@@ -1435,7 +1424,7 @@
 
   function publishPanelState(result, preferredPoints) {
     try {
-      var prediction = buildPanelPredictionModel(result);
+      var prediction = normalizePrediction(result);
       if (window.parent && window.parent !== window) {
         window.parent.postMessage({
           type: 'SPECIES_PREDICTION_PANEL_STATE',
@@ -1444,25 +1433,25 @@
           scope: state.scope,
           generatedAt: result && result.generatedAt ? result.generatedAt : '',
           analysisVersion: result && result.analysisVersion ? result.analysisVersion : '',
-          insightSummary: result && result.insightSummary ? result.insightSummary : '',
+          insightSummary: prediction.summaryText || '',
           externalPressureScore: result ? result.externalPressureScore : null,
           countryScores: result && result.countryScores ? result.countryScores : null,
           topPredictedPoints: Array.isArray(preferredPoints) ? preferredPoints : [],
-          sourceHealth: result && result.sourceHealth ? result.sourceHealth : null,
-          foreignEvidence: result && Array.isArray(result.foreignEvidence) ? result.foreignEvidence : [],
-          estoniaEvidence: result && result.estoniaEvidence ? result.estoniaEvidence : null,
-          historicalEvidence: result && result.historicalEvidence ? result.historicalEvidence : null,
-          evidenceState: result && result.evidenceState ? result.evidenceState : '',
-          hasUsableRecentEstoniaEvidence: result && typeof result.hasUsableRecentEstoniaEvidence === 'boolean' ? result.hasUsableRecentEstoniaEvidence : undefined,
-          hasUsableEstoniaHistory: result && typeof result.hasUsableEstoniaHistory === 'boolean' ? result.hasUsableEstoniaHistory : undefined,
-          hasUsableForeignPressure: result && typeof result.hasUsableForeignPressure === 'boolean' ? result.hasUsableForeignPressure : undefined,
-          hasUsablePredictedTargets: result && typeof result.hasUsablePredictedTargets === 'boolean' ? result.hasUsablePredictedTargets : undefined,
-          hasOnlyWeather: result && typeof result.hasOnlyWeather === 'boolean' ? result.hasOnlyWeather : undefined,
-          activeEvidenceSources: prediction.activeEvidenceSources,
+          sourceHealth: { activeEvidenceUsed: prediction.activeEvidenceUsed },
+          foreignEvidence: [],
+          estoniaEvidence: { recentCount7d: prediction.recentCount7d, recentCount30d: prediction.recentCount30d, latestEstoniaLocality: prediction.latestEeLocality },
+          historicalEvidence: null,
+          evidenceState: prediction.evidenceState || '',
+          hasUsableRecentEstoniaEvidence: undefined,
+          hasUsableEstoniaHistory: undefined,
+          hasUsableForeignPressure: undefined,
+          hasUsablePredictedTargets: prediction.predictedTargets.length > 0,
+          hasOnlyWeather: undefined,
+          activeEvidenceSources: prediction.activeEvidenceUsed,
           availableSources: prediction.sourcesContacted,
           attemptedButUnavailable: result && Array.isArray(result.attemptedButUnavailable) ? result.attemptedButUnavailable : [],
           attemptedButReturnedNoUsableEvidence: result && Array.isArray(result.attemptedButReturnedNoUsableEvidence) ? result.attemptedButReturnedNoUsableEvidence : [],
-          effectiveRankingMode: result && result.effectiveRankingMode ? result.effectiveRankingMode : '',
+          effectiveRankingMode: prediction.rankingMode || '',
           summaryGuardrailApplied: result && typeof result.summaryGuardrailApplied === 'boolean' ? result.summaryGuardrailApplied : undefined,
           summaryGuardrailReason: result && result.summaryGuardrailReason ? result.summaryGuardrailReason : '',
           runtimeMarker: runtimeInfo.visibleMarker,

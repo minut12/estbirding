@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { hasUsableSpeciesPredictionResult, normalizeSpeciesPredictionResult } from "@/lib/speciesPrediction";
+import { hasUsableSpeciesPredictionResult, normalizePrediction, normalizeSpeciesPredictionResult } from "@/lib/speciesPrediction";
 
 describe("normalizeSpeciesPredictionResult", () => {
   it("prefers canonical fields over legacy aliases", () => {
@@ -1171,5 +1171,104 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.sourceHealth?.activeEvidenceUsed).toContain("Open-Meteo weather");
     const freshestCoords = result.elurikkusRecentRecords?.find((record) => record?.hasCoords)?.coordinates;
     expect(freshestCoords).toEqual({ lat: 59.21001, lon: 23.49991 });
+  });
+});
+
+describe("normalizePrediction", () => {
+  it("builds one panel-facing normalized object from current n8n payload", () => {
+    const normalized = normalizePrediction([
+      {
+        speciesKey: "punakurk-kaur",
+        speciesName: "Punakurk-kaur",
+        evidenceState: "mixed",
+        confidenceNote: "Moderate confidence",
+        topTarget: {
+          rank: 1,
+          name: "Põõsaspea",
+          countyOrParish: "Lääne-Nigula",
+          lat: 59.0021,
+          lon: 23.4987,
+          confidence: 0.92,
+          eta: "24h",
+          searchRadiusKm: 5,
+          habitatCue: "coastal open water",
+          reason: "Top target",
+        },
+        sourceHealth: {
+          activeEvidenceUsed: ["eElurikkus recent records", "GBIF Estonia history", "eBird foreign pressure", "Open-Meteo weather"],
+          elurikkusAvailable: true,
+          ebirdAvailable: true,
+          gbifAvailable: true,
+        },
+        recentCount7d: 12,
+        recentCount30d: 12,
+        predictedTargets: [
+          {
+            rank: 1,
+            name: "Põõsaspea",
+            countyOrParish: "Lääne-Nigula",
+            lat: 59.0021,
+            lon: 23.4987,
+            confidence: 0.92,
+            eta: "24h",
+            searchRadiusKm: 5,
+            habitatCue: "coastal open water",
+            reason: "Top target",
+          },
+        ],
+        weather: {
+          windSpeedKmh: 21,
+          windDirectionDeg: 225,
+          observedAt: "2026-03-21T11:45:00.000Z",
+          source: "Open-Meteo",
+        },
+        elurikkusRecentRecords: [
+          {
+            id: "older",
+            date: "2026-03-20T08:00:00.000Z",
+            locality: "Older locality",
+            coordinates: { lat: 58.1, lon: 23.1 },
+          },
+          {
+            id: "freshest",
+            event_datetime_point: "2026-03-21T10:15:00.000Z",
+            locality: "Sääre küla",
+            latitude: 57.9054,
+            longitude: 22.051674,
+          },
+        ],
+        estoniaHistoryClusters: [{ id: "ee1", lat: 1, lon: 1, count: 1, recentCount: 1, newestEventDate: "", oldestEventDate: "", source: "GBIF" }],
+        foreignClusters: [{ id: "f1", lat: 1, lon: 1, pointCount: 1, newestObsDt: "", oldestObsDt: "", freshestDaysAgo: 1, averageDaysAgo: 1, totalHowMany: 1, countries: ["Latvia"], countryCodes: ["lv"], locNames: ["x"], nearestDistanceKm: 1, isFreshest: true }],
+        insightSummary: "OpenAI summary text",
+        hasRecentEstoniaEvidence: true,
+        hasForeignPressure: true,
+      },
+    ] as any);
+
+    expect(normalized.speciesName).toBe("Punakurk-kaur");
+    expect(normalized.evidenceState).toBe("mixed");
+    expect(normalized.confidenceValue).toBe(0.92);
+    expect(normalized.confidenceLabel).toBe("92%");
+    expect(normalized.sourcesContacted).toEqual([
+      "eElurikkus recent records",
+      "GBIF Estonia history",
+      "eBird foreign pressure",
+      "Open-Meteo weather",
+    ]);
+    expect(normalized.rankingMode).toBe("eElurikkus recent records + GBIF Estonia history + eBird foreign pressure + Open-Meteo weather");
+    expect(normalized.activeEvidenceUsed).toEqual([
+      "eElurikkus recent records",
+      "GBIF Estonia history",
+      "eBird foreign pressure",
+      "Open-Meteo weather",
+    ]);
+    expect(normalized.latestEeCoords).toBe("57.9054, 22.051674");
+    expect(normalized.latestEeLocality).toBe("Sääre küla");
+    expect(normalized.recentCount7d).toBe(12);
+    expect(normalized.recentCount30d).toBe(12);
+    expect(normalized.predictedTargets).toHaveLength(1);
+    expect(normalized.predictedTargets[0]?.name).toBe("Põõsaspea");
+    expect(normalized.weatherLabel).toContain("SW");
+    expect(normalized.summaryText).toBe("OpenAI summary text");
   });
 });

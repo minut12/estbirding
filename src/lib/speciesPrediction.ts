@@ -411,6 +411,24 @@ export type SpeciesPredictionResult = {
   effectiveRankingMode?: string;
   summaryGuardrailApplied?: boolean;
   summaryGuardrailReason?: string;
+  normalizedPrediction?: NormalizedPredictionPanelModel;
+};
+
+export type NormalizedPredictionPanelModel = {
+  speciesName: string;
+  evidenceState: string;
+  confidenceValue: number | null;
+  confidenceLabel: string;
+  sourcesContacted: string[];
+  rankingMode: string;
+  activeEvidenceUsed: string[];
+  latestEeCoords: string;
+  latestEeLocality: string;
+  recentCount7d: number;
+  recentCount30d: number;
+  predictedTargets: PredictedPoint[];
+  weatherLabel: string;
+  summaryText: string;
 };
 
 export type ResolvedSpeciesPredictionSource = {
@@ -863,6 +881,125 @@ export function normalizeSpeciesPredictionResult(
       ...(resolvedSource.warningsInputType ? { warningsInputType: resolvedSource.warningsInputType } : {}),
     } : {}),
   };
+}
+
+export function normalizePrediction(raw: Partial<SpeciesPredictionResult> | SpeciesPredictionResult[] | null | undefined): NormalizedPredictionPanelModel {
+  const root = Array.isArray(raw) ? (raw[0] as Partial<SpeciesPredictionResult> | undefined) ?? {} : (raw ?? {});
+  const speciesRoot = asRecord((root as SpeciesPredictionResult).species);
+  const sourceHealth = asRecord((root as SpeciesPredictionResult).sourceHealth);
+  const evidenceSummary = asRecord((root as SpeciesPredictionResult).evidenceSummary);
+  const weather = asRecord((root as SpeciesPredictionResult).weather);
+  const predictedTargets = Array.isArray((root as SpeciesPredictionResult).predictedTargets)
+    ? ((root as SpeciesPredictionResult).predictedTargets as PredictedPoint[])
+    : [];
+  const topTarget = asRecord((root as SpeciesPredictionResult).topTarget);
+  const confidenceValueRaw = hasValue(topTarget, ['confidence']) ? readNumber(topTarget, ['confidence']) : null;
+  const confidenceValue = Number.isFinite(Number(confidenceValueRaw)) ? Number(confidenceValueRaw) : null;
+  const activeEvidenceUsed = Array.isArray(readArray(sourceHealth, ['activeEvidenceUsed', 'active_evidence_used']))
+    ? (readArray(sourceHealth, ['activeEvidenceUsed', 'active_evidence_used']) || []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean)
+    : [];
+  const recentCount7d = hasValue(root as Record<string, unknown>, ['recentCount7d'])
+    ? clampNumber(readNumber(root as Record<string, unknown>, ['recentCount7d']), 0, 999999, 0)
+    : hasValue(evidenceSummary, ['recentCount7d'])
+      ? clampNumber(readNumber(evidenceSummary, ['recentCount7d']), 0, 999999, 0)
+      : 0;
+  const recentCount30d = hasValue(root as Record<string, unknown>, ['recentCount30d'])
+    ? clampNumber(readNumber(root as Record<string, unknown>, ['recentCount30d']), 0, 999999, 0)
+    : hasValue(evidenceSummary, ['recentCount30d'])
+      ? clampNumber(readNumber(evidenceSummary, ['recentCount30d']), 0, 999999, 0)
+      : 0;
+  const elurikkusRecentRecords = Array.isArray((root as SpeciesPredictionResult).elurikkusRecentRecords)
+    ? (root as SpeciesPredictionResult).elurikkusRecentRecords || []
+    : [];
+  const freshestRecordWithCoords = [...elurikkusRecentRecords]
+    .filter((record) => {
+      const coords = readRecentRecordCoords(record);
+      return !!coords;
+    })
+    .sort((left, right) => readRecentRecordTimestamp(right) - readRecentRecordTimestamp(left))[0];
+  const freshestCoords = readRecentRecordCoords(freshestRecordWithCoords);
+  const sourcesContacted: string[] = [];
+  if (
+    elurikkusRecentRecords.length
+    || recentCount7d > 0
+    || recentCount30d > 0
+    || (root as SpeciesPredictionResult).hasRecentEstoniaEvidence === true
+    || sourceHealth.elurikkusAvailable === true
+  ) sourcesContacted.push('eElurikkus recent records');
+  if (
+    (Array.isArray((root as SpeciesPredictionResult).estoniaHistoryPoints) && (root as SpeciesPredictionResult).estoniaHistoryPoints!.length)
+    || (Array.isArray((root as SpeciesPredictionResult).estoniaHistoryClusters) && (root as SpeciesPredictionResult).estoniaHistoryClusters!.length)
+    || (root as SpeciesPredictionResult).hasUsableEstoniaHistory === true
+    || sourceHealth.gbifAvailable === true
+  ) sourcesContacted.push('GBIF Estonia history');
+  if (
+    (Array.isArray((root as SpeciesPredictionResult).foreignRecentPoints) && (root as SpeciesPredictionResult).foreignRecentPoints!.length)
+    || (Array.isArray((root as SpeciesPredictionResult).foreignClusters) && (root as SpeciesPredictionResult).foreignClusters!.length)
+    || (root as SpeciesPredictionResult).hasForeignPressure === true
+    || (root as SpeciesPredictionResult).hasUsableForeignPressure === true
+    || sourceHealth.ebirdAvailable === true
+  ) sourcesContacted.push('eBird foreign pressure');
+  if (
+    hasValue(weather, ['windSpeedKmh'])
+    || hasValue(weather, ['windDirectionDeg'])
+    || !!readString(weather, ['observedAt'])
+    || !!readString(weather, ['source'])
+  ) sourcesContacted.push('Open-Meteo weather');
+  const rankingMode = activeEvidenceUsed.length ? activeEvidenceUsed.join(' + ') : (sourcesContacted.length ? sourcesContacted.join(' + ') : '—');
+  return {
+    speciesName: normalizeUiText(readString(root as Record<string, unknown>, ['speciesName']) || readString(speciesRoot, ['name']) || readString(root as Record<string, unknown>, ['speciesKey']) || ''),
+    evidenceState: normalizeUiText(readString(root as Record<string, unknown>, ['evidenceState']) || ''),
+    confidenceValue,
+    confidenceLabel: confidenceValue != null ? `${Math.round(confidenceValue * 100)}%` : (normalizeUiText(readString(root as Record<string, unknown>, ['confidenceNote']) || '') || '—'),
+    sourcesContacted,
+    rankingMode,
+    activeEvidenceUsed,
+    latestEeCoords: freshestCoords ? `${String(freshestCoords.lat)}, ${String(freshestCoords.lon)}` : '—',
+    latestEeLocality: normalizeUiText(String((freshestRecordWithCoords && ((freshestRecordWithCoords as Record<string, unknown>).locality || (freshestRecordWithCoords as Record<string, unknown>).locName)) || '')) || '—',
+    recentCount7d,
+    recentCount30d,
+    predictedTargets,
+    weatherLabel: formatPredictionWeatherLabel(weather),
+    summaryText: normalizeUiText(readString(root as Record<string, unknown>, ['insightSummary']) || readString(asRecord((root as SpeciesPredictionResult).aiSummary), ['insightSummary']) || ''),
+  };
+}
+
+function readRecentRecordTimestamp(record: SpeciesPredictionElurikkusRecentRecord | undefined): number {
+  if (!record) return 0;
+  const raw = String((record as Record<string, unknown>).event_datetime_point || record.date || (record as Record<string, unknown>).eventDate || '');
+  const ts = new Date(raw).getTime();
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function readRecentRecordCoords(record: SpeciesPredictionElurikkusRecentRecord | undefined): { lat: string; lon: string } | null {
+  if (!record) return null;
+  const source = record as Record<string, unknown>;
+  const coords = asRecord(source.coordinates);
+  const latRaw = coords.lat ?? source.latitude ?? source.lat;
+  const lonRaw = coords.lon ?? source.longitude ?? source.lon ?? source.lng;
+  const lat = Number(latRaw);
+  const lon = Number(lonRaw);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return { lat: String(latRaw), lon: String(lonRaw) };
+}
+
+function formatPredictionWeatherLabel(weather: Record<string, unknown>): string {
+  const speed = hasValue(weather, ['windSpeedKmh']) ? readNumber(weather, ['windSpeedKmh']) : null;
+  const deg = hasValue(weather, ['windDirectionDeg']) ? readNumber(weather, ['windDirectionDeg']) : null;
+  const observedAt = normalizeUiText(readString(weather, ['observedAt']) || '');
+  if (!Number.isFinite(Number(speed)) && !Number.isFinite(Number(deg)) && !observedAt) return '—';
+  const parts = [];
+  const dir = weatherDirectionToCompass(Number(deg));
+  if (dir) parts.push(dir);
+  if (Number.isFinite(Number(speed))) parts.push(`${Math.round(Number(speed))} km/h`);
+  if (observedAt) parts.push(observedAt);
+  return parts.join(' | ') || '—';
+}
+
+function weatherDirectionToCompass(deg: number): string {
+  if (!Number.isFinite(deg)) return '';
+  const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  return directions[Math.round((((deg % 360) + 360) % 360) / 45) % 8] || '';
 }
 
 export function hasUsableSpeciesPredictionResult(

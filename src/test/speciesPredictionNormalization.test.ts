@@ -303,6 +303,89 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.mapLayers?.diagnostics).toBe(true);
   });
 
+  it("preserves current n8n root evidence fields and array root normalization", () => {
+    const result = normalizeSpeciesPredictionResult([
+      {
+        speciesKey: "punakurk-kaur",
+        speciesName: "Punakurk-kaur",
+        generatedAt: "2026-03-21T12:00:00.000Z",
+        evidenceState: "mixed",
+        recentCount7d: 12,
+        recentCount30d: 18,
+        confidenceNote: "Confidence is moderate because recent Estonia evidence exists.",
+        topTarget: {
+          rank: 1,
+          name: "Sääre",
+          countyOrParish: "Saaremaa",
+          lat: 57.9054,
+          lon: 22.051674,
+          confidence: 0.92,
+          eta: "24h",
+          searchRadiusKm: 5,
+          habitatCue: "coastal open water",
+          reason: "Best current target",
+        },
+        sourceHealth: {
+          activeEvidenceUsed: ["eElurikkus recent records", "GBIF Estonia history", "eBird foreign pressure", "Open-Meteo weather"],
+          primarySourceUsed: "eElurikkus recent records",
+          sourceWarnings: [],
+          elurikkusAvailable: true,
+          ebirdAvailable: true,
+          gbifAvailable: true,
+          gbifFallbackUsed: false,
+        },
+        evidenceSummary: {
+          recentCount7d: 99,
+          recentCount30d: 88,
+        },
+        weather: {
+          observedAt: "2026-03-21T11:45:00.000Z",
+          windSpeedKmh: 23,
+          windDirectionDeg: 225,
+          source: "Open-Meteo",
+        },
+        elurikkusRecentRecords: [
+          {
+            id: "older",
+            event_datetime_point: "2026-03-20T09:00:00.000Z",
+            locality: "Older place",
+            hasCoords: true,
+            coordinates: { lat: 58.1, lon: 23.1 },
+          },
+          {
+            id: "freshest",
+            event_datetime_point: "2026-03-21T10:15:00.000Z",
+            locality: "Sääre küla",
+            hasCoords: true,
+            latitude: 57.9054,
+            longitude: 22.051674,
+          },
+        ],
+        hasRecentEstoniaEvidence: true,
+        hasForeignPressure: true,
+      },
+    ] as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.evidenceState).toBe("mixed");
+    expect(result.recentCount7d).toBe(12);
+    expect(result.recentCount30d).toBe(18);
+    expect(result.estoniaEvidence?.recentCount7d).toBe(12);
+    expect(result.estoniaEvidence?.recentCount30d).toBe(18);
+    expect(result.topTarget?.confidence).toBe(0.92);
+    expect(result.sourceHealth?.activeEvidenceUsed).toEqual([
+      "eElurikkus recent records",
+      "GBIF Estonia history",
+      "eBird foreign pressure",
+      "Open-Meteo weather",
+    ]);
+    expect(result.weather?.windSpeedKmh).toBe(23);
+    expect(result.weather?.windDirectionDeg).toBe(225);
+    expect(result.weather?.observedAt).toBe("2026-03-21T11:45:00.000Z");
+    expect(result.elurikkusRecentRecords?.[1]?.coordinates).toEqual({ lat: 57.9054, lon: 22.051674 });
+    expect(result.hasRecentEstoniaEvidence).toBe(true);
+    expect(result.hasForeignPressure).toBe(true);
+  });
+
   it("normalizes honesty-oriented predicted target metadata", () => {
     const result = normalizeSpeciesPredictionResult({
       speciesKey: "test-species",

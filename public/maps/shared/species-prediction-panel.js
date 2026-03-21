@@ -499,18 +499,18 @@
     var result = state.result;
     var prediction = buildPanelPredictionModel(result);
     var summaryText = normalizeText(prediction.summaryText);
-    var confidenceNote = normalizeText(result.confidenceNote);
+    var confidenceNote = normalizeText(prediction.confidenceNote || result.confidenceNote);
     var rankingNotes = normalizeText(result.rankingNotes);
     var warnings = normalizeStringArray(result.warnings);
     var consistencyChecks = result.consistencyChecks || null;
     var preferredPoints = Array.isArray(result.topPredictedPoints) ? result.topPredictedPoints.slice(0, 5) : [];
     var foreignClusters = Array.isArray(result.foreignClusters) ? result.foreignClusters : [];
     var predictedTargets = Array.isArray(prediction.predictedTargets) && prediction.predictedTargets.length ? prediction.predictedTargets.slice(0, 5) : preferredPoints;
-    var weather = result.weather || null;
-    var estoniaEvidence = result.estoniaEvidence || null;
-    var evidenceSummary = result.evidenceSummary || null;
+    var weather = prediction.weather || result.weather || null;
+    var estoniaEvidence = prediction.estoniaEvidence || result.estoniaEvidence || null;
+    var evidenceSummary = prediction.evidenceSummary || result.evidenceSummary || null;
     var evidenceState = String(prediction.evidenceState || '').trim();
-    var effectiveRankingMode = String(result.effectiveRankingMode || (evidenceSummary && evidenceSummary.effectiveRankingMode) || '').trim();
+    var effectiveRankingMode = String(prediction.effectiveRankingMode || result.effectiveRankingMode || (evidenceSummary && evidenceSummary.effectiveRankingMode) || '').trim();
     var activeEvidenceSources = prediction.activeEvidenceSources;
     var availableSources = prediction.sourcesContacted;
     var attemptedButUnavailable = Array.isArray(result.attemptedButUnavailable) ? result.attemptedButUnavailable : [];
@@ -549,15 +549,16 @@
     html += '<div class="spp-card"><h4>Summary</h4><p class="spp-summary-text">' + escapeHtml(summarySentence(evidenceState, summaryText, result, prediction)) + '</p><div class="spp-grid">' +
       metricCell('Species', prediction.speciesName || state.speciesName || 'Unavailable') +
       metricCell('Evidence state', formatEvidenceState(evidenceState)) +
-      metricCell('Confidence', deriveConfidenceLabel(prediction.predictedTargets)) +
+      metricCell('Confidence', prediction.confidenceDisplay) +
       meaningfulMetricCell('Sources contacted', availableSources.length ? availableSources.join(', ') : 'None') +
       metricCell('Ranking mode', effectiveRankingMode || formatRankingMode(evidenceSummary && evidenceSummary.rankingMode ? evidenceSummary.rankingMode : 'estonia_history_only')) +
       metricCell('Active evidence used', activeEvidenceSources.length ? activeEvidenceSources.join(', ') : 'None') +
       meaningfulMetricCell('Freshest EE locality', prediction.freshestLocality) +
       meaningfulMetricCell('Latest EE date', prediction.freshestDate) +
       meaningfulMetricCell('Latest EE coords', prediction.freshestCoordsText) +
-      meaningfulMetricCell('Recent EE count', prediction.recentEeCount) +
-      meaningfulMetricCell('Weather', evidenceSummary && evidenceSummary.wasWeatherUsedInRanking ? weatherLine(weather, evidenceSummary) : '') +
+      meaningfulMetricCell('Recent EE count (7d)', prediction.recentCount7d) +
+      meaningfulMetricCell('Recent EE count (30d)', prediction.recentCount30d) +
+      meaningfulMetricCell('Weather', weatherLine(weather, evidenceSummary)) +
       meaningfulMetricCell('Attempted but unavailable', attemptedButUnavailable.length ? attemptedButUnavailable.join(', ') : '') +
       meaningfulMetricCell('Attempted but no usable evidence', attemptedButReturnedNoUsableEvidence.length ? attemptedButReturnedNoUsableEvidence.join(', ') : '') +
       '</div></div>';
@@ -1022,11 +1023,60 @@
     return typeof value === 'number' && isFinite(value);
   }
 
+  function firstDefinedNumber() {
+    var idx;
+    for (idx = 0; idx < arguments.length; idx += 1) {
+      var value = arguments[idx];
+      var n = Number(value);
+      if (Number.isFinite(n)) return n;
+    }
+    return 0;
+  }
+
+  function getRecentRecordTimestamp(record) {
+    if (!record) return 0;
+    var raw = record.event_datetime_point || record.date || record.eventDate || record.observedAt || '';
+    var stamp = new Date(String(raw || '')).getTime();
+    return Number.isFinite(stamp) ? stamp : 0;
+  }
+
+  function getRecentRecordCoords(record) {
+    if (!record) return null;
+    var coords = record.coordinates || null;
+    var lat = coords && coords.lat != null ? Number(coords.lat) : Number(record.latitude != null ? record.latitude : (record.lat != null ? record.lat : record.decimalLatitude));
+    var lon = coords && coords.lon != null ? Number(coords.lon) : Number(record.longitude != null ? record.longitude : (record.lon != null ? record.lon : (record.lng != null ? record.lng : record.decimalLongitude)));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return { lat: lat, lon: lon };
+  }
+
+  function findFreshestRecentEeRecordWithCoords(records) {
+    if (!Array.isArray(records) || !records.length) return null;
+    var sorted = records.slice().sort(function (a, b) {
+      return getRecentRecordTimestamp(b) - getRecentRecordTimestamp(a);
+    });
+    var idx;
+    for (idx = 0; idx < sorted.length; idx += 1) {
+      var record = sorted[idx];
+      var coords = getRecentRecordCoords(record);
+      if (!coords) continue;
+      if (record && typeof record.hasCoords === 'boolean' && record.hasCoords !== true) continue;
+      return record;
+    }
+    return null;
+  }
+
   function formatConfidence(value) {
     var n = Number(value);
     if (!isFiniteNumber(n)) return '0%';
     if (n > 1) return String(Math.round(n)) + '%';
     return String(Math.round(n * 100)) + '%';
+  }
+
+  function formatConfidenceDisplay(confidence, confidenceNote) {
+    var n = Number(confidence);
+    if (Number.isFinite(n)) return formatConfidence(n);
+    var note = String(confidenceNote || '').trim();
+    return note || 'Unknown';
   }
 
   function clampConfidencePercent(value) {
@@ -1173,10 +1223,25 @@
 
   function weatherLine(weather, evidenceSummary) {
     if (!weather) return 'Unavailable';
-    if (weather.weatherAvailable !== true) return weather.error ? 'Unavailable (' + String(weather.error) + ')' : 'Unavailable';
-    if (weather.weatherPartial === true || !weather.fetchedAt) return 'Partial or unreliable weather payload';
+    var speed = Number(weather.windSpeedKmh);
+    var deg = Number(weather.windDirectionDeg);
+    var observedAt = String(weather.observedAt || '').trim();
+    if (!Number.isFinite(speed) && !Number.isFinite(deg) && !observedAt) return weather.error ? 'Unavailable (' + String(weather.error) + ')' : 'Unavailable';
     var status = evidenceSummary && evidenceSummary.wasWeatherUsedInRanking ? 'used' : 'available';
-    return String(weather.windDirectionLabel || '') + ' ' + String(weather.windSpeedKph || 0) + ' km/h (' + status + ', ' + String(weather.fetchedAt || 'no timestamp') + ')';
+    var direction = compassFromDegrees(deg);
+    var parts = [];
+    if (direction) parts.push(direction);
+    if (Number.isFinite(speed)) parts.push(String(Math.round(speed)) + ' km/h');
+    if (observedAt) parts.push(observedAt);
+    parts.push(status);
+    return parts.join(' | ');
+  }
+
+  function compassFromDegrees(value) {
+    var deg = Number(value);
+    if (!Number.isFinite(deg)) return '';
+    var directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    return directions[Math.round((((deg % 360) + 360) % 360) / 45) % 8];
   }
 
   function formatWeatherUsage(evidenceSummary, weather) {
@@ -1321,41 +1386,45 @@
   }
 
   function buildPanelPredictionModel(result) {
-    var prediction = normalizePredictionPayload(result) || {};
-    var species = prediction.species || {};
-    var sourceHealth = prediction.sourceHealth || {};
-    var evidenceSummary = prediction.evidenceSummary || {};
-    var estoniaEvidence = prediction.estoniaEvidence || {};
-    var predictedTargets = Array.isArray(prediction.predictedTargets) && prediction.predictedTargets.length
-      ? prediction.predictedTargets
-      : (Array.isArray(prediction.topPredictedPoints) ? prediction.topPredictedPoints : []);
+    var normalizedPrediction = normalizePredictionPayload(result) || {};
+    console.log("prediction-normalized", normalizedPrediction);
+    var species = normalizedPrediction.species || {};
+    var sourceHealth = normalizedPrediction.sourceHealth || {};
+    var evidenceSummary = normalizedPrediction.evidenceSummary || {};
+    var estoniaEvidence = normalizedPrediction.estoniaEvidence || {};
+    var predictedTargets = Array.isArray(normalizedPrediction.predictedTargets) && normalizedPrediction.predictedTargets.length
+      ? normalizedPrediction.predictedTargets
+      : (Array.isArray(normalizedPrediction.topPredictedPoints) ? normalizedPrediction.topPredictedPoints : []);
+    var topTarget = normalizedPrediction.topTarget || (predictedTargets.length ? predictedTargets[0] : null);
     var activeEvidence = Array.isArray(sourceHealth.activeEvidenceUsed) ? sourceHealth.activeEvidenceUsed.filter(Boolean) : [];
-    var sourcesContacted = activeEvidence.slice();
-    var recentRecords = Array.isArray(prediction.elurikkusRecentRecords) ? prediction.elurikkusRecentRecords : [];
-    var freshestWithCoords = recentRecords.find(function (record) {
-      var coords = record && record.coordinates;
-      return record && record.hasCoords === true && coords && isFiniteNumber(Number(coords.lat)) && isFiniteNumber(Number(coords.lon));
-    }) || null;
-    var firstRecordWithCoords = freshestWithCoords || recentRecords.find(function (record) {
-      var coords = record && record.coordinates;
-      return coords && isFiniteNumber(Number(coords.lat)) && isFiniteNumber(Number(coords.lon));
-    }) || null;
-    var freshestCoords = firstRecordWithCoords && firstRecordWithCoords.coordinates ? firstRecordWithCoords.coordinates : null;
-    var openAiSummaryFallback = typeof prediction.openAiResultValid === 'string' || typeof prediction.openAiResultValid === 'number'
-      ? prediction.openAiResultValid
+    var availableSources = Array.isArray(evidenceSummary.availableSources) ? evidenceSummary.availableSources.filter(Boolean) : [];
+    var sourcesContacted = availableSources.length ? availableSources.slice() : activeEvidence.slice();
+    var recentRecords = Array.isArray(normalizedPrediction.elurikkusRecentRecords) ? normalizedPrediction.elurikkusRecentRecords.slice() : [];
+    var freshestRecordWithCoords = findFreshestRecentEeRecordWithCoords(recentRecords);
+    var freshestCoords = getRecentRecordCoords(freshestRecordWithCoords);
+    var recentCount7d = firstDefinedNumber(normalizedPrediction.recentCount7d, evidenceSummary.recentCount7d, estoniaEvidence.recentCount7d);
+    var recentCount30d = firstDefinedNumber(normalizedPrediction.recentCount30d, evidenceSummary.recentCount30d, estoniaEvidence.recentCount30d);
+    var openAiSummaryFallback = typeof normalizedPrediction.openAiResultValid === 'string' || typeof normalizedPrediction.openAiResultValid === 'number'
+      ? normalizedPrediction.openAiResultValid
       : '';
     return {
-      speciesName: String((species && species.name) || prediction.speciesName || '').trim(),
-      evidenceState: String(prediction.evidenceState || '').trim(),
+      speciesName: String((species && species.name) || normalizedPrediction.speciesName || '').trim(),
+      evidenceState: String(normalizedPrediction.evidenceState || '').trim(),
       activeEvidenceSources: activeEvidence,
       sourcesContacted: sourcesContacted,
-      recentEeCount: estoniaEvidence && estoniaEvidence.recentCount7d != null ? estoniaEvidence.recentCount7d : 0,
-      recentCount7d: estoniaEvidence && estoniaEvidence.recentCount7d != null ? estoniaEvidence.recentCount7d : 0,
-      recentCount30d: estoniaEvidence && estoniaEvidence.recentCount30d != null ? estoniaEvidence.recentCount30d : 0,
-      summaryText: normalizeText(prediction.insightSummary || (prediction.aiSummary && prediction.aiSummary.insightSummary) || openAiSummaryFallback),
-      freshestDate: String(evidenceSummary.freshestElurikkusDate || '').trim(),
-      freshestLocality: String(evidenceSummary.freshestElurikkusLocality || '').trim(),
+      recentEeCount: recentCount7d,
+      recentCount7d: recentCount7d,
+      recentCount30d: recentCount30d,
+      summaryText: normalizeText(normalizedPrediction.insightSummary || (normalizedPrediction.aiSummary && normalizedPrediction.aiSummary.insightSummary) || openAiSummaryFallback),
+      confidenceNote: normalizeText(normalizedPrediction.confidenceNote || ''),
+      freshestDate: normalizeText((freshestRecordWithCoords && (freshestRecordWithCoords.event_datetime_point || freshestRecordWithCoords.date || freshestRecordWithCoords.eventDate)) || evidenceSummary.freshestElurikkusDate || estoniaEvidence.latestEstoniaDate || ''),
+      freshestLocality: normalizeText((freshestRecordWithCoords && (freshestRecordWithCoords.locality || freshestRecordWithCoords.locName)) || evidenceSummary.freshestElurikkusLocality || estoniaEvidence.latestEstoniaLocality || ''),
       freshestCoordsText: freshestCoords ? formatCoords(freshestCoords.lat, freshestCoords.lon) : 'Coordinates unavailable',
+      confidenceDisplay: formatConfidenceDisplay(topTarget && topTarget.confidence, normalizedPrediction.confidenceNote),
+      effectiveRankingMode: activeEvidence.length ? activeEvidence.join(' + ') : '',
+      evidenceSummary: evidenceSummary,
+      estoniaEvidence: estoniaEvidence,
+      weather: normalizedPrediction.weather || null,
       predictedTargets: predictedTargets,
     };
   }

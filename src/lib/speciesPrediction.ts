@@ -393,6 +393,11 @@ export type SpeciesPredictionResult = {
   rankingNotesInputType?: string;
   warningsInputType?: string;
   evidenceState?: SpeciesPredictionEvidenceState;
+  recentCount7d?: number;
+  recentCount30d?: number;
+  topTarget?: PredictedPoint;
+  hasRecentEstoniaEvidence?: boolean;
+  hasForeignPressure?: boolean;
   hasUsableRecentEstoniaEvidence?: boolean;
   hasUsableEstoniaHistory?: boolean;
   hasUsableForeignPressure?: boolean;
@@ -679,6 +684,16 @@ export function normalizeSpeciesPredictionResult(
   const evidenceSummary = normalizeEvidenceSummary(
     readRecord(source, ['evidenceSummary']) ?? readRecord(rawResearchPayload, ['evidenceSummary']),
   );
+  const recentCount7d = hasValue(source, ['recentCount7d', 'recent_count_7d'])
+    ? clampNumber(readNumber(source, ['recentCount7d', 'recent_count_7d']), 0, 999999, 0)
+    : hasValue(evidenceSummary, ['recentCount7d', 'recent_count_7d'])
+      ? clampNumber(readNumber(evidenceSummary, ['recentCount7d', 'recent_count_7d']), 0, 999999, 0)
+      : undefined;
+  const recentCount30d = hasValue(source, ['recentCount30d', 'recent_count_30d'])
+    ? clampNumber(readNumber(source, ['recentCount30d', 'recent_count_30d']), 0, 999999, 0)
+    : hasValue(evidenceSummary, ['recentCount30d', 'recent_count_30d'])
+      ? clampNumber(readNumber(evidenceSummary, ['recentCount30d', 'recent_count_30d']), 0, 999999, 0)
+      : undefined;
   const elurikkusRecentRecords = normalizeElurikkusRecentRecords(
     readArray(source, ['elurikkusRecentRecords']) ?? readArray(rawResearchPayload, ['elurikkusRecentRecords']),
   );
@@ -710,7 +725,13 @@ export function normalizeSpeciesPredictionResult(
   const weather = normalizeWeather(
     readRecord(source, ['weather']) ?? readRecord(rawResearchPayload, ['weather']),
   );
+  const topTargetRecord = readRecord(source, ['topTarget']) ?? {};
+  const topTarget = Object.keys(topTargetRecord).length
+    ? normalizePredictedPoint(topTargetRecord, 0)
+    : undefined;
   const evidenceState = readString(source, ['evidenceState', 'evidence_state']) as SpeciesPredictionEvidenceState | '';
+  const hasRecentEstoniaEvidence = typeof source.hasRecentEstoniaEvidence === 'boolean' ? source.hasRecentEstoniaEvidence : undefined;
+  const hasForeignPressure = typeof source.hasForeignPressure === 'boolean' ? source.hasForeignPressure : undefined;
   const hasUsableRecentEstoniaEvidence = typeof source.hasUsableRecentEstoniaEvidence === 'boolean' ? source.hasUsableRecentEstoniaEvidence : undefined;
   const hasUsableEstoniaHistory = typeof source.hasUsableEstoniaHistory === 'boolean' ? source.hasUsableEstoniaHistory : undefined;
   const hasUsableForeignPressure = typeof source.hasUsableForeignPressure === 'boolean' ? source.hasUsableForeignPressure : undefined;
@@ -762,7 +783,21 @@ export function normalizeSpeciesPredictionResult(
     ...((predictedTargets.length || hasPredictedTargets) ? { predictedTargets } : {}),
     ...(mapLayers ? { mapLayers } : {}),
     ...(foreignEvidence.length ? { foreignEvidence } : {}),
-    ...(estoniaEvidence ? { estoniaEvidence } : {}),
+    ...((estoniaEvidence || recentCount7d != null || recentCount30d != null) ? {
+      estoniaEvidence: {
+        recentCount7d: recentCount7d ?? estoniaEvidence?.recentCount7d ?? 0,
+        recentCount30d: recentCount30d ?? estoniaEvidence?.recentCount30d ?? 0,
+        latestEstoniaDate: estoniaEvidence?.latestEstoniaDate ?? '',
+        latestEstoniaLat: estoniaEvidence?.latestEstoniaLat ?? null,
+        latestEstoniaLon: estoniaEvidence?.latestEstoniaLon ?? null,
+        ...(estoniaEvidence?.latestEstoniaLocality ? { latestEstoniaLocality: estoniaEvidence.latestEstoniaLocality } : {}),
+        ...(estoniaEvidence?.latestEstoniaSource ? { latestEstoniaSource: estoniaEvidence.latestEstoniaSource } : {}),
+        ...(estoniaEvidence?.freshestLocalities ? { freshestLocalities: estoniaEvidence.freshestLocalities } : {}),
+        ...(estoniaEvidence?.sourceMix ? { sourceMix: estoniaEvidence.sourceMix } : {}),
+        alreadyPresent: estoniaEvidence?.alreadyPresent === true,
+        alreadyPassed: estoniaEvidence?.alreadyPassed === true,
+      },
+    } : {}),
     ...(historicalEvidence ? { historicalEvidence } : {}),
     ...(rawLinks ? { rawLinks } : {}),
     externalPressureScore: readNumber(source, ['externalPressureScore', 'external_pressure_score', 'pressureScore', 'pressure_score']),
@@ -792,6 +827,11 @@ export function normalizeSpeciesPredictionResult(
     ...(rankingNotes ? { rankingNotes: normalizeUiText(rankingNotes) } : {}),
     ...(warnings.length ? { warnings } : {}),
     ...(evidenceState ? { evidenceState } : {}),
+    ...(recentCount7d != null ? { recentCount7d } : {}),
+    ...(recentCount30d != null ? { recentCount30d } : {}),
+    ...(topTarget ? { topTarget } : {}),
+    ...(typeof hasRecentEstoniaEvidence === 'boolean' ? { hasRecentEstoniaEvidence } : {}),
+    ...(typeof hasForeignPressure === 'boolean' ? { hasForeignPressure } : {}),
     ...(typeof hasUsableRecentEstoniaEvidence === 'boolean' ? { hasUsableRecentEstoniaEvidence } : {}),
     ...(typeof hasUsableEstoniaHistory === 'boolean' ? { hasUsableEstoniaHistory } : {}),
     ...(typeof hasUsableForeignPressure === 'boolean' ? { hasUsableForeignPressure } : {}),
@@ -1248,6 +1288,8 @@ function normalizeEvidenceSummary(input: Record<string, unknown> | null): Specie
     ...(typeof input.weatherAvailable === 'boolean' ? { weatherAvailable: input.weatherAvailable === true } : {}),
     ...(typeof input.weatherPartial === 'boolean' ? { weatherPartial: input.weatherPartial === true } : {}),
     ...(typeof input.wasWeatherUsedInRanking === 'boolean' ? { wasWeatherUsedInRanking: input.wasWeatherUsedInRanking === true } : {}),
+    ...(hasValue(input, ['recentCount7d', 'recent_count_7d']) ? { recentCount7d: clampNumber(readNumber(input, ['recentCount7d', 'recent_count_7d']), 0, 999999, 0) } : {}),
+    ...(hasValue(input, ['recentCount30d', 'recent_count_30d']) ? { recentCount30d: clampNumber(readNumber(input, ['recentCount30d', 'recent_count_30d']), 0, 999999, 0) } : {}),
     ...(readString(input, ['rankingMode', 'ranking_mode']) ? { rankingMode: normalizeUiText(readString(input, ['rankingMode', 'ranking_mode'])) } : {}),
     ...(readString(input, ['effectiveRankingMode', 'effective_ranking_mode']) ? { effectiveRankingMode: normalizeUiText(readString(input, ['effectiveRankingMode', 'effective_ranking_mode'])) } : {}),
     ...(readString(input, ['summaryText', 'summary_text']) ? { summaryText: normalizeUiText(readString(input, ['summaryText', 'summary_text'])) } : {}),
@@ -1271,12 +1313,12 @@ function normalizeElurikkusRecentRecords(input: unknown[] | null): SpeciesPredic
       ? source.hasCoords === true
       : lat != null && lon != null;
     return {
+      ...source,
       ...(readString(source, ['id']) ? { id: normalizeUiText(readString(source, ['id'])) } : { id: `elurikkus-record-${index + 1}` }),
       ...(readString(source, ['date', 'observedAt', 'eventDate']) ? { date: normalizeUiText(readString(source, ['date', 'observedAt', 'eventDate'])) } : {}),
       ...(readString(source, ['locality', 'locName']) ? { locality: normalizeUiText(readString(source, ['locality', 'locName'])) } : {}),
       hasCoords,
       coordinates: { lat, lon },
-      ...source,
     };
   });
 }

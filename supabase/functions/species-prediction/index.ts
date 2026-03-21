@@ -10,12 +10,12 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-19-fix17';
-const INVOKE_ROUTE_VERSION = 'fix17';
+const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-21-fix18';
+const INVOKE_ROUTE_VERSION = 'fix18';
 const EDGE_FUNCTION_FILE = 'supabase/functions/species-prediction/index.ts';
 const EDGE_FUNCTION_ENTRYPOINT = 'serve(async (req) => { ... })';
 const EDGE_RESPONSE_PROOF = 'served by live species-prediction invoke route';
-const EDGE_ROUTE_HEADER = 'live-post-invoke-fix17';
+const EDGE_ROUTE_HEADER = 'live-post-invoke-fix18';
 const WEBHOOK_CONFIG_SOURCE = `env:${WEBHOOK_ENV_KEY}`;
 const STATUS_NO_CACHE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',

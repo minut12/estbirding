@@ -5,17 +5,15 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 type BackendHooks = {
-  finalizeCanonicalResponseSummary: (
+  finalizePredictionResponse: (
     response: Record<string, unknown>,
-    options: {
-      fallbackSummaryOrigin: string;
-      fallbackSummary: {
-        insightSummary: string;
-        confidenceNote: string;
-        rankingNotes: string;
-        warnings: string[];
-      };
-    },
+    branch: string,
+  ) => Record<string, unknown>;
+  sanitizeSummaryAgainstEvidence: (
+    response: Record<string, unknown>,
+  ) => Record<string, unknown>;
+  withEdgeResponseMarkers: (
+    body: Record<string, unknown>,
   ) => Record<string, unknown>;
   buildNeutralStructuredEvidenceSummary: (speciesName: string) => {
     insightSummary: string;
@@ -31,7 +29,9 @@ function loadBackendHooks(): BackendHooks {
     .replace(/^import .*$/gm, "");
   const wrapped = `${source}
 globalThis.__speciesPredictionBackendTestHooks = {
-  finalizeCanonicalResponseSummary,
+  finalizePredictionResponse,
+  sanitizeSummaryAgainstEvidence,
+  withEdgeResponseMarkers,
   buildNeutralStructuredEvidenceSummary,
 };
 `;
@@ -107,12 +107,9 @@ describe("species-prediction backend summary finalizer", () => {
       rawResearchPayload: { aiSummary: "ALREADY PRESENT - 12 records in 7 days near Sääre küla." },
     });
 
-    const finalized = hooks.finalizeCanonicalResponseSummary(response, {
-      fallbackSummaryOrigin: "regenerated_from_structured",
-      fallbackSummary: hooks.buildNeutralStructuredEvidenceSummary("Punakurk-kaur"),
-    });
+    const finalized = hooks.finalizePredictionResponse(response, "test_exact_contradiction");
 
-    expect(finalized.insightSummary).toContain("Structured evidence is currently unavailable or incomplete");
+    expect(finalized.insightSummary).toContain("Structured evidence is currently incomplete in the final payload");
     expect(finalized.aiSummary).toBe(finalized.insightSummary);
     expect((finalized.rawResearchPayload as Record<string, unknown>).aiSummary).toBe(finalized.insightSummary);
     expect(finalized.summaryRegeneratedFromStructuredEvidence).toBe(true);
@@ -124,10 +121,7 @@ describe("species-prediction backend summary finalizer", () => {
       aiSummary: "Pressure is building from PL, SE, FI, Mikoszewo, Kalmar and Helsinki.",
     });
 
-    const finalized = hooks.finalizeCanonicalResponseSummary(response, {
-      fallbackSummaryOrigin: "regenerated_from_structured",
-      fallbackSummary: hooks.buildNeutralStructuredEvidenceSummary("Punakurk-kaur"),
-    });
+    const finalized = hooks.finalizePredictionResponse(response, "test_foreign_narrative");
 
     expect(String(finalized.insightSummary)).not.toMatch(/PL|SE|FI|Mikoszewo|Kalmar|Helsinki/);
     expect(finalized.summaryOrigin).toBe("neutral_sanitizer_fallback");
@@ -139,13 +133,10 @@ describe("species-prediction backend summary finalizer", () => {
       aiSummary: "Ristna and Põõsaspea remain the top hotspot ranking right now.",
     });
 
-    const finalized = hooks.finalizeCanonicalResponseSummary(response, {
-      fallbackSummaryOrigin: "regenerated_from_structured",
-      fallbackSummary: hooks.buildNeutralStructuredEvidenceSummary("Punakurk-kaur"),
-    });
+    const finalized = hooks.finalizePredictionResponse(response, "test_hotspot_narrative");
 
     expect(String(finalized.insightSummary)).not.toMatch(/Ristna|Põõsaspea/i);
-    expect(String(finalized.insightSummary)).toContain("could not be confirmed");
+    expect(String(finalized.insightSummary)).toContain("cannot be confirmed");
     expect(finalized.aiSummary).toBe(finalized.insightSummary);
   });
 
@@ -175,10 +166,7 @@ describe("species-prediction backend summary finalizer", () => {
       },
     });
 
-    const finalized = hooks.finalizeCanonicalResponseSummary(response, {
-      fallbackSummaryOrigin: "regenerated_from_structured",
-      fallbackSummary: hooks.buildNeutralStructuredEvidenceSummary("Punakurk-kaur"),
-    });
+    const finalized = hooks.finalizePredictionResponse(response, "test_valid_upstream");
 
     expect(finalized.insightSummary).toContain("supported by canonical structured evidence");
     expect(finalized.summaryOrigin).toBe("normalized_upstream");
@@ -195,10 +183,7 @@ describe("species-prediction backend summary finalizer", () => {
       },
     });
 
-    const finalized = hooks.finalizeCanonicalResponseSummary(response, {
-      fallbackSummaryOrigin: "deterministic_structured",
-      fallbackSummary: hooks.buildNeutralStructuredEvidenceSummary("Punakurk-kaur"),
-    });
+    const finalized = hooks.finalizePredictionResponse(response, "test_raw_payload_sync");
 
     expect((finalized.rawResearchPayload as Record<string, unknown>).aiSummary).toBe(finalized.insightSummary);
     expect((finalized.rawResearchPayload as Record<string, unknown>).insightSummary).toBe(finalized.insightSummary);
@@ -213,14 +198,45 @@ describe("species-prediction backend summary finalizer", () => {
       },
     });
 
-    const finalized = hooks.finalizeCanonicalResponseSummary(response, {
-      fallbackSummaryOrigin: "regenerated_from_structured",
-      fallbackSummary: hooks.buildNeutralStructuredEvidenceSummary("Punakurk-kaur"),
-    });
+    const finalized = hooks.finalizePredictionResponse(response, "test_late_merge");
 
     expect(String(finalized.insightSummary)).not.toMatch(/ALREADY PRESENT|Helsinki|Sääre/i);
     expect(finalized.aiSummary).toBe(finalized.insightSummary);
     expect((finalized.rawResearchPayload as Record<string, unknown>).aiSummary).toBe(finalized.insightSummary);
     expect(finalized.summaryOrigin).toBe("neutral_sanitizer_fallback");
+  });
+
+  it("sanitizes recovery-path summaries and syncs nested rawResearchPayload", () => {
+    const response = buildBaseResponse({
+      insightSummary: "",
+      aiSummary: "ALREADY PRESENT - 12 records in 7 days from PL and SE.",
+      rawResearchPayload: {
+        aiSummary: "ALREADY PRESENT - 12 records in 7 days from PL and SE.",
+      },
+    });
+
+    const sanitized = hooks.sanitizeSummaryAgainstEvidence(response);
+    const finalized = hooks.finalizePredictionResponse(sanitized, "test_recovery_path");
+
+    expect(String(finalized.insightSummary)).not.toMatch(/ALREADY PRESENT|Poland|Sweden|Finland|\bPL\b|\bSE\b|\bFI\b/i);
+    expect(finalized.aiSummary).toBe(finalized.insightSummary);
+    expect((finalized.rawResearchPayload as Record<string, unknown>).aiSummary).toBe(finalized.insightSummary);
+  });
+
+  it("does not let poll marker wrapping reintroduce stale summary text", () => {
+    const response = buildBaseResponse({
+      insightSummary: "ALREADY PRESENT - 12 records in 7 days near Helsinki.",
+      aiSummary: "ALREADY PRESENT - 12 records in 7 days near Helsinki.",
+      rawResearchPayload: {
+        aiSummary: "ALREADY PRESENT - 12 records in 7 days near Helsinki.",
+      },
+    });
+
+    const finalized = hooks.finalizePredictionResponse(response, "test_poll_source");
+    const polled = hooks.withEdgeResponseMarkers(finalized);
+
+    expect(String(polled.insightSummary)).not.toMatch(/ALREADY PRESENT|Helsinki/i);
+    expect(polled.aiSummary).toBe(polled.insightSummary);
+    expect((polled.rawResearchPayload as Record<string, unknown>).aiSummary).toBe(polled.insightSummary);
   });
 });

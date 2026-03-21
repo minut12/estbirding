@@ -705,12 +705,20 @@ serve(async (req) => {
         : null;
 
       if (job.status === 'completed' && job.result_json) {
+        if (typeof job.result_json === 'object' && job.result_json && !Array.isArray(job.result_json)) {
+          logPredictionSummaryState('poll_read_result_json', 'poll_completed_result', job.result_json as Record<string, unknown>, {
+            polledObjectCameFromResultJsonUnchangedExceptMarkers: true,
+          });
+        }
         response.result = typeof job.result_json === 'object' && job.result_json && !Array.isArray(job.result_json)
           ? withEdgeResponseMarkers(job.result_json as Record<string, unknown>)
           : job.result_json;
       }
       if (job.status === 'failed' && job.error_json) {
         if (normalizedStoredError) {
+          logPredictionSummaryState('poll_recovered_result', 'poll_failed_recovered_result', normalizedStoredError as unknown as Record<string, unknown>, {
+            polledObjectCameFromResultJsonUnchangedExceptMarkers: false,
+          });
           response.status = 'completed';
           response.generatedAt = typeof normalizedStoredError.generatedAt === 'string' ? normalizedStoredError.generatedAt : job.generated_at;
           response.analysisVersion = typeof normalizedStoredError.analysisVersion === 'string' ? normalizedStoredError.analysisVersion : job.analysis_version;
@@ -862,7 +870,7 @@ async function executeN8nAndPersist(opts: {
 
   try {
     console.info(`${LOG_PREFIX} evidence_assembly_start`, { requestId, speciesKey });
-    const resultObj = await buildMapFirstPredictionResult({
+    let resultObj = await buildMapFirstPredictionResult({
       payload,
       speciesKey,
       speciesName,
@@ -871,6 +879,7 @@ async function executeN8nAndPersist(opts: {
       webhookUrl,
       signal: controller.signal,
     });
+    resultObj = finalizePredictionResponse(resultObj, 'persist_main_result');
     const analysisVersion = typeof resultObj.analysisVersion === 'string' ? resultObj.analysisVersion : null;
     const generatedAt = typeof resultObj.generatedAt === 'string' ? resultObj.generatedAt : new Date().toISOString();
 
@@ -879,6 +888,9 @@ async function executeN8nAndPersist(opts: {
       speciesKey,
       analysisVersion,
       generatedAt,
+    });
+    logPredictionSummaryState('before_persist', 'persist_main_result', resultObj, {
+      persistedObjectIsFinalizedObject: true,
     });
 
     await admin.from('prediction_jobs').update({
@@ -892,19 +904,25 @@ async function executeN8nAndPersist(opts: {
   } catch (err) {
     const isAbort = err instanceof DOMException && err.name === 'AbortError';
     const upstreamError = normalizePredictionError(err, webhookTarget);
-    const recoveredResult = upstreamError
+    let recoveredResult = upstreamError
       ? buildCleanPredictionResult(upstreamError.upstreamBody, {
         speciesKey,
         speciesName,
         scope: typeof payload.scope === 'string' ? payload.scope : 'linnuliigid',
       })
       : null;
+    if (recoveredResult) recoveredResult = finalizePredictionResponse(recoveredResult as unknown as Record<string, unknown>, 'persist_recovered_result') as unknown as NormalizedUpstreamResponse;
     const errorMessage = isAbort
       ? 'Prediction request timed out'
       : (upstreamError?.message || 'Prediction service evidence assembly error');
     console.error(`${LOG_PREFIX} background_error`, { requestId, isAbort, error: String(err) });
 
     try {
+      if (recoveredResult) {
+        logPredictionSummaryState('before_persist', 'persist_recovered_result', recoveredResult as unknown as Record<string, unknown>, {
+          persistedObjectIsFinalizedObject: true,
+        });
+      }
       await admin.from('prediction_jobs').update(recoveredResult ? {
         status: 'completed',
         result_json: recoveredResult,
@@ -1218,7 +1236,7 @@ async function buildMapFirstPredictionResult(opts: {
       warnings: normalizedN8nResponse.warnings,
     } : null,
   });
-  const response = attachNormalizationMarkers({
+  let canonicalResponse = attachNormalizationMarkers({
     ...baseResult,
     ...(normalizedN8nResponse ? { ok: normalizedN8nResponse.ok, status: normalizedN8nResponse.status, error: normalizedN8nResponse.error } : {}),
     speciesKey: canonical.speciesKey,
@@ -1281,27 +1299,22 @@ async function buildMapFirstPredictionResult(opts: {
       summaryRegeneratedFromStructuredEvidence: canonical.summaryRegeneratedFromStructuredEvidence,
     },
   });
-  const finalizedResponse = finalizeCanonicalResponseSummary(response, {
-    fallbackSummaryOrigin: canonical.summaryOrigin === 'normalized_upstream'
-      ? 'regenerated_from_structured'
-      : canonical.summaryOrigin,
-    fallbackSummary: buildNeutralStructuredEvidenceSummary(canonical.speciesName),
-  });
+  canonicalResponse = finalizePredictionResponse(canonicalResponse, 'main_buildMapFirstPredictionResult');
   console.info(`${LOG_PREFIX} canonical_response`, {
-    species: finalizedResponse.speciesName,
-    insightSummary: finalizedResponse.insightSummary,
-    aiSummary: finalizedResponse.aiSummary,
-    recentCount7d: asRecord(finalizedResponse.estoniaEvidence).recentCount7d,
-    recentCount30d: asRecord(finalizedResponse.estoniaEvidence).recentCount30d,
-    foreignRecentPointsCount: Array.isArray(finalizedResponse.foreignRecentPoints) ? finalizedResponse.foreignRecentPoints.length : 0,
-    foreignClustersCount: Array.isArray(finalizedResponse.foreignClusters) ? finalizedResponse.foreignClusters.length : 0,
-    predictedTargetsCount: Array.isArray(finalizedResponse.predictedTargets) ? finalizedResponse.predictedTargets.length : 0,
-    ebirdAvailable: asRecord(finalizedResponse.sourceHealth).ebirdAvailable,
-    consistencyChecks: finalizedResponse.consistencyChecks,
-    activeEvidenceUsed: asRecord(finalizedResponse.evidenceSummary).activeEvidenceUsed,
-    summaryRegeneratedFromStructuredEvidence: finalizedResponse.summaryRegeneratedFromStructuredEvidence,
+    species: canonicalResponse.speciesName,
+    insightSummary: canonicalResponse.insightSummary,
+    aiSummary: canonicalResponse.aiSummary,
+    recentCount7d: asRecord(canonicalResponse.estoniaEvidence).recentCount7d,
+    recentCount30d: asRecord(canonicalResponse.estoniaEvidence).recentCount30d,
+    foreignRecentPointsCount: Array.isArray(canonicalResponse.foreignRecentPoints) ? canonicalResponse.foreignRecentPoints.length : 0,
+    foreignClustersCount: Array.isArray(canonicalResponse.foreignClusters) ? canonicalResponse.foreignClusters.length : 0,
+    predictedTargetsCount: Array.isArray(canonicalResponse.predictedTargets) ? canonicalResponse.predictedTargets.length : 0,
+    ebirdAvailable: asRecord(canonicalResponse.sourceHealth).ebirdAvailable,
+    consistencyChecks: canonicalResponse.consistencyChecks,
+    activeEvidenceUsed: asRecord(canonicalResponse.evidenceSummary).activeEvidenceUsed,
+    summaryRegeneratedFromStructuredEvidence: canonicalResponse.summaryRegeneratedFromStructuredEvidence,
   });
-  return finalizedResponse;
+  return canonicalResponse;
 }
 
 async function fetchGbifEstoniaHistory(speciesName: string, signal: AbortSignal): Promise<Record<string, unknown>[]> {
@@ -2641,7 +2654,7 @@ function buildCleanPredictionResult(
     originalAiSummarySnippet: buildInsightSummaryPreview(data),
     finalAiSummarySnippet: canonical.insightSummary.slice(0, 160),
   });
-  return {
+  let canonicalResponse: Record<string, unknown> = {
     ...guarded,
     speciesKey: canonical.speciesKey,
     speciesName: canonical.speciesName,
@@ -2686,6 +2699,8 @@ function buildCleanPredictionResult(
     consistencyChecks: canonical.consistencyChecks,
     summaryRegeneratedFromStructuredEvidence: canonical.summaryRegeneratedFromStructuredEvidence,
   };
+  canonicalResponse = finalizePredictionResponse(canonicalResponse, 'recovery_buildCleanPredictionResult');
+  return canonicalResponse as NormalizedUpstreamResponse;
 }
 
 function normalizeN8nPredictionSuccessPayload(data: unknown): NormalizedUpstreamResponse | null {
@@ -2846,7 +2861,7 @@ function enrichPredictionResult(
       warnings: Array.isArray(assembled.warnings) ? assembled.warnings.map((item) => String(item || '')) : [],
     },
   });
-  const response = attachNormalizationMarkers({
+  let canonicalResponse = attachNormalizationMarkers({
     ...assembled,
     speciesKey: canonical.speciesKey,
     speciesName: canonical.speciesName,
@@ -2909,27 +2924,22 @@ function enrichPredictionResult(
       summaryRegeneratedFromStructuredEvidence: canonical.summaryRegeneratedFromStructuredEvidence,
     },
   });
-  const finalizedResponse = finalizeCanonicalResponseSummary(response, {
-    fallbackSummaryOrigin: canonical.summaryOrigin === 'normalized_upstream'
-      ? 'regenerated_from_structured'
-      : canonical.summaryOrigin,
-    fallbackSummary: buildNeutralStructuredEvidenceSummary(canonical.speciesName),
-  });
+  canonicalResponse = finalizePredictionResponse(canonicalResponse, 'enrichPredictionResult');
   console.info(`${LOG_PREFIX} canonical_response`, {
-    species: finalizedResponse.speciesName,
-    insightSummary: finalizedResponse.insightSummary,
-    aiSummary: finalizedResponse.aiSummary,
-    recentCount7d: asRecord(finalizedResponse.estoniaEvidence).recentCount7d,
-    recentCount30d: asRecord(finalizedResponse.estoniaEvidence).recentCount30d,
-    foreignRecentPointsCount: Array.isArray(finalizedResponse.foreignRecentPoints) ? finalizedResponse.foreignRecentPoints.length : 0,
-    foreignClustersCount: Array.isArray(finalizedResponse.foreignClusters) ? finalizedResponse.foreignClusters.length : 0,
-    predictedTargetsCount: Array.isArray(finalizedResponse.predictedTargets) ? finalizedResponse.predictedTargets.length : 0,
-    ebirdAvailable: asRecord(finalizedResponse.sourceHealth).ebirdAvailable,
-    consistencyChecks: finalizedResponse.consistencyChecks,
-    activeEvidenceUsed: asRecord(finalizedResponse.evidenceSummary).activeEvidenceUsed,
-    summaryRegeneratedFromStructuredEvidence: finalizedResponse.summaryRegeneratedFromStructuredEvidence,
+    species: canonicalResponse.speciesName,
+    insightSummary: canonicalResponse.insightSummary,
+    aiSummary: canonicalResponse.aiSummary,
+    recentCount7d: asRecord(canonicalResponse.estoniaEvidence).recentCount7d,
+    recentCount30d: asRecord(canonicalResponse.estoniaEvidence).recentCount30d,
+    foreignRecentPointsCount: Array.isArray(canonicalResponse.foreignRecentPoints) ? canonicalResponse.foreignRecentPoints.length : 0,
+    foreignClustersCount: Array.isArray(canonicalResponse.foreignClusters) ? canonicalResponse.foreignClusters.length : 0,
+    predictedTargetsCount: Array.isArray(canonicalResponse.predictedTargets) ? canonicalResponse.predictedTargets.length : 0,
+    ebirdAvailable: asRecord(canonicalResponse.sourceHealth).ebirdAvailable,
+    consistencyChecks: canonicalResponse.consistencyChecks,
+    activeEvidenceUsed: asRecord(canonicalResponse.evidenceSummary).activeEvidenceUsed,
+    summaryRegeneratedFromStructuredEvidence: canonicalResponse.summaryRegeneratedFromStructuredEvidence,
   });
-  return finalizedResponse;
+  return canonicalResponse;
 }
 
 function buildForeignEvidence(rows: unknown[]): Record<string, unknown>[] {
@@ -3582,43 +3592,54 @@ function buildNeutralStructuredEvidenceSummary(speciesName: string): Pick<Canoni
   };
 }
 
-function sanitizeSummaryAgainstEvidence(response: Record<string, unknown>): Record<string, unknown> {
-  const estoniaEvidence = asRecord(response.estoniaEvidence);
-  const sourceHealth = asRecord(response.sourceHealth);
-  const recent7d = Math.max(0, Math.round(toNumber(estoniaEvidence.recentCount7d)));
-  const foreignPointCount = Array.isArray(response.foreignRecentPoints) ? response.foreignRecentPoints.length : 0;
-  const foreignClusterCount = Array.isArray(response.foreignClusters) ? response.foreignClusters.length : 0;
-  const predictedCount = Array.isArray(response.predictedTargets) ? response.predictedTargets.length : 0;
-  const insightSummary = stringOr(response.insightSummary);
-  const invalidAlreadyPresent = /ALREADY PRESENT/i.test(insightSummary) && recent7d <= 0;
-  const invalidForeignNarrative = /(PL|SE|FI|Poland|Sweden|Finland|Mikoszewo|Kalmar|Helsinki|foreign pressure)/i.test(insightSummary)
-    && foreignPointCount === 0
-    && foreignClusterCount === 0;
-  const invalidHotspotNarrative = /(S(?:\u00E4|a)\u00E4re|Ristna|P(?:\u00F5|o)\u00F5saspea|hotspot|ranking)/i.test(insightSummary)
-    && predictedCount === 0
-    && recent7d === 0;
-  const invalidForeignPressureClaim = /foreign pressure|eBird|Poland|Sweden|Finland|\bPL\b|\bSE\b|\bFI\b/i.test(insightSummary)
-    && sourceHealth.ebirdAvailable === false
-    && foreignPointCount === 0
-    && foreignClusterCount === 0;
-  const invalid = invalidAlreadyPresent || invalidForeignNarrative || invalidHotspotNarrative || invalidForeignPressureClaim;
-  if (!invalid) return response;
+function logPredictionSummaryState(label: string, branch: string, response: Record<string, unknown>, extra: Record<string, unknown> = {}): void {
+  console.info(`${LOG_PREFIX} ${label}`, {
+    branch,
+    insightSummary: stringOr(response.insightSummary),
+    aiSummary: stringOr(response.aiSummary),
+    rawResearchPayloadAiSummary: stringOr(asRecord(response.rawResearchPayload).aiSummary),
+    recentCount7d: toNumber(asRecord(response.estoniaEvidence).recentCount7d),
+    foreignRecentPointsCount: Array.isArray(response.foreignRecentPoints) ? response.foreignRecentPoints.length : 0,
+    foreignClustersCount: Array.isArray(response.foreignClusters) ? response.foreignClusters.length : 0,
+    predictedTargetsCount: Array.isArray(response.predictedTargets) ? response.predictedTargets.length : 0,
+    ...extra,
+  });
+}
 
-  const fallback =
-    'Structured evidence is currently unavailable or incomplete for this species, so recent Estonia presence, foreign pressure, and hotspot ranking could not be confirmed from the final response payload.';
-  const rawResearchPayload = asRecord(response.rawResearchPayload);
-  return {
-    ...response,
-    insightSummary: fallback,
-    aiSummary: fallback,
-    rawResearchPayload: {
-      ...rawResearchPayload,
-      insightSummary: fallback,
-      aiSummary: fallback,
-    },
-    summaryOrigin: 'neutral_sanitizer_fallback',
-    summaryRegeneratedFromStructuredEvidence: true,
-  };
+function sanitizeSummaryAgainstEvidence(response: Record<string, unknown>): Record<string, unknown> {
+  const recent7d = response?.estoniaEvidence && typeof response.estoniaEvidence === 'object'
+    ? (asRecord(response.estoniaEvidence).recentCount7d ?? 0)
+    : 0;
+  const foreignPointCount = Array.isArray(response?.foreignRecentPoints) ? response.foreignRecentPoints.length : 0;
+  const foreignClusterCount = Array.isArray(response?.foreignClusters) ? response.foreignClusters.length : 0;
+  const predictedCount = Array.isArray(response?.predictedTargets) ? response.predictedTargets.length : 0;
+  const ebirdAvailable = asRecord(response?.sourceHealth).ebirdAvailable === true;
+  const summary =
+    stringOr(response?.insightSummary)
+    || stringOr(response?.aiSummary)
+    || stringOr(asRecord(response?.rawResearchPayload).aiSummary)
+    || '';
+
+  const invalidAlreadyPresent =
+    /ALREADY PRESENT/i.test(summary) && toNumber(recent7d) <= 0;
+
+  const invalidForeignNarrative =
+    /(PL|SE|FI|Poland|Sweden|Finland|Mikoszewo|Kalmar|Helsinki|Zatoka Pomorska|Hel|Dziwnów)/i.test(summary) &&
+    (!ebirdAvailable || (foreignPointCount === 0 && foreignClusterCount === 0));
+
+  const invalidHotspotNarrative =
+    /(S(?:\u00E4|a)\u00E4re|Ristna|P(?:\u00F5|o)\u00F5saspea|Saaremaa|Hiiu|L(?:\u00E4|a)\u00E4ne counties)/i.test(summary) &&
+    toNumber(recent7d) === 0 &&
+    predictedCount === 0;
+
+  if (invalidAlreadyPresent || invalidForeignNarrative || invalidHotspotNarrative) {
+    response.insightSummary =
+      'Structured evidence is currently incomplete in the final payload, so recent Estonia presence, foreign pressure, and hotspot ranking cannot be confirmed from this response.';
+    response.summaryOrigin = 'neutral_sanitizer_fallback';
+    response.summaryRegeneratedFromStructuredEvidence = true;
+  }
+
+  return response;
 }
 
 function enforceCanonicalSummaryConsistency(
@@ -3708,78 +3729,34 @@ function enforceCanonicalSummaryConsistency(
   };
 }
 
-function finalizeCanonicalResponseSummary(
-  response: Record<string, unknown>,
-  options: {
-    fallbackSummaryOrigin: SummaryOrigin;
-    fallbackSummary: Pick<CanonicalPredictionRecord, 'insightSummary' | 'confidenceNote' | 'rankingNotes' | 'warnings'>;
-  },
+function finalizePredictionResponse(
+  canonicalResponse: Record<string, unknown>,
+  branch: string,
 ): Record<string, unknown> {
-  const estoniaEvidence = asRecord(response.estoniaEvidence);
-  const foreignRecentPoints = Array.isArray(response.foreignRecentPoints) ? response.foreignRecentPoints : [];
-  const foreignClusters = Array.isArray(response.foreignClusters) ? response.foreignClusters : [];
-  const predictedTargets = Array.isArray(response.predictedTargets) ? response.predictedTargets : [];
-  const elurikkusRecentRecords = Array.isArray(response.elurikkusRecentRecords) ? response.elurikkusRecentRecords : [];
-  const rawResearchPayload = asRecord(response.rawResearchPayload);
-  const existingOrigin = stringOr(response.summaryOrigin) as SummaryOrigin || options.fallbackSummaryOrigin;
-  const summaryCheck = canonicalSummaryMatchesEvidence({
-    summary: stringOr(response.insightSummary),
-    estoniaEvidence,
-    foreignRecentPoints,
-    foreignClusters,
-    predictedTargets,
-    elurikkusRecentRecords,
+  logPredictionSummaryState('canonical_response_built', branch, canonicalResponse);
+  const beforeSanitize = canonicalResponse;
+  logPredictionSummaryState('before_sanitize', branch, canonicalResponse);
+  canonicalResponse = sanitizeSummaryAgainstEvidence(canonicalResponse);
+  logPredictionSummaryState('after_sanitize', branch, canonicalResponse, {
+    sameObjectBeforeAfterSanitize: beforeSanitize === canonicalResponse,
   });
-  const chosenSummary = summaryCheck.ok ? {
-    insightSummary: stringOr(response.insightSummary),
-    confidenceNote: stringOr(response.confidenceNote),
-    rankingNotes: stringOr(response.rankingNotes),
-    warnings: Array.isArray(response.warnings) ? response.warnings.map((item) => String(item || '').trim()).filter(Boolean) : [],
-  } : options.fallbackSummary;
-  const preSanitize = {
-    ...response,
-    insightSummary: chosenSummary.insightSummary,
-    aiSummary: chosenSummary.insightSummary,
-    confidenceNote: chosenSummary.confidenceNote,
-    rankingNotes: chosenSummary.rankingNotes,
-    warnings: chosenSummary.warnings,
-    summaryOrigin: summaryCheck.ok ? existingOrigin : options.fallbackSummaryOrigin,
-    summaryRegeneratedFromStructuredEvidence: response.summaryRegeneratedFromStructuredEvidence === true || !summaryCheck.ok,
-    rawResearchPayload: {
-      ...rawResearchPayload,
-      insightSummary: chosenSummary.insightSummary,
-      aiSummary: chosenSummary.insightSummary,
-      confidenceNote: chosenSummary.confidenceNote,
-      rankingNotes: chosenSummary.rankingNotes,
-      warnings: chosenSummary.warnings,
-      summaryRegeneratedFromStructuredEvidence: response.summaryRegeneratedFromStructuredEvidence === true || !summaryCheck.ok,
-    },
-  };
-  const sanitized = sanitizeSummaryAgainstEvidence(preSanitize);
-  const summaryModifiedAfterSanitize = stringOr(sanitized.insightSummary) !== stringOr(preSanitize.insightSummary)
-    || stringOr(asRecord(sanitized.rawResearchPayload).aiSummary) !== stringOr(asRecord(preSanitize.rawResearchPayload).aiSummary);
-  console.info(`${LOG_PREFIX} final_summary_origins`, {
-    species: stringOr(sanitized.speciesName),
-    insightSummaryOrigin: stringOr(sanitized.summaryOrigin) || (summaryCheck.ok ? existingOrigin : options.fallbackSummaryOrigin),
-    aiSummaryOrigin: stringOr(sanitized.summaryOrigin) || (summaryCheck.ok ? existingOrigin : options.fallbackSummaryOrigin),
-    rawResearchPayloadAiSummaryOrigin: stringOr(sanitized.summaryOrigin) || (summaryCheck.ok ? existingOrigin : options.fallbackSummaryOrigin),
-    sanitizeSummaryAgainstEvidenceRan: true,
-    summaryModifiedAfterSanitize,
+
+  const finalSummary =
+    stringOr(canonicalResponse.insightSummary)
+    || stringOr(canonicalResponse.aiSummary)
+    || stringOr(asRecord(canonicalResponse.rawResearchPayload).aiSummary)
+    || '';
+
+  canonicalResponse.insightSummary = finalSummary;
+  canonicalResponse.aiSummary = finalSummary;
+  canonicalResponse.rawResearchPayload = asRecord(canonicalResponse.rawResearchPayload);
+  asRecord(canonicalResponse.rawResearchPayload).aiSummary = finalSummary;
+  asRecord(canonicalResponse.rawResearchPayload).insightSummary = finalSummary;
+
+  logPredictionSummaryState('before_return', branch, canonicalResponse, {
+    returnedObjectIsSanitizedObject: beforeSanitize === canonicalResponse,
   });
-  return {
-    ...sanitized,
-    insightSummary: stringOr(sanitized.insightSummary),
-    aiSummary: stringOr(sanitized.insightSummary),
-    rawResearchPayload: {
-      ...asRecord(sanitized.rawResearchPayload),
-      insightSummary: stringOr(sanitized.insightSummary),
-      aiSummary: stringOr(sanitized.insightSummary),
-      confidenceNote: stringOr(sanitized.confidenceNote),
-      rankingNotes: stringOr(sanitized.rankingNotes),
-      warnings: Array.isArray(sanitized.warnings) ? sanitized.warnings.map((item) => String(item || '').trim()).filter(Boolean) : [],
-      summaryRegeneratedFromStructuredEvidence: sanitized.summaryRegeneratedFromStructuredEvidence === true,
-    },
-  };
+  return canonicalResponse;
 }
 
 function buildCanonicalPredictionRecord(input: {

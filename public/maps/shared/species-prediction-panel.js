@@ -560,7 +560,7 @@
     var html = '';
     var cautionState = evidenceState === 'insufficient' || evidenceState === 'weather_only_insufficient' || evidenceState === 'insufficient_evidence' || evidenceState === 'unavailable';
     html += renderStateCard(cautionState ? 'spp-state-caution' : 'spp-state-success', 'Prediction complete', cautionState ? 'Completed with limited evidence. Interpret the result cautiously.' : 'Rendering the latest backend evidence and target ranking for this species.');
-    html += '<div class="spp-card"><h4>Summary</h4><p class="spp-summary-text">' + escapeHtml(summarySentence(evidenceState, summaryText, result, prediction)) + '</p><div class="spp-grid">' +
+    html += '<div class="spp-card"><h4>Summary</h4><p class="spp-summary-text">' + escapeHtml(summarySentence(summaryText, evidenceState, prediction)) + '</p><div class="spp-grid">' +
       metricCell('Species', prediction.speciesName || state.speciesName || '—') +
       metricCell('Evidence state', prediction.evidenceState || '—') +
       metricCell('Confidence', prediction.confidenceLabel) +
@@ -1179,25 +1179,19 @@
     return items.length ? items.join(', ') : '';
   }
 
-  function summarySentence(evidenceState, summaryText, result, prediction) {
+  function summarySentence(summaryText, evidenceState, prediction) {
     if (summaryText) return summaryText;
     if (evidenceState === 'insufficient' || evidenceState === 'weather_only_insufficient' || evidenceState === 'insufficient_evidence' || evidenceState === 'unavailable') {
       return 'Usable prediction evidence is currently missing. No recent Estonia records, Estonia history clusters, foreign pressure points, or predicted targets were available in this result. Weather alone is not enough to support a meaningful arrival prediction.';
     }
-    var rankingMode = String(result && result.evidenceSummary && result.evidenceSummary.rankingMode || 'estonia_history_only');
-    var evidence = prediction && Array.isArray(prediction.activeEvidenceSources) && prediction.activeEvidenceSources.length
-      ? prediction.activeEvidenceSources.join(', ')
-      : 'None';
-    if (result && result.effectiveRankingMode) {
-      return result.effectiveRankingMode + (evidence && evidence !== 'None' ? ' using ' + evidence + '.' : '.');
+    var evidence = Array.isArray(prediction.activeEvidenceUsed) && prediction.activeEvidenceUsed.length
+      ? prediction.activeEvidenceUsed.join(', ')
+      : '';
+    var rankingMode = String(prediction.rankingMode || '');
+    if (rankingMode && rankingMode !== '—') {
+      return rankingMode + (evidence ? ' using ' + evidence + '.' : '.');
     }
-    if (rankingMode === 'estonia_history_only' || rankingMode === 'estonia_history_plus_weather') {
-      if (result && result.hasUsableEstoniaHistory !== true) {
-        return 'No Estonia history clusters were available to drive ranking in this payload.';
-      }
-      return 'Ranking is based on available Estonia history evidence' + (evidence ? ' using ' + evidence : '') + '.';
-    }
-    return formatRankingMode(rankingMode) + (evidence ? ' using ' + evidence + '.' : '.');
+    return evidence ? 'Ranked using ' + evidence + '.' : 'Prediction complete.';
   }
 
   function formatEvidenceState(value) {
@@ -1397,25 +1391,101 @@
     return result || null;
   }
 
+  function readRecentRecordCoordsJs(record) {
+    if (!record) return null;
+    var coords = (record.coordinates && typeof record.coordinates === 'object') ? record.coordinates : null;
+    var latRaw = (coords && coords.lat != null) ? coords.lat : (record.latitude != null ? record.latitude : (record.lat != null ? record.lat : null));
+    var lonRaw = (coords && coords.lon != null) ? coords.lon : (record.longitude != null ? record.longitude : (record.lon != null ? record.lon : (record.lng != null ? record.lng : null)));
+    var lat = Number(latRaw);
+    var lon = Number(lonRaw);
+    if (!isFinite(lat) || !isFinite(lon)) return null;
+    return { lat: String(latRaw), lon: String(lonRaw) };
+  }
+
+  function readRecentRecordTimestampJs(record) {
+    if (!record) return 0;
+    var raw = String(record.event_datetime_point || record.date || record.eventDate || '');
+    var ts = new Date(raw).getTime();
+    return isFinite(ts) ? ts : 0;
+  }
+
   function normalizePrediction(raw) {
     var root = normalizePredictionPayload(raw) || {};
-    var normalized = root && root.normalizedPrediction ? root.normalizedPrediction : {
-      speciesName: String(root.speciesName || (root.species && root.species.name) || root.speciesKey || '').trim(),
-      evidenceState: String(root.evidenceState || '').trim(),
-      confidenceValue: root.topTarget && typeof root.topTarget.confidence === 'number' ? root.topTarget.confidence : null,
-      confidenceLabel: '—',
-      sourcesContacted: [],
-      rankingMode: '—',
-      activeEvidenceUsed: [],
-      latestEeCoords: '—',
-      latestEeLocality: '—',
-      recentCount7d: 0,
-      recentCount30d: 0,
-      predictedTargets: Array.isArray(root.predictedTargets) ? root.predictedTargets : [],
-      weatherLabel: '—',
-      summaryText: String(root.insightSummary || '').trim()
+    var sourceHealth = (root.sourceHealth && typeof root.sourceHealth === 'object') ? root.sourceHealth : {};
+    var evidenceSummary = (root.evidenceSummary && typeof root.evidenceSummary === 'object') ? root.evidenceSummary : {};
+    var weather = (root.weather && typeof root.weather === 'object') ? root.weather : null;
+    var topTarget = (root.topTarget && typeof root.topTarget === 'object') ? root.topTarget : null;
+
+    var speciesName = String(root.speciesName || (root.species && root.species.name) || root.speciesKey || '').trim();
+    var evidenceState = String(root.evidenceState || '').trim();
+
+    var confidenceValue = (topTarget && typeof topTarget.confidence === 'number' && isFinite(topTarget.confidence)) ? topTarget.confidence : null;
+    var confidenceLabel = typeof confidenceValue === 'number'
+      ? (Math.round(confidenceValue * 100) + '%')
+      : (root.confidenceNote ? String(root.confidenceNote).trim() : '—');
+
+    var rawActiveEvidence = sourceHealth.activeEvidenceUsed || sourceHealth.active_evidence_used;
+    var activeEvidenceUsed = Array.isArray(rawActiveEvidence)
+      ? rawActiveEvidence.filter(Boolean).map(function(x) { return String(x).trim(); }).filter(Boolean)
+      : [];
+
+    var recentCount7d = 0;
+    if (root.recentCount7d != null && isFinite(Number(root.recentCount7d))) {
+      recentCount7d = Math.max(0, Math.min(999999, Math.floor(Number(root.recentCount7d))));
+    } else if (evidenceSummary.recentCount7d != null && isFinite(Number(evidenceSummary.recentCount7d))) {
+      recentCount7d = Math.max(0, Math.min(999999, Math.floor(Number(evidenceSummary.recentCount7d))));
+    }
+
+    var recentCount30d = 0;
+    if (root.recentCount30d != null && isFinite(Number(root.recentCount30d))) {
+      recentCount30d = Math.max(0, Math.min(999999, Math.floor(Number(root.recentCount30d))));
+    } else if (evidenceSummary.recentCount30d != null && isFinite(Number(evidenceSummary.recentCount30d))) {
+      recentCount30d = Math.max(0, Math.min(999999, Math.floor(Number(evidenceSummary.recentCount30d))));
+    }
+
+    var predictedTargets = Array.isArray(root.predictedTargets) ? root.predictedTargets : [];
+    var summaryText = String(root.insightSummary || (root.aiSummary && root.aiSummary.insightSummary) || '').trim();
+
+    var elurikkusRecentRecords = Array.isArray(root.elurikkusRecentRecords) ? root.elurikkusRecentRecords : [];
+    var recordsWithCoords = elurikkusRecentRecords.filter(function(rec) { return !!readRecentRecordCoordsJs(rec); });
+    recordsWithCoords.sort(function(a, b) { return readRecentRecordTimestampJs(b) - readRecentRecordTimestampJs(a); });
+    var freshestRecord = recordsWithCoords[0] || null;
+    var freshestCoords = freshestRecord ? readRecentRecordCoordsJs(freshestRecord) : null;
+    var latestEeCoords = freshestCoords ? (freshestCoords.lat + ', ' + freshestCoords.lon) : '—';
+    var latestEeLocality = freshestRecord ? (String(freshestRecord.locality || freshestRecord.locName || '').trim() || '—') : '—';
+
+    var sourcesContacted = [];
+    if (elurikkusRecentRecords.length || recentCount7d > 0 || recentCount30d > 0 || root.hasRecentEstoniaEvidence === true || sourceHealth.elurikkusAvailable === true)
+      sourcesContacted.push('eElurikkus recent records');
+    if ((Array.isArray(root.estoniaHistoryPoints) && root.estoniaHistoryPoints.length) || (Array.isArray(root.estoniaHistoryClusters) && root.estoniaHistoryClusters.length) || root.hasUsableEstoniaHistory === true || sourceHealth.gbifAvailable === true)
+      sourcesContacted.push('GBIF Estonia history');
+    if ((Array.isArray(root.foreignRecentPoints) && root.foreignRecentPoints.length) || (Array.isArray(root.foreignClusters) && root.foreignClusters.length) || root.hasForeignPressure === true || root.hasUsableForeignPressure === true || sourceHealth.ebirdAvailable === true)
+      sourcesContacted.push('eBird foreign pressure');
+    if (weather && (isFiniteNumber(weather.windSpeedKmh) || isFiniteNumber(weather.windDirectionDeg) || weather.observedAt || weather.source))
+      sourcesContacted.push('Open-Meteo weather');
+
+    var rankingMode = activeEvidenceUsed.length
+      ? activeEvidenceUsed.join(' + ')
+      : (sourcesContacted.length ? sourcesContacted.join(' + ') : '—');
+
+    var weatherLabel = weather ? weatherLine(weather, evidenceSummary) : '—';
+
+    return {
+      speciesName: speciesName,
+      evidenceState: evidenceState,
+      confidenceValue: confidenceValue,
+      confidenceLabel: confidenceLabel,
+      sourcesContacted: sourcesContacted,
+      rankingMode: rankingMode,
+      activeEvidenceUsed: activeEvidenceUsed,
+      latestEeCoords: latestEeCoords,
+      latestEeLocality: latestEeLocality,
+      recentCount7d: recentCount7d,
+      recentCount30d: recentCount30d,
+      predictedTargets: predictedTargets,
+      weatherLabel: weatherLabel,
+      summaryText: summaryText,
     };
-    return normalized;
   }
 
   function toTitleCase(value) {

@@ -17,7 +17,6 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
 import { type MapScope, loadSpeciesVisibility, saveSpeciesVisibility, loadLocalHidden } from '@/lib/speciesVisibility';
 import { getSpeciesScopeByMapId, SPECIES_PREDICTION_EVENT_TYPES, type SpeciesPredictionRequestPayload } from '@/lib/speciesPrediction';
-import { normalizePrediction } from '@/lib/speciesPrediction';
 import { loadSpeciesPredictionSettings } from '@/lib/speciesPredictionSettings';
 import { runSpeciesPredictionRequest } from '@/lib/speciesPredictionRunner';
 import { isSpeciesPredictionEnabled } from '@/lib/settings';
@@ -66,7 +65,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   const mapScope = MAP_ID_TO_SCOPE[current.id] as MapScope | undefined;
   const speciesScope = current.id === 'rariliin' ? RARILIIN_SCOPE : LINNULIIGID_SCOPE;
   const canEditKevadranne = isAdmin || hasPermission(PERMISSIONS.kevadranneEdit);
-  const speciesPredictionRuntimeMarker = `${APP_VERSION}|panel-runtime-c92cfa2`;
+  const speciesPredictionRuntimeMarker = `${APP_VERSION}|panel-runtime-fix001`;
   const iframeSrc = useMemo(() => {
     const proxyBase = resolveProxyBase();
     const params = new URLSearchParams();
@@ -509,13 +508,9 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
                 reason: point.reason,
               })),
             });
-            const normalizedPrediction = normalizePrediction(response.result);
             const iframePayload = {
               type: SPECIES_PREDICTION_EVENT_TYPES.result,
-              result: {
-                ...response.result,
-                normalizedPrediction,
-              },
+              result: response.result,
             };
             setSpeciesPredictionDebugPanelPayload(iframePayload.result);
             updateSpeciesPredictionTransport({

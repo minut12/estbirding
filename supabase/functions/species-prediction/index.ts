@@ -180,8 +180,15 @@ type NormalizedUpstreamResponse = {
   effectiveRankingMode: string;
   summaryGuardrailApplied: boolean;
   summaryGuardrailReason: string;
+  summaryOrigin?: SummaryOrigin;
   raw: Record<string, unknown>;
 };
+
+type SummaryOrigin =
+  | 'normalized_upstream'
+  | 'deterministic_structured'
+  | 'regenerated_from_structured'
+  | 'neutral_sanitizer_fallback';
 
 type CanonicalPredictionRecord = {
   speciesKey: string;
@@ -222,6 +229,7 @@ type CanonicalPredictionRecord = {
   warnings: string[];
   summaryGuardrailApplied: boolean;
   summaryGuardrailReason: string;
+  summaryOrigin: SummaryOrigin;
   consistencyChecks: {
     routeLooksPlausible: boolean;
     timingLooksPlausible: boolean;
@@ -1251,6 +1259,7 @@ async function buildMapFirstPredictionResult(opts: {
     rankingNotes: canonical.rankingNotes,
     warnings: canonical.warnings,
     consistencyChecks: canonical.consistencyChecks,
+    summaryOrigin: canonical.summaryOrigin,
     summaryRegeneratedFromStructuredEvidence: canonical.summaryRegeneratedFromStructuredEvidence,
     mapLayers: canonical.mapLayers,
     mapLayersDefault: canonical.mapLayersDefault,
@@ -1272,21 +1281,27 @@ async function buildMapFirstPredictionResult(opts: {
       summaryRegeneratedFromStructuredEvidence: canonical.summaryRegeneratedFromStructuredEvidence,
     },
   });
-  console.info(`${LOG_PREFIX} canonical_response`, {
-    species: response.speciesName,
-    insightSummary: response.insightSummary,
-    aiSummary: response.aiSummary,
-    recentCount7d: asRecord(response.estoniaEvidence).recentCount7d,
-    recentCount30d: asRecord(response.estoniaEvidence).recentCount30d,
-    foreignRecentPointsCount: Array.isArray(response.foreignRecentPoints) ? response.foreignRecentPoints.length : 0,
-    foreignClustersCount: Array.isArray(response.foreignClusters) ? response.foreignClusters.length : 0,
-    predictedTargetsCount: Array.isArray(response.predictedTargets) ? response.predictedTargets.length : 0,
-    ebirdAvailable: asRecord(response.sourceHealth).ebirdAvailable,
-    consistencyChecks: response.consistencyChecks,
-    activeEvidenceUsed: asRecord(response.evidenceSummary).activeEvidenceUsed,
-    summaryRegeneratedFromStructuredEvidence: response.summaryRegeneratedFromStructuredEvidence,
+  const finalizedResponse = finalizeCanonicalResponseSummary(response, {
+    fallbackSummaryOrigin: canonical.summaryOrigin === 'normalized_upstream'
+      ? 'regenerated_from_structured'
+      : canonical.summaryOrigin,
+    fallbackSummary: buildNeutralStructuredEvidenceSummary(canonical.speciesName),
   });
-  return response;
+  console.info(`${LOG_PREFIX} canonical_response`, {
+    species: finalizedResponse.speciesName,
+    insightSummary: finalizedResponse.insightSummary,
+    aiSummary: finalizedResponse.aiSummary,
+    recentCount7d: asRecord(finalizedResponse.estoniaEvidence).recentCount7d,
+    recentCount30d: asRecord(finalizedResponse.estoniaEvidence).recentCount30d,
+    foreignRecentPointsCount: Array.isArray(finalizedResponse.foreignRecentPoints) ? finalizedResponse.foreignRecentPoints.length : 0,
+    foreignClustersCount: Array.isArray(finalizedResponse.foreignClusters) ? finalizedResponse.foreignClusters.length : 0,
+    predictedTargetsCount: Array.isArray(finalizedResponse.predictedTargets) ? finalizedResponse.predictedTargets.length : 0,
+    ebirdAvailable: asRecord(finalizedResponse.sourceHealth).ebirdAvailable,
+    consistencyChecks: finalizedResponse.consistencyChecks,
+    activeEvidenceUsed: asRecord(finalizedResponse.evidenceSummary).activeEvidenceUsed,
+    summaryRegeneratedFromStructuredEvidence: finalizedResponse.summaryRegeneratedFromStructuredEvidence,
+  });
+  return finalizedResponse;
 }
 
 async function fetchGbifEstoniaHistory(speciesName: string, signal: AbortSignal): Promise<Record<string, unknown>[]> {
@@ -2667,6 +2682,7 @@ function buildCleanPredictionResult(
     warnings: canonical.warnings,
     summaryGuardrailApplied: canonical.summaryGuardrailApplied,
     summaryGuardrailReason: canonical.summaryGuardrailReason,
+    summaryOrigin: canonical.summaryOrigin,
     consistencyChecks: canonical.consistencyChecks,
     summaryRegeneratedFromStructuredEvidence: canonical.summaryRegeneratedFromStructuredEvidence,
   };
@@ -2872,6 +2888,7 @@ function enrichPredictionResult(
     warnings: canonical.warnings,
     summaryGuardrailApplied: canonical.summaryGuardrailApplied,
     summaryGuardrailReason: canonical.summaryGuardrailReason,
+    summaryOrigin: canonical.summaryOrigin,
     consistencyChecks: canonical.consistencyChecks,
     summaryRegeneratedFromStructuredEvidence: canonical.summaryRegeneratedFromStructuredEvidence,
     rawResearchPayload: {
@@ -2892,21 +2909,27 @@ function enrichPredictionResult(
       summaryRegeneratedFromStructuredEvidence: canonical.summaryRegeneratedFromStructuredEvidence,
     },
   });
-  console.info(`${LOG_PREFIX} canonical_response`, {
-    species: response.speciesName,
-    insightSummary: response.insightSummary,
-    aiSummary: response.aiSummary,
-    recentCount7d: asRecord(response.estoniaEvidence).recentCount7d,
-    recentCount30d: asRecord(response.estoniaEvidence).recentCount30d,
-    foreignRecentPointsCount: Array.isArray(response.foreignRecentPoints) ? response.foreignRecentPoints.length : 0,
-    foreignClustersCount: Array.isArray(response.foreignClusters) ? response.foreignClusters.length : 0,
-    predictedTargetsCount: Array.isArray(response.predictedTargets) ? response.predictedTargets.length : 0,
-    ebirdAvailable: asRecord(response.sourceHealth).ebirdAvailable,
-    consistencyChecks: response.consistencyChecks,
-    activeEvidenceUsed: asRecord(response.evidenceSummary).activeEvidenceUsed,
-    summaryRegeneratedFromStructuredEvidence: response.summaryRegeneratedFromStructuredEvidence,
+  const finalizedResponse = finalizeCanonicalResponseSummary(response, {
+    fallbackSummaryOrigin: canonical.summaryOrigin === 'normalized_upstream'
+      ? 'regenerated_from_structured'
+      : canonical.summaryOrigin,
+    fallbackSummary: buildNeutralStructuredEvidenceSummary(canonical.speciesName),
   });
-  return response;
+  console.info(`${LOG_PREFIX} canonical_response`, {
+    species: finalizedResponse.speciesName,
+    insightSummary: finalizedResponse.insightSummary,
+    aiSummary: finalizedResponse.aiSummary,
+    recentCount7d: asRecord(finalizedResponse.estoniaEvidence).recentCount7d,
+    recentCount30d: asRecord(finalizedResponse.estoniaEvidence).recentCount30d,
+    foreignRecentPointsCount: Array.isArray(finalizedResponse.foreignRecentPoints) ? finalizedResponse.foreignRecentPoints.length : 0,
+    foreignClustersCount: Array.isArray(finalizedResponse.foreignClusters) ? finalizedResponse.foreignClusters.length : 0,
+    predictedTargetsCount: Array.isArray(finalizedResponse.predictedTargets) ? finalizedResponse.predictedTargets.length : 0,
+    ebirdAvailable: asRecord(finalizedResponse.sourceHealth).ebirdAvailable,
+    consistencyChecks: finalizedResponse.consistencyChecks,
+    activeEvidenceUsed: asRecord(finalizedResponse.evidenceSummary).activeEvidenceUsed,
+    summaryRegeneratedFromStructuredEvidence: finalizedResponse.summaryRegeneratedFromStructuredEvidence,
+  });
+  return finalizedResponse;
 }
 
 function buildForeignEvidence(rows: unknown[]): Record<string, unknown>[] {
@@ -3418,7 +3441,20 @@ function buildCanonicalSummaryFromEvidence(input: {
   const freshestLocalities = Array.isArray(input.estoniaEvidence.freshestLocalities) ? input.estoniaEvidence.freshestLocalities.map((item) => stringOr(item)).filter(Boolean) : [];
   const latestLocality = stringOr(input.estoniaEvidence.latestEstoniaLocality, freshestLocalities[0]);
   const targetNames = (input.predictedTargets || []).map((item) => stringOr(asRecord(item).displayName, asRecord(item).name)).filter(Boolean);
-  const countryNames = Array.from(new Set(input.foreignEvidence.map((entry) => stringOr(entry.countryName, entry.countryCode)).filter(Boolean)));
+  const countryNamesFromPoints = input.foreignRecentPoints
+    .map((item) => stringOr(asRecord(item).countryName, asRecord(item).country, asRecord(item).countryCode))
+    .filter(Boolean);
+  const countryNamesFromClusters = input.foreignClusters
+    .flatMap((item) => {
+      const cluster = asRecord(item);
+      const countries = Array.isArray(cluster.countries) ? cluster.countries.map((entry) => stringOr(entry)).filter(Boolean) : [];
+      const countryCodes = Array.isArray(cluster.countryCodes) ? cluster.countryCodes.map((entry) => stringOr(entry)).filter(Boolean) : [];
+      return [...countries, ...countryCodes];
+    });
+  const countryNamesFromEvidence = input.foreignRecentPoints.length || input.foreignClusters.length
+    ? input.foreignEvidence.map((entry) => stringOr(entry.countryName, entry.countryCode)).filter(Boolean)
+    : [];
+  const countryNames = Array.from(new Set([...countryNamesFromPoints, ...countryNamesFromClusters, ...countryNamesFromEvidence]));
   const warnings = new Set<string>();
   if (!input.foreignRecentPoints.length && !input.foreignClusters.length) warnings.add('No foreign pressure detected in canonical evidence.');
   if (!input.predictedTargets.length) warnings.add('No predicted targets returned from canonical evidence.');
@@ -3546,6 +3582,45 @@ function buildNeutralStructuredEvidenceSummary(speciesName: string): Pick<Canoni
   };
 }
 
+function sanitizeSummaryAgainstEvidence(response: Record<string, unknown>): Record<string, unknown> {
+  const estoniaEvidence = asRecord(response.estoniaEvidence);
+  const sourceHealth = asRecord(response.sourceHealth);
+  const recent7d = Math.max(0, Math.round(toNumber(estoniaEvidence.recentCount7d)));
+  const foreignPointCount = Array.isArray(response.foreignRecentPoints) ? response.foreignRecentPoints.length : 0;
+  const foreignClusterCount = Array.isArray(response.foreignClusters) ? response.foreignClusters.length : 0;
+  const predictedCount = Array.isArray(response.predictedTargets) ? response.predictedTargets.length : 0;
+  const insightSummary = stringOr(response.insightSummary);
+  const invalidAlreadyPresent = /ALREADY PRESENT/i.test(insightSummary) && recent7d <= 0;
+  const invalidForeignNarrative = /(PL|SE|FI|Poland|Sweden|Finland|Mikoszewo|Kalmar|Helsinki|foreign pressure)/i.test(insightSummary)
+    && foreignPointCount === 0
+    && foreignClusterCount === 0;
+  const invalidHotspotNarrative = /(S(?:\u00E4|a)\u00E4re|Ristna|P(?:\u00F5|o)\u00F5saspea|hotspot|ranking)/i.test(insightSummary)
+    && predictedCount === 0
+    && recent7d === 0;
+  const invalidForeignPressureClaim = /foreign pressure|eBird|Poland|Sweden|Finland|\bPL\b|\bSE\b|\bFI\b/i.test(insightSummary)
+    && sourceHealth.ebirdAvailable === false
+    && foreignPointCount === 0
+    && foreignClusterCount === 0;
+  const invalid = invalidAlreadyPresent || invalidForeignNarrative || invalidHotspotNarrative || invalidForeignPressureClaim;
+  if (!invalid) return response;
+
+  const fallback =
+    'Structured evidence is currently unavailable or incomplete for this species, so recent Estonia presence, foreign pressure, and hotspot ranking could not be confirmed from the final response payload.';
+  const rawResearchPayload = asRecord(response.rawResearchPayload);
+  return {
+    ...response,
+    insightSummary: fallback,
+    aiSummary: fallback,
+    rawResearchPayload: {
+      ...rawResearchPayload,
+      insightSummary: fallback,
+      aiSummary: fallback,
+    },
+    summaryOrigin: 'neutral_sanitizer_fallback',
+    summaryRegeneratedFromStructuredEvidence: true,
+  };
+}
+
 function enforceCanonicalSummaryConsistency(
   canonical: CanonicalPredictionRecord,
 ): CanonicalPredictionRecord {
@@ -3616,6 +3691,9 @@ function enforceCanonicalSummaryConsistency(
     predictedTargets: canonical.predictedTargets,
     elurikkusRecentRecords: canonical.elurikkusRecentRecords,
   }).ok ? rebuilt : buildNeutralStructuredEvidenceSummary(canonical.speciesName);
+  const enforcedOrigin: SummaryOrigin = enforcedSummary.insightSummary === rebuilt.insightSummary
+    ? 'regenerated_from_structured'
+    : 'neutral_sanitizer_fallback';
   return {
     ...canonical,
     insightSummary: enforcedSummary.insightSummary,
@@ -3624,8 +3702,83 @@ function enforceCanonicalSummaryConsistency(
     warnings: enforcedSummary.warnings,
     summaryGuardrailApplied: true,
     summaryGuardrailReason: Array.from(new Set([...summaryCheck.reasons, ...failedConsistencyKeys, canonical.summaryGuardrailReason].filter(Boolean))).join(','),
+    summaryOrigin: enforcedOrigin,
     consistencyChecks,
     summaryRegeneratedFromStructuredEvidence: true,
+  };
+}
+
+function finalizeCanonicalResponseSummary(
+  response: Record<string, unknown>,
+  options: {
+    fallbackSummaryOrigin: SummaryOrigin;
+    fallbackSummary: Pick<CanonicalPredictionRecord, 'insightSummary' | 'confidenceNote' | 'rankingNotes' | 'warnings'>;
+  },
+): Record<string, unknown> {
+  const estoniaEvidence = asRecord(response.estoniaEvidence);
+  const foreignRecentPoints = Array.isArray(response.foreignRecentPoints) ? response.foreignRecentPoints : [];
+  const foreignClusters = Array.isArray(response.foreignClusters) ? response.foreignClusters : [];
+  const predictedTargets = Array.isArray(response.predictedTargets) ? response.predictedTargets : [];
+  const elurikkusRecentRecords = Array.isArray(response.elurikkusRecentRecords) ? response.elurikkusRecentRecords : [];
+  const rawResearchPayload = asRecord(response.rawResearchPayload);
+  const existingOrigin = stringOr(response.summaryOrigin) as SummaryOrigin || options.fallbackSummaryOrigin;
+  const summaryCheck = canonicalSummaryMatchesEvidence({
+    summary: stringOr(response.insightSummary),
+    estoniaEvidence,
+    foreignRecentPoints,
+    foreignClusters,
+    predictedTargets,
+    elurikkusRecentRecords,
+  });
+  const chosenSummary = summaryCheck.ok ? {
+    insightSummary: stringOr(response.insightSummary),
+    confidenceNote: stringOr(response.confidenceNote),
+    rankingNotes: stringOr(response.rankingNotes),
+    warnings: Array.isArray(response.warnings) ? response.warnings.map((item) => String(item || '').trim()).filter(Boolean) : [],
+  } : options.fallbackSummary;
+  const preSanitize = {
+    ...response,
+    insightSummary: chosenSummary.insightSummary,
+    aiSummary: chosenSummary.insightSummary,
+    confidenceNote: chosenSummary.confidenceNote,
+    rankingNotes: chosenSummary.rankingNotes,
+    warnings: chosenSummary.warnings,
+    summaryOrigin: summaryCheck.ok ? existingOrigin : options.fallbackSummaryOrigin,
+    summaryRegeneratedFromStructuredEvidence: response.summaryRegeneratedFromStructuredEvidence === true || !summaryCheck.ok,
+    rawResearchPayload: {
+      ...rawResearchPayload,
+      insightSummary: chosenSummary.insightSummary,
+      aiSummary: chosenSummary.insightSummary,
+      confidenceNote: chosenSummary.confidenceNote,
+      rankingNotes: chosenSummary.rankingNotes,
+      warnings: chosenSummary.warnings,
+      summaryRegeneratedFromStructuredEvidence: response.summaryRegeneratedFromStructuredEvidence === true || !summaryCheck.ok,
+    },
+  };
+  const sanitized = sanitizeSummaryAgainstEvidence(preSanitize);
+  const summaryModifiedAfterSanitize = stringOr(sanitized.insightSummary) !== stringOr(preSanitize.insightSummary)
+    || stringOr(asRecord(sanitized.rawResearchPayload).aiSummary) !== stringOr(asRecord(preSanitize.rawResearchPayload).aiSummary);
+  console.info(`${LOG_PREFIX} final_summary_origins`, {
+    species: stringOr(sanitized.speciesName),
+    insightSummaryOrigin: stringOr(sanitized.summaryOrigin) || (summaryCheck.ok ? existingOrigin : options.fallbackSummaryOrigin),
+    aiSummaryOrigin: stringOr(sanitized.summaryOrigin) || (summaryCheck.ok ? existingOrigin : options.fallbackSummaryOrigin),
+    rawResearchPayloadAiSummaryOrigin: stringOr(sanitized.summaryOrigin) || (summaryCheck.ok ? existingOrigin : options.fallbackSummaryOrigin),
+    sanitizeSummaryAgainstEvidenceRan: true,
+    summaryModifiedAfterSanitize,
+  });
+  return {
+    ...sanitized,
+    insightSummary: stringOr(sanitized.insightSummary),
+    aiSummary: stringOr(sanitized.insightSummary),
+    rawResearchPayload: {
+      ...asRecord(sanitized.rawResearchPayload),
+      insightSummary: stringOr(sanitized.insightSummary),
+      aiSummary: stringOr(sanitized.insightSummary),
+      confidenceNote: stringOr(sanitized.confidenceNote),
+      rankingNotes: stringOr(sanitized.rankingNotes),
+      warnings: Array.isArray(sanitized.warnings) ? sanitized.warnings.map((item) => String(item || '').trim()).filter(Boolean) : [],
+      summaryRegeneratedFromStructuredEvidence: sanitized.summaryRegeneratedFromStructuredEvidence === true,
+    },
   };
 }
 
@@ -3694,6 +3847,9 @@ function buildCanonicalPredictionRecord(input: {
     });
   }
   const summary = summaryCheck.ok ? preferredSummary : deterministicSummary;
+  const summaryOrigin: SummaryOrigin = summaryCheck.ok && input.preferredSummary
+    ? 'normalized_upstream'
+    : 'deterministic_structured';
   return enforceCanonicalSummaryConsistency({
     speciesKey: stringOr(chosen.speciesKey, asRecord(chosen.species).speciesKey, asRecord(chosen.species).key),
     speciesName: stringOr(chosen.speciesName, asRecord(chosen.species).speciesName, asRecord(chosen.species).name),
@@ -3733,6 +3889,7 @@ function buildCanonicalPredictionRecord(input: {
     warnings: summary.warnings,
     summaryGuardrailApplied: !summaryCheck.ok,
     summaryGuardrailReason: !summaryCheck.ok ? summaryCheck.reasons.join(',') : '',
+    summaryOrigin,
     consistencyChecks: {
       routeLooksPlausible: true,
       timingLooksPlausible: true,

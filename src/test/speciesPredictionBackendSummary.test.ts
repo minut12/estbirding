@@ -15,6 +15,9 @@ type BackendHooks = {
   withEdgeResponseMarkers: (
     body: Record<string, unknown>,
   ) => Record<string, unknown>;
+  SPECIES_PREDICTION_BACKEND_BUILD: string;
+  INVOKE_ROUTE_VERSION: string;
+  EDGE_RESPONSE_PROOF: string;
   buildNeutralStructuredEvidenceSummary: (speciesName: string) => {
     insightSummary: string;
     confidenceNote: string;
@@ -32,6 +35,9 @@ globalThis.__speciesPredictionBackendTestHooks = {
   finalizePredictionResponse,
   sanitizeSummaryAgainstEvidence,
   withEdgeResponseMarkers,
+  SPECIES_PREDICTION_BACKEND_BUILD,
+  INVOKE_ROUTE_VERSION,
+  EDGE_RESPONSE_PROOF,
   buildNeutralStructuredEvidenceSummary,
 };
 `;
@@ -238,5 +244,14 @@ describe("species-prediction backend summary finalizer", () => {
     expect(String(polled.insightSummary)).not.toMatch(/ALREADY PRESENT|Helsinki/i);
     expect(polled.aiSummary).toBe(polled.insightSummary);
     expect((polled.rawResearchPayload as Record<string, unknown>).aiSummary).toBe(polled.insightSummary);
+  });
+
+  it("marks finalized payloads with current backend source identity fields", () => {
+    const finalized = hooks.finalizePredictionResponse(buildBaseResponse(), "test_source_markers");
+    const wrapped = hooks.withEdgeResponseMarkers(finalized);
+
+    expect(wrapped.backendBuild).toBe(hooks.SPECIES_PREDICTION_BACKEND_BUILD);
+    expect(wrapped.invokeRouteVersion).toBe(hooks.INVOKE_ROUTE_VERSION);
+    expect(wrapped.responseProof).toBe(hooks.EDGE_RESPONSE_PROOF);
   });
 });

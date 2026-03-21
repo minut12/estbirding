@@ -706,13 +706,22 @@ serve(async (req) => {
 
       if (job.status === 'completed' && job.result_json) {
         if (typeof job.result_json === 'object' && job.result_json && !Array.isArray(job.result_json)) {
-          logPredictionSummaryState('poll_read_result_json', 'poll_completed_result', job.result_json as Record<string, unknown>, {
-            polledObjectCameFromResultJsonUnchangedExceptMarkers: true,
+          const storedResult = job.result_json as Record<string, unknown>;
+          const needsDefensiveFinalization = stringOr(storedResult.backendBuild) !== SPECIES_PREDICTION_BACKEND_BUILD
+            || stringOr(storedResult.invokeRouteVersion) !== INVOKE_ROUTE_VERSION
+            || stringOr(storedResult.responseProof) !== EDGE_RESPONSE_PROOF
+            || !stringOr(storedResult.summaryOrigin);
+          logPredictionSummaryState('poll_read_result_json', 'poll_completed_result', storedResult, {
+            polledObjectCameFromResultJsonUnchangedExceptMarkers: !needsDefensiveFinalization,
+            needsDefensiveFinalization,
           });
+          const polledResult = needsDefensiveFinalization
+            ? finalizePredictionResponse(withEdgeResponseMarkers(storedResult), 'poll_completed_result_defensive')
+            : storedResult;
+          response.result = withEdgeResponseMarkers(polledResult);
+        } else {
+          response.result = job.result_json;
         }
-        response.result = typeof job.result_json === 'object' && job.result_json && !Array.isArray(job.result_json)
-          ? withEdgeResponseMarkers(job.result_json as Record<string, unknown>)
-          : job.result_json;
       }
       if (job.status === 'failed' && job.error_json) {
         if (normalizedStoredError) {

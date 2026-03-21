@@ -411,6 +411,11 @@ export type SpeciesPredictionResult = {
   effectiveRankingMode?: string;
   summaryGuardrailApplied?: boolean;
   summaryGuardrailReason?: string;
+  summaryOrigin?: string;
+  backendBuild?: string;
+  invokeRouteVersion?: string;
+  responseProof?: string;
+  payloadSourceState?: 'current_finalized_backend_output' | 'legacy_or_unverified_source';
   normalizedPrediction?: NormalizedPredictionPanelModel;
 };
 
@@ -643,15 +648,31 @@ export function normalizeSpeciesPredictionResult(
     ?? legacyCountryScoresSource
     ?? fallbackCountryScoresSource
     ?? {};
+  const backendBuild = readString(source, ['backendBuild', 'backend_build']);
+  const invokeRouteVersion = readString(source, ['invokeRouteVersion', 'invoke_route_version']);
+  const responseProof = readString(source, ['responseProof', 'response_proof']);
+  const summaryOrigin = readString(source, ['summaryOrigin', 'summary_origin']);
+  const isCurrentFinalizedBackendOutput = Boolean(backendBuild && invokeRouteVersion && responseProof);
   const consistencyChecksSource = readRecord(source, ['consistencyChecks'])
     ?? readRecord(source, ['consistency_checks'])
     ?? readRecord(asRecord(source.openaiAnalysis), ['consistencyChecks'])
     ?? null;
-  const insightSummary = readString(source, ['insightSummary'])
-    || readString(aiSummaryRecord, ['insightSummary', 'insight_summary', 'summary'])
-    || readString(source, ['insight_summary', 'summary'])
-    || readString(asRecord(source.openaiAnalysis), ['insightSummary', 'insight_summary', 'summary'])
-    || readString(source, ['openAiResultValid']);
+  const insightSummary = isCurrentFinalizedBackendOutput
+    ? (
+      readString(source, ['insightSummary'])
+      || readString(source, ['insight_summary', 'summary'])
+      || readString(source, ['aiSummary', 'ai_summary'])
+      || readString(asRecord(source.rawResearchPayload), ['aiSummary', 'insightSummary'])
+      || readString(asRecord(source.openaiAnalysis), ['insightSummary', 'insight_summary', 'summary'])
+      || readString(source, ['openAiResultValid'])
+    )
+    : (
+      readString(source, ['insightSummary'])
+      || readString(aiSummaryRecord, ['insightSummary', 'insight_summary', 'summary'])
+      || readString(source, ['insight_summary', 'summary'])
+      || readString(asRecord(source.openaiAnalysis), ['insightSummary', 'insight_summary', 'summary'])
+      || readString(source, ['openAiResultValid'])
+    );
   const confidenceNote = readString(source, ['confidenceNote'])
     || readString(aiSummaryRecord, ['confidenceNote', 'confidence_note'])
     || readString(source, ['confidence_note'])
@@ -863,6 +884,11 @@ export function normalizeSpeciesPredictionResult(
     ...(effectiveRankingMode ? { effectiveRankingMode: normalizeUiText(effectiveRankingMode) } : {}),
     ...(typeof summaryGuardrailApplied === 'boolean' ? { summaryGuardrailApplied } : {}),
     ...(summaryGuardrailReason ? { summaryGuardrailReason: normalizeUiText(summaryGuardrailReason) } : {}),
+    ...(summaryOrigin ? { summaryOrigin: normalizeUiText(summaryOrigin) } : {}),
+    ...(backendBuild ? { backendBuild: normalizeUiText(backendBuild) } : {}),
+    ...(invokeRouteVersion ? { invokeRouteVersion: normalizeUiText(invokeRouteVersion) } : {}),
+    ...(responseProof ? { responseProof: normalizeUiText(responseProof) } : {}),
+    payloadSourceState: isCurrentFinalizedBackendOutput ? 'current_finalized_backend_output' : 'legacy_or_unverified_source',
     ...(consistencyChecksSource ? { consistencyChecks: normalizePredictionConsistencyChecks(consistencyChecksSource) } : {}),
     ...(source.openaiAnalysis ? { openaiAnalysis: source.openaiAnalysis as SpeciesPredictionAnalysis } : {}),
     ...(normalizeUiText(readString(source, ['aiSummary', 'ai_summary']) || readString(aiSummaryRecord, ['insightSummary']) || readString(asRecord(source.openaiAnalysis), ['insightSummary']))

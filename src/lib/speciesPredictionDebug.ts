@@ -96,6 +96,11 @@ export type SpeciesPredictionPanelStateSnapshot = {
   effectiveRankingMode?: string;
   summaryGuardrailApplied?: boolean;
   summaryGuardrailReason?: string;
+  summaryOrigin?: string;
+  backendBuild?: string;
+  invokeRouteVersion?: string;
+  responseProof?: string;
+  payloadSourceState?: 'current_finalized_backend_output' | 'legacy_or_unverified_source';
   runtimeMarker?: string;
 };
 

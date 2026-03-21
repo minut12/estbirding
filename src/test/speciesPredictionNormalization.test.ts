@@ -668,6 +668,47 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.predictedTargets).toEqual([]);
   });
 
+  it("prefers finalized top-level summary over stale nested legacy summaries when backend markers are present", () => {
+    const result = normalizeSpeciesPredictionResult({
+      backendBuild: "2026-03-21-fix18",
+      invokeRouteVersion: "fix18",
+      responseProof: "served by live species-prediction invoke route",
+      summaryOrigin: "neutral_sanitizer_fallback",
+      insightSummary: "Structured evidence is currently incomplete in the final payload, so recent Estonia presence, foreign pressure, and hotspot ranking cannot be confirmed from this response.",
+      aiSummary: "Structured evidence is currently incomplete in the final payload, so recent Estonia presence, foreign pressure, and hotspot ranking cannot be confirmed from this response.",
+      rawResearchPayload: {
+        aiSummary: "ALREADY PRESENT — 12 records in 7 days at Ristna and Põõsaspea with PL and FI pressure.",
+      },
+      openaiAnalysis: {
+        analysisVersion: "legacy",
+        insightSummary: "ALREADY PRESENT — 12 records in 7 days at Ristna and Põõsaspea with PL and FI pressure.",
+        consistencyChecks: {
+          routeLooksPlausible: false,
+          timingLooksPlausible: false,
+          weatherLooksSupportive: false,
+          foreignPressureMatchesNarrative: false,
+        },
+      },
+    } as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.insightSummary).toContain("Structured evidence is currently incomplete in the final payload");
+    expect(result.insightSummary).not.toContain("ALREADY PRESENT");
+    expect(result.aiSummary).toBe(result.insightSummary);
+    expect(result.payloadSourceState).toBe("current_finalized_backend_output");
+    expect(result.summaryOrigin).toBe("neutral_sanitizer_fallback");
+  });
+
+  it("flags payloads without backend markers as legacy or unverified sources", () => {
+    const result = normalizeSpeciesPredictionResult({
+      insightSummary: "Legacy payload summary",
+      rawResearchPayload: {
+        aiSummary: "Legacy nested summary",
+      },
+    } as any, "Punakurk-kaur", "linnuliigid");
+
+    expect(result.payloadSourceState).toBe("legacy_or_unverified_source");
+  });
+
   it("accepts direct wrapped n8n success payloads with nested aiSummary", () => {
     const result = normalizeSpeciesPredictionResult({
       ok: true,

@@ -157,6 +157,7 @@ type NormalizedUpstreamResponse = {
   evidenceSummary: Record<string, unknown>;
   foreignClusters: unknown[];
   predictedTargets: unknown[];
+  topTarget?: Record<string, unknown>;
   foreignRecentPoints: unknown[];
   estoniaHistoryPoints: unknown[];
   elurikkusRecentRecords: unknown[];
@@ -180,6 +181,47 @@ type NormalizedUpstreamResponse = {
   summaryGuardrailApplied: boolean;
   summaryGuardrailReason: string;
   raw: Record<string, unknown>;
+};
+
+type CanonicalPredictionRecord = {
+  speciesKey: string;
+  speciesName: string;
+  scope: string;
+  generatedAt: string;
+  analysisVersion: string;
+  species: Record<string, unknown>;
+  sourceHealth: Record<string, unknown>;
+  countryScores: Record<string, unknown>;
+  estoniaEvidence: Record<string, unknown>;
+  evidenceSummary: Record<string, unknown>;
+  foreignClusters: unknown[];
+  predictedTargets: unknown[];
+  topTarget: Record<string, unknown> | null;
+  foreignRecentPoints: unknown[];
+  estoniaHistoryPoints: unknown[];
+  elurikkusRecentRecords: unknown[];
+  estoniaHistoryClusters: unknown[];
+  mapLayers: Record<string, unknown>;
+  mapLayersDefault: Record<string, unknown>;
+  weather: Record<string, unknown>;
+  evidenceState: EvidenceState;
+  hasUsableRecentEstoniaEvidence: boolean;
+  hasUsableEstoniaHistory: boolean;
+  hasUsableForeignPressure: boolean;
+  hasUsablePredictedTargets: boolean;
+  hasOnlyWeather: boolean;
+  hasOnlySourceAvailabilityWithoutUsableEvidence: boolean;
+  activeEvidenceSources: string[];
+  availableSources: string[];
+  attemptedButUnavailable: string[];
+  attemptedButReturnedNoUsableEvidence: string[];
+  effectiveRankingMode: string;
+  insightSummary: string;
+  confidenceNote: string;
+  rankingNotes: string;
+  warnings: string[];
+  summaryGuardrailApplied: boolean;
+  summaryGuardrailReason: string;
 };
 
 type EvidenceState = 'recent_estonia' | 'estonia_history' | 'foreign_pressure' | 'mixed' | 'weather_only_insufficient' | 'insufficient';
@@ -1059,7 +1101,6 @@ async function buildMapFirstPredictionResult(opts: {
   const countryScores = buildCountryScores(foreignEvidence);
   const topPredictedPoints = predictedTargets.slice(0, Math.min(5, clampInt(toNumber(settings.outputCount) || 5, 1, 5)));
   const latestCluster = foreignClusters[0] ?? null;
-
   const baseResult = {
     speciesKey,
     speciesName,
@@ -1152,50 +1193,85 @@ async function buildMapFirstPredictionResult(opts: {
       ...(normalizedN8nResponse ? { aiSummary: normalizedN8nResponse.insightSummary } : {}),
     },
   };
-  if (!normalizedN8nResponse) {
-    return attachNormalizationMarkers(baseResult);
-  }
-  return attachNormalizationMarkers({
-    ...baseResult,
-    ok: normalizedN8nResponse.ok,
-    status: normalizedN8nResponse.status,
-    error: normalizedN8nResponse.error,
-    insightSummary: normalizedN8nResponse.insightSummary,
-    aiSummary: normalizedN8nResponse.insightSummary,
-    confidenceNote: normalizedN8nResponse.confidenceNote,
-    rankingNotes: normalizedN8nResponse.rankingNotes,
-    warnings: normalizedN8nResponse.warnings,
-    generatedAt: normalizedN8nResponse.generatedAt,
-    analysisVersion: normalizedN8nResponse.analysisVersion,
-    sourceHealth: normalizedN8nResponse.sourceHealth,
-    evidenceSummary: normalizedN8nResponse.evidenceSummary,
-    estoniaHistoryPoints: normalizedN8nResponse.estoniaHistoryPoints,
-    estoniaHistoryClusters: normalizedN8nResponse.estoniaHistoryClusters,
-    foreignRecentPoints: normalizedN8nResponse.foreignRecentPoints,
-    foreignClusters: normalizedN8nResponse.foreignClusters,
-    weather: normalizedN8nResponse.weather,
-    predictedTargets: normalizedN8nResponse.predictedTargets,
-    countryScores: normalizedN8nResponse.countryScores,
-    estoniaEvidence: normalizedN8nResponse.estoniaEvidence,
-    elurikkusRecentRecords: normalizedN8nResponse.elurikkusRecentRecords,
-    evidenceState: normalizedN8nResponse.evidenceState,
-    hasUsableRecentEstoniaEvidence: normalizedN8nResponse.hasUsableRecentEstoniaEvidence,
-    hasUsableEstoniaHistory: normalizedN8nResponse.hasUsableEstoniaHistory,
-    hasUsableForeignPressure: normalizedN8nResponse.hasUsableForeignPressure,
-    hasUsablePredictedTargets: normalizedN8nResponse.hasUsablePredictedTargets,
-    hasOnlyWeather: normalizedN8nResponse.hasOnlyWeather,
-    hasOnlySourceAvailabilityWithoutUsableEvidence: normalizedN8nResponse.hasOnlySourceAvailabilityWithoutUsableEvidence,
-    activeEvidenceSources: normalizedN8nResponse.activeEvidenceSources,
-    availableSources: normalizedN8nResponse.availableSources,
-    attemptedButUnavailable: normalizedN8nResponse.attemptedButUnavailable,
-    attemptedButReturnedNoUsableEvidence: normalizedN8nResponse.attemptedButReturnedNoUsableEvidence,
-    effectiveRankingMode: normalizedN8nResponse.effectiveRankingMode,
-    summaryGuardrailApplied: normalizedN8nResponse.summaryGuardrailApplied,
-    summaryGuardrailReason: normalizedN8nResponse.summaryGuardrailReason,
-    mapLayers: Object.keys(normalizedN8nResponse.mapLayers).length ? normalizedN8nResponse.mapLayers : baseResult.mapLayers,
-    mapLayersDefault: normalizedN8nResponse.mapLayersDefault,
-    species: normalizedN8nResponse.species,
+  const canonical = buildCanonicalPredictionRecord({
+    base: baseResult,
+    alternate: normalizedN8nResponse,
+    preferredSummary: normalizedN8nResponse ? {
+      insightSummary: normalizedN8nResponse.insightSummary,
+      confidenceNote: normalizedN8nResponse.confidenceNote,
+      rankingNotes: normalizedN8nResponse.rankingNotes,
+      warnings: normalizedN8nResponse.warnings,
+    } : null,
   });
+  const response = attachNormalizationMarkers({
+    ...baseResult,
+    ...(normalizedN8nResponse ? { ok: normalizedN8nResponse.ok, status: normalizedN8nResponse.status, error: normalizedN8nResponse.error } : {}),
+    speciesKey: canonical.speciesKey,
+    speciesName: canonical.speciesName,
+    generatedAt: canonical.generatedAt,
+    analysisVersion: canonical.analysisVersion,
+    species: canonical.species,
+    sourceHealth: canonical.sourceHealth,
+    evidenceSummary: canonical.evidenceSummary,
+    estoniaHistoryPoints: canonical.estoniaHistoryPoints,
+    estoniaHistoryClusters: canonical.estoniaHistoryClusters,
+    foreignRecentPoints: canonical.foreignRecentPoints,
+    foreignClusters: canonical.foreignClusters,
+    weather: canonical.weather,
+    predictedTargets: canonical.predictedTargets,
+    topPredictedPoints: canonical.predictedTargets,
+    topTarget: canonical.topTarget,
+    evidenceState: canonical.evidenceState,
+    hasUsableRecentEstoniaEvidence: canonical.hasUsableRecentEstoniaEvidence,
+    hasUsableEstoniaHistory: canonical.hasUsableEstoniaHistory,
+    hasUsableForeignPressure: canonical.hasUsableForeignPressure,
+    hasUsablePredictedTargets: canonical.hasUsablePredictedTargets,
+    hasOnlyWeather: canonical.hasOnlyWeather,
+    hasOnlySourceAvailabilityWithoutUsableEvidence: canonical.hasOnlySourceAvailabilityWithoutUsableEvidence,
+    activeEvidenceSources: canonical.activeEvidenceSources,
+    availableSources: canonical.availableSources,
+    attemptedButUnavailable: canonical.attemptedButUnavailable,
+    attemptedButReturnedNoUsableEvidence: canonical.attemptedButReturnedNoUsableEvidence,
+    effectiveRankingMode: canonical.effectiveRankingMode,
+    summaryGuardrailApplied: canonical.summaryGuardrailApplied,
+    summaryGuardrailReason: canonical.summaryGuardrailReason,
+    countryScores: canonical.countryScores,
+    estoniaEvidence: canonical.estoniaEvidence,
+    elurikkusRecentRecords: canonical.elurikkusRecentRecords,
+    insightSummary: canonical.insightSummary,
+    aiSummary: canonical.insightSummary,
+    confidenceNote: canonical.confidenceNote,
+    rankingNotes: canonical.rankingNotes,
+    warnings: canonical.warnings,
+    mapLayers: canonical.mapLayers,
+    mapLayersDefault: canonical.mapLayersDefault,
+    rawResearchPayload: {
+      ...asRecord(baseResult.rawResearchPayload),
+      sourceHealth: canonical.sourceHealth,
+      evidenceSummary: canonical.evidenceSummary,
+      estoniaEvidence: canonical.estoniaEvidence,
+      foreignRecentPoints: canonical.foreignRecentPoints,
+      foreignClusters: canonical.foreignClusters,
+      predictedTargets: canonical.predictedTargets,
+      topTarget: canonical.topTarget,
+      insightSummary: canonical.insightSummary,
+      confidenceNote: canonical.confidenceNote,
+      rankingNotes: canonical.rankingNotes,
+      warnings: canonical.warnings,
+    },
+  });
+  console.info(`${LOG_PREFIX} canonical_response`, {
+    species: response.speciesName,
+    insightSummary: response.insightSummary,
+    recentCount7d: asRecord(response.estoniaEvidence).recentCount7d,
+    recentCount30d: asRecord(response.estoniaEvidence).recentCount30d,
+    foreignRecentPoints: Array.isArray(response.foreignRecentPoints) ? response.foreignRecentPoints.length : 0,
+    foreignClusters: Array.isArray(response.foreignClusters) ? response.foreignClusters.length : 0,
+    predictedTargets: Array.isArray(response.predictedTargets) ? response.predictedTargets.length : 0,
+    ebirdAvailable: asRecord(response.sourceHealth).ebirdAvailable,
+    activeEvidenceUsed: asRecord(response.evidenceSummary).activeEvidenceUsed,
+  });
+  return response;
 }
 
 async function fetchGbifEstoniaHistory(speciesName: string, signal: AbortSignal): Promise<Record<string, unknown>[]> {
@@ -2514,19 +2590,68 @@ function buildCleanPredictionResult(
     raw: record,
   }) as NormalizedUpstreamResponse;
   const guarded = applyEvidenceStateSummaryGuardrails(cleaned, evidenceStateSnapshot);
-  console.info(`${LOG_PREFIX} recovered_summary_guardrails`, {
-    evidenceState: guarded.evidenceState,
-    hasUsableRecentEstoniaEvidence: guarded.hasUsableRecentEstoniaEvidence,
-    hasUsableEstoniaHistory: guarded.hasUsableEstoniaHistory,
-    hasUsableForeignPressure: guarded.hasUsableForeignPressure,
-    hasUsablePredictedTargets: guarded.hasUsablePredictedTargets,
-    hasOnlyWeather: guarded.hasOnlyWeather,
-    summaryGuardrailApplied: guarded.summaryGuardrailApplied,
-    summaryGuardrailReason: guarded.summaryGuardrailReason,
-    originalAiSummarySnippet: buildInsightSummaryPreview(data),
-    finalAiSummarySnippet: guarded.insightSummary.slice(0, 160),
+  const canonical = buildCanonicalPredictionRecord({
+    base: guarded as unknown as Record<string, unknown>,
+    preferredSummary: {
+      insightSummary: guarded.insightSummary,
+      confidenceNote: guarded.confidenceNote,
+      rankingNotes: guarded.rankingNotes,
+      warnings: guarded.warnings,
+    },
   });
-  return guarded;
+  console.info(`${LOG_PREFIX} recovered_summary_guardrails`, {
+    evidenceState: canonical.evidenceState,
+    hasUsableRecentEstoniaEvidence: canonical.hasUsableRecentEstoniaEvidence,
+    hasUsableEstoniaHistory: canonical.hasUsableEstoniaHistory,
+    hasUsableForeignPressure: canonical.hasUsableForeignPressure,
+    hasUsablePredictedTargets: canonical.hasUsablePredictedTargets,
+    hasOnlyWeather: canonical.hasOnlyWeather,
+    summaryGuardrailApplied: canonical.summaryGuardrailApplied,
+    summaryGuardrailReason: canonical.summaryGuardrailReason,
+    originalAiSummarySnippet: buildInsightSummaryPreview(data),
+    finalAiSummarySnippet: canonical.insightSummary.slice(0, 160),
+  });
+  return {
+    ...guarded,
+    speciesKey: canonical.speciesKey,
+    speciesName: canonical.speciesName,
+    scope: canonical.scope,
+    generatedAt: canonical.generatedAt,
+    analysisVersion: canonical.analysisVersion,
+    species: canonical.species,
+    sourceHealth: canonical.sourceHealth,
+    countryScores: canonical.countryScores,
+    estoniaEvidence: canonical.estoniaEvidence,
+    evidenceSummary: canonical.evidenceSummary,
+    foreignClusters: canonical.foreignClusters,
+    predictedTargets: canonical.predictedTargets,
+    topTarget: canonical.topTarget || undefined,
+    foreignRecentPoints: canonical.foreignRecentPoints,
+    estoniaHistoryPoints: canonical.estoniaHistoryPoints,
+    elurikkusRecentRecords: canonical.elurikkusRecentRecords,
+    estoniaHistoryClusters: canonical.estoniaHistoryClusters,
+    mapLayers: canonical.mapLayers,
+    mapLayersDefault: canonical.mapLayersDefault,
+    weather: canonical.weather,
+    evidenceState: canonical.evidenceState,
+    hasUsableRecentEstoniaEvidence: canonical.hasUsableRecentEstoniaEvidence,
+    hasUsableEstoniaHistory: canonical.hasUsableEstoniaHistory,
+    hasUsableForeignPressure: canonical.hasUsableForeignPressure,
+    hasUsablePredictedTargets: canonical.hasUsablePredictedTargets,
+    hasOnlyWeather: canonical.hasOnlyWeather,
+    hasOnlySourceAvailabilityWithoutUsableEvidence: canonical.hasOnlySourceAvailabilityWithoutUsableEvidence,
+    activeEvidenceSources: canonical.activeEvidenceSources,
+    availableSources: canonical.availableSources,
+    attemptedButUnavailable: canonical.attemptedButUnavailable,
+    attemptedButReturnedNoUsableEvidence: canonical.attemptedButReturnedNoUsableEvidence,
+    effectiveRankingMode: canonical.effectiveRankingMode,
+    insightSummary: canonical.insightSummary,
+    confidenceNote: canonical.confidenceNote,
+    rankingNotes: canonical.rankingNotes,
+    warnings: canonical.warnings,
+    summaryGuardrailApplied: canonical.summaryGuardrailApplied,
+    summaryGuardrailReason: canonical.summaryGuardrailReason,
+  };
 }
 
 function normalizeN8nPredictionSuccessPayload(data: unknown): NormalizedUpstreamResponse | null {
@@ -2617,7 +2742,7 @@ function enrichPredictionResult(
       name: speciesInfo.speciesName,
     };
 
-  return attachNormalizationMarkers({
+  const assembled = {
     ...raw,
     ...(canonicalSpecies.speciesKey ? { speciesKey: canonicalSpecies.speciesKey } : {}),
     ...(canonicalSpecies.speciesName ? { speciesName: canonicalSpecies.speciesName } : {}),
@@ -2671,7 +2796,91 @@ function enrichPredictionResult(
       historicalEvidence,
       rawLinks,
     },
+  };
+  const canonical = buildCanonicalPredictionRecord({
+    base: assembled,
+    alternate: normalizedUpstream ? normalizedUpstream as unknown as Record<string, unknown> : null,
+    preferredSummary: normalizedUpstream ? {
+      insightSummary: normalizedUpstream.insightSummary,
+      confidenceNote: normalizedUpstream.confidenceNote,
+      rankingNotes: normalizedUpstream.rankingNotes,
+      warnings: normalizedUpstream.warnings,
+    } : {
+      insightSummary: stringOr(assembled.insightSummary),
+      confidenceNote: stringOr(assembled.confidenceNote),
+      rankingNotes: stringOr(assembled.rankingNotes),
+      warnings: Array.isArray(assembled.warnings) ? assembled.warnings.map((item) => String(item || '')) : [],
+    },
   });
+  const response = attachNormalizationMarkers({
+    ...assembled,
+    speciesKey: canonical.speciesKey,
+    speciesName: canonical.speciesName,
+    scope: canonical.scope,
+    generatedAt: canonical.generatedAt,
+    analysisVersion: canonical.analysisVersion,
+    species: canonical.species,
+    sourceHealth: canonical.sourceHealth,
+    countryScores: canonical.countryScores,
+    estoniaEvidence: canonical.estoniaEvidence,
+    evidenceSummary: canonical.evidenceSummary,
+    foreignClusters: canonical.foreignClusters,
+    predictedTargets: canonical.predictedTargets,
+    topPredictedPoints: canonical.predictedTargets,
+    topTarget: canonical.topTarget,
+    foreignRecentPoints: canonical.foreignRecentPoints,
+    estoniaHistoryPoints: canonical.estoniaHistoryPoints,
+    elurikkusRecentRecords: canonical.elurikkusRecentRecords,
+    estoniaHistoryClusters: canonical.estoniaHistoryClusters,
+    mapLayers: canonical.mapLayers,
+    mapLayersDefault: canonical.mapLayersDefault,
+    weather: canonical.weather,
+    evidenceState: canonical.evidenceState,
+    hasUsableRecentEstoniaEvidence: canonical.hasUsableRecentEstoniaEvidence,
+    hasUsableEstoniaHistory: canonical.hasUsableEstoniaHistory,
+    hasUsableForeignPressure: canonical.hasUsableForeignPressure,
+    hasUsablePredictedTargets: canonical.hasUsablePredictedTargets,
+    hasOnlyWeather: canonical.hasOnlyWeather,
+    hasOnlySourceAvailabilityWithoutUsableEvidence: canonical.hasOnlySourceAvailabilityWithoutUsableEvidence,
+    activeEvidenceSources: canonical.activeEvidenceSources,
+    availableSources: canonical.availableSources,
+    attemptedButUnavailable: canonical.attemptedButUnavailable,
+    attemptedButReturnedNoUsableEvidence: canonical.attemptedButReturnedNoUsableEvidence,
+    effectiveRankingMode: canonical.effectiveRankingMode,
+    insightSummary: canonical.insightSummary,
+    aiSummary: canonical.insightSummary,
+    confidenceNote: canonical.confidenceNote,
+    rankingNotes: canonical.rankingNotes,
+    warnings: canonical.warnings,
+    summaryGuardrailApplied: canonical.summaryGuardrailApplied,
+    summaryGuardrailReason: canonical.summaryGuardrailReason,
+    rawResearchPayload: {
+      ...rawResearchPayload,
+      sourceHealth: canonical.sourceHealth,
+      evidenceSummary: canonical.evidenceSummary,
+      estoniaEvidence: canonical.estoniaEvidence,
+      foreignRecentPoints: canonical.foreignRecentPoints,
+      foreignClusters: canonical.foreignClusters,
+      predictedTargets: canonical.predictedTargets,
+      topTarget: canonical.topTarget,
+      insightSummary: canonical.insightSummary,
+      confidenceNote: canonical.confidenceNote,
+      rankingNotes: canonical.rankingNotes,
+      warnings: canonical.warnings,
+    },
+  });
+  console.info(`${LOG_PREFIX} canonical_response`, {
+    species: response.speciesName,
+    insightSummary: response.insightSummary,
+    recentCount7d: asRecord(response.estoniaEvidence).recentCount7d,
+    recentCount30d: asRecord(response.estoniaEvidence).recentCount30d,
+    foreignRecentPoints: Array.isArray(response.foreignRecentPoints) ? response.foreignRecentPoints.length : 0,
+    foreignClusters: Array.isArray(response.foreignClusters) ? response.foreignClusters.length : 0,
+    predictedTargets: Array.isArray(response.predictedTargets) ? response.predictedTargets.length : 0,
+    ebirdAvailable: asRecord(response.sourceHealth).ebirdAvailable,
+    activeEvidenceUsed: asRecord(response.evidenceSummary).activeEvidenceUsed,
+  });
+  return response;
 }
 
 function buildForeignEvidence(rows: unknown[]): Record<string, unknown>[] {
@@ -3118,6 +3327,248 @@ function buildEvidenceSummary(input: {
     rankingMode: effectiveRankingMode,
     effectiveRankingMode,
     summaryText: summaryParts.join(' '),
+  };
+}
+
+function computeEvidenceStrengthScore(input: {
+  estoniaEvidence: Record<string, unknown>;
+  foreignRecentPoints: unknown[];
+  foreignClusters: unknown[];
+  predictedTargets: unknown[];
+  estoniaHistoryPoints: unknown[];
+  estoniaHistoryClusters: unknown[];
+  elurikkusRecentRecords?: unknown[];
+}): number {
+  return (
+    Math.max(0, toNumber(input.estoniaEvidence.recentCount7d)) * 100
+    + Math.max(0, toNumber(input.estoniaEvidence.recentCount30d)) * 25
+    + input.predictedTargets.length * 50
+    + input.foreignClusters.length * 20
+    + input.foreignRecentPoints.length * 5
+    + input.estoniaHistoryClusters.length * 10
+    + input.estoniaHistoryPoints.length * 2
+    + (input.elurikkusRecentRecords?.length || 0) * 3
+  );
+}
+
+function pickCanonicalStructuredSource(
+  primary: Record<string, unknown>,
+  secondary?: Record<string, unknown> | null,
+): Record<string, unknown> {
+  if (!secondary) return primary;
+  const primaryScore = computeEvidenceStrengthScore({
+    estoniaEvidence: asRecord(primary.estoniaEvidence),
+    foreignRecentPoints: Array.isArray(primary.foreignRecentPoints) ? primary.foreignRecentPoints : [],
+    foreignClusters: Array.isArray(primary.foreignClusters) ? primary.foreignClusters : [],
+    predictedTargets: Array.isArray(primary.predictedTargets) ? primary.predictedTargets : [],
+    estoniaHistoryPoints: Array.isArray(primary.estoniaHistoryPoints) ? primary.estoniaHistoryPoints : [],
+    estoniaHistoryClusters: Array.isArray(primary.estoniaHistoryClusters) ? primary.estoniaHistoryClusters : [],
+    elurikkusRecentRecords: Array.isArray(primary.elurikkusRecentRecords) ? primary.elurikkusRecentRecords : [],
+  });
+  const secondaryScore = computeEvidenceStrengthScore({
+    estoniaEvidence: asRecord(secondary.estoniaEvidence),
+    foreignRecentPoints: Array.isArray(secondary.foreignRecentPoints) ? secondary.foreignRecentPoints : [],
+    foreignClusters: Array.isArray(secondary.foreignClusters) ? secondary.foreignClusters : [],
+    predictedTargets: Array.isArray(secondary.predictedTargets) ? secondary.predictedTargets : [],
+    estoniaHistoryPoints: Array.isArray(secondary.estoniaHistoryPoints) ? secondary.estoniaHistoryPoints : [],
+    estoniaHistoryClusters: Array.isArray(secondary.estoniaHistoryClusters) ? secondary.estoniaHistoryClusters : [],
+    elurikkusRecentRecords: Array.isArray(secondary.elurikkusRecentRecords) ? secondary.elurikkusRecentRecords : [],
+  });
+  return secondaryScore > primaryScore ? secondary : primary;
+}
+
+function buildCanonicalSummaryFromEvidence(input: {
+  speciesName: string;
+  estoniaEvidence: Record<string, unknown>;
+  foreignEvidence: Record<string, unknown>[];
+  foreignRecentPoints: unknown[];
+  foreignClusters: unknown[];
+  predictedTargets: unknown[];
+  activeEvidenceSources: string[];
+  evidenceStateSnapshot: EvidenceStateSnapshot;
+}): Pick<CanonicalPredictionRecord, 'insightSummary' | 'confidenceNote' | 'rankingNotes' | 'warnings'> {
+  const recentCount7d = Math.max(0, Math.round(toNumber(input.estoniaEvidence.recentCount7d)));
+  const recentCount30d = Math.max(0, Math.round(toNumber(input.estoniaEvidence.recentCount30d)));
+  const freshestLocalities = Array.isArray(input.estoniaEvidence.freshestLocalities) ? input.estoniaEvidence.freshestLocalities.map((item) => stringOr(item)).filter(Boolean) : [];
+  const latestLocality = stringOr(input.estoniaEvidence.latestEstoniaLocality, freshestLocalities[0]);
+  const targetNames = (input.predictedTargets || []).map((item) => stringOr(asRecord(item).displayName, asRecord(item).name)).filter(Boolean);
+  const countryNames = Array.from(new Set(input.foreignEvidence.map((entry) => stringOr(entry.countryName, entry.countryCode)).filter(Boolean)));
+  const warnings = new Set<string>();
+  if (!input.foreignRecentPoints.length && !input.foreignClusters.length) warnings.add('No foreign pressure detected in canonical evidence.');
+  if (!input.predictedTargets.length) warnings.add('No predicted targets returned from canonical evidence.');
+  if (recentCount7d > 0) {
+    const localityPart = latestLocality ? ` Latest locality: ${latestLocality}.` : '';
+    const targetPart = targetNames.length ? ` Top targets: ${targetNames.slice(0, 3).join(', ')}.` : '';
+    const foreignPart = countryNames.length ? ` Foreign support present from ${countryNames.slice(0, 4).join(', ')}.` : '';
+    return {
+      insightSummary: `ALREADY PRESENT — ${recentCount7d} records in 7 days and ${recentCount30d} records in 30 days for ${input.speciesName}.${localityPart}${foreignPart}${targetPart}`.trim(),
+      confidenceNote: `Confidence is anchored to canonical Estonia evidence because recent structured records are present (${recentCount7d}/7d, ${recentCount30d}/30d).`,
+      rankingNotes: `Ranking uses canonical evidence only: ${input.activeEvidenceSources.length ? input.activeEvidenceSources.join(', ') : 'no active evidence listed'}.`,
+      warnings: Array.from(warnings),
+    };
+  }
+  if (input.evidenceStateSnapshot.hasUsableForeignPressure || input.evidenceStateSnapshot.hasUsableEstoniaHistory) {
+    const supportParts = [
+      input.evidenceStateSnapshot.hasUsableEstoniaHistory ? 'Estonia history is present' : '',
+      input.evidenceStateSnapshot.hasUsableForeignPressure && countryNames.length ? `foreign pressure is present from ${countryNames.slice(0, 4).join(', ')}` : (input.evidenceStateSnapshot.hasUsableForeignPressure ? 'foreign pressure is present' : ''),
+      targetNames.length ? `top targets: ${targetNames.slice(0, 3).join(', ')}` : '',
+    ].filter(Boolean);
+    return {
+      insightSummary: `${input.speciesName} is supported by canonical structured evidence: ${supportParts.join('; ')}.`.trim(),
+      confidenceNote: 'Confidence is moderate because the response is grounded in canonical structured evidence, but recent Estonia records are limited.',
+      rankingNotes: `Ranking is derived only from canonical structured evidence: ${input.activeEvidenceSources.length ? input.activeEvidenceSources.join(', ') : 'no active evidence listed'}.`,
+      warnings: Array.from(warnings),
+    };
+  }
+  return {
+    insightSummary: INSUFFICIENT_EVIDENCE_FALLBACK.insightSummary,
+    confidenceNote: INSUFFICIENT_EVIDENCE_FALLBACK.confidenceNote,
+    rankingNotes: INSUFFICIENT_EVIDENCE_FALLBACK.rankingNotes,
+    warnings: Array.from(new Set([...INSUFFICIENT_EVIDENCE_FALLBACK.warnings, ...warnings])),
+  };
+}
+
+function canonicalSummaryMatchesEvidence(input: {
+  summary: string;
+  estoniaEvidence: Record<string, unknown>;
+  foreignRecentPoints: unknown[];
+  foreignClusters: unknown[];
+  predictedTargets: unknown[];
+  elurikkusRecentRecords: unknown[];
+}): { ok: boolean; reasons: string[] } {
+  const summary = stringOr(input.summary);
+  const reasons: string[] = [];
+  const recentCount7d = Math.max(0, Math.round(toNumber(input.estoniaEvidence.recentCount7d)));
+  const recentCount30d = Math.max(0, Math.round(toNumber(input.estoniaEvidence.recentCount30d)));
+  const countMatch = summary.match(/(\d+)\s+records?\s+in\s+7\s+days/i);
+  if ((/already present/i.test(summary) || countMatch) && recentCount7d <= 0) reasons.push('summary_claims_recent_estonia_but_recentCount7d_is_zero');
+  if (countMatch && Number(countMatch[1]) !== recentCount7d) reasons.push('summary_recentCount7d_does_not_match_structured_recentCount7d');
+  if (/foreign pressure|poland|sweden|finland|latvia|lithuania|belarus|russia/i.test(summary) && !input.foreignRecentPoints.length && !input.foreignClusters.length) {
+    reasons.push('summary_mentions_foreign_pressure_without_structured_foreign_evidence');
+  }
+  if (/põõsaspea|ristna|sääre/i.test(summary)) {
+    const localityPool = [
+      ...((input.predictedTargets || []).map((item) => stringOr(asRecord(item).displayName, asRecord(item).name))),
+      ...((input.elurikkusRecentRecords || []).map((item) => stringOr(asRecord(item).locality, asRecord(item).locName))),
+      stringOr(input.estoniaEvidence.latestEstoniaLocality),
+    ].filter(Boolean).join(' ').toLowerCase();
+    if ((/põõsaspea/i.test(summary) && !/põõsaspea/i.test(localityPool))
+      || (/ristna/i.test(summary) && !/ristna/i.test(localityPool))
+      || (/sääre/i.test(summary) && !/sääre/i.test(localityPool))) {
+      reasons.push('summary_mentions_specific_estonia_localities_without_structured_match');
+    }
+  }
+  if ((/hotspot|target|põõsaspea|ristna|sääre/i.test(summary)) && !input.predictedTargets.length) {
+    reasons.push('summary_mentions_hotspot_structure_without_predicted_targets');
+  }
+  if (/30\s+days/i.test(summary) && recentCount30d <= 0) reasons.push('summary_claims_recent_30d_presence_but_recentCount30d_is_zero');
+  return { ok: reasons.length === 0, reasons };
+}
+
+function buildCanonicalPredictionRecord(input: {
+  base: Record<string, unknown>;
+  alternate?: Record<string, unknown> | null;
+  preferredSummary?: Pick<CanonicalPredictionRecord, 'insightSummary' | 'confidenceNote' | 'rankingNotes' | 'warnings'> | null;
+}): CanonicalPredictionRecord {
+  const chosen = pickCanonicalStructuredSource(input.base, input.alternate);
+  const sourceHealth = asRecord(chosen.sourceHealth);
+  const estoniaEvidence = asRecord(chosen.estoniaEvidence);
+  const foreignRecentPoints = Array.isArray(chosen.foreignRecentPoints) ? chosen.foreignRecentPoints : [];
+  const foreignClusters = Array.isArray(chosen.foreignClusters) ? chosen.foreignClusters : [];
+  const predictedTargets = Array.isArray(chosen.predictedTargets) ? chosen.predictedTargets : [];
+  const estoniaHistoryPoints = Array.isArray(chosen.estoniaHistoryPoints) ? chosen.estoniaHistoryPoints : [];
+  const estoniaHistoryClusters = Array.isArray(chosen.estoniaHistoryClusters) ? chosen.estoniaHistoryClusters : [];
+  const elurikkusRecentRecords = Array.isArray(chosen.elurikkusRecentRecords) ? chosen.elurikkusRecentRecords : [];
+  const foreignEvidence = Array.isArray(chosen.foreignEvidence) ? chosen.foreignEvidence.map((item) => asRecord(item)) : [];
+  const weather = asRecord(chosen.weather);
+  const evidenceStateSnapshot = computeEvidenceState({
+    estoniaEvidence,
+    estoniaHistoryPoints,
+    estoniaHistoryClusters,
+    foreignRecentPoints,
+    foreignClusters,
+    foreignEvidence,
+    sourceHealth,
+    weather,
+    predictedTargets,
+    topPredictedPoints: Array.isArray(chosen.topPredictedPoints) ? chosen.topPredictedPoints : predictedTargets,
+  });
+  const evidenceSummary = buildEvidenceSummary({
+    weather,
+    sourceHealth,
+    evidenceStateSnapshot,
+  });
+  const deterministicSummary = buildCanonicalSummaryFromEvidence({
+    speciesName: stringOr(chosen.speciesName, asRecord(chosen.species).speciesName, asRecord(chosen.species).name),
+    estoniaEvidence,
+    foreignEvidence,
+    foreignRecentPoints,
+    foreignClusters,
+    predictedTargets,
+    activeEvidenceSources: evidenceStateSnapshot.activeEvidenceSources,
+    evidenceStateSnapshot,
+  });
+  const preferredSummary = input.preferredSummary || deterministicSummary;
+  const summaryCheck = canonicalSummaryMatchesEvidence({
+    summary: preferredSummary.insightSummary,
+    estoniaEvidence,
+    foreignRecentPoints,
+    foreignClusters,
+    predictedTargets,
+    elurikkusRecentRecords,
+  });
+  if (!summaryCheck.ok) {
+    console.error(`${LOG_PREFIX} canonical_summary_mismatch`, {
+      speciesName: stringOr(chosen.speciesName),
+      reasons: summaryCheck.reasons,
+      insightSummary: preferredSummary.insightSummary,
+      recentCount7d: estoniaEvidence.recentCount7d,
+      recentCount30d: estoniaEvidence.recentCount30d,
+      foreignRecentPoints: foreignRecentPoints.length,
+      foreignClusters: foreignClusters.length,
+      predictedTargets: predictedTargets.length,
+    });
+  }
+  const summary = summaryCheck.ok ? preferredSummary : deterministicSummary;
+  return {
+    speciesKey: stringOr(chosen.speciesKey, asRecord(chosen.species).speciesKey, asRecord(chosen.species).key),
+    speciesName: stringOr(chosen.speciesName, asRecord(chosen.species).speciesName, asRecord(chosen.species).name),
+    scope: stringOr(chosen.scope, 'linnuliigid'),
+    generatedAt: stringOr(chosen.generatedAt) || new Date().toISOString(),
+    analysisVersion: stringOr(chosen.analysisVersion) || `${EDGE_FUNCTION_VERSION}|canonical`,
+    species: asRecord(chosen.species),
+    sourceHealth,
+    countryScores: asRecord(chosen.countryScores),
+    estoniaEvidence,
+    evidenceSummary,
+    foreignClusters,
+    predictedTargets,
+    topTarget: predictedTargets.length ? asRecord(predictedTargets[0]) : null,
+    foreignRecentPoints,
+    estoniaHistoryPoints,
+    elurikkusRecentRecords,
+    estoniaHistoryClusters,
+    mapLayers: asRecord(chosen.mapLayers),
+    mapLayersDefault: asRecord(chosen.mapLayersDefault),
+    weather,
+    evidenceState: evidenceStateSnapshot.evidenceState,
+    hasUsableRecentEstoniaEvidence: evidenceStateSnapshot.hasUsableRecentEstoniaEvidence,
+    hasUsableEstoniaHistory: evidenceStateSnapshot.hasUsableEstoniaHistory,
+    hasUsableForeignPressure: evidenceStateSnapshot.hasUsableForeignPressure,
+    hasUsablePredictedTargets: evidenceStateSnapshot.hasUsablePredictedTargets,
+    hasOnlyWeather: evidenceStateSnapshot.hasOnlyWeather,
+    hasOnlySourceAvailabilityWithoutUsableEvidence: evidenceStateSnapshot.hasOnlySourceAvailabilityWithoutUsableEvidence,
+    activeEvidenceSources: evidenceStateSnapshot.activeEvidenceSources,
+    availableSources: evidenceStateSnapshot.availableSources,
+    attemptedButUnavailable: evidenceStateSnapshot.attemptedButUnavailable,
+    attemptedButReturnedNoUsableEvidence: evidenceStateSnapshot.attemptedButReturnedNoUsableEvidence,
+    effectiveRankingMode: evidenceStateSnapshot.effectiveRankingMode,
+    insightSummary: summary.insightSummary,
+    confidenceNote: summary.confidenceNote,
+    rankingNotes: summary.rankingNotes,
+    warnings: summary.warnings,
+    summaryGuardrailApplied: !summaryCheck.ok,
+    summaryGuardrailReason: !summaryCheck.ok ? summaryCheck.reasons.join(',') : '',
   };
 }
 

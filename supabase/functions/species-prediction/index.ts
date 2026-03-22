@@ -10,12 +10,12 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-22-lovable-fix';
-const INVOKE_ROUTE_VERSION = 'lovable-fix';
+const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-22-fix2-length';
+const INVOKE_ROUTE_VERSION = 'fix2-length';
 const EDGE_FUNCTION_FILE = 'supabase/functions/species-prediction/index.ts';
 const EDGE_FUNCTION_ENTRYPOINT = 'serve(async (req) => { ... })';
 const EDGE_RESPONSE_PROOF = 'served by live species-prediction invoke route';
-const EDGE_ROUTE_HEADER = 'live-post-invoke-lovable-fix';
+const EDGE_ROUTE_HEADER = 'live-post-invoke-fix2-length';
 const WEBHOOK_CONFIG_SOURCE = `env:${WEBHOOK_ENV_KEY}`;
 const STATUS_NO_CACHE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
@@ -26,7 +26,7 @@ const INVOCATION_DIAGNOSTICS_FRESHNESS_MS = 30 * 60 * 1000;
 // SPECIES_PREDICTION_N8N_WEBHOOK_URL to:
 // https://estbirds.app.n8n.cloud/webhook/species-prediction-evidence-first
 
-console.log('[species-prediction] BUILD: 2026-03-22-lovable-fix');
+console.log('[species-prediction] BUILD: 2026-03-22-fix2-length');
 console.error(`SPECIES_PREDICTION_BOOT ${INVOKE_ROUTE_VERSION} ${EDGE_FUNCTION_FILE} ${EDGE_FUNCTION_ENTRYPOINT}`);
 
 type WebhookValidationErrorCode =
@@ -2105,6 +2105,52 @@ async function maybeFetchSecondarySummary(opts: {
   const data = safeJsonParse(text);
   // Unwrap array responses: n8n v3 returns [{ok:true, analysisVersion:"v3_recency_first", ...}]
   const effectiveData = Array.isArray(data) && data.length > 0 ? data[0] : data;
+  // v3 passthrough — EARLY EXIT before any normalization that could crash on missing fields
+  const earlyRecord = asRecord(effectiveData);
+  if (
+    earlyRecord.ok === true &&
+    typeof earlyRecord.analysisVersion === 'string' &&
+    earlyRecord.analysisVersion.includes('v3')
+  ) {
+    console.info(`${LOG_PREFIX} v3_passthrough_early`, {
+      branch: 'maybeFetchSecondarySummary.v3_passthrough_early',
+      analysisVersion: String(earlyRecord.analysisVersion),
+      topLevelKeys: Object.keys(earlyRecord).slice(0, 20),
+      backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
+    });
+    const v3Summary = extractNormalizedAiSummary(effectiveData);
+    const v3Species = asRecord(earlyRecord.species);
+    return {
+      ok: true,
+      status: 'completed',
+      error: null,
+      speciesKey: stringOr(earlyRecord.speciesKey, v3Species.key, v3Species.speciesKey),
+      speciesName: stringOr(earlyRecord.speciesName, v3Species.name, v3Species.speciesName),
+      scope: stringOr(earlyRecord.scope) || 'linnuliigid',
+      insightSummary: v3Summary?.insightSummary || '',
+      confidenceNote: v3Summary?.confidenceNote || '',
+      rankingNotes: v3Summary?.rankingNotes || '',
+      warnings: v3Summary?.warnings || [],
+      generatedAt: stringOr(earlyRecord.generatedAt) || new Date().toISOString(),
+      analysisVersion: String(earlyRecord.analysisVersion),
+      species: v3Species,
+      sourceHealth: asRecord(earlyRecord.sourceHealth),
+      countryScores: asRecord(earlyRecord.countryScores),
+      estoniaEvidence: asRecord(earlyRecord.estoniaEvidence),
+      evidenceSummary: asRecord(earlyRecord.evidenceSummary),
+      foreignClusters: Array.isArray(earlyRecord.foreignClusters) ? earlyRecord.foreignClusters : [],
+      predictedTargets: Array.isArray(earlyRecord.predictedTargets) ? earlyRecord.predictedTargets : [],
+      foreignRecentPoints: Array.isArray(earlyRecord.foreignRecentPoints) ? earlyRecord.foreignRecentPoints : [],
+      estoniaHistoryPoints: Array.isArray(earlyRecord.estoniaHistoryPoints) ? earlyRecord.estoniaHistoryPoints : [],
+      elurikkusRecentRecords: Array.isArray(earlyRecord.elurikkusRecentRecords) ? earlyRecord.elurikkusRecentRecords : [],
+      estoniaHistoryClusters: Array.isArray(earlyRecord.estoniaHistoryClusters) ? earlyRecord.estoniaHistoryClusters : [],
+      mapLayers: asRecord(earlyRecord.mapLayers),
+      mapLayersDefault: asRecord(earlyRecord.mapLayersDefault),
+      weather: asRecord(earlyRecord.weather),
+      payloadSourceState: 'n8n_v3_passthrough',
+      summarySourcePath: v3Summary?.summarySourcePath || 'v3_direct',
+    } as NormalizedUpstreamResponse;
+  }
   if (!upstream.ok) {
     throw createUpstreamError({
       stage: 'n8n_upstream',
@@ -4443,9 +4489,9 @@ function computeEvidenceState(input: {
   foreignClusters: unknown[];
   foreignEvidence: Record<string, unknown>[];
   sourceHealth: Record<string, unknown>;
-  weather: Record<string, unknown>;
-  predictedTargets: unknown[];
-  topPredictedPoints: unknown[];
+  weather?: Record<string, unknown>;
+  predictedTargets?: unknown[];
+  topPredictedPoints?: unknown[];
 }): EvidenceStateSnapshot {
   const freshestLocalities = Array.isArray(input.estoniaEvidence.freshestLocalities) ? input.estoniaEvidence.freshestLocalities : [];
   const hasUsableRecentEstoniaEvidence = toNumber(input.estoniaEvidence.recentCount7d) > 0
@@ -4466,8 +4512,11 @@ function computeEvidenceState(input: {
     || input.foreignClusters.length > 0
     || totalForeignRecentPoints > 0
     || primaryCountries.length > 0;
-  const hasUsablePredictedTargets = input.predictedTargets.length > 0 || input.topPredictedPoints.length > 0;
-  const hasWeather = Boolean(input.weather && (input.weather.weatherAvailable === true || stringOr(input.weather.fetchedAt)));
+  const safePredictedTargets = Array.isArray(input.predictedTargets) ? input.predictedTargets : [];
+  const safeTopPredictedPoints = Array.isArray(input.topPredictedPoints) ? input.topPredictedPoints : [];
+  const safeWeather = input.weather || {};
+  const hasUsablePredictedTargets = safePredictedTargets.length > 0 || safeTopPredictedPoints.length > 0;
+  const hasWeather = Boolean(safeWeather && (safeWeather.weatherAvailable === true || stringOr(safeWeather.fetchedAt)));
   const hasOnlyWeather = hasWeather
     && !hasUsableRecentEstoniaEvidence
     && !hasUsableEstoniaHistory

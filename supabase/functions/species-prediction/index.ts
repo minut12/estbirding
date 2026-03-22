@@ -15,7 +15,7 @@ const INVOKE_ROUTE_VERSION = 'lovable-fix';
 const EDGE_FUNCTION_FILE = 'supabase/functions/species-prediction/index.ts';
 const EDGE_FUNCTION_ENTRYPOINT = 'serve(async (req) => { ... })';
 const EDGE_RESPONSE_PROOF = 'served by live species-prediction invoke route';
-const EDGE_ROUTE_HEADER = 'live-post-invoke-fix18';
+const EDGE_ROUTE_HEADER = 'live-post-invoke-lovable-fix';
 const WEBHOOK_CONFIG_SOURCE = `env:${WEBHOOK_ENV_KEY}`;
 const STATUS_NO_CACHE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',

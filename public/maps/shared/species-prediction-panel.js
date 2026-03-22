@@ -605,6 +605,36 @@
       }
       html += renderPayloadSections(result);
     }
+    var globalEtas = Array.isArray(result.globalMigrationEtas) ? result.globalMigrationEtas.slice() : [];
+    if (globalEtas.length) {
+      globalEtas.sort(function (a, b) {
+        return String(a.earliestArrival || '').localeCompare(String(b.earliestArrival || ''));
+      });
+      html += '<div class="spp-card"><h4>Migration Forecast</h4>';
+      globalEtas.forEach(function (eta) {
+        var color = eta.isImminent ? '#16a34a' : eta.isPastDue ? '#6b7280' : (daysDiff(eta.earliestArrival) <= 7 ? '#ca8a04' : '#374151');
+        var bg = eta.isImminent ? '#f0fdf4' : eta.isPastDue ? '#f3f4f6' : (daysDiff(eta.earliestArrival) <= 7 ? '#fefce8' : '#f8fafc');
+        var border = eta.isImminent ? '#bbf7d0' : eta.isPastDue ? '#d1d5db' : (daysDiff(eta.earliestArrival) <= 7 ? '#fde68a' : '#e2e8f0');
+        var badge = eta.isImminent ? '<span style="background:#16a34a;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:5px">IMMINENT</span>' :
+          eta.isPastDue ? '<span style="background:#6b7280;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:5px">OVERDUE</span>' : '';
+        var from = eta.foreignLocality ? eta.foreignLocality.replace(/--.*/, '').trim() : '';
+        var country = eta.foreignCountry || '';
+        var fromLine = (from || country) ? escapeHtml((from ? from + (country ? ', ' + country : '') : country)) : '';
+        var earliest = formatShortDate(eta.earliestArrival);
+        var latest = formatShortDate(eta.latestArrival);
+        var arrivalRange = earliest && latest ? earliest + '\u2013' + latest : (earliest || latest || '');
+        html += '<div style="margin-bottom:7px;padding:7px 9px;background:' + bg + ';border:1px solid ' + border + ';border-radius:5px;font-size:12px;line-height:1.6">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center">' +
+          '<span style="font-weight:600;color:' + color + '">' + fromLine + badge + '</span>' +
+          (eta.foreignSightingDate ? '<span style="color:#6b7280;font-size:11px">' + escapeHtml(formatShortDate(eta.foreignSightingDate)) + '</span>' : '') +
+          '</div>' +
+          (eta.distanceKm ? '<div style="color:#374151">' + escapeHtml(String(eta.distanceKm)) + ' km \u2192 ' + escapeHtml(eta.entryZone || 'Estonia') + '</div>' : '') +
+          (arrivalRange ? '<div>Expected: <strong>' + escapeHtml(arrivalRange) + '</strong></div>' : '') +
+          renderEtaTimelineBar(eta) +
+          '</div>';
+      });
+      html += '</div>';
+    }
     html += '<div class="spp-card"><h4>Predicted targets</h4><div class="spp-points">';
     if (!predictedTargets.length) {
       html += '<div class="spp-point"><div class="spp-point-reason-text">—</div></div>';
@@ -768,9 +798,77 @@
     overlayGroups = null;
   }
 
+  function daysDiff(isoStr) {
+    if (!isoStr) return 999;
+    try {
+      var now = new Date();
+      now.setHours(0, 0, 0, 0);
+      var d = new Date(isoStr);
+      d.setHours(0, 0, 0, 0);
+      return Math.round((d - now) / 86400000);
+    } catch (e) { return 999; }
+  }
+
+  function renderEtaTimelineBar(eta) {
+    if (!eta || !eta.foreignSightingDate || !eta.earliestArrival) return '';
+    try {
+      var sighting = new Date(eta.foreignSightingDate).getTime();
+      var arrival = new Date(eta.latestArrival || eta.earliestArrival).getTime();
+      var now = Date.now();
+      var total = arrival - sighting;
+      if (total <= 0) return '';
+      var todayPct = Math.max(0, Math.min(100, Math.round((now - sighting) / total * 100)));
+      var arrivalPct = Math.max(0, Math.min(100, Math.round((new Date(eta.earliestArrival).getTime() - sighting) / total * 100)));
+      return '<div style="margin-top:5px;position:relative;height:6px;background:#e5e7eb;border-radius:3px;overflow:visible">' +
+        '<div style="position:absolute;left:0;top:0;height:6px;width:' + arrivalPct + '%;background:#93c5fd;border-radius:3px"></div>' +
+        '<div style="position:absolute;left:' + todayPct + '%;top:-3px;width:2px;height:12px;background:#1d4ed8;border-radius:1px" title="Today"></div>' +
+        '</div>' +
+        '<div style="display:flex;justify-content:space-between;font-size:10px;color:#9ca3af;margin-top:2px">' +
+        '<span>' + escapeHtml(formatShortDate(eta.foreignSightingDate)) + '</span>' +
+        '<span>' + escapeHtml(formatShortDate(eta.latestArrival || eta.earliestArrival)) + '</span>' +
+        '</div>';
+    } catch (e) { return ''; }
+  }
+
+  function formatShortDate(isoStr) {
+    if (!isoStr) return '';
+    try {
+      var d = new Date(isoStr);
+      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    } catch (e) { return isoStr; }
+  }
+
+  function renderMigrationEtaCard(eta) {
+    if (!eta) return '';
+    var badge = '';
+    if (eta.isImminent) {
+      badge = '<span style="background:#16a34a;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;margin-left:6px;vertical-align:middle">IMMINENT</span>';
+    } else if (eta.isPastDue) {
+      badge = '<span style="background:#6b7280;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;margin-left:6px;vertical-align:middle">OVERDUE</span>';
+    }
+    var from = eta.foreignLocality ? eta.foreignLocality.replace(/--.*/, '').trim() : '';
+    var country = eta.foreignCountry ? eta.foreignCountry : '';
+    var fromLine = (from || country) ? (from + (from && country ? ', ' : '') + country) : '';
+    var sightingDate = formatShortDate(eta.foreignSightingDate);
+    var earliest = formatShortDate(eta.earliestArrival);
+    var latest = formatShortDate(eta.latestArrival);
+    var arrivalRange = earliest && latest ? earliest + '\u2013' + latest : (earliest || latest || eta.etaText || '');
+    var travelLine = eta.travelDays ? eta.travelDays + ' days travel' + (eta.stopoverDays ? ' + ' + eta.stopoverDays + ' stopover' : '') : '';
+    var typeLine = eta.speciesType && eta.effectiveSpeedKmh ? eta.speciesType + ' (' + eta.effectiveSpeedKmh + ' km/h)' : '';
+    return '<div style="margin-top:8px;padding:7px 9px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:5px;font-size:12px;line-height:1.5">' +
+      '<div style="font-weight:600;margin-bottom:3px">Migration ETA' + badge + '</div>' +
+      (fromLine ? '<div>\uD83D\uDCCD From: ' + escapeHtml(fromLine) + (sightingDate ? ' (' + escapeHtml(sightingDate) + ')' : '') + '</div>' : '') +
+      (eta.distanceKm ? '<div>\u2708\uFE0F ' + escapeHtml(String(eta.distanceKm)) + ' km \u2192 ' + escapeHtml(eta.entryZone || 'Estonia') + '</div>' : '') +
+      (arrivalRange ? '<div>\uD83D\uDD50 Expected arrival: <strong>' + escapeHtml(arrivalRange) + '</strong></div>' : '') +
+      (travelLine ? '<div>\u23F1\uFE0F ' + escapeHtml(travelLine) + '</div>' : '') +
+      (typeLine ? '<div>\uD83E\uDD85 ' + escapeHtml(typeLine) + '</div>' : '') +
+      '</div>';
+  }
+
   function renderPredictedPoint(point) {
     var confidencePct = formatConfidence(point && point.confidence);
     var fillPct = String(clampConfidencePercent(point && point.confidence)) + '%';
+    var migEta = point && point.migrationEta ? point.migrationEta : null;
     var metrics = '' +
       metricCell('ETA', point && point.eta) +
       metricCell('Radius', appendKm(point && point.searchRadiusKm)) +
@@ -793,6 +891,7 @@
       '    </div>' +
       '  </div>' +
       '  <div class="spp-point-grid">' + metrics + '</div>' +
+      (migEta ? renderMigrationEtaCard(migEta) : '') +
       '  <div class="spp-point-reason">' +
       '    <div class="spp-point-reason-label">Reason</div>' +
       '    <div class="spp-point-reason-text">' + escapeHtml(cleanReasonText(point && point.reason, false)) + '</div>' +

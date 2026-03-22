@@ -170,6 +170,27 @@ export type SpeciesPredictionLayerToggles = {
   recentOnly: boolean;
 };
 
+export type MigrationEta = {
+  distanceKm: number;
+  entryZone: string;
+  entryLat: number;
+  entryLon: number;
+  speciesType: string;
+  baseSpeedKmh: number;
+  effectiveSpeedKmh: number;
+  travelDays: number;
+  stopoverDays: number;
+  totalDaysEstimate: number;
+  foreignSightingDate: string;
+  earliestArrival: string;
+  latestArrival: string;
+  isPastDue: boolean;
+  isImminent: boolean;
+  etaText: string;
+  foreignLocality?: string;
+  foreignCountry?: string;
+};
+
 export type PredictedPoint = {
   rank: number;
   name: string;
@@ -208,6 +229,7 @@ export type PredictedPoint = {
   weatherSupportScore?: number;
   confidenceBeforeCap?: number;
   confidenceAfterCap?: number;
+  migrationEta?: MigrationEta | null;
 };
 
 export type SpeciesPredictionEvidenceSummary = {
@@ -415,7 +437,8 @@ export type SpeciesPredictionResult = {
   backendBuild?: string;
   invokeRouteVersion?: string;
   responseProof?: string;
-  payloadSourceState?: 'current_finalized_backend_output' | 'legacy_or_unverified_source';
+  payloadSourceState?: 'current_finalized_backend_output' | 'legacy_or_unverified_source' | 'n8n_v3_passthrough';
+  globalMigrationEtas?: MigrationEta[];
   normalizedPrediction?: NormalizedPredictionPanelModel;
 };
 

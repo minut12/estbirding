@@ -2945,6 +2945,9 @@ function enrichPredictionResult(
     foreignClusters: canonicalForeignClusters,
     foreignEvidence,
     sourceHealth: canonicalSourceHealth,
+    weather: canonicalWeather,
+    predictedTargets: canonicalPredictedTargets,
+    topPredictedPoints: topPredictedPoints.length ? topPredictedPoints : canonicalPredictedTargets,
   });
   const canonicalSpecies = Object.keys(normalizedUpstream?.species || {}).length
     ? normalizedUpstream!.species

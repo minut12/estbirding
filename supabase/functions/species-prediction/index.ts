@@ -4433,6 +4433,7 @@ function buildCanonicalPredictionRecord(input: {
       foreignPressureMatchesNarrative: true,
     },
     summaryRegeneratedFromStructuredEvidence: false,
+    globalMigrationEtas,
   });
 }
 

@@ -12,10 +12,11 @@ const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
 const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-22-lovable-fix';
 const INVOKE_ROUTE_VERSION = 'lovable-fix';
+@@DIFFMARK_A@@
 const EDGE_FUNCTION_FILE = 'supabase/functions/species-prediction/index.ts';
 const EDGE_FUNCTION_ENTRYPOINT = 'serve(async (req) => { ... })';
 const EDGE_RESPONSE_PROOF = 'served by live species-prediction invoke route';
-const EDGE_ROUTE_HEADER = 'live-post-invoke-lovable-fix';
+const EDGE_ROUTE_HEADER = 'live-post-invoke-fix2-length';
 const WEBHOOK_CONFIG_SOURCE = `env:${WEBHOOK_ENV_KEY}`;
 const STATUS_NO_CACHE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',

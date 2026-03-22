@@ -1296,6 +1296,7 @@ async function buildMapFirstPredictionResult(opts: {
     summaryRegeneratedFromStructuredEvidence: canonical.summaryRegeneratedFromStructuredEvidence,
     mapLayers: canonical.mapLayers,
     mapLayersDefault: canonical.mapLayersDefault,
+    globalMigrationEtas: canonical.globalMigrationEtas,
     rawResearchPayload: (() => {
       // Safe carry-forwards from base: species metadata, URLs, vectors, historical structured data only.
       // No field from baseResult.rawResearchPayload survives unless listed explicitly here.

@@ -195,15 +195,21 @@ export type MigrationRoute = {
 
 export type MigrationEta = {
   distanceKm: number;
+  routeDistanceKm?: number;
   entryZone: string;
   entryLat: number;
   entryLon: number;
   speciesType: string;
-  baseSpeedKmh: number;
-  effectiveSpeedKmh: number;
-  travelDays: number;
-  stopoverDays: number;
+  baseSpeedKmh?: number;
+  effectiveSpeedKmh?: number;
+  flightSpeedKmh?: number;
+  dailyProgressKm?: number;
+  travelDays?: number;
+  stopoverDays?: number;
+  flightDays?: number;
+  restDays?: number;
   totalDaysEstimate: number;
+  weatherAdjustment?: { windFactor: number; precipFactor: number; tempFactor: number };
   foreignSightingDate: string;
   earliestArrival: string;
   latestArrival: string;

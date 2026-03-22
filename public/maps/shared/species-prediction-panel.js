@@ -29,6 +29,7 @@
       predictedLines: false,
       predictedCone: false,
       predictedTargets: true,
+      migrationRoutes: true,
       diagnostics: false,
       recentOnly: false
     }
@@ -613,9 +614,11 @@
       });
       html += '<div class="spp-card"><h4>Migration Forecast</h4>';
       globalEtas.forEach(function (eta) {
-        var color = eta.isImminent ? '#16a34a' : eta.isPastDue ? '#6b7280' : (daysDiff(eta.earliestArrival) <= 7 ? '#ca8a04' : '#374151');
-        var bg = eta.isImminent ? '#f0fdf4' : eta.isPastDue ? '#f3f4f6' : (daysDiff(eta.earliestArrival) <= 7 ? '#fefce8' : '#f8fafc');
-        var border = eta.isImminent ? '#bbf7d0' : eta.isPastDue ? '#d1d5db' : (daysDiff(eta.earliestArrival) <= 7 ? '#fde68a' : '#e2e8f0');
+        var diff = daysDiff(eta.earliestArrival);
+        var color = eta.isImminent ? '#16a34a' : eta.isPastDue ? '#6b7280' : (diff <= 7 ? '#ca8a04' : '#374151');
+        var bg = eta.isImminent ? '#f0fdf4' : eta.isPastDue ? '#f3f4f6' : (diff <= 7 ? '#fefce8' : '#f8fafc');
+        var border = eta.isImminent ? '#bbf7d0' : eta.isPastDue ? '#d1d5db' : (diff <= 7 ? '#fde68a' : '#e2e8f0');
+        var statusText = eta.isImminent ? '\uD83D\uDFE2 Arriving within 48h' : eta.isPastDue ? '\uD83D\uDD34 Overdue — may have arrived undetected' : (diff <= 7 ? '\uD83D\uDFE1 Arriving within 7 days' : '\u26AA More than 7 days out');
         var badge = eta.isImminent ? '<span style="background:#16a34a;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:5px">IMMINENT</span>' :
           eta.isPastDue ? '<span style="background:#6b7280;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:5px">OVERDUE</span>' : '';
         var from = eta.foreignLocality ? eta.foreignLocality.replace(/--.*/, '').trim() : '';
@@ -624,16 +627,32 @@
         var earliest = formatShortDate(eta.earliestArrival);
         var latest = formatShortDate(eta.latestArrival);
         var arrivalRange = earliest && latest ? earliest + '\u2013' + latest : (earliest || latest || '');
+        var routeKm = eta.routeDistanceKm || eta.distanceKm;
+        var mr = eta.migrationRoute;
+        var progressPct = mr ? Number(mr.currentProgressPct || 0) : 0;
         html += '<div style="margin-bottom:7px;padding:7px 9px;background:' + bg + ';border:1px solid ' + border + ';border-radius:5px;font-size:12px;line-height:1.6">' +
           '<div style="display:flex;justify-content:space-between;align-items:center">' +
           '<span style="font-weight:600;color:' + color + '">' + fromLine + badge + '</span>' +
           (eta.foreignSightingDate ? '<span style="color:#6b7280;font-size:11px">' + escapeHtml(formatShortDate(eta.foreignSightingDate)) + '</span>' : '') +
           '</div>' +
-          (eta.distanceKm ? '<div style="color:#374151">' + escapeHtml(String(eta.distanceKm)) + ' km \u2192 ' + escapeHtml(eta.entryZone || 'Estonia') + '</div>' : '') +
+          (routeKm ? '<div style="color:#374151">' + escapeHtml(String(routeKm)) + ' km \u2192 ' + escapeHtml(eta.entryZone || 'Estonia') + '</div>' : '') +
           (arrivalRange ? '<div>Expected: <strong>' + escapeHtml(arrivalRange) + '</strong></div>' : '') +
-          renderEtaTimelineBar(eta) +
+          (progressPct > 0 ? '<div style="margin:4px 0 2px;position:relative;height:5px;background:#e5e7eb;border-radius:3px"><div style="position:absolute;left:0;top:0;height:5px;width:' + progressPct + '%;background:' + color + ';border-radius:3px"></div></div><div style="font-size:10px;color:#9ca3af;text-align:right">' + progressPct + '%</div>' : '') +
+          '<div style="font-size:11px;color:' + color + ';margin-top:2px">' + statusText + '</div>' +
           '</div>';
       });
+      // Weather impact from first ETA
+      var firstWa = globalEtas[0] && globalEtas[0].weatherAdjustment;
+      if (firstWa) {
+        var windPct = firstWa.windFactor ? Math.round((firstWa.windFactor - 1) * 100) : null;
+        var tempPct = firstWa.tempFactor ? Math.round((firstWa.tempFactor - 1) * 100) : null;
+        html += '<div style="margin-top:4px;padding:6px 9px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:5px;font-size:11px;color:#475569">' +
+          '<div style="font-weight:600;margin-bottom:2px">Weather impact</div>' +
+          (windPct !== null ? '<div>Wind: ' + escapeHtml(windPct >= 0 ? 'tailwind +' + windPct + '%' : 'headwind ' + windPct + '%') + '</div>' : '') +
+          (firstWa.precipFactor && firstWa.precipFactor < 1 ? '<div>Rain: reducing speed ' + escapeHtml(Math.round((1 - firstWa.precipFactor) * 100) + '%') + '</div>' : '<div>Rain: none</div>') +
+          (tempPct !== null && tempPct > 0 ? '<div>Temp: spring push +' + escapeHtml(String(tempPct)) + '%</div>' : '') +
+          '</div>';
+      }
       html += '</div>';
     }
     html += '<div class="spp-card"><h4>Predicted targets</h4><div class="spp-points">';
@@ -646,10 +665,14 @@
     }
     html += '</div></div>';
     if (summaryText || confidenceNote) {
-      var isImminent = Array.isArray(result.globalMigrationEtas) && result.globalMigrationEtas.length && result.globalMigrationEtas[0].isImminent;
-      html += '<details class="spp-card"' + (isImminent ? ' open' : '') + '><summary style="cursor:pointer;font-weight:700;color:#0f172a">AI summary' + (isImminent ? ' \u2014 <span style="color:#16a34a">ARRIVAL IMMINENT</span>' : '') + '</summary>';
+      var etaList = Array.isArray(result.globalMigrationEtas) ? result.globalMigrationEtas : [];
+      var isImminent = etaList.length && etaList[0].isImminent;
+      var isOverdue = !isImminent && etaList.some(function (e) { return e.isPastDue; });
+      html += '<details class="spp-card"' + (isImminent ? ' open' : '') + '><summary style="cursor:pointer;font-weight:700;color:#0f172a">AI summary' + (isImminent ? ' \u2014 <span style="color:#16a34a">ARRIVAL IMMINENT</span>' : (isOverdue ? ' \u2014 <span style="color:#b45309">OVERDUE</span>' : '')) + '</summary>';
       if (isImminent) {
-        html += '<div style="margin-top:8px;padding:8px 10px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;font-size:12px;font-weight:600;color:#15803d">\u26A0\uFE0F Arrival imminent \u2014 ' + escapeHtml(result.globalMigrationEtas[0].etaText || '') + '</div>';
+        html += '<div style="margin-top:8px;padding:8px 10px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;font-size:12px;font-weight:600;color:#15803d">\u26A1 Migration imminent \u2014 arrival expected within 48 hours</div>';
+      } else if (isOverdue) {
+        html += '<div style="margin-top:8px;padding:8px 10px;background:#fefce8;border:1px solid #fde68a;border-radius:6px;font-size:12px;font-weight:600;color:#92400e">\uD83D\uDD0D Overdue \u2014 expected arrival has passed, check recent reports</div>';
       }
       if (summaryText) {
         html += '<div class="spp-summary" style="margin-top:10px"><p class="spp-summary-text">' + highlightDatesInText(summaryText) + '</p></div>';
@@ -761,6 +784,7 @@
       layerChip('predictedLines', 'Prediction vectors', state.layerToggles.predictedLines) +
       layerChip('predictedCone', 'Prediction cone', state.layerToggles.predictedCone) +
       layerChip('predictedTargets', 'Predicted targets', state.layerToggles.predictedTargets) +
+      layerChip('migrationRoutes', 'Migration routes', state.layerToggles.migrationRoutes !== false) +
       layerChip('diagnostics', 'Diagnostics', state.layerToggles.diagnostics) +
       layerChip('recentOnly', 'Recent only', state.layerToggles.recentOnly) +
       '</div>';
@@ -792,7 +816,7 @@
     if (state.layerToggles.predictedLines !== false) renderPredictionVectors(result.predictionVectors || [], false);
     if (state.layerToggles.predictedCone !== false) renderPredictionVectors(result.predictionVectors || [], true);
     if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap((result.predictedTargets || result.topPredictedPoints || []).slice(0, 5));
-    if (Array.isArray(result.globalMigrationEtas) && result.globalMigrationEtas.length) renderMigrationRoutes(result.globalMigrationEtas);
+    if (state.layerToggles.migrationRoutes !== false && Array.isArray(result.globalMigrationEtas) && result.globalMigrationEtas.length) renderMigrationRoutes(result.globalMigrationEtas);
     if (state.layerToggles.diagnostics === true && shouldOpenDebugDetails()) renderDiagnostics((result.predictedTargets || result.topPredictedPoints || []).slice(0, 5));
   }
 
@@ -869,15 +893,25 @@
     var earliest = formatShortDate(eta.earliestArrival);
     var latest = formatShortDate(eta.latestArrival);
     var arrivalRange = earliest && latest ? earliest + '\u2013' + latest : (earliest || latest || eta.etaText || '');
-    var travelLine = eta.travelDays ? eta.travelDays + ' days travel' + (eta.stopoverDays ? ' + ' + eta.stopoverDays + ' stopover' : '') : '';
-    var typeLine = eta.speciesType && eta.effectiveSpeedKmh ? eta.speciesType + ' (' + eta.effectiveSpeedKmh + ' km/h)' : '';
+    var routeKm = eta.routeDistanceKm || eta.distanceKm;
+    var flightDays = eta.flightDays || eta.travelDays;
+    var restDays = eta.restDays || eta.stopoverDays;
+    var speedKmh = eta.flightSpeedKmh || eta.effectiveSpeedKmh || eta.baseSpeedKmh;
+    var travelLine = flightDays ? flightDays + ' flying + ' + (restDays || 0) + ' rest = ' + eta.totalDaysEstimate + ' days' : '';
+    var typeLine = eta.speciesType + (speedKmh ? ' (' + speedKmh + ' km/h)' : '');
+    var wa = eta.weatherAdjustment;
+    var windPct = wa && wa.windFactor ? Math.round((wa.windFactor - 1) * 100) : null;
+    var weatherLine = windPct !== null ? (windPct >= 0 ? 'tailwind +' : 'headwind ') + Math.abs(windPct) + '%' : '';
+    var progressPct = eta.migrationRoute ? Number(eta.migrationRoute.currentProgressPct || 0) : 0;
     return '<div style="margin-top:8px;padding:7px 9px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:5px;font-size:12px;line-height:1.5">' +
       '<div style="font-weight:600;margin-bottom:3px">Migration ETA' + badge + '</div>' +
       (fromLine ? '<div>\uD83D\uDCCD From: ' + escapeHtml(fromLine) + (sightingDate ? ' (' + escapeHtml(sightingDate) + ')' : '') + '</div>' : '') +
-      (eta.distanceKm ? '<div>\u2708\uFE0F ' + escapeHtml(String(eta.distanceKm)) + ' km \u2192 ' + escapeHtml(eta.entryZone || 'Estonia') + '</div>' : '') +
-      (arrivalRange ? '<div>\uD83D\uDD50 Expected arrival: <strong>' + escapeHtml(arrivalRange) + '</strong></div>' : '') +
+      (routeKm ? '<div>\uD83D\uDEE4\uFE0F ' + escapeHtml(String(routeKm)) + ' km \u2192 ' + escapeHtml(eta.entryZone || 'Estonia') + '</div>' : '') +
+      (arrivalRange ? '<div>\uD83D\uDCC5 Expected: <strong>' + escapeHtml(arrivalRange) + '</strong></div>' : '') +
       (travelLine ? '<div>\u23F1\uFE0F ' + escapeHtml(travelLine) + '</div>' : '') +
       (typeLine ? '<div>\uD83E\uDD85 ' + escapeHtml(typeLine) + '</div>' : '') +
+      (weatherLine ? '<div>\uD83D\uDCA8 Wind: ' + escapeHtml(weatherLine) + '</div>' : '') +
+      (progressPct > 0 ? renderEtaTimelineBar(eta) : '') +
       '</div>';
   }
 
@@ -1120,40 +1154,43 @@
 
   function migrationRouteColor(speciesType) {
     var t = String(speciesType || '').toLowerCase();
-    if (t === 'waterfowl' || t === 'diver') return '#3b82f6';
-    if (t === 'raptor') return '#92400e';
-    if (t === 'wader') return '#16a34a';
-    if (t === 'gull') return '#0891b2';
-    if (t === 'passerine') return '#7c3aed';
-    return '#6b7280';
+    if (t === 'waterfowl' || t === 'diver' || t === 'sea_duck') return '#2196F3';
+    if (t === 'raptor' || t === 'soarer') return '#8B4513';
+    if (t === 'wader') return '#4CAF50';
+    if (t === 'goose') return '#FF9800';
+    if (t === 'gull') return '#607D8B';
+    if (t === 'passerine') return '#9C27B0';
+    return '#FF5722';
   }
 
   function renderMigrationRoutes(globalEtas) {
     if (!overlayGroups || !overlayGroups.migrationRoutes) return;
     var layer = overlayGroups.migrationRoutes;
-    globalEtas.forEach(function (eta, idx) {
+    var etas = globalEtas.slice(0, 5); // max 5 routes for performance
+    etas.forEach(function (eta, idx) {
       var mr = eta && eta.migrationRoute;
       if (!mr || !Array.isArray(mr.route) || mr.route.length < 2) return;
       var isPrimary = idx === 0;
       var color = migrationRouteColor(mr.speciesType || eta.speciesType);
       var opacity = isPrimary ? 0.85 : 0.4;
       var progressPct = Number(mr.currentProgressPct || 0);
+      var routeDistKm = Number(mr.routeDistanceKm || eta.routeDistanceKm || eta.distanceKm || 0);
       var routeLatLngs = mr.route.map(function (wp) { return [wp.lat, wp.lon]; });
 
-      // Split into traveled and remaining segments at current progress
+      // Split into traveled (solid) and remaining (dashed) at currentWaypointIdx
       var splitIdx = Number(mr.currentWaypointIdx || 0);
-      splitIdx = Math.max(0, Math.min(splitIdx, routeLatLngs.length - 1));
-      var traveledCoords = routeLatLngs.slice(0, splitIdx + 1);
-      var remainingCoords = routeLatLngs.slice(splitIdx);
+      splitIdx = Math.max(0, Math.min(splitIdx, routeLatLngs.length - 2));
+      var traveledCoords = routeLatLngs.slice(0, splitIdx + 2); // +2 to include one past current
+      var remainingCoords = routeLatLngs.slice(splitIdx + 1);
 
       if (traveledCoords.length >= 2) {
         L.polyline(traveledCoords, {
-          color: color, weight: 3, opacity: opacity * 0.5, dashArray: null
+          color: color, weight: 3, opacity: opacity * 0.55, dashArray: null
         }).addTo(layer);
       }
       if (remainingCoords.length >= 2) {
         L.polyline(remainingCoords, {
-          color: color, weight: 3, opacity: opacity, dashArray: '8, 6'
+          color: color, weight: 3, opacity: opacity, dashArray: '10, 8'
         }).addTo(layer);
       }
 
@@ -1161,16 +1198,16 @@
       mr.route.forEach(function (wp) {
         if (wp.type === 'origin') {
           L.circleMarker([wp.lat, wp.lon], {
-            radius: 7, color: '#ea580c', weight: 2, fillColor: '#fed7aa', fillOpacity: 0.9
-          }).bindTooltip(escapeHtml(wp.name) + (wp.estimatedDate ? ' (' + escapeHtml(formatShortDate(wp.estimatedDate)) + ')' : ''), { permanent: false }).addTo(layer);
+            radius: 8, color: '#fff', weight: 2, fillColor: '#FF5722', fillOpacity: 0.9
+          }).bindTooltip('<b>' + escapeHtml(wp.name) + '</b><br>Sighted: ' + escapeHtml(formatShortDate(wp.estimatedDate)), { direction: 'top' }).addTo(layer);
         } else if (wp.type === 'destination') {
           L.circleMarker([wp.lat, wp.lon], {
-            radius: 7, color: '#16a34a', weight: 2, fillColor: '#bbf7d0', fillOpacity: 0.9
-          }).bindTooltip(escapeHtml(wp.name) + (wp.estimatedDate ? ' — est. ' + escapeHtml(formatShortDate(wp.estimatedDate)) : ''), { permanent: false }).addTo(layer);
+            radius: 8, color: '#fff', weight: 2, fillColor: '#4CAF50', fillOpacity: 0.9
+          }).bindTooltip('<b>' + escapeHtml(wp.name) + '</b><br>Expected: ' + escapeHtml(formatShortDate(eta.earliestArrival)) + ' \u2013 ' + escapeHtml(formatShortDate(eta.latestArrival)), { direction: 'top' }).addTo(layer);
         } else {
           L.circleMarker([wp.lat, wp.lon], {
-            radius: 4, color: color, weight: 1, fillColor: color, fillOpacity: 0.5
-          }).bindTooltip(escapeHtml(wp.name) + (wp.estimatedDate ? ' — est. ' + escapeHtml(formatShortDate(wp.estimatedDate)) : ''), { permanent: false }).addTo(layer);
+            radius: 4, color: '#fff', weight: 1, fillColor: color, fillOpacity: 0.6
+          }).bindTooltip(escapeHtml(wp.name) + (wp.estimatedDate ? '<br>Est. ' + escapeHtml(formatShortDate(wp.estimatedDate)) : '') + (wp.cumulativeKm ? '<br>' + escapeHtml(String(wp.cumulativeKm)) + ' km' : ''), { direction: 'top' }).addTo(layer);
         }
       });
 
@@ -1178,14 +1215,19 @@
       if (isFiniteNumber(mr.currentEstimatedLat) && isFiniteNumber(mr.currentEstimatedLon) && !mr.hasArrived) {
         var pulseIcon = L.divIcon({
           className: '',
-          html: '<div style="width:14px;height:14px;border-radius:50%;background:' + color + ';border:2px solid #fff;box-shadow:0 0 0 0 ' + color + ';animation:spp-pulse 1.6s infinite;opacity:0.95"></div>',
-          iconSize: [14, 14],
-          iconAnchor: [7, 7]
+          html: '<div style="width:12px;height:12px;border-radius:50%;background:' + color + ';border:2px solid #fff;animation:spp-pulse 2s ease-out infinite"></div>',
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
         });
-        var fromLabel = eta.foreignLocality ? eta.foreignLocality.replace(/--.*/, '').trim() : (eta.foreignCountry || '');
-        var kmLabel = isFiniteNumber(eta.distanceKm) ? '~' + Math.round((1 - progressPct / 100) * eta.distanceKm) + ' km from Estonia' : '';
+        var kmTraveled = routeDistKm && progressPct ? Math.round(routeDistKm * progressPct / 100) : null;
+        var kmLeft = routeDistKm && progressPct ? Math.round(routeDistKm * (1 - progressPct / 100)) : null;
+        var daysSince = mr.daysSinceSighting ? Number(mr.daysSinceSighting).toFixed(0) + ' days since sighting' : '';
+        var tooltip = '<b>Estimated position now</b>' +
+          (daysSince ? '<br>' + daysSince : '') +
+          (kmTraveled ? '<br>~' + escapeHtml(String(kmTraveled)) + ' km traveled' : '') +
+          (kmLeft ? '<br>~' + escapeHtml(String(kmLeft)) + ' km to Estonia' : '');
         L.marker([mr.currentEstimatedLat, mr.currentEstimatedLon], { icon: pulseIcon, zIndexOffset: 900 })
-          .bindTooltip('Estimated position now' + (fromLabel ? ' (' + escapeHtml(fromLabel) + ')' : '') + (kmLabel ? ' — ' + kmLabel : ''), { permanent: false })
+          .bindTooltip(tooltip, { direction: 'top', permanent: false })
           .addTo(layer);
       }
     });

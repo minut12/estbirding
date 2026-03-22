@@ -10,8 +10,8 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-22-lovable-fix';
-const INVOKE_ROUTE_VERSION = 'lovable-fix';
+const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-22-fix2-length';
+const INVOKE_ROUTE_VERSION = 'fix2-length';
 @@DIFFMARK_A@@
 const EDGE_FUNCTION_FILE = 'supabase/functions/species-prediction/index.ts';
 const EDGE_FUNCTION_ENTRYPOINT = 'serve(async (req) => { ... })';
@@ -27,7 +27,7 @@ const INVOCATION_DIAGNOSTICS_FRESHNESS_MS = 30 * 60 * 1000;
 // SPECIES_PREDICTION_N8N_WEBHOOK_URL to:
 // https://estbirds.app.n8n.cloud/webhook/species-prediction-evidence-first
 
-console.log('[species-prediction] BUILD: 2026-03-22-lovable-fix');
+console.log('[species-prediction] BUILD: 2026-03-22-fix2-length');
 console.error(`SPECIES_PREDICTION_BOOT ${INVOKE_ROUTE_VERSION} ${EDGE_FUNCTION_FILE} ${EDGE_FUNCTION_ENTRYPOINT}`);
 
 type WebhookValidationErrorCode =

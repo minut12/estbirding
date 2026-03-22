@@ -3046,6 +3046,7 @@ function enrichPredictionResult(
     estoniaHistoryClusters: canonical.estoniaHistoryClusters,
     mapLayers: canonical.mapLayers,
     mapLayersDefault: canonical.mapLayersDefault,
+    globalMigrationEtas: canonical.globalMigrationEtas,
     weather: canonical.weather,
     evidenceState: canonical.evidenceState,
     hasUsableRecentEstoniaEvidence: canonical.hasUsableRecentEstoniaEvidence,

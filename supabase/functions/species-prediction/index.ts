@@ -237,6 +237,7 @@ type CanonicalPredictionRecord = {
     foreignPressureMatchesNarrative: boolean;
   };
   summaryRegeneratedFromStructuredEvidence: boolean;
+  globalMigrationEtas: unknown[];
 };
 
 type EvidenceState = 'recent_estonia' | 'estonia_history' | 'foreign_pressure' | 'mixed' | 'weather_only_insufficient' | 'insufficient';

@@ -1,11 +1,11 @@
-name: Deploy Supabase Edge Function
+name: Deploy Supabase Edge Functions
 
 on:
   push:
     branches:
       - main
     paths:
-      - 'supabase/functions/linnuliigid-snapshot/**'
+      - 'supabase/functions/**'
       - '.github/workflows/deploy-supabase-edge.yml'
   workflow_dispatch:
 
@@ -13,18 +13,21 @@ jobs:
   deploy-linnuliigid-snapshot:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
+      - uses: actions/checkout@v4
       - name: Install Supabase CLI
         run: npm i -g supabase
-
-      - name: Deploy function
+      - name: Deploy linnuliigid-snapshot
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy linnuliigid-snapshot --project-ref eenwcyuyugyrjgpivxrq
+        run: supabase functions deploy linnuliigid-snapshot --project-ref eenwcyuyugyrjgpivxrq --no-verify-jwt
+
+  deploy-species-prediction:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Supabase CLI
+        run: npm i -g supabase
+      - name: Deploy species-prediction
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy species-prediction --project-ref eenwcyuyugyrjgpivxrq --no-verify-jwt

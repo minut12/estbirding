@@ -662,7 +662,7 @@ export function normalizeSpeciesPredictionSettings(
 }
 
 export function normalizeSpeciesPredictionResult(
-  input: Partial<SpeciesPredictionResult> | null | undefined,
+  input: Partial<SpeciesPredictionResult> | Partial<SpeciesPredictionResult>[] | null | undefined,
   speciesName: string,
   scope: SpeciesScopeId,
 ): SpeciesPredictionResult {

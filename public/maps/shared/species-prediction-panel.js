@@ -178,7 +178,8 @@
       '#speciesPredictionPanel .spp-toggle{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:6px 11px;font-size:11px;font-weight:700;color:#0f172a;cursor:pointer;flex:0 0 auto}',
       '#speciesPredictionPanel.is-collapsed .spp-body{display:none}',
       '@media (max-width:900px){#speciesPredictionPanel{left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));width:auto;border-radius:18px}#speciesPredictionPanel .spp-header{padding:13px 14px 11px;border-radius:18px 18px 0 0}#speciesPredictionPanel .spp-body{padding:12px 14px 14px;max-height:min(68vh,620px)}#speciesPredictionPanel .spp-country,#speciesPredictionPanel .spp-grid,#speciesPredictionPanel .spp-point-grid,#speciesPredictionPanel .spp-debug-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}',
-      '@media (max-width:560px){#speciesPredictionPanel .spp-actions,#speciesPredictionPanel .spp-country,#speciesPredictionPanel .spp-grid,#speciesPredictionPanel .spp-point-grid,#speciesPredictionPanel .spp-debug-grid{grid-template-columns:minmax(0,1fr)}#speciesPredictionPanel .spp-point-head{grid-template-columns:minmax(0,1fr);display:grid}#speciesPredictionPanel .spp-confidence{justify-items:start}#speciesPredictionPanel .spp-fact{display:grid;gap:3px}#speciesPredictionPanel .spp-fact strong{text-align:left}}'
+      '@media (max-width:560px){#speciesPredictionPanel .spp-actions,#speciesPredictionPanel .spp-country,#speciesPredictionPanel .spp-grid,#speciesPredictionPanel .spp-point-grid,#speciesPredictionPanel .spp-debug-grid{grid-template-columns:minmax(0,1fr)}#speciesPredictionPanel .spp-point-head{grid-template-columns:minmax(0,1fr);display:grid}#speciesPredictionPanel .spp-confidence{justify-items:start}#speciesPredictionPanel .spp-fact{display:grid;gap:3px}#speciesPredictionPanel .spp-fact strong{text-align:left}}',
+      '@keyframes spp-pulse{0%{box-shadow:0 0 0 0 currentColor}70%{box-shadow:0 0 0 8px transparent}100%{box-shadow:0 0 0 0 transparent}}'
     ].join('');
     document.head.appendChild(styleEl);
 
@@ -645,9 +646,13 @@
     }
     html += '</div></div>';
     if (summaryText || confidenceNote) {
-      html += '<details class="spp-card"><summary style="cursor:pointer;font-weight:700;color:#0f172a">OpenAI summary</summary>';
+      var isImminent = Array.isArray(result.globalMigrationEtas) && result.globalMigrationEtas.length && result.globalMigrationEtas[0].isImminent;
+      html += '<details class="spp-card"' + (isImminent ? ' open' : '') + '><summary style="cursor:pointer;font-weight:700;color:#0f172a">AI summary' + (isImminent ? ' \u2014 <span style="color:#16a34a">ARRIVAL IMMINENT</span>' : '') + '</summary>';
+      if (isImminent) {
+        html += '<div style="margin-top:8px;padding:8px 10px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;font-size:12px;font-weight:600;color:#15803d">\u26A0\uFE0F Arrival imminent \u2014 ' + escapeHtml(result.globalMigrationEtas[0].etaText || '') + '</div>';
+      }
       if (summaryText) {
-        html += '<div class="spp-summary" style="margin-top:10px"><p class="spp-summary-text">' + escapeHtml(summaryText) + '</p></div>';
+        html += '<div class="spp-summary" style="margin-top:10px"><p class="spp-summary-text">' + highlightDatesInText(summaryText) + '</p></div>';
       }
       if (confidenceNote) {
         html += '<div class="spp-confidence-note" style="margin-top:10px"><h5>Confidence note</h5><p>' + escapeHtml(confidenceNote) + '</p></div>';
@@ -770,6 +775,7 @@
       predictedLines: L.layerGroup().addTo(window.map),
       predictedCone: L.layerGroup().addTo(window.map),
       predictedTargets: L.layerGroup().addTo(window.map),
+      migrationRoutes: L.layerGroup().addTo(window.map),
       diagnostics: L.layerGroup().addTo(window.map)
     };
   }
@@ -786,6 +792,7 @@
     if (state.layerToggles.predictedLines !== false) renderPredictionVectors(result.predictionVectors || [], false);
     if (state.layerToggles.predictedCone !== false) renderPredictionVectors(result.predictionVectors || [], true);
     if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap((result.predictedTargets || result.topPredictedPoints || []).slice(0, 5));
+    if (Array.isArray(result.globalMigrationEtas) && result.globalMigrationEtas.length) renderMigrationRoutes(result.globalMigrationEtas);
     if (state.layerToggles.diagnostics === true && shouldOpenDebugDetails()) renderDiagnostics((result.predictedTargets || result.topPredictedPoints || []).slice(0, 5));
   }
 
@@ -796,6 +803,15 @@
       });
     }
     overlayGroups = null;
+  }
+
+  function highlightDatesInText(text) {
+    if (!text) return '';
+    // Split text into safe segments, bolding date-like patterns
+    var parts = escapeHtml(text).split(/(\b\d{4}-\d{2}-\d{2}\b|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}(?:,?\s+\d{4})?\b)/gi);
+    return parts.map(function (part, i) {
+      return i % 2 === 1 ? '<strong style="color:#0f172a">' + part + '</strong>' : part;
+    }).join('');
   }
 
   function daysDiff(isoStr) {
@@ -1099,6 +1115,79 @@
         'Habitat filter adjusted ranking: ' + escapeHtml(point.habitatFilterAdjustedRanking ? 'Yes' : 'No') + '<br>' +
         'Foreign pressure used: ' + escapeHtml(point.usedForeignPressure ? 'Yes' : 'No') + '<br>' +
         'Vectors suppressed: ' + escapeHtml(point.vectorsSuppressed ? 'Yes' : 'No')).addTo(overlayGroups.diagnostics);
+    });
+  }
+
+  function migrationRouteColor(speciesType) {
+    var t = String(speciesType || '').toLowerCase();
+    if (t === 'waterfowl' || t === 'diver') return '#3b82f6';
+    if (t === 'raptor') return '#92400e';
+    if (t === 'wader') return '#16a34a';
+    if (t === 'gull') return '#0891b2';
+    if (t === 'passerine') return '#7c3aed';
+    return '#6b7280';
+  }
+
+  function renderMigrationRoutes(globalEtas) {
+    if (!overlayGroups || !overlayGroups.migrationRoutes) return;
+    var layer = overlayGroups.migrationRoutes;
+    globalEtas.forEach(function (eta, idx) {
+      var mr = eta && eta.migrationRoute;
+      if (!mr || !Array.isArray(mr.route) || mr.route.length < 2) return;
+      var isPrimary = idx === 0;
+      var color = migrationRouteColor(mr.speciesType || eta.speciesType);
+      var opacity = isPrimary ? 0.85 : 0.4;
+      var progressPct = Number(mr.currentProgressPct || 0);
+      var routeLatLngs = mr.route.map(function (wp) { return [wp.lat, wp.lon]; });
+
+      // Split into traveled and remaining segments at current progress
+      var splitIdx = Number(mr.currentWaypointIdx || 0);
+      splitIdx = Math.max(0, Math.min(splitIdx, routeLatLngs.length - 1));
+      var traveledCoords = routeLatLngs.slice(0, splitIdx + 1);
+      var remainingCoords = routeLatLngs.slice(splitIdx);
+
+      if (traveledCoords.length >= 2) {
+        L.polyline(traveledCoords, {
+          color: color, weight: 3, opacity: opacity * 0.5, dashArray: null
+        }).addTo(layer);
+      }
+      if (remainingCoords.length >= 2) {
+        L.polyline(remainingCoords, {
+          color: color, weight: 3, opacity: opacity, dashArray: '8, 6'
+        }).addTo(layer);
+      }
+
+      // Waypoint markers
+      mr.route.forEach(function (wp) {
+        if (wp.type === 'origin') {
+          L.circleMarker([wp.lat, wp.lon], {
+            radius: 7, color: '#ea580c', weight: 2, fillColor: '#fed7aa', fillOpacity: 0.9
+          }).bindTooltip(escapeHtml(wp.name) + (wp.estimatedDate ? ' (' + escapeHtml(formatShortDate(wp.estimatedDate)) + ')' : ''), { permanent: false }).addTo(layer);
+        } else if (wp.type === 'destination') {
+          L.circleMarker([wp.lat, wp.lon], {
+            radius: 7, color: '#16a34a', weight: 2, fillColor: '#bbf7d0', fillOpacity: 0.9
+          }).bindTooltip(escapeHtml(wp.name) + (wp.estimatedDate ? ' — est. ' + escapeHtml(formatShortDate(wp.estimatedDate)) : ''), { permanent: false }).addTo(layer);
+        } else {
+          L.circleMarker([wp.lat, wp.lon], {
+            radius: 4, color: color, weight: 1, fillColor: color, fillOpacity: 0.5
+          }).bindTooltip(escapeHtml(wp.name) + (wp.estimatedDate ? ' — est. ' + escapeHtml(formatShortDate(wp.estimatedDate)) : ''), { permanent: false }).addTo(layer);
+        }
+      });
+
+      // Current estimated position (pulsing marker)
+      if (isFiniteNumber(mr.currentEstimatedLat) && isFiniteNumber(mr.currentEstimatedLon) && !mr.hasArrived) {
+        var pulseIcon = L.divIcon({
+          className: '',
+          html: '<div style="width:14px;height:14px;border-radius:50%;background:' + color + ';border:2px solid #fff;box-shadow:0 0 0 0 ' + color + ';animation:spp-pulse 1.6s infinite;opacity:0.95"></div>',
+          iconSize: [14, 14],
+          iconAnchor: [7, 7]
+        });
+        var fromLabel = eta.foreignLocality ? eta.foreignLocality.replace(/--.*/, '').trim() : (eta.foreignCountry || '');
+        var kmLabel = isFiniteNumber(eta.distanceKm) ? '~' + Math.round((1 - progressPct / 100) * eta.distanceKm) + ' km from Estonia' : '';
+        L.marker([mr.currentEstimatedLat, mr.currentEstimatedLon], { icon: pulseIcon, zIndexOffset: 900 })
+          .bindTooltip('Estimated position now' + (fromLabel ? ' (' + escapeHtml(fromLabel) + ')' : '') + (kmLabel ? ' — ' + kmLabel : ''), { permanent: false })
+          .addTo(layer);
+      }
     });
   }
 

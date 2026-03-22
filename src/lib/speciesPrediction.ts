@@ -170,6 +170,29 @@ export type SpeciesPredictionLayerToggles = {
   recentOnly: boolean;
 };
 
+export type MigrationRouteWaypoint = {
+  lat: number;
+  lon: number;
+  name: string;
+  type: 'origin' | 'waypoint' | 'destination';
+  cumulativeKm: number;
+  estimatedDate: string;
+  progressPct: number;
+};
+
+export type MigrationRoute = {
+  route: MigrationRouteWaypoint[];
+  totalDistanceKm: number;
+  routeDistanceKm: number;
+  currentProgressPct: number;
+  currentEstimatedLat: number;
+  currentEstimatedLon: number;
+  currentWaypointIdx: number;
+  hasArrived: boolean;
+  daysSinceSighting: number;
+  speciesType: string;
+};
+
 export type MigrationEta = {
   distanceKm: number;
   entryZone: string;
@@ -189,6 +212,7 @@ export type MigrationEta = {
   etaText: string;
   foreignLocality?: string;
   foreignCountry?: string;
+  migrationRoute?: MigrationRoute | null;
 };
 
 export type PredictedPoint = {

@@ -12,7 +12,6 @@ const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
 const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-22-fix2-length';
 const INVOKE_ROUTE_VERSION = 'fix2-length';
-@@DIFFMARK_A@@
 const EDGE_FUNCTION_FILE = 'supabase/functions/species-prediction/index.ts';
 const EDGE_FUNCTION_ENTRYPOINT = 'serve(async (req) => { ... })';
 const EDGE_RESPONSE_PROOF = 'served by live species-prediction invoke route';

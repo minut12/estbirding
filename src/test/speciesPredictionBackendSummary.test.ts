@@ -69,7 +69,7 @@ globalThis.__speciesPredictionBackendTestHooks = {
   };
   context.globalThis = context;
   vm.runInNewContext(transpiled, context, { filename: filePath });
-  return context.__speciesPredictionBackendTestHooks as BackendHooks;
+  return (context as any).__speciesPredictionBackendTestHooks as BackendHooks;
 }
 
 function buildBaseResponse(overrides: Record<string, unknown> = {}): Record<string, unknown> {

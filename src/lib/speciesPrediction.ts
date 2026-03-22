@@ -662,7 +662,7 @@ export function normalizeSpeciesPredictionSettings(
 }
 
 export function normalizeSpeciesPredictionResult(
-  input: Partial<SpeciesPredictionResult> | null | undefined,
+  input: Partial<SpeciesPredictionResult> | Partial<SpeciesPredictionResult>[] | null | undefined,
   speciesName: string,
   scope: SpeciesScopeId,
 ): SpeciesPredictionResult {
@@ -1246,7 +1246,7 @@ export function extractUsablePayloadFromErrorEnvelope(
         rawTopLevelCode,
         rawTopLevelStage,
         hasAiSummaryObject: Object.keys(asRecord(probe.obj.aiSummary)).length > 0,
-        hasNestedInsightSummary: typeof asRecord(probe.obj.aiSummary).insightSummary === 'string' && asRecord(probe.obj.aiSummary).insightSummary.trim().length > 0,
+        hasNestedInsightSummary: typeof asRecord(probe.obj.aiSummary).insightSummary === 'string' && String(asRecord(probe.obj.aiSummary).insightSummary).trim().length > 0,
         rankingNotesInputType: typeof (probe.obj.rankingNotes ?? probe.obj.ranking_notes),
         warningsInputType: Array.isArray(probe.obj.warnings) ? 'array' : typeof probe.obj.warnings,
       };

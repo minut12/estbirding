@@ -10,8 +10,8 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-22-fix19-array-passthrough';
-const INVOKE_ROUTE_VERSION = 'fix18';
+const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-22-fix20-migration-routes';
+const INVOKE_ROUTE_VERSION = 'fix20';
 const EDGE_FUNCTION_FILE = 'supabase/functions/species-prediction/index.ts';
 const EDGE_FUNCTION_ENTRYPOINT = 'serve(async (req) => { ... })';
 const EDGE_RESPONSE_PROOF = 'served by live species-prediction invoke route';
@@ -237,6 +237,7 @@ type CanonicalPredictionRecord = {
     foreignPressureMatchesNarrative: boolean;
   };
   summaryRegeneratedFromStructuredEvidence: boolean;
+  globalMigrationEtas: unknown[];
 };
 
 type EvidenceState = 'recent_estonia' | 'estonia_history' | 'foreign_pressure' | 'mixed' | 'weather_only_insufficient' | 'insufficient';
@@ -1295,6 +1296,7 @@ async function buildMapFirstPredictionResult(opts: {
     summaryRegeneratedFromStructuredEvidence: canonical.summaryRegeneratedFromStructuredEvidence,
     mapLayers: canonical.mapLayers,
     mapLayersDefault: canonical.mapLayersDefault,
+    globalMigrationEtas: canonical.globalMigrationEtas,
     rawResearchPayload: (() => {
       // Safe carry-forwards from base: species metadata, URLs, vectors, historical structured data only.
       // No field from baseResult.rawResearchPayload survives unless listed explicitly here.
@@ -2835,6 +2837,7 @@ function buildCleanPredictionResult(
     estoniaHistoryClusters: canonical.estoniaHistoryClusters,
     mapLayers: canonical.mapLayers,
     mapLayersDefault: canonical.mapLayersDefault,
+    globalMigrationEtas: canonical.globalMigrationEtas,
     weather: canonical.weather,
     evidenceState: canonical.evidenceState,
     hasUsableRecentEstoniaEvidence: canonical.hasUsableRecentEstoniaEvidence,
@@ -3043,6 +3046,7 @@ function enrichPredictionResult(
     estoniaHistoryClusters: canonical.estoniaHistoryClusters,
     mapLayers: canonical.mapLayers,
     mapLayersDefault: canonical.mapLayersDefault,
+    globalMigrationEtas: canonical.globalMigrationEtas,
     weather: canonical.weather,
     evidenceState: canonical.evidenceState,
     hasUsableRecentEstoniaEvidence: canonical.hasUsableRecentEstoniaEvidence,
@@ -4330,6 +4334,7 @@ function buildCanonicalPredictionRecord(input: {
   const estoniaHistoryPoints = Array.isArray(chosen.estoniaHistoryPoints) ? chosen.estoniaHistoryPoints : [];
   const estoniaHistoryClusters = Array.isArray(chosen.estoniaHistoryClusters) ? chosen.estoniaHistoryClusters : [];
   const elurikkusRecentRecords = Array.isArray(chosen.elurikkusRecentRecords) ? chosen.elurikkusRecentRecords : [];
+  const globalMigrationEtas = Array.isArray(chosen.globalMigrationEtas) ? chosen.globalMigrationEtas : [];
   const foreignEvidence = Array.isArray(chosen.foreignEvidence) ? chosen.foreignEvidence.map((item) => asRecord(item)) : [];
   const weather = asRecord(chosen.weather);
   const evidenceStateSnapshot = computeEvidenceState({
@@ -4431,6 +4436,7 @@ function buildCanonicalPredictionRecord(input: {
       foreignPressureMatchesNarrative: true,
     },
     summaryRegeneratedFromStructuredEvidence: false,
+    globalMigrationEtas,
   });
 }
 

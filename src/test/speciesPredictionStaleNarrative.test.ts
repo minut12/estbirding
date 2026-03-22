@@ -49,7 +49,7 @@ globalThis.__speciesPredictionStaleNarrativeTestHooks = {
   };
   context.globalThis = context;
   vm.runInNewContext(transpiled, context, { filename: filePath });
-  return context.__speciesPredictionStaleNarrativeTestHooks as StaleNarrativeHooks;
+  return (context as any).__speciesPredictionStaleNarrativeTestHooks as StaleNarrativeHooks;
 }
 
 function buildBasePayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {

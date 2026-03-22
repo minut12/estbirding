@@ -26,6 +26,7 @@ const INVOCATION_DIAGNOSTICS_FRESHNESS_MS = 30 * 60 * 1000;
 // SPECIES_PREDICTION_N8N_WEBHOOK_URL to:
 // https://estbirds.app.n8n.cloud/webhook/species-prediction-evidence-first
 
+console.log('[species-prediction] BUILD: 2026-03-22-lovable-fix');
 console.error(`SPECIES_PREDICTION_BOOT ${INVOKE_ROUTE_VERSION} ${EDGE_FUNCTION_FILE} ${EDGE_FUNCTION_ENTRYPOINT}`);
 
 type WebhookValidationErrorCode =

@@ -36,6 +36,68 @@ vi.mock('@/lib/activePredictionSpecies', () => ({
   setActivePredictionSpecies: (_scope: string, speciesName: string) => ({ speciesName }),
 }));
 
+vi.mock('@/lib/speciesPredictionDebug', () => ({
+  clearSpeciesPredictionDebugMemory: vi.fn(),
+  clearSpeciesPredictionDebugStorage: vi.fn(),
+  getSpeciesPredictionDebugSnapshot: () => ({
+    activeContext: {
+      speciesName: '',
+      speciesKey: '',
+      mapScope: '',
+      panelRuntimeMarker: '',
+      lastPredictionRequestAt: '',
+      lastPredictionResponseAt: '',
+      predictionStatus: 'idle',
+    },
+    rawBackendResponse: {
+      responseBody: {
+        warnings: null,
+        diagnostics: null,
+      },
+    },
+    panelPayload: null,
+    panelState: null,
+    latestBackendResponseForResync: null,
+    transport: {
+      requestUrl: '',
+      requestTimestamp: '',
+      responseTimestamp: '',
+      requestId: null,
+      invocationMethod: '',
+      authSessionPresent: false,
+      anonKeyPresent: false,
+      intendedHeaders: {
+        apikey: false,
+        authorization: false,
+        contentType: null,
+      },
+      failedBeforeResponse: false,
+      httpStatus: null,
+      responseBody: {
+        diagnostics: null,
+      },
+      timeoutMs: null,
+      abortedByClientTimeout: false,
+      likelyReachedEdgeFunction: false,
+      error: null,
+      healthCheck: {
+        body: {
+          configured: true,
+        },
+      },
+    },
+  }),
+  getSpeciesPredictionDebugStorageSnapshot: () => ({
+    localStorage: {},
+    sessionStorage: {},
+  }),
+  setSpeciesPredictionHealthCheckResult: vi.fn(),
+  SPECIES_PREDICTION_DEBUG_EVENT: 'species-prediction-debug-updated',
+  SPECIES_PREDICTION_DEBUG_HEALTHCHECK_EVENT: 'species-prediction-debug-healthcheck',
+  SPECIES_PREDICTION_DEBUG_RERUN_EVENT: 'species-prediction-debug-rerun',
+  SPECIES_PREDICTION_DEBUG_RESYNC_EVENT: 'species-prediction-debug-resync',
+}));
+
 import SpeciesPredictionSettings, {
   buildRecoveryDebugState,
   deriveSpeciesPredictionDisplayState,
@@ -75,6 +137,32 @@ describe('SpeciesPredictionSettings', () => {
     });
 
     expect(screen.getByText(/Status mapper debug/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Cannot read properties of undefined/i)).not.toBeInTheDocument();
+  });
+
+  it('renders the live failing unavailable-shaped payload without runtime exception and keeps configured state', async () => {
+    vi.spyOn(window, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => JSON.stringify({
+        configured: true,
+        webhookConfigured: true,
+        webhookValid: true,
+        deployed: true,
+        statusCode: 'CONFIGURED_UNAVAILABLE',
+        message: 'Partial status payload from backend',
+      }),
+    } as Response);
+
+    expect(() => render(<SpeciesPredictionSettings />)).not.toThrow();
+
+    await waitFor(() => {
+      expect(screen.getByText('Prediction backend is configured and available')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/displayState: CONFIGURED_AVAILABLE/i)).toBeInTheDocument();
+    expect(screen.getByText(/summarySourcePath:/i)).toBeInTheDocument();
     expect(screen.queryByText(/Cannot read properties of undefined/i)).not.toBeInTheDocument();
   });
 

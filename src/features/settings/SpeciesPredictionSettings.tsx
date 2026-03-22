@@ -69,7 +69,7 @@ export default function SpeciesPredictionSettings() {
     webhookConfigured: false,
     webhookValid: false,
     available: false,
-    runtimeAvailable: false,
+    runtimeAvailable: null,
     deployed: false,
     statusCode: 'NOT_CONFIGURED',
     reasonCode: 'MISSING_WEBHOOK_URL',
@@ -196,7 +196,7 @@ export default function SpeciesPredictionSettings() {
         webhookConfigured: false,
         webhookValid: false,
         available: false,
-        runtimeAvailable: false,
+        runtimeAvailable: null,
         deployed: false,
         statusCode: 'NOT_CONFIGURED',
         reasonCode: 'MISSING_WEBHOOK_URL',
@@ -225,7 +225,7 @@ export default function SpeciesPredictionSettings() {
           webhookConfigured: false,
           webhookValid: false,
           available: false,
-          runtimeAvailable: false,
+          runtimeAvailable: null,
           deployed: false,
           statusCode: 'NOT_CONFIGURED',
           reasonCode: 'MISSING_WEBHOOK_URL',
@@ -391,20 +391,13 @@ export default function SpeciesPredictionSettings() {
               <p>displayState: {displayState}</p>
               {(() => {
                 const recoveredState = buildRecoveryDebugState(debugSnapshot?.rawBackendResponse);
-                const topCode = recoveredState.rawTopLevelCode;
-                const recovered = recoveredState.summarySourcePath
-                  ? {
-                    summarySourcePath: recoveredState.summarySourcePath,
-                    insightSummary: recoveredState.insightSummaryRecovered ? 'recovered' : '',
-                  }
-                  : null;
                 return (
                   <>
                     <p className="mt-1 font-semibold text-foreground text-[11px]">Response envelope recovery</p>
-                    <p>raw top-level code: {typeof topCode === 'string' ? topCode : '–'}</p>
-                    <p>summarySourcePath: {recovered?.summarySourcePath || '–'}</p>
-                    <p>insightSummary recovered: {recovered?.insightSummary ? 'yes' : 'no'}</p>
-                    <p>normalizedPredictionShape: {recovered ? 'nested-aiSummary-error-envelope' : '–'}</p>
+                    <p>raw top-level code: {recoveredState.rawTopLevelCode || '–'}</p>
+                    <p>summarySourcePath: {recoveredState.summarySourcePath || '–'}</p>
+                    <p>insightSummary recovered: {recoveredState.insightSummaryRecovered ? 'yes' : 'no'}</p>
+                    <p>normalizedPredictionShape: {recoveredState.normalizedPredictionShape || '–'}</p>
                   </>
                 );
               })()}
@@ -943,7 +936,7 @@ type SpeciesPredictionBackendStatus = {
   webhookConfigured: boolean;
   webhookValid: boolean;
   available: boolean;
-  runtimeAvailable: boolean;
+  runtimeAvailable: boolean | null;
   deployed: boolean;
   statusCode: 'NOT_CONFIGURED' | 'DEPLOYED_NOT_CONFIGURED' | 'CONFIGURED_AVAILABLE' | 'CONFIGURED_UNAVAILABLE' | 'RUNTIME_ERROR';
   reasonCode: string | null;
@@ -1061,7 +1054,7 @@ async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionB
     webhookConfigured: status.webhookConfigured === true,
     webhookValid: status.webhookValid === true,
     available: status.available === true,
-    runtimeAvailable: status.runtimeAvailable === true,
+    runtimeAvailable: typeof status.runtimeAvailable === 'boolean' ? status.runtimeAvailable : null,
     deployed: status.deployed === true,
     statusCode: isBackendStatusCode(status.statusCode) ? status.statusCode : 'NOT_CONFIGURED',
     reasonCode: safeString(status.reasonCode) || null,
@@ -1116,6 +1109,8 @@ function isBackendStatusCode(value: unknown): value is SpeciesPredictionBackendS
 }
 
 export function normalizeBackendStatus(status: SpeciesPredictionBackendStatus) {
+  const hasRuntimeReachableSignal = typeof status.runtimeReachable === 'boolean';
+  const hasRuntimeAvailabilitySignal = typeof status.runtimeAvailable === 'boolean';
   const hasExplicitInvocationFailureSignal = Boolean(
     safeString(status.lastInvocationStatus)
     || safeString(status.lastInvocationAt)
@@ -1123,8 +1118,8 @@ export function normalizeBackendStatus(status: SpeciesPredictionBackendStatus) {
     || safeString(status.lastInvocationMessage)
     || safeString(status.upstreamMessage)
     || typeof status.upstreamStatus === 'number'
-    || status.runtimeReachable === false
-    || status.runtimeAvailable === false,
+    || (hasRuntimeReachableSignal && status.runtimeReachable === false)
+    || (hasRuntimeAvailabilitySignal && status.runtimeAvailable === false),
   );
   return {
     isConfigured: status.configured === true && status.missingWebhookEnv !== true,

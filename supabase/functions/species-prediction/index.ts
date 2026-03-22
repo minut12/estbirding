@@ -1414,15 +1414,68 @@ async function fetchElurikkusEstoniaHistory(speciesName: string, signal: AbortSi
         'Pragma': 'no-cache',
       },
     });
-    if (!resp.ok) return [];
+    if (!resp.ok) {
+      console.warn(`${LOG_PREFIX} fetchElurikkusEstoniaHistory.http_error`, {
+        status: resp.status,
+        statusText: resp.statusText,
+        url,
+      });
+      return [];
+    }
     const data = await resp.json() as Record<string, unknown>;
-    const occurrences = Array.isArray(data.occurrences) ? data.occurrences : [];
-    return occurrences.map((row) => {
+    // Try multiple occurrence array paths: ALA biocache v1 uses 'occurrences',
+    // some versions use 'results' or a top-level array.
+    const rawOccurrences: unknown[] = Array.isArray(data.occurrences)
+      ? data.occurrences
+      : Array.isArray(data.results)
+        ? data.results
+        : Array.isArray(data)
+          ? data as unknown[]
+          : [];
+    const topLevelKeys = Object.keys(data).slice(0, 12);
+    const firstItemKeys = rawOccurrences.length > 0 ? Object.keys(asRecord(rawOccurrences[0])).slice(0, 20) : [];
+    console.info(`${LOG_PREFIX} fetchElurikkusEstoniaHistory.parse`, {
+      totalRecords: data.totalRecords ?? data.total ?? '?',
+      occurrencesArrayLength: rawOccurrences.length,
+      topLevelKeys,
+      firstItemKeys,
+    });
+    let filteredByCoords = 0;
+    const points = rawOccurrences.map((row) => {
       const item = asRecord(row);
-      const lat = toNumber(item.decimalLatitude);
-      const lon = toNumber(item.decimalLongitude);
+      // Try multiple coordinate field name candidates in order of preference.
+      // eElurikkus ALA biocache may use decimalLatitude (DwC standard) or
+      // latitude/lat depending on API version and indexing configuration.
+      const lat = hasNumber(item.decimalLatitude)
+        ? toNumber(item.decimalLatitude)
+        : hasNumber(item.latitude)
+          ? toNumber(item.latitude)
+          : hasNumber(item.lat)
+            ? toNumber(item.lat)
+            : (() => {
+                // Last resort: parse "lat,lon" string from combined fields
+                const latLng = stringOr(item.latLng, item.latlong, item.coordinates);
+                const parts = latLng.split(',');
+                return parts.length >= 1 ? toNumber(parts[0].trim()) : 0;
+              })();
+      const lon = hasNumber(item.decimalLongitude)
+        ? toNumber(item.decimalLongitude)
+        : hasNumber(item.longitude)
+          ? toNumber(item.longitude)
+          : hasNumber(item.lon)
+            ? toNumber(item.lon)
+            : hasNumber(item.lng)
+              ? toNumber(item.lng)
+              : (() => {
+                  const latLng = stringOr(item.latLng, item.latlong, item.coordinates);
+                  const parts = latLng.split(',');
+                  return parts.length >= 2 ? toNumber(parts[1].trim()) : 0;
+                })();
       const eventDate = normalizeDateString(stringOr(item.eventDate, item.occurrenceDate, item.observed_at, item.datetime));
-      if (!Number.isFinite(lat) || !Number.isFinite(lon) || !isEstoniaCoords(lat, lon)) return null;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || !isEstoniaCoords(lat, lon)) {
+        filteredByCoords++;
+        return null;
+      }
       return {
         lat,
         lon,
@@ -1436,7 +1489,18 @@ async function fetchElurikkusEstoniaHistory(speciesName: string, signal: AbortSi
         count: Math.max(1, Math.round(toNumber(item.individualCount) || 1)),
       };
     }).filter(Boolean) as Record<string, unknown>[];
-  } catch {
+    console.info(`${LOG_PREFIX} fetchElurikkusEstoniaHistory.result`, {
+      rawOccurrencesCount: rawOccurrences.length,
+      filteredByCoords,
+      pointsExtracted: points.length,
+      recentCount7d: points.filter((p) => toNumber(p.daysAgo) <= 7).length,
+    });
+    return points;
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} fetchElurikkusEstoniaHistory.error`, {
+      error: err instanceof Error ? err.message : String(err),
+      url,
+    });
     return [];
   }
 }
@@ -1476,9 +1540,16 @@ async function fetchForeignRecentPoints(ebirdSpeciesCode: string, settings: Reco
         signal,
         headers: { 'X-eBirdApiToken': token, 'Accept': 'application/json' },
       });
-      if (!resp.ok) return [];
+      if (!resp.ok) {
+        console.warn(`${LOG_PREFIX} fetchForeignRecentPoints.http_error`, {
+          regionCode: entry.regionCode,
+          status: resp.status,
+          statusText: resp.statusText,
+        });
+        return [];
+      }
       const rows = await resp.json() as unknown[];
-      return (Array.isArray(rows) ? rows : []).map((row) => {
+      const points = (Array.isArray(rows) ? rows : []).map((row) => {
         const item = asRecord(row);
         const obsDt = normalizeDateString(stringOr(item.obsDt, item.obsTime));
         return {
@@ -1496,7 +1567,17 @@ async function fetchForeignRecentPoints(ebirdSpeciesCode: string, settings: Reco
           distanceToEstoniaKm: distanceToEstonia(toNumber(item.lat), hasNumber(item.lng) ? toNumber(item.lng) : toNumber(item.lon)),
         };
       }).filter((point) => Number.isFinite(toNumber(point.lat)) && Number.isFinite(toNumber(point.lon)));
-    } catch {
+      console.info(`${LOG_PREFIX} fetchForeignRecentPoints.region_result`, {
+        regionCode: entry.regionCode,
+        rawRows: Array.isArray(rows) ? rows.length : 0,
+        pointsExtracted: points.length,
+      });
+      return points;
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} fetchForeignRecentPoints.error`, {
+        regionCode: entry.regionCode,
+        error: err instanceof Error ? err.message : String(err),
+      });
       return [];
     }
   });

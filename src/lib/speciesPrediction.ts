@@ -1197,7 +1197,9 @@ export function extractUsablePayloadFromErrorEnvelope(
     seen.add(current.sourceObj);
     candidates.push(current);
     for (const key of ['body', 'data', 'result', 'responseBody', 'upstreamBody']) {
-      const next = asRecord(current.sourceObj[key]);
+      const nested = current.sourceObj[key];
+      if (!nested || typeof nested !== 'object' || Array.isArray(nested)) continue;
+      const next = nested as Record<string, unknown>;
       if (!Object.keys(next).length) continue;
       queue.push({ sourceObj: next, path: current.path ? `${current.path}.${key}` : key });
     }
@@ -1316,7 +1318,9 @@ function resolveWrappedSuccessSource(input: Record<string, unknown>): Record<str
     seen.add(current);
     if (hasCanonicalPredictionFields(current)) return current;
     for (const key of ['body', 'data', 'result', 'responseBody', 'upstreamBody']) {
-      const next = asRecord(current[key]);
+      const nested = current[key];
+      if (!nested || typeof nested !== 'object' || Array.isArray(nested)) continue;
+      const next = nested as Record<string, unknown>;
       if (!Object.keys(next).length) continue;
       queue.push(next);
     }

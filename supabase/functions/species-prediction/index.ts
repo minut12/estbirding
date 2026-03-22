@@ -1245,9 +1245,14 @@ async function buildMapFirstPredictionResult(opts: {
       warnings: normalizedN8nResponse.warnings,
     } : null,
   });
+  // Resolve payloadSourceState: v3 passthrough wins; otherwise mark as current pipeline output.
+  const resolvedPayloadSourceState = (normalizedN8nResponse as Record<string, unknown> | null)?.payloadSourceState === 'n8n_v3_passthrough'
+    ? 'n8n_v3_passthrough'
+    : 'current_finalized_backend_output';
   let canonicalResponse = attachNormalizationMarkers({
     ...baseResult,
     ...(normalizedN8nResponse ? { ok: normalizedN8nResponse.ok, status: normalizedN8nResponse.status, error: normalizedN8nResponse.error } : {}),
+    payloadSourceState: resolvedPayloadSourceState,
     speciesKey: canonical.speciesKey,
     speciesName: canonical.speciesName,
     generatedAt: canonical.generatedAt,
@@ -1337,7 +1342,7 @@ async function buildMapFirstPredictionResult(opts: {
   // Scrub rawResearchPayload narrative fields before finalization so finalizePredictionResponse
   // starts from a clean state rather than inheriting any stale narrative from the canonical merge.
   // Skip scrubbing for v3 passthrough payloads — their evidence is authoritative.
-  if (canonical.payloadSourceState !== 'n8n_v3_passthrough') {
+  if (resolvedPayloadSourceState !== 'n8n_v3_passthrough') {
     const preScrub = scrubStaleNarrativeFromStructuredEvidence(asRecord(canonicalResponse));
     const preRwp = asRecord(canonicalResponse.rawResearchPayload);
     preRwp.aiSummary = preScrub.safeSummary;

@@ -4331,6 +4331,7 @@ function buildCanonicalPredictionRecord(input: {
   const estoniaHistoryPoints = Array.isArray(chosen.estoniaHistoryPoints) ? chosen.estoniaHistoryPoints : [];
   const estoniaHistoryClusters = Array.isArray(chosen.estoniaHistoryClusters) ? chosen.estoniaHistoryClusters : [];
   const elurikkusRecentRecords = Array.isArray(chosen.elurikkusRecentRecords) ? chosen.elurikkusRecentRecords : [];
+  const globalMigrationEtas = Array.isArray(chosen.globalMigrationEtas) ? chosen.globalMigrationEtas : [];
   const foreignEvidence = Array.isArray(chosen.foreignEvidence) ? chosen.foreignEvidence.map((item) => asRecord(item)) : [];
   const weather = asRecord(chosen.weather);
   const evidenceStateSnapshot = computeEvidenceState({

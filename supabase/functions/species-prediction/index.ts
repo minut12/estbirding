@@ -10,7 +10,7 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-22-fix20-migration-routes';
+const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-22-fix21-evidence-state';
 const INVOKE_ROUTE_VERSION = 'fix20';
 const EDGE_FUNCTION_FILE = 'supabase/functions/species-prediction/index.ts';
 const EDGE_FUNCTION_ENTRYPOINT = 'serve(async (req) => { ... })';
@@ -2945,6 +2945,9 @@ function enrichPredictionResult(
     foreignClusters: canonicalForeignClusters,
     foreignEvidence,
     sourceHealth: canonicalSourceHealth,
+    weather: canonicalWeather,
+    predictedTargets: canonicalPredictedTargets,
+    topPredictedPoints: topPredictedPoints.length ? topPredictedPoints : canonicalPredictedTargets,
   });
   const canonicalSpecies = Object.keys(normalizedUpstream?.species || {}).length
     ? normalizedUpstream!.species

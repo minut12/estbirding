@@ -10,7 +10,7 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-22-fix21-evidence-state';
+const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-23-v3-passthrough';
 const INVOKE_ROUTE_VERSION = 'fix20';
 const EDGE_FUNCTION_FILE = 'supabase/functions/species-prediction/index.ts';
 const EDGE_FUNCTION_ENTRYPOINT = 'serve(async (req) => { ... })';
@@ -181,6 +181,11 @@ type NormalizedUpstreamResponse = {
   summaryGuardrailApplied: boolean;
   summaryGuardrailReason: string;
   summaryOrigin?: SummaryOrigin;
+  payloadSourceState?: string;
+  summarySourcePath?: string;
+  globalMigrationEtas?: unknown[];
+  topPredictedPoints?: unknown[];
+  aiSummary?: string;
   raw: Record<string, unknown>;
 };
 
@@ -196,6 +201,7 @@ type CanonicalPredictionRecord = {
   scope: string;
   generatedAt: string;
   analysisVersion: string;
+  externalPressureScore: number;
   species: Record<string, unknown>;
   sourceHealth: Record<string, unknown>;
   countryScores: Record<string, unknown>;

@@ -974,7 +974,9 @@ export function normalizeSpeciesPredictionResult(
     ...(backendBuild ? { backendBuild: normalizeUiText(backendBuild) } : {}),
     ...(invokeRouteVersion ? { invokeRouteVersion: normalizeUiText(invokeRouteVersion) } : {}),
     ...(responseProof ? { responseProof: normalizeUiText(responseProof) } : {}),
-    payloadSourceState: isCurrentFinalizedBackendOutput ? 'current_finalized_backend_output' : 'legacy_or_unverified_source',
+    payloadSourceState: readString(source, ['payloadSourceState']) === 'n8n_v3_passthrough'
+      ? 'n8n_v3_passthrough'
+      : isCurrentFinalizedBackendOutput ? 'current_finalized_backend_output' : 'legacy_or_unverified_source',
     ...(consistencyChecksSource ? { consistencyChecks: normalizePredictionConsistencyChecks(consistencyChecksSource) } : {}),
     ...(source.openaiAnalysis ? { openaiAnalysis: source.openaiAnalysis as SpeciesPredictionAnalysis } : {}),
     ...(normalizeUiText(

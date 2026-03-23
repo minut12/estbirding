@@ -974,7 +974,9 @@ export function normalizeSpeciesPredictionResult(
     ...(backendBuild ? { backendBuild: normalizeUiText(backendBuild) } : {}),
     ...(invokeRouteVersion ? { invokeRouteVersion: normalizeUiText(invokeRouteVersion) } : {}),
     ...(responseProof ? { responseProof: normalizeUiText(responseProof) } : {}),
-    payloadSourceState: isCurrentFinalizedBackendOutput ? 'current_finalized_backend_output' : 'legacy_or_unverified_source',
+    payloadSourceState: readString(source, ['payloadSourceState']) === 'n8n_v3_passthrough'
+      ? 'n8n_v3_passthrough'
+      : isCurrentFinalizedBackendOutput ? 'current_finalized_backend_output' : 'legacy_or_unverified_source',
     ...(consistencyChecksSource ? { consistencyChecks: normalizePredictionConsistencyChecks(consistencyChecksSource) } : {}),
     ...(source.openaiAnalysis ? { openaiAnalysis: source.openaiAnalysis as SpeciesPredictionAnalysis } : {}),
     ...(normalizeUiText(
@@ -988,6 +990,7 @@ export function normalizeSpeciesPredictionResult(
           : insightSummary
       ) }
       : {}),
+    ...(Array.isArray(source.globalMigrationEtas) && source.globalMigrationEtas.length ? { globalMigrationEtas: source.globalMigrationEtas as MigrationEta[] } : {}),
     ...(source.rawResearchPayload ? { rawResearchPayload: rawResearchPayload } : {}),
     ...(resolvedSource.recoveredFromErrorEnvelope ? {
       recoveredFromErrorEnvelope: true,

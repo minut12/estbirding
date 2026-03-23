@@ -906,6 +906,7 @@ export function normalizeSpeciesPredictionResult(
     ...(weather ? { weather } : {}),
     ...(predictionVectors.length ? { predictionVectors } : {}),
     ...((predictedTargets.length || hasPredictedTargets) ? { predictedTargets } : {}),
+    ...(Array.isArray(source.globalMigrationEtas) && source.globalMigrationEtas.length ? { globalMigrationEtas: source.globalMigrationEtas } : {}),
     ...(mapLayers ? { mapLayers } : {}),
     ...(foreignEvidence.length ? { foreignEvidence } : {}),
     ...((estoniaEvidence || recentCount7d != null || recentCount30d != null) ? {

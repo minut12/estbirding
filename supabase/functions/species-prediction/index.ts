@@ -1149,6 +1149,9 @@ async function buildMapFirstPredictionResult(opts: {
       evidenceStateSnapshot,
     })
     : null;
+  if ((normalizedN8nResponse as Record<string, unknown> | null)?.payloadSourceState === 'n8n_v3_passthrough') {
+    return attachNormalizationMarkers(normalizedN8nResponse as unknown as Record<string, unknown>);
+  }
   const countryScores = buildCountryScores(foreignEvidence);
   const topPredictedPoints = predictedTargets.slice(0, Math.min(5, clampInt(toNumber(settings.outputCount) || 5, 1, 5)));
   const latestCluster = foreignClusters[0] ?? null;
@@ -2469,7 +2472,9 @@ function createUpstreamError(input: {
     deployedProjectRef: getDeployedProjectRef(),
     ...(input.stage === 'invalid_upstream_json'
       ? {
-        summarySourcePath: (input.upstreamBody as Record<string, unknown> | null)?.summarySourcePath,
+        summarySourcePath: typeof (input.upstreamBody as Record<string, unknown> | null)?.summarySourcePath === 'string'
+          ? (input.upstreamBody as Record<string, unknown>).summarySourcePath
+          : undefined,
         hasAiSummaryObject: (input.upstreamBody as Record<string, unknown> | null)?.hasAiSummaryObject === true,
         hasNestedInsightSummary: (input.upstreamBody as Record<string, unknown> | null)?.hasNestedInsightSummary === true,
         normalizedInsightLength: (input.upstreamBody as Record<string, unknown> | null)?.normalizedInsightLength,
@@ -2782,6 +2787,7 @@ function buildCleanPredictionResult(
   const estoniaHistoryPoints = Array.isArray(record.estoniaHistoryPoints) ? record.estoniaHistoryPoints : [];
   const elurikkusRecentRecords = Array.isArray(record.elurikkusRecentRecords) ? record.elurikkusRecentRecords : [];
   const estoniaHistoryClusters = Array.isArray(record.estoniaHistoryClusters) ? record.estoniaHistoryClusters : [];
+  const topPredictedPoints = Array.isArray(record.topPredictedPoints) ? record.topPredictedPoints : predictedTargets;
   const evidenceStateSnapshot = computeEvidenceState({
     estoniaEvidence,
     estoniaHistoryPoints,
@@ -2790,6 +2796,9 @@ function buildCleanPredictionResult(
     foreignClusters,
     foreignEvidence: [],
     sourceHealth,
+    weather,
+    predictedTargets,
+    topPredictedPoints,
   });
   const cleaned = sanitizeSuccessfulPredictionPayload({
     ok: true,
@@ -3981,11 +3990,12 @@ const STALE_NARRATIVE_WARNING =
   'Narrative regenerated because stale summary text conflicted with structured evidence.';
 
 function collectEvidenceLocalities(response: Record<string, unknown>): string[] {
+  const freshestLocalities = Array.isArray(asRecord(response.estoniaEvidence).freshestLocalities)
+    ? asRecord(response.estoniaEvidence).freshestLocalities as unknown[]
+    : [];
   return [
     stringOr(asRecord(response.estoniaEvidence).latestEstoniaLocality),
-    ...(Array.isArray(asRecord(response.estoniaEvidence).freshestLocalities)
-      ? asRecord(response.estoniaEvidence).freshestLocalities.map((item) => stringOr(item))
-      : []),
+    ...freshestLocalities.map((item: unknown) => stringOr(item)),
     ...(Array.isArray(response.estoniaHistoryPoints)
       ? response.estoniaHistoryPoints.map((item) => stringOr(asRecord(item).locality, asRecord(item).municipality))
       : []),
@@ -4458,6 +4468,7 @@ function buildCanonicalPredictionRecord(input: {
     scope: stringOr(chosen.scope, 'linnuliigid'),
     generatedAt: stringOr(chosen.generatedAt) || new Date().toISOString(),
     analysisVersion: stringOr(chosen.analysisVersion) || `${EDGE_FUNCTION_VERSION}|canonical`,
+    externalPressureScore: toNumber(chosen.externalPressureScore),
     species: asRecord(chosen.species),
     sourceHealth,
     countryScores: asRecord(chosen.countryScores),
@@ -4671,6 +4682,7 @@ function sanitizeSummaryFields(input: {
       : 'insufficient_evidence_fallback';
     return {
       ...INSUFFICIENT_EVIDENCE_FALLBACK,
+      warnings: [...INSUFFICIENT_EVIDENCE_FALLBACK.warnings],
       summaryGuardrailApplied: true,
       summaryGuardrailReason: deterministicMissingEvidenceFallback ? `${reason},missing_usable_prediction_evidence` : reason,
       originalAiSummarySnippet,

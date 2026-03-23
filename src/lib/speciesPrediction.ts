@@ -988,6 +988,7 @@ export function normalizeSpeciesPredictionResult(
           : insightSummary
       ) }
       : {}),
+    ...(Array.isArray(source.globalMigrationEtas) && source.globalMigrationEtas.length ? { globalMigrationEtas: source.globalMigrationEtas as MigrationEta[] } : {}),
     ...(source.rawResearchPayload ? { rawResearchPayload: rawResearchPayload } : {}),
     ...(resolvedSource.recoveredFromErrorEnvelope ? {
       recoveredFromErrorEnvelope: true,

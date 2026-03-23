@@ -895,7 +895,9 @@ async function executeN8nAndPersist(opts: {
       webhookUrl,
       signal: controller.signal,
     });
-    resultObj = finalizePredictionResponse(resultObj, 'persist_main_result');
+    if (stringOr(resultObj.payloadSourceState) !== 'n8n_v3_passthrough') {
+      resultObj = finalizePredictionResponse(resultObj, 'persist_main_result');
+    }
     const analysisVersion = typeof resultObj.analysisVersion === 'string' ? resultObj.analysisVersion : null;
     const generatedAt = typeof resultObj.generatedAt === 'string' ? resultObj.generatedAt : new Date().toISOString();
 

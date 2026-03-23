@@ -221,6 +221,32 @@ export type MigrationEta = {
   migrationRoute?: MigrationRoute | null;
 };
 
+export type NormalizedMigrationRoutePoint = {
+  lat: number;
+  lon: number;
+  name?: string;
+  type?: 'origin' | 'waypoint' | 'destination';
+};
+
+export type NormalizedMigrationRoute = {
+  targetName: string;
+  rank?: number;
+  targetLat?: number;
+  targetLon?: number;
+  entryLat?: number;
+  entryLon?: number;
+  fromLocality?: string;
+  fromCountry?: string;
+  earliestArrival?: string;
+  latestArrival?: string;
+  routeDistanceKm?: number;
+  currentProgressPct?: number;
+  currentEstimatedLat?: number;
+  currentEstimatedLon?: number;
+  routePoints: NormalizedMigrationRoutePoint[];
+  sourcePath: string;
+};
+
 export type PredictedPoint = {
   rank: number;
   name: string;
@@ -1088,6 +1114,75 @@ export function normalizePrediction(raw: Partial<SpeciesPredictionResult> | Spec
   };
 }
 
+export function extractNormalizedMigrationRoutes(
+  raw: Partial<SpeciesPredictionResult> | SpeciesPredictionResult[] | null | undefined,
+): NormalizedMigrationRoute[] {
+  const root = Array.isArray(raw) ? (raw[0] as Partial<SpeciesPredictionResult> | undefined) ?? {} : (raw ?? {});
+  const result = asRecord(root);
+  const rawResearchPayload = readRecord(result, ['rawResearchPayload']) ?? {};
+  const sources: Array<{ path: string; points: unknown[] | null }> = [
+    { path: 'topPredictedPoints', points: readArray(result, ['topPredictedPoints']) },
+    { path: 'predictedTargets', points: readArray(result, ['predictedTargets']) },
+    { path: 'rawResearchPayload.topPredictedPoints', points: readArray(rawResearchPayload, ['topPredictedPoints']) },
+    { path: 'rawResearchPayload.predictedTargets', points: readArray(rawResearchPayload, ['predictedTargets']) },
+  ];
+  const dedupe = new Set<string>();
+  const routes: NormalizedMigrationRoute[] = [];
+
+  sources.forEach(({ path, points }) => {
+    (points ?? []).forEach((entry, index) => {
+      const point = asRecord(entry);
+      const migrationEta = readRecord(point, ['migrationEta']);
+      const migrationRoute = readRecord(migrationEta ?? {}, ['migrationRoute']);
+      if (!migrationEta || !migrationRoute) return;
+
+      const targetLat = readFiniteMigrationCoord(point, ['targetLat', 'lat']);
+      const targetLon = readFiniteMigrationCoord(point, ['targetLon', 'lon']);
+      const entryLat = readFiniteMigrationCoord(migrationEta, ['entryLat']);
+      const entryLon = readFiniteMigrationCoord(migrationEta, ['entryLon']);
+      const currentEstimatedLat = readFiniteMigrationCoord(migrationRoute, ['currentEstimatedLat']);
+      const currentEstimatedLon = readFiniteMigrationCoord(migrationRoute, ['currentEstimatedLon']);
+      const routePoints = normalizeMigrationRoutePoints(readArray(migrationRoute, ['route']));
+      const finalRoutePoints = routePoints.length >= 2
+        ? routePoints
+        : synthesizeMigrationRoutePoints(routePoints[0], entryLat, entryLon, targetLat, targetLon);
+      if (finalRoutePoints.length < 2) return;
+
+      const targetName = normalizeUiText(readString(point, ['displayName', 'name']) || `Target ${index + 1}`);
+      const routeKey = [
+        targetName,
+        readFiniteMigrationCoord(point, ['rank']) ?? '',
+        targetLat ?? '',
+        targetLon ?? '',
+        finalRoutePoints.map((routePoint) => `${routePoint.lat}:${routePoint.lon}`).join('|'),
+      ].join('::');
+      if (dedupe.has(routeKey)) return;
+      dedupe.add(routeKey);
+
+      routes.push({
+        targetName,
+        ...(hasValue(point, ['rank']) ? { rank: clampNumber(readNumber(point, ['rank']), 1, 999, 1) } : {}),
+        ...(targetLat != null ? { targetLat } : {}),
+        ...(targetLon != null ? { targetLon } : {}),
+        ...(entryLat != null ? { entryLat } : {}),
+        ...(entryLon != null ? { entryLon } : {}),
+        ...(readString(migrationEta, ['fromLocality', 'foreignLocality']) ? { fromLocality: normalizeUiText(readString(migrationEta, ['fromLocality', 'foreignLocality'])) } : {}),
+        ...(readString(migrationEta, ['fromCountry', 'foreignCountry']) ? { fromCountry: normalizeUiText(readString(migrationEta, ['fromCountry', 'foreignCountry'])) } : {}),
+        ...(readString(migrationEta, ['earliestArrival']) ? { earliestArrival: normalizeUiText(readString(migrationEta, ['earliestArrival'])) } : {}),
+        ...(readString(migrationEta, ['latestArrival']) ? { latestArrival: normalizeUiText(readString(migrationEta, ['latestArrival'])) } : {}),
+        ...(hasValue(migrationEta, ['routeDistanceKm']) ? { routeDistanceKm: clampFloat(readNumber(migrationEta, ['routeDistanceKm']), 0, 999999, 0) } : {}),
+        ...(hasValue(migrationRoute, ['currentProgressPct']) ? { currentProgressPct: clampFloat(readNumber(migrationRoute, ['currentProgressPct']), 0, 100, 0) } : {}),
+        ...(currentEstimatedLat != null ? { currentEstimatedLat } : {}),
+        ...(currentEstimatedLon != null ? { currentEstimatedLon } : {}),
+        routePoints: finalRoutePoints,
+        sourcePath: `${path}[${index}]`,
+      });
+    });
+  });
+
+  return routes;
+}
+
 function readRecentRecordTimestamp(record: SpeciesPredictionElurikkusRecentRecord | undefined): number {
   if (!record) return 0;
   const raw = String((record as Record<string, unknown>).event_datetime_point || record.date || (record as Record<string, unknown>).eventDate || '');
@@ -1848,6 +1943,52 @@ function normalizePredictionVectors(input: unknown[] | null): SpeciesPredictionV
       }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon)),
     };
   }).filter((vector) => vector.points.length >= 2);
+}
+
+function readFiniteMigrationCoord(
+  input: Record<string, unknown> | null | undefined,
+  keys: string[],
+): number | undefined {
+  if (!input) return undefined;
+  const matchedKey = keys.find((key) => hasValue(input, [key]));
+  if (!matchedKey) return undefined;
+  const rawValue = input[matchedKey];
+  const value = Number(rawValue);
+  return Number.isFinite(value) ? value : undefined;
+}
+
+function normalizeMigrationRoutePoints(input: unknown[] | null | undefined): NormalizedMigrationRoutePoint[] {
+  if (!Array.isArray(input)) return [];
+  return input.map((entry) => {
+    const source = asRecord(entry);
+    const lat = readFiniteMigrationCoord(source, ['lat', 'latitude']);
+    const lon = readFiniteMigrationCoord(source, ['lon', 'lng', 'longitude']);
+    if (lat == null || lon == null) return null;
+    return {
+      lat,
+      lon,
+      ...(readString(source, ['name']) ? { name: normalizeUiText(readString(source, ['name'])) } : {}),
+      ...(readString(source, ['type']) ? { type: normalizeUiText(readString(source, ['type'])) as NormalizedMigrationRoutePoint['type'] } : {}),
+    };
+  }).filter((point): point is NormalizedMigrationRoutePoint => point !== null);
+}
+
+function synthesizeMigrationRoutePoints(
+  firstRoutePoint: NormalizedMigrationRoutePoint | undefined,
+  entryLat: number | undefined,
+  entryLon: number | undefined,
+  targetLat: number | undefined,
+  targetLon: number | undefined,
+): NormalizedMigrationRoutePoint[] {
+  const synthesized: NormalizedMigrationRoutePoint[] = [];
+  if (firstRoutePoint) synthesized.push(firstRoutePoint);
+  if (entryLat != null && entryLon != null) synthesized.push({ lat: entryLat, lon: entryLon, name: 'Entry', type: 'waypoint' });
+  if (targetLat != null && targetLon != null) synthesized.push({ lat: targetLat, lon: targetLon, name: 'Target', type: 'destination' });
+  return synthesized.filter((point, index, array) => {
+    if (index === 0) return true;
+    const previous = array[index - 1];
+    return previous.lat !== point.lat || previous.lon !== point.lon;
+  });
 }
 
 function normalizeVectorKind(value: string): SpeciesPredictionVector['kind'] {

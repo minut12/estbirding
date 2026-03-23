@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { hasUsableSpeciesPredictionResult, normalizePrediction, normalizeSpeciesPredictionResult } from "@/lib/speciesPrediction";
+import { extractNormalizedMigrationRoutes, hasUsableSpeciesPredictionResult, normalizePrediction, normalizeSpeciesPredictionResult } from "@/lib/speciesPrediction";
 
 describe("normalizeSpeciesPredictionResult", () => {
   it("prefers canonical fields over legacy aliases", () => {
@@ -1268,6 +1268,147 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.sourceHealth?.activeEvidenceUsed).toContain("Open-Meteo weather");
     const freshestCoords = result.elurikkusRecentRecords?.find((record) => record?.hasCoords)?.coordinates;
     expect(freshestCoords).toEqual({ lat: 59.21001, lon: 23.49991 });
+  });
+
+  it("extracts nested migration routes from topPredictedPoints first", () => {
+    const routes = extractNormalizedMigrationRoutes({
+      topPredictedPoints: [
+        {
+          rank: 1,
+          name: "Mustvares Target",
+          lat: 58.5,
+          lon: 23.4,
+          migrationEta: {
+            entryLat: 57.9,
+            entryLon: 23.1,
+            fromLocality: "Kurzeme coast",
+            fromCountry: "Latvia",
+            earliestArrival: "2026-03-24",
+            latestArrival: "2026-03-26",
+            routeDistanceKm: 210,
+            migrationRoute: {
+              currentProgressPct: 44,
+              currentEstimatedLat: 57.7,
+              currentEstimatedLon: 22.8,
+              route: [
+                { lat: 56.9, lon: 21.1, type: "origin", name: "Origin" },
+                { lat: 57.9, lon: 23.1, type: "waypoint", name: "Entry" },
+                { lat: 58.5, lon: 23.4, type: "destination", name: "Mustvares Target" },
+              ],
+            },
+          },
+        },
+      ],
+    } as any);
+
+    expect(routes).toHaveLength(1);
+    expect(routes[0]?.targetName).toBe("Mustvares Target");
+    expect(routes[0]?.sourcePath).toBe("topPredictedPoints[0]");
+    expect(routes[0]?.routePoints).toHaveLength(3);
+    expect(routes[0]?.currentProgressPct).toBe(44);
+  });
+
+  it("falls back to predictedTargets and rawResearchPayload sources", () => {
+    const routes = extractNormalizedMigrationRoutes({
+      predictedTargets: [],
+      rawResearchPayload: {
+        topPredictedPoints: [
+          {
+            rank: 2,
+            name: "Fallback Target",
+            lat: 58.7,
+            lon: 23.8,
+            migrationEta: {
+              entryLat: 58.1,
+              entryLon: 23.4,
+              migrationRoute: {
+                route: [
+                  { lat: 57.1, lon: 22.1, type: "origin" },
+                  { lat: 58.7, lon: 23.8, type: "destination" },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    } as any);
+
+    expect(routes).toHaveLength(1);
+    expect(routes[0]?.sourcePath).toBe("rawResearchPayload.topPredictedPoints[0]");
+    expect(routes[0]?.routePoints).toHaveLength(2);
+  });
+
+  it("synthesizes origin-entry-target fallback routes when nested route arrays are too short", () => {
+    const routes = extractNormalizedMigrationRoutes({
+      predictedTargets: [
+        {
+          rank: 3,
+          name: "Synth Target",
+          lat: 59.0,
+          lon: 24.0,
+          migrationEta: {
+            entryLat: 58.4,
+            entryLon: 23.6,
+            migrationRoute: {
+              route: [{ lat: 57.0, lon: 22.0, type: "origin", name: "Origin" }],
+            },
+          },
+        },
+      ],
+    } as any);
+
+    expect(routes).toHaveLength(1);
+    expect(routes[0]?.routePoints).toEqual([
+      { lat: 57, lon: 22, name: "Origin", type: "origin" },
+      { lat: 58.4, lon: 23.6, name: "Entry", type: "waypoint" },
+      { lat: 59, lon: 24, name: "Target", type: "destination" },
+    ]);
+  });
+
+  it("ignores targets without migrationEta or usable coordinates", () => {
+    const routes = extractNormalizedMigrationRoutes({
+      topPredictedPoints: [
+        { rank: 1, name: "No ETA", lat: 58.1, lon: 23.1 },
+        {
+          rank: 2,
+          name: "Broken route",
+          lat: 58.2,
+          lon: 23.2,
+          migrationEta: {
+            migrationRoute: {
+              route: [{ lat: "bad", lon: 22.2 }],
+            },
+          },
+        },
+      ],
+    } as any);
+
+    expect(routes).toHaveLength(0);
+  });
+
+  it("deduplicates equivalent nested routes from topPredictedPoints and predictedTargets", () => {
+    const sharedTarget = {
+      rank: 1,
+      name: "Same Target",
+      lat: 58.8,
+      lon: 23.9,
+      migrationEta: {
+        migrationRoute: {
+          route: [
+            { lat: 57.2, lon: 22.2, type: "origin" },
+            { lat: 58.8, lon: 23.9, type: "destination" },
+          ],
+        },
+      },
+    };
+
+    const routes = extractNormalizedMigrationRoutes({
+      topPredictedPoints: [sharedTarget],
+      predictedTargets: [sharedTarget],
+    } as any);
+
+    expect(routes).toHaveLength(1);
+    expect(routes[0]?.sourcePath).toBe("topPredictedPoints[0]");
   });
 });
 

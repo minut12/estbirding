@@ -816,8 +816,8 @@
     if (state.layerToggles.predictedLines !== false) renderPredictionVectors(result.predictionVectors || [], false);
     if (state.layerToggles.predictedCone !== false) renderPredictionVectors(result.predictionVectors || [], true);
     if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap((result.predictedTargets || result.topPredictedPoints || []).slice(0, 5));
-    console.log('[ROUTES] toggle=', state.layerToggles.migrationRoutes, 'etas=', Array.isArray(result.globalMigrationEtas) ? result.globalMigrationEtas.length : 'missing', result.globalMigrationEtas);
-    if (state.layerToggles.migrationRoutes !== false && Array.isArray(result.globalMigrationEtas) && result.globalMigrationEtas.length) renderMigrationRoutes(result.globalMigrationEtas);
+    var normalizedMigrationRoutes = getNormalizedMigrationRoutes(result);
+    if (state.layerToggles.migrationRoutes !== false && normalizedMigrationRoutes.length) renderMigrationRoutes(normalizedMigrationRoutes);
     if (state.layerToggles.diagnostics === true && shouldOpenDebugDetails()) renderDiagnostics((result.predictedTargets || result.topPredictedPoints || []).slice(0, 5));
   }
 
@@ -1164,58 +1164,251 @@
     return '#FF5722';
   }
 
-  function renderMigrationRoutes(globalEtas) {
+  function logMigrationRouteDebug(message, payload) {
+    if (!shouldOpenDebugDetails()) return;
+    console.log('[ROUTES]', message, payload);
+  }
+
+  function normalizeMigrationRoutePoint(point, fallbackName) {
+    if (!point || typeof point !== 'object') return null;
+    var lat = Number(point.lat != null ? point.lat : point.latitude);
+    var lon = Number(point.lon != null ? point.lon : (point.lng != null ? point.lng : point.longitude));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return {
+      lat: lat,
+      lon: lon,
+      name: normalizeText(point.name || fallbackName || ''),
+      type: normalizeText(point.type || '')
+    };
+  }
+
+  function uniqueRoutePoints(points) {
+    if (!Array.isArray(points)) return [];
+    return points.filter(function (point, index) {
+      if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return false;
+      if (index === 0) return true;
+      var previous = points[index - 1];
+      return !previous || previous.lat !== point.lat || previous.lon !== point.lon;
+    });
+  }
+
+  function buildFallbackMigrationRoutePoints(routePoints, entryLat, entryLon, targetLat, targetLon) {
+    var points = [];
+    if (Array.isArray(routePoints) && routePoints.length && routePoints[0]) points.push(routePoints[0]);
+    if (Number.isFinite(entryLat) && Number.isFinite(entryLon)) {
+      points.push({ lat: entryLat, lon: entryLon, name: 'Entry zone', type: 'waypoint' });
+    }
+    if (Number.isFinite(targetLat) && Number.isFinite(targetLon)) {
+      points.push({ lat: targetLat, lon: targetLon, name: 'Target', type: 'destination' });
+    }
+    return uniqueRoutePoints(points);
+  }
+
+  function normalizeMigrationRouteCandidate(point, sourcePath, index, skipped) {
+    if (!point || typeof point !== 'object') {
+      skipped.push({ sourcePath: sourcePath + '[' + index + ']', reason: 'target object incomplete' });
+      return null;
+    }
+    var migrationEta = point.migrationEta && typeof point.migrationEta === 'object' ? point.migrationEta : null;
+    if (!migrationEta) {
+      skipped.push({ sourcePath: sourcePath + '[' + index + ']', targetName: normalizeText(point.displayName || point.name || ''), reason: 'missing migrationEta' });
+      return null;
+    }
+    var migrationRoute = migrationEta.migrationRoute && typeof migrationEta.migrationRoute === 'object' ? migrationEta.migrationRoute : null;
+    if (!migrationRoute) {
+      skipped.push({ sourcePath: sourcePath + '[' + index + ']', targetName: normalizeText(point.displayName || point.name || ''), reason: 'missing migrationEta.migrationRoute' });
+      return null;
+    }
+    var routeItems = Array.isArray(migrationRoute.route) ? migrationRoute.route : [];
+    var routePoints = routeItems.map(function (item, routeIndex) {
+      return normalizeMigrationRoutePoint(item, routeIndex === 0 ? 'Origin' : '');
+    }).filter(Boolean);
+    var targetLat = Number(point.targetLat != null ? point.targetLat : point.lat);
+    var targetLon = Number(point.targetLon != null ? point.targetLon : point.lon);
+    var entryLat = Number(migrationEta.entryLat);
+    var entryLon = Number(migrationEta.entryLon);
+    var finalRoutePoints = routePoints.length >= 2
+      ? uniqueRoutePoints(routePoints)
+      : buildFallbackMigrationRoutePoints(routePoints, entryLat, entryLon, targetLat, targetLon);
+    if (!Array.isArray(finalRoutePoints) || finalRoutePoints.length < 2) {
+      skipped.push({ sourcePath: sourcePath + '[' + index + ']', targetName: normalizeText(point.displayName || point.name || ''), reason: 'missing route array and no fallback coordinates' });
+      return null;
+    }
+    if (!finalRoutePoints.every(function (routePoint) { return Number.isFinite(routePoint.lat) && Number.isFinite(routePoint.lon); })) {
+      skipped.push({ sourcePath: sourcePath + '[' + index + ']', targetName: normalizeText(point.displayName || point.name || ''), reason: 'invalid lat/lon' });
+      return null;
+    }
+    var currentEstimatedLat = Number(migrationRoute.currentEstimatedLat);
+    var currentEstimatedLon = Number(migrationRoute.currentEstimatedLon);
+    return {
+      targetName: normalizeText(point.displayName || point.name || ('Target ' + (index + 1))),
+      rank: Number.isFinite(Number(point.rank)) ? Number(point.rank) : undefined,
+      targetLat: Number.isFinite(targetLat) ? targetLat : undefined,
+      targetLon: Number.isFinite(targetLon) ? targetLon : undefined,
+      entryLat: Number.isFinite(entryLat) ? entryLat : undefined,
+      entryLon: Number.isFinite(entryLon) ? entryLon : undefined,
+      fromLocality: normalizeText(migrationEta.fromLocality || migrationEta.foreignLocality || ''),
+      fromCountry: normalizeText(migrationEta.fromCountry || migrationEta.foreignCountry || ''),
+      earliestArrival: normalizeText(migrationEta.earliestArrival || ''),
+      latestArrival: normalizeText(migrationEta.latestArrival || ''),
+      routeDistanceKm: Number.isFinite(Number(migrationEta.routeDistanceKm)) ? Number(migrationEta.routeDistanceKm) : undefined,
+      currentProgressPct: Number.isFinite(Number(migrationRoute.currentProgressPct)) ? Number(migrationRoute.currentProgressPct) : undefined,
+      currentEstimatedLat: Number.isFinite(currentEstimatedLat) ? currentEstimatedLat : undefined,
+      currentEstimatedLon: Number.isFinite(currentEstimatedLon) ? currentEstimatedLon : undefined,
+      routePoints: finalRoutePoints,
+      speciesType: normalizeText(migrationRoute.speciesType || migrationEta.speciesType || ''),
+      sourcePath: sourcePath + '[' + index + ']'
+    };
+  }
+
+  function normalizeLegacyMigrationRouteCandidate(eta, index, skipped) {
+    if (!eta || typeof eta !== 'object') {
+      skipped.push({ sourcePath: 'globalMigrationEtas[' + index + ']', reason: 'target object incomplete' });
+      return null;
+    }
+    var migrationRoute = eta.migrationRoute && typeof eta.migrationRoute === 'object' ? eta.migrationRoute : null;
+    if (!migrationRoute) {
+      skipped.push({ sourcePath: 'globalMigrationEtas[' + index + ']', reason: 'missing migrationEta.migrationRoute' });
+      return null;
+    }
+    var routeItems = Array.isArray(migrationRoute.route) ? migrationRoute.route : [];
+    var routePoints = routeItems.map(function (item, routeIndex) {
+      return normalizeMigrationRoutePoint(item, routeIndex === 0 ? 'Origin' : '');
+    }).filter(Boolean);
+    var entryLat = Number(eta.entryLat);
+    var entryLon = Number(eta.entryLon);
+    var targetLat = Number(eta.targetLat);
+    var targetLon = Number(eta.targetLon);
+    var finalRoutePoints = routePoints.length >= 2
+      ? uniqueRoutePoints(routePoints)
+      : buildFallbackMigrationRoutePoints(routePoints, entryLat, entryLon, targetLat, targetLon);
+    if (finalRoutePoints.length < 2) {
+      skipped.push({ sourcePath: 'globalMigrationEtas[' + index + ']', reason: 'missing route array and no fallback coordinates' });
+      return null;
+    }
+    return {
+      targetName: normalizeText(eta.targetName || eta.entryZone || ('Target ' + (index + 1))),
+      targetLat: Number.isFinite(targetLat) ? targetLat : undefined,
+      targetLon: Number.isFinite(targetLon) ? targetLon : undefined,
+      entryLat: Number.isFinite(entryLat) ? entryLat : undefined,
+      entryLon: Number.isFinite(entryLon) ? entryLon : undefined,
+      fromLocality: normalizeText(eta.fromLocality || eta.foreignLocality || ''),
+      fromCountry: normalizeText(eta.fromCountry || eta.foreignCountry || ''),
+      earliestArrival: normalizeText(eta.earliestArrival || ''),
+      latestArrival: normalizeText(eta.latestArrival || ''),
+      routeDistanceKm: Number.isFinite(Number(eta.routeDistanceKm || eta.distanceKm)) ? Number(eta.routeDistanceKm || eta.distanceKm) : undefined,
+      currentProgressPct: Number.isFinite(Number(migrationRoute.currentProgressPct)) ? Number(migrationRoute.currentProgressPct) : undefined,
+      currentEstimatedLat: Number.isFinite(Number(migrationRoute.currentEstimatedLat)) ? Number(migrationRoute.currentEstimatedLat) : undefined,
+      currentEstimatedLon: Number.isFinite(Number(migrationRoute.currentEstimatedLon)) ? Number(migrationRoute.currentEstimatedLon) : undefined,
+      routePoints: finalRoutePoints,
+      speciesType: normalizeText(migrationRoute.speciesType || eta.speciesType || ''),
+      sourcePath: 'globalMigrationEtas[' + index + ']'
+    };
+  }
+
+  function getNormalizedMigrationRoutes(result) {
+    var skipped = [];
+    var sources = [
+      { path: 'topPredictedPoints', items: Array.isArray(result && result.topPredictedPoints) ? result.topPredictedPoints : [] },
+      { path: 'predictedTargets', items: Array.isArray(result && result.predictedTargets) ? result.predictedTargets : [] },
+      { path: 'rawResearchPayload.topPredictedPoints', items: Array.isArray(result && result.rawResearchPayload && result.rawResearchPayload.topPredictedPoints) ? result.rawResearchPayload.topPredictedPoints : [] },
+      { path: 'rawResearchPayload.predictedTargets', items: Array.isArray(result && result.rawResearchPayload && result.rawResearchPayload.predictedTargets) ? result.rawResearchPayload.predictedTargets : [] }
+    ];
+    var routes = [];
+    var dedupe = {};
+    var migrationEtaCount = 0;
+    var migrationRouteCount = 0;
+    sources.forEach(function (source) {
+      source.items.forEach(function (point, index) {
+        if (point && point.migrationEta) migrationEtaCount += 1;
+        if (point && point.migrationEta && point.migrationEta.migrationRoute) migrationRouteCount += 1;
+        var normalized = normalizeMigrationRouteCandidate(point, source.path, index, skipped);
+        if (!normalized) return;
+        var routeKey = [
+          normalized.targetName,
+          normalized.rank || '',
+          normalized.targetLat || '',
+          normalized.targetLon || '',
+          normalized.routePoints.map(function (routePoint) { return routePoint.lat + ':' + routePoint.lon; }).join('|')
+        ].join('::');
+        if (dedupe[routeKey]) return;
+        dedupe[routeKey] = true;
+        routes.push(normalized);
+      });
+    });
+    if (!routes.length && Array.isArray(result && result.globalMigrationEtas)) {
+      result.globalMigrationEtas.forEach(function (eta, index) {
+        var normalized = normalizeLegacyMigrationRouteCandidate(eta, index, skipped);
+        if (normalized) routes.push(normalized);
+      });
+    }
+    logMigrationRouteDebug('normalize', {
+      hasTopPredictedPoints: Array.isArray(result && result.topPredictedPoints),
+      targetsWithMigrationEta: migrationEtaCount,
+      targetsWithMigrationRoute: migrationRouteCount,
+      finalRenderableRoutes: routes.length,
+      skipped: skipped
+    });
+    return routes;
+  }
+
+  function renderMigrationRoutes(routes) {
     if (!overlayGroups || !overlayGroups.migrationRoutes) return;
     var layer = overlayGroups.migrationRoutes;
-    var etas = globalEtas.slice(0, 5); // max 5 routes for performance
-    console.log('[ROUTES] renderMigrationRoutes called, etas:', etas.length);
-    etas.forEach(function (eta, idx) {
-      var mr = eta && eta.migrationRoute;
-      console.log('[ROUTES] eta', idx, 'migrationRoute:', mr ? ('route len=' + (Array.isArray(mr.route) ? mr.route.length : 'not array')) : 'null/undefined');
-      if (!mr || !Array.isArray(mr.route) || mr.route.length < 2) return;
+    var limitedRoutes = Array.isArray(routes) ? routes.slice(0, 5) : [];
+    logMigrationRouteDebug('renderMigrationRoutes called', { routes: limitedRoutes.length });
+    limitedRoutes.forEach(function (route, idx) {
+      if (!route || !Array.isArray(route.routePoints) || route.routePoints.length < 2) return;
       var isPrimary = idx === 0;
-      var color = migrationRouteColor(mr.speciesType || eta.speciesType);
+      var color = migrationRouteColor(route.speciesType);
       var opacity = isPrimary ? 0.85 : 0.4;
-      var progressPct = Number(mr.currentProgressPct || 0);
-      var routeDistKm = Number(mr.routeDistanceKm || eta.routeDistanceKm || eta.distanceKm || 0);
-      var routeLatLngs = mr.route.map(function (wp) { return [wp.lat, wp.lon]; });
+      var progressPct = Number(route.currentProgressPct || 0);
+      var routeDistKm = Number(route.routeDistanceKm || 0);
+      var routeLatLngs = route.routePoints
+        .filter(function (wp) { return wp && Number.isFinite(wp.lat) && Number.isFinite(wp.lon); })
+        .map(function (wp) { return [wp.lat, wp.lon]; });
+      if (routeLatLngs.length < 2) return;
+      var progressLatLng = Number.isFinite(route.currentEstimatedLat) && Number.isFinite(route.currentEstimatedLon)
+        ? [route.currentEstimatedLat, route.currentEstimatedLon]
+        : null;
 
-      // Split into traveled (solid) and remaining (dashed) at currentWaypointIdx
-      var splitIdx = Number(mr.currentWaypointIdx || 0);
-      splitIdx = Math.max(0, Math.min(splitIdx, routeLatLngs.length - 2));
-      var traveledCoords = routeLatLngs.slice(0, splitIdx + 2); // +2 to include one past current
-      var remainingCoords = routeLatLngs.slice(splitIdx + 1);
-
-      if (traveledCoords.length >= 2) {
-        L.polyline(traveledCoords, {
-          color: color, weight: 3, opacity: opacity * 0.55, dashArray: null
+      if (progressLatLng) {
+        var progressedCoords = routeLatLngs.slice(0, 1).concat([progressLatLng]);
+        var remainingCoords = [progressLatLng].concat(routeLatLngs.slice(1));
+        if (progressedCoords.length >= 2) {
+          L.polyline(progressedCoords, {
+            color: color, weight: 3, opacity: opacity * 0.55, dashArray: null
+          }).addTo(layer);
+        }
+        if (remainingCoords.length >= 2) {
+          L.polyline(remainingCoords, {
+            color: color, weight: 3, opacity: opacity, dashArray: '10, 8'
+          }).addTo(layer);
+        }
+      } else {
+        L.polyline(routeLatLngs, {
+          color: color, weight: 3, opacity: opacity, dashArray: null
         }).addTo(layer);
       }
-      if (remainingCoords.length >= 2) {
-        L.polyline(remainingCoords, {
-          color: color, weight: 3, opacity: opacity, dashArray: '10, 8'
-        }).addTo(layer);
-      }
 
-      // Waypoint markers
-      mr.route.forEach(function (wp) {
+      route.routePoints.forEach(function (wp) {
+        if (!wp || !Number.isFinite(wp.lat) || !Number.isFinite(wp.lon)) return;
         if (wp.type === 'origin') {
           L.circleMarker([wp.lat, wp.lon], {
             radius: 8, color: '#fff', weight: 2, fillColor: '#FF5722', fillOpacity: 0.9
-          }).bindTooltip('<b>' + escapeHtml(wp.name) + '</b><br>Sighted: ' + escapeHtml(formatShortDate(wp.estimatedDate)), { direction: 'top' }).addTo(layer);
+          }).bindTooltip('<b>' + escapeHtml(wp.name || 'Origin') + '</b>', { direction: 'top' }).addTo(layer);
         } else if (wp.type === 'destination') {
           L.circleMarker([wp.lat, wp.lon], {
             radius: 8, color: '#fff', weight: 2, fillColor: '#4CAF50', fillOpacity: 0.9
-          }).bindTooltip('<b>' + escapeHtml(wp.name) + '</b><br>Expected: ' + escapeHtml(formatShortDate(eta.earliestArrival)) + ' \u2013 ' + escapeHtml(formatShortDate(eta.latestArrival)), { direction: 'top' }).addTo(layer);
+          }).bindTooltip('<b>' + escapeHtml(wp.name || route.targetName || 'Target') + '</b><br>Expected: ' + escapeHtml(formatShortDate(route.earliestArrival)) + ' \u2013 ' + escapeHtml(formatShortDate(route.latestArrival)), { direction: 'top' }).addTo(layer);
         } else {
           L.circleMarker([wp.lat, wp.lon], {
             radius: 4, color: '#fff', weight: 1, fillColor: color, fillOpacity: 0.6
-          }).bindTooltip(escapeHtml(wp.name) + (wp.estimatedDate ? '<br>Est. ' + escapeHtml(formatShortDate(wp.estimatedDate)) : '') + (wp.cumulativeKm ? '<br>' + escapeHtml(String(wp.cumulativeKm)) + ' km' : ''), { direction: 'top' }).addTo(layer);
+          }).bindTooltip(escapeHtml(wp.name || 'Waypoint'), { direction: 'top' }).addTo(layer);
         }
       });
 
-      // Current estimated position (pulsing marker)
-      if (isFiniteNumber(mr.currentEstimatedLat) && isFiniteNumber(mr.currentEstimatedLon) && !mr.hasArrived) {
+      if (progressLatLng) {
         var pulseIcon = L.divIcon({
           className: '',
           html: '<div style="width:12px;height:12px;border-radius:50%;background:' + color + ';border:2px solid #fff;animation:spp-pulse 2s ease-out infinite"></div>',
@@ -1224,12 +1417,13 @@
         });
         var kmTraveled = routeDistKm && progressPct ? Math.round(routeDistKm * progressPct / 100) : null;
         var kmLeft = routeDistKm && progressPct ? Math.round(routeDistKm * (1 - progressPct / 100)) : null;
-        var daysSince = mr.daysSinceSighting ? Number(mr.daysSinceSighting).toFixed(0) + ' days since sighting' : '';
-        var tooltip = '<b>Estimated position now</b>' +
-          (daysSince ? '<br>' + daysSince : '') +
+        var tooltip = '<b>' + escapeHtml(route.targetName || 'Estimated position now') + '</b>' +
+          ((route.fromLocality || route.fromCountry) ? '<br>From: ' + escapeHtml((route.fromLocality ? route.fromLocality : '') + (route.fromCountry ? ((route.fromLocality ? ', ' : '') + route.fromCountry) : '')) : '') +
+          (route.earliestArrival || route.latestArrival ? '<br>Expected: ' + escapeHtml(formatShortDate(route.earliestArrival)) + ' - ' + escapeHtml(formatShortDate(route.latestArrival)) : '') +
+          (progressPct ? '<br>Progress: ' + escapeHtml(String(progressPct)) + '%' : '') +
           (kmTraveled ? '<br>~' + escapeHtml(String(kmTraveled)) + ' km traveled' : '') +
           (kmLeft ? '<br>~' + escapeHtml(String(kmLeft)) + ' km to Estonia' : '');
-        L.marker([mr.currentEstimatedLat, mr.currentEstimatedLon], { icon: pulseIcon, zIndexOffset: 900 })
+        L.marker(progressLatLng, { icon: pulseIcon, zIndexOffset: 900 })
           .bindTooltip(tooltip, { direction: 'top', permanent: false })
           .addTo(layer);
       }

@@ -816,6 +816,7 @@
     if (state.layerToggles.predictedLines !== false) renderPredictionVectors(result.predictionVectors || [], false);
     if (state.layerToggles.predictedCone !== false) renderPredictionVectors(result.predictionVectors || [], true);
     if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap((result.predictedTargets || result.topPredictedPoints || []).slice(0, 5));
+    console.log('[ROUTES] toggle=', state.layerToggles.migrationRoutes, 'etas=', Array.isArray(result.globalMigrationEtas) ? result.globalMigrationEtas.length : 'missing', result.globalMigrationEtas);
     if (state.layerToggles.migrationRoutes !== false && Array.isArray(result.globalMigrationEtas) && result.globalMigrationEtas.length) renderMigrationRoutes(result.globalMigrationEtas);
     if (state.layerToggles.diagnostics === true && shouldOpenDebugDetails()) renderDiagnostics((result.predictedTargets || result.topPredictedPoints || []).slice(0, 5));
   }
@@ -1167,8 +1168,10 @@
     if (!overlayGroups || !overlayGroups.migrationRoutes) return;
     var layer = overlayGroups.migrationRoutes;
     var etas = globalEtas.slice(0, 5); // max 5 routes for performance
+    console.log('[ROUTES] renderMigrationRoutes called, etas:', etas.length);
     etas.forEach(function (eta, idx) {
       var mr = eta && eta.migrationRoute;
+      console.log('[ROUTES] eta', idx, 'migrationRoute:', mr ? ('route len=' + (Array.isArray(mr.route) ? mr.route.length : 'not array')) : 'null/undefined');
       if (!mr || !Array.isArray(mr.route) || mr.route.length < 2) return;
       var isPrimary = idx === 0;
       var color = migrationRouteColor(mr.speciesType || eta.speciesType);

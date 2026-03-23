@@ -10,7 +10,7 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-22-fix21-evidence-state';
+const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-23-v3-passthrough';
 const INVOKE_ROUTE_VERSION = 'fix20';
 const EDGE_FUNCTION_FILE = 'supabase/functions/species-prediction/index.ts';
 const EDGE_FUNCTION_ENTRYPOINT = 'serve(async (req) => { ... })';
@@ -181,6 +181,11 @@ type NormalizedUpstreamResponse = {
   summaryGuardrailApplied: boolean;
   summaryGuardrailReason: string;
   summaryOrigin?: SummaryOrigin;
+  payloadSourceState?: string;
+  summarySourcePath?: string;
+  globalMigrationEtas?: unknown[];
+  topPredictedPoints?: unknown[];
+  aiSummary?: string;
   raw: Record<string, unknown>;
 };
 
@@ -196,6 +201,7 @@ type CanonicalPredictionRecord = {
   scope: string;
   generatedAt: string;
   analysisVersion: string;
+  externalPressureScore: number;
   species: Record<string, unknown>;
   sourceHealth: Record<string, unknown>;
   countryScores: Record<string, unknown>;
@@ -889,7 +895,9 @@ async function executeN8nAndPersist(opts: {
       webhookUrl,
       signal: controller.signal,
     });
-    resultObj = finalizePredictionResponse(resultObj, 'persist_main_result');
+    if (stringOr(resultObj.payloadSourceState) !== 'n8n_v3_passthrough') {
+      resultObj = finalizePredictionResponse(resultObj, 'persist_main_result');
+    }
     const analysisVersion = typeof resultObj.analysisVersion === 'string' ? resultObj.analysisVersion : null;
     const generatedAt = typeof resultObj.generatedAt === 'string' ? resultObj.generatedAt : new Date().toISOString();
 
@@ -1141,6 +1149,9 @@ async function buildMapFirstPredictionResult(opts: {
       evidenceStateSnapshot,
     })
     : null;
+  if ((normalizedN8nResponse as Record<string, unknown> | null)?.payloadSourceState === 'n8n_v3_passthrough') {
+    return attachNormalizationMarkers(normalizedN8nResponse as unknown as Record<string, unknown>);
+  }
   const countryScores = buildCountryScores(foreignEvidence);
   const topPredictedPoints = predictedTargets.slice(0, Math.min(5, clampInt(toNumber(settings.outputCount) || 5, 1, 5)));
   const latestCluster = foreignClusters[0] ?? null;
@@ -2103,9 +2114,83 @@ async function maybeFetchSecondarySummary(opts: {
     signal,
   });
   const text = await upstream.text();
-  const data = safeJsonParse(text);
-  // Unwrap array responses: n8n v3 returns [{ok:true, analysisVersion:"v3_recency_first", ...}]
-  const effectiveData = Array.isArray(data) && data.length > 0 ? data[0] : data;
+  let n8nParsed = safeJsonParse(text);
+  if (Array.isArray(n8nParsed)) n8nParsed = n8nParsed[0];
+  const n8nRecord = asRecord(n8nParsed);
+  if (
+    n8nParsed
+    && n8nRecord.ok === true
+    && typeof n8nRecord.analysisVersion === 'string'
+    && n8nRecord.analysisVersion.startsWith('v3')
+  ) {
+    console.log('[species-prediction] V3 passthrough activated');
+    const passthroughPredictedTargets = Array.isArray(n8nRecord.predictedTargets) ? n8nRecord.predictedTargets : [];
+    const passthroughTopPredictedPoints = Array.isArray(n8nRecord.topPredictedPoints)
+      ? n8nRecord.topPredictedPoints
+      : passthroughPredictedTargets;
+    const passthroughSummary = stringOr(
+      n8nRecord.insightSummary,
+      asRecord(n8nRecord.aiSummary).insightSummary,
+      n8nRecord.aiSummary,
+      '',
+    );
+    return {
+      ...n8nRecord,
+      ok: true,
+      status: 'completed',
+      error: null,
+      speciesKey: stringOr(n8nRecord.speciesKey, asRecord(n8nRecord.species).speciesKey, asRecord(n8nRecord.species).key, asRecord(payload.species).key),
+      speciesName: stringOr(n8nRecord.speciesName, asRecord(n8nRecord.species).speciesName, asRecord(n8nRecord.species).name, asRecord(payload.species).name),
+      scope: stringOr(n8nRecord.scope, asRecord(payload.settings).scope) || 'linnuliigid',
+      generatedAt: stringOr(n8nRecord.generatedAt) || new Date().toISOString(),
+      analysisVersion: stringOr(n8nRecord.analysisVersion) || 'v3_passthrough',
+      sourceHealth: asRecord(n8nRecord.sourceHealth),
+      countryScores: asRecord(n8nRecord.countryScores),
+      estoniaEvidence: asRecord(n8nRecord.estoniaEvidence),
+      evidenceSummary: asRecord(n8nRecord.evidenceSummary),
+      foreignClusters: Array.isArray(n8nRecord.foreignClusters) ? n8nRecord.foreignClusters : [],
+      predictedTargets: passthroughPredictedTargets,
+      topTarget: passthroughTopPredictedPoints.length ? asRecord(passthroughTopPredictedPoints[0]) : undefined,
+      foreignRecentPoints: Array.isArray(n8nRecord.foreignRecentPoints) ? n8nRecord.foreignRecentPoints : [],
+      estoniaHistoryPoints: Array.isArray(n8nRecord.estoniaHistoryPoints) ? n8nRecord.estoniaHistoryPoints : [],
+      elurikkusRecentRecords: Array.isArray(n8nRecord.elurikkusRecentRecords) ? n8nRecord.elurikkusRecentRecords : [],
+      estoniaHistoryClusters: Array.isArray(n8nRecord.estoniaHistoryClusters) ? n8nRecord.estoniaHistoryClusters : [],
+      mapLayers: asRecord(n8nRecord.mapLayers),
+      mapLayersDefault: asRecord(n8nRecord.mapLayersDefault),
+      species: asRecord(n8nRecord.species),
+      weather: asRecord(n8nRecord.weather),
+      evidenceState: typeof n8nRecord.evidenceState === 'string' ? n8nRecord.evidenceState as EvidenceState : 'insufficient',
+      hasUsableRecentEstoniaEvidence: n8nRecord.hasUsableRecentEstoniaEvidence === true,
+      hasUsableEstoniaHistory: n8nRecord.hasUsableEstoniaHistory === true,
+      hasUsableForeignPressure: n8nRecord.hasUsableForeignPressure === true,
+      hasUsablePredictedTargets: n8nRecord.hasUsablePredictedTargets === true || passthroughTopPredictedPoints.length > 0,
+      hasOnlyWeather: n8nRecord.hasOnlyWeather === true,
+      hasOnlySourceAvailabilityWithoutUsableEvidence: n8nRecord.hasOnlySourceAvailabilityWithoutUsableEvidence === true,
+      activeEvidenceSources: Array.isArray(n8nRecord.activeEvidenceSources) ? n8nRecord.activeEvidenceSources.map((item) => String(item ?? '')) : [],
+      availableSources: Array.isArray(n8nRecord.availableSources) ? n8nRecord.availableSources.map((item) => String(item ?? '')) : [],
+      attemptedButUnavailable: Array.isArray(n8nRecord.attemptedButUnavailable) ? n8nRecord.attemptedButUnavailable.map((item) => String(item ?? '')) : [],
+      attemptedButReturnedNoUsableEvidence: Array.isArray(n8nRecord.attemptedButReturnedNoUsableEvidence) ? n8nRecord.attemptedButReturnedNoUsableEvidence.map((item) => String(item ?? '')) : [],
+      effectiveRankingMode: stringOr(n8nRecord.effectiveRankingMode),
+      summaryGuardrailApplied: false,
+      summaryGuardrailReason: '',
+      payloadSourceState: 'n8n_v3_passthrough',
+      globalMigrationEtas: Array.isArray(n8nRecord.globalMigrationEtas) ? n8nRecord.globalMigrationEtas : [],
+      topPredictedPoints: passthroughTopPredictedPoints,
+      insightSummary: passthroughSummary,
+      aiSummary: passthroughSummary,
+      confidenceNote: stringOr(n8nRecord.confidenceNote, asRecord(n8nRecord.aiSummary).confidenceNote),
+      rankingNotes: stringOr(n8nRecord.rankingNotes, asRecord(n8nRecord.aiSummary).rankingNotes),
+      warnings: Array.isArray(n8nRecord.warnings)
+        ? n8nRecord.warnings.map((item) => String(item ?? ''))
+        : (Array.isArray(asRecord(n8nRecord.aiSummary).warnings)
+          ? (asRecord(n8nRecord.aiSummary).warnings as unknown[]).map((item) => String(item ?? ''))
+          : []),
+      summarySourcePath: typeof n8nRecord.summarySourcePath === 'string' ? n8nRecord.summarySourcePath : undefined,
+      raw: n8nRecord,
+    } as NormalizedUpstreamResponse;
+  }
+  const data = n8nParsed;
+  const effectiveData = n8nParsed;
   if (!upstream.ok) {
     throw createUpstreamError({
       stage: 'n8n_upstream',
@@ -2194,28 +2279,6 @@ async function maybeFetchSecondarySummary(opts: {
       fallbackMessage: 'n8n returned success but no AI summary payload was present',
       shapeDiagnostics,
     });
-  }
-  // v3 passthrough: n8n returned a fully-resolved response with structured evidence —
-  // use it directly and skip the guardrails scrubber which would erase valid presence signals.
-  const effectiveRecord = asRecord(effectiveData);
-  const isV3Passthrough =
-    effectiveRecord.ok === true &&
-    (String(effectiveRecord.analysisVersion ?? '').includes('v3') ||
-      typeof extractedSummary?.summarySourcePath === 'string');
-  if (isV3Passthrough) {
-    console.info(`${LOG_PREFIX} v3_passthrough`, {
-      branch: 'maybeFetchSecondarySummary.v3_passthrough',
-      analysisVersion: String(effectiveRecord.analysisVersion ?? ''),
-      summarySourcePath: extractedSummary?.summarySourcePath ?? '',
-      insightSummarySnippet: normalizedResponse.insightSummary.slice(0, 160),
-      backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
-    });
-    return {
-      ...normalizedResponse,
-      payloadSourceState: 'n8n_v3_passthrough',
-      analysisVersion: String(effectiveRecord.analysisVersion ?? ''),
-      summarySourcePath: String(extractedSummary?.summarySourcePath ?? ''),
-    };
   }
   const guardedResponse = applyEvidenceStateSummaryGuardrails(normalizedResponse, evidenceStateSnapshot);
   console.info(`${LOG_PREFIX} summary_guardrails`, {
@@ -2409,7 +2472,9 @@ function createUpstreamError(input: {
     deployedProjectRef: getDeployedProjectRef(),
     ...(input.stage === 'invalid_upstream_json'
       ? {
-        summarySourcePath: (input.upstreamBody as Record<string, unknown> | null)?.summarySourcePath,
+        summarySourcePath: typeof (input.upstreamBody as Record<string, unknown> | null)?.summarySourcePath === 'string'
+          ? (input.upstreamBody as Record<string, unknown>).summarySourcePath
+          : undefined,
         hasAiSummaryObject: (input.upstreamBody as Record<string, unknown> | null)?.hasAiSummaryObject === true,
         hasNestedInsightSummary: (input.upstreamBody as Record<string, unknown> | null)?.hasNestedInsightSummary === true,
         normalizedInsightLength: (input.upstreamBody as Record<string, unknown> | null)?.normalizedInsightLength,
@@ -2722,6 +2787,7 @@ function buildCleanPredictionResult(
   const estoniaHistoryPoints = Array.isArray(record.estoniaHistoryPoints) ? record.estoniaHistoryPoints : [];
   const elurikkusRecentRecords = Array.isArray(record.elurikkusRecentRecords) ? record.elurikkusRecentRecords : [];
   const estoniaHistoryClusters = Array.isArray(record.estoniaHistoryClusters) ? record.estoniaHistoryClusters : [];
+  const topPredictedPoints = Array.isArray(record.topPredictedPoints) ? record.topPredictedPoints : predictedTargets;
   const evidenceStateSnapshot = computeEvidenceState({
     estoniaEvidence,
     estoniaHistoryPoints,
@@ -2730,6 +2796,9 @@ function buildCleanPredictionResult(
     foreignClusters,
     foreignEvidence: [],
     sourceHealth,
+    weather,
+    predictedTargets,
+    topPredictedPoints,
   });
   const cleaned = sanitizeSuccessfulPredictionPayload({
     ok: true,
@@ -3921,11 +3990,12 @@ const STALE_NARRATIVE_WARNING =
   'Narrative regenerated because stale summary text conflicted with structured evidence.';
 
 function collectEvidenceLocalities(response: Record<string, unknown>): string[] {
+  const freshestLocalities = Array.isArray(asRecord(response.estoniaEvidence).freshestLocalities)
+    ? asRecord(response.estoniaEvidence).freshestLocalities as unknown[]
+    : [];
   return [
     stringOr(asRecord(response.estoniaEvidence).latestEstoniaLocality),
-    ...(Array.isArray(asRecord(response.estoniaEvidence).freshestLocalities)
-      ? asRecord(response.estoniaEvidence).freshestLocalities.map((item) => stringOr(item))
-      : []),
+    ...freshestLocalities.map((item: unknown) => stringOr(item)),
     ...(Array.isArray(response.estoniaHistoryPoints)
       ? response.estoniaHistoryPoints.map((item) => stringOr(asRecord(item).locality, asRecord(item).municipality))
       : []),
@@ -4398,6 +4468,7 @@ function buildCanonicalPredictionRecord(input: {
     scope: stringOr(chosen.scope, 'linnuliigid'),
     generatedAt: stringOr(chosen.generatedAt) || new Date().toISOString(),
     analysisVersion: stringOr(chosen.analysisVersion) || `${EDGE_FUNCTION_VERSION}|canonical`,
+    externalPressureScore: toNumber(chosen.externalPressureScore),
     species: asRecord(chosen.species),
     sourceHealth,
     countryScores: asRecord(chosen.countryScores),
@@ -4611,6 +4682,7 @@ function sanitizeSummaryFields(input: {
       : 'insufficient_evidence_fallback';
     return {
       ...INSUFFICIENT_EVIDENCE_FALLBACK,
+      warnings: [...INSUFFICIENT_EVIDENCE_FALLBACK.warnings],
       summaryGuardrailApplied: true,
       summaryGuardrailReason: deterministicMissingEvidenceFallback ? `${reason},missing_usable_prediction_evidence` : reason,
       originalAiSummarySnippet,

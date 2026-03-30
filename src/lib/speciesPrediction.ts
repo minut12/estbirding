@@ -1190,7 +1190,7 @@ export function extractNormalizedMigrationRoutes(
       const originPoint = finalRoutePoints.find((routePoint) => routePoint.type === 'origin') ?? finalRoutePoints[0];
       const entryPoint = resolveEntryRoutePoint(finalRoutePoints, entryLat, entryLon, entryLabel);
       const targetPoint = resolveTargetRoutePoint(finalRoutePoints, targetLat, targetLon, targetNameFromPoint(point, index));
-      const displayRoutePoints = buildDisplayRoutePoints(finalRoutePoints, originPoint, entryPoint, targetPoint);
+      const displayRoutePoints = alignRoutePointsToTarget(buildDisplayRoutePoints(finalRoutePoints, originPoint, entryPoint, targetPoint), targetPoint);
       const originLocality = normalizeUiText(
         readString(migrationEta, ['fromLocality', 'foreignLocality'])
         || originPoint?.name
@@ -1289,7 +1289,7 @@ export function extractNormalizedMigrationRoutes(
       const originPoint = finalRoutePoints.find((routePoint) => routePoint.type === 'origin') ?? finalRoutePoints[0];
       const entryPoint = resolveEntryRoutePoint(finalRoutePoints, entryLat, entryLon, entryLabel);
       const targetPoint = resolveTargetRoutePoint(finalRoutePoints, targetLat, targetLon, normalizeUiText(readString(eta, ['targetName']) || `Target ${index + 1}`));
-      const displayRoutePoints = buildDisplayRoutePoints(finalRoutePoints, originPoint, entryPoint, targetPoint);
+      const displayRoutePoints = alignRoutePointsToTarget(buildDisplayRoutePoints(finalRoutePoints, originPoint, entryPoint, targetPoint), targetPoint);
       const currentEstimatedLat = readFiniteMigrationCoord(migrationRoute, ['currentEstimatedLat']);
       const currentEstimatedLon = readFiniteMigrationCoord(migrationRoute, ['currentEstimatedLon']);
       const originLocality = normalizeUiText(readString(eta, ['fromLocality', 'foreignLocality']) || originPoint?.name || '');
@@ -2524,6 +2524,24 @@ function buildDisplayRoutePoints(
     const previous = array[index - 1];
     return !arePointsNear(previous.lat, previous.lon, point.lat, point.lon, 0.01);
   });
+}
+
+function alignRoutePointsToTarget(
+  routePoints: NormalizedMigrationRoutePoint[],
+  targetPoint: NormalizedMigrationRoutePoint | undefined,
+): NormalizedMigrationRoutePoint[] {
+  if (!targetPoint || !routePoints.length) return routePoints;
+  const targetIndex = routePoints.findIndex((point) => arePointsNear(point.lat, point.lon, targetPoint.lat, targetPoint.lon, 0.05));
+  const aligned = targetIndex >= 0
+    ? routePoints.slice(0, targetIndex + 1)
+    : routePoints.slice();
+  const finalPoint = aligned[aligned.length - 1];
+  if (!finalPoint || !arePointsNear(finalPoint.lat, finalPoint.lon, targetPoint.lat, targetPoint.lon, 0.05)) {
+    aligned.push({ ...targetPoint });
+  } else {
+    aligned[aligned.length - 1] = { ...targetPoint };
+  }
+  return aligned;
 }
 
 function dedupeRoutePoints(

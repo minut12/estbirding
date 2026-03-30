@@ -1700,6 +1700,67 @@ describe("normalizeSpeciesPredictionResult", () => {
       "Kabli",
     ]);
   });
+
+  it("trims mismatched nested route endings to the selected target", () => {
+    const routes = extractNormalizedMigrationRoutes({
+      predictedTargets: [
+        {
+          rank: 1,
+          name: "Põõsaspea neem",
+          lat: 59.2,
+          lon: 23.52,
+          migrationEta: {
+            entryZone: "Sõrve",
+            entryLat: 57.91,
+            entryLon: 22.05,
+            migrationRoute: {
+              route: [
+                { lat: 54.4, lon: 18.7, name: "Poland origin", type: "origin" },
+                { lat: 57.91, lon: 22.05, name: "Sõrve", type: "destination" },
+                { lat: 58.4, lon: 21.8, name: "Offshore helper", type: "waypoint" },
+              ],
+            },
+          },
+        },
+      ],
+    } as any);
+
+    expect(routes[0]?.displayRoutePoints?.[routes[0].displayRoutePoints.length - 1]).toEqual({
+      lat: 59.2,
+      lon: 23.52,
+      name: "Põõsaspea neem",
+      type: "destination",
+    });
+  });
+
+  it("still extracts routes from nested migrationEta while already-present mode is handled by render suppression", () => {
+    const model = buildSpeciesPredictionDisplayModel({
+      recentCount7d: 1,
+      estoniaEvidence: { alreadyPresent: true },
+      predictedTargets: [
+        { rank: 1, name: "Ristna", lat: 58.93, lon: 22.05, confidence: 0.9, eta: "now", searchRadiusKm: 5, habitatCue: "", reason: "", countyOrParish: "" },
+      ],
+      topPredictedPoints: [
+        {
+          rank: 1,
+          name: "Ristna",
+          lat: 58.93,
+          lon: 22.05,
+          migrationEta: {
+            migrationRoute: {
+              route: [
+                { lat: 54.4, lon: 18.7, name: "Poland origin", type: "origin" },
+                { lat: 58.93, lon: 22.05, name: "Ristna", type: "destination" },
+              ],
+            },
+          },
+        },
+      ],
+    } as any);
+
+    expect(model.alreadyPresentMode).toBe(true);
+    expect(model.activeEstoniaAnchor?.name).toBe("Ristna");
+  });
 });
 
 describe("normalizePrediction", () => {

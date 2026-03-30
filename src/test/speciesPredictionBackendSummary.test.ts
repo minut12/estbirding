@@ -309,4 +309,191 @@ describe("species-prediction backend summary finalizer", () => {
     expect(wrapped.invokeRouteVersion).toBe(hooks.INVOKE_ROUTE_VERSION);
     expect(wrapped.responseProof).toBe(hooks.EDGE_RESPONSE_PROOF);
   });
+
+  it("canonicalizes route endpoints to the selected target and truncates at that target", () => {
+    const response = buildBaseResponse({
+      predictedTargets: [
+        {
+          rank: 1,
+          name: "Põõsaspea neem",
+          lat: 59.2,
+          lon: 23.52,
+          migrationEta: {
+            entryZone: "Sõrve (S Saaremaa)",
+            entryLat: 57.91,
+            entryLon: 22.05,
+            targetName: "Wrong destination",
+            targetLat: 57.91,
+            targetLon: 22.05,
+            migrationRoute: {
+              route: [
+                { lat: 54.4, lon: 18.7, name: "Poland origin", type: "origin" },
+                { lat: 57.91, lon: 22.05, name: "Sõrve (S Saaremaa)", type: "destination" },
+                { lat: 58.4, lon: 21.8, name: "Offshore helper", type: "waypoint" },
+              ],
+            },
+          },
+        },
+      ],
+      topPredictedPoints: [
+        {
+          rank: 1,
+          name: "Põõsaspea neem",
+          lat: 59.2,
+          lon: 23.52,
+          migrationEta: {
+            entryZone: "Sõrve (S Saaremaa)",
+            entryLat: 57.91,
+            entryLon: 22.05,
+            targetName: "Wrong destination",
+            targetLat: 57.91,
+            targetLon: 22.05,
+            migrationRoute: {
+              route: [
+                { lat: 54.4, lon: 18.7, name: "Poland origin", type: "origin" },
+                { lat: 57.91, lon: 22.05, name: "Sõrve (S Saaremaa)", type: "destination" },
+                { lat: 58.4, lon: 21.8, name: "Offshore helper", type: "waypoint" },
+              ],
+            },
+          },
+        },
+      ],
+    });
+
+    const finalized = hooks.finalizePredictionResponse(response, "test_route_target_alignment");
+    const target = (finalized.predictedTargets as Record<string, unknown>[])[0];
+    const migrationEta = target.migrationEta as Record<string, unknown>;
+    const route = ((migrationEta.migrationRoute as Record<string, unknown>).route as Record<string, unknown>[]);
+
+    expect(migrationEta.targetName).toBe("Põõsaspea neem");
+    expect(migrationEta.targetLat).toBe(59.2);
+    expect(migrationEta.targetLon).toBe(23.52);
+    expect(route[route.length - 1]?.name).toBe("Põõsaspea neem");
+    expect(route[route.length - 1]?.lat).toBe(59.2);
+    expect(route[route.length - 1]?.lon).toBe(23.52);
+    expect(route.some((point) => String(point.name) === "Offshore helper")).toBe(false);
+  });
+
+  it("suppresses active foreign migration routes when the species is already present", () => {
+    const response = buildBaseResponse({
+      estoniaEvidence: {
+        recentCount7d: 1,
+        recentCount30d: 1,
+        latestEstoniaLocality: "Ristna",
+        freshestLocalities: ["Ristna"],
+        alreadyPresent: true,
+      },
+      predictedTargets: [
+        {
+          rank: 1,
+          name: "Põõsaspea neem",
+          lat: 59.2,
+          lon: 23.52,
+          migrationEta: {
+            targetName: "Põõsaspea neem",
+            targetLat: 59.2,
+            targetLon: 23.52,
+            migrationRoute: {
+              route: [
+                { lat: 54.4, lon: 18.7, name: "Poland origin", type: "origin" },
+                { lat: 59.2, lon: 23.52, name: "Põõsaspea neem", type: "destination" },
+              ],
+            },
+          },
+        },
+      ],
+      topPredictedPoints: [
+        {
+          rank: 1,
+          name: "Põõsaspea neem",
+          lat: 59.2,
+          lon: 23.52,
+          migrationEta: {
+            targetName: "Põõsaspea neem",
+            targetLat: 59.2,
+            targetLon: 23.52,
+            migrationRoute: {
+              route: [
+                { lat: 54.4, lon: 18.7, name: "Poland origin", type: "origin" },
+                { lat: 59.2, lon: 23.52, name: "Põõsaspea neem", type: "destination" },
+              ],
+            },
+          },
+        },
+      ],
+      globalMigrationEtas: [
+        {
+          targetName: "Põõsaspea neem",
+          targetLat: 59.2,
+          targetLon: 23.52,
+          migrationRoute: {
+            route: [
+              { lat: 54.4, lon: 18.7, name: "Poland origin", type: "origin" },
+              { lat: 59.2, lon: 23.52, name: "Põõsaspea neem", type: "destination" },
+            ],
+          },
+        },
+      ],
+    });
+
+    const finalized = hooks.finalizePredictionResponse(response, "test_already_present_route_suppression");
+    expect(((finalized.predictedTargets as Record<string, unknown>[])[0]?.migrationEta ?? null)).toBeNull();
+    expect(Array.isArray(finalized.globalMigrationEtas) ? finalized.globalMigrationEtas : []).toEqual([]);
+    expect((((finalized.rawResearchPayload as Record<string, unknown>).globalMigrationEtas as unknown[]) ?? [])).toEqual([]);
+  });
+
+  it("promotes canonical foreign recent points from normalized sources into top-level finalized fields", () => {
+    const response = buildBaseResponse({
+      foreignRecentPoints: [],
+      rawResearchPayload: {
+        aiSummary: "stale legacy summary",
+        normalizedSources: {
+          foreignRecentPoints: [
+            { countryCode: "PL", countryName: "Poland", lat: 54.4, lon: 18.7, daysAgo: 1 },
+          ],
+          foreignClusters: [
+            { countries: ["Poland"], lat: 54.4, lon: 18.7 },
+          ],
+        },
+      },
+      sourceHealth: {
+        ebirdAvailable: true,
+        primarySourceUsed: "eBird foreign",
+      },
+    });
+
+    const finalized = hooks.finalizePredictionResponse(response, "test_foreign_promotion");
+    expect(Array.isArray(finalized.foreignRecentPoints) ? finalized.foreignRecentPoints : []).toHaveLength(1);
+    expect(Array.isArray((((finalized.rawResearchPayload as Record<string, unknown>).normalizedSources as Record<string, unknown>).foreignRecentPoints)) ? (((finalized.rawResearchPayload as Record<string, unknown>).normalizedSources as Record<string, unknown>).foreignRecentPoints as unknown[]) : []).toHaveLength(1);
+  });
+
+  it("derives an approximate fresh Estonia anchor when the freshest recent record lacks coordinates", () => {
+    const response = buildBaseResponse({
+      estoniaEvidence: {
+        recentCount7d: 1,
+        recentCount30d: 1,
+        latestEstoniaLocality: "Old GBIF place",
+        latestEstoniaLat: 57.5,
+        latestEstoniaLon: 21.9,
+        freshestLocalities: ["Kalana"],
+        alreadyPresent: true,
+      },
+      elurikkusRecentRecords: [
+        { locality: "Kalana", event_date: "2026-03-27" },
+      ],
+      predictedTargets: [
+        { rank: 1, name: "Kalana", lat: 58.987, lon: 22.469 },
+      ],
+      topPredictedPoints: [
+        { rank: 1, name: "Kalana", lat: 58.987, lon: 22.469 },
+      ],
+    });
+
+    const finalized = hooks.finalizePredictionResponse(response, "test_approximate_anchor");
+    const estoniaEvidence = finalized.estoniaEvidence as Record<string, unknown>;
+    expect(estoniaEvidence.latestEstoniaLocality).toBe("Kalana");
+    expect(estoniaEvidence.latestEstoniaLat).toBe(58.987);
+    expect(estoniaEvidence.latestEstoniaLon).toBe(22.469);
+    expect(estoniaEvidence.latestEstoniaCoordinateApproximate).toBe(true);
+  });
 });

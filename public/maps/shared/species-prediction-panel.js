@@ -820,7 +820,7 @@
     if (state.layerToggles.predictedCone !== false && !prediction.alreadyPresentMode) renderPredictionVectors(result.predictionVectors || [], true);
     if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap((prediction.displayedTargets || result.predictedTargets || result.topPredictedPoints || []).slice(0, prediction.alreadyPresentMode ? 2 : 5), prediction);
     var normalizedMigrationRoutes = getNormalizedMigrationRoutes(result);
-    if (state.layerToggles.migrationRoutes !== false && normalizedMigrationRoutes.length) renderMigrationRoutes(normalizedMigrationRoutes, prediction);
+    if (state.layerToggles.migrationRoutes !== false && normalizedMigrationRoutes.length && !prediction.alreadyPresentMode) renderMigrationRoutes(normalizedMigrationRoutes, prediction);
     if (state.layerToggles.diagnostics === true && shouldOpenDebugDetails()) renderDiagnostics((prediction.displayedTargets || result.predictedTargets || result.topPredictedPoints || []).slice(0, prediction.alreadyPresentMode ? 2 : 5));
   }
 
@@ -1252,6 +1252,18 @@
     });
   }
 
+  function alignRoutePointsToTargetJs(routePoints, targetPoint) {
+    if (!targetPoint || !Array.isArray(routePoints) || !routePoints.length) return routePoints;
+    var targetIndex = routePoints.findIndex(function (routePoint) {
+      return pointsNear(routePoint, targetPoint, 0.05);
+    });
+    var aligned = targetIndex >= 0 ? routePoints.slice(0, targetIndex + 1) : routePoints.slice();
+    var finalPoint = aligned.length ? aligned[aligned.length - 1] : null;
+    if (!finalPoint || !pointsNear(finalPoint, targetPoint, 0.05)) aligned.push(Object.assign({}, targetPoint));
+    else aligned[aligned.length - 1] = Object.assign({}, targetPoint);
+    return aligned;
+  }
+
   function dedupeRoutePointsJs(points) {
     return (Array.isArray(points) ? points : []).filter(function (point) {
       return point && Number.isFinite(point.lat) && Number.isFinite(point.lon);
@@ -1380,7 +1392,7 @@
     var originPoint = routePoints.find(function (routePoint) { return routePoint.type === 'origin'; }) || routePoints[0] || null;
     var entryPoint = resolveEntryRoutePointJs(finalRoutePoints, entryLat, entryLon, entryLabel);
     var targetPoint = resolveTargetRoutePointJs(finalRoutePoints, targetLat, targetLon, normalizeText(point.displayName || point.name || ('Target ' + (index + 1))));
-    var displayRoutePoints = buildDisplayRoutePointsJs(finalRoutePoints, originPoint, entryPoint, targetPoint);
+    var displayRoutePoints = alignRoutePointsToTargetJs(buildDisplayRoutePointsJs(finalRoutePoints, originPoint, entryPoint, targetPoint), targetPoint);
     var originLocality = normalizeText(migrationEta.fromLocality || migrationEta.foreignLocality || (originPoint && originPoint.name) || '');
     var originCountryCode = normalizeText(migrationEta.fromCountry || migrationEta.foreignCountry || migrationEta.countryCode || '');
     var foreignSightingDate = normalizeText(migrationEta.foreignSightingDate || migrationEta.sightingDate || '');
@@ -1452,7 +1464,7 @@
     var originPoint = routePoints.find(function (routePoint) { return routePoint.type === 'origin'; }) || finalRoutePoints[0] || null;
     var entryPoint = resolveEntryRoutePointJs(finalRoutePoints, entryLat, entryLon, normalizeText(eta.entryZone || 'Estonia entry'));
     var targetPoint = resolveTargetRoutePointJs(finalRoutePoints, targetLat, targetLon, normalizeText(eta.targetName || ('Target ' + (index + 1))));
-    var displayRoutePoints = buildDisplayRoutePointsJs(finalRoutePoints, originPoint, entryPoint, targetPoint);
+    var displayRoutePoints = alignRoutePointsToTargetJs(buildDisplayRoutePointsJs(finalRoutePoints, originPoint, entryPoint, targetPoint), targetPoint);
     return {
       targetName: normalizeText(eta.targetName || eta.entryZone || ('Target ' + (index + 1))),
       originLocality: normalizeText(eta.fromLocality || eta.foreignLocality || (originPoint && originPoint.name) || ''),
@@ -1563,6 +1575,16 @@
       var displayLatLngs = displayRoutePoints
         .filter(function (routePoint) { return routePoint && Number.isFinite(routePoint.lat) && Number.isFinite(routePoint.lon); })
         .map(function (routePoint) { return [routePoint.lat, routePoint.lon]; });
+      var finalDisplayPoint = displayRoutePoints.length ? displayRoutePoints[displayRoutePoints.length - 1] : null;
+      if (route.targetPoint && (!finalDisplayPoint || !pointsNear(finalDisplayPoint, route.targetPoint, 0.05))) {
+        logMigrationRouteDebug('route target mismatch skipped', {
+          sourcePath: route.sourcePath,
+          targetName: route.targetName,
+          finalDisplayPoint: finalDisplayPoint ? { lat: finalDisplayPoint.lat, lon: finalDisplayPoint.lon } : null,
+          targetPoint: { lat: route.targetPoint.lat, lon: route.targetPoint.lon }
+        });
+        return;
+      }
       var progressLatLng = route.progressPoint && Number.isFinite(route.progressPoint.lat) && Number.isFinite(route.progressPoint.lon)
         ? [route.progressPoint.lat, route.progressPoint.lon]
         : null;

@@ -8,7 +8,6 @@
     scope: detectScope(),
     settings: null,
     featureEnabled: false,
-    requestState: 'idle',
     loading: false,
     result: null,
     error: '',
@@ -354,7 +353,6 @@
       clearFallbackSelectionTimer();
       startupSyncPending = false;
       hasSyncedSpecies = false;
-      state.requestState = 'idle';
       state.loading = false;
       state.result = null;
       state.error = '';
@@ -395,14 +393,12 @@
     if (payload && payload.speciesKey) state.speciesKey = String(payload.speciesKey || '').trim();
     state.error = '';
     state.result = null;
-    state.requestState = 'idle';
     ensurePanel();
     render();
   }
 
   function setLoading() {
     if (!state.featureEnabled) return;
-    state.requestState = 'loading';
     state.loading = true;
     state.error = '';
     state.result = null;
@@ -412,7 +408,6 @@
 
   function setResult(result) {
     if (!state.featureEnabled) return;
-    state.requestState = 'success';
     state.loading = false;
     state.error = '';
     state.result = result ? cloneResult(normalizePredictionPayload(result)) : null;
@@ -452,21 +447,9 @@
 
   function setError(message) {
     if (!state.featureEnabled) return;
-    state.requestState = 'error';
     state.loading = false;
     state.result = null;
     state.error = String(message || 'Prediction request failed');
-    clearPredictionOverlay();
-    ensurePanel();
-    render();
-  }
-
-  function setTimeoutState(message) {
-    if (!state.featureEnabled) return;
-    state.requestState = 'timeout';
-    state.loading = false;
-    state.result = null;
-    state.error = String(message || 'Prediction request timed out');
     clearPredictionOverlay();
     ensurePanel();
     render();
@@ -487,20 +470,11 @@
     renderControls();
     resultWrap.innerHTML = '';
 
-    if (state.requestState === 'loading') {
+    if (state.loading) {
       resultWrap.innerHTML = renderStateCard(
         'spp-state-loading',
         'Prediction running',
         'Prediction may take some time. The panel will update as soon as the backend result is available.'
-      );
-      renderDebug();
-      return;
-    }
-    if (state.requestState === 'timeout') {
-      resultWrap.innerHTML = renderStateCard(
-        'spp-state-caution',
-        'Prediction timed out',
-        state.error || 'The prediction request timed out before a finalized response was received.'
       );
       renderDebug();
       return;
@@ -846,7 +820,7 @@
     if (state.layerToggles.predictedCone !== false && !prediction.alreadyPresentMode) renderPredictionVectors(result.predictionVectors || [], true);
     if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap((prediction.displayedTargets || result.predictedTargets || result.topPredictedPoints || []).slice(0, prediction.alreadyPresentMode ? 2 : 5), prediction);
     var normalizedMigrationRoutes = getNormalizedMigrationRoutes(result);
-    if (state.layerToggles.migrationRoutes !== false && normalizedMigrationRoutes.length && !prediction.alreadyPresentMode) renderMigrationRoutes(normalizedMigrationRoutes, prediction);
+    if (state.layerToggles.migrationRoutes !== false && normalizedMigrationRoutes.length) renderMigrationRoutes(normalizedMigrationRoutes, prediction);
     if (state.layerToggles.diagnostics === true && shouldOpenDebugDetails()) renderDiagnostics((prediction.displayedTargets || result.predictedTargets || result.topPredictedPoints || []).slice(0, prediction.alreadyPresentMode ? 2 : 5));
   }
 
@@ -1278,106 +1252,6 @@
     });
   }
 
-  function alignRoutePointsToTargetJs(routePoints, targetPoint) {
-    if (!targetPoint || !Array.isArray(routePoints) || !routePoints.length) return routePoints;
-    var targetIndex = routePoints.findIndex(function (routePoint) {
-      return pointsNear(routePoint, targetPoint, 0.05);
-    });
-    var aligned = targetIndex >= 0 ? routePoints.slice(0, targetIndex + 1) : routePoints.slice();
-    var finalPoint = aligned.length ? aligned[aligned.length - 1] : null;
-    if (!finalPoint || !pointsNear(finalPoint, targetPoint, 0.05)) aligned.push(Object.assign({}, targetPoint));
-    else aligned[aligned.length - 1] = Object.assign({}, targetPoint);
-    return aligned;
-  }
-
-  function dedupeRoutePointsJs(points) {
-    return (Array.isArray(points) ? points : []).filter(function (point) {
-      return point && Number.isFinite(point.lat) && Number.isFinite(point.lon);
-    }).filter(function (point, index, array) {
-      if (index === 0) return true;
-      return !pointsNear(array[index - 1], point, 0.01);
-    }).map(function (point) { return Object.assign({}, point); });
-  }
-
-  function collectPointsBeforeEntryJs(routePoints, entryPoint) {
-    if (!entryPoint) return (Array.isArray(routePoints) ? routePoints : []).slice();
-    var entryIndex = (Array.isArray(routePoints) ? routePoints : []).findIndex(function (point) {
-      return pointsNear(point, entryPoint, 0.05);
-    });
-    if (entryIndex < 0) return (Array.isArray(routePoints) ? routePoints : []).slice();
-    return routePoints.slice(0, entryIndex);
-  }
-
-  function collectPostEntryPointsJs(routePoints, entryPoint) {
-    if (!entryPoint) return (Array.isArray(routePoints) ? routePoints : []).slice();
-    var entryIndex = (Array.isArray(routePoints) ? routePoints : []).findIndex(function (point) {
-      return pointsNear(point, entryPoint, 0.05);
-    });
-    if (entryIndex < 0) return (Array.isArray(routePoints) ? routePoints : []).slice();
-    return routePoints.slice(entryIndex + 1);
-  }
-
-  function trimRoutePointsTowardDestinationJs(routePoints, destination) {
-    var trimmed = [];
-    var previousDistance = arguments.length > 2 && Number.isFinite(arguments[2]) ? arguments[2] : Number.POSITIVE_INFINITY;
-    (Array.isArray(routePoints) ? routePoints : []).forEach(function (point) {
-      if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return;
-      var currentDistance = distanceKm(point.lat, point.lon, destination.lat, destination.lon);
-      if (currentDistance > previousDistance + 0.1) return;
-      trimmed.push(Object.assign({}, point));
-      previousDistance = currentDistance;
-    });
-    return trimmed;
-  }
-
-  function buildActiveMigrationDisplayRouteJs(route, activeEstoniaAnchor, alreadyPresentMode) {
-    var fallbackPoints = Array.isArray(route && route.displayRoutePoints) && route.displayRoutePoints.length
-      ? route.displayRoutePoints.map(function (point) { return Object.assign({}, point); })
-      : (Array.isArray(route && route.routePoints) ? route.routePoints.map(function (point) { return Object.assign({}, point); }) : []);
-    var validFallbackPoints = fallbackPoints.filter(function (point) {
-      return point && Number.isFinite(point.lat) && Number.isFinite(point.lon);
-    });
-    var destination = alreadyPresentMode
-      ? (activeEstoniaAnchor && Number.isFinite(activeEstoniaAnchor.lat) && Number.isFinite(activeEstoniaAnchor.lon)
-        ? activeEstoniaAnchor
-        : null)
-      : (route && route.targetPoint && Number.isFinite(route.targetPoint.lat) && Number.isFinite(route.targetPoint.lon)
-        ? { name: route.targetName || route.targetPoint.name || 'Target', lat: route.targetPoint.lat, lon: route.targetPoint.lon }
-        : null);
-    if (!destination) {
-      if (route && route.entryPoint && Number.isFinite(route.entryPoint.lat) && Number.isFinite(route.entryPoint.lon)) {
-        var entryFallback = dedupeRoutePointsJs([route.originPoint, route.entryPoint]);
-        return { activeDisplayRoutePoints: entryFallback.length >= 2 ? entryFallback : validFallbackPoints };
-      }
-      return { activeDisplayRoutePoints: validFallbackPoints };
-    }
-    var pointsBeforeEntry = collectPointsBeforeEntryJs(validFallbackPoints, route && route.entryPoint);
-    var postEntryPoints = alreadyPresentMode ? [] : collectPostEntryPointsJs(validFallbackPoints, route && route.entryPoint);
-    var startDistance = route && route.entryPoint && Number.isFinite(route.entryPoint.lat) && Number.isFinite(route.entryPoint.lon)
-      ? distanceKm(route.entryPoint.lat, route.entryPoint.lon, destination.lat, destination.lon)
-      : Number.POSITIVE_INFINITY;
-    var trimmedPostEntryPoints = trimRoutePointsTowardDestinationJs(postEntryPoints, destination, startDistance);
-    var activeDisplayRoutePoints = dedupeRoutePointsJs([].concat(
-      pointsBeforeEntry,
-      [route && route.entryPoint],
-      trimmedPostEntryPoints,
-      [{ lat: destination.lat, lon: destination.lon, name: destination.name, type: 'destination' }]
-    ));
-    if (activeDisplayRoutePoints.length >= 2) {
-      return { activeDisplayRoutePoints: activeDisplayRoutePoints, activeDisplayDestination: destination };
-    }
-    if (route && route.entryPoint && Number.isFinite(route.entryPoint.lat) && Number.isFinite(route.entryPoint.lon)) {
-      var fallbackToEntry = dedupeRoutePointsJs([route.originPoint, route.entryPoint]);
-      return {
-        activeDisplayRoutePoints: fallbackToEntry.length >= 2 ? fallbackToEntry : validFallbackPoints,
-        activeDisplayDestination: fallbackToEntry.length >= 2
-          ? { name: route.entryLabel || route.entryPoint.name || 'Estonia entry', lat: route.entryPoint.lat, lon: route.entryPoint.lon }
-          : destination
-      };
-    }
-    return { activeDisplayRoutePoints: validFallbackPoints, activeDisplayDestination: destination };
-  }
-
   function normalizeMigrationRouteCandidate(point, sourcePath, index, skipped) {
     if (!point || typeof point !== 'object') {
       skipped.push({ sourcePath: sourcePath + '[' + index + ']', reason: 'target object incomplete' });
@@ -1418,7 +1292,7 @@
     var originPoint = routePoints.find(function (routePoint) { return routePoint.type === 'origin'; }) || routePoints[0] || null;
     var entryPoint = resolveEntryRoutePointJs(finalRoutePoints, entryLat, entryLon, entryLabel);
     var targetPoint = resolveTargetRoutePointJs(finalRoutePoints, targetLat, targetLon, normalizeText(point.displayName || point.name || ('Target ' + (index + 1))));
-    var displayRoutePoints = alignRoutePointsToTargetJs(buildDisplayRoutePointsJs(finalRoutePoints, originPoint, entryPoint, targetPoint), targetPoint);
+    var displayRoutePoints = buildDisplayRoutePointsJs(finalRoutePoints, originPoint, entryPoint, targetPoint);
     var originLocality = normalizeText(migrationEta.fromLocality || migrationEta.foreignLocality || (originPoint && originPoint.name) || '');
     var originCountryCode = normalizeText(migrationEta.fromCountry || migrationEta.foreignCountry || migrationEta.countryCode || '');
     var foreignSightingDate = normalizeText(migrationEta.foreignSightingDate || migrationEta.sightingDate || '');
@@ -1490,7 +1364,7 @@
     var originPoint = routePoints.find(function (routePoint) { return routePoint.type === 'origin'; }) || finalRoutePoints[0] || null;
     var entryPoint = resolveEntryRoutePointJs(finalRoutePoints, entryLat, entryLon, normalizeText(eta.entryZone || 'Estonia entry'));
     var targetPoint = resolveTargetRoutePointJs(finalRoutePoints, targetLat, targetLon, normalizeText(eta.targetName || ('Target ' + (index + 1))));
-    var displayRoutePoints = alignRoutePointsToTargetJs(buildDisplayRoutePointsJs(finalRoutePoints, originPoint, entryPoint, targetPoint), targetPoint);
+    var displayRoutePoints = buildDisplayRoutePointsJs(finalRoutePoints, originPoint, entryPoint, targetPoint);
     return {
       targetName: normalizeText(eta.targetName || eta.entryZone || ('Target ' + (index + 1))),
       originLocality: normalizeText(eta.fromLocality || eta.foreignLocality || (originPoint && originPoint.name) || ''),
@@ -1590,27 +1464,12 @@
       var opacity = 0.85;
       var progressPct = Number(route.currentProgressPct || 0);
       var routeDistKm = Number(route.routeDistanceKm || 0);
-      var activeDisplay = buildActiveMigrationDisplayRouteJs(route, prediction && prediction.activeEstoniaAnchor, prediction && prediction.alreadyPresentMode);
-      var displayRoutePoints = Array.isArray(activeDisplay.activeDisplayRoutePoints) && activeDisplay.activeDisplayRoutePoints.length
-        ? activeDisplay.activeDisplayRoutePoints
-        : (Array.isArray(route.activeDisplayRoutePoints) && route.activeDisplayRoutePoints.length
-          ? route.activeDisplayRoutePoints
-          : (Array.isArray(route.displayRoutePoints) && route.displayRoutePoints.length
-            ? route.displayRoutePoints
-            : route.routePoints));
+      var displayRoutePoints = Array.isArray(route.displayRoutePoints) && route.displayRoutePoints.length
+        ? route.displayRoutePoints
+        : route.routePoints;
       var displayLatLngs = displayRoutePoints
         .filter(function (routePoint) { return routePoint && Number.isFinite(routePoint.lat) && Number.isFinite(routePoint.lon); })
         .map(function (routePoint) { return [routePoint.lat, routePoint.lon]; });
-      var finalDisplayPoint = displayRoutePoints.length ? displayRoutePoints[displayRoutePoints.length - 1] : null;
-      if (route.targetPoint && (!finalDisplayPoint || !pointsNear(finalDisplayPoint, route.targetPoint, 0.05))) {
-        logMigrationRouteDebug('route target mismatch skipped', {
-          sourcePath: route.sourcePath,
-          targetName: route.targetName,
-          finalDisplayPoint: finalDisplayPoint ? { lat: finalDisplayPoint.lat, lon: finalDisplayPoint.lon } : null,
-          targetPoint: { lat: route.targetPoint.lat, lon: route.targetPoint.lon }
-        });
-        return;
-      }
       var progressLatLng = route.progressPoint && Number.isFinite(route.progressPoint.lat) && Number.isFinite(route.progressPoint.lon)
         ? [route.progressPoint.lat, route.progressPoint.lon]
         : null;
@@ -1618,7 +1477,6 @@
         sourcePath: route.sourcePath,
         originPoint: route.originPoint ? { lat: route.originPoint.lat, lon: route.originPoint.lon } : null,
         firstDisplayPoint: displayRoutePoints[0] ? { lat: displayRoutePoints[0].lat, lon: displayRoutePoints[0].lon } : null,
-        lastDisplayPoint: displayRoutePoints.length ? { lat: displayRoutePoints[displayRoutePoints.length - 1].lat, lon: displayRoutePoints[displayRoutePoints.length - 1].lon } : null,
         prependedOrigin: !!(route.originPoint && displayRoutePoints[0] && pointsNear(route.originPoint, displayRoutePoints[0], 0.01)),
       });
 
@@ -1668,13 +1526,10 @@
           }).bindTooltip('Route waypoint', { direction: 'top' }).addTo(layer);
         });
       }
-      var destinationAnchor = activeDisplay.activeDisplayDestination
-        && Number.isFinite(activeDisplay.activeDisplayDestination.lat) && Number.isFinite(activeDisplay.activeDisplayDestination.lon)
-        ? activeDisplay.activeDisplayDestination
-        : (prediction && prediction.alreadyPresentMode && prediction.activeEstoniaAnchor
-          && Number.isFinite(prediction.activeEstoniaAnchor.lat) && Number.isFinite(prediction.activeEstoniaAnchor.lon)
-          ? prediction.activeEstoniaAnchor
-          : route.targetPoint);
+      var destinationAnchor = prediction && prediction.alreadyPresentMode && prediction.activeEstoniaAnchor
+        && Number.isFinite(prediction.activeEstoniaAnchor.lat) && Number.isFinite(prediction.activeEstoniaAnchor.lon)
+        ? prediction.activeEstoniaAnchor
+        : route.targetPoint;
       if (destinationAnchor && Number.isFinite(destinationAnchor.lat) && Number.isFinite(destinationAnchor.lon)) {
         var targetTooltip = '<b>' + escapeHtml(
           prediction && prediction.alreadyPresentMode && prediction.activeEstoniaAnchor && prediction.activeEstoniaAnchor.name
@@ -2015,10 +1870,9 @@
   }
 
   function getStatusText() {
-    if (state.requestState === 'loading') return 'Running';
-    if (state.requestState === 'timeout') return 'Timed out';
-    if (state.requestState === 'error') return 'Error';
-    if (state.requestState === 'success' && state.result) return 'Completed';
+    if (state.loading) return 'Running';
+    if (state.error) return 'Error';
+    if (state.result) return 'Completed';
     return 'Idle';
   }
 
@@ -2478,7 +2332,6 @@
     if (data.type === 'SPECIES_PREDICTION_LOADING') setLoading();
     if (data.type === 'SPECIES_PREDICTION_RESULT') setResult(data.result || null);
     if (data.type === 'SPECIES_PREDICTION_ERROR') setError(data.error || 'Prediction request failed');
-    if (data.type === 'SPECIES_PREDICTION_TIMEOUT') setTimeoutState(data.error || 'Prediction request timed out');
   });
 
   if (document.readyState === 'loading') {

@@ -256,8 +256,6 @@ export type NormalizedMigrationRoute = {
   progressAtEntry?: boolean;
   routePoints: NormalizedMigrationRoutePoint[];
   displayRoutePoints?: NormalizedMigrationRoutePoint[];
-  activeDisplayRoutePoints?: NormalizedMigrationRoutePoint[];
-  activeDisplayDestination?: { name: string; lat: number; lon: number; supportCount?: number; confidence?: number };
   sourcePath: string;
 };
 
@@ -589,7 +587,6 @@ export const SPECIES_PREDICTION_EVENT_TYPES = {
   loading: 'SPECIES_PREDICTION_LOADING',
   result: 'SPECIES_PREDICTION_RESULT',
   error: 'SPECIES_PREDICTION_ERROR',
-  timeout: 'SPECIES_PREDICTION_TIMEOUT',
 } as const;
 
 export function getSpeciesScopeByMapId(mapId: string): SpeciesScopeConfig | null {
@@ -1191,7 +1188,7 @@ export function extractNormalizedMigrationRoutes(
       const originPoint = finalRoutePoints.find((routePoint) => routePoint.type === 'origin') ?? finalRoutePoints[0];
       const entryPoint = resolveEntryRoutePoint(finalRoutePoints, entryLat, entryLon, entryLabel);
       const targetPoint = resolveTargetRoutePoint(finalRoutePoints, targetLat, targetLon, targetNameFromPoint(point, index));
-      const displayRoutePoints = alignRoutePointsToTarget(buildDisplayRoutePoints(finalRoutePoints, originPoint, entryPoint, targetPoint), targetPoint);
+      const displayRoutePoints = buildDisplayRoutePoints(finalRoutePoints, originPoint, entryPoint, targetPoint);
       const originLocality = normalizeUiText(
         readString(migrationEta, ['fromLocality', 'foreignLocality'])
         || originPoint?.name
@@ -1212,18 +1209,6 @@ export function extractNormalizedMigrationRoutes(
       const progressLabel = progressAtEntry ? `Entry via ${entryLabel}` : 'Migration progress';
 
       const targetName = targetNameFromPoint(point, index);
-      const activeDisplay = buildActiveMigrationDisplayRoute({
-        targetName,
-        ...(entryLabel ? { entryLabel } : {}),
-        ...(targetLat != null ? { targetLat } : {}),
-        ...(targetLon != null ? { targetLon } : {}),
-        routePoints: finalRoutePoints,
-        ...(originPoint ? { originPoint } : {}),
-        ...(entryPoint ? { entryPoint } : {}),
-        ...(targetPoint ? { targetPoint } : {}),
-        ...(displayRoutePoints.length ? { displayRoutePoints } : {}),
-        sourcePath: `${path}[${index}]`,
-      }, null, false);
       const routeKey = [
         targetName,
         readFiniteMigrationCoord(point, ['rank']) ?? '',
@@ -1264,8 +1249,6 @@ export function extractNormalizedMigrationRoutes(
         ...(typeof progressAtEntry === 'boolean' ? { progressAtEntry } : {}),
         routePoints: finalRoutePoints,
         ...(displayRoutePoints.length ? { displayRoutePoints } : {}),
-        ...(activeDisplay.activeDisplayRoutePoints.length ? { activeDisplayRoutePoints: activeDisplay.activeDisplayRoutePoints } : {}),
-        ...(activeDisplay.activeDisplayDestination ? { activeDisplayDestination: activeDisplay.activeDisplayDestination } : {}),
         sourcePath: `${path}[${index}]`,
       });
     });
@@ -1290,7 +1273,7 @@ export function extractNormalizedMigrationRoutes(
       const originPoint = finalRoutePoints.find((routePoint) => routePoint.type === 'origin') ?? finalRoutePoints[0];
       const entryPoint = resolveEntryRoutePoint(finalRoutePoints, entryLat, entryLon, entryLabel);
       const targetPoint = resolveTargetRoutePoint(finalRoutePoints, targetLat, targetLon, normalizeUiText(readString(eta, ['targetName']) || `Target ${index + 1}`));
-      const displayRoutePoints = alignRoutePointsToTarget(buildDisplayRoutePoints(finalRoutePoints, originPoint, entryPoint, targetPoint), targetPoint);
+      const displayRoutePoints = buildDisplayRoutePoints(finalRoutePoints, originPoint, entryPoint, targetPoint);
       const currentEstimatedLat = readFiniteMigrationCoord(migrationRoute, ['currentEstimatedLat']);
       const currentEstimatedLon = readFiniteMigrationCoord(migrationRoute, ['currentEstimatedLon']);
       const originLocality = normalizeUiText(readString(eta, ['fromLocality', 'foreignLocality']) || originPoint?.name || '');
@@ -1299,18 +1282,6 @@ export function extractNormalizedMigrationRoutes(
       const distanceToEntryKm = originPoint && entryPoint
         ? Math.round(haversineKm(originPoint.lat, originPoint.lon, entryPoint.lat, entryPoint.lon))
         : undefined;
-      const activeDisplay = buildActiveMigrationDisplayRoute({
-        targetName: normalizeUiText(readString(eta, ['targetName']) || `Target ${index + 1}`),
-        ...(entryLabel ? { entryLabel } : {}),
-        ...(targetLat != null ? { targetLat } : {}),
-        ...(targetLon != null ? { targetLon } : {}),
-        routePoints: finalRoutePoints,
-        ...(originPoint ? { originPoint } : {}),
-        ...(entryPoint ? { entryPoint } : {}),
-        ...(targetPoint ? { targetPoint } : {}),
-        ...(displayRoutePoints.length ? { displayRoutePoints } : {}),
-        sourcePath: `globalMigrationEtas[${index}]`,
-      }, null, false);
       routes.push({
         targetName: normalizeUiText(readString(eta, ['targetName']) || `Target ${index + 1}`),
         ...(entryLabel ? { entryLabel } : {}),
@@ -1333,8 +1304,6 @@ export function extractNormalizedMigrationRoutes(
         ...(targetPoint ? { targetPoint } : {}),
         routePoints: finalRoutePoints,
         ...(displayRoutePoints.length ? { displayRoutePoints } : {}),
-        ...(activeDisplay.activeDisplayRoutePoints.length ? { activeDisplayRoutePoints: activeDisplay.activeDisplayRoutePoints } : {}),
-        ...(activeDisplay.activeDisplayDestination ? { activeDisplayDestination: activeDisplay.activeDisplayDestination } : {}),
         sourcePath: `globalMigrationEtas[${index}]`,
       });
     });
@@ -1533,81 +1502,6 @@ export function selectPrimaryMigrationRoute(
   }
 
   return normalizedRoutes[0] ?? null;
-}
-
-export function buildActiveMigrationDisplayRoute(
-  route: NormalizedMigrationRoute,
-  activeEstoniaAnchor: { name: string; lat: number; lon: number; supportCount?: number; confidence?: number } | null,
-  alreadyPresentMode: boolean,
-): { activeDisplayRoutePoints: NormalizedMigrationRoutePoint[]; activeDisplayDestination?: { name: string; lat: number; lon: number; supportCount?: number; confidence?: number } } {
-  const fallbackPoints = Array.isArray(route.displayRoutePoints) && route.displayRoutePoints.length
-    ? route.displayRoutePoints.map((point) => ({ ...point }))
-    : route.routePoints.map((point) => ({ ...point }));
-  const validFallbackPoints = fallbackPoints.filter((point) => point && Number.isFinite(point.lat) && Number.isFinite(point.lon));
-  const destination = alreadyPresentMode
-    ? (activeEstoniaAnchor && Number.isFinite(activeEstoniaAnchor.lat) && Number.isFinite(activeEstoniaAnchor.lon) ? activeEstoniaAnchor : null)
-    : (route.targetPoint && Number.isFinite(route.targetPoint.lat) && Number.isFinite(route.targetPoint.lon)
-      ? {
-        name: route.targetName || route.targetPoint.name || 'Target',
-        lat: route.targetPoint.lat,
-        lon: route.targetPoint.lon,
-      }
-      : null);
-  if (!destination || !Number.isFinite(destination.lat) || !Number.isFinite(destination.lon)) {
-    if (route.entryPoint && Number.isFinite(route.entryPoint.lat) && Number.isFinite(route.entryPoint.lon)) {
-      const points = dedupeRoutePoints([
-        route.originPoint,
-        route.entryPoint,
-      ]);
-      return { activeDisplayRoutePoints: points.length >= 2 ? points : validFallbackPoints };
-    }
-    return { activeDisplayRoutePoints: validFallbackPoints };
-  }
-
-  const pointsBeforeEntry = collectPointsBeforeEntry(validFallbackPoints, route.entryPoint);
-  const postEntryPoints = alreadyPresentMode ? [] : collectPostEntryPoints(validFallbackPoints, route.entryPoint);
-  const trimmedPostEntryPoints = trimRoutePointsTowardDestination(
-    postEntryPoints,
-    destination,
-    route.entryPoint && Number.isFinite(route.entryPoint.lat) && Number.isFinite(route.entryPoint.lon)
-      ? haversineKm(route.entryPoint.lat, route.entryPoint.lon, destination.lat, destination.lon)
-      : Number.POSITIVE_INFINITY,
-  );
-  const activeDisplayRoutePoints = dedupeRoutePoints([
-    ...pointsBeforeEntry,
-    route.entryPoint,
-    ...trimmedPostEntryPoints,
-    {
-      lat: destination.lat,
-      lon: destination.lon,
-      name: destination.name,
-      type: 'destination',
-    },
-  ]);
-
-  if (activeDisplayRoutePoints.length >= 2) {
-    return {
-      activeDisplayRoutePoints,
-      activeDisplayDestination: destination,
-    };
-  }
-
-  if (route.entryPoint && Number.isFinite(route.entryPoint.lat) && Number.isFinite(route.entryPoint.lon)) {
-    const fallbackToEntry = dedupeRoutePoints([route.originPoint, route.entryPoint]);
-    return {
-      activeDisplayRoutePoints: fallbackToEntry.length >= 2 ? fallbackToEntry : validFallbackPoints,
-      activeDisplayDestination: fallbackToEntry.length >= 2 ? {
-        name: route.entryLabel || route.entryPoint.name || 'Estonia entry',
-        lat: route.entryPoint.lat,
-        lon: route.entryPoint.lon,
-      } : destination,
-    };
-  }
-
-  return {
-    activeDisplayRoutePoints: validFallbackPoints,
-    activeDisplayDestination: destination,
-  };
 }
 
 function readRecentRecordTimestamp(record: SpeciesPredictionElurikkusRecentRecord | undefined): number {
@@ -2525,73 +2419,6 @@ function buildDisplayRoutePoints(
     const previous = array[index - 1];
     return !arePointsNear(previous.lat, previous.lon, point.lat, point.lon, 0.01);
   });
-}
-
-function alignRoutePointsToTarget(
-  routePoints: NormalizedMigrationRoutePoint[],
-  targetPoint: NormalizedMigrationRoutePoint | undefined,
-): NormalizedMigrationRoutePoint[] {
-  if (!targetPoint || !routePoints.length) return routePoints;
-  const targetIndex = routePoints.findIndex((point) => arePointsNear(point.lat, point.lon, targetPoint.lat, targetPoint.lon, 0.05));
-  const aligned = targetIndex >= 0
-    ? routePoints.slice(0, targetIndex + 1)
-    : routePoints.slice();
-  const finalPoint = aligned[aligned.length - 1];
-  if (!finalPoint || !arePointsNear(finalPoint.lat, finalPoint.lon, targetPoint.lat, targetPoint.lon, 0.05)) {
-    aligned.push({ ...targetPoint });
-  } else {
-    aligned[aligned.length - 1] = { ...targetPoint };
-  }
-  return aligned;
-}
-
-function dedupeRoutePoints(
-  points: Array<NormalizedMigrationRoutePoint | undefined>,
-): NormalizedMigrationRoutePoint[] {
-  return points.filter((point): point is NormalizedMigrationRoutePoint => !!point && Number.isFinite(point.lat) && Number.isFinite(point.lon))
-    .filter((point, index, array) => {
-      if (index === 0) return true;
-      const previous = array[index - 1];
-      return !arePointsNear(previous.lat, previous.lon, point.lat, point.lon, 0.01);
-    })
-    .map((point) => ({ ...point }));
-}
-
-function collectPointsBeforeEntry(
-  routePoints: NormalizedMigrationRoutePoint[],
-  entryPoint: NormalizedMigrationRoutePoint | undefined,
-): NormalizedMigrationRoutePoint[] {
-  if (!entryPoint) return routePoints.slice();
-  const entryIndex = routePoints.findIndex((point) => arePointsNear(point.lat, point.lon, entryPoint.lat, entryPoint.lon, 0.05));
-  if (entryIndex < 0) return routePoints.slice();
-  return routePoints.slice(0, entryIndex);
-}
-
-function collectPostEntryPoints(
-  routePoints: NormalizedMigrationRoutePoint[],
-  entryPoint: NormalizedMigrationRoutePoint | undefined,
-): NormalizedMigrationRoutePoint[] {
-  if (!entryPoint) return routePoints.slice();
-  const entryIndex = routePoints.findIndex((point) => arePointsNear(point.lat, point.lon, entryPoint.lat, entryPoint.lon, 0.05));
-  if (entryIndex < 0) return routePoints.slice();
-  return routePoints.slice(entryIndex + 1);
-}
-
-function trimRoutePointsTowardDestination(
-  routePoints: NormalizedMigrationRoutePoint[],
-  destination: { lat: number; lon: number },
-  startDistance = Number.POSITIVE_INFINITY,
-): NormalizedMigrationRoutePoint[] {
-  const trimmed: NormalizedMigrationRoutePoint[] = [];
-  let previousDistance = startDistance;
-  routePoints.forEach((point) => {
-    if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return;
-    const currentDistance = haversineKm(point.lat, point.lon, destination.lat, destination.lon);
-    if (currentDistance > previousDistance + 0.1) return;
-    trimmed.push({ ...point });
-    previousDistance = currentDistance;
-  });
-  return trimmed;
 }
 
 function normalizeVectorKind(value: string): SpeciesPredictionVector['kind'] {

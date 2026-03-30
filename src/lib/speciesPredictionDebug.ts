@@ -6,8 +6,7 @@ export const SPECIES_PREDICTION_DEBUG_RESYNC_EVENT = 'species-prediction-debug-r
 export const SPECIES_PREDICTION_DEBUG_PANEL_STATE_MESSAGE = 'SPECIES_PREDICTION_PANEL_STATE';
 export const SPECIES_PREDICTION_DEBUG_HEALTHCHECK_EVENT = 'species-prediction-debug-healthcheck';
 
-export type PredictionLifecycleState = 'idle' | 'loading' | 'success' | 'error' | 'timeout';
-type DebugStatus = PredictionLifecycleState;
+type DebugStatus = 'idle' | 'loading' | 'success' | 'error';
 export type SpeciesPredictionErrorStage =
   | 'frontend_fetch'
   | 'edge_function'
@@ -51,7 +50,6 @@ export type SpeciesPredictionTransportSnapshot = {
   requestUrl: string;
   requestTimestamp: string;
   responseTimestamp: string;
-  receivedAt: string | null;
   requestId: string | null;
   invocationMethod: 'supabase.functions.invoke' | 'raw_fetch' | '';
   authSessionPresent: boolean;
@@ -62,12 +60,9 @@ export type SpeciesPredictionTransportSnapshot = {
     contentType: string | null;
   };
   failedBeforeResponse: boolean;
-  ok: boolean | null;
   httpStatus: number | null;
   responseBody: unknown;
   timeoutMs: number | null;
-  timedOut: boolean;
-  aborted: boolean;
   abortedByClientTimeout: boolean;
   likelyReachedEdgeFunction: boolean;
   error: SpeciesPredictionTransportError | null;
@@ -144,7 +139,6 @@ const state: SpeciesPredictionDebugSnapshot = {
     requestUrl: '',
     requestTimestamp: '',
     responseTimestamp: '',
-    receivedAt: null,
     requestId: null,
     invocationMethod: '',
     authSessionPresent: false,
@@ -155,12 +149,9 @@ const state: SpeciesPredictionDebugSnapshot = {
       contentType: null,
     },
     failedBeforeResponse: false,
-    ok: null,
     httpStatus: null,
     responseBody: null,
     timeoutMs: null,
-    timedOut: false,
-    aborted: false,
     abortedByClientTimeout: false,
     likelyReachedEdgeFunction: false,
     error: null,
@@ -226,7 +217,6 @@ export function clearSpeciesPredictionDebugMemory(): void {
   state.transport.requestUrl = '';
   state.transport.requestTimestamp = '';
   state.transport.responseTimestamp = '';
-  state.transport.receivedAt = null;
   state.transport.requestId = null;
   state.transport.invocationMethod = '';
   state.transport.authSessionPresent = false;
@@ -235,12 +225,9 @@ export function clearSpeciesPredictionDebugMemory(): void {
   state.transport.intendedHeaders.authorization = false;
   state.transport.intendedHeaders.contentType = null;
   state.transport.failedBeforeResponse = false;
-  state.transport.ok = null;
   state.transport.httpStatus = null;
   state.transport.responseBody = null;
   state.transport.timeoutMs = null;
-  state.transport.timedOut = false;
-  state.transport.aborted = false;
   state.transport.abortedByClientTimeout = false;
   state.transport.likelyReachedEdgeFunction = false;
   state.transport.error = null;

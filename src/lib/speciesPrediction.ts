@@ -230,6 +230,8 @@ export type NormalizedMigrationRoutePoint = {
 
 export type NormalizedMigrationRoute = {
   targetName: string;
+  entryLabel?: string;
+  progressLabel?: string;
   rank?: number;
   targetLat?: number;
   targetLon?: number;
@@ -243,8 +245,37 @@ export type NormalizedMigrationRoute = {
   currentProgressPct?: number;
   currentEstimatedLat?: number;
   currentEstimatedLon?: number;
+  originPoint?: NormalizedMigrationRoutePoint;
+  entryPoint?: NormalizedMigrationRoutePoint;
+  targetPoint?: NormalizedMigrationRoutePoint;
+  progressPoint?: NormalizedMigrationRoutePoint;
+  progressAtEntry?: boolean;
   routePoints: NormalizedMigrationRoutePoint[];
   sourcePath: string;
+};
+
+export type SpeciesPredictionFreshestEstoniaEvidence = {
+  locality: string;
+  date: string;
+  coords: { lat: string; lon: string } | null;
+  source: 'rawResearchPayload.estoniaEvidence.latestEEDate' | 'elurikkusRecentRecords' | 'estoniaEvidence.latestEstoniaDate';
+};
+
+export type CanonicalEstoniaHotspot = {
+  canonicalName: string;
+  lat: number;
+  lon: number;
+  supportCount: number;
+  latestYear: number | null;
+  recent365d: number;
+  sourceIds: string[];
+};
+
+export type SpeciesPredictionDisplayModel = {
+  alreadyPresentMode: boolean;
+  freshestEstoniaEvidence: SpeciesPredictionFreshestEstoniaEvidence | null;
+  canonicalHotspots: CanonicalEstoniaHotspot[];
+  displayedTargets: PredictedPoint[];
 };
 
 export type PredictedPoint = {
@@ -1147,8 +1178,17 @@ export function extractNormalizedMigrationRoutes(
         ? routePoints
         : synthesizeMigrationRoutePoints(routePoints[0], entryLat, entryLon, targetLat, targetLon);
       if (finalRoutePoints.length < 2) return;
+      const entryLabel = normalizeUiText(readString(migrationEta, ['entryZone', 'entryLabel', 'countyOrParish']) || 'Estonia entry');
+      const originPoint = finalRoutePoints.find((routePoint) => routePoint.type === 'origin') ?? finalRoutePoints[0];
+      const entryPoint = resolveEntryRoutePoint(finalRoutePoints, entryLat, entryLon, entryLabel);
+      const targetPoint = resolveTargetRoutePoint(finalRoutePoints, targetLat, targetLon, targetNameFromPoint(point, index));
+      const progressAtEntry = currentEstimatedLat != null
+        && currentEstimatedLon != null
+        && !!entryPoint
+        && arePointsNear(currentEstimatedLat, currentEstimatedLon, entryPoint.lat, entryPoint.lon, 0.3);
+      const progressLabel = progressAtEntry ? `Entry via ${entryLabel}` : 'Migration progress';
 
-      const targetName = normalizeUiText(readString(point, ['displayName', 'name']) || `Target ${index + 1}`);
+      const targetName = targetNameFromPoint(point, index);
       const routeKey = [
         targetName,
         readFiniteMigrationCoord(point, ['rank']) ?? '',
@@ -1164,6 +1204,8 @@ export function extractNormalizedMigrationRoutes(
         ...(hasValue(point, ['rank']) ? { rank: clampNumber(readNumber(point, ['rank']), 1, 999, 1) } : {}),
         ...(targetLat != null ? { targetLat } : {}),
         ...(targetLon != null ? { targetLon } : {}),
+        ...(entryLabel ? { entryLabel } : {}),
+        ...(progressLabel ? { progressLabel } : {}),
         ...(entryLat != null ? { entryLat } : {}),
         ...(entryLon != null ? { entryLon } : {}),
         ...(readString(migrationEta, ['fromLocality', 'foreignLocality']) ? { fromLocality: normalizeUiText(readString(migrationEta, ['fromLocality', 'foreignLocality'])) } : {}),
@@ -1174,6 +1216,13 @@ export function extractNormalizedMigrationRoutes(
         ...(hasValue(migrationRoute, ['currentProgressPct']) ? { currentProgressPct: clampFloat(readNumber(migrationRoute, ['currentProgressPct']), 0, 100, 0) } : {}),
         ...(currentEstimatedLat != null ? { currentEstimatedLat } : {}),
         ...(currentEstimatedLon != null ? { currentEstimatedLon } : {}),
+        ...(originPoint ? { originPoint } : {}),
+        ...(entryPoint ? { entryPoint } : {}),
+        ...(targetPoint ? { targetPoint } : {}),
+        ...((currentEstimatedLat != null && currentEstimatedLon != null)
+          ? { progressPoint: { lat: currentEstimatedLat, lon: currentEstimatedLon, name: progressLabel, type: progressAtEntry ? 'waypoint' : 'waypoint' as const } }
+          : {}),
+        ...(typeof progressAtEntry === 'boolean' ? { progressAtEntry } : {}),
         routePoints: finalRoutePoints,
         sourcePath: `${path}[${index}]`,
       });
@@ -1181,6 +1230,130 @@ export function extractNormalizedMigrationRoutes(
   });
 
   return routes;
+}
+
+export function resolveFreshestEstoniaEvidence(
+  raw: Partial<SpeciesPredictionResult> | SpeciesPredictionResult[] | null | undefined,
+): SpeciesPredictionFreshestEstoniaEvidence | null {
+  const root = Array.isArray(raw) ? (raw[0] as Partial<SpeciesPredictionResult> | undefined) ?? {} : (raw ?? {});
+  const result = asRecord(root);
+  const rawResearchPayload = readRecord(result, ['rawResearchPayload']) ?? {};
+  const rawEstoniaEvidence = readRecord(rawResearchPayload, ['estoniaEvidence']) ?? {};
+  const latestEEDate = normalizeUiText(readString(rawEstoniaEvidence, ['latestEEDate']) || '');
+  const recentRecords = Array.isArray((root as SpeciesPredictionResult).elurikkusRecentRecords)
+    ? (root as SpeciesPredictionResult).elurikkusRecentRecords ?? []
+    : [];
+  const newestRecentRecord = [...recentRecords]
+    .sort((left, right) => readRecentRecordTimestamp(right) - readRecentRecordTimestamp(left))[0];
+  const newestRecentDate = newestRecentRecord
+    ? normalizeUiText(String((newestRecentRecord as Record<string, unknown>).event_date || newestRecentRecord.date || (newestRecentRecord as Record<string, unknown>).eventDate || ''))
+    : '';
+  if (latestEEDate) {
+    return {
+      locality: normalizeUiText(readString(rawEstoniaEvidence, ['latestEELocality', 'latestLocality']) || (newestRecentRecord ? String((newestRecentRecord as Record<string, unknown>).locality || '') : '')),
+      date: latestEEDate,
+      coords: newestRecentRecord ? readRecentRecordCoords(newestRecentRecord) : null,
+      source: 'rawResearchPayload.estoniaEvidence.latestEEDate',
+    };
+  }
+  if (newestRecentDate) {
+    return {
+      locality: normalizeUiText(String((newestRecentRecord as Record<string, unknown>).locality || (newestRecentRecord as Record<string, unknown>).locName || '')),
+      date: newestRecentDate,
+      coords: readRecentRecordCoords(newestRecentRecord),
+      source: 'elurikkusRecentRecords',
+    };
+  }
+  const estoniaEvidence = (root as SpeciesPredictionResult).estoniaEvidence;
+  if (estoniaEvidence?.latestEstoniaDate) {
+    return {
+      locality: normalizeUiText(estoniaEvidence.latestEstoniaLocality || ''),
+      date: normalizeUiText(estoniaEvidence.latestEstoniaDate),
+      coords: estoniaEvidence.latestEstoniaLat != null && estoniaEvidence.latestEstoniaLon != null
+        ? { lat: String(estoniaEvidence.latestEstoniaLat), lon: String(estoniaEvidence.latestEstoniaLon) }
+        : null,
+      source: 'estoniaEvidence.latestEstoniaDate',
+    };
+  }
+  return null;
+}
+
+export function isAlreadyPresentPrediction(
+  raw: Partial<SpeciesPredictionResult> | SpeciesPredictionResult[] | null | undefined,
+): boolean {
+  const root = Array.isArray(raw) ? (raw[0] as Partial<SpeciesPredictionResult> | undefined) ?? {} : (raw ?? {});
+  const recentCount7d = hasValue(asRecord(root), ['recentCount7d'])
+    ? clampNumber(readNumber(asRecord(root), ['recentCount7d']), 0, 999999, 0)
+    : clampNumber(readNumber(asRecord((root as SpeciesPredictionResult).estoniaEvidence ?? {}), ['recentCount7d']), 0, 999999, 0);
+  return (root as SpeciesPredictionResult).estoniaEvidence?.alreadyPresent === true || recentCount7d > 0;
+}
+
+export function mergeCanonicalEstoniaHotspots(
+  hotspots: Array<Partial<PredictedPoint> | SpeciesPredictionEstoniaHistoryCluster>,
+): CanonicalEstoniaHotspot[] {
+  const groups: Array<{ canonicalName: string; items: CanonicalEstoniaHotspot[] }> = [];
+  hotspots.forEach((entry, index) => {
+    const source = asRecord(entry);
+    const lat = readFiniteMigrationCoord(source, ['representativeLat', 'lat']);
+    const lon = readFiniteMigrationCoord(source, ['representativeLon', 'lon']);
+    if (lat == null || lon == null) return;
+    const rawName = normalizeUiText(readString(source, ['displayName', 'name', 'locality']) || `Hotspot ${index + 1}`);
+    const canonicalName = canonicalizeEstoniaHotspotName(rawName);
+    const latestDate = normalizeUiText(readString(source, ['latestSupportingEstoniaDate', 'newestEventDate', 'latestEstoniaDate']) || '');
+    const latestYear = latestDate ? extractYear(latestDate) : null;
+    const candidate: CanonicalEstoniaHotspot = {
+      canonicalName,
+      lat,
+      lon,
+      supportCount: clampNumber(readNumber(source, ['supportingEstoniaHistoryCount', 'count']), 0, 999999, 0),
+      latestYear,
+      recent365d: clampNumber(readNumber(source, ['recentCount']), 0, 999999, 0),
+      sourceIds: [normalizeUiText(readString(source, ['derivedFromClusterId', 'id']) || canonicalName)],
+    };
+    const existingGroup = groups.find((group) =>
+      group.canonicalName === canonicalName
+      && group.items.some((item) => haversineKm(item.lat, item.lon, lat, lon) <= 3),
+    );
+    if (!existingGroup) {
+      groups.push({ canonicalName, items: [candidate] });
+      return;
+    }
+    existingGroup.items.push(candidate);
+  });
+  return groups.map((group) => {
+    const supportCount = group.items.reduce((sum, item) => sum + item.supportCount, 0);
+    const recent365d = group.items.reduce((sum, item) => sum + item.recent365d, 0);
+    const latestYear = group.items.reduce<number | null>((latest, item) => latest == null ? item.latestYear : Math.max(latest, item.latestYear ?? latest), null);
+    const lat = group.items.reduce((sum, item) => sum + item.lat, 0) / group.items.length;
+    const lon = group.items.reduce((sum, item) => sum + item.lon, 0) / group.items.length;
+    return {
+      canonicalName: group.canonicalName,
+      lat,
+      lon,
+      supportCount,
+      latestYear,
+      recent365d,
+      sourceIds: group.items.flatMap((item) => item.sourceIds),
+    };
+  });
+}
+
+export function buildSpeciesPredictionDisplayModel(
+  raw: Partial<SpeciesPredictionResult> | SpeciesPredictionResult[] | null | undefined,
+): SpeciesPredictionDisplayModel {
+  const root = Array.isArray(raw) ? (raw[0] as Partial<SpeciesPredictionResult> | undefined) ?? {} : (raw ?? {});
+  const alreadyPresentMode = isAlreadyPresentPrediction(root);
+  const freshestEstoniaEvidence = resolveFreshestEstoniaEvidence(root);
+  const predictedTargets = Array.isArray((root as SpeciesPredictionResult).predictedTargets) ? (root as SpeciesPredictionResult).predictedTargets ?? [] : [];
+  const historyClusters = Array.isArray((root as SpeciesPredictionResult).estoniaHistoryClusters) ? (root as SpeciesPredictionResult).estoniaHistoryClusters ?? [] : [];
+  const canonicalHotspots = mergeCanonicalEstoniaHotspots([...(predictedTargets as Partial<PredictedPoint>[]), ...(historyClusters as SpeciesPredictionEstoniaHistoryCluster[])]);
+  const displayTargets = prioritizeDisplayedTargets(predictedTargets, freshestEstoniaEvidence, alreadyPresentMode);
+  return {
+    alreadyPresentMode,
+    freshestEstoniaEvidence,
+    canonicalHotspots,
+    displayedTargets: displayTargets,
+  };
 }
 
 function readRecentRecordTimestamp(record: SpeciesPredictionElurikkusRecentRecord | undefined): number {
@@ -1943,6 +2116,89 @@ function normalizePredictionVectors(input: unknown[] | null): SpeciesPredictionV
       }).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon)),
     };
   }).filter((vector) => vector.points.length >= 2);
+}
+
+function targetNameFromPoint(point: Record<string, unknown>, index: number): string {
+  return normalizeUiText(readString(point, ['displayName', 'name']) || `Target ${index + 1}`);
+}
+
+function resolveEntryRoutePoint(
+  routePoints: NormalizedMigrationRoutePoint[],
+  entryLat: number | undefined,
+  entryLon: number | undefined,
+  entryLabel: string,
+): NormalizedMigrationRoutePoint | undefined {
+  if (entryLat != null && entryLon != null) {
+    const matched = routePoints.find((routePoint) => arePointsNear(routePoint.lat, routePoint.lon, entryLat, entryLon, 0.3));
+    if (matched) return { ...matched, name: matched.name || entryLabel, type: 'waypoint' };
+    return { lat: entryLat, lon: entryLon, name: entryLabel, type: 'waypoint' };
+  }
+  return routePoints.find((routePoint) => routePoint.type === 'waypoint');
+}
+
+function resolveTargetRoutePoint(
+  routePoints: NormalizedMigrationRoutePoint[],
+  targetLat: number | undefined,
+  targetLon: number | undefined,
+  targetName: string,
+): NormalizedMigrationRoutePoint | undefined {
+  if (targetLat != null && targetLon != null) {
+    const matched = routePoints.find((routePoint) => arePointsNear(routePoint.lat, routePoint.lon, targetLat, targetLon, 0.3));
+    if (matched) return { ...matched, name: targetName, type: 'destination' };
+    return { lat: targetLat, lon: targetLon, name: targetName, type: 'destination' };
+  }
+  const destination = routePoints.find((routePoint) => routePoint.type === 'destination');
+  return destination ? { ...destination, name: targetName } : routePoints[routePoints.length - 1];
+}
+
+function arePointsNear(latA: number, lonA: number, latB: number, lonB: number, toleranceKm: number): boolean {
+  return haversineKm(latA, lonA, latB, lonB) <= toleranceKm;
+}
+
+function haversineKm(latA: number, lonA: number, latB: number, lonB: number): number {
+  const toRad = (deg: number): number => deg * Math.PI / 180;
+  const dLat = toRad(latB - latA);
+  const dLon = toRad(lonB - lonA);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(latA)) * Math.cos(toRad(latB)) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function canonicalizeEstoniaHotspotName(name: string): string {
+  const normalized = normalizeUiText(name).toLowerCase();
+  if (/(sääre|so?rve)/i.test(normalized)) return 'Sääre / Sõrve';
+  if (/(põõsaspea|poosaspea|spithami|spithamn)/i.test(normalized)) return 'Põõsaspea / Spithami';
+  if (/(ringsu|ruhnu)/i.test(normalized)) return 'Ringsu / Ruhnu';
+  return normalizeUiText(name);
+}
+
+function extractYear(value: string): number | null {
+  const match = value.match(/\b(19|20)\d{2}\b/);
+  return match ? Number(match[0]) : null;
+}
+
+function prioritizeDisplayedTargets(
+  predictedTargets: PredictedPoint[],
+  freshestEstoniaEvidence: SpeciesPredictionFreshestEstoniaEvidence | null,
+  alreadyPresentMode: boolean,
+): PredictedPoint[] {
+  const filtered = predictedTargets.filter((target) => {
+    const name = normalizeUiText(target.displayName || target.name).toLowerCase();
+    return !/(ringsu|ruhnu)/i.test(name);
+  });
+  if (!alreadyPresentMode || !freshestEstoniaEvidence?.coords) return filtered.slice(0, 5);
+  const { lat, lon } = freshestEstoniaEvidence.coords;
+  const baseLat = Number(lat);
+  const baseLon = Number(lon);
+  if (!Number.isFinite(baseLat) || !Number.isFinite(baseLon)) return filtered.slice(0, 2);
+  return filtered
+    .slice()
+    .sort((left, right) => {
+      const leftDistance = haversineKm(baseLat, baseLon, left.lat, left.lon);
+      const rightDistance = haversineKm(baseLat, baseLon, right.lat, right.lon);
+      return leftDistance - rightDistance;
+    })
+    .slice(0, 2);
 }
 
 function readFiniteMigrationCoord(

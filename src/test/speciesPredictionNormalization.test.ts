@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { extractNormalizedMigrationRoutes, hasUsableSpeciesPredictionResult, normalizePrediction, normalizeSpeciesPredictionResult } from "@/lib/speciesPrediction";
+import { buildSpeciesPredictionDisplayModel, extractNormalizedMigrationRoutes, hasUsableSpeciesPredictionResult, isAlreadyPresentPrediction, mergeCanonicalEstoniaHotspots, normalizePrediction, normalizeSpeciesPredictionResult, resolveFreshestEstoniaEvidence } from "@/lib/speciesPrediction";
 
 describe("normalizeSpeciesPredictionResult", () => {
   it("prefers canonical fields over legacy aliases", () => {
@@ -1410,6 +1410,41 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(routes).toHaveLength(1);
     expect(routes[0]?.sourcePath).toBe("topPredictedPoints[0]");
   });
+
+  it("separates entry progress from final target semantics", () => {
+    const routes = extractNormalizedMigrationRoutes({
+      topPredictedPoints: [
+        {
+          rank: 1,
+          name: "Põõsaspea",
+          lat: 59.002,
+          lon: 23.498,
+          migrationEta: {
+            entryZone: "Kabli",
+            entryLat: 58.0,
+            entryLon: 24.4,
+            migrationRoute: {
+              currentEstimatedLat: 58.0,
+              currentEstimatedLon: 24.4,
+              currentProgressPct: 55,
+              route: [
+                { lat: 56.9, lon: 22.1, type: "origin", name: "Origin coast" },
+                { lat: 58.0, lon: 24.4, type: "waypoint", name: "Kabli" },
+                { lat: 59.002, lon: 23.498, type: "destination", name: "Põõsaspea" },
+              ],
+            },
+          },
+        },
+      ],
+    } as any);
+
+    expect(routes[0]?.entryLabel).toBe("Kabli");
+    expect(routes[0]?.progressAtEntry).toBe(true);
+    expect(routes[0]?.progressLabel).toBe("Entry via Kabli");
+    expect(routes[0]?.targetName).toBe("Põõsaspea");
+    expect(routes[0]?.entryPoint?.name).toBe("Kabli");
+    expect(routes[0]?.targetPoint?.name).toBe("Põõsaspea");
+  });
 });
 
 describe("normalizePrediction", () => {
@@ -1508,5 +1543,81 @@ describe("normalizePrediction", () => {
     expect(normalized.predictedTargets[0]?.name).toBe("Põõsaspea");
     expect(normalized.weatherLabel).toContain("SW");
     expect(normalized.summaryText).toBe("OpenAI summary text");
+  });
+
+  it("prefers rawResearchPayload latestEEDate over stale top-level latestEstoniaDate", () => {
+    const freshest = resolveFreshestEstoniaEvidence({
+      estoniaEvidence: {
+        latestEstoniaDate: "2024-03-01",
+        latestEstoniaLocality: "Old fallback",
+      },
+      elurikkusRecentRecords: [
+        { locality: "Ristna", event_date: "2026-03-28", coordinates: { lat: 58.93, lon: 22.05 } },
+      ],
+      rawResearchPayload: {
+        estoniaEvidence: {
+          latestEEDate: "2026-03-29",
+          latestEELocality: "Kalana",
+        },
+      },
+    } as any);
+
+    expect(freshest?.date).toBe("2026-03-29");
+    expect(freshest?.locality).toBe("Kalana");
+    expect(freshest?.source).toBe("rawResearchPayload.estoniaEvidence.latestEEDate");
+  });
+
+  it("falls back to newest eElurikkus record before stale estoniaEvidence date", () => {
+    const freshest = resolveFreshestEstoniaEvidence({
+      estoniaEvidence: {
+        latestEstoniaDate: "2025-03-01",
+        latestEstoniaLocality: "Historical fallback",
+      },
+      elurikkusRecentRecords: [
+        { locality: "Sääre küla", event_date: "2026-03-27", coordinates: { lat: 57.905, lon: 22.051 } },
+        { locality: "Older locality", event_date: "2026-03-20", coordinates: { lat: 58.1, lon: 23.1 } },
+      ],
+    } as any);
+
+    expect(freshest?.date).toBe("2026-03-27");
+    expect(freshest?.locality).toBe("Sääre küla");
+    expect(freshest?.source).toBe("elurikkusRecentRecords");
+  });
+
+  it("merges canonical hotspot aliases within nearby clusters", () => {
+    const merged = mergeCanonicalEstoniaHotspots([
+      { displayName: "Põõsaspea neem", lat: 59.01, lon: 23.49, supportingEstoniaHistoryCount: 3, latestSupportingEstoniaDate: "2024-04-01" },
+      { displayName: "Spithami küla", lat: 59.02, lon: 23.5, supportingEstoniaHistoryCount: 2, latestSupportingEstoniaDate: "2026-03-15" },
+      { displayName: "Ringsu", lat: 57.78, lon: 23.26, supportingEstoniaHistoryCount: 1, latestSupportingEstoniaDate: "2022-03-01" },
+    ] as any);
+
+    const poosaspea = merged.find((item) => item.canonicalName === "Põõsaspea / Spithami");
+    expect(poosaspea?.supportCount).toBe(5);
+    expect(poosaspea?.latestYear).toBe(2026);
+  });
+
+  it("detects already-present mode from estoniaEvidence or recentCount7d", () => {
+    expect(isAlreadyPresentPrediction({ estoniaEvidence: { alreadyPresent: true } } as any)).toBe(true);
+    expect(isAlreadyPresentPrediction({ recentCount7d: 2 } as any)).toBe(true);
+    expect(isAlreadyPresentPrediction({ recentCount7d: 0, estoniaEvidence: { alreadyPresent: false } } as any)).toBe(false);
+  });
+
+  it("prioritizes nearby watch-next targets and de-prioritizes ruhnu in already-present mode", () => {
+    const model = buildSpeciesPredictionDisplayModel({
+      recentCount7d: 4,
+      elurikkusRecentRecords: [
+        { locality: "Ristna", event_date: "2026-03-29", coordinates: { lat: 58.9257, lon: 22.0541 } },
+      ],
+      predictedTargets: [
+        { rank: 1, name: "Ringsu", lat: 57.78, lon: 23.26, confidence: 0.8, eta: "24h", searchRadiusKm: 5, habitatCue: "", reason: "", countyOrParish: "" },
+        { rank: 2, name: "Kalana", lat: 58.99, lon: 22.45, confidence: 0.7, eta: "12h", searchRadiusKm: 5, habitatCue: "", reason: "", countyOrParish: "" },
+        { rank: 3, name: "Ristna", lat: 58.93, lon: 22.05, confidence: 0.9, eta: "now", searchRadiusKm: 5, habitatCue: "", reason: "", countyOrParish: "" },
+      ],
+    } as any);
+
+    expect(model.alreadyPresentMode).toBe(true);
+    expect(model.displayedTargets).toHaveLength(2);
+    expect(model.displayedTargets[0]?.name).toBe("Ristna");
+    expect(model.displayedTargets.some((item) => item.name === "Ringsu")).toBe(false);
   });
 });

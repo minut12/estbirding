@@ -523,7 +523,9 @@
     var rankingNotes = normalizeText(result.rankingNotes);
     var warnings = normalizeStringArray(result.warnings);
     var consistencyChecks = result.consistencyChecks || null;
-    var preferredPoints = Array.isArray(prediction.predictedTargets) ? prediction.predictedTargets.slice(0, 5) : [];
+    var preferredPoints = Array.isArray(prediction.displayedTargets) && prediction.displayedTargets.length
+      ? prediction.displayedTargets.slice(0, 5)
+      : (Array.isArray(prediction.predictedTargets) ? prediction.predictedTargets.slice(0, 5) : []);
     var predictedTargets = preferredPoints;
     var evidenceState = String(prediction.evidenceState || '').trim();
     var effectiveRankingMode = String(prediction.rankingMode || '').trim();
@@ -808,17 +810,18 @@
     clearPredictionOverlay();
     if (!state.result || !window.map || !window.L) return;
     var result = state.result;
+    var prediction = normalizePrediction(result);
     overlayGroups = createOverlayGroups();
     if (state.layerToggles.estoniaHistoryPoints !== false) renderEstoniaHistory(result.estoniaHistoryPoints || []);
     if (state.layerToggles.estoniaHistoryClusters !== false) renderEstoniaHistoryClusters(result.estoniaHistoryClusters || []);
     if (state.layerToggles.foreignRecentPoints !== false) renderForeignEvidencePoints(result.foreignRecentPoints || [], result.foreignClusters || []);
     if (state.layerToggles.foreignPressureClusters !== false) renderForeignPressureClusters(result.foreignClusters || []);
-    if (state.layerToggles.predictedLines !== false) renderPredictionVectors(result.predictionVectors || [], false);
-    if (state.layerToggles.predictedCone !== false) renderPredictionVectors(result.predictionVectors || [], true);
-    if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap((result.predictedTargets || result.topPredictedPoints || []).slice(0, 5));
+    if (state.layerToggles.predictedLines !== false && !prediction.alreadyPresentMode) renderPredictionVectors(result.predictionVectors || [], false);
+    if (state.layerToggles.predictedCone !== false && !prediction.alreadyPresentMode) renderPredictionVectors(result.predictionVectors || [], true);
+    if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap((prediction.displayedTargets || result.predictedTargets || result.topPredictedPoints || []).slice(0, prediction.alreadyPresentMode ? 2 : 5), prediction);
     var normalizedMigrationRoutes = getNormalizedMigrationRoutes(result);
-    if (state.layerToggles.migrationRoutes !== false && normalizedMigrationRoutes.length) renderMigrationRoutes(normalizedMigrationRoutes);
-    if (state.layerToggles.diagnostics === true && shouldOpenDebugDetails()) renderDiagnostics((result.predictedTargets || result.topPredictedPoints || []).slice(0, 5));
+    if (state.layerToggles.migrationRoutes !== false && normalizedMigrationRoutes.length) renderMigrationRoutes(normalizedMigrationRoutes, prediction);
+    if (state.layerToggles.diagnostics === true && shouldOpenDebugDetails()) renderDiagnostics((prediction.displayedTargets || result.predictedTargets || result.topPredictedPoints || []).slice(0, prediction.alreadyPresentMode ? 2 : 5));
   }
 
   function clearPredictionOverlay() {
@@ -1054,14 +1057,15 @@
 
   function renderEstoniaHistory(points) {
     points.filter(filterRecentHistoryPoint).forEach(function (point) {
-      var color = '#6b7280';
+      var isFresh = point.ageClass === 'recent';
+      var color = isFresh ? '#0ea5e9' : '#6b7280';
       L.circleMarker([point.lat, point.lon], {
-        radius: point.ageClass === 'recent' ? 4 : 3,
+        radius: isFresh ? 7 : 4,
         color: color,
-        weight: 1,
+        weight: isFresh ? 2 : 1,
         fillColor: color,
-        fillOpacity: point.ageClass === 'recent' ? 0.55 : 0.35
-      }).bindPopup('<strong>Estonia history</strong><br>' + escapeHtml(point.locality || point.municipality || 'GBIF point') + '<br>' + escapeHtml(point.eventDate || 'Unknown date')).addTo(overlayGroups.estoniaHistoryPoints);
+        fillOpacity: isFresh ? 0.9 : 0.35
+      }).bindPopup('<strong>' + escapeHtml(isFresh ? 'Fresh Estonia evidence' : 'Estonia history') + '</strong><br>' + escapeHtml(point.locality || point.municipality || 'GBIF point') + '<br>' + escapeHtml(point.eventDate || 'Unknown date')).addTo(overlayGroups.estoniaHistoryPoints);
     });
   }
 
@@ -1072,8 +1076,8 @@
         color: '#475569',
         weight: 2,
         fillColor: '#94a3b8',
-        fillOpacity: 0.28
-      }).bindPopup('<strong>Estonia history cluster</strong><br>' + escapeHtml(cluster.displayName || cluster.locality || 'Cluster') + '<br>' + escapeHtml(formatCoords(cluster.representativeLat || cluster.lat, cluster.representativeLon || cluster.lon)) + '<br>Support: ' + escapeHtml(cluster.count || 0)).addTo(overlayGroups.estoniaHistoryClusters);
+        fillOpacity: 0
+      }).bindPopup('<strong>History hotspot</strong><br>' + escapeHtml(canonicalHotspotName(cluster.displayName || cluster.locality || 'Cluster')) + '<br>Count: ' + escapeHtml(cluster.count || 0) + '<br>Latest year: ' + escapeHtml(String(extractYearJs(cluster.newestEventDate || '') || 'Unknown')) + '<br>Recent365d: ' + escapeHtml(cluster.recentCount || 0)).addTo(overlayGroups.estoniaHistoryClusters);
     });
   }
 
@@ -1117,19 +1121,19 @@
     });
   }
 
-  function renderPredictedTargetsOnMap(points) {
+  function renderPredictedTargetsOnMap(points, prediction) {
     points.forEach(function (point) {
       var icon = L.divIcon({
         className: 'species-prediction-target',
-        html: '<div style="width:28px;height:28px;border-radius:999px;background:#111827;color:#fff;border:3px solid #facc15;display:flex;align-items:center;justify-content:center;font:700 12px/1 system-ui;">' + escapeHtml(point.rank || '?') + '</div>',
+        html: '<div style="width:28px;height:28px;border-radius:999px;background:' + (prediction && prediction.alreadyPresentMode ? '#f97316' : '#111827') + ';color:#fff;border:3px solid #facc15;display:flex;align-items:center;justify-content:center;font:700 12px/1 system-ui;">' + escapeHtml(point.rank || '?') + '</div>',
         iconSize: [28, 28],
         iconAnchor: [14, 14]
       });
       L.marker([point.lat, point.lon], { icon: icon, zIndexOffset: 1000 }).bindPopup(
         '<strong>#' + escapeHtml(point.rank) + ' ' + escapeHtml(point.displayName || point.name || 'Target') + '</strong><br>' +
-        'Confidence: ' + escapeHtml(formatConfidence(point.confidence)) + '<br>' +
-        'EE support: ' + escapeHtml(point.supportingEstoniaHistoryCount || point.supportingPointCount || '') + '<br>' +
-        'Latest EE date: ' + escapeHtml(point.latestSupportingEstoniaDate || '') + '<br>' +
+        'ETA: ' + escapeHtml(point.eta || 'Unavailable') + '<br>' +
+        'Support: ' + escapeHtml(point.supportingEstoniaHistoryCount || point.supportingPointCount || '') + '<br>' +
+        'Latest EE date: ' + escapeHtml(point.latestSupportingEstoniaDate || (prediction && prediction.freshestEeDate) || '') + '<br>' +
         escapeHtml(cleanReasonText(point.reason || '', Array.isArray(point.supportingCountries) && point.supportingCountries.length))
       ).addTo(overlayGroups.predictedTargets);
     });
@@ -1204,6 +1208,30 @@
     return uniqueRoutePoints(points);
   }
 
+  function resolveEntryRoutePointJs(routePoints, entryLat, entryLon, entryLabel) {
+    if (Number.isFinite(entryLat) && Number.isFinite(entryLon)) {
+      var explicit = { lat: entryLat, lon: entryLon, name: entryLabel || 'Estonia entry', type: 'waypoint' };
+      var matched = (Array.isArray(routePoints) ? routePoints : []).find(function (point) {
+        return pointsNear(point, explicit, 0.3);
+      });
+      return matched ? Object.assign({}, matched, { name: matched.name || explicit.name, type: 'waypoint' }) : explicit;
+    }
+    var fallback = (Array.isArray(routePoints) ? routePoints : []).find(function (point) { return point && point.type === 'waypoint'; });
+    return fallback || null;
+  }
+
+  function resolveTargetRoutePointJs(routePoints, targetLat, targetLon, targetName) {
+    if (Number.isFinite(targetLat) && Number.isFinite(targetLon)) {
+      var explicit = { lat: targetLat, lon: targetLon, name: targetName || 'Target', type: 'destination' };
+      var matched = (Array.isArray(routePoints) ? routePoints : []).find(function (point) {
+        return pointsNear(point, explicit, 0.3);
+      });
+      return matched ? Object.assign({}, matched, { name: targetName || matched.name || 'Target', type: 'destination' }) : explicit;
+    }
+    var fallback = (Array.isArray(routePoints) ? routePoints : []).find(function (point) { return point && point.type === 'destination'; });
+    return fallback || ((Array.isArray(routePoints) && routePoints.length) ? routePoints[routePoints.length - 1] : null);
+  }
+
   function normalizeMigrationRouteCandidate(point, sourcePath, index, skipped) {
     if (!point || typeof point !== 'object') {
       skipped.push({ sourcePath: sourcePath + '[' + index + ']', reason: 'target object incomplete' });
@@ -1240,8 +1268,17 @@
     }
     var currentEstimatedLat = Number(migrationRoute.currentEstimatedLat);
     var currentEstimatedLon = Number(migrationRoute.currentEstimatedLon);
+    var entryLabel = normalizeText(migrationEta.entryZone || migrationEta.entryLabel || 'Estonia entry');
+    var originPoint = routePoints.find(function (routePoint) { return routePoint.type === 'origin'; }) || routePoints[0] || null;
+    var entryPoint = resolveEntryRoutePointJs(finalRoutePoints, entryLat, entryLon, entryLabel);
+    var targetPoint = resolveTargetRoutePointJs(finalRoutePoints, targetLat, targetLon, normalizeText(point.displayName || point.name || ('Target ' + (index + 1))));
+    var progressAtEntry = Number.isFinite(currentEstimatedLat) && Number.isFinite(currentEstimatedLon) && entryPoint
+      ? pointsNear({ lat: currentEstimatedLat, lon: currentEstimatedLon }, entryPoint, 0.3)
+      : false;
     return {
       targetName: normalizeText(point.displayName || point.name || ('Target ' + (index + 1))),
+      entryLabel: entryLabel,
+      progressLabel: progressAtEntry ? ('Entry via ' + entryLabel) : 'Migration progress',
       rank: Number.isFinite(Number(point.rank)) ? Number(point.rank) : undefined,
       targetLat: Number.isFinite(targetLat) ? targetLat : undefined,
       targetLon: Number.isFinite(targetLon) ? targetLon : undefined,
@@ -1255,6 +1292,13 @@
       currentProgressPct: Number.isFinite(Number(migrationRoute.currentProgressPct)) ? Number(migrationRoute.currentProgressPct) : undefined,
       currentEstimatedLat: Number.isFinite(currentEstimatedLat) ? currentEstimatedLat : undefined,
       currentEstimatedLon: Number.isFinite(currentEstimatedLon) ? currentEstimatedLon : undefined,
+      originPoint: originPoint || undefined,
+      entryPoint: entryPoint || undefined,
+      targetPoint: targetPoint || undefined,
+      progressPoint: (Number.isFinite(currentEstimatedLat) && Number.isFinite(currentEstimatedLon))
+        ? { lat: currentEstimatedLat, lon: currentEstimatedLon, name: progressAtEntry ? ('Entry via ' + entryLabel) : 'Migration progress', type: 'waypoint' }
+        : undefined,
+      progressAtEntry: progressAtEntry,
       routePoints: finalRoutePoints,
       speciesType: normalizeText(migrationRoute.speciesType || migrationEta.speciesType || ''),
       sourcePath: sourcePath + '[' + index + ']'
@@ -1352,7 +1396,7 @@
     return routes;
   }
 
-  function renderMigrationRoutes(routes) {
+  function renderMigrationRoutes(routes, prediction) {
     if (!overlayGroups || !overlayGroups.migrationRoutes) return;
     var layer = overlayGroups.migrationRoutes;
     var limitedRoutes = Array.isArray(routes) ? routes.slice(0, 5) : [];
@@ -1364,62 +1408,67 @@
       var opacity = isPrimary ? 0.85 : 0.4;
       var progressPct = Number(route.currentProgressPct || 0);
       var routeDistKm = Number(route.routeDistanceKm || 0);
-      var routeLatLngs = route.routePoints
-        .filter(function (wp) { return wp && Number.isFinite(wp.lat) && Number.isFinite(wp.lon); })
-        .map(function (wp) { return [wp.lat, wp.lon]; });
-      if (routeLatLngs.length < 2) return;
-      var progressLatLng = Number.isFinite(route.currentEstimatedLat) && Number.isFinite(route.currentEstimatedLon)
-        ? [route.currentEstimatedLat, route.currentEstimatedLon]
+      var approachLatLngs = [];
+      if (route.originPoint && route.entryPoint) approachLatLngs = [[route.originPoint.lat, route.originPoint.lon], [route.entryPoint.lat, route.entryPoint.lon]];
+      var targetLegLatLngs = [];
+      if (route.entryPoint && route.targetPoint && !pointsNear(route.entryPoint, route.targetPoint, 0.3)) {
+        targetLegLatLngs = [[route.entryPoint.lat, route.entryPoint.lon], [route.targetPoint.lat, route.targetPoint.lon]];
+      }
+      var progressLatLng = route.progressPoint && Number.isFinite(route.progressPoint.lat) && Number.isFinite(route.progressPoint.lon)
+        ? [route.progressPoint.lat, route.progressPoint.lon]
         : null;
 
-      if (progressLatLng) {
-        var progressedCoords = routeLatLngs.slice(0, 1).concat([progressLatLng]);
-        var remainingCoords = [progressLatLng].concat(routeLatLngs.slice(1));
-        if (progressedCoords.length >= 2) {
+      if (!prediction || !prediction.alreadyPresentMode) {
+        if (approachLatLngs.length >= 2) {
+          L.polyline(approachLatLngs, {
+            color: color, weight: 3, opacity: opacity, dashArray: '10, 8'
+          }).addTo(layer);
+        }
+        if (progressLatLng && route.originPoint && route.entryPoint) {
+          var progressedCoords = [[route.originPoint.lat, route.originPoint.lon], progressLatLng];
           L.polyline(progressedCoords, {
             color: color, weight: 3, opacity: opacity * 0.55, dashArray: null
           }).addTo(layer);
         }
-        if (remainingCoords.length >= 2) {
-          L.polyline(remainingCoords, {
-            color: color, weight: 3, opacity: opacity, dashArray: '10, 8'
-          }).addTo(layer);
-        }
-      } else {
-        L.polyline(routeLatLngs, {
-          color: color, weight: 3, opacity: opacity, dashArray: null
+      }
+      if (targetLegLatLngs.length >= 2) {
+        L.polyline(targetLegLatLngs, {
+          color: '#f59e0b', weight: 3, opacity: prediction && prediction.alreadyPresentMode ? 0.85 : opacity, dashArray: null
         }).addTo(layer);
       }
 
-      route.routePoints.forEach(function (wp) {
-        if (!wp || !Number.isFinite(wp.lat) || !Number.isFinite(wp.lon)) return;
-        if (wp.type === 'origin') {
-          L.circleMarker([wp.lat, wp.lon], {
-            radius: 8, color: '#fff', weight: 2, fillColor: '#FF5722', fillOpacity: 0.9
-          }).bindTooltip('<b>' + escapeHtml(wp.name || 'Origin') + '</b>', { direction: 'top' }).addTo(layer);
-        } else if (wp.type === 'destination') {
-          L.circleMarker([wp.lat, wp.lon], {
-            radius: 8, color: '#fff', weight: 2, fillColor: '#4CAF50', fillOpacity: 0.9
-          }).bindTooltip('<b>' + escapeHtml(wp.name || route.targetName || 'Target') + '</b><br>Expected: ' + escapeHtml(formatShortDate(route.earliestArrival)) + ' \u2013 ' + escapeHtml(formatShortDate(route.latestArrival)), { direction: 'top' }).addTo(layer);
-        } else {
-          L.circleMarker([wp.lat, wp.lon], {
-            radius: 4, color: '#fff', weight: 1, fillColor: color, fillOpacity: 0.6
-          }).bindTooltip(escapeHtml(wp.name || 'Waypoint'), { direction: 'top' }).addTo(layer);
-        }
-      });
+      if (route.originPoint) {
+        L.circleMarker([route.originPoint.lat, route.originPoint.lon], {
+          radius: 6, color: '#fff', weight: 2, fillColor: '#ef4444', fillOpacity: 0.9
+        }).bindTooltip('<b>' + escapeHtml(route.originPoint.name || 'Origin') + '</b>', { direction: 'top' }).addTo(layer);
+      }
+      if (route.entryPoint) {
+        var entryTooltip = '<b>' + escapeHtml(route.entryLabel || route.entryPoint.name || 'Estonia entry') + '</b>' +
+          ((route.fromLocality || route.fromCountry) ? '<br>Origin: ' + escapeHtml((route.fromLocality ? route.fromLocality : '') + (route.fromCountry ? ((route.fromLocality ? ', ' : '') + route.fromCountry) : '')) : '') +
+          (progressPct ? '<br>Progress: ' + escapeHtml(String(progressPct)) + '%' : '') +
+          (routeDistKm ? '<br>Km travelled: ' + escapeHtml(String(Math.round(routeDistKm * (progressPct || 0) / 100))) : '');
+        L.circleMarker([route.entryPoint.lat, route.entryPoint.lon], {
+          radius: 7, color: '#fff', weight: 2, fillColor: '#2563eb', fillOpacity: 0.95
+        }).bindTooltip(entryTooltip, { direction: 'top' }).addTo(layer);
+      }
+      if (route.targetPoint) {
+        L.circleMarker([route.targetPoint.lat, route.targetPoint.lon], {
+          radius: 8, color: '#f59e0b', weight: 3, fillColor: '#fff7ed', fillOpacity: 0.95
+        }).bindTooltip('<b>' + escapeHtml(route.targetName || route.targetPoint.name || 'Target') + '</b><br>ETA: ' + escapeHtml(formatShortDate(route.earliestArrival)) + ' \u2013 ' + escapeHtml(formatShortDate(route.latestArrival)), { direction: 'top' }).addTo(layer);
+      }
 
       if (progressLatLng) {
         var pulseIcon = L.divIcon({
           className: '',
-          html: '<div style="width:12px;height:12px;border-radius:50%;background:' + color + ';border:2px solid #fff;animation:spp-pulse 2s ease-out infinite"></div>',
+          html: '<div style="width:12px;height:12px;border-radius:2px;background:' + (route.progressAtEntry ? '#2563eb' : color) + ';border:2px solid #fff;transform:rotate(45deg);animation:spp-pulse 2s ease-out infinite"></div>',
           iconSize: [20, 20],
           iconAnchor: [10, 10]
         });
         var kmTraveled = routeDistKm && progressPct ? Math.round(routeDistKm * progressPct / 100) : null;
         var kmLeft = routeDistKm && progressPct ? Math.round(routeDistKm * (1 - progressPct / 100)) : null;
-        var tooltip = '<b>' + escapeHtml(route.targetName || 'Estimated position now') + '</b>' +
+        var tooltip = '<b>' + escapeHtml(route.progressLabel || 'Migration progress') + '</b>' +
           ((route.fromLocality || route.fromCountry) ? '<br>From: ' + escapeHtml((route.fromLocality ? route.fromLocality : '') + (route.fromCountry ? ((route.fromLocality ? ', ' : '') + route.fromCountry) : '')) : '') +
-          (route.earliestArrival || route.latestArrival ? '<br>Expected: ' + escapeHtml(formatShortDate(route.earliestArrival)) + ' - ' + escapeHtml(formatShortDate(route.latestArrival)) : '') +
+          ((route.entryLabel || (route.entryPoint && route.entryPoint.name)) ? '<br>Entry: ' + escapeHtml(route.entryLabel || route.entryPoint.name) : '') +
           (progressPct ? '<br>Progress: ' + escapeHtml(String(progressPct)) + '%' : '') +
           (kmTraveled ? '<br>~' + escapeHtml(String(kmTraveled)) + ' km traveled' : '') +
           (kmLeft ? '<br>~' + escapeHtml(String(kmLeft)) + ' km to Estonia' : '');
@@ -1831,9 +1880,117 @@
 
   function readRecentRecordTimestampJs(record) {
     if (!record) return 0;
-    var raw = String(record.event_datetime_point || record.date || record.eventDate || '');
+    var raw = String(record.event_datetime_point || record.event_date || record.date || record.eventDate || '');
     var ts = new Date(raw).getTime();
     return isFinite(ts) ? ts : 0;
+  }
+
+  function toRadians(value) {
+    return Number(value) * Math.PI / 180;
+  }
+
+  function distanceKm(latA, lonA, latB, lonB) {
+    if (!isFiniteNumber(Number(latA)) || !isFiniteNumber(Number(lonA)) || !isFiniteNumber(Number(latB)) || !isFiniteNumber(Number(lonB))) return Infinity;
+    var dLat = toRadians(Number(latB) - Number(latA));
+    var dLon = toRadians(Number(lonB) - Number(lonA));
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+      + Math.cos(toRadians(latA)) * Math.cos(toRadians(latB)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function pointsNear(pointA, pointB, toleranceKm) {
+    if (!pointA || !pointB) return false;
+    return distanceKm(pointA.lat, pointA.lon, pointB.lat, pointB.lon) <= (toleranceKm || 0.3);
+  }
+
+  function canonicalHotspotName(name) {
+    var text = normalizeText(name).toLowerCase();
+    if (/(sääre|saare|sorve|sõrve)/i.test(text)) return 'Sääre / Sõrve';
+    if (/(põõsaspea|poosaspea|spithami|spithamn)/i.test(text)) return 'Põõsaspea / Spithami';
+    if (/(ringsu|ruhnu)/i.test(text)) return 'Ringsu / Ruhnu';
+    return normalizeText(name);
+  }
+
+  function extractYearJs(value) {
+    var match = String(value || '').match(/\b(19|20)\d{2}\b/);
+    return match ? Number(match[0]) : null;
+  }
+
+  function resolveFreshestEstoniaEvidenceJs(root) {
+    var rawEE = root && root.rawResearchPayload && root.rawResearchPayload.estoniaEvidence && typeof root.rawResearchPayload.estoniaEvidence === 'object'
+      ? root.rawResearchPayload.estoniaEvidence
+      : null;
+    var recentRecords = Array.isArray(root && root.elurikkusRecentRecords) ? root.elurikkusRecentRecords.slice() : [];
+    recentRecords.sort(function (a, b) { return readRecentRecordTimestampJs(b) - readRecentRecordTimestampJs(a); });
+    var newestRecord = recentRecords[0] || null;
+    if (rawEE && String(rawEE.latestEEDate || '').trim()) {
+      return {
+        locality: normalizeText(rawEE.latestEELocality || rawEE.latestLocality || (newestRecord && (newestRecord.locality || newestRecord.locName)) || ''),
+        date: normalizeText(rawEE.latestEEDate || ''),
+        coords: newestRecord ? getRecentRecordCoords(newestRecord) : null,
+        source: 'rawResearchPayload.estoniaEvidence.latestEEDate'
+      };
+    }
+    if (newestRecord) {
+      return {
+        locality: normalizeText(newestRecord.locality || newestRecord.locName || ''),
+        date: normalizeText(newestRecord.event_date || newestRecord.date || newestRecord.eventDate || ''),
+        coords: getRecentRecordCoords(newestRecord),
+        source: 'elurikkusRecentRecords'
+      };
+    }
+    var estoniaEvidence = root && root.estoniaEvidence && typeof root.estoniaEvidence === 'object' ? root.estoniaEvidence : null;
+    if (estoniaEvidence && String(estoniaEvidence.latestEstoniaDate || '').trim()) {
+      return {
+        locality: normalizeText(estoniaEvidence.latestEstoniaLocality || ''),
+        date: normalizeText(estoniaEvidence.latestEstoniaDate || ''),
+        coords: (isFiniteNumber(Number(estoniaEvidence.latestEstoniaLat)) && isFiniteNumber(Number(estoniaEvidence.latestEstoniaLon)))
+          ? { lat: Number(estoniaEvidence.latestEstoniaLat), lon: Number(estoniaEvidence.latestEstoniaLon) }
+          : null,
+        source: 'estoniaEvidence.latestEstoniaDate'
+      };
+    }
+    return null;
+  }
+
+  function mergeCanonicalHotspotsJs(targets, clusters) {
+    var all = (Array.isArray(targets) ? targets : []).concat(Array.isArray(clusters) ? clusters : []);
+    var groups = [];
+    all.forEach(function (item, index) {
+      if (!item || !isFiniteNumber(Number(item.lat != null ? item.lat : item.representativeLat)) || !isFiniteNumber(Number(item.lon != null ? item.lon : item.representativeLon))) return;
+      var lat = Number(item.representativeLat != null ? item.representativeLat : item.lat);
+      var lon = Number(item.representativeLon != null ? item.representativeLon : item.lon);
+      var canonicalName = canonicalHotspotName(item.displayName || item.name || item.locality || ('Hotspot ' + (index + 1)));
+      var latestYear = extractYearJs(item.latestSupportingEstoniaDate || item.newestEventDate || item.latestEstoniaDate || '');
+      var supportCount = Number(item.supportingEstoniaHistoryCount != null ? item.supportingEstoniaHistoryCount : (item.count != null ? item.count : 0));
+      var recent365d = Number(item.recentCount != null ? item.recentCount : 0);
+      var matched = groups.find(function (group) {
+        return group.canonicalName === canonicalName && distanceKm(group.lat, group.lon, lat, lon) <= 3;
+      });
+      if (!matched) {
+        groups.push({ canonicalName: canonicalName, lat: lat, lon: lon, supportCount: Math.max(0, supportCount), latestYear: latestYear, recent365d: Math.max(0, recent365d) });
+        return;
+      }
+      matched.supportCount += Math.max(0, supportCount);
+      matched.recent365d += Math.max(0, recent365d);
+      if (latestYear && (!matched.latestYear || latestYear > matched.latestYear)) matched.latestYear = latestYear;
+      matched.lat = (matched.lat + lat) / 2;
+      matched.lon = (matched.lon + lon) / 2;
+    });
+    return groups;
+  }
+
+  function prioritizeDisplayedTargetsJs(targets, freshestEvidence, alreadyPresentMode) {
+    var filtered = (Array.isArray(targets) ? targets : []).filter(function (target) {
+      var name = normalizeText(target && (target.displayName || target.name));
+      return !/(ringsu|ruhnu)/i.test(name);
+    });
+    if (!alreadyPresentMode || !freshestEvidence || !freshestEvidence.coords) return filtered.slice(0, 5);
+    return filtered.slice().sort(function (a, b) {
+      var aDist = distanceKm(freshestEvidence.coords.lat, freshestEvidence.coords.lon, a.lat, a.lon);
+      var bDist = distanceKm(freshestEvidence.coords.lat, freshestEvidence.coords.lon, b.lat, b.lon);
+      return aDist - bDist;
+    }).slice(0, 2);
   }
 
   function normalizePrediction(raw) {
@@ -1872,14 +2029,20 @@
 
     var predictedTargets = Array.isArray(root.predictedTargets) ? root.predictedTargets : [];
     var summaryText = String(root.insightSummary || (root.aiSummary && root.aiSummary.insightSummary) || '').trim();
+    var freshestEvidence = resolveFreshestEstoniaEvidenceJs(root);
+    var alreadyPresentMode = !!((root.estoniaEvidence && root.estoniaEvidence.alreadyPresent === true) || recentCount7d > 0);
 
     var elurikkusRecentRecords = Array.isArray(root.elurikkusRecentRecords) ? root.elurikkusRecentRecords : [];
     var recordsWithCoords = elurikkusRecentRecords.filter(function(rec) { return !!readRecentRecordCoordsJs(rec); });
     recordsWithCoords.sort(function(a, b) { return readRecentRecordTimestampJs(b) - readRecentRecordTimestampJs(a); });
     var freshestRecord = recordsWithCoords[0] || null;
-    var freshestCoords = freshestRecord ? readRecentRecordCoordsJs(freshestRecord) : null;
+    var freshestCoords = freshestEvidence && freshestEvidence.coords ? freshestEvidence.coords : (freshestRecord ? readRecentRecordCoordsJs(freshestRecord) : null);
     var latestEeCoords = freshestCoords ? (freshestCoords.lat + ', ' + freshestCoords.lon) : '—';
     var latestEeLocality = freshestRecord ? (String(freshestRecord.locality || freshestRecord.locName || '').trim() || '—') : '—';
+
+    latestEeLocality = freshestEvidence && freshestEvidence.locality ? freshestEvidence.locality : latestEeLocality;
+    var displayedTargets = prioritizeDisplayedTargetsJs(predictedTargets, freshestEvidence, alreadyPresentMode);
+    var canonicalHotspots = mergeCanonicalHotspotsJs(predictedTargets, root.estoniaHistoryClusters);
 
     var sourcesContacted = [];
     if (elurikkusRecentRecords.length || recentCount7d > 0 || recentCount30d > 0 || root.hasRecentEstoniaEvidence === true || sourceHealth.elurikkusAvailable === true)
@@ -1907,9 +2070,14 @@
       activeEvidenceUsed: activeEvidenceUsed,
       latestEeCoords: latestEeCoords,
       latestEeLocality: latestEeLocality,
+      freshestEeDate: freshestEvidence && freshestEvidence.date ? freshestEvidence.date : 'â€”',
+      freshestEeSource: freshestEvidence && freshestEvidence.source ? freshestEvidence.source : '',
       recentCount7d: recentCount7d,
       recentCount30d: recentCount30d,
       predictedTargets: predictedTargets,
+      displayedTargets: displayedTargets,
+      canonicalHotspots: canonicalHotspots,
+      alreadyPresentMode: alreadyPresentMode,
       weatherLabel: weatherLabel,
       summaryText: summaryText,
     };

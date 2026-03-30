@@ -1453,13 +1453,15 @@
   function renderMigrationRoutes(routes, prediction) {
     if (!overlayGroups || !overlayGroups.migrationRoutes) return;
     var layer = overlayGroups.migrationRoutes;
-    var limitedRoutes = Array.isArray(routes) ? routes.slice(0, 5) : [];
-    logMigrationRouteDebug('renderMigrationRoutes called', { routes: limitedRoutes.length });
-    limitedRoutes.forEach(function (route, idx) {
-      if (!route || !Array.isArray(route.routePoints) || route.routePoints.length < 2) return;
-      var isPrimary = idx === 0;
-      var color = migrationRouteColor(route.speciesType);
-      var opacity = isPrimary ? 0.85 : 0.4;
+    var primaryRoute = selectPrimaryMigrationRouteJs(routes, prediction && prediction.displayedTargets, prediction && prediction.freshestEstoniaEvidence, prediction && prediction.alreadyPresentMode);
+    logMigrationRouteDebug('renderMigrationRoutes called', {
+      routes: Array.isArray(routes) ? routes.length : 0,
+      selectedPrimary: primaryRoute ? primaryRoute.targetName : null
+    });
+    if (!primaryRoute || !Array.isArray(primaryRoute.routePoints) || primaryRoute.routePoints.length < 2) return;
+    [primaryRoute].forEach(function (route) {
+      var color = '#f59e0b';
+      var opacity = 0.85;
       var progressPct = Number(route.currentProgressPct || 0);
       var routeDistKm = Number(route.routeDistanceKm || 0);
       var displayRoutePoints = Array.isArray(route.displayRoutePoints) && route.displayRoutePoints.length
@@ -1480,7 +1482,7 @@
 
       if (displayLatLngs.length >= 2) {
         L.polyline(displayLatLngs, {
-          color: '#f59e0b', weight: 3, opacity: prediction && prediction.alreadyPresentMode ? 0.85 : opacity, dashArray: null
+          color: '#f59e0b', weight: 3, opacity: opacity, dashArray: null
         }).addTo(layer);
       }
 
@@ -1501,7 +1503,7 @@
         }).bindTooltip(originTooltip, { direction: 'top', permanent: false, offset: [0, -8] }).addTo(layer);
       }
       if (route.entryPoint) {
-        var entryTooltip = '<b>' + escapeHtml(route.entryLabel || route.entryPoint.name || 'Estonia entry') + '</b>' +
+        var entryTooltip = '<b>Entry via ' + escapeHtml(route.entryLabel || route.entryPoint.name || 'Estonia') + '</b>' +
           ((route.fromLocality || route.fromCountry) ? '<br>Origin: ' + escapeHtml((route.fromLocality ? route.fromLocality : '') + (route.fromCountry ? ((route.fromLocality ? ', ' : '') + route.fromCountry) : '')) : '') +
           (progressPct ? '<br>Progress: ' + escapeHtml(String(progressPct)) + '%' : '') +
           (routeDistKm ? '<br>Km travelled: ' + escapeHtml(String(Math.round(routeDistKm * (progressPct || 0) / 100))) : '');
@@ -1509,23 +1511,42 @@
           radius: 7, color: '#fff', weight: 2, fillColor: '#2563eb', fillOpacity: 0.95
         }).bindTooltip(entryTooltip, { direction: 'top' }).addTo(layer);
       }
-      displayRoutePoints.forEach(function (routePoint) {
-        if (!routePoint || !Number.isFinite(routePoint.lat) || !Number.isFinite(routePoint.lon)) return;
-        if (route.originPoint && pointsNear(routePoint, route.originPoint, 0.05)) return;
-        if (route.entryPoint && pointsNear(routePoint, route.entryPoint, 0.05)) return;
-        if (route.targetPoint && pointsNear(routePoint, route.targetPoint, 0.05)) return;
-        L.circleMarker([routePoint.lat, routePoint.lon], {
-          radius: 3,
-          color: '#ffffff',
-          weight: 1,
-          fillColor: '#9ca3af',
-          fillOpacity: 0.6
-        }).bindTooltip('Route waypoint', { direction: 'top' }).addTo(layer);
-      });
-      if (route.targetPoint) {
-        L.circleMarker([route.targetPoint.lat, route.targetPoint.lon], {
+      if (shouldOpenDebugDetails()) {
+        displayRoutePoints.forEach(function (routePoint) {
+          if (!routePoint || !Number.isFinite(routePoint.lat) || !Number.isFinite(routePoint.lon)) return;
+          if (route.originPoint && pointsNear(routePoint, route.originPoint, 0.05)) return;
+          if (route.entryPoint && pointsNear(routePoint, route.entryPoint, 0.05)) return;
+          if (route.targetPoint && pointsNear(routePoint, route.targetPoint, 0.05)) return;
+          L.circleMarker([routePoint.lat, routePoint.lon], {
+            radius: 2,
+            color: '#ffffff',
+            weight: 1,
+            fillColor: '#9ca3af',
+            fillOpacity: 0.45
+          }).bindTooltip('Route waypoint', { direction: 'top' }).addTo(layer);
+        });
+      }
+      var destinationAnchor = prediction && prediction.alreadyPresentMode && prediction.activeEstoniaAnchor
+        && Number.isFinite(prediction.activeEstoniaAnchor.lat) && Number.isFinite(prediction.activeEstoniaAnchor.lon)
+        ? prediction.activeEstoniaAnchor
+        : route.targetPoint;
+      if (destinationAnchor && Number.isFinite(destinationAnchor.lat) && Number.isFinite(destinationAnchor.lon)) {
+        var targetTooltip = '<b>' + escapeHtml(
+          prediction && prediction.alreadyPresentMode && prediction.activeEstoniaAnchor && prediction.activeEstoniaAnchor.name
+            ? prediction.activeEstoniaAnchor.name
+            : (route.targetName || route.targetPoint && route.targetPoint.name || 'Target')
+        ) + '</b>' +
+          (prediction && prediction.alreadyPresentMode
+            ? ((prediction.activeEstoniaAnchor && prediction.activeEstoniaAnchor.supportCount != null)
+              ? '<br>Support: ' + escapeHtml(String(prediction.activeEstoniaAnchor.supportCount))
+              : (Number.isFinite(Number(route.rank)) ? '<br>Support: rank ' + escapeHtml(String(route.rank)) : '')) +
+              (prediction.activeEstoniaAnchor && prediction.activeEstoniaAnchor.confidence != null
+                ? '<br>Confidence: ' + escapeHtml(String(Math.round(prediction.activeEstoniaAnchor.confidence * 100))) + '%'
+                : '')
+            : '<br>ETA: ' + escapeHtml(formatShortDate(route.earliestArrival)) + ' \u2013 ' + escapeHtml(formatShortDate(route.latestArrival)));
+        L.circleMarker([destinationAnchor.lat, destinationAnchor.lon], {
           radius: 8, color: '#f59e0b', weight: 3, fillColor: '#fff7ed', fillOpacity: 0.95
-        }).bindTooltip('<b>' + escapeHtml(route.targetName || route.targetPoint.name || 'Target') + '</b><br>ETA: ' + escapeHtml(formatShortDate(route.earliestArrival)) + ' \u2013 ' + escapeHtml(formatShortDate(route.latestArrival)), { direction: 'top' }).addTo(layer);
+        }).bindTooltip(targetTooltip, { direction: 'top' }).addTo(layer);
       }
 
       if (progressLatLng) {
@@ -2064,6 +2085,61 @@
     }).slice(0, 2);
   }
 
+  function resolveActiveEstoniaAnchorJs(targets, freshestEvidence, alreadyPresentMode) {
+    if (alreadyPresentMode && freshestEvidence && freshestEvidence.coords) {
+      var lat = Number(freshestEvidence.coords.lat);
+      var lon = Number(freshestEvidence.coords.lon);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        return {
+          name: normalizeText(freshestEvidence.locality) || 'Current Estonia locality',
+          lat: lat,
+          lon: lon
+        };
+      }
+    }
+    var firstTarget = Array.isArray(targets) && targets.length ? targets[0] : null;
+    if (!firstTarget || !Number.isFinite(firstTarget.lat) || !Number.isFinite(firstTarget.lon)) return null;
+    return {
+      name: normalizeText(firstTarget.displayName || firstTarget.name) || 'Predicted target',
+      lat: firstTarget.lat,
+      lon: firstTarget.lon,
+      supportCount: Number.isFinite(Number(firstTarget.supportingEstoniaHistoryCount)) ? Number(firstTarget.supportingEstoniaHistoryCount) : undefined,
+      confidence: Number.isFinite(Number(firstTarget.confidence)) ? Number(firstTarget.confidence) : undefined
+    };
+  }
+
+  function selectPrimaryMigrationRouteJs(routes, displayedTargets, freshestEvidence, alreadyPresentMode) {
+    var normalizedRoutes = Array.isArray(routes) ? routes.filter(Boolean) : [];
+    if (!normalizedRoutes.length) return null;
+
+    if (alreadyPresentMode && freshestEvidence && freshestEvidence.coords) {
+      var baseLat = Number(freshestEvidence.coords.lat);
+      var baseLon = Number(freshestEvidence.coords.lon);
+      if (Number.isFinite(baseLat) && Number.isFinite(baseLon)) {
+        return normalizedRoutes.slice().sort(function (a, b) {
+          var aDist = Number.isFinite(a.targetLat) && Number.isFinite(a.targetLon)
+            ? distanceKm(baseLat, baseLon, a.targetLat, a.targetLon)
+            : Number.POSITIVE_INFINITY;
+          var bDist = Number.isFinite(b.targetLat) && Number.isFinite(b.targetLon)
+            ? distanceKm(baseLat, baseLon, b.targetLat, b.targetLon)
+            : Number.POSITIVE_INFINITY;
+          return aDist - bDist;
+        })[0] || null;
+      }
+    }
+
+    var activeTarget = Array.isArray(displayedTargets) && displayedTargets.length ? displayedTargets[0] : null;
+    if (activeTarget) {
+      var activeName = normalizeText(activeTarget.displayName || activeTarget.name).toLowerCase();
+      var matched = normalizedRoutes.find(function (route) {
+        return normalizeText(route.targetName).toLowerCase() === activeName;
+      });
+      if (matched) return matched;
+    }
+
+    return normalizedRoutes[0] || null;
+  }
+
   function normalizePrediction(raw) {
     var root = normalizePredictionPayload(raw) || {};
     var sourceHealth = (root.sourceHealth && typeof root.sourceHealth === 'object') ? root.sourceHealth : {};
@@ -2113,6 +2189,7 @@
 
     latestEeLocality = freshestEvidence && freshestEvidence.locality ? freshestEvidence.locality : latestEeLocality;
     var displayedTargets = prioritizeDisplayedTargetsJs(predictedTargets, freshestEvidence, alreadyPresentMode);
+    var activeEstoniaAnchor = resolveActiveEstoniaAnchorJs(predictedTargets, freshestEvidence, alreadyPresentMode);
     var canonicalHotspots = mergeCanonicalHotspotsJs(predictedTargets, root.estoniaHistoryClusters);
 
     var sourcesContacted = [];
@@ -2147,6 +2224,7 @@
       recentCount30d: recentCount30d,
       predictedTargets: predictedTargets,
       displayedTargets: displayedTargets,
+      activeEstoniaAnchor: activeEstoniaAnchor,
       canonicalHotspots: canonicalHotspots,
       alreadyPresentMode: alreadyPresentMode,
       weatherLabel: weatherLabel,

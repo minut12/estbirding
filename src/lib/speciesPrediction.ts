@@ -281,6 +281,7 @@ export type SpeciesPredictionDisplayModel = {
   freshestEstoniaEvidence: SpeciesPredictionFreshestEstoniaEvidence | null;
   canonicalHotspots: CanonicalEstoniaHotspot[];
   displayedTargets: PredictedPoint[];
+  activeEstoniaAnchor: { name: string; lat: number; lon: number; supportCount?: number; confidence?: number } | null;
 };
 
 export type PredictedPoint = {
@@ -1427,12 +1428,80 @@ export function buildSpeciesPredictionDisplayModel(
   const historyClusters = Array.isArray((root as SpeciesPredictionResult).estoniaHistoryClusters) ? (root as SpeciesPredictionResult).estoniaHistoryClusters ?? [] : [];
   const canonicalHotspots = mergeCanonicalEstoniaHotspots([...(predictedTargets as Partial<PredictedPoint>[]), ...(historyClusters as SpeciesPredictionEstoniaHistoryCluster[])]);
   const displayTargets = prioritizeDisplayedTargets(predictedTargets, freshestEstoniaEvidence, alreadyPresentMode);
+  const activeEstoniaAnchor = resolveActiveEstoniaAnchor(predictedTargets, freshestEstoniaEvidence, alreadyPresentMode);
   return {
     alreadyPresentMode,
     freshestEstoniaEvidence,
     canonicalHotspots,
     displayedTargets: displayTargets,
+    activeEstoniaAnchor,
   };
+}
+
+export function resolveActiveEstoniaAnchor(
+  predictedTargets: PredictedPoint[],
+  freshestEstoniaEvidence: SpeciesPredictionFreshestEstoniaEvidence | null,
+  alreadyPresentMode: boolean,
+): { name: string; lat: number; lon: number; supportCount?: number; confidence?: number } | null {
+  if (alreadyPresentMode && freshestEstoniaEvidence?.coords) {
+    const lat = Number(freshestEstoniaEvidence.coords.lat);
+    const lon = Number(freshestEstoniaEvidence.coords.lon);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      return {
+        name: freshestEstoniaEvidence.locality || 'Current Estonia locality',
+        lat,
+        lon,
+      };
+    }
+  }
+  const firstTarget = Array.isArray(predictedTargets) ? predictedTargets[0] : undefined;
+  if (!firstTarget || !Number.isFinite(firstTarget.lat) || !Number.isFinite(firstTarget.lon)) return null;
+  return {
+    name: normalizeUiText(firstTarget.displayName || firstTarget.name) || 'Predicted target',
+    lat: firstTarget.lat,
+    lon: firstTarget.lon,
+    supportCount: Number.isFinite(Number((firstTarget as Partial<PredictedPoint> & { supportingEstoniaHistoryCount?: number }).supportingEstoniaHistoryCount))
+      ? Number((firstTarget as Partial<PredictedPoint> & { supportingEstoniaHistoryCount?: number }).supportingEstoniaHistoryCount)
+      : undefined,
+    confidence: Number.isFinite(Number(firstTarget.confidence)) ? Number(firstTarget.confidence) : undefined,
+  };
+}
+
+export function selectPrimaryMigrationRoute(
+  routes: NormalizedMigrationRoute[],
+  displayedTargets: PredictedPoint[],
+  freshestEstoniaEvidence: SpeciesPredictionFreshestEstoniaEvidence | null,
+  alreadyPresentMode: boolean,
+): NormalizedMigrationRoute | null {
+  const normalizedRoutes = Array.isArray(routes) ? routes.filter(Boolean) : [];
+  if (!normalizedRoutes.length) return null;
+
+  if (alreadyPresentMode && freshestEstoniaEvidence?.coords) {
+    const baseLat = Number(freshestEstoniaEvidence.coords.lat);
+    const baseLon = Number(freshestEstoniaEvidence.coords.lon);
+    if (Number.isFinite(baseLat) && Number.isFinite(baseLon)) {
+      return normalizedRoutes
+        .slice()
+        .sort((left, right) => {
+          const leftDistance = Number.isFinite(left.targetLat) && Number.isFinite(left.targetLon)
+            ? haversineKm(baseLat, baseLon, left.targetLat!, left.targetLon!)
+            : Number.POSITIVE_INFINITY;
+          const rightDistance = Number.isFinite(right.targetLat) && Number.isFinite(right.targetLon)
+            ? haversineKm(baseLat, baseLon, right.targetLat!, right.targetLon!)
+            : Number.POSITIVE_INFINITY;
+          return leftDistance - rightDistance;
+        })[0] ?? null;
+    }
+  }
+
+  const activeTarget = Array.isArray(displayedTargets) ? displayedTargets[0] : undefined;
+  if (activeTarget) {
+    const activeName = normalizeUiText(activeTarget.displayName || activeTarget.name).toLowerCase();
+    const matched = normalizedRoutes.find((route) => normalizeUiText(route.targetName).toLowerCase() === activeName);
+    if (matched) return matched;
+  }
+
+  return normalizedRoutes[0] ?? null;
 }
 
 function readRecentRecordTimestamp(record: SpeciesPredictionElurikkusRecentRecord | undefined): number {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildSpeciesPredictionDisplayModel, extractNormalizedMigrationRoutes, hasUsableSpeciesPredictionResult, isAlreadyPresentPrediction, mergeCanonicalEstoniaHotspots, normalizePrediction, normalizeSpeciesPredictionResult, resolveFreshestEstoniaEvidence } from "@/lib/speciesPrediction";
+import { buildSpeciesPredictionDisplayModel, extractNormalizedMigrationRoutes, hasUsableSpeciesPredictionResult, isAlreadyPresentPrediction, mergeCanonicalEstoniaHotspots, normalizePrediction, normalizeSpeciesPredictionResult, resolveActiveEstoniaAnchor, resolveFreshestEstoniaEvidence, selectPrimaryMigrationRoute } from "@/lib/speciesPrediction";
 
 describe("normalizeSpeciesPredictionResult", () => {
   it("prefers canonical fields over legacy aliases", () => {
@@ -1796,5 +1796,84 @@ describe("normalizePrediction", () => {
     expect(model.displayedTargets).toHaveLength(2);
     expect(model.displayedTargets[0]?.name).toBe("Ristna");
     expect(model.displayedTargets.some((item) => item.name === "Ringsu")).toBe(false);
+  });
+
+  it("resolves the active Estonia anchor from freshest Estonia evidence in already-present mode", () => {
+    const model = buildSpeciesPredictionDisplayModel({
+      recentCount7d: 3,
+      elurikkusRecentRecords: [
+        { locality: "Kalana", event_date: "2026-03-29", coordinates: { lat: 58.987, lon: 22.469 } },
+      ],
+      predictedTargets: [
+        { rank: 1, name: "Põõsaspea", lat: 59.14, lon: 23.49, confidence: 0.71, eta: "12h", searchRadiusKm: 5, habitatCue: "", reason: "", countyOrParish: "" },
+      ],
+    } as any);
+
+    expect(model.activeEstoniaAnchor).toEqual({
+      name: "Kalana",
+      lat: 58.987,
+      lon: 22.469,
+    });
+  });
+
+  it("falls back to the first predicted target for the active Estonia anchor outside already-present mode", () => {
+    expect(resolveActiveEstoniaAnchor([
+      { rank: 1, name: "Põõsaspea", lat: 59.14, lon: 23.49, confidence: 0.71, eta: "12h", searchRadiusKm: 5, habitatCue: "", reason: "", countyOrParish: "" },
+    ] as any, null, false)).toEqual({
+      name: "Põõsaspea",
+      lat: 59.14,
+      lon: 23.49,
+      confidence: 0.71,
+      supportCount: undefined,
+    });
+  });
+
+  it("selects the route nearest to freshest Estonia evidence in already-present mode", () => {
+    const selected = selectPrimaryMigrationRoute([
+      {
+        targetName: "Ringsu",
+        targetLat: 57.78,
+        targetLon: 23.26,
+        routePoints: [{ lat: 57.0, lon: 22.0 }],
+        sourcePath: "a",
+      },
+      {
+        targetName: "Ristna",
+        targetLat: 58.9257,
+        targetLon: 22.0541,
+        routePoints: [{ lat: 57.1, lon: 22.1 }],
+        sourcePath: "b",
+      },
+    ] as any, [], {
+      locality: "Ristna",
+      date: "2026-03-29",
+      coords: { lat: "58.9257", lon: "22.0541" },
+      source: "elurikkusRecentRecords",
+    }, true);
+
+    expect(selected?.targetName).toBe("Ristna");
+  });
+
+  it("selects the route matching the first displayed target outside already-present mode", () => {
+    const selected = selectPrimaryMigrationRoute([
+      {
+        targetName: "Ringsu",
+        targetLat: 57.78,
+        targetLon: 23.26,
+        routePoints: [{ lat: 57.0, lon: 22.0 }],
+        sourcePath: "a",
+      },
+      {
+        targetName: "Põõsaspea",
+        targetLat: 59.14,
+        targetLon: 23.49,
+        routePoints: [{ lat: 57.1, lon: 22.1 }],
+        sourcePath: "b",
+      },
+    ] as any, [
+      { rank: 1, name: "Põõsaspea", lat: 59.14, lon: 23.49, confidence: 0.71, eta: "12h", searchRadiusKm: 5, habitatCue: "", reason: "", countyOrParish: "" },
+    ] as any, null, false);
+
+    expect(selected?.targetName).toBe("Põõsaspea");
   });
 });

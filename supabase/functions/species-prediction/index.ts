@@ -2992,18 +2992,52 @@ function enrichPredictionResult(
   const sourceWarnings = Array.isArray(sourceHealth.sourceWarnings) ? sourceHealth.sourceWarnings : [];
   const existingWarnings = normalizedUpstream?.warnings
     ?? (Array.isArray(raw.warnings) ? raw.warnings.map((item) => String(item || '').trim()).filter(Boolean) : []);
-  const canonicalForeignClusters = normalizedUpstream?.foreignClusters ?? (Array.isArray(raw.foreignClusters) ? raw.foreignClusters : []);
-  const canonicalPredictedTargets = normalizedUpstream?.predictedTargets ?? (Array.isArray(raw.predictedTargets) ? raw.predictedTargets : []);
-  const canonicalForeignRecentPoints = normalizedUpstream?.foreignRecentPoints ?? (Array.isArray(raw.foreignRecentPoints) ? raw.foreignRecentPoints : []);
-  const canonicalEstoniaHistoryPoints = normalizedUpstream?.estoniaHistoryPoints ?? (Array.isArray(raw.estoniaHistoryPoints) ? raw.estoniaHistoryPoints : []);
-  const canonicalElurikkusRecentRecords = normalizedUpstream?.elurikkusRecentRecords ?? (Array.isArray(raw.elurikkusRecentRecords) ? raw.elurikkusRecentRecords : []);
-  const canonicalEstoniaHistoryClusters = normalizedUpstream?.estoniaHistoryClusters ?? (Array.isArray(raw.estoniaHistoryClusters) ? raw.estoniaHistoryClusters : []);
-  const canonicalMapLayersDefault = normalizedUpstream?.mapLayersDefault ?? asRecord(raw.mapLayersDefault);
-  const canonicalSourceHealth = Object.keys(normalizedUpstream?.sourceHealth || {}).length ? normalizedUpstream!.sourceHealth : sourceHealth;
-  const canonicalEstoniaEvidence = Object.keys(normalizedUpstream?.estoniaEvidence || {}).length ? normalizedUpstream!.estoniaEvidence : estoniaEvidence;
-  const canonicalEvidenceSummary = Object.keys(normalizedUpstream?.evidenceSummary || {}).length ? normalizedUpstream!.evidenceSummary : asRecord(raw.evidenceSummary);
-  const canonicalCountryScores = Object.keys(normalizedUpstream?.countryScores || {}).length ? normalizedUpstream!.countryScores : asRecord(raw.countryScores);
-  const canonicalWeather = Object.keys(normalizedUpstream?.weather || {}).length ? normalizedUpstream!.weather : asRecord(raw.weather);
+  const normalizedForeignClusters = normalizedUpstream?.foreignClusters;
+  const normalizedPredictedTargets = normalizedUpstream?.predictedTargets;
+  const normalizedForeignRecentPoints = normalizedUpstream?.foreignRecentPoints;
+  const normalizedEstoniaHistoryPoints = normalizedUpstream?.estoniaHistoryPoints;
+  const normalizedElurikkusRecentRecords = normalizedUpstream?.elurikkusRecentRecords;
+  const normalizedEstoniaHistoryClusters = normalizedUpstream?.estoniaHistoryClusters;
+  const normalizedMapLayersDefault = normalizedUpstream?.mapLayersDefault;
+  const normalizedSourceHealth = normalizedUpstream?.sourceHealth;
+  const normalizedEstoniaEvidence = normalizedUpstream?.estoniaEvidence;
+  const normalizedEvidenceSummary = normalizedUpstream?.evidenceSummary;
+  const normalizedCountryScores = normalizedUpstream?.countryScores;
+  const normalizedWeather = normalizedUpstream?.weather;
+  const canonicalForeignClusters = hasMeaningfulArray(normalizedForeignClusters)
+    ? normalizedForeignClusters
+    : (hasMeaningfulArray(normalizedSources.foreignClusters) ? normalizedSources.foreignClusters as unknown[] : []);
+  const canonicalPredictedTargets = hasMeaningfulArray(normalizedPredictedTargets)
+    ? normalizedPredictedTargets
+    : (hasMeaningfulArray(rawResearchPayload.predictedTargets) ? rawResearchPayload.predictedTargets as unknown[] : []);
+  const canonicalForeignRecentPoints = hasMeaningfulArray(normalizedForeignRecentPoints)
+    ? normalizedForeignRecentPoints
+    : (hasMeaningfulArray(normalizedSources.foreignRecentPoints) ? normalizedSources.foreignRecentPoints as unknown[] : []);
+  const canonicalEstoniaHistoryPoints = hasMeaningfulArray(normalizedEstoniaHistoryPoints)
+    ? normalizedEstoniaHistoryPoints
+    : (hasMeaningfulArray(rawResearchPayload.estoniaHistoryPoints) ? rawResearchPayload.estoniaHistoryPoints as unknown[] : []);
+  const canonicalElurikkusRecentRecords = hasMeaningfulArray(normalizedElurikkusRecentRecords)
+    ? normalizedElurikkusRecentRecords
+    : (hasMeaningfulArray(rawResearchPayload.elurikkusRecentRecords) ? rawResearchPayload.elurikkusRecentRecords as unknown[] : []);
+  const canonicalEstoniaHistoryClusters = hasMeaningfulArray(normalizedEstoniaHistoryClusters)
+    ? normalizedEstoniaHistoryClusters
+    : (hasMeaningfulArray(rawResearchPayload.estoniaHistoryClusters) ? rawResearchPayload.estoniaHistoryClusters as unknown[] : []);
+  const canonicalMapLayersDefault = hasMeaningfulRecord(normalizedMapLayersDefault)
+    ? normalizedMapLayersDefault
+    : asRecord(rawResearchPayload.mapLayersDefault);
+  const canonicalSourceHealth = hasMeaningfulRecord(normalizedSourceHealth) ? normalizedSourceHealth : sourceHealth;
+  const canonicalEstoniaEvidence = hasMeaningfulRecord(normalizedEstoniaEvidence)
+    ? normalizedEstoniaEvidence
+    : estoniaEvidence;
+  const canonicalEvidenceSummary = hasMeaningfulRecord(normalizedEvidenceSummary)
+    ? normalizedEvidenceSummary
+    : asRecord(rawResearchPayload.evidenceSummary);
+  const canonicalCountryScores = hasMeaningfulRecord(normalizedCountryScores)
+    ? normalizedCountryScores
+    : asRecord(rawResearchPayload.countryScores);
+  const canonicalWeather = hasMeaningfulRecord(normalizedWeather)
+    ? normalizedWeather
+    : asRecord(rawResearchPayload.weather);
   const generatedAt = normalizedUpstream?.generatedAt || stringOr(raw.generatedAt) || new Date().toISOString();
   const analysisVersion = normalizedUpstream?.analysisVersion || stringOr(raw.analysisVersion);
   const evidenceStateSnapshot = computeEvidenceState({
@@ -3026,6 +3060,9 @@ function enrichPredictionResult(
       name: speciesInfo.speciesName,
     };
 
+  // From this point on, the working payload must be seeded only from the canonical
+  // normalized/rawResearchPayload branch. Re-introducing legacy top-level raw.* values
+  // here can overwrite fresher evidence before finalizePredictionResponse() repairs it.
   const assembled = {
     ...raw,
     ...(canonicalSpecies.speciesKey ? { speciesKey: canonicalSpecies.speciesKey } : {}),
@@ -4493,6 +4530,8 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
   });
   const evidenceSummary = {
     ...asRecord(payload.evidenceSummary),
+    totalForeignRecentPoints: foreignRecentPoints.length,
+    totalForeignClusters: foreignClusters.length,
     weatherAvailable: canonicalWeatherAvailable,
     foreignEbirdAvailable: foreignRecentPoints.length > 0 || foreignClusters.length > 0,
   };
@@ -5724,4 +5763,12 @@ function hasNumber(value: unknown): boolean {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {};
+}
+
+function hasMeaningfulArray(value: unknown): value is unknown[] {
+  return Array.isArray(value) && value.length > 0;
+}
+
+function hasMeaningfulRecord(value: unknown): value is Record<string, unknown> {
+  return Object.keys(asRecord(value)).length > 0;
 }

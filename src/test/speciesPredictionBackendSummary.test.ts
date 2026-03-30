@@ -538,6 +538,88 @@ describe("species-prediction backend summary finalizer", () => {
     expect(Array.isArray((((finalized.rawResearchPayload as Record<string, unknown>).normalizedSources as Record<string, unknown>).foreignRecentPoints)) ? (((finalized.rawResearchPayload as Record<string, unknown>).normalizedSources as Record<string, unknown>).foreignRecentPoints as unknown[]) : []).toHaveLength(1);
   });
 
+  it("preserves fresh Estonia recency and normalized foreign evidence through the final wrapped response", () => {
+    const response = buildBaseResponse({
+      payloadSourceState: "current_finalized_backend_output",
+      backendBuild: "fix20",
+      invokeRouteVersion: "invoke-route-v1",
+      responseProof: "edge-response-proof",
+      estoniaEvidence: {
+        latestEstoniaDate: "2025-11-19",
+        latestEstoniaLat: 58.1,
+        latestEstoniaLon: 22.1,
+        recentCount7d: 0,
+        recentCount30d: 0,
+      },
+      foreignRecentPoints: [],
+      foreignClusters: [
+        { countries: [], locNames: [], totalHowMany: 0, nearestDistanceKm: 0 },
+      ],
+      evidenceSummary: {
+        totalForeignRecentPoints: 0,
+        weatherAvailable: false,
+      },
+      weather: {
+        weatherAvailable: true,
+      },
+      sourceHealth: {
+        ebirdAvailable: true,
+        primarySourceUsed: "eBird foreign",
+      },
+      countryScores: {
+        latvia: 0,
+        poland: 0,
+        sweden: 0,
+      },
+      externalPressureScore: 0,
+      elurikkusRecentRecords: [
+        { locality: "Ristna", event_date: "2026-03-24" },
+        { locality: "Kalana", event_date: "2026-03-27" },
+      ],
+      rawResearchPayload: {
+        estoniaEvidence: {
+          latestEEDate: "2026-03-27 03:52",
+          latestEELocality: "Kalana",
+        },
+        weather: {
+          weatherAvailable: true,
+        },
+        countryScores: {
+          latvia: 9,
+          poland: 6,
+          sweden: 4,
+        },
+        normalizedSources: {
+          foreignRecentPoints: [
+            { countryCode: "LV", countryName: "Latvia", lat: 57.1, lon: 24.3, daysAgo: 1 },
+            { countryCode: "PL", countryName: "Poland", lat: 54.4, lon: 18.7, daysAgo: 2 },
+          ],
+          foreignClusters: [
+            {
+              countries: ["Latvia", "Poland"],
+              countryCodes: ["LV", "PL"],
+              locNames: ["Ragaciems", "Mikoszewo"],
+              totalHowMany: 5,
+              nearestDistanceKm: 118,
+            },
+          ],
+        },
+      },
+    });
+
+    const finalized = hooks.finalizePredictionResponse(response, "test_final_wrapped_response_survival");
+    const wrapped = hooks.withEdgeResponseMarkers(finalized);
+
+    expect(String((wrapped.estoniaEvidence as Record<string, unknown>).latestEstoniaDate)).toContain("2026-03-27");
+    expect(Array.isArray(wrapped.foreignRecentPoints) ? wrapped.foreignRecentPoints : []).toHaveLength(2);
+    expect(Array.isArray(wrapped.foreignClusters) ? wrapped.foreignClusters : []).toHaveLength(1);
+    expect(Number(wrapped.externalPressureScore)).toBeGreaterThan(0);
+    expect(Number(((wrapped.countryScores as Record<string, unknown>).latvia))).toBeGreaterThan(0);
+    expect(Number(((wrapped.evidenceSummary as Record<string, unknown>).totalForeignRecentPoints))).toBe(2);
+    expect((wrapped.weather as Record<string, unknown>).weatherAvailable).toBe(true);
+    expect((wrapped.evidenceSummary as Record<string, unknown>).weatherAvailable).toBe(true);
+  });
+
   it("derives an approximate fresh Estonia anchor when the freshest recent record lacks coordinates", () => {
     const response = buildBaseResponse({
       estoniaEvidence: {

@@ -4080,6 +4080,14 @@ function validatePredictionPayloadConsistency(finalPayload: Record<string, unkno
   const rawResearchPayload = asRecord(finalPayload.rawResearchPayload);
   const normalizedSources = asRecord(rawResearchPayload.normalizedSources);
   const routeValidationReasons = validateCanonicalMigrationRoutes(finalPayload);
+  const estoniaEvidence = asRecord(finalPayload.estoniaEvidence);
+  const weather = asRecord(finalPayload.weather);
+  const evidenceSummary = asRecord(finalPayload.evidenceSummary);
+  const consistencyChecks = asRecord(finalPayload.consistencyChecks);
+  const rawEstoniaEvidence = asRecord(rawResearchPayload.estoniaEvidence);
+  const latestRecentEe = resolveLatestElurikkusRecord(Array.isArray(finalPayload.elurikkusRecentRecords) ? finalPayload.elurikkusRecentRecords : []);
+  const foreignRecentPoints = Array.isArray(finalPayload.foreignRecentPoints) ? finalPayload.foreignRecentPoints : [];
+  const foreignClusters = Array.isArray(finalPayload.foreignClusters) ? finalPayload.foreignClusters : [];
   const rawPayloadMatchesFinalPayload =
     stringOr(rawResearchPayload.aiSummary) === stringOr(finalPayload.aiSummary)
     && JSON.stringify(asRecord(rawResearchPayload.estoniaEvidence)) === JSON.stringify(asRecord(finalPayload.estoniaEvidence))
@@ -4089,6 +4097,24 @@ function validatePredictionPayloadConsistency(finalPayload: Record<string, unkno
     && JSON.stringify(Array.isArray(normalizedSources.foreignClusters) ? normalizedSources.foreignClusters : []) === JSON.stringify(Array.isArray(finalPayload.foreignClusters) ? finalPayload.foreignClusters : [])
     && JSON.stringify(Array.isArray(normalizedSources.estoniaHistoryPoints) ? normalizedSources.estoniaHistoryPoints : []) === JSON.stringify(Array.isArray(finalPayload.estoniaHistoryPoints) ? finalPayload.estoniaHistoryPoints : [])
     && JSON.stringify(Array.isArray(normalizedSources.estoniaHistoryClusters) ? normalizedSources.estoniaHistoryClusters : []) === JSON.stringify(Array.isArray(finalPayload.estoniaHistoryClusters) ? finalPayload.estoniaHistoryClusters : []);
+  const consistencyReasons: string[] = [];
+  if (finalPayload.hasUsableForeignPressure === true && !foreignRecentPoints.length && !foreignClusters.length) {
+    consistencyReasons.push('has_usable_foreign_pressure_without_structured_foreign_evidence');
+  }
+  if (latestRecentEe.date && normalizeDateString(stringOr(estoniaEvidence.latestEstoniaDate)) && Date.parse(stringOr(estoniaEvidence.latestEstoniaDate)) < Date.parse(latestRecentEe.date)) {
+    consistencyReasons.push('latest_estonia_date_older_than_recent_elurikkus');
+  }
+  const weatherAvailable = weather.weatherAvailable === true;
+  if ((evidenceSummary.weatherAvailable === true) !== weatherAvailable) {
+    consistencyReasons.push('weather_available_flags_mismatch');
+  }
+  if (stringOr(finalPayload.summaryGuardrailReason).split(',').includes('weatherLooksSupportive') && consistencyChecks.weatherLooksSupportive !== true) {
+    consistencyReasons.push('summary_guardrail_reason_weather_mismatch');
+  }
+  if (normalizeDateString(stringOr(rawEstoniaEvidence.latestEEDate)) && normalizeDateString(stringOr(estoniaEvidence.latestEstoniaDate))
+    && Date.parse(stringOr(estoniaEvidence.latestEstoniaDate)) < Date.parse(normalizeDateString(stringOr(rawEstoniaEvidence.latestEEDate)))) {
+    consistencyReasons.push('latest_estonia_date_older_than_raw_latest_ee_date');
+  }
 
   return {
     summaryMatchesEvidence: narrative.summaryMatchesEvidence,
@@ -4099,6 +4125,7 @@ function validatePredictionPayloadConsistency(finalPayload: Record<string, unkno
     reasons: [
       ...narrative.reasons,
       ...routeValidationReasons,
+      ...consistencyReasons,
       ...(rawPayloadMatchesFinalPayload ? [] : ['raw_payload_does_not_match_final_payload']),
     ],
   };
@@ -4366,12 +4393,23 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
   const estoniaEvidence = { ...asRecord(payload.estoniaEvidence) };
   const rawResearchPayload = asRecord(payload.rawResearchPayload);
   const normalizedSources = asRecord(rawResearchPayload.normalizedSources);
-  const foreignRecentPoints = Array.isArray(payload.foreignRecentPoints) && payload.foreignRecentPoints.length
-    ? payload.foreignRecentPoints
-    : (Array.isArray(normalizedSources.foreignRecentPoints) ? normalizedSources.foreignRecentPoints : []);
-  const foreignClusters = Array.isArray(payload.foreignClusters) && payload.foreignClusters.length
-    ? payload.foreignClusters
-    : (Array.isArray(normalizedSources.foreignClusters) ? normalizedSources.foreignClusters : []);
+  const canonicalPayload = shouldUseCanonicalRawPayload(payload);
+  const sourceHealth = asRecord(payload.sourceHealth);
+  const mergeDebugSources: Record<string, unknown> = {};
+  const foreignRecentPoints = resolveCanonicalArrayField({
+    topLevelValue: payload.foreignRecentPoints,
+    rawValue: normalizedSources.foreignRecentPoints,
+    allowRawFallback: canonicalPayload || sourceHealth.ebirdAvailable === true,
+    fieldName: 'foreignRecentPoints',
+    mergeDebugSources,
+  });
+  const foreignClusters = resolveCanonicalArrayField({
+    topLevelValue: payload.foreignClusters,
+    rawValue: normalizedSources.foreignClusters,
+    allowRawFallback: canonicalPayload || sourceHealth.ebirdAvailable === true,
+    fieldName: 'foreignClusters',
+    mergeDebugSources,
+  });
   const estoniaHistoryPoints = Array.isArray(payload.estoniaHistoryPoints) ? payload.estoniaHistoryPoints : [];
   const estoniaHistoryClusters = Array.isArray(payload.estoniaHistoryClusters) ? payload.estoniaHistoryClusters : [];
   const predictedTargets = Array.isArray(payload.predictedTargets) ? payload.predictedTargets : [];
@@ -4381,9 +4419,44 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
   estoniaEvidence.recentCount7d = recentCount7d;
   estoniaEvidence.recentCount30d = recentCount30d;
   estoniaEvidence.alreadyPresent = recentCount7d > 0;
+  const elurikkusRecentRecords = Array.isArray(payload.elurikkusRecentRecords) ? payload.elurikkusRecentRecords : [];
+  const latestRecentEe = resolveLatestElurikkusRecord(elurikkusRecentRecords);
+  const rawEstoniaEvidence = canonicalPayload ? asRecord(rawResearchPayload.estoniaEvidence) : {};
+  const latestEEDate = normalizeDateString(stringOr(rawEstoniaEvidence.latestEEDate));
+  const latestEELocality = stringOr(rawEstoniaEvidence.latestEELocality, rawEstoniaEvidence.latestEstoniaLocality);
+  if (latestRecentEe.date) {
+    estoniaEvidence.latestEstoniaDate = latestRecentEe.date;
+    if (latestRecentEe.locality) estoniaEvidence.latestEstoniaLocality = latestRecentEe.locality;
+    mergeDebugSources.latestEstoniaDate = 'elurikkus_recent_records';
+  } else if (latestEEDate) {
+    estoniaEvidence.latestEstoniaDate = latestEEDate;
+    if (latestEELocality) estoniaEvidence.latestEstoniaLocality = latestEELocality;
+    mergeDebugSources.latestEstoniaDate = 'raw_estonia_evidence_latest_ee_date';
+  } else {
+    estoniaEvidence.latestEstoniaDate = normalizeDateString(stringOr(estoniaEvidence.latestEstoniaDate));
+    mergeDebugSources.latestEstoniaDate = 'canonical_backend';
+  }
+  const foreignEvidence = resolveCanonicalForeignEvidence(payload, rawResearchPayload, foreignRecentPoints, foreignClusters, canonicalPayload, mergeDebugSources);
+  const countryScores = foreignEvidence.length
+    ? buildCountryScores(foreignEvidence)
+    : buildZeroCountryScores();
+  const externalPressureScore = foreignEvidence.length
+    ? clampInt(Math.round(sum(foreignEvidence.map((entry) => toNumber(entry.recordCount7d) * 4))), 0, 100)
+    : 0;
+  mergeDebugSources.countryScores = foreignEvidence.length ? 'derived_foreign_evidence' : 'fallback_default';
+  mergeDebugSources.externalPressureScore = foreignEvidence.length ? 'derived_foreign_evidence' : 'fallback_default';
+  const weather = {
+    ...(canonicalPayload && Object.keys(asRecord(normalizedSources.weather)).length ? asRecord(normalizedSources.weather) : {}),
+    ...asRecord(payload.weather),
+  };
+  const canonicalWeatherAvailable = weatherLooksAvailable(weather);
+  weather.weatherAvailable = canonicalWeatherAvailable;
+  mergeDebugSources.weatherAvailable = canonicalPayload && Object.keys(asRecord(normalizedSources.weather)).length
+    ? 'normalizedSources.weather'
+    : 'canonical_backend';
   const freshEstoniaAnchor = resolveFreshEstoniaAnchor({
     estoniaEvidence,
-    elurikkusRecentRecords: Array.isArray(payload.elurikkusRecentRecords) ? payload.elurikkusRecentRecords : [],
+    elurikkusRecentRecords,
     predictedTargets,
     estoniaHistoryPoints,
     estoniaHistoryClusters,
@@ -4407,7 +4480,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
   const finalWarnings = Array.from(new Set([
     ...(recentCount7d > 0 ? [] : ['No recent Estonia records were confirmed in the last 7 days.']),
     ...(estoniaHistoryPoints.length || estoniaHistoryClusters.length ? [] : ['No coordinate-backed Estonia history was available in this run.']),
-    ...((asRecord(payload.sourceHealth).ebirdAvailable === true && (foreignRecentPoints.length || foreignClusters.length)) ? [] : ['No foreign pressure was available in this run.']),
+    ...((sourceHealth.ebirdAvailable === true && (foreignRecentPoints.length || foreignClusters.length)) ? [] : ['No foreign pressure was available in this run.']),
     ...(predictedTargets.length ? [] : ['No predicted targets were retained from the final structured evidence.']),
     ...(scrubbed.warning ? [scrubbed.warning] : []),
   ]));
@@ -4415,9 +4488,19 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     foreignRecentPoints,
     foreignClusters,
     predictedTargets,
-    weather: asRecord(payload.weather),
+    weather,
     insightSummary: scrubbed.safeSummary,
   });
+  const evidenceSummary = {
+    ...asRecord(payload.evidenceSummary),
+    weatherAvailable: canonicalWeatherAvailable,
+    foreignEbirdAvailable: foreignRecentPoints.length > 0 || foreignClusters.length > 0,
+  };
+  mergeDebugSources.evidenceSummary = 'derived_summary';
+  const summaryGuardrailReason = resolveConsistentSummaryGuardrailReason(
+    stringOr(payload.summaryGuardrailReason),
+    finalConsistencyChecks,
+  );
   const finalPayload: Record<string, unknown> = {
     speciesKey: payload.speciesKey,
     speciesName: payload.speciesName,
@@ -4425,35 +4508,28 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     generatedAt: payload.generatedAt,
     analysisVersion: payload.analysisVersion,
     species: asRecord(payload.species),
-    sourceHealth: asRecord(payload.sourceHealth),
-    evidenceSummary: asRecord(payload.evidenceSummary),
-    elurikkusRecentRecords: Array.isArray(payload.elurikkusRecentRecords) ? payload.elurikkusRecentRecords : [],
+    sourceHealth,
+    evidenceSummary,
+    elurikkusRecentRecords,
     estoniaHistoryPoints,
     estoniaHistoryClusters,
     foreignRecentPoints,
     foreignClusters,
-    weather: asRecord(payload.weather),
+    weather,
     predictionVectors: Array.isArray(payload.predictionVectors) ? payload.predictionVectors : [],
     predictedTargets: canonicalRouteState.predictedTargets,
     mapLayers: asRecord(payload.mapLayers),
-    foreignEvidence: Array.isArray(payload.foreignEvidence) ? payload.foreignEvidence : [],
+    foreignEvidence,
     historicalEvidence: asRecord(payload.historicalEvidence),
     rawLinks: asRecord(payload.rawLinks),
     estoniaEvidence,
-    externalPressureScore: 0,
+    externalPressureScore,
     springFitScore: payload.springFitScore,
     windSupportScore: payload.windSupportScore,
     routeVector: payload.routeVector,
     bestEntryZone: payload.bestEntryZone,
     alreadyMissedRisk: payload.alreadyMissedRisk,
-    countryScores: {
-      latvia: 0,
-      lithuania: 0,
-      belarus: 0,
-      poland: 0,
-      russia: 0,
-      finlandContextOnly: 0,
-    },
+    countryScores,
     topPredictedPoints: canonicalRouteState.topPredictedPoints,
     insightSummary: scrubbed.safeSummary,
     aiSummary: scrubbed.safeSummary,
@@ -4471,11 +4547,11 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     invokeRouteVersion: payload.invokeRouteVersion,
     responseProof: payload.responseProof,
     summaryGuardrailApplied: payload.summaryGuardrailApplied,
-    summaryGuardrailReason: payload.summaryGuardrailReason,
+    summaryGuardrailReason,
     evidenceState: payload.evidenceState,
     hasUsableRecentEstoniaEvidence: payload.hasUsableRecentEstoniaEvidence,
     hasUsableEstoniaHistory: payload.hasUsableEstoniaHistory,
-    hasUsableForeignPressure: payload.hasUsableForeignPressure,
+    hasUsableForeignPressure: payload.hasUsableForeignPressure ?? (foreignRecentPoints.length > 0 || foreignClusters.length > 0 || foreignEvidence.length > 0),
     hasUsablePredictedTargets: payload.hasUsablePredictedTargets,
     hasOnlyWeather: payload.hasOnlyWeather,
     hasOnlySourceAvailabilityWithoutUsableEvidence: payload.hasOnlySourceAvailabilityWithoutUsableEvidence,
@@ -4491,16 +4567,18 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
       rawLinks: asRecord(rawResearchPayload.rawLinks),
       historicalEvidence: asRecord(rawResearchPayload.historicalEvidence),
       predictionVectors: Array.isArray(rawResearchPayload.predictionVectors) ? rawResearchPayload.predictionVectors : [],
-      sourceHealth: asRecord(payload.sourceHealth),
-      evidenceSummary: asRecord(payload.evidenceSummary),
+      sourceHealth,
+      evidenceSummary,
       // Fresh computed values — never carried from rawResearchPayload
       aiSummary: scrubbed.safeSummary,
       insightSummary: scrubbed.safeSummary,
-      confidenceNote: '',
-      rankingNotes: [],
+      confidenceNote: payload.confidenceNote,
+      rankingNotes: payload.rankingNotes,
       topPredictedPoints: canonicalRouteState.topPredictedPoints,
       estoniaEvidence,
-      foreignEvidence: foreignRecentPoints,
+      foreignEvidence,
+      foreignRecentPoints,
+      foreignClusters,
       predictedTargets: canonicalRouteState.predictedTargets,
       globalMigrationEtas: canonicalRouteState.globalMigrationEtas,
       warnings: finalWarnings,
@@ -4508,25 +4586,23 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
         ...finalConsistencyChecks,
         legacyStateSafe: true,
       },
-      countryScores: {
-        latvia: 0,
-        lithuania: 0,
-        belarus: 0,
-        poland: 0,
-        russia: 0,
-        finlandContextOnly: 0,
-      },
-      externalPressureScore: 0,
+      countryScores,
+      externalPressureScore,
+      summaryGuardrailReason,
       normalizedSources: {
         estoniaHistoryPoints,
         estoniaHistoryClusters,
         foreignRecentPoints,
         foreignClusters,
-        weather: asRecord(payload.weather),
+        weather,
       },
     },
     globalMigrationEtas: canonicalRouteState.globalMigrationEtas,
   };
+  if (shouldIncludeMergeDebugSources(payload)) {
+    finalPayload.mergeDebugSources = mergeDebugSources;
+    asRecord(finalPayload.rawResearchPayload).mergeDebugSources = mergeDebugSources;
+  }
   return finalPayload;
 }
 
@@ -4588,6 +4664,133 @@ function buildDeterministicFinalPayloadFields(payload: Record<string, unknown>) 
     },
     externalPressureScore: 0,
   };
+}
+
+function shouldUseCanonicalRawPayload(payload: Record<string, unknown>): boolean {
+  const payloadSourceState = stringOr(payload.payloadSourceState);
+  return payloadSourceState === 'current_finalized_backend_output'
+    || payloadSourceState === 'n8n_v3_passthrough'
+    || (Boolean(stringOr(payload.backendBuild)) && Boolean(stringOr(payload.invokeRouteVersion)) && Boolean(stringOr(payload.responseProof)));
+}
+
+function shouldIncludeMergeDebugSources(payload: Record<string, unknown>): boolean {
+  const request = asRecord(asRecord(payload.rawResearchPayload).request);
+  return request.includeMergeDebugSources === true
+    || request.debugMergeSources === true
+    || request.debug === true;
+}
+
+function hasMeaningfulForeignRecentPoints(items: unknown[]): boolean {
+  return (Array.isArray(items) ? items : []).some((item) => {
+    const point = asRecord(item);
+    return !!stringOr(point.countryCode, point.countryName, point.country)
+      || readRoutePointCoords(point) !== null
+      || !!normalizeDateString(stringOr(point.date, point.latestDate, point.observedAt));
+  });
+}
+
+function hasMeaningfulForeignClusters(items: unknown[]): boolean {
+  return (Array.isArray(items) ? items : []).some((item) => {
+    const cluster = asRecord(item);
+    return !!stringOr(cluster.id)
+      || toNumber(cluster.pointCount) > 0
+      || toNumber(cluster.totalHowMany) > 0
+      || (Array.isArray(cluster.countries) && cluster.countries.length > 0)
+      || (Array.isArray(cluster.countryCodes) && cluster.countryCodes.length > 0);
+  });
+}
+
+function resolveCanonicalArrayField(input: {
+  topLevelValue: unknown;
+  rawValue: unknown;
+  allowRawFallback: boolean;
+  fieldName: string;
+  mergeDebugSources: Record<string, unknown>;
+}): unknown[] {
+  const topLevel = Array.isArray(input.topLevelValue) ? input.topLevelValue : [];
+  const raw = Array.isArray(input.rawValue) ? input.rawValue : [];
+  const topLevelMeaningful = input.fieldName === 'foreignRecentPoints'
+    ? hasMeaningfulForeignRecentPoints(topLevel)
+    : input.fieldName === 'foreignClusters'
+      ? hasMeaningfulForeignClusters(topLevel)
+      : topLevel.length > 0;
+  const rawMeaningful = input.fieldName === 'foreignRecentPoints'
+    ? hasMeaningfulForeignRecentPoints(raw)
+    : input.fieldName === 'foreignClusters'
+      ? hasMeaningfulForeignClusters(raw)
+      : raw.length > 0;
+  if (topLevelMeaningful) {
+    input.mergeDebugSources[input.fieldName] = 'canonical_backend';
+    return topLevel;
+  }
+  if (input.allowRawFallback && rawMeaningful) {
+    input.mergeDebugSources[input.fieldName] = 'normalizedSources';
+    return raw;
+  }
+  input.mergeDebugSources[input.fieldName] = 'fallback_default';
+  return [];
+}
+
+function resolveLatestElurikkusRecord(records: unknown[]): { date: string; locality: string } {
+  const normalized = (Array.isArray(records) ? records : [])
+    .map((item) => asRecord(item))
+    .map((item) => ({
+      date: normalizeDateString(stringOr(item.event_date, item.eventDate, item.date)),
+      locality: stringOr(item.locality, item.locName, item.municipality),
+    }))
+    .filter((item) => item.date);
+  normalized.sort((left, right) => Date.parse(right.date) - Date.parse(left.date));
+  return normalized[0] ?? { date: '', locality: '' };
+}
+
+function resolveCanonicalForeignEvidence(
+  payload: Record<string, unknown>,
+  rawResearchPayload: Record<string, unknown>,
+  foreignRecentPoints: unknown[],
+  foreignClusters: unknown[],
+  canonicalPayload: boolean,
+  mergeDebugSources: Record<string, unknown>,
+): Record<string, unknown>[] {
+  const payloadForeignEvidence = Array.isArray(payload.foreignEvidence) ? payload.foreignEvidence : [];
+  const rawForeignEvidence = Array.isArray(rawResearchPayload.foreignEvidence) ? rawResearchPayload.foreignEvidence : [];
+  if (payloadForeignEvidence.length) {
+    mergeDebugSources.foreignEvidence = 'canonical_backend';
+    return payloadForeignEvidence.map((item) => asRecord(item));
+  }
+  if (canonicalPayload && rawForeignEvidence.length) {
+    mergeDebugSources.foreignEvidence = 'rawResearchPayload.foreignEvidence';
+    return rawForeignEvidence.map((item) => asRecord(item));
+  }
+  mergeDebugSources.foreignEvidence = foreignRecentPoints.length || foreignClusters.length
+    ? 'derived_foreign_recent_points'
+    : 'fallback_default';
+  return buildForeignEvidenceFromPointsAndClusters(
+    foreignRecentPoints.map((item) => asRecord(item)),
+    foreignClusters.map((item) => asRecord(item)),
+  );
+}
+
+function buildZeroCountryScores(): Record<string, number> {
+  return {
+    latvia: 0,
+    lithuania: 0,
+    belarus: 0,
+    poland: 0,
+    russia: 0,
+    finlandContextOnly: 0,
+  };
+}
+
+function resolveConsistentSummaryGuardrailReason(
+  currentReason: string,
+  consistencyChecks: Record<string, unknown>,
+): string {
+  const reasons = currentReason.split(',').map((part) => part.trim()).filter(Boolean);
+  const filtered = reasons.filter((reason) => {
+    if (reason !== 'weatherLooksSupportive') return true;
+    return consistencyChecks.weatherLooksSupportive === true;
+  });
+  return filtered.join(',');
 }
 
 function validateNarrativeConsistency(payload: Record<string, unknown>): NarrativeConsistencyResult {

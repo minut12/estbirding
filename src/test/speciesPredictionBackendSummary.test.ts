@@ -9,6 +9,9 @@ type BackendHooks = {
     response: Record<string, unknown>,
     branch: string,
   ) => Record<string, unknown>;
+  buildFinalPredictionPayloadFromEvidence: (
+    payload: Record<string, unknown>,
+  ) => Record<string, unknown>;
   sanitizeSummaryAgainstEvidence: (
     response: Record<string, unknown>,
   ) => Record<string, unknown>;
@@ -33,6 +36,7 @@ function loadBackendHooks(): BackendHooks {
   const wrapped = `${source}
 globalThis.__speciesPredictionBackendTestHooks = {
   finalizePredictionResponse,
+  buildFinalPredictionPayloadFromEvidence,
   sanitizeSummaryAgainstEvidence,
   withEdgeResponseMarkers,
   SPECIES_PREDICTION_BACKEND_BUILD,
@@ -98,6 +102,7 @@ function buildBaseResponse(overrides: Record<string, unknown> = {}): Record<stri
     },
     rawResearchPayload: {
       aiSummary: "stale legacy summary",
+      normalizedSources: {},
     },
     ...overrides,
   };
@@ -372,6 +377,72 @@ describe("species-prediction backend summary finalizer", () => {
     expect(route[route.length - 1]?.lat).toBe(59.2);
     expect(route[route.length - 1]?.lon).toBe(23.52);
     expect(route.some((point) => String(point.name) === "Offshore helper")).toBe(false);
+  });
+
+  it("promotes canonical normalized foreign evidence into top-level payload fields", () => {
+    const finalized = hooks.buildFinalPredictionPayloadFromEvidence(buildBaseResponse({
+      payloadSourceState: "current_finalized_backend_output",
+      foreignRecentPoints: [],
+      foreignClusters: [{ id: "", pointCount: 0 }],
+      foreignEvidence: [],
+      hasUsableForeignPressure: true,
+      rawResearchPayload: {
+        normalizedSources: {
+          foreignRecentPoints: [{ countryCode: "PL", lat: 54.3, lon: 18.6, daysAgo: 2, recordCount: 3 }],
+          foreignClusters: [{ id: "cluster-1", countries: ["Poland"], countryCodes: ["pl"], nearestDistanceKm: 180, pointCount: 3 }],
+        },
+        foreignEvidence: [{ countryCode: "pl", countryName: "Poland", recordCount7d: 3, recordCount30d: 3, nearestDistanceKm: 180 }],
+      },
+    }));
+
+    expect(Array.isArray(finalized.foreignRecentPoints)).toBe(true);
+    expect((finalized.foreignRecentPoints as unknown[]).length).toBe(1);
+    expect((finalized.foreignClusters as unknown[])[0]).toMatchObject({ id: "cluster-1" });
+    expect((finalized.countryScores as Record<string, unknown>).poland).toBeGreaterThan(0);
+    expect(Number(finalized.externalPressureScore)).toBeGreaterThan(0);
+  });
+
+  it("uses recent elurikkus records ahead of stale latestEstoniaDate", () => {
+    const finalized = hooks.buildFinalPredictionPayloadFromEvidence(buildBaseResponse({
+      estoniaEvidence: {
+        recentCount7d: 1,
+        recentCount30d: 2,
+        latestEstoniaDate: "2025-11-19",
+      },
+      elurikkusRecentRecords: [
+        { locality: "Ristna", event_date: "2026-03-27", coordinates: { lat: 58.93, lon: 22.05 } },
+      ],
+      rawResearchPayload: {
+        estoniaEvidence: {
+          latestEEDate: "2026-03-26",
+          latestEELocality: "Kalana",
+        },
+        normalizedSources: {},
+      },
+    }));
+
+    expect(String((finalized.estoniaEvidence as Record<string, unknown>).latestEstoniaDate)).toContain("2026-03-27");
+  });
+
+  it("keeps weather flags and guardrail reason internally consistent", () => {
+    const finalized = hooks.buildFinalPredictionPayloadFromEvidence(buildBaseResponse({
+      weather: {
+        fetchedAt: "2026-03-30T10:00:00.000Z",
+        windSpeedKph: 1,
+        windDirectionDeg: 210,
+        weatherAvailable: true,
+      },
+      evidenceSummary: {
+        weatherAvailable: false,
+      },
+      summaryGuardrailReason: "weatherLooksSupportive",
+      foreignRecentPoints: [],
+      foreignClusters: [],
+      predictedTargets: [],
+    }));
+
+    expect((finalized.weather as Record<string, unknown>).weatherAvailable).toBe((finalized.evidenceSummary as Record<string, unknown>).weatherAvailable);
+    expect(String(finalized.summaryGuardrailReason || "")).not.toContain("weatherLooksSupportive");
   });
 
   it("suppresses active foreign migration routes when the species is already present", () => {

@@ -1272,6 +1272,10 @@
     var originPoint = routePoints.find(function (routePoint) { return routePoint.type === 'origin'; }) || routePoints[0] || null;
     var entryPoint = resolveEntryRoutePointJs(finalRoutePoints, entryLat, entryLon, entryLabel);
     var targetPoint = resolveTargetRoutePointJs(finalRoutePoints, targetLat, targetLon, normalizeText(point.displayName || point.name || ('Target ' + (index + 1))));
+    var originLocality = normalizeText(migrationEta.fromLocality || migrationEta.foreignLocality || (originPoint && originPoint.name) || '');
+    var originCountryCode = normalizeText(migrationEta.fromCountry || migrationEta.foreignCountry || migrationEta.countryCode || '');
+    var foreignSightingDate = normalizeText(migrationEta.foreignSightingDate || migrationEta.sightingDate || '');
+    var distanceToEntryKm = originPoint && entryPoint ? Math.round(distanceKm(originPoint.lat, originPoint.lon, entryPoint.lat, entryPoint.lon)) : undefined;
     var progressAtEntry = Number.isFinite(currentEstimatedLat) && Number.isFinite(currentEstimatedLon) && entryPoint
       ? pointsNear({ lat: currentEstimatedLat, lon: currentEstimatedLon }, entryPoint, 0.3)
       : false;
@@ -1279,6 +1283,10 @@
       targetName: normalizeText(point.displayName || point.name || ('Target ' + (index + 1))),
       entryLabel: entryLabel,
       progressLabel: progressAtEntry ? ('Entry via ' + entryLabel) : 'Migration progress',
+      originLocality: originLocality || undefined,
+      originCountryCode: originCountryCode || undefined,
+      foreignSightingDate: foreignSightingDate || undefined,
+      distanceToEntryKm: Number.isFinite(distanceToEntryKm) ? distanceToEntryKm : undefined,
       rank: Number.isFinite(Number(point.rank)) ? Number(point.rank) : undefined,
       targetLat: Number.isFinite(targetLat) ? targetLat : undefined,
       targetLon: Number.isFinite(targetLon) ? targetLon : undefined,
@@ -1301,6 +1309,7 @@
       progressAtEntry: progressAtEntry,
       routePoints: finalRoutePoints,
       speciesType: normalizeText(migrationRoute.speciesType || migrationEta.speciesType || ''),
+      originPointSource: routePoints.find(function (routePoint) { return routePoint.type === 'origin'; }) ? 'explicit_origin_waypoint' : 'first_route_coordinate',
       sourcePath: sourcePath + '[' + index + ']'
     };
   }
@@ -1330,8 +1339,14 @@
       skipped.push({ sourcePath: 'globalMigrationEtas[' + index + ']', reason: 'missing route array and no fallback coordinates' });
       return null;
     }
+    var originPoint = routePoints.find(function (routePoint) { return routePoint.type === 'origin'; }) || finalRoutePoints[0] || null;
+    var entryPoint = resolveEntryRoutePointJs(finalRoutePoints, entryLat, entryLon, normalizeText(eta.entryZone || 'Estonia entry'));
     return {
       targetName: normalizeText(eta.targetName || eta.entryZone || ('Target ' + (index + 1))),
+      originLocality: normalizeText(eta.fromLocality || eta.foreignLocality || (originPoint && originPoint.name) || ''),
+      originCountryCode: normalizeText(eta.fromCountry || eta.foreignCountry || eta.countryCode || ''),
+      foreignSightingDate: normalizeText(eta.foreignSightingDate || eta.sightingDate || ''),
+      distanceToEntryKm: originPoint && entryPoint ? Math.round(distanceKm(originPoint.lat, originPoint.lon, entryPoint.lat, entryPoint.lon)) : undefined,
       targetLat: Number.isFinite(targetLat) ? targetLat : undefined,
       targetLon: Number.isFinite(targetLon) ? targetLon : undefined,
       entryLat: Number.isFinite(entryLat) ? entryLat : undefined,
@@ -1344,8 +1359,11 @@
       currentProgressPct: Number.isFinite(Number(migrationRoute.currentProgressPct)) ? Number(migrationRoute.currentProgressPct) : undefined,
       currentEstimatedLat: Number.isFinite(Number(migrationRoute.currentEstimatedLat)) ? Number(migrationRoute.currentEstimatedLat) : undefined,
       currentEstimatedLon: Number.isFinite(Number(migrationRoute.currentEstimatedLon)) ? Number(migrationRoute.currentEstimatedLon) : undefined,
+      originPoint: originPoint || undefined,
+      entryPoint: entryPoint || undefined,
       routePoints: finalRoutePoints,
       speciesType: normalizeText(migrationRoute.speciesType || eta.speciesType || ''),
+      originPointSource: routePoints.find(function (routePoint) { return routePoint.type === 'origin'; }) ? 'explicit_origin_waypoint' : 'first_route_coordinate',
       sourcePath: 'globalMigrationEtas[' + index + ']'
     };
   }
@@ -1390,6 +1408,13 @@
       hasTopPredictedPoints: Array.isArray(result && result.topPredictedPoints),
       targetsWithMigrationEta: migrationEtaCount,
       targetsWithMigrationRoute: migrationRouteCount,
+      originStatus: routes.map(function (route) {
+        return {
+          sourcePath: route.sourcePath,
+          hasOriginPoint: !!route.originPoint,
+          originPointSource: route.originPointSource || 'unknown',
+        };
+      }),
       finalRenderableRoutes: routes.length,
       skipped: skipped
     });
@@ -1437,10 +1462,21 @@
         }).addTo(layer);
       }
 
-      if (route.originPoint) {
+      if (!route.originPoint) {
+        logMigrationRouteDebug('route missing originPoint', { sourcePath: route.sourcePath, targetName: route.targetName });
+      } else {
+        var originTooltip = '<b>' + escapeHtml(route.originLocality || route.originPoint.name || 'Foreign origin') + '</b>' +
+          (route.originCountryCode ? '<br>Country: ' + escapeHtml(route.originCountryCode) : '') +
+          (route.foreignSightingDate ? '<br>Sighted: ' + escapeHtml(formatShortDate(route.foreignSightingDate)) : '') +
+          (route.distanceToEntryKm != null ? '<br>To entry: ' + escapeHtml(String(route.distanceToEntryKm)) + ' km' : '');
         L.circleMarker([route.originPoint.lat, route.originPoint.lon], {
-          radius: 6, color: '#fff', weight: 2, fillColor: '#ef4444', fillOpacity: 0.9
-        }).bindTooltip('<b>' + escapeHtml(route.originPoint.name || 'Origin') + '</b>', { direction: 'top' }).addTo(layer);
+          radius: 5,
+          color: '#ffffff',
+          weight: 1,
+          fillColor: '#7f1d1d',
+          fillOpacity: 1,
+          bubblingMouseEvents: true
+        }).bindTooltip(originTooltip, { direction: 'top', permanent: false, offset: [0, -8] }).addTo(layer);
       }
       if (route.entryPoint) {
         var entryTooltip = '<b>' + escapeHtml(route.entryLabel || route.entryPoint.name || 'Estonia entry') + '</b>' +

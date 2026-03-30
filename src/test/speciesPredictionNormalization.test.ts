@@ -1445,6 +1445,109 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(routes[0]?.entryPoint?.name).toBe("Kabli");
     expect(routes[0]?.targetPoint?.name).toBe("Põõsaspea");
   });
+  it("preserves explicit origin waypoint metadata for active routes", () => {
+    const routes = extractNormalizedMigrationRoutes({
+      topPredictedPoints: [
+        {
+          name: "Target",
+          lat: 58.9,
+          lon: 23.4,
+          migrationEta: {
+            fromLocality: "Ragaciems, Gausā jūdze.",
+            fromCountry: "LV",
+            foreignSightingDate: "2026-03-30",
+            entryLat: 58.1,
+            entryLon: 24.3,
+            migrationRoute: {
+              route: [
+                { lat: 57.0, lon: 23.5, type: "origin", name: "Ragaciems, Gausā jūdze." },
+                { lat: 58.1, lon: 24.3, type: "waypoint", name: "Kabli" },
+                { lat: 58.9, lon: 23.4, type: "destination", name: "Target" },
+              ],
+            },
+          },
+        },
+      ],
+    } as any);
+
+    expect(routes[0]?.originPoint?.name).toBe("Ragaciems, Gausā jūdze.");
+    expect(routes[0]?.originLocality).toBe("Ragaciems, Gausā jūdze.");
+    expect(routes[0]?.originCountryCode).toBe("LV");
+    expect(routes[0]?.foreignSightingDate).toBe("2026-03-30");
+    expect(routes[0]?.distanceToEntryKm).toBeGreaterThan(0);
+  });
+
+  it("uses first route coordinate as origin when no explicit origin waypoint exists", () => {
+    const routes = extractNormalizedMigrationRoutes({
+      topPredictedPoints: [
+        {
+          name: "Target",
+          lat: 58.9,
+          lon: 23.4,
+          migrationEta: {
+            fromLocality: "Fallback foreign point",
+            migrationRoute: {
+              route: [
+                { lat: 57.1, lon: 23.2, type: "waypoint" },
+                { lat: 58.9, lon: 23.4, type: "destination" },
+              ],
+            },
+          },
+        },
+      ],
+    } as any);
+
+    expect(routes[0]?.originPoint).toEqual({ lat: 57.1, lon: 23.2, type: "waypoint" });
+    expect(routes[0]?.originLocality).toBe("Fallback foreign point");
+  });
+
+  it("keeps origin marker data even when origin and entry are close", () => {
+    const routes = extractNormalizedMigrationRoutes({
+      topPredictedPoints: [
+        {
+          name: "Nearby target",
+          lat: 58.9,
+          lon: 23.4,
+          migrationEta: {
+            fromLocality: "Close origin",
+            entryLat: 57.001,
+            entryLon: 23.501,
+            migrationRoute: {
+              route: [
+                { lat: 57.0, lon: 23.5, type: "origin", name: "Close origin" },
+                { lat: 58.9, lon: 23.4, type: "destination" },
+              ],
+            },
+          },
+        },
+      ],
+    } as any);
+
+    expect(routes[0]?.originPoint).toBeTruthy();
+    expect(routes[0]?.entryPoint).toBeTruthy();
+  });
+
+  it("keeps origin marker data for legacy fallback routes", () => {
+    const routes = extractNormalizedMigrationRoutes({
+      globalMigrationEtas: [
+        {
+          fromLocality: "Legacy origin",
+          foreignCountry: "LV",
+          foreignSightingDate: "2026-03-30",
+          entryLat: 58.1,
+          entryLon: 24.3,
+          migrationRoute: {
+            route: [
+              { lat: 57.0, lon: 23.5, type: "origin", name: "Legacy origin" },
+              { lat: 58.1, lon: 24.3, type: "waypoint", name: "Kabli" },
+            ],
+          },
+        },
+      ],
+    } as any);
+
+    expect(routes[0]?.originPoint?.name).toBe("Legacy origin");
+  });
 });
 
 describe("normalizePrediction", () => {

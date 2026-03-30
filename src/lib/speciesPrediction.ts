@@ -232,6 +232,10 @@ export type NormalizedMigrationRoute = {
   targetName: string;
   entryLabel?: string;
   progressLabel?: string;
+  originLocality?: string;
+  originCountryCode?: string;
+  foreignSightingDate?: string;
+  distanceToEntryKm?: number;
   rank?: number;
   targetLat?: number;
   targetLon?: number;
@@ -1182,6 +1186,19 @@ export function extractNormalizedMigrationRoutes(
       const originPoint = finalRoutePoints.find((routePoint) => routePoint.type === 'origin') ?? finalRoutePoints[0];
       const entryPoint = resolveEntryRoutePoint(finalRoutePoints, entryLat, entryLon, entryLabel);
       const targetPoint = resolveTargetRoutePoint(finalRoutePoints, targetLat, targetLon, targetNameFromPoint(point, index));
+      const originLocality = normalizeUiText(
+        readString(migrationEta, ['fromLocality', 'foreignLocality'])
+        || originPoint?.name
+        || '',
+      );
+      const originCountryCode = normalizeUiText(
+        readString(migrationEta, ['fromCountry', 'foreignCountry', 'countryCode'])
+        || '',
+      );
+      const foreignSightingDate = normalizeUiText(readString(migrationEta, ['foreignSightingDate', 'sightingDate']) || '');
+      const distanceToEntryKm = originPoint && entryPoint
+        ? Math.round(haversineKm(originPoint.lat, originPoint.lon, entryPoint.lat, entryPoint.lon))
+        : undefined;
       const progressAtEntry = currentEstimatedLat != null
         && currentEstimatedLon != null
         && !!entryPoint
@@ -1206,6 +1223,10 @@ export function extractNormalizedMigrationRoutes(
         ...(targetLon != null ? { targetLon } : {}),
         ...(entryLabel ? { entryLabel } : {}),
         ...(progressLabel ? { progressLabel } : {}),
+        ...(originLocality ? { originLocality } : {}),
+        ...(originCountryCode ? { originCountryCode } : {}),
+        ...(foreignSightingDate ? { foreignSightingDate } : {}),
+        ...(distanceToEntryKm != null ? { distanceToEntryKm } : {}),
         ...(entryLat != null ? { entryLat } : {}),
         ...(entryLon != null ? { entryLon } : {}),
         ...(readString(migrationEta, ['fromLocality', 'foreignLocality']) ? { fromLocality: normalizeUiText(readString(migrationEta, ['fromLocality', 'foreignLocality'])) } : {}),
@@ -1228,6 +1249,59 @@ export function extractNormalizedMigrationRoutes(
       });
     });
   });
+
+  if (!routes.length) {
+    const legacyEtas = readArray(result, ['globalMigrationEtas']) ?? [];
+    legacyEtas.forEach((entry, index) => {
+      const eta = asRecord(entry);
+      const migrationRoute = readRecord(eta, ['migrationRoute']);
+      if (!migrationRoute) return;
+      const entryLat = readFiniteMigrationCoord(eta, ['entryLat']);
+      const entryLon = readFiniteMigrationCoord(eta, ['entryLon']);
+      const targetLat = readFiniteMigrationCoord(eta, ['targetLat']);
+      const targetLon = readFiniteMigrationCoord(eta, ['targetLon']);
+      const routePoints = normalizeMigrationRoutePoints(readArray(migrationRoute, ['route']));
+      const finalRoutePoints = routePoints.length >= 2
+        ? routePoints
+        : synthesizeMigrationRoutePoints(routePoints[0], entryLat, entryLon, targetLat, targetLon);
+      if (finalRoutePoints.length < 2) return;
+      const entryLabel = normalizeUiText(readString(eta, ['entryZone']) || 'Estonia entry');
+      const originPoint = finalRoutePoints.find((routePoint) => routePoint.type === 'origin') ?? finalRoutePoints[0];
+      const entryPoint = resolveEntryRoutePoint(finalRoutePoints, entryLat, entryLon, entryLabel);
+      const targetPoint = resolveTargetRoutePoint(finalRoutePoints, targetLat, targetLon, normalizeUiText(readString(eta, ['targetName']) || `Target ${index + 1}`));
+      const currentEstimatedLat = readFiniteMigrationCoord(migrationRoute, ['currentEstimatedLat']);
+      const currentEstimatedLon = readFiniteMigrationCoord(migrationRoute, ['currentEstimatedLon']);
+      const originLocality = normalizeUiText(readString(eta, ['fromLocality', 'foreignLocality']) || originPoint?.name || '');
+      const originCountryCode = normalizeUiText(readString(eta, ['fromCountry', 'foreignCountry', 'countryCode']) || '');
+      const foreignSightingDate = normalizeUiText(readString(eta, ['foreignSightingDate', 'sightingDate']) || '');
+      const distanceToEntryKm = originPoint && entryPoint
+        ? Math.round(haversineKm(originPoint.lat, originPoint.lon, entryPoint.lat, entryPoint.lon))
+        : undefined;
+      routes.push({
+        targetName: normalizeUiText(readString(eta, ['targetName']) || `Target ${index + 1}`),
+        ...(entryLabel ? { entryLabel } : {}),
+        originLocality: originLocality || undefined,
+        originCountryCode: originCountryCode || undefined,
+        foreignSightingDate: foreignSightingDate || undefined,
+        ...(distanceToEntryKm != null ? { distanceToEntryKm } : {}),
+        ...(targetLat != null ? { targetLat } : {}),
+        ...(targetLon != null ? { targetLon } : {}),
+        ...(entryLat != null ? { entryLat } : {}),
+        ...(entryLon != null ? { entryLon } : {}),
+        ...(readString(eta, ['earliestArrival']) ? { earliestArrival: normalizeUiText(readString(eta, ['earliestArrival'])) } : {}),
+        ...(readString(eta, ['latestArrival']) ? { latestArrival: normalizeUiText(readString(eta, ['latestArrival'])) } : {}),
+        ...(hasValue(eta, ['routeDistanceKm', 'distanceKm']) ? { routeDistanceKm: clampFloat(readNumber(eta, ['routeDistanceKm', 'distanceKm']), 0, 999999, 0) } : {}),
+        ...(hasValue(migrationRoute, ['currentProgressPct']) ? { currentProgressPct: clampFloat(readNumber(migrationRoute, ['currentProgressPct']), 0, 100, 0) } : {}),
+        ...(currentEstimatedLat != null ? { currentEstimatedLat } : {}),
+        ...(currentEstimatedLon != null ? { currentEstimatedLon } : {}),
+        ...(originPoint ? { originPoint } : {}),
+        ...(entryPoint ? { entryPoint } : {}),
+        ...(targetPoint ? { targetPoint } : {}),
+        routePoints: finalRoutePoints,
+        sourcePath: `globalMigrationEtas[${index}]`,
+      });
+    });
+  }
 
   return routes;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildSpeciesPredictionDisplayModel, extractNormalizedMigrationRoutes, hasUsableSpeciesPredictionResult, isAlreadyPresentPrediction, mergeCanonicalEstoniaHotspots, normalizePrediction, normalizeSpeciesPredictionResult, resolveActiveEstoniaAnchor, resolveFreshestEstoniaEvidence, selectPrimaryMigrationRoute } from "@/lib/speciesPrediction";
+import { buildActiveMigrationDisplayRoute, buildSpeciesPredictionDisplayModel, extractNormalizedMigrationRoutes, hasUsableSpeciesPredictionResult, isAlreadyPresentPrediction, mergeCanonicalEstoniaHotspots, normalizePrediction, normalizeSpeciesPredictionResult, resolveActiveEstoniaAnchor, resolveFreshestEstoniaEvidence, selectPrimaryMigrationRoute } from "@/lib/speciesPrediction";
 
 describe("normalizeSpeciesPredictionResult", () => {
   it("prefers canonical fields over legacy aliases", () => {
@@ -1620,6 +1620,84 @@ describe("normalizeSpeciesPredictionResult", () => {
       "Route bend",
       "Kabli",
       "Target",
+    ]);
+  });
+  it("clips already-present routes to the fresh Estonia anchor instead of continuing offshore", () => {
+    const result = buildActiveMigrationDisplayRoute({
+      targetName: "Offshore helper",
+      entryLabel: "Kabli",
+      originPoint: { lat: 56.95, lon: 23.6, name: "Ragaciems", type: "origin" },
+      entryPoint: { lat: 58.0, lon: 24.45, name: "Kabli", type: "waypoint" },
+      targetPoint: { lat: 57.7, lon: 23.1, name: "Sea helper", type: "destination" },
+      routePoints: [],
+      displayRoutePoints: [
+        { lat: 56.95, lon: 23.6, name: "Ragaciems", type: "origin" },
+        { lat: 58.0, lon: 24.45, name: "Kabli", type: "waypoint" },
+        { lat: 57.7, lon: 23.1, name: "Sea helper", type: "destination" },
+      ],
+      sourcePath: "test",
+    } as any, {
+      name: "Ristna / Kalana",
+      lat: 58.93,
+      lon: 22.05,
+    }, true);
+
+    expect(result.activeDisplayRoutePoints.map((point) => point.name)).toEqual([
+      "Ragaciems",
+      "Kabli",
+      "Ristna / Kalana",
+    ]);
+    expect(result.activeDisplayDestination?.name).toBe("Ristna / Kalana");
+  });
+
+  it("drops post-entry segments that move farther away from the chosen Estonia destination", () => {
+    const result = buildActiveMigrationDisplayRoute({
+      targetName: "Põõsaspea",
+      entryLabel: "Kabli",
+      originPoint: { lat: 56.95, lon: 23.6, name: "Ragaciems", type: "origin" },
+      entryPoint: { lat: 58.0, lon: 24.45, name: "Kabli", type: "waypoint" },
+      targetPoint: { lat: 58.93, lon: 22.05, name: "Ristna", type: "destination" },
+      routePoints: [],
+      displayRoutePoints: [
+        { lat: 56.95, lon: 23.6, name: "Ragaciems", type: "origin" },
+        { lat: 58.0, lon: 24.45, name: "Kabli", type: "waypoint" },
+        { lat: 58.6, lon: 23.0, name: "Closer inland", type: "waypoint" },
+        { lat: 57.8, lon: 23.7, name: "Offshore drift", type: "waypoint" },
+      ],
+      sourcePath: "test",
+    } as any, {
+      name: "Ristna",
+      lat: 58.93,
+      lon: 22.05,
+    }, false);
+
+    expect(result.activeDisplayRoutePoints.map((point) => point.name)).toEqual([
+      "Ragaciems",
+      "Kabli",
+      "Closer inland",
+      "Põõsaspea",
+    ]);
+  });
+
+  it("falls back to origin to entry when already-present mode has no active Estonia anchor", () => {
+    const result = buildActiveMigrationDisplayRoute({
+      targetName: "Offshore helper",
+      entryLabel: "Kabli",
+      originPoint: { lat: 56.95, lon: 23.6, name: "Ragaciems", type: "origin" },
+      entryPoint: { lat: 58.0, lon: 24.45, name: "Kabli", type: "waypoint" },
+      targetPoint: { lat: 57.7, lon: 23.1, name: "Sea helper", type: "destination" },
+      routePoints: [],
+      displayRoutePoints: [
+        { lat: 56.95, lon: 23.6, name: "Ragaciems", type: "origin" },
+        { lat: 58.0, lon: 24.45, name: "Kabli", type: "waypoint" },
+        { lat: 57.7, lon: 23.1, name: "Sea helper", type: "destination" },
+      ],
+      sourcePath: "test",
+    } as any, null, true);
+
+    expect(result.activeDisplayRoutePoints.map((point) => point.name)).toEqual([
+      "Ragaciems",
+      "Kabli",
     ]);
   });
 });

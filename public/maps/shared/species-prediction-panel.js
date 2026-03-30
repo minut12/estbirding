@@ -1252,6 +1252,94 @@
     });
   }
 
+  function dedupeRoutePointsJs(points) {
+    return (Array.isArray(points) ? points : []).filter(function (point) {
+      return point && Number.isFinite(point.lat) && Number.isFinite(point.lon);
+    }).filter(function (point, index, array) {
+      if (index === 0) return true;
+      return !pointsNear(array[index - 1], point, 0.01);
+    }).map(function (point) { return Object.assign({}, point); });
+  }
+
+  function collectPointsBeforeEntryJs(routePoints, entryPoint) {
+    if (!entryPoint) return (Array.isArray(routePoints) ? routePoints : []).slice();
+    var entryIndex = (Array.isArray(routePoints) ? routePoints : []).findIndex(function (point) {
+      return pointsNear(point, entryPoint, 0.05);
+    });
+    if (entryIndex < 0) return (Array.isArray(routePoints) ? routePoints : []).slice();
+    return routePoints.slice(0, entryIndex);
+  }
+
+  function collectPostEntryPointsJs(routePoints, entryPoint) {
+    if (!entryPoint) return (Array.isArray(routePoints) ? routePoints : []).slice();
+    var entryIndex = (Array.isArray(routePoints) ? routePoints : []).findIndex(function (point) {
+      return pointsNear(point, entryPoint, 0.05);
+    });
+    if (entryIndex < 0) return (Array.isArray(routePoints) ? routePoints : []).slice();
+    return routePoints.slice(entryIndex + 1);
+  }
+
+  function trimRoutePointsTowardDestinationJs(routePoints, destination) {
+    var trimmed = [];
+    var previousDistance = arguments.length > 2 && Number.isFinite(arguments[2]) ? arguments[2] : Number.POSITIVE_INFINITY;
+    (Array.isArray(routePoints) ? routePoints : []).forEach(function (point) {
+      if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return;
+      var currentDistance = distanceKm(point.lat, point.lon, destination.lat, destination.lon);
+      if (currentDistance > previousDistance + 0.1) return;
+      trimmed.push(Object.assign({}, point));
+      previousDistance = currentDistance;
+    });
+    return trimmed;
+  }
+
+  function buildActiveMigrationDisplayRouteJs(route, activeEstoniaAnchor, alreadyPresentMode) {
+    var fallbackPoints = Array.isArray(route && route.displayRoutePoints) && route.displayRoutePoints.length
+      ? route.displayRoutePoints.map(function (point) { return Object.assign({}, point); })
+      : (Array.isArray(route && route.routePoints) ? route.routePoints.map(function (point) { return Object.assign({}, point); }) : []);
+    var validFallbackPoints = fallbackPoints.filter(function (point) {
+      return point && Number.isFinite(point.lat) && Number.isFinite(point.lon);
+    });
+    var destination = alreadyPresentMode
+      ? (activeEstoniaAnchor && Number.isFinite(activeEstoniaAnchor.lat) && Number.isFinite(activeEstoniaAnchor.lon)
+        ? activeEstoniaAnchor
+        : null)
+      : (route && route.targetPoint && Number.isFinite(route.targetPoint.lat) && Number.isFinite(route.targetPoint.lon)
+        ? { name: route.targetName || route.targetPoint.name || 'Target', lat: route.targetPoint.lat, lon: route.targetPoint.lon }
+        : null);
+    if (!destination) {
+      if (route && route.entryPoint && Number.isFinite(route.entryPoint.lat) && Number.isFinite(route.entryPoint.lon)) {
+        var entryFallback = dedupeRoutePointsJs([route.originPoint, route.entryPoint]);
+        return { activeDisplayRoutePoints: entryFallback.length >= 2 ? entryFallback : validFallbackPoints };
+      }
+      return { activeDisplayRoutePoints: validFallbackPoints };
+    }
+    var pointsBeforeEntry = collectPointsBeforeEntryJs(validFallbackPoints, route && route.entryPoint);
+    var postEntryPoints = alreadyPresentMode ? [] : collectPostEntryPointsJs(validFallbackPoints, route && route.entryPoint);
+    var startDistance = route && route.entryPoint && Number.isFinite(route.entryPoint.lat) && Number.isFinite(route.entryPoint.lon)
+      ? distanceKm(route.entryPoint.lat, route.entryPoint.lon, destination.lat, destination.lon)
+      : Number.POSITIVE_INFINITY;
+    var trimmedPostEntryPoints = trimRoutePointsTowardDestinationJs(postEntryPoints, destination, startDistance);
+    var activeDisplayRoutePoints = dedupeRoutePointsJs([].concat(
+      pointsBeforeEntry,
+      [route && route.entryPoint],
+      trimmedPostEntryPoints,
+      [{ lat: destination.lat, lon: destination.lon, name: destination.name, type: 'destination' }]
+    ));
+    if (activeDisplayRoutePoints.length >= 2) {
+      return { activeDisplayRoutePoints: activeDisplayRoutePoints, activeDisplayDestination: destination };
+    }
+    if (route && route.entryPoint && Number.isFinite(route.entryPoint.lat) && Number.isFinite(route.entryPoint.lon)) {
+      var fallbackToEntry = dedupeRoutePointsJs([route.originPoint, route.entryPoint]);
+      return {
+        activeDisplayRoutePoints: fallbackToEntry.length >= 2 ? fallbackToEntry : validFallbackPoints,
+        activeDisplayDestination: fallbackToEntry.length >= 2
+          ? { name: route.entryLabel || route.entryPoint.name || 'Estonia entry', lat: route.entryPoint.lat, lon: route.entryPoint.lon }
+          : destination
+      };
+    }
+    return { activeDisplayRoutePoints: validFallbackPoints, activeDisplayDestination: destination };
+  }
+
   function normalizeMigrationRouteCandidate(point, sourcePath, index, skipped) {
     if (!point || typeof point !== 'object') {
       skipped.push({ sourcePath: sourcePath + '[' + index + ']', reason: 'target object incomplete' });
@@ -1464,9 +1552,14 @@
       var opacity = 0.85;
       var progressPct = Number(route.currentProgressPct || 0);
       var routeDistKm = Number(route.routeDistanceKm || 0);
-      var displayRoutePoints = Array.isArray(route.displayRoutePoints) && route.displayRoutePoints.length
-        ? route.displayRoutePoints
-        : route.routePoints;
+      var activeDisplay = buildActiveMigrationDisplayRouteJs(route, prediction && prediction.activeEstoniaAnchor, prediction && prediction.alreadyPresentMode);
+      var displayRoutePoints = Array.isArray(activeDisplay.activeDisplayRoutePoints) && activeDisplay.activeDisplayRoutePoints.length
+        ? activeDisplay.activeDisplayRoutePoints
+        : (Array.isArray(route.activeDisplayRoutePoints) && route.activeDisplayRoutePoints.length
+          ? route.activeDisplayRoutePoints
+          : (Array.isArray(route.displayRoutePoints) && route.displayRoutePoints.length
+            ? route.displayRoutePoints
+            : route.routePoints));
       var displayLatLngs = displayRoutePoints
         .filter(function (routePoint) { return routePoint && Number.isFinite(routePoint.lat) && Number.isFinite(routePoint.lon); })
         .map(function (routePoint) { return [routePoint.lat, routePoint.lon]; });
@@ -1477,6 +1570,7 @@
         sourcePath: route.sourcePath,
         originPoint: route.originPoint ? { lat: route.originPoint.lat, lon: route.originPoint.lon } : null,
         firstDisplayPoint: displayRoutePoints[0] ? { lat: displayRoutePoints[0].lat, lon: displayRoutePoints[0].lon } : null,
+        lastDisplayPoint: displayRoutePoints.length ? { lat: displayRoutePoints[displayRoutePoints.length - 1].lat, lon: displayRoutePoints[displayRoutePoints.length - 1].lon } : null,
         prependedOrigin: !!(route.originPoint && displayRoutePoints[0] && pointsNear(route.originPoint, displayRoutePoints[0], 0.01)),
       });
 
@@ -1526,10 +1620,13 @@
           }).bindTooltip('Route waypoint', { direction: 'top' }).addTo(layer);
         });
       }
-      var destinationAnchor = prediction && prediction.alreadyPresentMode && prediction.activeEstoniaAnchor
-        && Number.isFinite(prediction.activeEstoniaAnchor.lat) && Number.isFinite(prediction.activeEstoniaAnchor.lon)
-        ? prediction.activeEstoniaAnchor
-        : route.targetPoint;
+      var destinationAnchor = activeDisplay.activeDisplayDestination
+        && Number.isFinite(activeDisplay.activeDisplayDestination.lat) && Number.isFinite(activeDisplay.activeDisplayDestination.lon)
+        ? activeDisplay.activeDisplayDestination
+        : (prediction && prediction.alreadyPresentMode && prediction.activeEstoniaAnchor
+          && Number.isFinite(prediction.activeEstoniaAnchor.lat) && Number.isFinite(prediction.activeEstoniaAnchor.lon)
+          ? prediction.activeEstoniaAnchor
+          : route.targetPoint);
       if (destinationAnchor && Number.isFinite(destinationAnchor.lat) && Number.isFinite(destinationAnchor.lon)) {
         var targetTooltip = '<b>' + escapeHtml(
           prediction && prediction.alreadyPresentMode && prediction.activeEstoniaAnchor && prediction.activeEstoniaAnchor.name

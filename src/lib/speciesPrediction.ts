@@ -255,6 +255,7 @@ export type NormalizedMigrationRoute = {
   progressPoint?: NormalizedMigrationRoutePoint;
   progressAtEntry?: boolean;
   routePoints: NormalizedMigrationRoutePoint[];
+  displayRoutePoints?: NormalizedMigrationRoutePoint[];
   sourcePath: string;
 };
 
@@ -1186,6 +1187,7 @@ export function extractNormalizedMigrationRoutes(
       const originPoint = finalRoutePoints.find((routePoint) => routePoint.type === 'origin') ?? finalRoutePoints[0];
       const entryPoint = resolveEntryRoutePoint(finalRoutePoints, entryLat, entryLon, entryLabel);
       const targetPoint = resolveTargetRoutePoint(finalRoutePoints, targetLat, targetLon, targetNameFromPoint(point, index));
+      const displayRoutePoints = buildDisplayRoutePoints(finalRoutePoints, originPoint, entryPoint, targetPoint);
       const originLocality = normalizeUiText(
         readString(migrationEta, ['fromLocality', 'foreignLocality'])
         || originPoint?.name
@@ -1245,6 +1247,7 @@ export function extractNormalizedMigrationRoutes(
           : {}),
         ...(typeof progressAtEntry === 'boolean' ? { progressAtEntry } : {}),
         routePoints: finalRoutePoints,
+        ...(displayRoutePoints.length ? { displayRoutePoints } : {}),
         sourcePath: `${path}[${index}]`,
       });
     });
@@ -1269,6 +1272,7 @@ export function extractNormalizedMigrationRoutes(
       const originPoint = finalRoutePoints.find((routePoint) => routePoint.type === 'origin') ?? finalRoutePoints[0];
       const entryPoint = resolveEntryRoutePoint(finalRoutePoints, entryLat, entryLon, entryLabel);
       const targetPoint = resolveTargetRoutePoint(finalRoutePoints, targetLat, targetLon, normalizeUiText(readString(eta, ['targetName']) || `Target ${index + 1}`));
+      const displayRoutePoints = buildDisplayRoutePoints(finalRoutePoints, originPoint, entryPoint, targetPoint);
       const currentEstimatedLat = readFiniteMigrationCoord(migrationRoute, ['currentEstimatedLat']);
       const currentEstimatedLon = readFiniteMigrationCoord(migrationRoute, ['currentEstimatedLon']);
       const originLocality = normalizeUiText(readString(eta, ['fromLocality', 'foreignLocality']) || originPoint?.name || '');
@@ -1298,6 +1302,7 @@ export function extractNormalizedMigrationRoutes(
         ...(entryPoint ? { entryPoint } : {}),
         ...(targetPoint ? { targetPoint } : {}),
         routePoints: finalRoutePoints,
+        ...(displayRoutePoints.length ? { displayRoutePoints } : {}),
         sourcePath: `globalMigrationEtas[${index}]`,
       });
     });
@@ -2318,6 +2323,32 @@ function synthesizeMigrationRoutePoints(
     if (index === 0) return true;
     const previous = array[index - 1];
     return previous.lat !== point.lat || previous.lon !== point.lon;
+  });
+}
+
+function buildDisplayRoutePoints(
+  routePoints: NormalizedMigrationRoutePoint[],
+  originPoint: NormalizedMigrationRoutePoint | undefined,
+  entryPoint: NormalizedMigrationRoutePoint | undefined,
+  targetPoint: NormalizedMigrationRoutePoint | undefined,
+): NormalizedMigrationRoutePoint[] {
+  const ordered: NormalizedMigrationRoutePoint[] = [];
+  if (originPoint) ordered.push({ ...originPoint });
+  routePoints.forEach((routePoint) => {
+    if (!routePoint) return;
+    if (originPoint && arePointsNear(routePoint.lat, routePoint.lon, originPoint.lat, originPoint.lon, 0.05)) return;
+    ordered.push({ ...routePoint });
+  });
+  if (entryPoint && !ordered.some((routePoint) => arePointsNear(routePoint.lat, routePoint.lon, entryPoint.lat, entryPoint.lon, 0.05))) {
+    ordered.push({ ...entryPoint });
+  }
+  if (targetPoint && !ordered.some((routePoint) => arePointsNear(routePoint.lat, routePoint.lon, targetPoint.lat, targetPoint.lon, 0.05))) {
+    ordered.push({ ...targetPoint });
+  }
+  return ordered.filter((point, index, array) => {
+    if (index === 0) return true;
+    const previous = array[index - 1];
+    return !arePointsNear(previous.lat, previous.lon, point.lat, point.lon, 0.01);
   });
 }
 

@@ -1232,6 +1232,26 @@
     return fallback || ((Array.isArray(routePoints) && routePoints.length) ? routePoints[routePoints.length - 1] : null);
   }
 
+  function buildDisplayRoutePointsJs(routePoints, originPoint, entryPoint, targetPoint) {
+    var ordered = [];
+    if (originPoint) ordered.push(Object.assign({}, originPoint));
+    (Array.isArray(routePoints) ? routePoints : []).forEach(function (routePoint) {
+      if (!routePoint) return;
+      if (originPoint && pointsNear(routePoint, originPoint, 0.05)) return;
+      ordered.push(Object.assign({}, routePoint));
+    });
+    if (entryPoint && !ordered.some(function (routePoint) { return pointsNear(routePoint, entryPoint, 0.05); })) {
+      ordered.push(Object.assign({}, entryPoint));
+    }
+    if (targetPoint && !ordered.some(function (routePoint) { return pointsNear(routePoint, targetPoint, 0.05); })) {
+      ordered.push(Object.assign({}, targetPoint));
+    }
+    return ordered.filter(function (routePoint, index, array) {
+      if (index === 0) return true;
+      return !pointsNear(array[index - 1], routePoint, 0.01);
+    });
+  }
+
   function normalizeMigrationRouteCandidate(point, sourcePath, index, skipped) {
     if (!point || typeof point !== 'object') {
       skipped.push({ sourcePath: sourcePath + '[' + index + ']', reason: 'target object incomplete' });
@@ -1272,6 +1292,7 @@
     var originPoint = routePoints.find(function (routePoint) { return routePoint.type === 'origin'; }) || routePoints[0] || null;
     var entryPoint = resolveEntryRoutePointJs(finalRoutePoints, entryLat, entryLon, entryLabel);
     var targetPoint = resolveTargetRoutePointJs(finalRoutePoints, targetLat, targetLon, normalizeText(point.displayName || point.name || ('Target ' + (index + 1))));
+    var displayRoutePoints = buildDisplayRoutePointsJs(finalRoutePoints, originPoint, entryPoint, targetPoint);
     var originLocality = normalizeText(migrationEta.fromLocality || migrationEta.foreignLocality || (originPoint && originPoint.name) || '');
     var originCountryCode = normalizeText(migrationEta.fromCountry || migrationEta.foreignCountry || migrationEta.countryCode || '');
     var foreignSightingDate = normalizeText(migrationEta.foreignSightingDate || migrationEta.sightingDate || '');
@@ -1308,6 +1329,7 @@
         : undefined,
       progressAtEntry: progressAtEntry,
       routePoints: finalRoutePoints,
+      displayRoutePoints: displayRoutePoints,
       speciesType: normalizeText(migrationRoute.speciesType || migrationEta.speciesType || ''),
       originPointSource: routePoints.find(function (routePoint) { return routePoint.type === 'origin'; }) ? 'explicit_origin_waypoint' : 'first_route_coordinate',
       sourcePath: sourcePath + '[' + index + ']'
@@ -1341,6 +1363,8 @@
     }
     var originPoint = routePoints.find(function (routePoint) { return routePoint.type === 'origin'; }) || finalRoutePoints[0] || null;
     var entryPoint = resolveEntryRoutePointJs(finalRoutePoints, entryLat, entryLon, normalizeText(eta.entryZone || 'Estonia entry'));
+    var targetPoint = resolveTargetRoutePointJs(finalRoutePoints, targetLat, targetLon, normalizeText(eta.targetName || ('Target ' + (index + 1))));
+    var displayRoutePoints = buildDisplayRoutePointsJs(finalRoutePoints, originPoint, entryPoint, targetPoint);
     return {
       targetName: normalizeText(eta.targetName || eta.entryZone || ('Target ' + (index + 1))),
       originLocality: normalizeText(eta.fromLocality || eta.foreignLocality || (originPoint && originPoint.name) || ''),
@@ -1361,7 +1385,9 @@
       currentEstimatedLon: Number.isFinite(Number(migrationRoute.currentEstimatedLon)) ? Number(migrationRoute.currentEstimatedLon) : undefined,
       originPoint: originPoint || undefined,
       entryPoint: entryPoint || undefined,
+      targetPoint: targetPoint || undefined,
       routePoints: finalRoutePoints,
+      displayRoutePoints: displayRoutePoints,
       speciesType: normalizeText(migrationRoute.speciesType || eta.speciesType || ''),
       originPointSource: routePoints.find(function (routePoint) { return routePoint.type === 'origin'; }) ? 'explicit_origin_waypoint' : 'first_route_coordinate',
       sourcePath: 'globalMigrationEtas[' + index + ']'
@@ -1413,6 +1439,9 @@
           sourcePath: route.sourcePath,
           hasOriginPoint: !!route.originPoint,
           originPointSource: route.originPointSource || 'unknown',
+          firstDisplayPoint: route.displayRoutePoints && route.displayRoutePoints[0]
+            ? { lat: route.displayRoutePoints[0].lat, lon: route.displayRoutePoints[0].lon }
+            : null,
         };
       }),
       finalRenderableRoutes: routes.length,
@@ -1433,31 +1462,24 @@
       var opacity = isPrimary ? 0.85 : 0.4;
       var progressPct = Number(route.currentProgressPct || 0);
       var routeDistKm = Number(route.routeDistanceKm || 0);
-      var approachLatLngs = [];
-      if (route.originPoint && route.entryPoint) approachLatLngs = [[route.originPoint.lat, route.originPoint.lon], [route.entryPoint.lat, route.entryPoint.lon]];
-      var targetLegLatLngs = [];
-      if (route.entryPoint && route.targetPoint && !pointsNear(route.entryPoint, route.targetPoint, 0.3)) {
-        targetLegLatLngs = [[route.entryPoint.lat, route.entryPoint.lon], [route.targetPoint.lat, route.targetPoint.lon]];
-      }
+      var displayRoutePoints = Array.isArray(route.displayRoutePoints) && route.displayRoutePoints.length
+        ? route.displayRoutePoints
+        : route.routePoints;
+      var displayLatLngs = displayRoutePoints
+        .filter(function (routePoint) { return routePoint && Number.isFinite(routePoint.lat) && Number.isFinite(routePoint.lon); })
+        .map(function (routePoint) { return [routePoint.lat, routePoint.lon]; });
       var progressLatLng = route.progressPoint && Number.isFinite(route.progressPoint.lat) && Number.isFinite(route.progressPoint.lon)
         ? [route.progressPoint.lat, route.progressPoint.lon]
         : null;
+      logMigrationRouteDebug('route geometry', {
+        sourcePath: route.sourcePath,
+        originPoint: route.originPoint ? { lat: route.originPoint.lat, lon: route.originPoint.lon } : null,
+        firstDisplayPoint: displayRoutePoints[0] ? { lat: displayRoutePoints[0].lat, lon: displayRoutePoints[0].lon } : null,
+        prependedOrigin: !!(route.originPoint && displayRoutePoints[0] && pointsNear(route.originPoint, displayRoutePoints[0], 0.01)),
+      });
 
-      if (!prediction || !prediction.alreadyPresentMode) {
-        if (approachLatLngs.length >= 2) {
-          L.polyline(approachLatLngs, {
-            color: color, weight: 3, opacity: opacity, dashArray: '10, 8'
-          }).addTo(layer);
-        }
-        if (progressLatLng && route.originPoint && route.entryPoint) {
-          var progressedCoords = [[route.originPoint.lat, route.originPoint.lon], progressLatLng];
-          L.polyline(progressedCoords, {
-            color: color, weight: 3, opacity: opacity * 0.55, dashArray: null
-          }).addTo(layer);
-        }
-      }
-      if (targetLegLatLngs.length >= 2) {
-        L.polyline(targetLegLatLngs, {
+      if (displayLatLngs.length >= 2) {
+        L.polyline(displayLatLngs, {
           color: '#f59e0b', weight: 3, opacity: prediction && prediction.alreadyPresentMode ? 0.85 : opacity, dashArray: null
         }).addTo(layer);
       }
@@ -1487,6 +1509,19 @@
           radius: 7, color: '#fff', weight: 2, fillColor: '#2563eb', fillOpacity: 0.95
         }).bindTooltip(entryTooltip, { direction: 'top' }).addTo(layer);
       }
+      displayRoutePoints.forEach(function (routePoint) {
+        if (!routePoint || !Number.isFinite(routePoint.lat) || !Number.isFinite(routePoint.lon)) return;
+        if (route.originPoint && pointsNear(routePoint, route.originPoint, 0.05)) return;
+        if (route.entryPoint && pointsNear(routePoint, route.entryPoint, 0.05)) return;
+        if (route.targetPoint && pointsNear(routePoint, route.targetPoint, 0.05)) return;
+        L.circleMarker([routePoint.lat, routePoint.lon], {
+          radius: 3,
+          color: '#ffffff',
+          weight: 1,
+          fillColor: '#9ca3af',
+          fillOpacity: 0.6
+        }).bindTooltip('Route waypoint', { direction: 'top' }).addTo(layer);
+      });
       if (route.targetPoint) {
         L.circleMarker([route.targetPoint.lat, route.targetPoint.lon], {
           radius: 8, color: '#f59e0b', weight: 3, fillColor: '#fff7ed', fillOpacity: 0.95

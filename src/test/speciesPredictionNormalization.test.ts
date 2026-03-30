@@ -1305,6 +1305,7 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(routes[0]?.targetName).toBe("Mustvares Target");
     expect(routes[0]?.sourcePath).toBe("topPredictedPoints[0]");
     expect(routes[0]?.routePoints).toHaveLength(3);
+    expect(routes[0]?.displayRoutePoints?.[0]).toEqual({ lat: 56.9, lon: 21.1, name: "Origin", type: "origin" });
     expect(routes[0]?.currentProgressPct).toBe(44);
   });
 
@@ -1547,6 +1548,79 @@ describe("normalizeSpeciesPredictionResult", () => {
     } as any);
 
     expect(routes[0]?.originPoint?.name).toBe("Legacy origin");
+  });
+
+  it("prepends the real origin ahead of snapped coastal route points in display geometry", () => {
+    const routes = extractNormalizedMigrationRoutes({
+      topPredictedPoints: [
+        {
+          name: "Mägi-kanepilind",
+          lat: 58.9,
+          lon: 23.4,
+          migrationEta: {
+            fromLocality: "Ragaciems, Gausā jūdze.",
+            fromCountry: "LV",
+            entryLat: 58.1,
+            entryLon: 24.3,
+            migrationRoute: {
+              route: [
+                { lat: 57.2, lon: 23.7, type: "waypoint", name: "Snapped coastal point" },
+                { lat: 58.1, lon: 24.3, type: "waypoint", name: "Kabli" },
+                { lat: 58.9, lon: 23.4, type: "destination", name: "Target" },
+              ],
+            },
+            currentEstimatedLat: 57.6,
+            currentEstimatedLon: 23.9,
+          },
+          migrationRoute: {
+            route: [
+              { lat: 57.2, lon: 23.7, type: "waypoint", name: "Snapped coastal point" },
+              { lat: 58.1, lon: 24.3, type: "waypoint", name: "Kabli" },
+              { lat: 58.9, lon: 23.4, type: "destination", name: "Target" },
+            ],
+          },
+          targetLat: 58.9,
+          targetLon: 23.4,
+        },
+      ],
+    } as any);
+
+    expect(routes[0]?.originPoint).toEqual({ lat: 57.2, lon: 23.7, name: "Snapped coastal point", type: "waypoint" });
+    expect(routes[0]?.displayRoutePoints?.[0]).toEqual({ lat: 57.2, lon: 23.7, name: "Snapped coastal point", type: "waypoint" });
+    expect(routes[0]?.displayRoutePoints?.[1]?.name).toBe("Kabli");
+  });
+
+  it("keeps display route ordering as origin then waypoints then entry then target", () => {
+    const routes = extractNormalizedMigrationRoutes({
+      topPredictedPoints: [
+        {
+          name: "Target",
+          lat: 58.9,
+          lon: 23.4,
+          migrationEta: {
+            fromLocality: "Ragaciems, Gausā jūdze.",
+            fromCountry: "LV",
+            entryLat: 58.1,
+            entryLon: 24.3,
+            migrationRoute: {
+              route: [
+                { lat: 57.0, lon: 23.5, type: "origin", name: "Ragaciems, Gausā jūdze." },
+                { lat: 57.6, lon: 23.9, type: "waypoint", name: "Route bend" },
+                { lat: 58.1, lon: 24.3, type: "waypoint", name: "Kabli" },
+                { lat: 58.9, lon: 23.4, type: "destination", name: "Target" },
+              ],
+            },
+          },
+        },
+      ],
+    } as any);
+
+    expect(routes[0]?.displayRoutePoints?.map((point) => point.name)).toEqual([
+      "Ragaciems, Gausā jūdze.",
+      "Route bend",
+      "Kabli",
+      "Target",
+    ]);
   });
 });
 

@@ -589,6 +589,7 @@ export const SPECIES_PREDICTION_EVENT_TYPES = {
   loading: 'SPECIES_PREDICTION_LOADING',
   result: 'SPECIES_PREDICTION_RESULT',
   error: 'SPECIES_PREDICTION_ERROR',
+  timeout: 'SPECIES_PREDICTION_TIMEOUT',
 } as const;
 
 export function getSpeciesScopeByMapId(mapId: string): SpeciesScopeConfig | null {

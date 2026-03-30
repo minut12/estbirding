@@ -395,6 +395,48 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
         }
         const requestId = latestPredictionRequestRef.current + 1;
         latestPredictionRequestRef.current = requestId;
+        const finalizePredictionFailure = (message: string, kind: 'error' | 'timeout', diagnostics?: {
+          requestUrl?: string;
+          requestTimestamp?: string;
+          responseTimestamp?: string;
+          requestId?: string;
+          httpStatus?: number | null;
+          responseBody?: unknown;
+          error?: unknown;
+          transport?: {
+            ok?: boolean;
+            receivedAt?: string | null;
+            timedOut?: boolean;
+            aborted?: boolean;
+          };
+        }) => {
+          const terminalAt = new Date().toISOString();
+          updateSpeciesPredictionTransport({
+            requestUrl: diagnostics?.requestUrl ?? '',
+            requestTimestamp: diagnostics?.requestTimestamp ?? '',
+            responseTimestamp: diagnostics?.responseTimestamp ?? terminalAt,
+            receivedAt: diagnostics?.transport?.receivedAt ?? diagnostics?.responseTimestamp ?? terminalAt,
+            requestId: diagnostics?.requestId ?? null,
+            ok: diagnostics?.transport?.ok ?? false,
+            httpStatus: diagnostics?.httpStatus ?? null,
+            responseBody: diagnostics?.responseBody ?? null,
+            timedOut: diagnostics?.transport?.timedOut ?? kind === 'timeout',
+            aborted: diagnostics?.transport?.aborted ?? false,
+            abortedByClientTimeout: diagnostics?.transport?.timedOut ?? kind === 'timeout',
+            error: (diagnostics?.error as never) ?? null,
+          });
+          setSpeciesPredictionDebugBackendResponse(null);
+          setSpeciesPredictionDebugPanelPayload(null);
+          setSpeciesPredictionDebugPanelState(null);
+          updateSpeciesPredictionDebugContext({
+            lastPredictionResponseAt: terminalAt,
+            predictionStatus: kind,
+          });
+          sendToIframe({
+            type: kind === 'timeout' ? SPECIES_PREDICTION_EVENT_TYPES.timeout : SPECIES_PREDICTION_EVENT_TYPES.error,
+            error: message,
+          });
+        };
         updateSpeciesPredictionDebugContext({
           speciesName,
           speciesKey,
@@ -404,11 +446,17 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
           predictionStatus: 'loading',
         });
         updateSpeciesPredictionTransport({
-          requestTimestamp: new Date().toISOString(),
+          requestUrl: '',
+          requestTimestamp: '',
           responseTimestamp: '',
-          requestId: String(requestId),
+          receivedAt: null,
+          requestId: null,
+          ok: null,
           httpStatus: null,
           responseBody: null,
+          timedOut: false,
+          aborted: false,
+          abortedByClientTimeout: false,
           error: null,
         });
         setSpeciesPredictionDebugBackendResponse(null);
@@ -420,10 +468,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
             const meta = getScopedSpeciesMeta(speciesName, scopeCfg);
             const ebirdSpeciesCodeOverride = meta.ebirdCode || '';
             if (!ebirdSpeciesCodeOverride) {
-              sendToIframe({
-                type: SPECIES_PREDICTION_EVENT_TYPES.error,
-                error: 'Missing eBird mapping for this species',
-              });
+              finalizePredictionFailure('Missing eBird mapping for this species', 'error');
               return;
             }
             const payload: SpeciesPredictionRequestPayload = {
@@ -467,27 +512,12 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
                 stage: response.stage || null,
                 message: response.error || 'Prediction request failed',
               });
-              updateSpeciesPredictionTransport({
-                requestUrl: response.diagnostics.requestUrl,
-                requestTimestamp: response.diagnostics.requestTimestamp,
-                responseTimestamp: response.diagnostics.responseTimestamp,
-                requestId: response.diagnostics.requestId,
-                httpStatus: response.diagnostics.httpStatus,
-                responseBody: response.diagnostics.responseBody,
-                error: response.diagnostics.error,
-              });
-              setSpeciesPredictionDebugBackendResponse(null);
-              setSpeciesPredictionDebugPanelPayload(null);
-              setSpeciesPredictionDebugPanelState(null);
               setSpeciesPredictionTransportError(response.diagnostics.error);
-              sendToIframe({
-                type: SPECIES_PREDICTION_EVENT_TYPES.error,
-                error: response.disabled ? 'Species prediction integration is currently unavailable' : (response.error || 'Prediction request failed'),
-              });
-              updateSpeciesPredictionDebugContext({
-                lastPredictionResponseAt: new Date().toISOString(),
-                predictionStatus: 'error',
-              });
+              finalizePredictionFailure(
+                response.disabled ? 'Species prediction integration is currently unavailable' : (response.error || 'Prediction request failed'),
+                response.diagnostics.terminalState === 'timeout' ? 'timeout' : 'error',
+                response.diagnostics,
+              );
               return;
             }
             console.debug('[speciesPrediction] parent -> iframe result', {
@@ -517,9 +547,13 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
               requestUrl: response.diagnostics.requestUrl,
               requestTimestamp: response.diagnostics.requestTimestamp,
               responseTimestamp: response.diagnostics.responseTimestamp,
+              receivedAt: response.diagnostics.transport.receivedAt,
               requestId: response.diagnostics.requestId,
+              ok: response.diagnostics.transport.ok,
               httpStatus: response.diagnostics.httpStatus,
               responseBody: response.diagnostics.responseBody,
+              timedOut: response.diagnostics.transport.timedOut,
+              aborted: response.diagnostics.transport.aborted,
               error: null,
             });
             setSpeciesPredictionTransportError(null);
@@ -556,7 +590,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
             }
             const now = new Date().toISOString();
             const message = predictionError instanceof Error ? predictionError.message : 'Prediction request failed';
-            updateSpeciesPredictionTransport({
+            finalizePredictionFailure(message, 'error', {
               responseTimestamp: now,
               error: {
                 stage: 'unknown',
@@ -568,17 +602,6 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
                 timestamp: now,
                 errorType: 'unknown',
               },
-            });
-            setSpeciesPredictionDebugBackendResponse(null);
-            setSpeciesPredictionDebugPanelPayload(null);
-            setSpeciesPredictionDebugPanelState(null);
-            updateSpeciesPredictionDebugContext({
-              lastPredictionResponseAt: new Date().toISOString(),
-              predictionStatus: 'error',
-            });
-            sendToIframe({
-              type: SPECIES_PREDICTION_EVENT_TYPES.error,
-              error: message,
             });
           });
       }

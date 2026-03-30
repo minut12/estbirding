@@ -13,9 +13,11 @@ import {
   setSpeciesPredictionTransportError,
   updateSpeciesPredictionTransport,
   type SpeciesPredictionTransportError,
+  type PredictionLifecycleState,
 } from '@/lib/speciesPredictionDebug';
 import type { SpeciesScopeId } from '@/lib/mapScope';
 import { getFunctionsBaseUrl, getSupabaseAnonKey, isDeveloperModeEnabled } from '@/config/supabaseConfig';
+import { safeFetchJson } from '@/lib/net';
 
 const POLL_INTERVAL_MS = 4000;
 const POLL_TIMEOUT_MS = 180000;
@@ -45,7 +47,24 @@ export type SpeciesPredictionRequestDiagnostics = {
   httpStatus: number | null;
   responseBody: unknown;
   error: SpeciesPredictionTransportError | null;
+  terminalState: Exclude<PredictionLifecycleState, 'idle' | 'loading'>;
+  transport: PredictionTransportResult;
   jobState?: PredictionJobState;
+};
+
+export type PredictionTransportResult = {
+  ok: boolean;
+  status: number | null;
+  data: unknown | null;
+  error: string | null;
+  errorObject?: unknown;
+  timedOut: boolean;
+  aborted: boolean;
+  receivedAt: string | null;
+  requestId: string;
+  requestUrl: string;
+  method: 'POST' | 'GET';
+  invocationMethod: 'supabase.functions.invoke' | 'raw_fetch';
 };
 
 type PollResponse = {
@@ -60,6 +79,15 @@ type PollResponse = {
   generatedAt?: string;
   analysisVersion?: string;
   message?: string;
+};
+
+type PredictionRequestRunResult = {
+  ok: boolean;
+  disabled?: boolean;
+  error?: string;
+  stage?: string;
+  result?: SpeciesPredictionResult;
+  diagnostics: SpeciesPredictionRequestDiagnostics;
 };
 
 function tryRecoverNormalizedResult(
@@ -77,7 +105,7 @@ export async function runSpeciesPredictionRequest(
   payload: SpeciesPredictionRequestPayload,
   scope: SpeciesScopeId,
   onJobUpdate?: (job: PredictionJobState) => void,
-): Promise<{ ok: boolean; disabled?: boolean; error?: string; stage?: string; result?: SpeciesPredictionResult; diagnostics: SpeciesPredictionRequestDiagnostics }> {
+): Promise<PredictionRequestRunResult> {
   const requestTimestamp = new Date().toISOString();
   const requestId = `sp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const requestUrl = `${getFunctionsBaseUrl()}/species-prediction`;
@@ -100,6 +128,7 @@ export async function runSpeciesPredictionRequest(
     requestUrl,
     requestTimestamp,
     responseTimestamp: '',
+    receivedAt: null,
     requestId,
     invocationMethod: 'supabase.functions.invoke',
     authSessionPresent,
@@ -110,9 +139,12 @@ export async function runSpeciesPredictionRequest(
       contentType: 'application/json',
     },
     failedBeforeResponse: false,
+    ok: null,
     httpStatus: null,
     responseBody: null,
     timeoutMs: POLL_TIMEOUT_MS,
+    timedOut: false,
+    aborted: false,
     abortedByClientTimeout: false,
     likelyReachedEdgeFunction: false,
     error: null,
@@ -129,38 +161,51 @@ export async function runSpeciesPredictionRequest(
       jobState.error = transportError.message;
       jobState.failedAt = responseTimestamp;
       onJobUpdate?.(jobState);
-      return { ok: false, error: transportError.message, stage: 'validation', diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, null, null, transportError, jobState) };
+      return { ok: false, error: transportError.message, stage: 'validation', diagnostics: buildDiagnostics(requestUrl, requestTimestamp, requestId, toTransportResultFromError(transportError, 'POST', 'supabase.functions.invoke'), transportError, jobState) };
     }
 
-    // Step 1: Send async POST to edge function
-    const { data, error } = await supabase.functions.invoke('species-prediction', {
+    const invokeTransport = await invokePredictionTransport({
+      requestUrl,
+      requestId,
       body: { ...payload, scope },
     });
 
-    const responseTimestamp = new Date().toISOString();
-    updateSpeciesPredictionTransport({ responseTimestamp, responseBody: data ?? null });
-    console.debug('[speciesPrediction] async POST response', data);
+    applyTransportSnapshot(invokeTransport);
+    console.debug('[speciesPrediction] async POST response', invokeTransport.data);
 
-    if (error) {
-      const recoveredResult = tryRecoverNormalizedResult(data, payload.species.name, scope);
-      if (recoveredResult) {
-        console.debug('[speciesPrediction] recovered usable payload despite SDK error', { path: recoveredResult.summarySourcePath });
-        setSpeciesPredictionDebugBackendResponse(data);
-        updateSuccessTransport(data);
-        jobState.status = 'completed';
-        jobState.result = recoveredResult;
-        jobState.completedAt = responseTimestamp;
-        onJobUpdate?.(jobState);
-        return { ok: true, result: recoveredResult, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, 200, data, null, jobState) };
-      }
-      const transportError = resolveInvokeTransportError(error, data, requestUrl, requestId, responseTimestamp);
-      updateTransportOnError(transportError, responseTimestamp);
+    if (invokeTransport.timedOut) {
+      const transportError = createTransportError('frontend_fetch', invokeTransport.status, invokeTransport.error || 'Prediction request timed out', invokeTransport.data, requestUrl, requestId, invokeTransport.receivedAt || new Date().toISOString(), 'timeout');
+      updateTransportOnError(transportError, invokeTransport.receivedAt || new Date().toISOString(), invokeTransport);
       jobState.status = 'failed';
       jobState.error = transportError.message;
-      jobState.failedAt = responseTimestamp;
+      jobState.failedAt = invokeTransport.receivedAt || new Date().toISOString();
       onJobUpdate?.(jobState);
-      return { ok: false, error: transportError.message, stage: transportError.stage, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, null, data, transportError, jobState) };
+      return { ok: false, error: transportError.message, stage: transportError.stage, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, requestId, invokeTransport, transportError, jobState) };
     }
+
+    if (invokeTransport.error) {
+      const recoveredResult = tryRecoverNormalizedResult(invokeTransport.data, payload.species.name, scope);
+      if (recoveredResult) {
+        console.debug('[speciesPrediction] recovered usable payload despite SDK error', { path: recoveredResult.summarySourcePath });
+        setSpeciesPredictionDebugBackendResponse(invokeTransport.data);
+        updateSuccessTransport(invokeTransport.data, invokeTransport);
+        jobState.status = 'completed';
+        jobState.result = recoveredResult;
+        jobState.completedAt = invokeTransport.receivedAt || new Date().toISOString();
+        onJobUpdate?.(jobState);
+        return { ok: true, result: recoveredResult, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, requestId, { ...invokeTransport, ok: true, error: null }, null, jobState) };
+      }
+      const transportError = resolveInvokeTransportError(invokeTransport.errorObject, invokeTransport.data, requestUrl, requestId, invokeTransport.receivedAt || new Date().toISOString());
+      updateTransportOnError(transportError, invokeTransport.receivedAt || new Date().toISOString(), invokeTransport);
+      jobState.status = 'failed';
+      jobState.error = transportError.message;
+      jobState.failedAt = invokeTransport.receivedAt || new Date().toISOString();
+      onJobUpdate?.(jobState);
+      return { ok: false, error: transportError.message, stage: transportError.stage, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, requestId, invokeTransport, transportError, jobState) };
+    }
+
+    const data = invokeTransport.data;
+    const responseTimestamp = invokeTransport.receivedAt || new Date().toISOString();
 
     // Check if edge returned error envelope — but try to recover usable payload first
     if (data && typeof data === 'object' && data.ok === false) {
@@ -168,12 +213,12 @@ export async function runSpeciesPredictionRequest(
       if (recoveredResult) {
         console.debug('[speciesPrediction] recovered usable payload from error envelope', { path: recoveredResult.summarySourcePath });
         setSpeciesPredictionDebugBackendResponse(data);
-        updateSuccessTransport(data);
+        updateSuccessTransport(data, invokeTransport);
         jobState.status = 'completed';
         jobState.result = recoveredResult;
         jobState.completedAt = responseTimestamp;
         onJobUpdate?.(jobState);
-        return { ok: true, result: recoveredResult, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, 200, data, null, jobState) };
+        return { ok: true, result: recoveredResult, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, requestId, { ...invokeTransport, ok: true, error: null, status: 200 }, null, jobState) };
       }
 
       const msg = String(data.message || 'Prediction request failed');
@@ -188,12 +233,12 @@ export async function runSpeciesPredictionRequest(
         'server',
         extractBackendErrorDetails(data),
       );
-      updateTransportOnError(transportError, responseTimestamp);
+      updateTransportOnError(transportError, responseTimestamp, invokeTransport);
       jobState.status = 'failed';
       jobState.error = resolveUserMessage(msg);
       jobState.failedAt = responseTimestamp;
       onJobUpdate?.(jobState);
-      return { ok: false, error: resolveUserMessage(msg), stage: String(data.stage || ''), diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, safeNumber(data.status), data, transportError, jobState) };
+      return { ok: false, error: resolveUserMessage(msg), stage: String(data.stage || ''), diagnostics: buildDiagnostics(requestUrl, requestTimestamp, requestId, { ...invokeTransport, status: safeNumber(data.status) }, transportError, jobState) };
     }
 
     // Check if edge returned accepted (async mode)
@@ -208,6 +253,7 @@ export async function runSpeciesPredictionRequest(
       updateSpeciesPredictionTransport({
         httpStatus: 202,
         failedBeforeResponse: false,
+        ok: true,
         likelyReachedEdgeFunction: true,
         error: null,
       });
@@ -224,23 +270,23 @@ export async function runSpeciesPredictionRequest(
     const recoveredDirectResult = tryRecoverNormalizedResult(sourceResult, payload.species.name, scope);
     if (recoveredDirectResult) {
       setSpeciesPredictionDebugBackendResponse(sourceResult);
-      updateSuccessTransport(sourceResult);
+      updateSuccessTransport(sourceResult, invokeTransport);
       jobState.status = 'completed';
       jobState.result = recoveredDirectResult;
       jobState.completedAt = new Date().toISOString();
       onJobUpdate?.(jobState);
-      return { ok: true, result: recoveredDirectResult, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, 200, sourceResult, null, jobState) };
+      return { ok: true, result: recoveredDirectResult, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, requestId, { ...invokeTransport, ok: true, error: null, data: sourceResult, status: 200 }, null, jobState) };
     }
     setSpeciesPredictionDebugBackendResponse(sourceResult);
-    updateSuccessTransport(sourceResult);
+    updateSuccessTransport(sourceResult, invokeTransport);
 
     if (!hasUsableSpeciesPredictionResult(sourceResult)) {
       const transportError = createTransportError('parse', 200, 'Prediction service is temporarily unavailable', sourceResult, requestUrl, requestId, responseTimestamp, 'parse');
-      updateTransportOnError(transportError, responseTimestamp);
+      updateTransportOnError(transportError, responseTimestamp, { ...invokeTransport, status: 200, data: sourceResult });
       jobState.status = 'failed';
       jobState.error = transportError.message;
       onJobUpdate?.(jobState);
-      return { ok: false, error: transportError.message, stage: 'parse', diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, 200, sourceResult, transportError, jobState) };
+      return { ok: false, error: transportError.message, stage: 'parse', diagnostics: buildDiagnostics(requestUrl, requestTimestamp, requestId, { ...invokeTransport, status: 200, data: sourceResult }, transportError, jobState) };
     }
 
     const normalizedResult = normalizeSpeciesPredictionResult(sourceResult, payload.species.name, scope);
@@ -249,19 +295,20 @@ export async function runSpeciesPredictionRequest(
     jobState.result = normalizedResult;
     jobState.completedAt = new Date().toISOString();
     onJobUpdate?.(jobState);
-    return { ok: true, result: normalizedResult, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, 200, sourceResult, null, jobState) };
+    return { ok: true, result: normalizedResult, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, requestId, { ...invokeTransport, ok: true, error: null, status: 200, data: sourceResult }, null, jobState) };
 
   } catch (error: unknown) {
     const message = resolveErrorMessage(error);
     const responseTimestamp = new Date().toISOString();
     const transportError = createTransportError('frontend_fetch', null, message, null, requestUrl, requestId, responseTimestamp, resolveErrorType(error));
-    updateTransportOnError(transportError, responseTimestamp);
+    const transport = toTransportResultFromError(transportError, 'POST', 'supabase.functions.invoke');
+    updateTransportOnError(transportError, responseTimestamp, transport);
     setSpeciesPredictionTransportError(transportError);
     jobState.status = 'failed';
     jobState.error = message;
     jobState.failedAt = responseTimestamp;
     onJobUpdate?.(jobState);
-    return { ok: false, stage: 'frontend_fetch', error: message, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, null, null, transportError, jobState) };
+    return { ok: false, stage: 'frontend_fetch', error: message, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, requestId, transport, transportError, jobState) };
   }
 }
 
@@ -275,7 +322,7 @@ async function pollForResult(
   requestTimestamp: string,
   jobState: PredictionJobState,
   onJobUpdate?: (job: PredictionJobState) => void,
-): Promise<{ ok: boolean; error?: string; stage?: string; result?: SpeciesPredictionResult; diagnostics: SpeciesPredictionRequestDiagnostics }> {
+): Promise<PredictionRequestRunResult> {
   const pollStart = Date.now();
   let pollCount = 0;
 
@@ -287,28 +334,40 @@ async function pollForResult(
     onJobUpdate?.(jobState);
 
     try {
-      const { data, error } = await supabase.functions.invoke('species-prediction', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        body: undefined,
-      });
-
-      // supabase.functions.invoke doesn't support query params well, use direct fetch
       const pollUrl = `${requestUrl}?mode=poll&requestId=${encodeURIComponent(requestId)}`;
-      const pollResp = await fetch(pollUrl, {
+      const pollTransport = await fetchPredictionTransport<PollResponse>({
+        requestId,
+        requestUrl: pollUrl,
         method: 'GET',
         headers: {
-          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || ''}`,
+          apikey: getSupabaseAnonKey() || '',
+          Authorization: `Bearer ${getSupabaseAnonKey() || ''}`,
         },
       });
+      updateSpeciesPredictionTransport({
+        responseTimestamp: pollTransport.receivedAt || '',
+        receivedAt: pollTransport.receivedAt,
+        invocationMethod: 'raw_fetch',
+        ok: pollTransport.ok,
+        httpStatus: pollTransport.status,
+        responseBody: pollTransport.data,
+        timedOut: pollTransport.timedOut,
+        aborted: pollTransport.aborted,
+        abortedByClientTimeout: pollTransport.timedOut,
+        failedBeforeResponse: pollTransport.status == null,
+        likelyReachedEdgeFunction: pollTransport.status != null,
+      });
 
-      if (!pollResp.ok) {
-        console.warn('[speciesPrediction] poll non-2xx', { status: pollResp.status, pollCount });
-        continue; // retry
+      if (pollTransport.timedOut) {
+        break;
       }
 
-      const pollData = await pollResp.json() as PollResponse;
+      if (!pollTransport.ok) {
+        console.warn('[speciesPrediction] poll non-2xx', { status: pollTransport.status, pollCount });
+        continue;
+      }
+
+      const pollData = pollTransport.data as PollResponse;
       console.debug('[speciesPrediction] poll response', { requestId, status: pollData.status, pollCount });
 
       if (pollData.status === 'completed' && pollData.result) {
@@ -316,7 +375,7 @@ async function pollForResult(
         const recoveredCompletedResult = tryRecoverNormalizedResult(sourceResult, payload.species.name, scope);
         if (recoveredCompletedResult) {
           setSpeciesPredictionDebugBackendResponse(sourceResult);
-          updateSuccessTransport(sourceResult);
+          updateSuccessTransport(sourceResult, pollTransport);
           jobState.status = 'completed';
           jobState.result = recoveredCompletedResult;
           jobState.completedAt = new Date().toISOString();
@@ -326,11 +385,11 @@ async function pollForResult(
           return {
             ok: true,
             result: recoveredCompletedResult,
-            diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, 200, sourceResult, null, jobState),
+            diagnostics: buildDiagnostics(requestUrl, requestTimestamp, requestId, { ...pollTransport, ok: true, error: null, data: sourceResult, status: 200 }, null, jobState),
           };
         }
         setSpeciesPredictionDebugBackendResponse(sourceResult);
-        updateSuccessTransport(sourceResult);
+        updateSuccessTransport(sourceResult, pollTransport);
 
         const normalizedResult = normalizeSpeciesPredictionResult(
           sourceResult as Partial<SpeciesPredictionResult>,
@@ -348,7 +407,7 @@ async function pollForResult(
         return {
           ok: true,
           result: normalizedResult,
-          diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, 200, sourceResult, null, jobState),
+          diagnostics: buildDiagnostics(requestUrl, requestTimestamp, requestId, { ...pollTransport, ok: true, error: null, data: sourceResult, status: 200 }, null, jobState),
         };
       }
 
@@ -357,14 +416,14 @@ async function pollForResult(
         if (recoveredFromPoll) {
           console.debug('[speciesPrediction] recovered usable payload from polled error', { path: recoveredFromPoll.summarySourcePath });
           setSpeciesPredictionDebugBackendResponse(pollData.error);
-          updateSuccessTransport(pollData.error);
+          updateSuccessTransport(pollData.error, pollTransport);
           jobState.status = 'completed';
           jobState.result = recoveredFromPoll;
           jobState.completedAt = new Date().toISOString();
           jobState.lastUpdatedAt = new Date().toISOString();
           onJobUpdate?.(jobState);
           const responseTimestamp = new Date().toISOString();
-          return { ok: true, result: recoveredFromPoll, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, 200, pollData.error, null, jobState) };
+          return { ok: true, result: recoveredFromPoll, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, requestId, { ...pollTransport, ok: true, error: null, data: pollData.error, status: 200 }, null, jobState) };
         }
 
         const errorDetails = extractBackendErrorDetails(pollData.error);
@@ -381,7 +440,7 @@ async function pollForResult(
           'server',
           errorDetails,
         );
-        updateTransportOnError(transportError, responseTimestamp);
+        updateTransportOnError(transportError, responseTimestamp, { ...pollTransport, status: transportError.httpStatus, data: pollData, error: transportError.message, errorObject: pollData.error });
 
         jobState.status = 'failed';
         jobState.error = transportError.message;
@@ -394,7 +453,7 @@ async function pollForResult(
           ok: false,
           error: transportError.message,
           stage: transportError.stage,
-          diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, transportError.httpStatus, pollData, transportError, jobState),
+          diagnostics: buildDiagnostics(requestUrl, requestTimestamp, requestId, { ...pollTransport, status: transportError.httpStatus, data: pollData, error: transportError.message, errorObject: pollData.error }, transportError, jobState),
         };
       }
 
@@ -408,7 +467,8 @@ async function pollForResult(
   // Poll timeout
   const responseTimestamp = new Date().toISOString();
   const transportError = createTransportError('n8n_timeout', null, 'Prediction request timed out waiting for results', null, requestUrl, requestId, responseTimestamp, 'timeout');
-  updateTransportOnError(transportError, responseTimestamp);
+  const timeoutTransport = toTransportResultFromError(transportError, 'GET', 'raw_fetch');
+  updateTransportOnError(transportError, responseTimestamp, timeoutTransport);
 
   jobState.status = 'poll_timeout';
   jobState.error = 'Prediction request timed out waiting for results';
@@ -420,7 +480,7 @@ async function pollForResult(
     ok: false,
     error: 'Prediction request timed out waiting for results',
     stage: 'n8n_timeout',
-    diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, null, null, transportError, jobState),
+    diagnostics: buildDiagnostics(requestUrl, requestTimestamp, requestId, timeoutTransport, transportError, jobState),
   };
 }
 
@@ -428,6 +488,141 @@ async function pollForResult(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function deriveTerminalState(
+  transport: PredictionTransportResult,
+  error: SpeciesPredictionTransportError | null,
+): Exclude<PredictionLifecycleState, 'idle' | 'loading'> {
+  if (transport.timedOut || error?.errorType === 'timeout' || error?.stage === 'n8n_timeout') return 'timeout';
+  return error ? 'error' : 'success';
+}
+
+function resolveInvokeStatus(data: unknown, error: unknown): number | null {
+  const candidate = (error && typeof error === 'object') ? error as Record<string, unknown> : {};
+  const errorStatus = safeNumber(candidate.status);
+  if (errorStatus != null) return errorStatus;
+  if (data && typeof data === 'object') {
+    const record = data as Record<string, unknown>;
+    if (record.accepted === true) return 202;
+    const dataStatus = safeNumber(record.status);
+    if (dataStatus != null) return dataStatus;
+    return 200;
+  }
+  return null;
+}
+
+async function invokePredictionTransport({
+  requestUrl,
+  requestId,
+  body,
+}: {
+  requestUrl: string;
+  requestId: string;
+  body: unknown;
+}): Promise<PredictionTransportResult> {
+  try {
+    const outcome = await Promise.race([
+      supabase.functions.invoke('species-prediction', { body }),
+      new Promise<{ __timeout: true }>((resolve) => setTimeout(() => resolve({ __timeout: true }), POLL_TIMEOUT_MS)),
+    ]);
+
+    if ('__timeout' in outcome) {
+      return {
+        ok: false,
+        status: null,
+        data: null,
+        error: 'Prediction request timed out',
+        timedOut: true,
+        aborted: false,
+        receivedAt: new Date().toISOString(),
+        requestId,
+        requestUrl,
+        method: 'POST',
+        invocationMethod: 'supabase.functions.invoke',
+      };
+    }
+
+    const response = outcome as Awaited<ReturnType<typeof supabase.functions.invoke>>;
+    return {
+      ok: !response.error,
+      status: resolveInvokeStatus(response.data, response.error),
+      data: response.data ?? null,
+      error: response.error ? resolveErrorMessage(response.error) : null,
+      errorObject: response.error ?? undefined,
+      timedOut: false,
+      aborted: isAbortLikeError(response.error),
+      receivedAt: new Date().toISOString(),
+      requestId,
+      requestUrl,
+      method: 'POST',
+      invocationMethod: 'supabase.functions.invoke',
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: safeNumber((error as { status?: unknown } | null | undefined)?.status),
+      data: null,
+      error: resolveErrorMessage(error),
+      errorObject: error,
+      timedOut: isTimeoutLikeError(error),
+      aborted: isAbortLikeError(error),
+      receivedAt: new Date().toISOString(),
+      requestId,
+      requestUrl,
+      method: 'POST',
+      invocationMethod: 'supabase.functions.invoke',
+    };
+  }
+}
+
+async function fetchPredictionTransport<T>({
+  requestId,
+  requestUrl,
+  method,
+  headers,
+}: {
+  requestId: string;
+  requestUrl: string;
+  method: 'GET';
+  headers?: Record<string, string>;
+}): Promise<PredictionTransportResult> {
+  try {
+    const response = await safeFetchJson<T>(requestUrl, {
+      method,
+      headers,
+      timeoutMs: POLL_INTERVAL_MS * 2,
+      retries: 0,
+    });
+    return {
+      ok: response.ok,
+      status: response.status,
+      data: response.json ?? null,
+      error: response.ok ? null : 'Prediction poll failed',
+      timedOut: false,
+      aborted: false,
+      receivedAt: new Date().toISOString(),
+      requestId,
+      requestUrl,
+      method,
+      invocationMethod: 'raw_fetch',
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: safeNumber((error as { status?: unknown } | null | undefined)?.status),
+      data: null,
+      error: resolveErrorMessage(error),
+      errorObject: error,
+      timedOut: isTimeoutLikeError(error),
+      aborted: isAbortLikeError(error),
+      receivedAt: new Date().toISOString(),
+      requestId,
+      requestUrl,
+      method,
+      invocationMethod: 'raw_fetch',
+    };
+  }
 }
 
 function createTransportError(
@@ -444,22 +639,68 @@ function createTransportError(
   return { ...extra, stage, httpStatus, message, responseBody, requestUrl, requestId, timestamp, errorType };
 }
 
-function updateTransportOnError(error: SpeciesPredictionTransportError, responseTimestamp: string): void {
+function toTransportResultFromError(
+  error: SpeciesPredictionTransportError,
+  method: 'POST' | 'GET',
+  invocationMethod: 'supabase.functions.invoke' | 'raw_fetch',
+): PredictionTransportResult {
+  return {
+    ok: false,
+    status: error.httpStatus,
+    data: error.responseBody,
+    error: error.message,
+    errorObject: error,
+    timedOut: error.errorType === 'timeout',
+    aborted: false,
+    receivedAt: error.timestamp,
+    requestId: error.requestId || '',
+    requestUrl: error.requestUrl,
+    method,
+    invocationMethod,
+  };
+}
+
+function applyTransportSnapshot(transport: PredictionTransportResult): void {
+  updateSpeciesPredictionTransport({
+    responseTimestamp: transport.receivedAt || '',
+    receivedAt: transport.receivedAt,
+    invocationMethod: transport.invocationMethod,
+    ok: transport.ok,
+    httpStatus: transport.status,
+    responseBody: transport.data,
+    timedOut: transport.timedOut,
+    aborted: transport.aborted,
+    abortedByClientTimeout: transport.timedOut,
+    failedBeforeResponse: transport.status == null && !transport.data,
+    likelyReachedEdgeFunction: transport.status != null || transport.data != null,
+  });
+}
+
+function updateTransportOnError(error: SpeciesPredictionTransportError, responseTimestamp: string, transport?: PredictionTransportResult): void {
   updateSpeciesPredictionTransport({
     responseTimestamp,
+    receivedAt: transport?.receivedAt ?? responseTimestamp,
+    ok: false,
     httpStatus: error.httpStatus,
     responseBody: error.responseBody,
     failedBeforeResponse: error.httpStatus == null,
+    timedOut: transport?.timedOut ?? error.errorType === 'timeout',
+    aborted: transport?.aborted ?? false,
+    abortedByClientTimeout: transport?.timedOut ?? error.errorType === 'timeout',
     likelyReachedEdgeFunction: isEdgeFunctionStage(error.stage),
     error,
   });
 }
 
-function updateSuccessTransport(sourceResult: unknown): void {
+function updateSuccessTransport(sourceResult: unknown, transport?: PredictionTransportResult): void {
   updateSpeciesPredictionTransport({
-    httpStatus: 200,
+    receivedAt: transport?.receivedAt ?? new Date().toISOString(),
+    ok: true,
+    httpStatus: transport?.status ?? 200,
     responseBody: sourceResult,
     failedBeforeResponse: false,
+    timedOut: false,
+    aborted: false,
     abortedByClientTimeout: false,
     likelyReachedEdgeFunction: true,
     error: null,
@@ -470,14 +711,23 @@ function updateSuccessTransport(sourceResult: unknown): void {
 function buildDiagnostics(
   requestUrl: string,
   requestTimestamp: string,
-  responseTimestamp: string,
   requestId: string,
-  httpStatus: number | null,
-  responseBody: unknown,
+  transport: PredictionTransportResult,
   error: SpeciesPredictionTransportError | null,
   jobState?: PredictionJobState,
 ): SpeciesPredictionRequestDiagnostics {
-  return { requestUrl, requestTimestamp, responseTimestamp, requestId, httpStatus, responseBody, error, jobState };
+  return {
+    requestUrl,
+    requestTimestamp,
+    responseTimestamp: transport.receivedAt || '',
+    requestId,
+    httpStatus: transport.status,
+    responseBody: transport.data,
+    error,
+    terminalState: deriveTerminalState(transport, error),
+    transport,
+    jobState,
+  };
 }
 
 function extractBackendErrorDetails(input: unknown): Partial<SpeciesPredictionTransportError> & { message?: string; upstreamStatus?: number | null } {
@@ -546,6 +796,17 @@ function resolveErrorType(error: unknown): SpeciesPredictionTransportError['erro
   if (msg.includes('timeout')) return 'timeout';
   if (msg.includes('fetch') || msg.includes('network')) return 'network';
   return 'unknown';
+}
+
+function isTimeoutLikeError(error: unknown): boolean {
+  const message = resolveErrorMessage(error).toLowerCase();
+  return message.includes('timed out') || message.includes('timeout');
+}
+
+function isAbortLikeError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { name?: string; message?: string };
+  return candidate.name === 'AbortError' || String(candidate.message || '').toLowerCase().includes('abort');
 }
 
 function mapStage(stage: unknown): SpeciesPredictionTransportError['stage'] {

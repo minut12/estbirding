@@ -8,6 +8,7 @@
     scope: detectScope(),
     settings: null,
     featureEnabled: false,
+    requestState: 'idle',
     loading: false,
     result: null,
     error: '',
@@ -353,6 +354,7 @@
       clearFallbackSelectionTimer();
       startupSyncPending = false;
       hasSyncedSpecies = false;
+      state.requestState = 'idle';
       state.loading = false;
       state.result = null;
       state.error = '';
@@ -393,12 +395,14 @@
     if (payload && payload.speciesKey) state.speciesKey = String(payload.speciesKey || '').trim();
     state.error = '';
     state.result = null;
+    state.requestState = 'idle';
     ensurePanel();
     render();
   }
 
   function setLoading() {
     if (!state.featureEnabled) return;
+    state.requestState = 'loading';
     state.loading = true;
     state.error = '';
     state.result = null;
@@ -408,6 +412,7 @@
 
   function setResult(result) {
     if (!state.featureEnabled) return;
+    state.requestState = 'success';
     state.loading = false;
     state.error = '';
     state.result = result ? cloneResult(normalizePredictionPayload(result)) : null;
@@ -447,9 +452,21 @@
 
   function setError(message) {
     if (!state.featureEnabled) return;
+    state.requestState = 'error';
     state.loading = false;
     state.result = null;
     state.error = String(message || 'Prediction request failed');
+    clearPredictionOverlay();
+    ensurePanel();
+    render();
+  }
+
+  function setTimeoutState(message) {
+    if (!state.featureEnabled) return;
+    state.requestState = 'timeout';
+    state.loading = false;
+    state.result = null;
+    state.error = String(message || 'Prediction request timed out');
     clearPredictionOverlay();
     ensurePanel();
     render();
@@ -470,11 +487,20 @@
     renderControls();
     resultWrap.innerHTML = '';
 
-    if (state.loading) {
+    if (state.requestState === 'loading') {
       resultWrap.innerHTML = renderStateCard(
         'spp-state-loading',
         'Prediction running',
         'Prediction may take some time. The panel will update as soon as the backend result is available.'
+      );
+      renderDebug();
+      return;
+    }
+    if (state.requestState === 'timeout') {
+      resultWrap.innerHTML = renderStateCard(
+        'spp-state-caution',
+        'Prediction timed out',
+        state.error || 'The prediction request timed out before a finalized response was received.'
       );
       renderDebug();
       return;
@@ -1989,9 +2015,10 @@
   }
 
   function getStatusText() {
-    if (state.loading) return 'Running';
-    if (state.error) return 'Error';
-    if (state.result) return 'Completed';
+    if (state.requestState === 'loading') return 'Running';
+    if (state.requestState === 'timeout') return 'Timed out';
+    if (state.requestState === 'error') return 'Error';
+    if (state.requestState === 'success' && state.result) return 'Completed';
     return 'Idle';
   }
 
@@ -2451,6 +2478,7 @@
     if (data.type === 'SPECIES_PREDICTION_LOADING') setLoading();
     if (data.type === 'SPECIES_PREDICTION_RESULT') setResult(data.result || null);
     if (data.type === 'SPECIES_PREDICTION_ERROR') setError(data.error || 'Prediction request failed');
+    if (data.type === 'SPECIES_PREDICTION_TIMEOUT') setTimeoutState(data.error || 'Prediction request timed out');
   });
 
   if (document.readyState === 'loading') {

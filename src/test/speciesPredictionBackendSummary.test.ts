@@ -983,6 +983,9 @@ describe("species-prediction backend summary finalizer", () => {
     expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.countries).toEqual(["Poland"]);
     expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.countryCodes).toEqual(["pl"]);
     expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.totalHowMany).toBe(18);
+    expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.locality).toBe("Mikoszewo");
+    expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.source).toBe("eBird");
+    expect((finalized.foreignClusters as Array<Record<string, unknown>>).some((cluster) => String(cluster.id) === "placeholder")).toBe(false);
     expect(Number(finalized.externalPressureScore)).toBeGreaterThan(0);
     expect((finalized.countryScores as Record<string, unknown>).poland).toBeGreaterThan(0);
     expect((finalized.countryScores as Record<string, unknown>).lithuania).toBeGreaterThan(0);

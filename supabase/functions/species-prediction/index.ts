@@ -4488,12 +4488,16 @@ function validatePredictionPayloadConsistency(finalPayload: Record<string, unkno
 function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown>): Record<string, unknown> {
   const estoniaEvidence = { ...asRecord(payload.estoniaEvidence) };
   const normalizedSources = asRecord(asRecord(payload.rawResearchPayload).normalizedSources);
-  const foreignRecentPoints = Array.isArray(payload.foreignRecentPoints) && payload.foreignRecentPoints.length
-    ? payload.foreignRecentPoints
-    : (Array.isArray(normalizedSources.foreignRecentPoints) ? normalizedSources.foreignRecentPoints : []);
-  const foreignClusters = Array.isArray(payload.foreignClusters) && hasNonPlaceholderForeignClusters(payload.foreignClusters)
-    ? payload.foreignClusters
-    : (Array.isArray(normalizedSources.foreignClusters) ? normalizedSources.foreignClusters : []);
+  const topLevelForeignRecentPoints = Array.isArray(payload.foreignRecentPoints) ? payload.foreignRecentPoints : [];
+  const topLevelForeignClusters = Array.isArray(payload.foreignClusters) ? payload.foreignClusters : [];
+  const normalizedForeignRecentPointsRaw = Array.isArray(normalizedSources.foreignRecentPoints) ? normalizedSources.foreignRecentPoints : [];
+  const normalizedForeignClustersRaw = Array.isArray(normalizedSources.foreignClusters) ? normalizedSources.foreignClusters : [];
+  const foreignRecentPoints = topLevelForeignRecentPoints.length
+    ? topLevelForeignRecentPoints
+    : normalizedForeignRecentPointsRaw;
+  const foreignClusters = hasNonPlaceholderForeignClusters(topLevelForeignClusters)
+    ? sanitizeCanonicalForeignClusters(topLevelForeignClusters)
+    : sanitizeCanonicalForeignClusters(normalizedForeignClustersRaw);
   const estoniaHistoryPoints = Array.isArray(payload.estoniaHistoryPoints) ? payload.estoniaHistoryPoints : [];
   const estoniaHistoryClusters = Array.isArray(payload.estoniaHistoryClusters) ? payload.estoniaHistoryClusters : [];
   const predictedTargets = Array.isArray(payload.predictedTargets) ? payload.predictedTargets : [];
@@ -4503,8 +4507,8 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
   const canonicalWeather = Object.keys(asRecord(payload.weather)).length
     ? asRecord(payload.weather)
     : asRecord(normalizedSources.weather);
-  const normalizedForeignRecentPoints = Array.isArray(normalizedSources.foreignRecentPoints) ? normalizedSources.foreignRecentPoints.map((entry) => asRecord(entry)) : [];
-  const normalizedForeignClusters = Array.isArray(normalizedSources.foreignClusters) ? normalizedSources.foreignClusters.map((entry) => asRecord(entry)) : [];
+  const normalizedForeignRecentPoints = normalizedForeignRecentPointsRaw.map((entry) => asRecord(entry));
+  const normalizedForeignClusters = sanitizeCanonicalForeignClusters(normalizedForeignClustersRaw).map((entry) => asRecord(entry));
   const foreignEvidence = buildForeignEvidenceFromPointsAndClusters(
     foreignRecentPoints.map((entry) => asRecord(entry)),
     foreignClusters.map((entry) => asRecord(entry)),
@@ -4545,10 +4549,19 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     evidenceStateSnapshot,
   });
   const canonicalPrimaryCountries = extractCanonicalPrimaryCountries(foreignRecentPoints, foreignClusters);
+  const predictedTargetsMentionForeignPressure = predictedTargetsContainForeignPressureSignals(canonicalPredictedTargets);
   const canonicalExternalPressureScore = clampInt(Math.round(sum(foreignEvidence.map((entry) => toNumber(entry.recordCount7d) * 4))), 0, 100);
+  const forcedExternalPressureScore = (foreignRecentPoints.length > 0 || foreignClusters.length > 0 || predictedTargetsMentionForeignPressure)
+    ? Math.max(1, canonicalExternalPressureScore)
+    : canonicalExternalPressureScore;
+  const predictedTargetRouteVector = deriveRouteVectorFromPredictedTargets(canonicalPredictedTargets);
+  const predictedTargetBestEntryZone = deriveBestEntryZoneFromPredictedTargets(canonicalPredictedTargets);
   const canonicalRouteVector = foreignClusters.length
     ? `${joinCountries((foreignClusters[0] as Record<string, unknown>).countryCodes) || joinCountries((foreignClusters[0] as Record<string, unknown>).countries)} -> Estonia`
-    : payload.routeVector;
+    : stringOr(predictedTargetRouteVector, isUnavailableLabel(payload.routeVector) ? '' : payload.routeVector);
+  const canonicalHasUsableForeignPressure = foreignRecentPoints.length > 0
+    || foreignClusters.length > 0
+    || predictedTargetsMentionForeignPressure;
   estoniaEvidence.recentCount7d = recentCount7d;
   estoniaEvidence.recentCount30d = recentCount30d;
   estoniaEvidence.alreadyPresent = recentCount7d > 0;
@@ -4594,7 +4607,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     historicalEvidence: asRecord(payload.historicalEvidence),
     rawLinks: asRecord(payload.rawLinks),
     estoniaEvidence,
-    externalPressureScore: canonicalExternalPressureScore,
+    externalPressureScore: forcedExternalPressureScore,
     springFitScore: payload.springFitScore,
     windSupportScore: payload.windSupportScore,
     routeVector: canonicalRouteVector || 'Unavailable',
@@ -4602,6 +4615,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
       asRecord(canonicalPredictedTargets[0]).entryCorridorLabel,
       asRecord(canonicalPredictedTargets[0]).countyOrParish,
       asRecord(canonicalPredictedTargets[0]).name,
+      predictedTargetBestEntryZone,
       isUnavailableLabel(payload.bestEntryZone) ? '' : payload.bestEntryZone,
       'Unavailable',
     ),
@@ -4628,7 +4642,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     evidenceState: payload.evidenceState,
     hasUsableRecentEstoniaEvidence: payload.hasUsableRecentEstoniaEvidence,
     hasUsableEstoniaHistory: payload.hasUsableEstoniaHistory,
-    hasUsableForeignPressure: payload.hasUsableForeignPressure,
+    hasUsableForeignPressure: canonicalHasUsableForeignPressure,
     hasUsablePredictedTargets: payload.hasUsablePredictedTargets,
     hasOnlyWeather: payload.hasOnlyWeather,
     hasOnlySourceAvailabilityWithoutUsableEvidence: payload.hasOnlySourceAvailabilityWithoutUsableEvidence,
@@ -4665,7 +4679,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
         legacyStateSafe: true,
       },
       countryScores: canonicalCountryScores,
-      externalPressureScore: canonicalExternalPressureScore,
+      externalPressureScore: forcedExternalPressureScore,
       normalizedSources: {
         estoniaHistoryPoints,
         estoniaHistoryClusters,
@@ -4675,6 +4689,27 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
       },
     },
   };
+  if (normalizedForeignRecentPoints.length > 0 && foreignRecentPoints.length === 0) {
+    console.error(`${LOG_PREFIX} final_payload_foreign_points_promoted`, {
+      speciesName: finalPayload.speciesName,
+      normalizedForeignRecentPointsCount: normalizedForeignRecentPoints.length,
+      topLevelForeignRecentPointsCount: topLevelForeignRecentPoints.length,
+    });
+  }
+  if (predictedTargetsMentionForeignPressure && (toNumber(finalPayload.externalPressureScore) <= 0 || isUnavailableLabel(finalPayload.routeVector) || isUnavailableLabel(finalPayload.bestEntryZone))) {
+    console.error(`${LOG_PREFIX} final_payload_foreign_pressure_state_promoted`, {
+      speciesName: finalPayload.speciesName,
+      externalPressureScore: finalPayload.externalPressureScore,
+      routeVector: finalPayload.routeVector,
+      bestEntryZone: finalPayload.bestEntryZone,
+    });
+  }
+  if (finalPayload.hasUsableForeignPressure === true && Object.values(asRecord(finalPayload.countryScores)).every((value) => toNumber(value) <= 0)) {
+    console.error(`${LOG_PREFIX} final_payload_country_scores_promoted`, {
+      speciesName: finalPayload.speciesName,
+      countryScores: finalPayload.countryScores,
+    });
+  }
   if (finalPayload.hasUsableForeignPressure === true && !hasRealForeignEvidenceShape(foreignRecentPoints, foreignClusters)) {
     console.warn(`${LOG_PREFIX} foreign_pressure_consistency_violation`, {
       speciesName: finalPayload.speciesName,
@@ -4729,9 +4764,70 @@ function hasNonPlaceholderForeignClusters(input: unknown[]): boolean {
     return (Array.isArray(cluster.countries) && cluster.countries.length > 0)
       || (Array.isArray(cluster.countryCodes) && cluster.countryCodes.length > 0)
       || (Array.isArray(cluster.locNames) && cluster.locNames.length > 0)
+      || !!stringOr(cluster.locality, cluster.locName)
       || toNumber(cluster.totalHowMany) > 0
+      || toNumber(cluster.totalIndividuals) > 0
+      || toNumber(cluster.recent7d) > 0
+      || toNumber(cluster.recent14d) > 0
       || toNumber(cluster.nearestDistanceKm) > 0;
   });
+}
+
+function sanitizeCanonicalForeignClusters(input: unknown[]): Record<string, unknown>[] {
+  if (!Array.isArray(input)) return [];
+  return input.map((entry, index) => {
+    const cluster = asRecord(entry);
+    const locNames = Array.isArray(cluster.locNames)
+      ? cluster.locNames.map((item) => stringOr(item)).filter(Boolean)
+      : (stringOr(cluster.locality, cluster.locName) ? [stringOr(cluster.locality, cluster.locName)] : []);
+    const pointCount = Math.max(1, Math.round(toNumber(cluster.pointCount) || toNumber(cluster.count) || 1));
+    const totalHowMany = Math.max(0, Math.round(toNumber(cluster.totalHowMany) || toNumber(cluster.totalIndividuals)));
+    const normalized: Record<string, unknown> = {
+      ...cluster,
+      id: stringOr(cluster.id, `cluster-${index + 1}`),
+      pointCount,
+      count: pointCount,
+      newestObsDt: stringOr(cluster.newestObsDt, cluster.latestDate),
+      latestDate: stringOr(cluster.latestDate, cluster.newestObsDt),
+      oldestObsDt: stringOr(cluster.oldestObsDt),
+      totalHowMany,
+      totalIndividuals: totalHowMany,
+      countries: Array.isArray(cluster.countries) ? cluster.countries.map((item) => stringOr(item)).filter(Boolean) : [],
+      countryCodes: Array.isArray(cluster.countryCodes) ? cluster.countryCodes.map((item) => stringOr(item).toLowerCase()).filter(Boolean) : [],
+      locNames,
+      locality: stringOr(cluster.locality, locNames[0]),
+      nearestDistanceKm: toNumber(cluster.nearestDistanceKm),
+      source: stringOr(cluster.source, 'eBird'),
+    };
+    if (cluster.recent7d != null) normalized.recent7d = Math.max(0, Math.round(toNumber(cluster.recent7d)));
+    if (cluster.recent14d != null) normalized.recent14d = Math.max(0, Math.round(toNumber(cluster.recent14d)));
+    return normalized;
+  }).filter((cluster) => !(!hasNonPlaceholderForeignClusters([cluster]) && Number(toNumber(asRecord(cluster).lat)) !== 0 && Number(toNumber(asRecord(cluster).lon)) !== 0));
+}
+
+function predictedTargetsContainForeignPressureSignals(predictedTargets: unknown[]): boolean {
+  return predictedTargets.some((entry) => {
+    const target = asRecord(entry);
+    const reason = stringOr(target.reason);
+    const migrationEta = asRecord(target.migrationEta);
+    return /foreign pressure|entry corridor|migration eta|latvia|lithuania|poland/i.test(reason)
+      || !!stringOr(target.entryCorridorLabel)
+      || !!stringOr(migrationEta.entryZone, migrationEta.entryLabel)
+      || !!stringOr(migrationEta.fromCountry, migrationEta.foreignCountry);
+  });
+}
+
+function deriveRouteVectorFromPredictedTargets(predictedTargets: unknown[]): string {
+  const first = asRecord(predictedTargets[0]);
+  const migrationEta = asRecord(first.migrationEta);
+  const country = stringOr(migrationEta.fromCountry, migrationEta.foreignCountry);
+  return country ? `${country} -> Estonia` : '';
+}
+
+function deriveBestEntryZoneFromPredictedTargets(predictedTargets: unknown[]): string {
+  const first = asRecord(predictedTargets[0]);
+  const migrationEta = asRecord(first.migrationEta);
+  return stringOr(first.entryCorridorLabel, migrationEta.entryZone, migrationEta.entryLabel, first.countyOrParish, first.name);
 }
 
 function extractCanonicalPrimaryCountries(
@@ -5335,8 +5431,9 @@ function scoreClusterEcology(
   const cue = stringOr(cluster.habitatCue, Array.isArray(cluster.localityNames) ? cluster.localityNames.join(' / ') : '', cluster.habitatType, 'Habitat uncertain');
   const coastalDistanceKm = toNumber(cluster.coastalDistanceKm);
   if (ecology.mode === 'marine_coastal_waterbird') {
-    const coastalMatch = coastalDistanceKm <= 8 || /\b(rand|laht|meri|sadam|poolsaar|ranna|järv|veehoidla|laid|sorve|tahkuna|poosaspea|spithami|ristna|kalana|tagaranna|puise)\b/i.test(cue);
-    const inlandMismatch = coastalDistanceKm > 18 && !/\b(järv|veehoidla|paisjärv|laht)\b/i.test(cue);
+    const coastalMatch = isCoastalCluster(cluster);
+    const inlandWaterMatch = /\b(järv|veehoidla|paisjärv|laht)\b/i.test(cue);
+    const inlandMismatch = !coastalMatch && coastalDistanceKm > 18 && !inlandWaterMatch;
     if (inlandMismatch && cluster.count < 4) {
       return { score: -48, adjustedRanking: true, excluded: true, habitatCue: cue || 'Unsuitable inland habitat' };
     }
@@ -5528,19 +5625,21 @@ function sanitizeDisplayLabel(value: string): string {
 }
 
 function isLikelyCoastalLocality(value: string): boolean {
-  return /\b(rand|meri|laht|sadam|poolsaar|ranna|laid|neem|spithami|spithamn|poosaspea|põõsaspea|ristna|tagaranna|tahkuna)\b/i.test(value);
+  return /\b(rand|meri|laht|sadam|poolsaar|ranna|laid|neem|spithami|spithamn|poosaspea|põõsaspea|ristna|tagaranna|tahkuna|sorve|puise|kalana)\b/i.test(value);
 }
 
 function isCoastalCluster(cluster: { habitatType?: string; habitatCue?: string; coastalDistanceKm?: number; displayName?: string; locality?: string; latestSupportingLocality?: string; nearestNamedCoastalLocality?: string }): boolean {
   if (stringOr(cluster.habitatType) === 'coastal_open_water') return true;
-  if (toNumber(cluster.coastalDistanceKm) <= 8) return true;
-  return isLikelyCoastalLocality(stringOr(
+  const labelText = stringOr(
     cluster.habitatCue,
     cluster.displayName,
     cluster.latestSupportingLocality,
     cluster.nearestNamedCoastalLocality,
     cluster.locality,
-  ));
+  );
+  if (toNumber(cluster.coastalDistanceKm) <= 2) return true;
+  if (toNumber(cluster.coastalDistanceKm) <= 5 && isLikelyCoastalLocality(labelText)) return true;
+  return isLikelyCoastalLocality(labelText) && toNumber(cluster.coastalDistanceKm) <= 12;
 }
 
 function computeWeightedCentroid(points: Record<string, unknown>[]): { lat: number; lon: number } {
@@ -5572,7 +5671,7 @@ function inferHabitatFromCluster(
 ): { cue: string; type: string; score: number; coastalDistanceKm: number } {
   const text = normalizeComparableText(localityNames.join(' '));
   const coastalDistanceKm = estimateCoastalDistanceKm(centroid.lat, centroid.lon);
-  if (/\b(rand|meri|laht|sadam|poolsaar|ranna|laid)\b/.test(text) || coastalDistanceKm <= 8) {
+  if (/\b(rand|meri|laht|sadam|poolsaar|ranna|laid|neem|spithami|spithamn|poosaspea|põõsaspea|ristna|tagaranna|tahkuna|sorve|puise|kalana)\b/.test(text) || coastalDistanceKm <= 2) {
     return { cue: buildDisplayClusterName(localityNames, 'Coastal hotspot'), type: 'coastal_open_water', score: 28, coastalDistanceKm };
   }
   if (/\b(järv|veehoidla|paisj|tiik|märgala|soo|raba)\b/.test(text)) {

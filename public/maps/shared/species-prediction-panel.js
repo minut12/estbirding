@@ -1091,7 +1091,7 @@
         weight: 2,
         fillColor: isFreshest ? '#fb923c' : '#fdba74',
         fillOpacity: 0.85
-      }).bindPopup('<strong>Foreign eBird evidence</strong><br>' + escapeHtml(point.countryName || point.countryCode || '') + '<br>' + escapeHtml(point.locName || 'Location unavailable') + '<br>' + escapeHtml(point.obsDt || '')).addTo(overlayGroups.foreignRecentPoints);
+      }).bindPopup('<strong>Foreign evidence point</strong><br>' + escapeHtml(point.countryName || point.countryCode || 'Country unavailable') + '<br>' + escapeHtml(point.locName || 'Location unavailable') + '<br>' + escapeHtml(point.obsDt || 'Date unavailable') + '<br>Source: ' + escapeHtml(point.source || 'eBird')).addTo(overlayGroups.foreignRecentPoints);
     });
   }
 
@@ -1103,7 +1103,15 @@
         weight: 2,
         fillColor: '#fb923c',
         fillOpacity: 0.2
-      }).bindPopup('<strong>Foreign pressure cluster</strong><br>' + escapeHtml((cluster.locNames || []).join(', ') || 'Cluster') + '<br>' + escapeHtml(formatCoords(cluster.lat, cluster.lon)) + '<br>Points: ' + escapeHtml(cluster.pointCount || 0)).addTo(overlayGroups.foreignPressureClusters);
+      }).bindPopup(
+        '<strong>Foreign pressure cluster</strong><br>'
+        + 'Country: ' + escapeHtml((cluster.countries || []).join(', ') || (cluster.countryCodes || []).join(', ') || 'Unavailable') + '<br>'
+        + 'Locality: ' + escapeHtml((cluster.locNames || []).join(', ') || cluster.locality || 'Unavailable') + '<br>'
+        + 'Latest date: ' + escapeHtml(cluster.newestObsDt || cluster.latestDate || 'Unavailable') + '<br>'
+        + 'Recent7d: ' + escapeHtml(cluster.recent7d != null ? cluster.recent7d : (cluster.pointCount || 0)) + '<br>'
+        + 'Total individuals: ' + escapeHtml(cluster.totalHowMany != null ? cluster.totalHowMany : (cluster.totalIndividuals || 0)) + '<br>'
+        + 'Source: ' + escapeHtml(cluster.source || 'eBird')
+      ).addTo(overlayGroups.foreignPressureClusters);
     });
   }
 
@@ -1486,9 +1494,7 @@
     var skipped = [];
     var sources = [
       { path: 'topPredictedPoints', items: Array.isArray(result && result.topPredictedPoints) ? result.topPredictedPoints : [] },
-      { path: 'predictedTargets', items: Array.isArray(result && result.predictedTargets) ? result.predictedTargets : [] },
-      { path: 'rawResearchPayload.topPredictedPoints', items: Array.isArray(result && result.rawResearchPayload && result.rawResearchPayload.topPredictedPoints) ? result.rawResearchPayload.topPredictedPoints : [] },
-      { path: 'rawResearchPayload.predictedTargets', items: Array.isArray(result && result.rawResearchPayload && result.rawResearchPayload.predictedTargets) ? result.rawResearchPayload.predictedTargets : [] }
+      { path: 'predictedTargets', items: Array.isArray(result && result.predictedTargets) ? result.predictedTargets : [] }
     ];
     var routes = [];
     var dedupe = {};

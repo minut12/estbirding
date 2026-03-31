@@ -601,6 +601,8 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.foreignRecentPoints?.length).toBe(2);
     expect(result.foreignClusters?.[0]?.countries).toEqual(["Poland"]);
     expect(result.foreignClusters?.[0]?.totalHowMany).toBe(18);
+    expect(result.foreignClusters?.[0]?.locality).toBe("Mikoszewo");
+    expect(result.foreignClusters?.[0]?.source).toBe("eBird");
     expect(result.externalPressureScore).toBe(24);
     expect(result.countryScores.poland).toBe(16);
     expect(result.countryScores.lithuania).toBe(8);
@@ -1532,7 +1534,7 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(routes[0]?.currentProgressPct).toBe(44);
   });
 
-  it("falls back to predictedTargets and rawResearchPayload sources", () => {
+  it("does not use rawResearchPayload predicted targets as a production route source", () => {
     const routes = extractNormalizedMigrationRoutes({
       predictedTargets: [],
       rawResearchPayload: {
@@ -1557,9 +1559,7 @@ describe("normalizeSpeciesPredictionResult", () => {
       },
     } as any);
 
-    expect(routes).toHaveLength(1);
-    expect(routes[0]?.sourcePath).toBe("rawResearchPayload.topPredictedPoints[0]");
-    expect(routes[0]?.routePoints).toHaveLength(2);
+    expect(routes).toHaveLength(0);
   });
 
   it("synthesizes origin-entry-target fallback routes when nested route arrays are too short", () => {

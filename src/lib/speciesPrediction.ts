@@ -120,11 +120,15 @@ export type SpeciesPredictionForeignCluster = {
   freshestDaysAgo: number;
   averageDaysAgo: number;
   totalHowMany: number;
+  recent7d?: number;
+  recent14d?: number;
   countries: string[];
   countryCodes: string[];
   locNames: string[];
+  locality?: string;
   nearestDistanceKm: number;
   isFreshest: boolean;
+  source?: string;
 };
 
 export type SpeciesPredictionWeather = {
@@ -1192,12 +1196,9 @@ export function extractNormalizedMigrationRoutes(
 ): NormalizedMigrationRoute[] {
   const root = Array.isArray(raw) ? (raw[0] as Partial<SpeciesPredictionResult> | undefined) ?? {} : (raw ?? {});
   const result = asRecord(root);
-  const rawResearchPayload = readRecord(result, ['rawResearchPayload']) ?? {};
   const sources: Array<{ path: string; points: unknown[] | null }> = [
     { path: 'topPredictedPoints', points: readArray(result, ['topPredictedPoints']) },
     { path: 'predictedTargets', points: readArray(result, ['predictedTargets']) },
-    { path: 'rawResearchPayload.topPredictedPoints', points: readArray(rawResearchPayload, ['topPredictedPoints']) },
-    { path: 'rawResearchPayload.predictedTargets', points: readArray(rawResearchPayload, ['predictedTargets']) },
   ];
   const dedupe = new Set<string>();
   const routes: NormalizedMigrationRoute[] = [];
@@ -2335,19 +2336,25 @@ function normalizeForeignClusters(input: unknown[] | null): SpeciesPredictionFor
       id: normalizeUiText(readString(source, ['id']) || `cluster-${index + 1}`),
       lat: clampFloat(readNumber(source, ['lat', 'latitude']), -90, 90, 0),
       lon: clampFloat(readNumber(source, ['lon', 'lng', 'longitude']), -180, 180, 0),
-      pointCount: clampNumber(readNumber(source, ['pointCount', 'point_count']), 1, 999999, 1),
-      newestObsDt: normalizeUiText(readString(source, ['newestObsDt', 'newest_obs_dt']) || ''),
+      pointCount: clampNumber(readNumber(source, ['pointCount', 'point_count', 'count']), 1, 999999, 1),
+      newestObsDt: normalizeUiText(readString(source, ['newestObsDt', 'newest_obs_dt', 'latestDate', 'latest_date']) || ''),
       oldestObsDt: normalizeUiText(readString(source, ['oldestObsDt', 'oldest_obs_dt']) || ''),
       freshestDaysAgo: clampNumber(readNumber(source, ['freshestDaysAgo', 'freshest_days_ago']), 0, 100000, 0),
       averageDaysAgo: clampFloat(readNumber(source, ['averageDaysAgo', 'average_days_ago']), 0, 100000, 0),
-      totalHowMany: clampNumber(readNumber(source, ['totalHowMany', 'total_how_many']), 0, 999999, 0),
+      totalHowMany: clampNumber(readNumber(source, ['totalHowMany', 'total_how_many', 'totalIndividuals', 'total_individuals']), 0, 999999, 0),
+      ...(hasValue(source, ['recent7d', 'recent_7d']) ? { recent7d: clampNumber(readNumber(source, ['recent7d', 'recent_7d']), 0, 999999, 0) } : {}),
+      ...(hasValue(source, ['recent14d', 'recent_14d']) ? { recent14d: clampNumber(readNumber(source, ['recent14d', 'recent_14d']), 0, 999999, 0) } : {}),
       countries: countries.map((item) => normalizeUiText(String(item || ''))).filter(Boolean),
       countryCodes: countryCodes.map((item) => normalizeUiText(String(item || '')).toLowerCase()).filter(Boolean),
-      locNames: locNames.map((item) => normalizeUiText(String(item || ''))).filter(Boolean),
+      locNames: (locNames.length ? locNames : readArray(source, ['localities']) ?? []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean),
+      ...((readString(source, ['locality', 'locName', 'loc_name']) || (locNames.length ? String(locNames[0] || '') : ''))
+        ? { locality: normalizeUiText(readString(source, ['locality', 'locName', 'loc_name']) || String(locNames[0] || '')) }
+        : {}),
       nearestDistanceKm: clampFloat(readNumber(source, ['nearestDistanceKm', 'nearest_distance_km']), 0, 999999, 0),
       isFreshest: source.isFreshest === true,
+      source: normalizeUiText(readString(source, ['source']) || 'eBird') || 'eBird',
     };
-  }).filter((cluster) => cluster.id && (cluster.lat !== 0 || cluster.lon !== 0));
+  }).filter((cluster) => cluster.id && (cluster.lat !== 0 || cluster.lon !== 0) && !foreignClustersLookPlaceholderLike([cluster]));
 }
 
 function foreignClustersLookPlaceholderLike(input: SpeciesPredictionForeignCluster[]): boolean {
@@ -2355,7 +2362,10 @@ function foreignClustersLookPlaceholderLike(input: SpeciesPredictionForeignClust
     (Array.isArray(cluster.countries) && cluster.countries.length > 0)
     || (Array.isArray(cluster.countryCodes) && cluster.countryCodes.length > 0)
     || (Array.isArray(cluster.locNames) && cluster.locNames.length > 0)
+    || !!cluster.locality
     || cluster.totalHowMany > 0
+    || (typeof cluster.recent7d === 'number' && cluster.recent7d > 0)
+    || (typeof cluster.recent14d === 'number' && cluster.recent14d > 0)
     || cluster.nearestDistanceKm > 0
   );
 }

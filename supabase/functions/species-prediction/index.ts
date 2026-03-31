@@ -1978,7 +1978,7 @@ function buildPredictedTargets(opts: {
         : '';
       const corridorReason = [
         `Anchored to fresh foreign pressure from ${anchorLocality || 'foreign eBird cluster'}${anchorCountries.length ? ` (${anchorCountries.join(', ')})` : ''}`,
-        ...(corridorAnchor && !arePointsNear(sourceOriginAnchor.lat, sourceOriginAnchor.lon, corridorAnchor.lat, corridorAnchor.lon, 0.05)
+        ...(corridorAnchor && !arePointsNear(toNumber(sourceOriginAnchor.lat), toNumber(sourceOriginAnchor.lon), toNumber(corridorAnchor.lat), toNumber(corridorAnchor.lon), 0.05)
           ? [`via downstream staging at ${corridorLocality || estoniaEntryCorridor.entryLabel}`]
           : []),
         `via the ${estoniaEntryCorridor.entryLabel} Estonia entry corridor`,

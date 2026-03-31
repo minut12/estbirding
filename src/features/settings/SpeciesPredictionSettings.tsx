@@ -398,13 +398,13 @@ export default function SpeciesPredictionSettings() {
               <p>diagnostics.matchedReason: {diagnosticWebhookError.matchedReason || '–'}</p>
               <p>effective.hasOutdatedWebhookPathError: {String(normalizedBackendStatus.hasOutdatedWebhookPathError)}</p>
               <p>displayState: {displayState}</p>
-              <p>resolvedWebhookUrl: {backendStatus.resolvedWebhookUrl || 'â€“'}</p>
-              <p>environmentName: {backendStatus.environmentName || 'â€“'}</p>
-              <p>healthcheckUrl: {backendStatus.healthcheckUrl || 'â€“'}</p>
-              <p>lastSuccessfulHealthCheckAt: {backendStatus.lastSuccessfulHealthCheckAt || 'â€“'}</p>
-              <p>lastFailedHealthCheckAt: {backendStatus.lastFailedHealthCheckAt || 'â€“'}</p>
-              <p>lastHttpStatus: {backendStatus.upstreamStatus != null ? String(backendStatus.upstreamStatus) : 'â€“'}</p>
-              <p>responseSnippet: {backendStatus.responseSnippet || 'â€“'}</p>
+              <p>resolvedWebhookUrl: {backendStatus.resolvedWebhookUrl || '–'}</p>
+              <p>environmentName: {backendStatus.environmentName || '–'}</p>
+              <p>healthcheckUrl: {backendStatus.healthcheckUrl || '–'}</p>
+              <p>lastSuccessfulHealthCheckAt: {backendStatus.lastSuccessfulHealthCheckAt || '–'}</p>
+              <p>lastFailedHealthCheckAt: {backendStatus.lastFailedHealthCheckAt || '–'}</p>
+              <p>lastHttpStatus: {backendStatus.upstreamStatus != null ? String(backendStatus.upstreamStatus) : '–'}</p>
+              <p>responseSnippet: {backendStatus.responseSnippet || '–'}</p>
               {(() => {
                 const recoveredState = buildRecoveryDebugState(debugSnapshot?.rawBackendResponse);
                 return (

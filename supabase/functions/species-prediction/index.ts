@@ -2997,7 +2997,7 @@ function createUpstreamError(input: {
     ...(input.stage === 'invalid_upstream_json'
       ? {
         summarySourcePath: typeof (input.upstreamBody as Record<string, unknown> | null)?.summarySourcePath === 'string'
-          ? (input.upstreamBody as Record<string, unknown>).summarySourcePath
+          ? (input.upstreamBody as Record<string, unknown>).summarySourcePath as string
           : undefined,
         hasAiSummaryObject: (input.upstreamBody as Record<string, unknown> | null)?.hasAiSummaryObject === true,
         hasNestedInsightSummary: (input.upstreamBody as Record<string, unknown> | null)?.hasNestedInsightSummary === true,

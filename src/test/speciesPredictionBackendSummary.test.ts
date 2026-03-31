@@ -1322,7 +1322,7 @@ describe("species-prediction backend summary finalizer", () => {
     ])).toBe(true);
   });
 
-  it("treats Estonia recent evidence as usable only when 7d records exist", () => {
+  it("treats Estonia recent evidence as usable when 7d or 30d records exist", () => {
     const snapshot = hooks.computeEvidenceState({
       estoniaEvidence: {
         recentCount7d: 0,
@@ -1345,7 +1345,7 @@ describe("species-prediction backend summary finalizer", () => {
       topPredictedPoints: [],
     });
 
-    expect(snapshot.hasUsableRecentEstoniaEvidence).toBe(false);
+    expect(snapshot.hasUsableRecentEstoniaEvidence).toBe(true);
   });
 
   it("keeps punanokk-vart on inland freshwater hotspots and avoids forced coastal corridor", () => {
@@ -1504,5 +1504,94 @@ describe("species-prediction backend summary finalizer", () => {
     expect(debug.habitatProfileUsed).toBeTruthy();
     expect(debug.rankingWeightsUsed).toBeTruthy();
     expect(String(debug.finalSerializerVersion)).toBeTruthy();
+  });
+
+  it("removes route state when canonical foreign routing signal is unusable", () => {
+    const finalized = hooks.finalizePredictionResponse(buildBaseResponse({
+      speciesName: "Punanokk-vart",
+      foreignRecentPoints: [],
+      foreignClusters: [],
+      externalPressureScore: 0,
+      routeVector: "Unavailable",
+      bestEntryZone: "Unavailable",
+      windSupportScore: 0,
+      weather: {
+        fetchedAt: "",
+        weatherAvailable: false,
+        weatherPartial: true,
+      },
+      mapLayers: {
+        predictedLines: true,
+        predictedCone: true,
+      },
+      predictedTargets: [
+        {
+          rank: 1,
+          name: "Põõsaspea neem",
+          countyOrParish: "Lääne-Nigula",
+          lat: 59.2,
+          lon: 23.5,
+          confidence: 0.71,
+          eta: "2d / ~30h",
+          habitatCue: "coastal migration bottleneck",
+          reason: "Anchored to fresh foreign pressure from Latvia via the Põõsaspea neem Estonia entry corridor.",
+          windAdjusted: true,
+          rankingMode: "foreign_anchor_entry_corridor",
+          usedForeignPressure: true,
+          entryCorridorLabel: "Põõsaspea neem",
+          migrationEta: {
+            fromCountry: "LV",
+            fromLocality: "Kolkasrags",
+            entryZone: "Põõsaspea neem",
+          },
+        },
+      ],
+    }), "test_no_foreign_routing_signal");
+
+    const target = (finalized.predictedTargets as Array<Record<string, unknown>>)[0];
+    expect(finalized.hasUsableForeignRoutingSignal).toBe(false);
+    expect(String(finalized.routeVector)).toBe("Unavailable");
+    expect(String(finalized.bestEntryZone)).toBe("Unavailable");
+    expect(Array.isArray(finalized.predictionVectors)).toBe(true);
+    expect((finalized.predictionVectors as unknown[]).length).toBe(0);
+    expect((finalized.mapLayers as Record<string, unknown>).predictedCone).toBe(false);
+    expect((finalized.mapLayers as Record<string, unknown>).predictedLines).toBe(false);
+    expect(target.migrationEta).toBeUndefined();
+    expect(target.windAdjusted).toBe(false);
+    expect(String(target.reason)).not.toMatch(/foreign pressure|entry corridor|Latvia/i);
+    expect(String(target.rankingMode)).not.toBe("foreign_anchor_entry_corridor");
+  });
+
+  it("keeps weather support and wind adjustment consistent in contradictory payloads", () => {
+    const finalized = hooks.finalizePredictionResponse(buildBaseResponse({
+      speciesName: "Punanokk-vart",
+      weather: {
+        fetchedAt: "",
+        weatherAvailable: false,
+        weatherPartial: true,
+        windSpeedKph: 0,
+        windDirectionDeg: 0,
+      },
+      windSupportScore: 12,
+      predictedTargets: [
+        {
+          rank: 1,
+          name: "Elistvere järv",
+          countyOrParish: "Tartu vald",
+          lat: 58.58,
+          lon: 26.76,
+          confidence: 0.45,
+          habitatCue: "Freshwater lake / reservoir habitat",
+          reason: "Canonical target",
+          windAdjusted: true,
+        },
+      ],
+    }), "test_weather_wind_consistency");
+
+    const target = (finalized.predictedTargets as Array<Record<string, unknown>>)[0];
+    expect((finalized.consistencyChecks as Record<string, unknown>).weatherLooksSupportive).toBe(false);
+    expect(finalized.windSupportScore).toBe(0);
+    expect(target.windAdjusted).toBe(false);
+    expect(target.weatherSupportScore).toBe(0);
   });
 });

@@ -4295,8 +4295,13 @@ function buildFinalConsistencyChecksFromCanonical(input: {
 } {
   const summary = stringOr(input.insightSummary);
   const mentionsForeign = /foreign pressure is active|pressure is building|poland|sweden|finland|latvia|lithuania|belarus|russia|pl\b|se\b|fi\b/i.test(summary);
+  const hasRouteBearingTargets = input.predictedTargets.some((entry) => {
+    const target = asRecord(entry);
+    const migrationEta = asRecord(target.migrationEta);
+    return !!stringOr(target.entryCorridorLabel, migrationEta.entryZone, migrationEta.entryLabel, migrationEta.fromCountry, migrationEta.foreignCountry);
+  });
   return {
-    routeLooksPlausible: input.predictedTargets.length > 0,
+    routeLooksPlausible: hasRouteBearingTargets || !mentionsForeign,
     timingLooksPlausible: input.foreignRecentPoints.some((point) => toNumber(asRecord(point).daysAgo) <= 7) || !mentionsForeign,
     weatherLooksSupportive: weatherLooksAvailable(input.weather) && computeWindSupport(input.weather) >= 45,
     foreignPressureMatchesNarrative: mentionsForeign
@@ -4658,7 +4663,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
   const canonicalEntryCorridor = canonicalSourceOriginAnchor && estoniaHistoryClusters.length
     ? deriveEstoniaEntryCorridor(canonicalCorridorAnchor ?? canonicalSourceOriginAnchor, estoniaHistoryClusters.map((entry) => asRecord(entry)))
     : null;
-  const canonicalPredictedTargets = canonicalSourceOriginAnchor
+  const canonicalPredictedTargetsWithEta = canonicalSourceOriginAnchor
     ? (predictedTargets.map((entry, index) => rebuildMigrationEtaOnTarget(asRecord(entry), canonicalSourceOriginAnchor, canonicalSelectedForeignOrigin, canonicalCorridorAnchor, canonicalEntryCorridor, canonicalWeather, index)))
     : predictedTargets;
   const canonicalCountryScores = buildCountryScores(foreignEvidence);
@@ -4673,7 +4678,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     sourceHealth: asRecord(payload.sourceHealth),
     weather: canonicalWeather,
     predictedTargets,
-    topPredictedPoints: Array.isArray(payload.topPredictedPoints) ? payload.topPredictedPoints : canonicalPredictedTargets,
+    topPredictedPoints: Array.isArray(payload.topPredictedPoints) ? payload.topPredictedPoints : canonicalPredictedTargetsWithEta,
   });
   const canonicalEvidenceSummary = buildEvidenceSummary({
     weather: canonicalWeather,
@@ -4681,18 +4686,43 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     evidenceStateSnapshot,
   });
   const canonicalPrimaryCountries = extractCanonicalPrimaryCountries(foreignRecentPoints, foreignClusters);
-  const predictedTargetsMentionForeignPressure = predictedTargetsContainForeignPressureSignals(canonicalPredictedTargets);
+  const predictedTargetsMentionForeignPressure = predictedTargetsContainForeignPressureSignals(canonicalPredictedTargetsWithEta);
   const canonicalExternalPressureScore = clampInt(Math.round(sum(foreignEvidence.map((entry) => toNumber(entry.recordCount7d) * 4))), 0, 100);
-  const forcedExternalPressureScore = (foreignRecentPoints.length > 0 || foreignClusters.length > 0 || predictedTargetsMentionForeignPressure)
-    ? Math.max(1, canonicalExternalPressureScore)
-    : canonicalExternalPressureScore;
-  const predictedTargetRouteVector = deriveRouteVectorFromPredictedTargets(canonicalPredictedTargets);
-  const predictedTargetBestEntryZone = deriveBestEntryZoneFromPredictedTargets(canonicalPredictedTargets);
-  const canonicalRouteVector = canonicalSelectedForeignOrigin
+  const predictedTargetRouteVector = deriveRouteVectorFromPredictedTargets(canonicalPredictedTargetsWithEta);
+  const predictedTargetBestEntryZone = deriveBestEntryZoneFromPredictedTargets(canonicalPredictedTargetsWithEta);
+  const canonicalRouteVectorCandidate = canonicalSelectedForeignOrigin
     ? `${stringOr(canonicalSelectedForeignOrigin.countryCode, canonicalSelectedForeignOrigin.countryName)} -> Estonia`
     : foreignClusters.length
     ? `${joinCountries((foreignClusters[0] as Record<string, unknown>).countryCodes) || joinCountries((foreignClusters[0] as Record<string, unknown>).countries)} -> Estonia`
     : stringOr(predictedTargetRouteVector, isUnavailableLabel(payload.routeVector) ? '' : payload.routeVector);
+  const rawWindSupportScore = clampInt(Math.round(computeWindSupport(canonicalWeather)), 0, 100);
+  const canonicalWeatherLooksSupportive = weatherLooksAvailable(canonicalWeather) && rawWindSupportScore > 0;
+  const canonicalWindSupportScore = canonicalWeatherLooksSupportive ? rawWindSupportScore : 0;
+  const canonicalHasUsableForeignRoutingSignal = hasUsableForeignRoutingSignal({
+    totalForeignRecentPoints: foreignRecentPoints.length,
+    externalPressureScore: canonicalExternalPressureScore,
+    routeVector: canonicalRouteVectorCandidate,
+  });
+  const canonicalPredictedTargets = sanitizePredictedTargetsForFinalPayload({
+    predictedTargets: canonicalPredictedTargetsWithEta.map((entry) => asRecord(entry)),
+    hasUsableForeignRoutingSignal: canonicalHasUsableForeignRoutingSignal,
+    weatherLooksSupportive: canonicalWeatherLooksSupportive,
+    windSupportScore: canonicalWindSupportScore,
+  });
+  const canonicalPredictionVectors = canonicalHasUsableForeignRoutingSignal
+    ? buildPredictionVectors(canonicalSelectedForeignOrigin, canonicalPredictedTargets.map((entry) => asRecord(entry)), canonicalWeather, asRecord(payload.settings))
+    : [];
+  const canonicalRouteVector = canonicalHasUsableForeignRoutingSignal ? canonicalRouteVectorCandidate : 'Unavailable';
+  const canonicalBestEntryZone = canonicalHasUsableForeignRoutingSignal
+    ? stringOr(
+      asRecord(canonicalPredictedTargets[0]).entryCorridorLabel,
+      asRecord(canonicalPredictedTargets[0]).countyOrParish,
+      asRecord(canonicalPredictedTargets[0]).name,
+      predictedTargetBestEntryZone,
+      isUnavailableLabel(payload.bestEntryZone) ? '' : payload.bestEntryZone,
+      'Unavailable',
+    )
+    : 'Unavailable';
   const canonicalHasUsableForeignPressure = foreignRecentPoints.length > 0
     || foreignClusters.length > 0
     || predictedTargetsMentionForeignPressure;
@@ -4734,25 +4764,22 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     foreignClusters,
     ...(canonicalSelectedForeignOrigin ? { selectedForeignOrigin: canonicalSelectedForeignOrigin } : {}),
     weather: canonicalWeather,
-    predictionVectors: buildPredictionVectors(canonicalSelectedForeignOrigin, canonicalPredictedTargets.map((entry) => asRecord(entry)), canonicalWeather, asRecord(payload.settings)),
+    predictionVectors: canonicalPredictionVectors,
     predictedTargets: canonicalPredictedTargets,
-    mapLayers: asRecord(payload.mapLayers),
+    mapLayers: {
+      ...asRecord(payload.mapLayers),
+      predictedLines: canonicalPredictionVectors.some((entry) => stringOr(asRecord(entry).kind) === 'route'),
+      predictedCone: canonicalPredictionVectors.some((entry) => stringOr(asRecord(entry).kind) === 'cone'),
+    },
     foreignEvidence,
     historicalEvidence: asRecord(payload.historicalEvidence),
     rawLinks: asRecord(payload.rawLinks),
     estoniaEvidence,
-    externalPressureScore: forcedExternalPressureScore,
+    externalPressureScore: canonicalExternalPressureScore,
     springFitScore: payload.springFitScore,
-    windSupportScore: payload.windSupportScore,
+    windSupportScore: canonicalWindSupportScore,
     routeVector: canonicalRouteVector || 'Unavailable',
-    bestEntryZone: stringOr(
-      asRecord(canonicalPredictedTargets[0]).entryCorridorLabel,
-      asRecord(canonicalPredictedTargets[0]).countyOrParish,
-      asRecord(canonicalPredictedTargets[0]).name,
-      predictedTargetBestEntryZone,
-      isUnavailableLabel(payload.bestEntryZone) ? '' : payload.bestEntryZone,
-      'Unavailable',
-    ),
+    bestEntryZone: canonicalBestEntryZone,
     alreadyMissedRisk: payload.alreadyMissedRisk,
     countryScores: canonicalCountryScores,
     topPredictedPoints: canonicalPredictedTargets,
@@ -4778,6 +4805,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     hasUsableHistoricalEstoniaEvidence: evidenceStateSnapshot.hasUsableHistoricalEstoniaEvidence,
     hasUsableEstoniaHistory: evidenceStateSnapshot.hasUsableEstoniaHistory,
     hasUsableForeignPressure: canonicalHasUsableForeignPressure,
+    hasUsableForeignRoutingSignal: canonicalHasUsableForeignRoutingSignal,
     hasUsablePredictedTargets: evidenceStateSnapshot.hasUsablePredictedTargets,
     hasOnlyWeather: evidenceStateSnapshot.hasOnlyWeather,
     hasOnlySourceAvailabilityWithoutUsableEvidence: evidenceStateSnapshot.hasOnlySourceAvailabilityWithoutUsableEvidence,
@@ -4808,7 +4836,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
       evidenceState: rawResearchPayload.evidenceState,
       rawLinks: asRecord(rawResearchPayload.rawLinks),
       historicalEvidence: asRecord(rawResearchPayload.historicalEvidence),
-      predictionVectors: buildPredictionVectors(canonicalSelectedForeignOrigin, canonicalPredictedTargets.map((entry) => asRecord(entry)), canonicalWeather, asRecord(payload.settings)),
+      predictionVectors: canonicalPredictionVectors,
       sourceHealth: asRecord(payload.sourceHealth),
       evidenceSummary: {
         ...canonicalEvidenceSummary,
@@ -4830,7 +4858,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
         legacyStateSafe: true,
       },
       countryScores: canonicalCountryScores,
-      externalPressureScore: forcedExternalPressureScore,
+      externalPressureScore: canonicalExternalPressureScore,
       ...(canonicalSelectedForeignOrigin ? { selectedForeignOrigin: canonicalSelectedForeignOrigin } : {}),
       normalizedSources: {
         estoniaHistoryPoints,
@@ -5031,6 +5059,79 @@ function deriveBestEntryZoneFromPredictedTargets(predictedTargets: unknown[]): s
   const first = asRecord(predictedTargets[0]);
   const migrationEta = asRecord(first.migrationEta);
   return stringOr(first.entryCorridorLabel, migrationEta.entryZone, migrationEta.entryLabel, first.countyOrParish, first.name);
+}
+
+function stripForeignPressureReasonText(reason: string): string {
+  const value = stringOr(reason);
+  if (!value) return 'Ranking reflects retained Estonia history, habitat fit, and canonical evidence only.';
+  if (/foreign pressure|entry corridor|migration eta|latvia|lithuania|poland|downstream staging/i.test(value)) {
+    return 'Ranking reflects retained Estonia history, habitat fit, and canonical evidence only.';
+  }
+  return value;
+}
+
+function sanitizePredictedTargetsForFinalPayload(input: {
+  predictedTargets: Record<string, unknown>[];
+  hasUsableForeignRoutingSignal: boolean;
+  weatherLooksSupportive: boolean;
+  windSupportScore: number;
+}): Record<string, unknown>[] {
+  const canonicalWindAdjusted = input.weatherLooksSupportive && input.windSupportScore > 0;
+  return input.predictedTargets.map((entry) => {
+    const target = asRecord(entry);
+    const debug = asRecord(target.debug);
+    const baseTarget: Record<string, unknown> = {
+      ...target,
+      windAdjusted: canonicalWindAdjusted,
+      weatherSupportScore: canonicalWindAdjusted ? Math.max(1, toNumber(target.weatherSupportScore) || clampInt(Math.round(input.windSupportScore / 10), 0, 10)) : 0,
+      debug: {
+        ...debug,
+        foreignPressureUsed: input.hasUsableForeignRoutingSignal ? target.usedForeignPressure === true : false,
+        vectorsSuppressedDueToMissingForeignData: input.hasUsableForeignRoutingSignal ? Boolean(debug.vectorsSuppressedDueToMissingForeignData) : true,
+        weatherSupportScore: canonicalWindAdjusted ? Math.max(1, toNumber(debug.weatherSupportScore) || clampInt(Math.round(input.windSupportScore / 10), 0, 10)) : 0,
+      },
+    };
+    if (input.hasUsableForeignRoutingSignal) return baseTarget;
+    const {
+      migrationEta: _migrationEta,
+      entryCorridorLabel: _entryCorridorLabel,
+      entryCorridorLat: _entryCorridorLat,
+      entryCorridorLon: _entryCorridorLon,
+      foreignAnchorLocality: _foreignAnchorLocality,
+      foreignAnchorCountries: _foreignAnchorCountries,
+      foreignAnchorCountryCodes: _foreignAnchorCountryCodes,
+      corridorAnchorLocality: _corridorAnchorLocality,
+      corridorAnchorCountryCodes: _corridorAnchorCountryCodes,
+      selectedForeignOrigin: _selectedForeignOrigin,
+      eta: _eta,
+      nearestRelevantClusterKm: _nearestRelevantClusterKm,
+      latestRelevantForeignDate: _latestRelevantForeignDate,
+      ...rest
+    } = baseTarget;
+    return {
+      ...rest,
+      reason: stripForeignPressureReasonText(stringOr(target.reason)),
+      usedForeignPressure: false,
+      vectorsSuppressed: true,
+      foreignSupportScore: 0,
+      rankingMode: stringOr(target.rankingMode) === 'foreign_anchor_entry_corridor' ? 'estonia_history_only' : stringOr(target.rankingMode),
+      debug: {
+        ...asRecord(baseTarget.debug),
+        foreignPressureUsed: false,
+      },
+    };
+  });
+}
+
+function hasUsableForeignRoutingSignal(input: {
+  totalForeignRecentPoints: number;
+  externalPressureScore: number;
+  routeVector: string;
+}): boolean {
+  return input.totalForeignRecentPoints > 0
+    && input.externalPressureScore > 0
+    && !isUnavailableLabel(input.routeVector)
+    && !!stringOr(input.routeVector);
 }
 
 function extractCanonicalPrimaryCountries(
@@ -5360,7 +5461,8 @@ function computeEvidenceState(input: {
   predictedTargets: unknown[];
   topPredictedPoints: unknown[];
 }): EvidenceStateSnapshot {
-  const hasUsableRecentEstoniaEvidence = toNumber(input.estoniaEvidence.recentCount7d) > 0;
+  const hasUsableRecentEstoniaEvidence = toNumber(input.estoniaEvidence.recentCount7d) > 0
+    || toNumber(input.estoniaEvidence.recentCount30d) > 0;
   const hasUsableHistoricalEstoniaEvidence = input.estoniaHistoryClusters.length > 0 || input.estoniaHistoryPoints.length > 0;
   const hasUsableEstoniaHistory = hasUsableHistoricalEstoniaEvidence;
   const totalForeignRecentPoints = input.foreignRecentPoints.length;

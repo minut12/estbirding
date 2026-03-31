@@ -34,6 +34,18 @@ type BackendHooks = {
     estoniaEvidence: Record<string, unknown>;
     horizonDays: number;
   }) => Record<string, unknown>[];
+  computeEvidenceState: (opts: {
+    estoniaEvidence: Record<string, unknown>;
+    estoniaHistoryPoints: unknown[];
+    estoniaHistoryClusters: unknown[];
+    foreignRecentPoints: unknown[];
+    foreignClusters: unknown[];
+    foreignEvidence: Record<string, unknown>[];
+    sourceHealth: Record<string, unknown>;
+    weather: Record<string, unknown>;
+    predictedTargets: unknown[];
+    topPredictedPoints: unknown[];
+  }) => Record<string, unknown>;
 };
 
 function loadBackendHooks(): BackendHooks {
@@ -51,6 +63,7 @@ globalThis.__speciesPredictionBackendTestHooks = {
   buildNeutralStructuredEvidenceSummary,
   hasNonPlaceholderForeignClusters,
   buildPredictedTargets,
+  computeEvidenceState,
 };
 `;
   const transpiled = ts.transpileModule(wrapped, {
@@ -453,9 +466,9 @@ describe("species-prediction backend summary finalizer", () => {
     expect(Number((finalized.rawResearchPayload as Record<string, unknown>).externalPressureScore)).toBeGreaterThan(0);
   });
 
-  it("anchors no-recent-Estonia ranking to foreign pressure and Estonia entry corridor", () => {
+  it("anchors coherent coastal foreign pressure to an Estonia entry corridor when the species profile supports it", () => {
     const predicted = hooks.buildPredictedTargets({
-      speciesName: "Punanokk-vart",
+      speciesName: "Punakurk-kaur",
       foreignRecentPoints: [
         {
           lat: 57.85,
@@ -1307,5 +1320,189 @@ describe("species-prediction backend summary finalizer", () => {
         nearestDistanceKm: 420,
       },
     ])).toBe(true);
+  });
+
+  it("treats Estonia recent evidence as usable only when 7d records exist", () => {
+    const snapshot = hooks.computeEvidenceState({
+      estoniaEvidence: {
+        recentCount7d: 0,
+        recentCount30d: 6,
+        latestEstoniaDate: "2026-03-29T00:00:00.000Z",
+        freshestLocalities: ["Saaremaa"],
+      },
+      estoniaHistoryPoints: [],
+      estoniaHistoryClusters: [],
+      foreignRecentPoints: [],
+      foreignClusters: [],
+      foreignEvidence: [],
+      sourceHealth: {
+        elurikkusAvailable: true,
+        ebirdAvailable: false,
+        gbifAvailable: false,
+      },
+      weather: {},
+      predictedTargets: [],
+      topPredictedPoints: [],
+    });
+
+    expect(snapshot.hasUsableRecentEstoniaEvidence).toBe(false);
+  });
+
+  it("keeps punanokk-vart on inland freshwater hotspots and avoids forced coastal corridor", () => {
+    const predicted = hooks.buildPredictedTargets({
+      speciesName: "Punanokk-vart",
+      foreignRecentPoints: [
+        {
+          lat: 55.72,
+          lon: 21.1,
+          obsDt: "2026-03-30T07:00:00.000Z",
+          locName: "Klaipeda coast",
+          countryCode: "lt",
+          countryName: "Lithuania",
+          source: "eBird",
+          howMany: 3,
+          daysAgo: 1,
+          clusterId: "lt-coast",
+          distanceToEstoniaKm: 260,
+        },
+      ],
+      foreignClusters: [
+        {
+          id: "lt-coast",
+          lat: 55.72,
+          lon: 21.1,
+          pointCount: 1,
+          newestObsDt: "2026-03-30T07:00:00.000Z",
+          oldestObsDt: "2026-03-30T07:00:00.000Z",
+          freshestDaysAgo: 1,
+          averageDaysAgo: 1,
+          totalHowMany: 3,
+          countries: ["Lithuania"],
+          countryCodes: ["lt"],
+          locNames: ["Klaipeda coast"],
+          nearestDistanceKm: 260,
+          isFreshest: true,
+        },
+      ],
+      estoniaHistoryClusters: [
+        {
+          id: "nomme-old",
+          lat: 59.39,
+          lon: 24.68,
+          representativeLat: 59.39,
+          representativeLon: 24.68,
+          count: 12,
+          recentCount: 0,
+          locality: "Nõmme linnaosa",
+          municipality: "Tallinn",
+          displayName: "Nõmme linnaosa",
+          habitatCue: "Historical occurrence density",
+          habitatType: "terrestrial_or_unknown",
+          coastalDistanceKm: 24,
+          clusterTightnessKm: 8,
+          newestEventDate: "2020-03-10T00:00:00.000Z",
+          oldestEventDate: "2010-03-10T00:00:00.000Z",
+          source: "GBIF",
+          sourceBreakdown: { GBIF: 12 },
+        },
+        {
+          id: "elistvere",
+          lat: 58.58,
+          lon: 26.76,
+          representativeLat: 58.58,
+          representativeLon: 26.76,
+          count: 7,
+          recentCount: 0,
+          locality: "Elistvere järv",
+          municipality: "Tartu vald",
+          displayName: "Elistvere järv",
+          habitatCue: "Freshwater lake / reservoir habitat",
+          habitatType: "wetland_inland_water",
+          coastalDistanceKm: 42,
+          clusterTightnessKm: 3,
+          newestEventDate: "2024-03-10T00:00:00.000Z",
+          oldestEventDate: "2018-03-10T00:00:00.000Z",
+          source: "GBIF",
+          sourceBreakdown: { GBIF: 7 },
+        },
+      ],
+      weather: {
+        fetchedAt: "2026-03-30T08:00:00.000Z",
+        windSpeedKph: 18,
+        windDirectionDeg: 205,
+        weatherAvailable: true,
+        weatherPartial: false,
+      },
+      estoniaEvidence: {
+        recentCount7d: 0,
+        recentCount30d: 0,
+        alreadyPresent: false,
+      },
+      horizonDays: 7,
+    });
+
+    expect(String(predicted[0]?.name)).toBe("Elistvere järv");
+    expect(String(predicted[0]?.habitatCue)).toMatch(/Freshwater|Wetland/i);
+    expect(String(predicted[0]?.rankingMode)).not.toBe("foreign_anchor_entry_corridor");
+    expect(predicted.some((entry) => String(entry.name) === "Nõmme linnaosa" && Number(entry.rank) === 1)).toBe(false);
+  });
+
+  it("adds canonical final debug payload fields", () => {
+    const finalized = hooks.finalizePredictionResponse(buildBaseResponse({
+      speciesName: "Punanokk-vart",
+      foreignRecentPoints: [
+        {
+          lat: 55.72,
+          lon: 21.1,
+          obsDt: "2026-03-30T07:00:00.000Z",
+          locName: "Klaipeda coast",
+          countryCode: "lt",
+          countryName: "Lithuania",
+          source: "eBird",
+          daysAgo: 1,
+        },
+      ],
+      foreignClusters: [
+        {
+          id: "lt-coast",
+          lat: 55.72,
+          lon: 21.1,
+          pointCount: 1,
+          newestObsDt: "2026-03-30T07:00:00.000Z",
+          oldestObsDt: "2026-03-30T07:00:00.000Z",
+          freshestDaysAgo: 1,
+          averageDaysAgo: 1,
+          totalHowMany: 3,
+          countries: ["Lithuania"],
+          countryCodes: ["lt"],
+          locNames: ["Klaipeda coast"],
+          nearestDistanceKm: 260,
+          isFreshest: true,
+        },
+      ],
+      rawResearchPayload: {
+        foreignEvidence: [
+          {
+            lat: 55.72,
+            lon: 21.1,
+            obsDt: "2026-03-30T07:00:00.000Z",
+            locName: "Klaipeda coast",
+            countryCode: "lt",
+            countryName: "Lithuania",
+            source: "eBird",
+            daysAgo: 1,
+          },
+        ],
+      },
+    }), "test_final_debug_block");
+
+    const debug = finalized.finalRankingDebug as Record<string, unknown>;
+    expect(debug).toBeTruthy();
+    expect(Number(debug.foreignRecentPointsCountFinal)).toBe(1);
+    expect(Number(debug.foreignRecentPointsCountRaw)).toBe(1);
+    expect(String(debug.countryScoresSource)).toBeTruthy();
+    expect(debug.habitatProfileUsed).toBeTruthy();
+    expect(debug.rankingWeightsUsed).toBeTruthy();
+    expect(String(debug.finalSerializerVersion)).toBeTruthy();
   });
 });

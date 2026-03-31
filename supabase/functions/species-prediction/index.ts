@@ -250,6 +250,7 @@ type EvidenceState = 'recent_estonia' | 'estonia_history' | 'foreign_pressure' |
 
 type EvidenceStateSnapshot = {
   hasUsableRecentEstoniaEvidence: boolean;
+  hasUsableHistoricalEstoniaEvidence: boolean;
   hasUsableEstoniaHistory: boolean;
   hasUsableForeignPressure: boolean;
   hasUsablePredictedTargets: boolean;
@@ -1847,7 +1848,7 @@ function buildPredictedTargets(opts: {
   const hasRecentForeignSupport = foreignRecentPoints.some((point) => toNumber(point.daysAgo) <= 14);
   const hasForeignPressure = foreignClusters.length > 0 && hasRecentForeignSupport;
   const hasWeatherSupport = weatherLooksAvailable(weather);
-  const hasRecentEstoniaSupport = toNumber(estoniaEvidence.recentCount30d) > 0 || estoniaHistoryClusters.some((cluster) => cluster.recentCount > 0);
+  const hasRecentEstoniaSupport = toNumber(estoniaEvidence.recentCount7d) > 0 || estoniaHistoryClusters.some((cluster) => cluster.recentCount > 0);
   const hasRecentCoastalEstoniaSupport = ecology.prefersCoast
     && estoniaHistoryClusters.some((cluster) => cluster.recentCount > 0 && isCoastalCluster(cluster));
   const rankingMode = determineRankingMode(hasForeignPressure, hasWeatherSupport);
@@ -1870,6 +1871,8 @@ function buildPredictedTargets(opts: {
   const foreignAnchoredRanking = hasForeignPressure
     && !hasRecentEstoniaSupport
     && sourceOriginAnchor
+    && ecology.coastalBoostAllowed
+    && hasStrongForeignCorridorSignal(sourceOriginAnchor, foreignRecentPoints)
     && estoniaHistoryClusters.length > 0;
   const corridorAnchor = foreignAnchoredRanking && sourceOriginAnchor
     ? selectNearestPlausibleCorridorAnchor(sourceOriginAnchor, foreignClusters, foreignRecentPoints)
@@ -2013,18 +2016,23 @@ function buildPredictedTargets(opts: {
     const ecologyScore = scoreClusterEcology(cluster, ecology);
     const historyScore = historyScoreForDebug(cluster);
     const clusterIsCoastal = isCoastalCluster(cluster);
+    const newestEventDaysAgo = daysAgoFromIso(stringOr(cluster.newestEventDate)) ?? 999;
     const foreignBoost = hasForeignPressure ? clampInt(routeAlignment, 0, 20) : 0;
     const weatherBoost = hasWeatherSupport ? clampInt(Math.round(computeWindSupport(weather) / 10), 0, 8) : 0;
     const recentCoastalBonus = hasRecentCoastalEstoniaSupport && clusterIsCoastal ? 18 : 0;
     const inlandRecentPenalty = hasRecentCoastalEstoniaSupport && !clusterIsCoastal ? 30 : 0;
     const noRecentEstoniaPenalty = cluster.recentCount > 0 ? 0 : (hasRecentEstoniaSupport ? 8 : 14);
+    const staleHistoryPenalty = newestEventDaysAgo > 365
+      ? (ecology.prefersInlandFreshwater && stringOr(cluster.habitatType) !== 'wetland_inland_water' ? 12 : 6)
+      : 0;
     const looseClusterPenalty = toNumber(cluster.clusterTightnessKm) > 12 ? 8 : (toNumber(cluster.clusterTightnessKm) > 6 ? 4 : 0);
     const weakHabitatPenalty = ecologyScore.score < 0 ? Math.abs(ecologyScore.score) : (ecologyScore.adjustedRanking ? 6 : 0);
     const weatherPenalty = weather.weatherPartial === true || !stringOr(weather.fetchedAt) ? 6 : 0;
     const foreignPenalty = hasForeignPressure ? 0 : 10;
     const confidenceBeforeCap = historyScore + ecologyScore.score + foreignBoost + weatherBoost + recentCoastalBonus
-      - inlandRecentPenalty - noRecentEstoniaPenalty - looseClusterPenalty - weakHabitatPenalty - weatherPenalty - foreignPenalty;
-    const confidenceCap = hasForeignPressure ? getConfidenceCapForRankingMode(rankingMode) : 0.70;
+      - inlandRecentPenalty - noRecentEstoniaPenalty - staleHistoryPenalty - looseClusterPenalty - weakHabitatPenalty - weatherPenalty - foreignPenalty;
+    const confidenceCapBase = hasForeignPressure ? getConfidenceCapForRankingMode(rankingMode) : 0.70;
+    const confidenceCap = !hasRecentEstoniaSupport ? Math.min(confidenceCapBase, 0.62) : confidenceCapBase;
     const normalizedConfidence = Math.max(0.18, Math.min(confidenceCap, confidenceBeforeCap / 100));
     const confidence = Number(normalizedConfidence.toFixed(2));
     const clusterDistanceKm = toNumber((cluster as Record<string, unknown>).nearestDistanceKm);
@@ -4654,6 +4662,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     ? (predictedTargets.map((entry, index) => rebuildMigrationEtaOnTarget(asRecord(entry), canonicalSourceOriginAnchor, canonicalSelectedForeignOrigin, canonicalCorridorAnchor, canonicalEntryCorridor, canonicalWeather, index)))
     : predictedTargets;
   const canonicalCountryScores = buildCountryScores(foreignEvidence);
+  const habitatProfileUsed = classifySpeciesEcology(stringOr(payload.speciesName));
   const evidenceStateSnapshot = computeEvidenceState({
     estoniaEvidence,
     estoniaHistoryPoints,
@@ -4766,6 +4775,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     summaryGuardrailReason: payload.summaryGuardrailReason,
     evidenceState: evidenceStateSnapshot.evidenceState,
     hasUsableRecentEstoniaEvidence: evidenceStateSnapshot.hasUsableRecentEstoniaEvidence,
+    hasUsableHistoricalEstoniaEvidence: evidenceStateSnapshot.hasUsableHistoricalEstoniaEvidence,
     hasUsableEstoniaHistory: evidenceStateSnapshot.hasUsableEstoniaHistory,
     hasUsableForeignPressure: canonicalHasUsableForeignPressure,
     hasUsablePredictedTargets: evidenceStateSnapshot.hasUsablePredictedTargets,
@@ -4776,6 +4786,22 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     attemptedButUnavailable: evidenceStateSnapshot.attemptedButUnavailable,
     attemptedButReturnedNoUsableEvidence: evidenceStateSnapshot.attemptedButReturnedNoUsableEvidence,
     effectiveRankingMode: stringOr(canonicalEvidenceSummary.effectiveRankingMode, evidenceStateSnapshot.effectiveRankingMode),
+    finalRankingDebug: {
+      foreignRecentPointsCountFinal: foreignRecentPoints.length,
+      foreignRecentPointsCountRaw: rawForeignEvidencePoints.length,
+      countryScoresSource: 'canonical_foreign_evidence',
+      habitatProfileUsed,
+      rankingWeightsUsed: {
+        ecologyMode: habitatProfileUsed.mode,
+        prefersCoast: habitatProfileUsed.prefersCoast,
+        prefersInlandFreshwater: habitatProfileUsed.prefersInlandFreshwater,
+        coastalBoostAllowed: habitatProfileUsed.coastalBoostAllowed,
+        recentEstoniaWeight: evidenceStateSnapshot.hasUsableRecentEstoniaEvidence ? 'high' : 'none',
+        historyWeightModel: 'cluster_count_recentness_ecology',
+        foreignPressureWeightModel: 'canonical_foreign_evidence_alignment',
+      },
+      finalSerializerVersion: 'species_prediction_final_v2',
+    },
     rawResearchPayload: {
       // Safe carry-forwards: species metadata, structured data, coordinates, URLs
       request: asRecord(rawResearchPayload.request),
@@ -5334,23 +5360,10 @@ function computeEvidenceState(input: {
   predictedTargets: unknown[];
   topPredictedPoints: unknown[];
 }): EvidenceStateSnapshot {
-  const freshestLocalities = Array.isArray(input.estoniaEvidence.freshestLocalities) ? input.estoniaEvidence.freshestLocalities : [];
-  const hasUsableRecentEstoniaEvidence = toNumber(input.estoniaEvidence.recentCount7d) > 0
-    || toNumber(input.estoniaEvidence.recentCount30d) > 0
-    || Boolean(stringOr(input.estoniaEvidence.latestEstoniaDate))
-    || freshestLocalities.length > 0;
-  const hasUsableEstoniaHistory = input.estoniaHistoryClusters.length > 0 || input.estoniaHistoryPoints.length > 0;
-  const totalForeignRecentPoints = Math.max(
-    input.foreignRecentPoints.length,
-    input.foreignEvidence.reduce((sumSoFar, entry) => (
-      sumSoFar + Math.max(
-        toNumber(entry.totalForeignRecentPoints),
-        toNumber(entry.recordCount7d),
-        toNumber(entry.recordCount30d),
-        0,
-      )
-    ), 0),
-  );
+  const hasUsableRecentEstoniaEvidence = toNumber(input.estoniaEvidence.recentCount7d) > 0;
+  const hasUsableHistoricalEstoniaEvidence = input.estoniaHistoryClusters.length > 0 || input.estoniaHistoryPoints.length > 0;
+  const hasUsableEstoniaHistory = hasUsableHistoricalEstoniaEvidence;
+  const totalForeignRecentPoints = input.foreignRecentPoints.length;
   const primaryCountries = Array.from(new Set(input.foreignEvidence.map((entry) => stringOr(entry.countryName, entry.countryCode)).filter(Boolean)));
   const hasUsableForeignPressure = input.foreignRecentPoints.length > 0
     || input.foreignClusters.length > 0
@@ -5360,11 +5373,11 @@ function computeEvidenceState(input: {
   const hasWeather = Boolean(input.weather && (input.weather.weatherAvailable === true || stringOr(input.weather.fetchedAt)));
   const hasOnlyWeather = hasWeather
     && !hasUsableRecentEstoniaEvidence
-    && !hasUsableEstoniaHistory
+    && !hasUsableHistoricalEstoniaEvidence
     && !hasUsableForeignPressure
     && !hasUsablePredictedTargets;
   const hasOnlySourceAvailabilityWithoutUsableEvidence = !hasUsableRecentEstoniaEvidence
-    && !hasUsableEstoniaHistory
+    && !hasUsableHistoricalEstoniaEvidence
     && !hasUsableForeignPressure
     && (input.sourceHealth.elurikkusAvailable === true || input.sourceHealth.ebirdAvailable === true || input.sourceHealth.gbifAvailable === true);
   const availableSources: string[] = [];
@@ -5373,7 +5386,7 @@ function computeEvidenceState(input: {
   if (input.sourceHealth.ebirdAvailable === true) availableSources.push('eBird foreign');
   if (hasWeather) availableSources.push('Open-Meteo weather');
   const activeEvidenceSources: string[] = [];
-  if (hasUsableRecentEstoniaEvidence || hasUsableEstoniaHistory) {
+  if (hasUsableRecentEstoniaEvidence || hasUsableHistoricalEstoniaEvidence) {
     if (input.sourceHealth.elurikkusAvailable === true) activeEvidenceSources.push('EELURIKKUS Estonia');
     else if (input.sourceHealth.gbifAvailable === true) activeEvidenceSources.push('GBIF Estonia');
   }
@@ -5382,14 +5395,14 @@ function computeEvidenceState(input: {
   const attemptedButUnavailable: string[] = [];
   if (input.sourceHealth.ebirdAvailable === false) attemptedButUnavailable.push('eBird foreign');
   const attemptedButReturnedNoUsableEvidence: string[] = [];
-  if (input.sourceHealth.elurikkusAvailable === true && !hasUsableRecentEstoniaEvidence && !hasUsableEstoniaHistory) {
+  if (input.sourceHealth.elurikkusAvailable === true && !hasUsableRecentEstoniaEvidence && !hasUsableHistoricalEstoniaEvidence) {
     attemptedButReturnedNoUsableEvidence.push('EELURIKKUS Estonia');
   }
   let evidenceState: EvidenceState = 'insufficient';
-  if (hasUsableRecentEstoniaEvidence && (hasUsableEstoniaHistory || hasUsableForeignPressure)) evidenceState = 'mixed';
+  if (hasUsableRecentEstoniaEvidence && (hasUsableHistoricalEstoniaEvidence || hasUsableForeignPressure)) evidenceState = 'mixed';
   else if (hasUsableRecentEstoniaEvidence) evidenceState = 'recent_estonia';
-  else if (hasUsableEstoniaHistory && hasUsableForeignPressure) evidenceState = 'mixed';
-  else if (hasUsableEstoniaHistory) evidenceState = 'estonia_history';
+  else if (hasUsableHistoricalEstoniaEvidence && hasUsableForeignPressure) evidenceState = 'mixed';
+  else if (hasUsableHistoricalEstoniaEvidence) evidenceState = 'estonia_history';
   else if (hasUsableForeignPressure) evidenceState = 'foreign_pressure';
   else if (hasOnlyWeather) evidenceState = 'weather_only_insufficient';
   const effectiveRankingMode = evidenceState === 'recent_estonia'
@@ -5405,6 +5418,7 @@ function computeEvidenceState(input: {
             : 'Insufficient evidence';
   return {
     hasUsableRecentEstoniaEvidence,
+    hasUsableHistoricalEstoniaEvidence,
     hasUsableEstoniaHistory,
     hasUsableForeignPressure,
     hasUsablePredictedTargets,
@@ -5440,6 +5454,7 @@ function applyEvidenceStateSummaryGuardrails(
     warnings: summary.warnings,
     evidenceState: evidenceStateSnapshot.evidenceState,
     hasUsableRecentEstoniaEvidence: evidenceStateSnapshot.hasUsableRecentEstoniaEvidence,
+    hasUsableHistoricalEstoniaEvidence: evidenceStateSnapshot.hasUsableHistoricalEstoniaEvidence,
     hasUsableEstoniaHistory: evidenceStateSnapshot.hasUsableEstoniaHistory,
     hasUsableForeignPressure: evidenceStateSnapshot.hasUsableForeignPressure,
     hasUsablePredictedTargets: evidenceStateSnapshot.hasUsablePredictedTargets,
@@ -5583,33 +5598,100 @@ function getConfidenceCapForRankingMode(rankingMode: string): number {
   return 0.70;
 }
 
+function hasStrongForeignCorridorSignal(
+  sourceOriginAnchor: Record<string, unknown> | null,
+  foreignRecentPoints: Record<string, unknown>[],
+): boolean {
+  if (!sourceOriginAnchor) return false;
+  const clusterId = stringOr(sourceOriginAnchor.id);
+  const matchingPoints = foreignRecentPoints.filter((point) => stringOr(point.clusterId) === clusterId);
+  const recentPoints = matchingPoints.filter((point) => toNumber(point.daysAgo) <= 7);
+  const totalHowMany = hasFiniteNumber(sourceOriginAnchor.totalHowMany)
+    ? toNumber(sourceOriginAnchor.totalHowMany)
+    : matchingPoints.reduce((sumSoFar, point) => sumSoFar + Math.max(1, toNumber(point.howMany) || 1), 0);
+  const nearestDistanceKm = hasFiniteNumber(sourceOriginAnchor.nearestDistanceKm)
+    ? toNumber(sourceOriginAnchor.nearestDistanceKm)
+    : distanceToEstonia(toNumber(sourceOriginAnchor.lat), toNumber(sourceOriginAnchor.lon));
+  return recentPoints.length >= 2
+    || (matchingPoints.length >= 2 && totalHowMany >= 5 && nearestDistanceKm <= 450)
+    || (totalHowMany >= 8 && nearestDistanceKm <= 280);
+}
+
 function historyScoreForDebug(cluster: { count: number; recentCount: number }): number {
   return clampInt(cluster.count * 7 + cluster.recentCount * 9, 10, 65);
 }
 
-function classifySpeciesEcology(speciesName: string): { mode: string; prefersCoast: boolean } {
+function classifySpeciesEcology(speciesName: string): {
+  mode: string;
+  guild: string;
+  prefersCoast: boolean;
+  prefersInlandFreshwater: boolean;
+  seasonalHabitatBias: string;
+  coastalBoostAllowed: boolean;
+} {
   const value = normalizeComparableText(speciesName);
-  if (/(kaur|loon|diver|aul|vaeras|sotkas|kajakas|tiir|hahk|part|meri|merisk|viires)/.test(value)) {
-    return { mode: 'marine_coastal_waterbird', prefersCoast: true };
+  if (/(punanokk-vart|vart|sotkas|duck|part|grebe|potipek)/.test(value)) {
+    return {
+      mode: 'freshwater_diving_waterfowl',
+      guild: 'waterfowl_diving_duck',
+      prefersCoast: false,
+      prefersInlandFreshwater: true,
+      seasonalHabitatBias: 'freshwater_spring_stopover',
+      coastalBoostAllowed: false,
+    };
+  }
+  if (/(kaur|loon|diver|aul|vaeras|kajakas|tiir|hahk|meri|merisk|viires)/.test(value)) {
+    return {
+      mode: 'marine_coastal_waterbird',
+      guild: 'marine_coastal_waterbird',
+      prefersCoast: true,
+      prefersInlandFreshwater: false,
+      seasonalHabitatBias: 'coastal_open_water',
+      coastalBoostAllowed: true,
+    };
   }
   if (/(luik|hani|lagle|pütt|haigur|ruik|sookurg|ibis)/.test(value)) {
-    return { mode: 'wetland_waterbird', prefersCoast: false };
+    return {
+      mode: 'wetland_waterbird',
+      guild: 'wetland_waterbird',
+      prefersCoast: false,
+      prefersInlandFreshwater: true,
+      seasonalHabitatBias: 'wetland_inland_freshwater',
+      coastalBoostAllowed: false,
+    };
   }
   if (/(kotkas|viu|loorkull|pistrik|kull)/.test(value)) {
-    return { mode: 'raptor', prefersCoast: false };
+    return {
+      mode: 'raptor',
+      guild: 'raptor',
+      prefersCoast: false,
+      prefersInlandFreshwater: false,
+      seasonalHabitatBias: 'general_terrestrial',
+      coastalBoostAllowed: false,
+    };
   }
-  return { mode: 'passerine_general', prefersCoast: false };
+  return {
+    mode: 'passerine_general',
+    guild: 'passerine_general',
+    prefersCoast: false,
+    prefersInlandFreshwater: false,
+    seasonalHabitatBias: 'general_terrestrial',
+    coastalBoostAllowed: false,
+  };
 }
 
 function scoreClusterEcology(
   cluster: { count: number; habitatCue?: string; habitatType?: string; coastalDistanceKm?: number; localityNames?: string[]; representativeLat?: number; representativeLon?: number },
-  ecology: { mode: string; prefersCoast: boolean },
+  ecology: { mode: string; prefersCoast: boolean; prefersInlandFreshwater?: boolean; coastalBoostAllowed?: boolean },
 ): { score: number; adjustedRanking: boolean; excluded: boolean; habitatCue: string } {
   const cue = stringOr(cluster.habitatCue, Array.isArray(cluster.localityNames) ? cluster.localityNames.join(' / ') : '', cluster.habitatType, 'Habitat uncertain');
   const coastalDistanceKm = toNumber(cluster.coastalDistanceKm);
+  const cueText = normalizeComparableText(cue);
+  const freshwaterMatch = /\b(jarv|veehoidla|paisjarv|paisj|tiik|margala|soo|raba|lamm|jogi|wetland|marsh|reservoir|lake)\b/.test(cueText)
+    || stringOr(cluster.habitatType) === 'wetland_inland_water';
   if (ecology.mode === 'marine_coastal_waterbird') {
     const coastalMatch = isCoastalCluster(cluster);
-    const inlandWaterMatch = /\b(järv|veehoidla|paisjärv|laht)\b/i.test(cue);
+    const inlandWaterMatch = freshwaterMatch || /\b(järv|veehoidla|paisjärv|laht)\b/i.test(cue);
     const inlandMismatch = !coastalMatch && coastalDistanceKm > 18 && !inlandWaterMatch;
     if (inlandMismatch && cluster.count < 4) {
       return { score: -48, adjustedRanking: true, excluded: true, habitatCue: cue || 'Unsuitable inland habitat' };
@@ -5620,6 +5702,19 @@ function scoreClusterEcology(
       excluded: false,
       habitatCue: coastalMatch ? (cue || 'Coastal or open-water habitat') : (cue || 'Habitat uncertain away from coast'),
     };
+  }
+  if (ecology.mode === 'freshwater_diving_waterfowl') {
+    const coastalMatch = isCoastalCluster(cluster);
+    if (freshwaterMatch && coastalDistanceKm > 6) {
+      return { score: 34, adjustedRanking: false, excluded: false, habitatCue: cue || 'Freshwater lake / reservoir habitat' };
+    }
+    if (freshwaterMatch) {
+      return { score: 20, adjustedRanking: true, excluded: false, habitatCue: cue || 'Wetland-associated habitat' };
+    }
+    if (coastalMatch) {
+      return { score: -24, adjustedRanking: true, excluded: false, habitatCue: 'Coastal habitat is a weak ecology match for this species' };
+    }
+    return { score: -18, adjustedRanking: true, excluded: false, habitatCue: cue || 'Habitat uncertain' };
   }
   if (ecology.mode === 'wetland_waterbird') {
     const waterMatch = /\b(järv|soo|raba|laht|laak|märgala|tiik|vee|rand)\b/i.test(cue);

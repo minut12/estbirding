@@ -904,14 +904,28 @@ export function normalizeSpeciesPredictionResult(
     readArray(source, ['estoniaHistoryClusters', 'estonia_history_clusters']),
   );
   const hasEstoniaHistoryClusters = hasValue(source, ['estoniaHistoryClusters', 'estonia_history_clusters']);
-  const foreignRecentPoints = normalizeForeignRecentPoints(
+  const topLevelForeignRecentPoints = normalizeForeignRecentPoints(
     readArray(source, ['foreignRecentPoints', 'foreign_recent_points']),
   );
-  const hasForeignRecentPoints = hasValue(source, ['foreignRecentPoints', 'foreign_recent_points']);
-  const foreignClusters = normalizeForeignClusters(
+  const normalizedSourceForeignRecentPoints = normalizeForeignRecentPoints(
+    readArray(normalizedSources, ['foreignRecentPoints', 'foreign_recent_points']),
+  );
+  const foreignRecentPoints = (topLevelForeignRecentPoints.length || !normalizedSourceForeignRecentPoints.length)
+    ? topLevelForeignRecentPoints
+    : normalizedSourceForeignRecentPoints;
+  const hasForeignRecentPoints = hasValue(source, ['foreignRecentPoints', 'foreign_recent_points']) || normalizedSourceForeignRecentPoints.length > 0;
+  const topLevelForeignClusters = normalizeForeignClusters(
     readArray(source, ['foreignClusters', 'foreign_clusters']),
   );
-  const hasForeignClusters = hasValue(source, ['foreignClusters', 'foreign_clusters']);
+  const normalizedSourceForeignClusters = normalizeForeignClusters(
+    readArray(normalizedSources, ['foreignClusters', 'foreign_clusters']),
+  );
+  const foreignClusters = (topLevelForeignClusters.length && !foreignClustersLookPlaceholderLike(topLevelForeignClusters))
+    ? topLevelForeignClusters
+    : normalizedSourceForeignClusters.length
+      ? normalizedSourceForeignClusters
+      : topLevelForeignClusters;
+  const hasForeignClusters = hasValue(source, ['foreignClusters', 'foreign_clusters']) || normalizedSourceForeignClusters.length > 0;
   const weather = normalizeWeather(
     readRecord(source, ['weather']) ?? readRecord(rawResearchPayload, ['weather']),
   );
@@ -950,6 +964,7 @@ export function normalizeSpeciesPredictionResult(
       ...evidenceSummaryBase,
       ...(isCurrentFinalizedBackendOutput ? {
         totalForeignRecentPoints: foreignRecentPoints.length,
+        primaryCountries: derivePrimaryCountriesFromForeignEvidence(foreignRecentPoints, foreignClusters),
         weatherAvailable: weather?.weatherAvailable === true,
         weatherPartial: weather?.weatherPartial === true,
         foreignEbirdAvailable: sourceHealth?.ebirdAvailable === true || foreignRecentPoints.length > 0 || foreignClusters.length > 0,
@@ -958,6 +973,7 @@ export function normalizeSpeciesPredictionResult(
     : (isCurrentFinalizedBackendOutput
       ? {
         totalForeignRecentPoints: foreignRecentPoints.length,
+        primaryCountries: derivePrimaryCountriesFromForeignEvidence(foreignRecentPoints, foreignClusters),
         weatherAvailable: weather?.weatherAvailable === true,
         weatherPartial: weather?.weatherPartial === true,
         foreignEbirdAvailable: sourceHealth?.ebirdAvailable === true || foreignRecentPoints.length > 0 || foreignClusters.length > 0,
@@ -2332,6 +2348,57 @@ function normalizeForeignClusters(input: unknown[] | null): SpeciesPredictionFor
       isFreshest: source.isFreshest === true,
     };
   }).filter((cluster) => cluster.id && (cluster.lat !== 0 || cluster.lon !== 0));
+}
+
+function foreignClustersLookPlaceholderLike(input: SpeciesPredictionForeignCluster[]): boolean {
+  return Array.isArray(input) && input.length > 0 && !input.some((cluster) =>
+    (Array.isArray(cluster.countries) && cluster.countries.length > 0)
+    || (Array.isArray(cluster.countryCodes) && cluster.countryCodes.length > 0)
+    || (Array.isArray(cluster.locNames) && cluster.locNames.length > 0)
+    || cluster.totalHowMany > 0
+    || cluster.nearestDistanceKm > 0
+  );
+}
+
+function derivePrimaryCountriesFromForeignEvidence(
+  foreignRecentPoints: SpeciesPredictionForeignRecentPoint[],
+  foreignClusters: SpeciesPredictionForeignCluster[],
+): string[] {
+  const fromPoints = foreignRecentPoints
+    .map((point) => normalizeUiText(point.countryName || resolveCountryNameForUi(point.countryCode || '') || ''))
+    .filter(Boolean);
+  const fromClusters = foreignClusters.flatMap((cluster) => {
+    const names = (Array.isArray(cluster.countries) ? cluster.countries : [])
+      .map((value) => normalizeUiText(String(value || '')))
+      .filter(Boolean);
+    const resolvedCodes = (Array.isArray(cluster.countryCodes) ? cluster.countryCodes : [])
+      .map((value) => normalizeUiText(resolveCountryNameForUi(String(value || '')) || ''))
+      .filter(Boolean);
+    return [...names, ...resolvedCodes];
+  });
+  return Array.from(new Set([...fromPoints, ...fromClusters])).slice(0, 5);
+}
+
+function resolveCountryNameForUi(countryCode: string): string {
+  const normalized = normalizeUiText(countryCode).toLowerCase();
+  switch (normalized) {
+    case 'pl':
+      return 'Poland';
+    case 'lt':
+      return 'Lithuania';
+    case 'lv':
+      return 'Latvia';
+    case 'by':
+      return 'Belarus';
+    case 'ru':
+      return 'Russia';
+    case 'fi':
+      return 'Finland';
+    case 'ee':
+      return 'Estonia';
+    default:
+      return '';
+  }
 }
 
 function normalizeWeather(input: Record<string, unknown> | null): SpeciesPredictionWeather | undefined {

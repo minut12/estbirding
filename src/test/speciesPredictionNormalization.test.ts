@@ -485,6 +485,130 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.evidenceSummary?.foreignEbirdAvailable).toBe(true);
   });
 
+  it("falls back to normalizedSources foreign evidence when finalized top-level foreign fields are empty or placeholder-like", () => {
+    const result = normalizeSpeciesPredictionResult({
+      speciesKey: "punanokk-vart",
+      speciesName: "Punanokk-vart",
+      generatedAt: "2026-03-31T08:00:00.000Z",
+      backendBuild: "2026-03-31-test",
+      invokeRouteVersion: "fix20",
+      responseProof: "served by live species-prediction invoke route",
+      foreignRecentPoints: [],
+      foreignClusters: [
+        {
+          id: "placeholder",
+          lat: 57.86,
+          lon: 23.21,
+          pointCount: 1,
+          newestObsDt: "2026-03-30T10:00:00.000Z",
+          oldestObsDt: "2026-03-30T10:00:00.000Z",
+          freshestDaysAgo: 1,
+          averageDaysAgo: 1,
+          totalHowMany: 0,
+          countries: [],
+          countryCodes: [],
+          locNames: [],
+          nearestDistanceKm: 0,
+          isFreshest: false,
+        },
+      ],
+      weather: {
+        fetchedAt: "2026-03-30T11:00:00.000Z",
+        windSpeedKph: 25,
+        windDirectionDeg: 205,
+        weatherAvailable: true,
+        weatherPartial: false,
+        source: "Open-Meteo",
+      },
+      countryScores: {
+        latvia: 8,
+        lithuania: 8,
+        belarus: 0,
+        poland: 16,
+        russia: 0,
+        finlandContextOnly: 0,
+      },
+      externalPressureScore: 24,
+      evidenceSummary: {
+        totalForeignRecentPoints: 0,
+        primaryCountries: [],
+        weatherAvailable: false,
+      },
+      rawResearchPayload: {
+        normalizedSources: {
+          foreignRecentPoints: [
+            {
+              lat: 54.35,
+              lon: 18.68,
+              obsDt: "2026-03-30T06:00:00.000Z",
+              locName: "Mikoszewo",
+              countryCode: "pl",
+              countryName: "Poland",
+              source: "eBird",
+              daysAgo: 1,
+              distanceToEstoniaKm: 420,
+            },
+            {
+              lat: 55.72,
+              lon: 21.1,
+              obsDt: "2026-03-30T07:00:00.000Z",
+              locName: "Klaipeda coast",
+              countryCode: "lt",
+              countryName: "Lithuania",
+              source: "eBird",
+              daysAgo: 1,
+              distanceToEstoniaKm: 260,
+            },
+          ],
+          foreignClusters: [
+            {
+              id: "pl-source",
+              lat: 54.35,
+              lon: 18.68,
+              pointCount: 5,
+              newestObsDt: "2026-03-30T06:00:00.000Z",
+              oldestObsDt: "2026-03-29T06:00:00.000Z",
+              freshestDaysAgo: 1,
+              averageDaysAgo: 1.1,
+              totalHowMany: 18,
+              countries: ["Poland"],
+              countryCodes: ["pl"],
+              locNames: ["Mikoszewo"],
+              nearestDistanceKm: 420,
+              isFreshest: true,
+            },
+            {
+              id: "lt-mid",
+              lat: 55.72,
+              lon: 21.1,
+              pointCount: 2,
+              newestObsDt: "2026-03-30T07:00:00.000Z",
+              oldestObsDt: "2026-03-30T07:00:00.000Z",
+              freshestDaysAgo: 1,
+              averageDaysAgo: 1,
+              totalHowMany: 5,
+              countries: ["Lithuania"],
+              countryCodes: ["lt"],
+              locNames: ["Klaipeda coast"],
+              nearestDistanceKm: 260,
+              isFreshest: false,
+            },
+          ],
+        },
+      },
+    } as any, "Punanokk-vart", "linnuliigid");
+
+    expect(result.foreignRecentPoints?.length).toBe(2);
+    expect(result.foreignClusters?.[0]?.countries).toEqual(["Poland"]);
+    expect(result.foreignClusters?.[0]?.totalHowMany).toBe(18);
+    expect(result.externalPressureScore).toBe(24);
+    expect(result.countryScores.poland).toBe(16);
+    expect(result.countryScores.lithuania).toBe(8);
+    expect(result.evidenceSummary?.totalForeignRecentPoints).toBe(2);
+    expect(result.evidenceSummary?.primaryCountries).toEqual(["Poland", "Lithuania"]);
+    expect(result.evidenceSummary?.weatherAvailable).toBe(true);
+  });
+
   it("normalizes honesty-oriented predicted target metadata", () => {
     const result = normalizeSpeciesPredictionResult({
       speciesKey: "test-species",

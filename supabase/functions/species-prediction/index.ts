@@ -4544,7 +4544,11 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     sourceHealth: asRecord(payload.sourceHealth),
     evidenceStateSnapshot,
   });
+  const canonicalPrimaryCountries = extractCanonicalPrimaryCountries(foreignRecentPoints, foreignClusters);
   const canonicalExternalPressureScore = clampInt(Math.round(sum(foreignEvidence.map((entry) => toNumber(entry.recordCount7d) * 4))), 0, 100);
+  const canonicalRouteVector = foreignClusters.length
+    ? `${joinCountries((foreignClusters[0] as Record<string, unknown>).countryCodes) || joinCountries((foreignClusters[0] as Record<string, unknown>).countries)} -> Estonia`
+    : payload.routeVector;
   estoniaEvidence.recentCount7d = recentCount7d;
   estoniaEvidence.recentCount30d = recentCount30d;
   estoniaEvidence.alreadyPresent = recentCount7d > 0;
@@ -4572,7 +4576,11 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     analysisVersion: payload.analysisVersion,
     species: asRecord(payload.species),
     sourceHealth: asRecord(payload.sourceHealth),
-    evidenceSummary: canonicalEvidenceSummary,
+    evidenceSummary: {
+      ...canonicalEvidenceSummary,
+      totalForeignRecentPoints: foreignRecentPoints.length,
+      primaryCountries: canonicalPrimaryCountries,
+    },
     elurikkusRecentRecords: Array.isArray(payload.elurikkusRecentRecords) ? payload.elurikkusRecentRecords : [],
     estoniaHistoryPoints,
     estoniaHistoryClusters,
@@ -4580,7 +4588,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     foreignClusters,
     weather: canonicalWeather,
     predictionVectors: Array.isArray(payload.predictionVectors) ? payload.predictionVectors : [],
-    predictedTargets,
+    predictedTargets: canonicalPredictedTargets,
     mapLayers: asRecord(payload.mapLayers),
     foreignEvidence,
     historicalEvidence: asRecord(payload.historicalEvidence),
@@ -4589,8 +4597,14 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     externalPressureScore: canonicalExternalPressureScore,
     springFitScore: payload.springFitScore,
     windSupportScore: payload.windSupportScore,
-    routeVector: payload.routeVector,
-    bestEntryZone: stringOr(payload.bestEntryZone, asRecord(predictedTargets[0]).entryCorridorLabel, asRecord(predictedTargets[0]).countyOrParish, asRecord(predictedTargets[0]).name, 'Unavailable'),
+    routeVector: canonicalRouteVector || 'Unavailable',
+    bestEntryZone: stringOr(
+      asRecord(canonicalPredictedTargets[0]).entryCorridorLabel,
+      asRecord(canonicalPredictedTargets[0]).countyOrParish,
+      asRecord(canonicalPredictedTargets[0]).name,
+      isUnavailableLabel(payload.bestEntryZone) ? '' : payload.bestEntryZone,
+      'Unavailable',
+    ),
     alreadyMissedRisk: payload.alreadyMissedRisk,
     countryScores: canonicalCountryScores,
     topPredictedPoints: canonicalPredictedTargets,
@@ -4631,7 +4645,11 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
       historicalEvidence: asRecord(rawResearchPayload.historicalEvidence),
       predictionVectors: Array.isArray(rawResearchPayload.predictionVectors) ? rawResearchPayload.predictionVectors : [],
       sourceHealth: asRecord(payload.sourceHealth),
-      evidenceSummary: canonicalEvidenceSummary,
+      evidenceSummary: {
+        ...canonicalEvidenceSummary,
+        totalForeignRecentPoints: foreignRecentPoints.length,
+        primaryCountries: canonicalPrimaryCountries,
+      },
       // Fresh computed values — never carried from rawResearchPayload
       aiSummary: scrubbed.safeSummary,
       insightSummary: scrubbed.safeSummary,
@@ -4657,6 +4675,17 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
       },
     },
   };
+  if (finalPayload.hasUsableForeignPressure === true && !hasRealForeignEvidenceShape(foreignRecentPoints, foreignClusters)) {
+    console.warn(`${LOG_PREFIX} foreign_pressure_consistency_violation`, {
+      speciesName: finalPayload.speciesName,
+      hasUsableForeignPressure: finalPayload.hasUsableForeignPressure,
+      foreignRecentPointsCount: foreignRecentPoints.length,
+      foreignClustersCount: foreignClusters.length,
+      normalizedForeignRecentPointsCount: normalizedForeignRecentPoints.length,
+      normalizedForeignClustersCount: normalizedForeignClusters.length,
+      payloadSourceState: finalPayload.payloadSourceState,
+    });
+  }
   return finalPayload;
 }
 
@@ -4699,8 +4728,44 @@ function hasNonPlaceholderForeignClusters(input: unknown[]): boolean {
     const cluster = asRecord(entry);
     return (Array.isArray(cluster.countries) && cluster.countries.length > 0)
       || (Array.isArray(cluster.countryCodes) && cluster.countryCodes.length > 0)
+      || (Array.isArray(cluster.locNames) && cluster.locNames.length > 0)
       || toNumber(cluster.totalHowMany) > 0
       || toNumber(cluster.nearestDistanceKm) > 0;
+  });
+}
+
+function extractCanonicalPrimaryCountries(
+  foreignRecentPoints: unknown[],
+  foreignClusters: unknown[],
+): string[] {
+  const countryNamesFromPoints = foreignRecentPoints
+    .map((entry) => {
+      const point = asRecord(entry);
+      return stringOr(point.countryName, resolveCountryName(stringOr(point.countryCode)));
+    })
+    .filter(Boolean);
+  const countryNamesFromClusters = foreignClusters.flatMap((entry) => {
+    const cluster = asRecord(entry);
+    const names = Array.isArray(cluster.countries) ? cluster.countries.map((item) => stringOr(item)).filter(Boolean) : [];
+    const codes = Array.isArray(cluster.countryCodes)
+      ? cluster.countryCodes.map((item) => resolveCountryName(stringOr(item))).filter(Boolean)
+      : [];
+    return [...names, ...codes];
+  });
+  return Array.from(new Set([...countryNamesFromPoints, ...countryNamesFromClusters])).slice(0, 5);
+}
+
+function isUnavailableLabel(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().toLowerCase() === 'unavailable';
+}
+
+function hasRealForeignEvidenceShape(foreignRecentPoints: unknown[], foreignClusters: unknown[]): boolean {
+  if (foreignRecentPoints.length > 0) return true;
+  return foreignClusters.some((entry) => {
+    const cluster = asRecord(entry);
+    return ((Array.isArray(cluster.countries) && cluster.countries.length > 0)
+      || (Array.isArray(cluster.countryCodes) && cluster.countryCodes.length > 0))
+      && (toNumber(cluster.totalHowMany) > 0 || toNumber(cluster.pointCount) > 0);
   });
 }
 

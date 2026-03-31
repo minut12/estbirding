@@ -24,6 +24,7 @@ type BackendHooks = {
     rankingNotes: string;
     warnings: string[];
   };
+  hasNonPlaceholderForeignClusters: (input: unknown[]) => boolean;
   buildPredictedTargets: (opts: {
     speciesName: string;
     estoniaHistoryClusters: Array<Record<string, unknown>>;
@@ -48,6 +49,7 @@ globalThis.__speciesPredictionBackendTestHooks = {
   INVOKE_ROUTE_VERSION,
   EDGE_RESPONSE_PROOF,
   buildNeutralStructuredEvidenceSummary,
+  hasNonPlaceholderForeignClusters,
   buildPredictedTargets,
 };
 `;
@@ -819,5 +821,199 @@ describe("species-prediction backend summary finalizer", () => {
     expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.countryCodes).toEqual(["pl"]);
     expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.totalHowMany).toBe(18);
     expect((finalized.foreignRecentPoints as Array<Record<string, unknown>>).length).toBe(2);
+  });
+
+  it("recomputes top-level foreign-derived fields from canonical normalized evidence", () => {
+    const finalized = hooks.finalizePredictionResponse(buildBaseResponse({
+      speciesName: "Punanokk-vart",
+      hasUsableForeignPressure: true,
+      sourceHealth: {
+        ebirdAvailable: true,
+        primarySourceUsed: "eBird foreign",
+      },
+      foreignRecentPoints: [],
+      foreignClusters: [
+        {
+          id: "placeholder",
+          lat: 57.9,
+          lon: 23.3,
+          pointCount: 1,
+          newestObsDt: "2026-03-30T10:00:00.000Z",
+          oldestObsDt: "2026-03-30T10:00:00.000Z",
+          freshestDaysAgo: 1,
+          averageDaysAgo: 1,
+          totalHowMany: 0,
+          countries: [],
+          countryCodes: [],
+          locNames: [],
+          nearestDistanceKm: 0,
+          isFreshest: false,
+        },
+      ],
+      externalPressureScore: 0,
+      routeVector: "Unavailable",
+      bestEntryZone: "Unavailable",
+      countryScores: {
+        latvia: 0,
+        lithuania: 0,
+        belarus: 0,
+        poland: 0,
+        russia: 0,
+        finlandContextOnly: 0,
+      },
+      evidenceSummary: {
+        totalForeignRecentPoints: 0,
+        primaryCountries: [],
+      },
+      predictedTargets: [
+        {
+          rank: 1,
+          name: "Põõsaspea neem",
+          countyOrParish: "Lääne-Nigula",
+          entryCorridorLabel: "Põõsaspea neem",
+          lat: 59.2054,
+          lon: 23.5164,
+          confidence: 0.74,
+          eta: "2d",
+          searchRadiusKm: 10,
+          habitatCue: "coastal migration bottleneck",
+          reason: "Canonical target",
+        },
+      ],
+      rawResearchPayload: {
+        normalizedSources: {
+          foreignRecentPoints: [
+            {
+              lat: 54.35,
+              lon: 18.68,
+              obsDt: "2026-03-30T06:00:00.000Z",
+              locName: "Mikoszewo",
+              countryCode: "pl",
+              countryName: "Poland",
+              source: "eBird",
+              daysAgo: 1,
+              distanceToEstoniaKm: 420,
+            },
+            {
+              lat: 55.72,
+              lon: 21.1,
+              obsDt: "2026-03-30T07:00:00.000Z",
+              locName: "Klaipeda coast",
+              countryCode: "lt",
+              countryName: "Lithuania",
+              source: "eBird",
+              daysAgo: 1,
+              distanceToEstoniaKm: 260,
+            },
+            {
+              lat: 57.86,
+              lon: 23.22,
+              obsDt: "2026-03-30T08:00:00.000Z",
+              locName: "Kolkasrags",
+              countryCode: "lv",
+              countryName: "Latvia",
+              source: "eBird",
+              daysAgo: 1,
+              distanceToEstoniaKm: 70,
+            },
+          ],
+          foreignClusters: [
+            {
+              id: "pl-source",
+              lat: 54.35,
+              lon: 18.68,
+              pointCount: 5,
+              newestObsDt: "2026-03-30T06:00:00.000Z",
+              oldestObsDt: "2026-03-29T06:00:00.000Z",
+              freshestDaysAgo: 1,
+              averageDaysAgo: 1.1,
+              totalHowMany: 18,
+              countries: ["Poland"],
+              countryCodes: ["pl"],
+              locNames: ["Mikoszewo"],
+              nearestDistanceKm: 420,
+              isFreshest: true,
+            },
+            {
+              id: "lt-mid",
+              lat: 55.72,
+              lon: 21.1,
+              pointCount: 2,
+              newestObsDt: "2026-03-30T07:00:00.000Z",
+              oldestObsDt: "2026-03-30T07:00:00.000Z",
+              freshestDaysAgo: 1,
+              averageDaysAgo: 1,
+              totalHowMany: 5,
+              countries: ["Lithuania"],
+              countryCodes: ["lt"],
+              locNames: ["Klaipeda coast"],
+              nearestDistanceKm: 260,
+              isFreshest: false,
+            },
+            {
+              id: "lv-corridor",
+              lat: 57.86,
+              lon: 23.22,
+              pointCount: 1,
+              newestObsDt: "2026-03-30T08:00:00.000Z",
+              oldestObsDt: "2026-03-30T08:00:00.000Z",
+              freshestDaysAgo: 1,
+              averageDaysAgo: 1,
+              totalHowMany: 1,
+              countries: ["Latvia"],
+              countryCodes: ["lv"],
+              locNames: ["Kolkasrags"],
+              nearestDistanceKm: 70,
+              isFreshest: false,
+            },
+          ],
+          weather: {
+            fetchedAt: "2026-03-30T10:00:00.000Z",
+            windSpeedKph: 24,
+            windDirectionDeg: 205,
+            weatherAvailable: true,
+            weatherPartial: false,
+            source: "Open-Meteo",
+          },
+        },
+      },
+    }), "test_canonical_foreign_serialization");
+
+    expect((finalized.foreignRecentPoints as Array<Record<string, unknown>>).length).toBe(3);
+    expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.countries).toEqual(["Poland"]);
+    expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.countryCodes).toEqual(["pl"]);
+    expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.totalHowMany).toBe(18);
+    expect(Number(finalized.externalPressureScore)).toBeGreaterThan(0);
+    expect((finalized.countryScores as Record<string, unknown>).poland).toBeGreaterThan(0);
+    expect((finalized.countryScores as Record<string, unknown>).lithuania).toBeGreaterThan(0);
+    expect((finalized.countryScores as Record<string, unknown>).latvia).toBeGreaterThan(0);
+    expect(String(finalized.routeVector)).not.toBe("Unavailable");
+    expect(String(finalized.bestEntryZone)).not.toBe("Unavailable");
+    expect((finalized.evidenceSummary as Record<string, unknown>).totalForeignRecentPoints).toBe(3);
+    expect((finalized.evidenceSummary as Record<string, unknown>).primaryCountries).toEqual(["Poland", "Lithuania", "Latvia"]);
+  });
+
+  it("detects placeholder foreign clusters only when they lack real foreign evidence fields", () => {
+    expect(hooks.hasNonPlaceholderForeignClusters([
+      {
+        countries: [],
+        countryCodes: [],
+        locNames: [],
+        totalHowMany: 0,
+        pointCount: 1,
+        nearestDistanceKm: 0,
+      },
+    ])).toBe(false);
+
+    expect(hooks.hasNonPlaceholderForeignClusters([
+      {
+        countries: ["Poland"],
+        countryCodes: ["pl"],
+        locNames: ["Mikoszewo"],
+        totalHowMany: 18,
+        pointCount: 5,
+        nearestDistanceKm: 420,
+      },
+    ])).toBe(true);
   });
 });

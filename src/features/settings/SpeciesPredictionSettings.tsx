@@ -376,6 +376,15 @@ export default function SpeciesPredictionSettings() {
             <p className="mt-1 text-muted-foreground">
               {statusCard.helperText}
             </p>
+            <TestPredictionBackendButton onResult={(data) => {
+              setBackendStatus(data);
+              setSpeciesPredictionHealthCheckResult({
+                ok: true,
+                status: 200,
+                body: data,
+                timestamp: new Date().toISOString(),
+              });
+            }} />
           </div>
           {/* Temporary debug: derived status mapper values */}
           {canSeeDebugDiagnostics && (

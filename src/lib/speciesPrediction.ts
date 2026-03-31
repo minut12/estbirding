@@ -546,6 +546,7 @@ export type NormalizedPredictionPanelModel = {
   evidenceState: string;
   confidenceValue: number | null;
   confidenceLabel: string;
+  primarySourceUsed: string;
   sourcesContacted: string[];
   rankingMode: string;
   activeEvidenceUsed: string[];
@@ -1122,9 +1123,15 @@ export function normalizePrediction(raw: Partial<SpeciesPredictionResult> | Spec
   const topTarget = asRecord((root as SpeciesPredictionResult).topTarget);
   const confidenceValueRaw = hasValue(topTarget, ['confidence']) ? readNumber(topTarget, ['confidence']) : null;
   const confidenceValue = Number.isFinite(Number(confidenceValueRaw)) ? Number(confidenceValueRaw) : null;
-  const activeEvidenceUsed = Array.isArray(readArray(sourceHealth, ['activeEvidenceUsed', 'active_evidence_used']))
-    ? (readArray(sourceHealth, ['activeEvidenceUsed', 'active_evidence_used']) || []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean)
-    : [];
+  const canonicalActiveEvidenceUsed = (
+    readArray(root as Record<string, unknown>, ['activeEvidenceSources', 'active_evidence_sources'])
+    ?? readArray(evidenceSummary, ['activeEvidenceUsed', 'active_evidence_used'])
+  ) || [];
+  const sourceHealthActiveEvidenceUsed = readArray(sourceHealth, ['activeEvidenceUsed', 'active_evidence_used']) || [];
+  const activeEvidenceUsed = (canonicalActiveEvidenceUsed.length ? canonicalActiveEvidenceUsed : sourceHealthActiveEvidenceUsed)
+    .map((item) => normalizeUiText(String(item || '')))
+    .filter(Boolean);
+  const primarySourceUsed = normalizeUiText(readString(sourceHealth, ['primarySourceUsed', 'primary_source_used']) || '');
   const recentCount7d = hasValue(root as Record<string, unknown>, ['recentCount7d'])
     ? clampNumber(readNumber(root as Record<string, unknown>, ['recentCount7d']), 0, 999999, 0)
     : hasValue(evidenceSummary, ['recentCount7d'])
@@ -1172,12 +1179,17 @@ export function normalizePrediction(raw: Partial<SpeciesPredictionResult> | Spec
     || !!readString(weather, ['observedAt'])
     || !!readString(weather, ['source'])
   ) sourcesContacted.push('Open-Meteo weather');
-  const rankingMode = activeEvidenceUsed.length ? activeEvidenceUsed.join(' + ') : (sourcesContacted.length ? sourcesContacted.join(' + ') : '—');
+  const rankingMode = normalizeUiText(
+    readString(evidenceSummary, ['effectiveRankingMode', 'effective_ranking_mode'])
+    || readString(root as Record<string, unknown>, ['effectiveRankingMode', 'effective_ranking_mode'])
+    || (activeEvidenceUsed.length ? activeEvidenceUsed.join(' + ') : (sourcesContacted.length ? sourcesContacted.join(' + ') : ''))
+  ) || '—';
   return {
     speciesName: normalizeUiText(readString(root as Record<string, unknown>, ['speciesName']) || readString(speciesRoot, ['name']) || readString(root as Record<string, unknown>, ['speciesKey']) || ''),
     evidenceState: normalizeUiText(readString(root as Record<string, unknown>, ['evidenceState']) || ''),
     confidenceValue,
     confidenceLabel: confidenceValue != null ? `${Math.round(confidenceValue * 100)}%` : (normalizeUiText(readString(root as Record<string, unknown>, ['confidenceNote']) || '') || '—'),
+    primarySourceUsed,
     sourcesContacted,
     rankingMode,
     activeEvidenceUsed,

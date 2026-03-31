@@ -1225,6 +1225,66 @@ describe("species-prediction backend summary finalizer", () => {
     expect((finalized.evidenceSummary as Record<string, unknown>).primaryCountries).toEqual(["Poland", "Lithuania", "Latvia"]);
   });
 
+  it("promotes foreign evidence from raw payload and recomputes canonical evidence flags", () => {
+    const finalized = hooks.finalizePredictionResponse(buildBaseResponse({
+      speciesName: "Punanokk-vart",
+      hasUsableRecentEstoniaEvidence: true,
+      hasUsableForeignPressure: false,
+      externalPressureScore: 0,
+      countryScores: {
+        latvia: 0,
+        lithuania: 0,
+        belarus: 0,
+        poland: 0,
+        russia: 0,
+        finlandContextOnly: 0,
+      },
+      estoniaEvidence: {
+        recentCount7d: 0,
+        recentCount30d: 0,
+        latestEstoniaLocality: "",
+        freshestLocalities: [],
+      },
+      foreignRecentPoints: [],
+      foreignClusters: [],
+      rawResearchPayload: {
+        foreignEvidence: [
+          {
+            lat: 54.35,
+            lon: 18.68,
+            obsDt: "2026-03-30T06:00:00.000Z",
+            locName: "Mikoszewo",
+            countryCode: "pl",
+            countryName: "Poland",
+            source: "eBird",
+            daysAgo: 1,
+            distanceToEstoniaKm: 420,
+          },
+          {
+            lat: 55.72,
+            lon: 21.1,
+            obsDt: "2026-03-30T07:00:00.000Z",
+            locName: "Klaipeda coast",
+            countryCode: "lt",
+            countryName: "Lithuania",
+            source: "eBird",
+            daysAgo: 1,
+            distanceToEstoniaKm: 260,
+          },
+        ],
+      },
+    }), "test_promote_raw_foreign_evidence");
+
+    expect((finalized.foreignRecentPoints as Array<Record<string, unknown>>).length).toBe(2);
+    expect(finalized.hasUsableRecentEstoniaEvidence).toBe(false);
+    expect(finalized.hasUsableForeignPressure).toBe(true);
+    expect(Number(finalized.externalPressureScore)).toBeGreaterThan(0);
+    expect((finalized.countryScores as Record<string, unknown>).poland).toBeGreaterThan(0);
+    expect((finalized.countryScores as Record<string, unknown>).lithuania).toBeGreaterThan(0);
+    expect(String(finalized.insightSummary)).toContain("No recent Estonia records were confirmed in the last 7 days");
+    expect(String(finalized.insightSummary)).toContain("foreign pressure");
+  });
+
   it("detects placeholder foreign clusters only when they lack real foreign evidence fields", () => {
     expect(hooks.hasNonPlaceholderForeignClusters([
       {

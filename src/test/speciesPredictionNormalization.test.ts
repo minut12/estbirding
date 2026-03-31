@@ -2102,6 +2102,66 @@ describe("normalizePrediction", () => {
     expect(normalized.summaryText).toBe("OpenAI summary text");
   });
 
+  it("prefers finalized panel mapping fields over derived source lists", () => {
+    const normalizedResult = normalizeSpeciesPredictionResult({
+      speciesKey: "punanokk-vart",
+      speciesName: "Punanokk-vart",
+      generatedAt: "2026-03-31T08:00:00.000Z",
+      payloadSourceState: "current_finalized_backend_output",
+      sourceHealth: {
+        primarySourceUsed: "eBird foreign",
+        activeEvidenceUsed: ["stale source health value"],
+        elurikkusAvailable: true,
+        ebirdAvailable: true,
+        gbifAvailable: true,
+      },
+      evidenceSummary: {
+        effectiveRankingMode: "Foreign pressure + Estonia history",
+        activeEvidenceUsed: ["eBird foreign", "GBIF Estonia"],
+        rankingMode: "wrong legacy ranking mode",
+      },
+      activeEvidenceSources: ["eBird foreign", "GBIF Estonia"],
+      effectiveRankingMode: "Foreign pressure + Estonia history",
+      foreignRecentPoints: [
+        { lat: 55.72, lon: 21.1, obsDt: "2026-03-30T07:00:00.000Z", locName: "Klaipeda coast", countryCode: "lt", countryName: "Lithuania", source: "eBird", daysAgo: 1 },
+      ],
+      foreignClusters: [
+        { id: "lt-mid", lat: 55.72, lon: 21.1, pointCount: 2, newestObsDt: "2026-03-30T07:00:00.000Z", oldestObsDt: "2026-03-30T07:00:00.000Z", freshestDaysAgo: 1, averageDaysAgo: 1, totalHowMany: 5, countries: ["Lithuania"], countryCodes: ["lt"], locNames: ["Klaipeda coast"], nearestDistanceKm: 260, isFreshest: true },
+      ],
+      externalPressureScore: 12,
+      countryScores: { latvia: 0, lithuania: 40, belarus: 0, poland: 0, russia: 0 },
+      estoniaEvidence: {
+        recentCount7d: 0,
+        recentCount30d: 0,
+        latestEstoniaLocality: "",
+        freshestLocalities: [],
+      },
+      hasUsableRecentEstoniaEvidence: false,
+      hasUsableForeignPressure: true,
+      insightSummary: "No recent Estonia records were confirmed in the last 7 days, but recent foreign pressure exists, supporting near-term watch targets in Estonia.",
+      rawResearchPayload: {
+        normalizedSources: {
+          foreignRecentPoints: [
+            { lat: 57.86, lon: 23.22, obsDt: "2026-03-30T08:00:00.000Z", locName: "Kolkasrags", countryCode: "lv", countryName: "Latvia", source: "eBird", daysAgo: 1 },
+          ],
+        },
+      },
+    } as any, "Punanokk-vart", "linnuliigid");
+
+    const panelModel = normalizePrediction(normalizedResult);
+
+    expect(normalizedResult.sourceHealth?.primarySourceUsed).toBe("eBird foreign");
+    expect(normalizedResult.effectiveRankingMode).toBe("Foreign pressure + Estonia history");
+    expect(normalizedResult.activeEvidenceSources).toEqual(["eBird foreign", "GBIF Estonia"]);
+    expect(normalizedResult.foreignRecentPoints?.length).toBe(1);
+    expect(normalizedResult.externalPressureScore).toBe(12);
+    expect(normalizedResult.countryScores.lithuania).toBe(40);
+
+    expect(panelModel.primarySourceUsed).toBe("eBird foreign");
+    expect(panelModel.rankingMode).toBe("Foreign pressure + Estonia history");
+    expect(panelModel.activeEvidenceUsed).toEqual(["eBird foreign", "GBIF Estonia"]);
+  });
+
   it("prefers rawResearchPayload latestEEDate over stale top-level latestEstoniaDate", () => {
     const freshest = resolveFreshestEstoniaEvidence({
       estoniaEvidence: {

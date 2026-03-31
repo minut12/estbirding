@@ -1925,6 +1925,7 @@
 
   function renderPayloadSections(result) {
     var html = '';
+    html += renderPanelConsistencySection(result);
     html += renderOptionalSection('Source health', result && result.sourceHealth);
     html += renderOptionalSection('Evidence summary', result && result.evidenceSummary);
     html += renderOptionalSection('Estonia evidence', result && result.estoniaEvidence);
@@ -1935,6 +1936,61 @@
     html += renderOptionalSection('Prediction vectors', result && result.predictionVectors);
     html += renderOptionalSection('AI summary', result && (result.aiSummary || result.insightSummary));
     return html;
+  }
+
+  function renderPanelConsistencySection(result) {
+    if (!result) return '';
+    var prediction = normalizePrediction(result);
+    var rows = [
+      {
+        label: 'sourceHealth.primarySourceUsed',
+        backend: result.sourceHealth && result.sourceHealth.primarySourceUsed ? result.sourceHealth.primarySourceUsed : '',
+        panel: prediction.primarySourceUsed || '',
+        finalState: prediction.primarySourceUsed || ''
+      },
+      {
+        label: 'effectiveRankingMode',
+        backend: (result.evidenceSummary && result.evidenceSummary.effectiveRankingMode) || result.effectiveRankingMode || '',
+        panel: prediction.rankingMode || '',
+        finalState: prediction.rankingMode || ''
+      },
+      {
+        label: 'activeEvidenceSources',
+        backend: Array.isArray(result.activeEvidenceSources) ? result.activeEvidenceSources.join(', ') : (Array.isArray(result.evidenceSummary && result.evidenceSummary.activeEvidenceUsed) ? result.evidenceSummary.activeEvidenceUsed.join(', ') : ''),
+        panel: Array.isArray(prediction.activeEvidenceUsed) ? prediction.activeEvidenceUsed.join(', ') : '',
+        finalState: Array.isArray(prediction.activeEvidenceUsed) ? prediction.activeEvidenceUsed.join(', ') : ''
+      },
+      {
+        label: 'foreignRecentPoints count',
+        backend: Array.isArray(result.foreignRecentPoints) ? String(result.foreignRecentPoints.length) : '0',
+        panel: Array.isArray(result.foreignRecentPoints) ? String(result.foreignRecentPoints.length) : '0',
+        finalState: Array.isArray(result.foreignRecentPoints) ? String(result.foreignRecentPoints.length) : '0'
+      },
+      {
+        label: 'externalPressureScore',
+        backend: result.externalPressureScore != null ? String(result.externalPressureScore) : '',
+        panel: result.externalPressureScore != null ? String(result.externalPressureScore) : '',
+        finalState: result.externalPressureScore != null ? String(result.externalPressureScore) : ''
+      },
+      {
+        label: 'countryScores',
+        backend: formatJson(result.countryScores || {}),
+        panel: formatJson(result.countryScores || {}),
+        finalState: formatJson(result.countryScores || {})
+      }
+    ];
+    var body = rows.map(function (row) {
+      return '<tr>'
+        + '<td style="padding:6px;border:1px solid #e5e7eb;vertical-align:top;font-weight:600">' + escapeHtml(row.label) + '</td>'
+        + '<td style="padding:6px;border:1px solid #e5e7eb;vertical-align:top">' + escapeHtml(row.backend || '—') + '</td>'
+        + '<td style="padding:6px;border:1px solid #e5e7eb;vertical-align:top">' + escapeHtml(row.panel || '—') + '</td>'
+        + '<td style="padding:6px;border:1px solid #e5e7eb;vertical-align:top">' + escapeHtml(row.finalState || '—') + '</td>'
+        + '</tr>';
+    }).join('');
+    return '<details class="spp-card"><summary style="cursor:pointer;font-weight:700;color:#0f172a">Payload consistency</summary>'
+      + '<div style="margin-top:10px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+      + '<thead><tr><th style="padding:6px;border:1px solid #e5e7eb;text-align:left">Field</th><th style="padding:6px;border:1px solid #e5e7eb;text-align:left">Backend payload</th><th style="padding:6px;border:1px solid #e5e7eb;text-align:left">Panel payload</th><th style="padding:6px;border:1px solid #e5e7eb;text-align:left">Final panel state</th></tr></thead>'
+      + '<tbody>' + body + '</tbody></table></div></details>';
   }
 
   function renderOptionalSection(title, value) {
@@ -2386,10 +2442,12 @@
       ? (Math.round(confidenceValue * 100) + '%')
       : (root.confidenceNote ? String(root.confidenceNote).trim() : '—');
 
-    var rawActiveEvidence = sourceHealth.activeEvidenceUsed || sourceHealth.active_evidence_used;
+    var canonicalActiveEvidence = Array.isArray(root.activeEvidenceSources) ? root.activeEvidenceSources : (Array.isArray(evidenceSummary.activeEvidenceUsed) ? evidenceSummary.activeEvidenceUsed : []);
+    var rawActiveEvidence = canonicalActiveEvidence.length ? canonicalActiveEvidence : (sourceHealth.activeEvidenceUsed || sourceHealth.active_evidence_used);
     var activeEvidenceUsed = Array.isArray(rawActiveEvidence)
       ? rawActiveEvidence.filter(Boolean).map(function(x) { return String(x).trim(); }).filter(Boolean)
       : [];
+    var primarySourceUsed = String((sourceHealth && sourceHealth.primarySourceUsed) || '').trim();
 
     var recentCount7d = 0;
     if (root.recentCount7d != null && isFinite(Number(root.recentCount7d))) {
@@ -2433,9 +2491,12 @@
     if (weather && (isFiniteNumber(weather.windSpeedKmh) || isFiniteNumber(weather.windDirectionDeg) || weather.observedAt || weather.source))
       sourcesContacted.push('Open-Meteo weather');
 
-    var rankingMode = activeEvidenceUsed.length
-      ? activeEvidenceUsed.join(' + ')
-      : (sourcesContacted.length ? sourcesContacted.join(' + ') : '—');
+    var rankingMode = String(evidenceSummary.effectiveRankingMode || root.effectiveRankingMode || '').trim();
+    if (!rankingMode) {
+      rankingMode = activeEvidenceUsed.length
+        ? activeEvidenceUsed.join(' + ')
+        : (sourcesContacted.length ? sourcesContacted.join(' + ') : '—');
+    }
 
     var weatherLabel = weather ? weatherLine(weather, evidenceSummary) : '—';
 
@@ -2444,6 +2505,7 @@
       evidenceState: evidenceState,
       confidenceValue: confidenceValue,
       confidenceLabel: confidenceLabel,
+      primarySourceUsed: primarySourceUsed,
       sourcesContacted: sourcesContacted,
       rankingMode: rankingMode,
       activeEvidenceUsed: activeEvidenceUsed,
@@ -2481,22 +2543,23 @@
           insightSummary: prediction.summaryText || '',
           externalPressureScore: result ? result.externalPressureScore : null,
           countryScores: result && result.countryScores ? result.countryScores : null,
+          foreignRecentPoints: result && Array.isArray(result.foreignRecentPoints) ? result.foreignRecentPoints : [],
           topPredictedPoints: Array.isArray(preferredPoints) ? preferredPoints : [],
-          sourceHealth: { activeEvidenceUsed: prediction.activeEvidenceUsed },
-          foreignEvidence: [],
-          estoniaEvidence: { recentCount7d: prediction.recentCount7d, recentCount30d: prediction.recentCount30d, latestEstoniaLocality: prediction.latestEeLocality },
-          historicalEvidence: null,
+          sourceHealth: result && result.sourceHealth ? result.sourceHealth : { primarySourceUsed: prediction.primarySourceUsed, activeEvidenceUsed: prediction.activeEvidenceUsed },
+          foreignEvidence: result && Array.isArray(result.foreignEvidence) ? result.foreignEvidence : [],
+          estoniaEvidence: result && result.estoniaEvidence ? result.estoniaEvidence : { recentCount7d: prediction.recentCount7d, recentCount30d: prediction.recentCount30d, latestEstoniaLocality: prediction.latestEeLocality },
+          historicalEvidence: result && result.historicalEvidence ? result.historicalEvidence : null,
           evidenceState: prediction.evidenceState || '',
-          hasUsableRecentEstoniaEvidence: undefined,
-          hasUsableEstoniaHistory: undefined,
-          hasUsableForeignPressure: undefined,
-          hasUsablePredictedTargets: prediction.predictedTargets.length > 0,
-          hasOnlyWeather: undefined,
-          activeEvidenceSources: prediction.activeEvidenceUsed,
-          availableSources: prediction.sourcesContacted,
+          hasUsableRecentEstoniaEvidence: result && typeof result.hasUsableRecentEstoniaEvidence === 'boolean' ? result.hasUsableRecentEstoniaEvidence : (prediction.recentCount7d > 0),
+          hasUsableEstoniaHistory: result && typeof result.hasUsableEstoniaHistory === 'boolean' ? result.hasUsableEstoniaHistory : undefined,
+          hasUsableForeignPressure: result && typeof result.hasUsableForeignPressure === 'boolean' ? result.hasUsableForeignPressure : ((Array.isArray(result && result.foreignRecentPoints) && result.foreignRecentPoints.length > 0) || (Array.isArray(result && result.foreignClusters) && result.foreignClusters.length > 0)),
+          hasUsablePredictedTargets: result && typeof result.hasUsablePredictedTargets === 'boolean' ? result.hasUsablePredictedTargets : prediction.predictedTargets.length > 0,
+          hasOnlyWeather: result && typeof result.hasOnlyWeather === 'boolean' ? result.hasOnlyWeather : undefined,
+          activeEvidenceSources: result && Array.isArray(result.activeEvidenceSources) ? result.activeEvidenceSources : prediction.activeEvidenceUsed,
+          availableSources: result && Array.isArray(result.availableSources) ? result.availableSources : prediction.sourcesContacted,
           attemptedButUnavailable: result && Array.isArray(result.attemptedButUnavailable) ? result.attemptedButUnavailable : [],
           attemptedButReturnedNoUsableEvidence: result && Array.isArray(result.attemptedButReturnedNoUsableEvidence) ? result.attemptedButReturnedNoUsableEvidence : [],
-          effectiveRankingMode: prediction.rankingMode || '',
+          effectiveRankingMode: (result && result.evidenceSummary && result.evidenceSummary.effectiveRankingMode) || (result && result.effectiveRankingMode) || prediction.rankingMode || '',
           summaryGuardrailApplied: result && typeof result.summaryGuardrailApplied === 'boolean' ? result.summaryGuardrailApplied : undefined,
           summaryGuardrailReason: result && result.summaryGuardrailReason ? result.summaryGuardrailReason : '',
           runtimeMarker: runtimeInfo.visibleMarker,

@@ -4198,8 +4198,12 @@ function buildCanonicalSummaryFromEvidence(input: {
       input.evidenceStateSnapshot.hasUsableForeignPressure && countryNames.length ? `foreign pressure is present from ${countryNames.slice(0, 4).join(', ')}` : (input.evidenceStateSnapshot.hasUsableForeignPressure ? 'foreign pressure is present' : ''),
       targetNames.length ? `top targets: ${targetNames.slice(0, 3).join(', ')}` : '',
     ].filter(Boolean);
+    const insightSummary = !input.evidenceStateSnapshot.hasUsableEstoniaHistory
+      && input.evidenceStateSnapshot.hasUsableForeignPressure
+      ? `No recent Estonia records were confirmed in the last 7 days, but recent foreign pressure exists, supporting near-term watch targets in Estonia.`
+      : `${input.speciesName} is supported by canonical structured evidence: ${supportParts.join('; ')}.`.trim();
     return {
-      insightSummary: `${input.speciesName} is supported by canonical structured evidence: ${supportParts.join('; ')}.`.trim(),
+      insightSummary,
       confidenceNote: 'Confidence is moderate because the response is grounded in canonical structured evidence, but recent Estonia records are limited.',
       rankingNotes: `Ranking is derived only from canonical structured evidence: ${input.activeEvidenceSources.length ? input.activeEvidenceSources.join(', ') : 'no active evidence listed'}.`,
       warnings: Array.from(warnings),
@@ -4494,14 +4498,18 @@ function buildDeterministicSummaryFromStructuredEvidence(payload: Record<string,
   const foreignClusters = Array.isArray(payload.foreignClusters) ? payload.foreignClusters : [];
   const estoniaHistoryPoints = Array.isArray(payload.estoniaHistoryPoints) ? payload.estoniaHistoryPoints : [];
   const estoniaHistoryClusters = Array.isArray(payload.estoniaHistoryClusters) ? payload.estoniaHistoryClusters : [];
+  const predictedTargets = Array.isArray(payload.predictedTargets) ? payload.predictedTargets : [];
   const recentCount7d = Math.max(0, Math.round(toNumber(estoniaEvidence.recentCount7d)));
   const hasHistory = estoniaHistoryPoints.length > 0 || estoniaHistoryClusters.length > 0;
   const hasForeign = foreignRecentPoints.length > 0 || foreignClusters.length > 0;
 
   if (recentCount7d > 0) return `ALREADY PRESENT — ${recentCount7d} records in 7 days.`;
+  if (!hasHistory && hasForeign && predictedTargets.length > 0) {
+    return 'No recent Estonia records were confirmed in the last 7 days, but recent foreign pressure exists, supporting near-term watch targets in Estonia.';
+  }
   if (hasHistory) return 'No recent Estonia records were confirmed in the last 7 days.';
   if (!hasForeign) return SAFE_INCOMPLETE_EVIDENCE_SUMMARY;
-  return 'No recent Estonia records were confirmed in the last 7 days.';
+  return 'No recent Estonia records were confirmed in the last 7 days, but recent foreign pressure exists, supporting near-term watch targets in Estonia.';
 }
 
 function scrubStaleNarrativeFromStructuredEvidence(payload: Record<string, unknown>): {
@@ -4538,6 +4546,7 @@ function scrubStaleNarrativeFromStructuredEvidence(payload: Record<string, unkno
       foreignClusters,
       estoniaHistoryPoints,
       estoniaHistoryClusters,
+      predictedTargets,
     }),
     reasons,
     warning: reasons.length ? STALE_NARRATIVE_WARNING : null,
@@ -4573,14 +4582,35 @@ function validatePredictionPayloadConsistency(finalPayload: Record<string, unkno
 
 function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown>): Record<string, unknown> {
   const estoniaEvidence = { ...asRecord(payload.estoniaEvidence) };
-  const normalizedSources = asRecord(asRecord(payload.rawResearchPayload).normalizedSources);
+  const rawResearchPayload = asRecord(payload.rawResearchPayload);
+  const normalizedSources = asRecord(rawResearchPayload.normalizedSources);
   const topLevelForeignRecentPoints = Array.isArray(payload.foreignRecentPoints) ? payload.foreignRecentPoints : [];
   const topLevelForeignClusters = Array.isArray(payload.foreignClusters) ? payload.foreignClusters : [];
   const normalizedForeignRecentPointsRaw = Array.isArray(normalizedSources.foreignRecentPoints) ? normalizedSources.foreignRecentPoints : [];
   const normalizedForeignClustersRaw = Array.isArray(normalizedSources.foreignClusters) ? normalizedSources.foreignClusters : [];
+  const rawForeignEvidencePoints = (Array.isArray(rawResearchPayload.foreignEvidence) ? rawResearchPayload.foreignEvidence : [])
+    .map((entry) => asRecord(entry))
+    .filter((entry) =>
+      Number.isFinite(toNumber(entry.lat))
+      && Number.isFinite(toNumber(entry.lon))
+      && (!!stringOr(entry.countryCode) || !!stringOr(entry.countryName))
+    )
+    .map((entry) => ({
+      ...entry,
+      lat: toNumber(entry.lat),
+      lon: toNumber(entry.lon),
+      obsDt: stringOr(entry.obsDt, entry.eventDate, entry.event_date),
+      locName: stringOr(entry.locName, entry.locality, entry.label),
+      countryCode: stringOr(entry.countryCode).toLowerCase(),
+      countryName: stringOr(entry.countryName, resolveCountryName(stringOr(entry.countryCode))),
+      source: stringOr(entry.source, 'eBird'),
+      daysAgo: Number.isFinite(toNumber(entry.daysAgo)) ? toNumber(entry.daysAgo) : daysAgoFromIso(stringOr(entry.obsDt, entry.eventDate, entry.event_date)) ?? 0,
+    }));
   const foreignRecentPoints = topLevelForeignRecentPoints.length
     ? topLevelForeignRecentPoints
-    : normalizedForeignRecentPointsRaw;
+    : normalizedForeignRecentPointsRaw.length
+    ? normalizedForeignRecentPointsRaw
+    : rawForeignEvidencePoints;
   const foreignClusters = populateForeignClustersFromPoints(
     hasNonPlaceholderForeignClusters(topLevelForeignClusters)
     ? sanitizeCanonicalForeignClusters(topLevelForeignClusters)
@@ -4675,7 +4705,6 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     weather: canonicalWeather,
     insightSummary: scrubbed.safeSummary,
   });
-  const rawResearchPayload = asRecord(payload.rawResearchPayload);
   const finalPayload: Record<string, unknown> = {
     speciesKey: payload.speciesKey,
     speciesName: payload.speciesName,
@@ -4735,18 +4764,18 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     responseProof: payload.responseProof,
     summaryGuardrailApplied: payload.summaryGuardrailApplied,
     summaryGuardrailReason: payload.summaryGuardrailReason,
-    evidenceState: payload.evidenceState,
-    hasUsableRecentEstoniaEvidence: payload.hasUsableRecentEstoniaEvidence,
-    hasUsableEstoniaHistory: payload.hasUsableEstoniaHistory,
+    evidenceState: evidenceStateSnapshot.evidenceState,
+    hasUsableRecentEstoniaEvidence: evidenceStateSnapshot.hasUsableRecentEstoniaEvidence,
+    hasUsableEstoniaHistory: evidenceStateSnapshot.hasUsableEstoniaHistory,
     hasUsableForeignPressure: canonicalHasUsableForeignPressure,
-    hasUsablePredictedTargets: payload.hasUsablePredictedTargets,
-    hasOnlyWeather: payload.hasOnlyWeather,
-    hasOnlySourceAvailabilityWithoutUsableEvidence: payload.hasOnlySourceAvailabilityWithoutUsableEvidence,
-    activeEvidenceSources: payload.activeEvidenceSources,
-    availableSources: payload.availableSources,
-    attemptedButUnavailable: payload.attemptedButUnavailable,
-    attemptedButReturnedNoUsableEvidence: payload.attemptedButReturnedNoUsableEvidence,
-    effectiveRankingMode: payload.effectiveRankingMode,
+    hasUsablePredictedTargets: evidenceStateSnapshot.hasUsablePredictedTargets,
+    hasOnlyWeather: evidenceStateSnapshot.hasOnlyWeather,
+    hasOnlySourceAvailabilityWithoutUsableEvidence: evidenceStateSnapshot.hasOnlySourceAvailabilityWithoutUsableEvidence,
+    activeEvidenceSources: evidenceStateSnapshot.activeEvidenceSources,
+    availableSources: evidenceStateSnapshot.availableSources,
+    attemptedButUnavailable: evidenceStateSnapshot.attemptedButUnavailable,
+    attemptedButReturnedNoUsableEvidence: evidenceStateSnapshot.attemptedButReturnedNoUsableEvidence,
+    effectiveRankingMode: stringOr(canonicalEvidenceSummary.effectiveRankingMode, evidenceStateSnapshot.effectiveRankingMode),
     rawResearchPayload: {
       // Safe carry-forwards: species metadata, structured data, coordinates, URLs
       request: asRecord(rawResearchPayload.request),
@@ -4786,6 +4815,19 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
       },
     },
   };
+  const finalSummaryGuardrailReasons = Array.from(new Set([
+    ...String(payload.summaryGuardrailReason || '').split(',').map((reason) => reason.trim()).filter(Boolean),
+    ...(topLevelForeignRecentPoints.length === 0 && (normalizedForeignRecentPointsRaw.length > 0 || rawForeignEvidencePoints.length > 0) ? ['top_level_foreign_recent_points_missing'] : []),
+    ...(stringOr(payload.effectiveRankingMode) && stringOr(payload.effectiveRankingMode) !== stringOr(canonicalEvidenceSummary.effectiveRankingMode, evidenceStateSnapshot.effectiveRankingMode) ? ['effective_ranking_mode_mismatch'] : []),
+    ...(buildFinalConsistencyChecksFromCanonical({
+      foreignRecentPoints,
+      foreignClusters,
+      predictedTargets: canonicalPredictedTargets,
+      weather: canonicalWeather,
+      insightSummary: scrubbed.safeSummary,
+    }).weatherLooksSupportive === true && /weather_only_insufficient/i.test(stringOr(payload.summaryGuardrailReason)) ? ['summary_guardrail_reason_contradicts_weather'] : []),
+  ]));
+  finalPayload.summaryGuardrailReason = finalSummaryGuardrailReasons.join(',');
   if (normalizedForeignRecentPoints.length > 0 && foreignRecentPoints.length === 0) {
     console.error(`${LOG_PREFIX} final_payload_foreign_points_promoted`, {
       speciesName: finalPayload.speciesName,
@@ -5773,8 +5815,8 @@ function isCoastalCluster(cluster: { habitatType?: string; habitatCue?: string; 
     cluster.locality,
   );
   if (toNumber(cluster.coastalDistanceKm) <= 2) return true;
-  if (toNumber(cluster.coastalDistanceKm) <= 5 && isLikelyCoastalLocality(labelText)) return true;
-  return isLikelyCoastalLocality(labelText) && toNumber(cluster.coastalDistanceKm) <= 12;
+  if (toNumber(cluster.coastalDistanceKm) <= 4 && isLikelyCoastalLocality(labelText)) return true;
+  return isLikelyCoastalLocality(labelText) && toNumber(cluster.coastalDistanceKm) <= 6;
 }
 
 function computeWeightedCentroid(points: Record<string, unknown>[]): { lat: number; lon: number } {
@@ -5806,7 +5848,7 @@ function inferHabitatFromCluster(
 ): { cue: string; type: string; score: number; coastalDistanceKm: number } {
   const text = normalizeComparableText(localityNames.join(' '));
   const coastalDistanceKm = estimateCoastalDistanceKm(centroid.lat, centroid.lon);
-  if (/\b(rand|meri|laht|sadam|poolsaar|ranna|laid|neem|spithami|spithamn|poosaspea|põõsaspea|ristna|tagaranna|tahkuna|sorve|puise|kalana)\b/.test(text) || coastalDistanceKm <= 2) {
+  if (coastalDistanceKm <= 2 || (coastalDistanceKm <= 4 && /\b(rand|meri|laht|sadam|poolsaar|ranna|laid|neem|spithami|spithamn|poosaspea|põõsaspea|ristna|tagaranna|tahkuna|sorve|puise|kalana)\b/.test(text))) {
     return { cue: buildDisplayClusterName(localityNames, 'Coastal hotspot'), type: 'coastal_open_water', score: 28, coastalDistanceKm };
   }
   if (/\b(järv|veehoidla|paisj|tiik|märgala|soo|raba)\b/.test(text)) {

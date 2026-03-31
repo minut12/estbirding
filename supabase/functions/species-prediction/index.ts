@@ -1969,7 +1969,7 @@ function buildPredictedTargets(opts: {
       const representativeLat = Number.isFinite(Number(cluster.representativeLat)) ? toNumber(cluster.representativeLat) : toNumber(cluster.lat);
       const representativeLon = Number.isFinite(Number(cluster.representativeLon)) ? toNumber(cluster.representativeLon) : toNumber(cluster.lon);
       const corridorBasis = corridorAnchor ?? sourceOriginAnchor;
-      const etaHours = Math.max(8, Math.round((entry.entryDistanceKm + haversineKm(corridorBasis.lat, corridorBasis.lon, estoniaEntryCorridor.entryLat, estoniaEntryCorridor.entryLon)) / Math.max(24, toNumber(weather.windSpeedKph) + 16)));
+      const etaHours = Math.max(8, Math.round((entry.entryDistanceKm + haversineKm(toNumber(corridorBasis.lat), toNumber(corridorBasis.lon), estoniaEntryCorridor.entryLat, estoniaEntryCorridor.entryLon)) / Math.max(24, toNumber(weather.windSpeedKph) + 16)));
       const anchorCountries = Array.isArray(sourceOriginAnchor.countries) ? sourceOriginAnchor.countries.map(String).filter(Boolean) : [];
       const anchorCountryCodes = Array.isArray(sourceOriginAnchor.countryCodes) ? sourceOriginAnchor.countryCodes.map(String).filter(Boolean) : [];
       const anchorLocality = Array.isArray(sourceOriginAnchor.locNames) ? sourceOriginAnchor.locNames.map(String).filter(Boolean)[0] : stringOr(sourceOriginAnchor.locName, sourceOriginAnchor.id);

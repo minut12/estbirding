@@ -1928,7 +1928,7 @@ function buildPredictedTargets(opts: {
       const corridorBasis = corridorAnchor ?? sourceOriginAnchor;
       const routeAlignment = computeAlignmentScore(corridorBasis, { lat: representativeLat, lon: representativeLon }, weather);
       const entryDistanceKm = haversineKm(representativeLat, representativeLon, estoniaEntryCorridor.entryLat, estoniaEntryCorridor.entryLon);
-      const corridorBearing = bearingBetween(corridorBasis.lat, corridorBasis.lon, representativeLat, representativeLon);
+      const corridorBearing = bearingBetween(toNumber(corridorBasis.lat), toNumber(corridorBasis.lon), representativeLat, representativeLon);
       const bearingDelta = Math.abs((((corridorBearing - estoniaEntryCorridor.bearingDeg) + 540) % 360) - 180);
       const corridorAlignmentBonus = clampInt(Math.round((180 - bearingDelta) / 3.2), 0, 36);
       const corridorDistancePenalty = clampInt(Math.round(entryDistanceKm / 8), 0, 28);

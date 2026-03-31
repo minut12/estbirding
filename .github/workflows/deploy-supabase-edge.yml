@@ -14,8 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Supabase CLI
-        run: npm i -g supabase
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
       - name: Deploy linnuliigid-snapshot
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -25,8 +26,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Supabase CLI
-        run: npm i -g supabase
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
       - name: Deploy species-prediction
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

@@ -354,7 +354,7 @@ export default function SpeciesPredictionSettings() {
         onEnabledChange={setPredictionFeatureEnabled}
       />
       <p className="text-[11px] text-muted-foreground">
-        prediction-settings-build: 2026-03-22-fix19
+        prediction-settings-build: 2026-03-31-live-probe
       </p>
       {!predictionEnabled ? (
         <p className="text-xs text-muted-foreground">Turn on Species Prediction to edit these settings</p>
@@ -376,11 +376,20 @@ export default function SpeciesPredictionSettings() {
             <p className="mt-1 text-muted-foreground">
               {statusCard.helperText}
             </p>
+            <TestPredictionBackendButton onResult={(data) => {
+              setBackendStatus(data);
+              setSpeciesPredictionHealthCheckResult({
+                ok: true,
+                status: 200,
+                body: data,
+                timestamp: new Date().toISOString(),
+              });
+            }} />
           </div>
           {/* Temporary debug: derived status mapper values */}
           {canSeeDebugDiagnostics && (
             <div className="rounded border border-border bg-muted/20 p-2 text-[10px] font-mono text-muted-foreground space-y-0.5">
-              <p className="font-semibold text-foreground text-[11px]">Status mapper debug (fix19)</p>
+              <p className="font-semibold text-foreground text-[11px]">Status mapper debug (live-probe)</p>
               <p>healthCheck.hasOutdatedWebhook: {String(normalizedBackendStatus.hasOutdatedWebhookPathError)}</p>
               <p>diagnostics.detected: {String(diagnosticWebhookError.detected)}</p>
               <p>diagnostics.stage: {diagnosticWebhookError.stage || '–'}</p>
@@ -389,13 +398,13 @@ export default function SpeciesPredictionSettings() {
               <p>diagnostics.matchedReason: {diagnosticWebhookError.matchedReason || '–'}</p>
               <p>effective.hasOutdatedWebhookPathError: {String(normalizedBackendStatus.hasOutdatedWebhookPathError)}</p>
               <p>displayState: {displayState}</p>
-              <p>resolvedWebhookUrl: {backendStatus.resolvedWebhookUrl || 'â€“'}</p>
-              <p>environmentName: {backendStatus.environmentName || 'â€“'}</p>
-              <p>healthcheckUrl: {backendStatus.healthcheckUrl || 'â€“'}</p>
-              <p>lastSuccessfulHealthCheckAt: {backendStatus.lastSuccessfulHealthCheckAt || 'â€“'}</p>
-              <p>lastFailedHealthCheckAt: {backendStatus.lastFailedHealthCheckAt || 'â€“'}</p>
-              <p>lastHttpStatus: {backendStatus.upstreamStatus != null ? String(backendStatus.upstreamStatus) : 'â€“'}</p>
-              <p>responseSnippet: {backendStatus.responseSnippet || 'â€“'}</p>
+              <p>resolvedWebhookUrl: {backendStatus.resolvedWebhookUrl || '–'}</p>
+              <p>environmentName: {backendStatus.environmentName || '–'}</p>
+              <p>healthcheckUrl: {backendStatus.healthcheckUrl || '–'}</p>
+              <p>lastSuccessfulHealthCheckAt: {backendStatus.lastSuccessfulHealthCheckAt || '–'}</p>
+              <p>lastFailedHealthCheckAt: {backendStatus.lastFailedHealthCheckAt || '–'}</p>
+              <p>lastHttpStatus: {backendStatus.upstreamStatus != null ? String(backendStatus.upstreamStatus) : '–'}</p>
+              <p>responseSnippet: {backendStatus.responseSnippet || '–'}</p>
               {(() => {
                 const recoveredState = buildRecoveryDebugState(debugSnapshot?.rawBackendResponse);
                 return (
@@ -1262,9 +1271,10 @@ export function deriveSpeciesPredictionDisplayState(
   status: ReturnType<typeof normalizeBackendStatus>,
 ): SpeciesPredictionDisplayState {
   if (status.missingWebhookEnv === true || !status.isConfigured) return 'NOT_CONFIGURED';
-  if (status.statusCode === 'CONFIGURED_UNAVAILABLE') return 'CONFIGURED_UNAVAILABLE';
+  if (status.statusCode === 'CONFIGURED_UNAVAILABLE' as string) return 'CONFIGURED_UNAVAILABLE';
   if (
     status.statusDecisionReason === 'configured_valid_no_runtime_probe'
+    || status.statusDecisionReason === 'live_probe_success'
     || status.statusCode === 'CONFIGURED_AVAILABLE'
   ) return 'CONFIGURED_AVAILABLE';
   if (
@@ -1274,8 +1284,8 @@ export function deriveSpeciesPredictionDisplayState(
       status.invalidWebhookUrl === true
       || status.hasOutdatedWebhookPathError === true
       || status.hasFreshInvocationFailure === true
-      || (status.statusCode === 'CONFIGURED_UNAVAILABLE' && status.hasExplicitInvocationFailureSignal === true)
-      || (status.statusCode === 'RUNTIME_ERROR' && status.hasExplicitInvocationFailureSignal === true)
+      || ((status.statusCode as string) === 'CONFIGURED_UNAVAILABLE' && status.hasExplicitInvocationFailureSignal === true)
+      || ((status.statusCode as string) === 'RUNTIME_ERROR' && status.hasExplicitInvocationFailureSignal === true)
       || (status.isHealthy !== true && status.statusDecisionReason === 'recent_real_invocation_failure' && status.hasExplicitInvocationFailureSignal === true)
     )
   ) {
@@ -1315,6 +1325,49 @@ export function buildSpeciesPredictionStatusCard(
     helperText: 'Add the webhook secret in Supabase and redeploy the Edge Function.',
   };
 }
+
+function TestPredictionBackendButton({ onResult }: { onResult: (data: SpeciesPredictionBackendStatus) => void }) {
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ status: number | null; snippet: string; available: boolean | null } | null>(null);
+
+  const runTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const data = await fetchSpeciesPredictionBackendStatus();
+      onResult(data);
+      setTestResult({
+        status: data.upstreamStatus ?? null,
+        snippet: data.responseSnippet || data.message || '',
+        available: data.available,
+      });
+    } catch (err: unknown) {
+      setTestResult({
+        status: null,
+        snippet: err instanceof Error ? err.message : 'Test failed',
+        available: false,
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 space-y-2">
+      <Button variant="outline" size="sm" onClick={runTest} disabled={testing} className="text-xs">
+        {testing ? <><Loader2 className="h-3 w-3 animate-spin mr-1" /> Testing...</> : 'Test prediction backend now'}
+      </Button>
+      {testResult && (
+        <div className="rounded border border-border bg-muted/30 p-2 text-[10px] font-mono space-y-0.5">
+          <p>available: <span className={testResult.available ? 'text-green-600' : 'text-red-500'}>{String(testResult.available)}</span></p>
+          {testResult.status != null && <p>httpStatus: {testResult.status}</p>}
+          <p>response: {testResult.snippet.slice(0, 200) || '\u2013'}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 function PredictionFeatureToggle({
   enabled,

@@ -10,7 +10,7 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-23-v3-passthrough';
+const SPECIES_PREDICTION_BACKEND_BUILD = '2026-03-31-live-probe';
 const INVOKE_ROUTE_VERSION = 'fix20';
 const EDGE_FUNCTION_FILE = 'supabase/functions/species-prediction/index.ts';
 const EDGE_FUNCTION_ENTRYPOINT = 'serve(async (req) => { ... })';
@@ -609,7 +609,120 @@ serve(async (req) => {
     if (req.method === 'GET' && url.searchParams.get('mode') === 'status') {
       const admin = getSupabaseAdmin();
       const lastInvocation = await getLastInvocationEvidence(admin);
-      const statusDecision = buildStatusDecision(webhookTarget, lastInvocation);
+      const shouldVerify = url.searchParams.get('verify') === '1' && webhookTarget.valid && webhookTarget.looksLikeProductionWebhook;
+
+      // Live webhook probe when verify=1
+      let liveProbe: {
+        attempted: boolean;
+        reachable: boolean | null;
+        httpStatus: number | null;
+        responseSnippet: string;
+        errorMessage: string;
+        webhookInactive: boolean;
+        checkedAt: string;
+      } = {
+        attempted: false,
+        reachable: null,
+        httpStatus: null,
+        responseSnippet: '',
+        errorMessage: '',
+        webhookInactive: false,
+        checkedAt: '',
+      };
+
+      if (shouldVerify) {
+        try {
+          const probeController = new AbortController();
+          const probeTimeout = setTimeout(() => probeController.abort(), 10000);
+          const probeHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+          const authHeader = (Deno.env.get(AUTH_HEADER_ENV_KEY) || '').trim();
+          const authValue = (Deno.env.get(AUTH_VALUE_ENV_KEY) || '').trim();
+          if (authHeader && authValue) probeHeaders[authHeader] = authValue;
+          const probeBody = JSON.stringify({
+            mode: 'healthcheck',
+            species: { key: 'health-probe', name: 'Health Probe', latinName: 'Probus healthius' },
+            settings: {},
+            _probeTimestamp: new Date().toISOString(),
+          });
+          const probeResponse = await fetch(webhookTarget.configuredWebhookUrl, {
+            method: 'POST',
+            headers: probeHeaders,
+            body: probeBody,
+            signal: probeController.signal,
+          });
+          clearTimeout(probeTimeout);
+          const probeText = await probeResponse.text();
+          const snippet = probeText.slice(0, 300);
+          const lowerSnippet = snippet.toLowerCase();
+          const webhookInactive = lowerSnippet.includes('not registered')
+            || lowerSnippet.includes('webhook not found')
+            || lowerSnippet.includes('workflow inactive')
+            || lowerSnippet.includes('not found');
+          liveProbe = {
+            attempted: true,
+            reachable: probeResponse.status < 500 && !webhookInactive,
+            httpStatus: probeResponse.status,
+            responseSnippet: snippet,
+            errorMessage: webhookInactive ? 'Webhook is not registered or workflow is inactive' : '',
+            webhookInactive,
+            checkedAt: new Date().toISOString(),
+          };
+          console.info(`${LOG_PREFIX} live_probe`, { status: probeResponse.status, webhookInactive, snippet: snippet.slice(0, 100) });
+        } catch (probeError: unknown) {
+          const msg = probeError instanceof Error ? probeError.message : 'probe failed';
+          const isTimeout = msg.includes('abort');
+          liveProbe = {
+            attempted: true,
+            reachable: false,
+            httpStatus: null,
+            responseSnippet: '',
+            errorMessage: isTimeout ? 'Webhook probe timed out after 10s' : msg,
+            webhookInactive: false,
+            checkedAt: new Date().toISOString(),
+          };
+          console.info(`${LOG_PREFIX} live_probe_error`, { error: msg });
+        }
+      }
+
+      // Override status decision with live probe results
+      let statusDecision = buildStatusDecision(webhookTarget, lastInvocation);
+      if (liveProbe.attempted) {
+        if (liveProbe.reachable === true) {
+          statusDecision = {
+            ...statusDecision,
+            available: true,
+            runtimeReachable: true,
+            runtimeProbeUsed: true,
+            runtimeProbeMethod: 'live_post_probe',
+            runtimeProbeReason: 'verify_param_requested',
+            statusDecisionReason: 'live_probe_success',
+            statusCode: 'CONFIGURED_AVAILABLE',
+            reasonCode: null,
+            message: 'Live webhook probe succeeded. Prediction backend is available.',
+          };
+        } else {
+          const probeReason = liveProbe.webhookInactive
+            ? 'WEBHOOK_NOT_REGISTERED'
+            : liveProbe.httpStatus === 401 || liveProbe.httpStatus === 403
+              ? 'UNAUTHORIZED'
+              : liveProbe.httpStatus === null
+                ? 'NETWORK_ERROR'
+                : 'MALFORMED_RESPONSE';
+          statusDecision = {
+            ...statusDecision,
+            available: false,
+            runtimeReachable: false,
+            runtimeProbeUsed: true,
+            runtimeProbeMethod: 'live_post_probe',
+            runtimeProbeReason: 'verify_param_requested',
+            statusDecisionReason: 'live_probe_failure',
+            statusCode: 'CONFIGURED_UNAVAILABLE',
+            reasonCode: probeReason,
+            message: liveProbe.errorMessage || `Live webhook probe failed with HTTP ${liveProbe.httpStatus}.`,
+          };
+        }
+      }
+
       console.info(`${LOG_PREFIX} webhook_config`, {
         parsedEnvVariableName: WEBHOOK_ENV_KEY,
         parsedConfiguredPath: webhookTarget.configuredWebhookPath,
@@ -632,6 +745,7 @@ serve(async (req) => {
         lastInvocationStatus: lastInvocation.lastInvocationStatus,
         lastInvocationHttpStatus: lastInvocation.lastInvocationHttpStatus,
         responseSnippet: lastInvocation.responseSnippet,
+        liveProbe: liveProbe.attempted ? liveProbe : 'skipped',
         edgeFunctionVersion: EDGE_FUNCTION_VERSION,
         predictionBackendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
       });
@@ -690,17 +804,17 @@ serve(async (req) => {
         looksLikeProductionWebhook: webhookTarget.looksLikeProductionWebhook,
         validationErrorCode: webhookTarget.validationErrorCode,
         validationMessage: webhookTarget.validationMessage,
-        verificationAttempted: false,
-        verificationSafeMode: true,
-        productionWebhookReachable: null,
-        productionWebhookInactive: false,
-        upstreamStatus: lastInvocation.lastInvocationHttpStatus,
+        verificationAttempted: liveProbe.attempted,
+        verificationSafeMode: !liveProbe.attempted,
+        productionWebhookReachable: liveProbe.attempted ? liveProbe.reachable : null,
+        productionWebhookInactive: liveProbe.webhookInactive,
+        upstreamStatus: liveProbe.attempted ? liveProbe.httpStatus : lastInvocation.lastInvocationHttpStatus,
         upstreamStatusText: '',
-        upstreamMessage: '',
+        upstreamMessage: liveProbe.errorMessage || '',
         upstreamBody: null,
-        responseSnippet: lastInvocation.responseSnippet,
-        lastSuccessfulHealthCheckAt: lastInvocation.lastSuccessfulHealthCheckAt,
-        lastFailedHealthCheckAt: lastInvocation.lastFailedHealthCheckAt,
+        responseSnippet: liveProbe.attempted ? liveProbe.responseSnippet : lastInvocation.responseSnippet,
+        lastSuccessfulHealthCheckAt: liveProbe.attempted && liveProbe.reachable ? liveProbe.checkedAt : lastInvocation.lastSuccessfulHealthCheckAt,
+        lastFailedHealthCheckAt: liveProbe.attempted && !liveProbe.reachable ? liveProbe.checkedAt : lastInvocation.lastFailedHealthCheckAt,
         timeoutMsUsed,
         edgeFunctionVersion: EDGE_FUNCTION_VERSION,
         timestamp: new Date().toISOString(),
@@ -1928,7 +2042,7 @@ function buildPredictedTargets(opts: {
       const corridorBasis = corridorAnchor ?? sourceOriginAnchor;
       const routeAlignment = computeAlignmentScore(corridorBasis, { lat: representativeLat, lon: representativeLon }, weather);
       const entryDistanceKm = haversineKm(representativeLat, representativeLon, estoniaEntryCorridor.entryLat, estoniaEntryCorridor.entryLon);
-      const corridorBearing = bearingBetween(corridorBasis.lat, corridorBasis.lon, representativeLat, representativeLon);
+      const corridorBearing = bearingBetween(toNumber(corridorBasis.lat), toNumber(corridorBasis.lon), representativeLat, representativeLon);
       const bearingDelta = Math.abs((((corridorBearing - estoniaEntryCorridor.bearingDeg) + 540) % 360) - 180);
       const corridorAlignmentBonus = clampInt(Math.round((180 - bearingDelta) / 3.2), 0, 36);
       const corridorDistancePenalty = clampInt(Math.round(entryDistanceKm / 8), 0, 28);
@@ -1969,7 +2083,7 @@ function buildPredictedTargets(opts: {
       const representativeLat = Number.isFinite(Number(cluster.representativeLat)) ? toNumber(cluster.representativeLat) : toNumber(cluster.lat);
       const representativeLon = Number.isFinite(Number(cluster.representativeLon)) ? toNumber(cluster.representativeLon) : toNumber(cluster.lon);
       const corridorBasis = corridorAnchor ?? sourceOriginAnchor;
-      const etaHours = Math.max(8, Math.round((entry.entryDistanceKm + haversineKm(corridorBasis.lat, corridorBasis.lon, estoniaEntryCorridor.entryLat, estoniaEntryCorridor.entryLon)) / Math.max(24, toNumber(weather.windSpeedKph) + 16)));
+      const etaHours = Math.max(8, Math.round((entry.entryDistanceKm + haversineKm(toNumber(corridorBasis.lat), toNumber(corridorBasis.lon), estoniaEntryCorridor.entryLat, estoniaEntryCorridor.entryLon)) / Math.max(24, toNumber(weather.windSpeedKph) + 16)));
       const anchorCountries = Array.isArray(sourceOriginAnchor.countries) ? sourceOriginAnchor.countries.map(String).filter(Boolean) : [];
       const anchorCountryCodes = Array.isArray(sourceOriginAnchor.countryCodes) ? sourceOriginAnchor.countryCodes.map(String).filter(Boolean) : [];
       const anchorLocality = Array.isArray(sourceOriginAnchor.locNames) ? sourceOriginAnchor.locNames.map(String).filter(Boolean)[0] : stringOr(sourceOriginAnchor.locName, sourceOriginAnchor.id);
@@ -1978,7 +2092,7 @@ function buildPredictedTargets(opts: {
         : '';
       const corridorReason = [
         `Anchored to fresh foreign pressure from ${anchorLocality || 'foreign eBird cluster'}${anchorCountries.length ? ` (${anchorCountries.join(', ')})` : ''}`,
-        ...(corridorAnchor && !arePointsNear(sourceOriginAnchor.lat, sourceOriginAnchor.lon, corridorAnchor.lat, corridorAnchor.lon, 0.05)
+        ...(corridorAnchor && !arePointsNear(toNumber(sourceOriginAnchor.lat), toNumber(sourceOriginAnchor.lon), toNumber(corridorAnchor.lat), toNumber(corridorAnchor.lon), 0.05)
           ? [`via downstream staging at ${corridorLocality || estoniaEntryCorridor.entryLabel}`]
           : []),
         `via the ${estoniaEntryCorridor.entryLabel} Estonia entry corridor`,
@@ -2997,7 +3111,7 @@ function createUpstreamError(input: {
     ...(input.stage === 'invalid_upstream_json'
       ? {
         summarySourcePath: typeof (input.upstreamBody as Record<string, unknown> | null)?.summarySourcePath === 'string'
-          ? (input.upstreamBody as Record<string, unknown>).summarySourcePath
+          ? (input.upstreamBody as Record<string, unknown>).summarySourcePath as string
           : undefined,
         hasAiSummaryObject: (input.upstreamBody as Record<string, unknown> | null)?.hasAiSummaryObject === true,
         hasNestedInsightSummary: (input.upstreamBody as Record<string, unknown> | null)?.hasNestedInsightSummary === true,
@@ -4458,6 +4572,7 @@ function enforceCanonicalSummaryConsistency(
     activeEvidenceSources: canonical.activeEvidenceSources,
     evidenceStateSnapshot: {
       hasUsableRecentEstoniaEvidence: canonical.hasUsableRecentEstoniaEvidence,
+      hasUsableHistoricalEstoniaEvidence: canonical.hasUsableEstoniaHistory,
       hasUsableEstoniaHistory: canonical.hasUsableEstoniaHistory,
       hasUsableForeignPressure: canonical.hasUsableForeignPressure,
       hasUsablePredictedTargets: canonical.hasUsablePredictedTargets,
@@ -5595,8 +5710,7 @@ function applyEvidenceStateSummaryGuardrails(
     warnings: summary.warnings,
     evidenceState: evidenceStateSnapshot.evidenceState,
     hasUsableRecentEstoniaEvidence: evidenceStateSnapshot.hasUsableRecentEstoniaEvidence,
-    hasUsableHistoricalEstoniaEvidence: evidenceStateSnapshot.hasUsableHistoricalEstoniaEvidence,
-    hasUsableEstoniaHistory: evidenceStateSnapshot.hasUsableEstoniaHistory,
+    hasUsableEstoniaHistory: evidenceStateSnapshot.hasUsableHistoricalEstoniaEvidence || evidenceStateSnapshot.hasUsableEstoniaHistory,
     hasUsableForeignPressure: evidenceStateSnapshot.hasUsableForeignPressure,
     hasUsablePredictedTargets: evidenceStateSnapshot.hasUsablePredictedTargets,
     hasOnlyWeather: evidenceStateSnapshot.hasOnlyWeather,

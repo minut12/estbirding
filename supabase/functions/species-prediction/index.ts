@@ -1857,25 +1857,29 @@ function buildPredictedTargets(opts: {
   const nearestRelevantClusterKm = hasForeignPressure
     ? Math.min(...foreignClusters.map((cluster) => toNumber(cluster.nearestDistanceKm)).filter((value) => value > 0))
     : null;
-  const primaryForeignAnchor = hasForeignPressure
-    ? selectPrimaryForeignAnchor(foreignClusters, foreignRecentPoints)
+  const sourceOriginAnchor = hasForeignPressure
+    ? selectStrongestForeignSourceAnchor(foreignClusters, foreignRecentPoints)
     : null;
   const foreignAnchoredRanking = hasForeignPressure
     && !hasRecentEstoniaSupport
-    && primaryForeignAnchor
+    && sourceOriginAnchor
     && estoniaHistoryClusters.length > 0;
-  const estoniaEntryCorridor = foreignAnchoredRanking
-    ? deriveEstoniaEntryCorridor(primaryForeignAnchor, estoniaHistoryClusters)
+  const corridorAnchor = foreignAnchoredRanking && sourceOriginAnchor
+    ? selectNearestPlausibleCorridorAnchor(sourceOriginAnchor, foreignClusters, foreignRecentPoints)
     : null;
-  if (foreignAnchoredRanking && primaryForeignAnchor && estoniaEntryCorridor) {
+  const estoniaEntryCorridor = foreignAnchoredRanking
+    ? deriveEstoniaEntryCorridor(corridorAnchor ?? sourceOriginAnchor, estoniaHistoryClusters)
+    : null;
+  if (foreignAnchoredRanking && sourceOriginAnchor && estoniaEntryCorridor) {
     const anchored = estoniaHistoryClusters.map((cluster) => {
       const representativeLat = Number.isFinite(Number(cluster.representativeLat)) ? toNumber(cluster.representativeLat) : toNumber(cluster.lat);
       const representativeLon = Number.isFinite(Number(cluster.representativeLon)) ? toNumber(cluster.representativeLon) : toNumber(cluster.lon);
       const ecologyScore = scoreClusterEcology(cluster, ecology);
       const historyScore = historyScoreForDebug(cluster);
-      const routeAlignment = computeAlignmentScore(primaryForeignAnchor, { lat: representativeLat, lon: representativeLon }, weather);
+      const corridorBasis = corridorAnchor ?? sourceOriginAnchor;
+      const routeAlignment = computeAlignmentScore(corridorBasis, { lat: representativeLat, lon: representativeLon }, weather);
       const entryDistanceKm = haversineKm(representativeLat, representativeLon, estoniaEntryCorridor.entryLat, estoniaEntryCorridor.entryLon);
-      const corridorBearing = bearingBetween(primaryForeignAnchor.lat, primaryForeignAnchor.lon, representativeLat, representativeLon);
+      const corridorBearing = bearingBetween(corridorBasis.lat, corridorBasis.lon, representativeLat, representativeLon);
       const bearingDelta = Math.abs((((corridorBearing - estoniaEntryCorridor.bearingDeg) + 540) % 360) - 180);
       const corridorAlignmentBonus = clampInt(Math.round((180 - bearingDelta) / 3.2), 0, 36);
       const corridorDistancePenalty = clampInt(Math.round(entryDistanceKm / 8), 0, 28);
@@ -1915,14 +1919,34 @@ function buildPredictedTargets(opts: {
       const cluster = entry.cluster;
       const representativeLat = Number.isFinite(Number(cluster.representativeLat)) ? toNumber(cluster.representativeLat) : toNumber(cluster.lat);
       const representativeLon = Number.isFinite(Number(cluster.representativeLon)) ? toNumber(cluster.representativeLon) : toNumber(cluster.lon);
-      const etaHours = Math.max(8, Math.round((entry.entryDistanceKm + haversineKm(primaryForeignAnchor.lat, primaryForeignAnchor.lon, estoniaEntryCorridor.entryLat, estoniaEntryCorridor.entryLon)) / Math.max(24, toNumber(weather.windSpeedKph) + 16)));
-      const anchorCountries = Array.isArray(primaryForeignAnchor.countries) ? primaryForeignAnchor.countries.map(String).filter(Boolean) : [];
-      const anchorLocality = Array.isArray(primaryForeignAnchor.locNames) ? primaryForeignAnchor.locNames.map(String).filter(Boolean)[0] : stringOr(primaryForeignAnchor.locName, primaryForeignAnchor.id);
+      const corridorBasis = corridorAnchor ?? sourceOriginAnchor;
+      const etaHours = Math.max(8, Math.round((entry.entryDistanceKm + haversineKm(corridorBasis.lat, corridorBasis.lon, estoniaEntryCorridor.entryLat, estoniaEntryCorridor.entryLon)) / Math.max(24, toNumber(weather.windSpeedKph) + 16)));
+      const anchorCountries = Array.isArray(sourceOriginAnchor.countries) ? sourceOriginAnchor.countries.map(String).filter(Boolean) : [];
+      const anchorCountryCodes = Array.isArray(sourceOriginAnchor.countryCodes) ? sourceOriginAnchor.countryCodes.map(String).filter(Boolean) : [];
+      const anchorLocality = Array.isArray(sourceOriginAnchor.locNames) ? sourceOriginAnchor.locNames.map(String).filter(Boolean)[0] : stringOr(sourceOriginAnchor.locName, sourceOriginAnchor.id);
+      const corridorLocality = corridorAnchor
+        ? (Array.isArray(corridorAnchor.locNames) ? corridorAnchor.locNames.map(String).filter(Boolean)[0] : stringOr(corridorAnchor.locName, corridorAnchor.id))
+        : '';
       const corridorReason = [
         `Anchored to fresh foreign pressure from ${anchorLocality || 'foreign eBird cluster'}${anchorCountries.length ? ` (${anchorCountries.join(', ')})` : ''}`,
+        ...(corridorAnchor && !arePointsNear(sourceOriginAnchor.lat, sourceOriginAnchor.lon, corridorAnchor.lat, corridorAnchor.lon, 0.05)
+          ? [`via downstream staging at ${corridorLocality || estoniaEntryCorridor.entryLabel}`]
+          : []),
         `via the ${estoniaEntryCorridor.entryLabel} Estonia entry corridor`,
         `before ranking Estonia targets by corridor fit and supporting history.`,
       ].join(' ');
+      const migrationEta = buildCanonicalMigrationEta({
+        sourceOriginAnchor,
+        corridorAnchor,
+        estoniaEntryCorridor,
+        target: {
+          name: stringOr(cluster.displayName, 'Unnamed history cluster'),
+          lat: representativeLat,
+          lon: representativeLon,
+          rank: index + 1,
+        },
+        weather,
+      });
       return {
         rank: index + 1,
         name: stringOr(cluster.displayName, 'Unnamed history cluster'),
@@ -1968,6 +1992,10 @@ function buildPredictedTargets(opts: {
         entryCorridorLon: estoniaEntryCorridor.entryLon,
         foreignAnchorLocality: anchorLocality,
         foreignAnchorCountries: anchorCountries,
+        foreignAnchorCountryCodes: anchorCountryCodes,
+        ...(corridorLocality ? { corridorAnchorLocality: corridorLocality } : {}),
+        ...(corridorAnchor ? { corridorAnchorCountryCodes: Array.isArray(corridorAnchor.countryCodes) ? corridorAnchor.countryCodes.map(String).filter(Boolean) : [] } : {}),
+        migrationEta,
       };
     });
   }
@@ -2108,7 +2136,7 @@ function buildPredictedTargets(opts: {
   });
 }
 
-function selectPrimaryForeignAnchor(
+function selectStrongestForeignSourceAnchor(
   foreignClusters: Record<string, unknown>[],
   foreignRecentPoints: Record<string, unknown>[],
 ): Record<string, unknown> | null {
@@ -2132,11 +2160,13 @@ function selectPrimaryForeignAnchor(
         ? toNumber(cluster.pointCount)
         : Math.max(1, pointCountsByClusterId.get(clusterId) || 0);
       const totalHowMany = hasFiniteNumber(cluster.totalHowMany) ? toNumber(cluster.totalHowMany) : pointCount;
-      const freshnessScore = Math.max(0, 20 - freshestDaysAgo * 3);
-      const proximityScore = Math.max(0, 18 - nearestDistanceKm / 20);
-      const volumeScore = Math.min(20, pointCount * 3 + Math.min(10, totalHowMany));
+      const recentScore = hasFiniteNumber((cluster as Record<string, unknown>).recentScore) ? toNumber((cluster as Record<string, unknown>).recentScore) : 0;
+      const freshnessScore = Math.max(0, 26 - freshestDaysAgo * 4);
+      const volumeScore = Math.min(24, pointCount * 2 + Math.min(16, totalHowMany));
+      const northwardScore = Math.max(0, Math.min(10, (toNumber(cluster.lat) - 49) * 1.2));
+      const proximityTieBreaker = Math.max(0, 6 - nearestDistanceKm / 80);
       const freshnessBoost = cluster.isFreshest === true ? 8 : 0;
-      const anchorScore = freshnessScore + proximityScore + volumeScore + freshnessBoost;
+      const anchorScore = freshnessScore + volumeScore + recentScore + northwardScore + proximityTieBreaker + freshnessBoost;
       return {
         ...cluster,
         pointCount,
@@ -2150,10 +2180,171 @@ function selectPrimaryForeignAnchor(
     .sort((left, right) =>
       toNumber(right.anchorScore) - toNumber(left.anchorScore)
       || toNumber(left.freshestDaysAgo) - toNumber(right.freshestDaysAgo)
-      || toNumber(left.nearestDistanceKm) - toNumber(right.nearestDistanceKm)
+      || toNumber(right.totalHowMany) - toNumber(left.totalHowMany)
       || toNumber(right.pointCount) - toNumber(left.pointCount)
+      || toNumber(left.nearestDistanceKm) - toNumber(right.nearestDistanceKm)
       || toNumber(left._inputIndex) - toNumber(right._inputIndex)
     )[0] ?? null;
+}
+
+function selectNearestPlausibleCorridorAnchor(
+  sourceOriginAnchor: Record<string, unknown>,
+  foreignClusters: Record<string, unknown>[],
+  foreignRecentPoints: Record<string, unknown>[],
+): Record<string, unknown> | null {
+  if (!sourceOriginAnchor || !foreignClusters.length) return null;
+  const sourceLat = toNumber(sourceOriginAnchor.lat);
+  const sourceLon = toNumber(sourceOriginAnchor.lon);
+  const sourceDistanceToEstonia = hasFiniteNumber(sourceOriginAnchor.nearestDistanceKm) && toNumber(sourceOriginAnchor.nearestDistanceKm) > 0
+    ? toNumber(sourceOriginAnchor.nearestDistanceKm)
+    : distanceToEstonia(sourceLat, sourceLon);
+  const candidates = foreignClusters
+    .filter((cluster) => stringOr(cluster.id) !== stringOr(sourceOriginAnchor.id))
+    .map((cluster, index) => {
+      const clusterLat = toNumber(cluster.lat);
+      const clusterLon = toNumber(cluster.lon);
+      const clusterDistanceToEstonia = hasFiniteNumber(cluster.nearestDistanceKm) && toNumber(cluster.nearestDistanceKm) > 0
+        ? toNumber(cluster.nearestDistanceKm)
+        : distanceToEstonia(clusterLat, clusterLon);
+      const freshness = hasFiniteNumber(cluster.freshestDaysAgo)
+        ? toNumber(cluster.freshestDaysAgo)
+        : daysAgoFromIso(stringOr(cluster.newestObsDt)) ?? 999;
+      const betweenProgress = sourceDistanceToEstonia - clusterDistanceToEstonia;
+      const distanceFromSourceKm = haversineKm(sourceLat, sourceLon, clusterLat, clusterLon);
+      const plausibleDownstream = betweenProgress > 15 && clusterDistanceToEstonia < sourceDistanceToEstonia;
+      const freshnessScore = Math.max(0, 12 - freshness * 2);
+      const downstreamScore = Math.max(0, Math.min(18, betweenProgress / 12));
+      const compactness = Math.max(0, 10 - distanceFromSourceKm / 25);
+      const volumeScore = Math.min(8, (hasFiniteNumber(cluster.pointCount) ? toNumber(cluster.pointCount) : 0) + Math.min(4, hasFiniteNumber(cluster.totalHowMany) ? toNumber(cluster.totalHowMany) : 0));
+      return {
+        ...cluster,
+        clusterDistanceToEstonia,
+        freshness,
+        distanceFromSourceKm,
+        plausibleDownstream,
+        corridorScore: (plausibleDownstream ? 15 : 0) + freshnessScore + downstreamScore + compactness + volumeScore,
+        _inputIndex: index,
+      };
+    })
+    .filter((cluster) => cluster.plausibleDownstream && cluster.freshness <= 10)
+    .sort((left, right) =>
+      toNumber(right.corridorScore) - toNumber(left.corridorScore)
+      || toNumber(left.clusterDistanceToEstonia) - toNumber(right.clusterDistanceToEstonia)
+      || toNumber(left.freshness) - toNumber(right.freshness)
+      || toNumber(left._inputIndex) - toNumber(right._inputIndex)
+    );
+  return candidates[0] ?? null;
+}
+
+function buildCanonicalMigrationEta(input: {
+  sourceOriginAnchor: Record<string, unknown>;
+  corridorAnchor: Record<string, unknown> | null;
+  estoniaEntryCorridor: { entryLabel: string; entryLat: number; entryLon: number; bearingDeg: number; distanceFromForeignKm: number };
+  target: { name: string; lat: number; lon: number; rank: number };
+  weather: Record<string, unknown>;
+}): Record<string, unknown> {
+  const sourceLocality = Array.isArray(input.sourceOriginAnchor.locNames)
+    ? input.sourceOriginAnchor.locNames.map(String).filter(Boolean)[0]
+    : stringOr(input.sourceOriginAnchor.locName, input.sourceOriginAnchor.id, 'Foreign source');
+  const sourceCountry = Array.isArray(input.sourceOriginAnchor.countries)
+    ? input.sourceOriginAnchor.countries.map(String).filter(Boolean)[0]
+    : resolveCountryName(Array.isArray(input.sourceOriginAnchor.countryCodes) ? String(input.sourceOriginAnchor.countryCodes[0] || '') : '');
+  const sourceCountryCode = Array.isArray(input.sourceOriginAnchor.countryCodes)
+    ? String(input.sourceOriginAnchor.countryCodes[0] || '').toUpperCase()
+    : '';
+  const corridorLocality = input.corridorAnchor
+    ? (Array.isArray(input.corridorAnchor.locNames) ? input.corridorAnchor.locNames.map(String).filter(Boolean)[0] : stringOr(input.corridorAnchor.locName, input.corridorAnchor.id))
+    : '';
+  const routePoints = dedupeMigrationRoutePoints([
+    {
+      lat: toNumber(input.sourceOriginAnchor.lat),
+      lon: toNumber(input.sourceOriginAnchor.lon),
+      name: sourceLocality || 'Foreign origin',
+      type: 'origin',
+    },
+    ...(input.corridorAnchor ? [{
+      lat: toNumber(input.corridorAnchor.lat),
+      lon: toNumber(input.corridorAnchor.lon),
+      name: corridorLocality || 'Downstream corridor',
+      type: 'waypoint',
+    }] : []),
+    {
+      lat: input.estoniaEntryCorridor.entryLat,
+      lon: input.estoniaEntryCorridor.entryLon,
+      name: input.estoniaEntryCorridor.entryLabel,
+      type: 'waypoint',
+    },
+    {
+      lat: input.target.lat,
+      lon: input.target.lon,
+      name: input.target.name,
+      type: 'destination',
+    },
+  ]);
+  const totalDistanceKm = computeRouteDistanceKm(routePoints);
+  const route = routePoints.map((point, index) => ({
+    lat: point.lat,
+    lon: point.lon,
+    name: point.name,
+    type: point.type,
+    cumulativeKm: Math.round(computeRouteDistanceKm(routePoints.slice(0, index + 1))),
+    estimatedDate: new Date(Date.now() + index * 86400000).toISOString(),
+    progressPct: routePoints.length > 1 ? Math.round((index / (routePoints.length - 1)) * 100) : 100,
+  }));
+  return {
+    distanceKm: Math.round(haversineKm(toNumber(input.sourceOriginAnchor.lat), toNumber(input.sourceOriginAnchor.lon), input.estoniaEntryCorridor.entryLat, input.estoniaEntryCorridor.entryLon)),
+    routeDistanceKm: totalDistanceKm,
+    entryZone: input.estoniaEntryCorridor.entryLabel,
+    entryLat: input.estoniaEntryCorridor.entryLat,
+    entryLon: input.estoniaEntryCorridor.entryLon,
+    speciesType: 'migrant',
+    totalDaysEstimate: Math.max(1, Math.round(totalDistanceKm / Math.max(140, toNumber(input.weather.windSpeedKph) * 6 || 160))),
+    foreignSightingDate: stringOr(input.sourceOriginAnchor.newestObsDt),
+    earliestArrival: new Date(Date.now() + 86400000).toISOString(),
+    latestArrival: new Date(Date.now() + 3 * 86400000).toISOString(),
+    isPastDue: false,
+    isImminent: true,
+    etaText: `${Math.max(1, Math.round(totalDistanceKm / Math.max(140, toNumber(input.weather.windSpeedKph) * 6 || 160)))}d`,
+    fromLocality: sourceLocality,
+    fromCountry: sourceCountry || sourceCountryCode,
+    foreignLocality: sourceLocality,
+    foreignCountry: sourceCountry || sourceCountryCode,
+    migrationRoute: {
+      route,
+      totalDistanceKm,
+      routeDistanceKm: totalDistanceKm,
+      currentProgressPct: 0,
+      currentEstimatedLat: routePoints[0]?.lat ?? toNumber(input.sourceOriginAnchor.lat),
+      currentEstimatedLon: routePoints[0]?.lon ?? toNumber(input.sourceOriginAnchor.lon),
+      currentWaypointIdx: 0,
+      hasArrived: false,
+      daysSinceSighting: Math.max(0, hasFiniteNumber(input.sourceOriginAnchor.freshestDaysAgo) ? toNumber(input.sourceOriginAnchor.freshestDaysAgo) : 0),
+      speciesType: 'migrant',
+    },
+  };
+}
+
+function dedupeMigrationRoutePoints(points: Array<{ lat: number; lon: number; name: string; type: string }>): Array<{ lat: number; lon: number; name: string; type: string }> {
+  const deduped: Array<{ lat: number; lon: number; name: string; type: string }> = [];
+  points.forEach((point) => {
+    if (!Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return;
+    const previous = deduped[deduped.length - 1];
+    if (previous && arePointsNear(previous.lat, previous.lon, point.lat, point.lon, 0.05)) return;
+    deduped.push(point);
+  });
+  return deduped;
+}
+
+function computeRouteDistanceKm(points: Array<{ lat: number; lon: number }>): number {
+  let total = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    total += haversineKm(points[index - 1].lat, points[index - 1].lon, points[index].lat, points[index].lon);
+  }
+  return Math.round(total);
+}
+
+function arePointsNear(lat1: number, lon1: number, lat2: number, lon2: number, toleranceDeg: number): boolean {
+  return Math.abs(lat1 - lat2) <= toleranceDeg && Math.abs(lon1 - lon2) <= toleranceDeg;
 }
 
 function deriveEstoniaEntryCorridor(
@@ -4312,10 +4503,29 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
   const canonicalWeather = Object.keys(asRecord(payload.weather)).length
     ? asRecord(payload.weather)
     : asRecord(normalizedSources.weather);
+  const normalizedForeignRecentPoints = Array.isArray(normalizedSources.foreignRecentPoints) ? normalizedSources.foreignRecentPoints.map((entry) => asRecord(entry)) : [];
+  const normalizedForeignClusters = Array.isArray(normalizedSources.foreignClusters) ? normalizedSources.foreignClusters.map((entry) => asRecord(entry)) : [];
   const foreignEvidence = buildForeignEvidenceFromPointsAndClusters(
     foreignRecentPoints.map((entry) => asRecord(entry)),
     foreignClusters.map((entry) => asRecord(entry)),
   );
+  const canonicalSourceOriginAnchor = selectStrongestForeignSourceAnchor(
+    normalizedForeignClusters.length ? normalizedForeignClusters : foreignClusters.map((entry) => asRecord(entry)),
+    normalizedForeignRecentPoints.length ? normalizedForeignRecentPoints : foreignRecentPoints.map((entry) => asRecord(entry)),
+  );
+  const canonicalCorridorAnchor = canonicalSourceOriginAnchor
+    ? selectNearestPlausibleCorridorAnchor(
+      canonicalSourceOriginAnchor,
+      normalizedForeignClusters.length ? normalizedForeignClusters : foreignClusters.map((entry) => asRecord(entry)),
+      normalizedForeignRecentPoints.length ? normalizedForeignRecentPoints : foreignRecentPoints.map((entry) => asRecord(entry)),
+    )
+    : null;
+  const canonicalEntryCorridor = canonicalSourceOriginAnchor && estoniaHistoryClusters.length
+    ? deriveEstoniaEntryCorridor(canonicalCorridorAnchor ?? canonicalSourceOriginAnchor, estoniaHistoryClusters.map((entry) => asRecord(entry)))
+    : null;
+  const canonicalPredictedTargets = canonicalSourceOriginAnchor && canonicalEntryCorridor
+    ? (predictedTargets.map((entry, index) => rebuildMigrationEtaOnTarget(asRecord(entry), canonicalSourceOriginAnchor, canonicalCorridorAnchor, canonicalEntryCorridor, canonicalWeather, index)))
+    : predictedTargets;
   const canonicalCountryScores = buildCountryScores(foreignEvidence);
   const evidenceStateSnapshot = computeEvidenceState({
     estoniaEvidence,
@@ -4327,7 +4537,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     sourceHealth: asRecord(payload.sourceHealth),
     weather: canonicalWeather,
     predictedTargets,
-    topPredictedPoints: Array.isArray(payload.topPredictedPoints) ? payload.topPredictedPoints : predictedTargets,
+    topPredictedPoints: Array.isArray(payload.topPredictedPoints) ? payload.topPredictedPoints : canonicalPredictedTargets,
   });
   const canonicalEvidenceSummary = buildEvidenceSummary({
     weather: canonicalWeather,
@@ -4349,7 +4559,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
   const finalConsistencyChecks = buildFinalConsistencyChecksFromCanonical({
     foreignRecentPoints,
     foreignClusters,
-    predictedTargets,
+    predictedTargets: canonicalPredictedTargets,
     weather: canonicalWeather,
     insightSummary: scrubbed.safeSummary,
   });
@@ -4383,7 +4593,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     bestEntryZone: stringOr(payload.bestEntryZone, asRecord(predictedTargets[0]).entryCorridorLabel, asRecord(predictedTargets[0]).countyOrParish, asRecord(predictedTargets[0]).name, 'Unavailable'),
     alreadyMissedRisk: payload.alreadyMissedRisk,
     countryScores: canonicalCountryScores,
-    topPredictedPoints: predictedTargets,
+    topPredictedPoints: canonicalPredictedTargets,
     insightSummary: scrubbed.safeSummary,
     aiSummary: scrubbed.safeSummary,
     confidenceNote: payload.confidenceNote,
@@ -4427,10 +4637,10 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
       insightSummary: scrubbed.safeSummary,
       confidenceNote: '',
       rankingNotes: [],
-      topPredictedPoints: predictedTargets,
+      topPredictedPoints: canonicalPredictedTargets,
       estoniaEvidence,
       foreignEvidence: foreignRecentPoints,
-      predictedTargets,
+      predictedTargets: canonicalPredictedTargets,
       warnings: finalWarnings,
       consistencyChecks: {
         ...finalConsistencyChecks,
@@ -4448,6 +4658,40 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     },
   };
   return finalPayload;
+}
+
+function rebuildMigrationEtaOnTarget(
+  target: Record<string, unknown>,
+  sourceOriginAnchor: Record<string, unknown>,
+  corridorAnchor: Record<string, unknown> | null,
+  estoniaEntryCorridor: { entryLabel: string; entryLat: number; entryLon: number; bearingDeg: number; distanceFromForeignKm: number },
+  weather: Record<string, unknown>,
+  index: number,
+): Record<string, unknown> {
+  const existingEta = asRecord(target.migrationEta);
+  const sourceCountryCode = Array.isArray(sourceOriginAnchor.countryCodes) ? String(sourceOriginAnchor.countryCodes[0] || '').toUpperCase() : '';
+  const expectedCountry = Array.isArray(sourceOriginAnchor.countries)
+    ? String(sourceOriginAnchor.countries[0] || '')
+    : resolveCountryName(sourceCountryCode);
+  const etaCountry = stringOr(existingEta.fromCountry, existingEta.foreignCountry);
+  const needsRebuild = !etaCountry
+    || (expectedCountry && etaCountry.toLowerCase() !== expectedCountry.toLowerCase() && etaCountry.toUpperCase() !== sourceCountryCode);
+  if (!needsRebuild) return target;
+  return {
+    ...target,
+    migrationEta: buildCanonicalMigrationEta({
+      sourceOriginAnchor,
+      corridorAnchor,
+      estoniaEntryCorridor,
+      target: {
+        name: stringOr(target.displayName, target.name, `Target ${index + 1}`),
+        lat: toNumber(target.lat),
+        lon: toNumber(target.lon),
+        rank: toNumber(target.rank) || index + 1,
+      },
+      weather,
+    }),
+  };
 }
 
 function hasNonPlaceholderForeignClusters(input: unknown[]): boolean {

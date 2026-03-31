@@ -551,4 +551,273 @@ describe("species-prediction backend summary finalizer", () => {
     expect(String(predicted[0]?.reason)).not.toMatch(/Nõmme linnaosa.*before ranking/i);
     expect(predicted[0]?.rankingMode).toBe("foreign_anchor_entry_corridor");
   });
+
+  it("keeps visible migration origin at strongest upstream source while allowing downstream corridor staging", () => {
+    const predicted = hooks.buildPredictedTargets({
+      speciesName: "Punanokk-vart",
+      foreignRecentPoints: [
+        {
+          lat: 54.35,
+          lon: 18.68,
+          obsDt: "2026-03-30T06:00:00.000Z",
+          locName: "Mikoszewo",
+          countryCode: "pl",
+          countryName: "Poland",
+          source: "eBird",
+          daysAgo: 1,
+          clusterId: "pl-source",
+          distanceToEstoniaKm: 420,
+        },
+        {
+          lat: 57.86,
+          lon: 23.22,
+          obsDt: "2026-03-30T07:00:00.000Z",
+          locName: "Kolkasrags",
+          countryCode: "lv",
+          countryName: "Latvia",
+          source: "eBird",
+          daysAgo: 1,
+          clusterId: "lv-corridor",
+          distanceToEstoniaKm: 70,
+        },
+      ],
+      foreignClusters: [
+        {
+          id: "pl-source",
+          lat: 54.35,
+          lon: 18.68,
+          pointCount: 5,
+          newestObsDt: "2026-03-30T06:00:00.000Z",
+          oldestObsDt: "2026-03-29T06:00:00.000Z",
+          freshestDaysAgo: 1,
+          averageDaysAgo: 1.1,
+          totalHowMany: 18,
+          countries: ["Poland"],
+          countryCodes: ["pl"],
+          locNames: ["Mikoszewo"],
+          nearestDistanceKm: 420,
+          isFreshest: true,
+        },
+        {
+          id: "lv-corridor",
+          lat: 57.86,
+          lon: 23.22,
+          pointCount: 1,
+          newestObsDt: "2026-03-30T07:00:00.000Z",
+          oldestObsDt: "2026-03-30T07:00:00.000Z",
+          freshestDaysAgo: 1,
+          averageDaysAgo: 1,
+          totalHowMany: 1,
+          countries: ["Latvia"],
+          countryCodes: ["lv"],
+          locNames: ["Kolkasrags"],
+          nearestDistanceKm: 70,
+          isFreshest: false,
+        },
+      ],
+      estoniaHistoryClusters: [
+        {
+          id: "poosaspea-entry",
+          lat: 59.21,
+          lon: 23.52,
+          representativeLat: 59.2054,
+          representativeLon: 23.5164,
+          count: 5,
+          recentCount: 0,
+          locality: "Põõsaspea neem",
+          municipality: "Lääne-Nigula",
+          displayName: "Põõsaspea neem",
+          habitatCue: "coastal migration bottleneck",
+          habitatType: "coastal_open_water",
+          habitatScore: 28,
+          coastalDistanceKm: 2,
+          clusterTightnessKm: 3,
+          newestEventDate: "2025-03-10T00:00:00.000Z",
+          oldestEventDate: "2023-03-10T00:00:00.000Z",
+          source: "GBIF",
+          sourceBreakdown: { GBIF: 5 },
+        },
+      ],
+      weather: {
+        fetchedAt: "2026-03-30T08:00:00.000Z",
+        windSpeedKph: 24,
+        windDirectionDeg: 205,
+        weatherAvailable: true,
+        weatherPartial: false,
+      },
+      estoniaEvidence: {
+        recentCount7d: 0,
+        recentCount30d: 0,
+        alreadyPresent: false,
+      },
+      horizonDays: 7,
+    });
+
+    const finalized = hooks.finalizePredictionResponse(buildBaseResponse({
+      speciesName: "Punanokk-vart",
+      sourceHealth: {
+        ebirdAvailable: true,
+        primarySourceUsed: "eBird foreign",
+      },
+      predictedTargets: predicted,
+      foreignRecentPoints: [
+        {
+          lat: 54.35,
+          lon: 18.68,
+          obsDt: "2026-03-30T06:00:00.000Z",
+          locName: "Mikoszewo",
+          countryCode: "pl",
+          countryName: "Poland",
+          source: "eBird",
+          daysAgo: 1,
+          clusterId: "pl-source",
+          distanceToEstoniaKm: 420,
+        },
+        {
+          lat: 57.86,
+          lon: 23.22,
+          obsDt: "2026-03-30T07:00:00.000Z",
+          locName: "Kolkasrags",
+          countryCode: "lv",
+          countryName: "Latvia",
+          source: "eBird",
+          daysAgo: 1,
+          clusterId: "lv-corridor",
+          distanceToEstoniaKm: 70,
+        },
+      ],
+      foreignClusters: [
+        {
+          id: "placeholder",
+          lat: 57.86,
+          lon: 23.22,
+          pointCount: 1,
+          newestObsDt: "2026-03-30T07:00:00.000Z",
+          oldestObsDt: "2026-03-30T07:00:00.000Z",
+          freshestDaysAgo: 1,
+          averageDaysAgo: 1,
+          totalHowMany: 0,
+          countries: [],
+          countryCodes: [],
+          locNames: [],
+          nearestDistanceKm: 0,
+          isFreshest: false,
+        },
+      ],
+      estoniaHistoryClusters: [
+        {
+          id: "poosaspea-entry",
+          lat: 59.21,
+          lon: 23.52,
+          representativeLat: 59.2054,
+          representativeLon: 23.5164,
+          count: 5,
+          recentCount: 0,
+          locality: "Põõsaspea neem",
+          municipality: "Lääne-Nigula",
+          displayName: "Põõsaspea neem",
+          habitatCue: "coastal migration bottleneck",
+          habitatType: "coastal_open_water",
+          habitatScore: 28,
+          coastalDistanceKm: 2,
+          clusterTightnessKm: 3,
+          newestEventDate: "2025-03-10T00:00:00.000Z",
+          oldestEventDate: "2023-03-10T00:00:00.000Z",
+          source: "GBIF",
+          sourceBreakdown: { GBIF: 5 },
+        },
+      ],
+      weather: {
+        fetchedAt: "2026-03-30T08:00:00.000Z",
+        windSpeedKph: 24,
+        windDirectionDeg: 205,
+        weatherAvailable: true,
+        weatherPartial: false,
+      },
+      rawResearchPayload: {
+        normalizedSources: {
+          foreignRecentPoints: [
+            {
+              lat: 54.35,
+              lon: 18.68,
+              obsDt: "2026-03-30T06:00:00.000Z",
+              locName: "Mikoszewo",
+              countryCode: "pl",
+              countryName: "Poland",
+              source: "eBird",
+              daysAgo: 1,
+              clusterId: "pl-source",
+              distanceToEstoniaKm: 420,
+            },
+            {
+              lat: 57.86,
+              lon: 23.22,
+              obsDt: "2026-03-30T07:00:00.000Z",
+              locName: "Kolkasrags",
+              countryCode: "lv",
+              countryName: "Latvia",
+              source: "eBird",
+              daysAgo: 1,
+              clusterId: "lv-corridor",
+              distanceToEstoniaKm: 70,
+            },
+          ],
+          foreignClusters: [
+            {
+              id: "pl-source",
+              lat: 54.35,
+              lon: 18.68,
+              pointCount: 5,
+              newestObsDt: "2026-03-30T06:00:00.000Z",
+              oldestObsDt: "2026-03-29T06:00:00.000Z",
+              freshestDaysAgo: 1,
+              averageDaysAgo: 1.1,
+              totalHowMany: 18,
+              countries: ["Poland"],
+              countryCodes: ["pl"],
+              locNames: ["Mikoszewo"],
+              nearestDistanceKm: 420,
+              isFreshest: true,
+            },
+            {
+              id: "lv-corridor",
+              lat: 57.86,
+              lon: 23.22,
+              pointCount: 1,
+              newestObsDt: "2026-03-30T07:00:00.000Z",
+              oldestObsDt: "2026-03-30T07:00:00.000Z",
+              freshestDaysAgo: 1,
+              averageDaysAgo: 1,
+              totalHowMany: 1,
+              countries: ["Latvia"],
+              countryCodes: ["lv"],
+              locNames: ["Kolkasrags"],
+              nearestDistanceKm: 70,
+              isFreshest: false,
+            },
+          ],
+          weather: {
+            fetchedAt: "2026-03-30T08:00:00.000Z",
+            windSpeedKph: 24,
+            windDirectionDeg: 205,
+            weatherAvailable: true,
+            weatherPartial: false,
+          },
+        },
+      },
+    }), "test_source_origin_vs_corridor");
+
+    const topTarget = (finalized.predictedTargets as Array<Record<string, unknown>>)[0];
+    const eta = topTarget?.migrationEta as Record<string, unknown>;
+    const route = (eta?.migrationRoute as Record<string, unknown>)?.route as Array<Record<string, unknown>>;
+
+    expect(String(eta?.fromCountry)).toBe("Poland");
+    expect(String(eta?.fromLocality)).toBe("Mikoszewo");
+    expect(String(route?.[0]?.name)).toBe("Mikoszewo");
+    expect(String(route?.[1]?.name)).toBe("Kolkasrags");
+    expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.countries).toEqual(["Poland"]);
+    expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.countryCodes).toEqual(["pl"]);
+    expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.totalHowMany).toBe(18);
+    expect((finalized.foreignRecentPoints as Array<Record<string, unknown>>).length).toBe(2);
+  });
 });

@@ -389,7 +389,7 @@ export default function SpeciesPredictionSettings() {
           {/* Temporary debug: derived status mapper values */}
           {canSeeDebugDiagnostics && (
             <div className="rounded border border-border bg-muted/20 p-2 text-[10px] font-mono text-muted-foreground space-y-0.5">
-              <p className="font-semibold text-foreground text-[11px]">Status mapper debug (fix19)</p>
+              <p className="font-semibold text-foreground text-[11px]">Status mapper debug (live-probe)</p>
               <p>healthCheck.hasOutdatedWebhook: {String(normalizedBackendStatus.hasOutdatedWebhookPathError)}</p>
               <p>diagnostics.detected: {String(diagnosticWebhookError.detected)}</p>
               <p>diagnostics.stage: {diagnosticWebhookError.stage || '–'}</p>

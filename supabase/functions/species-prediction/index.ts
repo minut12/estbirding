@@ -4458,6 +4458,7 @@ function enforceCanonicalSummaryConsistency(
     activeEvidenceSources: canonical.activeEvidenceSources,
     evidenceStateSnapshot: {
       hasUsableRecentEstoniaEvidence: canonical.hasUsableRecentEstoniaEvidence,
+      hasUsableHistoricalEstoniaEvidence: canonical.hasUsableEstoniaHistory,
       hasUsableEstoniaHistory: canonical.hasUsableEstoniaHistory,
       hasUsableForeignPressure: canonical.hasUsableForeignPressure,
       hasUsablePredictedTargets: canonical.hasUsablePredictedTargets,

@@ -611,6 +611,85 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.evidenceSummary?.weatherAvailable).toBe(true);
   });
 
+  it("preserves canonical selectedForeignOrigin and usable foreign cluster metadata from finalized payloads", () => {
+    const payload = {
+      speciesKey: "punanokk-vart",
+      speciesName: "Punanokk-vart",
+      generatedAt: "2026-03-31T08:00:00.000Z",
+      selectedForeignOrigin: {
+        countryCode: "LT",
+        countryName: "Lithuania",
+        locality: "Nemuno delta",
+        lat: 55.34,
+        lon: 21.29,
+        obsDate: "2026-03-29T08:00:00.000Z",
+        clusterId: "lt-nemuno",
+        source: "eBird",
+      },
+      foreignRecentPoints: [
+        {
+          lat: 55.34,
+          lon: 21.29,
+          obsDt: "2026-03-29T08:00:00.000Z",
+          locName: "Nemuno delta",
+          countryCode: "lt",
+          countryName: "Lithuania",
+          source: "eBird",
+          daysAgo: 2,
+        },
+      ],
+      foreignClusters: [
+        {
+          id: "lt-nemuno",
+          lat: 55.34,
+          lon: 21.29,
+          pointCount: 6,
+          newestObsDt: "2026-03-29T08:00:00.000Z",
+          oldestObsDt: "2026-03-28T08:00:00.000Z",
+          freshestDaysAgo: 2,
+          averageDaysAgo: 2,
+          totalHowMany: 18,
+          countries: ["Lithuania"],
+          countryCodes: ["lt"],
+          locNames: ["Nemuno delta"],
+          nearestDistanceKm: 265,
+          isFreshest: true,
+        },
+      ],
+      topPredictedPoints: [
+        {
+          rank: 1,
+          name: "PÃµÃµsaspea neem",
+          lat: 59.2054,
+          lon: 23.5164,
+          confidence: 0.74,
+          eta: "2d",
+          searchRadiusKm: 10,
+          habitatCue: "coastal migration bottleneck",
+          reason: "Canonical target",
+          migrationEta: {
+            fromCountry: "LT",
+            fromLocality: "Nemuno delta",
+            migrationRoute: {
+              route: [
+                { lat: 55.34, lon: 21.29, name: "Nemuno delta", type: "origin" },
+                { lat: 59.2054, lon: 23.5164, name: "PÃµÃµsaspea neem", type: "destination" },
+              ],
+            },
+          },
+        },
+      ],
+    } as any;
+    const result = normalizeSpeciesPredictionResult(payload, "Punanokk-vart", "linnuliigid");
+    const routes = extractNormalizedMigrationRoutes(payload);
+
+    expect(result.foreignClusters?.[0]?.countries).toEqual(["Lithuania"]);
+    expect(result.foreignClusters?.[0]?.countryCodes).toEqual(["lt"]);
+    expect(result.foreignClusters?.[0]?.locNames).toEqual(["Nemuno delta"]);
+    expect(routes[0]?.fromLocality).toBe("Nemuno delta");
+    expect(routes[0]?.routePoints?.[0]?.name).toBe("Nemuno delta");
+  });
+
   it("normalizes honesty-oriented predicted target metadata", () => {
     const result = normalizeSpeciesPredictionResult({
       speciesKey: "test-species",

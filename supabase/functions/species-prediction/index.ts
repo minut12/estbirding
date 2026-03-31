@@ -1091,6 +1091,8 @@ async function buildMapFirstPredictionResult(opts: {
   const estoniaEvidence = buildEstoniaEvidenceFromHistory(estoniaHistoryPoints);
   const historicalEvidence = buildHistoricalEvidenceFromHistory(estoniaHistoryClusters);
   const foreignEvidence = buildForeignEvidenceFromPointsAndClusters(foreignRecentPoints, foreignClusters);
+  const selectedForeignOriginAnchor = selectStrongestForeignSourceAnchor(foreignClusters, foreignRecentPoints);
+  const selectedForeignOrigin = buildCanonicalSelectedForeignOrigin(selectedForeignOriginAnchor, foreignRecentPoints);
   const predictedTargets = buildPredictedTargets({
     speciesName,
     estoniaHistoryClusters,
@@ -1100,7 +1102,7 @@ async function buildMapFirstPredictionResult(opts: {
     estoniaEvidence,
     horizonDays,
   });
-  const predictionVectors = buildPredictionVectors(foreignClusters, predictedTargets, weather, settings);
+  const predictionVectors = buildPredictionVectors(selectedForeignOrigin, predictedTargets, weather, settings);
   const rawLinks = buildRawLinks(speciesName, foreignEvidence);
   const sourceHealth = buildSourceHealthMapFirst({
     estoniaHistoryPoints,
@@ -1172,6 +1174,7 @@ async function buildMapFirstPredictionResult(opts: {
     estoniaHistoryClusters,
     foreignRecentPoints,
     foreignClusters,
+    ...(selectedForeignOrigin ? { selectedForeignOrigin } : {}),
     weather,
     predictionVectors,
     predictedTargets: topPredictedPoints,
@@ -1235,6 +1238,7 @@ async function buildMapFirstPredictionResult(opts: {
         foreignClusters,
         weather,
       },
+      ...(selectedForeignOrigin ? { selectedForeignOrigin } : {}),
       evidenceSummary,
       sourceHealth,
       foreignEvidence,
@@ -1860,6 +1864,9 @@ function buildPredictedTargets(opts: {
   const sourceOriginAnchor = hasForeignPressure
     ? selectStrongestForeignSourceAnchor(foreignClusters, foreignRecentPoints)
     : null;
+  const selectedForeignOrigin = sourceOriginAnchor
+    ? buildCanonicalSelectedForeignOrigin(sourceOriginAnchor, foreignRecentPoints)
+    : null;
   const foreignAnchoredRanking = hasForeignPressure
     && !hasRecentEstoniaSupport
     && sourceOriginAnchor
@@ -1937,6 +1944,7 @@ function buildPredictedTargets(opts: {
       ].join(' ');
       const migrationEta = buildCanonicalMigrationEta({
         sourceOriginAnchor,
+        selectedForeignOrigin,
         corridorAnchor,
         estoniaEntryCorridor,
         target: {
@@ -1993,6 +2001,7 @@ function buildPredictedTargets(opts: {
         foreignAnchorLocality: anchorLocality,
         foreignAnchorCountries: anchorCountries,
         foreignAnchorCountryCodes: anchorCountryCodes,
+        ...(selectedForeignOrigin ? { selectedForeignOrigin } : {}),
         ...(corridorLocality ? { corridorAnchorLocality: corridorLocality } : {}),
         ...(corridorAnchor ? { corridorAnchorCountryCodes: Array.isArray(corridorAnchor.countryCodes) ? corridorAnchor.countryCodes.map(String).filter(Boolean) : [] } : {}),
         migrationEta,
@@ -2187,6 +2196,72 @@ function selectStrongestForeignSourceAnchor(
     )[0] ?? null;
 }
 
+function buildCanonicalSelectedForeignOrigin(
+  sourceOriginAnchor: Record<string, unknown> | null,
+  foreignRecentPoints: Record<string, unknown>[],
+): Record<string, unknown> | null {
+  if (!sourceOriginAnchor) return null;
+  const clusterId = stringOr(sourceOriginAnchor.id);
+  const clusterLat = toNumber(sourceOriginAnchor.lat);
+  const clusterLon = toNumber(sourceOriginAnchor.lon);
+  const bestPoint = foreignRecentPoints
+    .map((point, index) => ({ point, index }))
+    .filter(({ point }) => stringOr(point.clusterId) === clusterId)
+    .map(({ point, index }) => {
+      const obsDate = normalizeDateString(stringOr(point.obsDt, point.observationDate, point.date, point.eventDate));
+      const obsTs = obsDate ? Date.parse(obsDate) : 0;
+      const howMany = Math.max(0, toNumber(point.howMany));
+      const pointLat = toNumber(point.lat);
+      const pointLon = toNumber(point.lon);
+      const distanceToClusterKm = Number.isFinite(pointLat) && Number.isFinite(pointLon) && Number.isFinite(clusterLat) && Number.isFinite(clusterLon)
+        ? haversineKm(pointLat, pointLon, clusterLat, clusterLon)
+        : Number.POSITIVE_INFINITY;
+      return { point, index, obsDate, obsTs, howMany, distanceToClusterKm };
+    })
+    .sort((left, right) =>
+      right.obsTs - left.obsTs
+      || right.howMany - left.howMany
+      || left.distanceToClusterKm - right.distanceToClusterKm
+      || left.index - right.index
+    )[0];
+  const sourcePoint = bestPoint?.point ?? {};
+  const countryCode = normalizeCountryCode(stringOr(
+    sourcePoint.countryCode,
+    sourcePoint.country,
+    Array.isArray(sourceOriginAnchor.countryCodes) ? String(sourceOriginAnchor.countryCodes[0] || '') : '',
+  )).toUpperCase();
+  const countryName = stringOr(
+    sourcePoint.countryName,
+    Array.isArray(sourceOriginAnchor.countries) ? String(sourceOriginAnchor.countries[0] || '') : '',
+    resolveCountryName(countryCode),
+  );
+  return {
+    countryCode,
+    countryName,
+    locality: sanitizeDisplayLabel(stringOr(
+      sourcePoint.locName,
+      sourcePoint.locality,
+      sourcePoint.name,
+      Array.isArray(sourceOriginAnchor.locNames) ? String(sourceOriginAnchor.locNames[0] || '') : '',
+      sourceOriginAnchor.locality,
+      sourceOriginAnchor.locName,
+      sourceOriginAnchor.id,
+    )),
+    lat: Number.isFinite(toNumber(sourcePoint.lat)) ? toNumber(sourcePoint.lat) : clusterLat,
+    lon: Number.isFinite(toNumber(sourcePoint.lon)) ? toNumber(sourcePoint.lon) : clusterLon,
+    obsDate: normalizeDateString(stringOr(
+      sourcePoint.obsDt,
+      sourcePoint.observationDate,
+      sourcePoint.date,
+      sourcePoint.eventDate,
+      sourceOriginAnchor.newestObsDt,
+    )),
+    clusterId,
+    source: stringOr(sourcePoint.source, sourceOriginAnchor.source, 'eBird'),
+    ...(stringOr(sourcePoint.submissionId, sourcePoint.obsId, sourcePoint.id) ? { supportingSubmissionId: stringOr(sourcePoint.submissionId, sourcePoint.obsId, sourcePoint.id) } : {}),
+  };
+}
+
 function selectNearestPlausibleCorridorAnchor(
   sourceOriginAnchor: Record<string, unknown>,
   foreignClusters: Record<string, unknown>[],
@@ -2238,27 +2313,38 @@ function selectNearestPlausibleCorridorAnchor(
 
 function buildCanonicalMigrationEta(input: {
   sourceOriginAnchor: Record<string, unknown>;
+  selectedForeignOrigin?: Record<string, unknown> | null;
   corridorAnchor: Record<string, unknown> | null;
-  estoniaEntryCorridor: { entryLabel: string; entryLat: number; entryLon: number; bearingDeg: number; distanceFromForeignKm: number };
+  estoniaEntryCorridor: { entryLabel: string; entryLat: number; entryLon: number; bearingDeg: number; distanceFromForeignKm: number } | null;
   target: { name: string; lat: number; lon: number; rank: number };
   weather: Record<string, unknown>;
 }): Record<string, unknown> {
-  const sourceLocality = Array.isArray(input.sourceOriginAnchor.locNames)
-    ? input.sourceOriginAnchor.locNames.map(String).filter(Boolean)[0]
-    : stringOr(input.sourceOriginAnchor.locName, input.sourceOriginAnchor.id, 'Foreign source');
-  const sourceCountry = Array.isArray(input.sourceOriginAnchor.countries)
-    ? input.sourceOriginAnchor.countries.map(String).filter(Boolean)[0]
-    : resolveCountryName(Array.isArray(input.sourceOriginAnchor.countryCodes) ? String(input.sourceOriginAnchor.countryCodes[0] || '') : '');
-  const sourceCountryCode = Array.isArray(input.sourceOriginAnchor.countryCodes)
-    ? String(input.sourceOriginAnchor.countryCodes[0] || '').toUpperCase()
-    : '';
+  const selectedOrigin = asRecord(input.selectedForeignOrigin);
+  const sourceLocality = stringOr(
+    selectedOrigin.locality,
+    Array.isArray(input.sourceOriginAnchor.locNames) ? input.sourceOriginAnchor.locNames.map(String).filter(Boolean)[0] : '',
+    input.sourceOriginAnchor.locName,
+    input.sourceOriginAnchor.id,
+    'Foreign source',
+  );
+  const sourceCountryCode = stringOr(
+    selectedOrigin.countryCode,
+    Array.isArray(input.sourceOriginAnchor.countryCodes) ? String(input.sourceOriginAnchor.countryCodes[0] || '') : '',
+  ).toUpperCase();
+  const sourceCountry = stringOr(
+    selectedOrigin.countryName,
+    Array.isArray(input.sourceOriginAnchor.countries) ? input.sourceOriginAnchor.countries.map(String).filter(Boolean)[0] : '',
+    resolveCountryName(sourceCountryCode),
+  );
+  const originLat = Number.isFinite(toNumber(selectedOrigin.lat)) ? toNumber(selectedOrigin.lat) : toNumber(input.sourceOriginAnchor.lat);
+  const originLon = Number.isFinite(toNumber(selectedOrigin.lon)) ? toNumber(selectedOrigin.lon) : toNumber(input.sourceOriginAnchor.lon);
   const corridorLocality = input.corridorAnchor
     ? (Array.isArray(input.corridorAnchor.locNames) ? input.corridorAnchor.locNames.map(String).filter(Boolean)[0] : stringOr(input.corridorAnchor.locName, input.corridorAnchor.id))
     : '';
   const routePoints = dedupeMigrationRoutePoints([
     {
-      lat: toNumber(input.sourceOriginAnchor.lat),
-      lon: toNumber(input.sourceOriginAnchor.lon),
+      lat: originLat,
+      lon: originLon,
       name: sourceLocality || 'Foreign origin',
       type: 'origin',
     },
@@ -2268,12 +2354,12 @@ function buildCanonicalMigrationEta(input: {
       name: corridorLocality || 'Downstream corridor',
       type: 'waypoint',
     }] : []),
-    {
+    ...(input.estoniaEntryCorridor ? [{
       lat: input.estoniaEntryCorridor.entryLat,
       lon: input.estoniaEntryCorridor.entryLon,
       name: input.estoniaEntryCorridor.entryLabel,
       type: 'waypoint',
-    },
+    }] : []),
     {
       lat: input.target.lat,
       lon: input.target.lon,
@@ -2292,30 +2378,32 @@ function buildCanonicalMigrationEta(input: {
     progressPct: routePoints.length > 1 ? Math.round((index / (routePoints.length - 1)) * 100) : 100,
   }));
   return {
-    distanceKm: Math.round(haversineKm(toNumber(input.sourceOriginAnchor.lat), toNumber(input.sourceOriginAnchor.lon), input.estoniaEntryCorridor.entryLat, input.estoniaEntryCorridor.entryLon)),
+    distanceKm: Math.round(input.estoniaEntryCorridor
+      ? haversineKm(originLat, originLon, input.estoniaEntryCorridor.entryLat, input.estoniaEntryCorridor.entryLon)
+      : haversineKm(originLat, originLon, input.target.lat, input.target.lon)),
     routeDistanceKm: totalDistanceKm,
-    entryZone: input.estoniaEntryCorridor.entryLabel,
-    entryLat: input.estoniaEntryCorridor.entryLat,
-    entryLon: input.estoniaEntryCorridor.entryLon,
+    entryZone: input.estoniaEntryCorridor?.entryLabel || 'Unavailable',
+    entryLat: input.estoniaEntryCorridor?.entryLat ?? input.target.lat,
+    entryLon: input.estoniaEntryCorridor?.entryLon ?? input.target.lon,
     speciesType: 'migrant',
     totalDaysEstimate: Math.max(1, Math.round(totalDistanceKm / Math.max(140, toNumber(input.weather.windSpeedKph) * 6 || 160))),
-    foreignSightingDate: stringOr(input.sourceOriginAnchor.newestObsDt),
+    foreignSightingDate: stringOr(selectedOrigin.obsDate, input.sourceOriginAnchor.newestObsDt),
     earliestArrival: new Date(Date.now() + 86400000).toISOString(),
     latestArrival: new Date(Date.now() + 3 * 86400000).toISOString(),
     isPastDue: false,
     isImminent: true,
     etaText: `${Math.max(1, Math.round(totalDistanceKm / Math.max(140, toNumber(input.weather.windSpeedKph) * 6 || 160)))}d`,
     fromLocality: sourceLocality,
-    fromCountry: sourceCountry || sourceCountryCode,
+    fromCountry: sourceCountryCode || sourceCountry,
     foreignLocality: sourceLocality,
-    foreignCountry: sourceCountry || sourceCountryCode,
+    foreignCountry: sourceCountryCode || sourceCountry,
     migrationRoute: {
       route,
       totalDistanceKm,
       routeDistanceKm: totalDistanceKm,
       currentProgressPct: 0,
-      currentEstimatedLat: routePoints[0]?.lat ?? toNumber(input.sourceOriginAnchor.lat),
-      currentEstimatedLon: routePoints[0]?.lon ?? toNumber(input.sourceOriginAnchor.lon),
+      currentEstimatedLat: routePoints[0]?.lat ?? originLat,
+      currentEstimatedLon: routePoints[0]?.lon ?? originLon,
       currentWaypointIdx: 0,
       hasArrived: false,
       daysSinceSighting: Math.max(0, hasFiniteNumber(input.sourceOriginAnchor.freshestDaysAgo) ? toNumber(input.sourceOriginAnchor.freshestDaysAgo) : 0),
@@ -2386,32 +2474,30 @@ function deriveEstoniaEntryCorridor(
 }
 
 function buildPredictionVectors(
-  foreignClusters: Record<string, unknown>[],
+  selectedForeignOrigin: Record<string, unknown> | null,
   predictedTargets: Record<string, unknown>[],
   weather: Record<string, unknown>,
   settings: Record<string, unknown>,
 ): Record<string, unknown>[] {
-  if (!foreignClusters.length || !predictedTargets.length) return [];
+  if (!selectedForeignOrigin || !predictedTargets.length) return [];
   const vectors: Record<string, unknown>[] = [];
-  for (const cluster of foreignClusters.slice(0, 3)) {
-    for (const target of predictedTargets.slice(0, 2)) {
-      const bearing = bearingBetween(toNumber(cluster.lat), toNumber(cluster.lon), toNumber(target.lat), toNumber(target.lon));
-      vectors.push({
-        id: `${stringOr(cluster.id)}-to-${toNumber(target.rank)}`,
-        kind: 'route',
-        sourceClusterId: stringOr(cluster.id),
-        targetRank: toNumber(target.rank),
-        confidence: clampInt((toNumber(target.confidence) + clampInt(Math.round(computeWindSupport(weather)), 0, 100)) / 2, 0, 100),
-        bearingDeg: bearing,
-        distanceKm: haversineKm(toNumber(cluster.lat), toNumber(cluster.lon), toNumber(target.lat), toNumber(target.lon)),
-        points: [
-          { lat: toNumber(cluster.lat), lon: toNumber(cluster.lon) },
-          { lat: toNumber(target.lat), lon: toNumber(target.lon) },
-        ],
-      });
-      if (settings.showPredictionCone !== false && vectors.filter((vector) => vector.kind === 'cone').length < 2) {
-        vectors.push(buildConeVector(cluster, target, weather));
-      }
+  for (const target of predictedTargets.slice(0, 2)) {
+    const bearing = bearingBetween(toNumber(selectedForeignOrigin.lat), toNumber(selectedForeignOrigin.lon), toNumber(target.lat), toNumber(target.lon));
+    vectors.push({
+      id: `${stringOr(selectedForeignOrigin.clusterId, selectedForeignOrigin.countryCode, 'origin')}-to-${toNumber(target.rank)}`,
+      kind: 'route',
+      sourceClusterId: stringOr(selectedForeignOrigin.clusterId),
+      targetRank: toNumber(target.rank),
+      confidence: clampInt((toNumber(target.confidence) + clampInt(Math.round(computeWindSupport(weather)), 0, 100)) / 2, 0, 100),
+      bearingDeg: bearing,
+      distanceKm: haversineKm(toNumber(selectedForeignOrigin.lat), toNumber(selectedForeignOrigin.lon), toNumber(target.lat), toNumber(target.lon)),
+      points: [
+        { lat: toNumber(selectedForeignOrigin.lat), lon: toNumber(selectedForeignOrigin.lon) },
+        { lat: toNumber(target.lat), lon: toNumber(target.lon) },
+      ],
+    });
+    if (settings.showPredictionCone !== false && vectors.filter((vector) => vector.kind === 'cone').length < 2) {
+      vectors.push(buildConeVector(selectedForeignOrigin, target, weather));
     }
   }
   return vectors;
@@ -4495,9 +4581,12 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
   const foreignRecentPoints = topLevelForeignRecentPoints.length
     ? topLevelForeignRecentPoints
     : normalizedForeignRecentPointsRaw;
-  const foreignClusters = hasNonPlaceholderForeignClusters(topLevelForeignClusters)
+  const foreignClusters = populateForeignClustersFromPoints(
+    hasNonPlaceholderForeignClusters(topLevelForeignClusters)
     ? sanitizeCanonicalForeignClusters(topLevelForeignClusters)
-    : sanitizeCanonicalForeignClusters(normalizedForeignClustersRaw);
+    : sanitizeCanonicalForeignClusters(normalizedForeignClustersRaw),
+    foreignRecentPoints.map((entry) => asRecord(entry)),
+  );
   const estoniaHistoryPoints = Array.isArray(payload.estoniaHistoryPoints) ? payload.estoniaHistoryPoints : [];
   const estoniaHistoryClusters = Array.isArray(payload.estoniaHistoryClusters) ? payload.estoniaHistoryClusters : [];
   const predictedTargets = Array.isArray(payload.predictedTargets) ? payload.predictedTargets : [];
@@ -4517,6 +4606,10 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     normalizedForeignClusters.length ? normalizedForeignClusters : foreignClusters.map((entry) => asRecord(entry)),
     normalizedForeignRecentPoints.length ? normalizedForeignRecentPoints : foreignRecentPoints.map((entry) => asRecord(entry)),
   );
+  const canonicalSelectedForeignOrigin = buildCanonicalSelectedForeignOrigin(
+    canonicalSourceOriginAnchor,
+    normalizedForeignRecentPoints.length ? normalizedForeignRecentPoints : foreignRecentPoints.map((entry) => asRecord(entry)),
+  );
   const canonicalCorridorAnchor = canonicalSourceOriginAnchor
     ? selectNearestPlausibleCorridorAnchor(
       canonicalSourceOriginAnchor,
@@ -4527,8 +4620,8 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
   const canonicalEntryCorridor = canonicalSourceOriginAnchor && estoniaHistoryClusters.length
     ? deriveEstoniaEntryCorridor(canonicalCorridorAnchor ?? canonicalSourceOriginAnchor, estoniaHistoryClusters.map((entry) => asRecord(entry)))
     : null;
-  const canonicalPredictedTargets = canonicalSourceOriginAnchor && canonicalEntryCorridor
-    ? (predictedTargets.map((entry, index) => rebuildMigrationEtaOnTarget(asRecord(entry), canonicalSourceOriginAnchor, canonicalCorridorAnchor, canonicalEntryCorridor, canonicalWeather, index)))
+  const canonicalPredictedTargets = canonicalSourceOriginAnchor
+    ? (predictedTargets.map((entry, index) => rebuildMigrationEtaOnTarget(asRecord(entry), canonicalSourceOriginAnchor, canonicalSelectedForeignOrigin, canonicalCorridorAnchor, canonicalEntryCorridor, canonicalWeather, index)))
     : predictedTargets;
   const canonicalCountryScores = buildCountryScores(foreignEvidence);
   const evidenceStateSnapshot = computeEvidenceState({
@@ -4556,7 +4649,9 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     : canonicalExternalPressureScore;
   const predictedTargetRouteVector = deriveRouteVectorFromPredictedTargets(canonicalPredictedTargets);
   const predictedTargetBestEntryZone = deriveBestEntryZoneFromPredictedTargets(canonicalPredictedTargets);
-  const canonicalRouteVector = foreignClusters.length
+  const canonicalRouteVector = canonicalSelectedForeignOrigin
+    ? `${stringOr(canonicalSelectedForeignOrigin.countryCode, canonicalSelectedForeignOrigin.countryName)} -> Estonia`
+    : foreignClusters.length
     ? `${joinCountries((foreignClusters[0] as Record<string, unknown>).countryCodes) || joinCountries((foreignClusters[0] as Record<string, unknown>).countries)} -> Estonia`
     : stringOr(predictedTargetRouteVector, isUnavailableLabel(payload.routeVector) ? '' : payload.routeVector);
   const canonicalHasUsableForeignPressure = foreignRecentPoints.length > 0
@@ -4599,8 +4694,9 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     estoniaHistoryClusters,
     foreignRecentPoints,
     foreignClusters,
+    ...(canonicalSelectedForeignOrigin ? { selectedForeignOrigin: canonicalSelectedForeignOrigin } : {}),
     weather: canonicalWeather,
-    predictionVectors: Array.isArray(payload.predictionVectors) ? payload.predictionVectors : [],
+    predictionVectors: buildPredictionVectors(canonicalSelectedForeignOrigin, canonicalPredictedTargets.map((entry) => asRecord(entry)), canonicalWeather, asRecord(payload.settings)),
     predictedTargets: canonicalPredictedTargets,
     mapLayers: asRecord(payload.mapLayers),
     foreignEvidence,
@@ -4657,7 +4753,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
       evidenceState: rawResearchPayload.evidenceState,
       rawLinks: asRecord(rawResearchPayload.rawLinks),
       historicalEvidence: asRecord(rawResearchPayload.historicalEvidence),
-      predictionVectors: Array.isArray(rawResearchPayload.predictionVectors) ? rawResearchPayload.predictionVectors : [],
+      predictionVectors: buildPredictionVectors(canonicalSelectedForeignOrigin, canonicalPredictedTargets.map((entry) => asRecord(entry)), canonicalWeather, asRecord(payload.settings)),
       sourceHealth: asRecord(payload.sourceHealth),
       evidenceSummary: {
         ...canonicalEvidenceSummary,
@@ -4680,6 +4776,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
       },
       countryScores: canonicalCountryScores,
       externalPressureScore: forcedExternalPressureScore,
+      ...(canonicalSelectedForeignOrigin ? { selectedForeignOrigin: canonicalSelectedForeignOrigin } : {}),
       normalizedSources: {
         estoniaHistoryPoints,
         estoniaHistoryClusters,
@@ -4727,24 +4824,30 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
 function rebuildMigrationEtaOnTarget(
   target: Record<string, unknown>,
   sourceOriginAnchor: Record<string, unknown>,
+  selectedForeignOrigin: Record<string, unknown> | null,
   corridorAnchor: Record<string, unknown> | null,
-  estoniaEntryCorridor: { entryLabel: string; entryLat: number; entryLon: number; bearingDeg: number; distanceFromForeignKm: number },
+  estoniaEntryCorridor: { entryLabel: string; entryLat: number; entryLon: number; bearingDeg: number; distanceFromForeignKm: number } | null,
   weather: Record<string, unknown>,
   index: number,
 ): Record<string, unknown> {
   const existingEta = asRecord(target.migrationEta);
-  const sourceCountryCode = Array.isArray(sourceOriginAnchor.countryCodes) ? String(sourceOriginAnchor.countryCodes[0] || '').toUpperCase() : '';
-  const expectedCountry = Array.isArray(sourceOriginAnchor.countries)
-    ? String(sourceOriginAnchor.countries[0] || '')
-    : resolveCountryName(sourceCountryCode);
-  const etaCountry = stringOr(existingEta.fromCountry, existingEta.foreignCountry);
-  const needsRebuild = !etaCountry
-    || (expectedCountry && etaCountry.toLowerCase() !== expectedCountry.toLowerCase() && etaCountry.toUpperCase() !== sourceCountryCode);
+  const expectedCountry = stringOr(asRecord(selectedForeignOrigin).countryName);
+  const expectedCountryCode = stringOr(asRecord(selectedForeignOrigin).countryCode).toUpperCase();
+  const expectedLocality = stringOr(asRecord(selectedForeignOrigin).locality);
+  const route = Array.isArray(asRecord(existingEta.migrationRoute).route) ? asRecord(existingEta.migrationRoute).route as unknown[] : [];
+  const firstRoutePoint = asRecord(route[0]);
+  const needsRebuild = !stringOr(existingEta.fromCountry, existingEta.foreignCountry)
+    || !stringOr(existingEta.fromLocality, existingEta.foreignLocality)
+    || (expectedCountry && stringOr(existingEta.fromCountry, existingEta.foreignCountry).toLowerCase() !== expectedCountry.toLowerCase() && stringOr(existingEta.fromCountry, existingEta.foreignCountry).toUpperCase() !== expectedCountryCode)
+    || (expectedLocality && stringOr(existingEta.fromLocality, existingEta.foreignLocality) !== expectedLocality)
+    || (Number.isFinite(toNumber(asRecord(selectedForeignOrigin).lat)) && Number.isFinite(toNumber(asRecord(selectedForeignOrigin).lon))
+      && (!arePointsNear(toNumber(firstRoutePoint.lat), toNumber(firstRoutePoint.lon), toNumber(asRecord(selectedForeignOrigin).lat), toNumber(asRecord(selectedForeignOrigin).lon), 0.05)));
   if (!needsRebuild) return target;
   return {
     ...target,
     migrationEta: buildCanonicalMigrationEta({
       sourceOriginAnchor,
+      selectedForeignOrigin,
       corridorAnchor,
       estoniaEntryCorridor,
       target: {
@@ -4770,6 +4873,38 @@ function hasNonPlaceholderForeignClusters(input: unknown[]): boolean {
       || toNumber(cluster.recent7d) > 0
       || toNumber(cluster.recent14d) > 0
       || toNumber(cluster.nearestDistanceKm) > 0;
+  });
+}
+
+function populateForeignClustersFromPoints(
+  clusters: Record<string, unknown>[],
+  points: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  return clusters.map((entry) => {
+    const cluster = asRecord(entry);
+    const clusterId = stringOr(cluster.id);
+    const matchingPoints = points.filter((point) => stringOr(point.clusterId) === clusterId);
+    if (!matchingPoints.length) return cluster;
+    const countries = Array.from(new Set([
+      ...(Array.isArray(cluster.countries) ? cluster.countries.map((item) => stringOr(item)).filter(Boolean) : []),
+      ...matchingPoints.map((point) => stringOr(point.countryName, resolveCountryName(stringOr(point.countryCode)))).filter(Boolean),
+    ]));
+    const countryCodes = Array.from(new Set([
+      ...(Array.isArray(cluster.countryCodes) ? cluster.countryCodes.map((item) => stringOr(item).toLowerCase()).filter(Boolean) : []),
+      ...matchingPoints.map((point) => normalizeCountryCode(stringOr(point.countryCode, point.country))).filter(Boolean),
+    ]));
+    const locNames = Array.from(new Set([
+      ...(Array.isArray(cluster.locNames) ? cluster.locNames.map((item) => stringOr(item)).filter(Boolean) : []),
+      ...matchingPoints.map((point) => sanitizeDisplayLabel(stringOr(point.locName, point.locality, point.name))).filter(Boolean),
+    ])).slice(0, 4);
+    return {
+      ...cluster,
+      countries,
+      countryCodes,
+      locNames,
+      locality: stringOr(cluster.locality, locNames[0]),
+      source: stringOr(cluster.source, matchingPoints[0]?.source, 'eBird'),
+    };
   });
 }
 

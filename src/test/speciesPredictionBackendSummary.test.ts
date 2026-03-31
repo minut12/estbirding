@@ -813,7 +813,7 @@ describe("species-prediction backend summary finalizer", () => {
     const eta = topTarget?.migrationEta as Record<string, unknown>;
     const route = (eta?.migrationRoute as Record<string, unknown>)?.route as Array<Record<string, unknown>>;
 
-    expect(String(eta?.fromCountry)).toBe("Poland");
+    expect(String(eta?.fromCountry)).toBe("PL");
     expect(String(eta?.fromLocality)).toBe("Mikoszewo");
     expect(String(route?.[0]?.name)).toBe("Mikoszewo");
     expect(String(route?.[1]?.name)).toBe("Kolkasrags");
@@ -821,6 +821,235 @@ describe("species-prediction backend summary finalizer", () => {
     expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.countryCodes).toEqual(["pl"]);
     expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.totalHowMany).toBe(18);
     expect((finalized.foreignRecentPoints as Array<Record<string, unknown>>).length).toBe(2);
+  });
+
+  it("uses the canonical Lithuanian origin consistently for punanokk-vart when LT wins over LV", () => {
+    const predicted = hooks.buildPredictedTargets({
+      speciesName: "Punanokk-vart",
+      foreignRecentPoints: [
+        {
+          lat: 55.34,
+          lon: 21.29,
+          obsDt: "2026-03-29T08:00:00.000Z",
+          locName: "Nemuno delta",
+          countryCode: "lt",
+          countryName: "Lithuania",
+          source: "eBird",
+          howMany: 9,
+          daysAgo: 2,
+          clusterId: "lt-nemuno",
+          distanceToEstoniaKm: 265,
+        },
+        {
+          lat: 57.03,
+          lon: 23.39,
+          obsDt: "2026-03-28T07:00:00.000Z",
+          locName: "Lake Kanieris -- Andersalas tornis",
+          countryCode: "lv",
+          countryName: "Latvia",
+          source: "eBird",
+          howMany: 2,
+          daysAgo: 3,
+          clusterId: "lv-kanieris",
+          distanceToEstoniaKm: 155,
+        },
+      ],
+      foreignClusters: [
+        {
+          id: "lt-nemuno",
+          lat: 55.34,
+          lon: 21.29,
+          pointCount: 6,
+          newestObsDt: "2026-03-29T08:00:00.000Z",
+          oldestObsDt: "2026-03-28T08:00:00.000Z",
+          freshestDaysAgo: 2,
+          averageDaysAgo: 2,
+          totalHowMany: 18,
+          countries: ["Lithuania"],
+          countryCodes: ["lt"],
+          locNames: ["Nemuno delta"],
+          nearestDistanceKm: 265,
+          isFreshest: true,
+        },
+        {
+          id: "lv-kanieris",
+          lat: 57.03,
+          lon: 23.39,
+          pointCount: 2,
+          newestObsDt: "2026-03-28T07:00:00.000Z",
+          oldestObsDt: "2026-03-28T07:00:00.000Z",
+          freshestDaysAgo: 3,
+          averageDaysAgo: 3,
+          totalHowMany: 2,
+          countries: ["Latvia"],
+          countryCodes: ["lv"],
+          locNames: ["Lake Kanieris -- Andersalas tornis"],
+          nearestDistanceKm: 155,
+          isFreshest: false,
+        },
+      ],
+      estoniaHistoryClusters: [
+        {
+          id: "poosaspea-entry",
+          lat: 59.21,
+          lon: 23.52,
+          representativeLat: 59.2054,
+          representativeLon: 23.5164,
+          count: 5,
+          recentCount: 0,
+          locality: "PÃµÃµsaspea neem",
+          municipality: "LÃ¤Ã¤ne-Nigula",
+          displayName: "PÃµÃµsaspea neem",
+          habitatCue: "coastal migration bottleneck",
+          habitatType: "coastal_open_water",
+          habitatScore: 28,
+          coastalDistanceKm: 2,
+          clusterTightnessKm: 3,
+          newestEventDate: "2025-03-10T00:00:00.000Z",
+          oldestEventDate: "2023-03-10T00:00:00.000Z",
+          source: "GBIF",
+          sourceBreakdown: { GBIF: 5 },
+        },
+      ],
+      weather: {
+        fetchedAt: "2026-03-30T08:00:00.000Z",
+        windSpeedKph: 24,
+        windDirectionDeg: 205,
+        weatherAvailable: true,
+        weatherPartial: false,
+      },
+      estoniaEvidence: {
+        recentCount7d: 0,
+        recentCount30d: 0,
+        alreadyPresent: false,
+      },
+      horizonDays: 7,
+    });
+
+    const finalized = hooks.finalizePredictionResponse(buildBaseResponse({
+      speciesName: "Punanokk-vart",
+      sourceHealth: {
+        ebirdAvailable: true,
+        primarySourceUsed: "eBird foreign",
+      },
+      predictedTargets: predicted,
+      foreignRecentPoints: [],
+      foreignClusters: [],
+      estoniaHistoryClusters: [
+        {
+          id: "poosaspea-entry",
+          lat: 59.21,
+          lon: 23.52,
+          representativeLat: 59.2054,
+          representativeLon: 23.5164,
+          count: 5,
+          recentCount: 0,
+          locality: "PÃµÃµsaspea neem",
+          municipality: "LÃ¤Ã¤ne-Nigula",
+          displayName: "PÃµÃµsaspea neem",
+          habitatCue: "coastal migration bottleneck",
+          habitatType: "coastal_open_water",
+          habitatScore: 28,
+          coastalDistanceKm: 2,
+          clusterTightnessKm: 3,
+          newestEventDate: "2025-03-10T00:00:00.000Z",
+          oldestEventDate: "2023-03-10T00:00:00.000Z",
+          source: "GBIF",
+          sourceBreakdown: { GBIF: 5 },
+        },
+      ],
+      weather: {
+        fetchedAt: "2026-03-30T08:00:00.000Z",
+        windSpeedKph: 24,
+        windDirectionDeg: 205,
+        weatherAvailable: true,
+        weatherPartial: false,
+      },
+      rawResearchPayload: {
+        normalizedSources: {
+          foreignRecentPoints: [
+            {
+              lat: 55.34,
+              lon: 21.29,
+              obsDt: "2026-03-29T08:00:00.000Z",
+              locName: "Nemuno delta",
+              countryCode: "lt",
+              countryName: "Lithuania",
+              source: "eBird",
+              howMany: 9,
+              daysAgo: 2,
+              clusterId: "lt-nemuno",
+              distanceToEstoniaKm: 265,
+            },
+            {
+              lat: 57.03,
+              lon: 23.39,
+              obsDt: "2026-03-28T07:00:00.000Z",
+              locName: "Lake Kanieris -- Andersalas tornis",
+              countryCode: "lv",
+              countryName: "Latvia",
+              source: "eBird",
+              howMany: 2,
+              daysAgo: 3,
+              clusterId: "lv-kanieris",
+              distanceToEstoniaKm: 155,
+            },
+          ],
+          foreignClusters: [
+            {
+              id: "lt-nemuno",
+              lat: 55.34,
+              lon: 21.29,
+              pointCount: 6,
+              newestObsDt: "2026-03-29T08:00:00.000Z",
+              oldestObsDt: "2026-03-28T08:00:00.000Z",
+              freshestDaysAgo: 2,
+              averageDaysAgo: 2,
+              totalHowMany: 18,
+              countries: ["Lithuania"],
+              countryCodes: ["lt"],
+              locNames: ["Nemuno delta"],
+              nearestDistanceKm: 265,
+              isFreshest: true,
+            },
+            {
+              id: "lv-kanieris",
+              lat: 57.03,
+              lon: 23.39,
+              pointCount: 2,
+              newestObsDt: "2026-03-28T07:00:00.000Z",
+              oldestObsDt: "2026-03-28T07:00:00.000Z",
+              freshestDaysAgo: 3,
+              averageDaysAgo: 3,
+              totalHowMany: 2,
+              countries: ["Latvia"],
+              countryCodes: ["lv"],
+              locNames: ["Lake Kanieris -- Andersalas tornis"],
+              nearestDistanceKm: 155,
+              isFreshest: false,
+            },
+          ],
+        },
+      },
+    }), "test_lt_origin_selected_over_lv");
+
+    const selectedOrigin = finalized.selectedForeignOrigin as Record<string, unknown>;
+    const target = (finalized.predictedTargets as Array<Record<string, unknown>>)[0];
+    const eta = target.migrationEta as Record<string, unknown>;
+    const route = ((eta.migrationRoute as Record<string, unknown>)?.route || []) as Array<Record<string, unknown>>;
+    const vectors = finalized.predictionVectors as Array<Record<string, unknown>>;
+
+    expect(String(selectedOrigin.countryCode)).toBe("LT");
+    expect(String(selectedOrigin.locality)).toBe("Nemuno delta");
+    expect(String(eta.fromCountry)).toBe("LT");
+    expect(String(eta.fromLocality)).toBe("Nemuno delta");
+    expect(String(route[0]?.name)).toBe("Nemuno delta");
+    expect(Number(route[0]?.lat)).toBeCloseTo(55.34, 2);
+    expect(Number(route[0]?.lon)).toBeCloseTo(21.29, 2);
+    expect(Number((vectors[0]?.points as Array<Record<string, unknown>>)[0]?.lat)).toBeCloseTo(55.34, 2);
+    expect(Number((vectors[0]?.points as Array<Record<string, unknown>>)[0]?.lon)).toBeCloseTo(21.29, 2);
+    expect((finalized.foreignRecentPoints as Array<Record<string, unknown>>)[0]?.countryCode).toBe("lt");
+    expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.countries).toEqual(["Lithuania"]);
   });
 
   it("recomputes top-level foreign-derived fields from canonical normalized evidence", () => {

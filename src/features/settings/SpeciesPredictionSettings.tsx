@@ -354,7 +354,7 @@ export default function SpeciesPredictionSettings() {
         onEnabledChange={setPredictionFeatureEnabled}
       />
       <p className="text-[11px] text-muted-foreground">
-        prediction-settings-build: 2026-03-22-fix19
+        prediction-settings-build: 2026-03-31-live-probe
       </p>
       {!predictionEnabled ? (
         <p className="text-xs text-muted-foreground">Turn on Species Prediction to edit these settings</p>

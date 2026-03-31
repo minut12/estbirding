@@ -5596,7 +5596,7 @@ function applyEvidenceStateSummaryGuardrails(
     warnings: summary.warnings,
     evidenceState: evidenceStateSnapshot.evidenceState,
     hasUsableRecentEstoniaEvidence: evidenceStateSnapshot.hasUsableRecentEstoniaEvidence,
-    hasUsableHistoricalEstoniaEvidence: evidenceStateSnapshot.hasUsableHistoricalEstoniaEvidence,
+    hasUsableEstoniaHistory: evidenceStateSnapshot.hasUsableHistoricalEstoniaEvidence,
     hasUsableEstoniaHistory: evidenceStateSnapshot.hasUsableEstoniaHistory,
     hasUsableForeignPressure: evidenceStateSnapshot.hasUsableForeignPressure,
     hasUsablePredictedTargets: evidenceStateSnapshot.hasUsablePredictedTargets,

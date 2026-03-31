@@ -1262,9 +1262,10 @@ export function deriveSpeciesPredictionDisplayState(
   status: ReturnType<typeof normalizeBackendStatus>,
 ): SpeciesPredictionDisplayState {
   if (status.missingWebhookEnv === true || !status.isConfigured) return 'NOT_CONFIGURED';
-  if (status.statusCode === 'CONFIGURED_UNAVAILABLE') return 'CONFIGURED_UNAVAILABLE';
+  if (status.statusCode === 'CONFIGURED_UNAVAILABLE' as string) return 'CONFIGURED_UNAVAILABLE';
   if (
     status.statusDecisionReason === 'configured_valid_no_runtime_probe'
+    || status.statusDecisionReason === 'live_probe_success'
     || status.statusCode === 'CONFIGURED_AVAILABLE'
   ) return 'CONFIGURED_AVAILABLE';
   if (
@@ -1274,8 +1275,8 @@ export function deriveSpeciesPredictionDisplayState(
       status.invalidWebhookUrl === true
       || status.hasOutdatedWebhookPathError === true
       || status.hasFreshInvocationFailure === true
-      || (status.statusCode === 'CONFIGURED_UNAVAILABLE' && status.hasExplicitInvocationFailureSignal === true)
-      || (status.statusCode === 'RUNTIME_ERROR' && status.hasExplicitInvocationFailureSignal === true)
+      || ((status.statusCode as string) === 'CONFIGURED_UNAVAILABLE' && status.hasExplicitInvocationFailureSignal === true)
+      || ((status.statusCode as string) === 'RUNTIME_ERROR' && status.hasExplicitInvocationFailureSignal === true)
       || (status.isHealthy !== true && status.statusDecisionReason === 'recent_real_invocation_failure' && status.hasExplicitInvocationFailureSignal === true)
     )
   ) {

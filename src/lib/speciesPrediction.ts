@@ -873,7 +873,7 @@ export function normalizeSpeciesPredictionResult(
   const sourceHealth = normalizeSourceHealth(
     readRecord(source, ['sourceHealth']) ?? readRecord(rawResearchPayload, ['sourceHealth']),
   );
-  const evidenceSummary = normalizeEvidenceSummary(
+  const evidenceSummaryBase = normalizeEvidenceSummary(
     readRecord(source, ['evidenceSummary']) ?? readRecord(rawResearchPayload, ['evidenceSummary']),
   );
   // Two levels only: top-level payload field, then payload.estoniaEvidence.
@@ -945,6 +945,24 @@ export function normalizeSpeciesPredictionResult(
     ? (readArray(source, ['predictedTargets', 'predicted_targets']) as unknown[]).map((point, index) => normalizePredictedPoint(asRecord(point), index))
     : [];
   const hasPredictedTargets = hasValue(source, ['predictedTargets', 'predicted_targets']);
+  const evidenceSummary = evidenceSummaryBase
+    ? {
+      ...evidenceSummaryBase,
+      ...(isCurrentFinalizedBackendOutput ? {
+        totalForeignRecentPoints: foreignRecentPoints.length,
+        weatherAvailable: weather?.weatherAvailable === true,
+        weatherPartial: weather?.weatherPartial === true,
+        foreignEbirdAvailable: sourceHealth?.ebirdAvailable === true || foreignRecentPoints.length > 0 || foreignClusters.length > 0,
+      } : {}),
+    }
+    : (isCurrentFinalizedBackendOutput
+      ? {
+        totalForeignRecentPoints: foreignRecentPoints.length,
+        weatherAvailable: weather?.weatherAvailable === true,
+        weatherPartial: weather?.weatherPartial === true,
+        foreignEbirdAvailable: sourceHealth?.ebirdAvailable === true || foreignRecentPoints.length > 0 || foreignClusters.length > 0,
+      }
+      : undefined);
   const mapLayers = normalizeMapLayers(
     readRecord(source, ['mapLayers', 'map_layers'])
       ?? readRecord(source, ['mapLayersDefault', 'map_layers_default'])

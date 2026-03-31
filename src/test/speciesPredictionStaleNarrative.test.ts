@@ -201,4 +201,70 @@ describe("stale narrative scrubber", () => {
       summary.includes("no recent estonia records");
     expect(isHonestAboutEmptyEvidence).toBe(true);
   });
+
+  it("keeps canonical foreign clusters instead of placeholder shells when normalized clusters exist", () => {
+    const payload = buildBasePayload({
+      sourceHealth: { ebirdAvailable: true, primarySourceUsed: "eBird foreign" },
+      foreignRecentPoints: [
+        {
+          lat: 57.86,
+          lon: 23.21,
+          obsDt: "2026-03-29T10:00:00.000Z",
+          locName: "Kolkasrags",
+          countryCode: "lv",
+          countryName: "Latvia",
+          daysAgo: 1,
+        },
+      ],
+      foreignClusters: [
+        {
+          id: "placeholder",
+          lat: 57.86,
+          lon: 23.21,
+          pointCount: 1,
+          newestObsDt: "2026-03-29T10:00:00.000Z",
+          oldestObsDt: "2026-03-29T10:00:00.000Z",
+          freshestDaysAgo: 1,
+          averageDaysAgo: 1,
+          totalHowMany: 0,
+          countries: [],
+          countryCodes: [],
+          locNames: [],
+          nearestDistanceKm: 0,
+          isFreshest: true,
+        },
+      ],
+      rawResearchPayload: {
+        normalizedSources: {
+          foreignClusters: [
+            {
+              id: "lv-cluster-1",
+              lat: 57.86,
+              lon: 23.21,
+              pointCount: 1,
+              newestObsDt: "2026-03-29T10:00:00.000Z",
+              oldestObsDt: "2026-03-29T10:00:00.000Z",
+              freshestDaysAgo: 1,
+              averageDaysAgo: 1,
+              totalHowMany: 3,
+              countries: ["Latvia"],
+              countryCodes: ["lv"],
+              locNames: ["Kolkasrags"],
+              nearestDistanceKm: 69,
+              isFreshest: true,
+            },
+          ],
+        },
+        aiSummary: "stale raw summary",
+      },
+    });
+
+    const finalized = hooks.buildFinalPredictionPayloadFromEvidence(payload);
+    const cluster = (finalized.foreignClusters as Array<Record<string, unknown>>)[0];
+
+    expect(cluster.countries).toEqual(["Latvia"]);
+    expect(cluster.countryCodes).toEqual(["lv"]);
+    expect(cluster.totalHowMany).toBe(3);
+    expect(cluster.nearestDistanceKm).toBe(69);
+  });
 });

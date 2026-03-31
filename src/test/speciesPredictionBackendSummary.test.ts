@@ -24,6 +24,15 @@ type BackendHooks = {
     rankingNotes: string;
     warnings: string[];
   };
+  buildPredictedTargets: (opts: {
+    speciesName: string;
+    estoniaHistoryClusters: Array<Record<string, unknown>>;
+    foreignClusters: Array<Record<string, unknown>>;
+    foreignRecentPoints: Array<Record<string, unknown>>;
+    weather: Record<string, unknown>;
+    estoniaEvidence: Record<string, unknown>;
+    horizonDays: number;
+  }) => Record<string, unknown>[];
 };
 
 function loadBackendHooks(): BackendHooks {
@@ -39,6 +48,7 @@ globalThis.__speciesPredictionBackendTestHooks = {
   INVOKE_ROUTE_VERSION,
   EDGE_RESPONSE_PROOF,
   buildNeutralStructuredEvidenceSummary,
+  buildPredictedTargets,
 };
 `;
   const transpiled = ts.transpileModule(wrapped, {
@@ -308,5 +318,237 @@ describe("species-prediction backend summary finalizer", () => {
     expect(wrapped.backendBuild).toBe(hooks.SPECIES_PREDICTION_BACKEND_BUILD);
     expect(wrapped.invokeRouteVersion).toBe(hooks.INVOKE_ROUTE_VERSION);
     expect(wrapped.responseProof).toBe(hooks.EDGE_RESPONSE_PROOF);
+  });
+
+  it("rebuilds final foreign payload fields from canonical normalized evidence", () => {
+    const response = buildBaseResponse({
+      speciesName: "Punanokk-vart",
+      foreignRecentPoints: [
+        {
+          lat: 57.82,
+          lon: 23.18,
+          obsDt: "2026-03-29T09:00:00.000Z",
+          locName: "Kolkasrags",
+          countryCode: "lv",
+          countryName: "Latvia",
+          source: "eBird",
+          daysAgo: 1,
+          distanceToEstoniaKm: 72,
+        },
+        {
+          lat: 57.91,
+          lon: 23.34,
+          obsDt: "2026-03-29T08:00:00.000Z",
+          locName: "Kurzeme coast",
+          countryCode: "lv",
+          countryName: "Latvia",
+          source: "eBird",
+          daysAgo: 1,
+          distanceToEstoniaKm: 68,
+        },
+      ],
+      foreignClusters: [
+        {
+          id: "lv-cluster-1",
+          lat: 57.86,
+          lon: 23.25,
+          pointCount: 2,
+          newestObsDt: "2026-03-29T09:00:00.000Z",
+          oldestObsDt: "2026-03-29T08:00:00.000Z",
+          freshestDaysAgo: 1,
+          averageDaysAgo: 1,
+          totalHowMany: 5,
+          countries: ["Latvia"],
+          countryCodes: ["lv"],
+          locNames: ["Kolkasrags", "Kurzeme coast"],
+          nearestDistanceKm: 68,
+          isFreshest: true,
+        },
+      ],
+      sourceHealth: {
+        ebirdAvailable: true,
+        primarySourceUsed: "eBird foreign",
+      },
+      weather: {
+        fetchedAt: "2026-03-29T10:00:00.000Z",
+        windSpeedKph: 24,
+        windDirectionDeg: 205,
+        weatherAvailable: true,
+        weatherPartial: false,
+        source: "Open-Meteo",
+      },
+      evidenceSummary: {
+        totalForeignRecentPoints: 0,
+        weatherAvailable: false,
+      },
+      countryScores: {
+        latvia: 0,
+        lithuania: 0,
+        belarus: 0,
+        poland: 0,
+        russia: 0,
+        finlandContextOnly: 0,
+      },
+      externalPressureScore: 0,
+      rawResearchPayload: {
+        normalizedSources: {
+          foreignRecentPoints: [
+            {
+              lat: 57.82,
+              lon: 23.18,
+              obsDt: "2026-03-29T09:00:00.000Z",
+              locName: "Kolkasrags",
+              countryCode: "lv",
+              countryName: "Latvia",
+              source: "eBird",
+              daysAgo: 1,
+              distanceToEstoniaKm: 72,
+            },
+          ],
+          foreignClusters: [
+            {
+              id: "lv-cluster-1",
+              lat: 57.86,
+              lon: 23.25,
+              pointCount: 2,
+              newestObsDt: "2026-03-29T09:00:00.000Z",
+              oldestObsDt: "2026-03-29T08:00:00.000Z",
+              freshestDaysAgo: 1,
+              averageDaysAgo: 1,
+              totalHowMany: 5,
+              countries: ["Latvia"],
+              countryCodes: ["lv"],
+              locNames: ["Kolkasrags", "Kurzeme coast"],
+              nearestDistanceKm: 68,
+              isFreshest: true,
+            },
+          ],
+          weather: {
+            fetchedAt: "2026-03-29T10:00:00.000Z",
+            windSpeedKph: 24,
+            windDirectionDeg: 205,
+            weatherAvailable: true,
+            weatherPartial: false,
+            source: "Open-Meteo",
+          },
+        },
+      },
+    });
+
+    const finalized = hooks.finalizePredictionResponse(response, "test_canonical_foreign_finalizer");
+
+    expect(Array.isArray(finalized.foreignRecentPoints)).toBe(true);
+    expect((finalized.foreignRecentPoints as unknown[]).length).toBe(2);
+    expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.countries).toEqual(["Latvia"]);
+    expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.countryCodes).toEqual(["lv"]);
+    expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.totalHowMany).toBe(5);
+    expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.nearestDistanceKm).toBe(68);
+    expect((finalized.evidenceSummary as Record<string, unknown>).totalForeignRecentPoints).toBeGreaterThan(0);
+    expect((finalized.countryScores as Record<string, unknown>).latvia).toBeGreaterThan(0);
+    expect(Number(finalized.externalPressureScore)).toBeGreaterThan(0);
+    expect((finalized.evidenceSummary as Record<string, unknown>).weatherAvailable).toBe(true);
+    expect(((finalized.rawResearchPayload as Record<string, unknown>).countryScores as Record<string, unknown>).latvia).toBeGreaterThan(0);
+    expect(Number((finalized.rawResearchPayload as Record<string, unknown>).externalPressureScore)).toBeGreaterThan(0);
+  });
+
+  it("anchors no-recent-Estonia ranking to foreign pressure and Estonia entry corridor", () => {
+    const predicted = hooks.buildPredictedTargets({
+      speciesName: "Punanokk-vart",
+      foreignRecentPoints: [
+        {
+          lat: 57.85,
+          lon: 23.2,
+          obsDt: "2026-03-30T06:00:00.000Z",
+          locName: "Kolkasrags",
+          countryCode: "lv",
+          countryName: "Latvia",
+          source: "eBird",
+          daysAgo: 1,
+          clusterId: "lv-cluster-1",
+          distanceToEstoniaKm: 70,
+        },
+      ],
+      foreignClusters: [
+        {
+          id: "lv-cluster-1",
+          lat: 57.86,
+          lon: 23.22,
+          pointCount: 4,
+          newestObsDt: "2026-03-30T06:00:00.000Z",
+          oldestObsDt: "2026-03-29T06:00:00.000Z",
+          freshestDaysAgo: 1,
+          averageDaysAgo: 1.2,
+          totalHowMany: 8,
+          countries: ["Latvia"],
+          countryCodes: ["lv"],
+          locNames: ["Kolkasrags"],
+          nearestDistanceKm: 70,
+          isFreshest: true,
+        },
+      ],
+      estoniaHistoryClusters: [
+        {
+          id: "nomme-old",
+          lat: 59.38,
+          lon: 24.67,
+          representativeLat: 59.38,
+          representativeLon: 24.67,
+          count: 12,
+          recentCount: 0,
+          locality: "Nõmme linnaosa",
+          municipality: "Tallinn",
+          displayName: "Nõmme linnaosa",
+          habitatCue: "inland park",
+          habitatType: "terrestrial_or_unknown",
+          habitatScore: 2,
+          coastalDistanceKm: 42,
+          clusterTightnessKm: 4,
+          newestEventDate: "2025-03-12T00:00:00.000Z",
+          oldestEventDate: "2023-03-12T00:00:00.000Z",
+          source: "GBIF",
+          sourceBreakdown: { GBIF: 12 },
+        },
+        {
+          id: "poosaspea-entry",
+          lat: 59.21,
+          lon: 23.52,
+          representativeLat: 59.2054,
+          representativeLon: 23.5164,
+          count: 5,
+          recentCount: 0,
+          locality: "Põõsaspea neem",
+          municipality: "Lääne-Nigula",
+          displayName: "Põõsaspea neem",
+          habitatCue: "coastal migration bottleneck",
+          habitatType: "coastal_open_water",
+          habitatScore: 28,
+          coastalDistanceKm: 2,
+          clusterTightnessKm: 3,
+          newestEventDate: "2025-03-10T00:00:00.000Z",
+          oldestEventDate: "2023-03-10T00:00:00.000Z",
+          source: "GBIF",
+          sourceBreakdown: { GBIF: 5 },
+        },
+      ],
+      weather: {
+        fetchedAt: "2026-03-30T08:00:00.000Z",
+        windSpeedKph: 26,
+        windDirectionDeg: 210,
+        weatherAvailable: true,
+        weatherPartial: false,
+      },
+      estoniaEvidence: {
+        recentCount7d: 0,
+        recentCount30d: 0,
+        alreadyPresent: false,
+      },
+      horizonDays: 7,
+    });
+
+    expect(predicted[0]?.name).toBe("Põõsaspea neem");
+    expect(String(predicted[0]?.reason)).toMatch(/Anchored to fresh foreign pressure/i);
+    expect(String(predicted[0]?.reason)).toMatch(/Estonia entry corridor/i);
+    expect(String(predicted[0]?.reason)).not.toMatch(/Nõmme linnaosa.*before ranking/i);
+    expect(predicted[0]?.rankingMode).toBe("foreign_anchor_entry_corridor");
   });
 });

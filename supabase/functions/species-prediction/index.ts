@@ -1857,6 +1857,120 @@ function buildPredictedTargets(opts: {
   const nearestRelevantClusterKm = hasForeignPressure
     ? Math.min(...foreignClusters.map((cluster) => toNumber(cluster.nearestDistanceKm)).filter((value) => value > 0))
     : null;
+  const primaryForeignAnchor = hasForeignPressure
+    ? selectPrimaryForeignAnchor(foreignClusters, foreignRecentPoints)
+    : null;
+  const foreignAnchoredRanking = hasForeignPressure
+    && !hasRecentEstoniaSupport
+    && primaryForeignAnchor
+    && estoniaHistoryClusters.length > 0;
+  const estoniaEntryCorridor = foreignAnchoredRanking
+    ? deriveEstoniaEntryCorridor(primaryForeignAnchor, estoniaHistoryClusters)
+    : null;
+  if (foreignAnchoredRanking && primaryForeignAnchor && estoniaEntryCorridor) {
+    const anchored = estoniaHistoryClusters.map((cluster) => {
+      const representativeLat = Number.isFinite(Number(cluster.representativeLat)) ? toNumber(cluster.representativeLat) : toNumber(cluster.lat);
+      const representativeLon = Number.isFinite(Number(cluster.representativeLon)) ? toNumber(cluster.representativeLon) : toNumber(cluster.lon);
+      const ecologyScore = scoreClusterEcology(cluster, ecology);
+      const historyScore = historyScoreForDebug(cluster);
+      const routeAlignment = computeAlignmentScore(primaryForeignAnchor, { lat: representativeLat, lon: representativeLon }, weather);
+      const entryDistanceKm = haversineKm(representativeLat, representativeLon, estoniaEntryCorridor.entryLat, estoniaEntryCorridor.entryLon);
+      const corridorBearing = bearingBetween(primaryForeignAnchor.lat, primaryForeignAnchor.lon, representativeLat, representativeLon);
+      const bearingDelta = Math.abs((((corridorBearing - estoniaEntryCorridor.bearingDeg) + 540) % 360) - 180);
+      const corridorAlignmentBonus = clampInt(Math.round((180 - bearingDelta) / 3.2), 0, 36);
+      const corridorDistancePenalty = clampInt(Math.round(entryDistanceKm / 8), 0, 28);
+      const inlandPenalty = !isCoastalCluster(cluster) ? 22 : 0;
+      const deepInlandPenalty = !isCoastalCluster(cluster) && toNumber(cluster.coastalDistanceKm) > 30 ? 18 : 0;
+      const historyWeight = Math.min(historyScore, 18);
+      const confidenceBeforeCap = 28
+        + corridorAlignmentBonus
+        + Math.min(routeAlignment, 20)
+        + Math.max(0, ecologyScore.score)
+        + historyWeight
+        - corridorDistancePenalty
+        - inlandPenalty
+        - deepInlandPenalty
+        - (toNumber(cluster.clusterTightnessKm) > 10 ? 8 : 0)
+        - (ecologyScore.score < 0 ? Math.abs(ecologyScore.score) : 0);
+      const confidence = Number(Math.max(0.2, Math.min(0.89, confidenceBeforeCap / 100)).toFixed(2));
+      return {
+        cluster,
+        ecologyScore,
+        historyScore,
+        routeAlignment,
+        confidence,
+        confidenceBeforeCap,
+        entryDistanceKm,
+        corridorAlignmentBonus,
+      };
+    })
+      .sort((left, right) =>
+        sortPredictedConfidence(right.confidence) - sortPredictedConfidence(left.confidence)
+        || left.entryDistanceKm - right.entryDistanceKm
+        || right.routeAlignment - left.routeAlignment
+        || right.historyScore - left.historyScore
+      )
+      .slice(0, 5);
+    return anchored.map((entry, index) => {
+      const cluster = entry.cluster;
+      const representativeLat = Number.isFinite(Number(cluster.representativeLat)) ? toNumber(cluster.representativeLat) : toNumber(cluster.lat);
+      const representativeLon = Number.isFinite(Number(cluster.representativeLon)) ? toNumber(cluster.representativeLon) : toNumber(cluster.lon);
+      const etaHours = Math.max(8, Math.round((entry.entryDistanceKm + haversineKm(primaryForeignAnchor.lat, primaryForeignAnchor.lon, estoniaEntryCorridor.entryLat, estoniaEntryCorridor.entryLon)) / Math.max(24, toNumber(weather.windSpeedKph) + 16)));
+      const anchorCountries = Array.isArray(primaryForeignAnchor.countries) ? primaryForeignAnchor.countries.map(String).filter(Boolean) : [];
+      const anchorLocality = Array.isArray(primaryForeignAnchor.locNames) ? primaryForeignAnchor.locNames.map(String).filter(Boolean)[0] : stringOr(primaryForeignAnchor.locName, primaryForeignAnchor.id);
+      const corridorReason = [
+        `Anchored to fresh foreign pressure from ${anchorLocality || 'foreign eBird cluster'}${anchorCountries.length ? ` (${anchorCountries.join(', ')})` : ''}`,
+        `via the ${estoniaEntryCorridor.entryLabel} Estonia entry corridor`,
+        `before ranking Estonia targets by corridor fit and supporting history.`,
+      ].join(' ');
+      return {
+        rank: index + 1,
+        name: stringOr(cluster.displayName, 'Unnamed history cluster'),
+        displayName: stringOr(cluster.displayName, 'Unnamed history cluster'),
+        countyOrParish: stringOr(cluster.municipality, estoniaEntryCorridor.entryLabel),
+        displayCountyOrParish: stringOr(cluster.municipality, estoniaEntryCorridor.entryLabel),
+        lat: representativeLat,
+        lon: representativeLon,
+        confidence: entry.confidence,
+        eta: `${Math.min(horizonDays, Math.max(1, Math.ceil(etaHours / 24)))}d / ~${etaHours}h`,
+        searchRadiusKm: clampInt(8 + cluster.count, 6, 30),
+        radius: clampInt(8 + cluster.count, 6, 30),
+        habitatCue: stringOr(cluster.habitatCue, entry.ecologyScore.habitatCue, 'Habitat uncertain'),
+        reason: `${corridorReason} Entry corridor distance is about ${Math.round(entry.entryDistanceKm)} km from this hotspot and foreign-cluster distance to Estonia entry is about ${Math.round(estoniaEntryCorridor.distanceFromForeignKm)} km.`,
+        supportingCountries: anchorCountries.length ? anchorCountries : supportingCountries.length ? supportingCountries : undefined,
+        ...(nearestRelevantClusterKm != null ? { nearestRelevantClusterKm: Number(nearestRelevantClusterKm.toFixed(1)) } : {}),
+        ...(latestRelevantForeignDate ? { latestRelevantForeignDate } : {}),
+        derivedFromClusterId: cluster.id,
+        rawClusterId: cluster.id,
+        supportingEstoniaHistoryCount: cluster.count,
+        latestSupportingEstoniaDate: cluster.newestEventDate,
+        historicalMatch: `${cluster.count} Estonia history points nearby`,
+        estoniaPresenceSignal: 'foreign_pressure_only',
+        windAdjusted: hasWeatherSupport,
+        rankingMode: 'foreign_anchor_entry_corridor',
+        sourceType: 'estonia_history_cluster',
+        representativePointMethod: stringOr(cluster.representativePointMethod, 'nearest_real_point'),
+        coordinateSource: stringOr(cluster.representativePointMethod, 'nearest_real_point'),
+        displayNameSource: stringOr(cluster.displayNameSource, 'fallback_label'),
+        supportingPointCount: Array.isArray(cluster.supportingPoints) ? cluster.supportingPoints.length : cluster.count,
+        usedForeignPressure: true,
+        habitatFilterAdjustedRanking: entry.ecologyScore.adjustedRanking,
+        vectorsSuppressed: false,
+        habitatType: stringOr(cluster.habitatType, ecology.mode),
+        habitatFitScore: entry.ecologyScore.score,
+        historySupportScore: entry.historyScore,
+        foreignSupportScore: entry.routeAlignment + entry.corridorAlignmentBonus,
+        weatherSupportScore: hasWeatherSupport ? clampInt(Math.round(computeWindSupport(weather) / 10), 0, 8) : 0,
+        confidenceBeforeCap: Number((Math.max(0, entry.confidenceBeforeCap) / 100).toFixed(2)),
+        confidenceAfterCap: entry.confidence,
+        entryCorridorLabel: estoniaEntryCorridor.entryLabel,
+        entryCorridorLat: estoniaEntryCorridor.entryLat,
+        entryCorridorLon: estoniaEntryCorridor.entryLon,
+        foreignAnchorLocality: anchorLocality,
+        foreignAnchorCountries: anchorCountries,
+      };
+    });
+  }
   const scored = estoniaHistoryClusters.map((cluster) => {
     const routeAlignment = hasForeignPressure ? computeAlignmentScore(foreignClusters[0], cluster, weather) : 0;
     const ecologyScore = scoreClusterEcology(cluster, ecology);
@@ -1992,6 +2106,92 @@ function buildPredictedTargets(opts: {
       },
     };
   });
+}
+
+function selectPrimaryForeignAnchor(
+  foreignClusters: Record<string, unknown>[],
+  foreignRecentPoints: Record<string, unknown>[],
+): Record<string, unknown> | null {
+  if (!foreignClusters.length) return null;
+  const pointCountsByClusterId = new Map<string, number>();
+  foreignRecentPoints.forEach((point) => {
+    const clusterId = stringOr(point.clusterId);
+    if (!clusterId) return;
+    pointCountsByClusterId.set(clusterId, (pointCountsByClusterId.get(clusterId) || 0) + 1);
+  });
+  return [...foreignClusters]
+    .map((cluster, index) => {
+      const clusterId = stringOr(cluster.id);
+      const freshestDaysAgo = hasFiniteNumber(cluster.freshestDaysAgo)
+        ? toNumber(cluster.freshestDaysAgo)
+        : daysAgoFromIso(stringOr(cluster.newestObsDt)) ?? 999;
+      const nearestDistanceKm = hasFiniteNumber(cluster.nearestDistanceKm) && toNumber(cluster.nearestDistanceKm) > 0
+        ? toNumber(cluster.nearestDistanceKm)
+        : distanceToEstonia(toNumber(cluster.lat), toNumber(cluster.lon));
+      const pointCount = hasFiniteNumber(cluster.pointCount) && toNumber(cluster.pointCount) > 0
+        ? toNumber(cluster.pointCount)
+        : Math.max(1, pointCountsByClusterId.get(clusterId) || 0);
+      const totalHowMany = hasFiniteNumber(cluster.totalHowMany) ? toNumber(cluster.totalHowMany) : pointCount;
+      const freshnessScore = Math.max(0, 20 - freshestDaysAgo * 3);
+      const proximityScore = Math.max(0, 18 - nearestDistanceKm / 20);
+      const volumeScore = Math.min(20, pointCount * 3 + Math.min(10, totalHowMany));
+      const freshnessBoost = cluster.isFreshest === true ? 8 : 0;
+      const anchorScore = freshnessScore + proximityScore + volumeScore + freshnessBoost;
+      return {
+        ...cluster,
+        pointCount,
+        totalHowMany,
+        freshestDaysAgo,
+        nearestDistanceKm,
+        anchorScore,
+        _inputIndex: index,
+      };
+    })
+    .sort((left, right) =>
+      toNumber(right.anchorScore) - toNumber(left.anchorScore)
+      || toNumber(left.freshestDaysAgo) - toNumber(right.freshestDaysAgo)
+      || toNumber(left.nearestDistanceKm) - toNumber(right.nearestDistanceKm)
+      || toNumber(right.pointCount) - toNumber(left.pointCount)
+      || toNumber(left._inputIndex) - toNumber(right._inputIndex)
+    )[0] ?? null;
+}
+
+function deriveEstoniaEntryCorridor(
+  foreignAnchor: Record<string, unknown>,
+  estoniaHistoryClusters: Array<Record<string, unknown>>,
+): { entryLabel: string; entryLat: number; entryLon: number; bearingDeg: number; distanceFromForeignKm: number } {
+  const coastalCandidates = estoniaHistoryClusters
+    .map((cluster) => ({
+      cluster,
+      lat: Number.isFinite(Number(cluster.representativeLat)) ? toNumber(cluster.representativeLat) : toNumber(cluster.lat),
+      lon: Number.isFinite(Number(cluster.representativeLon)) ? toNumber(cluster.representativeLon) : toNumber(cluster.lon),
+      coastalDistanceKm: toNumber(cluster.coastalDistanceKm),
+      clusterCount: toNumber(cluster.count),
+      locality: stringOr(cluster.displayName, cluster.municipality, cluster.locality, 'Estonia entry'),
+    }))
+    .filter((candidate) => Number.isFinite(candidate.lat) && Number.isFinite(candidate.lon))
+    .sort((left, right) =>
+      left.coastalDistanceKm - right.coastalDistanceKm
+      || haversineKm(foreignAnchor.lat as number, foreignAnchor.lon as number, left.lat, left.lon) - haversineKm(foreignAnchor.lat as number, foreignAnchor.lon as number, right.lat, right.lon)
+      || right.clusterCount - left.clusterCount
+    );
+  const chosen = coastalCandidates[0];
+  if (!chosen) {
+    return {
+      entryLabel: 'West Estonia entry',
+      entryLat: 58.95,
+      entryLon: 23.55,
+      bearingDeg: bearingBetween(toNumber(foreignAnchor.lat), toNumber(foreignAnchor.lon), 58.95, 23.55),
+      distanceFromForeignKm: haversineKm(toNumber(foreignAnchor.lat), toNumber(foreignAnchor.lon), 58.95, 23.55),
+    };
+  }
+  return {
+    entryLabel: chosen.locality,
+    entryLat: chosen.lat,
+    entryLon: chosen.lon,
+    bearingDeg: bearingBetween(toNumber(foreignAnchor.lat), toNumber(foreignAnchor.lon), chosen.lat, chosen.lon),
+    distanceFromForeignKm: haversineKm(toNumber(foreignAnchor.lat), toNumber(foreignAnchor.lon), chosen.lat, chosen.lon),
+  };
 }
 
 function buildPredictionVectors(
@@ -4096,14 +4296,45 @@ function validatePredictionPayloadConsistency(finalPayload: Record<string, unkno
 
 function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown>): Record<string, unknown> {
   const estoniaEvidence = { ...asRecord(payload.estoniaEvidence) };
-  const foreignRecentPoints = Array.isArray(payload.foreignRecentPoints) ? payload.foreignRecentPoints : [];
-  const foreignClusters = Array.isArray(payload.foreignClusters) ? payload.foreignClusters : [];
+  const normalizedSources = asRecord(asRecord(payload.rawResearchPayload).normalizedSources);
+  const foreignRecentPoints = Array.isArray(payload.foreignRecentPoints) && payload.foreignRecentPoints.length
+    ? payload.foreignRecentPoints
+    : (Array.isArray(normalizedSources.foreignRecentPoints) ? normalizedSources.foreignRecentPoints : []);
+  const foreignClusters = Array.isArray(payload.foreignClusters) && hasNonPlaceholderForeignClusters(payload.foreignClusters)
+    ? payload.foreignClusters
+    : (Array.isArray(normalizedSources.foreignClusters) ? normalizedSources.foreignClusters : []);
   const estoniaHistoryPoints = Array.isArray(payload.estoniaHistoryPoints) ? payload.estoniaHistoryPoints : [];
   const estoniaHistoryClusters = Array.isArray(payload.estoniaHistoryClusters) ? payload.estoniaHistoryClusters : [];
   const predictedTargets = Array.isArray(payload.predictedTargets) ? payload.predictedTargets : [];
   const scrubbed = scrubStaleNarrativeFromStructuredEvidence(payload);
   const recentCount7d = Math.max(0, Math.round(toNumber(estoniaEvidence.recentCount7d)));
   const recentCount30d = Math.max(0, Math.round(toNumber(estoniaEvidence.recentCount30d)));
+  const canonicalWeather = Object.keys(asRecord(payload.weather)).length
+    ? asRecord(payload.weather)
+    : asRecord(normalizedSources.weather);
+  const foreignEvidence = buildForeignEvidenceFromPointsAndClusters(
+    foreignRecentPoints.map((entry) => asRecord(entry)),
+    foreignClusters.map((entry) => asRecord(entry)),
+  );
+  const canonicalCountryScores = buildCountryScores(foreignEvidence);
+  const evidenceStateSnapshot = computeEvidenceState({
+    estoniaEvidence,
+    estoniaHistoryPoints,
+    estoniaHistoryClusters,
+    foreignRecentPoints,
+    foreignClusters,
+    foreignEvidence,
+    sourceHealth: asRecord(payload.sourceHealth),
+    weather: canonicalWeather,
+    predictedTargets,
+    topPredictedPoints: Array.isArray(payload.topPredictedPoints) ? payload.topPredictedPoints : predictedTargets,
+  });
+  const canonicalEvidenceSummary = buildEvidenceSummary({
+    weather: canonicalWeather,
+    sourceHealth: asRecord(payload.sourceHealth),
+    evidenceStateSnapshot,
+  });
+  const canonicalExternalPressureScore = clampInt(Math.round(sum(foreignEvidence.map((entry) => toNumber(entry.recordCount7d) * 4))), 0, 100);
   estoniaEvidence.recentCount7d = recentCount7d;
   estoniaEvidence.recentCount30d = recentCount30d;
   estoniaEvidence.alreadyPresent = recentCount7d > 0;
@@ -4119,11 +4350,10 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     foreignRecentPoints,
     foreignClusters,
     predictedTargets,
-    weather: asRecord(payload.weather),
+    weather: canonicalWeather,
     insightSummary: scrubbed.safeSummary,
   });
   const rawResearchPayload = asRecord(payload.rawResearchPayload);
-  const normalizedSources = asRecord(rawResearchPayload.normalizedSources);
   const finalPayload: Record<string, unknown> = {
     speciesKey: payload.speciesKey,
     speciesName: payload.speciesName,
@@ -4132,34 +4362,27 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     analysisVersion: payload.analysisVersion,
     species: asRecord(payload.species),
     sourceHealth: asRecord(payload.sourceHealth),
-    evidenceSummary: asRecord(payload.evidenceSummary),
+    evidenceSummary: canonicalEvidenceSummary,
     elurikkusRecentRecords: Array.isArray(payload.elurikkusRecentRecords) ? payload.elurikkusRecentRecords : [],
     estoniaHistoryPoints,
     estoniaHistoryClusters,
     foreignRecentPoints,
     foreignClusters,
-    weather: asRecord(payload.weather),
+    weather: canonicalWeather,
     predictionVectors: Array.isArray(payload.predictionVectors) ? payload.predictionVectors : [],
     predictedTargets,
     mapLayers: asRecord(payload.mapLayers),
-    foreignEvidence: Array.isArray(payload.foreignEvidence) ? payload.foreignEvidence : [],
+    foreignEvidence,
     historicalEvidence: asRecord(payload.historicalEvidence),
     rawLinks: asRecord(payload.rawLinks),
     estoniaEvidence,
-    externalPressureScore: 0,
+    externalPressureScore: canonicalExternalPressureScore,
     springFitScore: payload.springFitScore,
     windSupportScore: payload.windSupportScore,
     routeVector: payload.routeVector,
-    bestEntryZone: payload.bestEntryZone,
+    bestEntryZone: stringOr(payload.bestEntryZone, asRecord(predictedTargets[0]).entryCorridorLabel, asRecord(predictedTargets[0]).countyOrParish, asRecord(predictedTargets[0]).name, 'Unavailable'),
     alreadyMissedRisk: payload.alreadyMissedRisk,
-    countryScores: {
-      latvia: 0,
-      lithuania: 0,
-      belarus: 0,
-      poland: 0,
-      russia: 0,
-      finlandContextOnly: 0,
-    },
+    countryScores: canonicalCountryScores,
     topPredictedPoints: predictedTargets,
     insightSummary: scrubbed.safeSummary,
     aiSummary: scrubbed.safeSummary,
@@ -4198,7 +4421,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
       historicalEvidence: asRecord(rawResearchPayload.historicalEvidence),
       predictionVectors: Array.isArray(rawResearchPayload.predictionVectors) ? rawResearchPayload.predictionVectors : [],
       sourceHealth: asRecord(payload.sourceHealth),
-      evidenceSummary: asRecord(payload.evidenceSummary),
+      evidenceSummary: canonicalEvidenceSummary,
       // Fresh computed values — never carried from rawResearchPayload
       aiSummary: scrubbed.safeSummary,
       insightSummary: scrubbed.safeSummary,
@@ -4213,25 +4436,28 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
         ...finalConsistencyChecks,
         legacyStateSafe: true,
       },
-      countryScores: {
-        latvia: 0,
-        lithuania: 0,
-        belarus: 0,
-        poland: 0,
-        russia: 0,
-        finlandContextOnly: 0,
-      },
-      externalPressureScore: 0,
+      countryScores: canonicalCountryScores,
+      externalPressureScore: canonicalExternalPressureScore,
       normalizedSources: {
         estoniaHistoryPoints,
         estoniaHistoryClusters,
         foreignRecentPoints,
         foreignClusters,
-        weather: asRecord(payload.weather),
+        weather: canonicalWeather,
       },
     },
   };
   return finalPayload;
+}
+
+function hasNonPlaceholderForeignClusters(input: unknown[]): boolean {
+  return input.some((entry) => {
+    const cluster = asRecord(entry);
+    return (Array.isArray(cluster.countries) && cluster.countries.length > 0)
+      || (Array.isArray(cluster.countryCodes) && cluster.countryCodes.length > 0)
+      || toNumber(cluster.totalHowMany) > 0
+      || toNumber(cluster.nearestDistanceKm) > 0;
+  });
 }
 
 function buildDeterministicFinalPayloadFields(payload: Record<string, unknown>) {
@@ -4532,14 +4758,17 @@ function computeEvidenceState(input: {
     || Boolean(stringOr(input.estoniaEvidence.latestEstoniaDate))
     || freshestLocalities.length > 0;
   const hasUsableEstoniaHistory = input.estoniaHistoryClusters.length > 0 || input.estoniaHistoryPoints.length > 0;
-  const totalForeignRecentPoints = input.foreignEvidence.reduce((sumSoFar, entry) => (
-    sumSoFar + Math.max(
-      toNumber(entry.totalForeignRecentPoints),
-      toNumber(entry.recordCount7d),
-      toNumber(entry.recordCount30d),
-      0,
-    )
-  ), 0);
+  const totalForeignRecentPoints = Math.max(
+    input.foreignRecentPoints.length,
+    input.foreignEvidence.reduce((sumSoFar, entry) => (
+      sumSoFar + Math.max(
+        toNumber(entry.totalForeignRecentPoints),
+        toNumber(entry.recordCount7d),
+        toNumber(entry.recordCount30d),
+        0,
+      )
+    ), 0),
+  );
   const primaryCountries = Array.from(new Set(input.foreignEvidence.map((entry) => stringOr(entry.countryName, entry.countryCode)).filter(Boolean)));
   const hasUsableForeignPressure = input.foreignRecentPoints.length > 0
     || input.foreignClusters.length > 0
@@ -5152,6 +5381,10 @@ function bearingToCompass(value: number): string {
 function roundCoord(value: number, precision = 1): number {
   const factor = 10 ** precision;
   return Math.round(value * factor) / factor;
+}
+
+function hasFiniteNumber(value: unknown): boolean {
+  return Number.isFinite(Number(value));
 }
 
 function clampInt(value: number, min: number, max: number): number {

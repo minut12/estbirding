@@ -386,6 +386,105 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.hasForeignPressure).toBe(true);
   });
 
+  it("keeps finalized backend canonical foreign fields authoritative", () => {
+    const result = normalizeSpeciesPredictionResult({
+      speciesKey: "punanokk-vart",
+      speciesName: "Punanokk-vart",
+      generatedAt: "2026-03-31T08:00:00.000Z",
+      backendBuild: "2026-03-31-test",
+      invokeRouteVersion: "fix20",
+      responseProof: "served by live species-prediction invoke route",
+      foreignRecentPoints: [
+        {
+          lat: 57.86,
+          lon: 23.21,
+          obsDt: "2026-03-30T10:00:00.000Z",
+          locName: "Kolkasrags",
+          countryCode: "lv",
+          countryName: "Latvia",
+          source: "eBird",
+          daysAgo: 1,
+          distanceToEstoniaKm: 69,
+        },
+      ],
+      foreignClusters: [
+        {
+          id: "lv-cluster-1",
+          lat: 57.86,
+          lon: 23.21,
+          pointCount: 1,
+          newestObsDt: "2026-03-30T10:00:00.000Z",
+          oldestObsDt: "2026-03-30T10:00:00.000Z",
+          freshestDaysAgo: 1,
+          averageDaysAgo: 1,
+          totalHowMany: 3,
+          countries: ["Latvia"],
+          countryCodes: ["lv"],
+          locNames: ["Kolkasrags"],
+          nearestDistanceKm: 69,
+          isFreshest: true,
+        },
+      ],
+      weather: {
+        fetchedAt: "2026-03-30T11:00:00.000Z",
+        windSpeedKph: 25,
+        windDirectionDeg: 205,
+        weatherAvailable: true,
+        weatherPartial: false,
+        source: "Open-Meteo",
+      },
+      countryScores: {
+        latvia: 16,
+        lithuania: 0,
+        belarus: 0,
+        poland: 0,
+        russia: 0,
+        finlandContextOnly: 0,
+      },
+      externalPressureScore: 16,
+      evidenceSummary: {
+        totalForeignRecentPoints: 0,
+        weatherAvailable: false,
+        foreignEbirdAvailable: false,
+      },
+      rawResearchPayload: {
+        foreignRecentPoints: [],
+        foreignClusters: [
+          {
+            id: "placeholder",
+            lat: 57.86,
+            lon: 23.21,
+            pointCount: 1,
+            newestObsDt: "2026-03-30T10:00:00.000Z",
+            oldestObsDt: "2026-03-30T10:00:00.000Z",
+            freshestDaysAgo: 1,
+            averageDaysAgo: 1,
+            totalHowMany: 0,
+            countries: [],
+            countryCodes: [],
+            locNames: [],
+            nearestDistanceKm: 0,
+            isFreshest: true,
+          },
+        ],
+        weather: {
+          fetchedAt: "2026-03-30T11:00:00.000Z",
+          windSpeedKph: 12,
+          weatherAvailable: false,
+        },
+      },
+    } as any, "Punanokk-vart", "linnuliigid");
+
+    expect(result.foreignRecentPoints?.length).toBe(1);
+    expect(result.foreignClusters?.[0]?.countries).toEqual(["Latvia"]);
+    expect(result.foreignClusters?.[0]?.totalHowMany).toBe(3);
+    expect(result.countryScores.latvia).toBe(16);
+    expect(result.externalPressureScore).toBe(16);
+    expect(result.evidenceSummary?.totalForeignRecentPoints).toBe(1);
+    expect(result.evidenceSummary?.weatherAvailable).toBe(true);
+    expect(result.evidenceSummary?.foreignEbirdAvailable).toBe(true);
+  });
+
   it("normalizes honesty-oriented predicted target metadata", () => {
     const result = normalizeSpeciesPredictionResult({
       speciesKey: "test-species",

@@ -389,6 +389,13 @@ export default function SpeciesPredictionSettings() {
               <p>diagnostics.matchedReason: {diagnosticWebhookError.matchedReason || '–'}</p>
               <p>effective.hasOutdatedWebhookPathError: {String(normalizedBackendStatus.hasOutdatedWebhookPathError)}</p>
               <p>displayState: {displayState}</p>
+              <p>resolvedWebhookUrl: {backendStatus.resolvedWebhookUrl || 'â€“'}</p>
+              <p>environmentName: {backendStatus.environmentName || 'â€“'}</p>
+              <p>healthcheckUrl: {backendStatus.healthcheckUrl || 'â€“'}</p>
+              <p>lastSuccessfulHealthCheckAt: {backendStatus.lastSuccessfulHealthCheckAt || 'â€“'}</p>
+              <p>lastFailedHealthCheckAt: {backendStatus.lastFailedHealthCheckAt || 'â€“'}</p>
+              <p>lastHttpStatus: {backendStatus.upstreamStatus != null ? String(backendStatus.upstreamStatus) : 'â€“'}</p>
+              <p>responseSnippet: {backendStatus.responseSnippet || 'â€“'}</p>
               {(() => {
                 const recoveredState = buildRecoveryDebugState(debugSnapshot?.rawBackendResponse);
                 return (
@@ -972,10 +979,17 @@ type SpeciesPredictionBackendStatus = {
   resolvedWebhookUrl?: string;
   resolvedWebhookPath?: string;
   expectedMethod?: string;
+  healthcheckUrl?: string;
+  environmentName?: string;
+  webhookPathMatchesRegistration?: boolean;
   productionWebhookReachable?: boolean | null;
   productionWebhookInactive?: boolean;
   upstreamStatus?: number | null;
+  upstreamStatusText?: string;
   upstreamMessage?: string;
+  responseSnippet?: string;
+  lastSuccessfulHealthCheckAt?: string;
+  lastFailedHealthCheckAt?: string;
   validationErrorCode?: string | null;
   validationMessage?: string;
   message: string;
@@ -1090,10 +1104,17 @@ async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionB
     resolvedWebhookUrl: safeString(status.resolvedWebhookUrl),
     resolvedWebhookPath: safeString(status.resolvedWebhookPath),
     expectedMethod: safeString(status.expectedMethod),
+    healthcheckUrl: safeString(status.healthcheckUrl),
+    environmentName: safeString(status.environmentName),
+    webhookPathMatchesRegistration: typeof status.webhookPathMatchesRegistration === 'boolean' ? status.webhookPathMatchesRegistration : undefined,
     productionWebhookReachable: typeof status.productionWebhookReachable === 'boolean' ? status.productionWebhookReachable : null,
     productionWebhookInactive: status.productionWebhookInactive === true,
     upstreamStatus: typeof status.upstreamStatus === 'number' ? status.upstreamStatus : null,
+    upstreamStatusText: safeString(status.upstreamStatusText),
     upstreamMessage: safeString(status.upstreamMessage),
+    responseSnippet: safeString(status.responseSnippet),
+    lastSuccessfulHealthCheckAt: safeString(status.lastSuccessfulHealthCheckAt),
+    lastFailedHealthCheckAt: safeString(status.lastFailedHealthCheckAt),
     validationErrorCode: safeString(status.validationErrorCode) || null,
     validationMessage: safeString(status.validationMessage),
     message: safeString(status.message) || 'Prediction backend is not configured yet',
@@ -1241,7 +1262,11 @@ export function deriveSpeciesPredictionDisplayState(
   status: ReturnType<typeof normalizeBackendStatus>,
 ): SpeciesPredictionDisplayState {
   if (status.missingWebhookEnv === true || !status.isConfigured) return 'NOT_CONFIGURED';
-  if (status.statusDecisionReason === 'configured_valid_no_runtime_probe' || status.statusCode === 'CONFIGURED_AVAILABLE') return 'CONFIGURED_AVAILABLE';
+  if (status.statusCode === 'CONFIGURED_UNAVAILABLE') return 'CONFIGURED_UNAVAILABLE';
+  if (
+    status.statusDecisionReason === 'configured_valid_no_runtime_probe'
+    || status.statusCode === 'CONFIGURED_AVAILABLE'
+  ) return 'CONFIGURED_AVAILABLE';
   if (
     status.isDeployed
     && (status.isConfigured || status.invalidWebhookUrl === true)

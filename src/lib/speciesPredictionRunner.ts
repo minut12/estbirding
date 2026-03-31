@@ -62,6 +62,75 @@ type PollResponse = {
   message?: string;
 };
 
+const UNAVAILABLE_STATUS_CODES = new Set(['CONFIGURED_UNAVAILABLE']);
+
+function extractUnavailableStatusCode(input: unknown): string {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return '';
+  const record = input as Record<string, unknown>;
+  return typeof record.statusCode === 'string' ? record.statusCode : (typeof record.status_code === 'string' ? record.status_code : '');
+}
+
+function isKnownUnavailableTransport(input: unknown): boolean {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return false;
+  const record = input as Record<string, unknown>;
+  const message = String(record.message || record.error || record.detail || '').toLowerCase();
+  const stage = String(record.stage || '').toLowerCase();
+  const status = safeNumber(record.status ?? record.upstreamStatus ?? record.code);
+  return UNAVAILABLE_STATUS_CODES.has(extractUnavailableStatusCode(record))
+    || stage === 'n8n_upstream'
+    || stage === 'status'
+    || stage === 'missing_webhook_url'
+    || message.includes('not registered')
+    || message.includes('webhook not found')
+    || message.includes('workflow must be active')
+    || message.includes('production webhook is not active')
+    || status === 401
+    || status === 403
+    || status === 404;
+}
+
+function buildUnavailablePredictionResult(
+  raw: unknown,
+  speciesName: string,
+  scope: SpeciesScopeId,
+): SpeciesPredictionResult {
+  const record = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw as Record<string, unknown> : {};
+  const userMessage = 'Prediction backend is currently unavailable.';
+  return normalizeSpeciesPredictionResult({
+    ...record,
+    speciesName,
+    generatedAt: typeof record.generatedAt === 'string' ? record.generatedAt : new Date().toISOString(),
+    statusCode: 'CONFIGURED_UNAVAILABLE',
+    evidenceState: 'unavailable',
+    userMessage,
+    isLivePredictionAvailable: false,
+    isCachedPrediction: false,
+    canRenderPredictionLayers: false,
+    predictionVectors: [],
+    predictedTargets: [],
+    topPredictedPoints: [],
+    routeVector: 'Unavailable',
+    bestEntryZone: 'Unavailable',
+    activeEvidenceSources: [],
+    mapLayers: {
+      estoniaHistory: false,
+      estoniaHistoryPoints: false,
+      estoniaHistoryClusters: false,
+      foreignEvidence: false,
+      foreignRecentPoints: false,
+      foreignPressureClusters: false,
+      predictedLines: false,
+      predictedCone: false,
+      predictedTargets: false,
+      diagnostics: true,
+      recentOnly: false,
+    },
+    insightSummary: typeof record.userMessage === 'string' && record.userMessage.trim()
+      ? record.userMessage.trim()
+      : userMessage,
+  } as Partial<SpeciesPredictionResult>, speciesName, scope);
+}
+
 function tryRecoverNormalizedResult(
   raw: unknown,
   speciesName: string,
@@ -142,6 +211,16 @@ export async function runSpeciesPredictionRequest(
     console.debug('[speciesPrediction] async POST response', data);
 
     if (error) {
+      if (isKnownUnavailableTransport(data) || isKnownUnavailableTransport(error)) {
+        const unavailableResult = buildUnavailablePredictionResult(data || error, payload.species.name, scope);
+        setSpeciesPredictionDebugBackendResponse(data || error);
+        updateSuccessTransport(data || error);
+        jobState.status = 'completed';
+        jobState.result = unavailableResult;
+        jobState.completedAt = responseTimestamp;
+        onJobUpdate?.(jobState);
+        return { ok: true, result: unavailableResult, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, safeNumber((data as Record<string, unknown> | null)?.status), data || error, null, jobState) };
+      }
       const recoveredResult = tryRecoverNormalizedResult(data, payload.species.name, scope);
       if (recoveredResult) {
         console.debug('[speciesPrediction] recovered usable payload despite SDK error', { path: recoveredResult.summarySourcePath });
@@ -164,6 +243,16 @@ export async function runSpeciesPredictionRequest(
 
     // Check if edge returned error envelope — but try to recover usable payload first
     if (data && typeof data === 'object' && data.ok === false) {
+      if (isKnownUnavailableTransport(data)) {
+        const unavailableResult = buildUnavailablePredictionResult(data, payload.species.name, scope);
+        setSpeciesPredictionDebugBackendResponse(data);
+        updateSuccessTransport(data);
+        jobState.status = 'completed';
+        jobState.result = unavailableResult;
+        jobState.completedAt = responseTimestamp;
+        onJobUpdate?.(jobState);
+        return { ok: true, result: unavailableResult, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, safeNumber(data.status), data, null, jobState) };
+      }
       const recoveredResult = tryRecoverNormalizedResult(data, payload.species.name, scope);
       if (recoveredResult) {
         console.debug('[speciesPrediction] recovered usable payload from error envelope', { path: recoveredResult.summarySourcePath });
@@ -353,6 +442,18 @@ async function pollForResult(
       }
 
       if (pollData.status === 'failed') {
+        if (isKnownUnavailableTransport(pollData.error)) {
+          const responseTimestamp = new Date().toISOString();
+          const unavailableResult = buildUnavailablePredictionResult(pollData.error, payload.species.name, scope);
+          setSpeciesPredictionDebugBackendResponse(pollData.error);
+          updateSuccessTransport(pollData.error);
+          jobState.status = 'completed';
+          jobState.result = unavailableResult;
+          jobState.completedAt = responseTimestamp;
+          jobState.lastUpdatedAt = responseTimestamp;
+          onJobUpdate?.(jobState);
+          return { ok: true, result: unavailableResult, diagnostics: buildDiagnostics(requestUrl, requestTimestamp, responseTimestamp, requestId, safeNumber((pollData.error as Record<string, unknown> | null)?.status), pollData.error, null, jobState) };
+        }
         const recoveredFromPoll = tryRecoverNormalizedResult(pollData.error, payload.species.name, scope);
         if (recoveredFromPoll) {
           console.debug('[speciesPrediction] recovered usable payload from polled error', { path: recoveredFromPoll.summarySourcePath });

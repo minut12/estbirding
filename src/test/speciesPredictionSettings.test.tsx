@@ -140,7 +140,7 @@ describe('SpeciesPredictionSettings', () => {
     expect(screen.queryByText(/Cannot read properties of undefined/i)).not.toBeInTheDocument();
   });
 
-  it('renders the live failing unavailable-shaped payload without runtime exception and keeps configured state', async () => {
+  it('renders unavailable-shaped payload as unavailable instead of available', async () => {
     vi.spyOn(window, 'fetch').mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -152,16 +152,24 @@ describe('SpeciesPredictionSettings', () => {
         deployed: true,
         statusCode: 'CONFIGURED_UNAVAILABLE',
         message: 'Partial status payload from backend',
+        resolvedWebhookUrl: 'https://n8n.example/webhook/species-prediction-prod',
+        healthcheckUrl: 'https://n8n.example/webhook/species-prediction-prod',
+        environmentName: 'production',
+        upstreamStatus: 404,
+        responseSnippet: 'webhook not registered',
+        lastFailedHealthCheckAt: '2026-03-31T10:00:00.000Z',
       }),
     } as Response);
 
     expect(() => render(<SpeciesPredictionSettings />)).not.toThrow();
 
     await waitFor(() => {
-      expect(screen.getByText('Prediction backend is configured and available')).toBeInTheDocument();
+      expect(screen.getByText('Prediction backend is configured but currently unavailable')).toBeInTheDocument();
     });
 
-    expect(screen.getByText(/displayState: CONFIGURED_AVAILABLE/i)).toBeInTheDocument();
+    expect(screen.getByText(/displayState: CONFIGURED_UNAVAILABLE/i)).toBeInTheDocument();
+    expect(screen.getByText(/resolvedWebhookUrl: https:\/\/n8n.example\/webhook\/species-prediction-prod/i)).toBeInTheDocument();
+    expect(screen.getByText(/lastHttpStatus: 404/i)).toBeInTheDocument();
     expect(screen.getByText(/summarySourcePath:/i)).toBeInTheDocument();
     expect(screen.queryByText(/Cannot read properties of undefined/i)).not.toBeInTheDocument();
   });

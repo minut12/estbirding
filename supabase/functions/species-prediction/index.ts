@@ -301,6 +301,10 @@ type LastInvocationEvidence = {
   lastInvocationAt: string;
   lastInvocationErrorStage: string;
   lastInvocationMessage: string;
+  lastInvocationHttpStatus: number | null;
+  responseSnippet: string;
+  lastSuccessfulHealthCheckAt: string;
+  lastFailedHealthCheckAt: string;
   diagnosticsAgeMs: number | null;
 };
 
@@ -417,33 +421,53 @@ function buildEntrypointMarkers(): Record<string, unknown> {
   };
 }
 
+function buildResponseSnippet(value: unknown): string {
+  if (!value) return '';
+  if (typeof value === 'string') return value.trim().slice(0, 180);
+  try {
+    return JSON.stringify(value).slice(0, 180);
+  } catch {
+    return String(value).slice(0, 180);
+  }
+}
+
 async function getLastInvocationEvidence(admin: ReturnType<typeof getSupabaseAdmin>): Promise<LastInvocationEvidence> {
   try {
     const { data, error } = await admin
       .from('prediction_jobs')
       .select('status, updated_at, error_json')
       .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (error || !data) {
+      .limit(10);
+    if (error || !data || !data.length) {
       return {
         lastInvocationStatus: '',
         lastInvocationAt: '',
         lastInvocationErrorStage: '',
         lastInvocationMessage: '',
+        lastInvocationHttpStatus: null,
+        responseSnippet: '',
+        lastSuccessfulHealthCheckAt: '',
+        lastFailedHealthCheckAt: '',
         diagnosticsAgeMs: null,
       };
     }
-    const errorJson = data.error_json && typeof data.error_json === 'object' && !Array.isArray(data.error_json)
-      ? data.error_json as Record<string, unknown>
+    const latest = data[0];
+    const latestErrorJson = latest.error_json && typeof latest.error_json === 'object' && !Array.isArray(latest.error_json)
+      ? latest.error_json as Record<string, unknown>
       : {};
-    const lastInvocationAt = typeof data.updated_at === 'string' ? data.updated_at : '';
+    const latestSuccessful = data.find((entry) => entry && entry.status === 'completed');
+    const latestFailed = data.find((entry) => entry && entry.status === 'failed');
+    const lastInvocationAt = typeof latest.updated_at === 'string' ? latest.updated_at : '';
     const parsedTime = lastInvocationAt ? new Date(lastInvocationAt).getTime() : Number.NaN;
     return {
-      lastInvocationStatus: typeof data.status === 'string' ? data.status : '',
+      lastInvocationStatus: typeof latest.status === 'string' ? latest.status : '',
       lastInvocationAt,
-      lastInvocationErrorStage: typeof errorJson.stage === 'string' ? errorJson.stage : '',
-      lastInvocationMessage: typeof errorJson.message === 'string' ? errorJson.message : '',
+      lastInvocationErrorStage: typeof latestErrorJson.stage === 'string' ? latestErrorJson.stage : '',
+      lastInvocationMessage: typeof latestErrorJson.message === 'string' ? latestErrorJson.message : '',
+      lastInvocationHttpStatus: typeof latestErrorJson.upstreamStatus === 'number' ? latestErrorJson.upstreamStatus : null,
+      responseSnippet: buildResponseSnippet(latestErrorJson.upstreamBody ?? latestErrorJson.message ?? latestErrorJson),
+      lastSuccessfulHealthCheckAt: latestSuccessful && typeof latestSuccessful.updated_at === 'string' ? latestSuccessful.updated_at : '',
+      lastFailedHealthCheckAt: latestFailed && typeof latestFailed.updated_at === 'string' ? latestFailed.updated_at : '',
       diagnosticsAgeMs: Number.isFinite(parsedTime) ? Math.max(0, Date.now() - parsedTime) : null,
     };
   } catch {
@@ -452,6 +476,10 @@ async function getLastInvocationEvidence(admin: ReturnType<typeof getSupabaseAdm
       lastInvocationAt: '',
       lastInvocationErrorStage: '',
       lastInvocationMessage: '',
+      lastInvocationHttpStatus: null,
+      responseSnippet: '',
+      lastSuccessfulHealthCheckAt: '',
+      lastFailedHealthCheckAt: '',
       diagnosticsAgeMs: null,
     };
   }
@@ -597,8 +625,13 @@ serve(async (req) => {
         configuredWebhookPath: webhookTarget.configuredWebhookPath,
         hasOutdatedWebhook: webhookTarget.hasOutdatedWebhook,
         resolvedWebhookPath: webhookTarget.configuredWebhookPath,
+        resolvedWebhookUrl: webhookTarget.configuredWebhookUrlPreview,
+        healthcheckUrl: webhookTarget.configuredWebhookUrlPreview,
+        webhookPathMatchesRegistration: webhookTarget.looksLikeProductionWebhook,
         statusDecisionReason: statusDecision.statusDecisionReason,
         lastInvocationStatus: lastInvocation.lastInvocationStatus,
+        lastInvocationHttpStatus: lastInvocation.lastInvocationHttpStatus,
+        responseSnippet: lastInvocation.responseSnippet,
         edgeFunctionVersion: EDGE_FUNCTION_VERSION,
         predictionBackendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
       });
@@ -650,6 +683,9 @@ serve(async (req) => {
         invalidWebhookUrl: webhookTarget.invalidWebhookUrl,
         resolvedWebhookUrl: webhookTarget.configuredWebhookUrl,
         resolvedWebhookPath: webhookTarget.configuredWebhookPath,
+        healthcheckUrl: webhookTarget.configuredWebhookUrl,
+        environmentName: 'production',
+        webhookPathMatchesRegistration: webhookTarget.looksLikeProductionWebhook,
         expectedMethod: webhookTarget.expectedMethod,
         looksLikeProductionWebhook: webhookTarget.looksLikeProductionWebhook,
         validationErrorCode: webhookTarget.validationErrorCode,
@@ -658,10 +694,13 @@ serve(async (req) => {
         verificationSafeMode: true,
         productionWebhookReachable: null,
         productionWebhookInactive: false,
-        upstreamStatus: null,
+        upstreamStatus: lastInvocation.lastInvocationHttpStatus,
         upstreamStatusText: '',
         upstreamMessage: '',
         upstreamBody: null,
+        responseSnippet: lastInvocation.responseSnippet,
+        lastSuccessfulHealthCheckAt: lastInvocation.lastSuccessfulHealthCheckAt,
+        lastFailedHealthCheckAt: lastInvocation.lastFailedHealthCheckAt,
         timeoutMsUsed,
         edgeFunctionVersion: EDGE_FUNCTION_VERSION,
         timestamp: new Date().toISOString(),

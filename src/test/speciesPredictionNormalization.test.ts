@@ -2002,6 +2002,43 @@ describe("normalizeSpeciesPredictionResult", () => {
       "Kabli",
     ]);
   });
+  it("preserves unavailable-state flags for the panel model", () => {
+    const result = normalizeSpeciesPredictionResult({
+      speciesKey: "test-species",
+      speciesName: "Test Species",
+      generatedAt: "2026-03-31T12:00:00.000Z",
+      statusCode: "CONFIGURED_UNAVAILABLE",
+      userMessage: "Prediction backend is currently unavailable.",
+      isLivePredictionAvailable: false,
+      isCachedPrediction: false,
+      canRenderPredictionLayers: false,
+      predictionVectors: [],
+      predictedTargets: [],
+      topPredictedPoints: [],
+      mapLayers: {
+        estoniaHistory: false,
+        estoniaHistoryPoints: false,
+        estoniaHistoryClusters: false,
+        foreignEvidence: false,
+        foreignRecentPoints: false,
+        foreignPressureClusters: false,
+        predictedLines: false,
+        predictedCone: false,
+        predictedTargets: false,
+        diagnostics: true,
+        recentOnly: false,
+      },
+      insightSummary: "Prediction backend is currently unavailable.",
+    } as any, "Test Species", "linnuliigid");
+
+    const panel = normalizePrediction(result);
+    expect(result.statusCode).toBe("CONFIGURED_UNAVAILABLE");
+    expect(result.canRenderPredictionLayers).toBe(false);
+    expect(panel.isLivePredictionAvailable).toBe(false);
+    expect(panel.isCachedPrediction).toBe(false);
+    expect(panel.canRenderPredictionLayers).toBe(false);
+    expect(panel.userMessage).toBe("Prediction backend is currently unavailable.");
+  });
 });
 
 describe("normalizePrediction", () => {

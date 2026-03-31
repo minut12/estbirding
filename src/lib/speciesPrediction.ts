@@ -538,6 +538,14 @@ export type SpeciesPredictionResult = {
   responseProof?: string;
   payloadSourceState?: 'current_finalized_backend_output' | 'legacy_or_unverified_source' | 'n8n_v3_passthrough';
   globalMigrationEtas?: MigrationEta[];
+  statusCode?: 'CONFIGURED_AVAILABLE' | 'CONFIGURED_UNAVAILABLE' | 'NOT_CONFIGURED' | 'DEPLOYED_NOT_CONFIGURED' | 'RUNTIME_ERROR';
+  userMessage?: string;
+  isLivePredictionAvailable?: boolean;
+  isCachedPrediction?: boolean;
+  canRenderPredictionLayers?: boolean;
+  cachedAt?: string;
+  lastSuccessfulPredictionAt?: string;
+  lastFailedHealthCheckAt?: string;
   normalizedPrediction?: NormalizedPredictionPanelModel;
 };
 
@@ -557,6 +565,10 @@ export type NormalizedPredictionPanelModel = {
   predictedTargets: PredictedPoint[];
   weatherLabel: string;
   summaryText: string;
+  isLivePredictionAvailable: boolean;
+  isCachedPrediction: boolean;
+  canRenderPredictionLayers: boolean;
+  userMessage: string;
 };
 
 export type ResolvedSpeciesPredictionSource = {
@@ -954,6 +966,14 @@ export function normalizeSpeciesPredictionResult(
   const attemptedButUnavailable = (readArray(source, ['attemptedButUnavailable', 'attempted_but_unavailable']) ?? []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean);
   const attemptedButReturnedNoUsableEvidence = (readArray(source, ['attemptedButReturnedNoUsableEvidence', 'attempted_but_returned_no_usable_evidence']) ?? []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean);
   const effectiveRankingMode = readString(source, ['effectiveRankingMode', 'effective_ranking_mode']);
+  const statusCode = readString(source, ['statusCode', 'status_code']) as SpeciesPredictionResult['statusCode'] | '';
+  const userMessage = readString(source, ['userMessage', 'user_message']);
+  const isLivePredictionAvailable = typeof source.isLivePredictionAvailable === 'boolean' ? source.isLivePredictionAvailable : undefined;
+  const isCachedPrediction = typeof source.isCachedPrediction === 'boolean' ? source.isCachedPrediction : undefined;
+  const canRenderPredictionLayers = typeof source.canRenderPredictionLayers === 'boolean' ? source.canRenderPredictionLayers : undefined;
+  const cachedAt = readString(source, ['cachedAt', 'cached_at']);
+  const lastSuccessfulPredictionAt = readString(source, ['lastSuccessfulPredictionAt', 'last_successful_prediction_at']);
+  const lastFailedHealthCheckAt = readString(source, ['lastFailedHealthCheckAt', 'last_failed_health_check_at']);
   const summaryGuardrailApplied = typeof source.summaryGuardrailApplied === 'boolean' ? source.summaryGuardrailApplied : undefined;
   const summaryGuardrailReason = readString(source, ['summaryGuardrailReason', 'summary_guardrail_reason']);
   const predictionVectors = normalizePredictionVectors(
@@ -1073,6 +1093,14 @@ export function normalizeSpeciesPredictionResult(
     ...(attemptedButUnavailable.length ? { attemptedButUnavailable } : {}),
     ...(attemptedButReturnedNoUsableEvidence.length ? { attemptedButReturnedNoUsableEvidence } : {}),
     ...(effectiveRankingMode ? { effectiveRankingMode: normalizeUiText(effectiveRankingMode) } : {}),
+    ...(statusCode ? { statusCode } : {}),
+    ...(userMessage ? { userMessage: normalizeUiText(userMessage) } : {}),
+    ...(typeof isLivePredictionAvailable === 'boolean' ? { isLivePredictionAvailable } : {}),
+    ...(typeof isCachedPrediction === 'boolean' ? { isCachedPrediction } : {}),
+    ...(typeof canRenderPredictionLayers === 'boolean' ? { canRenderPredictionLayers } : {}),
+    ...(cachedAt ? { cachedAt: normalizeUiText(cachedAt) } : {}),
+    ...(lastSuccessfulPredictionAt ? { lastSuccessfulPredictionAt: normalizeUiText(lastSuccessfulPredictionAt) } : {}),
+    ...(lastFailedHealthCheckAt ? { lastFailedHealthCheckAt: normalizeUiText(lastFailedHealthCheckAt) } : {}),
     ...(typeof summaryGuardrailApplied === 'boolean' ? { summaryGuardrailApplied } : {}),
     ...(summaryGuardrailReason ? { summaryGuardrailReason: normalizeUiText(summaryGuardrailReason) } : {}),
     ...(summaryOrigin ? { summaryOrigin: normalizeUiText(summaryOrigin) } : {}),
@@ -1131,6 +1159,17 @@ export function normalizePrediction(raw: Partial<SpeciesPredictionResult> | Spec
   const activeEvidenceUsed = (canonicalActiveEvidenceUsed.length ? canonicalActiveEvidenceUsed : sourceHealthActiveEvidenceUsed)
     .map((item) => normalizeUiText(String(item || '')))
     .filter(Boolean);
+  const isLivePredictionAvailable = typeof (root as SpeciesPredictionResult).isLivePredictionAvailable === 'boolean'
+    ? (root as SpeciesPredictionResult).isLivePredictionAvailable === true
+    : !(
+      (root as SpeciesPredictionResult).statusCode === 'CONFIGURED_UNAVAILABLE'
+      || normalizeUiText(readString(root as Record<string, unknown>, ['evidenceState']) || '') === 'unavailable'
+    );
+  const isCachedPrediction = (root as SpeciesPredictionResult).isCachedPrediction === true;
+  const canRenderPredictionLayers = typeof (root as SpeciesPredictionResult).canRenderPredictionLayers === 'boolean'
+    ? (root as SpeciesPredictionResult).canRenderPredictionLayers === true
+    : isLivePredictionAvailable;
+  const userMessage = normalizeUiText((root as SpeciesPredictionResult).userMessage || '');
   const primarySourceUsed = normalizeUiText(readString(sourceHealth, ['primarySourceUsed', 'primary_source_used']) || '');
   const recentCount7d = hasValue(root as Record<string, unknown>, ['recentCount7d'])
     ? clampNumber(readNumber(root as Record<string, unknown>, ['recentCount7d']), 0, 999999, 0)
@@ -1200,6 +1239,10 @@ export function normalizePrediction(raw: Partial<SpeciesPredictionResult> | Spec
     predictedTargets,
     weatherLabel: formatPredictionWeatherLabel(weather),
     summaryText: normalizeUiText(readString(root as Record<string, unknown>, ['insightSummary']) || readString(asRecord((root as SpeciesPredictionResult).aiSummary), ['insightSummary']) || ''),
+    isLivePredictionAvailable,
+    isCachedPrediction,
+    canRenderPredictionLayers,
+    userMessage,
   };
 }
 
@@ -1902,7 +1945,11 @@ function resolveWrappedSuccessSource(input: Record<string, unknown>): Record<str
 
 function hasCanonicalPredictionFields(record: Record<string, unknown>): boolean {
   return Boolean(
-    readString(record, ['insightSummary'])
+    hasValue(record, ['statusCode'])
+    || hasValue(record, ['userMessage'])
+    || hasValue(record, ['canRenderPredictionLayers'])
+    || hasValue(record, ['isLivePredictionAvailable'])
+    || readString(record, ['insightSummary'])
     || hasValue(record, ['confidenceNote'])
     || hasValue(record, ['warnings'])
     || hasValue(record, ['consistencyChecks'])

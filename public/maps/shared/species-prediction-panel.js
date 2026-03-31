@@ -411,6 +411,7 @@
     state.loading = false;
     state.error = '';
     state.result = result ? cloneResult(normalizePredictionPayload(result)) : null;
+    if (state.result && state.result.canRenderPredictionLayers === false) clearPredictionOverlay();
     console.debug('[speciesPrediction] compare panel state replacement', {
       speciesKey: state.result && state.result.speciesKey ? state.result.speciesKey : state.speciesKey || '',
       insightSummary: state.result && state.result.insightSummary ? state.result.insightSummary : null,
@@ -562,6 +563,16 @@
     publishPanelState(result, preferredPoints);
 
     var html = '';
+    if (unavailableState) {
+      html += renderStateCard(
+        'spp-state-caution',
+        'Prediction backend temporarily unavailable',
+        prediction.userMessage || 'Prediction backend temporarily unavailable'
+      );
+      resultWrap.innerHTML = html;
+      renderDebug();
+      return;
+    }
     var cautionState = evidenceState === 'insufficient' || evidenceState === 'weather_only_insufficient' || evidenceState === 'insufficient_evidence' || evidenceState === 'unavailable';
     html += renderStateCard(cautionState ? 'spp-state-caution' : 'spp-state-success', 'Prediction complete', cautionState ? 'Completed with limited evidence. Interpret the result cautiously.' : 'Rendering the latest backend evidence and target ranking for this species.');
     html += '<div class="spp-card"><h4>Summary</h4><p class="spp-summary-text">' + escapeHtml(summarySentence(summaryText, evidenceState, prediction)) + '</p><div class="spp-grid">' +
@@ -766,8 +777,10 @@
     if (!panel) return;
     var host = panel.querySelector('[data-role="controls"]');
     if (!host) return;
+    var controlsDisabled = state.result && state.result.canRenderPredictionLayers === false;
     host.innerHTML = '' +
       '<h4>Map prediction mode</h4>' +
+      (controlsDisabled ? '<p class="spp-summary-text">Prediction layers are muted because the backend is currently unavailable.</p>' : '') +
       '<div class="spp-control-grid">' +
       controlInput('Horizon', '<input type="number" min="1" max="30" data-control="horizonDays" value="' + escapeHtml(state.controls.horizonDays) + '">') +
       controlInput('Country filter', renderCountryFilter()) +
@@ -937,6 +950,8 @@
     if (!state.result || !window.map || !window.L) return;
     var result = state.result;
     var prediction = normalizePrediction(result);
+    var unavailableState = result && result.statusCode === 'CONFIGURED_UNAVAILABLE';
+    if (unavailableState || prediction.canRenderPredictionLayers === false) return;
     var foreignRecentPoints = getForeignRecentPoints(result);
     var predictedLineFeatures = getPredictedLineFeatures(result);
     overlayGroups = createOverlayGroups();
@@ -2158,6 +2173,7 @@
 
   function getStatusText() {
     if (state.loading) return 'Running';
+    if (state.result && state.result.statusCode === 'CONFIGURED_UNAVAILABLE') return 'Unavailable';
     if (state.error) return 'Error';
     if (state.result) return 'Completed';
     return 'Idle';
@@ -2497,6 +2513,14 @@
         ? activeEvidenceUsed.join(' + ')
         : (sourcesContacted.length ? sourcesContacted.join(' + ') : '—');
     }
+    var isLivePredictionAvailable = typeof root.isLivePredictionAvailable === 'boolean'
+      ? root.isLivePredictionAvailable === true
+      : String(root.statusCode || '').trim() !== 'CONFIGURED_UNAVAILABLE';
+    var isCachedPrediction = root.isCachedPrediction === true;
+    var canRenderPredictionLayers = typeof root.canRenderPredictionLayers === 'boolean'
+      ? root.canRenderPredictionLayers === true
+      : isLivePredictionAvailable;
+    var userMessage = String(root.userMessage || '').trim();
 
     var weatherLabel = weather ? weatherLine(weather, evidenceSummary) : '—';
 
@@ -2522,6 +2546,10 @@
       alreadyPresentMode: alreadyPresentMode,
       weatherLabel: weatherLabel,
       summaryText: summaryText,
+      isLivePredictionAvailable: isLivePredictionAvailable,
+      isCachedPrediction: isCachedPrediction,
+      canRenderPredictionLayers: canRenderPredictionLayers,
+      userMessage: userMessage,
     };
   }
 
@@ -2539,6 +2567,7 @@
           speciesKey: result && result.speciesKey ? result.speciesKey : state.speciesKey || '',
           scope: state.scope,
           generatedAt: result && result.generatedAt ? result.generatedAt : '',
+          statusCode: result && result.statusCode ? result.statusCode : '',
           analysisVersion: result && result.analysisVersion ? result.analysisVersion : '',
           insightSummary: prediction.summaryText || '',
           externalPressureScore: result ? result.externalPressureScore : null,
@@ -2555,6 +2584,10 @@
           hasUsableForeignPressure: result && typeof result.hasUsableForeignPressure === 'boolean' ? result.hasUsableForeignPressure : ((Array.isArray(result && result.foreignRecentPoints) && result.foreignRecentPoints.length > 0) || (Array.isArray(result && result.foreignClusters) && result.foreignClusters.length > 0)),
           hasUsablePredictedTargets: result && typeof result.hasUsablePredictedTargets === 'boolean' ? result.hasUsablePredictedTargets : prediction.predictedTargets.length > 0,
           hasOnlyWeather: result && typeof result.hasOnlyWeather === 'boolean' ? result.hasOnlyWeather : undefined,
+          isLivePredictionAvailable: prediction.isLivePredictionAvailable,
+          isCachedPrediction: prediction.isCachedPrediction,
+          canRenderPredictionLayers: prediction.canRenderPredictionLayers,
+          userMessage: prediction.userMessage || '',
           activeEvidenceSources: result && Array.isArray(result.activeEvidenceSources) ? result.activeEvidenceSources : prediction.activeEvidenceUsed,
           availableSources: result && Array.isArray(result.availableSources) ? result.availableSources : prediction.sourcesContacted,
           attemptedButUnavailable: result && Array.isArray(result.attemptedButUnavailable) ? result.attemptedButUnavailable : [],

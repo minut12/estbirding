@@ -1326,6 +1326,49 @@ export function buildSpeciesPredictionStatusCard(
   };
 }
 
+function TestPredictionBackendButton({ onResult }: { onResult: (data: SpeciesPredictionBackendStatus) => void }) {
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ status: number | null; snippet: string; available: boolean | null } | null>(null);
+
+  const runTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const data = await fetchSpeciesPredictionBackendStatus();
+      onResult(data);
+      setTestResult({
+        status: data.upstreamStatus ?? null,
+        snippet: data.responseSnippet || data.message || '',
+        available: data.available,
+      });
+    } catch (err: unknown) {
+      setTestResult({
+        status: null,
+        snippet: err instanceof Error ? err.message : 'Test failed',
+        available: false,
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 space-y-2">
+      <Button variant="outline" size="sm" onClick={runTest} disabled={testing} className="text-xs">
+        {testing ? <><Loader2 className="h-3 w-3 animate-spin mr-1" /> Testing...</> : 'Test prediction backend now'}
+      </Button>
+      {testResult && (
+        <div className="rounded border border-border bg-muted/30 p-2 text-[10px] font-mono space-y-0.5">
+          <p>available: <span className={testResult.available ? 'text-green-600' : 'text-red-500'}>{String(testResult.available)}</span></p>
+          {testResult.status != null && <p>httpStatus: {testResult.status}</p>}
+          <p>response: {testResult.snippet.slice(0, 200) || '\u2013'}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function PredictionFeatureToggle({
   enabled,
   onEnabledChange,

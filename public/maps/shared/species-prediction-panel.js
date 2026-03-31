@@ -806,18 +806,146 @@
     };
   }
 
+  function readNestedValue(root, path) {
+    var current = root;
+    for (var index = 0; index < path.length; index += 1) {
+      if (!current || typeof current !== 'object') return undefined;
+      current = current[path[index]];
+    }
+    return current;
+  }
+
+  function normalizeForeignRecentPoint(point) {
+    if (!point || typeof point !== 'object') return null;
+    var lat = Number(point.lat != null ? point.lat : point.latitude);
+    var lon = Number(point.lon != null ? point.lon : (point.lng != null ? point.lng : point.longitude));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    var obsDt = normalizeText(point.obsDt || point.observationDate || point.date || point.eventDate || '');
+    var daysAgo = Number(point.daysAgo);
+    return {
+      id: normalizeText(point.id || ''),
+      lat: lat,
+      lon: lon,
+      clusterId: normalizeText(point.clusterId || ''),
+      countryCode: normalizeText(point.countryCode || point.country || ''),
+      countryName: normalizeText(point.countryName || ''),
+      locName: normalizeText(point.locName || point.locality || point.name || ''),
+      obsDt: obsDt,
+      source: normalizeText(point.source || 'eBird'),
+      daysAgo: Number.isFinite(daysAgo) ? daysAgo : undefined
+    };
+  }
+
+  function normalizeForeignRecentPoints(points) {
+    if (!Array.isArray(points)) return [];
+    return points.map(normalizeForeignRecentPoint).filter(Boolean);
+  }
+
+  function deriveForeignRecentPointsFromEvidence(evidenceItems) {
+    if (!Array.isArray(evidenceItems)) return [];
+    return evidenceItems.map(function (item) {
+      if (!item || typeof item !== 'object') return null;
+      var point = item.point && typeof item.point === 'object' ? item.point : item;
+      return normalizeForeignRecentPoint(point);
+    }).filter(Boolean);
+  }
+
+  function getForeignRecentPoints(payload) {
+    var topLevelPoints = normalizeForeignRecentPoints(payload && payload.foreignRecentPoints);
+    if (topLevelPoints.length) {
+      console.debug('[speciesPrediction] foreignRecentPoints fallback', {
+        source: 'top-level',
+        fallbackCount: 0
+      });
+      return topLevelPoints;
+    }
+    var normalizedSourcePoints = normalizeForeignRecentPoints(readNestedValue(payload, ['rawResearchPayload', 'normalizedSources', 'foreignRecentPoints']));
+    if (normalizedSourcePoints.length) {
+      console.debug('[speciesPrediction] foreignRecentPoints fallback', {
+        source: 'rawResearchPayload.normalizedSources.foreignRecentPoints',
+        fallbackCount: normalizedSourcePoints.length
+      });
+      return normalizedSourcePoints;
+    }
+    var derivedPoints = deriveForeignRecentPointsFromEvidence(readNestedValue(payload, ['rawResearchPayload', 'foreignEvidence']));
+    console.debug('[speciesPrediction] foreignRecentPoints fallback', {
+      source: derivedPoints.length ? 'rawResearchPayload.foreignEvidence' : 'none',
+      fallbackCount: derivedPoints.length
+    });
+    return derivedPoints;
+  }
+
+  function buildPredictionLineFeatureFromPoint(point, index) {
+    if (!point || typeof point !== 'object') return null;
+    var migrationEta = point.migrationEta && typeof point.migrationEta === 'object' ? point.migrationEta : null;
+    var migrationRoute = migrationEta && migrationEta.migrationRoute && typeof migrationEta.migrationRoute === 'object'
+      ? migrationEta.migrationRoute
+      : null;
+    var routeItems = migrationRoute && Array.isArray(migrationRoute.route) ? migrationRoute.route : [];
+    if (routeItems.length < 2) return null;
+    var routePoints = routeItems.map(function (item, routeIndex) {
+      return normalizeMigrationRoutePoint(item, routeIndex === 0 ? 'Origin' : '');
+    }).filter(Boolean);
+    if (routePoints.length < 2) return null;
+    var entryLat = Number(migrationEta.entryLat);
+    var entryLon = Number(migrationEta.entryLon);
+    var targetLat = Number(point.targetLat != null ? point.targetLat : point.lat);
+    var targetLon = Number(point.targetLon != null ? point.targetLon : point.lon);
+    var lastPoint = routePoints[routePoints.length - 1];
+    if (Number.isFinite(entryLat) && Number.isFinite(entryLon) && Number.isFinite(targetLat) && Number.isFinite(targetLon)) {
+      var targetPoint = { lat: targetLat, lon: targetLon, name: normalizeText(point.displayName || point.name || ('Target ' + (index + 1))), type: 'destination' };
+      if (!lastPoint || !pointsNear(lastPoint, targetPoint, 0.3)) {
+        routePoints.push({ lat: entryLat, lon: entryLon, name: normalizeText(migrationEta.entryZone || migrationEta.entryLabel || 'Entry zone'), type: 'waypoint' });
+        routePoints.push(targetPoint);
+        routePoints = uniqueRoutePoints(routePoints);
+      }
+    }
+    return routePoints.length >= 2
+      ? {
+          kind: 'line',
+          points: routePoints.map(function (routePoint) {
+            return { lat: routePoint.lat, lon: routePoint.lon };
+          })
+        }
+      : null;
+  }
+
+  function buildPredictionLineFeaturesFromTargets(points) {
+    if (!Array.isArray(points)) return [];
+    return points.map(buildPredictionLineFeatureFromPoint).filter(Boolean);
+  }
+
+  function getPredictedLineFeatures(payload) {
+    var topLevelVectors = Array.isArray(payload && payload.predictionVectors) ? payload.predictionVectors.filter(function (vector) {
+      return vector && Array.isArray(vector.points) && vector.points.length >= 2;
+    }) : [];
+    var topLevelEmpty = topLevelVectors.length === 0;
+    var fromTopPredicted = topLevelEmpty ? buildPredictionLineFeaturesFromTargets(payload && payload.topPredictedPoints) : [];
+    var fromRawTopPredicted = (!topLevelVectors.length && !fromTopPredicted.length)
+      ? buildPredictionLineFeaturesFromTargets(readNestedValue(payload, ['rawResearchPayload', 'topPredictedPoints']))
+      : [];
+    console.debug('[speciesPrediction] predicted line fallback', {
+      topLevelPredictionVectorsEmpty: topLevelEmpty,
+      derivedFromTopPredictedPoints: fromTopPredicted.length,
+      derivedFromRawResearchPayloadTopPredictedPoints: fromRawTopPredicted.length
+    });
+    return topLevelVectors.length ? topLevelVectors : (fromTopPredicted.length ? fromTopPredicted : fromRawTopPredicted);
+  }
+
   function applyResultToMap() {
     clearPredictionOverlay();
     if (!state.result || !window.map || !window.L) return;
     var result = state.result;
     var prediction = normalizePrediction(result);
+    var foreignRecentPoints = getForeignRecentPoints(result);
+    var predictedLineFeatures = getPredictedLineFeatures(result);
     overlayGroups = createOverlayGroups();
     if (state.layerToggles.estoniaHistoryPoints !== false) renderEstoniaHistory(result.estoniaHistoryPoints || []);
     if (state.layerToggles.estoniaHistoryClusters !== false) renderEstoniaHistoryClusters(result.estoniaHistoryClusters || []);
-    if (state.layerToggles.foreignRecentPoints !== false) renderForeignEvidencePoints(result.foreignRecentPoints || [], result.foreignClusters || []);
+    if (state.layerToggles.foreignRecentPoints !== false) renderForeignEvidencePoints(foreignRecentPoints, result.foreignClusters || []);
     if (state.layerToggles.foreignPressureClusters !== false) renderForeignPressureClusters(result.foreignClusters || []);
-    if (state.layerToggles.predictedLines !== false && !prediction.alreadyPresentMode) renderPredictionVectors(result.predictionVectors || [], false);
-    if (state.layerToggles.predictedCone !== false && !prediction.alreadyPresentMode) renderPredictionVectors(result.predictionVectors || [], true);
+    if (state.layerToggles.predictedLines !== false && !prediction.alreadyPresentMode) renderPredictionVectors(predictedLineFeatures, false);
+    if (state.layerToggles.predictedCone !== false && !prediction.alreadyPresentMode) renderPredictionVectors(predictedLineFeatures, true);
     if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap((prediction.displayedTargets || result.predictedTargets || result.topPredictedPoints || []).slice(0, prediction.alreadyPresentMode ? 2 : 5), prediction);
     var normalizedMigrationRoutes = getNormalizedMigrationRoutes(result);
     if (state.layerToggles.migrationRoutes !== false && normalizedMigrationRoutes.length) renderMigrationRoutes(normalizedMigrationRoutes, prediction);

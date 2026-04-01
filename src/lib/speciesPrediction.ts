@@ -520,6 +520,8 @@ export type SpeciesPredictionResult = {
     poland: number;
     russia: number;
     finlandContextOnly?: number;
+    sweden?: number;
+    germany?: number;
   };
   topPredictedPoints: PredictedPoint[];
   insightSummary?: string;
@@ -1096,20 +1098,29 @@ export function normalizeSpeciesPredictionResult(
     } : {}),
     ...(historicalEvidence ? { historicalEvidence } : {}),
     ...(rawLinks ? { rawLinks } : {}),
-    externalPressureScore: readNumber(source, ['externalPressureScore', 'external_pressure_score', 'pressureScore', 'pressure_score']),
+    externalPressureScore: readNumber(source, ['externalPressureScore', 'external_pressure_score', 'pressureScore', 'pressure_score'])
+      || (foreignRecentPoints.length > 0
+        ? Object.values(countryScoresSource ?? {}).reduce((sum: number, v) => sum + (Number.isFinite(Number(v)) ? Number(v) : 0), 0)
+        : 0),
     springFitScore: readNumber(source, ['springFitScore', 'spring_fit_score']),
     windSupportScore: readNumber(source, ['windSupportScore', 'wind_support_score']),
     routeVector: normalizeUiText(readString(source, ['routeVector', 'route_vector']) || ''),
     bestEntryZone: normalizeUiText(readString(source, ['bestEntryZone', 'best_entry_zone']) || ''),
     alreadyMissedRisk: resolvePredictionRisk(readString(source, ['alreadyMissedRisk', 'already_missed_risk'])),
     countryScores: {
-      latvia: readNumber(countryScoresSource, ['latvia']),
-      lithuania: readNumber(countryScoresSource, ['lithuania']),
-      belarus: readNumber(countryScoresSource, ['belarus']),
-      poland: readNumber(countryScoresSource, ['poland']),
-      russia: readNumber(countryScoresSource, ['russia']),
-      ...(hasValue(countryScoresSource, ['finlandContextOnly', 'finlandContext', 'finland_context_only', 'finland_context'])
-        ? { finlandContextOnly: readNumber(countryScoresSource, ['finlandContextOnly', 'finlandContext', 'finland_context_only', 'finland_context']) }
+      latvia: readNumber(countryScoresSource, ['latvia', 'LV', 'lv']),
+      lithuania: readNumber(countryScoresSource, ['lithuania', 'LT', 'lt']),
+      belarus: readNumber(countryScoresSource, ['belarus', 'BY', 'by']),
+      poland: readNumber(countryScoresSource, ['poland', 'PL', 'pl']),
+      russia: readNumber(countryScoresSource, ['russia', 'RU', 'ru']),
+      ...(hasValue(countryScoresSource, ['finlandContextOnly', 'finlandContext', 'finland_context_only', 'finland_context', 'FI', 'fi'])
+        ? { finlandContextOnly: readNumber(countryScoresSource, ['finlandContextOnly', 'finlandContext', 'finland_context_only', 'finland_context', 'FI', 'fi']) }
+        : {}),
+      ...(hasValue(countryScoresSource, ['SE', 'se', 'sweden'])
+        ? { sweden: readNumber(countryScoresSource, ['SE', 'se', 'sweden']) }
+        : {}),
+      ...(hasValue(countryScoresSource, ['DE', 'de', 'germany'])
+        ? { germany: readNumber(countryScoresSource, ['DE', 'de', 'germany']) }
         : {}),
     },
     topPredictedPoints,
@@ -2389,12 +2400,12 @@ function normalizeForeignRecentPoints(input: unknown[] | null): SpeciesPredictio
     return {
       lat: clampFloat(readNumber(source, ['lat', 'latitude']), -90, 90, 0),
       lon: clampFloat(readNumber(source, ['lon', 'lng', 'longitude']), -180, 180, 0),
-      obsDt: normalizeUiText(readString(source, ['obsDt', 'obs_dt', 'eventDate', 'event_date']) || ''),
-      locName: normalizeUiText(readString(source, ['locName', 'loc_name', 'label']) || ''),
+      obsDt: normalizeUiText(readString(source, ['obsDt', 'obs_dt', 'eventDate', 'event_date', 't']) || ''),
+      locName: normalizeUiText(readString(source, ['locName', 'loc_name', 'label', 'locality']) || ''),
       howMany: hasValue(source, ['howMany', 'how_many']) ? clampNumber(readNumber(source, ['howMany', 'how_many']), 0, 999999, 0) : null,
-      countryCode: normalizeUiText(readString(source, ['countryCode', 'country_code']) || '').toLowerCase(),
+      countryCode: normalizeUiText(readString(source, ['countryCode', 'country_code', 'country', 'regionCode', 'region_code']) || '').toLowerCase(),
       countryName: normalizeUiText(readString(source, ['countryName', 'country_name']) || ''),
-      ...(readString(source, ['regionCode', 'region_code']) ? { regionCode: normalizeUiText(readString(source, ['regionCode', 'region_code'])) } : {}),
+      ...(readString(source, ['regionCode', 'region_code', 'country']) ? { regionCode: normalizeUiText(readString(source, ['regionCode', 'region_code', 'country'])) } : {}),
       ...(readString(source, ['regionName', 'region_name']) ? { regionName: normalizeUiText(readString(source, ['regionName', 'region_name'])) } : {}),
       source: 'eBird' as const,
       daysAgo: clampNumber(readNumber(source, ['daysAgo', 'days_ago']), 0, 100000, 0),

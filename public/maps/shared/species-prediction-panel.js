@@ -847,7 +847,7 @@
     var lat = Number(point.lat != null ? point.lat : point.latitude);
     var lon = Number(point.lon != null ? point.lon : (point.lng != null ? point.lng : point.longitude));
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-    var obsDt = normalizeText(point.obsDt || point.observationDate || point.date || point.eventDate || '');
+    var obsDt = normalizeText(point.obsDt || point.observationDate || point.date || point.t || point.eventDate || '');
     var daysAgo = Number(point.daysAgo);
     return {
       id: normalizeText(point.id || ''),

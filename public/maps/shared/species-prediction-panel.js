@@ -1678,12 +1678,48 @@
         routes.push(normalized);
       });
     });
-    if (!routes.length && Array.isArray(result && result.globalMigrationEtas)) {
+    // Always merge globalMigrationEtas (v23+) — not just as a fallback when predictedTargets had none
+    if (Array.isArray(result && result.globalMigrationEtas)) {
       result.globalMigrationEtas.forEach(function (eta, index) {
         var normalized = normalizeLegacyMigrationRouteCandidate(eta, index, skipped);
-        if (normalized) routes.push(normalized);
+        if (!normalized) return;
+        var routeKey = [
+          normalized.targetName,
+          normalized.rank || '',
+          normalized.targetLat || '',
+          normalized.targetLon || '',
+          normalized.routePoints.map(function (routePoint) { return routePoint.lat + ':' + routePoint.lon; }).join('|')
+        ].join('::');
+        if (dedupe[routeKey]) return;
+        dedupe[routeKey] = true;
+        routes.push(normalized);
       });
     }
+    // Fallback: extract migrationEta from predictedTargets if no routes found yet
+    if (!routes.length) {
+      var fallbackTargets = (Array.isArray(result && result.predictedTargets) ? result.predictedTargets : [])
+        .filter(function (t) { return t && t.migrationEta && t.migrationEta.migrationRoute && t.migrationEta.migrationRoute.route && t.migrationEta.migrationRoute.route.length >= 2; });
+      if (fallbackTargets.length) {
+        console.log('[ROUTES] Built migrationEtas from predictedTargets fallback:', fallbackTargets.length);
+        fallbackTargets.forEach(function (point, index) {
+          var normalized = normalizeMigrationRouteCandidate(point, 'predictedTargets_fallback', index, skipped);
+          if (normalized && !dedupe[normalized.targetName]) {
+            dedupe[normalized.targetName] = true;
+            routes.push(normalized);
+          }
+        });
+      }
+    }
+    if (!routes.length) {
+      console.log('[ROUTES] No migration routes found in either globalMigrationEtas or predictedTargets');
+    }
+    console.log('[ROUTES] getNormalizedMigrationRoutes:', {
+      globalMigrationEtasCount: Array.isArray(result && result.globalMigrationEtas) ? result.globalMigrationEtas.length : 0,
+      predictedTargetsCount: Array.isArray(result && result.predictedTargets) ? result.predictedTargets.length : 0,
+      targetsWithMigrationEta: migrationEtaCount,
+      targetsWithMigrationRoute: migrationRouteCount,
+      finalRoutes: routes.length
+    });
     logMigrationRouteDebug('normalize', {
       hasTopPredictedPoints: Array.isArray(result && result.topPredictedPoints),
       targetsWithMigrationEta: migrationEtaCount,
@@ -1708,6 +1744,8 @@
     if (!overlayGroups || !overlayGroups.migrationRoutes) return;
     var layer = overlayGroups.migrationRoutes;
     var primaryRoute = selectPrimaryMigrationRouteJs(routes, prediction && prediction.displayedTargets, prediction && prediction.freshestEstoniaEvidence, prediction && prediction.alreadyPresentMode);
+    console.log('[ROUTES] renderMigrationRoutes called, routes:', Array.isArray(routes) ? routes.length : 0,
+      'first route waypoints:', routes[0] && routes[0].routePoints ? routes[0].routePoints.length : 0);
     logMigrationRouteDebug('renderMigrationRoutes called', {
       routes: Array.isArray(routes) ? routes.length : 0,
       selectedPrimary: primaryRoute ? primaryRoute.targetName : null

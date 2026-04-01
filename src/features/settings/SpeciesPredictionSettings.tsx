@@ -419,6 +419,9 @@ export default function SpeciesPredictionSettings() {
               })()}
             </div>
           )}
+          {canSeeDebugDiagnostics && (
+            <RawPredictionDebug speciesKey={activeSpeciesKey} scopeId={scopeId} />
+          )}
           {!canManage && (
             <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
               Admin-managed species settings are visible here for review. Running prediction/research remains available from the maps.
@@ -1430,6 +1433,165 @@ function NumericField({ id, label, value, min, max, onChange }: NumericFieldProp
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
       />
+    </div>
+  );
+}
+
+function RawPredictionDebug({ speciesKey, scopeId }: { speciesKey: string; scopeId: string }) {
+  const [dbRaw, setDbRaw] = useState<string | null>(null);
+  const [edgeRaw, setEdgeRaw] = useState<string | null>(null);
+  const [dbLoading, setDbLoading] = useState(false);
+  const [edgeLoading, setEdgeLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [keyFields, setKeyFields] = useState<Record<string, unknown> | null>(null);
+
+  const effectiveKey = speciesKey || 'Punanokk-vart';
+
+  const loadDb = useCallback(async () => {
+    setDbLoading(true);
+    setKeyFields(null);
+    try {
+      const { supabase } = await import('@/integrations/supabase/client');
+      const { data, error } = await supabase
+        .from('prediction_jobs')
+        .select('*')
+        .eq('species_key', effectiveKey)
+        .eq('scope', scopeId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) {
+        setDbRaw('(no row found)');
+        return;
+      }
+      setDbRaw(JSON.stringify(data, null, 2));
+      // Extract key fields for summary
+      const rj = (data as Record<string, unknown>).result_json as Record<string, unknown> | null;
+      setKeyFields({
+        status: (data as Record<string, unknown>).status ?? '–',
+        updated_at: (data as Record<string, unknown>).updated_at ?? '–',
+        analysis_version: (data as Record<string, unknown>).analysis_version ?? '–',
+        'result_json.summaryOrigin': rj?.summaryOrigin ?? '–',
+        'result_json.payloadSourceState': rj?.payloadSourceState ?? '–',
+        'result_json.backendBuild': rj?.backendBuild ?? '–',
+        'result_json.countryScores': rj?.countryScores ? JSON.stringify(rj.countryScores) : '–',
+        'result_json.predictedTargets count': Array.isArray(rj?.predictedTargets) ? (rj.predictedTargets as unknown[]).length : '–',
+        'result_json.globalMigrationEtas count': Array.isArray(rj?.globalMigrationEtas) ? (rj.globalMigrationEtas as unknown[]).length : '–',
+      });
+    } catch (err: unknown) {
+      setDbRaw(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setDbLoading(false);
+    }
+  }, [effectiveKey, scopeId]);
+
+  const loadEdge = useCallback(async () => {
+    setEdgeLoading(true);
+    try {
+      const baseUrl = getFunctionsBaseUrl();
+      const headers = await getSupabaseAuthHeaders();
+      const { supabase } = await import('@/integrations/supabase/client');
+      const { data: job } = await supabase
+        .from('prediction_jobs')
+        .select('request_id')
+        .eq('species_key', effectiveKey)
+        .eq('scope', scopeId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!job?.request_id) { setEdgeRaw('(no prediction job found for this species)'); return; }
+      const url = `${baseUrl}/species-prediction?mode=poll&requestId=${encodeURIComponent(job.request_id)}`;
+      const resp = await fetch(url, { method: 'GET', headers });
+      const text = await resp.text();
+      try {
+        setEdgeRaw(JSON.stringify(JSON.parse(text), null, 2));
+      } catch {
+        setEdgeRaw(text);
+      }
+    } catch (err: unknown) {
+      setEdgeRaw(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setEdgeLoading(false);
+    }
+  }, [effectiveKey, scopeId]);
+
+  const deleteCached = useCallback(async () => {
+    if (!confirm(`Delete all cached prediction_jobs rows for "${effectiveKey}"?`)) return;
+    setDeleting(true);
+    try {
+      const { supabase } = await import('@/integrations/supabase/client');
+      const { error } = await supabase
+        .from('prediction_jobs')
+        .delete()
+        .eq('species_key', effectiveKey);
+      if (error) throw error;
+      toast.success(`Deleted cached results for ${effectiveKey}`);
+      setDbRaw(null);
+      setEdgeRaw(null);
+      setKeyFields(null);
+    } catch (err: unknown) {
+      toast.error(`Delete failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setDeleting(false);
+    }
+  }, [effectiveKey]);
+
+  return (
+    <div className="rounded border border-border bg-muted/20 p-3 space-y-3">
+      <p className="font-semibold text-foreground text-xs">Raw DB prediction debug</p>
+      <p className="text-[10px] text-muted-foreground font-mono">species_key: {effectiveKey} | scope: {scopeId}</p>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" onClick={loadDb} disabled={dbLoading}>
+          {dbLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+          Load raw DB result
+        </Button>
+        <Button variant="outline" size="sm" onClick={loadEdge} disabled={edgeLoading}>
+          {edgeLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+          Load via edge function
+        </Button>
+        <Button variant="destructive" size="sm" onClick={deleteCached} disabled={deleting}>
+          {deleting ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+          Delete cached result
+        </Button>
+      </div>
+
+      {keyFields && (
+        <div className="space-y-1">
+          <p className="text-[11px] font-semibold text-foreground">Key fields summary</p>
+          <table className="text-[10px] font-mono w-full border-collapse">
+            <tbody>
+              {Object.entries(keyFields).map(([k, v]) => (
+                <tr key={k} className="border-b border-border/50">
+                  <td className="py-0.5 pr-2 text-muted-foreground whitespace-nowrap">{k}</td>
+                  <td className="py-0.5 text-foreground break-all">{String(v)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {(dbRaw || edgeRaw) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {dbRaw != null && (
+            <div className="space-y-1">
+              <p className="text-[11px] font-semibold text-foreground">DB RAW</p>
+              <pre className="text-[9px] font-mono bg-background border border-border rounded p-2 max-h-[400px] overflow-auto whitespace-pre-wrap break-all">
+                {dbRaw}
+              </pre>
+            </div>
+          )}
+          {edgeRaw != null && (
+            <div className="space-y-1">
+              <p className="text-[11px] font-semibold text-foreground">EDGE FUNCTION RESPONSE</p>
+              <pre className="text-[9px] font-mono bg-background border border-border rounded p-2 max-h-[400px] overflow-auto whitespace-pre-wrap break-all">
+                {edgeRaw}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

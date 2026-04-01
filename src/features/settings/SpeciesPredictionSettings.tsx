@@ -1442,41 +1442,60 @@ function RawPredictionDebug({ speciesKey, scopeId }: { speciesKey: string; scope
   const [edgeRaw, setEdgeRaw] = useState<string | null>(null);
   const [dbLoading, setDbLoading] = useState(false);
   const [edgeLoading, setEdgeLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [keyFields, setKeyFields] = useState<Record<string, unknown> | null>(null);
+
+  const effectiveKey = speciesKey || 'Punanokk-vart';
 
   const loadDb = useCallback(async () => {
-    if (!speciesKey) { toast.error('Select a species first'); return; }
     setDbLoading(true);
+    setKeyFields(null);
     try {
       const { supabase } = await import('@/integrations/supabase/client');
       const { data, error } = await supabase
         .from('prediction_jobs')
         .select('*')
-        .eq('species_key', speciesKey)
+        .eq('species_key', effectiveKey)
         .eq('scope', scopeId)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
       if (error) throw error;
-      setDbRaw(data ? JSON.stringify(data, null, 2) : '(no row found)');
+      if (!data) {
+        setDbRaw('(no row found)');
+        return;
+      }
+      setDbRaw(JSON.stringify(data, null, 2));
+      // Extract key fields for summary
+      const rj = (data as Record<string, unknown>).result_json as Record<string, unknown> | null;
+      setKeyFields({
+        status: (data as Record<string, unknown>).status ?? '–',
+        updated_at: (data as Record<string, unknown>).updated_at ?? '–',
+        analysis_version: (data as Record<string, unknown>).analysis_version ?? '–',
+        'result_json.summaryOrigin': rj?.summaryOrigin ?? '–',
+        'result_json.payloadSourceState': rj?.payloadSourceState ?? '–',
+        'result_json.backendBuild': rj?.backendBuild ?? '–',
+        'result_json.countryScores': rj?.countryScores ? JSON.stringify(rj.countryScores) : '–',
+        'result_json.predictedTargets count': Array.isArray(rj?.predictedTargets) ? (rj.predictedTargets as unknown[]).length : '–',
+        'result_json.globalMigrationEtas count': Array.isArray(rj?.globalMigrationEtas) ? (rj.globalMigrationEtas as unknown[]).length : '–',
+      });
     } catch (err: unknown) {
       setDbRaw(`Error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setDbLoading(false);
     }
-  }, [speciesKey, scopeId]);
+  }, [effectiveKey, scopeId]);
 
   const loadEdge = useCallback(async () => {
-    if (!speciesKey) { toast.error('Select a species first'); return; }
     setEdgeLoading(true);
     try {
       const baseUrl = getFunctionsBaseUrl();
       const headers = await getSupabaseAuthHeaders();
-      // Find the latest request_id for this species from DB
       const { supabase } = await import('@/integrations/supabase/client');
       const { data: job } = await supabase
         .from('prediction_jobs')
         .select('request_id')
-        .eq('species_key', speciesKey)
+        .eq('species_key', effectiveKey)
         .eq('scope', scopeId)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -1495,22 +1514,64 @@ function RawPredictionDebug({ speciesKey, scopeId }: { speciesKey: string; scope
     } finally {
       setEdgeLoading(false);
     }
-  }, [speciesKey, scopeId]);
+  }, [effectiveKey, scopeId]);
+
+  const deleteCached = useCallback(async () => {
+    if (!confirm(`Delete all cached prediction_jobs rows for "${effectiveKey}"?`)) return;
+    setDeleting(true);
+    try {
+      const { supabase } = await import('@/integrations/supabase/client');
+      const { error } = await supabase
+        .from('prediction_jobs')
+        .delete()
+        .eq('species_key', effectiveKey);
+      if (error) throw error;
+      toast.success(`Deleted cached results for ${effectiveKey}`);
+      setDbRaw(null);
+      setEdgeRaw(null);
+      setKeyFields(null);
+    } catch (err: unknown) {
+      toast.error(`Delete failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setDeleting(false);
+    }
+  }, [effectiveKey]);
 
   return (
     <div className="rounded border border-border bg-muted/20 p-3 space-y-3">
       <p className="font-semibold text-foreground text-xs">Raw DB prediction debug</p>
-      <p className="text-[10px] text-muted-foreground font-mono">species_key: {speciesKey || '–'} | scope: {scopeId}</p>
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={loadDb} disabled={dbLoading || !speciesKey}>
+      <p className="text-[10px] text-muted-foreground font-mono">species_key: {effectiveKey} | scope: {scopeId}</p>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" onClick={loadDb} disabled={dbLoading}>
           {dbLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-          Load raw DB prediction
+          Load raw DB result
         </Button>
-        <Button variant="outline" size="sm" onClick={loadEdge} disabled={edgeLoading || !speciesKey}>
+        <Button variant="outline" size="sm" onClick={loadEdge} disabled={edgeLoading}>
           {edgeLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
           Load via edge function
         </Button>
+        <Button variant="destructive" size="sm" onClick={deleteCached} disabled={deleting}>
+          {deleting ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+          Delete cached result
+        </Button>
       </div>
+
+      {keyFields && (
+        <div className="space-y-1">
+          <p className="text-[11px] font-semibold text-foreground">Key fields summary</p>
+          <table className="text-[10px] font-mono w-full border-collapse">
+            <tbody>
+              {Object.entries(keyFields).map(([k, v]) => (
+                <tr key={k} className="border-b border-border/50">
+                  <td className="py-0.5 pr-2 text-muted-foreground whitespace-nowrap">{k}</td>
+                  <td className="py-0.5 text-foreground break-all">{String(v)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {(dbRaw || edgeRaw) && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {dbRaw != null && (

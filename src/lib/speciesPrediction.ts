@@ -1100,7 +1100,7 @@ export function normalizeSpeciesPredictionResult(
     ...(rawLinks ? { rawLinks } : {}),
     externalPressureScore: readNumber(source, ['externalPressureScore', 'external_pressure_score', 'pressureScore', 'pressure_score'])
       || (foreignRecentPoints.length > 0
-        ? Object.values(countryScoresSource ?? {}).reduce((sum: number, v) => sum + (Number.isFinite(Number(v)) ? Number(v) : 0), 0)
+        ? Object.values(countryScoresSource ?? {}).reduce((sum: number, v: unknown) => sum + (Number.isFinite(Number(v)) ? Number(v) : 0), 0)
         : 0),
     springFitScore: readNumber(source, ['springFitScore', 'spring_fit_score']),
     windSupportScore: readNumber(source, ['windSupportScore', 'wind_support_score']),

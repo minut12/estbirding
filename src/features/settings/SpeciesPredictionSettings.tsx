@@ -419,6 +419,9 @@ export default function SpeciesPredictionSettings() {
               })()}
             </div>
           )}
+          {canSeeDebugDiagnostics && (
+            <RawPredictionDebug speciesKey={activeSpeciesKey} scopeId={scopeId} />
+          )}
           {!canManage && (
             <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
               Admin-managed species settings are visible here for review. Running prediction/research remains available from the maps.

@@ -201,7 +201,7 @@ describe("species-prediction backend summary finalizer", () => {
 
     const finalized = hooks.finalizePredictionResponse(response, "test_valid_upstream");
 
-    expect(finalized.insightSummary).toBe("No recent Estonia records were confirmed in the last 7 days.");
+    expect(finalized.insightSummary).toBe("No recent Estonia records were confirmed in the last 7 days, but recent foreign pressure exists in Finland.");
     expect(finalized.summaryOrigin).toBe("regenerated_from_structured");
     expect(finalized.summaryRegeneratedFromStructuredEvidence).toBe(true);
   });
@@ -1236,6 +1236,112 @@ describe("species-prediction backend summary finalizer", () => {
     expect(String(finalized.bestEntryZone)).not.toBe("Unavailable");
     expect((finalized.evidenceSummary as Record<string, unknown>).totalForeignRecentPoints).toBe(3);
     expect((finalized.evidenceSummary as Record<string, unknown>).primaryCountries).toEqual(["Poland", "Lithuania", "Latvia"]);
+    expect((finalized.selectedForeignOrigin as Record<string, unknown>).countryCode).toBeTruthy();
+    expect((finalized.selectedForeignOrigin as Record<string, unknown>).countryName).toBeTruthy();
+    expect(String(finalized.insightSummary)).toMatch(/foreign pressure/i);
+    expect(String(finalized.insightSummary)).toMatch(/Latvia|Lithuania|Poland/i);
+    expect(((finalized.predictedTargets as Array<Record<string, unknown>>)[0] || {}).usedForeignPressure).toBe(true);
+    expect(Number((((finalized.predictedTargets as Array<Record<string, unknown>>)[0] || {}).foreignSupportScore))).toBeGreaterThan(0);
+    expect((((finalized.predictedTargets as Array<Record<string, unknown>>)[0] || {}).vectorsSuppressed)).toBe(false);
+    expect(String((((finalized.predictedTargets as Array<Record<string, unknown>>)[0] || {}).vectorsSuppressedReason) || "")).not.toMatch(/missing foreign data/i);
+    const diagnostics = finalized.foreignEvidenceDiagnostics as Record<string, unknown>;
+    expect(Number(diagnostics.foreignEvidenceCountRaw)).toBe(0);
+    expect(Number(diagnostics.foreignRecentPointsCountNormalized)).toBe(3);
+    expect(Number(diagnostics.foreignClusterCountNormalized)).toBeGreaterThan(0);
+    expect(Array.isArray(diagnostics.countryCodesDetected)).toBe(true);
+    expect((diagnostics.countryCodesDetected as unknown[])).toEqual(expect.arrayContaining(["lv", "lt", "pl"]));
+    expect(String(diagnostics.reasonForeignPressureUsedOrNotUsed)).toBe("used_for_routing_and_ranking");
+    expect(String(diagnostics.vectorsSuppressedReason || "")).not.toMatch(/missing foreign data/i);
+  });
+
+  it("keeps foreign metadata and explains threshold-based non-use when foreign evidence exists but routing remains unusable", () => {
+    const finalized = hooks.finalizePredictionResponse(buildBaseResponse({
+      speciesName: "Punanokk-vart",
+      foreignRecentPoints: [],
+      foreignClusters: [],
+      externalPressureScore: 0,
+      routeVector: "Unavailable",
+      bestEntryZone: "Unavailable",
+      countryScores: {
+        latvia: 0,
+        lithuania: 0,
+        belarus: 0,
+        poland: 0,
+        russia: 0,
+        finlandContextOnly: 0,
+      },
+      weather: {
+        fetchedAt: "",
+        weatherAvailable: false,
+        weatherPartial: true,
+      },
+      predictedTargets: [
+        {
+          rank: 1,
+          name: "Põõsaspea neem",
+          countyOrParish: "Lääne-Nigula",
+          lat: 59.2054,
+          lon: 23.5164,
+          confidence: 0.44,
+          eta: "4d",
+          searchRadiusKm: 10,
+          habitatCue: "coastal migration bottleneck",
+          reason: "Canonical target",
+          usedForeignPressure: false,
+          foreignSupportScore: 0,
+          vectorsSuppressed: true,
+        },
+      ],
+      rawResearchPayload: {
+        normalizedSources: {
+          foreignRecentPoints: [
+            {
+              lat: 54.35,
+              lon: 18.68,
+              obsDt: "2026-03-30T06:00:00.000Z",
+              locName: "Mikoszewo",
+              countryCode: "pl",
+              countryName: "Poland",
+              source: "eBird",
+              daysAgo: 1,
+              distanceToEstoniaKm: 420,
+            },
+          ],
+          foreignClusters: [
+            {
+              id: "pl-source",
+              lat: 54.35,
+              lon: 18.68,
+              pointCount: 1,
+              newestObsDt: "2026-03-30T06:00:00.000Z",
+              oldestObsDt: "2026-03-30T06:00:00.000Z",
+              freshestDaysAgo: 1,
+              averageDaysAgo: 1,
+              totalHowMany: 1,
+              countries: ["Poland"],
+              countryCodes: ["pl"],
+              locNames: ["Mikoszewo"],
+              nearestDistanceKm: 420,
+              isFreshest: true,
+            },
+          ],
+        },
+      },
+    }), "test_foreign_present_below_threshold");
+
+    expect((finalized.foreignRecentPoints as Array<Record<string, unknown>>).length).toBe(1);
+    expect((finalized.foreignClusters as Array<Record<string, unknown>>)[0]?.countries).toEqual(["Poland"]);
+    expect(Number(finalized.externalPressureScore)).toBeGreaterThan(0);
+    expect((finalized.countryScores as Record<string, unknown>).poland).toBeGreaterThan(0);
+    expect((finalized.selectedForeignOrigin as Record<string, unknown>).countryCode).toBe("PL");
+    expect((finalized.selectedForeignOrigin as Record<string, unknown>).countryName).toBe("Poland");
+    expect(finalized.hasUsableForeignPressure).toBe(true);
+    expect(finalized.hasUsableForeignRoutingSignal).toBe(false);
+    expect(String(((finalized.predictedTargets as Array<Record<string, unknown>>)[0] || {}).vectorsSuppressedReason || "")).toBeTruthy();
+    expect(String(((finalized.predictedTargets as Array<Record<string, unknown>>)[0] || {}).vectorsSuppressedReason || "")).not.toMatch(/missing foreign data/i);
+    expect(String((((finalized.foreignEvidenceDiagnostics as Record<string, unknown>) || {}).reasonForeignPressureUsedOrNotUsed || ""))).toMatch(/below|threshold|insufficient|routing/i);
+    expect(String(finalized.insightSummary)).toMatch(/foreign pressure/i);
+    expect(String(finalized.insightSummary)).toMatch(/Poland/i);
   });
 
   it("promotes foreign evidence from raw payload and recomputes canonical evidence flags", () => {

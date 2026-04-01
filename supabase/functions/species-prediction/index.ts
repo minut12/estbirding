@@ -2408,8 +2408,8 @@ function buildCanonicalSelectedForeignOrigin(
       sourceOriginAnchor.locName,
       sourceOriginAnchor.id,
     )),
-    lat: Number.isFinite(toNumber(sourcePoint.lat)) ? toNumber(sourcePoint.lat) : clusterLat,
-    lon: Number.isFinite(toNumber(sourcePoint.lon)) ? toNumber(sourcePoint.lon) : clusterLon,
+    lat: hasFiniteNumber(sourcePoint.lat) ? toNumber(sourcePoint.lat) : clusterLat,
+    lon: hasFiniteNumber(sourcePoint.lon) ? toNumber(sourcePoint.lon) : clusterLon,
     obsDate: normalizeDateString(stringOr(
       sourcePoint.obsDt,
       sourcePoint.observationDate,
@@ -4361,7 +4361,7 @@ function buildCanonicalSummaryFromEvidence(input: {
     ].filter(Boolean);
     const insightSummary = !input.evidenceStateSnapshot.hasUsableEstoniaHistory
       && input.evidenceStateSnapshot.hasUsableForeignPressure
-      ? `No recent Estonia records were confirmed in the last 7 days, but recent foreign pressure exists, supporting near-term watch targets in Estonia.`
+      ? `No recent Estonia records were confirmed in the last 7 days, but recent foreign pressure exists${countryNames.length ? ` in ${countryNames.slice(0, 4).join('/')}` : ''}, supporting near-term watch targets in Estonia.`
       : `${input.speciesName} is supported by canonical structured evidence: ${supportParts.join('; ')}.`.trim();
     return {
       insightSummary,
@@ -4669,14 +4669,20 @@ function buildDeterministicSummaryFromStructuredEvidence(payload: Record<string,
   const recentCount7d = Math.max(0, Math.round(toNumber(estoniaEvidence.recentCount7d)));
   const hasHistory = estoniaHistoryPoints.length > 0 || estoniaHistoryClusters.length > 0;
   const hasForeign = foreignRecentPoints.length > 0 || foreignClusters.length > 0;
+  const foreignCountries = extractCanonicalPrimaryCountries(foreignRecentPoints, foreignClusters);
+  const foreignCountryText = foreignCountries.length ? ` in ${foreignCountries.slice(0, 4).join('/')}` : '';
 
   if (recentCount7d > 0) return `ALREADY PRESENT — ${recentCount7d} records in 7 days.`;
   if (!hasHistory && hasForeign && predictedTargets.length > 0) {
-    return 'No recent Estonia records were confirmed in the last 7 days, but recent foreign pressure exists, supporting near-term watch targets in Estonia.';
+    return `No recent Estonia records were confirmed in the last 7 days, but recent foreign pressure exists${foreignCountryText}, supporting near-term watch targets in Estonia.`;
   }
-  if (hasHistory) return 'No recent Estonia records were confirmed in the last 7 days.';
+  if (hasHistory) {
+    return hasForeign
+      ? `No recent Estonia records were confirmed in the last 7 days, but recent foreign pressure exists${foreignCountryText}.`
+      : 'No recent Estonia records were confirmed in the last 7 days.';
+  }
   if (!hasForeign) return SAFE_INCOMPLETE_EVIDENCE_SUMMARY;
-  return 'No recent Estonia records were confirmed in the last 7 days, but recent foreign pressure exists, supporting near-term watch targets in Estonia.';
+  return `No recent Estonia records were confirmed in the last 7 days, but recent foreign pressure exists${foreignCountryText}, supporting near-term watch targets in Estonia.`;
 }
 
 function scrubStaleNarrativeFromStructuredEvidence(payload: Record<string, unknown>): {
@@ -4755,46 +4761,26 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
   const topLevelForeignClusters = Array.isArray(payload.foreignClusters) ? payload.foreignClusters : [];
   const normalizedForeignRecentPointsRaw = Array.isArray(normalizedSources.foreignRecentPoints) ? normalizedSources.foreignRecentPoints : [];
   const normalizedForeignClustersRaw = Array.isArray(normalizedSources.foreignClusters) ? normalizedSources.foreignClusters : [];
-  const rawForeignEvidencePoints = (Array.isArray(rawResearchPayload.foreignEvidence) ? rawResearchPayload.foreignEvidence : [])
-    .map((entry) => asRecord(entry))
-    .filter((entry) =>
-      Number.isFinite(toNumber(entry.lat))
-      && Number.isFinite(toNumber(entry.lon))
-      && (!!stringOr(entry.countryCode) || !!stringOr(entry.countryName))
-    )
-    .map((entry) => ({
-      ...entry,
-      lat: toNumber(entry.lat),
-      lon: toNumber(entry.lon),
-      obsDt: stringOr(entry.obsDt, entry.eventDate, entry.event_date),
-      locName: stringOr(entry.locName, entry.locality, entry.label),
-      countryCode: stringOr(entry.countryCode).toLowerCase(),
-      countryName: stringOr(entry.countryName, resolveCountryName(stringOr(entry.countryCode))),
-      source: stringOr(entry.source, 'eBird'),
-      daysAgo: Number.isFinite(toNumber(entry.daysAgo)) ? toNumber(entry.daysAgo) : daysAgoFromIso(stringOr(entry.obsDt, entry.eventDate, entry.event_date)) ?? 0,
-    }));
-  const foreignRecentPoints = topLevelForeignRecentPoints.length
-    ? topLevelForeignRecentPoints
-    : normalizedForeignRecentPointsRaw.length
-    ? normalizedForeignRecentPointsRaw
-    : rawForeignEvidencePoints;
-  const foreignClusters = populateForeignClustersFromPoints(
-    hasNonPlaceholderForeignClusters(topLevelForeignClusters)
-    ? sanitizeCanonicalForeignClusters(topLevelForeignClusters)
-    : sanitizeCanonicalForeignClusters(normalizedForeignClustersRaw),
-    foreignRecentPoints.map((entry) => asRecord(entry)),
-  );
+  const canonicalForeignBundle = buildCanonicalForeignEvidenceBundle({
+    topLevelForeignRecentPoints,
+    normalizedForeignRecentPointsRaw,
+    rawForeignEvidenceRaw: Array.isArray(rawResearchPayload.foreignEvidence) ? rawResearchPayload.foreignEvidence : [],
+    topLevelForeignClusters,
+    normalizedForeignClustersRaw,
+  });
+  const foreignRecentPoints = canonicalForeignBundle.foreignRecentPoints;
+  const foreignClusters = canonicalForeignBundle.foreignClusters;
+  const rawForeignEvidencePoints = canonicalForeignBundle.rawForeignEvidencePoints;
   const estoniaHistoryPoints = Array.isArray(payload.estoniaHistoryPoints) ? payload.estoniaHistoryPoints : [];
   const estoniaHistoryClusters = Array.isArray(payload.estoniaHistoryClusters) ? payload.estoniaHistoryClusters : [];
   const predictedTargets = Array.isArray(payload.predictedTargets) ? payload.predictedTargets : [];
-  const scrubbed = scrubStaleNarrativeFromStructuredEvidence(payload);
   const recentCount7d = Math.max(0, Math.round(toNumber(estoniaEvidence.recentCount7d)));
   const recentCount30d = Math.max(0, Math.round(toNumber(estoniaEvidence.recentCount30d)));
   const canonicalWeather = Object.keys(asRecord(payload.weather)).length
     ? asRecord(payload.weather)
     : asRecord(normalizedSources.weather);
-  const normalizedForeignRecentPoints = normalizedForeignRecentPointsRaw.map((entry) => asRecord(entry));
-  const normalizedForeignClusters = sanitizeCanonicalForeignClusters(normalizedForeignClustersRaw).map((entry) => asRecord(entry));
+  const normalizedForeignRecentPoints = canonicalForeignBundle.normalizedForeignRecentPoints;
+  const normalizedForeignClusters = canonicalForeignBundle.normalizedForeignClusters;
   const foreignEvidence = buildForeignEvidenceFromPointsAndClusters(
     foreignRecentPoints.map((entry) => asRecord(entry)),
     foreignClusters.map((entry) => asRecord(entry)),
@@ -4852,16 +4838,27 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
   const rawWindSupportScore = clampInt(Math.round(computeWindSupport(canonicalWeather)), 0, 100);
   const canonicalWeatherLooksSupportive = weatherLooksAvailable(canonicalWeather) && rawWindSupportScore > 0;
   const canonicalWindSupportScore = canonicalWeatherLooksSupportive ? rawWindSupportScore : 0;
+  const canonicalHasRealForeignPressure = foreignRecentPoints.length > 0 || foreignClusters.length > 0;
   const canonicalHasUsableForeignRoutingSignal = hasUsableForeignRoutingSignal({
     totalForeignRecentPoints: foreignRecentPoints.length,
     externalPressureScore: canonicalExternalPressureScore,
     routeVector: canonicalRouteVectorCandidate,
   });
+  const vectorsSuppressedReason = canonicalHasUsableForeignRoutingSignal
+    ? 'routing_signal_available'
+    : (canonicalHasRealForeignPressure ? 'present_but_below_routing_threshold' : 'missing_canonical_foreign_evidence');
+  const reasonForeignPressureUsedOrNotUsed = canonicalHasUsableForeignRoutingSignal
+    ? 'used_for_routing_and_ranking'
+    : (canonicalHasRealForeignPressure ? 'present_but_below_routing_threshold' : 'missing_canonical_foreign_evidence');
   const canonicalPredictedTargets = sanitizePredictedTargetsForFinalPayload({
     predictedTargets: canonicalPredictedTargetsWithEta.map((entry) => asRecord(entry)),
     hasUsableForeignRoutingSignal: canonicalHasUsableForeignRoutingSignal,
+    hasCanonicalForeignPressure: canonicalHasRealForeignPressure,
     weatherLooksSupportive: canonicalWeatherLooksSupportive,
     windSupportScore: canonicalWindSupportScore,
+    fallbackForeignSupportScore: canonicalHasUsableForeignRoutingSignal ? Math.max(1, clampInt(Math.round(canonicalExternalPressureScore / 4), 0, 100)) : 0,
+    vectorsSuppressedReason,
+    reasonForeignPressureUsedOrNotUsed,
   });
   const canonicalPredictionVectors = canonicalHasUsableForeignRoutingSignal
     ? buildPredictionVectors(canonicalSelectedForeignOrigin, canonicalPredictedTargets.map((entry) => asRecord(entry)), canonicalWeather, asRecord(payload.settings))
@@ -4880,6 +4877,12 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
   const canonicalHasUsableForeignPressure = foreignRecentPoints.length > 0
     || foreignClusters.length > 0
     || predictedTargetsMentionForeignPressure;
+  const scrubbed = scrubStaleNarrativeFromStructuredEvidence({
+    ...payload,
+    foreignRecentPoints,
+    foreignClusters,
+    predictedTargets: canonicalPredictedTargets,
+  });
   estoniaEvidence.recentCount7d = recentCount7d;
   estoniaEvidence.recentCount30d = recentCount30d;
   estoniaEvidence.alreadyPresent = recentCount7d > 0;
@@ -4960,6 +4963,8 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     hasUsableEstoniaHistory: evidenceStateSnapshot.hasUsableEstoniaHistory,
     hasUsableForeignPressure: canonicalHasUsableForeignPressure,
     hasUsableForeignRoutingSignal: canonicalHasUsableForeignRoutingSignal,
+    vectorsSuppressedReason,
+    reasonForeignPressureUsedOrNotUsed,
     hasUsablePredictedTargets: evidenceStateSnapshot.hasUsablePredictedTargets,
     hasOnlyWeather: evidenceStateSnapshot.hasOnlyWeather,
     hasOnlySourceAvailabilityWithoutUsableEvidence: evidenceStateSnapshot.hasOnlySourceAvailabilityWithoutUsableEvidence,
@@ -4983,6 +4988,16 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
         foreignPressureWeightModel: 'canonical_foreign_evidence_alignment',
       },
       finalSerializerVersion: 'species_prediction_final_v2',
+    },
+    foreignEvidenceDiagnostics: {
+      foreignEvidenceCountRaw: canonicalForeignBundle.foreignEvidenceCountRaw,
+      foreignRecentPointsCountNormalized: canonicalForeignBundle.foreignRecentPointsCountNormalized,
+      foreignClusterCountNormalized: canonicalForeignBundle.foreignClusterCountNormalized,
+      selectedForeignOrigin: canonicalSelectedForeignOrigin,
+      countryCodesDetected: canonicalForeignBundle.countryCodesDetected,
+      externalPressureScore: canonicalExternalPressureScore,
+      reasonForeignPressureUsedOrNotUsed,
+      vectorsSuppressedReason,
     },
     rawResearchPayload: {
       // Safe carry-forwards: species metadata, structured data, coordinates, URLs
@@ -5013,6 +5028,8 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
       },
       countryScores: canonicalCountryScores,
       externalPressureScore: canonicalExternalPressureScore,
+      vectorsSuppressedReason,
+      reasonForeignPressureUsedOrNotUsed,
       ...(canonicalSelectedForeignOrigin ? { selectedForeignOrigin: canonicalSelectedForeignOrigin } : {}),
       normalizedSources: {
         estoniaHistoryPoints,
@@ -5036,6 +5053,17 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     }).weatherLooksSupportive === true && /weather_only_insufficient/i.test(stringOr(payload.summaryGuardrailReason)) ? ['summary_guardrail_reason_contradicts_weather'] : []),
   ]));
   finalPayload.summaryGuardrailReason = finalSummaryGuardrailReasons.join(',');
+  console.info(`${LOG_PREFIX} foreign_evidence_canonicalized`, {
+    speciesName: finalPayload.speciesName,
+    foreignEvidenceCountRaw: canonicalForeignBundle.foreignEvidenceCountRaw,
+    foreignRecentPointsCountNormalized: canonicalForeignBundle.foreignRecentPointsCountNormalized,
+    foreignClusterCountNormalized: canonicalForeignBundle.foreignClusterCountNormalized,
+    selectedForeignOrigin: canonicalSelectedForeignOrigin,
+    countryCodesDetected: canonicalForeignBundle.countryCodesDetected,
+    externalPressureScore: canonicalExternalPressureScore,
+    reasonForeignPressureUsedOrNotUsed,
+    vectorsSuppressedReason,
+  });
   if (normalizedForeignRecentPoints.length > 0 && foreignRecentPoints.length === 0) {
     console.error(`${LOG_PREFIX} final_payload_foreign_points_promoted`, {
       speciesName: finalPayload.speciesName,
@@ -5158,6 +5186,100 @@ function populateForeignClustersFromPoints(
   });
 }
 
+function normalizeCanonicalForeignRecentPoint(entry: unknown, index: number): Record<string, unknown> | null {
+  const point = asRecord(entry);
+  const lat = toNumber(point.lat, point.latitude);
+  const lon = toNumber(point.lon, point.lng, point.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  const countryCode = normalizeCountryCode(stringOr(point.countryCode, point.country, point.country_code));
+  const countryName = stringOr(point.countryName, point.country_name, resolveCountryName(countryCode));
+  const obsDt = normalizeDateString(stringOr(point.obsDt, point.observationDate, point.date, point.eventDate, point.event_date));
+  const clusterId = stringOr(point.clusterId, point.cluster_id);
+  return {
+    ...point,
+    id: stringOr(point.id, `${countryCode || 'foreign'}-${index + 1}`),
+    lat,
+    lon,
+    obsDt,
+    locName: sanitizeDisplayLabel(stringOr(point.locName, point.locality, point.label, point.name)),
+    howMany: hasFiniteNumber(point.howMany) ? Math.max(0, Math.round(toNumber(point.howMany))) : (hasFiniteNumber(point.recordCount) ? Math.max(0, Math.round(toNumber(point.recordCount))) : null),
+    countryCode,
+    countryName,
+    regionCode: stringOr(point.regionCode, point.region_code),
+    regionName: stringOr(point.regionName, point.region_name),
+    source: stringOr(point.source, 'eBird'),
+    daysAgo: Number.isFinite(toNumber(point.daysAgo))
+      ? Math.max(0, toNumber(point.daysAgo))
+      : (obsDt ? Math.max(0, daysAgoFromIso(obsDt) ?? 0) : 0),
+    ...(clusterId ? { clusterId } : {}),
+    distanceToEstoniaKm: hasFiniteNumber(point.distanceToEstoniaKm)
+      ? toNumber(point.distanceToEstoniaKm)
+      : distanceToEstonia(lat, lon),
+  };
+}
+
+function buildCanonicalForeignEvidenceBundle(input: {
+  topLevelForeignRecentPoints: unknown[];
+  normalizedForeignRecentPointsRaw: unknown[];
+  rawForeignEvidenceRaw: unknown[];
+  topLevelForeignClusters: unknown[];
+  normalizedForeignClustersRaw: unknown[];
+}): {
+  foreignRecentPoints: Record<string, unknown>[];
+  foreignClusters: Record<string, unknown>[];
+  rawForeignEvidencePoints: Record<string, unknown>[];
+  normalizedForeignRecentPoints: Record<string, unknown>[];
+  normalizedForeignClusters: Record<string, unknown>[];
+  countryCodesDetected: string[];
+  foreignEvidenceCountRaw: number;
+  foreignRecentPointsCountNormalized: number;
+  foreignClusterCountNormalized: number;
+} {
+  const rawForeignEvidencePoints = input.rawForeignEvidenceRaw
+    .map((entry, index) => normalizeCanonicalForeignRecentPoint(entry, index))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+  const normalizedForeignRecentPoints = input.normalizedForeignRecentPointsRaw
+    .map((entry, index) => normalizeCanonicalForeignRecentPoint(entry, index))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+  const topLevelForeignRecentPoints = input.topLevelForeignRecentPoints
+    .map((entry, index) => normalizeCanonicalForeignRecentPoint(entry, index))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+  const canonicalForeignRecentPoints = topLevelForeignRecentPoints.length
+    ? topLevelForeignRecentPoints
+    : normalizedForeignRecentPoints.length
+      ? normalizedForeignRecentPoints
+      : rawForeignEvidencePoints;
+  const normalizedForeignClusters = sanitizeCanonicalForeignClusters(input.normalizedForeignClustersRaw)
+    .map((entry) => asRecord(entry));
+  const topLevelForeignClusters = sanitizeCanonicalForeignClusters(input.topLevelForeignClusters)
+    .map((entry) => asRecord(entry));
+  const preferredClusters = hasNonPlaceholderForeignClusters(topLevelForeignClusters)
+    ? topLevelForeignClusters
+    : (hasNonPlaceholderForeignClusters(normalizedForeignClusters) ? normalizedForeignClusters : []);
+  const rebuiltClusters = canonicalForeignRecentPoints.length
+    ? clusterForeignRecentPoints(canonicalForeignRecentPoints.map((entry) => ({ ...entry })))
+    : [];
+  const foreignClusters = populateForeignClustersFromPoints(
+    preferredClusters.length ? preferredClusters : rebuiltClusters,
+    canonicalForeignRecentPoints,
+  );
+  const countryCodesDetected = Array.from(new Set([
+    ...canonicalForeignRecentPoints.map((entry) => normalizeCountryCode(stringOr(entry.countryCode))).filter(Boolean),
+    ...foreignClusters.flatMap((entry) => Array.isArray(entry.countryCodes) ? entry.countryCodes.map((item) => normalizeCountryCode(stringOr(item))).filter(Boolean) : []),
+  ]));
+  return {
+    foreignRecentPoints: canonicalForeignRecentPoints,
+    foreignClusters,
+    rawForeignEvidencePoints,
+    normalizedForeignRecentPoints,
+    normalizedForeignClusters,
+    countryCodesDetected,
+    foreignEvidenceCountRaw: rawForeignEvidencePoints.length,
+    foreignRecentPointsCountNormalized: canonicalForeignRecentPoints.length,
+    foreignClusterCountNormalized: foreignClusters.length,
+  };
+}
+
 function sanitizeCanonicalForeignClusters(input: unknown[]): Record<string, unknown>[] {
   if (!Array.isArray(input)) return [];
   return input.map((entry, index) => {
@@ -5227,8 +5349,12 @@ function stripForeignPressureReasonText(reason: string): string {
 function sanitizePredictedTargetsForFinalPayload(input: {
   predictedTargets: Record<string, unknown>[];
   hasUsableForeignRoutingSignal: boolean;
+  hasCanonicalForeignPressure: boolean;
   weatherLooksSupportive: boolean;
   windSupportScore: number;
+  fallbackForeignSupportScore: number;
+  vectorsSuppressedReason: string;
+  reasonForeignPressureUsedOrNotUsed: string;
 }): Record<string, unknown>[] {
   const canonicalWindAdjusted = input.weatherLooksSupportive && input.windSupportScore > 0;
   return input.predictedTargets.map((entry) => {
@@ -5238,11 +5364,22 @@ function sanitizePredictedTargetsForFinalPayload(input: {
       ...target,
       windAdjusted: canonicalWindAdjusted,
       weatherSupportScore: canonicalWindAdjusted ? Math.max(1, toNumber(target.weatherSupportScore) || clampInt(Math.round(input.windSupportScore / 10), 0, 10)) : 0,
+      usedForeignPressure: input.hasUsableForeignRoutingSignal ? true : false,
+      foreignSupportScore: input.hasUsableForeignRoutingSignal
+        ? Math.max(toNumber(target.foreignSupportScore), input.fallbackForeignSupportScore)
+        : Math.max(0, toNumber(target.foreignSupportScore)),
+      vectorsSuppressed: input.hasUsableForeignRoutingSignal ? false : true,
+      vectorsSuppressedReason: input.hasUsableForeignRoutingSignal ? 'routing_signal_available' : input.vectorsSuppressedReason,
+      reasonForeignPressureUsedOrNotUsed: input.hasUsableForeignRoutingSignal
+        ? 'used_for_routing_and_ranking'
+        : input.reasonForeignPressureUsedOrNotUsed,
       debug: {
         ...debug,
-        foreignPressureUsed: input.hasUsableForeignRoutingSignal ? target.usedForeignPressure === true : false,
-        vectorsSuppressedDueToMissingForeignData: input.hasUsableForeignRoutingSignal ? Boolean(debug.vectorsSuppressedDueToMissingForeignData) : true,
+        foreignPressureUsed: input.hasUsableForeignRoutingSignal,
+        vectorsSuppressedDueToMissingForeignData: input.hasUsableForeignRoutingSignal ? false : !input.hasCanonicalForeignPressure,
         weatherSupportScore: canonicalWindAdjusted ? Math.max(1, toNumber(debug.weatherSupportScore) || clampInt(Math.round(input.windSupportScore / 10), 0, 10)) : 0,
+        vectorsSuppressedReason: input.hasUsableForeignRoutingSignal ? 'routing_signal_available' : input.vectorsSuppressedReason,
+        reasonForeignPressureUsedOrNotUsed: input.hasUsableForeignRoutingSignal ? 'used_for_routing_and_ranking' : input.reasonForeignPressureUsedOrNotUsed,
       },
     };
     if (input.hasUsableForeignRoutingSignal) return baseTarget;
@@ -5268,10 +5405,15 @@ function sanitizePredictedTargetsForFinalPayload(input: {
       usedForeignPressure: false,
       vectorsSuppressed: true,
       foreignSupportScore: 0,
+      vectorsSuppressedReason: input.vectorsSuppressedReason,
+      reasonForeignPressureUsedOrNotUsed: input.reasonForeignPressureUsedOrNotUsed,
       rankingMode: stringOr(target.rankingMode) === 'foreign_anchor_entry_corridor' ? 'estonia_history_only' : stringOr(target.rankingMode),
       debug: {
         ...asRecord(baseTarget.debug),
         foreignPressureUsed: false,
+        vectorsSuppressedDueToMissingForeignData: !input.hasCanonicalForeignPressure,
+        vectorsSuppressedReason: input.vectorsSuppressedReason,
+        reasonForeignPressureUsedOrNotUsed: input.reasonForeignPressureUsedOrNotUsed,
       },
     };
   });
@@ -5283,7 +5425,7 @@ function hasUsableForeignRoutingSignal(input: {
   routeVector: string;
 }): boolean {
   return input.totalForeignRecentPoints > 0
-    && input.externalPressureScore > 0
+    && input.externalPressureScore >= 8
     && !isUnavailableLabel(input.routeVector)
     && !!stringOr(input.routeVector);
 }

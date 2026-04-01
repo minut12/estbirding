@@ -656,6 +656,24 @@ describe("normalizeSpeciesPredictionResult", () => {
           isFreshest: true,
         },
       ],
+      foreignEvidenceDiagnostics: {
+        foreignEvidenceCountRaw: 1,
+        foreignRecentPointsCountNormalized: 1,
+        foreignClusterCountNormalized: 1,
+        selectedForeignOrigin: {
+          countryCode: "LT",
+          countryName: "Lithuania",
+          locality: "Nemuno delta",
+          lat: 55.34,
+          lon: 21.29,
+        },
+        countryCodesDetected: ["lt"],
+        externalPressureScore: 8,
+        reasonForeignPressureUsedOrNotUsed: "used_for_routing_and_ranking",
+        vectorsSuppressedReason: "routing_signal_available",
+      },
+      reasonForeignPressureUsedOrNotUsed: "used_for_routing_and_ranking",
+      vectorsSuppressedReason: "routing_signal_available",
       topPredictedPoints: [
         {
           rank: 1,
@@ -667,6 +685,11 @@ describe("normalizeSpeciesPredictionResult", () => {
           searchRadiusKm: 10,
           habitatCue: "coastal migration bottleneck",
           reason: "Canonical target",
+          usedForeignPressure: true,
+          foreignSupportScore: 8,
+          vectorsSuppressed: false,
+          vectorsSuppressedReason: "routing_signal_available",
+          reasonForeignPressureUsedOrNotUsed: "used_for_routing_and_ranking",
           migrationEta: {
             fromCountry: "LT",
             fromLocality: "Nemuno delta",
@@ -686,6 +709,16 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(result.foreignClusters?.[0]?.countries).toEqual(["Lithuania"]);
     expect(result.foreignClusters?.[0]?.countryCodes).toEqual(["lt"]);
     expect(result.foreignClusters?.[0]?.locNames).toEqual(["Nemuno delta"]);
+    expect(result.selectedForeignOrigin?.countryCode).toBe("LT");
+    expect(result.selectedForeignOrigin?.countryName).toBe("Lithuania");
+    expect(result.foreignEvidenceDiagnostics?.countryCodesDetected).toEqual(["lt"]);
+    expect(result.foreignEvidenceDiagnostics?.reasonForeignPressureUsedOrNotUsed).toBe("used_for_routing_and_ranking");
+    expect(result.foreignEvidenceDiagnostics?.vectorsSuppressedReason).toBe("routing_signal_available");
+    expect(result.reasonForeignPressureUsedOrNotUsed).toBe("used_for_routing_and_ranking");
+    expect(result.vectorsSuppressedReason).toBe("routing_signal_available");
+    expect(result.topPredictedPoints?.[0]?.usedForeignPressure).toBe(true);
+    expect(result.topPredictedPoints?.[0]?.vectorsSuppressed).toBe(false);
+    expect(result.topPredictedPoints?.[0]?.vectorsSuppressedReason).toBe("routing_signal_available");
     expect(routes[0]?.fromLocality).toBe("Nemuno delta");
     expect(routes[0]?.routePoints?.[0]?.name).toBe("Nemuno delta");
   });

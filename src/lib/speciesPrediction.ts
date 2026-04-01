@@ -131,6 +131,29 @@ export type SpeciesPredictionForeignCluster = {
   source?: string;
 };
 
+export type SpeciesPredictionSelectedForeignOrigin = {
+  countryCode: string;
+  countryName: string;
+  locality: string;
+  lat: number | null;
+  lon: number | null;
+  obsDate?: string;
+  clusterId?: string;
+  source?: string;
+  supportingSubmissionId?: string;
+};
+
+export type SpeciesPredictionForeignEvidenceDiagnostics = {
+  foreignEvidenceCountRaw?: number;
+  foreignRecentPointsCountNormalized?: number;
+  foreignClusterCountNormalized?: number;
+  selectedForeignOrigin?: SpeciesPredictionSelectedForeignOrigin;
+  countryCodesDetected?: string[];
+  externalPressureScore?: number;
+  reasonForeignPressureUsedOrNotUsed?: string;
+  vectorsSuppressedReason?: string;
+};
+
 export type SpeciesPredictionWeather = {
   fetchedAt: string;
   observedAt?: string;
@@ -320,6 +343,8 @@ export type PredictedPoint = {
   usedForeignPressure?: boolean;
   habitatFilterAdjustedRanking?: boolean;
   vectorsSuppressed?: boolean;
+  vectorsSuppressedReason?: string;
+  reasonForeignPressureUsedOrNotUsed?: string;
   rankingMode?: string;
   rawClusterId?: string;
   habitatFitScore?: number;
@@ -465,6 +490,7 @@ export type SpeciesPredictionResult = {
   estoniaHistoryClusters?: SpeciesPredictionEstoniaHistoryCluster[];
   foreignRecentPoints?: SpeciesPredictionForeignRecentPoint[];
   foreignClusters?: SpeciesPredictionForeignCluster[];
+  selectedForeignOrigin?: SpeciesPredictionSelectedForeignOrigin;
   weather?: SpeciesPredictionWeather;
   predictionVectors?: SpeciesPredictionVector[];
   predictedTargets?: PredictedPoint[];
@@ -537,6 +563,9 @@ export type SpeciesPredictionResult = {
   invokeRouteVersion?: string;
   responseProof?: string;
   payloadSourceState?: 'current_finalized_backend_output' | 'legacy_or_unverified_source' | 'n8n_v3_passthrough';
+  vectorsSuppressedReason?: string;
+  reasonForeignPressureUsedOrNotUsed?: string;
+  foreignEvidenceDiagnostics?: SpeciesPredictionForeignEvidenceDiagnostics;
   globalMigrationEtas?: MigrationEta[];
   statusCode?: 'CONFIGURED_AVAILABLE' | 'CONFIGURED_UNAVAILABLE' | 'NOT_CONFIGURED' | 'DEPLOYED_NOT_CONFIGURED' | 'RUNTIME_ERROR';
   userMessage?: string;
@@ -943,6 +972,17 @@ export function normalizeSpeciesPredictionResult(
       ? normalizedSourceForeignClusters
       : topLevelForeignClusters;
   const hasForeignClusters = hasValue(source, ['foreignClusters', 'foreign_clusters']) || normalizedSourceForeignClusters.length > 0;
+  const selectedForeignOrigin = normalizeSelectedForeignOrigin(
+    readRecord(source, ['selectedForeignOrigin', 'selected_foreign_origin'])
+      ?? readRecord(rawResearchPayload, ['selectedForeignOrigin', 'selected_foreign_origin'])
+      ?? readRecord(readRecord(rawResearchPayload, ['foreignEvidenceDiagnostics']) ?? {}, ['selectedForeignOrigin', 'selected_foreign_origin'])
+      ?? null,
+  );
+  const foreignEvidenceDiagnostics = normalizeForeignEvidenceDiagnostics(
+    readRecord(source, ['foreignEvidenceDiagnostics', 'foreign_evidence_diagnostics'])
+      ?? readRecord(rawResearchPayload, ['foreignEvidenceDiagnostics', 'foreign_evidence_diagnostics'])
+      ?? null,
+  );
   const weather = normalizeWeather(
     readRecord(source, ['weather']) ?? readRecord(rawResearchPayload, ['weather']),
   );
@@ -1027,6 +1067,7 @@ export function normalizeSpeciesPredictionResult(
     ...((estoniaHistoryClusters.length || hasEstoniaHistoryClusters) ? { estoniaHistoryClusters } : {}),
     ...((foreignRecentPoints.length || hasForeignRecentPoints) ? { foreignRecentPoints } : {}),
     ...((foreignClusters.length || hasForeignClusters) ? { foreignClusters } : {}),
+    ...(selectedForeignOrigin ? { selectedForeignOrigin } : {}),
     ...(weather ? { weather } : {}),
     ...(predictionVectors.length ? { predictionVectors } : {}),
     ...((predictedTargets.length || hasPredictedTargets) ? { predictedTargets } : {}),
@@ -1107,6 +1148,9 @@ export function normalizeSpeciesPredictionResult(
     ...(backendBuild ? { backendBuild: normalizeUiText(backendBuild) } : {}),
     ...(invokeRouteVersion ? { invokeRouteVersion: normalizeUiText(invokeRouteVersion) } : {}),
     ...(responseProof ? { responseProof: normalizeUiText(responseProof) } : {}),
+    ...(readString(source, ['vectorsSuppressedReason', 'vectors_suppressed_reason']) ? { vectorsSuppressedReason: normalizeUiText(readString(source, ['vectorsSuppressedReason', 'vectors_suppressed_reason'])) } : {}),
+    ...(readString(source, ['reasonForeignPressureUsedOrNotUsed', 'reason_foreign_pressure_used_or_not_used']) ? { reasonForeignPressureUsedOrNotUsed: normalizeUiText(readString(source, ['reasonForeignPressureUsedOrNotUsed', 'reason_foreign_pressure_used_or_not_used'])) } : {}),
+    ...(foreignEvidenceDiagnostics ? { foreignEvidenceDiagnostics } : {}),
     payloadSourceState: readString(source, ['payloadSourceState']) === 'n8n_v3_passthrough'
       ? 'n8n_v3_passthrough'
       : isCurrentFinalizedBackendOutput ? 'current_finalized_backend_output' : 'legacy_or_unverified_source',
@@ -2137,6 +2181,8 @@ function normalizePredictedPoint(point: Partial<PredictedPoint> | null | undefin
     ...(typeof source.usedForeignPressure === 'boolean' ? { usedForeignPressure: source.usedForeignPressure === true } : {}),
     ...(typeof source.habitatFilterAdjustedRanking === 'boolean' ? { habitatFilterAdjustedRanking: source.habitatFilterAdjustedRanking === true } : {}),
     ...(typeof source.vectorsSuppressed === 'boolean' ? { vectorsSuppressed: source.vectorsSuppressed === true } : {}),
+    ...(readString(source, ['vectorsSuppressedReason', 'vectors_suppressed_reason']) ? { vectorsSuppressedReason: normalizeUiText(readString(source, ['vectorsSuppressedReason', 'vectors_suppressed_reason'])) } : {}),
+    ...(readString(source, ['reasonForeignPressureUsedOrNotUsed', 'reason_foreign_pressure_used_or_not_used']) ? { reasonForeignPressureUsedOrNotUsed: normalizeUiText(readString(source, ['reasonForeignPressureUsedOrNotUsed', 'reason_foreign_pressure_used_or_not_used'])) } : {}),
     ...(readString(source, ['rankingMode', 'ranking_mode']) ? { rankingMode: normalizeUiText(readString(source, ['rankingMode', 'ranking_mode'])) } : {}),
     ...(readString(source, ['rawClusterId', 'raw_cluster_id']) ? { rawClusterId: normalizeUiText(readString(source, ['rawClusterId', 'raw_cluster_id'])) } : {}),
     ...(hasValue(source, ['habitatFitScore', 'habitat_fit_score']) ? { habitatFitScore: clampFloat(readNumber(source, ['habitatFitScore', 'habitat_fit_score']), -999999, 999999, 0) } : {}),
@@ -2468,6 +2514,49 @@ function resolveCountryNameForUi(countryCode: string): string {
     default:
       return '';
   }
+}
+
+function normalizeSelectedForeignOrigin(input: Record<string, unknown> | null): SpeciesPredictionSelectedForeignOrigin | undefined {
+  if (!input || !Object.keys(input).length) return undefined;
+  const countryCode = normalizeUiText(readString(input, ['countryCode', 'country_code']) || '').toUpperCase();
+  const countryName = normalizeUiText(
+    readString(input, ['countryName', 'country_name'])
+    || resolveCountryNameForUi(countryCode)
+    || '',
+  );
+  const locality = normalizeUiText(readString(input, ['locality', 'locName', 'loc_name']) || '');
+  const lat = hasValue(input, ['lat', 'latitude']) ? clampFloat(readNumber(input, ['lat', 'latitude']), -90, 90, 0) : null;
+  const lon = hasValue(input, ['lon', 'lng', 'longitude']) ? clampFloat(readNumber(input, ['lon', 'lng', 'longitude']), -180, 180, 0) : null;
+  if (!countryCode && !countryName && !locality && lat == null && lon == null) return undefined;
+  return {
+    countryCode,
+    countryName,
+    locality,
+    lat,
+    lon,
+    ...(readString(input, ['obsDate', 'obs_date']) ? { obsDate: normalizeUiText(readString(input, ['obsDate', 'obs_date'])) } : {}),
+    ...(readString(input, ['clusterId', 'cluster_id']) ? { clusterId: normalizeUiText(readString(input, ['clusterId', 'cluster_id'])) } : {}),
+    ...(readString(input, ['source']) ? { source: normalizeUiText(readString(input, ['source'])) } : {}),
+    ...(readString(input, ['supportingSubmissionId', 'supporting_submission_id']) ? { supportingSubmissionId: normalizeUiText(readString(input, ['supportingSubmissionId', 'supporting_submission_id'])) } : {}),
+  };
+}
+
+function normalizeForeignEvidenceDiagnostics(input: Record<string, unknown> | null): SpeciesPredictionForeignEvidenceDiagnostics | undefined {
+  if (!input || !Object.keys(input).length) return undefined;
+  const selectedForeignOrigin = normalizeSelectedForeignOrigin(readRecord(input, ['selectedForeignOrigin', 'selected_foreign_origin']) ?? null);
+  const countryCodesDetected = (readArray(input, ['countryCodesDetected', 'country_codes_detected']) ?? [])
+    .map((item) => normalizeUiText(String(item || '')).toLowerCase())
+    .filter(Boolean);
+  return {
+    ...(hasValue(input, ['foreignEvidenceCountRaw', 'foreign_evidence_count_raw']) ? { foreignEvidenceCountRaw: clampNumber(readNumber(input, ['foreignEvidenceCountRaw', 'foreign_evidence_count_raw']), 0, 999999, 0) } : {}),
+    ...(hasValue(input, ['foreignRecentPointsCountNormalized', 'foreign_recent_points_count_normalized']) ? { foreignRecentPointsCountNormalized: clampNumber(readNumber(input, ['foreignRecentPointsCountNormalized', 'foreign_recent_points_count_normalized']), 0, 999999, 0) } : {}),
+    ...(hasValue(input, ['foreignClusterCountNormalized', 'foreign_cluster_count_normalized']) ? { foreignClusterCountNormalized: clampNumber(readNumber(input, ['foreignClusterCountNormalized', 'foreign_cluster_count_normalized']), 0, 999999, 0) } : {}),
+    ...(selectedForeignOrigin ? { selectedForeignOrigin } : {}),
+    ...(countryCodesDetected.length ? { countryCodesDetected } : {}),
+    ...(hasValue(input, ['externalPressureScore', 'external_pressure_score']) ? { externalPressureScore: readNumber(input, ['externalPressureScore', 'external_pressure_score']) } : {}),
+    ...(readString(input, ['reasonForeignPressureUsedOrNotUsed', 'reason_foreign_pressure_used_or_not_used']) ? { reasonForeignPressureUsedOrNotUsed: normalizeUiText(readString(input, ['reasonForeignPressureUsedOrNotUsed', 'reason_foreign_pressure_used_or_not_used'])) } : {}),
+    ...(readString(input, ['vectorsSuppressedReason', 'vectors_suppressed_reason']) ? { vectorsSuppressedReason: normalizeUiText(readString(input, ['vectorsSuppressedReason', 'vectors_suppressed_reason'])) } : {}),
+  };
 }
 
 function normalizeWeather(input: Record<string, unknown> | null): SpeciesPredictionWeather | undefined {

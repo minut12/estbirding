@@ -708,6 +708,7 @@
     if (!debugBody) return;
     var result = state.result || {};
     var points = Array.isArray(result.topPredictedPoints) ? result.topPredictedPoints : [];
+    var foreignDiagnostics = result.foreignEvidenceDiagnostics || {};
     var debugItems = [
       debugItem('Panel build', runtimeInfo.visibleMarker),
       debugItem('Panel script', runtimeInfo.panelScript),
@@ -738,6 +739,13 @@
       debugItem('Summary guardrail applied', typeof result.summaryGuardrailApplied === 'boolean' ? String(result.summaryGuardrailApplied) : '(empty)'),
       debugItem('Summary guardrail reason', result.summaryGuardrailReason || '(empty)'),
       debugItem('Foreign groups', String(Array.isArray(result.foreignEvidence) ? result.foreignEvidence.length : 0)),
+      debugItem('Foreign raw count', foreignDiagnostics.foreignEvidenceCountRaw != null ? String(foreignDiagnostics.foreignEvidenceCountRaw) : '(empty)'),
+      debugItem('Foreign normalized points', foreignDiagnostics.foreignRecentPointsCountNormalized != null ? String(foreignDiagnostics.foreignRecentPointsCountNormalized) : '(empty)'),
+      debugItem('Foreign normalized clusters', foreignDiagnostics.foreignClusterCountNormalized != null ? String(foreignDiagnostics.foreignClusterCountNormalized) : '(empty)'),
+      debugItem('Foreign selected origin', formatJson(foreignDiagnostics.selectedForeignOrigin || result.selectedForeignOrigin || {})),
+      debugItem('Foreign country codes', Array.isArray(foreignDiagnostics.countryCodesDetected) ? foreignDiagnostics.countryCodesDetected.join(', ') : '(empty)'),
+      debugItem('Foreign use reason', foreignDiagnostics.reasonForeignPressureUsedOrNotUsed || result.reasonForeignPressureUsedOrNotUsed || '(empty)'),
+      debugItem('Vectors suppressed reason', foreignDiagnostics.vectorsSuppressedReason || result.vectorsSuppressedReason || '(empty)'),
       debugItem('Estonia recent 7d', result.estoniaEvidence && result.estoniaEvidence.recentCount7d != null ? String(result.estoniaEvidence.recentCount7d) : '(empty)'),
       debugItem('Warning count', String(normalizeStringArray(result.warnings).length)),
       debugItem('Top points', String(points.length)),
@@ -761,6 +769,8 @@
         ' | habitatFilter=' + escapeHtml(point.habitatFilterAdjustedRanking ? 'Yes' : 'No') +
         ' | foreign=' + escapeHtml(point.usedForeignPressure ? 'Yes' : 'No') +
         ' | vectorsSuppressed=' + escapeHtml(point.vectorsSuppressed ? 'Yes' : 'No') +
+        ' | foreignReason=' + escapeHtml(point.reasonForeignPressureUsedOrNotUsed || result.reasonForeignPressureUsedOrNotUsed || 'Unavailable') +
+        ' | vectorsReason=' + escapeHtml(point.vectorsSuppressedReason || result.vectorsSuppressedReason || 'Unavailable') +
         '</div></div>';
     }).join('');
     debugBody.innerHTML = '' +
@@ -2573,6 +2583,9 @@
           externalPressureScore: result ? result.externalPressureScore : null,
           countryScores: result && result.countryScores ? result.countryScores : null,
           foreignRecentPoints: result && Array.isArray(result.foreignRecentPoints) ? result.foreignRecentPoints : [],
+          foreignClusters: result && Array.isArray(result.foreignClusters) ? result.foreignClusters : [],
+          selectedForeignOrigin: result && result.selectedForeignOrigin ? result.selectedForeignOrigin : null,
+          foreignEvidenceDiagnostics: result && result.foreignEvidenceDiagnostics ? result.foreignEvidenceDiagnostics : null,
           topPredictedPoints: Array.isArray(preferredPoints) ? preferredPoints : [],
           sourceHealth: result && result.sourceHealth ? result.sourceHealth : { primarySourceUsed: prediction.primarySourceUsed, activeEvidenceUsed: prediction.activeEvidenceUsed },
           foreignEvidence: result && Array.isArray(result.foreignEvidence) ? result.foreignEvidence : [],
@@ -2593,6 +2606,8 @@
           attemptedButUnavailable: result && Array.isArray(result.attemptedButUnavailable) ? result.attemptedButUnavailable : [],
           attemptedButReturnedNoUsableEvidence: result && Array.isArray(result.attemptedButReturnedNoUsableEvidence) ? result.attemptedButReturnedNoUsableEvidence : [],
           effectiveRankingMode: (result && result.evidenceSummary && result.evidenceSummary.effectiveRankingMode) || (result && result.effectiveRankingMode) || prediction.rankingMode || '',
+          vectorsSuppressedReason: result && result.vectorsSuppressedReason ? result.vectorsSuppressedReason : '',
+          reasonForeignPressureUsedOrNotUsed: result && result.reasonForeignPressureUsedOrNotUsed ? result.reasonForeignPressureUsedOrNotUsed : '',
           summaryGuardrailApplied: result && typeof result.summaryGuardrailApplied === 'boolean' ? result.summaryGuardrailApplied : undefined,
           summaryGuardrailReason: result && result.summaryGuardrailReason ? result.summaryGuardrailReason : '',
           runtimeMarker: runtimeInfo.visibleMarker,

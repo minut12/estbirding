@@ -5652,6 +5652,15 @@ function finalizePredictionResponse(
   canonicalResponse: Record<string, unknown>,
   branch: string,
 ): Record<string, unknown> {
+  // Skip finalization if this payload was written directly by n8n
+  const isN8nPassthrough =
+    stringOr(canonicalResponse.summaryOrigin) === 'n8n_evidence_first' ||
+    stringOr(canonicalResponse.payloadSourceState) === 'n8n_v3_passthrough';
+  if (isN8nPassthrough) {
+    console.log(`[finalizePredictionResponse] Skipping (${branch}): n8n passthrough detected`);
+    return canonicalResponse;
+  }
+
   logPredictionSummaryState('canonical_response_built', branch, canonicalResponse);
   const finalPayload = buildFinalPredictionPayloadFromEvidence(canonicalResponse);
   const finalValidation = validatePredictionPayloadConsistency(finalPayload);

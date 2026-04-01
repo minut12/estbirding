@@ -5261,8 +5261,8 @@ function populateForeignClustersFromPoints(
 
 function normalizeCanonicalForeignRecentPoint(entry: unknown, index: number): Record<string, unknown> | null {
   const point = asRecord(entry);
-  const lat = toNumber(point.lat, point.latitude);
-  const lon = toNumber(point.lon, point.lng, point.longitude);
+  const lat = toNumber(point.lat) || toNumber(point.latitude);
+  const lon = toNumber(point.lon) || toNumber(point.lng) || toNumber(point.longitude);
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   const countryCode = normalizeCountryCode(stringOr(point.countryCode, point.country, point.country_code));
   const countryName = stringOr(point.countryName, point.country_name, resolveCountryName(countryCode));

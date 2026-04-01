@@ -1436,3 +1436,101 @@ function NumericField({ id, label, value, min, max, onChange }: NumericFieldProp
     </div>
   );
 }
+
+function RawPredictionDebug({ speciesKey, scopeId }: { speciesKey: string; scopeId: string }) {
+  const [dbRaw, setDbRaw] = useState<string | null>(null);
+  const [edgeRaw, setEdgeRaw] = useState<string | null>(null);
+  const [dbLoading, setDbLoading] = useState(false);
+  const [edgeLoading, setEdgeLoading] = useState(false);
+
+  const loadDb = useCallback(async () => {
+    if (!speciesKey) { toast.error('Select a species first'); return; }
+    setDbLoading(true);
+    try {
+      const { supabase } = await import('@/integrations/supabase/client');
+      const { data, error } = await supabase
+        .from('prediction_jobs')
+        .select('*')
+        .eq('species_key', speciesKey)
+        .eq('scope', scopeId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      setDbRaw(data ? JSON.stringify(data, null, 2) : '(no row found)');
+    } catch (err: unknown) {
+      setDbRaw(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setDbLoading(false);
+    }
+  }, [speciesKey, scopeId]);
+
+  const loadEdge = useCallback(async () => {
+    if (!speciesKey) { toast.error('Select a species first'); return; }
+    setEdgeLoading(true);
+    try {
+      const baseUrl = getFunctionsBaseUrl();
+      const headers = await getSupabaseAuthHeaders();
+      // Find the latest request_id for this species from DB
+      const { supabase } = await import('@/integrations/supabase/client');
+      const { data: job } = await supabase
+        .from('prediction_jobs')
+        .select('request_id')
+        .eq('species_key', speciesKey)
+        .eq('scope', scopeId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!job?.request_id) { setEdgeRaw('(no prediction job found for this species)'); return; }
+      const url = `${baseUrl}/species-prediction?mode=poll&requestId=${encodeURIComponent(job.request_id)}`;
+      const resp = await fetch(url, { method: 'GET', headers });
+      const text = await resp.text();
+      try {
+        setEdgeRaw(JSON.stringify(JSON.parse(text), null, 2));
+      } catch {
+        setEdgeRaw(text);
+      }
+    } catch (err: unknown) {
+      setEdgeRaw(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setEdgeLoading(false);
+    }
+  }, [speciesKey, scopeId]);
+
+  return (
+    <div className="rounded border border-border bg-muted/20 p-3 space-y-3">
+      <p className="font-semibold text-foreground text-xs">Raw DB prediction debug</p>
+      <p className="text-[10px] text-muted-foreground font-mono">species_key: {speciesKey || '–'} | scope: {scopeId}</p>
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" onClick={loadDb} disabled={dbLoading || !speciesKey}>
+          {dbLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+          Load raw DB prediction
+        </Button>
+        <Button variant="outline" size="sm" onClick={loadEdge} disabled={edgeLoading || !speciesKey}>
+          {edgeLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+          Load via edge function
+        </Button>
+      </div>
+      {(dbRaw || edgeRaw) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {dbRaw != null && (
+            <div className="space-y-1">
+              <p className="text-[11px] font-semibold text-foreground">DB RAW</p>
+              <pre className="text-[9px] font-mono bg-background border border-border rounded p-2 max-h-[400px] overflow-auto whitespace-pre-wrap break-all">
+                {dbRaw}
+              </pre>
+            </div>
+          )}
+          {edgeRaw != null && (
+            <div className="space-y-1">
+              <p className="text-[11px] font-semibold text-foreground">EDGE FUNCTION RESPONSE</p>
+              <pre className="text-[9px] font-mono bg-background border border-border rounded p-2 max-h-[400px] overflow-auto whitespace-pre-wrap break-all">
+                {edgeRaw}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

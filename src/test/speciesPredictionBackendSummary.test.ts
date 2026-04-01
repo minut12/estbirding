@@ -1612,6 +1612,194 @@ describe("species-prediction backend summary finalizer", () => {
     expect(String(debug.finalSerializerVersion)).toBeTruthy();
   });
 
+  it("promotes normalized foreign clusters with mainCountries into final canonical scoring state", () => {
+    const finalized = hooks.finalizePredictionResponse(buildBaseResponse({
+      speciesName: "Punanokk-vart",
+      foreignRecentPoints: [],
+      foreignClusters: [
+        {
+          id: "placeholder-cluster",
+          lat: 55.34,
+          lon: 21.29,
+          pointCount: 1,
+          newestObsDt: "2026-03-30T07:00:00.000Z",
+          oldestObsDt: "2026-03-30T07:00:00.000Z",
+          freshestDaysAgo: 1,
+          averageDaysAgo: 1,
+          totalHowMany: 0,
+          countries: [],
+          countryCodes: [],
+          locNames: [],
+          nearestDistanceKm: 0,
+          isFreshest: true,
+        },
+      ],
+      selectedForeignOrigin: {
+        countryCode: "",
+        countryName: "",
+        locality: "Nemuno delta",
+        lat: 0,
+        lon: 0,
+      },
+      externalPressureScore: 0,
+      countryScores: {
+        latvia: 0,
+        lithuania: 0,
+        belarus: 0,
+        poland: 0,
+        russia: 0,
+        finlandContextOnly: 0,
+      },
+      predictedTargets: [
+        {
+          rank: 1,
+          name: "Põõsaspea neem",
+          countyOrParish: "Lääne-Nigula",
+          lat: 59.2,
+          lon: 23.5,
+          confidence: 0.71,
+          eta: "2d / ~30h",
+          habitatCue: "coastal migration bottleneck",
+          reason: "Anchored to fresh foreign pressure from Poland and Lithuania.",
+          rankingMode: "foreign_anchor_entry_corridor",
+          usedForeignPressure: true,
+          foreignSupportScore: 12,
+          vectorsSuppressed: true,
+          debug: {
+            vectorsSuppressedDueToMissingForeignData: true,
+            scoreBreakdown: {
+              foreignRecent: 15,
+              foreignProximity: 8,
+            },
+          },
+        },
+      ],
+      rawResearchPayload: {
+        foreignEvidence: [
+          {
+            lat: 54.35,
+            lon: 18.68,
+            obsDt: "2026-03-30T06:00:00.000Z",
+            locName: "Mikoszewo",
+            countryCode: "pl",
+            countryName: "Poland",
+            source: "eBird",
+            daysAgo: 1,
+            clusterId: "pl-source",
+          },
+        ],
+        evidenceSummary: {
+          totalForeignRecentPoints: 3,
+        },
+        normalizedSources: {
+          foreignRecentPoints: [
+            {
+              lat: 54.35,
+              lon: 18.68,
+              obsDt: "2026-03-30T06:00:00.000Z",
+              locName: "Mikoszewo",
+              countryCode: "pl",
+              countryName: "Poland",
+              source: "eBird",
+              daysAgo: 1,
+              clusterId: "pl-source",
+            },
+            {
+              lat: 55.34,
+              lon: 21.29,
+              obsDt: "2026-03-30T07:00:00.000Z",
+              locName: "Nemuno delta",
+              countryCode: "lt",
+              countryName: "Lithuania",
+              source: "eBird",
+              daysAgo: 1,
+              clusterId: "lt-source",
+            },
+            {
+              lat: 57.12,
+              lon: 24.3,
+              obsDt: "2026-03-29T09:00:00.000Z",
+              locName: "Engure coast",
+              countryCode: "lv",
+              countryName: "Latvia",
+              source: "eBird",
+              daysAgo: 2,
+              clusterId: "lv-source",
+            },
+          ],
+          foreignClusters: [
+            {
+              id: "pl-source",
+              lat: 54.35,
+              lon: 18.68,
+              pointCount: 4,
+              newestObsDt: "2026-03-30T06:00:00.000Z",
+              oldestObsDt: "2026-03-29T06:00:00.000Z",
+              freshestDaysAgo: 1,
+              averageDaysAgo: 1.2,
+              totalHowMany: 12,
+              mainCountries: ["Poland"],
+              nearestDistanceKm: 420,
+              locality: "Mikoszewo",
+            },
+            {
+              id: "lt-source",
+              lat: 55.34,
+              lon: 21.29,
+              pointCount: 5,
+              newestObsDt: "2026-03-30T07:00:00.000Z",
+              oldestObsDt: "2026-03-29T07:00:00.000Z",
+              freshestDaysAgo: 1,
+              averageDaysAgo: 1.3,
+              totalHowMany: 10,
+              mainCountries: ["Lithuania"],
+              nearestDistanceKm: 265,
+              locality: "Nemuno delta",
+            },
+            {
+              id: "lv-source",
+              lat: 57.12,
+              lon: 24.3,
+              pointCount: 3,
+              newestObsDt: "2026-03-29T09:00:00.000Z",
+              oldestObsDt: "2026-03-29T09:00:00.000Z",
+              freshestDaysAgo: 2,
+              averageDaysAgo: 2,
+              totalHowMany: 7,
+              mainCountries: ["Latvia"],
+              nearestDistanceKm: 140,
+              locality: "Engure coast",
+            },
+          ],
+        },
+      },
+    }), "test_main_countries_foreign_canonicalization");
+
+    expect((finalized.foreignRecentPoints as unknown[]).length).toBe(3);
+    expect((finalized.foreignClusters as Array<Record<string, unknown>>).map((cluster) => cluster.countries)).toEqual([
+      ["Poland"],
+      ["Lithuania"],
+      ["Latvia"],
+    ]);
+    expect((finalized.foreignClusters as Array<Record<string, unknown>>).map((cluster) => cluster.countryCodes)).toEqual([
+      ["pl"],
+      ["lt"],
+      ["lv"],
+    ]);
+    expect((finalized.selectedForeignOrigin as Record<string, unknown>).countryCode).toBeTruthy();
+    expect((finalized.selectedForeignOrigin as Record<string, unknown>).countryName).toBeTruthy();
+    expect(Number((finalized.selectedForeignOrigin as Record<string, unknown>).lat)).not.toBe(0);
+    expect(Number((finalized.selectedForeignOrigin as Record<string, unknown>).lon)).not.toBe(0);
+    expect(Number(finalized.externalPressureScore)).toBeGreaterThan(0);
+    expect(Object.values(finalized.countryScores as Record<string, unknown>).some((value) => Number(value) > 0)).toBe(true);
+    expect(String(finalized.insightSummary)).toMatch(/Poland|Lithuania|Latvia/);
+    expect(String(finalized.vectorsSuppressedReason)).not.toBe("missing_canonical_foreign_evidence");
+    expect(String(finalized.reasonForeignPressureUsedOrNotUsed)).not.toBe("missing_canonical_foreign_evidence");
+    expect((finalized.foreignEvidenceDiagnostics as Record<string, unknown>).foreignSourceOfTruthUsed).toBeTruthy();
+    expect(Number((finalized.foreignEvidenceDiagnostics as Record<string, unknown>).foreignRecentPointsCountFinal)).toBe(3);
+    expect(Number((finalized.foreignEvidenceDiagnostics as Record<string, unknown>).foreignClusterCountFinal)).toBe(3);
+  });
+
   it("removes route state when canonical foreign routing signal is unusable", () => {
     const finalized = hooks.finalizePredictionResponse(buildBaseResponse({
       speciesName: "Punanokk-vart",

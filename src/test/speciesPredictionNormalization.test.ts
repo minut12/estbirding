@@ -723,6 +723,141 @@ describe("normalizeSpeciesPredictionResult", () => {
     expect(routes[0]?.routePoints?.[0]?.name).toBe("Nemuno delta");
   });
 
+  it("keeps final canonical foreign evidence as the runtime source of truth and preserves final diagnostics counts", () => {
+    const payload = {
+      speciesKey: "punanokk-vart",
+      speciesName: "Punanokk-vart",
+      generatedAt: "2026-03-31T08:00:00.000Z",
+      foreignRecentPoints: [
+        {
+          lat: 55.34,
+          lon: 21.29,
+          obsDt: "2026-03-29T08:00:00.000Z",
+          locName: "Nemuno delta",
+          countryCode: "lt",
+          countryName: "Lithuania",
+          source: "eBird",
+          daysAgo: 2,
+          clusterId: "lt-nemuno",
+        },
+      ],
+      foreignClusters: [
+        {
+          id: "lt-nemuno",
+          lat: 55.34,
+          lon: 21.29,
+          pointCount: 6,
+          newestObsDt: "2026-03-29T08:00:00.000Z",
+          oldestObsDt: "2026-03-28T08:00:00.000Z",
+          freshestDaysAgo: 2,
+          averageDaysAgo: 2,
+          totalHowMany: 18,
+          countries: ["Lithuania"],
+          countryCodes: ["lt"],
+          locNames: ["Nemuno delta"],
+          nearestDistanceKm: 265,
+          isFreshest: true,
+        },
+      ],
+      selectedForeignOrigin: {
+        countryCode: "LT",
+        countryName: "Lithuania",
+        locality: "Nemuno delta",
+        lat: 55.34,
+        lon: 21.29,
+        obsDate: "2026-03-29T08:00:00.000Z",
+      },
+      foreignEvidenceDiagnostics: {
+        foreignEvidenceCountRaw: 3,
+        foreignRecentPointsCountNormalized: 3,
+        foreignRecentPointsCountFinal: 1,
+        foreignClusterCountNormalized: 3,
+        foreignClusterCountFinal: 1,
+        countryCodesDetectedNormalized: ["pl", "lt", "lv"],
+        countryCodesDetectedFinal: ["lt"],
+        selectedForeignOrigin: {
+          countryCode: "LT",
+          countryName: "Lithuania",
+          locality: "Nemuno delta",
+          lat: 55.34,
+          lon: 21.29,
+        },
+        externalPressureScore: 8,
+        reasonForeignPressureUsedOrNotUsed: "present_but_below_routing_threshold",
+        vectorsSuppressedReason: "present_but_below_routing_threshold",
+        foreignSourceOfTruthUsed: "top_level_final_payload",
+      },
+      rawResearchPayload: {
+        normalizedSources: {
+          foreignRecentPoints: [
+            {
+              lat: 54.35,
+              lon: 18.68,
+              obsDt: "2026-03-29T08:00:00.000Z",
+              locName: "Mikoszewo",
+              countryCode: "pl",
+              countryName: "Poland",
+              source: "eBird",
+              daysAgo: 2,
+            },
+            {
+              lat: 55.34,
+              lon: 21.29,
+              obsDt: "2026-03-29T08:00:00.000Z",
+              locName: "Nemuno delta",
+              countryCode: "lt",
+              countryName: "Lithuania",
+              source: "eBird",
+              daysAgo: 2,
+            },
+            {
+              lat: 57.12,
+              lon: 24.3,
+              obsDt: "2026-03-29T08:00:00.000Z",
+              locName: "Engure coast",
+              countryCode: "lv",
+              countryName: "Latvia",
+              source: "eBird",
+              daysAgo: 2,
+            },
+          ],
+          foreignClusters: [
+            {
+              id: "pl-source",
+              lat: 54.35,
+              lon: 18.68,
+              pointCount: 4,
+              newestObsDt: "2026-03-29T08:00:00.000Z",
+              oldestObsDt: "2026-03-28T08:00:00.000Z",
+              freshestDaysAgo: 2,
+              averageDaysAgo: 2,
+              totalHowMany: 12,
+              countries: ["Poland"],
+              countryCodes: ["pl"],
+              locNames: ["Mikoszewo"],
+              nearestDistanceKm: 420,
+              isFreshest: true,
+            },
+          ],
+        },
+      },
+    } as any;
+
+    const result = normalizeSpeciesPredictionResult(payload, "Punanokk-vart", "linnuliigid");
+
+    expect(result.foreignRecentPoints?.length).toBe(1);
+    expect(result.foreignRecentPoints?.[0]?.countryCode).toBe("lt");
+    expect(result.foreignClusters?.length).toBe(1);
+    expect(result.foreignClusters?.[0]?.countryCodes).toEqual(["lt"]);
+    expect(result.selectedForeignOrigin?.countryCode).toBe("LT");
+    expect(result.foreignEvidenceDiagnostics?.foreignRecentPointsCountNormalized).toBe(3);
+    expect((result.foreignEvidenceDiagnostics as any)?.foreignRecentPointsCountFinal).toBe(1);
+    expect((result.foreignEvidenceDiagnostics as any)?.foreignClusterCountFinal).toBe(1);
+    expect((result.foreignEvidenceDiagnostics as any)?.countryCodesDetectedNormalized).toEqual(["pl", "lt", "lv"]);
+    expect((result.foreignEvidenceDiagnostics as any)?.countryCodesDetectedFinal).toEqual(["lt"]);
+    expect((result.foreignEvidenceDiagnostics as any)?.foreignSourceOfTruthUsed).toBe("top_level_final_payload");
+  });
+
   it("normalizes honesty-oriented predicted target metadata", () => {
     const result = normalizeSpeciesPredictionResult({
       speciesKey: "test-species",

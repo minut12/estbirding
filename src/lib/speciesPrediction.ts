@@ -146,12 +146,17 @@ export type SpeciesPredictionSelectedForeignOrigin = {
 export type SpeciesPredictionForeignEvidenceDiagnostics = {
   foreignEvidenceCountRaw?: number;
   foreignRecentPointsCountNormalized?: number;
+  foreignRecentPointsCountFinal?: number;
   foreignClusterCountNormalized?: number;
+  foreignClusterCountFinal?: number;
   selectedForeignOrigin?: SpeciesPredictionSelectedForeignOrigin;
   countryCodesDetected?: string[];
+  countryCodesDetectedNormalized?: string[];
+  countryCodesDetectedFinal?: string[];
   externalPressureScore?: number;
   reasonForeignPressureUsedOrNotUsed?: string;
   vectorsSuppressedReason?: string;
+  foreignSourceOfTruthUsed?: string;
 };
 
 export type SpeciesPredictionWeather = {
@@ -2434,9 +2439,16 @@ function normalizeForeignClusters(input: unknown[] | null): SpeciesPredictionFor
   if (!Array.isArray(input)) return [];
   return input.map((entry, index) => {
     const source = asRecord(entry);
-    const countries = readArray(source, ['countries']) ?? [];
-    const countryCodes = readArray(source, ['countryCodes', 'country_codes']) ?? [];
+    const countries = (readArray(source, ['countries']) ?? readArray(source, ['mainCountries']) ?? [])
+      .map((item) => normalizeUiText(String(item || '')))
+      .filter(Boolean);
+    const countryCodes = (readArray(source, ['countryCodes', 'country_codes']) ?? [])
+      .map((item) => normalizeUiText(String(item || '')).toLowerCase())
+      .filter(Boolean);
     const locNames = readArray(source, ['locNames', 'loc_names']) ?? [];
+    const derivedCountryCodes = countries
+      .map((item) => normalizeCountryNameToCode(item))
+      .filter(Boolean);
     return {
       id: normalizeUiText(readString(source, ['id']) || `cluster-${index + 1}`),
       lat: clampFloat(readNumber(source, ['lat', 'latitude']), -90, 90, 0),
@@ -2449,8 +2461,8 @@ function normalizeForeignClusters(input: unknown[] | null): SpeciesPredictionFor
       totalHowMany: clampNumber(readNumber(source, ['totalHowMany', 'total_how_many', 'totalIndividuals', 'total_individuals']), 0, 999999, 0),
       ...(hasValue(source, ['recent7d', 'recent_7d']) ? { recent7d: clampNumber(readNumber(source, ['recent7d', 'recent_7d']), 0, 999999, 0) } : {}),
       ...(hasValue(source, ['recent14d', 'recent_14d']) ? { recent14d: clampNumber(readNumber(source, ['recent14d', 'recent_14d']), 0, 999999, 0) } : {}),
-      countries: countries.map((item) => normalizeUiText(String(item || ''))).filter(Boolean),
-      countryCodes: countryCodes.map((item) => normalizeUiText(String(item || '')).toLowerCase()).filter(Boolean),
+      countries,
+      countryCodes: Array.from(new Set([...countryCodes, ...derivedCountryCodes])),
       locNames: (locNames.length ? locNames : readArray(source, ['localities']) ?? []).map((item) => normalizeUiText(String(item || ''))).filter(Boolean),
       ...((readString(source, ['locality', 'locName', 'loc_name']) || (locNames.length ? String(locNames[0] || '') : ''))
         ? { locality: normalizeUiText(readString(source, ['locality', 'locName', 'loc_name']) || String(locNames[0] || '')) }
@@ -2516,6 +2528,35 @@ function resolveCountryNameForUi(countryCode: string): string {
   }
 }
 
+function normalizeCountryNameToCode(country: string): string {
+  const normalized = normalizeUiText(country).toLowerCase();
+  switch (normalized) {
+    case 'poland':
+    case 'pl':
+      return 'pl';
+    case 'lithuania':
+    case 'lt':
+      return 'lt';
+    case 'latvia':
+    case 'lv':
+      return 'lv';
+    case 'belarus':
+    case 'by':
+      return 'by';
+    case 'russia':
+    case 'ru':
+      return 'ru';
+    case 'finland':
+    case 'fi':
+      return 'fi';
+    case 'estonia':
+    case 'ee':
+      return 'ee';
+    default:
+      return '';
+  }
+}
+
 function normalizeSelectedForeignOrigin(input: Record<string, unknown> | null): SpeciesPredictionSelectedForeignOrigin | undefined {
   if (!input || !Object.keys(input).length) return undefined;
   const countryCode = normalizeUiText(readString(input, ['countryCode', 'country_code']) || '').toUpperCase();
@@ -2547,15 +2588,26 @@ function normalizeForeignEvidenceDiagnostics(input: Record<string, unknown> | nu
   const countryCodesDetected = (readArray(input, ['countryCodesDetected', 'country_codes_detected']) ?? [])
     .map((item) => normalizeUiText(String(item || '')).toLowerCase())
     .filter(Boolean);
+  const countryCodesDetectedNormalized = (readArray(input, ['countryCodesDetectedNormalized', 'country_codes_detected_normalized']) ?? [])
+    .map((item) => normalizeUiText(String(item || '')).toLowerCase())
+    .filter(Boolean);
+  const countryCodesDetectedFinal = (readArray(input, ['countryCodesDetectedFinal', 'country_codes_detected_final']) ?? [])
+    .map((item) => normalizeUiText(String(item || '')).toLowerCase())
+    .filter(Boolean);
   return {
     ...(hasValue(input, ['foreignEvidenceCountRaw', 'foreign_evidence_count_raw']) ? { foreignEvidenceCountRaw: clampNumber(readNumber(input, ['foreignEvidenceCountRaw', 'foreign_evidence_count_raw']), 0, 999999, 0) } : {}),
     ...(hasValue(input, ['foreignRecentPointsCountNormalized', 'foreign_recent_points_count_normalized']) ? { foreignRecentPointsCountNormalized: clampNumber(readNumber(input, ['foreignRecentPointsCountNormalized', 'foreign_recent_points_count_normalized']), 0, 999999, 0) } : {}),
+    ...(hasValue(input, ['foreignRecentPointsCountFinal', 'foreign_recent_points_count_final']) ? { foreignRecentPointsCountFinal: clampNumber(readNumber(input, ['foreignRecentPointsCountFinal', 'foreign_recent_points_count_final']), 0, 999999, 0) } : {}),
     ...(hasValue(input, ['foreignClusterCountNormalized', 'foreign_cluster_count_normalized']) ? { foreignClusterCountNormalized: clampNumber(readNumber(input, ['foreignClusterCountNormalized', 'foreign_cluster_count_normalized']), 0, 999999, 0) } : {}),
+    ...(hasValue(input, ['foreignClusterCountFinal', 'foreign_cluster_count_final']) ? { foreignClusterCountFinal: clampNumber(readNumber(input, ['foreignClusterCountFinal', 'foreign_cluster_count_final']), 0, 999999, 0) } : {}),
     ...(selectedForeignOrigin ? { selectedForeignOrigin } : {}),
     ...(countryCodesDetected.length ? { countryCodesDetected } : {}),
+    ...(countryCodesDetectedNormalized.length ? { countryCodesDetectedNormalized } : {}),
+    ...(countryCodesDetectedFinal.length ? { countryCodesDetectedFinal } : {}),
     ...(hasValue(input, ['externalPressureScore', 'external_pressure_score']) ? { externalPressureScore: readNumber(input, ['externalPressureScore', 'external_pressure_score']) } : {}),
     ...(readString(input, ['reasonForeignPressureUsedOrNotUsed', 'reason_foreign_pressure_used_or_not_used']) ? { reasonForeignPressureUsedOrNotUsed: normalizeUiText(readString(input, ['reasonForeignPressureUsedOrNotUsed', 'reason_foreign_pressure_used_or_not_used'])) } : {}),
     ...(readString(input, ['vectorsSuppressedReason', 'vectors_suppressed_reason']) ? { vectorsSuppressedReason: normalizeUiText(readString(input, ['vectorsSuppressedReason', 'vectors_suppressed_reason'])) } : {}),
+    ...(readString(input, ['foreignSourceOfTruthUsed', 'foreign_source_of_truth_used']) ? { foreignSourceOfTruthUsed: normalizeUiText(readString(input, ['foreignSourceOfTruthUsed', 'foreign_source_of_truth_used'])) } : {}),
   };
 }
 

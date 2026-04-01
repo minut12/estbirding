@@ -4992,12 +4992,17 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     foreignEvidenceDiagnostics: {
       foreignEvidenceCountRaw: canonicalForeignBundle.foreignEvidenceCountRaw,
       foreignRecentPointsCountNormalized: canonicalForeignBundle.foreignRecentPointsCountNormalized,
+      foreignRecentPointsCountFinal: canonicalForeignBundle.foreignRecentPointsCountFinal,
       foreignClusterCountNormalized: canonicalForeignBundle.foreignClusterCountNormalized,
+      foreignClusterCountFinal: canonicalForeignBundle.foreignClusterCountFinal,
       selectedForeignOrigin: canonicalSelectedForeignOrigin,
-      countryCodesDetected: canonicalForeignBundle.countryCodesDetected,
+      countryCodesDetected: canonicalForeignBundle.countryCodesDetectedFinal,
+      countryCodesDetectedNormalized: canonicalForeignBundle.countryCodesDetectedNormalized,
+      countryCodesDetectedFinal: canonicalForeignBundle.countryCodesDetectedFinal,
       externalPressureScore: canonicalExternalPressureScore,
       reasonForeignPressureUsedOrNotUsed,
       vectorsSuppressedReason,
+      foreignSourceOfTruthUsed: canonicalForeignBundle.foreignSourceOfTruthUsed,
     },
     rawResearchPayload: {
       // Safe carry-forwards: species metadata, structured data, coordinates, URLs
@@ -5030,6 +5035,21 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
       externalPressureScore: canonicalExternalPressureScore,
       vectorsSuppressedReason,
       reasonForeignPressureUsedOrNotUsed,
+      foreignEvidenceDiagnostics: {
+        foreignEvidenceCountRaw: canonicalForeignBundle.foreignEvidenceCountRaw,
+        foreignRecentPointsCountNormalized: canonicalForeignBundle.foreignRecentPointsCountNormalized,
+        foreignRecentPointsCountFinal: canonicalForeignBundle.foreignRecentPointsCountFinal,
+        foreignClusterCountNormalized: canonicalForeignBundle.foreignClusterCountNormalized,
+        foreignClusterCountFinal: canonicalForeignBundle.foreignClusterCountFinal,
+        selectedForeignOrigin: canonicalSelectedForeignOrigin,
+        countryCodesDetected: canonicalForeignBundle.countryCodesDetectedFinal,
+        countryCodesDetectedNormalized: canonicalForeignBundle.countryCodesDetectedNormalized,
+        countryCodesDetectedFinal: canonicalForeignBundle.countryCodesDetectedFinal,
+        externalPressureScore: canonicalExternalPressureScore,
+        reasonForeignPressureUsedOrNotUsed,
+        vectorsSuppressedReason,
+        foreignSourceOfTruthUsed: canonicalForeignBundle.foreignSourceOfTruthUsed,
+      },
       ...(canonicalSelectedForeignOrigin ? { selectedForeignOrigin: canonicalSelectedForeignOrigin } : {}),
       normalizedSources: {
         estoniaHistoryPoints,
@@ -5057,12 +5077,16 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     speciesName: finalPayload.speciesName,
     foreignEvidenceCountRaw: canonicalForeignBundle.foreignEvidenceCountRaw,
     foreignRecentPointsCountNormalized: canonicalForeignBundle.foreignRecentPointsCountNormalized,
+    foreignRecentPointsCountFinal: canonicalForeignBundle.foreignRecentPointsCountFinal,
     foreignClusterCountNormalized: canonicalForeignBundle.foreignClusterCountNormalized,
+    foreignClusterCountFinal: canonicalForeignBundle.foreignClusterCountFinal,
     selectedForeignOrigin: canonicalSelectedForeignOrigin,
-    countryCodesDetected: canonicalForeignBundle.countryCodesDetected,
+    countryCodesDetectedNormalized: canonicalForeignBundle.countryCodesDetectedNormalized,
+    countryCodesDetectedFinal: canonicalForeignBundle.countryCodesDetectedFinal,
     externalPressureScore: canonicalExternalPressureScore,
     reasonForeignPressureUsedOrNotUsed,
     vectorsSuppressedReason,
+    foreignSourceOfTruthUsed: canonicalForeignBundle.foreignSourceOfTruthUsed,
   });
   if (normalizedForeignRecentPoints.length > 0 && foreignRecentPoints.length === 0) {
     console.error(`${LOG_PREFIX} final_payload_foreign_points_promoted`, {
@@ -5154,6 +5178,53 @@ function hasNonPlaceholderForeignClusters(input: unknown[]): boolean {
   });
 }
 
+function extractForeignClusterMetadata(
+  cluster: Record<string, unknown>,
+  supportingPoints: Record<string, unknown>[],
+): { countries: string[]; countryCodes: string[]; locNames: string[] } {
+  const normalizedMainCountries = (Array.isArray(cluster.mainCountries) ? cluster.mainCountries : [])
+    .map((item) => stringOr(item))
+    .filter(Boolean);
+  const normalizedCountries = (Array.isArray(cluster.countries) ? cluster.countries : [])
+    .map((item) => stringOr(item))
+    .filter(Boolean);
+  const supportingCountryCodes = supportingPoints
+    .map((point) => normalizeCountryCode(stringOr(point.countryCode, point.country, point.country_code)))
+    .filter(Boolean);
+  const supportingCountries = supportingPoints
+    .map((point) => stringOr(point.countryName, point.country_name, resolveCountryName(normalizeCountryCode(stringOr(point.countryCode, point.country, point.country_code)))))
+    .filter(Boolean);
+  const clusterCountryCodes = (Array.isArray(cluster.countryCodes) ? cluster.countryCodes : [])
+    .map((item) => normalizeCountryCode(stringOr(item)))
+    .filter(Boolean);
+  const mainCountryCodes = normalizedMainCountries
+    .map((item) => normalizeCountryCode(item))
+    .filter(Boolean);
+  const locNames = Array.from(new Set([
+    ...(Array.isArray(cluster.locNames) ? cluster.locNames.map((item) => stringOr(item)).filter(Boolean) : []),
+    ...(Array.isArray(cluster.localities) ? cluster.localities.map((item) => stringOr(item)).filter(Boolean) : []),
+    ...supportingPoints.map((point) => sanitizeDisplayLabel(stringOr(point.locName, point.locality, point.name))).filter(Boolean),
+    sanitizeDisplayLabel(stringOr(cluster.locality, cluster.locName)),
+  ].filter(Boolean)));
+  const countryCodes = Array.from(new Set([
+    ...clusterCountryCodes,
+    ...mainCountryCodes,
+    ...supportingCountryCodes,
+  ]));
+  const countries = Array.from(new Set([
+    ...normalizedCountries,
+    ...normalizedMainCountries.map((item) => resolveCountryName(normalizeCountryCode(item))),
+    ...normalizedMainCountries,
+    ...countryCodes.map((item) => resolveCountryName(item)).filter(Boolean),
+    ...supportingCountries,
+  ].filter(Boolean)));
+  return {
+    countries,
+    countryCodes,
+    locNames,
+  };
+}
+
 function populateForeignClustersFromPoints(
   clusters: Record<string, unknown>[],
   points: Record<string, unknown>[],
@@ -5162,18 +5233,16 @@ function populateForeignClustersFromPoints(
     const cluster = asRecord(entry);
     const clusterId = stringOr(cluster.id);
     const matchingPoints = points.filter((point) => stringOr(point.clusterId) === clusterId);
-    if (!matchingPoints.length) return cluster;
+    const metadata = extractForeignClusterMetadata(cluster, matchingPoints);
+    if (!matchingPoints.length && !metadata.countries.length && !metadata.countryCodes.length && !metadata.locNames.length) return cluster;
     const countries = Array.from(new Set([
-      ...(Array.isArray(cluster.countries) ? cluster.countries.map((item) => stringOr(item)).filter(Boolean) : []),
-      ...matchingPoints.map((point) => stringOr(point.countryName, resolveCountryName(stringOr(point.countryCode)))).filter(Boolean),
+      ...metadata.countries,
     ]));
     const countryCodes = Array.from(new Set([
-      ...(Array.isArray(cluster.countryCodes) ? cluster.countryCodes.map((item) => stringOr(item).toLowerCase()).filter(Boolean) : []),
-      ...matchingPoints.map((point) => normalizeCountryCode(stringOr(point.countryCode, point.country))).filter(Boolean),
+      ...metadata.countryCodes,
     ]));
     const locNames = Array.from(new Set([
-      ...(Array.isArray(cluster.locNames) ? cluster.locNames.map((item) => stringOr(item)).filter(Boolean) : []),
-      ...matchingPoints.map((point) => sanitizeDisplayLabel(stringOr(point.locName, point.locality, point.name))).filter(Boolean),
+      ...metadata.locNames,
     ])).slice(0, 4);
     return {
       ...cluster,
@@ -5230,10 +5299,14 @@ function buildCanonicalForeignEvidenceBundle(input: {
   rawForeignEvidencePoints: Record<string, unknown>[];
   normalizedForeignRecentPoints: Record<string, unknown>[];
   normalizedForeignClusters: Record<string, unknown>[];
-  countryCodesDetected: string[];
+  countryCodesDetectedNormalized: string[];
+  countryCodesDetectedFinal: string[];
+  foreignSourceOfTruthUsed: 'top_level_final_payload' | 'rawResearchPayload.normalizedSources' | 'rawResearchPayload.foreignEvidence';
   foreignEvidenceCountRaw: number;
   foreignRecentPointsCountNormalized: number;
+  foreignRecentPointsCountFinal: number;
   foreignClusterCountNormalized: number;
+  foreignClusterCountFinal: number;
 } {
   const rawForeignEvidencePoints = input.rawForeignEvidenceRaw
     .map((entry, index) => normalizeCanonicalForeignRecentPoint(entry, index))
@@ -5244,9 +5317,14 @@ function buildCanonicalForeignEvidenceBundle(input: {
   const topLevelForeignRecentPoints = input.topLevelForeignRecentPoints
     .map((entry, index) => normalizeCanonicalForeignRecentPoint(entry, index))
     .filter((entry): entry is Record<string, unknown> => Boolean(entry));
-  const canonicalForeignRecentPoints = topLevelForeignRecentPoints.length
-    ? topLevelForeignRecentPoints
+  const foreignSourceOfTruthUsed = topLevelForeignRecentPoints.length
+    ? 'top_level_final_payload'
     : normalizedForeignRecentPoints.length
+      ? 'rawResearchPayload.normalizedSources'
+      : 'rawResearchPayload.foreignEvidence';
+  const canonicalForeignRecentPoints = foreignSourceOfTruthUsed === 'top_level_final_payload'
+    ? topLevelForeignRecentPoints
+    : foreignSourceOfTruthUsed === 'rawResearchPayload.normalizedSources'
       ? normalizedForeignRecentPoints
       : rawForeignEvidencePoints;
   const normalizedForeignClusters = sanitizeCanonicalForeignClusters(input.normalizedForeignClustersRaw)
@@ -5263,7 +5341,11 @@ function buildCanonicalForeignEvidenceBundle(input: {
     preferredClusters.length ? preferredClusters : rebuiltClusters,
     canonicalForeignRecentPoints,
   );
-  const countryCodesDetected = Array.from(new Set([
+  const countryCodesDetectedNormalized = Array.from(new Set([
+    ...normalizedForeignRecentPoints.map((entry) => normalizeCountryCode(stringOr(entry.countryCode))).filter(Boolean),
+    ...normalizedForeignClusters.flatMap((entry) => Array.isArray(entry.countryCodes) ? entry.countryCodes.map((item) => normalizeCountryCode(stringOr(item))).filter(Boolean) : []),
+  ]));
+  const countryCodesDetectedFinal = Array.from(new Set([
     ...canonicalForeignRecentPoints.map((entry) => normalizeCountryCode(stringOr(entry.countryCode))).filter(Boolean),
     ...foreignClusters.flatMap((entry) => Array.isArray(entry.countryCodes) ? entry.countryCodes.map((item) => normalizeCountryCode(stringOr(item))).filter(Boolean) : []),
   ]));
@@ -5273,10 +5355,14 @@ function buildCanonicalForeignEvidenceBundle(input: {
     rawForeignEvidencePoints,
     normalizedForeignRecentPoints,
     normalizedForeignClusters,
-    countryCodesDetected,
+    countryCodesDetectedNormalized,
+    countryCodesDetectedFinal,
+    foreignSourceOfTruthUsed,
     foreignEvidenceCountRaw: rawForeignEvidencePoints.length,
-    foreignRecentPointsCountNormalized: canonicalForeignRecentPoints.length,
-    foreignClusterCountNormalized: foreignClusters.length,
+    foreignRecentPointsCountNormalized: normalizedForeignRecentPoints.length,
+    foreignRecentPointsCountFinal: canonicalForeignRecentPoints.length,
+    foreignClusterCountNormalized: normalizedForeignClusters.length,
+    foreignClusterCountFinal: foreignClusters.length,
   };
 }
 
@@ -5284,8 +5370,9 @@ function sanitizeCanonicalForeignClusters(input: unknown[]): Record<string, unkn
   if (!Array.isArray(input)) return [];
   return input.map((entry, index) => {
     const cluster = asRecord(entry);
-    const locNames = Array.isArray(cluster.locNames)
-      ? cluster.locNames.map((item) => stringOr(item)).filter(Boolean)
+    const metadata = extractForeignClusterMetadata(cluster, Array.isArray(cluster.supportingPoints) ? cluster.supportingPoints.map((item) => asRecord(item)) : []);
+    const locNames = metadata.locNames.length
+      ? metadata.locNames
       : (stringOr(cluster.locality, cluster.locName) ? [stringOr(cluster.locality, cluster.locName)] : []);
     const pointCount = Math.max(1, Math.round(toNumber(cluster.pointCount) || toNumber(cluster.count) || 1));
     const totalHowMany = Math.max(0, Math.round(toNumber(cluster.totalHowMany) || toNumber(cluster.totalIndividuals)));
@@ -5299,8 +5386,8 @@ function sanitizeCanonicalForeignClusters(input: unknown[]): Record<string, unkn
       oldestObsDt: stringOr(cluster.oldestObsDt),
       totalHowMany,
       totalIndividuals: totalHowMany,
-      countries: Array.isArray(cluster.countries) ? cluster.countries.map((item) => stringOr(item)).filter(Boolean) : [],
-      countryCodes: Array.isArray(cluster.countryCodes) ? cluster.countryCodes.map((item) => stringOr(item).toLowerCase()).filter(Boolean) : [],
+      countries: metadata.countries,
+      countryCodes: metadata.countryCodes,
       locNames,
       locality: stringOr(cluster.locality, locNames[0]),
       nearestDistanceKm: toNumber(cluster.nearestDistanceKm),

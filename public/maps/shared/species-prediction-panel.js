@@ -741,9 +741,13 @@
       debugItem('Foreign groups', String(Array.isArray(result.foreignEvidence) ? result.foreignEvidence.length : 0)),
       debugItem('Foreign raw count', foreignDiagnostics.foreignEvidenceCountRaw != null ? String(foreignDiagnostics.foreignEvidenceCountRaw) : '(empty)'),
       debugItem('Foreign normalized points', foreignDiagnostics.foreignRecentPointsCountNormalized != null ? String(foreignDiagnostics.foreignRecentPointsCountNormalized) : '(empty)'),
+      debugItem('Foreign final points', foreignDiagnostics.foreignRecentPointsCountFinal != null ? String(foreignDiagnostics.foreignRecentPointsCountFinal) : '(empty)'),
       debugItem('Foreign normalized clusters', foreignDiagnostics.foreignClusterCountNormalized != null ? String(foreignDiagnostics.foreignClusterCountNormalized) : '(empty)'),
+      debugItem('Foreign final clusters', foreignDiagnostics.foreignClusterCountFinal != null ? String(foreignDiagnostics.foreignClusterCountFinal) : '(empty)'),
       debugItem('Foreign selected origin', formatJson(foreignDiagnostics.selectedForeignOrigin || result.selectedForeignOrigin || {})),
-      debugItem('Foreign country codes', Array.isArray(foreignDiagnostics.countryCodesDetected) ? foreignDiagnostics.countryCodesDetected.join(', ') : '(empty)'),
+      debugItem('Foreign country codes normalized', Array.isArray(foreignDiagnostics.countryCodesDetectedNormalized) ? foreignDiagnostics.countryCodesDetectedNormalized.join(', ') : (Array.isArray(foreignDiagnostics.countryCodesDetected) ? foreignDiagnostics.countryCodesDetected.join(', ') : '(empty)')),
+      debugItem('Foreign country codes final', Array.isArray(foreignDiagnostics.countryCodesDetectedFinal) ? foreignDiagnostics.countryCodesDetectedFinal.join(', ') : (Array.isArray(foreignDiagnostics.countryCodesDetected) ? foreignDiagnostics.countryCodesDetected.join(', ') : '(empty)')),
+      debugItem('Foreign source of truth', foreignDiagnostics.foreignSourceOfTruthUsed || '(empty)'),
       debugItem('Foreign use reason', foreignDiagnostics.reasonForeignPressureUsedOrNotUsed || result.reasonForeignPressureUsedOrNotUsed || '(empty)'),
       debugItem('Vectors suppressed reason', foreignDiagnostics.vectorsSuppressedReason || result.vectorsSuppressedReason || '(empty)'),
       debugItem('Estonia recent 7d', result.estoniaEvidence && result.estoniaEvidence.recentCount7d != null ? String(result.estoniaEvidence.recentCount7d) : '(empty)'),
@@ -874,10 +878,13 @@
   }
 
   function getForeignRecentPoints(payload) {
+    var diagnostics = payload && payload.foreignEvidenceDiagnostics && typeof payload.foreignEvidenceDiagnostics === 'object'
+      ? payload.foreignEvidenceDiagnostics
+      : {};
     var topLevelPoints = normalizeForeignRecentPoints(payload && payload.foreignRecentPoints);
     if (topLevelPoints.length) {
       console.debug('[speciesPrediction] foreignRecentPoints fallback', {
-        source: 'top-level',
+        source: diagnostics.foreignSourceOfTruthUsed || 'top-level',
         fallbackCount: 0
       });
       return topLevelPoints;
@@ -885,14 +892,14 @@
     var normalizedSourcePoints = normalizeForeignRecentPoints(readNestedValue(payload, ['rawResearchPayload', 'normalizedSources', 'foreignRecentPoints']));
     if (normalizedSourcePoints.length) {
       console.debug('[speciesPrediction] foreignRecentPoints fallback', {
-        source: 'rawResearchPayload.normalizedSources.foreignRecentPoints',
+        source: diagnostics.foreignSourceOfTruthUsed || 'rawResearchPayload.normalizedSources.foreignRecentPoints',
         fallbackCount: normalizedSourcePoints.length
       });
       return normalizedSourcePoints;
     }
     var derivedPoints = deriveForeignRecentPointsFromEvidence(readNestedValue(payload, ['rawResearchPayload', 'foreignEvidence']));
     console.debug('[speciesPrediction] foreignRecentPoints fallback', {
-      source: derivedPoints.length ? 'rawResearchPayload.foreignEvidence' : 'none',
+      source: derivedPoints.length ? (diagnostics.foreignSourceOfTruthUsed || 'rawResearchPayload.foreignEvidence') : 'none',
       fallbackCount: derivedPoints.length
     });
     return derivedPoints;

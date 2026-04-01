@@ -3117,7 +3117,9 @@ function createUpstreamError(input: {
           : undefined,
         hasAiSummaryObject: (input.upstreamBody as Record<string, unknown> | null)?.hasAiSummaryObject === true,
         hasNestedInsightSummary: (input.upstreamBody as Record<string, unknown> | null)?.hasNestedInsightSummary === true,
-        normalizedInsightLength: (input.upstreamBody as Record<string, unknown> | null)?.normalizedInsightLength,
+        normalizedInsightLength: typeof (input.upstreamBody as Record<string, unknown> | null)?.normalizedInsightLength === 'number'
+          ? (input.upstreamBody as Record<string, unknown>).normalizedInsightLength as number
+          : undefined,
         normalizedWarningsCount: (input.upstreamBody as Record<string, unknown> | null)?.normalizedWarningsCount,
         normalizedRankingNotesType: typeof (input.upstreamBody as Record<string, unknown> | null)?.normalizedRankingNotesType === 'string'
           ? (input.upstreamBody as Record<string, unknown>).normalizedRankingNotesType

@@ -3117,7 +3117,9 @@ function createUpstreamError(input: {
           : undefined,
         hasAiSummaryObject: (input.upstreamBody as Record<string, unknown> | null)?.hasAiSummaryObject === true,
         hasNestedInsightSummary: (input.upstreamBody as Record<string, unknown> | null)?.hasNestedInsightSummary === true,
-        normalizedInsightLength: (input.upstreamBody as Record<string, unknown> | null)?.normalizedInsightLength,
+        normalizedInsightLength: typeof (input.upstreamBody as Record<string, unknown> | null)?.normalizedInsightLength === 'number'
+          ? (input.upstreamBody as Record<string, unknown>).normalizedInsightLength as number
+          : undefined,
         normalizedWarningsCount: (input.upstreamBody as Record<string, unknown> | null)?.normalizedWarningsCount,
         normalizedRankingNotesType: typeof (input.upstreamBody as Record<string, unknown> | null)?.normalizedRankingNotesType === 'string'
           ? (input.upstreamBody as Record<string, unknown>).normalizedRankingNotesType
@@ -5259,8 +5261,8 @@ function populateForeignClustersFromPoints(
 
 function normalizeCanonicalForeignRecentPoint(entry: unknown, index: number): Record<string, unknown> | null {
   const point = asRecord(entry);
-  const lat = toNumber(point.lat, point.latitude);
-  const lon = toNumber(point.lon, point.lng, point.longitude);
+  const lat = toNumber(point.lat) || toNumber(point.latitude);
+  const lon = toNumber(point.lon) || toNumber(point.lng) || toNumber(point.longitude);
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   const countryCode = normalizeCountryCode(stringOr(point.countryCode, point.country, point.country_code));
   const countryName = stringOr(point.countryName, point.country_name, resolveCountryName(countryCode));

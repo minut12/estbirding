@@ -7276,6 +7276,32 @@ async function resolveGbifTaxonKey(species) {
   }
 }
 
+function buildGbifPopup(species, occ) {
+  var lat = Number(occ.decimalLatitude).toFixed(4);
+  var lon = Number(occ.decimalLongitude).toFixed(4);
+  var coords = lat + ', ' + lon;
+  var dateStr = occ.eventDate
+    ? occ.eventDate.slice(0, 10)
+    : (occ.year ? occ.year + (occ.month ? '-' + String(occ.month).padStart(2,'0') : '') : '?');
+  var locParts = [occ.locality, occ.stateProvince].filter(Boolean);
+  var locStr = locParts.length ? locParts.join(', ') : '';
+  var wazeUrl = 'https://waze.com/ul?ll=' + lat + ',' + lon + '&navigate=yes';
+  var mapsUrl = 'https://www.google.com/maps?q=' + lat + ',' + lon;
+  var btnStyle = 'padding:3px 8px;border:1px solid #6366f1;border-radius:6px;background:#eef2ff;color:#4338ca;font-size:11px;cursor:pointer;text-decoration:none';
+  return '<div style="min-width:200px">'
+    + '<b>' + escapeHtml(species) + '</b>'
+    + '<br><small>Kuupäev: ' + escapeHtml(dateStr) + '</small>'
+    + (locStr ? '<br><small>Koht: ' + escapeHtml(locStr) + '</small>' : '')
+    + '<br><small>Koordinaadid: ' + coords + '</small>'
+    + '<br><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'
+    + '<button onclick="navigator.clipboard.writeText(\'' + coords + '\').then(()=>{this.textContent=\'Kopeeritud!\';setTimeout(()=>{this.textContent=\'Kopeeri\'},1500)})" style="' + btnStyle + '">Kopeeri</button>'
+    + '<a href="' + wazeUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Waze</a>'
+    + '<a href="' + mapsUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Maps</a>'
+    + '</div>'
+    + '<div style="margin-top:4px"><small style="color:#6366f1">GBIF</small></div>'
+    + '</div>';
+}
+
 async function toggleGbifData(species) {
   if (gbifMarkers.has(species) && gbifMarkers.get(species).length > 0) {
     gbifMarkers.get(species).forEach(function(m){ try { map.removeLayer(m); } catch(e){} });
@@ -7328,15 +7354,7 @@ async function toggleGbifData(species) {
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
       var icon = _gbifMiniIcon(avatarUrl);
       var m = L.marker([lat, lon], { icon: icon });
-      var dateStr = occ.eventDate
-        ? occ.eventDate.slice(0, 10)
-        : (occ.year ? occ.year + (occ.month ? '-' + String(occ.month).padStart(2,'0') : '') : '?');
-      var locStr = [occ.locality, occ.stateProvince].filter(Boolean).join(', ');
-      var popup = '<b>' + escapeHtml(species) + '</b>'
-        + '<br><small>Kuupäev: ' + escapeHtml(dateStr) + '</small>'
-        + (locStr ? '<br><small>Koht: ' + escapeHtml(locStr) + '</small>' : '')
-        + '<br><small style="color:#6366f1">GBIF</small>';
-      m.bindPopup(popup);
+      m.bindPopup(buildGbifPopup(species, occ));
       m.addTo(map);
       markerList.push(m);
     }

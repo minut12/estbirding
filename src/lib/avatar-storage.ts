@@ -61,23 +61,32 @@ export function getMergedAvatars(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE):
 
 export async function fetchSharedAvatars(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): Promise<AvatarMap> {
   try {
-    console.log('[avatar-storage] fetchSharedAvatars: querying bird_avatar_map...');
+    console.log('[avatar-storage] fetchSharedAvatars: querying bird_avatar_map (paginated)...');
     const prefix = `${scope.avatarSpeciesKeyPrefix}%`;
-    const { data, error } = await supabase
-      .from('bird_avatar_map')
-      .select('species_key, public_url')
-      .like('species_key', prefix);
-    if (error) {
-      console.error('[avatar-storage] fetchSharedAvatars query error:', error);
-      throw error;
-    }
-    console.log('[avatar-storage] fetchSharedAvatars: got', data?.length, 'rows');
     const map: AvatarMap = {};
-    for (const row of data || []) {
-      map[unscopedSpeciesKey(row.species_key, scope)] = row.public_url;
+    const PAGE_SIZE = 25;
+    let offset = 0;
+    let hasMore = true;
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('bird_avatar_map')
+        .select('species_key, public_url')
+        .like('species_key', prefix)
+        .range(offset, offset + PAGE_SIZE - 1)
+        .order('species_key');
+      if (error) {
+        console.error('[avatar-storage] fetchSharedAvatars query error at offset', offset, ':', error);
+        throw error;
+      }
+      const rows = data || [];
+      for (const row of rows) {
+        map[unscopedSpeciesKey(row.species_key, scope)] = row.public_url;
+      }
+      offset += rows.length;
+      hasMore = rows.length === PAGE_SIZE;
     }
+    console.log('[avatar-storage] fetchSharedAvatars: got', Object.keys(map).length, 'total entries (paginated)');
     persistSharedCache(map, scope);
-    console.log('[avatar-storage] fetchSharedAvatars: cached', Object.keys(map).length, 'entries');
     return map;
   } catch (e) {
     console.warn('[avatar-storage] fetchSharedAvatars failed, using cache fallback:', e);

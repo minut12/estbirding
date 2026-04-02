@@ -1091,8 +1091,24 @@
     var confidencePct = formatConfidence(point && point.confidence);
     var fillPct = String(clampConfidencePercent(point && point.confidence)) + '%';
     var migEta = point && point.migrationEta ? point.migrationEta : null;
+    var etaDisplay = (function () {
+      if (!migEta || !migEta.earliestArrival) return point && point.eta;
+      var fmt = function (iso) {
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return '';
+        return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+      };
+      var early = fmt(migEta.earliestArrival);
+      var late = migEta.latestArrival ? fmt(migEta.latestArrival) : '';
+      var range = early && late && early !== late ? early + '–' + late.replace(/^[A-Za-z]+ /, '') : early;
+      var days = migEta.etaText || (migEta.totalDaysEstimate ? migEta.totalDaysEstimate + 'd' : '');
+      var label = range + (days ? ' (~' + days + ')' : '');
+      if (migEta.isImminent) label += ' ⚡';
+      if (migEta.isPastDue) label += ' ⏰';
+      return label;
+    })();
     var metrics = '' +
-      metricCell('ETA', point && point.eta) +
+      metricCell('ETA', etaDisplay) +
       metricCell('Radius', appendKm(point && point.searchRadiusKm)) +
       metricCell('Confidence', confidencePct) +
       metricCell('EE support count', point && point.supportingEstoniaHistoryCount) +

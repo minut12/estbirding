@@ -200,6 +200,18 @@
   .elu-debug-actions{display:flex;gap:6px;flex-wrap:wrap}
   .elu-debug-text{width:100%;min-height:260px;resize:vertical;border:1px solid #cbd5e1;border-radius:8px;padding:8px;font:12px/1.4 ui-monospace,Consolas,monospace;background:#f8fafc;color:#0f172a}
 
+  /* GBIF mini markers */
+  .gbif-mini-marker { background: transparent; border: none; }
+  .gbif-mini-icon {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid #6366f1; background-size: cover;
+    background-position: center; background-color: #e0e7ff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+  .gbif-btn { background: #6366f1 !important; }
+  .gbif-btn.active { background: #4f46e5 !important; }
+  .gbif-btn:disabled { opacity: 0.5; }
+
 </style>
 </head>
 <body>
@@ -612,6 +624,11 @@ if (IS_MOBILE_DEVICE) { L.control.zoom({ position: 'topright' }).addTo(map); }
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).addTo(map);
 
 const markers = new Map();
+
+// === GBIF state ===
+var gbifMarkers = new Map();
+var gbifTaxonKeys = (function(){ try { return JSON.parse(localStorage.getItem('gbif_taxonkeys')) || {}; } catch(e){ return {}; } })();
+var gbifLoadingSpecies = new Set();
 
 // === Helpers ===
 const EE_TZ = 'Europe/Tallinn';
@@ -7216,6 +7233,124 @@ function rarityToBorder(level, fallback){
   var style = window.getRarityStyle ? window.getRarityStyle(level || 'none') : null;
   return (style && style.ringColor) || fallback || '#222';
 }
+// === GBIF functions ===
+function _gbifMiniIcon(avatarUrl) {
+  var bg = avatarUrl
+    ? "background-image:url('" + avatarUrl + "')"
+    : "background-color:#c7d2fe";
+  var html = '<div class="gbif-mini-icon" style="' + bg + '"></div>';
+  return L.divIcon({
+    html: html,
+    className: 'gbif-mini-marker',
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+    popupAnchor: [0, -14]
+  });
+}
+
+async function resolveGbifTaxonKey(species) {
+  try {
+    var suggestUrl = 'https://api.gbif.org/v1/species/suggest?q='
+      + encodeURIComponent(species) + '&rank=SPECIES&limit=5';
+    var res = await fetch(suggestUrl);
+    if (res.ok) {
+      var suggestions = await res.json();
+      var bird = suggestions.find(function(s){ return s.kingdom === 'Animalia' || s.class === 'Aves'; });
+      if (bird && bird.key) return bird.key;
+    }
+    var matchUrl = 'https://api.gbif.org/v1/species/match?name='
+      + encodeURIComponent(species) + '&kingdom=Animalia&verbose=true';
+    var res2 = await fetch(matchUrl);
+    if (res2.ok) {
+      var match = await res2.json();
+      if (match.usageKey && match.confidence > 80) return match.usageKey;
+      if (match.alternatives && match.alternatives.length) {
+        var best = match.alternatives.find(function(a){ return a.class === 'Aves'; });
+        if (best && best.usageKey) return best.usageKey;
+      }
+    }
+    return null;
+  } catch (err) {
+    console.warn('GBIF taxon resolve failed for ' + species, err);
+    return null;
+  }
+}
+
+async function toggleGbifData(species) {
+  if (gbifMarkers.has(species) && gbifMarkers.get(species).length > 0) {
+    gbifMarkers.get(species).forEach(function(m){ try { map.removeLayer(m); } catch(e){} });
+    gbifMarkers.delete(species);
+    if (window.gbifStats) delete window.gbifStats[species];
+    render();
+    return;
+  }
+  gbifLoadingSpecies.add(species);
+  render();
+  try {
+    var taxonKey = gbifTaxonKeys[species];
+    if (!taxonKey) {
+      taxonKey = await resolveGbifTaxonKey(species);
+      if (taxonKey) {
+        gbifTaxonKeys[species] = taxonKey;
+        try { localStorage.setItem('gbif_taxonkeys', JSON.stringify(gbifTaxonKeys)); } catch(e){}
+      }
+    }
+    if (!taxonKey) {
+      notifySilent('GBIF: liiki ei leitud – ' + species);
+      gbifLoadingSpecies.delete(species);
+      render();
+      return;
+    }
+    var allResults = [];
+    var offset = 0;
+    for (var page = 0; page < 3; page++) {
+      var url = 'https://api.gbif.org/v1/occurrence/search'
+        + '?taxonKey=' + taxonKey
+        + '&country=EE'
+        + '&hasCoordinate=true'
+        + '&hasGeospatialIssue=false'
+        + '&year=2016,2026'
+        + '&limit=300'
+        + '&offset=' + offset;
+      var res = await fetch(url);
+      if (!res.ok) break;
+      var data = await res.json();
+      allResults.push.apply(allResults, data.results || []);
+      if (data.endOfRecords) break;
+      offset += 300;
+    }
+    var avatarUrl = getDisplayAvatar(species);
+    var markerList = [];
+    for (var i = 0; i < allResults.length; i++) {
+      var occ = allResults[i];
+      var lat = occ.decimalLatitude;
+      var lon = occ.decimalLongitude;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      var icon = _gbifMiniIcon(avatarUrl);
+      var m = L.marker([lat, lon], { icon: icon });
+      var dateStr = occ.eventDate
+        ? occ.eventDate.slice(0, 10)
+        : (occ.year ? occ.year + (occ.month ? '-' + String(occ.month).padStart(2,'0') : '') : '?');
+      var locStr = [occ.locality, occ.stateProvince].filter(Boolean).join(', ');
+      var popup = '<b>' + escapeHtml(species) + '</b>'
+        + '<br><small>Kuupäev: ' + escapeHtml(dateStr) + '</small>'
+        + (locStr ? '<br><small>Koht: ' + escapeHtml(locStr) + '</small>' : '')
+        + '<br><small style="color:#6366f1">GBIF</small>';
+      m.bindPopup(popup);
+      m.addTo(map);
+      markerList.push(m);
+    }
+    gbifMarkers.set(species, markerList);
+    if (!window.gbifStats) window.gbifStats = {};
+    window.gbifStats[species] = { count: allResults.length, fetchedAt: new Date().toISOString() };
+  } catch (err) {
+    console.warn('GBIF fetch error for ' + species, err);
+  } finally {
+    gbifLoadingSpecies.delete(species);
+    render();
+  }
+}
+
 function _markerIcon(avatarUrl, borderColor, count7d, rarityLevel){
   const color = rarityToBorder(rarityLevel, borderColor || '#222');
   const style = window.getRarityStyle ? window.getRarityStyle(rarityLevel || 'none') : null;
@@ -7573,7 +7708,20 @@ function rowHTML(obj) {
     '<div class="controls">' +
       '<div style="display:flex;flex-direction:column;gap:6px">' +
       '<button class="btn open-occ-btn" data-open-url="'+openUrl.replace(/"/g,'&quot;')+'">Open</button>' +
+      (function(){
+        var isGbifActive = gbifMarkers.has(key) && gbifMarkers.get(key).length > 0;
+        var isGbifLoading = gbifLoadingSpecies.has(key);
+        var gbifBtnText = isGbifLoading ? 'GBIF...' : (isGbifActive ? 'GBIF ✕' : 'GBIF');
+        var gbifBtnClass = isGbifActive ? 'btn gbif-btn active' : 'btn gbif-btn';
+        return '<button class="' + gbifBtnClass + '" data-species="' + key + '"'
+          + (isGbifLoading ? ' disabled' : '') + ' title="Näita GBIF andmeid (viimased 10 aastat)">'
+          + gbifBtnText + '</button>';
+      })() +
       '</div>' +
+      (function(){
+        var gbifStat = window.gbifStats && window.gbifStats[key];
+        return gbifStat ? '<div class="small" style="color:#6366f1">GBIF: ' + gbifStat.count + ' vaatlust (2016–2026)</div>' : '';
+      })() +
     '</div>' +
   '</div>';
 }
@@ -7668,6 +7816,14 @@ if(window.__predictionSyncedSpecies && !window.__selectedSpecies){
     if(row){
       window.__selectedSpecies = row.getAttribute('data-key') || window.__selectedSpecies;
       window.__predictionSyncedSpecies = window.__selectedSpecies;
+    }
+    const gbifBtn = t.closest?.('.gbif-btn');
+    if(gbifBtn){
+      e.preventDefault();
+      e.stopPropagation();
+      const species = gbifBtn.getAttribute('data-species') || '';
+      if(species) toggleGbifData(species);
+      return;
     }
     const openBtn = t.closest?.('.open-occ-btn');
     if(openBtn){

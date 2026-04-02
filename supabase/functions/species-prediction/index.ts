@@ -1261,6 +1261,11 @@ async function buildMapFirstPredictionResult(opts: {
     horizonDays,
   });
   const predictionVectors = buildPredictionVectors(selectedForeignOrigin, predictedTargets, weather, settings);
+  // Build globalMigrationEtas from per-target migrationEta data
+  const globalMigrationEtas = predictedTargets
+    .map((target) => asRecord(target).migrationEta)
+    .filter((eta) => eta && typeof eta === 'object')
+    .map((eta) => asRecord(eta));
   const rawLinks = buildRawLinks(speciesName, foreignEvidence);
   const sourceHealth = buildSourceHealthMapFirst({
     estoniaHistoryPoints,
@@ -1375,6 +1380,7 @@ async function buildMapFirstPredictionResult(opts: {
     alreadyMissedRisk: estoniaEvidence.alreadyPresent ? 'medium' : 'low',
     countryScores,
     topPredictedPoints,
+    globalMigrationEtas,
     warnings,
     consistencyChecks: {
       routeLooksPlausible: true,

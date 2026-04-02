@@ -981,6 +981,7 @@
     if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap((prediction.displayedTargets || result.predictedTargets || result.topPredictedPoints || []).slice(0, prediction.alreadyPresentMode ? 2 : 5), prediction);
     var normalizedMigrationRoutes = getNormalizedMigrationRoutes(result);
     if (state.layerToggles.migrationRoutes !== false && normalizedMigrationRoutes.length) renderMigrationRoutes(normalizedMigrationRoutes, prediction);
+    if (state.layerToggles.migrationRoutes !== false) renderSupplementaryForeignRoutes(result);
     if (state.layerToggles.diagnostics === true && shouldOpenDebugDetails()) renderDiagnostics((prediction.displayedTargets || result.predictedTargets || result.topPredictedPoints || []).slice(0, prediction.alreadyPresentMode ? 2 : 5));
   }
 
@@ -1869,6 +1870,68 @@
           .bindTooltip(tooltip, { direction: 'top', permanent: false })
           .addTo(layer);
       }
+    });
+  }
+
+  // Render supplementary migration routes from non-FI foreign clusters
+  function renderSupplementaryForeignRoutes(result) {
+    if (!overlayGroups || !overlayGroups.migrationRoutes) return;
+    var layer = overlayGroups.migrationRoutes;
+    var clusters = (result.foreignClusters || []);
+    if (!clusters.length) {
+      var raw = result.rawResearchPayload || {};
+      clusters = raw.foreignClusters || (raw.normalizedSources || {}).foreignClusters || [];
+    }
+    if (!clusters.length) return;
+    var targets = result.predictedTargets || result.topPredictedPoints || [];
+    var t0 = targets[0] || null;
+    var destLat = t0 ? Number(t0.lat) : 58.31;
+    var destLon = t0 ? Number(t0.lon) : 26.74;
+    var destName = t0 ? (t0.displayName || t0.name || 'Target') : 'Target';
+    // Existing routes' countries (from globalMigrationEtas)
+    var existingCountries = {};
+    (result.globalMigrationEtas || []).forEach(function (eta) {
+      var cc = String(eta.fromCountry || eta.foreignCountry || '').toUpperCase();
+      if (cc) existingCountries[cc] = true;
+    });
+    // Best cluster per country (freshest)
+    var bestPerCountry = {};
+    clusters.forEach(function (c) {
+      var codes = c.countryCodes || c.mainCountries || [];
+      var cc = String(codes[0] || '').toUpperCase();
+      if (!cc || cc === 'FI' || existingCountries[cc]) return;
+      var existing = bestPerCountry[cc];
+      if (!existing || String(c.newestObsDt || '') > String(existing.newestObsDt || '')) {
+        bestPerCountry[cc] = c;
+      }
+    });
+    var countryColors = { LV: '#22c55e', LT: '#3b82f6', PL: '#a855f7', BY: '#ef4444', RU: '#f97316' };
+    Object.keys(bestPerCountry).forEach(function (cc) {
+      var c = bestPerCountry[cc];
+      var cLat = Number(c.lat);
+      var cLon = Number(c.lon);
+      if (!Number.isFinite(cLat) || !Number.isFinite(cLon)) return;
+      var entryLat = cc === 'LV' ? 57.8 : 57.6;
+      var entryLon = cc === 'LV' ? 24.8 : 24.3;
+      var color = countryColors[cc] || '#f59e0b';
+      var locality = c.locality || (Array.isArray(c.locNames) ? c.locNames[0] : '') || 'Unknown';
+      var dist = c.nearestDistanceKm || Math.round(Math.sqrt(Math.pow((cLat - destLat) * 111, 2) + Math.pow((cLon - destLon) * 65, 2)));
+      var sDate = c.newestObsDt || c.latestDate || '';
+      // Draw polyline: origin → entry → destination
+      L.polyline([[cLat, cLon], [entryLat, entryLon], [destLat, destLon]], {
+        color: color, weight: 3, opacity: 0.75, dashArray: '8 6'
+      }).addTo(layer);
+      // Origin marker
+      var originTip = '<b>' + escapeHtml(locality) + '</b><br>Country: ' + escapeHtml(cc) +
+        (sDate ? '<br>Sighted: ' + escapeHtml(String(sDate).slice(0, 10)) : '') +
+        '<br>~' + escapeHtml(String(Math.round(dist))) + ' km to Estonia';
+      L.circleMarker([cLat, cLon], {
+        radius: 5, color: '#fff', weight: 1, fillColor: color, fillOpacity: 1
+      }).bindTooltip(originTip, { direction: 'top' }).addTo(layer);
+      // Entry marker
+      L.circleMarker([entryLat, entryLon], {
+        radius: 5, color: '#fff', weight: 1, fillColor: color, fillOpacity: 0.7
+      }).bindTooltip('<b>Estonia entry</b><br>From: ' + escapeHtml(cc), { direction: 'top' }).addTo(layer);
     });
   }
 

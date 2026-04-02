@@ -59,16 +59,34 @@ export function getMergedAvatars(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE):
   return { ...shared, ...local };
 }
 
-/** Fetch all shared avatars from the database (paginated to handle server row limits) */
+/** Fetch all shared avatars via RPC to bypass PostgREST row limits */
 export async function fetchSharedAvatars(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): Promise<AvatarMap> {
   try {
-    console.log('[avatar-storage] fetchSharedAvatars: querying bird_avatar_map (paginated)...');
+    console.log('[avatar-storage] fetchSharedAvatars: calling get_all_avatars RPC...');
+    const { data: rpcData, error: rpcError } = await supabase.rpc('get_all_avatars');
+
+    if (!rpcError && rpcData && rpcData.length > 0) {
+      const map: AvatarMap = {};
+      for (const row of rpcData as Array<{ species_key: string; public_url: string }>) {
+        if (row.species_key && row.public_url) {
+          map[unscopedSpeciesKey(row.species_key, scope)] = row.public_url;
+        }
+      }
+      console.log('[avatar-storage] fetchSharedAvatars via RPC: got', Object.keys(map).length, 'avatars');
+      persistSharedCache(map, scope);
+      return map;
+    }
+
+    if (rpcError) {
+      console.warn('[avatar-storage] RPC failed, trying paginated fallback:', rpcError.message);
+    }
+
+    // Fallback: paginate through direct query
     const prefix = `${scope.avatarSpeciesKeyPrefix}%`;
     const map: AvatarMap = {};
     const PAGE_SIZE = 25;
     let from = 0;
     let keepGoing = true;
-
     while (keepGoing) {
       const { data, error } = await supabase
         .from('bird_avatar_map')
@@ -76,24 +94,17 @@ export async function fetchSharedAvatars(scope: SpeciesScopeConfig = LINNULIIGID
         .like('species_key', prefix)
         .order('species_key', { ascending: true })
         .range(from, from + PAGE_SIZE - 1);
-
-      if (error) {
-        console.error('[avatar-storage] query error at offset', from, error);
-        throw error;
-      }
-
+      if (error) throw error;
       const rows = data ?? [];
       for (const row of rows) {
         if (row.species_key && row.public_url) {
           map[unscopedSpeciesKey(row.species_key, scope)] = row.public_url;
         }
       }
-
       from += rows.length;
       keepGoing = rows.length === PAGE_SIZE;
     }
-
-    console.log('[avatar-storage] fetchSharedAvatars: fetched', Object.keys(map).length, 'avatars total');
+    console.log('[avatar-storage] fetchSharedAvatars via pagination: got', Object.keys(map).length, 'avatars');
     persistSharedCache(map, scope);
     return map;
   } catch (e) {

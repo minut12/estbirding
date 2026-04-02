@@ -10,7 +10,7 @@ const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const SPECIES_PREDICTION_BACKEND_BUILD = '2026-04-01-fix-n8n-passthrough';
+const SPECIES_PREDICTION_BACKEND_BUILD = '2026-04-02-spring-filter-v2';
 const INVOKE_ROUTE_VERSION = 'fix20';
 const EDGE_FUNCTION_FILE = 'supabase/functions/species-prediction/index.ts';
 const EDGE_FUNCTION_ENTRYPOINT = 'serve(async (req) => { ... })';
@@ -1247,13 +1247,15 @@ async function buildMapFirstPredictionResult(opts: {
   const estoniaEvidence = buildEstoniaEvidenceFromHistory(estoniaHistoryPoints);
   const historicalEvidence = buildHistoricalEvidenceFromHistory(estoniaHistoryClusters);
   const foreignEvidence = buildForeignEvidenceFromPointsAndClusters(foreignRecentPoints, foreignClusters);
-  const selectedForeignOriginAnchor = selectStrongestForeignSourceAnchor(foreignClusters, foreignRecentPoints);
-  const selectedForeignOrigin = buildCanonicalSelectedForeignOrigin(selectedForeignOriginAnchor, foreignRecentPoints);
+  const foreignClustersForRouting = filterForSpringRouting(foreignClusters);
+  const foreignRecentPointsForRouting = filterForSpringRouting(foreignRecentPoints);
+  const selectedForeignOriginAnchor = selectStrongestForeignSourceAnchor(foreignClustersForRouting, foreignRecentPointsForRouting);
+  const selectedForeignOrigin = buildCanonicalSelectedForeignOrigin(selectedForeignOriginAnchor, foreignRecentPointsForRouting);
   const predictedTargets = buildPredictedTargets({
     speciesName,
     estoniaHistoryClusters,
-    foreignClusters,
-    foreignRecentPoints,
+    foreignClusters: foreignClustersForRouting,
+    foreignRecentPoints: foreignRecentPointsForRouting,
     weather,
     estoniaEvidence,
     horizonDays,
@@ -1312,7 +1314,7 @@ async function buildMapFirstPredictionResult(opts: {
   }
   const countryScores = buildCountryScores(foreignEvidence);
   const topPredictedPoints = predictedTargets.slice(0, Math.min(5, clampInt(toNumber(settings.outputCount) || 5, 1, 5)));
-  const latestCluster = foreignClusters[0] ?? null;
+  const latestCluster = foreignClustersForRouting[0] ?? null;
   const baseResult = {
     speciesKey,
     speciesName,
@@ -1379,6 +1381,16 @@ async function buildMapFirstPredictionResult(opts: {
       timingLooksPlausible: true,
       weatherLooksSupportive: true,
       foreignPressureMatchesNarrative: true,
+    },
+    springFilterDiagnostics: {
+      springFilterApplied: isSpringMigrationPeriod(),
+      foreignClustersBeforeFilter: foreignClusters.length,
+      foreignClustersAfterFilter: foreignClustersForRouting.length,
+      filteredOutCountries: isSpringMigrationPeriod()
+        ? Array.from(new Set(foreignClusters
+            .filter((c) => toNumber(c.lat) >= ESTONIA_NORTH_BORDER_LAT)
+            .flatMap((c) => Array.isArray(c.countryCodes) ? c.countryCodes.map(String) : [])))
+        : [],
     },
     rawResearchPayload: {
       request: {
@@ -4816,19 +4828,25 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     foreignRecentPoints.map((entry) => asRecord(entry)),
     foreignClusters.map((entry) => asRecord(entry)),
   );
-  const canonicalSourceOriginAnchor = selectStrongestForeignSourceAnchor(
+  const canonicalForeignClustersForRouting = filterForSpringRouting(
     normalizedForeignClusters.length ? normalizedForeignClusters : foreignClusters.map((entry) => asRecord(entry)),
+  );
+  const canonicalForeignPointsForRouting = filterForSpringRouting(
     normalizedForeignRecentPoints.length ? normalizedForeignRecentPoints : foreignRecentPoints.map((entry) => asRecord(entry)),
+  );
+  const canonicalSourceOriginAnchor = selectStrongestForeignSourceAnchor(
+    canonicalForeignClustersForRouting,
+    canonicalForeignPointsForRouting,
   );
   const canonicalSelectedForeignOrigin = buildCanonicalSelectedForeignOrigin(
     canonicalSourceOriginAnchor,
-    normalizedForeignRecentPoints.length ? normalizedForeignRecentPoints : foreignRecentPoints.map((entry) => asRecord(entry)),
+    canonicalForeignPointsForRouting,
   );
   const canonicalCorridorAnchor = canonicalSourceOriginAnchor
     ? selectNearestPlausibleCorridorAnchor(
       canonicalSourceOriginAnchor,
-      normalizedForeignClusters.length ? normalizedForeignClusters : foreignClusters.map((entry) => asRecord(entry)),
-      normalizedForeignRecentPoints.length ? normalizedForeignRecentPoints : foreignRecentPoints.map((entry) => asRecord(entry)),
+      canonicalForeignClustersForRouting,
+      canonicalForeignPointsForRouting,
     )
     : null;
   const canonicalEntryCorridor = canonicalSourceOriginAnchor && estoniaHistoryClusters.length
@@ -4858,7 +4876,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
   });
   const canonicalPrimaryCountries = extractCanonicalPrimaryCountries(foreignRecentPoints, foreignClusters);
   const predictedTargetsMentionForeignPressure = predictedTargetsContainForeignPressureSignals(canonicalPredictedTargetsWithEta);
-  const canonicalExternalPressureScore = clampInt(Math.round(sum(foreignEvidence.map((entry) => toNumber(entry.recordCount7d) * 4))), 0, 100);
+  const canonicalExternalPressureScore = clampInt(Math.round(sum(filterForeignEvidenceForSpringPressure(foreignEvidence).map((entry) => toNumber(entry.recordCount7d) * 4))), 0, 100);
   const predictedTargetRouteVector = deriveRouteVectorFromPredictedTargets(canonicalPredictedTargetsWithEta);
   const predictedTargetBestEntryZone = deriveBestEntryZoneFromPredictedTargets(canonicalPredictedTargetsWithEta);
   const canonicalRouteVectorCandidate = canonicalSelectedForeignOrigin

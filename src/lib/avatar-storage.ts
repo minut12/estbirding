@@ -61,10 +61,8 @@ export function getMergedAvatars(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE):
 
 export async function fetchSharedAvatars(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): Promise<AvatarMap> {
   try {
-    console.log('[avatar-storage] fetchSharedAvatars: querying bird_avatar_map (paginated)...');
+    console.log('[avatar-storage] fetchSharedAvatars: querying bird_avatar_map...');
     const prefix = `${scope.avatarSpeciesKeyPrefix}%`;
-<<<<<<< HEAD
-=======
     const { data, error } = await supabase
       .from('bird_avatar_map')
       .select('species_key, public_url')
@@ -74,31 +72,11 @@ export async function fetchSharedAvatars(scope: SpeciesScopeConfig = LINNULIIGID
       console.error('[avatar-storage] fetchSharedAvatars query error:', error);
       throw error;
     }
-    console.log('[avatar-storage] fetchSharedAvatars: got', data?.length, 'rows');
->>>>>>> a5705bf24a8fc31f8bd4e0c8d178fdfb3fadfd6c
     const map: AvatarMap = {};
-    const PAGE_SIZE = 25;
-    let offset = 0;
-    let hasMore = true;
-    while (hasMore) {
-      const { data, error } = await supabase
-        .from('bird_avatar_map')
-        .select('species_key, public_url')
-        .like('species_key', prefix)
-        .range(offset, offset + PAGE_SIZE - 1)
-        .order('species_key');
-      if (error) {
-        console.error('[avatar-storage] fetchSharedAvatars query error at offset', offset, ':', error);
-        throw error;
-      }
-      const rows = data || [];
-      for (const row of rows) {
-        map[unscopedSpeciesKey(row.species_key, scope)] = row.public_url;
-      }
-      offset += rows.length;
-      hasMore = rows.length === PAGE_SIZE;
+    for (const row of data || []) {
+      map[unscopedSpeciesKey(row.species_key, scope)] = row.public_url;
     }
-    console.log('[avatar-storage] fetchSharedAvatars: got', Object.keys(map).length, 'total entries (paginated)');
+    console.log('[avatar-storage] fetchSharedAvatars: got', Object.keys(map).length, 'rows');
     persistSharedCache(map, scope);
     return map;
   } catch (e) {

@@ -5656,10 +5656,18 @@ function finalizePredictionResponse(
   canonicalResponse: Record<string, unknown>,
   branch: string,
 ): Record<string, unknown> {
+  // Guard: if payload is null/undefined/non-object, return as-is to prevent crashes
+  if (!canonicalResponse || typeof canonicalResponse !== 'object') {
+    return canonicalResponse;
+  }
+
   // Skip finalization if this payload was written directly by n8n
   const isN8nPassthrough =
     stringOr(canonicalResponse.summaryOrigin) === 'n8n_evidence_first' ||
-    stringOr(canonicalResponse.payloadSourceState) === 'n8n_v3_passthrough';
+    stringOr(canonicalResponse.payloadSourceState) === 'n8n_v3_passthrough' ||
+    (((canonicalResponse.rawResearchPayload as Record<string, unknown> | null)
+      ?.evidenceSummary as Record<string, unknown> | null)
+      ?.totalForeignRecentPoints as number ?? 0) > 0;
   if (isN8nPassthrough) {
     console.log(`[finalizePredictionResponse] Skipping (${branch}): n8n passthrough detected`);
     return canonicalResponse;

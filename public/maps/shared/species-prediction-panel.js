@@ -681,7 +681,7 @@
       html += '<div class="spp-point"><div class="spp-point-reason-text">—</div></div>';
     } else {
       var _raw = result.rawResearchPayload || {};
-      var _etaCtx = { foreignClusters: result.foreignClusters || _raw.foreignClusters || (_raw.normalizedSources || {}).foreignClusters || [] };
+      var _etaCtx = { foreignClusters: result.foreignClusters || _raw.foreignClusters || (_raw.normalizedSources || {}).foreignClusters || [], weather: result.weather || (_raw.normalizedSources || {}).weather || null };
       predictedTargets.forEach(function (point) {
         html += renderPredictedPoint(point, _etaCtx);
       });
@@ -1348,7 +1348,7 @@
         iconAnchor: [14, 14]
       });
       var pMigEta = point.migrationEta || null;
-      var pEtaCtx = { foreignClusters: prediction && prediction.foreignClusters || [], targetLat: point.lat, targetLon: point.lon, latestSupportingEstoniaDate: point.latestSupportingEstoniaDate };
+      var pEtaCtx = { foreignClusters: prediction && prediction.foreignClusters || [], targetLat: point.lat, targetLon: point.lon, latestSupportingEstoniaDate: point.latestSupportingEstoniaDate, weather: prediction && prediction.weather || null };
       var pEtaLabel = formatMigrationEtaLabel(pMigEta, point.eta, pEtaCtx);
       var pPopup = '<div style="max-width:320px">' +
         '<strong>#' + escapeHtml(point.rank) + ' ' + escapeHtml(point.displayName || point.name || 'Target') + '</strong><br>' +
@@ -2207,6 +2207,32 @@
     return sources.join(', ');
   }
 
+  function calculateWindAdjustment(weather, fromLat, fromLon, toLat, toLon) {
+    if (!weather || !weather.windSpeedKmh) return { factor: 1.0, label: '' };
+    var dLon = (toLon - fromLon) * Math.PI / 180;
+    var y = Math.sin(dLon) * Math.cos(toLat * Math.PI / 180);
+    var x = Math.cos(fromLat * Math.PI / 180) * Math.sin(toLat * Math.PI / 180)
+          - Math.sin(fromLat * Math.PI / 180) * Math.cos(toLat * Math.PI / 180) * Math.cos(dLon);
+    var flightBearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    var windTo = (weather.windDirectionDeg + 180) % 360;
+    var angleDiff = Math.abs(windTo - flightBearing);
+    if (angleDiff > 180) angleDiff = 360 - angleDiff;
+    var speed = weather.windSpeedKmh;
+    var adj = 1.0;
+    var windLabel = '';
+    if (angleDiff < 60 && speed > 10) {
+      adj = speed > 25 ? 1.15 : 1.08;
+      windLabel = 'tailwind';
+    } else if (angleDiff > 120 && speed > 10) {
+      adj = speed > 35 ? 0.5 : (speed > 20 ? 0.8 : 0.9);
+      windLabel = 'headwind';
+    }
+    if (weather.precipitation > 2) adj *= 0.7;
+    if (weather.temperatureC < 0) adj *= 0.8;
+    else if (weather.temperatureC > 8) adj *= 1.1;
+    return { factor: adj, label: windLabel };
+  }
+
   function formatMigrationEtaLabel(migEta, fallbackEta, context) {
     var fmtDate = function (iso) {
       var d = new Date(iso);
@@ -2238,13 +2264,17 @@
         if (d < bestDist) { bestDist = d; best = c; }
       });
       if (best && bestDist < 2000) {
-        var estDays = Math.max(1, Math.ceil(bestDist / 100));
+        var wind = calculateWindAdjustment(ctx.weather, Number(best.lat), Number(best.lon), targetLat, targetLon);
+        var adjustedRate = 100 * wind.factor;
+        var estDays = Math.max(1, Math.ceil(bestDist / adjustedRate));
         var sightDate = best.newestObsDt || best.latestDate;
         var baseDate = sightDate ? new Date(sightDate) : new Date();
         if (isNaN(baseDate.getTime())) baseDate = new Date();
         var arrivalEst = new Date(baseDate.getTime() + estDays * 86400000);
         var cc = ((best.countryCodes || best.mainCountries || [])[0] || '').toUpperCase();
-        return '~' + fmtDate(arrivalEst.toISOString()) + ' (est. ' + estDays + 'd from ' + (cc || 'foreign') + ')';
+        var windNote = wind.label ? ', ' + wind.label : '';
+        var windIcon = wind.label === 'tailwind' ? ' \uD83C\uDF2C\uFE0F\u2191' : (wind.label === 'headwind' ? ' \uD83C\uDF2C\uFE0F\u2193' : '');
+        return '~' + fmtDate(arrivalEst.toISOString()) + ' (est. ' + estDays + 'd from ' + (cc || 'foreign') + windNote + ')' + windIcon;
       }
     }
     // Priority 3: historical window from last year
@@ -2779,6 +2809,7 @@
       activeEstoniaAnchor: activeEstoniaAnchor,
       canonicalHotspots: canonicalHotspots,
       foreignClusters: Array.isArray(root.foreignClusters) ? root.foreignClusters : [],
+      weather: weather,
       alreadyPresentMode: alreadyPresentMode,
       weatherLabel: weatherLabel,
       summaryText: summaryText,

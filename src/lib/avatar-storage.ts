@@ -66,7 +66,8 @@ export async function fetchSharedAvatars(scope: SpeciesScopeConfig = LINNULIIGID
     const { data, error } = await supabase
       .from('bird_avatar_map')
       .select('species_key, public_url')
-      .like('species_key', prefix);
+      .like('species_key', prefix)
+      .limit(1000);
     if (error) {
       console.error('[avatar-storage] fetchSharedAvatars query error:', error);
       throw error;

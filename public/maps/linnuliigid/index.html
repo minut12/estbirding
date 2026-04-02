@@ -212,7 +212,8 @@
     <div class="panel-content-scroll" style="position:relative;z-index:9999;pointer-events:auto">
 <div id="snapshotBanner" class="snapshot-banner" style="display:none !important"></div>
 <div class="fetch-controls">
-  <button id="recentToggle" class="btn on" title="7 päeva filter">7p: ON</button>
+  <button id="recentToggle" class="btn" title="7 päeva filter">7p: ...</button>
+  <script>(function(){var b=document.getElementById('recentToggle');if(!b)return;var on=(localStorage.getItem('bm_recent_only')!=='0');b.textContent=on?'7p: ON':'7p: OFF';if(on)b.classList.add('on');else b.classList.remove('on');})()</script>
   <button id="btnRefreshData" class="btn" title="Refresh all species from Elurikkus">Refresh from Elurikkus</button>
   <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index" style="display:none">Resume</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
@@ -3563,12 +3564,16 @@ async function refreshSpringYearFirstForKeys(keys){
 // Toggle state: 7 days only
 function getRecentOnly(){
   const v = localStorage.getItem(LS_RECENT_ONLY);
-  return v === null ? true : (v === '1');
+  const val = v === null ? true : (v === '1');
+  console.log('[7p-filter] getRecentOnly: raw=' + v + ' → ' + val);
+  return val;
 }
 function setRecentOnly(val){
+  const prev = window.__recentOnly;
   const on = !!val;
   try{ localStorage.setItem(LS_RECENT_ONLY, on ? '1' : '0'); }catch(e){}
   window.__recentOnly = on;
+  console.log('[7p-filter] state changed:', prev, '→', on, 'caller:', (new Error().stack || '').split('\n').slice(1,3).map(function(s){return s.trim();}).join(' | '));
   const btn = document.getElementById('recentToggle');
   if(btn){
     btn.textContent = '7p: ' + (on ? 'ON' : 'OFF');

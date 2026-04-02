@@ -7234,11 +7234,15 @@ function rarityToBorder(level, fallback){
   return (style && style.ringColor) || fallback || '#222';
 }
 // === GBIF functions ===
-function _gbifMiniIcon(avatarUrl) {
+function _gbifMiniIcon(avatarUrl, year) {
+  var currentYear = new Date().getFullYear();
+  var age = currentYear - (year || currentYear);
+  var opacity = Math.max(0.3, 1 - (age * 0.07));
+  var borderColor = age <= 1 ? '#4f46e5' : age <= 3 ? '#6366f1' : age <= 6 ? '#818cf8' : '#a5b4fc';
   var bg = avatarUrl
     ? "background-image:url('" + avatarUrl + "')"
     : "background-color:#c7d2fe";
-  var html = '<div class="gbif-mini-icon" style="' + bg + '"></div>';
+  var html = '<div class="gbif-mini-icon" style="border-color:' + borderColor + ';opacity:' + opacity + ';' + bg + '"></div>';
   return L.divIcon({
     html: html,
     className: 'gbif-mini-marker',
@@ -7292,6 +7296,7 @@ function buildGbifPopup(species, occ) {
     + '<b>' + escapeHtml(species) + '</b>'
     + '<br><small>Kuupäev: ' + escapeHtml(dateStr) + '</small>'
     + (locStr ? '<br><small>Koht: ' + escapeHtml(locStr) + '</small>' : '')
+    + '<br><small>Aasta: ' + (occ.year || '?') + '</small>'
     + '<br><small>Koordinaadid: ' + coords + '</small>'
     + '<br><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'
     + '<button onclick="navigator.clipboard.writeText(\'' + coords + '\').then(()=>{this.textContent=\'Kopeeritud!\';setTimeout(()=>{this.textContent=\'Kopeeri\'},1500)})" style="' + btnStyle + '">Kopeeri</button>'
@@ -7328,22 +7333,25 @@ async function toggleGbifData(species) {
       return;
     }
     var allResults = [];
-    var offset = 0;
-    for (var page = 0; page < 3; page++) {
-      var url = 'https://api.gbif.org/v1/occurrence/search'
-        + '?taxonKey=' + taxonKey
-        + '&country=EE'
-        + '&hasCoordinate=true'
-        + '&hasGeospatialIssue=false'
-        + '&year=2016,2026'
-        + '&limit=300'
-        + '&offset=' + offset;
-      var res = await fetch(url);
-      if (!res.ok) break;
-      var data = await res.json();
-      allResults.push.apply(allResults, data.results || []);
-      if (data.endOfRecords) break;
-      offset += 300;
+    var currentYear = new Date().getFullYear();
+    var startYear = currentYear - 9;
+    var PER_YEAR_LIMIT = 80;
+    for (var yr = currentYear; yr >= startYear; yr--) {
+      try {
+        var url = 'https://api.gbif.org/v1/occurrence/search'
+          + '?taxonKey=' + taxonKey
+          + '&country=EE'
+          + '&hasCoordinate=true'
+          + '&hasGeospatialIssue=false'
+          + '&year=' + yr
+          + '&limit=' + PER_YEAR_LIMIT;
+        var res = await fetch(url);
+        if (!res.ok) continue;
+        var data = await res.json();
+        allResults.push.apply(allResults, data.results || []);
+      } catch (err) {
+        console.warn('GBIF fetch year ' + yr + ' failed', err);
+      }
     }
     var avatarUrl = getDisplayAvatar(species);
     var markerList = [];
@@ -7352,15 +7360,18 @@ async function toggleGbifData(species) {
       var lat = occ.decimalLatitude;
       var lon = occ.decimalLongitude;
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-      var icon = _gbifMiniIcon(avatarUrl);
+      var icon = _gbifMiniIcon(avatarUrl, occ.year);
       var m = L.marker([lat, lon], { icon: icon });
       m.bindPopup(buildGbifPopup(species, occ));
       m.addTo(map);
       markerList.push(m);
     }
     gbifMarkers.set(species, markerList);
+    var years = allResults.map(function(o){ return o.year; }).filter(function(y){ return Number.isFinite(y); });
+    var minYear = years.length ? Math.min.apply(null, years) : startYear;
+    var maxYear = years.length ? Math.max.apply(null, years) : currentYear;
     if (!window.gbifStats) window.gbifStats = {};
-    window.gbifStats[species] = { count: allResults.length, fetchedAt: new Date().toISOString() };
+    window.gbifStats[species] = { count: allResults.length, minYear: minYear, maxYear: maxYear, fetchedAt: new Date().toISOString() };
   } catch (err) {
     console.warn('GBIF fetch error for ' + species, err);
   } finally {
@@ -7738,7 +7749,7 @@ function rowHTML(obj) {
       '</div>' +
       (function(){
         var gbifStat = window.gbifStats && window.gbifStats[key];
-        return gbifStat ? '<div class="small" style="color:#6366f1">GBIF: ' + gbifStat.count + ' vaatlust (2016–2026)</div>' : '';
+        return gbifStat ? '<div class="small" style="color:#6366f1">GBIF: ' + gbifStat.count + ' vaatlust (' + gbifStat.minYear + '–' + gbifStat.maxYear + ')</div>' : '';
       })() +
     '</div>' +
   '</div>';

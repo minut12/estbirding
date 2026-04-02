@@ -256,7 +256,7 @@ const DEFAULT_SPRING_DATES = {
 let avatars = JSON.parse(localStorage.getItem(LS_AVATARS) || '{}');
 let points  = JSON.parse(localStorage.getItem(LS_POINTS) || '{}'); // key = estonian name
 const DEFAULT_PROXY_BASE = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/proxy?url=';
-const FALLBACK_PROXY_BASE = 'https://api.allorigins.win/raw?url=';
+const FALLBACK_PROXY_BASE = ''; // removed dead allorigins.win proxy
 let proxyBase = localStorage.getItem(LS_PROXY) || DEFAULT_PROXY_BASE;
 let nameCache = JSON.parse(localStorage.getItem(LS_NAMES) || '{}'); // not really used here
 

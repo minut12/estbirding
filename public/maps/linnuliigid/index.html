@@ -1429,11 +1429,10 @@ function makeFetchURL(url){
   const raw = String(url || '').trim();
   const withTs = _withCacheBuster(raw);
   const pb = String(proxyBase || '').trim();
-  const bases = ['', pb, 'https://api.allorigins.win/raw?url=', 'https://cors.isomorphic-git.org/'];
+  const bases = ['', pb];
   const out = [];
   for(const b of bases){
     if(!b) out.push(withTs);
-    else if(b === 'https://cors.isomorphic-git.org/') out.push(b + withTs);
     else out.push(b + encodeURIComponent(withTs));
   }
   return Array.from(new Set(out.filter(Boolean)));
@@ -2935,9 +2934,7 @@ function _buildEluFetchCandidates(url){
   if(pb) push(pb + encodeURIComponent(baseUrl));
   // 3. Direct (may fail CORS)
   push(baseUrl);
-  // 4. Public CORS proxies as last resort
-  push('https://api.allorigins.win/raw?url=' + encodeURIComponent(baseUrl));
-  push('https://cors.isomorphic-git.org/' + baseUrl);
+  // (removed dead public CORS proxies — allorigins.win, cors.isomorphic-git.org)
   return out;
 }
 async function _fetchHtmlWithFallback(url, signal){
@@ -2982,11 +2979,7 @@ async function fetchElurikkusHtml(url, signal, opts){
   const requireOccLinks = options.requireOccLinks !== false;
   const rawUrl = String(url || '').trim();
   if(!rawUrl) throw new Error('fetchElurikkusHtml: empty url');
-  const candidates = [
-    rawUrl,
-    'https://api.allorigins.win/raw?url=' + encodeURIComponent(rawUrl),
-    'https://cors.isomorphic-git.org/' + rawUrl
-  ];
+  const candidates = [rawUrl];
   let lastErr = null;
   for(const u of candidates){
     try{
@@ -7174,14 +7167,31 @@ window.addEventListener('message', function(ev){
 });
 
 
+function _prunePointsForStorage(pts) {
+  var pruned = {};
+  for (var key in pts) {
+    var p = pts[key];
+    if (!p) continue;
+    pruned[key] = { lat: p.lat, lon: p.lon, t: p.t, occ7: p.occ7, src: p.src, visible: p.visible, rarity: p.rarity, migration: p.migration, coords_status: p.coords_status };
+    for (var k in pruned[key]) { if (pruned[key][k] === undefined) delete pruned[key][k]; }
+  }
+  return pruned;
+}
 function save() {
-  localStorage.setItem(LS_AVATARS, JSON.stringify(avatars));
-  localStorage.setItem(LS_POINTS, JSON.stringify(points));
-  localStorage.setItem(LS_NAMES, JSON.stringify(nameCache));
-  localStorage.setItem(LS_SPRING, JSON.stringify(springDates));
-  localStorage.setItem(LS_SPRING_META, JSON.stringify(springMeta || {}));
-  localStorage.setItem(LS_SPRING_YEARFIRST, JSON.stringify(springYearFirst));
-  _persistLiveCaches();
+  try { localStorage.setItem(LS_AVATARS, JSON.stringify(avatars)); } catch(e) { console.warn('[save] avatars failed', e); }
+  try {
+    localStorage.setItem(LS_POINTS, JSON.stringify(_prunePointsForStorage(points)));
+  } catch(e) {
+    console.warn('[save] points failed, trying minimal', e);
+    var minimal = {};
+    for (var k in points) { if (points[k] && Number.isFinite(points[k].lat)) minimal[k] = { lat: points[k].lat, lon: points[k].lon, t: points[k].t }; }
+    try { localStorage.setItem(LS_POINTS, JSON.stringify(minimal)); } catch(e2) { console.error('[save] points completely failed', e2); }
+  }
+  try { localStorage.setItem(LS_NAMES, JSON.stringify(nameCache)); } catch(e) {}
+  try { localStorage.setItem(LS_SPRING, JSON.stringify(springDates)); } catch(e) {}
+  try { localStorage.setItem(LS_SPRING_META, JSON.stringify(springMeta || {})); } catch(e) {}
+  try { localStorage.setItem(LS_SPRING_YEARFIRST, JSON.stringify(springYearFirst)); } catch(e) {}
+  try { _persistLiveCaches(); } catch(e) { console.warn('[save] liveCaches failed', e); }
 }
 
 // Icons
@@ -7610,7 +7620,7 @@ function render() {
         const d = getEffectiveRecentDate(p);
         const ts = _parseObservedTs(d);
         if(Number.isFinite(ts) && ts < cutoffTs){
-          console.warn('[7day] ERROR old record visible species=' + key + ' date=' + d);
+          console.debug('[7day] old record visible species=' + key + ' date=' + d);
         }
       }
     }

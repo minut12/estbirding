@@ -1399,11 +1399,10 @@ function makeFetchURL(url){
   const raw = String(url || '').trim();
   const withTs = _withCacheBuster(raw);
   const pb = String(proxyBase || '').trim();
-  const bases = ['', pb, 'https://api.allorigins.win/raw?url=', 'https://cors.isomorphic-git.org/'];
+  const bases = ['', pb];
   const out = [];
   for(const b of bases){
     if(!b) out.push(withTs);
-    else if(b === 'https://cors.isomorphic-git.org/') out.push(b + withTs);
     else out.push(b + encodeURIComponent(withTs));
   }
   return Array.from(new Set(out.filter(Boolean)));
@@ -2905,9 +2904,7 @@ function _buildEluFetchCandidates(url){
   if(pb) push(pb + encodeURIComponent(baseUrl));
   // 3. Direct (may fail CORS)
   push(baseUrl);
-  // 4. Public CORS proxies as last resort
-  push('https://api.allorigins.win/raw?url=' + encodeURIComponent(baseUrl));
-  push('https://cors.isomorphic-git.org/' + baseUrl);
+  // (removed dead public CORS proxies — allorigins.win, cors.isomorphic-git.org)
   return out;
 }
 async function _fetchHtmlWithFallback(url, signal){
@@ -2952,11 +2949,7 @@ async function fetchElurikkusHtml(url, signal, opts){
   const requireOccLinks = options.requireOccLinks !== false;
   const rawUrl = String(url || '').trim();
   if(!rawUrl) throw new Error('fetchElurikkusHtml: empty url');
-  const candidates = [
-    rawUrl,
-    'https://api.allorigins.win/raw?url=' + encodeURIComponent(rawUrl),
-    'https://cors.isomorphic-git.org/' + rawUrl
-  ];
+  const candidates = [rawUrl];
   let lastErr = null;
   for(const u of candidates){
     try{

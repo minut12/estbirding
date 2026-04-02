@@ -1,7 +1,7 @@
 const KEY = "estbirding.proxyBase";
 const LS_RESOLVED_PROXY_BASE = "resolved_proxy_base_v1";
 export const PROXY_ENDPOINT_UPDATED_EVENT = "proxy-endpoint-updated";
-export const FALLBACK_PROXY_BASE = "https://api.allorigins.win/raw?url=";
+export const FALLBACK_PROXY_BASE = ""; // removed dead allorigins.win proxy
 
 function storeResolvedProxyBase(v: string): void {
   try {
@@ -67,6 +67,6 @@ export function getProxyMode(base?: string): "supabase" | "fallback" | "custom" 
   const resolved = String(base || resolveProxyBase()).trim();
   if (!resolved) return "none";
   if (resolved.includes("/functions/v1/proxy")) return "supabase";
-  if (resolved.includes("allorigins.win")) return "fallback";
+  if (resolved.includes("allorigins.win")) return "fallback"; // legacy, no longer used
   return "custom";
 }

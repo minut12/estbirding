@@ -63,6 +63,19 @@ export async function fetchSharedAvatars(scope: SpeciesScopeConfig = LINNULIIGID
   try {
     console.log('[avatar-storage] fetchSharedAvatars: querying bird_avatar_map (paginated)...');
     const prefix = `${scope.avatarSpeciesKeyPrefix}%`;
+<<<<<<< HEAD
+=======
+    const { data, error } = await supabase
+      .from('bird_avatar_map')
+      .select('species_key, public_url')
+      .like('species_key', prefix)
+      .limit(1000);
+    if (error) {
+      console.error('[avatar-storage] fetchSharedAvatars query error:', error);
+      throw error;
+    }
+    console.log('[avatar-storage] fetchSharedAvatars: got', data?.length, 'rows');
+>>>>>>> a5705bf24a8fc31f8bd4e0c8d178fdfb3fadfd6c
     const map: AvatarMap = {};
     const PAGE_SIZE = 25;
     let offset = 0;

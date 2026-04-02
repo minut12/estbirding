@@ -3576,6 +3576,18 @@ function setRecentOnly(val){
   render();
 }
 window.__recentOnly = getRecentOnly();
+// Trace unexpected changes to __recentOnly
+(function(){
+  var _val = window.__recentOnly;
+  Object.defineProperty(window, '__recentOnly', {
+    get: function(){ return _val; },
+    set: function(v){
+      if(!!v !== !!_val) console.log('[7p-filter] __recentOnly changed:', _val, '->', v, (new Error().stack || '').split('\n').slice(1,3).join(' | '));
+      _val = !!v;
+    },
+    configurable: true
+  });
+})();
 function is7daysOnly(){ return !!window.__recentOnly; }
 function _toDayLocalTallinn(v){
   const s = String(v || '').trim();
@@ -7178,6 +7190,7 @@ function _prunePointsForStorage(pts) {
   return pruned;
 }
 function save() {
+  try { localStorage.setItem(LS_RECENT_ONLY, window.__recentOnly ? '1' : '0'); } catch(e) {}
   try { localStorage.setItem(LS_AVATARS, JSON.stringify(avatars)); } catch(e) { console.warn('[save] avatars failed', e); }
   try {
     localStorage.setItem(LS_POINTS, JSON.stringify(_prunePointsForStorage(points)));

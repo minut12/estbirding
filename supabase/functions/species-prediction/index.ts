@@ -2920,6 +2920,7 @@ async function maybeFetchSecondarySummary(opts: {
           ? (asRecord(n8nRecord.aiSummary).warnings as unknown[]).map((item) => String(item ?? ''))
           : []),
       summarySourcePath: typeof n8nRecord.summarySourcePath === 'string' ? n8nRecord.summarySourcePath : undefined,
+      summaryOrigin: typeof n8nRecord.summaryOrigin === 'string' ? n8nRecord.summaryOrigin as SummaryOrigin : undefined,
       raw: n8nRecord,
     } as NormalizedUpstreamResponse;
   }
@@ -4628,6 +4629,23 @@ function sanitizeSummaryAgainstEvidence(response: Record<string, unknown>): Reco
 function enforceCanonicalSummaryConsistency(
   canonical: CanonicalPredictionRecord,
 ): CanonicalPredictionRecord {
+  // Skip guardrail if n8n already provided an OpenAI summary
+  if (canonical.summaryOrigin === 'openai_analyst' || canonical.summaryOrigin === 'openai'
+    || canonical.summaryOrigin === 'normalized_upstream') {
+    return {
+      ...canonical,
+      consistencyChecks: buildFinalConsistencyChecksFromCanonical({
+        foreignRecentPoints: canonical.foreignRecentPoints,
+        foreignClusters: canonical.foreignClusters,
+        predictedTargets: canonical.predictedTargets,
+        weather: canonical.weather,
+        insightSummary: canonical.insightSummary,
+      }),
+      summaryGuardrailApplied: false,
+      summaryGuardrailReason: 'skipped_openai_present',
+      summaryRegeneratedFromStructuredEvidence: false,
+    };
+  }
   const consistencyChecks = buildFinalConsistencyChecksFromCanonical({
     foreignRecentPoints: canonical.foreignRecentPoints,
     foreignClusters: canonical.foreignClusters,

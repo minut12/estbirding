@@ -59,28 +59,45 @@ export function getMergedAvatars(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE):
   return { ...shared, ...local };
 }
 
+/** Fetch all shared avatars from the database (paginated to handle server row limits) */
 export async function fetchSharedAvatars(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): Promise<AvatarMap> {
   try {
-    console.log('[avatar-storage] fetchSharedAvatars: querying bird_avatar_map...');
+    console.log('[avatar-storage] fetchSharedAvatars: querying bird_avatar_map (paginated)...');
     const prefix = `${scope.avatarSpeciesKeyPrefix}%`;
-    const { data, error } = await supabase
-      .from('bird_avatar_map')
-      .select('species_key, public_url')
-      .like('species_key', prefix)
-      .limit(1000);
-    if (error) {
-      console.error('[avatar-storage] fetchSharedAvatars query error:', error);
-      throw error;
-    }
     const map: AvatarMap = {};
-    for (const row of data || []) {
-      map[unscopedSpeciesKey(row.species_key, scope)] = row.public_url;
+    const PAGE_SIZE = 25;
+    let from = 0;
+    let keepGoing = true;
+
+    while (keepGoing) {
+      const { data, error } = await supabase
+        .from('bird_avatar_map')
+        .select('species_key, public_url')
+        .like('species_key', prefix)
+        .order('species_key', { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) {
+        console.error('[avatar-storage] query error at offset', from, error);
+        throw error;
+      }
+
+      const rows = data ?? [];
+      for (const row of rows) {
+        if (row.species_key && row.public_url) {
+          map[unscopedSpeciesKey(row.species_key, scope)] = row.public_url;
+        }
+      }
+
+      from += rows.length;
+      keepGoing = rows.length === PAGE_SIZE;
     }
-    console.log('[avatar-storage] fetchSharedAvatars: got', Object.keys(map).length, 'rows');
+
+    console.log('[avatar-storage] fetchSharedAvatars: fetched', Object.keys(map).length, 'avatars total');
     persistSharedCache(map, scope);
     return map;
   } catch (e) {
-    console.warn('[avatar-storage] fetchSharedAvatars failed, using cache fallback:', e);
+    console.warn('[avatar-storage] fetchSharedAvatars failed, using cache:', e);
     return loadSharedCache(scope);
   }
 }

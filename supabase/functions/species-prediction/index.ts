@@ -1365,7 +1365,7 @@ async function buildMapFirstPredictionResult(opts: {
     estoniaEvidence,
     historicalEvidence,
     rawLinks,
-    externalPressureScore: clampInt(Math.round(sum(foreignEvidence.map((entry) => toNumber(entry.recordCount7d) * 4))), 0, 100),
+    externalPressureScore: clampInt(Math.round(sum(filterForeignEvidenceForSpringPressure(foreignEvidence).map((entry) => toNumber(entry.recordCount7d) * 4))), 0, 100),
     springFitScore: clampInt(estoniaHistoryPoints.length ? 78 : 42, 0, 100),
     windSupportScore: evidenceSummary.wasWeatherUsedInRanking ? clampInt(Math.round(computeWindSupport(weather)), 0, 100) : 0,
     routeVector: latestCluster ? `${joinCountries(latestCluster.countryCodes)} -> Estonia` : 'Unavailable',
@@ -1762,6 +1762,28 @@ async function fetchForeignRecentPoints(ebirdSpeciesCode: string, settings: Reco
   return (await Promise.all(requests)).flat().sort((left, right) => Number(left.daysAgo) - Number(right.daysAgo));
 }
 
+const ESTONIA_SOUTH_BORDER_LAT = 57.5;
+const ESTONIA_NORTH_BORDER_LAT = 59.5;
+
+function isSpringMigrationPeriod(): boolean {
+  const now = new Date();
+  const month = now.getMonth() + 1; // 1-12
+  const day = now.getDate();
+  return (month > 2 || (month === 2 && day >= 15)) && (month < 6 || (month === 6 && day <= 15));
+}
+
+/** Filter foreign points/clusters for spring migration routing: exclude observations north of Estonia */
+function filterForSpringRouting<T extends Record<string, unknown>>(items: T[]): T[] {
+  if (!isSpringMigrationPeriod()) return items;
+  return items.filter((item) => toNumber(item.lat) < ESTONIA_NORTH_BORDER_LAT);
+}
+
+/** Filter foreign evidence entries for spring pressure scoring: exclude Finland */
+function filterForeignEvidenceForSpringPressure(entries: Record<string, unknown>[]): Record<string, unknown>[] {
+  if (!isSpringMigrationPeriod()) return entries;
+  return entries.filter((entry) => entry.countryCode !== 'fi');
+}
+
 function clusterForeignRecentPoints(points: Record<string, unknown>[]): Record<string, unknown>[] {
   const clusters = new Map<string, { id: string; lat: number; lon: number; points: Record<string, unknown>[] }>();
   for (const point of points) {
@@ -1998,7 +2020,10 @@ function buildPredictedTargets(opts: {
   estoniaEvidence: Record<string, unknown>;
   horizonDays: number;
 }): Record<string, unknown>[] {
-  const { speciesName, estoniaHistoryClusters, foreignClusters, foreignRecentPoints, weather, estoniaEvidence, horizonDays } = opts;
+  const { speciesName, estoniaHistoryClusters, weather, estoniaEvidence, horizonDays } = opts;
+  // During spring migration, exclude observations north of Estonia from routing
+  const foreignClusters = filterForSpringRouting(opts.foreignClusters);
+  const foreignRecentPoints = filterForSpringRouting(opts.foreignRecentPoints);
   const ecology = classifySpeciesEcology(speciesName);
   const hasRecentForeignSupport = foreignRecentPoints.some((point) => toNumber(point.daysAgo) <= 14);
   const hasForeignPressure = foreignClusters.length > 0 && hasRecentForeignSupport;

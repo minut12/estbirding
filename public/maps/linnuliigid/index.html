@@ -5638,6 +5638,7 @@ function applySnapshot(snapshot){
   try{ save(); }catch(e){}
   rebuildAllMarkers();
   render();
+  try{ setTimeout(function(){ map.invalidateSize(); }, 200); }catch(e){}
   return true;
 }
 function reloadSnapshot(){
@@ -7315,7 +7316,8 @@ function updateMarker(key) {
 
   const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
   const markerCount = getMarkerCount(p);
-  const passesRecent = (!window.__recentOnly) || hasRecentObservation(p);
+  const _isLoading = __isRefreshRunning || __loaderStage === 'loading_snapshot' || __loaderStage === 'processing';
+  const passesRecent = (!window.__recentOnly) || hasRecentObservation(p) || (_isLoading && hasCoords);
   const isVisible = (p.visible !== false) && passesRecent && hasCoords;
   if (!isVisible) {
     if(prevMarker){
@@ -7509,6 +7511,7 @@ function render() {
   const q = (document.getElementById('filterBox').value||'').toLowerCase().trim();
   const list = document.getElementById('list'); list.innerHTML='';
   const recent7 = is7daysOnly();
+  const isLoading = __isRefreshRunning || __loaderStage === 'loading_snapshot' || __loaderStage === 'processing';
   const arr = DATA.filter(function(x){
     if(!x.est.toLowerCase().includes(q)) return false;
     if(recent7){
@@ -7516,7 +7519,7 @@ function render() {
       if(!p) return false;
       const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
       if(!hasCoords) return false;
-      if(!hasRecentObservation(p)) return false;
+      if(!hasRecentObservation(p) && !(isLoading && hasCoords)) return false;
     }
     return true;
   });

@@ -425,6 +425,28 @@ function slugifySpeciesKey(key){
     .replace(/^-+|-+$/g,'');
 }
 
+// Convert clean Unicode Estonian keys to the garbled double-encoded format used internally
+function _toInternalKey(cleanKey) {
+  if (!cleanKey) return cleanKey;
+  return String(cleanKey)
+    .replace(/õ/g, '\u00c3\u00b5').replace(/ä/g, '\u00c3\u00a4')
+    .replace(/ö/g, '\u00c3\u00b6').replace(/ü/g, '\u00c3\u00bc')
+    .replace(/š/g, '\u00c5\u00a1').replace(/ž/g, '\u00c5\u00be')
+    .replace(/Õ/g, '\u00c3\u0095').replace(/Ä/g, '\u00c3\u0084')
+    .replace(/Ö/g, '\u00c3\u0096').replace(/Ü/g, '\u00c3\u009c')
+    .replace(/Š/g, '\u00c5\u00a0').replace(/Ž/g, '\u00c5\u00bd');
+}
+function _toCleanKey(garbledKey) {
+  if (!garbledKey) return garbledKey;
+  return String(garbledKey)
+    .replace(/\u00c3\u00b5/g, 'õ').replace(/\u00c3\u00a4/g, 'ä')
+    .replace(/\u00c3\u00b6/g, 'ö').replace(/\u00c3\u00bc/g, 'ü')
+    .replace(/\u00c5\u00a1/g, 'š').replace(/\u00c5\u00be/g, 'ž')
+    .replace(/\u00c3\u0095/g, 'Õ').replace(/\u00c3\u0084/g, 'Ä')
+    .replace(/\u00c3\u0096/g, 'Ö').replace(/\u00c3\u009c/g, 'Ü')
+    .replace(/\u00c5\u00a0/g, 'Š').replace(/\u00c5\u00bd/g, 'Ž');
+}
+
 const __avatarPreloadCache = new Set();
 function preloadAvatars(urls){
   try{
@@ -484,7 +506,10 @@ async function autoDetectAvatarsForActive(){
 }
 
 function getDisplayAvatar(key){
-  return avatars[key] || PLACEHOLDER_AVATAR_URL;
+  if(avatars[key]) return avatars[key];
+  var cleanKey = _toCleanKey(key);
+  if(cleanKey !== key && avatars[cleanKey]) return avatars[cleanKey];
+  return PLACEHOLDER_AVATAR_URL;
 }
 
 let avatars = JSON.parse(localStorage.getItem(LS_AVATARS) || '{}');
@@ -8240,7 +8265,14 @@ var __sharedDefaults = {};
       if(!ev.data || typeof ev.data !== 'object') return;
       var type = ev.data.type;
       if(type === 'AVATARS_DEFAULTS' && ev.data.avatars){
-        __sharedDefaults = ev.data.avatars || {};
+        __sharedDefaults = {};
+        var incomingDefaults = ev.data.avatars || {};
+        for(var dk in incomingDefaults){
+          if(!incomingDefaults.hasOwnProperty(dk)) continue;
+          __sharedDefaults[dk] = incomingDefaults[dk];
+          var intKey = _toInternalKey(dk);
+          if(intKey !== dk) __sharedDefaults[intKey] = incomingDefaults[dk];
+        }
         var localAvatars = JSON.parse(localStorage.getItem(LS_AVATARS) || '{}');
         var merged = Object.assign({}, __sharedDefaults, localAvatars);
         for(var k in merged){ if(merged.hasOwnProperty(k) && merged[k]) avatars[k] = merged[k]; }
@@ -8251,7 +8283,11 @@ var __sharedDefaults = {};
       }
       if(type === 'AVATARS_UPDATE' && ev.data.avatars){
         var incoming = ev.data.avatars;
-        for(var k in incoming){ if(incoming.hasOwnProperty(k)){ if(incoming[k]) avatars[k] = incoming[k]; else delete avatars[k]; } }
+        for(var k in incoming){
+          if(!incoming.hasOwnProperty(k)) continue;
+          if(incoming[k]){ avatars[k] = incoming[k]; var ik = _toInternalKey(k); if(ik !== k) avatars[ik] = incoming[k]; }
+          else { delete avatars[k]; var ik2 = _toInternalKey(k); if(ik2 !== k) delete avatars[ik2]; }
+        }
         save();
         preloadAvatars(Object.values(avatars));
         SPECIES.forEach(function(name){ try{ updateMarker(name); }catch(e){} });
@@ -8264,7 +8300,14 @@ var __sharedDefaults = {};
       if(type === 'SPECIES_META_DEFAULTS' && ev.data.speciesMeta && typeof ev.data.speciesMeta === 'object'){
         var currentMeta = JSON.parse(localStorage.getItem('estbirding.speciesMeta.v1') || '{}');
         var incomingMeta = ev.data.speciesMeta || {};
-        var mergedMeta = Object.assign({}, currentMeta, incomingMeta);
+        var normalizedMeta = {};
+        for(var mk in incomingMeta){
+          if(!incomingMeta.hasOwnProperty(mk)) continue;
+          normalizedMeta[mk] = incomingMeta[mk];
+          var mIntKey = _toInternalKey(mk);
+          if(mIntKey !== mk) normalizedMeta[mIntKey] = incomingMeta[mk];
+        }
+        var mergedMeta = Object.assign({}, currentMeta, normalizedMeta);
         localStorage.setItem('estbirding.speciesMeta.v1', JSON.stringify(mergedMeta));
         render();
       }

@@ -680,8 +680,10 @@
     if (!predictedTargets.length) {
       html += '<div class="spp-point"><div class="spp-point-reason-text">—</div></div>';
     } else {
+      var _raw = result.rawResearchPayload || {};
+      var _etaCtx = { foreignClusters: result.foreignClusters || _raw.foreignClusters || (_raw.normalizedSources || {}).foreignClusters || [] };
       predictedTargets.forEach(function (point) {
-        html += renderPredictedPoint(point);
+        html += renderPredictedPoint(point, _etaCtx);
       });
     }
     html += '</div></div>';
@@ -1088,12 +1090,16 @@
       '</div>';
   }
 
-  function renderPredictedPoint(point) {
+  function renderPredictedPoint(point, etaContext) {
     var confidencePct = formatConfidence(point && point.confidence);
     var fillPct = String(clampConfidencePercent(point && point.confidence)) + '%';
     var migEta = point && point.migrationEta ? point.migrationEta : null;
+    var ctx = etaContext || {};
+    ctx.targetLat = point && point.lat;
+    ctx.targetLon = point && point.lon;
+    ctx.latestSupportingEstoniaDate = point && point.latestSupportingEstoniaDate;
     var metrics = '' +
-      metricCell('ETA', formatMigrationEtaLabel(migEta, point && point.eta)) +
+      metricCell('ETA', formatMigrationEtaLabel(migEta, point && point.eta, ctx)) +
       metricCell('Radius', appendKm(point && point.searchRadiusKm)) +
       metricCell('Confidence', confidencePct) +
       metricCell('EE support count', point && point.supportingEstoniaHistoryCount) +
@@ -1342,7 +1348,8 @@
         iconAnchor: [14, 14]
       });
       var pMigEta = point.migrationEta || null;
-      var pEtaLabel = formatMigrationEtaLabel(pMigEta, point.eta);
+      var pEtaCtx = { foreignClusters: prediction && prediction.foreignClusters || [], targetLat: point.lat, targetLon: point.lon, latestSupportingEstoniaDate: point.latestSupportingEstoniaDate };
+      var pEtaLabel = formatMigrationEtaLabel(pMigEta, point.eta, pEtaCtx);
       var pPopup = '<div style="max-width:320px">' +
         '<strong>#' + escapeHtml(point.rank) + ' ' + escapeHtml(point.displayName || point.name || 'Target') + '</strong><br>' +
         '<b>ETA:</b> ' + escapeHtml(pEtaLabel) + '<br>' +
@@ -2200,21 +2207,61 @@
     return sources.join(', ');
   }
 
-  function formatMigrationEtaLabel(migEta, fallbackEta) {
-    if (!migEta || !migEta.earliestArrival) return fallbackEta || 'Unavailable';
-    var fmt = function (iso) {
+  function formatMigrationEtaLabel(migEta, fallbackEta, context) {
+    var fmtDate = function (iso) {
       var d = new Date(iso);
       if (isNaN(d.getTime())) return '';
       return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
     };
-    var early = fmt(migEta.earliestArrival);
-    var late = migEta.latestArrival ? fmt(migEta.latestArrival) : '';
-    var range = early && late && early !== late ? early + ' \u2013 ' + late : early;
-    var days = migEta.etaText || (migEta.totalDaysEstimate ? migEta.totalDaysEstimate + 'd' : '');
-    var label = range + (days ? ' (~' + days + ')' : '');
-    if (migEta.isImminent) label += ' \u26A1';
-    if (migEta.isPastDue) label += ' \u23F0';
-    return label;
+    // Priority 1: migrationEta with dates
+    if (migEta && migEta.earliestArrival) {
+      var early = fmtDate(migEta.earliestArrival);
+      var late = migEta.latestArrival ? fmtDate(migEta.latestArrival) : '';
+      var range = early && late && early !== late ? early + ' \u2013 ' + late : early;
+      var days = migEta.etaText || (migEta.totalDaysEstimate ? migEta.totalDaysEstimate + 'd' : '');
+      var label = range + (days ? ' (~' + days + ')' : '');
+      if (migEta.isImminent) label += ' \u26A1';
+      if (migEta.isPastDue) label += ' \u23F0';
+      return label;
+    }
+    // Priority 2: estimate from nearest foreign cluster
+    var ctx = context || {};
+    var clusters = ctx.foreignClusters || [];
+    var targetLat = ctx.targetLat;
+    var targetLon = ctx.targetLon;
+    if (clusters.length && isFiniteNumber(targetLat) && isFiniteNumber(targetLon)) {
+      var best = null;
+      var bestDist = Infinity;
+      clusters.forEach(function (c) {
+        if (!isFiniteNumber(Number(c.lat)) || !isFiniteNumber(Number(c.lon))) return;
+        var d = distanceKm(c.lat, c.lon, targetLat, targetLon);
+        if (d < bestDist) { bestDist = d; best = c; }
+      });
+      if (best && bestDist < 2000) {
+        var estDays = Math.max(1, Math.ceil(bestDist / 100));
+        var sightDate = best.newestObsDt || best.latestDate;
+        var baseDate = sightDate ? new Date(sightDate) : new Date();
+        if (isNaN(baseDate.getTime())) baseDate = new Date();
+        var arrivalEst = new Date(baseDate.getTime() + estDays * 86400000);
+        var cc = ((best.countryCodes || best.mainCountries || [])[0] || '').toUpperCase();
+        return '~' + fmtDate(arrivalEst.toISOString()) + ' (est. ' + estDays + 'd from ' + (cc || 'foreign') + ')';
+      }
+    }
+    // Priority 3: historical window from last year
+    var histDate = ctx.latestSupportingEstoniaDate;
+    if (histDate) {
+      var hd = new Date(histDate);
+      if (!isNaN(hd.getTime())) {
+        var thisYear = new Date().getFullYear();
+        var adjustedDate = new Date(thisYear, hd.getMonth(), hd.getDate());
+        var windowStart = new Date(adjustedDate.getTime() - 7 * 86400000);
+        var windowEnd = new Date(adjustedDate.getTime() + 7 * 86400000);
+        return 'Historical: ~' + fmtDate(windowStart.toISOString()) + ' \u2013 ' + fmtDate(windowEnd.toISOString());
+      }
+    }
+    // Priority 4: last resort
+    if (fallbackEta && fallbackEta !== '72h+' && fallbackEta !== 'Unavailable') return fallbackEta;
+    return 'No ETA data';
   }
 
   var _countryFlags = { fi: '\uD83C\uDDEB\uD83C\uDDEE', lv: '\uD83C\uDDF1\uD83C\uDDFB', lt: '\uD83C\uDDF1\uD83C\uDDF9', pl: '\uD83C\uDDF5\uD83C\uDDF1', by: '\uD83C\uDDE7\uD83C\uDDFE', ru: '\uD83C\uDDF7\uD83C\uDDFA', ee: '\uD83C\uDDEA\uD83C\uDDEA' };
@@ -2731,6 +2778,7 @@
       displayedTargets: displayedTargets,
       activeEstoniaAnchor: activeEstoniaAnchor,
       canonicalHotspots: canonicalHotspots,
+      foreignClusters: Array.isArray(root.foreignClusters) ? root.foreignClusters : [],
       alreadyPresentMode: alreadyPresentMode,
       weatherLabel: weatherLabel,
       summaryText: summaryText,

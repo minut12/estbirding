@@ -83,6 +83,8 @@ export function slugifySpeciesKey(key: string): string {
   return key.toLowerCase()
     .replace(/õ/g, 'o').replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u')
     .replace(/š/g, 's').replace(/ž/g, 'z')
+    .replace(/Ãµ/g, 'o').replace(/Ã¤/g, 'a').replace(/Ã¶/g, 'o').replace(/Ã¼/g, 'u')
+    .replace(/Å¡/g, 's').replace(/Å¾/g, 'z')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 }

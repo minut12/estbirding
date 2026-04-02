@@ -627,8 +627,85 @@ const markers = new Map();
 
 // === GBIF state ===
 var gbifMarkers = new Map();
-var gbifTaxonKeys = (function(){ try { return JSON.parse(localStorage.getItem('gbif_taxonkeys')) || {}; } catch(e){ return {}; } })();
+var gbifTaxonKeys = {};
+try { gbifTaxonKeys = JSON.parse(localStorage.getItem('gbif_taxonkeys') || '{}'); } catch(e){}
 var gbifLoadingSpecies = new Set();
+
+function _saveGbifTaxonKeys() {
+  try { localStorage.setItem('gbif_taxonkeys', JSON.stringify(gbifTaxonKeys)); } catch(e){}
+}
+
+function _getEbirdCode(species) {
+  try {
+    var meta = JSON.parse(localStorage.getItem('estbirding.speciesMeta.v1') || '{}');
+    var entry = meta[species] || meta[species.toLowerCase()] || null;
+    if (entry && entry.ebirdCode) return entry.ebirdCode;
+  } catch(e){}
+  try {
+    var codes = JSON.parse(localStorage.getItem('bm_ebird_codes') || localStorage.getItem('bm_global_ebird_codes') || '{}');
+    if (codes[species]) return codes[species];
+  } catch(e){}
+  return null;
+}
+
+function _getEbirdToken() {
+  try { return localStorage.getItem('bm_ebird_token') || ''; } catch(e){ return ''; }
+}
+
+async function _getScientificNameFromEbird(ebirdCode) {
+  var token = _getEbirdToken();
+  if (!token) return null;
+  try {
+    var url = 'https://api.ebird.org/v2/ref/taxonomy/ebird?species='
+      + encodeURIComponent(ebirdCode) + '&fmt=json';
+    var res = await fetch(url, { headers: { 'X-eBirdApiToken': token } });
+    if (!res.ok) return null;
+    var arr = await res.json();
+    if (Array.isArray(arr) && arr.length > 0 && arr[0].sciName) return arr[0].sciName;
+  } catch(e) { console.warn('eBird taxonomy lookup failed for ' + ebirdCode, e); }
+  return null;
+}
+
+async function _gbifMatchByScientificName(sciName) {
+  try {
+    var url = 'https://api.gbif.org/v1/species/match?name='
+      + encodeURIComponent(sciName) + '&kingdom=Animalia&strict=true';
+    var res = await fetch(url);
+    if (!res.ok) return null;
+    var data = await res.json();
+    if (data.usageKey && data.matchType !== 'NONE' && data.confidence > 90) {
+      return { taxonKey: data.usageKey, scientificName: data.scientificName || sciName };
+    }
+  } catch(e){}
+  return null;
+}
+
+async function _gbifSuggestFallback(species) {
+  try {
+    var url = 'https://api.gbif.org/v1/species/suggest?q='
+      + encodeURIComponent(species) + '&rank=SPECIES&limit=5';
+    var res = await fetch(url);
+    if (res.ok) {
+      var suggestions = await res.json();
+      var bird = suggestions.find(function(s){ return s.class === 'Aves' || s.kingdom === 'Animalia'; });
+      if (bird && bird.key) return { taxonKey: bird.key, scientificName: bird.scientificName || '?', resolvedVia: 'suggest_fallback' };
+    }
+  } catch(e){}
+  try {
+    var url2 = 'https://api.gbif.org/v1/species/match?name='
+      + encodeURIComponent(species) + '&kingdom=Animalia&verbose=true';
+    var res2 = await fetch(url2);
+    if (res2.ok) {
+      var match = await res2.json();
+      if (match.usageKey && match.confidence > 80) return { taxonKey: match.usageKey, scientificName: match.scientificName || '?', resolvedVia: 'match_fallback' };
+      if (match.alternatives) {
+        var best = match.alternatives.find(function(a){ return a.class === 'Aves'; });
+        if (best && best.usageKey) return { taxonKey: best.usageKey, scientificName: best.scientificName || '?', resolvedVia: 'match_alt_fallback' };
+      }
+    }
+  } catch(e){}
+  return null;
+}
 
 // === Helpers ===
 const EE_TZ = 'Europe/Tallinn';
@@ -7253,31 +7330,34 @@ function _gbifMiniIcon(avatarUrl, year) {
 }
 
 async function resolveGbifTaxonKey(species) {
-  try {
-    var suggestUrl = 'https://api.gbif.org/v1/species/suggest?q='
-      + encodeURIComponent(species) + '&rank=SPECIES&limit=5';
-    var res = await fetch(suggestUrl);
-    if (res.ok) {
-      var suggestions = await res.json();
-      var bird = suggestions.find(function(s){ return s.kingdom === 'Animalia' || s.class === 'Aves'; });
-      if (bird && bird.key) return bird.key;
-    }
-    var matchUrl = 'https://api.gbif.org/v1/species/match?name='
-      + encodeURIComponent(species) + '&kingdom=Animalia&verbose=true';
-    var res2 = await fetch(matchUrl);
-    if (res2.ok) {
-      var match = await res2.json();
-      if (match.usageKey && match.confidence > 80) return match.usageKey;
-      if (match.alternatives && match.alternatives.length) {
-        var best = match.alternatives.find(function(a){ return a.class === 'Aves'; });
-        if (best && best.usageKey) return best.usageKey;
+  var cached = gbifTaxonKeys[species];
+  if (cached && cached.taxonKey) return cached.taxonKey;
+
+  // Strategy 1: eBird code → scientific name → GBIF match
+  var ebirdCode = _getEbirdCode(species);
+  if (ebirdCode) {
+    var sciName = await _getScientificNameFromEbird(ebirdCode);
+    if (sciName) {
+      var result = await _gbifMatchByScientificName(sciName);
+      if (result) {
+        gbifTaxonKeys[species] = { taxonKey: result.taxonKey, scientificName: result.scientificName, ebirdCode: ebirdCode, resolvedVia: 'ebird_sciname' };
+        _saveGbifTaxonKeys();
+        console.info('GBIF resolved ' + species + ' → ' + result.scientificName + ' (via eBird ' + ebirdCode + ')');
+        return result.taxonKey;
       }
     }
-    return null;
-  } catch (err) {
-    console.warn('GBIF taxon resolve failed for ' + species, err);
-    return null;
   }
+
+  // Strategy 2: fallback to GBIF suggest/match with Estonian name
+  var fallback = await _gbifSuggestFallback(species);
+  if (fallback) {
+    gbifTaxonKeys[species] = { taxonKey: fallback.taxonKey, scientificName: fallback.scientificName, resolvedVia: fallback.resolvedVia || 'suggest', warning: 'Matched by Estonian name — may be inaccurate' };
+    _saveGbifTaxonKeys();
+    console.warn('GBIF fallback for ' + species + ' → ' + fallback.scientificName + ' (may be wrong)');
+    return fallback.taxonKey;
+  }
+
+  return null;
 }
 
 function buildGbifPopup(species, occ) {
@@ -7289,15 +7369,24 @@ function buildGbifPopup(species, occ) {
     : (occ.year ? occ.year + (occ.month ? '-' + String(occ.month).padStart(2,'0') : '') : '?');
   var locParts = [occ.locality, occ.stateProvince].filter(Boolean);
   var locStr = locParts.length ? locParts.join(', ') : '';
+  var cached = gbifTaxonKeys[species] || {};
+  var sciLine = cached.scientificName
+    ? '<br><small style="color:#64748b;font-style:italic">' + escapeHtml(cached.scientificName) + '</small>'
+    : '';
+  var warningLine = (cached.resolvedVia && cached.resolvedVia.indexOf('fallback') !== -1)
+    ? '<br><small style="color:#f59e0b">&#9888;&#65039; Kontrollimata vaste</small>'
+    : '';
   var wazeUrl = 'https://waze.com/ul?ll=' + lat + ',' + lon + '&navigate=yes';
   var mapsUrl = 'https://www.google.com/maps?q=' + lat + ',' + lon;
   var btnStyle = 'padding:3px 8px;border:1px solid #6366f1;border-radius:6px;background:#eef2ff;color:#4338ca;font-size:11px;cursor:pointer;text-decoration:none';
   return '<div style="min-width:200px">'
     + '<b>' + escapeHtml(species) + '</b>'
+    + sciLine
     + '<br><small>Kuupäev: ' + escapeHtml(dateStr) + '</small>'
     + (locStr ? '<br><small>Koht: ' + escapeHtml(locStr) + '</small>' : '')
     + '<br><small>Aasta: ' + (occ.year || '?') + '</small>'
     + '<br><small>Koordinaadid: ' + coords + '</small>'
+    + warningLine
     + '<br><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'
     + '<button onclick="navigator.clipboard.writeText(\'' + coords + '\').then(()=>{this.textContent=\'Kopeeritud!\';setTimeout(()=>{this.textContent=\'Kopeeri\'},1500)})" style="' + btnStyle + '">Kopeeri</button>'
     + '<a href="' + wazeUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Waze</a>'
@@ -7318,14 +7407,7 @@ async function toggleGbifData(species) {
   gbifLoadingSpecies.add(species);
   render();
   try {
-    var taxonKey = gbifTaxonKeys[species];
-    if (!taxonKey) {
-      taxonKey = await resolveGbifTaxonKey(species);
-      if (taxonKey) {
-        gbifTaxonKeys[species] = taxonKey;
-        try { localStorage.setItem('gbif_taxonkeys', JSON.stringify(gbifTaxonKeys)); } catch(e){}
-      }
-    }
+    var taxonKey = await resolveGbifTaxonKey(species);
     if (!taxonKey) {
       notifySilent('GBIF: liiki ei leitud – ' + species);
       gbifLoadingSpecies.delete(species);
@@ -7743,13 +7825,17 @@ function rowHTML(obj) {
         var gbifBtnText = isGbifLoading ? 'GBIF...' : (isGbifActive ? 'GBIF ✕' : 'GBIF');
         var gbifBtnClass = isGbifActive ? 'btn gbif-btn active' : 'btn gbif-btn';
         return '<button class="' + gbifBtnClass + '" data-species="' + key + '"'
-          + (isGbifLoading ? ' disabled' : '') + ' title="Näita GBIF andmeid (viimased 10 aastat)">'
+          + (isGbifLoading ? ' disabled' : '') + ' title="Näita GBIF andmeid. Shift+click = muuda liigi vastet">'
           + gbifBtnText + '</button>';
       })() +
       '</div>' +
       (function(){
         var gbifStat = window.gbifStats && window.gbifStats[key];
-        return gbifStat ? '<div class="small" style="color:#6366f1">GBIF: ' + gbifStat.count + ' vaatlust (' + gbifStat.minYear + '–' + gbifStat.maxYear + ')</div>' : '';
+        if (!gbifStat) return '';
+        var cached = gbifTaxonKeys[key] || {};
+        var sciLabel = cached.scientificName ? ' &middot; <i>' + escapeHtml(cached.scientificName) + '</i>' : '';
+        var warnIcon = (cached.resolvedVia && cached.resolvedVia.indexOf('fallback') !== -1) ? ' &#9888;&#65039;' : '';
+        return '<div class="small" style="color:#6366f1">GBIF: ' + gbifStat.count + ' vaatlust (' + gbifStat.minYear + '–' + gbifStat.maxYear + ')' + sciLabel + warnIcon + '</div>';
       })() +
     '</div>' +
   '</div>';
@@ -7851,7 +7937,28 @@ if(window.__predictionSyncedSpecies && !window.__selectedSpecies){
       e.preventDefault();
       e.stopPropagation();
       const species = gbifBtn.getAttribute('data-species') || '';
-      if(species) toggleGbifData(species);
+      if(!species) return;
+      if(e.shiftKey){
+        var currentCache = gbifTaxonKeys[species] || {};
+        var currentKey = currentCache.taxonKey || '';
+        var currentSci = currentCache.scientificName || '';
+        var input = prompt('GBIF taxonKey for ' + species + '\nCurrent: ' + currentKey + ' (' + currentSci + ')\n\nEnter scientific name (e.g. "Asio otus") or taxonKey number:', currentSci || currentKey || '');
+        if(input === null) return;
+        input = input.trim();
+        if(!input){ delete gbifTaxonKeys[species]; _saveGbifTaxonKeys(); notifySilent('GBIF: cleared cache for ' + species); render(); return; }
+        if(/^\d+$/.test(input)){
+          gbifTaxonKeys[species] = { taxonKey: Number(input), scientificName: '(manual)', resolvedVia: 'manual' };
+          _saveGbifTaxonKeys();
+          notifySilent('GBIF: set taxonKey ' + input + ' for ' + species);
+        } else {
+          _gbifMatchByScientificName(input).then(function(result){
+            if(result){ gbifTaxonKeys[species] = { taxonKey: result.taxonKey, scientificName: result.scientificName, resolvedVia: 'manual_sciname' }; _saveGbifTaxonKeys(); notifySilent('GBIF: ' + species + ' → ' + result.scientificName + ' (taxonKey ' + result.taxonKey + ')'); }
+            else { notifySilent('GBIF: scientific name "' + input + '" not found'); }
+          });
+        }
+        return;
+      }
+      toggleGbifData(species);
       return;
     }
     const openBtn = t.closest?.('.open-occ-btn');

@@ -2274,7 +2274,9 @@
         var cc = ((best.countryCodes || best.mainCountries || [])[0] || '').toUpperCase();
         var windNote = wind.label ? ', ' + wind.label : '';
         var windIcon = wind.label === 'tailwind' ? ' \uD83C\uDF2C\uFE0F\u2191' : (wind.label === 'headwind' ? ' \uD83C\uDF2C\uFE0F\u2193' : '');
-        return '~' + fmtDate(arrivalEst.toISOString()) + ' (est. ' + estDays + 'd from ' + (cc || 'foreign') + windNote + ')' + windIcon;
+        var isPast = arrivalEst < new Date();
+        var prefix = isPast ? 'possibly present since ~' : '~';
+        return prefix + fmtDate(arrivalEst.toISOString()) + ' (est. ' + estDays + 'd from ' + (cc || 'foreign') + windNote + ')' + windIcon;
       }
     }
     // Priority 3: historical window from last year

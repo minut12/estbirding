@@ -1261,11 +1261,8 @@ async function buildMapFirstPredictionResult(opts: {
     horizonDays,
   });
   const predictionVectors = buildPredictionVectors(selectedForeignOrigin, predictedTargets, weather, settings);
-  // Build globalMigrationEtas from per-target migrationEta data
-  const globalMigrationEtas = predictedTargets
-    .map((target) => asRecord(target).migrationEta)
-    .filter((eta) => eta && typeof eta === 'object')
-    .map((eta) => asRecord(eta));
+  // Build globalMigrationEtas: one route per significant foreign cluster (best per country)
+  const globalMigrationEtas = buildGlobalMigrationEtas(foreignClustersForRouting, estoniaHistoryClusters, foreignRecentPointsForRouting, weather);
   const rawLinks = buildRawLinks(speciesName, foreignEvidence);
   const sourceHealth = buildSourceHealthMapFirst({
     estoniaHistoryPoints,
@@ -2639,6 +2636,60 @@ function computeRouteDistanceKm(points: Array<{ lat: number; lon: number }>): nu
 
 function arePointsNear(lat1: number, lon1: number, lat2: number, lon2: number, toleranceDeg: number): boolean {
   return Math.abs(lat1 - lat2) <= toleranceDeg && Math.abs(lon1 - lon2) <= toleranceDeg;
+}
+
+/** Build migration ETA routes from ALL significant foreign clusters (best per country) to the nearest Estonian target. */
+function buildGlobalMigrationEtas(
+  foreignClusters: Record<string, unknown>[],
+  estoniaHistoryClusters: Array<Record<string, unknown>>,
+  foreignRecentPoints: Record<string, unknown>[],
+  weather: Record<string, unknown>,
+): Record<string, unknown>[] {
+  if (!foreignClusters.length || !estoniaHistoryClusters.length) return [];
+  // Pick the best (freshest, largest) cluster per country
+  const bestPerCountry = new Map<string, Record<string, unknown>>();
+  for (const cluster of foreignClusters) {
+    const codes = Array.isArray(cluster.countryCodes) ? cluster.countryCodes.map(String) : [];
+    const countryCode = (codes[0] || '').toLowerCase();
+    if (!countryCode) continue;
+    const existing = bestPerCountry.get(countryCode);
+    if (!existing
+      || toNumber(cluster.freshestDaysAgo) < toNumber(existing.freshestDaysAgo)
+      || (toNumber(cluster.freshestDaysAgo) === toNumber(existing.freshestDaysAgo) && toNumber(cluster.pointCount) > toNumber(existing.pointCount))
+    ) {
+      bestPerCountry.set(countryCode, cluster);
+    }
+  }
+  const results: Record<string, unknown>[] = [];
+  for (const [countryCode, cluster] of bestPerCountry) {
+    // Find nearest Estonian target for this cluster
+    const nearestTarget = estoniaHistoryClusters
+      .map((est) => ({
+        est,
+        dist: haversineKm(toNumber(cluster.lat), toNumber(cluster.lon), toNumber(est.lat), toNumber(est.lon)),
+      }))
+      .sort((a, b) => a.dist - b.dist)[0];
+    if (!nearestTarget) continue;
+    const entryCorridor = deriveEstoniaEntryCorridor(cluster, estoniaHistoryClusters.map((c) => c as Record<string, unknown>));
+    const selectedOrigin = buildCanonicalSelectedForeignOrigin(cluster, foreignRecentPoints);
+    const eta = buildCanonicalMigrationEta({
+      sourceOriginAnchor: cluster,
+      selectedForeignOrigin: selectedOrigin,
+      corridorAnchor: null,
+      estoniaEntryCorridor: entryCorridor,
+      target: {
+        name: stringOr(nearestTarget.est.displayName, nearestTarget.est.municipality, 'Target'),
+        lat: toNumber(nearestTarget.est.lat),
+        lon: toNumber(nearestTarget.est.lon),
+        rank: results.length + 1,
+      },
+      weather,
+    });
+    results.push(eta);
+  }
+  // Sort by distance (closest first = earliest arrival)
+  results.sort((a, b) => toNumber(a.distanceKm) - toNumber(b.distanceKm));
+  return results;
 }
 
 function deriveEstoniaEntryCorridor(

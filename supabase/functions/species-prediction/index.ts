@@ -3120,7 +3120,9 @@ function createUpstreamError(input: {
         normalizedInsightLength: typeof (input.upstreamBody as Record<string, unknown> | null)?.normalizedInsightLength === 'number'
           ? (input.upstreamBody as Record<string, unknown>).normalizedInsightLength as number
           : undefined,
-        normalizedWarningsCount: (input.upstreamBody as Record<string, unknown> | null)?.normalizedWarningsCount,
+        normalizedWarningsCount: typeof (input.upstreamBody as Record<string, unknown> | null)?.normalizedWarningsCount === 'number'
+          ? (input.upstreamBody as Record<string, unknown>).normalizedWarningsCount as number
+          : undefined,
         normalizedRankingNotesType: typeof (input.upstreamBody as Record<string, unknown> | null)?.normalizedRankingNotesType === 'string'
           ? (input.upstreamBody as Record<string, unknown>).normalizedRankingNotesType
           : undefined,
@@ -5654,10 +5656,18 @@ function finalizePredictionResponse(
   canonicalResponse: Record<string, unknown>,
   branch: string,
 ): Record<string, unknown> {
+  // Guard: if payload is null/undefined/non-object, return as-is to prevent crashes
+  if (!canonicalResponse || typeof canonicalResponse !== 'object') {
+    return canonicalResponse;
+  }
+
   // Skip finalization if this payload was written directly by n8n
   const isN8nPassthrough =
     stringOr(canonicalResponse.summaryOrigin) === 'n8n_evidence_first' ||
-    stringOr(canonicalResponse.payloadSourceState) === 'n8n_v3_passthrough';
+    stringOr(canonicalResponse.payloadSourceState) === 'n8n_v3_passthrough' ||
+    (((canonicalResponse.rawResearchPayload as Record<string, unknown> | null)
+      ?.evidenceSummary as Record<string, unknown> | null)
+      ?.totalForeignRecentPoints as number ?? 0) > 0;
   if (isN8nPassthrough) {
     console.log(`[finalizePredictionResponse] Skipping (${branch}): n8n passthrough detected`);
     return canonicalResponse;

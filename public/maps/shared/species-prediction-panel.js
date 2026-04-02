@@ -520,6 +520,11 @@
       latestEeCoords: prediction.latestEeCoords,
     });
     var summaryText = normalizeText(prediction.summaryText);
+    console.log('[Insight] rendering, summaryText:', summaryText ? summaryText.substring(0, 80) : '(empty)',
+      'insightSummary:', result.insightSummary ? String(result.insightSummary).substring(0, 80) : '(empty)',
+      'aiSummary type:', typeof result.aiSummary,
+      'aiSummary:', result.aiSummary ? String(typeof result.aiSummary === 'object' ? JSON.stringify(result.aiSummary).substring(0, 80) : result.aiSummary).substring(0, 80) : '(empty)',
+      'confidenceNote:', result.confidenceNote ? String(result.confidenceNote).substring(0, 80) : '(empty)');
     var _aiObj = (result.aiSummary && typeof result.aiSummary === 'object') ? result.aiSummary : null;
     var confidenceNote = normalizeText(result.confidenceNote || (_aiObj && _aiObj.confidenceNote) || '');
     var rankingNotes = normalizeText(result.rankingNotes || (_aiObj && _aiObj.rankingNotes) || '');

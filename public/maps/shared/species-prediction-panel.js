@@ -520,8 +520,9 @@
       latestEeCoords: prediction.latestEeCoords,
     });
     var summaryText = normalizeText(prediction.summaryText);
-    var confidenceNote = normalizeText(result.confidenceNote);
-    var rankingNotes = normalizeText(result.rankingNotes);
+    var _aiObj = (result.aiSummary && typeof result.aiSummary === 'object') ? result.aiSummary : null;
+    var confidenceNote = normalizeText(result.confidenceNote || (_aiObj && _aiObj.confidenceNote) || '');
+    var rankingNotes = normalizeText(result.rankingNotes || (_aiObj && _aiObj.rankingNotes) || '');
     var warnings = normalizeStringArray(result.warnings);
     var consistencyChecks = result.consistencyChecks || null;
     var preferredPoints = Array.isArray(prediction.displayedTargets) && prediction.displayedTargets.length
@@ -2598,7 +2599,8 @@
     }
 
     var predictedTargets = Array.isArray(root.predictedTargets) ? root.predictedTargets : [];
-    var summaryText = String(root.insightSummary || (root.aiSummary && root.aiSummary.insightSummary) || '').trim();
+    var aiSummaryObj = (root.aiSummary && typeof root.aiSummary === 'object') ? root.aiSummary : null;
+    var summaryText = String(root.insightSummary || (aiSummaryObj && aiSummaryObj.insightSummary) || (typeof root.aiSummary === 'string' ? root.aiSummary : '') || '').trim();
     var freshestEvidence = resolveFreshestEstoniaEvidenceJs(root);
     var alreadyPresentMode = !!((root.estoniaEvidence && root.estoniaEvidence.alreadyPresent === true) || recentCount7d > 0);
 

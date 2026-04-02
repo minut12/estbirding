@@ -29,6 +29,7 @@ import {
   refreshSpeciesMetaFromCloud,
   saveSpeciesMetaToCloud,
 } from '@/lib/speciesMetaCloud';
+import { addCustomSpecies, removeCustomSpecies, isCustomSpecies } from '@/lib/customSpecies';
 import { ET_STRINGS } from '@/lib/etStrings';
 import { normalizeUiText } from '@/lib/textNormalize';
 
@@ -48,6 +49,8 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
   const [syncStatus, setSyncStatus] = useState(() => getSpeciesMetaSyncStatus(scope));
   const [scopeMetadata, setScopeMetadata] = useState<SpeciesMetaLookupFallback>({});
   const [avatarsReady, setAvatarsReady] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newSpeciesName, setNewSpeciesName] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -243,6 +246,40 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     }
   }, [scope]);
 
+  const handleAddSpecies = useCallback(() => {
+    const trimmed = newSpeciesName.trim();
+    if (!trimmed) {
+      toast.error('Sisesta liigi nimi');
+      return;
+    }
+    if (species.some((s) => s.toLowerCase() === trimmed.toLowerCase())) {
+      toast.error('See liik on juba nimekirjas');
+      return;
+    }
+    const added = addCustomSpecies(trimmed);
+    if (added) {
+      fetchSpeciesList(scope).then((list) => {
+        if (list.length > 0) setSpecies(list.map(normalizeUiText));
+      });
+      setNewSpeciesName('');
+      setShowAddForm(false);
+      setSelected(trimmed);
+      toast.success(`Liik "${trimmed}" lisatud`);
+    } else {
+      toast.error('Liigi lisamine ebaõnnestus');
+    }
+  }, [newSpeciesName, species, scope]);
+
+  const handleRemoveCustomSpecies = useCallback(() => {
+    if (!selected || !isCustomSpecies(selected)) return;
+    removeCustomSpecies(selected);
+    fetchSpeciesList(scope).then((list) => {
+      if (list.length > 0) setSpecies(list.map(normalizeUiText));
+    });
+    setSelected('');
+    toast.success(`Liik "${selected}" eemaldatud`);
+  }, [selected, scope]);
+
   const formatLastSync = useCallback((iso: string) => {
     if (!iso) return '-';
     const d = new Date(iso);
@@ -313,6 +350,39 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
         </div>
       )}
 
+      {/* Add new species section */}
+      <div className="flex items-center gap-2">
+        {!showAddForm ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowAddForm(true)}
+            className="text-xs"
+          >
+            + Lisa uus liik
+          </Button>
+        ) : (
+          <div className="flex items-center gap-2 w-full">
+            <Input
+              placeholder="Uue liigi nimi, nt. Sookurg"
+              value={newSpeciesName}
+              onChange={(e) => setNewSpeciesName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAddSpecies(); }}
+              className="text-sm"
+              autoFocus
+            />
+            <Button size="sm" onClick={handleAddSpecies}>Lisa</Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => { setShowAddForm(false); setNewSpeciesName(''); }}
+            >
+              Tühista
+            </Button>
+          </div>
+        )}
+      </div>
+
       {activeKey && (
         <>
           <Separator />
@@ -323,6 +393,16 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
             </Avatar>
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm text-foreground truncate">{activeKey}</p>
+              {isCustomSpecies(selected) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-destructive h-6 px-2"
+                  onClick={handleRemoveCustomSpecies}
+                >
+                  <Trash2 className="w-3 h-3 mr-1" /> Eemalda liik
+                </Button>
+              )}
               <p className="text-xs text-muted-foreground">
                 {preview ? 'Eelvaade (salvestamata)' : currentAvatar ? 'Pilves salvestatud avatar' : 'Vaikimisi / placeholder'}
               </p>

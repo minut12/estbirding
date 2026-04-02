@@ -1110,8 +1110,8 @@
       '    <div class="spp-point-title">' +
       '      <div class="spp-point-rank">#' + escapeHtml(point && point.rank) + '</div>' +
       '      <div>' +
-        '        <div class="spp-point-name">' + escapeHtml(point && (point.displayName || point.name)) + '</div>' +
-      '        <div class="spp-point-place">' + escapeHtml(formatCoords(point && point.lat, point && point.lon)) + '</div>' +
+        '        <div class="spp-point-name">' + escapeHtml(point && (point.displayName || point.name || point.countyOrParish || point.municipality || 'Target')) + '</div>' +
+      '        <div class="spp-point-place">' + escapeHtml((point && point.countyOrParish && point.countyOrParish !== (point.displayName || point.name) ? point.countyOrParish + ' \u00B7 ' : '') + formatCoords(point && point.lat, point && point.lon)) + '</div>' +
       '      </div>' +
       '    </div>' +
       '    <div class="spp-confidence">' +
@@ -2271,7 +2271,9 @@
         var baseDate = sightDate ? new Date(sightDate) : new Date();
         if (isNaN(baseDate.getTime())) baseDate = new Date();
         var arrivalEst = new Date(baseDate.getTime() + estDays * 86400000);
-        var cc = ((best.countryCodes || best.mainCountries || [])[0] || '').toUpperCase();
+        var cc = ((best.countryCodes || best.countries || best.mainCountries || [])[0] || '').toUpperCase();
+        console.log('[ETA] nearest cluster:', { lat: best.lat, lon: best.lon, dist: Math.round(bestDist), countryCodes: best.countryCodes, countries: best.countries, newestObsDt: best.newestObsDt, locNames: best.locNames },
+          'country:', cc, 'sightDate:', sightDate, 'baseDate:', baseDate.toISOString(), 'estDays:', estDays, 'arrivalEst:', arrivalEst.toISOString());
         var windNote = wind.label ? ', ' + wind.label : '';
         var windIcon = wind.label === 'tailwind' ? ' \uD83C\uDF2C\uFE0F\u2191' : (wind.label === 'headwind' ? ' \uD83C\uDF2C\uFE0F\u2193' : '');
         var isPast = arrivalEst < new Date();

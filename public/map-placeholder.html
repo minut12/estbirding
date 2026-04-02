@@ -47,6 +47,7 @@
 .marker-count.mig-on{background:rgba(40,180,70,.95);color:#fff;border-color:#1c6b25}
 .marker-count.mig-off{background:rgba(255,160,0,.95);color:#111;border-color:#8a5a00}
 
+.leaflet-marker-icon { overflow: visible !important; }
 .rarity-select{font-size:12px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;vertical-align:middle}
 
 
@@ -1012,7 +1013,7 @@ function rowHTML(obj) {
   const occ7 = Number.isFinite(p.occ7) ? p.occ7 : null;
   const rarityTxt = r ? ` <span class="pill">rarity:</span> ${r}` : '';
   const springVal = (springDates && springDates[key]) ? String(springDates[key]).trim() : '';
-  const springTxt = ` <span class="pill">Kevad:</span> <span class="clickable spring-edit" data-spring-key="${key}" title="Muuda kevadise saabumise kuupäeva">${springVal || '—'}</span>`;
+  const springTxt = ` <span class="pill">Kevad:</span> <span class="clickable spring-edit" data-spring-key="${key}" title="Muuda kevadise saabumise kuupï¿½eva">${springVal || 'ï¿½'}</span>`;
 
   const meta = hasPoint
     ? `<span class="pill">lat:</span> ${p.lat.toFixed(4)} <span class="pill">lon:</span> ${p.lon.toFixed(4)}${p.t?` <span class="pill">date:</span> ${p.t}`:''}${(occ7!==null?` <span class="pill">7d:</span> ${occ7}`:'')}${rarityTxt}${springTxt}`

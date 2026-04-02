@@ -103,6 +103,7 @@
   cursor:pointer;
 }
 .leaflet-marker-icon, .leaflet-interactive { pointer-events: auto !important; }
+.leaflet-marker-icon { overflow: visible !important; }
 
 .rarity-select{font-size:12px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;vertical-align:middle}
 
@@ -6384,7 +6385,7 @@ function rebuildAllMarkers(){
     if(markers && typeof markers.forEach === 'function'){
       markers.forEach(function(m){
         try{
-          if(clusterGroup && typeof clusterGroup.removeLayer === 'function') clusterGroup.removeLayer(m);
+          if(clusterGroup && typeof clusterGroup.removeLayer === 'function' && map.hasLayer(clusterGroup)) clusterGroup.removeLayer(m);
           else map.removeLayer(m);
         }catch(e){}
       });
@@ -7304,7 +7305,7 @@ function updateMarker(key) {
   if (!p) {
     if(prevMarker){
       try{
-        if(clusterGroup && typeof clusterGroup.removeLayer === 'function') clusterGroup.removeLayer(prevMarker);
+        if(clusterGroup && typeof clusterGroup.removeLayer === 'function' && map.hasLayer(clusterGroup)) clusterGroup.removeLayer(prevMarker);
         else map.removeLayer(prevMarker);
       }catch(e){}
       markers.delete(key);
@@ -7319,7 +7320,7 @@ function updateMarker(key) {
   if (!isVisible) {
     if(prevMarker){
       try{
-        if(clusterGroup && typeof clusterGroup.removeLayer === 'function') clusterGroup.removeLayer(prevMarker);
+        if(clusterGroup && typeof clusterGroup.removeLayer === 'function' && map.hasLayer(clusterGroup)) clusterGroup.removeLayer(prevMarker);
         else map.removeLayer(prevMarker);
       }catch(e){}
       markers.delete(key);
@@ -7339,14 +7340,14 @@ function updateMarker(key) {
   }
   if(prevMarker){
     try{
-      if(clusterGroup && typeof clusterGroup.removeLayer === 'function') clusterGroup.removeLayer(prevMarker);
+      if(clusterGroup && typeof clusterGroup.removeLayer === 'function' && map.hasLayer(clusterGroup)) clusterGroup.removeLayer(prevMarker);
       else map.removeLayer(prevMarker);
       markers.delete(key);
     }catch(_e){}
   }
   console.log('[fix] updateMarker: placing', key, 'at lat=', p.lat, 'lon=', p.lon);
   const m = L.marker([p.lat,p.lon], {icon});
-  if(clusterGroup && typeof clusterGroup.addLayer === 'function'){
+  if(clusterGroup && typeof clusterGroup.addLayer === 'function' && map.hasLayer(clusterGroup)){
     try{ clusterGroup.addLayer(m); }catch(e){ m.addTo(map); }
   } else {
     m.addTo(map);
@@ -7366,7 +7367,7 @@ function updateMarker(key) {
     changed: !old || Math.abs(old.lat - p.lat) > 1e-6 || Math.abs(old.lng - p.lon) > 1e-6,
     atISO: new Date().toISOString()
   };
-  if(p.lastMarkerMove.changed && clusterGroup && typeof clusterGroup.removeLayer === 'function' && typeof clusterGroup.addLayer === 'function'){
+  if(p.lastMarkerMove.changed && clusterGroup && typeof clusterGroup.removeLayer === 'function' && typeof clusterGroup.addLayer === 'function' && map.hasLayer(clusterGroup)){
     try{ clusterGroup.removeLayer(m); clusterGroup.addLayer(m); }catch(e){}
   }
   markers.set(key, m);

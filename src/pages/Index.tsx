@@ -83,8 +83,10 @@ export default function Index() {
     <div className="flex flex-col h-[100dvh] min-h-[100dvh] bg-background overflow-hidden">
       <VersionBanner />
 
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {active === 'kaart' && <MapTab isActive={active === 'kaart'} onMapChange={setSelectedMapId} />}
+      <div className="flex-1 min-h-0 overflow-hidden relative">
+        <div className={active === 'kaart' ? 'absolute inset-0' : 'absolute inset-0 invisible pointer-events-none'}>
+          <MapTab isActive={active === 'kaart'} onMapChange={setSelectedMapId} />
+        </div>
         {active === 'uudised' && <NewsTab />}
         {active === 'üritused' && <EventsTab />}
         {active === 'seaded' && <SettingsTab />}

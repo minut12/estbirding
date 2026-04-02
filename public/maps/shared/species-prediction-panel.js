@@ -1091,24 +1091,8 @@
     var confidencePct = formatConfidence(point && point.confidence);
     var fillPct = String(clampConfidencePercent(point && point.confidence)) + '%';
     var migEta = point && point.migrationEta ? point.migrationEta : null;
-    var etaDisplay = (function () {
-      if (!migEta || !migEta.earliestArrival) return point && point.eta;
-      var fmt = function (iso) {
-        var d = new Date(iso);
-        if (isNaN(d.getTime())) return '';
-        return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
-      };
-      var early = fmt(migEta.earliestArrival);
-      var late = migEta.latestArrival ? fmt(migEta.latestArrival) : '';
-      var range = early && late && early !== late ? early + '–' + late.replace(/^[A-Za-z]+ /, '') : early;
-      var days = migEta.etaText || (migEta.totalDaysEstimate ? migEta.totalDaysEstimate + 'd' : '');
-      var label = range + (days ? ' (~' + days + ')' : '');
-      if (migEta.isImminent) label += ' ⚡';
-      if (migEta.isPastDue) label += ' ⏰';
-      return label;
-    })();
     var metrics = '' +
-      metricCell('ETA', etaDisplay) +
+      metricCell('ETA', formatMigrationEtaLabel(migEta, point && point.eta)) +
       metricCell('Radius', appendKm(point && point.searchRadiusKm)) +
       metricCell('Confidence', confidencePct) +
       metricCell('EE support count', point && point.supportingEstoniaHistoryCount) +
@@ -1249,7 +1233,17 @@
         weight: isFresh ? 2 : 1,
         fillColor: color,
         fillOpacity: isFresh ? 0.9 : 0.35
-      }).bindPopup('<strong>' + escapeHtml(isFresh ? 'Fresh Estonia evidence' : 'Estonia history') + '</strong><br>' + escapeHtml(point.locality || point.municipality || 'GBIF point') + '<br>' + escapeHtml(point.eventDate || 'Unknown date')).addTo(overlayGroups.estoniaHistoryPoints);
+      }).bindPopup(
+        '<div style="max-width:300px">' +
+        '<strong>' + escapeHtml(isFresh ? '\uD83D\uDFE2 Fresh Estonia evidence' : '\uD83D\uDD35 Estonia history') + '</strong><br>' +
+        '<b>' + escapeHtml(point.locality || point.municipality || 'GBIF point') + '</b><br>' +
+        escapeHtml(point.eventDate || 'Unknown date') +
+        (point.individualCount != null ? ' \u00B7 ' + escapeHtml(point.individualCount) + ' ind.' : '') + '<br>' +
+        (point.source ? 'Source: ' + escapeHtml(point.source) + '<br>' : '') +
+        (point.occurrenceId ? '<a href="https://www.gbif.org/occurrence/' + escapeHtml(point.occurrenceId) + '" target="_blank" rel="noopener" style="color:#2563eb">GBIF record \u2197</a>' : '') +
+        '</div>',
+        { maxWidth: 300 }
+      ).addTo(overlayGroups.estoniaHistoryPoints);
     });
   }
 
@@ -1261,7 +1255,18 @@
         weight: 2,
         fillColor: '#94a3b8',
         fillOpacity: 0
-      }).bindPopup('<strong>History hotspot</strong><br>' + escapeHtml(canonicalHotspotName(cluster.displayName || cluster.locality || 'Cluster')) + '<br>Count: ' + escapeHtml(cluster.count || 0) + '<br>Latest year: ' + escapeHtml(String(extractYearJs(cluster.newestEventDate || '') || 'Unknown')) + '<br>Recent365d: ' + escapeHtml(cluster.recentCount || 0)).addTo(overlayGroups.estoniaHistoryClusters);
+      }).bindPopup(
+        '<div style="max-width:320px">' +
+        '<strong>' + escapeHtml(canonicalHotspotName(cluster.displayName || cluster.locality || 'Cluster')) + '</strong><br>' +
+        '<b>Count:</b> ' + escapeHtml(cluster.count || 0) + ' records<br>' +
+        '<b>Latest:</b> ' + escapeHtml(cluster.newestEventDate || 'Unknown') + '<br>' +
+        '<b>Recent (365d):</b> ' + escapeHtml(cluster.recentCount || 0) + '<br>' +
+        (cluster.coastalDistanceKm != null ? '<b>Coast:</b> ~' + escapeHtml(Math.round(Number(cluster.coastalDistanceKm))) + ' km' + (Number(cluster.coastalDistanceKm) < 5 ? ' (coastal)' : '') + '<br>' : '') +
+        (cluster.habitatCue ? '<b>Habitat:</b> ' + escapeHtml(cluster.habitatCue) + '<br>' : '') +
+        (Array.isArray(cluster.localityNames) && cluster.localityNames.length ? '<div style="margin-top:3px;font-size:11px;color:#64748b">Localities: ' + escapeHtml(cluster.localityNames.slice(0, 4).join(', ')) + '</div>' : '') +
+        '</div>',
+        { maxWidth: 320 }
+      ).addTo(overlayGroups.estoniaHistoryClusters);
     });
   }
 
@@ -1275,7 +1280,18 @@
         weight: 2,
         fillColor: isFreshest ? '#fb923c' : '#fdba74',
         fillOpacity: 0.85
-      }).bindPopup('<strong>Foreign evidence point</strong><br>' + escapeHtml(point.countryName || point.countryCode || 'Country unavailable') + '<br>' + escapeHtml(point.locName || 'Location unavailable') + '<br>' + escapeHtml(point.obsDt || 'Date unavailable') + '<br>Source: ' + escapeHtml(point.source || 'eBird')).addTo(overlayGroups.foreignRecentPoints);
+      }).bindPopup(
+        '<div style="max-width:320px">' +
+        '<strong>' + countryFlag(point.countryCode) + ' ' + escapeHtml(point.countryName || String(point.countryCode || '').toUpperCase() || 'Unknown') + '</strong><br>' +
+        '<b>' + escapeHtml(point.locName || 'Unknown locality') + '</b><br>' +
+        escapeHtml(point.obsDt || 'Date unavailable') +
+        (point.howMany != null ? ' \u00B7 ' + escapeHtml(point.howMany) + ' ind.' : '') + '<br>' +
+        (point.distanceToEstoniaKm != null ? 'Distance: ~' + escapeHtml(Math.round(Number(point.distanceToEstoniaKm))) + ' km to Estonia<br>' : '') +
+        (point.daysAgo != null ? escapeHtml(point.daysAgo) + ' days ago<br>' : '') +
+        (point.subId ? '<a href="https://ebird.org/checklist/' + escapeHtml(point.subId) + '" target="_blank" rel="noopener" style="color:#2563eb">eBird checklist \u2197</a>' : 'Source: eBird') +
+        '</div>',
+        { maxWidth: 320 }
+      ).addTo(overlayGroups.foreignRecentPoints);
     });
   }
 
@@ -1288,13 +1304,16 @@
         fillColor: '#fb923c',
         fillOpacity: 0.2
       }).bindPopup(
-        '<strong>Foreign pressure cluster</strong><br>'
-        + 'Country: ' + escapeHtml((cluster.countries || []).join(', ') || (cluster.countryCodes || []).join(', ') || 'Unavailable') + '<br>'
-        + 'Locality: ' + escapeHtml((cluster.locNames || []).join(', ') || cluster.locality || 'Unavailable') + '<br>'
-        + 'Latest date: ' + escapeHtml(cluster.newestObsDt || cluster.latestDate || 'Unavailable') + '<br>'
-        + 'Recent7d: ' + escapeHtml(cluster.recent7d != null ? cluster.recent7d : (cluster.pointCount || 0)) + '<br>'
-        + 'Total individuals: ' + escapeHtml(cluster.totalHowMany != null ? cluster.totalHowMany : (cluster.totalIndividuals || 0)) + '<br>'
-        + 'Source: ' + escapeHtml(cluster.source || 'eBird')
+        '<div style="max-width:320px">' +
+        '<strong>' + countryFlag((cluster.countryCodes || [])[0]) + ' Foreign pressure cluster</strong><br>' +
+        '<b>' + escapeHtml((cluster.locNames || []).slice(0, 2).join(', ') || cluster.locality || 'Unknown') + '</b><br>' +
+        escapeHtml((cluster.countries || []).join(', ') || (cluster.countryCodes || []).map(function(c) { return String(c).toUpperCase(); }).join(', ') || '') + '<br>' +
+        '<b>Latest:</b> ' + escapeHtml(cluster.newestObsDt || cluster.latestDate || 'N/A') + '<br>' +
+        '<b>Points:</b> ' + escapeHtml(cluster.pointCount || 0) + ' recent \u00B7 ' + escapeHtml(cluster.totalHowMany != null ? cluster.totalHowMany : 0) + ' individuals<br>' +
+        (cluster.nearestDistanceKm != null ? '<b>Distance:</b> ~' + escapeHtml(Math.round(Number(cluster.nearestDistanceKm))) + ' km to Estonia<br>' : '') +
+        (cluster.freshestDaysAgo != null ? escapeHtml(cluster.freshestDaysAgo) + ' days ago<br>' : '') +
+        '</div>',
+        { maxWidth: 320 }
       ).addTo(overlayGroups.foreignPressureClusters);
     });
   }
@@ -1321,13 +1340,19 @@
         iconSize: [28, 28],
         iconAnchor: [14, 14]
       });
-      L.marker([point.lat, point.lon], { icon: icon, zIndexOffset: 1000 }).bindPopup(
+      var pMigEta = point.migrationEta || null;
+      var pEtaLabel = formatMigrationEtaLabel(pMigEta, point.eta);
+      var pPopup = '<div style="max-width:320px">' +
         '<strong>#' + escapeHtml(point.rank) + ' ' + escapeHtml(point.displayName || point.name || 'Target') + '</strong><br>' +
-        'ETA: ' + escapeHtml(point.eta || 'Unavailable') + '<br>' +
-        'Support: ' + escapeHtml(point.supportingEstoniaHistoryCount || point.supportingPointCount || '') + '<br>' +
-        'Latest EE date: ' + escapeHtml(point.latestSupportingEstoniaDate || (prediction && prediction.freshestEeDate) || '') + '<br>' +
-        escapeHtml(cleanReasonText(point.reason || '', Array.isArray(point.supportingCountries) && point.supportingCountries.length))
-      ).addTo(overlayGroups.predictedTargets);
+        '<b>ETA:</b> ' + escapeHtml(pEtaLabel) + '<br>' +
+        (pMigEta && pMigEta.fromLocality ? '<b>From:</b> ' + escapeHtml(pMigEta.fromLocality) + ' (' + escapeHtml(pMigEta.fromCountry || '') + ')' + (pMigEta.distanceKm ? ' — ' + escapeHtml(pMigEta.distanceKm) + ' km' : '') + '<br>' : '') +
+        '<b>EE support:</b> ' + escapeHtml(point.supportingEstoniaHistoryCount || point.supportingPointCount || '0') + ' pts<br>' +
+        '<b>Latest EE date:</b> ' + escapeHtml(point.latestSupportingEstoniaDate || (prediction && prediction.freshestEeDate) || 'N/A') + '<br>' +
+        (point.habitatCue ? '<b>Habitat:</b> ' + escapeHtml(point.habitatCue) + '<br>' : '') +
+        (point.confidence != null ? '<b>Confidence:</b> ' + escapeHtml(String(Math.round(Number(point.confidence) * 100))) + '%<br>' : '') +
+        '<div style="margin-top:4px;font-size:11px;color:#64748b">' + escapeHtml(cleanReasonText(point.reason || '', Array.isArray(point.supportingCountries) && point.supportingCountries.length)) + '</div>' +
+        '</div>';
+      L.marker([point.lat, point.lon], { icon: icon, zIndexOffset: 1000 }).bindPopup(pPopup, { maxWidth: 320 }).addTo(overlayGroups.predictedTargets);
     });
   }
 
@@ -2173,6 +2198,26 @@
     if (!sources.length) return summarizeSources(evidenceSummary, sourceHealth);
     return sources.join(', ');
   }
+
+  function formatMigrationEtaLabel(migEta, fallbackEta) {
+    if (!migEta || !migEta.earliestArrival) return fallbackEta || 'Unavailable';
+    var fmt = function (iso) {
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+    };
+    var early = fmt(migEta.earliestArrival);
+    var late = migEta.latestArrival ? fmt(migEta.latestArrival) : '';
+    var range = early && late && early !== late ? early + ' \u2013 ' + late : early;
+    var days = migEta.etaText || (migEta.totalDaysEstimate ? migEta.totalDaysEstimate + 'd' : '');
+    var label = range + (days ? ' (~' + days + ')' : '');
+    if (migEta.isImminent) label += ' \u26A1';
+    if (migEta.isPastDue) label += ' \u23F0';
+    return label;
+  }
+
+  var _countryFlags = { fi: '\uD83C\uDDEB\uD83C\uDDEE', lv: '\uD83C\uDDF1\uD83C\uDDFB', lt: '\uD83C\uDDF1\uD83C\uDDF9', pl: '\uD83C\uDDF5\uD83C\uDDF1', by: '\uD83C\uDDE7\uD83C\uDDFE', ru: '\uD83C\uDDF7\uD83C\uDDFA', ee: '\uD83C\uDDEA\uD83C\uDDEA' };
+  function countryFlag(code) { return _countryFlags[String(code || '').toLowerCase()] || ''; }
 
   function summarizeFreshestEstoniaLocalities(estoniaEvidence) {
     var localities = Array.isArray(estoniaEvidence && estoniaEvidence.freshestLocalities) ? estoniaEvidence.freshestLocalities : [];

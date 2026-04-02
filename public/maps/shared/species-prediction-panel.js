@@ -569,6 +569,7 @@
     publishPanelState(result, preferredPoints);
 
     var html = '';
+    var unavailableState = result && result.statusCode === 'CONFIGURED_UNAVAILABLE';
     if (unavailableState) {
       html += renderStateCard(
         'spp-state-caution',

@@ -447,6 +447,18 @@ function _toCleanKey(garbledKey) {
     .replace(/\u00c5\u00a0/g, 'Š').replace(/\u00c5\u00bd/g, 'Ž');
 }
 
+// Robust key normalizer: find the SPECIES entry that matches a cloud key via slug comparison
+function _normalizeToInternal(key) {
+  if (!key) return key;
+  var s = String(key);
+  if (typeof SPECIES !== 'undefined') {
+    for (var i = 0; i < SPECIES.length; i++) { if (SPECIES[i] === s) return s; }
+    var slug = slugifySpeciesKey(s);
+    for (var i = 0; i < SPECIES.length; i++) { if (slugifySpeciesKey(SPECIES[i]) === slug) return SPECIES[i]; }
+  }
+  return _toInternalKey(key);
+}
+
 const __avatarPreloadCache = new Set();
 function preloadAvatars(urls){
   try{
@@ -509,6 +521,10 @@ function getDisplayAvatar(key){
   if(avatars[key]) return avatars[key];
   var cleanKey = _toCleanKey(key);
   if(cleanKey !== key && avatars[cleanKey]) return avatars[cleanKey];
+  var targetSlug = slugifySpeciesKey(key);
+  for(var k in avatars){
+    if(avatars.hasOwnProperty(k) && avatars[k] && slugifySpeciesKey(k) === targetSlug) return avatars[k];
+  }
   return PLACEHOLDER_AVATAR_URL;
 }
 
@@ -8267,12 +8283,15 @@ var __sharedDefaults = {};
       if(type === 'AVATARS_DEFAULTS' && ev.data.avatars){
         __sharedDefaults = {};
         var incomingDefaults = ev.data.avatars || {};
+        var _matchCount = 0;
         for(var dk in incomingDefaults){
           if(!incomingDefaults.hasOwnProperty(dk)) continue;
-          __sharedDefaults[dk] = incomingDefaults[dk];
-          var intKey = _toInternalKey(dk);
-          if(intKey !== dk) __sharedDefaults[intKey] = incomingDefaults[dk];
+          var normKey = _normalizeToInternal(dk);
+          __sharedDefaults[normKey] = incomingDefaults[dk];
+          if(normKey !== dk) __sharedDefaults[dk] = incomingDefaults[dk];
+          if(normKey !== dk) _matchCount++;
         }
+        console.log('[iframe] AVATARS_DEFAULTS received:', Object.keys(incomingDefaults).length, 'keys,', _matchCount, 'normalized to internal format');
         var localAvatars = JSON.parse(localStorage.getItem(LS_AVATARS) || '{}');
         var merged = Object.assign({}, __sharedDefaults, localAvatars);
         for(var k in merged){ if(merged.hasOwnProperty(k) && merged[k]) avatars[k] = merged[k]; }
@@ -8285,8 +8304,9 @@ var __sharedDefaults = {};
         var incoming = ev.data.avatars;
         for(var k in incoming){
           if(!incoming.hasOwnProperty(k)) continue;
-          if(incoming[k]){ avatars[k] = incoming[k]; var ik = _toInternalKey(k); if(ik !== k) avatars[ik] = incoming[k]; }
-          else { delete avatars[k]; var ik2 = _toInternalKey(k); if(ik2 !== k) delete avatars[ik2]; }
+          var nk = _normalizeToInternal(k);
+          if(incoming[k]){ avatars[nk] = incoming[k]; if(nk !== k) avatars[k] = incoming[k]; }
+          else { delete avatars[nk]; if(nk !== k) delete avatars[k]; }
         }
         save();
         preloadAvatars(Object.values(avatars));
@@ -8303,9 +8323,9 @@ var __sharedDefaults = {};
         var normalizedMeta = {};
         for(var mk in incomingMeta){
           if(!incomingMeta.hasOwnProperty(mk)) continue;
-          normalizedMeta[mk] = incomingMeta[mk];
-          var mIntKey = _toInternalKey(mk);
-          if(mIntKey !== mk) normalizedMeta[mIntKey] = incomingMeta[mk];
+          var mnk = _normalizeToInternal(mk);
+          normalizedMeta[mnk] = incomingMeta[mk];
+          if(mnk !== mk) normalizedMeta[mk] = incomingMeta[mk];
         }
         var mergedMeta = Object.assign({}, currentMeta, normalizedMeta);
         localStorage.setItem('estbirding.speciesMeta.v1', JSON.stringify(mergedMeta));

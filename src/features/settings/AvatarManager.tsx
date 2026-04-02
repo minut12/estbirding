@@ -12,7 +12,7 @@ import { Upload, Trash2, Bird, RefreshCw, Check, Cloud, Loader2 } from 'lucide-r
 import { LINNULIIGID_SCOPE, type SpeciesScopeConfig } from '@/lib/mapScope';
 import {
   getMergedAvatars, validateFile, processImage, notifyIframeUpdate,
-  uploadSharedAvatar, removeSharedAvatar, fetchSpeciesList,
+  uploadSharedAvatar, removeSharedAvatar, fetchSpeciesList, fetchSharedAvatars,
 } from '@/lib/avatar-storage';
 import {
   buildSpeciesMetaLookupFallback,
@@ -47,6 +47,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
   const [lastSyncAt, setLastSyncAt] = useState<string>(() => localStorage.getItem(scope.speciesMetaLastSyncAtKey || SPECIES_META_LAST_SYNC_AT_KEY) || '');
   const [syncStatus, setSyncStatus] = useState(() => getSpeciesMetaSyncStatus(scope));
   const [scopeMetadata, setScopeMetadata] = useState<SpeciesMetaLookupFallback>({});
+  const [avatarsReady, setAvatarsReady] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -69,6 +70,13 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     } else {
       setScopeMetadata({});
     }
+    fetchSharedAvatars(scope).then((map) => {
+      console.log('[AvatarManager] fetchSharedAvatars returned', Object.keys(map).length, 'entries');
+      setAvatarsReady(true);
+    }).catch((err) => {
+      console.error('[AvatarManager] fetchSharedAvatars failed:', err);
+      setAvatarsReady(true);
+    });
   }, [scope]);
 
   useEffect(() => {
@@ -93,7 +101,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     setEbirdCode(meta.ebirdCode || '');
     setRarityLevel(meta.rarityLevel || 'none');
     setPreview(null);
-  }, [scope, selected, scopeMetadata]);
+  }, [scope, selected, scopeMetadata, avatarsReady]);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

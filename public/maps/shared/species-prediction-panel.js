@@ -530,9 +530,10 @@
     var rankingNotes = normalizeText(result.rankingNotes || (_aiObj && _aiObj.rankingNotes) || '');
     var warnings = normalizeStringArray(result.warnings);
     var consistencyChecks = result.consistencyChecks || null;
-    var preferredPoints = Array.isArray(prediction.displayedTargets) && prediction.displayedTargets.length
-      ? prediction.displayedTargets.slice(0, 5)
-      : (Array.isArray(prediction.predictedTargets) ? prediction.predictedTargets.slice(0, 5) : []);
+    // Use all predictedTargets (up to 5) instead of displayedTargets which may filter/re-sort
+    var preferredPoints = Array.isArray(prediction.predictedTargets) && prediction.predictedTargets.length
+      ? prediction.predictedTargets.slice(0, 5)
+      : (Array.isArray(prediction.displayedTargets) ? prediction.displayedTargets.slice(0, 5) : []);
     var predictedTargets = preferredPoints;
     var evidenceState = String(prediction.evidenceState || '').trim();
     var effectiveRankingMode = String(prediction.rankingMode || '').trim();

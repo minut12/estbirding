@@ -986,11 +986,11 @@
     if (state.layerToggles.foreignPressureClusters !== false) renderForeignPressureClusters(result.foreignClusters || []);
     if (state.layerToggles.predictedLines !== false && !prediction.alreadyPresentMode) renderPredictionVectors(predictedLineFeatures, false);
     if (state.layerToggles.predictedCone !== false && !prediction.alreadyPresentMode) renderPredictionVectors(predictedLineFeatures, true);
-    if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap((prediction.displayedTargets || result.predictedTargets || result.topPredictedPoints || []).slice(0, prediction.alreadyPresentMode ? 2 : 5), prediction);
+    if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap((result.predictedTargets || result.topPredictedPoints || prediction.displayedTargets || []).slice(0, 5), prediction);
     var normalizedMigrationRoutes = getNormalizedMigrationRoutes(result);
     if (state.layerToggles.migrationRoutes !== false && normalizedMigrationRoutes.length) renderMigrationRoutes(normalizedMigrationRoutes, prediction);
     if (state.layerToggles.migrationRoutes !== false) renderSupplementaryForeignRoutes(result);
-    if (state.layerToggles.diagnostics === true && shouldOpenDebugDetails()) renderDiagnostics((prediction.displayedTargets || result.predictedTargets || result.topPredictedPoints || []).slice(0, prediction.alreadyPresentMode ? 2 : 5));
+    if (state.layerToggles.diagnostics === true && shouldOpenDebugDetails()) renderDiagnostics((result.predictedTargets || result.topPredictedPoints || prediction.displayedTargets || []).slice(0, 5));
   }
 
   function clearPredictionOverlay() {

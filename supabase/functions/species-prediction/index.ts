@@ -3120,7 +3120,9 @@ function createUpstreamError(input: {
         normalizedInsightLength: typeof (input.upstreamBody as Record<string, unknown> | null)?.normalizedInsightLength === 'number'
           ? (input.upstreamBody as Record<string, unknown>).normalizedInsightLength as number
           : undefined,
-        normalizedWarningsCount: (input.upstreamBody as Record<string, unknown> | null)?.normalizedWarningsCount,
+        normalizedWarningsCount: typeof (input.upstreamBody as Record<string, unknown> | null)?.normalizedWarningsCount === 'number'
+          ? (input.upstreamBody as Record<string, unknown>).normalizedWarningsCount as number
+          : undefined,
         normalizedRankingNotesType: typeof (input.upstreamBody as Record<string, unknown> | null)?.normalizedRankingNotesType === 'string'
           ? (input.upstreamBody as Record<string, unknown>).normalizedRankingNotesType
           : undefined,

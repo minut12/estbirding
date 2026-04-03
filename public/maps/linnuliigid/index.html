@@ -9084,5 +9084,67 @@ var __sharedDefaults = {};
   }
 })();
 </script>
+
+<!-- Elurikkus marker overlap spread -->
+<script>
+(function(){
+  function spreadElurikkusMarkers(){
+    var threshold = 0.0005;
+    var spreadRadius = 0.0008;
+    var items = [];
+    markers.forEach(function(marker, key){
+      try {
+        var ll = marker.getLatLng();
+        if(ll && Number.isFinite(ll.lat) && Number.isFinite(ll.lng)){
+          items.push({ key: key, lat: ll.lat, lon: ll.lng, marker: marker });
+        }
+      } catch(e){}
+    });
+    if(items.length < 2) return;
+    var groups = {};
+    for(var i = 0; i < items.length; i++){
+      var gLat = Math.round(items[i].lat / threshold) * threshold;
+      var gLon = Math.round(items[i].lon / threshold) * threshold;
+      var gKey = gLat.toFixed(5) + ',' + gLon.toFixed(5);
+      if(!groups[gKey]) groups[gKey] = [];
+      groups[gKey].push(i);
+    }
+    var groupKeys = Object.keys(groups);
+    for(var g = 0; g < groupKeys.length; g++){
+      var indices = groups[groupKeys[g]];
+      if(indices.length < 2) continue;
+      var cLat = 0, cLon = 0;
+      for(var j = 0; j < indices.length; j++){
+        cLat += items[indices[j]].lat;
+        cLon += items[indices[j]].lon;
+      }
+      cLat /= indices.length;
+      cLon /= indices.length;
+      var count = indices.length;
+      for(var j = 0; j < count; j++){
+        var angle = (2 * Math.PI * j) / count - Math.PI / 2;
+        var newLat = cLat + spreadRadius * Math.sin(angle);
+        var newLon = cLon + spreadRadius * Math.cos(angle);
+        try { items[indices[j]].marker.setLatLng([newLat, newLon]); } catch(e){}
+      }
+    }
+  }
+  window.spreadElurikkusMarkers = spreadElurikkusMarkers;
+
+  // Patch render() with debounced spread
+  if(typeof window.render === 'function' && !window.__spread_patch_render__){
+    var _origRender = window.render;
+    window.render = function(){
+      var out = _origRender.apply(this, arguments);
+      clearTimeout(window.__spreadDebounceTimer);
+      window.__spreadDebounceTimer = setTimeout(function(){
+        try { spreadElurikkusMarkers(); } catch(e){}
+      }, 300);
+      return out;
+    };
+    window.__spread_patch_render__ = true;
+  }
+})();
+</script>
 </body>
 </html>

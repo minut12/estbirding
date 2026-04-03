@@ -7721,13 +7721,11 @@ function escapeHtml(s){
 function buildPopupHtml(key, p){
   const x = (p && p.eluExtra) ? p.eluExtra : {};
   const val = (v)=> (v===undefined || v===null || String(v).trim()==='') ? '-' : String(v).trim();
-  const ind = val(x.individualCount ?? p.individualCount);
-  const beh = val(x.behavior ?? p.behavior);
-  const col = val(x.collectors ?? p.collectors);
   const latest = fmtDateEE(val(p.t));
   let occ7 = Number.isFinite(p.occ7) ? p.occ7 : 0;
   if(isWithin7dAny(p.t) && occ7 < 1) occ7 = 1;
   const src = val(p.src);
+  const locText = String(x.locality || x.municipality || p.placeText || x.county || '').trim();
   const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
   const lat = hasCoords ? p.lat.toFixed(5) : '';
   const lon = hasCoords ? p.lon.toFixed(5) : '';
@@ -7741,14 +7739,10 @@ function buildPopupHtml(key, p){
   return `
     <div style="min-width:210px">
       <div style="font-weight:700;margin-bottom:4px">${escapeHtml(key)}</div>
-      <div>latest record: ${escapeHtml(latest)}</div>
+      <div>vaatluse kuupäev: ${escapeHtml(latest)}</div>
       <div>7 päeva vaatlused: ${escapeHtml(String(occ7))}</div>
       <div>allikas: ${escapeHtml(src)}</div>
-      <div style="margin-top:6px">
-        <div>Individual count: ${escapeHtml(ind)}</div>
-        <div>Behavior: ${escapeHtml(beh)}</div>
-        <div>Collectors: ${escapeHtml(col)}</div>
-      </div>
+      ${locText ? '<div>koht: ' + escapeHtml(locText) + '</div>' : ''}
       ${actions}
     </div>
   `;
@@ -7789,26 +7783,8 @@ function rowHTML(obj) {
     ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
     : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
   const x = (p.eluExtra || {});
-  const get = function(v){ return (v && String(v).trim()) ? String(v).trim() : '-'; };
-  const trunc = function(s,n){
-    const t = (s && String(s).trim()) ? String(s).trim() : '';
-    return t.length>n ? t.slice(0,n-1)+'…' : t;
-  };
-  const collectorsFull = get(x.collectors);
-  const collectorsShort = collectorsFull === '-' ? '-' : trunc(collectorsFull, 30);
-  const extraBlock =
-    '<div class="kvGrid">' +
-      '<div class="kvLabel">Municipality:</div><div class="kvValue">' + escapeHtml(get(x.municipality)) + '</div>' +
-      '<div class="kvLabel">Locality:</div><div class="kvValue">' + escapeHtml(get(x.locality)) + '</div>' +
-      '<div class="kvLabel">County:</div><div class="kvValue">' + escapeHtml(get(x.county)) + '</div>' +
-      '<div class="kvLabel">Districts:</div><div class="kvValue">' + escapeHtml(get(x.districts)) + '</div>' +
-      '<div class="kvLabel">Communes:</div><div class="kvValue">' + escapeHtml(get(x.communes)) + '</div>' +
-      '<div class="kvLabel">Eesti omavalitsused:</div><div class="kvValue">' + escapeHtml(get(x.eestiOmavalitsused)) + '</div>' +
-      '<div class="kvLabel">Individual count:</div><div class="kvValue">' + escapeHtml(get(x.individualCount)) + '</div>' +
-      '<div class="kvLabel">Behavior:</div><div class="kvValue">' + escapeHtml(get(x.behavior)) + '</div>' +
-      '<div class="kvLabel">Collectors:</div>' +
-      '<div class="kvValue"><span class="truncate" title="' + escapeHtml(collectorsFull) + '">' + escapeHtml(collectorsShort) + '</span></div>' +
-    '</div>';
+  const locText = String(x.locality || x.municipality || p.placeText || x.county || '').trim();
+  const extraBlock = locText ? '<div class="small">koht: ' + escapeHtml(locText) + '</div>' : '';
   const springVal = _springDisplayValue(_getSpringValue(key));
   const springTxt = '' +
     '<span class="kevadi-chip" style="display:inline-flex; gap:8px; align-items:center;">' +

@@ -94,8 +94,9 @@
 .marker-count{position:absolute;left:50%;transform:translateX(-50%);bottom:-8px;min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:#fff;border:2px solid #555;color:#000;font-size:13px;line-height:18px;font-weight:700;text-align:center;box-sizing:border-box;z-index:3;box-shadow:0 1px 2px rgba(0,0,0,.2)}
 .marker-count.mig-on{background:rgba(40,180,70,.95);color:#fff;border-color:#1c6b25}
 .marker-count.mig-off{background:rgba(255,160,0,.95);color:#111;border-color:#8a5a00}
-.marker-eb-badge{position:absolute;top:-4px;left:-6px;background:#f59e0b;color:#fff;font-size:9px;font-weight:700;padding:1px 4px;border-radius:6px;line-height:1.2;pointer-events:none;z-index:2;border:1px solid #fff;text-transform:uppercase;letter-spacing:.3px}
-.ebird-count{background:#f59e0b !important;color:#fff !important}
+.marker-ebird-logo{position:absolute;top:6px;left:-4px;width:20px;height:20px;background:#fff;border-radius:50%;border:1.5px solid #4CAF50;display:flex;align-items:center;justify-content:center;z-index:2;box-shadow:0 1px 3px rgba(0,0,0,.25);pointer-events:none}
+.marker-ebird-logo svg{width:13px;height:13px}
+.marker-count.ebird-count{background:rgba(76,175,80,.95) !important;color:#fff !important;border-color:#2E7D32 !important}
 .popupBtn{
   padding:6px 10px;
   border-radius:10px;
@@ -8238,6 +8239,7 @@ document.addEventListener('DOMContentLoaded', function(){
   <button id="toggleEbirdEE" class="btn secondary">eBird EE</button>
   <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 päeva jooksul aktiivsed">7p liigid: 0</span>
 </div>
+<div id="ebirdEEProgress" class="fetch-progress" style="display:none"></div>
 <div id="springPanel" class="hidden-in-export" style="display:none">
   <div id="springHeader">
     <div class="title">Kevadränne</div>
@@ -8767,16 +8769,19 @@ var __sharedDefaults = {};
   });
   syncEbirdEEBtn();
 
-  // --- Marker icon ---
+  // --- Marker icon (eBird logo SVG) ---
+  var EBIRD_LOGO_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+    '<path d="M3 12.5c1.5-2 3.5-3 6-3.2l3-.2-1.5-2c-.3-.4-.2-.8.2-1 .3-.3.8-.2 1 .2l2 2.5 5.5-2.3c.4-.2.9.1 1 .5.2.4-.1.8-.5 1l-4.5 2 3 1.3c.4.2.5.6.4 1-.2.4-.6.5-1 .4l-4.2-1.8-1.5.7 2 2.5c.3.4.2.8-.2 1-.3.3-.8.2-1-.2l-2.3-2.8-1.5.1c-1.3.1-2.5.8-3.2 1.9l-.5.8c-.2.3-.5.4-.7.3-.3-.1-.5-.4-.3-.8l.6-1z" fill="#4CAF50"/>' +
+    '</svg>';
+
   function _ebirdMarkerIcon(avatarUrl, count, rarityLevel){
-    var color = '#f59e0b';
-    var style = window.getRarityStyle ? window.getRarityStyle(rarityLevel || 'none') : null;
+    var color = '#4CAF50';
     var countHtml = Number.isFinite(count) && count > 0
       ? '<div class="marker-count ebird-count" title="Lindude arv (eBird)">' + count + '</div>'
       : '';
-    var ebLabel = '<div class="marker-eb-badge" title="eBird andmed">eB</div>';
-    var bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#f59e0b";
-    var html = '<div class="marker-wrap"><div class="marker-circle" style="border-color:' + color + ';' + bg + '"></div>' + ebLabel + countHtml + '</div>';
+    var ebirdLogo = '<div class="marker-ebird-logo" title="eBird">' + EBIRD_LOGO_SVG + '</div>';
+    var bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#4CAF50";
+    var html = '<div class="marker-wrap">' + ebirdLogo + '<div class="marker-circle" style="border-color:' + color + ';' + bg + '"></div>' + countHtml + '</div>';
     return L.divIcon({html:html, className:'', iconSize:[44,72], iconAnchor:[22,36], popupAnchor:[0,-36]});
   }
 
@@ -8844,18 +8849,48 @@ var __sharedDefaults = {};
     };
   }
 
+  // --- Progress indicator ---
+  function _updateEbirdEEProgress(done, total, currentSpecies, status){
+    var el = document.getElementById('ebirdEEProgress');
+    if(!el) return;
+    if(status === 'idle'){
+      el.style.display = 'none';
+      el.textContent = '';
+      return;
+    }
+    el.style.display = 'block';
+    el.style.color = '';
+    if(status === 'running'){
+      el.textContent = 'eBird EE: ' + done + '/' + total + ' | ' + (currentSpecies || '...');
+    } else if(status === 'done'){
+      var found = Object.keys(ebirdEEPoints).filter(function(k){
+        var ep = ebirdEEPoints[k];
+        return ep && Number.isFinite(ep.lat) && Number.isFinite(ep.lon);
+      }).length;
+      el.textContent = 'eBird EE: Done. ' + found + ' species with data.';
+      setTimeout(function(){ el.style.display = 'none'; }, 5000);
+    } else if(status === 'error'){
+      el.textContent = 'eBird EE: Error — ' + (currentSpecies || 'unknown');
+      el.style.color = '#dc2626';
+      setTimeout(function(){ el.style.display = 'none'; el.style.color = ''; }, 5000);
+    }
+  }
+
   // --- Bulk fetch ---
   var _ebirdEEFetching = false;
   async function refreshEbirdEEAll(){
     if(_ebirdEEFetching) return;
     _ebirdEEFetching = true;
     var speciesList = Object.keys(SPECIES_EBIRD_CODES || {});
-    var done = 0, errors = 0;
-    for(var i = 0; i < speciesList.length; i++){
+    var total = speciesList.length;
+    var done = 0, errors = 0, found = 0;
+    _updateEbirdEEProgress(0, total, '', 'running');
+    for(var i = 0; i < total; i++){
       var name = speciesList[i];
+      _updateEbirdEEProgress(done, total, name, 'running');
       try {
         var result = await fetchEbirdEEForSpecies(name);
-        if(result) ebirdEEPoints[name] = result;
+        if(result){ ebirdEEPoints[name] = result; found++; }
       } catch(e){
         errors++;
         console.warn('eBird EE fetch failed:', name, e);
@@ -8866,11 +8901,17 @@ var __sharedDefaults = {};
         saveEbirdEE();
         refreshEbirdEEMarkers();
       }
+      if(!window.__ebirdEELayerOn){
+        _updateEbirdEEProgress(0, 0, '', 'idle');
+        _ebirdEEFetching = false;
+        return;
+      }
     }
     saveEbirdEE();
     refreshEbirdEEMarkers();
     _ebirdEEFetching = false;
-    console.log('[eBird EE] Refresh done: ' + done + ' total, ' + errors + ' errors');
+    _updateEbirdEEProgress(done, total, '', 'done');
+    console.log('[eBird EE] Refresh done: total=' + done + ', found=' + found + ', errors=' + errors);
   }
 
   // --- Render markers ---
@@ -8935,6 +8976,7 @@ var __sharedDefaults = {};
       refreshEbirdEEAll();
     } else {
       refreshEbirdEEMarkers();
+      _updateEbirdEEProgress(0, 0, '', 'idle');
     }
   }
 

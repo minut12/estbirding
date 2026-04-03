@@ -635,77 +635,21 @@ function _saveGbifTaxonKeys() {
   try { localStorage.setItem('gbif_taxonkeys', JSON.stringify(gbifTaxonKeys)); } catch(e){}
 }
 
-function _getEbirdCode(species) {
-  try {
-    var meta = JSON.parse(localStorage.getItem('estbirding.speciesMeta.v1') || '{}');
-    var entry = meta[species] || meta[species.toLowerCase()] || null;
-    if (entry && entry.ebirdCode) return entry.ebirdCode;
-  } catch(e){}
-  try {
-    var codes = JSON.parse(localStorage.getItem('bm_ebird_codes') || localStorage.getItem('bm_global_ebird_codes') || '{}');
-    if (codes[species]) return codes[species];
-  } catch(e){}
-  return null;
-}
+// Estonian name → scientific name (374 species, from eBird taxonomy v2024)
+var SPECIES_SCINAMES = {"Aed-põõsalind":"Sylvia borin","Aed-roolind":"Acrocephalus dumetorum","Aedporr":"Certhia brachydactyla","Alk":"Alca torda","Alverüdi":"Calidris acuminata","Ameerika piilpart":"Anas carolinensis","Atlantise tormilind":"Calonectris diomedea","Aul":"Clangula hyemalis","Baleaari tormilind":"Puffinus mauretanicus","Euroopa kaelustäks":"Saxicola rubicola","Habekakk":"Strix nebulosa","Habeviires":"Chlidonias hybrida","Hahk":"Somateria mollissima","Hakk":"Coloeus monedula","Hall-kärbsenäpp":"Muscicapa striata","Hallhaigur":"Ardea cinerea","Hallhani":"Anser anser","Hallkibu":"Xenus cinereus","Hallpea-rähn":"Picus canus","Hallpõsk-pütt":"Podiceps grisegena","Hallrästas":"Turdus pilaris","Hallrüdi":"Calidris pusilla","Halltsiitsitaja":"Emberiza calandra","Hallvares":"Corvus cornix","Hallõgija":"Lanius excubitor","Hangelind":"Plectrophenax nivalis","Harakas":"Pica pica","Haugaskotkas":"Aquila fasciata","Hele-urvalind":"Acanthis flammea hornemanni","Heletilder":"Tringa nebularia","Herilaseviu":"Pernis apivorus","Hiireviu":"Buteo buteo","Hoburästas":"Turdus viscivorus","Händkakk":"Strix uralensis","Hänilane":"Motacilla flava","Hõbehaigur":"Ardea alba","Hõbehaugas":"Elanus caeruleus","Hõbekajakas":"Larus argentatus","Hüüp":"Botaurus stellaris","Ida-mustvaeras":"Melanitta americana","Jahipistrik":"Falco rusticolus","Jämejalg":"Burhinus oedicnemus","Järvekaur":"Gavia arctica","Jääkajakas":"Larus hyperboreus","Jääkaur":"Gavia immer","Jääkoskel":"Mergus merganser","Jõgi-ritsiklind":"Locustella fluviatilis","Jõgitiir":"Sterna hirundo","Jõgitilder":"Actitis hypoleucos","Jõgivästrik":"Motacilla cinerea","Kadakatäks":"Saxicola rubetra","Kaelus-kärbsenäpp":"Ficedula albicollis","Kaelus-turteltuvi":"Streptopelia decaocto","Kaeluskotkas":"Gyps fulvus","Kaelusrästas":"Turdus torquatus","Kaelustuvi":"Columba palumbus","Kalakajakas":"Larus canus","Kalakotkas":"Pandion haliaetus","Kalda-rädilind":"Cettia cetti","Kaldapääsuke":"Riparia riparia","Kaljukajakas":"Rissa tridactyla","Kaljukotkas":"Aquila chrysaetos","Kanada lagle":"Branta canadensis","Kanakull":"Astur gentilis","Kanepilind":"Linaria cannabina","Karbuskajakas":"Ichthyaetus melanocephalus","Karkjalg":"Himantopus himantopus","Karmiinleevike":"Carpodacus erythrinus","Karvasjalg-kakk":"Aegolius funereus","Karvasjalg-viu":"Buteo lagopus","Kassikakk":"Bubo bubo","Kiivitaja":"Vanellus vanellus","Kiripugu-rüdi":"Calidris melanotos","Kirjuhahk":"Polysticta stelleri","Kivikakk":"Athene noctua","Kivirullija":"Arenaria interpres","Kivitäks":"Oenanthe oenanthe","Kodukakk":"Strix aluco","Kodutuvi":"Columba livia f. domestica","Koduvarblane":"Passer domesticus","Koldhaigur":"Ardeola ralloides","Koldjalg-hõbekajakas":"Larus cachinnans","Koldvint":"Serinus serinus","Kormoran":"Phalacrocorax carbo","Krüüsel":"Cepphus grylle","Kukkurtihane":"Remiz pendulinus","Kuld-lehelind":"Phylloscopus proregulus","Kuldhänilane":"Motacilla citreola","Kuldnokk":"Sturnus vulgaris","Kuldtsiitsitaja":"Emberiza aureola","Kuninghahk":"Somateria spectabilis","Kuuse-käbilind":"Loxia curvirostra","Käblik":"Troglodytes troglodytes","Kägu":"Cuculus canorus","Käharpelikan":"Pelecanus crispus","Käosulane":"Hippolais icterina","Kääbuskormoran":"Microcarbo pygmaeus","Kääbuskotkas":"Hieraaetus pennatus","Kõnnuõgija":"Lanius isabellinus","Kõrbe-kivitäks":"Oenanthe deserti","Kõrbe-põõsalind":"Curruca nana","Kõrkja-roolind":"Acrocephalus schoenobaenus","Kõrvukräts":"Asio otus","Kõvernokk-rüdi":"Calidris ferruginea","Kühmnokk-luik":"Cygnus olor","Künnivares":"Corvus frugilegus","Laanenäär":"Perisoreus infaustus","Laanepüü":"Tetrastes bonasia","Laanerähn":"Picoides tridactylus","Laisaba-änn":"Stercorarius pomarinus","Lammitilder":"Tringa stagnatilis","Lapi tsiitsitaja":"Calcarius lapponicus","Lasuurtihane":"Cyanistes cyanus","Lauk":"Fulica atra","Laululuik":"Cygnus cygnus","Laulurästas":"Turdus philomelos","Leeterüdi":"Calidris alba","Leevike":"Pyrrhula pyrrhula","Liiv-kivitäks":"Oenanthe isabellina","Liivatüll":"Charadrius hiaticula","Linavästrik":"Motacilla alba","Loorkakk":"Tyto alba","Luitsnokk-iibis":"Platalea leucorodia","Luitsnokk-part":"Spatula clypeata","Lumehani":"Anser caerulescens","Lumekakk":"Bubo scandiacus","Lääne-lehelind":"Phylloscopus bonelli","Lääne-pöialpoiss":"Regulus ignicapilla","Lõopistrik":"Falco subbuteo","Lõuna-hõbekajakas":"Larus michahellis","Lühinokk-hani":"Anser brachyrhynchus","Madukotkas":"Circaetus gallicus","Mandariinpart":"Aix galericulata","Merikajakas":"Larus marinus","Merikotkas":"Haliaeetus albicilla","Merirüdi":"Calidris maritima","Merisk":"Haematopus ostralegus","Merivart":"Aythya marila","Mesilasenäpp":"Merops apiaster","Mets-lehelind":"Phylloscopus sibilatrix","Metsis":"Tetrao urogallus","Metskiur":"Anthus trivialis","Metskurvits":"Scolopax rusticola","Metstilder":"Tringa ochropus","Metsvint":"Fringilla coelebs","Mudanepp":"Lymnocryptes minimus","Mudatilder":"Tringa glareola","Must-harksaba":"Milvus migrans","Must-kärbsenäpp":"Ficedula hypoleuca","Must-lepalind":"Phoenicurus ochruros","Must-toonekurg":"Ciconia nigra","Mustjalg-tüll":"Anarhynchus alexandrinus","Mustkael-pütt":"Podiceps nigricollis","Mustkurk-raat":"Prunella atrogularis","Mustlagle":"Branta bernicla","Mustlauk-õgija":"Lanius minor","Mustpea-põõsalind":"Sylvia atricapilla","Mustpea-tsiitsitaja":"Emberiza melanocephala","Mustpugu-rästas":"Turdus atrogularis","Musträhn":"Dryocopus martius","Musträstas":"Turdus merula","Mustsaba-vigle":"Limosa limosa","Musttihane":"Periparus ater","Mustvaeras":"Melanitta nigra","Mustvares":"Corvus corone","Mustviires":"Chlidonias niger","Mägi-kanepilind":"Linaria flavirostris","Mägikiur":"Anthus spinoletta","Männi-käbilind":"Loxia pytyopsittacus","Männileevike":"Pinicola enucleator","Männitalvike":"Emberiza leucocephalos","Mänsak":"Nucifraga caryocatactes","Naaskelnokk":"Recurvirostra avosetta","Naerukajakas":"Chroicocephalus ridibundus","Naerutiir":"Gelochelidon nilotica","Niidu-kaelustäks":"Saxicola maurus","Niidu-ritsiklind":"Helopsaltes certhiola","Niidukiur":"Anthus richardi","Nunn-kivitäks":"Oenanthe pleschanka","Nurmkana":"Perdix perdix","Nõgipart":"Anas rubripes","Nõlva-lehelind":"Phylloscopus trochiloides viridanus","Nõmmekiur":"Anthus campestris","Nõmmelõoke":"Lullula arborea","Ohakalind":"Carduelis carduelis","Ohhoota hõbekajakas":"Larus schistisagus","Padu-roolind":"Acrocephalus agricola","Pasknäär":"Garrulus glandarius","Peegel-tormilind":"Ardenna grisea","Pelikan":"Pelecanus onocrotalus","Peoleo":"Oriolus oriolus","Piilpart":"Anas crecca","Piiritaja":"Apus apus","Pikksaba-änn":"Stercorarius longicaudus","Plütt":"Calidris falcinellus","Plüü":"Pluvialis squatarola","Polaarkajakas":"Larus glaucoides","Porr":"Certhia familiaris","Prillvaeras":"Melanitta perspicillata","Pruunselg-põõsalind":"Curruca communis","Puna-harksaba":"Milvus milvus","Puna-veetallaja":"Phalaropus fulicaria","Punajalg-pistrik":"Falco vespertinus","Punajalg-tilder":"Tringa totanus","Punakael-lagle":"Branta ruficollis","Punakurk-kaur":"Gavia stellata","Punanokk-vart":"Netta rufina","Punapea-vart":"Aythya ferina","Punapea-õgija":"Lanius senator","Punarind":"Erithacus rubecula","Punasaba-õgija":"Lanius phoenicuroides","Punaselg-õgija":"Lanius collurio","Purpurhaigur":"Ardea purpurea","Puukoristaja":"Sitta europaea","Põhja-kirjurästas":"Zoothera aurea","Põhja-lehelind":"Phylloscopus borealis","Põhja-tormipääsu":"Hydrobates leucorhous","Põhjatihane":"Poecile montanus","Põhjatsiitsitaja":"Emberiza rustica","Põhjavint":"Fringilla montifringilla","Põldlõoke":"Alauda arvensis","Põldtsiitsitaja":"Emberiza hortulana","Põldvarblane":"Passer montanus","Põldvutt":"Coturnix coturnix","Pöialpoiss":"Regulus regulus","Rabapistrik":"Falco peregrinus","Rabapüü":"Lagopus lagopus","Raisakotkas":"Aegypius monachus","Randkajakas":"Leucophaeus atricilla","Randkiur":"Anthus petrosus","Randtiir":"Sterna paradisaea","Rasvatihane":"Parus major","Raudkull":"Accipiter nisus","Ristpart":"Tadorna tadorna","Roherähn":"Picus viridis","Rohevint":"Chloris chloris","Rohukoskel":"Mergus serrator","Rohunepp":"Gallinago media","Ronk":"Corvus corax","Roo-loorkull":"Circus aeruginosus","Roo-ritsiklind":"Locustella luscinioides","Roohabekas":"Panurus biarmicus","Rooruik":"Rallus aquaticus","Roosa-kuldnokk":"Pastor roseus","Roosakajakas":"Rhodostethia rosea","Roosatiir":"Sterna dougallii","Roostepääsuke":"Cecropis rufula","Roosterind-tüll":"Eudromias morinellus","Rootsiitsitaja":"Emberiza schoeniclus","Rubiinööbik":"Calliope calliope","Rukkirääk":"Crex crex","Ruugerüdi":"Calidris subruficollis","Rägapart":"Spatula querquedula","Rästas-roolind":"Acrocephalus arundinaceus","Räusktiir":"Hydroprogne caspia","Rääkspart":"Mareca strepera","Räästapääsuke":"Delichon urbicum","Rüüt":"Pluvialis apricaria","Sabatihane":"Aegithalos caudatus","Salu-lehelind":"Phylloscopus trochilus","Salupäll":"Otus scops","Salutihane":"Poecile palustris","Sarviklõoke":"Eremophila alpestris","Sarvikpütt":"Podiceps auritus","Siberi lehelind":"Phylloscopus schwarzi","Siberi raat":"Prunella montanella","Siidhaigur":"Egretta garzetta","Siidisaba":"Bombycilla garrulus","Siisike":"Spinus spinus","Sinikael-part":"Anas platyrhynchos","Siniraag":"Coracias garrulus","Sinirind":"Luscinia svecica","Sinisaba":"Tarsiger cyanurus","Sinitihane":"Cyanistes caeruleus","Soo-loorkull":"Circus pygargus","Soo-roolind":"Acrocephalus palustris","Sookiur":"Anthus pratensis","Sookurg":"Grus grus","Soopart":"Anas acuta","Sooräts":"Asio flammeus","Soorüdi":"Calidris alpina","Stepi-loorkull":"Circus macrourus","Stepikajakas":"Ichthyaetus ichthyaetus","Stepikiivitaja":"Vanellus gregarius","Stepikotkas":"Aquila nipalensis","Stepipistrik":"Falco cherrug","Stepiviu":"Buteo rufinus","Suitsupääsuke":"Hirundo rustica","Suula":"Morus bassanus","Suur-kirjurähn":"Dendrocopos major","Suur-konnakotkas":"Clanga clanga","Suur-laukhani":"Anser albifrons","Suurkoovitaja":"Numenius arquata","Suurnokk-vint":"Coccothraustes coccothraustes","Suurrüdi":"Calidris canutus","Suuränn":"Stercorarius skua","Sõtkas":"Bucephala clangula","Söödikänn":"Stercorarius parasiticus","Tait":"Gallinula chloropus","Talvike":"Emberiza citrinella","Tamme-kirjurähn":"Dendrocoptes medius","Teder":"Lyrurus tetrix","Tiigi-roolind":"Acrocephalus scirpaceus","Tikutaja":"Gallinago gallinago","Triip-ritsiklind":"Locustella lanceolata","Tuhk-lehelind":"Phylloscopus humei","Tumetilder":"Tringa erythropus","Tundra-rabahani":"Anser serrirostris","Tundrakaur":"Gavia adamsii","Tundrakiur":"Anthus cervinus","Tutkas":"Calidris pugnax","Tutt-tihane":"Lophophanes cristatus","Tutt-tiir":"Thalasseus sandvicensis","Tuttlõoke":"Galerida cristata","Tuttpütt":"Podiceps cristatus","Tuttvart":"Aythya fuligula","Tuuletallaja":"Falco tinnunculus","Täpikhuik":"Porzana porzana","Tõmmu-lehelind":"Phylloscopus fuscatus","Tõmmuiibis":"Plegadis falcinellus","Tõmmukajakas":"Larus fuscus","Tõmmuvaeras":"Melanitta fusca","Urvalind":"Acanthis flammea","Vaaraohani":"Alopochen aegyptiaca","Vaenukägu":"Upupa epops","Vainurästas":"Turdus iliacus","Valge-toonekurg":"Ciconia ciconia","Valgepõsk-lagle":"Branta leucopsis","Valgeselg-kirjurähn":"Dendrocopos leucotos","Valgesilm-vart":"Aythya nyroca","Valgetiib-viires":"Chlidonias leucopterus","Veetallaja":"Phalaropus lobatus","Veisehaigur":"Ardea ibis","Vesipapp":"Cinclus cinclus","Vihitaja":"Actitis hypoleucos","Viupart":"Mareca penelope","Väike-kirjurähn":"Dryobates minor","Väike-konnakotkas":"Clanga pomarina","Väike-käosulane":"Iduna caligata","Väike-kärbsenäpp":"Ficedula parva","Väike-laukhani":"Anser erythropus","Väike-lehelind":"Phylloscopus collybita","Väike-põõsalind":"Curruca curruca","Väikealk":"Alle alle","Väikehuik":"Zapornia parva","Väikehüüp":"Botaurus minutus","Väikekajakas":"Hydrocoloeus minutus","Väikekoovitaja":"Numenius phaeopus","Väikekoskel":"Mergellus albellus","Väikeluik":"Cygnus columbianus bewickii","Väikepistrik":"Falco columbarius","Väikepütt":"Tachybaptus ruficollis","Väikerüdi":"Calidris minuta","Väiketiir":"Sternula albifrons","Väiketrapp":"Tetrax tetrax","Väiketsiitsitaja":"Emberiza pusilla","Väiketüll":"Charadrius dubius","Välja-loorkull":"Circus cyaneus","Välja-väikelõoke":"Calandrella brachydactyla","Värbkakk":"Glaucidium passerinum","Värbrüdi":"Calidris temminckii","Väänkael":"Jynx torquilla","Võsa-ritsiklind":"Locustella naevia","Võsaraat":"Prunella modularis","Vööt-käbilind":"Loxia leucoptera","Vööt-põõsalind":"Curruca nisoria","Vööthani":"Anser indicus","Vöötkakk":"Surnia ulula","Vöötnokk-kajakas":"Larus delawarensis","Vöötsaba-vigle":"Limosa lapponica","Õõnetuvi":"Columba oenas","Ööbik":"Luscinia luscinia","Ööhaigur":"Nycticorax nycticorax","Öösorr":"Caprimulgus europaeus"};
 
-function _getEbirdToken() {
-  try { return localStorage.getItem('bm_ebird_token') || ''; } catch(e){ return ''; }
-}
-
-async function _getScientificNameFromEbird(ebirdCode) {
-  var token = _getEbirdToken();
-  if (!token) return null;
+// Clear old GBIF cache if it was built before taxonomy mapping was added
+(function() {
   try {
-    var url = 'https://api.ebird.org/v2/ref/taxonomy/ebird?species='
-      + encodeURIComponent(ebirdCode) + '&fmt=json';
-    var res = await fetch(url, { headers: { 'X-eBirdApiToken': token } });
-    if (!res.ok) return null;
-    var arr = await res.json();
-    if (Array.isArray(arr) && arr.length > 0 && arr[0].sciName) return arr[0].sciName;
-  } catch(e) { console.warn('eBird taxonomy lookup failed for ' + ebirdCode, e); }
-  return null;
-}
-
-async function _gbifMatchByScientificName(sciName) {
-  try {
-    var url = 'https://api.gbif.org/v1/species/match?name='
-      + encodeURIComponent(sciName) + '&kingdom=Animalia&strict=true';
-    var res = await fetch(url);
-    if (!res.ok) return null;
-    var data = await res.json();
-    if (data.usageKey && data.matchType !== 'NONE' && data.confidence > 90) {
-      return { taxonKey: data.usageKey, scientificName: data.scientificName || sciName };
+    var cacheVersion = localStorage.getItem('gbif_taxonkeys_version');
+    if (cacheVersion !== 'v2_scinames') {
+      localStorage.removeItem('gbif_taxonkeys');
+      gbifTaxonKeys = {};
+      localStorage.setItem('gbif_taxonkeys_version', 'v2_scinames');
+      console.info('GBIF: cleared old taxon key cache (upgraded to sciname-based resolution)');
     }
-  } catch(e){}
-  return null;
-}
-
-async function _gbifSuggestFallback(species) {
-  try {
-    var url = 'https://api.gbif.org/v1/species/suggest?q='
-      + encodeURIComponent(species) + '&rank=SPECIES&limit=5';
-    var res = await fetch(url);
-    if (res.ok) {
-      var suggestions = await res.json();
-      var bird = suggestions.find(function(s){ return s.class === 'Aves' || s.kingdom === 'Animalia'; });
-      if (bird && bird.key) return { taxonKey: bird.key, scientificName: bird.scientificName || '?', resolvedVia: 'suggest_fallback' };
-    }
-  } catch(e){}
-  try {
-    var url2 = 'https://api.gbif.org/v1/species/match?name='
-      + encodeURIComponent(species) + '&kingdom=Animalia&verbose=true';
-    var res2 = await fetch(url2);
-    if (res2.ok) {
-      var match = await res2.json();
-      if (match.usageKey && match.confidence > 80) return { taxonKey: match.usageKey, scientificName: match.scientificName || '?', resolvedVia: 'match_fallback' };
-      if (match.alternatives) {
-        var best = match.alternatives.find(function(a){ return a.class === 'Aves'; });
-        if (best && best.usageKey) return { taxonKey: best.usageKey, scientificName: best.scientificName || '?', resolvedVia: 'match_alt_fallback' };
-      }
-    }
-  } catch(e){}
-  return null;
-}
+  } catch(e) {}
+})();
 
 // === Helpers ===
 const EE_TZ = 'Europe/Tallinn';
@@ -7330,33 +7274,61 @@ function _gbifMiniIcon(avatarUrl, year) {
 }
 
 async function resolveGbifTaxonKey(species) {
+  // 1. Check cache
   var cached = gbifTaxonKeys[species];
   if (cached && cached.taxonKey) return cached.taxonKey;
 
-  // Strategy 1: eBird code → scientific name → GBIF match
-  var ebirdCode = _getEbirdCode(species);
-  if (ebirdCode) {
-    var sciName = await _getScientificNameFromEbird(ebirdCode);
-    if (sciName) {
-      var result = await _gbifMatchByScientificName(sciName);
-      if (result) {
-        gbifTaxonKeys[species] = { taxonKey: result.taxonKey, scientificName: result.scientificName, ebirdCode: ebirdCode, resolvedVia: 'ebird_sciname' };
+  // 2. Look up scientific name from embedded table
+  var sciName = SPECIES_SCINAMES[species];
+  if (sciName) {
+    try {
+      var url = 'https://api.gbif.org/v1/species/match?name='
+        + encodeURIComponent(sciName) + '&kingdom=Animalia&strict=true';
+      var res = await fetch(url);
+      if (res.ok) {
+        var data = await res.json();
+        if (data.usageKey && data.matchType !== 'NONE') {
+          gbifTaxonKeys[species] = { taxonKey: data.usageKey, scientificName: data.scientificName || sciName, resolvedVia: 'sciname_lookup' };
+          _saveGbifTaxonKeys();
+          console.info('GBIF: ' + species + ' → ' + (data.scientificName || sciName) + ' (key ' + data.usageKey + ')');
+          return data.usageKey;
+        }
+      }
+    } catch(e) { console.warn('GBIF match failed for ' + sciName, e); }
+    // Retry without strict
+    try {
+      var url2 = 'https://api.gbif.org/v1/species/match?name='
+        + encodeURIComponent(sciName) + '&kingdom=Animalia';
+      var res2 = await fetch(url2);
+      if (res2.ok) {
+        var data2 = await res2.json();
+        if (data2.usageKey && data2.confidence > 80) {
+          gbifTaxonKeys[species] = { taxonKey: data2.usageKey, scientificName: data2.scientificName || sciName, resolvedVia: 'sciname_loose' };
+          _saveGbifTaxonKeys();
+          return data2.usageKey;
+        }
+      }
+    } catch(e) {}
+  }
+
+  // 3. Last resort: GBIF suggest with Estonian name (unreliable)
+  try {
+    var url3 = 'https://api.gbif.org/v1/species/suggest?q='
+      + encodeURIComponent(species) + '&rank=SPECIES&limit=5';
+    var res3 = await fetch(url3);
+    if (res3.ok) {
+      var suggestions = await res3.json();
+      var bird = suggestions.find(function(s) { return s.class === 'Aves'; });
+      if (bird && bird.key) {
+        gbifTaxonKeys[species] = { taxonKey: bird.key, scientificName: bird.scientificName || '?', resolvedVia: 'suggest_fallback', warning: true };
         _saveGbifTaxonKeys();
-        console.info('GBIF resolved ' + species + ' → ' + result.scientificName + ' (via eBird ' + ebirdCode + ')');
-        return result.taxonKey;
+        console.warn('GBIF fallback: ' + species + ' → ' + (bird.scientificName || '?') + ' (may be wrong)');
+        return bird.key;
       }
     }
-  }
+  } catch(e) {}
 
-  // Strategy 2: fallback to GBIF suggest/match with Estonian name
-  var fallback = await _gbifSuggestFallback(species);
-  if (fallback) {
-    gbifTaxonKeys[species] = { taxonKey: fallback.taxonKey, scientificName: fallback.scientificName, resolvedVia: fallback.resolvedVia || 'suggest', warning: 'Matched by Estonian name — may be inaccurate' };
-    _saveGbifTaxonKeys();
-    console.warn('GBIF fallback for ' + species + ' → ' + fallback.scientificName + ' (may be wrong)');
-    return fallback.taxonKey;
-  }
-
+  console.warn('GBIF: could not resolve ' + species);
   return null;
 }
 
@@ -7370,10 +7342,11 @@ function buildGbifPopup(species, occ) {
   var locParts = [occ.locality, occ.stateProvince].filter(Boolean);
   var locStr = locParts.length ? locParts.join(', ') : '';
   var cached = gbifTaxonKeys[species] || {};
-  var sciLine = cached.scientificName
-    ? '<br><small style="color:#64748b;font-style:italic">' + escapeHtml(cached.scientificName) + '</small>'
+  var displaySci = cached.scientificName || SPECIES_SCINAMES[species] || '';
+  var sciLine = displaySci
+    ? '<br><small style="color:#64748b;font-style:italic">' + escapeHtml(displaySci) + '</small>'
     : '';
-  var warningLine = (cached.resolvedVia && cached.resolvedVia.indexOf('fallback') !== -1)
+  var warningLine = (cached.warning || (cached.resolvedVia && cached.resolvedVia.indexOf('fallback') !== -1))
     ? '<br><small style="color:#f59e0b">&#9888;&#65039; Kontrollimata vaste</small>'
     : '';
   var wazeUrl = 'https://waze.com/ul?ll=' + lat + ',' + lon + '&navigate=yes';
@@ -7833,9 +7806,10 @@ function rowHTML(obj) {
         var gbifStat = window.gbifStats && window.gbifStats[key];
         if (!gbifStat) return '';
         var cached = gbifTaxonKeys[key] || {};
-        var sciLabel = cached.scientificName ? ' &middot; <i>' + escapeHtml(cached.scientificName) + '</i>' : '';
-        var warnIcon = (cached.resolvedVia && cached.resolvedVia.indexOf('fallback') !== -1) ? ' &#9888;&#65039;' : '';
-        return '<div class="small" style="color:#6366f1">GBIF: ' + gbifStat.count + ' vaatlust (' + gbifStat.minYear + '–' + gbifStat.maxYear + ')' + sciLabel + warnIcon + '</div>';
+        var sciLabel = (cached.scientificName || SPECIES_SCINAMES[key] || '');
+        var sciSpan = sciLabel ? ' &middot; <i style="color:#64748b">' + escapeHtml(sciLabel) + '</i>' : '';
+        var warnIcon = cached.warning ? ' &#9888;&#65039;' : '';
+        return '<div class="small" style="color:#6366f1">GBIF: ' + gbifStat.count + ' vaatlust (' + (gbifStat.minYear || '?') + '–' + (gbifStat.maxYear || '?') + ')' + sciSpan + warnIcon + '</div>';
       })() +
     '</div>' +
   '</div>';
@@ -7940,9 +7914,8 @@ if(window.__predictionSyncedSpecies && !window.__selectedSpecies){
       if(!species) return;
       if(e.shiftKey){
         var currentCache = gbifTaxonKeys[species] || {};
-        var currentKey = currentCache.taxonKey || '';
-        var currentSci = currentCache.scientificName || '';
-        var input = prompt('GBIF taxonKey for ' + species + '\nCurrent: ' + currentKey + ' (' + currentSci + ')\n\nEnter scientific name (e.g. "Asio otus") or taxonKey number:', currentSci || currentKey || '');
+        var currentSci = currentCache.scientificName || SPECIES_SCINAMES[species] || '';
+        var input = prompt('GBIF liigi vaste: ' + species + '\nPraegune: ' + currentSci + '\n\nSisesta ladina nimi (nt "Asio otus"):', currentSci);
         if(input === null) return;
         input = input.trim();
         if(!input){ delete gbifTaxonKeys[species]; _saveGbifTaxonKeys(); notifySilent('GBIF: cleared cache for ' + species); render(); return; }
@@ -7951,10 +7924,17 @@ if(window.__predictionSyncedSpecies && !window.__selectedSpecies){
           _saveGbifTaxonKeys();
           notifySilent('GBIF: set taxonKey ' + input + ' for ' + species);
         } else {
-          _gbifMatchByScientificName(input).then(function(result){
-            if(result){ gbifTaxonKeys[species] = { taxonKey: result.taxonKey, scientificName: result.scientificName, resolvedVia: 'manual_sciname' }; _saveGbifTaxonKeys(); notifySilent('GBIF: ' + species + ' → ' + result.scientificName + ' (taxonKey ' + result.taxonKey + ')'); }
-            else { notifySilent('GBIF: scientific name "' + input + '" not found'); }
-          });
+          fetch('https://api.gbif.org/v1/species/match?name=' + encodeURIComponent(input) + '&kingdom=Animalia')
+            .then(function(r){ return r.json(); })
+            .then(function(data){
+              if(data.usageKey){
+                gbifTaxonKeys[species] = { taxonKey: data.usageKey, scientificName: data.scientificName || input, resolvedVia: 'manual_sciname' };
+                _saveGbifTaxonKeys();
+                if(gbifMarkers.has(species)){ gbifMarkers.get(species).forEach(function(m){ try{map.removeLayer(m);}catch(e){} }); gbifMarkers.delete(species); }
+                notifySilent('GBIF: ' + species + ' → ' + (data.scientificName || input) + ' (taxonKey ' + data.usageKey + ')');
+                render();
+              } else { notifySilent('GBIF: "' + input + '" not found'); }
+            }).catch(function(){ notifySilent('GBIF: lookup failed'); });
         }
         return;
       }

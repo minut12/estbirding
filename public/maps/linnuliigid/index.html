@@ -9210,6 +9210,21 @@ var __sharedDefaults = {};
   // --- Helpers ---
   var probLayerGroup = null;
 
+  function parseProbDate(dateStr) {
+    if (!dateStr) return null;
+    var s = String(dateStr).trim();
+    // Try "YYYY-MM-DD" manual parse first (avoids timezone issues)
+    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+    // Try "DD.MM.YYYY" (Estonian format)
+    m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
+    if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+    // Try standard parse
+    var d = new Date(s);
+    if (!isNaN(d.getTime()) && d.getFullYear() > 1900) return d;
+    return null;
+  }
+
   function getDayOfYear(date) {
     var start = new Date(date.getFullYear(), 0, 0);
     return Math.floor((date - start) / 86400000);
@@ -9217,9 +9232,8 @@ var __sharedDefaults = {};
 
   function isInSeasonWindow(occDateStr, windowDays) {
     windowDays = windowDays || 21;
-    if (!occDateStr) return false;
-    var occ = new Date(occDateStr);
-    if (isNaN(occ.getTime())) return false;
+    var occ = parseProbDate(occDateStr);
+    if (!occ) return false;
     var now = new Date();
     var nowDoy = getDayOfYear(now);
     var occDoy = getDayOfYear(occ);
@@ -9408,48 +9422,114 @@ var __sharedDefaults = {};
       var data = loadProbCache(speciesName);
 
       if (!data) {
-        // Reuse existing eElurikkus infrastructure
+        // Step 1: Get eElurikkus data from cache or fetch
         var cacheKey = String(speciesName || '').trim().toLowerCase();
         var eluItems = (liveElurikkusBySpecies[cacheKey] && liveElurikkusBySpecies[cacheKey].items) || null;
 
-        if (!eluItems) {
+        if (!eluItems || eluItems.length === 0) {
           var json = await fetchElurikkusSpecies(speciesName);
           eluItems = (json && json.items) ? json.items : [];
         }
 
-        var eluOccs = eluItems
-          .filter(function(item) {
-            return Number.isFinite(item.lat) && Number.isFinite(item.lon)
-              && String(item.coordsStatus || '') !== 'restricted'
-              && String(item.coordsStatus || '') !== 'missing';
-          })
-          .map(function(item) {
-            return {
-              lat: item.lat, lon: item.lon,
-              date: String(item.observedAt || ''),
-              source: 'elurikkus',
-              scientificName: String(item.scientificName || item.taxonName || '')
-            };
-          });
+        // Step 2: Map ALL items, resolving coords for restricted items via centroids
+        var eluOccs = [];
+        for (var i = 0; i < eluItems.length; i++) {
+          var item = eluItems[i];
+          var lat = Number(item.lat);
+          var lon = Number(item.lon);
+          var hasCoords = Number.isFinite(lat) && Number.isFinite(lon);
 
-        // Extract scientific name for GBIF
+          if (!hasCoords) {
+            var place = String(item.municipality || item.placeText || item.locality || item.county || '').trim();
+            if (place) {
+              var resolved = null;
+              if (typeof resolveCentroidFromPlace === 'function') {
+                resolved = resolveCentroidFromPlace(place);
+              }
+              if (!resolved && typeof resolveFallbackLatLon === 'function') {
+                resolved = resolveFallbackLatLon({
+                  municipality: item.municipality || '',
+                  locality: item.locality || '',
+                  county: item.county || ''
+                });
+              }
+              if (resolved && Number.isFinite(resolved.lat) && Number.isFinite(resolved.lon)) {
+                lat = resolved.lat;
+                lon = resolved.lon;
+                hasCoords = true;
+              }
+            }
+          }
+          if (!hasCoords) continue;
+          eluOccs.push({
+            lat: lat, lon: lon,
+            date: String(item.observedAt || ''),
+            source: 'elurikkus',
+            scientificName: String(item.scientificName || item.taxonName || '')
+          });
+        }
+        console.log('[prob] eElurikkus items:', eluItems.length, '-> with coords:', eluOccs.length);
+
+        // Step 3: Also fetch historical data via HTML search page
+        try {
+          setProbStatus('Fetching historical data...');
+          var searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' +
+            encodeURIComponent(speciesName) + '&_ts=' + Date.now();
+          var html = await tryFetch(searchUrl);
+          if (html && typeof extractElurikkusRecordRows === 'function') {
+            var htmlRows = extractElurikkusRecordRows(html);
+            console.log('[prob] HTML historical rows:', htmlRows.length);
+            for (var j = 0; j < htmlRows.length; j++) {
+              var row = htmlRows[j];
+              var rLat = Number(row.lat), rLon = Number(row.lon);
+              var rHas = Number.isFinite(rLat) && Number.isFinite(rLon);
+              if (!rHas) {
+                var rPlace = String(row.municipality || row.placeText || row.locality || row.county || '').trim();
+                if (rPlace) {
+                  var rRes = null;
+                  if (typeof resolveCentroidFromPlace === 'function') rRes = resolveCentroidFromPlace(rPlace);
+                  if (!rRes && typeof resolveFallbackLatLon === 'function') {
+                    rRes = resolveFallbackLatLon({ municipality: row.municipality || '', locality: row.locality || '', county: row.county || '' });
+                  }
+                  if (rRes && Number.isFinite(rRes.lat) && Number.isFinite(rRes.lon)) {
+                    rLat = rRes.lat; rLon = rRes.lon; rHas = true;
+                  }
+                }
+              }
+              if (!rHas) continue;
+              eluOccs.push({
+                lat: rLat, lon: rLon,
+                date: String(row.observedAt || ''),
+                source: 'elurikkus',
+                scientificName: String(row.scientificName || row.taxonName || '')
+              });
+            }
+          }
+        } catch(htmlErr) {
+          console.warn('[prob] Historical HTML fetch failed:', htmlErr);
+        }
+
+        // Step 4: Extract scientific name for GBIF
         var sciName = extractScientificName(eluOccs);
         if (!sciName && typeof SPECIES_SCINAMES !== 'undefined' && SPECIES_SCINAMES[speciesName]) {
           sciName = SPECIES_SCINAMES[speciesName];
         }
 
-        // Fetch GBIF
+        // Step 5: Fetch GBIF
         var gbifOccs = [];
         if (sciName) {
-          setProbStatus('Fetching GBIF...');
+          setProbStatus('Fetching GBIF (' + sciName + ')...');
           gbifOccs = await fetchProbGbifOccurrences(sciName);
         } else {
-          setProbStatus('No Latin name found \u2014 GBIF skipped');
+          console.log('[prob] No Latin name found, GBIF skipped');
         }
 
+        // Step 6: Merge + deduplicate
         var allOccs = deduplicateOccurrences(eluOccs.concat(gbifOccs));
         data = { species: speciesName, scientificName: sciName || '', fetchedAt: new Date().toISOString(), occurrences: allOccs };
         saveProbCache(speciesName, data);
+
+        console.log('[prob] Total:', allOccs.length, '| eElurikkus:', eluOccs.length, '| GBIF:', gbifOccs.length);
       }
 
       // User may have toggled away while fetching
@@ -9457,9 +9537,20 @@ var __sharedDefaults = {};
 
       setProbStatus('Calculating...');
       var seasonal = data.occurrences.filter(function(o){ return isInSeasonWindow(o.date); });
+      console.log('[prob] Season window:', formatSeasonWindow(), '| In-season:', seasonal.length, '/', data.occurrences.length);
+
+      // Auto-widen to ±45 days if no results
+      if (seasonal.length === 0 && data.occurrences.length > 0) {
+        seasonal = data.occurrences.filter(function(o){ return isInSeasonWindow(o.date, 45); });
+        console.log('[prob] Widened to \u00b145 days:', seasonal.length);
+      }
 
       if (seasonal.length === 0) {
-        setProbStatus('No observations in current season window');
+        if (data.occurrences.length > 0) {
+          var sampleDates = data.occurrences.slice(0,5).map(function(o){ return o.date; });
+          console.log('[prob] Sample dates:', sampleDates);
+        }
+        setProbStatus('No observations near current season (' + data.occurrences.length + ' total obs)');
         clearProbabilityLayer();
         return;
       }

@@ -944,6 +944,13 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      get_all_avatars: {
+        Args: never
+        Returns: {
+          public_url: string
+          species_key: string
+        }[]
+      }
       get_user_permissions: { Args: { _user_id: string }; Returns: string[] }
       get_user_role: {
         Args: { _user_id: string }

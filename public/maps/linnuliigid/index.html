@@ -94,6 +94,8 @@
 .marker-count{position:absolute;left:50%;transform:translateX(-50%);bottom:-8px;min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:#fff;border:2px solid #555;color:#000;font-size:13px;line-height:18px;font-weight:700;text-align:center;box-sizing:border-box;z-index:3;box-shadow:0 1px 2px rgba(0,0,0,.2)}
 .marker-count.mig-on{background:rgba(40,180,70,.95);color:#fff;border-color:#1c6b25}
 .marker-count.mig-off{background:rgba(255,160,0,.95);color:#111;border-color:#8a5a00}
+.marker-eb-badge{position:absolute;top:-4px;left:-6px;background:#f59e0b;color:#fff;font-size:9px;font-weight:700;padding:1px 4px;border-radius:6px;line-height:1.2;pointer-events:none;z-index:2;border:1px solid #fff;text-transform:uppercase;letter-spacing:.3px}
+.ebird-count{background:#f59e0b !important;color:#fff !important}
 .popupBtn{
   padding:6px 10px;
   border-radius:10px;
@@ -8233,6 +8235,7 @@ document.addEventListener('DOMContentLoaded', function(){
 <div id="windToggleBar" class="hidden-in-export">
   <button id="toggleWind" class="btn secondary">Tuulekaart</button>
   <button id="toggleSpring" class="btn secondary">Kevadränne</button>
+  <button id="toggleEbirdEE" class="btn secondary">eBird EE</button>
   <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 päeva jooksul aktiivsed">7p liigid: 0</span>
 </div>
 <div id="springPanel" class="hidden-in-export" style="display:none">
@@ -8730,5 +8733,234 @@ var __sharedDefaults = {};
   </div>
 </div>
 
+<!-- eBird EE Layer -->
+<script>
+(function(){
+  // --- Storage ---
+  var LS_EBIRD_EE_LAYER = 'bm_ebird_ee_layer';
+  var LS_EBIRD_EE_POINTS = 'bm_ebird_ee_points';
+  var ebirdEEPoints = {};
+  try { ebirdEEPoints = JSON.parse(localStorage.getItem(LS_EBIRD_EE_POINTS) || '{}'); } catch(e){ ebirdEEPoints = {}; }
+  function saveEbirdEE(){ try { localStorage.setItem(LS_EBIRD_EE_POINTS, JSON.stringify(ebirdEEPoints)); } catch(e){} }
+
+  window.__ebirdEELayerOn = (localStorage.getItem(LS_EBIRD_EE_LAYER) === '1');
+  var ebirdEEMarkers = new Map();
+
+  // --- Toggle button ---
+  var ebirdEEBtn = document.getElementById('toggleEbirdEE');
+  function syncEbirdEEBtn(){
+    if(window.__ebirdEELayerOn){
+      ebirdEEBtn.classList.add('on');
+      ebirdEEBtn.classList.remove('secondary');
+      ebirdEEBtn.textContent = 'eBird EE: ON';
+    } else {
+      ebirdEEBtn.classList.remove('on');
+      ebirdEEBtn.classList.add('secondary');
+      ebirdEEBtn.textContent = 'eBird EE';
+    }
+  }
+  ebirdEEBtn.addEventListener('click', function(){
+    window.__ebirdEELayerOn = !window.__ebirdEELayerOn;
+    localStorage.setItem(LS_EBIRD_EE_LAYER, window.__ebirdEELayerOn ? '1' : '0');
+    syncEbirdEEBtn();
+    refreshEbirdEELayer();
+  });
+  syncEbirdEEBtn();
+
+  // --- Marker icon ---
+  function _ebirdMarkerIcon(avatarUrl, count, rarityLevel){
+    var color = '#f59e0b';
+    var style = window.getRarityStyle ? window.getRarityStyle(rarityLevel || 'none') : null;
+    var countHtml = Number.isFinite(count) && count > 0
+      ? '<div class="marker-count ebird-count" title="Lindude arv (eBird)">' + count + '</div>'
+      : '';
+    var ebLabel = '<div class="marker-eb-badge" title="eBird andmed">eB</div>';
+    var bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#f59e0b";
+    var html = '<div class="marker-wrap"><div class="marker-circle" style="border-color:' + color + ';' + bg + '"></div>' + ebLabel + countHtml + '</div>';
+    return L.divIcon({html:html, className:'', iconSize:[44,72], iconAnchor:[22,36], popupAnchor:[0,-36]});
+  }
+
+  // --- Popup ---
+  function ebirdEEPopupHtml(key, ep){
+    var displayName = window.normalizeUiText ? window.normalizeUiText(key) : key;
+    var when = ep.t ? '<br><small>last seen: ' + formatDateEE(ep.t) + '</small>' : '';
+    var where = ep.loc ? '<br><small>location: ' + ep.loc + '</small>' : '';
+    var srcLn = '<br><small>source: eBird EE (Estonia)</small>';
+    var occLn = '<br><small>7d records: ' + (ep.occ7 || 0) + '</small>';
+    var countLn = Number.isFinite(ep.howMany) ? '<br><small>bird count: ' + ep.howMany + '</small>' : '';
+    var metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
+    var rarLn = (metaCfg.rarityLevel && metaCfg.rarityLevel !== 'none' && window.getRarityBadgeText)
+      ? '<br><small>rarity: ' + window.getRarityBadgeText(metaCfg.rarityLevel) + '</small>' : '';
+    return '<b>' + displayName + '</b>' + when + where + srcLn + occLn + countLn + rarLn;
+  }
+
+  // --- Fetch single species ---
+  async function fetchEbirdEEForSpecies(estName){
+    var code = (typeof SPECIES_EBIRD_CODES !== 'undefined' && SPECIES_EBIRD_CODES[estName]) || '';
+    if(!code && window.points && window.points[estName] && window.points[estName].ebirdCode) code = window.points[estName].ebirdCode;
+    if(!code) return null;
+
+    var SUPABASE_REF = 'eenwcyuyugyrjgpivxrq';
+    var proxyUrl = 'https://' + SUPABASE_REF + '.supabase.co/functions/v1/ebird_recent?regionCode=EE&back=30&maxResults=1000&speciesCode=' + encodeURIComponent(code);
+
+    var arr;
+    try {
+      var res = await fetch(proxyUrl);
+      if(!res.ok) throw new Error('proxy HTTP ' + res.status);
+      var json = await res.json();
+      arr = Array.isArray(json) ? json : (json.observations || json.data || []);
+    } catch(proxyErr){
+      var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
+      var directUrl = 'https://api.ebird.org/v2/data/obs/EE/recent/' + encodeURIComponent(code) + '?back=30&maxResults=1000&_ts=' + Date.now();
+      var res2 = await fetch(directUrl, { headers: { 'X-eBirdApiToken': token } });
+      if(!res2.ok) throw new Error('eBird HTTP ' + res2.status);
+      arr = await res2.json();
+    }
+
+    if(!Array.isArray(arr) || arr.length === 0) return null;
+
+    var occ7 = 0;
+    var now = Date.now();
+    var win7 = 7 * 24 * 60 * 60 * 1000;
+    arr.forEach(function(o){
+      var d = String(o.obsDt || '').substring(0, 10);
+      var ms = (typeof _toDay === 'function') ? _toDay(d) : Date.parse(d);
+      if(ms && (now - ms) >= 0 && (now - ms) <= win7) occ7++;
+    });
+
+    arr.sort(function(a,b){ return String(b.obsDt || '').localeCompare(String(a.obsDt || '')); });
+    var latest = arr[0];
+    var lat = +latest.lat, lon = +latest.lng;
+    if(!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+    return {
+      lat: lat, lon: lon,
+      t: (latest.obsDt || '').substring(0, 10),
+      loc: latest.locName || '',
+      occ7: occ7,
+      howMany: Number.isFinite(latest.howMany) ? latest.howMany : null,
+      lastFetched: new Date().toISOString(),
+      src: 'eBird EE'
+    };
+  }
+
+  // --- Bulk fetch ---
+  var _ebirdEEFetching = false;
+  async function refreshEbirdEEAll(){
+    if(_ebirdEEFetching) return;
+    _ebirdEEFetching = true;
+    var speciesList = Object.keys(SPECIES_EBIRD_CODES || {});
+    var done = 0, errors = 0;
+    for(var i = 0; i < speciesList.length; i++){
+      var name = speciesList[i];
+      try {
+        var result = await fetchEbirdEEForSpecies(name);
+        if(result) ebirdEEPoints[name] = result;
+      } catch(e){
+        errors++;
+        console.warn('eBird EE fetch failed:', name, e);
+      }
+      done++;
+      await new Promise(function(r){ setTimeout(r, 400); });
+      if(done % 5 === 0){
+        saveEbirdEE();
+        refreshEbirdEEMarkers();
+      }
+    }
+    saveEbirdEE();
+    refreshEbirdEEMarkers();
+    _ebirdEEFetching = false;
+    console.log('[eBird EE] Refresh done: ' + done + ' total, ' + errors + ' errors');
+  }
+
+  // --- Render markers ---
+  function refreshEbirdEEMarkers(){
+    var clusterGroup = window.__markerClusterGroup || window.markerClusterGroup || null;
+    ebirdEEMarkers.forEach(function(m){
+      try {
+        if(clusterGroup && typeof clusterGroup.removeLayer === 'function') clusterGroup.removeLayer(m);
+        else map.removeLayer(m);
+      } catch(e){}
+    });
+    ebirdEEMarkers.clear();
+
+    if(!window.__ebirdEELayerOn) return;
+
+    var now = Date.now();
+    var win7 = 7 * 24 * 60 * 60 * 1000;
+    var keys = Object.keys(ebirdEEPoints);
+    for(var i = 0; i < keys.length; i++){
+      var key = keys[i];
+      var ep = ebirdEEPoints[key];
+      if(!ep || !Number.isFinite(ep.lat) || !Number.isFinite(ep.lon)) continue;
+
+      if(window.__recentOnly){
+        var occ7 = Number(ep.occ7 || 0);
+        var dateRecent = false;
+        if(ep.t){
+          var ms = (typeof _toDay === 'function') ? _toDay(ep.t) : Date.parse(ep.t);
+          if(ms && (now - ms) >= 0 && (now - ms) <= win7) dateRecent = true;
+        }
+        if(!(occ7 > 0) && !dateRecent) continue;
+      }
+
+      var mainP = (window.points || {})[key] || {};
+      if(mainP.visible === false) continue;
+
+      var metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
+      var avatar = (typeof getDisplayAvatar === 'function') ? getDisplayAvatar(key) : ((typeof avatars !== 'undefined' && avatars[key]) || '');
+      var count = Number.isFinite(ep.howMany) ? ep.howMany : null;
+      var icon = _ebirdMarkerIcon(avatar, count, metaCfg.rarityLevel || 'none');
+
+      var offsetLat = ep.lat + 0.002;
+      var offsetLon = ep.lon + 0.002;
+
+      var m = L.marker([offsetLat, offsetLon], { icon: icon });
+      m.bindPopup(ebirdEEPopupHtml(key, ep));
+
+      if(clusterGroup && typeof clusterGroup.addLayer === 'function'){
+        try { clusterGroup.addLayer(m); } catch(e){ m.addTo(map); }
+      } else {
+        m.addTo(map);
+      }
+      ebirdEEMarkers.set(key, m);
+    }
+  }
+  window.refreshEbirdEEMarkers = refreshEbirdEEMarkers;
+
+  // --- Master toggle ---
+  function refreshEbirdEELayer(){
+    if(window.__ebirdEELayerOn){
+      if(Object.keys(ebirdEEPoints).length > 0) refreshEbirdEEMarkers();
+      refreshEbirdEEAll();
+    } else {
+      refreshEbirdEEMarkers();
+    }
+  }
+
+  // --- 7-day filter integration ---
+  if(typeof window.updateMarker === 'function' && !window.__ebird_ee_upd_patch__){
+    var _origUpdateMarker = window.updateMarker;
+    window.updateMarker = function(){
+      var out = _origUpdateMarker.apply(this, arguments);
+      clearTimeout(window.__ebirdEERefreshTimer);
+      window.__ebirdEERefreshTimer = setTimeout(refreshEbirdEEMarkers, 200);
+      return out;
+    };
+    window.__ebird_ee_upd_patch__ = true;
+  }
+
+  // --- Auto-refresh every 30 min ---
+  setInterval(function(){
+    if(window.__ebirdEELayerOn) refreshEbirdEEAll();
+  }, 30 * 60 * 1000);
+
+  // --- Init: restore from cache ---
+  if(window.__ebirdEELayerOn && Object.keys(ebirdEEPoints).length > 0){
+    setTimeout(refreshEbirdEEMarkers, 1000);
+    setTimeout(refreshEbirdEEAll, 5000);
+  }
+})();
+</script>
 </body>
 </html>

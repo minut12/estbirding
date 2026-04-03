@@ -9188,9 +9188,9 @@ var __sharedDefaults = {};
     '</div>' +
     '<div style="font-size:11px;color:#64748b;margin-bottom:10px">Sighting probability by location</div>' +
     '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">' +
-      '<div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:rgba(226,75,74,0.6)"></div><span style="font-size:12px;color:#64748b">High (&gt;60%)</span></div>' +
-      '<div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:rgba(239,159,39,0.5)"></div><span style="font-size:12px;color:#64748b">Medium (25\u201360%)</span></div>' +
-      '<div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:rgba(151,196,89,0.5)"></div><span style="font-size:12px;color:#64748b">Low (&lt;25%)</span></div>' +
+      '<div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:rgba(226,75,74,0.7)"></div><span style="font-size:12px;color:#64748b">High (&gt;60%)</span></div>' +
+      '<div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:rgba(232,141,42,0.65)"></div><span style="font-size:12px;color:#64748b">Medium (25\u201360%)</span></div>' +
+      '<div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:rgba(127,119,221,0.55)"></div><span style="font-size:12px;color:#64748b">Low (&lt;25%)</span></div>' +
     '</div>' +
     '<div style="border-top:1px solid #e2e8f0;padding-top:10px">' +
       '<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">Sources</div>' +
@@ -9340,7 +9340,7 @@ var __sharedDefaults = {};
   function buildProbPopup(cell, speciesName) {
     var eluCount = cell.occurrences.filter(function(o){ return o.source === 'elurikkus'; }).length;
     var gbifCount = cell.occurrences.filter(function(o){ return o.source === 'gbif'; }).length;
-    var probColor = cell.probability > 60 ? '#A32D2D' : cell.probability > 25 ? '#854F0B' : '#27500A';
+    var probColor = cell.probability > 60 ? '#A32D2D' : cell.probability > 25 ? '#B06A1A' : '#534AB7';
     return '<div style="font-family:system-ui;min-width:180px">' +
       '<div style="font-size:22px;font-weight:600;color:' + probColor + ';margin-bottom:2px">' + cell.probability + '%</div>' +
       '<div style="font-size:12px;color:#64748b;margin-bottom:8px">probability in current season</div>' +
@@ -9359,11 +9359,12 @@ var __sharedDefaults = {};
     gridCells.forEach(function(cell) {
       var bounds = [[cell.latMin, cell.lonMin], [cell.latMax, cell.lonMax]];
       var fillColor, fillOpacity;
-      if (cell.probability > 60) { fillColor = '#E24B4A'; fillOpacity = 0.4; }
-      else if (cell.probability > 25) { fillColor = '#EF9F27'; fillOpacity = 0.35; }
-      else { fillColor = '#97C459'; fillOpacity = 0.3; }
+      var strokeColor;
+      if (cell.probability > 60) { fillColor = '#E24B4A'; fillOpacity = 0.50; strokeColor = '#A32D2D'; }
+      else if (cell.probability > 25) { fillColor = '#E88D2A'; fillOpacity = 0.45; strokeColor = '#B06A1A'; }
+      else { fillColor = '#7F77DD'; fillOpacity = 0.35; strokeColor = '#534AB7'; }
 
-      var rect = L.rectangle(bounds, { color: 'transparent', fillColor: fillColor, fillOpacity: fillOpacity, weight: 0, interactive: true });
+      var rect = L.rectangle(bounds, { fillColor: fillColor, fillOpacity: fillOpacity, color: strokeColor, weight: 1.5, opacity: 0.6, interactive: true });
       rect.bindPopup(buildProbPopup(cell, speciesName));
       probLayerGroup.addLayer(rect);
     });
@@ -9372,7 +9373,7 @@ var __sharedDefaults = {};
     var topCells = gridCells.slice().sort(function(a,b){ return b.probability - a.probability; }).slice(0,5);
     topCells.forEach(function(cell) {
       var center = [(cell.latMin + cell.latMax)/2, (cell.lonMin + cell.lonMax)/2];
-      var mc = cell.probability > 60 ? '#791F1F' : cell.probability > 25 ? '#854F0B' : '#27500A';
+      var mc = cell.probability > 60 ? '#A32D2D' : cell.probability > 25 ? '#B06A1A' : '#534AB7';
       var marker = L.circleMarker(center, { radius: 5, fillColor: mc, fillOpacity: 1, color: 'white', weight: 1.5 });
       marker.bindPopup(buildProbPopup(cell, speciesName));
       probLayerGroup.addLayer(marker);

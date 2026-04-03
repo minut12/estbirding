@@ -63,9 +63,9 @@ export function getMergedAvatars(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE):
 export async function fetchSharedAvatars(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): Promise<AvatarMap> {
   try {
     console.log('[avatar-storage] fetchSharedAvatars: calling get_all_avatars RPC...');
-    const { data: rpcData, error: rpcError } = await supabase.rpc('get_all_avatars');
+    const { data: rpcData, error: rpcError } = await (supabase as any).rpc('get_all_avatars');
 
-    if (!rpcError && rpcData && rpcData.length > 0) {
+    if (!rpcError && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
       const map: AvatarMap = {};
       for (const row of rpcData as Array<{ species_key: string; public_url: string }>) {
         if (row.species_key && row.public_url) {

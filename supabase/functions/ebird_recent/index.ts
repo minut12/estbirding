@@ -46,10 +46,10 @@ Deno.serve(async (req) => {
     return jsonResponse(400, { error: "invalid method" }, origin);
   }
 
-  const token = Deno.env.get("EBIRD_API_TOKEN2") || Deno.env.get("EBIRD_API_TOKEN");
+  const token = Deno.env.get("EBIRD_API_TOKEN2");
   if (!token) {
-    console.error("[ebird_recent] missing secret EBIRD_API_TOKEN");
-    return jsonResponse(500, { error: "EBIRD_API_TOKEN secret not set" }, origin);
+    console.error("[ebird_recent] missing secret EBIRD_API_TOKEN2");
+    return jsonResponse(500, { error: "EBIRD_API_TOKEN2 secret not set" }, origin);
   }
 
   const reqUrl = new URL(req.url);

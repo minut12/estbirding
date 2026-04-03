@@ -95,9 +95,7 @@
 .marker-count.mig-on{background:rgba(40,180,70,.95);color:#fff;border-color:#1c6b25}
 .marker-count.mig-off{background:rgba(255,160,0,.95);color:#111;border-color:#8a5a00}
 .marker-ebird-label{position:absolute;top:4px;left:50%;transform:translateX(-50%);background:#4CAF50;color:#fff;font-size:8px;font-weight:700;font-family:system-ui,Arial,sans-serif;padding:1px 4px;border-radius:4px;line-height:1.3;pointer-events:none;z-index:2;border:1px solid #fff;white-space:nowrap;letter-spacing:.2px;text-transform:uppercase}
-.marker-count.ebird-count{background:rgba(76,175,80,.95) !important;color:#fff !important;border-color:#2E7D32 !important}
-.ebird-cluster-icon{width:36px;height:36px;border-radius:50%;background:#4CAF50;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3);font-family:system-ui,Arial,sans-serif}
-.popupBtn{
+.marker-count.ebird-count{background:rgba(76,175,80,.95) !important;color:#fff !important;border-color:#2E7D32 !important}.popupBtn{
   padding:6px 10px;
   border-radius:10px;
   border:1px solid rgba(0,0,0,.12);
@@ -251,9 +249,6 @@
 <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
-<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="/maps/shared/map-hamburger-control.js"></script>
 <script src="/maps/shared/format-ee.js"></script>
 <script src="/maps/shared/species-meta.js"></script>
@@ -8751,26 +8746,6 @@ var __sharedDefaults = {};
   window.__ebirdEELayerOn = (localStorage.getItem(LS_EBIRD_EE_LAYER) === '1');
   var ebirdEEMarkers = new Map();
 
-  // --- eBird cluster group ---
-  var ebirdClusterGroup = L.markerClusterGroup({
-    maxClusterRadius: 35,
-    spiderfyOnMaxZoom: true,
-    showCoverageOnHover: false,
-    zoomToBoundsOnClick: true,
-    disableClusteringAtZoom: 15,
-    iconCreateFunction: function(cluster){
-      var count = cluster.getChildCount();
-      return L.divIcon({
-        html: '<div class="ebird-cluster-icon">' + count + '</div>',
-        className: '',
-        iconSize: [36,36],
-        iconAnchor: [18,18]
-      });
-    }
-  });
-  if(window.__ebirdEELayerOn) map.addLayer(ebirdClusterGroup);
-  window.__ebirdClusterGroup = ebirdClusterGroup;
-
   // --- Toggle button ---
   var ebirdEEBtn = document.getElementById('toggleEbirdEE');
   function syncEbirdEEBtn(){
@@ -8789,13 +8764,10 @@ var __sharedDefaults = {};
     syncEbirdEEBtn();
     if(window.__ebirdEELayerOn){
       _updateEbirdEEProgress(0, 0, 'Starting...', 'running');
-      if(!map.hasLayer(ebirdClusterGroup)) map.addLayer(ebirdClusterGroup);
       if(Object.keys(ebirdEEPoints).length > 0) refreshEbirdEEMarkers();
       refreshEbirdEEAll();
     } else {
-      ebirdClusterGroup.clearLayers();
-      ebirdEEMarkers.clear();
-      if(map.hasLayer(ebirdClusterGroup)) map.removeLayer(ebirdClusterGroup);
+      refreshEbirdEEMarkers();
       _updateEbirdEEProgress(0, 0, '', 'idle');
     }
   });
@@ -8974,14 +8946,62 @@ var __sharedDefaults = {};
     console.log('[eBird EE] Refresh done: total=' + done + ', found=' + found + ', errors=' + errors);
   }
 
+  // --- Collision detection utilities ---
+  function spreadOverlappingCoords(items, threshold, spreadRadius){
+    threshold = threshold || 0.0005;
+    spreadRadius = spreadRadius || 0.0008;
+    var groups = {};
+    for(var i = 0; i < items.length; i++){
+      var item = items[i];
+      var gLat = Math.round(item.lat / threshold) * threshold;
+      var gLon = Math.round(item.lon / threshold) * threshold;
+      var gKey = gLat.toFixed(5) + ',' + gLon.toFixed(5);
+      if(!groups[gKey]) groups[gKey] = [];
+      groups[gKey].push(i);
+    }
+    var result = [];
+    for(var i = 0; i < items.length; i++){
+      result.push({ key: items[i].key, lat: items[i].lat, lon: items[i].lon, original: items[i] });
+    }
+    var groupKeys = Object.keys(groups);
+    for(var g = 0; g < groupKeys.length; g++){
+      var indices = groups[groupKeys[g]];
+      if(indices.length < 2) continue;
+      var cLat = 0, cLon = 0;
+      for(var j = 0; j < indices.length; j++){
+        cLat += items[indices[j]].lat;
+        cLon += items[indices[j]].lon;
+      }
+      cLat /= indices.length;
+      cLon /= indices.length;
+      var count = indices.length;
+      for(var j = 0; j < count; j++){
+        var angle = (2 * Math.PI * j) / count - Math.PI / 2;
+        result[indices[j]].lat = cLat + spreadRadius * Math.sin(angle);
+        result[indices[j]].lon = cLon + spreadRadius * Math.cos(angle);
+      }
+    }
+    return result;
+  }
+
+  function getElurikkusCollisionOffset(lat, lon, threshold){
+    threshold = threshold || 0.0005;
+    var pts = window.points || {};
+    var keys = Object.keys(pts);
+    for(var i = 0; i < keys.length; i++){
+      var p = pts[keys[i]];
+      if(!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) continue;
+      if(Math.abs(p.lat - lat) < threshold && Math.abs(p.lon - lon) < threshold){
+        return { lat: 0.0006, lon: 0.0008 };
+      }
+    }
+    return { lat: 0, lon: 0 };
+  }
+
   // --- Render markers ---
   function refreshEbirdEEMarkers(){
-    var ebirdCG = window.__ebirdClusterGroup;
     ebirdEEMarkers.forEach(function(m){
-      try {
-        if(ebirdCG) ebirdCG.removeLayer(m);
-        else map.removeLayer(m);
-      } catch(e){}
+      try { map.removeLayer(m); } catch(e){}
     });
     ebirdEEMarkers.clear();
 
@@ -8989,6 +9009,9 @@ var __sharedDefaults = {};
 
     var now = Date.now();
     var win7 = 7 * 24 * 60 * 60 * 1000;
+
+    // Step 1: Collect visible eBird markers
+    var visibleItems = [];
     var keys = Object.keys(ebirdEEPoints);
     for(var i = 0; i < keys.length; i++){
       var key = keys[i];
@@ -9008,17 +9031,30 @@ var __sharedDefaults = {};
       var mainP = (window.points || {})[key] || {};
       if(mainP.visible === false) continue;
 
+      visibleItems.push({ key: key, lat: ep.lat, lon: ep.lon, ep: ep });
+    }
+
+    // Step 2: Spread overlapping eBird markers
+    var spread = spreadOverlappingCoords(visibleItems, 0.0005, 0.0008);
+
+    // Step 3: Create markers with adjusted coordinates
+    for(var i = 0; i < spread.length; i++){
+      var s = spread[i];
+      var ep = s.original.ep;
+      var key = s.key;
+
+      var elOffset = getElurikkusCollisionOffset(s.lat, s.lon, 0.0005);
+      var finalLat = s.lat + elOffset.lat;
+      var finalLon = s.lon + elOffset.lon;
+
       var avatar = (typeof getDisplayAvatar === 'function') ? getDisplayAvatar(key) : ((typeof avatars !== 'undefined' && avatars[key]) || '');
       var count = Number.isFinite(ep.howMany) ? ep.howMany : null;
       var metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
       var icon = _ebirdMarkerIcon(avatar, count, metaCfg.rarityLevel || 'none');
 
-      var m = L.marker([ep.lat, ep.lon], { icon: icon });
+      var m = L.marker([finalLat, finalLon], { icon: icon });
       m.bindPopup(ebirdEEPopupHtml(key, ep));
-
-      if(ebirdCG) ebirdCG.addLayer(m);
-      else m.addTo(map);
-
+      m.addTo(map);
       ebirdEEMarkers.set(key, m);
     }
   }

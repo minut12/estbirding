@@ -15,11 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
       - name: Deploy linnuliigid-snapshot
-        run: npx supabase@latest functions deploy linnuliigid-snapshot --project-ref eenwcyuyugyrjgpivxrq
+        run: |
+          curl -fsSL https://github.com/supabase/cli/releases/download/v2.20.12/supabase_2.20.12_linux_amd64.tar.gz | tar xz
+          ./supabase functions deploy linnuliigid-snapshot --project-ref eenwcyuyugyrjgpivxrq
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
@@ -27,10 +26,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
       - name: Deploy ebird_recent
-        run: npx supabase@latest functions deploy ebird_recent --project-ref eenwcyuyugyrjgpivxrq
+        run: |
+          curl -fsSL https://github.com/supabase/cli/releases/download/v2.20.12/supabase_2.20.12_linux_amd64.tar.gz | tar xz
+          ./supabase functions deploy ebird_recent --project-ref eenwcyuyugyrjgpivxrq
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

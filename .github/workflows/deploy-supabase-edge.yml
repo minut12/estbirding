@@ -33,3 +33,15 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: supabase functions deploy species-prediction --project-ref eenwcyuyugyrjgpivxrq --no-verify-jwt
+
+  deploy-ebird-recent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Deploy ebird_recent
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy ebird_recent --project-ref eenwcyuyugyrjgpivxrq --no-verify-jwt

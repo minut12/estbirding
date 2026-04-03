@@ -3651,6 +3651,8 @@ function setRecentOnly(val){
   render();
 }
 window.__recentOnly = getRecentOnly();
+window.__snapshotLoadedOnce = false;
+window.__applyingSnapshot = false;
 // Trace unexpected changes to __recentOnly
 (function(){
   var _val = window.__recentOnly;
@@ -6428,6 +6430,7 @@ function _updateDebugPanel(){
 
 async function _applySnapshot(snap){
   if(!snap || !snap.points_json) return;
+  window.__applyingSnapshot = true;
   const pts = snap.points_json;
   const keys = Object.keys(pts || {});
   __snapshotProgressTotal = keys.length;
@@ -6496,6 +6499,8 @@ async function _applySnapshot(snap){
   _setResumeIndex(__snapshotProgressDone);
   _recomputeClientDataMaxAt();
   save();
+  window.__applyingSnapshot = false;
+  window.__snapshotLoadedOnce = true;
   rebuildAllMarkers();
   render();
 }
@@ -7627,6 +7632,7 @@ window.saveSpringEditModal = function(clearValue){
 };
 
 function updateMarker(key) {
+  if (!window.__snapshotLoadedOnce && window.__recentOnly) return;
   const p = points[key];
   const prevMarker = markers.has(key) ? markers.get(key) : null;
   const clusterGroup = window.__markerClusterGroup || window.markerClusterGroup || null;
@@ -7853,6 +7859,7 @@ function rowHTML(obj) {
 }
 
 function render() {
+  if (window.__applyingSnapshot) return;
   const q = (document.getElementById('filterBox').value||'').toLowerCase().trim();
   const list = document.getElementById('list'); list.innerHTML='';
   const recent7 = is7daysOnly();

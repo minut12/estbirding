@@ -9146,5 +9146,407 @@ var __sharedDefaults = {};
   }
 })();
 </script>
+
+<!-- === Probability Map === -->
+<script>
+(function(){
+  var probLayerGroup = null;
+  var activeProbSpecies = null;
+
+  // --- Info panel (injected into #mapWrap) ---
+  var mapWrap = document.getElementById('mapWrap');
+  var probPanel = document.createElement('div');
+  probPanel.id = 'probInfoPanel';
+  probPanel.className = 'hidden-in-export';
+  probPanel.style.cssText = 'position:absolute;top:12px;right:12px;z-index:1000;background:white;border-radius:12px;border:1px solid #e2e8f0;padding:14px 16px;width:210px;display:none;box-shadow:0 2px 8px rgba(0,0,0,0.08)';
+  probPanel.innerHTML =
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
+      '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="#185FA5" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="3" stroke="#185FA5" stroke-width="1.2" fill="none"/><circle cx="8" cy="8" r="1" fill="#185FA5"/></svg>' +
+      '<span id="probSpeciesLabel" style="font-size:13px;font-weight:600"></span>' +
+    '</div>' +
+    '<div style="font-size:11px;color:#64748b;margin-bottom:10px">Sighting probability by location</div>' +
+    '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">' +
+      '<div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:rgba(226,75,74,0.6)"></div><span style="font-size:12px;color:#64748b">High (&gt;60%)</span></div>' +
+      '<div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:rgba(239,159,39,0.5)"></div><span style="font-size:12px;color:#64748b">Medium (25–60%)</span></div>' +
+      '<div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:rgba(151,196,89,0.5)"></div><span style="font-size:12px;color:#64748b">Low (&lt;25%)</span></div>' +
+    '</div>' +
+    '<div style="border-top:1px solid #e2e8f0;padding-top:10px">' +
+      '<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">Sources</div>' +
+      '<div style="display:flex;gap:4px">' +
+        '<span style="font-size:11px;background:#eef2ff;color:#3730a3;padding:2px 8px;border-radius:12px">eElurikkus</span>' +
+        '<span style="font-size:11px;background:#ecfdf5;color:#065f46;padding:2px 8px;border-radius:12px">GBIF</span>' +
+      '</div>' +
+      '<div id="probFetchStatus" style="font-size:11px;color:#94a3b8;margin-top:6px"></div>' +
+    '</div>';
+  mapWrap.appendChild(probPanel);
+
+  // --- CSS ---
+  var style = document.createElement('style');
+  style.textContent =
+    '.prob-btn{padding:2px 6px;color:#64748b;cursor:pointer;transition:all .15s;background:transparent;border:1px solid transparent;border-radius:6px}' +
+    '.prob-btn:hover{color:#185FA5;background:#E6F1FB}' +
+    '.prob-btn.prob-active{color:#185FA5;background:#E6F1FB;border-color:#85B7EB}' +
+    '.prob-btn.loading svg{animation:prob-spin 1s linear infinite}' +
+    '@keyframes prob-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}' +
+    '.row.prob-row-active{border-left:3px solid #1D9E75;background:#f0fdf4}' +
+    '@media(max-width:768px){#probInfoPanel{max-width:180px!important;font-size:11px!important;padding:10px 12px!important}}';
+  document.head.appendChild(style);
+
+  // --- Helpers ---
+  function getDayOfYear(date) {
+    var start = new Date(date.getFullYear(), 0, 0);
+    return Math.floor((date - start) / 86400000);
+  }
+
+  function isInSeasonWindow(occDateStr, windowDays) {
+    windowDays = windowDays || 21;
+    if (!occDateStr) return false;
+    var now = new Date();
+    var occ = new Date(occDateStr);
+    if (isNaN(occ.getTime())) return false;
+    var nowDoy = getDayOfYear(now);
+    var occDoy = getDayOfYear(occ);
+    var diff = Math.abs(nowDoy - occDoy);
+    return Math.min(diff, 365 - diff) <= windowDays;
+  }
+
+  function formatSeasonWindow(windowDays) {
+    windowDays = windowDays || 21;
+    var now = new Date();
+    var start = new Date(now); start.setDate(start.getDate() - windowDays);
+    var end = new Date(now); end.setDate(end.getDate() + windowDays);
+    var fmt = function(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+    return fmt(start) + ' – ' + fmt(end);
+  }
+
+  function deduplicateOccurrences(occs) {
+    var seen = {};
+    return occs.filter(function(o) {
+      var key = (o.date ? o.date.substring(0,10) : 'nodate') + '|' + Math.round(o.lat*200) + '|' + Math.round(o.lon*200);
+      if (seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
+  }
+
+  function clusterToGrid(occs, gridSize) {
+    gridSize = gridSize || 0.1;
+    var cells = {};
+    occs.forEach(function(o) {
+      var gLat = Math.floor(o.lat / gridSize) * gridSize;
+      var gLon = Math.floor(o.lon / gridSize) * gridSize;
+      var key = gLat.toFixed(2) + '|' + gLon.toFixed(2);
+      if (!cells[key]) {
+        cells[key] = { latMin: gLat, latMax: gLat + gridSize, lonMin: gLon, lonMax: gLon + gridSize, occurrences: [] };
+      }
+      cells[key].occurrences.push(o);
+    });
+    return Object.values(cells);
+  }
+
+  function calculateProbabilities(gridCells, seasonal, allOccs) {
+    var totalInSeason = seasonal.length;
+    if (totalInSeason === 0) return gridCells;
+    var yearsSet = {};
+    seasonal.forEach(function(o) {
+      if (o.date) { var y = new Date(o.date).getFullYear(); if (!isNaN(y)) yearsSet[y] = true; }
+    });
+    var yearsWithData = Object.keys(yearsSet).length;
+    var allYearsSet = {};
+    allOccs.forEach(function(o) {
+      if (o.date) { var y = new Date(o.date).getFullYear(); if (!isNaN(y)) allYearsSet[y] = true; }
+    });
+    var allYears = Object.keys(allYearsSet).sort();
+    var totalYearsSpan = allYears.length > 1 ? (parseInt(allYears[allYears.length-1]) - parseInt(allYears[0]) + 1) : 1;
+    var yearCoverage = yearsWithData / totalYearsSpan;
+
+    gridCells.forEach(function(cell) {
+      var densityScore = cell.occurrences.length / totalInSeason;
+      cell.probability = Math.min(100, Math.round(densityScore * yearCoverage * 300));
+      // top locality from occurrences (use first one's approximate position)
+      cell.topLocality = cell.latMin.toFixed(2) + '°N, ' + cell.lonMin.toFixed(2) + '°E';
+    });
+    return gridCells;
+  }
+
+  // --- Cache ---
+  function loadProbCache(species) {
+    try {
+      var raw = localStorage.getItem('bm_prob_' + species);
+      if (!raw) return null;
+      var data = JSON.parse(raw);
+      if (Date.now() - new Date(data.fetchedAt).getTime() > 6 * 3600000) return null;
+      return data;
+    } catch(e) { return null; }
+  }
+  function saveProbCache(species, data) {
+    try { localStorage.setItem('bm_prob_' + species, JSON.stringify(data)); } catch(e) {}
+  }
+
+  // --- Fetch eElurikkus ---
+  async function fetchElurikkusOccurrences(speciesName) {
+    var biocacheUrl = 'https://elurikkus.ee/biocache-service/occurrences/search?q=' + encodeURIComponent(speciesName) + '&sort=eventDate&dir=desc&pageSize=300&fq=country:Estonia&_ts=' + Date.now();
+    var json;
+    try {
+      var res = await fetch(biocacheUrl, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      json = await res.json();
+    } catch(e) {
+      var proxyUrl = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/elurikkus-proxy?url=' + encodeURIComponent(biocacheUrl);
+      var res2 = await fetch(proxyUrl);
+      if (!res2.ok) throw new Error('Proxy HTTP ' + res2.status);
+      json = await res2.json();
+    }
+    return (json.occurrences || [])
+      .filter(function(r) { return Number.isFinite(parseFloat(r.decimalLatitude)) && Number.isFinite(parseFloat(r.decimalLongitude)); })
+      .map(function(r) {
+        return {
+          lat: parseFloat(r.decimalLatitude),
+          lon: parseFloat(r.decimalLongitude),
+          date: String(r.eventDate || r.occurrenceDate || r.observed_at || ''),
+          scientificName: r.scientificName || r.taxonName || ''
+        };
+      });
+  }
+
+  // --- Fetch GBIF ---
+  async function fetchGbifOccurrences(scientificName) {
+    var url = 'https://api.gbif.org/v1/occurrence/search?scientificName=' + encodeURIComponent(scientificName) + '&country=EE&hasCoordinate=true&limit=300';
+    var res = await fetch(url);
+    if (!res.ok) throw new Error('GBIF HTTP ' + res.status);
+    var json = await res.json();
+    return (json.results || [])
+      .filter(function(r) { return Number.isFinite(r.decimalLatitude) && Number.isFinite(r.decimalLongitude); })
+      .map(function(r) {
+        return {
+          lat: r.decimalLatitude,
+          lon: r.decimalLongitude,
+          date: r.eventDate || null,
+          scientificName: r.scientificName || scientificName
+        };
+      });
+  }
+
+  // --- Layer rendering ---
+  function clearProbabilityLayer() {
+    if (probLayerGroup) {
+      map.removeLayer(probLayerGroup);
+      probLayerGroup = null;
+    }
+  }
+
+  function buildProbPopup(cell, speciesName) {
+    var eluCount = cell.occurrences.filter(function(o) { return o.source === 'elurikkus'; }).length;
+    var gbifCount = cell.occurrences.filter(function(o) { return o.source === 'gbif'; }).length;
+    var locality = cell.topLocality || 'Unknown area';
+    var probColor = cell.probability > 60 ? '#A32D2D' : cell.probability > 25 ? '#854F0B' : '#27500A';
+    return '<div style="font-family:system-ui;min-width:180px">' +
+      '<div style="font-weight:600;font-size:14px;margin-bottom:4px">' + locality + '</div>' +
+      '<div style="font-size:22px;font-weight:600;color:' + probColor + ';margin-bottom:2px">' + cell.probability + '%</div>' +
+      '<div style="font-size:12px;color:#64748b;margin-bottom:8px">probability in current season</div>' +
+      '<div style="display:flex;gap:12px;font-size:11px;color:#94a3b8">' +
+        '<span>eElurikkus: ' + eluCount + ' obs</span>' +
+        '<span>GBIF: ' + gbifCount + ' obs</span>' +
+      '</div>' +
+      '<div style="font-size:11px;color:#94a3b8;margin-top:4px">Period: ' + formatSeasonWindow() + '</div>' +
+    '</div>';
+  }
+
+  function renderProbabilityOverlay(gridCells, speciesName) {
+    clearProbabilityLayer();
+    probLayerGroup = L.layerGroup();
+
+    gridCells.forEach(function(cell) {
+      if (cell.probability <= 0) return;
+      var bounds = [[cell.latMin, cell.lonMin], [cell.latMax, cell.lonMax]];
+      var fillColor, fillOpacity;
+      if (cell.probability > 60) { fillColor = 'rgb(226,75,74)'; fillOpacity = 0.4; }
+      else if (cell.probability > 25) { fillColor = 'rgb(239,159,39)'; fillOpacity = 0.35; }
+      else { fillColor = 'rgb(151,196,89)'; fillOpacity = 0.3; }
+
+      var rect = L.rectangle(bounds, {
+        color: 'transparent', fillColor: fillColor, fillOpacity: fillOpacity, weight: 0, interactive: true
+      });
+      rect.bindPopup(buildProbPopup(cell, speciesName));
+      probLayerGroup.addLayer(rect);
+    });
+
+    // Top 5 hotspot markers
+    var topCells = gridCells.slice().sort(function(a,b){ return b.probability - a.probability; }).slice(0,5);
+    topCells.forEach(function(cell) {
+      if (cell.probability <= 0) return;
+      var center = [(cell.latMin + cell.latMax)/2, (cell.lonMin + cell.lonMax)/2];
+      var fc = cell.probability > 60 ? '#791F1F' : cell.probability > 25 ? '#854F0B' : '#27500A';
+      var marker = L.circleMarker(center, {
+        radius: 5, fillColor: fc, fillOpacity: 1, color: 'white', weight: 1.5
+      });
+      marker.bindPopup(buildProbPopup(cell, speciesName));
+      probLayerGroup.addLayer(marker);
+    });
+
+    probLayerGroup.addTo(map);
+  }
+
+  // --- UI helpers ---
+  function setProbStatus(txt) {
+    var el = document.getElementById('probFetchStatus');
+    if (el) el.textContent = txt;
+  }
+
+  function showProbInfoPanel(speciesName) {
+    var panel = document.getElementById('probInfoPanel');
+    if (panel) { panel.style.display = 'block'; }
+    var label = document.getElementById('probSpeciesLabel');
+    if (label) label.textContent = speciesName;
+  }
+
+  function hideProbInfoPanel() {
+    var panel = document.getElementById('probInfoPanel');
+    if (panel) panel.style.display = 'none';
+  }
+
+  function updateProbButtons() {
+    document.querySelectorAll('[data-prob-btn]').forEach(function(btn) {
+      var species = btn.getAttribute('data-species');
+      var row = btn.closest('.row');
+      if (species === activeProbSpecies) {
+        btn.classList.add('prob-active');
+        if (row) row.classList.add('prob-row-active');
+      } else {
+        btn.classList.remove('prob-active');
+        btn.classList.remove('loading');
+        if (row) row.classList.remove('prob-row-active');
+      }
+    });
+  }
+
+  // --- Main toggle ---
+  async function toggleProbability(speciesName) {
+    if (activeProbSpecies === speciesName) {
+      clearProbabilityLayer();
+      hideProbInfoPanel();
+      activeProbSpecies = null;
+      updateProbButtons();
+      return;
+    }
+
+    activeProbSpecies = speciesName;
+    updateProbButtons();
+    showProbInfoPanel(speciesName);
+
+    // Set loading state on button
+    var btn = document.querySelector('[data-prob-btn][data-species="' + speciesName + '"]');
+    if (btn) btn.classList.add('loading');
+
+    try {
+      var data = loadProbCache(speciesName);
+
+      if (!data) {
+        setProbStatus('Fetching eElurikkus...');
+        var eluOccs = await fetchElurikkusOccurrences(speciesName);
+
+        var sciName = eluOccs.length > 0 ? eluOccs[0].scientificName : null;
+        // Fallback: try SPECIES_SCINAMES
+        if (!sciName && typeof SPECIES_SCINAMES !== 'undefined' && SPECIES_SCINAMES[speciesName]) {
+          sciName = SPECIES_SCINAMES[speciesName];
+        }
+
+        var gbifOccs = [];
+        if (sciName) {
+          setProbStatus('Fetching GBIF...');
+          try {
+            gbifOccs = await fetchGbifOccurrences(sciName);
+          } catch(e) { console.warn('[prob] GBIF failed:', e); }
+        }
+
+        var allOccs = deduplicateOccurrences(
+          eluOccs.map(function(o){ return { lat: o.lat, lon: o.lon, date: o.date, source: 'elurikkus', scientificName: o.scientificName }; })
+          .concat(gbifOccs.map(function(o){ return { lat: o.lat, lon: o.lon, date: o.date, source: 'gbif', scientificName: o.scientificName }; }))
+        );
+
+        data = { species: speciesName, scientificName: sciName, fetchedAt: new Date().toISOString(), occurrences: allOccs };
+        saveProbCache(speciesName, data);
+      }
+
+      // Check if user toggled away while fetching
+      if (activeProbSpecies !== speciesName) return;
+
+      setProbStatus('Calculating...');
+      var seasonal = data.occurrences.filter(function(o){ return isInSeasonWindow(o.date); });
+
+      if (seasonal.length === 0) {
+        setProbStatus('No seasonal data found');
+        clearProbabilityLayer();
+        if (btn) btn.classList.remove('loading');
+        return;
+      }
+
+      var gridCells = clusterToGrid(seasonal);
+      var scored = calculateProbabilities(gridCells, seasonal, data.occurrences);
+      renderProbabilityOverlay(scored, speciesName);
+      setProbStatus('Updated: ' + new Date().toLocaleTimeString('et-EE'));
+
+    } catch(err) {
+      console.error('[prob]', err);
+      setProbStatus('Error: ' + err.message);
+      clearProbabilityLayer();
+      try { notifySilent('Probability map error: ' + err.message); } catch(e) {}
+    }
+
+    if (btn) btn.classList.remove('loading');
+    updateProbButtons();
+  }
+
+  // --- Inject buttons into sidebar rows ---
+  function injectProbabilityControls() {
+    var rows = document.querySelectorAll('.row[data-key]');
+    rows.forEach(function(row) {
+      if (row.querySelector('[data-prob-btn]')) return;
+      var species = row.getAttribute('data-key');
+      var controls = row.querySelector('.controls > div');
+      if (!controls) return;
+
+      var btn = document.createElement('button');
+      btn.className = 'btn secondary prob-btn hidden-in-export';
+      btn.setAttribute('data-prob-btn', '');
+      btn.setAttribute('data-species', species);
+      btn.title = 'Probability map';
+      btn.style.cssText = 'padding:2px 6px;min-width:auto';
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.2" fill="none"/><circle cx="8" cy="8" r="1" fill="currentColor"/></svg>';
+
+      btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleProbability(species);
+      });
+
+      // Insert before the first button (Open)
+      controls.insertBefore(btn, controls.firstChild);
+
+      // Restore active state
+      if (species === activeProbSpecies) {
+        btn.classList.add('prob-active');
+        row.classList.add('prob-row-active');
+      }
+    });
+  }
+
+  // --- Patch render() ---
+  if (typeof window.render === 'function' && !window.__prob_injected__) {
+    var _origRender = window.render;
+    window.render = function() {
+      var out = _origRender.apply(this, arguments);
+      try { injectProbabilityControls(); } catch(e) { console.error('[prob] inject error', e); }
+      return out;
+    };
+    window.__prob_injected__ = true;
+  }
+
+  // Initial injection
+  try { injectProbabilityControls(); } catch(e) {}
+})();
+</script>
 </body>
 </html>

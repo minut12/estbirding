@@ -365,10 +365,11 @@
   <div id="modal">
     <h3>Europe map settings</h3>
     <div class="small" style="margin-top:0;">
-      eBird data is fetched via server (no token needed).
-      <br/>Species list: one per line (default = 376 species).
+      Paste your eBird API token below. Species list: one per line (default = 376 species).
     </div>
     <div class="grid">
+      <label style="font-size:13px;font-weight:600;">eBird API token</label>
+      <input id="tokenInput" type="text" placeholder="Paste your eBird API token here…" style="width:100%;padding:6px 8px;box-sizing:border-box;font-size:13px;border:1px solid #ccc;border-radius:4px;margin-bottom:8px;">
       <textarea id="speciesInput" placeholder="One species per line (Estonian names)..."></textarea>
     </div>
     <div class="rowBtns">
@@ -409,20 +410,32 @@ const LS_RARE_ONLY   = "bm_eu_rare_only";
 const LS_SNAPSHOT_PREFIX = "bm_map_snapshot:";
 const LS_EU_LAST_GOOD = "bm_eu_last_good_snapshot";
 const SNAPSHOT_VERSION = "europe_map_v2";
-const EBIRD_EDGE_FN = "https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/ebird_recent";
+const LS_TOKEN = "bm_ebird_token";
 
 /* ========= Defaults ========= */
 
+function getEbirdToken(){
+  const raw = localStorage.getItem(LS_TOKEN) || "";
+  return raw.trim().replace(/[^a-zA-Z0-9_\-]/g, "");
+}
+
 function detectProxyMode(){
-  return "Supabase Edge Function";
+  return getEbirdToken() ? "Direct eBird API" : "No token";
 }
 
 function updateProxyHint(){
   const el = document.getElementById("proxyPill");
   if (!el) return;
-  el.textContent = "eBird: Server";
-  el.title = EBIRD_EDGE_FN;
-  console.info("[ebird] server mode via Edge Function");
+  const token = getEbirdToken();
+  if (token) {
+    el.textContent = "eBird: Direct";
+    el.title = "Using local eBird API token";
+    console.info("[ebird] direct mode via local token");
+  } else {
+    el.textContent = "eBird: No token";
+    el.title = "Set your eBird API token in Settings";
+    console.warn("[ebird] no token set");
+  }
 }
 
 const DEFAULT_SPECIES = ["Aed-lepalind", "Aed-pÃµÃµsalind", "Aed-roolind", "Aedporr", "Alk", "AlverÃ¼di", "Ameerika piilpart", "Atlantise tormilind", "Aul", "Baleaari tormilind", "Euroopa kaelustÃ¤ks", "Habekakk", "Habeviires", "Hahk", "Hakk", "Hall-kÃ¤rbsenÃ¤pp", "Hallhaigur", "Hallhani", "Hallkibu", "Hallpea-rÃ¤hn", "HallpÃµsk-pÃ¼tt", "HallrÃ¤stas", "HallrÃ¼di", "Halltsiitsitaja", "Hallvares", "HallÃµgija", "Hangelind", "Harakas", "Haugaskotkas", "Hele-urvalind", "Heletilder", "Herilaseviu", "Hiireviu", "HoburÃ¤stas", "HÃ¤ndkakk", "HÃ¤nilane", "HÃµbehaigur", "HÃµbehaugas", "HÃµbekajakas", "HÃ¼Ã¼p", "Ida-mustvaeras", "Jahipistrik", "JÃ¤mejalg", "JÃ¤rvekaur", "JÃ¤Ã¤kajakas", "JÃ¤Ã¤kaur", "JÃ¤Ã¤koskel", "JÃµgi-ritsiklind", "JÃµgitiir", "JÃµgitilder", "JÃµgivÃ¤strik", "KadakatÃ¤ks", "Kaelus-kÃ¤rbsenÃ¤pp", "Kaelus-turteltuvi", "Kaeluskotkas", "KaelusrÃ¤stas", "Kaelustuvi", "Kalakajakas", "Kalakotkas", "Kalda-rÃ¤dilind", "KaldapÃ¤Ã¤suke", "Kaljukajakas", "Kaljukotkas", "Kanada lagle", "Kanakull", "Kanepilind", "Karbuskajakas", "Karkjalg", "Karmiinleevike", "Karvasjalg-kakk", "Karvasjalg-viu", "Kassikakk", "Kiivitaja", "Kiripugu-rÃ¼di", "Kirjuhahk", "Kivikakk", "Kivirullija", "KivitÃ¤ks", "Kodukakk", "Kodutuvi", "Koduvarblane", "Koldhaigur", "Koldjalg-hÃµbekajakas", "Koldvint", "Kormoran", "KrÃ¼Ã¼sel", "Kukkurtihane", "Kuld-lehelind", "KuldhÃ¤nilane", "Kuldnokk", "Kuldtsiitsitaja", "Kuninghahk", "Kuuse-kÃ¤bilind", "KÃ¤blik", "KÃ¤gu", "KÃ¤harpelikan", "KÃ¤osulane", "KÃ¤Ã¤buskormoran", "KÃ¤Ã¤buskotkas", "KÃµnnuÃµgija", "KÃµrbe-kivitÃ¤ks", "KÃµrbe-pÃµÃµsalind", "KÃµrkja-roolind", "KÃµrvukrÃ¤ts", "KÃµvernokk-rÃ¼di", "KÃ¼hmnokk-luik", "KÃ¼nnivares", "LaanenÃ¤Ã¤r", "LaanepÃ¼Ã¼", "LaanerÃ¤hn", "Laisaba-Ã¤nn", "Lammitilder", "Lapi tsiitsitaja", "Lasuurtihane", "Lauk", "Laululuik", "LaulurÃ¤stas", "LeeterÃ¼di", "Leevike", "Liiv-kivitÃ¤ks", "LiivatÃ¼ll", "LinavÃ¤strik", "Loorkakk", "Luitsnokk-iibis", "Luitsnokk-part", "Lumehani", "Lumekakk", "LÃ¤Ã¤ne-lehelind", "LÃ¤Ã¤ne-pÃ¶ialpoiss", "LÃµopistrik", "LÃµuna-hÃµbekajakas", "LÃ¼hinokk-hani", "Madukotkas", "Mandariinpart", "Merikajakas", "Merikotkas", "MerirÃ¼di", "Merisk", "Merivart", "MesilasenÃ¤pp", "Mets-lehelind", "Metsis", "Metskiur", "Metskurvits", "Metstilder", "Metsvint", "Mudanepp", "Mudatilder", "Must-harksaba", "Must-kÃ¤rbsenÃ¤pp", "Must-lepalind", "Must-toonekurg", "Mustjalg-tÃ¼ll", "Mustkael-pÃ¼tt", "Mustkurk-raat", "Mustlagle", "Mustlauk-Ãµgija", "Mustpea-pÃµÃµsalind", "Mustpea-tsiitsitaja", "Mustpugu-rÃ¤stas", "MustrÃ¤hn", "MustrÃ¤stas", "Mustsaba-vigle", "Musttihane", "Mustvaeras", "Mustvares", "Mustviires", "MÃ¤gi-kanepilind", "MÃ¤gikiur", "MÃ¤nni-kÃ¤bilind", "MÃ¤nnileevike", "MÃ¤nnitalvike", "MÃ¤nsak", "Naaskelnokk", "Naerukajakas", "Naerutiir", "Niidu-kaelustÃ¤ks", "Niidu-ritsiklind", "Niidukiur", "Nunn-kivitÃ¤ks", "Nurmkana", "NÃµgipart", "NÃµlva-lehelind", "NÃµmmekiur", "NÃµmmelÃµoke", "Ohakalind", "Ohhoota hÃµbekajakas", "Padu-roolind", "PasknÃ¤Ã¤r", "Peegel-tormilind", "Pelikan", "Peoleo", "Piilpart", "Piiritaja", "Pikksaba-Ã¤nn", "PlÃ¼tt", "PlÃ¼Ã¼", "Polaarkajakas", "Porr", "Prillvaeras", "Pruunselg-pÃµÃµsalind", "Puna-harksaba", "Puna-veetallaja", "Punajalg-pistrik", "Punajalg-tilder", "Punakael-lagle", "Punakurk-kaur", "Punanokk-vart", "Punapea-vart", "Punapea-Ãµgija", "Punarind", "Punasaba-Ãµgija", "Punaselg-Ãµgija", "Purpurhaigur", "Puukoristaja", "PÃµhja-kirjurÃ¤stas", "PÃµhja-lehelind", "PÃµhja-tormipÃ¤Ã¤su", "PÃµhjatihane", "PÃµhjatsiitsitaja", "PÃµhjavint", "PÃµldlÃµoke", "PÃµldtsiitsitaja", "PÃµldvarblane", "PÃµldvutt", "PÃ¶ialpoiss", "Rabapistrik", "RabapÃ¼Ã¼", "Raisakotkas", "Randkajakas", "Randkiur", "Randtiir", "Rasvatihane", "Raudkull", "Ristpart", "RoherÃ¤hn", "Rohevint", "Rohukoskel", "Rohunepp", "Ronk", "Roo-loorkull", "Roo-ritsiklind", "Roohabekas", "Rooruik", "Roosa-kuldnokk", "Roosakajakas", "Roosatiir", "RoostepÃ¤Ã¤suke", "Roosterind-tÃ¼ll", "Rootsiitsitaja", "RubiinÃ¶Ã¶bik", "RukkirÃ¤Ã¤k", "RuugerÃ¼di", "RÃ¤gapart", "RÃ¤stas-roolind", "RÃ¤usk", "RÃ¤Ã¤kspart", "RÃ¤Ã¤stapÃ¤Ã¤suke", "RÃ¼Ã¼t", "Sabatihane", "Salu-lehelind", "SalupÃ¤ll", "Salutihane", "SarviklÃµoke", "SarvikpÃ¼tt", "Siberi lehelind", "Siberi raat", "Siidhaigur", "Siidisaba", "Siisike", "Sinikael-part", "Siniraag", "Sinirind", "Sinisaba", "Sinitihane", "Soo-loorkull", "Soo-roolind", "Sookiur", "Sookurg", "Soopart", "SoorÃ¤ts", "SoorÃ¼di", "Stepi-loorkull", "Stepikajakas", "Stepikiivitaja", "Stepikotkas", "Stepipistrik", "Stepiviu", "SuitsupÃ¤Ã¤suke", "Suula", "Suur-kirjurÃ¤hn", "Suur-konnakotkas", "Suur-laukhani", "Suurkoovitaja", "Suurnokk-vint", "SuurrÃ¼di", "SuurÃ¤nn", "SÃµtkas", "SÃ¶Ã¶dikÃ¤nn", "Tait", "Talvike", "Tamme-kirjurÃ¤hn", "Teder", "Tiigi-roolind", "Tikutaja", "Triip-ritsiklind", "Tuhk-lehelind", "Tumetilder", "Tundra-rabahani", "Tundrakaur", "Tundrakiur", "Turteltuvi", "Tutkas", "Tutt-tihane", "Tutt-tiir", "TuttlÃµoke", "TuttpÃ¼tt", "Tuttvart", "Tuuletallaja", "TÃ¤pikhuik", "TÃµmmu-lehelind", "TÃµmmuiibis", "TÃµmmukajakas", "TÃµmmuvaeras", "Urvalind", "Vaaraohani", "VaenukÃ¤gu", "VainurÃ¤stas", "Valge-toonekurg", "ValgepÃµsk-lagle", "Valgeselg-kirjurÃ¤hn", "Valgesilm-vart", "Valgetiib-viires", "Veetallaja", "Veisehaigur", "Vesipapp", "Vihitaja", "Viupart", "VÃ¤ike-kirjurÃ¤hn", "VÃ¤ike-konnakotkas", "VÃ¤ike-kÃ¤osulane", "VÃ¤ike-kÃ¤rbsenÃ¤pp", "VÃ¤ike-laukhani", "VÃ¤ike-lehelind", "VÃ¤ike-pÃµÃµsalind", "VÃ¤ikealk", "VÃ¤ikehuik", "VÃ¤ikehÃ¼Ã¼p", "VÃ¤ikekajakas", "VÃ¤ikekoovitaja", "VÃ¤ikekoskel", "VÃ¤ikeluik", "VÃ¤ikepistrik", "VÃ¤ikepÃ¼tt", "VÃ¤ikerÃ¼di", "VÃ¤iketiir", "VÃ¤iketrapp", "VÃ¤iketsiitsitaja", "VÃ¤iketÃ¼ll", "VÃ¤lja-loorkull", "VÃ¤lja-vÃ¤ikelÃµoke", "VÃ¤rbkakk", "VÃ¤rbrÃ¼di", "VÃ¤Ã¤nkael", "VÃµsa-ritsiklind", "VÃµsaraat", "VÃ¶Ã¶t-kÃ¤bilind", "VÃ¶Ã¶t-pÃµÃµsalind", "VÃ¶Ã¶thani", "VÃ¶Ã¶tkakk", "VÃ¶Ã¶tnokk-kajakas", "VÃ¶Ã¶tsaba-vigle", "\u00D5\u00F5netuvi", "Ã–Ã¶bik", "Ã–Ã¶haigur", "Ã–Ã¶sorr"];
@@ -1772,9 +1785,10 @@ async function refreshEuropeAggregated(keys, onProgress){
 
   for (const region of REGIONS) {
     if (refreshCancelled) break;
-    const url = buildEbirdCountryRecentUrl(region, BACK_DAYS, MAX_RESULTS);
+    const token = getEbirdToken();
+    const url = buildEbirdCountryRecentUrl(region, BACK_DAYS, MAX_RESULTS, token);
     try {
-      const raw = await safeFetchText(url, {}, 20000, 1);
+      const raw = await safeFetchText(url, { headers: { "X-eBirdApiToken": token } }, 20000, 1);
       let payload = null;
       try { payload = raw ? JSON.parse(raw) : null; } catch { payload = null; }
       lastRequest = { url, status: 200, timeMs: null };
@@ -1970,12 +1984,13 @@ function resetEuropeDebugState(){
 }
 
 function validateRefreshConfig(){
-  // Token is now server-side — no client config needed
+  const token = getEbirdToken();
+  if (!token) return { ok: false, message: "Missing eBird token. Open Settings and paste your eBird API token." };
   return { ok: true, message: "" };
 }
 
-function buildEbirdCountryRecentUrl(regionCode, back, maxResults){
-  return `${EBIRD_EDGE_FN}?regionCode=${encodeURIComponent(regionCode)}&back=${back}&maxResults=${maxResults}&_ts=${Date.now()}`;
+function buildEbirdCountryRecentUrl(regionCode, back, maxResults, token){
+  return `https://api.ebird.org/v2/data/obs/${encodeURIComponent(regionCode)}/recent?back=${back}&maxResults=${maxResults}&key=${encodeURIComponent(token || getEbirdToken())}&_ts=${Date.now()}`;
 }
 
 async function refreshKeys(keys, force=true){
@@ -2000,9 +2015,10 @@ async function refreshKeys(keys, force=true){
     return { done: 0, total: keys.length, successCount: 0, failureCount: keys.length, aborted: false };
   }
 
-  const healthUrl = buildEbirdCountryRecentUrl("EE", 1, 1);
+  const token = getEbirdToken();
+  const healthUrl = buildEbirdCountryRecentUrl("EE", 1, 1, token);
   try {
-    const health = await safeFetchJson(healthUrl, { timeoutMs: 10000, retries: 0 });
+    const health = await safeFetchJson(healthUrl, { timeoutMs: 10000, retries: 0, headers: { "X-eBirdApiToken": token } });
     lastErrorStatus = health.status;
     lastBodySnippet = health.textSnippet || null;
     lastRequest = { url: health.url, status: health.status, timeMs: health.timeMs };
@@ -2021,7 +2037,7 @@ async function refreshKeys(keys, force=true){
       return { done: 0, total: keys.length, successCount: 0, failureCount: 0, aborted: false };
     }
     if (status === 401) {
-      const msg = "Server eBird token invalid (401). Check EBIRD_API_TOKEN secret in Supabase.";
+      const msg = "eBird token invalid (401). Open Settings and check your eBird API token.";
       showSnapshotBanner(msg, "error");
       showWarn(msg);
       setRefreshError(`${msg}. status=${status} ${lastErrorSnippet || ""}`, 0, "health-check");
@@ -2138,8 +2154,10 @@ syncRareOnlyBtn();
 const modalBackdrop = document.getElementById("modalBackdrop");
 const settingsBtn = document.getElementById("settingsBtn");
 const speciesInput = document.getElementById("speciesInput");
+const tokenInput = document.getElementById("tokenInput");
 
 function openSettings(){
+  tokenInput.value = getEbirdToken();
   speciesInput.value = SPECIES.join("\n");
   modalBackdrop.style.display = "flex";
 }
@@ -2150,6 +2168,11 @@ document.getElementById("modalCancel").addEventListener("click", closeSettings);
 modalBackdrop.addEventListener("click", (e)=>{ if (e.target === modalBackdrop) closeSettings(); });
 
 document.getElementById("modalSave").addEventListener("click", ()=>{
+  const newToken = (tokenInput.value || "").trim().replace(/[^a-zA-Z0-9_\-]/g, "");
+  localStorage.setItem(LS_TOKEN, newToken);
+  updateProxyHint();
+  if (!newToken) showWarn("Missing eBird token. Open Settings and paste your eBird API token.");
+  else showWarn("");
   const lines = normalizeNameArray((speciesInput.value||"").split("\n").map(s=>s.trim()).filter(Boolean));
   reconcileEuropeSpecies(MASTER_SPECIES, lines, "master+custom");
   saveAll(); render(); closeSettings();
@@ -2221,6 +2244,7 @@ if (!DEV_DEBUG) {
 /* ========= Init ========= */
 preloadAvatars();
 updateProxyHint();
+if (!getEbirdToken()) showWarn("Missing eBird token. Open Settings and paste your eBird API token.");
 render();
 loadSharedEuropeSpecies();
 recentOnly = (document.getElementById("toggle7days")?.checked !== false);

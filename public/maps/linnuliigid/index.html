@@ -94,8 +94,7 @@
 .marker-count{position:absolute;left:50%;transform:translateX(-50%);bottom:-8px;min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:#fff;border:2px solid #555;color:#000;font-size:13px;line-height:18px;font-weight:700;text-align:center;box-sizing:border-box;z-index:3;box-shadow:0 1px 2px rgba(0,0,0,.2)}
 .marker-count.mig-on{background:rgba(40,180,70,.95);color:#fff;border-color:#1c6b25}
 .marker-count.mig-off{background:rgba(255,160,0,.95);color:#111;border-color:#8a5a00}
-.marker-ebird-logo{position:absolute;top:6px;left:-4px;width:20px;height:20px;background:#fff;border-radius:50%;border:1.5px solid #4CAF50;display:flex;align-items:center;justify-content:center;z-index:2;box-shadow:0 1px 3px rgba(0,0,0,.25);pointer-events:none}
-.marker-ebird-logo svg{width:13px;height:13px}
+.marker-ebird-label{position:absolute;top:4px;left:50%;transform:translateX(-50%);background:#4CAF50;color:#fff;font-size:8px;font-weight:700;font-family:system-ui,Arial,sans-serif;padding:1px 4px;border-radius:4px;line-height:1.3;pointer-events:none;z-index:2;border:1px solid #fff;white-space:nowrap;letter-spacing:.2px;text-transform:uppercase}
 .marker-count.ebird-count{background:rgba(76,175,80,.95) !important;color:#fff !important;border-color:#2E7D32 !important}
 .popupBtn{
   padding:6px 10px;
@@ -8236,7 +8235,7 @@ document.addEventListener('DOMContentLoaded', function(){
 <div id="windToggleBar" class="hidden-in-export">
   <button id="toggleWind" class="btn secondary">Tuulekaart</button>
   <button id="toggleSpring" class="btn secondary">Kevadränne</button>
-  <button id="toggleEbirdEE" class="btn secondary">eBird EE</button>
+  <button id="toggleEbirdEE" class="btn secondary" style="white-space:nowrap">eBird EE</button>
   <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 päeva jooksul aktiivsed">7p liigid: 0</span>
 </div>
 <div id="ebirdEEProgress" class="fetch-progress" style="display:none"></div>
@@ -8752,36 +8751,38 @@ var __sharedDefaults = {};
   var ebirdEEBtn = document.getElementById('toggleEbirdEE');
   function syncEbirdEEBtn(){
     if(window.__ebirdEELayerOn){
-      ebirdEEBtn.classList.add('on');
-      ebirdEEBtn.classList.remove('secondary');
+      ebirdEEBtn.className = 'btn on';
       ebirdEEBtn.textContent = 'eBird EE: ON';
     } else {
-      ebirdEEBtn.classList.remove('on');
-      ebirdEEBtn.classList.add('secondary');
+      ebirdEEBtn.className = 'btn secondary';
       ebirdEEBtn.textContent = 'eBird EE';
     }
+    ebirdEEBtn.style.whiteSpace = 'nowrap';
   }
   ebirdEEBtn.addEventListener('click', function(){
     window.__ebirdEELayerOn = !window.__ebirdEELayerOn;
     localStorage.setItem(LS_EBIRD_EE_LAYER, window.__ebirdEELayerOn ? '1' : '0');
     syncEbirdEEBtn();
-    refreshEbirdEELayer();
+    if(window.__ebirdEELayerOn){
+      _updateEbirdEEProgress(0, 0, 'Starting...', 'running');
+      if(Object.keys(ebirdEEPoints).length > 0) refreshEbirdEEMarkers();
+      refreshEbirdEEAll();
+    } else {
+      refreshEbirdEEMarkers();
+      _updateEbirdEEProgress(0, 0, '', 'idle');
+    }
   });
   syncEbirdEEBtn();
 
-  // --- Marker icon (eBird logo SVG) ---
-  var EBIRD_LOGO_SVG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-    '<path d="M3 12.5c1.5-2 3.5-3 6-3.2l3-.2-1.5-2c-.3-.4-.2-.8.2-1 .3-.3.8-.2 1 .2l2 2.5 5.5-2.3c.4-.2.9.1 1 .5.2.4-.1.8-.5 1l-4.5 2 3 1.3c.4.2.5.6.4 1-.2.4-.6.5-1 .4l-4.2-1.8-1.5.7 2 2.5c.3.4.2.8-.2 1-.3.3-.8.2-1-.2l-2.3-2.8-1.5.1c-1.3.1-2.5.8-3.2 1.9l-.5.8c-.2.3-.5.4-.7.3-.3-.1-.5-.4-.3-.8l.6-1z" fill="#4CAF50"/>' +
-    '</svg>';
-
-  function _ebirdMarkerIcon(avatarUrl, count, rarityLevel){
+  // --- Marker icon (text label) ---
+  function _ebirdMarkerIcon(avatarUrl, howMany, rarityLevel){
     var color = '#4CAF50';
-    var countHtml = Number.isFinite(count) && count > 0
-      ? '<div class="marker-count ebird-count" title="Lindude arv (eBird)">' + count + '</div>'
+    var countHtml = (Number.isFinite(howMany) && howMany > 0)
+      ? '<div class="marker-count ebird-count" title="Lindude arv (eBird)">' + howMany + '</div>'
       : '';
-    var ebirdLogo = '<div class="marker-ebird-logo" title="eBird">' + EBIRD_LOGO_SVG + '</div>';
+    var ebirdLabel = '<div class="marker-ebird-label">eBird</div>';
     var bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#4CAF50";
-    var html = '<div class="marker-wrap">' + ebirdLogo + '<div class="marker-circle" style="border-color:' + color + ';' + bg + '"></div>' + countHtml + '</div>';
+    var html = '<div class="marker-wrap">' + ebirdLabel + '<div class="marker-circle" style="border-color:' + color + ';' + bg + '"></div>' + countHtml + '</div>';
     return L.divIcon({html:html, className:'', iconSize:[44,72], iconAnchor:[22,36], popupAnchor:[0,-36]});
   }
 
@@ -8791,12 +8792,16 @@ var __sharedDefaults = {};
     var when = ep.t ? '<br><small>last seen: ' + formatDateEE(ep.t) + '</small>' : '';
     var where = ep.loc ? '<br><small>location: ' + ep.loc + '</small>' : '';
     var srcLn = '<br><small>source: eBird EE (Estonia)</small>';
-    var occLn = '<br><small>7d records: ' + (ep.occ7 || 0) + '</small>';
+    var occLn = '<br><small>7d records: ' + (ep.occ7 || 0) + ' (computed from last 30d)</small>';
     var countLn = Number.isFinite(ep.howMany) ? '<br><small>bird count: ' + ep.howMany + '</small>' : '';
+    var observerLn = ep.observer ? '<br><small>observer: ' + ep.observer + '</small>' : '';
+    var checklistLn = ep.subId
+      ? '<br><small><a href="https://ebird.org/checklist/' + ep.subId + '" target="_blank" rel="noopener" style="color:#4CAF50">view checklist &#8599;</a></small>'
+      : '';
     var metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
     var rarLn = (metaCfg.rarityLevel && metaCfg.rarityLevel !== 'none' && window.getRarityBadgeText)
       ? '<br><small>rarity: ' + window.getRarityBadgeText(metaCfg.rarityLevel) + '</small>' : '';
-    return '<b>' + displayName + '</b>' + when + where + srcLn + occLn + countLn + rarLn;
+    return '<b>' + displayName + '</b>' + when + where + srcLn + occLn + countLn + observerLn + checklistLn + rarLn;
   }
 
   // --- Fetch single species ---
@@ -8806,7 +8811,7 @@ var __sharedDefaults = {};
     if(!code) return null;
 
     var SUPABASE_REF = 'eenwcyuyugyrjgpivxrq';
-    var proxyUrl = 'https://' + SUPABASE_REF + '.supabase.co/functions/v1/ebird_recent?regionCode=EE&back=30&maxResults=1000&speciesCode=' + encodeURIComponent(code);
+    var proxyUrl = 'https://' + SUPABASE_REF + '.supabase.co/functions/v1/ebird_recent?regionCode=EE&back=30&maxResults=1000&detail=full&speciesCode=' + encodeURIComponent(code);
 
     var arr;
     try {
@@ -8816,7 +8821,7 @@ var __sharedDefaults = {};
       arr = Array.isArray(json) ? json : (json.observations || json.data || []);
     } catch(proxyErr){
       var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
-      var directUrl = 'https://api.ebird.org/v2/data/obs/EE/recent/' + encodeURIComponent(code) + '?back=30&maxResults=1000&_ts=' + Date.now();
+      var directUrl = 'https://api.ebird.org/v2/data/obs/EE/recent/' + encodeURIComponent(code) + '?back=30&maxResults=1000&detail=full&_ts=' + Date.now();
       var res2 = await fetch(directUrl, { headers: { 'X-eBirdApiToken': token } });
       if(!res2.ok) throw new Error('eBird HTTP ' + res2.status);
       arr = await res2.json();
@@ -8844,6 +8849,8 @@ var __sharedDefaults = {};
       loc: latest.locName || '',
       occ7: occ7,
       howMany: Number.isFinite(latest.howMany) ? latest.howMany : null,
+      observer: latest.userDisplayName || (latest.firstName && latest.lastName ? ((latest.firstName || '') + ' ' + (latest.lastName || '')).trim() : null),
+      subId: latest.subId || null,
       lastFetched: new Date().toISOString(),
       src: 'eBird EE'
     };
@@ -8852,39 +8859,64 @@ var __sharedDefaults = {};
   // --- Progress indicator ---
   function _updateEbirdEEProgress(done, total, currentSpecies, status){
     var el = document.getElementById('ebirdEEProgress');
-    if(!el) return;
+    if(!el){
+      var container = document.getElementById('windToggleBar');
+      if(container){
+        el = document.createElement('div');
+        el.id = 'ebirdEEProgress';
+        el.className = 'fetch-progress';
+        container.parentNode.insertBefore(el, container.nextSibling);
+      }
+      if(!el) return;
+    }
     if(status === 'idle'){
       el.style.display = 'none';
       el.textContent = '';
+      el.style.color = '';
       return;
     }
     el.style.display = 'block';
     el.style.color = '';
     if(status === 'running'){
-      el.textContent = 'eBird EE: ' + done + '/' + total + ' | ' + (currentSpecies || '...');
+      if(total > 0){
+        el.textContent = 'eBird EE: ' + done + '/' + total + ' | ' + (currentSpecies || '...');
+      } else {
+        el.textContent = 'eBird EE: ' + (currentSpecies || 'Starting...');
+      }
     } else if(status === 'done'){
-      var found = Object.keys(ebirdEEPoints).filter(function(k){
-        var ep = ebirdEEPoints[k];
-        return ep && Number.isFinite(ep.lat) && Number.isFinite(ep.lon);
-      }).length;
+      var found = 0;
+      try {
+        var keys = Object.keys(ebirdEEPoints);
+        for(var i = 0; i < keys.length; i++){
+          var ep = ebirdEEPoints[keys[i]];
+          if(ep && Number.isFinite(ep.lat) && Number.isFinite(ep.lon)) found++;
+        }
+      } catch(e){}
       el.textContent = 'eBird EE: Done. ' + found + ' species with data.';
-      setTimeout(function(){ el.style.display = 'none'; }, 5000);
+      setTimeout(function(){ el.style.display = 'none'; }, 8000);
     } else if(status === 'error'){
       el.textContent = 'eBird EE: Error — ' + (currentSpecies || 'unknown');
       el.style.color = '#dc2626';
-      setTimeout(function(){ el.style.display = 'none'; el.style.color = ''; }, 5000);
+      setTimeout(function(){ el.style.display = 'none'; el.style.color = ''; }, 8000);
     }
   }
 
   // --- Bulk fetch ---
-  var _ebirdEEFetching = false;
   async function refreshEbirdEEAll(){
-    if(_ebirdEEFetching) return;
-    _ebirdEEFetching = true;
+    if(window.__ebirdEERefreshing){
+      _updateEbirdEEProgress(0, 0, 'Already refreshing...', 'running');
+      return;
+    }
+    window.__ebirdEERefreshing = true;
     var speciesList = Object.keys(SPECIES_EBIRD_CODES || {});
     var total = speciesList.length;
+    if(total === 0){
+      _updateEbirdEEProgress(0, 0, 'No species list found', 'error');
+      window.__ebirdEERefreshing = false;
+      return;
+    }
     var done = 0, errors = 0, found = 0;
-    _updateEbirdEEProgress(0, total, '', 'running');
+    _updateEbirdEEProgress(0, total, 'Starting...', 'running');
     for(var i = 0; i < total; i++){
       var name = speciesList[i];
       _updateEbirdEEProgress(done, total, name, 'running');
@@ -8900,16 +8932,17 @@ var __sharedDefaults = {};
       if(done % 5 === 0){
         saveEbirdEE();
         refreshEbirdEEMarkers();
+        _updateEbirdEEProgress(done, total, name, 'running');
       }
       if(!window.__ebirdEELayerOn){
         _updateEbirdEEProgress(0, 0, '', 'idle');
-        _ebirdEEFetching = false;
+        window.__ebirdEERefreshing = false;
         return;
       }
     }
     saveEbirdEE();
     refreshEbirdEEMarkers();
-    _ebirdEEFetching = false;
+    window.__ebirdEERefreshing = false;
     _updateEbirdEEProgress(done, total, '', 'done');
     console.log('[eBird EE] Refresh done: total=' + done + ', found=' + found + ', errors=' + errors);
   }
@@ -8968,17 +9001,6 @@ var __sharedDefaults = {};
     }
   }
   window.refreshEbirdEEMarkers = refreshEbirdEEMarkers;
-
-  // --- Master toggle ---
-  function refreshEbirdEELayer(){
-    if(window.__ebirdEELayerOn){
-      if(Object.keys(ebirdEEPoints).length > 0) refreshEbirdEEMarkers();
-      refreshEbirdEEAll();
-    } else {
-      refreshEbirdEEMarkers();
-      _updateEbirdEEProgress(0, 0, '', 'idle');
-    }
-  }
 
   // --- 7-day filter integration ---
   if(typeof window.updateMarker === 'function' && !window.__ebird_ee_upd_patch__){

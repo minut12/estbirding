@@ -9775,6 +9775,43 @@ var __sharedDefaults = {};
     if (btn) btn.classList.add('prob-loading');
 
     try {
+      // Step 0: Ensure eElurikkus live cache is populated (for recency boost + popup info)
+      var _eluKey = typeof _normalizeSpeciesKey === 'function' ? _normalizeSpeciesKey(speciesName) : String(speciesName || '').trim().toLowerCase();
+      var _eluCachedCheck = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluKey]) || null;
+      if (!_eluCachedCheck || !Array.isArray(_eluCachedCheck.items) || _eluCachedCheck.items.length === 0) {
+        try {
+          setProbStatus('Fetching eElurikkus data...');
+          var _eluResult = await _fetchElurikkusSpeciesViaHtml(speciesName);
+          if (_eluResult && Array.isArray(_eluResult.items) && _eluResult.items.length > 0) {
+            liveElurikkusBySpecies[_eluKey] = {
+              fetchedAt: new Date().toISOString(),
+              dataMaxAt: _eluResult.dataMaxAt || _eluResult.latestOccurrenceAt || '',
+              items: _eluResult.items,
+              sourceUrl: _eluResult.sourceUrl || ''
+            };
+            // Update points occ7 and latest date
+            if (typeof points !== 'undefined') {
+              points[speciesName] = points[speciesName] || {};
+              if (_eluResult.latestOccurrenceAt || _eluResult.dataMaxAt) {
+                points[speciesName].t = _eluResult.latestOccurrenceAt || _eluResult.dataMaxAt;
+              }
+              if (typeof countInLastNDaysFromDates === 'function') {
+                var _dates = _eluResult.items.map(function(it){ return it.observedAt; }).filter(Boolean);
+                points[speciesName].occ7 = countInLastNDaysFromDates(_dates, 7);
+              }
+            }
+            if (typeof _persistLiveCaches === 'function') _persistLiveCaches();
+            console.log('[PROB] eElurikkus fetched:', _eluResult.items.length, 'items for', speciesName);
+          } else {
+            console.log('[PROB] eElurikkus returned 0 items for', speciesName);
+          }
+        } catch(_eluErr) {
+          console.warn('[PROB] eElurikkus fetch failed for', speciesName, _eluErr);
+        }
+      } else {
+        console.log('[PROB] eElurikkus cache hit:', _eluCachedCheck.items.length, 'items for', speciesName);
+      }
+
       var data = loadProbCache(speciesName);
 
       if (!data) {
@@ -9967,7 +10004,16 @@ var __sharedDefaults = {};
       renderProbabilityOverlay(scored, speciesName, data.occurrences.length, seasonal.length, seasonInfo);
       var _gbifTotal = data.occurrences.filter(function(o){ return o.source === 'gbif'; }).length;
       var _eluTotal = data.occurrences.filter(function(o){ return o.source === 'elurikkus'; }).length;
-      setProbStatus('GBIF: ' + _gbifTotal + ' \u00b7 eElurikkus: ' + _eluTotal + ' \u00b7 ' + seasonal.length + ' in season \u00b7 ' + scored.length + ' cells');
+      // Also show live eElurikkus cache count and occ7
+      var _eluLiveCache = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluKey]) || null;
+      var _eluLiveCount = (_eluLiveCache && Array.isArray(_eluLiveCache.items)) ? _eluLiveCache.items.length : 0;
+      var _eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
+      var _occ7 = Number.isFinite(_eluPoint.occ7) ? _eluPoint.occ7 : 0;
+      var _eluDateStr = _eluPoint.t ? formatDateEE(_eluPoint.t) : '';
+      var _eluInfo = 'eElurikkus: ' + _eluLiveCount + ' items';
+      if (_occ7 > 0) _eluInfo += ' (' + _occ7 + ' in 7d)';
+      if (_eluDateStr) _eluInfo += ' \u00b7 latest: ' + _eluDateStr;
+      setProbStatus('GBIF: ' + _gbifTotal + ' \u00b7 ' + _eluInfo + ' \u00b7 ' + seasonal.length + ' in season \u00b7 ' + scored.length + ' cells');
 
     } catch(err) {
       console.error('[prob]', err);

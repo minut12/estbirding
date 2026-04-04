@@ -974,6 +974,17 @@ const {
             <Button
               variant="ghost"
               size="icon"
+              onClick={() => retranslateMutation.mutate()}
+              disabled={retranslateMutation.isPending}
+              title="Tõlgi uuesti"
+            >
+              {retranslateMutation.isPending
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Languages className="w-4 h-4" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => pullMutation.mutate()}
               disabled={pullMutation.isPending}
               title="Värskenda"

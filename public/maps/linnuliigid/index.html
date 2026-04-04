@@ -9253,6 +9253,20 @@ var __sharedDefaults = {};
     return Math.min(diff, 365 - diff) <= windowDays;
   }
 
+  // Check if an occurrence date falls within a specific season range (start/end Date objects)
+  function isInSeasonRange(occDateStr, seasonStart, seasonEnd) {
+    var occ = parseProbDate(occDateStr);
+    if (!occ) return false;
+    var occDoy = getDayOfYear(occ);
+    var startDoy = getDayOfYear(seasonStart);
+    var endDoy = getDayOfYear(seasonEnd);
+    if (startDoy <= endDoy) {
+      return occDoy >= startDoy && occDoy <= endDoy;
+    }
+    // Wraps around year boundary
+    return occDoy >= startDoy || occDoy <= endDoy;
+  }
+
   function formatSeasonWindow(windowDays) {
     windowDays = windowDays || 21;
     var now = new Date();
@@ -9260,6 +9274,52 @@ var __sharedDefaults = {};
     var end = new Date(now); end.setDate(end.getDate() + windowDays);
     var fmt = function(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
     return fmt(start) + ' \u2013 ' + fmt(end);
+  }
+
+  // Derive season window from actual GBIF data distribution (10th–90th percentile + 7d padding)
+  function calculateSeasonFromData(occurrences) {
+    var daysInMonth = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    function monthDayToDoy(m, d) {
+      var doy = 0;
+      for (var i = 1; i < m; i++) doy += daysInMonth[i];
+      return doy + d;
+    }
+    function doyToDate(year, doy) {
+      var d = new Date(year, 0, 1);
+      d.setDate(d.getDate() + doy - 1);
+      return d;
+    }
+
+    var doys = [];
+    for (var i = 0; i < occurrences.length; i++) {
+      var d = parseProbDate(occurrences[i].date);
+      if (d) doys.push(getDayOfYear(d));
+    }
+
+    if (doys.length < 5) {
+      // Too few records — fall back to ±21 days from now
+      var now = new Date();
+      var start = new Date(now); start.setDate(start.getDate() - 21);
+      var end = new Date(now); end.setDate(end.getDate() + 21);
+      var fmt = function(dd) { return dd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+      return { start: start, end: end, label: fmt(start) + ' \u2013 ' + fmt(end) };
+    }
+
+    doys.sort(function(a, b) { return a - b; });
+
+    var p10 = doys[Math.floor(doys.length * 0.10)];
+    var p90 = doys[Math.floor(doys.length * 0.90)];
+
+    // Pad by 7 days
+    p10 = Math.max(1, p10 - 7);
+    p90 = Math.min(365, p90 + 7);
+
+    var year = new Date().getFullYear();
+    var startDate = doyToDate(year, p10);
+    var endDate = doyToDate(year, p90);
+
+    var fmt2 = function(dd) { return dd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+    return { start: startDate, end: endDate, label: fmt2(startDate) + ' \u2013 ' + fmt2(endDate) };
   }
 
   function deduplicateOccurrences(occs) {
@@ -9275,14 +9335,15 @@ var __sharedDefaults = {};
   // Fixed Estonia bounding box
   var ESTONIA_BOUNDS = { minLat: 57.50, maxLat: 59.75, minLon: 21.50, maxLon: 28.25 };
 
-  // Simple land mask to skip obvious sea cells
+  // Simple land mask — only skip cells that are definitely deep open sea
   function isLikelyLand(lat, lon) {
-    if (lat > 59.7) return false;
-    if (lat < 57.55) return false;
-    if (lon < 22.0 && lat < 58.0) return false;
-    if (lon < 21.8 && lat < 58.5) return false;
-    if (lon < 22.5 && lat > 59.2) return false;
-    return true;
+    if (lat > 59.85) return false;    // well north of Estonia
+    if (lat < 57.45) return false;    // south of Latvia border
+    if (lon < 21.3) return false;     // far west of Saaremaa
+    if (lon > 28.3) return false;     // east of Narva
+    // Deep Baltic west of Saaremaa (not coastal)
+    if (lon < 21.8 && lat < 57.9) return false;
+    return true;  // everything else is potentially land or coastal
   }
 
   function buildEstoniaGrid(occs, gridSize) {
@@ -9321,17 +9382,21 @@ var __sharedDefaults = {};
   }
 
   // --- Temporal period helpers ---
-  function getSeasonPeriods(windowDays) {
-    windowDays = windowDays || 21;
-    var now = new Date();
-    var start = new Date(now); start.setDate(start.getDate() - windowDays);
-    var end = new Date(now); end.setDate(end.getDate() + windowDays);
-    var periods = [];
-    var current = new Date(start);
+  function getSeasonPeriods(seasonStart, seasonEnd) {
     var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    while (current < end) {
+    // If no season dates provided, fall back to ±21 days
+    if (!seasonStart || !seasonEnd) {
+      var now = new Date();
+      seasonStart = new Date(now); seasonStart.setDate(seasonStart.getDate() - 21);
+      seasonEnd = new Date(now); seasonEnd.setDate(seasonEnd.getDate() + 21);
+    }
+    var periods = [];
+    var current = new Date(seasonStart);
+    while (current < seasonEnd) {
       var periodEnd = new Date(current.getTime() + 14 * 86400000);
-      if (periodEnd > end) periodEnd = new Date(end);
+      if (periodEnd > seasonEnd) periodEnd = new Date(seasonEnd);
+      // Skip very short tail periods (<3 days)
+      if (periodEnd - current < 3 * 86400000 && periods.length > 0) break;
       periods.push({
         start: new Date(current),
         end: new Date(periodEnd),
@@ -9372,7 +9437,15 @@ var __sharedDefaults = {};
       var period = cell.periods[p];
       var periodHistorical = 0;
       if (maxPeriodCount > 0 && period.count > 0) {
-        periodHistorical = Math.round((period.count / maxPeriodCount) * cell.probability * 0.8);
+        var rawScore = (period.count / maxPeriodCount) * cell.probability * 0.8;
+        // Confidence dampener: fewer records → lower confidence
+        var conf;
+        if (period.count <= 1) conf = 0.3;
+        else if (period.count <= 2) conf = 0.5;
+        else if (period.count <= 3) conf = 0.7;
+        else if (period.count <= 4) conf = 0.85;
+        else conf = 1.0;
+        periodHistorical = Math.round(rawScore * conf);
       }
       var isCurrentPeriod = (now >= period.start && now < period.end);
       var periodRecency = 0;
@@ -9385,7 +9458,7 @@ var __sharedDefaults = {};
     }
   }
 
-  function calculateProbabilities(gridCells, seasonal, allOccs, speciesName, cellSize) {
+  function calculateProbabilities(gridCells, seasonal, allOccs, speciesName, cellSize, seasonInfo) {
     cellSize = cellSize || 0.15;
 
     // Find max GBIF count across all cells for normalization
@@ -9405,8 +9478,8 @@ var __sharedDefaults = {};
     // Season timing bonus
     var seasonBonus = 5;
 
-    // Temporal periods (shared template)
-    var periodTemplate = getSeasonPeriods();
+    // Temporal periods from data-derived season
+    var periodTemplate = getSeasonPeriods(seasonInfo && seasonInfo.start, seasonInfo && seasonInfo.end);
 
     gridCells.forEach(function(cell) {
       if (!Number.isFinite(cell.centerLat)) {
@@ -9520,7 +9593,7 @@ var __sharedDefaults = {};
         + '<div style="flex:1;height:8px;background:#f1f1f1;border-radius:4px;overflow:hidden">'
         + '<div style="width:' + barWidth + '%;height:100%;background:' + barColor + ';border-radius:4px"></div></div>'
         + '<span style="font-size:10px;color:#555;min-width:32px;text-align:right">' + prob + '%</span>'
-        + '<span style="font-size:9px;color:#999;min-width:20px">(' + (period.obsCount || 0) + ')</span>'
+        + '<span style="font-size:9px;color:#999;min-width:20px">(' + (period.obsCount || 0) + ')' + (period.obsCount <= 1 ? ' \u26A0' : period.obsCount <= 2 ? ' ~' : '') + '</span>'
         + '<span style="font-size:9px;color:#2196F3">' + currentMarker + '</span>'
         + '</div>';
     }
@@ -9528,7 +9601,7 @@ var __sharedDefaults = {};
     return html;
   }
 
-  function buildProbPopup(cell, speciesName, totalObs, totalInSeason) {
+  function buildProbPopup(cell, speciesName, totalObs, totalInSeason, seasonInfo) {
     var probColor = cell.probability > 60 ? '#A32D2D' : cell.probability > 25 ? '#B06A1A' : '#534AB7';
     var cellSize = 0.15;
     var cLat = Number.isFinite(cell.centerLat) ? cell.centerLat : (cell.latMin + cell.latMax) / 2;
@@ -9595,13 +9668,13 @@ var __sharedDefaults = {};
       + '<div style="font-size:12px;color:#94a3b8;margin-top:6px">'
         + '\uD83D\uDCCA All cells: ' + (totalObs || '?') + ' obs \u00b7 ' + (totalInSeason || '?') + ' in season'
       + '</div>'
-      + '<div style="font-size:11px;color:#94a3b8;margin-top:2px">Season: ' + formatSeasonWindow() + '</div>'
+      + '<div style="font-size:11px;color:#94a3b8;margin-top:2px">Season: ' + (seasonInfo && seasonInfo.label ? seasonInfo.label : formatSeasonWindow()) + '</div>'
       + breakdownLine
       + temporalHtml
     + '</div>';
   }
 
-  function renderProbabilityOverlay(gridCells, speciesName, totalObs, totalInSeason) {
+  function renderProbabilityOverlay(gridCells, speciesName, totalObs, totalInSeason, seasonInfo) {
     clearProbabilityLayer();
     probLayerGroup = L.layerGroup();
 
@@ -9614,7 +9687,7 @@ var __sharedDefaults = {};
       else { fillColor = '#A0A0CC'; fillOpacity = 0.10; strokeColor = '#888'; strokeOpacity = 0.15; }
 
       var rect = L.rectangle(bounds, { fillColor: fillColor, fillOpacity: fillOpacity, color: strokeColor, weight: 1, opacity: strokeOpacity, interactive: true });
-      rect.bindPopup(buildProbPopup(cell, speciesName, totalObs, totalInSeason));
+      rect.bindPopup(buildProbPopup(cell, speciesName, totalObs, totalInSeason, seasonInfo));
       probLayerGroup.addLayer(rect);
     });
 
@@ -9624,7 +9697,7 @@ var __sharedDefaults = {};
       var center = [(cell.latMin + cell.latMax)/2, (cell.lonMin + cell.lonMax)/2];
       var mc = cell.probability > 60 ? '#A32D2D' : cell.probability > 25 ? '#B06A1A' : '#534AB7';
       var marker = L.circleMarker(center, { radius: 5, fillColor: mc, fillOpacity: 1, color: 'white', weight: 1.5 });
-      marker.bindPopup(buildProbPopup(cell, speciesName, totalObs, totalInSeason));
+      marker.bindPopup(buildProbPopup(cell, speciesName, totalObs, totalInSeason, seasonInfo));
       probLayerGroup.addLayer(marker);
     });
 
@@ -9786,12 +9859,22 @@ var __sharedDefaults = {};
       if (activeProbSpecies !== speciesName) return;
 
       setProbStatus('Calculating...');
-      var seasonal = data.occurrences.filter(function(o){ return isInSeasonWindow(o.date); });
-      console.log('[prob] Season window:', formatSeasonWindow(), '| In-season:', seasonal.length, '/', data.occurrences.length);
 
-      // Auto-widen to ±45 days if no results
+      // Derive season window from actual GBIF data distribution
+      var seasonInfo = calculateSeasonFromData(data.occurrences);
+      console.log('[prob] Derived season:', seasonInfo.label);
+
+      // Filter occurrences to the data-derived season
+      var seasonal = data.occurrences.filter(function(o){ return isInSeasonRange(o.date, seasonInfo.start, seasonInfo.end); });
+      console.log('[prob] Season:', seasonInfo.label, '| In-season:', seasonal.length, '/', data.occurrences.length);
+
+      // Fallback: if derived season misses everything, use ±45 days from now
       if (seasonal.length === 0 && data.occurrences.length > 0) {
         seasonal = data.occurrences.filter(function(o){ return isInSeasonWindow(o.date, 45); });
+        var now2 = new Date();
+        var fb1 = new Date(now2); fb1.setDate(fb1.getDate() - 45);
+        var fb2 = new Date(now2); fb2.setDate(fb2.getDate() + 45);
+        seasonInfo = { start: fb1, end: fb2, label: formatSeasonWindow(45) };
         console.log('[prob] Widened to \u00b145 days:', seasonal.length);
       }
 
@@ -9837,9 +9920,10 @@ var __sharedDefaults = {};
       });
 
       console.log('[PROB] grid cells:', gridCells.length, '| cellSize:', probCellSize);
+      console.log('[PROB-GRID] Cells with GBIF > 0:', gridCells.filter(function(c) { return c.gbifCount > 0; }).length);
 
-      var scored = calculateProbabilities(gridCells, seasonal, data.occurrences, speciesName, probCellSize);
-      renderProbabilityOverlay(scored, speciesName, data.occurrences.length, seasonal.length);
+      var scored = calculateProbabilities(gridCells, seasonal, data.occurrences, speciesName, probCellSize, seasonInfo);
+      renderProbabilityOverlay(scored, speciesName, data.occurrences.length, seasonal.length, seasonInfo);
       setProbStatus('eElurikkus + GBIF \u00b7 ' + data.occurrences.length + ' obs \u00b7 ' + seasonal.length + ' in season \u00b7 ' + scored.length + ' cells');
 
     } catch(err) {

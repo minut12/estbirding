@@ -9272,25 +9272,121 @@ var __sharedDefaults = {};
     });
   }
 
-  function clusterToGrid(occs, gridSize) {
-    gridSize = gridSize || 0.1;
+  // Fixed Estonia bounding box
+  var ESTONIA_BOUNDS = { minLat: 57.50, maxLat: 59.75, minLon: 21.50, maxLon: 28.25 };
+
+  // Simple land mask to skip obvious sea cells
+  function isLikelyLand(lat, lon) {
+    if (lat > 59.7) return false;
+    if (lat < 57.55) return false;
+    if (lon < 22.0 && lat < 58.0) return false;
+    if (lon < 21.8 && lat < 58.5) return false;
+    if (lon < 22.5 && lat > 59.2) return false;
+    return true;
+  }
+
+  function buildEstoniaGrid(occs, gridSize) {
+    gridSize = gridSize || 0.15;
     var cells = {};
+    var precision = gridSize < 0.1 ? 3 : 2;
+
+    // Create cells covering all of Estonia
+    for (var lat = ESTONIA_BOUNDS.minLat; lat < ESTONIA_BOUNDS.maxLat; lat += gridSize) {
+      for (var lon = ESTONIA_BOUNDS.minLon; lon < ESTONIA_BOUNDS.maxLon; lon += gridSize) {
+        var gLat = Math.floor(lat / gridSize) * gridSize;
+        var gLon = Math.floor(lon / gridSize) * gridSize;
+        var cLat = gLat + gridSize / 2;
+        var cLon = gLon + gridSize / 2;
+        if (!isLikelyLand(cLat, cLon)) continue;
+        var key = gLat.toFixed(precision) + '|' + gLon.toFixed(precision);
+        if (!cells[key]) {
+          cells[key] = { latMin: gLat, latMax: gLat + gridSize, lonMin: gLon, lonMax: gLon + gridSize, occurrences: [], gbifCount: 0, gbifCountTotal: 0, centerLat: cLat, centerLon: cLon };
+        }
+      }
+    }
+
+    // Assign occurrences to cells
     occs.forEach(function(o) {
       var gLat = Math.floor(o.lat / gridSize) * gridSize;
       var gLon = Math.floor(o.lon / gridSize) * gridSize;
-      var key = gLat.toFixed(2) + '|' + gLon.toFixed(2);
+      var key = gLat.toFixed(precision) + '|' + gLon.toFixed(precision);
       if (!cells[key]) {
-        cells[key] = { latMin: gLat, latMax: gLat + gridSize, lonMin: gLon, lonMax: gLon + gridSize, occurrences: [], gbifCount: 0, centerLat: gLat + gridSize / 2, centerLon: gLon + gridSize / 2 };
+        cells[key] = { latMin: gLat, latMax: gLat + gridSize, lonMin: gLon, lonMax: gLon + gridSize, occurrences: [], gbifCount: 0, gbifCountTotal: 0, centerLat: gLat + gridSize / 2, centerLon: gLon + gridSize / 2 };
       }
       cells[key].occurrences.push(o);
       if (o.source === 'gbif') cells[key].gbifCount++;
     });
+
     return Object.values(cells);
   }
 
-  function calculateProbabilities(gridCells, seasonal, allOccs, speciesName) {
-    if (seasonal.length === 0) return gridCells;
-    var cellSize = 0.1;
+  // --- Temporal period helpers ---
+  function getSeasonPeriods(windowDays) {
+    windowDays = windowDays || 21;
+    var now = new Date();
+    var start = new Date(now); start.setDate(start.getDate() - windowDays);
+    var end = new Date(now); end.setDate(end.getDate() + windowDays);
+    var periods = [];
+    var current = new Date(start);
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    while (current < end) {
+      var periodEnd = new Date(current.getTime() + 14 * 86400000);
+      if (periodEnd > end) periodEnd = new Date(end);
+      periods.push({
+        start: new Date(current),
+        end: new Date(periodEnd),
+        label: String(current.getDate()).padStart(2,'0') + ' ' + months[current.getMonth()] + '\u2013' + String(periodEnd.getDate()).padStart(2,'0') + ' ' + months[periodEnd.getMonth()],
+        count: 0
+      });
+      current = periodEnd;
+    }
+    return periods;
+  }
+
+  function assignRecordsToPeriods(cell, periods) {
+    cell.periods = periods.map(function(p) { return { start: p.start, end: p.end, label: p.label, count: 0, probability: 1, isCurrent: false, obsCount: 0 }; });
+    for (var i = 0; i < cell.occurrences.length; i++) {
+      var d = parseProbDate(cell.occurrences[i].date);
+      if (!d) continue;
+      var doy = getDayOfYear(d);
+      for (var p = 0; p < cell.periods.length; p++) {
+        var pStartDoy = getDayOfYear(cell.periods[p].start);
+        var pEndDoy = getDayOfYear(cell.periods[p].end);
+        if (doy >= pStartDoy && doy < pEndDoy) {
+          cell.periods[p].count++;
+          break;
+        }
+      }
+    }
+  }
+
+  function calculatePeriodProbabilities(cell, eluPoint) {
+    if (!cell.periods || !cell.periods.length) return;
+    var maxPeriodCount = 0;
+    for (var p = 0; p < cell.periods.length; p++) {
+      if (cell.periods[p].count > maxPeriodCount) maxPeriodCount = cell.periods[p].count;
+    }
+    var now = new Date();
+    var occ7 = (eluPoint && Number.isFinite(eluPoint.occ7)) ? eluPoint.occ7 : 0;
+    for (var p = 0; p < cell.periods.length; p++) {
+      var period = cell.periods[p];
+      var periodHistorical = 0;
+      if (maxPeriodCount > 0 && period.count > 0) {
+        periodHistorical = Math.round((period.count / maxPeriodCount) * cell.probability * 0.8);
+      }
+      var isCurrentPeriod = (now >= period.start && now < period.end);
+      var periodRecency = 0;
+      if (isCurrentPeriod && occ7 > 0) {
+        periodRecency = Math.min(20, Math.round(occ7 / 3));
+      }
+      period.probability = Math.max(1, Math.min(95, periodHistorical + periodRecency));
+      period.isCurrent = isCurrentPeriod;
+      period.obsCount = period.count;
+    }
+  }
+
+  function calculateProbabilities(gridCells, seasonal, allOccs, speciesName, cellSize) {
+    cellSize = cellSize || 0.15;
 
     // Find max GBIF count across all cells for normalization
     var maxCellCount = 0;
@@ -9298,18 +9394,21 @@ var __sharedDefaults = {};
       if (c.gbifCount > maxCellCount) maxCellCount = c.gbifCount;
     });
 
+    // Max occurrence count for non-GBIF fallback
+    var maxOccCount = 0;
+    gridCells.forEach(function(c) { if (c.occurrences.length > maxOccCount) maxOccCount = c.occurrences.length; });
+
     // eElurikkus marker data
     var eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
     var occ7 = Number.isFinite(eluPoint.occ7) ? eluPoint.occ7 : 0;
 
     // Season timing bonus
-    var now = new Date();
-    var nowDoy = getDayOfYear(now);
-    // Use the season window center (±21 days from now) as approximate peak
-    var seasonBonus = 5; // we're always "in season" since we filtered to seasonal data
+    var seasonBonus = 5;
+
+    // Temporal periods (shared template)
+    var periodTemplate = getSeasonPeriods();
 
     gridCells.forEach(function(cell) {
-      // Ensure centerLat/centerLon exist (for padding cells added later)
       if (!Number.isFinite(cell.centerLat)) {
         cell.centerLat = (cell.latMin + cell.latMax) / 2;
         cell.centerLon = (cell.lonMin + cell.lonMax) / 2;
@@ -9321,13 +9420,8 @@ var __sharedDefaults = {};
       if (maxCellCount > 0 && cell.gbifCount > 0) {
         historicalScore = Math.round((cell.gbifCount / maxCellCount) * 60);
       }
-      // If no GBIF but has other occurrences, give partial credit
-      if (historicalScore === 0 && cell.occurrences.length > 0) {
-        var maxOccCount = 0;
-        gridCells.forEach(function(c2) { if (c2.occurrences.length > maxOccCount) maxOccCount = c2.occurrences.length; });
-        if (maxOccCount > 0) {
-          historicalScore = Math.round((cell.occurrences.length / maxOccCount) * 40);
-        }
+      if (historicalScore === 0 && cell.occurrences.length > 0 && maxOccCount > 0) {
+        historicalScore = Math.round((cell.occurrences.length / maxOccCount) * 40);
       }
 
       // 2. Recency boost (eElurikkus) — up to 35%
@@ -9357,9 +9451,13 @@ var __sharedDefaults = {};
       cell.scoreHistory = historicalScore;
       cell.scoreRecency = recencyBoost;
       cell.scoreSeason = seasonBonus;
+
+      // Temporal periods
+      assignRecordsToPeriods(cell, periodTemplate);
+      calculatePeriodProbabilities(cell, eluPoint);
     });
 
-    return gridCells.filter(function(c) { return c.probability > 0; });
+    return gridCells;
   }
 
   function extractScientificName(items) {
@@ -9405,9 +9503,34 @@ var __sharedDefaults = {};
     if (probLayerGroup) { map.removeLayer(probLayerGroup); probLayerGroup = null; }
   }
 
+  function buildTemporalBreakdown(cell) {
+    if (!cell.periods || !cell.periods.length) return '';
+    var html = '<div style="border-top:1px solid #eee;margin-top:6px;padding-top:6px">'
+      + '<div style="font-size:11px;font-weight:600;color:#555;margin-bottom:4px">\uD83D\uDCC5 Probability by period:</div>';
+    for (var p = 0; p < cell.periods.length; p++) {
+      var period = cell.periods[p];
+      var prob = period.probability || 1;
+      var barColor = prob > 60 ? '#E24B4A' : prob > 25 ? '#E88D2A' : '#7F77DD';
+      var bgColor = period.isCurrent ? '#f0f9ff' : 'transparent';
+      var currentMarker = period.isCurrent ? ' \u25C0 now' : '';
+      var fontWeight = period.isCurrent ? 'font-weight:600' : '';
+      var barWidth = Math.max(4, Math.round(prob * 0.8));
+      html += '<div style="display:flex;align-items:center;gap:6px;padding:2px 4px;margin:1px 0;border-radius:3px;background:' + bgColor + ';' + fontWeight + '">'
+        + '<span style="font-size:10px;color:#666;min-width:100px;white-space:nowrap">' + period.label + '</span>'
+        + '<div style="flex:1;height:8px;background:#f1f1f1;border-radius:4px;overflow:hidden">'
+        + '<div style="width:' + barWidth + '%;height:100%;background:' + barColor + ';border-radius:4px"></div></div>'
+        + '<span style="font-size:10px;color:#555;min-width:32px;text-align:right">' + prob + '%</span>'
+        + '<span style="font-size:9px;color:#999;min-width:20px">(' + (period.obsCount || 0) + ')</span>'
+        + '<span style="font-size:9px;color:#2196F3">' + currentMarker + '</span>'
+        + '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
   function buildProbPopup(cell, speciesName, totalObs, totalInSeason) {
     var probColor = cell.probability > 60 ? '#A32D2D' : cell.probability > 25 ? '#B06A1A' : '#534AB7';
-    var cellSize = 0.1;
+    var cellSize = 0.15;
     var cLat = Number.isFinite(cell.centerLat) ? cell.centerLat : (cell.latMin + cell.latMax) / 2;
     var cLon = Number.isFinite(cell.centerLon) ? cell.centerLon : (cell.lonMin + cell.lonMax) / 2;
 
@@ -9457,7 +9580,10 @@ var __sharedDefaults = {};
     var gbifSeason = cell.gbifCount || 0;
     var gbifTotal = cell.gbifCountTotal || gbifSeason;
 
-    return '<div style="font-family:system-ui;min-width:200px;max-width:300px">'
+    // Temporal breakdown
+    var temporalHtml = buildTemporalBreakdown(cell);
+
+    return '<div style="font-family:system-ui;min-width:240px;max-width:360px">'
       + '<div style="font-size:22px;font-weight:600;color:' + probColor + ';margin-bottom:2px">' + cell.probability + '%</div>'
       + '<div style="font-size:12px;color:#64748b;margin-bottom:8px">probability in current season</div>'
       + '<div style="border-top:1px solid #eee;padding-top:6px;margin-top:2px">'
@@ -9471,6 +9597,7 @@ var __sharedDefaults = {};
       + '</div>'
       + '<div style="font-size:11px;color:#94a3b8;margin-top:2px">Season: ' + formatSeasonWindow() + '</div>'
       + breakdownLine
+      + temporalHtml
     + '</div>';
   }
 
@@ -9480,13 +9607,13 @@ var __sharedDefaults = {};
 
     gridCells.forEach(function(cell) {
       var bounds = [[cell.latMin, cell.lonMin], [cell.latMax, cell.lonMax]];
-      var fillColor, fillOpacity;
-      var strokeColor;
-      if (cell.probability > 60) { fillColor = '#E24B4A'; fillOpacity = 0.50; strokeColor = '#A32D2D'; }
-      else if (cell.probability > 25) { fillColor = '#E88D2A'; fillOpacity = 0.45; strokeColor = '#B06A1A'; }
-      else { fillColor = '#7F77DD'; fillOpacity = 0.35; strokeColor = '#534AB7'; }
+      var fillColor, fillOpacity, strokeColor, strokeOpacity;
+      if (cell.probability > 60) { fillColor = '#E24B4A'; fillOpacity = 0.50; strokeColor = '#A32D2D'; strokeOpacity = 0.6; }
+      else if (cell.probability > 25) { fillColor = '#E88D2A'; fillOpacity = 0.45; strokeColor = '#B06A1A'; strokeOpacity = 0.5; }
+      else if (cell.probability > 5) { fillColor = '#7F77DD'; fillOpacity = 0.25; strokeColor = '#534AB7'; strokeOpacity = 0.3; }
+      else { fillColor = '#A0A0CC'; fillOpacity = 0.10; strokeColor = '#888'; strokeOpacity = 0.15; }
 
-      var rect = L.rectangle(bounds, { fillColor: fillColor, fillOpacity: fillOpacity, color: strokeColor, weight: 1.5, opacity: 0.6, interactive: true });
+      var rect = L.rectangle(bounds, { fillColor: fillColor, fillOpacity: fillOpacity, color: strokeColor, weight: 1, opacity: strokeOpacity, interactive: true });
       rect.bindPopup(buildProbPopup(cell, speciesName, totalObs, totalInSeason));
       probLayerGroup.addLayer(rect);
     });
@@ -9684,62 +9811,36 @@ var __sharedDefaults = {};
       console.log('[PROB] liveEluCache:', (typeof liveElurikkusBySpecies !== 'undefined' ? liveElurikkusBySpecies[_probCacheKey] : 'N/A'));
       console.log('[PROB] seasonal occs:', seasonal.length, '/ total:', data.occurrences.length);
 
-      // Include eElurikkus marker position so grid covers it
-      var eluPoint = (typeof points !== 'undefined' && points[speciesName]) || null;
-      if (eluPoint && Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon)) {
-        var alreadyHas = seasonal.some(function(o){ return Math.abs(o.lat - eluPoint.lat) < 0.001 && Math.abs(o.lon - eluPoint.lon) < 0.001; });
-        if (!alreadyHas) {
-          seasonal.push({ lat: eluPoint.lat, lon: eluPoint.lon, date: new Date().toISOString().substring(0,10), source: 'elurikkus', scientificName: '' });
-        }
-      }
+      // Adaptive cell size based on data density
+      var totalGbifRecords = data.occurrences.filter(function(o){ return o.source === 'gbif'; }).length;
+      var probCellSize;
+      if (totalGbifRecords > 500) probCellSize = 0.1;
+      else if (totalGbifRecords > 100) probCellSize = 0.15;
+      else probCellSize = 0.2;
 
-      var gridCells = clusterToGrid(seasonal);
-
-      // Pad grid by 1 cell in each direction
-      if (gridCells.length > 0) {
-        var gridSize = 0.1;
-        var padMinLat = Infinity, padMaxLat = -Infinity, padMinLon = Infinity, padMaxLon = -Infinity;
-        gridCells.forEach(function(c) {
-          if (c.latMin < padMinLat) padMinLat = c.latMin;
-          if (c.latMax > padMaxLat) padMaxLat = c.latMax;
-          if (c.lonMin < padMinLon) padMinLon = c.lonMin;
-          if (c.lonMax > padMaxLon) padMaxLon = c.lonMax;
-        });
-        // Add empty padding cells around the perimeter
-        var dirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
-        var existingKeys = {};
-        gridCells.forEach(function(c){ existingKeys[c.latMin.toFixed(2) + '|' + c.lonMin.toFixed(2)] = true; });
-        gridCells.forEach(function(c) {
-          dirs.forEach(function(d) {
-            var nLat = +(c.latMin + d[0] * gridSize).toFixed(2);
-            var nLon = +(c.lonMin + d[1] * gridSize).toFixed(2);
-            var nKey = nLat.toFixed(2) + '|' + nLon.toFixed(2);
-            if (!existingKeys[nKey]) {
-              existingKeys[nKey] = true;
-              gridCells.push({ latMin: nLat, latMax: nLat + gridSize, lonMin: nLon, lonMax: nLon + gridSize, occurrences: [], gbifCount: 0, centerLat: nLat + gridSize / 2, centerLon: nLon + gridSize / 2 });
-            }
-          });
-        });
-      }
+      // Build full Estonia grid and assign seasonal occurrences to cells
+      var gridCells = buildEstoniaGrid(seasonal, probCellSize);
 
       // Compute gbifCountTotal per cell from ALL occurrences (not just seasonal)
+      var precision = probCellSize < 0.1 ? 3 : 2;
       var allGbif = data.occurrences.filter(function(o){ return o.source === 'gbif'; });
-      var cellSize = 0.1;
       var gbifTotalByCell = {};
       allGbif.forEach(function(o) {
-        var gLat = Math.floor(o.lat / cellSize) * cellSize;
-        var gLon = Math.floor(o.lon / cellSize) * cellSize;
-        var key = gLat.toFixed(2) + '|' + gLon.toFixed(2);
+        var gLat = Math.floor(o.lat / probCellSize) * probCellSize;
+        var gLon = Math.floor(o.lon / probCellSize) * probCellSize;
+        var key = gLat.toFixed(precision) + '|' + gLon.toFixed(precision);
         gbifTotalByCell[key] = (gbifTotalByCell[key] || 0) + 1;
       });
       gridCells.forEach(function(c) {
-        var key = c.latMin.toFixed(2) + '|' + c.lonMin.toFixed(2);
+        var key = c.latMin.toFixed(precision) + '|' + c.lonMin.toFixed(precision);
         c.gbifCountTotal = gbifTotalByCell[key] || 0;
       });
 
-      var scored = calculateProbabilities(gridCells, seasonal, data.occurrences, speciesName);
+      console.log('[PROB] grid cells:', gridCells.length, '| cellSize:', probCellSize);
+
+      var scored = calculateProbabilities(gridCells, seasonal, data.occurrences, speciesName, probCellSize);
       renderProbabilityOverlay(scored, speciesName, data.occurrences.length, seasonal.length);
-      setProbStatus('eElurikkus + GBIF \u00b7 ' + data.occurrences.length + ' obs \u00b7 ' + seasonal.length + ' in season');
+      setProbStatus('eElurikkus + GBIF \u00b7 ' + data.occurrences.length + ' obs \u00b7 ' + seasonal.length + ' in season \u00b7 ' + scored.length + ' cells');
 
     } catch(err) {
       console.error('[prob]', err);

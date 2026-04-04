@@ -1,5 +1,6 @@
 ﻿import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getOpenAIConfig, translateToEstonian } from "./openai.ts";
+import { getAnthropicConfig, classifyLanguageClaude } from "./anthropic.ts";
 import { applyBirdNameCorrections, logBirdNameCorrections, prepareBirdNameCorrectionFromOriginalText } from "./bird-name-correction.ts";
 
 export interface NewsTranslationItem {
@@ -101,7 +102,18 @@ async function detectSourceLanguage(item: NewsTranslationItem, title: string, bo
   if (known) return known;
   if (item.source_key === "facebook_birdingpoland") return "pl";
   if (isEoySource(item)) return "et";
-  return heuristicLanguage(title, body) || await classifyLanguageWithOpenAI(title, body);
+  const heuristic = heuristicLanguage(title, body);
+  if (heuristic) return heuristic;
+
+  // Prefer Claude for language detection
+  if (getAnthropicConfig()) {
+    try {
+      return await classifyLanguageClaude(title, body);
+    } catch (e) {
+      console.warn("[lang-detect] Claude failed, falling back to OpenAI:", (e as Error).message);
+    }
+  }
+  return await classifyLanguageWithOpenAI(title, body);
 }
 
 function correctBirdNamesSafely(

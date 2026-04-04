@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { getAnthropicConfig, callClaude, getSimpleTranslationSystemPrompt } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,6 +12,32 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
   });
+}
+
+async function translateWithOpenAI(apiKey: string, sys: string, user: string): Promise<string> {
+  const r = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      temperature: 0.2,
+      messages: [
+        { role: "system", content: sys },
+        { role: "user", content: user },
+      ],
+    }),
+  });
+
+  if (!r.ok) {
+    const errText = await r.text().catch(() => "");
+    throw new Error(`OpenAI error: ${r.status} ${errText.slice(0, 400)}`);
+  }
+
+  const data = await r.json();
+  return data?.choices?.[0]?.message?.content?.trim?.() ?? "";
 }
 
 serve(async (req) => {
@@ -37,42 +64,27 @@ serve(async (req) => {
       return json({ ok: false, error: "TEXT_TOO_LARGE" }, 413);
     }
 
-    const apiKey = Deno.env.get("OPENAI_API_KEY");
-    if (!apiKey) return json({ ok: false, error: "OPENAI_API_KEY_MISSING" }, 500);
-
-    const sys =
-      `You are a translation engine. Translate the user text to ${targetLang}. ` +
-      `When translating bird-related content, use correct Estonian bird names (eesti linnunimed), not literal translations from the source language. ` +
-      `Return ONLY the translation, preserve paragraphs, no extra commentary.`;
-    const user = sourceLang
+    const userMessage = sourceLang
       ? `Source language: ${sourceLang}\n\nText:\n${text}`
       : `Text:\n${text}`;
+    const sysPrompt = getSimpleTranslationSystemPrompt(targetLang);
 
-    const r = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0.2,
-        messages: [
-          { role: "system", content: sys },
-          { role: "user", content: user },
-        ],
-      }),
-    });
-
-    if (!r.ok) {
-      const errText = await r.text().catch(() => "");
-      return json({ ok: false, error: "OPENAI_ERROR", status: r.status, details: errText.slice(0, 400) }, 502);
+    // Prefer Claude
+    const anthropicCfg = getAnthropicConfig();
+    if (anthropicCfg) {
+      try {
+        const translatedText = await callClaude(anthropicCfg, sysPrompt, userMessage);
+        return json({ ok: true, translatedText });
+      } catch (e) {
+        console.warn("[translate-et] Claude failed, falling back to OpenAI:", (e as Error).message);
+      }
     }
 
-    const data = await r.json();
-    const translatedText =
-      data?.choices?.[0]?.message?.content?.trim?.() ?? "";
+    // OpenAI fallback
+    const apiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!apiKey) return json({ ok: false, error: "API_KEY_MISSING" }, 500);
 
+    const translatedText = await translateWithOpenAI(apiKey, sysPrompt, userMessage);
     return json({ ok: true, translatedText });
   } catch (e) {
     return json({ ok: false, error: "UNHANDLED", message: String(e) }, 500);

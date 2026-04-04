@@ -86,13 +86,44 @@ Deno.serve(async (req) => {
     if (!text) return json({ ok: false, error: "MISSING_TEXT" }, 400);
     if (text.length > 12_000) return json({ ok: false, error: "TEXT_TOO_LARGE" }, 413);
 
-    const apiKey = Deno.env.get("OPENAI_API_KEY")?.trim();
-    if (!apiKey) return json({ ok: false, error: "OPENAI_API_KEY_MISSING" }, 500);
-
-    const system = `You are a translation engine. Translate the user text to ${targetLang}. When translating bird-related content, use correct Estonian bird names (eesti linnunimed), not literal translations from the source language. Return ONLY the translation, preserve paragraphs.`;
-    const user = sourceLang
+    const sysPrompt = `You are a translation engine specializing in bird-related content. Translate the user text to ${targetLang}. Use correct Estonian bird names (eesti linnunimed), never literally translate bird common names. Return ONLY the translation, preserve paragraphs, no commentary.`;
+    const userMsg = sourceLang
       ? `Source language: ${sourceLang}\n\nText:\n${text}`
       : `Text:\n${text}`;
+
+    // Prefer Claude
+    const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY")?.trim();
+    if (anthropicKey) {
+      try {
+        const model = Deno.env.get("ANTHROPIC_TRANSLATION_MODEL") || "claude-haiku-4-5-20251001";
+        const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "x-api-key": anthropicKey,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: 2048,
+            system: sysPrompt,
+            messages: [{ role: "user", content: userMsg }],
+          }),
+        });
+        if (claudeRes.ok) {
+          const claudeData = await claudeRes.json();
+          const translatedText = String(claudeData?.content?.[0]?.text || "").trim();
+          return json({ ok: true, translatedText }, 200);
+        }
+        console.warn("[proxy/translate-et] Claude returned", claudeRes.status, "falling back to OpenAI");
+      } catch (error) {
+        console.warn("[proxy/translate-et] Claude failed, falling back to OpenAI:", String(error).slice(0, 200));
+      }
+    }
+
+    // OpenAI fallback
+    const apiKey = Deno.env.get("OPENAI_API_KEY")?.trim();
+    if (!apiKey) return json({ ok: false, error: "API_KEY_MISSING" }, 500);
 
     let upstream: Response;
     try {
@@ -106,8 +137,8 @@ Deno.serve(async (req) => {
           model: "gpt-4o-mini",
           temperature: 0.2,
           messages: [
-            { role: "system", content: system },
-            { role: "user", content: user },
+            { role: "system", content: sysPrompt },
+            { role: "user", content: userMsg },
           ],
         }),
       });

@@ -1,3 +1,5 @@
+import { getAnthropicConfig, translateToEstonianClaude } from "./anthropic.ts";
+
 export interface OpenAIConfig {
   apiKey: string;
   model: string;
@@ -15,6 +17,16 @@ export async function translateToEstonian(input: {
   body: string;
   sourceLang: string;
 }): Promise<{ title_et: string; body_et: string }> {
+  // Prefer Claude for better bird name translations
+  const anthropicCfg = getAnthropicConfig();
+  if (anthropicCfg) {
+    try {
+      return await translateToEstonianClaude(input);
+    } catch (e) {
+      console.warn("[translate] Claude failed, falling back to OpenAI:", (e as Error).message);
+    }
+  }
+
   const cfg = getOpenAIConfig();
   if (!cfg) throw new Error("Translation not configured");
 

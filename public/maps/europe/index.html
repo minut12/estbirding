@@ -422,7 +422,7 @@ function getEbirdToken(){
   const tokenTrim = raw.trim();
   const tokenClean = tokenTrim.replace(/[^A-Za-z0-9]/g, "");
   tokenSanitized = tokenTrim !== tokenClean;
-  if (tokenTrim !== tokenClean) localStorage.setItem(LS_TOKEN, tokenClean);
+  if (tokenTrim !== tokenClean) { try { localStorage.setItem(LS_TOKEN, tokenClean); } catch(e){ console.warn("[quota] LS_TOKEN save failed", e); } }
   EBIRD_TOKEN = tokenClean || HARDCODED_EBIRD_TOKEN;
   return EBIRD_TOKEN;
 }
@@ -824,7 +824,7 @@ function normalizeSpeciesMetaStorage(){
   const raw = safeParseJSON(localStorage.getItem(LS_SPECIES_META) || "{}") || {};
   const normalized = normalizeNameMap(raw);
   if (Object.keys(normalized).length && JSON.stringify(raw) !== JSON.stringify(normalized)) {
-    localStorage.setItem(LS_SPECIES_META, JSON.stringify(normalized));
+    try { localStorage.setItem(LS_SPECIES_META, JSON.stringify(normalized)); } catch(e){ console.warn("[quota] LS_SPECIES_META save failed", e); }
   }
 }
 function getSpeciesMeta(name){
@@ -887,25 +887,25 @@ function migrateAvatars() {
 
   const merged = { ...(best || {}), ...current };
   const mergedCount = Object.values(merged).filter(isAvatarVal).length;
-  if (mergedCount > curCount) localStorage.setItem(LS_AVATARS, JSON.stringify(merged));
+  if (mergedCount > curCount) { try { localStorage.setItem(LS_AVATARS, JSON.stringify(merged)); } catch(e){ console.warn("[quota] LS_AVATARS save failed", e); } }
   return merged;
 }
 
 /* ========= Load storage ========= */
 let avatars = migrateAvatars();
 avatars = normalizeNameMap(avatars);
-localStorage.setItem(LS_AVATARS, JSON.stringify(avatars));
+try { localStorage.setItem(LS_AVATARS, JSON.stringify(avatars)); } catch(e){ console.warn("[quota] LS_AVATARS save failed", e); }
 
 let EBIRD_CODES = (() => {
   const defaults = normalizeNameMap(DEFAULT_EBIRD_CODES);
   const stored = normalizeNameMap(safeParseJSON(localStorage.getItem(LS_CODES) || "{}") || {});
   const merged = { ...defaults, ...stored };
-  localStorage.setItem(LS_CODES, JSON.stringify(merged));
+  try { localStorage.setItem(LS_CODES, JSON.stringify(merged)); } catch(e){ console.warn("[quota] LS_CODES save failed", e); }
   return merged;
 })();
 
 let points = normalizeNameMap(safeParseJSON(localStorage.getItem(LS_POINTS) || "{}") || {});
-localStorage.setItem(LS_POINTS, JSON.stringify(points));
+try { localStorage.setItem(LS_POINTS, JSON.stringify(points)); } catch(e){ console.warn("[quota] LS_POINTS save failed", e); }
 normalizeSpeciesMetaStorage();
 
 const SHARED_SPECIES_URL = "/maps/linnuliigid/species.json";
@@ -928,7 +928,7 @@ function deriveEuropeExtras(masterSpecies, speciesList){
   return normalizeNameArray((speciesList || []).filter(name => !masterSet.has(normalizeText(name))));
 }
 function persistEuropeSpeciesExtras(){
-  localStorage.setItem(LS_SPECIES, EUROPE_SPECIES_EXTRAS.join("\n"));
+  try { localStorage.setItem(LS_SPECIES, EUROPE_SPECIES_EXTRAS.join("\n")); } catch(e){ console.warn("[quota] LS_SPECIES save failed", e); }
 }
 
 const storedEuropeSpecies = readStoredEuropeSpecies();
@@ -1200,8 +1200,8 @@ async function saveSnapshotLocal(){
       counts: getSnapshotCounts(),
     },
   };
-  localStorage.setItem(getSnapshotStorageKey(), JSON.stringify(snapshot));
-  localStorage.setItem(LS_EU_LAST_GOOD, JSON.stringify(snapshot));
+  try { localStorage.setItem(getSnapshotStorageKey(), JSON.stringify(snapshot)); } catch(e){ console.warn("[snapshot] snapshot save failed (quota)", e); }
+  try { localStorage.setItem(LS_EU_LAST_GOOD, JSON.stringify(snapshot)); } catch(e){ console.warn("[snapshot] bm_eu_last_good_snapshot save failed (quota)", e); }
   lastSnapshotAt = snapshot.createdAt;
   updateDebugPanel();
 }
@@ -1239,7 +1239,7 @@ function applySnapshot(snapshot){
   dataMode = "snapshot";
   lastSnapshotAt = snapshot.createdAt || null;
   snapshotDebugNote = null;
-  localStorage.setItem(LS_EU_LAST_GOOD, JSON.stringify(snapshot));
+  try { localStorage.setItem(LS_EU_LAST_GOOD, JSON.stringify(snapshot)); } catch(e){ console.warn("[snapshot] bm_eu_last_good_snapshot save failed (quota)", e); }
   saveAll();
   render();
   updateDebugPanel();
@@ -2234,7 +2234,7 @@ modalBackdrop.addEventListener("click", (e)=>{ if (e.target === modalBackdrop) c
 
 document.getElementById("modalSave").addEventListener("click", ()=>{
   const newToken = (tokenInput.value || "").trim().replace(/[^a-zA-Z0-9_\-]/g, "");
-  localStorage.setItem(LS_TOKEN, newToken);
+  try { localStorage.setItem(LS_TOKEN, newToken); } catch(e){ console.warn("[quota] LS_TOKEN save failed", e); }
   updateProxyHint();
   if (!newToken) { EBIRD_TOKEN = HARDCODED_EBIRD_TOKEN; showWarn(""); }
   else showWarn("");
@@ -2352,7 +2352,7 @@ function startAutoSync(){
 
     const chunk = keys.slice(offset, offset + chunkSize);
     if (chunk.length === 0){
-      localStorage.setItem(LS_LAST_AUTOSYNC, String(Date.now()));
+      try { localStorage.setItem(LS_LAST_AUTOSYNC, String(Date.now())); } catch(e){ console.warn("[quota] LS_LAST_AUTOSYNC save failed", e); }
       return;
     }
     await refreshKeys(chunk, false);
@@ -2361,7 +2361,7 @@ function startAutoSync(){
     if (offset < keys.length && !AUTO_SYNC_CANCELLED){
       setTimeout(runNext, 1200);
     } else {
-      localStorage.setItem(LS_LAST_AUTOSYNC, String(Date.now()));
+      try { localStorage.setItem(LS_LAST_AUTOSYNC, String(Date.now())); } catch(e){ console.warn("[quota] LS_LAST_AUTOSYNC save failed", e); }
     }
   };
   runNext();
@@ -2403,7 +2403,7 @@ window.addEventListener("message", function(ev){
       const incoming = normalizeNameMap(ev.data.speciesMeta);
       if (Object.keys(incoming).length) {
         const existing = safeParseJSON(localStorage.getItem(LS_SPECIES_META) || "{}") || {};
-        localStorage.setItem(LS_SPECIES_META, JSON.stringify({ ...existing, ...incoming }));
+        try { localStorage.setItem(LS_SPECIES_META, JSON.stringify({ ...existing, ...incoming })); } catch(e){ console.warn("[quota] LS_SPECIES_META save failed", e); }
         render();
       }
     }

@@ -117,6 +117,33 @@ function isCorruptedSingleEntry(list: NewsSourceConfigItem[]): boolean {
   return true;
 }
 
+function isBirdingPolandSource(source: NewsSourceConfigItem): boolean {
+  return (
+    source.id === "birding_poland" ||
+    source.name.toLowerCase().includes("birding poland") ||
+    (source.url && /birding.*poland|poland.*birding/i.test(source.url))
+  );
+}
+
+function deduplicateBirdingPoland(list: NewsSourceConfigItem[]): NewsSourceConfigItem[] {
+  let firstBirdingPolandSeen = false;
+  let removedCount = 0;
+  const result = list.filter((source) => {
+    if (isBirdingPolandSource(source)) {
+      if (firstBirdingPolandSeen) {
+        removedCount++;
+        return false;
+      }
+      firstBirdingPolandSeen = true;
+    }
+    return true;
+  });
+  if (removedCount > 0) {
+    console.warn(`[news-sources] removed ${removedCount} duplicate Birding Poland entries`);
+  }
+  return result;
+}
+
 function mergeWithDefaults(list: NewsSourceConfigItem[]): NewsSourceConfigItem[] {
   const byId = new Map<string, NewsSourceConfigItem>();
   for (const source of list) {
@@ -134,7 +161,7 @@ function mergeWithDefaults(list: NewsSourceConfigItem[]): NewsSourceConfigItem[]
     }
   }
 
-  return merged;
+  return deduplicateBirdingPoland(merged);
 }
 
 export function saveNewsSources(list: NewsSourceConfigItem[]): void {

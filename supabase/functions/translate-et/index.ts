@@ -42,6 +42,7 @@ serve(async (req) => {
 
     const sys =
       `You are a translation engine. Translate the user text to ${targetLang}. ` +
+      `When translating bird-related content, use correct Estonian bird names (eesti linnunimed), not literal translations from the source language. ` +
       `Return ONLY the translation, preserve paragraphs, no extra commentary.`;
     const user = sourceLang
       ? `Source language: ${sourceLang}\n\nText:\n${text}`

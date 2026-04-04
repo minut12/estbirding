@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
     const apiKey = Deno.env.get("OPENAI_API_KEY")?.trim();
     if (!apiKey) return json({ ok: false, error: "OPENAI_API_KEY_MISSING" }, 500);
 
-    const system = `You are a translation engine. Translate the user text to ${targetLang}. Return ONLY the translation, preserve paragraphs.`;
+    const system = `You are a translation engine. Translate the user text to ${targetLang}. When translating bird-related content, use correct Estonian bird names (eesti linnunimed), not literal translations from the source language. Return ONLY the translation, preserve paragraphs.`;
     const user = sourceLang
       ? `Source language: ${sourceLang}\n\nText:\n${text}`
       : `Text:\n${text}`;

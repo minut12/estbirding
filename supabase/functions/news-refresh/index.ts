@@ -832,10 +832,20 @@ Deno.serve(async (req) => {
     let skipped = 0;
     let birdingCacheFailures = 0;
 
+    const processedCanonicalKeys = new Set<string>();
+
     for (const source of enabledSources) {
       const slug = String(source.slug || "").toLowerCase();
       const type = String(source.type || "").toLowerCase();
       const isBirdingPoland = slug === "birding_poland" || slug === "facebook_birdingpoland";
+
+      if (isBirdingPoland) {
+        if (processedCanonicalKeys.has("birding_poland")) {
+          console.warn(`[news-refresh] skipping duplicate Birding Poland source: ${slug}`);
+          continue;
+        }
+        processedCanonicalKeys.add("birding_poland");
+      }
       if (cacheImages && isBirdingPoland) {
         const pref = await backfillMissingCachedImages(supabase, supabaseUrl, source.slug, 25);
         cachedImages += pref.cached;

@@ -61,7 +61,7 @@ return [{ json: { ...$json, cache_key: `${id}:${hash}` } }];
 7. `OpenAI Chat Model` (Cache Miss Branch)
 - Model: e.g. `gpt-4.1-mini`
 - System message:
-  - `Translate to Estonian. Preserve URLs, hashtags, @mentions, numbers, Latin species names, and emojis. Keep paragraph breaks. Output JSON: {"title_et":"...","body_et":"..."}.`
+  - `Translate bird-related news to Estonian. Use correct official Estonian bird names (eesti linnunimed) — do NOT literally translate bird common names from the source language. Preserve URLs, hashtags, @mentions, numbers, Latin species names, and emojis. Keep paragraph breaks. Output JSON: {"title_et":"...","body_et":"..."}.`
 - User message:
   - Include title and body, for example:
 ```text

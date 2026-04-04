@@ -8773,12 +8773,15 @@ var __sharedDefaults = {};
   ebirdEEBtn.addEventListener('click', function(){
     window.__ebirdEELayerOn = !window.__ebirdEELayerOn;
     localStorage.setItem(LS_EBIRD_EE_LAYER, window.__ebirdEELayerOn ? '1' : '0');
-    syncEbirdEEBtn();
     if(window.__ebirdEELayerOn){
+      ebirdEEBtn.textContent = 'eBird EE: Loading...';
+      ebirdEEBtn.disabled = true;
+      ebirdEEBtn.style.opacity = '0.6';
       _updateEbirdEEProgress(0, 0, 'Starting...', 'running');
       if(Object.keys(ebirdEEPoints).length > 0) refreshEbirdEEMarkers();
       refreshEbirdEEAll();
     } else {
+      syncEbirdEEBtn();
       refreshEbirdEEMarkers();
       _updateEbirdEEProgress(0, 0, '', 'idle');
     }
@@ -8939,6 +8942,9 @@ var __sharedDefaults = {};
         console.warn('eBird EE fetch failed:', name, e);
       }
       done++;
+      if(ebirdEEBtn && window.__ebirdEELayerOn){
+        ebirdEEBtn.textContent = 'eBird EE: ' + done + '/' + total;
+      }
       await new Promise(function(r){ setTimeout(r, 400); });
       if(done % 5 === 0){
         saveEbirdEE();
@@ -8947,6 +8953,9 @@ var __sharedDefaults = {};
       }
       if(!window.__ebirdEELayerOn){
         _updateEbirdEEProgress(0, 0, '', 'idle');
+        ebirdEEBtn.disabled = false;
+        ebirdEEBtn.style.opacity = '';
+        syncEbirdEEBtn();
         window.__ebirdEERefreshing = false;
         return;
       }
@@ -8955,6 +8964,9 @@ var __sharedDefaults = {};
     refreshEbirdEEMarkers();
     window.__ebirdEERefreshing = false;
     _updateEbirdEEProgress(done, total, '', 'done');
+    ebirdEEBtn.disabled = false;
+    ebirdEEBtn.style.opacity = '';
+    syncEbirdEEBtn();
     console.log('[eBird EE] Refresh done: total=' + done + ', found=' + found + ', errors=' + errors);
   }
 
@@ -9338,14 +9350,31 @@ var __sharedDefaults = {};
   }
 
   function buildProbPopup(cell, speciesName) {
-    var eluCount = cell.occurrences.filter(function(o){ return o.source === 'elurikkus'; }).length;
+    var eluCellCount = cell.occurrences.filter(function(o){ return o.source === 'elurikkus'; }).length;
     var gbifCount = cell.occurrences.filter(function(o){ return o.source === 'gbif'; }).length;
+    // Use occ7 from points as fallback when cell-level eElurikkus count is 0
+    var eluCount = eluCellCount;
+    if (eluCount === 0 && typeof points !== 'undefined' && points[speciesName]) {
+      var sp = points[speciesName];
+      if (Number.isFinite(sp.occ7) && sp.occ7 > 0) {
+        eluCount = sp.occ7;
+      }
+    }
+    // Also check liveElurikkusBySpecies cache for total season items
+    if (eluCount === 0 && typeof liveElurikkusBySpecies !== 'undefined') {
+      var cacheKey = String(speciesName || '').trim().toLowerCase();
+      var cached = liveElurikkusBySpecies[cacheKey];
+      if (cached && Array.isArray(cached.items) && cached.items.length > 0) {
+        eluCount = cached.items.length;
+      }
+    }
+    var eluLabel = eluCellCount > 0 ? (eluCount + ' obs') : (eluCount > 0 ? (eluCount + ' obs (7d)') : '0 obs');
     var probColor = cell.probability > 60 ? '#A32D2D' : cell.probability > 25 ? '#B06A1A' : '#534AB7';
     return '<div style="font-family:system-ui;min-width:180px">' +
       '<div style="font-size:22px;font-weight:600;color:' + probColor + ';margin-bottom:2px">' + cell.probability + '%</div>' +
       '<div style="font-size:12px;color:#64748b;margin-bottom:8px">probability in current season</div>' +
       '<div style="display:flex;gap:12px;font-size:11px;color:#94a3b8">' +
-        '<span>eElurikkus: ' + eluCount + ' obs</span>' +
+        '<span>eElurikkus: ' + eluLabel + '</span>' +
         '<span>GBIF: ' + gbifCount + ' obs</span>' +
       '</div>' +
       '<div style="font-size:11px;color:#94a3b8;margin-top:4px">Season: ' + formatSeasonWindow() + '</div>' +
@@ -9556,7 +9585,50 @@ var __sharedDefaults = {};
         return;
       }
 
+      console.log('[PROB] species:', speciesName);
+      console.log('[PROB] eluPoint:', (typeof points !== 'undefined' ? points[speciesName] : 'no points'));
+      var _probCacheKey = String(speciesName || '').trim().toLowerCase();
+      console.log('[PROB] liveEluCache:', (typeof liveElurikkusBySpecies !== 'undefined' ? liveElurikkusBySpecies[_probCacheKey] : 'N/A'));
+      console.log('[PROB] seasonal occs:', seasonal.length, '/ total:', data.occurrences.length);
+
+      // Include eElurikkus marker position so grid covers it
+      var eluPoint = (typeof points !== 'undefined' && points[speciesName]) || null;
+      if (eluPoint && Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon)) {
+        var alreadyHas = seasonal.some(function(o){ return Math.abs(o.lat - eluPoint.lat) < 0.001 && Math.abs(o.lon - eluPoint.lon) < 0.001; });
+        if (!alreadyHas) {
+          seasonal.push({ lat: eluPoint.lat, lon: eluPoint.lon, date: new Date().toISOString().substring(0,10), source: 'elurikkus', scientificName: '' });
+        }
+      }
+
       var gridCells = clusterToGrid(seasonal);
+
+      // Pad grid by 1 cell in each direction
+      if (gridCells.length > 0) {
+        var gridSize = 0.1;
+        var padMinLat = Infinity, padMaxLat = -Infinity, padMinLon = Infinity, padMaxLon = -Infinity;
+        gridCells.forEach(function(c) {
+          if (c.latMin < padMinLat) padMinLat = c.latMin;
+          if (c.latMax > padMaxLat) padMaxLat = c.latMax;
+          if (c.lonMin < padMinLon) padMinLon = c.lonMin;
+          if (c.lonMax > padMaxLon) padMaxLon = c.lonMax;
+        });
+        // Add empty padding cells around the perimeter
+        var dirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+        var existingKeys = {};
+        gridCells.forEach(function(c){ existingKeys[c.latMin.toFixed(2) + '|' + c.lonMin.toFixed(2)] = true; });
+        gridCells.forEach(function(c) {
+          dirs.forEach(function(d) {
+            var nLat = +(c.latMin + d[0] * gridSize).toFixed(2);
+            var nLon = +(c.lonMin + d[1] * gridSize).toFixed(2);
+            var nKey = nLat.toFixed(2) + '|' + nLon.toFixed(2);
+            if (!existingKeys[nKey]) {
+              existingKeys[nKey] = true;
+              gridCells.push({ latMin: nLat, latMax: nLat + gridSize, lonMin: nLon, lonMax: nLon + gridSize, occurrences: [] });
+            }
+          });
+        });
+      }
+
       var scored = calculateProbabilities(gridCells, seasonal, data.occurrences);
       renderProbabilityOverlay(scored, speciesName);
       setProbStatus('eElurikkus + GBIF \u00b7 ' + data.occurrences.length + ' obs \u00b7 ' + seasonal.length + ' in season');

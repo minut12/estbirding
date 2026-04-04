@@ -3,7 +3,7 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/config/supabaseClient';
 import {
   Newspaper, ChevronLeft, Archive, ArchiveRestore, ExternalLink,
-  Search, RefreshCw, Loader2,
+  Search, RefreshCw, Loader2, Languages,
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';

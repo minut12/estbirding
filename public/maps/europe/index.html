@@ -2177,7 +2177,7 @@ document.getElementById("modalSave").addEventListener("click", ()=>{
   const newToken = (tokenInput.value || "").trim().replace(/[^a-zA-Z0-9_\-]/g, "");
   localStorage.setItem(LS_TOKEN, newToken);
   updateProxyHint();
-  if (!newToken) showWarn("Missing eBird token. Open Settings and paste your eBird API token.");
+  if (!newToken) { EBIRD_TOKEN = HARDCODED_EBIRD_TOKEN; showWarn(""); }
   else showWarn("");
   const lines = normalizeNameArray((speciesInput.value||"").split("\n").map(s=>s.trim()).filter(Boolean));
   reconcileEuropeSpecies(MASTER_SPECIES, lines, "master+custom");

@@ -2250,7 +2250,9 @@ if (!DEV_DEBUG) {
 /* ========= Init ========= */
 preloadAvatars();
 updateProxyHint();
-if (!getEbirdToken()) showWarn("Missing eBird token. Open Settings and paste your eBird API token.");
+if (!getEbirdToken()) {
+  EBIRD_TOKEN = HARDCODED_EBIRD_TOKEN;
+}
 render();
 loadSharedEuropeSpecies();
 recentOnly = (document.getElementById("toggle7days")?.checked !== false);

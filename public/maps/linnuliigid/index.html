@@ -3432,8 +3432,8 @@ async function refreshAllElurikkusOnce(){
     const total = list.length;
     _logElurikkusRefresh('[elurikkus] refresh start view=' + view, { jobId: jobId, total: total });
     __eeRefreshContext = { jobId: jobId, view: view, index: -1, species: '', deferUi: true, uiErrors: 0 };
-    const CONCURRENCY = 3;
-    const DELAY_BETWEEN_MS = 300;
+    const CONCURRENCY = 2;
+    const DELAY_BETWEEN_MS = 400;
     var nextIndex = 0;
     var doneCount = 0;
     async function processOne(){

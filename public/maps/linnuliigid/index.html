@@ -9555,20 +9555,53 @@ var __sharedDefaults = {};
     try { localStorage.setItem('bm_prob_' + species, JSON.stringify(data)); } catch(e) {}
   }
 
-  // --- Fetch GBIF (direct, no proxy needed) ---
-  async function fetchProbGbifOccurrences(scientificName) {
+  // --- Fetch GBIF per-year sampling for better coverage ---
+  async function fetchProbGbifOccurrences(scientificName, onProgress) {
     if (!scientificName) return [];
-    var url = 'https://api.gbif.org/v1/occurrence/search?scientificName=' + encodeURIComponent(scientificName) + '&country=EE&hasCoordinate=true&limit=300';
-    try {
-      var res = await fetch(url);
-      if (!res.ok) { console.warn('[prob] GBIF HTTP ' + res.status); return []; }
-      var json = await res.json();
-      return (json.results || [])
-        .filter(function(r) { return Number.isFinite(r.decimalLatitude) && Number.isFinite(r.decimalLongitude); })
-        .map(function(r) {
-          return { lat: r.decimalLatitude, lon: r.decimalLongitude, date: r.eventDate || '', source: 'gbif', scientificName: r.scientificName || scientificName };
-        });
-    } catch(err) { console.warn('[prob] GBIF fetch failed:', err); return []; }
+    var currentYear = new Date().getFullYear();
+    var startYear = currentYear - 10;
+    var totalYears = currentYear - startYear + 1;
+    var allOccs = [];
+
+    for (var year = currentYear; year >= startYear; year--) {
+      var yearNum = currentYear - year + 1;
+      if (onProgress) onProgress(yearNum, totalYears, allOccs.length);
+
+      try {
+        var url = 'https://api.gbif.org/v1/occurrence/search?scientificName='
+          + encodeURIComponent(scientificName)
+          + '&country=EE&hasCoordinate=true&hasGeospatialIssue=false'
+          + '&year=' + year + '&limit=300';
+        var res = await fetch(url);
+        if (!res.ok) continue;
+        var json = await res.json();
+        var results = (json.results || [])
+          .filter(function(r) { return Number.isFinite(r.decimalLatitude) && Number.isFinite(r.decimalLongitude); })
+          .map(function(r) {
+            return { lat: r.decimalLatitude, lon: r.decimalLongitude, date: r.eventDate || '', source: 'gbif', scientificName: r.scientificName || scientificName };
+          });
+        allOccs = allOccs.concat(results);
+
+        // If this year has more records, fetch page 2
+        if (!json.endOfRecords && json.count > 300) {
+          var res2 = await fetch(url + '&offset=300');
+          if (res2.ok) {
+            var json2 = await res2.json();
+            var results2 = (json2.results || [])
+              .filter(function(r) { return Number.isFinite(r.decimalLatitude) && Number.isFinite(r.decimalLongitude); })
+              .map(function(r) {
+                return { lat: r.decimalLatitude, lon: r.decimalLongitude, date: r.eventDate || '', source: 'gbif', scientificName: r.scientificName || scientificName };
+              });
+            allOccs = allOccs.concat(results2);
+          }
+        }
+      } catch(e) {
+        console.warn('[PROB] GBIF fetch failed for year', year, e);
+      }
+    }
+
+    console.log('[PROB] Total GBIF records fetched:', allOccs.length, 'across', totalYears, 'years');
+    return allOccs;
   }
 
   // --- Layer rendering ---
@@ -9838,11 +9871,13 @@ var __sharedDefaults = {};
           sciName = SPECIES_SCINAMES[speciesName];
         }
 
-        // Step 5: Fetch GBIF
+        // Step 5: Fetch GBIF (per-year sampling for better coverage)
         var gbifOccs = [];
         if (sciName) {
           setProbStatus('Fetching GBIF (' + sciName + ')...');
-          gbifOccs = await fetchProbGbifOccurrences(sciName);
+          gbifOccs = await fetchProbGbifOccurrences(sciName, function(yearNum, totalYears, soFar) {
+            setProbStatus('Fetching GBIF ' + yearNum + '/' + totalYears + ' years... ' + soFar + ' records');
+          });
         } else {
           console.log('[prob] No Latin name found, GBIF skipped');
         }
@@ -9853,6 +9888,12 @@ var __sharedDefaults = {};
         saveProbCache(speciesName, data);
 
         console.log('[prob] Total:', allOccs.length, '| eElurikkus:', eluOccs.length, '| GBIF:', gbifOccs.length);
+
+        // Log eElurikkus cache info for cross-reference
+        var _eluCacheKey = String(speciesName || '').trim().toLowerCase();
+        var _eluCached = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluCacheKey]) || null;
+        var _eluCacheCount = (_eluCached && Array.isArray(_eluCached.items)) ? _eluCached.items.length : 0;
+        console.log('[PROB] eElurikkus cache:', _eluCacheCount, 'items | GBIF with coords:', gbifOccs.length);
       }
 
       // User may have toggled away while fetching
@@ -9924,7 +9965,9 @@ var __sharedDefaults = {};
 
       var scored = calculateProbabilities(gridCells, seasonal, data.occurrences, speciesName, probCellSize, seasonInfo);
       renderProbabilityOverlay(scored, speciesName, data.occurrences.length, seasonal.length, seasonInfo);
-      setProbStatus('eElurikkus + GBIF \u00b7 ' + data.occurrences.length + ' obs \u00b7 ' + seasonal.length + ' in season \u00b7 ' + scored.length + ' cells');
+      var _gbifTotal = data.occurrences.filter(function(o){ return o.source === 'gbif'; }).length;
+      var _eluTotal = data.occurrences.filter(function(o){ return o.source === 'elurikkus'; }).length;
+      setProbStatus('GBIF: ' + _gbifTotal + ' \u00b7 eElurikkus: ' + _eluTotal + ' \u00b7 ' + seasonal.length + ' in season \u00b7 ' + scored.length + ' cells');
 
     } catch(err) {
       console.error('[prob]', err);

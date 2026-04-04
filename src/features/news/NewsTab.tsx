@@ -3,7 +3,7 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/config/supabaseClient';
 import {
   Newspaper, ChevronLeft, Archive, ArchiveRestore, ExternalLink,
-  Search, RefreshCw, Loader2,
+  Search, RefreshCw, Loader2, Languages,
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -888,6 +888,25 @@ const {
     },
   });
 
+  const retranslateMutation = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('translate-missing-news-et', {
+        method: 'POST',
+        body: { force: true, limit: 100 },
+      });
+      if (error) throw new Error(error.message || 'Tõlkimise viga');
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['news-items'] });
+      const count = Number(data?.updated ?? 0);
+      toast.success(`Tõlgitud: ${count} uudist`);
+    },
+    onError: (error) => {
+      toast.error('Tõlkimise viga: ' + formatErrorReason(error).slice(0, 160));
+    },
+  });
+
   // Save/restore scroll
   const openArticle = (item: NewsItem) => {
     scrollPosRef.current = scrollRef.current?.scrollTop ?? 0;
@@ -952,6 +971,17 @@ const {
             <span className="text-xs text-muted-foreground whitespace-nowrap">
               {formatNewsRefreshTimestamp(lastRefreshAt)}
             </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => retranslateMutation.mutate()}
+              disabled={retranslateMutation.isPending}
+              title="Tõlgi uuesti"
+            >
+              {retranslateMutation.isPending
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Languages className="w-4 h-4" />}
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -1490,8 +1520,3 @@ function EmptyState({ tab }: { tab: string }) {
     </div>
   );
 }
-
-
-
-
-

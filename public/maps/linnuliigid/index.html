@@ -3432,15 +3432,21 @@ async function refreshAllElurikkusOnce(){
     const total = list.length;
     _logElurikkusRefresh('[elurikkus] refresh start view=' + view, { jobId: jobId, total: total });
     __eeRefreshContext = { jobId: jobId, view: view, index: -1, species: '', deferUi: true, uiErrors: 0 };
-    try{
-      for(let i = 0; i < total; i++){
-        if(signal.aborted) break;
-        const name = String(list[i] || '').trim();
-        if(!name) continue;
+    const CONCURRENCY = 3;
+    const DELAY_BETWEEN_MS = 300;
+    var nextIndex = 0;
+    var doneCount = 0;
+    async function processOne(){
+      while(nextIndex < total){
+        if(signal.aborted) return;
+        var i = nextIndex++;
+        var name = String(list[i] || '').trim();
+        if(!name) { doneCount++; continue; }
         __eeRefreshContext.index = i;
         __eeRefreshContext.species = name;
         if(seenSpecies.has(name)){
           _logElurikkusRefresh('[elurikkus] same species processed twice', { view: view, jobId: jobId, species: name, index: i });
+          doneCount++;
           continue;
         }
         seenSpecies.add(name);
@@ -3489,17 +3495,23 @@ async function refreshAllElurikkusOnce(){
             at: new Date().toISOString(),
             jobId: jobId,
           });
-          if(isAbort) break;
+          if(isAbort) return;
         }
         if(window.__lastElurikkusBulkErrors.length > 50) window.__lastElurikkusBulkErrors.length = 50;
         if(window.__lastElurikkusBulkOutcomes.length > 50) window.__lastElurikkusBulkOutcomes.length = 50;
-        __elurikkusBulkStats = { done: i + 1, total: total, updated: updated, moved: moved, errors: errors, lastKey: name };
+        doneCount++;
+        __elurikkusBulkStats = { done: doneCount, total: total, updated: updated, moved: moved, errors: errors, lastKey: name };
         _safeEeRefreshUiApply('updateProgressUi', function(){
           _logEeRefreshStage({ view: view, jobId: jobId, index: i, species: name, stage: 'updateProgressUi' });
-          setEluRefreshStatus(i + 1, total, updated, moved, errors);
+          setEluRefreshStatus(doneCount, total, updated, moved, errors);
         });
-        await new Promise(function(res){ setTimeout(res, 900); });
+        await new Promise(function(res){ setTimeout(res, DELAY_BETWEEN_MS); });
       }
+    }
+    try{
+      var workers = [];
+      for(var w = 0; w < CONCURRENCY; w++) workers.push(processOne());
+      await Promise.all(workers);
       updateClientDataMaxAtFromPoints();
       _safeEeRefreshUiApply('finalRebuildMarkers', function(){
         _logEeRefreshStage({ view: view, jobId: jobId, index: total - 1, species: '', stage: 'finalRebuildMarkers' });

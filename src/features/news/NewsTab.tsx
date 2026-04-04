@@ -1491,6 +1491,25 @@ function EmptyState({ tab }: { tab: string }) {
   );
 }
 
+  const retranslateMutation = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('translate-missing-news-et', {
+        method: 'POST',
+        body: { force: true, limit: 100 },
+      });
+      if (error) throw new Error(error.message || 'Tõlkimise viga');
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['news-items'] });
+      const count = Number(data?.updated ?? 0);
+      toast.success(`Tõlgitud: ${count} uudist`);
+    },
+    onError: (error) => {
+      toast.error('Tõlkimise viga: ' + formatErrorReason(error).slice(0, 160));
+    },
+  });
+
 
 
 

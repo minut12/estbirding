@@ -1,3 +1,5 @@
+import { fixBirdNamesInText } from "./bird-names-et.ts";
+
 export interface AnthropicConfig {
   apiKey: string;
   model: string;
@@ -73,8 +75,8 @@ export async function translateToEstonianClaude(input: {
   const parsed = parseJsonFromText(text);
 
   return {
-    title_et: typeof parsed?.title_et === "string" ? parsed.title_et : "",
-    body_et: typeof parsed?.body_et === "string" ? parsed.body_et : "",
+    title_et: fixBirdNamesInText(typeof parsed?.title_et === "string" ? parsed.title_et : ""),
+    body_et: fixBirdNamesInText(typeof parsed?.body_et === "string" ? parsed.body_et : ""),
   };
 }
 

@@ -1,4 +1,5 @@
 import { getAnthropicConfig, translateToEstonianClaude } from "./anthropic.ts";
+import { fixBirdNamesInText } from "./bird-names-et.ts";
 
 export interface OpenAIConfig {
   apiKey: string;
@@ -63,7 +64,7 @@ export async function translateToEstonian(input: {
   const content = data?.choices?.[0]?.message?.content || "{}";
   const parsed = JSON.parse(content);
   return {
-    title_et: typeof parsed?.title_et === "string" ? parsed.title_et : "",
-    body_et: typeof parsed?.body_et === "string" ? parsed.body_et : "",
+    title_et: fixBirdNamesInText(typeof parsed?.title_et === "string" ? parsed.title_et : ""),
+    body_et: fixBirdNamesInText(typeof parsed?.body_et === "string" ? parsed.body_et : ""),
   };
 }

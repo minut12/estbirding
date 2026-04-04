@@ -1052,13 +1052,67 @@ function isInLastNDaysTs(ts, days){
   return ts >= (Date.now() - d * 86400000);
 }
 
+function compactPoints(){
+  const compact = {};
+  for (const [name, p] of Object.entries(points)) {
+    if (!p) continue;
+    const cp = {};
+    // Only keep fields that have meaningful values
+    if (Number.isFinite(p.lat)) cp.lat = p.lat;
+    if (Number.isFinite(p.lon)) cp.lon = p.lon;
+    if (p.t) cp.t = p.t;
+    if (p.tMs) cp.tMs = p.tMs;
+    if (p.region) cp.region = p.region;
+    if (p.loc) cp.loc = p.loc;
+    if (Number.isFinite(p.occ7) && p.occ7 > 0) cp.occ7 = p.occ7;
+    if (p.ebirdCode) cp.ebirdCode = p.ebirdCode;
+    if (p.visible === false) cp.visible = false;
+    if (p.migration) cp.migration = true;
+    if (p.fetchedAt) cp.fetchedAt = p.fetchedAt;
+    // Compact regions: only keep regions that have occ7 > 0 or valid coords
+    if (p.regions && typeof p.regions === "object") {
+      const cr = {};
+      for (const [rg, d] of Object.entries(p.regions)) {
+        if (!d) continue;
+        if (!Number.isFinite(d.lat) || !Number.isFinite(d.lon)) continue;
+        const rd = { lat: d.lat, lon: d.lon };
+        if (d.t) rd.t = d.t;
+        if (d.loc) rd.loc = d.loc;
+        if (Number.isFinite(d.occ7) && d.occ7 > 0) rd.occ7 = d.occ7;
+        if (Number.isFinite(d.howMany)) rd.howMany = d.howMany;
+        cr[rg] = rd;
+      }
+      if (Object.keys(cr).length > 0) cp.regions = cr;
+    }
+    if (Object.keys(cp).length > 0) compact[name] = cp;
+  }
+  return compact;
+}
+
 function saveAll(){
-  localStorage.setItem(LS_AVATARS, JSON.stringify(avatars));
-  localStorage.setItem(LS_CODES, JSON.stringify(EBIRD_CODES));
-  localStorage.setItem(LS_POINTS, JSON.stringify(points));
-  persistEuropeSpeciesExtras();
-  localStorage.setItem(LS_PER_COUNTRY, perCountry ? "1" : "0");
-  localStorage.setItem(LS_RARE_ONLY, rareOnly ? "1" : "0");
+  try {
+    localStorage.setItem(LS_POINTS, JSON.stringify(compactPoints()));
+  } catch (e) {
+    console.warn("[saveAll] bm_eu_points save failed, clearing old snapshots and retrying", e);
+    // Clear old snapshots to free space
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(LS_SNAPSHOT_PREFIX)) {
+        localStorage.removeItem(key);
+        i--; // adjust index after removal
+      }
+    }
+    try {
+      localStorage.setItem(LS_POINTS, JSON.stringify(compactPoints()));
+    } catch (e2) {
+      console.error("[saveAll] bm_eu_points save failed even after cleanup", e2);
+    }
+  }
+  try { localStorage.setItem(LS_AVATARS, JSON.stringify(avatars)); } catch(e){}
+  try { localStorage.setItem(LS_CODES, JSON.stringify(EBIRD_CODES)); } catch(e){}
+  try { localStorage.setItem(LS_EBIRD_TOKEN, EBIRD_TOKEN || ""); } catch(e){}
+  try { localStorage.setItem(LS_SPECIES, SPECIES.join("\n")); } catch(e){}
+  try { localStorage.setItem(LS_PER_COUNTRY, perCountry ? "1" : "0"); } catch(e){}
 }
 
 function getSnapshotKey(){

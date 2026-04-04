@@ -26,6 +26,7 @@ export const LATIN_TO_ESTONIAN = new Map<string, string>([
   ["ardea purpurea", "purpurhaigur"],
   ["egretta garzetta", "siidhaigur"],
   ["bubulcus ibis", "veisehaigur"],
+  ["ardea ibis", "veisehaigur"],
   ["ixobrychus minutus", "hüüp"],
   ["botaurus stellaris", "hüüp"],
   ["nycticorax nycticorax", "ööshaigur"],

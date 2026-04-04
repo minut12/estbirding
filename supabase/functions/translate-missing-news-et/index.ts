@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getOpenAIConfig, translateToEstonian } from "../_shared/openai.ts";
+import { getAnthropicConfig } from "../_shared/anthropic.ts";
 import { applyBirdNameCorrections, logBirdNameCorrections, prepareBirdNameCorrectionFromOriginalText } from "../_shared/bird-name-correction.ts";
 
 const corsHeaders = {
@@ -16,6 +17,7 @@ type MissingNewsItem = {
   body: string | null;
   title_et: string | null;
   body_et: string | null;
+  translate_hash: string | null;
 };
 
 function jsonResponse(status: number, payload: unknown): Response {
@@ -125,27 +127,50 @@ Deno.serve(async (req) => {
       return jsonResponse(500, { ok: false, error: "SERVICE_ROLE_MISSING" });
     }
 
-    if (!getOpenAIConfig()) {
-      return jsonResponse(400, { ok: false, error: "OPENAI_API_KEY_MISSING" });
+    if (!getOpenAIConfig() && !getAnthropicConfig()) {
+      return jsonResponse(400, { ok: false, error: "Translation not configured (no ANTHROPIC_API_KEY or OPENAI_API_KEY)" });
     }
 
     const body = await req.json().catch(() => ({}));
     const limitRaw = Number(body?.limit);
     const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(100, limitRaw)) : 20;
-    const sourceKey = typeof body?.source_key === "string" && body.source_key.trim()
-      ? body.source_key.trim()
-      : null;
+    const force = Boolean(body?.force);
+
+    const rawSourceKey = body?.source_key;
+    const sourceKeys: string[] = Array.isArray(rawSourceKey)
+      ? rawSourceKey.map(String)
+      : typeof rawSourceKey === "string" && rawSourceKey.trim()
+        ? [rawSourceKey.trim()]
+        : [];
 
     const supabase = createClient(supabaseUrl, serviceRole);
 
     let query = supabase
       .from("news_items")
-      .select("id, source_key, source_lang, title, body, title_et, body_et")
-      .or("title_et.is.null,body_et.is.null")
-      .order("published_at", { ascending: false })
-      .limit(limit * 2);
+      .select("id, source_key, source_lang, title, body, title_et, body_et, translate_hash");
 
-    if (sourceKey) query = query.eq("source_key", sourceKey);
+    if (force) {
+      // Force mode: get ALL non-Estonian items (already translated or not)
+      query = query.neq("source_lang", "et");
+    } else {
+      // Normal mode: only items missing translation
+      query = query.or("title_et.is.null,body_et.is.null");
+    }
+
+    // Source key filter — expand known aliases
+    if (sourceKeys.length > 0) {
+      const expandedKeys = new Set<string>();
+      for (const key of sourceKeys) {
+        expandedKeys.add(key);
+        if (key === "birding_poland" || key === "facebook_birdingpoland") {
+          expandedKeys.add("birding_poland");
+          expandedKeys.add("facebook_birdingpoland");
+        }
+      }
+      query = query.in("source_key", [...expandedKeys]);
+    }
+
+    query = query.order("published_at", { ascending: false }).limit(limit * 2);
 
     const { data, error } = await query;
     if (error) {
@@ -156,14 +181,29 @@ Deno.serve(async (req) => {
       .filter((row) => hasText(row.title) || hasText(row.body))
       .slice(0, limit);
 
-    let processed = 0;
+    const processed: Array<{ id: string }> = [];
     const updated: Array<{ id: string; title_et: string; body_et: string }> = [];
     const errors: Array<{ id: string; error: string }> = [];
 
     for (const item of candidates) {
-      processed += 1;
+      processed.push({ id: item.id });
       try {
-        if (hasText(item.title_et) && hasText(item.body_et)) {
+        // In force mode, clear existing translation so it won't be skipped
+        if (force) {
+          await supabase.from("news_items").update({
+            title_et: null,
+            body_et: null,
+            translate_hash: null,
+            translation_status: "pending",
+            translated_at: null,
+            translation_error: null,
+          }).eq("id", item.id);
+          item.title_et = null;
+          item.body_et = null;
+          item.translate_hash = null;
+        }
+
+        if (!force && hasText(item.title_et) && hasText(item.body_et)) {
           updated.push({ id: item.id, title_et: String(item.title_et || ""), body_et: String(item.body_et || "") });
           continue;
         }
@@ -205,7 +245,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    return jsonResponse(200, { ok: true, processed, updated, errors });
+    return jsonResponse(200, {
+      ok: true,
+      force,
+      source_keys: sourceKeys.length > 0 ? sourceKeys : "all",
+      limit,
+      processed: processed.length,
+      updated: updated.length,
+      errors,
+    });
   } catch (e) {
     return jsonResponse(500, { ok: false, error: String((e as Error)?.message || e || "UNEXPECTED_ERROR") });
   }

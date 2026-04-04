@@ -75,7 +75,15 @@ Deno.serve(async (req) => {
       .update({ archived })
       .eq("id", id);
 
-    if (error) throw error;
+    if (error) {
+      // Try alternative column name
+      const { error: retryError } = await supabase
+        .from("news_items")
+        .update({ is_archived: archived })
+        .eq("id", id);
+
+      if (retryError) throw retryError;
+    }
 
     return new Response(
       JSON.stringify({ success: true }),

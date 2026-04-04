@@ -193,7 +193,9 @@ type SummaryOrigin =
   | 'normalized_upstream'
   | 'deterministic_structured'
   | 'regenerated_from_structured'
-  | 'neutral_sanitizer_fallback';
+  | 'neutral_sanitizer_fallback'
+  | 'openai_analyst'
+  | 'openai';
 
 type CanonicalPredictionRecord = {
   speciesKey: string;

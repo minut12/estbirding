@@ -9405,60 +9405,42 @@ var __sharedDefaults = {};
     if (probLayerGroup) { map.removeLayer(probLayerGroup); probLayerGroup = null; }
   }
 
-  function getEluInfoForCell(speciesName, cellCenterLat, cellCenterLon, cellSize) {
-    var eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
-    if (!Number.isFinite(eluPoint.lat) || !Number.isFinite(eluPoint.lon)) return null;
-
-    var dLat = Math.abs(eluPoint.lat - cellCenterLat);
-    var dLon = Math.abs(eluPoint.lon - cellCenterLon);
-    var isInCell = (dLat <= cellSize / 2 && dLon <= cellSize / 2);
-    var isNearby = (dLat <= cellSize * 1.5 && dLon <= cellSize * 1.5);
-    if (!isInCell && !isNearby) return null;
-
-    var dateStr = eluPoint.t ? formatDateEE(eluPoint.t) : '?';
-    var location = eluPoint.koht || '';
-
-    // Check liveElurikkusBySpecies for richer info
-    var speciesKey = typeof _normalizeSpeciesKey === 'function' ? _normalizeSpeciesKey(speciesName) : String(speciesName || '').trim().toLowerCase();
-    if (typeof liveElurikkusBySpecies !== 'undefined') {
-      var liveData = liveElurikkusBySpecies[speciesKey];
-      if (liveData && Array.isArray(liveData.items) && liveData.items.length > 0) {
-        var newest = liveData.items[0];
-        for (var i = 1; i < liveData.items.length; i++) {
-          if (String(liveData.items[i].observedAt || '') > String(newest.observedAt || '')) newest = liveData.items[i];
-        }
-        if (newest.placeText || newest.locality || newest.municipality) {
-          location = newest.placeText || newest.locality || newest.municipality;
-        }
-        if (newest.observedAt) dateStr = formatDateEE(newest.observedAt);
-      }
-    }
-
-    return {
-      isInCell: isInCell,
-      dateStr: dateStr,
-      location: location,
-      occ7: Number.isFinite(eluPoint.occ7) ? eluPoint.occ7 : 0
-    };
-  }
-
   function buildProbPopup(cell, speciesName, totalObs, totalInSeason) {
     var probColor = cell.probability > 60 ? '#A32D2D' : cell.probability > 25 ? '#B06A1A' : '#534AB7';
     var cellSize = 0.1;
     var cLat = Number.isFinite(cell.centerLat) ? cell.centerLat : (cell.latMin + cell.latMax) / 2;
     var cLon = Number.isFinite(cell.centerLon) ? cell.centerLon : (cell.lonMin + cell.lonMax) / 2;
 
-    // eElurikkus info for this cell
-    var eluInfo = getEluInfoForCell(speciesName, cLat, cLon, cellSize);
+    // eElurikkus line — clearly show per-cell vs species-wide
+    var eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
+    var eluOcc7 = Number.isFinite(eluPoint.occ7) ? eluPoint.occ7 : 0;
     var eluLine;
-    if (eluInfo) {
-      eluLine = '<div style="margin:2px 0;font-size:12px;color:#555">'
-        + '\uD83D\uDD0D eElurikkus: ' + eluInfo.dateStr
-        + (eluInfo.location ? ', ' + eluInfo.location : '')
-        + (eluInfo.occ7 > 0 ? ' (' + eluInfo.occ7 + ' obs 7d)' : '')
-        + '</div>';
+
+    if (Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon)) {
+      var dLat = Math.abs(eluPoint.lat - cLat);
+      var dLon = Math.abs(eluPoint.lon - cLon);
+      var isInCell = (dLat <= cellSize / 2 && dLon <= cellSize / 2);
+      var isNearby = (dLat <= cellSize * 1.5 && dLon <= cellSize * 1.5);
+      var dateStr = eluPoint.t ? formatDateEE(eluPoint.t) : '?';
+      var distKm = Math.round(Math.sqrt(dLat * dLat + dLon * dLon) * 111);
+
+      if (isInCell) {
+        eluLine = '<div style="margin:2px 0;font-size:12px;color:#555">'
+          + '\uD83D\uDD0D eElurikkus: <b>marker in cell</b> \u00b7 '
+          + dateStr + ' \u00b7 ' + eluOcc7 + ' obs (7d)'
+          + '</div>';
+      } else if (isNearby) {
+        eluLine = '<div style="margin:2px 0;font-size:12px;color:#555">'
+          + '\uD83D\uDD0D eElurikkus: marker ~' + distKm + ' km away \u00b7 '
+          + dateStr + ' \u00b7 ' + eluOcc7 + ' obs (7d total)'
+          + '</div>';
+      } else {
+        eluLine = '<div style="margin:2px 0;font-size:12px;color:#999">'
+          + '\uD83D\uDD0D eElurikkus: 0 in cell \u00b7 marker ' + distKm + ' km away'
+          + '</div>';
+      }
     } else {
-      eluLine = '<div style="margin:2px 0;font-size:12px;color:#999">eElurikkus: no obs near this cell</div>';
+      eluLine = '<div style="margin:2px 0;font-size:12px;color:#999">\uD83D\uDD0D eElurikkus: no data</div>';
     }
 
     // Score breakdown

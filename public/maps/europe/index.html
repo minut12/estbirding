@@ -2163,7 +2163,7 @@ const speciesInput = document.getElementById("speciesInput");
 const tokenInput = document.getElementById("tokenInput");
 
 function openSettings(){
-  tokenInput.value = getEbirdToken();
+  tokenInput.value = EBIRD_TOKEN || HARDCODED_EBIRD_TOKEN;
   speciesInput.value = SPECIES.join("\n");
   modalBackdrop.style.display = "flex";
 }

@@ -681,10 +681,15 @@ export default function NewsTab() {
 
   const filterSources = useMemo(() => {
     const seen = new Set<string>();
+    const seenNames = new Set<string>();
     return sources.filter((source) => {
       const canonical = getCanonicalSourceValue(source);
       if (!canonical || seen.has(canonical)) return false;
+      // Deduplicate by name (case-insensitive) to merge e.g. duplicate "Birding Poland"
+      const nameLower = (source.name || '').trim().toLowerCase();
+      if (nameLower && seenNames.has(nameLower)) return false;
       seen.add(canonical);
+      if (nameLower) seenNames.add(nameLower);
       return true;
     });
   }, [sources]);

@@ -193,7 +193,9 @@ type SummaryOrigin =
   | 'normalized_upstream'
   | 'deterministic_structured'
   | 'regenerated_from_structured'
-  | 'neutral_sanitizer_fallback';
+  | 'neutral_sanitizer_fallback'
+  | 'openai_analyst'
+  | 'openai';
 
 type CanonicalPredictionRecord = {
   speciesKey: string;
@@ -3219,7 +3221,7 @@ function createUpstreamError(input: {
           ? (input.upstreamBody as Record<string, unknown>).normalizedWarningsCount as number
           : undefined,
         normalizedRankingNotesType: typeof (input.upstreamBody as Record<string, unknown> | null)?.normalizedRankingNotesType === 'string'
-          ? (input.upstreamBody as Record<string, unknown>).normalizedRankingNotesType
+          ? (input.upstreamBody as Record<string, unknown>).normalizedRankingNotesType as string
           : undefined,
         rankingNotesInputType: typeof (input.upstreamBody as Record<string, unknown> | null)?.rankingNotesInputType === 'string'
           ? (input.upstreamBody as Record<string, unknown>).rankingNotesInputType

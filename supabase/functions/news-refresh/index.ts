@@ -1200,6 +1200,21 @@ Deno.serve(async (req) => {
       birdingCacheFailures += repair.failed;
     }
 
+    // Auto-archive news older than 2 weeks
+    const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: autoArchived, error: archiveError } = await supabase
+      .from("news_items")
+      .update({ archived: true })
+      .eq("archived", false)
+      .lt("published_at", twoWeeksAgo)
+      .select("id");
+
+    const autoArchivedCount = autoArchived?.length || 0;
+
+    if (autoArchivedCount > 0) {
+      console.log(`[news-refresh] auto-archived ${autoArchivedCount} items older than 2 weeks`);
+    }
+
     return json({
       ok: true,
       perSource,
@@ -1213,6 +1228,7 @@ Deno.serve(async (req) => {
       birdingCacheFailures,
       skipped,
       errors,
+      autoArchivedCount,
     });
   } catch (error) {
     return jsonError("news-refresh", error, 500);

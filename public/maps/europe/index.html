@@ -365,7 +365,7 @@
   <div id="modal">
     <h3>Europe map settings</h3>
     <div class="small" style="margin-top:0;">
-      Paste your eBird API token below. Species list: one per line (default = 376 species).
+      eBird API token (pre-filled, override only if needed). Species list: one per line (default = 376 species).
     </div>
     <div class="grid">
       <label style="font-size:13px;font-weight:600;">eBird API token</label>
@@ -411,12 +411,20 @@ const LS_SNAPSHOT_PREFIX = "bm_map_snapshot:";
 const LS_EU_LAST_GOOD = "bm_eu_last_good_snapshot";
 const SNAPSHOT_VERSION = "europe_map_v2";
 const LS_TOKEN = "bm_ebird_token";
+const HARDCODED_EBIRD_TOKEN = "9s72dc2jcjlq";
+var EBIRD_TOKEN = "";
+var tokenSanitized = false;
 
 /* ========= Defaults ========= */
 
 function getEbirdToken(){
-  const raw = localStorage.getItem(LS_TOKEN) || "";
-  return raw.trim().replace(/[^a-zA-Z0-9_\-]/g, "");
+  const raw = String(localStorage.getItem(LS_TOKEN) || "");
+  const tokenTrim = raw.trim();
+  const tokenClean = tokenTrim.replace(/[^A-Za-z0-9]/g, "");
+  tokenSanitized = tokenTrim !== tokenClean;
+  if (tokenTrim !== tokenClean) localStorage.setItem(LS_TOKEN, tokenClean);
+  EBIRD_TOKEN = tokenClean || HARDCODED_EBIRD_TOKEN;
+  return EBIRD_TOKEN;
 }
 
 function detectProxyMode(){
@@ -2157,7 +2165,7 @@ const speciesInput = document.getElementById("speciesInput");
 const tokenInput = document.getElementById("tokenInput");
 
 function openSettings(){
-  tokenInput.value = getEbirdToken();
+  tokenInput.value = EBIRD_TOKEN || HARDCODED_EBIRD_TOKEN;
   speciesInput.value = SPECIES.join("\n");
   modalBackdrop.style.display = "flex";
 }
@@ -2171,7 +2179,7 @@ document.getElementById("modalSave").addEventListener("click", ()=>{
   const newToken = (tokenInput.value || "").trim().replace(/[^a-zA-Z0-9_\-]/g, "");
   localStorage.setItem(LS_TOKEN, newToken);
   updateProxyHint();
-  if (!newToken) showWarn("Missing eBird token. Open Settings and paste your eBird API token.");
+  if (!newToken) { EBIRD_TOKEN = HARDCODED_EBIRD_TOKEN; showWarn(""); }
   else showWarn("");
   const lines = normalizeNameArray((speciesInput.value||"").split("\n").map(s=>s.trim()).filter(Boolean));
   reconcileEuropeSpecies(MASTER_SPECIES, lines, "master+custom");
@@ -2244,7 +2252,9 @@ if (!DEV_DEBUG) {
 /* ========= Init ========= */
 preloadAvatars();
 updateProxyHint();
-if (!getEbirdToken()) showWarn("Missing eBird token. Open Settings and paste your eBird API token.");
+if (!getEbirdToken()) {
+  EBIRD_TOKEN = HARDCODED_EBIRD_TOKEN;
+}
 render();
 loadSharedEuropeSpecies();
 recentOnly = (document.getElementById("toggle7days")?.checked !== false);

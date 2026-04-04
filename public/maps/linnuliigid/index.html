@@ -9604,6 +9604,66 @@ var __sharedDefaults = {};
     return allOccs;
   }
 
+  // --- Paginated eElurikkus fetch for probability ---
+  async function fetchElurikkusAllDatesForProb(speciesName) {
+    var searchUrlBase = 'https://elurikkus.ee/app/occurrences/search?text='
+      + encodeURIComponent(speciesName);
+    var maxPages = 30;
+    var pageSize = 50;
+    var allItems = [];
+    var seenDates = {};
+
+    for (var page = 0; page < maxPages; page++) {
+      var offset = page * pageSize;
+      var pageUrl = searchUrlBase + '&country=Estonia&offset=' + offset;
+
+      try {
+        var html = await tryFetch(pageUrl);
+        var rows = extractElurikkusRecordRows(html);
+
+        if (!rows || !rows.length) {
+          var dates = extractElurikkusRecordDatesIso(html);
+          if (!dates || !dates.length) dates = extractAllEventDates(html);
+          rows = (dates || []).map(function(d) {
+            return { observedAt: d, municipality: '', locality: '', placeText: '', county: '' };
+          });
+        }
+
+        if (!rows || rows.length === 0) {
+          console.log('[PROB-ELU] Page', page, 'returned 0 rows — stopping');
+          break;
+        }
+
+        for (var r = 0; r < rows.length; r++) {
+          var row = rows[r];
+          var dateKey = (row.observedAt || '') + '|' + (row.locality || '') + '|' + (row.municipality || '');
+          if (!seenDates[dateKey]) {
+            seenDates[dateKey] = true;
+            allItems.push({
+              observedAt: row.observedAt || '',
+              placeText: row.placeText || row.locality || '',
+              municipality: row.municipality || '',
+              locality: row.locality || '',
+              county: row.county || '',
+              coordsStatus: 'restricted'
+            });
+          }
+        }
+
+        setProbStatus('Fetching eElurikkus... page ' + (page + 1) + ' (' + allItems.length + ' records)');
+
+        if (rows.length < pageSize) break;
+        await new Promise(function(resolve) { setTimeout(resolve, 300); });
+      } catch(e) {
+        console.warn('[PROB-ELU] Page', page, 'failed:', e);
+        break;
+      }
+    }
+
+    console.log('[PROB-ELU] Total items for', speciesName, ':', allItems.length, 'across', Math.min(page + 1, maxPages), 'pages');
+    return allItems;
+  }
+
   // --- Layer rendering ---
   function clearProbabilityLayer() {
     if (probLayerGroup) { map.removeLayer(probLayerGroup); probLayerGroup = null; }
@@ -9775,38 +9835,40 @@ var __sharedDefaults = {};
     if (btn) btn.classList.add('prob-loading');
 
     try {
-      // Step 0: Ensure eElurikkus live cache is populated (for recency boost + popup info)
+      // Step 0: Ensure eElurikkus live cache is populated with ALL pages
       var _eluKey = typeof _normalizeSpeciesKey === 'function' ? _normalizeSpeciesKey(speciesName) : String(speciesName || '').trim().toLowerCase();
       var _eluCachedCheck = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluKey]) || null;
-      if (!_eluCachedCheck || !Array.isArray(_eluCachedCheck.items) || _eluCachedCheck.items.length === 0) {
+      var _eluNeedsFetch = !_eluCachedCheck || !Array.isArray(_eluCachedCheck.items) || _eluCachedCheck.items.length < 100;
+      if (_eluNeedsFetch) {
         try {
-          setProbStatus('Fetching eElurikkus data...');
-          var _eluResult = await _fetchElurikkusSpeciesViaHtml(speciesName);
-          if (_eluResult && Array.isArray(_eluResult.items) && _eluResult.items.length > 0) {
+          setProbStatus('Fetching eElurikkus data (all pages)...');
+          var _eluItems = await fetchElurikkusAllDatesForProb(speciesName);
+          if (_eluItems && _eluItems.length > 0) {
+            var _newest = '';
+            for (var _ei = 0; _ei < _eluItems.length; _ei++) {
+              if (String(_eluItems[_ei].observedAt || '') > _newest) _newest = String(_eluItems[_ei].observedAt);
+            }
             liveElurikkusBySpecies[_eluKey] = {
               fetchedAt: new Date().toISOString(),
-              dataMaxAt: _eluResult.dataMaxAt || _eluResult.latestOccurrenceAt || '',
-              items: _eluResult.items,
-              sourceUrl: _eluResult.sourceUrl || ''
+              dataMaxAt: _newest,
+              items: _eluItems,
+              sourceUrl: 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(speciesName)
             };
-            // Update points occ7 and latest date
             if (typeof points !== 'undefined') {
               points[speciesName] = points[speciesName] || {};
-              if (_eluResult.latestOccurrenceAt || _eluResult.dataMaxAt) {
-                points[speciesName].t = _eluResult.latestOccurrenceAt || _eluResult.dataMaxAt;
-              }
+              if (_newest) points[speciesName].t = _newest;
               if (typeof countInLastNDaysFromDates === 'function') {
-                var _dates = _eluResult.items.map(function(it){ return it.observedAt; }).filter(Boolean);
+                var _dates = _eluItems.map(function(it){ return it.observedAt; }).filter(Boolean);
                 points[speciesName].occ7 = countInLastNDaysFromDates(_dates, 7);
               }
             }
             if (typeof _persistLiveCaches === 'function') _persistLiveCaches();
-            console.log('[PROB] eElurikkus fetched:', _eluResult.items.length, 'items for', speciesName);
+            console.log('[PROB] eElurikkus paginated:', _eluItems.length, 'items for', speciesName);
           } else {
             console.log('[PROB] eElurikkus returned 0 items for', speciesName);
           }
         } catch(_eluErr) {
-          console.warn('[PROB] eElurikkus fetch failed for', speciesName, _eluErr);
+          console.warn('[PROB] eElurikkus paginated fetch failed for', speciesName, _eluErr);
         }
       } else {
         console.log('[PROB] eElurikkus cache hit:', _eluCachedCheck.items.length, 'items for', speciesName);

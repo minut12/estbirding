@@ -411,12 +411,18 @@ const LS_SNAPSHOT_PREFIX = "bm_map_snapshot:";
 const LS_EU_LAST_GOOD = "bm_eu_last_good_snapshot";
 const SNAPSHOT_VERSION = "europe_map_v2";
 const LS_TOKEN = "bm_ebird_token";
+const HARDCODED_EBIRD_TOKEN = "9s72dc2jcjlq";
 
 /* ========= Defaults ========= */
 
 function getEbirdToken(){
-  const raw = localStorage.getItem(LS_TOKEN) || "";
-  return raw.trim().replace(/[^a-zA-Z0-9_\-]/g, "");
+  const raw = String(localStorage.getItem(LS_TOKEN) || "");
+  const tokenTrim = raw.trim();
+  const tokenClean = tokenTrim.replace(/[^A-Za-z0-9]/g, "");
+  tokenSanitized = tokenTrim !== tokenClean;
+  if (tokenTrim !== tokenClean) localStorage.setItem(LS_TOKEN, tokenClean);
+  EBIRD_TOKEN = tokenClean || HARDCODED_EBIRD_TOKEN;
+  return EBIRD_TOKEN;
 }
 
 function detectProxyMode(){

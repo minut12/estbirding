@@ -1464,13 +1464,14 @@ function updateMarker(species){
       const when  = d.t ? `<br><small>last seen: ${formatDateEt(d.t)}</small>` : "";
       const srcLn = `<br><small>source: eBird ${rg} (${REGION_NAME[rg]||rg})</small>`;
       const occLn = `<br><small>7d records: ${occ7} (computed from last ${BACK_DAYS}d)</small>`;
+      const howManyLn = Number.isFinite(d.howMany) ? `<br><small>count: ${d.howMany}</small>` : "";
       const migr  = `<br><small>migration: ${isMigr ? "yes" : "no"}</small>`;
       const rarLn = rarityLevel !== "none" ? `<br><small>rarity: ${window.getRarityBadgeText(rarityLevel)}</small>` : "";
 
       const markerKey = species + "@@" + rg;
       const popupName = window.normalizeUiText ? window.normalizeUiText(species) : species;
       const m = L.marker([d.lat, d.lon], { icon }).addTo(map)
-        .bindPopup(`<b>${popupName}</b>${when}${where}${srcLn}${occLn}${migr}${rarLn}`);
+        .bindPopup(`<b>${popupName}</b>${when}${where}${srcLn}${occLn}${howManyLn}${migr}${rarLn}`);
       markers.set(markerKey, m);
 
       if (rg === latestRegion) latestMarker = m;
@@ -1491,12 +1492,13 @@ function updateMarker(species){
       const when  = best.t ? `<br><small>last seen: ${formatDateEt(best.t)}</small>` : "";
       const srcLn = `<br><small>source: eBird ${best.rg} (${REGION_NAME[best.rg]||best.rg})</small>`;
       const occLn = `<br><small>7d records (total): ${total7}</small>`;
+      const howManyLn = Number.isFinite(best.howMany) ? `<br><small>count: ${best.howMany}</small>` : "";
       const migr  = `<br><small>migration: ${isMigr ? "yes" : "no"}</small>`;
       const rarLn = rarityLevel !== "none" ? `<br><small>rarity: ${window.getRarityBadgeText(rarityLevel)}</small>` : "";
 
       const popupName = window.normalizeUiText ? window.normalizeUiText(species) : species;
       const m = L.marker([best.lat, best.lon], { icon }).addTo(map)
-        .bindPopup(`<b>${popupName}</b>${when}${where}${srcLn}${occLn}${migr}${rarLn}`);
+        .bindPopup(`<b>${popupName}</b>${when}${where}${srcLn}${occLn}${howManyLn}${migr}${rarLn}`);
       latestMarker = m;
       markers.set(species + "@@" + best.rg, m);
     }
@@ -1875,6 +1877,7 @@ async function refreshEuropeAggregated(keys, onProgress){
           tMs: lastSeenMs,
           loc: latestObs.locName || "",
           occ7: Number(regionStats.occ7 || 0),
+          howMany: latestObs.howMany != null ? Number(latestObs.howMany) : null,
         };
         aggregate[speciesName].total7 += Number(regionStats.occ7 || 0);
         if (lastSeenMs && (!aggregate[speciesName].latest.tMs || lastSeenMs > aggregate[speciesName].latest.tMs)) {

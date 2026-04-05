@@ -149,11 +149,10 @@ export function loadSpeciesMeta(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): 
   return migrated;
 }
 
-export function getSpeciesMeta(name: string, scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): SpeciesMeta {
-  const map = loadSpeciesMeta(scope);
+export function getSpeciesMeta(name: string): SpeciesMeta {
+  const map = loadSpeciesMeta();
   const key = normalizeSpeciesName(name);
   const meta = map[key] ?? { name: key };
-  // Return a copy with default eBird code fallback (never mutate the original)
   if (!meta.ebirdCode) {
     const defaultCode = DEFAULT_EBIRD_CODES[name] || DEFAULT_EBIRD_CODES[key];
     if (defaultCode) {

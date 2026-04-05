@@ -8265,9 +8265,16 @@ document.addEventListener('DOMContentLoaded', function(){
   <button id="toggleWind" class="btn secondary">Tuulekaart</button>
   <button id="toggleSpring" class="btn secondary">Kevadränne</button>
   <button id="toggleEbirdEE" class="btn secondary" style="white-space:nowrap">eBird EE</button>
+  <button id="btnProbRefresh" class="btn secondary" style="white-space:nowrap">Prob refresh</button>
   <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 päeva jooksul aktiivsed">7p liigid: 0</span>
 </div>
 <div id="ebirdEEProgress" class="fetch-progress" style="display:none"></div>
+<div id="probRefreshStatus" style="display:none;margin:6px 0;padding:8px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1e40af;">
+  <div id="probRefreshText">Valmisolekus...</div>
+  <div style="margin-top:4px;height:4px;background:#dbeafe;border-radius:2px;overflow:hidden;">
+    <div id="probRefreshBar" style="height:100%;width:0%;background:#3b82f6;border-radius:2px;transition:width 0.3s;"></div>
+  </div>
+</div>
 <div id="springPanel" class="hidden-in-export" style="display:none">
   <div id="springHeader">
     <div class="title">Kevadränne</div>
@@ -10125,6 +10132,20 @@ var __sharedDefaults = {};
       if (btn2) btn2.classList.remove('prob-loading');
     }
   };
+
+  // Expose internal functions for bulk prob refresh
+  window.loadProbCache = loadProbCache;
+  window.saveProbCache = saveProbCache;
+  window.calculateSeasonFromData = calculateSeasonFromData;
+  window.buildEstoniaGrid = buildEstoniaGrid;
+  window.calculateProbabilities = calculateProbabilities;
+  window.fetchProbGbifOccurrences = fetchProbGbifOccurrences;
+  window.deduplicateOccurrences = deduplicateOccurrences;
+  window.isInSeasonRange = isInSeasonRange;
+  window.isInSeasonWindow = isInSeasonWindow;
+  window.formatSeasonWindow = formatSeasonWindow;
+  window.fetchElurikkusAllDatesForProb = fetchElurikkusAllDatesForProb;
+  window.extractScientificName = extractScientificName;
 })();
 </script>
 
@@ -10282,6 +10303,257 @@ document.addEventListener('click', function(e) {
       window.toggleProbability(sp);
     }
   }
+});
+
+// --- Silent probability computation (no UI toggle, just data) ---
+window.__computeProbSilent = async function(speciesName) {
+  // Check if already computed
+  if (window.__probDataBySpecies[speciesName]) return;
+
+  // We need access to the prob IIFE's internal functions.
+  // The simplest approach: temporarily set activeProbSpecies, call toggleProbability,
+  // then restore. But that has UI side effects.
+  // Instead, replicate the core data pipeline using the same cached/fetched data.
+
+  // Step 0: Ensure eElurikkus live cache
+  var _eluKey = typeof _normalizeSpeciesKey === 'function' ? _normalizeSpeciesKey(speciesName) : String(speciesName || '').trim().toLowerCase();
+  var _eluCached = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluKey]) || null;
+  if (!_eluCached || !Array.isArray(_eluCached.items) || _eluCached.items.length < 100) {
+    try {
+      if (typeof fetchElurikkusAllDatesForProb === 'function') {
+        var _eluItems = await fetchElurikkusAllDatesForProb(speciesName);
+        if (_eluItems && _eluItems.length > 0) {
+          var _newest = '';
+          for (var _ei = 0; _ei < _eluItems.length; _ei++) {
+            if (String(_eluItems[_ei].observedAt || '') > _newest) _newest = String(_eluItems[_ei].observedAt);
+          }
+          liveElurikkusBySpecies[_eluKey] = {
+            fetchedAt: new Date().toISOString(),
+            dataMaxAt: _newest,
+            items: _eluItems,
+            sourceUrl: 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(speciesName)
+          };
+          if (typeof points !== 'undefined') {
+            points[speciesName] = points[speciesName] || {};
+            if (_newest) points[speciesName].t = _newest;
+            if (typeof countInLastNDaysFromDates === 'function') {
+              var _dates = _eluItems.map(function(it) { return it.observedAt; }).filter(Boolean);
+              points[speciesName].occ7 = countInLastNDaysFromDates(_dates, 7);
+            }
+          }
+          if (typeof _persistLiveCaches === 'function') _persistLiveCaches();
+        }
+      }
+    } catch(e) { /* ignore */ }
+  }
+
+  // Step 1: Check prob cache
+  var data = typeof loadProbCache === 'function' ? loadProbCache(speciesName) : null;
+
+  if (!data) {
+    // Fetch eElurikkus occurrences with coord resolution
+    var cacheKey = String(speciesName || '').trim().toLowerCase();
+    var eluItems = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[cacheKey] && liveElurikkusBySpecies[cacheKey].items) || null;
+    if (!eluItems || eluItems.length === 0) {
+      if (typeof fetchElurikkusSpecies === 'function') {
+        var json = await fetchElurikkusSpecies(speciesName);
+        eluItems = (json && json.items) ? json.items : [];
+      } else {
+        eluItems = [];
+      }
+    }
+
+    var eluOccs = [];
+    for (var i = 0; i < eluItems.length; i++) {
+      var item = eluItems[i];
+      var lat = Number(item.lat), lon = Number(item.lon);
+      var hasCoords = Number.isFinite(lat) && Number.isFinite(lon);
+      if (!hasCoords) {
+        var place = String(item.municipality || item.placeText || item.locality || item.county || '').trim();
+        if (place) {
+          var resolved = null;
+          if (typeof resolveCentroidFromPlace === 'function') resolved = resolveCentroidFromPlace(place);
+          if (!resolved && typeof resolveFallbackLatLon === 'function') {
+            resolved = resolveFallbackLatLon({ municipality: item.municipality || '', locality: item.locality || '', county: item.county || '' });
+          }
+          if (resolved && Number.isFinite(resolved.lat) && Number.isFinite(resolved.lon)) {
+            lat = resolved.lat; lon = resolved.lon; hasCoords = true;
+          }
+        }
+      }
+      if (!hasCoords) continue;
+      eluOccs.push({ lat: lat, lon: lon, date: String(item.observedAt || ''), source: 'elurikkus', scientificName: String(item.scientificName || item.taxonName || '') });
+    }
+
+    // Historical HTML fetch
+    try {
+      var searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(speciesName) + '&_ts=' + Date.now();
+      if (typeof tryFetch === 'function') {
+        var html = await tryFetch(searchUrl);
+        if (html && typeof extractElurikkusRecordRows === 'function') {
+          var htmlRows = extractElurikkusRecordRows(html);
+          for (var j = 0; j < htmlRows.length; j++) {
+            var row = htmlRows[j];
+            var rLat = Number(row.lat), rLon = Number(row.lon);
+            var rHas = Number.isFinite(rLat) && Number.isFinite(rLon);
+            if (!rHas) {
+              var rPlace = String(row.municipality || row.placeText || row.locality || row.county || '').trim();
+              if (rPlace) {
+                var rRes = null;
+                if (typeof resolveCentroidFromPlace === 'function') rRes = resolveCentroidFromPlace(rPlace);
+                if (!rRes && typeof resolveFallbackLatLon === 'function') rRes = resolveFallbackLatLon({ municipality: row.municipality || '', locality: row.locality || '', county: row.county || '' });
+                if (rRes && Number.isFinite(rRes.lat) && Number.isFinite(rRes.lon)) { rLat = rRes.lat; rLon = rRes.lon; rHas = true; }
+              }
+            }
+            if (!rHas) continue;
+            eluOccs.push({ lat: rLat, lon: rLon, date: String(row.observedAt || ''), source: 'elurikkus', scientificName: String(row.scientificName || row.taxonName || '') });
+          }
+        }
+      }
+    } catch(e) { /* ignore */ }
+
+    // GBIF
+    var sciName = (typeof extractScientificName === 'function' ? extractScientificName(eluOccs) : '') || (typeof SPECIES_SCINAMES !== 'undefined' ? SPECIES_SCINAMES[speciesName] : '') || '';
+    var gbifOccs = [];
+    if (sciName && typeof fetchProbGbifOccurrences === 'function') {
+      gbifOccs = await fetchProbGbifOccurrences(sciName, function() {});
+    }
+
+    var allOccs = typeof deduplicateOccurrences === 'function' ? deduplicateOccurrences(eluOccs.concat(gbifOccs)) : eluOccs.concat(gbifOccs);
+    data = { species: speciesName, scientificName: sciName, fetchedAt: new Date().toISOString(), occurrences: allOccs };
+    if (typeof saveProbCache === 'function') saveProbCache(speciesName, data);
+  }
+
+  if (!data.occurrences || data.occurrences.length === 0) return;
+
+  // Compute season + grid + probabilities
+  var seasonInfo = typeof calculateSeasonFromData === 'function' ? calculateSeasonFromData(data.occurrences) : null;
+  if (!seasonInfo) return;
+
+  var seasonal = data.occurrences.filter(function(o) { return typeof isInSeasonRange === 'function' && isInSeasonRange(o.date, seasonInfo.start, seasonInfo.end); });
+  if (seasonal.length === 0 && data.occurrences.length > 0 && typeof isInSeasonWindow === 'function') {
+    seasonal = data.occurrences.filter(function(o) { return isInSeasonWindow(o.date, 45); });
+    var now2 = new Date();
+    var fb1 = new Date(now2); fb1.setDate(fb1.getDate() - 45);
+    var fb2 = new Date(now2); fb2.setDate(fb2.getDate() + 45);
+    seasonInfo = { start: fb1, end: fb2, label: typeof formatSeasonWindow === 'function' ? formatSeasonWindow(45) : '' };
+  }
+  if (seasonal.length === 0) return;
+
+  var totalGbif = data.occurrences.filter(function(o) { return o.source === 'gbif'; }).length;
+  var probCellSize = totalGbif > 500 ? 0.1 : totalGbif > 100 ? 0.15 : 0.2;
+
+  if (typeof buildEstoniaGrid !== 'function' || typeof calculateProbabilities !== 'function') return;
+
+  var gridCells = buildEstoniaGrid(seasonal, probCellSize);
+  var precision = probCellSize < 0.1 ? 3 : 2;
+  var allGbif = data.occurrences.filter(function(o) { return o.source === 'gbif'; });
+  var gbifTotalByCell = {};
+  allGbif.forEach(function(o) {
+    var gLat = Math.floor(o.lat / probCellSize) * probCellSize;
+    var gLon = Math.floor(o.lon / probCellSize) * probCellSize;
+    var key = gLat.toFixed(precision) + '|' + gLon.toFixed(precision);
+    gbifTotalByCell[key] = (gbifTotalByCell[key] || 0) + 1;
+  });
+  gridCells.forEach(function(c) {
+    var key = c.latMin.toFixed(precision) + '|' + c.lonMin.toFixed(precision);
+    c.gbifCountTotal = gbifTotalByCell[key] || 0;
+  });
+
+  var scored = calculateProbabilities(gridCells, seasonal, data.occurrences, speciesName, probCellSize, seasonInfo);
+
+  // Store for sidebar
+  var topCell = scored.slice().sort(function(a, b) { return b.probability - a.probability; })[0];
+  if (topCell && topCell.periods) {
+    window.__probDataBySpecies[speciesName] = {
+      computedAt: Date.now(),
+      cellLat: (topCell.latMin + topCell.latMax) / 2,
+      cellLon: (topCell.lonMin + topCell.lonMax) / 2,
+      overallScore: topCell.probability,
+      season: (seasonInfo && seasonInfo.label) || '',
+      periods: topCell.periods.map(function(p) {
+        return { label: p.label, pct: p.probability || 1, count: p.obsCount || p.count || 0, isCurrent: !!p.isCurrent };
+      })
+    };
+  }
+};
+
+// --- Prob Refresh bulk button ---
+var __probBulkActive = false;
+var __probBulkAbort = false;
+
+document.getElementById('btnProbRefresh').addEventListener('click', async function() {
+  if (__probBulkActive) {
+    __probBulkAbort = true;
+    return;
+  }
+
+  __probBulkActive = true;
+  __probBulkAbort = false;
+
+  var btn = document.getElementById('btnProbRefresh');
+  var statusEl = document.getElementById('probRefreshStatus');
+  var textEl = document.getElementById('probRefreshText');
+  var barEl = document.getElementById('probRefreshBar');
+
+  btn.textContent = 'Peata';
+  btn.style.background = '#fee2e2';
+  btn.style.borderColor = '#fca5a5';
+  statusEl.style.display = 'block';
+  barEl.style.background = '#3b82f6';
+
+  var filterVal = (document.getElementById('filterBox').value || '').toLowerCase().trim();
+  var candidates = (window.DATA || []).map(function(d) { return d.est; }).filter(function(name) {
+    if (filterVal && !name.toLowerCase().includes(filterVal)) return false;
+    return true;
+  });
+
+  var total = candidates.length;
+  var done = 0, errors = 0, updated = 0;
+
+  for (var ci = 0; ci < candidates.length; ci++) {
+    if (__probBulkAbort) break;
+    var species = candidates[ci];
+
+    textEl.innerHTML = '<b>' + species + '</b> (' + (done + 1) + '/' + total + ')' +
+      (errors > 0 ? ' \u00b7 <span style="color:#dc2626;">' + errors + ' viga</span>' : '') +
+      (updated > 0 ? ' \u00b7 <span style="color:#16a34a;">' + updated + ' uuendatud</span>' : '');
+    barEl.style.width = Math.round(((done + 1) / total) * 100) + '%';
+
+    try {
+      await window.__computeProbSilent(species);
+      if (window.__probDataBySpecies[species]) updated++;
+    } catch(e) {
+      console.warn('Prob refresh error for', species, e);
+      errors++;
+    }
+
+    done++;
+
+    if (!__probBulkAbort && done < total) {
+      await new Promise(function(r) { setTimeout(r, 2000); });
+    }
+  }
+
+  var aborted = __probBulkAbort;
+  textEl.innerHTML = aborted
+    ? 'Peatatud: ' + done + '/' + total + ' \u00b7 ' + updated + ' uuendatud \u00b7 ' + errors + ' viga'
+    : 'Valmis: ' + total + ' liiki \u00b7 ' + updated + ' uuendatud \u00b7 ' + errors + ' viga';
+  barEl.style.width = '100%';
+  barEl.style.background = aborted ? '#fbbf24' : '#22c55e';
+
+  btn.textContent = 'Prob refresh';
+  btn.style.background = '';
+  btn.style.borderColor = '';
+
+  __probBulkActive = false;
+  __probBulkAbort = false;
+
+  if (typeof render === 'function') render();
+
+  setTimeout(function() {
+    if (!__probBulkActive) statusEl.style.display = 'none';
+  }, 10000);
 });
 
 })();

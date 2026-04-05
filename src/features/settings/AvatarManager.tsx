@@ -321,18 +321,15 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
           <Label>Vali liik</Label>
           <Command className="border border-input rounded-md">
             <CommandInput placeholder="Otsi liiki..." value={search} onValueChange={setSearch} />
-            <CommandList className="max-h-[200px]">
+            <CommandList className="max-h-[400px]">
               <CommandEmpty>Liiki ei leitud</CommandEmpty>
               <CommandGroup>
-                {filtered.slice(0, 50).map((s) => (
+                {filtered.map((s) => (
                   <CommandItem key={s} value={s} onSelect={() => { setSelected(s); setSearch(''); }} className="flex items-center gap-2">
                     {selected === s && <Check className="w-3 h-3 text-primary" />}
                     <span>{s}</span>
                   </CommandItem>
                 ))}
-                {filtered.length > 50 && (
-                  <p className="text-xs text-muted-foreground px-2 py-1">...ja veel {filtered.length - 50} liiki</p>
-                )}
               </CommandGroup>
             </CommandList>
           </Command>

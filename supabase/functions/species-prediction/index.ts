@@ -3224,7 +3224,7 @@ function createUpstreamError(input: {
           ? (input.upstreamBody as Record<string, unknown>).normalizedRankingNotesType as string
           : undefined,
         rankingNotesInputType: typeof (input.upstreamBody as Record<string, unknown> | null)?.rankingNotesInputType === 'string'
-          ? (input.upstreamBody as Record<string, unknown>).rankingNotesInputType
+          ? (input.upstreamBody as Record<string, unknown>).rankingNotesInputType as string
           : undefined,
         warningsInputType: typeof (input.upstreamBody as Record<string, unknown> | null)?.warningsInputType === 'string'
           ? (input.upstreamBody as Record<string, unknown>).warningsInputType

@@ -7861,7 +7861,7 @@ function rowHTML(obj) {
       '</div>' +
       '<div class="small">'+meta+'</div>' +
       springChip +
-      (function(){ var _t3 = getTop3ForSpecies(key); return (_t3 && _t3.top3 && _t3.top3.length) ? buildTop3Section(key, _t3) : '<div class="top3-placeholder" data-species="'+key+'" style="margin-top:6px;font-size:11px;color:#94a3b8;cursor:pointer;" title="Kliki laadimiseks">▦ Top ruudud: laadi...</div>'; })() +
+      (typeof buildTop3PeriodsSection === 'function' ? buildTop3PeriodsSection(key) : '') +
       gbifStatusHtml +
       extraBlock +
     '</div>' +
@@ -10082,6 +10082,26 @@ var __sharedDefaults = {};
 
       var scored = calculateProbabilities(gridCells, seasonal, data.occurrences, speciesName, probCellSize, seasonInfo);
       renderProbabilityOverlay(scored, speciesName, data.occurrences.length, seasonal.length, seasonInfo);
+
+      // Store probability data for sidebar top-3 periods section
+      try {
+        window.__probDataBySpecies = window.__probDataBySpecies || {};
+        var topCell = scored.slice().sort(function(a,b){ return b.probability - a.probability; })[0];
+        if (topCell && topCell.periods) {
+          window.__probDataBySpecies[speciesName] = {
+            computedAt: Date.now(),
+            cellLat: (topCell.latMin + topCell.latMax) / 2,
+            cellLon: (topCell.lonMin + topCell.lonMax) / 2,
+            overallScore: topCell.probability,
+            season: (seasonInfo && seasonInfo.label) || '',
+            periods: topCell.periods.map(function(p) {
+              return { label: p.label, pct: p.probability || 1, count: p.obsCount || p.count || 0, isCurrent: !!p.isCurrent };
+            })
+          };
+          if (typeof render === 'function') render();
+        }
+      } catch(e) { console.warn('[top3periods] store error', e); }
+
       var _gbifTotal = data.occurrences.filter(function(o){ return o.source === 'gbif'; }).length;
       var _eluTotal = data.occurrences.filter(function(o){ return o.source === 'elurikkus'; }).length;
       // Also show live eElurikkus cache count and occ7
@@ -10108,172 +10128,102 @@ var __sharedDefaults = {};
 })();
 </script>
 
-<!-- ===== Top 3 Probability Squares ===== -->
+<!-- ===== Top 3 Probability Periods (v2) — reads from existing Prob system ===== -->
 <script>
 (function(){
 'use strict';
 
-var LS_TOP3 = 'bm_rari_top3_prob';
-var _top3FetchInFlight = new Set();
-var _activeGridRect = null;
+window.__probDataBySpecies = window.__probDataBySpecies || {};
 
-// --- Helpers ---
-
-function getISOWeek(d) {
-  var date = new Date(d.getTime());
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() + 3 - ((date.getDay() + 6) % 7));
-  var week1 = new Date(date.getFullYear(), 0, 4);
-  return 1 + Math.round(((date - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
-}
-
-function toGridCell(lat, lon) {
-  var latCell = Math.floor(lat / 0.5) * 0.5;
-  var lonCell = Math.floor(lon / 0.5) * 0.5;
-  return { latCell: latCell, lonCell: lonCell };
-}
-
-function isoWeekToDateRange(week, year) {
-  var yr = year || new Date().getFullYear();
-  var jan4 = new Date(yr, 0, 4);
-  var dayOfWeek = jan4.getDay() || 7;
-  var monday = new Date(jan4);
-  monday.setDate(jan4.getDate() - dayOfWeek + 1 + (week - 1) * 7);
-  var sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  var months = ['jaan','veebr','märts','apr','mai','juuni','juuli','aug','sept','okt','nov','dets'];
-  var fmt = function(d) { return d.getDate() + '. ' + months[d.getMonth()]; };
-  return fmt(monday) + ' – ' + fmt(sunday);
-}
-
-var COUNTY_BOUNDS = [
-  { name: "Harjumaa", latMin: 59.0, latMax: 59.7, lonMin: 24.0, lonMax: 25.2 },
-  { name: "Lääne-Virumaa", latMin: 59.0, latMax: 59.7, lonMin: 25.2, lonMax: 27.0 },
-  { name: "Ida-Virumaa", latMin: 59.0, latMax: 59.5, lonMin: 27.0, lonMax: 28.2 },
-  { name: "Raplamaa", latMin: 58.7, latMax: 59.1, lonMin: 24.0, lonMax: 25.0 },
-  { name: "Järvamaa", latMin: 58.7, latMax: 59.2, lonMin: 25.0, lonMax: 26.2 },
-  { name: "Läänemaa", latMin: 58.6, latMax: 59.1, lonMin: 23.3, lonMax: 24.2 },
-  { name: "Pärnumaa", latMin: 57.8, latMax: 58.7, lonMin: 23.5, lonMax: 25.0 },
-  { name: "Viljandimaa", latMin: 58.0, latMax: 58.7, lonMin: 25.0, lonMax: 26.2 },
-  { name: "Jõgevamaa", latMin: 58.3, latMax: 58.9, lonMin: 26.0, lonMax: 27.2 },
-  { name: "Tartumaa", latMin: 58.0, latMax: 58.6, lonMin: 26.2, lonMax: 27.5 },
-  { name: "Valgamaa", latMin: 57.6, latMax: 58.1, lonMin: 25.8, lonMax: 26.6 },
-  { name: "Võrumaa", latMin: 57.5, latMax: 58.0, lonMin: 26.6, lonMax: 27.8 },
-  { name: "Põlvamaa", latMin: 57.8, latMax: 58.3, lonMin: 27.0, lonMax: 27.8 },
-  { name: "Saaremaa", latMin: 57.7, latMax: 58.6, lonMin: 21.8, lonMax: 23.4 },
-  { name: "Hiiumaa", latMin: 58.7, latMax: 59.1, lonMin: 22.0, lonMax: 23.3 },
-];
-
-function resolveCounty(lat, lon) {
-  for (var i = 0; i < COUNTY_BOUNDS.length; i++) {
-    var c = COUNTY_BOUNDS[i];
-    if (lat >= c.latMin && lat < c.latMax && lon >= c.lonMin && lon < c.lonMax) return c.name;
+// --- buildTop3PeriodsSection: renders top-3 periods + "now" row in sidebar ---
+window.buildTop3PeriodsSection = function(speciesKey) {
+  var probData = (window.__probDataBySpecies || {})[speciesKey];
+  if (!probData || !probData.periods || !probData.periods.length) {
+    return '<div class="top3-placeholder" data-species="' + speciesKey + '" style="margin-top:6px;font-size:11px;color:#94a3b8;cursor:pointer;" title="Vajuta Prob nuppu andmete laadimiseks">▦ Top perioodid: vajuta Prob</div>';
   }
-  return "Eesti";
-}
 
-// --- Cache ---
+  var periods = probData.periods;
+  var currentPeriod = null;
+  for (var cp = 0; cp < periods.length; cp++) {
+    if (periods[cp].isCurrent) { currentPeriod = periods[cp]; break; }
+  }
 
-window.getTop3ForSpecies = function(speciesName) {
-  try {
-    var cache = JSON.parse(localStorage.getItem(LS_TOP3) || '{}');
-    var entry = cache[speciesName];
-    if (!entry || !entry.fetchedAt) return null;
-    var age = Date.now() - Date.parse(entry.fetchedAt);
-    if (age > 7 * 24 * 60 * 60 * 1000) return null;
-    return entry;
-  } catch(e) { return null; }
-};
+  // Top 3 by pct (exclude 0%)
+  var ranked = periods.filter(function(p) { return p.pct > 0; })
+    .sort(function(a, b) { return b.pct - a.pct || b.count - a.count; })
+    .slice(0, 3);
 
-// --- UI builder ---
-
-window.buildTop3Section = function(speciesKey, data) {
-  var rows = (data.top3 || []).slice(0, 3);
-  if (!rows.length) return '';
+  if (!ranked.length) {
+    return '<div style="margin-top:6px;font-size:11px;color:#94a3b8;">▦ Vaatlusi pole leitud</div>';
+  }
 
   var colors = [
     { bg: '#E1F5EE', text: '#0F6E56', bar: '#1D9E75' },
     { bg: '#E6F1FB', text: '#185FA5', bar: '#378ADD' },
     { bg: '#FAEEDA', text: '#854F0B', bar: '#EF9F27' },
   ];
+  var maxPct = ranked[0].pct || 1;
 
   var html = '<div class="top3-section" style="border-top:1px solid #eef2f7;margin-top:8px;padding-top:8px;">';
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">';
-  html += '<span style="font-size:11px;font-weight:500;color:#64748b;">▦ Parimad ruudud (0.5°)</span>';
+  html += '<span style="font-size:11px;font-weight:500;color:#64748b;">▦ Parimad perioodid</span>';
   html += '<span style="font-size:9px;color:#94a3b8;">GBIF+eLurikkus</span>';
   html += '</div>';
 
-  rows.forEach(function(r, i) {
+  for (var i = 0; i < ranked.length; i++) {
+    var r = ranked[i];
     var c = colors[i] || colors[2];
-    var pct = Math.round((r.probability || 0) * 100);
-    var latEnd = (r.latCell + 0.5).toFixed(1);
-    var lonEnd = (r.lonCell + 0.5).toFixed(1);
-    var gridLabel = r.latCell.toFixed(1) + '°–' + latEnd + '°N ' + r.lonCell.toFixed(1) + '°–' + lonEnd + '°E';
-    var weekLabel = r.weekLabel || ('n' + r.week);
-    var county = r.county || '';
+    var barWidth = Math.round((r.pct / maxPct) * 100);
 
-    html += '<div class="top3-row" data-species="' + speciesKey + '" data-lat="' + r.latCell + '" data-lon="' + r.lonCell + '" data-week="' + r.week + '" ';
-    html += 'style="display:flex;align-items:center;gap:6px;padding:5px 8px;margin-bottom:4px;background:#fff;border-radius:8px;border:1px solid #eef2f7;cursor:pointer;" ';
-    html += 'onmouseover="this.style.borderColor=\'#5DCAA5\'" onmouseout="this.style.borderColor=\'#eef2f7\'">';
+    html += '<div class="top3-row" data-species="' + speciesKey + '"';
+    html += ' data-lat="' + (probData.cellLat || '') + '"';
+    html += ' data-lon="' + (probData.cellLon || '') + '"';
+    html += ' style="display:flex;align-items:center;gap:6px;padding:5px 8px;margin-bottom:3px;background:#fff;border-radius:8px;border:1px solid #eef2f7;cursor:pointer;"';
+    html += ' onmouseover="this.style.borderColor=\'#5DCAA5\'" onmouseout="this.style.borderColor=\'#eef2f7\'">';
 
     // Rank badge
     html += '<div style="width:18px;height:18px;border-radius:50%;background:' + c.bg + ';color:' + c.text + ';font-size:10px;font-weight:500;display:flex;align-items:center;justify-content:center;flex-shrink:0;">' + (i + 1) + '</div>';
 
-    // Label
+    // Period label + count
     html += '<div style="flex:1;min-width:0;overflow:hidden;">';
-    html += '<div style="font-size:11px;font-weight:500;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + gridLabel + '</div>';
-    html += '<div style="font-size:10px;color:#94a3b8;">n' + r.week + ' · ' + weekLabel + (county ? ' · ' + county : '') + '</div>';
+    html += '<div style="font-size:11px;font-weight:500;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + r.label + '</div>';
+    html += '<div style="font-size:10px;color:#94a3b8;">(' + r.count + ')</div>';
     html += '</div>';
 
     // Probability bar + %
     html += '<div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">';
-    html += '<div style="width:32px;height:4px;border-radius:2px;background:#f1f5f9;overflow:hidden;">';
-    html += '<div style="width:' + pct + '%;height:100%;background:' + c.bar + ';border-radius:2px;"></div>';
+    html += '<div style="width:36px;height:4px;border-radius:2px;background:#f1f5f9;overflow:hidden;">';
+    html += '<div style="width:' + barWidth + '%;height:100%;background:' + c.bar + ';border-radius:2px;"></div>';
     html += '</div>';
-    html += '<span style="font-size:11px;font-weight:500;color:' + c.text + ';min-width:28px;text-align:right;">' + pct + '%</span>';
+    html += '<span style="font-size:11px;font-weight:500;color:' + c.text + ';min-width:28px;text-align:right;">' + r.pct + '%</span>';
     html += '</div>';
 
     // Chevron
     html += '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="2.5" style="flex-shrink:0;"><path d="M9 18l6-6-6-6"/></svg>';
-
     html += '</div>';
-  });
+  }
+
+  // "praegu" (now) row
+  if (currentPeriod) {
+    var isInTop3 = false;
+    for (var t = 0; t < ranked.length; t++) {
+      if (ranked[t].label === currentPeriod.label) { isInTop3 = true; break; }
+    }
+    html += '<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;margin-top:2px;background:' + (currentPeriod.pct > 0 ? '#fffbeb' : '#f8fafc') + ';border-radius:8px;border:1px solid ' + (currentPeriod.pct > 0 ? '#fde68a' : '#eef2f7') + ';">';
+    html += '<div style="font-size:9px;font-weight:500;color:#92400e;background:#fef3c7;padding:2px 6px;border-radius:999px;flex-shrink:0;">praegu</div>';
+    html += '<div style="flex:1;min-width:0;"><div style="font-size:11px;color:#1e293b;">' + currentPeriod.label + '</div></div>';
+    html += '<span style="font-size:11px;font-weight:500;color:' + (currentPeriod.pct > 0 ? '#92400e' : '#94a3b8') + ';">' + currentPeriod.pct + '%</span>';
+    html += '<span style="font-size:10px;color:#94a3b8;">(' + currentPeriod.count + ')</span>';
+    if (isInTop3) html += '<span style="font-size:9px;color:#16a34a;" title="See periood on ka top 3 seas">\u2605</span>';
+    html += '</div>';
+  }
 
   html += '</div>';
   return html;
 };
 
-// --- Grid cell highlight ---
-
-function drawGridCellHighlight(latCell, lonCell) {
-  if (_activeGridRect && window.map) {
-    try { map.removeLayer(_activeGridRect); } catch(e) {}
-    _activeGridRect = null;
-  }
-  var bounds = [
-    [latCell, lonCell],
-    [latCell + 0.5, lonCell + 0.5]
-  ];
-  _activeGridRect = L.rectangle(bounds, {
-    color: '#1D9E75',
-    weight: 2,
-    fillColor: '#1D9E75',
-    fillOpacity: 0.12,
-    dashArray: '6 4',
-    interactive: false
-  }).addTo(map);
-  setTimeout(function() {
-    if (_activeGridRect) {
-      try { map.removeLayer(_activeGridRect); } catch(e) {}
-      _activeGridRect = null;
-    }
-  }, 30000);
-}
-
-// --- Click handlers ---
-
+// --- Click handler: top3 row → fly to cell, enable Prob overlay ---
 document.addEventListener('click', function(e) {
-  // Top3 row click → fly to cell
   var row = e.target.closest('.top3-row');
   if (row) {
     e.preventDefault();
@@ -10283,37 +10233,34 @@ document.addEventListener('click', function(e) {
     var lat = parseFloat(row.getAttribute('data-lat'));
     var lon = parseFloat(row.getAttribute('data-lon'));
 
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-
-    var centerLat = lat + 0.25;
-    var centerLon = lon + 0.25;
-    if (window.map && typeof map.flyTo === 'function') {
-      map.flyTo([centerLat, centerLon], 10, { duration: 1.2 });
+    // Fly to cell center
+    if (Number.isFinite(lat) && Number.isFinite(lon) && window.map) {
+      map.flyTo([lat, lon], 10, { duration: 1.2 });
     }
 
-    try { drawGridCellHighlight(lat, lon); } catch(err) { console.warn('grid highlight error', err); }
+    // Enable Prob overlay if not already active
+    if (typeof window.toggleProbability === 'function' && window.activeProbSpecies !== species) {
+      window.toggleProbability(species);
+    }
 
     // Make species visible if hidden
-    if (window.points && window.points[species]) {
-      if (window.points[species].visible === false) {
-        window.points[species].visible = true;
-        if (typeof save === 'function') save();
-        if (typeof updateMarker === 'function') updateMarker(species);
-      }
+    if (window.points && window.points[species] && window.points[species].visible === false) {
+      window.points[species].visible = true;
+      if (typeof save === 'function') save();
+      if (typeof updateMarker === 'function') updateMarker(species);
     }
 
     // Highlight species row
     try {
       var speciesRow = document.querySelector('.row[data-key="' + CSS.escape(species) + '"]');
       if (speciesRow) {
-        speciesRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         speciesRow.style.outline = '2px solid #5DCAA5';
         speciesRow.style.outlineOffset = '2px';
         setTimeout(function() { speciesRow.style.outline = ''; speciesRow.style.outlineOffset = ''; }, 2000);
       }
     } catch(err) {}
 
-    // On mobile, close sidebar
+    // Mobile: close sidebar
     try {
       var sidebar = document.getElementById('sidebar');
       if (sidebar && sidebar.classList.contains('open') && window.innerWidth <= 900) {
@@ -10322,175 +10269,20 @@ document.addEventListener('click', function(e) {
         if (backdrop) backdrop.classList.remove('show');
       }
     } catch(err) {}
-
     return;
   }
 
-  // Placeholder click → force fetch
+  // Placeholder click → trigger Prob for the species
   var ph = e.target.closest('.top3-placeholder');
   if (ph) {
     var sp = ph.getAttribute('data-species');
-    if (sp) {
-      ph.textContent = '▦ Top ruudud: laen...';
+    if (sp && typeof window.toggleProbability === 'function') {
+      ph.textContent = '▦ Top perioodid: laen...';
       ph.style.color = '#64748b';
-      fetchTop3ForSpecies(sp);
+      window.toggleProbability(sp);
     }
   }
 });
-
-// --- Main fetch ---
-
-window.fetchTop3ForSpecies = async function(speciesName) {
-  if (_top3FetchInFlight.has(speciesName)) return;
-  _top3FetchInFlight.add(speciesName);
-
-  try {
-    // A) GBIF occurrences (primary source with coordinates)
-    var latinName = (window.SPECIES_SCINAMES || {})[speciesName] || '';
-    var gbifOccs = [];
-    if (latinName) {
-      try {
-        var gbifUrl = 'https://api.gbif.org/v1/occurrence/search?scientificName='
-          + encodeURIComponent(latinName)
-          + '&country=EE&hasCoordinate=true&limit=300';
-        // Try direct fetch first, fall back to proxy
-        var res;
-        try {
-          res = await fetch(gbifUrl);
-        } catch(corsErr) {
-          if (window.proxyBase) {
-            res = await fetch(proxyBase + gbifUrl);
-          } else {
-            throw corsErr;
-          }
-        }
-        if (res.ok) {
-          var json = await res.json();
-          gbifOccs = (json.results || [])
-            .filter(function(r) { return r.decimalLatitude && r.decimalLongitude && (r.eventDate || (r.year && r.month && r.day)); })
-            .map(function(r) {
-              var d = r.eventDate ? new Date(r.eventDate) : new Date(r.year, (r.month || 1) - 1, r.day || 1);
-              return { date: d, year: d.getFullYear(), week: getISOWeek(d), lat: r.decimalLatitude, lon: r.decimalLongitude };
-            })
-            .filter(function(o) { return o.year > 2000; });
-        }
-      } catch(e) { console.warn('GBIF fetch failed for', speciesName, e); }
-    }
-
-    // B) Elurikkus occurrences (usually no coords, but try)
-    var eluOccs = [];
-    try {
-      if (typeof _fetchElurikkusSpeciesViaHtml === 'function') {
-        var eluData = await _fetchElurikkusSpeciesViaHtml(speciesName);
-        eluOccs = (eluData.items || [])
-          .filter(function(it) { return it.observedAt && it.lat != null && it.lon != null; })
-          .map(function(it) {
-            var d = new Date(it.observedAt);
-            return { date: d, year: d.getFullYear(), week: getISOWeek(d), lat: parseFloat(it.lat), lon: parseFloat(it.lon) };
-          })
-          .filter(function(o) { return Number.isFinite(o.lat) && Number.isFinite(o.lon) && o.year > 2000; });
-      }
-    } catch(e) { console.warn('Elurikkus fetch failed for top3:', speciesName, e); }
-
-    // C) Combine and deduplicate
-    var allOccs = gbifOccs.concat(eluOccs);
-    if (!allOccs.length) {
-      // No coordinate data at all — store empty result so we don't keep retrying
-      var cache0 = JSON.parse(localStorage.getItem(LS_TOP3) || '{}');
-      cache0[speciesName] = { fetchedAt: new Date().toISOString(), totalYears: 0, top3: [] };
-      localStorage.setItem(LS_TOP3, JSON.stringify(cache0));
-      if (typeof render === 'function') render();
-      return;
-    }
-
-    var seen = new Set();
-    var unique = allOccs.filter(function(o) {
-      var cell = toGridCell(o.lat, o.lon);
-      var key = o.date.toISOString().slice(0, 10) + '_' + cell.latCell + '_' + cell.lonCell;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-
-    // D) Compute probability per (cell, week)
-    var allYears = new Set(unique.map(function(o) { return o.year; }));
-    var totalYears = allYears.size || 1;
-
-    var cellWeekMap = {};
-    unique.forEach(function(o) {
-      var cell = toGridCell(o.lat, o.lon);
-      var key = cell.latCell.toFixed(1) + '_' + cell.lonCell.toFixed(1) + '_' + o.week;
-      if (!cellWeekMap[key]) cellWeekMap[key] = new Set();
-      cellWeekMap[key].add(o.year);
-    });
-
-    // E) Rank and pick top 3
-    var ranked = Object.keys(cellWeekMap)
-      .map(function(key) {
-        var years = cellWeekMap[key];
-        var parts = key.split('_');
-        var latCell = parseFloat(parts[0]);
-        var lonCell = parseFloat(parts[1]);
-        var week = parseInt(parts[2], 10);
-        var probability = years.size / totalYears;
-        var centerLat = latCell + 0.25;
-        var centerLon = lonCell + 0.25;
-        return {
-          latCell: latCell, lonCell: lonCell, week: week, probability: probability,
-          yearsPresent: years.size,
-          weekLabel: isoWeekToDateRange(week),
-          county: resolveCounty(centerLat, centerLon),
-        };
-      })
-      .sort(function(a, b) { return b.probability - a.probability || b.yearsPresent - a.yearsPresent; })
-      .slice(0, 3);
-
-    // F) Cache
-    var cache = JSON.parse(localStorage.getItem(LS_TOP3) || '{}');
-    cache[speciesName] = {
-      fetchedAt: new Date().toISOString(),
-      totalYears: totalYears,
-      top3: ranked,
-    };
-    localStorage.setItem(LS_TOP3, JSON.stringify(cache));
-
-    // G) Re-render
-    if (typeof render === 'function') render();
-
-  } catch(e) {
-    console.warn('Top3 fetch error for', speciesName, e);
-  } finally {
-    _top3FetchInFlight.delete(speciesName);
-  }
-};
-
-// --- Lazy fetch scheduling ---
-
-function scheduleTop3Fetches() {
-  var visible = document.querySelectorAll('.top3-placeholder[data-species]');
-  var queue = [];
-  visible.forEach(function(el) {
-    var sp = el.getAttribute('data-species');
-    if (sp && !_top3FetchInFlight.has(sp)) queue.push(sp);
-  });
-  var delay = 0;
-  queue.slice(0, 5).forEach(function(sp) {
-    setTimeout(function() { fetchTop3ForSpecies(sp); }, delay);
-    delay += 3000;
-  });
-}
-
-// --- Patch render() to schedule fetches ---
-
-if (typeof window.render === 'function' && !window.__top3_render_patch__) {
-  var _origRender = window.render;
-  window.render = function() {
-    var out = _origRender.apply(this, arguments);
-    try { setTimeout(scheduleTop3Fetches, 500); } catch(e) {}
-    return out;
-  };
-  window.__top3_render_patch__ = true;
-}
 
 })();
 </script>

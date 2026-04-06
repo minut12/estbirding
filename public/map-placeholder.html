@@ -2192,10 +2192,8 @@ function missing(){
   var ebird=(ebirdRecentCache&&ebirdRecentCache.data)?ebirdRecentCache.data:{};
   for(var i=0;i<all.length;i++){
     var n=all[i],p=pts[n]||{};
-    var seen=Number.isFinite(p.lat)||Number.isFinite(p.lon)||
-      p.occ7!==undefined||
-      (p.t&&String(p.t).trim()!=='')||
-      (p.src&&String(p.src).trim()!=='');
+    var seen=(Number.isFinite(p.lat)&&Number.isFinite(p.lon))||
+      (Number.isFinite(p.occ7)&&p.occ7>0);
     if(seen) continue;
     var springDate=getSpringDate(n,dates);
     var baseProb=prob(springDate);

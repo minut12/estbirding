@@ -2190,8 +2190,27 @@ window.__closeEnn=function(){document.getElementById('ennBg').style.display='non
 window.__renderEnn=render;
 window.__sortEnn=function(s){sort=s;render();};
 window.__scanEnn=function(btn){
-  btn.textContent='Skaneerin...';btn.style.opacity='.6';
-  setTimeout(function(){render();btn.textContent='Skaneeri';btn.style.opacity='1';},200);
+  btn.textContent='Skaneerin...';
+  btn.style.opacity='.6';
+  btn.disabled=true;
+  var lst=document.getElementById('ennLst');
+  if(lst) lst.style.opacity='0.3';
+  setTimeout(function(){
+    render();
+    if(lst) lst.style.opacity='1';
+    btn.textContent='Skaneeri';
+    btn.style.opacity='1';
+    btn.disabled=false;
+    var sum=document.getElementById('ennSum');
+    if(sum){
+      var ts=new Date();
+      var timeStr=String(ts.getHours()).padStart(2,'0')+':'+String(ts.getMinutes()).padStart(2,'0')+':'+String(ts.getSeconds()).padStart(2,'0');
+      var existing=sum.innerHTML;
+      if(existing.indexOf('Skaneeritud')!==-1) existing=existing.replace(/Skaneeritud \d{2}:\d{2}:\d{2}/,'Skaneeritud '+timeStr);
+      else existing+='<span style="margin-left:8px">Skaneeritud '+timeStr+'</span>';
+      sum.innerHTML=existing;
+    }
+  },400);
 };
 window.__openEnnustus=window.__openEnn;
 

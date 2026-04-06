@@ -7888,15 +7888,12 @@ function render() {
   const q = (document.getElementById('filterBox').value||'').toLowerCase().trim();
   const list = document.getElementById('list'); list.innerHTML='';
   const recent7 = is7daysOnly();
-  const isLoading = __isRefreshRunning || __loaderStage === 'loading_snapshot' || __loaderStage === 'processing';
   const arr = DATA.filter(function(x){
     if(!x.est.toLowerCase().includes(q)) return false;
     if(recent7){
       const p = points[x.est];
       if(!p) return false;
-      const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
-      if(!hasCoords) return false;
-      if(!hasRecentObservation(p) && !(isLoading && hasCoords)) return false;
+      if(!hasRecentObservation(p)) return false;
     }
     return true;
   });

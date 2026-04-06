@@ -10729,7 +10729,7 @@ function getEluCount(speciesName) {
   // Method 1: from points occ7
   try {
     var pts=pt();
-    var clean=(typeof _toCleanKey==='function')?_toCleanKey(speciesName):speciesName;
+    var clean=_fix(speciesName);
     var p=pts[speciesName]||pts[clean];
     if(p&&Number.isFinite(p.occ7)&&p.occ7>0) return p.occ7;
   } catch(e) {}
@@ -10777,12 +10777,12 @@ function pt(){
   return {};
 }
 function av(n){
-  var c=(typeof _toCleanKey==='function')?_toCleanKey(n):n;
+  var c=_fix(n);
   try{if(typeof window.getDisplayAvatar==='function') return window.getDisplayAvatar(n)||window.getDisplayAvatar(c)||'';}catch(e){}
   try{var a=window.avatars||window.__bm_avatars||JSON.parse(localStorage.getItem('bm_rari_avatars')||'{}');return a[n]||a[c]||'';}catch(e){}
   return '';
 }
-function dn(n){try{if(typeof window.normalizeUiText==='function') return window.normalizeUiText(n);}catch(e){}return (typeof _toCleanKey==='function')?_toCleanKey(n):n;}
+function dn(n){var c=_fix(n);try{if(typeof window.normalizeUiText==='function') return window.normalizeUiText(c)||window.normalizeUiText(n)||c;}catch(e){}return c;}
 
 function prob(ds){
   if(!ds) return 0;
@@ -10809,9 +10809,25 @@ function getSpringDate(name,dates){
   return '';
 }
 
-// Fix mojibake: SPECIES array has double-encoded UTF-8, points/eBird codes use clean UTF-8
-function _cleanName(n){
-  return (typeof _toCleanKey==='function')?_toCleanKey(n):n;
+// Inline mojibake decoder — fixes double-encoded UTF-8 in SPECIES names
+// Self-contained: does NOT depend on any function outside this IIFE
+function _fix(s) {
+  if (!s || typeof s !== 'string') return s || '';
+  // Quick check: if no high bytes, no mojibake possible
+  if (!/[\u00c0-\u00ff]/.test(s)) return s;
+  try {
+    var bytes = [];
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      if (c < 256) bytes.push(c);
+      else return s; // has chars outside Latin-1 range, not mojibake
+    }
+    var decoded = new TextDecoder('utf-8').decode(new Uint8Array(bytes));
+    if (decoded !== s && decoded.length > 0 && decoded.indexOf('\ufffd') === -1) {
+      return decoded;
+    }
+  } catch(e) {}
+  return s;
 }
 
 function missing(){
@@ -10820,7 +10836,7 @@ function missing(){
   var thisYear=new Date().getFullYear();
   for(var i=0;i<all.length;i++){
     var n=all[i];
-    var clean=_cleanName(n);
+    var clean=_fix(n);
     var p=pts[n]||pts[clean]||{};
 
     // Has recent 7-day observations → definitely seen, skip
@@ -10859,8 +10875,8 @@ function render(){
   if(q){
     for(var i=0;i<allSpecies.length;i++){
       var n=allSpecies[i];
-      if(n.toLowerCase().indexOf(q)===-1&&_cleanName(n).toLowerCase().indexOf(q)===-1) continue;
-      var clean=_cleanName(n);
+      if(n.toLowerCase().indexOf(q)===-1&&_fix(n).toLowerCase().indexOf(q)===-1) continue;
+      var clean=_fix(n);
       var p=pts[n]||pts[clean]||{};
       var _ds=String(p.t||'').trim();
       var _ym=_ds?_ds.match(/^(\d{4})/):null;
@@ -10990,7 +11006,7 @@ window.__scanEnn=function(btn){
         btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';return;
       }
       var name=toFetch[idx];
-      var cleanName=_cleanName(name);
+      var cleanName=_fix(name);
       btn.textContent='eElur '+(idx+1)+'/'+toFetch.length;
       idx++;
       var fetchFn=null;

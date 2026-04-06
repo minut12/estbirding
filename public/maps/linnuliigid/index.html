@@ -10880,9 +10880,9 @@ function render(){
   else if(sort==='spring') displayList.sort(function(a,b){return ssk(a.spring)-ssk(b.spring);});
   else displayList.sort(function(a,b){return a.name.localeCompare(b.name,'et');});
 
-  var totalElu=0;
-  for(var te=0;te<m.length;te++){totalElu+=getEluCount(m[te].name);}
-  var eluInfo=totalElu>0?' · eElur: '+totalElu+' vaatlust':'';
+  var totalElu=0,eluFetched=0;
+  for(var te=0;te<m.length;te++){var ec=getEluCount(m[te].name);if(ec>=0){eluFetched++;totalElu+=ec;}}
+  var eluInfo=eluFetched>0?' · eElur: '+totalElu+' vaatlust':'';
 
   var el=document.getElementById('ennSum');
   if(el) el.innerHTML='<span><b>'+m.length+'</b> puuduvat liiki</span>'+

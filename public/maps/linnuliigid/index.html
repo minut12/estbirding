@@ -8265,16 +8265,10 @@ document.addEventListener('DOMContentLoaded', function(){
   <button id="toggleWind" class="btn secondary">Tuulekaart</button>
   <button id="toggleSpring" class="btn secondary">Kevadränne</button>
   <button id="toggleEbirdEE" class="btn secondary" style="white-space:nowrap">eBird EE</button>
-  <button id="btnProbRefresh" class="btn secondary" style="white-space:nowrap">Prob refresh</button>
+
   <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 päeva jooksul aktiivsed">7p liigid: 0</span>
 </div>
 <div id="ebirdEEProgress" class="fetch-progress" style="display:none"></div>
-<div id="probRefreshStatus" style="display:none;margin:6px 0;padding:8px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1e40af;">
-  <div id="probRefreshText">Valmisolekus...</div>
-  <div style="margin-top:4px;height:4px;background:#dbeafe;border-radius:2px;overflow:hidden;">
-    <div id="probRefreshBar" style="height:100%;width:0%;background:#3b82f6;border-radius:2px;transition:width 0.3s;"></div>
-  </div>
-</div>
 <div id="springPanel" class="hidden-in-export" style="display:none">
   <div id="springHeader">
     <div class="title">Kevadränne</div>
@@ -9856,6 +9850,13 @@ var __sharedDefaults = {};
     if (panel) panel.style.display = 'none';
     var bd = document.getElementById('probBackdrop');
     if (bd) bd.style.display = 'none';
+    // Unfreeze sidebar/body on mobile
+    document.body.style.overflow = '';
+    var sidebar = document.getElementById('sidebar');
+    if (sidebar) {
+      sidebar.style.pointerEvents = '';
+      sidebar.removeAttribute('inert');
+    }
   }
 
   // --- Main toggle (global so delegation can call it) ---
@@ -10496,83 +10497,22 @@ window.__computeProbSilent = async function(speciesName) {
   }
 };
 
-// --- Prob Refresh bulk button ---
-var __probBulkActive = false;
-var __probBulkAbort = false;
-
-document.getElementById('btnProbRefresh').addEventListener('click', async function() {
-  if (__probBulkActive) {
-    __probBulkAbort = true;
-    return;
-  }
-
-  __probBulkActive = true;
-  __probBulkAbort = false;
-
-  var btn = document.getElementById('btnProbRefresh');
-  var statusEl = document.getElementById('probRefreshStatus');
-  var textEl = document.getElementById('probRefreshText');
-  var barEl = document.getElementById('probRefreshBar');
-
-  btn.textContent = 'Peata';
-  btn.style.background = '#fee2e2';
-  btn.style.borderColor = '#fca5a5';
-  statusEl.style.display = 'block';
-  barEl.style.background = '#3b82f6';
-
-  var filterVal = (document.getElementById('filterBox').value || '').toLowerCase().trim();
-  var candidates = (window.DATA || []).map(function(d) { return d.est; }).filter(function(name) {
-    if (filterVal && !name.toLowerCase().includes(filterVal)) return false;
-    return true;
-  });
-
-  var total = candidates.length;
-  var done = 0, errors = 0, updated = 0;
-
-  for (var ci = 0; ci < candidates.length; ci++) {
-    if (__probBulkAbort) break;
-    var species = candidates[ci];
-
-    textEl.innerHTML = '<b>' + species + '</b> (' + (done + 1) + '/' + total + ')' +
-      (errors > 0 ? ' \u00b7 <span style="color:#dc2626;">' + errors + ' viga</span>' : '') +
-      (updated > 0 ? ' \u00b7 <span style="color:#16a34a;">' + updated + ' uuendatud</span>' : '');
-    barEl.style.width = Math.round(((done + 1) / total) * 100) + '%';
-
-    try {
-      await window.__computeProbSilent(species);
-      if (window.__probDataBySpecies[species]) updated++;
-    } catch(e) {
-      console.warn('Prob refresh error for', species, e);
-      errors++;
-    }
-
-    done++;
-
-    if (!__probBulkAbort && done < total) {
-      await new Promise(function(r) { setTimeout(r, 2000); });
+// --- Mobile safety net: unfreeze sidebar if prob popup is gone but state is stuck ---
+setInterval(function() {
+  if (window.innerWidth > 900) return;
+  var panel = document.getElementById('probInfoPanel');
+  var panelVisible = panel && panel.style.display !== 'none' && panel.style.display !== '';
+  if (!panelVisible) {
+    var bd = document.getElementById('probBackdrop');
+    if (bd) bd.style.display = 'none';
+    document.body.style.overflow = '';
+    var sidebar = document.getElementById('sidebar');
+    if (sidebar) {
+      sidebar.style.pointerEvents = '';
+      sidebar.removeAttribute('inert');
     }
   }
-
-  var aborted = __probBulkAbort;
-  textEl.innerHTML = aborted
-    ? 'Peatatud: ' + done + '/' + total + ' \u00b7 ' + updated + ' uuendatud \u00b7 ' + errors + ' viga'
-    : 'Valmis: ' + total + ' liiki \u00b7 ' + updated + ' uuendatud \u00b7 ' + errors + ' viga';
-  barEl.style.width = '100%';
-  barEl.style.background = aborted ? '#fbbf24' : '#22c55e';
-
-  btn.textContent = 'Prob refresh';
-  btn.style.background = '';
-  btn.style.borderColor = '';
-
-  __probBulkActive = false;
-  __probBulkAbort = false;
-
-  if (typeof render === 'function') render();
-
-  setTimeout(function() {
-    if (!__probBulkActive) statusEl.style.display = 'none';
-  }, 10000);
-});
+}, 2000);
 
 })();
 </script>

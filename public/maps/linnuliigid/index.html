@@ -9865,14 +9865,8 @@ var __sharedDefaults = {};
     }
     var bd = document.getElementById('probBackdrop');
     if (bd) bd.style.display = 'none';
-    // Unfreeze sidebar/body on mobile
-    document.body.style.overflow = '';
-    var sidebar = document.getElementById('sidebar');
-    if (sidebar) {
-      sidebar.style.pointerEvents = '';
-      sidebar.removeAttribute('inert');
-      sidebar.removeAttribute('aria-hidden');
-    }
+    // Nuclear unfreeze — clear ALL possible blocking state
+    if (typeof window.unfreezeAfterProb === 'function') window.unfreezeAfterProb();
   }
 
   // Targeted prob-row-active toggle without full render()
@@ -10535,22 +10529,145 @@ window.__computeProbSilent = async function(speciesName) {
   }
 };
 
-// --- Mobile safety net: unfreeze sidebar if prob popup is gone but state is stuck ---
-setInterval(function() {
-  if (window.innerWidth > 900) return;
-  var panel = document.getElementById('probInfoPanel');
-  var panelVisible = panel && panel.style.display !== 'none' && panel.style.display !== '';
-  if (!panelVisible) {
-    var bd = document.getElementById('probBackdrop');
-    if (bd) bd.style.display = 'none';
+// --- Nuclear unfreeze function: clears ALL possible blocking state ---
+window.unfreezeAfterProb = function() {
+  try {
+    // 1. Body scroll
     document.body.style.overflow = '';
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.width = '';
+    document.body.style.height = '';
+    document.documentElement.style.overflow = '';
+
+    // 2. Remove prob-specific backdrops/overlays
+    document.querySelectorAll(
+      '#probBackdrop, .prob-backdrop, [data-prob-backdrop]'
+    ).forEach(function(el) {
+      el.style.display = 'none';
+    });
+
+    // 3. Sidebar: clear ALL blocking styles
     var sidebar = document.getElementById('sidebar');
     if (sidebar) {
       sidebar.style.pointerEvents = '';
+      sidebar.style.touchAction = '';
+      sidebar.style.userSelect = '';
+      sidebar.style.overflow = '';
+      sidebar.style.overflowY = '';
       sidebar.removeAttribute('inert');
+      sidebar.removeAttribute('aria-hidden');
+      sidebar.removeAttribute('data-blocked');
     }
+
+    // 4. Sidebar scroll container
+    var scrollContainer = document.querySelector('.panel-content-scroll');
+    if (scrollContainer) {
+      scrollContainer.style.pointerEvents = '';
+      scrollContainer.style.overflow = '';
+      scrollContainer.style.overflowY = '';
+      scrollContainer.style.touchAction = '';
+      scrollContainer.removeAttribute('inert');
+    }
+
+    // 5. Species list container
+    var list = document.getElementById('list');
+    if (list) {
+      list.style.pointerEvents = '';
+      list.style.touchAction = '';
+      list.removeAttribute('inert');
+    }
+
+    // 6. Map container
+    var mapWrap = document.getElementById('mapWrap');
+    if (mapWrap) {
+      mapWrap.style.pointerEvents = '';
+      mapWrap.removeAttribute('inert');
+    }
+
+    // 7. Scan for stale full-screen fixed overlays (not sidebar/map related)
+    document.querySelectorAll('div[style*="position:fixed"], div[style*="position: fixed"]').forEach(function(el) {
+      if (el.id === 'sidebar' || el.id === 'sidebarBackdrop' || el.id === 'windPanel' ||
+          el.id === 'probInfoPanel' || el.id === '__emergencyUnfreeze' ||
+          el.classList.contains('leaflet-control') || el.closest('#sidebar') || el.closest('#map')) return;
+      var rect = el.getBoundingClientRect();
+      if (rect.width > window.innerWidth * 0.8 && rect.height > window.innerHeight * 0.8) {
+        console.warn('[unfreeze] removing stale overlay:', el.id || el.className || el.tagName);
+        el.style.display = 'none';
+      }
+    });
+
+    console.log('[unfreeze] completed');
+  } catch(e) {
+    console.error('[unfreeze] error:', e);
   }
-}, 2000);
+};
+
+// --- Mobile safety net: auto-unfreeze if popup closed but state stuck ---
+(function() {
+  var lastSeenPopup = 0;
+
+  setInterval(function() {
+    if (window.innerWidth > 900) return;
+
+    var panel = document.getElementById('probInfoPanel');
+    var panelVisible = panel && panel.style.display !== 'none' && panel.style.display !== '';
+
+    if (panelVisible) {
+      lastSeenPopup = Date.now();
+      return;
+    }
+
+    // Panel not visible — check if we need to unfreeze
+    if (lastSeenPopup > 0 && (Date.now() - lastSeenPopup) > 1000) {
+      window.unfreezeAfterProb();
+      lastSeenPopup = 0;
+    }
+
+    // Also detect: body locked or sidebar frozen without popup
+    var bodyLocked = document.body.style.overflow === 'hidden' || document.body.style.position === 'fixed';
+    var sidebar = document.getElementById('sidebar');
+    var sidebarFrozen = sidebar && (
+      sidebar.style.pointerEvents === 'none' ||
+      sidebar.hasAttribute('inert') ||
+      sidebar.getAttribute('aria-hidden') === 'true'
+    );
+
+    if ((bodyLocked || sidebarFrozen) && !panelVisible) {
+      console.warn('[safety] frozen without popup — unfreezing');
+      window.unfreezeAfterProb();
+    }
+  }, 1500);
+})();
+
+// --- Emergency unfreeze button (mobile only) ---
+(function() {
+  if (window.innerWidth > 900) return;
+
+  var btn = document.createElement('button');
+  btn.id = '__emergencyUnfreeze';
+  btn.textContent = '\uD83D\uDD13';
+  btn.title = 'Unfreeze sidebar';
+  btn.style.cssText = 'position:fixed;bottom:80px;right:12px;z-index:99999;' +
+    'width:44px;height:44px;border-radius:50%;border:2px solid #f59e0b;' +
+    'background:#fffbeb;font-size:20px;display:flex;align-items:center;' +
+    'justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.2);cursor:pointer;' +
+    'opacity:0.6;';
+
+  btn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    window.unfreezeAfterProb();
+    btn.style.background = '#d1fae5';
+    btn.style.borderColor = '#10b981';
+    setTimeout(function() {
+      btn.style.background = '#fffbeb';
+      btn.style.borderColor = '#f59e0b';
+    }, 800);
+  });
+
+  document.body.appendChild(btn);
+})();
 
 })();
 </script>

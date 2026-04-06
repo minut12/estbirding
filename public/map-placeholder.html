@@ -2190,12 +2190,13 @@ function getSpringDate(name,dates){
 function missing(){
   var all=sp(),dates=sd(),pts=pt(),out=[];
   var ebird=(ebirdRecentCache&&ebirdRecentCache.data)?ebirdRecentCache.data:{};
-  var thisYear=String(new Date().getFullYear());
   for(var i=0;i<all.length;i++){
     var n=all[i],p=pts[n]||{};
-    if(Number.isFinite(p.lat)&&Number.isFinite(p.lon)) continue;
-    if(Number.isFinite(p.occ7)&&p.occ7>0) continue;
-    if(p.t&&String(p.t).indexOf(thisYear)!==-1) continue;
+    var seen=Number.isFinite(p.lat)||Number.isFinite(p.lon)||
+      p.occ7!==undefined||
+      (p.t&&String(p.t).trim()!=='')||
+      (p.src&&String(p.src).trim()!=='');
+    if(seen) continue;
     var springDate=getSpringDate(n,dates);
     var baseProb=prob(springDate);
     var ebCode=getEbirdCode(n);

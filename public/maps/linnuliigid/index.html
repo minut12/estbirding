@@ -10776,23 +10776,62 @@ function getSpringDate(name,dates){
   return '';
 }
 
+function fetchGbifSeasonCount(scientificName){
+  return fetch('https://api.gbif.org/v1/occurrence/search?scientificName='+encodeURIComponent(scientificName)+'&country=EE&month='+(new Date().getMonth()+1)+'&limit=0')
+    .then(function(r){return r.ok?r.json():{count:0};})
+    .then(function(d){return d.count||0;})
+    .catch(function(){return 0;});
+}
+
+function gbifBoost(speciesName,baseProb){
+  var cache=window.__ennustusGbifCache||{};
+  var entry=cache[speciesName];
+  if(!entry||!entry.count) return baseProb;
+  var count=entry.count;
+  var boost=0;
+  if(count>=100) boost=15;
+  else if(count>=50) boost=12;
+  else if(count>=20) boost=8;
+  else if(count>=5) boost=5;
+  else if(count>=1) boost=3;
+  return Math.min(95,baseProb+boost);
+}
+
 function missing(){
   var all=sp(),dates=sd(),pts=pt(),out=[];
   var ebird=(ebirdRecentCache&&ebirdRecentCache.data)?ebirdRecentCache.data:{};
   for(var i=0;i<all.length;i++){
     var n=all[i],p=pts[n]||{};
-    var hasPublicCoords=Number.isFinite(p.lat)&&Number.isFinite(p.lon)
-      &&String(p.coords_status||'')!=='restricted'
-      &&String(p.coords_status||'')!=='restricted_or_missing';
-    var hasRealDate=p.t&&String(p.t).trim()!==''&&String(p.t).trim()!=='(kuupäev puudub)';
-    if(hasPublicCoords&&hasRealDate) continue;
+
+    // 1. Has coordinates on map (any kind)
+    if(Number.isFinite(p.lat)&&Number.isFinite(p.lon)) continue;
+
+    // 2. Has a real observation date
+    var dateStr=String(p.t||'').trim();
+    if(dateStr&&dateStr!==''&&dateStr!=='(kuupäev puudub)') continue;
+
+    // 3. Has recent 7-day observations
+    if(Number.isFinite(p.occ7)&&p.occ7>0) continue;
+
+    // 4. User filtered it off in sidebar
+    if(p.visible===false) continue;
+
+    // 5. Has source data with a date
+    var hasSrc=p.src&&String(p.src).trim()!=='';
+    if(hasSrc&&dateStr) continue;
+
     var springDate=getSpringDate(n,dates);
     var baseProb=prob(springDate);
     var ebCode=getEbirdCode(n);
     var ebCount=0;
     if(ebCode&&ebird[ebCode]) ebCount=ebird[ebCode].count||0;
     var finalProb=combinedProb(baseProb,ebCount);
-    out.push({name:n,spring:springDate,prob:finalProb,baseProb:baseProb,ebirdCount:ebCount,ebirdCode:ebCode||''});
+    finalProb=gbifBoost(n,finalProb);
+
+    // eElurikkus count
+    var eluC=getEluCount(n);
+
+    out.push({name:n,spring:springDate,prob:finalProb,baseProb:baseProb,ebirdCount:ebCount,ebirdCode:ebCode||'',eluCount:eluC||0});
   }
   return out;
 }
@@ -10812,11 +10851,10 @@ function render(){
       var n=allSpecies[i];
       if(n.toLowerCase().indexOf(q)===-1) continue;
       var p=pts[n]||{};
-      var _hasPubCoords=Number.isFinite(p.lat)&&Number.isFinite(p.lon)
-        &&String(p.coords_status||'')!=='restricted'
-        &&String(p.coords_status||'')!=='restricted_or_missing';
+      var _hasCoords=Number.isFinite(p.lat)&&Number.isFinite(p.lon);
       var _hasRealDate=p.t&&String(p.t).trim()!==''&&String(p.t).trim()!=='(kuupäev puudub)';
-      var isSeen=_hasPubCoords&&_hasRealDate;
+      var _hasOcc7=Number.isFinite(p.occ7)&&p.occ7>0;
+      var isSeen=_hasCoords||_hasRealDate||_hasOcc7;
       var springDate=getSpringDate(n,dates);
       var baseProb=prob(springDate);
       var ebCode=getEbirdCode(n);
@@ -10832,12 +10870,25 @@ function render(){
   else if(sort==='spring') displayList.sort(function(a,b){return ssk(a.spring)-ssk(b.spring);});
   else displayList.sort(function(a,b){return a.name.localeCompare(b.name,'et');});
 
+  var totalEluObs=0;
+  for(var te=0;te<m.length;te++){totalEluObs+=(m[te].eluCount||0);}
+  var totalGbif=0;
+  for(var tg=0;tg<m.length;tg++){var _ge=(window.__ennustusGbifCache||{})[m[tg].name];if(_ge&&_ge.count) totalGbif+=_ge.count;}
+
   var el=document.getElementById('ennSum');
-  if(el) el.innerHTML='<span><b>'+m.length+'</b> puuduvat liiki</span>'+
-    (ebirdRecentCache?'<span>Skaneeritud '+
-      String(new Date(ebirdRecentCache.fetchedAt).getHours()).padStart(2,'0')+':'+
-      String(new Date(ebirdRecentCache.fetchedAt).getMinutes()).padStart(2,'0')+
-      ' · eBird: '+ebirdRecentCache.totalObs+' vaatlust EE-s</span>':'');
+  if(el){
+    var sumParts=['<b>'+m.length+'</b> puuduvat liiki'];
+    var detailParts=[];
+    if(ebirdRecentCache){
+      detailParts.push('Skaneeritud '+
+        String(new Date(ebirdRecentCache.fetchedAt).getHours()).padStart(2,'0')+':'+
+        String(new Date(ebirdRecentCache.fetchedAt).getMinutes()).padStart(2,'0')+
+        ' · eBird: '+ebirdRecentCache.totalObs+' vaatlust EE-s');
+    }
+    if(totalEluObs>0) detailParts.push('eElur: '+totalEluObs);
+    if(totalGbif>0) detailParts.push('GBIF: '+totalGbif+' (kuu)');
+    el.innerHTML='<span>'+sumParts.join('')+'</span>'+(detailParts.length?'<span>'+detailParts.join(' · ')+'</span>':'');
+  }
 
   var lst=document.getElementById('ennLst');
   if(!lst) return;
@@ -10865,11 +10916,15 @@ function render(){
     var eluTxt='';
     if(eluC!==null&&eluC>0) eluTxt='<div class="eObs" style="color:#16a34a">eElur: '+eluC+'</div>';
     else eluTxt='<div class="eObs">eElur: 0</div>';
+    var gbifEntry=(window.__ennustusGbifCache||{})[s.name];
+    var gbifTxt='';
+    if(gbifEntry&&gbifEntry.count>0) gbifTxt='<div class="eObs">GBIF: '+gbifEntry.count+' (selles kuus)</div>';
+    else if(gbifEntry) gbifTxt='<div class="eObs">GBIF: 0</div>';
     var escName=s.name.replace(/'/g,"\\'");
     h+='<div class="eR" style="'+rowStyle+'"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+
       '<div class="eNm">'+nm+' '+badge+' <button class="ePrb" onclick="window.__ennProb(\''+escName+'\')">Prob</button></div><div class="eLt">'+sl+'</div>'+
       '<div class="eBar"><div class="eBf" style="width:'+Math.min(100,s.prob)+'%;background:'+bc+'"></div></div>'+
-      '</div><div class="eRt"><div class="ePct" style="color:'+pc+'">'+s.prob+'%</div>'+ebTxt+eluTxt+'</div></div>';
+      '</div><div class="eRt"><div class="ePct" style="color:'+pc+'">'+s.prob+'%</div>'+ebTxt+eluTxt+gbifTxt+'</div></div>';
   }
   if(!h){
     if(q) h='<div style="padding:16px;text-align:center;color:#94a3b8">Liiki "'+q+'" ei leitud</div>';
@@ -10915,10 +10970,36 @@ window.__scanEnn=function(btn){
   fetchEbirdRecent(function(err){
     render();
     if(lst) lst.style.opacity='1';
-    btn.disabled=false;
-    btn.style.opacity='1';
-    if(err){btn.textContent='Skaneeri (viga)';setTimeout(function(){btn.textContent='Skaneeri';},3000);}
-    else btn.textContent='Skaneeri';
+    if(err){btn.textContent='Skaneeri (viga)';setTimeout(function(){btn.textContent='Skaneeri';},3000);btn.disabled=false;btn.style.opacity='1';return;}
+
+    // Step 2: Fetch GBIF for top candidates
+    btn.textContent='Laen GBIF...';
+    var m=missing();
+    m.sort(function(a,b){return b.prob-a.prob;});
+    var topCandidates=m.slice(0,20);
+    var gbifCache=window.__ennustusGbifCache||{};
+    var idx=0;
+
+    function nextGbif(){
+      if(idx>=topCandidates.length){
+        window.__ennustusGbifCache=gbifCache;
+        render();
+        btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';
+        return;
+      }
+      var species=topCandidates[idx];
+      var sciName=SPECIES_SCINAMES[species.name]||null;
+      idx++;
+      if(!sciName){nextGbif();return;}
+      var cached=gbifCache[species.name];
+      if(cached&&(Date.now()-cached.fetchedAt<6*3600000)){nextGbif();return;}
+      btn.textContent='GBIF '+idx+'/'+topCandidates.length;
+      fetchGbifSeasonCount(sciName).then(function(count){
+        gbifCache[species.name]={count:count,scientificName:sciName,fetchedAt:Date.now()};
+        setTimeout(nextGbif,250);
+      }).catch(function(){setTimeout(nextGbif,250);});
+    }
+    nextGbif();
   });
 };
 window.__ennProb=function(speciesName){

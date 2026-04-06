@@ -2030,6 +2030,8 @@ window.alert = function(msg){ notifySilent(msg); };
 .eRt{text-align:right;flex-shrink:0;min-width:55px}
 .ePct{font-size:18px;font-weight:600}
 .eObs{font-size:11px;color:#94a3b8;margin-top:1px}
+.ePrb{font-size:10px;padding:1px 6px;border-radius:4px;border:1px solid #cbd5e1;background:#f0fdf4;color:#16a34a;cursor:pointer;margin-left:4px;vertical-align:middle}
+.ePrb:hover{background:#dcfce7}
 .eBdg{font-size:11px;padding:1px 6px;border-radius:4px}
 .eBH{background:#dcfce7;color:#166534}
 .eBM{background:#fef3c7;color:#92400e}
@@ -2120,6 +2122,17 @@ function combinedProb(springProb, ebirdCount) {
   if (!ebirdCount || ebirdCount <= 0) return springProb;
   var boost = ebirdCount >= 11 ? 50 : ebirdCount >= 6 ? 40 : ebirdCount >= 3 ? 30 : 20;
   return Math.min(99, springProb + boost);
+}
+
+function getEluCount(speciesName) {
+  try { var p = pt()[speciesName] || {};
+    if (Number.isFinite(p.occ7) && p.occ7 > 0) return p.occ7; } catch(e) {}
+  try { var liveStats = window.liveStatsBySpecies || {};
+    var cacheKey = (typeof window._normalizeSpeciesKey === 'function')
+      ? window._normalizeSpeciesKey(speciesName) : speciesName;
+    if (liveStats[cacheKey] && Number.isFinite(liveStats[cacheKey].last7d)) return liveStats[cacheKey].last7d;
+  } catch(e) {}
+  return null;
 }
 
 function sd(){
@@ -2225,10 +2238,15 @@ function render(){
     if(s.ebirdCount>0) ebTxt='<div class="eObs" style="color:#16a34a">eBird: '+s.ebirdCount+' vaatl.</div>';
     else if(s.ebirdCode) ebTxt='<div class="eObs">eBird: 0 vaatl.</div>';
     else ebTxt='<div class="eObs" style="color:#d97706">eBird kood puudub</div>';
+    var eluC=getEluCount(s.name);
+    var eluTxt='';
+    if(eluC!==null&&eluC>0) eluTxt='<div class="eObs" style="color:#16a34a">eElur: '+eluC+' vaatl.</div>';
+    else eluTxt='<div class="eObs">eElur: 0</div>';
+    var escName=s.name.replace(/'/g,"\\'");
     h+='<div class="eR"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+
-      '<div class="eNm">'+nm+' '+badge+'</div><div class="eLt">'+sl+'</div>'+
+      '<div class="eNm">'+nm+' '+badge+' <button class="ePrb" onclick="window.__ennProb(\''+escName+'\')">Prob</button></div><div class="eLt">'+sl+'</div>'+
       '<div class="eBar"><div class="eBf" style="width:'+Math.min(100,s.prob)+'%;background:'+bc+'"></div></div>'+
-      '</div><div class="eRt"><div class="ePct" style="color:'+pc+'">'+s.prob+'%</div>'+ebTxt+'</div></div>';
+      '</div><div class="eRt"><div class="ePct" style="color:'+pc+'">'+s.prob+'%</div>'+ebTxt+eluTxt+'</div></div>';
   }
   lst.innerHTML=h||'<div style="padding:16px;text-align:center;color:#94a3b8">Kõik liigid on juba kaardil!</div>';
 
@@ -2272,6 +2290,28 @@ window.__scanEnn=function(btn){
     if(err){btn.textContent='Skaneeri (viga)';setTimeout(function(){btn.textContent='Skaneeri';},3000);}
     else btn.textContent='Skaneeri';
   });
+};
+window.__ennProb=function(speciesName){
+  window.__closeEnn();
+  setTimeout(function(){
+    try{
+      if(typeof window.__springScrollToSpecies==='function') window.__springScrollToSpecies(speciesName);
+      var row=document.querySelector('.row[data-key="'+CSS.escape(speciesName)+'"]');
+      if(row){
+        row.scrollIntoView({behavior:'smooth',block:'nearest'});
+        row.style.outline='2px solid #93c5fd';row.style.outlineOffset='2px';
+        setTimeout(function(){row.style.outline='';row.style.outlineOffset='';},2000);
+        var allBtns=row.querySelectorAll('button');
+        for(var i=0;i<allBtns.length;i++){
+          var txt=(allBtns[i].textContent||'').trim();
+          if(txt==='Prob'||txt.indexOf('Prob')!==-1){allBtns[i].click();break;}
+        }
+      } else {
+        var filterBox=document.getElementById('filterBox');
+        if(filterBox){filterBox.value=speciesName;filterBox.dispatchEvent(new Event('input',{bubbles:true}));}
+      }
+    }catch(e){console.warn('[Ennustus] Prob navigation failed:',e);}
+  },300);
 };
 window.__openEnnustus=window.__openEnn;
 

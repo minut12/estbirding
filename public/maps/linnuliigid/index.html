@@ -3468,6 +3468,7 @@ async function refreshAllElurikkusOnce(){
           _logEeRefreshStage({ view: view, jobId: jobId, index: i, species: name, stage: 'counters', updated: !!(r && r.updated), moved: !!(r && r.moved) });
           if(r && r.updated) updated++;
           if(r && r.moved) moved++;
+          if(points[name]) points[name].clientScannedAt = new Date().toISOString();
           window.__lastElurikkusBulkOutcomes.unshift({
             species: name,
             ok: true,
@@ -6482,19 +6483,13 @@ async function _applySnapshot(snap){
     if(typeof s.county === 'string' && s.county.trim()) snapPoint.county = s.county;
     if(s.elurikkus && typeof s.elurikkus === 'object') snapPoint.elurikkus = Object.assign({}, s.elurikkus);
     __snapshotPointBySpecies[_speciesKey(key)] = Object.assign({}, snapPoint);
-    const keepLive = false;
+    var _existingClientScan = points[key] && points[key].clientScannedAt ? Date.parse(points[key].clientScannedAt) : 0;
+    var _snapGeneratedAt = snap.generated_at ? Date.parse(snap.generated_at) : 0;
+    var keepClientScan = Number.isFinite(_existingClientScan) && _existingClientScan > 0 && Number.isFinite(_snapGeneratedAt) && _existingClientScan > _snapGeneratedAt;
+    const keepLive = keepClientScan;
     if(!keepLive){
-      // Race-condition fix: skip overwriting if we have a fresher Elurikkus-fetched value
       const _existing = points[key];
-      const _snapTs = Date.parse(snap.generated_at || '');
-      const _fetchTs = Date.parse((_existing && _existing.lastFetched) || '');
-      if(Number.isFinite(_fetchTs) && Number.isFinite(_snapTs) && _fetchTs > _snapTs){
-        console.log('[coords-fix] _applySnapshot: keeping fresher fetch for', key, '| fetchedAt:', _existing.lastFetched, '> snapshotAt:', snap.generated_at);
-        // preserve the live fetch but restore visibility from snapshot logic
-        if(_existing.visible === undefined) _existing.visible = true;
-      } else {
-        points[key] = Object.assign({}, snapPoint, { visible: (_existing && _existing.visible === false) ? false : true });
-      }
+      points[key] = Object.assign({}, snapPoint, { visible: (_existing && _existing.visible === false) ? false : true });
     }else{
       _applyLiveOverrideForSpecies(key);
     }
@@ -6522,6 +6517,16 @@ async function _applySnapshot(snap){
   __snapshotMeta.generated_at = snap.generated_at;
   _setResumeIndex(__snapshotProgressDone);
   _recomputeClientDataMaxAt();
+  // Clear stale clientScannedAt flags once server snapshot catches up
+  var _snapTs = snap.generated_at ? Date.parse(snap.generated_at) : 0;
+  if(Number.isFinite(_snapTs) && _snapTs > 0){
+    for(var _ck in points){
+      if(points[_ck] && points[_ck].clientScannedAt){
+        var _csTs = Date.parse(points[_ck].clientScannedAt) || 0;
+        if(_snapTs > _csTs) delete points[_ck].clientScannedAt;
+      }
+    }
+  }
   save();
   window.__applyingSnapshot = false;
   window.__snapshotLoadedOnce = true;

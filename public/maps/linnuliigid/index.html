@@ -977,6 +977,12 @@ function _applyLiveOverrideForSpecies(speciesName){
   points[speciesName] = _livePointFromItems(speciesName, liveEntry.items);
   const newLat = Number(points[speciesName].lat);
   const newLon = Number(points[speciesName].lon);
+  console.log('[live-override]', speciesName, {
+    prevLat: Number.isFinite(oldLat) ? oldLat : null, prevLon: Number.isFinite(oldLon) ? oldLon : null, prevDate: prev.t || null,
+    newLat: Number.isFinite(newLat) ? newLat : null, newLon: Number.isFinite(newLon) ? newLon : null, newDate: points[speciesName].t || null,
+    coordsStatus: points[speciesName].coords_status, coordsSource: points[speciesName].coords_source,
+    changedCoords: (oldLat !== newLat || oldLon !== newLon)
+  });
   points[speciesName].lastCoordsDecision = Object.assign({}, points[speciesName].lastCoordsDecision || {}, {
     oldLat: Number.isFinite(oldLat) ? oldLat : null,
     oldLon: Number.isFinite(oldLon) ? oldLon : null,
@@ -9488,9 +9494,40 @@ var __sharedDefaults = {};
       }
       var isCurrentPeriod = (now >= period.start && now < period.end);
       var periodRecency = 0;
-      if (isCurrentPeriod && occ7 > 0) {
-        periodRecency = Math.min(20, Math.round(occ7 / 3));
+
+      if (isCurrentPeriod) {
+        var latestObsDate = (eluPoint && eluPoint.t) ? eluPoint.t : '';
+        var ageDays = Infinity;
+
+        if (latestObsDate) {
+          try {
+            var obsTs = (typeof _toDay === 'function') ? _toDay(latestObsDate) : Date.parse(latestObsDate);
+            if (obsTs && obsTs > 0) {
+              ageDays = (Date.now() - obsTs) / (24 * 60 * 60 * 1000);
+            }
+          } catch(e) {}
+        }
+
+        if (ageDays < 1) {
+          periodRecency = 50;
+        } else if (ageDays < 2) {
+          periodRecency = 40;
+        } else if (ageDays < 3) {
+          periodRecency = 30;
+        } else if (ageDays < 5) {
+          periodRecency = 20;
+        } else if (ageDays < 7) {
+          periodRecency = 12;
+        } else {
+          periodRecency = 5;
+        }
+
+        if (occ7 >= 10) periodRecency = Math.min(60, periodRecency + 10);
+        else if (occ7 >= 5) periodRecency = Math.min(60, periodRecency + 7);
+        else if (occ7 >= 3) periodRecency = Math.min(60, periodRecency + 5);
+        else if (occ7 >= 1) periodRecency = Math.min(60, periodRecency + 3);
       }
+
       period.probability = Math.max(1, Math.min(95, periodHistorical + periodRecency));
       period.isCurrent = isCurrentPeriod;
       period.obsCount = period.count;
@@ -10735,9 +10772,14 @@ function missing(){
   var ebird=(ebirdRecentCache&&ebirdRecentCache.data)?ebirdRecentCache.data:{};
   for(var i=0;i<all.length;i++){
     var n=all[i],p=pts[n]||{};
-    var seen=(Number.isFinite(p.lat)&&Number.isFinite(p.lon))||
-      (Number.isFinite(p.occ7)&&p.occ7>0);
-    if(seen) continue;
+    var hasCoords=Number.isFinite(p.lat)&&Number.isFinite(p.lon);
+    var hasDate=p.t&&String(p.t).trim()!==''&&String(p.t).trim()!=='(kuupäev puudub)';
+    var hasOcc7=Number.isFinite(p.occ7)&&p.occ7>0;
+    var hasFetchedData=!!p.lastFetched&&(hasDate||hasOcc7);
+    var springVal=String((dates[n]||'')).trim();
+    var hasYearFirstDate=/^\d{4}-\d{2}-\d{2}/.test(springVal);
+    var hasSource=p.src&&String(p.src).trim()!=='';
+    if(hasCoords||hasDate||hasOcc7||hasFetchedData||hasYearFirstDate||hasSource) continue;
     var springDate=getSpringDate(n,dates);
     var baseProb=prob(springDate);
     var ebCode=getEbirdCode(n);
@@ -10766,7 +10808,10 @@ function render(){
       var p=pts[n]||{};
       var isSeen=(Number.isFinite(p.lat)&&Number.isFinite(p.lon))||
         (Number.isFinite(p.occ7)&&p.occ7>0)||
-        (p.t&&String(p.t).indexOf(thisYear)!==-1);
+        (p.t&&String(p.t).trim()!==''&&String(p.t).trim()!=='(kuupäev puudub)')||
+        (!!p.lastFetched&&((p.t&&String(p.t).trim()!=='')||(Number.isFinite(p.occ7)&&p.occ7>0)))||
+        (/^\d{4}-\d{2}-\d{2}/.test(String(dates[n]||'')))||
+        (p.src&&String(p.src).trim()!=='');
       var springDate=getSpringDate(n,dates);
       var baseProb=prob(springDate);
       var ebCode=getEbirdCode(n);

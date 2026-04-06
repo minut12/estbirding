@@ -10779,51 +10779,29 @@ function getSpringDate(name,dates){
 function missing(){
   var all=sp(),dates=sd(),pts=pt(),out=[];
   var ebird=(ebirdRecentCache&&ebirdRecentCache.data)?ebirdRecentCache.data:{};
-
-  // Build lowercase lookup map for points to handle encoding mismatches
-  var ptsLower={};
-  for(var pk in pts){
-    if(pts.hasOwnProperty(pk)) ptsLower[pk.toLowerCase().trim()]=pts[pk];
-  }
-
+  // Build lowercase lookup maps to handle encoding mismatches (e.g. Jõgitilder)
+  var _ptsLower={};
+  for(var _pk in pts){if(pts.hasOwnProperty(_pk)) _ptsLower[_pk.toLowerCase()]=pts[_pk];}
+  var _datesLower={};
+  for(var _dk in dates){if(dates.hasOwnProperty(_dk)) _datesLower[_dk.toLowerCase()]=dates[_dk];}
   for(var i=0;i<all.length;i++){
-    var n=all[i];
-    var lowerN=n.toLowerCase().trim();
-
-    // Find point data — exact match first, then lowercase fallback
-    var p=pts[n]||ptsLower[lowerN]||{};
-
-    // Debug log for species with 'tilder' or 'tiir' in name
-    if(n.indexOf('tilder')!==-1||n.indexOf('tiir')!==-1){
-      console.log('[ennustus-filter]',n,{
-        hasCoords:Number.isFinite(p.lat)&&Number.isFinite(p.lon),
-        date:p.t,occ7:p.occ7,visible:p.visible,src:p.src,
-        exactMatch:!!pts[n],lowerMatch:!!ptsLower[lowerN],
-        rawPoint:JSON.stringify(p).substring(0,200)
-      });
-    }
-
-    // 1. Has valid coordinates on map
-    if(Number.isFinite(p.lat)&&Number.isFinite(p.lon)) continue;
-
-    // 2. Has a real observation date
-    var dateStr=String(p.t||'').trim();
-    if(dateStr&&dateStr!==''&&dateStr!=='(kuupäev puudub)') continue;
-
-    // 3. Has recent 7-day observations
-    if(Number.isFinite(p.occ7)&&p.occ7>0) continue;
-
-    // --- This species is truly missing — compute probability ---
-    var springDate=getSpringDate(n,dates);
+    var n=all[i],p=pts[n]||_ptsLower[n.toLowerCase()]||{};
+    var hasCoords=Number.isFinite(p.lat)&&Number.isFinite(p.lon);
+    var hasDate=p.t&&String(p.t).trim()!==''&&String(p.t).trim()!=='(kuupäev puudub)';
+    var hasOcc7=Number.isFinite(p.occ7)&&p.occ7>0;
+    var hasFetchedData=!!p.lastFetched&&(hasDate||hasOcc7);
+    var springVal=String((dates[n]||_datesLower[n.toLowerCase()]||'')).trim();
+    var hasYearFirstDate=/^\d{4}-\d{2}-\d{2}/.test(springVal);
+    var hasSource=p.src&&String(p.src).trim()!=='';
+    if(hasCoords||hasDate||hasOcc7||hasFetchedData||hasYearFirstDate||hasSource) continue;
+    var springDate=getSpringDate(n,dates)||_datesLower[n.toLowerCase()]||'';
+    springDate=String(springDate).trim();
     var baseProb=prob(springDate);
     var ebCode=getEbirdCode(n);
     var ebCount=0;
     if(ebCode&&ebird[ebCode]) ebCount=ebird[ebCode].count||0;
     var finalProb=combinedProb(baseProb,ebCount);
-
-    var eluC=getEluCount(n);
-
-    out.push({name:n,spring:springDate,prob:finalProb,baseProb:baseProb,ebirdCount:ebCount,ebirdCode:ebCode||'',eluCount:eluC||0});
+    out.push({name:n,spring:springDate,prob:finalProb,baseProb:baseProb,ebirdCount:ebCount,ebirdCode:ebCode||''});
   }
   return out;
 }
@@ -10837,19 +10815,20 @@ function render(){
   var ebird=(ebirdRecentCache&&ebirdRecentCache.data)?ebirdRecentCache.data:{};
   var thisYear=String(new Date().getFullYear());
   var m=missing();
-  // Build lowercase lookup for search mode
   var _ptsLower={};
-  for(var _pk in pts){if(pts.hasOwnProperty(_pk)) _ptsLower[_pk.toLowerCase().trim()]=pts[_pk];}
+  for(var _pk in pts){if(pts.hasOwnProperty(_pk)) _ptsLower[_pk.toLowerCase()]=pts[_pk];}
   var displayList=[];
   if(q){
     for(var i=0;i<allSpecies.length;i++){
       var n=allSpecies[i];
       if(n.toLowerCase().indexOf(q)===-1) continue;
-      var p=pts[n]||_ptsLower[n.toLowerCase().trim()]||{};
-      var _hasCoords=Number.isFinite(p.lat)&&Number.isFinite(p.lon);
-      var _hasRealDate=p.t&&String(p.t).trim()!==''&&String(p.t).trim()!=='(kuupäev puudub)';
-      var _hasOcc7=Number.isFinite(p.occ7)&&p.occ7>0;
-      var isSeen=_hasCoords||_hasRealDate||_hasOcc7;
+      var p=pts[n]||_ptsLower[n.toLowerCase()]||{};
+      var isSeen=(Number.isFinite(p.lat)&&Number.isFinite(p.lon))||
+        (Number.isFinite(p.occ7)&&p.occ7>0)||
+        (p.t&&String(p.t).trim()!==''&&String(p.t).trim()!=='(kuupäev puudub)')||
+        (!!p.lastFetched&&((p.t&&String(p.t).trim()!=='')||(Number.isFinite(p.occ7)&&p.occ7>0)))||
+        (/^\d{4}-\d{2}-\d{2}/.test(String(dates[n]||'')))||
+        (p.src&&String(p.src).trim()!=='');
       var springDate=getSpringDate(n,dates);
       var baseProb=prob(springDate);
       var ebCode=getEbirdCode(n);

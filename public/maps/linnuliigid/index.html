@@ -10552,7 +10552,7 @@ var SPRING = {
 "Mustlagle":"30.03","Mustviires":"29.04","Nõmmelõoke":"10.03","Peoleo":"6.05",
 "Piiritaja":"3.05","Plütt":"19.05","Plüü":"25.04","Põldtsiitsitaja":"4.05",
 "Rabapistrik":"11.04","Randtiir":"16.04","Rohunepp":"28.04","Rukkirääk":"7.05",
-"Rägapart":"25.03","Räusk":"4.04","Räästapääsuke":"18.04","Rüüt":"5.03",
+"Rägapart":"25.03","Räusk":"4.04","Räusktiir":"4.04","Räästapääsuke":"18.04","Rüüt":"5.03",
 "Sarviklõoke":"6.03","Sinirind":"18.04","Sooräts":"17.04","Soorüdi":"27.03",
 "Suitsupääsuke":"10.04","Suurkoovitaja":"25.03","Suurrüdi":"4.05","Tundrakaur":"1.05",
 "Tundrakiur":"23.04","Turteltuvi":"25.04","Täpikhuik":"18.04","Tõmmukajakas":"8.03",
@@ -10661,14 +10661,24 @@ function prob(ds){
   return Math.max(1,Math.round(18-(diff-30)*.3));
 }
 
+function getSpringDate(name,dates){
+  if(dates[name]) return dates[name];
+  var lo=name.toLowerCase().trim();
+  var keys=Object.keys(dates);
+  for(var i=0;i<keys.length;i++){if(keys[i].toLowerCase().trim()===lo) return dates[keys[i]];}
+  return '';
+}
+
 function missing(){
   var all=sp(),dates=sd(),pts=pt(),out=[];
   var ebird=(ebirdRecentCache&&ebirdRecentCache.data)?ebirdRecentCache.data:{};
+  var thisYear=String(new Date().getFullYear());
   for(var i=0;i<all.length;i++){
     var n=all[i],p=pts[n]||{};
     if(Number.isFinite(p.lat)&&Number.isFinite(p.lon)) continue;
     if(Number.isFinite(p.occ7)&&p.occ7>0) continue;
-    var springDate=(dates[n]||'').trim();
+    if(p.t&&String(p.t).indexOf(thisYear)!==-1) continue;
+    var springDate=getSpringDate(n,dates);
     var baseProb=prob(springDate);
     var ebCode=getEbirdCode(n);
     var ebCount=0;
@@ -10776,23 +10786,40 @@ window.__scanEnn=function(btn){
 window.__ennProb=function(speciesName){
   window.__closeEnn();
   setTimeout(function(){
-    try{
-      if(typeof window.__springScrollToSpecies==='function') window.__springScrollToSpecies(speciesName);
-      var row=document.querySelector('.row[data-key="'+CSS.escape(speciesName)+'"]');
-      if(row){
-        row.scrollIntoView({behavior:'smooth',block:'nearest'});
-        row.style.outline='2px solid #93c5fd';row.style.outlineOffset='2px';
-        setTimeout(function(){row.style.outline='';row.style.outlineOffset='';},2000);
-        var allBtns=row.querySelectorAll('button');
-        for(var i=0;i<allBtns.length;i++){
-          var txt=(allBtns[i].textContent||'').trim();
-          if(txt==='Prob'||txt.indexOf('Prob')!==-1){allBtns[i].click();break;}
+    var filterBox=document.getElementById('filterBox');
+    if(filterBox){
+      filterBox.value=speciesName;
+      filterBox.dispatchEvent(new Event('input',{bubbles:true}));
+      try{if(typeof window.render==='function') window.render();}catch(e){}
+    }
+    setTimeout(function(){
+      try{
+        var row=document.querySelector('.row[data-key="'+speciesName.replace(/"/g,'\\"')+'"]');
+        if(!row) try{row=document.querySelector('.row[data-key="'+CSS.escape(speciesName)+'"]');}catch(e){}
+        if(row){
+          row.scrollIntoView({behavior:'smooth',block:'center'});
+          row.style.outline='2px solid #93c5fd';row.style.outlineOffset='2px';
+          setTimeout(function(){row.style.outline='';row.style.outlineOffset='';},3000);
+          var allBtns=row.querySelectorAll('button,[onclick]');
+          var probFound=false;
+          for(var i=0;i<allBtns.length;i++){
+            var txt=(allBtns[i].textContent||'').trim();
+            if(txt==='Prob'||txt==='⊙ Prob'||txt.indexOf('Prob')!==-1){allBtns[i].click();probFound=true;break;}
+          }
+          if(!probFound){
+            var clickables=row.querySelectorAll('[onclick*="prob"],[onclick*="Prob"],[onclick*="topPeriod"],[onclick*="TopPeriod"]');
+            if(clickables.length>0){clickables[0].click();probFound=true;}
+          }
+          if(!probFound){
+            var links=row.querySelectorAll('span,a,div');
+            for(var j=0;j<links.length;j++){
+              var t=(links[j].textContent||'').trim();
+              if(t.indexOf('vajuta Prob')!==-1||t.indexOf('Top periood')!==-1){links[j].click();break;}
+            }
+          }
         }
-      } else {
-        var filterBox=document.getElementById('filterBox');
-        if(filterBox){filterBox.value=speciesName;filterBox.dispatchEvent(new Event('input',{bubbles:true}));}
-      }
-    }catch(e){console.warn('[Ennustus] Prob navigation failed:',e);}
+      }catch(e){console.warn('[Ennustus] Prob navigation failed:',e);}
+    },400);
   },300);
 };
 window.__openEnnustus=window.__openEnn;

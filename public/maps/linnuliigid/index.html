@@ -10723,34 +10723,31 @@ function getEluCached(speciesName){
 }
 
 function getEluCount(speciesName) {
-  // Method 0: from ennustus scan cache
+  var clean=_fix(speciesName);
+  // Method 0: from ennustus scan cache (try both raw and clean keys)
   var cached=getEluCached(speciesName);
+  if(cached===null) cached=getEluCached(clean);
   if(cached!==null) return cached;
   // Method 1: from points occ7
   try {
     var pts=pt();
-    var clean=_fix(speciesName);
     var p=pts[speciesName]||pts[clean];
     if(p&&Number.isFinite(p.occ7)&&p.occ7>0) return p.occ7;
   } catch(e) {}
   // Method 2: from live eElurikkus cache
   try {
     var elu=window.__elurikkusBySpecies||{};
-    var entry=elu[speciesName];
+    var entry=elu[speciesName]||elu[clean];
     if(!entry){
-      var normKey=(typeof window._normalizeSpeciesKey==='function')?window._normalizeSpeciesKey(speciesName):speciesName;
+      var normKey=(typeof window._normalizeSpeciesKey==='function')?window._normalizeSpeciesKey(clean):clean;
       entry=elu[normKey];
-    }
-    if(!entry){
-      var lk=speciesName.toLowerCase();
-      for(var ek in elu){if(elu.hasOwnProperty(ek)&&ek.toLowerCase()===lk){entry=elu[ek];break;}}
     }
     if(entry&&entry.items&&Array.isArray(entry.items)&&entry.items.length>0) return entry.items.length;
   } catch(e) {}
   // Method 3: from liveStats
   try {
     var liveStats=window.liveStatsBySpecies||{};
-    var cacheKey=(typeof window._normalizeSpeciesKey==='function')?window._normalizeSpeciesKey(speciesName):speciesName;
+    var cacheKey=(typeof window._normalizeSpeciesKey==='function')?window._normalizeSpeciesKey(clean):clean;
     if(liveStats[cacheKey]&&Number.isFinite(liveStats[cacheKey].last7d)) return liveStats[cacheKey].last7d;
   } catch(e) {}
   return -1; // -1 = not fetched yet, 0 = fetched but none
@@ -10995,7 +10992,7 @@ window.__scanEnn=function(btn){
     m.sort(function(a,b){return b.prob-a.prob;});
     var toFetch=[];
     for(var i=0;i<Math.min(m.length,30);i++){
-      if(getEluCached(m[i].name)===null) toFetch.push(m[i].name);
+      if(getEluCached(m[i].name)===null&&getEluCached(_fix(m[i].name))===null) toFetch.push(m[i].name);
     }
     if(toFetch.length===0){
       btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';return;
@@ -11014,16 +11011,21 @@ window.__scanEnn=function(btn){
       else if(typeof window._fetchElurikkusSpeciesViaHtml==='function') fetchFn=window._fetchElurikkusSpeciesViaHtml;
       if(!fetchFn){
         window.__ennustusEluCache[name]={count:0,source:'no_fn',fetchedAt:Date.now()};
+        window.__ennustusEluCache[cleanName]={count:0,source:'no_fn',fetchedAt:Date.now()};
         render();setTimeout(nextElu,100);return;
       }
       fetchFn(cleanName).then(function(result){
         var count=(result&&Array.isArray(result.items))?result.items.length:0;
-        window.__ennustusEluCache[name]={count:count,source:'api',fetchedAt:Date.now()};
+        var entry={count:count,source:'api',fetchedAt:Date.now()};
+        window.__ennustusEluCache[name]=entry;
+        window.__ennustusEluCache[cleanName]=entry;
         render();
         setTimeout(nextElu,500);
       }).catch(function(e){
-        console.warn('[ennustus-elu]',name,e&&e.message||e);
-        window.__ennustusEluCache[name]={count:0,source:'error',fetchedAt:Date.now()};
+        console.warn('[ennustus-elu]',cleanName,e&&e.message||e);
+        var entry={count:0,source:'error',fetchedAt:Date.now()};
+        window.__ennustusEluCache[name]=entry;
+        window.__ennustusEluCache[cleanName]=entry;
         render();
         setTimeout(nextElu,500);
       });

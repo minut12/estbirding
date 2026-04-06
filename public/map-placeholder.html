@@ -2209,38 +2209,59 @@ function missing(){
 var sort='prob';
 
 function render(){
-  var m=missing(),q=(document.getElementById('ennQ')||{}).value||'';
+  var allSpecies=sp(),dates=sd(),pts=pt();
+  var q=(document.getElementById('ennQ')||{}).value||'';
   q=q.toLowerCase().trim();
-  var f=q?m.filter(function(s){return s.name.toLowerCase().indexOf(q)!==-1;}):m;
-  if(sort==='prob') f.sort(function(a,b){return b.prob-a.prob;});
-  else if(sort==='spring') f.sort(function(a,b){return ssk(a.spring)-ssk(b.spring);});
-  else f.sort(function(a,b){return a.name.localeCompare(b.name,'et');});
+  var ebird=(ebirdRecentCache&&ebirdRecentCache.data)?ebirdRecentCache.data:{};
+  var thisYear=String(new Date().getFullYear());
+  var m=missing();
+  var displayList=[];
+  if(q){
+    for(var i=0;i<allSpecies.length;i++){
+      var n=allSpecies[i];
+      if(n.toLowerCase().indexOf(q)===-1) continue;
+      var p=pts[n]||{};
+      var isSeen=(Number.isFinite(p.lat)&&Number.isFinite(p.lon))||
+        (Number.isFinite(p.occ7)&&p.occ7>0)||
+        (p.t&&String(p.t).indexOf(thisYear)!==-1);
+      var springDate=getSpringDate(n,dates);
+      var baseProb=prob(springDate);
+      var ebCode=getEbirdCode(n);
+      var ebCount=0;
+      if(ebCode&&ebird[ebCode]) ebCount=ebird[ebCode].count||0;
+      var finalProb=combinedProb(baseProb,ebCount);
+      displayList.push({name:n,spring:springDate,prob:finalProb,baseProb:baseProb,ebirdCount:ebCount,ebirdCode:ebCode||'',seen:isSeen});
+    }
+  } else {
+    for(var j=0;j<m.length;j++){m[j].seen=false;displayList.push(m[j]);}
+  }
+  if(sort==='prob') displayList.sort(function(a,b){return b.prob-a.prob;});
+  else if(sort==='spring') displayList.sort(function(a,b){return ssk(a.spring)-ssk(b.spring);});
+  else displayList.sort(function(a,b){return a.name.localeCompare(b.name,'et');});
 
   var el=document.getElementById('ennSum');
-  if(el){
-    var sumH='<span><b>'+m.length+'</b> puuduvat liiki</span>';
-    if(ebirdRecentCache){
-      var ts=new Date(ebirdRecentCache.fetchedAt);
-      var timeStr=String(ts.getHours()).padStart(2,'0')+':'+String(ts.getMinutes()).padStart(2,'0');
-      sumH+='<span>Skaneeritud '+timeStr+' · eBird: '+ebirdRecentCache.totalObs+' vaatlust EE-s</span>';
-    }
-    el.innerHTML=sumH;
-  }
+  if(el) el.innerHTML='<span><b>'+m.length+'</b> puuduvat liiki</span>'+
+    (ebirdRecentCache?'<span>Skaneeritud '+
+      String(new Date(ebirdRecentCache.fetchedAt).getHours()).padStart(2,'0')+':'+
+      String(new Date(ebirdRecentCache.fetchedAt).getMinutes()).padStart(2,'0')+
+      ' · eBird: '+ebirdRecentCache.totalObs+' vaatlust EE-s</span>':'');
 
   var lst=document.getElementById('ennLst');
   if(!lst) return;
   var h='';
-  for(var i=0;i<f.length;i++){
-    var s=f[i],nm=dn(s.name),aurl=av(s.name);
+  for(var k=0;k<displayList.length;k++){
+    var s=displayList[k],nm=dn(s.name),aurl=av(s.name);
     var bc=s.prob>=50?'#16a34a':s.prob>=20?'#d97706':'#cbd5e1';
     var pc=s.prob>=50?'#16a34a':s.prob>=20?'#d97706':s.prob>=5?'#94a3b8':'#cbd5e1';
     var badge='';
-    if(s.spring){
+    if(s.seen) badge='<span class="eBdg" style="background:#dbeafe;color:#1e40af">kaardil</span>';
+    else if(s.spring){
       var mm=String(s.spring).match(/^(\d{1,2})\.(\d{2})$/);
       if(mm){var dd=new Date(new Date().getFullYear(),parseInt(mm[2],10)-1,parseInt(mm[1],10));
         var df=(dd.getTime()-Date.now())/864e5;
         if(df<=7) badge='<span class="eBdg eBH">saabumas</span>';
         else if(df<=30) badge='<span class="eBdg eBM">varsti</span>';}}
+    var rowStyle=s.seen?'opacity:0.6':'';
     var sty=aurl?'background-image:url(\''+aurl+'\');border-color:'+bc:'border-color:'+bc;
     var sl=s.spring?'Kevad: '+s.spring:'Kevadkuupäev puudub';
     var ebTxt='';
@@ -2249,22 +2270,29 @@ function render(){
     else ebTxt='<div class="eObs" style="color:#d97706">eBird kood puudub</div>';
     var eluC=getEluCount(s.name);
     var eluTxt='';
-    if(eluC!==null&&eluC>0) eluTxt='<div class="eObs" style="color:#16a34a">eElur: '+eluC+' vaatl.</div>';
+    if(eluC!==null&&eluC>0) eluTxt='<div class="eObs" style="color:#16a34a">eElur: '+eluC+'</div>';
     else eluTxt='<div class="eObs">eElur: 0</div>';
     var escName=s.name.replace(/'/g,"\\'");
-    h+='<div class="eR"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+
+    h+='<div class="eR" style="'+rowStyle+'"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+
       '<div class="eNm">'+nm+' '+badge+' <button class="ePrb" onclick="window.__ennProb(\''+escName+'\')">Prob</button></div><div class="eLt">'+sl+'</div>'+
       '<div class="eBar"><div class="eBf" style="width:'+Math.min(100,s.prob)+'%;background:'+bc+'"></div></div>'+
       '</div><div class="eRt"><div class="ePct" style="color:'+pc+'">'+s.prob+'%</div>'+ebTxt+eluTxt+'</div></div>';
   }
-  lst.innerHTML=h||'<div style="padding:16px;text-align:center;color:#94a3b8">Kõik liigid on juba kaardil!</div>';
+  if(!h){
+    if(q) h='<div style="padding:16px;text-align:center;color:#94a3b8">Liiki "'+q+'" ei leitud</div>';
+    else h='<div style="padding:16px;text-align:center;color:#94a3b8">Kõik liigid on juba kaardil!</div>';
+  }
+  lst.innerHTML=h;
 
   var ft=document.getElementById('ennFt');
-  if(ft) ft.innerHTML='<span>Näitab '+f.length+' / '+m.length+' puuduvat</span>'+
-    '<div style="display:flex;gap:6px;align-items:center"><span style="color:#64748b">Sorteeri:</span>'+
-    '<button class="eSP '+(sort==='prob'?'eSA':'eSO')+'" onclick="window.__sortEnn(\'prob\')">% laskuv</button>'+
-    '<button class="eSP '+(sort==='spring'?'eSA':'eSO')+'" onclick="window.__sortEnn(\'spring\')">Kevad kp</button>'+
-    '<button class="eSP '+(sort==='az'?'eSA':'eSO')+'" onclick="window.__sortEnn(\'az\')">A-Z</button></div>';
+  if(ft){
+    var footerLabel=q?'Näitab '+displayList.length+' / '+allSpecies.length+' liiki':'Näitab '+displayList.length+' / '+m.length+' puuduvat';
+    ft.innerHTML='<span>'+footerLabel+'</span>'+
+      '<div style="display:flex;gap:6px;align-items:center"><span style="color:#64748b">Sorteeri:</span>'+
+      '<button class="eSP '+(sort==='prob'?'eSA':'eSO')+'" onclick="window.__sortEnn(\'prob\')">% laskuv</button>'+
+      '<button class="eSP '+(sort==='spring'?'eSA':'eSO')+'" onclick="window.__sortEnn(\'spring\')">Kevad kp</button>'+
+      '<button class="eSP '+(sort==='az'?'eSA':'eSO')+'" onclick="window.__sortEnn(\'az\')">A-Z</button></div>';
+  }
 }
 
 function ssk(ds){if(!ds) return 999999;

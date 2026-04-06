@@ -8270,6 +8270,7 @@ document.addEventListener('DOMContentLoaded', function(){
   <button id="toggleWind" class="btn secondary">Tuulekaart</button>
   <button id="toggleSpring" class="btn secondary">Kevadränne</button>
   <button id="toggleEbirdEE" class="btn secondary" style="white-space:nowrap">eBird EE</button>
+  <button id="ennustusBtn" class="btn secondary" title="Näita puuduvate liikide saabumise tõenäosust">Ennustus</button>
 
   <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 päeva jooksul aktiivsed">7p liigid: 0</span>
 </div>
@@ -10476,6 +10477,250 @@ window.__computeProbSilent = async function(speciesName) {
   }
 };
 
+})();
+</script>
+
+<style>
+#ennustusBackdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+  display: none; align-items: center; justify-content: center; z-index: 9999;
+}
+#ennustusPanel {
+  background: #fff; max-width: 560px; width: 92vw; max-height: 80vh;
+  border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+#ennustusPanel .enn-header {
+  padding: 12px 16px; border-bottom: 1px solid #e5e7eb;
+  display: flex; justify-content: space-between; align-items: center;
+}
+#ennustusPanel .enn-header h3 { margin: 0; font-size: 15px; font-weight: 600; }
+#ennustusPanel .enn-header .sub { margin: 2px 0 0; font-size: 12px; color: #64748b; }
+#ennustusPanel .enn-summary {
+  display: flex; gap: 12px; padding: 8px 16px; border-bottom: 1px solid #e5e7eb;
+  flex-wrap: wrap; font-size: 12px; color: #64748b;
+}
+#ennustusPanel .enn-summary .val { font-weight: 600; color: #1e293b; }
+#ennustusPanel .enn-search { padding: 8px 16px; }
+#ennustusPanel .enn-search input {
+  width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 6px;
+  border: 1px solid #e5e7eb; font-size: 13px; background: #f8fafc;
+}
+#ennustusPanel .enn-list { overflow-y: auto; flex: 1; padding: 0 8px 8px; }
+.enn-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 8px;
+  border-radius: 8px; margin-bottom: 2px;
+}
+.enn-row:nth-child(odd) { background: #f8fafc; }
+.enn-avatar {
+  width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
+  background-size: cover; background-position: center; background-color: #f1f5f9;
+  border: 2px solid #cbd5e1;
+}
+.enn-info { flex: 1; min-width: 0; }
+.enn-name { font-size: 14px; font-weight: 600; color: #1e293b; display: flex; align-items: center; gap: 6px; }
+.enn-latin { font-size: 11px; color: #94a3b8; }
+.enn-bar { height: 3px; background: #e5e7eb; border-radius: 2px; margin-top: 4px; }
+.enn-bar-fill { height: 100%; border-radius: 2px; }
+.enn-right { text-align: right; flex-shrink: 0; min-width: 65px; }
+.enn-pct { font-size: 18px; font-weight: 600; }
+.enn-obs { font-size: 11px; color: #94a3b8; display: flex; align-items: center; gap: 3px; justify-content: flex-end; margin-top: 1px; }
+.enn-badge { font-size: 11px; padding: 1px 6px; border-radius: 4px; }
+.enn-badge-high { background: #dcfce7; color: #166534; }
+.enn-badge-med { background: #fef3c7; color: #92400e; }
+#ennustusPanel .enn-footer {
+  padding: 8px 16px; border-top: 1px solid #e5e7eb;
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11px; color: #94a3b8;
+}
+.enn-sort-pill {
+  font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; border: none;
+}
+.enn-sort-active { background: #dbeafe; color: #1e40af; }
+.enn-sort-off { background: #f1f5f9; color: #64748b; }
+@media (max-width: 600px) {
+  #ennustusPanel { width: 96vw; max-height: 85vh; }
+  .enn-avatar { width: 30px; height: 30px; }
+  .enn-name { font-size: 13px; }
+  .enn-pct { font-size: 15px; }
+  .enn-row { gap: 7px; padding: 6px; }
+}
+</style>
+
+<div id="ennustusBackdrop">
+  <div id="ennustusPanel">
+    <div class="enn-header">
+      <div><h3>Puuduvad liigid — ennustus</h3><div class="sub">Liigid, mida kaardil veel pole</div></div>
+      <button id="ennustusClose" class="btn secondary" style="font-size:18px;line-height:1;padding:2px 8px">&times;</button>
+    </div>
+    <div class="enn-summary" id="ennustusSummary"></div>
+    <div class="enn-search"><input id="ennustusSearch" type="text" placeholder="Otsi liiki…"></div>
+    <div class="enn-list" id="ennustusList"></div>
+    <div class="enn-footer" id="ennustusFooter"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  function calcEnnustusProbability(springDateStr) {
+    if (!springDateStr) return 0;
+    var m = String(springDateStr).match(/^(\d{1,2})\.(\d{2})$/);
+    if (!m) return 0;
+    var day = parseInt(m[1], 10), month = parseInt(m[2], 10);
+    var now = new Date(), thisYear = now.getFullYear();
+    var springDate = new Date(thisYear, month - 1, day);
+    var diffDays = (springDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    if (diffDays <= 0) {
+      var daysPast = Math.abs(diffDays);
+      if (daysPast <= 14) return Math.max(60, Math.round(95 - daysPast * 1.5));
+      return Math.max(20, Math.round(75 - daysPast * 1.2));
+    }
+    if (diffDays <= 7) return Math.round(70 - diffDays * 4);
+    if (diffDays <= 14) return Math.round(50 - (diffDays - 7) * 3);
+    if (diffDays <= 30) return Math.round(30 - (diffDays - 14) * 1);
+    return Math.max(1, Math.round(15 - (diffDays - 30) * 0.3));
+  }
+
+  function getMissingSpecies() {
+    var allSpecies = (typeof SPECIES !== 'undefined') ? SPECIES : [];
+    var sd = (typeof springDates !== 'undefined') ? springDates : {};
+    var pts = (typeof points !== 'undefined') ? points : {};
+    var missing = [];
+    for (var i = 0; i < allSpecies.length; i++) {
+      var name = allSpecies[i];
+      var p = pts[name] || {};
+      if (Number.isFinite(p.lat) && Number.isFinite(p.lon)) continue;
+      var springDate = (sd[name] || '').trim();
+      missing.push({ name: name, springDate: springDate, probability: calcEnnustusProbability(springDate) });
+    }
+    return missing;
+  }
+
+  function getElurikkusWeeklyCount(speciesName) {
+    var cacheKey = (typeof _normalizeSpeciesKey === 'function') ? _normalizeSpeciesKey(speciesName) : speciesName;
+    if (typeof liveStatsBySpecies !== 'undefined' && liveStatsBySpecies[cacheKey]) {
+      var stats = liveStatsBySpecies[cacheKey];
+      if (Number.isFinite(stats.last7d)) return stats.last7d;
+      if (Number.isFinite(stats.recentCount)) return stats.recentCount;
+    }
+    if (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[cacheKey]) {
+      var data = liveElurikkusBySpecies[cacheKey];
+      if (data.items && data.items.length > 0) {
+        var cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000, count = 0;
+        for (var j = 0; j < data.items.length; j++) {
+          var t = (typeof parseElurikkusDate === 'function') ? parseElurikkusDate(data.items[j].observedAt || '') : Date.parse(data.items[j].observedAt || '');
+          if (t >= cutoff) count++;
+        }
+        return count;
+      }
+    }
+    var pts = (typeof points !== 'undefined') ? points : {};
+    var p = pts[speciesName] || {};
+    if (Number.isFinite(p.occ7)) return p.occ7;
+    return null;
+  }
+
+  var ennustusSort = 'prob';
+
+  function probBorderColor(prob) {
+    if (prob >= 50) return '#16a34a';
+    if (prob >= 20) return '#d97706';
+    return '#cbd5e1';
+  }
+
+  function renderEnnustusModal() {
+    var missing = getMissingSpecies();
+    var searchVal = (document.getElementById('ennustusSearch').value || '').toLowerCase().trim();
+    var filtered = missing;
+    if (searchVal) {
+      filtered = missing.filter(function(s){ return s.name.toLowerCase().indexOf(searchVal) !== -1; });
+    }
+    if (ennustusSort === 'prob') {
+      filtered.sort(function(a,b){ return b.probability - a.probability; });
+    } else if (ennustusSort === 'spring') {
+      filtered.sort(function(a,b){
+        return (typeof springSortKey === 'function' ? springSortKey(a.springDate) : 0) - (typeof springSortKey === 'function' ? springSortKey(b.springDate) : 0);
+      });
+    } else {
+      filtered.sort(function(a,b){ return a.name.localeCompare(b.name, 'et'); });
+    }
+
+    var totalEluWeekly = 0;
+    for (var i = 0; i < missing.length; i++) {
+      var c = getElurikkusWeeklyCount(missing[i].name);
+      if (c !== null && c > 0) totalEluWeekly += c;
+    }
+
+    document.getElementById('ennustusSummary').innerHTML =
+      '<span><span class="val">' + missing.length + '</span> puuduvat liiki</span>' +
+      '<span>eElurikkus sel nädalal: <span class="val">' + totalEluWeekly.toLocaleString() + '</span> vaatlust</span>';
+
+    var listEl = document.getElementById('ennustusList');
+    var avMap = (typeof avatars !== 'undefined') ? avatars : {};
+    var html = '';
+
+    for (var i = 0; i < filtered.length; i++) {
+      var s = filtered[i];
+      var displayName = (typeof normalizeUiText === 'function') ? normalizeUiText(s.name) : s.name;
+      var avatarUrl = '';
+      if (typeof getDisplayAvatar === 'function') { avatarUrl = getDisplayAvatar(s.name) || ''; }
+      else { avatarUrl = avMap[s.name] || ''; }
+      var avatarStyle = avatarUrl
+        ? 'background-image:url(\'' + avatarUrl + '\');border-color:' + probBorderColor(s.probability)
+        : 'border-color:' + probBorderColor(s.probability);
+      var badge = '';
+      if (s.springDate) {
+        var mm = String(s.springDate).match(/^(\d{1,2})\.(\d{2})$/);
+        if (mm) {
+          var sd = new Date(new Date().getFullYear(), parseInt(mm[2],10)-1, parseInt(mm[1],10));
+          var diffDays = (sd.getTime() - Date.now()) / (1000*60*60*24);
+          if (diffDays <= 7) badge = '<span class="enn-badge enn-badge-high">saabumas</span>';
+          else if (diffDays <= 30) badge = '<span class="enn-badge enn-badge-med">varsti</span>';
+        }
+      }
+      var eluCount = getElurikkusWeeklyCount(s.name);
+      var eluText = (eluCount !== null) ? eluCount + ' sel näd.' : '–';
+      var pctColor = s.probability >= 50 ? '#16a34a' : s.probability >= 20 ? '#d97706' : s.probability >= 5 ? '#94a3b8' : '#cbd5e1';
+      var barColor = s.probability >= 50 ? '#16a34a' : s.probability >= 20 ? '#d97706' : '#cbd5e1';
+
+      html += '<div class="enn-row">' +
+        '<div class="enn-avatar" style="' + avatarStyle + '"></div>' +
+        '<div class="enn-info">' +
+          '<div class="enn-name">' + displayName + ' ' + badge + '</div>' +
+          '<div class="enn-latin">' + (s.springDate ? 'Kevad: ' + s.springDate : 'Kevadkuupäev puudub') + '</div>' +
+          '<div class="enn-bar"><div class="enn-bar-fill" style="width:' + Math.min(100, s.probability) + '%;background:' + barColor + '"></div></div>' +
+        '</div>' +
+        '<div class="enn-right">' +
+          '<div class="enn-pct" style="color:' + pctColor + '">' + s.probability + '%</div>' +
+          '<div class="enn-obs">' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>' +
+            eluText +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }
+
+    listEl.innerHTML = html || '<div style="padding:16px;text-align:center;color:#94a3b8">Kõik liigid on juba kaardil!</div>';
+
+    document.getElementById('ennustusFooter').innerHTML =
+      '<span>Näitab ' + filtered.length + ' / ' + missing.length + ' puuduvat</span>' +
+      '<div style="display:flex;gap:6px;align-items:center">' +
+        '<span style="color:#64748b">Sorteeri:</span>' +
+        '<button class="enn-sort-pill ' + (ennustusSort==='prob'?'enn-sort-active':'enn-sort-off') + '" onclick="window._setEnnustusSort(\'prob\')">% laskuv</button>' +
+        '<button class="enn-sort-pill ' + (ennustusSort==='spring'?'enn-sort-active':'enn-sort-off') + '" onclick="window._setEnnustusSort(\'spring\')">Kevad kp</button>' +
+        '<button class="enn-sort-pill ' + (ennustusSort==='az'?'enn-sort-active':'enn-sort-off') + '" onclick="window._setEnnustusSort(\'az\')">A-Z</button>' +
+      '</div>';
+  }
+
+  window._setEnnustusSort = function(s) { ennustusSort = s; renderEnnustusModal(); };
+
+  function openEnnustus() { renderEnnustusModal(); document.getElementById('ennustusBackdrop').style.display = 'flex'; }
+  function closeEnnustus() { document.getElementById('ennustusBackdrop').style.display = 'none'; }
+
+  document.getElementById('ennustusBtn').addEventListener('click', openEnnustus);
+  document.getElementById('ennustusClose').addEventListener('click', closeEnnustus);
+  document.getElementById('ennustusBackdrop').addEventListener('click', function(e) { if (e.target === this) closeEnnustus(); });
+  document.getElementById('ennustusSearch').addEventListener('input', renderEnnustusModal);
 })();
 </script>
 

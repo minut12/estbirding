@@ -10968,10 +10968,49 @@ window.__scanEnn=function(btn){
   fetchEbirdRecent(function(err){
     render();
     if(lst) lst.style.opacity='1';
-    btn.disabled=false;
-    btn.style.opacity='1';
-    if(err){btn.textContent='Skaneeri (viga)';setTimeout(function(){btn.textContent='Skaneeri';},3000);}
-    else btn.textContent='Skaneeri';
+    if(err){
+      btn.disabled=false;btn.style.opacity='1';
+      btn.textContent='Skaneeri (viga)';setTimeout(function(){btn.textContent='Skaneeri';},3000);
+      return;
+    }
+    // Step 2: fetch eElurikkus for top candidates
+    var m=missing();
+    m.sort(function(a,b){return b.prob-a.prob;});
+    var toFetch=[];
+    for(var i=0;i<Math.min(m.length,30);i++){
+      if(getEluCached(m[i].name)===null) toFetch.push(m[i].name);
+    }
+    if(toFetch.length===0){
+      btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';return;
+    }
+    var idx=0;
+    function nextElu(){
+      if(idx>=toFetch.length){
+        btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';return;
+      }
+      var name=toFetch[idx];
+      btn.textContent='eElur '+(idx+1)+'/'+toFetch.length;
+      idx++;
+      var fetchFn=null;
+      if(typeof fetchElurikkusSpecies==='function') fetchFn=fetchElurikkusSpecies;
+      else if(typeof _fetchElurikkusSpeciesViaHtml==='function') fetchFn=_fetchElurikkusSpeciesViaHtml;
+      if(!fetchFn){
+        window.__ennustusEluCache[name]={count:0,source:'no_fn',fetchedAt:Date.now()};
+        render();setTimeout(nextElu,100);return;
+      }
+      fetchFn(name).then(function(result){
+        var count=(result&&Array.isArray(result.items))?result.items.length:0;
+        window.__ennustusEluCache[name]={count:count,source:'api',fetchedAt:Date.now()};
+        render();
+        setTimeout(nextElu,500);
+      }).catch(function(e){
+        console.warn('[ennustus-elu]',name,e&&e.message||e);
+        window.__ennustusEluCache[name]={count:0,source:'error',fetchedAt:Date.now()};
+        render();
+        setTimeout(nextElu,500);
+      });
+    }
+    nextElu();
   });
 };
 window.__ennProb=function(speciesName){

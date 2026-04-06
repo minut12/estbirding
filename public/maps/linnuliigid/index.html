@@ -10545,6 +10545,9 @@ window.__computeProbSilent = async function(speciesName) {
   .enn-pct { font-size: 15px; }
   .enn-row { gap: 7px; padding: 6px; }
 }
+@keyframes ennSpin {
+  to { transform: rotate(360deg); }
+}
 </style>
 
 <div id="ennustusBackdrop">
@@ -10562,40 +10565,84 @@ window.__computeProbSilent = async function(speciesName) {
 
 <script>
 (function(){
-  function calcEnnustusProbability(springDateStr) {
-    if (!springDateStr) return 0;
-    var m = String(springDateStr).match(/^(\d{1,2})\.(\d{2})$/);
-    if (!m) return 0;
-    var day = parseInt(m[1], 10), month = parseInt(m[2], 10);
-    var now = new Date(), thisYear = now.getFullYear();
-    var springDate = new Date(thisYear, month - 1, day);
-    var diffDays = (springDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-    if (diffDays <= 0) {
-      var daysPast = Math.abs(diffDays);
-      if (daysPast <= 14) return Math.max(60, Math.round(95 - daysPast * 1.5));
-      return Math.max(20, Math.round(75 - daysPast * 1.2));
+  /* --- Spring date lookup with normalization fallbacks --- */
+  function findSpringDate(speciesName) {
+    var sd = (typeof springDates !== 'undefined') ? springDates : {};
+    if (sd[speciesName]) return sd[speciesName];
+    if (typeof _normText === 'function') {
+      var n1 = _normText(speciesName);
+      if (n1 && sd[n1]) return sd[n1];
     }
-    if (diffDays <= 7) return Math.round(70 - diffDays * 4);
-    if (diffDays <= 14) return Math.round(50 - (diffDays - 7) * 3);
-    if (diffDays <= 30) return Math.round(30 - (diffDays - 14) * 1);
-    return Math.max(1, Math.round(15 - (diffDays - 30) * 0.3));
+    if (typeof normalizeUiText === 'function') {
+      var n2 = normalizeUiText(speciesName);
+      if (n2 && sd[n2]) return sd[n2];
+    }
+    if (typeof window.normalizeUiText === 'function') {
+      var n3 = window.normalizeUiText(speciesName);
+      if (n3 && sd[n3]) return sd[n3];
+    }
+    var lower = speciesName.toLowerCase().trim();
+    var keys = Object.keys(sd);
+    for (var k = 0; k < keys.length; k++) {
+      if (keys[k].toLowerCase().trim() === lower) return sd[keys[k]];
+    }
+    return null;
   }
 
+  /* --- Probability calculation (with eElurikkus boost) --- */
+  function calcEnnustusProbability(springDateStr, eluWeeklyCount) {
+    var prob = 0;
+    if (springDateStr) {
+      var m = String(springDateStr).match(/^(\d{1,2})\.(\d{2})$/);
+      if (m) {
+        var day = parseInt(m[1], 10), month = parseInt(m[2], 10);
+        var now = new Date(), thisYear = now.getFullYear();
+        var springDate = new Date(thisYear, month - 1, day);
+        var diffDays = (springDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+        if (diffDays <= 0) {
+          var daysPast = Math.abs(diffDays);
+          if (daysPast <= 14) prob = Math.max(60, Math.round(95 - daysPast * 1.5));
+          else prob = Math.max(20, Math.round(75 - daysPast * 1.2));
+        } else if (diffDays <= 7) {
+          prob = Math.round(70 - diffDays * 4);
+        } else if (diffDays <= 14) {
+          prob = Math.round(50 - (diffDays - 7) * 3);
+        } else if (diffDays <= 30) {
+          prob = Math.round(30 - (diffDays - 14) * 1);
+        } else {
+          prob = Math.max(1, Math.round(15 - (diffDays - 30) * 0.3));
+        }
+      }
+    }
+    var eluCount = Number(eluWeeklyCount) || 0;
+    if (eluCount > 0) {
+      var eluBoost = Math.min(40, Math.round(10 + Math.log2(eluCount + 1) * 8));
+      prob = Math.max(prob, eluBoost);
+      if (springDateStr && prob > eluBoost) {
+        prob = Math.min(99, prob + Math.round(eluBoost * 0.3));
+      }
+    }
+    return Math.min(99, Math.max(0, prob));
+  }
+
+  /* --- Missing species --- */
   function getMissingSpecies() {
     var allSpecies = (typeof SPECIES !== 'undefined') ? SPECIES : [];
-    var sd = (typeof springDates !== 'undefined') ? springDates : {};
     var pts = (typeof points !== 'undefined') ? points : {};
     var missing = [];
     for (var i = 0; i < allSpecies.length; i++) {
       var name = allSpecies[i];
       var p = pts[name] || {};
       if (Number.isFinite(p.lat) && Number.isFinite(p.lon)) continue;
-      var springDate = (sd[name] || '').trim();
-      missing.push({ name: name, springDate: springDate, probability: calcEnnustusProbability(springDate) });
+      var springDate = findSpringDate(name);
+      var eluCount = getElurikkusWeeklyCount(name);
+      var prob = calcEnnustusProbability(springDate, eluCount);
+      missing.push({ name: name, springDate: springDate || '', probability: prob, eluWeekly: eluCount });
     }
     return missing;
   }
 
+  /* --- eElurikkus weekly count --- */
   function getElurikkusWeeklyCount(speciesName) {
     var cacheKey = (typeof _normalizeSpeciesKey === 'function') ? _normalizeSpeciesKey(speciesName) : speciesName;
     if (typeof liveStatsBySpecies !== 'undefined' && liveStatsBySpecies[cacheKey]) {
@@ -10620,6 +10667,7 @@ window.__computeProbSilent = async function(speciesName) {
     return null;
   }
 
+  /* --- Rendering --- */
   var ennustusSort = 'prob';
 
   function probBorderColor(prob) {
@@ -10647,7 +10695,7 @@ window.__computeProbSilent = async function(speciesName) {
 
     var totalEluWeekly = 0;
     for (var i = 0; i < missing.length; i++) {
-      var c = getElurikkusWeeklyCount(missing[i].name);
+      var c = missing[i].eluWeekly;
       if (c !== null && c > 0) totalEluWeekly += c;
     }
 
@@ -10678,8 +10726,10 @@ window.__computeProbSilent = async function(speciesName) {
           else if (diffDays <= 30) badge = '<span class="enn-badge enn-badge-med">varsti</span>';
         }
       }
-      var eluCount = getElurikkusWeeklyCount(s.name);
-      var eluText = (eluCount !== null) ? eluCount + ' sel näd.' : '–';
+      var eluText = (s.eluWeekly !== null) ? s.eluWeekly + ' sel näd.' : '–';
+      var latinLine = s.springDate
+        ? 'Kevad: ' + s.springDate
+        : (s.eluWeekly > 0 ? 'eElurikkuses vaadeldud!' : 'Kevadkuupäev puudub');
       var pctColor = s.probability >= 50 ? '#16a34a' : s.probability >= 20 ? '#d97706' : s.probability >= 5 ? '#94a3b8' : '#cbd5e1';
       var barColor = s.probability >= 50 ? '#16a34a' : s.probability >= 20 ? '#d97706' : '#cbd5e1';
 
@@ -10687,7 +10737,7 @@ window.__computeProbSilent = async function(speciesName) {
         '<div class="enn-avatar" style="' + avatarStyle + '"></div>' +
         '<div class="enn-info">' +
           '<div class="enn-name">' + displayName + ' ' + badge + '</div>' +
-          '<div class="enn-latin">' + (s.springDate ? 'Kevad: ' + s.springDate : 'Kevadkuupäev puudub') + '</div>' +
+          '<div class="enn-latin">' + latinLine + '</div>' +
           '<div class="enn-bar"><div class="enn-bar-fill" style="width:' + Math.min(100, s.probability) + '%;background:' + barColor + '"></div></div>' +
         '</div>' +
         '<div class="enn-right">' +
@@ -10714,7 +10764,17 @@ window.__computeProbSilent = async function(speciesName) {
 
   window._setEnnustusSort = function(s) { ennustusSort = s; renderEnnustusModal(); };
 
-  function openEnnustus() { renderEnnustusModal(); document.getElementById('ennustusBackdrop').style.display = 'flex'; }
+  /* --- Open/close --- */
+  function openEnnustus() {
+    var backdrop = document.getElementById('ennustusBackdrop');
+    backdrop.style.display = 'flex';
+    document.getElementById('ennustusList').innerHTML = '<div style="padding:32px;text-align:center">' +
+      '<div style="display:inline-block;width:24px;height:24px;border:3px solid #e5e7eb;border-top-color:#16a34a;border-radius:50%;animation:ennSpin 0.8s linear infinite"></div>' +
+      '<div style="margin-top:8px;font-size:13px;color:#64748b">Skanneerin liike...</div></div>';
+    document.getElementById('ennustusSummary').innerHTML = '<span style="color:#94a3b8">Arvutan tõenäosusi...</span>';
+    document.getElementById('ennustusFooter').innerHTML = '';
+    setTimeout(function() { renderEnnustusModal(); }, 80);
+  }
   function closeEnnustus() { document.getElementById('ennustusBackdrop').style.display = 'none'; }
 
   document.getElementById('ennustusBtn').addEventListener('click', openEnnustus);

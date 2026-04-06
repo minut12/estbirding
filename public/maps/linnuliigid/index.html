@@ -10689,6 +10689,7 @@ try { EBIRD_CODES_FALLBACK = JSON.parse(localStorage.getItem('bm_ebird_codes') |
 
 var EBIRD_TOKEN = '9s72dc2jcjlq';
 var ebirdRecentCache = null;
+var __ennScanEbirdCounts = {};
 
 function fetchEbirdRecent(callback) {
   var url = 'https://api.ebird.org/v2/data/obs/EE/recent?back=7&maxResults=10000&_ts=' + Date.now();
@@ -10706,7 +10707,18 @@ function fetchEbirdRecent(callback) {
       if (dt > counts[code].lastDate) counts[code].lastDate = dt;
     }
     ebirdRecentCache = { fetchedAt: Date.now(), data: counts, totalObs: arr.length };
-    console.log('[Ennustus] eBird EE fetched:', Object.keys(counts).length, 'species,', arr.length, 'observations');
+    // Build reverse map: eBird code → Estonian name, then populate per-species counts
+    __ennScanEbirdCounts = {};
+    var codeToName = {};
+    try {
+      var codes = (typeof SPECIES_EBIRD_CODES !== 'undefined') ? SPECIES_EBIRD_CODES : {};
+      for (var _n in codes) { if (codes[_n]) codeToName[codes[_n]] = _n; }
+    } catch(_){}
+    for (var _c in counts) {
+      var estName = codeToName[_c];
+      if (estName) __ennScanEbirdCounts[estName] = counts[_c].count;
+    }
+    console.log('[Ennustus] eBird EE fetched:', Object.keys(counts).length, 'species,', arr.length, 'observations, mapped:', Object.keys(__ennScanEbirdCounts).length);
     callback(null, counts);
   })
   .catch(function(err) { console.warn('[Ennustus] eBird fetch failed:', err.message); callback(err, null); });
@@ -10867,8 +10879,8 @@ function missing(){
     springDate=String(springDate).trim();
     var baseProb=prob(springDate);
     var ebCode=getEbirdCode(n)||getEbirdCode(clean);
-    var ebCount=0;
-    if(ebCode&&ebird[ebCode]) ebCount=ebird[ebCode].count||0;
+    var ebCount=__ennScanEbirdCounts[n]||__ennScanEbirdCounts[clean]||0;
+    if(!ebCount&&ebCode&&ebird[ebCode]) ebCount=ebird[ebCode].count||0;
     var finalProb=combinedProb(baseProb,ebCount);
     out.push({name:n,spring:springDate,prob:finalProb,baseProb:baseProb,ebirdCount:ebCount,ebirdCode:ebCode||''});
   }
@@ -10898,8 +10910,8 @@ function render(){
       var springDate=getSpringDate(n,dates)||getSpringDate(clean,dates)||'';
       var baseProb=prob(springDate);
       var ebCode=getEbirdCode(n)||getEbirdCode(clean);
-      var ebCount=0;
-      if(ebCode&&ebird[ebCode]) ebCount=ebird[ebCode].count||0;
+      var ebCount=__ennScanEbirdCounts[n]||__ennScanEbirdCounts[clean]||0;
+      if(!ebCount&&ebCode&&ebird[ebCode]) ebCount=ebird[ebCode].count||0;
       var finalProb=combinedProb(baseProb,ebCount);
       displayList.push({name:n,spring:springDate,prob:finalProb,baseProb:baseProb,ebirdCount:ebCount,ebirdCode:ebCode||'',seen:isSeen});
     }
@@ -10990,6 +11002,7 @@ window.__closeEnn=function(){document.getElementById('ennBg').style.display='non
 window.__renderEnn=render;
 window.__sortEnn=function(s){sort=s;render();};
 window.__scanEnn=function(btn){
+  __ennScanEbirdCounts = {};
   btn.textContent='Laen eBird...';
   btn.style.opacity='.6';
   btn.disabled=true;

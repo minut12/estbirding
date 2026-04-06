@@ -9828,9 +9828,17 @@ var __sharedDefaults = {};
   }
   function showProbInfoPanel(speciesName) {
     var panel = document.getElementById('probInfoPanel');
-    if (panel) panel.style.display = 'block';
+    if (!panel) return;
+
+    // On mobile: move panel to <body> so it escapes mapWrap/sidebar stacking context
+    if (window.innerWidth <= 900 && panel.parentNode !== document.body) {
+      document.body.appendChild(panel);
+    }
+
+    panel.style.display = 'block';
     var label = document.getElementById('probSpeciesLabel');
     if (label) label.textContent = speciesName;
+
     // Mobile backdrop
     if (window.innerWidth <= 900) {
       var bd = document.getElementById('probBackdrop');
@@ -9847,7 +9855,14 @@ var __sharedDefaults = {};
   }
   function hideProbInfoPanel() {
     var panel = document.getElementById('probInfoPanel');
-    if (panel) panel.style.display = 'none';
+    if (panel) {
+      panel.style.display = 'none';
+      // On mobile: move panel back to mapWrap for desktop consistency
+      var mapWrap = document.getElementById('mapWrap');
+      if (mapWrap && panel.parentNode === document.body) {
+        mapWrap.appendChild(panel);
+      }
+    }
     var bd = document.getElementById('probBackdrop');
     if (bd) bd.style.display = 'none';
     // Unfreeze sidebar/body on mobile
@@ -9856,6 +9871,19 @@ var __sharedDefaults = {};
     if (sidebar) {
       sidebar.style.pointerEvents = '';
       sidebar.removeAttribute('inert');
+      sidebar.removeAttribute('aria-hidden');
+    }
+  }
+
+  // Targeted prob-row-active toggle without full render()
+  function updateProbRowActive(newSpecies) {
+    var oldActive = document.querySelector('.row.prob-row-active');
+    if (oldActive) oldActive.classList.remove('prob-row-active');
+    if (newSpecies) {
+      try {
+        var newRow = document.querySelector('.row[data-key="' + CSS.escape(newSpecies) + '"]');
+        if (newRow) newRow.classList.add('prob-row-active');
+      } catch(e) {}
     }
   }
 
@@ -9866,13 +9894,23 @@ var __sharedDefaults = {};
       clearProbabilityLayer();
       hideProbInfoPanel();
       activeProbSpecies = null;
-      render();
+      // On mobile: targeted update to avoid full sidebar rebuild (prevents freeze/data loss)
+      if (window.innerWidth <= 900) {
+        updateProbRowActive(null);
+      } else {
+        render();
+      }
       return;
     }
 
     // Activate new
     activeProbSpecies = speciesName;
-    render();
+    // On mobile: targeted update to avoid full sidebar rebuild
+    if (window.innerWidth <= 900) {
+      updateProbRowActive(speciesName);
+    } else {
+      render();
+    }
     showProbInfoPanel(speciesName);
     setProbStatus('Fetching eElurikkus...');
 

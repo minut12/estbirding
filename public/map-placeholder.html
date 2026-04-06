@@ -2165,32 +2165,27 @@ window.alert = function(msg){ notifySilent(msg); };
   /* --- Missing species --- */
   function getMissingSpecies() {
     var allSpecies = window.SPECIES || [];
+    var sd = window.springDates || {};
     var pts = window.points || {};
     var missing = [];
+
     for (var i = 0; i < allSpecies.length; i++) {
       var name = allSpecies[i];
       var p = pts[name] || {};
 
-      // Skip if species has ANY observation evidence
+      // Species is "observed" if it has coordinates OR recent sightings
       var hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
-      var hasDate = p.t && String(p.t).trim() !== '' && String(p.t).trim() !== '(kuupäev puudub)';
       var hasOcc7 = Number.isFinite(p.occ7) && p.occ7 > 0;
-      var hasLastFetched = !!p.lastFetched;
 
-      // Check eElurikkus live cache
-      var cacheKey = (typeof window._normalizeSpeciesKey === 'function')
-        ? window._normalizeSpeciesKey(name) : name;
-      var hasEluData = window.liveElurikkusBySpecies
-        && window.liveElurikkusBySpecies[cacheKey]
-        && window.liveElurikkusBySpecies[cacheKey].items
-        && window.liveElurikkusBySpecies[cacheKey].items.length > 0;
+      if (hasCoords || hasOcc7) continue;
 
-      if (hasCoords || hasDate || hasOcc7 || hasLastFetched || hasEluData) continue;
-
-      var springDate = findSpringDate(name);
-      var eluCount = getElurikkusWeeklyCount(name);
-      var prob = calcEnnustusProbability(springDate, eluCount);
-      missing.push({ name: name, springDate: springDate || '', probability: prob, eluWeekly: eluCount });
+      var springDate = (sd[name] || '').trim();
+      var prob = calcEnnustusProbability(springDate);
+      missing.push({
+        name: name,
+        springDate: springDate,
+        probability: prob
+      });
     }
     return missing;
   }

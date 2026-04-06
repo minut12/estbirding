@@ -2077,6 +2077,48 @@ var SPRING = {
 "Väiketüll":"6.04","Värbrüdi":"20.04","Väänkael":"11.04","Ööbik":"28.04","Öösorr":"24.04"
 };
 
+var EBIRD_CODES_FALLBACK = {};
+try { EBIRD_CODES_FALLBACK = JSON.parse(localStorage.getItem('bm_ebird_codes') || '{}'); } catch(e) {}
+
+var EBIRD_TOKEN = '9s72dc2jcjlq';
+var ebirdRecentCache = null;
+
+function fetchEbirdRecent(callback) {
+  var url = 'https://api.ebird.org/v2/data/obs/EE/recent?back=7&maxResults=10000&_ts=' + Date.now();
+  fetch(url, { headers: { 'X-eBirdApiToken': EBIRD_TOKEN }, cache: 'no-store' })
+  .then(function(res) { if (!res.ok) throw new Error('eBird HTTP ' + res.status); return res.json(); })
+  .then(function(arr) {
+    if (!Array.isArray(arr)) throw new Error('eBird: invalid response');
+    var counts = {};
+    for (var i = 0; i < arr.length; i++) {
+      var obs = arr[i], code = String(obs.speciesCode || '');
+      if (!code) continue;
+      if (!counts[code]) counts[code] = { count: 0, lastDate: '', comName: obs.comName || '' };
+      counts[code].count++;
+      var dt = String(obs.obsDt || '').substring(0, 10);
+      if (dt > counts[code].lastDate) counts[code].lastDate = dt;
+    }
+    ebirdRecentCache = { fetchedAt: Date.now(), data: counts, totalObs: arr.length };
+    console.log('[Ennustus] eBird EE fetched:', Object.keys(counts).length, 'species,', arr.length, 'observations');
+    callback(null, counts);
+  })
+  .catch(function(err) { console.warn('[Ennustus] eBird fetch failed:', err.message); callback(err, null); });
+}
+
+function getEbirdCode(estName) {
+  if (EBIRD_CODES_FALLBACK[estName]) return EBIRD_CODES_FALLBACK[estName];
+  try { var p = (window.points || {})[estName]; if (p && p.ebirdCode) return p.ebirdCode; } catch(e) {}
+  try { var pts = JSON.parse(localStorage.getItem('bm_rari_points') || '{}');
+    if (pts[estName] && pts[estName].ebirdCode) return pts[estName].ebirdCode; } catch(e) {}
+  return null;
+}
+
+function combinedProb(springProb, ebirdCount) {
+  if (!ebirdCount || ebirdCount <= 0) return springProb;
+  var boost = ebirdCount >= 11 ? 50 : ebirdCount >= 6 ? 40 : ebirdCount >= 3 ? 30 : 20;
+  return Math.min(99, springProb + boost);
+}
+
 function sd(){
   try{ var s=JSON.parse(localStorage.getItem('bm_rari_spring_dates')||'null');
     if(s&&typeof s==='object'&&Object.keys(s).length>0) return Object.assign({},SPRING,s);
@@ -2123,12 +2165,18 @@ function prob(ds){
 
 function missing(){
   var all=sp(),dates=sd(),pts=pt(),out=[];
+  var ebird=(ebirdRecentCache&&ebirdRecentCache.data)?ebirdRecentCache.data:{};
   for(var i=0;i<all.length;i++){
     var n=all[i],p=pts[n]||{};
     if(Number.isFinite(p.lat)&&Number.isFinite(p.lon)) continue;
     if(Number.isFinite(p.occ7)&&p.occ7>0) continue;
-    var pr=prob((dates[n]||'').trim());
-    out.push({name:n,spring:(dates[n]||'').trim(),prob:pr});
+    var springDate=(dates[n]||'').trim();
+    var baseProb=prob(springDate);
+    var ebCode=getEbirdCode(n);
+    var ebCount=0;
+    if(ebCode&&ebird[ebCode]) ebCount=ebird[ebCode].count||0;
+    var finalProb=combinedProb(baseProb,ebCount);
+    out.push({name:n,spring:springDate,prob:finalProb,baseProb:baseProb,ebirdCount:ebCount,ebirdCode:ebCode||''});
   }
   return out;
 }
@@ -2140,12 +2188,19 @@ function render(){
   q=q.toLowerCase().trim();
   var f=q?m.filter(function(s){return s.name.toLowerCase().indexOf(q)!==-1;}):m;
   if(sort==='prob') f.sort(function(a,b){return b.prob-a.prob;});
-  else if(sort==='spring') f.sort(function(a,b){
-    var ka=ssk(a.spring),kb=ssk(b.spring);return ka-kb;});
+  else if(sort==='spring') f.sort(function(a,b){return ssk(a.spring)-ssk(b.spring);});
   else f.sort(function(a,b){return a.name.localeCompare(b.name,'et');});
 
   var el=document.getElementById('ennSum');
-  if(el) el.innerHTML='<span><b>'+m.length+'</b> puuduvat liiki</span>';
+  if(el){
+    var sumH='<span><b>'+m.length+'</b> puuduvat liiki</span>';
+    if(ebirdRecentCache){
+      var ts=new Date(ebirdRecentCache.fetchedAt);
+      var timeStr=String(ts.getHours()).padStart(2,'0')+':'+String(ts.getMinutes()).padStart(2,'0');
+      sumH+='<span>Skaneeritud '+timeStr+' · eBird: '+ebirdRecentCache.totalObs+' vaatlust EE-s</span>';
+    }
+    el.innerHTML=sumH;
+  }
 
   var lst=document.getElementById('ennLst');
   if(!lst) return;
@@ -2163,10 +2218,14 @@ function render(){
         else if(df<=30) badge='<span class="eBdg eBM">varsti</span>';}}
     var sty=aurl?'background-image:url(\''+aurl+'\');border-color:'+bc:'border-color:'+bc;
     var sl=s.spring?'Kevad: '+s.spring:'Kevadkuupäev puudub';
+    var ebTxt='';
+    if(s.ebirdCount>0) ebTxt='<div class="eObs" style="color:#16a34a">eBird: '+s.ebirdCount+' vaatl.</div>';
+    else if(s.ebirdCode) ebTxt='<div class="eObs">eBird: 0 vaatl.</div>';
+    else ebTxt='<div class="eObs" style="color:#d97706">eBird kood puudub</div>';
     h+='<div class="eR"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+
       '<div class="eNm">'+nm+' '+badge+'</div><div class="eLt">'+sl+'</div>'+
       '<div class="eBar"><div class="eBf" style="width:'+Math.min(100,s.prob)+'%;background:'+bc+'"></div></div>'+
-      '</div><div class="eRt"><div class="ePct" style="color:'+pc+'">'+s.prob+'%</div></div></div>';
+      '</div><div class="eRt"><div class="ePct" style="color:'+pc+'">'+s.prob+'%</div>'+ebTxt+'</div></div>';
   }
   lst.innerHTML=h||'<div style="padding:16px;text-align:center;color:#94a3b8">Kõik liigid on juba kaardil!</div>';
 
@@ -2185,32 +2244,31 @@ function ssk(ds){if(!ds) return 999999;
   if(m) return parseInt(m[2],10)*100+parseInt(m[3],10);
   return 999999;}
 
-window.__openEnn=function(){render();document.getElementById('ennBg').style.display='flex';};
+window.__openEnn=function(){
+  var bg=document.getElementById('ennBg');
+  if(bg) bg.style.display='flex';
+  if(ebirdRecentCache&&(Date.now()-ebirdRecentCache.fetchedAt)<300000){render();return;}
+  render();
+  var scanBtn=document.querySelector('#ennBox [onclick*="__scanEnn"]');
+  if(scanBtn) window.__scanEnn(scanBtn);
+};
 window.__closeEnn=function(){document.getElementById('ennBg').style.display='none';};
 window.__renderEnn=render;
 window.__sortEnn=function(s){sort=s;render();};
 window.__scanEnn=function(btn){
-  btn.textContent='Skaneerin...';
+  btn.textContent='Laen eBird...';
   btn.style.opacity='.6';
   btn.disabled=true;
   var lst=document.getElementById('ennLst');
   if(lst) lst.style.opacity='0.3';
-  setTimeout(function(){
+  fetchEbirdRecent(function(err){
     render();
     if(lst) lst.style.opacity='1';
-    btn.textContent='Skaneeri';
-    btn.style.opacity='1';
     btn.disabled=false;
-    var sum=document.getElementById('ennSum');
-    if(sum){
-      var ts=new Date();
-      var timeStr=String(ts.getHours()).padStart(2,'0')+':'+String(ts.getMinutes()).padStart(2,'0')+':'+String(ts.getSeconds()).padStart(2,'0');
-      var existing=sum.innerHTML;
-      if(existing.indexOf('Skaneeritud')!==-1) existing=existing.replace(/Skaneeritud \d{2}:\d{2}:\d{2}/,'Skaneeritud '+timeStr);
-      else existing+='<span style="margin-left:8px">Skaneeritud '+timeStr+'</span>';
-      sum.innerHTML=existing;
-    }
-  },400);
+    btn.style.opacity='1';
+    if(err){btn.textContent='Skaneeri (viga)';setTimeout(function(){btn.textContent='Skaneeri';},3000);}
+    else btn.textContent='Skaneeri';
+  });
 };
 window.__openEnnustus=window.__openEnn;
 

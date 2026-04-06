@@ -10697,11 +10697,11 @@ function fetchEbirdRecent(callback) {
 }
 
 function getEbirdCode(estName) {
+  // Primary source: the comprehensive SPECIES_EBIRD_CODES constant
+  try { if (typeof SPECIES_EBIRD_CODES !== 'undefined' && SPECIES_EBIRD_CODES[estName]) return SPECIES_EBIRD_CODES[estName]; } catch(e) {}
   try { var meta = JSON.parse(localStorage.getItem('estbirding.speciesMeta.v1') || '{}');
     if (meta[estName] && meta[estName].ebirdCode) return meta[estName].ebirdCode; } catch(e) {}
   try { if (EBIRD_CODES_FALLBACK[estName]) return EBIRD_CODES_FALLBACK[estName]; } catch(e) {}
-  try { var pts = JSON.parse(localStorage.getItem('bm_rari_points') || '{}');
-    if (pts[estName] && pts[estName].ebirdCode) return pts[estName].ebirdCode; } catch(e) {}
   try { if (window.points && window.points[estName] && window.points[estName].ebirdCode)
     return window.points[estName].ebirdCode; } catch(e) {}
   return null;
@@ -10992,8 +10992,8 @@ window.__scanEnn=function(btn){
       btn.textContent='eElur '+(idx+1)+'/'+toFetch.length;
       idx++;
       var fetchFn=null;
-      if(typeof fetchElurikkusSpecies==='function') fetchFn=fetchElurikkusSpecies;
-      else if(typeof _fetchElurikkusSpeciesViaHtml==='function') fetchFn=_fetchElurikkusSpeciesViaHtml;
+      if(typeof window.fetchElurikkusSpecies==='function') fetchFn=window.fetchElurikkusSpecies;
+      else if(typeof window._fetchElurikkusSpeciesViaHtml==='function') fetchFn=window._fetchElurikkusSpeciesViaHtml;
       if(!fetchFn){
         window.__ennustusEluCache[name]={count:0,source:'no_fn',fetchedAt:Date.now()};
         render();setTimeout(nextElu,100);return;
@@ -11056,47 +11056,6 @@ window.__openEnnustus=window.__openEnn;
 
 var bg=document.getElementById('ennBg');
 if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__closeEnn();});
-
-// TEMPORARY DIAGNOSTIC — remove after confirming fix
-(function _ennDiag(){
-  try {
-    var all=sp(),pts=pt(),dates=sd(),thisYear=new Date().getFullYear();
-    console.log('[ennDiag] SPECIES count:',all.length);
-    console.log('[ennDiag] points keys count:',Object.keys(pts).length);
-    console.log('[ennDiag] springDates keys count:',Object.keys(dates).length);
-    var hasCoords=0,hasDate=0,hasOcc7=0,hasThisYearDate=0,hasSrc=0,noPoint=0,wouldPass=0;
-    var _pL={};for(var _k in pts){if(pts.hasOwnProperty(_k))_pL[_k.toLowerCase()]=pts[_k];}
-    for(var i=0;i<all.length;i++){
-      var n=all[i],p=pts[n]||_pL[n.toLowerCase()]||{};
-      if(!pts[n]&&!_pL[n.toLowerCase()]) noPoint++;
-      if(Number.isFinite(p.lat)&&Number.isFinite(p.lon)) hasCoords++;
-      var ds=String(p.t||'').trim();
-      if(ds&&ds!==''&&ds!=='(kuupäev puudub)') hasDate++;
-      if(Number.isFinite(p.occ7)&&p.occ7>0) hasOcc7++;
-      if(p.src&&String(p.src).trim()!=='') hasSrc++;
-      var ym=ds?ds.match(/^(\d{4})/):null;
-      if(ym&&parseInt(ym[1],10)===thisYear) hasThisYearDate++;
-      var blocked=(Number.isFinite(p.occ7)&&p.occ7>0)||(ym&&parseInt(ym[1],10)===thisYear);
-      if(!blocked) wouldPass++;
-    }
-    console.log('[ennDiag] FILTER RESULTS:');
-    console.log('  Total species:',all.length);
-    console.log('  Not in points at all:',noPoint);
-    console.log('  Has coords:',hasCoords);
-    console.log('  Has any date:',hasDate);
-    console.log('  Has this-year date:',hasThisYearDate);
-    console.log('  Has occ7>0:',hasOcc7);
-    console.log('  Has src:',hasSrc);
-    console.log('  Would PASS filter (missing):',wouldPass);
-    var check=['Jõgitilder','Aedporr','Baleaari tormilind','Haugaskotkas'];
-    for(var j=0;j<check.length;j++){
-      var cn=check[j],cp=pts[cn]||_pL[cn.toLowerCase()]||null;
-      console.log('[ennDiag] CHECK:',JSON.stringify(cn),'found:',!!cp,
-        cp?JSON.stringify({lat:cp.lat,lon:cp.lon,t:cp.t,occ7:cp.occ7,src:cp.src}).substring(0,200):'NOT IN POINTS');
-    }
-  } catch(e){console.error('[ennDiag] Error:',e);}
-})();
-
 })();
 </script>
 

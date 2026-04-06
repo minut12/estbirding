@@ -10779,21 +10779,27 @@ function getSpringDate(name,dates){
 function missing(){
   var all=sp(),dates=sd(),pts=pt(),out=[];
   var ebird=(ebirdRecentCache&&ebirdRecentCache.data)?ebirdRecentCache.data:{};
-  // Build lowercase lookup maps to handle encoding mismatches (e.g. Jõgitilder)
+  var thisYear=new Date().getFullYear();
+  // Lowercase fallback for encoding mismatches (e.g. Jõgitilder)
   var _ptsLower={};
   for(var _pk in pts){if(pts.hasOwnProperty(_pk)) _ptsLower[_pk.toLowerCase()]=pts[_pk];}
   var _datesLower={};
   for(var _dk in dates){if(dates.hasOwnProperty(_dk)) _datesLower[_dk.toLowerCase()]=dates[_dk];}
   for(var i=0;i<all.length;i++){
-    var n=all[i],p=pts[n]||_ptsLower[n.toLowerCase()]||{};
-    var hasCoords=Number.isFinite(p.lat)&&Number.isFinite(p.lon);
-    var hasDate=p.t&&String(p.t).trim()!==''&&String(p.t).trim()!=='(kuupäev puudub)';
-    var hasOcc7=Number.isFinite(p.occ7)&&p.occ7>0;
-    var hasFetchedData=!!p.lastFetched&&(hasDate||hasOcc7);
-    var springVal=String((dates[n]||_datesLower[n.toLowerCase()]||'')).trim();
-    var hasYearFirstDate=/^\d{4}-\d{2}-\d{2}/.test(springVal);
-    var hasSource=p.src&&String(p.src).trim()!=='';
-    if(hasCoords||hasDate||hasOcc7||hasFetchedData||hasYearFirstDate||hasSource) continue;
+    var n=all[i];
+    var p=pts[n]||_ptsLower[n.toLowerCase()]||{};
+
+    // Has recent 7-day observations → definitely seen, skip
+    if(Number.isFinite(p.occ7)&&p.occ7>0) continue;
+
+    // Has observation date from THIS YEAR → seen this year, skip
+    var dateStr=String(p.t||'').trim();
+    if(dateStr){
+      var yearMatch=dateStr.match(/^(\d{4})/);
+      if(yearMatch&&parseInt(yearMatch[1],10)===thisYear) continue;
+    }
+
+    // This species hasn't been seen this year — it's "missing"
     var springDate=getSpringDate(n,dates)||_datesLower[n.toLowerCase()]||'';
     springDate=String(springDate).trim();
     var baseProb=prob(springDate);
@@ -10823,12 +10829,10 @@ function render(){
       var n=allSpecies[i];
       if(n.toLowerCase().indexOf(q)===-1) continue;
       var p=pts[n]||_ptsLower[n.toLowerCase()]||{};
-      var isSeen=(Number.isFinite(p.lat)&&Number.isFinite(p.lon))||
-        (Number.isFinite(p.occ7)&&p.occ7>0)||
-        (p.t&&String(p.t).trim()!==''&&String(p.t).trim()!=='(kuupäev puudub)')||
-        (!!p.lastFetched&&((p.t&&String(p.t).trim()!=='')||(Number.isFinite(p.occ7)&&p.occ7>0)))||
-        (/^\d{4}-\d{2}-\d{2}/.test(String(dates[n]||'')))||
-        (p.src&&String(p.src).trim()!=='');
+      var _ds=String(p.t||'').trim();
+      var _ym=_ds?_ds.match(/^(\d{4})/):null;
+      var isSeen=(Number.isFinite(p.occ7)&&p.occ7>0)||
+        (_ym&&parseInt(_ym[1],10)===new Date().getFullYear());
       var springDate=getSpringDate(n,dates);
       var baseProb=prob(springDate);
       var ebCode=getEbirdCode(n);
@@ -10976,6 +10980,47 @@ window.__openEnnustus=window.__openEnn;
 
 var bg=document.getElementById('ennBg');
 if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__closeEnn();});
+
+// TEMPORARY DIAGNOSTIC — remove after confirming fix
+(function _ennDiag(){
+  try {
+    var all=sp(),pts=pt(),dates=sd(),thisYear=new Date().getFullYear();
+    console.log('[ennDiag] SPECIES count:',all.length);
+    console.log('[ennDiag] points keys count:',Object.keys(pts).length);
+    console.log('[ennDiag] springDates keys count:',Object.keys(dates).length);
+    var hasCoords=0,hasDate=0,hasOcc7=0,hasThisYearDate=0,hasSrc=0,noPoint=0,wouldPass=0;
+    var _pL={};for(var _k in pts){if(pts.hasOwnProperty(_k))_pL[_k.toLowerCase()]=pts[_k];}
+    for(var i=0;i<all.length;i++){
+      var n=all[i],p=pts[n]||_pL[n.toLowerCase()]||{};
+      if(!pts[n]&&!_pL[n.toLowerCase()]) noPoint++;
+      if(Number.isFinite(p.lat)&&Number.isFinite(p.lon)) hasCoords++;
+      var ds=String(p.t||'').trim();
+      if(ds&&ds!==''&&ds!=='(kuupäev puudub)') hasDate++;
+      if(Number.isFinite(p.occ7)&&p.occ7>0) hasOcc7++;
+      if(p.src&&String(p.src).trim()!=='') hasSrc++;
+      var ym=ds?ds.match(/^(\d{4})/):null;
+      if(ym&&parseInt(ym[1],10)===thisYear) hasThisYearDate++;
+      var blocked=(Number.isFinite(p.occ7)&&p.occ7>0)||(ym&&parseInt(ym[1],10)===thisYear);
+      if(!blocked) wouldPass++;
+    }
+    console.log('[ennDiag] FILTER RESULTS:');
+    console.log('  Total species:',all.length);
+    console.log('  Not in points at all:',noPoint);
+    console.log('  Has coords:',hasCoords);
+    console.log('  Has any date:',hasDate);
+    console.log('  Has this-year date:',hasThisYearDate);
+    console.log('  Has occ7>0:',hasOcc7);
+    console.log('  Has src:',hasSrc);
+    console.log('  Would PASS filter (missing):',wouldPass);
+    var check=['Jõgitilder','Aedporr','Baleaari tormilind','Haugaskotkas'];
+    for(var j=0;j<check.length;j++){
+      var cn=check[j],cp=pts[cn]||_pL[cn.toLowerCase()]||null;
+      console.log('[ennDiag] CHECK:',JSON.stringify(cn),'found:',!!cp,
+        cp?JSON.stringify({lat:cp.lat,lon:cp.lon,t:cp.t,occ7:cp.occ7,src:cp.src}).substring(0,200):'NOT IN POINTS');
+    }
+  } catch(e){console.error('[ennDiag] Error:',e);}
+})();
+
 })();
 </script>
 

@@ -10568,7 +10568,7 @@ window.__computeProbSilent = async function(speciesName) {
     <div class="enn-header">
       <div><h3>Puuduvad liigid — ennustus</h3><p class="sub">Liigid, mida kaardil veel pole</p></div>
       <div style="display:flex;gap:8px;align-items:center">
-        <button id="ennustusScan" class="btn secondary" style="font-size:12px;padding:4px 10px" title="Skaneeri andmed uuesti">Skaneeri</button>
+        <button id="ennustusScan" class="btn secondary" style="font-size:12px;padding:4px 10px" title="Skaneeri andmed uuesti" onclick="window.__ennustusScan(this)">Skaneeri</button>
         <button id="ennustusClose" class="btn secondary" style="font-size:18px;line-height:1;padding:2px 8px">&times;</button>
       </div>
     </div>
@@ -10677,18 +10677,40 @@ window.__computeProbSilent = async function(speciesName) {
     var sd = _springDates();
     var pts = _points();
     var missing = [];
+    var now = new Date();
+    var thisYear = now.getFullYear();
+
     console.log('[Ennustus] Scanning:', allSpecies.length, 'species,', Object.keys(sd).length, 'spring dates,', Object.keys(pts).length, 'points entries');
+
     for (var i = 0; i < allSpecies.length; i++) {
       var name = allSpecies[i];
       var p = pts[name] || {};
+
+      // 1. Has map coordinates
       var hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
+      // 2. Has recent 7-day observations
       var hasOcc7 = Number.isFinite(p.occ7) && p.occ7 > 0;
-      if (hasCoords || hasOcc7) continue;
+      // 3. Has an observation date from this year
+      var hasRecentDate = false;
+      if (p.t) {
+        var dateStr = String(p.t).trim();
+        if (dateStr.indexOf(String(thisYear)) !== -1) hasRecentDate = true;
+        if (dateStr.match && dateStr.match(/^20\d{2}/)) {
+          var yr = parseInt(dateStr.substring(0, 4), 10);
+          if (yr >= thisYear - 1) hasRecentDate = true;
+        }
+      }
+      // 4. Has been fetched from a data source AND has occ7 value set
+      var wasFetched = !!p.src && p.occ7 !== undefined;
+
+      if (hasCoords || hasOcc7 || hasRecentDate || wasFetched) continue;
+
       var springDate = (sd[name] || '').trim();
       var prob = calcEnnustusProbability(springDate);
       missing.push({ name: name, springDate: springDate, probability: prob });
     }
-    console.log('[Ennustus] Found', missing.length, 'missing species');
+
+    console.log('[Ennustus] Found', missing.length, 'missing species out of', allSpecies.length);
     return missing;
   }
 
@@ -10888,6 +10910,20 @@ window.__computeProbSilent = async function(speciesName) {
   }
   setTimeout(wireEnnustus, 500);
   setTimeout(wireEnnustus, 1500);
+
+  // Expose scan handler for inline onclick
+  window.__ennustusScan = function(btn) {
+    btn.textContent = 'Skaneerin...';
+    btn.style.opacity = '0.6';
+    btn.disabled = true;
+    setTimeout(function() {
+      console.log('[Ennustus] Scanning fresh from localStorage...');
+      renderEnnustusModal();
+      btn.textContent = 'Skaneeri';
+      btn.style.opacity = '1';
+      btn.disabled = false;
+    }, 200);
+  };
 })();
 </script>
 

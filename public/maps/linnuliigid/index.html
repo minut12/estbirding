@@ -10583,29 +10583,62 @@ window.__computeProbSilent = async function(speciesName) {
 (function(){
   'use strict';
 
-  // === Accessors that work regardless of how variables were exposed ===
+  // === Embedded spring dates fallback ===
+  var DEFAULT_SPRING_DATES_ENNUSTUS = {
+    "Heletilder":"6.04","Herilaseviu":"5.05","Hänilane":"14.04","Jõgitilder":"21.03",
+    "Kadakatäks":"22.04","Kaelusrästas":"17.04","Kalakotkas":"31.03","Kaldapääsuke":"29.04",
+    "Karmiinleevike":"6.05","Kivirullija":"6.05","Kivitäks":"2.04","Koldvint":"6.04",
+    "Kukkurtihane":"1.04","Kuldhänilane":"12.04","Käosulane":"4.05","Lammitilder":"14.04",
+    "Lapi tsiitsitaja":"5.04","Lepalind":"12.04","Linavästrik":"18.03","Lõopistrik":"19.04",
+    "Madukotkas":"26.04","Metskiur":"8.04","Metstilder":"24.03","Mudatilder":"9.04",
+    "Mustlagle":"30.03","Mustviires":"29.04","Nõmmelõoke":"10.03","Peoleo":"6.05",
+    "Piiritaja":"3.05","Plütt":"19.05","Plüü":"25.04","Põldtsiitsitaja":"4.05",
+    "Rabapistrik":"11.04","Randtiir":"16.04","Rohunepp":"28.04","Rukkirääk":"7.05",
+    "Rägapart":"25.03","Räusk":"4.04","Räästapääsuke":"18.04","Rüüt":"5.03",
+    "Sarviklõoke":"6.03","Sinirind":"18.04","Sooräts":"17.04","Soorüdi":"27.03",
+    "Suitsupääsuke":"10.04","Suurkoovitaja":"25.03","Suurrüdi":"4.05","Tundrakaur":"1.05",
+    "Tundrakiur":"23.04","Turteltuvi":"25.04","Täpikhuik":"18.04","Tõmmukajakas":"8.03",
+    "Vaenukägu":"13.04","Veetallaja":"19.05","Vihitaja":"31.03","Väikehuik":"24.04",
+    "Väikehüüp":"30.05","Väikekoovitaja":"12.04","Väikerüdi":"17.05","Väiketiir":"21.04",
+    "Väiketüll":"6.04","Värbrüdi":"20.04","Väänkael":"11.04","Ööbik":"28.04","Öösorr":"24.04"
+  };
+
+  // === Accessors with localStorage fallbacks ===
   function _species(){
     if (window.__bm_SPECIES && window.__bm_SPECIES.length) return window.__bm_SPECIES;
     if (window.SPECIES && window.SPECIES.length) return window.SPECIES;
-    if (typeof SPECIES !== 'undefined') return SPECIES;
+    try {
+      var saved = JSON.parse(localStorage.getItem('bm_species_list_global') || 'null');
+      if (saved && saved.length) return saved;
+    } catch(e) {}
+    try { if (typeof SPECIES !== 'undefined' && SPECIES.length) return SPECIES; } catch(e) {}
     return [];
   }
   function _points(){
-    if (window.__bm_points && typeof window.__bm_points === 'object') return window.__bm_points;
-    if (window.points && typeof window.points === 'object') return window.points;
-    if (typeof points !== 'undefined') return points;
+    if (window.__bm_points && typeof window.__bm_points === 'object' && Object.keys(window.__bm_points).length > 0) return window.__bm_points;
+    if (window.points && typeof window.points === 'object' && Object.keys(window.points).length > 0) return window.points;
+    try {
+      var saved = JSON.parse(localStorage.getItem('bm_rari_points') || 'null');
+      if (saved && typeof saved === 'object') return saved;
+    } catch(e) {}
+    try { if (typeof points !== 'undefined') return points; } catch(e) {}
     return {};
   }
   function _springDates(){
-    if (window.__bm_springDates && typeof window.__bm_springDates === 'object') return window.__bm_springDates;
-    if (window.springDates && typeof window.springDates === 'object') return window.springDates;
-    if (typeof springDates !== 'undefined') return springDates;
-    return {};
+    try {
+      var saved = JSON.parse(localStorage.getItem('bm_rari_spring_dates') || 'null');
+      if (saved && typeof saved === 'object' && Object.keys(saved).length > 0) {
+        return Object.assign({}, DEFAULT_SPRING_DATES_ENNUSTUS, saved);
+      }
+    } catch(e) {}
+    if (window.__bm_springDates && typeof window.__bm_springDates === 'object' && Object.keys(window.__bm_springDates).length > 0) return window.__bm_springDates;
+    if (window.springDates && typeof window.springDates === 'object' && Object.keys(window.springDates).length > 0) return window.springDates;
+    return Object.assign({}, DEFAULT_SPRING_DATES_ENNUSTUS);
   }
   function _avatars(){
     if (window.__bm_avatars && typeof window.__bm_avatars === 'object') return window.__bm_avatars;
     if (window.avatars && typeof window.avatars === 'object') return window.avatars;
-    if (typeof avatars !== 'undefined') return avatars;
+    try { if (typeof avatars !== 'undefined') return avatars; } catch(e) {}
     return {};
   }
 
@@ -10833,12 +10866,15 @@ window.__computeProbSilent = async function(speciesName) {
       scanBtn.addEventListener('click', function() {
         var self = this;
         self.textContent = 'Skaneerin...';
+        self.style.opacity = '0.6';
         self.disabled = true;
         setTimeout(function() {
+          console.log('[Ennustus] Scanning fresh from localStorage...');
           renderEnnustusModal();
           self.textContent = 'Skaneeri';
+          self.style.opacity = '1';
           self.disabled = false;
-        }, 150);
+        }, 200);
       });
       scanBtn.__ennWired = true;
     }

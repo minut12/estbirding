@@ -9527,42 +9527,98 @@ var __sharedDefaults = {};
       }
       if (!Number.isFinite(cell.gbifCount)) cell.gbifCount = 0;
 
-      // 1. Historical score — normalized against best cell, max 60%
+      // 1. Historical (GBIF) — up to 35%
       var historicalScore = 0;
       if (maxCellCount > 0 && cell.gbifCount > 0) {
-        historicalScore = Math.round((cell.gbifCount / maxCellCount) * 60);
-      }
-      if (historicalScore === 0 && cell.occurrences.length > 0 && maxOccCount > 0) {
-        historicalScore = Math.round((cell.occurrences.length / maxOccCount) * 40);
+        historicalScore = Math.round((cell.gbifCount / maxCellCount) * 35);
       }
 
-      // 2. Recency boost (eElurikkus) — up to 35%
-      var recencyBoost = 0;
-      if (occ7 > 0) {
-        recencyBoost = Math.min(15, Math.round(occ7 / 5) * 3);
+      // 2. Freshness — the KEY signal, up to 55%
+      var freshnessScore = 0;
+      var latestObsDate = eluPoint.t || '';
+      var ageDays = Infinity;
+
+      if (latestObsDate) {
+        try {
+          var obsTs = (typeof _toDay === 'function') ? _toDay(latestObsDate) : Date.parse(latestObsDate);
+          if (obsTs && obsTs > 0) {
+            ageDays = (Date.now() - obsTs) / (24 * 60 * 60 * 1000);
+          }
+        } catch(e) {}
       }
+
+      var markerInCell = false;
+      var markerNearCell = false;
       if (Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon)) {
         var dLat = Math.abs(eluPoint.lat - cell.centerLat);
         var dLon = Math.abs(eluPoint.lon - cell.centerLon);
-        if (dLat <= cellSize / 2 && dLon <= cellSize / 2) {
-          recencyBoost = Math.min(35, 20 + Math.round(occ7 / 3));
-        } else if (dLat <= cellSize * 1.5 && dLon <= cellSize * 1.5) {
-          recencyBoost = Math.min(25, 10 + Math.round(occ7 / 5));
+        markerInCell = (dLat <= cellSize / 2 && dLon <= cellSize / 2);
+        markerNearCell = !markerInCell && (dLat <= cellSize * 1.5 && dLon <= cellSize * 1.5);
+      }
+
+      if (markerInCell) {
+        if (ageDays < 1) {
+          freshnessScore = 55;
+        } else if (ageDays < 2) {
+          freshnessScore = 45;
+        } else if (ageDays < 3) {
+          freshnessScore = 35;
+        } else if (ageDays < 5) {
+          freshnessScore = 25;
+        } else if (ageDays < 7) {
+          freshnessScore = 15;
+        } else {
+          freshnessScore = 5;
+        }
+        if (occ7 >= 10) freshnessScore = Math.min(55, freshnessScore + 10);
+        else if (occ7 >= 5) freshnessScore = Math.min(55, freshnessScore + 7);
+        else if (occ7 >= 3) freshnessScore = Math.min(55, freshnessScore + 5);
+        else if (occ7 >= 1) freshnessScore = Math.min(55, freshnessScore + 3);
+      } else if (markerNearCell) {
+        if (ageDays < 1) {
+          freshnessScore = 35;
+        } else if (ageDays < 2) {
+          freshnessScore = 25;
+        } else if (ageDays < 3) {
+          freshnessScore = 18;
+        } else if (ageDays < 7) {
+          freshnessScore = 10;
+        } else {
+          freshnessScore = 3;
+        }
+        if (occ7 >= 5) freshnessScore = Math.min(40, freshnessScore + 5);
+        else if (occ7 >= 1) freshnessScore = Math.min(40, freshnessScore + 2);
+      } else {
+        if (occ7 > 0 && ageDays < 3) {
+          freshnessScore = Math.min(10, Math.round(occ7 / 3));
         }
       }
 
-      // 3. Combine
-      var prob = historicalScore + recencyBoost + seasonBonus;
+      // 3. Season timing — up to +5%
+      var seasonBonusCell = seasonBonus;
+      try {
+        var now = new Date();
+        var sStart = seasonInfo && seasonInfo.start;
+        var sEnd = seasonInfo && seasonInfo.end;
+        if (sStart && sEnd) {
+          var seasonMid = new Date((sStart.getTime() + sEnd.getTime()) / 2);
+          var daysToPeak = Math.abs((now - seasonMid) / 86400000);
+          seasonBonusCell = daysToPeak < 10 ? 5 : (daysToPeak < 20 ? 3 : 0);
+        }
+      } catch(e) {}
 
-      // Cap distant empty cells
-      if (cell.occurrences.length === 0 && recencyBoost <= 15) {
+      // Combine
+      var prob = historicalScore + freshnessScore + seasonBonusCell;
+
+      // Cells with zero GBIF AND far from marker get minimum
+      if (cell.gbifCount === 0 && freshnessScore <= 5) {
         prob = Math.min(prob, 5);
       }
 
       cell.probability = Math.max(1, Math.min(95, prob));
       cell.scoreHistory = historicalScore;
-      cell.scoreRecency = recencyBoost;
-      cell.scoreSeason = seasonBonus;
+      cell.scoreRecency = freshnessScore;
+      cell.scoreSeason = seasonBonusCell;
 
       // Temporal periods
       assignRecordsToPeriods(cell, periodTemplate);
@@ -9775,7 +9831,7 @@ var __sharedDefaults = {};
     var breakdownLine = '';
     var parts = [];
     if (cell.scoreHistory > 0) parts.push(cell.scoreHistory + '% history');
-    if (cell.scoreRecency > 0) parts.push(cell.scoreRecency + '% recency');
+    if (cell.scoreRecency > 0) parts.push(cell.scoreRecency + '% freshness');
     if (cell.scoreSeason > 0) parts.push(cell.scoreSeason + '% season');
     if (parts.length > 0) {
       breakdownLine = '<div style="font-size:11px;color:#94a3b8;margin-top:6px;border-top:1px solid #eee;padding-top:4px">'

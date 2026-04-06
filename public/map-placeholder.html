@@ -1560,7 +1560,7 @@ window.alert = function(msg){ notifySilent(msg); };
 <div id="windToggleBar" class="hidden-in-export">
   <button id="toggleWind" class="btn secondary">Tuulekaart</button>
   <button id="toggleSpring" class="btn secondary">KevadrÃ¤nne</button>
-  <button id="ennustusBtn" class="btn secondary" title="Näita puuduvate liikide saabumise tõenäosust">Ennustus</button>
+  <button id="ennustusBtn" class="btn secondary" title="Näita puuduvate liikide saabumise tõenäosust" onclick="window.__openEnnustus()">Ennustus</button>
   <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 pÃ¤eva jooksul aktiivsed (7d vaatlustes &gt; 0 vÃµi kuupÃ¤ev viimase 7 pÃ¤eva sees).">7p liigid: 0</span>
 </div>
 <div id="springPanel" class="hidden-in-export">
@@ -2007,447 +2007,199 @@ window.alert = function(msg){ notifySilent(msg); };
 })();
 </script>
 
-
+<!-- === ENNUSTUS: Puuduvad liigid / Missing species probability === -->
 <style>
-#ennustusBackdrop {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.35);
-  display: none; align-items: center; justify-content: center; z-index: 9999;
-}
-#ennustusPanel {
-  background: #fff; max-width: 560px; width: 92vw; max-height: 80vh;
-  border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-  display: flex; flex-direction: column; overflow: hidden;
-}
-#ennustusPanel .enn-header {
-  padding: 12px 16px; border-bottom: 1px solid #e5e7eb;
-  display: flex; justify-content: space-between; align-items: center;
-}
-#ennustusPanel .enn-header h3 { margin: 0; font-size: 15px; font-weight: 600; }
-#ennustusPanel .enn-header .sub { margin: 2px 0 0; font-size: 12px; color: #64748b; }
-#ennustusPanel .enn-summary {
-  display: flex; gap: 12px; padding: 8px 16px; border-bottom: 1px solid #e5e7eb;
-  flex-wrap: wrap; font-size: 12px; color: #64748b;
-}
-#ennustusPanel .enn-summary .val { font-weight: 600; color: #1e293b; }
-#ennustusPanel .enn-search { padding: 8px 16px; }
-#ennustusPanel .enn-search input {
-  width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 6px;
-  border: 1px solid #e5e7eb; font-size: 13px; background: #f8fafc;
-}
-#ennustusPanel .enn-list { overflow-y: auto; flex: 1; padding: 0 8px 8px; }
-.enn-row {
-  display: flex; align-items: center; gap: 10px; padding: 8px 8px;
-  border-radius: 8px; margin-bottom: 2px;
-}
-.enn-row:nth-child(odd) { background: #f8fafc; }
-.enn-avatar {
-  width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
-  background-size: cover; background-position: center; background-color: #f1f5f9;
-  border: 2px solid #cbd5e1;
-}
-.enn-info { flex: 1; min-width: 0; }
-.enn-name { font-size: 14px; font-weight: 600; color: #1e293b; display: flex; align-items: center; gap: 6px; }
-.enn-latin { font-size: 11px; color: #94a3b8; }
-.enn-bar { height: 3px; background: #e5e7eb; border-radius: 2px; margin-top: 4px; }
-.enn-bar-fill { height: 100%; border-radius: 2px; }
-.enn-right { text-align: right; flex-shrink: 0; min-width: 65px; }
-.enn-pct { font-size: 18px; font-weight: 600; }
-.enn-obs { font-size: 11px; color: #94a3b8; display: flex; align-items: center; gap: 3px; justify-content: flex-end; margin-top: 1px; }
-.enn-badge { font-size: 11px; padding: 1px 6px; border-radius: 4px; }
-.enn-badge-high { background: #dcfce7; color: #166534; }
-.enn-badge-med { background: #fef3c7; color: #92400e; }
-#ennustusPanel .enn-footer {
-  padding: 8px 16px; border-top: 1px solid #e5e7eb;
-  display: flex; justify-content: space-between; align-items: center;
-  font-size: 11px; color: #94a3b8;
-}
-.enn-sort-pill {
-  font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; border: none;
-}
-.enn-sort-active { background: #dbeafe; color: #1e40af; }
-.enn-sort-off { background: #f1f5f9; color: #64748b; }
-@media (max-width: 600px) {
-  #ennustusPanel { width: 96vw; max-height: 85vh; }
-  .enn-avatar { width: 30px; height: 30px; }
-  .enn-name { font-size: 13px; }
-  .enn-pct { font-size: 15px; }
-  .enn-row { gap: 7px; padding: 6px; }
-}
-@keyframes ennSpin {
-  to { transform: rotate(360deg); }
-}
-#ennustusScan.scanning {
-  opacity: 0.6;
-  pointer-events: none;
-}
+#ennBg{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:9999}
+#ennBox{background:#fff;max-width:560px;width:92vw;max-height:80vh;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);display:flex;flex-direction:column;overflow:hidden}
+.ennHdr{padding:12px 16px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center}
+.ennHdr h3{margin:0;font-size:15px;font-weight:600}
+.ennHdr .sub{margin:2px 0 0;font-size:12px;color:#64748b}
+.ennSum{display:flex;gap:12px;padding:8px 16px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#64748b;flex-wrap:wrap}
+.ennSum b{font-weight:600;color:#1e293b}
+.ennSrch{padding:8px 16px}
+.ennSrch input{width:100%;box-sizing:border-box;padding:6px 10px;border-radius:6px;border:1px solid #e5e7eb;font-size:13px;background:#f8fafc}
+.ennLst{overflow-y:auto;flex:1;padding:0 8px 8px}
+.eR{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;margin-bottom:2px}
+.eR:nth-child(odd){background:#f8fafc}
+.eAv{width:38px;height:38px;border-radius:50%;flex-shrink:0;background-size:cover;background-position:center;background-color:#f1f5f9;border:2px solid #cbd5e1}
+.eInf{flex:1;min-width:0}
+.eNm{font-size:14px;font-weight:600;color:#1e293b;display:flex;align-items:center;gap:6px}
+.eLt{font-size:11px;color:#94a3b8}
+.eBar{height:3px;background:#e5e7eb;border-radius:2px;margin-top:4px}
+.eBf{height:100%;border-radius:2px}
+.eRt{text-align:right;flex-shrink:0;min-width:55px}
+.ePct{font-size:18px;font-weight:600}
+.eObs{font-size:11px;color:#94a3b8;margin-top:1px}
+.eBdg{font-size:11px;padding:1px 6px;border-radius:4px}
+.eBH{background:#dcfce7;color:#166534}
+.eBM{background:#fef3c7;color:#92400e}
+.ennFt{padding:8px 16px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#94a3b8}
+.eSP{font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;border:none}
+.eSA{background:#dbeafe;color:#1e40af}
+.eSO{background:#f1f5f9;color:#64748b}
+@media(max-width:600px){#ennBox{width:96vw;max-height:85vh}.eAv{width:30px;height:30px}.eNm{font-size:13px}.ePct{font-size:15px}.eR{gap:7px;padding:6px}}
 </style>
 
-<div id="ennustusBackdrop">
-  <div id="ennustusPanel">
-    <div class="enn-header">
-      <div><h3>Puuduvad liigid — ennustus</h3><p class="sub">Liigid, mida kaardil veel pole</p></div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <button id="ennustusScan" class="btn secondary" style="font-size:12px;padding:4px 10px" title="Skaneeri andmed uuesti" onclick="window.__ennustusScan(this)">Skaneeri</button>
-        <button id="ennustusClose" class="btn secondary" style="font-size:18px;line-height:1;padding:2px 8px">&times;</button>
-      </div>
-    </div>
-    <div class="enn-summary" id="ennustusSummary"></div>
-    <div class="enn-search"><input id="ennustusSearch" type="text" placeholder="Otsi liiki…"></div>
-    <div class="enn-list" id="ennustusList"></div>
-    <div class="enn-footer" id="ennustusFooter"></div>
-  </div>
+<div id="ennBg">
+<div id="ennBox">
+<div class="ennHdr">
+<div><h3>Puuduvad liigid — ennustus</h3><p class="sub">Liigid, mida kaardil veel pole</p></div>
+<div style="display:flex;gap:8px;align-items:center">
+<button class="btn secondary" style="font-size:12px;padding:4px 10px" onclick="window.__scanEnn(this)">Skaneeri</button>
+<button class="btn small" onclick="window.__closeEnn()">&#10005;</button>
+</div>
+</div>
+<div class="ennSum" id="ennSum"></div>
+<div class="ennSrch"><input id="ennQ" type="text" placeholder="Otsi liiki..." oninput="window.__renderEnn()"></div>
+<div class="ennLst" id="ennLst"></div>
+<div class="ennFt" id="ennFt"></div>
+</div>
 </div>
 
 <script>
 (function(){
-  'use strict';
+var SPRING = {
+"Heletilder":"6.04","Herilaseviu":"5.05","Hänilane":"14.04","Jõgitilder":"21.03",
+"Kadakatäks":"22.04","Kaelusrästas":"17.04","Kalakotkas":"31.03","Kaldapääsuke":"29.04",
+"Karmiinleevike":"6.05","Kivirullija":"6.05","Kivitäks":"2.04","Koldvint":"6.04",
+"Kukkurtihane":"1.04","Kuldhänilane":"12.04","Käosulane":"4.05","Lammitilder":"14.04",
+"Lapi tsiitsitaja":"5.04","Lepalind":"12.04","Linavästrik":"18.03","Lõopistrik":"19.04",
+"Madukotkas":"26.04","Metskiur":"8.04","Metstilder":"24.03","Mudatilder":"9.04",
+"Mustlagle":"30.03","Mustviires":"29.04","Nõmmelõoke":"10.03","Peoleo":"6.05",
+"Piiritaja":"3.05","Plütt":"19.05","Plüü":"25.04","Põldtsiitsitaja":"4.05",
+"Rabapistrik":"11.04","Randtiir":"16.04","Rohunepp":"28.04","Rukkirääk":"7.05",
+"Rägapart":"25.03","Räusk":"4.04","Räästapääsuke":"18.04","Rüüt":"5.03",
+"Sarviklõoke":"6.03","Sinirind":"18.04","Sooräts":"17.04","Soorüdi":"27.03",
+"Suitsupääsuke":"10.04","Suurkoovitaja":"25.03","Suurrüdi":"4.05","Tundrakaur":"1.05",
+"Tundrakiur":"23.04","Turteltuvi":"25.04","Täpikhuik":"18.04","Tõmmukajakas":"8.03",
+"Vaenukägu":"13.04","Veetallaja":"19.05","Vihitaja":"31.03","Väikehuik":"24.04",
+"Väikehüüp":"30.05","Väikekoovitaja":"12.04","Väikerüdi":"17.05","Väiketiir":"21.04",
+"Väiketüll":"6.04","Värbrüdi":"20.04","Väänkael":"11.04","Ööbik":"28.04","Öösorr":"24.04"
+};
 
-  // === Embedded spring dates fallback ===
-  var DEFAULT_SPRING_DATES_ENNUSTUS = {
-    "Heletilder":"6.04","Herilaseviu":"5.05","Hänilane":"14.04","Jõgitilder":"21.03",
-    "Kadakatäks":"22.04","Kaelusrästas":"17.04","Kalakotkas":"31.03","Kaldapääsuke":"29.04",
-    "Karmiinleevike":"6.05","Kivirullija":"6.05","Kivitäks":"2.04","Koldvint":"6.04",
-    "Kukkurtihane":"1.04","Kuldhänilane":"12.04","Käosulane":"4.05","Lammitilder":"14.04",
-    "Lapi tsiitsitaja":"5.04","Lepalind":"12.04","Linavästrik":"18.03","Lõopistrik":"19.04",
-    "Madukotkas":"26.04","Metskiur":"8.04","Metstilder":"24.03","Mudatilder":"9.04",
-    "Mustlagle":"30.03","Mustviires":"29.04","Nõmmelõoke":"10.03","Peoleo":"6.05",
-    "Piiritaja":"3.05","Plütt":"19.05","Plüü":"25.04","Põldtsiitsitaja":"4.05",
-    "Rabapistrik":"11.04","Randtiir":"16.04","Rohunepp":"28.04","Rukkirääk":"7.05",
-    "Rägapart":"25.03","Räusk":"4.04","Räästapääsuke":"18.04","Rüüt":"5.03",
-    "Sarviklõoke":"6.03","Sinirind":"18.04","Sooräts":"17.04","Soorüdi":"27.03",
-    "Suitsupääsuke":"10.04","Suurkoovitaja":"25.03","Suurrüdi":"4.05","Tundrakaur":"1.05",
-    "Tundrakiur":"23.04","Turteltuvi":"25.04","Täpikhuik":"18.04","Tõmmukajakas":"8.03",
-    "Vaenukägu":"13.04","Veetallaja":"19.05","Vihitaja":"31.03","Väikehuik":"24.04",
-    "Väikehüüp":"30.05","Väikekoovitaja":"12.04","Väikerüdi":"17.05","Väiketiir":"21.04",
-    "Väiketüll":"6.04","Värbrüdi":"20.04","Väänkael":"11.04","Ööbik":"28.04","Öösorr":"24.04"
-  };
+function sd(){
+  try{ var s=JSON.parse(localStorage.getItem('bm_rari_spring_dates')||'null');
+    if(s&&typeof s==='object'&&Object.keys(s).length>0) return Object.assign({},SPRING,s);
+  }catch(e){}
+  return Object.assign({},SPRING);
+}
+function sp(){
+  try{if(window.SPECIES&&window.SPECIES.length) return window.SPECIES;}catch(e){}
+  try{if(window.__bm_SPECIES&&window.__bm_SPECIES.length) return window.__bm_SPECIES;}catch(e){}
+  try{var s=JSON.parse(localStorage.getItem('bm_species_list_global')||'null');if(s&&s.length) return s;}catch(e){}
+  try{if(typeof SPECIES!=='undefined'&&SPECIES.length) return SPECIES;}catch(e){}
+  return [];
+}
+function pt(){
+  try{if(window.points&&typeof window.points==='object'&&Object.keys(window.points).length>0) return window.points;}catch(e){}
+  try{if(window.__bm_points&&typeof window.__bm_points==='object') return window.__bm_points;}catch(e){}
+  try{var s=JSON.parse(localStorage.getItem('bm_rari_points')||'null');if(s) return s;}catch(e){}
+  try{if(typeof points!=='undefined') return points;}catch(e){}
+  return {};
+}
+function av(n){
+  try{if(typeof window.getDisplayAvatar==='function') return window.getDisplayAvatar(n)||'';}catch(e){}
+  try{var a=window.avatars||window.__bm_avatars||JSON.parse(localStorage.getItem('bm_rari_avatars')||'{}');return a[n]||'';}catch(e){}
+  return '';
+}
+function dn(n){try{if(typeof window.normalizeUiText==='function') return window.normalizeUiText(n);}catch(e){}return n;}
 
-  // === Accessors with localStorage fallbacks ===
-  function _species(){
-    if (window.__bm_SPECIES && window.__bm_SPECIES.length) return window.__bm_SPECIES;
-    if (window.SPECIES && window.SPECIES.length) return window.SPECIES;
-    try {
-      var saved = JSON.parse(localStorage.getItem('bm_species_list_global') || 'null');
-      if (saved && saved.length) return saved;
-    } catch(e) {}
-    try { if (typeof SPECIES !== 'undefined' && SPECIES.length) return SPECIES; } catch(e) {}
-    return [];
+function prob(ds){
+  if(!ds) return 0;
+  var d=null,now=new Date(),yr=now.getFullYear();
+  var m=String(ds).match(/^(\d{1,2})\.(\d{2})$/);
+  if(m) d=new Date(yr,parseInt(m[2],10)-1,parseInt(m[1],10));
+  if(!d){m=String(ds).match(/^(\d{4})-(\d{2})-(\d{2})/);if(m) d=new Date(yr,parseInt(m[2],10)-1,parseInt(m[3],10));}
+  if(!d) return 0;
+  var diff=(d.getTime()-now.getTime())/(864e5);
+  if(diff<=0){var past=Math.abs(diff);
+    if(past<=3) return 95;if(past<=7) return Math.round(90-past);
+    if(past<=14) return Math.round(80-past*.8);if(past<=30) return Math.round(65-past*.8);
+    return Math.max(5,Math.round(45-past*.5));}
+  if(diff<=3) return Math.round(88-diff*3);if(diff<=7) return Math.round(75-diff*4);
+  if(diff<=14) return Math.round(55-diff*2);if(diff<=30) return Math.round(30-(diff-14)*.8);
+  return Math.max(1,Math.round(18-(diff-30)*.3));
+}
+
+function missing(){
+  var all=sp(),dates=sd(),pts=pt(),out=[];
+  for(var i=0;i<all.length;i++){
+    var n=all[i],p=pts[n]||{};
+    if(Number.isFinite(p.lat)&&Number.isFinite(p.lon)) continue;
+    if(Number.isFinite(p.occ7)&&p.occ7>0) continue;
+    var pr=prob((dates[n]||'').trim());
+    out.push({name:n,spring:(dates[n]||'').trim(),prob:pr});
   }
-  function _points(){
-    if (window.__bm_points && typeof window.__bm_points === 'object' && Object.keys(window.__bm_points).length > 0) return window.__bm_points;
-    if (window.points && typeof window.points === 'object' && Object.keys(window.points).length > 0) return window.points;
-    try {
-      var saved = JSON.parse(localStorage.getItem('bm_rari_points') || 'null');
-      if (saved && typeof saved === 'object') return saved;
-    } catch(e) {}
-    try { if (typeof points !== 'undefined') return points; } catch(e) {}
-    return {};
+  return out;
+}
+
+var sort='prob';
+
+function render(){
+  var m=missing(),q=(document.getElementById('ennQ')||{}).value||'';
+  q=q.toLowerCase().trim();
+  var f=q?m.filter(function(s){return s.name.toLowerCase().indexOf(q)!==-1;}):m;
+  if(sort==='prob') f.sort(function(a,b){return b.prob-a.prob;});
+  else if(sort==='spring') f.sort(function(a,b){
+    var ka=ssk(a.spring),kb=ssk(b.spring);return ka-kb;});
+  else f.sort(function(a,b){return a.name.localeCompare(b.name,'et');});
+
+  var el=document.getElementById('ennSum');
+  if(el) el.innerHTML='<span><b>'+m.length+'</b> puuduvat liiki</span>';
+
+  var lst=document.getElementById('ennLst');
+  if(!lst) return;
+  var h='';
+  for(var i=0;i<f.length;i++){
+    var s=f[i],nm=dn(s.name),aurl=av(s.name);
+    var bc=s.prob>=50?'#16a34a':s.prob>=20?'#d97706':'#cbd5e1';
+    var pc=s.prob>=50?'#16a34a':s.prob>=20?'#d97706':s.prob>=5?'#94a3b8':'#cbd5e1';
+    var badge='';
+    if(s.spring){
+      var mm=String(s.spring).match(/^(\d{1,2})\.(\d{2})$/);
+      if(mm){var dd=new Date(new Date().getFullYear(),parseInt(mm[2],10)-1,parseInt(mm[1],10));
+        var df=(dd.getTime()-Date.now())/864e5;
+        if(df<=7) badge='<span class="eBdg eBH">saabumas</span>';
+        else if(df<=30) badge='<span class="eBdg eBM">varsti</span>';}}
+    var sty=aurl?'background-image:url(\''+aurl+'\');border-color:'+bc:'border-color:'+bc;
+    var sl=s.spring?'Kevad: '+s.spring:'Kevadkuupäev puudub';
+    h+='<div class="eR"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+
+      '<div class="eNm">'+nm+' '+badge+'</div><div class="eLt">'+sl+'</div>'+
+      '<div class="eBar"><div class="eBf" style="width:'+Math.min(100,s.prob)+'%;background:'+bc+'"></div></div>'+
+      '</div><div class="eRt"><div class="ePct" style="color:'+pc+'">'+s.prob+'%</div></div></div>';
   }
-  function _springDates(){
-    try {
-      var saved = JSON.parse(localStorage.getItem('bm_rari_spring_dates') || 'null');
-      if (saved && typeof saved === 'object' && Object.keys(saved).length > 0) {
-        return Object.assign({}, DEFAULT_SPRING_DATES_ENNUSTUS, saved);
-      }
-    } catch(e) {}
-    if (window.__bm_springDates && typeof window.__bm_springDates === 'object' && Object.keys(window.__bm_springDates).length > 0) return window.__bm_springDates;
-    if (window.springDates && typeof window.springDates === 'object' && Object.keys(window.springDates).length > 0) return window.springDates;
-    return Object.assign({}, DEFAULT_SPRING_DATES_ENNUSTUS);
-  }
-  function _avatars(){
-    if (window.__bm_avatars && typeof window.__bm_avatars === 'object') return window.__bm_avatars;
-    if (window.avatars && typeof window.avatars === 'object') return window.avatars;
-    try { if (typeof avatars !== 'undefined') return avatars; } catch(e) {}
-    return {};
-  }
+  lst.innerHTML=h||'<div style="padding:16px;text-align:center;color:#94a3b8">Kõik liigid on juba kaardil!</div>';
 
-  // === Probability calculation ===
-  function calcEnnustusProbability(springDateStr) {
-    if (!springDateStr) return 0;
-    var springDate = null;
-    var now = new Date();
-    var thisYear = now.getFullYear();
-    var m = String(springDateStr).match(/^(\d{1,2})\.(\d{2})$/);
-    if (m) springDate = new Date(thisYear, parseInt(m[2], 10) - 1, parseInt(m[1], 10));
-    if (!springDate) {
-      m = String(springDateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if (m) springDate = new Date(thisYear, parseInt(m[2], 10) - 1, parseInt(m[3], 10));
-    }
-    if (!springDate) return 0;
-    var diffDays = (springDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-    if (diffDays <= 0) {
-      var daysPast = Math.abs(diffDays);
-      if (daysPast <= 3) return 95;
-      if (daysPast <= 7) return Math.round(90 - daysPast);
-      if (daysPast <= 14) return Math.round(80 - daysPast * 0.8);
-      if (daysPast <= 30) return Math.round(65 - daysPast * 0.8);
-      return Math.max(5, Math.round(45 - daysPast * 0.5));
-    }
-    if (diffDays <= 3) return Math.round(88 - diffDays * 3);
-    if (diffDays <= 7) return Math.round(75 - diffDays * 4);
-    if (diffDays <= 14) return Math.round(55 - diffDays * 2);
-    if (diffDays <= 30) return Math.round(30 - (diffDays - 14) * 0.8);
-    return Math.max(1, Math.round(18 - (diffDays - 30) * 0.3));
-  }
+  var ft=document.getElementById('ennFt');
+  if(ft) ft.innerHTML='<span>Näitab '+f.length+' / '+m.length+' puuduvat</span>'+
+    '<div style="display:flex;gap:6px;align-items:center"><span style="color:#64748b">Sorteeri:</span>'+
+    '<button class="eSP '+(sort==='prob'?'eSA':'eSO')+'" onclick="window.__sortEnn(\'prob\')">% laskuv</button>'+
+    '<button class="eSP '+(sort==='spring'?'eSA':'eSO')+'" onclick="window.__sortEnn(\'spring\')">Kevad kp</button>'+
+    '<button class="eSP '+(sort==='az'?'eSA':'eSO')+'" onclick="window.__sortEnn(\'az\')">A-Z</button></div>';
+}
 
-  // === Missing species detection ===
-  function getMissingSpecies() {
-    var allSpecies = _species();
-    var sd = _springDates();
-    var pts = _points();
-    var missing = [];
-    var now = new Date();
-    var thisYear = now.getFullYear();
+function ssk(ds){if(!ds) return 999999;
+  var m=String(ds).match(/^(\d{1,2})\.(\d{2})$/);
+  if(m) return parseInt(m[2],10)*100+parseInt(m[1],10);
+  m=String(ds).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return parseInt(m[2],10)*100+parseInt(m[3],10);
+  return 999999;}
 
-    console.log('[Ennustus] Scanning:', allSpecies.length, 'species,', Object.keys(sd).length, 'spring dates,', Object.keys(pts).length, 'points entries');
+window.__openEnn=function(){render();document.getElementById('ennBg').style.display='flex';};
+window.__closeEnn=function(){document.getElementById('ennBg').style.display='none';};
+window.__renderEnn=render;
+window.__sortEnn=function(s){sort=s;render();};
+window.__scanEnn=function(btn){
+  btn.textContent='Skaneerin...';btn.style.opacity='.6';
+  setTimeout(function(){render();btn.textContent='Skaneeri';btn.style.opacity='1';},200);
+};
+window.__openEnnustus=window.__openEnn;
 
-    for (var i = 0; i < allSpecies.length; i++) {
-      var name = allSpecies[i];
-      var p = pts[name] || {};
-
-      // 1. Has map coordinates
-      var hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
-      // 2. Has recent 7-day observations
-      var hasOcc7 = Number.isFinite(p.occ7) && p.occ7 > 0;
-      // 3. Has an observation date from this year
-      var hasRecentDate = false;
-      if (p.t) {
-        var dateStr = String(p.t).trim();
-        if (dateStr.indexOf(String(thisYear)) !== -1) hasRecentDate = true;
-        if (dateStr.match && dateStr.match(/^20\d{2}/)) {
-          var yr = parseInt(dateStr.substring(0, 4), 10);
-          if (yr >= thisYear - 1) hasRecentDate = true;
-        }
-      }
-      // 4. Has been fetched from a data source AND has occ7 value set
-      var wasFetched = !!p.src && p.occ7 !== undefined;
-
-      if (hasCoords || hasOcc7 || hasRecentDate || wasFetched) continue;
-
-      var springDate = (sd[name] || '').trim();
-      var prob = calcEnnustusProbability(springDate);
-      missing.push({ name: name, springDate: springDate, probability: prob });
-    }
-
-    console.log('[Ennustus] Found', missing.length, 'missing species out of', allSpecies.length);
-    return missing;
-  }
-
-  // === eElurikkus weekly count ===
-  function getElurikkusWeeklyCount(speciesName) {
-    var pts = _points();
-    var p = pts[speciesName] || {};
-    if (Number.isFinite(p.occ7)) return p.occ7;
-    try {
-      var liveStats = window.liveStatsBySpecies || {};
-      var cacheKey = (typeof window._normalizeSpeciesKey === 'function')
-        ? window._normalizeSpeciesKey(speciesName) : speciesName;
-      if (liveStats[cacheKey]) {
-        var stats = liveStats[cacheKey];
-        if (Number.isFinite(stats.last7d)) return stats.last7d;
-        if (Number.isFinite(stats.recentCount)) return stats.recentCount;
-      }
-    } catch(e) {}
-    return null;
-  }
-
-  // === Helpers ===
-  function getAvatar(name) {
-    if (typeof window.getDisplayAvatar === 'function') return window.getDisplayAvatar(name) || '';
-    var av = _avatars();
-    return av[name] || '';
-  }
-  function dName(name) {
-    if (typeof window.normalizeUiText === 'function') return window.normalizeUiText(name);
-    return name;
-  }
-  function springSortKeyLocal(dateStr) {
-    if (typeof window.springSortKey === 'function') return window.springSortKey(dateStr);
-    if (!dateStr) return 999999;
-    var m = String(dateStr).match(/^(\d{1,2})\.(\d{2})$/);
-    if (m) return parseInt(m[2], 10) * 100 + parseInt(m[1], 10);
-    m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (m) return parseInt(m[2], 10) * 100 + parseInt(m[3], 10);
-    return 999999;
-  }
-  function probColor(prob) {
-    if (prob >= 50) return '#16a34a';
-    if (prob >= 20) return '#d97706';
-    if (prob >= 5) return '#94a3b8';
-    return '#cbd5e1';
-  }
-  function probBorderColor(prob) {
-    if (prob >= 50) return '#16a34a';
-    if (prob >= 20) return '#d97706';
-    return '#cbd5e1';
-  }
-
-  // === Rendering ===
-  var ennustusSort = 'prob';
-
-  function renderEnnustusModal() {
-    var missing = getMissingSpecies();
-    var searchEl = document.getElementById('ennustusSearch');
-    var searchVal = (searchEl ? searchEl.value : '').toLowerCase().trim();
-    var filtered = missing;
-    if (searchVal) {
-      filtered = missing.filter(function(s) { return s.name.toLowerCase().indexOf(searchVal) !== -1; });
-    }
-    if (ennustusSort === 'prob') {
-      filtered.sort(function(a, b) { return b.probability - a.probability; });
-    } else if (ennustusSort === 'spring') {
-      filtered.sort(function(a, b) { return springSortKeyLocal(a.springDate) - springSortKeyLocal(b.springDate); });
-    } else {
-      filtered.sort(function(a, b) { return a.name.localeCompare(b.name, 'et'); });
-    }
-
-    var totalEluWeekly = 0;
-    for (var j = 0; j < missing.length; j++) {
-      var c = getElurikkusWeeklyCount(missing[j].name);
-      if (c !== null && c > 0) totalEluWeekly += c;
-    }
-
-    var summaryEl = document.getElementById('ennustusSummary');
-    if (summaryEl) {
-      summaryEl.innerHTML =
-        '<span><span class="val">' + missing.length + '</span> puuduvat liiki</span>' +
-        '<span>eElurikkus sel nädalal: <span class="val">' + totalEluWeekly + '</span> vaatlust</span>';
-    }
-
-    var listEl = document.getElementById('ennustusList');
-    if (!listEl) { console.warn('[Ennustus] #ennustusList not found!'); return; }
-    var html = '';
-
-    for (var i = 0; i < filtered.length; i++) {
-      var s = filtered[i];
-      var displayName = dName(s.name);
-      var avatarUrl = getAvatar(s.name);
-      var avatarStyle = avatarUrl
-        ? 'background-image:url(\'' + avatarUrl + '\');border-color:' + probBorderColor(s.probability)
-        : 'border-color:' + probBorderColor(s.probability);
-      var badge = '';
-      if (s.springDate) {
-        var mm = String(s.springDate).match(/^(\d{1,2})\.(\d{2})$/);
-        if (!mm) mm = String(s.springDate).match(/^\d{4}-(\d{2})-(\d{2})/);
-        if (mm) {
-          var month, day;
-          if (s.springDate.indexOf('-') !== -1) { month = parseInt(mm[1],10); day = parseInt(mm[2],10); }
-          else { day = parseInt(mm[1],10); month = parseInt(mm[2],10); }
-          var sd = new Date(new Date().getFullYear(), month - 1, day);
-          var diffDays = (sd.getTime() - Date.now()) / (1000*60*60*24);
-          if (diffDays <= 7) badge = '<span class="enn-badge enn-badge-high">saabumas</span>';
-          else if (diffDays <= 30) badge = '<span class="enn-badge enn-badge-med">varsti</span>';
-        }
-      }
-      var eluCount = getElurikkusWeeklyCount(s.name);
-      var eluText = (eluCount !== null) ? eluCount + ' sel näd.' : '–';
-      var pctColor = probColor(s.probability);
-      var barColor = s.probability >= 50 ? '#16a34a' : (s.probability >= 20 ? '#d97706' : '#cbd5e1');
-      var springLabel = s.springDate ? 'Kevad: ' + s.springDate : 'Kevadkuupäev puudub';
-
-      html += '<div class="enn-row">' +
-        '<div class="enn-avatar" style="' + avatarStyle + '"></div>' +
-        '<div class="enn-info">' +
-          '<div class="enn-name">' + displayName + ' ' + badge + '</div>' +
-          '<div class="enn-latin">' + springLabel + '</div>' +
-          '<div class="enn-bar"><div class="enn-bar-fill" style="width:' + Math.min(100, s.probability) + '%;background:' + barColor + '"></div></div>' +
-        '</div>' +
-        '<div class="enn-right">' +
-          '<div class="enn-pct" style="color:' + pctColor + '">' + s.probability + '%</div>' +
-          '<div class="enn-obs">' + eluText + '</div>' +
-        '</div>' +
-      '</div>';
-    }
-
-    listEl.innerHTML = html || '<div style="padding:16px;text-align:center;color:#94a3b8">Kõik liigid on juba kaardil!</div>';
-
-    var footerEl = document.getElementById('ennustusFooter');
-    if (footerEl) {
-      footerEl.innerHTML =
-        '<span>Näitab ' + filtered.length + ' / ' + missing.length + ' puuduvat</span>' +
-        '<div style="display:flex;gap:6px;align-items:center">' +
-          '<span style="color:#64748b">Sorteeri:</span>' +
-          '<button class="enn-sort-pill ' + (ennustusSort==='prob'?'enn-sort-active':'enn-sort-off') + '" data-sort="prob">% laskuv</button>' +
-          '<button class="enn-sort-pill ' + (ennustusSort==='spring'?'enn-sort-active':'enn-sort-off') + '" data-sort="spring">Kevad kp</button>' +
-          '<button class="enn-sort-pill ' + (ennustusSort==='az'?'enn-sort-active':'enn-sort-off') + '" data-sort="az">A-Z</button>' +
-        '</div>';
-      footerEl.querySelectorAll('[data-sort]').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-          ennustusSort = this.getAttribute('data-sort');
-          renderEnnustusModal();
-        });
-      });
-    }
-  }
-
-  // === Open / Close ===
-  function openEnnustus() {
-    renderEnnustusModal();
-    var bd = document.getElementById('ennustusBackdrop');
-    if (bd) bd.style.display = 'flex';
-  }
-  function closeEnnustus() {
-    var bd = document.getElementById('ennustusBackdrop');
-    if (bd) bd.style.display = 'none';
-  }
-
-  // === Wire buttons (safe: checks existence, prevents double-bind) ===
-  function wireEnnustus() {
-    var btn = document.getElementById('ennustusBtn');
-    var closeBtn = document.getElementById('ennustusClose');
-    var backdrop = document.getElementById('ennustusBackdrop');
-    var search = document.getElementById('ennustusSearch');
-    var scanBtn = document.getElementById('ennustusScan');
-
-    if (btn && !btn.__ennWired) { btn.addEventListener('click', openEnnustus); btn.__ennWired = true; }
-    if (closeBtn && !closeBtn.__ennWired) { closeBtn.addEventListener('click', closeEnnustus); closeBtn.__ennWired = true; }
-    if (backdrop && !backdrop.__ennWired) { backdrop.addEventListener('click', function(e) { if (e.target === this) closeEnnustus(); }); backdrop.__ennWired = true; }
-    if (search && !search.__ennWired) { search.addEventListener('input', renderEnnustusModal); search.__ennWired = true; }
-    if (scanBtn && !scanBtn.__ennWired) {
-      scanBtn.addEventListener('click', function() {
-        var self = this;
-        self.textContent = 'Skaneerin...';
-        self.style.opacity = '0.6';
-        self.disabled = true;
-        setTimeout(function() {
-          console.log('[Ennustus] Scanning fresh from localStorage...');
-          renderEnnustusModal();
-          self.textContent = 'Skaneeri';
-          self.style.opacity = '1';
-          self.disabled = false;
-        }, 200);
-      });
-      scanBtn.__ennWired = true;
-    }
-    console.log('[Ennustus] Wired. SPECIES=' + _species().length + ', points=' + Object.keys(_points()).length + ', springDates=' + Object.keys(_springDates()).length);
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', wireEnnustus);
-  } else {
-    wireEnnustus();
-  }
-  setTimeout(wireEnnustus, 500);
-  setTimeout(wireEnnustus, 1500);
-
-  // Expose scan handler for inline onclick
-  window.__ennustusScan = function(btn) {
-    btn.textContent = 'Skaneerin...';
-    btn.style.opacity = '0.6';
-    btn.disabled = true;
-    setTimeout(function() {
-      console.log('[Ennustus] Scanning fresh from localStorage...');
-      renderEnnustusModal();
-      btn.textContent = 'Skaneeri';
-      btn.style.opacity = '1';
-      btn.disabled = false;
-    }, 200);
-  };
+var bg=document.getElementById('ennBg');
+if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__closeEnn();});
 })();
 </script>
 
 </body>
 </html>
-
-
 

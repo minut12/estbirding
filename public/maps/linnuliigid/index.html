@@ -10779,34 +10779,31 @@ function getSpringDate(name,dates){
 function missing(){
   var all=sp(),dates=sd(),pts=pt(),out=[];
   var ebird=(ebirdRecentCache&&ebirdRecentCache.data)?ebirdRecentCache.data:{};
+
+  // Build lowercase lookup map for points to handle encoding mismatches
+  var ptsLower={};
+  for(var pk in pts){
+    if(pts.hasOwnProperty(pk)) ptsLower[pk.toLowerCase().trim()]=pts[pk];
+  }
+
   for(var i=0;i<all.length;i++){
     var n=all[i];
+    var lowerN=n.toLowerCase().trim();
 
-    // Normalized key lookup — handles encoding differences
-    var p=pts[n]||null;
-    if(!p){
-      var normN=(typeof window._normalizeSpeciesKey==='function')?window._normalizeSpeciesKey(n):n;
-      if(normN!==n&&pts[normN]) p=pts[normN];
-      else{
-        var lowerN=n.toLowerCase().trim();
-        for(var k in pts){
-          if(pts.hasOwnProperty(k)&&k.toLowerCase().trim()===lowerN){p=pts[k];break;}
-        }
-      }
-    }
-    if(!p) p={};
+    // Find point data — exact match first, then lowercase fallback
+    var p=pts[n]||ptsLower[lowerN]||{};
 
     // Debug log for species with 'tilder' or 'tiir' in name
     if(n.indexOf('tilder')!==-1||n.indexOf('tiir')!==-1){
       console.log('[ennustus-filter]',n,{
         hasCoords:Number.isFinite(p.lat)&&Number.isFinite(p.lon),
         date:p.t,occ7:p.occ7,visible:p.visible,src:p.src,
-        pointsKeyMatch:!!pts[n],
+        exactMatch:!!pts[n],lowerMatch:!!ptsLower[lowerN],
         rawPoint:JSON.stringify(p).substring(0,200)
       });
     }
 
-    // 1. Has coordinates on map (any kind)
+    // 1. Has valid coordinates on map
     if(Number.isFinite(p.lat)&&Number.isFinite(p.lon)) continue;
 
     // 2. Has a real observation date
@@ -10816,13 +10813,7 @@ function missing(){
     // 3. Has recent 7-day observations
     if(Number.isFinite(p.occ7)&&p.occ7>0) continue;
 
-    // 4. User filtered it off in sidebar
-    if(p.visible===false) continue;
-
-    // 5. Has source data with a date
-    var hasSrc=p.src&&String(p.src).trim()!=='';
-    if(hasSrc&&dateStr) continue;
-
+    // --- This species is truly missing — compute probability ---
     var springDate=getSpringDate(n,dates);
     var baseProb=prob(springDate);
     var ebCode=getEbirdCode(n);
@@ -10846,12 +10837,15 @@ function render(){
   var ebird=(ebirdRecentCache&&ebirdRecentCache.data)?ebirdRecentCache.data:{};
   var thisYear=String(new Date().getFullYear());
   var m=missing();
+  // Build lowercase lookup for search mode
+  var _ptsLower={};
+  for(var _pk in pts){if(pts.hasOwnProperty(_pk)) _ptsLower[_pk.toLowerCase().trim()]=pts[_pk];}
   var displayList=[];
   if(q){
     for(var i=0;i<allSpecies.length;i++){
       var n=allSpecies[i];
       if(n.toLowerCase().indexOf(q)===-1) continue;
-      var p=pts[n]||{};
+      var p=pts[n]||_ptsLower[n.toLowerCase().trim()]||{};
       var _hasCoords=Number.isFinite(p.lat)&&Number.isFinite(p.lon);
       var _hasRealDate=p.t&&String(p.t).trim()!==''&&String(p.t).trim()!=='(kuupäev puudub)';
       var _hasOcc7=Number.isFinite(p.occ7)&&p.occ7>0;

@@ -7650,7 +7650,6 @@ window.saveSpringEditModal = function(clearValue){
 };
 
 function updateMarker(key) {
-  if (!window.__snapshotLoadedOnce && window.__recentOnly) return;
   const p = points[key];
   const prevMarker = markers.has(key) ? markers.get(key) : null;
   const clusterGroup = window.__markerClusterGroup || window.markerClusterGroup || null;
@@ -7667,8 +7666,7 @@ function updateMarker(key) {
 
   const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
   const markerCount = getMarkerCount(p);
-  const _isLoading = __isRefreshRunning || __loaderStage === 'loading_snapshot' || __loaderStage === 'processing';
-  const passesRecent = (!window.__recentOnly) || hasRecentObservation(p) || (_isLoading && hasCoords);
+  const passesRecent = (!window.__recentOnly) || hasRecentObservation(p);
   const isVisible = (p.visible !== false) && passesRecent && hasCoords;
   if (!isVisible) {
     if(prevMarker){

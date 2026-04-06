@@ -621,6 +621,12 @@ for (const __springName of Object.keys(DEFAULT_SPRING_DATES)) {
 }
 springDates = _sanitizeSpringDateMap(springDates);
 window.springDates = springDates;
+// === Expose for Ennustus and other cross-script-block access ===
+window.__bm_SPECIES = SPECIES;
+window.__bm_points = points;
+window.__bm_springDates = springDates;
+window.__bm_DATA = DATA;
+window.__bm_avatars = avatars;
 
 // Map
 const IS_MOBILE_DEVICE = matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -7303,6 +7309,9 @@ function save() {
   try { localStorage.setItem(LS_SPRING_META, JSON.stringify(springMeta || {})); } catch(e) {}
   try { localStorage.setItem(LS_SPRING_YEARFIRST, JSON.stringify(springYearFirst)); } catch(e) {}
   try { _persistLiveCaches(); } catch(e) { console.warn('[save] liveCaches failed', e); }
+  // Keep window references in sync after save
+  window.__bm_points = points;
+  window.__bm_springDates = springDates;
 }
 
 // Icons
@@ -10572,254 +10581,277 @@ window.__computeProbSilent = async function(speciesName) {
 
 <script>
 (function(){
-  /* --- Spring date lookup with normalization fallbacks --- */
-  function findSpringDate(speciesName) {
-    var sd = (typeof springDates !== 'undefined') ? springDates : {};
-    if (sd[speciesName]) return sd[speciesName];
-    if (typeof _normText === 'function') {
-      var n1 = _normText(speciesName);
-      if (n1 && sd[n1]) return sd[n1];
-    }
-    if (typeof normalizeUiText === 'function') {
-      var n2 = normalizeUiText(speciesName);
-      if (n2 && sd[n2]) return sd[n2];
-    }
-    if (typeof window.normalizeUiText === 'function') {
-      var n3 = window.normalizeUiText(speciesName);
-      if (n3 && sd[n3]) return sd[n3];
-    }
-    var lower = speciesName.toLowerCase().trim();
-    var keys = Object.keys(sd);
-    for (var k = 0; k < keys.length; k++) {
-      if (keys[k].toLowerCase().trim() === lower) return sd[keys[k]];
-    }
-    return null;
+  'use strict';
+
+  // === Accessors that work regardless of how variables were exposed ===
+  function _species(){
+    if (window.__bm_SPECIES && window.__bm_SPECIES.length) return window.__bm_SPECIES;
+    if (window.SPECIES && window.SPECIES.length) return window.SPECIES;
+    if (typeof SPECIES !== 'undefined') return SPECIES;
+    return [];
+  }
+  function _points(){
+    if (window.__bm_points && typeof window.__bm_points === 'object') return window.__bm_points;
+    if (window.points && typeof window.points === 'object') return window.points;
+    if (typeof points !== 'undefined') return points;
+    return {};
+  }
+  function _springDates(){
+    if (window.__bm_springDates && typeof window.__bm_springDates === 'object') return window.__bm_springDates;
+    if (window.springDates && typeof window.springDates === 'object') return window.springDates;
+    if (typeof springDates !== 'undefined') return springDates;
+    return {};
+  }
+  function _avatars(){
+    if (window.__bm_avatars && typeof window.__bm_avatars === 'object') return window.__bm_avatars;
+    if (window.avatars && typeof window.avatars === 'object') return window.avatars;
+    if (typeof avatars !== 'undefined') return avatars;
+    return {};
   }
 
-  /* --- Probability calculation (with eElurikkus boost) --- */
-  function calcEnnustusProbability(springDateStr, eluWeeklyCount) {
-    var prob = 0;
-    if (springDateStr) {
-      var springDate = null;
-      var now = new Date(), thisYear = now.getFullYear();
-      var m = String(springDateStr).match(/^(\d{1,2})\.(\d{2})$/);
-      if (m) {
-        springDate = new Date(thisYear, parseInt(m[2], 10) - 1, parseInt(m[1], 10));
-      }
-      if (!springDate) {
-        m = String(springDateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
-        if (m) springDate = new Date(thisYear, parseInt(m[2], 10) - 1, parseInt(m[3], 10));
-      }
-      if (springDate) {
-        var diffDays = (springDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-        if (diffDays <= 0) {
-          var daysPast = Math.abs(diffDays);
-          if (daysPast <= 3) prob = 95;
-          else if (daysPast <= 7) prob = Math.round(90 - daysPast);
-          else if (daysPast <= 14) prob = Math.round(80 - daysPast * 0.8);
-          else if (daysPast <= 30) prob = Math.round(65 - daysPast * 0.8);
-          else prob = Math.max(5, Math.round(45 - daysPast * 0.5));
-        } else if (diffDays <= 3) {
-          prob = Math.round(88 - diffDays * 3);
-        } else if (diffDays <= 7) {
-          prob = Math.round(75 - diffDays * 4);
-        } else if (diffDays <= 14) {
-          prob = Math.round(55 - diffDays * 2);
-        } else if (diffDays <= 30) {
-          prob = Math.round(30 - (diffDays - 14) * 0.8);
-        } else {
-          prob = Math.max(1, Math.round(18 - (diffDays - 30) * 0.3));
-        }
-      }
+  // === Probability calculation ===
+  function calcEnnustusProbability(springDateStr) {
+    if (!springDateStr) return 0;
+    var springDate = null;
+    var now = new Date();
+    var thisYear = now.getFullYear();
+    var m = String(springDateStr).match(/^(\d{1,2})\.(\d{2})$/);
+    if (m) springDate = new Date(thisYear, parseInt(m[2], 10) - 1, parseInt(m[1], 10));
+    if (!springDate) {
+      m = String(springDateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m) springDate = new Date(thisYear, parseInt(m[2], 10) - 1, parseInt(m[3], 10));
     }
-    var eluCount = Number(eluWeeklyCount) || 0;
-    if (eluCount > 0) {
-      var eluBoost = Math.min(40, Math.round(10 + Math.log2(eluCount + 1) * 8));
-      prob = Math.max(prob, eluBoost);
-      if (springDateStr && prob > eluBoost) {
-        prob = Math.min(99, prob + Math.round(eluBoost * 0.3));
-      }
+    if (!springDate) return 0;
+    var diffDays = (springDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    if (diffDays <= 0) {
+      var daysPast = Math.abs(diffDays);
+      if (daysPast <= 3) return 95;
+      if (daysPast <= 7) return Math.round(90 - daysPast);
+      if (daysPast <= 14) return Math.round(80 - daysPast * 0.8);
+      if (daysPast <= 30) return Math.round(65 - daysPast * 0.8);
+      return Math.max(5, Math.round(45 - daysPast * 0.5));
     }
-    return Math.min(99, Math.max(0, prob));
+    if (diffDays <= 3) return Math.round(88 - diffDays * 3);
+    if (diffDays <= 7) return Math.round(75 - diffDays * 4);
+    if (diffDays <= 14) return Math.round(55 - diffDays * 2);
+    if (diffDays <= 30) return Math.round(30 - (diffDays - 14) * 0.8);
+    return Math.max(1, Math.round(18 - (diffDays - 30) * 0.3));
   }
 
-  /* --- Missing species --- */
+  // === Missing species detection ===
   function getMissingSpecies() {
-    var allSpecies = window.SPECIES || [];
-    var sd = window.springDates || {};
-    var pts = window.points || {};
+    var allSpecies = _species();
+    var sd = _springDates();
+    var pts = _points();
     var missing = [];
-
+    console.log('[Ennustus] Scanning:', allSpecies.length, 'species,', Object.keys(sd).length, 'spring dates,', Object.keys(pts).length, 'points entries');
     for (var i = 0; i < allSpecies.length; i++) {
       var name = allSpecies[i];
       var p = pts[name] || {};
-
-      // Species is "observed" if it has coordinates OR recent sightings
       var hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
       var hasOcc7 = Number.isFinite(p.occ7) && p.occ7 > 0;
-
       if (hasCoords || hasOcc7) continue;
-
       var springDate = (sd[name] || '').trim();
       var prob = calcEnnustusProbability(springDate);
-      missing.push({
-        name: name,
-        springDate: springDate,
-        probability: prob
-      });
+      missing.push({ name: name, springDate: springDate, probability: prob });
     }
+    console.log('[Ennustus] Found', missing.length, 'missing species');
     return missing;
   }
 
-  /* --- eElurikkus weekly count --- */
+  // === eElurikkus weekly count ===
   function getElurikkusWeeklyCount(speciesName) {
-    var cacheKey = (typeof _normalizeSpeciesKey === 'function') ? _normalizeSpeciesKey(speciesName) : speciesName;
-    if (typeof liveStatsBySpecies !== 'undefined' && liveStatsBySpecies[cacheKey]) {
-      var stats = liveStatsBySpecies[cacheKey];
-      if (Number.isFinite(stats.last7d)) return stats.last7d;
-      if (Number.isFinite(stats.recentCount)) return stats.recentCount;
-    }
-    if (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[cacheKey]) {
-      var data = liveElurikkusBySpecies[cacheKey];
-      if (data.items && data.items.length > 0) {
-        var cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000, count = 0;
-        for (var j = 0; j < data.items.length; j++) {
-          var t = (typeof parseElurikkusDate === 'function') ? parseElurikkusDate(data.items[j].observedAt || '') : Date.parse(data.items[j].observedAt || '');
-          if (t >= cutoff) count++;
-        }
-        return count;
-      }
-    }
-    var pts = (typeof points !== 'undefined') ? points : {};
+    var pts = _points();
     var p = pts[speciesName] || {};
     if (Number.isFinite(p.occ7)) return p.occ7;
+    try {
+      var liveStats = window.liveStatsBySpecies || {};
+      var cacheKey = (typeof window._normalizeSpeciesKey === 'function')
+        ? window._normalizeSpeciesKey(speciesName) : speciesName;
+      if (liveStats[cacheKey]) {
+        var stats = liveStats[cacheKey];
+        if (Number.isFinite(stats.last7d)) return stats.last7d;
+        if (Number.isFinite(stats.recentCount)) return stats.recentCount;
+      }
+    } catch(e) {}
     return null;
   }
 
-  /* --- Rendering --- */
-  var ennustusSort = 'prob';
-
+  // === Helpers ===
+  function getAvatar(name) {
+    if (typeof window.getDisplayAvatar === 'function') return window.getDisplayAvatar(name) || '';
+    var av = _avatars();
+    return av[name] || '';
+  }
+  function dName(name) {
+    if (typeof window.normalizeUiText === 'function') return window.normalizeUiText(name);
+    return name;
+  }
+  function springSortKeyLocal(dateStr) {
+    if (typeof window.springSortKey === 'function') return window.springSortKey(dateStr);
+    if (!dateStr) return 999999;
+    var m = String(dateStr).match(/^(\d{1,2})\.(\d{2})$/);
+    if (m) return parseInt(m[2], 10) * 100 + parseInt(m[1], 10);
+    m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return parseInt(m[2], 10) * 100 + parseInt(m[3], 10);
+    return 999999;
+  }
+  function probColor(prob) {
+    if (prob >= 50) return '#16a34a';
+    if (prob >= 20) return '#d97706';
+    if (prob >= 5) return '#94a3b8';
+    return '#cbd5e1';
+  }
   function probBorderColor(prob) {
     if (prob >= 50) return '#16a34a';
     if (prob >= 20) return '#d97706';
     return '#cbd5e1';
   }
 
+  // === Rendering ===
+  var ennustusSort = 'prob';
+
   function renderEnnustusModal() {
     var missing = getMissingSpecies();
-    var searchVal = (document.getElementById('ennustusSearch').value || '').toLowerCase().trim();
+    var searchEl = document.getElementById('ennustusSearch');
+    var searchVal = (searchEl ? searchEl.value : '').toLowerCase().trim();
     var filtered = missing;
     if (searchVal) {
-      filtered = missing.filter(function(s){ return s.name.toLowerCase().indexOf(searchVal) !== -1; });
+      filtered = missing.filter(function(s) { return s.name.toLowerCase().indexOf(searchVal) !== -1; });
     }
     if (ennustusSort === 'prob') {
-      filtered.sort(function(a,b){ return b.probability - a.probability; });
+      filtered.sort(function(a, b) { return b.probability - a.probability; });
     } else if (ennustusSort === 'spring') {
-      filtered.sort(function(a,b){
-        return (typeof springSortKey === 'function' ? springSortKey(a.springDate) : 0) - (typeof springSortKey === 'function' ? springSortKey(b.springDate) : 0);
-      });
+      filtered.sort(function(a, b) { return springSortKeyLocal(a.springDate) - springSortKeyLocal(b.springDate); });
     } else {
-      filtered.sort(function(a,b){ return a.name.localeCompare(b.name, 'et'); });
+      filtered.sort(function(a, b) { return a.name.localeCompare(b.name, 'et'); });
     }
 
     var totalEluWeekly = 0;
-    for (var i = 0; i < missing.length; i++) {
-      var c = missing[i].eluWeekly;
+    for (var j = 0; j < missing.length; j++) {
+      var c = getElurikkusWeeklyCount(missing[j].name);
       if (c !== null && c > 0) totalEluWeekly += c;
     }
 
-    document.getElementById('ennustusSummary').innerHTML =
-      '<span><span class="val">' + missing.length + '</span> puuduvat liiki</span>' +
-      '<span>eElurikkus sel nädalal: <span class="val">' + totalEluWeekly.toLocaleString() + '</span> vaatlust</span>';
+    var summaryEl = document.getElementById('ennustusSummary');
+    if (summaryEl) {
+      summaryEl.innerHTML =
+        '<span><span class="val">' + missing.length + '</span> puuduvat liiki</span>' +
+        '<span>eElurikkus sel nädalal: <span class="val">' + totalEluWeekly + '</span> vaatlust</span>';
+    }
 
     var listEl = document.getElementById('ennustusList');
-    var avMap = (typeof avatars !== 'undefined') ? avatars : {};
+    if (!listEl) { console.warn('[Ennustus] #ennustusList not found!'); return; }
     var html = '';
 
     for (var i = 0; i < filtered.length; i++) {
       var s = filtered[i];
-      var displayName = (typeof normalizeUiText === 'function') ? normalizeUiText(s.name) : s.name;
-      var avatarUrl = '';
-      if (typeof getDisplayAvatar === 'function') { avatarUrl = getDisplayAvatar(s.name) || ''; }
-      else { avatarUrl = avMap[s.name] || ''; }
+      var displayName = dName(s.name);
+      var avatarUrl = getAvatar(s.name);
       var avatarStyle = avatarUrl
         ? 'background-image:url(\'' + avatarUrl + '\');border-color:' + probBorderColor(s.probability)
         : 'border-color:' + probBorderColor(s.probability);
       var badge = '';
       if (s.springDate) {
         var mm = String(s.springDate).match(/^(\d{1,2})\.(\d{2})$/);
+        if (!mm) mm = String(s.springDate).match(/^\d{4}-(\d{2})-(\d{2})/);
         if (mm) {
-          var sd = new Date(new Date().getFullYear(), parseInt(mm[2],10)-1, parseInt(mm[1],10));
+          var month, day;
+          if (s.springDate.indexOf('-') !== -1) { month = parseInt(mm[1],10); day = parseInt(mm[2],10); }
+          else { day = parseInt(mm[1],10); month = parseInt(mm[2],10); }
+          var sd = new Date(new Date().getFullYear(), month - 1, day);
           var diffDays = (sd.getTime() - Date.now()) / (1000*60*60*24);
           if (diffDays <= 7) badge = '<span class="enn-badge enn-badge-high">saabumas</span>';
           else if (diffDays <= 30) badge = '<span class="enn-badge enn-badge-med">varsti</span>';
         }
       }
-      var eluText = (s.eluWeekly !== null) ? s.eluWeekly + ' sel näd.' : '–';
-      var latinLine = s.springDate
-        ? 'Kevad: ' + s.springDate
-        : (s.eluWeekly > 0 ? 'eElurikkuses vaadeldud!' : 'Kevadkuupäev puudub');
-      var pctColor = s.probability >= 50 ? '#16a34a' : s.probability >= 20 ? '#d97706' : s.probability >= 5 ? '#94a3b8' : '#cbd5e1';
-      var barColor = s.probability >= 50 ? '#16a34a' : s.probability >= 20 ? '#d97706' : '#cbd5e1';
+      var eluCount = getElurikkusWeeklyCount(s.name);
+      var eluText = (eluCount !== null) ? eluCount + ' sel näd.' : '–';
+      var pctColor = probColor(s.probability);
+      var barColor = s.probability >= 50 ? '#16a34a' : (s.probability >= 20 ? '#d97706' : '#cbd5e1');
+      var springLabel = s.springDate ? 'Kevad: ' + s.springDate : 'Kevadkuupäev puudub';
 
       html += '<div class="enn-row">' +
         '<div class="enn-avatar" style="' + avatarStyle + '"></div>' +
         '<div class="enn-info">' +
           '<div class="enn-name">' + displayName + ' ' + badge + '</div>' +
-          '<div class="enn-latin">' + latinLine + '</div>' +
+          '<div class="enn-latin">' + springLabel + '</div>' +
           '<div class="enn-bar"><div class="enn-bar-fill" style="width:' + Math.min(100, s.probability) + '%;background:' + barColor + '"></div></div>' +
         '</div>' +
         '<div class="enn-right">' +
           '<div class="enn-pct" style="color:' + pctColor + '">' + s.probability + '%</div>' +
-          '<div class="enn-obs">' +
-            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>' +
-            eluText +
-          '</div>' +
+          '<div class="enn-obs">' + eluText + '</div>' +
         '</div>' +
       '</div>';
     }
 
     listEl.innerHTML = html || '<div style="padding:16px;text-align:center;color:#94a3b8">Kõik liigid on juba kaardil!</div>';
 
-    document.getElementById('ennustusFooter').innerHTML =
-      '<span>Näitab ' + filtered.length + ' / ' + missing.length + ' puuduvat</span>' +
-      '<div style="display:flex;gap:6px;align-items:center">' +
-        '<span style="color:#64748b">Sorteeri:</span>' +
-        '<button class="enn-sort-pill ' + (ennustusSort==='prob'?'enn-sort-active':'enn-sort-off') + '" onclick="window._setEnnustusSort(\'prob\')">% laskuv</button>' +
-        '<button class="enn-sort-pill ' + (ennustusSort==='spring'?'enn-sort-active':'enn-sort-off') + '" onclick="window._setEnnustusSort(\'spring\')">Kevad kp</button>' +
-        '<button class="enn-sort-pill ' + (ennustusSort==='az'?'enn-sort-active':'enn-sort-off') + '" onclick="window._setEnnustusSort(\'az\')">A-Z</button>' +
-      '</div>';
+    var footerEl = document.getElementById('ennustusFooter');
+    if (footerEl) {
+      footerEl.innerHTML =
+        '<span>Näitab ' + filtered.length + ' / ' + missing.length + ' puuduvat</span>' +
+        '<div style="display:flex;gap:6px;align-items:center">' +
+          '<span style="color:#64748b">Sorteeri:</span>' +
+          '<button class="enn-sort-pill ' + (ennustusSort==='prob'?'enn-sort-active':'enn-sort-off') + '" data-sort="prob">% laskuv</button>' +
+          '<button class="enn-sort-pill ' + (ennustusSort==='spring'?'enn-sort-active':'enn-sort-off') + '" data-sort="spring">Kevad kp</button>' +
+          '<button class="enn-sort-pill ' + (ennustusSort==='az'?'enn-sort-active':'enn-sort-off') + '" data-sort="az">A-Z</button>' +
+        '</div>';
+      footerEl.querySelectorAll('[data-sort]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          ennustusSort = this.getAttribute('data-sort');
+          renderEnnustusModal();
+        });
+      });
+    }
   }
 
-  window._setEnnustusSort = function(s) { ennustusSort = s; renderEnnustusModal(); };
-
-  /* --- Open/close --- */
+  // === Open / Close ===
   function openEnnustus() {
-    var backdrop = document.getElementById('ennustusBackdrop');
-    backdrop.style.display = 'flex';
-    document.getElementById('ennustusList').innerHTML = '<div style="padding:32px;text-align:center">' +
-      '<div style="display:inline-block;width:24px;height:24px;border:3px solid #e5e7eb;border-top-color:#16a34a;border-radius:50%;animation:ennSpin 0.8s linear infinite"></div>' +
-      '<div style="margin-top:8px;font-size:13px;color:#64748b">Skanneerin liike...</div></div>';
-    document.getElementById('ennustusSummary').innerHTML = '<span style="color:#94a3b8">Arvutan tõenäosusi...</span>';
-    document.getElementById('ennustusFooter').innerHTML = '';
-    setTimeout(function() { renderEnnustusModal(); }, 80);
+    renderEnnustusModal();
+    var bd = document.getElementById('ennustusBackdrop');
+    if (bd) bd.style.display = 'flex';
   }
-  function closeEnnustus() { document.getElementById('ennustusBackdrop').style.display = 'none'; }
+  function closeEnnustus() {
+    var bd = document.getElementById('ennustusBackdrop');
+    if (bd) bd.style.display = 'none';
+  }
 
-  document.getElementById('ennustusBtn').addEventListener('click', openEnnustus);
-  document.getElementById('ennustusClose').addEventListener('click', closeEnnustus);
-  document.getElementById('ennustusBackdrop').addEventListener('click', function(e) { if (e.target === this) closeEnnustus(); });
-  document.getElementById('ennustusSearch').addEventListener('input', renderEnnustusModal);
-  document.getElementById('ennustusScan').addEventListener('click', function() {
-    var btn = this;
-    btn.classList.add('scanning');
-    btn.textContent = 'Skaneerin...';
-    setTimeout(function() {
-      try { renderEnnustusModal(); } catch(e) { console.warn('Ennustus scan error:', e); }
-      btn.classList.remove('scanning');
-      btn.textContent = 'Skaneeri';
-    }, 100);
-  });
+  // === Wire buttons (safe: checks existence, prevents double-bind) ===
+  function wireEnnustus() {
+    var btn = document.getElementById('ennustusBtn');
+    var closeBtn = document.getElementById('ennustusClose');
+    var backdrop = document.getElementById('ennustusBackdrop');
+    var search = document.getElementById('ennustusSearch');
+    var scanBtn = document.getElementById('ennustusScan');
+
+    if (btn && !btn.__ennWired) { btn.addEventListener('click', openEnnustus); btn.__ennWired = true; }
+    if (closeBtn && !closeBtn.__ennWired) { closeBtn.addEventListener('click', closeEnnustus); closeBtn.__ennWired = true; }
+    if (backdrop && !backdrop.__ennWired) { backdrop.addEventListener('click', function(e) { if (e.target === this) closeEnnustus(); }); backdrop.__ennWired = true; }
+    if (search && !search.__ennWired) { search.addEventListener('input', renderEnnustusModal); search.__ennWired = true; }
+    if (scanBtn && !scanBtn.__ennWired) {
+      scanBtn.addEventListener('click', function() {
+        var self = this;
+        self.textContent = 'Skaneerin...';
+        self.disabled = true;
+        setTimeout(function() {
+          renderEnnustusModal();
+          self.textContent = 'Skaneeri';
+          self.disabled = false;
+        }, 150);
+      });
+      scanBtn.__ennWired = true;
+    }
+    console.log('[Ennustus] Wired. SPECIES=' + _species().length + ', points=' + Object.keys(_points()).length + ', springDates=' + Object.keys(_springDates()).length);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', wireEnnustus);
+  } else {
+    wireEnnustus();
+  }
+  setTimeout(wireEnnustus, 500);
+  setTimeout(wireEnnustus, 1500);
 })();
 </script>
 

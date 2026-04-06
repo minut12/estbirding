@@ -311,6 +311,22 @@ function _fixMojibake(s){
 function _normText(s){ return _fixMojibake(s).replace(/\uFFFD/g, "").trim(); }
 for (let i = 0; i < SPECIES.length; i++) SPECIES[i] = _normText(SPECIES[i]);
 
+// Normalize mojibake keys in lookup objects
+(function _normObjectKeys(){
+  function normKeys(obj){
+    if(!obj || typeof obj !== 'object') return;
+    var needsFix = Object.keys(obj).some(function(k){ return /[\u00C3\u00C2\u00E2]/.test(k); });
+    if(!needsFix) return;
+    var cleaned = {};
+    for(var k in obj) cleaned[_normText(k)] = obj[k];
+    for(var k in obj) delete obj[k];
+    Object.assign(obj, cleaned);
+  }
+  if(typeof SPECIES_EBIRD_CODES !== 'undefined') normKeys(SPECIES_EBIRD_CODES);
+  if(typeof SPECIES_SCINAMES !== 'undefined')    normKeys(SPECIES_SCINAMES);
+  if(typeof springDates !== 'undefined')         normKeys(springDates);
+})();
+
 let DATA = SPECIES.map(name => ({ est: _normText(name), url: 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(_normText(name)) }));
 
 function _setRuntimeSpeciesList(list){

@@ -10729,8 +10729,8 @@ function getEluCount(speciesName) {
   // Method 1: from points occ7
   try {
     var pts=pt();
-    var p=pts[speciesName];
-    if(!p){var lo=speciesName.toLowerCase();for(var k in pts){if(pts.hasOwnProperty(k)&&k.toLowerCase()===lo){p=pts[k];break;}}}
+    var clean=(typeof _toCleanKey==='function')?_toCleanKey(speciesName):speciesName;
+    var p=pts[speciesName]||pts[clean];
     if(p&&Number.isFinite(p.occ7)&&p.occ7>0) return p.occ7;
   } catch(e) {}
   // Method 2: from live eElurikkus cache
@@ -10777,11 +10777,12 @@ function pt(){
   return {};
 }
 function av(n){
-  try{if(typeof window.getDisplayAvatar==='function') return window.getDisplayAvatar(n)||'';}catch(e){}
-  try{var a=window.avatars||window.__bm_avatars||JSON.parse(localStorage.getItem('bm_rari_avatars')||'{}');return a[n]||'';}catch(e){}
+  var c=(typeof _toCleanKey==='function')?_toCleanKey(n):n;
+  try{if(typeof window.getDisplayAvatar==='function') return window.getDisplayAvatar(n)||window.getDisplayAvatar(c)||'';}catch(e){}
+  try{var a=window.avatars||window.__bm_avatars||JSON.parse(localStorage.getItem('bm_rari_avatars')||'{}');return a[n]||a[c]||'';}catch(e){}
   return '';
 }
-function dn(n){try{if(typeof window.normalizeUiText==='function') return window.normalizeUiText(n);}catch(e){}return n;}
+function dn(n){try{if(typeof window.normalizeUiText==='function') return window.normalizeUiText(n);}catch(e){}return (typeof _toCleanKey==='function')?_toCleanKey(n):n;}
 
 function prob(ds){
   if(!ds) return 0;
@@ -10808,18 +10809,19 @@ function getSpringDate(name,dates){
   return '';
 }
 
+// Fix mojibake: SPECIES array has double-encoded UTF-8, points/eBird codes use clean UTF-8
+function _cleanName(n){
+  return (typeof _toCleanKey==='function')?_toCleanKey(n):n;
+}
+
 function missing(){
   var all=sp(),dates=sd(),pts=pt(),out=[];
   var ebird=(ebirdRecentCache&&ebirdRecentCache.data)?ebirdRecentCache.data:{};
   var thisYear=new Date().getFullYear();
-  // Lowercase fallback for encoding mismatches (e.g. Jõgitilder)
-  var _ptsLower={};
-  for(var _pk in pts){if(pts.hasOwnProperty(_pk)) _ptsLower[_pk.toLowerCase()]=pts[_pk];}
-  var _datesLower={};
-  for(var _dk in dates){if(dates.hasOwnProperty(_dk)) _datesLower[_dk.toLowerCase()]=dates[_dk];}
   for(var i=0;i<all.length;i++){
     var n=all[i];
-    var p=pts[n]||_ptsLower[n.toLowerCase()]||{};
+    var clean=_cleanName(n);
+    var p=pts[n]||pts[clean]||{};
 
     // Has recent 7-day observations → definitely seen, skip
     if(Number.isFinite(p.occ7)&&p.occ7>0) continue;
@@ -10832,10 +10834,10 @@ function missing(){
     }
 
     // This species hasn't been seen this year — it's "missing"
-    var springDate=getSpringDate(n,dates)||_datesLower[n.toLowerCase()]||'';
+    var springDate=getSpringDate(n,dates)||getSpringDate(clean,dates)||'';
     springDate=String(springDate).trim();
     var baseProb=prob(springDate);
-    var ebCode=getEbirdCode(n);
+    var ebCode=getEbirdCode(n)||getEbirdCode(clean);
     var ebCount=0;
     if(ebCode&&ebird[ebCode]) ebCount=ebird[ebCode].count||0;
     var finalProb=combinedProb(baseProb,ebCount);
@@ -10851,23 +10853,22 @@ function render(){
   var q=(document.getElementById('ennQ')||{}).value||'';
   q=q.toLowerCase().trim();
   var ebird=(ebirdRecentCache&&ebirdRecentCache.data)?ebirdRecentCache.data:{};
-  var thisYear=String(new Date().getFullYear());
+  var thisYear=new Date().getFullYear();
   var m=missing();
-  var _ptsLower={};
-  for(var _pk in pts){if(pts.hasOwnProperty(_pk)) _ptsLower[_pk.toLowerCase()]=pts[_pk];}
   var displayList=[];
   if(q){
     for(var i=0;i<allSpecies.length;i++){
       var n=allSpecies[i];
-      if(n.toLowerCase().indexOf(q)===-1) continue;
-      var p=pts[n]||_ptsLower[n.toLowerCase()]||{};
+      if(n.toLowerCase().indexOf(q)===-1&&_cleanName(n).toLowerCase().indexOf(q)===-1) continue;
+      var clean=_cleanName(n);
+      var p=pts[n]||pts[clean]||{};
       var _ds=String(p.t||'').trim();
       var _ym=_ds?_ds.match(/^(\d{4})/):null;
       var isSeen=(Number.isFinite(p.occ7)&&p.occ7>0)||
-        (_ym&&parseInt(_ym[1],10)===new Date().getFullYear());
-      var springDate=getSpringDate(n,dates);
+        (_ym&&parseInt(_ym[1],10)===thisYear);
+      var springDate=getSpringDate(n,dates)||getSpringDate(clean,dates)||'';
       var baseProb=prob(springDate);
-      var ebCode=getEbirdCode(n);
+      var ebCode=getEbirdCode(n)||getEbirdCode(clean);
       var ebCount=0;
       if(ebCode&&ebird[ebCode]) ebCount=ebird[ebCode].count||0;
       var finalProb=combinedProb(baseProb,ebCount);
@@ -10989,6 +10990,7 @@ window.__scanEnn=function(btn){
         btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';return;
       }
       var name=toFetch[idx];
+      var cleanName=_cleanName(name);
       btn.textContent='eElur '+(idx+1)+'/'+toFetch.length;
       idx++;
       var fetchFn=null;
@@ -10998,7 +11000,7 @@ window.__scanEnn=function(btn){
         window.__ennustusEluCache[name]={count:0,source:'no_fn',fetchedAt:Date.now()};
         render();setTimeout(nextElu,100);return;
       }
-      fetchFn(name).then(function(result){
+      fetchFn(cleanName).then(function(result){
         var count=(result&&Array.isArray(result.items))?result.items.length:0;
         window.__ennustusEluCache[name]={count:count,source:'api',fetchedAt:Date.now()};
         render();

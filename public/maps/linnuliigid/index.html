@@ -10548,13 +10548,20 @@ window.__computeProbSilent = async function(speciesName) {
 @keyframes ennSpin {
   to { transform: rotate(360deg); }
 }
+#ennustusScan.scanning {
+  opacity: 0.6;
+  pointer-events: none;
+}
 </style>
 
 <div id="ennustusBackdrop">
   <div id="ennustusPanel">
     <div class="enn-header">
-      <div><h3>Puuduvad liigid — ennustus</h3><div class="sub">Liigid, mida kaardil veel pole</div></div>
-      <button id="ennustusClose" class="btn secondary" style="font-size:18px;line-height:1;padding:2px 8px">&times;</button>
+      <div><h3>Puuduvad liigid — ennustus</h3><p class="sub">Liigid, mida kaardil veel pole</p></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="ennustusScan" class="btn secondary" style="font-size:12px;padding:4px 10px" title="Skaneeri andmed uuesti">Skaneeri</button>
+        <button id="ennustusClose" class="btn secondary" style="font-size:18px;line-height:1;padding:2px 8px">&times;</button>
+      </div>
     </div>
     <div class="enn-summary" id="ennustusSummary"></div>
     <div class="enn-search"><input id="ennustusSearch" type="text" placeholder="Otsi liiki…"></div>
@@ -10593,24 +10600,35 @@ window.__computeProbSilent = async function(speciesName) {
   function calcEnnustusProbability(springDateStr, eluWeeklyCount) {
     var prob = 0;
     if (springDateStr) {
+      var springDate = null;
+      var now = new Date(), thisYear = now.getFullYear();
       var m = String(springDateStr).match(/^(\d{1,2})\.(\d{2})$/);
       if (m) {
-        var day = parseInt(m[1], 10), month = parseInt(m[2], 10);
-        var now = new Date(), thisYear = now.getFullYear();
-        var springDate = new Date(thisYear, month - 1, day);
+        springDate = new Date(thisYear, parseInt(m[2], 10) - 1, parseInt(m[1], 10));
+      }
+      if (!springDate) {
+        m = String(springDateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) springDate = new Date(thisYear, parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+      }
+      if (springDate) {
         var diffDays = (springDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
         if (diffDays <= 0) {
           var daysPast = Math.abs(diffDays);
-          if (daysPast <= 14) prob = Math.max(60, Math.round(95 - daysPast * 1.5));
-          else prob = Math.max(20, Math.round(75 - daysPast * 1.2));
+          if (daysPast <= 3) prob = 95;
+          else if (daysPast <= 7) prob = Math.round(90 - daysPast);
+          else if (daysPast <= 14) prob = Math.round(80 - daysPast * 0.8);
+          else if (daysPast <= 30) prob = Math.round(65 - daysPast * 0.8);
+          else prob = Math.max(5, Math.round(45 - daysPast * 0.5));
+        } else if (diffDays <= 3) {
+          prob = Math.round(88 - diffDays * 3);
         } else if (diffDays <= 7) {
-          prob = Math.round(70 - diffDays * 4);
+          prob = Math.round(75 - diffDays * 4);
         } else if (diffDays <= 14) {
-          prob = Math.round(50 - (diffDays - 7) * 3);
+          prob = Math.round(55 - diffDays * 2);
         } else if (diffDays <= 30) {
-          prob = Math.round(30 - (diffDays - 14) * 1);
+          prob = Math.round(30 - (diffDays - 14) * 0.8);
         } else {
-          prob = Math.max(1, Math.round(15 - (diffDays - 30) * 0.3));
+          prob = Math.max(1, Math.round(18 - (diffDays - 30) * 0.3));
         }
       }
     }
@@ -10627,13 +10645,27 @@ window.__computeProbSilent = async function(speciesName) {
 
   /* --- Missing species --- */
   function getMissingSpecies() {
-    var allSpecies = (typeof SPECIES !== 'undefined') ? SPECIES : [];
-    var pts = (typeof points !== 'undefined') ? points : {};
+    var allSpecies = window.SPECIES || [];
+    var pts = window.points || {};
     var missing = [];
     for (var i = 0; i < allSpecies.length; i++) {
       var name = allSpecies[i];
       var p = pts[name] || {};
-      if (Number.isFinite(p.lat) && Number.isFinite(p.lon)) continue;
+
+      var hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
+      var hasDate = p.t && String(p.t).trim() !== '' && String(p.t).trim() !== '(kuupäev puudub)';
+      var hasOcc7 = Number.isFinite(p.occ7) && p.occ7 > 0;
+      var hasLastFetched = !!p.lastFetched;
+
+      var cacheKey = (typeof window._normalizeSpeciesKey === 'function')
+        ? window._normalizeSpeciesKey(name) : name;
+      var hasEluData = window.liveElurikkusBySpecies
+        && window.liveElurikkusBySpecies[cacheKey]
+        && window.liveElurikkusBySpecies[cacheKey].items
+        && window.liveElurikkusBySpecies[cacheKey].items.length > 0;
+
+      if (hasCoords || hasDate || hasOcc7 || hasLastFetched || hasEluData) continue;
+
       var springDate = findSpringDate(name);
       var eluCount = getElurikkusWeeklyCount(name);
       var prob = calcEnnustusProbability(springDate, eluCount);
@@ -10781,6 +10813,16 @@ window.__computeProbSilent = async function(speciesName) {
   document.getElementById('ennustusClose').addEventListener('click', closeEnnustus);
   document.getElementById('ennustusBackdrop').addEventListener('click', function(e) { if (e.target === this) closeEnnustus(); });
   document.getElementById('ennustusSearch').addEventListener('input', renderEnnustusModal);
+  document.getElementById('ennustusScan').addEventListener('click', function() {
+    var btn = this;
+    btn.classList.add('scanning');
+    btn.textContent = 'Skaneerin...';
+    setTimeout(function() {
+      try { renderEnnustusModal(); } catch(e) { console.warn('Ennustus scan error:', e); }
+      btn.classList.remove('scanning');
+      btn.textContent = 'Skaneeri';
+    }, 100);
+  });
 })();
 </script>
 

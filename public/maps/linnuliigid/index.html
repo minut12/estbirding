@@ -7685,9 +7685,11 @@ function updateMarker(key) {
   }
 
   const hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
+  const coordsRestricted = String(p.coords_status || '') === 'restricted'
+    || String(p.coords_status || '') === 'restricted_or_missing';
   const markerCount = getMarkerCount(p);
   const passesRecent = (!window.__recentOnly) || hasRecentObservation(p);
-  const isVisible = (p.visible !== false) && passesRecent && hasCoords;
+  const isVisible = (p.visible !== false) && passesRecent && hasCoords && !coordsRestricted;
   if (!isVisible) {
     if(prevMarker){
       try{
@@ -9470,7 +9472,7 @@ var __sharedDefaults = {};
     }
   }
 
-  function calculatePeriodProbabilities(cell, eluPoint) {
+  function calculatePeriodProbabilities(cell, eluPoint, cellSize) {
     if (!cell.periods || !cell.periods.length) return;
     var maxPeriodCount = 0;
     for (var p = 0; p < cell.periods.length; p++) {
@@ -9478,12 +9480,22 @@ var __sharedDefaults = {};
     }
     var now = new Date();
     var occ7 = (eluPoint && Number.isFinite(eluPoint.occ7)) ? eluPoint.occ7 : 0;
+
+    // Check marker proximity to this cell
+    var markerInCell = false;
+    var markerNearCell = false;
+    if (eluPoint && Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon) && cellSize) {
+      var dLat = Math.abs(eluPoint.lat - cell.centerLat);
+      var dLon = Math.abs(eluPoint.lon - cell.centerLon);
+      markerInCell = (dLat <= cellSize / 2 && dLon <= cellSize / 2);
+      markerNearCell = !markerInCell && (dLat <= cellSize * 1.5 && dLon <= cellSize * 1.5);
+    }
+
     for (var p = 0; p < cell.periods.length; p++) {
       var period = cell.periods[p];
       var periodHistorical = 0;
       if (maxPeriodCount > 0 && period.count > 0) {
         var rawScore = (period.count / maxPeriodCount) * cell.probability * 0.8;
-        // Confidence dampener: fewer records → lower confidence
         var conf;
         if (period.count <= 1) conf = 0.3;
         else if (period.count <= 2) conf = 0.5;
@@ -9495,7 +9507,7 @@ var __sharedDefaults = {};
       var isCurrentPeriod = (now >= period.start && now < period.end);
       var periodRecency = 0;
 
-      if (isCurrentPeriod) {
+      if (isCurrentPeriod && (markerInCell || markerNearCell)) {
         var latestObsDate = (eluPoint && eluPoint.t) ? eluPoint.t : '';
         var ageDays = Infinity;
 
@@ -9508,24 +9520,21 @@ var __sharedDefaults = {};
           } catch(e) {}
         }
 
-        if (ageDays < 1) {
-          periodRecency = 50;
-        } else if (ageDays < 2) {
-          periodRecency = 40;
-        } else if (ageDays < 3) {
-          periodRecency = 30;
-        } else if (ageDays < 5) {
-          periodRecency = 20;
-        } else if (ageDays < 7) {
-          periodRecency = 12;
-        } else {
-          periodRecency = 5;
-        }
+        var proximityScale = markerInCell ? 1.0 : 0.6;
+
+        if (ageDays < 1) periodRecency = 50;
+        else if (ageDays < 2) periodRecency = 40;
+        else if (ageDays < 3) periodRecency = 30;
+        else if (ageDays < 5) periodRecency = 20;
+        else if (ageDays < 7) periodRecency = 12;
+        else periodRecency = 5;
 
         if (occ7 >= 10) periodRecency = Math.min(60, periodRecency + 10);
         else if (occ7 >= 5) periodRecency = Math.min(60, periodRecency + 7);
         else if (occ7 >= 3) periodRecency = Math.min(60, periodRecency + 5);
         else if (occ7 >= 1) periodRecency = Math.min(60, periodRecency + 3);
+
+        periodRecency = Math.round(periodRecency * proximityScale);
       }
 
       period.probability = Math.max(1, Math.min(95, periodHistorical + periodRecency));
@@ -9659,7 +9668,7 @@ var __sharedDefaults = {};
 
       // Temporal periods
       assignRecordsToPeriods(cell, periodTemplate);
-      calculatePeriodProbabilities(cell, eluPoint);
+      calculatePeriodProbabilities(cell, eluPoint, cellSize);
     });
 
     return gridCells;
@@ -10772,14 +10781,11 @@ function missing(){
   var ebird=(ebirdRecentCache&&ebirdRecentCache.data)?ebirdRecentCache.data:{};
   for(var i=0;i<all.length;i++){
     var n=all[i],p=pts[n]||{};
-    var hasCoords=Number.isFinite(p.lat)&&Number.isFinite(p.lon);
-    var hasDate=p.t&&String(p.t).trim()!==''&&String(p.t).trim()!=='(kuupäev puudub)';
-    var hasOcc7=Number.isFinite(p.occ7)&&p.occ7>0;
-    var hasFetchedData=!!p.lastFetched&&(hasDate||hasOcc7);
-    var springVal=String((dates[n]||'')).trim();
-    var hasYearFirstDate=/^\d{4}-\d{2}-\d{2}/.test(springVal);
-    var hasSource=p.src&&String(p.src).trim()!=='';
-    if(hasCoords||hasDate||hasOcc7||hasFetchedData||hasYearFirstDate||hasSource) continue;
+    var hasPublicCoords=Number.isFinite(p.lat)&&Number.isFinite(p.lon)
+      &&String(p.coords_status||'')!=='restricted'
+      &&String(p.coords_status||'')!=='restricted_or_missing';
+    var hasRealDate=p.t&&String(p.t).trim()!==''&&String(p.t).trim()!=='(kuupäev puudub)';
+    if(hasPublicCoords&&hasRealDate) continue;
     var springDate=getSpringDate(n,dates);
     var baseProb=prob(springDate);
     var ebCode=getEbirdCode(n);
@@ -10806,12 +10812,11 @@ function render(){
       var n=allSpecies[i];
       if(n.toLowerCase().indexOf(q)===-1) continue;
       var p=pts[n]||{};
-      var isSeen=(Number.isFinite(p.lat)&&Number.isFinite(p.lon))||
-        (Number.isFinite(p.occ7)&&p.occ7>0)||
-        (p.t&&String(p.t).trim()!==''&&String(p.t).trim()!=='(kuupäev puudub)')||
-        (!!p.lastFetched&&((p.t&&String(p.t).trim()!=='')||(Number.isFinite(p.occ7)&&p.occ7>0)))||
-        (/^\d{4}-\d{2}-\d{2}/.test(String(dates[n]||'')))||
-        (p.src&&String(p.src).trim()!=='');
+      var _hasPubCoords=Number.isFinite(p.lat)&&Number.isFinite(p.lon)
+        &&String(p.coords_status||'')!=='restricted'
+        &&String(p.coords_status||'')!=='restricted_or_missing';
+      var _hasRealDate=p.t&&String(p.t).trim()!==''&&String(p.t).trim()!=='(kuupäev puudub)';
+      var isSeen=_hasPubCoords&&_hasRealDate;
       var springDate=getSpringDate(n,dates);
       var baseProb=prob(springDate);
       var ebCode=getEbirdCode(n);

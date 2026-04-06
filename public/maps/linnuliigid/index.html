@@ -10714,14 +10714,34 @@ function combinedProb(springProb, ebirdCount) {
 }
 
 function getEluCount(speciesName) {
-  try { var p = pt()[speciesName] || {};
-    if (Number.isFinite(p.occ7) && p.occ7 > 0) return p.occ7; } catch(e) {}
-  try { var liveStats = window.liveStatsBySpecies || {};
-    var cacheKey = (typeof window._normalizeSpeciesKey === 'function')
-      ? window._normalizeSpeciesKey(speciesName) : speciesName;
-    if (liveStats[cacheKey] && Number.isFinite(liveStats[cacheKey].last7d)) return liveStats[cacheKey].last7d;
+  // Method 1: from points occ7
+  try {
+    var pts=pt();
+    var p=pts[speciesName];
+    if(!p){var lo=speciesName.toLowerCase();for(var k in pts){if(pts.hasOwnProperty(k)&&k.toLowerCase()===lo){p=pts[k];break;}}}
+    if(p&&Number.isFinite(p.occ7)&&p.occ7>0) return p.occ7;
   } catch(e) {}
-  return null;
+  // Method 2: from live eElurikkus cache
+  try {
+    var elu=window.__elurikkusBySpecies||{};
+    var entry=elu[speciesName];
+    if(!entry){
+      var normKey=(typeof window._normalizeSpeciesKey==='function')?window._normalizeSpeciesKey(speciesName):speciesName;
+      entry=elu[normKey];
+    }
+    if(!entry){
+      var lk=speciesName.toLowerCase();
+      for(var ek in elu){if(elu.hasOwnProperty(ek)&&ek.toLowerCase()===lk){entry=elu[ek];break;}}
+    }
+    if(entry&&entry.items&&Array.isArray(entry.items)&&entry.items.length>0) return entry.items.length;
+  } catch(e) {}
+  // Method 3: from liveStats
+  try {
+    var liveStats=window.liveStatsBySpecies||{};
+    var cacheKey=(typeof window._normalizeSpeciesKey==='function')?window._normalizeSpeciesKey(speciesName):speciesName;
+    if(liveStats[cacheKey]&&Number.isFinite(liveStats[cacheKey].last7d)) return liveStats[cacheKey].last7d;
+  } catch(e) {}
+  return 0;
 }
 
 function sd(){
@@ -10848,12 +10868,16 @@ function render(){
   else if(sort==='spring') displayList.sort(function(a,b){return ssk(a.spring)-ssk(b.spring);});
   else displayList.sort(function(a,b){return a.name.localeCompare(b.name,'et');});
 
+  var totalElu=0;
+  for(var te=0;te<m.length;te++){totalElu+=getEluCount(m[te].name);}
+  var eluInfo=totalElu>0?' · eElur: '+totalElu+' vaatlust':'';
+
   var el=document.getElementById('ennSum');
   if(el) el.innerHTML='<span><b>'+m.length+'</b> puuduvat liiki</span>'+
     (ebirdRecentCache?'<span>Skaneeritud '+
       String(new Date(ebirdRecentCache.fetchedAt).getHours()).padStart(2,'0')+':'+
       String(new Date(ebirdRecentCache.fetchedAt).getMinutes()).padStart(2,'0')+
-      ' · eBird: '+ebirdRecentCache.totalObs+' vaatlust EE-s</span>':'');
+      ' · eBird: '+ebirdRecentCache.totalObs+' vaatlust EE-s'+eluInfo+'</span>':'');
 
   var lst=document.getElementById('ennLst');
   if(!lst) return;
@@ -10879,7 +10903,7 @@ function render(){
     else ebTxt='<div class="eObs" style="color:#d97706">eBird kood puudub</div>';
     var eluC=getEluCount(s.name);
     var eluTxt='';
-    if(eluC!==null&&eluC>0) eluTxt='<div class="eObs" style="color:#16a34a">eElur: '+eluC+'</div>';
+    if(eluC>0) eluTxt='<div class="eObs" style="color:#16a34a">eElur: '+eluC+'</div>';
     else eluTxt='<div class="eObs">eElur: 0</div>';
     var escName=s.name.replace(/'/g,"\\'");
     h+='<div class="eR" style="'+rowStyle+'"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+

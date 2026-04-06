@@ -9208,7 +9208,12 @@ var __sharedDefaults = {};
     '.prob-btn.prob-loading svg{animation:prob-spin 1s linear infinite}' +
     '@keyframes prob-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}' +
     '.row.prob-row-active{border-left:3px solid #1D9E75;background:#f0fdf4}' +
-    '@media(max-width:768px){#probInfoPanel{max-width:180px!important;font-size:11px!important;padding:10px 12px!important}}';
+    '@media(max-width:768px){#probInfoPanel{max-width:180px!important;font-size:11px!important;padding:10px 12px!important}}' +
+    '@media(max-width:900px){' +
+      '#probInfoPanel{position:fixed!important;top:50%!important;left:50%!important;right:auto!important;transform:translate(-50%,-50%)!important;z-index:5000!important;max-width:92vw!important;max-height:80vh!important;overflow-y:auto!important;width:auto!important;min-width:220px!important;box-shadow:0 20px 60px rgba(0,0,0,.35)!important}' +
+      '#probCloseBtn{min-width:44px!important;min-height:44px!important;font-size:18px!important;display:flex!important;align-items:center!important;justify-content:center!important}' +
+      '.prob-backdrop{display:block!important;position:fixed!important;inset:0!important;background:rgba(0,0,0,.35)!important;z-index:4999!important}' +
+    '}';
   document.head.appendChild(style);
 
   // --- Info panel (injected into #mapWrap) ---
@@ -9832,10 +9837,25 @@ var __sharedDefaults = {};
     if (panel) panel.style.display = 'block';
     var label = document.getElementById('probSpeciesLabel');
     if (label) label.textContent = speciesName;
+    // Mobile backdrop
+    if (window.innerWidth <= 900) {
+      var bd = document.getElementById('probBackdrop');
+      if (!bd) {
+        bd = document.createElement('div');
+        bd.id = 'probBackdrop';
+        bd.className = 'prob-backdrop';
+        bd.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:4999';
+        bd.addEventListener('click', function() { if (activeProbSpecies) toggleProbability(activeProbSpecies); });
+        document.body.appendChild(bd);
+      }
+      bd.style.display = 'block';
+    }
   }
   function hideProbInfoPanel() {
     var panel = document.getElementById('probInfoPanel');
     if (panel) panel.style.display = 'none';
+    var bd = document.getElementById('probBackdrop');
+    if (bd) bd.style.display = 'none';
   }
 
   // --- Main toggle (global so delegation can call it) ---
@@ -10205,18 +10225,16 @@ window.buildTop3PeriodsSection = function(speciesKey) {
     // Rank badge
     html += '<div style="width:18px;height:18px;border-radius:50%;background:' + c.bg + ';color:' + c.text + ';font-size:10px;font-weight:500;display:flex;align-items:center;justify-content:center;flex-shrink:0;">' + (i + 1) + '</div>';
 
-    // Period label + count
-    html += '<div style="flex:1;min-width:0;overflow:hidden;">';
-    html += '<div style="font-size:11px;font-weight:500;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + r.label + '</div>';
-    html += '<div style="font-size:10px;color:#94a3b8;">(' + r.count + ')</div>';
-    html += '</div>';
-
-    // Probability bar + %
-    html += '<div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">';
-    html += '<div style="width:36px;height:4px;border-radius:2px;background:#f1f5f9;overflow:hidden;">';
+    // Period label (line 1) + count + bar + % (line 2)
+    html += '<div style="flex:1;min-width:0;">';
+    html += '<div style="font-size:11px;font-weight:500;color:#1e293b;">' + r.label + '</div>';
+    html += '<div style="display:flex;align-items:center;gap:6px;margin-top:1px;">';
+    html += '<span style="font-size:10px;color:#94a3b8;">(' + r.count + ')</span>';
+    html += '<div style="flex:1;max-width:50px;height:4px;border-radius:2px;background:#f1f5f9;overflow:hidden;">';
     html += '<div style="width:' + barWidth + '%;height:100%;background:' + c.bar + ';border-radius:2px;"></div>';
     html += '</div>';
-    html += '<span style="font-size:11px;font-weight:500;color:' + c.text + ';min-width:28px;text-align:right;">' + r.pct + '%</span>';
+    html += '<span style="font-size:11px;font-weight:500;color:' + c.text + ';">' + r.pct + '%</span>';
+    html += '</div>';
     html += '</div>';
 
     // Chevron

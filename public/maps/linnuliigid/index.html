@@ -10713,7 +10713,19 @@ function combinedProb(springProb, ebirdCount) {
   return Math.min(99, springProb + boost);
 }
 
+// Ennustus eElurikkus cache (persists for 2 hours)
+window.__ennustusEluCache=window.__ennustusEluCache||{};
+
+function getEluCached(speciesName){
+  var entry=window.__ennustusEluCache[speciesName];
+  if(entry&&(Date.now()-entry.fetchedAt<2*3600000)) return entry.count;
+  return null;
+}
+
 function getEluCount(speciesName) {
+  // Method 0: from ennustus scan cache
+  var cached=getEluCached(speciesName);
+  if(cached!==null) return cached;
   // Method 1: from points occ7
   try {
     var pts=pt();
@@ -10741,7 +10753,7 @@ function getEluCount(speciesName) {
     var cacheKey=(typeof window._normalizeSpeciesKey==='function')?window._normalizeSpeciesKey(speciesName):speciesName;
     if(liveStats[cacheKey]&&Number.isFinite(liveStats[cacheKey].last7d)) return liveStats[cacheKey].last7d;
   } catch(e) {}
-  return 0;
+  return -1; // -1 = not fetched yet, 0 = fetched but none
 }
 
 function sd(){
@@ -10904,7 +10916,8 @@ function render(){
     var eluC=getEluCount(s.name);
     var eluTxt='';
     if(eluC>0) eluTxt='<div class="eObs" style="color:#16a34a">eElur: '+eluC+'</div>';
-    else eluTxt='<div class="eObs">eElur: 0</div>';
+    else if(eluC===0) eluTxt='<div class="eObs">eElur: 0</div>';
+    else eluTxt='<div class="eObs" style="color:#94a3b8">eElur: \u2013</div>';
     var escName=s.name.replace(/'/g,"\\'");
     h+='<div class="eR" style="'+rowStyle+'"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+
       '<div class="eNm">'+nm+' '+badge+' <button class="ePrb" onclick="window.__ennProb(\''+escName+'\')">Prob</button></div><div class="eLt">'+sl+'</div>'+

@@ -10215,14 +10215,15 @@ var __sharedDefaults = {};
       else if (totalGbifRecords > 100) probCellSize = 0.15;
       else probCellSize = 0.2;
 
-      // --- eElurikkus historical injection via biocache JSON API (returns items WITH real coordinates) ---
-      // Uses elurikkus-proxy to call biocache-service (the elurikkus-species function incorrectly fetches HTML, not JSON)
+      // --- eElurikkus historical injection via biocache JSON API ---
+      // Uses elurikkus-proxy to call biocache-service which returns real lat/lon coordinates
       window.__eluHistoryCache = window.__eluHistoryCache || {};
       var _eluHistKey = String(speciesName || '').trim().toLowerCase();
       var _eluHistItems = window.__eluHistoryCache[_eluHistKey] || null;
       if (!_eluHistItems) {
         try {
           var _cfg = (typeof resolveSupabaseConfig === 'function') ? resolveSupabaseConfig() : {};
+          console.log('[PROB] biocache: supabaseUrl=' + (_cfg.supabaseUrl ? 'present' : 'MISSING') + ', anonKey=' + (_cfg.anonKey ? 'present' : 'MISSING'));
           if (_cfg.supabaseUrl) {
             setProbStatus('Fetching eElurikkus history (biocache)...');
             var _biocacheUrl = 'https://elurikkus.ee/biocache-service/occurrences/search?q='
@@ -10231,11 +10232,22 @@ var __sharedDefaults = {};
             var _histHeaders = { 'Accept': 'application/json' };
             if (_cfg.anonKey) _histHeaders['apikey'] = _cfg.anonKey;
             var _histRes = await fetch(_proxyUrl, { headers: _histHeaders });
-            var _histJson = await _histRes.json();
-            // Biocache API returns { occurrences: [...] } with decimalLatitude/decimalLongitude/eventDate
+            console.log('[PROB] biocache proxy status:', _histRes.status);
+            var _histText = await _histRes.text();
+            var _histJson;
+            try { _histJson = JSON.parse(_histText); } catch(_pe) {
+              console.warn('[PROB] biocache response not JSON, first 200 chars:', _histText.slice(0, 200));
+              _histJson = {};
+            }
+            var _topKeys = Object.keys(_histJson).slice(0, 10);
+            console.log('[PROB] biocache response keys:', _topKeys.join(', '));
+            // Biocache returns { occurrences: [...] } or { results: [...] } or top-level array
             var _rawOccs = Array.isArray(_histJson.occurrences) ? _histJson.occurrences
               : Array.isArray(_histJson.results) ? _histJson.results
               : Array.isArray(_histJson) ? _histJson : [];
+            if (_rawOccs.length > 0) {
+              console.log('[PROB] biocache first item keys:', Object.keys(_rawOccs[0]).slice(0, 15).join(', '));
+            }
             _eluHistItems = [];
             for (var _hi = 0; _hi < _rawOccs.length; _hi++) {
               var _r = _rawOccs[_hi];
@@ -10248,7 +10260,10 @@ var __sharedDefaults = {};
               _eluHistItems.push({ lat: _hLat, lon: _hLon, date: _hDate });
             }
             window.__eluHistoryCache[_eluHistKey] = _eluHistItems;
-            console.log('[PROB] eElurikkus biocache history:', _rawOccs.length, 'raw →', _eluHistItems.length, 'with coords');
+            console.log('[PROB] eElurikkus biocache:', _rawOccs.length, 'raw →', _eluHistItems.length, 'with coords');
+          } else {
+            console.warn('[PROB] biocache skipped: no supabaseUrl');
+            _eluHistItems = [];
           }
         } catch(_e) {
           console.warn('[PROB] eElurikkus biocache fetch failed', _e);

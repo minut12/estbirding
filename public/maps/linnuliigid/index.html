@@ -11110,6 +11110,8 @@ window.__ennCombinedProb = combinedProb;
 window.__ennGetEluCount = getEluCount;
 window.__ennGetEbirdCode = getEbirdCode;
 window.__ennGetSpringDate = getSpringDate;
+window.__ennEbirdToken = EBIRD_TOKEN;
+window.__ennScanCounts = function(){ return __ennScanEbirdCounts; };
 
 var bg=document.getElementById('ennBg');
 if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__closeEnn();});
@@ -11210,7 +11212,7 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
     var pts = points || {};
     var sd  = springDates || {};
     var av  = avatars || {};
-    var eCounts = __ennScanEbirdCounts || {};
+    var eCounts = (window.__ennScanCounts ? window.__ennScanCounts() : {});
     var allSpecies = SPECIES || [];
 
     var out = [];
@@ -11331,22 +11333,20 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
 
     try {
       var url = 'https://api.ebird.org/v2/data/obs/EE/recent?back=7&maxResults=10000&_ts='+Date.now();
-      var res = await fetch(url, {headers:{'X-eBirdApiToken': EBIRD_TOKEN}});
+      var res = await fetch(url, {headers:{'X-eBirdApiToken': window.__ennEbirdToken || '9s72dc2jcjlq'}});
       if (res.ok){
         var arr = await res.json();
         var codes = (typeof SPECIES_EBIRD_CODES!=='undefined') ? SPECIES_EBIRD_CODES : {};
         var c2n = {};
         for (var k in codes){ if(codes[k]) c2n[codes[k]]=k; }
         var now7=Date.now(), win7=7*24*60*60*1000;
-        if (typeof __ennScanEbirdCounts!=='undefined'){
-          var ks=Object.keys(__ennScanEbirdCounts);
-          for(var j=0;j<ks.length;j++) delete __ennScanEbirdCounts[ks[j]];
-        }
+        var _ec = window.__ennScanCounts ? window.__ennScanCounts() : null;
+        if(_ec){ var ks=Object.keys(_ec); for(var j=0;j<ks.length;j++) delete _ec[ks[j]]; }
         (arr||[]).forEach(function(obs){
           var name=c2n[String(obs.speciesCode||'')];
           if(!name) return;
           var ms=obs.obsDt?new Date(obs.obsDt.substring(0,10)).getTime():0;
-          if(ms&&(now7-ms)<=win7) __ennScanEbirdCounts[name]=(__ennScanEbirdCounts[name]||0)+1;
+          if(ms&&(now7-ms)<=win7&&_ec) _ec[name]=(_ec[name]||0)+1;
         });
       }
     } catch(e){ console.warn('[probAll] eBird failed',e); }

@@ -11124,7 +11124,9 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
     <div style="padding:10px 16px;border-bottom:1px solid #f3f4f6;display:flex;gap:8px;align-items:center;flex-wrap:wrap;flex-shrink:0">
       <input id="probAllSearch" type="text" placeholder="Otsi liiki..." style="flex:1;min-width:130px;padding:7px 12px;border:1px solid #d1d5db;border-radius:10px;font-size:13px"/>
       <select id="probAllFilter" style="padding:7px 10px;border:1px solid #d1d5db;border-radius:10px;font-size:13px;background:#fff">
-        <option value="all">Kõik puuduvad</option>
+        <option value="all">Kõik liigid</option>
+        <option value="missing">Puudub kaardilt</option>
+        <option value="onmap">Kaardil olemas</option>
         <option value="high">Kõrge (&gt;60%)</option>
         <option value="medium">Keskmine (20–60%)</option>
         <option value="low">Madal (&lt;20%)</option>
@@ -11209,8 +11211,6 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
       var name = allSpecies[i];
       var p = pts[name] || {};
 
-      if (p.lat && p.lon) continue;
-
       var clean = _f(name);
       var springDate = sd[name] || sd[clean] || '';
 
@@ -11227,14 +11227,13 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
 
       var score = calcScore(springDate, ebCount, eluCount);
 
-      if (score < 1 && !springDate && !ebCount && !eluCount) continue;
-
       out.push({
         name:        name,
         pct:         score,
         springDate:  springDate,
         ebirdCount:  ebCount,
         eluCount:    eluCount,
+        onMap:       !!(p.lat && p.lon),
         avatar:      av[name] || '',
       });
     }
@@ -11248,6 +11247,8 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
     var f = filterEl.value;
     var rows = _results.filter(function(r){
       if (q && !r.name.toLowerCase().includes(q)) return false;
+      if (f==='missing') return !r.onMap;
+      if (f==='onmap')   return r.onMap;
       if (f==='high')   return r.pct > 60;
       if (f==='medium') return r.pct >= 20 && r.pct <= 60;
       if (f==='low')    return r.pct < 20;
@@ -11290,6 +11291,8 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
       var badges = '';
       if (springLabel) badges += '<span style="background:#dcfce7;color:#15803d;border-radius:999px;padding:1px 7px;font-size:11px;font-weight:600">'+springLabel+'</span> ';
       if (r.ebirdCount>0) badges += '<span style="background:#dbeafe;color:#1d4ed8;border-radius:999px;padding:1px 7px;font-size:11px">eBird ✓</span> ';
+      if (r.onMap) badges += '<span style="background:#f0fdf4;color:#15803d;border-radius:999px;padding:1px 7px;font-size:11px">kaardil ✓</span> ';
+      else badges += '<span style="background:#fef2f2;color:#b91c1c;border-radius:999px;padding:1px 7px;font-size:11px">puudub</span> ';
 
       var meta = [];
       if (r.springDate) meta.push('<span style="color:#6b7280;font-size:11px">Kevad: '+r.springDate+'</span>');

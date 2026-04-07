@@ -10233,45 +10233,46 @@ var __sharedDefaults = {};
       else if (totalGbifRecords > 100) probCellSize = 0.15;
       else probCellSize = 0.2;
 
-      // Inject eElurikkus items from live cache into seasonal array
-      // (the prob cache or fetch pipeline may not include these if cache was stale)
+      // Inject eElurikkus items into seasonal array from all available caches
+      // Sources: liveElurikkusBySpecies (server-fetched, has coords) + __probEluCache (date-only, needs centroid resolution)
       var _eluLiveKey = String(speciesName || '').trim().toLowerCase();
       var _eluLiveEntry = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluLiveKey]) || null;
       var _eluLiveItems = (_eluLiveEntry && Array.isArray(_eluLiveEntry.items)) ? _eluLiveEntry.items : [];
-      console.log('[ELU-INJECT]', {
-        speciesKey: _eluLiveKey,
-        liveKeys: Object.keys(liveElurikkusBySpecies || {}),
-        itemsFound: _eluLiveItems.length,
-        sampleItem: _eluLiveItems[0] || null,
-        seasonalBefore: seasonal.length,
-        seasonStart: seasonInfo && seasonInfo.start ? seasonInfo.start.toISOString() : null,
-        seasonEnd: seasonInfo && seasonInfo.end ? seasonInfo.end.toISOString() : null,
-      });
-      var _eluInjected = 0;
-      var _eluSkipNoCoord = 0, _eluSkipNoDate = 0, _eluSkipOutSeason = 0;
-      for (var _ei = 0; _ei < _eluLiveItems.length; _ei++) {
-        var _it = _eluLiveItems[_ei];
+      var _eluProbEntry = (window.__probEluCache && window.__probEluCache[_eluLiveKey]) || null;
+      var _eluProbItems = (_eluProbEntry && Array.isArray(_eluProbEntry.items)) ? _eluProbEntry.items : [];
+      // Merge both sources, preferring live (has coords) then prob (needs resolution)
+      var _allEluItems = _eluLiveItems.length > 0 ? _eluLiveItems : _eluProbItems;
+      var _eluInjected = 0, _eluResolved = 0;
+      console.log('[ELU-INJECT] source:', _eluLiveItems.length > 0 ? 'live(' + _eluLiveItems.length + ')' : 'prob(' + _eluProbItems.length + ')', 'season:', seasonInfo.label);
+      for (var _ei = 0; _ei < _allEluItems.length; _ei++) {
+        var _it = _allEluItems[_ei];
         var _eLat = Number(_it.lat);
         var _eLon = Number(_it.lon);
-        if (!Number.isFinite(_eLat) || !Number.isFinite(_eLon)) { _eluSkipNoCoord++; continue; }
+        // Resolve coords via centroid if missing (prob cache items have municipality/locality but no lat/lon)
+        if (!Number.isFinite(_eLat) || !Number.isFinite(_eLon)) {
+          var _place = String(_it.municipality || _it.placeText || _it.locality || _it.county || '').trim();
+          if (_place) {
+            var _res = null;
+            if (typeof resolveCentroidFromPlace === 'function') _res = resolveCentroidFromPlace(_place);
+            if (!_res && typeof resolveFallbackLatLon === 'function') {
+              _res = resolveFallbackLatLon({ municipality: _it.municipality || '', locality: _it.locality || '', county: _it.county || '' });
+            }
+            if (_res && Number.isFinite(_res.lat) && Number.isFinite(_res.lon)) {
+              _eLat = _res.lat; _eLon = _res.lon; _eluResolved++;
+            }
+          }
+        }
+        if (!Number.isFinite(_eLat) || !Number.isFinite(_eLon)) continue;
         var _eDate = String(_it.observedAt || _it.eventDate || _it.date || '');
-        if (!_eDate) { _eluSkipNoDate++; continue; }
-        // Only include if in season range
-        if (!isInSeasonRange(_eDate, seasonInfo.start, seasonInfo.end)) { _eluSkipOutSeason++; continue; }
+        if (!_eDate) continue;
+        if (!isInSeasonRange(_eDate, seasonInfo.start, seasonInfo.end)) continue;
         seasonal.push({ lat: _eLat, lon: _eLon, date: _eDate, source: 'elurikkus' });
         _eluInjected++;
       }
-      console.log('[ELU-INJECT-RESULT]', {
-        injected: _eluInjected,
-        skipNoCoord: _eluSkipNoCoord,
-        skipNoDate: _eluSkipNoDate,
-        skipOutSeason: _eluSkipOutSeason,
-        seasonalAfter: seasonal.length,
-      });
       if (_eluInjected > 0) {
         seasonal = deduplicateOccurrences(seasonal);
-        console.log('[PROB] Injected', _eluInjected, 'eElurikkus items from live cache into seasonal (after dedup:', seasonal.length, ')');
       }
+      console.log('[ELU-INJECT] result:', _eluInjected, 'injected (' + _eluResolved + ' via centroid), seasonal:', seasonal.length);
 
       // Build full Estonia grid and assign seasonal occurrences to cells
       var gridCells = buildEstoniaGrid(seasonal, probCellSize);
@@ -10662,33 +10663,36 @@ window.__computeProbSilent = async function(speciesName) {
 
   if (typeof buildEstoniaGrid !== 'function' || typeof calculateProbabilities !== 'function') return;
 
-  // Inject eElurikkus items from live cache
+  // Inject eElurikkus items from all available caches (with centroid resolution)
   var _eluLiveKey = String(speciesName || '').trim().toLowerCase();
   var _eluLiveEntry = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluLiveKey]) || null;
   var _eluLiveItems = (_eluLiveEntry && Array.isArray(_eluLiveEntry.items)) ? _eluLiveEntry.items : [];
-  console.log('[ELU-INJECT-SILENT]', {
-    speciesKey: _eluLiveKey,
-    itemsFound: _eluLiveItems.length,
-    sampleItem: _eluLiveItems[0] || null,
-  });
-  var _eluSkipNoCoord2 = 0, _eluSkipNoDate2 = 0, _eluSkipOutSeason2 = 0, _eluInjected2 = 0;
-  for (var _ei = 0; _ei < _eluLiveItems.length; _ei++) {
-    var _it = _eluLiveItems[_ei];
+  var _eluProbEntry = (window.__probEluCache && window.__probEluCache[_eluLiveKey]) || null;
+  var _eluProbItems = (_eluProbEntry && Array.isArray(_eluProbEntry.items)) ? _eluProbEntry.items : [];
+  var _allEluItems = _eluLiveItems.length > 0 ? _eluLiveItems : _eluProbItems;
+  for (var _ei = 0; _ei < _allEluItems.length; _ei++) {
+    var _it = _allEluItems[_ei];
     var _eLat = Number(_it.lat);
     var _eLon = Number(_it.lon);
-    if (!Number.isFinite(_eLat) || !Number.isFinite(_eLon)) { _eluSkipNoCoord2++; continue; }
+    if (!Number.isFinite(_eLat) || !Number.isFinite(_eLon)) {
+      var _place = String(_it.municipality || _it.placeText || _it.locality || _it.county || '').trim();
+      if (_place) {
+        var _res = null;
+        if (typeof resolveCentroidFromPlace === 'function') _res = resolveCentroidFromPlace(_place);
+        if (!_res && typeof resolveFallbackLatLon === 'function') {
+          _res = resolveFallbackLatLon({ municipality: _it.municipality || '', locality: _it.locality || '', county: _it.county || '' });
+        }
+        if (_res && Number.isFinite(_res.lat) && Number.isFinite(_res.lon)) {
+          _eLat = _res.lat; _eLon = _res.lon;
+        }
+      }
+    }
+    if (!Number.isFinite(_eLat) || !Number.isFinite(_eLon)) continue;
     var _eDate = String(_it.observedAt || _it.eventDate || _it.date || '');
-    if (!_eDate) { _eluSkipNoDate2++; continue; }
-    if (typeof isInSeasonRange === 'function' && !isInSeasonRange(_eDate, seasonInfo.start, seasonInfo.end)) { _eluSkipOutSeason2++; continue; }
+    if (!_eDate) continue;
+    if (typeof isInSeasonRange === 'function' && !isInSeasonRange(_eDate, seasonInfo.start, seasonInfo.end)) continue;
     seasonal.push({ lat: _eLat, lon: _eLon, date: _eDate, source: 'elurikkus' });
-    _eluInjected2++;
   }
-  console.log('[ELU-INJECT-SILENT-RESULT]', {
-    injected: _eluInjected2,
-    skipNoCoord: _eluSkipNoCoord2,
-    skipNoDate: _eluSkipNoDate2,
-    skipOutSeason: _eluSkipOutSeason2,
-  });
   if (typeof deduplicateOccurrences === 'function') seasonal = deduplicateOccurrences(seasonal);
 
   var gridCells = buildEstoniaGrid(seasonal, probCellSize);

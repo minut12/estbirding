@@ -9971,10 +9971,17 @@ var __sharedDefaults = {};
     if (btn) btn.classList.add('prob-loading');
 
     try {
-      // Step 0: Ensure eElurikkus live cache is populated with ALL pages
+      // Step 0: Fetch eElurikkus date-only items for probability grid.
+      // IMPORTANT: store in a prob-specific cache, NOT in liveElurikkusBySpecies,
+      // because these items have no coordinates and overwriting the live cache
+      // causes _applyLiveOverrideForSpecies to produce coords_status:'restricted',
+      // which makes updateMarker hide the species marker.
       var _eluKey = typeof _normalizeSpeciesKey === 'function' ? _normalizeSpeciesKey(speciesName) : String(speciesName || '').trim().toLowerCase();
       var _eluCachedCheck = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluKey]) || null;
-      var _eluNeedsFetch = !_eluCachedCheck || !Array.isArray(_eluCachedCheck.items) || _eluCachedCheck.items.length < 100;
+      var _probEluCache = window.__probEluCache = window.__probEluCache || {};
+      var _probEluCached = _probEluCache[_eluKey] || null;
+      var _eluNeedsFetch = (!_eluCachedCheck || !Array.isArray(_eluCachedCheck.items) || _eluCachedCheck.items.length < 100)
+        && (!_probEluCached || !Array.isArray(_probEluCached.items) || _probEluCached.items.length < 100);
       if (_eluNeedsFetch) {
         try {
           setProbStatus('Fetching eElurikkus data (all pages)...');
@@ -9988,12 +9995,14 @@ var __sharedDefaults = {};
             for (var _ei = 0; _ei < _eluItems.length; _ei++) {
               if (String(_eluItems[_ei].observedAt || '') > _newest) _newest = String(_eluItems[_ei].observedAt);
             }
-            liveElurikkusBySpecies[_eluKey] = {
+            // Store in prob-specific cache only (do NOT overwrite liveElurikkusBySpecies)
+            _probEluCache[_eluKey] = {
               fetchedAt: new Date().toISOString(),
               dataMaxAt: _newest,
               items: _eluItems,
               sourceUrl: 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(speciesName)
             };
+            // Update date and occ7 on points (safe — does not affect coords)
             if (typeof points !== 'undefined') {
               points[speciesName] = points[speciesName] || {};
               if (_newest) points[speciesName].t = _newest;
@@ -10002,7 +10011,6 @@ var __sharedDefaults = {};
                 points[speciesName].occ7 = countInLastNDaysFromDates(_dates, 7);
               }
             }
-            if (typeof _persistLiveCaches === 'function') _persistLiveCaches();
             console.log('[PROB] eElurikkus paginated:', _eluItems.length, 'items for', speciesName);
           } else {
             console.log('[PROB] eElurikkus returned 0 items for', speciesName);
@@ -10011,7 +10019,7 @@ var __sharedDefaults = {};
           console.warn('[PROB] eElurikkus paginated fetch failed for', speciesName, _eluErr);
         }
       } else {
-        console.log('[PROB] eElurikkus cache hit:', _eluCachedCheck.items.length, 'items for', speciesName);
+        console.log('[PROB] eElurikkus cache hit:', (_eluCachedCheck ? _eluCachedCheck.items.length : 0), 'live +', (_probEluCached ? _probEluCached.items.length : 0), 'prob items for', speciesName);
       }
 
       var data = loadProbCache(speciesName);
@@ -10020,6 +10028,11 @@ var __sharedDefaults = {};
         // Step 1: Get eElurikkus data from cache or fetch
         var cacheKey = String(speciesName || '').trim().toLowerCase();
         var eluItems = (liveElurikkusBySpecies[cacheKey] && liveElurikkusBySpecies[cacheKey].items) || null;
+        // Also check prob-specific cache (date-only items for grid building)
+        if (!eluItems || eluItems.length === 0) {
+          var _pec = window.__probEluCache && window.__probEluCache[cacheKey];
+          if (_pec && Array.isArray(_pec.items) && _pec.items.length > 0) eluItems = _pec.items;
+        }
 
         if (!eluItems || eluItems.length === 0) {
           var json = await fetchElurikkusSpecies(speciesName);
@@ -10428,10 +10441,14 @@ window.__computeProbSilent = async function(speciesName) {
   // then restore. But that has UI side effects.
   // Instead, replicate the core data pipeline using the same cached/fetched data.
 
-  // Step 0: Ensure eElurikkus live cache
+  // Step 0: Fetch eElurikkus date-only items for probability grid.
+  // Store in prob-specific cache, NOT liveElurikkusBySpecies (see toggleProbability comment).
   var _eluKey = typeof _normalizeSpeciesKey === 'function' ? _normalizeSpeciesKey(speciesName) : String(speciesName || '').trim().toLowerCase();
   var _eluCached = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluKey]) || null;
-  if (!_eluCached || !Array.isArray(_eluCached.items) || _eluCached.items.length < 100) {
+  var _probEluCache = window.__probEluCache = window.__probEluCache || {};
+  var _probEluCached = _probEluCache[_eluKey] || null;
+  if ((!_eluCached || !Array.isArray(_eluCached.items) || _eluCached.items.length < 100)
+    && (!_probEluCached || !Array.isArray(_probEluCached.items) || _probEluCached.items.length < 100)) {
     try {
       if (typeof fetchElurikkusAllDatesForProb === 'function') {
         var _eluItems = await fetchElurikkusAllDatesForProb(speciesName);
@@ -10444,7 +10461,7 @@ window.__computeProbSilent = async function(speciesName) {
           for (var _ei = 0; _ei < _eluItems.length; _ei++) {
             if (String(_eluItems[_ei].observedAt || '') > _newest) _newest = String(_eluItems[_ei].observedAt);
           }
-          liveElurikkusBySpecies[_eluKey] = {
+          _probEluCache[_eluKey] = {
             fetchedAt: new Date().toISOString(),
             dataMaxAt: _newest,
             items: _eluItems,
@@ -10458,7 +10475,6 @@ window.__computeProbSilent = async function(speciesName) {
               points[speciesName].occ7 = countInLastNDaysFromDates(_dates, 7);
             }
           }
-          if (typeof _persistLiveCaches === 'function') _persistLiveCaches();
         }
       }
     } catch(e) { /* ignore */ }
@@ -10471,6 +10487,11 @@ window.__computeProbSilent = async function(speciesName) {
     // Fetch eElurikkus occurrences with coord resolution
     var cacheKey = String(speciesName || '').trim().toLowerCase();
     var eluItems = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[cacheKey] && liveElurikkusBySpecies[cacheKey].items) || null;
+    // Also check prob-specific cache
+    if (!eluItems || eluItems.length === 0) {
+      var _pec = window.__probEluCache && window.__probEluCache[cacheKey];
+      if (_pec && Array.isArray(_pec.items) && _pec.items.length > 0) eluItems = _pec.items;
+    }
     if (!eluItems || eluItems.length === 0) {
       if (typeof fetchElurikkusSpecies === 'function') {
         var json = await fetchElurikkusSpecies(speciesName);

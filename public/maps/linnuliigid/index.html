@@ -11041,6 +11041,7 @@ window.__scanEnn=function(btn){
       if(!fetchFn){
         window.__ennustusEluCache[name]={count:0,source:'no_fn',fetchedAt:Date.now()};
         window.__ennustusEluCache[cleanName]={count:0,source:'no_fn',fetchedAt:Date.now()};
+        console.log('[DEBUG-ELU]', cleanName, 'count: 0', 'source: no_fn (no fetch function available)');
         render();setTimeout(nextElu,100);return;
       }
       fetchFn(cleanName).then(function(result){
@@ -11048,6 +11049,7 @@ window.__scanEnn=function(btn){
         var entry={count:count,source:'api',fetchedAt:Date.now()};
         window.__ennustusEluCache[name]=entry;
         window.__ennustusEluCache[cleanName]=entry;
+        console.log('[DEBUG-ELU]', cleanName, 'count:', count, 'source:', entry.source);
         render();
         setTimeout(nextElu,500);
       }).catch(function(e){
@@ -11055,6 +11057,7 @@ window.__scanEnn=function(btn){
         var entry={count:0,source:'error',fetchedAt:Date.now()};
         window.__ennustusEluCache[name]=entry;
         window.__ennustusEluCache[cleanName]=entry;
+        console.log('[DEBUG-ELU]', cleanName, 'count: 0', 'source:', entry.source);
         render();
         setTimeout(nextElu,500);
       });

@@ -9582,8 +9582,10 @@ var __sharedDefaults = {};
       var _lAge = (_now - _lTs) / (24 * 60 * 60 * 1000);
       recentEluLocs.push({ lat: _lLat, lon: _lLon, ageDays: _lAge });
     }
-    console.log('[PROB] recentEluLocs:', recentEluLocs.length,
-      recentEluLocs.map(function(l) { return l.lat.toFixed(3) + ',' + l.lon.toFixed(3) + ' age:' + l.ageDays.toFixed(1) + 'd'; }));
+    console.log('[FRESH] recentEluLocs count:', recentEluLocs.length);
+    console.log('[FRESH] liveItems count:', _eluLiveItems.length);
+    console.log('[FRESH] liveItems sample:', JSON.stringify(_eluLiveItems.slice(0, 3)).slice(0, 500));
+    console.log('[FRESH] recentEluLocs:', JSON.stringify(recentEluLocs).slice(0, 500));
 
     // Season timing bonus
     var seasonBonus = 5;

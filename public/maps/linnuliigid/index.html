@@ -10217,17 +10217,19 @@ var __sharedDefaults = {};
 
       // --- eElurikkus historical injection via biocache JSON API ---
       // Uses elurikkus-proxy to call biocache-service which returns real lat/lon coordinates
+      // NOTE: biocache API requires Latin (scientific) name, not Estonian name
+      var _latinName = (typeof SPECIES_SCINAMES !== 'undefined' && SPECIES_SCINAMES[speciesName]) || null;
       window.__eluHistoryCache = window.__eluHistoryCache || {};
       var _eluHistKey = String(speciesName || '').trim().toLowerCase();
       var _eluHistItems = window.__eluHistoryCache[_eluHistKey] || null;
-      if (!_eluHistItems) {
+      if (!_eluHistItems && _latinName) {
         try {
           var _cfg = (typeof resolveSupabaseConfig === 'function') ? resolveSupabaseConfig() : {};
-          console.log('[PROB] biocache: supabaseUrl=' + (_cfg.supabaseUrl ? 'present' : 'MISSING') + ', anonKey=' + (_cfg.anonKey ? 'present' : 'MISSING'));
+          console.log('[PROB] biocache: latinName=' + _latinName + ', supabaseUrl=' + (_cfg.supabaseUrl ? 'present' : 'MISSING'));
           if (_cfg.supabaseUrl) {
             setProbStatus('Fetching eElurikkus history (biocache)...');
             var _biocacheUrl = 'https://elurikkus.ee/biocache-service/occurrences/search?q='
-              + encodeURIComponent(speciesName) + '&sort=eventDate&dir=desc&pageSize=200&fq=country:Estonia&_ts=' + Date.now();
+              + encodeURIComponent('taxon_name:"' + _latinName + '"') + '&sort=eventDate&dir=desc&pageSize=300&fq=country:Estonia&_ts=' + Date.now();
             var _proxyUrl = _cfg.supabaseUrl + '/functions/v1/elurikkus-proxy?url=' + encodeURIComponent(_biocacheUrl);
             var _histHeaders = { 'Accept': 'application/json' };
             if (_cfg.anonKey) _histHeaders['apikey'] = _cfg.anonKey;
@@ -10269,8 +10271,11 @@ var __sharedDefaults = {};
           console.warn('[PROB] eElurikkus biocache fetch failed', _e);
           _eluHistItems = [];
         }
-      } else {
+      } else if (_eluHistItems) {
         console.log('[PROB] eElurikkus biocache cache hit:', _eluHistItems.length, 'items');
+      } else if (!_latinName) {
+        console.warn('[PROB] biocache skipped: no Latin name for', speciesName);
+        _eluHistItems = [];
       }
 
       // Inject biocache items (have real lat/lon)
@@ -10691,15 +10696,17 @@ window.__computeProbSilent = async function(speciesName) {
   if (typeof buildEstoniaGrid !== 'function' || typeof calculateProbabilities !== 'function') return;
 
   // Fetch eElurikkus history via biocache JSON API through proxy
+  // NOTE: biocache requires Latin name, not Estonian
+  var _latinName = (typeof SPECIES_SCINAMES !== 'undefined' && SPECIES_SCINAMES[speciesName]) || null;
   window.__eluHistoryCache = window.__eluHistoryCache || {};
   var _eluHistKey = String(speciesName || '').trim().toLowerCase();
   var _eluHistItems = window.__eluHistoryCache[_eluHistKey] || null;
-  if (!_eluHistItems) {
+  if (!_eluHistItems && _latinName) {
     try {
       var _cfg = (typeof resolveSupabaseConfig === 'function') ? resolveSupabaseConfig() : {};
       if (_cfg.supabaseUrl) {
         var _biocacheUrl = 'https://elurikkus.ee/biocache-service/occurrences/search?q='
-          + encodeURIComponent(speciesName) + '&sort=eventDate&dir=desc&pageSize=200&fq=country:Estonia&_ts=' + Date.now();
+          + encodeURIComponent('taxon_name:"' + _latinName + '"') + '&sort=eventDate&dir=desc&pageSize=300&fq=country:Estonia&_ts=' + Date.now();
         var _proxyUrl = _cfg.supabaseUrl + '/functions/v1/elurikkus-proxy?url=' + encodeURIComponent(_biocacheUrl);
         var _histHeaders = { 'Accept': 'application/json' };
         if (_cfg.anonKey) _histHeaders['apikey'] = _cfg.anonKey;

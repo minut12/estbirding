@@ -10777,7 +10777,7 @@ function getEluCount(speciesName) {
   try {
     var liveStats=window.liveStatsBySpecies||{};
     var cacheKey=(typeof window._normalizeSpeciesKey==='function')?window._normalizeSpeciesKey(clean):clean;
-    if(liveStats[cacheKey]&&Number.isFinite(liveStats[cacheKey].last7d)) return liveStats[cacheKey].last7d;
+    if(liveStats[cacheKey]&&Number.isFinite(liveStats[cacheKey].itemsWithin7d)) return liveStats[cacheKey].itemsWithin7d;
   } catch(e) {}
   return -1; // -1 = not fetched yet, 0 = fetched but none
 }
@@ -11188,21 +11188,33 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
 
   // CORRECTED probability formula
   function calcScore(springDate, ebirdCount){
+    // Spring date signal
     var springScore = (springDate && window.__ennProb) ? window.__ennProb(springDate) : 0;
 
-    // eBird recent observations = strongest real-world signal
-    var ebirdScore = 0;
-    if      (ebirdCount >= 10) ebirdScore = 40;
-    else if (ebirdCount >= 5)  ebirdScore = 30;
-    else if (ebirdCount >= 2)  ebirdScore = 20;
-    else if (ebirdCount >= 1)  ebirdScore = 10;
+    // eBird 7-day observations in Estonia = strongest real-world confirmation
+    // Scale: 1 obs = small boost, many obs = strong confirmation
+    var ebirdBoost = 0;
+    if      (ebirdCount >= 20) ebirdBoost = 35;
+    else if (ebirdCount >= 10) ebirdBoost = 28;
+    else if (ebirdCount >= 5)  ebirdBoost = 20;
+    else if (ebirdCount >= 2)  ebirdBoost = 12;
+    else if (ebirdCount >= 1)  ebirdBoost = 6;
 
-    if (ebirdScore > 0) {
-      // Observations confirmed — boost spring score
-      return Math.min(99, Math.max(springScore, springScore + ebirdScore));
+    if (springScore > 0 && ebirdBoost > 0) {
+      // Both signals present — spring date sets base, eBird confirms
+      return Math.min(99, springScore + ebirdBoost);
     }
-    // No observations — spring date only
-    return Math.min(99, springScore);
+    if (springScore > 0) {
+      // Spring date only — no eBird confirmation yet
+      return Math.min(99, springScore);
+    }
+    if (ebirdBoost > 0) {
+      // eBird observations but no spring date (year-round or untracked species)
+      // Lower ceiling — we don't know if "now" is the right season
+      return Math.min(50, ebirdBoost * 2);
+    }
+    // No signals
+    return 0;
   }
 
   function buildResults(){
@@ -11227,7 +11239,11 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
         if (ebird[ebCode]) ebCount = ebird[ebCode].count || 0;
       }
 
-      var eluCount = window.__ennGetEluCount ? (window.__ennGetEluCount(name) || 0) : 0;
+      // eElur server returns empty — only show if we have actual cached data
+      var eluCount = 0;
+      var _eluCache = window.__ennustusEluCache || {};
+      var _eluEntry = _eluCache[name] || _eluCache[_f(name)] || null;
+      if (_eluEntry && _eluEntry.count > 0) eluCount = _eluEntry.count;
 
       var score = calcScore(springDate, ebCount);
 
@@ -11242,7 +11258,14 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
       });
     }
 
-    out.sort(function(a,b){ return b.pct - a.pct; });
+    out.sort(function(a,b){
+      if (b.pct !== a.pct) return b.pct - a.pct;
+      // Tiebreak: species with spring date first, then eBird, then alphabetical
+      var aHas = (a.springDate?2:0)+(a.ebirdCount>0?1:0);
+      var bHas = (b.springDate?2:0)+(b.ebirdCount>0?1:0);
+      if (bHas !== aHas) return bHas - aHas;
+      return a.name.localeCompare(b.name);
+    });
     return out;
   }
 

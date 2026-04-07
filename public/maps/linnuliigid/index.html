@@ -2738,6 +2738,7 @@ async function _fetchElurikkusSpeciesViaHtml(speciesName){
   const t0 = performance.now();
   const url = _withCacheBuster("https://elurikkus.ee/app/occurrences/search?text=" + encodeURIComponent(speciesName));
   const html = await tryFetch(url);
+  console.log('[DEBUG-ELU-HTML]', speciesName, 'html length:', (html||'').length, 'first 200 chars:', String(html||'').substring(0,200));
   let rows = extractElurikkusRecordRows(html);
   let dates = rows.map(function(r){ return r.observedAt; });
   if(!dates || !dates.length){

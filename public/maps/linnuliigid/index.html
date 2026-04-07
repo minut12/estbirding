@@ -11104,6 +11104,13 @@ window.__ennProb=function(speciesName){
 };
 window.__openEnnustus=window.__openEnn;
 
+// Expose internals for Tõenäosus panel
+window.__ennProb = prob;
+window.__ennCombinedProb = combinedProb;
+window.__ennGetEluCount = getEluCount;
+window.__ennGetEbirdCode = getEbirdCode;
+window.__ennGetSpringDate = getSpringDate;
+
 var bg=document.getElementById('ennBg');
 if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__closeEnn();});
 })();
@@ -11177,7 +11184,7 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
 
   // CORRECTED probability formula
   function calcScore(springDate, ebirdCount, eluCount){
-    var springScore = (springDate && typeof prob==='function') ? prob(springDate) : 0;
+    var springScore = (springDate && window.__ennProb) ? window.__ennProb(springDate) : 0;
 
     var ebirdScore = 0;
     if      (ebirdCount >= 10) ebirdScore = 60;
@@ -11200,11 +11207,11 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
   }
 
   function buildResults(){
-    var pts = (typeof points!=='undefined') ? points : {};
-    var sd  = (typeof springDates!=='undefined') ? springDates : {};
-    var av  = (typeof avatars!=='undefined') ? avatars : {};
-    var eCounts = (typeof __ennScanEbirdCounts!=='undefined') ? __ennScanEbirdCounts : {};
-    var allSpecies = (typeof SPECIES!=='undefined') ? SPECIES : [];
+    var pts = points || {};
+    var sd  = springDates || {};
+    var av  = avatars || {};
+    var eCounts = __ennScanEbirdCounts || {};
+    var allSpecies = SPECIES || [];
 
     var out = [];
     for (var i=0; i<allSpecies.length; i++){
@@ -11214,16 +11221,14 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
       var clean = _f(name);
       var springDate = sd[name] || sd[clean] || '';
 
-      var ebCode = null;
-      if (typeof getEbirdCode==='function') ebCode = getEbirdCode(name)||getEbirdCode(clean);
+      var ebCode = window.__ennGetEbirdCode ? (window.__ennGetEbirdCode(name)||window.__ennGetEbirdCode(clean)) : null;
       var ebCount = eCounts[name] || eCounts[clean] || 0;
       if (!ebCount && ebCode) {
         var ebird = (typeof ebirdRecentCache!=='undefined' && ebirdRecentCache && ebirdRecentCache.data) ? ebirdRecentCache.data : {};
         if (ebird[ebCode]) ebCount = ebird[ebCode].count || 0;
       }
 
-      var eluCount = 0;
-      if (typeof getEluCount==='function') eluCount = getEluCount(name) || 0;
+      var eluCount = window.__ennGetEluCount ? (window.__ennGetEluCount(name) || 0) : 0;
 
       var score = calcScore(springDate, ebCount, eluCount);
 
@@ -11347,7 +11352,6 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
     } catch(e){ console.warn('[probAll] eBird failed',e); }
 
     footer.textContent = 'Arvutan tõenäosused...';
-    console.log('[DEBUG-PROB]', 'typeof prob:', typeof prob, 'typeof springDates:', typeof springDates, 'typeof __ennScanEbirdCounts:', typeof __ennScanEbirdCounts, 'ebirdKeys:', Object.keys(typeof __ennScanEbirdCounts!=='undefined'?__ennScanEbirdCounts:{}).length, 'springDates first 3:', JSON.stringify(Object.entries(typeof springDates!=='undefined'?springDates:{}).slice(0,3)));
     _results = buildResults();
 
     var total = _results.length;

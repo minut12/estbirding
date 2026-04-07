@@ -9909,7 +9909,7 @@ var __sharedDefaults = {};
       + '<div style="border-top:1px solid #eee;padding-top:6px;margin-top:2px">'
         + '<div style="font-size:12px;color:#555">\uD83D\uDCCD <b>This cell:</b> GBIF ' + gbifSeason + ' in season'
         + (gbifTotal > gbifSeason ? ' (' + gbifTotal + ' total)' : '')
-        + ' \u00b7 eElurikkus ' + (cell.eluCount || 0)
+        + ((cell.eluCount || 0) > 0 ? ' \u00b7 eElurikkus ' + cell.eluCount : '')
         + '</div>'
         + eluLine
       + '</div>'
@@ -10215,123 +10215,9 @@ var __sharedDefaults = {};
       else if (totalGbifRecords > 100) probCellSize = 0.15;
       else probCellSize = 0.2;
 
-      // --- eElurikkus historical injection via biocache JSON API ---
-      // Uses elurikkus-proxy to call biocache-service which returns real lat/lon coordinates
-      // NOTE: biocache API requires Latin (scientific) name, not Estonian name
-      var _latinName = (typeof SPECIES_SCINAMES !== 'undefined' && SPECIES_SCINAMES[speciesName]) || null;
-      window.__eluHistoryCache = window.__eluHistoryCache || {};
-      var _eluHistKey = String(speciesName || '').trim().toLowerCase();
-      var _eluHistItems = window.__eluHistoryCache[_eluHistKey] || null;
-      if (!_eluHistItems && _latinName) {
-        try {
-          var _cfg = (typeof resolveSupabaseConfig === 'function') ? resolveSupabaseConfig() : {};
-          console.log('[PROB] biocache: latinName=' + _latinName + ', supabaseUrl=' + (_cfg.supabaseUrl ? 'present' : 'MISSING'));
-          if (_cfg.supabaseUrl) {
-            setProbStatus('Fetching eElurikkus history (biocache)...');
-            var _biocacheUrl = 'https://elurikkus.ee/biocache-service/occurrences/search?q='
-              + encodeURIComponent(_latinName) + '&sort=eventDate&dir=desc&pageSize=300&fq=country:Estonia&_ts=' + Date.now();
-            var _proxyUrl = _cfg.supabaseUrl + '/functions/v1/elurikkus-proxy?url=' + encodeURIComponent(_biocacheUrl);
-            var _histHeaders = { 'Accept': 'application/json' };
-            if (_cfg.anonKey) _histHeaders['apikey'] = _cfg.anonKey;
-            var _histRes = await fetch(_proxyUrl, { headers: _histHeaders });
-            console.log('[PROB] biocache proxy status:', _histRes.status);
-            var _histText = await _histRes.text();
-            var _histJson;
-            try { _histJson = JSON.parse(_histText); } catch(_pe) {
-              console.warn('[PROB] biocache response not JSON, first 200 chars:', _histText.slice(0, 200));
-              _histJson = {};
-            }
-            var _topKeys = Object.keys(_histJson).slice(0, 10);
-            console.log('[PROB] biocache response keys:', _topKeys.join(', '));
-            // Biocache returns { occurrences: [...] } or { results: [...] } or top-level array
-            var _rawOccs = Array.isArray(_histJson.occurrences) ? _histJson.occurrences
-              : Array.isArray(_histJson.results) ? _histJson.results
-              : Array.isArray(_histJson) ? _histJson : [];
-            if (_rawOccs.length > 0) {
-              console.log('[PROB] biocache first item keys:', Object.keys(_rawOccs[0]).slice(0, 15).join(', '));
-            }
-            _eluHistItems = [];
-            for (var _hi = 0; _hi < _rawOccs.length; _hi++) {
-              var _r = _rawOccs[_hi];
-              if (!_r || typeof _r !== 'object') continue;
-              var _hLat = Number(_r.decimalLatitude != null ? _r.decimalLatitude : _r.lat);
-              var _hLon = Number(_r.decimalLongitude != null ? _r.decimalLongitude : _r.lon);
-              var _hDate = String(_r.eventDate || _r.observedAt || _r.date || '').trim();
-              if (!Number.isFinite(_hLat) || !Number.isFinite(_hLon)) continue;
-              if (!_hDate) continue;
-              _eluHistItems.push({ lat: _hLat, lon: _hLon, date: _hDate });
-            }
-            window.__eluHistoryCache[_eluHistKey] = _eluHistItems;
-            console.log('[PROB] eElurikkus biocache:', _rawOccs.length, 'raw →', _eluHistItems.length, 'with coords');
-          } else {
-            console.warn('[PROB] biocache skipped: no supabaseUrl');
-            _eluHistItems = [];
-          }
-        } catch(_e) {
-          console.warn('[PROB] eElurikkus biocache fetch failed', _e);
-          _eluHistItems = [];
-        }
-        // Fallback: if biocache returned 0 items, try fetchElurikkusSpecies (HTML scraping with detail page coord extraction)
-        if ((!_eluHistItems || _eluHistItems.length === 0) && typeof fetchElurikkusSpecies === 'function') {
-          try {
-            console.log('[PROB] biocache empty, falling back to fetchElurikkusSpecies...');
-            setProbStatus('Fetching eElurikkus (fallback)...');
-            var _fbJson = await fetchElurikkusSpecies(speciesName);
-            var _fbItems = (_fbJson && Array.isArray(_fbJson.items)) ? _fbJson.items : [];
-            _eluHistItems = [];
-            for (var _fi = 0; _fi < _fbItems.length; _fi++) {
-              var _fb = _fbItems[_fi];
-              var _fbLat = Number(_fb.lat);
-              var _fbLon = Number(_fb.lon);
-              if (!Number.isFinite(_fbLat) || !Number.isFinite(_fbLon)) continue;
-              var _fbDate = String(_fb.observedAt || _fb.eventDate || _fb.date || '').trim();
-              if (!_fbDate) continue;
-              _eluHistItems.push({ lat: _fbLat, lon: _fbLon, date: _fbDate });
-            }
-            window.__eluHistoryCache[_eluHistKey] = _eluHistItems;
-            console.log('[PROB] fetchElurikkusSpecies fallback:', _fbItems.length, 'total →', _eluHistItems.length, 'with coords');
-          } catch(_fe) {
-            console.warn('[PROB] fetchElurikkusSpecies fallback failed', _fe);
-          }
-        }
-      } else if (_eluHistItems) {
-        console.log('[PROB] eElurikkus biocache cache hit:', _eluHistItems.length, 'items');
-      } else if (!_latinName) {
-        // No latin name: go straight to fetchElurikkusSpecies fallback
-        try {
-          if (typeof fetchElurikkusSpecies === 'function') {
-            var _fbJson2 = await fetchElurikkusSpecies(speciesName);
-            var _fbItems2 = (_fbJson2 && Array.isArray(_fbJson2.items)) ? _fbJson2.items : [];
-            _eluHistItems = [];
-            for (var _fi2 = 0; _fi2 < _fbItems2.length; _fi2++) {
-              var _fb2 = _fbItems2[_fi2];
-              var _fbLat2 = Number(_fb2.lat);
-              var _fbLon2 = Number(_fb2.lon);
-              if (!Number.isFinite(_fbLat2) || !Number.isFinite(_fbLon2)) continue;
-              var _fbDate2 = String(_fb2.observedAt || '').trim();
-              if (!_fbDate2) continue;
-              _eluHistItems.push({ lat: _fbLat2, lon: _fbLon2, date: _fbDate2 });
-            }
-            window.__eluHistoryCache[_eluHistKey] = _eluHistItems;
-            console.log('[PROB] no latin name, fetchElurikkusSpecies:', _eluHistItems.length, 'with coords');
-          }
-        } catch(_e2) { _eluHistItems = []; }
-      }
-
-      // Inject biocache items (have real lat/lon)
-      var _eluInjected = 0;
-      if (_eluHistItems && _eluHistItems.length > 0) {
-        for (var _ei = 0; _ei < _eluHistItems.length; _ei++) {
-          var _it = _eluHistItems[_ei];
-          if (!isInSeasonRange(_it.date, seasonInfo.start, seasonInfo.end)) continue;
-          seasonal.push({ lat: _it.lat, lon: _it.lon, date: _it.date, source: 'elurikkus' });
-          _eluInjected++;
-        }
-        if (_eluInjected > 0) seasonal = deduplicateOccurrences(seasonal);
-      }
-
-      // Fallback: direct injection from eluPoint marker (occ7 weighted, real coords)
-      // Added AFTER dedup so weighted entries are not collapsed to 1
+      // --- eElurikkus injection: occ7-weighted marker location ---
+      // Historical per-cell eElurikkus data deferred until coordinate API is available.
+      // For now, inject the known marker location weighted by 7-day observation count.
       var _eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
       if (Number.isFinite(_eluPoint.lat) && Number.isFinite(_eluPoint.lon)) {
         var _eluOcc7 = Math.min(Number(_eluPoint.occ7 || _eluPoint.occ || 1), 30);
@@ -10340,11 +10226,8 @@ var __sharedDefaults = {};
           for (var _oi = 0; _oi < _eluOcc7; _oi++) {
             seasonal.push({ lat: _eluPoint.lat, lon: _eluPoint.lon, date: _eluDate, source: 'elurikkus' });
           }
-          _eluInjected += _eluOcc7;
         }
       }
-
-      console.log('[PROB] eElurikkus total injected:', _eluInjected);
 
       // Build full Estonia grid and assign seasonal occurrences to cells
       var gridCells = buildEstoniaGrid(seasonal, probCellSize);
@@ -10735,53 +10618,7 @@ window.__computeProbSilent = async function(speciesName) {
 
   if (typeof buildEstoniaGrid !== 'function' || typeof calculateProbabilities !== 'function') return;
 
-  // Fetch eElurikkus history via biocache JSON API through proxy
-  // NOTE: biocache requires Latin name, not Estonian
-  var _latinName = (typeof SPECIES_SCINAMES !== 'undefined' && SPECIES_SCINAMES[speciesName]) || null;
-  window.__eluHistoryCache = window.__eluHistoryCache || {};
-  var _eluHistKey = String(speciesName || '').trim().toLowerCase();
-  var _eluHistItems = window.__eluHistoryCache[_eluHistKey] || null;
-  if (!_eluHistItems && _latinName) {
-    try {
-      var _cfg = (typeof resolveSupabaseConfig === 'function') ? resolveSupabaseConfig() : {};
-      if (_cfg.supabaseUrl) {
-        var _biocacheUrl = 'https://elurikkus.ee/biocache-service/occurrences/search?q='
-          + encodeURIComponent(_latinName) + '&sort=eventDate&dir=desc&pageSize=300&fq=country:Estonia&_ts=' + Date.now();
-        var _proxyUrl = _cfg.supabaseUrl + '/functions/v1/elurikkus-proxy?url=' + encodeURIComponent(_biocacheUrl);
-        var _histHeaders = { 'Accept': 'application/json' };
-        if (_cfg.anonKey) _histHeaders['apikey'] = _cfg.anonKey;
-        var _histRes = await fetch(_proxyUrl, { headers: _histHeaders });
-        var _histJson = await _histRes.json();
-        var _rawOccs = Array.isArray(_histJson.occurrences) ? _histJson.occurrences
-          : Array.isArray(_histJson.results) ? _histJson.results
-          : Array.isArray(_histJson) ? _histJson : [];
-        _eluHistItems = [];
-        for (var _hi = 0; _hi < _rawOccs.length; _hi++) {
-          var _r = _rawOccs[_hi];
-          if (!_r || typeof _r !== 'object') continue;
-          var _hLat = Number(_r.decimalLatitude != null ? _r.decimalLatitude : _r.lat);
-          var _hLon = Number(_r.decimalLongitude != null ? _r.decimalLongitude : _r.lon);
-          var _hDate = String(_r.eventDate || _r.observedAt || _r.date || '').trim();
-          if (!Number.isFinite(_hLat) || !Number.isFinite(_hLon)) continue;
-          if (!_hDate) continue;
-          _eluHistItems.push({ lat: _hLat, lon: _hLon, date: _hDate });
-        }
-        window.__eluHistoryCache[_eluHistKey] = _eluHistItems;
-      }
-    } catch(_e) { _eluHistItems = []; }
-  }
-
-  // Inject biocache items
-  if (_eluHistItems && _eluHistItems.length > 0) {
-    for (var _ei = 0; _ei < _eluHistItems.length; _ei++) {
-      var _it = _eluHistItems[_ei];
-      if (typeof isInSeasonRange === 'function' && !isInSeasonRange(_it.date, seasonInfo.start, seasonInfo.end)) continue;
-      seasonal.push({ lat: _it.lat, lon: _it.lon, date: _it.date, source: 'elurikkus' });
-    }
-    if (typeof deduplicateOccurrences === 'function') seasonal = deduplicateOccurrences(seasonal);
-  }
-
-  // Fallback: direct injection from eluPoint marker (occ7 weighted, real coords, after dedup)
+  // eElurikkus injection: occ7-weighted marker location
   var _eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
   if (Number.isFinite(_eluPoint.lat) && Number.isFinite(_eluPoint.lon)) {
     var _eluOcc7 = Math.min(Number(_eluPoint.occ7 || _eluPoint.occ || 1), 30);

@@ -9500,14 +9500,9 @@ var __sharedDefaults = {};
       if (cell.periods[p].count > maxPeriodCount) maxPeriodCount = cell.periods[p].count;
     }
     var now = new Date();
-    var occ7 = (eluPoint && Number.isFinite(eluPoint.occ7)) ? eluPoint.occ7 : 0;
 
-    // Strict point-in-cell bounding box check
-    var markerInCell = false;
-    if (eluPoint && Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon)) {
-      markerInCell = (eluPoint.lat >= cell.latMin && eluPoint.lat < cell.latMax &&
-                      eluPoint.lon >= cell.lonMin && eluPoint.lon < cell.lonMax);
-    }
+    // Use cell.markerInCell and cell.scoreRecency from the multi-location freshness check
+    var markerInCell = !!cell.markerInCell;
 
     for (var p = 0; p < cell.periods.length; p++) {
       var period = cell.periods[p];
@@ -9523,37 +9518,8 @@ var __sharedDefaults = {};
         periodHistorical = Math.round(rawScore * conf);
       }
       var isCurrentPeriod = (now >= period.start && now < period.end);
-      var periodRecency = 0;
-
-      if (isCurrentPeriod && markerInCell) {
-        var latestObsDate = (eluPoint && eluPoint.t) ? eluPoint.t : '';
-        var ageDays = Infinity;
-
-        if (latestObsDate) {
-          try {
-            var obsTs = (typeof _toDay === 'function') ? _toDay(latestObsDate) : Date.parse(latestObsDate);
-            if (obsTs && obsTs > 0) {
-              ageDays = (Date.now() - obsTs) / (24 * 60 * 60 * 1000);
-            }
-          } catch(e) {}
-        }
-
-        var proximityScale = 1.0;
-
-        if (ageDays < 1) periodRecency = 50;
-        else if (ageDays < 2) periodRecency = 40;
-        else if (ageDays < 3) periodRecency = 30;
-        else if (ageDays < 5) periodRecency = 20;
-        else if (ageDays < 7) periodRecency = 12;
-        else periodRecency = 5;
-
-        if (occ7 >= 10) periodRecency = Math.min(60, periodRecency + 10);
-        else if (occ7 >= 5) periodRecency = Math.min(60, periodRecency + 7);
-        else if (occ7 >= 3) periodRecency = Math.min(60, periodRecency + 5);
-        else if (occ7 >= 1) periodRecency = Math.min(60, periodRecency + 3);
-
-        periodRecency = Math.round(periodRecency * proximityScale);
-      }
+      // Use the already-computed cell freshness score for the current period recency
+      var periodRecency = (isCurrentPeriod && markerInCell) ? Math.round(cell.scoreRecency * 0.9) : 0;
 
       period.probability = Math.max(1, Math.min(95, periodHistorical + periodRecency));
       period.isCurrent = isCurrentPeriod;
@@ -9586,6 +9552,37 @@ var __sharedDefaults = {};
     var eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
     var occ7 = Number.isFinite(eluPoint.occ7) ? eluPoint.occ7 : 0;
 
+    // Build array of all recent eElurikkus observation locations (within 7 days)
+    // so freshness can apply to multiple cells, not just the single marker cell
+    var recentEluLocs = [];
+    var _now = Date.now();
+    var _7dMs = 7 * 24 * 60 * 60 * 1000;
+    // From main marker
+    if (Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon) && eluPoint.t) {
+      var _mTs = (typeof _toDay === 'function') ? _toDay(eluPoint.t) : Date.parse(eluPoint.t);
+      if (_mTs && _mTs > 0) {
+        var _mAge = (_now - _mTs) / (24 * 60 * 60 * 1000);
+        if (_mAge <= 7) recentEluLocs.push({ lat: eluPoint.lat, lon: eluPoint.lon, ageDays: _mAge, occ7: occ7 });
+      }
+    }
+    // From live cache items (may have different locations)
+    var _eluLiveKey = String(speciesName || '').trim().toLowerCase();
+    var _eluLiveEntry = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluLiveKey]) || null;
+    var _eluLiveItems = (_eluLiveEntry && Array.isArray(_eluLiveEntry.items)) ? _eluLiveEntry.items : [];
+    for (var _li = 0; _li < _eluLiveItems.length; _li++) {
+      var _lIt = _eluLiveItems[_li];
+      var _lLat = Number(_lIt.lat);
+      var _lLon = Number(_lIt.lon);
+      if (!Number.isFinite(_lLat) || !Number.isFinite(_lLon)) continue;
+      var _lDate = String(_lIt.observedAt || _lIt.eventDate || _lIt.date || '');
+      if (!_lDate) continue;
+      var _lTs = (typeof _toDay === 'function') ? _toDay(_lDate) : Date.parse(_lDate);
+      if (!_lTs || _lTs <= 0) continue;
+      if (_now - _lTs > _7dMs) continue;
+      var _lAge = (_now - _lTs) / (24 * 60 * 60 * 1000);
+      recentEluLocs.push({ lat: _lLat, lon: _lLon, ageDays: _lAge, occ7: 0 });
+    }
+
     // Season timing bonus
     var seasonBonus = 5;
 
@@ -9611,44 +9608,31 @@ var __sharedDefaults = {};
       var historicalScore = Math.min(35, gbifScore + eluScore);
 
       // 2. Freshness — the KEY signal, up to 55%
+      // Check ALL recent eElurikkus observation locations against this cell
       var freshnessScore = 0;
-      var latestObsDate = eluPoint.t || '';
-      var ageDays = Infinity;
-
-      if (latestObsDate) {
-        try {
-          var obsTs = (typeof _toDay === 'function') ? _toDay(latestObsDate) : Date.parse(latestObsDate);
-          if (obsTs && obsTs > 0) {
-            ageDays = (Date.now() - obsTs) / (24 * 60 * 60 * 1000);
-          }
-        } catch(e) {}
-      }
-
-      // Strict point-in-cell bounding box check (no radius/distance search)
       var markerInCell = false;
-      if (Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon)) {
-        markerInCell = (eluPoint.lat >= cell.latMin && eluPoint.lat < cell.latMax &&
-                        eluPoint.lon >= cell.lonMin && eluPoint.lon < cell.lonMax);
-      }
-
-      if (markerInCell) {
-        if (ageDays < 1) {
-          freshnessScore = 55;
-        } else if (ageDays < 2) {
-          freshnessScore = 45;
-        } else if (ageDays < 3) {
-          freshnessScore = 35;
-        } else if (ageDays < 5) {
-          freshnessScore = 25;
-        } else if (ageDays < 7) {
-          freshnessScore = 15;
-        } else {
-          freshnessScore = 5;
+      for (var _ri = 0; _ri < recentEluLocs.length; _ri++) {
+        var _rl = recentEluLocs[_ri];
+        if (_rl.lat >= cell.latMin && _rl.lat < cell.latMax &&
+            _rl.lon >= cell.lonMin && _rl.lon < cell.lonMax) {
+          markerInCell = true;
+          var _ageDays = _rl.ageDays;
+          var _fs = 0;
+          if (_ageDays < 1) _fs = 55;
+          else if (_ageDays < 2) _fs = 45;
+          else if (_ageDays < 3) _fs = 35;
+          else if (_ageDays < 5) _fs = 25;
+          else if (_ageDays < 7) _fs = 15;
+          else _fs = 5;
+          // occ7 boost only from the main marker entry
+          var _locOcc7 = _rl.occ7 || 0;
+          if (_locOcc7 >= 10) _fs = Math.min(55, _fs + 10);
+          else if (_locOcc7 >= 5) _fs = Math.min(55, _fs + 7);
+          else if (_locOcc7 >= 3) _fs = Math.min(55, _fs + 5);
+          else if (_locOcc7 >= 1) _fs = Math.min(55, _fs + 3);
+          // Keep the highest freshness score if multiple obs hit this cell
+          if (_fs > freshnessScore) freshnessScore = _fs;
         }
-        if (occ7 >= 10) freshnessScore = Math.min(55, freshnessScore + 10);
-        else if (occ7 >= 5) freshnessScore = Math.min(55, freshnessScore + 7);
-        else if (occ7 >= 3) freshnessScore = Math.min(55, freshnessScore + 5);
-        else if (occ7 >= 1) freshnessScore = Math.min(55, freshnessScore + 3);
       }
 
       // 3. Season timing — up to +5%

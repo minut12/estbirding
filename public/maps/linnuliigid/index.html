@@ -9497,14 +9497,11 @@ var __sharedDefaults = {};
     var now = new Date();
     var occ7 = (eluPoint && Number.isFinite(eluPoint.occ7)) ? eluPoint.occ7 : 0;
 
-    // Check marker proximity to this cell
+    // Strict point-in-cell bounding box check
     var markerInCell = false;
-    var markerNearCell = false;
-    if (eluPoint && Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon) && cellSize) {
-      var dLat = Math.abs(eluPoint.lat - cell.centerLat);
-      var dLon = Math.abs(eluPoint.lon - cell.centerLon);
-      markerInCell = (dLat <= cellSize / 2 && dLon <= cellSize / 2);
-      markerNearCell = !markerInCell && (dLat <= cellSize * 1.5 && dLon <= cellSize * 1.5);
+    if (eluPoint && Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon)) {
+      markerInCell = (eluPoint.lat >= cell.latMin && eluPoint.lat < cell.latMax &&
+                      eluPoint.lon >= cell.lonMin && eluPoint.lon < cell.lonMax);
     }
 
     for (var p = 0; p < cell.periods.length; p++) {
@@ -9523,7 +9520,7 @@ var __sharedDefaults = {};
       var isCurrentPeriod = (now >= period.start && now < period.end);
       var periodRecency = 0;
 
-      if (isCurrentPeriod && (markerInCell || markerNearCell)) {
+      if (isCurrentPeriod && markerInCell) {
         var latestObsDate = (eluPoint && eluPoint.t) ? eluPoint.t : '';
         var ageDays = Infinity;
 
@@ -9536,7 +9533,7 @@ var __sharedDefaults = {};
           } catch(e) {}
         }
 
-        var proximityScale = markerInCell ? 1.0 : 0.6;
+        var proximityScale = 1.0;
 
         if (ageDays < 1) periodRecency = 50;
         else if (ageDays < 2) periodRecency = 40;
@@ -9609,13 +9606,11 @@ var __sharedDefaults = {};
         } catch(e) {}
       }
 
+      // Strict point-in-cell bounding box check (no radius/distance search)
       var markerInCell = false;
-      var markerNearCell = false;
       if (Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon)) {
-        var dLat = Math.abs(eluPoint.lat - cell.centerLat);
-        var dLon = Math.abs(eluPoint.lon - cell.centerLon);
-        markerInCell = (dLat <= cellSize / 2 && dLon <= cellSize / 2);
-        markerNearCell = !markerInCell && (dLat <= cellSize * 1.5 && dLon <= cellSize * 1.5);
+        markerInCell = (eluPoint.lat >= cell.latMin && eluPoint.lat < cell.latMax &&
+                        eluPoint.lon >= cell.lonMin && eluPoint.lon < cell.lonMax);
       }
 
       if (markerInCell) {
@@ -9636,24 +9631,6 @@ var __sharedDefaults = {};
         else if (occ7 >= 5) freshnessScore = Math.min(55, freshnessScore + 7);
         else if (occ7 >= 3) freshnessScore = Math.min(55, freshnessScore + 5);
         else if (occ7 >= 1) freshnessScore = Math.min(55, freshnessScore + 3);
-      } else if (markerNearCell) {
-        if (ageDays < 1) {
-          freshnessScore = 35;
-        } else if (ageDays < 2) {
-          freshnessScore = 25;
-        } else if (ageDays < 3) {
-          freshnessScore = 18;
-        } else if (ageDays < 7) {
-          freshnessScore = 10;
-        } else {
-          freshnessScore = 3;
-        }
-        if (occ7 >= 5) freshnessScore = Math.min(40, freshnessScore + 5);
-        else if (occ7 >= 1) freshnessScore = Math.min(40, freshnessScore + 2);
-      } else {
-        if (occ7 > 0 && ageDays < 3) {
-          freshnessScore = Math.min(10, Math.round(occ7 / 3));
-        }
       }
 
       // 3. Season timing — up to +5%
@@ -9865,8 +9842,8 @@ var __sharedDefaults = {};
     if (Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon)) {
       var dLat = Math.abs(eluPoint.lat - cLat);
       var dLon = Math.abs(eluPoint.lon - cLon);
-      var isInCell = (dLat <= cellSize / 2 && dLon <= cellSize / 2);
-      var isNearby = (dLat <= cellSize * 1.5 && dLon <= cellSize * 1.5);
+      var isInCell = (eluPoint.lat >= cell.latMin && eluPoint.lat < cell.latMax &&
+                      eluPoint.lon >= cell.lonMin && eluPoint.lon < cell.lonMax);
       var dateStr = eluPoint.t ? formatDateEE(eluPoint.t) : '?';
       var distKm = Math.round(Math.sqrt(dLat * dLat + dLon * dLon) * 111);
 
@@ -9874,11 +9851,6 @@ var __sharedDefaults = {};
         eluLine = '<div style="margin:2px 0;font-size:12px;color:#555">'
           + '\uD83D\uDD0D eElurikkus: <b>marker in cell</b> \u00b7 '
           + dateStr + ' \u00b7 ' + eluOcc7 + ' obs (7d)'
-          + '</div>';
-      } else if (isNearby) {
-        eluLine = '<div style="margin:2px 0;font-size:12px;color:#555">'
-          + '\uD83D\uDD0D eElurikkus: marker ~' + distKm + ' km away \u00b7 '
-          + dateStr + ' \u00b7 ' + eluOcc7 + ' obs (7d total)'
           + '</div>';
       } else {
         eluLine = '<div style="margin:2px 0;font-size:12px;color:#999">'
@@ -9929,12 +9901,13 @@ var __sharedDefaults = {};
     probLayerGroup = L.layerGroup();
 
     gridCells.forEach(function(cell) {
+      // Skip cells with no seasonal GBIF data
+      if (cell.gbifCount <= 0) return;
       var bounds = [[cell.latMin, cell.lonMin], [cell.latMax, cell.lonMax]];
       var fillColor, fillOpacity, strokeColor, strokeOpacity;
       if (cell.probability > 60) { fillColor = '#E24B4A'; fillOpacity = 0.50; strokeColor = '#A32D2D'; strokeOpacity = 0.6; }
       else if (cell.probability > 25) { fillColor = '#E88D2A'; fillOpacity = 0.45; strokeColor = '#B06A1A'; strokeOpacity = 0.5; }
-      else if (cell.probability > 5) { fillColor = '#7F77DD'; fillOpacity = 0.25; strokeColor = '#534AB7'; strokeOpacity = 0.3; }
-      else { fillColor = '#A0A0CC'; fillOpacity = 0.10; strokeColor = '#888'; strokeOpacity = 0.15; }
+      else { fillColor = '#7F77DD'; fillOpacity = 0.25; strokeColor = '#534AB7'; strokeOpacity = 0.3; }
 
       var rect = L.rectangle(bounds, { fillColor: fillColor, fillOpacity: fillOpacity, color: strokeColor, weight: 1, opacity: strokeOpacity, interactive: true });
       rect.bindPopup(buildProbPopup(cell, speciesName, totalObs, totalInSeason, seasonInfo));

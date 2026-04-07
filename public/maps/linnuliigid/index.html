@@ -9566,7 +9566,10 @@ var __sharedDefaults = {};
       }
     }
     // From live cache items (may have different locations with real coords)
-    // Try in-memory first, fall back to localStorage
+    // NOTE: most liveElurikkusBySpecies items are HTML-scraped and have no lat/lon.
+    // Multi-location freshness is limited to items that have real coordinates.
+    // Until eElurikkus exposes per-observation coords via API, freshness will
+    // primarily apply to the single main marker cell.
     var _eluLiveKey = String(speciesName || '').trim().toLowerCase();
     var _eluLiveEntry = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluLiveKey]) || null;
     var _eluLiveItems = (_eluLiveEntry && Array.isArray(_eluLiveEntry.items)) ? _eluLiveEntry.items : [];
@@ -9577,23 +9580,19 @@ var __sharedDefaults = {};
         if (_lsEntry && Array.isArray(_lsEntry.items)) _eluLiveItems = _lsEntry.items;
       } catch(_e) {}
     }
-    var _skipNoCoord = 0, _skipNoDate = 0, _skipOld = 0;
     for (var _li = 0; _li < _eluLiveItems.length; _li++) {
       var _lIt = _eluLiveItems[_li];
       var _lLat = Number(_lIt.lat);
       var _lLon = Number(_lIt.lon);
-      if (!Number.isFinite(_lLat) || !Number.isFinite(_lLon)) { _skipNoCoord++; continue; }
+      if (!Number.isFinite(_lLat) || !Number.isFinite(_lLon)) continue;
       var _lDate = String(_lIt.observedAt || _lIt.eventDate || _lIt.date || '');
-      if (!_lDate) { _skipNoDate++; continue; }
+      if (!_lDate) continue;
       var _lTs = (typeof _toDay === 'function') ? _toDay(_lDate) : Date.parse(_lDate);
-      if (!_lTs || _lTs <= 0) { _skipNoDate++; continue; }
-      if (_now - _lTs > _14dMs) { _skipOld++; continue; }
+      if (!_lTs || _lTs <= 0) continue;
+      if (_now - _lTs > _14dMs) continue;
       var _lAge = (_now - _lTs) / (24 * 60 * 60 * 1000);
       recentEluLocs.push({ lat: _lLat, lon: _lLon, ageDays: _lAge });
     }
-    console.log('[FRESH] liveItems:', _eluLiveItems.length, '| skipNoCoord:', _skipNoCoord, '| skipNoDate:', _skipNoDate, '| skipOld:', _skipOld);
-    console.log('[FRESH] liveItems sample:', _eluLiveItems.length > 0 ? JSON.stringify(_eluLiveItems[0]).slice(0, 300) : 'empty');
-    console.log('[FRESH] recentEluLocs:', recentEluLocs.length, recentEluLocs.map(function(l) { return l.lat.toFixed(3) + ',' + l.lon.toFixed(3) + ' age:' + l.ageDays.toFixed(1) + 'd'; }));
 
     // Season timing bonus
     var seasonBonus = 5;
@@ -9650,8 +9649,8 @@ var __sharedDefaults = {};
       // Combine
       var prob = historicalScore + freshnessScore + seasonBonusCell;
 
-      // Cells with zero GBIF, zero eElurikkus AND far from marker get minimum
-      if (cell.gbifCount === 0 && (cell.eluCount || 0) === 0 && freshnessScore <= 5) {
+      // Cells with zero GBIF, zero eElurikkus, AND no significant freshness get minimum
+      if (cell.gbifCount === 0 && (cell.eluCount || 0) === 0 && freshnessScore === 0) {
         prob = Math.min(prob, 5);
       }
 
@@ -9910,8 +9909,8 @@ var __sharedDefaults = {};
     probLayerGroup = L.layerGroup();
 
     gridCells.forEach(function(cell) {
-      // Skip cells with no seasonal data (GBIF or eElurikkus) AND no eElurikkus marker inside
-      if (cell.gbifCount <= 0 && (cell.eluCount || 0) <= 0 && !cell.markerInCell) return;
+      // Skip cells with no signal at all (no GBIF, no eElurikkus history, no freshness)
+      if (cell.gbifCount <= 0 && (cell.eluCount || 0) <= 0 && !cell.markerInCell && (cell.scoreRecency || 0) <= 0) return;
       var bounds = [[cell.latMin, cell.lonMin], [cell.latMax, cell.lonMax]];
       var fillColor, fillOpacity, strokeColor, strokeOpacity;
       if (cell.probability > 60) { fillColor = '#E24B4A'; fillOpacity = 0.50; strokeColor = '#A32D2D'; strokeOpacity = 0.6; }

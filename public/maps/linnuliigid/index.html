@@ -9441,8 +9441,9 @@ var __sharedDefaults = {};
         cells[key] = { latMin: gLat, latMax: gLat + gridSize, lonMin: gLon, lonMax: gLon + gridSize, occurrences: [], gbifCount: 0, gbifCountTotal: 0, eluCount: 0, centerLat: gLat + gridSize / 2, centerLon: gLon + gridSize / 2 };
       }
       cells[key].occurrences.push(o);
-      if (o.source === 'gbif') cells[key].gbifCount++;
-      if (o.source === 'elurikkus') cells[key].eluCount++;
+      var _src = String(o.source || '').toLowerCase();
+      if (_src === 'gbif') cells[key].gbifCount++;
+      else if (_src.indexOf('elurikkus') !== -1) cells[key].eluCount++;
     });
 
     return Object.values(cells);
@@ -9695,10 +9696,11 @@ var __sharedDefaults = {};
     return null;
   }
 
-  // --- Cache ---
+  // --- Cache (v2: key changed to invalidate pre-eluCount caches) ---
+  var PROB_CACHE_PREFIX = 'bm_prob2_';
   function loadProbCache(species) {
     try {
-      var raw = localStorage.getItem('bm_prob_' + species);
+      var raw = localStorage.getItem(PROB_CACHE_PREFIX + species);
       if (!raw) return null;
       var data = JSON.parse(raw);
       if (Date.now() - new Date(data.fetchedAt).getTime() > 6 * 3600000) return null;
@@ -9706,7 +9708,7 @@ var __sharedDefaults = {};
     } catch(e) { return null; }
   }
   function saveProbCache(species, data) {
-    try { localStorage.setItem('bm_prob_' + species, JSON.stringify(data)); } catch(e) {}
+    try { localStorage.setItem(PROB_CACHE_PREFIX + species, JSON.stringify(data)); } catch(e) {}
   }
 
   // --- Fetch GBIF per-year sampling for better coverage ---

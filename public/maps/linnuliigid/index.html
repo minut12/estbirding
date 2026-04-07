@@ -10945,9 +10945,6 @@ function missing(){
     var finalProb=combinedProb(baseProb,ebCount);
     out.push({name:n,spring:springDate,prob:finalProb,baseProb:baseProb,ebirdCount:ebCount,ebirdCode:ebCode||''});
   }
-  var withEbird=out.filter(function(x){return x.ebirdCount>0;}).length;
-  var withSpring=out.filter(function(x){return x.spring;}).length;
-  console.log('[ENN] missing():', out.length, 'species, withSpring:', withSpring, 'withEbird:', withEbird, 'sample:', out.slice(0,3).map(function(x){return x.name+'='+x.prob+'%(base:'+x.baseProb+',eb:'+x.ebirdCount+')';}));
   return out;
 }
 
@@ -11072,10 +11069,7 @@ window.__scanEnn=function(btn){
   btn.disabled=true;
   var lst=document.getElementById('ennLst');
   if(lst) lst.style.opacity='0.3';
-  console.log('[ENN] starting scan, EBIRD_TOKEN exists:', !!EBIRD_TOKEN, 'SPECIES_EBIRD_CODES keys:', Object.keys(typeof SPECIES_EBIRD_CODES!=='undefined'?SPECIES_EBIRD_CODES:{}).length);
   fetchEbirdRecent(function(err){
-    console.log('[ENN] eBird fetch done, err:', err, 'ebirdRecentCache:', ebirdRecentCache?{species:Object.keys(ebirdRecentCache.data||{}).length,totalObs:ebirdRecentCache.totalObs}:'null', '__ennScanEbirdCounts keys:', Object.keys(__ennScanEbirdCounts).length);
-    if(Object.keys(__ennScanEbirdCounts).length>0){var sample=Object.entries(__ennScanEbirdCounts).slice(0,5);console.log('[ENN] eBird sample counts:', sample);}
     render();
     if(lst) lst.style.opacity='1';
     if(err){
@@ -11105,16 +11099,13 @@ window.__scanEnn=function(btn){
       var fetchFn=null;
       if(typeof window.fetchElurikkusSpecies==='function') fetchFn=window.fetchElurikkusSpecies;
       else if(typeof window._fetchElurikkusSpeciesViaHtml==='function') fetchFn=window._fetchElurikkusSpeciesViaHtml;
-      console.log('[ENN] eElurikkus fetch for "'+cleanName+'", fetchFn:', fetchFn?fetchFn.name||'anonymous':'null');
       if(!fetchFn){
-        console.warn('[ENN] No eElurikkus fetch function available!');
         window.__ennustusEluCache[name]={count:0,source:'no_fn',fetchedAt:Date.now()};
         window.__ennustusEluCache[cleanName]={count:0,source:'no_fn',fetchedAt:Date.now()};
         render();setTimeout(nextElu,100);return;
       }
       fetchFn(cleanName).then(function(result){
         var count=(result&&Array.isArray(result.items))?result.items.length:0;
-        console.log('[ENN] eElurikkus result for "'+cleanName+'":', count, 'items, hasItems:', !!(result&&result.items));
         var entry={count:count,source:'api',fetchedAt:Date.now()};
         window.__ennustusEluCache[name]=entry;
         window.__ennustusEluCache[cleanName]=entry;
@@ -11172,33 +11163,6 @@ window.__ennProb=function(speciesName){
   },300);
 };
 window.__openEnnustus=window.__openEnn;
-
-// === Tõenäosus button — redirects to Ennustus panel ===
-(function(){
-  if (window.__probAllBound) return;
-  window.__probAllBound = true;
-  function init(){
-    if (!document.getElementById('probAllBtn')) {
-      var ennBtn = document.getElementById('ennustusBtn');
-      if (ennBtn) {
-        var b = document.createElement('button');
-        b.id = 'probAllBtn';
-        b.className = 'btn secondary';
-        b.textContent = 'Tõenäosus';
-        ennBtn.parentNode.insertBefore(b, ennBtn.nextSibling);
-      }
-    }
-    var btn = document.getElementById('probAllBtn');
-    if (btn) {
-      btn.addEventListener('click', function(){ window.__openEnn && window.__openEnn(); });
-    }
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
-})();
 
 var bg=document.getElementById('ennBg');
 if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__closeEnn();});

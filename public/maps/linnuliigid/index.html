@@ -9433,8 +9433,6 @@ var __sharedDefaults = {};
     }
 
     // Assign occurrences to cells
-    var _binDebugCount = 0;
-    var _binSrcTally = {};
     occs.forEach(function(o) {
       var gLat = Math.floor(o.lat / gridSize) * gridSize;
       var gLon = Math.floor(o.lon / gridSize) * gridSize;
@@ -9444,27 +9442,11 @@ var __sharedDefaults = {};
       }
       cells[key].occurrences.push(o);
       var _src = String(o.source || '').toLowerCase();
-      _binSrcTally[_src] = (_binSrcTally[_src] || 0) + 1;
-      if (_binDebugCount < 3 && _src.indexOf('elurikkus') !== -1) {
-        console.log('[BIN-OCC] elurikkus item:', JSON.stringify(o).slice(0, 300));
-        _binDebugCount++;
-      }
       if (_src === 'gbif') cells[key].gbifCount++;
       else if (_src.indexOf('elurikkus') !== -1) cells[key].eluCount++;
     });
 
-    var _cellArr = Object.values(cells);
-    var _totalElu = 0;
-    _cellArr.forEach(function(c) { _totalElu += (c.eluCount || 0); });
-    console.log('[ELU-GRID]', {
-      totalOccs: occs.length,
-      sourceTally: _binSrcTally,
-      totalEluCount: _totalElu,
-      cellsWithElu: _cellArr.filter(function(c) { return (c.eluCount || 0) > 0; }).length,
-      totalCells: _cellArr.length,
-    });
-
-    return _cellArr;
+    return Object.values(cells);
   }
 
   // --- Temporal period helpers ---
@@ -10243,7 +10225,7 @@ var __sharedDefaults = {};
       // Merge both sources, preferring live (has coords) then prob (needs resolution)
       var _allEluItems = _eluLiveItems.length > 0 ? _eluLiveItems : _eluProbItems;
       var _eluInjected = 0, _eluResolved = 0;
-      console.log('[ELU-INJECT] source:', _eluLiveItems.length > 0 ? 'live(' + _eluLiveItems.length + ')' : 'prob(' + _eluProbItems.length + ')', 'season:', seasonInfo.label);
+      console.log('[PROB] eElurikkus inject: source=' + (_eluLiveItems.length > 0 ? 'live(' + _eluLiveItems.length + ')' : 'prob(' + _eluProbItems.length + ')'));
       for (var _ei = 0; _ei < _allEluItems.length; _ei++) {
         var _it = _allEluItems[_ei];
         var _eLat = Number(_it.lat);
@@ -10272,7 +10254,7 @@ var __sharedDefaults = {};
       if (_eluInjected > 0) {
         seasonal = deduplicateOccurrences(seasonal);
       }
-      console.log('[ELU-INJECT] result:', _eluInjected, 'injected (' + _eluResolved + ' via centroid), seasonal:', seasonal.length);
+      console.log('[PROB] eElurikkus injected:', _eluInjected, '(' + _eluResolved + ' via centroid)');
 
       // Build full Estonia grid and assign seasonal occurrences to cells
       var gridCells = buildEstoniaGrid(seasonal, probCellSize);

@@ -11347,6 +11347,7 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
     } catch(e){ console.warn('[probAll] eBird failed',e); }
 
     footer.textContent = 'Arvutan tõenäosused...';
+    console.log('[DEBUG-PROB]', 'typeof prob:', typeof prob, 'typeof springDates:', typeof springDates, 'typeof __ennScanEbirdCounts:', typeof __ennScanEbirdCounts, 'ebirdKeys:', Object.keys(typeof __ennScanEbirdCounts!=='undefined'?__ennScanEbirdCounts:{}).length, 'springDates first 3:', JSON.stringify(Object.entries(typeof springDates!=='undefined'?springDates:{}).slice(0,3)));
     _results = buildResults();
 
     var total = _results.length;

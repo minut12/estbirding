@@ -10229,7 +10229,7 @@ var __sharedDefaults = {};
           if (_cfg.supabaseUrl) {
             setProbStatus('Fetching eElurikkus history (biocache)...');
             var _biocacheUrl = 'https://elurikkus.ee/biocache-service/occurrences/search?q='
-              + encodeURIComponent('taxon_name:"' + _latinName + '"') + '&sort=eventDate&dir=desc&pageSize=300&fq=country:Estonia&_ts=' + Date.now();
+              + encodeURIComponent(_latinName) + '&sort=eventDate&dir=desc&pageSize=300&fq=country:Estonia&_ts=' + Date.now();
             var _proxyUrl = _cfg.supabaseUrl + '/functions/v1/elurikkus-proxy?url=' + encodeURIComponent(_biocacheUrl);
             var _histHeaders = { 'Accept': 'application/json' };
             if (_cfg.anonKey) _histHeaders['apikey'] = _cfg.anonKey;
@@ -10706,7 +10706,7 @@ window.__computeProbSilent = async function(speciesName) {
       var _cfg = (typeof resolveSupabaseConfig === 'function') ? resolveSupabaseConfig() : {};
       if (_cfg.supabaseUrl) {
         var _biocacheUrl = 'https://elurikkus.ee/biocache-service/occurrences/search?q='
-          + encodeURIComponent('taxon_name:"' + _latinName + '"') + '&sort=eventDate&dir=desc&pageSize=300&fq=country:Estonia&_ts=' + Date.now();
+          + encodeURIComponent(_latinName) + '&sort=eventDate&dir=desc&pageSize=300&fq=country:Estonia&_ts=' + Date.now();
         var _proxyUrl = _cfg.supabaseUrl + '/functions/v1/elurikkus-proxy?url=' + encodeURIComponent(_biocacheUrl);
         var _histHeaders = { 'Accept': 'application/json' };
         if (_cfg.anonKey) _histHeaders['apikey'] = _cfg.anonKey;

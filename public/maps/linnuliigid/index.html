@@ -9493,32 +9493,21 @@ var __sharedDefaults = {};
     }
   }
 
-  function calculatePeriodProbabilities(cell, eluPoint, cellSize) {
+  function calculatePeriodProbabilities(cell, eluPoint, cellSize, globalMaxPerPeriod) {
     if (!cell.periods || !cell.periods.length) return;
-    var maxPeriodCount = 0;
-    for (var p = 0; p < cell.periods.length; p++) {
-      if (cell.periods[p].count > maxPeriodCount) maxPeriodCount = cell.periods[p].count;
-    }
     var now = new Date();
-
-    // Use cell.markerInCell and cell.scoreRecency from the multi-location freshness check
     var markerInCell = !!cell.markerInCell;
 
     for (var p = 0; p < cell.periods.length; p++) {
       var period = cell.periods[p];
       var periodHistorical = 0;
-      if (maxPeriodCount > 0 && period.count > 0) {
-        var rawScore = (period.count / maxPeriodCount) * cell.probability * 0.8;
-        var conf;
-        if (period.count <= 1) conf = 0.3;
-        else if (period.count <= 2) conf = 0.5;
-        else if (period.count <= 3) conf = 0.7;
-        else if (period.count <= 4) conf = 0.85;
-        else conf = 1.0;
-        periodHistorical = Math.round(rawScore * conf);
+      // Use global max for this period across ALL cells (log-scale, floor at 5)
+      var globalMax = (globalMaxPerPeriod && globalMaxPerPeriod[p]) || 0;
+      var effectiveMax = Math.max(globalMax, 5);
+      if (globalMax > 0 && period.count > 0) {
+        periodHistorical = Math.round((Math.log1p(period.count) / Math.log1p(effectiveMax)) * cell.probability * 0.8);
       }
       var isCurrentPeriod = (now >= period.start && now < period.end);
-      // Use the already-computed cell freshness score for the current period recency
       var periodRecency = (isCurrentPeriod && markerInCell) ? Math.round(cell.scoreRecency * 0.9) : 0;
 
       period.probability = Math.max(1, Math.min(95, periodHistorical + periodRecency));
@@ -9662,9 +9651,22 @@ var __sharedDefaults = {};
       cell.scoreSeason = seasonBonusCell;
       cell.markerInCell = markerInCell;
 
-      // Temporal periods
+      // Temporal periods — assign records first (scoring in second pass)
       assignRecordsToPeriods(cell, periodTemplate);
-      calculatePeriodProbabilities(cell, eluPoint, cellSize);
+    });
+
+    // Second pass: compute global max obs count per period across ALL cells, then score
+    var numPeriods = periodTemplate.length;
+    var globalMaxPerPeriod = [];
+    for (var _gp = 0; _gp < numPeriods; _gp++) globalMaxPerPeriod.push(0);
+    gridCells.forEach(function(c) {
+      if (!c.periods) return;
+      for (var _gp = 0; _gp < c.periods.length && _gp < numPeriods; _gp++) {
+        if (c.periods[_gp].count > globalMaxPerPeriod[_gp]) globalMaxPerPeriod[_gp] = c.periods[_gp].count;
+      }
+    });
+    gridCells.forEach(function(cell) {
+      calculatePeriodProbabilities(cell, eluPoint, cellSize, globalMaxPerPeriod);
     });
 
     return gridCells;

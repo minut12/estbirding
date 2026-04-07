@@ -11345,6 +11345,7 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
 
   async function doScan(){
     if (_scanning) return;
+    console.log('[probAll debug]', typeof window.__ennProb, typeof springDates, Object.keys(springDates||{}).slice(0,3));
     _scanning = true;
     var btn = document.getElementById('probAllScanBtn');
     btn.disabled = true;

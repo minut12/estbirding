@@ -10719,8 +10719,6 @@ function fetchEbirdRecent(callback) {
       if (estName) __ennScanEbirdCounts[estName] = counts[_c].count;
     }
     console.log('[Ennustus] eBird EE fetched:', Object.keys(counts).length, 'species,', arr.length, 'observations, mapped:', Object.keys(__ennScanEbirdCounts).length);
-    console.log('[DEBUG-SCAN] __ennScanEbirdCounts keys:', Object.keys(__ennScanEbirdCounts).length, 'first 3:', JSON.stringify(Object.entries(__ennScanEbirdCounts).slice(0,3)));
-    console.log('[DEBUG-SCAN] ebirdRecentCache.data keys:', Object.keys(ebirdRecentCache.data).length, 'first 3:', JSON.stringify(Object.entries(ebirdRecentCache.data).slice(0,3)));
     callback(null, counts);
   })
   .catch(function(err) { console.warn('[Ennustus] eBird fetch failed:', err.message); callback(err, null); });

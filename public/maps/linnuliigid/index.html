@@ -719,14 +719,17 @@ window.addEventListener('message', function(event) {
 // === Helpers ===
 const EE_TZ = 'Europe/Tallinn';
 function _parseObservedTs(v){
-  const s = String(v || '').trim();
+  var s = String(v || '').trim();
   if(!s) return null;
+  // Normalize DD.MM.YYYY → YYYY-MM-DD before any other parsing
+  var ee = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if(ee) s = ee[3] + '-' + ee[2].padStart(2,'0') + '-' + ee[1].padStart(2,'0');
   // date-only: anchor to midday UTC to avoid day shifts around timezone boundaries
-  const d = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  var d = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if(d) return Date.UTC(+d[1], +d[2]-1, +d[3], 12, 0, 0);
-  const t = Date.parse(s);
+  var t = Date.parse(s);
   if(Number.isFinite(t)) return t;
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  var m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
   if(m) return Date.UTC(+m[1], +m[2]-1, +m[3], +m[4], +m[5], 0);
   return null;
 }
@@ -9976,6 +9979,10 @@ var __sharedDefaults = {};
           setProbStatus('Fetching eElurikkus data (all pages)...');
           var _eluItems = await fetchElurikkusAllDatesForProb(speciesName);
           if (_eluItems && _eluItems.length > 0) {
+            // Normalize observedAt to ISO so string comparison and downstream parsers work
+            for (var _ni = 0; _ni < _eluItems.length; _ni++) {
+              if (_eluItems[_ni].observedAt) _eluItems[_ni].observedAt = normDateISO(_eluItems[_ni].observedAt) || _eluItems[_ni].observedAt;
+            }
             var _newest = '';
             for (var _ei = 0; _ei < _eluItems.length; _ei++) {
               if (String(_eluItems[_ei].observedAt || '') > _newest) _newest = String(_eluItems[_ei].observedAt);
@@ -10428,6 +10435,10 @@ window.__computeProbSilent = async function(speciesName) {
       if (typeof fetchElurikkusAllDatesForProb === 'function') {
         var _eluItems = await fetchElurikkusAllDatesForProb(speciesName);
         if (_eluItems && _eluItems.length > 0) {
+          // Normalize observedAt to ISO so string comparison and downstream parsers work
+          for (var _ni = 0; _ni < _eluItems.length; _ni++) {
+            if (_eluItems[_ni].observedAt) _eluItems[_ni].observedAt = normDateISO(_eluItems[_ni].observedAt) || _eluItems[_ni].observedAt;
+          }
           var _newest = '';
           for (var _ei = 0; _ei < _eluItems.length; _ei++) {
             if (String(_eluItems[_ei].observedAt || '') > _newest) _newest = String(_eluItems[_ei].observedAt);

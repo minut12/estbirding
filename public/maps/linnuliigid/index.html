@@ -9498,8 +9498,7 @@ var __sharedDefaults = {};
     var now = new Date();
     var markerInCell = !!cell.markerInCell;
 
-    // Within-cell normalization: busiest period gets cell's full probability,
-    // other periods scale down relative to it (log-scale)
+    // Within-cell normalization: busiest period → 95%, others scale down (log-scale)
     var maxPeriodCount = 0;
     for (var p = 0; p < cell.periods.length; p++) {
       if (cell.periods[p].count > maxPeriodCount) maxPeriodCount = cell.periods[p].count;
@@ -9510,7 +9509,7 @@ var __sharedDefaults = {};
       var periodHistorical = 0;
       if (maxPeriodCount > 0 && period.count > 0) {
         periodHistorical = Math.round(
-          (Math.log1p(period.count) / Math.log1p(Math.max(maxPeriodCount, 1))) * cell.probability
+          (Math.log1p(period.count) / Math.log1p(Math.max(maxPeriodCount, 1))) * 95
         );
       }
       var isCurrentPeriod = (now >= period.start && now < period.end);

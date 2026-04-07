@@ -10750,7 +10750,7 @@ try { EBIRD_CODES_FALLBACK = JSON.parse(localStorage.getItem('bm_ebird_codes') |
 
 var EBIRD_TOKEN = '9s72dc2jcjlq';
 var ebirdRecentCache = null;
-var __ennScanEbirdCounts = {};
+window.__ennEbirdCounts = {};
 
 function fetchEbirdRecent(callback) {
   var url = 'https://api.ebird.org/v2/data/obs/EE/recent?back=30&maxResults=10000&_ts=' + Date.now();
@@ -10758,41 +10758,47 @@ function fetchEbirdRecent(callback) {
   .then(function(res) { if (!res.ok) throw new Error('eBird HTTP ' + res.status); return res.json(); })
   .then(function(arr) {
     if (!Array.isArray(arr)) throw new Error('eBird: invalid response');
-    var counts = {};
+    // Build per-species-code counts directly from the raw array
+    var countsByCode = {};
     for (var i = 0; i < arr.length; i++) {
       var obs = arr[i], code = String(obs.speciesCode || '');
       if (!code) continue;
-      if (!counts[code]) counts[code] = { count: 0, lastDate: '', comName: obs.comName || '' };
-      counts[code].count++;
+      if (!countsByCode[code]) countsByCode[code] = { count: 0, lastDate: '', comName: obs.comName || '' };
+      countsByCode[code].count++;
       var dt = String(obs.obsDt || '').substring(0, 10);
-      if (dt > counts[code].lastDate) counts[code].lastDate = dt;
+      if (dt > countsByCode[code].lastDate) countsByCode[code].lastDate = dt;
     }
-    ebirdRecentCache = { fetchedAt: Date.now(), data: counts, totalObs: arr.length };
-    // Build reverse map: eBird code → Estonian name, then populate per-species counts
-    __ennScanEbirdCounts = {};
-    var codeToName = {};
-    try {
-      var codes = (typeof SPECIES_EBIRD_CODES !== 'undefined') ? SPECIES_EBIRD_CODES : {};
-      for (var _n in codes) { if (codes[_n]) codeToName[codes[_n]] = _n; }
-    } catch(_){}
-    for (var _c in counts) {
-      var estName = codeToName[_c];
-      if (estName) __ennScanEbirdCounts[estName] = counts[_c].count;
+    ebirdRecentCache = { fetchedAt: Date.now(), data: countsByCode, totalObs: arr.length };
+    // Store per-species-code counts on window for direct lookup
+    window.__ennEbirdCounts = {};
+    for (var _c in countsByCode) {
+      window.__ennEbirdCounts[_c] = countsByCode[_c].count;
     }
-    console.log('[Ennustus] eBird EE fetched:', Object.keys(counts).length, 'species,', arr.length, 'observations, mapped:', Object.keys(__ennScanEbirdCounts).length);
-    callback(null, counts);
+    console.log('[Ennustus] eBird EE fetched:', Object.keys(countsByCode).length, 'species,', arr.length, 'obs, __ennEbirdCounts:', Object.keys(window.__ennEbirdCounts).length);
+    callback(null, countsByCode);
   })
   .catch(function(err) { console.warn('[Ennustus] eBird fetch failed:', err.message); callback(err, null); });
 }
 
 function getEbirdCode(estName) {
-  // Primary source: the comprehensive SPECIES_EBIRD_CODES constant
-  try { if (typeof SPECIES_EBIRD_CODES !== 'undefined' && SPECIES_EBIRD_CODES[estName]) return SPECIES_EBIRD_CODES[estName]; } catch(e) {}
+  var clean = (typeof _fix === 'function') ? _fix(estName) : estName;
+  // Primary source: the comprehensive SPECIES_EBIRD_CODES constant (clean UTF-8 keys)
+  try {
+    if (typeof SPECIES_EBIRD_CODES !== 'undefined') {
+      if (SPECIES_EBIRD_CODES[estName]) return SPECIES_EBIRD_CODES[estName];
+      if (SPECIES_EBIRD_CODES[clean]) return SPECIES_EBIRD_CODES[clean];
+    }
+  } catch(e) {}
+  // speciesMeta in localStorage (may have either encoding as key)
   try { var meta = JSON.parse(localStorage.getItem('estbirding.speciesMeta.v1') || '{}');
-    if (meta[estName] && meta[estName].ebirdCode) return meta[estName].ebirdCode; } catch(e) {}
-  try { if (EBIRD_CODES_FALLBACK[estName]) return EBIRD_CODES_FALLBACK[estName]; } catch(e) {}
-  try { if (window.points && window.points[estName] && window.points[estName].ebirdCode)
-    return window.points[estName].ebirdCode; } catch(e) {}
+    if (meta[estName] && meta[estName].ebirdCode) return meta[estName].ebirdCode;
+    if (meta[clean] && meta[clean].ebirdCode) return meta[clean].ebirdCode;
+  } catch(e) {}
+  try { if (EBIRD_CODES_FALLBACK[estName]) return EBIRD_CODES_FALLBACK[estName];
+    if (EBIRD_CODES_FALLBACK[clean]) return EBIRD_CODES_FALLBACK[clean]; } catch(e) {}
+  try { var pts = window.points || {};
+    var p = pts[estName] || pts[clean];
+    if (p && p.ebirdCode) return p.ebirdCode; } catch(e) {}
   return null;
 }
 
@@ -10918,7 +10924,7 @@ function _fix(s) {
 
 function missing(){
   var all=sp(),dates=sd(),pts=pt(),out=[];
-  var ebird=(ebirdRecentCache&&ebirdRecentCache.data)?ebirdRecentCache.data:{};
+  var ebCounts=window.__ennEbirdCounts||{};
   var thisYear=new Date().getFullYear();
   for(var i=0;i<all.length;i++){
     var n=all[i];
@@ -10939,10 +10945,8 @@ function missing(){
     var springDate=getSpringDate(n,dates)||getSpringDate(clean,dates)||'';
     springDate=String(springDate).trim();
     var baseProb=prob(springDate);
-    var ebCode=getEbirdCode(n)||getEbirdCode(clean);
-    var ebCount=0;
-    if(ebCode&&ebird[ebCode]) ebCount=ebird[ebCode].count||0;
-    if(!ebCount) ebCount=__ennScanEbirdCounts[n]||__ennScanEbirdCounts[clean]||0;
+    var ebCode=getEbirdCode(n);
+    var ebCount=ebCode?ebCounts[ebCode]||0:0;
     var finalProb=combinedProb(baseProb,ebCount);
     out.push({name:n,spring:springDate,prob:finalProb,baseProb:baseProb,ebirdCount:ebCount,ebirdCode:ebCode||''});
   }
@@ -10955,7 +10959,7 @@ function render(){
   var allSpecies=sp(),dates=sd(),pts=pt();
   var q=(document.getElementById('ennQ')||{}).value||'';
   q=q.toLowerCase().trim();
-  var ebird=(ebirdRecentCache&&ebirdRecentCache.data)?ebirdRecentCache.data:{};
+  var ebCounts=window.__ennEbirdCounts||{};
   var thisYear=new Date().getFullYear();
   var m=missing();
   var displayList=[];
@@ -10971,10 +10975,8 @@ function render(){
         (_ym&&parseInt(_ym[1],10)===thisYear);
       var springDate=getSpringDate(n,dates)||getSpringDate(clean,dates)||'';
       var baseProb=prob(springDate);
-      var ebCode=getEbirdCode(n)||getEbirdCode(clean);
-      var ebCount=0;
-      if(ebCode&&ebird[ebCode]) ebCount=ebird[ebCode].count||0;
-      if(!ebCount) ebCount=__ennScanEbirdCounts[n]||__ennScanEbirdCounts[clean]||0;
+      var ebCode=getEbirdCode(n);
+      var ebCount=ebCode?ebCounts[ebCode]||0:0;
       var finalProb=combinedProb(baseProb,ebCount);
       displayList.push({name:n,spring:springDate,prob:finalProb,baseProb:baseProb,ebirdCount:ebCount,ebirdCode:ebCode||'',seen:isSeen});
     }
@@ -11056,7 +11058,7 @@ window.__closeEnn=function(){document.getElementById('ennBg').style.display='non
 window.__renderEnn=render;
 window.__sortEnn=function(s){sort=s;render();};
 window.__scanEnn=function(btn){
-  __ennScanEbirdCounts = {};
+  window.__ennEbirdCounts = {};
   btn.textContent='Laen eBird...';
   btn.style.opacity='.6';
   btn.disabled=true;

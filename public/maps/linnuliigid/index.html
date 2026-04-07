@@ -10215,7 +10215,8 @@ var __sharedDefaults = {};
       else if (totalGbifRecords > 100) probCellSize = 0.15;
       else probCellSize = 0.2;
 
-      // --- eElurikkus historical injection via biocache API (returns items WITH real coordinates) ---
+      // --- eElurikkus historical injection via biocache JSON API (returns items WITH real coordinates) ---
+      // Uses elurikkus-proxy to call biocache-service (the elurikkus-species function incorrectly fetches HTML, not JSON)
       window.__eluHistoryCache = window.__eluHistoryCache || {};
       var _eluHistKey = String(speciesName || '').trim().toLowerCase();
       var _eluHistItems = window.__eluHistoryCache[_eluHistKey] || null;
@@ -10224,37 +10225,46 @@ var __sharedDefaults = {};
           var _cfg = (typeof resolveSupabaseConfig === 'function') ? resolveSupabaseConfig() : {};
           if (_cfg.supabaseUrl) {
             setProbStatus('Fetching eElurikkus history (biocache)...');
-            var _histUrl = _cfg.supabaseUrl + '/functions/v1/elurikkus-species?text=' + encodeURIComponent(speciesName)
-              + '&days=3650&limit=500&_ts=' + Date.now();
+            var _biocacheUrl = 'https://elurikkus.ee/biocache-service/occurrences/search?q='
+              + encodeURIComponent(speciesName) + '&sort=eventDate&dir=desc&pageSize=200&fq=country:Estonia&_ts=' + Date.now();
+            var _proxyUrl = _cfg.supabaseUrl + '/functions/v1/elurikkus-proxy?url=' + encodeURIComponent(_biocacheUrl);
             var _histHeaders = { 'Accept': 'application/json' };
             if (_cfg.anonKey) _histHeaders['apikey'] = _cfg.anonKey;
-            var _histRes = await fetch(_histUrl, { headers: _histHeaders });
+            var _histRes = await fetch(_proxyUrl, { headers: _histHeaders });
             var _histJson = await _histRes.json();
-            _eluHistItems = Array.isArray(_histJson.items) ? _histJson.items : [];
+            // Biocache API returns { occurrences: [...] } with decimalLatitude/decimalLongitude/eventDate
+            var _rawOccs = Array.isArray(_histJson.occurrences) ? _histJson.occurrences
+              : Array.isArray(_histJson.results) ? _histJson.results
+              : Array.isArray(_histJson) ? _histJson : [];
+            _eluHistItems = [];
+            for (var _hi = 0; _hi < _rawOccs.length; _hi++) {
+              var _r = _rawOccs[_hi];
+              if (!_r || typeof _r !== 'object') continue;
+              var _hLat = Number(_r.decimalLatitude != null ? _r.decimalLatitude : _r.lat);
+              var _hLon = Number(_r.decimalLongitude != null ? _r.decimalLongitude : _r.lon);
+              var _hDate = String(_r.eventDate || _r.observedAt || _r.date || '').trim();
+              if (!Number.isFinite(_hLat) || !Number.isFinite(_hLon)) continue;
+              if (!_hDate) continue;
+              _eluHistItems.push({ lat: _hLat, lon: _hLon, date: _hDate });
+            }
             window.__eluHistoryCache[_eluHistKey] = _eluHistItems;
-            console.log('[PROB] eElurikkus biocache history:', _eluHistItems.length, 'items,',
-              _eluHistItems.filter(function(x) { return x.coordsStatus === 'public'; }).length, 'with coords');
+            console.log('[PROB] eElurikkus biocache history:', _rawOccs.length, 'raw →', _eluHistItems.length, 'with coords');
           }
         } catch(_e) {
-          console.warn('[PROB] eElurikkus biocache history fetch failed', _e);
+          console.warn('[PROB] eElurikkus biocache fetch failed', _e);
           _eluHistItems = [];
         }
       } else {
-        console.log('[PROB] eElurikkus biocache history cache hit:', _eluHistItems.length, 'items');
+        console.log('[PROB] eElurikkus biocache cache hit:', _eluHistItems.length, 'items');
       }
 
-      // Inject biocache items (have real lat/lon from biocache API)
+      // Inject biocache items (have real lat/lon)
       var _eluInjected = 0;
       if (_eluHistItems && _eluHistItems.length > 0) {
         for (var _ei = 0; _ei < _eluHistItems.length; _ei++) {
           var _it = _eluHistItems[_ei];
-          var _eLat = Number(_it.lat);
-          var _eLon = Number(_it.lon);
-          if (!Number.isFinite(_eLat) || !Number.isFinite(_eLon)) continue;
-          var _eDate = String(_it.observedAt || '');
-          if (!_eDate) continue;
-          if (!isInSeasonRange(_eDate, seasonInfo.start, seasonInfo.end)) continue;
-          seasonal.push({ lat: _eLat, lon: _eLon, date: _eDate, source: 'elurikkus' });
+          if (!isInSeasonRange(_it.date, seasonInfo.start, seasonInfo.end)) continue;
+          seasonal.push({ lat: _it.lat, lon: _it.lon, date: _it.date, source: 'elurikkus' });
           _eluInjected++;
         }
         if (_eluInjected > 0) seasonal = deduplicateOccurrences(seasonal);
@@ -10665,7 +10675,7 @@ window.__computeProbSilent = async function(speciesName) {
 
   if (typeof buildEstoniaGrid !== 'function' || typeof calculateProbabilities !== 'function') return;
 
-  // Fetch eElurikkus history via biocache API (returns items WITH real coordinates)
+  // Fetch eElurikkus history via biocache JSON API through proxy
   window.__eluHistoryCache = window.__eluHistoryCache || {};
   var _eluHistKey = String(speciesName || '').trim().toLowerCase();
   var _eluHistItems = window.__eluHistoryCache[_eluHistKey] || null;
@@ -10673,13 +10683,27 @@ window.__computeProbSilent = async function(speciesName) {
     try {
       var _cfg = (typeof resolveSupabaseConfig === 'function') ? resolveSupabaseConfig() : {};
       if (_cfg.supabaseUrl) {
-        var _histUrl = _cfg.supabaseUrl + '/functions/v1/elurikkus-species?text=' + encodeURIComponent(speciesName)
-          + '&days=3650&limit=500&_ts=' + Date.now();
+        var _biocacheUrl = 'https://elurikkus.ee/biocache-service/occurrences/search?q='
+          + encodeURIComponent(speciesName) + '&sort=eventDate&dir=desc&pageSize=200&fq=country:Estonia&_ts=' + Date.now();
+        var _proxyUrl = _cfg.supabaseUrl + '/functions/v1/elurikkus-proxy?url=' + encodeURIComponent(_biocacheUrl);
         var _histHeaders = { 'Accept': 'application/json' };
         if (_cfg.anonKey) _histHeaders['apikey'] = _cfg.anonKey;
-        var _histRes = await fetch(_histUrl, { headers: _histHeaders });
+        var _histRes = await fetch(_proxyUrl, { headers: _histHeaders });
         var _histJson = await _histRes.json();
-        _eluHistItems = Array.isArray(_histJson.items) ? _histJson.items : [];
+        var _rawOccs = Array.isArray(_histJson.occurrences) ? _histJson.occurrences
+          : Array.isArray(_histJson.results) ? _histJson.results
+          : Array.isArray(_histJson) ? _histJson : [];
+        _eluHistItems = [];
+        for (var _hi = 0; _hi < _rawOccs.length; _hi++) {
+          var _r = _rawOccs[_hi];
+          if (!_r || typeof _r !== 'object') continue;
+          var _hLat = Number(_r.decimalLatitude != null ? _r.decimalLatitude : _r.lat);
+          var _hLon = Number(_r.decimalLongitude != null ? _r.decimalLongitude : _r.lon);
+          var _hDate = String(_r.eventDate || _r.observedAt || _r.date || '').trim();
+          if (!Number.isFinite(_hLat) || !Number.isFinite(_hLon)) continue;
+          if (!_hDate) continue;
+          _eluHistItems.push({ lat: _hLat, lon: _hLon, date: _hDate });
+        }
         window.__eluHistoryCache[_eluHistKey] = _eluHistItems;
       }
     } catch(_e) { _eluHistItems = []; }
@@ -10689,13 +10713,8 @@ window.__computeProbSilent = async function(speciesName) {
   if (_eluHistItems && _eluHistItems.length > 0) {
     for (var _ei = 0; _ei < _eluHistItems.length; _ei++) {
       var _it = _eluHistItems[_ei];
-      var _eLat = Number(_it.lat);
-      var _eLon = Number(_it.lon);
-      if (!Number.isFinite(_eLat) || !Number.isFinite(_eLon)) continue;
-      var _eDate = String(_it.observedAt || '');
-      if (!_eDate) continue;
-      if (typeof isInSeasonRange === 'function' && !isInSeasonRange(_eDate, seasonInfo.start, seasonInfo.end)) continue;
-      seasonal.push({ lat: _eLat, lon: _eLon, date: _eDate, source: 'elurikkus' });
+      if (typeof isInSeasonRange === 'function' && !isInSeasonRange(_it.date, seasonInfo.start, seasonInfo.end)) continue;
+      seasonal.push({ lat: _it.lat, lon: _it.lon, date: _it.date, source: 'elurikkus' });
     }
     if (typeof deduplicateOccurrences === 'function') seasonal = deduplicateOccurrences(seasonal);
   }

@@ -9562,11 +9562,12 @@ var __sharedDefaults = {};
   function calculateProbabilities(gridCells, seasonal, allOccs, speciesName, cellSize, seasonInfo) {
     cellSize = cellSize || 0.15;
 
-    // Find max GBIF count across all cells for normalization
+    // Find max GBIF count across all cells for normalization (floor at 30 to prevent sparse species over-inflation)
     var maxCellCount = 0;
     gridCells.forEach(function(c) {
       if (c.gbifCount > maxCellCount) maxCellCount = c.gbifCount;
     });
+    var effectiveMaxCell = Math.max(maxCellCount, 30);
 
     // Max occurrence count for non-GBIF fallback
     var maxOccCount = 0;
@@ -9592,7 +9593,7 @@ var __sharedDefaults = {};
       // 1. Historical (GBIF) — up to 35%
       var historicalScore = 0;
       if (maxCellCount > 0 && cell.gbifCount > 0) {
-        historicalScore = Math.round((cell.gbifCount / maxCellCount) * 35);
+        historicalScore = Math.round((Math.log1p(cell.gbifCount) / Math.log1p(effectiveMaxCell)) * 35);
       }
 
       // 2. Freshness — the KEY signal, up to 55%

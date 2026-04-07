@@ -10271,11 +10271,51 @@ var __sharedDefaults = {};
           console.warn('[PROB] eElurikkus biocache fetch failed', _e);
           _eluHistItems = [];
         }
+        // Fallback: if biocache returned 0 items, try fetchElurikkusSpecies (HTML scraping with detail page coord extraction)
+        if ((!_eluHistItems || _eluHistItems.length === 0) && typeof fetchElurikkusSpecies === 'function') {
+          try {
+            console.log('[PROB] biocache empty, falling back to fetchElurikkusSpecies...');
+            setProbStatus('Fetching eElurikkus (fallback)...');
+            var _fbJson = await fetchElurikkusSpecies(speciesName);
+            var _fbItems = (_fbJson && Array.isArray(_fbJson.items)) ? _fbJson.items : [];
+            _eluHistItems = [];
+            for (var _fi = 0; _fi < _fbItems.length; _fi++) {
+              var _fb = _fbItems[_fi];
+              var _fbLat = Number(_fb.lat);
+              var _fbLon = Number(_fb.lon);
+              if (!Number.isFinite(_fbLat) || !Number.isFinite(_fbLon)) continue;
+              var _fbDate = String(_fb.observedAt || _fb.eventDate || _fb.date || '').trim();
+              if (!_fbDate) continue;
+              _eluHistItems.push({ lat: _fbLat, lon: _fbLon, date: _fbDate });
+            }
+            window.__eluHistoryCache[_eluHistKey] = _eluHistItems;
+            console.log('[PROB] fetchElurikkusSpecies fallback:', _fbItems.length, 'total →', _eluHistItems.length, 'with coords');
+          } catch(_fe) {
+            console.warn('[PROB] fetchElurikkusSpecies fallback failed', _fe);
+          }
+        }
       } else if (_eluHistItems) {
         console.log('[PROB] eElurikkus biocache cache hit:', _eluHistItems.length, 'items');
       } else if (!_latinName) {
-        console.warn('[PROB] biocache skipped: no Latin name for', speciesName);
-        _eluHistItems = [];
+        // No latin name: go straight to fetchElurikkusSpecies fallback
+        try {
+          if (typeof fetchElurikkusSpecies === 'function') {
+            var _fbJson2 = await fetchElurikkusSpecies(speciesName);
+            var _fbItems2 = (_fbJson2 && Array.isArray(_fbJson2.items)) ? _fbJson2.items : [];
+            _eluHistItems = [];
+            for (var _fi2 = 0; _fi2 < _fbItems2.length; _fi2++) {
+              var _fb2 = _fbItems2[_fi2];
+              var _fbLat2 = Number(_fb2.lat);
+              var _fbLon2 = Number(_fb2.lon);
+              if (!Number.isFinite(_fbLat2) || !Number.isFinite(_fbLon2)) continue;
+              var _fbDate2 = String(_fb2.observedAt || '').trim();
+              if (!_fbDate2) continue;
+              _eluHistItems.push({ lat: _fbLat2, lon: _fbLon2, date: _fbDate2 });
+            }
+            window.__eluHistoryCache[_eluHistKey] = _eluHistItems;
+            console.log('[PROB] no latin name, fetchElurikkusSpecies:', _eluHistItems.length, 'with coords');
+          }
+        } catch(_e2) { _eluHistItems = []; }
       }
 
       // Inject biocache items (have real lat/lon)

@@ -37,11 +37,17 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Use Accept header based on target URL: prefer JSON for biocache API, HTML for search pages
+    const acceptHeader = targetUrl.includes("/biocache-service/")
+      ? "application/json"
+      : "text/html, application/json, */*";
     const response = await fetch(targetUrl, {
       method: "GET",
       headers: {
-        "Accept": "text/html, application/json, */*",
+        "Accept": acceptHeader,
         "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
       },
     });
 

@@ -10215,22 +10215,31 @@ var __sharedDefaults = {};
       else if (totalGbifRecords > 100) probCellSize = 0.15;
       else probCellSize = 0.2;
 
-      // Inject eElurikkus items into seasonal array from all available caches
-      // Sources: liveElurikkusBySpecies (server-fetched, has coords) + __probEluCache (date-only, needs centroid resolution)
+      // --- eElurikkus injection into seasonal array ---
       var _eluLiveKey = String(speciesName || '').trim().toLowerCase();
+
+      // Part 2: Trigger live fetch if cache is cold (provides items with real coords)
+      if (!liveElurikkusBySpecies[_eluLiveKey] || !Array.isArray(liveElurikkusBySpecies[_eluLiveKey].items) || liveElurikkusBySpecies[_eluLiveKey].items.length === 0) {
+        try {
+          if (typeof fetchElurikkusSpecies === 'function') {
+            setProbStatus('Fetching eElurikkus live data...');
+            await fetchElurikkusSpecies(speciesName);
+          }
+        } catch(_e) { console.warn('[PROB] live elu fetch failed, continuing without', _e); }
+      }
+
       var _eluLiveEntry = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluLiveKey]) || null;
       var _eluLiveItems = (_eluLiveEntry && Array.isArray(_eluLiveEntry.items)) ? _eluLiveEntry.items : [];
       var _eluProbEntry = (window.__probEluCache && window.__probEluCache[_eluLiveKey]) || null;
       var _eluProbItems = (_eluProbEntry && Array.isArray(_eluProbEntry.items)) ? _eluProbEntry.items : [];
-      // Merge both sources, preferring live (has coords) then prob (needs resolution)
+      // Prefer live items (have real coords), fall back to prob items (need centroid resolution)
       var _allEluItems = _eluLiveItems.length > 0 ? _eluLiveItems : _eluProbItems;
       var _eluInjected = 0, _eluResolved = 0;
-      console.log('[PROB] eElurikkus inject: source=' + (_eluLiveItems.length > 0 ? 'live(' + _eluLiveItems.length + ')' : 'prob(' + _eluProbItems.length + ')'));
       for (var _ei = 0; _ei < _allEluItems.length; _ei++) {
         var _it = _allEluItems[_ei];
         var _eLat = Number(_it.lat);
         var _eLon = Number(_it.lon);
-        // Resolve coords via centroid if missing (prob cache items have municipality/locality but no lat/lon)
+        // Resolve coords via centroid if missing
         if (!Number.isFinite(_eLat) || !Number.isFinite(_eLon)) {
           var _place = String(_it.municipality || _it.placeText || _it.locality || _it.county || '').trim();
           if (_place) {
@@ -10251,10 +10260,27 @@ var __sharedDefaults = {};
         seasonal.push({ lat: _eLat, lon: _eLon, date: _eDate, source: 'elurikkus' });
         _eluInjected++;
       }
+
       if (_eluInjected > 0) {
         seasonal = deduplicateOccurrences(seasonal);
       }
-      console.log('[PROB] eElurikkus injected:', _eluInjected, '(' + _eluResolved + ' via centroid)');
+
+      // Part 1: Direct injection from eluPoint (the species marker with real coords + occ7 count)
+      // Added AFTER dedup so multiple weighted entries are not collapsed to 1
+      var _eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
+      if (Number.isFinite(_eluPoint.lat) && Number.isFinite(_eluPoint.lon)) {
+        var _eluOcc7 = Math.min(Number(_eluPoint.occ7 || _eluPoint.occ || 1), 30);
+        var _eluDate = String(_eluPoint.t || '');
+        if (_eluDate && _eluOcc7 > 0) {
+          for (var _oi = 0; _oi < _eluOcc7; _oi++) {
+            seasonal.push({ lat: _eluPoint.lat, lon: _eluPoint.lon, date: _eluDate, source: 'elurikkus' });
+          }
+          _eluInjected += _eluOcc7;
+          console.log('[PROB] eluPoint direct inject:', _eluOcc7, 'at', _eluPoint.lat.toFixed(4), _eluPoint.lon.toFixed(4));
+        }
+      }
+
+      console.log('[PROB] eElurikkus total injected:', _eluInjected, '(' + _eluResolved + ' via centroid, live items:', _eluLiveItems.length + ')');
 
       // Build full Estonia grid and assign seasonal occurrences to cells
       var gridCells = buildEstoniaGrid(seasonal, probCellSize);
@@ -10645,8 +10671,15 @@ window.__computeProbSilent = async function(speciesName) {
 
   if (typeof buildEstoniaGrid !== 'function' || typeof calculateProbabilities !== 'function') return;
 
-  // Inject eElurikkus items from all available caches (with centroid resolution)
+  // Trigger live fetch if cache is cold
   var _eluLiveKey = String(speciesName || '').trim().toLowerCase();
+  if (!liveElurikkusBySpecies[_eluLiveKey] || !Array.isArray(liveElurikkusBySpecies[_eluLiveKey].items) || liveElurikkusBySpecies[_eluLiveKey].items.length === 0) {
+    try {
+      if (typeof fetchElurikkusSpecies === 'function') await fetchElurikkusSpecies(speciesName);
+    } catch(_e) {}
+  }
+
+  // Inject eElurikkus items from all available caches (with centroid resolution)
   var _eluLiveEntry = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluLiveKey]) || null;
   var _eluLiveItems = (_eluLiveEntry && Array.isArray(_eluLiveEntry.items)) ? _eluLiveEntry.items : [];
   var _eluProbEntry = (window.__probEluCache && window.__probEluCache[_eluLiveKey]) || null;
@@ -10675,7 +10708,21 @@ window.__computeProbSilent = async function(speciesName) {
     if (typeof isInSeasonRange === 'function' && !isInSeasonRange(_eDate, seasonInfo.start, seasonInfo.end)) continue;
     seasonal.push({ lat: _eLat, lon: _eLon, date: _eDate, source: 'elurikkus' });
   }
+
   if (typeof deduplicateOccurrences === 'function') seasonal = deduplicateOccurrences(seasonal);
+
+  // Direct injection from eluPoint marker (real coords + occ7 weighted count)
+  // Added AFTER dedup so weighted entries are not collapsed
+  var _eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
+  if (Number.isFinite(_eluPoint.lat) && Number.isFinite(_eluPoint.lon)) {
+    var _eluOcc7 = Math.min(Number(_eluPoint.occ7 || _eluPoint.occ || 1), 30);
+    var _eluDate = String(_eluPoint.t || '');
+    if (_eluDate && _eluOcc7 > 0) {
+      for (var _oi = 0; _oi < _eluOcc7; _oi++) {
+        seasonal.push({ lat: _eluPoint.lat, lon: _eluPoint.lon, date: _eluDate, source: 'elurikkus' });
+      }
+    }
+  }
 
   var gridCells = buildEstoniaGrid(seasonal, probCellSize);
   var precision = probCellSize < 0.1 ? 3 : 2;

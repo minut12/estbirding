@@ -9658,6 +9658,7 @@ var __sharedDefaults = {};
       cell.scoreHistory = historicalScore;
       cell.scoreRecency = freshnessScore;
       cell.scoreSeason = seasonBonusCell;
+      cell.markerInCell = markerInCell;
 
       // Temporal periods
       assignRecordsToPeriods(cell, periodTemplate);
@@ -9901,8 +9902,8 @@ var __sharedDefaults = {};
     probLayerGroup = L.layerGroup();
 
     gridCells.forEach(function(cell) {
-      // Skip cells with no seasonal GBIF data
-      if (cell.gbifCount <= 0) return;
+      // Skip cells with no seasonal GBIF data AND no eElurikkus marker inside
+      if (cell.gbifCount <= 0 && !cell.markerInCell) return;
       var bounds = [[cell.latMin, cell.lonMin], [cell.latMax, cell.lonMax]];
       var fillColor, fillOpacity, strokeColor, strokeOpacity;
       if (cell.probability > 60) { fillColor = '#E24B4A'; fillOpacity = 0.50; strokeColor = '#A32D2D'; strokeOpacity = 0.6; }

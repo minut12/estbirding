@@ -9493,19 +9493,25 @@ var __sharedDefaults = {};
     }
   }
 
-  function calculatePeriodProbabilities(cell, eluPoint, cellSize, globalMaxPerPeriod) {
+  function calculatePeriodProbabilities(cell, eluPoint, cellSize) {
     if (!cell.periods || !cell.periods.length) return;
     var now = new Date();
     var markerInCell = !!cell.markerInCell;
 
+    // Within-cell normalization: busiest period gets cell's full probability,
+    // other periods scale down relative to it (log-scale)
+    var maxPeriodCount = 0;
+    for (var p = 0; p < cell.periods.length; p++) {
+      if (cell.periods[p].count > maxPeriodCount) maxPeriodCount = cell.periods[p].count;
+    }
+
     for (var p = 0; p < cell.periods.length; p++) {
       var period = cell.periods[p];
       var periodHistorical = 0;
-      // Use global max for this period across ALL cells (log-scale, floor at 5)
-      var globalMax = (globalMaxPerPeriod && globalMaxPerPeriod[p]) || 0;
-      var effectiveMax = Math.max(globalMax, 5);
-      if (globalMax > 0 && period.count > 0) {
-        periodHistorical = Math.round((Math.log1p(period.count) / Math.log1p(effectiveMax)) * cell.probability * 0.8);
+      if (maxPeriodCount > 0 && period.count > 0) {
+        periodHistorical = Math.round(
+          (Math.log1p(period.count) / Math.log1p(Math.max(maxPeriodCount, 1))) * cell.probability
+        );
       }
       var isCurrentPeriod = (now >= period.start && now < period.end);
       var periodRecency = (isCurrentPeriod && markerInCell) ? Math.round(cell.scoreRecency * 0.9) : 0;
@@ -9651,22 +9657,9 @@ var __sharedDefaults = {};
       cell.scoreSeason = seasonBonusCell;
       cell.markerInCell = markerInCell;
 
-      // Temporal periods — assign records first (scoring in second pass)
+      // Temporal periods
       assignRecordsToPeriods(cell, periodTemplate);
-    });
-
-    // Second pass: compute global max obs count per period across ALL cells, then score
-    var numPeriods = periodTemplate.length;
-    var globalMaxPerPeriod = [];
-    for (var _gp = 0; _gp < numPeriods; _gp++) globalMaxPerPeriod.push(0);
-    gridCells.forEach(function(c) {
-      if (!c.periods) return;
-      for (var _gp = 0; _gp < c.periods.length && _gp < numPeriods; _gp++) {
-        if (c.periods[_gp].count > globalMaxPerPeriod[_gp]) globalMaxPerPeriod[_gp] = c.periods[_gp].count;
-      }
-    });
-    gridCells.forEach(function(cell) {
-      calculatePeriodProbabilities(cell, eluPoint, cellSize, globalMaxPerPeriod);
+      calculatePeriodProbabilities(cell, eluPoint, cellSize);
     });
 
     return gridCells;

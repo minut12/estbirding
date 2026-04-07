@@ -11108,25 +11108,34 @@ window.__openEnnustus=window.__openEnn;
   if (window.__probAllBound) return;
   window.__probAllBound = true;
 
-  var ennBtn = document.getElementById('ennustusBtn');
-  if (ennBtn) {
-    var b = document.createElement('button');
-    b.id = 'probAllBtn';
-    b.className = 'btn secondary';
-    b.textContent = 'Tõenäosus';
-    ennBtn.parentNode.insertBefore(b, ennBtn.nextSibling);
-  }
+  function init(){
+    var backdrop = document.getElementById('probAllBackdrop');
+    if (!backdrop) {
+      setTimeout(init, 100);
+      return;
+    }
 
-  var backdrop = document.getElementById('probAllBackdrop');
-  var listEl   = document.getElementById('probAllList');
-  var footer   = document.getElementById('probAllFooter');
-  var subtitle = document.getElementById('probAllSubtitle');
-  var searchEl = document.getElementById('probAllSearch');
-  var filterEl = document.getElementById('probAllFilter');
-  var _results = [];
-  var _scanning = false;
+    // Insert button after Ennustus button
+    if (!document.getElementById('probAllBtn')) {
+      var ennBtn = document.getElementById('ennustusBtn');
+      if (ennBtn) {
+        var b = document.createElement('button');
+        b.id = 'probAllBtn';
+        b.className = 'btn secondary';
+        b.textContent = 'Tõenäosus';
+        ennBtn.parentNode.insertBefore(b, ennBtn.nextSibling);
+      }
+    }
 
-  document.getElementById('probAllBtn').addEventListener('click', function(){
+    var listEl   = document.getElementById('probAllList');
+    var footer   = document.getElementById('probAllFooter');
+    var subtitle = document.getElementById('probAllSubtitle');
+    var searchEl = document.getElementById('probAllSearch');
+    var filterEl = document.getElementById('probAllFilter');
+    var _results = [];
+    var _scanning = false;
+
+    document.getElementById('probAllBtn').addEventListener('click', function(){
     backdrop.style.display = 'block';
     document.body.style.overflow = 'hidden';
     filterEl.value = 'missing';
@@ -11325,9 +11334,16 @@ window.__openEnnustus=window.__openEnn;
     btn.textContent = 'Skaneeri';
   }
 
-  document.getElementById('probAllScanBtn').addEventListener('click', doScan);
-  searchEl.addEventListener('input', renderList);
-  filterEl.addEventListener('change', renderList);
+    document.getElementById('probAllScanBtn').addEventListener('click', doScan);
+    searchEl.addEventListener('input', renderList);
+    filterEl.addEventListener('change', renderList);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();
 
 var bg=document.getElementById('ennBg');

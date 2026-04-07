@@ -11133,7 +11133,7 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
     <div style="padding:10px 16px;border-bottom:1px solid #f3f4f6;display:flex;gap:8px;align-items:center;flex-wrap:wrap;flex-shrink:0">
       <input id="probAllSearch" type="text" placeholder="Otsi liiki..." style="flex:1;min-width:130px;padding:7px 12px;border:1px solid #d1d5db;border-radius:10px;font-size:13px"/>
       <select id="probAllFilter" style="padding:7px 10px;border:1px solid #d1d5db;border-radius:10px;font-size:13px;background:#fff">
-        <option value="missing">Puudub kaardilt</option>
+        <option value="missing" selected>Puudub kaardilt</option>
         <option value="all">Kõik liigid</option>
         <option value="onmap">Kaardil olemas</option>
         <option value="high">Kõrge (&gt;60%)</option>
@@ -11165,6 +11165,8 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
   document.getElementById('probAllBtn').addEventListener('click', function(){
     backdrop.style.display = 'block';
     document.body.style.overflow = 'hidden';
+    filterEl.value = 'missing';
+    if (_results.length) renderList();
   });
   function closeModal(){
     backdrop.style.display = 'none';
@@ -11349,9 +11351,9 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
     footer.textContent = 'Arvutan tõenäosused...';
     _results = buildResults();
 
-    var total = _results.length;
-    var high  = _results.filter(function(r){ return r.pct>60; }).length;
-    subtitle.textContent = total+' puuduvat liiki · '+high+' kõrge tõenäosusega';
+    var missing = _results.filter(function(r){ return !r.onMap; });
+    var high = missing.filter(function(r){ return r.pct>60; }).length;
+    subtitle.textContent = missing.length+' puuduvat liiki · '+high+' kõrge tõenäosusega';
     footer.textContent = 'Uuendatud '+new Date().toLocaleTimeString('et-EE',{hour:'2-digit',minute:'2-digit'});
 
     renderList();

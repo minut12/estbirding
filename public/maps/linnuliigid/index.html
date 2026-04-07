@@ -10215,58 +10215,53 @@ var __sharedDefaults = {};
       else if (totalGbifRecords > 100) probCellSize = 0.15;
       else probCellSize = 0.2;
 
-      // --- eElurikkus injection into seasonal array ---
-      var _eluLiveKey = String(speciesName || '').trim().toLowerCase();
-
-      // Part 2: Trigger live fetch if cache is cold (provides items with real coords)
-      if (!liveElurikkusBySpecies[_eluLiveKey] || !Array.isArray(liveElurikkusBySpecies[_eluLiveKey].items) || liveElurikkusBySpecies[_eluLiveKey].items.length === 0) {
+      // --- eElurikkus historical injection via biocache API (returns items WITH real coordinates) ---
+      window.__eluHistoryCache = window.__eluHistoryCache || {};
+      var _eluHistKey = String(speciesName || '').trim().toLowerCase();
+      var _eluHistItems = window.__eluHistoryCache[_eluHistKey] || null;
+      if (!_eluHistItems) {
         try {
-          if (typeof fetchElurikkusSpecies === 'function') {
-            setProbStatus('Fetching eElurikkus live data...');
-            await fetchElurikkusSpecies(speciesName);
+          var _cfg = (typeof resolveSupabaseConfig === 'function') ? resolveSupabaseConfig() : {};
+          if (_cfg.supabaseUrl) {
+            setProbStatus('Fetching eElurikkus history (biocache)...');
+            var _histUrl = _cfg.supabaseUrl + '/functions/v1/elurikkus-species?text=' + encodeURIComponent(speciesName)
+              + '&days=3650&limit=500&_ts=' + Date.now();
+            var _histHeaders = { 'Accept': 'application/json' };
+            if (_cfg.anonKey) _histHeaders['apikey'] = _cfg.anonKey;
+            var _histRes = await fetch(_histUrl, { headers: _histHeaders });
+            var _histJson = await _histRes.json();
+            _eluHistItems = Array.isArray(_histJson.items) ? _histJson.items : [];
+            window.__eluHistoryCache[_eluHistKey] = _eluHistItems;
+            console.log('[PROB] eElurikkus biocache history:', _eluHistItems.length, 'items,',
+              _eluHistItems.filter(function(x) { return x.coordsStatus === 'public'; }).length, 'with coords');
           }
-        } catch(_e) { console.warn('[PROB] live elu fetch failed, continuing without', _e); }
-      }
-
-      var _eluLiveEntry = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluLiveKey]) || null;
-      var _eluLiveItems = (_eluLiveEntry && Array.isArray(_eluLiveEntry.items)) ? _eluLiveEntry.items : [];
-      var _eluProbEntry = (window.__probEluCache && window.__probEluCache[_eluLiveKey]) || null;
-      var _eluProbItems = (_eluProbEntry && Array.isArray(_eluProbEntry.items)) ? _eluProbEntry.items : [];
-      // Prefer live items (have real coords), fall back to prob items (need centroid resolution)
-      var _allEluItems = _eluLiveItems.length > 0 ? _eluLiveItems : _eluProbItems;
-      var _eluInjected = 0, _eluResolved = 0;
-      for (var _ei = 0; _ei < _allEluItems.length; _ei++) {
-        var _it = _allEluItems[_ei];
-        var _eLat = Number(_it.lat);
-        var _eLon = Number(_it.lon);
-        // Resolve coords via centroid if missing
-        if (!Number.isFinite(_eLat) || !Number.isFinite(_eLon)) {
-          var _place = String(_it.municipality || _it.placeText || _it.locality || _it.county || '').trim();
-          if (_place) {
-            var _res = null;
-            if (typeof resolveCentroidFromPlace === 'function') _res = resolveCentroidFromPlace(_place);
-            if (!_res && typeof resolveFallbackLatLon === 'function') {
-              _res = resolveFallbackLatLon({ municipality: _it.municipality || '', locality: _it.locality || '', county: _it.county || '' });
-            }
-            if (_res && Number.isFinite(_res.lat) && Number.isFinite(_res.lon)) {
-              _eLat = _res.lat; _eLon = _res.lon; _eluResolved++;
-            }
-          }
+        } catch(_e) {
+          console.warn('[PROB] eElurikkus biocache history fetch failed', _e);
+          _eluHistItems = [];
         }
-        if (!Number.isFinite(_eLat) || !Number.isFinite(_eLon)) continue;
-        var _eDate = String(_it.observedAt || _it.eventDate || _it.date || '');
-        if (!_eDate) continue;
-        if (!isInSeasonRange(_eDate, seasonInfo.start, seasonInfo.end)) continue;
-        seasonal.push({ lat: _eLat, lon: _eLon, date: _eDate, source: 'elurikkus' });
-        _eluInjected++;
+      } else {
+        console.log('[PROB] eElurikkus biocache history cache hit:', _eluHistItems.length, 'items');
       }
 
-      if (_eluInjected > 0) {
-        seasonal = deduplicateOccurrences(seasonal);
+      // Inject biocache items (have real lat/lon from biocache API)
+      var _eluInjected = 0;
+      if (_eluHistItems && _eluHistItems.length > 0) {
+        for (var _ei = 0; _ei < _eluHistItems.length; _ei++) {
+          var _it = _eluHistItems[_ei];
+          var _eLat = Number(_it.lat);
+          var _eLon = Number(_it.lon);
+          if (!Number.isFinite(_eLat) || !Number.isFinite(_eLon)) continue;
+          var _eDate = String(_it.observedAt || '');
+          if (!_eDate) continue;
+          if (!isInSeasonRange(_eDate, seasonInfo.start, seasonInfo.end)) continue;
+          seasonal.push({ lat: _eLat, lon: _eLon, date: _eDate, source: 'elurikkus' });
+          _eluInjected++;
+        }
+        if (_eluInjected > 0) seasonal = deduplicateOccurrences(seasonal);
       }
 
-      // Part 1: Direct injection from eluPoint (the species marker with real coords + occ7 count)
-      // Added AFTER dedup so multiple weighted entries are not collapsed to 1
+      // Fallback: direct injection from eluPoint marker (occ7 weighted, real coords)
+      // Added AFTER dedup so weighted entries are not collapsed to 1
       var _eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
       if (Number.isFinite(_eluPoint.lat) && Number.isFinite(_eluPoint.lon)) {
         var _eluOcc7 = Math.min(Number(_eluPoint.occ7 || _eluPoint.occ || 1), 30);
@@ -10276,11 +10271,10 @@ var __sharedDefaults = {};
             seasonal.push({ lat: _eluPoint.lat, lon: _eluPoint.lon, date: _eluDate, source: 'elurikkus' });
           }
           _eluInjected += _eluOcc7;
-          console.log('[PROB] eluPoint direct inject:', _eluOcc7, 'at', _eluPoint.lat.toFixed(4), _eluPoint.lon.toFixed(4));
         }
       }
 
-      console.log('[PROB] eElurikkus total injected:', _eluInjected, '(' + _eluResolved + ' via centroid, live items:', _eluLiveItems.length + ')');
+      console.log('[PROB] eElurikkus total injected:', _eluInjected);
 
       // Build full Estonia grid and assign seasonal occurrences to cells
       var gridCells = buildEstoniaGrid(seasonal, probCellSize);
@@ -10671,48 +10665,42 @@ window.__computeProbSilent = async function(speciesName) {
 
   if (typeof buildEstoniaGrid !== 'function' || typeof calculateProbabilities !== 'function') return;
 
-  // Trigger live fetch if cache is cold
-  var _eluLiveKey = String(speciesName || '').trim().toLowerCase();
-  if (!liveElurikkusBySpecies[_eluLiveKey] || !Array.isArray(liveElurikkusBySpecies[_eluLiveKey].items) || liveElurikkusBySpecies[_eluLiveKey].items.length === 0) {
+  // Fetch eElurikkus history via biocache API (returns items WITH real coordinates)
+  window.__eluHistoryCache = window.__eluHistoryCache || {};
+  var _eluHistKey = String(speciesName || '').trim().toLowerCase();
+  var _eluHistItems = window.__eluHistoryCache[_eluHistKey] || null;
+  if (!_eluHistItems) {
     try {
-      if (typeof fetchElurikkusSpecies === 'function') await fetchElurikkusSpecies(speciesName);
-    } catch(_e) {}
-  }
-
-  // Inject eElurikkus items from all available caches (with centroid resolution)
-  var _eluLiveEntry = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluLiveKey]) || null;
-  var _eluLiveItems = (_eluLiveEntry && Array.isArray(_eluLiveEntry.items)) ? _eluLiveEntry.items : [];
-  var _eluProbEntry = (window.__probEluCache && window.__probEluCache[_eluLiveKey]) || null;
-  var _eluProbItems = (_eluProbEntry && Array.isArray(_eluProbEntry.items)) ? _eluProbEntry.items : [];
-  var _allEluItems = _eluLiveItems.length > 0 ? _eluLiveItems : _eluProbItems;
-  for (var _ei = 0; _ei < _allEluItems.length; _ei++) {
-    var _it = _allEluItems[_ei];
-    var _eLat = Number(_it.lat);
-    var _eLon = Number(_it.lon);
-    if (!Number.isFinite(_eLat) || !Number.isFinite(_eLon)) {
-      var _place = String(_it.municipality || _it.placeText || _it.locality || _it.county || '').trim();
-      if (_place) {
-        var _res = null;
-        if (typeof resolveCentroidFromPlace === 'function') _res = resolveCentroidFromPlace(_place);
-        if (!_res && typeof resolveFallbackLatLon === 'function') {
-          _res = resolveFallbackLatLon({ municipality: _it.municipality || '', locality: _it.locality || '', county: _it.county || '' });
-        }
-        if (_res && Number.isFinite(_res.lat) && Number.isFinite(_res.lon)) {
-          _eLat = _res.lat; _eLon = _res.lon;
-        }
+      var _cfg = (typeof resolveSupabaseConfig === 'function') ? resolveSupabaseConfig() : {};
+      if (_cfg.supabaseUrl) {
+        var _histUrl = _cfg.supabaseUrl + '/functions/v1/elurikkus-species?text=' + encodeURIComponent(speciesName)
+          + '&days=3650&limit=500&_ts=' + Date.now();
+        var _histHeaders = { 'Accept': 'application/json' };
+        if (_cfg.anonKey) _histHeaders['apikey'] = _cfg.anonKey;
+        var _histRes = await fetch(_histUrl, { headers: _histHeaders });
+        var _histJson = await _histRes.json();
+        _eluHistItems = Array.isArray(_histJson.items) ? _histJson.items : [];
+        window.__eluHistoryCache[_eluHistKey] = _eluHistItems;
       }
-    }
-    if (!Number.isFinite(_eLat) || !Number.isFinite(_eLon)) continue;
-    var _eDate = String(_it.observedAt || _it.eventDate || _it.date || '');
-    if (!_eDate) continue;
-    if (typeof isInSeasonRange === 'function' && !isInSeasonRange(_eDate, seasonInfo.start, seasonInfo.end)) continue;
-    seasonal.push({ lat: _eLat, lon: _eLon, date: _eDate, source: 'elurikkus' });
+    } catch(_e) { _eluHistItems = []; }
   }
 
-  if (typeof deduplicateOccurrences === 'function') seasonal = deduplicateOccurrences(seasonal);
+  // Inject biocache items
+  if (_eluHistItems && _eluHistItems.length > 0) {
+    for (var _ei = 0; _ei < _eluHistItems.length; _ei++) {
+      var _it = _eluHistItems[_ei];
+      var _eLat = Number(_it.lat);
+      var _eLon = Number(_it.lon);
+      if (!Number.isFinite(_eLat) || !Number.isFinite(_eLon)) continue;
+      var _eDate = String(_it.observedAt || '');
+      if (!_eDate) continue;
+      if (typeof isInSeasonRange === 'function' && !isInSeasonRange(_eDate, seasonInfo.start, seasonInfo.end)) continue;
+      seasonal.push({ lat: _eLat, lon: _eLon, date: _eDate, source: 'elurikkus' });
+    }
+    if (typeof deduplicateOccurrences === 'function') seasonal = deduplicateOccurrences(seasonal);
+  }
 
-  // Direct injection from eluPoint marker (real coords + occ7 weighted count)
-  // Added AFTER dedup so weighted entries are not collapsed
+  // Fallback: direct injection from eluPoint marker (occ7 weighted, real coords, after dedup)
   var _eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
   if (Number.isFinite(_eluPoint.lat) && Number.isFinite(_eluPoint.lon)) {
     var _eluOcc7 = Math.min(Number(_eluPoint.occ7 || _eluPoint.occ || 1), 30);

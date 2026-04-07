@@ -10753,7 +10753,7 @@ var ebirdRecentCache = null;
 var __ennScanEbirdCounts = {};
 
 function fetchEbirdRecent(callback) {
-  var url = 'https://api.ebird.org/v2/data/obs/EE/recent?back=7&maxResults=10000&_ts=' + Date.now();
+  var url = 'https://api.ebird.org/v2/data/obs/EE/recent?back=30&maxResults=10000&_ts=' + Date.now();
   fetch(url, { headers: { 'X-eBirdApiToken': EBIRD_TOKEN }, cache: 'no-store' })
   .then(function(res) { if (!res.ok) throw new Error('eBird HTTP ' + res.status); return res.json(); })
   .then(function(arr) {
@@ -10940,8 +10940,9 @@ function missing(){
     springDate=String(springDate).trim();
     var baseProb=prob(springDate);
     var ebCode=getEbirdCode(n)||getEbirdCode(clean);
-    var ebCount=__ennScanEbirdCounts[n]||__ennScanEbirdCounts[clean]||0;
-    if(!ebCount&&ebCode&&ebird[ebCode]) ebCount=ebird[ebCode].count||0;
+    var ebCount=0;
+    if(ebCode&&ebird[ebCode]) ebCount=ebird[ebCode].count||0;
+    if(!ebCount) ebCount=__ennScanEbirdCounts[n]||__ennScanEbirdCounts[clean]||0;
     var finalProb=combinedProb(baseProb,ebCount);
     out.push({name:n,spring:springDate,prob:finalProb,baseProb:baseProb,ebirdCount:ebCount,ebirdCode:ebCode||''});
   }
@@ -10971,8 +10972,9 @@ function render(){
       var springDate=getSpringDate(n,dates)||getSpringDate(clean,dates)||'';
       var baseProb=prob(springDate);
       var ebCode=getEbirdCode(n)||getEbirdCode(clean);
-      var ebCount=__ennScanEbirdCounts[n]||__ennScanEbirdCounts[clean]||0;
-      if(!ebCount&&ebCode&&ebird[ebCode]) ebCount=ebird[ebCode].count||0;
+      var ebCount=0;
+      if(ebCode&&ebird[ebCode]) ebCount=ebird[ebCode].count||0;
+      if(!ebCount) ebCount=__ennScanEbirdCounts[n]||__ennScanEbirdCounts[clean]||0;
       var finalProb=combinedProb(baseProb,ebCount);
       displayList.push({name:n,spring:springDate,prob:finalProb,baseProb:baseProb,ebirdCount:ebCount,ebirdCode:ebCode||'',seen:isSeen});
     }
@@ -10983,16 +10985,12 @@ function render(){
   else if(sort==='spring') displayList.sort(function(a,b){return ssk(a.spring)-ssk(b.spring);});
   else displayList.sort(function(a,b){return a.name.localeCompare(b.name,'et');});
 
-  var totalElu=0,eluFetched=0;
-  for(var te=0;te<m.length;te++){var ec=getEluCount(m[te].name);if(ec>=0){eluFetched++;totalElu+=ec;}}
-  var eluInfo=eluFetched>0?' · eElur: '+totalElu+' vaatlust':'';
-
   var el=document.getElementById('ennSum');
   if(el) el.innerHTML='<span><b>'+m.length+'</b> puuduvat liiki</span>'+
     (ebirdRecentCache?'<span>Skaneeritud '+
       String(new Date(ebirdRecentCache.fetchedAt).getHours()).padStart(2,'0')+':'+
       String(new Date(ebirdRecentCache.fetchedAt).getMinutes()).padStart(2,'0')+
-      ' · eBird: '+ebirdRecentCache.totalObs+' vaatlust EE-s'+eluInfo+'</span>':'');
+      ' · eBird: '+ebirdRecentCache.totalObs+' vaatlust EE-s</span>':'');
 
   var lst=document.getElementById('ennLst');
   if(!lst) return;
@@ -11016,16 +11014,11 @@ function render(){
     if(s.ebirdCount>0) ebTxt='<div class="eObs" style="color:#16a34a">eBird: '+s.ebirdCount+' vaatl.</div>';
     else if(s.ebirdCode) ebTxt='<div class="eObs">eBird: 0 vaatl.</div>';
     else ebTxt='<div class="eObs" style="color:#d97706">eBird kood puudub</div>';
-    var eluC=getEluCount(s.name);
-    var eluTxt='';
-    if(eluC>0) eluTxt='<div class="eObs" style="color:#16a34a">eElur: '+eluC+'</div>';
-    else if(eluC===0) eluTxt='<div class="eObs">eElur: 0</div>';
-    else eluTxt='<div class="eObs" style="color:#94a3b8">eElur: \u2013</div>';
     var escName=s.name.replace(/'/g,"\\'");
     h+='<div class="eR" style="'+rowStyle+'"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+
       '<div class="eNm">'+nm+' '+badge+' <button class="ePrb" onclick="window.__ennProb(\''+escName+'\')">Prob</button></div><div class="eLt">'+sl+'</div>'+
       '<div class="eBar"><div class="eBf" style="width:'+Math.min(100,s.prob)+'%;background:'+bc+'"></div></div>'+
-      '</div><div class="eRt"><div class="ePct" style="color:'+pc+'">'+s.prob+'%</div>'+ebTxt+eluTxt+'</div></div>';
+      '</div><div class="eRt"><div class="ePct" style="color:'+pc+'">'+s.prob+'%</div>'+ebTxt+'</div></div>';
   }
   if(!h){
     if(q) h='<div style="padding:16px;text-align:center;color:#94a3b8">Liiki "'+q+'" ei leitud</div>';
@@ -11077,50 +11070,7 @@ window.__scanEnn=function(btn){
       btn.textContent='Skaneeri (viga)';setTimeout(function(){btn.textContent='Skaneeri';},3000);
       return;
     }
-    // Step 2: fetch eElurikkus for top candidates
-    var m=missing();
-    m.sort(function(a,b){return b.prob-a.prob;});
-    var toFetch=[];
-    for(var i=0;i<Math.min(m.length,30);i++){
-      if(getEluCached(m[i].name)===null&&getEluCached(_fix(m[i].name))===null) toFetch.push(m[i].name);
-    }
-    if(toFetch.length===0){
-      btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';return;
-    }
-    var idx=0;
-    function nextElu(){
-      if(idx>=toFetch.length){
-        btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';return;
-      }
-      var name=toFetch[idx];
-      var cleanName=_fix(name);
-      btn.textContent='eElur '+(idx+1)+'/'+toFetch.length;
-      idx++;
-      var fetchFn=null;
-      if(typeof window.fetchElurikkusSpecies==='function') fetchFn=window.fetchElurikkusSpecies;
-      else if(typeof window._fetchElurikkusSpeciesViaHtml==='function') fetchFn=window._fetchElurikkusSpeciesViaHtml;
-      if(!fetchFn){
-        window.__ennustusEluCache[name]={count:0,source:'no_fn',fetchedAt:Date.now()};
-        window.__ennustusEluCache[cleanName]={count:0,source:'no_fn',fetchedAt:Date.now()};
-        render();setTimeout(nextElu,100);return;
-      }
-      fetchFn(cleanName).then(function(result){
-        var count=(result&&Array.isArray(result.items))?result.items.length:0;
-        var entry={count:count,source:'api',fetchedAt:Date.now()};
-        window.__ennustusEluCache[name]=entry;
-        window.__ennustusEluCache[cleanName]=entry;
-        render();
-        setTimeout(nextElu,500);
-      }).catch(function(e){
-        console.warn('[ennustus-elu]',cleanName,e&&e.message||e);
-        var entry={count:0,source:'error',fetchedAt:Date.now()};
-        window.__ennustusEluCache[name]=entry;
-        window.__ennustusEluCache[cleanName]=entry;
-        render();
-        setTimeout(nextElu,500);
-      });
-    }
-    nextElu();
+    btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';
   });
 };
 window.__ennProb=function(speciesName){

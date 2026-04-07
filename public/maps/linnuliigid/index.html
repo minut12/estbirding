@@ -11373,6 +11373,13 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
 
     footer.textContent = 'Arvutan tõenäosused...';
     _results = buildResults();
+    console.log('[DEBUG-PROB] results total:', _results.length, 'missing:', _results.filter(function(r){return !r.onMap;}).length, 'onmap:', _results.filter(function(r){return r.onMap;}).length);
+    var sampleOnMap = _results.filter(function(r){return r.onMap;}).slice(0,3);
+    var sampleMissing = _results.filter(function(r){return !r.onMap;}).slice(0,3);
+    console.log('[DEBUG-PROB] sample onMap:', JSON.stringify(sampleOnMap.map(function(r){return {name:r.name,onMap:r.onMap};})));
+    console.log('[DEBUG-PROB] sample missing:', JSON.stringify(sampleMissing.map(function(r){return {name:r.name,onMap:r.onMap};})));
+    console.log('[DEBUG-PROB] points sample:', JSON.stringify(Object.entries(points||{}).slice(0,2).map(function(e){return {name:e[0],keys:Object.keys(e[1])};})));
+    console.log('[DEBUG-PROB] filterEl.value:', filterEl.value);
 
     var missing = _results.filter(function(r){ return !r.onMap; });
     var high = missing.filter(function(r){ return r.pct>60; }).length;

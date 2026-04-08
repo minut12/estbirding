@@ -53,6 +53,45 @@ export type Database = {
         }
         Relationships: []
       }
+      elurikkus_cache: {
+        Row: {
+          coords_source: string | null
+          coords_status: string | null
+          fetched_at: string
+          lat: number | null
+          lon: number | null
+          occ7: number | null
+          open_url: string | null
+          search_url: string | null
+          species_name: string
+          t: string | null
+        }
+        Insert: {
+          coords_source?: string | null
+          coords_status?: string | null
+          fetched_at?: string
+          lat?: number | null
+          lon?: number | null
+          occ7?: number | null
+          open_url?: string | null
+          search_url?: string | null
+          species_name: string
+          t?: string | null
+        }
+        Update: {
+          coords_source?: string | null
+          coords_status?: string | null
+          fetched_at?: string
+          lat?: number | null
+          lon?: number | null
+          occ7?: number | null
+          open_url?: string | null
+          search_url?: string | null
+          species_name?: string
+          t?: string | null
+        }
+        Relationships: []
+      }
       europe_snapshot: {
         Row: {
           created_at: string

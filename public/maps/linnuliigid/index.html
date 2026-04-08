@@ -11126,8 +11126,7 @@ window.__scanEnnAll=async function(btn){
   var staleMs=2*60*60*1000;
   var probCacheMs=24*60*60*1000;
   var scanned=0,errors=0;
-  var BATCH=5;
-  var TIMEOUT=8000;
+  var BATCH=3;
   render();
   for(var bi=0;bi<need.length;bi+=BATCH){
     if(_ennScanAbort){btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';return;}
@@ -11142,7 +11141,7 @@ window.__scanEnnAll=async function(btn){
             if((Date.now()-_updAt>staleMs)&&typeof window.__fetchEbirdEEForSpecies==='function'){
               var ebResult=await Promise.race([
                 window.__fetchEbirdEEForSpecies(name),
-                new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},TIMEOUT);})
+                new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},8000);})
               ]);
               if(ebResult){
                 var _pt=pts[name]||(pts[name]={});
@@ -11163,7 +11162,7 @@ window.__scanEnnAll=async function(btn){
               if(probAge>probCacheMs&&typeof window.__computeProbSilent==='function'){
                 await Promise.race([
                   window.__computeProbSilent(name,{skipElurikkus:true}),
-                  new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},15000);})
+                  new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},45000);})
                 ]);
               }
             }

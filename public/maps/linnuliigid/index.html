@@ -961,6 +961,8 @@ function _livePointFromItems(speciesName, items){
   if(newest && newest.observedAt) out.t = String(newest.observedAt);
   if(Number.isFinite(lat) && Number.isFinite(lon)){ out.lat = lat; out.lon = lon; } else { delete out.lat; delete out.lon; }
   out.occ7 = occ7;
+  out.occ7Elu = occ7;
+  out.occ7EluUpdated = new Date().toISOString();
   out.src = 'Elurikkus';
   out.coords_status = coordsStatus;
   out.coords_source = coordsSource;
@@ -2912,7 +2914,7 @@ async function _applyElurikkusPayloadToPoints(species, payload){
     }
   }
   if(newest) row.t = newest;
-  if(Number.isFinite(occ7)) row.occ7 = occ7;
+  if(Number.isFinite(occ7)){ row.occ7 = occ7; row.occ7Elu = occ7; row.occ7EluUpdated = new Date().toISOString(); }
   row.src = 'Elurikkus';
   row.lastFetched = new Date().toISOString();
   let best = null;
@@ -3254,7 +3256,7 @@ function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, oc
   const oldLon = Number.isFinite(Number(p.lon)) ? Number(p.lon) : null;
   const detailExact = parseEluDetailExact(detailHtml);
   if(newestIso) p.t = newestIso;
-  if(Number.isFinite(Number(occ7))) p.occ7 = Number(occ7);
+  if(Number.isFinite(Number(occ7))){ p.occ7 = Number(occ7); p.occ7Elu = Number(occ7); p.occ7EluUpdated = new Date().toISOString(); }
   p.src = 'Elurikkus';
   p.openUrl = String(detailUrl || '').trim() || p.openUrl || '';
   p.latestUrl = p.openUrl || p.latestUrl || '';
@@ -3366,6 +3368,8 @@ async function autoFetchCoords(key, searchUrl, signal){
   if(latestIso && isWithin7dAny(latestIso) && finalOcc7 < 1) finalOcc7 = 1;
   if(finalOcc7 === 0 && prevOcc7 != null && prevOcc7 > 0 && latestIso && isWithin7dAny(latestIso)) finalOcc7 = prevOcc7;
   p.occ7 = finalOcc7;
+  p.occ7Elu = finalOcc7;
+  p.occ7EluUpdated = new Date().toISOString();
   p.occ7Source = 'elurikkus_records_table';
   p.occ7PagesScanned = Number((occ7Multi && occ7Multi.pagesScanned) || 0) || 0;
   p.occ7DatesSample = (occ7Dates || []).slice(0, 10);
@@ -4628,7 +4632,7 @@ function _applySelectedOccurrenceFromServer(speciesName, json){
   const selDate = String((selected.date || selected.dateText || selected.observedAt || '')).slice(0,10);
   p.t = selDate || p.t || '';
   p.t_dt = String((selected.observedAt || selected.dateText || '')).trim() || p.t_dt || '';
-  if(Number.isFinite(Number(json && json.occ7))) p.occ7 = Number(json.occ7);
+  if(Number.isFinite(Number(json && json.occ7))){ p.occ7 = Number(json.occ7); p.occ7Elu = Number(json.occ7); p.occ7EluUpdated = new Date().toISOString(); }
   p.src = 'live_elurikkus';
   p.openUrl = occUrl || p.openUrl || '';
   if(p.openUrl) p.latestUrl = p.openUrl;
@@ -11075,6 +11079,18 @@ function ssk(ds){if(!ds) return 999999;
   return 999999;}
 
 window.__openEnn=function(){
+  // Backfill occ7Elu from existing data on open
+  var _pts=pt(),_all=sp();
+  for(var _oi=0;_oi<_all.length;_oi++){
+    var _on=_all[_oi],_oc=_fix(_on);
+    var _op=_pts[_on]||_pts[_oc];
+    if(!_op) continue;
+    var _os=String(_op.src||'').toLowerCase();
+    if(_os.indexOf('elurikkus')!==-1&&_op.occ7!=null&&_op.occ7Elu==null){
+      _op.occ7Elu=Number(_op.occ7||0);
+      _op.occ7EluUpdated=_op.lastFetched||new Date().toISOString();
+    }
+  }
   var bg=document.getElementById('ennBg');
   if(bg) bg.style.display='flex';
   render();
@@ -11088,6 +11104,17 @@ window.__scanEnnAll=async function(btn){
   _ennScanAbort=false;
   btn.disabled=true;btn.style.opacity='.6';
   var allSpecies=sp(),pts=pt();
+  // Backfill occ7Elu from existing data where separate fields don't exist yet
+  for(var bi2=0;bi2<allSpecies.length;bi2++){
+    var _bn=allSpecies[bi2],_bc=_fix(_bn);
+    var _bp=pts[_bn]||pts[_bc];
+    if(!_bp) continue;
+    var _bsrc=String(_bp.src||'').toLowerCase();
+    if(_bsrc.indexOf('elurikkus')!==-1&&_bp.occ7!=null&&_bp.occ7Elu==null){
+      _bp.occ7Elu=Number(_bp.occ7||0);
+      _bp.occ7EluUpdated=_bp.lastFetched||new Date().toISOString();
+    }
+  }
   var need=[];
   for(var i=0;i<allSpecies.length;i++){
     var n=allSpecies[i];

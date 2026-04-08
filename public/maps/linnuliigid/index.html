@@ -10738,7 +10738,7 @@ window.__computeProbSilent = async function(speciesName, options) {
 <div class="ennHdr">
 <div><h3>Ennustus</h3><p class="sub">Tõenäosus praegusel perioodil</p></div>
 <div style="display:flex;gap:8px;align-items:center">
-<button class="btn secondary" style="font-size:12px;padding:4px 10px" onclick="window.__scanEnnAll(this)">Skaneeri</button>
+<button class="btn secondary" style="font-size:12px;padding:4px 10px" onclick="window.__scanEnnAll(this)" title="Skaneerib GBIF t&#245;en&#228;osuse andmeid. eBird andmete uuendamiseks kasuta eBird EE nuppu.">Skaneeri</button>
 <button class="btn small" onclick="window.__closeEnn()">&#10005;</button>
 </div>
 </div>
@@ -11133,40 +11133,11 @@ window.__scanEnnAll=async function(btn){
     need.push(n);
   }
   if(need.length===0){btn.disabled=false;btn.style.opacity='1';btn.textContent='Pole liike';setTimeout(function(){btn.textContent='Skaneeri';},2000);return;}
-  var staleMs=6*60*60*1000;
   var probCacheMs=24*60*60*1000;
   var errors=0;
   render();
 
-  // PHASE 1: Sequential eBird fetches (one at a time, 500ms delay)
-  var ebirdDone=0;
-  for(var ei=0;ei<need.length;ei++){
-    if(_ennScanAbort){btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';return;}
-    var eName=need[ei];
-    var _ep=pts[eName]||pts[_fix(eName)]||{};
-    var _eUpdAt=_ep.occ7EbirdUpdated?new Date(_ep.occ7EbirdUpdated).getTime():0;
-    if((Date.now()-_eUpdAt>staleMs)&&typeof window.__fetchEbirdEEForSpecies==='function'){
-      try{
-        var ebResult=await Promise.race([
-          window.__fetchEbirdEEForSpecies(eName),
-          new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},10000);})
-        ]);
-        if(ebResult){
-          var _ept=pts[eName]||(pts[eName]={});
-          _ept.occ7Ebird=ebResult.occ7;_ept.occ7EbirdUpdated=new Date().toISOString();
-          _ept.occ7=Math.max(Number(_ept.occ7Elu||0),ebResult.occ7);_ept.src=ebResult.src;_ept.occ7Updated=new Date().toISOString();
-          if(!_ept.lat&&ebResult.lat){_ept.lat=ebResult.lat;_ept.lon=ebResult.lon;}
-        }
-      }catch(e){errors++;console.warn('[ENN] eBird failed:',eName,e&&e.message);}
-      await new Promise(function(r){setTimeout(r,1500);});
-    }
-    ebirdDone++;
-    btn.textContent='eBird '+ebirdDone+'/'+need.length;
-    if(ebirdDone%10===0) render();
-  }
-  render();
-
-  // PHASE 2: Parallel GBIF prob scans in batches of 3
+  // GBIF prob scans in batches of 3 (eBird data from eBird EE layer)
   var probDone=0;
   var BATCH=3;
   for(var bi=0;bi<need.length;bi+=BATCH){
@@ -11191,7 +11162,7 @@ window.__scanEnnAll=async function(btn){
             }
           }catch(e){errors++;console.warn('[ENN] prob failed:',name,e&&e.message);}
           probDone++;
-          btn.textContent='GBIF '+probDone+'/'+need.length;
+          btn.textContent='Skaneerin '+probDone+'/'+need.length;
         })();
       }));
     }catch(e){console.warn('[ENN] batch failed at',bi,e&&e.message);}

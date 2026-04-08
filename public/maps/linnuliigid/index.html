@@ -8936,6 +8936,8 @@ var __sharedDefaults = {};
     };
   }
 
+  window.__fetchEbirdEEForSpecies = fetchEbirdEEForSpecies;
+
   // --- Progress indicator ---
   function _updateEbirdEEProgress(done, total, currentSpecies, status){
     var el = document.getElementById('ebirdEEProgress');
@@ -11081,14 +11083,36 @@ window.__scanEnnAll=async function(btn){
   for(var i=0;i<allSpecies.length;i++){
     var n=allSpecies[i],clean=_fix(n);
     if(!isOnMap(n,pts)) continue;
-    if(getCurrentProbScore(n)===null&&getCurrentProbScore(clean)===null) need.push(n);
+    need.push(n);
   }
-  if(need.length===0){btn.disabled=false;btn.style.opacity='1';btn.textContent='Kõik skaneeritud!';setTimeout(function(){btn.textContent='Skaneeri';},2000);return;}
+  if(need.length===0){btn.disabled=false;btn.style.opacity='1';btn.textContent='Pole liike';setTimeout(function(){btn.textContent='Skaneeri';},2000);return;}
+  var staleMs=2*60*60*1000;
   for(var j=0;j<need.length;j++){
     if(_ennScanAbort){btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';return;}
-    btn.textContent='Skaneerin '+(j+1)+'/'+need.length+'...';
-    try{await window.__computeProbSilent(need[j],{skipElurikkus:true});}catch(e){console.warn('[Ennustus] scan error:',need[j],e);}
-    if(j%3===2) render(); // update list every 3 species
+    var name=need[j];
+    btn.textContent='Skaneerin '+(j+1)+'/'+need.length+' '+_fix(name).substring(0,12)+'...';
+    // Step 1: fetch fresh eBird 7-day count if stale or not from eBird
+    var _p=pts[name]||pts[_fix(name)]||{};
+    var _src=String(_p.src||'').toLowerCase();
+    var _updAt=_p.occ7Updated?new Date(_p.occ7Updated).getTime():0;
+    var needsEbird=_src.indexOf('ebird')===-1||(Date.now()-_updAt>staleMs);
+    if(needsEbird&&typeof window.__fetchEbirdEEForSpecies==='function'){
+      try{
+        var ebResult=await window.__fetchEbirdEEForSpecies(name);
+        if(ebResult){
+          var _pt=pts[name]||(pts[name]={});
+          _pt.occ7=ebResult.occ7;_pt.src=ebResult.src;_pt.occ7Updated=new Date().toISOString();
+          if(!_pt.lat&&ebResult.lat){_pt.lat=ebResult.lat;_pt.lon=ebResult.lon;}
+        }
+      }catch(e){console.warn('[Ennustus] eBird fetch error:',name,e);}
+      await new Promise(function(r){setTimeout(r,100);});
+    }
+    // Step 2: run GBIF prob scan if not cached
+    var clean=_fix(name);
+    if(getCurrentProbScore(name)===null&&getCurrentProbScore(clean)===null){
+      try{await window.__computeProbSilent(name,{skipElurikkus:true});}catch(e){console.warn('[Ennustus] scan error:',name,e);}
+    }
+    if(j%3===2) render();
   }
   render();
   btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';

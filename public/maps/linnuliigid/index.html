@@ -11001,7 +11001,8 @@ function render(){
     var springDate=getSpringDate(n,dates)||getSpringDate(clean,dates)||'';
     var ebirdBoost=occ7>0?Math.min(20,Math.round(Math.log1p(occ7)*5)):0;
     var finalScore=currentScore!==null?Math.min(99,currentScore+ebirdBoost):null;
-    displayList.push({name:n,spring:springDate,score:finalScore,baseScore:currentScore,occ7:occ7});
+    var src=String(p.src||'').toLowerCase();
+    displayList.push({name:n,spring:springDate,score:finalScore,baseScore:currentScore,occ7:occ7,src:src});
   }
   if(sort==='prob') displayList.sort(function(a,b){
     var sa=a.score!==null?a.score:-1,sb=b.score!==null?b.score:-1;
@@ -11025,7 +11026,12 @@ function render(){
     var sty=aurl?'background-image:url(\''+aurl+'\');border-color:'+bc:'border-color:'+bc;
     var sl=s.spring?'Kevad: '+s.spring:'Kevadkuupäev puudub';
     var escName=s.name.replace(/'/g,"\\'");
-    var ebLabel=s.occ7>0?'<span style="color:#16a34a;font-size:10px;margin-left:6px">eBird: '+s.occ7+'</span>':'';
+    var ebLabel='';
+    if(s.occ7>0){
+      if(s.src==='ebird') ebLabel='<span style="color:#16a34a;font-size:10px;margin-left:6px">eBird: '+s.occ7+'</span>';
+      else if(s.src.indexOf('elurikkus')!==-1) ebLabel='<span style="color:#3b82f6;font-size:10px;margin-left:6px">eElu: '+s.occ7+'</span>';
+      else ebLabel='<span style="color:#94a3b8;font-size:10px;margin-left:6px">7d: '+s.occ7+'</span>';
+    }
     var pctHtml=hasScore?'<div class="ePct" style="color:'+pc+'">'+sc+'%</div>':
       '<div class="ePct" style="color:#cbd5e1">&mdash;</div><div class="eObs" style="color:#d97706;font-size:10px">Vajab skaneerimist</div>';
     h+='<div class="eR"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+

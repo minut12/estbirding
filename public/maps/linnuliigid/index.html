@@ -8900,6 +8900,11 @@ var __sharedDefaults = {};
     var arr;
     try {
       var res = await fetch(proxyUrl);
+      if(res.status===418||res.status===429){
+        console.warn('[eBird] rate limited via proxy, waiting 10s...');
+        await new Promise(function(r){setTimeout(r,10000);});
+        res = await fetch(proxyUrl);
+      }
       if(!res.ok) throw new Error('proxy HTTP ' + res.status);
       var json = await res.json();
       arr = Array.isArray(json) ? json : (json.observations || json.data || []);
@@ -8907,6 +8912,11 @@ var __sharedDefaults = {};
       var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
       var directUrl = 'https://api.ebird.org/v2/data/obs/EE/recent/' + encodeURIComponent(code) + '?back=30&maxResults=1000&detail=full&_ts=' + Date.now();
       var res2 = await fetch(directUrl, { headers: { 'X-eBirdApiToken': token } });
+      if(res2.status===418||res2.status===429){
+        console.warn('[eBird] rate limited direct, waiting 10s...');
+        await new Promise(function(r){setTimeout(r,10000);});
+        res2 = await fetch(directUrl, { headers: { 'X-eBirdApiToken': token } });
+      }
       if(!res2.ok) throw new Error('eBird HTTP ' + res2.status);
       arr = await res2.json();
     }
@@ -11123,7 +11133,7 @@ window.__scanEnnAll=async function(btn){
     need.push(n);
   }
   if(need.length===0){btn.disabled=false;btn.style.opacity='1';btn.textContent='Pole liike';setTimeout(function(){btn.textContent='Skaneeri';},2000);return;}
-  var staleMs=2*60*60*1000;
+  var staleMs=6*60*60*1000;
   var probCacheMs=24*60*60*1000;
   var errors=0;
   render();
@@ -11148,7 +11158,7 @@ window.__scanEnnAll=async function(btn){
           if(!_ept.lat&&ebResult.lat){_ept.lat=ebResult.lat;_ept.lon=ebResult.lon;}
         }
       }catch(e){errors++;console.warn('[ENN] eBird failed:',eName,e&&e.message);}
-      await new Promise(function(r){setTimeout(r,500);});
+      await new Promise(function(r){setTimeout(r,1500);});
     }
     ebirdDone++;
     btn.textContent='eBird '+ebirdDone+'/'+need.length;

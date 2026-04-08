@@ -10039,8 +10039,8 @@ var __sharedDefaults = {};
               if (typeof countInLastNDaysFromDates === 'function') {
                 var _dates = _eluItems.map(function(it){ return it.observedAt; }).filter(Boolean);
                 var _eluOcc7 = countInLastNDaysFromDates(_dates, 7);
-                points[speciesName].occ7 = _eluOcc7;
                 points[speciesName].occ7Elu = _eluOcc7;
+                points[speciesName].occ7 = Math.max(_eluOcc7, Number(points[speciesName].occ7Ebird || 0));
               }
             }
             console.log('[PROB] eElurikkus paginated:', _eluItems.length, 'items for', speciesName);
@@ -10521,8 +10521,8 @@ window.__computeProbSilent = async function(speciesName, options) {
             if (typeof countInLastNDaysFromDates === 'function') {
               var _dates = _eluItems.map(function(it) { return it.observedAt; }).filter(Boolean);
               var _eluOcc7Val = countInLastNDaysFromDates(_dates, 7);
-              points[speciesName].occ7 = _eluOcc7Val;
               points[speciesName].occ7Elu = _eluOcc7Val;
+              points[speciesName].occ7 = Math.max(_eluOcc7Val, Number(points[speciesName].occ7Ebird || 0));
             }
           }
         }
@@ -11000,8 +11000,9 @@ function render(){
     if(q&&n.toLowerCase().indexOf(q)===-1&&_fix(n).toLowerCase().indexOf(q)===-1) continue;
     var clean=_fix(n);
     var p=pts[n]||pts[clean]||{};
-    var occ7Ebird=Number(p.occ7Ebird||0);
-    var occ7Elu=Number(p.occ7Elu||0);
+    var _srcLo=String(p.src||'').toLowerCase();
+    var occ7Ebird=Number(p.occ7Ebird||0)||(!p.occ7Ebird&&_srcLo.indexOf('ebird')!==-1?Number(p.occ7||0):0);
+    var occ7Elu=Number(p.occ7Elu||0)||(!p.occ7Elu&&_srcLo.indexOf('elurikkus')!==-1?Number(p.occ7||0):0);
     var currentScore=getCurrentProbScore(n);
     if(currentScore===null) currentScore=getCurrentProbScore(clean);
     if(currentScore!==null) cachedCount++;
@@ -11108,7 +11109,7 @@ window.__scanEnnAll=async function(btn){
             if(ebResult){
               var _pt=pts[name]||(pts[name]={});
               _pt.occ7Ebird=ebResult.occ7;_pt.occ7EbirdUpdated=new Date().toISOString();
-              _pt.occ7=ebResult.occ7;_pt.src=ebResult.src;_pt.occ7Updated=new Date().toISOString();
+              _pt.occ7=Math.max(Number(_pt.occ7Elu||0),ebResult.occ7);_pt.src=ebResult.src;_pt.occ7Updated=new Date().toISOString();
               if(!_pt.lat&&ebResult.lat){_pt.lat=ebResult.lat;_pt.lon=ebResult.lon;}
             }
           }

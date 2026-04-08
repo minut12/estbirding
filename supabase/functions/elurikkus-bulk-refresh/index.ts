@@ -173,14 +173,19 @@ Deno.serve(async (req) => {
   const t0 = Date.now();
 
   // Parse optional species list from body
-  let species: string[] = DEFAULT_SPECIES;
-  try {
-    const body = await req.json();
-    if (body && Array.isArray(body.species) && body.species.length > 0) {
-      species = body.species.map((s: unknown) => String(s).trim()).filter(Boolean);
-    }
-  } catch {
-    // Empty or invalid body — use defaults
+  let species: string[];
+  let bodyOffset = 0;
+  const body = await req.json().catch(() => ({}));
+
+  if (body && Array.isArray(body.species) && body.species.length > 0) {
+    // Explicit list provided — use as-is
+    species = body.species.map((s: unknown) => String(s).trim()).filter(Boolean);
+  } else {
+    // Use offset/limit slice of DEFAULT_SPECIES
+    const offset = typeof body.offset === "number" ? Math.max(0, body.offset) : 0;
+    const limit = typeof body.limit === "number" ? Math.min(100, Math.max(1, body.limit)) : DEFAULT_SPECIES.length;
+    bodyOffset = offset;
+    species = DEFAULT_SPECIES.slice(offset, offset + limit);
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
@@ -257,6 +262,8 @@ Deno.serve(async (req) => {
     errors: errors.length,
     error_details: errors.slice(0, 20),
     duration_ms,
+    offset: bodyOffset,
+    total_species: DEFAULT_SPECIES.length,
   };
 
   return new Response(JSON.stringify(result), {

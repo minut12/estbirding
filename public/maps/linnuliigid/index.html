@@ -11030,7 +11030,7 @@ function render(){
     var escName=s.name.replace(/'/g,"\\'");
     var ebLabel='';
     if(s.occ7>0){
-      if(s.src==='ebird') ebLabel='<span style="color:#16a34a;font-size:10px;margin-left:6px">eBird: '+s.occ7+'</span>';
+      if(s.src.indexOf('ebird')!==-1) ebLabel='<span style="color:#16a34a;font-size:10px;margin-left:6px">eBird: '+s.occ7+'</span>';
       else if(s.src.indexOf('elurikkus')!==-1) ebLabel='<span style="color:#3b82f6;font-size:10px;margin-left:6px">eElu: '+s.occ7+'</span>';
       else ebLabel='<span style="color:#94a3b8;font-size:10px;margin-left:6px">7d: '+s.occ7+'</span>';
     }

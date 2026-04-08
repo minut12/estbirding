@@ -10713,6 +10713,7 @@ window.__computeProbSilent = async function(speciesName) {
 <div class="ennHdr">
 <div><h3>Ennustus</h3><p class="sub">Tõenäosus praegusel perioodil</p></div>
 <div style="display:flex;gap:8px;align-items:center">
+<button class="btn secondary" style="font-size:12px;padding:4px 10px" onclick="window.__scanEnnAll(this)">Skaneeri</button>
 <button class="btn small" onclick="window.__closeEnn()">&#10005;</button>
 </div>
 </div>
@@ -10953,15 +10954,24 @@ function missing(){
 }
 
 var sort='prob';
+var _ennScanAbort=false;
+
+function getCurrentProbScore(name){
+  var probData=(window.__probDataBySpecies||{})[name];
+  if(!probData||!probData.periods) return null;
+  for(var i=0;i<probData.periods.length;i++){
+    if(probData.periods[i].isCurrent) return probData.periods[i].pct;
+  }
+  return null;
+}
 
 function render(){
   var allSpecies=sp(),dates=sd(),pts=pt();
   var q=(document.getElementById('ennQ')||{}).value||'';
   q=q.toLowerCase().trim();
-  var ebCounts=window.__ennEbirdCounts||{};
   var thisYear=new Date().getFullYear();
   var displayList=[];
-  var onMapCount=0;
+  var onMapCount=0,cachedCount=0;
   for(var i=0;i<allSpecies.length;i++){
     var n=allSpecies[i];
     if(q&&n.toLowerCase().indexOf(q)===-1&&_fix(n).toLowerCase().indexOf(q)===-1) continue;
@@ -10972,28 +10982,31 @@ function render(){
     var isSeen=(Number.isFinite(p.occ7)&&p.occ7>0)||
       (_ym&&parseInt(_ym[1],10)===thisYear);
     if(isSeen) onMapCount++;
+    var currentScore=getCurrentProbScore(n);
+    if(currentScore===null) currentScore=getCurrentProbScore(clean);
+    if(currentScore!==null) cachedCount++;
     var springDate=getSpringDate(n,dates)||getSpringDate(clean,dates)||'';
-    var baseProb=prob(springDate);
-    var ebCode=getEbirdCode(n);
-    var ebCount=ebCode?ebCounts[ebCode]||0:0;
-    var finalProb=combinedProb(baseProb,ebCount);
-    displayList.push({name:n,spring:springDate,prob:finalProb,baseProb:baseProb,ebirdCount:ebCount,ebirdCode:ebCode||'',seen:isSeen});
+    displayList.push({name:n,spring:springDate,score:currentScore,seen:isSeen});
   }
-  if(sort==='prob') displayList.sort(function(a,b){return b.prob-a.prob;});
+  if(sort==='prob') displayList.sort(function(a,b){
+    var sa=a.score!==null?a.score:-1,sb=b.score!==null?b.score:-1;
+    return sb-sa;
+  });
   else if(sort==='spring') displayList.sort(function(a,b){return ssk(a.spring)-ssk(b.spring);});
   else displayList.sort(function(a,b){return a.name.localeCompare(b.name,'et');});
 
   var el=document.getElementById('ennSum');
-  if(el) el.innerHTML='<span><b>'+displayList.length+'</b> liiki · <b>'+onMapCount+'</b> kaardil</span>'+
-'';
+  if(el) el.innerHTML='<span><b>'+displayList.length+'</b> liiki · <b>'+onMapCount+'</b> kaardil · <b>'+cachedCount+'</b> skaneeritud</span>';
 
   var lst=document.getElementById('ennLst');
   if(!lst) return;
   var h='';
   for(var k=0;k<displayList.length;k++){
     var s=displayList[k],nm=dn(s.name),aurl=av(s.name);
-    var bc=s.prob>=50?'#16a34a':s.prob>=20?'#d97706':'#cbd5e1';
-    var pc=s.prob>=50?'#16a34a':s.prob>=20?'#d97706':s.prob>=5?'#94a3b8':'#cbd5e1';
+    var hasScore=s.score!==null;
+    var sc=hasScore?s.score:0;
+    var bc=hasScore?(sc>=50?'#16a34a':sc>=20?'#d97706':'#cbd5e1'):'#e5e7eb';
+    var pc=hasScore?(sc>=50?'#16a34a':sc>=20?'#d97706':sc>=5?'#94a3b8':'#cbd5e1'):'#cbd5e1';
     var badge='';
     if(s.seen) badge='<span class="eBdg" style="background:#dbeafe;color:#1e40af">kaardil</span>';
     else badge='<span class="eBdg" style="background:#fef2f2;color:#991b1b">puudub</span>';
@@ -11001,14 +11014,16 @@ function render(){
     var sty=aurl?'background-image:url(\''+aurl+'\');border-color:'+bc:'border-color:'+bc;
     var sl=s.spring?'Kevad: '+s.spring:'Kevadkuupäev puudub';
     var escName=s.name.replace(/'/g,"\\'");
+    var pctHtml=hasScore?'<div class="ePct" style="color:'+pc+'">'+sc+'%</div>':
+      '<div class="ePct" style="color:#cbd5e1">&mdash;</div><div class="eObs" style="color:#d97706;font-size:10px">Vajab skaneerimist</div>';
     h+='<div class="eR" style="'+rowStyle+'"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+
       '<div class="eNm">'+nm+' '+badge+' <button class="ePrb" onclick="window.__ennProb(\''+escName+'\')">Prob</button></div><div class="eLt">'+sl+'</div>'+
-      '<div class="eBar"><div class="eBf" style="width:'+Math.min(100,s.prob)+'%;background:'+bc+'"></div></div>'+
-      '</div><div class="eRt"><div class="ePct" style="color:'+pc+'">'+s.prob+'%</div></div></div>';
+      '<div class="eBar"><div class="eBf" style="width:'+(hasScore?Math.min(100,sc):0)+'%;background:'+bc+'"></div></div>'+
+      '</div><div class="eRt">'+pctHtml+'</div></div>';
   }
   if(!h){
     if(q) h='<div style="padding:16px;text-align:center;color:#94a3b8">Liiki "'+q+'" ei leitud</div>';
-    else h='<div style="padding:16px;text-align:center;color:#94a3b8">Kõik liigid on juba kaardil!</div>';
+    else h='<div style="padding:16px;text-align:center;color:#94a3b8">Andmed puuduvad</div>';
   }
   lst.innerHTML=h;
 
@@ -11035,27 +11050,31 @@ window.__openEnn=function(){
   if(bg) bg.style.display='flex';
   render();
 };
-window.__closeEnn=function(){document.getElementById('ennBg').style.display='none';};
+window.__closeEnn=function(){document.getElementById('ennBg').style.display='none';_ennScanAbort=true;};
 window.__renderEnn=render;
 window.__sortEnn=function(s){sort=s;render();};
-window.__scanEnn=function(btn){
-  window.__ennEbirdCounts = {};
-  btn.textContent='Laen eBird...';
-  btn.style.opacity='.6';
-  btn.disabled=true;
-  var lst=document.getElementById('ennLst');
-  if(lst) lst.style.opacity='0.3';
-  fetchEbirdRecent(function(err){
-    render();
-    if(lst) lst.style.opacity='1';
-    if(err){
-      btn.disabled=false;btn.style.opacity='1';
-      btn.textContent='Skaneeri (viga)';setTimeout(function(){btn.textContent='Skaneeri';},3000);
-      return;
-    }
-    btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';
-  });
+
+window.__scanEnnAll=async function(btn){
+  if(typeof window.__computeProbSilent!=='function'){btn.textContent='Pole saadaval';return;}
+  _ennScanAbort=false;
+  var allSpecies=sp();
+  var need=[];
+  for(var i=0;i<allSpecies.length;i++){
+    var n=allSpecies[i],clean=_fix(n);
+    if(getCurrentProbScore(n)===null&&getCurrentProbScore(clean)===null) need.push(n);
+  }
+  if(need.length===0){btn.textContent='Kõik skaneeritud!';setTimeout(function(){btn.textContent='Skaneeri';},2000);return;}
+  btn.disabled=true;btn.style.opacity='.6';
+  for(var j=0;j<need.length;j++){
+    if(_ennScanAbort){btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';return;}
+    btn.textContent='Skaneerin '+(j+1)+'/'+need.length+'...';
+    try{await window.__computeProbSilent(need[j]);}catch(e){console.warn('[Ennustus] scan error:',need[j],e);}
+    if(j%3===2) render(); // update list every 3 species
+  }
+  render();
+  btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';
 };
+
 window.__ennProb=function(speciesName){
   window.__closeEnn();
   setTimeout(function(){

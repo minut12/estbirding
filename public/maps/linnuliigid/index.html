@@ -10970,28 +10970,32 @@ function getCurrentProbScore(name){
   return null;
 }
 
+function isMissing(name,pts,thisYear){
+  var clean=_fix(name);
+  var p=pts[name]||pts[clean]||{};
+  if(Number.isFinite(p.occ7)&&p.occ7>0) return false;
+  var _ds=String(p.t||'').trim();
+  if(_ds){var _ym=_ds.match(/^(\d{4})/);if(_ym&&parseInt(_ym[1],10)===thisYear) return false;}
+  return true;
+}
+
 function render(){
   var allSpecies=sp(),dates=sd(),pts=pt();
   var q=(document.getElementById('ennQ')||{}).value||'';
   q=q.toLowerCase().trim();
   var thisYear=new Date().getFullYear();
   var displayList=[];
-  var onMapCount=0,cachedCount=0;
+  var cachedCount=0;
   for(var i=0;i<allSpecies.length;i++){
     var n=allSpecies[i];
+    if(!isMissing(n,pts,thisYear)) continue;
     if(q&&n.toLowerCase().indexOf(q)===-1&&_fix(n).toLowerCase().indexOf(q)===-1) continue;
     var clean=_fix(n);
-    var p=pts[n]||pts[clean]||{};
-    var _ds=String(p.t||'').trim();
-    var _ym=_ds?_ds.match(/^(\d{4})/):null;
-    var isSeen=(Number.isFinite(p.occ7)&&p.occ7>0)||
-      (_ym&&parseInt(_ym[1],10)===thisYear);
-    if(isSeen) onMapCount++;
     var currentScore=getCurrentProbScore(n);
     if(currentScore===null) currentScore=getCurrentProbScore(clean);
     if(currentScore!==null) cachedCount++;
     var springDate=getSpringDate(n,dates)||getSpringDate(clean,dates)||'';
-    displayList.push({name:n,spring:springDate,score:currentScore,seen:isSeen});
+    displayList.push({name:n,spring:springDate,score:currentScore});
   }
   if(sort==='prob') displayList.sort(function(a,b){
     var sa=a.score!==null?a.score:-1,sb=b.score!==null?b.score:-1;
@@ -11001,7 +11005,7 @@ function render(){
   else displayList.sort(function(a,b){return a.name.localeCompare(b.name,'et');});
 
   var el=document.getElementById('ennSum');
-  if(el) el.innerHTML='<span><b>'+displayList.length+'</b> liiki · <b>'+onMapCount+'</b> kaardil · <b>'+cachedCount+'</b> skaneeritud</span>';
+  if(el) el.innerHTML='<span><b>'+displayList.length+'</b> puuduvat liiki · <b>'+cachedCount+'</b> skaneeritud</span>';
 
   var lst=document.getElementById('ennLst');
   if(!lst) return;
@@ -11012,29 +11016,25 @@ function render(){
     var sc=hasScore?s.score:0;
     var bc=hasScore?(sc>=50?'#16a34a':sc>=20?'#d97706':'#cbd5e1'):'#e5e7eb';
     var pc=hasScore?(sc>=50?'#16a34a':sc>=20?'#d97706':sc>=5?'#94a3b8':'#cbd5e1'):'#cbd5e1';
-    var badge='';
-    if(s.seen) badge='<span class="eBdg" style="background:#dbeafe;color:#1e40af">kaardil</span>';
-    else badge='<span class="eBdg" style="background:#fef2f2;color:#991b1b">puudub</span>';
-    var rowStyle=s.seen?'opacity:0.5':'';
     var sty=aurl?'background-image:url(\''+aurl+'\');border-color:'+bc:'border-color:'+bc;
     var sl=s.spring?'Kevad: '+s.spring:'Kevadkuupäev puudub';
     var escName=s.name.replace(/'/g,"\\'");
     var pctHtml=hasScore?'<div class="ePct" style="color:'+pc+'">'+sc+'%</div>':
       '<div class="ePct" style="color:#cbd5e1">&mdash;</div><div class="eObs" style="color:#d97706;font-size:10px">Vajab skaneerimist</div>';
-    h+='<div class="eR" style="'+rowStyle+'"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+
-      '<div class="eNm">'+nm+' '+badge+' <button class="ePrb" onclick="window.__ennProb(\''+escName+'\')">Prob</button></div><div class="eLt">'+sl+'</div>'+
+    h+='<div class="eR"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+
+      '<div class="eNm">'+nm+' <button class="ePrb" onclick="window.__ennProb(\''+escName+'\')">Prob</button></div><div class="eLt">'+sl+'</div>'+
       '<div class="eBar"><div class="eBf" style="width:'+(hasScore?Math.min(100,sc):0)+'%;background:'+bc+'"></div></div>'+
       '</div><div class="eRt">'+pctHtml+'</div></div>';
   }
   if(!h){
     if(q) h='<div style="padding:16px;text-align:center;color:#94a3b8">Liiki "'+q+'" ei leitud</div>';
-    else h='<div style="padding:16px;text-align:center;color:#94a3b8">Andmed puuduvad</div>';
+    else h='<div style="padding:16px;text-align:center;color:#94a3b8">Kõik liigid on kaardil!</div>';
   }
   lst.innerHTML=h;
 
   var ft=document.getElementById('ennFt');
   if(ft){
-    var footerLabel='Näitab '+displayList.length+' / '+allSpecies.length+' liiki';
+    var footerLabel=q?'Näitab '+displayList.length+' liiki':'Näitab '+displayList.length+' puuduvat liiki';
     ft.innerHTML='<span>'+footerLabel+'</span>'+
       '<div style="display:flex;gap:6px;align-items:center"><span style="color:#64748b">Sorteeri:</span>'+
       '<button class="eSP '+(sort==='prob'?'eSA':'eSO')+'" onclick="window.__sortEnn(\'prob\')">% laskuv</button>'+
@@ -11062,10 +11062,11 @@ window.__sortEnn=function(s){sort=s;render();};
 window.__scanEnnAll=async function(btn){
   if(typeof window.__computeProbSilent!=='function'){btn.textContent='Pole saadaval';return;}
   _ennScanAbort=false;
-  var allSpecies=sp();
+  var allSpecies=sp(),pts=pt(),thisYear=new Date().getFullYear();
   var need=[];
   for(var i=0;i<allSpecies.length;i++){
     var n=allSpecies[i],clean=_fix(n);
+    if(!isMissing(n,pts,thisYear)) continue;
     if(getCurrentProbScore(n)===null&&getCurrentProbScore(clean)===null) need.push(n);
   }
   if(need.length===0){btn.textContent='Kõik skaneeritud!';setTimeout(function(){btn.textContent='Skaneeri';},2000);return;}

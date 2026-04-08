@@ -11038,7 +11038,8 @@ function render(){
     var bc=hasScore?(sc>=50?'#16a34a':sc>=20?'#d97706':'#cbd5e1'):'#e5e7eb';
     var pc=hasScore?(sc>=50?'#16a34a':sc>=20?'#d97706':sc>=5?'#94a3b8':'#cbd5e1'):'#cbd5e1';
     var sty=aurl?'background-image:url(\''+aurl+'\');border-color:'+bc:'border-color:'+bc;
-    var sl=s.spring?'Kevad: '+s.spring:'Kevadkuupäev puudub';
+    var _isSpringFmt=s.spring&&/^\d{1,2}\.\d{2}$/.test(String(s.spring).trim());
+    var sl=_isSpringFmt?'Kevad: '+s.spring:'Kevadkuupäev puudub';
     var escName=s.name.replace(/'/g,"\\'");
     var ebLabel='';
     var _ebTxt=s.ebirdScanned?'eBird: '+s.occ7Ebird:'eBird: \u2014';

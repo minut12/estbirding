@@ -10474,7 +10474,8 @@ document.addEventListener('click', function(e) {
 });
 
 // --- Silent probability computation (no UI toggle, just data) ---
-window.__computeProbSilent = async function(speciesName) {
+window.__computeProbSilent = async function(speciesName, options) {
+  options = options || {};
   // Check if already computed
   if (window.__probDataBySpecies[speciesName]) return;
 
@@ -10486,6 +10487,7 @@ window.__computeProbSilent = async function(speciesName) {
   // Step 0: Fetch eElurikkus date-only items for probability grid.
   // Store in prob-specific cache, NOT liveElurikkusBySpecies (see toggleProbability comment).
   var _eluKey = typeof _normalizeSpeciesKey === 'function' ? _normalizeSpeciesKey(speciesName) : String(speciesName || '').trim().toLowerCase();
+  if (!options.skipElurikkus) {
   var _eluCached = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluKey]) || null;
   var _probEluCache = window.__probEluCache = window.__probEluCache || {};
   var _probEluCached = _probEluCache[_eluKey] || null;
@@ -10521,11 +10523,14 @@ window.__computeProbSilent = async function(speciesName) {
       }
     } catch(e) { /* ignore */ }
   }
+  } // end skipElurikkus
 
   // Step 1: Check prob cache
   var data = typeof loadProbCache === 'function' ? loadProbCache(speciesName) : null;
 
   if (!data) {
+    var eluOccs = [];
+    if (!options.skipElurikkus) {
     // Fetch eElurikkus occurrences with coord resolution
     var cacheKey = String(speciesName || '').trim().toLowerCase();
     var eluItems = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[cacheKey] && liveElurikkusBySpecies[cacheKey].items) || null;
@@ -10543,7 +10548,6 @@ window.__computeProbSilent = async function(speciesName) {
       }
     }
 
-    var eluOccs = [];
     for (var i = 0; i < eluItems.length; i++) {
       var item = eluItems[i];
       var lat = Number(item.lat), lon = Number(item.lon);
@@ -10591,6 +10595,7 @@ window.__computeProbSilent = async function(speciesName) {
         }
       }
     } catch(e) { /* ignore */ }
+    } // end skipElurikkus
 
     // GBIF
     var sciName = (typeof extractScientificName === 'function' ? extractScientificName(eluOccs) : '') || (typeof SPECIES_SCINAMES !== 'undefined' ? SPECIES_SCINAMES[speciesName] : '') || '';
@@ -11010,7 +11015,7 @@ function render(){
     var badge='';
     if(s.seen) badge='<span class="eBdg" style="background:#dbeafe;color:#1e40af">kaardil</span>';
     else badge='<span class="eBdg" style="background:#fef2f2;color:#991b1b">puudub</span>';
-    var rowStyle=s.seen?'opacity:0.6':'';
+    var rowStyle=s.seen?'opacity:0.5':'';
     var sty=aurl?'background-image:url(\''+aurl+'\');border-color:'+bc:'border-color:'+bc;
     var sl=s.spring?'Kevad: '+s.spring:'Kevadkuupäev puudub';
     var escName=s.name.replace(/'/g,"\\'");
@@ -11068,7 +11073,7 @@ window.__scanEnnAll=async function(btn){
   for(var j=0;j<need.length;j++){
     if(_ennScanAbort){btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';return;}
     btn.textContent='Skaneerin '+(j+1)+'/'+need.length+'...';
-    try{await window.__computeProbSilent(need[j]);}catch(e){console.warn('[Ennustus] scan error:',need[j],e);}
+    try{await window.__computeProbSilent(need[j],{skipElurikkus:true});}catch(e){console.warn('[Ennustus] scan error:',need[j],e);}
     if(j%3===2) render(); // update list every 3 species
   }
   render();

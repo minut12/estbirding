@@ -11010,7 +11010,9 @@ function render(){
     var bestOcc7=Math.max(occ7Ebird,occ7Elu);
     var boost=bestOcc7>0?Math.min(20,Math.round(Math.log1p(bestOcc7)*5)):0;
     var finalScore=currentScore!==null?Math.min(99,currentScore+boost):null;
-    displayList.push({name:n,spring:springDate,score:finalScore,baseScore:currentScore,occ7Ebird:occ7Ebird,occ7Elu:occ7Elu});
+    var ebirdScanned=p.occ7EbirdUpdated!=null;
+    var eluScanned=p.occ7Elu!=null||_srcLo.indexOf('elurikkus')!==-1;
+    displayList.push({name:n,spring:springDate,score:finalScore,baseScore:currentScore,occ7Ebird:occ7Ebird,occ7Elu:occ7Elu,ebirdScanned:ebirdScanned,eluScanned:eluScanned});
   }
   if(sort==='prob') displayList.sort(function(a,b){
     var sa=a.score!==null?a.score:-1,sb=b.score!==null?b.score:-1;
@@ -11035,8 +11037,12 @@ function render(){
     var sl=s.spring?'Kevad: '+s.spring:'Kevadkuupäev puudub';
     var escName=s.name.replace(/'/g,"\\'");
     var ebLabel='';
-    if(s.occ7Ebird>0) ebLabel+='<span style="color:#16a34a;font-size:10px;margin-left:6px">eBird: '+s.occ7Ebird+'</span>';
-    if(s.occ7Elu>0) ebLabel+='<span style="color:#3b82f6;font-size:10px;margin-left:6px">eElu: '+s.occ7Elu+'</span>';
+    var _ebTxt=s.ebirdScanned?'eBird: '+s.occ7Ebird:'eBird: \u2014';
+    var _ebClr=s.ebirdScanned?(s.occ7Ebird>0?'#16a34a':'#94a3b8'):'#cbd5e1';
+    ebLabel+='<span style="color:'+_ebClr+';font-size:10px;margin-left:6px">'+_ebTxt+'</span>';
+    var _elTxt=s.eluScanned?'eElu: '+s.occ7Elu:'eElu: \u2014';
+    var _elClr=s.eluScanned?(s.occ7Elu>0?'#3b82f6':'#94a3b8'):'#cbd5e1';
+    ebLabel+='<span style="color:'+_elClr+';font-size:10px;margin-left:4px">'+_elTxt+'</span>';
     var pctHtml=hasScore?'<div class="ePct" style="color:'+pc+'">'+sc+'%</div>':
       '<div class="ePct" style="color:#cbd5e1">&mdash;</div><div class="eObs" style="color:#d97706;font-size:10px">Vajab skaneerimist</div>';
     h+='<div class="eR"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+

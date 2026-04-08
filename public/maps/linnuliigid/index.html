@@ -6563,6 +6563,61 @@ async function _applySnapshot(snap){
   render();
 }
 
+async function _loadElurikkusCacheFromSupabase(){
+  try{
+    var cfg = resolveSupabaseConfig();
+    var supabaseUrl = cfg.supabaseUrl;
+    var anonKey = cfg.anonKey;
+    if(!supabaseUrl || !anonKey) return;
+    var res = await fetch(
+      supabaseUrl + '/rest/v1/elurikkus_cache?select=*&order=fetched_at.desc',
+      {
+        headers: {
+          'apikey': anonKey,
+          'Authorization': 'Bearer ' + anonKey
+        }
+      }
+    );
+    if(!res.ok) return;
+    var rows = await res.json();
+    if(!Array.isArray(rows) || rows.length === 0) return;
+    var applied = 0;
+    for(var i = 0; i < rows.length; i++){
+      var row = rows[i];
+      var key = row.species_name;
+      if(!key || SPECIES.indexOf(key) === -1) continue;
+      var p = points[key] || {};
+      var existingTs = p.clientScannedAt ? new Date(p.clientScannedAt).getTime() : 0;
+      var cacheTs = new Date(row.fetched_at).getTime();
+      if(cacheTs <= existingTs) continue;
+      var hasCoords = row.lat && row.lon &&
+        row.coords_status === 'public' &&
+        Number.isFinite(row.lat) && Number.isFinite(row.lon);
+      var merged = Object.assign({}, p, {
+        occ7: typeof row.occ7 === 'number' ? row.occ7 : p.occ7,
+        t: row.t || p.t,
+        src: 'ElurikkusCloud',
+        openUrl: row.open_url || p.openUrl,
+        searchUrl: row.search_url || p.searchUrl,
+        coords_status: row.coords_status || p.coords_status,
+        coords_source: row.coords_source || p.coords_source,
+      });
+      if(hasCoords){ merged.lat = row.lat; merged.lon = row.lon; }
+      points[key] = merged;
+      applied++;
+    }
+    if(applied > 0){
+      save();
+      if(typeof rebuildAllMarkers === 'function') rebuildAllMarkers();
+      if(typeof render === 'function') render();
+      _showSnapshotBanner('Elurikkus pilveandmed laaditud: ' + applied + ' liiki uuendatud', '');
+    }
+    console.log('[ElurikkusCloud] loaded', applied, 'species from cache');
+  }catch(e){
+    console.warn('[ElurikkusCloud] startup load failed:', e);
+  }
+}
+
 function refreshAllMarkers(){
   __renderedMarkerCount = 0;
   Object.keys(points).forEach(updateMarker);
@@ -8143,6 +8198,7 @@ if(!window.__springEditDelegatedBound){
 // Restore existing markers from localStorage and render list
 updateClientDataMaxAtFromPoints();
 refreshAllMarkers();
+_loadElurikkusCacheFromSupabase(); // non-blocking, fire and forget
 _updateServerSnapshotStatus();
 _wireSnapshotButtons();
 _wireSidebarSettingsRow();

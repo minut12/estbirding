@@ -11125,49 +11125,61 @@ window.__scanEnnAll=async function(btn){
   if(need.length===0){btn.disabled=false;btn.style.opacity='1';btn.textContent='Pole liike';setTimeout(function(){btn.textContent='Skaneeri';},2000);return;}
   var staleMs=2*60*60*1000;
   var probCacheMs=24*60*60*1000;
-  var scanned=0;
+  var scanned=0,errors=0;
   var BATCH=5;
-  // Show cached results immediately
+  var TIMEOUT=8000;
   render();
   for(var bi=0;bi<need.length;bi+=BATCH){
     if(_ennScanAbort){btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';return;}
-    var batch=need.slice(bi,bi+BATCH);
-    await Promise.allSettled(batch.map(function(name){
-      return (async function(){
-        try{
-          // Step 1: eBird fetch if stale
-          var _p=pts[name]||pts[_fix(name)]||{};
-          var _updAt=_p.occ7EbirdUpdated?new Date(_p.occ7EbirdUpdated).getTime():0;
-          if((Date.now()-_updAt>staleMs)&&typeof window.__fetchEbirdEEForSpecies==='function'){
-            var ebResult=await window.__fetchEbirdEEForSpecies(name);
-            if(ebResult){
-              var _pt=pts[name]||(pts[name]={});
-              _pt.occ7Ebird=ebResult.occ7;_pt.occ7EbirdUpdated=new Date().toISOString();
-              _pt.occ7=Math.max(Number(_pt.occ7Elu||0),ebResult.occ7);_pt.src=ebResult.src;_pt.occ7Updated=new Date().toISOString();
-              if(!_pt.lat&&ebResult.lat){_pt.lat=ebResult.lat;_pt.lon=ebResult.lon;}
+    try{
+      var batch=need.slice(bi,bi+BATCH);
+      await Promise.allSettled(batch.map(function(name){
+        return (async function(){
+          // Step 1: eBird fetch with timeout
+          try{
+            var _p=pts[name]||pts[_fix(name)]||{};
+            var _updAt=_p.occ7EbirdUpdated?new Date(_p.occ7EbirdUpdated).getTime():0;
+            if((Date.now()-_updAt>staleMs)&&typeof window.__fetchEbirdEEForSpecies==='function'){
+              var ebResult=await Promise.race([
+                window.__fetchEbirdEEForSpecies(name),
+                new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},TIMEOUT);})
+              ]);
+              if(ebResult){
+                var _pt=pts[name]||(pts[name]={});
+                _pt.occ7Ebird=ebResult.occ7;_pt.occ7EbirdUpdated=new Date().toISOString();
+                _pt.occ7=Math.max(Number(_pt.occ7Elu||0),ebResult.occ7);_pt.src=ebResult.src;_pt.occ7Updated=new Date().toISOString();
+                if(!_pt.lat&&ebResult.lat){_pt.lat=ebResult.lat;_pt.lon=ebResult.lon;}
+              }
             }
-          }
-          // Step 2: prob scan if no fresh cache
-          var clean=_fix(name);
-          var hasProb=getCurrentProbScore(name)!==null||getCurrentProbScore(clean)!==null;
-          if(!hasProb){
-            var probCached=null;
-            try{var raw=localStorage.getItem('bm_prob2_'+name);if(raw){probCached=JSON.parse(raw);}}catch(e){}
-            var probAge=probCached&&probCached.fetchedAt?Date.now()-new Date(probCached.fetchedAt).getTime():Infinity;
-            if(probAge>probCacheMs&&typeof window.__computeProbSilent==='function'){
-              await window.__computeProbSilent(name,{skipElurikkus:true});
+          }catch(e){errors++;console.warn('[ENN] eBird failed:',name,e&&e.message);}
+          // Step 2: prob scan with timeout
+          try{
+            var clean=_fix(name);
+            var hasProb=getCurrentProbScore(name)!==null||getCurrentProbScore(clean)!==null;
+            if(!hasProb){
+              var probCached=null;
+              try{var raw=localStorage.getItem('bm_prob2_'+name);if(raw){probCached=JSON.parse(raw);}}catch(e2){}
+              var probAge=probCached&&probCached.fetchedAt?Date.now()-new Date(probCached.fetchedAt).getTime():Infinity;
+              if(probAge>probCacheMs&&typeof window.__computeProbSilent==='function'){
+                await Promise.race([
+                  window.__computeProbSilent(name,{skipElurikkus:true}),
+                  new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},15000);})
+                ]);
+              }
             }
-          }
-        }catch(e){console.warn('[Ennustus] scan error:',name,e);}
-        scanned++;
-        btn.textContent='Skaneerin '+scanned+'/'+need.length;
-      })();
-    }));
+          }catch(e){errors++;console.warn('[ENN] prob failed:',name,e&&e.message);}
+          scanned++;
+          btn.textContent='Skaneerin '+scanned+'/'+need.length;
+        })();
+      }));
+    }catch(e){console.warn('[ENN] batch failed at',bi,e&&e.message);}
     render();
-    await new Promise(function(r){setTimeout(r,200);});
+    await new Promise(function(r){setTimeout(r,300);});
   }
   render();
-  btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';
+  btn.disabled=false;btn.style.opacity='1';
+  btn.textContent=errors>0?'Valmis ('+errors+' viga)':'Valmis \u2713';
+  setTimeout(function(){btn.textContent='Skaneeri';},5000);
 };
 
 window.__ennProb=function(speciesName){

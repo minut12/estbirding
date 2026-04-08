@@ -8311,7 +8311,7 @@ document.addEventListener('DOMContentLoaded', function(){
   <button id="toggleWind" class="btn secondary">Tuulekaart</button>
   <button id="toggleSpring" class="btn secondary">Kevadränne</button>
   <button id="toggleEbirdEE" class="btn secondary" style="white-space:nowrap">eBird EE</button>
-  <button id="ennustusBtn" class="btn secondary" title="Näita puuduvate liikide saabumise tõenäosust" onclick="window.__openEnnustus()">Ennustus</button>
+  <button id="ennustusBtn" class="btn secondary" title="Näita liikide tõenäosust praegusel perioodil" onclick="window.__openEnnustus()">Ennustus</button>
 
   <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 päeva jooksul aktiivsed">7p liigid: 0</span>
 </div>
@@ -10711,7 +10711,7 @@ window.__computeProbSilent = async function(speciesName) {
 <div id="ennBg">
 <div id="ennBox">
 <div class="ennHdr">
-<div><h3>Puuduvad liigid — ennustus</h3><p class="sub">Liigid, mida kaardil veel pole</p></div>
+<div><h3>Ennustus</h3><p class="sub">Tõenäosus praegusel perioodil</p></div>
 <div style="display:flex;gap:8px;align-items:center">
 <button class="btn secondary" style="font-size:12px;padding:4px 10px" onclick="window.__scanEnn(this)">Skaneeri</button>
 <button class="btn small" onclick="window.__closeEnn()">&#10005;</button>
@@ -10961,34 +10961,31 @@ function render(){
   q=q.toLowerCase().trim();
   var ebCounts=window.__ennEbirdCounts||{};
   var thisYear=new Date().getFullYear();
-  var m=missing();
   var displayList=[];
-  if(q){
-    for(var i=0;i<allSpecies.length;i++){
-      var n=allSpecies[i];
-      if(n.toLowerCase().indexOf(q)===-1&&_fix(n).toLowerCase().indexOf(q)===-1) continue;
-      var clean=_fix(n);
-      var p=pts[n]||pts[clean]||{};
-      var _ds=String(p.t||'').trim();
-      var _ym=_ds?_ds.match(/^(\d{4})/):null;
-      var isSeen=(Number.isFinite(p.occ7)&&p.occ7>0)||
-        (_ym&&parseInt(_ym[1],10)===thisYear);
-      var springDate=getSpringDate(n,dates)||getSpringDate(clean,dates)||'';
-      var baseProb=prob(springDate);
-      var ebCode=getEbirdCode(n);
-      var ebCount=ebCode?ebCounts[ebCode]||0:0;
-      var finalProb=combinedProb(baseProb,ebCount);
-      displayList.push({name:n,spring:springDate,prob:finalProb,baseProb:baseProb,ebirdCount:ebCount,ebirdCode:ebCode||'',seen:isSeen});
-    }
-  } else {
-    for(var j=0;j<m.length;j++){m[j].seen=false;displayList.push(m[j]);}
+  var onMapCount=0;
+  for(var i=0;i<allSpecies.length;i++){
+    var n=allSpecies[i];
+    if(q&&n.toLowerCase().indexOf(q)===-1&&_fix(n).toLowerCase().indexOf(q)===-1) continue;
+    var clean=_fix(n);
+    var p=pts[n]||pts[clean]||{};
+    var _ds=String(p.t||'').trim();
+    var _ym=_ds?_ds.match(/^(\d{4})/):null;
+    var isSeen=(Number.isFinite(p.occ7)&&p.occ7>0)||
+      (_ym&&parseInt(_ym[1],10)===thisYear);
+    if(isSeen) onMapCount++;
+    var springDate=getSpringDate(n,dates)||getSpringDate(clean,dates)||'';
+    var baseProb=prob(springDate);
+    var ebCode=getEbirdCode(n);
+    var ebCount=ebCode?ebCounts[ebCode]||0:0;
+    var finalProb=combinedProb(baseProb,ebCount);
+    displayList.push({name:n,spring:springDate,prob:finalProb,baseProb:baseProb,ebirdCount:ebCount,ebirdCode:ebCode||'',seen:isSeen});
   }
   if(sort==='prob') displayList.sort(function(a,b){return b.prob-a.prob;});
   else if(sort==='spring') displayList.sort(function(a,b){return ssk(a.spring)-ssk(b.spring);});
   else displayList.sort(function(a,b){return a.name.localeCompare(b.name,'et');});
 
   var el=document.getElementById('ennSum');
-  if(el) el.innerHTML='<span><b>'+m.length+'</b> puuduvat liiki</span>'+
+  if(el) el.innerHTML='<span><b>'+displayList.length+'</b> liiki · <b>'+onMapCount+'</b> kaardil</span>'+
     (ebirdRecentCache?'<span>Skaneeritud '+
       String(new Date(ebirdRecentCache.fetchedAt).getHours()).padStart(2,'0')+':'+
       String(new Date(ebirdRecentCache.fetchedAt).getMinutes()).padStart(2,'0')+
@@ -11003,12 +11000,7 @@ function render(){
     var pc=s.prob>=50?'#16a34a':s.prob>=20?'#d97706':s.prob>=5?'#94a3b8':'#cbd5e1';
     var badge='';
     if(s.seen) badge='<span class="eBdg" style="background:#dbeafe;color:#1e40af">kaardil</span>';
-    else if(s.spring){
-      var mm=String(s.spring).match(/^(\d{1,2})\.(\d{2})$/);
-      if(mm){var dd=new Date(new Date().getFullYear(),parseInt(mm[2],10)-1,parseInt(mm[1],10));
-        var df=(dd.getTime()-Date.now())/864e5;
-        if(df<=7) badge='<span class="eBdg eBH">saabumas</span>';
-        else if(df<=30) badge='<span class="eBdg eBM">varsti</span>';}}
+    else badge='<span class="eBdg" style="background:#fef2f2;color:#991b1b">puudub</span>';
     var rowStyle=s.seen?'opacity:0.6':'';
     var sty=aurl?'background-image:url(\''+aurl+'\');border-color:'+bc:'border-color:'+bc;
     var sl=s.spring?'Kevad: '+s.spring:'Kevadkuupäev puudub';
@@ -11030,7 +11022,7 @@ function render(){
 
   var ft=document.getElementById('ennFt');
   if(ft){
-    var footerLabel=q?'Näitab '+displayList.length+' / '+allSpecies.length+' liiki':'Näitab '+displayList.length+' / '+m.length+' puuduvat';
+    var footerLabel='Näitab '+displayList.length+' / '+allSpecies.length+' liiki';
     ft.innerHTML='<span>'+footerLabel+'</span>'+
       '<div style="display:flex;gap:6px;align-items:center"><span style="color:#64748b">Sorteeri:</span>'+
       '<button class="eSP '+(sort==='prob'?'eSA':'eSO')+'" onclick="window.__sortEnn(\'prob\')">% laskuv</button>'+

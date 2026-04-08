@@ -10713,7 +10713,6 @@ window.__computeProbSilent = async function(speciesName) {
 <div class="ennHdr">
 <div><h3>Ennustus</h3><p class="sub">Tõenäosus praegusel perioodil</p></div>
 <div style="display:flex;gap:8px;align-items:center">
-<button class="btn secondary" style="font-size:12px;padding:4px 10px" onclick="window.__scanEnn(this)">Skaneeri</button>
 <button class="btn small" onclick="window.__closeEnn()">&#10005;</button>
 </div>
 </div>
@@ -10986,10 +10985,7 @@ function render(){
 
   var el=document.getElementById('ennSum');
   if(el) el.innerHTML='<span><b>'+displayList.length+'</b> liiki · <b>'+onMapCount+'</b> kaardil</span>'+
-    (ebirdRecentCache?'<span>Skaneeritud '+
-      String(new Date(ebirdRecentCache.fetchedAt).getHours()).padStart(2,'0')+':'+
-      String(new Date(ebirdRecentCache.fetchedAt).getMinutes()).padStart(2,'0')+
-      ' · eBird: '+ebirdRecentCache.totalObs+' vaatlust EE-s</span>':'');
+'';
 
   var lst=document.getElementById('ennLst');
   if(!lst) return;
@@ -11004,15 +11000,11 @@ function render(){
     var rowStyle=s.seen?'opacity:0.6':'';
     var sty=aurl?'background-image:url(\''+aurl+'\');border-color:'+bc:'border-color:'+bc;
     var sl=s.spring?'Kevad: '+s.spring:'Kevadkuupäev puudub';
-    var ebTxt='';
-    if(s.ebirdCount>0) ebTxt='<div class="eObs" style="color:#16a34a">eBird: '+s.ebirdCount+' vaatl.</div>';
-    else if(s.ebirdCode) ebTxt='<div class="eObs">eBird: 0 vaatl.</div>';
-    else ebTxt='<div class="eObs" style="color:#d97706">eBird kood puudub</div>';
     var escName=s.name.replace(/'/g,"\\'");
     h+='<div class="eR" style="'+rowStyle+'"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+
       '<div class="eNm">'+nm+' '+badge+' <button class="ePrb" onclick="window.__ennProb(\''+escName+'\')">Prob</button></div><div class="eLt">'+sl+'</div>'+
       '<div class="eBar"><div class="eBf" style="width:'+Math.min(100,s.prob)+'%;background:'+bc+'"></div></div>'+
-      '</div><div class="eRt"><div class="ePct" style="color:'+pc+'">'+s.prob+'%</div>'+ebTxt+'</div></div>';
+      '</div><div class="eRt"><div class="ePct" style="color:'+pc+'">'+s.prob+'%</div></div></div>';
   }
   if(!h){
     if(q) h='<div style="padding:16px;text-align:center;color:#94a3b8">Liiki "'+q+'" ei leitud</div>';
@@ -11041,10 +11033,7 @@ function ssk(ds){if(!ds) return 999999;
 window.__openEnn=function(){
   var bg=document.getElementById('ennBg');
   if(bg) bg.style.display='flex';
-  if(ebirdRecentCache&&(Date.now()-ebirdRecentCache.fetchedAt)<300000){render();return;}
   render();
-  var scanBtn=document.querySelector('#ennBox [onclick*="__scanEnn"]');
-  if(scanBtn) window.__scanEnn(scanBtn);
 };
 window.__closeEnn=function(){document.getElementById('ennBg').style.display='none';};
 window.__renderEnn=render;

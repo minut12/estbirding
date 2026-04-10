@@ -1,0 +1,58 @@
+name: Refresh linnuliigid snapshot
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # Every 6 hours
+  workflow_dispatch:          # Manual trigger
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Trigger snapshot refresh and wait for completion
+        env:
+          FUNCTION_URL: https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/linnuliigid-snapshot
+          SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          MAX_CALLS=50
+          SLEEP_BETWEEN=5
+
+          for i in $(seq 1 $MAX_CALLS); do
+            echo "--- Call $i / $MAX_CALLS ---"
+            HTTP_CODE=$(curl -s -o /tmp/resp.json -w '%{http_code}' \
+              -X POST "$FUNCTION_URL" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
+              -d '{"action":"start_refresh","force":true}')
+
+            echo "HTTP $HTTP_CODE"
+            cat /tmp/resp.json | head -c 500
+            echo
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              if grep -q '"finished":true' /tmp/resp.json 2>/dev/null || \
+                 grep -q '"finished": true' /tmp/resp.json 2>/dev/null; then
+                echo "Snapshot refresh completed successfully."
+                exit 0
+              fi
+            fi
+
+            if [ "$HTTP_CODE" = "429" ]; then
+              echo "Cooldown active, waiting 60s..."
+              sleep 60
+              continue
+            fi
+
+            if [ "$HTTP_CODE" -ge 500 ]; then
+              echo "Server error, retrying in 10s..."
+              sleep 10
+              continue
+            fi
+
+            sleep $SLEEP_BETWEEN
+          done
+
+          echo "ERROR: Did not finish after $MAX_CALLS calls"
+          exit 1

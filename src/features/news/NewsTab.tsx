@@ -1111,6 +1111,7 @@ export default function NewsTab() {
         ) : allItems.length === 0 ? (
           <EmptyState tab={tab} />
         ) : (
+          <>
           <div className="divide-y divide-border">
             {allItems.map((item) => (
               <NewsCard
@@ -1142,6 +1143,7 @@ export default function NewsTab() {
               Rohkem uudiseid pole
             </div>
           )}
+          </>
         )}
       </div>
     </div>

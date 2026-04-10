@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getAnthropicConfig, callClaude, getSimpleTranslationSystemPrompt } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
@@ -12,6 +12,33 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
   });
+}
+
+async function verifyAuth(req: Request): Promise<{ ok: boolean; error?: string }> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return { ok: false, error: "Missing Authorization header" };
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+  // Allow service-role calls (from other Edge Functions)
+  if (token === serviceRoleKey) {
+    return { ok: true };
+  }
+
+  // Verify user JWT
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data?.user) {
+    return { ok: false, error: "Invalid or expired token" };
+  }
+  return { ok: true };
 }
 
 async function translateWithOpenAI(apiKey: string, sys: string, user: string): Promise<string> {
@@ -40,7 +67,7 @@ async function translateWithOpenAI(apiKey: string, sys: string, user: string): P
   return data?.choices?.[0]?.message?.content?.trim?.() ?? "";
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   try {
     if (req.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeaders });
@@ -54,6 +81,12 @@ serve(async (req) => {
 
     if (req.method !== "POST") {
       return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+    }
+
+    // Auth check — require valid JWT or service-role key
+    const auth = await verifyAuth(req);
+    if (!auth.ok) {
+      return json({ ok: false, error: "UNAUTHORIZED", message: auth.error }, 401);
     }
 
     const { text, targetLang = "et", sourceLang } = await req.json().catch(() => ({}));

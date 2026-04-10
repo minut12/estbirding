@@ -1,3 +1,4 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getOpenAIConfig } from "../_shared/openai.ts";
 
 const corsHeaders = {
@@ -13,9 +14,40 @@ function jsonResponse(status: number, payload: unknown): Response {
   });
 }
 
+async function verifyAuth(req: Request): Promise<{ ok: boolean; error?: string }> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return { ok: false, error: "Missing Authorization header" };
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+  if (token === serviceRoleKey) {
+    return { ok: true };
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data?.user) {
+    return { ok: false, error: "Invalid or expired token" };
+  }
+  return { ok: true };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse(405, { error: "Method not allowed" });
+
+  // Auth check
+  const auth = await verifyAuth(req);
+  if (!auth.ok) {
+    return jsonResponse(401, { error: "Unauthorized", message: auth.error });
+  }
 
   const cfg = getOpenAIConfig();
   if (!cfg) return jsonResponse(400, { error: "Translation not configured" });

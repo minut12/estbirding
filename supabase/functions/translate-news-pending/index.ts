@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     let skipped = 0;
     let failureStreak = 0;
 
-    for (const item of items) {
+    for (const item of flatItems) {
       const result = await translateNewsItemToEt(supabase, item);
       if (result.status === "error") {
         failed++;

@@ -87,11 +87,18 @@ async function translateText(endpoint: string, text: string, sourceLang?: string
   const cached = localStorage.getItem(cacheKey);
   if (cached !== null) return cached;
 
-  const anon = String((import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || '').trim();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+
+  // Pass user JWT if available, fall back to anon key
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const anon = String((import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || '').trim();
   if (anon) {
     headers.apikey = anon;
-    headers.Authorization = `Bearer ${anon}`;
+    if (!token) headers.Authorization = `Bearer ${anon}`;
   }
 
   const response = await fetch(endpoint, {

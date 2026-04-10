@@ -5,6 +5,7 @@ import {
   getStoredTranslationEndpoint,
   getTranslateEndpoint,
 } from '@/config/translationEndpoint';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 export interface TranslateEtInput {

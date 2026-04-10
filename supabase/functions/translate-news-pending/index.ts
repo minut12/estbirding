@@ -21,16 +21,32 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
+    // Fetch translate_to_et from news_sources
+    const { data: sources } = await supabase
+      .from("news_sources")
+      .select("id, translate_to_et");
+    const sourceTranslateMap = new Map<string, boolean>();
+    for (const s of sources || []) {
+      sourceTranslateMap.set(s.id, s.translate_to_et);
+    }
+
     const { data: items, error } = await supabase
       .from("news_items")
-      .select("id, source_key, title, body, source_lang, title_et, body_et, translate_hash")
+      .select("id, source_id, source_key, title, body, source_lang, title_et, body_et, translate_hash")
       .neq("source_key", "eoy")
       .or("title_et.is.null,body_et.is.null,translation_status.eq.pending,translation_status.eq.error")
       .order("published_at", { ascending: false })
       .limit(limit);
 
     if (error) throw error;
-    if (!items || items.length === 0) {
+
+    // Enrich items with translate_to_et from their source
+    const enrichedItems = (items || []).map((item: any) => ({
+      ...item,
+      translate_to_et: sourceTranslateMap.get(item.source_id) ?? true,
+    }));
+
+    if (enrichedItems.length === 0) {
       return jsonResponse(200, { success: true, translated: 0, failed: 0, skipped: 0 });
     }
 
@@ -39,7 +55,7 @@ Deno.serve(async (req) => {
     let skipped = 0;
     let failureStreak = 0;
 
-    for (const item of items) {
+    for (const item of enrichedItems) {
       const result = await translateNewsItemToEt(supabase, item);
       if (result.status === "error") {
         failed++;

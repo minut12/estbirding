@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
     }));
 
     if (error) throw error;
-    if (!items || items.length === 0) {
+    if (!flatItems || flatItems.length === 0) {
       return jsonResponse(200, { success: true, translated: 0, failed: 0, skipped: 0 });
     }
 

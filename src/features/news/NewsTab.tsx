@@ -725,14 +725,14 @@ export default function NewsTab() {
           ? `published_at.lt.${cursorForQuery.published_at},and(published_at.eq.${cursorForQuery.published_at},id.lt.${cursorForQuery.id})`
           : null;
 
-        const applyPagination = <T,>(q: T & { eq: Function; order: Function; limit: Function; or: Function }): T => {
+        const applyPagination = (q: any): any => {
           let r = q
             .eq('archived', archivedFilter)
             .order('published_at', { ascending: false, nullsFirst: false })
             .order('id', { ascending: false })
             .limit(PAGE_SIZE);
           if (cursorOr) r = r.or(cursorOr);
-          return r as T;
+          return r;
         };
 
         // Tier 1: news_items_v with full select

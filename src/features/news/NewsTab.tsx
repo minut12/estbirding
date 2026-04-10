@@ -1,5 +1,5 @@
 ﻿import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/config/supabaseClient';
 import {
   Newspaper, ChevronLeft, Archive, ArchiveRestore, ExternalLink,
@@ -69,6 +69,7 @@ type NewsListState = {
 };
 
 const NEWS_MAX_AGE_DAYS = 14;
+const PAGE_SIZE = 25;
 const NEWS_LIST_STATE_KEY = 'estbirding.news.listState.v1';
 const NEWS_HASH_LIST = '#news';
 const NEWS_HASH_ARTICLE = '#news-article';
@@ -577,7 +578,6 @@ function rewriteImgSrcToProxy(html: string, sourceName: string, proxyBase: strin
 /* Main component */
 export default function NewsTab() {
   const { isAdmin, hasPermission } = useAuth();
-  const queryClient = useQueryClient();
   const initialListState = useMemo(() => readNewsListState(), []);
   const [tab, setTab] = useState<'latest' | 'archive'>(initialListState?.tab || 'latest');
   const [search, setSearch] = useState(initialListState?.search || '');
@@ -694,96 +694,131 @@ export default function NewsTab() {
     });
   }, [sources]);
 
-const {
-    data: newsItems = [], isLoading, isError, error: newsQueryError,
-  } = useQuery({
-    queryKey: ['news-items', tab],
-    queryFn: async () => {
-      let primaryResult = await supabase
-        .from('news_items_v')
-        .select(NEWS_VIEW_SELECT)
-        .eq('archived', tab === 'archive')
-        .order('published_at', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false, nullsFirst: false })
-        .limit(50);
-      if (primaryResult.error && isColumnMismatchError(primaryResult.error)) {
-        console.warn('[news] selectWithEt failed on news_items_v, retrying minimal:', formatErrorReason(primaryResult.error));
-        primaryResult = await supabase
-          .from('news_items_v')
-          .select(NEWS_MIN_SELECT)
-          .eq('archived', tab === 'archive')
-          .order('published_at', { ascending: false, nullsFirst: false })
-          .order('created_at', { ascending: false, nullsFirst: false })
-          .limit(50) as any;
-      }
-      const { data, error } = primaryResult;
+// Pagination state
+  const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
+  const cursorRef = useRef<{ published_at: string; id: string } | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [isError, setIsError] = useState(false);
+  const [newsQueryError, setNewsQueryError] = useState<unknown>(null);
+  const loadIdRef = useRef(0);
 
-      if (error) {
-        if (!shouldFallbackNewsQuery(error)) {
-          console.error('[NEWS] items query failed', error);
-          throw error;
-        }
-        let fallbackResult = await supabase
-          .from('news_items')
-          .select(NEWS_TABLE_FALLBACK_SELECT)
-          .eq('archived', tab === 'archive')
-          .order('published_at', { ascending: false, nullsFirst: false })
-          .order('created_at', { ascending: false, nullsFirst: false })
-          .limit(50);
-        if (fallbackResult.error && isColumnMismatchError(fallbackResult.error)) {
-          console.warn('[news] selectWithEt failed on news_items, retrying minimal:', formatErrorReason(fallbackResult.error));
-          fallbackResult = await supabase
-            .from('news_items')
-            .select(NEWS_MIN_SELECT)
+  const loadPage = useCallback(async (mode: 'initial' | 'more') => {
+    const loadId = ++loadIdRef.current;
+    if (mode === 'initial') {
+      cursorRef.current = null;
+      setIsLoading(true);
+      setIsError(false);
+      setNewsQueryError(null);
+    } else {
+      setLoadingMore(true);
+    }
+
+    try {
+      const cursorForQuery = mode === 'more' ? cursorRef.current : null;
+
+      // Three-tier fallback fetch helper
+      const fetchPage = async (): Promise<NewsItem[]> => {
+        const buildQuery = (table: string, select: string) => {
+          let q = supabase
+            .from(table)
+            .select(select)
             .eq('archived', tab === 'archive')
             .order('published_at', { ascending: false, nullsFirst: false })
-            .order('created_at', { ascending: false, nullsFirst: false })
-            .limit(50) as any;
+            .order('id', { ascending: false })
+            .limit(PAGE_SIZE);
+
+          if (cursorForQuery) {
+            q = q.or(
+              `published_at.lt.${cursorForQuery.published_at},` +
+              `and(published_at.eq.${cursorForQuery.published_at},id.lt.${cursorForQuery.id})`
+            );
+          }
+          return q;
+        };
+
+        // Tier 1: news_items_v with full select
+        let result = await buildQuery('news_items_v', NEWS_VIEW_SELECT);
+        if (result.error && isColumnMismatchError(result.error)) {
+          console.warn('[news] selectWithEt failed on news_items_v, retrying minimal:', formatErrorReason(result.error));
+          result = await buildQuery('news_items_v', NEWS_MIN_SELECT) as any;
         }
-        const { data: fallbackData, error: fallbackError } = fallbackResult;
-        if (fallbackError) {
-          console.error('[NEWS] fallback items query failed', fallbackError);
-          throw fallbackError;
+
+        if (result.error) {
+          if (!shouldFallbackNewsQuery(result.error)) {
+            throw result.error;
+          }
+          // Tier 2: news_items table with fallback select
+          let fallbackResult = await buildQuery('news_items', NEWS_TABLE_FALLBACK_SELECT);
+          if (fallbackResult.error && isColumnMismatchError(fallbackResult.error)) {
+            console.warn('[news] selectWithEt failed on news_items, retrying minimal:', formatErrorReason(fallbackResult.error));
+            fallbackResult = await buildQuery('news_items', NEWS_MIN_SELECT) as any;
+          }
+          if (fallbackResult.error) {
+            console.error('[NEWS] fallback items query failed', fallbackResult.error);
+            throw fallbackResult.error;
+          }
+          const bySourceId = new Map<string, NewsSource>();
+          for (const source of sources) bySourceId.set(source.id, source);
+          return ((fallbackResult.data || []) as Array<Record<string, any>>).map((row) => {
+            const source = row?.source_id ? bySourceId.get(String(row.source_id)) : null;
+            return ensureImageUrl({
+              ...row,
+              source_name: source?.name || row?.source_slug || row?.source_key || 'Unknown source',
+              cached_image_url: row?.cached_image_url || row?.image_cached_url || null,
+              display_image_url: row?.cached_image_url || row?.image_cached_url || row?.image_url || null,
+              is_archived: Boolean(row?.archived),
+            } as NewsItem);
+          });
         }
-        const bySourceId = new Map<string, NewsSource>();
-        for (const source of sources) bySourceId.set(source.id, source);
-        const fallbackMapped = ((fallbackData || []) as Array<Record<string, any>>).map((row) => {
-          const source = row?.source_id ? bySourceId.get(String(row.source_id)) : null;
-          return {
-            ...row,
-            source_name: source?.name || row?.source_slug || row?.source_key || 'Unknown source',
-            cached_image_url: row?.cached_image_url || row?.image_cached_url || null,
-            display_image_url: row?.cached_image_url || row?.image_cached_url || row?.image_url || null,
-            is_archived: Boolean(row?.archived),
-          } as NewsItem;
-        });
-        const items = fallbackMapped.map(ensureImageUrl);
-        return items.sort((a, b) => {
-          const ta = new Date(a.published_at || a.created_at || '').getTime() || 0;
-          const tb = new Date(b.published_at || b.created_at || '').getTime() || 0;
-          return tb - ta;
-        });
+
+        if (import.meta.env.DEV && mode === 'initial') console.log('[NEWS] first item', result.data?.[0]);
+        return ((result.data || []) as Array<Record<string, any>>).map((row) => ensureImageUrl({
+          ...row,
+          is_archived: Boolean(row.archived),
+          display_image_url: row.display_image_url || row.cached_image_url || row.image_cached_url || row.image_url || null,
+          summary: row.summary || null,
+          body: row.body || row.summary || null,
+          content_html: row.content_html || null,
+          source_name: row.source_name || row.source_slug || row.source_key || 'Unknown source',
+        } as NewsItem));
+      };
+
+      const page = await fetchPage();
+
+      // Stale request guard
+      if (loadId !== loadIdRef.current) return;
+
+      setHasMore(page.length >= PAGE_SIZE);
+
+      if (page.length > 0) {
+        const last = page[page.length - 1];
+        cursorRef.current = { published_at: last.published_at || last.created_at || '', id: last.id };
       }
-      const mapped = ((data || []) as Array<Record<string, any>>).map((row) => ({
-        ...row,
-        is_archived: Boolean(row.archived),
-        display_image_url: row.display_image_url || row.cached_image_url || row.image_cached_url || row.image_url || null,
-        summary: row.summary || null,
-        body: row.body || row.summary || null,
-        content_html: row.content_html || null,
-        source_name: row.source_name || row.source_slug || row.source_key || 'Unknown source',
-      })) as NewsItem[];
-      if (import.meta.env.DEV) console.log('[NEWS] first item', mapped?.[0]);
-      const items = mapped.map(ensureImageUrl);
-      return items.sort((a, b) => {
-        const ta = new Date(a.published_at || a.created_at || '').getTime() || 0;
-        const tb = new Date(b.published_at || b.created_at || '').getTime() || 0;
-        return tb - ta;
-      });
-    },
-    staleTime: 30_000,
-    retry: 1,
-  });
+
+      if (mode === 'initial') {
+        setNewsItems(page);
+      } else {
+        setNewsItems((prev) => [...prev, ...page]);
+      }
+    } catch (err) {
+      if (loadId !== loadIdRef.current) return;
+      console.error('[NEWS] items query failed', err);
+      setIsError(true);
+      setNewsQueryError(err);
+    } finally {
+      if (loadId === loadIdRef.current) {
+        setIsLoading(false);
+        setLoadingMore(false);
+      }
+    }
+  }, [tab, sources]);
+
+  // Initial load + reset on tab change
+  useEffect(() => {
+    loadPage('initial');
+  }, [loadPage]);
   const allItems = useMemo(() => {
     const filteredBySource = newsItems.filter((item) => {
       if (sourceFilter === 'all') return true;
@@ -835,8 +870,9 @@ const {
       });
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['news-items'] });
+    onSuccess: (_data, variables) => {
+      // Optimistically remove the item from the current list
+      setNewsItems((prev) => prev.filter((item) => item.id !== variables.id));
     },
     onError: () => {
       toast.error('Arhiveerimise viga');
@@ -864,7 +900,7 @@ const {
       return data;
     },
     onSuccess: async (data) => {
-      queryClient.invalidateQueries({ queryKey: ['news-items'] });
+      loadPage('initial');
       const total = Number(
         data?.itemsUpserted
         ?? ((Number(data?.totalInserted || 0) + Number(data?.totalUpdated || 0)) || 0)
@@ -903,7 +939,7 @@ const {
       return data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['news-items'] });
+      loadPage('initial');
       const count = Number(data?.updated ?? 0);
       toast.success(`Tõlgitud: ${count} uudist`);
     },
@@ -1090,6 +1126,22 @@ const {
               />
             ))}
           </div>
+          {hasMore && allItems.length > 0 && (
+            <div className="flex justify-center py-4">
+              <button
+                onClick={() => loadPage('more')}
+                disabled={loadingMore}
+                className="px-4 py-2 rounded-md border border-border hover:bg-accent disabled:opacity-50 text-sm"
+              >
+                {loadingMore ? 'Laen…' : 'Lae rohkem'}
+              </button>
+            </div>
+          )}
+          {!hasMore && allItems.length > 0 && (
+            <div className="text-center text-sm text-muted-foreground py-4">
+              Rohkem uudiseid pole
+            </div>
+          )}
         )}
       </div>
     </div>

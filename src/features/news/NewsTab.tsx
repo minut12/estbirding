@@ -1143,6 +1143,7 @@ export default function NewsTab() {
               Rohkem uudiseid pole
             </div>
           )}
+          </>
         )}
       </div>
     </div>

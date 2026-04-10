@@ -1,4 +1,5 @@
-﻿// Add more domains here as needed.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// Add more domains here as needed.
 const ALLOWED_DOMAINS = [
   "eoy.ee",
   "www.eoy.ee",
@@ -76,6 +77,25 @@ Deno.serve(async (req) => {
 
       if (req.method !== "POST") {
         return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+      }
+
+      // Auth check — require valid JWT or service-role key
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader?.startsWith("Bearer ")) {
+        return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+      }
+      const token = authHeader.replace("Bearer ", "");
+      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      if (token !== serviceRoleKey) {
+        const supabase = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_ANON_KEY")!,
+          { global: { headers: { Authorization: authHeader } } }
+        );
+        const { data, error: authError } = await supabase.auth.getUser();
+        if (authError || !data?.user) {
+          return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+        }
       }
 
     const body = await req.json().catch(() => ({}));

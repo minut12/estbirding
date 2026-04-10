@@ -81,11 +81,18 @@ async function fetchSpeciesData(name: string): Promise<{
     clearTimeout(timeout);
 
     if (!res.ok) {
-      // Try HTML scraping as fallback
+      // Consume body to release connection, then fall back to HTML scraping
+      await res.body?.cancel().catch(() => {});
       return await fetchSpeciesFromHtml(name);
     }
 
-    const json = await res.json();
+    let json: Record<string, unknown>;
+    try {
+      json = await res.json();
+    } catch {
+      // Non-JSON response (e.g. HTML error page returned as 200)
+      return await fetchSpeciesFromHtml(name);
+    }
     const occurrences = json?.occurrences || [];
 
     const normalized = occurrences
@@ -100,6 +107,11 @@ async function fetchSpeciesData(name: string): Promise<{
 
     const latestTs = normalized[0]?.t || 0;
     const latestDate = latestTs > 0 ? new Date(latestTs).toISOString() : null;
+
+    // JSON API returned OK but no usable dates — fall back to HTML scraping
+    if (!latestDate) {
+      return await fetchSpeciesFromHtml(name);
+    }
     const occ7 = normalized.filter((x: { t: number }) => x.t >= (Date.now() - 7 * 24 * 60 * 60 * 1000)).length;
     let lat: number | null = null;
     let lon: number | null = null;

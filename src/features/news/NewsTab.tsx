@@ -720,29 +720,26 @@ export default function NewsTab() {
 
       // Three-tier fallback fetch helper
       const fetchPage = async (): Promise<NewsItem[]> => {
-        const buildQuery = (table: string, select: string) => {
-          let q = supabase
-            .from(table)
-            .select(select)
-            .eq('archived', tab === 'archive')
+        const archivedFilter = tab === 'archive';
+        const cursorOr = cursorForQuery
+          ? `published_at.lt.${cursorForQuery.published_at},and(published_at.eq.${cursorForQuery.published_at},id.lt.${cursorForQuery.id})`
+          : null;
+
+        const applyPagination = <T,>(q: T & { eq: Function; order: Function; limit: Function; or: Function }): T => {
+          let r = q
+            .eq('archived', archivedFilter)
             .order('published_at', { ascending: false, nullsFirst: false })
             .order('id', { ascending: false })
             .limit(PAGE_SIZE);
-
-          if (cursorForQuery) {
-            q = q.or(
-              `published_at.lt.${cursorForQuery.published_at},` +
-              `and(published_at.eq.${cursorForQuery.published_at},id.lt.${cursorForQuery.id})`
-            );
-          }
-          return q;
+          if (cursorOr) r = r.or(cursorOr);
+          return r as T;
         };
 
         // Tier 1: news_items_v with full select
-        let result = await buildQuery('news_items_v', NEWS_VIEW_SELECT);
+        let result = await applyPagination(supabase.from('news_items_v').select(NEWS_VIEW_SELECT));
         if (result.error && isColumnMismatchError(result.error)) {
           console.warn('[news] selectWithEt failed on news_items_v, retrying minimal:', formatErrorReason(result.error));
-          result = await buildQuery('news_items_v', NEWS_MIN_SELECT) as any;
+          result = await applyPagination(supabase.from('news_items_v').select(NEWS_MIN_SELECT)) as any;
         }
 
         if (result.error) {
@@ -750,10 +747,10 @@ export default function NewsTab() {
             throw result.error;
           }
           // Tier 2: news_items table with fallback select
-          let fallbackResult = await buildQuery('news_items', NEWS_TABLE_FALLBACK_SELECT);
+          let fallbackResult = await applyPagination(supabase.from('news_items').select(NEWS_TABLE_FALLBACK_SELECT));
           if (fallbackResult.error && isColumnMismatchError(fallbackResult.error)) {
             console.warn('[news] selectWithEt failed on news_items, retrying minimal:', formatErrorReason(fallbackResult.error));
-            fallbackResult = await buildQuery('news_items', NEWS_MIN_SELECT) as any;
+            fallbackResult = await applyPagination(supabase.from('news_items').select(NEWS_MIN_SELECT)) as any;
           }
           if (fallbackResult.error) {
             console.error('[NEWS] fallback items query failed', fallbackResult.error);

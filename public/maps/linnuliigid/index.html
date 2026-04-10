@@ -6652,6 +6652,70 @@ async function _loadElurikkusCacheFromSupabase(){
     console.warn('[ElurikkusCloud] startup load failed:', e);
   }
 }
+function _buildEbirdComNameToEt(){
+  try{
+    var raw = localStorage.getItem('estbirding.speciesMeta.v1');
+    if(!raw) return {};
+    var meta = JSON.parse(raw);
+    var map = {};
+    for(var etName in meta){
+      if(meta.hasOwnProperty(etName) && meta[etName].comName){
+        map[meta[etName].comName] = etName;
+      }
+    }
+    return map;
+  }catch(e){ return {}; }
+}
+async function _loadEbirdCacheFromSupabase(){
+  try{
+    var cfg = resolveSupabaseConfig();
+    var supabaseUrl = cfg.supabaseUrl;
+    var anonKey = cfg.anonKey;
+    if(!supabaseUrl || !anonKey) return;
+    var res = await fetch(
+      supabaseUrl + '/rest/v1/ebird_cache?select=*&order=fetched_at.desc',
+      {
+        headers: {
+          'apikey': anonKey,
+          'Authorization': 'Bearer ' + anonKey
+        }
+      }
+    );
+    if(!res.ok) return;
+    var rows = await res.json();
+    if(!Array.isArray(rows) || rows.length === 0) return;
+    var comNameToEt = _buildEbirdComNameToEt();
+    var applied = 0;
+    for(var i = 0; i < rows.length; i++){
+      var row = rows[i];
+      var etName = comNameToEt[row.species_name] || row.species_name;
+      if(!etName || SPECIES.indexOf(etName) === -1) continue;
+      var p = points[etName] || {};
+      var existingTs = p.clientScannedAt ? new Date(p.clientScannedAt).getTime() : 0;
+      var cacheTs = new Date(row.fetched_at).getTime();
+      if(cacheTs <= existingTs) continue;
+      var hasCoords = row.lat && row.lon &&
+        Number.isFinite(row.lat) && Number.isFinite(row.lon);
+      var merged = Object.assign({}, p, {
+        occ7: typeof row.occ7 === 'number' ? row.occ7 : p.occ7,
+        t: row.t || p.t,
+        src: p.src || 'eBirdCloud',
+      });
+      if(hasCoords){ merged.lat = row.lat; merged.lon = row.lon; }
+      points[etName] = merged;
+      applied++;
+    }
+    if(applied > 0){
+      save();
+      if(typeof rebuildAllMarkers === 'function') rebuildAllMarkers();
+      if(typeof render === 'function') render();
+      _showCloudToast('\uD83D\uDC26 ' + applied + ' liiki eBird andmetega uuendatud');
+      console.log('[eBirdCloud] applied', applied, 'species from cloud cache');
+    }
+  }catch(e){
+    console.warn('[eBirdCloud] startup load failed:', e);
+  }
+}
 
 function refreshAllMarkers(){
   __renderedMarkerCount = 0;
@@ -7361,10 +7425,14 @@ window.addEventListener('message', function(ev){
         pushDebugEvent('SNAPSHOT_RETRY_REASON', 'Retry reason supabase_config', { hadNoApi: hadNoApi, hadUrlMissingErr: hadUrlMissingErr }, 'warn');
         _scheduleLoadSnapshotRetry('supabase_config');
       }
-      // Load cloud Elurikkus cache now that config is available (run once only)
+      // Load cloud caches now that config is available (run once only)
       if(!window.__elurikkusCacheLoadedOnce){
         window.__elurikkusCacheLoadedOnce = true;
         _loadElurikkusCacheFromSupabase();
+      }
+      if(!window.__ebirdCacheLoadedOnce){
+        window.__ebirdCacheLoadedOnce = true;
+        _loadEbirdCacheFromSupabase();
       }
       _updateDebugPanel();
       return;

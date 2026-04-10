@@ -732,7 +732,7 @@ export default function NewsTab() {
             .order('id', { ascending: false })
             .limit(PAGE_SIZE);
           if (cursorOr) r = r.or(cursorOr);
-          return r as T;
+          return r;
         };
 
         // Tier 1: news_items_v with full select

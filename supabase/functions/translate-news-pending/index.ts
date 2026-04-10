@@ -23,11 +23,18 @@ Deno.serve(async (req) => {
 
     const { data: items, error } = await supabase
       .from("news_items")
-      .select("id, source_key, title, body, source_lang, title_et, body_et, translate_hash")
+      .select("id, source_key, title, body, source_lang, title_et, body_et, translate_hash, news_sources!news_items_source_id_fkey(translate_to_et)")
       .neq("source_key", "eoy")
       .or("title_et.is.null,body_et.is.null,translation_status.eq.pending,translation_status.eq.error")
       .order("published_at", { ascending: false })
       .limit(limit);
+
+    // Flatten the joined translate_to_et into each item
+    const flatItems = (items || []).map((item: any) => ({
+      ...item,
+      translate_to_et: item.news_sources?.translate_to_et ?? true,
+      news_sources: undefined,
+    }));
 
     if (error) throw error;
     if (!items || items.length === 0) {

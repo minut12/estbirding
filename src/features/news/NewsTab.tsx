@@ -725,7 +725,7 @@ export default function NewsTab() {
           ? `published_at.lt.${cursorForQuery.published_at},and(published_at.eq.${cursorForQuery.published_at},id.lt.${cursorForQuery.id})`
           : null;
 
-        const applyPagination = <T,>(q: T & { eq: Function; order: Function; limit: Function; or: Function }): T => {
+        const applyPagination = (q: any): any => {
           let r = q
             .eq('archived', archivedFilter)
             .order('published_at', { ascending: false, nullsFirst: false })

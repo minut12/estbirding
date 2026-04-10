@@ -53,6 +53,39 @@ export type Database = {
         }
         Relationships: []
       }
+      ebird_cache: {
+        Row: {
+          fetched_at: string
+          lat: number | null
+          location_name: string | null
+          lon: number | null
+          occ7: number | null
+          species_name: string
+          sub_id: string | null
+          t: string | null
+        }
+        Insert: {
+          fetched_at?: string
+          lat?: number | null
+          location_name?: string | null
+          lon?: number | null
+          occ7?: number | null
+          species_name: string
+          sub_id?: string | null
+          t?: string | null
+        }
+        Update: {
+          fetched_at?: string
+          lat?: number | null
+          location_name?: string | null
+          lon?: number | null
+          occ7?: number | null
+          species_name?: string
+          sub_id?: string | null
+          t?: string | null
+        }
+        Relationships: []
+      }
       elurikkus_cache: {
         Row: {
           coords_source: string | null

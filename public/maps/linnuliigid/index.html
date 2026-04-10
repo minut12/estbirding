@@ -6563,6 +6563,40 @@ async function _applySnapshot(snap){
   render();
 }
 
+function _showCloudToast(msg){
+  try{
+    var toast = document.getElementById('__cloudToast');
+    if(!toast){
+      toast = document.createElement('div');
+      toast.id = '__cloudToast';
+      toast.style.cssText = [
+        'position:fixed',
+        'bottom:80px',
+        'left:50%',
+        'transform:translateX(-50%)',
+        'background:rgba(39,174,96,0.92)',
+        'color:#fff',
+        'padding:8px 18px',
+        'border-radius:20px',
+        'font-size:13px',
+        'font-weight:500',
+        'z-index:99999',
+        'pointer-events:none',
+        'box-shadow:0 2px 12px rgba(0,0,0,0.18)',
+        'transition:opacity 0.4s'
+      ].join(';');
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    toast.style.display = 'block';
+    clearTimeout(toast.__hideTimer);
+    toast.__hideTimer = setTimeout(function(){
+      toast.style.opacity = '0';
+      setTimeout(function(){ toast.style.display = 'none'; }, 400);
+    }, 4000);
+  }catch(e){}
+}
 async function _loadElurikkusCacheFromSupabase(){
   try{
     var cfg = resolveSupabaseConfig();
@@ -6610,7 +6644,8 @@ async function _loadElurikkusCacheFromSupabase(){
       save();
       if(typeof rebuildAllMarkers === 'function') rebuildAllMarkers();
       if(typeof render === 'function') render();
-      _showSnapshotBanner('Elurikkus pilveandmed laaditud: ' + applied + ' liiki uuendatud', '');
+      _showCloudToast('\u2601\uFE0F ' + applied + ' liiki uuendatud');
+      console.log('[ElurikkusCloud] applied', applied, 'species from cloud cache');
     }
     console.log('[ElurikkusCloud] loaded', applied, 'species from cache');
   }catch(e){
@@ -7325,6 +7360,11 @@ window.addEventListener('message', function(ev){
       } else if(materialChanged && (hadNoApi || hadUrlMissingErr || !__snapshotMeta.generated_at)){
         pushDebugEvent('SNAPSHOT_RETRY_REASON', 'Retry reason supabase_config', { hadNoApi: hadNoApi, hadUrlMissingErr: hadUrlMissingErr }, 'warn');
         _scheduleLoadSnapshotRetry('supabase_config');
+      }
+      // Load cloud Elurikkus cache now that config is available (run once only)
+      if(!window.__elurikkusCacheLoadedOnce){
+        window.__elurikkusCacheLoadedOnce = true;
+        _loadElurikkusCacheFromSupabase();
       }
       _updateDebugPanel();
       return;
@@ -8198,7 +8238,6 @@ if(!window.__springEditDelegatedBound){
 // Restore existing markers from localStorage and render list
 updateClientDataMaxAtFromPoints();
 refreshAllMarkers();
-_loadElurikkusCacheFromSupabase(); // non-blocking, fire and forget
 _updateServerSnapshotStatus();
 _wireSnapshotButtons();
 _wireSidebarSettingsRow();

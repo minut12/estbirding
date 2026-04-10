@@ -9,10 +9,6 @@ const corsHeaders = {
   "Content-Type": "application/json; charset=utf-8",
 };
 
-const EBIRD_API_URL =
-  "https://api.ebird.org/v2/data/obs/EE/recent?maxResults=10000&back=7";
-const EBIRD_API_TOKEN = "9s72dc2jcjlq";
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -37,27 +33,28 @@ Deno.serve(async (req) => {
 
   const t0 = Date.now();
 
+  // Read observations from POST body (n8n fetches eBird and passes them here)
+  const body = await req.json().catch(() => ({}));
+  const observations: Array<{
+    comName?: string;
+    obsDt?: string;
+    lat?: number;
+    lng?: number;
+    locName?: string;
+    subId?: string;
+  }> = body?.observations;
+
+  if (!Array.isArray(observations) || observations.length === 0) {
+    return new Response(
+      JSON.stringify({
+        error: "Missing or empty observations array in request body",
+        duration_ms: Date.now() - t0,
+      }),
+      { status: 400, headers: corsHeaders },
+    );
+  }
+
   try {
-    // Single eBird API call
-    const ebirdRes = await fetch(EBIRD_API_URL, {
-      headers: { "X-eBirdApiToken": EBIRD_API_TOKEN },
-    });
-    if (!ebirdRes.ok) {
-      throw new Error(`eBird API HTTP ${ebirdRes.status}`);
-    }
-    const observations: Array<{
-      comName?: string;
-      obsDt?: string;
-      lat?: number;
-      lng?: number;
-      locName?: string;
-      subId?: string;
-    }> = await ebirdRes.json();
-
-    if (!Array.isArray(observations)) {
-      throw new Error("eBird API did not return an array");
-    }
-
     // Aggregate by species
     const bySpecies = new Map<
       string,
@@ -133,11 +130,12 @@ Deno.serve(async (req) => {
     const duration_ms = Date.now() - t0;
     return new Response(
       JSON.stringify({
-        done: bySpecies.size,
+        done: rows.length,
         updated,
         errors,
-        duration_ms,
+        species_count: rows.length,
         observations_total: observations.length,
+        duration_ms,
       }),
       { status: 200, headers: corsHeaders },
     );

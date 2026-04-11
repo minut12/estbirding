@@ -1549,7 +1549,8 @@ Deno.serve(async (req) => {
         );
       }
 
-      const resumeStart = Math.max(startIndex, Number(current?.progress_done || 0) || 0);
+      // When filtering to a single species, always start from 0 to scan the full list
+      const resumeStart = speciesFilter ? 0 : Math.max(startIndex, Number(current?.progress_done || 0) || 0);
       const { error: startError } = await updateSnapshot(supabaseAdmin, {
         status: "running",
         progress_done: resumeStart,

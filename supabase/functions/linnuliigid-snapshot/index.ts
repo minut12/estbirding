@@ -80,8 +80,8 @@ async function fetchSpeciesData(name: string): Promise<{
     });
     clearTimeout(timeout);
 
+    console.log('[fetchSpeciesData]', name, 'biocache status:', res.status);
     if (!res.ok) {
-      console.log('[fetchSpeciesData]', name, 'JSON API returned', res.status, '→ falling back to HTML');
       // Consume body to release connection, then fall back to HTML scraping
       await res.body?.cancel().catch(() => {});
       return await fetchSpeciesFromHtml(name);
@@ -1118,11 +1118,12 @@ async function updateSnapshot(
   return res;
 }
 
-// Run one refresh batch, updating progress after every item.
+// Run one refresh batch. When speciesFilter is set (debug-only), only process that one species.
 async function runRefresh(
   supabase: any,
-  opts?: { startIndex?: number; runId?: string }
+  opts?: { startIndex?: number; runId?: string; speciesFilter?: string }
 ) {
+  const speciesFilter = opts?.speciesFilter?.trim().toLowerCase() || "";
   const total = SPECIES.length;
   const startIndex = Math.max(0, Math.min(total, Number(opts?.startIndex || 0)));
   const runId = opts?.runId || crypto.randomUUID();
@@ -1161,6 +1162,11 @@ async function runRefresh(
   const INDEX_TIMEOUT_MS = 30000;
   for (let i = startIndex; i < total; i++) {
     const name = SPECIES[i];
+    // Skip species not matching filter (debug single-species mode)
+    if (speciesFilter && name.toLowerCase() !== speciesFilter) {
+      done++;
+      continue;
+    }
     try {
       // Runner watches for takeover marker and skips current index once requested.
       const { data: takeoverRow } = await supabase

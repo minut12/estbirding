@@ -62,6 +62,11 @@ async function fetchSpeciesData(name: string): Promise<{
   locality: string | null;
   municipality: string | null;
   county: string | null;
+  individualCount: number | null;
+  behavior: string | null;
+  collectors: string | null;
+  districts: string | null;
+  eestiOmavalitsused: string | null;
 }> {
   const searchUrl = `https://elurikkus.ee/biocache-service/occurrences/search?q=${encodeURIComponent(name)}&sort=eventDate&dir=desc&pageSize=200&fq=country:Estonia&_ts=${Date.now()}`;
 
@@ -168,7 +173,7 @@ async function fetchSpeciesData(name: string): Promise<{
       });
     }
 
-    return { lat, lon, latestDate, occ7, coordsStatus, coordsSource, locality, municipality, county };
+    return { lat, lon, latestDate, occ7, coordsStatus, coordsSource, locality, municipality, county, individualCount: null, behavior: null, collectors: null, districts: null, eestiOmavalitsused: null };
   } catch (e) {
     clearTimeout(timeout);
     // Fallback to HTML scraping
@@ -187,6 +192,11 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
   locality: string | null;
   municipality: string | null;
   county: string | null;
+  individualCount: number | null;
+  behavior: string | null;
+  collectors: string | null;
+  districts: string | null;
+  eestiOmavalitsused: string | null;
 }> {
   const url = `https://elurikkus.ee/app/occurrences/search?text=${encodeURIComponent(name)}&_ts=${Date.now()}`;
   const controller = new AbortController();
@@ -204,7 +214,7 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
       },
     });
     clearTimeout(timeout);
-    if (!res.ok) return { lat: null, lon: null, latestDate: null, occ7: 0, coordsStatus: "missing" as const, coordsSource: "none" as const, locality: null, municipality: null, county: null };
+    if (!res.ok) return { lat: null, lon: null, latestDate: null, occ7: 0, coordsStatus: "missing" as const, coordsSource: "none" as const, locality: null, municipality: null, county: null, individualCount: null, behavior: null, collectors: null, districts: null, eestiOmavalitsused: null };
 
     const html = await res.text();
 
@@ -250,11 +260,50 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
       }
     }
 
+    // Extract metadata from Svelte hydration JSON (defensive — never breaks lat/lon/t/occ7)
+    let locality: string | null = null;
+    let municipality: string | null = null;
+    let county: string | null = null;
+    let individualCount: number | null = null;
+    let behavior: string | null = null;
+    let collectors: string | null = null;
+    let districts: string | null = null;
+    let eestiOmavalitsused: string | null = null;
+    try {
+      // Svelte hydration embeds escaped JSON: \"key\":\"value\"
+      // Using [^\\]* to match value content — stops at next backslash-escaped quote.
+      // Unicode (ä, õ, ü) passes through fine; values containing literal \" would truncate
+      // but the failure is silent (returns null) which is acceptable for v1.
+      const mLoc = html.match(/\\"locality\\":\\"([^\\]*?)\\"/);
+      if (mLoc && mLoc[1]) locality = mLoc[1];
+      const mMun = html.match(/\\"municipality\\":\\"([^\\]*?)\\"/);
+      if (mMun && mMun[1]) municipality = mMun[1];
+      const mCou = html.match(/\\"county\\":\\"([^\\]*?)\\"/);
+      if (mCou && mCou[1]) county = mCou[1];
+      const mInd = html.match(/\\"individual_count\\":(\d+)/);
+      if (mInd && mInd[1]) individualCount = parseInt(mInd[1], 10);
+      const mBeh = html.match(/\\"behavior\\":\\"([^\\]*?)\\"/);
+      if (mBeh && mBeh[1]) behavior = mBeh[1];
+      // recorded_by is a JSON array: \"recorded_by\":[\"Name1\",\"Name2\"]
+      // Extract the array contents, strip escaped quotes, split, join as comma-separated string
+      const mRec = html.match(/\\"recorded_by\\":\[([^\]]*)\]/);
+      if (mRec && mRec[1]) {
+        const names = mRec[1].replace(/\\"/g, "").split(",").map((s: string) => s.trim()).filter(Boolean);
+        if (names.length) collectors = names.join(", ");
+      }
+      const mOma = html.match(/\\"layer_omavalitsused\\":\\"([^\\]*?)\\"/);
+      if (mOma && mOma[1]) eestiOmavalitsused = mOma[1];
+      const mDis = html.match(/\\"layer_kihelkonnad\\":\\"([^\\]*?)\\"/);
+      if (mDis && mDis[1]) districts = mDis[1];
+    } catch (metaErr) {
+      console.log("[html-fallback-meta] Svelte JSON parse failed:", metaErr);
+    }
+
     console.log('[html-fallback]', name, 'latestDate:', latestDate);
-    return { lat, lon, latestDate, occ7, coordsStatus: "missing", coordsSource: "none", locality: null, municipality: null, county: null };
+    return { lat, lon, latestDate, occ7, coordsStatus: "missing", coordsSource: "none", locality, municipality, county, individualCount, behavior, collectors, districts, eestiOmavalitsused };
   } catch {
     clearTimeout(timeout);
-    return { lat: null, lon: null, latestDate: null, occ7: 0, coordsStatus: "missing", coordsSource: "none", locality: null, municipality: null, county: null };
+    return { lat: null, lon: null, latestDate: null, occ7: 0, coordsStatus: "missing", coordsSource: "none", locality: null, municipality: null, county: null, individualCount: null, behavior: null, collectors: null, districts: null, eestiOmavalitsused: null };
   }
 }
 
@@ -1150,9 +1199,14 @@ async function runRefresh(
       locality?: string | null;
       municipality?: string | null;
       county?: string | null;
+      individualCount?: number | null;
+      behavior?: string | null;
+      collectors?: string | null;
+      districts?: string | null;
+      eestiOmavalitsused?: string | null;
     }
   > = (existingRow?.points_json && typeof existingRow.points_json === "object")
-    ? existingRow.points_json as Record<string, { lat?: number; lon?: number; t?: string; occ7?: number; src?: string; visible?: boolean; coords_status?: "public" | "restricted" | "missing"; coords_source?: "exact" | "municipality" | "county" | "none"; locality?: string | null; municipality?: string | null; county?: string | null; }>
+    ? existingRow.points_json as Record<string, { lat?: number; lon?: number; t?: string; occ7?: number; src?: string; visible?: boolean; coords_status?: "public" | "restricted" | "missing"; coords_source?: "exact" | "municipality" | "county" | "none"; locality?: string | null; municipality?: string | null; county?: string | null; individualCount?: number | null; behavior?: string | null; collectors?: string | null; districts?: string | null; eestiOmavalitsused?: string | null; }>
     : {};
 
   let done = startIndex;
@@ -1216,6 +1270,11 @@ async function runRefresh(
               entry.locality = data.locality;
               entry.municipality = data.municipality;
               entry.county = data.county;
+              if (data.individualCount != null) entry.individualCount = data.individualCount;
+              if (data.behavior) entry.behavior = data.behavior;
+              if (data.collectors) entry.collectors = data.collectors;
+              if (data.districts) entry.districts = data.districts;
+              if (data.eestiOmavalitsused) entry.eestiOmavalitsused = data.eestiOmavalitsused;
               points[name] = entry;
             } else {
               lastError = `${name}: ${lastErr?.message || "Unknown fetch error"}`;

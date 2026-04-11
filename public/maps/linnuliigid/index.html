@@ -6511,6 +6511,21 @@ async function _applySnapshot(snap){
     if(typeof s.municipality === 'string' && s.municipality.trim()) snapPoint.municipality = s.municipality;
     if(typeof s.county === 'string' && s.county.trim()) snapPoint.county = s.county;
     if(s.elurikkus && typeof s.elurikkus === 'object') snapPoint.elurikkus = Object.assign({}, s.elurikkus);
+    // Build eluExtra from snapshot metadata (fallback; live detail fetch replaces this entirely if it runs)
+    var _sm = s.locality || s.municipality || s.county || s.individualCount != null || s.behavior || s.collectors || s.districts || s.eestiOmavalitsused;
+    if(_sm){
+      snapPoint.eluExtra = {
+        municipality: (typeof s.municipality === 'string' && s.municipality.trim()) ? s.municipality.trim() : '',
+        locality: (typeof s.locality === 'string' && s.locality.trim()) ? s.locality.trim() : '',
+        county: (typeof s.county === 'string' && s.county.trim()) ? s.county.trim() : '',
+        districts: (typeof s.districts === 'string' && s.districts.trim()) ? s.districts.trim() : '',
+        communes: '', // not available in HTML search page — data limitation, not a bug
+        eestiOmavalitsused: (typeof s.eestiOmavalitsused === 'string' && s.eestiOmavalitsused.trim()) ? s.eestiOmavalitsused.trim() : '',
+        individualCount: (s.individualCount != null && String(s.individualCount).trim() !== '') ? String(s.individualCount) : '',
+        behavior: (typeof s.behavior === 'string' && s.behavior.trim()) ? s.behavior.trim() : '',
+        collectors: (typeof s.collectors === 'string' && s.collectors.trim()) ? s.collectors.trim() : ''
+      };
+    }
     __snapshotPointBySpecies[_speciesKey(key)] = Object.assign({}, snapPoint);
     var _existingClientScan = points[key] && points[key].clientScannedAt ? Date.parse(points[key].clientScannedAt) : 0;
     var _snapGeneratedAt = snap.generated_at ? Date.parse(snap.generated_at) : 0;

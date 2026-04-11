@@ -1549,8 +1549,8 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Only resume mid-batch if previous run was interrupted (status=running) and not forced
-      const isResume = current?.status === "running" && !force;
+      // Resume if already running (mid-batch continuation). Fresh start if previous was ready/empty.
+      const isResume = current?.status === "running";
       const resumeStart = (speciesFilter || !isResume) ? 0 : Math.max(startIndex, Number(current?.progress_done || 0) || 0);
       const { error: startError } = await updateSnapshot(supabaseAdmin, {
         status: "running",

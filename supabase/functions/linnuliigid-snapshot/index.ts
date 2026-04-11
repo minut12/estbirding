@@ -93,7 +93,7 @@ async function fetchSpeciesData(name: string): Promise<{
       // Non-JSON response (e.g. HTML error page returned as 200)
       return await fetchSpeciesFromHtml(name);
     }
-    const occurrences = json?.occurrences || [];
+    const occurrences: Record<string, unknown>[] = Array.isArray(json?.occurrences) ? json.occurrences : [];
 
     const normalized = occurrences
       .map((occ: Record<string, unknown>) => {

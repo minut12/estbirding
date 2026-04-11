@@ -9058,30 +9058,24 @@ var __sharedDefaults = {};
     if(!code) return null;
 
     var SUPABASE_REF = 'eenwcyuyugyrjgpivxrq';
+    var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
+    var directUrl = 'https://api.ebird.org/v2/data/obs/EE/recent/' + encodeURIComponent(code) + '?back=30&maxResults=1000&detail=full&_ts=' + Date.now();
     var proxyUrl = 'https://' + SUPABASE_REF + '.supabase.co/functions/v1/ebird_recent?regionCode=EE&back=30&maxResults=1000&detail=full&speciesCode=' + encodeURIComponent(code);
 
     var arr;
     try {
-      var res = await fetch(proxyUrl);
-      if(res.status===418||res.status===429){
-        console.warn('[eBird] rate limited via proxy, waiting 10s...');
-        await new Promise(function(r){setTimeout(r,10000);});
-        res = await fetch(proxyUrl);
+      var res = await fetch(directUrl, { headers: { 'X-eBirdApiToken': token } });
+      if(!res.ok) throw new Error('direct HTTP ' + res.status);
+      arr = await res.json();
+    } catch(directErr){
+      try {
+        var res2 = await fetch(proxyUrl);
+        if(!res2.ok) throw new Error('proxy HTTP ' + res2.status);
+        var json = await res2.json();
+        arr = Array.isArray(json) ? json : (json.observations || json.data || []);
+      } catch(proxyErr){
+        throw new Error('both direct (' + directErr.message + ') and proxy (' + proxyErr.message + ') failed');
       }
-      if(!res.ok) throw new Error('proxy HTTP ' + res.status);
-      var json = await res.json();
-      arr = Array.isArray(json) ? json : (json.observations || json.data || []);
-    } catch(proxyErr){
-      var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
-      var directUrl = 'https://api.ebird.org/v2/data/obs/EE/recent/' + encodeURIComponent(code) + '?back=30&maxResults=1000&detail=full&_ts=' + Date.now();
-      var res2 = await fetch(directUrl, { headers: { 'X-eBirdApiToken': token } });
-      if(res2.status===418||res2.status===429){
-        console.warn('[eBird] rate limited direct, waiting 10s...');
-        await new Promise(function(r){setTimeout(r,10000);});
-        res2 = await fetch(directUrl, { headers: { 'X-eBirdApiToken': token } });
-      }
-      if(!res2.ok) throw new Error('eBird HTTP ' + res2.status);
-      arr = await res2.json();
     }
 
     if(!Array.isArray(arr) || arr.length === 0) return null;

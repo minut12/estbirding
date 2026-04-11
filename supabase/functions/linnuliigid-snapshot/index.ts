@@ -1562,7 +1562,7 @@ Deno.serve(async (req) => {
       if (startError) throw startError;
 
       try {
-        const result = await runRefresh(supabaseAdmin, { startIndex: resumeStart, runId });
+        const result = await runRefresh(supabaseAdmin, { startIndex: resumeStart, runId, speciesFilter });
         const finalStatus = result.finished ? "ready" : "running";
         const { error: finalizeError } = await updateSnapshot(supabaseAdmin, {
           points_json: result.points,

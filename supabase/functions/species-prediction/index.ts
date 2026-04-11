@@ -3230,7 +3230,7 @@ function createUpstreamError(input: {
           ? (input.upstreamBody as Record<string, unknown>).warningsInputType as string
           : undefined,
         normalizedPredictionShape: typeof (input.upstreamBody as Record<string, unknown> | null)?.normalizedPredictionShape === 'string'
-          ? (input.upstreamBody as Record<string, unknown>).normalizedPredictionShape
+          ? (input.upstreamBody as Record<string, unknown>).normalizedPredictionShape as string
           : undefined,
         insightSummaryValuePreview: buildInsightSummaryPreview(input.upstreamBody),
         nestedInsightSummaryType: typeof asRecord(asRecord(input.upstreamBody).aiSummary).insightSummary,

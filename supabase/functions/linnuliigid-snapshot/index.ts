@@ -1410,6 +1410,8 @@ Deno.serve(async (req) => {
 
       const startIndex = Math.max(0, Number(body?.start_index || 0) || 0);
       const force = body?.force === true;
+      // Debug-only: filter rebuild to a single species by name
+      const speciesFilter = typeof body?.species === "string" ? body.species : "";
       const STALE_MS = 90000;
       const nowMs = Date.now();
       const nowIso = new Date().toISOString();

@@ -260,43 +260,70 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
       }
     }
 
-    // Extract metadata from Svelte hydration JSON (defensive — never breaks lat/lon/t/occ7)
+    // Extract metadata from search-page HTML table (search-page-only tier)
+    // Fields requiring the detail page (county, municipality, districts, eestiOmavalitsused)
+    // stay null here — the frontend "Refresh from Elurikkus" button populates them on demand.
     let locality: string | null = null;
-    let municipality: string | null = null;
-    let county: string | null = null;
+    const municipality: string | null = null;
+    const county: string | null = null;
     let individualCount: number | null = null;
     let behavior: string | null = null;
     let collectors: string | null = null;
-    let districts: string | null = null;
-    let eestiOmavalitsused: string | null = null;
+    const districts: string | null = null;
+    const eestiOmavalitsused: string | null = null;
     try {
-      // Svelte hydration embeds escaped JSON: \"key\":\"value\"
-      // Using [^\\]* to match value content — stops at next backslash-escaped quote.
-      // Unicode (ä, õ, ü) passes through fine; values containing literal \" would truncate
-      // but the failure is silent (returns null) which is acceptable for v1.
-      const mLoc = html.match(/\\"locality\\":\\"([^\\]*?)\\"/);
-      if (mLoc && mLoc[1]) locality = mLoc[1];
-      const mMun = html.match(/\\"municipality\\":\\"([^\\]*?)\\"/);
-      if (mMun && mMun[1]) municipality = mMun[1];
-      const mCou = html.match(/\\"county\\":\\"([^\\]*?)\\"/);
-      if (mCou && mCou[1]) county = mCou[1];
-      const mInd = html.match(/\\"individual_count\\":(\d+)/);
-      if (mInd && mInd[1]) individualCount = parseInt(mInd[1], 10);
-      const mBeh = html.match(/\\"behavior\\":\\"([^\\]*?)\\"/);
-      if (mBeh && mBeh[1]) behavior = mBeh[1];
-      // recorded_by is a JSON array: \"recorded_by\":[\"Name1\",\"Name2\"]
-      // Extract the array contents, strip escaped quotes, split, join as comma-separated string
-      const mRec = html.match(/\\"recorded_by\\":\[([^\]]*)\]/);
-      if (mRec && mRec[1]) {
-        const names = mRec[1].replace(/\\"/g, "").split(",").map((s: string) => s.trim()).filter(Boolean);
-        if (names.length) collectors = names.join(", ");
+      // --- helper: strip HTML tags from a cell ---
+      const stripTags = (s: string) => s.replace(/<[^>]*>/g, "").trim();
+
+      // --- find <thead> and extract column names ---
+      const theadMatch = html.match(/<thead[^>]*>([\s\S]*?)<\/thead>/i);
+      if (theadMatch) {
+        const headerRow = theadMatch[1];
+        const thMatches = [...headerRow.matchAll(/<th[^>]*>([\s\S]*?)<\/th>/gi)];
+        const colNames = thMatches.map((m) => stripTags(m[1]).toLowerCase());
+
+        // --- bilingual column finder (EN || ET) ---
+        const findCol = (needles: string[]): number =>
+          colNames.findIndex((c) => needles.some((n) => c.includes(n)));
+
+        const idxCount = findCol(["individual count", "isendite arv"]);
+        const idxBehavior = findCol(["behavior", "käitumine"]);
+        const idxLocality = findCol(["locality", "kohanimi"]);
+        const idxCollectors = findCol(["collector", "kogunik", "recorded by", "leidja"]);
+
+        // --- extract first <tr> in <tbody> = newest occurrence ---
+        const tbodyMatch = html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
+        if (tbodyMatch) {
+          const firstTr = tbodyMatch[1].match(/<tr[^>]*>([\s\S]*?)<\/tr>/i);
+          if (firstTr) {
+            const tdMatches = [...firstTr[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)];
+            const cells = tdMatches.map((m) => stripTags(m[1]));
+
+            if (idxCount >= 0 && idxCount < cells.length) {
+              const n = parseInt(cells[idxCount], 10);
+              if (!isNaN(n)) individualCount = n;
+            }
+            if (idxBehavior >= 0 && idxBehavior < cells.length && cells[idxBehavior]) {
+              behavior = cells[idxBehavior] || null;
+            }
+            if (idxLocality >= 0 && idxLocality < cells.length && cells[idxLocality]) {
+              locality = cells[idxLocality] || null;
+            }
+            if (idxCollectors >= 0 && idxCollectors < cells.length && cells[idxCollectors]) {
+              collectors = cells[idxCollectors] || null;
+            }
+          }
+        }
       }
-      const mOma = html.match(/\\"layer_omavalitsused\\":\\"([^\\]*?)\\"/);
-      if (mOma && mOma[1]) eestiOmavalitsused = mOma[1];
-      const mDis = html.match(/\\"layer_kihelkonnad\\":\\"([^\\]*?)\\"/);
-      if (mDis && mDis[1]) districts = mDis[1];
-    } catch (metaErr) {
-      console.log("[html-fallback-meta] Svelte JSON parse failed:", metaErr);
+      // TODO: Detail-page fetching could later be added here with rate-limiting and caching
+      // to populate county, municipality, districts, eestiOmavalitsused.
+      // Approach: extract the first occurrence URL from the search results table <a href>,
+      // fetch it with a 5s timeout, and use regex to extract fields from the detail page.
+      // Rate-limit to max 1 detail fetch per 2 seconds to avoid overloading Elurikkus.
+      // Cache detail-page results in a separate Supabase table keyed by occurrence URL
+      // with a 7-day TTL, so repeated rebuilds don't re-fetch the same pages.
+    } catch (metaErr: unknown) {
+      console.log("[html-fallback-meta] table parse failed:", metaErr);
     }
 
     console.log('[html-fallback]', name, 'latestDate:', latestDate);

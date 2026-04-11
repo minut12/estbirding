@@ -81,6 +81,7 @@ async function fetchSpeciesData(name: string): Promise<{
     clearTimeout(timeout);
 
     if (!res.ok) {
+      console.log('[fetchSpeciesData]', name, 'JSON API returned', res.status, '→ falling back to HTML');
       // Consume body to release connection, then fall back to HTML scraping
       await res.body?.cancel().catch(() => {});
       return await fetchSpeciesFromHtml(name);

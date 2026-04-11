@@ -192,6 +192,7 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
   const timeout = setTimeout(() => controller.abort(), 15000);
 
   try {
+    console.log('[html-fallback]', name, 'starting');
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
@@ -248,6 +249,7 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
       }
     }
 
+    console.log('[html-fallback]', name, 'latestDate:', latestDate);
     return { lat, lon, latestDate, occ7, coordsStatus: "missing", coordsSource: "none", locality: null, municipality: null, county: null };
   } catch {
     clearTimeout(timeout);

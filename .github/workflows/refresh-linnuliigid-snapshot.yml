@@ -8,7 +8,7 @@ on:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - name: Trigger snapshot refresh and wait for completion
         env:
@@ -16,25 +16,61 @@ jobs:
           SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -euo pipefail
-          MAX_CALLS=120
-          SLEEP_BETWEEN=5
+          MAX_CALLS=80
+          SLEEP_BETWEEN=10
+
+          extract_field() {
+            # $1 = field name, $2 = file
+            # Greedy-safe extraction of "field":"value" or "field":number from JSON.
+            grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$2" | head -1 | sed -E "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"([^\"]*)\".*/\1/"
+          }
+          extract_number() {
+            grep -o "\"$1\"[[:space:]]*:[[:space:]]*[0-9]\+" "$2" | head -1 | sed -E "s/.*\"$1\"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/"
+          }
+
+          INITIAL_GEN=""
+          FIRST_CALL=1
+
           for i in $(seq 1 $MAX_CALLS); do
             echo "--- Call $i / $MAX_CALLS ---"
-            HTTP_CODE=$(curl -s -o /tmp/resp.json -w '%{http_code}' \
+
+            if [ "$FIRST_CALL" = "1" ]; then
+              BODY='{"action":"start_refresh","force":true}'
+            else
+              BODY='{"action":"start_refresh"}'
+            fi
+
+            HTTP_CODE=$(curl -sS --max-time 30 -o /tmp/resp.json -w '%{http_code}' \
               -X POST "$FUNCTION_URL" \
               -H "Content-Type: application/json" \
               -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
-              -d '{"action":"start_refresh","force":true}')
+              -d "$BODY" || echo "000")
+
             echo "HTTP $HTTP_CODE"
-            head -c 500 /tmp/resp.json || true
+            head -c 400 /tmp/resp.json || true
             echo
 
-            # Function returns 202 while running, 200 when done — check both
-            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
-              if grep -q '"finished"[[:space:]]*:[[:space:]]*true' /tmp/resp.json; then
-                echo "Snapshot refresh completed successfully."
-                exit 0
-              fi
+            STATUS=$(extract_field status /tmp/resp.json)
+            GEN=$(extract_field generated_at /tmp/resp.json)
+            DONE=$(extract_number progress_done /tmp/resp.json)
+            TOTAL=$(extract_number progress_total /tmp/resp.json)
+            echo "parsed: status='$STATUS' generated_at='$GEN' progress=${DONE:-?}/${TOTAL:-?}"
+
+            # On the first call, capture baseline generated_at so we can detect a fresh snapshot.
+            if [ "$FIRST_CALL" = "1" ]; then
+              INITIAL_GEN="$GEN"
+              echo "Baseline generated_at: $INITIAL_GEN"
+              FIRST_CALL=0
+              sleep $SLEEP_BETWEEN
+              continue
+            fi
+
+            # Success: status ready AND generated_at advanced past baseline.
+            if [ "$HTTP_CODE" = "200" ] && [ "$STATUS" = "ready" ] && [ -n "$GEN" ] && [ "$GEN" != "$INITIAL_GEN" ]; then
+              echo "Snapshot refresh completed successfully."
+              echo "  initial generated_at: $INITIAL_GEN"
+              echo "  final   generated_at: $GEN"
+              exit 0
             fi
 
             if [ "$HTTP_CODE" = "429" ]; then
@@ -42,12 +78,14 @@ jobs:
               sleep 60
               continue
             fi
-            if [ "$HTTP_CODE" -ge 500 ]; then
-              echo "Server error, retrying in 10s..."
-              sleep 10
+            if [ "$HTTP_CODE" = "000" ] || [ "$HTTP_CODE" -ge 500 ]; then
+              echo "Server/network error, retrying in 15s..."
+              sleep 15
               continue
             fi
+
             sleep $SLEEP_BETWEEN
           done
-          echo "ERROR: Did not finish after $MAX_CALLS calls"
+
+          echo "ERROR: Did not see a fresh ready snapshot after $MAX_CALLS calls"
           exit 1

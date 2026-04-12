@@ -29,7 +29,7 @@ jobs:
             head -c 500 /tmp/resp.json || true
             echo
 
-            # Check completion on any 2xx response (function returns 202 while running, 200 when done)
+            # Function returns 202 while running, 200 when done — check both
             if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
               if grep -q '"finished"[[:space:]]*:[[:space:]]*true' /tmp/resp.json; then
                 echo "Snapshot refresh completed successfully."

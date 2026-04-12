@@ -16,7 +16,7 @@ jobs:
           SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -euo pipefail
-          MAX_CALLS=50
+          MAX_CALLS=120
           SLEEP_BETWEEN=5
 
           for i in $(seq 1 $MAX_CALLS); do
@@ -28,12 +28,12 @@ jobs:
               -d '{"action":"start_refresh","force":true}')
 
             echo "HTTP $HTTP_CODE"
-            cat /tmp/resp.json | head -c 500
+            head -c 500 /tmp/resp.json || true
             echo
 
-            if [ "$HTTP_CODE" = "200" ]; then
-              if grep -q '"finished":true' /tmp/resp.json 2>/dev/null || \
-                 grep -q '"finished": true' /tmp/resp.json 2>/dev/null; then
+            # Check completion on any 2xx response (function returns 202 while running, 200 when done)
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
+              if grep -q '"finished"[[:space:]]*:[[:space:]]*true' /tmp/resp.json; then
                 echo "Snapshot refresh completed successfully."
                 exit 0
               fi

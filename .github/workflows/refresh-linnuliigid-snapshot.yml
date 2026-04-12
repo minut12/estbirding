@@ -18,7 +18,6 @@ jobs:
           set -euo pipefail
           MAX_CALLS=120
           SLEEP_BETWEEN=5
-
           for i in $(seq 1 $MAX_CALLS); do
             echo "--- Call $i / $MAX_CALLS ---"
             HTTP_CODE=$(curl -s -o /tmp/resp.json -w '%{http_code}' \
@@ -26,7 +25,6 @@ jobs:
               -H "Content-Type: application/json" \
               -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
               -d '{"action":"start_refresh","force":true}')
-
             echo "HTTP $HTTP_CODE"
             head -c 500 /tmp/resp.json || true
             echo
@@ -44,15 +42,12 @@ jobs:
               sleep 60
               continue
             fi
-
             if [ "$HTTP_CODE" -ge 500 ]; then
               echo "Server error, retrying in 10s..."
               sleep 10
               continue
             fi
-
             sleep $SLEEP_BETWEEN
           done
-
           echo "ERROR: Did not finish after $MAX_CALLS calls"
           exit 1

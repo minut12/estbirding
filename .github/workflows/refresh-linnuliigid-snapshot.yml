@@ -15,77 +15,90 @@ jobs:
           FUNCTION_URL: https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/linnuliigid-snapshot
           SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          set -euo pipefail
-          MAX_CALLS=80
+          set -uo pipefail   # NOTE: no -e; we manage failures explicitly per-call
+
+          MAX_POLLS=80
           SLEEP_BETWEEN=10
 
+          # Tolerant extractors — never fail the script even if file is missing/empty.
           extract_field() {
-            # $1 = field name, $2 = file
-            # Greedy-safe extraction of "field":"value" or "field":number from JSON.
-            grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$2" | head -1 | sed -E "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"([^\"]*)\".*/\1/"
+            local field="$1" file="$2"
+            [ -s "$file" ] || { echo ""; return 0; }
+            grep -o "\"$field\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$file" 2>/dev/null \
+              | head -1 \
+              | sed -E "s/.*\"$field\"[[:space:]]*:[[:space:]]*\"([^\"]*)\".*/\1/" \
+              || echo ""
           }
           extract_number() {
-            grep -o "\"$1\"[[:space:]]*:[[:space:]]*[0-9]\+" "$2" | head -1 | sed -E "s/.*\"$1\"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/"
+            local field="$1" file="$2"
+            [ -s "$file" ] || { echo ""; return 0; }
+            grep -o "\"$field\"[[:space:]]*:[[:space:]]*[0-9]\+" "$file" 2>/dev/null \
+              | head -1 \
+              | sed -E "s/.*\"$field\"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/" \
+              || echo ""
           }
 
-          INITIAL_GEN=""
-          FIRST_CALL=1
-
-          for i in $(seq 1 $MAX_CALLS); do
-            echo "--- Call $i / $MAX_CALLS ---"
-
-            if [ "$FIRST_CALL" = "1" ]; then
-              BODY='{"action":"start_refresh","force":true}'
-            else
-              BODY='{"action":"start_refresh"}'
-            fi
-
-            HTTP_CODE=$(curl -sS --max-time 30 -o /tmp/resp.json -w '%{http_code}' \
+          # Wraps curl: writes response to $1, prints HTTP code (or 000 on network failure).
+          # Always ensures the file exists, even if empty, so downstream extractors don't crash.
+          do_post() {
+            local out="$1" body="$2" max_time="$3"
+            : > "$out"   # truncate / create
+            local code
+            code=$(curl -sS --max-time "$max_time" -o "$out" -w '%{http_code}' \
               -X POST "$FUNCTION_URL" \
               -H "Content-Type: application/json" \
               -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
-              -d "$BODY" || echo "000")
+              -d "$body" 2>/dev/null) || code="000"
+            [ -s "$out" ] || echo '{}' > "$out"
+            echo "${code:-000}"
+          }
 
-            echo "HTTP $HTTP_CODE"
-            head -c 400 /tmp/resp.json || true
-            echo
+          echo "=== Step 1: Read baseline generated_at ==="
+          # No force — just observe current state. Function may return either ready or running.
+          BASE_CODE=$(do_post /tmp/base.json '{"action":"start_refresh"}' 30)
+          echo "HTTP $BASE_CODE"
+          head -c 400 /tmp/base.json; echo
+          INITIAL_GEN=$(extract_field generated_at /tmp/base.json)
+          INITIAL_STATUS=$(extract_field status /tmp/base.json)
+          echo "Baseline: status='$INITIAL_STATUS' generated_at='$INITIAL_GEN'"
+
+          echo "=== Step 2: Trigger refresh (fire-and-forget, long timeout, ignore failures) ==="
+          TRIG_CODE=$(do_post /tmp/trig.json '{"action":"start_refresh","force":true}' 90)
+          echo "HTTP $TRIG_CODE (timeout/error here is OK — refresh likely started server-side)"
+          head -c 400 /tmp/trig.json; echo
+
+          echo "=== Step 3: Poll until status=ready AND generated_at advanced ==="
+          for i in $(seq 1 $MAX_POLLS); do
+            echo "--- Poll $i / $MAX_POLLS ---"
+            CODE=$(do_post /tmp/resp.json '{"action":"start_refresh"}' 30)
+            echo "HTTP $CODE"
+            head -c 300 /tmp/resp.json; echo
 
             STATUS=$(extract_field status /tmp/resp.json)
             GEN=$(extract_field generated_at /tmp/resp.json)
             DONE=$(extract_number progress_done /tmp/resp.json)
             TOTAL=$(extract_number progress_total /tmp/resp.json)
-            echo "parsed: status='$STATUS' generated_at='$GEN' progress=${DONE:-?}/${TOTAL:-?}"
+            echo "parsed: status='$STATUS' gen='$GEN' progress=${DONE:-?}/${TOTAL:-?}"
 
-            # On the first call, capture baseline generated_at so we can detect a fresh snapshot.
-            if [ "$FIRST_CALL" = "1" ]; then
-              INITIAL_GEN="$GEN"
-              echo "Baseline generated_at: $INITIAL_GEN"
-              FIRST_CALL=0
-              sleep $SLEEP_BETWEEN
-              continue
-            fi
-
-            # Success: status ready AND generated_at advanced past baseline.
-            if [ "$HTTP_CODE" = "200" ] && [ "$STATUS" = "ready" ] && [ -n "$GEN" ] && [ "$GEN" != "$INITIAL_GEN" ]; then
-              echo "Snapshot refresh completed successfully."
-              echo "  initial generated_at: $INITIAL_GEN"
-              echo "  final   generated_at: $GEN"
+            if [ "$CODE" = "200" ] && [ "$STATUS" = "ready" ] && [ -n "$GEN" ] && [ "$GEN" != "$INITIAL_GEN" ]; then
+              echo ""
+              echo "✓ Snapshot refresh completed successfully."
+              echo "  baseline generated_at: $INITIAL_GEN"
+              echo "  final    generated_at: $GEN"
               exit 0
             fi
 
-            if [ "$HTTP_CODE" = "429" ]; then
-              echo "Cooldown active, waiting 60s..."
+            if [ "$CODE" = "429" ]; then
+              echo "Cooldown — waiting 60s..."
               sleep 60
-              continue
-            fi
-            if [ "$HTTP_CODE" = "000" ] || [ "$HTTP_CODE" -ge 500 ]; then
-              echo "Server/network error, retrying in 15s..."
-              sleep 15
               continue
             fi
 
             sleep $SLEEP_BETWEEN
           done
 
-          echo "ERROR: Did not see a fresh ready snapshot after $MAX_CALLS calls"
+          echo ""
+          echo "✗ ERROR: Did not see a fresh ready snapshot after $MAX_POLLS polls."
+          echo "  baseline generated_at: $INITIAL_GEN"
+          echo "  last seen: status='$STATUS' gen='$GEN'"
           exit 1

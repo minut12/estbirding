@@ -8,19 +8,29 @@ on:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
-      - name: Trigger snapshot refresh and wait for completion
+      - name: Trigger snapshot refresh (fire-and-forget)
         env:
           FUNCTION_URL: https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/linnuliigid-snapshot
           SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          set -uo pipefail   # NOTE: no -e; we manage failures explicitly per-call
+          set -uo pipefail
 
-          MAX_POLLS=80
-          SLEEP_BETWEEN=10
+          # Helper: POST and always leave /tmp/resp.json as valid (even-if-empty) JSON.
+          do_post() {
+            local out="$1" body="$2" max_time="$3"
+            : > "$out"
+            local code
+            code=$(curl -sS --max-time "$max_time" -o "$out" -w '%{http_code}' \
+              -X POST "$FUNCTION_URL" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
+              -d "$body" 2>/dev/null) || code="000"
+            [ -s "$out" ] || echo '{}' > "$out"
+            echo "${code:-000}"
+          }
 
-          # Tolerant extractors — never fail the script even if file is missing/empty.
           extract_field() {
             local field="$1" file="$2"
             [ -s "$file" ] || { echo ""; return 0; }
@@ -38,67 +48,45 @@ jobs:
               || echo ""
           }
 
-          # Wraps curl: writes response to $1, prints HTTP code (or 000 on network failure).
-          # Always ensures the file exists, even if empty, so downstream extractors don't crash.
-          do_post() {
-            local out="$1" body="$2" max_time="$3"
-            : > "$out"   # truncate / create
-            local code
-            code=$(curl -sS --max-time "$max_time" -o "$out" -w '%{http_code}' \
-              -X POST "$FUNCTION_URL" \
-              -H "Content-Type: application/json" \
-              -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
-              -d "$body" 2>/dev/null) || code="000"
-            [ -s "$out" ] || echo '{}' > "$out"
-            echo "${code:-000}"
-          }
-
-          echo "=== Step 1: Read baseline generated_at ==="
-          # No force — just observe current state. Function may return either ready or running.
-          BASE_CODE=$(do_post /tmp/base.json '{"action":"start_refresh"}' 30)
-          echo "HTTP $BASE_CODE"
-          head -c 400 /tmp/base.json; echo
-          INITIAL_GEN=$(extract_field generated_at /tmp/base.json)
-          INITIAL_STATUS=$(extract_field status /tmp/base.json)
-          echo "Baseline: status='$INITIAL_STATUS' generated_at='$INITIAL_GEN'"
-
-          echo "=== Step 2: Trigger refresh (fire-and-forget, long timeout, ignore failures) ==="
-          TRIG_CODE=$(do_post /tmp/trig.json '{"action":"start_refresh","force":true}' 90)
-          echo "HTTP $TRIG_CODE (timeout/error here is OK — refresh likely started server-side)"
-          head -c 400 /tmp/trig.json; echo
-
-          echo "=== Step 3: Poll until status=ready AND generated_at advanced ==="
-          for i in $(seq 1 $MAX_POLLS); do
-            echo "--- Poll $i / $MAX_POLLS ---"
-            CODE=$(do_post /tmp/resp.json '{"action":"start_refresh"}' 30)
+          attempt() {
+            local n="$1"
+            echo "--- Attempt $n ---"
+            CODE=$(do_post /tmp/resp.json '{"action":"start_refresh","force":true}' 60)
             echo "HTTP $CODE"
-            head -c 300 /tmp/resp.json; echo
-
+            head -c 400 /tmp/resp.json; echo
             STATUS=$(extract_field status /tmp/resp.json)
-            GEN=$(extract_field generated_at /tmp/resp.json)
             DONE=$(extract_number progress_done /tmp/resp.json)
             TOTAL=$(extract_number progress_total /tmp/resp.json)
-            echo "parsed: status='$STATUS' gen='$GEN' progress=${DONE:-?}/${TOTAL:-?}"
+            echo "parsed: status='$STATUS' progress=${DONE:-?}/${TOTAL:-?}"
+          }
 
-            if [ "$CODE" = "200" ] && [ "$STATUS" = "ready" ] && [ -n "$GEN" ] && [ "$GEN" != "$INITIAL_GEN" ]; then
+          attempt 1
+
+          # 200 ready  → snapshot is current (possibly just-completed)
+          # 202 *      → refresh accepted / in progress
+          # 409 *      → another refresh already running (also fine)
+          # anything else (incl. 5xx, timeout 000) → retry once after 15s
+          case "$CODE" in
+            200|202|409)
               echo ""
-              echo "✓ Snapshot refresh completed successfully."
-              echo "  baseline generated_at: $INITIAL_GEN"
-              echo "  final    generated_at: $GEN"
+              echo "✓ Snapshot system responded cleanly (HTTP $CODE, status='$STATUS'). Refresh will continue server-side."
               exit 0
-            fi
-
-            if [ "$CODE" = "429" ]; then
-              echo "Cooldown — waiting 60s..."
-              sleep 60
-              continue
-            fi
-
-            sleep $SLEEP_BETWEEN
-          done
+              ;;
+          esac
 
           echo ""
-          echo "✗ ERROR: Did not see a fresh ready snapshot after $MAX_POLLS polls."
-          echo "  baseline generated_at: $INITIAL_GEN"
-          echo "  last seen: status='$STATUS' gen='$GEN'"
+          echo "First attempt unsatisfactory (HTTP $CODE). Retrying once..."
+          sleep 15
+          attempt 2
+
+          case "$CODE" in
+            200|202|409)
+              echo ""
+              echo "✓ Snapshot system responded cleanly on retry (HTTP $CODE, status='$STATUS')."
+              exit 0
+              ;;
+          esac
+
+          echo ""
+          echo "✗ ERROR: Snapshot endpoint did not respond acceptably after 2 attempts. Last HTTP=$CODE, status='$STATUS'."
           exit 1

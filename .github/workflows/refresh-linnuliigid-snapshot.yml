@@ -15,13 +15,12 @@ jobs:
           FUNCTION_URL: https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/linnuliigid-snapshot
           SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          set -uo pipefail   # NOTE: no -e; explicit per-call error handling
+          set -uo pipefail   # no -e; explicit per-call error handling
 
           MAX_POLLS=200
           SLEEP_BETWEEN=15
-          STUCK_THRESHOLD_SEC=600   # if progress doesn't move for 10 min, give up
+          STUCK_THRESHOLD_SEC=600
 
-          # Tolerant extractors — never crash the script.
           extract_field() {
             local field="$1" file="$2"
             [ -s "$file" ] || { echo ""; return 0; }
@@ -37,6 +36,11 @@ jobs:
               | head -1 \
               | sed -E "s/.*\"$field\"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/" \
               || echo ""
+          }
+          body_contains() {
+            # $1 = substring, $2 = file
+            [ -s "$2" ] || return 1
+            grep -qF "$1" "$2" 2>/dev/null
           }
 
           do_post() {
@@ -57,20 +61,28 @@ jobs:
           echo "HTTP $BASE_CODE"
           head -c 400 /tmp/base.json; echo
           INITIAL_GEN=$(extract_field generated_at /tmp/base.json)
-          echo "Step 1 generated_at: '$INITIAL_GEN'"
 
-          echo "=== Step 2: Trigger refresh (fire-and-forget, long timeout) ==="
+          # If the baseline response is ALREADY "recently completed", the snapshot is fresh — exit now.
+          if [ "$BASE_CODE" = "429" ] && body_contains "recently completed" /tmp/base.json; then
+            echo ""
+            echo "✓ Snapshot is already fresh (429 recently completed on baseline read)."
+            exit 0
+          fi
+
+          echo "=== Step 2: Trigger refresh (fire-and-forget) ==="
           TRIG_CODE=$(do_post /tmp/trig.json '{"action":"start_refresh","force":true}' 90)
-          echo "HTTP $TRIG_CODE (timeout/error here is OK — refresh likely already running)"
+          echo "HTTP $TRIG_CODE"
           head -c 400 /tmp/trig.json; echo
-          # Fall back to trigger response for baseline if Step 1 didn't have it
           if [ -z "$INITIAL_GEN" ]; then
             INITIAL_GEN=$(extract_field generated_at /tmp/trig.json)
-            echo "Step 2 fallback generated_at: '$INITIAL_GEN'"
           fi
-          echo "Final baseline generated_at: '${INITIAL_GEN:-<none>}'"
-          if [ -z "$INITIAL_GEN" ]; then
-            echo "WARNING: no baseline generated_at — will accept any ready response as success."
+          echo "Baseline generated_at: '${INITIAL_GEN:-<none>}'"
+
+          # If the trigger itself reports "recently completed", we're done.
+          if [ "$TRIG_CODE" = "429" ] && body_contains "recently completed" /tmp/trig.json; then
+            echo ""
+            echo "✓ Trigger reported snapshot already fresh (429 recently completed)."
+            exit 0
           fi
 
           echo "=== Step 3: Poll until snapshot ready ==="
@@ -89,10 +101,15 @@ jobs:
             TOTAL=$(extract_number progress_total /tmp/resp.json)
             echo "parsed: status='$STATUS' gen='$GEN' progress=${DONE:-?}/${TOTAL:-?}"
 
-            # Success conditions:
-            # (a) status=ready AND generated_at advanced past baseline, OR
-            # (b) status=ready AND we never had a baseline (best-effort)
-            if [ "$STATUS" = "ready" ]; then
+            # SUCCESS A: 429 "recently completed" — function's cooldown guard tells us the refresh just finished.
+            if [ "$CODE" = "429" ] && body_contains "recently completed" /tmp/resp.json; then
+              echo ""
+              echo "✓ Snapshot refresh completed (429 recently completed on poll $i)."
+              exit 0
+            fi
+
+            # SUCCESS B: 200 ready with advanced generated_at.
+            if [ "$CODE" = "200" ] && [ "$STATUS" = "ready" ]; then
               if [ -n "$INITIAL_GEN" ] && [ -n "$GEN" ] && [ "$GEN" != "$INITIAL_GEN" ]; then
                 echo ""
                 echo "✓ Snapshot refresh completed successfully (fresh)."
@@ -102,28 +119,34 @@ jobs:
               fi
               if [ -z "$INITIAL_GEN" ]; then
                 echo ""
-                echo "✓ Snapshot is ready (no baseline available, accepting)."
+                echo "✓ Snapshot is ready (no baseline, accepting)."
                 echo "  generated_at: $GEN"
                 exit 0
               fi
-              echo "  (status ready but generated_at unchanged — same snapshot, keep waiting)"
+              echo "  (ready but generated_at unchanged — keep waiting)"
             fi
 
-            # Stuck detection: progress hasn't advanced in STUCK_THRESHOLD_SEC
+            # Stuck detection — only meaningful while status is actually 'running'
             NOW=$(date +%s)
-            if [ -n "$DONE" ] && [ "$DONE" != "$LAST_PROGRESS" ]; then
+            if [ "$STATUS" = "running" ] && [ -n "$DONE" ] && [ "$DONE" != "$LAST_PROGRESS" ]; then
               LAST_PROGRESS="$DONE"
               LAST_PROGRESS_AT=$NOW
             fi
-            ELAPSED=$((NOW - LAST_PROGRESS_AT))
-            if [ "$ELAPSED" -gt "$STUCK_THRESHOLD_SEC" ]; then
-              echo ""
-              echo "✗ ERROR: progress stuck at $LAST_PROGRESS for ${ELAPSED}s (>${STUCK_THRESHOLD_SEC}s threshold). Aborting."
-              exit 1
+            if [ "$STATUS" = "running" ]; then
+              ELAPSED=$((NOW - LAST_PROGRESS_AT))
+              if [ "$ELAPSED" -gt "$STUCK_THRESHOLD_SEC" ]; then
+                echo ""
+                echo "✗ ERROR: progress stuck at $LAST_PROGRESS for ${ELAPSED}s (>${STUCK_THRESHOLD_SEC}s). Aborting."
+                exit 1
+              fi
+            else
+              # Not running — reset the stuck timer so transient non-running states don't trip it
+              LAST_PROGRESS_AT=$NOW
             fi
 
+            # Other 429 (not "recently completed") — actual cooldown, back off longer
             if [ "$CODE" = "429" ]; then
-              echo "Cooldown — waiting 60s..."
+              echo "Cooldown (non-completion) — waiting 60s..."
               sleep 60
               continue
             fi
@@ -132,7 +155,7 @@ jobs:
           done
 
           echo ""
-          echo "✗ ERROR: Did not see a fresh ready snapshot after $MAX_POLLS polls (~$((MAX_POLLS * SLEEP_BETWEEN / 60)) min)."
+          echo "✗ ERROR: Did not see completion after $MAX_POLLS polls."
           echo "  baseline generated_at: ${INITIAL_GEN:-<none>}"
           echo "  last seen: status='$STATUS' gen='$GEN' progress=${DONE:-?}/${TOTAL:-?}"
           exit 1

@@ -298,7 +298,7 @@ function clearOccurrence(key){
 // ---- GBIF polite client: max 3 concurrent + 429 backoff with jitter ----
 var __gbifInFlight = 0;
 var __gbifQueue = [];
-var GBIF_MAX_CONCURRENT = 3;
+var GBIF_MAX_CONCURRENT = 5;
 var GBIF_MAX_RETRIES = 5;
 
 function __gbifPump() {
@@ -9954,24 +9954,50 @@ var __sharedDefaults = {};
   }
 
   // --- Fetch GBIF per-year sampling for better coverage ---
+  // Resolve GBIF taxonKey from scientific name (cached)
+  var __taxonKeyCache = {};
+  async function _resolveTaxonKeyFromSciName(sciName) {
+    if (__taxonKeyCache[sciName] !== undefined) return __taxonKeyCache[sciName];
+    try {
+      var res = await window.gbifFetch('https://api.gbif.org/v1/species/match?name=' + encodeURIComponent(sciName) + '&kingdom=Animalia&strict=false');
+      if (res.ok) {
+        var data = await res.json();
+        if (data && data.usageKey) {
+          __taxonKeyCache[sciName] = data.usageKey;
+          return data.usageKey;
+        }
+      }
+    } catch(e) { console.warn('[PROB-GBIF] taxonKey resolve failed:', sciName, e); }
+    __taxonKeyCache[sciName] = null;
+    return null;
+  }
+  window.__taxonKeyCache = __taxonKeyCache;
+
   async function fetchProbGbifOccurrences(scientificName, onProgress) {
     if (!scientificName) return [];
+
+    // Resolve taxonKey first — allows single-request year-range query
+    var taxonKey = await _resolveTaxonKeyFromSciName(scientificName);
+    if (!taxonKey) {
+      console.log('[PROB-GBIF] no taxonKey for', scientificName);
+      return [];
+    }
+
     var currentYear = new Date().getFullYear();
     var startYear = currentYear - 10;
-    var totalYears = currentYear - startYear + 1;
+    var baseUrl = 'https://api.gbif.org/v1/occurrence/search?taxonKey=' + taxonKey
+      + '&country=EE&hasCoordinate=true&hasGeospatialIssue=false'
+      + '&year=' + startYear + ',' + currentYear + '&limit=300';
+
     var allOccs = [];
+    var MAX_PAGES = 10; // safety cap: 10 × 300 = 3000 records
 
-    for (var year = currentYear; year >= startYear; year--) {
-      var yearNum = currentYear - year + 1;
-      if (onProgress) onProgress(yearNum, totalYears, allOccs.length);
-
+    for (var page = 0; page < MAX_PAGES; page++) {
+      var offset = page * 300;
       try {
-        var url = 'https://api.gbif.org/v1/occurrence/search?scientificName='
-          + encodeURIComponent(scientificName)
-          + '&country=EE&hasCoordinate=true&hasGeospatialIssue=false'
-          + '&year=' + year + '&limit=300';
+        var url = baseUrl + '&offset=' + offset;
         var res = await window.gbifFetch(url);
-        if (!res.ok) continue;
+        if (!res.ok) { console.warn('[PROB-GBIF] HTTP', res.status, 'for', scientificName); break; }
         var json = await res.json();
         var results = (json.results || [])
           .filter(function(r) { return Number.isFinite(r.decimalLatitude) && Number.isFinite(r.decimalLongitude); })
@@ -9979,26 +10005,15 @@ var __sharedDefaults = {};
             return { lat: r.decimalLatitude, lon: r.decimalLongitude, date: r.eventDate || '', source: 'gbif', scientificName: r.scientificName || scientificName };
           });
         allOccs = allOccs.concat(results);
-
-        // If this year has more records, fetch page 2
-        if (!json.endOfRecords && json.count > 300) {
-          var res2 = await window.gbifFetch(url + '&offset=300');
-          if (res2.ok) {
-            var json2 = await res2.json();
-            var results2 = (json2.results || [])
-              .filter(function(r) { return Number.isFinite(r.decimalLatitude) && Number.isFinite(r.decimalLongitude); })
-              .map(function(r) {
-                return { lat: r.decimalLatitude, lon: r.decimalLongitude, date: r.eventDate || '', source: 'gbif', scientificName: r.scientificName || scientificName };
-              });
-            allOccs = allOccs.concat(results2);
-          }
-        }
+        if (onProgress) onProgress(page + 1, MAX_PAGES, allOccs.length);
+        if (results.length < 300 || json.endOfRecords) break;
       } catch(e) {
-        console.warn('[PROB] GBIF fetch failed for year', year, e);
+        console.warn('[PROB-GBIF] fetch failed page', page, scientificName, e);
+        break;
       }
     }
 
-    console.log('[PROB] Total GBIF records fetched:', allOccs.length, 'across', totalYears, 'years');
+    console.log('[PROB-GBIF] fetched', scientificName, 'taxonKey:', taxonKey, 'records:', allOccs.length);
     return allOccs;
   }
 

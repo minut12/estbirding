@@ -4325,6 +4325,10 @@ function _scheduleNextSnapshotRefresh(delayMs){
   if(__snapshotAutoRefreshTimer) clearTimeout(__snapshotAutoRefreshTimer);
   __snapshotAutoRefreshTimer = setTimeout(function(){
     if(__isReloading) return _scheduleNextSnapshotRefresh(SNAPSHOT_AUTO_REFRESH_MS);
+    if(window.__scanEnnAllRunning){
+      console.log('[snapshot-refresh] suspended: scan in progress, rescheduling');
+      return _scheduleNextSnapshotRefresh(SNAPSHOT_AUTO_REFRESH_MS);
+    }
     loadSnapshot();
   }, Math.max(1000, Number(delayMs) || SNAPSHOT_AUTO_REFRESH_MS));
 }
@@ -6629,8 +6633,15 @@ async function _applySnapshot(snap){
     var keepClientScan = Number.isFinite(_existingClientScan) && _existingClientScan > 0 && Number.isFinite(_snapGeneratedAt) && _existingClientScan > _snapGeneratedAt;
     const keepLive = keepClientScan;
     if(!keepLive){
-      const _existing = points[key];
-      points[key] = Object.assign({}, snapPoint, { visible: (_existing && _existing.visible === false) ? false : true });
+      const _existing = points[key] || {};
+      var _clientFields = {};
+      var _PRESERVE = ['occ7Ebird','occ7EbirdUpdated','occ7Elu','occ7EluUpdated','clientScannedAt','occ7Source','occ7PagesScanned'];
+      for(var _pi=0;_pi<_PRESERVE.length;_pi++){
+        if(_existing[_PRESERVE[_pi]] !== undefined && _existing[_PRESERVE[_pi]] !== null){
+          _clientFields[_PRESERVE[_pi]] = _existing[_PRESERVE[_pi]];
+        }
+      }
+      points[key] = Object.assign({}, snapPoint, _clientFields, { visible: (_existing.visible === false) ? false : true });
     }else{
       _applyLiveOverrideForSpecies(key);
     }
@@ -6659,8 +6670,9 @@ async function _applySnapshot(snap){
   _setResumeIndex(__snapshotProgressDone);
   _recomputeClientDataMaxAt();
   // Clear stale clientScannedAt flags once server snapshot catches up
+  // Skip during active scan to preserve in-progress state
   var _snapTs = snap.generated_at ? Date.parse(snap.generated_at) : 0;
-  if(Number.isFinite(_snapTs) && _snapTs > 0){
+  if(Number.isFinite(_snapTs) && _snapTs > 0 && !window.__scanEnnAllRunning){
     for(var _ck in points){
       if(points[_ck] && points[_ck].clientScannedAt){
         var _csTs = Date.parse(points[_ck].clientScannedAt) || 0;
@@ -7092,6 +7104,10 @@ function loadSnapshotOnce(force){
 }
 
 function loadSnapshot(force){
+  if(window.__scanEnnAllRunning && !window.__scanEnnAllAllowSnapshot){
+    console.log('[loadSnapshot] suppressed: scan in progress');
+    return Promise.resolve({suppressed:true});
+  }
   return loadSnapshotOnce(!!force).catch(function(err){
     if(!_isAbortLikeError(err)){
       __lastErrorMessage = String(err && err.message ? err.message : err);
@@ -11156,7 +11172,8 @@ window.__scanEnnAll=async function(btn){
       var totalSpecies=sp().length||450;
       var eluUpdated=0,eluErrors=0;
       for(var eluOff=0;eluOff<totalSpecies;eluOff+=ELU_BATCH){
-        if(_ennScanAbort) break;
+        if(_ennScanAbort){console.log('[ELU-REFRESH] ABORTED at offset',eluOff);break;}
+        console.log('[ELU-REFRESH] starting batch offset='+eluOff);
         if(btn) btn.textContent='eElu '+eluOff+'/'+totalSpecies;
         try{
           var eluRes=await fetch(ELU_EDGE,{

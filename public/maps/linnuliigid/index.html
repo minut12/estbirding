@@ -11345,10 +11345,14 @@ window.__renderEnn=render;
 window.__sortEnn=function(s){sort=s;render();};
 
 window.__scanEnnAll=async function(btn){
+  console.log('[SCAN] handler fired, typeof gbifFetch:', typeof gbifFetch);
+  console.log('[SCAN] window.gbifFetch:', typeof window.gbifFetch);
+  console.log('[SCAN] typeof __computeProbSilent:', typeof window.__computeProbSilent);
   if(typeof window.__computeProbSilent!=='function'){btn.textContent='Pole saadaval';return;}
   _ennScanAbort=false;
   btn.disabled=true;btn.style.opacity='.6';
   var allSpecies=sp(),pts=pt();
+  console.log('[SCAN] allSpecies.length:', allSpecies.length, 'pts keys:', Object.keys(pts).length);
   // Backfill occ7Elu from existing data where separate fields don't exist yet
   for(var bi2=0;bi2<allSpecies.length;bi2++){
     var _bn=allSpecies[bi2],_bc=_fix(_bn);
@@ -11366,7 +11370,13 @@ window.__scanEnnAll=async function(btn){
     if(!isOnMap(n,pts)) continue;
     need.push(n);
   }
-  if(need.length===0){btn.disabled=false;btn.style.opacity='1';btn.textContent='Pole liike';setTimeout(function(){btn.textContent='Skaneeri';},2000);return;}
+  console.log('[SCAN] need.length:', need.length, 'sample:', need.slice(0,3));
+  if(need.length===0){
+    // Diagnostic: why is need empty?
+    var onMapCount=0;for(var di=0;di<allSpecies.length;di++){var dn=allSpecies[di],dc=_fix(dn),dp=pts[dn]||pts[dc]||{};if(Number.isFinite(dp.lat)&&Number.isFinite(dp.lon))onMapCount++;}
+    console.log('[SCAN] need=0. onMap (has lat/lon):', onMapCount, 'visible check samples:', allSpecies.slice(0,5).map(function(n){var c=_fix(n),p=pts[n]||pts[c]||{};return n+': lat='+p.lat+' lon='+p.lon+' vis='+p.visible;}));
+    btn.disabled=false;btn.style.opacity='1';btn.textContent='Pole liike';setTimeout(function(){btn.textContent='Skaneeri';},2000);return;
+  }
   var probCacheMs=24*60*60*1000;
   var errors=0;
   render();
@@ -11383,10 +11393,12 @@ window.__scanEnnAll=async function(btn){
           try{
             var clean=_fix(name);
             var hasProb=getCurrentProbScore(name)!==null||getCurrentProbScore(clean)!==null;
+            if(hasProb){console.log('[SCAN] SKIP (hasProb):', name);}
             if(!hasProb){
               var probCached=null;
               try{var raw=localStorage.getItem('bm_prob2_'+name);if(raw){probCached=JSON.parse(raw);}}catch(e2){}
               var probAge=probCached&&probCached.fetchedAt?Date.now()-new Date(probCached.fetchedAt).getTime():Infinity;
+              console.log('[SCAN] COMPUTE:', name, 'probAge:', probAge, 'cacheMs:', probCacheMs, 'willFetch:', probAge>probCacheMs);
               if(probAge>probCacheMs&&typeof window.__computeProbSilent==='function'){
                 await Promise.race([
                   window.__computeProbSilent(name,{skipElurikkus:true}),

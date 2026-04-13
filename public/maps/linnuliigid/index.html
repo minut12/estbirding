@@ -295,6 +295,68 @@ function clearOccurrence(key){
 </script>
 
 <script>
+// ---- GBIF polite client: max 3 concurrent + 429 backoff with jitter ----
+var __gbifInFlight = 0;
+var __gbifQueue = [];
+var GBIF_MAX_CONCURRENT = 3;
+var GBIF_MAX_RETRIES = 5;
+
+function __gbifPump() {
+  while (__gbifInFlight < GBIF_MAX_CONCURRENT && __gbifQueue.length) {
+    var job = __gbifQueue.shift();
+    __gbifInFlight++;
+    job();
+  }
+}
+
+function __gbifRelease() {
+  __gbifInFlight = Math.max(0, __gbifInFlight - 1);
+  __gbifPump();
+}
+
+function __gbifSleep(ms) {
+  return new Promise(function(r){ setTimeout(r, ms); });
+}
+
+async function gbifFetch(url, opts) {
+  return new Promise(function(resolve, reject) {
+    __gbifQueue.push(async function run() {
+      var attempt = 0;
+      while (true) {
+        try {
+          var res = await fetch(url, opts);
+          if (res.status === 429 && attempt < GBIF_MAX_RETRIES) {
+            var ra = parseInt(res.headers.get('Retry-After') || '0', 10);
+            var waitMs = ra > 0
+              ? ra * 1000
+              : Math.min(16000, 500 * Math.pow(2, attempt)) + Math.floor(Math.random() * 300);
+            attempt++;
+            console.log('[GBIF] 429 on attempt ' + attempt + ', retry in ' + waitMs + 'ms: ' + url.substring(0, 80));
+            await __gbifSleep(waitMs);
+            continue;
+          }
+          __gbifRelease();
+          resolve(res);
+          return;
+        } catch (err) {
+          if (attempt < GBIF_MAX_RETRIES) {
+            var waitMs2 = Math.min(16000, 500 * Math.pow(2, attempt)) + Math.floor(Math.random() * 300);
+            attempt++;
+            await __gbifSleep(waitMs2);
+            continue;
+          }
+          __gbifRelease();
+          reject(err);
+          return;
+        }
+      }
+    });
+    __gbifPump();
+  });
+}
+</script>
+
+<script>
 // === Species ===
 let SPECIES = ["Aed-pÃµÃµsalind","Aed-roolind","Aedporr","Alk","AlverÃ¼di","Ameerika piilpart","Atlantise tormilind","Aul","Baleaari tormilind","Euroopa kaelustÃ¤ks","Habekakk","Habeviires","Hahk","Hakk","Hall-kÃ¤rbsenÃ¤pp","Hallhaigur","Hallhani","Hallkibu","Hallpea-rÃ¤hn","HallpÃµsk-pÃ¼tt","HallrÃ¤stas","HallrÃ¼di","Halltsiitsitaja","Hallvares","HallÃµgija","Hangelind","Harakas","Haugaskotkas","Hele-urvalind","Heletilder","Herilaseviu","Hiireviu","HoburÃ¤stas","HÃ¤ndkakk","HÃ¤nilane","HÃµbehaigur","HÃµbehaugas","HÃµbekajakas","HÃ¼Ã¼p","Ida-mustvaeras","Jahipistrik","JÃ¤mejalg","JÃ¤rvekaur","JÃ¤Ã¤kajakas","JÃ¤Ã¤kaur","JÃ¤Ã¤koskel","JÃµgi-ritsiklind","JÃµgitiir","JÃµgitilder","JÃµgivÃ¤strik","KadakatÃ¤ks","Kaelus-kÃ¤rbsenÃ¤pp","Kaelus-turteltuvi","Kaeluskotkas","KaelusrÃ¤stas","Kaelustuvi","Kalakajakas","Kalakotkas","Kalda-rÃ¤dilind","KaldapÃ¤Ã¤suke","Kaljukajakas","Kaljukotkas","Kanada lagle","Kanakull","Kanepilind","Karbuskajakas","Karkjalg","Karmiinleevike","Karvasjalg-kakk","Karvasjalg-viu","Kassikakk","Kiivitaja","Kiripugu-rÃ¼di","Kirjuhahk","Kivikakk","Kivirullija","KivitÃ¤ks","Kodukakk","Kodutuvi","Koduvarblane","Koldhaigur","Koldjalg-hÃµbekajakas","Koldvint","Kormoran","KrÃ¼Ã¼sel","Kukkurtihane","Kuld-lehelind","KuldhÃ¤nilane","Kuldnokk","Kuldtsiitsitaja","Kuninghahk","Kuuse-kÃ¤bilind","KÃ¤blik","KÃ¤gu","KÃ¤harpelikan","KÃ¤osulane","KÃ¤Ã¤buskormoran","KÃ¤Ã¤buskotkas","KÃµnnuÃµgija","KÃµrbe-kivitÃ¤ks","KÃµrbe-pÃµÃµsalind","KÃµrkja-roolind","KÃµrvukrÃ¤ts","KÃµvernokk-rÃ¼di","KÃ¼hmnokk-luik","KÃ¼nnivares","LaanenÃ¤Ã¤r","LaanepÃ¼Ã¼","LaanerÃ¤hn","Laisaba-Ã¤nn","Lammitilder","Lapi tsiitsitaja","Lasuurtihane","Lauk","Laululuik","LaulurÃ¤stas","LeeterÃ¼di","Leevike","Liiv-kivitÃ¤ks","LiivatÃ¼ll","LinavÃ¤strik","Loorkakk","Luitsnokk-iibis","Luitsnokk-part","Lumehani","Lumekakk","LÃ¤Ã¤ne-lehelind","LÃ¤Ã¤ne-pÃ¶ialpoiss","LÃµopistrik","LÃµuna-hÃµbekajakas","LÃ¼hinokk-hani","Madukotkas","Mandariinpart","Merikajakas","Merikotkas","MerirÃ¼di","Merisk","Merivart","MesilasenÃ¤pp","Mets-lehelind","Metsis","Metskiur","Metskurvits","Metstilder","Metsvint","Mudanepp","Mudatilder","Must-harksaba","Must-kÃ¤rbsenÃ¤pp","Must-lepalind","Must-toonekurg","Mustjalg-tÃ¼ll","Mustkael-pÃ¼tt","Mustkurk-raat","Mustlagle","Mustlauk-Ãµgija","Mustpea-pÃµÃµsalind","Mustpea-tsiitsitaja","Mustpugu-rÃ¤stas","MustrÃ¤hn","MustrÃ¤stas","Mustsaba-vigle","Musttihane","Mustvaeras","Mustvares","Mustviires","MÃ¤gi-kanepilind","MÃ¤gikiur","MÃ¤nni-kÃ¤bilind","MÃ¤nnileevike","MÃ¤nnitalvike","MÃ¤nsak","Naaskelnokk","Naerukajakas","Naerutiir","Niidu-kaelustÃ¤ks","Niidu-ritsiklind","Niidukiur","Nunn-kivitÃ¤ks","Nurmkana","NÃµgipart","NÃµlva-lehelind","NÃµmmekiur","NÃµmmelÃµoke","Ohakalind","Ohhoota hÃµbekajakas","Padu-roolind","PasknÃ¤Ã¤r","Peegel-tormilind","Pelikan","Peoleo","Piilpart","Piiritaja","Pikksaba-Ã¤nn","PlÃ¼tt","PlÃ¼Ã¼","Polaarkajakas","Porr","Prillvaeras","Pruunselg-pÃµÃµsalind","Puna-harksaba","Puna-veetallaja","Punajalg-pistrik","Punajalg-tilder","Punakael-lagle","Punakurk-kaur","Punanokk-vart","Punapea-vart","Punapea-Ãµgija","Punarind","Punasaba-Ãµgija","Punaselg-Ãµgija","Purpurhaigur","Puukoristaja","PÃµhja-kirjurÃ¤stas","PÃµhja-lehelind","PÃµhja-tormipÃ¤Ã¤su","PÃµhjatihane","PÃµhjatsiitsitaja","PÃµhjavint","PÃµldlÃµoke","PÃµldtsiitsitaja","PÃµldvarblane","PÃµldvutt","PÃ¶ialpoiss","Rabapistrik","RabapÃ¼Ã¼","Raisakotkas","Randkajakas","Randkiur","Randtiir","Rasvatihane","Raudkull","Ristpart","RoherÃ¤hn","Rohevint","Rohukoskel","Rohunepp","Ronk","Roo-loorkull","Roo-ritsiklind","Roohabekas","Rooruik","Roosa-kuldnokk","Roosakajakas","Roosatiir","RoostepÃ¤Ã¤suke","Roosterind-tÃ¼ll","Rootsiitsitaja","RubiinÃ¶Ã¶bik","RukkirÃ¤Ã¤k","RuugerÃ¼di","RÃ¤gapart","RÃ¤stas-roolind","RÃ¤usktiir","RÃ¤Ã¤kspart","RÃ¤Ã¤stapÃ¤Ã¤suke","RÃ¼Ã¼t","Sabatihane","Salu-lehelind","SalupÃ¤ll","Salutihane","SarviklÃµoke","SarvikpÃ¼tt","Siberi lehelind","Siberi raat","Siidhaigur","Siidisaba","Siisike","Sinikael-part","Siniraag","Sinirind","Sinisaba","Sinitihane","Soo-loorkull","Soo-roolind","Sookiur","Sookurg","Soopart","SoorÃ¤ts","SoorÃ¼di","Stepi-loorkull","Stepikajakas","Stepikiivitaja","Stepikotkas","Stepipistrik","Stepiviu","SuitsupÃ¤Ã¤suke","Suula","Suur-kirjurÃ¤hn","Suur-konnakotkas","Suur-laukhani","Suurkoovitaja","Suurnokk-vint","SuurrÃ¼di","SuurÃ¤nn","SÃµtkas","SÃ¶Ã¶dikÃ¤nn","Tait","Talvike","Tamme-kirjurÃ¤hn","Teder","Tiigi-roolind","Tikutaja","Triip-ritsiklind","Tuhk-lehelind","Tumetilder","Tundra-rabahani","Tundrakaur","Tundrakiur","Tutkas","Tutt-tihane","Tutt-tiir","TuttlÃµoke","TuttpÃ¼tt","Tuttvart","Tuuletallaja","TÃ¤pikhuik","TÃµmmu-lehelind","TÃµmmuiibis","TÃµmmukajakas","TÃµmmuvaeras","Urvalind","Vaaraohani","VaenukÃ¤gu","VainurÃ¤stas","Valge-toonekurg","ValgepÃµsk-lagle","Valgeselg-kirjurÃ¤hn","Valgesilm-vart","Valgetiib-viires","Veetallaja","Veisehaigur","Vesipapp","Vihitaja","Viupart","VÃ¤ike-kirjurÃ¤hn","VÃ¤ike-konnakotkas","VÃ¤ike-kÃ¤osulane","VÃ¤ike-kÃ¤rbsenÃ¤pp","VÃ¤ike-laukhani","VÃ¤ike-lehelind","VÃ¤ike-pÃµÃµsalind","VÃ¤ikealk","VÃ¤ikehuik","VÃ¤ikehÃ¼Ã¼p","VÃ¤ikekajakas","VÃ¤ikekoovitaja","VÃ¤ikekoskel","VÃ¤ikeluik","VÃ¤ikepistrik","VÃ¤ikepÃ¼tt","VÃ¤ikerÃ¼di","VÃ¤iketiir","VÃ¤iketrapp","VÃ¤iketsiitsitaja","VÃ¤iketÃ¼ll","VÃ¤lja-loorkull","VÃ¤lja-vÃ¤ikelÃµoke","VÃ¤rbkakk","VÃ¤rbrÃ¼di","VÃ¤Ã¤nkael","VÃµsa-ritsiklind","VÃµsaraat","VÃ¶Ã¶t-kÃ¤bilind","VÃ¶Ã¶t-pÃµÃµsalind","VÃ¶Ã¶thani","VÃ¶Ã¶tkakk","VÃ¶Ã¶tnokk-kajakas","VÃ¶Ã¶tsaba-vigle","Õõnetuvi","Ööbik","Ööhaigur","Öösorr"];
 
@@ -7565,7 +7627,7 @@ async function resolveGbifTaxonKey(species) {
     try {
       var url = 'https://api.gbif.org/v1/species/match?name='
         + encodeURIComponent(sciName) + '&kingdom=Animalia&strict=true';
-      var res = await fetch(url);
+      var res = await gbifFetch(url);
       if (res.ok) {
         var data = await res.json();
         if (data.usageKey && data.matchType !== 'NONE') {
@@ -7580,7 +7642,7 @@ async function resolveGbifTaxonKey(species) {
     try {
       var url2 = 'https://api.gbif.org/v1/species/match?name='
         + encodeURIComponent(sciName) + '&kingdom=Animalia';
-      var res2 = await fetch(url2);
+      var res2 = await gbifFetch(url2);
       if (res2.ok) {
         var data2 = await res2.json();
         if (data2.usageKey && data2.confidence > 80) {
@@ -7596,7 +7658,7 @@ async function resolveGbifTaxonKey(species) {
   try {
     var url3 = 'https://api.gbif.org/v1/species/suggest?q='
       + encodeURIComponent(species) + '&rank=SPECIES&limit=5';
-    var res3 = await fetch(url3);
+    var res3 = await gbifFetch(url3);
     if (res3.ok) {
       var suggestions = await res3.json();
       var bird = suggestions.find(function(s) { return s.class === 'Aves'; });
@@ -7681,7 +7743,7 @@ async function toggleGbifData(species) {
           + '&hasGeospatialIssue=false'
           + '&year=' + yr
           + '&limit=' + PER_YEAR_LIMIT;
-        var res = await fetch(url);
+        var res = await gbifFetch(url);
         if (!res.ok) continue;
         var data = await res.json();
         allResults.push.apply(allResults, data.results || []);
@@ -8231,7 +8293,7 @@ if(window.__predictionSyncedSpecies && !window.__selectedSpecies){
           _saveGbifTaxonKeys();
           notifySilent('GBIF: set taxonKey ' + input + ' for ' + species);
         } else {
-          fetch('https://api.gbif.org/v1/species/match?name=' + encodeURIComponent(input) + '&kingdom=Animalia')
+          gbifFetch('https://api.gbif.org/v1/species/match?name=' + encodeURIComponent(input) + '&kingdom=Animalia')
             .then(function(r){ return r.json(); })
             .then(function(data){
               if(data.usageKey){
@@ -9909,7 +9971,7 @@ var __sharedDefaults = {};
           + encodeURIComponent(scientificName)
           + '&country=EE&hasCoordinate=true&hasGeospatialIssue=false'
           + '&year=' + year + '&limit=300';
-        var res = await fetch(url);
+        var res = await gbifFetch(url);
         if (!res.ok) continue;
         var json = await res.json();
         var results = (json.results || [])
@@ -9921,7 +9983,7 @@ var __sharedDefaults = {};
 
         // If this year has more records, fetch page 2
         if (!json.endOfRecords && json.count > 300) {
-          var res2 = await fetch(url + '&offset=300');
+          var res2 = await gbifFetch(url + '&offset=300');
           if (res2.ok) {
             var json2 = await res2.json();
             var results2 = (json2.results || [])

@@ -10251,7 +10251,207 @@ var __sharedDefaults = {};
     if (panel) panel.style.display = 'none';
   }
 
-  // --- Main toggle (global so delegation can call it) ---
+
+  // --- Core compute+write function (no UI side effects) ---
+  // Returns { scored, data, seasonInfo, seasonal } on success, or null on skip/failure.
+  async function computeProbForSpecies(speciesName, options) {
+    options = options || {};
+
+    // Skip if already computed (unless force)
+    if (!options.force && window.__probDataBySpecies && window.__probDataBySpecies[speciesName]) return null;
+
+    // Step 0: Fetch eElurikkus date-only items for probability grid.
+    var _eluKey = typeof _normalizeSpeciesKey === 'function' ? _normalizeSpeciesKey(speciesName) : String(speciesName || '').trim().toLowerCase();
+    if (!options.skipElurikkus) {
+      var _eluCachedCheck = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluKey]) || null;
+      var _probEluCache = window.__probEluCache = window.__probEluCache || {};
+      var _probEluCached = _probEluCache[_eluKey] || null;
+      var _eluNeedsFetch = (!_eluCachedCheck || !Array.isArray(_eluCachedCheck.items) || _eluCachedCheck.items.length < 100)
+        && (!_probEluCached || !Array.isArray(_probEluCached.items) || _probEluCached.items.length < 100);
+      if (_eluNeedsFetch) {
+        try {
+          var _eluItems = await fetchElurikkusAllDatesForProb(speciesName);
+          if (_eluItems && _eluItems.length > 0) {
+            for (var _ni = 0; _ni < _eluItems.length; _ni++) {
+              if (_eluItems[_ni].observedAt) _eluItems[_ni].observedAt = normDateISO(_eluItems[_ni].observedAt) || _eluItems[_ni].observedAt;
+            }
+            var _newest = '';
+            for (var _ei = 0; _ei < _eluItems.length; _ei++) {
+              if (String(_eluItems[_ei].observedAt || '') > _newest) _newest = String(_eluItems[_ei].observedAt);
+            }
+            _probEluCache[_eluKey] = {
+              fetchedAt: new Date().toISOString(),
+              dataMaxAt: _newest,
+              items: _eluItems,
+              sourceUrl: 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(speciesName)
+            };
+            if (typeof points !== 'undefined') {
+              points[speciesName] = points[speciesName] || {};
+              if (_newest) points[speciesName].t = _newest;
+              if (typeof countInLastNDaysFromDates === 'function') {
+                var _dates = _eluItems.map(function(it){ return it.observedAt; }).filter(Boolean);
+                var _eluOcc7 = countInLastNDaysFromDates(_dates, 7);
+                points[speciesName].occ7Elu = _eluOcc7;
+                points[speciesName].occ7 = Math.max(_eluOcc7, Number(points[speciesName].occ7Ebird || 0));
+              }
+            }
+            console.log('[PROB] eElurikkus paginated:', _eluItems.length, 'items for', speciesName);
+          }
+        } catch(_eluErr) {
+          console.warn('[PROB] eElurikkus paginated fetch failed for', speciesName, _eluErr);
+        }
+      }
+    }
+
+    var data = loadProbCache(speciesName);
+
+    if (!data) {
+      var cacheKey = String(speciesName || '').trim().toLowerCase();
+      var eluItems = (liveElurikkusBySpecies[cacheKey] && liveElurikkusBySpecies[cacheKey].items) || null;
+      if (!eluItems || eluItems.length === 0) {
+        var _pec = window.__probEluCache && window.__probEluCache[cacheKey];
+        if (_pec && Array.isArray(_pec.items) && _pec.items.length > 0) eluItems = _pec.items;
+      }
+      if (!eluItems || eluItems.length === 0) {
+        var json = await fetchElurikkusSpecies(speciesName);
+        eluItems = (json && json.items) ? json.items : [];
+      }
+
+      var eluOccs = [];
+      for (var i = 0; i < eluItems.length; i++) {
+        var item = eluItems[i];
+        var lat = Number(item.lat);
+        var lon = Number(item.lon);
+        var hasCoords = Number.isFinite(lat) && Number.isFinite(lon);
+        if (!hasCoords) {
+          var place = String(item.municipality || item.placeText || item.locality || item.county || '').trim();
+          if (place) {
+            var resolved = null;
+            if (typeof resolveCentroidFromPlace === 'function') resolved = resolveCentroidFromPlace(place);
+            if (!resolved && typeof resolveFallbackLatLon === 'function') {
+              resolved = resolveFallbackLatLon({ municipality: item.municipality || '', locality: item.locality || '', county: item.county || '' });
+            }
+            if (resolved && Number.isFinite(resolved.lat) && Number.isFinite(resolved.lon)) {
+              lat = resolved.lat; lon = resolved.lon; hasCoords = true;
+            }
+          }
+        }
+        if (!hasCoords) continue;
+        eluOccs.push({ lat: lat, lon: lon, date: String(item.observedAt || ''), source: 'elurikkus', scientificName: String(item.scientificName || item.taxonName || '') });
+      }
+      console.log('[prob] eElurikkus items:', eluItems.length, '-> with coords:', eluOccs.length);
+
+      // Historical HTML fetch
+      try {
+        var searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(speciesName) + '&_ts=' + Date.now();
+        var html = await tryFetch(searchUrl);
+        if (html && typeof extractElurikkusRecordRows === 'function') {
+          var htmlRows = extractElurikkusRecordRows(html);
+          for (var j = 0; j < htmlRows.length; j++) {
+            var row = htmlRows[j];
+            var rLat = Number(row.lat), rLon = Number(row.lon);
+            var rHas = Number.isFinite(rLat) && Number.isFinite(rLon);
+            if (!rHas) {
+              var rPlace = String(row.municipality || row.placeText || row.locality || row.county || '').trim();
+              if (rPlace) {
+                var rRes = null;
+                if (typeof resolveCentroidFromPlace === 'function') rRes = resolveCentroidFromPlace(rPlace);
+                if (!rRes && typeof resolveFallbackLatLon === 'function') rRes = resolveFallbackLatLon({ municipality: row.municipality || '', locality: row.locality || '', county: row.county || '' });
+                if (rRes && Number.isFinite(rRes.lat) && Number.isFinite(rRes.lon)) { rLat = rRes.lat; rLon = rRes.lon; rHas = true; }
+              }
+            }
+            if (!rHas) continue;
+            eluOccs.push({ lat: rLat, lon: rLon, date: String(row.observedAt || ''), source: 'elurikkus', scientificName: String(row.scientificName || row.taxonName || '') });
+          }
+        }
+      } catch(htmlErr) {
+        console.warn('[prob] Historical HTML fetch failed:', htmlErr);
+      }
+
+      var sciName = extractScientificName(eluOccs);
+      if (!sciName && typeof SPECIES_SCINAMES !== 'undefined' && SPECIES_SCINAMES[speciesName]) sciName = SPECIES_SCINAMES[speciesName];
+
+      var gbifOccs = [];
+      if (sciName) {
+        gbifOccs = await fetchProbGbifOccurrences(sciName, function() {});
+      }
+
+      var allOccs = deduplicateOccurrences(eluOccs.concat(gbifOccs));
+      data = { species: speciesName, scientificName: sciName || '', fetchedAt: new Date().toISOString(), occurrences: allOccs };
+      saveProbCache(speciesName, data);
+      console.log('[prob] Total:', allOccs.length, '| eElurikkus:', eluOccs.length, '| GBIF:', gbifOccs.length);
+    }
+
+    if (!data.occurrences || data.occurrences.length === 0) { console.log('[PROB-EXIT] A (no occurrences)', speciesName); return null; }
+
+    var seasonInfo = calculateSeasonFromData(data.occurrences);
+    if (!seasonInfo) { console.log('[PROB-EXIT] B (no seasonInfo)', speciesName); return null; }
+
+    var seasonal = data.occurrences.filter(function(o){ return isInSeasonRange(o.date, seasonInfo.start, seasonInfo.end); });
+    if (seasonal.length === 0 && data.occurrences.length > 0) {
+      seasonal = data.occurrences.filter(function(o){ return isInSeasonWindow(o.date, 45); });
+      var now2 = new Date();
+      var fb1 = new Date(now2); fb1.setDate(fb1.getDate() - 45);
+      var fb2 = new Date(now2); fb2.setDate(fb2.getDate() + 45);
+      seasonInfo = { start: fb1, end: fb2, label: formatSeasonWindow(45) };
+    }
+    if (seasonal.length === 0) { console.log('[PROB-EXIT] C (no seasonal)', speciesName); return null; }
+
+    var totalGbifRecords = data.occurrences.filter(function(o){ return o.source === 'gbif'; }).length;
+    var probCellSize = totalGbifRecords > 500 ? 0.1 : totalGbifRecords > 100 ? 0.15 : 0.2;
+
+    // eElurikkus injection
+    var _eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
+    if (Number.isFinite(_eluPoint.lat) && Number.isFinite(_eluPoint.lon)) {
+      var _eluOcc7 = Math.min(Number(_eluPoint.occ7 || _eluPoint.occ || 1), 30);
+      var _eluDate = String(_eluPoint.t || '');
+      if (_eluDate && _eluOcc7 > 0) {
+        for (var _oi = 0; _oi < _eluOcc7; _oi++) {
+          seasonal.push({ lat: _eluPoint.lat, lon: _eluPoint.lon, date: _eluDate, source: 'elurikkus' });
+        }
+      }
+    }
+
+    var gridCells = buildEstoniaGrid(seasonal, probCellSize);
+    var precision = probCellSize < 0.1 ? 3 : 2;
+    var allGbif = data.occurrences.filter(function(o){ return o.source === 'gbif'; });
+    var gbifTotalByCell = {};
+    allGbif.forEach(function(o) {
+      var gLat = Math.floor(o.lat / probCellSize) * probCellSize;
+      var gLon = Math.floor(o.lon / probCellSize) * probCellSize;
+      var key = gLat.toFixed(precision) + '|' + gLon.toFixed(precision);
+      gbifTotalByCell[key] = (gbifTotalByCell[key] || 0) + 1;
+    });
+    gridCells.forEach(function(c) {
+      var key = c.latMin.toFixed(precision) + '|' + c.lonMin.toFixed(precision);
+      c.gbifCountTotal = gbifTotalByCell[key] || 0;
+    });
+
+    var scored = calculateProbabilities(gridCells, seasonal, data.occurrences, speciesName, probCellSize, seasonInfo);
+
+    // Write to __probDataBySpecies
+    window.__probDataBySpecies = window.__probDataBySpecies || {};
+    var topCell = scored.slice().sort(function(a,b){ return b.probability - a.probability; })[0];
+    console.log('[PROB-WRITE]', speciesName, 'scored:', scored.length, 'topCell:', !!topCell);
+    if (topCell && topCell.periods) {
+      window.__probDataBySpecies[speciesName] = {
+        computedAt: Date.now(),
+        cellLat: (topCell.latMin + topCell.latMax) / 2,
+        cellLon: (topCell.lonMin + topCell.lonMax) / 2,
+        overallScore: topCell.probability,
+        season: (seasonInfo && seasonInfo.label) || '',
+        periods: topCell.periods.map(function(p) {
+          return { label: p.label, pct: p.probability || 1, count: p.obsCount || p.count || 0, isCurrent: !!p.isCurrent };
+        })
+      };
+    }
+
+    return { scored: scored, data: data, seasonInfo: seasonInfo, seasonal: seasonal, probCellSize: probCellSize };
+  }
+
+  window.computeProbForSpecies = computeProbForSpecies;
+
+  // --- toggleProbability: UI wrapper around computeProbForSpecies ---
   window.toggleProbability = async function toggleProbability(speciesName) {
     // Deactivate
     if (activeProbSpecies === speciesName) {
@@ -10266,307 +10466,37 @@ var __sharedDefaults = {};
     activeProbSpecies = speciesName;
     render();
     showProbInfoPanel(speciesName);
-    setProbStatus('Fetching eElurikkus...');
+    setProbStatus('Fetching data...');
 
-    // Set loading on button
     var btn = document.querySelector('.prob-btn[data-prob-species="' + speciesName + '"]');
     if (btn) btn.classList.add('prob-loading');
 
     try {
-      // Step 0: Fetch eElurikkus date-only items for probability grid.
-      // IMPORTANT: store in a prob-specific cache, NOT in liveElurikkusBySpecies,
-      // because these items have no coordinates and overwriting the live cache
-      // causes _applyLiveOverrideForSpecies to produce coords_status:'restricted',
-      // which makes updateMarker hide the species marker.
-      var _eluKey = typeof _normalizeSpeciesKey === 'function' ? _normalizeSpeciesKey(speciesName) : String(speciesName || '').trim().toLowerCase();
-      var _eluCachedCheck = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluKey]) || null;
-      var _probEluCache = window.__probEluCache = window.__probEluCache || {};
-      var _probEluCached = _probEluCache[_eluKey] || null;
-      var _eluNeedsFetch = (!_eluCachedCheck || !Array.isArray(_eluCachedCheck.items) || _eluCachedCheck.items.length < 100)
-        && (!_probEluCached || !Array.isArray(_probEluCached.items) || _probEluCached.items.length < 100);
-      if (_eluNeedsFetch) {
-        try {
-          setProbStatus('Fetching eElurikkus data (all pages)...');
-          var _eluItems = await fetchElurikkusAllDatesForProb(speciesName);
-          if (_eluItems && _eluItems.length > 0) {
-            // Normalize observedAt to ISO so string comparison and downstream parsers work
-            for (var _ni = 0; _ni < _eluItems.length; _ni++) {
-              if (_eluItems[_ni].observedAt) _eluItems[_ni].observedAt = normDateISO(_eluItems[_ni].observedAt) || _eluItems[_ni].observedAt;
-            }
-            var _newest = '';
-            for (var _ei = 0; _ei < _eluItems.length; _ei++) {
-              if (String(_eluItems[_ei].observedAt || '') > _newest) _newest = String(_eluItems[_ei].observedAt);
-            }
-            // Store in prob-specific cache only (do NOT overwrite liveElurikkusBySpecies)
-            _probEluCache[_eluKey] = {
-              fetchedAt: new Date().toISOString(),
-              dataMaxAt: _newest,
-              items: _eluItems,
-              sourceUrl: 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(speciesName)
-            };
-            // Update date and occ7 on points (safe — does not affect coords)
-            if (typeof points !== 'undefined') {
-              points[speciesName] = points[speciesName] || {};
-              if (_newest) points[speciesName].t = _newest;
-              if (typeof countInLastNDaysFromDates === 'function') {
-                var _dates = _eluItems.map(function(it){ return it.observedAt; }).filter(Boolean);
-                var _eluOcc7 = countInLastNDaysFromDates(_dates, 7);
-                points[speciesName].occ7Elu = _eluOcc7;
-                points[speciesName].occ7 = Math.max(_eluOcc7, Number(points[speciesName].occ7Ebird || 0));
-              }
-            }
-            console.log('[PROB] eElurikkus paginated:', _eluItems.length, 'items for', speciesName);
-          } else {
-            console.log('[PROB] eElurikkus returned 0 items for', speciesName);
-          }
-        } catch(_eluErr) {
-          console.warn('[PROB] eElurikkus paginated fetch failed for', speciesName, _eluErr);
-        }
-      } else {
-        console.log('[PROB] eElurikkus cache hit:', (_eluCachedCheck ? _eluCachedCheck.items.length : 0), 'live +', (_probEluCached ? _probEluCached.items.length : 0), 'prob items for', speciesName);
-      }
-
-      var data = loadProbCache(speciesName);
-
-      if (!data) {
-        // Step 1: Get eElurikkus data from cache or fetch
-        var cacheKey = String(speciesName || '').trim().toLowerCase();
-        var eluItems = (liveElurikkusBySpecies[cacheKey] && liveElurikkusBySpecies[cacheKey].items) || null;
-        // Also check prob-specific cache (date-only items for grid building)
-        if (!eluItems || eluItems.length === 0) {
-          var _pec = window.__probEluCache && window.__probEluCache[cacheKey];
-          if (_pec && Array.isArray(_pec.items) && _pec.items.length > 0) eluItems = _pec.items;
-        }
-
-        if (!eluItems || eluItems.length === 0) {
-          var json = await fetchElurikkusSpecies(speciesName);
-          eluItems = (json && json.items) ? json.items : [];
-        }
-
-        // Step 2: Map ALL items, resolving coords for restricted items via centroids
-        var eluOccs = [];
-        for (var i = 0; i < eluItems.length; i++) {
-          var item = eluItems[i];
-          var lat = Number(item.lat);
-          var lon = Number(item.lon);
-          var hasCoords = Number.isFinite(lat) && Number.isFinite(lon);
-
-          if (!hasCoords) {
-            var place = String(item.municipality || item.placeText || item.locality || item.county || '').trim();
-            if (place) {
-              var resolved = null;
-              if (typeof resolveCentroidFromPlace === 'function') {
-                resolved = resolveCentroidFromPlace(place);
-              }
-              if (!resolved && typeof resolveFallbackLatLon === 'function') {
-                resolved = resolveFallbackLatLon({
-                  municipality: item.municipality || '',
-                  locality: item.locality || '',
-                  county: item.county || ''
-                });
-              }
-              if (resolved && Number.isFinite(resolved.lat) && Number.isFinite(resolved.lon)) {
-                lat = resolved.lat;
-                lon = resolved.lon;
-                hasCoords = true;
-              }
-            }
-          }
-          if (!hasCoords) continue;
-          eluOccs.push({
-            lat: lat, lon: lon,
-            date: String(item.observedAt || ''),
-            source: 'elurikkus',
-            scientificName: String(item.scientificName || item.taxonName || '')
-          });
-        }
-        console.log('[prob] eElurikkus items:', eluItems.length, '-> with coords:', eluOccs.length);
-
-        // Step 3: Also fetch historical data via HTML search page
-        try {
-          setProbStatus('Fetching historical data...');
-          var searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' +
-            encodeURIComponent(speciesName) + '&_ts=' + Date.now();
-          var html = await tryFetch(searchUrl);
-          if (html && typeof extractElurikkusRecordRows === 'function') {
-            var htmlRows = extractElurikkusRecordRows(html);
-            console.log('[prob] HTML historical rows:', htmlRows.length);
-            for (var j = 0; j < htmlRows.length; j++) {
-              var row = htmlRows[j];
-              var rLat = Number(row.lat), rLon = Number(row.lon);
-              var rHas = Number.isFinite(rLat) && Number.isFinite(rLon);
-              if (!rHas) {
-                var rPlace = String(row.municipality || row.placeText || row.locality || row.county || '').trim();
-                if (rPlace) {
-                  var rRes = null;
-                  if (typeof resolveCentroidFromPlace === 'function') rRes = resolveCentroidFromPlace(rPlace);
-                  if (!rRes && typeof resolveFallbackLatLon === 'function') {
-                    rRes = resolveFallbackLatLon({ municipality: row.municipality || '', locality: row.locality || '', county: row.county || '' });
-                  }
-                  if (rRes && Number.isFinite(rRes.lat) && Number.isFinite(rRes.lon)) {
-                    rLat = rRes.lat; rLon = rRes.lon; rHas = true;
-                  }
-                }
-              }
-              if (!rHas) continue;
-              eluOccs.push({
-                lat: rLat, lon: rLon,
-                date: String(row.observedAt || ''),
-                source: 'elurikkus',
-                scientificName: String(row.scientificName || row.taxonName || '')
-              });
-            }
-          }
-        } catch(htmlErr) {
-          console.warn('[prob] Historical HTML fetch failed:', htmlErr);
-        }
-
-        // Step 4: Extract scientific name for GBIF
-        var sciName = extractScientificName(eluOccs);
-        if (!sciName && typeof SPECIES_SCINAMES !== 'undefined' && SPECIES_SCINAMES[speciesName]) {
-          sciName = SPECIES_SCINAMES[speciesName];
-        }
-
-        // Step 5: Fetch GBIF (per-year sampling for better coverage)
-        var gbifOccs = [];
-        if (sciName) {
-          setProbStatus('Fetching GBIF (' + sciName + ')...');
-          gbifOccs = await fetchProbGbifOccurrences(sciName, function(yearNum, totalYears, soFar) {
-            setProbStatus('Fetching GBIF ' + yearNum + '/' + totalYears + ' years... ' + soFar + ' records');
-          });
-        } else {
-          console.log('[prob] No Latin name found, GBIF skipped');
-        }
-
-        // Step 6: Merge + deduplicate
-        var allOccs = deduplicateOccurrences(eluOccs.concat(gbifOccs));
-        data = { species: speciesName, scientificName: sciName || '', fetchedAt: new Date().toISOString(), occurrences: allOccs };
-        saveProbCache(speciesName, data);
-
-        console.log('[prob] Total:', allOccs.length, '| eElurikkus:', eluOccs.length, '| GBIF:', gbifOccs.length);
-
-        // Log eElurikkus cache info for cross-reference
-        var _eluCacheKey = String(speciesName || '').trim().toLowerCase();
-        var _eluCached = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluCacheKey]) || null;
-        var _eluCacheCount = (_eluCached && Array.isArray(_eluCached.items)) ? _eluCached.items.length : 0;
-        console.log('[PROB] eElurikkus cache:', _eluCacheCount, 'items | GBIF with coords:', gbifOccs.length);
-      }
+      var result = await computeProbForSpecies(speciesName, { force: true });
 
       // User may have toggled away while fetching
       if (activeProbSpecies !== speciesName) return;
 
-      setProbStatus('Calculating...');
-
-      // Derive season window from actual GBIF data distribution
-      var seasonInfo = calculateSeasonFromData(data.occurrences);
-      console.log('[prob] Derived season:', seasonInfo.label);
-
-      // Filter occurrences to the data-derived season
-      var seasonal = data.occurrences.filter(function(o){ return isInSeasonRange(o.date, seasonInfo.start, seasonInfo.end); });
-      console.log('[prob] Season:', seasonInfo.label, '| In-season:', seasonal.length, '/', data.occurrences.length);
-
-      // Fallback: if derived season misses everything, use ±45 days from now
-      if (seasonal.length === 0 && data.occurrences.length > 0) {
-        seasonal = data.occurrences.filter(function(o){ return isInSeasonWindow(o.date, 45); });
-        var now2 = new Date();
-        var fb1 = new Date(now2); fb1.setDate(fb1.getDate() - 45);
-        var fb2 = new Date(now2); fb2.setDate(fb2.getDate() + 45);
-        seasonInfo = { start: fb1, end: fb2, label: formatSeasonWindow(45) };
-        console.log('[prob] Widened to \u00b145 days:', seasonal.length);
-      }
-
-      if (seasonal.length === 0) {
-        if (data.occurrences.length > 0) {
-          var sampleDates = data.occurrences.slice(0,5).map(function(o){ return o.date; });
-          console.log('[prob] Sample dates:', sampleDates);
-        }
-        setProbStatus('No observations near current season (' + data.occurrences.length + ' total obs)');
+      if (!result) {
+        setProbStatus('No data available for this species');
         clearProbabilityLayer();
         return;
       }
 
-      console.log('[PROB] species:', speciesName);
-      console.log('[PROB] eluPoint:', (typeof points !== 'undefined' ? points[speciesName] : 'no points'));
-      var _probCacheKey = String(speciesName || '').trim().toLowerCase();
-      console.log('[PROB] liveEluCache:', (typeof liveElurikkusBySpecies !== 'undefined' ? liveElurikkusBySpecies[_probCacheKey] : 'N/A'));
-      console.log('[PROB] seasonal occs:', seasonal.length, '/ total:', data.occurrences.length);
+      renderProbabilityOverlay(result.scored, speciesName, result.data.occurrences.length, result.seasonal.length, result.seasonInfo);
+      if (typeof render === 'function') render();
 
-      // Adaptive cell size based on data density
-      var totalGbifRecords = data.occurrences.filter(function(o){ return o.source === 'gbif'; }).length;
-      var probCellSize;
-      if (totalGbifRecords > 500) probCellSize = 0.1;
-      else if (totalGbifRecords > 100) probCellSize = 0.15;
-      else probCellSize = 0.2;
-
-      // --- eElurikkus injection: occ7-weighted marker location ---
-      // Historical per-cell eElurikkus data deferred until coordinate API is available.
-      // For now, inject the known marker location weighted by 7-day observation count.
-      var _eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
-      if (Number.isFinite(_eluPoint.lat) && Number.isFinite(_eluPoint.lon)) {
-        var _eluOcc7 = Math.min(Number(_eluPoint.occ7 || _eluPoint.occ || 1), 30);
-        var _eluDate = String(_eluPoint.t || '');
-        if (_eluDate && _eluOcc7 > 0) {
-          for (var _oi = 0; _oi < _eluOcc7; _oi++) {
-            seasonal.push({ lat: _eluPoint.lat, lon: _eluPoint.lon, date: _eluDate, source: 'elurikkus' });
-          }
-        }
-      }
-
-      // Build full Estonia grid and assign seasonal occurrences to cells
-      var gridCells = buildEstoniaGrid(seasonal, probCellSize);
-
-      // Compute gbifCountTotal per cell from ALL occurrences (not just seasonal)
-      var precision = probCellSize < 0.1 ? 3 : 2;
-      var allGbif = data.occurrences.filter(function(o){ return o.source === 'gbif'; });
-      var gbifTotalByCell = {};
-      allGbif.forEach(function(o) {
-        var gLat = Math.floor(o.lat / probCellSize) * probCellSize;
-        var gLon = Math.floor(o.lon / probCellSize) * probCellSize;
-        var key = gLat.toFixed(precision) + '|' + gLon.toFixed(precision);
-        gbifTotalByCell[key] = (gbifTotalByCell[key] || 0) + 1;
-      });
-      gridCells.forEach(function(c) {
-        var key = c.latMin.toFixed(precision) + '|' + c.lonMin.toFixed(precision);
-        c.gbifCountTotal = gbifTotalByCell[key] || 0;
-      });
-
-      console.log('[PROB] grid cells:', gridCells.length, '| cellSize:', probCellSize);
-      console.log('[PROB-GRID] Cells with GBIF > 0:', gridCells.filter(function(c) { return c.gbifCount > 0; }).length);
-
-      var scored = calculateProbabilities(gridCells, seasonal, data.occurrences, speciesName, probCellSize, seasonInfo);
-      renderProbabilityOverlay(scored, speciesName, data.occurrences.length, seasonal.length, seasonInfo);
-
-      // Store probability data for sidebar top-3 periods section
-      try {
-        window.__probDataBySpecies = window.__probDataBySpecies || {};
-        var topCell = scored.slice().sort(function(a,b){ return b.probability - a.probability; })[0];
-        if (topCell && topCell.periods) {
-          window.__probDataBySpecies[speciesName] = {
-            computedAt: Date.now(),
-            cellLat: (topCell.latMin + topCell.latMax) / 2,
-            cellLon: (topCell.lonMin + topCell.lonMax) / 2,
-            overallScore: topCell.probability,
-            season: (seasonInfo && seasonInfo.label) || '',
-            periods: topCell.periods.map(function(p) {
-              return { label: p.label, pct: p.probability || 1, count: p.obsCount || p.count || 0, isCurrent: !!p.isCurrent };
-            })
-          };
-          if (typeof render === 'function') render();
-        }
-      } catch(e) { console.warn('[top3periods] store error', e); }
-
-      var _gbifTotal = data.occurrences.filter(function(o){ return o.source === 'gbif'; }).length;
-      var _eluTotal = data.occurrences.filter(function(o){ return o.source === 'elurikkus'; }).length;
-      // Also show live eElurikkus cache count and occ7
+      var _eluKey = typeof _normalizeSpeciesKey === 'function' ? _normalizeSpeciesKey(speciesName) : String(speciesName || '').trim().toLowerCase();
+      var _gbifTotal = result.data.occurrences.filter(function(o){ return o.source === 'gbif'; }).length;
       var _eluLiveCache = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluKey]) || null;
       var _eluLiveCount = (_eluLiveCache && Array.isArray(_eluLiveCache.items)) ? _eluLiveCache.items.length : 0;
-      var _eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
-      var _occ7 = Number.isFinite(_eluPoint.occ7) ? _eluPoint.occ7 : 0;
-      var _eluDateStr = _eluPoint.t ? formatDateEE(_eluPoint.t) : '';
+      var _eluPoint2 = (typeof points !== 'undefined' && points[speciesName]) || {};
+      var _occ7 = Number.isFinite(_eluPoint2.occ7) ? _eluPoint2.occ7 : 0;
+      var _eluDateStr = _eluPoint2.t ? formatDateEE(_eluPoint2.t) : '';
       var _eluInfo = 'eElurikkus: ' + _eluLiveCount + ' items';
       if (_occ7 > 0) _eluInfo += ' (' + _occ7 + ' in 7d)';
-      if (_eluDateStr) _eluInfo += ' \u00b7 latest: ' + _eluDateStr;
-      setProbStatus('GBIF: ' + _gbifTotal + ' \u00b7 ' + _eluInfo + ' \u00b7 ' + seasonal.length + ' in season \u00b7 ' + scored.length + ' cells');
+      if (_eluDateStr) _eluInfo += ' \u00b7 ' + _eluDateStr;
+      setProbStatus('GBIF: ' + _gbifTotal + ' \u00b7 ' + _eluInfo + ' \u00b7 ' + result.seasonal.length + ' in season \u00b7 ' + result.scored.length + ' cells');
 
     } catch(err) {
       console.error('[prob]', err);
@@ -10749,211 +10679,6 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// --- Silent probability computation (no UI toggle, just data) ---
-window.__computeProbSilent = async function(speciesName, options) {
-  options = options || {};
-  // Check if already computed (skip if force refresh)
-  if (!options.force && window.__probDataBySpecies[speciesName]) return;
-
-  // We need access to the prob IIFE's internal functions.
-  // The simplest approach: temporarily set activeProbSpecies, call toggleProbability,
-  // then restore. But that has UI side effects.
-  // Instead, replicate the core data pipeline using the same cached/fetched data.
-
-  // Step 0: Fetch eElurikkus date-only items for probability grid.
-  // Store in prob-specific cache, NOT liveElurikkusBySpecies (see toggleProbability comment).
-  var _eluKey = typeof _normalizeSpeciesKey === 'function' ? _normalizeSpeciesKey(speciesName) : String(speciesName || '').trim().toLowerCase();
-  if (!options.skipElurikkus) {
-  var _eluCached = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluKey]) || null;
-  var _probEluCache = window.__probEluCache = window.__probEluCache || {};
-  var _probEluCached = _probEluCache[_eluKey] || null;
-  if ((!_eluCached || !Array.isArray(_eluCached.items) || _eluCached.items.length < 100)
-    && (!_probEluCached || !Array.isArray(_probEluCached.items) || _probEluCached.items.length < 100)) {
-    try {
-      if (typeof fetchElurikkusAllDatesForProb === 'function') {
-        var _eluItems = await fetchElurikkusAllDatesForProb(speciesName);
-        if (_eluItems && _eluItems.length > 0) {
-          // Normalize observedAt to ISO so string comparison and downstream parsers work
-          for (var _ni = 0; _ni < _eluItems.length; _ni++) {
-            if (_eluItems[_ni].observedAt) _eluItems[_ni].observedAt = normDateISO(_eluItems[_ni].observedAt) || _eluItems[_ni].observedAt;
-          }
-          var _newest = '';
-          for (var _ei = 0; _ei < _eluItems.length; _ei++) {
-            if (String(_eluItems[_ei].observedAt || '') > _newest) _newest = String(_eluItems[_ei].observedAt);
-          }
-          _probEluCache[_eluKey] = {
-            fetchedAt: new Date().toISOString(),
-            dataMaxAt: _newest,
-            items: _eluItems,
-            sourceUrl: 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(speciesName)
-          };
-          if (typeof points !== 'undefined') {
-            points[speciesName] = points[speciesName] || {};
-            if (_newest) points[speciesName].t = _newest;
-            if (typeof countInLastNDaysFromDates === 'function') {
-              var _dates = _eluItems.map(function(it) { return it.observedAt; }).filter(Boolean);
-              var _eluOcc7Val = countInLastNDaysFromDates(_dates, 7);
-              points[speciesName].occ7Elu = _eluOcc7Val;
-              points[speciesName].occ7 = Math.max(_eluOcc7Val, Number(points[speciesName].occ7Ebird || 0));
-            }
-          }
-        }
-      }
-    } catch(e) { /* ignore */ }
-  }
-  } // end skipElurikkus
-
-  // Step 1: Check prob cache (skip when force-scanning)
-  var data = (!options.force && typeof loadProbCache === 'function') ? loadProbCache(speciesName) : null;
-  console.log('[PROB] cache lookup:', speciesName, 'force:', !!options.force, 'cached:', !!data);
-
-  if (!data) {
-    var eluOccs = [];
-    if (!options.skipElurikkus) {
-    // Fetch eElurikkus occurrences with coord resolution
-    var cacheKey = String(speciesName || '').trim().toLowerCase();
-    var eluItems = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[cacheKey] && liveElurikkusBySpecies[cacheKey].items) || null;
-    // Also check prob-specific cache
-    if (!eluItems || eluItems.length === 0) {
-      var _pec = window.__probEluCache && window.__probEluCache[cacheKey];
-      if (_pec && Array.isArray(_pec.items) && _pec.items.length > 0) eluItems = _pec.items;
-    }
-    if (!eluItems || eluItems.length === 0) {
-      if (typeof fetchElurikkusSpecies === 'function') {
-        var json = await fetchElurikkusSpecies(speciesName);
-        eluItems = (json && json.items) ? json.items : [];
-      } else {
-        eluItems = [];
-      }
-    }
-
-    for (var i = 0; i < eluItems.length; i++) {
-      var item = eluItems[i];
-      var lat = Number(item.lat), lon = Number(item.lon);
-      var hasCoords = Number.isFinite(lat) && Number.isFinite(lon);
-      if (!hasCoords) {
-        var place = String(item.municipality || item.placeText || item.locality || item.county || '').trim();
-        if (place) {
-          var resolved = null;
-          if (typeof resolveCentroidFromPlace === 'function') resolved = resolveCentroidFromPlace(place);
-          if (!resolved && typeof resolveFallbackLatLon === 'function') {
-            resolved = resolveFallbackLatLon({ municipality: item.municipality || '', locality: item.locality || '', county: item.county || '' });
-          }
-          if (resolved && Number.isFinite(resolved.lat) && Number.isFinite(resolved.lon)) {
-            lat = resolved.lat; lon = resolved.lon; hasCoords = true;
-          }
-        }
-      }
-      if (!hasCoords) continue;
-      eluOccs.push({ lat: lat, lon: lon, date: String(item.observedAt || ''), source: 'elurikkus', scientificName: String(item.scientificName || item.taxonName || '') });
-    }
-
-    // Historical HTML fetch
-    try {
-      var searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(speciesName) + '&_ts=' + Date.now();
-      if (typeof tryFetch === 'function') {
-        var html = await tryFetch(searchUrl);
-        if (html && typeof extractElurikkusRecordRows === 'function') {
-          var htmlRows = extractElurikkusRecordRows(html);
-          for (var j = 0; j < htmlRows.length; j++) {
-            var row = htmlRows[j];
-            var rLat = Number(row.lat), rLon = Number(row.lon);
-            var rHas = Number.isFinite(rLat) && Number.isFinite(rLon);
-            if (!rHas) {
-              var rPlace = String(row.municipality || row.placeText || row.locality || row.county || '').trim();
-              if (rPlace) {
-                var rRes = null;
-                if (typeof resolveCentroidFromPlace === 'function') rRes = resolveCentroidFromPlace(rPlace);
-                if (!rRes && typeof resolveFallbackLatLon === 'function') rRes = resolveFallbackLatLon({ municipality: row.municipality || '', locality: row.locality || '', county: row.county || '' });
-                if (rRes && Number.isFinite(rRes.lat) && Number.isFinite(rRes.lon)) { rLat = rRes.lat; rLon = rRes.lon; rHas = true; }
-              }
-            }
-            if (!rHas) continue;
-            eluOccs.push({ lat: rLat, lon: rLon, date: String(row.observedAt || ''), source: 'elurikkus', scientificName: String(row.scientificName || row.taxonName || '') });
-          }
-        }
-      }
-    } catch(e) { /* ignore */ }
-    } // end skipElurikkus
-
-    // GBIF
-    var sciName = (typeof extractScientificName === 'function' ? extractScientificName(eluOccs) : '') || (typeof SPECIES_SCINAMES !== 'undefined' ? SPECIES_SCINAMES[speciesName] : '') || '';
-    var gbifOccs = [];
-    if (sciName && typeof fetchProbGbifOccurrences === 'function') {
-      gbifOccs = await fetchProbGbifOccurrences(sciName, function() {});
-    }
-
-    var allOccs = typeof deduplicateOccurrences === 'function' ? deduplicateOccurrences(eluOccs.concat(gbifOccs)) : eluOccs.concat(gbifOccs);
-    data = { species: speciesName, scientificName: sciName, fetchedAt: new Date().toISOString(), occurrences: allOccs };
-    if (typeof saveProbCache === 'function') saveProbCache(speciesName, data);
-  }
-
-  if (!data.occurrences || data.occurrences.length === 0) { console.log('[PROB-EXIT] A (no occurrences)', speciesName, {hasData:!!data, occCount:data&&data.occurrences?data.occurrences.length:'n/a', sciName:data&&data.scientificName||'?'}); return; }
-
-  // Compute season + grid + probabilities
-  var seasonInfo = typeof calculateSeasonFromData === 'function' ? calculateSeasonFromData(data.occurrences) : null;
-  if (!seasonInfo) { console.log('[PROB-EXIT] B (no seasonInfo)', speciesName, {occCount:data.occurrences.length, calcFnExists:typeof calculateSeasonFromData==='function'}); return; }
-
-  var seasonal = data.occurrences.filter(function(o) { return typeof isInSeasonRange === 'function' && isInSeasonRange(o.date, seasonInfo.start, seasonInfo.end); });
-  if (seasonal.length === 0 && data.occurrences.length > 0 && typeof isInSeasonWindow === 'function') {
-    seasonal = data.occurrences.filter(function(o) { return isInSeasonWindow(o.date, 45); });
-    var now2 = new Date();
-    var fb1 = new Date(now2); fb1.setDate(fb1.getDate() - 45);
-    var fb2 = new Date(now2); fb2.setDate(fb2.getDate() + 45);
-    seasonInfo = { start: fb1, end: fb2, label: typeof formatSeasonWindow === 'function' ? formatSeasonWindow(45) : '' };
-  }
-  if (seasonal.length === 0) { console.log('[PROB-EXIT] C (no seasonal)', speciesName, {occCount:data.occurrences.length, seasonStart:seasonInfo&&seasonInfo.start, seasonEnd:seasonInfo&&seasonInfo.end}); return; }
-
-  var totalGbif = data.occurrences.filter(function(o) { return o.source === 'gbif'; }).length;
-  var probCellSize = totalGbif > 500 ? 0.1 : totalGbif > 100 ? 0.15 : 0.2;
-
-  if (typeof buildEstoniaGrid !== 'function' || typeof calculateProbabilities !== 'function') { console.log('[PROB-EXIT] D (missing grid/calc fns)', speciesName, {buildGrid:typeof buildEstoniaGrid, calcProb:typeof calculateProbabilities}); return; }
-
-  // eElurikkus injection: occ7-weighted marker location
-  var _eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
-  if (Number.isFinite(_eluPoint.lat) && Number.isFinite(_eluPoint.lon)) {
-    var _eluOcc7 = Math.min(Number(_eluPoint.occ7 || _eluPoint.occ || 1), 30);
-    var _eluDate = String(_eluPoint.t || '');
-    if (_eluDate && _eluOcc7 > 0) {
-      for (var _oi = 0; _oi < _eluOcc7; _oi++) {
-        seasonal.push({ lat: _eluPoint.lat, lon: _eluPoint.lon, date: _eluDate, source: 'elurikkus' });
-      }
-    }
-  }
-
-  var gridCells = buildEstoniaGrid(seasonal, probCellSize);
-  var precision = probCellSize < 0.1 ? 3 : 2;
-  var allGbif = data.occurrences.filter(function(o) { return o.source === 'gbif'; });
-  var gbifTotalByCell = {};
-  allGbif.forEach(function(o) {
-    var gLat = Math.floor(o.lat / probCellSize) * probCellSize;
-    var gLon = Math.floor(o.lon / probCellSize) * probCellSize;
-    var key = gLat.toFixed(precision) + '|' + gLon.toFixed(precision);
-    gbifTotalByCell[key] = (gbifTotalByCell[key] || 0) + 1;
-  });
-  gridCells.forEach(function(c) {
-    var key = c.latMin.toFixed(precision) + '|' + c.lonMin.toFixed(precision);
-    c.gbifCountTotal = gbifTotalByCell[key] || 0;
-  });
-
-  var scored = calculateProbabilities(gridCells, seasonal, data.occurrences, speciesName, probCellSize, seasonInfo);
-
-  // Store for sidebar
-  var topCell = scored.slice().sort(function(a, b) { return b.probability - a.probability; })[0];
-  console.log('[PROB-WRITE]', speciesName, 'scored:', scored.length, 'topCell:', !!topCell);
-  if (topCell && topCell.periods) {
-    window.__probDataBySpecies[speciesName] = {
-      computedAt: Date.now(),
-      cellLat: (topCell.latMin + topCell.latMax) / 2,
-      cellLon: (topCell.lonMin + topCell.lonMax) / 2,
-      overallScore: topCell.probability,
-      season: (seasonInfo && seasonInfo.label) || '',
-      periods: topCell.periods.map(function(p) {
-        return { label: p.label, pct: p.probability || 1, count: p.obsCount || p.count || 0, isCurrent: !!p.isCurrent };
-      })
-    };
-  }
-};
 
 })();
 </script>
@@ -11372,140 +11097,132 @@ window.__renderEnn=render;
 window.__sortEnn=function(s){sort=s;render();};
 
 window.__scanEnnAll=async function(btn){
-  console.log('[SCAN] handler fired');
-  if(typeof window.__computeProbSilent!=='function'){btn.textContent='Pole saadaval';return;}
+  if(window.__scanEnnAllRunning) return;
+  window.__scanEnnAllRunning=true;
   _ennScanAbort=false;
-  btn.disabled=true;btn.style.opacity='.6';
 
-  // Step A: trigger elurikkus cloud refresh (batched, synchronous Edge Function)
-  console.log('[SCAN] step A: triggering elurikkus cloud refresh');
-  btn.textContent='eElu värskendus...';
   try{
-    var ELU_EDGE='https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/elurikkus-bulk-refresh';
-    var ELU_SECRET='elu-refresh-2026';
-    var ELU_BATCH=75;
-    var totalSpecies=sp().length||450;
-    var eluUpdated=0,eluErrors=0;
-    for(var eluOff=0;eluOff<totalSpecies;eluOff+=ELU_BATCH){
-      if(_ennScanAbort) break;
-      btn.textContent='eElu '+(eluOff)+'/'+totalSpecies;
-      try{
-        var eluRes=await fetch(ELU_EDGE,{
-          method:'POST',
-          headers:{'Content-Type':'application/json','x-refresh-secret':ELU_SECRET},
-          body:JSON.stringify({offset:eluOff,limit:ELU_BATCH})
-        });
-        if(eluRes.ok){
-          var eluJson=await eluRes.json();
-          eluUpdated+=(eluJson.updated||0);
-          eluErrors+=(eluJson.errors||0);
-          console.log('[ELU-REFRESH] batch offset='+eluOff, eluJson);
-        }else{
-          console.warn('[ELU-REFRESH] batch failed HTTP',eluRes.status,'offset='+eluOff);
+    if(btn){btn.disabled=true;btn.style.opacity='.6';btn.textContent='Värskendan eElurikkus...';}
+
+    // Phase 1: Elurikkus cloud refresh (keep existing logic)
+    try{
+      var ELU_EDGE='https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/elurikkus-bulk-refresh';
+      var ELU_SECRET='elu-refresh-2026';
+      var ELU_BATCH=75;
+      var totalSpecies=sp().length||450;
+      var eluUpdated=0,eluErrors=0;
+      for(var eluOff=0;eluOff<totalSpecies;eluOff+=ELU_BATCH){
+        if(_ennScanAbort) break;
+        if(btn) btn.textContent='eElu '+eluOff+'/'+totalSpecies;
+        try{
+          var eluRes=await fetch(ELU_EDGE,{
+            method:'POST',
+            headers:{'Content-Type':'application/json','x-refresh-secret':ELU_SECRET},
+            body:JSON.stringify({offset:eluOff,limit:ELU_BATCH})
+          });
+          if(eluRes.ok){
+            var eluJson=await eluRes.json();
+            eluUpdated+=(eluJson.updated||0);
+            eluErrors+=(eluJson.errors||0);
+            console.log('[ELU-REFRESH] batch offset='+eluOff, eluJson);
+          }
+        }catch(eluErr){
+          console.warn('[ELU-REFRESH] batch error offset='+eluOff,eluErr);
         }
-      }catch(eluErr){
-        console.warn('[ELU-REFRESH] batch error offset='+eluOff,eluErr);
+      }
+      console.log('[ELU-REFRESH] done. updated:',eluUpdated,'errors:',eluErrors);
+    }catch(eluTopErr){
+      console.warn('[ELU-REFRESH] top-level error',eluTopErr);
+    }
+
+    // Phase 1b: Reload elurikkus cache into points
+    try{
+      if(btn) btn.textContent='Laadin eElu...';
+      if(typeof _loadElurikkusCacheFromSupabase==='function'){
+        await _loadElurikkusCacheFromSupabase();
+      }
+    }catch(reloadErr){
+      console.warn('[SCAN] cache reload error',reloadErr);
+    }
+
+    // Phase 2: Build species list
+    var allSpecies=sp(),pts=pt();
+    // Backfill occ7Elu from existing data
+    for(var bi2=0;bi2<allSpecies.length;bi2++){
+      var _bn=allSpecies[bi2],_bc=_fix(_bn);
+      var _bp=pts[_bn]||pts[_bc];
+      if(!_bp) continue;
+      var _bsrc=String(_bp.src||'').toLowerCase();
+      if(_bsrc.indexOf('elurikkus')!==-1&&_bp.occ7!=null&&_bp.occ7Elu==null){
+        _bp.occ7Elu=Number(_bp.occ7||0);
+        _bp.occ7EluUpdated=_bp.lastFetched||new Date().toISOString();
       }
     }
-    console.log('[ELU-REFRESH] done. updated:',eluUpdated,'errors:',eluErrors);
-  }catch(eluTopErr){
-    console.warn('[ELU-REFRESH] top-level error',eluTopErr);
-  }
-
-  // Step B: reload elurikkus cache into points
-  console.log('[SCAN] step B: reloading elurikkus cache into points');
-  btn.textContent='Laadin eElu...';
-  try{
-    if(typeof _loadElurikkusCacheFromSupabase==='function'){
-      await _loadElurikkusCacheFromSupabase();
-    }else{
-      console.warn('[SCAN] _loadElurikkusCacheFromSupabase not in scope');
+    var need=[];
+    for(var i=0;i<allSpecies.length;i++){
+      var n=allSpecies[i];
+      if(!isOnMap(n,pts)) continue;
+      need.push(n);
     }
-  }catch(reloadErr){
-    console.warn('[SCAN] cache reload error',reloadErr);
-  }
-
-  // Step C: per-species scan (GBIF + eBird)
-  console.log('[SCAN] step C: per-species scan');
-  var allSpecies=sp(),pts=pt();
-  console.log('[SCAN] allSpecies.length:', allSpecies.length, 'pts keys:', Object.keys(pts).length);
-  // Backfill occ7Elu from existing data where separate fields don't exist yet
-  for(var bi2=0;bi2<allSpecies.length;bi2++){
-    var _bn=allSpecies[bi2],_bc=_fix(_bn);
-    var _bp=pts[_bn]||pts[_bc];
-    if(!_bp) continue;
-    var _bsrc=String(_bp.src||'').toLowerCase();
-    if(_bsrc.indexOf('elurikkus')!==-1&&_bp.occ7!=null&&_bp.occ7Elu==null){
-      _bp.occ7Elu=Number(_bp.occ7||0);
-      _bp.occ7EluUpdated=_bp.lastFetched||new Date().toISOString();
+    console.log('[SCAN] per-species loop over',need.length,'species');
+    if(need.length===0){
+      if(btn){btn.disabled=false;btn.style.opacity='1';btn.textContent='Pole liike';setTimeout(function(){btn.textContent='Skaneeri';},2000);}
+      return;
     }
-  }
-  var need=[];
-  for(var i=0;i<allSpecies.length;i++){
-    var n=allSpecies[i];
-    if(!isOnMap(n,pts)) continue;
-    need.push(n);
-  }
-  console.log('[SCAN] need.length:', need.length, 'sample:', need.slice(0,3));
-  if(need.length===0){
-    // Diagnostic: why is need empty?
-    var onMapCount=0;for(var di=0;di<allSpecies.length;di++){var dn=allSpecies[di],dc=_fix(dn),dp=pts[dn]||pts[dc]||{};if(Number.isFinite(dp.lat)&&Number.isFinite(dp.lon))onMapCount++;}
-    console.log('[SCAN] need=0. onMap (has lat/lon):', onMapCount, 'visible check samples:', allSpecies.slice(0,5).map(function(n){var c=_fix(n),p=pts[n]||pts[c]||{};return n+': lat='+p.lat+' lon='+p.lon+' vis='+p.visible;}));
-    btn.disabled=false;btn.style.opacity='1';btn.textContent='Pole liike';setTimeout(function(){btn.textContent='Skaneeri';},2000);return;
-  }
-  var probCacheMs=24*60*60*1000;
-  var errors=0;
-  render();
 
-  // GBIF prob scans in batches of 3 (eBird data from eBird EE layer)
-  var probDone=0;
-  var BATCH=3;
-  for(var bi=0;bi<need.length;bi+=BATCH){
-    if(_ennScanAbort){btn.disabled=false;btn.style.opacity='1';btn.textContent='Skaneeri';return;}
-    try{
-      var batch=need.slice(bi,bi+BATCH);
-      await Promise.allSettled(batch.map(function(name){
-        return (async function(){
-          try{
-            console.log('[SCAN] COMPUTE (force):', name);
-            if(typeof window.__computeProbSilent==='function'){
-              await Promise.race([
-                window.__computeProbSilent(name,{force:true,skipElurikkus:true}),
-                new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},45000);})
-              ]);
-            }
-          }catch(e){errors++;console.warn('[ENN] prob failed:',name,e&&e.message);}
-          // Fetch eBird data for this species (populates occ7Ebird in points)
-          try{
-            if(typeof window.__fetchEbirdEEForSpecies==='function'){
-              var ebResult=await window.__fetchEbirdEEForSpecies(name);
-              if(ebResult){
-                window.points=window.points||{};
-                window.points[name]=window.points[name]||{};
-                var ep=window.points[name];
-                ep.occ7Ebird=ebResult.occ7;
-                ep.occ7EbirdUpdated=new Date().toISOString();
-                if(Number.isFinite(ebResult.lat)&&Number.isFinite(ebResult.lon)){
-                  ep.lat=ebResult.lat;ep.lon=ebResult.lon;
-                }
-                if(ebResult.t) ep.t=ebResult.t;
-                ep.src='eBird';ep.lastFetched=ebResult.lastFetched;
-                console.log('[SCAN-EBIRD] done',name,'occ7Ebird:',ebResult.occ7);
-              }
-            }
-          }catch(ebErr){console.warn('[SCAN-EBIRD] error',name,ebErr);}
-          probDone++;
-          btn.textContent='Skaneerin '+probDone+'/'+need.length;
-        })();
-      }));
-    }catch(e){console.warn('[ENN] batch failed at',bi,e&&e.message);}
+    // Phase 3: Loop — call computeProbForSpecies once per species (same path as Prob button)
+    var done=0,errors=0;
     render();
-    await new Promise(function(r){setTimeout(r,200);});
+    for(var si=0;si<need.length;si++){
+      if(_ennScanAbort){console.log('[SCAN] aborted at',si);break;}
+      var name=need[si];
+      if(btn) btn.textContent='Skaneerin '+(si+1)+'/'+need.length;
+
+      try{
+        await window.computeProbForSpecies(name,{force:true});
+        done++;
+      }catch(err){
+        errors++;
+        console.warn('[SCAN] prob failed:',name,err&&err.message);
+      }
+
+      // Fetch eBird data for this species
+      try{
+        if(typeof window.__fetchEbirdEEForSpecies==='function'){
+          var ebResult=await window.__fetchEbirdEEForSpecies(name);
+          if(ebResult){
+            window.points=window.points||{};
+            window.points[name]=window.points[name]||{};
+            var ep=window.points[name];
+            ep.occ7Ebird=ebResult.occ7;
+            ep.occ7EbirdUpdated=new Date().toISOString();
+            if(Number.isFinite(ebResult.lat)&&Number.isFinite(ebResult.lon)){
+              ep.lat=ebResult.lat;ep.lon=ebResult.lon;
+            }
+            if(ebResult.t) ep.t=ebResult.t;
+            ep.src='eBird';ep.lastFetched=ebResult.lastFetched;
+          }
+        }
+      }catch(ebErr){console.warn('[SCAN-EBIRD] error',name,ebErr);}
+
+      // Polite delay
+      await new Promise(function(r){setTimeout(r,200);});
+
+      // Re-render every 5 species
+      if(si%5===0&&typeof render==='function'){try{render();}catch(e){}}
+    }
+
+    if(typeof render==='function') render();
+    console.log('[SCAN] done —',done,'/',need.length,'species scanned, errors:',errors);
+
+    if(btn){
+      btn.disabled=false;btn.style.opacity='1';
+      btn.textContent=errors>0?'Valmis ('+errors+' viga)':'Valmis ✓';
+      setTimeout(function(){btn.textContent='Skaneeri';},5000);
+    }
+  }finally{
+    window.__scanEnnAllRunning=false;
   }
-  render();
-  btn.disabled=false;btn.style.opacity='1';
-  btn.textContent=errors>0?'Valmis ('+errors+' viga)':'Valmis \u2713';
-  setTimeout(function(){btn.textContent='Skaneeri';},5000);
 };
 
 window.__ennProb=function(speciesName){

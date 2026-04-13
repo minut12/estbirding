@@ -11362,12 +11362,61 @@ window.__renderEnn=render;
 window.__sortEnn=function(s){sort=s;render();};
 
 window.__scanEnnAll=async function(btn){
-  console.log('[SCAN] handler fired, typeof gbifFetch:', typeof gbifFetch);
-  console.log('[SCAN] window.gbifFetch:', typeof window.gbifFetch);
-  console.log('[SCAN] typeof __computeProbSilent:', typeof window.__computeProbSilent);
+  console.log('[SCAN] handler fired');
   if(typeof window.__computeProbSilent!=='function'){btn.textContent='Pole saadaval';return;}
   _ennScanAbort=false;
   btn.disabled=true;btn.style.opacity='.6';
+
+  // Step A: trigger elurikkus cloud refresh (batched, synchronous Edge Function)
+  console.log('[SCAN] step A: triggering elurikkus cloud refresh');
+  btn.textContent='eElu värskendus...';
+  try{
+    var ELU_EDGE='https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/elurikkus-bulk-refresh';
+    var ELU_SECRET='elu-refresh-2026';
+    var ELU_BATCH=75;
+    var totalSpecies=sp().length||450;
+    var eluUpdated=0,eluErrors=0;
+    for(var eluOff=0;eluOff<totalSpecies;eluOff+=ELU_BATCH){
+      if(_ennScanAbort) break;
+      btn.textContent='eElu '+(eluOff)+'/'+totalSpecies;
+      try{
+        var eluRes=await fetch(ELU_EDGE,{
+          method:'POST',
+          headers:{'Content-Type':'application/json','x-refresh-secret':ELU_SECRET},
+          body:JSON.stringify({offset:eluOff,limit:ELU_BATCH})
+        });
+        if(eluRes.ok){
+          var eluJson=await eluRes.json();
+          eluUpdated+=(eluJson.updated||0);
+          eluErrors+=(eluJson.errors||0);
+          console.log('[ELU-REFRESH] batch offset='+eluOff, eluJson);
+        }else{
+          console.warn('[ELU-REFRESH] batch failed HTTP',eluRes.status,'offset='+eluOff);
+        }
+      }catch(eluErr){
+        console.warn('[ELU-REFRESH] batch error offset='+eluOff,eluErr);
+      }
+    }
+    console.log('[ELU-REFRESH] done. updated:',eluUpdated,'errors:',eluErrors);
+  }catch(eluTopErr){
+    console.warn('[ELU-REFRESH] top-level error',eluTopErr);
+  }
+
+  // Step B: reload elurikkus cache into points
+  console.log('[SCAN] step B: reloading elurikkus cache into points');
+  btn.textContent='Laadin eElu...';
+  try{
+    if(typeof _loadElurikkusCacheFromSupabase==='function'){
+      await _loadElurikkusCacheFromSupabase();
+    }else{
+      console.warn('[SCAN] _loadElurikkusCacheFromSupabase not in scope');
+    }
+  }catch(reloadErr){
+    console.warn('[SCAN] cache reload error',reloadErr);
+  }
+
+  // Step C: per-species scan (GBIF + eBird)
+  console.log('[SCAN] step C: per-species scan');
   var allSpecies=sp(),pts=pt();
   console.log('[SCAN] allSpecies.length:', allSpecies.length, 'pts keys:', Object.keys(pts).length);
   // Backfill occ7Elu from existing data where separate fields don't exist yet

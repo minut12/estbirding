@@ -7558,11 +7558,17 @@ window.addEventListener('message', function(ev){
 
 function _prunePointsForStorage(pts) {
   var pruned = {};
+  var KEEP = ['lat','lon','t','occ7','src','visible','rarity','migration','coords_status',
+    'occ7Ebird','occ7EbirdUpdated','occ7Elu','occ7EluUpdated','lastFetched','clientScannedAt',
+    'ebirdCode','ebirdAuto','loc','openUrl','searchUrl','coords_source'];
   for (var key in pts) {
     var p = pts[key];
     if (!p) continue;
-    pruned[key] = { lat: p.lat, lon: p.lon, t: p.t, occ7: p.occ7, src: p.src, visible: p.visible, rarity: p.rarity, migration: p.migration, coords_status: p.coords_status };
-    for (var k in pruned[key]) { if (pruned[key][k] === undefined) delete pruned[key][k]; }
+    var row = {};
+    for (var i = 0; i < KEEP.length; i++) {
+      if (p[KEEP[i]] !== undefined && p[KEEP[i]] !== null && p[KEEP[i]] !== '') row[KEEP[i]] = p[KEEP[i]];
+    }
+    if (Object.keys(row).length > 0) pruned[key] = row;
   }
   return pruned;
 }
@@ -7573,9 +7579,13 @@ function save() {
     localStorage.setItem(LS_POINTS, JSON.stringify(_prunePointsForStorage(points)));
   } catch(e) {
     console.warn('[save] points failed, trying minimal', e);
+    // Free space: drop per-species prob caches
+    try{for(var li=localStorage.length-1;li>=0;li--){var lk=localStorage.key(li);if(lk&&lk.indexOf('bm_prob2_')===0)localStorage.removeItem(lk);}}catch(ce){}
     var minimal = {};
-    for (var k in points) { if (points[k] && Number.isFinite(points[k].lat)) minimal[k] = { lat: points[k].lat, lon: points[k].lon, t: points[k].t }; }
-    try { localStorage.setItem(LS_POINTS, JSON.stringify(minimal)); } catch(e2) { console.error('[save] points completely failed', e2); }
+    for (var k in points) { var mp=points[k]; if(mp&&Number.isFinite(mp.lat)) minimal[k]={lat:mp.lat,lon:mp.lon,t:mp.t,src:mp.src,occ7Elu:mp.occ7Elu,occ7Ebird:mp.occ7Ebird}; }
+    // Strip undefineds
+    for(var mk in minimal){for(var mf in minimal[mk]){if(minimal[mk][mf]===undefined)delete minimal[mk][mf];}}
+    try { localStorage.setItem(LS_POINTS, JSON.stringify(minimal)); console.log('[save] points minimal ok'); } catch(e2) { console.error('[save] points completely failed', e2); }
   }
   try { localStorage.setItem(LS_NAMES, JSON.stringify(nameCache)); } catch(e) {}
   try { localStorage.setItem(LS_SPRING, JSON.stringify(springDates)); } catch(e) {}

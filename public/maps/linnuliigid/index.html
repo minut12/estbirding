@@ -10727,8 +10727,8 @@ document.addEventListener('click', function(e) {
 // --- Silent probability computation (no UI toggle, just data) ---
 window.__computeProbSilent = async function(speciesName, options) {
   options = options || {};
-  // Check if already computed
-  if (window.__probDataBySpecies[speciesName]) return;
+  // Check if already computed (skip if force refresh)
+  if (!options.force && window.__probDataBySpecies[speciesName]) return;
 
   // We need access to the prob IIFE's internal functions.
   // The simplest approach: temporarily set activeProbSpecies, call toggleProbability,
@@ -11391,20 +11391,12 @@ window.__scanEnnAll=async function(btn){
       await Promise.allSettled(batch.map(function(name){
         return (async function(){
           try{
-            var clean=_fix(name);
-            var hasProb=getCurrentProbScore(name)!==null||getCurrentProbScore(clean)!==null;
-            if(hasProb){console.log('[SCAN] SKIP (hasProb):', name);}
-            if(!hasProb){
-              var probCached=null;
-              try{var raw=localStorage.getItem('bm_prob2_'+name);if(raw){probCached=JSON.parse(raw);}}catch(e2){}
-              var probAge=probCached&&probCached.fetchedAt?Date.now()-new Date(probCached.fetchedAt).getTime():Infinity;
-              console.log('[SCAN] COMPUTE:', name, 'probAge:', probAge, 'cacheMs:', probCacheMs, 'willFetch:', probAge>probCacheMs);
-              if(probAge>probCacheMs&&typeof window.__computeProbSilent==='function'){
-                await Promise.race([
-                  window.__computeProbSilent(name,{skipElurikkus:true}),
-                  new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},45000);})
-                ]);
-              }
+            console.log('[SCAN] COMPUTE (force):', name);
+            if(typeof window.__computeProbSilent==='function'){
+              await Promise.race([
+                window.__computeProbSilent(name,{force:true,skipElurikkus:true}),
+                new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},45000);})
+              ]);
             }
           }catch(e){errors++;console.warn('[ENN] prob failed:',name,e&&e.message);}
           probDone++;

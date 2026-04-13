@@ -10778,8 +10778,9 @@ window.__computeProbSilent = async function(speciesName, options) {
   }
   } // end skipElurikkus
 
-  // Step 1: Check prob cache
-  var data = typeof loadProbCache === 'function' ? loadProbCache(speciesName) : null;
+  // Step 1: Check prob cache (skip when force-scanning)
+  var data = (!options.force && typeof loadProbCache === 'function') ? loadProbCache(speciesName) : null;
+  console.log('[PROB] cache lookup:', speciesName, 'force:', !!options.force, 'cached:', !!data);
 
   if (!data) {
     var eluOccs = [];
@@ -10862,11 +10863,11 @@ window.__computeProbSilent = async function(speciesName, options) {
     if (typeof saveProbCache === 'function') saveProbCache(speciesName, data);
   }
 
-  if (!data.occurrences || data.occurrences.length === 0) return;
+  if (!data.occurrences || data.occurrences.length === 0) { console.log('[PROB-EXIT] A (no occurrences)', speciesName, {hasData:!!data, occCount:data&&data.occurrences?data.occurrences.length:'n/a', sciName:data&&data.scientificName||'?'}); return; }
 
   // Compute season + grid + probabilities
   var seasonInfo = typeof calculateSeasonFromData === 'function' ? calculateSeasonFromData(data.occurrences) : null;
-  if (!seasonInfo) return;
+  if (!seasonInfo) { console.log('[PROB-EXIT] B (no seasonInfo)', speciesName, {occCount:data.occurrences.length, calcFnExists:typeof calculateSeasonFromData==='function'}); return; }
 
   var seasonal = data.occurrences.filter(function(o) { return typeof isInSeasonRange === 'function' && isInSeasonRange(o.date, seasonInfo.start, seasonInfo.end); });
   if (seasonal.length === 0 && data.occurrences.length > 0 && typeof isInSeasonWindow === 'function') {
@@ -10876,12 +10877,12 @@ window.__computeProbSilent = async function(speciesName, options) {
     var fb2 = new Date(now2); fb2.setDate(fb2.getDate() + 45);
     seasonInfo = { start: fb1, end: fb2, label: typeof formatSeasonWindow === 'function' ? formatSeasonWindow(45) : '' };
   }
-  if (seasonal.length === 0) return;
+  if (seasonal.length === 0) { console.log('[PROB-EXIT] C (no seasonal)', speciesName, {occCount:data.occurrences.length, seasonStart:seasonInfo&&seasonInfo.start, seasonEnd:seasonInfo&&seasonInfo.end}); return; }
 
   var totalGbif = data.occurrences.filter(function(o) { return o.source === 'gbif'; }).length;
   var probCellSize = totalGbif > 500 ? 0.1 : totalGbif > 100 ? 0.15 : 0.2;
 
-  if (typeof buildEstoniaGrid !== 'function' || typeof calculateProbabilities !== 'function') return;
+  if (typeof buildEstoniaGrid !== 'function' || typeof calculateProbabilities !== 'function') { console.log('[PROB-EXIT] D (missing grid/calc fns)', speciesName, {buildGrid:typeof buildEstoniaGrid, calcProb:typeof calculateProbabilities}); return; }
 
   // eElurikkus injection: occ7-weighted marker location
   var _eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
@@ -10914,6 +10915,7 @@ window.__computeProbSilent = async function(speciesName, options) {
 
   // Store for sidebar
   var topCell = scored.slice().sort(function(a, b) { return b.probability - a.probability; })[0];
+  console.log('[PROB-WRITE]', speciesName, 'scored:', scored.length, 'topCell:', !!topCell);
   if (topCell && topCell.periods) {
     window.__probDataBySpecies[speciesName] = {
       computedAt: Date.now(),
@@ -11399,6 +11401,25 @@ window.__scanEnnAll=async function(btn){
               ]);
             }
           }catch(e){errors++;console.warn('[ENN] prob failed:',name,e&&e.message);}
+          // Fetch eBird data for this species (populates occ7Ebird in points)
+          try{
+            if(typeof window.__fetchEbirdEEForSpecies==='function'){
+              var ebResult=await window.__fetchEbirdEEForSpecies(name);
+              if(ebResult){
+                window.points=window.points||{};
+                window.points[name]=window.points[name]||{};
+                var ep=window.points[name];
+                ep.occ7Ebird=ebResult.occ7;
+                ep.occ7EbirdUpdated=new Date().toISOString();
+                if(Number.isFinite(ebResult.lat)&&Number.isFinite(ebResult.lon)){
+                  ep.lat=ebResult.lat;ep.lon=ebResult.lon;
+                }
+                if(ebResult.t) ep.t=ebResult.t;
+                ep.src='eBird';ep.lastFetched=ebResult.lastFetched;
+                console.log('[SCAN-EBIRD] done',name,'occ7Ebird:',ebResult.occ7);
+              }
+            }
+          }catch(ebErr){console.warn('[SCAN-EBIRD] error',name,ebErr);}
           probDone++;
           btn.textContent='Skaneerin '+probDone+'/'+need.length;
         })();

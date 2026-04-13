@@ -3744,6 +3744,42 @@ async function refreshSpringYearFirstForKeys(keys){
   }
 }
 
+let __springManualScanActive = false;
+
+async function manualRefreshAllSpringYearFirst(){
+  if(__springManualScanActive) return;
+  __springManualScanActive = true;
+
+  const btn = document.getElementById('springRefreshBtn');
+  const origLabel = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; }
+
+  try{
+    // Get all species that have a spring date defined
+    const allKeys = (typeof SPECIES !== 'undefined' ? SPECIES : Object.keys(typeof springDates !== 'undefined' ? springDates : {})).filter(Boolean);
+    const total = allKeys.length;
+    let done = 0;
+
+    const tick = setInterval(() => {
+      if(!btn) return;
+      btn.textContent = 'Skannin ' + done + '/' + total + '\u2026';
+    }, 500);
+
+    for(const key of allKeys){
+      try{ await fetchSpringYearFirstOne(key); }catch(e){}
+      done++;
+      await new Promise(r => setTimeout(r, 250));
+    }
+
+    clearInterval(tick);
+    if(btn) btn.textContent = 'Valmis';
+    setTimeout(() => { if(btn) btn.textContent = origLabel; }, 1500);
+  } finally {
+    __springManualScanActive = false;
+    if(btn) btn.disabled = false;
+  }
+}
+
 // Toggle state: 7 days only
 function getRecentOnly(){
   const v = localStorage.getItem(LS_RECENT_ONLY);
@@ -8574,6 +8610,9 @@ document.addEventListener('DOMContentLoaded', function(){
     <div class="title">Kevadränne</div>
     <div class="actions">
       <button id="springRefresh" class="btn secondary" type="button">Värskenda kevadrännet</button>
+      <button id="springRefreshBtn" class="btn secondary" type="button"
+              title="Küsi elurikkus.ee-st käesoleva aasta esimesed vaatlused kõigi liikide kohta"
+              style="margin-left:6px;">Värskenda 2026 esmavaatlused</button>
       <button id="springClose" class="btn icon" type="button" aria-label="Sulge">X</button>
     </div>
   </div>
@@ -8811,8 +8850,8 @@ document.addEventListener('DOMContentLoaded', function(){
           : `<span style="border-radius:999px; padding:6px 10px; background:#f3f4f6; color:#111; display:inline-block;">${springDateText}</span>`);
       return '<tr><td>'+dateCellHtml+'</td><td><span class="springSpeciesBtn" onclick="window.__springScrollToSpecies && window.__springScrollToSpecies(\''+safeName.replace(/'/g, "\\'")+'\')">'+ safeName+'</span></td><td>'+yDisp+'</td></tr>';
     }).join('');
-    const keysShown = rows.map(r=>r.name);
-    enqueueSpringYearFirst(keysShown);
+    // Auto-scan disabled — user triggers refresh manually via the
+    // "Värskenda 2026 esmavaatlused" button in the Kevad panel header.
     countEl.textContent = rows.length;
   }
   window.renderSpringPanel = renderSpringPanel;
@@ -8870,6 +8909,11 @@ document.addEventListener('DOMContentLoaded', function(){
         }
       });
       refreshBtn.__springBound = true;
+    }
+    const refreshAllBtn = document.getElementById('springRefreshBtn');
+    if(refreshAllBtn && !refreshAllBtn.__springBound){
+      refreshAllBtn.addEventListener('click', () => manualRefreshAllSpringYearFirst());
+      refreshAllBtn.__springBound = true;
     }
   }
 

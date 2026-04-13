@@ -1248,7 +1248,7 @@ window.alert = function(msg){ notifySilent(msg); };
       p.src = 'eBird';
       p.lastFetched = new Date().toISOString();
       if (locName) p.loc = locName;
-      if (Number.isFinite(occ7)) { p.occ7 = occ7; p.occ7Updated = new Date().toISOString(); }
+      if (Number.isFinite(occ7)) { p.occ7 = occ7; p.occ7Updated = new Date().toISOString(); p.occ7Ebird = occ7; p.occ7EbirdUpdated = new Date().toISOString(); }
       if (typeof p.visible !== 'boolean') p.visible = true;
       if (typeof save === 'function') save();
       if (typeof updateMarker === 'function') updateMarker(estName);
@@ -1466,7 +1466,7 @@ window.alert = function(msg){ notifySilent(msg); };
       window.points = window.points || {};
       const p = (window.points[estName] = window.points[estName] || {});
       p.lat = lat; p.lon = lon; p.t = dateOnly || p.t || ''; p.src = 'eBird';
-      p.lastFetched = new Date().toISOString(); if (loc) p.loc = loc; if (Number.isFinite(occ7)) { p.occ7 = occ7; p.occ7Updated = new Date().toISOString(); } if (typeof p.visible!=='boolean') p.visible = true;
+      p.lastFetched = new Date().toISOString(); if (loc) p.loc = loc; if (Number.isFinite(occ7)) { p.occ7 = occ7; p.occ7Updated = new Date().toISOString(); p.occ7Ebird = occ7; p.occ7EbirdUpdated = new Date().toISOString(); } if (typeof p.visible!=='boolean') p.visible = true;
       if (typeof save==='function') save();
       if (typeof updateMarker==='function') updateMarker(estName);
       if (typeof render==='function') render();

@@ -11193,8 +11193,9 @@ function render(){
     if(currentScore===null) currentScore=getCurrentProbScore(clean);
     if(currentScore!==null) cachedCount++;
     var springDate=getSpringDate(n,dates)||getSpringDate(clean,dates)||'';
-    var bestOcc7=Math.max(occ7Ebird,occ7Elu);
-    var boost=bestOcc7>0?Math.min(20,Math.round(Math.log1p(bestOcc7)*5)):0;
+    var ebirdBoost=occ7Ebird>0?Math.min(15,Math.round(Math.log1p(occ7Ebird)*5)):0;
+    var eluBoost=occ7Elu>0?Math.min(15,Math.round(Math.log1p(occ7Elu)*4)):0;
+    var boost=ebirdBoost+eluBoost;
     var finalScore=currentScore!==null?Math.min(99,currentScore+boost):null;
     var ebirdScanned=p.occ7EbirdUpdated!=null;
     var eluScanned=p.occ7Elu!=null||_srcLo.indexOf('elurikkus')!==-1;

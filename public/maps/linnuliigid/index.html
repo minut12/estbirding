@@ -10689,7 +10689,7 @@ var ENN_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 var ENN_PROB_CACHE_KEY = 'bm_enn_prob_v1';
 var ENN_BADGE_CACHE_KEY = 'bm_enn_badges_v1';
 
-// Restore prob data from localStorage
+// Restore prob data from localStorage (handles both compact and full format)
 (function(){try{
   var raw=localStorage.getItem(ENN_PROB_CACHE_KEY);
   if(!raw){console.log('[enn-cache] prob: no stored cache');return;}
@@ -10698,9 +10698,23 @@ var ENN_BADGE_CACHE_KEY = 'bm_enn_badges_v1';
   var now=Date.now(),restored=0,expired=0;
   Object.keys(parsed).forEach(function(name){
     var e=parsed[name];
-    if(!e||!e.computedAt) return;
-    if(now-e.computedAt>ENN_CACHE_TTL_MS){expired++;return;}
-    window.__probDataBySpecies[name]=e;
+    if(!e) return;
+    var isCompact=e.c!=null&&e.computedAt==null;
+    var computedAt=isCompact?e.c:e.computedAt;
+    if(!computedAt) return;
+    if(now-computedAt>ENN_CACHE_TTL_MS){expired++;return;}
+    if(isCompact){
+      window.__probDataBySpecies[name]={
+        computedAt:e.c,
+        overallScore:e.s,
+        cellLat:e.la,
+        cellLon:e.lo,
+        season:e.se||'',
+        periods:e.p!=null?[{pct:e.p,isCurrent:true,label:'current'}]:[]
+      };
+    }else{
+      window.__probDataBySpecies[name]=e;
+    }
     restored++;
   });
   console.log('[enn-cache] prob restored:',restored,'expired:',expired);
@@ -10747,15 +10761,24 @@ function __schedulePersistProbCache(){
   __persistProbTimer=setTimeout(function(){
     __persistProbTimer=null;
     try{
-      var _json=JSON.stringify(window.__probDataBySpecies);
+      var compact={};
+      var src=window.__probDataBySpecies||{};
+      Object.keys(src).forEach(function(name){
+        var d=src[name];
+        if(!d||!d.computedAt) return;
+        var currentPct=null;
+        if(d.periods&&d.periods.length){
+          for(var i=0;i<d.periods.length;i++){
+            if(d.periods[i].isCurrent){currentPct=d.periods[i].pct;break;}
+          }
+        }
+        compact[name]={c:d.computedAt,s:d.overallScore,p:currentPct,la:d.cellLat,lo:d.cellLon,se:d.season||''};
+      });
+      var _json=JSON.stringify(compact);
       localStorage.setItem(ENN_PROB_CACHE_KEY,_json);
-      console.log('[enn-cache] prob persisted:',(_json.length/1024).toFixed(1),'KB,',Object.keys(window.__probDataBySpecies).length,'species');
+      console.log('[enn-cache] prob persisted:',(_json.length/1024).toFixed(1),'KB,',Object.keys(compact).length,'species');
     }catch(err){
-      try{
-        var compact={},now=Date.now();
-        Object.keys(window.__probDataBySpecies).forEach(function(n){var e=window.__probDataBySpecies[n];if(e&&e.computedAt&&now-e.computedAt<ENN_CACHE_TTL_MS)compact[n]=e;});
-        localStorage.setItem(ENN_PROB_CACHE_KEY,JSON.stringify(compact));
-      }catch(err2){console.warn('[enn-cache] prob persist failed:',err2);}
+      console.warn('[enn-cache] prob persist failed:',err);
     }
   },2000);
 }
@@ -11460,6 +11483,16 @@ window.__scanEnnAll=async function(btn,opts){
       if(!isOnMap(n,pts)) continue;
       need.push(n);
     }
+    console.log('[SCAN-FILTER]',{
+      allSpeciesLength:allSpecies.length,
+      ptsSource:pts===window.points?'window.points':(typeof points!=='undefined'&&pts===points?'closure-points':'other'),
+      ptsKeyCount:Object.keys(pts).length,
+      ptsWithCoords:Object.keys(pts).filter(function(n){var p=pts[n]||{};return Number.isFinite(p.lat)&&Number.isFinite(p.lon);}).length,
+      ptsVisible:Object.keys(pts).filter(function(n){var p=pts[n]||{};return p.visible!==false;}).length,
+      needLength:need.length,
+      sampleNeed:need.slice(0,5),
+      windowPointsKeys:Object.keys(window.points||{}).length
+    });
     console.log('[SCAN] per-species loop over',need.length,'species');
     if(need.length===0){
       if(btn){btn.disabled=false;btn.style.opacity='1';btn.textContent='Pole liike';setTimeout(function(){btn.textContent='Skaneeri';},2000);}

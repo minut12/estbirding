@@ -298,7 +298,7 @@ function clearOccurrence(key){
 // ---- GBIF polite client: max 3 concurrent + 429 backoff with jitter ----
 var __gbifInFlight = 0;
 var __gbifQueue = [];
-var GBIF_MAX_CONCURRENT = 5;
+var GBIF_MAX_CONCURRENT = 3;
 var GBIF_MAX_RETRIES = 5;
 
 function __gbifPump() {
@@ -6585,6 +6585,9 @@ function _updateDebugPanel(){
 
 async function _applySnapshot(snap){
   if(!snap || !snap.points_json) return;
+  if(window.__scanEnnAllRunning){
+    console.warn('[_applySnapshot] CALLED DURING SCAN — guards failed. Stack:',new Error().stack.split('\n').slice(1,5).join(' <- '));
+  }
   window.__applyingSnapshot = true;
   const pts = snap.points_json;
   const keys = Object.keys(pts || {});
@@ -10074,31 +10077,23 @@ var __sharedDefaults = {};
   window.__taxonKeyCache = __taxonKeyCache;
 
   // GBIF occurrence cache with 24h TTL
+  // In-memory GBIF cache — survives within session, lost on page reload
+  var __gbifMemoryCache = new Map();
   var GBIF_CACHE_TTL_MS=24*60*60*1000;
-  function _gbifCacheKey(name){return 'bm_gbif_'+name;}
+  window.__gbifMemoryCache = __gbifMemoryCache;
+
+  // Clean up stale bm_gbif_* localStorage keys from previous deploy
+  (function(){try{var rm=[];for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('bm_gbif_')===0)rm.push(k);}rm.forEach(function(k){try{localStorage.removeItem(k);}catch(e){}});if(rm.length)console.log('[cleanup] removed',rm.length,'stale bm_gbif_* keys');}catch(e){}})();
+
   function _getGbifCache(name){
-    try{
-      var raw=localStorage.getItem(_gbifCacheKey(name));
-      if(!raw) return null;
-      var parsed=JSON.parse(raw);
-      if(!parsed.ts||Date.now()-parsed.ts>GBIF_CACHE_TTL_MS) return null;
-      return parsed.data;
-    }catch(e){return null;}
+    var entry=__gbifMemoryCache.get(name);
+    if(!entry) return null;
+    if(Date.now()-entry.ts>GBIF_CACHE_TTL_MS){__gbifMemoryCache.delete(name);return null;}
+    return entry.data;
   }
   function _setGbifCache(name,occs){
-    try{
-      var compact=occs.map(function(o){return{lat:o.lat,lon:o.lon,date:o.date||'',source:'gbif'};});
-      localStorage.setItem(_gbifCacheKey(name),JSON.stringify({ts:Date.now(),data:compact}));
-    }catch(e){
-      // Quota — clear oldest GBIF caches and retry once
-      try{
-        var keys=[];
-        for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('bm_gbif_')===0){try{var v=JSON.parse(localStorage.getItem(k));keys.push({k:k,ts:v.ts||0});}catch(_e){}}}
-        keys.sort(function(a,b){return a.ts-b.ts;});
-        for(var j=0;j<Math.min(50,keys.length);j++){try{localStorage.removeItem(keys[j].k);}catch(_e){}}
-        localStorage.setItem(_gbifCacheKey(name),JSON.stringify({ts:Date.now(),data:compact}));
-      }catch(_e2){}
-    }
+    var compact=occs.map(function(o){return{lat:o.lat,lon:o.lon,date:o.date||'',source:'gbif'};});
+    __gbifMemoryCache.set(name,{ts:Date.now(),data:compact});
   }
 
   async function fetchProbGbifOccurrences(scientificName, onProgress) {
@@ -11346,19 +11341,23 @@ window.__scanEnnAll=async function(btn,opts){
       return;
     }
 
-    // Phase 3: Parallel per-species scan (pool of 5 workers)
-    var SCAN_CONCURRENCY=5;
+    // Phase 3: Serial per-species scan with 150ms delay
     var scanDone=0,scanErrors=0;
     render();
 
-    async function processOneSpecies(name){
-      if(_ennScanAbort) return;
+    for(var si=0;si<need.length;si++){
+      if(_ennScanAbort){console.log('[SCAN] aborted at',si);break;}
+      var name=need[si];
+      if(btn) btn.textContent='Skaneerin '+(si+1)+'/'+need.length;
+
       try{
         await window.computeProbForSpecies(name,{force:true});
+        scanDone++;
       }catch(err){
         scanErrors++;
         console.warn('[SCAN] prob failed:',name,err&&err.message);
       }
+
       try{
         if(typeof window.__fetchEbirdEEForSpecies==='function'){
           var ebResult=await window.__fetchEbirdEEForSpecies(name);
@@ -11376,22 +11375,10 @@ window.__scanEnnAll=async function(btn,opts){
           }
         }
       }catch(ebErr){console.warn('[SCAN-EBIRD] error',name,ebErr);}
-      scanDone++;
-      if(btn) btn.textContent='Skaneerin '+scanDone+'/'+need.length;
-      if(scanDone%10===0&&typeof render==='function'){try{render();}catch(e){}}
-    }
 
-    // Pool runner: N concurrent workers pulling from shared index
-    var poolIdx=0;
-    async function poolWorker(){
-      while(poolIdx<need.length&&!_ennScanAbort){
-        var myIdx=poolIdx++;
-        await processOneSpecies(need[myIdx]);
-      }
+      await new Promise(function(r){setTimeout(r,150);});
+      if(si%10===0&&typeof render==='function'){try{render();}catch(e){}}
     }
-    var workers=[];
-    for(var w=0;w<SCAN_CONCURRENCY;w++) workers.push(poolWorker());
-    await Promise.all(workers);
 
     if(typeof render==='function') render();
     var elapsed=Math.round((Date.now()-scanStartMs)/1000);

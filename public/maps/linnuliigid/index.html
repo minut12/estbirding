@@ -10150,10 +10150,11 @@ var __sharedDefaults = {};
   }
 
   // --- Paginated eElurikkus fetch for probability ---
-  async function fetchElurikkusAllDatesForProb(speciesName) {
+  async function fetchElurikkusAllDatesForProb(speciesName, options) {
+    options = options || {};
     var searchUrlBase = 'https://elurikkus.ee/app/occurrences/search?text='
       + encodeURIComponent(speciesName);
-    var maxPages = 30;
+    var maxPages = Number.isFinite(options.maxPages) ? options.maxPages : 30;
     var pageSize = 50;
     var allItems = [];
     var seenDates = {};
@@ -10392,7 +10393,7 @@ var __sharedDefaults = {};
         && (!_probEluCached || !Array.isArray(_probEluCached.items) || _probEluCached.items.length < 100);
       if (_eluNeedsFetch) {
         try {
-          var _eluItems = await fetchElurikkusAllDatesForProb(speciesName);
+          var _eluItems = await fetchElurikkusAllDatesForProb(speciesName, {maxPages:1});
           if (_eluItems && _eluItems.length > 0) {
             for (var _ni = 0; _ni < _eluItems.length; _ni++) {
               if (_eluItems[_ni].observedAt) _eluItems[_ni].observedAt = normDateISO(_eluItems[_ni].observedAt) || _eluItems[_ni].observedAt;

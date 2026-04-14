@@ -10808,7 +10808,7 @@ function __schedulePersistProbCache(){
         if(d.exitReason) _ce.x=d.exitReason;
         // Best period
         var _best=d.bestPeriod||null;
-        if(!_best&&d.periods&&d.periods.length>1){
+        if(!_best&&d.periods&&d.periods.length>=1){
           for(var _bi=0;_bi<d.periods.length;_bi++){
             if(!_best||(d.periods[_bi].pct||0)>(_best.pct||0)) _best=d.periods[_bi];
           }
@@ -10898,7 +10898,7 @@ window.__ennCachePushToCloud=async function(onProgress){
     var currentPct=null;
     if(d.periods&&d.periods.length){for(var i=0;i<d.periods.length;i++){if(d.periods[i].isCurrent){currentPct=d.periods[i].pct;break;}}}
     var _bp=d.bestPeriod||null;
-    if(!_bp&&d.periods&&d.periods.length>1){var _bb=null;for(var _pi=0;_pi<d.periods.length;_pi++){if(!_bb||(d.periods[_pi].pct||0)>(_bb.pct||0))_bb=d.periods[_pi];}if(_bb&&(_bb.pct||0)>0)_bp={pct:_bb.pct,label:_bb.label};}
+    if(!_bp&&d.periods&&d.periods.length>=1){var _bb=null;for(var _pi=0;_pi<d.periods.length;_pi++){if(!_bb||(d.periods[_pi].pct||0)>(_bb.pct||0))_bb=d.periods[_pi];}if(_bb&&(_bb.pct||0)>0)_bp={pct:_bb.pct,label:_bb.label};}
     return{species_name:n,computed_at:d.computedAt||Date.now(),score:d.overallScore||0,current_pct:currentPct,cell_lat:d.cellLat||null,cell_lon:d.cellLon||null,season:d.season||null,no_data:!!d.noData,exit_reason:d.exitReason||null,best_period_pct:_bp?_bp.pct:null,best_period_label:_bp?_bp.label:null};
   });
 
@@ -10907,6 +10907,7 @@ window.__ennCachePushToCloud=async function(onProgress){
 
   try{
     var BATCH=100,pushed=0;
+    if(rows.length>0){var _sample=rows.find(function(r){return r.best_period_pct!=null;})||rows[0];console.log('[enn-cache] sample row being pushed:',JSON.stringify(_sample));}
     for(var start=0;start<rows.length;start+=BATCH){
       var slice=rows.slice(start,start+BATCH);
       var res=await fetch(sbUrl+'/rest/v1/ennustus_cache?on_conflict=species_name',{
@@ -11539,7 +11540,7 @@ function render(){
     var _bpd=(window.__probDataBySpecies||{})[s.name];
     if(_bpd&&!_bpd.noData){
       var _bpBest=_bpd.bestPeriod||null;
-      if(!_bpBest&&_bpd.periods&&_bpd.periods.length>1){
+      if(!_bpBest&&_bpd.periods&&_bpd.periods.length>=1){
         var _bpTop=null;for(var _bpi=0;_bpi<_bpd.periods.length;_bpi++){if(!_bpTop||(_bpd.periods[_bpi].pct||0)>(_bpTop.pct||0))_bpTop=_bpd.periods[_bpi];}
         if(_bpTop&&(_bpTop.pct||0)>0) _bpBest={pct:_bpTop.pct,label:_bpTop.label};
       }

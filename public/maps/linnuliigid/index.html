@@ -9918,16 +9918,41 @@ var __sharedDefaults = {};
         if (_lsEntry && Array.isArray(_lsEntry.items)) _eluLiveItems = _lsEntry.items;
       } catch(_e) {}
     }
+    var _freshEluStats = { withNativeCoords: 0, resolvedFromPlace: 0, stillSkipped: 0, contributed: 0 };
     for (var _li = 0; _li < _eluLiveItems.length; _li++) {
       var _lIt = _eluLiveItems[_li];
       var _lLat = Number(_lIt.lat); var _lLon = Number(_lIt.lon);
-      if (!Number.isFinite(_lLat) || !Number.isFinite(_lLon)) continue;
+      if (!Number.isFinite(_lLat) || !Number.isFinite(_lLon)) {
+        var _lPlace = String(_lIt.municipality || _lIt.placeText || _lIt.locality || _lIt.county || '').trim();
+        var _lResolved = null;
+        if (_lPlace) {
+          if (typeof resolveCentroidFromPlace === 'function') _lResolved = resolveCentroidFromPlace(_lPlace);
+          if (!_lResolved && typeof resolveFallbackLatLon === 'function') _lResolved = resolveFallbackLatLon(_lPlace);
+        }
+        if (_lResolved && Number.isFinite(_lResolved.lat) && Number.isFinite(_lResolved.lon)) {
+          _lLat = _lResolved.lat; _lLon = _lResolved.lon;
+          _freshEluStats.resolvedFromPlace++;
+        } else {
+          _freshEluStats.stillSkipped++;
+          continue;
+        }
+      } else {
+        _freshEluStats.withNativeCoords++;
+      }
       var _lDate = String(_lIt.observedAt || _lIt.eventDate || _lIt.date || '');
       if (!_lDate) continue;
       var _lTs = (typeof _toDay === 'function') ? _toDay(_lDate) : Date.parse(_lDate);
       if (!_lTs || _lTs <= 0 || (_now - _lTs) > _7dMs) continue;
       recentEluLocs.push({ lat: _lLat, lon: _lLon, ageDays: (_now - _lTs) / 86400000 });
+      _freshEluStats.contributed++;
     }
+    console.debug('[FRESHNESS-ELU]', speciesName, {
+      itemsTotal: _eluLiveItems.length,
+      withNativeCoords: _freshEluStats.withNativeCoords,
+      resolvedFromPlace: _freshEluStats.resolvedFromPlace,
+      stillSkipped: _freshEluStats.stillSkipped,
+      contributedToRecentEluLocs: _freshEluStats.contributed
+    });
 
     // --- E: Score each cell, each period ---
     var nowMs = Date.now();
@@ -10670,6 +10695,12 @@ var __sharedDefaults = {};
       var _gbifTotal = result.data.occurrences.filter(function(o){ return o.source === 'gbif'; }).length;
       var _eluLiveCache = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluKey]) || null;
       var _eluLiveCount = (_eluLiveCache && Array.isArray(_eluLiveCache.items)) ? _eluLiveCache.items.length : 0;
+      if (_eluLiveCount === 0) {
+        var _probEluEntry = (typeof window.__probEluCache === 'object' && window.__probEluCache) ? window.__probEluCache[_eluKey] : null;
+        if (_probEluEntry && Array.isArray(_probEluEntry.items)) {
+          _eluLiveCount = _probEluEntry.items.length;
+        }
+      }
       var _eluPoint2 = (typeof points !== 'undefined' && points[speciesName]) || {};
       var _occ7 = Number.isFinite(_eluPoint2.occ7) ? _eluPoint2.occ7 : 0;
       var _eluDateStr = _eluPoint2.t ? formatDateEE(_eluPoint2.t) : '';

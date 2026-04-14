@@ -11637,6 +11637,10 @@ window.__ennProb=function(speciesName){
               if(t.indexOf('vajuta Prob')!==-1||t.indexOf('Top periood')!==-1){links[j].click();break;}
             }
           }
+        }else{
+          // Row not found (species filtered out by 7p filter) — call toggleProbability directly
+          console.log('[Ennustus] row not found for',speciesName,'— calling toggleProbability directly');
+          if(typeof window.toggleProbability==='function') window.toggleProbability(speciesName);
         }
       }catch(e){console.warn('[Ennustus] Prob navigation failed:',e);}
     },400);

@@ -8619,7 +8619,7 @@ document.addEventListener('DOMContentLoaded', function(){
   <button id="toggleWind" class="btn secondary">Tuulekaart</button>
   <button id="toggleSpring" class="btn secondary">Kevadränne</button>
   <button id="toggleEbirdEE" class="btn secondary" style="white-space:nowrap">eBird EE</button>
-  <button id="ennustusBtn" class="btn secondary" title="Näita liikide tõenäosust praegusel perioodil" onclick="window.__openEnnustus()">Ennustus</button>
+  <button id="ennustusBtn" class="btn secondary" title="Näita liikide tõenäosust praegusel perioodil" onclick="window.__openEnnustus()">Tõenäosus</button>
 
   <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 päeva jooksul aktiivsed">7p liigid: 0</span>
 </div>
@@ -10868,6 +10868,123 @@ window.__storageStats=function(){
   return total;
 };
 
+// === Cloud sync: push/pull ennustus_cache via Supabase REST API ===
+window.__ennCachePushToCloud=async function(onProgress){
+  var sbUrl=String(typeof __resolvedSupabaseUrl!=='undefined'?__resolvedSupabaseUrl:'').replace(/\/+$/,'');
+  var anonKey=String(typeof __resolvedSupabaseAnonKey!=='undefined'?__resolvedSupabaseAnonKey:'').trim();
+  if(!sbUrl||!anonKey){console.warn('[enn-cache] cloud push: no supabase config');return{failed:true,reason:'no-config'};}
+
+  var pd=window.__probDataBySpecies||{};
+  var keys=Object.keys(pd);
+  if(!keys.length){console.warn('[enn-cache] cloud push: no data');return{failed:true,reason:'no-data'};}
+
+  var rows=keys.map(function(n){
+    var d=pd[n];
+    var currentPct=null;
+    if(d.periods&&d.periods.length){for(var i=0;i<d.periods.length;i++){if(d.periods[i].isCurrent){currentPct=d.periods[i].pct;break;}}}
+    return{species_name:n,computed_at:d.computedAt||Date.now(),score:d.overallScore||0,current_pct:currentPct,cell_lat:d.cellLat||null,cell_lon:d.cellLon||null,season:d.season||null,no_data:!!d.noData,exit_reason:d.exitReason||null};
+  });
+
+  console.log('[enn-cache] pushing',rows.length,'species to cloud...');
+  if(onProgress) onProgress({phase:'pushing',count:rows.length});
+
+  try{
+    var BATCH=100,pushed=0;
+    for(var start=0;start<rows.length;start+=BATCH){
+      var slice=rows.slice(start,start+BATCH);
+      var res=await fetch(sbUrl+'/rest/v1/ennustus_cache',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':anonKey,'Authorization':'Bearer '+anonKey,'Prefer':'resolution=merge-duplicates'},
+        body:JSON.stringify(slice)
+      });
+      if(!res.ok){var errText=await res.text().catch(function(){return'';});console.error('[enn-cache] cloud push batch failed',start,res.status,errText);return{failed:true,reason:'http-'+res.status};}
+      pushed+=slice.length;
+      if(onProgress) onProgress({phase:'pushing',pushed:pushed,total:rows.length});
+    }
+    console.log('[enn-cache] cloud push complete:',pushed,'species');
+    if(onProgress) onProgress({phase:'done',pushed:pushed});
+    return{pushed:pushed};
+  }catch(err){
+    console.error('[enn-cache] cloud push error:',err);
+    return{failed:true,error:String(err)};
+  }
+};
+
+window.__ennCachePullFromCloud=async function(){
+  var sbUrl=String(typeof __resolvedSupabaseUrl!=='undefined'?__resolvedSupabaseUrl:'').replace(/\/+$/,'');
+  var anonKey=String(typeof __resolvedSupabaseAnonKey!=='undefined'?__resolvedSupabaseAnonKey:'').trim();
+  if(!sbUrl||!anonKey) return{failed:true,reason:'no-config'};
+
+  try{
+    var res=await fetch(sbUrl+'/rest/v1/ennustus_cache?select=*',{
+      headers:{'apikey':anonKey,'Authorization':'Bearer '+anonKey}
+    });
+    if(!res.ok){console.warn('[enn-cache] cloud pull HTTP',res.status);return{failed:true,reason:'http-'+res.status};}
+    var data=await res.json();
+    if(!data||!data.length){console.log('[enn-cache] cloud: no rows');return{pulled:0};}
+
+    var now=Date.now(),applied=0,skipped=0;
+    data.forEach(function(row){
+      var existing=(window.__probDataBySpecies||{})[row.species_name];
+      if(existing&&existing.computedAt&&existing.computedAt>=row.computed_at){skipped++;return;}
+      if(now-row.computed_at>(window.ENN_CACHE_TTL_MS||43200000)){skipped++;return;}
+      window.__probDataBySpecies[row.species_name]={
+        computedAt:row.computed_at,
+        overallScore:row.score||0,
+        cellLat:row.cell_lat,
+        cellLon:row.cell_lon,
+        season:row.season,
+        periods:row.current_pct!=null?[{pct:row.current_pct,isCurrent:true,label:'current'}]:[],
+        noData:!!row.no_data,
+        exitReason:row.exit_reason
+      };
+      applied++;
+    });
+    console.log('[enn-cache] cloud pulled:',applied,'applied,',skipped,'skipped');
+    if(applied>0&&typeof window.__schedulePersistProbCache==='function') window.__schedulePersistProbCache();
+    return{pulled:applied,skipped:skipped};
+  }catch(err){
+    console.warn('[enn-cache] cloud pull failed:',err);
+    return{failed:true,error:String(err)};
+  }
+};
+
+// Auto-pull from cloud on page load (deferred)
+(function(){
+  setTimeout(function(){
+    if(window.__ennCachePullFromCloud){
+      window.__ennCachePullFromCloud().then(function(result){
+        if(result&&result.pulled>0){
+          console.log('[enn-cache] cloud sync added',result.pulled,'species');
+          try{if(typeof window.__renderEnn==='function') window.__renderEnn();}catch(e){}
+        }
+      }).catch(function(e){console.warn('[enn-cache] cloud auto-pull error:',e);});
+    }
+  },3000);
+})();
+
+// Jaga button click handler
+window.__ennJagaClick=async function(btn){
+  if(btn.__busy) return;
+  btn.__busy=true;
+  var origText=btn.textContent;
+  btn.textContent='Jagamine...';
+  btn.disabled=true;
+  try{
+    var result=await window.__ennCachePushToCloud(function(progress){
+      if(progress.phase==='pushing'&&progress.pushed!=null) btn.textContent='Jagamine '+progress.pushed+'/'+progress.total;
+    });
+    if(result&&result.pushed){
+      btn.textContent='\u2713 Jagatud ('+result.pushed+')';
+    }else{
+      btn.textContent='\u2717 Viga';
+    }
+  }catch(e){
+    btn.textContent='\u2717 Viga';
+  }
+  setTimeout(function(){btn.textContent=origText;btn.disabled=false;btn.__busy=false;},2500);
+};
+
 // --- buildTop3PeriodsSection: renders top-3 periods + "now" row in sidebar ---
 window.buildTop3PeriodsSection = function(speciesKey) {
   var probData = (window.__probDataBySpecies || {})[speciesKey];
@@ -11057,10 +11174,10 @@ document.addEventListener('click', function(e) {
 <div id="ennBg">
 <div id="ennBox">
 <div class="ennHdr">
-<div><h3>Ennustus</h3><p class="sub">Tõenäosus praegusel perioodil</p></div>
+<div><h3>Tõenäosus</h3><p class="sub">Tõenäosus praegusel perioodil</p></div>
 <div style="display:flex;gap:8px;align-items:center">
 <button class="btn secondary" style="font-size:12px;padding:4px 10px" onclick="window.__scanEnnAll(this,{skipEluRefresh:true})" title="Kiire skaneerimine (kasutab vahemällu salvestatud eElurikkuse andmeid)">Skaneeri</button>
-<button class="btn secondary" style="font-size:11px;padding:4px 8px;background:#fef3c7;border-color:#f59e0b" onclick="window.__scanEnnAll(this,{skipEluRefresh:false,force:true})" title="Värskendab esmalt eElurikkuse pilveandmed, seejärel skaneerib. Aeglasem (~2 min).">&#x1F504; Värskenda</button>
+<button id="ennJagaBtn" class="btn secondary" style="font-size:12px;padding:4px 10px" onclick="window.__ennJagaClick(this)" title="Jaga skaneeritud andmeid teistele seadmetele pilve kaudu">&#9729; Jaga</button>
 <button class="btn small" onclick="window.__closeEnn()">&#10005;</button>
 </div>
 </div>

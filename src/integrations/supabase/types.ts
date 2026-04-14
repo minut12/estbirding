@@ -125,6 +125,48 @@ export type Database = {
         }
         Relationships: []
       }
+      ennustus_cache: {
+        Row: {
+          cell_lat: number | null
+          cell_lon: number | null
+          computed_at: number
+          current_pct: number | null
+          exit_reason: string | null
+          id: number
+          no_data: boolean | null
+          score: number
+          season: string | null
+          species_name: string
+          updated_at: string | null
+        }
+        Insert: {
+          cell_lat?: number | null
+          cell_lon?: number | null
+          computed_at: number
+          current_pct?: number | null
+          exit_reason?: string | null
+          id?: number
+          no_data?: boolean | null
+          score?: number
+          season?: string | null
+          species_name: string
+          updated_at?: string | null
+        }
+        Update: {
+          cell_lat?: number | null
+          cell_lon?: number | null
+          computed_at?: number
+          current_pct?: number | null
+          exit_reason?: string | null
+          id?: number
+          no_data?: boolean | null
+          score?: number
+          season?: string | null
+          species_name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       europe_snapshot: {
         Row: {
           created_at: string

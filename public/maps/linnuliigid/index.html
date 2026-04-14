@@ -10909,12 +10909,24 @@ window.__ennCachePushToCloud=async function(onProgress){
     var BATCH=100,pushed=0;
     for(var start=0;start<rows.length;start+=BATCH){
       var slice=rows.slice(start,start+BATCH);
-      var res=await fetch(sbUrl+'/rest/v1/ennustus_cache',{
+      var res=await fetch(sbUrl+'/rest/v1/ennustus_cache?on_conflict=species_name',{
         method:'POST',
-        headers:{'Content-Type':'application/json','apikey':anonKey,'Authorization':'Bearer '+anonKey,'Prefer':'resolution=merge-duplicates'},
+        headers:{'Content-Type':'application/json','apikey':anonKey,'Authorization':'Bearer '+anonKey,'Prefer':'resolution=merge-duplicates,return=minimal'},
         body:JSON.stringify(slice)
       });
-      if(!res.ok){var errText=await res.text().catch(function(){return'';});console.error('[enn-cache] cloud push batch failed',start,res.status,errText);return{failed:true,reason:'http-'+res.status};}
+      if(!res.ok&&res.status===409){
+        console.log('[enn-cache] upsert hit 409, falling back to delete+insert for batch',start);
+        var speciesNames=slice.map(function(r){return r.species_name;});
+        var delRes=await fetch(sbUrl+'/rest/v1/ennustus_cache?species_name=in.('+encodeURIComponent(speciesNames.join(','))+')',{
+          method:'DELETE',headers:{'apikey':anonKey,'Authorization':'Bearer '+anonKey,'Prefer':'return=minimal'}
+        });
+        if(!delRes.ok){var dt=await delRes.text().catch(function(){return'';});console.error('[enn-cache] delete fallback failed:',dt);return{failed:true,reason:'delete-error'};}
+        var insRes=await fetch(sbUrl+'/rest/v1/ennustus_cache',{
+          method:'POST',headers:{'Content-Type':'application/json','apikey':anonKey,'Authorization':'Bearer '+anonKey,'Prefer':'return=minimal'},
+          body:JSON.stringify(slice)
+        });
+        if(!insRes.ok){var it=await insRes.text().catch(function(){return'';});console.error('[enn-cache] insert after delete failed:',it);return{failed:true,reason:'insert-after-delete'};}
+      }else if(!res.ok){var errText=await res.text().catch(function(){return'';});console.error('[enn-cache] cloud push batch failed',start,res.status,errText);return{failed:true,reason:'http-'+res.status};}
       pushed+=slice.length;
       if(onProgress) onProgress({phase:'pushing',pushed:pushed,total:rows.length});
     }

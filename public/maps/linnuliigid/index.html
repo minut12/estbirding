@@ -10052,6 +10052,9 @@ var __sharedDefaults = {};
   // --- Fetch GBIF per-year sampling for better coverage ---
   // Resolve GBIF taxonKey from scientific name (cached)
   var __taxonKeyCache = {};
+  // Restore taxonKey cache from localStorage (keys never change)
+  try{var _tkRaw=localStorage.getItem('bm_taxonkey_cache');if(_tkRaw) __taxonKeyCache=JSON.parse(_tkRaw);}catch(_e){__taxonKeyCache={};}
+
   async function _resolveTaxonKeyFromSciName(sciName) {
     if (__taxonKeyCache[sciName] !== undefined) return __taxonKeyCache[sciName];
     try {
@@ -10060,6 +10063,7 @@ var __sharedDefaults = {};
         var data = await res.json();
         if (data && data.usageKey) {
           __taxonKeyCache[sciName] = data.usageKey;
+          try{localStorage.setItem('bm_taxonkey_cache',JSON.stringify(__taxonKeyCache));}catch(_e){}
           return data.usageKey;
         }
       }
@@ -10069,8 +10073,43 @@ var __sharedDefaults = {};
   }
   window.__taxonKeyCache = __taxonKeyCache;
 
+  // GBIF occurrence cache with 24h TTL
+  var GBIF_CACHE_TTL_MS=24*60*60*1000;
+  function _gbifCacheKey(name){return 'bm_gbif_'+name;}
+  function _getGbifCache(name){
+    try{
+      var raw=localStorage.getItem(_gbifCacheKey(name));
+      if(!raw) return null;
+      var parsed=JSON.parse(raw);
+      if(!parsed.ts||Date.now()-parsed.ts>GBIF_CACHE_TTL_MS) return null;
+      return parsed.data;
+    }catch(e){return null;}
+  }
+  function _setGbifCache(name,occs){
+    try{
+      var compact=occs.map(function(o){return{lat:o.lat,lon:o.lon,date:o.date||'',source:'gbif'};});
+      localStorage.setItem(_gbifCacheKey(name),JSON.stringify({ts:Date.now(),data:compact}));
+    }catch(e){
+      // Quota — clear oldest GBIF caches and retry once
+      try{
+        var keys=[];
+        for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('bm_gbif_')===0){try{var v=JSON.parse(localStorage.getItem(k));keys.push({k:k,ts:v.ts||0});}catch(_e){}}}
+        keys.sort(function(a,b){return a.ts-b.ts;});
+        for(var j=0;j<Math.min(50,keys.length);j++){try{localStorage.removeItem(keys[j].k);}catch(_e){}}
+        localStorage.setItem(_gbifCacheKey(name),JSON.stringify({ts:Date.now(),data:compact}));
+      }catch(_e2){}
+    }
+  }
+
   async function fetchProbGbifOccurrences(scientificName, onProgress) {
     if (!scientificName) return [];
+
+    // Check cache first
+    var cached=_getGbifCache(scientificName);
+    if(cached){
+      console.log('[PROB-GBIF] cache hit',scientificName,'records:',cached.length);
+      return cached;
+    }
 
     // Resolve taxonKey first — allows single-request year-range query
     var taxonKey = await _resolveTaxonKeyFromSciName(scientificName);
@@ -10110,6 +10149,8 @@ var __sharedDefaults = {};
     }
 
     console.log('[PROB-GBIF] fetched', scientificName, 'taxonKey:', taxonKey, 'records:', allOccs.length);
+    // Cache the result
+    _setGbifCache(scientificName,allOccs);
     return allOccs;
   }
 
@@ -10837,7 +10878,8 @@ document.addEventListener('click', function(e) {
 <div class="ennHdr">
 <div><h3>Ennustus</h3><p class="sub">Tõenäosus praegusel perioodil</p></div>
 <div style="display:flex;gap:8px;align-items:center">
-<button class="btn secondary" style="font-size:12px;padding:4px 10px" onclick="window.__scanEnnAll(this)" title="Skaneerib GBIF t&#245;en&#228;osuse andmeid. eBird andmete uuendamiseks kasuta eBird EE nuppu.">Skaneeri</button>
+<button class="btn secondary" style="font-size:12px;padding:4px 10px" onclick="window.__scanEnnAll(this,{skipEluRefresh:true})" title="Kiire skaneerimine (kasutab vahemällu salvestatud eElurikkuse andmeid)">Skaneeri</button>
+<button class="btn secondary" style="font-size:11px;padding:4px 8px;background:#fef3c7;border-color:#f59e0b" onclick="window.__scanEnnAll(this,{skipEluRefresh:false})" title="Värskendab esmalt eElurikkuse pilveandmed, seejärel skaneerib. Aeglasem (~2 min).">&#x1F504; Värskenda</button>
 <button class="btn small" onclick="window.__closeEnn()">&#10005;</button>
 </div>
 </div>
@@ -11211,59 +11253,77 @@ window.__closeEnn=function(){document.getElementById('ennBg').style.display='non
 window.__renderEnn=render;
 window.__sortEnn=function(s){sort=s;render();};
 
-window.__scanEnnAll=async function(btn){
+window.__scanEnnAll=async function(btn,opts){
   if(window.__scanEnnAllRunning) return;
   window.__scanEnnAllRunning=true;
   _ennScanAbort=false;
+  opts=opts||{};
+  var skipEluRefresh=opts.skipEluRefresh!==false; // default: skip
+  var scanStartMs=Date.now();
 
   try{
-    if(btn){btn.disabled=true;btn.style.opacity='.6';btn.textContent='Värskendan eElurikkus...';}
+    // Phase 1: Elurikkus cloud refresh (only if explicitly requested via Värskenda)
+    if(!skipEluRefresh){
+      if(btn){btn.disabled=true;btn.style.opacity='.6';btn.textContent='Värskendan eElurikkus...';}
+      try{
+        var ELU_EDGE='https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/elurikkus-bulk-refresh';
+        var ELU_SECRET='elu-refresh-2026';
+        var ELU_BATCH=75;
+        var totalSpecies=sp().length||450;
+        var eluUpdated=0,eluErrors=0;
 
-    // Phase 1: Elurikkus cloud refresh (keep existing logic)
-    try{
-      var ELU_EDGE='https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/elurikkus-bulk-refresh';
-      var ELU_SECRET='elu-refresh-2026';
-      var ELU_BATCH=75;
-      var totalSpecies=sp().length||450;
-      var eluUpdated=0,eluErrors=0;
-      for(var eluOff=0;eluOff<totalSpecies;eluOff+=ELU_BATCH){
-        if(_ennScanAbort){console.log('[ELU-REFRESH] ABORTED at offset',eluOff);break;}
-        console.log('[ELU-REFRESH] starting batch offset='+eluOff);
-        if(btn) btn.textContent='eElu '+eluOff+'/'+totalSpecies;
-        try{
-          var eluRes=await fetch(ELU_EDGE,{
-            method:'POST',
-            headers:{'Content-Type':'application/json','x-refresh-secret':ELU_SECRET},
-            body:JSON.stringify({offset:eluOff,limit:ELU_BATCH})
-          });
-          if(eluRes.ok){
-            var eluJson=await eluRes.json();
-            eluUpdated+=(eluJson.updated||0);
-            eluErrors+=(eluJson.errors||0);
-            console.log('[ELU-REFRESH] batch offset='+eluOff, eluJson);
+        // Build batch offsets
+        var batchOffsets=[];
+        for(var eluOff=0;eluOff<totalSpecies;eluOff+=ELU_BATCH) batchOffsets.push(eluOff);
+
+        // Run 3 batches in parallel at a time
+        var PARALLEL_BATCHES=3;
+        for(var bi=0;bi<batchOffsets.length;bi+=PARALLEL_BATCHES){
+          if(_ennScanAbort){console.log('[ELU-REFRESH] ABORTED at group',bi);break;}
+          var slice=batchOffsets.slice(bi,bi+PARALLEL_BATCHES);
+          console.log('[ELU-REFRESH] parallel group offsets:',slice);
+          if(btn) btn.textContent='eElu '+slice[0]+'/'+totalSpecies;
+
+          var groupResults=await Promise.all(slice.map(function(offset){
+            return fetch(ELU_EDGE,{
+              method:'POST',
+              headers:{'Content-Type':'application/json','x-refresh-secret':ELU_SECRET},
+              body:JSON.stringify({offset:offset,limit:ELU_BATCH})
+            }).then(function(r){return r.ok?r.json():Promise.resolve({failed:true,offset:offset});})
+              .catch(function(err){console.warn('[ELU-REFRESH] batch error offset='+offset,err);return{failed:true,offset:offset};});
+          }));
+
+          for(var gi=0;gi<groupResults.length;gi++){
+            var gr=groupResults[gi];
+            if(gr&&!gr.failed){
+              eluUpdated+=(gr.updated||0);
+              eluErrors+=(gr.errors||0);
+              console.log('[ELU-REFRESH] batch offset='+slice[gi],gr);
+            }
           }
-        }catch(eluErr){
-          console.warn('[ELU-REFRESH] batch error offset='+eluOff,eluErr);
         }
+        console.log('[ELU-REFRESH] done. updated:',eluUpdated,'errors:',eluErrors);
+      }catch(eluTopErr){
+        console.warn('[ELU-REFRESH] top-level error',eluTopErr);
       }
-      console.log('[ELU-REFRESH] done. updated:',eluUpdated,'errors:',eluErrors);
-    }catch(eluTopErr){
-      console.warn('[ELU-REFRESH] top-level error',eluTopErr);
+
+      // Reload elurikkus cache into points
+      try{
+        if(btn) btn.textContent='Laadin eElu...';
+        if(typeof _loadElurikkusCacheFromSupabase==='function'){
+          await _loadElurikkusCacheFromSupabase();
+        }
+      }catch(reloadErr){
+        console.warn('[SCAN] cache reload error',reloadErr);
+      }
+    }else{
+      console.log('[SCAN] skipping Elurikkus refresh (using cached data)');
     }
 
-    // Phase 1b: Reload elurikkus cache into points
-    try{
-      if(btn) btn.textContent='Laadin eElu...';
-      if(typeof _loadElurikkusCacheFromSupabase==='function'){
-        await _loadElurikkusCacheFromSupabase();
-      }
-    }catch(reloadErr){
-      console.warn('[SCAN] cache reload error',reloadErr);
-    }
+    if(btn){btn.disabled=true;btn.style.opacity='.6';}
 
     // Phase 2: Build species list
     var allSpecies=sp(),pts=pt();
-    // Backfill occ7Elu from existing data
     for(var bi2=0;bi2<allSpecies.length;bi2++){
       var _bn=allSpecies[bi2],_bc=_fix(_bn);
       var _bp=pts[_bn]||pts[_bc];
@@ -11286,23 +11346,19 @@ window.__scanEnnAll=async function(btn){
       return;
     }
 
-    // Phase 3: Loop — call computeProbForSpecies once per species (same path as Prob button)
-    var done=0,errors=0;
+    // Phase 3: Parallel per-species scan (pool of 5 workers)
+    var SCAN_CONCURRENCY=5;
+    var scanDone=0,scanErrors=0;
     render();
-    for(var si=0;si<need.length;si++){
-      if(_ennScanAbort){console.log('[SCAN] aborted at',si);break;}
-      var name=need[si];
-      if(btn) btn.textContent='Skaneerin '+(si+1)+'/'+need.length;
 
+    async function processOneSpecies(name){
+      if(_ennScanAbort) return;
       try{
         await window.computeProbForSpecies(name,{force:true});
-        done++;
       }catch(err){
-        errors++;
+        scanErrors++;
         console.warn('[SCAN] prob failed:',name,err&&err.message);
       }
-
-      // Fetch eBird data for this species
       try{
         if(typeof window.__fetchEbirdEEForSpecies==='function'){
           var ebResult=await window.__fetchEbirdEEForSpecies(name);
@@ -11320,20 +11376,30 @@ window.__scanEnnAll=async function(btn){
           }
         }
       }catch(ebErr){console.warn('[SCAN-EBIRD] error',name,ebErr);}
-
-      // Polite delay
-      await new Promise(function(r){setTimeout(r,200);});
-
-      // Re-render every 5 species
-      if(si%5===0&&typeof render==='function'){try{render();}catch(e){}}
+      scanDone++;
+      if(btn) btn.textContent='Skaneerin '+scanDone+'/'+need.length;
+      if(scanDone%10===0&&typeof render==='function'){try{render();}catch(e){}}
     }
 
+    // Pool runner: N concurrent workers pulling from shared index
+    var poolIdx=0;
+    async function poolWorker(){
+      while(poolIdx<need.length&&!_ennScanAbort){
+        var myIdx=poolIdx++;
+        await processOneSpecies(need[myIdx]);
+      }
+    }
+    var workers=[];
+    for(var w=0;w<SCAN_CONCURRENCY;w++) workers.push(poolWorker());
+    await Promise.all(workers);
+
     if(typeof render==='function') render();
-    console.log('[SCAN] done —',done,'/',need.length,'species scanned, errors:',errors);
+    var elapsed=Math.round((Date.now()-scanStartMs)/1000);
+    console.log('[SCAN] done —',scanDone,'/',need.length,'species scanned, errors:',scanErrors,'in',elapsed+'s');
 
     if(btn){
       btn.disabled=false;btn.style.opacity='1';
-      btn.textContent=errors>0?'Valmis ('+errors+' viga)':'Valmis ✓';
+      btn.textContent=scanErrors>0?'Valmis ('+scanErrors+' viga, '+elapsed+'s)':'Valmis ✓ ('+elapsed+'s)';
       setTimeout(function(){btn.textContent='Skaneeri';},5000);
     }
   }finally{

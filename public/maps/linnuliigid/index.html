@@ -10706,28 +10706,39 @@ var ENN_BADGE_CACHE_KEY = 'bm_enn_badges_v1';
   console.log('[enn-cache] prob restored:',restored,'expired:',expired);
 }catch(err){console.warn('[enn-cache] prob restore failed:',err);}})();
 
-// Restore badge data (occ7Ebird/occ7Elu) from localStorage
-(function(){try{
-  var raw=localStorage.getItem(ENN_BADGE_CACHE_KEY);
-  if(!raw){console.log('[enn-cache] badges: no stored cache');return;}
-  var parsed=JSON.parse(raw);
-  if(!parsed||typeof parsed!=='object') return;
-  var now=Date.now(),restored=0,expired=0;
-  Object.keys(parsed).forEach(function(name){
-    var entry=parsed[name];
-    if(!entry) return;
-    window.points=window.points||{};
-    window.points[name]=window.points[name]||{};
-    var p=window.points[name];
-    if(entry.occ7Ebird!=null&&entry.occ7EbirdUpdated&&now-new Date(entry.occ7EbirdUpdated).getTime()<ENN_CACHE_TTL_MS){
-      p.occ7Ebird=entry.occ7Ebird;p.occ7EbirdUpdated=entry.occ7EbirdUpdated;restored++;
-    }else if(entry.occ7Ebird!=null){expired++;}
-    if(entry.occ7Elu!=null&&entry.occ7EluUpdated&&now-new Date(entry.occ7EluUpdated).getTime()<ENN_CACHE_TTL_MS){
-      p.occ7Elu=entry.occ7Elu;p.occ7EluUpdated=entry.occ7EluUpdated;restored++;
-    }else if(entry.occ7Elu!=null){expired++;}
-  });
-  console.log('[enn-cache] badges restored:',restored,'expired:',expired);
-}catch(err){console.warn('[enn-cache] badge restore failed:',err);}})();
+// Deferred badge restore — waits for snapshot loader to populate window.points
+(function(){
+  var _badgeStartTime=Date.now();
+  function _attemptBadgeRestore(){
+    var pts=window.points;
+    if(!pts||typeof pts!=='object'||Object.keys(pts).length<10){
+      if(Date.now()-_badgeStartTime>30000){console.warn('[enn-cache] badges: timed out waiting for snapshot');return;}
+      setTimeout(_attemptBadgeRestore,500);
+      return;
+    }
+    try{
+      var raw=localStorage.getItem(ENN_BADGE_CACHE_KEY);
+      if(!raw){console.log('[enn-cache] badges: no stored cache');return;}
+      var parsed=JSON.parse(raw);
+      if(!parsed||typeof parsed!=='object') return;
+      var now=Date.now(),restored=0,expired=0;
+      Object.keys(parsed).forEach(function(name){
+        var entry=parsed[name];
+        if(!entry) return;
+        var p=pts[name];
+        if(!p) return;
+        if(entry.occ7Ebird!=null&&entry.occ7EbirdUpdated&&now-new Date(entry.occ7EbirdUpdated).getTime()<ENN_CACHE_TTL_MS){
+          p.occ7Ebird=entry.occ7Ebird;p.occ7EbirdUpdated=entry.occ7EbirdUpdated;restored++;
+        }else if(entry.occ7Ebird!=null){expired++;}
+        if(entry.occ7Elu!=null&&entry.occ7EluUpdated&&now-new Date(entry.occ7EluUpdated).getTime()<ENN_CACHE_TTL_MS){
+          p.occ7Elu=entry.occ7Elu;p.occ7EluUpdated=entry.occ7EluUpdated;restored++;
+        }else if(entry.occ7Elu!=null){expired++;}
+      });
+      console.log('[enn-cache] badges restored:',restored,'expired:',expired,'(after',Date.now()-_badgeStartTime,'ms wait)');
+    }catch(err){console.warn('[enn-cache] badge restore failed:',err);}
+  }
+  _attemptBadgeRestore();
+})();
 
 // Debounced persist helpers
 var __persistProbTimer=null;

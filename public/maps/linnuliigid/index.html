@@ -10049,7 +10049,8 @@ var __sharedDefaults = {};
     } catch(e) { return null; }
   }
   function saveProbCache(species, data) {
-    try { localStorage.setItem(PROB_CACHE_PREFIX + species, JSON.stringify(data)); } catch(e) {}
+    // Disabled: bm_prob2_* keys replaced by compact bm_enn_prob_v1 system.
+    // In-memory __gbifMemoryCache handles session-level caching.
   }
 
   // --- Fetch GBIF per-year sampling for better coverage ---
@@ -10084,6 +10085,9 @@ var __sharedDefaults = {};
 
   // Clean up stale bm_gbif_* localStorage keys from previous deploy
   (function(){try{var rm=[];for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('bm_gbif_')===0)rm.push(k);}rm.forEach(function(k){try{localStorage.removeItem(k);}catch(e){}});if(rm.length)console.log('[cleanup] removed',rm.length,'stale bm_gbif_* keys');}catch(e){}})();
+
+  // Clean up legacy bm_prob2_* keys (replaced by compact bm_enn_prob_v1)
+  (function(){try{var rm=[],bytes=0;for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('bm_prob2_')===0){bytes+=(localStorage.getItem(k)||'').length;rm.push(k);}}rm.forEach(function(k){try{localStorage.removeItem(k);}catch(e){}});if(rm.length)console.log('[cleanup] removed',rm.length,'stale bm_prob2_* keys, freed',(bytes/1024).toFixed(1),'KB');}catch(e){}})();
 
   function _getGbifCache(name){
     var entry=__gbifMemoryCache.get(name);
@@ -10827,6 +10831,18 @@ window.__ennCacheClear=function(){
   localStorage.removeItem(ENN_PROB_CACHE_KEY);
   localStorage.removeItem(ENN_BADGE_CACHE_KEY);
   console.log('Ennustus caches cleared. Reload to apply.');
+};
+window.__storageStats=function(){
+  var sizes=[],total=0;
+  for(var i=0;i<localStorage.length;i++){
+    var k=localStorage.key(i),v=localStorage.getItem(k)||'',sz=k.length+v.length;
+    sizes.push({key:k,sizeKB:+(sz/1024).toFixed(1)});total+=sz;
+  }
+  sizes.sort(function(a,b){return b.sizeKB-a.sizeKB;});
+  console.log('Total localStorage:',(total/1024).toFixed(1),'KB');
+  console.log('Top 10 keys:');
+  sizes.slice(0,10).forEach(function(s){console.log('  ',s.sizeKB,'KB  ',s.key);});
+  return total;
 };
 
 // --- buildTop3PeriodsSection: renders top-3 periods + "now" row in sidebar ---

@@ -10595,6 +10595,7 @@ var __sharedDefaults = {};
           return { label: p.label, pct: p.probability || 1, count: p.obsCount || p.count || 0, isCurrent: !!p.isCurrent };
         })
       };
+      if(typeof __schedulePersistProbCache==='function') __schedulePersistProbCache();
     }
 
     return { scored: scored, data: data, seasonInfo: seasonInfo, seasonal: seasonal, probCellSize: probCellSize };
@@ -10682,6 +10683,108 @@ var __sharedDefaults = {};
 'use strict';
 
 window.__probDataBySpecies = window.__probDataBySpecies || {};
+
+// === Ennustus cross-session cache (12h TTL) ===
+var ENN_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+var ENN_PROB_CACHE_KEY = 'bm_enn_prob_v1';
+var ENN_BADGE_CACHE_KEY = 'bm_enn_badges_v1';
+
+// Restore prob data from localStorage
+(function(){try{
+  var raw=localStorage.getItem(ENN_PROB_CACHE_KEY);
+  if(!raw) return;
+  var parsed=JSON.parse(raw);
+  if(!parsed||typeof parsed!=='object') return;
+  var now=Date.now(),restored=0,expired=0;
+  Object.keys(parsed).forEach(function(name){
+    var e=parsed[name];
+    if(!e||!e.computedAt) return;
+    if(now-e.computedAt>ENN_CACHE_TTL_MS){expired++;return;}
+    window.__probDataBySpecies[name]=e;
+    restored++;
+  });
+  console.log('[enn-cache] prob restored:',restored,'expired:',expired);
+}catch(err){console.warn('[enn-cache] prob restore failed:',err);}})();
+
+// Restore badge data (occ7Ebird/occ7Elu) from localStorage
+(function(){try{
+  var raw=localStorage.getItem(ENN_BADGE_CACHE_KEY);
+  if(!raw) return;
+  var parsed=JSON.parse(raw);
+  if(!parsed||typeof parsed!=='object') return;
+  var now=Date.now(),restored=0,expired=0;
+  Object.keys(parsed).forEach(function(name){
+    var entry=parsed[name];
+    if(!entry) return;
+    window.points=window.points||{};
+    window.points[name]=window.points[name]||{};
+    var p=window.points[name];
+    if(entry.occ7Ebird!=null&&entry.occ7EbirdUpdated&&now-new Date(entry.occ7EbirdUpdated).getTime()<ENN_CACHE_TTL_MS){
+      p.occ7Ebird=entry.occ7Ebird;p.occ7EbirdUpdated=entry.occ7EbirdUpdated;restored++;
+    }else if(entry.occ7Ebird!=null){expired++;}
+    if(entry.occ7Elu!=null&&entry.occ7EluUpdated&&now-new Date(entry.occ7EluUpdated).getTime()<ENN_CACHE_TTL_MS){
+      p.occ7Elu=entry.occ7Elu;p.occ7EluUpdated=entry.occ7EluUpdated;restored++;
+    }else if(entry.occ7Elu!=null){expired++;}
+  });
+  console.log('[enn-cache] badges restored:',restored,'expired:',expired);
+}catch(err){console.warn('[enn-cache] badge restore failed:',err);}})();
+
+// Debounced persist helpers
+var __persistProbTimer=null;
+function __schedulePersistProbCache(){
+  if(__persistProbTimer) return;
+  __persistProbTimer=setTimeout(function(){
+    __persistProbTimer=null;
+    try{
+      localStorage.setItem(ENN_PROB_CACHE_KEY,JSON.stringify(window.__probDataBySpecies));
+    }catch(err){
+      try{
+        var compact={},now=Date.now();
+        Object.keys(window.__probDataBySpecies).forEach(function(n){var e=window.__probDataBySpecies[n];if(e&&e.computedAt&&now-e.computedAt<ENN_CACHE_TTL_MS)compact[n]=e;});
+        localStorage.setItem(ENN_PROB_CACHE_KEY,JSON.stringify(compact));
+      }catch(err2){console.warn('[enn-cache] prob persist failed:',err2);}
+    }
+  },2000);
+}
+
+var __persistBadgeTimer=null;
+function __schedulePersistBadgeCache(){
+  if(__persistBadgeTimer) return;
+  __persistBadgeTimer=setTimeout(function(){
+    __persistBadgeTimer=null;
+    try{
+      var pts=window.points||{},compact={};
+      Object.keys(pts).forEach(function(name){
+        var p=pts[name]||{},entry={},has=false;
+        if(p.occ7Ebird!=null){entry.occ7Ebird=p.occ7Ebird;has=true;}
+        if(p.occ7EbirdUpdated){entry.occ7EbirdUpdated=p.occ7EbirdUpdated;has=true;}
+        if(p.occ7Elu!=null){entry.occ7Elu=p.occ7Elu;has=true;}
+        if(p.occ7EluUpdated){entry.occ7EluUpdated=p.occ7EluUpdated;has=true;}
+        if(has) compact[name]=entry;
+      });
+      localStorage.setItem(ENN_BADGE_CACHE_KEY,JSON.stringify(compact));
+    }catch(err){console.warn('[enn-cache] badge persist failed:',err);}
+  },2000);
+}
+
+// Debug helpers
+window.__ennCacheStats=function(){
+  try{
+    var prob=JSON.parse(localStorage.getItem(ENN_PROB_CACHE_KEY)||'{}');
+    var badges=JSON.parse(localStorage.getItem(ENN_BADGE_CACHE_KEY)||'{}');
+    var probSize=(localStorage.getItem(ENN_PROB_CACHE_KEY)||'').length;
+    var badgeSize=(localStorage.getItem(ENN_BADGE_CACHE_KEY)||'').length;
+    var now=Date.now(),freshProb=0,staleProb=0;
+    Object.values(prob).forEach(function(e){if(e&&e.computedAt&&now-e.computedAt<ENN_CACHE_TTL_MS)freshProb++;else staleProb++;});
+    console.log('Prob cache:',Object.keys(prob).length,'entries (',freshProb,'fresh,',staleProb,'stale),',(probSize/1024).toFixed(1),'KB');
+    console.log('Badge cache:',Object.keys(badges).length,'entries,',(badgeSize/1024).toFixed(1),'KB');
+  }catch(e){console.error(e);}
+};
+window.__ennCacheClear=function(){
+  localStorage.removeItem(ENN_PROB_CACHE_KEY);
+  localStorage.removeItem(ENN_BADGE_CACHE_KEY);
+  console.log('Ennustus caches cleared. Reload to apply.');
+};
 
 // --- buildTop3PeriodsSection: renders top-3 periods + "now" row in sidebar ---
 window.buildTop3PeriodsSection = function(speciesKey) {
@@ -10875,7 +10978,7 @@ document.addEventListener('click', function(e) {
 <div><h3>Ennustus</h3><p class="sub">Tõenäosus praegusel perioodil</p></div>
 <div style="display:flex;gap:8px;align-items:center">
 <button class="btn secondary" style="font-size:12px;padding:4px 10px" onclick="window.__scanEnnAll(this,{skipEluRefresh:true})" title="Kiire skaneerimine (kasutab vahemällu salvestatud eElurikkuse andmeid)">Skaneeri</button>
-<button class="btn secondary" style="font-size:11px;padding:4px 8px;background:#fef3c7;border-color:#f59e0b" onclick="window.__scanEnnAll(this,{skipEluRefresh:false})" title="Värskendab esmalt eElurikkuse pilveandmed, seejärel skaneerib. Aeglasem (~2 min).">&#x1F504; Värskenda</button>
+<button class="btn secondary" style="font-size:11px;padding:4px 8px;background:#fef3c7;border-color:#f59e0b" onclick="window.__scanEnnAll(this,{skipEluRefresh:false,force:true})" title="Värskendab esmalt eElurikkuse pilveandmed, seejärel skaneerib. Aeglasem (~2 min).">&#x1F504; Värskenda</button>
 <button class="btn small" onclick="window.__closeEnn()">&#10005;</button>
 </div>
 </div>
@@ -11255,6 +11358,7 @@ window.__scanEnnAll=async function(btn,opts){
   _ennScanAbort=false;
   opts=opts||{};
   var skipEluRefresh=opts.skipEluRefresh!==false; // default: skip
+  var forceRescan=opts.force===true;
   var scanStartMs=Date.now();
 
   try{
@@ -11343,13 +11447,21 @@ window.__scanEnnAll=async function(btn,opts){
     }
 
     // Phase 3: Serial per-species scan with 150ms delay
-    var scanDone=0,scanErrors=0;
+    var scanDone=0,scanErrors=0,scanSkipped=0;
     render();
 
     for(var si=0;si<need.length;si++){
       if(_ennScanAbort){console.log('[SCAN] aborted at',si);break;}
       var name=need[si];
       if(btn) btn.textContent='Skaneerin '+(si+1)+'/'+need.length;
+
+      // Skip if cached prob data is fresh (< 12h old) and not force-rescanning
+      var _existing=(window.__probDataBySpecies||{})[name];
+      if(!forceRescan&&_existing&&_existing.computedAt&&Date.now()-_existing.computedAt<ENN_CACHE_TTL_MS){
+        scanSkipped++;
+        if(scanSkipped%20===1) console.log('[SCAN] cache hit',name,'age:',Math.round((Date.now()-_existing.computedAt)/60000),'min');
+        continue;
+      }
 
       try{
         await window.computeProbForSpecies(name,{force:true});
@@ -11373,6 +11485,7 @@ window.__scanEnnAll=async function(btn,opts){
             }
             if(ebResult.t) ep.t=ebResult.t;
             ep.src='eBird';ep.lastFetched=ebResult.lastFetched;
+            if(typeof __schedulePersistBadgeCache==='function') __schedulePersistBadgeCache();
           }
         }
       }catch(ebErr){console.warn('[SCAN-EBIRD] error',name,ebErr);}
@@ -11383,7 +11496,7 @@ window.__scanEnnAll=async function(btn,opts){
 
     if(typeof render==='function') render();
     var elapsed=Math.round((Date.now()-scanStartMs)/1000);
-    console.log('[SCAN] done —',scanDone,'/',need.length,'species scanned, errors:',scanErrors,'in',elapsed+'s');
+    console.log('[SCAN] done —',scanDone,'/',need.length,'species scanned,',scanSkipped,'cached,',scanErrors,'errors, in',elapsed+'s');
 
     if(btn){
       btn.disabled=false;btn.style.opacity='1';

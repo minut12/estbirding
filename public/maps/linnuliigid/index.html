@@ -10493,6 +10493,40 @@ var __sharedDefaults = {};
     window.__probDataBySpecies = window.__probDataBySpecies || {};
     var topCell = scored.slice().sort(function(a,b){ return b.probability - a.probability; })[0];
     console.log('[PROB-WRITE]', speciesName, 'scored:', scored.length, 'topCell:', !!topCell);
+    if(topCell){
+      var _currentPeriod = null;
+      if(topCell.periods){ for(var _dpi=0;_dpi<topCell.periods.length;_dpi++){ if(topCell.periods[_dpi].isCurrent) _currentPeriod=topCell.periods[_dpi]; } }
+      var _allProbs = scored.map(function(c){return c.probability;});
+      console.log('[PROB-SCORE]', speciesName, {
+        totalCells: scored.length,
+        topCell: {
+          lat: ((topCell.latMin+topCell.latMax)/2).toFixed(3),
+          lon: ((topCell.lonMin+topCell.lonMax)/2).toFixed(3),
+          gbifCount: topCell.gbifCount,
+          eluCount: topCell.eluCount||0,
+          historicalScore: topCell.scoreHistory,
+          gbifPart: topCell.scoreHistoryGbif,
+          eluPart: topCell.scoreHistoryElu,
+          freshnessScore: topCell.scoreRecency,
+          seasonScore: topCell.scoreSeason,
+          markerInCell: topCell.markerInCell,
+          cellProbability: topCell.probability,
+          periodConfidence: topCell.periodConfidence
+        },
+        currentPeriod: _currentPeriod ? {
+          label: _currentPeriod.label,
+          count: _currentPeriod.obsCount||_currentPeriod.count||0,
+          probability: _currentPeriod.probability,
+          isCurrent: true
+        } : null,
+        allCellStats: {
+          avgProb: Math.round(_allProbs.reduce(function(s,v){return s+v;},0)/_allProbs.length),
+          maxProb: Math.max.apply(null, _allProbs),
+          cellsAbove50: _allProbs.filter(function(v){return v>50;}).length,
+          cellsAbove80: _allProbs.filter(function(v){return v>80;}).length
+        }
+      });
+    }
     if (topCell && topCell.periods) {
       window.__probDataBySpecies[speciesName] = {
         computedAt: Date.now(),
@@ -11070,6 +11104,7 @@ function render(){
     var eluBoost=occ7Elu>0?Math.min(15,Math.round(Math.log1p(occ7Elu)*4)):0;
     var boost=ebirdBoost+eluBoost;
     var finalScore=currentScore!==null?Math.min(99,currentScore+boost):null;
+    if(finalScore!==null&&finalScore>=80){console.log('[PROB-FINAL]',n,{currentScore:currentScore,ebirdBoost:ebirdBoost,eluBoost:eluBoost,boost:boost,finalScore:finalScore});}
     var ebirdScanned=p.occ7EbirdUpdated!=null;
     var eluScanned=p.occ7Elu!=null||_srcLo.indexOf('elurikkus')!==-1;
     displayList.push({name:n,spring:springDate,score:finalScore,baseScore:currentScore,occ7Ebird:occ7Ebird,occ7Elu:occ7Elu,ebirdScanned:ebirdScanned,eluScanned:eluScanned});

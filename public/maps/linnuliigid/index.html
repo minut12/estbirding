@@ -10509,10 +10509,22 @@ var __sharedDefaults = {};
       console.log('[prob] Total:', allOccs.length, '| eElurikkus:', eluOccs.length, '| GBIF:', gbifOccs.length);
     }
 
-    if (!data.occurrences || data.occurrences.length === 0) { console.log('[PROB-EXIT] A (no occurrences)', speciesName); return null; }
+    if (!data.occurrences || data.occurrences.length === 0) {
+      console.log('[PROB-EXIT] A (no occurrences)', speciesName);
+      window.__probDataBySpecies=window.__probDataBySpecies||{};
+      window.__probDataBySpecies[speciesName]={computedAt:Date.now(),overallScore:0,cellLat:null,cellLon:null,season:null,periods:[],noData:true,exitReason:'A'};
+      if(typeof window.__schedulePersistProbCache==='function') window.__schedulePersistProbCache();
+      return null;
+    }
 
     var seasonInfo = calculateSeasonFromData(data.occurrences);
-    if (!seasonInfo) { console.log('[PROB-EXIT] B (no seasonInfo)', speciesName); return null; }
+    if (!seasonInfo) {
+      console.log('[PROB-EXIT] B (no seasonInfo)', speciesName);
+      window.__probDataBySpecies=window.__probDataBySpecies||{};
+      window.__probDataBySpecies[speciesName]={computedAt:Date.now(),overallScore:0,cellLat:null,cellLon:null,season:null,periods:[],noData:true,exitReason:'B'};
+      if(typeof window.__schedulePersistProbCache==='function') window.__schedulePersistProbCache();
+      return null;
+    }
 
     var seasonal = data.occurrences.filter(function(o){ return isInSeasonRange(o.date, seasonInfo.start, seasonInfo.end); });
     if (seasonal.length === 0 && data.occurrences.length > 0) {
@@ -10522,7 +10534,13 @@ var __sharedDefaults = {};
       var fb2 = new Date(now2); fb2.setDate(fb2.getDate() + 45);
       seasonInfo = { start: fb1, end: fb2, label: formatSeasonWindow(45) };
     }
-    if (seasonal.length === 0) { console.log('[PROB-EXIT] C (no seasonal)', speciesName); return null; }
+    if (seasonal.length === 0) {
+      console.log('[PROB-EXIT] C (no seasonal)', speciesName);
+      window.__probDataBySpecies=window.__probDataBySpecies||{};
+      window.__probDataBySpecies[speciesName]={computedAt:Date.now(),overallScore:0,cellLat:null,cellLon:null,season:null,periods:[],noData:true,exitReason:'C'};
+      if(typeof window.__schedulePersistProbCache==='function') window.__schedulePersistProbCache();
+      return null;
+    }
 
     var totalGbifRecords = data.occurrences.filter(function(o){ return o.source === 'gbif'; }).length;
     var probCellSize = totalGbifRecords > 500 ? 0.1 : totalGbifRecords > 100 ? 0.15 : 0.2;
@@ -10714,7 +10732,9 @@ var ENN_BADGE_CACHE_KEY = 'bm_enn_badges_v1';
         cellLat:e.la,
         cellLon:e.lo,
         season:e.se||'',
-        periods:e.p!=null?[{pct:e.p,isCurrent:true,label:'current'}]:[]
+        periods:e.p!=null?[{pct:e.p,isCurrent:true,label:'current'}]:[],
+        noData:e.n===1,
+        exitReason:e.x||undefined
       };
     }else{
       window.__probDataBySpecies[name]=e;
@@ -10776,7 +10796,10 @@ function __schedulePersistProbCache(){
             if(d.periods[i].isCurrent){currentPct=d.periods[i].pct;break;}
           }
         }
-        compact[name]={c:d.computedAt,s:d.overallScore,p:currentPct,la:d.cellLat,lo:d.cellLon,se:d.season||''};
+        var _ce={c:d.computedAt,s:d.overallScore,p:currentPct,la:d.cellLat,lo:d.cellLon,se:d.season||''};
+        if(d.noData) _ce.n=1;
+        if(d.exitReason) _ce.x=d.exitReason;
+        compact[name]=_ce;
       });
       var _json=JSON.stringify(compact);
       localStorage.setItem(ENN_PROB_CACHE_KEY,_json);
@@ -11289,6 +11312,8 @@ var _ennScanAbort=false;
 function getCurrentProbScore(name){
   var probData=(window.__probDataBySpecies||{})[name];
   if(!probData||!probData.periods) return null;
+  // Scanned but no viable data (PROB-EXIT A/B/C)
+  if(probData.noData) return 0;
   for(var i=0;i<probData.periods.length;i++){
     if(probData.periods[i].isCurrent) return probData.periods[i].pct;
   }

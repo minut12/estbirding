@@ -9607,9 +9607,9 @@ var __sharedDefaults = {};
         '<button id="eluObsToggleBtn" style="font-size:11px;padding:2px 8px;border-radius:12px;border:1px solid #d1d5db;background:#f8fafc;color:#64748b;cursor:pointer" onclick="window.__toggleEluObsLayer()">' + (_eluObsToggleActive ? 'Peida obs' : 'Kuva obs') + '</button>' +
       '</div>' +
       '<div id="eluObsLegend" style="margin-top:4px;font-size:11px;color:#64748b;display:' + (_eluObsToggleActive ? 'flex' : 'none') + ';align-items:center;gap:6px;flex-wrap:wrap">' +
-        'Obs: <svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#1E7F3E" stroke="#0F3F1F" stroke-width="1"/></svg> native ' +
-        '<svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="#E88D2A" stroke="#8B4B11" stroke-width="1" stroke-dasharray="2 2"/></svg> resolved ' +
-        '<svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#2166AC" stroke="#0E3A61" stroke-width="1.5"/></svg> marker' +
+        'Obs: <svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="#ddd" stroke="#1E7F3E" stroke-width="2"/></svg> native ' +
+        '<svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="#ddd" stroke="#E88D2A" stroke-width="2" stroke-dasharray="2 2"/></svg> resolved ' +
+        '<svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="#ddd" stroke="#2166AC" stroke-width="2.5"/></svg> marker' +
       '</div>' +
     '</div>';
   mapWrap.appendChild(probPanel);
@@ -10268,6 +10268,24 @@ var __sharedDefaults = {};
   // --- Layer rendering ---
   var _eluObsLayerGroup = null;
 
+  // Ensure a custom pane for eElurikkus obs markers sits above the overlay pane
+  if (map && !map.getPane('eluObsPane')) {
+    map.createPane('eluObsPane');
+    map.getPane('eluObsPane').style.zIndex = 650; // above overlayPane (400) and shadowPane (500), below markerPane (600) default — actually above markerPane too
+  }
+
+  function _eluObsAvatarIcon(avatarUrl, borderColor, borderStyle, borderWidth, opacity, letter) {
+    var size = 26;
+    var bg = avatarUrl
+      ? "background-image:url('" + avatarUrl + "');background-size:cover;background-position:center"
+      : "background-color:#94a3b8;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff";
+    var html = '<div style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;border:' + borderWidth + 'px ' + borderStyle + ' ' + borderColor + ';' + bg + ';opacity:' + opacity.toFixed(2) + ';box-shadow:0 1px 4px rgba(0,0,0,0.25)">'
+      + (avatarUrl ? '' : (letter || '?'))
+      + '</div>';
+    var total = size + borderWidth * 2;
+    return L.divIcon({ html: html, className: '', iconSize: [total, total], iconAnchor: [total / 2, total / 2], popupAnchor: [0, -(total / 2 + 2)] });
+  }
+
   function clearEluObsLayer() {
     if (_eluObsLayerGroup) { map.removeLayer(_eluObsLayerGroup); _eluObsLayerGroup = null; }
   }
@@ -10285,10 +10303,15 @@ var __sharedDefaults = {};
       if (_lec && Array.isArray(_lec.items)) items = _lec.items;
     }
 
+    // Resolve avatar for this species (global getDisplayAvatar from main script block)
+    var avatarUrl = (typeof getDisplayAvatar === 'function') ? getDisplayAvatar(speciesName) : '';
+    var hasAvatar = !!(avatarUrl && avatarUrl.indexOf('placeholder') === -1);
+    var fallbackLetter = String(speciesName || '?').charAt(0).toUpperCase();
+
     _eluObsLayerGroup = L.layerGroup();
     var _now = Date.now();
     var _7dMs = 7 * 24 * 60 * 60 * 1000;
-    var stats = { native: 0, resolved: 0, marker: 0, skipped: 0, in7d: 0 };
+    var stats = { native: 0, resolved: 0, marker: 0, skipped: 0, in7d: 0, fallbackIcon: 0 };
 
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
@@ -10316,22 +10339,20 @@ var __sharedDefaults = {};
       var ageDays = (_now - _lTs) / 86400000;
       stats.in7d++;
       if (coordSource === 'native') stats.native++; else stats.resolved++;
+      if (!hasAvatar) stats.fallbackIcon++;
 
       var baseOpacity = coordSource === 'native' ? 0.85 : 0.65;
       var opacity = baseOpacity * (1 - 0.5 * (ageDays / 7));
-      var fillColor = coordSource === 'native' ? '#1E7F3E' : '#E88D2A';
-      var strokeColor = coordSource === 'native' ? '#0F3F1F' : '#8B4B11';
-      var radius = coordSource === 'native' ? 6 : 5;
-      var dashArray = coordSource === 'resolved' ? '3 3' : null;
+      var borderColor = coordSource === 'native' ? '#1E7F3E' : '#E88D2A';
+      var borderStyle = coordSource === 'resolved' ? 'dashed' : 'solid';
       var placeLabel = String(item.placeText || item.locality || item.municipality || item.county || '').trim();
       var dateFormatted = _lDate.replace(/^(\d{4})-(\d{2})-(\d{2}).*/, '$3.$2.$1');
       var sourceLabel = coordSource === 'native' ? 'Native coords' : 'Resolved from place: ' + placeLabel;
 
-      var markerOpts = { radius: radius, fillColor: fillColor, fillOpacity: opacity, color: strokeColor, weight: 1.5, opacity: opacity };
-      if (dashArray) markerOpts.dashArray = dashArray;
-      var cm = L.circleMarker([_lLat, _lLon], markerOpts);
-      cm.bindPopup('<div style="font-family:system-ui;font-size:12px"><b>' + dateFormatted + '</b><br>' + (placeLabel || '-') + '<br><span style="color:#94a3b8;font-size:11px">' + sourceLabel + '</span></div>');
-      _eluObsLayerGroup.addLayer(cm);
+      var icon = _eluObsAvatarIcon(hasAvatar ? avatarUrl : '', borderColor, borderStyle, 3, opacity, fallbackLetter);
+      var m = L.marker([_lLat, _lLon], { icon: icon, pane: 'eluObsPane' });
+      m.bindPopup('<div style="font-family:system-ui;font-size:12px"><b>' + dateFormatted + '</b><br>' + (placeLabel || '-') + '<br><span style="color:#94a3b8;font-size:11px">' + sourceLabel + '</span></div>');
+      _eluObsLayerGroup.addLayer(m);
     }
 
     // Add species marker point if it has native coords
@@ -10342,7 +10363,9 @@ var __sharedDefaults = {};
         var mAgeDays = (_now - _mTs) / 86400000;
         var mOpacity = 0.95 * (1 - 0.5 * (mAgeDays / 7));
         var mDateFmt = String(eluPoint.t || '').replace(/^(\d{4})-(\d{2})-(\d{2}).*/, '$3.$2.$1');
-        var mMarker = L.circleMarker([eluPoint.lat, eluPoint.lon], { radius: 7, fillColor: '#2166AC', fillOpacity: mOpacity, color: '#0E3A61', weight: 2, opacity: mOpacity });
+        var mIcon = _eluObsAvatarIcon(hasAvatar ? avatarUrl : '', '#2166AC', 'solid', 4, mOpacity, fallbackLetter);
+        if (!hasAvatar) stats.fallbackIcon++;
+        var mMarker = L.marker([eluPoint.lat, eluPoint.lon], { icon: mIcon, pane: 'eluObsPane' });
         mMarker.bindPopup('<div style="font-family:system-ui;font-size:12px"><b>' + mDateFmt + '</b><br>Marker point<br><span style="color:#94a3b8;font-size:11px">Native coords (detail page)</span></div>');
         _eluObsLayerGroup.addLayer(mMarker);
         stats.marker++;
@@ -10357,7 +10380,9 @@ var __sharedDefaults = {};
       resolved: stats.resolved,
       marker: stats.marker,
       skipped: stats.skipped,
-      in7d: stats.in7d
+      in7d: stats.in7d,
+      hasAvatarForSpecies: hasAvatar,
+      fallbackIconUsed: stats.fallbackIcon
     });
   }
 

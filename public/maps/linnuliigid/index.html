@@ -10607,15 +10607,21 @@ var __sharedDefaults = {};
       });
     }
     if (topCell && topCell.periods) {
+      var _mappedPeriods=topCell.periods.map(function(p){
+        return{label:p.label,pct:p.probability||1,count:p.obsCount||p.count||0,isCurrent:!!p.isCurrent};
+      });
+      var _bestP=null;
+      for(var _bpi2=0;_bpi2<_mappedPeriods.length;_bpi2++){
+        if(!_bestP||(_mappedPeriods[_bpi2].pct||0)>(_bestP.pct||0)) _bestP=_mappedPeriods[_bpi2];
+      }
       window.__probDataBySpecies[speciesName] = {
         computedAt: Date.now(),
         cellLat: (topCell.latMin + topCell.latMax) / 2,
         cellLon: (topCell.lonMin + topCell.lonMax) / 2,
         overallScore: topCell.probability,
         season: (seasonInfo && seasonInfo.label) || '',
-        periods: topCell.periods.map(function(p) {
-          return { label: p.label, pct: p.probability || 1, count: p.obsCount || p.count || 0, isCurrent: !!p.isCurrent };
-        })
+        periods: _mappedPeriods,
+        bestPeriod:(_bestP&&(_bestP.pct||0)>0)?{pct:_bestP.pct,label:_bestP.label}:null
       };
       if(typeof window.__schedulePersistProbCache==='function') window.__schedulePersistProbCache();
     }
@@ -10734,7 +10740,8 @@ var ENN_BADGE_CACHE_KEY = 'bm_enn_badges_v1';
         season:e.se||'',
         periods:e.p!=null?[{pct:e.p,isCurrent:true,label:'current'}]:[],
         noData:e.n===1,
-        exitReason:e.x||undefined
+        exitReason:e.x||undefined,
+        bestPeriod:(e.bp!=null)?{pct:e.bp,label:e.bl||'best'}:null
       };
     }else{
       window.__probDataBySpecies[name]=e;
@@ -10799,6 +10806,14 @@ function __schedulePersistProbCache(){
         var _ce={c:d.computedAt,s:d.overallScore,p:currentPct,la:d.cellLat,lo:d.cellLon,se:d.season||''};
         if(d.noData) _ce.n=1;
         if(d.exitReason) _ce.x=d.exitReason;
+        // Best period
+        var _best=d.bestPeriod||null;
+        if(!_best&&d.periods&&d.periods.length>1){
+          for(var _bi=0;_bi<d.periods.length;_bi++){
+            if(!_best||(d.periods[_bi].pct||0)>(_best.pct||0)) _best=d.periods[_bi];
+          }
+        }
+        if(_best&&(_best.pct||0)>0){_ce.bp=_best.pct;if(_best.label&&_best.label!=='current')_ce.bl=_best.label;}
         compact[name]=_ce;
       });
       var _json=JSON.stringify(compact);
@@ -10882,7 +10897,9 @@ window.__ennCachePushToCloud=async function(onProgress){
     var d=pd[n];
     var currentPct=null;
     if(d.periods&&d.periods.length){for(var i=0;i<d.periods.length;i++){if(d.periods[i].isCurrent){currentPct=d.periods[i].pct;break;}}}
-    return{species_name:n,computed_at:d.computedAt||Date.now(),score:d.overallScore||0,current_pct:currentPct,cell_lat:d.cellLat||null,cell_lon:d.cellLon||null,season:d.season||null,no_data:!!d.noData,exit_reason:d.exitReason||null};
+    var _bp=d.bestPeriod||null;
+    if(!_bp&&d.periods&&d.periods.length>1){var _bb=null;for(var _pi=0;_pi<d.periods.length;_pi++){if(!_bb||(d.periods[_pi].pct||0)>(_bb.pct||0))_bb=d.periods[_pi];}if(_bb&&(_bb.pct||0)>0)_bp={pct:_bb.pct,label:_bb.label};}
+    return{species_name:n,computed_at:d.computedAt||Date.now(),score:d.overallScore||0,current_pct:currentPct,cell_lat:d.cellLat||null,cell_lon:d.cellLon||null,season:d.season||null,no_data:!!d.noData,exit_reason:d.exitReason||null,best_period_pct:_bp?_bp.pct:null,best_period_label:_bp?_bp.label:null};
   });
 
   console.log('[enn-cache] pushing',rows.length,'species to cloud...');
@@ -10936,7 +10953,8 @@ window.__ennCachePullFromCloud=async function(){
         season:row.season,
         periods:row.current_pct!=null?[{pct:row.current_pct,isCurrent:true,label:'current'}]:[],
         noData:!!row.no_data,
-        exitReason:row.exit_reason
+        exitReason:row.exit_reason,
+        bestPeriod:(row.best_period_pct!=null)?{pct:row.best_period_pct,label:row.best_period_label||'best'}:null
       };
       applied++;
     });
@@ -11504,8 +11522,21 @@ function render(){
     ebLabel+='<span style="color:'+_elClr+';font-size:10px;margin-left:4px">'+_elTxt+'</span>';
     var pctHtml=hasScore?'<div class="ePct" style="color:'+pc+'">'+sc+'%</div>':
       '<div class="ePct" style="color:#cbd5e1">&mdash;</div><div class="eObs" style="color:#d97706;font-size:10px">Vajab skaneerimist</div>';
+    // Best period line
+    var _bpLine='';
+    var _bpd=(window.__probDataBySpecies||{})[s.name];
+    if(_bpd&&!_bpd.noData){
+      var _bpBest=_bpd.bestPeriod||null;
+      if(!_bpBest&&_bpd.periods&&_bpd.periods.length>1){
+        var _bpTop=null;for(var _bpi=0;_bpi<_bpd.periods.length;_bpi++){if(!_bpTop||(_bpd.periods[_bpi].pct||0)>(_bpTop.pct||0))_bpTop=_bpd.periods[_bpi];}
+        if(_bpTop&&(_bpTop.pct||0)>0) _bpBest={pct:_bpTop.pct,label:_bpTop.label};
+      }
+      if(_bpBest&&(_bpBest.pct||0)>0&&_bpBest.label&&_bpBest.label!=='current'&&_bpBest.label!=='best'){
+        _bpLine='<div style="color:#64748b;font-size:11px;margin-top:1px">Parim: '+_bpBest.label+' ('+_bpBest.pct+'%)</div>';
+      }
+    }
     h+='<div class="eR"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+
-      '<div class="eNm">'+nm+ebLabel+' <button class="ePrb" onclick="window.__ennProb(\''+escName+'\')">Prob</button></div><div class="eLt">'+sl+'</div>'+
+      '<div class="eNm">'+nm+ebLabel+' <button class="ePrb" onclick="window.__ennProb(\''+escName+'\')">Prob</button></div><div class="eLt">'+sl+_bpLine+'</div>'+
       '<div class="eBar"><div class="eBf" style="width:'+(hasScore?Math.min(100,sc):0)+'%;background:'+bc+'"></div></div>'+
       '</div><div class="eRt">'+pctHtml+'</div></div>';
   }

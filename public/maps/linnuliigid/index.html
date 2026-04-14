@@ -9574,6 +9574,10 @@ var __sharedDefaults = {};
     '@media(max-width:768px){#probInfoPanel{max-width:180px!important;font-size:11px!important;padding:10px 12px!important}}';
   document.head.appendChild(style);
 
+  // --- eElurikkus obs layer state (read before panel HTML build) ---
+  var _eluObsToggleActive = false;
+  try { _eluObsToggleActive = localStorage.getItem('bm_enn_show_elu_obs') === 'true'; } catch(_e) {}
+
   // --- Info panel (injected into #mapWrap) ---
   var mapWrap = document.getElementById('mapWrap');
   var probPanel = document.createElement('div');
@@ -9599,6 +9603,14 @@ var __sharedDefaults = {};
         '<span style="font-size:11px;background:#ecfdf5;color:#065f46;padding:2px 8px;border-radius:12px">GBIF</span>' +
       '</div>' +
       '<div id="probFetchStatus" style="font-size:11px;color:#94a3b8;margin-top:6px"></div>' +
+      '<div style="margin-top:6px;display:flex;align-items:center;gap:6px">' +
+        '<button id="eluObsToggleBtn" style="font-size:11px;padding:2px 8px;border-radius:12px;border:1px solid #d1d5db;background:#f8fafc;color:#64748b;cursor:pointer" onclick="window.__toggleEluObsLayer()">' + (_eluObsToggleActive ? 'Peida obs' : 'Kuva obs') + '</button>' +
+      '</div>' +
+      '<div id="eluObsLegend" style="margin-top:4px;font-size:11px;color:#64748b;display:' + (_eluObsToggleActive ? 'flex' : 'none') + ';align-items:center;gap:6px;flex-wrap:wrap">' +
+        'Obs: <svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#1E7F3E" stroke="#0F3F1F" stroke-width="1"/></svg> native ' +
+        '<svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="#E88D2A" stroke="#8B4B11" stroke-width="1" stroke-dasharray="2 2"/></svg> resolved ' +
+        '<svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#2166AC" stroke="#0E3A61" stroke-width="1.5"/></svg> marker' +
+      '</div>' +
     '</div>';
   mapWrap.appendChild(probPanel);
 
@@ -9606,6 +9618,20 @@ var __sharedDefaults = {};
   document.getElementById('probCloseBtn').addEventListener('click', function(){
     if(activeProbSpecies) toggleProbability(activeProbSpecies);
   });
+
+  window.__toggleEluObsLayer = function() {
+    _eluObsToggleActive = !_eluObsToggleActive;
+    try { localStorage.setItem('bm_enn_show_elu_obs', _eluObsToggleActive ? 'true' : 'false'); } catch(_e) {}
+    var btn = document.getElementById('eluObsToggleBtn');
+    if (btn) btn.textContent = _eluObsToggleActive ? 'Peida obs' : 'Kuva obs';
+    var legend = document.getElementById('eluObsLegend');
+    if (legend) legend.style.display = _eluObsToggleActive ? 'flex' : 'none';
+    if (_eluObsToggleActive && activeProbSpecies) {
+      renderElurikkusObservationsLayer(activeProbSpecies);
+    } else {
+      clearEluObsLayer();
+    }
+  };
 
   // --- Helpers ---
   var probLayerGroup = null;
@@ -10240,8 +10266,104 @@ var __sharedDefaults = {};
   }
 
   // --- Layer rendering ---
+  var _eluObsLayerGroup = null;
+
+  function clearEluObsLayer() {
+    if (_eluObsLayerGroup) { map.removeLayer(_eluObsLayerGroup); _eluObsLayerGroup = null; }
+  }
+
+  function renderElurikkusObservationsLayer(speciesName) {
+    clearEluObsLayer();
+    if (!_eluObsToggleActive) return;
+    var _eluKey = typeof _normalizeSpeciesKey === 'function' ? _normalizeSpeciesKey(speciesName) : String(speciesName || '').trim().toLowerCase();
+    var items = [];
+    var _pec = (typeof window.__probEluCache === 'object' && window.__probEluCache) ? window.__probEluCache[_eluKey] : null;
+    if (_pec && Array.isArray(_pec.items) && _pec.items.length > 0) {
+      items = _pec.items;
+    } else {
+      var _lec = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluKey]) || null;
+      if (_lec && Array.isArray(_lec.items)) items = _lec.items;
+    }
+
+    _eluObsLayerGroup = L.layerGroup();
+    var _now = Date.now();
+    var _7dMs = 7 * 24 * 60 * 60 * 1000;
+    var stats = { native: 0, resolved: 0, marker: 0, skipped: 0, in7d: 0 };
+
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var _lLat = Number(item.lat); var _lLon = Number(item.lon);
+      var coordSource = 'native';
+      if (!Number.isFinite(_lLat) || !Number.isFinite(_lLon)) {
+        var place = String(item.municipality || item.placeText || item.locality || item.county || '').trim();
+        var resolved = null;
+        if (place) {
+          if (typeof resolveCentroidFromPlace === 'function') resolved = resolveCentroidFromPlace(place);
+          if (!resolved && typeof resolveFallbackLatLon === 'function') resolved = resolveFallbackLatLon(place);
+        }
+        if (resolved && Number.isFinite(resolved.lat) && Number.isFinite(resolved.lon)) {
+          _lLat = resolved.lat; _lLon = resolved.lon;
+          coordSource = 'resolved';
+        } else {
+          stats.skipped++;
+          continue;
+        }
+      }
+      var _lDate = String(item.observedAt || item.eventDate || item.date || '');
+      if (!_lDate) { stats.skipped++; continue; }
+      var _lTs = (typeof _toDay === 'function') ? _toDay(_lDate) : Date.parse(_lDate);
+      if (!_lTs || _lTs <= 0 || (_now - _lTs) > _7dMs) continue;
+      var ageDays = (_now - _lTs) / 86400000;
+      stats.in7d++;
+      if (coordSource === 'native') stats.native++; else stats.resolved++;
+
+      var baseOpacity = coordSource === 'native' ? 0.85 : 0.65;
+      var opacity = baseOpacity * (1 - 0.5 * (ageDays / 7));
+      var fillColor = coordSource === 'native' ? '#1E7F3E' : '#E88D2A';
+      var strokeColor = coordSource === 'native' ? '#0F3F1F' : '#8B4B11';
+      var radius = coordSource === 'native' ? 6 : 5;
+      var dashArray = coordSource === 'resolved' ? '3 3' : null;
+      var placeLabel = String(item.placeText || item.locality || item.municipality || item.county || '').trim();
+      var dateFormatted = _lDate.replace(/^(\d{4})-(\d{2})-(\d{2}).*/, '$3.$2.$1');
+      var sourceLabel = coordSource === 'native' ? 'Native coords' : 'Resolved from place: ' + placeLabel;
+
+      var markerOpts = { radius: radius, fillColor: fillColor, fillOpacity: opacity, color: strokeColor, weight: 1.5, opacity: opacity };
+      if (dashArray) markerOpts.dashArray = dashArray;
+      var cm = L.circleMarker([_lLat, _lLon], markerOpts);
+      cm.bindPopup('<div style="font-family:system-ui;font-size:12px"><b>' + dateFormatted + '</b><br>' + (placeLabel || '-') + '<br><span style="color:#94a3b8;font-size:11px">' + sourceLabel + '</span></div>');
+      _eluObsLayerGroup.addLayer(cm);
+    }
+
+    // Add species marker point if it has native coords
+    var eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
+    if (Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon) && eluPoint.t) {
+      var _mTs = (typeof _toDay === 'function') ? _toDay(eluPoint.t) : Date.parse(eluPoint.t);
+      if (_mTs && _mTs > 0 && (_now - _mTs) <= _7dMs) {
+        var mAgeDays = (_now - _mTs) / 86400000;
+        var mOpacity = 0.95 * (1 - 0.5 * (mAgeDays / 7));
+        var mDateFmt = String(eluPoint.t || '').replace(/^(\d{4})-(\d{2})-(\d{2}).*/, '$3.$2.$1');
+        var mMarker = L.circleMarker([eluPoint.lat, eluPoint.lon], { radius: 7, fillColor: '#2166AC', fillOpacity: mOpacity, color: '#0E3A61', weight: 2, opacity: mOpacity });
+        mMarker.bindPopup('<div style="font-family:system-ui;font-size:12px"><b>' + mDateFmt + '</b><br>Marker point<br><span style="color:#94a3b8;font-size:11px">Native coords (detail page)</span></div>');
+        _eluObsLayerGroup.addLayer(mMarker);
+        stats.marker++;
+        stats.in7d++;
+      }
+    }
+
+    _eluObsLayerGroup.addTo(map);
+    console.debug('[ELU-OBS-LAYER]', speciesName, {
+      itemsTotal: items.length,
+      native: stats.native,
+      resolved: stats.resolved,
+      marker: stats.marker,
+      skipped: stats.skipped,
+      in7d: stats.in7d
+    });
+  }
+
   function clearProbabilityLayer() {
     if (probLayerGroup) { map.removeLayer(probLayerGroup); probLayerGroup = null; }
+    clearEluObsLayer();
   }
 
   function buildTemporalBreakdown(cell) {
@@ -10689,6 +10811,7 @@ var __sharedDefaults = {};
       }
 
       renderProbabilityOverlay(result.scored, speciesName, result.data.occurrences.length, result.seasonal.length, result.seasonInfo);
+      renderElurikkusObservationsLayer(speciesName);
       if (typeof render === 'function') render();
 
       var _eluKey = typeof _normalizeSpeciesKey === 'function' ? _normalizeSpeciesKey(speciesName) : String(speciesName || '').trim().toLowerCase();

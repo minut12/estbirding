@@ -9849,46 +9849,62 @@ var __sharedDefaults = {};
   function calculateProbabilities(gridCells, seasonal, allOccs, speciesName, cellSize, seasonInfo) {
     cellSize = cellSize || 0.15;
 
-    // Find max GBIF count across all cells for normalization (floor at 30 to prevent sparse species over-inflation)
-    var maxCellCount = 0;
-    gridCells.forEach(function(c) {
-      if (c.gbifCount > maxCellCount) maxCellCount = c.gbifCount;
-    });
-    var effectiveMaxGbif = Math.max(maxCellCount, 30);
+    // === Composite scoring (rebuilt 2026-04-14) ===
+    // Produces spread across 0–95 instead of saturating at 95 for every species.
+    // Three components: history (60w), freshness (35w), season (5w) × confidence.
 
-    // Find max eElurikkus count across all cells (floor at 10)
-    var maxEluCount = 0;
-    gridCells.forEach(function(c) {
-      if ((c.eluCount || 0) > maxEluCount) maxEluCount = c.eluCount;
-    });
-    var effectiveMaxElu = Math.max(maxEluCount, 10);
+    var HISTORY_WEIGHT = 60;
+    var FRESHNESS_WEIGHT = 35;
+    var SEASON_WEIGHT = 5;
 
-    // Max occurrence count for non-GBIF fallback
-    var maxOccCount = 0;
-    gridCells.forEach(function(c) { if (c.occurrences.length > maxOccCount) maxOccCount = c.occurrences.length; });
+    // --- A: Per-cell history density (log-normalized against species' own max) ---
+    var maxCellOcc = 0;
+    for (var _ai = 0; _ai < gridCells.length; _ai++) {
+      var _aoLen = (gridCells[_ai].occurrences || []).length;
+      if (_aoLen > maxCellOcc) maxCellOcc = _aoLen;
+    }
 
-    // eElurikkus marker data
-    var eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
-    var occ7 = Number.isFinite(eluPoint.occ7) ? eluPoint.occ7 : 0;
+    // --- B: Confidence dampening based on total data volume ---
+    // 500+ records → 1.0, 50 → ~0.63, 5 → ~0.29, floor at 0.3
+    var totalRecords = (allOccs || []).length;
+    var confidence = Math.max(0.3, Math.min(1.0, Math.log1p(totalRecords) / Math.log1p(500)));
 
-    // Build array of all recent eElurikkus observation locations (within 14 days)
-    // so freshness can apply to multiple cells, not just the single marker cell
-    var recentEluLocs = [];
-    var _now = Date.now();
-    var _14dMs = 14 * 24 * 60 * 60 * 1000;
-    // From main marker
-    if (Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon) && eluPoint.t) {
-      var _mTs = (typeof _toDay === 'function') ? _toDay(eluPoint.t) : Date.parse(eluPoint.t);
-      if (_mTs && _mTs > 0) {
-        var _mAge = (_now - _mTs) / (24 * 60 * 60 * 1000);
-        if (_mAge <= 14) recentEluLocs.push({ lat: eluPoint.lat, lon: eluPoint.lon, ageDays: _mAge });
+    // --- C: Season centrality per period ---
+    var periodTemplate = getSeasonPeriods(seasonInfo && seasonInfo.start, seasonInfo && seasonInfo.end);
+    // Pre-count total occurrences per period template slot across ALL cells
+    var periodTotalCounts = [];
+    for (var _ci = 0; _ci < periodTemplate.length; _ci++) periodTotalCounts.push(0);
+    for (var _oi = 0; _oi < (allOccs || []).length; _oi++) {
+      var _od = parseProbDate((allOccs[_oi] || {}).date || (allOccs[_oi] || {}).eventDate);
+      if (!_od) continue;
+      var _odoy = getDayOfYear(_od);
+      for (var _pi = 0; _pi < periodTemplate.length; _pi++) {
+        var _ps = getDayOfYear(periodTemplate[_pi].start);
+        var _pe = getDayOfYear(periodTemplate[_pi].end);
+        if (_odoy >= _ps && _odoy < _pe) { periodTotalCounts[_pi]++; break; }
       }
     }
-    // From live cache items (may have different locations with real coords)
-    // NOTE: most liveElurikkusBySpecies items are HTML-scraped and have no lat/lon.
-    // Multi-location freshness is limited to items that have real coordinates.
-    // Until eElurikkus exposes per-observation coords via API, freshness will
-    // primarily apply to the single main marker cell.
+    var maxPeriodTotal = Math.max.apply(null, periodTotalCounts.concat([1]));
+    // centrality: peak period = 1.0, edge = 0.3+
+    var periodCentrality = [];
+    for (var _pj = 0; _pj < periodTemplate.length; _pj++) {
+      periodCentrality.push(maxPeriodTotal > 0
+        ? 0.3 + 0.7 * (periodTotalCounts[_pj] / maxPeriodTotal)
+        : 0.3);
+    }
+
+    // --- D: Freshness — recent eElurikkus obs within 7 days, per cell ---
+    // Gather recent eElu locations (same logic as before, but 7-day window)
+    var eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
+    var recentEluLocs = [];
+    var _now = Date.now();
+    var _7dMs = 7 * 24 * 60 * 60 * 1000;
+    if (Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon) && eluPoint.t) {
+      var _mTs = (typeof _toDay === 'function') ? _toDay(eluPoint.t) : Date.parse(eluPoint.t);
+      if (_mTs && _mTs > 0 && (_now - _mTs) <= _7dMs) {
+        recentEluLocs.push({ lat: eluPoint.lat, lon: eluPoint.lon, ageDays: (_now - _mTs) / 86400000 });
+      }
+    }
     var _eluLiveKey = String(speciesName || '').trim().toLowerCase();
     var _eluLiveEntry = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluLiveKey]) || null;
     var _eluLiveItems = (_eluLiveEntry && Array.isArray(_eluLiveEntry.items)) ? _eluLiveEntry.items : [];
@@ -9901,100 +9917,110 @@ var __sharedDefaults = {};
     }
     for (var _li = 0; _li < _eluLiveItems.length; _li++) {
       var _lIt = _eluLiveItems[_li];
-      var _lLat = Number(_lIt.lat);
-      var _lLon = Number(_lIt.lon);
+      var _lLat = Number(_lIt.lat); var _lLon = Number(_lIt.lon);
       if (!Number.isFinite(_lLat) || !Number.isFinite(_lLon)) continue;
       var _lDate = String(_lIt.observedAt || _lIt.eventDate || _lIt.date || '');
       if (!_lDate) continue;
       var _lTs = (typeof _toDay === 'function') ? _toDay(_lDate) : Date.parse(_lDate);
-      if (!_lTs || _lTs <= 0) continue;
-      if (_now - _lTs > _14dMs) continue;
-      var _lAge = (_now - _lTs) / (24 * 60 * 60 * 1000);
-      recentEluLocs.push({ lat: _lLat, lon: _lLon, ageDays: _lAge });
+      if (!_lTs || _lTs <= 0 || (_now - _lTs) > _7dMs) continue;
+      recentEluLocs.push({ lat: _lLat, lon: _lLon, ageDays: (_now - _lTs) / 86400000 });
     }
 
-    // Season timing bonus
-    var seasonBonus = 5;
+    // --- E: Score each cell, each period ---
+    var nowMs = Date.now();
 
-    // Temporal periods from data-derived season
-    var periodTemplate = getSeasonPeriods(seasonInfo && seasonInfo.start, seasonInfo && seasonInfo.end);
-
-    gridCells.forEach(function(cell) {
+    gridCells.forEach(function(cell, cellIdx) {
       if (!Number.isFinite(cell.centerLat)) {
         cell.centerLat = (cell.latMin + cell.latMax) / 2;
         cell.centerLon = (cell.lonMin + cell.lonMax) / 2;
       }
       if (!Number.isFinite(cell.gbifCount)) cell.gbifCount = 0;
 
-      // 1. Historical (GBIF 20pts + eElurikkus 15pts) — up to 35%
-      var gbifScore = 0;
-      var eluScore = 0;
-      if (maxCellCount > 0 && cell.gbifCount > 0) {
-        gbifScore = Math.round((Math.log1p(cell.gbifCount) / Math.log1p(effectiveMaxGbif)) * 20);
-      }
-      if (maxEluCount > 0 && (cell.eluCount || 0) > 0) {
-        eluScore = Math.round((Math.log1p(cell.eluCount) / Math.log1p(effectiveMaxElu)) * 15);
-      }
-      var historicalScore = Math.min(35, gbifScore + eluScore);
+      // Cell-level history pct (0..1): log-normalized against species max
+      var cellOccCount = (cell.occurrences || []).length;
+      var histPct = maxCellOcc > 0 ? Math.log1p(cellOccCount) / Math.log1p(maxCellOcc) : 0;
 
-      // 2. Freshness — the KEY signal, up to 55%
-      // Check ALL recent eElurikkus observation locations against this cell
-      // Smooth linear decay: age 0 → 55pts, age 7 → 27pts, age 14 → 0pts
-      var freshnessScore = 0;
+      // Cell-level freshness pct (0..1): check if any recent eElu obs fall in this cell
+      var freshPct = 0;
       var markerInCell = false;
       for (var _ri = 0; _ri < recentEluLocs.length; _ri++) {
         var _rl = recentEluLocs[_ri];
         if (_rl.lat >= cell.latMin && _rl.lat < cell.latMax &&
             _rl.lon >= cell.lonMin && _rl.lon < cell.lonMax) {
           markerInCell = true;
-          var _fs = Math.max(0, Math.round(55 * (1 - _rl.ageDays / 14)));
-          if (_fs > freshnessScore) freshnessScore = _fs;
+          // Linear decay: 0 days → 1.0, 7 days → 0.0
+          var _fp = Math.max(0, 1 - _rl.ageDays / 7);
+          if (_fp > freshPct) freshPct = _fp;
         }
       }
 
-      // 3. Season timing — up to +5%
-      var seasonBonusCell = seasonBonus;
-      try {
-        var now = new Date();
-        var sStart = seasonInfo && seasonInfo.start;
-        var sEnd = seasonInfo && seasonInfo.end;
-        if (sStart && sEnd) {
-          var seasonMid = new Date((sStart.getTime() + sEnd.getTime()) / 2);
-          var daysToPeak = Math.abs((now - seasonMid) / 86400000);
-          seasonBonusCell = daysToPeak < 10 ? 5 : (daysToPeak < 20 ? 3 : 0);
+      // Count this cell's obs per period for period-local history
+      var cellPeriodCounts = [];
+      for (var _cpi = 0; _cpi < periodTemplate.length; _cpi++) cellPeriodCounts.push(0);
+      for (var _coi = 0; _coi < (cell.occurrences || []).length; _coi++) {
+        var _cod = parseProbDate((cell.occurrences[_coi] || {}).date || (cell.occurrences[_coi] || {}).eventDate);
+        if (!_cod) continue;
+        var _codoy = getDayOfYear(_cod);
+        for (var _cpj = 0; _cpj < periodTemplate.length; _cpj++) {
+          var _cps = getDayOfYear(periodTemplate[_cpj].start);
+          var _cpe = getDayOfYear(periodTemplate[_cpj].end);
+          if (_codoy >= _cps && _codoy < _cpe) { cellPeriodCounts[_cpj]++; break; }
         }
-      } catch(e) {}
+      }
+      var maxCellPeriod = Math.max.apply(null, cellPeriodCounts.concat([1]));
 
-      // Combine
-      var prob = historicalScore + freshnessScore + seasonBonusCell;
+      // Build periods for this cell
+      var cellPeriods = [];
+      for (var pk = 0; pk < periodTemplate.length; pk++) {
+        var central = periodCentrality[pk] || 0.3;
+        var isCurrentPeriod = (nowMs >= periodTemplate[pk].start.getTime() && nowMs < periodTemplate[pk].end.getTime());
 
-      // Cells with zero GBIF, zero eElurikkus, AND no significant freshness get minimum
-      if (cell.gbifCount === 0 && (cell.eluCount || 0) === 0 && freshnessScore === 0) {
-        prob = Math.min(prob, 5);
+        // Period-local history: blend species-wide cell rank (60%) with period-specific density (40%)
+        var localPeriodPct = maxCellPeriod > 0 ? cellPeriodCounts[pk] / maxCellPeriod : 0;
+        var histBlended = 0.6 * histPct + 0.4 * localPeriodPct;
+
+        // Freshness only applies to the current period
+        var periodFresh = isCurrentPeriod ? freshPct : 0;
+
+        // Composite: weighted sum × confidence
+        var rawScore = (HISTORY_WEIGHT * histBlended +
+                        FRESHNESS_WEIGHT * periodFresh +
+                        SEASON_WEIGHT * central) * confidence;
+
+        var score = Math.max(1, Math.min(95, Math.round(rawScore)));
+
+        cellPeriods.push({
+          label: periodTemplate[pk].label,
+          start: periodTemplate[pk].start,
+          end: periodTemplate[pk].end,
+          count: cellPeriodCounts[pk],
+          probability: score,
+          isCurrent: isCurrentPeriod,
+          obsCount: cellPeriodCounts[pk]
+        });
       }
 
-      cell.probability = Math.max(1, Math.min(95, prob));
-      cell.scoreHistory = historicalScore;
-      cell.scoreHistoryGbif = gbifScore;
-      cell.scoreHistoryElu = eluScore;
-      cell.scoreRecency = freshnessScore;
-      cell.scoreSeason = seasonBonusCell;
+      cell.periods = cellPeriods;
       cell.markerInCell = markerInCell;
+      cell.periodConfidence = confidence;
 
-      // Temporal periods
-      assignRecordsToPeriods(cell, periodTemplate);
-      calculatePeriodProbabilities(cell, eluPoint, cellSize);
-
-      // Use current period's score as headline probability (reflects NOW, not season average)
-      cell.seasonProbability = cell.probability; // preserve season score
-      if (cell.periods) {
-        for (var _cp = 0; _cp < cell.periods.length; _cp++) {
-          if (cell.periods[_cp].isCurrent && cell.periods[_cp].probability > 1) {
-            cell.probability = cell.periods[_cp].probability;
-            break;
-          }
+      // Headline probability: use current period if available, else max across periods
+      var headlineProb = 1;
+      for (var _hp = 0; _hp < cellPeriods.length; _hp++) {
+        if (cellPeriods[_hp].isCurrent && cellPeriods[_hp].probability > 1) {
+          headlineProb = cellPeriods[_hp].probability;
+          break;
         }
       }
+      if (headlineProb <= 1 && cellPeriods.length > 0) {
+        headlineProb = Math.max.apply(null, cellPeriods.map(function(p) { return p.probability; }));
+      }
+      cell.probability = headlineProb;
+
+      // Diagnostic fields (for [PROB-SCORE] log)
+      cell.scoreHistory = Math.round(histPct * HISTORY_WEIGHT * confidence);
+      cell.scoreRecency = Math.round(freshPct * FRESHNESS_WEIGHT * confidence);
+      cell.scoreSeason = Math.round((periodCentrality[0] || 0.3) * SEASON_WEIGHT * confidence);
     });
 
     return gridCells;
@@ -10498,26 +10524,20 @@ var __sharedDefaults = {};
       if(topCell.periods){ for(var _dpi=0;_dpi<topCell.periods.length;_dpi++){ if(topCell.periods[_dpi].isCurrent) _currentPeriod=topCell.periods[_dpi]; } }
       var _allProbs = scored.map(function(c){return c.probability;});
       console.log('[PROB-SCORE]', speciesName, {
+        totalRecords: (allOccs||[]).length,
+        confidence: topCell.periodConfidence,
         totalCells: scored.length,
+        topCellScore: topCell.probability,
         topCell: {
-          lat: ((topCell.latMin+topCell.latMax)/2).toFixed(3),
-          lon: ((topCell.lonMin+topCell.lonMax)/2).toFixed(3),
-          gbifCount: topCell.gbifCount,
-          eluCount: topCell.eluCount||0,
-          historicalScore: topCell.scoreHistory,
-          gbifPart: topCell.scoreHistoryGbif,
-          eluPart: topCell.scoreHistoryElu,
-          freshnessScore: topCell.scoreRecency,
-          seasonScore: topCell.scoreSeason,
-          markerInCell: topCell.markerInCell,
-          cellProbability: topCell.probability,
-          periodConfidence: topCell.periodConfidence
+          historyPts: topCell.scoreHistory,
+          freshnessPts: topCell.scoreRecency,
+          seasonPts: topCell.scoreSeason,
+          markerInCell: topCell.markerInCell
         },
         currentPeriod: _currentPeriod ? {
           label: _currentPeriod.label,
           count: _currentPeriod.obsCount||_currentPeriod.count||0,
-          probability: _currentPeriod.probability,
-          isCurrent: true
+          probability: _currentPeriod.probability
         } : null,
         allCellStats: {
           avgProb: Math.round(_allProbs.reduce(function(s,v){return s+v;},0)/_allProbs.length),
@@ -11100,10 +11120,10 @@ function render(){
     if(currentScore===null) currentScore=getCurrentProbScore(clean);
     if(currentScore!==null) cachedCount++;
     var springDate=getSpringDate(n,dates)||getSpringDate(clean,dates)||'';
-    var ebirdBoost=occ7Ebird>0?Math.min(15,Math.round(Math.log1p(occ7Ebird)*5)):0;
-    var eluBoost=occ7Elu>0?Math.min(15,Math.round(Math.log1p(occ7Elu)*4)):0;
+    var ebirdBoost=occ7Ebird>0?Math.min(5,Math.round(Math.log1p(occ7Ebird))):0;
+    var eluBoost=occ7Elu>0?Math.min(5,Math.round(Math.log1p(occ7Elu))):0;
     var boost=ebirdBoost+eluBoost;
-    var finalScore=currentScore!==null?Math.min(99,currentScore+boost):null;
+    var finalScore=currentScore!==null?Math.min(95,currentScore+boost):null;
     if(finalScore!==null&&finalScore>=80){console.log('[PROB-FINAL]',n,{currentScore:currentScore,ebirdBoost:ebirdBoost,eluBoost:eluBoost,boost:boost,finalScore:finalScore});}
     var ebirdScanned=p.occ7EbirdUpdated!=null;
     var eluScanned=p.occ7Elu!=null||_srcLo.indexOf('elurikkus')!==-1;

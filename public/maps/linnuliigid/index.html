@@ -10595,7 +10595,7 @@ var __sharedDefaults = {};
           return { label: p.label, pct: p.probability || 1, count: p.obsCount || p.count || 0, isCurrent: !!p.isCurrent };
         })
       };
-      if(typeof __schedulePersistProbCache==='function') __schedulePersistProbCache();
+      if(typeof window.__schedulePersistProbCache==='function') window.__schedulePersistProbCache();
     }
 
     return { scored: scored, data: data, seasonInfo: seasonInfo, seasonal: seasonal, probCellSize: probCellSize };
@@ -10692,7 +10692,7 @@ var ENN_BADGE_CACHE_KEY = 'bm_enn_badges_v1';
 // Restore prob data from localStorage
 (function(){try{
   var raw=localStorage.getItem(ENN_PROB_CACHE_KEY);
-  if(!raw) return;
+  if(!raw){console.log('[enn-cache] prob: no stored cache');return;}
   var parsed=JSON.parse(raw);
   if(!parsed||typeof parsed!=='object') return;
   var now=Date.now(),restored=0,expired=0;
@@ -10709,7 +10709,7 @@ var ENN_BADGE_CACHE_KEY = 'bm_enn_badges_v1';
 // Restore badge data (occ7Ebird/occ7Elu) from localStorage
 (function(){try{
   var raw=localStorage.getItem(ENN_BADGE_CACHE_KEY);
-  if(!raw) return;
+  if(!raw){console.log('[enn-cache] badges: no stored cache');return;}
   var parsed=JSON.parse(raw);
   if(!parsed||typeof parsed!=='object') return;
   var now=Date.now(),restored=0,expired=0;
@@ -10736,7 +10736,9 @@ function __schedulePersistProbCache(){
   __persistProbTimer=setTimeout(function(){
     __persistProbTimer=null;
     try{
-      localStorage.setItem(ENN_PROB_CACHE_KEY,JSON.stringify(window.__probDataBySpecies));
+      var _json=JSON.stringify(window.__probDataBySpecies);
+      localStorage.setItem(ENN_PROB_CACHE_KEY,_json);
+      console.log('[enn-cache] prob persisted:',(_json.length/1024).toFixed(1),'KB,',Object.keys(window.__probDataBySpecies).length,'species');
     }catch(err){
       try{
         var compact={},now=Date.now();
@@ -10762,10 +10764,17 @@ function __schedulePersistBadgeCache(){
         if(p.occ7EluUpdated){entry.occ7EluUpdated=p.occ7EluUpdated;has=true;}
         if(has) compact[name]=entry;
       });
-      localStorage.setItem(ENN_BADGE_CACHE_KEY,JSON.stringify(compact));
+      var _bjson=JSON.stringify(compact);
+      localStorage.setItem(ENN_BADGE_CACHE_KEY,_bjson);
+      console.log('[enn-cache] badges persisted:',(_bjson.length/1024).toFixed(1),'KB,',Object.keys(compact).length,'species');
     }catch(err){console.warn('[enn-cache] badge persist failed:',err);}
   },2000);
 }
+
+// Expose persist functions globally (called from other IIFEs/scopes)
+window.__schedulePersistProbCache = __schedulePersistProbCache;
+window.__schedulePersistBadgeCache = __schedulePersistBadgeCache;
+window.ENN_CACHE_TTL_MS = ENN_CACHE_TTL_MS;
 
 // Debug helpers
 window.__ennCacheStats=function(){
@@ -11457,7 +11466,7 @@ window.__scanEnnAll=async function(btn,opts){
 
       // Skip if cached prob data is fresh (< 12h old) and not force-rescanning
       var _existing=(window.__probDataBySpecies||{})[name];
-      if(!forceRescan&&_existing&&_existing.computedAt&&Date.now()-_existing.computedAt<ENN_CACHE_TTL_MS){
+      if(!forceRescan&&_existing&&_existing.computedAt&&Date.now()-_existing.computedAt<(window.ENN_CACHE_TTL_MS||43200000)){
         scanSkipped++;
         if(scanSkipped%20===1) console.log('[SCAN] cache hit',name,'age:',Math.round((Date.now()-_existing.computedAt)/60000),'min');
         continue;
@@ -11485,7 +11494,7 @@ window.__scanEnnAll=async function(btn,opts){
             }
             if(ebResult.t) ep.t=ebResult.t;
             ep.src='eBird';ep.lastFetched=ebResult.lastFetched;
-            if(typeof __schedulePersistBadgeCache==='function') __schedulePersistBadgeCache();
+            if(typeof window.__schedulePersistBadgeCache==='function') window.__schedulePersistBadgeCache();
           }
         }
       }catch(ebErr){console.warn('[SCAN-EBIRD] error',name,ebErr);}

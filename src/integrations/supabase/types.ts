@@ -127,6 +127,8 @@ export type Database = {
       }
       ennustus_cache: {
         Row: {
+          best_period_label: string | null
+          best_period_pct: number | null
           cell_lat: number | null
           cell_lon: number | null
           computed_at: number
@@ -140,6 +142,8 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          best_period_label?: string | null
+          best_period_pct?: number | null
           cell_lat?: number | null
           cell_lon?: number | null
           computed_at: number
@@ -153,6 +157,8 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          best_period_label?: string | null
+          best_period_pct?: number | null
           cell_lat?: number | null
           cell_lon?: number | null
           computed_at?: number

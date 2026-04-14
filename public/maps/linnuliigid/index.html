@@ -11292,7 +11292,8 @@ function getCurrentProbScore(name){
   for(var i=0;i<probData.periods.length;i++){
     if(probData.periods[i].isCurrent) return probData.periods[i].pct;
   }
-  return null;
+  // Scanned but no current period (out of season) — return 1 to distinguish from unscanned
+  return 1;
 }
 
 function isOnMap(name,pts){

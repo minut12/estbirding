@@ -3009,6 +3009,135 @@ function extractElurikkusRecordRows(html){
   }
   return out;
 }
+// --- Detail-page coordinate enrichment for probability (page 1 only) ---
+async function enrichElurikkusItemsWithDetailCoords(speciesName, options) {
+  options = options || {};
+  var maxItems = Math.max(1, Math.min(60, Number(options.maxItems || 50)));
+  var concurrency = 3;
+  var minSpacingMs = 250;
+  var perFetchTimeoutMs = 8000;
+
+  var searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(speciesName);
+  var searchHtml;
+  try {
+    searchHtml = await tryFetch(_withCacheBuster(searchUrl));
+  } catch(e) {
+    console.warn('[ENRICH-ELU] search fetch failed for', speciesName, e);
+    return [];
+  }
+  var rows = (typeof extractElurikkusRecordRows === 'function') ? extractElurikkusRecordRows(searchHtml) : [];
+  if (!rows.length) {
+    console.log('[ENRICH-ELU]', speciesName, 'no rows on page 1');
+    return [];
+  }
+  rows = rows.slice(0, maxItems);
+
+  var detailUrls = [];
+  try {
+    var doc = new DOMParser().parseFromString(searchHtml, 'text/html');
+    var trs = doc.querySelectorAll('table tbody tr');
+    for (var i = 0; i < trs.length && i < rows.length; i++) {
+      var a = trs[i].querySelector('a[href*="/app/occurrences/occurrence/"]');
+      detailUrls.push(a ? _absElurikkusUrl(a.getAttribute('href')) : '');
+    }
+  } catch(e) {
+    console.warn('[ENRICH-ELU] href parse failed', e);
+  }
+
+  var enriched = new Array(rows.length);
+  var lastFetchAt = 0;
+  var nextIdx = 0;
+  var stats = { withDetailCoords: 0, restricted: 0, missing: 0, hadCoordsAlready: 0 };
+
+  function _wait(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+
+  async function processOne(idx) {
+    var row = rows[idx];
+    if (Number.isFinite(Number(row.lat)) && Number.isFinite(Number(row.lon))) {
+      enriched[idx] = Object.assign({}, row, { lat: Number(row.lat), lon: Number(row.lon), coordsStatus: 'public', _enrichSource: 'row' });
+      stats.hadCoordsAlready++;
+      return;
+    }
+    var url = detailUrls[idx];
+    if (!url) {
+      enriched[idx] = Object.assign({}, row, { coordsStatus: 'missing', _enrichSource: 'no-url' });
+      stats.missing++;
+      return;
+    }
+    var sinceLast = Date.now() - lastFetchAt;
+    if (sinceLast < minSpacingMs) await _wait(minSpacingMs - sinceLast);
+    lastFetchAt = Date.now();
+
+    var ctrl = new AbortController();
+    var t = setTimeout(function(){ try{ ctrl.abort('timeout'); }catch(e){} }, perFetchTimeoutMs);
+    try {
+      var html = await tryFetch(_withCacheBuster(url), { signal: ctrl.signal });
+      clearTimeout(t);
+      if (/Koordinaadid peidetud|Coordinates hidden|Restricted/i.test(html)) {
+        enriched[idx] = Object.assign({}, row, { coordsStatus: 'restricted', _enrichSource: 'detail-restricted', _detailUrl: url });
+        stats.restricted++;
+        return;
+      }
+      var parsed = (typeof parseEluDetailExact === 'function') ? parseEluDetailExact(html) : null;
+      if (parsed && Number.isFinite(parsed.lat) && Number.isFinite(parsed.lon)) {
+        enriched[idx] = Object.assign({}, row, {
+          lat: parsed.lat,
+          lon: parsed.lon,
+          coordsStatus: 'public',
+          _enrichSource: 'detail',
+          _detailUrl: url,
+          municipality: row.municipality || parsed.municipality || '',
+          locality: row.locality || parsed.locality || '',
+          county: row.county || parsed.county || ''
+        });
+        stats.withDetailCoords++;
+        return;
+      }
+      enriched[idx] = Object.assign({}, row, { coordsStatus: 'missing', _enrichSource: 'detail-noparse', _detailUrl: url });
+      stats.missing++;
+    } catch(e) {
+      clearTimeout(t);
+      enriched[idx] = Object.assign({}, row, { coordsStatus: 'missing', _enrichSource: 'detail-error', _detailUrl: url, _err: String(e && e.message || e) });
+      stats.missing++;
+    }
+  }
+
+  async function worker() {
+    while (true) {
+      var idx = nextIdx++;
+      if (idx >= rows.length) return;
+      await processOne(idx);
+    }
+  }
+  var workers = [];
+  for (var w = 0; w < concurrency; w++) workers.push(worker());
+  await Promise.all(workers);
+
+  var out = enriched.filter(Boolean);
+  console.log('[ENRICH-ELU]', speciesName, {
+    requested: rows.length,
+    returned: out.length,
+    withDetailCoords: stats.withDetailCoords,
+    restricted: stats.restricted,
+    missing: stats.missing,
+    hadCoordsAlready: stats.hadCoordsAlready
+  });
+  return out;
+}
+
+window.__enrichedEluCache = window.__enrichedEluCache || {};
+async function getEnrichedElurikkusItems(speciesName, options) {
+  var key = (typeof _normalizeSpeciesKey === 'function') ? _normalizeSpeciesKey(speciesName) : String(speciesName).toLowerCase();
+  var cached = window.__enrichedEluCache[key];
+  var ttlMs = 12 * 60 * 60 * 1000;
+  if (cached && (Date.now() - cached.at < ttlMs) && !(options && options.force)) {
+    return cached.items;
+  }
+  var items = await enrichElurikkusItemsWithDetailCoords(speciesName, options);
+  window.__enrichedEluCache[key] = { at: Date.now(), items: items };
+  return items;
+}
+
 async function _fetchElurikkusSpeciesViaHtml(speciesName){
   const t0 = performance.now();
   const url = _withCacheBuster("https://elurikkus.ee/app/occurrences/search?text=" + encodeURIComponent(speciesName));
@@ -10951,6 +11080,28 @@ var __sharedDefaults = {};
         } catch(_eluErr) {
           console.warn('[PROB] eElurikkus paginated fetch failed for', speciesName, _eluErr);
         }
+      }
+    }
+
+    // Enrich first-page items with detail-page coordinates for accurate freshness scoring
+    if (!window.__applyingSnapshot && typeof getEnrichedElurikkusItems === 'function') {
+      try {
+        var enriched = await getEnrichedElurikkusItems(speciesName, { force: !!(options && options.force) });
+        if (enriched && enriched.length) {
+          window.__probEluCache = window.__probEluCache || {};
+          var pecKey = typeof _normalizeSpeciesKey === 'function' ? _normalizeSpeciesKey(speciesName) : String(speciesName).toLowerCase();
+          var prevPec = window.__probEluCache[pecKey] || {};
+          window.__probEluCache[pecKey] = {
+            fetchedAt: new Date().toISOString(),
+            dataMaxAt: prevPec.dataMaxAt || '',
+            items: enriched,
+            sourceUrl: prevPec.sourceUrl || ('https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(speciesName)),
+            _enriched: true
+          };
+          console.log('[PROB-ENRICH]', speciesName, 'replaced', (prevPec.items || []).length, 'items with', enriched.length, 'enriched items');
+        }
+      } catch(enrErr) {
+        console.warn('[PROB-ENRICH] enrichment failed for', speciesName, enrErr);
       }
     }
 

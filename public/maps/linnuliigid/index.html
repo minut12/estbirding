@@ -500,6 +500,13 @@ _loadBundledLinnuliigidSpecies().then(function(){
       }
     }
   } catch(e){}
+  // Propagate cached speciesMeta (scientificName + ebirdCode) to in-memory dicts
+  try {
+    var metaRaw = localStorage.getItem('estbirding.speciesMeta.v1');
+    if (metaRaw && typeof window.__bm_applySpeciesMetaToDicts === 'function') {
+      window.__bm_applySpeciesMetaToDicts(JSON.parse(metaRaw));
+    }
+  } catch(e){}
 });
 
 // Local storage keys
@@ -835,6 +842,32 @@ var SPECIES_EBIRD_CODES = {"Aed-põõsalind":"garwar1","Aed-roolind":"blrwar1","
   for(var k in SPECIES_EBIRD_CODES)delete SPECIES_EBIRD_CODES[k];
   Object.assign(SPECIES_EBIRD_CODES,c);
 })();
+
+// === Propagate speciesMeta scientificName + ebirdCode into in-memory dicts ===
+window.__bm_applySpeciesMetaToDicts = function(metaMap){
+  try {
+    if (!metaMap || typeof metaMap !== 'object') return;
+    var sciAdded = 0, codeAdded = 0;
+    for (var name in metaMap) {
+      if (!metaMap.hasOwnProperty(name)) continue;
+      var m = metaMap[name];
+      if (!m || typeof m !== 'object') continue;
+      var sci = (m.scientificName || '').trim();
+      var code = (m.ebirdCode || '').trim();
+      if (sci && (!SPECIES_SCINAMES[name] || SPECIES_SCINAMES[name] !== sci)) {
+        SPECIES_SCINAMES[name] = sci;
+        sciAdded++;
+      }
+      if (code && (!SPECIES_EBIRD_CODES[name] || SPECIES_EBIRD_CODES[name] !== code)) {
+        SPECIES_EBIRD_CODES[name] = code;
+        codeAdded++;
+      }
+    }
+    if (sciAdded || codeAdded) {
+      console.log('[customSpecies] applied meta to dicts:', { sciAdded: sciAdded, codeAdded: codeAdded });
+    }
+  } catch(e){ console.warn('[customSpecies] applySpeciesMetaToDicts failed', e); }
+};
 
 // One-time migration: bulk-import eBird codes into speciesMeta
 (function migrateEbirdCodesToSpeciesMeta() {
@@ -7863,6 +7896,20 @@ async function resolveGbifTaxonKey(species) {
 
   // 2. Look up scientific name from embedded table
   var sciName = SPECIES_SCINAMES[species];
+  // 2b. Fallback: check speciesMeta localStorage (for custom species)
+  if (!sciName) {
+    try {
+      var metaRaw = localStorage.getItem('estbirding.speciesMeta.v1');
+      if (metaRaw) {
+        var metaMap = JSON.parse(metaRaw);
+        var m = metaMap && metaMap[species];
+        if (m && typeof m.scientificName === 'string' && m.scientificName.trim()) {
+          sciName = m.scientificName.trim();
+          SPECIES_SCINAMES[species] = sciName;
+        }
+      }
+    } catch(_){}
+  }
   if (sciName) {
     try {
       var url = 'https://api.gbif.org/v1/species/match?name='
@@ -9443,6 +9490,9 @@ var __sharedDefaults = {};
         }
         var mergedMeta = Object.assign({}, currentMeta, normalizedMeta);
         localStorage.setItem('estbirding.speciesMeta.v1', JSON.stringify(mergedMeta));
+        if (typeof window.__bm_applySpeciesMetaToDicts === 'function') {
+          window.__bm_applySpeciesMetaToDicts(mergedMeta);
+        }
         render();
       }
       if(type === 'SPECIES_META_REQUEST'){

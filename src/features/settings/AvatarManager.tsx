@@ -31,6 +31,7 @@ import {
 } from '@/lib/speciesMetaCloud';
 import { addCustomSpecies, removeCustomSpecies, isCustomSpecies } from '@/lib/customSpecies';
 import { addCustomSpeciesToCloud, removeCustomSpeciesFromCloud, refreshCustomSpeciesFromCloud } from '@/lib/customSpeciesCloud';
+import { fetchEbirdTaxon } from '@/lib/ebirdTaxon';
 import { ET_STRINGS } from '@/lib/etStrings';
 import { normalizeUiText } from '@/lib/textNormalize';
 
@@ -50,6 +51,8 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
   const [syncStatus, setSyncStatus] = useState(() => getSpeciesMetaSyncStatus(scope));
   const [scopeMetadata, setScopeMetadata] = useState<SpeciesMetaLookupFallback>({});
   const [avatarsReady, setAvatarsReady] = useState(false);
+  const [scientificName, setScientificName] = useState('');
+  const [fetchingTaxon, setFetchingTaxon] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newSpeciesName, setNewSpeciesName] = useState('');
   const [bundledSpecies, setBundledSpecies] = useState<Set<string>>(new Set());
@@ -109,6 +112,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
       setPreview(null);
       setEbirdCode('');
       setRarityLevel('none');
+      setScientificName('');
       return;
     }
     const avatars = getMergedAvatars(scope);
@@ -118,6 +122,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     setCurrentAvatar(meta.avatarUrl || avatars[selected] || null);
     setEbirdCode(meta.ebirdCode || '');
     setRarityLevel(meta.rarityLevel || 'none');
+    setScientificName(meta.scientificName || '');
     setPreview(null);
   }, [scope, selected, scopeMetadata, avatarsReady]);
 
@@ -154,7 +159,8 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
       const patch = {
         ebirdCode: ebirdCode.trim(),
         rarityLevel,
-      } as const;
+        scientificName: scientificName.trim() || undefined,
+      };
       console.info('[avatar-manager] avatar upload start', { species: selected });
       const publicUrl = await uploadSharedAvatar(selected, preview, scope);
       console.info('[avatar-manager] avatar upload end', { species: selected, publicUrl });
@@ -178,7 +184,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     } finally {
       setSaving(false);
     }
-  }, [saving, scope, selected, preview, ebirdCode, rarityLevel]);
+  }, [saving, scope, selected, preview, ebirdCode, rarityLevel, scientificName]);
 
   const handleRemove = useCallback(async () => {
     if (!selected) return;
@@ -211,6 +217,28 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     }
   }, [scope]);
 
+  const handleFetchTaxon = useCallback(async () => {
+    const code = ebirdCode.trim();
+    if (!code) {
+      toast.warning('Sisesta esmalt eBird speciesCode');
+      return;
+    }
+    setFetchingTaxon(true);
+    try {
+      const taxon = await fetchEbirdTaxon(code);
+      if (taxon?.sciName) {
+        setScientificName(taxon.sciName);
+        toast.success(`Laadisin eBirdist: ${taxon.sciName}`);
+      } else {
+        toast.warning('eBirdist ei leitud — sisesta käsitsi');
+      }
+    } catch {
+      toast.warning('eBirdist ei leitud — sisesta käsitsi');
+    } finally {
+      setFetchingTaxon(false);
+    }
+  }, [ebirdCode]);
+
   const handleMetaSave = useCallback(() => {
     if (saving) return;
     if (!selected) {
@@ -218,15 +246,33 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
       return;
     }
     setSaving(true);
-    const patch = {
-      ebirdCode: ebirdCode.trim(),
-      rarityLevel,
-      avatarUrl: currentAvatar || undefined,
+
+    // Silent auto-fetch scientific name if missing but ebirdCode is set
+    const doSave = async () => {
+      let resolvedSciName = scientificName.trim();
+      if (!resolvedSciName && ebirdCode.trim()) {
+        try {
+          const taxon = await fetchEbirdTaxon(ebirdCode.trim());
+          if (taxon?.sciName) {
+            resolvedSciName = taxon.sciName;
+            setScientificName(resolvedSciName);
+          }
+        } catch {}
+      }
+
+      const patch = {
+        ebirdCode: ebirdCode.trim(),
+        rarityLevel,
+        avatarUrl: currentAvatar || undefined,
+        scientificName: resolvedSciName || undefined,
+      };
+      upsertSpeciesMeta(selected, patch, scope);
+      window.dispatchEvent(new CustomEvent('species-meta-updated'));
+      console.info('[avatar-manager] metadata-only save start', { species: selected, patch });
+      return patch;
     };
-    upsertSpeciesMeta(selected, patch, scope);
-    window.dispatchEvent(new CustomEvent('species-meta-updated'));
-    console.info('[avatar-manager] metadata-only save start', { species: selected, patch });
-    saveSpeciesMetaToCloud(selected, patch, scope)
+
+    doSave().then((patch) => saveSpeciesMetaToCloud(selected, patch, scope))
       .then(async () => {
         await refreshSpeciesMetaFromCloud({ force: true, scope }).catch(() => {});
         setLastSyncAt(localStorage.getItem(scope.speciesMetaLastSyncAtKey || SPECIES_META_LAST_SYNC_AT_KEY) || '');
@@ -244,7 +290,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
       .finally(() => {
         setSaving(false);
       });
-  }, [saving, scope, selected, ebirdCode, rarityLevel, currentAvatar]);
+  }, [saving, scope, selected, ebirdCode, rarityLevel, currentAvatar, scientificName]);
 
   const handleSyncNow = useCallback(async () => {
     setSyncing(true);
@@ -438,7 +484,6 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
           <div className="space-y-2">
             {selectedScopeMeta && (
               <div className="rounded-md border border-border bg-muted/20 p-3 text-xs space-y-1">
-                {selectedScopeMeta.scientificName && <div>Teaduslik nimi: {selectedScopeMeta.scientificName}</div>}
                 {selectedScopeMeta.rariliinCode && <div>3+3 kood: {selectedScopeMeta.rariliinCode}</div>}
                 {selectedScopeMeta.notificationNote && <div>Teate märkus: {selectedScopeMeta.notificationNote}</div>}
               </div>
@@ -450,6 +495,25 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
               value={ebirdCode}
               onChange={(e) => setEbirdCode(e.target.value)}
             />
+            <Label htmlFor="scientificName">Teaduslik nimi (ladina)</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="scientificName"
+                placeholder="nt Erithacus rubecula"
+                value={scientificName}
+                onChange={(e) => setScientificName(e.target.value)}
+                className="flex-1"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleFetchTaxon}
+                disabled={fetchingTaxon || !ebirdCode.trim()}
+                className="shrink-0 text-xs"
+              >
+                {fetchingTaxon ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Lae eBirdist'}
+              </Button>
+            </div>
             <Label htmlFor="rarityLevel">{ET_STRINGS.rarityLabel}</Label>
             <select
               id="rarityLevel"

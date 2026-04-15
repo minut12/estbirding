@@ -6792,6 +6792,18 @@ function _updateDebugPanel(){
   }catch(e){}
 }
 
+function _eluExtraScore(ex){
+  if(!ex || typeof ex !== 'object') return 0;
+  var keys = ['municipality','locality','county','districts','communes','eestiOmavalitsused','individualCount','behavior','collectors'];
+  var n = 0;
+  for(var i=0;i<keys.length;i++){
+    var v = ex[keys[i]];
+    if(v == null) continue;
+    if(typeof v === 'string' && v.trim() !== '') n++;
+    else if(typeof v === 'number' && Number.isFinite(v)) n++;
+  }
+  return n;
+}
 async function _applySnapshot(snap){
   if(!snap || !snap.points_json) return;
   if(window.__scanEnnAllRunning){
@@ -6852,6 +6864,11 @@ async function _applySnapshot(snap){
         if(_existing[_PRESERVE[_pi]] !== undefined && _existing[_PRESERVE[_pi]] !== null){
           _clientFields[_PRESERVE[_pi]] = _existing[_PRESERVE[_pi]];
         }
+      }
+      var _clientElu = _existing.eluExtra || null;
+      var _snapElu = snapPoint.eluExtra || null;
+      if(_eluExtraScore(_clientElu) > _eluExtraScore(_snapElu)){
+        _clientFields.eluExtra = _clientElu;
       }
       points[key] = Object.assign({}, snapPoint, _clientFields, { visible: (_existing.visible === false) ? false : true });
     }else{
@@ -7824,7 +7841,7 @@ function _prunePointsForStorage(pts) {
   var pruned = {};
   var KEEP = ['lat','lon','t','occ7','src','visible','rarity','migration','coords_status',
     'occ7Ebird','occ7EbirdUpdated','occ7Elu','occ7EluUpdated','lastFetched','clientScannedAt',
-    'ebirdCode','ebirdAuto','loc','openUrl','searchUrl','coords_source'];
+    'ebirdCode','ebirdAuto','loc','openUrl','searchUrl','coords_source','eluExtra'];
   for (var key in pts) {
     var p = pts[key];
     if (!p) continue;

@@ -8816,7 +8816,8 @@ var _eluObsLayerGroup = null;
 
 if (map && !map.getPane('eluObsPane')) {
   map.createPane('eluObsPane');
-  map.getPane('eluObsPane').style.zIndex = 650;
+  map.getPane('eluObsPane').style.zIndex = 700;
+  map.getPane('eluObsPane').style.pointerEvents = 'auto';
 }
 
 function _eluObsAvatarIcon(avatarUrl, borderColor, borderStyle, borderWidth, opacity, letter) {
@@ -8824,7 +8825,7 @@ function _eluObsAvatarIcon(avatarUrl, borderColor, borderStyle, borderWidth, opa
   var bg = avatarUrl
     ? "background-image:url('" + avatarUrl + "');background-size:cover;background-position:center"
     : "background-color:#94a3b8;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff";
-  var html = '<div style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;border:' + borderWidth + 'px ' + borderStyle + ' ' + borderColor + ';' + bg + ';opacity:' + opacity.toFixed(2) + ';box-shadow:0 1px 4px rgba(0,0,0,0.25)">'
+  var html = '<div style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;border:' + borderWidth + 'px ' + borderStyle + ' ' + borderColor + ';' + bg + ';opacity:' + opacity.toFixed(2) + ';box-shadow:0 1px 4px rgba(0,0,0,0.25);pointer-events:auto;cursor:pointer">'
     + (avatarUrl ? '' : (letter || '?'))
     + '</div>';
   var total = size + borderWidth * 2;
@@ -10775,12 +10776,25 @@ var __sharedDefaults = {};
 
       if (isInCell) {
         eluLine = '<div style="margin:2px 0;font-size:12px;color:#555">'
-          + '\uD83D\uDD0D eElurikkus: <b>marker in cell</b> \u00b7 '
-          + dateStr + ' \u00b7 ' + eluOcc7 + ' obs (7d)'
+          + '\uD83D\uDD0D eElurikkus in this cell: <b>' + (cell.eluCount || 0) + '</b> obs \u00b7 marker present ('
+          + dateStr + ', ' + eluOcc7 + ' obs in 7d)'
           + '</div>';
       } else {
+        var globalIn7d = 0;
+        try {
+          var _eluKey2 = String(speciesName).trim().toLowerCase();
+          var _entry = (window.__probEluCache || {})[_eluKey2] || (window.liveElurikkusBySpecies || {})[_eluKey2];
+          if (_entry && Array.isArray(_entry.items)) {
+            var _now2 = Date.now(), _7d2 = 7*24*60*60*1000;
+            for (var _i2 = 0; _i2 < _entry.items.length; _i2++) {
+              var _t2 = (typeof _toDay === 'function') ? _toDay(_entry.items[_i2].observedAt) : Date.parse(_entry.items[_i2].observedAt);
+              if (_t2 && (_now2 - _t2) <= _7d2) globalIn7d++;
+            }
+          }
+        } catch(e) {}
         eluLine = '<div style="margin:2px 0;font-size:12px;color:#999">'
-          + '\uD83D\uDD0D eElurikkus: 0 in cell \u00b7 marker ' + distKm + ' km away'
+          + '\uD83D\uDD0D eElurikkus in this cell: <b>0</b>'
+          + (globalIn7d > 0 ? (' \u00b7 ' + globalIn7d + ' obs elsewhere in last 7d (see green/orange markers)') : '')
           + '</div>';
       }
     } else {

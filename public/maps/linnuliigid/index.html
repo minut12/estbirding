@@ -2776,25 +2776,73 @@ function extractElurikkusRecordRows(html){
     if(thText.includes('date')) { t = tb; break; }
   }
   if(!t) t = tables[0];
+
+  // Detect column layout from header row
+  var placeColIdx = -1, dateColIdx = 0;
+  var ths = Array.from(t.querySelectorAll('thead th, thead td'));
+  if (!window.__eluParserDiagLogged && ths.length > 0) {
+    window.__eluParserDiagLogged = true;
+    console.debug('[ELU-PARSER-DIAG] header columns:', ths.length,
+      ths.map(function(c,i){ return i + ':' + (c.textContent || '').trim().substring(0,30); }));
+  }
+  for (var hi = 0; hi < ths.length; hi++) {
+    var hText = (ths[hi].textContent || '').trim().toLowerCase();
+    if (/koht|place|locality|asukoht/i.test(hText)) placeColIdx = hi;
+  }
+
   const rows = Array.from(t.querySelectorAll('tbody tr'));
   for(const tr of rows){
     const tds = Array.from(tr.querySelectorAll('td'));
     if(!tds.length) continue;
-    const txt0 = (tds[0].textContent || '').trim();
-    const m = txt0.match(/(\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?)/);
+
+    // Log first data row column structure once
+    if (!window.__eluParserDiagRowLogged) {
+      window.__eluParserDiagRowLogged = true;
+      console.debug('[ELU-PARSER-DIAG] columns in first row:', tds.length,
+        tds.map(function(c,i){ return i + ':' + (c.textContent || '').trim().substring(0,40); }));
+    }
+
+    // Find date in first few columns
+    var m = null;
+    var dateIdx = -1;
+    for (var di = 0; di < Math.min(tds.length, 3); di++) {
+      var dtxt = (tds[di].textContent || '').trim();
+      m = dtxt.match(/(\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?)/);
+      if (m) { dateIdx = di; break; }
+    }
     if(!m) continue;
-    const rowText = String(tr.textContent || '').replace(/\s+/g, ' ').trim();
-    const placeCell = (tds[tds.length - 1] && tds[tds.length - 1].textContent) ? String(tds[tds.length - 1].textContent).trim() : '';
-    const placeText = _extractPlaceHintFromText(placeCell || rowText || '');
-    const muniMatch = String(placeText || rowText || '').match(/([A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*(?:\s+[A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*)*\s+(?:vald|linn))/i);
-    const countyMatch = String(placeText || rowText || '').match(/([A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*(?:\s+[A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*)*\s+maakond)/i);
-    const muni = muniMatch ? String(muniMatch[1]).trim() : '';
+
+    // Extract place: use detected header column, or scan from right for place-like text
+    var rawPlace = '';
+    if (placeColIdx >= 0 && placeColIdx < tds.length) {
+      rawPlace = (tds[placeColIdx].textContent || '').trim();
+    } else {
+      // Heuristic: scan columns from right-to-left, skip short cells (observer initials, counts, behavior codes)
+      // Place names in Estonia typically contain: küla, vald, linn, maakond, or are >5 chars with spaces
+      for (var ci = tds.length - 1; ci > dateIdx; ci--) {
+        var cellText = (tds[ci].textContent || '').trim();
+        if (cellText.length > 5 && (/\s/.test(cellText) || /küla|vald|linn|maakond|järv|jõgi|mets|rand|laht|saar/i.test(cellText))) {
+          rawPlace = cellText;
+          break;
+        }
+      }
+      // If nothing found from right scan, try second-to-last column (often place before observer)
+      if (!rawPlace && tds.length >= 3) {
+        var stl = (tds[tds.length - 2].textContent || '').trim();
+        if (stl.length > 3) rawPlace = stl;
+      }
+    }
+
+    var placeText = _extractPlaceHintFromText(rawPlace);
+    var muniMatch = String(placeText || rawPlace || '').match(/([A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*(?:\s+[A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*)*\s+(?:vald|linn))/i);
+    var countyMatch = String(placeText || rawPlace || '').match(/([A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*(?:\s+[A-Za-z\u00c0-\u017f]+(?:-[A-Za-z\u00c0-\u017f]+)*)*\s+maakond)/i);
+    var muni = muniMatch ? String(muniMatch[1]).trim() : '';
     out.push({
       observedAt: m[1],
-      placeText: placeText || '',
+      placeText: placeText || rawPlace || '',
       municipality: muni || '',
-      locality: placeText || rowText || '',
-      county: countyMatch ? String(countyMatch[1]).trim() : (/maakond/i.test(placeText || '') ? placeText : ''),
+      locality: placeText || rawPlace || '',
+      county: countyMatch ? String(countyMatch[1]).trim() : '',
       coordsStatus: 'restricted'
     });
   }
@@ -10138,6 +10186,10 @@ var __sharedDefaults = {};
         var _lsEntry = _lsElu[_eluLiveKey] || _lsElu[speciesName] || null;
         if (_lsEntry && Array.isArray(_lsEntry.items)) _eluLiveItems = _lsEntry.items;
       } catch(_e) {}
+    }
+    if (_eluLiveItems.length === 0) {
+      var _pecFresh = (window.__probEluCache || {})[_eluLiveKey] || (window.__probEluCache || {})[speciesName] || null;
+      if (_pecFresh && Array.isArray(_pecFresh.items)) _eluLiveItems = _pecFresh.items;
     }
     var _freshEluStats = { withNativeCoords: 0, resolvedFromPlace: 0, stillSkipped: 0, contributed: 0 };
     for (var _li = 0; _li < _eluLiveItems.length; _li++) {

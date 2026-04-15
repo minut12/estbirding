@@ -919,6 +919,41 @@ function resolveFallbackLatLon(input){
   }
   return null;
 }
+var _resolvePlaceStats = { s1:0, s2:0, s3:0, s4:0, s5:0, s6:0, s7:0, s8:0, s9:0, fail:0 };
+function _stripPlaceSuffix(s) {
+  if (!s) return '';
+  return s.replace(/\s+(linn|küla|vald|alevik|alev|maakond|linnaosa|asula|asustusüksus|osavald)$/i, '').trim();
+}
+function resolvePlace(placeText, municipality, county) {
+  var r = null;
+  var pt = String(placeText || '').trim();
+  var mu = String(municipality || '').trim();
+  var co = String(county || '').trim();
+  var ptStripped = _stripPlaceSuffix(pt);
+  var muStripped = _stripPlaceSuffix(mu);
+  // Strategy 1: direct placeText
+  if (pt) { r = resolveCentroidFromPlace(pt); if (r) { _resolvePlaceStats.s1++; r._strategy = 'direct'; return r; } }
+  // Strategy 2: stripped placeText
+  if (ptStripped && ptStripped !== pt) { r = resolveCentroidFromPlace(ptStripped); if (r) { _resolvePlaceStats.s2++; r._strategy = 'stripped'; return r; } }
+  // Strategy 3: municipality as-is
+  if (mu && mu !== pt) { r = resolveCentroidFromPlace(mu); if (r) { _resolvePlaceStats.s3++; r._strategy = 'municipality'; return r; } }
+  // Strategy 4: municipality stripped
+  if (muStripped && muStripped !== mu && muStripped !== pt && muStripped !== ptStripped) { r = resolveCentroidFromPlace(muStripped); if (r) { _resolvePlaceStats.s4++; r._strategy = 'municipality-stripped'; return r; } }
+  // Strategy 5: county
+  if (co) { r = resolveCentroidFromPlace(co); if (r) { _resolvePlaceStats.s5++; r._strategy = 'county'; return r; } }
+  // Strategy 6: fallback resolver with placeText
+  if (pt) { r = resolveFallbackLatLon({ municipality: mu || pt, locality: pt, county: co }); if (r) { _resolvePlaceStats.s6++; r._strategy = 'fallback-place'; return r; } }
+  // Strategy 7: fallback with stripped
+  if (ptStripped && ptStripped !== pt) { r = resolveFallbackLatLon({ municipality: ptStripped, locality: ptStripped, county: co }); if (r) { _resolvePlaceStats.s7++; r._strategy = 'fallback-stripped'; return r; } }
+  // Strategy 8: fallback with municipality
+  if (mu) { r = resolveFallbackLatLon({ municipality: mu, locality: mu, county: co }); if (r) { _resolvePlaceStats.s8++; r._strategy = 'fallback-municipality'; return r; } }
+  // Strategy 9: fallback with county only
+  if (co) { r = resolveFallbackLatLon({ municipality: '', locality: '', county: co }); if (r) { _resolvePlaceStats.s9++; r._strategy = 'fallback-county'; return r; } }
+  _resolvePlaceStats.fail++;
+  return null;
+}
+window.__resolvePlaceStats = function(){ console.table(_resolvePlaceStats); return _resolvePlaceStats; };
+
 function _extractPlaceHintFromText(raw){
   const txt = String(raw || '').replace(/\s+/g, ' ').trim();
   if(!txt) return '';
@@ -8708,14 +8743,10 @@ function renderElurikkusObservationsLayer(speciesName) {
     var _diagCentroidResult = null;
     var _diagFallbackResult = null;
     if (!Number.isFinite(_lLat) || !Number.isFinite(_lLon)) {
-      var place = String(item.municipality || item.placeText || item.locality || item.county || '').trim();
+      var place = String(item.placeText || item.locality || item.municipality || item.county || '').trim();
       _diagPlaceUsed = place;
-      var resolved = null;
-      if (place) {
-        resolved = resolveCentroidFromPlace(place);
-        _diagCentroidResult = resolved;
-        if (!resolved) { resolved = resolveFallbackLatLon(place); _diagFallbackResult = resolved; }
-      }
+      var resolved = resolvePlace(place, item.municipality || '', item.county || '');
+      _diagCentroidResult = resolved;
       if (resolved && Number.isFinite(resolved.lat) && Number.isFinite(resolved.lon)) {
         _lLat = resolved.lat; _lLon = resolved.lon;
         coordSource = 'resolved';
@@ -8730,8 +8761,10 @@ function renderElurikkusObservationsLayer(speciesName) {
             locality: item.locality, county: item.county, coordsStatus: item.coordsStatus,
             nativeLatRaw: item.lat, nativeLonRaw: item.lon,
             nativeLatFinite: Number.isFinite(Number(item.lat)), nativeLonFinite: Number.isFinite(Number(item.lon)),
-            placeUsedForResolve: _diagPlaceUsed, resolveCentroidResult: _diagCentroidResult,
-            resolveFallbackResult: _diagFallbackResult, finalCoordSource: coordSource, skipReason: _diagSkipReason
+            placeUsedForResolve: _diagPlaceUsed, resolveResult: resolved,
+            resolveStrategy: resolved ? (resolved._strategy || 'unknown') : 'none',
+            strippedText: _stripPlaceSuffix(place),
+            finalCoordSource: coordSource, skipReason: _diagSkipReason
           });
           _diagItemIndex++;
         }
@@ -8750,8 +8783,10 @@ function renderElurikkusObservationsLayer(speciesName) {
         locality: item.locality, county: item.county, coordsStatus: item.coordsStatus,
         nativeLatRaw: item.lat, nativeLonRaw: item.lon,
         nativeLatFinite: Number.isFinite(Number(item.lat)), nativeLonFinite: Number.isFinite(Number(item.lon)),
-        placeUsedForResolve: _diagPlaceUsed, resolveCentroidResult: _diagCentroidResult,
-        resolveFallbackResult: _diagFallbackResult, finalCoordSource: coordSource, skipReason: null
+        placeUsedForResolve: _diagPlaceUsed, resolveResult: _diagCentroidResult,
+        resolveStrategy: _diagCentroidResult ? (_diagCentroidResult._strategy || 'native') : 'native',
+        strippedText: _stripPlaceSuffix(String(item.placeText || '')),
+        finalCoordSource: coordSource, skipReason: null
       });
       _diagItemIndex++;
     }
@@ -10196,11 +10231,10 @@ var __sharedDefaults = {};
       var _lIt = _eluLiveItems[_li];
       var _lLat = Number(_lIt.lat); var _lLon = Number(_lIt.lon);
       if (!Number.isFinite(_lLat) || !Number.isFinite(_lLon)) {
-        var _lPlace = String(_lIt.municipality || _lIt.placeText || _lIt.locality || _lIt.county || '').trim();
+        var _lPlace = String(_lIt.placeText || _lIt.locality || _lIt.municipality || _lIt.county || '').trim();
         var _lResolved = null;
-        if (_lPlace) {
-          if (typeof resolveCentroidFromPlace === 'function') _lResolved = resolveCentroidFromPlace(_lPlace);
-          if (!_lResolved && typeof resolveFallbackLatLon === 'function') _lResolved = resolveFallbackLatLon(_lPlace);
+        if (_lPlace || _lIt.municipality || _lIt.county) {
+          _lResolved = (typeof resolvePlace === 'function') ? resolvePlace(_lPlace, _lIt.municipality || '', _lIt.county || '') : null;
         }
         if (_lResolved && Number.isFinite(_lResolved.lat) && Number.isFinite(_lResolved.lon)) {
           _lLat = _lResolved.lat; _lLon = _lResolved.lon;
@@ -10750,16 +10784,9 @@ var __sharedDefaults = {};
         var lon = Number(item.lon);
         var hasCoords = Number.isFinite(lat) && Number.isFinite(lon);
         if (!hasCoords) {
-          var place = String(item.municipality || item.placeText || item.locality || item.county || '').trim();
-          if (place) {
-            var resolved = null;
-            if (typeof resolveCentroidFromPlace === 'function') resolved = resolveCentroidFromPlace(place);
-            if (!resolved && typeof resolveFallbackLatLon === 'function') {
-              resolved = resolveFallbackLatLon({ municipality: item.municipality || '', locality: item.locality || '', county: item.county || '' });
-            }
-            if (resolved && Number.isFinite(resolved.lat) && Number.isFinite(resolved.lon)) {
-              lat = resolved.lat; lon = resolved.lon; hasCoords = true;
-            }
+          var resolved = (typeof resolvePlace === 'function') ? resolvePlace(item.placeText || item.locality || '', item.municipality || '', item.county || '') : null;
+          if (resolved && Number.isFinite(resolved.lat) && Number.isFinite(resolved.lon)) {
+            lat = resolved.lat; lon = resolved.lon; hasCoords = true;
           }
         }
         if (!hasCoords) continue;
@@ -10778,13 +10805,8 @@ var __sharedDefaults = {};
             var rLat = Number(row.lat), rLon = Number(row.lon);
             var rHas = Number.isFinite(rLat) && Number.isFinite(rLon);
             if (!rHas) {
-              var rPlace = String(row.municipality || row.placeText || row.locality || row.county || '').trim();
-              if (rPlace) {
-                var rRes = null;
-                if (typeof resolveCentroidFromPlace === 'function') rRes = resolveCentroidFromPlace(rPlace);
-                if (!rRes && typeof resolveFallbackLatLon === 'function') rRes = resolveFallbackLatLon({ municipality: row.municipality || '', locality: row.locality || '', county: row.county || '' });
-                if (rRes && Number.isFinite(rRes.lat) && Number.isFinite(rRes.lon)) { rLat = rRes.lat; rLon = rRes.lon; rHas = true; }
-              }
+              var rRes = (typeof resolvePlace === 'function') ? resolvePlace(row.placeText || row.locality || '', row.municipality || '', row.county || '') : null;
+              if (rRes && Number.isFinite(rRes.lat) && Number.isFinite(rRes.lon)) { rLat = rRes.lat; rLon = rRes.lon; rHas = true; }
             }
             if (!rHas) continue;
             eluOccs.push({ lat: rLat, lon: rLon, date: String(row.observedAt || ''), source: 'elurikkus', scientificName: String(row.scientificName || row.taxonName || '') });

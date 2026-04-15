@@ -937,6 +937,77 @@ let SPECIES = mergeNameLists(MASTER_SPECIES, EUROPE_SPECIES_EXTRAS);
 speciesListSource = storedEuropeSpecies.length ? "master+stored_extras" : "fallback_default";
 persistEuropeSpeciesExtras();
 
+// === Custom species helpers (called from postMessage handler below) ===
+let __bm_bundledSpeciesSet = null; // populated by loadSharedEuropeSpecies
+
+window.__bm_addSpeciesIfMissing = function(name){
+  try {
+    if (!name || typeof name !== "string") return false;
+    const n = normalizeText(name);
+    if (!n) return false;
+    if (SPECIES.indexOf(n) !== -1) return false;
+    SPECIES.push(n);
+    if (typeof render === "function") render();
+    return true;
+  } catch(e){ console.warn("[customSpecies] add failed", e); return false; }
+};
+
+window.__bm_removeCustomSpecies = function(name){
+  try {
+    if (!name || typeof name !== "string") return false;
+    const n = normalizeText(name);
+    const i = SPECIES.indexOf(n);
+    if (i === -1) return false;
+    if (__bm_bundledSpeciesSet && __bm_bundledSpeciesSet.has(n)) return false;
+    SPECIES.splice(i, 1);
+    try { if (typeof points === "object" && points && points[n]) delete points[n]; } catch(_){}
+    if (typeof saveAll === "function") saveAll();
+    if (typeof render === "function") render();
+    return true;
+  } catch(e){ console.warn("[customSpecies] remove failed", e); return false; }
+};
+
+window.__bm_applyCustomSpeciesList = function(list){
+  try {
+    if (!Array.isArray(list)) return;
+    let changed = false;
+    for (let ci = 0; ci < list.length; ci++) {
+      const n = (typeof list[ci] === "string") ? normalizeText(list[ci]) : "";
+      if (n && SPECIES.indexOf(n) === -1) {
+        SPECIES.push(n);
+        changed = true;
+      }
+    }
+    if (changed && typeof render === "function") render();
+  } catch(e){ console.warn("[customSpecies] apply failed", e); }
+};
+
+window.__bm_reconcileCustomSpecies = function(list){
+  try {
+    if (!Array.isArray(list)) return;
+    if (!__bm_bundledSpeciesSet) return;
+    const allowed = {};
+    for (let ri = 0; ri < list.length; ri++) {
+      const rn = (typeof list[ri] === "string") ? normalizeText(list[ri]) : "";
+      if (rn) allowed[rn] = true;
+    }
+    let changed = false;
+    for (let si = SPECIES.length - 1; si >= 0; si--) {
+      const sn = SPECIES[si];
+      if (__bm_bundledSpeciesSet.has(sn)) continue;
+      if (!allowed[sn]) {
+        SPECIES.splice(si, 1);
+        try { if (typeof points === "object" && points && points[sn]) delete points[sn]; } catch(_){}
+        changed = true;
+      }
+    }
+    if (changed) {
+      if (typeof saveAll === "function") saveAll();
+      if (typeof render === "function") render();
+    }
+  } catch(e){ console.warn("[customSpecies] reconcile failed", e); }
+};
+
 function countObservedSpecies(){
   let count = 0;
   for (const name of Object.keys(points || {})) {
@@ -981,6 +1052,8 @@ async function loadSharedEuropeSpecies(){
     if (!Array.isArray(payload)) return;
     const sharedSpecies = normalizeNameArray(payload);
     if (!sharedSpecies.length) return;
+    // Capture bundled species set for reconciliation
+    __bm_bundledSpeciesSet = new Set(sharedSpecies);
     const storedExtras = deriveEuropeExtras(sharedSpecies, readStoredEuropeSpecies());
     const changed = reconcileEuropeSpecies(sharedSpecies, mergeNameLists(EUROPE_SPECIES_EXTRAS, storedExtras), "master+stored_extras");
     if (changed) {
@@ -2313,7 +2386,18 @@ if (!getEbirdToken()) {
   EBIRD_TOKEN = HARDCODED_EBIRD_TOKEN;
 }
 render();
-loadSharedEuropeSpecies();
+loadSharedEuropeSpecies().then(function(){
+  // Apply cached custom species on cold start
+  try {
+    const raw = localStorage.getItem("estbirding.customSpecies.v1");
+    if (raw) {
+      const cached = JSON.parse(raw);
+      if (Array.isArray(cached) && cached.length && typeof window.__bm_applyCustomSpeciesList === "function") {
+        window.__bm_applyCustomSpeciesList(cached);
+      }
+    }
+  } catch(e){}
+});
 recentOnly = (document.getElementById("toggle7days")?.checked !== false);
 if (!reloadSnapshot()) {
   dataMode = "live";
@@ -2407,9 +2491,26 @@ window.addEventListener("message", function(ev){
         render();
       }
     }
+    if (t === "CUSTOM_SPECIES_DEFAULTS" && Array.isArray(ev.data.customSpecies)) {
+      try { localStorage.setItem("estbirding.customSpecies.v1", JSON.stringify(ev.data.customSpecies)); } catch(_){}
+      if (typeof window.__bm_applyCustomSpeciesList === "function") {
+        window.__bm_applyCustomSpeciesList(ev.data.customSpecies);
+      }
+      if (typeof window.__bm_reconcileCustomSpecies === "function") {
+        window.__bm_reconcileCustomSpecies(ev.data.customSpecies);
+      }
+    }
+    if (t === "CUSTOM_SPECIES_REMOVE" && typeof ev.data.name === "string") {
+      if (typeof window.__bm_removeCustomSpecies === "function") {
+        window.__bm_removeCustomSpecies(ev.data.name);
+      }
+    }
   }catch(e){}
 });
-try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: "SPECIES_META_REQUEST" }, "*"); } catch(e){}
+try { if (window.parent && window.parent !== window) {
+  window.parent.postMessage({ type: "SPECIES_META_REQUEST" }, "*");
+  window.parent.postMessage({ type: "CUSTOM_SPECIES_REQUEST" }, "*");
+} } catch(e){}
 </script>
 </body>
 </html>

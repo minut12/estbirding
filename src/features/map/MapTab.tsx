@@ -12,6 +12,8 @@ import { LINNULIIGID_SCOPE, RARILIIN_SCOPE } from '@/lib/mapScope';
 import { resolveProxyBase } from '@/config/proxyEndpoint';
 import { buildSpeciesMetaLookupFallback, getScopedSpeciesMeta, loadSpeciesMeta, seedSpeciesMetaFallback } from '@/lib/speciesMeta';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
+import { loadCustomSpecies } from '@/lib/customSpecies';
+import { refreshCustomSpeciesFromCloud } from '@/lib/customSpeciesCloud';
 import { broadcastSupabaseConfigToMapIframes, getFunctionsBaseUrl, getSupabaseAuthHeaders, getSupabaseAnonKey, getSupabaseUrl, isDeveloperModeEnabled, validateSupabaseConfig } from '@/config/supabaseConfig';
 import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
@@ -152,6 +154,9 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   const sendSpeciesMetaToIframe = useCallback(() => {
     sendToIframe({ type: 'SPECIES_META_DEFAULTS', speciesMeta: loadSpeciesMeta(speciesScope) });
   }, [sendToIframe, speciesScope]);
+  const sendCustomSpeciesToIframe = useCallback(() => {
+    sendToIframe({ type: 'CUSTOM_SPECIES_DEFAULTS', customSpecies: loadCustomSpecies() });
+  }, [sendToIframe]);
   const seedScopeMetadata = useCallback(async () => {
     if (!speciesScope.speciesMetaAssetPath) return;
     try {
@@ -271,8 +276,11 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       .catch(() => {
         sendSpeciesMetaToIframe();
       });
+    refreshCustomSpeciesFromCloud({ force: true })
+      .then(() => sendCustomSpeciesToIframe())
+      .catch(() => sendCustomSpeciesToIframe());
     return () => clearTimeout(t0);
-  }, [seedScopeMetadata, sendAvatarsToIframe, sendSpeciesMetaToIframe, speciesScope]);
+  }, [seedScopeMetadata, sendAvatarsToIframe, sendSpeciesMetaToIframe, sendCustomSpeciesToIframe, speciesScope]);
 
   // Listen for AVATARS_REQUEST and INSETS_REQUEST from iframe
   useEffect(() => {
@@ -283,6 +291,9 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       }
       if (ev.data?.type === 'SPECIES_META_REQUEST') {
         sendSpeciesMetaToIframe();
+      }
+      if (ev.data?.type === 'CUSTOM_SPECIES_REQUEST') {
+        sendCustomSpeciesToIframe();
       }
       if (ev.data?.type === 'INSETS_REQUEST') {
         sendAppInsets();
@@ -725,6 +736,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     // Send avatars and insets when iframe loads
     setTimeout(sendAvatarsToIframe, 300);
     setTimeout(sendSpeciesMetaToIframe, 350);
+    setTimeout(sendCustomSpeciesToIframe, 360);
     setTimeout(sendSupabaseConfigToIframe, 375);
     setTimeout(sendPermissionsToIframe, 380);
     setTimeout(sendFeatureFlagsToIframe, 390);
@@ -777,8 +789,15 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   }, [sendSpeciesMetaToIframe]);
 
   useEffect(() => {
+    const onCustomSpeciesUpdated = () => sendCustomSpeciesToIframe();
+    window.addEventListener('custom-species-updated', onCustomSpeciesUpdated as EventListener);
+    return () => window.removeEventListener('custom-species-updated', onCustomSpeciesUpdated as EventListener);
+  }, [sendCustomSpeciesToIframe]);
+
+  useEffect(() => {
     const id = window.setInterval(() => {
       refreshSpeciesMetaFromCloud({ scope: speciesScope }).catch(() => {});
+      refreshCustomSpeciesFromCloud().catch(() => {});
     }, 60000);
     return () => window.clearInterval(id);
   }, [speciesScope]);

@@ -30,6 +30,7 @@ import {
   saveSpeciesMetaToCloud,
 } from '@/lib/speciesMetaCloud';
 import { addCustomSpecies, removeCustomSpecies, isCustomSpecies } from '@/lib/customSpecies';
+import { addCustomSpeciesToCloud, removeCustomSpeciesFromCloud, refreshCustomSpeciesFromCloud } from '@/lib/customSpeciesCloud';
 import { ET_STRINGS } from '@/lib/etStrings';
 import { normalizeUiText } from '@/lib/textNormalize';
 
@@ -51,13 +52,19 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
   const [avatarsReady, setAvatarsReady] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newSpeciesName, setNewSpeciesName] = useState('');
+  const [bundledSpecies, setBundledSpecies] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadSpeciesMeta(scope);
     refreshSpeciesMetaFromCloud({ force: true, scope }).catch(() => {});
+    refreshCustomSpeciesFromCloud({ force: true }).catch(() => {});
     setSyncStatus(getSpeciesMetaSyncStatus(scope));
     fetchSpeciesList(scope).then((list) => { if (list.length > 0) setSpecies(list.map(normalizeUiText)); });
+    // Load bundled species set (species.json only, no custom merge) for remove-button guard
+    fetch(scope.speciesJsonPath).then(r => r.ok ? r.json() : []).then((list: string[]) => {
+      if (Array.isArray(list)) setBundledSpecies(new Set(list.map(s => normalizeUiText(s).toLowerCase())));
+    }).catch(() => {});
     if (scope.speciesMetaAssetPath) {
       fetch(scope.speciesMetaAssetPath)
         .then((res) => res.ok ? res.json() : {})
@@ -86,6 +93,14 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     const onMetaUpdated = () => setSyncStatus(getSpeciesMetaSyncStatus(scope));
     window.addEventListener('species-meta-updated', onMetaUpdated as EventListener);
     return () => window.removeEventListener('species-meta-updated', onMetaUpdated as EventListener);
+  }, [scope]);
+
+  useEffect(() => {
+    const onCustomSpeciesUpdated = () => {
+      fetchSpeciesList(scope).then((list) => { if (list.length > 0) setSpecies(list.map(normalizeUiText)); });
+    };
+    window.addEventListener('custom-species-updated', onCustomSpeciesUpdated as EventListener);
+    return () => window.removeEventListener('custom-species-updated', onCustomSpeciesUpdated as EventListener);
   }, [scope]);
 
   useEffect(() => {
@@ -265,6 +280,10 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
       setShowAddForm(false);
       setSelected(trimmed);
       toast.success(`Liik "${trimmed}" lisatud`);
+      addCustomSpeciesToCloud(trimmed).catch((err) => {
+        console.warn('[AvatarManager] cloud sync failed for added species:', err);
+        toast.warning('Liik lisatud lokaalselt, kuid pilve sünkroon ebaõnnestus.');
+      });
     } else {
       toast.error('Liigi lisamine ebaõnnestus');
     }
@@ -272,13 +291,23 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
 
   const handleRemoveCustomSpecies = useCallback(() => {
     if (!selected || !isCustomSpecies(selected)) return;
+    // Guard: never remove bundled species
+    if (bundledSpecies.has(normalizeUiText(selected).toLowerCase())) {
+      toast.error('Sisseehitatud liike ei saa eemaldada.');
+      return;
+    }
     removeCustomSpecies(selected);
     fetchSpeciesList(scope).then((list) => {
       if (list.length > 0) setSpecies(list.map(normalizeUiText));
     });
+    const removedName = selected;
     setSelected('');
-    toast.success(`Liik "${selected}" eemaldatud`);
-  }, [selected, scope]);
+    toast.success(`Liik "${removedName}" eemaldatud`);
+    removeCustomSpeciesFromCloud(removedName).catch((err) => {
+      console.warn('[AvatarManager] cloud remove failed:', err);
+      toast.warning('Liik eemaldatud lokaalselt, kuid pilve sünkroon ebaõnnestus.');
+    });
+  }, [selected, scope, bundledSpecies]);
 
   const formatLastSync = useCallback((iso: string) => {
     if (!iso) return '-';
@@ -390,7 +419,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
             </Avatar>
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm text-foreground truncate">{activeKey}</p>
-              {isCustomSpecies(selected) && (
+              {isCustomSpecies(selected) && !bundledSpecies.has(normalizeUiText(selected).toLowerCase()) && (
                 <Button
                   variant="ghost"
                   size="sm"

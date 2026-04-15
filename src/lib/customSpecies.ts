@@ -1,4 +1,10 @@
+import { normalizeSpeciesName } from '@/lib/textNormalize';
+
 const CUSTOM_SPECIES_KEY = "estbirding.customSpecies.v1";
+
+function dispatchCustomSpeciesUpdated(): void {
+  try { window.dispatchEvent(new CustomEvent('custom-species-updated')); } catch {}
+}
 
 export function loadCustomSpecies(): string[] {
   try {
@@ -19,19 +25,23 @@ export function saveCustomSpecies(list: string[]): void {
 }
 
 export function addCustomSpecies(name: string): boolean {
-  const trimmed = name.trim();
+  const trimmed = normalizeSpeciesName(name);
   if (!trimmed) return false;
   const existing = loadCustomSpecies();
   if (existing.some((s) => s.toLowerCase() === trimmed.toLowerCase())) return false;
   existing.push(trimmed);
   saveCustomSpecies(existing);
+  dispatchCustomSpeciesUpdated();
   return true;
 }
 
 export function removeCustomSpecies(name: string): void {
+  const trimmed = normalizeSpeciesName(name);
+  if (!trimmed) return;
   const existing = loadCustomSpecies();
-  const filtered = existing.filter((s) => s.toLowerCase() !== name.trim().toLowerCase());
+  const filtered = existing.filter((s) => s.toLowerCase() !== trimmed.toLowerCase());
   saveCustomSpecies(filtered);
+  dispatchCustomSpeciesUpdated();
 }
 
 export function isCustomSpecies(name: string): boolean {

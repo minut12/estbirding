@@ -374,6 +374,84 @@ for (let i = 0; i < SPECIES.length; i++) SPECIES[i] = _normText(SPECIES[i]);
 
 let DATA = SPECIES.map(name => ({ est: _normText(name), url: 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(_normText(name)) }));
 
+// === Custom species helpers (called from postMessage handler in another script block) ===
+window.__bm_bundledSpeciesSet = null; // populated by _loadBundledLinnuliigidSpecies
+
+window.__bm_addSpeciesIfMissing = function(name){
+  try {
+    if (!name || typeof name !== 'string') return false;
+    var n = _normText(name);
+    if (!n) return false;
+    if (SPECIES.indexOf(n) !== -1) return false;
+    SPECIES.push(n);
+    DATA = SPECIES.map(function(est){ return { est: _normText(est), url: 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(_normText(est)) }; });
+    if (typeof render === 'function') render();
+    return true;
+  } catch(e){ console.warn('[customSpecies] add failed', e); return false; }
+};
+
+window.__bm_removeCustomSpecies = function(name){
+  try {
+    if (!name || typeof name !== 'string') return false;
+    var n = _normText(name);
+    var i = SPECIES.indexOf(n);
+    if (i === -1) return false;
+    // Never remove bundled species
+    if (window.__bm_bundledSpeciesSet && window.__bm_bundledSpeciesSet.has(n)) return false;
+    SPECIES.splice(i, 1);
+    DATA = SPECIES.map(function(est){ return { est: _normText(est), url: 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(_normText(est)) }; });
+    try { if (typeof points === 'object' && points && points[n]) delete points[n]; } catch(_){}
+    if (typeof save === 'function') save();
+    if (typeof render === 'function') render();
+    return true;
+  } catch(e){ console.warn('[customSpecies] remove failed', e); return false; }
+};
+
+window.__bm_applyCustomSpeciesList = function(list){
+  try {
+    if (!Array.isArray(list)) return;
+    var changed = false;
+    for (var ci = 0; ci < list.length; ci++) {
+      var n = (typeof list[ci] === 'string') ? _normText(list[ci]) : '';
+      if (n && SPECIES.indexOf(n) === -1) {
+        SPECIES.push(n);
+        changed = true;
+      }
+    }
+    if (changed) {
+      DATA = SPECIES.map(function(est){ return { est: _normText(est), url: 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(_normText(est)) }; });
+      if (typeof render === 'function') render();
+    }
+  } catch(e){ console.warn('[customSpecies] apply failed', e); }
+};
+
+window.__bm_reconcileCustomSpecies = function(list){
+  try {
+    if (!Array.isArray(list)) return;
+    if (!window.__bm_bundledSpeciesSet) return;
+    var allowed = {};
+    for (var ri = 0; ri < list.length; ri++) {
+      var rn = (typeof list[ri] === 'string') ? _normText(list[ri]) : '';
+      if (rn) allowed[rn] = true;
+    }
+    var changed = false;
+    for (var si = SPECIES.length - 1; si >= 0; si--) {
+      var sn = SPECIES[si];
+      if (window.__bm_bundledSpeciesSet.has(sn)) continue;
+      if (!allowed[sn]) {
+        SPECIES.splice(si, 1);
+        try { if (typeof points === 'object' && points && points[sn]) delete points[sn]; } catch(_){}
+        changed = true;
+      }
+    }
+    if (changed) {
+      DATA = SPECIES.map(function(est){ return { est: _normText(est), url: 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(_normText(est)) }; });
+      if (typeof save === 'function') save();
+      if (typeof render === 'function') render();
+    }
+  } catch(e){ console.warn('[customSpecies] reconcile failed', e); }
+};
+
 function _setRuntimeSpeciesList(list){
   const nextSpecies = [];
   const seen = new Set();
@@ -395,6 +473,8 @@ async function _loadBundledLinnuliigidSpecies(){
     if(!res.ok) return;
     const list = await res.json();
     if(!Array.isArray(list) || !list.length) return;
+    // Capture bundled species set for reconciliation
+    window.__bm_bundledSpeciesSet = new Set(list.map(function(s){ return _normText(s); }));
     const prevSerialized = JSON.stringify(SPECIES);
     _setRuntimeSpeciesList(list);
     if(JSON.stringify(SPECIES) === prevSerialized) return;
@@ -407,7 +487,20 @@ async function _loadBundledLinnuliigidSpecies(){
   }catch(e){}
 }
 
-_loadBundledLinnuliigidSpecies();
+_loadBundledLinnuliigidSpecies().then(function(){
+  // Apply cached custom species on cold start (before parent posts)
+  try {
+    var raw = localStorage.getItem('estbirding.customSpecies.v1');
+    if (raw) {
+      var cached = JSON.parse(raw);
+      if (Array.isArray(cached) && cached.length) {
+        if (typeof window.__bm_applyCustomSpeciesList === 'function') {
+          window.__bm_applyCustomSpeciesList(cached);
+        }
+      }
+    }
+  } catch(e){}
+});
 
 // Local storage keys
 const LS_AVATARS='bm_rari_avatars', LS_POINTS='bm_rari_points', LS_PROXY='bm_rari_proxy', LS_NAMES='bm_rari_names', LS_SPRING='bm_rari_spring_dates';
@@ -9356,6 +9449,22 @@ var __sharedDefaults = {};
         var src2 = ev.source;
         if(src2 && typeof src2.postMessage === 'function') src2.postMessage({ type: 'SPECIES_META_CURRENT', speciesMeta: JSON.parse(localStorage.getItem('estbirding.speciesMeta.v1') || '{}') }, '*');
       }
+      if(type === 'CUSTOM_SPECIES_DEFAULTS' && Array.isArray(ev.data.customSpecies)){
+        try {
+          localStorage.setItem('estbirding.customSpecies.v1', JSON.stringify(ev.data.customSpecies));
+        } catch(_){}
+        if (typeof window.__bm_applyCustomSpeciesList === 'function') {
+          window.__bm_applyCustomSpeciesList(ev.data.customSpecies);
+        }
+        if (typeof window.__bm_reconcileCustomSpecies === 'function') {
+          window.__bm_reconcileCustomSpecies(ev.data.customSpecies);
+        }
+      }
+      if(type === 'CUSTOM_SPECIES_REMOVE' && typeof ev.data.name === 'string'){
+        if (typeof window.__bm_removeCustomSpecies === 'function') {
+          window.__bm_removeCustomSpecies(ev.data.name);
+        }
+      }
       if(type === 'APP_PERMISSIONS' && ev.data.permissions && typeof ev.data.permissions === 'object'){
         window.__appPermissions = Object.assign({}, window.__appPermissions || {}, ev.data.permissions || {});
         springEditRowKey = null;
@@ -9368,6 +9477,7 @@ var __sharedDefaults = {};
     if(window.parent && window.parent !== window){
       window.parent.postMessage({ type: 'AVATARS_REQUEST' }, '*');
       window.parent.postMessage({ type: 'SPECIES_META_REQUEST' }, '*');
+      window.parent.postMessage({ type: 'CUSTOM_SPECIES_REQUEST' }, '*');
     }
   }catch(e){}
 })();

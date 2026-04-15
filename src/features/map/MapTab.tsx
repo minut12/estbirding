@@ -24,6 +24,8 @@ import { runSpeciesPredictionRequest } from '@/lib/speciesPredictionRunner';
 import { isSpeciesPredictionEnabled } from '@/lib/settings';
 import { ACTIVE_PREDICTION_IFRAME_READY_MESSAGE, ACTIVE_PREDICTION_SPECIES_EVENT, ACTIVE_PREDICTION_SPECIES_MESSAGE, getActivePredictionSpecies, setActivePredictionSpecies, type ActivePredictionSpecies } from '@/lib/activePredictionSpecies';
 import { normalizeSpeciesName } from '@/lib/textNormalize';
+import { runBundledSpeciesBackfill } from '@/lib/speciesMetaBackfill';
+import { toast } from 'sonner';
 import {
   SPECIES_PREDICTION_DEBUG_HEALTHCHECK_EVENT,
   SPECIES_PREDICTION_DEBUG_PANEL_STATE_MESSAGE,
@@ -757,6 +759,21 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       lastAutoRefreshRef.current = Date.now();
       sendRefreshVisible();
     }, 800);
+    // One-time backfill of bundled species sciname/ebirdCode into cloud meta
+    setTimeout(() => {
+      runBundledSpeciesBackfill()
+        .then((result) => {
+          if (result.status === 'done') {
+            console.log(`[backfill] Filled ${result.filled}/${result.checked} bundled species`);
+            toast.success(`Täiendasin ${result.filled} liigi andmed`);
+          } else if (result.status === 'no-changes') {
+            console.log(`[backfill] No changes needed (${result.checked} checked)`);
+          } else {
+            console.log(`[backfill] Skipped: ${result.reason}`);
+          }
+        })
+        .catch((e) => console.warn('[backfill] failed', e));
+    }, 2000);
   };
 
   useEffect(() => {

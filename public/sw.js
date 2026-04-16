@@ -47,3 +47,50 @@ self.addEventListener('fetch', (event) => {
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );
 });
+
+// === Push Notification Handler ===
+self.addEventListener('push', function(event) {
+  let data = { species: 'Tundmatu liik' };
+  try {
+    if (event.data) {
+      data = event.data.json();
+    }
+  } catch (e) {
+    try {
+      data = { species: event.data.text() };
+    } catch (e2) {}
+  }
+
+  const species = data.species || 'Tundmatu liik';
+  const title = 'EstBirding';
+  const options = {
+    body: species + ' on märgatud!',
+    icon: '/icon.png',
+    badge: '/icon.png',
+    tag: 'estbirding-' + species.replace(/[^a-zA-ZäöüõÄÖÜÕ0-9]/g, '-'),
+    data: { url: '/', species: species },
+    vibrate: [200, 100, 200],
+    requireInteraction: false
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(title, options)
+  );
+});
+
+self.addEventListener('notificationclick', function(event) {
+  event.notification.close();
+  var urlToOpen = (event.notification.data && event.notification.data.url) || '/';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+      for (var i = 0; i < clientList.length; i++) {
+        var client = clientList[i];
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      return clients.openWindow(urlToOpen);
+    })
+  );
+});

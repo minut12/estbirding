@@ -218,6 +218,20 @@
   .gbif-btn.active { background: #4f46e5 !important; }
   .gbif-btn:disabled { opacity: 0.5; }
 
+  .notify-bell {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    padding: 2px 4px;
+    opacity: 0.35;
+    transition: opacity 0.2s;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+  .notify-bell:hover { opacity: 0.7; }
+  .notify-bell.active { opacity: 1; }
+
 </style>
 </head>
 <body>
@@ -8627,6 +8641,120 @@ function openWaze(lat, lon){
   setTimeout(()=>{ try{ location.href = url; } catch(e){} }, 50);
 }
 var activeProbSpecies = null;
+
+// === NOTIFICATION BELL TOGGLE ===
+var VAPID_PUBLIC_KEY = ''; // ← FILL IN after generating VAPID keys
+
+var __notifySpecies = [];
+try { __notifySpecies = JSON.parse(localStorage.getItem('bm_notify_species') || '[]'); } catch(e){ __notifySpecies = []; }
+var __pushSubscription = null;
+
+function _urlBase64ToUint8Array(base64String) {
+  var padding = '='.repeat((4 - base64String.length % 4) % 4);
+  var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  var rawData = atob(base64);
+  var outputArray = new Uint8Array(rawData.length);
+  for (var i = 0; i < rawData.length; i++) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+async function _getOrCreatePushSub() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+  var perm = await Notification.requestPermission();
+  if (perm !== 'granted') return null;
+  var reg = await navigator.serviceWorker.ready;
+  var sub = await reg.pushManager.getSubscription();
+  if (!sub && VAPID_PUBLIC_KEY) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: _urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    });
+  }
+  return sub;
+}
+
+function _syncNotifyToSupabase(subscription, speciesList) {
+  try {
+    var cfg = resolveSupabaseConfig();
+    if (!cfg.supabaseUrl || !cfg.supabaseKey) return;
+    var subJson = subscription.toJSON();
+    var payload = {
+      endpoint: subJson.endpoint,
+      key_p256dh: subJson.keys.p256dh,
+      key_auth: subJson.keys.auth,
+      subscribed_species: speciesList,
+      device_label: /iPhone|iPad/.test(navigator.userAgent) ? 'iOS' :
+                    /Android/.test(navigator.userAgent) ? 'Android' : 'Desktop',
+      updated_at: new Date().toISOString()
+    };
+    fetch(cfg.supabaseUrl + '/rest/v1/push_subscriptions?endpoint=eq.' + encodeURIComponent(payload.endpoint), {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': cfg.supabaseKey,
+        'Authorization': 'Bearer ' + cfg.supabaseKey,
+        'Prefer': 'return=headers-only'
+      },
+      body: JSON.stringify({
+        subscribed_species: payload.subscribed_species,
+        device_label: payload.device_label,
+        updated_at: payload.updated_at
+      })
+    }).then(function(res) {
+      var range = res.headers.get('content-range') || '';
+      if (range === '*/0' || res.status === 404) {
+        return fetch(cfg.supabaseUrl + '/rest/v1/push_subscriptions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': cfg.supabaseKey,
+            'Authorization': 'Bearer ' + cfg.supabaseKey,
+            'Prefer': 'return=minimal'
+          },
+          body: JSON.stringify(payload)
+        });
+      }
+    }).catch(function(e) {
+      console.warn('[notify] Supabase sync error:', e);
+    });
+  } catch(e) {
+    console.warn('[notify] Sync failed:', e);
+  }
+}
+
+window.toggleNotification = async function(speciesName) {
+  if (!__pushSubscription) {
+    __pushSubscription = await _getOrCreatePushSub();
+    if (!__pushSubscription) {
+      if (/iPhone|iPad/.test(navigator.userAgent)) {
+        alert('Teavituste jaoks lisa EstBirding avakuvale:\nSafari → Jaga → Lisa avakuvale');
+      } else {
+        alert('Teavituste luba keelatud. Luba teavitused brauseri seadetes.');
+      }
+      return;
+    }
+  }
+  var idx = __notifySpecies.indexOf(speciesName);
+  if (idx >= 0) {
+    __notifySpecies.splice(idx, 1);
+  } else {
+    __notifySpecies.push(speciesName);
+  }
+  localStorage.setItem('bm_notify_species', JSON.stringify(__notifySpecies));
+  _syncNotifyToSupabase(__pushSubscription, __notifySpecies);
+  render();
+};
+
+(async function() {
+  try {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    if (Notification.permission !== 'granted') return;
+    var reg = await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.getSubscription();
+    if (sub) { __pushSubscription = sub; console.log('[notify] Restored push subscription'); }
+  } catch(e) {}
+})();
+
 function rowHTML(obj) {
   const key = obj.est;
   const p = points[key] || {};
@@ -8636,6 +8764,11 @@ function rowHTML(obj) {
   const occ7 = Number.isFinite(p.occ7) ? p.occ7 : null;
   const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
   const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(metaCfg.rarityLevel) : '';
+  var isNotified = __notifySpecies.indexOf(key) >= 0;
+  var bellBtn = '<button class="notify-bell' + (isNotified ? ' active' : '') + '" '
+    + 'onclick="event.stopPropagation();toggleNotification(\'' + key.replace(/'/g, "\\'") + '\')" '
+    + 'title="' + (isNotified ? 'Teavitus sees' : 'Teavitus väljas') + '">'
+    + (isNotified ? '🔔' : '🔕') + '</button>';
   const meta = hasPoint
     ? '<span class="pill">lat:</span> '+p.lat.toFixed(4)+' <span class="pill">lon:</span> '+p.lon.toFixed(4)+(p.t?' <span class="pill">date:</span> ' + formatDateEE(p.t):'')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'')
     : ((window.ET_STRINGS && window.ET_STRINGS.noLocationYet) || 'Asukoht puudub')+(occ7!==null?' <span class="pill">7d:</span> '+occ7:'');
@@ -8687,7 +8820,7 @@ function rowHTML(obj) {
     '<div class="avatar" style="background-image:url(\''+getDisplayAvatar(key)+'\');border:3px solid '+bcol+'"></div>' +
     '<div class="row-main">' +
       '<div class="top">' +
-        '<div class="name-row"><div class="name-label clickable '+muted+'" onclick="toggleVisibility(\''+key+'\')">'+key+'</div>' + (rarityText ? '<span class="rarity-badge" title="Haruldus">'+rarityText+'</span>' : '') + '</div>' +
+        '<div class="name-row"><div class="name-label clickable '+muted+'" onclick="toggleVisibility(\''+key+'\')">'+key+'</div>' + '<span style="display:flex;gap:6px;align-items:center;flex-shrink:0">' + (rarityText ? '<span class="rarity-badge" title="Haruldus">'+rarityText+'</span>' : '') + bellBtn + '</span>' + '</div>' +
       '</div>' +
       '<div class="small">'+meta+'</div>' +
       springChip +

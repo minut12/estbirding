@@ -300,6 +300,14 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       if (ev.data?.type === 'INSETS_REQUEST') {
         sendAppInsets();
       }
+      if (ev.data?.type === 'NOTIFY_SPECIES_CHANGED' && ev.data?.species && typeof ev.data?.notify === 'boolean') {
+        const speciesName = String(ev.data.species);
+        const notify = ev.data.notify as boolean;
+        upsertSpeciesMeta(speciesName, { notify });
+        saveSpeciesMetaToCloud(speciesName, { notify })
+          .then(() => console.log('[notify-sync] Cloud updated:', speciesName, notify))
+          .catch((e: any) => console.warn('[notify-sync] Cloud sync failed:', e));
+      }
       if (ev.data?.type === 'SUPABASE_CONFIG_REQUEST') {
         const validation = validateSupabaseConfig();
         if (validation.ok) {

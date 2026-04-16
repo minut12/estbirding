@@ -1349,6 +1349,58 @@ async function runRefresh(
     }
   }
 
+  // --- NOTIFICATION TRIGGER: detect newly spotted species after a full refresh ---
+  if (done >= total) {
+    try {
+      const newlySpottedSpecies: string[] = [];
+      for (const [name, newData] of Object.entries(points)) {
+        const nd = newData as { t?: string; occ7?: number };
+        const prev = previousPoints[name];
+
+        if (!prev) {
+          if (nd.t || (nd.occ7 || 0) > 0) {
+            newlySpottedSpecies.push(name);
+          }
+          continue;
+        }
+
+        if (nd.t && nd.t !== prev.t && nd.t > (prev.t || "")) {
+          newlySpottedSpecies.push(name);
+          continue;
+        }
+
+        if ((nd.occ7 || 0) > 0 && (prev.occ7 || 0) === 0) {
+          newlySpottedSpecies.push(name);
+        }
+      }
+
+      if (newlySpottedSpecies.length > 0) {
+        console.log(
+          "[notify] Newly spotted:",
+          newlySpottedSpecies.length,
+          "species:",
+          newlySpottedSpecies.slice(0, 15).join(", "),
+        );
+        const notifyUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/send-push-notifications`;
+        const notifyRes = await fetch(notifyUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+          },
+          body: JSON.stringify({ species: newlySpottedSpecies }),
+        });
+        const notifyResult = await notifyRes.json().catch(() => ({}));
+        console.log("[notify] Push result:", JSON.stringify(notifyResult));
+      } else {
+        console.log("[notify] No newly spotted species in this refresh");
+      }
+    } catch (e) {
+      // CRITICAL: must NEVER break the snapshot refresh
+      console.warn("[notify] Push notification trigger failed:", (e as Error).message);
+    }
+  }
+
   return {
     done, total, finished: done >= total, timedOut: false, lastError, points, runId,
     upstreamDataMaxAt: upstreamMaxTs > 0 ? new Date(upstreamMaxTs).toISOString() : null,

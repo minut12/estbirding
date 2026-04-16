@@ -2848,6 +2848,58 @@ function parseEluDetailExact(detailHtml){
     eestiOmavalitsused: eestiOmavalitsused
   };
 }
+// Parse SvelteKit-embedded JSON coordinates from detail page HTML.
+// Returns { lat, lon, isRestricted, _source } or null.
+function parseEluDetailCoordsFromJson(html) {
+  var s = String(html || '');
+  if (!s) return null;
+
+  function _ok(lat, lon) { return lat >= 57 && lat <= 60 && lon >= 21 && lon <= 29; }
+
+  // Escaped-quote form (SvelteKit SSR output): \"coordinates\":{\"is_restricted\":false,\"longitude\":26.5,\"latitude\":59.5}
+  var m = s.match(/\\"coordinates\\":\{\\"is_restricted\\":(true|false),\\"longitude\\":(-?\d+(?:\.\d+)?),\\"latitude\\":(-?\d+(?:\.\d+)?)/);
+  if (m) {
+    var lat = parseFloat(m[3]), lon = parseFloat(m[2]);
+    if (Number.isFinite(lat) && Number.isFinite(lon) && _ok(lat, lon))
+      return { isRestricted: m[1] === 'true', lat: lat, lon: lon, _source: 'json-escaped-lon-first' };
+  }
+  m = s.match(/\\"coordinates\\":\{\\"is_restricted\\":(true|false),\\"latitude\\":(-?\d+(?:\.\d+)?),\\"longitude\\":(-?\d+(?:\.\d+)?)/);
+  if (m) {
+    var lat2 = parseFloat(m[2]), lon2 = parseFloat(m[3]);
+    if (Number.isFinite(lat2) && Number.isFinite(lon2) && _ok(lat2, lon2))
+      return { isRestricted: m[1] === 'true', lat: lat2, lon: lon2, _source: 'json-escaped-lat-first' };
+  }
+
+  // Unescaped form
+  m = s.match(/"coordinates":\{"is_restricted":(true|false),"longitude":(-?\d+(?:\.\d+)?),"latitude":(-?\d+(?:\.\d+)?)/);
+  if (m) {
+    var lat3 = parseFloat(m[3]), lon3 = parseFloat(m[2]);
+    if (Number.isFinite(lat3) && Number.isFinite(lon3) && _ok(lat3, lon3))
+      return { isRestricted: m[1] === 'true', lat: lat3, lon: lon3, _source: 'json-plain-lon-first' };
+  }
+  m = s.match(/"coordinates":\{"is_restricted":(true|false),"latitude":(-?\d+(?:\.\d+)?),"longitude":(-?\d+(?:\.\d+)?)/);
+  if (m) {
+    var lat4 = parseFloat(m[2]), lon4 = parseFloat(m[3]);
+    if (Number.isFinite(lat4) && Number.isFinite(lon4) && _ok(lat4, lon4))
+      return { isRestricted: m[1] === 'true', lat: lat4, lon: lon4, _source: 'json-plain-lat-first' };
+  }
+
+  // Permissive fallback: find latitude/longitude separately within a "coordinates" block
+  var block = s.match(/"coordinates"[^{]*\{([^{}]*)\}/) || s.match(/\\"coordinates\\"[^{]*\{([^{}]*)\}/);
+  if (block) {
+    var inner = block[1];
+    var latM = inner.match(/"latitude"[^0-9\-]*(-?\d+(?:\.\d+)?)/) || inner.match(/\\"latitude\\"[^0-9\-]*(-?\d+(?:\.\d+)?)/);
+    var lonM = inner.match(/"longitude"[^0-9\-]*(-?\d+(?:\.\d+)?)/) || inner.match(/\\"longitude\\"[^0-9\-]*(-?\d+(?:\.\d+)?)/);
+    var resM = inner.match(/"is_restricted"\s*:\s*(true|false)/) || inner.match(/\\"is_restricted\\"\s*:\s*(true|false)/);
+    if (latM && lonM) {
+      var lat5 = parseFloat(latM[1]), lon5 = parseFloat(lonM[1]);
+      if (Number.isFinite(lat5) && Number.isFinite(lon5) && _ok(lat5, lon5))
+        return { isRestricted: resM ? resM[1] === 'true' : false, lat: lat5, lon: lon5, _source: 'json-permissive' };
+    }
+  }
+
+  return null;
+}
 function parseEluDetailExtras(detailHtml, detailUrl){
   const x = {
     detailUrl: detailUrl || '',
@@ -3082,19 +3134,38 @@ async function enrichElurikkusItemsWithDetailCoords(speciesName, options) {
     try {
       var html = await tryFetch(_withCacheBuster(url), { signal: ctrl.signal });
       clearTimeout(t);
-      if (/Koordinaadid peidetud|Coordinates hidden|Restricted/i.test(html)) {
-        enriched[idx] = Object.assign({}, row, { coordsStatus: 'restricted', _enrichSource: 'detail-restricted', _detailUrl: url });
-        stats.restricted++;
-        return;
+
+      // Debug first item only — TODO: remove after fix confirmed
+      if (idx === 0) {
+        var _dbgJson = parseEluDetailCoordsFromJson(html);
+        console.log('[ENRICH-ELU-DEBUG] item 0 detail:', { url: url, htmlLength: html.length, jsonCoords: _dbgJson });
       }
+
+      // Try JSON-first (new SvelteKit UI)
+      var jsonCoords = parseEluDetailCoordsFromJson(html);
+      if (jsonCoords) {
+        if (jsonCoords.isRestricted) {
+          enriched[idx] = Object.assign({}, row, { coordsStatus: 'restricted', _enrichSource: 'detail-restricted-json', _detailUrl: url });
+          stats.restricted++;
+          return;
+        }
+        if (Number.isFinite(jsonCoords.lat) && Number.isFinite(jsonCoords.lon)) {
+          enriched[idx] = Object.assign({}, row, {
+            lat: jsonCoords.lat, lon: jsonCoords.lon,
+            coordsStatus: 'public', _enrichSource: 'detail-json', _detailUrl: url,
+            municipality: row.municipality || '', locality: row.locality || '', county: row.county || ''
+          });
+          stats.withDetailCoords++;
+          return;
+        }
+      }
+
+      // Fallback: old text-label parser (for any pages still in old layout)
       var parsed = (typeof parseEluDetailExact === 'function') ? parseEluDetailExact(html) : null;
       if (parsed && Number.isFinite(parsed.lat) && Number.isFinite(parsed.lon)) {
         enriched[idx] = Object.assign({}, row, {
-          lat: parsed.lat,
-          lon: parsed.lon,
-          coordsStatus: 'public',
-          _enrichSource: 'detail',
-          _detailUrl: url,
+          lat: parsed.lat, lon: parsed.lon,
+          coordsStatus: 'public', _enrichSource: 'detail-textlabel', _detailUrl: url,
           municipality: row.municipality || parsed.municipality || '',
           locality: row.locality || parsed.locality || '',
           county: row.county || parsed.county || ''
@@ -3102,6 +3173,14 @@ async function enrichElurikkusItemsWithDetailCoords(speciesName, options) {
         stats.withDetailCoords++;
         return;
       }
+
+      // Last resort: text restricted markers ONLY if JSON parser returned null
+      if (/Koordinaadid peidetud|Coordinates hidden/i.test(html)) {
+        enriched[idx] = Object.assign({}, row, { coordsStatus: 'restricted', _enrichSource: 'detail-restricted-text', _detailUrl: url });
+        stats.restricted++;
+        return;
+      }
+
       enriched[idx] = Object.assign({}, row, { coordsStatus: 'missing', _enrichSource: 'detail-noparse', _detailUrl: url });
       stats.missing++;
     } catch(e) {

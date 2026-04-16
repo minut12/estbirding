@@ -9659,7 +9659,10 @@ document.addEventListener('DOMContentLoaded', function(){
 
 <!-- === Filter input wiring === -->
 <script>
-document.getElementById('filterBox').addEventListener('input', render);
+document.getElementById('filterBox').addEventListener('input', function(){
+  try { render(); } catch(e){}
+  try { if(window.refreshEbirdEEMarkers) window.refreshEbirdEEMarkers(); } catch(e){}
+});
 </script>
 
 <!-- === postMessage API for parent app (Avatar Manager) === -->
@@ -9804,6 +9807,16 @@ var __sharedDefaults = {};
 
   window.__ebirdEELayerOn = (localStorage.getItem(LS_EBIRD_EE_LAYER) === '1');
   var ebirdEEMarkers = new Map();
+
+  // Sidebar filter → eBird marker visibility.
+  function _ebirdEEPassesSidebarFilter(key){
+    try{
+      var box = document.getElementById('filterBox');
+      var q = (box && box.value || '').toLowerCase().trim();
+      if(!q) return true;
+      return String(key || '').toLowerCase().indexOf(q) !== -1;
+    }catch(e){ return true; }
+  }
 
   // --- Toggle button ---
   var ebirdEEBtn = document.getElementById('toggleEbirdEE');
@@ -10107,6 +10120,7 @@ var __sharedDefaults = {};
 
       var mainP = (window.points || {})[key] || {};
       if(mainP.visible === false) continue;
+      if(!_ebirdEEPassesSidebarFilter(key)) continue;
 
       visibleItems.push({ key: key, lat: ep.lat, lon: ep.lon, ep: ep });
     }

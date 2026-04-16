@@ -13,6 +13,7 @@ export type SpeciesMeta = {
   scientificName?: string;
   rariliinCode?: string;
   notificationNote?: string;
+  notify?: boolean;
 };
 
 export type SpeciesMetaMap = Record<string, SpeciesMeta>;
@@ -73,6 +74,7 @@ function sanitizeMeta(name: string, raw: any): SpeciesMeta {
     ...(scientificName ? { scientificName } : {}),
     ...(rariliinCode ? { rariliinCode } : {}),
     ...(notificationNote ? { notificationNote } : {}),
+    ...(raw?.notify === true ? { notify: true } : {}),
   };
 }
 

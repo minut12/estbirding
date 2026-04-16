@@ -8967,6 +8967,7 @@ function render() {
     }
     return true;
   });
+  arr.sort((a, b) => a.est.localeCompare(b.est, 'et'));
   for (const o of arr) list.insertAdjacentHTML('beforeend', rowHTML(o));
   const firstRow = list.querySelector('.row[data-key]');
   const syncedPredictionSpecies = getPredictionSpeciesPreference();

@@ -3031,22 +3031,31 @@ async function enrichElurikkusItemsWithDetailCoords(speciesName, options) {
     return [];
   }
   rows = rows.slice(0, maxItems);
+  console.log('[ENRICH-ELU-DEBUG]', speciesName, 'rows parsed:', rows.length, 'first row:', rows[0] || null);
 
+  // Extract detail URLs using the proven extractOccurrenceLinkFromRow helper
   var detailUrls = [];
   try {
     var doc = new DOMParser().parseFromString(searchHtml, 'text/html');
-    var trs = doc.querySelectorAll('table tbody tr');
+    var trs = (typeof _getEluRecordsRows === 'function')
+      ? _getEluRecordsRows(doc)
+      : Array.from(doc.querySelectorAll('table tbody tr'));
     for (var i = 0; i < trs.length && i < rows.length; i++) {
-      var a = trs[i].querySelector('a[href*="/app/occurrences/occurrence/"]');
-      detailUrls.push(a ? _absElurikkusUrl(a.getAttribute('href')) : '');
+      var linkInfo = extractOccurrenceLinkFromRow(trs[i], searchUrl);
+      detailUrls.push(linkInfo && linkInfo.href ? linkInfo.href : '');
     }
   } catch(e) {
     console.warn('[ENRICH-ELU] href parse failed', e);
   }
+  console.log('[ENRICH-ELU-DEBUG]', speciesName, 'extracted', detailUrls.filter(Boolean).length, 'of', rows.length, 'detail URLs, first 3:', detailUrls.slice(0, 3));
+
+  if (!searchHtml || searchHtml.length < 500) {
+    console.error('[ENRICH-ELU] search HTML too short for', speciesName, 'len=', (searchHtml || '').length);
+    return [];
+  }
 
   var enriched = new Array(rows.length);
   var lastFetchAt = 0;
-  var nextIdx = 0;
   var stats = { withDetailCoords: 0, restricted: 0, missing: 0, hadCoordsAlready: 0 };
 
   function _wait(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
@@ -3102,16 +3111,10 @@ async function enrichElurikkusItemsWithDetailCoords(speciesName, options) {
     }
   }
 
-  async function worker() {
-    while (true) {
-      var idx = nextIdx++;
-      if (idx >= rows.length) return;
-      await processOne(idx);
-    }
+  // Sequential loop with throttle (simpler than worker pool, proven reliable)
+  for (var idx = 0; idx < rows.length; idx++) {
+    await processOne(idx);
   }
-  var workers = [];
-  for (var w = 0; w < concurrency; w++) workers.push(worker());
-  await Promise.all(workers);
 
   var out = enriched.filter(Boolean);
   console.log('[ENRICH-ELU]', speciesName, {

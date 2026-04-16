@@ -8340,7 +8340,6 @@ function toggleVisibility(key){
       }, '*');
     }
   } catch(e) {}
-  try { if (typeof window.refreshEbirdEEMarkers === 'function') window.refreshEbirdEEMarkers(); } catch(e){}
 }
 
 function setRarity(key, val){
@@ -9809,6 +9808,21 @@ var __sharedDefaults = {};
   window.__ebirdEELayerOn = (localStorage.getItem(LS_EBIRD_EE_LAYER) === '1');
   var ebirdEEMarkers = new Map();
 
+  // Sidebar DOM = source of truth for eBird marker visibility.
+  function _ebirdEESpeciesIsVisibleInSidebar(key){
+    try {
+      if (typeof key !== 'string' || !key) return false;
+      var esc = key.replace(/"/g, '\\"');
+      var row = document.querySelector('.row[data-key="' + esc + '"]');
+      if (!row) return false;
+      var label = row.querySelector('.name-label');
+      if (label && label.classList.contains('muted')) return false;
+      return true;
+    } catch(e){
+      return true;
+    }
+  }
+
   // Sidebar filter → eBird marker visibility.
   function _ebirdEEPassesSidebarFilter(key){
     try{
@@ -10121,6 +10135,7 @@ var __sharedDefaults = {};
 
       var mainP = (window.points || {})[key] || {};
       if(mainP.visible === false) continue;
+      if(!_ebirdEESpeciesIsVisibleInSidebar(key)) continue;
       if(!_ebirdEEPassesSidebarFilter(key)) continue;
 
       visibleItems.push({ key: key, lat: ep.lat, lon: ep.lon, ep: ep });
@@ -10174,6 +10189,18 @@ var __sharedDefaults = {};
     setTimeout(refreshEbirdEEMarkers, 1000);
     setTimeout(refreshEbirdEEAll, 5000);
   }
+  // Hook: refresh eBird markers whenever the sidebar re-renders.
+  try {
+    if (typeof window.render === 'function' && !window.__ebirdEERenderWrapped){
+      window.__ebirdEERenderWrapped = true;
+      var _ebirdEEOrigRender = window.render;
+      window.render = function(){
+        var out = _ebirdEEOrigRender.apply(this, arguments);
+        try { if (typeof refreshEbirdEEMarkers === 'function') refreshEbirdEEMarkers(); } catch(e){}
+        return out;
+      };
+    }
+  } catch(e){}
 })();
 </script>
 

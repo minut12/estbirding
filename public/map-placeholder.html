@@ -1561,6 +1561,7 @@ window.alert = function(msg){ notifySilent(msg); };
   <button id="toggleSpring" class="btn secondary">KevadrÃ¤nne</button>
   <button id="ennustusBtn" class="btn secondary" title="Näita puuduvate liikide saabumise tõenäosust" onclick="window.__openEnnustus()">Ennustus</button>
   <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on viimase 7 pÃ¤eva jooksul aktiivsed (7d vaatlustes &gt; 0 vÃµi kuupÃ¤ev viimase 7 pÃ¤eva sees).">7p liigid: 0</span>
+  <span id="hiddenSpeciesBadge" class="active7d-badge" title="Mitu liiki on sidebaris peidetud (klikitud ära, visible=false)">Peidetud: 0</span>
 </div>
 <div id="springPanel" class="hidden-in-export">
   <div id="springHeader">
@@ -1962,6 +1963,46 @@ window.alert = function(msg){ notifySilent(msg); };
 })();
 </script>
 
+<!-- === Hidden (visible=false) species count badge === -->
+<script>
+(function(){
+  function computeHiddenSpeciesCount(){
+    try{
+      const pts  = (typeof points  !== 'undefined') ? points  : (window.points  || {});
+      const list = (typeof SPECIES !== 'undefined') ? SPECIES : (window.SPECIES || []);
+      let n = 0;
+      for (const name of list){
+        const p = pts[name] || {};
+        if (p.visible === false) n++;
+      }
+      return n;
+    }catch(e){ return 0; }
+  }
+  function updateHiddenBadge(){
+    try{
+      const el = document.getElementById('hiddenSpeciesBadge');
+      if (el) el.textContent = 'Peidetud: ' + computeHiddenSpeciesCount();
+    }catch(e){}
+  }
+  try{
+    if (typeof window.render === 'function' && !window.__hidden_render_patch__){
+      const _r = window.render;
+      window.render = function(){ const out = _r.apply(this, arguments); try{ updateHiddenBadge(); }catch(e){} return out; };
+      window.__hidden_render_patch__ = true;
+    }
+  }catch(e){}
+  try{
+    if (typeof window.updateMarker === 'function' && !window.__hidden_upd_patch__){
+      const _u = window.updateMarker;
+      window.updateMarker = function(){ const out = _u.apply(this, arguments); try{ updateHiddenBadge(); }catch(e){} return out; };
+      window.__hidden_upd_patch__ = true;
+    }
+  }catch(e){}
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', updateHiddenBadge);
+  else updateHiddenBadge();
+  setInterval(updateHiddenBadge, 60000);
+})();
+</script>
 
 <script>
 (function(){

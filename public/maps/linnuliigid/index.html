@@ -8722,18 +8722,72 @@ function _syncNotifyToSupabase(subscription, speciesList) {
   }
 }
 
-window.toggleNotification = async function(speciesName) {
-  if (!__pushSubscription) {
-    __pushSubscription = await _getOrCreatePushSub();
-    if (!__pushSubscription) {
+var __notifyPermissionHintShown = false;
+
+async function _trySubscribeAndSync() {
+  if (__notifySpecies.length === 0 && __pushSubscription) {
+    _syncNotifyToSupabase(__pushSubscription, __notifySpecies);
+    return;
+  }
+
+  if (__pushSubscription) {
+    _syncNotifyToSupabase(__pushSubscription, __notifySpecies);
+    return;
+  }
+
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    if (!__notifyPermissionHintShown) {
+      __notifyPermissionHintShown = true;
+      console.warn('[notify] Push not supported in this browser');
+    }
+    return;
+  }
+
+  var currentPermission = Notification.permission;
+
+  if (currentPermission === 'denied') {
+    if (!__notifyPermissionHintShown) {
+      __notifyPermissionHintShown = true;
       if (/iPhone|iPad/.test(navigator.userAgent)) {
         alert('Teavituste jaoks lisa EstBirding avakuvale:\nSafari → Jaga → Lisa avakuvale');
       } else {
-        alert('Teavituste luba keelatud. Luba teavitused brauseri seadetes.');
+        alert('Teavituste luba on keelatud.\nMuuda brauseri seadetes: 🔒 → Teavitused → Luba');
+      }
+    }
+    return;
+  }
+
+  if (currentPermission === 'default') {
+    var perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      if (perm === 'denied' && !__notifyPermissionHintShown) {
+        __notifyPermissionHintShown = true;
+        alert('Teavituste luba on keelatud.\nMuuda brauseri seadetes: 🔒 → Teavitused → Luba');
       }
       return;
     }
   }
+
+  try {
+    var reg = await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.getSubscription();
+    if (!sub && VAPID_PUBLIC_KEY) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: _urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+    }
+    if (sub) {
+      __pushSubscription = sub;
+      _syncNotifyToSupabase(__pushSubscription, __notifySpecies);
+      console.log('[notify] Push subscription created and synced');
+    }
+  } catch (e) {
+    console.warn('[notify] Subscription creation failed:', e.message || e);
+  }
+}
+
+window.toggleNotification = async function(speciesName) {
   var idx = __notifySpecies.indexOf(speciesName);
   if (idx >= 0) {
     __notifySpecies.splice(idx, 1);
@@ -8741,8 +8795,9 @@ window.toggleNotification = async function(speciesName) {
     __notifySpecies.push(speciesName);
   }
   localStorage.setItem('bm_notify_species', JSON.stringify(__notifySpecies));
-  _syncNotifyToSupabase(__pushSubscription, __notifySpecies);
   render();
+
+  _trySubscribeAndSync();
 };
 
 (async function() {
@@ -8751,7 +8806,13 @@ window.toggleNotification = async function(speciesName) {
     if (Notification.permission !== 'granted') return;
     var reg = await navigator.serviceWorker.ready;
     var sub = await reg.pushManager.getSubscription();
-    if (sub) { __pushSubscription = sub; console.log('[notify] Restored push subscription'); }
+    if (sub) {
+      __pushSubscription = sub;
+      console.log('[notify] Restored push subscription');
+      if (__notifySpecies.length > 0) {
+        _syncNotifyToSupabase(__pushSubscription, __notifySpecies);
+      }
+    }
   } catch(e) {}
 })();
 

@@ -8724,6 +8724,30 @@ function _syncNotifyToSupabase(subscription, speciesList) {
 
 var __notifyPermissionHintShown = false;
 
+function _updateNotifyInSpeciesMeta(speciesName, enabled) {
+  try {
+    var metaRaw = localStorage.getItem('estbirding.speciesMeta.v1');
+    var meta = metaRaw ? JSON.parse(metaRaw) : {};
+    if (!meta[speciesName]) meta[speciesName] = { name: speciesName };
+    if (enabled) {
+      meta[speciesName].notify = true;
+    } else {
+      delete meta[speciesName].notify;
+    }
+    localStorage.setItem('estbirding.speciesMeta.v1', JSON.stringify(meta));
+  } catch(e) { console.warn('[notify] speciesMeta update failed:', e); }
+
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'NOTIFY_SPECIES_CHANGED',
+        species: speciesName,
+        notify: !!enabled
+      }, '*');
+    }
+  } catch(e) {}
+}
+
 async function _trySubscribeAndSync() {
   if (__notifySpecies.length === 0 && __pushSubscription) {
     _syncNotifyToSupabase(__pushSubscription, __notifySpecies);
@@ -8789,18 +8813,38 @@ async function _trySubscribeAndSync() {
 
 window.toggleNotification = async function(speciesName) {
   var idx = __notifySpecies.indexOf(speciesName);
+  var nowEnabled;
   if (idx >= 0) {
     __notifySpecies.splice(idx, 1);
+    nowEnabled = false;
   } else {
     __notifySpecies.push(speciesName);
+    nowEnabled = true;
   }
   localStorage.setItem('bm_notify_species', JSON.stringify(__notifySpecies));
   render();
 
+  _updateNotifyInSpeciesMeta(speciesName, nowEnabled);
   _trySubscribeAndSync();
 };
 
 (async function() {
+  try {
+    var smRaw = localStorage.getItem('estbirding.speciesMeta.v1');
+    var sm = smRaw ? JSON.parse(smRaw) : {};
+    var fromMeta = [];
+    for (var sk in sm) {
+      if (sm[sk] && sm[sk].notify === true) fromMeta.push(sk);
+    }
+    if (fromMeta.length > 0) {
+      for (var fi = 0; fi < __notifySpecies.length; fi++) {
+        if (fromMeta.indexOf(__notifySpecies[fi]) < 0) fromMeta.push(__notifySpecies[fi]);
+      }
+      __notifySpecies = fromMeta;
+      localStorage.setItem('bm_notify_species', JSON.stringify(__notifySpecies));
+    }
+  } catch(e) {}
+
   try {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
     if (Notification.permission !== 'granted') return;
@@ -9994,6 +10038,26 @@ var __sharedDefaults = {};
           window.__bm_applySpeciesMetaToDicts(mergedMeta);
         }
         render();
+
+        try {
+          var rebuiltNotify = [];
+          for (var mKey in mergedMeta) {
+            if (mergedMeta[mKey] && mergedMeta[mKey].notify === true) {
+              rebuiltNotify.push(mKey);
+            }
+          }
+          var localNotify = __notifySpecies || [];
+          for (var li = 0; li < localNotify.length; li++) {
+            if (rebuiltNotify.indexOf(localNotify[li]) < 0) {
+              rebuiltNotify.push(localNotify[li]);
+            }
+          }
+          __notifySpecies = rebuiltNotify;
+          localStorage.setItem('bm_notify_species', JSON.stringify(__notifySpecies));
+          console.log('[notify] Rebuilt from cloud sync:', __notifySpecies.length, 'species');
+        } catch(e) {
+          console.warn('[notify] Rebuild from cloud failed:', e);
+        }
       }
       if(type === 'SPECIES_META_REQUEST'){
         var src2 = ev.source;

@@ -8647,6 +8647,21 @@ var VAPID_PUBLIC_KEY = ''; // ← FILL IN after generating VAPID keys
 
 var __notifySpecies = [];
 try { __notifySpecies = JSON.parse(localStorage.getItem('bm_notify_species') || '[]'); } catch(e){ __notifySpecies = []; }
+try {
+  if (__notifySpecies.length === 0) {
+    var bootMeta = JSON.parse(localStorage.getItem('estbirding.speciesMeta.v1') || '{}');
+    var bootKeys = Object.keys(bootMeta);
+    for (var bi = 0; bi < bootKeys.length; bi++) {
+      if (bootMeta[bootKeys[bi]] && bootMeta[bootKeys[bi]].notify === true) {
+        __notifySpecies.push(bootKeys[bi]);
+      }
+    }
+    if (__notifySpecies.length > 0) {
+      localStorage.setItem('bm_notify_species', JSON.stringify(__notifySpecies));
+      console.log('[notify] Cold-start rebuild from speciesMeta:', __notifySpecies.length, 'species');
+    }
+  }
+} catch(e){ console.warn('[notify] cold-start rebuild failed', e); }
 var __pushSubscription = null;
 
 function _urlBase64ToUint8Array(base64String) {
@@ -10056,6 +10071,7 @@ var __sharedDefaults = {};
           __notifySpecies = rebuiltNotify;
           localStorage.setItem('bm_notify_species', JSON.stringify(__notifySpecies));
           console.log('[notify] Rebuilt from cloud sync:', __notifySpecies.length, 'species');
+          if (typeof render === 'function') render();
         } catch(e) {
           console.warn('[notify] Rebuild from cloud failed:', e);
         }

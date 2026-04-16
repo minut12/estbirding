@@ -19,6 +19,7 @@ export type SpeciesMetaCloudItem = {
   scientificName?: string;
   rariliinCode?: string;
   notificationNote?: string;
+  notify?: boolean;
 };
 
 export type SpeciesMetaCloudJson = {

@@ -74,6 +74,7 @@ function sanitizeMeta(name: string, raw: any): SpeciesMeta {
     ...(scientificName ? { scientificName } : {}),
     ...(rariliinCode ? { rariliinCode } : {}),
     ...(notificationNote ? { notificationNote } : {}),
+    ...(raw?.notify === true ? { notify: true } : {}),
   };
 }
 

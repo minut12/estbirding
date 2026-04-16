@@ -13,6 +13,7 @@ export type SpeciesMeta = {
   scientificName?: string;
   rariliinCode?: string;
   notificationNote?: string;
+  notify?: boolean;
 };
 
 export type SpeciesMetaMap = Record<string, SpeciesMeta>;

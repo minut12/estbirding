@@ -8340,6 +8340,7 @@ function toggleVisibility(key){
       }, '*');
     }
   } catch(e) {}
+  try { if (typeof window.refreshEbirdEEMarkers === 'function') window.refreshEbirdEEMarkers(); } catch(e){}
 }
 
 function setRarity(key, val){

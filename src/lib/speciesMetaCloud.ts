@@ -89,6 +89,7 @@ function normalizeCloudItem(raw: unknown): SpeciesMetaCloudItem {
     scientificName: normalizeUiText(String(x.scientificName || '')) || undefined,
     rariliinCode: normalizeUiText(String(x.rariliinCode || '')) || undefined,
     notificationNote: normalizeUiText(String(x.notificationNote || '')) || undefined,
+    notify: x.notify === true ? true : undefined,
   };
 }
 

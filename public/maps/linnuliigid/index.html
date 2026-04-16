@@ -10741,10 +10741,17 @@ var __sharedDefaults = {};
       }
       cell.probability = headlineProb;
 
-      // Diagnostic fields (for [PROB-SCORE] log)
-      cell.scoreHistory = Math.round(histPct * HISTORY_WEIGHT * confidence);
-      cell.scoreRecency = Math.round(freshPct * FRESHNESS_WEIGHT * confidence);
-      cell.scoreSeason = Math.round((periodCentrality[0] || 0.3) * SEASON_WEIGHT * confidence);
+      // Diagnostic fields — use the current period's actual blended values
+      var _cpIdx = -1;
+      for (var _di = 0; _di < cellPeriods.length; _di++) { if (cellPeriods[_di].isCurrent) { _cpIdx = _di; break; } }
+      var _diagHistBlended = _cpIdx >= 0 ? (0.6 * histPct + 0.4 * (maxCellPeriod > 0 ? cellPeriodCounts[_cpIdx] / maxCellPeriod : 0)) : histPct;
+      var _diagFreshPct = _cpIdx >= 0 ? freshPct : 0;
+      var _diagCentral = _cpIdx >= 0 ? (periodCentrality[_cpIdx] || 0.3) : (periodCentrality[0] || 0.3);
+      cell.scoreHistory = Math.round(_diagHistBlended * HISTORY_WEIGHT * confidence);
+      cell.scoreRecency = Math.round(_diagFreshPct * FRESHNESS_WEIGHT * confidence);
+      cell.scoreSeason = Math.round(_diagCentral * SEASON_WEIGHT * confidence);
+      cell.scoreHistoryGbif = cell.gbifCount;
+      cell.scoreHistoryElu = cell.eluCount;
     });
 
     return gridCells;
@@ -10972,44 +10979,32 @@ var __sharedDefaults = {};
     var cLat = Number.isFinite(cell.centerLat) ? cell.centerLat : (cell.latMin + cell.latMax) / 2;
     var cLon = Number.isFinite(cell.centerLon) ? cell.centerLon : (cell.lonMin + cell.lonMax) / 2;
 
-    // eElurikkus line — clearly show per-cell vs species-wide
-    var eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
-    var eluOcc7 = Number.isFinite(eluPoint.occ7) ? eluPoint.occ7 : 0;
-    var eluLine;
-
-    if (Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon)) {
-      var dLat = Math.abs(eluPoint.lat - cLat);
-      var dLon = Math.abs(eluPoint.lon - cLon);
-      var isInCell = (eluPoint.lat >= cell.latMin && eluPoint.lat < cell.latMax &&
-                      eluPoint.lon >= cell.lonMin && eluPoint.lon < cell.lonMax);
-      var dateStr = eluPoint.t ? formatDateEE(eluPoint.t) : '?';
-      var distKm = Math.round(Math.sqrt(dLat * dLat + dLon * dLon) * 111);
-
-      if (isInCell) {
-        eluLine = '<div style="margin:2px 0;font-size:12px;color:#555">'
-          + '\uD83D\uDD0D eElurikkus in this cell: <b>' + (cell.eluCount || 0) + '</b> obs \u00b7 marker present ('
-          + dateStr + ', ' + eluOcc7 + ' obs in 7d)'
-          + '</div>';
-      } else {
-        var globalIn7d = 0;
-        try {
-          var _eluKey2 = String(speciesName).trim().toLowerCase();
-          var _entry = (window.__probEluCache || {})[_eluKey2] || (window.liveElurikkusBySpecies || {})[_eluKey2];
-          if (_entry && Array.isArray(_entry.items)) {
-            var _now2 = Date.now(), _7d2 = 7*24*60*60*1000;
-            for (var _i2 = 0; _i2 < _entry.items.length; _i2++) {
-              var _t2 = (typeof _toDay === 'function') ? _toDay(_entry.items[_i2].observedAt) : Date.parse(_entry.items[_i2].observedAt);
-              if (_t2 && (_now2 - _t2) <= _7d2) globalIn7d++;
-            }
-          }
-        } catch(e) {}
-        eluLine = '<div style="margin:2px 0;font-size:12px;color:#999">'
-          + '\uD83D\uDD0D eElurikkus in this cell: <b>0</b>'
-          + (globalIn7d > 0 ? (' \u00b7 ' + globalIn7d + ' obs elsewhere in last 7d (see green/orange markers)') : '')
-          + '</div>';
+    // eElurikkus line — single source of truth: cell.eluCount
+    var cellEluTotal = cell.eluCount || 0;
+    var globalEluRecent7d = 0;
+    try {
+      var _eluKey2 = String(speciesName).trim().toLowerCase();
+      var _entry = (window.__probEluCache || {})[_eluKey2] || (window.liveElurikkusBySpecies || {})[_eluKey2];
+      if (_entry && Array.isArray(_entry.items)) {
+        var _now2 = Date.now(), _7d2 = 7*24*60*60*1000;
+        for (var _i2 = 0; _i2 < _entry.items.length; _i2++) {
+          var _t2 = (typeof _toDay === 'function') ? _toDay(_entry.items[_i2].observedAt) : Date.parse(_entry.items[_i2].observedAt);
+          if (_t2 && (_now2 - _t2) <= _7d2) globalEluRecent7d++;
+        }
       }
-    } else {
-      eluLine = '<div style="margin:2px 0;font-size:12px;color:#999">\uD83D\uDD0D eElurikkus: no data</div>';
+    } catch(e) {}
+
+    var eluLine = '';
+    if (cellEluTotal > 0) {
+      eluLine = '<div style="margin:2px 0;font-size:12px;color:#555">'
+        + '\uD83D\uDD0D eElurikkus: <b>' + cellEluTotal + '</b> in this cell'
+        + (globalEluRecent7d > 0 ? ' (' + globalEluRecent7d + ' species-wide in last 7d)' : '')
+        + '</div>';
+    } else if (globalEluRecent7d > 0) {
+      eluLine = '<div style="margin:2px 0;font-size:12px;color:#999">'
+        + '\uD83D\uDD0D eElurikkus: 0 in this cell \u00b7 ' + globalEluRecent7d + ' obs elsewhere in last 7d'
+        + ' (see green/orange markers)'
+        + '</div>';
     }
 
     // Determine if headline is showing current period or season
@@ -11024,20 +11019,21 @@ var __sharedDefaults = {};
       ? 'probability in current period (' + _currentPeriod.label + ')'
       : 'probability in current season';
 
-    // Score breakdown
+    // Score breakdown — show the three weighted components that sum to the headline
     var breakdownLine = '';
-    var parts = [];
-    if (cell.seasonProbability && cell.seasonProbability !== cell.probability) {
-      parts.push('Season: ' + cell.seasonProbability + '%');
-    }
-    if (cell.scoreHistory > 0) {
-      var hDetail = 'GBIF ' + (cell.scoreHistoryGbif || 0) + 'pt + eElu ' + (cell.scoreHistoryElu || 0) + 'pt';
-      parts.push(cell.scoreHistory + '% history (' + hDetail + ')');
-    }
-    if (cell.scoreRecency > 0) parts.push(cell.scoreRecency + '% freshness');
-    if (parts.length > 0) {
+    var _bHistory = cell.scoreHistory || 0;
+    var _bFreshness = cell.scoreRecency || 0;
+    var _bSeason = cell.scoreSeason || 0;
+    var _bSum = _bHistory + _bFreshness + _bSeason;
+    if (_bSum > 0) {
+      var bParts = [];
+      if (_bHistory > 0) bParts.push(_bHistory + ' history (GBIF ' + (cell.scoreHistoryGbif || 0) + ' + eElu ' + (cell.scoreHistoryElu || 0) + ' obs)');
+      if (_bFreshness > 0) bParts.push(_bFreshness + ' freshness');
+      if (_bSeason > 0) bParts.push(_bSeason + ' season');
       breakdownLine = '<div style="font-size:11px;color:#94a3b8;margin-top:6px;border-top:1px solid #eee;padding-top:4px">'
-        + 'Score: ' + parts.join(' + ') + '</div>';
+        + 'Score: ' + bParts.join(' + ') + ' = ' + _bSum
+        + (Math.abs(_bSum - cell.probability) > 2 ? ' (period-adjusted to ' + cell.probability + ')' : '')
+        + '</div>';
     }
 
     var gbifSeason = cell.gbifCount || 0;

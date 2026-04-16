@@ -762,6 +762,39 @@ export type Database = {
         }
         Relationships: []
       }
+      push_subscriptions: {
+        Row: {
+          created_at: string
+          device_label: string | null
+          endpoint: string
+          id: string
+          key_auth: string
+          key_p256dh: string
+          subscribed_species: string[]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          device_label?: string | null
+          endpoint: string
+          id?: string
+          key_auth: string
+          key_p256dh: string
+          subscribed_species?: string[]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          device_label?: string | null
+          endpoint?: string
+          id?: string
+          key_auth?: string
+          key_p256dh?: string
+          subscribed_species?: string[]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       role_permissions: {
         Row: {
           created_at: string
@@ -1069,6 +1102,15 @@ export type Database = {
         Returns: {
           public_url: string
           species_key: string
+        }[]
+      }
+      get_subscriptions_for_species: {
+        Args: { species_list: string[] }
+        Returns: {
+          endpoint: string
+          key_auth: string
+          key_p256dh: string
+          subscribed_species: string[]
         }[]
       }
       get_user_permissions: { Args: { _user_id: string }; Returns: string[] }

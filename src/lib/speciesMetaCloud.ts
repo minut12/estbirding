@@ -118,6 +118,7 @@ function mergeCloudOverLocal(localMap: Record<string, SpeciesMeta>, cloud: Speci
       ...(item.scientificName ? { scientificName: item.scientificName } : {}),
       ...(item.rariliinCode ? { rariliinCode: item.rariliinCode } : {}),
       ...(item.notificationNote ? { notificationNote: item.notificationNote } : {}),
+      ...(item.notify === true ? { notify: true } : { notify: undefined }),
     };
   }
   return merged;

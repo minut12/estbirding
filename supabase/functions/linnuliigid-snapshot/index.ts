@@ -1236,6 +1236,18 @@ async function runRefresh(
     ? existingRow.points_json as Record<string, { lat?: number; lon?: number; t?: string; occ7?: number; src?: string; visible?: boolean; coords_status?: "public" | "restricted" | "missing"; coords_source?: "exact" | "municipality" | "county" | "none"; locality?: string | null; municipality?: string | null; county?: string | null; individualCount?: number | null; behavior?: string | null; collectors?: string | null; districts?: string | null; eestiOmavalitsused?: string | null; }>
     : {};
 
+  // --- NOTIFICATION PREP: snapshot previous points (t + occ7 only) for later comparison ---
+  const previousPoints: Record<string, { t?: string; occ7?: number }> = {};
+  try {
+    for (const [k, v] of Object.entries(points)) {
+      const vv = v as { t?: string; occ7?: number };
+      previousPoints[k] = { t: vv?.t, occ7: vv?.occ7 };
+    }
+    console.log("[notify-prep] Snapshot previous state:", Object.keys(previousPoints).length, "species");
+  } catch (e) {
+    console.warn("[notify-prep] Could not snapshot previous points:", (e as Error).message);
+  }
+
   let done = startIndex;
   let lastError: string | null = null;
   let upstreamMaxTs = 0;

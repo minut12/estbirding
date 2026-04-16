@@ -3736,6 +3736,21 @@ function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, oc
   const oldLat = Number.isFinite(Number(p.lat)) ? Number(p.lat) : null;
   const oldLon = Number.isFinite(Number(p.lon)) ? Number(p.lon) : null;
   const detailExact = parseEluDetailExact(detailHtml);
+  if (detailHtml && (!detailExact.municipality || !detailExact.locality || !detailExact.county || !detailExact.districts || !detailExact.communes || !detailExact.eestiOmavalitsused)) {
+    try {
+      var detailExtras = (typeof parseEluDetailExtras === 'function') ? parseEluDetailExtras(detailHtml) : null;
+      if (detailExtras) {
+        if (!detailExact.municipality && detailExtras.municipality) detailExact.municipality = detailExtras.municipality;
+        if (!detailExact.locality && detailExtras.locality) detailExact.locality = detailExtras.locality;
+        if (!detailExact.county && detailExtras.county) detailExact.county = detailExtras.county;
+        if (!detailExact.districts && detailExtras.districts) detailExact.districts = detailExtras.districts;
+        if (!detailExact.communes && detailExtras.communes) detailExact.communes = detailExtras.communes;
+        if (!detailExact.eestiOmavalitsused && detailExtras.eestiOmavalitsused) detailExact.eestiOmavalitsused = detailExtras.eestiOmavalitsused;
+      }
+    } catch (e) {
+      console.warn('[parseEluDetailExtras fallback] error:', e);
+    }
+  }
   if(newestIso) p.t = newestIso;
   if(Number.isFinite(Number(occ7))){ p.occ7 = Number(occ7); p.occ7Elu = Number(occ7); p.occ7EluUpdated = new Date().toISOString(); }
   p.src = 'Elurikkus';
@@ -3871,6 +3886,21 @@ async function autoFetchCoords(key, searchUrl, signal){
   }
   const detailHtml = await tryFetch(_withCacheBuster(detailUrl), { signal });
   const detailExact = parseEluDetailExact(detailHtml);
+  if (detailHtml && (!detailExact.municipality || !detailExact.locality || !detailExact.county || !detailExact.districts || !detailExact.communes || !detailExact.eestiOmavalitsused)) {
+    try {
+      var detailExtras2 = (typeof parseEluDetailExtras === 'function') ? parseEluDetailExtras(detailHtml) : null;
+      if (detailExtras2) {
+        if (!detailExact.municipality && detailExtras2.municipality) detailExact.municipality = detailExtras2.municipality;
+        if (!detailExact.locality && detailExtras2.locality) detailExact.locality = detailExtras2.locality;
+        if (!detailExact.county && detailExtras2.county) detailExact.county = detailExtras2.county;
+        if (!detailExact.districts && detailExtras2.districts) detailExact.districts = detailExtras2.districts;
+        if (!detailExact.communes && detailExtras2.communes) detailExact.communes = detailExtras2.communes;
+        if (!detailExact.eestiOmavalitsused && detailExtras2.eestiOmavalitsused) detailExact.eestiOmavalitsused = detailExtras2.eestiOmavalitsused;
+      }
+    } catch (e) {
+      console.warn('[parseEluDetailExtras fallback] error:', e);
+    }
+  }
   const detailFields = {
     country: detailExact.country || '',
     county: detailExact.county || '',
@@ -7055,7 +7085,9 @@ async function _applySnapshot(snap){
         locality: (typeof s.locality === 'string' && s.locality.trim()) ? s.locality.trim() : '',
         county: (typeof s.county === 'string' && s.county.trim()) ? s.county.trim() : '',
         districts: (typeof s.districts === 'string' && s.districts.trim()) ? s.districts.trim() : '',
-        communes: '', // not available in HTML search page — data limitation, not a bug
+        communes: (typeof s.communes === 'string' && s.communes.trim())
+          ? s.communes.trim()
+          : ((points[key] && points[key].eluExtra && points[key].eluExtra.communes) || ''),
         eestiOmavalitsused: (typeof s.eestiOmavalitsused === 'string' && s.eestiOmavalitsused.trim()) ? s.eestiOmavalitsused.trim() : '',
         individualCount: (s.individualCount != null && String(s.individualCount).trim() !== '') ? String(s.individualCount) : '',
         behavior: (typeof s.behavior === 'string' && s.behavior.trim()) ? s.behavior.trim() : '',

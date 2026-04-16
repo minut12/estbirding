@@ -10664,19 +10664,29 @@ var __sharedDefaults = {};
       var cellOccCount = (cell.occurrences || []).length;
       var histPct = maxCellOcc > 0 ? Math.log1p(cellOccCount) / Math.log1p(maxCellOcc) : 0;
 
-      // Cell-level freshness pct (0..1): check if any recent eElu obs fall in this cell
+      // Cell-level freshness: combines best recency with density of recent obs.
       var freshPct = 0;
       var markerInCell = false;
+      var cellRecentCount = 0;
+      var baseFresh = 0;
       for (var _ri = 0; _ri < recentEluLocs.length; _ri++) {
         var _rl = recentEluLocs[_ri];
         if (_rl.lat >= cell.latMin && _rl.lat < cell.latMax &&
             _rl.lon >= cell.lonMin && _rl.lon < cell.lonMax) {
           markerInCell = true;
-          // Linear decay: 0 days → 1.0, 7 days → 0.0
+          cellRecentCount++;
           var _fp = Math.max(0, 1 - _rl.ageDays / 7);
-          if (_fp > freshPct) freshPct = _fp;
+          if (_fp > baseFresh) baseFresh = _fp;
         }
       }
+      if (cellRecentCount > 0 && baseFresh > 0) {
+        // Density multiplier: 1 obs → 1.0, 3 → 1.33, 9 → 1.69, capped via min(1) on result
+        var densityMul = 1 + 0.3 * Math.log1p(cellRecentCount);
+        freshPct = Math.min(1, baseFresh * densityMul);
+      }
+      cell.freshRecentCount = cellRecentCount;
+      cell.freshBaseRecency = baseFresh;
+      cell.freshDensityMul = (cellRecentCount > 0 && baseFresh > 0) ? (1 + 0.3 * Math.log1p(cellRecentCount)) : 1;
 
       // Count this cell's obs per period for period-local history
       var cellPeriodCounts = [];
@@ -11028,7 +11038,10 @@ var __sharedDefaults = {};
     if (_bSum > 0) {
       var bParts = [];
       if (_bHistory > 0) bParts.push(_bHistory + ' history (GBIF ' + (cell.scoreHistoryGbif || 0) + ' + eElu ' + (cell.scoreHistoryElu || 0) + ' obs)');
-      if (_bFreshness > 0) bParts.push(_bFreshness + ' freshness');
+      if (_bFreshness > 0) bParts.push(_bFreshness + ' freshness'
+        + ((cell.freshRecentCount || 0) > 0
+          ? ' (' + cell.freshRecentCount + ' obs in 7d, freshest ~' + Math.round(7 - (cell.freshBaseRecency || 0) * 7) + 'd ago)'
+          : ''));
       if (_bSeason > 0) bParts.push(_bSeason + ' season');
       breakdownLine = '<div style="font-size:11px;color:#94a3b8;margin-top:6px;border-top:1px solid #eee;padding-top:4px">'
         + 'Score: ' + bParts.join(' + ') + ' = ' + _bSum

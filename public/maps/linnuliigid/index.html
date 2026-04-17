@@ -8643,7 +8643,7 @@ function openWaze(lat, lon){
 var activeProbSpecies = null;
 
 // === NOTIFICATION BELL TOGGLE ===
-var VAPID_PUBLIC_KEY = ''; // ← FILL IN after generating VAPID keys
+var VAPID_PUBLIC_KEY = 'BBugk-8xSVxkyM0-_gYvcwlno0Mu2XNzyoA1HkI812T9E4zdn8tVYfxUyucuovJIpWTjJkURu-FKTF3BirgszeQ';
 
 var __notifySpecies = [];
 try { __notifySpecies = JSON.parse(localStorage.getItem('bm_notify_species') || '[]'); } catch(e){ __notifySpecies = []; }
@@ -8684,6 +8684,8 @@ async function _getOrCreatePushSub() {
       userVisibleOnly: true,
       applicationServerKey: _urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
     });
+  } else if (!sub && !VAPID_PUBLIC_KEY) {
+    console.error('[push] VAPID_PUBLIC_KEY is empty — push notifications cannot be enabled. Fill in the constant in index.html.');
   }
   return sub;
 }
@@ -8815,6 +8817,8 @@ async function _trySubscribeAndSync() {
         userVisibleOnly: true,
         applicationServerKey: _urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
       });
+    } else if (!sub && !VAPID_PUBLIC_KEY) {
+      console.error('[push] VAPID_PUBLIC_KEY is empty — push notifications cannot be enabled. Fill in the constant in index.html.');
     }
     if (sub) {
       __pushSubscription = sub;
@@ -8822,7 +8826,7 @@ async function _trySubscribeAndSync() {
       console.log('[notify] Push subscription created and synced');
     }
   } catch (e) {
-    console.warn('[notify] Subscription creation failed:', e.message || e);
+    console.error('[notify] Subscription creation failed:', e.message || e);
   }
 }
 

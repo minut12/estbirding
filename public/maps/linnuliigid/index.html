@@ -9496,6 +9496,112 @@ function renderElurikkusObservationsLayer(speciesName) {
 }
 window.renderElurikkusObservationsLayer = renderElurikkusObservationsLayer;
 
+// === eBird 7d observation layer (per-species, mirrors eElu render model) ===
+// Reads from bm_ebird_obs_v1 cache populated by __refreshEbirdEEBulk.
+var _ebirdObsLayerGroup = null;
+
+function clearEbirdObsLayer() {
+  if (_ebirdObsLayerGroup) { map.removeLayer(_ebirdObsLayerGroup); _ebirdObsLayerGroup = null; }
+}
+window.clearEbirdObsLayer = clearEbirdObsLayer;
+
+function renderEbirdObservationsLayer(speciesName) {
+  clearEbirdObsLayer();
+  var toggleActive = !!(window.__eluObsToggleActive);
+  if (!toggleActive) return;
+
+  var bySpecies = {};
+  try {
+    var raw = localStorage.getItem('bm_ebird_obs_v1');
+    if (raw) {
+      var cached = JSON.parse(raw);
+      bySpecies = (cached && cached.bySpecies) || {};
+    }
+  } catch (e) {}
+
+  var items = bySpecies[speciesName] || [];
+  if (!items.length) return;
+
+  var avatarUrl = getDisplayAvatar(speciesName);
+  var hasAvatar = !!(avatarUrl && avatarUrl.indexOf('placeholder') === -1);
+  var fallbackLetter = String(speciesName || '?').charAt(0).toUpperCase();
+
+  _ebirdObsLayerGroup = L.layerGroup();
+  var _now = Date.now();
+  var _7dMs = 7 * 24 * 60 * 60 * 1000;
+
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    var lat = Number(item.lat), lon = Number(item.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    var obsDt = String(item.obsDt || '');
+    if (!obsDt) continue;
+    var tsMs = Date.parse(obsDt.replace(' ', 'T'));
+    if (!Number.isFinite(tsMs) || (_now - tsMs) > _7dMs) continue;
+
+    var ageDays = (_now - tsMs) / 86400000;
+    var opacity = 0.85 * (1 - 0.5 * (ageDays / 7));
+    var dateFormatted = obsDt.substring(0, 10).replace(/^(\d{4})-(\d{2})-(\d{2}).*/, '$3.$2.$1');
+    var locLabel = item.loc || '-';
+    var countLabel = (item.howMany != null) ? (' \u00b7 kogus: ' + item.howMany) : '';
+
+    var icon = _eluObsAvatarIcon(hasAvatar ? avatarUrl : '', '#f59e0b', 'solid', 3, opacity, fallbackLetter);
+    var m = L.marker([lat, lon], { icon: icon, pane: 'eluObsPane' });
+    m.bindPopup(
+      '<div style="font-family:system-ui;font-size:12px">' +
+      '<b>' + dateFormatted + '</b><br>' +
+      locLabel + '<br>' +
+      '<span style="color:#f59e0b;font-size:11px">eBird' + countLabel + '</span>' +
+      '</div>'
+    );
+    _ebirdObsLayerGroup.addLayer(m);
+  }
+
+  if (_ebirdObsLayerGroup.getLayers().length) _ebirdObsLayerGroup.addTo(map);
+}
+window.renderEbirdObservationsLayer = renderEbirdObservationsLayer;
+
+// === eBird obs debug helpers ===
+window.__ebirdObsStats = function () {
+  try {
+    var raw = localStorage.getItem('bm_ebird_obs_v1');
+    if (!raw) return { cached: false };
+    var c = JSON.parse(raw);
+    var counts = {};
+    var keys = Object.keys(c.bySpecies || {});
+    for (var i = 0; i < keys.length; i++) counts[keys[i]] = c.bySpecies[keys[i]].length;
+    var total = 0;
+    for (var k in counts) total += counts[k];
+    return {
+      cached: true,
+      fetchedAt: c.fetchedAt,
+      ageMinutes: c.fetchedAt ? Math.round((Date.now() - Date.parse(c.fetchedAt)) / 60000) : null,
+      speciesCount: keys.length,
+      totalObs: total,
+      top10: Object.entries(counts).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 10),
+    };
+  } catch (e) { return { cached: false, error: String(e) }; }
+};
+
+window.__ebirdObsClear = function () {
+  localStorage.removeItem('bm_ebird_obs_v1');
+  console.log('[EBIRD-OBS] cache cleared');
+};
+
+window.__ebirdObsForce = async function () {
+  try {
+    if (typeof window.__refreshEbirdEEBulk === 'function') await window.__refreshEbirdEEBulk();
+    var openSpecies = (typeof activeProbSpecies !== 'undefined' && activeProbSpecies) || (window.activeProbSpecies || '');
+    if (openSpecies && typeof window.renderEbirdObservationsLayer === 'function') {
+      window.renderEbirdObservationsLayer(openSpecies);
+    }
+    return window.__ebirdObsStats();
+  } catch (e) {
+    console.warn('[EBIRD-OBS] force failed', e);
+    return { ok: false, error: String(e) };
+  }
+};
+
 // Narrow helper for info-card count fallback (avoids exposing __probEluCache)
 window.__getProbEluItemCount = function(key) {
   var entry = (window.__probEluCache || {})[key];
@@ -10426,6 +10532,55 @@ var __sharedDefaults = {};
       }
       window.__ennEbirdCountsUpdatedAt = Date.now();
 
+      // === Phase 1: bucket 7d obs (with coords) into bm_ebird_obs_v1 ===
+      // Side-effect side-channel for renderEbirdObservationsLayer. Reuses
+      // codeToName built above. Wrapped in try/catch so any failure here
+      // (quota, parse, etc.) never breaks the existing counts logic below.
+      try {
+        var __obs_now = now;
+        var __obs_7dMs = win7;
+        var bySpeciesObs = {};
+        var __obs_kept = 0, __obs_dropped = 0, __obs_noMatch = 0;
+        for (var oi = 0; oi < arr.length; oi++) {
+          var oo = arr[oi];
+          var ocode = String((oo && oo.speciesCode) || '').trim();
+          if (!ocode) { __obs_dropped++; continue; }
+          var oest = codeToName[ocode];
+          if (!oest) { __obs_noMatch++; continue; }
+          var olat = Number(oo.lat), olon = Number(oo.lng);
+          if (!Number.isFinite(olat) || !Number.isFinite(olon)) { __obs_dropped++; continue; }
+          if (olat < 57 || olat > 60 || olon < 21 || olon > 29) { __obs_dropped++; continue; }
+          var oObsDt = String((oo && oo.obsDt) || '').trim();
+          var oTsMs = oObsDt ? Date.parse(oObsDt.replace(' ', 'T')) : NaN;
+          if (!Number.isFinite(oTsMs) || (__obs_now - oTsMs) > __obs_7dMs || oTsMs > __obs_now + 86400000) { __obs_dropped++; continue; }
+          if (!bySpeciesObs[oest]) bySpeciesObs[oest] = [];
+          bySpeciesObs[oest].push({
+            lat: olat, lon: olon,
+            obsDt: oObsDt,
+            ageDays: (__obs_now - oTsMs) / 86400000,
+            loc: String((oo && oo.locName) || ''),
+            howMany: Number.isFinite(Number(oo && oo.howMany)) ? Number(oo.howMany) : null,
+            subId: String((oo && oo.subId) || ''),
+            speciesCode: ocode
+          });
+          __obs_kept++;
+        }
+        try {
+          localStorage.setItem('bm_ebird_obs_v1', JSON.stringify({
+            fetchedAt: new Date().toISOString(),
+            bySpecies: bySpeciesObs
+          }));
+        } catch (lsErr) {
+          console.warn('[EBIRD-OBS] localStorage write failed', lsErr && lsErr.message);
+        }
+        console.log('[EBIRD-OBS] bucketed', {
+          kept: __obs_kept, dropped: __obs_dropped, noMatchToOurSpecies: __obs_noMatch,
+          speciesCount: Object.keys(bySpeciesObs).length
+        });
+      } catch (bucketErr) {
+        console.warn('[EBIRD-OBS] bucketing failed (non-fatal)', bucketErr && bucketErr.message);
+      }
+
       saveEbirdEE();
       try { refreshEbirdEEMarkers(); } catch(e){}
 
@@ -10801,9 +10956,10 @@ var __sharedDefaults = {};
     '</div>' +
     '<div style="border-top:1px solid #e2e8f0;padding-top:10px">' +
       '<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">Sources</div>' +
-      '<div style="display:flex;gap:4px">' +
+      '<div style="display:flex;gap:4px;flex-wrap:wrap">' +
         '<span style="font-size:11px;background:#eef2ff;color:#3730a3;padding:2px 8px;border-radius:12px">eElurikkus</span>' +
         '<span style="font-size:11px;background:#ecfdf5;color:#065f46;padding:2px 8px;border-radius:12px">GBIF</span>' +
+        '<span id="probSrcPillEbird" style="font-size:11px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;display:none">eBird</span>' +
       '</div>' +
       '<div id="probFetchStatus" style="font-size:11px;color:#94a3b8;margin-top:6px"></div>' +
       '<div style="margin-top:6px;display:flex;align-items:center;gap:6px">' +
@@ -10812,6 +10968,7 @@ var __sharedDefaults = {};
       '<div id="eluObsLegend" style="margin-top:4px;font-size:11px;color:#64748b;display:' + (_eluObsToggleActive ? 'flex' : 'none') + ';align-items:center;gap:6px;flex-wrap:wrap">' +
         'Obs: <svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="#ddd" stroke="#1E7F3E" stroke-width="2"/></svg> native ' +
         '<svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="#ddd" stroke="#E88D2A" stroke-width="2" stroke-dasharray="2 2"/></svg> resolved ' +
+        '<svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="#ddd" stroke="#f59e0b" stroke-width="2"/></svg> eBird ' +
         '<svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="#ddd" stroke="#2166AC" stroke-width="2.5"/></svg> marker' +
       '</div>' +
     '</div>';
@@ -10832,8 +10989,10 @@ var __sharedDefaults = {};
     if (legend) legend.style.display = _eluObsToggleActive ? 'flex' : 'none';
     if (_eluObsToggleActive && activeProbSpecies) {
       if (typeof window.renderElurikkusObservationsLayer === 'function') window.renderElurikkusObservationsLayer(activeProbSpecies);
+      if (typeof window.renderEbirdObservationsLayer === 'function') window.renderEbirdObservationsLayer(activeProbSpecies);
     } else {
       if (typeof window.clearEluObsLayer === 'function') window.clearEluObsLayer();
+      if (typeof window.clearEbirdObsLayer === 'function') window.clearEbirdObsLayer();
     }
   };
 
@@ -11493,6 +11652,7 @@ var __sharedDefaults = {};
   function clearProbabilityLayer() {
     if (probLayerGroup) { map.removeLayer(probLayerGroup); probLayerGroup = null; }
     if (typeof window.clearEluObsLayer === 'function') window.clearEluObsLayer();
+    if (typeof window.clearEbirdObsLayer === 'function') window.clearEbirdObsLayer();
   }
 
   function buildTemporalBreakdown(cell) {
@@ -11653,6 +11813,20 @@ var __sharedDefaults = {};
     panel.style.display = 'block';
     var label = document.getElementById('probSpeciesLabel');
     if (label) label.textContent = speciesName;
+    // Show eBird pill only when species has 7d obs in the bm_ebird_obs_v1 cache
+    var ebirdPill = document.getElementById('probSrcPillEbird');
+    if (ebirdPill) {
+      var hasEbird = false;
+      try {
+        var raw = localStorage.getItem('bm_ebird_obs_v1');
+        if (raw) {
+          var cached = JSON.parse(raw);
+          var arrEb = cached && cached.bySpecies && cached.bySpecies[speciesName];
+          hasEbird = Array.isArray(arrEb) && arrEb.length > 0;
+        }
+      } catch (e) {}
+      ebirdPill.style.display = hasEbird ? 'inline-block' : 'none';
+    }
   }
   function hideProbInfoPanel() {
     var panel = document.getElementById('probInfoPanel');
@@ -11956,6 +12130,7 @@ var __sharedDefaults = {};
 
       renderProbabilityOverlay(result.scored, speciesName, result.data.occurrences.length, result.seasonal.length, result.seasonInfo);
       if (typeof window.renderElurikkusObservationsLayer === 'function') window.renderElurikkusObservationsLayer(speciesName);
+      if (typeof window.renderEbirdObservationsLayer === 'function') window.renderEbirdObservationsLayer(speciesName);
       if (typeof render === 'function') render();
 
       var _eluKey = typeof _normalizeSpeciesKey === 'function' ? _normalizeSpeciesKey(speciesName) : String(speciesName || '').trim().toLowerCase();
@@ -12966,13 +13141,33 @@ window.__scanEnnAll=async function(btn,opts){
     // Phase 3: single regional-bulk eBird fetch, then serial prob-only scan.
     // eBird data used to be fetched per-species inside this loop (446 HTTP calls).
     // Now we fetch once via __refreshEbirdEEBulk and read counts from the bulk result.
-    try {
-      if(typeof window.__refreshEbirdEEBulk==='function'){
-        var bulkRes=await window.__refreshEbirdEEBulk();
-        console.log('[SCAN-EBIRD] bulk', bulkRes);
+    // 6h TTL gate (only at this call site, so other __refreshEbirdEEBulk callers
+    // at 10206/10679/10685 keep their fetch-every-time behavior).
+    var _shouldFetchEbirdObs = forceRescan;
+    if (!_shouldFetchEbirdObs) {
+      try {
+        var _rawObsCache = localStorage.getItem('bm_ebird_obs_v1');
+        if (!_rawObsCache) {
+          _shouldFetchEbirdObs = true;
+        } else {
+          var _cachedObs = JSON.parse(_rawObsCache);
+          var _ageMs = (_cachedObs && _cachedObs.fetchedAt) ? (Date.now() - Date.parse(_cachedObs.fetchedAt)) : Infinity;
+          _shouldFetchEbirdObs = !Number.isFinite(_ageMs) || _ageMs >= 6 * 60 * 60 * 1000;
+          if (!_shouldFetchEbirdObs) {
+            console.log('[EBIRD-OBS] cache fresh (' + Math.round(_ageMs/60000) + 'min) — skipping eBird bulk in scan');
+          }
+        }
+      } catch (e) { _shouldFetchEbirdObs = true; }
+    }
+    if (_shouldFetchEbirdObs) {
+      try {
+        if(typeof window.__refreshEbirdEEBulk==='function'){
+          var bulkRes=await window.__refreshEbirdEEBulk();
+          console.log('[SCAN-EBIRD] bulk', bulkRes);
+        }
+      } catch(bulkErr){
+        console.warn('[EBIRD-OBS] scan fetch failed (non-fatal)', bulkErr && bulkErr.message);
       }
-    } catch(bulkErr){
-      console.warn('[SCAN-EBIRD] bulk failed, continuing with stale counts', bulkErr && bulkErr.message);
     }
     var __scanBulkCounts = window.__ennEbirdCounts || {};
     var __scanBulkUpdatedAt = new Date().toISOString();

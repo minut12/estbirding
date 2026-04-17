@@ -11238,6 +11238,34 @@ var __sharedDefaults = {};
     cell.periodConfidence = confidence;
   }
 
+  // Phase 2: eBird 7d obs contribution to cell freshness.
+  // Matches the scoring bbox predicate exactly (half-open < on upper bounds).
+  function getEbirdCellStats(speciesName, cell) {
+    var out = { count: 0, freshestRecency: 0 };
+    try {
+      var raw = localStorage.getItem('bm_ebird_obs_v1');
+      if (!raw) return out;
+      var cached = JSON.parse(raw);
+      var items = (cached && cached.bySpecies && cached.bySpecies[speciesName]) || [];
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i];
+        var lat = Number(it.lat), lon = Number(it.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+        if (!(lat >= cell.latMin && lat < cell.latMax && lon >= cell.lonMin && lon < cell.lonMax)) continue;
+        out.count++;
+        var age = Number(it.ageDays);
+        if (!Number.isFinite(age)) {
+          var tsMs = Date.parse(String(it.obsDt || '').replace(' ', 'T'));
+          if (!Number.isFinite(tsMs)) continue;
+          age = (Date.now() - tsMs) / 86400000;
+        }
+        var fp = Math.max(0, 1 - age / 7);
+        if (fp > out.freshestRecency) out.freshestRecency = fp;
+      }
+    } catch (e) {}
+    return out;
+  }
+
   function calculateProbabilities(gridCells, seasonal, allOccs, speciesName, cellSize, seasonInfo) {
     cellSize = cellSize || 0.15;
 
@@ -11375,6 +11403,17 @@ var __sharedDefaults = {};
           if (_fp > baseFresh) baseFresh = _fp;
         }
       }
+      // Capture eElu-only count before extension (for popup breakdown)
+      cell.freshEluCount = cellRecentCount;
+
+      // Phase 2: extend with eBird 7d obs in this cell
+      var _ebirdStats = getEbirdCellStats(speciesName, cell);
+      cell.freshEbirdCount = _ebirdStats.count;
+      if (_ebirdStats.count > 0) {
+        cellRecentCount += _ebirdStats.count;
+        if (_ebirdStats.freshestRecency > baseFresh) baseFresh = _ebirdStats.freshestRecency;
+      }
+
       if (cellRecentCount > 0 && baseFresh > 0) {
         // Density multiplier: 1 obs → 1.0, 3 → 1.33, 9 → 1.69, capped via min(1) on result
         var densityMul = 1 + 0.3 * Math.log1p(cellRecentCount);
@@ -11708,8 +11747,8 @@ var __sharedDefaults = {};
     if (ebirdSpeciesWide > 0) {
       for (var _ei = 0; _ei < ebirdAll.length; _ei++) {
         var _eit = ebirdAll[_ei];
-        if (_eit.lat >= cell.latMin && _eit.lat <= cell.latMax &&
-            _eit.lon >= cell.lonMin && _eit.lon <= cell.lonMax) cellEbirdTotal++;
+        if (_eit.lat >= cell.latMin && _eit.lat < cell.latMax &&
+            _eit.lon >= cell.lonMin && _eit.lon < cell.lonMax) cellEbirdTotal++;
       }
     }
 
@@ -11756,10 +11795,20 @@ var __sharedDefaults = {};
     if (_bSum > 0) {
       var bParts = [];
       if (_bHistory > 0) bParts.push(_bHistory + ' history (GBIF ' + (cell.scoreHistoryGbif || 0) + ' + eElu ' + (cell.scoreHistoryElu || 0) + ' obs)');
-      if (_bFreshness > 0) bParts.push(_bFreshness + ' freshness'
-        + ((cell.freshRecentCount || 0) > 0
-          ? ' (' + cell.freshRecentCount + ' obs in 7d, freshest ~' + Math.round(7 - (cell.freshBaseRecency || 0) * 7) + 'd ago)'
-          : ''));
+      if (_bFreshness > 0) {
+        var _eluN   = Number(cell.freshEluCount   || 0);
+        var _ebirdN = Number(cell.freshEbirdCount || 0);
+        var _totalN = Number(cell.freshRecentCount || 0);
+        var _ageTxt = _totalN > 0
+          ? ', freshest ~' + Math.round(7 - (cell.freshBaseRecency || 0) * 7) + 'd ago'
+          : '';
+        var _breakdown;
+        if (_eluN > 0 && _ebirdN > 0)      _breakdown = _eluN + ' Elu + ' + _ebirdN + ' eBird in 7d';
+        else if (_ebirdN > 0)              _breakdown = _ebirdN + ' eBird in 7d';
+        else if (_eluN > 0)                _breakdown = _eluN + ' Elu in 7d';
+        else                               _breakdown = '';
+        bParts.push(_bFreshness + ' freshness' + (_breakdown ? ' (' + _breakdown + _ageTxt + ')' : ''));
+      }
       if (_bSeason > 0) bParts.push(_bSeason + ' season');
       breakdownLine = '<div style="font-size:11px;color:#94a3b8;margin-top:6px;border-top:1px solid #eee;padding-top:4px">'
         + 'Score: ' + bParts.join(' + ') + ' = ' + _bSum
@@ -12229,8 +12278,13 @@ window.__probDataBySpecies = window.__probDataBySpecies || {};
 
 // === Ennustus cross-session cache (12h TTL) ===
 var ENN_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
-var ENN_PROB_CACHE_KEY = 'bm_enn_prob_v1';
+// Phase 2 (2026-04-17): bumped v1 → v2 to invalidate scores computed without
+// eBird freshness contribution. Stale v1 entries are purged once on load.
+var ENN_PROB_CACHE_KEY = 'bm_enn_prob_v2';
 var ENN_BADGE_CACHE_KEY = 'bm_enn_badges_v1';
+
+// One-time cleanup of legacy v1 prob cache (superseded by v2 / eBird-inclusive freshness)
+try { localStorage.removeItem('bm_enn_prob_v1'); } catch (e) {}
 
 // Restore prob data from localStorage (handles both compact and full format)
 (function(){try{

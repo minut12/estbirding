@@ -11499,6 +11499,34 @@ var __sharedDefaults = {};
       cell.scoreHistoryElu = cell.eluCount;
     });
 
+    // Phase 3: flag the single best rendered cell for crown display.
+    // Per-render flag, not persisted to bm_enn_prob_v2.
+    (function flagTopScoreCell(cells) {
+      if (!Array.isArray(cells) || !cells.length) return;
+      var best = null;
+      for (var i = 0; i < cells.length; i++) {
+        var c = cells[i];
+        // Match renderProbabilityOverlay's visibility guard — never crown a cell that won't be drawn.
+        if ((c.gbifCount || 0) <= 0 && (c.eluCount || 0) <= 0 && !c.markerInCell && (c.scoreRecency || 0) <= 0) continue;
+        var pct = Number(c.probability || 0);
+        if (!(pct > 0)) continue;
+        if (best === null) { best = c; continue; }
+        var bPct = Number(best.probability || 0);
+        if (pct > bPct) { best = c; continue; }
+        if (pct === bPct) {
+          var cFB = Number(c.freshBaseRecency || 0);
+          var bFB = Number(best.freshBaseRecency || 0);
+          if (cFB > bFB) { best = c; continue; }
+          if (cFB === bFB) {
+            var cRC = Number(c.freshRecentCount || 0);
+            var bRC = Number(best.freshRecentCount || 0);
+            if (cRC > bRC) best = c;
+          }
+        }
+      }
+      if (best) best.isTopScore = true;
+    })(gridCells);
+
     return gridCells;
   }
 
@@ -11869,6 +11897,20 @@ var __sharedDefaults = {};
       var rect = L.rectangle(bounds, { fillColor: fillColor, fillOpacity: fillOpacity, color: strokeColor, weight: 1, opacity: strokeOpacity, interactive: true });
       rect.bindPopup(buildProbPopup(cell, speciesName, totalObs, totalInSeason, seasonInfo, _ebirdItems));
       probLayerGroup.addLayer(rect);
+
+      // Phase 3: crown the single best cell. interactive:false so clicks fall through to the rect popup.
+      if (cell.isTopScore) {
+        var crownIcon = L.divIcon({
+          html: '<div style="font-size:16px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.4));pointer-events:none">\uD83D\uDC51</div>',
+          className: 'prob-cell-crown',
+          iconSize: [20, 20],
+          iconAnchor: [18, 2]
+        });
+        var crownLat = cell.latMax - 0.002;
+        var crownLon = cell.lonMax - 0.002;
+        var crownMarker = L.marker([crownLat, crownLon], { icon: crownIcon, interactive: false });
+        probLayerGroup.addLayer(crownMarker);
+      }
     });
 
     // Top-5 hotspot markers

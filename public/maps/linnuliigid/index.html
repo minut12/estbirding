@@ -11680,7 +11680,7 @@ var __sharedDefaults = {};
     return html;
   }
 
-  function buildProbPopup(cell, speciesName, totalObs, totalInSeason, seasonInfo) {
+  function buildProbPopup(cell, speciesName, totalObs, totalInSeason, seasonInfo, ebirdItems) {
     var probColor = cell.probability > 60 ? '#A32D2D' : cell.probability > 25 ? '#B06A1A' : '#534AB7';
     var cellSize = 0.15;
     var cLat = Number.isFinite(cell.centerLat) ? cell.centerLat : (cell.latMin + cell.latMax) / 2;
@@ -11701,6 +11701,18 @@ var __sharedDefaults = {};
       }
     } catch(e) {}
 
+    // eBird in-cell count (bbox membership against current cell)
+    var ebirdAll = Array.isArray(ebirdItems) ? ebirdItems : [];
+    var ebirdSpeciesWide = ebirdAll.length;
+    var cellEbirdTotal = 0;
+    if (ebirdSpeciesWide > 0) {
+      for (var _ei = 0; _ei < ebirdAll.length; _ei++) {
+        var _eit = ebirdAll[_ei];
+        if (_eit.lat >= cell.latMin && _eit.lat <= cell.latMax &&
+            _eit.lon >= cell.lonMin && _eit.lon <= cell.lonMax) cellEbirdTotal++;
+      }
+    }
+
     var eluLine = '';
     if (cellEluTotal > 0) {
       eluLine = '<div style="margin:2px 0;font-size:12px;color:#555">'
@@ -11711,6 +11723,15 @@ var __sharedDefaults = {};
       eluLine = '<div style="margin:2px 0;font-size:12px;color:#999">'
         + '\uD83D\uDD0D eElurikkus: 0 in this cell \u00b7 ' + globalEluRecent7d + ' obs elsewhere in last 7d'
         + ' (see green/orange markers)'
+        + '</div>';
+    }
+
+    // eBird species-wide line (mirrors eElu format, omitted entirely if no cache entries)
+    var ebirdLine = '';
+    if (ebirdSpeciesWide > 0) {
+      ebirdLine = '<div style="margin:2px 0;font-size:12px;color:#555">'
+        + '\uD83D\uDD0D eBird: <b>' + cellEbirdTotal + '</b> in this cell'
+        + ' (' + ebirdSpeciesWide + ' species-wide in last 7d)'
         + '</div>';
     }
 
@@ -11759,8 +11780,10 @@ var __sharedDefaults = {};
         + '<div style="font-size:12px;color:#555">\uD83D\uDCCD <b>This cell:</b> GBIF ' + gbifSeason + ' in season'
         + (gbifTotal > gbifSeason ? ' (' + gbifTotal + ' total)' : '')
         + ((cell.eluCount || 0) > 0 ? ' \u00b7 eElurikkus ' + cell.eluCount : '')
+        + (ebirdSpeciesWide > 0 ? ' \u00b7 eBird ' + cellEbirdTotal : '')
         + '</div>'
         + eluLine
+        + ebirdLine
       + '</div>'
       + '<div style="font-size:12px;color:#94a3b8;margin-top:6px">'
         + '\uD83D\uDCCA All cells: ' + (totalObs || '?') + ' obs \u00b7 ' + (totalInSeason || '?') + ' in season'
@@ -11775,6 +11798,16 @@ var __sharedDefaults = {};
     clearProbabilityLayer();
     probLayerGroup = L.layerGroup();
 
+    // Read eBird obs cache once — passed to buildProbPopup per cell
+    var _ebirdItems = [];
+    try {
+      var _rawEb2 = localStorage.getItem('bm_ebird_obs_v1');
+      if (_rawEb2) {
+        var _cachedEb2 = JSON.parse(_rawEb2);
+        _ebirdItems = (_cachedEb2 && _cachedEb2.bySpecies && _cachedEb2.bySpecies[speciesName]) || [];
+      }
+    } catch (_eRendEb) {}
+
     gridCells.forEach(function(cell) {
       // Skip cells with no signal at all (no GBIF, no eElurikkus history, no freshness)
       if (cell.gbifCount <= 0 && (cell.eluCount || 0) <= 0 && !cell.markerInCell && (cell.scoreRecency || 0) <= 0) return;
@@ -11785,7 +11818,7 @@ var __sharedDefaults = {};
       else { fillColor = '#7F77DD'; fillOpacity = 0.25; strokeColor = '#534AB7'; strokeOpacity = 0.3; }
 
       var rect = L.rectangle(bounds, { fillColor: fillColor, fillOpacity: fillOpacity, color: strokeColor, weight: 1, opacity: strokeOpacity, interactive: true });
-      rect.bindPopup(buildProbPopup(cell, speciesName, totalObs, totalInSeason, seasonInfo));
+      rect.bindPopup(buildProbPopup(cell, speciesName, totalObs, totalInSeason, seasonInfo, _ebirdItems));
       probLayerGroup.addLayer(rect);
     });
 
@@ -11795,7 +11828,7 @@ var __sharedDefaults = {};
       var center = [(cell.latMin + cell.latMax)/2, (cell.lonMin + cell.lonMax)/2];
       var mc = cell.probability > 60 ? '#A32D2D' : cell.probability > 25 ? '#B06A1A' : '#534AB7';
       var marker = L.circleMarker(center, { radius: 5, fillColor: mc, fillOpacity: 1, color: 'white', weight: 1.5 });
-      marker.bindPopup(buildProbPopup(cell, speciesName, totalObs, totalInSeason, seasonInfo));
+      marker.bindPopup(buildProbPopup(cell, speciesName, totalObs, totalInSeason, seasonInfo, _ebirdItems));
       probLayerGroup.addLayer(marker);
     });
 
@@ -12146,7 +12179,19 @@ var __sharedDefaults = {};
       var _eluInfo = 'eElurikkus: ' + _eluLiveCount + ' items';
       if (_occ7 > 0) _eluInfo += ' (' + _occ7 + ' in 7d)';
       if (_eluDateStr) _eluInfo += ' \u00b7 ' + _eluDateStr;
-      setProbStatus('GBIF: ' + _gbifTotal + ' \u00b7 ' + _eluInfo + ' \u00b7 ' + result.seasonal.length + ' in season \u00b7 ' + result.scored.length + ' cells');
+      // eBird: N items (M in 7d) — bucket already enforces 7d, so N === M
+      var _ebirdInfo = '';
+      try {
+        var _rawEb = localStorage.getItem('bm_ebird_obs_v1');
+        if (_rawEb) {
+          var _cachedEb = JSON.parse(_rawEb);
+          var _ebItems = (_cachedEb && _cachedEb.bySpecies && _cachedEb.bySpecies[speciesName]) || [];
+          if (_ebItems.length > 0) {
+            _ebirdInfo = ' \u00b7 eBird: ' + _ebItems.length + ' items (' + _ebItems.length + ' in 7d)';
+          }
+        }
+      } catch(_ebErr) {}
+      setProbStatus('GBIF: ' + _gbifTotal + ' \u00b7 ' + _eluInfo + _ebirdInfo + ' \u00b7 ' + result.seasonal.length + ' in season \u00b7 ' + result.scored.length + ' cells');
 
     } catch(err) {
       console.error('[prob]', err);

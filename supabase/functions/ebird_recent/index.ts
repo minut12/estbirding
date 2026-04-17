@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
     return jsonResponse(400, { error: "regionCode is required" }, origin);
   }
   const back = intInRange(reqUrl.searchParams.get("back"), 7, 1, 30);
-  const maxResults = intInRange(reqUrl.searchParams.get("maxResults"), 1000, 1, 1000);
+  const maxResults = intInRange(reqUrl.searchParams.get("maxResults"), 1000, 1, 10000);
   const speciesCode = (reqUrl.searchParams.get("speciesCode") || "").trim();
   const detail = (reqUrl.searchParams.get("detail") || "simple").trim();
 

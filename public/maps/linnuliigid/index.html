@@ -10203,7 +10203,7 @@ var __sharedDefaults = {};
       ebirdEEBtn.style.opacity = '0.6';
       _updateEbirdEEProgress(0, 0, 'Starting...', 'running');
       if(Object.keys(ebirdEEPoints).length > 0) refreshEbirdEEMarkers();
-      refreshEbirdEEAll();
+      refreshEbirdEEBulk();
     } else {
       syncEbirdEEBtn();
       refreshEbirdEEMarkers();
@@ -10300,6 +10300,149 @@ var __sharedDefaults = {};
 
   window.__fetchEbirdEEForSpecies = fetchEbirdEEForSpecies;
 
+  // Accessor so other IIFEs (e.g. Ennustus "Skaneeri") can read a single
+  // ebirdEEPoints entry without exposing the whole store to mutation.
+  window.__getEbirdEEPoint = function(name){
+    if(!name || typeof name !== 'string') return null;
+    return ebirdEEPoints[name] || null;
+  };
+
+  // --- Regional bulk fetch ---
+  // Single request for all of EE; replaces the 446× per-species loop.
+  // Consumed by the layer-toggle, the 30-min auto-interval, the cold-start
+  // hydrate, and the Ennustus "Skaneeri" scan.
+  var __ebirdEEBulkInFlight = null;
+  async function refreshEbirdEEBulk(){
+    if(__ebirdEEBulkInFlight) return __ebirdEEBulkInFlight;
+    window.__ennEbirdCounts = window.__ennEbirdCounts || {};
+    var started = Date.now();
+    var SUPABASE_REF = 'eenwcyuyugyrjgpivxrq';
+    var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
+    var proxyUrl = 'https://' + SUPABASE_REF + '.supabase.co/functions/v1/ebird_recent?regionCode=EE&back=30&maxResults=10000&detail=full&_ts=' + Date.now();
+    var directUrl = 'https://api.ebird.org/v2/data/obs/EE/recent?back=30&maxResults=10000&detail=full&_ts=' + Date.now();
+
+    async function _fetchWithTimeout(url, opts, ms){
+      var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+      var timer = ctrl ? setTimeout(function(){ try{ ctrl.abort(); }catch(e){} }, ms) : null;
+      try {
+        var f = ctrl ? Object.assign({ signal: ctrl.signal }, opts || {}) : (opts || {});
+        return await fetch(url, f);
+      } finally {
+        if(timer) clearTimeout(timer);
+      }
+    }
+
+    __ebirdEEBulkInFlight = (async function(){
+      var arr = null;
+      // Prefer proxy (token stays server-side). Fall back to direct on failure.
+      try {
+        var res = await _fetchWithTimeout(proxyUrl, { headers: { 'X-eBirdApiToken': token }, cache: 'no-store' }, 30000);
+        if(!res.ok) throw new Error('proxy HTTP ' + res.status);
+        var json = await res.json();
+        arr = Array.isArray(json) ? json : (json && (json.observations || json.data));
+      } catch(proxyErr){
+        try {
+          var res2 = await _fetchWithTimeout(directUrl, { headers: { 'X-eBirdApiToken': token }, cache: 'no-store' }, 30000);
+          if(!res2.ok) throw new Error('direct HTTP ' + res2.status);
+          arr = await res2.json();
+        } catch(directErr){
+          console.warn('[eBird EE bulk] both proxy and direct failed', proxyErr && proxyErr.message, directErr && directErr.message);
+          return { ok: false, reason: 'fetch_failed', durationMs: Date.now() - started };
+        }
+      }
+
+      if(!Array.isArray(arr)){
+        console.warn('[eBird EE bulk] invalid payload');
+        return { ok: false, reason: 'invalid_payload', durationMs: Date.now() - started };
+      }
+
+      var now = Date.now();
+      var win7 = 7 * 24 * 60 * 60 * 1000;
+      var countsByCode = Object.create(null);
+      for(var i = 0; i < arr.length; i++){
+        var obs = arr[i];
+        var code = String((obs && obs.speciesCode) || '');
+        if(!code) continue;
+        var slot = countsByCode[code];
+        if(!slot){
+          slot = { count30: 0, count7: 0, latestObs: null, latestTs: 0 };
+          countsByCode[code] = slot;
+        }
+        slot.count30++;
+        var dstr = String((obs && obs.obsDt) || '').substring(0, 10);
+        var ms = (typeof _toDay === 'function') ? _toDay(dstr) : Date.parse(dstr);
+        if(ms && (now - ms) >= 0 && (now - ms) <= win7) slot.count7++;
+        if(ms && ms > slot.latestTs){
+          slot.latestTs = ms;
+          slot.latestObs = obs;
+        }
+      }
+
+      // Build eBird code → Estonian name map from the authoritative constant.
+      var codeToName = Object.create(null);
+      var dupes = 0;
+      var codes = Object.keys(SPECIES_EBIRD_CODES || {});
+      for(var ci = 0; ci < codes.length; ci++){
+        var estName = codes[ci];
+        var spCode = SPECIES_EBIRD_CODES[estName];
+        if(!spCode) continue;
+        if(codeToName[spCode]){ dupes++; continue; }
+        codeToName[spCode] = estName;
+      }
+      if(dupes > 0) console.warn('[eBird EE bulk] duplicate eBird codes in SPECIES_EBIRD_CODES:', dupes);
+
+      var written = 0;
+      var codesWithData = Object.keys(countsByCode);
+      for(var k = 0; k < codesWithData.length; k++){
+        var spCode2 = codesWithData[k];
+        var stats = countsByCode[spCode2];
+        var name = codeToName[spCode2];
+        if(!name) continue;
+        var latest = stats.latestObs;
+        if(!latest) continue;
+        var lat = +latest.lat, lon = +latest.lng;
+        if(!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+        var observer = latest.userDisplayName
+          || (latest.firstName && latest.lastName ? ((latest.firstName || '') + ' ' + (latest.lastName || '')).trim() : null);
+        ebirdEEPoints[name] = {
+          lat: lat, lon: lon,
+          t: String(latest.obsDt || '').substring(0, 10),
+          loc: latest.locName || '',
+          occ7: stats.count7,
+          howMany: Number.isFinite(latest.howMany) ? latest.howMany : null,
+          observer: observer,
+          subId: latest.subId || null,
+          lastFetched: new Date().toISOString(),
+          src: 'eBird EE'
+        };
+        written++;
+      }
+
+      // Populate counts keyed by eBird species code (what combinedProb reads).
+      window.__ennEbirdCounts = {};
+      for(var sc in countsByCode){
+        if(!Object.prototype.hasOwnProperty.call(countsByCode, sc)) continue;
+        window.__ennEbirdCounts[sc] = countsByCode[sc].count7;
+      }
+      window.__ennEbirdCountsUpdatedAt = Date.now();
+
+      saveEbirdEE();
+      try { refreshEbirdEEMarkers(); } catch(e){}
+
+      var elapsed = Date.now() - started;
+      console.log('[eBird EE bulk] done total=' + arr.length + ' codes=' + codesWithData.length + ' written=' + written + ' in ' + elapsed + 'ms');
+      return { ok: true, total: codesWithData.length, written: written, durationMs: elapsed };
+    })();
+
+    try {
+      return await __ebirdEEBulkInFlight;
+    } finally {
+      __ebirdEEBulkInFlight = null;
+    }
+  }
+
+  window.__refreshEbirdEEBulk = refreshEbirdEEBulk;
+
   // --- Progress indicator ---
   function _updateEbirdEEProgress(done, total, currentSpecies, status){
     var el = document.getElementById('ebirdEEProgress');
@@ -10346,6 +10489,9 @@ var __sharedDefaults = {};
   }
 
   // --- Bulk fetch ---
+  // DEPRECATED 2026-04-17: replaced by refreshEbirdEEBulk (single regional call).
+  // Keeping function definition for one release cycle in case rollback is needed.
+  // Remove in a follow-up PR if no issues surface within a week.
   async function refreshEbirdEEAll(){
     if(window.__ebirdEERefreshing){
       _updateEbirdEEProgress(0, 0, 'Already refreshing...', 'running');
@@ -10530,13 +10676,13 @@ var __sharedDefaults = {};
 
   // --- Auto-refresh every 30 min ---
   setInterval(function(){
-    if(window.__ebirdEELayerOn) refreshEbirdEEAll();
+    if(window.__ebirdEELayerOn) refreshEbirdEEBulk();
   }, 30 * 60 * 1000);
 
   // --- Init: restore from cache ---
   if(window.__ebirdEELayerOn && Object.keys(ebirdEEPoints).length > 0){
     setTimeout(refreshEbirdEEMarkers, 1000);
-    setTimeout(refreshEbirdEEAll, 5000);
+    setTimeout(refreshEbirdEEBulk, 5000);
   }
   // Hook: refresh eBird markers whenever the sidebar re-renders.
   try {
@@ -12392,43 +12538,9 @@ var SPRING = {
 var EBIRD_CODES_FALLBACK = {};
 try { EBIRD_CODES_FALLBACK = JSON.parse(localStorage.getItem('bm_ebird_codes') || '{}'); } catch(e) {}
 
-var EBIRD_TOKEN = '9s72dc2jcjlq';
-var ebirdRecentCache = null;
-window.__ennEbirdCounts = {};
+window.__ennEbirdCounts = window.__ennEbirdCounts || {};
 
-function fetchEbirdRecent(callback) {
-  var url = 'https://api.ebird.org/v2/data/obs/EE/recent?back=30&maxResults=10000&_ts=' + Date.now();
-  fetch(url, { headers: { 'X-eBirdApiToken': EBIRD_TOKEN }, cache: 'no-store' })
-  .then(function(res) { if (!res.ok) throw new Error('eBird HTTP ' + res.status); return res.json(); })
-  .then(function(arr) {
-    if (!Array.isArray(arr)) throw new Error('eBird: invalid response');
-    // Build per-species-code counts directly from the raw array
-    var countsByCode = {};
-    for (var i = 0; i < arr.length; i++) {
-      var obs = arr[i], code = String(obs.speciesCode || '');
-      if (!code) continue;
-      if (!countsByCode[code]) countsByCode[code] = { count: 0, lastDate: '', comName: obs.comName || '' };
-      countsByCode[code].count++;
-      var dt = String(obs.obsDt || '').substring(0, 10);
-      if (dt > countsByCode[code].lastDate) countsByCode[code].lastDate = dt;
-    }
-    ebirdRecentCache = { fetchedAt: Date.now(), data: countsByCode, totalObs: arr.length };
-    // Store per-species-code 7-day counts on window for direct lookup
-    window.__ennEbirdCounts = {};
-    var _now7 = Date.now(), _7days = 7 * 24 * 60 * 60 * 1000;
-    for (var _ai = 0; _ai < arr.length; _ai++) {
-      var _aobs = arr[_ai], _acode = String(_aobs.speciesCode || '');
-      if (!_acode) continue;
-      var _ams = new Date(String(_aobs.obsDt || '').substring(0, 10)).getTime();
-      if (_now7 - _ams <= _7days) {
-        window.__ennEbirdCounts[_acode] = (window.__ennEbirdCounts[_acode] || 0) + 1;
-      }
-    }
-    console.log('[Ennustus] eBird EE fetched:', Object.keys(countsByCode).length, 'species,', arr.length, 'obs, __ennEbirdCounts:', Object.keys(window.__ennEbirdCounts).length);
-    callback(null, countsByCode);
-  })
-  .catch(function(err) { console.warn('[Ennustus] eBird fetch failed:', err.message); callback(err, null); });
-}
+// 2026-04-17: fetchEbirdRecent removed — regional bulk is now __refreshEbirdEEBulk (exposed from eBird EE IIFE).
 
 function getEbirdCode(estName) {
   var clean = (typeof _fix === 'function') ? _fix(estName) : estName;
@@ -12851,7 +12963,20 @@ window.__scanEnnAll=async function(btn,opts){
       return;
     }
 
-    // Phase 3: Serial per-species scan with 150ms delay
+    // Phase 3: single regional-bulk eBird fetch, then serial prob-only scan.
+    // eBird data used to be fetched per-species inside this loop (446 HTTP calls).
+    // Now we fetch once via __refreshEbirdEEBulk and read counts from the bulk result.
+    try {
+      if(typeof window.__refreshEbirdEEBulk==='function'){
+        var bulkRes=await window.__refreshEbirdEEBulk();
+        console.log('[SCAN-EBIRD] bulk', bulkRes);
+      }
+    } catch(bulkErr){
+      console.warn('[SCAN-EBIRD] bulk failed, continuing with stale counts', bulkErr && bulkErr.message);
+    }
+    var __scanBulkCounts = window.__ennEbirdCounts || {};
+    var __scanBulkUpdatedAt = new Date().toISOString();
+
     var scanDone=0,scanErrors=0,scanSkipped=0;
     render();
 
@@ -12860,7 +12985,25 @@ window.__scanEnnAll=async function(btn,opts){
       var name=need[si];
       if(btn) btn.textContent='Skaneerin '+(si+1)+'/'+need.length;
 
-      // Skip if cached prob data is fresh (< 12h old) and not force-rescanning
+      // Apply bulk eBird result to this species regardless of prob cache hit.
+      try{
+        var _code = (typeof getEbirdCode==='function') ? getEbirdCode(name) : null;
+        var _count7 = _code ? (Number(__scanBulkCounts[_code]) || 0) : 0;
+        var _ee = (typeof window.__getEbirdEEPoint==='function') ? window.__getEbirdEEPoint(name) : null;
+        window.points=window.points||{};
+        window.points[name]=window.points[name]||{};
+        var ep=window.points[name];
+        ep.occ7Ebird=_count7;
+        ep.occ7EbirdUpdated=__scanBulkUpdatedAt;
+        if(_ee && Number.isFinite(_ee.lat) && Number.isFinite(_ee.lon)){
+          ep.lat=_ee.lat;ep.lon=_ee.lon;
+          if(_ee.t) ep.t=_ee.t;
+          ep.src='eBird';ep.lastFetched=_ee.lastFetched;
+        }
+        if(typeof window.__schedulePersistBadgeCache==='function') window.__schedulePersistBadgeCache();
+      }catch(ebErr){console.warn('[SCAN-EBIRD] apply error',name,ebErr);}
+
+      // Skip heavy prob computation if cached data is fresh (< 12h) and not force-rescanning.
       var _existing=(window.__probDataBySpecies||{})[name];
       if(!forceRescan&&_existing&&_existing.computedAt&&Date.now()-_existing.computedAt<(window.ENN_CACHE_TTL_MS||43200000)){
         scanSkipped++;
@@ -12876,26 +13019,6 @@ window.__scanEnnAll=async function(btn,opts){
         console.warn('[SCAN] prob failed:',name,err&&err.message);
       }
 
-      try{
-        if(typeof window.__fetchEbirdEEForSpecies==='function'){
-          var ebResult=await window.__fetchEbirdEEForSpecies(name);
-          if(ebResult){
-            window.points=window.points||{};
-            window.points[name]=window.points[name]||{};
-            var ep=window.points[name];
-            ep.occ7Ebird=ebResult.occ7;
-            ep.occ7EbirdUpdated=new Date().toISOString();
-            if(Number.isFinite(ebResult.lat)&&Number.isFinite(ebResult.lon)){
-              ep.lat=ebResult.lat;ep.lon=ebResult.lon;
-            }
-            if(ebResult.t) ep.t=ebResult.t;
-            ep.src='eBird';ep.lastFetched=ebResult.lastFetched;
-            if(typeof window.__schedulePersistBadgeCache==='function') window.__schedulePersistBadgeCache();
-          }
-        }
-      }catch(ebErr){console.warn('[SCAN-EBIRD] error',name,ebErr);}
-
-      await new Promise(function(r){setTimeout(r,150);});
       if(si%10===0&&typeof render==='function'){try{render();}catch(e){}}
     }
 

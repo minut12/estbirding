@@ -1137,7 +1137,10 @@ function _persistLiveCaches(){
   }catch(e){}
 }
 function _livePointFromItems(speciesName, items){
-  const key = _speciesKey(speciesName);
+  // Returns a sparse patch of count/freshness fields only. Positional and
+  // descriptive fields (lat, lon, src, coords_*, municipality, locality,
+  // county, placeText, eluExtra) come from the snapshot and must not be
+  // overwritten by device-local live items — see _applyLiveOverrideForSpecies.
   const arr = Array.isArray(items) ? items.slice() : [];
   const sorted = arr.slice().sort(function(a,b){
     return (_parseObservedTs(b && b.observedAt) || 0) - (_parseObservedTs(a && a.observedAt) || 0);
@@ -1148,108 +1151,40 @@ function _livePointFromItems(speciesName, items){
     const ts = _parseObservedTs(it && it.observedAt ? it.observedAt : '');
     return Number.isFinite(ts) && ts >= cutoffTs;
   }).length;
-  let lat = null, lon = null, coordsStatus = 'missing', coordsSource = 'none', municipality = null, locality = null, county = null, placeText = '';
-  let chosenPlaceRow = null;
-  for(const it of sorted){
-    const ilat = Number(it && it.lat);
-    const ilon = Number(it && it.lon);
-    if(Number.isFinite(ilat) && Number.isFinite(ilon)){
-      lat = ilat; lon = ilon; coordsStatus = 'public'; coordsSource = 'exact';
-      municipality = it && it.municipality ? String(it.municipality).trim() : null;
-      locality = it && it.locality ? String(it.locality).trim() : null;
-      county = it && it.county ? String(it.county).trim() : null;
-      placeText = String((it && (it.placeText || it.locality || it.municipality || it.county)) || '').trim();
-      break;
-    }
-    if(!chosenPlaceRow && it && (it.placeText || it.municipality || it.locality || it.county)) chosenPlaceRow = it;
-  }
-  const snap = __snapshotPointBySpecies[key] || {};
-  if(!(Number.isFinite(lat) && Number.isFinite(lon))){
-    if(chosenPlaceRow){
-      municipality = chosenPlaceRow.municipality ? String(chosenPlaceRow.municipality).trim() : null;
-      locality = chosenPlaceRow.locality ? String(chosenPlaceRow.locality).trim() : null;
-      county = chosenPlaceRow.county ? String(chosenPlaceRow.county).trim() : null;
-      placeText = String((chosenPlaceRow.placeText || chosenPlaceRow.locality || chosenPlaceRow.municipality || chosenPlaceRow.county) || '').trim();
-    }
-    const byPlace = resolveCentroidFromPlace(placeText || municipality || locality || county || '');
-    if(byPlace && Number.isFinite(byPlace.lat) && Number.isFinite(byPlace.lon)){
-      lat = Number(byPlace.lat);
-      lon = Number(byPlace.lon);
-      coordsStatus = 'restricted';
-      coordsSource = String(byPlace.source || 'municipality_centroid');
-    } else {
-    const resolved = resolveFallbackLatLon({
-      municipality: municipality,
-      locality: locality,
-      county: county,
-      snapshotLat: snap.lat,
-      snapshotLon: snap.lon,
-    });
-    if(resolved && Number.isFinite(resolved.lat) && Number.isFinite(resolved.lon)){
-      lat = Number(resolved.lat);
-      lon = Number(resolved.lon);
-      coordsStatus = 'restricted';
-      coordsSource = resolved.source;
-    }
-    }
-  }
-  const out = Object.assign({}, snap);
-  if(newest && newest.observedAt) out.t = String(newest.observedAt);
-  if(Number.isFinite(lat) && Number.isFinite(lon)){ out.lat = lat; out.lon = lon; } else { delete out.lat; delete out.lon; }
-  out.occ7 = occ7;
-  out.occ7Elu = occ7;
-  out.occ7EluUpdated = new Date().toISOString();
-  out.src = 'Elurikkus';
-  out.coords_status = coordsStatus;
-  out.coords_source = coordsSource;
-  if(municipality) out.municipality = municipality;
-  if(locality) out.locality = locality;
-  if(county) out.county = county;
-  if(placeText) out.placeText = placeText;
-  out.coords_note = (coordsStatus === 'restricted')
-    ? ('coords restricted \u2192 ' + (coordsSource === 'snapshot_fallback' ? 'snapshot fallback' : coordsSource) + (placeText ? (' (' + placeText + ')') : ''))
-    : '';
-  const decision = {
-    species: speciesName,
-    coordsStatus: coordsStatus,
-    municipality: municipality || '',
-    county: county || '',
-    locality: locality || '',
-    placeText: placeText || '',
-    resolvedLatLon: (Number.isFinite(lat) && Number.isFinite(lon)) ? { lat: Number(lat), lon: Number(lon) } : null,
-    coordsSource: coordsSource,
+  const nowIso = new Date().toISOString();
+  const patch = {
+    occ7: occ7,
+    occ7Elu: occ7,
+    occ7EluUpdated: nowIso,
+    lastFetched: nowIso
   };
-  __lastLiveCoordsDecision = decision;
-  out.lastCoordsDecision = decision;
-  out.visible = out.visible !== false;
-  return out;
+  if(newest && newest.observedAt) patch.t = String(newest.observedAt);
+  return patch;
 }
 function _applyLiveOverrideForSpecies(speciesName){
   const key = _speciesKey(speciesName);
   const liveEntry = _readLiveEntry(speciesName);
   if(!liveEntry || !Array.isArray(liveEntry.items) || !liveEntry.items.length) return;
-  const prev = points[speciesName] || {};
-  const oldLat = Number(prev.lat);
-  const oldLon = Number(prev.lon);
-  points[speciesName] = _livePointFromItems(speciesName, liveEntry.items);
-  const newLat = Number(points[speciesName].lat);
-  const newLon = Number(points[speciesName].lon);
+  const existing = points[speciesName] || {};
+  const patch = _livePointFromItems(speciesName, liveEntry.items);
+  // Snapshot t wins; only fill t from live if snapshot lacked one.
+  if(existing.t) delete patch.t;
+  // Gap-fill only: if snapshot already supplied coords, live must not overwrite.
+  // (Current _livePointFromItems never returns lat/lon — this omit is a defensive
+  // guard in case future changes reintroduce them.)
+  const snapshotHasCoords = Number.isFinite(existing.lat) && Number.isFinite(existing.lon);
+  if(snapshotHasCoords){
+    delete patch.lat;
+    delete patch.lon;
+  }
+  if(liveEntry.fetchedAt) patch.lastFetched = String(liveEntry.fetchedAt);
+  points[speciesName] = Object.assign({}, existing, patch);
   console.log('[live-override]', speciesName, {
-    prevLat: Number.isFinite(oldLat) ? oldLat : null, prevLon: Number.isFinite(oldLon) ? oldLon : null, prevDate: prev.t || null,
-    newLat: Number.isFinite(newLat) ? newLat : null, newLon: Number.isFinite(newLon) ? newLon : null, newDate: points[speciesName].t || null,
-    coordsStatus: points[speciesName].coords_status, coordsSource: points[speciesName].coords_source,
-    changedCoords: (oldLat !== newLat || oldLon !== newLon)
+    occ7: points[speciesName].occ7,
+    occ7Elu: points[speciesName].occ7Elu,
+    tUpdated: !existing.t && !!patch.t,
+    keptSnapshotCoords: snapshotHasCoords,
   });
-  points[speciesName].lastCoordsDecision = Object.assign({}, points[speciesName].lastCoordsDecision || {}, {
-    oldLat: Number.isFinite(oldLat) ? oldLat : null,
-    oldLon: Number.isFinite(oldLon) ? oldLon : null,
-    newLat: Number.isFinite(newLat) ? newLat : null,
-    newLon: Number.isFinite(newLon) ? newLon : null,
-    atISO: new Date().toISOString(),
-  });
-  points[speciesName].lastFetched = String(liveEntry.fetchedAt || new Date().toISOString());
-  points[speciesName].coordsSource = points[speciesName].coords_source || '';
-  points[speciesName].coordsNote = points[speciesName].coords_note || '';
   useLiveElurikkusForSpecies[key] = true;
   _persistLiveCaches();
 }
@@ -7112,23 +7047,24 @@ async function _applySnapshot(snap){
     var _existingClientScan = points[key] && points[key].clientScannedAt ? Date.parse(points[key].clientScannedAt) : 0;
     var _snapGeneratedAt = snap.generated_at ? Date.parse(snap.generated_at) : 0;
     var keepClientScan = Number.isFinite(_existingClientScan) && _existingClientScan > 0 && Number.isFinite(_snapGeneratedAt) && _existingClientScan > _snapGeneratedAt;
-    const keepLive = keepClientScan;
-    if(!keepLive){
-      const _existing = points[key] || {};
-      var _clientFields = {};
-      var _PRESERVE = ['occ7Ebird','occ7EbirdUpdated','occ7Elu','occ7EluUpdated','clientScannedAt','occ7Source','occ7PagesScanned'];
-      for(var _pi=0;_pi<_PRESERVE.length;_pi++){
-        if(_existing[_PRESERVE[_pi]] !== undefined && _existing[_PRESERVE[_pi]] !== null){
-          _clientFields[_PRESERVE[_pi]] = _existing[_PRESERVE[_pi]];
-        }
+    // Always merge the snapshot first — it owns positional/descriptive fields.
+    const _existing = points[key] || {};
+    var _clientFields = {};
+    var _PRESERVE = ['occ7Ebird','occ7EbirdUpdated','occ7Elu','occ7EluUpdated','clientScannedAt','occ7Source','occ7PagesScanned'];
+    for(var _pi=0;_pi<_PRESERVE.length;_pi++){
+      if(_existing[_PRESERVE[_pi]] !== undefined && _existing[_PRESERVE[_pi]] !== null){
+        _clientFields[_PRESERVE[_pi]] = _existing[_PRESERVE[_pi]];
       }
-      var _clientElu = _existing.eluExtra || null;
-      var _snapElu = snapPoint.eluExtra || null;
-      if(_eluExtraScore(_clientElu) > _eluExtraScore(_snapElu)){
-        _clientFields.eluExtra = _clientElu;
-      }
-      points[key] = Object.assign({}, snapPoint, _clientFields, { visible: (_existing.visible === false) ? false : true });
-    }else{
+    }
+    var _clientElu = _existing.eluExtra || null;
+    var _snapElu = snapPoint.eluExtra || null;
+    if(_eluExtraScore(_clientElu) > _eluExtraScore(_snapElu)){
+      _clientFields.eluExtra = _clientElu;
+    }
+    points[key] = Object.assign({}, snapPoint, _clientFields, { visible: (_existing.visible === false) ? false : true });
+    // If device-local live data is newer than the snapshot, patch counts on top
+    // — must not replace the point or overwrite positional fields.
+    if(keepClientScan){
       _applyLiveOverrideForSpecies(key);
     }
     __snapshotProgressDone++;

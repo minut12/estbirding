@@ -8783,22 +8783,70 @@ window.toggleNotification = async function(speciesName) {
   _trySubscribeAndSync();
 };
 
-(async function() {
+// === Auto-restore: fetch notify flags directly from cloud ===
+(async function _restoreNotifyFromCloud() {
   try {
     var smRaw = localStorage.getItem('estbirding.speciesMeta.v1');
     var sm = smRaw ? JSON.parse(smRaw) : {};
-    var fromMeta = [];
+    var fromLocal = [];
     for (var sk in sm) {
-      if (sm[sk] && sm[sk].notify === true) fromMeta.push(sk);
+      if (sm[sk] && sm[sk].notify === true) fromLocal.push(sk);
     }
-    if (fromMeta.length > 0) {
-      for (var fi = 0; fi < __notifySpecies.length; fi++) {
-        if (fromMeta.indexOf(__notifySpecies[fi]) < 0) fromMeta.push(__notifySpecies[fi]);
+
+    var fromBm = __notifySpecies || [];
+
+    var cloudUrl = 'https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/meta/species_meta_v1.json?t=' + Date.now();
+    var res = await fetch(cloudUrl, { cache: 'no-store' });
+    if (res.ok) {
+      var cloud = await res.json();
+      var fromCloud = [];
+      if (cloud && cloud.items) {
+        for (var ck in cloud.items) {
+          if (cloud.items[ck] && cloud.items[ck].notify === true) {
+            fromCloud.push(ck);
+          }
+        }
       }
-      __notifySpecies = fromMeta;
+      console.log('[notify] Cloud direct fetch:', fromCloud.length, 'species with notify');
+
+      var unionSet = {};
+      fromCloud.forEach(function(s) { unionSet[s] = true; });
+      fromLocal.forEach(function(s) { unionSet[s] = true; });
+      fromBm.forEach(function(s) { unionSet[s] = true; });
+      var combined = Object.keys(unionSet);
+
+      __notifySpecies = combined;
       localStorage.setItem('bm_notify_species', JSON.stringify(__notifySpecies));
+
+      var meta = JSON.parse(localStorage.getItem('estbirding.speciesMeta.v1') || '{}');
+      var changed = false;
+      for (var i = 0; i < combined.length; i++) {
+        var sp = combined[i];
+        if (!meta[sp]) meta[sp] = { name: sp };
+        if (meta[sp].notify !== true) {
+          meta[sp].notify = true;
+          changed = true;
+        }
+      }
+      for (var mk in meta) {
+        if (meta[mk] && meta[mk].notify === true && !unionSet[mk]) {
+          delete meta[mk].notify;
+          changed = true;
+        }
+      }
+      if (changed) {
+        localStorage.setItem('estbirding.speciesMeta.v1', JSON.stringify(meta));
+        console.log('[notify] Wrote', combined.length, 'notify flags to speciesMeta');
+      }
+
+      if (typeof render === 'function') render();
+      console.log('[notify] Restored', combined.length, 'notification bells from cloud');
+    } else {
+      console.warn('[notify] Cloud fetch failed:', res.status);
     }
-  } catch(e) {}
+  } catch (e) {
+    console.warn('[notify] Cloud restore failed:', e && e.message || e);
+  }
 
   try {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
@@ -8812,7 +8860,7 @@ window.toggleNotification = async function(speciesName) {
         _syncNotifyToSupabase(__pushSubscription, __notifySpecies);
       }
     }
-  } catch(e) {}
+  } catch (e) {}
 })();
 
 function rowHTML(obj) {
@@ -10094,7 +10142,13 @@ var __sharedDefaults = {};
           normalizedMeta[mnk] = incomingMeta[mk];
           if(mnk !== mk) normalizedMeta[mk] = incomingMeta[mk];
         }
-        var mergedMeta = Object.assign({}, currentMeta, normalizedMeta);
+        var mergedMeta = {};
+        var allKeys = {};
+        for (var ck in currentMeta) allKeys[ck] = true;
+        for (var ik in normalizedMeta) allKeys[ik] = true;
+        for (var amk in allKeys) {
+          mergedMeta[amk] = Object.assign({}, currentMeta[amk] || {}, normalizedMeta[amk] || {});
+        }
         localStorage.setItem('estbirding.speciesMeta.v1', JSON.stringify(mergedMeta));
         if (typeof window.__bm_applySpeciesMetaToDicts === 'function') {
           window.__bm_applySpeciesMetaToDicts(mergedMeta);

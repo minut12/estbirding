@@ -193,7 +193,12 @@ Deno.serve(async (req) => {
           }
         } catch (err: any) {
           errors++;
-          const detail = { species: sp, error: err?.message || String(err) };
+          const detail = {
+            species: sp,
+            error: err?.message || String(err),
+            name: err?.name,
+            stack: (err?.stack || "").split("\n").slice(0, 5).join(" | "),
+          };
           errorDetails.push(detail);
           console.error("[push] Exception:", JSON.stringify(detail));
         }

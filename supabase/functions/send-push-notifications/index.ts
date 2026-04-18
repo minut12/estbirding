@@ -35,19 +35,32 @@ function concat(...arrs: Uint8Array[]): Uint8Array {
 }
 
 // ---------- VAPID JWT (ES256) ----------
-async function importVapidPrivateKey(privB64u: string, pubB64u: string): Promise<CryptoKey> {
-  // VAPID private key is the raw 32-byte d; public is uncompressed P-256 point (65 bytes, 0x04 prefix).
-  const d = b64uToBytes(privB64u);
-  const pub = b64uToBytes(pubB64u); // 65 bytes
+async function importVapidPrivateKey(privKeyStr: string, pubB64u: string): Promise<CryptoKey> {
+  const trimmed = privKeyStr.trim();
+
+  // Case 1: PEM (PKCS8)
+  if (trimmed.includes("BEGIN PRIVATE KEY")) {
+    const b64 = trimmed.replace(/-----BEGIN [^-]+-----/g, "")
+      .replace(/-----END [^-]+-----/g, "")
+      .replace(/\s+/g, "");
+    const der = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    return await crypto.subtle.importKey(
+      "pkcs8", der, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"],
+    );
+  }
+
+  // Case 2: raw 32-byte base64url scalar — combine with public key into JWK
+  const d = b64uToBytes(trimmed);
+  if (d.length !== 32) {
+    throw new Error(`Unexpected VAPID private key format (length ${d.length}, expected 32 raw bytes or PEM)`);
+  }
+  const pub = b64uToBytes(pubB64u);
   if (pub.length !== 65 || pub[0] !== 0x04) throw new Error("invalid VAPID public key");
-  const x = pub.slice(1, 33);
-  const y = pub.slice(33, 65);
   const jwk: JsonWebKey = {
-    kty: "EC",
-    crv: "P-256",
+    kty: "EC", crv: "P-256",
     d: bytesToB64u(d),
-    x: bytesToB64u(x),
-    y: bytesToB64u(y),
+    x: bytesToB64u(pub.slice(1, 33)),
+    y: bytesToB64u(pub.slice(33, 65)),
     ext: true,
   };
   return await crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);

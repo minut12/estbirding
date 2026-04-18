@@ -310,16 +310,10 @@ function clearOccurrence(key){
 
 <script>
 // ---- Event log helper: bubble events up to parent window ----
-function _logToParent(category, message, level, details) {
+function _log(msg) {
   try {
     if (window.parent && window.parent !== window) {
-      window.parent.postMessage({
-        type: 'LOG_EVENT',
-        category: category || 'system',
-        message: message || '',
-        level: level || 'info',
-        details: details || ''
-      }, '*');
+      window.parent.postMessage({ type: 'LOG_EVENT', msg: msg }, '*');
     }
   } catch(e) {}
 }
@@ -4089,16 +4083,12 @@ async function refreshAllElurikkusOnce(){
   return runPromise;
 }
 async function refreshAllFromElurikkus(){
-  _logToParent('elurikkus', 'Elurikkus refresh alustatud', 'info');
   try {
     var result = await refreshAllElurikkusOnce();
-    var stats = __elurikkusBulkStats || {};
-    var u = Number(stats.updated || 0);
-    var err = Number(stats.errors || 0);
-    _logToParent('elurikkus', 'Elurikkus refresh lõpetatud: ' + u + ' uuendatud, ' + err + ' viga', err > 0 ? 'warn' : 'success');
+    _log('🌿 elu refresh: ' + __elurikkusBulkStats.updated + ' updated, ' + __elurikkusBulkStats.errors + ' errors');
     return result;
   } catch(e) {
-    _logToParent('elurikkus', 'Elurikkus refresh ebaõnnestus', 'error', String(e && e.message || e));
+    _log('❌ elu refresh fail: ' + String(e && e.message || e));
     throw e;
   }
 }
@@ -7420,7 +7410,7 @@ async function _loadSnapshotImpl(){
       pushDebugEvent('PROGRESS_TICK', 'Snapshot apply completed', { runId: runId, index: __currentIndex, atMs: __lastProgressAtMs });
       const age = snap.generated_at && window.formatAgeEE ? window.formatAgeEE(snap.generated_at) : null;
       _showSnapshotBanner('Data loaded' + (age ? ' (' + age + ')' : ''));
-      try { _logToParent('snapshot', 'Snapshot laaditud: ' + Object.keys(snap.points_json || {}).length + ' liiki', 'success'); } catch(e) {}
+      _log('📸 snapshot: ' + Object.keys(points).length + ' species');
       setTimeout(_hideSnapshotBanner, 4000);
       _clearResumeState('completed', '[resume] completed state, hiding resume');
       _updateProgressUI(__snapshotProgressDone, __snapshotProgressTotal, 'ready');
@@ -8694,8 +8684,11 @@ function _syncNotifyToSupabase(subscription, speciesList) {
           body: JSON.stringify(payload)
         });
       }
+    }).then(function() {
+      _log('☁️ subscription synced to DB');
     }).catch(function(e) {
       console.warn('[notify] Supabase sync error:', e);
+      _log('❌ subscription sync fail: ' + String(e && e.message || e));
     });
   } catch(e) {
     console.warn('[notify] Sync failed:', e);
@@ -8758,7 +8751,7 @@ async function _trySubscribeAndSync() {
         alert('Teavituste luba on keelatud.\nMuuda brauseri seadetes: 🔒 → Teavitused → Luba');
       }
     }
-    _logToParent('push', 'Teavituste luba keelatud', 'warn');
+    _log('⚠️ push permission denied');
     return;
   }
 
@@ -8769,7 +8762,7 @@ async function _trySubscribeAndSync() {
         __notifyPermissionHintShown = true;
         alert('Teavituste luba on keelatud.\nMuuda brauseri seadetes: 🔒 → Teavitused → Luba');
       }
-      _logToParent('push', 'Teavituste luba keelatud', 'warn');
+      _log('⚠️ push permission denied');
       return;
     }
   }
@@ -8789,11 +8782,11 @@ async function _trySubscribeAndSync() {
       __pushSubscription = sub;
       _syncNotifyToSupabase(__pushSubscription, __notifySpecies);
       console.log('[notify] Push subscription created and synced');
-      _logToParent('push', 'Push subscription loodud', 'success');
+      _log('✅ push sub created');
     }
   } catch (e) {
     console.error('[notify] Subscription creation failed:', e.message || e);
-    _logToParent('push', 'Push subscription ebaõnnestus', 'error', String(e && e.message || e));
+    _log('❌ push sub failed: ' + String(e && e.message || e));
   }
 }
 
@@ -8811,7 +8804,7 @@ window.toggleNotification = async function(speciesName) {
   render();
 
   _updateNotifyInSpeciesMeta(speciesName, nowEnabled);
-  _logToParent('notify', speciesName + ' teavitus ' + (nowEnabled ? 'sisse' : 'välja'), 'info');
+  _log('🔔 ' + speciesName + (nowEnabled ? ' ON' : ' OFF'));
   _trySubscribeAndSync();
 };
 
@@ -8873,10 +8866,10 @@ window.toggleNotification = async function(speciesName) {
 
       if (typeof render === 'function') render();
       console.log('[notify] Restored', combined.length, 'notification bells from cloud');
-      _logToParent('sync', 'Teavitused pilvist laaditud: ' + combined.length + ' liiki', 'success');
+      _log('☁️ notify restored: ' + combined.length + ' species');
     } else {
       console.warn('[notify] Cloud fetch failed:', res.status);
-      _logToParent('sync', 'Teavituste pilvest laadimine ebaõnnestus (HTTP ' + res.status + ')', 'error');
+      _log('❌ notify restore failed: HTTP ' + res.status);
     }
   } catch (e) {
     console.warn('[notify] Cloud restore failed:', e && e.message || e);

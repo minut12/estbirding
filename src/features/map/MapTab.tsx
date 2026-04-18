@@ -25,7 +25,7 @@ import { isSpeciesPredictionEnabled } from '@/lib/settings';
 import { ACTIVE_PREDICTION_IFRAME_READY_MESSAGE, ACTIVE_PREDICTION_SPECIES_EVENT, ACTIVE_PREDICTION_SPECIES_MESSAGE, getActivePredictionSpecies, setActivePredictionSpecies, type ActivePredictionSpecies } from '@/lib/activePredictionSpecies';
 import { normalizeSpeciesName } from '@/lib/textNormalize';
 import { runBundledSpeciesBackfill } from '@/lib/speciesMetaBackfill';
-import { logEvent } from '@/lib/eventLog';
+import { log } from '@/lib/eventLog';
 import { toast } from 'sonner';
 import {
   SPECIES_PREDICTION_DEBUG_HEALTHCHECK_EVENT,
@@ -305,26 +305,19 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
         const speciesName = String(ev.data.species);
         const notify = ev.data.notify as boolean;
         upsertSpeciesMeta(speciesName, { notify });
-        try { logEvent('notify', `${speciesName} teavitus ${notify ? 'sisse' : 'välja'}`, 'info'); } catch {}
+        log('🔔 ' + speciesName + (notify ? ' ON' : ' OFF'));
         saveSpeciesMetaToCloud(speciesName, { notify })
           .then(() => {
             console.log('[notify-sync] Cloud updated:', speciesName, notify);
-            try { logEvent('sync', `${speciesName} sünkroonitud pilve`, 'success'); } catch {}
+            log('☁️ ' + speciesName + ' synced');
           })
           .catch((e: any) => {
             console.warn('[notify-sync] Cloud sync failed:', e);
-            try { logEvent('sync', `${speciesName} pilve sünkroon ebaõnnestus`, 'error', String(e)); } catch {}
+            log('❌ sync fail: ' + String(e));
           });
       }
-      if (ev.data?.type === 'LOG_EVENT' && ev.data?.message) {
-        try {
-          logEvent(
-            String(ev.data.category || 'system'),
-            String(ev.data.message),
-            (ev.data.level || 'info') as any,
-            ev.data.details ? String(ev.data.details) : undefined
-          );
-        } catch {}
+      if (ev.data?.type === 'LOG_EVENT' && ev.data?.msg) {
+        log(String(ev.data.msg));
       }
       if (ev.data?.type === 'SUPABASE_CONFIG_REQUEST') {
         const validation = validateSupabaseConfig();

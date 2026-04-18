@@ -1,69 +1,23 @@
-export type EventLevel = 'info' | 'warn' | 'error' | 'success';
-
-export interface AppEvent {
-  id: string;
-  timestamp: string;
-  level: EventLevel;
-  category: string;
-  message: string;
-  details?: string;
-}
-
-const MAX_EVENTS = 200;
-const LS_KEY = 'estbirding.eventLog.v1';
-
-let _events: AppEvent[] = [];
-let _listeners: Array<() => void> = [];
-
-try {
-  const raw = localStorage.getItem(LS_KEY);
-  if (raw) _events = JSON.parse(raw).slice(0, MAX_EVENTS);
-} catch {}
-
-function _persist() {
+export function log(msg: string) {
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify(_events.slice(0, MAX_EVENTS)));
+    const MAX = 150;
+    const key = 'estbirding.log.v1';
+    const ts = new Date().toLocaleTimeString('et-EE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const line = `[${ts}] ${msg}`;
+    const raw = localStorage.getItem(key) || '';
+    const lines = raw ? raw.split('\n') : [];
+    lines.push(line);
+    if (lines.length > MAX) lines.splice(0, lines.length - MAX);
+    localStorage.setItem(key, lines.join('\n'));
   } catch {}
 }
 
-function _notify() {
-  _listeners.forEach(fn => { try { fn(); } catch {} });
+export function getLog(): string {
+  try {
+    return localStorage.getItem('estbirding.log.v1') || '(tühi)';
+  } catch { return '(viga)'; }
 }
 
-export function logEvent(
-  category: string,
-  message: string,
-  level: EventLevel = 'info',
-  details?: string
-): AppEvent {
-  const ev: AppEvent = {
-    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    timestamp: new Date().toISOString(),
-    level,
-    category,
-    message,
-    details,
-  };
-  _events.unshift(ev);
-  if (_events.length > MAX_EVENTS) _events.length = MAX_EVENTS;
-  _persist();
-  _notify();
-  return ev;
-}
-
-export function getEvents(): AppEvent[] {
-  return _events;
-}
-
-export function clearEvents(): void {
-  _events = [];
-  _persist();
-  _notify();
-}
-
-export function onEventsChanged(fn: () => void): () => void {
-  _listeners.push(fn);
-  return () => {
-    _listeners = _listeners.filter(l => l !== fn);
-  };
+export function clearLog() {
+  try { localStorage.removeItem('estbirding.log.v1'); } catch {}
 }

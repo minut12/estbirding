@@ -5,6 +5,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 // Hidden debug shortcut: ?reset=1 triggers full reset
 import { fullReset, doHardReload } from './lib/cache-reset';
+import { logEvent } from './lib/eventLog';
 const BUILTIN_TRANSLATE_ENDPOINT = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/translate-et';
 declare const __BUILD_TIME__: string;
 const RUNTIME_BUILD_MARKER = `${__BUILD_TIME__}|app-runtime-c92cfa2`;
@@ -47,5 +48,17 @@ if ('serviceWorker' in navigator) {
     });
   });
 }
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    try {
+      if (event.data?.type === 'PUSH_RECEIVED') {
+        logEvent('push', `${event.data.species} on märgatud!`, 'success');
+      }
+    } catch {}
+  });
+}
+
+try { logEvent('system', 'Rakendus käivitatud', 'info'); } catch {}
 
 createRoot(document.getElementById("root")!).render(<App />);

@@ -21,6 +21,7 @@ import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
 import EventsManagementSettings from './EventsManagementSettings';
 import SpeciesPredictionSettings from './SpeciesPredictionSettings';
+import EventLog from './EventLog';
 import { LINNULIIGID_SCOPE, RARILIIN_SCOPE } from '@/lib/mapScope';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import {
@@ -46,7 +47,7 @@ import {
 import { isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
 
 type ResetMode = 'soft' | 'hard' | null;
-type SettingsPage = 'home' | 'news' | 'events' | 'translations' | 'species' | 'rariliin' | 'species_prediction' | 'maps_debug';
+type SettingsPage = 'home' | 'news' | 'events' | 'translations' | 'species' | 'rariliin' | 'species_prediction' | 'event_log';
 const LS_RESOLVED_PROXY_BASE = 'resolved_proxy_base_v1';
 const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 const LS_SUPABASE_PROXY_BASE = 'supabase_proxy_base_v1';
@@ -224,8 +225,6 @@ export default function SettingsTab() {
   const [storedEndpointView, setStoredEndpointView] = useState('');
   const [proxyBaseUrl, setProxyBaseUrl] = useState('');
   const [storedProxyBaseView, setStoredProxyBaseView] = useState('');
-  const [mapsDebugJson, setMapsDebugJson] = useState('');
-  const [mapsDebugPretty, setMapsDebugPretty] = useState('');
   const envEndpoint = getEnvEndpoint();
   const resolvedEndpoint = resolveEndpoint(translationApiUrl);
   const resolvedProxyTranslateEndpoint = getProxyTranslateEndpointFromSupabaseProxyBase() || getProxyTranslateEndpoint();
@@ -923,91 +922,7 @@ export default function SettingsTab() {
   const renderSettingsSpecies = () => <AvatarManager scope={LINNULIIGID_SCOPE} />;
   const renderSettingsRariliin = () => <AvatarManager scope={RARILIIN_SCOPE} />;
   const renderSettingsSpeciesPrediction = () => <SpeciesPredictionSettings />;
-  const renderSettingsMapsDebug = () => {
-    const handlePrettyPrint = () => {
-      const raw = mapsDebugJson.trim();
-      if (!raw) {
-        setMapsDebugPretty('');
-        return;
-      }
-      try {
-        const parsed = JSON.parse(raw);
-        setMapsDebugPretty(JSON.stringify(parsed, null, 2));
-      } catch {
-        setMapsDebugPretty('Invalid JSON');
-      }
-    };
-
-    const handleCopy = async () => {
-      const text = (mapsDebugPretty || mapsDebugJson).trim();
-      if (!text) return;
-      try {
-        await navigator.clipboard.writeText(text);
-        toast.success('Debug JSON copied');
-      } catch {
-        toast.error('Copy failed');
-      }
-    };
-
-    const handleCopyCurrentMapDebug = async () => {
-      try {
-        const fn = (window as Window & { copyMapsDebugJson?: () => Promise<string> | string }).copyMapsDebugJson;
-        if (typeof fn === 'function') {
-          const raw = await fn();
-          const text = String(raw || '').trim();
-          if (text) {
-            setMapsDebugJson(text);
-            try {
-              const parsed = JSON.parse(text);
-              setMapsDebugPretty(JSON.stringify(parsed, null, 2));
-            } catch {
-              setMapsDebugPretty('');
-            }
-            toast.success('Current map debug copied');
-            return;
-          }
-        }
-        toast.message('Open map and click "Copy debug JSON", then paste here.');
-      } catch {
-        toast.error('Could not read map debug directly');
-      }
-    };
-
-    return (
-      <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          Paste map debug JSON copied from the map view (&quot;Copy debug JSON&quot;), then pretty print for review.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={handleCopyCurrentMapDebug}>Copy current map debug JSON</Button>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="maps-debug-input">Paste debug JSON</Label>
-          <textarea
-            id="maps-debug-input"
-            className="min-h-40 w-full rounded-md border border-border bg-background p-3 text-xs font-mono"
-            value={mapsDebugJson}
-            onChange={(e) => setMapsDebugJson(e.target.value)}
-            placeholder='{"lastRun":"...","snapshotStatus":{}}'
-          />
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={handlePrettyPrint}>Pretty print</Button>
-          <Button variant="outline" onClick={handleCopy}>Copy</Button>
-          <Button variant="outline" onClick={() => { setMapsDebugJson(''); setMapsDebugPretty(''); }}>Clear</Button>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="maps-debug-output">Formatted output</Label>
-          <textarea
-            id="maps-debug-output"
-            className="min-h-64 w-full rounded-md border border-border bg-background p-3 text-xs font-mono"
-            readOnly
-            value={mapsDebugPretty}
-          />
-        </div>
-      </div>
-    );
-  };
+  const renderSettingsEventLog = () => <EventLog />;
 
   const renderDebugLite = () => (
     <div className="space-y-3">
@@ -1103,8 +1018,8 @@ export default function SettingsTab() {
           <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('species_prediction')}>
             Species Prediction
           </Button>
-          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('maps_debug')}>
-            Kaardid
+          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('event_log')}>
+            📋 Sündmuste logi
           </Button>
       </div>}
       <div className="mt-2">
@@ -1122,7 +1037,7 @@ export default function SettingsTab() {
     if (settingsPage === 'species') return <>{renderSettingsHeader('Linnuliigid')}{renderSettingsSpecies()}</>;
     if (settingsPage === 'rariliin') return <>{renderSettingsHeader('Rariliin')}{renderSettingsRariliin()}</>;
     if (settingsPage === 'species_prediction') return <>{renderSettingsHeader('Species Prediction & Research')}{renderSettingsSpeciesPrediction()}</>;
-    if (settingsPage === 'maps_debug') return <>{renderSettingsHeader('Maps Debugging / Kaardid')}{renderSettingsMapsDebug()}</>;
+    if (settingsPage === 'event_log') return <>{renderSettingsHeader('Sündmuste logi')}{renderSettingsEventLog()}</>;
     return renderSettingsHome();
   };
 

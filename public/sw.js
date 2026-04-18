@@ -74,7 +74,15 @@ self.addEventListener('push', function(event) {
   };
 
   event.waitUntil(
-    self.registration.showNotification(title, options)
+    self.registration.showNotification(title, options).then(function() {
+      return self.clients.matchAll({ type: 'window' });
+    }).then(function(allClients) {
+      allClients.forEach(function(client) {
+        try {
+          client.postMessage({ type: 'PUSH_RECEIVED', species: species });
+        } catch (e) {}
+      });
+    }).catch(function() {})
   );
 });
 

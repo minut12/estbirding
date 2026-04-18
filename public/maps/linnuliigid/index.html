@@ -309,6 +309,21 @@ function clearOccurrence(key){
 </script>
 
 <script>
+// ---- Event log helper: bubble events up to parent window ----
+function _logToParent(category, message, level, details) {
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'LOG_EVENT',
+        category: category || 'system',
+        message: message || '',
+        level: level || 'info',
+        details: details || ''
+      }, '*');
+    }
+  } catch(e) {}
+}
+
 // ---- GBIF polite client: max 3 concurrent + 429 backoff with jitter ----
 var __gbifInFlight = 0;
 var __gbifQueue = [];
@@ -4074,7 +4089,18 @@ async function refreshAllElurikkusOnce(){
   return runPromise;
 }
 async function refreshAllFromElurikkus(){
-  return refreshAllElurikkusOnce();
+  _logToParent('elurikkus', 'Elurikkus refresh alustatud', 'info');
+  try {
+    var result = await refreshAllElurikkusOnce();
+    var stats = __elurikkusBulkStats || {};
+    var u = Number(stats.updated || 0);
+    var err = Number(stats.errors || 0);
+    _logToParent('elurikkus', 'Elurikkus refresh lõpetatud: ' + u + ' uuendatud, ' + err + ' viga', err > 0 ? 'warn' : 'success');
+    return result;
+  } catch(e) {
+    _logToParent('elurikkus', 'Elurikkus refresh ebaõnnestus', 'error', String(e && e.message || e));
+    throw e;
+  }
 }
 
 function enqueueSpringYearFirst(keys){
@@ -7394,6 +7420,7 @@ async function _loadSnapshotImpl(){
       pushDebugEvent('PROGRESS_TICK', 'Snapshot apply completed', { runId: runId, index: __currentIndex, atMs: __lastProgressAtMs });
       const age = snap.generated_at && window.formatAgeEE ? window.formatAgeEE(snap.generated_at) : null;
       _showSnapshotBanner('Data loaded' + (age ? ' (' + age + ')' : ''));
+      try { _logToParent('snapshot', 'Snapshot laaditud: ' + Object.keys(snap.points_json || {}).length + ' liiki', 'success'); } catch(e) {}
       setTimeout(_hideSnapshotBanner, 4000);
       _clearResumeState('completed', '[resume] completed state, hiding resume');
       _updateProgressUI(__snapshotProgressDone, __snapshotProgressTotal, 'ready');
@@ -8731,6 +8758,7 @@ async function _trySubscribeAndSync() {
         alert('Teavituste luba on keelatud.\nMuuda brauseri seadetes: 🔒 → Teavitused → Luba');
       }
     }
+    _logToParent('push', 'Teavituste luba keelatud', 'warn');
     return;
   }
 
@@ -8741,6 +8769,7 @@ async function _trySubscribeAndSync() {
         __notifyPermissionHintShown = true;
         alert('Teavituste luba on keelatud.\nMuuda brauseri seadetes: 🔒 → Teavitused → Luba');
       }
+      _logToParent('push', 'Teavituste luba keelatud', 'warn');
       return;
     }
   }
@@ -8760,9 +8789,11 @@ async function _trySubscribeAndSync() {
       __pushSubscription = sub;
       _syncNotifyToSupabase(__pushSubscription, __notifySpecies);
       console.log('[notify] Push subscription created and synced');
+      _logToParent('push', 'Push subscription loodud', 'success');
     }
   } catch (e) {
     console.error('[notify] Subscription creation failed:', e.message || e);
+    _logToParent('push', 'Push subscription ebaõnnestus', 'error', String(e && e.message || e));
   }
 }
 
@@ -8780,6 +8811,7 @@ window.toggleNotification = async function(speciesName) {
   render();
 
   _updateNotifyInSpeciesMeta(speciesName, nowEnabled);
+  _logToParent('notify', speciesName + ' teavitus ' + (nowEnabled ? 'sisse' : 'välja'), 'info');
   _trySubscribeAndSync();
 };
 
@@ -8841,8 +8873,10 @@ window.toggleNotification = async function(speciesName) {
 
       if (typeof render === 'function') render();
       console.log('[notify] Restored', combined.length, 'notification bells from cloud');
+      _logToParent('sync', 'Teavitused pilvist laaditud: ' + combined.length + ' liiki', 'success');
     } else {
       console.warn('[notify] Cloud fetch failed:', res.status);
+      _logToParent('sync', 'Teavituste pilvest laadimine ebaõnnestus (HTTP ' + res.status + ')', 'error');
     }
   } catch (e) {
     console.warn('[notify] Cloud restore failed:', e && e.message || e);

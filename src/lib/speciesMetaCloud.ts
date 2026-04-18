@@ -4,6 +4,7 @@ import { validateSupabaseConfig } from '@/config/supabaseConfig';
 import { LINNULIIGID_SCOPE, type SpeciesScopeConfig } from '@/lib/mapScope';
 import { loadSpeciesMeta, replaceSpeciesMeta, SPECIES_META_LOCAL_UPDATED_AT_KEY, type SpeciesMeta } from '@/lib/speciesMeta';
 import { normalizeSpeciesName, normalizeUiText } from '@/lib/textNormalize';
+import { logEvent } from '@/lib/eventLog';
 
 const BUCKET = 'bird-avatars';
 const FILE_PATH = LINNULIIGID_SCOPE.speciesMetaCloudFilePath;
@@ -179,6 +180,7 @@ export async function refreshSpeciesMetaFromCloud(options?: { force?: boolean; s
       setLastSyncError('Pilvest lugemine ebaõnnestus.', scope);
     }
     console.warn('[species-meta-cloud] refresh skipped, cloud payload unavailable');
+    try { logEvent('sync', 'Pilve sünkroon ebaõnnestus', 'error', localStorage.getItem(scope.speciesMetaLastSyncErrorKey) || undefined); } catch {}
     return { updated: false, merged: local };
   }
 
@@ -194,6 +196,7 @@ export async function refreshSpeciesMetaFromCloud(options?: { force?: boolean; s
   localStorage.setItem(scope.speciesMetaLastSyncAtKey, new Date().toISOString());
   clearLastSyncError(scope);
   console.info('[species-meta-cloud] refresh end', { updatedAt: cloud.updatedAt, updated });
+  try { logEvent('sync', `Pilve sünkroon: ${updated ? 'uuendatud' : 'muutusi pole'}`, updated ? 'success' : 'info'); } catch {}
 
   if (updated) {
     try { window.dispatchEvent(new CustomEvent('species-meta-updated')); } catch {}

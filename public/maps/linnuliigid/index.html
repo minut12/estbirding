@@ -3694,9 +3694,11 @@ function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, oc
   const oldLat = Number.isFinite(Number(p.lat)) ? Number(p.lat) : null;
   const oldLon = Number.isFinite(Number(p.lon)) ? Number(p.lon) : null;
   const detailExact = parseEluDetailExact(detailHtml);
+  let __detailExtrasForLog = null;
   if (detailHtml && (!detailExact.municipality || !detailExact.locality || !detailExact.county || !detailExact.districts || !detailExact.communes || !detailExact.eestiOmavalitsused)) {
     try {
       var detailExtras = (typeof parseEluDetailExtras === 'function') ? parseEluDetailExtras(detailHtml) : null;
+      __detailExtrasForLog = detailExtras;
       if (detailExtras) {
         if (!detailExact.municipality && detailExtras.municipality) detailExact.municipality = detailExtras.municipality;
         if (!detailExact.locality && detailExtras.locality) detailExact.locality = detailExtras.locality;
@@ -3707,6 +3709,74 @@ function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, oc
       }
     } catch (e) {
       console.warn('[parseEluDetailExtras fallback] error:', e);
+    }
+  }
+  // TEMP DIAGNOSTIC — remove or gate once root cause is confirmed.
+  // Set window.DEBUG_ELU_DETAIL = false in console to silence.
+  if (window.DEBUG_ELU_DETAIL !== false) {
+    try {
+      const __h = String(detailHtml || '');
+      const __labels = ['Municipality','Locality','County','Districts','Communes','Eesti omavalitsused'];
+      const __jsonKeys = ['municipality','county','district','commune','stateProvince','locality','parish','administrative_division','administrativeDivision'];
+      const __labelInRaw = {};
+      __labels.forEach(function(l){ __labelInRaw[l] = __h.indexOf(l) >= 0; });
+      let __innerText = '';
+      try {
+        const __doc = new DOMParser().parseFromString(__h, 'text/html');
+        __innerText = (__doc.body && __doc.body.innerText) ? __doc.body.innerText : '';
+      } catch (e) {}
+      const __labelInInner = {};
+      __labels.forEach(function(l){ __labelInInner[l] = __innerText.indexOf(l) >= 0; });
+      const __jsonKeyHits = {};
+      __jsonKeys.forEach(function(k){
+        const __re = new RegExp('(?:\\\\?")' + k + '(?:\\\\?")\\s*:', 'i');
+        __jsonKeyHits[k] = __re.test(__h);
+      });
+      const __eestiInJson = /Eesti\s*omavalitsused/i.test(__h);
+      const __scriptJsonTags = (__h.match(/<script\b[^>]*type=["']application\/json["'][^>]*>/gi) || []).length;
+      const __hasSveltekitData = __h.indexOf('__sveltekit_data') >= 0 || __h.indexOf('__sveltekit_') >= 0;
+      const __hasWindowData = __h.indexOf('window.__data') >= 0 || __h.indexOf('__DATA__') >= 0;
+      // Snippets around each failing label so we can see the surrounding markup/text shape.
+      const __inner = __innerText;
+      function __ctx(src, needle){
+        const idx = src.indexOf(needle);
+        if (idx < 0) return null;
+        return src.slice(Math.max(0, idx - 40), Math.min(src.length, idx + needle.length + 120));
+      }
+      const __labelCtxRaw = {};
+      const __labelCtxInner = {};
+      __labels.forEach(function(l){
+        __labelCtxRaw[l] = __ctx(__h, l);
+        __labelCtxInner[l] = __ctx(__inner, l);
+      });
+      console.log('[elu-detail-parse]', species, {
+        detailUrl: detailUrl,
+        htmlLength: __h.length,
+        htmlHead: __h.slice(0, 500),
+        innerTextLength: __inner.length,
+        innerTextHead: __inner.slice(0, 800),
+        labelInRaw: __labelInRaw,
+        labelInInner: __labelInInner,
+        labelCtxRaw: __labelCtxRaw,
+        labelCtxInner: __labelCtxInner,
+        jsonKeyHits: __jsonKeyHits,
+        eestiOmavalitsusedInJson: __eestiInJson,
+        scriptJsonTags: __scriptJsonTags,
+        hasSveltekitData: __hasSveltekitData,
+        hasWindowData: __hasWindowData,
+        detailExactExtracted: {
+          municipality: detailExact.municipality,
+          locality: detailExact.locality,
+          county: detailExact.county,
+          districts: detailExact.districts,
+          communes: detailExact.communes,
+          eestiOmavalitsused: detailExact.eestiOmavalitsused
+        },
+        detailExtrasFallback: __detailExtrasForLog,
+        rowExtra: rowExtra || null
+      });
+    } catch (e) {
+      console.warn('[elu-detail-parse] diagnostic error:', e);
     }
   }
   if(newestIso) p.t = newestIso;

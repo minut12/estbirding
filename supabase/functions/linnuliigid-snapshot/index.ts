@@ -163,24 +163,17 @@ async function fetchSpeciesData(name: string): Promise<{
       }
     }
     if (lat === null || lon === null) {
-      // Bug 3 fix: Estonian API returns "X maakond" (county) and "X vald"/"X linn" (municipality)
-      // Strip these suffixes so they match the centroid map keys (e.g. "laane_maakond" → "laane")
-      const mKey = normalizeName(municipality)
-        .replace(/_linn$/, "").replace(/_vald$/, "").replace(/_alev$/, "").replace(/_alevik$/, "");
-      const cKey = normalizeName(county)
-        .replace(/_county$/, "").replace(/_maakond$/, "");
-      const mCentroid = MUNICIPALITY_CENTROIDS[mKey];
-      const cCentroid = COUNTY_CENTROIDS[cKey];
-      if (mCentroid) {
-        lat = mCentroid.lat;
-        lon = mCentroid.lon;
+      const centroid = resolveRestrictedCentroid(municipality, county);
+      if (centroid) {
+        lat = centroid.lat;
+        lon = centroid.lon;
         coordsStatus = "restricted";
-        coordsSource = "municipality";
-      } else if (cCentroid) {
-        lat = cCentroid.lat;
-        lon = cCentroid.lon;
-        coordsStatus = "restricted";
-        coordsSource = "county";
+        coordsSource = centroid.coordsSource;
+      } else {
+        lat = null;
+        lon = null;
+        coordsStatus = "missing";
+        coordsSource = "none";
       }
     }
 

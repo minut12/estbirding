@@ -1228,8 +1228,8 @@ async function runRefresh(
   const points: Record<
     string,
     {
-      lat?: number;
-      lon?: number;
+      lat?: number | null;
+      lon?: number | null;
       t?: string;
       occ7?: number;
       src?: string;
@@ -1246,7 +1246,7 @@ async function runRefresh(
       eestiOmavalitsused?: string | null;
     }
   > = (existingRow?.points_json && typeof existingRow.points_json === "object")
-    ? existingRow.points_json as Record<string, { lat?: number; lon?: number; t?: string; occ7?: number; src?: string; visible?: boolean; coords_status?: "public" | "restricted" | "missing"; coords_source?: "exact" | "municipality" | "county" | "none"; locality?: string | null; municipality?: string | null; county?: string | null; individualCount?: number | null; behavior?: string | null; collectors?: string | null; districts?: string | null; eestiOmavalitsused?: string | null; }>
+    ? existingRow.points_json as Record<string, { lat?: number | null; lon?: number | null; t?: string; occ7?: number; src?: string; visible?: boolean; coords_status?: "public" | "restricted" | "missing"; coords_source?: "exact" | "municipality" | "county" | "none"; locality?: string | null; municipality?: string | null; county?: string | null; individualCount?: number | null; behavior?: string | null; collectors?: string | null; districts?: string | null; eestiOmavalitsused?: string | null; }>
     : {};
 
   // --- NOTIFICATION PREP: snapshot previous points (t + occ7 only) for later comparison ---

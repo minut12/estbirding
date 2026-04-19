@@ -1304,7 +1304,7 @@ async function runRefresh(
               if (srcTs > upstreamMaxTs) upstreamMaxTs = srcTs;
               const entry: (typeof points)[string] = {
                 src: "Elurikkus",
-                visible: true,
+                visible: points[name]?.visible ?? true,
               };
               // Bug 2 fix: preserve existing t when new fetch returns no date, so snapshot doesn't lose stale date
               if (data.latestDate) {

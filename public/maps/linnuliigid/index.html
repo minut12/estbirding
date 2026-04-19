@@ -7150,7 +7150,25 @@ async function _applySnapshot(snap){
     if(_eluExtraScore(_clientElu) > _eluExtraScore(_snapElu)){
       _clientFields.eluExtra = _clientElu;
     }
-    points[key] = Object.assign({}, snapPoint, _clientFields, { visible: (_existing.visible === false) ? false : true });
+    var _snapHasCoords = Number.isFinite(snapPoint.lat) && Number.isFinite(snapPoint.lon);
+    if(_snapHasCoords){
+      __snapAppliedCoords++;
+      points[key] = Object.assign({}, snapPoint, _clientFields, { visible: (_existing.visible === false) ? false : true });
+    } else {
+      __snapPreservedCoords++;
+      // Snapshot has no coords — preserve existing positional fields from eBird/local sources.
+      // Apply only non-geographic snapshot fields (t, occ7, descriptive metadata where snap has them).
+      var _merged = Object.assign({}, _existing, snapPoint, _clientFields, { visible: (_existing.visible === false) ? false : true });
+      // Restore positional/source fields from _existing if snapshot didn't provide them
+      var _GEO = ['lat','lon','src','coords_source','coords_status','locality','municipality','county'];
+      for(var _gi=0; _gi<_GEO.length; _gi++){
+        var _gk = _GEO[_gi];
+        if(snapPoint[_gk] === undefined && _existing[_gk] !== undefined){
+          _merged[_gk] = _existing[_gk];
+        }
+      }
+      points[key] = _merged;
+    }
     // If device-local live data is newer than the snapshot, patch counts on top
     // — must not replace the point or overwrite positional fields.
     if(keepClientScan){

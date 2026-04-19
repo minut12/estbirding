@@ -324,8 +324,8 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
     // Fields requiring the detail page (county, municipality, districts, eestiOmavalitsused)
     // stay null here — the frontend "Refresh from Elurikkus" button populates them on demand.
     let locality: string | null = null;
-    const municipality: string | null = null;
-    const county: string | null = null;
+    let municipality: string | null = null;
+    let county: string | null = null;
     let individualCount: number | null = null;
     let behavior: string | null = null;
     let collectors: string | null = null;

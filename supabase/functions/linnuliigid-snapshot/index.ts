@@ -1312,10 +1312,10 @@ async function runRefresh(
               } else if (points[name]?.t) {
                 entry.t = points[name].t;
               }
-              if (data.lat !== null && data.lon !== null) {
-                entry.lat = data.lat;
-                entry.lon = data.lon;
-              }
+              // Always write lat/lon explicitly (including null) so the merge layer
+              // overwrites stale numeric values rather than preserving them.
+              entry.lat = data.lat ?? null;
+              entry.lon = data.lon ?? null;
               entry.occ7 = data.occ7;
               entry.coords_status = data.coordsStatus;
               entry.coords_source = data.coordsSource;

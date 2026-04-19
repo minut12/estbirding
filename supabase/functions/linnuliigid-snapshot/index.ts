@@ -24,6 +24,25 @@ function isEstoniaCoords(lat: number, lon: number) {
   return lat >= 57 && lat <= 60 && lon >= 21 && lon <= 29;
 }
 
+function resolveRestrictedCentroid(
+  municipality: string | null,
+  county: string | null,
+): { lat: number; lon: number; coordsSource: "municipality" | "county" } | null {
+  const mKey = municipality
+    ? normalizeName(municipality)
+        .replace(/_linn$/, "").replace(/_vald$/, "").replace(/_alev$/, "").replace(/_alevik$/, "")
+        .replace(/_maakond$/, "").replace(/_county$/, "")
+    : "";
+  const cKey = county
+    ? normalizeName(county).replace(/_county$/, "").replace(/_maakond$/, "")
+    : "";
+  const mCentroid = mKey ? MUNICIPALITY_CENTROIDS[mKey] : null;
+  if (mCentroid) return { lat: mCentroid.lat, lon: mCentroid.lon, coordsSource: "municipality" };
+  const cCentroid = cKey ? COUNTY_CENTROIDS[cKey] : null;
+  if (cCentroid) return { lat: cCentroid.lat, lon: cCentroid.lon, coordsSource: "county" };
+  return null;
+}
+
 function toDay(s: string): number | null {
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return null;

@@ -386,6 +386,12 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
       console.log("[html-fallback-meta] table parse failed:", metaErr);
     }
 
+    // Derive municipality/county from the scraped locality free-text
+    if (locality) {
+      municipality = extractMunicipality(locality);
+      county = extractCounty(locality);
+    }
+
     // Resolve municipality/county centroid; explicitly null lat/lon when nothing resolves
     // so the merge layer overwrites stale values rather than preserving them.
     let coordsStatus: "public" | "restricted" | "missing" = "missing";
@@ -405,7 +411,14 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
       }
     }
 
-    console.log('[html-fallback]', name, 'latestDate:', latestDate, 'coords_source:', coordsSource);
+    // TODO: remove after coverage validated
+    console.log("[elurikkus-html-parse]", JSON.stringify({
+      species: name,
+      locality,
+      municipality,
+      county,
+      resolved: coordsSource,
+    }));
     return { lat, lon, latestDate, occ7, coordsStatus, coordsSource, locality, municipality, county, individualCount, behavior, collectors, districts, eestiOmavalitsused };
   } catch {
     clearTimeout(timeout);

@@ -8874,7 +8874,6 @@ window.toggleNotification = async function(speciesName) {
   render();
 
   _updateNotifyInSpeciesMeta(speciesName, nowEnabled);
-  _log('🔔 ' + speciesName + (nowEnabled ? ' ON' : ' OFF'));
   _trySubscribeAndSync();
 };
 

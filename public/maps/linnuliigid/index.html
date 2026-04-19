@@ -287,6 +287,18 @@ function clearOccurrence(key){
   try{
     window.points = window.points || {};
     const p = (points[key] = points[key] || {});
+    if (key === 'Punanokk-vart') {
+      console.log('[NETTA-TRACE] points WRITE at CLEAR_OCCURRENCE (before delete):',
+        JSON.stringify({
+          lat: p?.lat, lon: p?.lon,
+          cellLat: p?.cellLat, cellLon: p?.cellLon,
+          occ7: p?.occ7, occ7Ebird: p?.occ7Ebird, occ7Elu: p?.occ7Elu,
+          t: p?.t, src: p?.src,
+          clientScannedAt: p?.clientScannedAt, lastFetched: p?.lastFetched,
+          stack: new Error().stack.split('\n').slice(1,4).join(' <- '),
+        })
+      );
+    }
     delete p.lat; delete p.lon; delete p.t; delete p.occ; delete p.src;
     try{
       if (window.markers && typeof markers.has === 'function' && markers.has(key)){
@@ -1143,6 +1155,10 @@ function _persistLiveCaches(){
     liveElurikkusBySpecies = trimmed;
     localStorage.setItem(LS_LIVE_ELURIKKUS, JSON.stringify(liveElurikkusBySpecies));
     localStorage.setItem(LS_LIVE_ELURIKKUS_USE, JSON.stringify(useLiveElurikkusForSpecies || {}));
+    console.log('[NETTA-TRACE] _persistLiveCaches trimmed liveElurikkusBySpecies keys:',
+      Object.keys(liveElurikkusBySpecies || {}).slice(0, 20),
+      'includes Punanokk-vart:',
+      !!(liveElurikkusBySpecies && liveElurikkusBySpecies['Punanokk-vart']));
   }catch(e){}
 }
 function _livePointFromItems(speciesName, items){
@@ -1188,6 +1204,18 @@ function _applyLiveOverrideForSpecies(speciesName){
   }
   if(liveEntry.fetchedAt) patch.lastFetched = String(liveEntry.fetchedAt);
   points[speciesName] = Object.assign({}, existing, patch);
+  if (speciesName === 'Punanokk-vart') {
+    console.log('[NETTA-TRACE] points WRITE at LIVE_OVERRIDE:',
+      JSON.stringify({
+        lat: points[speciesName]?.lat, lon: points[speciesName]?.lon,
+        cellLat: points[speciesName]?.cellLat, cellLon: points[speciesName]?.cellLon,
+        occ7: points[speciesName]?.occ7, occ7Ebird: points[speciesName]?.occ7Ebird, occ7Elu: points[speciesName]?.occ7Elu,
+        t: points[speciesName]?.t, src: points[speciesName]?.src,
+        clientScannedAt: points[speciesName]?.clientScannedAt, lastFetched: points[speciesName]?.lastFetched,
+        patch: patch, existing_had_lat: existing?.lat, existing_had_lon: existing?.lon,
+      })
+    );
+  }
   console.log('[live-override]', speciesName, {
     occ7: points[speciesName].occ7,
     occ7Elu: points[speciesName].occ7Elu,
@@ -1202,6 +1230,18 @@ function _restoreSnapshotForSpecies(speciesName){
   const snap = __snapshotPointBySpecies[key];
   if(snap && typeof snap === 'object'){
     points[speciesName] = Object.assign({}, snap);
+    if (speciesName === 'Punanokk-vart') {
+      console.log('[NETTA-TRACE] points WRITE at SNAP_RESTORE:',
+        JSON.stringify({
+          lat: points[speciesName]?.lat, lon: points[speciesName]?.lon,
+          cellLat: points[speciesName]?.cellLat, cellLon: points[speciesName]?.cellLon,
+          occ7: points[speciesName]?.occ7, occ7Ebird: points[speciesName]?.occ7Ebird, occ7Elu: points[speciesName]?.occ7Elu,
+          t: points[speciesName]?.t, src: points[speciesName]?.src,
+          clientScannedAt: points[speciesName]?.clientScannedAt, lastFetched: points[speciesName]?.lastFetched,
+          restored_from: snap,
+        })
+      );
+    }
   }
   useLiveElurikkusForSpecies[key] = false;
   _persistLiveCaches();
@@ -3457,6 +3497,18 @@ async function _applyElurikkusPayloadToPoints(species, payload){
     coordLock: row.coordLock || '',
     reason
   });
+  if (species === 'Punanokk-vart') {
+    console.log('[NETTA-TRACE] points WRITE at LIVE_ELU_APPLY:',
+      JSON.stringify({
+        lat: row.lat, lon: row.lon,
+        cellLat: row.cellLat, cellLon: row.cellLon,
+        occ7: row.occ7, occ7Ebird: row.occ7Ebird, occ7Elu: row.occ7Elu,
+        t: row.t, src: row.src,
+        clientScannedAt: row.clientScannedAt, lastFetched: row.lastFetched,
+        reason: reason,
+      })
+    );
+  }
   try{ if(typeof save === 'function') save(); }catch(e){}
   try{ if(typeof updateMarker === 'function') updateMarker(species); }catch(e){}
   return {
@@ -3827,6 +3879,19 @@ function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, oc
     p.coordSource = p.coordSource || p.coordsSource;
     p.coords_source = p.coords_source || p.coordsSource;
     p.coords_status = String(det.coordsStatus || p.coords_status || 'restricted_or_missing');
+  }
+  if (species === 'Punanokk-vart') {
+    console.log('[NETTA-TRACE] points WRITE at ELU_EXACT_DETAIL:',
+      JSON.stringify({
+        lat: p.lat, lon: p.lon,
+        cellLat: p.cellLat, cellLon: p.cellLon,
+        occ7: p.occ7, occ7Ebird: p.occ7Ebird, occ7Elu: p.occ7Elu,
+        t: p.t, src: p.src,
+        clientScannedAt: p.clientScannedAt, lastFetched: p.lastFetched,
+        detailExact_lat: detailExact?.lat, detailExact_lon: detailExact?.lon,
+        moved: moved,
+      })
+    );
   }
   if(_shouldDeferEeRefreshUi()){
     _logEeRefreshStage({
@@ -4806,6 +4871,8 @@ function _fmtTs(iso){
   try{ return formatDateTimeEE(iso); }catch(e){ return String(iso); }
 }
 function _scheduleNextSnapshotRefresh(delayMs){
+  console.log('[NETTA-TRACE] _scheduleNextSnapshotRefresh called, __scanEnnAllRunning =',
+    !!window.__scanEnnAllRunning, 'delayMs =', delayMs);
   if(__rateLimitRetryTimer) return;
   if(__snapshotAutoRefreshTimer) clearTimeout(__snapshotAutoRefreshTimer);
   __snapshotAutoRefreshTimer = setTimeout(function(){
@@ -5300,6 +5367,20 @@ function _applySelectedOccurrenceFromServer(speciesName, json){
   const moved = applied && isValidEE(oldLat, oldLon) && isValidEE(lat, lon)
     ? (Math.abs(oldLat - lat) > 1e-6 || Math.abs(oldLon - lon) > 1e-6)
     : false;
+  if (speciesName === 'Punanokk-vart') {
+    console.log('[NETTA-TRACE] points WRITE at SINGLE_ELU_FETCH:',
+      JSON.stringify({
+        lat: p.lat, lon: p.lon,
+        cellLat: p.cellLat, cellLon: p.cellLon,
+        occ7: p.occ7, occ7Ebird: p.occ7Ebird, occ7Elu: p.occ7Elu,
+        t: p.t, src: p.src,
+        clientScannedAt: p.clientScannedAt, lastFetched: p.lastFetched,
+        applied: applied, moved: moved,
+        selected_lat: selected?.lat, selected_lon: selected?.lon,
+        detail_lat: detail?.latitude, detail_lon: detail?.longitude,
+      })
+    );
+  }
   try{ save(); }catch(e){}
   try{ updateMarker(speciesName); }catch(e){}
   try{ render(); }catch(e){}
@@ -6386,6 +6467,11 @@ function applySnapshot(snapshot){
     return false;
   }
   const incomingPoints = snapshot.payload.points || {};
+  console.log('[NETTA-TRACE] applySnapshot(local) ENTRY:', JSON.stringify({
+    local_before: (points && points['Punanokk-vart']) ? points['Punanokk-vart'] : null,
+    local_snap_has: incomingPoints['Punanokk-vart'] || null,
+    snapshot_createdAt: snapshot && snapshot.createdAt,
+  }));
   const mergedPoints = Object.assign({}, points || {});
   Object.keys(incomingPoints).forEach(function(key){
     const incoming = incomingPoints[key];
@@ -6396,11 +6482,37 @@ function applySnapshot(snapshot){
        Number.isFinite(Number(existing.lat)) &&
        Number.isFinite(Number(existing.lon))){
       if(existing.visible === undefined) existing.visible = true;
+      if (key === 'Punanokk-vart') {
+        console.log('[NETTA-TRACE] points WRITE at LOCAL_SNAP_PRESERVE_EXACT (existing kept):',
+          JSON.stringify({
+            lat: existing.lat, lon: existing.lon,
+            cellLat: existing.cellLat, cellLon: existing.cellLon,
+            occ7: existing.occ7, occ7Ebird: existing.occ7Ebird, occ7Elu: existing.occ7Elu,
+            t: existing.t, src: existing.src,
+            clientScannedAt: existing.clientScannedAt, lastFetched: existing.lastFetched,
+          })
+        );
+      }
       return;
     }
     mergedPoints[key] = incoming;
+    if (key === 'Punanokk-vart') {
+      console.log('[NETTA-TRACE] points WRITE at LOCAL_SNAP_OVERWRITE:',
+        JSON.stringify({
+          lat: mergedPoints[key]?.lat, lon: mergedPoints[key]?.lon,
+          cellLat: mergedPoints[key]?.cellLat, cellLon: mergedPoints[key]?.cellLon,
+          occ7: mergedPoints[key]?.occ7, occ7Ebird: mergedPoints[key]?.occ7Ebird, occ7Elu: mergedPoints[key]?.occ7Elu,
+          t: mergedPoints[key]?.t, src: mergedPoints[key]?.src,
+          clientScannedAt: mergedPoints[key]?.clientScannedAt, lastFetched: mergedPoints[key]?.lastFetched,
+          existing_had_lat: existing?.lat, existing_had_lon: existing?.lon, existing_coordLock: existing?.coordLock, existing_coordsSource: existing?.coordsSource || existing?.coords_source,
+        })
+      );
+    }
   });
   points = mergedPoints;
+  console.log('[NETTA-TRACE] applySnapshot(local) EXIT:', JSON.stringify({
+    local_after: (points && points['Punanokk-vart']) ? points['Punanokk-vart'] : null,
+  }));
   dataMode = 'snapshot';
   lastSnapshotAt = snapshot.createdAt || null;
   snapshotDebugNote = null;
@@ -7085,6 +7197,20 @@ async function _applySnapshot(snap){
   if(window.__scanEnnAllRunning){
     console.warn('[_applySnapshot] CALLED DURING SCAN — guards failed. Stack:',new Error().stack.split('\n').slice(1,5).join(' <- '));
   }
+  const __netta_before = points['Punanokk-vart']
+    ? JSON.parse(JSON.stringify(points['Punanokk-vart']))
+    : null;
+  const __netta_in_snapshot = (snap && snap.points_json && snap.points_json['Punanokk-vart'])
+    ? JSON.parse(JSON.stringify(snap.points_json['Punanokk-vart']))
+    : null;
+  console.log('[NETTA-TRACE] _applySnapshot ENTRY:', JSON.stringify({
+    local_before: __netta_before,
+    snapshot_has: __netta_in_snapshot,
+    useLiveFlag: !!(typeof useLiveElurikkusForSpecies !== 'undefined' && useLiveElurikkusForSpecies && useLiveElurikkusForSpecies['Punanokk-vart']),
+    liveElu: (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies && liveElurikkusBySpecies['Punanokk-vart']) || null,
+    __scanRunning: !!window.__scanEnnAllRunning,
+    snap_generated_at: snap && snap.generated_at,
+  }));
   window.__applyingSnapshot = true;
   // TODO: remove after verification
   let __snapAppliedCoords = 0;
@@ -7154,12 +7280,21 @@ async function _applySnapshot(snap){
     if(_snapHasCoords){
       __snapAppliedCoords++;
       points[key] = Object.assign({}, snapPoint, _clientFields, { visible: (_existing.visible === false) ? false : true });
+      if (key === 'Punanokk-vart') {
+        console.log('[NETTA-TRACE] points WRITE at SNAPSHOT_APPLY_COORDS:',
+          JSON.stringify({
+            lat: points[key]?.lat, lon: points[key]?.lon,
+            cellLat: points[key]?.cellLat, cellLon: points[key]?.cellLon,
+            occ7: points[key]?.occ7, occ7Ebird: points[key]?.occ7Ebird, occ7Elu: points[key]?.occ7Elu,
+            t: points[key]?.t, src: points[key]?.src,
+            clientScannedAt: points[key]?.clientScannedAt, lastFetched: points[key]?.lastFetched,
+            snapPoint: snapPoint, _clientFields: _clientFields,
+          })
+        );
+      }
     } else {
       __snapPreservedCoords++;
-      // Snapshot has no coords — preserve existing positional fields from eBird/local sources.
-      // Apply only non-geographic snapshot fields (t, occ7, descriptive metadata where snap has them).
       var _merged = Object.assign({}, _existing, snapPoint, _clientFields, { visible: (_existing.visible === false) ? false : true });
-      // Restore positional/source fields from _existing if snapshot didn't provide them
       var _GEO = ['lat','lon','src','coords_source','coords_status','locality','municipality','county'];
       for(var _gi=0; _gi<_GEO.length; _gi++){
         var _gk = _GEO[_gi];
@@ -7168,6 +7303,18 @@ async function _applySnapshot(snap){
         }
       }
       points[key] = _merged;
+      if (key === 'Punanokk-vart') {
+        console.log('[NETTA-TRACE] points WRITE at SNAPSHOT_APPLY_NOCOORDS:',
+          JSON.stringify({
+            lat: points[key]?.lat, lon: points[key]?.lon,
+            cellLat: points[key]?.cellLat, cellLon: points[key]?.cellLon,
+            occ7: points[key]?.occ7, occ7Ebird: points[key]?.occ7Ebird, occ7Elu: points[key]?.occ7Elu,
+            t: points[key]?.t, src: points[key]?.src,
+            clientScannedAt: points[key]?.clientScannedAt, lastFetched: points[key]?.lastFetched,
+            snapPoint: snapPoint, _existing_had_lat: _existing?.lat, _existing_had_lon: _existing?.lon,
+          })
+        );
+      }
     }
     // If device-local live data is newer than the snapshot, patch counts on top
     // — must not replace the point or overwrite positional fields.
@@ -7211,6 +7358,9 @@ async function _applySnapshot(snap){
       }
     }
   }
+  console.log('[NETTA-TRACE] _applySnapshot EXIT:', JSON.stringify({
+    local_after: points['Punanokk-vart'] || null,
+  }));
   save();
   window.__applyingSnapshot = false;
   window.__snapshotLoadedOnce = true;
@@ -7293,6 +7443,18 @@ async function _loadElurikkusCacheFromSupabase(){
       });
       if(hasCoords){ merged.lat = row.lat; merged.lon = row.lon; }
       points[key] = merged;
+      if (key === 'Punanokk-vart') {
+        console.log('[NETTA-TRACE] points WRITE at ELU_CLOUD_CACHE:',
+          JSON.stringify({
+            lat: merged.lat, lon: merged.lon,
+            cellLat: merged.cellLat, cellLon: merged.cellLon,
+            occ7: merged.occ7, occ7Ebird: merged.occ7Ebird, occ7Elu: merged.occ7Elu,
+            t: merged.t, src: merged.src,
+            clientScannedAt: merged.clientScannedAt, lastFetched: merged.lastFetched,
+            row_has_coords: hasCoords, row_coords_status: row.coords_status, row_fetched_at: row.fetched_at,
+          })
+        );
+      }
       applied++;
     }
     if(applied > 0){
@@ -7358,6 +7520,18 @@ async function _loadEbirdCacheFromSupabase(){
       });
       if(hasCoords){ merged.lat = row.lat; merged.lon = row.lon; }
       points[etName] = merged;
+      if (etName === 'Punanokk-vart') {
+        console.log('[NETTA-TRACE] points WRITE at EBIRD_CLOUD_CACHE:',
+          JSON.stringify({
+            lat: merged.lat, lon: merged.lon,
+            cellLat: merged.cellLat, cellLon: merged.cellLon,
+            occ7: merged.occ7, occ7Ebird: merged.occ7Ebird, occ7Elu: merged.occ7Elu,
+            t: merged.t, src: merged.src,
+            clientScannedAt: merged.clientScannedAt, lastFetched: merged.lastFetched,
+            row_has_coords: hasCoords, row_fetched_at: row.fetched_at,
+          })
+        );
+      }
       applied++;
     }
     if(applied > 0){
@@ -7636,6 +7810,9 @@ function loadSnapshotOnce(force){
 }
 
 function loadSnapshot(force){
+  console.log('[NETTA-TRACE] loadSnapshot called, __scanEnnAllRunning =',
+    !!window.__scanEnnAllRunning, 'force =', !!force,
+    'local_Punanokk_lat =', (typeof points !== 'undefined' && points['Punanokk-vart']) ? points['Punanokk-vart'].lat : '(none)');
   if(window.__scanEnnAllRunning && !window.__scanEnnAllAllowSnapshot){
     console.log('[loadSnapshot] suppressed: scan in progress');
     return Promise.resolve({suppressed:true});
@@ -8414,6 +8591,17 @@ function setLocation(key) {
     points[key].t = normDateISO(points[key].t) || '';
     points[key].src='manual';
     if(typeof points[key].visible!=='boolean') points[key].visible=true;
+    if (key === 'Punanokk-vart') {
+      console.log('[NETTA-TRACE] points WRITE at MANUAL_SET:',
+        JSON.stringify({
+          lat: points[key]?.lat, lon: points[key]?.lon,
+          cellLat: points[key]?.cellLat, cellLon: points[key]?.cellLon,
+          occ7: points[key]?.occ7, occ7Ebird: points[key]?.occ7Ebird, occ7Elu: points[key]?.occ7Elu,
+          t: points[key]?.t, src: points[key]?.src,
+          clientScannedAt: points[key]?.clientScannedAt, lastFetched: points[key]?.lastFetched,
+        })
+      );
+    }
     save(); updateMarker(key); render();
   } else notifySilent('Invalid format. Use: 59.123,24.456');
 }
@@ -8560,6 +8748,22 @@ function updateMarker(key) {
   const markerCount = getMarkerCount(p);
   const passesRecent = (!window.__recentOnly) || hasRecentObservation(p);
   const isVisible = (p.visible !== false) && passesRecent && hasCoords && !coordsRestricted;
+  if (key === 'Punanokk-vart') {
+    console.log('[NETTA-TRACE] render DECISION:', JSON.stringify({
+      hasLat: !!Number.isFinite(p?.lat),
+      hasLon: !!Number.isFinite(p?.lon),
+      lat: p?.lat, lon: p?.lon,
+      visible: p?.visible,
+      coords_status: p?.coords_status,
+      coordsRestricted: coordsRestricted,
+      occ7: p?.occ7,
+      src: p?.src,
+      t: p?.t,
+      passesRecent: passesRecent,
+      recentOnly: !!window.__recentOnly,
+      willRender: isVisible,
+    }));
+  }
   if (!isVisible) {
     if(prevMarker){
       try{
@@ -12182,6 +12386,17 @@ var __sharedDefaults = {};
                 points[speciesName].occ7Elu = _eluOcc7;
                 points[speciesName].occ7 = Math.max(_eluOcc7, Number(points[speciesName].occ7Ebird || 0));
               }
+              if (speciesName === 'Punanokk-vart') {
+                console.log('[NETTA-TRACE] points WRITE at PROB_ELU_PAGINATED:',
+                  JSON.stringify({
+                    lat: points[speciesName]?.lat, lon: points[speciesName]?.lon,
+                    cellLat: points[speciesName]?.cellLat, cellLon: points[speciesName]?.cellLon,
+                    occ7: points[speciesName]?.occ7, occ7Ebird: points[speciesName]?.occ7Ebird, occ7Elu: points[speciesName]?.occ7Elu,
+                    t: points[speciesName]?.t, src: points[speciesName]?.src,
+                    clientScannedAt: points[speciesName]?.clientScannedAt, lastFetched: points[speciesName]?.lastFetched,
+                  })
+                );
+              }
             }
             console.log('[PROB] eElurikkus paginated:', _eluItems.length, 'items for', speciesName);
           }
@@ -13517,6 +13732,19 @@ window.__scanEnnAll=async function(btn,opts){
           ep.lat=_ee.lat;ep.lon=_ee.lon;
           if(_ee.t) ep.t=_ee.t;
           ep.src='eBird';ep.lastFetched=_ee.lastFetched;
+        }
+        if (name === 'Punanokk-vart') {
+          console.log('[NETTA-TRACE] points WRITE at EBIRD_BULK:',
+            JSON.stringify({
+              lat: ep.lat, lon: ep.lon,
+              cellLat: ep.cellLat, cellLon: ep.cellLon,
+              occ7: ep.occ7, occ7Ebird: ep.occ7Ebird, occ7Elu: ep.occ7Elu,
+              t: ep.t, src: ep.src,
+              clientScannedAt: ep.clientScannedAt, lastFetched: ep.lastFetched,
+              _ee_has_coords: !!(_ee && Number.isFinite(_ee.lat) && Number.isFinite(_ee.lon)),
+              _count7: _count7,
+            })
+          );
         }
         if(typeof window.__schedulePersistBadgeCache==='function') window.__schedulePersistBadgeCache();
       }catch(ebErr){console.warn('[SCAN-EBIRD] apply error',name,ebErr);}

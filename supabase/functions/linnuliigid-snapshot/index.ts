@@ -320,8 +320,27 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
       console.log("[html-fallback-meta] table parse failed:", metaErr);
     }
 
-    console.log('[html-fallback]', name, 'latestDate:', latestDate);
-    return { lat, lon, latestDate, occ7, coordsStatus: "missing", coordsSource: "none", locality, municipality, county, individualCount, behavior, collectors, districts, eestiOmavalitsused };
+    // Resolve municipality/county centroid; explicitly null lat/lon when nothing resolves
+    // so the merge layer overwrites stale values rather than preserving them.
+    let coordsStatus: "public" | "restricted" | "missing" = "missing";
+    let coordsSource: "exact" | "municipality" | "county" | "none" = "none";
+    if (lat === null || lon === null) {
+      const centroid = resolveRestrictedCentroid(municipality, county);
+      if (centroid) {
+        lat = centroid.lat;
+        lon = centroid.lon;
+        coordsStatus = "restricted";
+        coordsSource = centroid.coordsSource;
+      } else {
+        lat = null;
+        lon = null;
+        coordsStatus = "missing";
+        coordsSource = "none";
+      }
+    }
+
+    console.log('[html-fallback]', name, 'latestDate:', latestDate, 'coords_source:', coordsSource);
+    return { lat, lon, latestDate, occ7, coordsStatus, coordsSource, locality, municipality, county, individualCount, behavior, collectors, districts, eestiOmavalitsused };
   } catch {
     clearTimeout(timeout);
     return { lat: null, lon: null, latestDate: null, occ7: 0, coordsStatus: "missing", coordsSource: "none", locality: null, municipality: null, county: null, individualCount: null, behavior: null, collectors: null, districts: null, eestiOmavalitsused: null };

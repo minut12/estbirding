@@ -235,30 +235,12 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const occ7 = normalized.filter((x) => x.t >= sevenDaysAgo).length;
 
-    // Extract coords
+    // Page-wide coord extraction removed: the catch-all regex was returning the first
+    // Estonia-looking lat/lon pair anywhere in the embedded SvelteKit hydration payload,
+    // which often belonged to a different observation than the visible table row. Rely
+    // on municipality/county centroid fallback instead (applied below after metadata scrape).
     let lat: number | null = null;
     let lon: number | null = null;
-    const coordPatterns = [
-      /"decimalLatitude"\s*:\s*(-?\d+\.\d+)[^\d-]+?"decimalLongitude"\s*:\s*(-?\d+\.\d+)/i,
-      /([5-6]\d\.\d+)\s*[;,\s]\s*(2\d\.\d+)/,
-    ];
-    for (const re of coordPatterns) {
-      const cm = html.match(re);
-      if (cm) {
-        const a = parseFloat(cm[1]),
-          b = parseFloat(cm[2]);
-        if (isEstoniaCoords(a, b)) {
-          lat = a;
-          lon = b;
-          break;
-        }
-        if (isEstoniaCoords(b, a)) {
-          lat = b;
-          lon = a;
-          break;
-        }
-      }
-    }
 
     // Extract metadata from search-page HTML table (search-page-only tier)
     // Fields requiring the detail page (county, municipality, districts, eestiOmavalitsused)

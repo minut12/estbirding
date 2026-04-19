@@ -57,6 +57,29 @@ const MUNICIPALITY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
   valga: { lat: 57.78, lon: 26.04 },
   põlva: { lat: 58.05, lon: 27.05 },
 };
+// Extracts "X vald" / "X linn" fragment from free-text locality.
+function extractMunicipality(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const m = text.match(
+    /([A-Za-zÀ-ž]+(?:-[A-Za-zÀ-ž]+)*(?:\s+[A-Za-zÀ-ž]+(?:-[A-Za-zÀ-ž]+)*)*\s+(?:vald|linn))/i,
+  );
+  return m ? m[1].trim() : null;
+}
+
+// Extracts county. Matches both "X maakond" and the informal "Xmaa" form
+// (e.g. "Harjumaa", "Ida-Virumaa", "Pärnumaa"), while excluding the very
+// common Estonian place-word "küla" which would otherwise collide.
+function extractCounty(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const mk = text.match(
+    /([A-Za-zÀ-ž]+(?:-[A-Za-zÀ-ž]+)*(?:\s+[A-Za-zÀ-ž]+(?:-[A-Za-zÀ-ž]+)*)*\s+maakond)/i,
+  );
+  if (mk) return mk[1].trim();
+  const maa = text.match(/\b([A-Za-zÀ-ž]+(?:-[A-Za-zÀ-ž]+)?maa)\b/);
+  if (maa && !/küla$/i.test(maa[1])) return maa[1].trim();
+  return null;
+}
+
 function normalizeName(v: unknown): string {
   return String(v || "").toLowerCase()
     .replace(/[ä]/g, "a")
@@ -301,8 +324,8 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
     // Fields requiring the detail page (county, municipality, districts, eestiOmavalitsused)
     // stay null here — the frontend "Refresh from Elurikkus" button populates them on demand.
     let locality: string | null = null;
-    const municipality: string | null = null;
-    const county: string | null = null;
+    let municipality: string | null = null;
+    let county: string | null = null;
     let individualCount: number | null = null;
     let behavior: string | null = null;
     let collectors: string | null = null;
@@ -363,6 +386,12 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
       console.log("[html-fallback-meta] table parse failed:", metaErr);
     }
 
+    // Derive municipality/county from the scraped locality free-text
+    if (locality) {
+      municipality = extractMunicipality(locality);
+      county = extractCounty(locality);
+    }
+
     // Resolve municipality/county centroid; explicitly null lat/lon when nothing resolves
     // so the merge layer overwrites stale values rather than preserving them.
     let coordsStatus: "public" | "restricted" | "missing" = "missing";
@@ -382,7 +411,14 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
       }
     }
 
-    console.log('[html-fallback]', name, 'latestDate:', latestDate, 'coords_source:', coordsSource);
+    // TODO: remove after coverage validated
+    console.log("[elurikkus-html-parse]", JSON.stringify({
+      species: name,
+      locality,
+      municipality,
+      county,
+      resolved: coordsSource,
+    }));
     return { lat, lon, latestDate, occ7, coordsStatus, coordsSource, locality, municipality, county, individualCount, behavior, collectors, districts, eestiOmavalitsused };
   } catch {
     clearTimeout(timeout);

@@ -24,6 +24,68 @@ function isEstoniaCoords(lat: number, lon: number) {
   return lat >= 57 && lat <= 60 && lon >= 21 && lon <= 29;
 }
 
+const COUNTY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
+  harju: { lat: 59.40, lon: 24.80 },
+  hiiu: { lat: 58.92, lon: 22.60 },
+  ida_viru: { lat: 59.35, lon: 27.42 },
+  jõgeva: { lat: 58.75, lon: 26.40 },
+  järva: { lat: 58.89, lon: 25.57 },
+  lääne: { lat: 58.94, lon: 23.54 },
+  lääne_viru: { lat: 59.30, lon: 26.33 },
+  põlva: { lat: 58.05, lon: 27.05 },
+  pärnu: { lat: 58.38, lon: 24.53 },
+  rapla: { lat: 58.99, lon: 24.79 },
+  saare: { lat: 58.33, lon: 22.48 },
+  tartu: { lat: 58.38, lon: 26.73 },
+  valga: { lat: 57.78, lon: 26.04 },
+  viljandi: { lat: 58.36, lon: 25.60 },
+  võru: { lat: 57.84, lon: 27.00 },
+};
+const MUNICIPALITY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
+  tartu: { lat: 58.38, lon: 26.73 },
+  tallinn: { lat: 59.44, lon: 24.75 },
+  pärnu: { lat: 58.38, lon: 24.50 },
+  narva: { lat: 59.38, lon: 28.19 },
+  viljandi: { lat: 58.36, lon: 25.60 },
+  võru: { lat: 57.84, lon: 27.00 },
+  rakvere: { lat: 59.35, lon: 26.36 },
+  haapsalu: { lat: 58.94, lon: 23.54 },
+  kuressaare: { lat: 58.25, lon: 22.49 },
+  jõgeva: { lat: 58.75, lon: 26.40 },
+  paide: { lat: 58.88, lon: 25.56 },
+  rapla: { lat: 58.99, lon: 24.79 },
+  valga: { lat: 57.78, lon: 26.04 },
+  põlva: { lat: 58.05, lon: 27.05 },
+};
+function normalizeName(v: unknown): string {
+  return String(v || "").toLowerCase()
+    .replace(/[ä]/g, "a")
+    .replace(/[ö]/g, "o")
+    .replace(/[õ]/g, "o")
+    .replace(/[ü]/g, "u")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function resolveRestrictedCentroid(
+  municipality: string | null,
+  county: string | null,
+): { lat: number; lon: number; coordsSource: "municipality" | "county" } | null {
+  const mKey = municipality
+    ? normalizeName(municipality)
+        .replace(/_linn$/, "").replace(/_vald$/, "").replace(/_alev$/, "").replace(/_alevik$/, "")
+        .replace(/_maakond$/, "").replace(/_county$/, "")
+    : "";
+  const cKey = county
+    ? normalizeName(county).replace(/_county$/, "").replace(/_maakond$/, "")
+    : "";
+  const mCentroid = mKey ? MUNICIPALITY_CENTROIDS[mKey] : null;
+  if (mCentroid) return { lat: mCentroid.lat, lon: mCentroid.lon, coordsSource: "municipality" };
+  const cCentroid = cKey ? COUNTY_CENTROIDS[cKey] : null;
+  if (cCentroid) return { lat: cCentroid.lat, lon: cCentroid.lon, coordsSource: "county" };
+  return null;
+}
+
 function toDay(s: string): number | null {
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return null;
@@ -144,24 +206,17 @@ async function fetchSpeciesData(name: string): Promise<{
       }
     }
     if (lat === null || lon === null) {
-      // Bug 3 fix: Estonian API returns "X maakond" (county) and "X vald"/"X linn" (municipality)
-      // Strip these suffixes so they match the centroid map keys (e.g. "laane_maakond" → "laane")
-      const mKey = normalizeName(municipality)
-        .replace(/_linn$/, "").replace(/_vald$/, "").replace(/_alev$/, "").replace(/_alevik$/, "");
-      const cKey = normalizeName(county)
-        .replace(/_county$/, "").replace(/_maakond$/, "");
-      const mCentroid = MUNICIPALITY_CENTROIDS[mKey];
-      const cCentroid = COUNTY_CENTROIDS[cKey];
-      if (mCentroid) {
-        lat = mCentroid.lat;
-        lon = mCentroid.lon;
+      const centroid = resolveRestrictedCentroid(municipality, county);
+      if (centroid) {
+        lat = centroid.lat;
+        lon = centroid.lon;
         coordsStatus = "restricted";
-        coordsSource = "municipality";
-      } else if (cCentroid) {
-        lat = cCentroid.lat;
-        lon = cCentroid.lon;
-        coordsStatus = "restricted";
-        coordsSource = "county";
+        coordsSource = centroid.coordsSource;
+      } else {
+        lat = null;
+        lon = null;
+        coordsStatus = "missing";
+        coordsSource = "none";
       }
     }
 
@@ -235,30 +290,12 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const occ7 = normalized.filter((x) => x.t >= sevenDaysAgo).length;
 
-    // Extract coords
+    // Page-wide coord extraction removed: the catch-all regex was returning the first
+    // Estonia-looking lat/lon pair anywhere in the embedded SvelteKit hydration payload,
+    // which often belonged to a different observation than the visible table row. Rely
+    // on municipality/county centroid fallback instead (applied below after metadata scrape).
     let lat: number | null = null;
     let lon: number | null = null;
-    const coordPatterns = [
-      /"decimalLatitude"\s*:\s*(-?\d+\.\d+)[^\d-]+?"decimalLongitude"\s*:\s*(-?\d+\.\d+)/i,
-      /([5-6]\d\.\d+)\s*[;,\s]\s*(2\d\.\d+)/,
-    ];
-    for (const re of coordPatterns) {
-      const cm = html.match(re);
-      if (cm) {
-        const a = parseFloat(cm[1]),
-          b = parseFloat(cm[2]);
-        if (isEstoniaCoords(a, b)) {
-          lat = a;
-          lon = b;
-          break;
-        }
-        if (isEstoniaCoords(b, a)) {
-          lat = b;
-          lon = a;
-          break;
-        }
-      }
-    }
 
     // Extract metadata from search-page HTML table (search-page-only tier)
     // Fields requiring the detail page (county, municipality, districts, eestiOmavalitsused)
@@ -326,8 +363,27 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
       console.log("[html-fallback-meta] table parse failed:", metaErr);
     }
 
-    console.log('[html-fallback]', name, 'latestDate:', latestDate);
-    return { lat, lon, latestDate, occ7, coordsStatus: "missing", coordsSource: "none", locality, municipality, county, individualCount, behavior, collectors, districts, eestiOmavalitsused };
+    // Resolve municipality/county centroid; explicitly null lat/lon when nothing resolves
+    // so the merge layer overwrites stale values rather than preserving them.
+    let coordsStatus: "public" | "restricted" | "missing" = "missing";
+    let coordsSource: "exact" | "municipality" | "county" | "none" = "none";
+    if (lat === null || lon === null) {
+      const centroid = resolveRestrictedCentroid(municipality, county);
+      if (centroid) {
+        lat = centroid.lat;
+        lon = centroid.lon;
+        coordsStatus = "restricted";
+        coordsSource = centroid.coordsSource;
+      } else {
+        lat = null;
+        lon = null;
+        coordsStatus = "missing";
+        coordsSource = "none";
+      }
+    }
+
+    console.log('[html-fallback]', name, 'latestDate:', latestDate, 'coords_source:', coordsSource);
+    return { lat, lon, latestDate, occ7, coordsStatus, coordsSource, locality, municipality, county, individualCount, behavior, collectors, districts, eestiOmavalitsused };
   } catch {
     clearTimeout(timeout);
     return { lat: null, lon: null, latestDate: null, occ7: 0, coordsStatus: "missing", coordsSource: "none", locality: null, municipality: null, county: null, individualCount: null, behavior: null, collectors: null, districts: null, eestiOmavalitsused: null };
@@ -1215,8 +1271,8 @@ async function runRefresh(
   const points: Record<
     string,
     {
-      lat?: number;
-      lon?: number;
+      lat?: number | null;
+      lon?: number | null;
       t?: string;
       occ7?: number;
       src?: string;
@@ -1233,7 +1289,7 @@ async function runRefresh(
       eestiOmavalitsused?: string | null;
     }
   > = (existingRow?.points_json && typeof existingRow.points_json === "object")
-    ? existingRow.points_json as Record<string, { lat?: number; lon?: number; t?: string; occ7?: number; src?: string; visible?: boolean; coords_status?: "public" | "restricted" | "missing"; coords_source?: "exact" | "municipality" | "county" | "none"; locality?: string | null; municipality?: string | null; county?: string | null; individualCount?: number | null; behavior?: string | null; collectors?: string | null; districts?: string | null; eestiOmavalitsused?: string | null; }>
+    ? existingRow.points_json as Record<string, { lat?: number | null; lon?: number | null; t?: string; occ7?: number; src?: string; visible?: boolean; coords_status?: "public" | "restricted" | "missing"; coords_source?: "exact" | "municipality" | "county" | "none"; locality?: string | null; municipality?: string | null; county?: string | null; individualCount?: number | null; behavior?: string | null; collectors?: string | null; districts?: string | null; eestiOmavalitsused?: string | null; }>
     : {};
 
   // --- NOTIFICATION PREP: snapshot previous points (t + occ7 only) for later comparison ---
@@ -1291,7 +1347,7 @@ async function runRefresh(
               if (srcTs > upstreamMaxTs) upstreamMaxTs = srcTs;
               const entry: (typeof points)[string] = {
                 src: "Elurikkus",
-                visible: true,
+                visible: points[name]?.visible ?? true,
               };
               // Bug 2 fix: preserve existing t when new fetch returns no date, so snapshot doesn't lose stale date
               if (data.latestDate) {
@@ -1299,10 +1355,10 @@ async function runRefresh(
               } else if (points[name]?.t) {
                 entry.t = points[name].t;
               }
-              if (data.lat !== null && data.lon !== null) {
-                entry.lat = data.lat;
-                entry.lon = data.lon;
-              }
+              // Always write lat/lon explicitly (including null) so the merge layer
+              // overwrites stale numeric values rather than preserving them.
+              entry.lat = data.lat ?? null;
+              entry.lon = data.lon ?? null;
               entry.occ7 = data.occ7;
               entry.coords_status = data.coordsStatus;
               entry.coords_source = data.coordsSource;
@@ -1783,43 +1839,3 @@ Deno.serve(async (req) => {
   }
 });
 
-  const COUNTY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
-    harju: { lat: 59.40, lon: 24.80 },
-    hiiu: { lat: 58.92, lon: 22.60 },
-    ida_viru: { lat: 59.35, lon: 27.42 },
-    jõgeva: { lat: 58.75, lon: 26.40 },
-    järva: { lat: 58.89, lon: 25.57 },
-    lääne: { lat: 58.94, lon: 23.54 },
-    lääne_viru: { lat: 59.30, lon: 26.33 },
-    põlva: { lat: 58.05, lon: 27.05 },
-    pärnu: { lat: 58.38, lon: 24.53 },
-    rapla: { lat: 58.99, lon: 24.79 },
-    saare: { lat: 58.33, lon: 22.48 },
-    tartu: { lat: 58.38, lon: 26.73 },
-    valga: { lat: 57.78, lon: 26.04 },
-    viljandi: { lat: 58.36, lon: 25.60 },
-    võru: { lat: 57.84, lon: 27.00 },
-  };
-  const MUNICIPALITY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
-    tartu: { lat: 58.38, lon: 26.73 },
-    tallinn: { lat: 59.44, lon: 24.75 },
-    pärnu: { lat: 58.38, lon: 24.50 },
-    narva: { lat: 59.38, lon: 28.19 },
-    viljandi: { lat: 58.36, lon: 25.60 },
-    võru: { lat: 57.84, lon: 27.00 },
-    rakvere: { lat: 59.35, lon: 26.36 },
-    haapsalu: { lat: 58.94, lon: 23.54 },
-    kuressaare: { lat: 58.25, lon: 22.49 },
-    jõgeva: { lat: 58.75, lon: 26.40 },
-    paide: { lat: 58.88, lon: 25.56 },
-    rapla: { lat: 58.99, lon: 24.79 },
-    valga: { lat: 57.78, lon: 26.04 },
-    põlva: { lat: 58.05, lon: 27.05 },
-  };
-  const normalizeName = (v: unknown) => String(v || "").toLowerCase()
-    .replace(/[ä]/g, "a")
-    .replace(/[ö]/g, "o")
-    .replace(/[õ]/g, "o")
-    .replace(/[ü]/g, "u")
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");

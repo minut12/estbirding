@@ -107,7 +107,8 @@ async function sendOne(
     headers: {
       "Content-Encoding": "aes128gcm",
       "Content-Type": "application/octet-stream",
-      "TTL": "3600",
+      "TTL": "86400",
+      "Urgency": "high",
       "Authorization": `vapid t=${jwt}, k=${vapidPubB64u}`,
     },
     body,

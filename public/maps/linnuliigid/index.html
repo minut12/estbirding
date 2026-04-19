@@ -8765,6 +8765,34 @@ function _syncNotifyToSupabase(subscription, speciesList) {
   }
 }
 
+if ('serviceWorker' in navigator && navigator.serviceWorker && !window.__pushRotationListenerInstalled) {
+  window.__pushRotationListenerInstalled = true;
+  navigator.serviceWorker.addEventListener('message', function(ev) {
+    try {
+      var msg = ev && ev.data;
+      if (!msg || msg.type !== 'PUSH_SUBSCRIPTION_ROTATED') return;
+      var j = msg.newSubscription;
+      if (!j || !j.endpoint || !j.keys) return;
+      var cfg = resolveSupabaseConfig();
+      if (!cfg.supabaseUrl || !cfg.supabaseKey) return;
+
+      var killOld = msg.oldEndpoint
+        ? fetch(cfg.supabaseUrl + '/rest/v1/push_subscriptions?endpoint=eq.' + encodeURIComponent(msg.oldEndpoint), {
+            method: 'DELETE',
+            headers: { apikey: cfg.supabaseKey, Authorization: 'Bearer ' + cfg.supabaseKey },
+          }).catch(function(){})
+        : Promise.resolve();
+
+      killOld.then(function() {
+        var fakeSub = { toJSON: function(){ return j; } };
+        _syncNotifyToSupabase(fakeSub, __notifySpecies);
+        __pushSubscription = fakeSub;
+        if (typeof _log === 'function') _log('♻️ push subscription rotated — resynced');
+      });
+    } catch (e) {}
+  });
+}
+
 var __notifyPermissionHintShown = false;
 
 function _updateNotifyInSpeciesMeta(speciesName, enabled) {
@@ -8949,11 +8977,52 @@ window.toggleNotification = async function(speciesName) {
     if (Notification.permission !== 'granted') return;
     var reg = await navigator.serviceWorker.ready;
     var sub = await reg.pushManager.getSubscription();
+
+    if (!sub && __notifySpecies.length > 0 && VAPID_PUBLIC_KEY) {
+      try {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: _urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        });
+        __pushSubscription = sub;
+        _syncNotifyToSupabase(sub, __notifySpecies);
+        console.log('[notify-reconcile] resubscribed');
+        if (typeof _log === 'function') _log('♻️ notify-reconcile: resubscribed');
+      } catch (e) {
+        console.warn('[notify-reconcile] resubscribe failed', e);
+      }
+      return;
+    }
+
     if (sub) {
       __pushSubscription = sub;
       console.log('[notify] Restored push subscription');
       if (__notifySpecies.length > 0) {
-        _syncNotifyToSupabase(__pushSubscription, __notifySpecies);
+        try {
+          var cfg = resolveSupabaseConfig();
+          if (cfg.supabaseUrl && cfg.supabaseKey) {
+            var checkUrl = cfg.supabaseUrl +
+              '/rest/v1/push_subscriptions?endpoint=eq.' +
+              encodeURIComponent(sub.endpoint) +
+              '&select=endpoint';
+            var r = await fetch(checkUrl, {
+              headers: { apikey: cfg.supabaseKey, Authorization: 'Bearer ' + cfg.supabaseKey }
+            });
+            var rows = r.ok ? await r.json().catch(function(){ return []; }) : [];
+            if (!Array.isArray(rows) || rows.length === 0) {
+              _syncNotifyToSupabase(sub, __notifySpecies);
+              console.log('[notify-reconcile] upserted missing row');
+              if (typeof _log === 'function') _log('♻️ notify-reconcile: upserted missing row');
+            } else {
+              console.log('[notify-reconcile] ok');
+            }
+          } else {
+            _syncNotifyToSupabase(sub, __notifySpecies);
+          }
+        } catch (e) {
+          console.warn('[notify-reconcile] check failed', e);
+          _syncNotifyToSupabase(sub, __notifySpecies);
+        }
       }
     }
   } catch (e) {}

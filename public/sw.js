@@ -102,3 +102,36 @@ self.addEventListener('notificationclick', function(event) {
     })
   );
 });
+
+// Chrome periodically rotates push subscriptions. Without this handler the
+// rotation is silent and the old endpoint in push_subscriptions is orphaned.
+self.addEventListener('pushsubscriptionchange', function(event) {
+  event.waitUntil((async () => {
+    try {
+      var oldSub = event.oldSubscription;
+      var appServerKey =
+        (event.newSubscription && event.newSubscription.options && event.newSubscription.options.applicationServerKey) ||
+        (oldSub && oldSub.options && oldSub.options.applicationServerKey) ||
+        null;
+
+      var newSub = event.newSubscription;
+      if (!newSub) {
+        newSub = await self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: appServerKey,
+        });
+      }
+
+      var clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      var payload = {
+        type: 'PUSH_SUBSCRIPTION_ROTATED',
+        oldEndpoint: oldSub ? oldSub.endpoint : null,
+        newSubscription: newSub ? newSub.toJSON() : null,
+        at: new Date().toISOString(),
+      };
+      clientList.forEach(function(c) { try { c.postMessage(payload); } catch (e) {} });
+    } catch (e) {
+      // Silent — startup reconciliation is the safety net.
+    }
+  })());
+});

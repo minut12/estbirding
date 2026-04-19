@@ -7191,6 +7191,8 @@ async function _applySnapshot(snap){
       _updateIndexProgressLine();
     }
   }
+  // TODO: remove after verification
+  console.log('[snap-apply]', { applied: __snapAppliedCoords, preserved: __snapPreservedCoords, totalInSnap: keys.length });
   __currentIndex = null;
   __nextIndex = keys.length;
   __processedCount = keys.length;

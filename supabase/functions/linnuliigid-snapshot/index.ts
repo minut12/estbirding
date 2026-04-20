@@ -1090,8 +1090,18 @@ function buildSnapshotMeta(data: Record<string, unknown>) {
 }
 
 function isMissingSnapshotStateTableError(err: unknown): boolean {
-  const msg = String((err as { message?: string })?.message || err || "").toLowerCase();
-  return msg.includes("snapshot_state") && (msg.includes("relation") || msg.includes("does not exist"));
+  const e = err as { message?: string; code?: string; details?: string; hint?: string } | null;
+  const msg = String(e?.message || err || "").toLowerCase();
+  const code = String(e?.code || "").toLowerCase();
+  // PostgREST: PGRST205 = could not find table in schema cache; 42P01 = undefined_table
+  if (code === "pgrst205" || code === "42p01") return true;
+  if (!msg.includes("snapshot_state")) return false;
+  return (
+    msg.includes("relation") ||
+    msg.includes("does not exist") ||
+    msg.includes("schema cache") ||
+    msg.includes("could not find")
+  );
 }
 
 async function getSnapshotState(supabase: any, key: string) {

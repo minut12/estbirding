@@ -1444,6 +1444,7 @@ async function runRefresh(
   // --- NOTIFICATION TRIGGER: detect newly spotted species after a full refresh ---
   if (done >= total) {
     try {
+      console.log(`[notify-check] done=${done} total=${total}`);
       const newlySpottedSpecies: string[] = [];
       for (const [name, newData] of Object.entries(points)) {
         const nd = newData as { t?: string; occ7?: number };

@@ -857,8 +857,9 @@ async function buildMapFirstPredictionResult(opts: {
   webhookTarget: WebhookTargetInfo;
   webhookUrl: string;
   signal: AbortSignal;
+  diagnosticEventsCollector?: Array<{ tag: string; data: unknown }>;
 }): Promise<Record<string, unknown>> {
-  const { payload, speciesKey, speciesName, webhookConfigured, webhookTarget, webhookUrl, signal } = opts;
+  const { payload, speciesKey, speciesName, webhookConfigured, webhookTarget, webhookUrl, signal, diagnosticEventsCollector } = opts;
   const payloadSpecies = asRecord(payload.species);
   const settings = asRecord(payload.settings);
   const latinName = stringOr(payloadSpecies.latinName);

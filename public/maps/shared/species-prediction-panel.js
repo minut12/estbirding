@@ -1412,6 +1412,37 @@
     console.log('[ROUTES]', message, payload);
   }
 
+  var ET_MONTHS_ABBR = ['jaan', 'veebr', 'märts', 'apr', 'mai', 'juuni', 'juuli', 'aug', 'sept', 'okt', 'nov', 'dets'];
+
+  function formatRouteDate(isoString) {
+    if (!isoString) return null;
+    var d = new Date(isoString);
+    if (isNaN(d.getTime())) return null;
+    var day = d.getDate();
+    var month = ET_MONTHS_ABBR[d.getMonth()];
+    var year = d.getFullYear();
+    var formattedDate = day + '. ' + month + ' ' + year;
+    var now = new Date();
+    var startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var startOfTarget = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    var diffDays = Math.round((startOfTarget - startOfToday) / 86400000);
+    var suffix;
+    if (diffDays === 0) suffix = 'täna';
+    else if (diffDays === 1) suffix = 'homme';
+    else if (diffDays === -1) suffix = 'eile';
+    else if (diffDays > 0) suffix = diffDays + ' päeva pärast';
+    else suffix = Math.abs(diffDays) + ' päeva tagasi';
+    return formattedDate + ' (' + suffix + ')';
+  }
+
+  function buildRouteDateRow(point, isOrigin) {
+    if (!point || !point.estimatedDate) return '';
+    var line = formatRouteDate(point.estimatedDate);
+    if (!line) return '';
+    var label = isOrigin ? 'Vaadeldud' : 'Eeldatav kuupäev';
+    return '<br>' + label + ': ' + escapeHtml(line);
+  }
+
   function normalizeMigrationRoutePoint(point, fallbackName) {
     if (!point || typeof point !== 'object') return null;
     var lat = Number(point.lat != null ? point.lat : point.latitude);
@@ -1421,7 +1452,8 @@
       lat: lat,
       lon: lon,
       name: normalizeText(point.name || fallbackName || ''),
-      type: normalizeText(point.type || '')
+      type: normalizeText(point.type || ''),
+      estimatedDate: typeof point.estimatedDate === 'string' ? point.estimatedDate : undefined
     };
   }
 

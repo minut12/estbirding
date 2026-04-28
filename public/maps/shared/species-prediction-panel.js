@@ -30,6 +30,7 @@
       predictedCone: false,
       predictedTargets: true,
       migrationRoutes: true,
+      migrationRoutesApprox: true,
       diagnostics: false,
       recentOnly: false
     }
@@ -824,6 +825,7 @@
       layerChip('predictedCone', 'Prediction cone', state.layerToggles.predictedCone) +
       layerChip('predictedTargets', 'Predicted targets', state.layerToggles.predictedTargets) +
       layerChip('migrationRoutes', 'Migration routes', state.layerToggles.migrationRoutes !== false) +
+      layerChip('migrationRoutesApprox', 'Approx. routes', state.layerToggles.migrationRoutesApprox !== false) +
       layerChip('diagnostics', 'Diagnostics', state.layerToggles.diagnostics) +
       layerChip('recentOnly', 'Recent only', state.layerToggles.recentOnly) +
       '</div>';
@@ -991,7 +993,7 @@
     if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap((result.predictedTargets || result.topPredictedPoints || prediction.displayedTargets || []).slice(0, 5), prediction);
     var normalizedMigrationRoutes = getNormalizedMigrationRoutes(result);
     if (state.layerToggles.migrationRoutes !== false && normalizedMigrationRoutes.length) renderMigrationRoutes(normalizedMigrationRoutes, prediction);
-    if (state.layerToggles.migrationRoutes !== false) renderSupplementaryForeignRoutes(result);
+    if (state.layerToggles.migrationRoutesApprox !== false) renderSupplementaryForeignRoutes(result);
     if (state.layerToggles.diagnostics === true && shouldOpenDebugDetails()) renderDiagnostics((result.predictedTargets || result.topPredictedPoints || prediction.displayedTargets || []).slice(0, 5));
   }
 
@@ -1807,9 +1809,13 @@
       routes: Array.isArray(routes) ? routes.length : 0,
       selectedPrimary: primaryRoute ? primaryRoute.targetName : null
     });
-    if (!primaryRoute || !Array.isArray(primaryRoute.routePoints) || primaryRoute.routePoints.length < 2) return;
-    [primaryRoute].forEach(function (route) {
-      var color = '#f59e0b';
+    var validRoutes = (Array.isArray(routes) ? routes : []).filter(function (route) {
+      return route && Array.isArray(route.routePoints) && route.routePoints.length >= 2;
+    });
+    if (!validRoutes.length) return;
+    validRoutes.forEach(function (route) {
+      var routeCc = route.fromCountry || route.foreignCountry || route.countryCode || '';
+      var color = pickRouteColor(routeCc, false);
       var opacity = 0.85;
       var progressPct = Number(route.currentProgressPct || 0);
       var routeDistKm = Number(route.routeDistanceKm || 0);
@@ -1837,7 +1843,7 @@
 
       if (displayLatLngs.length >= 2) {
         L.polyline(displayLatLngs, {
-          color: '#f59e0b', weight: 3, opacity: opacity, dashArray: null
+          color: color, weight: 3, opacity: opacity, dashArray: null
         }).addTo(layer);
       }
 
@@ -1929,21 +1935,86 @@
     });
   }
 
+  // Approximate Estonia entry coordinates by country of origin.
+  // Used only by the speculative-route renderer; real migrationEta data
+  // from n8n carries its own entryLat/entryLon.
+  var COUNTRY_ENTRY_ZONES = {
+    LV: { lat: 58.00, lon: 24.60 }, // Häädemeeste / Pärnu Bay
+    LT: { lat: 57.95, lon: 24.50 }, // arrives via Latvia
+    PL: { lat: 58.00, lon: 24.00 }, // SW corner / Saaremaa SE
+    BY: { lat: 58.00, lon: 27.00 }, // SE via Latvia/Russia
+    RU: { lat: 59.00, lon: 27.80 }, // Narva / Lake Peipus
+    FI: { lat: 59.50, lon: 24.70 }, // Tallinn from Helsinki
+    SE: { lat: 58.40, lon: 22.00 }, // Saaremaa west
+    NO: { lat: 58.40, lon: 22.00 },
+    DK: { lat: 58.00, lon: 23.50 },
+    DE: { lat: 58.00, lon: 23.50 },
+    NL: { lat: 58.00, lon: 23.50 },
+    GB: { lat: 58.00, lon: 23.00 },
+  };
+  var DEFAULT_ENTRY = { lat: 58.00, lon: 24.00 };
+
+  var COUNTRY_COLORS = {
+    LV: '#22c55e', // green
+    LT: '#3b82f6', // blue
+    PL: '#a855f7', // purple
+    BY: '#ef4444', // red
+    RU: '#f97316', // orange (deep)
+    FI: '#06b6d4', // cyan
+    SE: '#eab308', // yellow
+    NO: '#84cc16', // lime
+    DK: '#ec4899', // pink
+    DE: '#6366f1', // indigo
+    NL: '#14b8a6', // teal
+    GB: '#a78bfa', // violet
+  };
+  var DEFAULT_COUNTRY_COLOR = '#94a3b8'; // slate (intentionally muted, not orange)
+  var SOLID_ROUTE_DEFAULT_COLOR = '#f59e0b'; // amber — fallback for real n8n routes when country unknown
+
+  // Returns the country-coded color when known. When unknown, falls back to a
+  // tier-specific default so solid (real) routes don't collide with the muted
+  // approximate-route default.
+  function pickRouteColor(cc, isApprox) {
+    var key = String(cc || '').toUpperCase();
+    if (COUNTRY_COLORS[key]) return COUNTRY_COLORS[key];
+    return isApprox ? DEFAULT_COUNTRY_COLOR : SOLID_ROUTE_DEFAULT_COLOR;
+  }
+
+  function parseObsTs(value) {
+    if (!value) return 0;
+    var t = Date.parse(String(value));
+    return Number.isFinite(t) ? t : 0;
+  }
+
   // Render supplementary migration routes from non-FI foreign clusters
   function renderSupplementaryForeignRoutes(result) {
     if (!overlayGroups || !overlayGroups.migrationRoutes) return;
     var layer = overlayGroups.migrationRoutes;
-    var clusters = (result.foreignClusters || []);
-    if (!clusters.length) {
-      var raw = result.rawResearchPayload || {};
-      clusters = raw.foreignClusters || (raw.normalizedSources || {}).foreignClusters || [];
-    }
+    var clusters = Array.isArray(result.foreignClusters) ? result.foreignClusters : [];
     if (!clusters.length) return;
     var targets = result.predictedTargets || result.topPredictedPoints || [];
-    var t0 = targets[0] || null;
-    var destLat = t0 ? Number(t0.lat) : 58.31;
-    var destLon = t0 ? Number(t0.lon) : 26.74;
-    var destName = t0 ? (t0.displayName || t0.name || 'Target') : 'Target';
+    function pickNearestTarget(clusterLat, clusterLon) {
+      if (!Array.isArray(targets) || targets.length === 0) {
+        return { lat: 58.31, lon: 26.74, name: 'Target', isFallback: true };
+      }
+      var best = null;
+      var bestDist = Infinity;
+      for (var i = 0; i < targets.length; i++) {
+        var t = targets[i];
+        var tLat = Number(t && t.lat);
+        var tLon = Number(t && t.lon);
+        if (!Number.isFinite(tLat) || !Number.isFinite(tLon)) continue;
+        var d = distanceKm(clusterLat, clusterLon, tLat, tLon);
+        if (d < bestDist) { bestDist = d; best = t; }
+      }
+      if (!best) return { lat: 58.31, lon: 26.74, name: 'Target', isFallback: true };
+      return {
+        lat: Number(best.lat),
+        lon: Number(best.lon),
+        name: best.displayName || best.name || 'Target',
+        isFallback: false,
+      };
+    }
     // Existing routes' countries (from globalMigrationEtas)
     var existingCountries = {};
     (result.globalMigrationEtas || []).forEach(function (eta) {
@@ -1957,26 +2028,34 @@
       var cc = String(codes[0] || '').toUpperCase();
       if (!cc || cc === 'FI' || existingCountries[cc]) return;
       var existing = bestPerCountry[cc];
-      if (!existing || String(c.newestObsDt || '') > String(existing.newestObsDt || '')) {
+      var existingTs = existing ? parseObsTs(existing.newestObsDt) : 0;
+      var candidateTs = parseObsTs(c.newestObsDt);
+      if (!existing || candidateTs > existingTs) {
         bestPerCountry[cc] = c;
       }
     });
-    var countryColors = { LV: '#22c55e', LT: '#3b82f6', PL: '#a855f7', BY: '#ef4444', RU: '#f97316' };
     Object.keys(bestPerCountry).forEach(function (cc) {
       var c = bestPerCountry[cc];
       var cLat = Number(c.lat);
       var cLon = Number(c.lon);
       if (!Number.isFinite(cLat) || !Number.isFinite(cLon)) return;
-      var entryLat = cc === 'LV' ? 57.8 : 57.6;
-      var entryLon = cc === 'LV' ? 24.8 : 24.3;
-      var color = countryColors[cc] || '#f59e0b';
+      var dest = pickNearestTarget(cLat, cLon);
+      var destLat = dest.lat;
+      var destLon = dest.lon;
+      var destName = dest.name;
+      var entry = COUNTRY_ENTRY_ZONES[cc] || DEFAULT_ENTRY;
+      var entryLat = entry.lat;
+      var entryLon = entry.lon;
+      var color = pickRouteColor(cc, true);
       var locality = c.locality || (Array.isArray(c.locNames) ? c.locNames[0] : '') || 'Unknown';
       var dist = c.nearestDistanceKm || Math.round(Math.sqrt(Math.pow((cLat - destLat) * 111, 2) + Math.pow((cLon - destLon) * 65, 2)));
       var sDate = c.newestObsDt || c.latestDate || '';
       // Draw polyline: origin → entry → destination
+      var approxTooltip = escapeHtml(cc) + ' → ' + escapeHtml(destName) +
+        ' · ~' + escapeHtml(String(Math.round(dist))) + ' km · approximate (no migration model)';
       L.polyline([[cLat, cLon], [entryLat, entryLon], [destLat, destLon]], {
-        color: color, weight: 3, opacity: 0.75, dashArray: '8 6'
-      }).addTo(layer);
+        color: color, weight: 3, opacity: 0.55, dashArray: '8 6'
+      }).bindTooltip(approxTooltip, { direction: 'top', sticky: true }).addTo(layer);
       // Origin marker
       var originTip = '<b>' + escapeHtml(locality) + '</b><br>Country: ' + escapeHtml(cc) +
         (sDate ? '<br>Sighted: ' + escapeHtml(String(sDate).slice(0, 10)) : '') +

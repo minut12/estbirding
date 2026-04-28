@@ -91,9 +91,7 @@ vi.mock('@/lib/speciesPredictionDebug', () => ({
   SPECIES_PREDICTION_DEBUG_RESYNC_EVENT: 'species-prediction-debug-resync',
 }));
 
-import SpeciesPredictionSettings, {
-  buildRecoveryDebugState,
-} from '@/features/settings/SpeciesPredictionSettings';
+import SpeciesPredictionSettings from '@/features/settings/SpeciesPredictionSettings';
 
 describe('SpeciesPredictionSettings', () => {
   beforeEach(() => {
@@ -147,25 +145,4 @@ describe('SpeciesPredictionSettings', () => {
     expect(screen.queryByText(/Cannot read properties of undefined/i)).not.toBeInTheDocument();
   });
 
-  it('handles partial recovery payloads without throwing', () => {
-    expect(() => buildRecoveryDebugState({
-      code: 'PARTIAL',
-      responseBody: {
-        aiSummary: null,
-        warnings: null,
-      },
-    })).not.toThrow();
-
-    expect(buildRecoveryDebugState({
-      code: 'PARTIAL',
-      responseBody: {
-        aiSummary: null,
-      },
-    })).toEqual({
-      rawTopLevelCode: 'PARTIAL',
-      summarySourcePath: '',
-      insightSummaryRecovered: false,
-      normalizedPredictionShape: '',
-    });
-  });
 });

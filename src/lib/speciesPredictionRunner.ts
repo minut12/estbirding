@@ -4,7 +4,6 @@ import {
   isPredictionRequestType,
   normalizeSpeciesPredictionResult,
   resolveSpeciesPredictionSource,
-  type PredictionRequestType,
   type SpeciesPredictionRequestPayload,
   type SpeciesPredictionResult,
 } from '@/lib/speciesPrediction';
@@ -666,10 +665,4 @@ function isEdgeFunctionStage(stage: string): boolean {
 function safeNumber(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
-}
-
-export function resolvePredictionRequestType(enablePrediction: boolean, enableResearchInsights: boolean): PredictionRequestType {
-  if (enablePrediction && enableResearchInsights) return 'prediction_and_insight';
-  if (enableResearchInsights) return 'insight';
-  return 'prediction';
 }

@@ -12,36 +12,15 @@ export type SpeciesPredictionSettings = {
   speciesName: string;
   scope: SpeciesScopeId;
   ebirdSpeciesCodeOverride?: string;
-  enablePrediction: boolean;
-  enableResearchInsights: boolean;
   outputCount: 3 | 5;
-  useEbirdForeignSightings: boolean;
   useElurikkusHistory: boolean;
-  useEstoniaRecentRecords: boolean;
-  useWeatherWind: boolean;
   useLatvia: boolean;
   useLithuania: boolean;
   useBelarus: boolean;
   usePoland: boolean;
   useRussia: boolean;
   useFinlandContextOnly: boolean;
-  foreignLookback1d: boolean;
-  foreignLookback3d: boolean;
-  foreignLookback7d: boolean;
-  foreignLookback14d: boolean;
-  estoniaRecentWindow7d: boolean;
-  estoniaRecentWindow30d: boolean;
-  foreignPressureWeight: number;
-  elurikkusHistoryWeight: number;
-  springTimingWeight: number;
-  weatherWindWeight: number;
-  hotspotHistoryWeight: number;
   predictionMode: PredictionMode;
-  searchRadiusKm: number;
-  hotspotRadiusKm: number;
-  hotspotCount: number;
-  mapShowSourceFlows: boolean;
-  mapShowConfidenceRings: boolean;
   enableN8nResearch: boolean;
   enableOpenAISummary: boolean;
   summaryStyle: SummaryStyle;
@@ -49,10 +28,7 @@ export type SpeciesPredictionSettings = {
   predictionLayerMode: PredictionLayerMode;
   horizonDays: number;
   showPredictionCone: boolean;
-  useRegionalTargets: boolean;
   recentOnlyMapMarkers: boolean;
-  snapToBestTarget: boolean;
-  autoFeedEnabled: boolean;
   updatedAt: string;
 };
 
@@ -656,36 +632,15 @@ export function getSpeciesPredictionDefaults(speciesName = '', scope: SpeciesSco
     speciesName: normalizedName,
     scope,
     ebirdSpeciesCodeOverride: undefined,
-    enablePrediction: true,
-    enableResearchInsights: true,
     outputCount: 5,
-    useEbirdForeignSightings: true,
     useElurikkusHistory: true,
-    useEstoniaRecentRecords: true,
-    useWeatherWind: true,
     useLatvia: true,
     useLithuania: true,
     useBelarus: true,
     usePoland: true,
     useRussia: true,
     useFinlandContextOnly: true,
-    foreignLookback1d: true,
-    foreignLookback3d: true,
-    foreignLookback7d: true,
-    foreignLookback14d: false,
-    estoniaRecentWindow7d: true,
-    estoniaRecentWindow30d: true,
-    foreignPressureWeight: 35,
-    elurikkusHistoryWeight: 20,
-    springTimingWeight: 20,
-    weatherWindWeight: 15,
-    hotspotHistoryWeight: 10,
     predictionMode: 'precise_hotspot',
-    searchRadiusKm: 35,
-    hotspotRadiusKm: 5,
-    hotspotCount: 5,
-    mapShowSourceFlows: true,
-    mapShowConfidenceRings: true,
     enableN8nResearch: false,
     enableOpenAISummary: true,
     summaryStyle: 'field_use',
@@ -693,10 +648,7 @@ export function getSpeciesPredictionDefaults(speciesName = '', scope: SpeciesSco
     predictionLayerMode: 'map_first',
     horizonDays: 7,
     showPredictionCone: true,
-    useRegionalTargets: true,
     recentOnlyMapMarkers: false,
-    snapToBestTarget: true,
-    autoFeedEnabled: false,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -711,8 +663,6 @@ export function normalizeSpeciesPredictionSettings(
   const inputAny = (input || {}) as Record<string, unknown>;
   const legacySources = asRecord(inputAny.sources);
   const legacyCountries = asRecord(inputAny.countries);
-  const legacyWindows = asRecord(inputAny.windows);
-  const legacyWeights = asRecord(inputAny.weights);
   const legacyPrecision = asRecord(inputAny.precision);
   const legacyAutomation = asRecord(inputAny.automation);
   const next: SpeciesPredictionSettings = {
@@ -722,33 +672,14 @@ export function normalizeSpeciesPredictionSettings(
     speciesKey: normalizeSpeciesName(input?.speciesKey || normalizedName || defaults.speciesKey),
     scope,
     ...(normalizeUiText(input?.ebirdSpeciesCodeOverride || '') ? { ebirdSpeciesCodeOverride: normalizeUiText(input?.ebirdSpeciesCodeOverride || '') } : {}),
-    useEbirdForeignSightings: coalesceBoolean(input?.useEbirdForeignSightings, legacySources.ebirdForeign, defaults.useEbirdForeignSightings),
     useElurikkusHistory: coalesceBoolean(input?.useElurikkusHistory, legacySources.elurikkusHistory, defaults.useElurikkusHistory),
-    useEstoniaRecentRecords: coalesceBoolean(input?.useEstoniaRecentRecords, legacySources.estoniaRecent, defaults.useEstoniaRecentRecords),
-    useWeatherWind: coalesceBoolean(input?.useWeatherWind, legacySources.weatherWind, defaults.useWeatherWind),
     useLatvia: coalesceBoolean(input?.useLatvia, legacyCountries.latvia, defaults.useLatvia),
     useLithuania: coalesceBoolean(input?.useLithuania, legacyCountries.lithuania, defaults.useLithuania),
     useBelarus: coalesceBoolean(input?.useBelarus, legacyCountries.belarus, defaults.useBelarus),
     usePoland: coalesceBoolean(input?.usePoland, legacyCountries.poland, defaults.usePoland),
     useRussia: coalesceBoolean(input?.useRussia, legacyCountries.russia, defaults.useRussia),
     useFinlandContextOnly: coalesceBoolean(input?.useFinlandContextOnly, legacyCountries.finlandContextOnly, defaults.useFinlandContextOnly),
-    foreignLookback1d: coalesceBoolean(input?.foreignLookback1d, legacyWindows.foreign1d, defaults.foreignLookback1d),
-    foreignLookback3d: coalesceBoolean(input?.foreignLookback3d, legacyWindows.foreign3d, defaults.foreignLookback3d),
-    foreignLookback7d: coalesceBoolean(input?.foreignLookback7d, legacyWindows.foreign7d, defaults.foreignLookback7d),
-    foreignLookback14d: coalesceBoolean(input?.foreignLookback14d, legacyWindows.foreign14d, defaults.foreignLookback14d),
-    estoniaRecentWindow7d: coalesceBoolean(input?.estoniaRecentWindow7d, legacyWindows.estonia7d, defaults.estoniaRecentWindow7d),
-    estoniaRecentWindow30d: coalesceBoolean(input?.estoniaRecentWindow30d, legacyWindows.estonia30d, defaults.estoniaRecentWindow30d),
-    foreignPressureWeight: coalesceNumber(input?.foreignPressureWeight, legacyWeights.foreignPressure, defaults.foreignPressureWeight),
-    elurikkusHistoryWeight: coalesceNumber(input?.elurikkusHistoryWeight, legacyWeights.elurikkusHistory, defaults.elurikkusHistoryWeight),
-    springTimingWeight: coalesceNumber(input?.springTimingWeight, legacyWeights.springTiming, defaults.springTimingWeight),
-    weatherWindWeight: coalesceNumber(input?.weatherWindWeight, legacyWeights.weatherWind, defaults.weatherWindWeight),
-    hotspotHistoryWeight: coalesceNumber(input?.hotspotHistoryWeight, legacyWeights.hotspotHistory, defaults.hotspotHistoryWeight),
     predictionMode: isPredictionMode(input?.predictionMode) ? input.predictionMode : (isPredictionMode(legacyPrecision.mode) ? legacyPrecision.mode : defaults.predictionMode),
-    searchRadiusKm: coalesceNumber(input?.searchRadiusKm, legacyPrecision.searchRadiusKm, defaults.searchRadiusKm),
-    hotspotRadiusKm: coalesceNumber(input?.hotspotRadiusKm, legacyPrecision.hotspotRadiusKm, defaults.hotspotRadiusKm),
-    hotspotCount: coalesceNumber(input?.hotspotCount, legacyPrecision.hotspotCount, defaults.hotspotCount),
-    mapShowSourceFlows: coalesceBoolean(input?.mapShowSourceFlows, legacyPrecision.showSourceFlows, defaults.mapShowSourceFlows),
-    mapShowConfidenceRings: coalesceBoolean(input?.mapShowConfidenceRings, legacyPrecision.showConfidenceRings, defaults.mapShowConfidenceRings),
     enableN8nResearch: coalesceBoolean(input?.enableN8nResearch, legacyAutomation.enableN8nResearch, defaults.enableN8nResearch),
     enableOpenAISummary: coalesceBoolean(input?.enableOpenAISummary, legacyAutomation.enableOpenAISummary, defaults.enableOpenAISummary),
     summaryStyle: isSummaryStyle(input?.summaryStyle) ? input.summaryStyle : (isSummaryStyle(legacyAutomation.summaryStyle) ? legacyAutomation.summaryStyle : defaults.summaryStyle),
@@ -756,21 +687,10 @@ export function normalizeSpeciesPredictionSettings(
     predictionLayerMode: isPredictionLayerMode(input?.predictionLayerMode) ? input.predictionLayerMode : defaults.predictionLayerMode,
     horizonDays: coalesceNumber(input?.horizonDays, legacyAutomation.horizonDays, defaults.horizonDays),
     showPredictionCone: coalesceBoolean(input?.showPredictionCone, legacyAutomation.showPredictionCone, defaults.showPredictionCone),
-    useRegionalTargets: coalesceBoolean(input?.useRegionalTargets, legacyAutomation.useRegionalTargets, defaults.useRegionalTargets),
     recentOnlyMapMarkers: coalesceBoolean(input?.recentOnlyMapMarkers, legacyAutomation.recentOnlyMapMarkers, defaults.recentOnlyMapMarkers),
-    snapToBestTarget: coalesceBoolean(input?.snapToBestTarget, legacyAutomation.snapToBestTarget, defaults.snapToBestTarget),
-    autoFeedEnabled: coalesceBoolean(input?.autoFeedEnabled, legacyAutomation.autoFeedEnabled, defaults.autoFeedEnabled),
     updatedAt: normalizeUiText(input?.updatedAt || defaults.updatedAt) || new Date().toISOString(),
   };
   next.outputCount = next.outputCount === 3 ? 3 : 5;
-  next.foreignPressureWeight = clampNumber(next.foreignPressureWeight, 0, 100, defaults.foreignPressureWeight);
-  next.elurikkusHistoryWeight = clampNumber(next.elurikkusHistoryWeight, 0, 100, defaults.elurikkusHistoryWeight);
-  next.springTimingWeight = clampNumber(next.springTimingWeight, 0, 100, defaults.springTimingWeight);
-  next.weatherWindWeight = clampNumber(next.weatherWindWeight, 0, 100, defaults.weatherWindWeight);
-  next.hotspotHistoryWeight = clampNumber(next.hotspotHistoryWeight, 0, 100, defaults.hotspotHistoryWeight);
-  next.searchRadiusKm = clampNumber(next.searchRadiusKm, 1, 300, defaults.searchRadiusKm);
-  next.hotspotRadiusKm = clampNumber(next.hotspotRadiusKm, 1, 100, defaults.hotspotRadiusKm);
-  next.hotspotCount = clampNumber(next.hotspotCount, 1, 20, defaults.hotspotCount);
   next.summaryMaxLength = clampNumber(next.summaryMaxLength, 100, 5000, defaults.summaryMaxLength);
   next.horizonDays = clampNumber(next.horizonDays, 1, 30, defaults.horizonDays);
   return next;
@@ -1849,8 +1769,7 @@ function hasUsableDirectShape(input: Partial<SpeciesPredictionResult>): boolean 
  *
  * Returns the best usable source object + path, or null.
  *
- * Callers: `hasUsableSpeciesPredictionResult`, `resolveSpeciesPredictionSource`,
- * and the React debug panel's `buildRecoveryDebugState`.
+ * Callers: `hasUsableSpeciesPredictionResult`, `resolveSpeciesPredictionSource`.
  *
  * TODO(post-rework): remove once the n8n → edge-function → client response
  * shape is contractually stable and error envelopes can no longer carry

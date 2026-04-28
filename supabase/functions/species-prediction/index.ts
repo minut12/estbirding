@@ -456,6 +456,137 @@ serve(async (req) => {
       }, 200, STATUS_NO_CACHE_HEADERS);
     }
 
+    // ── GET ?mode=n8n_debug&speciesKey=X&scope=Y ──
+    // Diagnostic endpoint: runs a real prediction internally with both
+    // enableOpenAISummary and enableN8nResearch forced true, captures every
+    // [N8N-*] diagnostic event into a collector, and returns it inline.
+    // Does NOT touch the live prediction code path (separate invocation).
+    if (req.method === 'GET' && url.searchParams.get('mode') === 'n8n_debug') {
+      const speciesKey = (url.searchParams.get('speciesKey') || '').trim() || 'Piiritaja';
+      const scope = (url.searchParams.get('scope') || '').trim() || 'linnuliigid';
+      const speciesName = speciesKey;
+
+      const rawWebhookUrl = (Deno.env.get(WEBHOOK_ENV_KEY) || '').trim();
+      let dbgWebhookHost = '';
+      let dbgWebhookPath = '';
+      try {
+        const u = new URL(rawWebhookUrl);
+        dbgWebhookHost = u.host;
+        dbgWebhookPath = u.pathname;
+      } catch { /* ignore */ }
+
+      const envCheck = {
+        webhookConfigured: !!rawWebhookUrl,
+        webhookHost: dbgWebhookHost,
+        webhookPath: dbgWebhookPath,
+        authHeaderConfigured: !!(Deno.env.get(AUTH_HEADER_ENV_KEY) || '').trim(),
+        authValueConfigured: !!(Deno.env.get(AUTH_VALUE_ENV_KEY) || '').trim(),
+        timeoutMsConfigured: !!(Deno.env.get(TIMEOUT_ENV_KEY) || '').trim(),
+        timeoutMs: timeoutMsUsed,
+      };
+
+      const settingsResolved = {
+        enableOpenAISummary: true,
+        enableN8nResearch: true,
+        requiresN8nSummary: true,
+      };
+
+      const debugPayload: Record<string, unknown> = {
+        requestType: 'prediction_and_insight',
+        scope,
+        species: { key: speciesKey, name: speciesName, speciesKey, speciesName },
+        settings: {
+          scope,
+          horizonDays: 7,
+          outputCount: 5,
+          enableOpenAISummary: true,
+          enableN8nResearch: true,
+          useElurikkusHistory: true,
+        },
+      };
+
+      const diagnosticEvents: Array<{ tag: string; data: unknown }> = [];
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMsUsed);
+
+      let resultObj: Record<string, unknown> | null = null;
+      let runError: string | null = null;
+      try {
+        resultObj = await buildMapFirstPredictionResult({
+          payload: debugPayload,
+          speciesKey,
+          speciesName,
+          webhookConfigured,
+          webhookTarget,
+          webhookUrl,
+          signal: controller.signal,
+          diagnosticEventsCollector: diagnosticEvents,
+        });
+      } catch (err) {
+        runError = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+      } finally {
+        clearTimeout(timer);
+      }
+
+      const decision = diagnosticEvents.find((e) => e.tag === '[N8N-DECISION]')?.data as
+        | { requiresN8nSummary?: boolean; willCallN8n?: boolean; fallbackReason?: string }
+        | undefined;
+      const callEvt = diagnosticEvents.find((e) => e.tag === '[N8N-CALL]');
+      const callErrEvt = diagnosticEvents.find((e) => e.tag === '[N8N-CALL-ERROR]');
+      const gate = diagnosticEvents.find((e) => e.tag === '[N8N-PASSTHROUGH-GATE]')?.data as
+        | {
+          n8nParsedTruthy?: boolean;
+          n8nRecordOkStrictTrue?: boolean;
+          analysisVersionValue?: string | null;
+          analysisVersionStartsWithV3?: boolean;
+        }
+        | undefined;
+      const payloadSourceState = stringOr((resultObj as Record<string, unknown> | null)?.payloadSourceState);
+
+      let finalPath: 'n8n_v3_passthrough' | 'local_map_first' | 'n8n_called_but_dropped' | 'n8n_not_called' =
+        'local_map_first';
+      let finalPathReason = '';
+
+      if (!decision?.requiresN8nSummary) {
+        finalPath = 'n8n_not_called';
+        finalPathReason = `requiresN8nSummary=false (${decision?.fallbackReason || 'unknown reason'})`;
+      } else if (callErrEvt && !callEvt) {
+        finalPath = 'n8n_called_but_dropped';
+        finalPathReason = `n8n fetch threw: ${JSON.stringify(callErrEvt.data)}`;
+      } else if (payloadSourceState === 'n8n_v3_passthrough') {
+        finalPath = 'n8n_v3_passthrough';
+        finalPathReason = 'v3 gate passed; n8n response returned to caller';
+      } else if (callEvt && gate) {
+        finalPath = 'n8n_called_but_dropped';
+        const failed: string[] = [];
+        if (!gate.n8nParsedTruthy) failed.push('n8nParsed falsy');
+        if (!gate.n8nRecordOkStrictTrue) failed.push('record.ok !== true');
+        if (typeof gate.analysisVersionValue !== 'string') failed.push('analysisVersion not a string');
+        else if (!gate.analysisVersionStartsWithV3) failed.push(`analysisVersion '${gate.analysisVersionValue}' does not start with 'v3'`);
+        finalPathReason = `v3 gate failed: ${failed.join('; ') || 'unknown'}`;
+      } else if (callEvt) {
+        finalPath = 'n8n_called_but_dropped';
+        finalPathReason = 'n8n called but no passthrough-gate event captured';
+      } else {
+        finalPath = 'local_map_first';
+        finalPathReason = runError ? `error before n8n call: ${runError}` : 'n8n was not invoked (configuration or evidence path)';
+      }
+
+      return json({
+        ok: true,
+        mode: 'n8n_debug',
+        speciesKey,
+        scope,
+        envCheck,
+        settingsResolved,
+        diagnosticEvents,
+        finalPath,
+        finalPathReason,
+        runError,
+        backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
+      }, 200, STATUS_NO_CACHE_HEADERS);
+    }
+
     // ── GET ?mode=poll&requestId=X ──
     if (req.method === 'GET' && url.searchParams.get('mode') === 'poll') {
       const requestId = (url.searchParams.get('requestId') || '').trim();

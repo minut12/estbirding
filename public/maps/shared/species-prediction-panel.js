@@ -682,7 +682,7 @@
       html += '<div class="spp-point"><div class="spp-point-reason-text">—</div></div>';
     } else {
       var _raw = result.rawResearchPayload || {};
-      var _etaCtx = { foreignClusters: result.foreignClusters || _raw.foreignClusters || (_raw.normalizedSources || {}).foreignClusters || [], weather: result.weather || (_raw.normalizedSources || {}).weather || null };
+      var _etaCtx = { foreignClusters: result.foreignClusters || _raw.foreignClusters || (_raw.normalizedSources || {}).foreignClusters || [], weather: result.weather || (_raw.normalizedSources || {}).weather || null, estoniaHistoryPoints: result.estoniaHistoryPoints || (_raw.normalizedSources || {}).estoniaHistoryPoints || [] };
       predictedTargets.forEach(function (point) {
         html += renderPredictedPoint(point, _etaCtx);
       });
@@ -990,7 +990,7 @@
     if (state.layerToggles.foreignPressureClusters !== false) renderForeignPressureClusters(result.foreignClusters || []);
     if (state.layerToggles.predictedLines !== false && !prediction.alreadyPresentMode) renderPredictionVectors(predictedLineFeatures, false);
     if (state.layerToggles.predictedCone !== false && !prediction.alreadyPresentMode) renderPredictionVectors(predictedLineFeatures, true);
-    if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap((result.predictedTargets || result.topPredictedPoints || prediction.displayedTargets || []).slice(0, 5), prediction);
+    if (state.layerToggles.predictedTargets !== false) renderPredictedTargetsOnMap((result.predictedTargets || result.topPredictedPoints || prediction.displayedTargets || []).slice(0, 5), prediction, result.estoniaHistoryPoints || []);
     var normalizedMigrationRoutes = getNormalizedMigrationRoutes(result);
     if (state.layerToggles.migrationRoutes !== false && normalizedMigrationRoutes.length) renderMigrationRoutes(normalizedMigrationRoutes, prediction);
     if (state.layerToggles.migrationRoutesApprox !== false) renderSupplementaryForeignRoutes(result);
@@ -1341,7 +1341,7 @@
     });
   }
 
-  function renderPredictedTargetsOnMap(points, prediction) {
+  function renderPredictedTargetsOnMap(points, prediction, estoniaHistoryPoints) {
     points.forEach(function (point) {
       var icon = L.divIcon({
         className: 'species-prediction-target',
@@ -1350,7 +1350,7 @@
         iconAnchor: [14, 14]
       });
       var pMigEta = point.migrationEta || null;
-      var pEtaCtx = { foreignClusters: prediction && prediction.foreignClusters || [], targetLat: point.lat, targetLon: point.lon, latestSupportingEstoniaDate: point.latestSupportingEstoniaDate, weather: prediction && prediction.weather || null };
+      var pEtaCtx = { foreignClusters: prediction && prediction.foreignClusters || [], targetLat: point.lat, targetLon: point.lon, latestSupportingEstoniaDate: point.latestSupportingEstoniaDate, weather: prediction && prediction.weather || null, estoniaHistoryPoints: Array.isArray(estoniaHistoryPoints) ? estoniaHistoryPoints : [] };
       var pEtaLabel = formatMigrationEtaLabel(pMigEta, point.eta, pEtaCtx);
       var pPopup = '<div style="max-width:320px">' +
         '<strong>#' + escapeHtml(point.rank) + ' ' + escapeHtml(point.displayName || point.name || 'Target') + '</strong><br>' +
@@ -2312,6 +2312,70 @@
     return { factor: adj, label: windLabel };
   }
 
+  // Compute "typical first-arrival" window from historical observation dates.
+  // Returns { startDoy, endDoy, sampleYears, basis } or null if no usable data.
+  //
+  // Algorithm:
+  //   1. Group history points by calendar year, keep last 10 years.
+  //   2. For each year, take the earliest day-of-year observed.
+  //   3. Take median of those per-year-earliest DOY values.
+  //   4. Window = median - 7 days … median + 7 days.
+  //   5. Fallback (fewer than 3 years of data): use the absolute earliest
+  //      historical observation, window = earliest … earliest + 14 days.
+  function computeFirstArrivalWindow(historyPoints) {
+    if (!Array.isArray(historyPoints) || historyPoints.length === 0) return null;
+    var nowYear = new Date().getUTCFullYear();
+    var earliestDoyByYear = {};
+    for (var i = 0; i < historyPoints.length; i++) {
+      var hp = historyPoints[i];
+      // Accept either `date` (spec) or `eventDate` (n8n GBIF shape) — both seen in the wild.
+      var d = hp && (hp.date || hp.eventDate);
+      if (!d) continue;
+      var ts = Date.parse(d);
+      if (!Number.isFinite(ts)) continue;
+      var dt = new Date(ts);
+      var year = dt.getUTCFullYear();
+      if (year < nowYear - 10) continue;
+      var jan1 = Date.UTC(year, 0, 1);
+      var doy = Math.floor((ts - jan1) / 86400000) + 1;
+      if (earliestDoyByYear[year] == null || doy < earliestDoyByYear[year]) {
+        earliestDoyByYear[year] = doy;
+      }
+    }
+    var perYear = Object.values(earliestDoyByYear);
+    if (perYear.length === 0) return null;
+    perYear.sort(function (a, b) { return a - b; });
+    if (perYear.length < 3) {
+      var earliest = perYear[0];
+      return {
+        startDoy: earliest,
+        endDoy: earliest + 14,
+        sampleYears: perYear.length,
+        basis: 'earliest_record_plus_14d',
+      };
+    }
+    var median = perYear[Math.floor(perYear.length * 0.5)];
+    return {
+      startDoy: Math.max(1, median - 7),
+      endDoy: Math.min(366, median + 7),
+      sampleYears: perYear.length,
+      basis: 'median_first_arrival_pm_7d',
+    };
+  }
+
+  function formatDoyShort(doy) {
+    // Use a non-leap reference year so DOY math is unambiguous.
+    var d = new Date(Date.UTC(2023, 0, 1));
+    d.setUTCDate(doy);
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return d.getUTCDate() + ' ' + months[d.getUTCMonth()];
+  }
+
+  function formatFirstArrivalLabel(window) {
+    if (!window) return 'Historical: insufficient data';
+    return 'Historical: ~' + formatDoyShort(window.startDoy) + ' – ' + formatDoyShort(window.endDoy);
+  }
+
   function formatMigrationEtaLabel(migEta, fallbackEta, context) {
     var fmtDate = function (iso) {
       var d = new Date(iso);
@@ -2360,17 +2424,12 @@
         return prefix + fmtDate(arrivalEst.toISOString()) + ' (est. ' + estDays + 'd from ' + (cc || 'foreign') + windNote + ')' + windIcon;
       }
     }
-    // Priority 3: historical window from last year
-    var histDate = ctx.latestSupportingEstoniaDate;
-    if (histDate) {
-      var hd = new Date(histDate);
-      if (!isNaN(hd.getTime())) {
-        var thisYear = new Date().getFullYear();
-        var adjustedDate = new Date(thisYear, hd.getMonth(), hd.getDate());
-        var windowStart = new Date(adjustedDate.getTime() - 7 * 86400000);
-        var windowEnd = new Date(adjustedDate.getTime() + 7 * 86400000);
-        return 'Historical: ~' + fmtDate(windowStart.toISOString()) + ' \u2013 ' + fmtDate(windowEnd.toISOString());
-      }
+    // Priority 3: typical first-arrival window from historical observations.
+    // Uses per-year-earliest medians (not peak-density), so the popup describes
+    // when the species typically first arrives \u2014 not the latest sighting \u00b17d.
+    var firstArrival = computeFirstArrivalWindow(ctx.estoniaHistoryPoints);
+    if (firstArrival) {
+      return formatFirstArrivalLabel(firstArrival);
     }
     // Priority 4: last resort
     if (fallbackEta && fallbackEta !== '72h+' && fallbackEta !== 'Unavailable') return fallbackEta;

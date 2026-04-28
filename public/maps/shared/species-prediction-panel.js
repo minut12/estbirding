@@ -1922,6 +1922,7 @@
       if (route.entryPoint) {
         var entryTooltip = '<b>Entry via ' + escapeHtml(route.entryLabel || route.entryPoint.name || 'Estonia') + '</b>' +
           ((route.fromLocality || route.fromCountry) ? '<br>Origin: ' + escapeHtml((route.fromLocality ? route.fromLocality : '') + (route.fromCountry ? ((route.fromLocality ? ', ' : '') + route.fromCountry) : '')) : '') +
+          buildRouteDateRow(route.entryPoint, false) +
           (progressPct ? '<br>Progress: ' + escapeHtml(String(progressPct)) + '%' : '') +
           (routeDistKm ? '<br>Km travelled: ' + escapeHtml(String(Math.round(routeDistKm * (progressPct || 0) / 100))) : '');
         L.circleMarker([route.entryPoint.lat, route.entryPoint.lon], {

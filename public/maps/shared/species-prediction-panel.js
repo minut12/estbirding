@@ -116,11 +116,31 @@
       '#speciesPredictionPanel .spp-fact strong{color:#0f172a;text-align:right;line-height:1.4}',
       '#speciesPredictionPanel .spp-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}',
       '#speciesPredictionPanel .spp-controls{display:grid;gap:10px}',
-      '#speciesPredictionPanel .spp-control-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}',
-      '#speciesPredictionPanel .spp-control-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:#334155;padding:8px 10px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc}',
-      '#speciesPredictionPanel .spp-control-row input,#speciesPredictionPanel .spp-control-row select{max-width:110px;border:1px solid #cbd5e1;border-radius:8px;padding:4px 6px;background:#fff;font-size:12px}',
-      '#speciesPredictionPanel .spp-layer-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}',
-      '#speciesPredictionPanel .spp-layer-chip{display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid #e2e8f0;border-radius:999px;background:#fff;font-size:11px;color:#334155}',
+      '#speciesPredictionPanel .spp-controls.spp-card{padding:0;border-radius:12px;border:.5px solid rgba(148,163,184,.4);box-shadow:none;overflow:hidden;background:#fff}',
+      '#speciesPredictionPanel .spp-controls.spp-card h4{margin:0;padding:14px 16px 12px;font-size:13px;font-weight:600;color:#0f172a;border-bottom:.5px solid rgba(148,163,184,.4)}',
+      '#speciesPredictionPanel .spp-controls-disabled-msg{padding:9px 16px;font-size:12px;color:#92400e;background:#fffbeb;border-bottom:.5px solid rgba(148,163,184,.4)}',
+      '#speciesPredictionPanel .spp-pickers{display:flex;flex-direction:column}',
+      '#speciesPredictionPanel .spp-picker-row{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;padding:9px 16px;margin:0;font-size:14px;color:#0f172a;background:#fff;cursor:pointer}',
+      '#speciesPredictionPanel .spp-picker-row + .spp-picker-row{border-top:.5px solid rgba(148,163,184,.25)}',
+      '#speciesPredictionPanel .spp-picker-label{font-size:14px;color:#0f172a;line-height:1.3}',
+      '#speciesPredictionPanel .spp-picker-value{display:inline-flex;align-items:center;gap:4px;font-size:14px;color:#64748b;line-height:1.3}',
+      '#speciesPredictionPanel .spp-picker-input{width:42px;text-align:right;border:0;background:transparent;font-size:16px;color:#64748b;padding:0;-moz-appearance:textfield;appearance:textfield;line-height:1.3}',
+      '#speciesPredictionPanel .spp-picker-input::-webkit-outer-spin-button,#speciesPredictionPanel .spp-picker-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}',
+      '#speciesPredictionPanel .spp-picker-input:focus{outline:none}',
+      '#speciesPredictionPanel .spp-picker-select{border:0;background:transparent;font-size:16px;color:#64748b;padding:0 2px 0 0;appearance:none;-webkit-appearance:none;-moz-appearance:none;line-height:1.3}',
+      '#speciesPredictionPanel .spp-picker-select:focus{outline:none}',
+      '#speciesPredictionPanel .spp-picker-chevron{color:#94a3b8;font-size:18px;line-height:1;font-weight:300}',
+      '#speciesPredictionPanel .spp-section-header{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:#64748b;padding:12px 16px 6px;background:#fff;border-top:.5px solid rgba(148,163,184,.4)}',
+      '#speciesPredictionPanel .spp-section-rows{display:flex;flex-direction:column;background:#fff}',
+      '#speciesPredictionPanel .spp-toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;padding:9px 16px;margin:0;font-size:14px;color:#0f172a;background:#fff;cursor:pointer}',
+      '#speciesPredictionPanel .spp-toggle-label{display:flex;align-items:center;gap:10px;flex:1;min-width:0;font-size:14px;color:#0f172a;line-height:1.3}',
+      '#speciesPredictionPanel .spp-layer-dot{width:9px;height:9px;border-radius:999px;flex:0 0 9px;display:inline-block}',
+      '#speciesPredictionPanel .spp-toggle{position:relative;flex:0 0 34px;width:34px;height:20px;display:inline-block}',
+      '#speciesPredictionPanel .spp-toggle input{position:absolute;inset:0;opacity:0;margin:0;width:100%;height:100%;cursor:pointer;z-index:2}',
+      '#speciesPredictionPanel .spp-toggle-track{position:absolute;inset:0;background:#cbd5e1;border-radius:999px;transition:background-color 150ms ease}',
+      '#speciesPredictionPanel .spp-toggle-knob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:999px;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.2);transition:transform 150ms ease}',
+      '#speciesPredictionPanel .spp-toggle input:checked ~ .spp-toggle-track{background:#0F6E56}',
+      '#speciesPredictionPanel .spp-toggle input:checked ~ .spp-toggle-knob{transform:translateX(14px)}',
       '#speciesPredictionPanel .spp-results{display:grid;gap:12px}',
       '#speciesPredictionPanel .spp-card{border:1px solid #dbe4ee;border-radius:16px;padding:12px;background:#fff;box-shadow:0 1px 0 rgba(255,255,255,.75) inset}',
       '#speciesPredictionPanel .spp-card h4{margin:0 0 8px;font-size:13px;font-weight:700;color:#0f172a}',
@@ -805,29 +825,33 @@
     var controlsDisabled = state.result && state.result.canRenderPredictionLayers === false;
     host.innerHTML = '' +
       '<h4>Map prediction mode</h4>' +
-      (controlsDisabled ? '<p class="spp-summary-text">Prediction layers are muted because the backend is currently unavailable.</p>' : '') +
-      '<div class="spp-control-grid">' +
-      controlInput('Horizon', '<input type="number" min="1" max="30" data-control="horizonDays" value="' + escapeHtml(state.controls.horizonDays) + '">') +
-      controlInput('Country filter', renderCountryFilter()) +
-      controlInput('Use wind', checkboxControl('useWeatherWind', state.controls.useWeatherWind)) +
-      controlInput('Show cone', checkboxControl('showPredictionCone', state.controls.showPredictionCone)) +
-      controlInput('Regional', checkboxControl('useRegionalTargets', state.controls.useRegionalTargets)) +
-      controlInput('Recent only', checkboxControl('recentOnlyMapMarkers', state.controls.recentOnlyMapMarkers)) +
-      controlInput('Snap target', checkboxControl('snapToBestTarget', state.controls.snapToBestTarget)) +
-      controlInput('Auto feed', checkboxControl('autoFeedEnabled', state.controls.autoFeedEnabled)) +
+      (controlsDisabled ? '<div class="spp-controls-disabled-msg">Prediction layers are muted because the backend is currently unavailable.</div>' : '') +
+      '<div class="spp-pickers">' +
+      pickerRowNumber('Horizon', 'horizonDays', Number(state.controls.horizonDays || 7), 1, 30) +
+      pickerRowSelect('Country filter', renderCountryFilter()) +
       '</div>' +
-      '<div class="spp-layer-grid">' +
-      layerChip('estoniaHistoryPoints', 'EE history points', state.layerToggles.estoniaHistoryPoints) +
-      layerChip('estoniaHistoryClusters', 'EE history clusters', state.layerToggles.estoniaHistoryClusters) +
-      layerChip('foreignRecentPoints', 'Foreign eBird points', state.layerToggles.foreignRecentPoints) +
-      layerChip('foreignPressureClusters', 'Foreign pressure clusters', state.layerToggles.foreignPressureClusters) +
-      layerChip('predictedLines', 'Prediction vectors', state.layerToggles.predictedLines) +
-      layerChip('predictedCone', 'Prediction cone', state.layerToggles.predictedCone) +
-      layerChip('predictedTargets', 'Predicted targets', state.layerToggles.predictedTargets) +
-      layerChip('migrationRoutes', 'Migration routes', state.layerToggles.migrationRoutes !== false) +
-      layerChip('migrationRoutesApprox', 'Approx. routes', state.layerToggles.migrationRoutesApprox !== false) +
-      layerChip('diagnostics', 'Diagnostics', state.layerToggles.diagnostics) +
-      layerChip('recentOnly', 'Recent only', state.layerToggles.recentOnly) +
+      '<div class="spp-section-header">Forecast</div>' +
+      '<div class="spp-section-rows">' +
+      toggleRow('Use wind', 'data-control', 'useWeatherWind', state.controls.useWeatherWind) +
+      toggleRow('Show cone', 'data-control', 'showPredictionCone', state.controls.showPredictionCone) +
+      toggleRow('Regional', 'data-control', 'useRegionalTargets', state.controls.useRegionalTargets) +
+      toggleRow('Snap target', 'data-control', 'snapToBestTarget', state.controls.snapToBestTarget) +
+      toggleRow('Recent only', 'data-control', 'recentOnlyMapMarkers', state.controls.recentOnlyMapMarkers) +
+      toggleRow('Auto feed', 'data-control', 'autoFeedEnabled', state.controls.autoFeedEnabled) +
+      '</div>' +
+      '<div class="spp-section-header">Map layers</div>' +
+      '<div class="spp-section-rows">' +
+      layerRow('Estonia history points', 'estoniaHistoryPoints', state.layerToggles.estoniaHistoryPoints, '#639922') +
+      layerRow('Estonia history clusters', 'estoniaHistoryClusters', state.layerToggles.estoniaHistoryClusters, '#639922') +
+      layerRow('Foreign eBird points', 'foreignRecentPoints', state.layerToggles.foreignRecentPoints, '#D85A30') +
+      layerRow('Foreign pressure clusters', 'foreignPressureClusters', state.layerToggles.foreignPressureClusters, '#D85A30') +
+      layerRow('Prediction vectors', 'predictedLines', state.layerToggles.predictedLines, '#7F77DD') +
+      layerRow('Prediction cone', 'predictedCone', state.layerToggles.predictedCone, '#AFA9EC') +
+      layerRow('Predicted targets', 'predictedTargets', state.layerToggles.predictedTargets, '#BA7517') +
+      layerRow('Migration routes', 'migrationRoutes', state.layerToggles.migrationRoutes !== false, '#534AB7') +
+      layerRow('Approx. routes', 'migrationRoutesApprox', state.layerToggles.migrationRoutesApprox !== false, '#94a3b8') +
+      layerRow('Diagnostics', 'diagnostics', state.layerToggles.diagnostics, '#94a3b8') +
+      layerRow('Recent only', 'recentOnly', state.layerToggles.recentOnly, '#94a3b8') +
       '</div>';
   }
 
@@ -1195,16 +1219,51 @@
       '</div>';
   }
 
-  function controlInput(label, controlHtml) {
-    return '<label class="spp-control-row"><span>' + escapeHtml(label) + '</span><span>' + controlHtml + '</span></label>';
+  function toggleSwitch(attr, name, checked) {
+    return '<span class="spp-toggle">' +
+      '<input type="checkbox" ' + attr + '="' + escapeHtml(name) + '"' + (checked ? ' checked' : '') + '>' +
+      '<span class="spp-toggle-track"></span>' +
+      '<span class="spp-toggle-knob"></span>' +
+      '</span>';
   }
 
-  function checkboxControl(name, checked) {
-    return '<input type="checkbox" data-control="' + escapeHtml(name) + '"' + (checked ? ' checked' : '') + '>';
+  function toggleRow(label, attr, name, checked) {
+    return '<label class="spp-toggle-row">' +
+      '<span class="spp-toggle-label">' + escapeHtml(label) + '</span>' +
+      toggleSwitch(attr, name, checked) +
+      '</label>';
   }
 
-  function layerChip(name, label, checked) {
-    return '<label class="spp-layer-chip"><input type="checkbox" data-layer-toggle="' + escapeHtml(name) + '"' + (checked ? ' checked' : '') + '><span>' + escapeHtml(label) + '</span></label>';
+  function layerRow(label, name, checked, dotColor) {
+    return '<label class="spp-toggle-row">' +
+      '<span class="spp-toggle-label">' +
+      '<span class="spp-layer-dot" style="background:' + escapeHtml(dotColor) + '"></span>' +
+      escapeHtml(label) +
+      '</span>' +
+      toggleSwitch('data-layer-toggle', name, checked) +
+      '</label>';
+  }
+
+  function pickerRowNumber(label, name, value, min, max) {
+    var suffix = Number(value) === 1 ? 'day' : 'days';
+    return '<label class="spp-picker-row">' +
+      '<span class="spp-picker-label">' + escapeHtml(label) + '</span>' +
+      '<span class="spp-picker-value">' +
+      '<input class="spp-picker-input" type="number" min="' + min + '" max="' + max + '" data-control="' + escapeHtml(name) + '" value="' + escapeHtml(value) + '">' +
+      '<span>' + escapeHtml(suffix) + '</span>' +
+      '<span class="spp-picker-chevron">›</span>' +
+      '</span>' +
+      '</label>';
+  }
+
+  function pickerRowSelect(label, selectHtml) {
+    return '<label class="spp-picker-row">' +
+      '<span class="spp-picker-label">' + escapeHtml(label) + '</span>' +
+      '<span class="spp-picker-value">' +
+      selectHtml +
+      '<span class="spp-picker-chevron">›</span>' +
+      '</span>' +
+      '</label>';
   }
 
   function renderCountryFilter() {
@@ -1214,7 +1273,7 @@
       var code = String(group.countryCode || '').toLowerCase();
       if (code && options.indexOf(code) < 0) options.push(code);
     });
-    return '<select data-control="countryFilter">' + options.map(function (code) {
+    return '<select class="spp-picker-select" data-control="countryFilter">' + options.map(function (code) {
       var selected = state.controls.countryFilter === code ? ' selected' : '';
       return '<option value="' + escapeHtml(code) + '"' + selected + '>' + escapeHtml(code === 'all' ? 'All' : String(code).toUpperCase()) + '</option>';
     }).join('') + '</select>';

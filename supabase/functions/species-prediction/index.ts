@@ -927,6 +927,30 @@ async function buildMapFirstPredictionResult(opts: {
   });
   const warnings = Array.from(new Set(sourceHealth.sourceWarnings as string[]));
   const requiresN8nSummary = settings.enableOpenAISummary === true || settings.enableN8nResearch === true;
+  console.log('[N8N-DECISION]', JSON.stringify({
+    webhookUrlConfigured: !!Deno.env.get(WEBHOOK_ENV_KEY),
+    webhookUrlPreview: (Deno.env.get(WEBHOOK_ENV_KEY) || '').slice(0, 60),
+    authHeaderConfigured: !!Deno.env.get(AUTH_HEADER_ENV_KEY),
+    authValueConfigured: !!Deno.env.get(AUTH_VALUE_ENV_KEY),
+    timeoutMsEnv: Deno.env.get(TIMEOUT_ENV_KEY) || null,
+    webhookTargetConfigured: webhookTarget.webhookConfigured,
+    webhookTargetValid: webhookTarget.valid,
+    webhookHost: webhookTarget.configuredWebhookUrl ? (() => {
+      try { return new URL(webhookTarget.configuredWebhookUrl).host; } catch { return ''; }
+    })() : '',
+    enableOpenAISummary: settings.enableOpenAISummary,
+    enableN8nResearch: settings.enableN8nResearch,
+    requiresN8nSummary,
+    willCallN8n: requiresN8nSummary && webhookTarget.webhookConfigured && webhookTarget.valid,
+    fallbackReason: !requiresN8nSummary
+      ? 'enableOpenAISummary AND enableN8nResearch both false in settings'
+      : (!webhookTarget.webhookConfigured ? 'webhookTarget.webhookConfigured=false' : (!webhookTarget.valid ? 'webhookTarget.valid=false' : '')),
+    requestType: stringOr((payload as Record<string, unknown>).requestType),
+    scope: stringOr((payload as Record<string, unknown>).scope, settings.scope) || 'linnuliigid',
+    predictionMode: stringOr(settings.predictionMode),
+    speciesKey,
+    speciesName,
+  }));
   const normalizedN8nResponse = requiresN8nSummary
     ? await maybeFetchSecondarySummary({
       webhookTarget,
@@ -2456,35 +2480,73 @@ async function maybeFetchSecondarySummary(opts: {
   const authHeader = (Deno.env.get(AUTH_HEADER_ENV_KEY) || '').trim();
   const authValue = (Deno.env.get(AUTH_VALUE_ENV_KEY) || '').trim();
   if (authHeader && authValue) headers[authHeader] = authValue;
-  const upstream = await fetch(webhookUrl, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      ...payload,
-      evidenceSummary: {
-        sourceHealth,
-        foreignEvidence,
-        predictedTargets,
-        weather,
-        estoniaEvidence,
-        estoniaHistoryPoints,
-        estoniaHistoryClusters,
-        foreignRecentPoints,
-        foreignClusters,
-        evidenceState: evidenceStateSnapshot,
-        hardRules: {
-          distinguishNegativeEvidenceFromMissingData: true,
-          doNotUseHighConfidenceAbsenceWhenSourcesUnavailable: true,
-          weatherAloneIsWeakOrNeutral: true,
-        },
+  const requestBodyJson = JSON.stringify({
+    ...payload,
+    evidenceSummary: {
+      sourceHealth,
+      foreignEvidence,
+      predictedTargets,
+      weather,
+      estoniaEvidence,
+      estoniaHistoryPoints,
+      estoniaHistoryClusters,
+      foreignRecentPoints,
+      foreignClusters,
+      evidenceState: evidenceStateSnapshot,
+      hardRules: {
+        distinguishNegativeEvidenceFromMissingData: true,
+        doNotUseHighConfidenceAbsenceWhenSourcesUnavailable: true,
+        weatherAloneIsWeakOrNeutral: true,
       },
-    }),
-    signal,
+    },
   });
+  console.log('[N8N-CALL-START]', JSON.stringify({
+    webhookHost: (() => { try { return new URL(webhookUrl).host; } catch { return ''; } })(),
+    webhookPath: (() => { try { return new URL(webhookUrl).pathname; } catch { return ''; } })(),
+    bodyBytes: requestBodyJson.length,
+    authHeaderName: authHeader || null,
+    hasAuthValue: !!authValue,
+  }));
+  let upstream: Response;
+  try {
+    upstream = await fetch(webhookUrl, {
+      method: 'POST',
+      headers,
+      body: requestBodyJson,
+      signal,
+    });
+  } catch (err) {
+    console.log('[N8N-CALL-ERROR]', JSON.stringify({
+      message: err instanceof Error ? err.message : String(err),
+      name: err instanceof Error ? err.name : '',
+    }));
+    throw err;
+  }
   const text = await upstream.text();
+  console.log('[N8N-CALL]', JSON.stringify({
+    status: upstream.status,
+    ok: upstream.ok,
+    headers: Object.fromEntries(upstream.headers.entries()),
+    bodyBytes: text.length,
+  }));
+  console.log('[N8N-CALL-BODY-PREVIEW]', text.slice(0, 500));
   let n8nParsed = safeJsonParse(text);
   if (Array.isArray(n8nParsed)) n8nParsed = n8nParsed[0];
   const n8nRecord = asRecord(n8nParsed);
+  console.log('[N8N-PASSTHROUGH-GATE]', JSON.stringify({
+    n8nParsedTruthy: !!n8nParsed,
+    n8nRecordOk: n8nRecord.ok,
+    n8nRecordOkStrictTrue: n8nRecord.ok === true,
+    analysisVersionType: typeof n8nRecord.analysisVersion,
+    analysisVersionValue: typeof n8nRecord.analysisVersion === 'string' ? n8nRecord.analysisVersion : null,
+    analysisVersionStartsWithV3: typeof n8nRecord.analysisVersion === 'string' && n8nRecord.analysisVersion.startsWith('v3'),
+    n8nRecordTopLevelKeys: Object.keys(n8nRecord).slice(0, 40),
+    workflowVersion: typeof n8nRecord.__workflowVersion === 'string' ? n8nRecord.__workflowVersion : null,
+    debugFinalizeSource: (() => {
+      const df = n8nRecord.__debugFinalize;
+      return df && typeof df === 'object' && !Array.isArray(df) ? (df as Record<string, unknown>).source : null;
+    })(),
+  }));
   if (
     n8nParsed
     && n8nRecord.ok === true

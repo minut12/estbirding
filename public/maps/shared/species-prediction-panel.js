@@ -1412,6 +1412,37 @@
     console.log('[ROUTES]', message, payload);
   }
 
+  var ET_MONTHS_ABBR = ['jaan', 'veebr', 'märts', 'apr', 'mai', 'juuni', 'juuli', 'aug', 'sept', 'okt', 'nov', 'dets'];
+
+  function formatRouteDate(isoString) {
+    if (!isoString) return null;
+    var d = new Date(isoString);
+    if (isNaN(d.getTime())) return null;
+    var day = d.getDate();
+    var month = ET_MONTHS_ABBR[d.getMonth()];
+    var year = d.getFullYear();
+    var formattedDate = day + '. ' + month + ' ' + year;
+    var now = new Date();
+    var startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var startOfTarget = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    var diffDays = Math.round((startOfTarget - startOfToday) / 86400000);
+    var suffix;
+    if (diffDays === 0) suffix = 'täna';
+    else if (diffDays === 1) suffix = 'homme';
+    else if (diffDays === -1) suffix = 'eile';
+    else if (diffDays > 0) suffix = diffDays + ' päeva pärast';
+    else suffix = Math.abs(diffDays) + ' päeva tagasi';
+    return formattedDate + ' (' + suffix + ')';
+  }
+
+  function buildRouteDateRow(point, isOrigin) {
+    if (!point || !point.estimatedDate) return '';
+    var line = formatRouteDate(point.estimatedDate);
+    if (!line) return '';
+    var label = isOrigin ? 'Vaadeldud' : 'Eeldatav kuupäev';
+    return '<br>' + label + ': ' + escapeHtml(line);
+  }
+
   function normalizeMigrationRoutePoint(point, fallbackName) {
     if (!point || typeof point !== 'object') return null;
     var lat = Number(point.lat != null ? point.lat : point.latitude);
@@ -1421,7 +1452,8 @@
       lat: lat,
       lon: lon,
       name: normalizeText(point.name || fallbackName || ''),
-      type: normalizeText(point.type || '')
+      type: normalizeText(point.type || ''),
+      estimatedDate: typeof point.estimatedDate === 'string' ? point.estimatedDate : undefined
     };
   }
 
@@ -1876,6 +1908,7 @@
         var originTooltip = '<b>' + escapeHtml(route.originLocality || route.originPoint.name || 'Foreign origin') + '</b>' +
           (route.originCountryCode ? '<br>Country: ' + escapeHtml(route.originCountryCode) : '') +
           (route.foreignSightingDate ? '<br>Sighted: ' + escapeHtml(formatShortDate(route.foreignSightingDate)) : '') +
+          buildRouteDateRow(route.originPoint, true) +
           (route.distanceToEntryKm != null ? '<br>To entry: ' + escapeHtml(String(route.distanceToEntryKm)) + ' km' : '');
         L.circleMarker([route.originPoint.lat, route.originPoint.lon], {
           radius: 5,
@@ -1889,6 +1922,7 @@
       if (route.entryPoint) {
         var entryTooltip = '<b>Entry via ' + escapeHtml(route.entryLabel || route.entryPoint.name || 'Estonia') + '</b>' +
           ((route.fromLocality || route.fromCountry) ? '<br>Origin: ' + escapeHtml((route.fromLocality ? route.fromLocality : '') + (route.fromCountry ? ((route.fromLocality ? ', ' : '') + route.fromCountry) : '')) : '') +
+          buildRouteDateRow(route.entryPoint, false) +
           (progressPct ? '<br>Progress: ' + escapeHtml(String(progressPct)) + '%' : '') +
           (routeDistKm ? '<br>Km travelled: ' + escapeHtml(String(Math.round(routeDistKm * (progressPct || 0) / 100))) : '');
         L.circleMarker([route.entryPoint.lat, route.entryPoint.lon], {
@@ -1930,7 +1964,8 @@
               (prediction.activeEstoniaAnchor && prediction.activeEstoniaAnchor.confidence != null
                 ? '<br>Confidence: ' + escapeHtml(String(Math.round(prediction.activeEstoniaAnchor.confidence * 100))) + '%'
                 : '')
-            : '<br>ETA: ' + escapeHtml(formatShortDate(route.earliestArrival)) + ' \u2013 ' + escapeHtml(formatShortDate(route.latestArrival)));
+            : '<br>ETA: ' + escapeHtml(formatShortDate(route.earliestArrival)) + ' \u2013 ' + escapeHtml(formatShortDate(route.latestArrival))) +
+          buildRouteDateRow((destinationAnchor && destinationAnchor.estimatedDate) ? destinationAnchor : route.targetPoint, false);
         L.circleMarker([destinationAnchor.lat, destinationAnchor.lon], {
           radius: 8, color: '#f59e0b', weight: 3, fillColor: '#fff7ed', fillOpacity: 0.95
         }).bindTooltip(targetTooltip, { direction: 'top' }).addTo(layer);

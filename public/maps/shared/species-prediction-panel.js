@@ -1328,6 +1328,18 @@
   }
 
   function renderPredictionVectors(vectors, conesOnly) {
+    var __r = state && state.result || {};
+    console.log('[ROUTE-RENDER]', {
+      fnName: 'renderPredictionVectors',
+      conesOnly: !!conesOnly,
+      vectorsLen: Array.isArray(vectors) ? vectors.length : 0,
+      globalMigrationEtasLen: (__r.globalMigrationEtas || []).length,
+      foreignClustersLen: (__r.foreignClusters || []).length,
+      predictedTargetsLen: (__r.predictedTargets || []).length,
+      showPredictionVectors: __r && __r.mapLayersDefault ? __r.mapLayersDefault.showPredictionVectors : undefined,
+      hasForeignPressure: __r.hasForeignPressure,
+      workflowVersion: __r.__workflowVersion,
+    });
     vectors.forEach(function (vector) {
       if (!!conesOnly !== (vector.kind === 'cone')) return;
       var points = Array.isArray(vector.points) ? vector.points : [];
@@ -1800,6 +1812,17 @@
   }
 
   function renderMigrationRoutes(routes, prediction) {
+    var __r = state && state.result || {};
+    console.log('[ROUTE-RENDER]', {
+      fnName: 'renderMigrationRoutes',
+      routesLen: Array.isArray(routes) ? routes.length : 0,
+      globalMigrationEtasLen: (__r.globalMigrationEtas || []).length,
+      foreignClustersLen: (__r.foreignClusters || []).length,
+      predictedTargetsLen: (__r.predictedTargets || []).length,
+      showPredictionVectors: __r && __r.mapLayersDefault ? __r.mapLayersDefault.showPredictionVectors : undefined,
+      hasForeignPressure: __r.hasForeignPressure,
+      workflowVersion: __r.__workflowVersion,
+    });
     if (!overlayGroups || !overlayGroups.migrationRoutes) return;
     var layer = overlayGroups.migrationRoutes;
     var primaryRoute = selectPrimaryMigrationRouteJs(routes, prediction && prediction.displayedTargets, prediction && prediction.freshestEstoniaEvidence, prediction && prediction.alreadyPresentMode);
@@ -1988,6 +2011,23 @@
 
   // Render supplementary migration routes from non-FI foreign clusters
   function renderSupplementaryForeignRoutes(result) {
+    var __r = result || {};
+    var __firstCluster = (Array.isArray(__r.foreignClusters) ? __r.foreignClusters[0] : null) || null;
+    console.log('[ROUTE-RENDER]', {
+      fnName: 'renderSupplementaryForeignRoutes',
+      globalMigrationEtasLen: (__r.globalMigrationEtas || []).length,
+      foreignClustersLen: (__r.foreignClusters || []).length,
+      predictedTargetsLen: (__r.predictedTargets || []).length,
+      showPredictionVectors: __r && __r.mapLayersDefault ? __r.mapLayersDefault.showPredictionVectors : undefined,
+      hasForeignPressure: __r.hasForeignPressure,
+      workflowVersion: __r.__workflowVersion,
+      firstClusterKeys: __firstCluster ? Object.keys(__firstCluster) : null,
+      firstClusterCountryCodes: __firstCluster ? __firstCluster.countryCodes : null,
+      firstClusterMainCountries: __firstCluster ? __firstCluster.mainCountries : null,
+      firstClusterLatLon: __firstCluster ? [__firstCluster.lat, __firstCluster.lon] : null,
+      migrationRoutesApproxToggle: state && state.layerToggles ? state.layerToggles.migrationRoutesApprox : undefined,
+      migrationRoutesToggle: state && state.layerToggles ? state.layerToggles.migrationRoutes : undefined,
+    });
     if (!overlayGroups || !overlayGroups.migrationRoutes) return;
     var layer = overlayGroups.migrationRoutes;
     var clusters = Array.isArray(result.foreignClusters) ? result.foreignClusters : [];

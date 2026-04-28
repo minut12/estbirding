@@ -2460,6 +2460,7 @@ async function maybeFetchSecondarySummary(opts: {
   foreignRecentPoints: Record<string, unknown>[];
   foreignClusters: Record<string, unknown>[];
   evidenceStateSnapshot: EvidenceStateSnapshot;
+  diagnosticEventsCollector?: Array<{ tag: string; data: unknown }>;
 }): Promise<NormalizedUpstreamResponse> {
   const {
     webhookTarget,
@@ -2476,6 +2477,7 @@ async function maybeFetchSecondarySummary(opts: {
     foreignRecentPoints,
     foreignClusters,
     evidenceStateSnapshot,
+    diagnosticEventsCollector,
   } = opts;
   if (!webhookTarget.webhookConfigured || !webhookTarget.valid) {
     throw createWebhookConfigError(webhookTarget);

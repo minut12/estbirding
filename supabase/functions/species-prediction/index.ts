@@ -2506,13 +2506,15 @@ async function maybeFetchSecondarySummary(opts: {
       },
     },
   });
-  console.log('[N8N-CALL-START]', JSON.stringify({
+  const callStartData = {
     webhookHost: (() => { try { return new URL(webhookUrl).host; } catch { return ''; } })(),
     webhookPath: (() => { try { return new URL(webhookUrl).pathname; } catch { return ''; } })(),
     bodyBytes: requestBodyJson.length,
     authHeaderName: authHeader || null,
     hasAuthValue: !!authValue,
-  }));
+  };
+  console.log('[N8N-CALL-START]', JSON.stringify(callStartData));
+  diagnosticEventsCollector?.push({ tag: '[N8N-CALL-START]', data: callStartData });
   let upstream: Response;
   try {
     upstream = await fetch(webhookUrl, {
@@ -2522,24 +2524,29 @@ async function maybeFetchSecondarySummary(opts: {
       signal,
     });
   } catch (err) {
-    console.log('[N8N-CALL-ERROR]', JSON.stringify({
+    const errData = {
       message: err instanceof Error ? err.message : String(err),
       name: err instanceof Error ? err.name : '',
-    }));
+    };
+    console.log('[N8N-CALL-ERROR]', JSON.stringify(errData));
+    diagnosticEventsCollector?.push({ tag: '[N8N-CALL-ERROR]', data: errData });
     throw err;
   }
   const text = await upstream.text();
-  console.log('[N8N-CALL]', JSON.stringify({
+  const callData = {
     status: upstream.status,
     ok: upstream.ok,
     headers: Object.fromEntries(upstream.headers.entries()),
     bodyBytes: text.length,
-  }));
+  };
+  console.log('[N8N-CALL]', JSON.stringify(callData));
+  diagnosticEventsCollector?.push({ tag: '[N8N-CALL]', data: callData });
   console.log('[N8N-CALL-BODY-PREVIEW]', text.slice(0, 500));
+  diagnosticEventsCollector?.push({ tag: '[N8N-CALL-BODY-PREVIEW]', data: { preview: text.slice(0, 2000) } });
   let n8nParsed = safeJsonParse(text);
   if (Array.isArray(n8nParsed)) n8nParsed = n8nParsed[0];
   const n8nRecord = asRecord(n8nParsed);
-  console.log('[N8N-PASSTHROUGH-GATE]', JSON.stringify({
+  const gateData = {
     n8nParsedTruthy: !!n8nParsed,
     n8nRecordOk: n8nRecord.ok,
     n8nRecordOkStrictTrue: n8nRecord.ok === true,
@@ -2552,7 +2559,9 @@ async function maybeFetchSecondarySummary(opts: {
       const df = n8nRecord.__debugFinalize;
       return df && typeof df === 'object' && !Array.isArray(df) ? (df as Record<string, unknown>).source : null;
     })(),
-  }));
+  };
+  console.log('[N8N-PASSTHROUGH-GATE]', JSON.stringify(gateData));
+  diagnosticEventsCollector?.push({ tag: '[N8N-PASSTHROUGH-GATE]', data: gateData });
   if (
     n8nParsed
     && n8nRecord.ok === true

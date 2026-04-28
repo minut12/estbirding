@@ -14,7 +14,7 @@ import { buildSpeciesMetaLookupFallback, getScopedSpeciesMeta, loadSpeciesMeta, 
 import { refreshSpeciesMetaFromCloud, saveSpeciesMetaToCloud } from '@/lib/speciesMetaCloud';
 import { loadCustomSpecies } from '@/lib/customSpecies';
 import { refreshCustomSpeciesFromCloud } from '@/lib/customSpeciesCloud';
-import { broadcastSupabaseConfigToMapIframes, getFunctionsBaseUrl, getSupabaseAuthHeaders, getSupabaseAnonKey, getSupabaseUrl, isDeveloperModeEnabled, validateSupabaseConfig } from '@/config/supabaseConfig';
+import { broadcastSupabaseConfigToMapIframes, getSupabaseAnonKey, getSupabaseUrl, isDeveloperModeEnabled, validateSupabaseConfig } from '@/config/supabaseConfig';
 import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
 import { type MapScope, loadSpeciesVisibility, saveSpeciesVisibility, loadLocalHidden } from '@/lib/speciesVisibility';
@@ -28,13 +28,11 @@ import { runBundledSpeciesBackfill } from '@/lib/speciesMetaBackfill';
 import { log } from '@/lib/eventLog';
 import { toast } from 'sonner';
 import {
-  SPECIES_PREDICTION_DEBUG_HEALTHCHECK_EVENT,
   SPECIES_PREDICTION_DEBUG_PANEL_STATE_MESSAGE,
   SPECIES_PREDICTION_DEBUG_RESYNC_EVENT,
   SPECIES_PREDICTION_DEBUG_RERUN_EVENT,
   getSpeciesPredictionDebugSnapshot,
   setSpeciesPredictionDebugBackendResponse,
-  setSpeciesPredictionHealthCheckResult,
   setSpeciesPredictionDebugPanelPayload,
   setSpeciesPredictionDebugPanelState,
   setSpeciesPredictionTransportError,
@@ -641,45 +639,11 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
         result: snapshot.panelPayload,
       });
     };
-    const healthCheckHandler = async () => {
-      try {
-        const response = await fetch(`${getFunctionsBaseUrl()}/species-prediction?mode=status&verify=1`, {
-          method: 'GET',
-          headers: {
-            ...getSupabaseAuthHeaders(),
-          },
-        });
-        const rawText = await response.text();
-        let body: unknown = rawText;
-        try {
-          body = rawText ? JSON.parse(rawText) : null;
-        } catch {
-          body = rawText;
-        }
-        setSpeciesPredictionHealthCheckResult({
-          ok: response.ok,
-          status: response.status,
-          statusText: response.statusText,
-          body,
-          timestamp: new Date().toISOString(),
-        });
-      } catch (error) {
-        setSpeciesPredictionHealthCheckResult({
-          ok: false,
-          status: null,
-          statusText: '',
-          body: error instanceof Error ? { message: error.message } : { message: 'Health check failed' },
-          timestamp: new Date().toISOString(),
-        });
-      }
-    };
     window.addEventListener(SPECIES_PREDICTION_DEBUG_RERUN_EVENT, rerunHandler as EventListener);
     window.addEventListener(SPECIES_PREDICTION_DEBUG_RESYNC_EVENT, resyncHandler as EventListener);
-    window.addEventListener(SPECIES_PREDICTION_DEBUG_HEALTHCHECK_EVENT, healthCheckHandler as EventListener);
     return () => {
       window.removeEventListener(SPECIES_PREDICTION_DEBUG_RERUN_EVENT, rerunHandler as EventListener);
       window.removeEventListener(SPECIES_PREDICTION_DEBUG_RESYNC_EVENT, resyncHandler as EventListener);
-      window.removeEventListener(SPECIES_PREDICTION_DEBUG_HEALTHCHECK_EVENT, healthCheckHandler as EventListener);
     };
   }, [current.id, sendToIframe]);
 

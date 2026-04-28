@@ -24,16 +24,14 @@ import {
   clearSpeciesPredictionDebugStorage,
   getSpeciesPredictionDebugSnapshot,
   getSpeciesPredictionDebugStorageSnapshot,
-  setSpeciesPredictionHealthCheckResult,
   SPECIES_PREDICTION_DEBUG_EVENT,
-  SPECIES_PREDICTION_DEBUG_HEALTHCHECK_EVENT,
   SPECIES_PREDICTION_DEBUG_RERUN_EVENT,
   SPECIES_PREDICTION_DEBUG_RESYNC_EVENT,
   type SpeciesPredictionDebugSnapshot,
 } from '@/lib/speciesPredictionDebug';
 import { isDeveloperModeEnabled } from '@/config/supabaseConfig';
 
-const FRONTEND_BUILD_TAG = '2026-04-28-cleanup';
+const FRONTEND_BUILD_TAG = '2026-04-28-probe-removed';
 
 type NumericFieldProps = {
   id: string;
@@ -43,10 +41,6 @@ type NumericFieldProps = {
   max?: number;
   onChange: (next: number) => void;
 };
-
-function safeArray<T = unknown>(value: unknown): T[] {
-  return Array.isArray(value) ? value as T[] : [];
-}
 
 function safeString(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -65,25 +59,12 @@ export default function SpeciesPredictionSettings() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [backendStatus, setBackendStatus] = useState<SpeciesPredictionBackendStatus>({
-    ok: false,
-    configured: false,
+  const [backendConfig, setBackendConfig] = useState<BackendConfig>({
     webhookConfigured: false,
-    webhookValid: false,
-    available: false,
-    runtimeAvailable: null,
-    deployed: false,
-    statusCode: 'NOT_CONFIGURED',
-    reasonCode: 'MISSING_WEBHOOK_URL',
-    predictionBackendBuild: '',
-    expectedWebhookPath: '',
-    configuredWebhookPath: '',
-    hasOutdatedWebhook: false,
-    productionWebhookReachable: null,
-    productionWebhookInactive: false,
-    message: 'Prediction backend is not configured yet',
+    webhookHost: null,
+    backendBuild: '',
   });
-  const [backendStatusLoading, setBackendStatusLoading] = useState(false);
+  const [backendConfigLoading, setBackendConfigLoading] = useState(false);
   const [predictionFeatureEnabled, setPredictionFeatureEnabled] = useState(isSpeciesPredictionEnabled);
   const [form, setForm] = useState<SpeciesPredictionSettingsModel>(() => normalizeSpeciesPredictionSettings(null, '', 'linnuliigid'));
   const [showDebugData, setShowDebugData] = useState(false);
@@ -94,12 +75,8 @@ export default function SpeciesPredictionSettings() {
   const predictionEnabled = isSpeciesPredictionEnabled();
   const activeSpeciesKey = useMemo(() => normalizeSpeciesName(activeSpeciesName), [activeSpeciesName]);
   const hasValidSelectedSpecies = Boolean(activeSpeciesName && activeSpeciesKey);
-  const normalizedBackendStatus = useMemo(() => normalizeBackendStatus(backendStatus), [backendStatus]);
-  const diagnosticWebhookError = useMemo(() => detectOutdatedWebhookFromDiagnostics(debugSnapshot), [debugSnapshot]);
-  const displayState = useMemo(() => deriveSpeciesPredictionDisplayState(normalizedBackendStatus), [normalizedBackendStatus]);
-  const statusCard = useMemo(() => buildSpeciesPredictionStatusCard(displayState, normalizedBackendStatus), [displayState, normalizedBackendStatus]);
-  const isBackendReadyForConfiguration = displayState === 'CONFIGURED_AVAILABLE';
-  const canValidateSpeciesSettings = predictionEnabled && isBackendReadyForConfiguration;
+  const isBackendConfigured = backendConfig.webhookConfigured;
+  const canValidateSpeciesSettings = predictionEnabled && isBackendConfigured;
   const saveBlockedMessage = canValidateSpeciesSettings && !hasValidSelectedSpecies
     ? 'Select a valid species before saving prediction settings'
     : '';
@@ -192,51 +169,14 @@ export default function SpeciesPredictionSettings() {
 
   useEffect(() => {
     if (!isSpeciesPredictionEnabled()) {
-      setBackendStatus({
-        ok: false,
-        configured: false,
-        webhookConfigured: false,
-        webhookValid: false,
-        available: false,
-        runtimeAvailable: null,
-        deployed: false,
-        statusCode: 'NOT_CONFIGURED',
-        reasonCode: 'MISSING_WEBHOOK_URL',
-        productionWebhookReachable: null,
-        productionWebhookInactive: false,
-        message: 'Prediction backend is not configured yet',
-      });
+      setBackendConfig({ webhookConfigured: false, webhookHost: null, backendBuild: '' });
       return;
     }
-
-    setBackendStatusLoading(true);
-    fetchSpeciesPredictionBackendStatus()
-      .then((data) => {
-        setBackendStatus(data);
-        setSpeciesPredictionHealthCheckResult({
-          ok: true,
-          status: 200,
-          body: data,
-          timestamp: new Date().toISOString(),
-        });
-      })
-      .catch(() => {
-        setBackendStatus({
-          ok: false,
-          configured: false,
-          webhookConfigured: false,
-          webhookValid: false,
-          available: false,
-          runtimeAvailable: null,
-          deployed: false,
-          statusCode: 'NOT_CONFIGURED',
-          reasonCode: 'MISSING_WEBHOOK_URL',
-          productionWebhookReachable: null,
-          productionWebhookInactive: false,
-          message: 'Prediction backend is not configured yet',
-        });
-      })
-      .finally(() => setBackendStatusLoading(false));
+    setBackendConfigLoading(true);
+    fetchBackendConfig()
+      .then(setBackendConfig)
+      .catch(() => setBackendConfig({ webhookConfigured: false, webhookHost: null, backendBuild: '' }))
+      .finally(() => setBackendConfigLoading(false));
   }, [predictionFeatureEnabled, scopeId]);
 
   const filtered = useMemo(() => (
@@ -252,7 +192,7 @@ export default function SpeciesPredictionSettings() {
   const saveForm = async () => {
     if (!isSpeciesPredictionEnabled()) return;
     if (!predictionFeatureEnabled) return;
-    if (!isBackendReadyForConfiguration) {
+    if (!isBackendConfigured) {
       toast.error('Prediction backend is not configured yet');
       return;
     }
@@ -327,11 +267,6 @@ export default function SpeciesPredictionSettings() {
     toast.success('Prediction rerun requested');
   }, []);
 
-  const runHealthCheck = useCallback(() => {
-    window.dispatchEvent(new Event(SPECIES_PREDICTION_DEBUG_HEALTHCHECK_EVENT));
-    toast.success('Backend health check requested');
-  }, []);
-
   const resyncPanel = useCallback(() => {
     window.dispatchEvent(new Event(SPECIES_PREDICTION_DEBUG_RESYNC_EVENT));
     toast.success('Panel resync requested');
@@ -365,62 +300,27 @@ export default function SpeciesPredictionSettings() {
           <p className="text-xs text-muted-foreground">
             These settings apply only to the currently selected species.
           </p>
-          <div className="rounded-lg border border-border bg-card p-4 text-xs">
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-medium text-foreground">Prediction backend status</span>
-              <Badge variant={isBackendReadyForConfiguration ? 'default' : 'outline'}>
-                {statusCard.badge}
-              </Badge>
-            </div>
-            <p className="mt-2 font-medium text-foreground">
-              {statusCard.primaryText}
-            </p>
-            <p className="mt-1 text-muted-foreground">
-              {statusCard.helperText}
-            </p>
-            <TestPredictionBackendButton onResult={(data) => {
-              setBackendStatus(data);
-              setSpeciesPredictionHealthCheckResult({
-                ok: true,
-                status: 200,
-                body: data,
-                timestamp: new Date().toISOString(),
-              });
-            }} />
+          <div className="flex items-center gap-2 text-xs">
+            {backendConfigLoading ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Checking backend config…
+              </span>
+            ) : isBackendConfigured ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-emerald-600 dark:text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
+                Backend configured{backendConfig.webhookHost ? `: ${backendConfig.webhookHost}` : ''}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-rose-600 dark:text-rose-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-rose-500" aria-hidden />
+                Backend not configured — set SPECIES_PREDICTION_N8N_WEBHOOK_URL in Supabase
+              </span>
+            )}
+            {backendConfig.backendBuild && (
+              <span className="text-muted-foreground">build: {backendConfig.backendBuild}</span>
+            )}
           </div>
-          {/* Temporary debug: derived status mapper values */}
-          {canSeeDebugDiagnostics && (
-            <div className="rounded border border-border bg-muted/20 p-2 text-[10px] font-mono text-muted-foreground space-y-0.5">
-              <p className="font-semibold text-foreground text-[11px]">Status mapper debug (live-probe)</p>
-              <p>healthCheck.hasOutdatedWebhook: {String(normalizedBackendStatus.hasOutdatedWebhookPathError)}</p>
-              <p>diagnostics.detected: {String(diagnosticWebhookError.detected)}</p>
-              <p>diagnostics.stage: {diagnosticWebhookError.stage || '–'}</p>
-              <p>diagnostics.code: {diagnosticWebhookError.code != null ? String(diagnosticWebhookError.code) : '–'}</p>
-              <p>diagnostics.message: {diagnosticWebhookError.message || '–'}</p>
-              <p>diagnostics.matchedReason: {diagnosticWebhookError.matchedReason || '–'}</p>
-              <p>effective.hasOutdatedWebhookPathError: {String(normalizedBackendStatus.hasOutdatedWebhookPathError)}</p>
-              <p>displayState: {displayState}</p>
-              <p>resolvedWebhookUrl: {backendStatus.resolvedWebhookUrl || '–'}</p>
-              <p>environmentName: {backendStatus.environmentName || '–'}</p>
-              <p>healthcheckUrl: {backendStatus.healthcheckUrl || '–'}</p>
-              <p>lastSuccessfulHealthCheckAt: {backendStatus.lastSuccessfulHealthCheckAt || '–'}</p>
-              <p>lastFailedHealthCheckAt: {backendStatus.lastFailedHealthCheckAt || '–'}</p>
-              <p>lastHttpStatus: {backendStatus.upstreamStatus != null ? String(backendStatus.upstreamStatus) : '–'}</p>
-              <p>responseSnippet: {backendStatus.responseSnippet || '–'}</p>
-              {(() => {
-                const recoveredState = buildRecoveryDebugState(debugSnapshot?.rawBackendResponse);
-                return (
-                  <>
-                    <p className="mt-1 font-semibold text-foreground text-[11px]">Response envelope recovery</p>
-                    <p>raw top-level code: {recoveredState.rawTopLevelCode || '–'}</p>
-                    <p>summarySourcePath: {recoveredState.summarySourcePath || '–'}</p>
-                    <p>insightSummary recovered: {recoveredState.insightSummaryRecovered ? 'yes' : 'no'}</p>
-                    <p>normalizedPredictionShape: {recoveredState.normalizedPredictionShape || '–'}</p>
-                  </>
-                );
-              })()}
-            </div>
-          )}
           {canSeeDebugDiagnostics && (
             <RawPredictionDebug speciesKey={activeSpeciesKey} scopeId={scopeId} />
           )}
@@ -430,12 +330,12 @@ export default function SpeciesPredictionSettings() {
             </div>
           )}
 
-          {loading || backendStatusLoading ? (
+          {loading || backendConfigLoading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              <span>{loading ? 'Loading species settings...' : 'Checking prediction backend...'}</span>
+              <span>{loading ? 'Loading species settings...' : 'Checking backend config...'}</span>
             </div>
-          ) : isBackendReadyForConfiguration ? (
+          ) : isBackendConfigured ? (
             <>
               <div className="rounded-lg border border-border bg-card p-4 space-y-3">
                 <div className="space-y-1.5">
@@ -646,8 +546,8 @@ export default function SpeciesPredictionSettings() {
                               <DebugKeyValue label="Error type" value={debugSnapshot.transport.error?.errorType || '(empty)'} />
                               <DebugKeyValue label="Last error message" value={debugSnapshot.transport.error?.message || '(empty)'} />
                               <DebugKeyValue label="Upstream status" value={String(debugSnapshot.transport.error?.upstreamStatus ?? '(null)')} />
-                              <DebugKeyValue label="Resolved webhook path" value={debugSnapshot.transport.error?.resolvedWebhookPath || backendStatus.resolvedWebhookPath || '(empty)'} />
-                              <DebugKeyValue label="Resolved webhook URL" value={debugSnapshot.transport.error?.resolvedWebhookUrl || backendStatus.resolvedWebhookUrl || '(empty)'} />
+                              <DebugKeyValue label="Resolved webhook path" value={debugSnapshot.transport.error?.resolvedWebhookPath || '(empty)'} />
+                              <DebugKeyValue label="Resolved webhook URL" value={debugSnapshot.transport.error?.resolvedWebhookUrl || '(empty)'} />
                               <DebugKeyValue label="Webhook inactive" value={debugSnapshot.transport.error?.productionWebhookInactive ? 'Yes' : 'No'} />
                             </div>
                           </DebugSection>
@@ -668,25 +568,6 @@ export default function SpeciesPredictionSettings() {
                             actions={<Button variant="outline" size="sm" onClick={copyTransportDiagnostics}>Copy transport diagnostics</Button>}
                           >
                             <JsonBox value={debugSnapshot.transport.responseBody} />
-                          </DebugSection>
-
-                          <DebugSection title="Backend health check">
-                            <JsonBox value={debugSnapshot.transport.healthCheck} />
-                            {canSeeDebugDiagnostics && (
-                              <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
-                                <DebugKeyValue label="Configured" value={backendStatus.configured ? 'Yes' : 'No'} />
-                                <DebugKeyValue label="Available" value={backendStatus.available ? 'Yes' : 'No'} />
-                                <DebugKeyValue label="Runtime probe used" value={backendStatus.runtimeProbeUsed ? 'Yes' : 'No'} />
-                                <DebugKeyValue label="Runtime probe method" value={backendStatus.runtimeProbeMethod || '(empty)'} />
-                                <DebugKeyValue label="Runtime probe reason" value={backendStatus.runtimeProbeReason || '(empty)'} />
-                                <DebugKeyValue label="Status decision reason" value={backendStatus.statusDecisionReason || '(empty)'} />
-                                <DebugKeyValue label="Diagnostics mismatch" value={diagnosticWebhookError.detected ? 'Yes' : 'No'} />
-                                <DebugKeyValue label="Diagnostics age (ms)" value={String(backendStatus.diagnosticsAgeMs ?? '(null)')} />
-                                <DebugKeyValue label="Last invocation status" value={backendStatus.lastInvocationStatus || '(empty)'} />
-                                <DebugKeyValue label="Last invocation error stage" value={backendStatus.lastInvocationErrorStage || '(empty)'} />
-                                <DebugKeyValue label="Backend build" value={backendStatus.backendBuild || backendStatus.predictionBackendBuild || '(empty)'} />
-                              </div>
-                            )}
                           </DebugSection>
 
                           <DebugSection
@@ -735,7 +616,6 @@ export default function SpeciesPredictionSettings() {
                           </DebugSection>
 
                           <div className="grid gap-2 md:grid-cols-2">
-                            <Button variant="outline" onClick={runHealthCheck}>Run backend health check</Button>
                             <Button variant="outline" onClick={clearPredictionCache}>Clear prediction cache</Button>
                             <Button variant="outline" onClick={clearPredictionStorage}>Clear species prediction local storage</Button>
                             <Button variant="outline" onClick={forceRerunPrediction}>Run prediction test now</Button>
@@ -754,8 +634,8 @@ export default function SpeciesPredictionSettings() {
             <p className="text-xs text-destructive">{saveBlockedMessage}</p>
           )}
 
-          {isBackendReadyForConfiguration && (
-            <Button onClick={saveForm} className="w-full" disabled={!canManage || saving || !hasValidSelectedSpecies || !isBackendReadyForConfiguration}>
+          {isBackendConfigured && (
+            <Button onClick={saveForm} className="w-full" disabled={!canManage || saving || !hasValidSelectedSpecies || !isBackendConfigured}>
               {saving ? 'Saving...' : 'Save species settings'}
             </Button>
           )}
@@ -943,238 +823,28 @@ function buildDiagnosticsSummary(snapshot: SpeciesPredictionDebugSnapshot): stri
   ].join('\n');
 }
 
-type SpeciesPredictionBackendStatus = {
-  ok: boolean;
-  configured: boolean;
+type BackendConfig = {
   webhookConfigured: boolean;
-  webhookValid: boolean;
-  available: boolean;
-  runtimeAvailable: boolean | null;
-  deployed: boolean;
-  statusCode: 'NOT_CONFIGURED' | 'DEPLOYED_NOT_CONFIGURED' | 'CONFIGURED_AVAILABLE' | 'CONFIGURED_UNAVAILABLE' | 'RUNTIME_ERROR';
-  reasonCode: string | null;
-  predictionBackendBuild?: string;
-  backendBuild?: string;
-  runtimeReachable?: boolean | null;
-  runtimeProbeUsed?: boolean;
-  runtimeProbeMethod?: string;
-  runtimeProbeReason?: string;
-  lastInvocationStatus?: string;
-  lastInvocationAt?: string;
-  lastInvocationErrorStage?: string;
-  lastInvocationMessage?: string;
-  diagnosticsAgeMs?: number | null;
-  statusDecisionReason?: string;
-  envVarName?: string;
-  envPresent?: boolean;
-  envLength?: number;
-  rawWebhookPreview?: string;
-  parsedUrlOk?: boolean;
-  configuredPathname?: string;
-  normalizedConfiguredPath?: string;
-  expectedPath?: string;
-  fallbackUsed?: boolean;
-  fallbackValue?: string;
-  missingWebhookEnv?: boolean;
-  invalidWebhookUrl?: boolean;
-  expectedWebhookPath?: string;
-  configuredWebhookPath?: string;
-  configuredWebhookUrlPreview?: string;
-  hasOutdatedWebhook?: boolean;
-  configSource?: string;
-  resolvedWebhookUrl?: string;
-  resolvedWebhookPath?: string;
-  expectedMethod?: string;
-  healthcheckUrl?: string;
-  environmentName?: string;
-  webhookPathMatchesRegistration?: boolean;
-  productionWebhookReachable?: boolean | null;
-  productionWebhookInactive?: boolean;
-  upstreamStatus?: number | null;
-  upstreamStatusText?: string;
-  upstreamMessage?: string;
-  responseSnippet?: string;
-  lastSuccessfulHealthCheckAt?: string;
-  lastFailedHealthCheckAt?: string;
-  validationErrorCode?: string | null;
-  validationMessage?: string;
-  message: string;
+  webhookHost: string | null;
+  backendBuild: string;
 };
 
-type SpeciesPredictionDisplayState =
-  | 'NOT_CONFIGURED'
-  | 'CONFIGURED_AVAILABLE'
-  | 'CONFIGURED_UNAVAILABLE';
-
-type SpeciesPredictionStatusCardModel = {
-  badge: 'Configured' | 'Unavailable' | 'Missing config';
-  primaryText: string;
-  helperText: string;
-};
-
-async function fetchSpeciesPredictionBackendStatus(): Promise<SpeciesPredictionBackendStatus> {
-  let response: Response;
-  try {
-    response = await fetch(`${getFunctionsBaseUrl()}/species-prediction?mode=status&verify=1&_ts=${Date.now()}`, {
-      method: 'GET',
-      cache: 'no-store',
-      headers: {
-        ...getSupabaseAuthHeaders(),
-      },
-    });
-  } catch {
-    throw new Error('Prediction backend is not configured yet');
-  }
-
-  const raw = await response.text();
-  let data: unknown = null;
-  if (raw) {
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      if (response.status === 404) {
-        throw new Error('Prediction backend is unavailable or not deployed');
-      }
-      throw new Error('Prediction backend is not configured yet');
-    }
-  }
-
-  if (!response.ok) {
-    if (response.status === 404) {
-      throw new Error('Prediction backend is unavailable or not deployed');
-    }
-    const message = typeof data === 'object' && data && 'message' in data
-      ? String((data as { message?: unknown }).message || 'Prediction backend is not configured yet')
-      : 'Prediction backend is not configured yet';
-    setSpeciesPredictionHealthCheckResult({
-      ok: false,
-      status: response.status,
-      statusText: response.statusText,
-      body: data,
-      timestamp: new Date().toISOString(),
-    });
-    throw new Error(message);
-  }
-
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    throw new Error('Prediction backend is not configured yet');
-  }
-
-  const status = safeRecord(data) as Partial<SpeciesPredictionBackendStatus>;
-  setSpeciesPredictionHealthCheckResult({
-    ok: true,
-    status: response.status,
-    statusText: response.statusText,
-    body: data,
-    timestamp: new Date().toISOString(),
+async function fetchBackendConfig(): Promise<BackendConfig> {
+  const response = await fetch(`${getFunctionsBaseUrl()}/species-prediction?mode=config&_ts=${Date.now()}`, {
+    method: 'GET',
+    cache: 'no-store',
+    headers: { ...getSupabaseAuthHeaders() },
   });
+  if (!response.ok) throw new Error(`Backend config fetch failed: HTTP ${response.status}`);
+  const raw = await response.text();
+  const data = raw ? JSON.parse(raw) : null;
+  const record = safeRecord(data);
   return {
-    ok: status.ok === true,
-    configured: status.configured === true,
-    webhookConfigured: status.webhookConfigured === true,
-    webhookValid: status.webhookValid === true,
-    available: status.available === true,
-    runtimeAvailable: typeof status.runtimeAvailable === 'boolean' ? status.runtimeAvailable : null,
-    deployed: status.deployed === true,
-    statusCode: isBackendStatusCode(status.statusCode) ? status.statusCode : 'NOT_CONFIGURED',
-    reasonCode: safeString(status.reasonCode) || null,
-    predictionBackendBuild: safeString(status.predictionBackendBuild),
-    backendBuild: safeString(status.backendBuild),
-    runtimeReachable: typeof status.runtimeReachable === 'boolean' ? status.runtimeReachable : null,
-    runtimeProbeUsed: status.runtimeProbeUsed === true,
-    runtimeProbeMethod: safeString(status.runtimeProbeMethod),
-    runtimeProbeReason: safeString(status.runtimeProbeReason),
-    lastInvocationStatus: safeString(status.lastInvocationStatus),
-    lastInvocationAt: safeString(status.lastInvocationAt),
-    lastInvocationErrorStage: safeString(status.lastInvocationErrorStage),
-    lastInvocationMessage: safeString(status.lastInvocationMessage),
-    diagnosticsAgeMs: typeof status.diagnosticsAgeMs === 'number' ? status.diagnosticsAgeMs : null,
-    statusDecisionReason: safeString(status.statusDecisionReason),
-    envVarName: safeString(status.envVarName),
-    envPresent: status.envPresent === true,
-    envLength: typeof status.envLength === 'number' ? status.envLength : 0,
-    rawWebhookPreview: safeString(status.rawWebhookPreview),
-    parsedUrlOk: status.parsedUrlOk === true,
-    configuredPathname: safeString(status.configuredPathname),
-    normalizedConfiguredPath: safeString(status.normalizedConfiguredPath),
-    expectedPath: safeString(status.expectedPath),
-    fallbackUsed: status.fallbackUsed === true,
-    fallbackValue: safeString(status.fallbackValue),
-    missingWebhookEnv: status.missingWebhookEnv === true,
-    invalidWebhookUrl: status.invalidWebhookUrl === true,
-    expectedWebhookPath: safeString(status.expectedWebhookPath),
-    configuredWebhookPath: safeString(status.configuredWebhookPath),
-    configuredWebhookUrlPreview: safeString(status.configuredWebhookUrlPreview),
-    hasOutdatedWebhook: status.hasOutdatedWebhook === true,
-    configSource: safeString(status.configSource),
-    resolvedWebhookUrl: safeString(status.resolvedWebhookUrl),
-    resolvedWebhookPath: safeString(status.resolvedWebhookPath),
-    expectedMethod: safeString(status.expectedMethod),
-    healthcheckUrl: safeString(status.healthcheckUrl),
-    environmentName: safeString(status.environmentName),
-    webhookPathMatchesRegistration: typeof status.webhookPathMatchesRegistration === 'boolean' ? status.webhookPathMatchesRegistration : undefined,
-    productionWebhookReachable: typeof status.productionWebhookReachable === 'boolean' ? status.productionWebhookReachable : null,
-    productionWebhookInactive: status.productionWebhookInactive === true,
-    upstreamStatus: typeof status.upstreamStatus === 'number' ? status.upstreamStatus : null,
-    upstreamStatusText: safeString(status.upstreamStatusText),
-    upstreamMessage: safeString(status.upstreamMessage),
-    responseSnippet: safeString(status.responseSnippet),
-    lastSuccessfulHealthCheckAt: safeString(status.lastSuccessfulHealthCheckAt),
-    lastFailedHealthCheckAt: safeString(status.lastFailedHealthCheckAt),
-    validationErrorCode: safeString(status.validationErrorCode) || null,
-    validationMessage: safeString(status.validationMessage),
-    message: safeString(status.message) || 'Prediction backend is not configured yet',
+    webhookConfigured: record.webhookConfigured === true,
+    webhookHost: typeof record.webhookHost === 'string' && record.webhookHost ? record.webhookHost : null,
+    backendBuild: safeString(record.backendBuild),
   };
 }
-
-function isBackendStatusCode(value: unknown): value is SpeciesPredictionBackendStatus['statusCode'] {
-  return value === 'NOT_CONFIGURED'
-    || value === 'DEPLOYED_NOT_CONFIGURED'
-    || value === 'CONFIGURED_AVAILABLE'
-    || value === 'CONFIGURED_UNAVAILABLE'
-    || value === 'RUNTIME_ERROR';
-}
-
-export function normalizeBackendStatus(status: SpeciesPredictionBackendStatus) {
-  const hasRuntimeReachableSignal = typeof status.runtimeReachable === 'boolean';
-  const hasRuntimeAvailabilitySignal = typeof status.runtimeAvailable === 'boolean';
-  const hasExplicitInvocationFailureSignal = Boolean(
-    safeString(status.lastInvocationStatus)
-    || safeString(status.lastInvocationAt)
-    || safeString(status.lastInvocationErrorStage)
-    || safeString(status.lastInvocationMessage)
-    || safeString(status.upstreamMessage)
-    || typeof status.upstreamStatus === 'number'
-    || (hasRuntimeReachableSignal && status.runtimeReachable === false)
-    || (hasRuntimeAvailabilitySignal && status.runtimeAvailable === false),
-  );
-  return {
-    isConfigured: status.configured === true && status.missingWebhookEnv !== true,
-    isDeployed: status.deployed === true,
-    isHealthy: status.available === true || status.statusCode === 'CONFIGURED_AVAILABLE',
-    isRuntimeAvailable: status.runtimeAvailable === true,
-    statusDecisionReason: safeString(status.statusDecisionReason),
-    diagnosticsAgeMs: status.diagnosticsAgeMs ?? null,
-    hasFreshInvocationFailure: safeString(status.statusDecisionReason) === 'recent_real_invocation_failure' && hasExplicitInvocationFailureSignal,
-    hasExplicitInvocationFailureSignal,
-    lastRuntimeErrorCode: status.reasonCode,
-    lastRuntimeErrorMessage: safeString(status.lastInvocationMessage) || safeString(status.upstreamMessage) || safeString(status.message),
-    statusCode: status.statusCode,
-    reasonCode: status.reasonCode,
-    missingWebhookEnv: status.missingWebhookEnv === true,
-    invalidWebhookUrl: status.invalidWebhookUrl === true,
-    hasOutdatedWebhookPathError: status.hasOutdatedWebhook === true,
-    backend: status,
-  };
-}
-
-type DiagnosticWebhookDetection = {
-  detected: boolean;
-  stage: string;
-  code: number | string | null;
-  message: string;
-  matchedReason: string;
-};
 
 type RecoveryDebugState = {
   rawTopLevelCode: string;
@@ -1200,169 +870,6 @@ export function buildRecoveryDebugState(rawResponse: unknown): RecoveryDebugStat
     insightSummaryRecovered: safeString(recovered?.insightSummary).length > 0,
     normalizedPredictionShape: safeString(recovered?.normalizedPredictionShape),
   };
-}
-
-function detectOutdatedWebhookFromDiagnostics(snapshot: SpeciesPredictionDebugSnapshot): DiagnosticWebhookDetection {
-  const none: DiagnosticWebhookDetection = { detected: false, stage: '', code: null, message: '', matchedReason: '' };
-
-  // Collect all candidate objects from snapshot
-  const transport = snapshot.transport;
-  const transportError = transport?.error;
-
-  // Gather all searchable strings and codes from deeply nested paths
-  const candidates: Array<{ stage?: string; code?: number | string | null; message?: string; source: string }> = [];
-
-  function extractFromObj(obj: unknown, source: string) {
-    const r = safeRecord(obj);
-    if (!Object.keys(r).length) return;
-    const msg = safeString(r.message);
-    const hint = safeString(r.hint);
-    const stage = safeString(r.stage);
-    const code = typeof r.code === 'number' ? r.code : (typeof r.status === 'number' ? r.status : null);
-    if (msg || hint || stage || code != null) {
-      candidates.push({ stage, code, message: msg || hint, source });
-    }
-    // Recurse into known nested keys
-    for (const key of ['body', 'responseBody', 'error', 'json', 'context']) {
-      const nested = safeRecord(r[key]);
-      if (Object.keys(nested).length) extractFromObj(nested, `${source}.${key}`);
-    }
-  }
-
-  if (transportError) extractFromObj(transportError, 'transportError');
-  if (transport?.responseBody) extractFromObj(transport.responseBody, 'responseBody');
-
-  // Also check the stored result from last prediction
-  const lastResponse = snapshot.rawBackendResponse;
-  if (lastResponse) extractFromObj(lastResponse, 'lastBackendResponse');
-
-  // Check each candidate for outdated webhook signature
-  for (const c of candidates) {
-    const lower = (c.message || '').toLowerCase();
-    const is404 = c.code === 404;
-    const hasNotRegistered = lower.includes('not registered');
-    const hasSpeciesPrediction = lower.includes('species-prediction');
-    const hasWebhookMention = lower.includes('webhook');
-    const isGetMethodMismatch = lower.includes('not registered for get requests')
-      || lower.includes('did you mean to make a post request');
-
-    if (isGetMethodMismatch) {
-      continue;
-    }
-
-    if (hasNotRegistered && (hasSpeciesPrediction || hasWebhookMention)) {
-      return { detected: true, stage: c.stage || '', code: c.code, message: c.message || '', matchedReason: `message contains "not registered" + webhook ref (${c.source})` };
-    }
-    if (is404 && (hasSpeciesPrediction || hasNotRegistered)) {
-      return { detected: true, stage: c.stage || '', code: c.code, message: c.message || '', matchedReason: `code=404 + species-prediction/not-registered (${c.source})` };
-    }
-    if (c.stage === 'n8n_upstream' && is404) {
-      return { detected: true, stage: c.stage, code: c.code, message: c.message || '', matchedReason: `stage=n8n_upstream + code=404 (${c.source})` };
-    }
-  }
-
-  return none;
-}
-
-export function deriveSpeciesPredictionDisplayState(
-  status: ReturnType<typeof normalizeBackendStatus>,
-): SpeciesPredictionDisplayState {
-  if (status.missingWebhookEnv === true || !status.isConfigured) return 'NOT_CONFIGURED';
-  if (status.statusCode === 'CONFIGURED_UNAVAILABLE' as string) return 'CONFIGURED_UNAVAILABLE';
-  if (
-    status.statusDecisionReason === 'configured_valid_no_runtime_probe'
-    || status.statusDecisionReason === 'live_probe_success'
-    || status.statusCode === 'CONFIGURED_AVAILABLE'
-  ) return 'CONFIGURED_AVAILABLE';
-  if (
-    status.isDeployed
-    && (status.isConfigured || status.invalidWebhookUrl === true)
-    && (
-      status.invalidWebhookUrl === true
-      || status.hasOutdatedWebhookPathError === true
-      || status.hasFreshInvocationFailure === true
-      || ((status.statusCode as string) === 'CONFIGURED_UNAVAILABLE' && status.hasExplicitInvocationFailureSignal === true)
-      || ((status.statusCode as string) === 'RUNTIME_ERROR' && status.hasExplicitInvocationFailureSignal === true)
-      || (status.isHealthy !== true && status.statusDecisionReason === 'recent_real_invocation_failure' && status.hasExplicitInvocationFailureSignal === true)
-    )
-  ) {
-    return 'CONFIGURED_UNAVAILABLE';
-  }
-  return 'CONFIGURED_AVAILABLE';
-}
-
-export function buildSpeciesPredictionStatusCard(
-  displayState: SpeciesPredictionDisplayState,
-  status: ReturnType<typeof normalizeBackendStatus>,
-): SpeciesPredictionStatusCardModel {
-  if (displayState === 'CONFIGURED_AVAILABLE') {
-    return {
-      badge: 'Configured',
-      primaryText: 'Prediction backend is configured and available',
-      helperText: status.statusDecisionReason === 'configured_valid_no_runtime_probe'
-        ? 'The species prediction backend is configured. No dedicated runtime probe is required for the POST webhook.'
-        : 'The species prediction backend is configured and ready for use.',
-    };
-  }
-  if (displayState === 'CONFIGURED_UNAVAILABLE') {
-    const helperText = status.invalidWebhookUrl === true
-      ? 'The Supabase webhook URL is invalid. Check the backend config debug values below.'
-      : status.hasOutdatedWebhookPathError === true
-        ? 'The Supabase prediction function is still pointing to an outdated n8n webhook path.'
-        : (status.backend.lastInvocationMessage || 'The latest real prediction invocation failed. Check the backend diagnostics below.');
-    return {
-      badge: 'Unavailable',
-      primaryText: 'Prediction backend is configured but currently unavailable',
-      helperText,
-    };
-  }
-  return {
-    badge: 'Missing config',
-    primaryText: 'Prediction backend is not configured yet',
-    helperText: 'Add the webhook secret in Supabase and redeploy the Edge Function.',
-  };
-}
-
-function TestPredictionBackendButton({ onResult }: { onResult: (data: SpeciesPredictionBackendStatus) => void }) {
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ status: number | null; snippet: string; available: boolean | null } | null>(null);
-
-  const runTest = async () => {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const data = await fetchSpeciesPredictionBackendStatus();
-      onResult(data);
-      setTestResult({
-        status: data.upstreamStatus ?? null,
-        snippet: data.responseSnippet || data.message || '',
-        available: data.available,
-      });
-    } catch (err: unknown) {
-      setTestResult({
-        status: null,
-        snippet: err instanceof Error ? err.message : 'Test failed',
-        available: false,
-      });
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  return (
-    <div className="mt-3 space-y-2">
-      <Button variant="outline" size="sm" onClick={runTest} disabled={testing} className="text-xs">
-        {testing ? <><Loader2 className="h-3 w-3 animate-spin mr-1" /> Testing...</> : 'Test prediction backend now'}
-      </Button>
-      {testResult && (
-        <div className="rounded border border-border bg-muted/30 p-2 text-[10px] font-mono space-y-0.5">
-          <p>available: <span className={testResult.available ? 'text-green-600' : 'text-red-500'}>{String(testResult.available)}</span></p>
-          {testResult.status != null && <p>httpStatus: {testResult.status}</p>}
-          <p>response: {testResult.snippet.slice(0, 200) || '\u2013'}</p>
-        </div>
-      )}
-    </div>
-  );
 }
 
 

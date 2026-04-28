@@ -21,8 +21,7 @@ const STATUS_NO_CACHE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
   'Pragma': 'no-cache',
 } as const;
-const INVOCATION_DIAGNOSTICS_FRESHNESS_MS = 30 * 60 * 1000;
-// If health/status reports an outdated webhook path, update the Supabase secret
+// If config check reports a missing webhook URL, set the Supabase secret
 // SPECIES_PREDICTION_N8N_WEBHOOK_URL to:
 // https://estbirds.app.n8n.cloud/webhook/species-prediction-evidence-first
 
@@ -298,31 +297,6 @@ type CleanPredictionContext = {
   scope?: string;
 };
 
-type LastInvocationEvidence = {
-  lastInvocationStatus: string;
-  lastInvocationAt: string;
-  lastInvocationErrorStage: string;
-  lastInvocationMessage: string;
-  lastInvocationHttpStatus: number | null;
-  responseSnippet: string;
-  lastSuccessfulHealthCheckAt: string;
-  lastFailedHealthCheckAt: string;
-  diagnosticsAgeMs: number | null;
-};
-
-type StatusDecision = {
-  configured: boolean;
-  available: boolean;
-  runtimeReachable: boolean | null;
-  runtimeProbeUsed: boolean;
-  runtimeProbeMethod: string;
-  runtimeProbeReason: string;
-  statusDecisionReason: string;
-  statusCode: StatusCode;
-  reasonCode: string | null;
-  message: string;
-};
-
 function buildWebhookTargetInfo(input: Partial<WebhookTargetInfo>): WebhookTargetInfo {
   const normalizedConfiguredPath = input.normalizedConfiguredPath || '';
   const expectedWebhookPath = EXPECTED_PRODUCTION_WEBHOOK_PATH;
@@ -433,161 +407,6 @@ function buildResponseSnippet(value: unknown): string {
   }
 }
 
-async function getLastInvocationEvidence(admin: ReturnType<typeof getSupabaseAdmin>): Promise<LastInvocationEvidence> {
-  try {
-    const { data, error } = await admin
-      .from('prediction_jobs')
-      .select('status, updated_at, error_json')
-      .order('updated_at', { ascending: false })
-      .limit(10);
-    if (error || !data || !data.length) {
-      return {
-        lastInvocationStatus: '',
-        lastInvocationAt: '',
-        lastInvocationErrorStage: '',
-        lastInvocationMessage: '',
-        lastInvocationHttpStatus: null,
-        responseSnippet: '',
-        lastSuccessfulHealthCheckAt: '',
-        lastFailedHealthCheckAt: '',
-        diagnosticsAgeMs: null,
-      };
-    }
-    const latest = data[0];
-    const latestErrorJson = latest.error_json && typeof latest.error_json === 'object' && !Array.isArray(latest.error_json)
-      ? latest.error_json as Record<string, unknown>
-      : {};
-    const latestSuccessful = data.find((entry) => entry && entry.status === 'completed');
-    const latestFailed = data.find((entry) => entry && entry.status === 'failed');
-    const lastInvocationAt = typeof latest.updated_at === 'string' ? latest.updated_at : '';
-    const parsedTime = lastInvocationAt ? new Date(lastInvocationAt).getTime() : Number.NaN;
-    return {
-      lastInvocationStatus: typeof latest.status === 'string' ? latest.status : '',
-      lastInvocationAt,
-      lastInvocationErrorStage: typeof latestErrorJson.stage === 'string' ? latestErrorJson.stage : '',
-      lastInvocationMessage: typeof latestErrorJson.message === 'string' ? latestErrorJson.message : '',
-      lastInvocationHttpStatus: typeof latestErrorJson.upstreamStatus === 'number' ? latestErrorJson.upstreamStatus : null,
-      responseSnippet: buildResponseSnippet(latestErrorJson.upstreamBody ?? latestErrorJson.message ?? latestErrorJson),
-      lastSuccessfulHealthCheckAt: latestSuccessful && typeof latestSuccessful.updated_at === 'string' ? latestSuccessful.updated_at : '',
-      lastFailedHealthCheckAt: latestFailed && typeof latestFailed.updated_at === 'string' ? latestFailed.updated_at : '',
-      diagnosticsAgeMs: Number.isFinite(parsedTime) ? Math.max(0, Date.now() - parsedTime) : null,
-    };
-  } catch {
-    return {
-      lastInvocationStatus: '',
-      lastInvocationAt: '',
-      lastInvocationErrorStage: '',
-      lastInvocationMessage: '',
-      lastInvocationHttpStatus: null,
-      responseSnippet: '',
-      lastSuccessfulHealthCheckAt: '',
-      lastFailedHealthCheckAt: '',
-      diagnosticsAgeMs: null,
-    };
-  }
-}
-
-function buildStatusDecision(webhookTarget: WebhookTargetInfo, lastInvocation: LastInvocationEvidence): StatusDecision {
-  if (!webhookTarget.webhookConfigured || webhookTarget.missingWebhookEnv) {
-    return {
-      configured: false,
-      available: false,
-      runtimeReachable: null,
-      runtimeProbeUsed: false,
-      runtimeProbeMethod: 'none',
-      runtimeProbeReason: 'no_runtime_probe_for_invalid_config',
-      statusDecisionReason: 'missing_webhook_env',
-      statusCode: 'NOT_CONFIGURED',
-      reasonCode: webhookTarget.validationErrorCode || 'MISSING_WEBHOOK_URL',
-      message: `Prediction backend is not configured yet because Supabase secret ${WEBHOOK_ENV_KEY} is missing.`,
-    };
-  }
-  if (!webhookTarget.valid || webhookTarget.invalidWebhookUrl) {
-    return {
-      configured: false,
-      available: false,
-      runtimeReachable: null,
-      runtimeProbeUsed: false,
-      runtimeProbeMethod: 'none',
-      runtimeProbeReason: 'no_runtime_probe_for_invalid_config',
-      statusDecisionReason: 'invalid_webhook_url',
-      statusCode: 'DEPLOYED_NOT_CONFIGURED',
-      reasonCode: webhookTarget.validationErrorCode || 'INVALID_WEBHOOK_URL',
-      message: `Prediction backend has an invalid n8n webhook configuration in ${WEBHOOK_ENV_KEY}.`,
-    };
-  }
-  if (webhookTarget.hasOutdatedWebhook || !webhookTarget.looksLikeProductionWebhook) {
-    return {
-      configured: false,
-      available: false,
-      runtimeReachable: null,
-      runtimeProbeUsed: false,
-      runtimeProbeMethod: 'none',
-      runtimeProbeReason: 'no_runtime_probe_for_invalid_config',
-      statusDecisionReason: 'outdated_webhook_path',
-      statusCode: 'DEPLOYED_NOT_CONFIGURED',
-      reasonCode: 'INVALID_WEBHOOK_PATH',
-      message: `Supabase secret ${WEBHOOK_ENV_KEY} is still configured with webhook path ${webhookTarget.configuredWebhookPath}, expected ${webhookTarget.expectedWebhookPath}`,
-    };
-  }
-
-  const diagnosticsAreFresh = lastInvocation.diagnosticsAgeMs != null && lastInvocation.diagnosticsAgeMs <= INVOCATION_DIAGNOSTICS_FRESHNESS_MS;
-  if (diagnosticsAreFresh && lastInvocation.lastInvocationStatus === 'failed') {
-    return {
-      configured: true,
-      available: false,
-      runtimeReachable: false,
-      runtimeProbeUsed: false,
-      runtimeProbeMethod: 'none',
-      runtimeProbeReason: 'recent_real_invocation_evidence',
-      statusDecisionReason: 'recent_real_invocation_failure',
-      statusCode: 'CONFIGURED_UNAVAILABLE',
-      reasonCode: 'RUNTIME_ERROR',
-      message: lastInvocation.lastInvocationMessage || 'Prediction backend is configured but the latest real invocation failed.',
-    };
-  }
-  if (diagnosticsAreFresh && lastInvocation.lastInvocationStatus === 'completed') {
-    return {
-      configured: true,
-      available: true,
-      runtimeReachable: true,
-      runtimeProbeUsed: false,
-      runtimeProbeMethod: 'none',
-      runtimeProbeReason: 'recent_real_invocation_evidence',
-      statusDecisionReason: 'recent_real_invocation_success',
-      statusCode: 'CONFIGURED_AVAILABLE',
-      reasonCode: null,
-      message: 'Prediction backend is deployed, configured, and recently succeeded on a real invocation.',
-    };
-  }
-  if (lastInvocation.lastInvocationStatus === 'failed' && lastInvocation.diagnosticsAgeMs != null && lastInvocation.diagnosticsAgeMs > INVOCATION_DIAGNOSTICS_FRESHNESS_MS) {
-    return {
-      configured: true,
-      available: true,
-      runtimeReachable: null,
-      runtimeProbeUsed: false,
-      runtimeProbeMethod: 'none',
-      runtimeProbeReason: 'no_dedicated_runtime_probe_configured',
-      statusDecisionReason: 'stale_invocation_failure_ignored',
-      statusCode: 'CONFIGURED_AVAILABLE',
-      reasonCode: null,
-      message: 'Prediction backend is configured. Older invocation failures are outside the active diagnostics window.',
-    };
-  }
-  return {
-    configured: true,
-    available: true,
-    runtimeReachable: null,
-    runtimeProbeUsed: false,
-    runtimeProbeMethod: 'none',
-    runtimeProbeReason: 'no_dedicated_runtime_probe_configured',
-    statusDecisionReason: 'configured_valid_no_runtime_probe',
-    statusCode: 'CONFIGURED_AVAILABLE',
-    reasonCode: null,
-    message: 'Prediction backend is configured and no dedicated runtime probe is required.',
-  };
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
@@ -607,220 +426,33 @@ serve(async (req) => {
     const webhookConfigured = webhookTarget.webhookConfigured;
     const timeoutMsUsed = resolveTimeoutMs();
 
-    // ── GET ?mode=status ──
-    if (req.method === 'GET' && url.searchParams.get('mode') === 'status') {
-      const admin = getSupabaseAdmin();
-      const lastInvocation = await getLastInvocationEvidence(admin);
-      const shouldVerify = url.searchParams.get('verify') === '1' && webhookTarget.valid && webhookTarget.looksLikeProductionWebhook;
-
-      // Live webhook probe when verify=1
-      let liveProbe: {
-        attempted: boolean;
-        reachable: boolean | null;
-        httpStatus: number | null;
-        responseSnippet: string;
-        errorMessage: string;
-        webhookInactive: boolean;
-        checkedAt: string;
-      } = {
-        attempted: false,
-        reachable: null,
-        httpStatus: null,
-        responseSnippet: '',
-        errorMessage: '',
-        webhookInactive: false,
-        checkedAt: '',
-      };
-
-      if (shouldVerify) {
+    // ── GET ?mode=config ──
+    // Passive configuration check. Verifies the webhook secret is set and parses
+    // as a URL. Does NOT call n8n. Replaces the legacy mode=status verify=1 probe
+    // which fired the full prediction pipeline on every settings page mount.
+    if (req.method === 'GET' && url.searchParams.get('mode') === 'config') {
+      const rawWebhookUrl = (Deno.env.get(WEBHOOK_ENV_KEY) || '').trim();
+      let configWebhookHost: string | null = null;
+      let configWebhookConfigured = false;
+      if (rawWebhookUrl) {
         try {
-          const probeController = new AbortController();
-          const probeTimeout = setTimeout(() => probeController.abort(), 10000);
-          const probeHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-          const authHeader = (Deno.env.get(AUTH_HEADER_ENV_KEY) || '').trim();
-          const authValue = (Deno.env.get(AUTH_VALUE_ENV_KEY) || '').trim();
-          if (authHeader && authValue) probeHeaders[authHeader] = authValue;
-          const probeBody = JSON.stringify({
-            mode: 'healthcheck',
-            species: { key: 'health-probe', name: 'Health Probe', latinName: 'Probus healthius' },
-            settings: {},
-            _probeTimestamp: new Date().toISOString(),
-          });
-          const probeResponse = await fetch(webhookTarget.configuredWebhookUrl, {
-            method: 'POST',
-            headers: probeHeaders,
-            body: probeBody,
-            signal: probeController.signal,
-          });
-          clearTimeout(probeTimeout);
-          const probeText = await probeResponse.text();
-          const snippet = probeText.slice(0, 300);
-          const lowerSnippet = snippet.toLowerCase();
-          const webhookInactive = lowerSnippet.includes('not registered')
-            || lowerSnippet.includes('webhook not found')
-            || lowerSnippet.includes('workflow inactive')
-            || lowerSnippet.includes('not found');
-          liveProbe = {
-            attempted: true,
-            reachable: probeResponse.status < 500 && !webhookInactive,
-            httpStatus: probeResponse.status,
-            responseSnippet: snippet,
-            errorMessage: webhookInactive ? 'Webhook is not registered or workflow is inactive' : '',
-            webhookInactive,
-            checkedAt: new Date().toISOString(),
-          };
-          console.info(`${LOG_PREFIX} live_probe`, { status: probeResponse.status, webhookInactive, snippet: snippet.slice(0, 100) });
-        } catch (probeError: unknown) {
-          const msg = probeError instanceof Error ? probeError.message : 'probe failed';
-          const isTimeout = msg.includes('abort');
-          liveProbe = {
-            attempted: true,
-            reachable: false,
-            httpStatus: null,
-            responseSnippet: '',
-            errorMessage: isTimeout ? 'Webhook probe timed out after 10s' : msg,
-            webhookInactive: false,
-            checkedAt: new Date().toISOString(),
-          };
-          console.info(`${LOG_PREFIX} live_probe_error`, { error: msg });
+          configWebhookHost = new URL(rawWebhookUrl).host || null;
+          configWebhookConfigured = !!configWebhookHost;
+        } catch {
+          // Malformed URL: report as unconfigured rather than throwing.
+          configWebhookConfigured = false;
+          configWebhookHost = null;
         }
       }
-
-      // Override status decision with live probe results
-      let statusDecision = buildStatusDecision(webhookTarget, lastInvocation);
-      if (liveProbe.attempted) {
-        if (liveProbe.reachable === true) {
-          statusDecision = {
-            ...statusDecision,
-            available: true,
-            runtimeReachable: true,
-            runtimeProbeUsed: true,
-            runtimeProbeMethod: 'live_post_probe',
-            runtimeProbeReason: 'verify_param_requested',
-            statusDecisionReason: 'live_probe_success',
-            statusCode: 'CONFIGURED_AVAILABLE',
-            reasonCode: null,
-            message: 'Live webhook probe succeeded. Prediction backend is available.',
-          };
-        } else {
-          const probeReason = liveProbe.webhookInactive
-            ? 'WEBHOOK_NOT_REGISTERED'
-            : liveProbe.httpStatus === 401 || liveProbe.httpStatus === 403
-              ? 'UNAUTHORIZED'
-              : liveProbe.httpStatus === null
-                ? 'NETWORK_ERROR'
-                : 'MALFORMED_RESPONSE';
-          statusDecision = {
-            ...statusDecision,
-            available: false,
-            runtimeReachable: false,
-            runtimeProbeUsed: true,
-            runtimeProbeMethod: 'live_post_probe',
-            runtimeProbeReason: 'verify_param_requested',
-            statusDecisionReason: 'live_probe_failure',
-            statusCode: 'CONFIGURED_UNAVAILABLE',
-            reasonCode: probeReason,
-            message: liveProbe.errorMessage || `Live webhook probe failed with HTTP ${liveProbe.httpStatus}.`,
-          };
-        }
-      }
-
-      console.info(`${LOG_PREFIX} webhook_config`, {
-        parsedEnvVariableName: WEBHOOK_ENV_KEY,
-        parsedConfiguredPath: webhookTarget.configuredWebhookPath,
-        expectedPath: webhookTarget.expectedWebhookPath,
-        configSource: webhookTarget.configSource,
-      });
-      console.info(`${LOG_PREFIX} status check`, {
-        webhookConfigured,
-        webhookValid: webhookTarget.valid,
-        statusCode: statusDecision.statusCode,
-        reasonCode: statusDecision.reasonCode,
-        expectedWebhookPath: webhookTarget.expectedWebhookPath,
-        configuredWebhookPath: webhookTarget.configuredWebhookPath,
-        hasOutdatedWebhook: webhookTarget.hasOutdatedWebhook,
-        resolvedWebhookPath: webhookTarget.configuredWebhookPath,
-        resolvedWebhookUrl: webhookTarget.configuredWebhookUrlPreview,
-        healthcheckUrl: webhookTarget.configuredWebhookUrlPreview,
-        webhookPathMatchesRegistration: webhookTarget.looksLikeProductionWebhook,
-        statusDecisionReason: statusDecision.statusDecisionReason,
-        lastInvocationStatus: lastInvocation.lastInvocationStatus,
-        lastInvocationHttpStatus: lastInvocation.lastInvocationHttpStatus,
-        responseSnippet: lastInvocation.responseSnippet,
-        liveProbe: liveProbe.attempted ? liveProbe : 'skipped',
-        edgeFunctionVersion: EDGE_FUNCTION_VERSION,
+      console.info(`${LOG_PREFIX} config check`, {
+        webhookConfigured: configWebhookConfigured,
+        webhookHost: configWebhookHost,
         predictionBackendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
       });
       return json({
-        ok: true,
-        stage: 'status',
-        predictionBackendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
-        ...buildEntrypointMarkers(),
-        summaryShapeUsed: 'missing',
-        hasTopLevelInsightSummary: false,
-        hasNestedAiSummaryObject: false,
-        hasNestedAiSummaryInsight: false,
-        topLevelKeys: [],
-        nestedAiSummaryKeys: [],
-        available: statusDecision.available,
-        deployed: webhookTarget.deployed,
-        configured: statusDecision.configured,
-        webhookConfigured,
-        webhookValid: webhookTarget.valid,
-        runtimeAvailable: statusDecision.runtimeReachable === true,
-        runtimeReachable: statusDecision.runtimeReachable,
-        runtimeProbeUsed: statusDecision.runtimeProbeUsed,
-        runtimeProbeMethod: statusDecision.runtimeProbeMethod,
-        runtimeProbeReason: statusDecision.runtimeProbeReason,
-        lastInvocationStatus: lastInvocation.lastInvocationStatus,
-        lastInvocationAt: lastInvocation.lastInvocationAt,
-        lastInvocationErrorStage: lastInvocation.lastInvocationErrorStage,
-        lastInvocationMessage: lastInvocation.lastInvocationMessage,
-        diagnosticsAgeMs: lastInvocation.diagnosticsAgeMs,
-        statusDecisionReason: statusDecision.statusDecisionReason,
-        statusCode: statusDecision.statusCode,
-        reasonCode: statusDecision.reasonCode,
-        expectedWebhookPath: webhookTarget.expectedWebhookPath,
-        configuredWebhookPath: webhookTarget.configuredWebhookPath,
-        configuredWebhookUrlPreview: webhookTarget.configuredWebhookUrlPreview,
-        hasOutdatedWebhook: webhookTarget.hasOutdatedWebhook,
-        envVarName: webhookTarget.envVarName,
-        envPresent: webhookTarget.envPresent,
-        envLength: webhookTarget.envLength,
-        configSource: webhookTarget.configSource,
-        rawWebhookPreview: webhookTarget.rawWebhookPreview,
-        parsedUrlOk: webhookTarget.parsedUrlOk,
-        configuredPathname: webhookTarget.configuredPathname,
-        normalizedConfiguredPath: webhookTarget.normalizedConfiguredPath,
-        expectedPath: webhookTarget.expectedPath,
-        fallbackUsed: webhookTarget.fallbackUsed,
-        fallbackValue: webhookTarget.fallbackValue,
-        missingWebhookEnv: webhookTarget.missingWebhookEnv,
-        invalidWebhookUrl: webhookTarget.invalidWebhookUrl,
-        resolvedWebhookUrl: webhookTarget.configuredWebhookUrl,
-        resolvedWebhookPath: webhookTarget.configuredWebhookPath,
-        healthcheckUrl: webhookTarget.configuredWebhookUrl,
-        environmentName: 'production',
-        webhookPathMatchesRegistration: webhookTarget.looksLikeProductionWebhook,
-        expectedMethod: webhookTarget.expectedMethod,
-        looksLikeProductionWebhook: webhookTarget.looksLikeProductionWebhook,
-        validationErrorCode: webhookTarget.validationErrorCode,
-        validationMessage: webhookTarget.validationMessage,
-        verificationAttempted: liveProbe.attempted,
-        verificationSafeMode: !liveProbe.attempted,
-        productionWebhookReachable: liveProbe.attempted ? liveProbe.reachable : null,
-        productionWebhookInactive: liveProbe.webhookInactive,
-        upstreamStatus: liveProbe.attempted ? liveProbe.httpStatus : lastInvocation.lastInvocationHttpStatus,
-        upstreamStatusText: '',
-        upstreamMessage: liveProbe.errorMessage || '',
-        upstreamBody: null,
-        responseSnippet: liveProbe.attempted ? liveProbe.responseSnippet : lastInvocation.responseSnippet,
-        lastSuccessfulHealthCheckAt: liveProbe.attempted && liveProbe.reachable ? liveProbe.checkedAt : lastInvocation.lastSuccessfulHealthCheckAt,
-        lastFailedHealthCheckAt: liveProbe.attempted && !liveProbe.reachable ? liveProbe.checkedAt : lastInvocation.lastFailedHealthCheckAt,
-        timeoutMsUsed,
-        edgeFunctionVersion: EDGE_FUNCTION_VERSION,
-        timestamp: new Date().toISOString(),
-        message: statusDecision.message,
+        webhookConfigured: configWebhookConfigured,
+        webhookHost: configWebhookHost,
+        backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
       }, 200, STATUS_NO_CACHE_HEADERS);
     }
 

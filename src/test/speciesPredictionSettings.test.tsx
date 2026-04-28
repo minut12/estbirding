@@ -80,28 +80,19 @@ vi.mock('@/lib/speciesPredictionDebug', () => ({
       abortedByClientTimeout: false,
       likelyReachedEdgeFunction: false,
       error: null,
-      healthCheck: {
-        body: {
-          configured: true,
-        },
-      },
     },
   }),
   getSpeciesPredictionDebugStorageSnapshot: () => ({
     localStorage: {},
     sessionStorage: {},
   }),
-  setSpeciesPredictionHealthCheckResult: vi.fn(),
   SPECIES_PREDICTION_DEBUG_EVENT: 'species-prediction-debug-updated',
-  SPECIES_PREDICTION_DEBUG_HEALTHCHECK_EVENT: 'species-prediction-debug-healthcheck',
   SPECIES_PREDICTION_DEBUG_RERUN_EVENT: 'species-prediction-debug-rerun',
   SPECIES_PREDICTION_DEBUG_RESYNC_EVENT: 'species-prediction-debug-resync',
 }));
 
 import SpeciesPredictionSettings, {
   buildRecoveryDebugState,
-  deriveSpeciesPredictionDisplayState,
-  normalizeBackendStatus,
 } from '@/features/settings/SpeciesPredictionSettings';
 
 describe('SpeciesPredictionSettings', () => {
@@ -118,77 +109,42 @@ describe('SpeciesPredictionSettings', () => {
       status: 200,
       statusText: 'OK',
       text: async () => JSON.stringify({
-        configured: true,
         webhookConfigured: true,
-        webhookValid: true,
-        available: true,
-        deployed: true,
-        statusCode: 'CONFIGURED_AVAILABLE',
-        message: 'Prediction backend is configured and available',
+        webhookHost: 'estbirds.app.n8n.cloud',
+        backendBuild: '2026-04-28-probe-removed',
       }),
     } as Response);
   });
 
-  it('renders without crashing when status payload is partial and optional fields are missing', async () => {
+  it('renders the configured pill when ?mode=config returns webhookConfigured: true', async () => {
     expect(() => render(<SpeciesPredictionSettings />)).not.toThrow();
 
     await waitFor(() => {
-      expect(screen.getByText('Prediction backend is configured and available')).toBeInTheDocument();
+      expect(screen.getByText(/Backend configured: estbirds\.app\.n8n\.cloud/i)).toBeInTheDocument();
     });
 
-    expect(screen.getByText(/Status mapper debug/i)).toBeInTheDocument();
     expect(screen.queryByText(/Cannot read properties of undefined/i)).not.toBeInTheDocument();
   });
 
-  it('renders unavailable-shaped payload as unavailable instead of available', async () => {
+  it('renders the not-configured pill when webhookConfigured is false', async () => {
     vi.spyOn(window, 'fetch').mockResolvedValueOnce({
       ok: true,
       status: 200,
       statusText: 'OK',
       text: async () => JSON.stringify({
-        configured: true,
-        webhookConfigured: true,
-        webhookValid: true,
-        deployed: true,
-        statusCode: 'CONFIGURED_UNAVAILABLE',
-        message: 'Partial status payload from backend',
-        resolvedWebhookUrl: 'https://n8n.example/webhook/species-prediction-prod',
-        healthcheckUrl: 'https://n8n.example/webhook/species-prediction-prod',
-        environmentName: 'production',
-        upstreamStatus: 404,
-        responseSnippet: 'webhook not registered',
-        lastFailedHealthCheckAt: '2026-03-31T10:00:00.000Z',
+        webhookConfigured: false,
+        webhookHost: null,
+        backendBuild: '',
       }),
     } as Response);
 
     expect(() => render(<SpeciesPredictionSettings />)).not.toThrow();
 
     await waitFor(() => {
-      expect(screen.getByText('Prediction backend is configured but currently unavailable')).toBeInTheDocument();
+      expect(screen.getByText(/Backend not configured/i)).toBeInTheDocument();
     });
 
-    expect(screen.getByText(/displayState: CONFIGURED_UNAVAILABLE/i)).toBeInTheDocument();
-    expect(screen.getByText(/resolvedWebhookUrl: https:\/\/n8n.example\/webhook\/species-prediction-prod/i)).toBeInTheDocument();
-    expect(screen.getByText(/lastHttpStatus: 404/i)).toBeInTheDocument();
-    expect(screen.getByText(/summarySourcePath:/i)).toBeInTheDocument();
     expect(screen.queryByText(/Cannot read properties of undefined/i)).not.toBeInTheDocument();
-  });
-
-  it('keeps configured payloads available when only optional backend fields are missing', () => {
-    const normalized = normalizeBackendStatus({
-      ok: false,
-      configured: true,
-      webhookConfigured: true,
-      webhookValid: true,
-      available: false,
-      runtimeAvailable: false,
-      deployed: true,
-      statusCode: 'CONFIGURED_AVAILABLE',
-      reasonCode: null,
-      message: 'partial payload',
-    });
-
-    expect(deriveSpeciesPredictionDisplayState(normalized)).toBe('CONFIGURED_AVAILABLE');
   });
 
   it('handles partial recovery payloads without throwing', () => {

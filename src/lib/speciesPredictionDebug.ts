@@ -4,7 +4,6 @@ export const SPECIES_PREDICTION_DEBUG_EVENT = 'species-prediction-debug-updated'
 export const SPECIES_PREDICTION_DEBUG_RERUN_EVENT = 'species-prediction-debug-rerun';
 export const SPECIES_PREDICTION_DEBUG_RESYNC_EVENT = 'species-prediction-debug-resync';
 export const SPECIES_PREDICTION_DEBUG_PANEL_STATE_MESSAGE = 'SPECIES_PREDICTION_PANEL_STATE';
-export const SPECIES_PREDICTION_DEBUG_HEALTHCHECK_EVENT = 'species-prediction-debug-healthcheck';
 
 type DebugStatus = 'idle' | 'loading' | 'success' | 'error';
 export type SpeciesPredictionErrorStage =
@@ -66,7 +65,6 @@ export type SpeciesPredictionTransportSnapshot = {
   abortedByClientTimeout: boolean;
   likelyReachedEdgeFunction: boolean;
   error: SpeciesPredictionTransportError | null;
-  healthCheck: unknown | null;
 };
 
 export type SpeciesPredictionPanelStateSnapshot = {
@@ -155,7 +153,6 @@ const state: SpeciesPredictionDebugSnapshot = {
     abortedByClientTimeout: false,
     likelyReachedEdgeFunction: false,
     error: null,
-    healthCheck: null,
   },
 };
 
@@ -201,11 +198,6 @@ export function setSpeciesPredictionTransportError(error: SpeciesPredictionTrans
   emit();
 }
 
-export function setSpeciesPredictionHealthCheckResult(result: unknown): void {
-  state.transport.healthCheck = result ?? null;
-  emit();
-}
-
 export function clearSpeciesPredictionDebugMemory(): void {
   state.rawBackendResponse = null;
   state.panelPayload = null;
@@ -231,7 +223,6 @@ export function clearSpeciesPredictionDebugMemory(): void {
   state.transport.abortedByClientTimeout = false;
   state.transport.likelyReachedEdgeFunction = false;
   state.transport.error = null;
-  state.transport.healthCheck = null;
   emit();
 }
 

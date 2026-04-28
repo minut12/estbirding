@@ -1964,7 +1964,8 @@
               (prediction.activeEstoniaAnchor && prediction.activeEstoniaAnchor.confidence != null
                 ? '<br>Confidence: ' + escapeHtml(String(Math.round(prediction.activeEstoniaAnchor.confidence * 100))) + '%'
                 : '')
-            : '<br>ETA: ' + escapeHtml(formatShortDate(route.earliestArrival)) + ' \u2013 ' + escapeHtml(formatShortDate(route.latestArrival)));
+            : '<br>ETA: ' + escapeHtml(formatShortDate(route.earliestArrival)) + ' \u2013 ' + escapeHtml(formatShortDate(route.latestArrival))) +
+          buildRouteDateRow((destinationAnchor && destinationAnchor.estimatedDate) ? destinationAnchor : route.targetPoint, false);
         L.circleMarker([destinationAnchor.lat, destinationAnchor.lon], {
           radius: 8, color: '#f59e0b', weight: 3, fillColor: '#fff7ed', fillOpacity: 0.95
         }).bindTooltip(targetTooltip, { direction: 'top' }).addTo(layer);

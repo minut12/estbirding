@@ -14,7 +14,6 @@ export type SpeciesPredictionSettings = {
   ebirdSpeciesCodeOverride?: string;
   enablePrediction: boolean;
   enableResearchInsights: boolean;
-  refreshIntervalMinutes: number;
   outputCount: 3 | 5;
   useEbirdForeignSightings: boolean;
   useElurikkusHistory: boolean;
@@ -659,7 +658,6 @@ export function getSpeciesPredictionDefaults(speciesName = '', scope: SpeciesSco
     ebirdSpeciesCodeOverride: undefined,
     enablePrediction: true,
     enableResearchInsights: true,
-    refreshIntervalMinutes: 30,
     outputCount: 5,
     useEbirdForeignSightings: true,
     useElurikkusHistory: true,
@@ -765,7 +763,6 @@ export function normalizeSpeciesPredictionSettings(
     updatedAt: normalizeUiText(input?.updatedAt || defaults.updatedAt) || new Date().toISOString(),
   };
   next.outputCount = next.outputCount === 3 ? 3 : 5;
-  next.refreshIntervalMinutes = clampNumber(next.refreshIntervalMinutes, 5, 1440, defaults.refreshIntervalMinutes);
   next.foreignPressureWeight = clampNumber(next.foreignPressureWeight, 0, 100, defaults.foreignPressureWeight);
   next.elurikkusHistoryWeight = clampNumber(next.elurikkusHistoryWeight, 0, 100, defaults.elurikkusHistoryWeight);
   next.springTimingWeight = clampNumber(next.springTimingWeight, 0, 100, defaults.springTimingWeight);
@@ -1834,7 +1831,14 @@ function hasUsableDirectShape(input: Partial<SpeciesPredictionResult>): boolean 
 }
 
 /**
- * Extracts a usable prediction payload from an error envelope.
+ * Defensive shim: recovers a usable prediction payload from an n8n error envelope.
+ *
+ * Background: earlier n8n workflow versions sometimes returned the actual
+ * prediction payload nested inside an error wrapper (with top-level `code` /
+ * `stage` / `responseBody` / `upstreamBody` fields) instead of as a flat
+ * success response. Without this recovery step the React app would treat those
+ * responses as failures even though a usable insightSummary was present.
+ *
  * Probes these paths in order:
  *   A) raw.aiSummary.insightSummary
  *   B) raw.responseBody.aiSummary.insightSummary
@@ -1842,7 +1846,15 @@ function hasUsableDirectShape(input: Partial<SpeciesPredictionResult>): boolean 
  *   D) raw.insightSummary
  *   E) raw.responseBody.insightSummary
  *   F) raw.responseBody.upstreamBody.insightSummary
+ *
  * Returns the best usable source object + path, or null.
+ *
+ * Callers: `hasUsableSpeciesPredictionResult`, `resolveSpeciesPredictionSource`,
+ * and the React debug panel's `buildRecoveryDebugState`.
+ *
+ * TODO(post-rework): remove once the n8n → edge-function → client response
+ * shape is contractually stable and error envelopes can no longer carry
+ * recoverable success payloads.
  */
 export function extractUsablePayloadFromErrorEnvelope(
   raw: Record<string, unknown> | null | undefined,

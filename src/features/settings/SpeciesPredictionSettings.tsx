@@ -33,6 +33,8 @@ import {
 } from '@/lib/speciesPredictionDebug';
 import { isDeveloperModeEnabled } from '@/config/supabaseConfig';
 
+const FRONTEND_BUILD_TAG = '2026-04-28-cleanup';
+
 type NumericFieldProps = {
   id: string;
   label: string;
@@ -354,7 +356,7 @@ export default function SpeciesPredictionSettings() {
         onEnabledChange={setPredictionFeatureEnabled}
       />
       <p className="text-[11px] text-muted-foreground">
-        prediction-settings-build: 2026-03-31-live-probe
+        prediction-settings-build: {FRONTEND_BUILD_TAG}
       </p>
       {!predictionEnabled ? (
         <p className="text-xs text-muted-foreground">Turn on Species Prediction to edit these settings</p>
@@ -490,14 +492,6 @@ export default function SpeciesPredictionSettings() {
                         label="Enable research insights"
                         checked={form.enableResearchInsights}
                         onCheckedChange={(checked) => patchForm({ enableResearchInsights: checked })}
-                      />
-                      <NumericField
-                        id="refreshIntervalMinutes"
-                        label="Refresh interval (minutes)"
-                        value={form.refreshIntervalMinutes}
-                        min={5}
-                        max={1440}
-                        onChange={(value) => patchForm({ refreshIntervalMinutes: value })}
                       />
                       <div className="space-y-1.5">
                         <Label htmlFor="outputCount">Output count</Label>
@@ -1445,7 +1439,8 @@ function RawPredictionDebug({ speciesKey, scopeId }: { speciesKey: string; scope
   const [deleting, setDeleting] = useState(false);
   const [keyFields, setKeyFields] = useState<Record<string, unknown> | null>(null);
 
-  const effectiveKey = speciesKey || 'Punanokk-vart';
+  const effectiveKey = speciesKey;
+  const hasSpeciesSelected = Boolean(effectiveKey);
 
   const loadDb = useCallback(async () => {
     setDbLoading(true);
@@ -1540,17 +1535,20 @@ function RawPredictionDebug({ speciesKey, scopeId }: { speciesKey: string; scope
   return (
     <div className="rounded border border-border bg-muted/20 p-3 space-y-3">
       <p className="font-semibold text-foreground text-xs">Raw DB prediction debug</p>
-      <p className="text-[10px] text-muted-foreground font-mono">species_key: {effectiveKey} | scope: {scopeId}</p>
+      <p className="text-[10px] text-muted-foreground font-mono">species_key: {effectiveKey || '(none)'} | scope: {scopeId}</p>
+      {!hasSpeciesSelected && (
+        <p className="text-[10px] text-muted-foreground">Select a species first.</p>
+      )}
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" size="sm" onClick={loadDb} disabled={dbLoading}>
+        <Button variant="outline" size="sm" onClick={loadDb} disabled={dbLoading || !hasSpeciesSelected}>
           {dbLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
           Load raw DB result
         </Button>
-        <Button variant="outline" size="sm" onClick={loadEdge} disabled={edgeLoading}>
+        <Button variant="outline" size="sm" onClick={loadEdge} disabled={edgeLoading || !hasSpeciesSelected}>
           {edgeLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
           Load via edge function
         </Button>
-        <Button variant="destructive" size="sm" onClick={deleteCached} disabled={deleting}>
+        <Button variant="destructive" size="sm" onClick={deleteCached} disabled={deleting || !hasSpeciesSelected}>
           {deleting ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
           Delete cached result
         </Button>

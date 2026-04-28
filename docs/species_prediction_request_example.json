@@ -11,7 +11,6 @@
     "scope": "linnuliigid",
     "enablePrediction": true,
     "enableResearchInsights": true,
-    "refreshIntervalMinutes": 30,
     "outputCount": 5,
     "useEbirdForeignSightings": true,
     "useElurikkusHistory": true,

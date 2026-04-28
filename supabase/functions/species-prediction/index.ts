@@ -928,7 +928,7 @@ async function buildMapFirstPredictionResult(opts: {
   });
   const warnings = Array.from(new Set(sourceHealth.sourceWarnings as string[]));
   const requiresN8nSummary = settings.enableOpenAISummary === true || settings.enableN8nResearch === true;
-  console.log('[N8N-DECISION]', JSON.stringify({
+  const n8nDecisionData = {
     webhookUrlConfigured: !!Deno.env.get(WEBHOOK_ENV_KEY),
     webhookUrlPreview: (Deno.env.get(WEBHOOK_ENV_KEY) || '').slice(0, 60),
     authHeaderConfigured: !!Deno.env.get(AUTH_HEADER_ENV_KEY),
@@ -951,7 +951,9 @@ async function buildMapFirstPredictionResult(opts: {
     predictionMode: stringOr(settings.predictionMode),
     speciesKey,
     speciesName,
-  }));
+  };
+  console.log('[N8N-DECISION]', JSON.stringify(n8nDecisionData));
+  diagnosticEventsCollector?.push({ tag: '[N8N-DECISION]', data: n8nDecisionData });
   const normalizedN8nResponse = requiresN8nSummary
     ? await maybeFetchSecondarySummary({
       webhookTarget,
@@ -968,6 +970,7 @@ async function buildMapFirstPredictionResult(opts: {
       foreignRecentPoints,
       foreignClusters,
       evidenceStateSnapshot,
+      diagnosticEventsCollector,
     })
     : null;
   if ((normalizedN8nResponse as Record<string, unknown> | null)?.payloadSourceState === 'n8n_v3_passthrough') {

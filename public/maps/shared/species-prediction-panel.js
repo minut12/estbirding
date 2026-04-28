@@ -1908,6 +1908,7 @@
         var originTooltip = '<b>' + escapeHtml(route.originLocality || route.originPoint.name || 'Foreign origin') + '</b>' +
           (route.originCountryCode ? '<br>Country: ' + escapeHtml(route.originCountryCode) : '') +
           (route.foreignSightingDate ? '<br>Sighted: ' + escapeHtml(formatShortDate(route.foreignSightingDate)) : '') +
+          buildRouteDateRow(route.originPoint, true) +
           (route.distanceToEntryKm != null ? '<br>To entry: ' + escapeHtml(String(route.distanceToEntryKm)) + ' km' : '');
         L.circleMarker([route.originPoint.lat, route.originPoint.lon], {
           radius: 5,

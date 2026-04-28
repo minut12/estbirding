@@ -711,12 +711,15 @@
     if (summaryText || confidenceNote) {
       var etaList = Array.isArray(result.globalMigrationEtas) ? result.globalMigrationEtas : [];
       var isImminent = etaList.length && etaList[0].isImminent;
-      var isOverdue = !isImminent && etaList.some(function (e) { return e.isPastDue; });
+      var phenologyState = getPhenologyOverdueState(result);
+      var isOverdue = !isImminent && phenologyState === 'overdue';
       html += '<details class="spp-card"' + (isImminent ? ' open' : '') + '><summary style="cursor:pointer;font-weight:700;color:#0f172a">AI summary' + (isImminent ? ' \u2014 <span style="color:#16a34a">ARRIVAL IMMINENT</span>' : (isOverdue ? ' \u2014 <span style="color:#b45309">OVERDUE</span>' : '')) + '</summary>';
       if (isImminent) {
         html += '<div style="margin-top:8px;padding:8px 10px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;font-size:12px;font-weight:600;color:#15803d">\u26A1 Migration imminent \u2014 arrival expected within 48 hours</div>';
       } else if (isOverdue) {
         html += '<div style="margin-top:8px;padding:8px 10px;background:#fefce8;border:1px solid #fde68a;border-radius:6px;font-size:12px;font-weight:600;color:#92400e">\uD83D\uDD0D Overdue \u2014 expected arrival has passed, check recent reports</div>';
+      } else {
+        html += renderPhenologyInfoBanner(phenologyState, result.phenology);
       }
       if (summaryText) {
         html += '<div class="spp-summary" style="margin-top:10px"><p class="spp-summary-text">' + highlightDatesInText(summaryText) + '</p></div>';
@@ -1472,6 +1475,47 @@
   }
 
   var ET_MONTHS_ABBR = ['jaan', 'veebr', 'märts', 'apr', 'mai', 'juuni', 'juuli', 'aug', 'sept', 'okt', 'nov', 'dets'];
+
+  function formatMonthDay(mmDd) {
+    var match = /^(\d{2})-(\d{2})$/.exec(String(mmDd || ''));
+    if (!match) return '';
+    var monthIndex = Number(match[1]) - 1;
+    var day = Number(match[2]);
+    if (monthIndex < 0 || monthIndex > 11 || !day) return '';
+    return day + '. ' + ET_MONTHS_ABBR[monthIndex];
+  }
+
+  function getPhenologyOverdueState(result) {
+    var ph = result && result.phenology;
+    if (!ph || ph.method === 'no_data') return 'unknown';
+    if (ph.afterTypicalArrival === true) return 'overdue';
+    if (ph.withinTypicalArrival === true) return 'within';
+    if (ph.beforeTypicalArrival === true) return 'before';
+    return 'unknown';
+  }
+
+  function renderPhenologyInfoBanner(state, ph) {
+    if (!ph) return '';
+    if (state === 'within') {
+      var earliest = formatMonthDay(ph.earliestEverFirstArrival);
+      var today = formatMonthDay(ph.todayMonthDay);
+      var parts = [];
+      if (earliest) parts.push('first arrivals start around ' + earliest);
+      if (today) parts.push('today is ' + today);
+      var detail = parts.length ? ' — ' + parts.join(', ') : '';
+      return '<div style="margin-top:8px;padding:8px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:12px;font-weight:600;color:#1d4ed8">📅 Within typical arrival window' + escapeHtml(detail) + '</div>';
+    }
+    if (state === 'before') {
+      var median = formatMonthDay(ph.medianFirstArrival);
+      var days = Number(ph.daysUntilWindowStart);
+      var bits = [];
+      if (median) bits.push('expected around ' + median);
+      if (Number.isFinite(days) && days > 0) bits.push('in ' + days + ' day' + (days === 1 ? '' : 's'));
+      var beforeDetail = bits.length ? ' — ' + bits.join(' (') + (bits.length > 1 ? ')' : '') : '';
+      return '<div style="margin-top:8px;padding:8px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:12px;font-weight:600;color:#1d4ed8">📅 Pre-arrival' + escapeHtml(beforeDetail) + '</div>';
+    }
+    return '';
+  }
 
   function formatRouteDate(isoString) {
     if (!isoString) return null;

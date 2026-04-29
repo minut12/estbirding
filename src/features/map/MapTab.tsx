@@ -617,6 +617,17 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     return () => window.removeEventListener('message', handler);
   }, [current.id, sendAvatarsToIframe, sendAppInsets, sendSpeciesMetaToIframe, sendSupabaseConfigToIframe, sendToIframe, user, mapScope, sendPredictionContextToIframe, sendActivePredictionSpeciesToIframe]);
 
+  // TEMP DEBUG — remove after Ennusta is confirmed working
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data && e.data.type === 'ENNUSTA_DEBUG') {
+        console.log('[ENNUSTA-DEBUG]', e.data);
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
   useEffect(() => {
     const rerunHandler = () => {
       if (!iframePredictionReadyRef.current) return;

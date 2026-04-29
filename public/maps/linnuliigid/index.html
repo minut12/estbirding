@@ -281,6 +281,19 @@
 // Define the prediction selector EARLY so popup onclick handlers can find it
 // even if later code throws during initialization.
 window.__selectAsPredictionSpecies = function(scope, speciesName) {
+  // TEMP DEBUG — remove after Ennusta is confirmed working
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'ENNUSTA_DEBUG',
+        stage: 'function-called',
+        scope: scope,
+        speciesName: speciesName,
+        timestamp: Date.now(),
+      }, '*');
+    }
+  } catch (_e) {}
+
   var name = String(speciesName || '').trim();
   if (!name) return;
   try {
@@ -294,6 +307,19 @@ window.__selectAsPredictionSpecies = function(scope, speciesName) {
     }
   } catch (_e) {}
 };
+
+// TEMP DEBUG — remove after Ennusta is confirmed working
+try {
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage({
+      type: 'ENNUSTA_DEBUG',
+      stage: 'function-defined',
+      timestamp: Date.now(),
+      fnType: typeof window.__selectAsPredictionSpecies,
+      featureFlag: window.__predictionFeatureOn,
+    }, '*');
+  }
+} catch (_e) {}
 
 // --- Silent notifier: replace alerts with console logs ---
 function notifySilent(msg){
@@ -963,6 +989,17 @@ window.__predictionFeatureOn = false;
 window.addEventListener('message', function(event) {
   var data = event && event.data;
   if (!data || data.type !== 'APP_FEATURE_FLAGS') return;
+  // TEMP DEBUG — remove after Ennusta is confirmed working
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'ENNUSTA_DEBUG',
+        stage: 'feature-flag-received',
+        flagsPayload: data,
+        timestamp: Date.now(),
+      }, '*');
+    }
+  } catch (_e) {}
   var next = !!(data.flags && data.flags.speciesPredictionEnabled);
   if (next === window.__predictionFeatureOn) return;
   window.__predictionFeatureOn = next;
@@ -9295,6 +9332,21 @@ function rowHTML(obj) {
   const hasPoint = Number.isFinite(p.lat) && Number.isFinite(p.lon);
   const muted = (p.visible===false) ? 'muted' : '';
   const occ7 = Number.isFinite(p.occ7) ? p.occ7 : null;
+  // TEMP DEBUG — log render decision for two probe species
+  if (key === 'Habeviires' || key === 'Hõbehaugas') {
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({
+          type: 'ENNUSTA_DEBUG',
+          stage: 'row-render-decision',
+          species: key,
+          featureOn: window.__predictionFeatureOn,
+          willRenderButton: !!window.__predictionFeatureOn,
+          timestamp: Date.now(),
+        }, '*');
+      }
+    } catch (_e) {}
+  }
   const metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel: 'none' };
   const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(metaCfg.rarityLevel) : '';
   var isNotified = __notifySpecies.indexOf(key) >= 0;
@@ -9377,7 +9429,7 @@ function rowHTML(obj) {
         '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="vertical-align:middle;margin-right:3px"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.2" fill="none"/><circle cx="8" cy="8" r="1" fill="currentColor"/></svg>' +
         'Prob</button>' +
       (window.__predictionFeatureOn
-        ? '<button type="button" class="btn ennusta-btn" title="Vali ennustuse liik" onclick="event.preventDefault();event.stopPropagation();window.__selectAsPredictionSpecies && window.__selectAsPredictionSpecies(\'linnuliigid\',\'' + String(key).replace(/\\/g,'\\\\').replace(/'/g,"\\'") + '\');return false;">Ennusta</button>'
+        ? '<button type="button" class="btn ennusta-btn" title="Vali ennustuse liik" onclick="event.preventDefault();event.stopPropagation();try{console.log(\'[ENNUSTA] inline onclick fired for\',\'' + String(key).replace(/\\/g,'\\\\').replace(/'/g,"\\'") + '\');}catch(_){}try{window.parent&&window.parent!==window&&window.parent.postMessage({type:\'ENNUSTA_DEBUG\',stage:\'onclick-fired\',species:\'' + String(key).replace(/\\/g,'\\\\').replace(/'/g,"\\'") + '\',fn:typeof window.__selectAsPredictionSpecies,timestamp:Date.now()},\'*\');}catch(_){}window.__selectAsPredictionSpecies && window.__selectAsPredictionSpecies(\'linnuliigid\',\'' + String(key).replace(/\\/g,'\\\\').replace(/'/g,"\\'") + '\');return false;">Ennusta</button>'
         : '') +
       '</div>' +
     '</div>' +

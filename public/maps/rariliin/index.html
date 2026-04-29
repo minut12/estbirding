@@ -21,6 +21,8 @@
     .small {color:#666;font-size:12px;margin-top:2px}
     .btn {padding:4px 8px;border:none;border-radius:6px;background:#0a7;color:white;cursor:pointer}
     .btn.secondary {background:#666}
+    .ennusta-btn { background: #8b5cf6 !important; }
+    .ennusta-btn:hover { background: #7c3aed !important; }
     input[type="text"] {width:100%;padding:6px;box-sizing:border-box;margin:6px 0}
     .pill {display:inline-block;padding:2px 6px;border-radius:10px;background:#eef;font-size:11px}
     .pill.muted {opacity:.6;}
@@ -7256,6 +7258,19 @@ function _wireSidebarSettingsRow(){
 function refreshVisible(){ rebuildAllMarkers(); render(); }
 function refreshSelected(){ rebuildAllMarkers(); render(); }
 
+// Track species-prediction feature flag for the Ennusta button in row controls
+window.__predictionFeatureOn = false;
+window.addEventListener('message', function(event) {
+  var data = event && event.data;
+  if (!data || data.type !== 'APP_FEATURE_FLAGS') return;
+  var next = !!(data.flags && data.flags.speciesPredictionEnabled);
+  if (next === window.__predictionFeatureOn) return;
+  window.__predictionFeatureOn = next;
+  if (typeof render === 'function') {
+    try { render(); } catch(e) {}
+  }
+});
+
 window.addEventListener('message', function(ev){
   try{
     if(!ev.data || typeof ev.data !== 'object') return;
@@ -7721,6 +7736,9 @@ function rowHTML(obj) {
     '<div class="controls">' +
       '<div style="display:flex;flex-direction:column;gap:6px">' +
       '<button class="btn open-occ-btn" data-open-url="'+openUrl.replace(/"/g,'&quot;')+'">Open</button>' +
+      (window.__predictionFeatureOn
+        ? '<button class="btn ennusta-btn" data-ennusta-species="'+key+'" title="Vali ennustuse liik">Ennusta</button>'
+        : '') +
       '</div>' +
     '</div>' +
   '</div>';
@@ -7859,6 +7877,24 @@ if(window.__predictionSyncedSpecies && !window.__selectedSpecies){
       e.stopPropagation();
       const url = String(openBtn.getAttribute('data-open-url') || '').trim();
       if(url) window.open(url, '_blank', 'noopener');
+      return;
+    }
+    const ennustaBtn = t.closest?.('.ennusta-btn');
+    if(ennustaBtn){
+      e.preventDefault();
+      e.stopPropagation();
+      const species = ennustaBtn.getAttribute('data-ennusta-species') || '';
+      if(!species) return;
+      try {
+        if(window.parent && window.parent !== window){
+          window.parent.postMessage({
+            type: 'SPECIES_PREDICTION_SELECTED',
+            scope: 'rariliin',
+            speciesKey: species,
+            speciesName: species,
+          }, '*');
+        }
+      } catch(_e){}
       return;
     }
     // Start edit

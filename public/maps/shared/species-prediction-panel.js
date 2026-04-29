@@ -130,17 +130,17 @@
       '#speciesPredictionPanel .spp-picker-select{border:0;background:transparent;font-size:16px;color:#64748b;padding:0 2px 0 0;appearance:none;-webkit-appearance:none;-moz-appearance:none;line-height:1.3}',
       '#speciesPredictionPanel .spp-picker-select:focus{outline:none}',
       '#speciesPredictionPanel .spp-picker-chevron{color:#94a3b8;font-size:18px;line-height:1;font-weight:300}',
-      '#speciesPredictionPanel .spp-section-header{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:#64748b;padding:12px 16px 6px;background:#fff;border-top:.5px solid rgba(148,163,184,.4)}',
+      '#speciesPredictionPanel .spp-section-header{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:#9CA3AF;padding:12px 16px 6px;background:#fff;border-top:.5px solid rgba(148,163,184,.4)}',
       '#speciesPredictionPanel .spp-section-rows{display:flex;flex-direction:column;background:#fff}',
-      '#speciesPredictionPanel .spp-toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;padding:9px 16px;margin:0;font-size:14px;color:#0f172a;background:#fff;cursor:pointer}',
+      '#speciesPredictionPanel .spp-toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;padding:9px 16px;margin:0;font-size:14px;color:#0f172a;background:#fff}',
       '#speciesPredictionPanel .spp-toggle-label{display:flex;align-items:center;gap:10px;flex:1;min-width:0;font-size:14px;color:#0f172a;line-height:1.3}',
       '#speciesPredictionPanel .spp-layer-dot{width:9px;height:9px;border-radius:999px;flex:0 0 9px;display:inline-block}',
-      '#speciesPredictionPanel .spp-toggle{position:relative;flex:0 0 34px;width:34px;height:20px;display:inline-block}',
-      '#speciesPredictionPanel .spp-toggle input{position:absolute;inset:0;opacity:0;margin:0;width:100%;height:100%;cursor:pointer;z-index:2}',
-      '#speciesPredictionPanel .spp-toggle-track{position:absolute;inset:0;background:#cbd5e1;border-radius:999px;transition:background-color 150ms ease}',
+      '#speciesPredictionPanel .spp-toggle{position:relative;flex:0 0 34px;width:34px;height:20px;display:inline-block;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}',
+      '#speciesPredictionPanel .spp-toggle:focus-visible{outline:2px solid #0F6E56;outline-offset:2px;border-radius:999px}',
+      '#speciesPredictionPanel .spp-toggle-track{position:absolute;inset:0;background:#D1D5DB;border-radius:999px;transition:background-color 150ms ease}',
       '#speciesPredictionPanel .spp-toggle-knob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:999px;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.2);transition:transform 150ms ease}',
-      '#speciesPredictionPanel .spp-toggle input:checked ~ .spp-toggle-track{background:#0F6E56}',
-      '#speciesPredictionPanel .spp-toggle input:checked ~ .spp-toggle-knob{transform:translateX(14px)}',
+      '#speciesPredictionPanel .spp-toggle.on .spp-toggle-track{background:#0F6E56}',
+      '#speciesPredictionPanel .spp-toggle.on .spp-toggle-knob{transform:translateX(14px)}',
       '#speciesPredictionPanel .spp-results{display:grid;gap:12px}',
       '#speciesPredictionPanel .spp-card{border:1px solid #dbe4ee;border-radius:16px;padding:12px;background:#fff;box-shadow:0 1px 0 rgba(255,255,255,.75) inset}',
       '#speciesPredictionPanel .spp-card h4{margin:0 0 8px;font-size:13px;font-weight:700;color:#0f172a}',
@@ -276,14 +276,35 @@
       var target = event && event.target;
       if (!target || !target.getAttribute) return;
       var control = target.getAttribute('data-control');
+      if (!control) return;
+      // Only number inputs and selects reach this branch now; toggles use click delegation below.
+      state.controls[control] = target.value;
+    });
+    panel.addEventListener('click', function (event) {
+      var target = event && event.target;
+      if (!target || !target.closest) return;
+      var toggleEl = target.closest('.spp-toggle');
+      if (!toggleEl || !panel.contains(toggleEl)) return;
+      var control = toggleEl.getAttribute('data-control');
+      var layer = toggleEl.getAttribute('data-layer-toggle');
+      if (!control && !layer) return;
+      var nextOn = !toggleEl.classList.contains('on');
+      toggleEl.classList.toggle('on', nextOn);
+      toggleEl.setAttribute('aria-checked', nextOn ? 'true' : 'false');
       if (control) {
-        state.controls[control] = target.type === 'checkbox' ? !!target.checked : target.value;
+        state.controls[control] = nextOn;
       }
-      var layer = target.getAttribute('data-layer-toggle');
       if (layer) {
-        state.layerToggles[layer] = !!target.checked;
+        state.layerToggles[layer] = nextOn;
         applyResultToMap();
       }
+    });
+    panel.addEventListener('keydown', function (event) {
+      if (event.key !== ' ' && event.key !== 'Enter') return;
+      var target = event && event.target;
+      if (!target || !target.classList || !target.classList.contains('spp-toggle')) return;
+      event.preventDefault();
+      target.click();
     });
   }
 
@@ -1224,28 +1245,28 @@
   }
 
   function toggleSwitch(attr, name, checked) {
-    return '<span class="spp-toggle">' +
-      '<input type="checkbox" ' + attr + '="' + escapeHtml(name) + '"' + (checked ? ' checked' : '') + '>' +
+    return '<span class="spp-toggle' + (checked ? ' on' : '') + '" ' +
+      attr + '="' + escapeHtml(name) + '" role="switch" aria-checked="' + (checked ? 'true' : 'false') + '" tabindex="0">' +
       '<span class="spp-toggle-track"></span>' +
       '<span class="spp-toggle-knob"></span>' +
       '</span>';
   }
 
   function toggleRow(label, attr, name, checked) {
-    return '<label class="spp-toggle-row">' +
+    return '<div class="spp-toggle-row">' +
       '<span class="spp-toggle-label">' + escapeHtml(label) + '</span>' +
       toggleSwitch(attr, name, checked) +
-      '</label>';
+      '</div>';
   }
 
   function layerRow(label, name, checked, dotColor) {
-    return '<label class="spp-toggle-row">' +
+    return '<div class="spp-toggle-row">' +
       '<span class="spp-toggle-label">' +
       '<span class="spp-layer-dot" style="background:' + escapeHtml(dotColor) + '"></span>' +
       escapeHtml(label) +
       '</span>' +
       toggleSwitch('data-layer-toggle', name, checked) +
-      '</label>';
+      '</div>';
   }
 
   function pickerRowNumber(label, name, value, min, max) {

@@ -954,6 +954,21 @@ window.addEventListener('message', function(event) {
   }
 });
 
+window.__selectAsPredictionSpecies = function(scope, speciesName) {
+  var name = String(speciesName || '').trim();
+  if (!name) return;
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'SPECIES_PREDICTION_SELECTED',
+        scope: scope || 'linnuliigid',
+        speciesKey: name,
+        speciesName: name,
+      }, '*');
+    }
+  } catch (_e) {}
+};
+
 // === Helpers ===
 const EE_TZ = 'Europe/Tallinn';
 function _parseObservedTs(v){
@@ -9360,7 +9375,7 @@ function rowHTML(obj) {
         '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="vertical-align:middle;margin-right:3px"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.2" fill="none"/><circle cx="8" cy="8" r="1" fill="currentColor"/></svg>' +
         'Prob</button>' +
       (window.__predictionFeatureOn
-        ? '<button class="btn ennusta-btn" data-ennusta-species="'+key+'" title="Vali ennustuse liik">Ennusta</button>'
+        ? '<button type="button" class="btn ennusta-btn" title="Vali ennustuse liik" onclick="event.preventDefault();event.stopPropagation();window.__selectAsPredictionSpecies && window.__selectAsPredictionSpecies(\'linnuliigid\',\'' + String(key).replace(/\\/g,'\\\\').replace(/'/g,"\\'") + '\');return false;">Ennusta</button>'
         : '') +
       '</div>' +
     '</div>' +
@@ -9516,24 +9531,6 @@ if(window.__predictionSyncedSpecies && !window.__selectedSpecies){
       e.stopPropagation();
       const url = String(openBtn.getAttribute('data-open-url') || '').trim();
       if(url) window.open(url, '_blank', 'noopener');
-      return;
-    }
-    const ennustaBtn = t.closest?.('.ennusta-btn');
-    if(ennustaBtn){
-      e.preventDefault();
-      e.stopPropagation();
-      const species = ennustaBtn.getAttribute('data-ennusta-species') || '';
-      if(!species) return;
-      try {
-        if(window.parent && window.parent !== window){
-          window.parent.postMessage({
-            type: 'SPECIES_PREDICTION_SELECTED',
-            scope: 'linnuliigid',
-            speciesKey: species,
-            speciesName: species,
-          }, '*');
-        }
-      } catch(_e){}
       return;
     }
     // Start edit

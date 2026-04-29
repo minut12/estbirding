@@ -7271,6 +7271,21 @@ window.addEventListener('message', function(event) {
   }
 });
 
+window.__selectAsPredictionSpecies = function(scope, speciesName) {
+  var name = String(speciesName || '').trim();
+  if (!name) return;
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'SPECIES_PREDICTION_SELECTED',
+        scope: scope || 'rariliin',
+        speciesKey: name,
+        speciesName: name,
+      }, '*');
+    }
+  } catch (_e) {}
+};
+
 window.addEventListener('message', function(ev){
   try{
     if(!ev.data || typeof ev.data !== 'object') return;
@@ -7737,7 +7752,7 @@ function rowHTML(obj) {
       '<div style="display:flex;flex-direction:column;gap:6px">' +
       '<button class="btn open-occ-btn" data-open-url="'+openUrl.replace(/"/g,'&quot;')+'">Open</button>' +
       (window.__predictionFeatureOn
-        ? '<button class="btn ennusta-btn" data-ennusta-species="'+key+'" title="Vali ennustuse liik">Ennusta</button>'
+        ? '<button type="button" class="btn ennusta-btn" title="Vali ennustuse liik" onclick="event.preventDefault();event.stopPropagation();window.__selectAsPredictionSpecies && window.__selectAsPredictionSpecies(\'rariliin\',\'' + String(key).replace(/\\/g,'\\\\').replace(/'/g,"\\'") + '\');return false;">Ennusta</button>'
         : '') +
       '</div>' +
     '</div>' +
@@ -7877,24 +7892,6 @@ if(window.__predictionSyncedSpecies && !window.__selectedSpecies){
       e.stopPropagation();
       const url = String(openBtn.getAttribute('data-open-url') || '').trim();
       if(url) window.open(url, '_blank', 'noopener');
-      return;
-    }
-    const ennustaBtn = t.closest?.('.ennusta-btn');
-    if(ennustaBtn){
-      e.preventDefault();
-      e.stopPropagation();
-      const species = ennustaBtn.getAttribute('data-ennusta-species') || '';
-      if(!species) return;
-      try {
-        if(window.parent && window.parent !== window){
-          window.parent.postMessage({
-            type: 'SPECIES_PREDICTION_SELECTED',
-            scope: 'rariliin',
-            speciesKey: species,
-            speciesName: species,
-          }, '*');
-        }
-      } catch(_e){}
       return;
     }
     // Start edit

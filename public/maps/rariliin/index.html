@@ -303,6 +303,23 @@
 <script src="/maps/shared/et-strings.js"></script>
 
 <script>
+// Define the prediction selector EARLY so popup onclick handlers can find it
+// even if later code throws during initialization.
+window.__selectAsPredictionSpecies = function(scope, speciesName) {
+  var name = String(speciesName || '').trim();
+  if (!name) return;
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'SPECIES_PREDICTION_SELECTED',
+        scope: scope || 'rariliin',
+        speciesKey: name,
+        speciesName: name,
+      }, '*');
+    }
+  } catch (_e) {}
+};
+
 // --- Silent notifier: replace alerts with console logs ---
 function notifySilent(msg){
   try { console.warn(msg); } catch(e){}
@@ -7270,21 +7287,6 @@ window.addEventListener('message', function(event) {
     try { render(); } catch(e) {}
   }
 });
-
-window.__selectAsPredictionSpecies = function(scope, speciesName) {
-  var name = String(speciesName || '').trim();
-  if (!name) return;
-  try {
-    if (window.parent && window.parent !== window) {
-      window.parent.postMessage({
-        type: 'SPECIES_PREDICTION_SELECTED',
-        scope: scope || 'rariliin',
-        speciesKey: name,
-        speciesName: name,
-      }, '*');
-    }
-  } catch (_e) {}
-};
 
 window.addEventListener('message', function(ev){
   try{

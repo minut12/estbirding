@@ -74,7 +74,7 @@
       '    <div class="spp-title">Selected species</div>' +
       '    <div class="spp-subtitle">Prediction results are shown directly from the backend response.</div>' +
       '  </div>' +
-      '  <button type="button" class="spp-toggle" aria-expanded="true">Hide</button>' +
+      '  <button type="button" class="spp-collapse-btn" aria-expanded="true">Hide</button>' +
       '</div>' +
       '<div class="spp-body">' +
       '  <div class="spp-context">' +
@@ -197,7 +197,8 @@
       '#speciesPredictionPanel .spp-debug-label{font-size:11px;color:#64748b}',
       '#speciesPredictionPanel .spp-debug-value{margin-top:3px;font-size:12px;color:#0f172a;line-height:1.45;word-break:break-word}',
       '#speciesPredictionPanel .spp-debug-pre{margin:0;max-height:220px;overflow:auto;border-radius:12px;background:#0f172a;color:#e2e8f0;padding:10px;font:11px/1.45 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-word}',
-      '#speciesPredictionPanel .spp-toggle{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:6px 11px;font-size:11px;font-weight:700;color:#0f172a;cursor:pointer;flex:0 0 auto}',
+      '#speciesPredictionPanel .spp-collapse-btn{border:none;background:transparent;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:500;color:#6B7280;cursor:pointer;flex:0 0 auto;box-shadow:none;transition:background-color 150ms ease,color 150ms ease}',
+      '#speciesPredictionPanel .spp-collapse-btn:hover{background:rgba(0,0,0,0.04);color:#0f172a}',
       '#speciesPredictionPanel.is-collapsed .spp-body{display:none}',
       '@media (max-width:900px){#speciesPredictionPanel{left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));width:auto;border-radius:18px}#speciesPredictionPanel .spp-header{padding:13px 14px 11px;border-radius:18px 18px 0 0}#speciesPredictionPanel .spp-body{padding:12px 14px 14px;max-height:min(68vh,620px)}#speciesPredictionPanel .spp-country,#speciesPredictionPanel .spp-grid,#speciesPredictionPanel .spp-point-grid,#speciesPredictionPanel .spp-debug-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}',
       '@media (max-width:560px){#speciesPredictionPanel .spp-actions,#speciesPredictionPanel .spp-country,#speciesPredictionPanel .spp-grid,#speciesPredictionPanel .spp-point-grid,#speciesPredictionPanel .spp-debug-grid{grid-template-columns:minmax(0,1fr)}#speciesPredictionPanel .spp-point-head{grid-template-columns:minmax(0,1fr);display:grid}#speciesPredictionPanel .spp-confidence{justify-items:start}#speciesPredictionPanel .spp-fact{display:grid;gap:3px}#speciesPredictionPanel .spp-fact strong{text-align:left}}',
@@ -212,10 +213,10 @@
     debugWrap = panel.querySelector('[data-role="debug-wrap"]');
     bindControlEvents();
 
-    panel.querySelector('.spp-toggle').addEventListener('click', function () {
+    panel.querySelector('.spp-collapse-btn').addEventListener('click', function () {
       var isCollapsed = panel.classList.toggle('is-collapsed');
-      panel.querySelector('.spp-toggle').textContent = isCollapsed ? 'Show' : 'Hide';
-      panel.querySelector('.spp-toggle').setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+      panel.querySelector('.spp-collapse-btn').textContent = isCollapsed ? 'Show' : 'Hide';
+      panel.querySelector('.spp-collapse-btn').setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
     });
     Array.prototype.slice.call(panel.querySelectorAll('[data-request-type]')).forEach(function (btn) {
       btn.addEventListener('click', function () {

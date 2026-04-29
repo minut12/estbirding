@@ -393,55 +393,21 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
         }
       }
       if (ev.data?.type === SPECIES_PREDICTION_EVENT_TYPES.selected) {
-        // TEMP DEBUG — remove after Ennusta is confirmed working
-        console.log('[ENNUSTA-RECV] message-received', ev.data);
         const scopeCfg = getSpeciesScopeByMapId(current.id);
         const speciesName = typeof ev.data.speciesName === 'string' ? ev.data.speciesName : '';
         const speciesKey = typeof ev.data.speciesKey === 'string' ? ev.data.speciesKey : '';
-        console.log('[ENNUSTA-RECV] resolved-fields', { currentMapId: current.id, scopeCfgId: scopeCfg?.id, speciesName, speciesKey });
-        if (!scopeCfg || !speciesName) {
-          console.log('[ENNUSTA-RECV] missing-fields-aborting', { hasScopeCfg: !!scopeCfg, hasSpeciesName: !!speciesName });
-          return;
-        }
+        if (!scopeCfg || !speciesName) return;
         const startupGuard = iframePredictionStartupGuardRef.current;
         const userInitiated = ev.data?.userInitiated === true;
-        console.log('[ENNUSTA-RECV] startup-guard-state', { active: startupGuard.active, guardSpecies: startupGuard.speciesName, incomingSpecies: speciesName, userInitiated });
-        if (startupGuard.active && startupGuard.speciesName && speciesName !== startupGuard.speciesName) {
-          if (!userInitiated) {
-            console.log('[ENNUSTA-RECV] startup-guard-rejected');
-            return;
-          }
-          console.log('[ENNUSTA-RECV] startup-guard-bypassed-user-click');
+        if (startupGuard.active && startupGuard.speciesName && speciesName !== startupGuard.speciesName && !userInitiated) {
+          return;
         }
         iframePredictionStartupGuardRef.current = { active: false, speciesName };
         latestPredictionRequestRef.current += 1;
-        try {
-          console.log('[ENNUSTA-RECV] before-setActive', { scope: scopeCfg.id, speciesName });
-          const setResult = setActivePredictionSpecies(scopeCfg.id, speciesName);
-          console.log('[ENNUSTA-RECV] after-setActive', { setResult });
-          try {
-            const writtenLs = window.localStorage.getItem(`speciesPrediction.activeSpecies.${scopeCfg.id}`);
-            console.log('[ENNUSTA-RECV] localStorage-after-setActive', { writtenLs });
-          } catch (lsErr) {
-            console.warn('[ENNUSTA-RECV] localStorage-read-failed', lsErr);
-          }
-        } catch (err) {
-          console.error('[ENNUSTA-RECV] setActive-threw', err);
-          return;
-        }
+        setActivePredictionSpecies(scopeCfg.id, speciesName);
         const predictionFeatureEnabled = isSpeciesPredictionEnabled();
-        console.log('[ENNUSTA-RECV] feature-flag-check', { predictionFeatureEnabled });
-        if (!predictionFeatureEnabled) {
-          console.log('[ENNUSTA-RECV] feature-disabled-skipping-context-push');
-          return;
-        }
-        try {
-          console.log('[ENNUSTA-RECV] before-iframe-context-push', { scope: scopeCfg.id, speciesName, speciesKey: speciesKey || speciesName });
-          sendPredictionContextToIframe(scopeCfg, speciesName, speciesKey || speciesName);
-          console.log('[ENNUSTA-RECV] after-iframe-context-push');
-        } catch (err) {
-          console.error('[ENNUSTA-RECV] context-push-threw', err);
-        }
+        if (!predictionFeatureEnabled) return;
+        sendPredictionContextToIframe(scopeCfg, speciesName, speciesKey || speciesName);
       }
       if (ev.data?.type === SPECIES_PREDICTION_EVENT_TYPES.run) {
         const predictionFeatureEnabled = isSpeciesPredictionEnabled();
@@ -651,17 +617,6 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
   }, [current.id, sendAvatarsToIframe, sendAppInsets, sendSpeciesMetaToIframe, sendSupabaseConfigToIframe, sendToIframe, user, mapScope, sendPredictionContextToIframe, sendActivePredictionSpeciesToIframe]);
-
-  // TEMP DEBUG — remove after Ennusta is confirmed working
-  useEffect(() => {
-    const handler = (e: MessageEvent) => {
-      if (e.data && e.data.type === 'ENNUSTA_DEBUG') {
-        console.log('[ENNUSTA-DEBUG]', e.data);
-      }
-    };
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
-  }, []);
 
   useEffect(() => {
     const rerunHandler = () => {

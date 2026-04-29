@@ -404,10 +404,14 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
           return;
         }
         const startupGuard = iframePredictionStartupGuardRef.current;
-        console.log('[ENNUSTA-RECV] startup-guard-state', { active: startupGuard.active, guardSpecies: startupGuard.speciesName, incomingSpecies: speciesName });
+        const userInitiated = ev.data?.userInitiated === true;
+        console.log('[ENNUSTA-RECV] startup-guard-state', { active: startupGuard.active, guardSpecies: startupGuard.speciesName, incomingSpecies: speciesName, userInitiated });
         if (startupGuard.active && startupGuard.speciesName && speciesName !== startupGuard.speciesName) {
-          console.log('[ENNUSTA-RECV] startup-guard-rejected');
-          return;
+          if (!userInitiated) {
+            console.log('[ENNUSTA-RECV] startup-guard-rejected');
+            return;
+          }
+          console.log('[ENNUSTA-RECV] startup-guard-bypassed-user-click');
         }
         iframePredictionStartupGuardRef.current = { active: false, speciesName };
         latestPredictionRequestRef.current += 1;

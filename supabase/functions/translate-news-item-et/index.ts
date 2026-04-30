@@ -1,3 +1,4 @@
+// Redeploy marker spatula-discors-2026-04-30 — force re-bundle (picks up b981a3f dict + 0d31fb3 migration anchor)
 // Redeploy marker V3 2026-04-30T13:00 — force re-bundle, traceable log markers
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getOpenAIConfig } from "../_shared/openai.ts";

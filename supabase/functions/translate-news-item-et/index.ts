@@ -17,6 +17,7 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const id = typeof body.id === "string" ? body.id : "";
+    const force = body.force === true;
     if (!id) return jsonResponse(400, { error: "Missing id" });
 
     const supabase = createClient(
@@ -53,7 +54,7 @@ Deno.serve(async (req) => {
       translate_hash: item.translate_hash,
       source_name: sourceMeta?.name ?? null,
       translate_to_et: sourceMeta?.translate_to_et ?? true,
-    });
+    }, { force });
     const statusCode = result.status === "error" ? 500 : 200;
     return jsonResponse(statusCode, result);
   } catch (error) {

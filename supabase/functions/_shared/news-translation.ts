@@ -151,6 +151,7 @@ function correctBirdNamesSafely(
 export async function translateNewsItemToEt(
   supabase: SupabaseClient,
   item: NewsTranslationItem,
+  options: { force?: boolean } = {},
 ): Promise<TranslateResult> {
   const id = item.id;
   const title = item.title || "";
@@ -204,7 +205,7 @@ export async function translateNewsItemToEt(
     };
   }
 
-  if (item.title_et && item.body_et && item.translate_hash === contentHash) {
+  if (!options.force && item.title_et && item.body_et && item.translate_hash === contentHash) {
     await supabase.from("news_items").update({
       source_lang: normalizedSourceLang || sourceLang,
       translation_status: "done",

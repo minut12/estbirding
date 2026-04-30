@@ -1289,15 +1289,48 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, canAr
   onBack: () => void;
   onToggleArchive: () => void;
 }) {
-  const [contentHtml, setContentHtml] = useState<string | null>(item.content_html);
-  const [loadingContent, setLoadingContent] = useState(!item.content_html && item.source_slug === 'eoy');
-  const [contentError, setContentError] = useState<string | null>(null);
-  const sourceName = sourceLabel(item, sources);
+  const [currentItem, setCurrentItem] = useState<NewsItem>(item);
+  const [retranslating, setRetranslating] = useState(false);
 
-  const normalizedLang = normalizeLocale(item.source_lang || item.language || '');
+  // Keep currentItem in sync when the parent passes a different article
+  useEffect(() => { setCurrentItem(item); }, [item.id]);
+
+  const [contentHtml, setContentHtml] = useState<string | null>(currentItem.content_html);
+  const [loadingContent, setLoadingContent] = useState(!currentItem.content_html && currentItem.source_slug === 'eoy');
+  const [contentError, setContentError] = useState<string | null>(null);
+  const sourceName = sourceLabel(currentItem, sources);
+
+  const normalizedLang = normalizeLocale(currentItem.source_lang || currentItem.language || '');
   const isNonEtSource = normalizedLang !== 'et';
-  const translatedTitle = useMemo(() => getTranslatedTitle(item), [item]);
-  const translatedBody = useMemo(() => getTranslatedBody(item), [item]);
+  const translatedTitle = useMemo(() => getTranslatedTitle(currentItem), [currentItem]);
+  const translatedBody = useMemo(() => getTranslatedBody(currentItem), [currentItem]);
+
+  const handleRetranslate = async () => {
+    if (retranslating) return;
+    setRetranslating(true);
+    try {
+      const { error } = await supabase.functions.invoke('translate-news-item-et', {
+        body: { id: currentItem.id, force: true },
+      });
+      if (error) throw error;
+
+      const { data: refreshed, error: fetchError } = await supabase
+        .from('news_items')
+        .select('*')
+        .eq('id', currentItem.id)
+        .single();
+      if (fetchError) throw fetchError;
+      if (refreshed) {
+        setCurrentItem((prev) => ({ ...prev, ...(refreshed as Partial<NewsItem>) }));
+        toast.success('Tõlge uuendatud');
+      }
+    } catch (e: any) {
+      const msg = (e?.message || String(e)).slice(0, 200);
+      toast.error(`Tõlke uuendamine ebaõnnestus: ${msg}`);
+    } finally {
+      setRetranslating(false);
+    }
+  };
   const hasTranslation = Boolean(translatedTitle || translatedBody);
   const canShowTranslated = showEtContent && autoTranslateEnabled && isNonEtSource && hasTranslation && sourceName !== 'EOÜ';
 
@@ -1353,10 +1386,10 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, canAr
 
   const displayTitle = useMemo(() => (
     showTranslated
-      ? getDisplayTitleForSource(sourceName, translatedTitle || item.title || '')
-      : getDisplayTitleForSource(sourceName, item.title || '')
-  ), [showTranslated, sourceName, translatedTitle, item.title]);
-  const mergedBody = useMemo(() => cleanupNewsText(item.body || item.summary), [item.body, item.summary]);
+      ? getDisplayTitleForSource(sourceName, translatedTitle || currentItem.title || '')
+      : getDisplayTitleForSource(sourceName, currentItem.title || '')
+  ), [showTranslated, sourceName, translatedTitle, currentItem.title]);
+  const mergedBody = useMemo(() => cleanupNewsText(currentItem.body || currentItem.summary), [currentItem.body, currentItem.summary]);
   const cleanedContentHtml = useMemo(() => cleanupNewsHtml(contentHtml), [contentHtml]);
   const bodyText = useMemo(() => toPlainText(cleanedContentHtml || mergedBody), [cleanedContentHtml, mergedBody]);
   const displayBody = useMemo(() => (
@@ -1364,11 +1397,11 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, canAr
   ), [showTranslated, translatedBody, cleanedContentHtml, bodyText]);
   const translatedParagraphs = useMemo(() => splitTranslatedParagraphs(translatedBody), [translatedBody]);
   const articleImages = useMemo(() => extractArticleImages({
-    ...item,
+    ...currentItem,
     content_html: cleanedContentHtml,
-  }), [item, cleanedContentHtml]);
+  }), [currentItem, cleanedContentHtml]);
 
-  const heroImageUrl = getNewsImageSrc(item, proxyBase);
+  const heroImageUrl = getNewsImageSrc(currentItem, proxyBase);
   const [heroSrc, setHeroSrc] = useState<string | null>(heroImageUrl);
   const [heroFailed, setHeroFailed] = useState(false);
   const rewrittenContentHtml = useMemo(() => (
@@ -1386,21 +1419,21 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, canAr
     [bodyHtmlWithoutDuplicateHero],
   );
   const hasTranslatedInlineMedia = showTranslated && preservedMediaBlocks.length > 0 && translatedParagraphs.length > 0;
-  const originalUrl = item.permalink_url || item.url || '#';
+  const originalUrl = currentItem.permalink_url || currentItem.url || '#';
   const isPending = showEtContent && autoTranslateEnabled && isNonEtSource && !hasTranslation && sourceName !== 'EOÜ';
 
   useEffect(() => {
     if (showTranslated && !hasTranslation && import.meta.env.DEV) {
       console.warn('[news-translation] translated mode requested without Estonian body', {
-        id: item.id,
+        id: currentItem.id,
         source: sourceName,
-        title_et: item.title_et,
-        translated_title: item.translated_title,
-        body_et: item.body_et,
-        translated_body: item.translated_body,
+        title_et: currentItem.title_et,
+        translated_title: currentItem.translated_title,
+        body_et: currentItem.body_et,
+        translated_body: currentItem.translated_body,
       });
     }
-  }, [showTranslated, hasTranslation, item.id, item.title_et, item.translated_title, item.body_et, item.translated_body, sourceName]);
+  }, [showTranslated, hasTranslation, currentItem.id, currentItem.title_et, currentItem.translated_title, currentItem.body_et, currentItem.translated_body, sourceName]);
 
   useEffect(() => {
     setHeroSrc(heroImageUrl);
@@ -1424,7 +1457,7 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, canAr
             referrerPolicy="no-referrer"
             crossOrigin="anonymous"
             onError={() => {
-              const proxiedFallback = getProxiedImageUrl(item.image_url, proxyBase);
+              const proxiedFallback = getProxiedImageUrl(currentItem.image_url, proxyBase);
               if (heroSrc && !isProxiedImageUrl(heroSrc, proxyBase) && proxiedFallback && proxiedFallback !== heroSrc) {
                 setHeroSrc(proxiedFallback);
                 return;
@@ -1450,7 +1483,7 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, canAr
             </Badge>
           )}
           {showTranslated && <Badge variant="outline">Tõlgitud</Badge>}
-          <span className="text-xs text-muted-foreground">{formatEstDate(item.published_at || item.created_at || item.fetched_at || '')}</span>
+          <span className="text-xs text-muted-foreground">{formatEstDate(currentItem.published_at || currentItem.created_at || currentItem.fetched_at || '')}</span>
         </div>
 
         {/* Tõlgitud / Originaal toggle */}
@@ -1555,8 +1588,21 @@ function ArticleView({ item, sources, showEtContent, autoTranslateEnabled, canAr
           </a>
           {canArchiveNews && (
             <Button variant="outline" size="sm" className="gap-1.5" onClick={onToggleArchive}>
-              {item.is_archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
-              {item.is_archived ? 'Taasta' : 'Arhiveeri'}
+              {currentItem.is_archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+              {currentItem.is_archived ? 'Taasta' : 'Arhiveeri'}
+            </Button>
+          )}
+          {isNonEtSource && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={handleRetranslate}
+              disabled={retranslating}
+              title="Tõlgi see uudis uuesti uue prompti ja mudeliga"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${retranslating ? 'animate-spin' : ''}`} />
+              {retranslating ? 'Tõlgib…' : 'Tõlgi uuesti'}
             </Button>
           )}
         </div>

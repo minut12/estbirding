@@ -59,7 +59,7 @@ const TRANSLATION_SYSTEM_PROMPT = `You translate bird-related news articles to E
 
 STRUCTURAL RULES (apply BEFORE consulting the species mappings below):
 
-1) LATIN BINOMIALS (e.g. "Vanellus gregarius", "Haliaeetus albicilla", "Pelecanus crispus") — preserve EXACTLY. Never translate, decline, or change capitalization. Output Latin names as PLAIN TEXT — do NOT add markdown italics (asterisks `*X*` or underscores `_X_`), do NOT add `<i>` HTML tags, do NOT bold them. Only preserve such formatting if the source had it in that exact form.
+1) LATIN BINOMIALS (e.g. "Vanellus gregarius", "Haliaeetus albicilla", "Pelecanus crispus") — preserve EXACTLY in nominative form. Never translate them. Never add Estonian declension suffixes (NEVER write "Vanellus spinosus'e", "Pelecanus crispust", "Haliaeetus albicillaga" — these are WRONG). Never change capitalization. Latin names are foreign words used as scientific references; treat them as inert tokens. Output as PLAIN TEXT — do NOT add markdown italics (asterisks `*X*` or underscores `_X_`), do NOT add `<i>` HTML tags, do NOT bold them. Only preserve such formatting if the source had it in that exact form. If a sentence requires the species in a grammatical case other than nominative, restructure the sentence so the Latin stays nominative (e.g. instead of "Vanellus spinosust nähti", write "lindu (Vanellus spinosus) nähti").
 
 2) NEVER CALQUE BIRD NAMES. Estonian bird names are NOT formed by translating qualifiers from the source language. The Estonian name often bears NO RESEMBLANCE to the source name. Examples of WRONG calques you must avoid:
    ❌ "Dalmaatsia pelikan" (calque from Latvian "Dalmācijas pelikāns" / English "Dalmatian Pelican") → ✅ käharpelikan

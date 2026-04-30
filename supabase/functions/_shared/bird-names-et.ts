@@ -343,6 +343,7 @@ const CALQUE_CORRECTIONS: Array<[RegExp, string]> = [
   [/\bDalmaatsia\s+pelikan(i|it|ile|is|ist|iks|iga|ina)?\b/gi, "käharpelikan$1"],
   [/\bDalmaatia\s+pelikan(i|it|ile|is|ist|iks|iga|ina)?\b/gi, "käharpelikan$1"],
   [/\bSabatiigli\s+kiivitaja(t|le|s|st|ks|ga|na)?\b/gi, "stepikiivitaja$1"],
+  [/\bkannusvästrik(u|ut|ule|us|ust|uks|uga|una|ud|ute|uid|utes|utega|uteta)?\b/gi, "valgekael-kiivitaja$1"],
 ];
 
 /**
@@ -370,9 +371,17 @@ export function fixCalquesInText(text: string): string {
 export function fixBirdNamesInText(text: string): string {
   if (!text) return text;
 
+  // Pre-pass: strip markdown italic wrappers around Latin binomials inside parens.
+  // The model sometimes adds *X y*, _X y_, or <i>X y</i> around scientific names,
+  // which would otherwise prevent Pattern 1 from matching the Latin lookup.
+  const normalized = text
+    .replace(/\(\s*\*\s*([A-Z][a-z]+\s+[a-z]+)\s*\*\s*\)/g, "($1)")
+    .replace(/\(\s*_\s*([A-Z][a-z]+\s+[a-z]+)\s*_\s*\)/g, "($1)")
+    .replace(/\(\s*<i>\s*([A-Z][a-z]+\s+[a-z]+)\s*<\/i>\s*\)/gi, "($1)");
+
   // Pattern 1: "some-name (Genus species)" → "correct-name (Genus species)"
   // Matches word(s) before a parenthesized Latin binomial
-  let result = text.replace(
+  let result = normalized.replace(
     /([\p{L}\-]+(?:\s+[\p{L}\-]+){0,3})\s*\(([A-Z][a-z]+\s+[a-z]+)\)/gu,
     (match, _estName, latinName) => {
       const correct = LATIN_TO_ESTONIAN.get(latinName.toLowerCase());

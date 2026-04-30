@@ -112,7 +112,7 @@ function parseLinnudTsv(tsv: string): LookupMaps {
   return { latinToEt, englishToEt };
 }
 
-const LOOKUPS = parseLinnudTsv(readLinnudText());
+export const LOOKUPS = parseLinnudTsv(readLinnudText());
 
 function detectBirdMatches(originalText: string): BirdNameMatch[] {
   const text = String(originalText || "");

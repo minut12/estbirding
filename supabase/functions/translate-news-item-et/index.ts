@@ -1,4 +1,4 @@
-// Redeploy marker tumetilder-2026-04-30T16:30 — force re-bundle for haarahaukka fix + mustaviklo/tringa erythropus add
+// Redeploy marker linnud-refactor-2026-04-30T17:00 — bird-names-et.ts now sources from Linnud.txt
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getOpenAIConfig } from "../_shared/openai.ts";
 import { jsonResponse, translateNewsItemToEt } from "../_shared/news-translation.ts";

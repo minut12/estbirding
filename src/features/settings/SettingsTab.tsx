@@ -19,7 +19,6 @@ import { PERMISSIONS } from '@/features/auth/permissions';
 import AvatarManager from './AvatarManager';
 import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
-import EventsManagementSettings from './EventsManagementSettings';
 import SpeciesPredictionSettings from './SpeciesPredictionSettings';
 import EventLog from './EventLog';
 import { LINNULIIGID_SCOPE, RARILIIN_SCOPE } from '@/lib/mapScope';
@@ -47,7 +46,7 @@ import {
 import { isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
 
 type ResetMode = 'soft' | 'hard' | null;
-type SettingsPage = 'home' | 'news' | 'events' | 'translations' | 'species' | 'rariliin' | 'species_prediction' | 'event_log';
+type SettingsPage = 'home' | 'news' | 'translations' | 'species' | 'rariliin' | 'species_prediction' | 'event_log';
 const LS_RESOLVED_PROXY_BASE = 'resolved_proxy_base_v1';
 const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 const LS_SUPABASE_PROXY_BASE = 'supabase_proxy_base_v1';
@@ -782,8 +781,6 @@ export default function SettingsTab() {
     </div>
   );
 
-  const renderSettingsEvents = () => <EventsManagementSettings />;
-
   const renderSettingsTranslations = () => (
     <>
       <div className="space-y-2">
@@ -1003,9 +1000,6 @@ export default function SettingsTab() {
         <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('news')}>
           Uudised
         </Button>
-        <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('events')}>
-          Üritused
-        </Button>
         <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('translations')}>
           Tõlge
         </Button>
@@ -1032,7 +1026,6 @@ export default function SettingsTab() {
     if (settingsPage === 'home') return renderSettingsHome();
     if (!canManageSettings) return renderSettingsHome();
     if (settingsPage === 'news') return <>{renderSettingsHeader('Uudised')}{renderSettingsNews()}</>;
-    if (settingsPage === 'events') return <>{renderSettingsHeader('Üritused')}{renderSettingsEvents()}</>;
     if (settingsPage === 'translations') return <>{renderSettingsHeader('Tõlge')}{renderSettingsTranslations()}</>;
     if (settingsPage === 'species') return <>{renderSettingsHeader('Linnuliigid')}{renderSettingsSpecies()}</>;
     if (settingsPage === 'rariliin') return <>{renderSettingsHeader('Rariliin')}{renderSettingsRariliin()}</>;

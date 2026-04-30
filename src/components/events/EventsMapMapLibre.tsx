@@ -21,14 +21,18 @@ const KINGFISHER_PIN_URI = `data:image/svg+xml;charset=utf-8,${encodeURIComponen
 const MAP_STYLE = {
   version: 8,
   sources: {
-    osm: {
+    carto: {
       type: "raster",
-      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      tiles: [
+        "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+        "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+        "https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+      ],
       tileSize: 256,
-      attribution: "© OpenStreetMap contributors",
+      attribution: "© OpenStreetMap contributors © CARTO",
     },
   },
-  layers: [{ id: "osm", type: "raster", source: "osm" }],
+  layers: [{ id: "carto", type: "raster", source: "carto" }],
 } as const;
 
 function isValidPoint(point: MapPoint): boolean {

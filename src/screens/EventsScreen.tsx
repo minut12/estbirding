@@ -9,52 +9,17 @@ import {
   archiveManualEvent,
   deleteManualEvent,
   listPublicEventsManual,
-  type ManualEventPatch,
   type ManualEventRow,
   unarchiveManualEvent,
-  updateManualEvent,
 } from "@/features/events/eventsService";
-import { getEventsAdminKey } from "@/features/events/adminKey";
+import { hasEventsAdminKey } from "@/features/events/adminKey";
+import { EventEditDialog } from "@/features/events/EventEditDialog";
 import EventDetailsScreen from "./EventDetailsScreen";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 type MainTab = "tulevased" | "moodunud" | "muud";
 type CategoryFilter = "koik" | "active" | "archived";
-
-type EditForm = {
-  title: string;
-  starts_at: string;
-  ends_at: string;
-  type: "estbirding" | "muud";
-  location_name: string;
-  lat: string;
-  lon: string;
-  url: string;
-  description: string;
-};
-
-const emptyForm: EditForm = {
-  title: "",
-  starts_at: "",
-  ends_at: "",
-  type: "estbirding",
-  location_name: "",
-  lat: "",
-  lon: "",
-  url: "",
-  description: "",
-};
-
-function toLocalDatetime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 function toEventItem(row: ManualEventRow): EventItem {
   const lat = Number(row.lat);
@@ -85,32 +50,9 @@ function toEventItem(row: ManualEventRow): EventItem {
   };
 }
 
-function rowToForm(row: ManualEventRow): EditForm {
-  return {
-    title: row.title,
-    starts_at: toLocalDatetime(row.starts_at),
-    ends_at: row.ends_at ? toLocalDatetime(row.ends_at) : "",
-    type: row.type,
-    location_name: row.location_name || "",
-    lat: row.lat == null ? "" : String(row.lat),
-    lon: row.lon == null ? "" : String(row.lon),
-    url: row.url || "",
-    description: row.description || "",
-  };
-}
-
 function toErrorMessage(err: unknown): string {
   const e = err as any;
   return String(e?.message ?? String(err));
-}
-
-function parseCoord(value: string, min: number, max: number): number | null {
-  const trimmed = value?.trim().replace(",", ".");
-  if (!trimmed) return null;
-  const parsed = Number.parseFloat(trimmed);
-  if (!Number.isFinite(parsed)) return null;
-  if (parsed < min || parsed > max) return null;
-  return parsed;
 }
 
 export default function EventsScreen() {
@@ -122,9 +64,8 @@ export default function EventsScreen() {
   const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
   const [openedDetails, setOpenedDetails] = useState<EventItem | null>(null);
   const [rows, setRows] = useState<ManualEventRow[]>([]);
-  const [editOpen, setEditOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<EditForm>(emptyForm);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingRow, setEditingRow] = useState<ManualEventRow | null>(null);
 
   const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const todayStart = useMemo(() => {
@@ -133,7 +74,7 @@ export default function EventsScreen() {
     return date;
   }, []);
 
-  const canManage = Boolean(getEventsAdminKey());
+  const canManage = hasEventsAdminKey();
 
   const loadEvents = useCallback(async () => {
     setIsLoading(true);
@@ -219,65 +160,39 @@ export default function EventsScreen() {
     setIsRefreshing(false);
   };
 
-  const startEdit = (eventId: string) => {
+  const openCreate = () => {
+    setEditingRow(null);
+    setDialogOpen(true);
+  };
+
+  const openEdit = (eventId: string) => {
     const row = rows.find((r) => r.id === eventId);
     if (!row) return;
-    setEditingId(eventId);
-    setEditForm(rowToForm(row));
-    setEditOpen(true);
+    setEditingRow(row);
+    setDialogOpen(true);
   };
 
-  const saveEdit = async () => {
-    if (!editingId) return;
-    if (!editForm.title.trim() || !editForm.starts_at) {
-      toast.error("Pealkiri ja algusaeg on kohustuslikud.");
-      return;
-    }
-    if ((editForm.lat && !editForm.lon) || (!editForm.lat && editForm.lon)) {
-      toast.error("Lat ja lon peavad olema mõlemad.");
-      return;
-    }
-    const patch: ManualEventPatch = {
-      title: editForm.title.trim(),
-      starts_at: new Date(editForm.starts_at).toISOString(),
-      ends_at: editForm.ends_at ? new Date(editForm.ends_at).toISOString() : null,
-      type: editForm.type,
-      location_name: editForm.location_name.trim() || null,
-      lat: parseCoord(editForm.lat, -90, 90),
-      lon: parseCoord(editForm.lon, -180, 180),
-      url: editForm.url.trim() || null,
-      description: editForm.description.trim() || null,
-    };
-
-    try {
-      await updateManualEvent(editingId, patch);
-      toast.success("Üritus uuendatud");
-      setEditOpen(false);
-      await loadEvents();
-    } catch (error) {
-      toast.error(toErrorMessage(error));
-    }
-  };
-
-  const archiveToggle = async (eventId: string) => {
+  const onArchiveToggle = async (eventId: string) => {
     const row = rows.find((r) => r.id === eventId);
     if (!row) return;
     try {
       if (row.status === "archived") await unarchiveManualEvent(eventId);
       else await archiveManualEvent(eventId);
       await loadEvents();
-    } catch (error) {
-      toast.error(toErrorMessage(error));
+      toast.success(row.status === "archived" ? "Üritus taastatud" : "Üritus arhiveeritud");
+    } catch (e) {
+      toast.error(toErrorMessage(e));
     }
   };
 
-  const removeEvent = async (eventId: string) => {
-    if (!window.confirm("Delete this event?")) return;
+  const onDelete = async (eventId: string) => {
+    if (!window.confirm("Kustutan ürituse?")) return;
     try {
       await deleteManualEvent(eventId);
       await loadEvents();
-    } catch (error) {
-      toast.error(toErrorMessage(error));
+      toast.success("Üritus kustutatud");
+    } catch (e) {
+      toast.error(toErrorMessage(e));
     }
   };
 
@@ -288,15 +203,22 @@ export default function EventsScreen() {
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[#F3F5F4]">
       <div className="space-y-3 px-4 pb-4 pt-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">{et.eventsTitle}</h1>
-          <button
-            onClick={handleRefresh}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border/80 bg-white/80 text-foreground"
-            aria-label={et.refresh}
-          >
-            <RefreshCw className={cn("h-4 w-4", isRefreshing ? "animate-spin" : "")} />
-          </button>
+          <div className="flex items-center gap-2">
+            {canManage && (
+              <Button size="sm" onClick={openCreate}>
+                Lisa üritus
+              </Button>
+            )}
+            <button
+              onClick={handleRefresh}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border/80 bg-white/80 text-foreground"
+              aria-label={et.refresh}
+            >
+              <RefreshCw className={cn("h-4 w-4", isRefreshing ? "animate-spin" : "")} />
+            </button>
+          </div>
         </div>
 
         <div className="flex gap-1 rounded-2xl bg-[#E7ECE9] p-1">
@@ -382,9 +304,9 @@ export default function EventsScreen() {
                 event={event}
                 selected={event.id === highlightedEvent?.id}
                 canManage={canManage}
-                onEdit={() => startEdit(event.id)}
-                onArchiveToggle={() => archiveToggle(event.id)}
-                onDelete={() => removeEvent(event.id)}
+                onEdit={() => openEdit(event.id)}
+                onArchiveToggle={() => onArchiveToggle(event.id)}
+                onDelete={() => onDelete(event.id)}
                 onPress={() => {
                   selectEvent(event.id);
                   setOpenedDetails(event);
@@ -398,36 +320,14 @@ export default function EventsScreen() {
         )}
       </div>
 
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-h-[90dvh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit event</DialogTitle>
-          </DialogHeader>
-          <div className="grid grid-cols-1 gap-3">
-            <div><Label>Title*</Label><Input value={editForm.title} onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))} /></div>
-            <div><Label>Start datetime*</Label><Input type="datetime-local" value={editForm.starts_at} onChange={(e) => setEditForm((p) => ({ ...p, starts_at: e.target.value }))} /></div>
-            <div><Label>End datetime</Label><Input type="datetime-local" value={editForm.ends_at} onChange={(e) => setEditForm((p) => ({ ...p, ends_at: e.target.value }))} /></div>
-            <div>
-              <Label>Type</Label>
-              <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={editForm.type} onChange={(e) => setEditForm((p) => ({ ...p, type: e.target.value as "estbirding" | "muud" }))}>
-                <option value="estbirding">EstBirding</option>
-                <option value="muud">Muud</option>
-              </select>
-            </div>
-            <div><Label>Location</Label><Input value={editForm.location_name} onChange={(e) => setEditForm((p) => ({ ...p, location_name: e.target.value }))} /></div>
-            <div className="grid grid-cols-2 gap-2">
-              <div><Label>Lat</Label><Input value={editForm.lat} onChange={(e) => setEditForm((p) => ({ ...p, lat: e.target.value }))} /></div>
-              <div><Label>Lon</Label><Input value={editForm.lon} onChange={(e) => setEditForm((p) => ({ ...p, lon: e.target.value }))} /></div>
-            </div>
-            <div><Label>URL</Label><Input value={editForm.url} onChange={(e) => setEditForm((p) => ({ ...p, url: e.target.value }))} /></div>
-            <div><Label>Description</Label><Input value={editForm.description} onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))} /></div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
-            <Button onClick={saveEdit}>Save</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <EventEditDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        initial={editingRow}
+        onSaved={() => {
+          void loadEvents();
+        }}
+      />
     </div>
   );
 }

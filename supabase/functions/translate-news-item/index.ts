@@ -1,4 +1,4 @@
-// Redeploy marker V3 2026-04-30T13:00 — force re-bundle, traceable log markers
+// Redeploy marker spatula-fix 2026-04-30T15:30 — force re-bundle for spatula discors Map entry
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getOpenAIConfig } from "../_shared/openai.ts";
 import { jsonResponse, translateNewsItemToEt } from "../_shared/news-translation.ts";

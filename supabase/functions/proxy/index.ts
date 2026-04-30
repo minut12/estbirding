@@ -1,3 +1,4 @@
+// Redeploy marker 2026-04-30 — force re-bundle to pick up _shared/* updates (vanellus spinosus dict, no-decline rule, faithfulness)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // Add more domains here as needed.
 const ALLOWED_DOMAINS = [

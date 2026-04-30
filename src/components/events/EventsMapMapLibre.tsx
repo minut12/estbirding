@@ -63,6 +63,12 @@ function createMarkerElement(selected: boolean): HTMLDivElement {
 }
 
 export function EventsMapMapLibre({ points, selectedId }: EventsMapMapLibreProps) {
+  const validPoints = useMemo(() => points.filter(isValidPoint), [points]);
+  if (validPoints.length === 0) return null;
+  return <EventsMapInner points={validPoints} selectedId={selectedId} />;
+}
+
+function EventsMapInner({ points, selectedId }: { points: MapPoint[]; selectedId?: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
@@ -70,66 +76,82 @@ export function EventsMapMapLibre({ points, selectedId }: EventsMapMapLibreProps
   const userMovedRef = useRef(false);
   const lastPointsKeyRef = useRef("");
 
-  const validPoints = useMemo(() => points.filter(isValidPoint), [points]);
-  const pointsKey = useMemo(() => stableKey(validPoints), [validPoints]);
+  const pointsKey = useMemo(() => stableKey(points), [points]);
 
   const applyViewRef = useRef<(force?: boolean) => void>(() => {});
   applyViewRef.current = (force = false) => {
     const map = mapRef.current;
-    if (!map || validPoints.length === 0) return;
+    if (!map || points.length === 0) return;
     if (!force && userMovedRef.current) return;
 
     try {
-      if (validPoints.length === 1) {
-        const p = validPoints[0];
+      if (points.length === 1) {
+        const p = points[0];
         map.easeTo({ center: [p.lon, p.lat], zoom: 12, duration: 400 });
         return;
       }
-
       const bounds = new maplibregl.LngLatBounds();
-      for (const p of validPoints) bounds.extend([p.lon, p.lat]);
+      for (const p of points) bounds.extend([p.lon, p.lat]);
       map.fitBounds(bounds as LngLatBoundsLike, { padding: 40, maxZoom: 13, duration: 500 });
-    } catch {
+    } catch (err) {
+      console.warn("[EventsMap] fitBounds failed, falling back to Estonia center", err);
       map.easeTo({ center: ESTONIA_CENTER, zoom: ESTONIA_ZOOM, duration: 300 });
     }
   };
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || mapRef.current || validPoints.length === 0) return;
+    if (!container || mapRef.current) return;
 
-    const map = new maplibregl.Map({
-      container,
-      style: MAP_STYLE as any,
-      center: ESTONIA_CENTER,
-      zoom: ESTONIA_ZOOM,
-      maxZoom: 12,
-      attributionControl: { compact: true },
-    });
+    let map: MapLibreMap;
+    try {
+      map = new maplibregl.Map({
+        container,
+        style: MAP_STYLE as any,
+        center: ESTONIA_CENTER,
+        zoom: ESTONIA_ZOOM,
+        maxZoom: 12,
+        attributionControl: { compact: true },
+      });
+    } catch (err) {
+      console.error("[EventsMap] failed to construct MapLibre Map", err);
+      return;
+    }
     mapRef.current = map;
 
     map.scrollZoom.disable();
     map.dragRotate.disable();
     map.touchZoomRotate.disableRotation();
 
-    map.on("dragstart", () => {
-      userMovedRef.current = true;
+    map.on("dragstart", () => { userMovedRef.current = true; });
+    map.on("zoomstart", (e: any) => {
+      if (e?.originalEvent) userMovedRef.current = true;
     });
-    map.on("movestart", () => {
-      userMovedRef.current = true;
+
+    map.on("error", (e: any) => {
+      console.warn("[EventsMap] MapLibre error:", e?.error?.message || e);
     });
 
     map.on("load", () => {
       loadedRef.current = true;
       applyViewRef.current(true);
       lastPointsKeyRef.current = pointsKey;
+      for (const point of points) {
+        const selected = point.id === selectedId;
+        const marker = new maplibregl.Marker({ element: createMarkerElement(selected), anchor: "bottom" })
+          .setLngLat([point.lon, point.lat])
+          .addTo(map);
+        markersRef.current.set(point.id, marker);
+      }
     });
 
-    const resizeObserver = new ResizeObserver(() => map.resize());
+    const resizeObserver = new ResizeObserver(() => {
+      try { map.resize(); } catch {}
+    });
     resizeObserver.observe(container);
 
     const timer = window.setTimeout(() => {
-      map.resize();
+      try { map.resize(); } catch {}
       applyViewRef.current(true);
     }, 50);
 
@@ -139,51 +161,44 @@ export function EventsMapMapLibre({ points, selectedId }: EventsMapMapLibreProps
       loadedRef.current = false;
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current.clear();
-      map.remove();
+      try { map.remove(); } catch {}
       mapRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loadedRef.current) return;
-    const markerIds = new Set(validPoints.map((p) => p.id));
+
+    const markerIds = new Set(points.map((p) => p.id));
     for (const [id, marker] of markersRef.current) {
       if (!markerIds.has(id)) {
         marker.remove();
         markersRef.current.delete(id);
       }
     }
-    for (const point of validPoints) {
+    for (const point of points) {
       const existing = markersRef.current.get(point.id);
       const selected = point.id === selectedId;
-      if (!existing) {
-        const marker = new maplibregl.Marker({ element: createMarkerElement(selected), anchor: "bottom" })
-          .setLngLat([point.lon, point.lat])
-          .addTo(map);
-        markersRef.current.set(point.id, marker);
-      } else {
-        const marker = new maplibregl.Marker({ element: createMarkerElement(selected), anchor: "bottom" })
-          .setLngLat([point.lon, point.lat])
-          .addTo(map);
-        existing.remove();
-        markersRef.current.set(point.id, marker);
-      }
+      const marker = new maplibregl.Marker({ element: createMarkerElement(selected), anchor: "bottom" })
+        .setLngLat([point.lon, point.lat])
+        .addTo(map);
+      if (existing) existing.remove();
+      markersRef.current.set(point.id, marker);
     }
 
-    const pointsChanged = pointsKey !== lastPointsKeyRef.current;
-    if (pointsChanged) {
+    if (pointsKey !== lastPointsKeyRef.current) {
       userMovedRef.current = false;
       applyViewRef.current(true);
       lastPointsKeyRef.current = pointsKey;
     }
-  }, [pointsKey, selectedId, validPoints]);
+  }, [pointsKey, selectedId, points]);
 
-  if (validPoints.length === 0) return null;
   return (
     <div>
       <div ref={containerRef} className="w-full h-[260px] sm:h-[320px] rounded-xl overflow-hidden bg-muted" />
-      {import.meta.env.DEV ? <p className="mt-1 text-xs text-muted-foreground">Pins: {validPoints.length}</p> : null}
+      {import.meta.env.DEV ? <p className="mt-1 text-xs text-muted-foreground">Pins: {points.length}</p> : null}
     </div>
   );
 }

@@ -64,11 +64,11 @@ export function EventCard({
 
       {canManage && (
         <div className="mt-3 grid grid-cols-3 gap-2">
-          <button onClick={onEdit} className="rounded-lg border border-border px-2 py-1.5 text-xs">Edit</button>
+          <button onClick={onEdit} className="rounded-lg border border-border px-2 py-1.5 text-xs">Muuda</button>
           <button onClick={onArchiveToggle} className="rounded-lg border border-border px-2 py-1.5 text-xs">
-            {event.isArchived ? "Unarchive" : "Archive"}
+            {event.isArchived ? "Taasta" : "Arhiveeri"}
           </button>
-          <button onClick={onDelete} className="rounded-lg border border-red-300 bg-red-50 px-2 py-1.5 text-xs text-red-700">Delete</button>
+          <button onClick={onDelete} className="rounded-lg border border-red-300 bg-red-50 px-2 py-1.5 text-xs text-red-700">Kustuta</button>
         </div>
       )}
     </div>

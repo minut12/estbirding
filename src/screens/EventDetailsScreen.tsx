@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarDays, MapPin } from "lucide-react";
+import { ArrowLeft, CalendarDays, ExternalLink, MapPin } from "lucide-react";
 import { formatEventCountdown, formatEventDate, et } from "@/localization/et";
 import type { EventItem } from "@/data/events";
 
@@ -35,6 +35,12 @@ export default function EventDetailsScreen({ event, onBack }: EventDetailsScreen
             <CalendarDays className="h-4 w-4" />
             {formatEventDate(event.startAt)}
           </p>
+          {event.endAt && (
+            <p className="inline-flex items-center gap-2">
+              <CalendarDays className="h-4 w-4" />
+              Lõpeb: {formatEventDate(event.endAt)}
+            </p>
+          )}
           <div>
             <span className="inline-flex rounded-full bg-muted px-2 py-1 text-xs text-foreground">{countdown}</span>
           </div>
@@ -56,8 +62,20 @@ export default function EventDetailsScreen({ event, onBack }: EventDetailsScreen
         </div>
 
         <p className="mt-4 text-sm leading-relaxed text-foreground">
-          {event.description ?? "Selle ürituse kohta kuvatakse peagi lisainfo."}
+          {event.description?.trim() ? event.description : "Selle ürituse kohta kuvatakse peagi lisainfo."}
         </p>
+
+        {event.url && (
+          <a
+            href={event.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-primary underline-offset-2 hover:underline"
+          >
+            Ava algallikas
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        )}
       </div>
     </div>
   );

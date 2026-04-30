@@ -231,6 +231,8 @@ export async function translateNewsItemToEt(
     });
     const corrected = correctBirdNamesSafely(id, title, bodyText, translated.title_et, translated.body_et);
 
+    console.log("[V3-MARKER-C]", new Date().toISOString(), "About to persist to news_items. title_et=", String(corrected.titleEt).slice(0, 100), "body_et=", String(corrected.bodyEt).slice(0, 200), "containsValgekael=", String(corrected.bodyEt).includes("valgekael-kiivitaja"));
+
     await supabase.from("news_items").update({
       source_lang: normalizedSourceLang || sourceLang,
       title_et: corrected.titleEt || null,

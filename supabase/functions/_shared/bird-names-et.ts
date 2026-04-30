@@ -370,6 +370,7 @@ export function fixCalquesInText(text: string): string {
  */
 export function fixBirdNamesInText(text: string): string {
   if (!text) return text;
+  console.log("[V3-MARKER-A]", new Date().toISOString(), "fixBirdNamesInText called. preview=", text.slice(0, 120));
 
   // Pre-pass: strip markdown italic wrappers around Latin binomials inside parens.
   // The model sometimes adds *X y*, _X y_, or <i>X y</i> around scientific names,
@@ -409,5 +410,6 @@ export function fixBirdNamesInText(text: string): string {
   // Final pass: catch known calques that appear without an accompanying Latin name.
   result = fixCalquesInText(result);
 
+  console.log("[V3-MARKER-B]", new Date().toISOString(), "fixBirdNamesInText output. preview=", result.slice(0, 120), "containsValgekael=", result.includes("valgekael-kiivitaja"));
   return result;
 }

@@ -61,6 +61,7 @@ export const LATIN_TO_ESTONIAN = new Map<string, string>([
   ["anas acuta", "sõtkas"],
   ["spatula clypeata", "luitsnokk-part"],
   ["spatula querquedula", "rägapart"],
+  ["spatula discors", "sini-rägapart"],
   ["mareca penelope", "viupart"],
   ["mareca strepera", "rääkspart"],
   ["aythya ferina", "punapea-vart"],

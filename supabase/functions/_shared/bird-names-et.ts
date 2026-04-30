@@ -352,10 +352,12 @@ const CALQUE_CORRECTIONS: Array<[RegExp, string]> = [
  */
 export function fixCalquesInText(text: string): string {
   if (!text) return text;
+  console.log("[PHASE2-DBG-B] fixCalquesInText reached, len=", text.length, "containsCalque=", /Dalmaatsia\s+pelikan/i.test(text));
   let result = text;
   for (const [pattern, replacement] of CALQUE_CORRECTIONS) {
     result = result.replace(pattern, replacement);
   }
+  console.log("[PHASE2-DBG-C] fixCalquesInText output, changed=", text !== result, "preview=", result.slice(0, 120));
   return result;
 }
 
@@ -368,6 +370,7 @@ export function fixCalquesInText(text: string): string {
  */
 export function fixBirdNamesInText(text: string): string {
   if (!text) return text;
+  console.log("[PHASE2-DBG-A] fixBirdNamesInText reached, len=", text.length, "preview=", text.slice(0, 120));
 
   // Pattern 1: "some-name (Genus species)" → "correct-name (Genus species)"
   // Matches word(s) before a parenthesized Latin binomial

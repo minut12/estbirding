@@ -126,6 +126,7 @@ export const LATIN_TO_ESTONIAN = new Map<string, string>([
   ["recurvirostra avosetta", "naaskelnokk"],
   ["vanellus vanellus", "kiivitaja"],
   ["vanellus gregarius", "stepikiivitaja"],
+  ["vanellus spinosus", "valgekael-kiivitaja"],
   ["pluvialis apricaria", "rüüt"],
   ["pluvialis squatarola", "tundrarüüt"],
   ["charadrius dubius", "väiketüll"],

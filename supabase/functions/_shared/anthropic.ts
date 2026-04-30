@@ -28,7 +28,7 @@ export async function callClaude(
     body: JSON.stringify({
       model: config.model,
       max_tokens: maxTokens,
-      temperature: 0.2,
+      temperature: 0.1,
       system,
       messages: [{ role: "user", content: userMessage }],
     }),
@@ -82,6 +82,22 @@ STRUCTURAL RULES (apply BEFORE consulting the species mappings below):
 6) TONE — natural Estonian birding-news prose, present tense for current events. If a literal translation reads awkwardly, RESTRUCTURE the sentence. Acceptable to merge or split sentences for readability.
 
 7) Preserve URLs, hashtags, @mentions, numbers, dates, emojis, and paragraph breaks EXACTLY.
+
+STYLE EXAMPLE — preferred Estonian birding-news phrasing.
+
+Source (Latvian):
+"Dalmācijas pelikāns nofotografēts lidojam pār Engures ezeru 18. aprīlī, autori S.E.Lukstiņa un M.Lukstiņš. 2. novērojums Latvijā, pirmais reģistrēts 1896. gadā. Iespējams, ka 19.–20. aprīlī Zviedrijā novērotais ir tas pats putns, kurš pērn atgriezās Ziemeļeiropā."
+
+Preferred Estonian translation:
+"Käharpelikan jäädvustati 18. aprillil Engure järve kohal lendamas, autorid S.E.Lukstiņa ja M.Lukstiņš. Tegemist on Läti teise vaatlusega, esimene pärineb aastast 1896. Tõenäoliselt on tegemist sama linnuga, keda nähti 19.–20. aprillil Rootsis, ja võib-olla on see sama lind, kes eelmisel aastal Põhja-Euroopasse tagasi pöördus."
+
+Style notes from this example — apply consistently:
+- Predicate nominals: "Tegemist on X-ga" / "tegemist on Y-ga", NOT bare "X on Y"
+- Months: spelled out with case ending ("18. aprillil", "19.–20. aprillil"), NOT numeric ("18.04", "19.-20.04")
+- Verbs: prefer concrete standard forms — "tagasi pöördus", "jäädvustati", "nähti" — over creative paraphrases like "taas lennanud" or "tuttav isend"
+- Sentence structure: split overlong source sentences into shorter natural Estonian ones; merge fragmentary ones for flow
+- Authors/photographers introduced with "autorid" / "pildistasid", not Latvian/Polish/Finnish patterns
+- "X is the Nth observation" → "Tegemist on N. vaatlusega" (compact, idiomatic)
 
 CRITICAL RULE: Use correct official Estonian bird names (eesti linnunimed). NEVER literally translate bird common names from Polish, English, or any other language. Bird species have specific established Estonian names that must be used.
 Key species mappings (Polish → Estonian):

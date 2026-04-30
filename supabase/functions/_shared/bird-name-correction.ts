@@ -187,7 +187,10 @@ export function applyBirdNameCorrections(maskedTranslatedText: string | null | u
     const placeholder = `__NEWS_BIRD_${index}__`;
     const pattern = new RegExp(escapeRegex(placeholder), "g");
     const replaced = (output.match(pattern) || []).length;
-    output = output.replace(pattern, match.estonianName);
+    // Restore the original matched substring (Latin binomial / English alias as it
+    // appeared in the source). Claude now produces the Estonian name itself via
+    // the in-prompt dictionary, so the masker no longer injects a second copy.
+    output = output.replace(pattern, match.token);
     replacementCount += replaced;
     replacements.push({
       matchedToken: match.token,

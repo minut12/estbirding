@@ -96,6 +96,7 @@ export const LATIN_TO_ESTONIAN = new Map<string, string>([
   ["pernis apivorus", "herilaseviu"],
   ["milvus milvus", "puna-harksaba"],
   ["milvus migrans", "must-harksaba"],
+  ["elanus caeruleus", "hõbehaugas"],
   ["circus aeruginosus", "roo-loorkull"],
   ["circus cyaneus", "soo-loorkull"],
   ["circus pygargus", "stepi-loorkull"],

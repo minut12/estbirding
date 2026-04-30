@@ -233,14 +233,14 @@ export default function EventsManagementSettings() {
     const persisted = (getEventsAdminKey() ?? "").trim();
     setSavedAdminKey(persisted);
     setAdminKeyInput(persisted);
-    toast.success("Events admin key salvestatud");
+    toast.success("Võti salvestatud");
   };
 
   const clearKey = () => {
     clearEventsAdminKey();
     setSavedAdminKey("");
     setAdminKeyInput("");
-    toast.success("Events admin key eemaldatud");
+    toast.success("Võti eemaldatud");
   };
 
   const testAdminEndpoint = async () => {
@@ -251,7 +251,7 @@ export default function EventsManagementSettings() {
         toast.success("OK");
         return;
       }
-      toast.error("Test events admin ebaõnnestus");
+      toast.error("Võtme test ebaõnnestus");
     } catch (error) {
       toast.error(toErrorMessage(error));
     }
@@ -327,7 +327,7 @@ export default function EventsManagementSettings() {
       <h3 className="font-semibold text-foreground">Ürituste haldus</h3>
 
       <div className="space-y-2">
-        <Label htmlFor="eventsAdminKeyInput">Events admin key</Label>
+        <Label htmlFor="eventsAdminKeyInput">EVENTS_ADMIN_KEY</Label>
         <Input
           id="eventsAdminKeyInput"
           type="password"
@@ -344,7 +344,7 @@ export default function EventsManagementSettings() {
           <Button variant="outline" onClick={clearKey} className="flex-1">Eemalda</Button>
         </div>
         <Button variant="outline" onClick={testAdminEndpoint} className="w-full">
-          Test events admin
+          Testi võtit
         </Button>
       </div>
 
@@ -376,11 +376,11 @@ export default function EventsManagementSettings() {
               </div>
               {canWrite && (
                 <div className="mt-2 grid grid-cols-3 gap-2">
-                  <Button variant="outline" size="sm" onClick={() => openEdit(event)}>Edit</Button>
+                  <Button variant="outline" size="sm" onClick={() => openEdit(event)}>Muuda</Button>
                   <Button variant="outline" size="sm" onClick={() => onArchiveToggle(event)}>
-                    {event.status === "archived" ? "Unarchive" : "Archive"}
+                    {event.status === "archived" ? "Taasta" : "Arhiveeri"}
                   </Button>
-                  <Button variant="destructive" size="sm" onClick={() => onDelete(event)}>Delete</Button>
+                  <Button variant="destructive" size="sm" onClick={() => onDelete(event)}>Kustuta</Button>
                 </div>
               )}
             </div>
@@ -397,19 +397,19 @@ export default function EventsManagementSettings() {
 
           <div className="grid grid-cols-1 gap-3">
             <div>
-              <Label>Title*</Label>
+              <Label>Pealkiri*</Label>
               <Input value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} />
             </div>
             <div>
-              <Label>Start datetime*</Label>
+              <Label>Algusaeg*</Label>
               <Input type="datetime-local" value={form.starts_at} onChange={(e) => setForm((p) => ({ ...p, starts_at: e.target.value }))} />
             </div>
             <div>
-              <Label>End datetime</Label>
+              <Label>Lõpuaeg</Label>
               <Input type="datetime-local" value={form.ends_at} onChange={(e) => setForm((p) => ({ ...p, ends_at: e.target.value }))} />
             </div>
             <div>
-              <Label>Type</Label>
+              <Label>Tüüp</Label>
               <select
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={form.type}
@@ -420,16 +420,16 @@ export default function EventsManagementSettings() {
               </select>
             </div>
             <div>
-              <Label>Location name</Label>
+              <Label>Asukoha nimi</Label>
               <Input value={form.location_name} onChange={(e) => setForm((p) => ({ ...p, location_name: e.target.value }))} />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label>Lat</Label>
+                <Label>Laiuskraad</Label>
                 <Input value={form.lat} onChange={(e) => setForm((p) => ({ ...p, lat: e.target.value }))} />
               </div>
               <div>
-                <Label>Lon</Label>
+                <Label>Pikkuskraad</Label>
                 <Input value={form.lon} onChange={(e) => setForm((p) => ({ ...p, lon: e.target.value }))} />
               </div>
             </div>
@@ -438,11 +438,11 @@ export default function EventsManagementSettings() {
               <Input value={form.url} onChange={(e) => setForm((p) => ({ ...p, url: e.target.value }))} />
             </div>
             <div>
-              <Label>Description</Label>
+              <Label>Kirjeldus</Label>
               <Input value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="eventImage">Image</Label>
+              <Label htmlFor="eventImage">Pilt</Label>
               <Input
                 id="eventImage"
                 type="file"
@@ -461,14 +461,14 @@ export default function EventsManagementSettings() {
                       setImageChanged(true);
                       setForm((p) => ({ ...p, image_url: preview, image_path: "inline-base64" }));
                     } catch (err) {
-                      toast.error(`Image processing failed: ${toErrorMessage(err)}`);
+                      toast.error(`Pildi töötlemine ebaõnnestus: ${toErrorMessage(err)}`);
                     }
                   }
                 }}
               />
               {imagePreviewUrl ? (
                 <div className="space-y-2">
-                  <img src={imagePreviewUrl} alt="Event preview" className="h-28 w-full rounded-md object-cover" />
+                  <img src={imagePreviewUrl} alt="Ürituse eelvaade" className="h-28 w-full rounded-md object-cover" />
                   <Button
                     type="button"
                     variant="outline"
@@ -479,13 +479,13 @@ export default function EventsManagementSettings() {
                       setRemoveImage(true);
                     }}
                   >
-                    Remove image
+                    Eemalda pilt
                   </Button>
                 </div>
               ) : (
                 <img
                   src="https://images.unsplash.com/photo-1448375240586-882707db888b?w=360&h=280&fit=crop"
-                  alt="Placeholder"
+                  alt="Kohatäide"
                   className="h-28 w-full rounded-md object-cover"
                 />
               )}
@@ -493,8 +493,8 @@ export default function EventsManagementSettings() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={submitForm} disabled={!canWrite}>Save</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Tühista</Button>
+            <Button onClick={submitForm} disabled={!canWrite}>Salvesta</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

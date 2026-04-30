@@ -20,6 +20,8 @@ export const LATIN_TO_ESTONIAN = new Map<string, string>([
   // Cormorants
   ["phalacrocorax carbo", "kormoran"],
   ["microcarbo pygmaeus", "kääbuskormoran"],
+  // Pelicans
+  ["pelecanus crispus", "käharpelikan"],
   // Herons
   ["ardea cinerea", "hallhaigur"],
   ["ardea alba", "hõbehaigur"],
@@ -27,9 +29,9 @@ export const LATIN_TO_ESTONIAN = new Map<string, string>([
   ["egretta garzetta", "siidhaigur"],
   ["bubulcus ibis", "veisehaigur"],
   ["ardea ibis", "veisehaigur"],
-  ["ixobrychus minutus", "hüüp"],
+  ["ixobrychus minutus", "väikehüüp"],
   ["botaurus stellaris", "hüüp"],
-  ["nycticorax nycticorax", "ööshaigur"],
+  ["nycticorax nycticorax", "ööhaigur"],
   // Storks
   ["ciconia ciconia", "valge-toonekurg"],
   ["ciconia nigra", "must-toonekurg"],
@@ -96,7 +98,7 @@ export const LATIN_TO_ESTONIAN = new Map<string, string>([
   ["circus aeruginosus", "roo-loorkull"],
   ["circus cyaneus", "soo-loorkull"],
   ["circus pygargus", "stepi-loorkull"],
-  ["circus macrourus", "stepi-loorkull"],
+  ["circus macrourus", "aru-loorkull"],
   ["accipiter gentilis", "kanakull"],
   ["accipiter nisus", "raudkull"],
   ["falco peregrinus", "rabapistrik"],
@@ -123,6 +125,7 @@ export const LATIN_TO_ESTONIAN = new Map<string, string>([
   ["haematopus ostralegus", "merisk"],
   ["recurvirostra avosetta", "naaskelnokk"],
   ["vanellus vanellus", "kiivitaja"],
+  ["vanellus gregarius", "stepikiivitaja"],
   ["pluvialis apricaria", "rüüt"],
   ["pluvialis squatarola", "tundrarüüt"],
   ["charadrius dubius", "väiketüll"],
@@ -146,7 +149,9 @@ export const LATIN_TO_ESTONIAN = new Map<string, string>([
   ["calidris temminckii", "leeterüdi"],
   ["calidris ferruginea", "kõvernokk-rüdi"],
   ["calidris canutus", "ruugerüdi"],
+  // TODO(verify): "alverüdi" for Calidris alba (Sanderling) is suspect — Sanderling is conventionally "risla". The same name is also assigned to Calidris melanotos (Pectoral Sandpiper) below; one of these is wrong.
   ["calidris alba", "alverüdi"],
+  ["calidris melanotos", "alverüdi"],
   ["arenaria interpres", "kivirullija"],
   ["phalaropus lobatus", "veetallaja"],
   // Skuas & Gulls
@@ -158,10 +163,14 @@ export const LATIN_TO_ESTONIAN = new Map<string, string>([
   ["larus marinus", "merikajakas"],
   ["larus minutus", "väikekajakas"],
   ["hydrocoloeus minutus", "väikekajakas"],
+  ["ichthyaetus melanocephalus", "mustpea-kajakas"],
+  ["larus michahellis", "vahemerekajakas"],
+  ["larus cachinnans", "stepikajakas"],
   // Terns
   ["sterna hirundo", "jõgitiir"],
   ["sterna paradisaea", "randtiir"],
   ["sternula albifrons", "väiketiir"],
+  ["hydroprogne caspia", "räusktiir"],
   ["chlidonias niger", "mustviires"],
   ["chlidonias leucopterus", "valgetiib-viires"],
   // Auks
@@ -259,6 +268,7 @@ export const LATIN_TO_ESTONIAN = new Map<string, string>([
   ["sylvia nisoria", "pruunselg-põõsalind"],
   ["hippolais icterina", "koldvint"],
   ["regulus regulus", "pöialpoiss"],
+  ["regulus ignicapilla", "punapea-pöialpoiss"],
   // Flycatchers
   ["muscicapa striata", "hall-kärbsenäpp"],
   ["ficedula hypoleuca", "must-kärbsenäpp"],
@@ -324,10 +334,37 @@ export const LATIN_TO_ESTONIAN = new Map<string, string>([
   ["oriolus oriolus", "peoleo"],
 ]);
 
+// Common calque forms the model produces when a species is missing from the
+// dictionary. Each pattern matches a wrong Estonian-only form (case-insensitive,
+// word-bounded) with an optional declension suffix as $1, so the replacement
+// preserves the case ending. Grow this list as new failure modes are observed.
+const CALQUE_CORRECTIONS: Array<[RegExp, string]> = [
+  [/\bDalmaatsia\s+pelikan(i|it|ile|is|ist|iks|iga|ina)?\b/gi, "käharpelikan$1"],
+  [/\bDalmaatia\s+pelikan(i|it|ile|is|ist|iks|iga|ina)?\b/gi, "käharpelikan$1"],
+  [/\bSabatiigli\s+kiivitaja(t|le|s|st|ks|ga|na)?\b/gi, "stepikiivitaja$1"],
+];
+
+/**
+ * Final pass over Estonian-only text to correct known calques the model
+ * produces when a species name is missing from the dictionary. Unlike the
+ * Latin-binomial passes in fixBirdNamesInText, this scans Estonian text
+ * directly and does not require a Latin name to be present.
+ */
+export function fixCalquesInText(text: string): string {
+  if (!text) return text;
+  let result = text;
+  for (const [pattern, replacement] of CALQUE_CORRECTIONS) {
+    result = result.replace(pattern, replacement);
+  }
+  return result;
+}
+
 /**
  * Post-process translated text to fix bird names using Latin→Estonian dictionary.
  * Looks for Latin binomials (in parentheses or standalone) and corrects the
- * preceding Estonian name if it doesn't match the dictionary.
+ * preceding Estonian name if it doesn't match the dictionary. Then runs the
+ * calque-correction pass to catch known wrong forms that appear without a
+ * Latin name.
  */
 export function fixBirdNamesInText(text: string): string {
   if (!text) return text;
@@ -358,6 +395,9 @@ export function fixBirdNamesInText(text: string): string {
       return match;
     },
   );
+
+  // Final pass: catch known calques that appear without an accompanying Latin name.
+  result = fixCalquesInText(result);
 
   return result;
 }

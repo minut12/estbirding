@@ -141,6 +141,7 @@ export const LATIN_TO_ESTONIAN = new Map<string, string>([
   ["gallinago gallinago", "rohunepp"],
   ["lymnocryptes minimus", "mudanepp"],
   ["tringa totanus", "punajalg-tilder"],
+  ["tringa erythropus", "tumetilder"],
   ["tringa nebularia", "heletilder"],
   ["tringa glareola", "mudatilder"],
   ["tringa ochropus", "metstilder"],

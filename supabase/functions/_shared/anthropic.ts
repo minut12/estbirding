@@ -8,7 +8,7 @@ export interface AnthropicConfig {
 export function getAnthropicConfig(): AnthropicConfig | null {
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY")?.trim() || "";
   if (!apiKey) return null;
-  const model = Deno.env.get("ANTHROPIC_TRANSLATION_MODEL") || "claude-haiku-4-5-20251001";
+  const model = Deno.env.get("ANTHROPIC_TRANSLATION_MODEL") || "claude-sonnet-4-6";
   return { apiKey, model };
 }
 
@@ -28,6 +28,7 @@ export async function callClaude(
     body: JSON.stringify({
       model: config.model,
       max_tokens: maxTokens,
+      temperature: 0.2,
       system,
       messages: [{ role: "user", content: userMessage }],
     }),
@@ -54,7 +55,24 @@ function parseJsonFromText(text: string): Record<string, unknown> {
   }
 }
 
-const TRANSLATION_SYSTEM_PROMPT = `You are translating bird-related news articles to Estonian.
+const TRANSLATION_SYSTEM_PROMPT = `You translate bird-related news articles to Estonian for an Estonian birdwatching audience. Write NATURAL, FLUENT Estonian — not literal word-for-word output.
+
+STRUCTURAL RULES (apply BEFORE consulting the species mappings below):
+
+1) LATIN BINOMIALS (e.g. "Vanellus gregarius", "Haliaeetus albicilla") — preserve EXACTLY. Never translate, decline, or change capitalization. Keep italics/parentheses if the source has them.
+
+2) COMPOUND SPECIES NAMES — Estonian uses HYPHENS: "väike-konnakotkas", "must-toonekurg", "stepi-loorkull", "valgepõsk-lagle", "mustsaba-vigle", "punajalg-tilder". When the source has a qualified species (e.g. PL "czajka stepowa", EN "sociable lapwing", LV "steppes ķīvīte"), produce the Estonian compound form (here: "stepikiivitaja"). If a species is NOT in the dictionary below and you are unsure, KEEP THE LATIN NAME VISIBLE rather than guess.
+
+3) PLACE NAMES — preserve original spelling. Do NOT estonianize Polish/Finnish/Latvian/Dutch toponyms. "Zarszyn" stays "Zarszyn". Use Estonian forms only for established exonyms: "Helsinki" → "Helsingi", "Riga" → "Riia", "Warszawa" → "Varssavi", "Sankt-Peterburg" → "Peterburi". Add "(piirkond)" or "(maakond)" only when natural.
+
+4) SOURCE-LANGUAGE MORPHOLOGY:
+   • FINNISH: never carry Finnish stems into Estonian. "lintu-" → "lind-" or "linnu-" (e.g. "lintuvaatlus" → "linnuvaatlus", NOT "lintuvaatlus"). "Suomi" → "Soome".
+   • LATVIAN: Latvian declensional endings are not Estonian. "Engures ezerā" → "Engure järvel" (Estonian inessive), not "Engures järvel".
+   • POLISH: do not calque compounds literally. Preserve diacritics (ł ą ę ś ż) in proper names.
+   • DUTCH/FLEMISH: "Vlaanderen" → "Flandria", "Wallonië" → "Valloonia".
+
+5) TONE — natural Estonian birding-news prose, present tense for current events. If a literal translation reads awkwardly, RESTRUCTURE the sentence so it reads naturally in Estonian.
+
 CRITICAL RULE: Use correct official Estonian bird names (eesti linnunimed). NEVER literally translate bird common names from Polish, English, or any other language. Bird species have specific established Estonian names that must be used.
 Key species mappings (Polish → Estonian):
 bielik/White-tailed Eagle = merikotkas, żuraw/Crane = sookurg, bocian biały/White Stork = valge-toonekurg, rybołów/Osprey = kalakotkas, bernikla białolica/Barnacle Goose = valgepõsk-lagle, gęś zbożowa/Bean Goose = suur-laukhani, orlik krzykliwy/Lesser Spotted Eagle = väike-konnakotkas, orlik grubodzioby/Greater Spotted Eagle = suur-konnakotkas, błotniak łąkowy/Montagu's Harrier = stepi-loorkull, błotniak zbożowy/Hen Harrier = soo-loorkull, błotniak stawowy/Marsh Harrier = roo-loorkull, myszołów/Common Buzzard = hiireviu, trzmielojad/Honey Buzzard = herilaseviu, drzemlik/Merlin = piiritaja, kobuz/Hobby = lõopistrik, sokół wędrowny/Peregrine = rabapistrik, orzeł przedni/Golden Eagle = kaljukotkas, jastrząb/Goshawk = kanakull, krogulec/Sparrowhawk = raudkull, gąsiorek/Red-backed Shrike = punaselg-õgija, srokosz/Great Grey Shrike = hallõgija, krętogłów/Wryneck = käosulane, dzięcioł czarny/Black Woodpecker = musträhn, lelek/Nightjar = öösorr, kukułka/Cuckoo = kägu, jerzyk/Swift = piiritaja, kraska/Roller = siniraag, żołna/Bee-eater = mesilasenäpp, dudek/Hoopoe = vaenukägu, derkacz/Corncrake = rukkirääk, kropiatka/Spotted Crake = täpikhuik, łyska/Coot = lauk, brodziec piskliwy/Common Sandpiper = jõgitilder, samotnik/Green Sandpiper = metstilder, łęczak/Wood Sandpiper = mudatilder, czajka/Lapwing = kiivitaja, kulik wielki/Curlew = suurkoovitaja, słonka/Woodcock = metskurvits, kszyk/Snipe = rohunepp, rycyk/Black-tailed Godwit = mustsaba-vigle, batalion/Ruff = tuttvart, biegus zmienny/Dunlin = soorüdi, sieweczka obrożna/Ringed Plover = liivatüll, siewka złota/Golden Plover = rüüt, szablodziób/Avocet = naaskelnokk, ostrygojad/Oystercatcher = merisk, rybitwa rzeczna/Common Tern = jõgitiir, rybitwa popielata/Arctic Tern = randtiir, dymówka/Barn Swallow = suitsupääsuke, oknówka/House Martin = räästapääsuke, brzegówka/Sand Martin = kaldapääsuke, skowronek/Skylark = põldlõoke, świergotek łąkowy/Meadow Pipit = niidukiur, świergotek drzewny/Tree Pipit = metskiur, pliszka żółta/Yellow Wagtail = linavästrik, pliszka siwa/White Wagtail = jõgivästrik, pleszka/Redstart = lepalind, białorzytka/Wheatear = kivitäks, pokrzywnica/Whinchat = kadakatäks, kląskawka/Stonechat = must-lepalind, rudzik/Robin = punarind, słowik/Nightingale = ööbik, podróżniczek/Bluethroat = sinirind, kwiczoł/Fieldfare = hallrästas, śpiewak/Song Thrush = laulurästas, kos/Blackbird = musträstas, droździk/Ring Ouzel = kaelusrästas, trzciniak/Reed Warbler = aed-roolind, rokitniczka/Sedge Warbler = kõrkja-roolind, piecuszek/Willow Warbler = salu-lehelind, pierwiosnek/Chiffchaff = mets-lehelind, kapturka/Blackcap = mustpea-põõsalind, cierniówka/Whitethroat = aed-põõsalind, muchołówka szara/Spotted Flycatcher = hall-kärbsenäpp, muchołówka żałobna/Pied Flycatcher = must-kärbsenäpp, muchołówka mała/Red-breasted Flycatcher = kaelus-kärbsenäpp, szpak/Starling = kuldnokk, ortolan/Ortolan = aed-tsiitsitaja, trznadel/Yellowhammer = talvike, makolągwa/Linnet = kanepilind, czyż/Siskin = siisike, szczygieł/Goldfinch = ohakalind, dzwoniec/Greenfinch = rohevint, grubodziób/Hawfinch = suurnokk-vint, krzyżodziób świerkowy/Crossbill = kuuse-käbilind, gil/Bullfinch = leevike, dzwoniec/Rosefinch = karmiinleevike, zięba/Chaffinch = metsvint, jer/Brambling = põhjavint, łabędź niemy/Mute Swan = kühmnokk-luik, łabędź krzykliwy/Whooper Swan = laululuik, czapla siwa/Grey Heron = hallhaigur, czapla biała/Great Egret = hõbehaigur, kormoran/Cormorant = kormoran, gęś białoczelna/White-fronted Goose = suur-laukhani, kaczka krzyżówka/Mallard = sinikael-part, cyranka/Garganey = rägapart, cyraneczka/Teal = piilpart, czernica/Tufted Duck = tuttvart, gągoł/Goldeneye = sõtkas, nurogęś/Goosander = jääkoskel, szlachar/Red-breasted Merganser = rohukoskel, perkoz dwuczuby/Great Crested Grebe = tuttpütt, perkoz rdzawoszyi/Red-necked Grebe = hallpõsk-pütt, mewa śmieszka/Black-headed Gull = naerukajakas, mewa srebrzysta/Herring Gull = hõbekajakas, gołąb miejski/Feral Pigeon = kodutuvi, grzywacz/Woodpigeon = kaelustuvi, turkawka/Turtle Dove = kaelus-turteltuvi, pustułka/Kestrel = tuuletallaja, kobczyk/Red-footed Falcon = punajalg-pistrik, kania ruda/Red Kite = puna-harksaba, kania czarna/Black Kite = must-harksaba
@@ -100,9 +118,54 @@ export const BIRD_TRANSLATION_SYSTEM_HINT =
   "When translating bird-related content, use correct Estonian bird names (eesti linnunimed), never literally translate bird common names.";
 
 export function getSimpleTranslationSystemPrompt(targetLang: string): string {
-  return (
-    `You are a translation engine specializing in bird-related content. Translate the user text to ${targetLang}. ` +
-    `Use correct Estonian bird names (eesti linnunimed), never literally translate bird common names. ` +
-    `Return ONLY the translation, preserve paragraphs, no commentary.`
-  );
+  return `You translate bird-related news content to ${targetLang} for an Estonian birdwatching audience. Write NATURAL, FLUENT ${targetLang.toUpperCase()} — not literal word-for-word output.
+
+STRUCTURAL RULES (apply BEFORE consulting the species mappings):
+
+1) LATIN BINOMIALS (e.g. "Vanellus gregarius", "Haliaeetus albicilla") — preserve EXACTLY. Never translate, decline, or change capitalization. Keep italics/parentheses if present.
+
+2) COMPOUND SPECIES NAMES — Estonian uses HYPHENS: "väike-konnakotkas", "must-toonekurg", "stepi-loorkull", "valgepõsk-lagle", "mustsaba-vigle", "punajalg-tilder". When the source has a qualified species (e.g. PL "czajka stepowa", EN "sociable lapwing", LV "steppes ķīvīte"), produce the Estonian compound form (here: "stepikiivitaja"). If unsure of the exact name, KEEP THE LATIN NAME VISIBLE rather than guess.
+
+3) PLACE NAMES — preserve original spelling. Do NOT estonianize Polish/Finnish/Latvian/Dutch toponyms ("Zarszyn" stays "Zarszyn"). Use Estonian forms only for established exonyms: "Helsinki" → "Helsingi", "Riga" → "Riia", "Warszawa" → "Varssavi", "Sankt-Peterburg" → "Peterburi".
+
+4) SOURCE-LANGUAGE MORPHOLOGY:
+   • FINNISH: never leak Finnish stems. "lintu-" → "lind-/linnu-" (e.g. "lintuvaatlus" → "linnuvaatlus"). "Suomi" → "Soome".
+   • LATVIAN: Latvian endings are not Estonian. "Engures ezerā" → "Engure järvel" (Estonian inessive), not "Engures järvel".
+   • POLISH: do not calque compounds literally. Preserve diacritics (ł ą ę ś ż) in proper names.
+   • DUTCH/FLEMISH: "Vlaanderen" → "Flandria", "Wallonië" → "Valloonia".
+
+5) TONE — natural Estonian birding-news prose, present tense for current events. If a literal translation reads awkwardly, restructure the sentence.
+
+6) Preserve URLs, hashtags, @mentions, numbers, emojis, paragraph breaks EXACTLY.
+
+COMMON SPECIES MAPPINGS (FI/PL/LV/EN → Estonian):
+merikotka/bielik/jūras ērglis/White-tailed Eagle = merikotkas
+kurki/żuraw/dzērve/Crane = sookurg
+valkohaikara/bocian biały/baltais stārķis/White Stork = valge-toonekurg
+mustahaikara/bocian czarny/melnais stārķis/Black Stork = must-toonekurg
+sääksi/rybołów/zivjērglis/Osprey = kalakotkas
+maakotka/orzeł przedni/klinšu ērglis/Golden Eagle = kaljukotkas
+kiljukotka/orlik krzykliwy/mazais ērglis/Lesser Spotted Eagle = väike-konnakotkas
+pikkukiljukotka/orlik grubodzioby/Greater Spotted Eagle = suur-konnakotkas
+sininärhi/kraska/zilā vārna/Roller = siniraag
+mehiläissyöjä/żołna/bišu dzenis/Bee-eater = mesilasenäpp
+harjalintu/dudek/pupuķis/Hoopoe = vaenukägu
+ruisrääkkä/derkacz/grieze/Corncrake = rukkirääk
+satakieli/słowik/lakstīgala/Nightingale = ööbik
+sinirinta/podróżniczek/zilrīklīte/Bluethroat = sinirind
+kottarainen/szpak/mājas strazds/Starling = kuldnokk
+valkoposkihanhi/bernikla białolica/baltvaigu zoss/Barnacle Goose = valgepõsk-lagle
+metsähanhi/gęś zbożowa/sējas zoss/Bean Goose = suur-laukhani
+laulujoutsen/łabędź krzykliwy/ziemeļu gulbis/Whooper Swan = laululuik
+selkälokki/mewa żółtonoga/Lesser Black-backed Gull = tõmmukajakas
+naurulokki/mewa śmieszka/lielais ķīris/Black-headed Gull = naerukajakas
+kalalokki/mewa pospolita/kajak/Common Gull = kalakajakas
+sociable lapwing/czajka stepowa/steppes ķīvīte = stepikiivitaja
+töyhtöhyyppä/czajka/ķīvīte/Lapwing = kiivitaja
+peregrine/sokół wędrowny/lielais piekūns = rabapistrik
+hobby/kobuz/bezdelīgu piekūns = lõopistrik
+
+For species not listed: use your knowledge of Estonian ornithology. When uncertain, keep the original name and add the Latin name in parentheses.
+
+Return ONLY the translation. No commentary, no quotes around the result, no markdown fences.`;
 }

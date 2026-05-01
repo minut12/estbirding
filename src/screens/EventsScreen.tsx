@@ -17,7 +17,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
 type MainTab = "tulevased" | "moodunud" | "muud";
-type CategoryFilter = "koik" | "active" | "archived";
 
 function toEventItem(row: ManualEventRow): EventItem {
   const lat = Number(row.lat);
@@ -44,7 +43,6 @@ function toEventItem(row: ManualEventRow): EventItem {
     description: row.description || undefined,
     url: row.url || undefined,
     isPublished: row.status === "active",
-    isArchived: row.status === "archived",
   };
 }
 
@@ -55,7 +53,6 @@ function toErrorMessage(err: unknown): string {
 
 export default function EventsScreen() {
   const [mainTab, setMainTab] = useState<MainTab>("tulevased");
-  const [statusFilter, setStatusFilter] = useState<CategoryFilter>("active");
   const [searchValue, setSearchValue] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -105,21 +102,14 @@ export default function EventsScreen() {
             ? eventDate < todayStart
             : event.category === "Muud";
 
-      const statusMatch =
-        statusFilter === "koik"
-          ? true
-          : statusFilter === "active"
-            ? !event.isArchived
-            : Boolean(event.isArchived);
-
       const searchMatch = searchTerm
         ? event.title.toLowerCase().includes(searchTerm) ||
           event.locationName.toLowerCase().includes(searchTerm)
         : true;
 
-      return tabMatch && statusMatch && searchMatch;
+      return tabMatch && searchMatch;
     });
-  }, [events, mainTab, searchValue, statusFilter, todayStart]);
+  }, [events, mainTab, searchValue, todayStart]);
 
   const mapEvents = useMemo(
     () =>

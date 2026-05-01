@@ -1,0 +1,1 @@
+- [vaatluste-koordinaator pipeline characteristics](project_vaatluste_pipeline.md) — wallclock ~2 min/run, ~$0.75/run on Sonnet 4.6 (~15× spec), occasional species translation drift; spec in docs/vaatluste-koordinaator.md

@@ -161,19 +161,6 @@ export default function EventsScreen() {
     setDialogOpen(true);
   };
 
-  const onArchiveToggle = async (eventId: string) => {
-    const row = rows.find((r) => r.id === eventId);
-    if (!row) return;
-    try {
-      if (row.status === "archived") await unarchiveManualEvent(eventId);
-      else await archiveManualEvent(eventId);
-      await loadEvents();
-      toast.success(row.status === "archived" ? "Üritus taastatud" : "Üritus arhiveeritud");
-    } catch (e) {
-      toast.error(toErrorMessage(e));
-    }
-  };
-
   const onDelete = async (eventId: string) => {
     if (!window.confirm("Kustutan ürituse?")) return;
     try {
@@ -231,29 +218,6 @@ export default function EventsScreen() {
           ))}
         </div>
 
-        <div className="flex gap-2">
-          {(
-            [
-              ["koik", "Kõik"],
-              ["active", "Aktiivsed"],
-              ["archived", "Arhiveeritud"],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setStatusFilter(key)}
-              className={cn(
-                "rounded-full px-3 py-1.5 text-xs font-medium transition",
-                statusFilter === key
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-white text-muted-foreground"
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -304,7 +268,6 @@ export default function EventsScreen() {
                 selected={event.id === highlightedEvent?.id}
                 canManage={canManage}
                 onEdit={() => openEdit(event.id)}
-                onArchiveToggle={() => onArchiveToggle(event.id)}
                 onDelete={() => onDelete(event.id)}
                 onPress={() => {
                   selectEvent(event.id);

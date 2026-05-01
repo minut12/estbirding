@@ -10,7 +10,6 @@ interface EventCardProps {
   cardRef?: (node: HTMLButtonElement | null) => void;
   canManage?: boolean;
   onEdit?: () => void;
-  onArchiveToggle?: () => void;
   onDelete?: () => void;
 }
 
@@ -21,7 +20,6 @@ export function EventCard({
   cardRef,
   canManage,
   onEdit,
-  onArchiveToggle,
   onDelete,
 }: EventCardProps) {
   const countdown = formatEventCountdown(event.startAt);
@@ -63,11 +61,8 @@ export function EventCard({
       </button>
 
       {canManage && (
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="mt-3 grid grid-cols-2 gap-2">
           <button onClick={onEdit} className="rounded-lg border border-border px-2 py-1.5 text-xs">Muuda</button>
-          <button onClick={onArchiveToggle} className="rounded-lg border border-border px-2 py-1.5 text-xs">
-            {event.isArchived ? "Taasta" : "Arhiveeri"}
-          </button>
           <button onClick={onDelete} className="rounded-lg border border-red-300 bg-red-50 px-2 py-1.5 text-xs text-red-700">Kustuta</button>
         </div>
       )}

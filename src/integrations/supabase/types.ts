@@ -923,12 +923,21 @@ export type Database = {
       }
     }
     Functions: {
-      _events_admin_bootstrap_or_check: {
-        Args: { admin_key: string }
-        Returns: undefined
-      }
-      events_admin_archive: {
-        Args: { admin_key: string; p_id: string }
+      events_admin_assert_admin: { Args: never; Returns: undefined }
+      events_admin_create: {
+        Args: {
+          p_description: string
+          p_ends_at: string
+          p_image_path: string
+          p_image_url: string
+          p_lat: number
+          p_location_name: string
+          p_lon: number
+          p_starts_at: string
+          p_title: string
+          p_type: string
+          p_url: string
+        }
         Returns: {
           archived_at: string | null
           created_at: string
@@ -955,94 +964,8 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      events_admin_create:
-        | {
-            Args: {
-              admin_key: string
-              p_description?: string
-              p_ends_at?: string
-              p_lat?: number
-              p_location_name?: string
-              p_lon?: number
-              p_starts_at: string
-              p_title: string
-              p_type?: string
-              p_url?: string
-            }
-            Returns: {
-              archived_at: string | null
-              created_at: string
-              deleted_at: string | null
-              description: string | null
-              ends_at: string | null
-              id: string
-              image_path: string | null
-              image_url: string | null
-              lat: number | null
-              location_name: string | null
-              lon: number | null
-              starts_at: string
-              status: string
-              title: string
-              type: string
-              updated_at: string
-              url: string | null
-            }
-            SetofOptions: {
-              from: "*"
-              to: "events_manual"
-              isOneToOne: true
-              isSetofReturn: false
-            }
-          }
-        | {
-            Args: {
-              admin_key: string
-              p_description?: string
-              p_ends_at?: string
-              p_image_path?: string
-              p_image_url?: string
-              p_lat?: number
-              p_location_name?: string
-              p_lon?: number
-              p_starts_at: string
-              p_title: string
-              p_type?: string
-              p_url?: string
-            }
-            Returns: {
-              archived_at: string | null
-              created_at: string
-              deleted_at: string | null
-              description: string | null
-              ends_at: string | null
-              id: string
-              image_path: string | null
-              image_url: string | null
-              lat: number | null
-              location_name: string | null
-              lon: number | null
-              starts_at: string
-              status: string
-              title: string
-              type: string
-              updated_at: string
-              url: string | null
-            }
-            SetofOptions: {
-              from: "*"
-              to: "events_manual"
-              isOneToOne: true
-              isSetofReturn: false
-            }
-          }
       events_admin_delete: {
-        Args: { admin_key: string; p_id: string }
-        Returns: Json
-      }
-      events_admin_health: { Args: { admin_key: string }; Returns: Json }
-      events_admin_unarchive: {
-        Args: { admin_key: string; p_id: string }
+        Args: { p_id: string }
         Returns: {
           archived_at: string | null
           created_at: string
@@ -1069,8 +992,9 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      events_admin_health: { Args: never; Returns: Json }
       events_admin_update: {
-        Args: { admin_key: string; p_id: string; p_patch: Json }
+        Args: { p_id: string; p_patch: Json }
         Returns: {
           archived_at: string | null
           created_at: string

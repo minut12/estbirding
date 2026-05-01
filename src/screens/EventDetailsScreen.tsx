@@ -54,11 +54,6 @@ export default function EventDetailsScreen({ event, onBack }: EventDetailsScreen
           <span className="inline-flex rounded-full bg-[#DDEBE3] px-3 py-1 text-xs font-medium text-primary">
             {event.category}
           </span>
-          {event.isArchived && (
-            <span className="inline-flex rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-              Arhiveeritud
-            </span>
-          )}
         </div>
 
         <p className="mt-4 text-sm leading-relaxed text-foreground">

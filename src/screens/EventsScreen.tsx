@@ -6,11 +6,9 @@ import { type EventItem } from "@/data/events";
 import { EventsMapMapLibre } from "@/components/events/EventsMapMapLibre";
 import { EventCard } from "@/components/events/EventCard";
 import {
-  archiveManualEvent,
   deleteManualEvent,
   listPublicEventsManual,
   type ManualEventRow,
-  unarchiveManualEvent,
 } from "@/features/events/eventsService";
 import { useAuth } from "@/features/auth/AuthContext";
 import { EventEditDialog } from "@/features/events/EventEditDialog";
@@ -19,7 +17,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
 type MainTab = "tulevased" | "moodunud" | "muud";
-type CategoryFilter = "koik" | "active" | "archived";
 
 function toEventItem(row: ManualEventRow): EventItem {
   const lat = Number(row.lat);
@@ -46,7 +43,6 @@ function toEventItem(row: ManualEventRow): EventItem {
     description: row.description || undefined,
     url: row.url || undefined,
     isPublished: row.status === "active",
-    isArchived: row.status === "archived",
   };
 }
 
@@ -57,7 +53,6 @@ function toErrorMessage(err: unknown): string {
 
 export default function EventsScreen() {
   const [mainTab, setMainTab] = useState<MainTab>("tulevased");
-  const [statusFilter, setStatusFilter] = useState<CategoryFilter>("active");
   const [searchValue, setSearchValue] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -107,21 +102,14 @@ export default function EventsScreen() {
             ? eventDate < todayStart
             : event.category === "Muud";
 
-      const statusMatch =
-        statusFilter === "koik"
-          ? true
-          : statusFilter === "active"
-            ? !event.isArchived
-            : Boolean(event.isArchived);
-
       const searchMatch = searchTerm
         ? event.title.toLowerCase().includes(searchTerm) ||
           event.locationName.toLowerCase().includes(searchTerm)
         : true;
 
-      return tabMatch && statusMatch && searchMatch;
+      return tabMatch && searchMatch;
     });
-  }, [events, mainTab, searchValue, statusFilter, todayStart]);
+  }, [events, mainTab, searchValue, todayStart]);
 
   const mapEvents = useMemo(
     () =>
@@ -171,19 +159,6 @@ export default function EventsScreen() {
     if (!row) return;
     setEditingRow(row);
     setDialogOpen(true);
-  };
-
-  const onArchiveToggle = async (eventId: string) => {
-    const row = rows.find((r) => r.id === eventId);
-    if (!row) return;
-    try {
-      if (row.status === "archived") await unarchiveManualEvent(eventId);
-      else await archiveManualEvent(eventId);
-      await loadEvents();
-      toast.success(row.status === "archived" ? "Üritus taastatud" : "Üritus arhiveeritud");
-    } catch (e) {
-      toast.error(toErrorMessage(e));
-    }
   };
 
   const onDelete = async (eventId: string) => {
@@ -243,29 +218,6 @@ export default function EventsScreen() {
           ))}
         </div>
 
-        <div className="flex gap-2">
-          {(
-            [
-              ["koik", "Kõik"],
-              ["active", "Aktiivsed"],
-              ["archived", "Arhiveeritud"],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setStatusFilter(key)}
-              className={cn(
-                "rounded-full px-3 py-1.5 text-xs font-medium transition",
-                statusFilter === key
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-white text-muted-foreground"
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -316,7 +268,6 @@ export default function EventsScreen() {
                 selected={event.id === highlightedEvent?.id}
                 canManage={canManage}
                 onEdit={() => openEdit(event.id)}
-                onArchiveToggle={() => onArchiveToggle(event.id)}
                 onDelete={() => onDelete(event.id)}
                 onPress={() => {
                   selectEvent(event.id);

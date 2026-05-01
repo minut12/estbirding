@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, RefreshCw, Search } from "lucide-react";
+import { RefreshCw, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { et } from "@/localization/et";
 import { type EventItem } from "@/data/events";
@@ -17,6 +17,44 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
 type MainTab = "tulevased" | "moodunud" | "muud";
+
+type MonthGroup = {
+  key: string;
+  label: string;
+  events: EventItem[];
+};
+
+const ESTONIAN_MONTHS = [
+  "jaanuar", "veebruar", "märts", "aprill", "mai", "juuni",
+  "juuli", "august", "september", "oktoober", "november", "detsember",
+];
+
+function groupByMonth(events: EventItem[], reverseChronological: boolean): MonthGroup[] {
+  const buckets = new Map<string, EventItem[]>();
+  for (const ev of events) {
+    const d = new Date(ev.startAt);
+    if (Number.isNaN(d.getTime())) continue;
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key)!.push(ev);
+  }
+  for (const list of buckets.values()) {
+    list.sort((a, b) => {
+      const da = new Date(a.startAt).getTime();
+      const db = new Date(b.startAt).getTime();
+      return reverseChronological ? db - da : da - db;
+    });
+  }
+  return Array.from(buckets.entries())
+    .map(([key, evs]) => {
+      const [yStr, mStr] = key.split("-");
+      const monthIdx = Number(mStr) - 1;
+      const monthName = ESTONIAN_MONTHS[monthIdx] ?? mStr;
+      const label = `${monthName.charAt(0).toUpperCase()}${monthName.slice(1)} ${yStr}`;
+      return { key, label, events: evs };
+    })
+    .sort((a, b) => (reverseChronological ? b.key.localeCompare(a.key) : a.key.localeCompare(b.key)));
+}
 
 function toEventItem(row: ManualEventRow): EventItem {
   const lat = Number(row.lat);
@@ -61,6 +99,7 @@ export default function EventsScreen() {
   const [rows, setRows] = useState<ManualEventRow[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<ManualEventRow | null>(null);
+  const [mapOpen, setMapOpen] = useState(false);
 
   const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const todayStart = useMemo(() => {
@@ -111,37 +150,28 @@ export default function EventsScreen() {
     });
   }, [events, mainTab, searchValue, todayStart]);
 
-  const mapEvents = useMemo(
+  const reverse = mainTab === "moodunud";
+  const groups = useMemo(() => groupByMonth(filteredEvents, reverse), [filteredEvents, reverse]);
+
+  const mapPoints = useMemo(
     () =>
-      filteredEvents.filter(
-        (event) =>
-          Number.isFinite(event.lat) &&
-          Number.isFinite(event.lng) &&
-          Math.abs(event.lat) <= 90 &&
-          Math.abs(event.lng) <= 180,
-      ),
+      filteredEvents
+        .filter(
+          (event) =>
+            Number.isFinite(event.lat) &&
+            Number.isFinite(event.lng) &&
+            Math.abs(event.lat) <= 90 &&
+            Math.abs(event.lng) <= 180,
+        )
+        .map((event) => ({ id: event.id, lat: event.lat, lon: event.lng, title: event.title })),
     [filteredEvents],
   );
 
   useEffect(() => {
     if (filteredEvents.length === 0) {
       setHighlightedEventId(null);
-      return;
     }
-    if (!highlightedEventId || !filteredEvents.some((event) => event.id === highlightedEventId)) {
-      setHighlightedEventId(filteredEvents[0].id);
-    }
-  }, [filteredEvents, highlightedEventId]);
-
-  const highlightedEvent = useMemo(
-    () => filteredEvents.find((event) => event.id === highlightedEventId) ?? null,
-    [filteredEvents, highlightedEventId]
-  );
-
-  const selectEvent = (eventId: string) => {
-    setHighlightedEventId(eventId);
-    cardRefs.current[eventId]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  };
+  }, [filteredEvents]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -229,54 +259,79 @@ export default function EventsScreen() {
         </div>
       </div>
 
-      {mapEvents.length > 0 && (
-        <div className="px-4 pb-3">
-          <EventsMapMapLibre
-            points={mapEvents.map((event) => ({ id: event.id, lat: event.lat, lon: event.lng, title: event.title }))}
-            selectedId={highlightedEventId || undefined}
-            onMarkerClick={(id) => {
-              setHighlightedEventId(id);
-              const node = cardRefs.current[id];
-              if (node) {
-                node.scrollIntoView({ behavior: "smooth", block: "center" });
-              }
-              window.setTimeout(() => {
-                setHighlightedEventId((current) => (current === id ? null : current));
-              }, 2500);
-            }}
-          />
+      <div className="px-4">
+        <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-3 py-2">
+          <span className="text-sm text-muted-foreground">
+            {mapPoints.length === 0
+              ? "Asukohaga üritusi pole"
+              : `${mapPoints.length} üritust kaardil`}
+          </span>
+          {mapPoints.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setMapOpen((v) => !v)}
+              className="h-7 px-2 text-xs"
+            >
+              {mapOpen ? "Sulge kaart" : "Ava kaart"}
+            </Button>
+          )}
         </div>
-      )}
 
-      <div className="min-h-0 flex-1 overflow-hidden rounded-t-[28px] bg-white px-4 pt-4 shadow-[0_-8px_24px_rgba(38,64,52,0.08)]">
+        {mapOpen && mapPoints.length > 0 && (
+          <div className="mt-2 overflow-hidden rounded-lg border border-border">
+            <EventsMapMapLibre
+              points={mapPoints}
+              selectedId={highlightedEventId || undefined}
+              onMarkerClick={(id) => {
+                setHighlightedEventId(id);
+                const node = cardRefs.current[id];
+                if (node) {
+                  node.scrollIntoView({ behavior: "smooth", block: "center" });
+                }
+                window.setTimeout(() => {
+                  setHighlightedEventId((current) => (current === id ? null : current));
+                }, 2500);
+              }}
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 min-h-0 flex-1 overflow-y-auto bg-white">
         {isLoading ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Laen üritusi...</div>
-        ) : filteredEvents.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <CalendarDays className="h-10 w-10 text-muted-foreground/45" />
-            <p className="text-sm text-muted-foreground">Üritusi ei leitud. Proovi värskendada.</p>
-            <button onClick={handleRefresh} className="rounded-full border border-border px-4 py-1.5 text-xs font-medium text-foreground">
-              Värskenda
-            </button>
-          </div>
+        ) : groups.length === 0 ? (
+          <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+            Ühtegi üritust ei leitud.
+          </p>
         ) : (
-          <div className="h-full space-y-3 overflow-y-auto pb-6">
-            {filteredEvents.map((event) => (
-              <EventCard
-                key={event.id}
-                event={event}
-                selected={event.id === highlightedEvent?.id}
-                canManage={canManage}
-                onEdit={() => openEdit(event.id)}
-                onDelete={() => onDelete(event.id)}
-                onPress={() => {
-                  selectEvent(event.id);
-                  setOpenedDetails(event);
-                }}
-                cardRef={(node) => {
-                  cardRefs.current[event.id] = node;
-                }}
-              />
+          <div className="pb-6">
+            {groups.map((group) => (
+              <section key={group.key}>
+                <header className="bg-muted/50 px-4 py-2">
+                  <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    {group.label}
+                  </h2>
+                </header>
+                <div>
+                  {group.events.map((event) => (
+                    <EventCard
+                      key={event.id}
+                      event={event}
+                      variant="compact"
+                      selected={event.id === highlightedEventId}
+                      canManage={canManage}
+                      onEdit={() => openEdit(event.id)}
+                      onDelete={() => onDelete(event.id)}
+                      onPress={() => setOpenedDetails(event)}
+                      cardRef={(node) => {
+                        cardRefs.current[event.id] = node;
+                      }}
+                    />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         )}

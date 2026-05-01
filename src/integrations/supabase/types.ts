@@ -870,6 +870,51 @@ export type Database = {
         }
         Relationships: []
       }
+      vaatluste_raport: {
+        Row: {
+          estonia_entries: Json
+          estonia_narrative_et: string | null
+          europe_entries: Json
+          europe_narrative_et: string | null
+          generated_at: string
+          generation_meta: Json | null
+          id: string
+          intro_et: string | null
+          model: string | null
+          period_end: string
+          period_start: string
+          source_data: Json | null
+        }
+        Insert: {
+          estonia_entries?: Json
+          estonia_narrative_et?: string | null
+          europe_entries?: Json
+          europe_narrative_et?: string | null
+          generated_at?: string
+          generation_meta?: Json | null
+          id?: string
+          intro_et?: string | null
+          model?: string | null
+          period_end: string
+          period_start: string
+          source_data?: Json | null
+        }
+        Update: {
+          estonia_entries?: Json
+          estonia_narrative_et?: string | null
+          europe_entries?: Json
+          europe_narrative_et?: string | null
+          generated_at?: string
+          generation_meta?: Json | null
+          id?: string
+          intro_et?: string | null
+          model?: string | null
+          period_end?: string
+          period_start?: string
+          source_data?: Json | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       news_items_v: {

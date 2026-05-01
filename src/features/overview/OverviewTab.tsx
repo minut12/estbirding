@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, RefreshCw, X } from 'lucide-react';
 
 type VaatlusEntry = {
   species_et: string;
@@ -19,9 +19,9 @@ type VaatlusEntry = {
   lng?: number | null;
   count?: number | null;
   is_rarity: boolean;
-  rarity_reason?: string;
+  rarity_reason?: string | null;
   documented?: string[];
-  comparison_et?: string;
+  comparison_et?: string | null;
 };
 
 type VaatlusteRaport = {
@@ -44,6 +44,9 @@ const FLAG: Record<string, string> = {
 
 const dayMonthFmt = new Intl.DateTimeFormat('et-EE', { day: 'numeric', month: 'long' });
 const dayMonthYearFmt = new Intl.DateTimeFormat('et-EE', { day: 'numeric', month: 'long', year: 'numeric' });
+const dateTimeFmt = new Intl.DateTimeFormat('et-EE', {
+  day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
+});
 
 function parseDate(s: string): Date | null {
   if (!s) return null;
@@ -67,10 +70,10 @@ function formatRelative(iso: string): string {
   const diffSec = Math.floor((Date.now() - d.getTime()) / 1000);
   if (diffSec < 60) return 'just nüüd';
   const min = Math.floor(diffSec / 60);
-  if (min < 60) return `${min} minutit tagasi`;
+  if (min < 60) return `${min} ${min === 1 ? 'minut' : 'minutit'} tagasi`;
   const hr = Math.floor(min / 60);
   if (hr < 24) return `${hr} ${hr === 1 ? 'tund' : 'tundi'} tagasi`;
-  return dayMonthYearFmt.format(d);
+  return dateTimeFmt.format(d);
 }
 
 function formatEntryDate(s: string): string {
@@ -78,9 +81,19 @@ function formatEntryDate(s: string): string {
   return d ? dayMonthFmt.format(d) : s;
 }
 
+function formatObservers(observers: string[] | undefined): { text: string; unknown: boolean } {
+  const cleaned = (observers || []).map((o) => (o || '').trim()).filter(Boolean);
+  const onlyUnknown =
+    cleaned.length === 0 ||
+    cleaned.every((o) => o === '(vaatleja teadmata)' || o.toLowerCase() === 'vaatleja teadmata');
+  if (onlyUnknown) return { text: 'Vaatleja teadmata', unknown: true };
+  return { text: cleaned.join(', '), unknown: false };
+}
+
 function EntryCard({ entry }: { entry: VaatlusEntry }) {
   const isRarity = entry.is_rarity;
-  const flag = entry.country_code !== 'EE' ? FLAG[entry.country_code] : undefined;
+  const flag = entry.country_code && entry.country_code !== 'EE' ? FLAG[entry.country_code] : undefined;
+  const obs = formatObservers(entry.observers);
   return (
     <Card
       className={cn(
@@ -117,12 +130,10 @@ function EntryCard({ entry }: { entry: VaatlusEntry }) {
           </>
         )}
       </div>
-      {entry.observers && entry.observers.length > 0 && (
-        <div className="text-sm">
-          <span className="text-muted-foreground">Vaatleja(d): </span>
-          {entry.observers.join(', ')}
-        </div>
-      )}
+      <div className="text-sm">
+        <span className="text-muted-foreground">Vaatleja(d): </span>
+        <span className={cn(obs.unknown && 'text-muted-foreground italic')}>{obs.text}</span>
+      </div>
       {typeof entry.count === 'number' && entry.count > 0 && (
         <div className="text-sm">
           <span className="text-muted-foreground">Arv: </span>
@@ -152,8 +163,10 @@ export default function OverviewTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [section, setSection] = useState<'ee' | 'eu'>('ee');
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
-  const fetchLatest = useCallback(async () => {
+  const fetchLatest = useCallback(async (): Promise<VaatlusteRaport | null> => {
     setError(null);
     try {
       const { data, error } = await (supabase as any)
@@ -169,8 +182,10 @@ export default function OverviewTab() {
         row.europe_entries = Array.isArray(row.europe_entries) ? row.europe_entries : [];
       }
       setReport(row);
+      return row;
     } catch (e: any) {
       setError(e?.message || 'Tundmatu viga');
+      return null;
     } finally {
       setLoading(false);
     }
@@ -178,9 +193,63 @@ export default function OverviewTab() {
 
   useEffect(() => {
     fetchLatest();
-    const id = window.setInterval(fetchLatest, 5 * 60 * 1000);
-    return () => window.clearInterval(id);
   }, [fetchLatest]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    setRefreshError(null);
+    const startedAt = new Date().toISOString();
+
+    try {
+      const { error } = await supabase.functions.invoke('trigger-vaatluste-refresh', {
+        method: 'POST',
+        body: {},
+      });
+
+      if (error) {
+        const ctx: any = (error as any)?.context;
+        const status = ctx?.status;
+        if (status === 429 && ctx) {
+          const body = await ctx.json?.().catch(() => null);
+          const seconds = body?.retry_after_seconds ?? 60;
+          setRefreshError(
+            `Eelmine värskendus toimus hiljuti. Proovi uuesti ${seconds} sekundi pärast.`,
+          );
+        } else {
+          setRefreshError('Värskendamine ebaõnnestus. Proovi hiljem uuesti.');
+        }
+        setRefreshing(false);
+        return;
+      }
+
+      const TIMEOUT_MS = 90_000;
+      const POLL_MS = 3_000;
+      const deadline = Date.now() + TIMEOUT_MS;
+
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, POLL_MS));
+        const { data: row } = await (supabase as any)
+          .from('vaatluste_raport')
+          .select('*')
+          .order('generated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (row && row.generated_at > startedAt) {
+          row.estonia_entries = Array.isArray(row.estonia_entries) ? row.estonia_entries : [];
+          row.europe_entries = Array.isArray(row.europe_entries) ? row.europe_entries : [];
+          setReport(row as VaatlusteRaport);
+          setRefreshing(false);
+          return;
+        }
+      }
+
+      setRefreshError('Värskendamine kestab oodatust kauem. Proovi hetke pärast lehte uuendada.');
+      setRefreshing(false);
+    } catch {
+      setRefreshError('Värskendamine ebaõnnestus. Proovi hiljem uuesti.');
+      setRefreshing(false);
+    }
+  }, []);
 
   const eeEntries = useMemo(() => sortEntries(report?.estonia_entries || []), [report]);
   const euEntries = useMemo(() => sortEntries(report?.europe_entries || []), [report]);
@@ -191,19 +260,44 @@ export default function OverviewTab() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-2xl mx-auto p-4 space-y-4">
-        <header className="space-y-1">
-          <h1 className="text-2xl font-semibold">Ülevaade</h1>
-          {report && (
-            <>
-              <p className="text-sm text-muted-foreground">
-                Periood: {formatPeriod(report.period_start, report.period_end)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Värskendatud {formatRelative(report.generated_at)}
-              </p>
-            </>
-          )}
+        <header className="flex items-start justify-between gap-3">
+          <div className="space-y-1 min-w-0">
+            <h1 className="text-2xl font-semibold">Ülevaade</h1>
+            {report && (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Periood: {formatPeriod(report.period_start, report.period_end)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Värskendatud {formatRelative(report.generated_at)}
+                </p>
+              </>
+            )}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="shrink-0 gap-2"
+          >
+            <RefreshCw className={cn('w-4 h-4', refreshing && 'animate-spin')} />
+            {refreshing ? 'Värskendan...' : 'Värskenda'}
+          </Button>
         </header>
+
+        {refreshError && (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <span className="flex-1">{refreshError}</span>
+            <button
+              onClick={() => setRefreshError(null)}
+              className="shrink-0 opacity-70 hover:opacity-100"
+              aria-label="Sulge"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {loading && (
           <div className="space-y-3">
@@ -223,7 +317,7 @@ export default function OverviewTab() {
         {!loading && !error && !report && (
           <Card className="p-6 text-center">
             <p className="text-sm text-muted-foreground">
-              Ülevaadet pole veel koostatud. Esimene värskendus toimub kell 06:00 või 18:00.
+              Ülevaadet pole veel koostatud. Vajuta Värskenda või oota järgmist automaatset uuendust kell 06:00 või 18:00.
             </p>
           </Card>
         )}
@@ -260,7 +354,7 @@ export default function OverviewTab() {
             <div className="space-y-3">
               {activeEntries.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-8">
-                  Selles sektsioonis vaatlusi ei ole.
+                  Sel perioodil silmapaistvaid vaatlusi ei registreeritud.
                 </p>
               ) : (
                 activeEntries.map((entry, idx) => (

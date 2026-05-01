@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Map, Newspaper, CalendarDays, Settings } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { Map, Newspaper, CalendarDays, Settings, Binoculars } from 'lucide-react';
 import MapTab from '@/features/map/MapTab';
 import NewsTab from '@/features/news/NewsTab';
 import EventsTab from '@/features/events/EventsTab';
+import OverviewTab from '@/features/overview/OverviewTab';
 
 import SettingsTab from '@/features/settings/SettingsTab';
 import CacheResetFab from '@/components/CacheResetFab';
@@ -14,11 +16,12 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { maps } from '@/features/map/config';
 import { resolveAllowedMapSelection } from '@/features/map/access';
 
-type Tab = 'kaart' | 'uudised' | 'üritused' | 'seaded';
+type Tab = 'kaart' | 'ulevaade' | 'uudised' | 'üritused' | 'seaded';
 
 const NEWS_HASHES = new Set(['#news', '#news-article']);
 
 function resolveInitialTab(): Tab {
+  if (typeof window !== 'undefined' && window.location.pathname === '/ulevaade') return 'ulevaade';
   const stateTab = window.history.state?.estbirding?.activeTab;
   if (stateTab === 'uudised') return 'uudised';
   if (NEWS_HASHES.has(window.location.hash)) return 'uudised';
@@ -27,6 +30,7 @@ function resolveInitialTab(): Tab {
 
 const tabs: { id: Tab; label: string; icon: typeof Map }[] = [
   { id: 'kaart', label: 'Kaart', icon: Map },
+  { id: 'ulevaade', label: 'Ülevaade', icon: Binoculars },
   { id: 'uudised', label: 'Uudised', icon: Newspaper },
   { id: 'üritused', label: 'Üritused', icon: CalendarDays },
   { id: 'seaded', label: 'Seaded', icon: Settings },
@@ -34,8 +38,13 @@ const tabs: { id: Tab; label: string; icon: typeof Map }[] = [
 
 export default function Index() {
   const { role, permissions } = useAuth();
+  const location = useLocation();
   const [active, setActive] = useState<Tab>(() => resolveInitialTab());
   const [selectedMapId, setSelectedMapId] = useState<string>('');
+
+  useEffect(() => {
+    if (location.pathname === '/ulevaade') setActive('ulevaade');
+  }, [location.pathname]);
 
   useEffect(() => {
     const resolved = resolveAllowedMapSelection({ role, permissions, maps, requestedId: selectedMapId });
@@ -87,6 +96,7 @@ export default function Index() {
         <div className={active === 'kaart' ? 'absolute inset-0' : 'absolute inset-0 invisible pointer-events-none'}>
           <MapTab isActive={active === 'kaart'} onMapChange={setSelectedMapId} />
         </div>
+        {active === 'ulevaade' && <OverviewTab />}
         {active === 'uudised' && <NewsTab />}
         {active === 'üritused' && <EventsTab />}
         {active === 'seaded' && <SettingsTab />}

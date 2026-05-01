@@ -41,6 +41,14 @@ const App = () => {
                 }
               />
               <Route
+                path="/ulevaade"
+                element={
+                  <ProtectedRoute>
+                    <Index />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/admin/users"
                 element={
                   <ProtectedRoute requireAdmin>

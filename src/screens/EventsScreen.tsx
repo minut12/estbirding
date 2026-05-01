@@ -6,11 +6,9 @@ import { type EventItem } from "@/data/events";
 import { EventsMapMapLibre } from "@/components/events/EventsMapMapLibre";
 import { EventCard } from "@/components/events/EventCard";
 import {
-  archiveManualEvent,
   deleteManualEvent,
   listPublicEventsManual,
   type ManualEventRow,
-  unarchiveManualEvent,
 } from "@/features/events/eventsService";
 import { useAuth } from "@/features/auth/AuthContext";
 import { EventEditDialog } from "@/features/events/EventEditDialog";

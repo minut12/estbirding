@@ -328,6 +328,12 @@ export default function EventsScreen() {
           void loadEvents();
         }}
       />
+
+      {import.meta.env.DEV && (
+        <p className="px-4 pb-4 text-xs text-muted-foreground">
+          Admin režiim: {canManage ? "sees" : "väljas (VITE_EVENTS_ADMIN_KEY puudu)"}
+        </p>
+      )}
     </div>
   );
 }

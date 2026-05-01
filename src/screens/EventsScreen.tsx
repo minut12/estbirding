@@ -282,6 +282,16 @@ export default function EventsScreen() {
           <EventsMapMapLibre
             points={mapEvents.map((event) => ({ id: event.id, lat: event.lat, lon: event.lng, title: event.title }))}
             selectedId={highlightedEventId || undefined}
+            onMarkerClick={(id) => {
+              setHighlightedEventId(id);
+              const node = cardRefs.current[id];
+              if (node) {
+                node.scrollIntoView({ behavior: "smooth", block: "center" });
+              }
+              window.setTimeout(() => {
+                setHighlightedEventId((current) => (current === id ? null : current));
+              }, 2500);
+            }}
           />
         </div>
       )}

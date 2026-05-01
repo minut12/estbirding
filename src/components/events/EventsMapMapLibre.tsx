@@ -11,12 +11,26 @@ type MapPoint = {
 type EventsMapMapLibreProps = {
   points: MapPoint[];
   selectedId?: string;
+  onMarkerClick?: (id: string) => void;
 };
 
 const ESTONIA_CENTER: [number, number] = [24.75, 59.44];
 const ESTONIA_ZOOM = 5;
-const KINGFISHER_PIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 64 64"><path fill="#1f6f4a" d="M32 2c-11 0-20 9-20 20 0 16 20 40 20 40s20-24 20-40C52 11 43 2 32 2z"/><path fill="#ffffff" d="M22 26c6-6 18-6 24 0-5 2-9 6-12 12-3-6-7-10-12-12z"/><circle cx="38" cy="22" r="2" fill="#ffffff"/></svg>`;
-const KINGFISHER_PIN_URI = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(KINGFISHER_PIN_SVG)}`;
+
+// Teardrop pin with a flying bird silhouette. Two-tone green to match app theme.
+const BIRD_PIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="48" viewBox="0 0 36 48">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <path filter="url(#shadow)" fill="#1f6f4a" stroke="#0f3a26" stroke-width="1"
+        d="M18 1 C8 1 1 8.5 1 18 C1 30 18 47 18 47 C18 47 35 30 35 18 C35 8.5 28 1 18 1 Z"/>
+  <circle cx="18" cy="17" r="10.5" fill="#ffffff"/>
+  <path fill="#1f6f4a"
+        d="M7.5 18 C10 14.5 13.5 13.5 17 16 C20.5 13.5 24 14.5 26.5 18 C24 17 21 17.5 18 19 C15 17.5 12 17 7.5 18 Z"/>
+</svg>`;
+const BIRD_PIN_URI = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(BIRD_PIN_SVG)}`;
 
 const MAP_STYLE = {
   version: 8,
@@ -55,30 +69,45 @@ function stableKey(points: MapPoint[]): string {
 
 function createMarkerElement(selected: boolean): HTMLDivElement {
   const el = document.createElement("div");
-  const size = selected ? 36 : 32;
-  el.style.width = `${size}px`;
-  el.style.height = `${size}px`;
-  el.style.backgroundImage = `url('${KINGFISHER_PIN_URI}')`;
+  const width = selected ? 42 : 36;
+  const height = Math.round(width * (48 / 36));
+  el.style.width = `${width}px`;
+  el.style.height = `${height}px`;
+  el.style.backgroundImage = `url('${BIRD_PIN_URI}')`;
   el.style.backgroundSize = "contain";
   el.style.backgroundRepeat = "no-repeat";
-  el.style.transform = `translate(-${Math.round(size / 2)}px,-${size}px)`;
+  el.style.transform = `translate(-${Math.round(width / 2)}px,-${height}px)`;
   el.style.cursor = "pointer";
+  el.style.transition = "transform 0.15s ease-out";
+  if (selected) {
+    el.style.zIndex = "10";
+  }
   return el;
 }
 
-export function EventsMapMapLibre({ points, selectedId }: EventsMapMapLibreProps) {
+export function EventsMapMapLibre({ points, selectedId, onMarkerClick }: EventsMapMapLibreProps) {
   const validPoints = useMemo(() => points.filter(isValidPoint), [points]);
   if (validPoints.length === 0) return null;
-  return <EventsMapInner points={validPoints} selectedId={selectedId} />;
+  return <EventsMapInner points={validPoints} selectedId={selectedId} onMarkerClick={onMarkerClick} />;
 }
 
-function EventsMapInner({ points, selectedId }: { points: MapPoint[]; selectedId?: string }) {
+function EventsMapInner({
+  points,
+  selectedId,
+  onMarkerClick,
+}: {
+  points: MapPoint[];
+  selectedId?: string;
+  onMarkerClick?: (id: string) => void;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const loadedRef = useRef(false);
   const userMovedRef = useRef(false);
   const lastPointsKeyRef = useRef("");
+  const onMarkerClickRef = useRef<typeof onMarkerClick>(onMarkerClick);
+  onMarkerClickRef.current = onMarkerClick;
 
   const pointsKey = useMemo(() => stableKey(points), [points]);
 
@@ -142,7 +171,12 @@ function EventsMapInner({ points, selectedId }: { points: MapPoint[]; selectedId
       lastPointsKeyRef.current = pointsKey;
       for (const point of points) {
         const selected = point.id === selectedId;
-        const marker = new maplibregl.Marker({ element: createMarkerElement(selected), anchor: "bottom" })
+        const el = createMarkerElement(selected);
+        el.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          onMarkerClickRef.current?.(point.id);
+        });
+        const marker = new maplibregl.Marker({ element: el, anchor: "bottom" })
           .setLngLat([point.lon, point.lat])
           .addTo(map);
         markersRef.current.set(point.id, marker);
@@ -185,7 +219,12 @@ function EventsMapInner({ points, selectedId }: { points: MapPoint[]; selectedId
     for (const point of points) {
       const existing = markersRef.current.get(point.id);
       const selected = point.id === selectedId;
-      const marker = new maplibregl.Marker({ element: createMarkerElement(selected), anchor: "bottom" })
+      const el = createMarkerElement(selected);
+      el.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        onMarkerClickRef.current?.(point.id);
+      });
+      const marker = new maplibregl.Marker({ element: el, anchor: "bottom" })
         .setLngLat([point.lon, point.lat])
         .addTo(map);
       if (existing) existing.remove();

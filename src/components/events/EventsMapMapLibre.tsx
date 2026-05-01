@@ -67,22 +67,46 @@ function stableKey(points: MapPoint[]): string {
     .join("|");
 }
 
-function createMarkerElement(selected: boolean): HTMLDivElement {
-  const el = document.createElement("div");
+function createMarkerElement(title: string, selected: boolean): HTMLDivElement {
+  const wrapper = document.createElement("div");
+  wrapper.style.position = "relative";
+  wrapper.style.display = "flex";
+  wrapper.style.flexDirection = "column";
+  wrapper.style.alignItems = "center";
+  wrapper.style.cursor = "pointer";
+  wrapper.style.transition = "transform 0.15s ease-out";
+  if (selected) wrapper.style.zIndex = "10";
+
+  const pin = document.createElement("div");
   const width = selected ? 42 : 36;
   const height = Math.round(width * (48 / 36));
-  el.style.width = `${width}px`;
-  el.style.height = `${height}px`;
-  el.style.backgroundImage = `url('${BIRD_PIN_URI}')`;
-  el.style.backgroundSize = "contain";
-  el.style.backgroundRepeat = "no-repeat";
-  el.style.transform = `translate(-${Math.round(width / 2)}px,-${height}px)`;
-  el.style.cursor = "pointer";
-  el.style.transition = "transform 0.15s ease-out";
-  if (selected) {
-    el.style.zIndex = "10";
-  }
-  return el;
+  pin.style.width = `${width}px`;
+  pin.style.height = `${height}px`;
+  pin.style.backgroundImage = `url('${BIRD_PIN_URI}')`;
+  pin.style.backgroundSize = "contain";
+  pin.style.backgroundRepeat = "no-repeat";
+  wrapper.appendChild(pin);
+
+  const label = document.createElement("div");
+  label.textContent = title;
+  label.style.marginTop = "2px";
+  label.style.padding = "2px 6px";
+  label.style.fontSize = "11px";
+  label.style.fontWeight = "600";
+  label.style.lineHeight = "1.2";
+  label.style.color = "#0f3a26";
+  label.style.background = "rgba(255, 255, 255, 0.92)";
+  label.style.border = "1px solid rgba(31, 111, 74, 0.35)";
+  label.style.borderRadius = "4px";
+  label.style.whiteSpace = "nowrap";
+  label.style.maxWidth = "180px";
+  label.style.overflow = "hidden";
+  label.style.textOverflow = "ellipsis";
+  label.style.boxShadow = "0 1px 2px rgba(0,0,0,0.15)";
+  label.style.pointerEvents = "none";
+  wrapper.appendChild(label);
+
+  return wrapper;
 }
 
 export function EventsMapMapLibre({ points, selectedId, onMarkerClick }: EventsMapMapLibreProps) {
@@ -171,12 +195,12 @@ function EventsMapInner({
       lastPointsKeyRef.current = pointsKey;
       for (const point of points) {
         const selected = point.id === selectedId;
-        const el = createMarkerElement(selected);
+        const el = createMarkerElement(point.title ?? "", selected);
         el.addEventListener("click", (ev) => {
           ev.stopPropagation();
           onMarkerClickRef.current?.(point.id);
         });
-        const marker = new maplibregl.Marker({ element: el, anchor: "bottom" })
+        const marker = new maplibregl.Marker({ element: el, anchor: "bottom", offset: [0, -22] })
           .setLngLat([point.lon, point.lat])
           .addTo(map);
         markersRef.current.set(point.id, marker);
@@ -219,12 +243,12 @@ function EventsMapInner({
     for (const point of points) {
       const existing = markersRef.current.get(point.id);
       const selected = point.id === selectedId;
-      const el = createMarkerElement(selected);
+      const el = createMarkerElement(point.title ?? "", selected);
       el.addEventListener("click", (ev) => {
         ev.stopPropagation();
         onMarkerClickRef.current?.(point.id);
       });
-      const marker = new maplibregl.Marker({ element: el, anchor: "bottom" })
+      const marker = new maplibregl.Marker({ element: el, anchor: "bottom", offset: [0, -22] })
         .setLngLat([point.lon, point.lat])
         .addTo(map);
       if (existing) existing.remove();

@@ -12,7 +12,7 @@ import {
   type ManualEventRow,
   unarchiveManualEvent,
 } from "@/features/events/eventsService";
-import { hasEventsAdminKey } from "@/features/events/adminKey";
+import { useAuth } from "@/features/auth/AuthContext";
 import { EventEditDialog } from "@/features/events/EventEditDialog";
 import EventDetailsScreen from "./EventDetailsScreen";
 import { toast } from "sonner";
@@ -74,7 +74,8 @@ export default function EventsScreen() {
     return date;
   }, []);
 
-  const canManage = hasEventsAdminKey();
+  const { isAdmin } = useAuth();
+  const canManage = isAdmin;
 
   const loadEvents = useCallback(async () => {
     setIsLoading(true);
@@ -331,7 +332,7 @@ export default function EventsScreen() {
 
       {import.meta.env.DEV && (
         <p className="px-4 pb-4 text-xs text-muted-foreground">
-          Admin režiim: {canManage ? "sees" : "väljas (VITE_EVENTS_ADMIN_KEY puudu)"}
+          Admin režiim: {canManage ? "sees" : "väljas (admin rolli vaja)"}
         </p>
       )}
     </div>

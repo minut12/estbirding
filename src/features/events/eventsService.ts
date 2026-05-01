@@ -1,6 +1,5 @@
 import { getSupabaseUrl, supabaseFetch, validateSupabaseConfig } from "@/config/supabaseConfig";
 import { supabase } from "@/config/supabaseClient";
-import { getEventsAdminKey } from "./adminKey";
 
 export type ManualEventType = "estbirding" | "muud";
 export type ManualEventStatus = "active" | "archived" | "deleted";
@@ -125,20 +124,13 @@ export async function listPublicEventsManual(): Promise<ManualEventRow[]> {
   return sortByStartsAtAsc(rows);
 }
 
-function requireEventsAdminKey(): string {
-  const eventsAdminKey = getEventsAdminKey();
-  const key = (eventsAdminKey ?? "").trim();
-  if (!key) {
-    throw new Error("events_admin_key puudub");
-  }
-  return key;
-}
-
 function ensureIso(value: string | null | undefined): string | null {
   if (!value) return null;
   return new Date(value).toISOString();
 }
 
+// TODO: regenerate Supabase types after migration 20260501190000_events_admin_use_auth.sql is applied;
+// the generated RPC signatures still include admin_key, so we cast args to `any` for now.
 async function callRpcRow(functionName: string, args: Record<string, unknown>): Promise<ManualEventRow> {
   const { data, error } = await supabase.rpc(functionName as any, args as any);
   if (error) throw error;
@@ -146,9 +138,8 @@ async function callRpcRow(functionName: string, args: Record<string, unknown>): 
   return mapRow(row);
 }
 
-export async function testEventsAdminHealth(adminKey?: string): Promise<{ ok: boolean; now?: string }> {
-  const key = (adminKey || requireEventsAdminKey()).trim();
-  const { data, error } = await supabase.rpc("events_admin_health", { admin_key: key });
+export async function testEventsAdminHealth(): Promise<{ ok: boolean; now?: string }> {
+  const { data, error } = await supabase.rpc("events_admin_health" as any, {} as any);
   if (error) {
     console.log("[events-admin-rpc] health error", { fn: "events_admin_health", error });
     throw error;
@@ -157,9 +148,7 @@ export async function testEventsAdminHealth(adminKey?: string): Promise<{ ok: bo
 }
 
 export async function createManualEvent(event: ManualEventInput): Promise<ManualEventRow> {
-  const adminKey = requireEventsAdminKey();
   return callRpcRow("events_admin_create", {
-    admin_key: adminKey,
     p_title: event.title,
     p_starts_at: ensureIso(event.starts_at),
     p_ends_at: ensureIso(event.ends_at ?? null),
@@ -175,25 +164,20 @@ export async function createManualEvent(event: ManualEventInput): Promise<Manual
 }
 
 export async function updateManualEvent(id: string, patch: ManualEventPatch): Promise<ManualEventRow> {
-  const adminKey = requireEventsAdminKey();
   return callRpcRow("events_admin_update", {
-    admin_key: adminKey,
     p_id: id,
     p_patch: patch,
   });
 }
 
 export async function archiveManualEvent(id: string): Promise<ManualEventRow> {
-  const adminKey = requireEventsAdminKey();
-  return callRpcRow("events_admin_archive", { admin_key: adminKey, p_id: id });
+  return callRpcRow("events_admin_archive", { p_id: id });
 }
 
 export async function unarchiveManualEvent(id: string): Promise<ManualEventRow> {
-  const adminKey = requireEventsAdminKey();
-  return callRpcRow("events_admin_unarchive", { admin_key: adminKey, p_id: id });
+  return callRpcRow("events_admin_unarchive", { p_id: id });
 }
 
 export async function deleteManualEvent(id: string): Promise<ManualEventRow> {
-  const adminKey = requireEventsAdminKey();
-  return callRpcRow("events_admin_delete", { admin_key: adminKey, p_id: id });
+  return callRpcRow("events_admin_delete", { p_id: id });
 }

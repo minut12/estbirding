@@ -14,7 +14,6 @@ export interface EventItem {
   organizerName?: string;
   url?: string;
   isPublished?: boolean;
-  isArchived?: boolean;
 }
 
 const baseDate = new Date();

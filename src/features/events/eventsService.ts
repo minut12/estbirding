@@ -90,7 +90,7 @@ export async function listPublicEventsManual(): Promise<ManualEventRow[]> {
   }
 
   const base = `${getSupabaseUrl().replace(/\/+$/, "")}/rest/v1/events_manual`;
-  const query = `status=neq.deleted&order=starts_at.asc`;
+  const query = `status=eq.active&order=starts_at.asc`;
   const withImageEndpoint = `${base}?select=${encodeURIComponent(READ_COLUMNS_WITH_IMAGE)}&${query}`;
   const fallbackEndpoint = `${base}?select=${encodeURIComponent(READ_COLUMNS)}&${query}`;
 
@@ -129,8 +129,8 @@ function ensureIso(value: string | null | undefined): string | null {
   return new Date(value).toISOString();
 }
 
-// TODO: regenerate Supabase types after migration 20260501190000_events_admin_use_auth.sql is applied;
-// the generated RPC signatures still include admin_key, so we cast args to `any` for now.
+// Casts to `any` remain because Supabase TS types haven't been regenerated yet
+// after the events_admin_* RPCs were rewritten to drop the admin_key parameter.
 async function callRpcRow(functionName: string, args: Record<string, unknown>): Promise<ManualEventRow> {
   const { data, error } = await supabase.rpc(functionName as any, args as any);
   if (error) throw error;
@@ -168,14 +168,6 @@ export async function updateManualEvent(id: string, patch: ManualEventPatch): Pr
     p_id: id,
     p_patch: patch,
   });
-}
-
-export async function archiveManualEvent(id: string): Promise<ManualEventRow> {
-  return callRpcRow("events_admin_archive", { p_id: id });
-}
-
-export async function unarchiveManualEvent(id: string): Promise<ManualEventRow> {
-  return callRpcRow("events_admin_unarchive", { p_id: id });
 }
 
 export async function deleteManualEvent(id: string): Promise<ManualEventRow> {

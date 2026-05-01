@@ -2,14 +2,15 @@
 // ────────────────────────
 // Accepts POST from n8n with a generated observation report and inserts a row
 // into public.vaatluste_raport using the service-role key held server-side.
-// n8n authenticates via the shared X-Webhook-Secret header (VAATLUSTE_WEBHOOK_SECRET).
+// n8n authenticates via the shared X-Webhook-Secret header
+// (N8N_VAATLUSTE_WEBHOOK_SECRET — same value used by trigger-vaatluste-refresh).
 // This avoids ever exposing the service_role key outside Supabase.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const WEBHOOK_SECRET = Deno.env.get("VAATLUSTE_WEBHOOK_SECRET") ?? "";
+const WEBHOOK_SECRET = Deno.env.get("N8N_VAATLUSTE_WEBHOOK_SECRET") ?? "";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -39,7 +40,7 @@ Deno.serve(async (req) => {
 
   // Shared-secret auth
   const provided = req.headers.get("x-webhook-secret") ?? "";
-  if (provided !== WEBHOOK_SECRET) {
+  if (!provided || provided !== WEBHOOK_SECRET) {
     return json({ error: "unauthorized" }, 401);
   }
 
@@ -50,23 +51,28 @@ Deno.serve(async (req) => {
     return json({ error: "invalid_json" }, 400);
   }
 
-  // Minimal validation — table has its own NOT NULL constraints as backstop
-  const report_data = body.report_data;
-  if (!report_data || typeof report_data !== "object") {
-    return json({ error: "missing_report_data" }, 400);
+  // Required fields
+  if (!body.period_start || !body.period_end) {
+    return json({ error: "missing_required_fields" }, 400);
   }
 
   const row = {
-    generated_at: typeof body.generated_at === "string"
-      ? body.generated_at
-      : new Date().toISOString(),
-    report_data,
-    period_start: body.period_start ?? null,
-    period_end: body.period_end ?? null,
-    source: typeof body.source === "string" ? body.source : "n8n",
+    period_start: body.period_start,
+    period_end: body.period_end,
+    intro_et: typeof body.intro_et === "string" ? body.intro_et : null,
+    estonia_narrative_et:
+      typeof body.estonia_narrative_et === "string" ? body.estonia_narrative_et : null,
+    estonia_entries: Array.isArray(body.estonia_entries) ? body.estonia_entries : [],
+    europe_narrative_et:
+      typeof body.europe_narrative_et === "string" ? body.europe_narrative_et : null,
+    europe_entries: Array.isArray(body.europe_entries) ? body.europe_entries : [],
+    source_data:
+      body.source_data && typeof body.source_data === "object" ? body.source_data : {},
     model: typeof body.model === "string" ? body.model : null,
-    input_tokens: typeof body.input_tokens === "number" ? body.input_tokens : null,
-    output_tokens: typeof body.output_tokens === "number" ? body.output_tokens : null,
+    generation_meta:
+      body.generation_meta && typeof body.generation_meta === "object"
+        ? body.generation_meta
+        : {},
   };
 
   try {
@@ -74,17 +80,17 @@ Deno.serve(async (req) => {
     const { data, error } = await supabase
       .from("vaatluste_raport")
       .insert(row)
-      .select("id, generated_at")
+      .select("id")
       .single();
 
     if (error) {
       console.error("insert failed:", error);
-      return json({ error: "insert_failed", details: error.message }, 500);
+      return json({ error: error.message }, 500);
     }
 
-    return json({ ok: true, id: data.id, generated_at: data.generated_at }, 201);
+    return json({ inserted: true, id: data.id }, 201);
   } catch (err) {
     console.error("unexpected error:", err);
-    return json({ error: "internal_error", details: String(err) }, 500);
+    return json({ error: String(err) }, 500);
   }
 });

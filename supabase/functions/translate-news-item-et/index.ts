@@ -1,4 +1,4 @@
-// Redeploy marker linnud-refactor-2026-04-30T17:00 — bird-names-et.ts now sources from Linnud.txt
+// Redeploy marker linnud-relocate-2026-05-01T17:35 — Linnud.txt moved into bundle tree
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getOpenAIConfig } from "../_shared/openai.ts";
 import { jsonResponse, translateNewsItemToEt } from "../_shared/news-translation.ts";

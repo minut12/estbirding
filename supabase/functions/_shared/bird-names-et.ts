@@ -31,6 +31,19 @@ const CALQUE_CORRECTIONS: Array<[RegExp, string]> = [
   [/\bDalmaatia\s+pelikan(i|it|ile|is|ist|iks|iga|ina)?\b/gi, "käharpelikan$1"],
   [/\bSabatiigli\s+kiivitaja(t|le|s|st|ks|ga|na)?\b/gi, "stepikiivitaja$1"],
   [/\bkannusvästrik(u|ut|ule|us|ust|uks|uga|una|ud|ute|uid|utes|utega|uteta)?\b/gi, "valgekael-kiivitaja$1"],
+  // Finnish stems leaking into Estonian (post-processor backstop when Sonnet
+  // fails to translate Finnish morphology fully).
+  // TODO(translation): refine Estonian replacements with Kristian if context warrants
+  [/\btuttvart-koiras(t|tega|le|s|st|ks|ina)?\b/gi, "tutka-isane$1"],
+  [/\btuttvart-koirased(?=\b)/gi, "tutka-isased"],
+  [/\bkoirased\b/gi, "isased"],
+  [/\bkoirastega\b/gi, "isastega"],
+  [/\bkoirast\b/gi, "isast"],
+  [/\bkoiraste\b/gi, "isaste"],
+  [/\btuttvartidel\b/gi, "tutkadel"],
+  [/\btuttvartid\b/gi, "tutkad"],
+  [/\bvappubukett(i|it|ile|is|ist|iks|iga|ina)?\b/gi, "kevadlille$1"],
+  [/\bvappuõis(t|tega|le|s|st|ks|ed)?\b/gi, "kevadlille$1"],
 ];
 
 export function fixCalquesInText(text: string): string {

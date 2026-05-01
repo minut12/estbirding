@@ -26,7 +26,7 @@ export type BirdNameCorrectionSummary = {
   }>;
 };
 
-const LINNUD_TXT_RELATIVE_PATH = "../../../data/Linnud.txt";
+const LINNUD_TXT_RELATIVE_PATH = "./data/Linnud.txt";
 
 const FALLBACK_ROWS = [
   "nimi_lk\tnimi_ek\tnimi_ik",

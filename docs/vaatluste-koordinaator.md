@@ -27,7 +27,11 @@ Automated twice-daily observation report combining Estonian and European bird si
                   [Code: parse JSON]
                                 │
                                 ▼
-                  [Supabase: insert row]
+                  [HTTP: POST insert-vaatluste-raport
+                   edge function (X-Webhook-Secret)]
+                                │
+                                ▼
+                  [Edge function inserts via service_role]
                                 │
                                 ▼
                   [Frontend reads / polls latest row]
@@ -85,16 +89,18 @@ Workflow name: `vaatluste-koordinaator`. Two trigger nodes feeding one shared ch
 ### Credentials
 
 - `anthropic-api` — HTTP Header Auth, name `x-api-key`, value = your Anthropic API key
-- `supabase-estbirding` — built-in Supabase credential, host `https://eenwcyuyugyrjgpivxrq.supabase.co`, service role key
 
-eBird token (`9s72dc2jcjlq`) hardcoded in the Code node.
+n8n no longer needs a Supabase credential — inserts go through the `insert-vaatluste-raport` edge function, which holds the service-role key in Supabase's edge env. The eBird token (`9s72dc2jcjlq`) is hardcoded in the Code node.
 
 ### Webhook secret
 
-Generate a random 32-byte hex string (e.g., `openssl rand -hex 32`). This is the shared secret between the edge function and the n8n webhook. Store it as:
+Generate a random 32-byte hex string (e.g., `openssl rand -hex 32`). One value is shared across three places:
 
-- An environment variable in n8n (`VAATLUSTE_WEBHOOK_SECRET`), referenced from the Webhook node's auth check
-- A secret in Supabase edge function env (`N8N_VAATLUSTE_WEBHOOK_SECRET`)
+- n8n env var `VAATLUSTE_WEBHOOK_SECRET` — used by both the inbound Webhook trigger (validates incoming requests from `trigger-vaatluste-refresh`) and the outbound HTTP Request node in Node 4 (sends to `insert-vaatluste-raport`)
+- Supabase edge secret `N8N_VAATLUSTE_WEBHOOK_SECRET` on `trigger-vaatluste-refresh` — sent to n8n on the way in
+- Supabase edge secret `N8N_VAATLUSTE_WEBHOOK_SECRET` on `insert-vaatluste-raport` — checked against the incoming header on the way out
+
+**Rotation caveat.** Rotating the secret means updating all three places in lockstep — n8n env var plus both edge function secrets — or you'll break either the inbound or outbound leg. If we ever expose any of these endpoints externally or go multi-tenant, split them into separate `INSERT_SHARED_SECRET` / `TRIGGER_SHARED_SECRET` values.
 
 ### Trigger 1 — Schedule
 
@@ -267,15 +273,22 @@ return [{
 }];
 ```
 
-### Node 4 — Supabase: Insert row
+### Node 4 — HTTP Request: insert via edge function
 
-- Credential: `supabase-estbirding`
-- Resource: Row, Operation: Create
-- Table: `vaatluste_raport`
-- Data: Define Below for Each Column. Each value uses `={{ $json.<field> }}`:
-  - `period_start`, `period_end`, `intro_et`, `estonia_narrative_et`, `estonia_entries`, `europe_narrative_et`, `europe_entries`, `source_data`, `model`, `generation_meta`
+n8n no longer talks to Supabase directly. Instead, it POSTs the parsed row to the `insert-vaatluste-raport` edge function, which holds the service-role key and performs the insert.
 
-`generated_at` and `id` populated by Postgres defaults.
+- Method: `POST`
+- URL: `https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/insert-vaatluste-raport`
+- Authentication: none at the n8n credential level — the secret is sent as a custom header
+- Send Headers: ON
+  - `X-Webhook-Secret: {{$env.VAATLUSTE_WEBHOOK_SECRET}}`
+  - `Content-Type: application/json`
+- Send Body: ON, Body Content Type: JSON, Specify Body: Using JSON
+- Body: `={{ $json }}` (forwards the entire output of Node 3 — the edge function picks the columns it needs)
+
+Expected response: `201 Created` with `{ "id": "...", "generated_at": "..." }`. Any 4xx/5xx surfaces as a workflow failure in n8n's Executions tab.
+
+`generated_at` and `id` are populated by Postgres defaults inside the edge function's insert.
 
 ## Anthropic system prompt
 
@@ -350,13 +363,15 @@ NARRATIVE STYLE:
 INPUT: User provides eBird notable observations from Estonia and 7 neighboring regions as JSON arrays. Deduplicate by species+date+location and select 8–20 most notable entries per section depending on activity level. If a section has no notable observations, write "Sel perioodil silmapaistvaid vaatlusi ei registreeritud." in narrative_et and return entries: [].
 ```
 
-## Manual refresh from app
+## Edge functions
 
-The Ülevaade page has a "Värskenda" button that triggers an immediate refresh.
+Two edge functions sit on either side of the n8n workflow. Both use the same shared secret as the n8n webhook (see [Webhook secret](#webhook-secret) above).
 
-### Edge function: `trigger-vaatluste-refresh`
+### `trigger-vaatluste-refresh`
 
 Source: [supabase/functions/trigger-vaatluste-refresh/index.ts](../supabase/functions/trigger-vaatluste-refresh/index.ts).
+
+Inbound side — fired by the Ülevaade page's "Värskenda" button.
 
 Responsibilities:
 
@@ -367,14 +382,29 @@ Responsibilities:
 
 The function does NOT wait for the workflow to complete — it returns as soon as n8n has acknowledged receipt. The frontend polls the `vaatluste_raport` table for a row newer than `started_at`.
 
-### Required edge function secrets
+### `insert-vaatluste-raport`
+
+Outbound side — called by Node 4 of the n8n workflow. Holds the service-role key so n8n doesn't need it.
+
+Responsibilities:
+
+1. Accept POST from n8n. Require `X-Webhook-Secret` to match `N8N_VAATLUSTE_WEBHOOK_SECRET` — return `401` otherwise.
+2. Validate the body has the expected fields (`period_start`, `period_end`, `intro_et`, `estonia_narrative_et`, `estonia_entries`, `europe_narrative_et`, `europe_entries`, `model`, `generation_meta`; `source_data` optional). Return `400` on shape mismatch so failures surface loudly in n8n's Executions tab rather than landing as a malformed row.
+3. Insert the row via PostgREST using the auto-provided `SUPABASE_SERVICE_ROLE_KEY`.
+4. Return `201 Created` with `{ "id": "...", "generated_at": "..." }`.
+
+The cron path and the manual-refresh path both terminate here — every row in `vaatluste_raport` is written by this function.
+
+### Edge function secrets
 
 Set in Supabase dashboard → Edge Functions → Secrets (or via `supabase secrets set`):
 
-- `N8N_VAATLUSTE_WEBHOOK_URL` — full URL of the n8n webhook (e.g., `https://your-n8n.app.n8n.cloud/webhook/vaatluste-refresh`)
-- `N8N_VAATLUSTE_WEBHOOK_SECRET` — same secret value as `VAATLUSTE_WEBHOOK_SECRET` in n8n
+| Secret | Used by | Notes |
+| --- | --- | --- |
+| `N8N_VAATLUSTE_WEBHOOK_URL` | `trigger-vaatluste-refresh` | Full URL of the n8n webhook (e.g., `https://your-n8n.app.n8n.cloud/webhook/vaatluste-refresh`) |
+| `N8N_VAATLUSTE_WEBHOOK_SECRET` | both functions | Same value as `VAATLUSTE_WEBHOOK_SECRET` in n8n |
 
-`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are auto-provided by the Supabase runtime.
+`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are auto-provided by the Supabase runtime to every edge function.
 
 ### Frontend flow
 

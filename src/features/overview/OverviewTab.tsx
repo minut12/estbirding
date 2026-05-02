@@ -242,6 +242,7 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
         <div className="flex flex-wrap gap-1">
           {entry.documented.map((d) => {
             const isFoto = d.toLowerCase() === 'foto';
+            if (isFoto && avatarUrl) return null;
             if (isFoto && ebirdCode) {
               return (
                 <a

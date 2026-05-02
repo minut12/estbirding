@@ -160,22 +160,37 @@ function formatObservers(observers: string[] | undefined): { text: string; unkno
 }
 
 function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry; subId?: string; ebirdCode?: string; avatarUrl?: string }) {
-  const isRarity = entry.is_rarity;
+  const tier = effectiveRarityTier(entry);
   const flag = entry.country_code && entry.country_code !== 'EE' ? FLAG[entry.country_code] : undefined;
   const obs = formatObservers(entry.observers);
   return (
     <Card
       className={cn(
         'p-4 space-y-2',
-        isRarity && 'border-l-4 border-l-destructive bg-destructive/5',
+        tier === 'rare' && 'border-l-4 border-l-amber-500 bg-amber-50/40',
+        tier === 'super' && 'border-l-4 border-l-destructive bg-destructive/5',
+        tier === 'mega' && 'border-l-8 border-l-red-800 bg-red-900/5 ring-1 ring-red-800/40 shadow-md',
       )}
     >
-      {isRarity && (
+      {tier !== 'none' && (
         <div className="flex items-center gap-2">
-          <Badge variant="destructive" className="gap-1">
-            <AlertTriangle className="w-3 h-3" />
-            HARULDUS
-          </Badge>
+          {tier === 'rare' && (
+            <Badge className="gap-1 bg-amber-500 text-white hover:bg-amber-500/90 border-transparent">
+              Rari
+            </Badge>
+          )}
+          {tier === 'super' && (
+            <Badge className="gap-1 bg-red-600 text-white hover:bg-red-600/90 border-transparent">
+              <AlertTriangle className="w-3 h-3" />
+              Super rari
+            </Badge>
+          )}
+          {tier === 'mega' && (
+            <Badge className="gap-1 bg-red-800 text-white hover:bg-red-800/90 border-transparent font-bold shadow-sm">
+              <AlertTriangle className="w-3 h-3" />
+              Mega rari
+            </Badge>
+          )}
         </div>
       )}
       <div className="flex items-start gap-3">

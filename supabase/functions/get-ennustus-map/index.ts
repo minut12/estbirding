@@ -1,6 +1,7 @@
 // supabase/functions/get-ennustus-map/index.ts
 //
-// Returns rows from ennustus_cache as a JSON array. Auth: Bearer <VAATLUSTE_WEBHOOK_SECRET>.
+// Returns rows from ennustus_cache as a JSON array.
+// Auth: X-Webhook-Secret: <VAATLUSTE_WEBHOOK_SECRET>  (matches repo convention)
 // Used by the vaatluste-koordinaator n8n workflow to enrich europe_entries with
 // Estonia's current_pct probability for entries from neighbor countries.
 
@@ -9,7 +10,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, content-type",
+  "Access-Control-Allow-Headers": "x-webhook-secret, content-type",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
@@ -18,8 +19,8 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  // --- Bearer auth (same secret as insert-vaatluste-raport) ---
-  const authHeader = req.headers.get("Authorization") || "";
+  // --- Custom-header auth (same pattern as insert-vaatluste-raport) ---
+  const providedSecret = req.headers.get("x-webhook-secret") || "";
   const expectedSecret = Deno.env.get("VAATLUSTE_WEBHOOK_SECRET");
   if (!expectedSecret) {
     return new Response(
@@ -27,7 +28,7 @@ serve(async (req) => {
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
-  if (authHeader !== `Bearer ${expectedSecret}`) {
+  if (providedSecret !== expectedSecret) {
     return new Response(
       JSON.stringify({ error: "Unauthorized" }),
       { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },

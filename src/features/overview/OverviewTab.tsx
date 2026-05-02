@@ -132,7 +132,7 @@ function formatObservers(observers: string[] | undefined): { text: string; unkno
   return { text: cleaned.join(', '), unknown: false };
 }
 
-function EntryCard({ entry, subId }: { entry: VaatlusEntry; subId?: string }) {
+function EntryCard({ entry, subId, ebirdCode }: { entry: VaatlusEntry; subId?: string; ebirdCode?: string }) {
   const isRarity = entry.is_rarity;
   const flag = entry.country_code && entry.country_code !== 'EE' ? FLAG[entry.country_code] : undefined;
   const obs = formatObservers(entry.observers);

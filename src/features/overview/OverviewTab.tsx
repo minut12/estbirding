@@ -286,7 +286,11 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
 }
 
 function sortEntries(entries: VaatlusEntry[]): VaatlusEntry[] {
-  return [...entries].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  return [...entries].sort((a, b) => {
+    const tierDiff = TIER_RANK[effectiveRarityTier(b)] - TIER_RANK[effectiveRarityTier(a)];
+    if (tierDiff !== 0) return tierDiff;
+    return (b.date || '').localeCompare(a.date || '');
+  });
 }
 
 export default function OverviewTab() {

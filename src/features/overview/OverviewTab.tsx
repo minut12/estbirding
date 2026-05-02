@@ -280,6 +280,14 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
           })}
         </div>
       )}
+      {Number.isFinite(entry.ee_probability_pct) && (
+        <div className="inline-flex items-center gap-1 text-xs text-muted-foreground" title="Hetkeline tõenäosus liiki Eestis kohata">
+          <span className="font-medium">Eesti tõenäosus:</span>
+          <span className="rounded-full bg-secondary px-2 py-0.5 font-semibold text-secondary-foreground">
+            {entry.ee_probability_pct}%
+          </span>
+        </div>
+      )}
       {entry.comparison_et && (
         <p className="text-sm italic text-muted-foreground">{entry.comparison_et}</p>
       )}

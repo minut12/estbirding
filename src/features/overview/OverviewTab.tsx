@@ -6,6 +6,22 @@ import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { AlertTriangle, RefreshCw, X, ExternalLink } from 'lucide-react';
+import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
+
+function buildSciNameToEbirdCode(map: SpeciesMetaMap): Map<string, string> {
+  const out = new Map<string, string>();
+  Object.values(map || {}).forEach((m) => {
+    const sci = (m?.scientificName || '').trim().toLowerCase();
+    const code = (m?.ebirdCode || '').trim();
+    if (sci && code && !out.has(sci)) out.set(sci, code);
+  });
+  return out;
+}
+
+function lookupEbirdCode(speciesLat: string, lookup: Map<string, string>): string | undefined {
+  const k = (speciesLat || '').trim().toLowerCase();
+  return k ? lookup.get(k) : undefined;
+}
 
 type VaatlusEntry = {
   species_et: string;
@@ -116,7 +132,7 @@ function formatObservers(observers: string[] | undefined): { text: string; unkno
   return { text: cleaned.join(', '), unknown: false };
 }
 
-function EntryCard({ entry, subId }: { entry: VaatlusEntry; subId?: string }) {
+function EntryCard({ entry, subId, ebirdCode }: { entry: VaatlusEntry; subId?: string; ebirdCode?: string }) {
   const isRarity = entry.is_rarity;
   const flag = entry.country_code && entry.country_code !== 'EE' ? FLAG[entry.country_code] : undefined;
   const obs = formatObservers(entry.observers);
@@ -170,6 +186,21 @@ function EntryCard({ entry, subId }: { entry: VaatlusEntry; subId?: string }) {
         <div className="flex flex-wrap gap-1">
           {entry.documented.map((d) => {
             const isFoto = d.toLowerCase() === 'foto';
+            if (isFoto && ebirdCode) {
+              return (
+                <a
+                  key={d}
+                  href={`https://ebird.org/species/${ebirdCode}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Badge variant="secondary" className="capitalize gap-1 hover:bg-secondary/80 cursor-pointer">
+                    {d}
+                    <ExternalLink className="w-3 h-3" />
+                  </Badge>
+                </a>
+              );
+            }
             if (isFoto && subId) {
               return (
                 <a
@@ -303,6 +334,7 @@ export default function OverviewTab() {
   const euRarities = euEntries.filter((e) => e.is_rarity).length;
   const activeEntries = section === 'ee' ? eeEntries : euEntries;
   const activeLookup = section === 'ee' ? eeSubIdLookup : euSubIdLookup;
+  const ebirdCodeLookup = useMemo(() => buildSciNameToEbirdCode(loadSpeciesMeta()), [report]);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -409,6 +441,7 @@ export default function OverviewTab() {
                     key={`${entry.species_lat}-${entry.date}-${idx}`}
                     entry={entry}
                     subId={findSubId(entry, activeLookup)}
+                    ebirdCode={lookupEbirdCode(entry.species_lat, ebirdCodeLookup)}
                   />
                 ))
               )}

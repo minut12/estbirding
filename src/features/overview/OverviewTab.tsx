@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, RefreshCw, X, ExternalLink } from 'lucide-react';
+import { AlertTriangle, RefreshCw, X, ExternalLink, Bird } from 'lucide-react';
 import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
 
 function buildSciNameToEbirdCode(map: SpeciesMetaMap): Map<string, string> {
@@ -18,7 +18,22 @@ function buildSciNameToEbirdCode(map: SpeciesMetaMap): Map<string, string> {
   return out;
 }
 
+function buildSciNameToAvatarUrl(map: SpeciesMetaMap): Map<string, string> {
+  const out = new Map<string, string>();
+  Object.values(map || {}).forEach((m) => {
+    const sci = (m?.scientificName || '').trim().toLowerCase();
+    const url = (m?.avatarUrl || '').trim();
+    if (sci && url && !out.has(sci)) out.set(sci, url);
+  });
+  return out;
+}
+
 function lookupEbirdCode(speciesLat: string, lookup: Map<string, string>): string | undefined {
+  const k = (speciesLat || '').trim().toLowerCase();
+  return k ? lookup.get(k) : undefined;
+}
+
+function lookupAvatarUrl(speciesLat: string, lookup: Map<string, string>): string | undefined {
   const k = (speciesLat || '').trim().toLowerCase();
   return k ? lookup.get(k) : undefined;
 }

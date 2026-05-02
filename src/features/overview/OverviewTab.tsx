@@ -211,8 +211,8 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
           <span className="italic text-muted-foreground text-sm">({entry.species_lat})</span>
         </div>
       </div>
-      {isRarity && entry.rarity_reason && (
-        <p className="text-sm text-destructive">{entry.rarity_reason}</p>
+      {tier !== 'none' && entry.rarity_reason && (
+        <p className={cn('text-sm', tier === 'rare' ? 'text-amber-700' : 'text-destructive')}>{entry.rarity_reason}</p>
       )}
       <div className="text-sm text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1">
         <span>{formatEntryDate(entry.date)}</span>

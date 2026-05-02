@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, RefreshCw, X } from 'lucide-react';
+import { AlertTriangle, RefreshCw, X, ExternalLink } from 'lucide-react';
 
 type VaatlusEntry = {
   species_et: string;
@@ -24,6 +24,13 @@ type VaatlusEntry = {
   comparison_et?: string | null;
 };
 
+type SourceObservation = {
+  species_lat?: string;
+  date?: string;
+  location?: string;
+  sub_id?: string;
+};
+
 type VaatlusteRaport = {
   id: string;
   generated_at: string;
@@ -34,7 +41,26 @@ type VaatlusteRaport = {
   estonia_entries: VaatlusEntry[];
   europe_narrative_et: string | null;
   europe_entries: VaatlusEntry[];
+  source_data?: {
+    estonia?: SourceObservation[];
+    europe?: SourceObservation[];
+  } | null;
 };
+
+function buildSubIdLookup(obs: SourceObservation[] | undefined): Map<string, string> {
+  const m = new Map<string, string>();
+  if (!Array.isArray(obs)) return m;
+  for (const o of obs) {
+    if (!o?.sub_id) continue;
+    const key = `${o.species_lat || ''}|${o.date || ''}|${o.location || ''}`;
+    if (!m.has(key)) m.set(key, o.sub_id);
+  }
+  return m;
+}
+
+function findSubId(entry: VaatlusEntry, lookup: Map<string, string>): string | undefined {
+  return lookup.get(`${entry.species_lat}|${entry.date}|${entry.location}`);
+}
 
 const FLAG: Record<string, string> = {
   EE: '🇪🇪', FI: '🇫🇮', LV: '🇱🇻', LT: '🇱🇹',
@@ -90,7 +116,7 @@ function formatObservers(observers: string[] | undefined): { text: string; unkno
   return { text: cleaned.join(', '), unknown: false };
 }
 
-function EntryCard({ entry }: { entry: VaatlusEntry }) {
+function EntryCard({ entry, subId }: { entry: VaatlusEntry; subId?: string }) {
   const isRarity = entry.is_rarity;
   const flag = entry.country_code && entry.country_code !== 'EE' ? FLAG[entry.country_code] : undefined;
   const obs = formatObservers(entry.observers);
@@ -142,9 +168,27 @@ function EntryCard({ entry }: { entry: VaatlusEntry }) {
       )}
       {entry.documented && entry.documented.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {entry.documented.map((d) => (
-            <Badge key={d} variant="secondary" className="capitalize">{d}</Badge>
-          ))}
+          {entry.documented.map((d) => {
+            const isFoto = d.toLowerCase() === 'foto';
+            if (isFoto && subId) {
+              return (
+                <a
+                  key={d}
+                  href={`https://ebird.org/checklist/${subId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Badge variant="secondary" className="capitalize gap-1 hover:bg-secondary/80 cursor-pointer">
+                    {d}
+                    <ExternalLink className="w-3 h-3" />
+                  </Badge>
+                </a>
+              );
+            }
+            return (
+              <Badge key={d} variant="secondary" className="capitalize">{d}</Badge>
+            );
+          })}
         </div>
       )}
       {entry.comparison_et && (
@@ -253,9 +297,12 @@ export default function OverviewTab() {
 
   const eeEntries = useMemo(() => sortEntries(report?.estonia_entries || []), [report]);
   const euEntries = useMemo(() => sortEntries(report?.europe_entries || []), [report]);
+  const eeSubIdLookup = useMemo(() => buildSubIdLookup(report?.source_data?.estonia), [report]);
+  const euSubIdLookup = useMemo(() => buildSubIdLookup(report?.source_data?.europe), [report]);
   const eeRarities = eeEntries.filter((e) => e.is_rarity).length;
   const euRarities = euEntries.filter((e) => e.is_rarity).length;
   const activeEntries = section === 'ee' ? eeEntries : euEntries;
+  const activeLookup = section === 'ee' ? eeSubIdLookup : euSubIdLookup;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -358,7 +405,11 @@ export default function OverviewTab() {
                 </p>
               ) : (
                 activeEntries.map((entry, idx) => (
-                  <EntryCard key={`${entry.species_lat}-${entry.date}-${idx}`} entry={entry} />
+                  <EntryCard
+                    key={`${entry.species_lat}-${entry.date}-${idx}`}
+                    entry={entry}
+                    subId={findSubId(entry, activeLookup)}
+                  />
                 ))
               )}
             </div>

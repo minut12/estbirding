@@ -24,6 +24,13 @@ type VaatlusEntry = {
   comparison_et?: string | null;
 };
 
+type SourceObservation = {
+  species_lat?: string;
+  date?: string;
+  location?: string;
+  sub_id?: string;
+};
+
 type VaatlusteRaport = {
   id: string;
   generated_at: string;
@@ -34,7 +41,26 @@ type VaatlusteRaport = {
   estonia_entries: VaatlusEntry[];
   europe_narrative_et: string | null;
   europe_entries: VaatlusEntry[];
+  source_data?: {
+    estonia?: SourceObservation[];
+    europe?: SourceObservation[];
+  } | null;
 };
+
+function buildSubIdLookup(obs: SourceObservation[] | undefined): Map<string, string> {
+  const m = new Map<string, string>();
+  if (!Array.isArray(obs)) return m;
+  for (const o of obs) {
+    if (!o?.sub_id) continue;
+    const key = `${o.species_lat || ''}|${o.date || ''}|${o.location || ''}`;
+    if (!m.has(key)) m.set(key, o.sub_id);
+  }
+  return m;
+}
+
+function findSubId(entry: VaatlusEntry, lookup: Map<string, string>): string | undefined {
+  return lookup.get(`${entry.species_lat}|${entry.date}|${entry.location}`);
+}
 
 const FLAG: Record<string, string> = {
   EE: '🇪🇪', FI: '🇫🇮', LV: '🇱🇻', LT: '🇱🇹',

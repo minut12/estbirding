@@ -441,6 +441,7 @@ export default function OverviewTab() {
                     key={`${entry.species_lat}-${entry.date}-${idx}`}
                     entry={entry}
                     subId={findSubId(entry, activeLookup)}
+                    ebirdCode={lookupEbirdCode(entry.species_lat, ebirdCodeLookup)}
                   />
                 ))
               )}

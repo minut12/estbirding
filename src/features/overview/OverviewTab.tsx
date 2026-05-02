@@ -56,6 +56,7 @@ type VaatlusEntry = {
   rarity_reason?: string | null;
   documented?: string[];
   comparison_et?: string | null;
+  ee_probability_pct?: number;
 };
 
 function effectiveRarityTier(entry: VaatlusEntry): RarityTier {

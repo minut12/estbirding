@@ -38,6 +38,8 @@ function lookupAvatarUrl(speciesLat: string, lookup: Map<string, string>): strin
   return k ? lookup.get(k) : undefined;
 }
 
+type RarityTier = 'none' | 'rare' | 'super' | 'mega';
+
 type VaatlusEntry = {
   species_et: string;
   species_lat: string;
@@ -50,10 +52,20 @@ type VaatlusEntry = {
   lng?: number | null;
   count?: number | null;
   is_rarity: boolean;
+  rarity_level?: RarityTier | null;
   rarity_reason?: string | null;
   documented?: string[];
   comparison_et?: string | null;
 };
+
+function effectiveRarityTier(entry: VaatlusEntry): RarityTier {
+  const lvl = entry.rarity_level;
+  if (lvl === 'mega' || lvl === 'super' || lvl === 'rare' || lvl === 'none') return lvl;
+  // Backwards compat: old rows without rarity_level
+  return entry.is_rarity ? 'super' : 'none';
+}
+
+const TIER_RANK: Record<RarityTier, number> = { mega: 3, super: 2, rare: 1, none: 0 };
 
 type SourceObservation = {
   species_lat?: string;
@@ -148,22 +160,37 @@ function formatObservers(observers: string[] | undefined): { text: string; unkno
 }
 
 function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry; subId?: string; ebirdCode?: string; avatarUrl?: string }) {
-  const isRarity = entry.is_rarity;
+  const tier = effectiveRarityTier(entry);
   const flag = entry.country_code && entry.country_code !== 'EE' ? FLAG[entry.country_code] : undefined;
   const obs = formatObservers(entry.observers);
   return (
     <Card
       className={cn(
         'p-4 space-y-2',
-        isRarity && 'border-l-4 border-l-destructive bg-destructive/5',
+        tier === 'rare' && 'border-l-4 border-l-amber-500 bg-amber-50/40',
+        tier === 'super' && 'border-l-4 border-l-destructive bg-destructive/5',
+        tier === 'mega' && 'border-l-8 border-l-red-800 bg-red-900/5 ring-1 ring-red-800/40 shadow-md',
       )}
     >
-      {isRarity && (
+      {tier !== 'none' && (
         <div className="flex items-center gap-2">
-          <Badge variant="destructive" className="gap-1">
-            <AlertTriangle className="w-3 h-3" />
-            HARULDUS
-          </Badge>
+          {tier === 'rare' && (
+            <Badge className="gap-1 bg-amber-500 text-white hover:bg-amber-500/90 border-transparent">
+              Rari
+            </Badge>
+          )}
+          {tier === 'super' && (
+            <Badge className="gap-1 bg-red-600 text-white hover:bg-red-600/90 border-transparent">
+              <AlertTriangle className="w-3 h-3" />
+              Super rari
+            </Badge>
+          )}
+          {tier === 'mega' && (
+            <Badge className="gap-1 bg-red-800 text-white hover:bg-red-800/90 border-transparent font-bold shadow-sm">
+              <AlertTriangle className="w-3 h-3" />
+              Mega rari
+            </Badge>
+          )}
         </div>
       )}
       <div className="flex items-start gap-3">
@@ -184,8 +211,8 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
           <span className="italic text-muted-foreground text-sm">({entry.species_lat})</span>
         </div>
       </div>
-      {isRarity && entry.rarity_reason && (
-        <p className="text-sm text-destructive">{entry.rarity_reason}</p>
+      {tier !== 'none' && entry.rarity_reason && (
+        <p className={cn('text-sm', tier === 'rare' ? 'text-amber-700' : 'text-destructive')}>{entry.rarity_reason}</p>
       )}
       <div className="text-sm text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1">
         <span>{formatEntryDate(entry.date)}</span>
@@ -259,7 +286,11 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
 }
 
 function sortEntries(entries: VaatlusEntry[]): VaatlusEntry[] {
-  return [...entries].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  return [...entries].sort((a, b) => {
+    const tierDiff = TIER_RANK[effectiveRarityTier(b)] - TIER_RANK[effectiveRarityTier(a)];
+    if (tierDiff !== 0) return tierDiff;
+    return (b.date || '').localeCompare(a.date || '');
+  });
 }
 
 export default function OverviewTab() {
@@ -359,8 +390,8 @@ export default function OverviewTab() {
   const euEntries = useMemo(() => sortEntries(report?.europe_entries || []), [report]);
   const eeSubIdLookup = useMemo(() => buildSubIdLookup(report?.source_data?.estonia), [report]);
   const euSubIdLookup = useMemo(() => buildSubIdLookup(report?.source_data?.europe), [report]);
-  const eeRarities = eeEntries.filter((e) => e.is_rarity).length;
-  const euRarities = euEntries.filter((e) => e.is_rarity).length;
+  const eeRarities = eeEntries.filter((e) => effectiveRarityTier(e) !== 'none').length;
+  const euRarities = euEntries.filter((e) => effectiveRarityTier(e) !== 'none').length;
   const activeEntries = section === 'ee' ? eeEntries : euEntries;
   const activeLookup = section === 'ee' ? eeSubIdLookup : euSubIdLookup;
   const speciesMetaMap = useMemo(() => loadSpeciesMeta(), [report]);

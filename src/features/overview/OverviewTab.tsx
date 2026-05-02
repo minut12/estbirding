@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, RefreshCw, X, ExternalLink } from 'lucide-react';
+import { AlertTriangle, RefreshCw, X, ExternalLink, Bird } from 'lucide-react';
 import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
 
 function buildSciNameToEbirdCode(map: SpeciesMetaMap): Map<string, string> {
@@ -18,7 +18,22 @@ function buildSciNameToEbirdCode(map: SpeciesMetaMap): Map<string, string> {
   return out;
 }
 
+function buildSciNameToAvatarUrl(map: SpeciesMetaMap): Map<string, string> {
+  const out = new Map<string, string>();
+  Object.values(map || {}).forEach((m) => {
+    const sci = (m?.scientificName || '').trim().toLowerCase();
+    const url = (m?.avatarUrl || '').trim();
+    if (sci && url && !out.has(sci)) out.set(sci, url);
+  });
+  return out;
+}
+
 function lookupEbirdCode(speciesLat: string, lookup: Map<string, string>): string | undefined {
+  const k = (speciesLat || '').trim().toLowerCase();
+  return k ? lookup.get(k) : undefined;
+}
+
+function lookupAvatarUrl(speciesLat: string, lookup: Map<string, string>): string | undefined {
   const k = (speciesLat || '').trim().toLowerCase();
   return k ? lookup.get(k) : undefined;
 }
@@ -132,7 +147,7 @@ function formatObservers(observers: string[] | undefined): { text: string; unkno
   return { text: cleaned.join(', '), unknown: false };
 }
 
-function EntryCard({ entry, subId, ebirdCode }: { entry: VaatlusEntry; subId?: string; ebirdCode?: string }) {
+function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry; subId?: string; ebirdCode?: string; avatarUrl?: string }) {
   const isRarity = entry.is_rarity;
   const flag = entry.country_code && entry.country_code !== 'EE' ? FLAG[entry.country_code] : undefined;
   const obs = formatObservers(entry.observers);
@@ -151,9 +166,23 @@ function EntryCard({ entry, subId, ebirdCode }: { entry: VaatlusEntry; subId?: s
           </Badge>
         </div>
       )}
-      <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className="font-semibold">{entry.species_et}</span>
-        <span className="italic text-muted-foreground text-sm">({entry.species_lat})</span>
+      <div className="flex items-start gap-3">
+        {avatarUrl ? (
+          <img
+            src={avatarUrl}
+            alt={entry.species_et}
+            loading="lazy"
+            className="w-14 h-14 rounded-md object-cover shrink-0 bg-muted"
+          />
+        ) : (
+          <div className="w-14 h-14 rounded-md shrink-0 bg-muted flex items-center justify-center text-muted-foreground">
+            <Bird className="w-7 h-7" />
+          </div>
+        )}
+        <div className="flex flex-wrap items-baseline gap-x-2 min-w-0 flex-1">
+          <span className="font-semibold">{entry.species_et}</span>
+          <span className="italic text-muted-foreground text-sm">({entry.species_lat})</span>
+        </div>
       </div>
       {isRarity && entry.rarity_reason && (
         <p className="text-sm text-destructive">{entry.rarity_reason}</p>
@@ -334,7 +363,9 @@ export default function OverviewTab() {
   const euRarities = euEntries.filter((e) => e.is_rarity).length;
   const activeEntries = section === 'ee' ? eeEntries : euEntries;
   const activeLookup = section === 'ee' ? eeSubIdLookup : euSubIdLookup;
-  const ebirdCodeLookup = useMemo(() => buildSciNameToEbirdCode(loadSpeciesMeta()), [report]);
+  const speciesMetaMap = useMemo(() => loadSpeciesMeta(), [report]);
+  const ebirdCodeLookup = useMemo(() => buildSciNameToEbirdCode(speciesMetaMap), [speciesMetaMap]);
+  const avatarUrlLookup = useMemo(() => buildSciNameToAvatarUrl(speciesMetaMap), [speciesMetaMap]);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -442,6 +473,7 @@ export default function OverviewTab() {
                     entry={entry}
                     subId={findSubId(entry, activeLookup)}
                     ebirdCode={lookupEbirdCode(entry.species_lat, ebirdCodeLookup)}
+                    avatarUrl={lookupAvatarUrl(entry.species_lat, avatarUrlLookup)}
                   />
                 ))
               )}

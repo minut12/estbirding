@@ -186,6 +186,21 @@ function EntryCard({ entry, subId, ebirdCode }: { entry: VaatlusEntry; subId?: s
         <div className="flex flex-wrap gap-1">
           {entry.documented.map((d) => {
             const isFoto = d.toLowerCase() === 'foto';
+            if (isFoto && ebirdCode) {
+              return (
+                <a
+                  key={d}
+                  href={`https://ebird.org/species/${ebirdCode}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Badge variant="secondary" className="capitalize gap-1 hover:bg-secondary/80 cursor-pointer">
+                    {d}
+                    <ExternalLink className="w-3 h-3" />
+                  </Badge>
+                </a>
+              );
+            }
             if (isFoto && subId) {
               return (
                 <a

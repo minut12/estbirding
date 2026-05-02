@@ -297,9 +297,12 @@ export default function OverviewTab() {
 
   const eeEntries = useMemo(() => sortEntries(report?.estonia_entries || []), [report]);
   const euEntries = useMemo(() => sortEntries(report?.europe_entries || []), [report]);
+  const eeSubIdLookup = useMemo(() => buildSubIdLookup(report?.source_data?.estonia), [report]);
+  const euSubIdLookup = useMemo(() => buildSubIdLookup(report?.source_data?.europe), [report]);
   const eeRarities = eeEntries.filter((e) => e.is_rarity).length;
   const euRarities = euEntries.filter((e) => e.is_rarity).length;
   const activeEntries = section === 'ee' ? eeEntries : euEntries;
+  const activeLookup = section === 'ee' ? eeSubIdLookup : euSubIdLookup;
 
   return (
     <div className="h-full overflow-y-auto">

@@ -405,7 +405,11 @@ export default function OverviewTab() {
                 </p>
               ) : (
                 activeEntries.map((entry, idx) => (
-                  <EntryCard key={`${entry.species_lat}-${entry.date}-${idx}`} entry={entry} />
+                  <EntryCard
+                    key={`${entry.species_lat}-${entry.date}-${idx}`}
+                    entry={entry}
+                    subId={findSubId(entry, activeLookup)}
+                  />
                 ))
               )}
             </div>

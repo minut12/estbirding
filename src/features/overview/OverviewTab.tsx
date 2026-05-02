@@ -6,6 +6,22 @@ import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { AlertTriangle, RefreshCw, X, ExternalLink } from 'lucide-react';
+import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
+
+function buildSciNameToEbirdCode(map: SpeciesMetaMap): Map<string, string> {
+  const out = new Map<string, string>();
+  Object.values(map || {}).forEach((m) => {
+    const sci = (m?.scientificName || '').trim().toLowerCase();
+    const code = (m?.ebirdCode || '').trim();
+    if (sci && code && !out.has(sci)) out.set(sci, code);
+  });
+  return out;
+}
+
+function lookupEbirdCode(speciesLat: string, lookup: Map<string, string>): string | undefined {
+  const k = (speciesLat || '').trim().toLowerCase();
+  return k ? lookup.get(k) : undefined;
+}
 
 type VaatlusEntry = {
   species_et: string;

@@ -38,6 +38,8 @@ function lookupAvatarUrl(speciesLat: string, lookup: Map<string, string>): strin
   return k ? lookup.get(k) : undefined;
 }
 
+type RarityTier = 'none' | 'rare' | 'super' | 'mega';
+
 type VaatlusEntry = {
   species_et: string;
   species_lat: string;
@@ -50,10 +52,20 @@ type VaatlusEntry = {
   lng?: number | null;
   count?: number | null;
   is_rarity: boolean;
+  rarity_level?: RarityTier | null;
   rarity_reason?: string | null;
   documented?: string[];
   comparison_et?: string | null;
 };
+
+function effectiveRarityTier(entry: VaatlusEntry): RarityTier {
+  const lvl = entry.rarity_level;
+  if (lvl === 'mega' || lvl === 'super' || lvl === 'rare' || lvl === 'none') return lvl;
+  // Backwards compat: old rows without rarity_level
+  return entry.is_rarity ? 'super' : 'none';
+}
+
+const TIER_RANK: Record<RarityTier, number> = { mega: 3, super: 2, rare: 1, none: 0 };
 
 type SourceObservation = {
   species_lat?: string;

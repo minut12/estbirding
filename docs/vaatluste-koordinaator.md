@@ -345,13 +345,16 @@ OBSERVER NAMES:
 - Use the observer field from the input when present.
 - If observer is null (eBird privacy setting), write "(vaatleja teadmata)" in the narrative for that entry.
 
-COMPARISON LINES:
-- Only include comparison_et when you have actual historical context. NEVER fabricate "X päeva varasem" numbers.
-- Acceptable phrases when applicable:
-  - "Tegu on antud liigi jaoks tavapärase vaatlusega."
-  - "Viimasel kümnendil on liigi esinemine antud perioodil muutunud üha sagedasemaks."
-  - "Põhja-Euroopas erakordne vaatlus; liigi tavapärane levila on [piirkond]."
-- If no historical data is available, set comparison_et to null and omit it from the narrative.
+COMPARISON LINES — pikkus ja täpsus:
+- HARULDUS-kirjetel kirjuta `comparison_et` 2-3 lauset (mitte ainult ühte). Lisa lühike levila kirjeldus, sigimisala või talvitumisala, ning kas tegu on tüüpilise rändeperioodi vaatlusega või vagrandiga.
+- Mitte-haruldus kirjetel piisab ühest lausest või võib `comparison_et` olla null.
+- ÄRA KUNAGI viita konkreetsetele kuupäevadele ("X päeva varasem", "esimene Eestis", "viimane registreerimine 2019") — see info pole sõnastikus ja seda ei tohi leiutada.
+- ÄRA viita Eesti varasematele vaatlustele kvantitatiivselt ("registreeritud N korda viimase 10 aasta jooksul") — kui sul pole täpset andmeallikat, jäta välja.
+- Kui pole kindel, kirjuta lühem ja täpsem lause kui pikem ja küsitavate faktidega.
+- Aktsepteeritavad mustrid:
+  * "Põhja-Euroopas erakordne vaatlus; liigi tavapärane levila on [piirkond]. Sigib [ala] ja talvitub [ala]. Eestis on tegu vagrandi vaatlusega."
+  * "Tegu on antud liigi jaoks tavapärase kevadrände vaatlusega. Liigi peamine rändeaeg langeb [kuud]."
+  * "Eestis on liik haruldane, kuid viimase kümnendi jooksul on esinemus muutunud sagedasemaks. Sigib [piirkond], rändeperioodil läbib Põhja-Euroopat."
 
 NARRATIVE STYLE:
 - Fluent, calm, factual Estonian. EOÜ publication tone.

@@ -56,6 +56,7 @@ type VaatlusEntry = {
   rarity_reason?: string | null;
   documented?: string[];
   comparison_et?: string | null;
+  ee_probability_pct?: number;
 };
 
 function effectiveRarityTier(entry: VaatlusEntry): RarityTier {
@@ -277,6 +278,14 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
               <Badge key={d} variant="secondary" className="capitalize">{d}</Badge>
             );
           })}
+        </div>
+      )}
+      {Number.isFinite(entry.ee_probability_pct) && (
+        <div className="inline-flex items-center gap-1 text-xs text-muted-foreground" title="Hetkeline tõenäosus liiki Eestis kohata">
+          <span className="font-medium">Eesti tõenäosus:</span>
+          <span className="rounded-full bg-secondary px-2 py-0.5 font-semibold text-secondary-foreground">
+            {entry.ee_probability_pct}%
+          </span>
         </div>
       )}
       {entry.comparison_et && (

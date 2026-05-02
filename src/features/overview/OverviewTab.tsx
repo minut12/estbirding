@@ -134,10 +134,10 @@ function EntryCard({ entry }: { entry: VaatlusEntry }) {
         <span className="text-muted-foreground">Vaatleja(d): </span>
         <span className={cn(obs.unknown && 'text-muted-foreground italic')}>{obs.text}</span>
       </div>
-      {typeof entry.count === 'number' && entry.count > 0 && (
+      {typeof entry.count === 'number' && entry.count > 1 && (
         <div className="text-sm">
           <span className="text-muted-foreground">Arv: </span>
-          {entry.count} is.
+          {entry.count} isendit
         </div>
       )}
       {entry.documented && entry.documented.length > 0 && (

@@ -168,9 +168,27 @@ function EntryCard({ entry, subId }: { entry: VaatlusEntry; subId?: string }) {
       )}
       {entry.documented && entry.documented.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {entry.documented.map((d) => (
-            <Badge key={d} variant="secondary" className="capitalize">{d}</Badge>
-          ))}
+          {entry.documented.map((d) => {
+            const isFoto = d.toLowerCase() === 'foto';
+            if (isFoto && subId) {
+              return (
+                <a
+                  key={d}
+                  href={`https://ebird.org/checklist/${subId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Badge variant="secondary" className="capitalize gap-1 hover:bg-secondary/80 cursor-pointer">
+                    {d}
+                    <ExternalLink className="w-3 h-3" />
+                  </Badge>
+                </a>
+              );
+            }
+            return (
+              <Badge key={d} variant="secondary" className="capitalize">{d}</Badge>
+            );
+          })}
         </div>
       )}
       {entry.comparison_et && (

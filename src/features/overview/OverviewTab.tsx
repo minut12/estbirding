@@ -147,7 +147,7 @@ function formatObservers(observers: string[] | undefined): { text: string; unkno
   return { text: cleaned.join(', '), unknown: false };
 }
 
-function EntryCard({ entry, subId, ebirdCode }: { entry: VaatlusEntry; subId?: string; ebirdCode?: string }) {
+function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry; subId?: string; ebirdCode?: string; avatarUrl?: string }) {
   const isRarity = entry.is_rarity;
   const flag = entry.country_code && entry.country_code !== 'EE' ? FLAG[entry.country_code] : undefined;
   const obs = formatObservers(entry.observers);
@@ -166,9 +166,23 @@ function EntryCard({ entry, subId, ebirdCode }: { entry: VaatlusEntry; subId?: s
           </Badge>
         </div>
       )}
-      <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className="font-semibold">{entry.species_et}</span>
-        <span className="italic text-muted-foreground text-sm">({entry.species_lat})</span>
+      <div className="flex items-start gap-3">
+        {avatarUrl ? (
+          <img
+            src={avatarUrl}
+            alt={entry.species_et}
+            loading="lazy"
+            className="w-14 h-14 rounded-md object-cover shrink-0 bg-muted"
+          />
+        ) : (
+          <div className="w-14 h-14 rounded-md shrink-0 bg-muted flex items-center justify-center text-muted-foreground">
+            <Bird className="w-7 h-7" />
+          </div>
+        )}
+        <div className="flex flex-wrap items-baseline gap-x-2 min-w-0 flex-1">
+          <span className="font-semibold">{entry.species_et}</span>
+          <span className="italic text-muted-foreground text-sm">({entry.species_lat})</span>
+        </div>
       </div>
       {isRarity && entry.rarity_reason && (
         <p className="text-sm text-destructive">{entry.rarity_reason}</p>

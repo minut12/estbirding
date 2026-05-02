@@ -390,8 +390,8 @@ export default function OverviewTab() {
   const euEntries = useMemo(() => sortEntries(report?.europe_entries || []), [report]);
   const eeSubIdLookup = useMemo(() => buildSubIdLookup(report?.source_data?.estonia), [report]);
   const euSubIdLookup = useMemo(() => buildSubIdLookup(report?.source_data?.europe), [report]);
-  const eeRarities = eeEntries.filter((e) => e.is_rarity).length;
-  const euRarities = euEntries.filter((e) => e.is_rarity).length;
+  const eeRarities = eeEntries.filter((e) => effectiveRarityTier(e) !== 'none').length;
+  const euRarities = euEntries.filter((e) => effectiveRarityTier(e) !== 'none').length;
   const activeEntries = section === 'ee' ? eeEntries : euEntries;
   const activeLookup = section === 'ee' ? eeSubIdLookup : euSubIdLookup;
   const speciesMetaMap = useMemo(() => loadSpeciesMeta(), [report]);

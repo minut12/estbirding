@@ -363,7 +363,9 @@ export default function OverviewTab() {
   const euRarities = euEntries.filter((e) => e.is_rarity).length;
   const activeEntries = section === 'ee' ? eeEntries : euEntries;
   const activeLookup = section === 'ee' ? eeSubIdLookup : euSubIdLookup;
-  const ebirdCodeLookup = useMemo(() => buildSciNameToEbirdCode(loadSpeciesMeta()), [report]);
+  const speciesMetaMap = useMemo(() => loadSpeciesMeta(), [report]);
+  const ebirdCodeLookup = useMemo(() => buildSciNameToEbirdCode(speciesMetaMap), [speciesMetaMap]);
+  const avatarUrlLookup = useMemo(() => buildSciNameToAvatarUrl(speciesMetaMap), [speciesMetaMap]);
 
   return (
     <div className="h-full overflow-y-auto">

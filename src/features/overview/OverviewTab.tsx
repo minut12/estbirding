@@ -473,6 +473,7 @@ export default function OverviewTab() {
                     entry={entry}
                     subId={findSubId(entry, activeLookup)}
                     ebirdCode={lookupEbirdCode(entry.species_lat, ebirdCodeLookup)}
+                    avatarUrl={lookupAvatarUrl(entry.species_lat, avatarUrlLookup)}
                   />
                 ))
               )}

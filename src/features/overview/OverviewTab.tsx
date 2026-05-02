@@ -334,6 +334,7 @@ export default function OverviewTab() {
   const euRarities = euEntries.filter((e) => e.is_rarity).length;
   const activeEntries = section === 'ee' ? eeEntries : euEntries;
   const activeLookup = section === 'ee' ? eeSubIdLookup : euSubIdLookup;
+  const ebirdCodeLookup = useMemo(() => buildSciNameToEbirdCode(loadSpeciesMeta()), [report]);
 
   return (
     <div className="h-full overflow-y-auto">

@@ -116,7 +116,7 @@ function formatObservers(observers: string[] | undefined): { text: string; unkno
   return { text: cleaned.join(', '), unknown: false };
 }
 
-function EntryCard({ entry }: { entry: VaatlusEntry }) {
+function EntryCard({ entry, subId }: { entry: VaatlusEntry; subId?: string }) {
   const isRarity = entry.is_rarity;
   const flag = entry.country_code && entry.country_code !== 'EE' ? FLAG[entry.country_code] : undefined;
   const obs = formatObservers(entry.observers);

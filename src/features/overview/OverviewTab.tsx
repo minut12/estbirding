@@ -91,6 +91,36 @@ type VaatlusteRaport = {
   } | null;
 };
 
+type ElurikkusRaport = {
+  id: string;
+  generated_at: string;
+  period_start: string;
+  period_end: string;
+  intro_et: string | null;
+  estonia_entries: VaatlusEntry[];
+  generation_meta?: Record<string, unknown>;
+};
+
+function mergeEstoniaEntries(
+  fromVaatluste: VaatlusEntry[] | undefined,
+  fromElurikkus: VaatlusEntry[] | undefined,
+): VaatlusEntry[] {
+  const all = [...(fromVaatluste ?? []), ...(fromElurikkus ?? [])];
+  const seen = new Set<string>();
+  const merged: VaatlusEntry[] = [];
+  for (const e of all) {
+    const key = [
+      String(e.species_lat ?? '').toLowerCase().trim(),
+      String(e.date ?? '').trim(),
+      String(e.location ?? '').toLowerCase().trim(),
+    ].join('|');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(e);
+  }
+  return merged;
+}
+
 function buildSubIdLookup(obs: SourceObservation[] | undefined): Map<string, string> {
   const m = new Map<string, string>();
   if (!Array.isArray(obs)) return m;
@@ -303,8 +333,40 @@ function sortEntries(entries: VaatlusEntry[]): VaatlusEntry[] {
   });
 }
 
+async function fetchLatestVaatluste(): Promise<VaatlusteRaport | null> {
+  const { data, error } = await (supabase as any)
+    .from('vaatluste_raport')
+    .select('*')
+    .order('generated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  const row = (data || null) as VaatlusteRaport | null;
+  if (row) {
+    row.estonia_entries = Array.isArray(row.estonia_entries) ? row.estonia_entries : [];
+    row.europe_entries = Array.isArray(row.europe_entries) ? row.europe_entries : [];
+  }
+  return row;
+}
+
+async function fetchLatestElurikkus(): Promise<ElurikkusRaport | null> {
+  const { data, error } = await (supabase as any)
+    .from('elurikkus_raport')
+    .select('*')
+    .order('generated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  const row = (data || null) as ElurikkusRaport | null;
+  if (row) {
+    row.estonia_entries = Array.isArray(row.estonia_entries) ? row.estonia_entries : [];
+  }
+  return row;
+}
+
 export default function OverviewTab() {
   const [report, setReport] = useState<VaatlusteRaport | null>(null);
+  const [elurikkusReport, setElurikkusReport] = useState<ElurikkusRaport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [section, setSection] = useState<'ee' | 'eu'>('ee');
@@ -314,20 +376,25 @@ export default function OverviewTab() {
   const fetchLatest = useCallback(async (): Promise<VaatlusteRaport | null> => {
     setError(null);
     try {
-      const { data, error } = await (supabase as any)
-        .from('vaatluste_raport')
-        .select('*')
-        .order('generated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (error) throw error;
-      const row = (data || null) as VaatlusteRaport | null;
-      if (row) {
-        row.estonia_entries = Array.isArray(row.estonia_entries) ? row.estonia_entries : [];
-        row.europe_entries = Array.isArray(row.europe_entries) ? row.europe_entries : [];
+      // Fetch both reports in parallel. eBird is required; elurikkus is best-effort.
+      const [vaatlusteResult, elurikkusResult] = await Promise.allSettled([
+        fetchLatestVaatluste(),
+        fetchLatestElurikkus(),
+      ]);
+
+      if (vaatlusteResult.status === 'rejected') {
+        throw vaatlusteResult.reason;
       }
-      setReport(row);
-      return row;
+      const vaatlusteRow = vaatlusteResult.value;
+      setReport(vaatlusteRow);
+
+      if (elurikkusResult.status === 'fulfilled') {
+        setElurikkusReport(elurikkusResult.value);
+      } else {
+        setElurikkusReport(null);
+      }
+
+      return vaatlusteRow;
     } catch (e: any) {
       setError(e?.message || 'Tundmatu viga');
       return null;
@@ -371,24 +438,28 @@ export default function OverviewTab() {
       const POLL_MS = 3_000;
       const deadline = Date.now() + TIMEOUT_MS;
 
-      while (Date.now() < deadline) {
+      let gotVaatluste = false;
+      let gotElurikkus = false;
+
+      while (Date.now() < deadline && !(gotVaatluste && gotElurikkus)) {
         await new Promise((r) => setTimeout(r, POLL_MS));
-        const { data: row } = await (supabase as any)
-          .from('vaatluste_raport')
-          .select('*')
-          .order('generated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (row && row.generated_at > startedAt) {
-          row.estonia_entries = Array.isArray(row.estonia_entries) ? row.estonia_entries : [];
-          row.europe_entries = Array.isArray(row.europe_entries) ? row.europe_entries : [];
-          setReport(row as VaatlusteRaport);
-          setRefreshing(false);
-          return;
+        const [vRes, eRes] = await Promise.allSettled([
+          gotVaatluste ? Promise.resolve(null) : fetchLatestVaatluste(),
+          gotElurikkus ? Promise.resolve(null) : fetchLatestElurikkus(),
+        ]);
+        if (!gotVaatluste && vRes.status === 'fulfilled' && vRes.value && vRes.value.generated_at > startedAt) {
+          setReport(vRes.value);
+          gotVaatluste = true;
+        }
+        if (!gotElurikkus && eRes.status === 'fulfilled' && eRes.value && eRes.value.generated_at > startedAt) {
+          setElurikkusReport(eRes.value);
+          gotElurikkus = true;
         }
       }
 
-      setRefreshError('Värskendamine kestab oodatust kauem. Proovi hetke pärast lehte uuendada.');
+      if (!gotVaatluste) {
+        setRefreshError('Värskendamine kestab oodatust kauem. Proovi hetke pärast lehte uuendada.');
+      }
       setRefreshing(false);
     } catch {
       setRefreshError('Värskendamine ebaõnnestus. Proovi hiljem uuesti.');
@@ -396,10 +467,25 @@ export default function OverviewTab() {
     }
   }, []);
 
-  const eeEntries = useMemo(() => sortEntries(report?.estonia_entries || []), [report]);
+  const mergedEstonia = useMemo(
+    () => mergeEstoniaEntries(report?.estonia_entries, elurikkusReport?.estonia_entries),
+    [report, elurikkusReport],
+  );
+  const eeEntries = useMemo(() => sortEntries(mergedEstonia), [mergedEstonia]);
   const euEntries = useMemo(() => sortEntries(report?.europe_entries || []), [report]);
   const eeSubIdLookup = useMemo(() => buildSubIdLookup(report?.source_data?.estonia), [report]);
   const euSubIdLookup = useMemo(() => buildSubIdLookup(report?.source_data?.europe), [report]);
+  // Use the most recent generated_at across both reports as the displayed "Värskendatud" timestamp.
+  const lastUpdated = useMemo(() => {
+    return [report?.generated_at, elurikkusReport?.generated_at]
+      .filter((s): s is string => Boolean(s))
+      .sort()
+      .pop();
+  }, [report, elurikkusReport]);
+  // Prefer eBird's intro/period (richer Estonia + Europe context); fall back to elurikkus if eBird missing.
+  const introEt = report?.intro_et ?? elurikkusReport?.intro_et ?? null;
+  const periodStart = report?.period_start ?? elurikkusReport?.period_start;
+  const periodEnd = report?.period_end ?? elurikkusReport?.period_end;
   const eeRarities = eeEntries.filter((e) => effectiveRarityTier(e) !== 'none').length;
   const euRarities = euEntries.filter((e) => effectiveRarityTier(e) !== 'none').length;
   const activeEntries = section === 'ee' ? eeEntries : euEntries;
@@ -414,14 +500,16 @@ export default function OverviewTab() {
         <header className="flex items-start justify-between gap-3">
           <div className="space-y-1 min-w-0">
             <h1 className="text-2xl font-semibold">Ülevaade</h1>
-            {report && (
+            {report && periodStart && periodEnd && (
               <>
                 <p className="text-sm text-muted-foreground">
-                  Periood: {formatPeriod(report.period_start, report.period_end)}
+                  Periood: {formatPeriod(periodStart, periodEnd)}
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  Värskendatud {formatRelative(report.generated_at)}
-                </p>
+                {lastUpdated && (
+                  <p className="text-xs text-muted-foreground">
+                    Värskendatud {formatRelative(lastUpdated)}
+                  </p>
+                )}
               </>
             )}
           </div>
@@ -475,8 +563,8 @@ export default function OverviewTab() {
 
         {!loading && !error && report && (
           <>
-            {report.intro_et && (
-              <p className="text-sm leading-relaxed">{report.intro_et}</p>
+            {introEt && (
+              <p className="text-sm leading-relaxed">{introEt}</p>
             )}
 
             <div className="flex gap-2 border-b border-border">

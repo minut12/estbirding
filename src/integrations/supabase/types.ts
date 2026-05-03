@@ -182,6 +182,36 @@ export type Database = {
         }
         Relationships: []
       }
+      elurikkus_raport: {
+        Row: {
+          estonia_entries: Json
+          generated_at: string
+          generation_meta: Json
+          id: string
+          intro_et: string | null
+          period_end: string
+          period_start: string
+        }
+        Insert: {
+          estonia_entries?: Json
+          generated_at?: string
+          generation_meta?: Json
+          id?: string
+          intro_et?: string | null
+          period_end: string
+          period_start: string
+        }
+        Update: {
+          estonia_entries?: Json
+          generated_at?: string
+          generation_meta?: Json
+          id?: string
+          intro_et?: string | null
+          period_end?: string
+          period_start?: string
+        }
+        Relationships: []
+      }
       ennustus_cache: {
         Row: {
           best_period_label: string | null

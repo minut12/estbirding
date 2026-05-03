@@ -9,10 +9,22 @@ const corsHeaders = {
 };
 
 const DEFAULT_SPECIES: string[] = [
-  "Aed-põõsalind","Aed-roolind","Aedporr","Alk","Alverüdi","Ameerika piilpart","Atlantise tormilind","Aul","Baleaari tormilind","Euroopa kaelustäks","Habekakk","Habeviires","Hahk","Hakk","Hall-kärbsenäpp","Hallhaigur","Hallhani","Hallkibu","Hallpea-rähn","Hallpõsk-pütt","Hallrästas","Hallrüdi","Halltsiitsitaja","Hallvares","Hallõgija","Hangelind","Harakas","Haugaskotkas","Hele-urvalind","Heletilder","Herilaseviu","Hiireviu","Hoburästas","Händkakk","Hänilane","Hõbehaigur","Hõbehaugas","Hõbekajakas","Hüüp","Ida-mustvaeras","Jahipistrik","Jämejalg","Järvekaur","Jääkajakas","Jääkaur","Jääkoskel","Jõgi-ritsiklind","Jõgitiir","Jõgitilder","Jõgivästrik","Kadakatäks","Kaelus-kärbsenäpp","Kaelus-turteltuvi","Kaeluskotkas","Kaelusrästas","Kaelustuvi","Kalakajakas","Kalakotkas","Kalda-rädilind","Kaldapääsuke","Kaljukajakas","Kaljukotkas","Kanada lagle","Kanakull","Kanepilind","Karbuskajakas","Karkjalg","Karmiinleevike","Karvasjalg-kakk","Karvasjalg-viu","Kassikakk","Kiivitaja","Kiripugu-rüdi","Kirjuhahk","Kivikakk","Kivirullija","Kivitäks","Kodukakk","Kodutuvi","Koduvarblane","Koldhaigur","Koldjalg-hõbekajakas","Koldvint","Kormoran","Krüüsel","Kukkurtihane","Kuld-lehelind","Kuldhänilane","Kuldnokk","Kuldtsiitsitaja","Kuninghahk","Kuuse-käbilind","Käblik","Kägu","Käharpelikan","Käosulane","Kääbuskormoran","Kääbuskotkas","Kõnnuõgija","Kõrbe-kivitäks","Kõrbe-põõsalind","Kõrkja-roolind","Kõrvukräts","Kõvernokk-rüdi","Kühmnokk-luik","Künnivares","Laanenäär","Laanepüü","Laanerähn","Laisaba-änn","Lammitilder","Lapi tsiitsitaja","Lasuurtihane","Lauk","Laululuik","Laulurästas","Leeterüdi","Leevike","Liiv-kivitäks","Liivatüll","Linavästrik","Loorkakk","Luitsnokk-iibis","Luitsnokk-part","Lumehani","Lumekakk","Lääne-lehelind","Lääne-pöialpoiss","Lõopistrik","Lõuna-hõbekajakas","Lühinokk-hani","Madukotkas","Mandariinpart","Merikajakas","Merikotkas","Merirüdi","Merisk","Merivart","Mesilasenäpp","Mets-lehelind","Metsis","Metskiur","Metskurvits","Metstilder","Metsvint","Mudanepp","Mudatilder","Must-harksaba","Must-kärbsenäpp","Must-lepalind","Must-toonekurg","Mustjalg-tüll","Mustkael-pütt","Mustkurk-raat","Mustlagle","Mustlauk-õgija","Mustpea-põõsalind","Mustpea-tsiitsitaja","Mustpugu-rästas","Musträhn","Musträstas","Mustsaba-vigle","Musttihane","Mustvaeras","Mustvares","Mustviires","Mägi-kanepilind","Mägikiur","Männi-käbilind","Männileevike","Männitalvike","Mänsak","Naaskelnokk","Naerukajakas","Naerutiir","Niidu-kaelustäks","Niidu-ritsiklind","Niidukiur","Nunn-kivitäks","Nurmkana","Nõgipart","Nõlva-lehelind","Nõmmekiur","Nõmmelõoke","Ohakalind","Ohhoota hõbekajakas","Padu-roolind","Pasknäär","Peegel-tormilind","Pelikan","Peoleo","Piilpart","Piiritaja","Pikksaba-änn","Plütt","Plüü","Polaarkajakas","Porr","Prillvaeras","Pruunselg-põõsalind","Puna-harksaba","Puna-veetallaja","Punajalg-pistrik","Punajalg-tilder","Punakael-lagle","Punakurk-kaur","Punanokk-vart","Punapea-vart","Punapea-õgija","Punarind","Punasaba-õgija","Punaselg-õgija","Purpurhaigur","Puukoristaja","Põhja-kirjurästas","Põhja-lehelind","Põhja-tormipääsu","Põhjatihane","Põhjatsiitsitaja","Põhjavint","Põldlõoke","Põldtsiitsitaja","Põldvarblane","Põldvutt","Pöialpoiss","Rabapistrik","Rabapüü","Raisakotkas","Randkajakas","Randkiur","Randtiir","Rasvatihane","Raudkull","Ristpart","Roherähn","Rohevint","Rohukoskel","Rohunepp","Ronk","Roo-loorkull","Roo-ritsiklind","Roohabekas","Rooruik","Roosa-kuldnokk","Roosakajakas","Roosatiir","Roostepääsuke","Roosterind-tüll","Rootsiitsitaja","Rubiinööbik","Rukkirääk","Ruugerüdi","Rägapart","Rästas-roolind","Räusktiir","Rääkspart","Räästapääsuke","Rüüt","Sabatihane","Salu-lehelind","Salupäll","Salutihane","Sarviklõoke","Sarvikpütt","Siberi lehelind","Siberi raat","Siidhaigur","Siidisaba","Siisike","Sinikael-part","Siniraag","Sinirind","Sinisaba","Sinitihane","Soo-loorkull","Soo-roolind","Sookiur","Sookurg","Soopart","Sooräts","Soorüdi","Stepi-loorkull","Stepikajakas","Stepikiivitaja","Stepikotkas","Stepipistrik","Stepiviu","Suitsupääsuke","Suula","Suur-kirjurähn","Suur-konnakotkas","Suur-laukhani","Suurkoovitaja","Suurnokk-vint","Suurrüdi","Suuränn","Sõtkas","Söödikänn","Tait","Talvike","Tamme-kirjurähn","Teder","Tiigi-roolind","Tikutaja","Triip-ritsiklind","Tuhk-lehelind","Tumetilder","Tundra-rabahani","Tundrakaur","Tundrakiur","Tutkas","Tutt-tihane","Tutt-tiir","Tuttlõoke","Tuttpütt","Tuttvart","Tuuletallaja","Täpikhuik","Tõmmu-lehelind","Tõmmuiibis","Tõmmukajakas","Tõmmuvaeras","Urvalind","Vaaraohani","Vaenukägu","Vainurästas","Valge-toonekurg","Valgepõsk-lagle","Valgeselg-kirjurähn","Valgesilm-vart","Valgetiib-viires","Veetallaja","Veisehaigur","Vesipapp","Vihitaja","Viupart","Väike-kirjurähn","Väike-konnakotkas","Väike-käosulane","Väike-kärbsenäpp","Väike-laukhani","Väike-lehelind","Väike-põõsalind","Väikealk","Väikehuik","Väikehüüp","Väikekajakas","Väikekoovitaja","Väikekoskel","Väikeluik","Väikepistrik","Väikepütt","Väikerüdi","Väiketiir","Väiketrapp","Väiketsiitsitaja","Väiketüll","Välja-loorkull","Välja-väikelõoke","Värbkakk","Värbrüdi","Väänkael","Võsa-ritsiklind","Võsaraat","Vööt-käbilind","Vööt-põõsalind","Vööthani","Vöötkakk","Vöötnokk-kajakas","Vöötsaba-vigle","Õõnetuvi","Ööbik","Ööhaigur","Öösorr","Väike-lumehani","Tulipart","Siberi tõmmuvaeras","Lannuvart","Sini-rägapart","Ameerika viupart","Suurtrapp","Stepivuril","Suur-turteltuvi","Kanada kurg","Neitsikurg","Värbhuik","Tundrarüüt","Valgesaba-kiivitaja","Kõrbetüll","Tundra-neppvigle","Ameerika vihitaja","Suur-veetallaja","Älverüdi","Pikkjalg-rüdi","Stepi-pääsujooksur","Kõnnu-pääsujooksur","Harksaba-kajakas","Vandelkajakas","Põhja-tormilind","Vahemere tormilind","Suurpiiritaja","Randpiiritaja","Raipekotkas","Kumai-kaeluskotkas","Kääpakotkas","Stepi-tuuletallaja","Mongoolia kõnnuõgija","Punasaba-kõnnuõgija","Taigatihane","Stepilõoke","Leet-käosulane","Tarna-roolind","Kivipääsuke","Vööt-lehelind","Punakurk-põõsalind","Ruskerästas","Kivisiirak","Mägiraat","Idahänilane","Mongoolia kiur","Taigakiur","Kõrbeleevike","Punapea-tsiitsitaja","Rebassidrik","Ameerika väikeluik","Lääne-mustlagle","Kirde-mustlagle","Grööni suur-laukhani","Aafrika harksaba","Stepi-hallõgija","Lääne-sabatihane","Siseaasia must-lepalind","Mustpea-hänilane","Tõmmu-linavästrik","Mustluik","Eskimo lagle","Mõrsjapart","Sõnnpea-sõtkas","Läänesõtkas","Kübarkoskel","Kuupart","Puna-rägapart","Heleflamingo","Hiid-merikotkas","Tutt-karakaara","Ameerika tuuletallaja",
+  "Aed-põõsalind","Aed-roolind","Aedporr","Alk","Alverüdi","Ameerika piilpart","Atlantise tormilind","Aul","Baleaari tormilind","Euroopa kaelustäks","Habekakk","Habeviires","Hahk","Hakk","Hall-kärbsenäpp","Hallhaigur","Hallhani","Hallkibu","Hallpea-rähn","Hallpõsk-pütt","Hallrästas","Hallrüdi","Halltsiitsitaja","Hallvares","Hallõgija","Hangelind","Harakas","Haugaskotkas","Hele-urvalind","Heletilder","Herilaseviu","Hiireviu","Hoburästas","Händkakk","Hänilane","Hõbehaigur","Hõbehaugas","Hõbekajakas","Hüüp","Ida-mustvaeras","Jahipistrik","Jämejalg","Järvekaur","Jääkajakas","Jääkaur","Jääkoskel","Jõgi-ritsiklind","Jõgitiir","Jõgitilder","Jõgivästrik","Kadakatäks","Kaelus-kärbsenäpp","Kaelus-turteltuvi","Kaeluskotkas","Kaelusrästas","Kaelustuvi","Kalakajakas","Kalakotkas","Kalda-rädilind","Kaldapääsuke","Kaljukajakas","Kaljukotkas","Kanada lagle","Kanakull","Kanepilind","Karbuskajakas","Karkjalg","Karmiinleevike","Karvasjalg-kakk","Karvasjalg-viu","Kassikakk","Kiivitaja","Kiripugu-rüdi","Kirjuhahk","Kivikakk","Kivirullija","Kivitäks","Kodukakk","Kodutuvi","Koldhaigur","Koldjalg-hõbekajakas","Koldvint","Kormoran","Krüüsel","Kukkurtihane","Kuld-lehelind","Kuldhänilane","Kuldnokk","Kuldtsiitsitaja","Kuninghahk","Kuuse-käbilind","Käblik","Kägu","Käharpelikan","Käosulane","Kääbuskormoran","Kääbuskotkas","Kõnnuõgija","Kõrbe-kivitäks","Kõrbe-põõsalind","Kõrkja-roolind","Kõrvukräts","Kõvernokk-rüdi","Kühmnokk-luik","Künnivares","Laanenäär","Laanepüü","Laanerähn","Laisaba-änn","Lammitilder","Lapi tsiitsitaja","Lasuurtihane","Lauk","Laululuik","Laulurästas","Leeterüdi","Leevike","Liiv-kivitäks","Liivatüll","Linavästrik","Loorkakk","Luitsnokk-iibis","Luitsnokk-part","Lumehani","Lumekakk","Lääne-lehelind","Lääne-pöialpoiss","Lõopistrik","Lõuna-hõbekajakas","Lühinokk-hani","Madukotkas","Mandariinpart","Merikajakas","Merikotkas","Merirüdi","Merisk","Merivart","Mesilasenäpp","Mets-lehelind","Metsis","Metskiur","Metskurvits","Metstilder","Metsvint","Mudanepp","Mudatilder","Must-harksaba","Must-kärbsenäpp","Must-lepalind","Must-toonekurg","Mustjalg-tüll","Mustkael-pütt","Mustkurk-raat","Mustlagle","Mustlauk-õgija","Mustpea-põõsalind","Mustpea-tsiitsitaja","Mustpugu-rästas","Musträhn","Musträstas","Mustsaba-vigle","Musttihane","Mustvaeras","Mustvares","Mustviires","Mägi-kanepilind","Mägikiur","Männi-käbilind","Männileevike","Männitalvike","Mänsak","Naaskelnokk","Naerukajakas","Naerutiir","Niidu-kaelustäks","Niidu-ritsiklind","Niidukiur","Nunn-kivitäks","Nurmkana","Nõgipart","Nõlva-lehelind","Nõmmekiur","Nõmmelõoke","Ohakalind","Ohhoota hõbekajakas","Padu-roolind","Pasknäär","Peegel-tormilind","Pelikan","Peoleo","Piilpart","Piiritaja","Pikksaba-änn","Plütt","Plüü","Polaarkajakas","Porr","Prillvaeras","Pruunselg-põõsalind","Puna-harksaba","Puna-veetallaja","Punajalg-pistrik","Punajalg-tilder","Punakael-lagle","Punakurk-kaur","Punanokk-vart","Punapea-vart","Punapea-õgija","Punarind","Punasaba-õgija","Punaselg-õgija","Purpurhaigur","Puukoristaja","Põhja-kirjurästas","Põhja-lehelind","Põhja-tormipääsu","Põhjatihane","Põhjatsiitsitaja","Põhjavint","Põldlõoke","Põldtsiitsitaja","Põldvarblane","Põldvutt","Pöialpoiss","Rabapistrik","Rabapüü","Raisakotkas","Randkajakas","Randkiur","Randtiir","Rasvatihane","Raudkull","Ristpart","Roherähn","Rohevint","Rohukoskel","Rohunepp","Ronk","Roo-loorkull","Roo-ritsiklind","Roohabekas","Rooruik","Roosa-kuldnokk","Roosakajakas","Roosatiir","Roostepääsuke","Roosterind-tüll","Rootsiitsitaja","Rubiinööbik","Rukkirääk","Ruugerüdi","Rägapart","Rästas-roolind","Räusktiir","Rääkspart","Räästapääsuke","Rüüt","Sabatihane","Salu-lehelind","Salupäll","Salutihane","Sarviklõoke","Sarvikpütt","Siberi lehelind","Siberi raat","Siidhaigur","Siidisaba","Siisike","Sinikael-part","Siniraag","Sinirind","Sinisaba","Sinitihane","Soo-loorkull","Soo-roolind","Sookiur","Sookurg","Soopart","Sooräts","Soorüdi","Stepi-loorkull","Stepikajakas","Stepikiivitaja","Stepikotkas","Stepipistrik","Stepiviu","Suitsupääsuke","Suula","Suur-kirjurähn","Suur-konnakotkas","Suur-laukhani","Suurkoovitaja","Suurnokk-vint","Suurrüdi","Suuränn","Sõtkas","Söödikänn","Tait","Talvike","Tamme-kirjurähn","Teder","Tiigi-roolind","Tikutaja","Triip-ritsiklind","Tuhk-lehelind","Tumetilder","Tundra-rabahani","Tundrakaur","Tundrakiur","Tutkas","Tutt-tihane","Tutt-tiir","Tuttlõoke","Tuttpütt","Tuttvart","Tuuletallaja","Täpikhuik","Tõmmu-lehelind","Tõmmuiibis","Tõmmukajakas","Tõmmuvaeras","Urvalind","Vaaraohani","Vaenukägu","Vainurästas","Valge-toonekurg","Valgepõsk-lagle","Valgeselg-kirjurähn","Valgesilm-vart","Valgetiib-viires","Veetallaja","Veisehaigur","Vesipapp","Vihitaja","Viupart","Väike-kirjurähn","Väike-konnakotkas","Väike-käosulane","Väike-kärbsenäpp","Väike-laukhani","Väike-lehelind","Väike-põõsalind","Väikealk","Väikehuik","Väikehüüp","Väikekajakas","Väikekoovitaja","Väikekoskel","Väikeluik","Väikepistrik","Väikepütt","Väikerüdi","Väiketiir","Väiketrapp","Väiketsiitsitaja","Väiketüll","Välja-loorkull","Välja-väikelõoke","Värbkakk","Värbrüdi","Väänkael","Võsa-ritsiklind","Võsaraat","Vööt-käbilind","Vööt-põõsalind","Vööthani","Vöötkakk","Vöötnokk-kajakas","Vöötsaba-vigle","Õõnetuvi","Ööbik","Ööhaigur","Öösorr","Väike-lumehani","Tulipart","Siberi tõmmuvaeras","Lannuvart","Sini-rägapart","Ameerika viupart","Suurtrapp","Stepivuril","Suur-turteltuvi","Kanada kurg","Neitsikurg","Värbhuik","Tundrarüüt","Valgesaba-kiivitaja","Kõrbetüll","Tundra-neppvigle","Ameerika vihitaja","Suur-veetallaja","Älverüdi","Pikkjalg-rüdi","Stepi-pääsujooksur","Kõnnu-pääsujooksur","Harksaba-kajakas","Vandelkajakas","Põhja-tormilind","Vahemere tormilind","Suurpiiritaja","Randpiiritaja","Raipekotkas","Kumai-kaeluskotkas","Kääpakotkas","Stepi-tuuletallaja","Mongoolia kõnnuõgija","Punasaba-kõnnuõgija","Taigatihane","Stepilõoke","Leet-käosulane","Tarna-roolind","Kivipääsuke","Vööt-lehelind","Punakurk-põõsalind","Ruskerästas","Kivisiirak","Mägiraat","Idahänilane","Mongoolia kiur","Taigakiur","Kõrbeleevike","Punapea-tsiitsitaja","Rebassidrik","Ameerika väikeluik","Lääne-mustlagle","Kirde-mustlagle","Grööni suur-laukhani","Aafrika harksaba","Stepi-hallõgija","Lääne-sabatihane","Siseaasia must-lepalind","Mustpea-hänilane","Tõmmu-linavästrik","Mustluik","Eskimo lagle","Mõrsjapart","Sõnnpea-sõtkas","Läänesõtkas","Kübarkoskel","Kuupart","Puna-rägapart","Heleflamingo","Hiid-merikotkas","Tutt-karakaara","Ameerika tuuletallaja",
 ];
 
 const DELAY_MS = 600;
+
+interface ParsedObservation {
+  sub_id: string | null;
+  observed_at: string; // ISO date YYYY-MM-DD
+  locality: string | null;
+  county: string | null;
+  lat: number | null;
+  lon: number | null;
+  observer: string | null;
+  individual_count: number | null;
+  behavior: string | null;
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -30,10 +42,167 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<string>
   }
 }
 
+function stripHtml(s: string): string {
+  return s.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
+}
+
+function parseIsoDate(text: string): string | null {
+  const iso = text.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    const y = +iso[1], m = +iso[2], d = +iso[3];
+    if (y >= 2000 && y <= 2099 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      return `${iso[1]}-${iso[2]}-${iso[3]}`;
+    }
+  }
+  const eu = text.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+  if (eu) {
+    const d = +eu[1], m = +eu[2], y = +eu[3];
+    if (y >= 2000 && y <= 2099 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      return `${eu[3]}-${eu[2]}-${eu[1]}`;
+    }
+  }
+  return null;
+}
+
+function parseCoordsFromCell(text: string): { lat: number | null; lon: number | null } {
+  const pair = text.match(/(-?\d{1,3}\.\d{2,7})\s*[,;\s]\s*(-?\d{1,3}\.\d{2,7})/);
+  if (pair) {
+    const a = parseFloat(pair[1]);
+    const b = parseFloat(pair[2]);
+    if (a >= 57 && a <= 60 && b >= 21 && b <= 29) return { lat: a, lon: b };
+    if (b >= 57 && b <= 60 && a >= 21 && a <= 29) return { lat: b, lon: a };
+  }
+  return { lat: null, lon: null };
+}
+
+function parseObservationsFromHtml(html: string): ParsedObservation[] {
+  const observations: ParsedObservation[] = [];
+  // Iterate <tr>...</tr>
+  const rowRe = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
+  let rowMatch: RegExpExecArray | null;
+  while ((rowMatch = rowRe.exec(html)) !== null) {
+    const rowHtml = rowMatch[1];
+    // Extract cells
+    const cells: string[] = [];
+    const cellRe = /<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi;
+    let cellMatch: RegExpExecArray | null;
+    while ((cellMatch = cellRe.exec(rowHtml)) !== null) {
+      cells.push(cellMatch[1]);
+    }
+    if (cells.length === 0) continue;
+
+    // Find a date in any cell to determine if this is an observation row
+    let observed_at: string | null = null;
+    for (const c of cells) {
+      observed_at = parseIsoDate(stripHtml(c));
+      if (observed_at) break;
+    }
+    if (!observed_at) continue;
+
+    // sub_id from /occurrences/<id> link or data-record-id
+    let sub_id: string | null = null;
+    const subFromLink = rowHtml.match(/\/occurrences\/(\d+)/);
+    if (subFromLink) sub_id = subFromLink[1];
+    if (!sub_id) {
+      const dataAttr = rowHtml.match(/data-record-id=["']([^"']+)/i);
+      if (dataAttr) sub_id = dataAttr[1];
+    }
+
+    // Coords
+    let lat: number | null = null;
+    let lon: number | null = null;
+    for (const c of cells) {
+      const coords = parseCoordsFromCell(stripHtml(c));
+      if (coords.lat !== null && coords.lon !== null) {
+        lat = coords.lat;
+        lon = coords.lon;
+        break;
+      }
+    }
+
+    // Heuristic field assignment from remaining cell text values.
+    // The elurikkus.ee table layout varies; we collect candidates and pick best.
+    const cellTexts = cells.map((c) => decodeEntities(stripHtml(c)));
+
+    // individual_count: cell that's a small integer (1..9999) on its own
+    let individual_count: number | null = null;
+    for (const t of cellTexts) {
+      if (/^\d{1,4}$/.test(t)) {
+        const n = parseInt(t, 10);
+        if (Number.isFinite(n) && n > 0 && n < 10000) {
+          individual_count = n;
+          break;
+        }
+      }
+    }
+
+    // observer / collectors: cell containing letters and a comma or "and" but not a date and not coords
+    let observer: string | null = null;
+    // locality / county: pick longest non-date/non-coord text cells
+    const textCandidates = cellTexts.filter((t) => {
+      if (!t) return false;
+      if (parseIsoDate(t)) return false;
+      if (/^\d+(\.\d+)?$/.test(t)) return false;
+      if (/^-?\d{1,3}\.\d{2,7}\s*[,;\s]\s*-?\d{1,3}\.\d{2,7}$/.test(t)) return false;
+      return true;
+    });
+
+    // Observer guess: cell that looks like a person name (capitalised words, len < 80, contains a space or comma)
+    for (const t of textCandidates) {
+      if (t.length > 2 && t.length < 120 && /[A-ZÄÖÜÕŠŽ][a-zäöüõšž]+/.test(t) && (/\s/.test(t) || /,/.test(t))) {
+        // skip if it looks like a locality with too many words
+        if (t.split(/\s+/).length <= 6) {
+          observer = t;
+          break;
+        }
+      }
+    }
+
+    // locality and county: use remaining text candidates
+    const remaining = textCandidates.filter((t) => t !== observer);
+    let locality: string | null = remaining[0] ?? null;
+    let county: string | null = remaining[1] ?? null;
+
+    // behavior: a short token cell that is not numeric/date/coords/observer/locality
+    let behavior: string | null = null;
+    for (const t of cellTexts) {
+      if (!t) continue;
+      if (t === observer || t === locality || t === county) continue;
+      if (parseIsoDate(t)) continue;
+      if (/^\d+$/.test(t)) continue;
+      if (t.length > 0 && t.length <= 40 && !/\d{4}/.test(t) && /^[A-Za-zÄÖÜÕäöüõŠšŽž\- ]+$/.test(t)) {
+        behavior = t;
+        break;
+      }
+    }
+
+    observations.push({
+      sub_id,
+      observed_at,
+      locality: locality && locality.length <= 200 ? locality : null,
+      county: county && county.length <= 100 ? county : null,
+      lat,
+      lon,
+      observer: observer && observer.length <= 200 ? observer : null,
+      individual_count,
+      behavior,
+    });
+  }
+  return observations;
+}
+
 function extractNewestIsoFromSearch(html: string): string | null {
-  // Match YYYY-MM-DD dates
   const isoMatches = html.match(/\b(\d{4})-(\d{2})-(\d{2})\b/g) || [];
-  // Match DD.MM.YYYY dates
   const euMatches = html.match(/\b(\d{2})\.(\d{2})\.(\d{4})\b/g) || [];
 
   const dates: string[] = [];
@@ -63,37 +232,19 @@ function extractNewestIsoFromSearch(html: string): string | null {
 function extractDetailUrl(html: string, _species: string): string | null {
   const match = html.match(/href=["']?(\/occurrences\/(\d+))/);
   if (match) return `https://elurikkus.ee${match[1]}`;
-  // Also try full URLs
   const full = html.match(/https?:\/\/elurikkus\.ee\/occurrences\/(\d+)/);
   if (full) return full[0];
   return null;
 }
 
-function extractOcc7FromHtml(html: string): number {
+function countWithin7Days(observations: ParsedObservation[]): number {
   const now = Date.now();
   const sevenDays = 7 * 24 * 60 * 60 * 1000;
   let count = 0;
-
-  // Parse table rows looking for dates
-  const rowPattern = /<tr[^>]*>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>/gi;
-  let match;
-  while ((match = rowPattern.exec(html)) !== null) {
-    const cellText = match[1].replace(/<[^>]+>/g, "").trim();
-    // Try ISO date
-    const isoMatch = cellText.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (isoMatch) {
-      const ts = Date.parse(`${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}T12:00:00Z`);
-      if (Number.isFinite(ts) && now - ts >= 0 && now - ts <= sevenDays) count++;
-      continue;
-    }
-    // Try EU date
-    const euMatch = cellText.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
-    if (euMatch) {
-      const ts = Date.parse(`${euMatch[3]}-${euMatch[2]}-${euMatch[1]}T12:00:00Z`);
-      if (Number.isFinite(ts) && now - ts >= 0 && now - ts <= sevenDays) count++;
-    }
+  for (const o of observations) {
+    const ts = Date.parse(`${o.observed_at}T12:00:00Z`);
+    if (Number.isFinite(ts) && now - ts >= 0 && now - ts <= sevenDays) count++;
   }
-
   return count;
 }
 
@@ -103,7 +254,6 @@ async function fetchDetailCoords(
   try {
     const html = await fetchWithTimeout(detailUrl, 10000);
 
-    // Try JSON-like patterns: "lat":59.1234 / "lng":24.5678
     const latJson = html.match(/"lat"\s*:\s*(-?\d+\.?\d*)/);
     const lonJson =
       html.match(/"lng"\s*:\s*(-?\d+\.?\d*)/) ||
@@ -116,7 +266,6 @@ async function fetchDetailCoords(
       }
     }
 
-    // Try data attributes
     const dataLat = html.match(/data-lat=["'](-?\d+\.?\d*)/);
     const dataLon =
       html.match(/data-lng=["'](-?\d+\.?\d*)/) ||
@@ -129,16 +278,13 @@ async function fetchDetailCoords(
       }
     }
 
-    // Try decimal coordinate pairs in Estonia bbox
     const coordPairs = html.matchAll(
       /(\d{2}\.\d{3,7})\s*[,;\s]\s*(\d{2}\.\d{3,7})/g,
     );
     for (const cp of coordPairs) {
       const a = parseFloat(cp[1]);
       const b = parseFloat(cp[2]);
-      // lat, lon order
       if (a >= 57 && a <= 60 && b >= 21 && b <= 29) return { lat: a, lon: b };
-      // lon, lat order
       if (b >= 57 && b <= 60 && a >= 21 && a <= 29) return { lat: b, lon: a };
     }
 
@@ -160,7 +306,6 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Auth check
   const secret = req.headers.get("x-refresh-secret") || "";
   const expected = Deno.env.get("ELURIKKUS_REFRESH_SECRET") || "";
   if (!expected || secret !== expected) {
@@ -172,16 +317,13 @@ Deno.serve(async (req) => {
 
   const t0 = Date.now();
 
-  // Parse optional species list from body
   let species: string[];
   let bodyOffset = 0;
   const body = await req.json().catch(() => ({}));
 
   if (body && Array.isArray(body.species) && body.species.length > 0) {
-    // Explicit list provided — use as-is
     species = body.species.map((s: unknown) => String(s).trim()).filter(Boolean);
   } else {
-    // Use offset/limit slice of DEFAULT_SPECIES
     const offset = typeof body.offset === "number" ? Math.max(0, body.offset) : 0;
     const limit = typeof body.limit === "number" ? Math.min(100, Math.max(1, body.limit)) : DEFAULT_SPECIES.length;
     bodyOffset = offset;
@@ -200,6 +342,11 @@ Deno.serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   let updated = 0;
+  let totalObsParsed = 0;
+  let totalWithSubId = 0;
+  let totalWithoutSubId = 0;
+  let totalObsFailed = 0;
+  let totalCacheUpserts = 0;
   const errors: { name: string; error: string }[] = [];
 
   for (let i = 0; i < species.length; i++) {
@@ -208,45 +355,150 @@ Deno.serve(async (req) => {
       const searchUrl = `https://elurikkus.ee/app/occurrences/search?text=${encodeURIComponent(name)}`;
       const html = await fetchWithTimeout(searchUrl, 10000);
 
-      const t = extractNewestIsoFromSearch(html);
-      const occ7 = extractOcc7FromHtml(html);
+      // Parse per-observation rows from the HTML
+      const observations = parseObservationsFromHtml(html);
+      // Sort by observed_at desc (string ISO sort works)
+      observations.sort((a, b) => (a.observed_at < b.observed_at ? 1 : a.observed_at > b.observed_at ? -1 : 0));
+      const mostRecent = observations[0] ?? null;
+
+      // Existing summary fields
+      const t = (mostRecent?.observed_at) || extractNewestIsoFromSearch(html);
+      const occ7 = observations.length > 0
+        ? countWithin7Days(observations)
+        : (() => {
+            // Fallback to legacy date-only counting if observation parsing yielded nothing
+            const now = Date.now();
+            const sevenDays = 7 * 24 * 60 * 60 * 1000;
+            let count = 0;
+            const rowPattern = /<tr[^>]*>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>/gi;
+            let m;
+            while ((m = rowPattern.exec(html)) !== null) {
+              const cellText = m[1].replace(/<[^>]+>/g, "").trim();
+              const iso = cellText.match(/^(\d{4})-(\d{2})-(\d{2})/);
+              if (iso) {
+                const ts = Date.parse(`${iso[1]}-${iso[2]}-${iso[3]}T12:00:00Z`);
+                if (Number.isFinite(ts) && now - ts >= 0 && now - ts <= sevenDays) count++;
+                continue;
+              }
+              const eu = cellText.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
+              if (eu) {
+                const ts = Date.parse(`${eu[3]}-${eu[2]}-${eu[1]}T12:00:00Z`);
+                if (Number.isFinite(ts) && now - ts >= 0 && now - ts <= sevenDays) count++;
+              }
+            }
+            return count;
+          })();
+
       const detailUrl = extractDetailUrl(html, name);
 
-      let lat: number | null = null;
-      let lon: number | null = null;
-      let coordsStatus = "missing";
+      let lat: number | null = mostRecent?.lat ?? null;
+      let lon: number | null = mostRecent?.lon ?? null;
+      let coordsStatus = lat !== null && lon !== null ? "public" : "missing";
+      let coordsSource: string | null = lat !== null && lon !== null ? "row" : null;
 
-      if (detailUrl) {
+      if ((lat === null || lon === null) && detailUrl) {
         const coords = await fetchDetailCoords(detailUrl);
         if (coords) {
           lat = coords.lat;
           lon = coords.lon;
           coordsStatus = "public";
+          coordsSource = "detail";
         } else {
           coordsStatus = "restricted";
+          coordsSource = "detail";
+        }
+      } else if (lat === null && !detailUrl) {
+        coordsSource = "search";
+      }
+
+      // === WRITE 1: elurikkus_cache (existing summary + 3 new popup-fields) ===
+      const cacheRow = {
+        species_name: name,
+        lat,
+        lon,
+        occ7,
+        t,
+        coords_status: coordsStatus,
+        coords_source: coordsSource ?? (detailUrl ? "detail" : "search"),
+        open_url: detailUrl || searchUrl,
+        search_url: searchUrl,
+        individual_count: mostRecent?.individual_count ?? null,
+        behavior: mostRecent?.behavior ?? null,
+        collectors: mostRecent?.observer ?? null,
+        fetched_at: new Date().toISOString(),
+      };
+
+      const { error: cacheErr } = await supabase
+        .from("elurikkus_cache")
+        .upsert(cacheRow, { onConflict: "species_name" });
+
+      if (cacheErr) {
+        errors.push({ name, error: `cache: ${cacheErr.message}` });
+      } else {
+        updated++;
+        totalCacheUpserts++;
+      }
+
+      // === WRITE 2: elurikkus_observations (per-observation rows) ===
+      const nowIso = new Date().toISOString();
+      const obsRowsWithSubId = observations
+        .filter((o) => o.sub_id)
+        .map((o) => ({
+          species_name: name,
+          species_lat: null,
+          observed_at: o.observed_at,
+          locality: o.locality,
+          county: o.county,
+          lat: o.lat,
+          lon: o.lon,
+          observer: o.observer,
+          individual_count: o.individual_count,
+          behavior: o.behavior,
+          sub_id: o.sub_id,
+          fetched_at: nowIso,
+        }));
+
+      const obsRowsWithoutSubId = observations
+        .filter((o) => !o.sub_id)
+        .map((o) => ({
+          species_name: name,
+          species_lat: null,
+          observed_at: o.observed_at,
+          locality: o.locality,
+          county: o.county,
+          lat: o.lat,
+          lon: o.lon,
+          observer: o.observer,
+          individual_count: o.individual_count,
+          behavior: o.behavior,
+          sub_id: null,
+          fetched_at: nowIso,
+        }));
+
+      totalObsParsed += observations.length;
+      totalWithSubId += obsRowsWithSubId.length;
+      totalWithoutSubId += obsRowsWithoutSubId.length;
+
+      if (obsRowsWithSubId.length > 0) {
+        const { error: subIdErr } = await supabase
+          .from("elurikkus_observations")
+          .upsert(obsRowsWithSubId, { onConflict: "sub_id" });
+        if (subIdErr) {
+          totalObsFailed += obsRowsWithSubId.length;
+          errors.push({ name, error: `obs sub_id: ${subIdErr.message}` });
         }
       }
 
-      const { error } = await supabase.from("elurikkus_cache").upsert(
-        {
-          species_name: name,
-          lat,
-          lon,
-          occ7,
-          t,
-          coords_status: coordsStatus,
-          coords_source: detailUrl ? "detail" : "search",
-          open_url: detailUrl || searchUrl,
-          search_url: searchUrl,
-          fetched_at: new Date().toISOString(),
-        },
-        { onConflict: "species_name" },
-      );
-
-      if (error) {
-        errors.push({ name, error: `DB: ${error.message}` });
-      } else {
-        updated++;
+      if (obsRowsWithoutSubId.length > 0) {
+        const { error: natErr } = await supabase
+          .from("elurikkus_observations")
+          .upsert(obsRowsWithoutSubId, {
+            onConflict: "species_name,observed_at,locality,observer",
+          });
+        if (natErr) {
+          totalObsFailed += obsRowsWithoutSubId.length;
+          errors.push({ name, error: `obs natural: ${natErr.message}` });
+        }
       }
     } catch (e) {
       errors.push({ name, error: String(e) });
@@ -264,6 +516,11 @@ Deno.serve(async (req) => {
     duration_ms,
     offset: bodyOffset,
     total_species: DEFAULT_SPECIES.length,
+    observations_parsed: totalObsParsed,
+    observations_with_sub_id: totalWithSubId,
+    observations_without_sub_id: totalWithoutSubId,
+    observations_failed: totalObsFailed,
+    cache_rows_upserted: totalCacheUpserts,
   };
 
   return new Response(JSON.stringify(result), {

@@ -17,6 +17,8 @@ interface InsertPayload {
   intro_et?: string | null;
   estonia_entries: unknown[];
   generation_meta?: Record<string, unknown> | null;
+  kevadranne_narrative_et?: string | null;
+  kevadranne_arrivals?: unknown[];
 }
 
 const json = (body: unknown, status = 200) =>
@@ -69,6 +71,8 @@ Deno.serve(async (req) => {
       intro_et: payload.intro_et ?? null,
       estonia_entries: payload.estonia_entries,
       generation_meta: payload.generation_meta ?? {},
+      kevadranne_narrative_et: payload.kevadranne_narrative_et ?? null,
+      kevadranne_arrivals: payload.kevadranne_arrivals ?? [],
     })
     .select("id, generated_at")
     .single();

@@ -495,24 +495,32 @@ Deno.serve(async (req) => {
       totalWithoutSubId += obsRowsWithoutSubId.length;
 
       if (obsRowsWithSubId.length > 0) {
-        const { error: subIdErr } = await supabase
+        const { data: subIdData, error: subIdErr } = await supabase
           .from("elurikkus_observations")
-          .upsert(obsRowsWithSubId, { onConflict: "sub_id" });
+          .upsert(obsRowsWithSubId, { onConflict: "sub_id" })
+          .select("id");
         if (subIdErr) {
           totalObsFailed += obsRowsWithSubId.length;
+          console.error(`[elurikkus-obs sub_id upsert] ${name}: ${subIdErr.message}`);
           errors.push({ name, error: `obs sub_id: ${subIdErr.message}` });
+        } else {
+          totalObsInserted += subIdData?.length ?? obsRowsWithSubId.length;
         }
       }
 
       if (obsRowsWithoutSubId.length > 0) {
-        const { error: natErr } = await supabase
+        const { data: natData, error: natErr } = await supabase
           .from("elurikkus_observations")
           .upsert(obsRowsWithoutSubId, {
             onConflict: "species_name,observed_at,locality,observer",
-          });
+          })
+          .select("id");
         if (natErr) {
           totalObsFailed += obsRowsWithoutSubId.length;
+          console.error(`[elurikkus-obs natural-key upsert] ${name}: ${natErr.message}`);
           errors.push({ name, error: `obs natural: ${natErr.message}` });
+        } else {
+          totalObsInserted += natData?.length ?? obsRowsWithoutSubId.length;
         }
       }
     } catch (e) {
@@ -535,6 +543,10 @@ Deno.serve(async (req) => {
     observations_with_sub_id: totalWithSubId,
     observations_without_sub_id: totalWithoutSubId,
     observations_failed: totalObsFailed,
+    observations_skipped_no_date: totalSkippedNoDate,
+    observations_failed_upsert: totalObsFailed,
+    observations_inserted: totalObsInserted,
+    observations_updated: totalObsUpdated,
     cache_rows_upserted: totalCacheUpserts,
   };
 

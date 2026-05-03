@@ -386,7 +386,13 @@ async function fetchLatestElurikkus(): Promise<ElurikkusRaport | null> {
   if (error) throw error;
   const row = (data || null) as ElurikkusRaport | null;
   if (row) {
-    row.estonia_entries = Array.isArray(row.estonia_entries) ? row.estonia_entries : [];
+    const raw = Array.isArray(row.estonia_entries) ? row.estonia_entries : [];
+    // elurikkus.ee rows store a single `observer` (string); the UI expects `observers` (string[]).
+    row.estonia_entries = raw.map((e: any) => {
+      if (Array.isArray(e?.observers)) return e;
+      const single = typeof e?.observer === 'string' ? e.observer.trim() : '';
+      return { ...e, observers: single ? [single] : [] };
+    });
   }
   return row;
 }

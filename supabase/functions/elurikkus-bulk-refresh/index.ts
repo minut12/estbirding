@@ -509,18 +509,47 @@ Deno.serve(async (req) => {
       }
 
       if (obsRowsWithoutSubId.length > 0) {
-        const { data: natData, error: natErr } = await supabase
-          .from("elurikkus_observations")
-          .upsert(obsRowsWithoutSubId, {
-            onConflict: "species_name,observed_at,locality,observer",
-          })
-          .select("id");
-        if (natErr) {
-          totalObsFailed += obsRowsWithoutSubId.length;
-          console.error(`[elurikkus-obs natural-key upsert] ${name}: ${natErr.message}`);
-          errors.push({ name, error: `obs natural: ${natErr.message}` });
-        } else {
-          totalObsInserted += natData?.length ?? obsRowsWithoutSubId.length;
+        for (const row of obsRowsWithoutSubId) {
+          let existingQuery = supabase
+            .from("elurikkus_observations")
+            .select("id")
+            .eq("species_name", row.species_name)
+            .eq("observed_at", row.observed_at);
+          existingQuery = row.locality === null ? existingQuery.is("locality", null) : existingQuery.eq("locality", row.locality);
+          existingQuery = row.observer === null ? existingQuery.is("observer", null) : existingQuery.eq("observer", row.observer);
+
+          const { data: existing, error: lookupErr } = await existingQuery.maybeSingle();
+          if (lookupErr) {
+            totalObsFailed++;
+            console.error(`[elurikkus-obs natural-key upsert] ${name}: lookup failed: ${lookupErr.message}`);
+            errors.push({ name, error: `obs natural lookup: ${lookupErr.message}` });
+            continue;
+          }
+
+          if (existing?.id) {
+            const { error: updateErr } = await supabase
+              .from("elurikkus_observations")
+              .update(row)
+              .eq("id", existing.id);
+            if (updateErr) {
+              totalObsFailed++;
+              console.error(`[elurikkus-obs natural-key upsert] ${name}: update failed: ${updateErr.message}`);
+              errors.push({ name, error: `obs natural update: ${updateErr.message}` });
+            } else {
+              totalObsUpdated++;
+            }
+          } else {
+            const { error: insertErr } = await supabase
+              .from("elurikkus_observations")
+              .insert(row);
+            if (insertErr) {
+              totalObsFailed++;
+              console.error(`[elurikkus-obs natural-key upsert] ${name}: insert failed: ${insertErr.message}`);
+              errors.push({ name, error: `obs natural insert: ${insertErr.message}` });
+            } else {
+              totalObsInserted++;
+            }
+          }
         }
       }
     } catch (e) {

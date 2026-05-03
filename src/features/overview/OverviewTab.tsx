@@ -137,6 +137,16 @@ type VaatlusteRaport = {
   } | null;
 };
 
+type KevadranneArrival = {
+  species_et: string;
+  species_lat: string | null;
+  first_obs_date: string;
+  locality: string | null;
+  county: string | null;
+  observer: string | null;
+  obs_count_in_period: number;
+};
+
 type ElurikkusRaport = {
   id: string;
   generated_at: string;
@@ -144,6 +154,8 @@ type ElurikkusRaport = {
   period_end: string;
   intro_et: string | null;
   estonia_entries: VaatlusEntry[];
+  kevadranne_narrative_et: string | null;
+  kevadranne_arrivals: KevadranneArrival[];
   generation_meta?: Record<string, unknown>;
 };
 
@@ -422,6 +434,64 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
   );
 }
 
+function KevadranneSection({
+  narrative,
+  arrivals,
+  periodStart,
+  periodEnd,
+}: {
+  narrative: string | null;
+  arrivals: KevadranneArrival[];
+  periodStart?: string;
+  periodEnd?: string;
+}) {
+  const hasNarrative = Boolean(narrative && narrative.trim());
+  const hasArrivals = Array.isArray(arrivals) && arrivals.length > 0;
+  if (!hasNarrative && !hasArrivals) return null;
+
+  const periodLabel =
+    periodStart && periodEnd ? `${formatEntryDate(periodStart)} – ${formatEntryDate(periodEnd)}` : '';
+
+  return (
+    <section className="mt-6 pt-4 border-t border-border/60 space-y-3">
+      <h2 className="text-lg font-semibold">Kevadränne</h2>
+      {hasNarrative && <p className="text-sm leading-relaxed">{narrative}</p>}
+      {hasArrivals && (
+        <>
+          <h3 className="text-sm font-medium">
+            Uusi saabujad{periodLabel ? ` perioodil ${periodLabel}` : ''}:
+          </h3>
+          <ul className="space-y-1.5 list-none pl-0">
+            {arrivals.map((arr, idx) => (
+              <li
+                key={`${arr.species_lat ?? arr.species_et}-${arr.first_obs_date}-${idx}`}
+                className="text-sm leading-relaxed"
+              >
+                <strong>{arr.species_et}</strong>
+                {arr.species_lat && (
+                  <em className="text-muted-foreground"> ({arr.species_lat})</em>
+                )}
+                {' – '}
+                <span>{formatEntryDate(arr.first_obs_date)}</span>
+                {arr.locality && (
+                  <span>
+                    {', '}
+                    {arr.locality}
+                    {arr.county && `, ${arr.county}`}
+                  </span>
+                )}
+                {arr.observer && (
+                  <span className="text-muted-foreground"> ({arr.observer})</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
 function sortEntries(entries: VaatlusEntry[]): VaatlusEntry[] {
   return [...entries].sort((a, b) => {
     const tierDiff = TIER_RANK[effectiveRarityTier(b)] - TIER_RANK[effectiveRarityTier(a)];
@@ -463,6 +533,7 @@ async function fetchLatestElurikkus(): Promise<ElurikkusRaport | null> {
       const single = typeof e?.observer === 'string' ? e.observer.trim() : '';
       return { ...e, observers: single ? [single] : [] };
     });
+    row.kevadranne_arrivals = Array.isArray(row.kevadranne_arrivals) ? row.kevadranne_arrivals : [];
   }
   return row;
 }
@@ -669,6 +740,13 @@ export default function OverviewTab() {
             {introEt && (
               <p className="text-sm leading-relaxed">{introEt}</p>
             )}
+
+            <KevadranneSection
+              narrative={elurikkusReport?.kevadranne_narrative_et ?? null}
+              arrivals={elurikkusReport?.kevadranne_arrivals ?? []}
+              periodStart={elurikkusReport?.period_start ?? periodStart}
+              periodEnd={elurikkusReport?.period_end ?? periodEnd}
+            />
 
             <div className="flex gap-2 border-b border-border">
               {([

@@ -40,6 +40,8 @@ function lookupAvatarUrl(speciesLat: string, lookup: Map<string, string>): strin
 
 type RarityTier = 'none' | 'rare' | 'super' | 'mega';
 
+type EntrySource = 'ebird' | 'et_rarity_topup' | 'elurikkus';
+
 type VaatlusEntry = {
   species_et: string;
   species_lat: string;
@@ -57,7 +59,19 @@ type VaatlusEntry = {
   documented?: string[];
   comparison_et?: string | null;
   ee_probability_pct?: number;
+  source?: EntrySource | string;
 };
+
+const SOURCE_DISPLAY: Record<string, { label: string; emoji: string }> = {
+  ebird: { label: 'eBird', emoji: '🐦' },
+  et_rarity_topup: { label: 'eBird', emoji: '🐦' },
+  elurikkus: { label: 'elurikkus.ee', emoji: '🌿' },
+};
+
+function getSourceDisplay(source: string | undefined): { label: string; emoji: string } | null {
+  if (!source) return null;
+  return SOURCE_DISPLAY[source] ?? null;
+}
 
 function effectiveRarityTier(entry: VaatlusEntry): RarityTier {
   const lvl = entry.rarity_level;
@@ -258,6 +272,19 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
             </span>
           </>
         )}
+        {(() => {
+          const src = getSourceDisplay(entry.source);
+          if (!src) return null;
+          return (
+            <>
+              <span>·</span>
+              <span className="inline-flex items-center gap-1 text-xs">
+                <span aria-hidden>{src.emoji}</span>
+                <span>{src.label}</span>
+              </span>
+            </>
+          );
+        })()}
       </div>
       <div className="text-sm">
         <span className="text-muted-foreground">Vaatleja(d): </span>

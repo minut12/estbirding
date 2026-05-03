@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, RefreshCw, X, ExternalLink, Bird } from 'lucide-react';
+import { AlertTriangle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye } from 'lucide-react';
 import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
 
 function buildSciNameToEbirdCode(map: SpeciesMetaMap): Map<string, string> {
@@ -60,6 +60,12 @@ type VaatlusEntry = {
   comparison_et?: string | null;
   ee_probability_pct?: number;
   source?: EntrySource | string;
+  biology_et?: EntryBiology | null;
+};
+
+type EntryBiology = {
+  habitat_behavior?: string;
+  identification?: string;
 };
 
 const SOURCE_DISPLAY: Record<string, { label: string; emoji: string }> = {
@@ -347,6 +353,30 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
       )}
       {entry.comparison_et && (
         <p className="text-sm italic text-muted-foreground">{entry.comparison_et}</p>
+      )}
+      {entry.biology_et && typeof entry.biology_et === 'object' && (
+        (entry.biology_et.habitat_behavior || entry.biology_et.identification) && (
+          <div className="mt-3 pt-3 border-t border-border/40 space-y-3">
+            {entry.biology_et.habitat_behavior && (
+              <div>
+                <h4 className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                  <MapPin className="h-3 w-3" />
+                  Elupaik ja käitumine
+                </h4>
+                <p className="text-sm">{entry.biology_et.habitat_behavior}</p>
+              </div>
+            )}
+            {entry.biology_et.identification && (
+              <div>
+                <h4 className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                  <Eye className="h-3 w-3" />
+                  Tunnused
+                </h4>
+                <p className="text-sm">{entry.biology_et.identification}</p>
+              </div>
+            )}
+          </div>
+        )
       )}
     </Card>
   );

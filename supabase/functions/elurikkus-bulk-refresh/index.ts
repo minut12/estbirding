@@ -26,6 +26,11 @@ interface ParsedObservation {
   behavior: string | null;
 }
 
+interface ObservationParseResult {
+  observations: ParsedObservation[];
+  skippedNoDate: number;
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -56,21 +61,40 @@ function decodeEntities(s: string): string {
     .replace(/&nbsp;/g, " ");
 }
 
-function parseIsoDate(text: string): string | null {
-  const iso = text.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) {
-    const y = +iso[1], m = +iso[2], d = +iso[3];
-    if (y >= 2000 && y <= 2099 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
-      return `${iso[1]}-${iso[2]}-${iso[3]}`;
+function cleanCellText(cellHtml: string): string {
+  return decodeEntities(cellHtml
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<br\s*\/?\s*>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\s+,/g, ",")
+    .replace(/,\s*$/g, "")
+    .trim());
+}
+
+function parseEstonianDate(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const trimmed = text.trim();
+  const dotMatch = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (dotMatch) {
+    const [, d, m, y] = dotMatch;
+    const day = Number(d), month = Number(m), year = Number(y);
+    if (year >= 2000 && year <= 2099 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
     }
   }
-  const eu = text.match(/(\d{2})\.(\d{2})\.(\d{4})/);
-  if (eu) {
-    const d = +eu[1], m = +eu[2], y = +eu[3];
+
+  const isoDate = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:\b|\s|T)/);
+  if (isoDate) {
+    const y = Number(isoDate[1]), m = Number(isoDate[2]), d = Number(isoDate[3]);
     if (y >= 2000 && y <= 2099 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
-      return `${eu[3]}-${eu[2]}-${eu[1]}`;
+      return `${isoDate[1]}-${isoDate[2]}-${isoDate[3]}`;
     }
   }
+
+  const isoTimestamp = trimmed.match(/^(\d{4}-\d{2}-\d{2})T/);
+  if (isoTimestamp) return isoTimestamp[1];
   return null;
 }
 

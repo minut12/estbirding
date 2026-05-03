@@ -26,6 +26,11 @@ interface ParsedObservation {
   behavior: string | null;
 }
 
+interface ObservationParseResult {
+  observations: ParsedObservation[];
+  skippedNoDate: number;
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -56,21 +61,40 @@ function decodeEntities(s: string): string {
     .replace(/&nbsp;/g, " ");
 }
 
-function parseIsoDate(text: string): string | null {
-  const iso = text.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) {
-    const y = +iso[1], m = +iso[2], d = +iso[3];
-    if (y >= 2000 && y <= 2099 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
-      return `${iso[1]}-${iso[2]}-${iso[3]}`;
+function cleanCellText(cellHtml: string): string {
+  return decodeEntities(cellHtml
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<br\s*\/?\s*>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\s+,/g, ",")
+    .replace(/,\s*$/g, "")
+    .trim());
+}
+
+function parseEstonianDate(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const trimmed = text.trim();
+  const dotMatch = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (dotMatch) {
+    const [, d, m, y] = dotMatch;
+    const day = Number(d), month = Number(m), year = Number(y);
+    if (year >= 2000 && year <= 2099 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
     }
   }
-  const eu = text.match(/(\d{2})\.(\d{2})\.(\d{4})/);
-  if (eu) {
-    const d = +eu[1], m = +eu[2], y = +eu[3];
+
+  const isoDate = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:\b|\s|T)/);
+  if (isoDate) {
+    const y = Number(isoDate[1]), m = Number(isoDate[2]), d = Number(isoDate[3]);
     if (y >= 2000 && y <= 2099 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
-      return `${eu[3]}-${eu[2]}-${eu[1]}`;
+      return `${isoDate[1]}-${isoDate[2]}-${isoDate[3]}`;
     }
   }
+
+  const isoTimestamp = trimmed.match(/^(\d{4}-\d{2}-\d{2})T/);
+  if (isoTimestamp) return isoTimestamp[1];
   return null;
 }
 
@@ -85,8 +109,35 @@ function parseCoordsFromCell(text: string): { lat: number | null; lon: number | 
   return { lat: null, lon: null };
 }
 
-function parseObservationsFromHtml(html: string): ParsedObservation[] {
+function normalizeHeaderLabel(cellHtml: string): string {
+  return cleanCellText(cellHtml).toLowerCase();
+}
+
+function buildColumnIndex(cells: string[]): Record<string, number> {
+  const colIndex: Record<string, number> = {};
+  cells.forEach((cell, i) => {
+    const label = normalizeHeaderLabel(cell);
+    if (label.includes("vaatleja") || label.includes("observer") || label.includes("collector")) {
+      colIndex.observer = i;
+    } else if (label.includes("kuupäev") || label.includes("date") || label.includes("observed")) {
+      colIndex.observed_at = i;
+    } else if (label.includes("asukoht") || label.includes("locality") || label.includes("place")) {
+      colIndex.locality = i;
+    } else if (label.includes("maakond") || label.includes("county")) {
+      colIndex.county = i;
+    } else if (label.includes("arv") || label.includes("count") || label.includes("isendi")) {
+      colIndex.individual_count = i;
+    } else if (label.includes("käitumine") || label.includes("behavior")) {
+      colIndex.behavior = i;
+    }
+  });
+  return colIndex;
+}
+
+function parseObservationsFromHtml(html: string): ObservationParseResult {
   const observations: ParsedObservation[] = [];
+  let skippedNoDate = 0;
+  let colIndex: Record<string, number> = {};
   // Iterate <tr>...</tr>
   const rowRe = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
   let rowMatch: RegExpExecArray | null;
@@ -101,17 +152,24 @@ function parseObservationsFromHtml(html: string): ParsedObservation[] {
     }
     if (cells.length === 0) continue;
 
-    // Find a date in any cell to determine if this is an observation row
-    let observed_at: string | null = null;
-    for (const c of cells) {
-      observed_at = parseIsoDate(stripHtml(c));
-      if (observed_at) break;
+    const isHeaderRow = /<th\b/i.test(rowHtml);
+    if (isHeaderRow) {
+      colIndex = buildColumnIndex(cells);
+      continue;
     }
-    if (!observed_at) continue;
+
+    const cellTexts = cells.map((c) => cleanCellText(c));
+
+    const dateText = colIndex.observed_at !== undefined ? cellTexts[colIndex.observed_at] : cellTexts.find((t) => parseEstonianDate(t));
+    const observed_at = parseEstonianDate(dateText);
+    if (!observed_at) {
+      if (cellTexts.some(Boolean)) skippedNoDate++;
+      continue;
+    }
 
     // sub_id from /occurrences/<id> link or data-record-id
     let sub_id: string | null = null;
-    const subFromLink = rowHtml.match(/\/occurrences\/(\d+)/);
+    const subFromLink = rowHtml.match(/\/occurrences\/(?:occurrence\/)?(\d+)/);
     if (subFromLink) sub_id = subFromLink[1];
     if (!sub_id) {
       const dataAttr = rowHtml.match(/data-record-id=["']([^"']+)/i);
@@ -130,61 +188,13 @@ function parseObservationsFromHtml(html: string): ParsedObservation[] {
       }
     }
 
-    // Heuristic field assignment from remaining cell text values.
-    // The elurikkus.ee table layout varies; we collect candidates and pick best.
-    const cellTexts = cells.map((c) => decodeEntities(stripHtml(c)));
-
-    // individual_count: cell that's a small integer (1..9999) on its own
-    let individual_count: number | null = null;
-    for (const t of cellTexts) {
-      if (/^\d{1,4}$/.test(t)) {
-        const n = parseInt(t, 10);
-        if (Number.isFinite(n) && n > 0 && n < 10000) {
-          individual_count = n;
-          break;
-        }
-      }
-    }
-
-    // observer / collectors: cell containing letters and a comma or "and" but not a date and not coords
-    let observer: string | null = null;
-    // locality / county: pick longest non-date/non-coord text cells
-    const textCandidates = cellTexts.filter((t) => {
-      if (!t) return false;
-      if (parseIsoDate(t)) return false;
-      if (/^\d+(\.\d+)?$/.test(t)) return false;
-      if (/^-?\d{1,3}\.\d{2,7}\s*[,;\s]\s*-?\d{1,3}\.\d{2,7}$/.test(t)) return false;
-      return true;
-    });
-
-    // Observer guess: cell that looks like a person name (capitalised words, len < 80, contains a space or comma)
-    for (const t of textCandidates) {
-      if (t.length > 2 && t.length < 120 && /[A-ZÄÖÜÕŠŽ][a-zäöüõšž]+/.test(t) && (/\s/.test(t) || /,/.test(t))) {
-        // skip if it looks like a locality with too many words
-        if (t.split(/\s+/).length <= 6) {
-          observer = t;
-          break;
-        }
-      }
-    }
-
-    // locality and county: use remaining text candidates
-    const remaining = textCandidates.filter((t) => t !== observer);
-    let locality: string | null = remaining[0] ?? null;
-    let county: string | null = remaining[1] ?? null;
-
-    // behavior: a short token cell that is not numeric/date/coords/observer/locality
-    let behavior: string | null = null;
-    for (const t of cellTexts) {
-      if (!t) continue;
-      if (t === observer || t === locality || t === county) continue;
-      if (parseIsoDate(t)) continue;
-      if (/^\d+$/.test(t)) continue;
-      if (t.length > 0 && t.length <= 40 && !/\d{4}/.test(t) && /^[A-Za-zÄÖÜÕäöüõŠšŽž\- ]+$/.test(t)) {
-        behavior = t;
-        break;
-      }
-    }
+    const countText = colIndex.individual_count !== undefined ? cellTexts[colIndex.individual_count] : "";
+    const count = countText.match(/\d{1,4}/)?.[0];
+    const individual_count = count ? parseInt(count, 10) : null;
+    const observer = colIndex.observer !== undefined ? cellTexts[colIndex.observer] || null : null;
+    const locality = colIndex.locality !== undefined ? cellTexts[colIndex.locality] || null : null;
+    const county = colIndex.county !== undefined ? cellTexts[colIndex.county] || null : null;
+    const behavior = colIndex.behavior !== undefined ? cellTexts[colIndex.behavior] || null : null;
 
     observations.push({
       sub_id,
@@ -198,7 +208,7 @@ function parseObservationsFromHtml(html: string): ParsedObservation[] {
       behavior,
     });
   }
-  return observations;
+  return { observations, skippedNoDate };
 }
 
 function extractNewestIsoFromSearch(html: string): string | null {
@@ -346,6 +356,9 @@ Deno.serve(async (req) => {
   let totalWithSubId = 0;
   let totalWithoutSubId = 0;
   let totalObsFailed = 0;
+  let totalSkippedNoDate = 0;
+  let totalObsInserted = 0;
+  let totalObsUpdated = 0;
   let totalCacheUpserts = 0;
   const errors: { name: string; error: string }[] = [];
 
@@ -356,7 +369,9 @@ Deno.serve(async (req) => {
       const html = await fetchWithTimeout(searchUrl, 10000);
 
       // Parse per-observation rows from the HTML
-      const observations = parseObservationsFromHtml(html);
+      const parseResult = parseObservationsFromHtml(html);
+      const observations = parseResult.observations;
+      totalSkippedNoDate += parseResult.skippedNoDate;
       // Sort by observed_at desc (string ISO sort works)
       observations.sort((a, b) => (a.observed_at < b.observed_at ? 1 : a.observed_at > b.observed_at ? -1 : 0));
       const mostRecent = observations[0] ?? null;
@@ -480,24 +495,61 @@ Deno.serve(async (req) => {
       totalWithoutSubId += obsRowsWithoutSubId.length;
 
       if (obsRowsWithSubId.length > 0) {
-        const { error: subIdErr } = await supabase
+        const { data: subIdData, error: subIdErr } = await supabase
           .from("elurikkus_observations")
-          .upsert(obsRowsWithSubId, { onConflict: "sub_id" });
+          .upsert(obsRowsWithSubId, { onConflict: "sub_id" })
+          .select("id");
         if (subIdErr) {
           totalObsFailed += obsRowsWithSubId.length;
+          console.error(`[elurikkus-obs sub_id upsert] ${name}: ${subIdErr.message}`);
           errors.push({ name, error: `obs sub_id: ${subIdErr.message}` });
+        } else {
+          totalObsInserted += subIdData?.length ?? obsRowsWithSubId.length;
         }
       }
 
       if (obsRowsWithoutSubId.length > 0) {
-        const { error: natErr } = await supabase
-          .from("elurikkus_observations")
-          .upsert(obsRowsWithoutSubId, {
-            onConflict: "species_name,observed_at,locality,observer",
-          });
-        if (natErr) {
-          totalObsFailed += obsRowsWithoutSubId.length;
-          errors.push({ name, error: `obs natural: ${natErr.message}` });
+        for (const row of obsRowsWithoutSubId) {
+          let existingQuery = supabase
+            .from("elurikkus_observations")
+            .select("id")
+            .eq("species_name", row.species_name)
+            .eq("observed_at", row.observed_at);
+          existingQuery = row.locality === null ? existingQuery.is("locality", null) : existingQuery.eq("locality", row.locality);
+          existingQuery = row.observer === null ? existingQuery.is("observer", null) : existingQuery.eq("observer", row.observer);
+
+          const { data: existing, error: lookupErr } = await existingQuery.maybeSingle();
+          if (lookupErr) {
+            totalObsFailed++;
+            console.error(`[elurikkus-obs natural-key upsert] ${name}: lookup failed: ${lookupErr.message}`);
+            errors.push({ name, error: `obs natural lookup: ${lookupErr.message}` });
+            continue;
+          }
+
+          if (existing?.id) {
+            const { error: updateErr } = await supabase
+              .from("elurikkus_observations")
+              .update(row)
+              .eq("id", existing.id);
+            if (updateErr) {
+              totalObsFailed++;
+              console.error(`[elurikkus-obs natural-key upsert] ${name}: update failed: ${updateErr.message}`);
+              errors.push({ name, error: `obs natural update: ${updateErr.message}` });
+            } else {
+              totalObsUpdated++;
+            }
+          } else {
+            const { error: insertErr } = await supabase
+              .from("elurikkus_observations")
+              .insert(row);
+            if (insertErr) {
+              totalObsFailed++;
+              console.error(`[elurikkus-obs natural-key upsert] ${name}: insert failed: ${insertErr.message}`);
+              errors.push({ name, error: `obs natural insert: ${insertErr.message}` });
+            } else {
+              totalObsInserted++;
+            }
+          }
         }
       }
     } catch (e) {
@@ -520,6 +572,10 @@ Deno.serve(async (req) => {
     observations_with_sub_id: totalWithSubId,
     observations_without_sub_id: totalWithoutSubId,
     observations_failed: totalObsFailed,
+    observations_skipped_no_date: totalSkippedNoDate,
+    observations_failed_upsert: totalObsFailed,
+    observations_inserted: totalObsInserted,
+    observations_updated: totalObsUpdated,
     cache_rows_upserted: totalCacheUpserts,
   };
 

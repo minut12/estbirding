@@ -80,3 +80,6 @@ verify_jwt = false
 
 [functions.get-elurikkus-recent-rarities]
 verify_jwt = false
+
+[functions.get-elurikkus-arrivals-window]
+verify_jwt = false

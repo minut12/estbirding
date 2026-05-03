@@ -189,6 +189,8 @@ export type Database = {
           generation_meta: Json
           id: string
           intro_et: string | null
+          kevadranne_arrivals: Json
+          kevadranne_narrative_et: string | null
           period_end: string
           period_start: string
         }
@@ -198,6 +200,8 @@ export type Database = {
           generation_meta?: Json
           id?: string
           intro_et?: string | null
+          kevadranne_arrivals?: Json
+          kevadranne_narrative_et?: string | null
           period_end: string
           period_start: string
         }
@@ -207,6 +211,8 @@ export type Database = {
           generation_meta?: Json
           id?: string
           intro_et?: string | null
+          kevadranne_arrivals?: Json
+          kevadranne_narrative_et?: string | null
           period_end?: string
           period_start?: string
         }

@@ -169,7 +169,7 @@ function parseObservationsFromHtml(html: string): ObservationParseResult {
 
     // sub_id from /occurrences/<id> link or data-record-id
     let sub_id: string | null = null;
-    const subFromLink = rowHtml.match(/\/occurrences\/(\d+)/);
+    const subFromLink = rowHtml.match(/\/occurrences\/(?:occurrence\/)?(\d+)/);
     if (subFromLink) sub_id = subFromLink[1];
     if (!sub_id) {
       const dataAttr = rowHtml.match(/data-record-id=["']([^"']+)/i);
@@ -356,6 +356,9 @@ Deno.serve(async (req) => {
   let totalWithSubId = 0;
   let totalWithoutSubId = 0;
   let totalObsFailed = 0;
+  let totalSkippedNoDate = 0;
+  let totalObsInserted = 0;
+  let totalObsUpdated = 0;
   let totalCacheUpserts = 0;
   const errors: { name: string; error: string }[] = [];
 
@@ -366,7 +369,9 @@ Deno.serve(async (req) => {
       const html = await fetchWithTimeout(searchUrl, 10000);
 
       // Parse per-observation rows from the HTML
-      const observations = parseObservationsFromHtml(html);
+      const parseResult = parseObservationsFromHtml(html);
+      const observations = parseResult.observations;
+      totalSkippedNoDate += parseResult.skippedNoDate;
       // Sort by observed_at desc (string ISO sort works)
       observations.sort((a, b) => (a.observed_at < b.observed_at ? 1 : a.observed_at > b.observed_at ? -1 : 0));
       const mostRecent = observations[0] ?? null;

@@ -434,61 +434,57 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
   );
 }
 
-function KevadranneSection({
-  narrative,
+function ArrivalsList({
   arrivals,
   periodStart,
   periodEnd,
 }: {
-  narrative: string | null;
   arrivals: KevadranneArrival[];
   periodStart?: string;
   periodEnd?: string;
 }) {
-  const hasNarrative = Boolean(narrative && narrative.trim());
-  const hasArrivals = Array.isArray(arrivals) && arrivals.length > 0;
-  if (!hasNarrative && !hasArrivals) return null;
+  if (!Array.isArray(arrivals) || arrivals.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground py-4">
+        Selles perioodis uusi saabujaid ei tuvastatud.
+      </p>
+    );
+  }
 
   const periodLabel =
     periodStart && periodEnd ? `${formatEntryDate(periodStart)} – ${formatEntryDate(periodEnd)}` : '';
 
   return (
-    <section className="mt-6 pt-4 border-t border-border/60 space-y-3">
-      <h2 className="text-lg font-semibold">Kevadränne</h2>
-      {hasNarrative && <p className="text-sm leading-relaxed">{narrative}</p>}
-      {hasArrivals && (
-        <>
-          <h3 className="text-sm font-medium">
-            Uusi saabujad{periodLabel ? ` perioodil ${periodLabel}` : ''}:
-          </h3>
-          <ul className="space-y-1.5 list-none pl-0">
-            {arrivals.map((arr, idx) => (
-              <li
-                key={`${arr.species_lat ?? arr.species_et}-${arr.first_obs_date}-${idx}`}
-                className="text-sm leading-relaxed"
-              >
-                <strong>{arr.species_et}</strong>
-                {arr.species_lat && (
-                  <em className="text-muted-foreground"> ({arr.species_lat})</em>
-                )}
-                {' – '}
-                <span>{formatEntryDate(arr.first_obs_date)}</span>
-                {arr.locality && (
-                  <span>
-                    {', '}
-                    {arr.locality}
-                    {arr.county && `, ${arr.county}`}
-                  </span>
-                )}
-                {arr.observer && (
-                  <span className="text-muted-foreground"> ({arr.observer})</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </>
+    <div className="space-y-3 py-4">
+      {periodLabel && (
+        <p className="text-sm font-medium">Uusi saabujad perioodil {periodLabel}:</p>
       )}
-    </section>
+      <ul className="space-y-2 list-none pl-0">
+        {arrivals.map((arr, idx) => (
+          <li
+            key={`${arr.species_lat ?? arr.species_et}-${arr.first_obs_date}-${idx}`}
+            className="text-sm leading-relaxed"
+          >
+            <strong>{arr.species_et}</strong>
+            {arr.species_lat && (
+              <em className="text-muted-foreground"> ({arr.species_lat})</em>
+            )}
+            {' – '}
+            <span>{formatEntryDate(arr.first_obs_date)}</span>
+            {arr.locality && (
+              <span>
+                {', '}
+                {arr.locality}
+                {arr.county && `, ${arr.county}`}
+              </span>
+            )}
+            {arr.observer && (
+              <span className="text-muted-foreground"> ({arr.observer})</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -543,7 +539,7 @@ export default function OverviewTab() {
   const [elurikkusReport, setElurikkusReport] = useState<ElurikkusRaport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [section, setSection] = useState<'ee' | 'eu'>('ee');
+  const [section, setSection] = useState<'ee' | 'eu' | 'arrivals'>('ee');
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
 
@@ -662,8 +658,14 @@ export default function OverviewTab() {
   const periodEnd = report?.period_end ?? elurikkusReport?.period_end;
   const eeRarities = eeEntries.filter((e) => effectiveRarityTier(e) !== 'none').length;
   const euRarities = euEntries.filter((e) => effectiveRarityTier(e) !== 'none').length;
-  const activeEntries = section === 'ee' ? eeEntries : euEntries;
-  const activeLookup = section === 'ee' ? eeSubIdLookup : euSubIdLookup;
+  const kevadranneNarrative = elurikkusReport?.kevadranne_narrative_et ?? null;
+  const arrivals = useMemo(
+    () => (Array.isArray(elurikkusReport?.kevadranne_arrivals) ? elurikkusReport!.kevadranne_arrivals : []),
+    [elurikkusReport],
+  );
+  const arrivalsCount = arrivals.length;
+  const activeEntries = section === 'eu' ? euEntries : eeEntries;
+  const activeLookup = section === 'eu' ? euSubIdLookup : eeSubIdLookup;
   const speciesMetaMap = useMemo(() => loadSpeciesMeta(), [report]);
   const ebirdCodeLookup = useMemo(() => buildSciNameToEbirdCode(speciesMetaMap), [speciesMetaMap]);
   const avatarUrlLookup = useMemo(() => buildSciNameToAvatarUrl(speciesMetaMap), [speciesMetaMap]);
@@ -740,54 +742,66 @@ export default function OverviewTab() {
             {introEt && (
               <p className="text-sm leading-relaxed">{introEt}</p>
             )}
-
-            <KevadranneSection
-              narrative={elurikkusReport?.kevadranne_narrative_et ?? null}
-              arrivals={elurikkusReport?.kevadranne_arrivals ?? []}
-              periodStart={elurikkusReport?.period_start ?? periodStart}
-              periodEnd={elurikkusReport?.period_end ?? periodEnd}
-            />
+            {kevadranneNarrative && (
+              <p className="text-sm leading-relaxed text-foreground/90">{kevadranneNarrative}</p>
+            )}
 
             <div className="flex gap-2 border-b border-border">
               {([
-                { id: 'ee' as const, label: 'Eesti', count: eeRarities },
-                { id: 'eu' as const, label: 'Euroopa', count: euRarities },
+                { id: 'ee' as const, label: 'Eesti', count: eeRarities, disabled: false },
+                { id: 'eu' as const, label: 'Euroopa', count: euRarities, disabled: false },
+                { id: 'arrivals' as const, label: 'Saabujad', count: arrivalsCount, disabled: arrivalsCount === 0 },
               ]).map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => setSection(t.id)}
+                  onClick={() => !t.disabled && setSection(t.id)}
+                  disabled={t.disabled}
                   className={cn(
                     'px-4 py-2 text-sm font-medium border-b-2 -mb-px flex items-center gap-2 transition-colors',
                     section === t.id
                       ? 'border-primary text-primary'
                       : 'border-transparent text-muted-foreground hover:text-foreground',
+                    t.disabled && 'opacity-50 cursor-not-allowed hover:text-muted-foreground',
                   )}
                 >
                   {t.label}
                   {t.count > 0 && (
-                    <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">{t.count}</Badge>
+                    <Badge
+                      variant={t.id === 'arrivals' ? 'secondary' : 'destructive'}
+                      className="h-5 px-1.5 text-[10px]"
+                    >
+                      {t.count}
+                    </Badge>
                   )}
                 </button>
               ))}
             </div>
 
-            <div className="space-y-3">
-              {activeEntries.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  Sel perioodil silmapaistvaid vaatlusi ei registreeritud.
-                </p>
-              ) : (
-                activeEntries.map((entry, idx) => (
-                  <EntryCard
-                    key={`${entry.species_lat}-${entry.date}-${idx}`}
-                    entry={entry}
-                    subId={findSubId(entry, activeLookup)}
-                    ebirdCode={lookupEbirdCode(entry.species_lat, ebirdCodeLookup)}
-                    avatarUrl={lookupAvatarUrl(entry.species_lat, avatarUrlLookup)}
-                  />
-                ))
-              )}
-            </div>
+            {section === 'arrivals' ? (
+              <ArrivalsList
+                arrivals={arrivals}
+                periodStart={elurikkusReport?.period_start ?? periodStart}
+                periodEnd={elurikkusReport?.period_end ?? periodEnd}
+              />
+            ) : (
+              <div className="space-y-3">
+                {activeEntries.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    Sel perioodil silmapaistvaid vaatlusi ei registreeritud.
+                  </p>
+                ) : (
+                  activeEntries.map((entry, idx) => (
+                    <EntryCard
+                      key={`${entry.species_lat}-${entry.date}-${idx}`}
+                      entry={entry}
+                      subId={findSubId(entry, activeLookup)}
+                      ebirdCode={lookupEbirdCode(entry.species_lat, ebirdCodeLookup)}
+                      avatarUrl={lookupAvatarUrl(entry.species_lat, avatarUrlLookup)}
+                    />
+                  ))
+                )}
+              </div>
+            )}
           </>
         )}
       </div>

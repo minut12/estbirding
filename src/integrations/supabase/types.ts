@@ -125,6 +125,54 @@ export type Database = {
         }
         Relationships: []
       }
+      elurikkus_observations: {
+        Row: {
+          behavior: string | null
+          county: string | null
+          fetched_at: string
+          id: string
+          individual_count: number | null
+          lat: number | null
+          locality: string | null
+          lon: number | null
+          observed_at: string
+          observer: string | null
+          species_lat: string | null
+          species_name: string
+          sub_id: string | null
+        }
+        Insert: {
+          behavior?: string | null
+          county?: string | null
+          fetched_at?: string
+          id?: string
+          individual_count?: number | null
+          lat?: number | null
+          locality?: string | null
+          lon?: number | null
+          observed_at: string
+          observer?: string | null
+          species_lat?: string | null
+          species_name: string
+          sub_id?: string | null
+        }
+        Update: {
+          behavior?: string | null
+          county?: string | null
+          fetched_at?: string
+          id?: string
+          individual_count?: number | null
+          lat?: number | null
+          locality?: string | null
+          lon?: number | null
+          observed_at?: string
+          observer?: string | null
+          species_lat?: string | null
+          species_name?: string
+          sub_id?: string | null
+        }
+        Relationships: []
+      }
       ennustus_cache: {
         Row: {
           best_period_label: string | null

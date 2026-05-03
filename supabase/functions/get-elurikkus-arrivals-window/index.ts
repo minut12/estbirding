@@ -32,18 +32,30 @@ serve(async (req) => {
   cutoff.setUTCDate(cutoff.getUTCDate() - DAYS_WINDOW);
   const cutoffIso = cutoff.toISOString().slice(0, 10);
 
-  const { data, error } = await supabase
-    .from("elurikkus_observations")
-    .select("species_name, observed_at, locality, county, observer")
-    .gte("observed_at", cutoffIso)
-    .order("observed_at", { ascending: true });
+  // Paginate to bypass Supabase's 1000-row default limit.
+  const PAGE_SIZE = 1000;
+  const all: any[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("elurikkus_observations")
+      .select("species_name, observed_at, locality, county, observer")
+      .gte("observed_at", cutoffIso)
+      .order("observed_at", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
 
-  if (error) {
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    if (error) {
+      return new Response(
+        JSON.stringify({ error: error.message }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < PAGE_SIZE) break;
+    if (all.length >= 50000) break; // safety cap
   }
+  const data = all;
+  const error = null as null;
 
   return new Response(
     JSON.stringify(data || []),

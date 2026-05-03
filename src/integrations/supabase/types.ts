@@ -88,9 +88,12 @@ export type Database = {
       }
       elurikkus_cache: {
         Row: {
+          behavior: string | null
+          collectors: string | null
           coords_source: string | null
           coords_status: string | null
           fetched_at: string
+          individual_count: number | null
           lat: number | null
           lon: number | null
           occ7: number | null
@@ -100,9 +103,12 @@ export type Database = {
           t: string | null
         }
         Insert: {
+          behavior?: string | null
+          collectors?: string | null
           coords_source?: string | null
           coords_status?: string | null
           fetched_at?: string
+          individual_count?: number | null
           lat?: number | null
           lon?: number | null
           occ7?: number | null
@@ -112,9 +118,12 @@ export type Database = {
           t?: string | null
         }
         Update: {
+          behavior?: string | null
+          collectors?: string | null
           coords_source?: string | null
           coords_status?: string | null
           fetched_at?: string
+          individual_count?: number | null
           lat?: number | null
           lon?: number | null
           occ7?: number | null

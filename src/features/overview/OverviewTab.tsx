@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye } from 'lucide-react';
+import { AlertTriangle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye, BarChart3 } from 'lucide-react';
 import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
 
 function buildSciNameToEbirdCode(map: SpeciesMetaMap): Map<string, string> {
@@ -61,12 +61,38 @@ type VaatlusEntry = {
   ee_probability_pct?: number;
   source?: EntrySource | string;
   biology_et?: EntryBiology | null;
+  sights_stats?: SightsStats | null;
 };
 
 type EntryBiology = {
   habitat_behavior?: string;
   identification?: string;
 };
+
+type SightsStats = {
+  total_obs: number;
+  observer_count: number;
+  first_date: string;
+  last_date: string;
+};
+
+function pluralizeObs(n: number): string {
+  return n === 1 ? '1 vaatlus' : `${n} vaatlust`;
+}
+
+function pluralizeObserver(n: number): string {
+  return n === 1 ? '1 vaatleja' : `${n} vaatlejat`;
+}
+
+function formatDateRange(first: string, last: string): string {
+  const f = parseDate(first);
+  const l = parseDate(last);
+  if (!f && !l) return '';
+  if (!f) return dayMonthFmt.format(l!);
+  if (!l) return dayMonthFmt.format(f);
+  if (first === last) return dayMonthFmt.format(f);
+  return `${dayMonthFmt.format(f)} – ${dayMonthFmt.format(l)}`;
+}
 
 const SOURCE_DISPLAY: Record<string, { label: string; emoji: string }> = {
   ebird: { label: 'eBird', emoji: '🐦' },
@@ -377,6 +403,20 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
             )}
           </div>
         )
+      )}
+      {entry.sights_stats && typeof entry.sights_stats === 'object' && Number.isFinite(entry.sights_stats.total_obs) && (
+        <div className="mt-3 pt-3 border-t border-border/40 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <BarChart3 className="h-3 w-3 shrink-0" />
+          <span>{pluralizeObs(entry.sights_stats.total_obs)}</span>
+          <span aria-hidden>·</span>
+          <span>{pluralizeObserver(entry.sights_stats.observer_count ?? 0)}</span>
+          {(entry.sights_stats.first_date || entry.sights_stats.last_date) && (
+            <>
+              <span aria-hidden>·</span>
+              <span>{formatDateRange(entry.sights_stats.first_date, entry.sights_stats.last_date)}</span>
+            </>
+          )}
+        </div>
       )}
     </Card>
   );

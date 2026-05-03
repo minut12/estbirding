@@ -111,41 +111,67 @@ serve(async (req) => {
 
   const startedAt = new Date().toISOString();
 
-  // Trigger n8n webhook
-  let n8nStatus: number;
-  try {
-    const n8nResp = await fetch(N8N_WEBHOOK_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Webhook-Secret": N8N_WEBHOOK_SECRET,
-      },
-      body: JSON.stringify({
-        source: "app-manual",
-        triggered_at: startedAt,
-        ...clientPayload,
-      }),
-    });
-    n8nStatus = n8nResp.status;
+  const ELURIKKUS_WEBHOOK_URL = Deno.env.get("N8N_VAATLUSTE_ELURIKKUS_WEBHOOK_URL") ?? "";
 
-    if (!n8nResp.ok) {
-      const text = await n8nResp.text().catch(() => "");
-      console.error(`n8n webhook returned ${n8nResp.status}: ${text}`);
-      return json(
-        {
-          error: "n8n_trigger_failed",
-          message: "Värskenduse käivitamine ebaõnnestus. Proovi uuesti.",
-          n8n_status: n8nResp.status,
-        },
-        502,
-      );
+  const callHeaders = {
+    "Content-Type": "application/json",
+    "X-Webhook-Secret": N8N_WEBHOOK_SECRET,
+  };
+  const callBody = JSON.stringify({
+    source: "app-manual",
+    triggered_at: startedAt,
+    ...clientPayload,
+  });
+
+  const targets: Array<{ key: "ebird" | "elurikkus"; url: string }> = [
+    { key: "ebird", url: N8N_WEBHOOK_URL },
+  ];
+  if (ELURIKKUS_WEBHOOK_URL) {
+    targets.push({ key: "elurikkus", url: ELURIKKUS_WEBHOOK_URL });
+  } else {
+    console.warn("N8N_VAATLUSTE_ELURIKKUS_WEBHOOK_URL not set — skipping elurikkus trigger");
+  }
+
+  const results = await Promise.allSettled(
+    targets.map((t) =>
+      fetch(t.url, { method: "POST", headers: callHeaders, body: callBody }),
+    ),
+  );
+
+  const summary: Record<string, { triggered: boolean; status: number | null; error: string | null }> = {};
+  results.forEach((r, i) => {
+    const key = targets[i].key;
+    if (r.status === "fulfilled") {
+      summary[key] = {
+        triggered: r.value.ok,
+        status: r.value.status,
+        error: r.value.ok ? null : `HTTP ${r.value.status}`,
+      };
+      if (!r.value.ok) {
+        r.value.text().then((t) => console.error(`${key} webhook ${r.value.status}: ${t}`)).catch(() => {});
+      }
+    } else {
+      const msg = String((r.reason as { message?: string })?.message ?? r.reason);
+      console.error(`${key} webhook fetch threw:`, msg);
+      summary[key] = { triggered: false, status: null, error: msg };
     }
-  } catch (err) {
-    console.error("n8n webhook fetch threw:", err);
+  });
+
+  if (!ELURIKKUS_WEBHOOK_URL) {
+    summary.elurikkus = { triggered: false, status: null, error: "env_missing" };
+  }
+
+  const ebirdOk = summary.ebird?.triggered === true;
+  const elurikkusOk = summary.elurikkus?.triggered === true;
+  const overallOk = ebirdOk && elurikkusOk;
+
+  if (!ebirdOk && !elurikkusOk) {
     return json(
       {
-        error: "n8n_unreachable",
-        message: "Värskenduse server pole kättesaadav. Proovi hiljem uuesti.",
+        triggered: false,
+        error: "n8n_trigger_failed",
+        message: "Värskenduse käivitamine ebaõnnestus. Proovi uuesti.",
+        results: summary,
       },
       502,
     );
@@ -154,10 +180,14 @@ serve(async (req) => {
   return json(
     {
       triggered: true,
+      ok: overallOk,
       started_at: startedAt,
-      n8n_status: n8nStatus,
-      message: "Värskendus käivitatud. Uus aruanne ilmub umbes 30 sekundi pärast.",
+      n8n_status: summary.ebird?.status ?? null,
+      results: summary,
+      message: overallOk
+        ? "Värskendus käivitatud. Uus aruanne ilmub umbes 2-4 minuti pärast."
+        : "Värskendus käivitatud osaliselt. Vaata 'results' välja.",
     },
-    202,
+    overallOk ? 202 : 207,
   );
 });

@@ -77,3 +77,6 @@ verify_jwt = false
 
 [functions.send-push-notifications]
 verify_jwt = false
+
+[functions.get-elurikkus-recent-rarities]
+verify_jwt = false

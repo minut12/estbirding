@@ -309,13 +309,17 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
         <span>{formatEntryDate(entry.date)}</span>
         <span>·</span>
         <span>{entry.location}</span>
-        {entry.region && (
+        {entry.country_code && entry.country_code !== 'EE' && (flag || entry.region) && (
           <>
             <span>·</span>
-            <span>
-              {flag ? `${flag} ` : ''}
-              {entry.region}
-            </span>
+            {flag && <span aria-hidden>{flag}</span>}
+            {entry.region && <span>{entry.region}</span>}
+          </>
+        )}
+        {(!entry.country_code || entry.country_code === 'EE') && entry.region && (
+          <>
+            <span>·</span>
+            <span>{entry.region}</span>
           </>
         )}
         {(() => {

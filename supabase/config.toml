@@ -83,3 +83,6 @@ verify_jwt = false
 
 [functions.get-elurikkus-arrivals-window]
 verify_jwt = false
+
+[functions.get-europe-ebird-cache]
+verify_jwt = false

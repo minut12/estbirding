@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  const expectedSecret = Deno.env.get('EUROPE_EBIRD_WEBHOOK_SECRET');
+  const expectedSecret = Deno.env.get('VAATLUSTE_WEBHOOK_SECRET');
   const providedSecret = req.headers.get('x-webhook-secret');
   if (!expectedSecret || providedSecret !== expectedSecret) {
     return new Response(JSON.stringify({ error: 'unauthorized' }), {

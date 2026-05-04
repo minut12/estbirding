@@ -13654,43 +13654,13 @@ function isOnMap(name,pts){
 
 function render(){
   var allSpecies=sp(),dates=sd(),pts=pt();
-  console.log('[SCAN-FILTER-RENDER-START]', {
-    ts: new Date().toISOString().slice(11,23),
-    speciesLen: allSpecies.length,
-    ptsKeyCount: Object.keys(pts || {}).length,
-    windowPointsKeyCount: Object.keys(window.points || {}).length,
-    ptsIsWindowPoints: Object.is(pts, window.points),
-    ptsWithCoords: Object.keys(pts || {}).filter(function(k){
-      var p = pts[k] || {}; return Number.isFinite(p.lat) && Number.isFinite(p.lon);
-    }).length,
-    ptsVisible: Object.keys(pts || {}).filter(function(k){
-      var p = pts[k] || {}; return p.visible !== false;
-    }).length,
-  });
   var q=(document.getElementById('ennQ')||{}).value||'';
   q=q.toLowerCase().trim();
   var displayList=[];
   var cachedCount=0;
   for(var i=0;i<allSpecies.length;i++){
     var n=allSpecies[i];
-    if(!isOnMap(n,pts)) {
-      var _sfP = pts[n] || pts[(typeof _fix==='function'?_fix(n):n)] || null;
-      console.log('[SCAN-FILTER-DROP]', n, 'F1', {
-        hasEntry: !!_sfP,
-        lat: _sfP ? _sfP.lat : '(no entry)',
-        lon: _sfP ? _sfP.lon : '(no entry)',
-        visible: _sfP ? _sfP.visible : '(no entry)',
-        latOk: _sfP ? Number.isFinite(_sfP.lat) : false,
-        lonOk: _sfP ? Number.isFinite(_sfP.lon) : false,
-        visibleOk: _sfP ? _sfP.visible !== false : false,
-        src: _sfP ? _sfP.src : null,
-        occ7Ebird: _sfP ? _sfP.occ7Ebird : null,
-        occ7Elu: _sfP ? _sfP.occ7Elu : null,
-        occ7EbirdUpdated: _sfP ? _sfP.occ7EbirdUpdated : null,
-        occ7EluUpdated: _sfP ? _sfP.occ7EluUpdated : null,
-      });
-      continue;
-    }
+    if(!isOnMap(n,pts)) continue;
     if(q&&n.toLowerCase().indexOf(q)===-1&&_fix(n).toLowerCase().indexOf(q)===-1) continue;
     var clean=_fix(n);
     var p=pts[n]||pts[clean]||{};
@@ -13727,12 +13697,6 @@ function render(){
       neighborSeason: nbResult.season,
     });
   }
-  console.log('[SCAN-FILTER-RENDER-END]', {
-    ts: new Date().toISOString().slice(11,23),
-    speciesLen: allSpecies.length,
-    displayListLen: displayList.length,
-    dropped: allSpecies.length - displayList.length,
-  });
   if(sort==='prob') displayList.sort(function(a,b){
     var sa=a.score!==null?a.score:-1,sb=b.score!==null?b.score:-1;
     return sb-sa;
@@ -14002,37 +13966,25 @@ window.__scanEnnAll=async function(btn,opts){
         var _code = (typeof getEbirdCode==='function') ? getEbirdCode(name) : null;
         var _count7 = _code ? (Number(__scanBulkCounts[_code]) || 0) : 0;
         var _ee = (typeof window.__getEbirdEEPoint==='function') ? window.__getEbirdEEPoint(name) : null;
-        window.points=window.points||{};
-        window.points[name]=window.points[name]||{};
-        var ep=window.points[name];
-        var _sfBefore = ep ? Object.assign({}, ep) : null;
-        var _sfPatch = {
-          occ7Ebird: _count7,
-          occ7EbirdUpdated: __scanBulkUpdatedAt,
-          _ee_has_coords: !!(_ee && Number.isFinite(_ee.lat) && Number.isFinite(_ee.lon)),
-        };
-        if (_sfPatch._ee_has_coords) {
-          _sfPatch.lat = _ee.lat;
-          _sfPatch.lon = _ee.lon;
-          if (_ee.t) _sfPatch.t = _ee.t;
-          _sfPatch.src = 'eBird';
-          _sfPatch.lastFetched = _ee.lastFetched;
+        // Write to whatever pt() reads from, so the per-species patch reaches the
+        // store render() iterates. pt() is the same helper render() uses; it might
+        // return closure-points, window.__bm_points, or window.points depending on
+        // runtime state. Falling back to window.points preserves prior behaviour
+        // when pt() isn't reachable.
+        var __ebStore = (typeof pt === 'function') ? pt() : null;
+        if (!__ebStore || typeof __ebStore !== 'object') {
+          window.points = window.points || {};
+          __ebStore = window.points;
         }
-        console.log('[SCAN-FILTER-EBIRD-WRITE]', name, {
-          beforeSrc: _sfBefore ? _sfBefore.src : '(no entry)',
-          beforeLat: _sfBefore ? _sfBefore.lat : '(no entry)',
-          beforeLon: _sfBefore ? _sfBefore.lon : '(no entry)',
-          beforeOcc7Elu: _sfBefore ? _sfBefore.occ7Elu : '(no entry)',
-          beforeOcc7EluUpdated: _sfBefore ? _sfBefore.occ7EluUpdated : '(no entry)',
-          beforeVisible: _sfBefore ? _sfBefore.visible : '(no entry)',
-          patch: _sfPatch,
-        });
+        __ebStore[name] = __ebStore[name] || {};
+        var ep = __ebStore[name];
         ep.occ7Ebird=_count7;
         ep.occ7EbirdUpdated=__scanBulkUpdatedAt;
         if(_ee && Number.isFinite(_ee.lat) && Number.isFinite(_ee.lon)){
           ep.lat=_ee.lat;ep.lon=_ee.lon;
           if(_ee.t) ep.t=_ee.t;
-          ep.src='eBird';ep.lastFetched=_ee.lastFetched;
+          if(!ep.src) ep.src='eBird';   // do not clobber existing 'elurikkus' / other sources
+          ep.lastFetched=_ee.lastFetched;
         }
         if (name === 'Punanokk-vart') {
           console.log('[NETTA-TRACE] points WRITE at EBIRD_BULK:',

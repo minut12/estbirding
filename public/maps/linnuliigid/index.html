@@ -13674,8 +13674,11 @@ function render(){
     var ebirdBoost=occ7Ebird>0?Math.min(5,Math.round(Math.log1p(occ7Ebird))):0;
     var eluBoost=occ7Elu>0?Math.min(5,Math.round(Math.log1p(occ7Elu))):0;
     var boost=ebirdBoost+eluBoost;
-    var nbResult = (currentScore !== null) ? _neighborBoost(n, _activeNeighborMap, new Date()) : { boost: 0, neighbors: [], season: 'other' };
-    var nbBoost  = Number(nbResult.boost) || 0;
+    var _nbMeta   = (typeof window.getSpeciesMetaShared === 'function') ? window.getSpeciesMetaShared(n) : null;
+    var _nbRarity = (_nbMeta && typeof _nbMeta.rarityLevel === 'string') ? _nbMeta.rarityLevel : 'none';
+    var _nbIsRare = (_nbRarity === 'rare' || _nbRarity === 'super' || _nbRarity === 'mega');
+    var nbResult  = (currentScore !== null && _nbIsRare) ? _neighborBoost(n, _activeNeighborMap, new Date()) : { boost: 0, neighbors: [], season: 'other' };
+    var nbBoost   = Number(nbResult.boost) || 0;
     var finalScore = (currentScore !== null) ? Math.min(95, currentScore + boost + nbBoost) : null;
     if(finalScore!==null&&finalScore>=80){console.log('[PROB-FINAL]',n,{currentScore:currentScore,ebirdBoost:ebirdBoost,eluBoost:eluBoost,boost:boost,nbBoost:nbBoost,finalScore:finalScore});}
     var ebirdScanned=p.occ7EbirdUpdated!=null;

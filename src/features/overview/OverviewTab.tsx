@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye, BarChart3 } from 'lucide-react';
+import { AlertTriangle, AlertCircle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye, BarChart3 } from 'lucide-react';
 import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
 
 function buildSciNameToEbirdCode(map: SpeciesMetaMap): Map<string, string> {
@@ -62,6 +62,7 @@ type VaatlusEntry = {
   source?: EntrySource | string;
   biology_et?: EntryBiology | null;
   sights_stats?: SightsStats | null;
+  data_integrity?: 'verified' | 'unverified';
 };
 
 type EntryBiology = {
@@ -252,6 +253,7 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
   const tier = effectiveRarityTier(entry);
   const flag = entry.country_code && entry.country_code !== 'EE' ? FLAG[entry.country_code] : undefined;
   const obs = formatObservers(entry.observers);
+  const isUnverified = entry.data_integrity === 'unverified';
   return (
     <Card
       className={cn(
@@ -303,44 +305,53 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
       {tier !== 'none' && entry.rarity_reason && (
         <p className={cn('text-sm', tier === 'rare' ? 'text-amber-700' : 'text-destructive')}>{entry.rarity_reason}</p>
       )}
-      <div className="text-sm text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span>{formatEntryDate(entry.date)}</span>
-        <span>·</span>
-        <span>{entry.location}</span>
-        {entry.region && (
-          <>
-            <span>·</span>
-            <span>
-              {flag ? `${flag} ` : ''}
-              {entry.region}
-            </span>
-          </>
-        )}
-        {(() => {
-          const src = getSourceDisplay(entry.source);
-          if (!src) return null;
-          return (
-            <>
-              <span>·</span>
-              <span className="inline-flex items-center gap-1 text-xs">
-                <span aria-hidden>{src.emoji}</span>
-                <span>{src.label}</span>
-              </span>
-            </>
-          );
-        })()}
-      </div>
-      <div className="text-sm">
-        <span className="text-muted-foreground">Vaatleja(d): </span>
-        <span className={cn(obs.unknown && 'text-muted-foreground italic')}>{obs.text}</span>
-      </div>
-      {typeof entry.count === 'number' && entry.count > 1 && (
-        <div className="text-sm">
-          <span className="text-muted-foreground">Arv: </span>
-          {entry.count} isendit
+      {isUnverified ? (
+        <div className="flex items-center gap-1 text-xs text-muted-foreground italic">
+          <AlertCircle className="h-3 w-3 shrink-0" />
+          <span>Konkreetne vaatluskoht teadmata — üldine info liigi kohta</span>
         </div>
+      ) : (
+        <>
+          <div className="text-sm text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span>{formatEntryDate(entry.date)}</span>
+            <span>·</span>
+            <span>{entry.location}</span>
+            {entry.region && (
+              <>
+                <span>·</span>
+                <span>
+                  {flag ? `${flag} ` : ''}
+                  {entry.region}
+                </span>
+              </>
+            )}
+            {(() => {
+              const src = getSourceDisplay(entry.source);
+              if (!src) return null;
+              return (
+                <>
+                  <span>·</span>
+                  <span className="inline-flex items-center gap-1 text-xs">
+                    <span aria-hidden>{src.emoji}</span>
+                    <span>{src.label}</span>
+                  </span>
+                </>
+              );
+            })()}
+          </div>
+          <div className="text-sm">
+            <span className="text-muted-foreground">Vaatleja(d): </span>
+            <span className={cn(obs.unknown && 'text-muted-foreground italic')}>{obs.text}</span>
+          </div>
+          {typeof entry.count === 'number' && entry.count > 1 && (
+            <div className="text-sm">
+              <span className="text-muted-foreground">Arv: </span>
+              {entry.count} isendit
+            </div>
+          )}
+        </>
       )}
-      {entry.documented && entry.documented.length > 0 && (
+      {!isUnverified && entry.documented && entry.documented.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {entry.documented.map((d) => {
             const isFoto = d.toLowerCase() === 'foto';
@@ -416,7 +427,7 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
           </div>
         )
       )}
-      {entry.sights_stats && typeof entry.sights_stats === 'object' && Number.isFinite(entry.sights_stats.total_obs) && (
+      {!isUnverified && entry.sights_stats && typeof entry.sights_stats === 'object' && Number.isFinite(entry.sights_stats.total_obs) && (
         <div className="mt-3 pt-3 border-t border-border/40 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           <BarChart3 className="h-3 w-3 shrink-0" />
           <span>{pluralizeObs(entry.sights_stats.total_obs)}</span>

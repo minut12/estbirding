@@ -13244,6 +13244,8 @@ document.addEventListener('click', function(e) {
 .eSP{font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;border:none}
 .eSA{background:#dbeafe;color:#1e40af}
 .eSO{background:#f1f5f9;color:#64748b}
+.eNb{margin-top:2px;font-size:11px;color:#475569}
+.eNbB{font-weight:600;color:#047857}
 @media(max-width:600px){#ennBox{width:96vw;max-height:85vh}.eAv{width:30px;height:30px}.eNm{font-size:13px}.ePct{font-size:15px}.eR{gap:7px;padding:6px}}
 </style>
 
@@ -13266,6 +13268,170 @@ document.addEventListener('click', function(e) {
 
 <script>
 (function(){
+/* ====== Neighbour-country boost helpers (Phase 3) ====== */
+
+var BM_NEIGHBOR_CACHE_KEY    = 'bm_neighbor_cache_v1';
+var BM_NEIGHBOR_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+var BM_NEIGHBOR_FETCH_TIMEOUT_MS = 15000;
+var BM_NEIGHBOR_ENDPOINT = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/get-europe-ebird-cache';
+
+var _NB_SOUTH = ['LV','LT','PL','BY'];
+var _NB_NORTH = ['FI','SE','RU'];
+var _NB_ALL   = ['FI','SE','LV','LT','PL','BY','RU'];
+
+// IIFE-scoped active map. Populated by __scanEnnAll before the per-species loop.
+var _activeNeighborMap = {};
+
+function _neighborSeason(date){
+  var d = (date instanceof Date) ? date : new Date();
+  var m = d.getMonth() + 1;
+  if (m >= 3 && m <= 5)  return 'spring';
+  if (m >= 8 && m <= 10) return 'autumn';
+  return 'other';
+}
+
+function _neighborSeasonLabelEt(season){
+  if (season === 'spring') return 'kevad';
+  if (season === 'autumn') return 'sügis';
+  return '';
+}
+
+function _neighborCountriesForSeason(season){
+  if (season === 'spring') return _NB_SOUTH.slice();
+  if (season === 'autumn') return _NB_NORTH.slice();
+  return _NB_ALL.slice();
+}
+
+async function _nbFetchWithTimeout(url, opts, ms){
+  var ctrl  = (typeof AbortController === 'function') ? new AbortController() : null;
+  var timer = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(e){} }, ms) : null;
+  try {
+    var f = ctrl ? Object.assign({ signal: ctrl.signal }, opts || {}) : (opts || {});
+    return await fetch(url, f);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function _loadNeighborDataLocal(){
+  try {
+    var raw = localStorage.getItem('bm_eu_last_good_snapshot');
+    if (!raw) return null;
+    var snap = JSON.parse(raw);
+    var pts = snap && snap.payload && snap.payload.points;
+    if (!pts || typeof pts !== 'object') return null;
+    var out = {};
+    Object.keys(pts).forEach(function(name){
+      var entry = pts[name] || {};
+      var regions = entry.regions || {};
+      var arr = [];
+      Object.keys(regions).forEach(function(cc){
+        var r = regions[cc] || {};
+        var occ7 = Number(r.occ7);
+        if (!Number.isFinite(occ7) || occ7 <= 0) return;
+        arr.push({
+          cc: cc,
+          occ7: occ7,
+          latest_obs_date: r.t || null,
+          latest_lat: Number.isFinite(Number(r.lat)) ? Number(r.lat) : null,
+          latest_lon: Number.isFinite(Number(r.lon)) ? Number(r.lon) : null,
+          latest_loc: r.loc || null,
+        });
+      });
+      if (arr.length) out[name] = arr;
+    });
+    return out;
+  } catch (e) {
+    console.warn('[neighbor] local snapshot parse failed:', e);
+    return null;
+  }
+}
+
+async function _loadNeighborDataCloud(force){
+  if (!force) {
+    try {
+      var cachedRaw = localStorage.getItem(BM_NEIGHBOR_CACHE_KEY);
+      if (cachedRaw) {
+        var cached = JSON.parse(cachedRaw);
+        var ageMs  = Date.now() - Number(cached.fetchedAtMs || 0);
+        if (cached && cached.bySpecies && ageMs >= 0 && ageMs < BM_NEIGHBOR_CACHE_TTL_MS) {
+          return cached.bySpecies;
+        }
+      }
+    } catch (e) {}
+  }
+
+  try {
+    var resp = await _nbFetchWithTimeout(
+      BM_NEIGHBOR_ENDPOINT,
+      { method: 'GET', headers: { 'Accept': 'application/json' }, cache: 'no-store' },
+      BM_NEIGHBOR_FETCH_TIMEOUT_MS
+    );
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var data = await resp.json();
+    var rows = (data && Array.isArray(data.rows)) ? data.rows : [];
+    var bySpecies = {};
+    rows.forEach(function(r){
+      var name = r && r.species_name;
+      var cc   = r && r.country_code;
+      var occ7 = Number(r && r.occ7);
+      if (!name || !cc || !Number.isFinite(occ7) || occ7 <= 0) return;
+      if (!bySpecies[name]) bySpecies[name] = [];
+      bySpecies[name].push({
+        cc: cc,
+        occ7: occ7,
+        latest_obs_date: r.latest_obs_date || null,
+        latest_lat: Number.isFinite(Number(r.latest_lat)) ? Number(r.latest_lat) : null,
+        latest_lon: Number.isFinite(Number(r.latest_lon)) ? Number(r.latest_lon) : null,
+        latest_loc: r.latest_loc || null,
+      });
+    });
+    try {
+      localStorage.setItem(BM_NEIGHBOR_CACHE_KEY, JSON.stringify({
+        fetchedAtMs: Date.now(),
+        bySpecies: bySpecies,
+      }));
+    } catch (e) {}
+    return bySpecies;
+  } catch (e) {
+    console.warn('[neighbor] cloud fetch failed:', e);
+    return null;
+  }
+}
+
+async function _loadNeighborData(force){
+  var cloud = await _loadNeighborDataCloud(force === true);
+  var local = _loadNeighborDataLocal();
+  if (!cloud && !local) return {};
+  var out = {};
+  if (cloud) Object.keys(cloud).forEach(function(k){ out[k] = cloud[k].slice(); });
+  if (local) {
+    Object.keys(local).forEach(function(k){
+      if (!out[k]) { out[k] = local[k].slice(); return; }
+      var byCC = {};
+      out[k].forEach(function(r){ byCC[r.cc] = r; });
+      local[k].forEach(function(r){ byCC[r.cc] = r; });
+      out[k] = Object.values(byCC);
+    });
+  }
+  return out;
+}
+
+function _neighborBoost(speciesName, neighborMap, dateForSeason){
+  var season  = _neighborSeason(dateForSeason);
+  var allowed = _neighborCountriesForSeason(season);
+  var allowedSet = {};
+  allowed.forEach(function(cc){ allowedSet[cc] = true; });
+  var entries = (neighborMap && neighborMap[speciesName]) || [];
+  var contributing = entries
+    .filter(function(r){ return allowedSet[r.cc] && Number(r.occ7) > 0; })
+    .sort(function(a, b){ return a.cc < b.cc ? -1 : a.cc > b.cc ? 1 : 0; });
+  var boost = Math.min(25, contributing.length * 5);
+  return { boost: boost, neighbors: contributing, season: season };
+}
+
+/* ====== /Neighbour-country boost helpers ====== */
+
 var SPRING = {
 "Heletilder":"6.04","Herilaseviu":"5.05","Hänilane":"14.04",
 "Kadakatäks":"22.04","Kaelusrästas":"17.04","Kalakotkas":"31.03","Kaldapääsuke":"29.04",
@@ -13508,11 +13674,25 @@ function render(){
     var ebirdBoost=occ7Ebird>0?Math.min(5,Math.round(Math.log1p(occ7Ebird))):0;
     var eluBoost=occ7Elu>0?Math.min(5,Math.round(Math.log1p(occ7Elu))):0;
     var boost=ebirdBoost+eluBoost;
-    var finalScore=currentScore!==null?Math.min(95,currentScore+boost):null;
-    if(finalScore!==null&&finalScore>=80){console.log('[PROB-FINAL]',n,{currentScore:currentScore,ebirdBoost:ebirdBoost,eluBoost:eluBoost,boost:boost,finalScore:finalScore});}
+    var nbResult = (currentScore !== null) ? _neighborBoost(n, _activeNeighborMap, new Date()) : { boost: 0, neighbors: [], season: 'other' };
+    var nbBoost  = Number(nbResult.boost) || 0;
+    var finalScore = (currentScore !== null) ? Math.min(95, currentScore + boost + nbBoost) : null;
+    if(finalScore!==null&&finalScore>=80){console.log('[PROB-FINAL]',n,{currentScore:currentScore,ebirdBoost:ebirdBoost,eluBoost:eluBoost,boost:boost,nbBoost:nbBoost,finalScore:finalScore});}
     var ebirdScanned=p.occ7EbirdUpdated!=null;
     var eluScanned=p.occ7Elu!=null||_srcLo.indexOf('elurikkus')!==-1;
-    displayList.push({name:n,spring:springDate,score:finalScore,baseScore:currentScore,occ7Ebird:occ7Ebird,occ7Elu:occ7Elu,ebirdScanned:ebirdScanned,eluScanned:eluScanned});
+    displayList.push({
+      name: n,
+      spring: springDate,
+      score: finalScore,
+      baseScore: currentScore,
+      occ7Ebird: occ7Ebird,
+      occ7Elu: occ7Elu,
+      ebirdScanned: ebirdScanned,
+      eluScanned: eluScanned,
+      neighborBoost: nbBoost,
+      neighborCountries: nbResult.neighbors.map(function(x){ return x.cc; }),
+      neighborSeason: nbResult.season,
+    });
   }
   if(sort==='prob') displayList.sort(function(a,b){
     var sa=a.score!==null?a.score:-1,sb=b.score!==null?b.score:-1;
@@ -13559,8 +13739,18 @@ function render(){
         _bpLine='<div style="color:#64748b;font-size:11px;margin-top:1px">Parim: '+_bpBest.label+' ('+_bpBest.pct+'%)</div>';
       }
     }
+    // Neighbour-country boost line
+    var _nbLine = '';
+    var _nbPct  = Number(s.neighborBoost) || 0;
+    var _nbCCs  = Array.isArray(s.neighborCountries) ? s.neighborCountries : [];
+    if (_nbPct > 0 && _nbCCs.length > 0) {
+      var _nbSeasonLbl = _neighborSeasonLabelEt(s.neighborSeason);
+      var _nbPrefix    = _nbSeasonLbl ? ('Naabrid (' + _nbSeasonLbl + ')') : 'Naabrid';
+      _nbLine = '<div class="eNb">' + _nbPrefix + ': ' + _nbCCs.join('·') +
+                ' <span class="eNbB">+' + _nbPct + '%</span></div>';
+    }
     h+='<div class="eR"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+
-      '<div class="eNm">'+nm+ebLabel+' <button class="ePrb" onclick="window.__ennProb(\''+escName+'\')">Prob</button></div><div class="eLt">'+sl+_bpLine+'</div>'+
+      '<div class="eNm">'+nm+ebLabel+' <button class="ePrb" onclick="window.__ennProb(\''+escName+'\')">Prob</button></div><div class="eLt">'+sl+_bpLine+_nbLine+'</div>'+
       '<div class="eBar"><div class="eBf" style="width:'+(hasScore?Math.min(100,sc):0)+'%;background:'+bc+'"></div></div>'+
       '</div><div class="eRt">'+pctHtml+'</div></div>';
   }
@@ -13711,6 +13901,19 @@ window.__scanEnnAll=async function(btn,opts){
     if(need.length===0){
       if(btn){btn.disabled=false;btn.style.opacity='1';btn.textContent='Pole liike';setTimeout(function(){btn.textContent='Skaneeri';},2000);}
       return;
+    }
+
+    /* Phase 3: load neighbour-country boost map (south/north depending on season). */
+    try {
+      if (forceRescan) {
+        try { localStorage.removeItem(BM_NEIGHBOR_CACHE_KEY); } catch(e) {}
+      }
+      _activeNeighborMap = await _loadNeighborData(forceRescan);
+      console.log('[neighbor] active map species count:',
+                  Object.keys(_activeNeighborMap || {}).length);
+    } catch (e) {
+      console.warn('[neighbor] load failed, continuing without boost:', e);
+      _activeNeighborMap = {};
     }
 
     // Phase 3: single regional-bulk eBird fetch, then serial prob-only scan.

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, AlertCircle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye, BarChart3 } from 'lucide-react';
+import { AlertTriangle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye, BarChart3 } from 'lucide-react';
 import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
 
 function buildSciNameToEbirdCode(map: SpeciesMetaMap): Map<string, string> {
@@ -305,51 +305,44 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
       {tier !== 'none' && entry.rarity_reason && (
         <p className={cn('text-sm', tier === 'rare' ? 'text-amber-700' : 'text-destructive')}>{entry.rarity_reason}</p>
       )}
-      {isUnverified ? (
-        <div className="flex items-center gap-1 text-xs text-muted-foreground italic">
-          <AlertCircle className="h-3 w-3 shrink-0" />
-          <span>Konkreetne vaatluskoht teadmata — üldine info liigi kohta</span>
-        </div>
-      ) : (
-        <>
-          <div className="text-sm text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span>{formatEntryDate(entry.date)}</span>
+      <div className="text-sm text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span>{formatEntryDate(entry.date)}</span>
+        <span>·</span>
+        <span>{entry.location}</span>
+        {entry.region && (
+          <>
             <span>·</span>
-            <span>{entry.location}</span>
-            {entry.region && (
-              <>
-                <span>·</span>
-                <span>
-                  {flag ? `${flag} ` : ''}
-                  {entry.region}
-                </span>
-              </>
-            )}
-            {(() => {
-              const src = getSourceDisplay(entry.source);
-              if (!src) return null;
-              return (
-                <>
-                  <span>·</span>
-                  <span className="inline-flex items-center gap-1 text-xs">
-                    <span aria-hidden>{src.emoji}</span>
-                    <span>{src.label}</span>
-                  </span>
-                </>
-              );
-            })()}
-          </div>
-          <div className="text-sm">
-            <span className="text-muted-foreground">Vaatleja(d): </span>
-            <span className={cn(obs.unknown && 'text-muted-foreground italic')}>{obs.text}</span>
-          </div>
-          {typeof entry.count === 'number' && entry.count > 1 && (
-            <div className="text-sm">
-              <span className="text-muted-foreground">Arv: </span>
-              {entry.count} isendit
-            </div>
-          )}
-        </>
+            <span>
+              {flag ? `${flag} ` : ''}
+              {entry.region}
+            </span>
+          </>
+        )}
+        {(() => {
+          const src = getSourceDisplay(entry.source);
+          if (!src) return null;
+          return (
+            <>
+              <span>·</span>
+              <span className="inline-flex items-center gap-1 text-xs">
+                <span aria-hidden>{src.emoji}</span>
+                <span>{src.label}</span>
+              </span>
+            </>
+          );
+        })()}
+      </div>
+      {!obs.unknown && (
+        <div className="text-sm">
+          <span className="text-muted-foreground">Vaatleja(d): </span>
+          <span>{obs.text}</span>
+        </div>
+      )}
+      {typeof entry.count === 'number' && entry.count > 1 && (
+        <div className="text-sm">
+          <span className="text-muted-foreground">Arv: </span>
+          {entry.count} isendit
+        </div>
       )}
       {!isUnverified && entry.documented && entry.documented.length > 0 && (
         <div className="flex flex-wrap gap-1">
@@ -431,8 +424,12 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
         <div className="mt-3 pt-3 border-t border-border/40 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           <BarChart3 className="h-3 w-3 shrink-0" />
           <span>{pluralizeObs(entry.sights_stats.total_obs)}</span>
-          <span aria-hidden>·</span>
-          <span>{pluralizeObserver(entry.sights_stats.observer_count ?? 0)}</span>
+          {entry.sights_stats.observer_count != null && entry.sights_stats.observer_count > 0 && (
+            <>
+              <span aria-hidden>·</span>
+              <span>{pluralizeObserver(entry.sights_stats.observer_count)}</span>
+            </>
+          )}
           {(entry.sights_stats.first_date || entry.sights_stats.last_date) && (
             <>
               <span aria-hidden>·</span>
@@ -440,6 +437,11 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
             </>
           )}
         </div>
+      )}
+      {isUnverified && (
+        <p className="text-xs text-muted-foreground italic mt-2">
+          Üldised andmed liigi kohta; konkreetne vaatluskirje ei ole kättesaadav
+        </p>
       )}
     </Card>
   );

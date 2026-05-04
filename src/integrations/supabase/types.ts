@@ -266,6 +266,39 @@ export type Database = {
         }
         Relationships: []
       }
+      europe_ebird_cache: {
+        Row: {
+          country_code: string
+          fetched_at: string
+          latest_lat: number | null
+          latest_loc: string | null
+          latest_lon: number | null
+          latest_obs_date: string | null
+          occ7: number
+          species_name: string
+        }
+        Insert: {
+          country_code: string
+          fetched_at?: string
+          latest_lat?: number | null
+          latest_loc?: string | null
+          latest_lon?: number | null
+          latest_obs_date?: string | null
+          occ7?: number
+          species_name: string
+        }
+        Update: {
+          country_code?: string
+          fetched_at?: string
+          latest_lat?: number | null
+          latest_loc?: string | null
+          latest_lon?: number | null
+          latest_obs_date?: string | null
+          occ7?: number
+          species_name?: string
+        }
+        Relationships: []
+      }
       europe_snapshot: {
         Row: {
           created_at: string

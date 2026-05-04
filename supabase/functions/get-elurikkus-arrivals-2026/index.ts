@@ -38,6 +38,40 @@ interface SpeciesMetaItem {
   is_migrant?: boolean;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// RESIDENT_EXCLUSIONS — species that the migrant heuristic misclassifies.
+// Treated as `is_migrant: false` unless an explicit per-species override
+// in species_meta_v1.json says otherwise (explicit override wins).
+//
+// Categories:
+//   - Year-round residents: present in Estonia all 12 months.
+//   - Winter visitors: present Nov–Mar, depart in spring (NOT arrivals).
+//
+// To override per-species without code change, set is_migrant on the entry
+// in storage://bird-avatars/meta/species_meta_v1.json.
+// ─────────────────────────────────────────────────────────────────────────
+const RESIDENT_EXCLUSIONS: ReadonlySet<string> = new Set([
+  // Year-round residents
+  "Rabapistrik",          // Falco peregrinus
+  "Kassikakk",            // Bubo bubo
+  "Kaelus-turteltuvi",    // Streptopelia decaocto
+  "Laanerähn",            // Picoides tridactylus
+  "Kõrvukräts",           // Asio otus (partial migrant; main pop. resident)
+  "Mänsak",               // Nucifraga caryocatactes
+  "Pasknäär",             // Garrulus glandarius
+  "Habekakk",             // Strix nebulosa
+  "Värbkakk",             // Glaucidium passerinum
+  "Kodukakk",             // Strix aluco
+  "Händkakk",             // Strix uralensis
+  "Laanenäär",            // Perisoreus infaustus
+  "Musträhn",             // Dryocopus martius
+
+  // Winter visitors (depart, not arrive, in spring)
+  "Kirjuhahk",            // Polysticta stelleri
+  "Hangelind",            // Plectrophenax nivalis
+  "Mägi-kanepilind",      // Linaria flavirostris
+]);
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -132,7 +166,13 @@ serve(async (req) => {
     if (!state.first_2026) continue;
 
     const meta = speciesMeta[species_et];
-    const manualOverride = meta?.is_migrant;
+    // Explicit species_meta override always wins. If absent, fall back to
+    // hardcoded RESIDENT_EXCLUSIONS (treated as is_migrant: false).
+    const explicitOverride = meta?.is_migrant;
+    const manualOverride: boolean | undefined =
+      explicitOverride !== undefined
+        ? explicitOverride
+        : (RESIDENT_EXCLUSIONS.has(species_et) ? false : undefined);
 
     let isArrival: boolean;
     if (manualOverride === true) {

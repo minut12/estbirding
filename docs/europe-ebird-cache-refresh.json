@@ -22,7 +22,7 @@
     {
       "parameters": {
         "language": "javaScript",
-        "jsCode": "// =============================================================\n// Europe eBird Cache Refresh — single-node implementation.\n// =============================================================\n// Strategy: per-country call to eBird's NOTABLE endpoint.\n//   - Notable obs are eBird's own \"rare for region\" filter.\n//   - This is exactly what we want for boosting rare species\n//     in Estonia: if it's notable in a neighbour, it's likely\n//     a candidate vagrant/migrant near Estonia.\n//   - Volume: typically 50–500 obs per country per 7 days.\n//   - 7 countries × 1 request = 7 eBird API calls per refresh.\n//\n// Source of truth for species_name <-> ebirdCode:\n//   public Supabase storage at bird-avatars/meta/species_meta_v1.json\n//\n// Output: builds an array of upsert rows ready for the Supabase\n//   insert-europe-ebird-cache Edge Function.\n// =============================================================\n\nconst EBIRD_TOKEN = '9s72dc2jcjlq'; // shared linnuliigid token\nconst COUNTRIES   = ['FI','SE','LV','LT','PL','BY','RU'];\nconst META_URL    = 'https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/meta/species_meta_v1.json';\n\nconst SEVEN_DAYS_MS = 7 * 86400 * 1000;\nconst nowMs = Date.now();\nconst sevenDaysAgo = nowMs - SEVEN_DAYS_MS;\n\nfunction safeNum(v) {\n  const n = Number(v);\n  return Number.isFinite(n) ? n : null;\n}\n\nfunction parseObsDateMs(s) {\n  const ymd = String(s || '').slice(0, 10);\n  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(ymd)) return null;\n  const ms = Date.parse(ymd + 'T12:00:00Z');\n  return Number.isFinite(ms) ? ms : null;\n}\n\n// -----------------------------------------------------------\n// Step 1 — fetch species_meta to build code -> name map\n// -----------------------------------------------------------\nlet codeToName = {};\ntry {\n  const metaResp = await fetch(META_URL);\n  if (!metaResp.ok) throw new Error('species_meta HTTP ' + metaResp.status);\n  const meta = await metaResp.json();\n  const items = (meta && meta.items && typeof meta.items === 'object') ? meta.items : {};\n  for (const [name, item] of Object.entries(items)) {\n    const code = (item && typeof item.ebirdCode === 'string') ? item.ebirdCode.trim() : '';\n    const cleanName = String(name || '').trim();\n    if (code && cleanName) codeToName[code] = cleanName;\n  }\n} catch (e) {\n  return [{ json: { ok: false, error: 'species_meta_fetch_failed', detail: String(e && e.message || e) } }];\n}\n\nconst trackedCodeCount = Object.keys(codeToName).length;\nif (trackedCodeCount === 0) {\n  return [{ json: { ok: false, error: 'no_tracked_species', detail: 'codeToName is empty' } }];\n}\n\n// -----------------------------------------------------------\n// Step 2 — per-country eBird notable fetch + aggregation\n// -----------------------------------------------------------\nconst allRows = [];\nconst perCountryStats = {};\nconst errors = [];\n\nfor (const cc of COUNTRIES) {\n  const url = `https://api.ebird.org/v2/data/obs/${cc}/recent/notable?back=7&maxResults=10000&detail=simple`;\n  let obs = [];\n  try {\n    const r = await fetch(url, {\n      headers: { 'X-eBirdApiToken': EBIRD_TOKEN, 'Accept': 'application/json' },\n    });\n    if (!r.ok) {\n      errors.push({ cc, status: r.status, snippet: (await r.text()).slice(0, 200) });\n      perCountryStats[cc] = { fetched: 0, tracked: 0, rows: 0, error: 'HTTP ' + r.status };\n      continue;\n    }\n    obs = await r.json();\n    if (!Array.isArray(obs)) obs = [];\n  } catch (e) {\n    errors.push({ cc, error: String(e && e.message || e) });\n    perCountryStats[cc] = { fetched: 0, tracked: 0, rows: 0, error: 'fetch_failed' };\n    continue;\n  }\n\n  const bySpecies = {};\n  let trackedCount = 0;\n  for (const o of obs) {\n    const code = String(o && o.speciesCode || '').trim();\n    if (!code) continue;\n    const dateMs = parseObsDateMs(o && o.obsDt);\n    if (dateMs == null) continue;\n    if (dateMs < sevenDaysAgo) continue;\n\n    if (!bySpecies[code]) bySpecies[code] = { count: 0, latestMs: 0, latest: null };\n    bySpecies[code].count++;\n    if (dateMs > bySpecies[code].latestMs) {\n      bySpecies[code].latestMs = dateMs;\n      bySpecies[code].latest = o;\n    }\n  }\n\n  for (const [code, agg] of Object.entries(bySpecies)) {\n    const speciesName = codeToName[code];\n    if (!speciesName) continue;\n    trackedCount++;\n    const latest = agg.latest || {};\n    allRows.push({\n      species_name: speciesName,\n      country_code: cc,\n      occ7: agg.count,\n      latest_obs_date: String(latest.obsDt || '').slice(0, 10) || null,\n      latest_lat: safeNum(latest.lat),\n      latest_lon: safeNum(latest.lng),\n      latest_loc: typeof latest.locName === 'string' ? latest.locName.slice(0, 500) : null,\n    });\n  }\n\n  perCountryStats[cc] = {\n    fetched: obs.length,\n    tracked: trackedCount,\n    rows: trackedCount,\n  };\n}\n\nreturn [{\n  json: {\n    ok: true,\n    rows: allRows,\n    totalRows: allRows.length,\n    countries: COUNTRIES.length,\n    trackedCodeCount,\n    perCountryStats,\n    errors,\n    runAt: new Date().toISOString(),\n  },\n}];\n"
+        "jsCode": "// =============================================================\n// Europe eBird Cache Refresh — single-node implementation.\n// =============================================================\n// Strategy: per-country call to eBird's NOTABLE endpoint.\n//   - 7 countries × 1 request = 7 eBird API calls per refresh.\n//\n// Source of truth for species_name <-> ebirdCode:\n//   public Supabase storage at bird-avatars/meta/species_meta_v1.json\n// =============================================================\n\nconst EBIRD_TOKEN = '9s72dc2jcjlq';\nconst COUNTRIES   = ['FI','SE','LV','LT','PL','BY','RU'];\nconst META_URL    = 'https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/meta/species_meta_v1.json';\n\nconst SEVEN_DAYS_MS = 7 * 86400 * 1000;\nconst nowMs = Date.now();\nconst sevenDaysAgo = nowMs - SEVEN_DAYS_MS;\n\nfunction safeNum(v) {\n  const n = Number(v);\n  return Number.isFinite(n) ? n : null;\n}\n\nfunction parseObsDateMs(s) {\n  const ymd = String(s || '').slice(0, 10);\n  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(ymd)) return null;\n  const ms = Date.parse(ymd + 'T12:00:00Z');\n  return Number.isFinite(ms) ? ms : null;\n}\n\n// Step 1 — fetch species_meta to build code -> name map\nlet codeToName = {};\ntry {\n  const metaResp = await fetch(META_URL);\n  if (!metaResp.ok) throw new Error('species_meta HTTP ' + metaResp.status);\n  const meta = await metaResp.json();\n  const items = (meta && meta.items && typeof meta.items === 'object') ? meta.items : {};\n  for (const [name, item] of Object.entries(items)) {\n    const code = (item && typeof item.ebirdCode === 'string') ? item.ebirdCode.trim() : '';\n    const cleanName = String(name || '').trim();\n    if (code && cleanName) codeToName[code] = cleanName;\n  }\n} catch (e) {\n  return [{ json: { ok: false, error: 'species_meta_fetch_failed', detail: String(e && e.message || e) } }];\n}\n\nconst trackedCodeCount = Object.keys(codeToName).length;\nif (trackedCodeCount === 0) {\n  return [{ json: { ok: false, error: 'no_tracked_species', detail: 'codeToName is empty' } }];\n}\n\n// Step 2 — per-country eBird notable fetch + aggregation\nconst allRows = [];\nconst perCountryStats = {};\nconst errors = [];\n\nfor (const cc of COUNTRIES) {\n  const url = `https://api.ebird.org/v2/data/obs/${cc}/recent/notable?back=7&maxResults=10000&detail=simple`;\n  let obs = [];\n  try {\n    const r = await fetch(url, {\n      headers: { 'X-eBirdApiToken': EBIRD_TOKEN, 'Accept': 'application/json' },\n    });\n    if (!r.ok) {\n      errors.push({ cc, status: r.status, snippet: (await r.text()).slice(0, 200) });\n      perCountryStats[cc] = { fetched: 0, tracked: 0, rows: 0, error: 'HTTP ' + r.status };\n      continue;\n    }\n    obs = await r.json();\n    if (!Array.isArray(obs)) obs = [];\n  } catch (e) {\n    errors.push({ cc, error: String(e && e.message || e) });\n    perCountryStats[cc] = { fetched: 0, tracked: 0, rows: 0, error: 'fetch_failed' };\n    continue;\n  }\n\n  const bySpecies = {};\n  let trackedCount = 0;\n  for (const o of obs) {\n    const code = String(o && o.speciesCode || '').trim();\n    if (!code) continue;\n    const dateMs = parseObsDateMs(o && o.obsDt);\n    if (dateMs == null) continue;\n    if (dateMs < sevenDaysAgo) continue;\n\n    if (!bySpecies[code]) bySpecies[code] = { count: 0, latestMs: 0, latest: null };\n    bySpecies[code].count++;\n    if (dateMs > bySpecies[code].latestMs) {\n      bySpecies[code].latestMs = dateMs;\n      bySpecies[code].latest = o;\n    }\n  }\n\n  for (const [code, agg] of Object.entries(bySpecies)) {\n    const speciesName = codeToName[code];\n    if (!speciesName) continue;\n    trackedCount++;\n    const latest = agg.latest || {};\n    allRows.push({\n      species_name: speciesName,\n      country_code: cc,\n      occ7: agg.count,\n      latest_obs_date: String(latest.obsDt || '').slice(0, 10) || null,\n      latest_lat: safeNum(latest.lat),\n      latest_lon: safeNum(latest.lng),\n      latest_loc: typeof latest.locName === 'string' ? latest.locName.slice(0, 500) : null,\n    });\n  }\n\n  perCountryStats[cc] = { fetched: obs.length, tracked: trackedCount, rows: trackedCount };\n}\n\nreturn [{\n  json: {\n    ok: true,\n    rows: allRows,\n    totalRows: allRows.length,\n    countries: COUNTRIES.length,\n    trackedCodeCount,\n    perCountryStats,\n    errors,\n    runAt: new Date().toISOString(),\n  },\n}];\n"
       },
       "id": "code-aggregate-1",
       "name": "Fetch + Aggregate (eBird notable)",
@@ -64,11 +64,12 @@
       "parameters": {
         "method": "POST",
         "url": "https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/insert-europe-ebird-cache",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Content-Type",     "value": "application/json" },
-            { "name": "X-Webhook-Secret", "value": "={{ $env.EUROPE_EBIRD_WEBHOOK_SECRET }}" }
+            { "name": "content-type", "value": "application/json" }
           ]
         },
         "sendBody": true,
@@ -79,16 +80,23 @@
           "response": {
             "response": {
               "fullResponse": false,
-              "responseFormat": "json"
+              "responseFormat": "json",
+              "neverError": false
             }
           }
         }
       },
       "id": "http-insert-1",
-      "name": "POST insert-europe-ebird-cache",
+      "name": "Insert into Supabase",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [900, 220]
+      "position": [900, 220],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "PLACEHOLDER_WEBHOOK_CRED_ID",
+          "name": "vaatluste-webhook-secret"
+        }
+      }
     },
     {
       "parameters": {
@@ -111,8 +119,8 @@
     },
     "Have rows to insert?": {
       "main": [
-        [{ "node": "POST insert-europe-ebird-cache", "type": "main", "index": 0 }],
-        [{ "node": "No rows (skip insert)",         "type": "main", "index": 0 }]
+        [{ "node": "Insert into Supabase",  "type": "main", "index": 0 }],
+        [{ "node": "No rows (skip insert)", "type": "main", "index": 0 }]
       ]
     }
   },

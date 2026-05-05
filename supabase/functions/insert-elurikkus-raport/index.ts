@@ -65,6 +65,106 @@ const RESIDENT_EXCLUSIONS: ReadonlySet<string> = new Set([
   // Batch 2 — additional winter visitors / passage species
   "Hallõgija",            // Lanius excubitor (mainly winter visitor in EE)
   "Mustvaeras",           // Melanitta nigra (passage migrant; observations ≠ "arrivals")
+
+  // ─── Batch 3a — additional year-round residents ──────────────────────
+  "Rasvatihane",          // Parus major
+  "Sinitihane",           // Cyanistes caeruleus
+  "Musttihane",           // Periparus ater
+  "Põhjatihane",          // Poecile montanus
+  "Salutihane",           // Poecile palustris
+  "Sabatihane",           // Aegithalos caudatus
+  "Musträstas",           // Turdus merula
+  "Käblik",               // Troglodytes troglodytes
+  "Talvike",              // Emberiza citrinella
+  "Roherähn",             // Picus viridis
+  "Hallpea-rähn",         // Picus canus
+  "Suur-kirjurähn",       // Dendrocopos major
+  "Väike-kirjurähn",      // Dryobates minor
+  "Hakk",                 // Coloeus monedula
+  "Hallvares",            // Corvus cornix
+  "Ronk",                 // Corvus corax
+  "Harakas",              // Pica pica
+  "Puukoristaja",         // Sitta europaea
+  "Porr",                 // Certhia familiaris
+  "Suurnokk-vint",        // Coccothraustes coccothraustes
+  "Leevike",              // Pyrrhula pyrrhula
+  "Siisike",              // Spinus spinus
+  "Rohevint",             // Chloris chloris
+  "Põldvarblane",         // Passer montanus
+  "Hõbekajakas",          // Larus argentatus
+  "Merikotkas",           // Haliaeetus albicilla
+  "Raudkull",             // Accipiter nisus
+  "Hiireviu",             // Buteo buteo
+  "Sookurg",              // Grus grus
+  "Kühmnokk-luik",        // Cygnus olor
+  "Metsis",               // Tetrao urogallus
+  "Teder",                // Lyrurus tetrix
+  "Laanepüü",             // Tetrastes bonasia
+  "Metsvint",             // Fringilla coelebs (partial migrant; bulk overwinter/breed in EE)
+
+  // ─── Batch 3b — early-spring migrants (typical arrival before 21. April) ──
+  // Their first_obs_date in current period is wrong because elurikkus_observations
+  // is a rolling 28-day cache that doesn't retain their true March/early-April dates.
+  "Punarind",             // Erithacus rubecula (mid-March)
+  "Laulurästas",          // Turdus philomelos (mid-March)
+  "Põldlõoke",            // Alauda arvensis (early March)
+  "Linavästrik",          // Motacilla alba (mid-March)
+  "Väike-lehelind",       // Phylloscopus collybita (late March)
+  "Salu-lehelind",        // Phylloscopus trochilus (early April)
+  "Hänilane",             // Motacilla flava (mid-April)
+  "Vainurästas",          // Turdus iliacus (late March)
+  "Hallrästas",           // Turdus pilaris (late March)
+  "Hoburästas",           // Turdus viscivorus (late March)
+  "Kuldnokk",             // Sturnus vulgaris (late February)
+  "Mustsaba-vigle",       // Limosa limosa (early April)
+  "Punajalg-tilder",      // Tringa totanus (late March)
+  "Tõmmukajakas",         // Larus fuscus (early March)
+  "Suitsupääsuke",        // Hirundo rustica (mid-April)
+  "Räästapääsuke",        // Delichon urbicum (mid-April)
+  "Kaldapääsuke",         // Riparia riparia (mid-April)
+  "Sookiur",              // Anthus pratensis (late March)
+  "Naerukajakas",         // Chroicocephalus ridibundus (early March)
+  "Kalakajakas",          // Larus canus (early March)
+  "Põhjavint",            // Fringilla montifringilla (early April)
+  "Piilpart",             // Anas crecca (early March)
+  "Soopart",              // Anas acuta (early April)
+  "Viupart",              // Mareca penelope (early April)
+  "Rääkspart",            // Mareca strepera (early April)
+  "Sõtkas",               // Bucephala clangula (early March)
+  "Rohukoskel",           // Mergus serrator (late March)
+  "Jääkoskel",            // Mergus merganser (early March)
+  "Tuttvart",             // Aythya fuligula (early March)
+  "Merivart",             // Aythya marila (early March)
+  "Lauk",                 // Fulica atra (late March)
+  "Kiivitaja",            // Vanellus vanellus (early March)
+  "Tikutaja",             // Gallinago gallinago (late March)
+  "Rüüt",                 // Pluvialis apricaria (late March)
+  "Hallhaigur",           // Ardea cinerea (early April)
+  "Hallhani",             // Anser anser (early March)
+  "Sinikael-part",        // Anas platyrhynchos (resident-leaning partial migrant)
+  "Laululuik",            // Cygnus cygnus (late March)
+  "Tuuletallaja",         // Falco tinnunculus (late March)
+  "Kalakotkas",           // Pandion haliaetus (early April)
+  "Vaenukägu",            // Upupa epops (mid-April)
+  "Sinirind",             // Luscinia svecica (mid-April)
+  "Pruunselg-põõsalind",  // Curruca communis (mid-April)
+  "Mets-lehelind",        // Phylloscopus sibilatrix (mid-April)
+  "Mustpea-põõsalind",    // Sylvia atricapilla (mid-April)
+  "Liivatüll",            // Charadrius hiaticula (early April)
+  "Aul",                  // Clangula hyemalis (winter visitor / passage)
+  "Kaelusrästas",         // Turdus torquatus (mid-April)
+  "Sarvikpütt",           // Podiceps auritus (mid-April)
+  "Hallpõsk-pütt",        // Podiceps grisegena (mid-April)
+  "Tundra-rabahani",      // Anser serrirostris (early April)
+  "Suur-laukhani",        // Anser albifrons (early April)
+  "Valgepõsk-lagle",      // Branta leucopsis (early April)
+  "Tuttpütt",             // Podiceps cristatus (early April)
+  "Kormoran",             // Phalacrocorax carbo (early April)
+  "Lammitilder",          // Tringa stagnatilis (mid-April)
+  "Tõmmuvaeras",          // Melanitta fusca (early April)
+  "Punapea-vart",         // Aythya ferina (early April)
+  "Mägikiur",             // Anthus spinoletta (mid-April)
+  "Hõbehaigur",           // Ardea alba (mid-April)
 ]);
 
 const json = (body: unknown, status = 200) =>
@@ -123,52 +223,6 @@ Deno.serve(async (req) => {
   });
   const residentsFiltered = rawArrivals.length - filteredArrivals.length;
 
-  // ───────────────────────────────────────────────────────────────────────
-  // Date filter: exclude species whose true first 2026 obs predates the
-  // current period_start. The n8n Code node's first_obs_date is "earliest
-  // in current period", which misfires when detection gaps make a species
-  // look new. We check actual earliest 2026 obs in elurikkus_observations.
-  // ───────────────────────────────────────────────────────────────────────
-  const speciesNames: string[] = [];
-  for (const e of filteredArrivals) {
-    if (e && typeof e === "object") {
-      const n = (e as { species_et?: unknown }).species_et;
-      if (typeof n === "string" && n) speciesNames.push(n);
-    }
-  }
-
-  const firstObsByName: Record<string, string> = {};
-  if (speciesNames.length > 0) {
-    const { data: firstObsRows, error: firstObsError } = await supabase
-      .from("elurikkus_observations")
-      .select("species_name, observed_at")
-      .in("species_name", speciesNames)
-      .gte("observed_at", "2026-01-01")
-      .order("observed_at", { ascending: true });
-
-    if (firstObsError) {
-      console.warn("[insert-elurikkus-raport] first-obs lookup failed, skipping date filter:", firstObsError.message);
-    } else if (firstObsRows) {
-      for (const row of firstObsRows as Array<{ species_name: string; observed_at: string }>) {
-        // Rows are sorted ascending; first hit per species wins.
-        if (!firstObsByName[row.species_name]) {
-          firstObsByName[row.species_name] = row.observed_at;
-        }
-      }
-    }
-  }
-
-  const periodStartStr = String(payload.period_start);
-  const dateFilteredArrivals = filteredArrivals.filter((entry: unknown) => {
-    if (!entry || typeof entry !== "object") return true;
-    const name = (entry as { species_et?: unknown }).species_et;
-    if (typeof name !== "string" || !name) return true;
-    const actualFirst = firstObsByName[name];
-    if (!actualFirst) return true;                  // defensive: no DB hit, keep
-    return actualFirst >= periodStartStr;           // keep iff true first within period
-  });
-  const earlyArrivalsFiltered = filteredArrivals.length - dateFilteredArrivals.length;
-
   const { data, error } = await supabase
     .from("elurikkus_raport")
     .insert({
@@ -178,7 +232,7 @@ Deno.serve(async (req) => {
       estonia_entries: payload.estonia_entries,
       generation_meta: payload.generation_meta ?? {},
       kevadranne_narrative_et: payload.kevadranne_narrative_et ?? null,
-      kevadranne_arrivals: dateFilteredArrivals,
+      kevadranne_arrivals: filteredArrivals,
     })
     .select("id, generated_at")
     .single();
@@ -193,6 +247,5 @@ Deno.serve(async (req) => {
     id: data.id,
     generated_at: data.generated_at,
     residents_filtered: residentsFiltered,
-    early_arrivals_filtered: earlyArrivalsFiltered,
   }, 200);
 });

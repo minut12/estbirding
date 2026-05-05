@@ -174,6 +174,10 @@ const RESIDENT_EXCLUSIONS: ReadonlySet<string> = new Set([
   "Võsaraat",             // Prunella modularis (typical first ~27 February)
   "Metskurvits",           // Scolopax rusticola (typical first early April)
   "Valge-toonekurg",      // Ciconia ciconia (typical first late March / early April)
+
+  // ─── Batch 5 — Phase G top-up ────────────────────────────────────────
+  "Ohakalind",            // Carduelis carduelis (year-round resident in EE)
+  "Alk",                  // Alca torda (Baltic resident, no true "arrival")
 ]);
 
 const json = (body: unknown, status = 200) =>

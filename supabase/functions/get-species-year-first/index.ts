@@ -65,6 +65,30 @@ function extractIsoDatesFromBody(body: string): string[] {
   return dates;
 }
 
+async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const res = await fetch(url);
+      if (res.status === 429 || res.status === 503) {
+        lastErr = new Error(`HTTP ${res.status}`);
+        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("RateLimit") || msg.includes("429") || msg.includes("ECONN") || msg.includes("network")) {
+        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("fetch failed after retries");
+}
+
 async function fetchEarliestForSpecies(
   speciesEt: string,
   year: number,
@@ -80,14 +104,14 @@ async function fetchEarliestForSpecies(
 
     let body: string;
     try {
-      const res = await fetch(proxyUrl);
+      const res = await fetchWithRetry(proxyUrl);
       if (!res.ok) {
         console.warn(`[get-species-year-first] ${speciesEt} page ${page}: HTTP ${res.status}`);
         break;
       }
       body = await res.text();
     } catch (err) {
-      console.warn(`[get-species-year-first] ${speciesEt} page ${page} fetch error:`, err);
+      console.warn(`[get-species-year-first] ${speciesEt} page ${page} fetch error after retries:`, err);
       break;
     }
 

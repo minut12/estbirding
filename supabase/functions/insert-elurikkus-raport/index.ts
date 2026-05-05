@@ -178,6 +178,16 @@ const RESIDENT_EXCLUSIONS: ReadonlySet<string> = new Set([
   // ─── Batch 5 — Phase G top-up ────────────────────────────────────────
   "Ohakalind",            // Carduelis carduelis (year-round resident in EE)
   "Alk",                  // Alca torda (Baltic resident, no true "arrival")
+
+  // ─── Batch 6 — Phase H top-up ────────────────────────────────────────
+  "Urvalind",             // Acanthis flammea (winter visitor, Oct–April)
+  "Kukkurtihane",         // Remiz pendulinus (typical first ~late March)
+  "Nõmmelõoke",           // Lullula arborea (typical first mid-March / early April)
+  "Ristpart",             // Tadorna tadorna (typical first early March)
+  "Rootsiitsitaja",       // Emberiza schoeniclus (typical first mid-March)
+  "Metstilder",           // Tringa ochropus (typical first early-mid April)
+  "Roo-loorkull",         // Circus aeruginosus (typical first late March / early April)
+  "Vihitaja",             // Actitis hypoleucos (typical first mid-April)
 ]);
 
 const json = (body: unknown, status = 200) =>

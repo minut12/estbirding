@@ -123,6 +123,52 @@ Deno.serve(async (req) => {
   });
   const residentsFiltered = rawArrivals.length - filteredArrivals.length;
 
+  // ───────────────────────────────────────────────────────────────────────
+  // Date filter: exclude species whose true first 2026 obs predates the
+  // current period_start. The n8n Code node's first_obs_date is "earliest
+  // in current period", which misfires when detection gaps make a species
+  // look new. We check actual earliest 2026 obs in elurikkus_observations.
+  // ───────────────────────────────────────────────────────────────────────
+  const speciesNames: string[] = [];
+  for (const e of filteredArrivals) {
+    if (e && typeof e === "object") {
+      const n = (e as { species_et?: unknown }).species_et;
+      if (typeof n === "string" && n) speciesNames.push(n);
+    }
+  }
+
+  const firstObsByName: Record<string, string> = {};
+  if (speciesNames.length > 0) {
+    const { data: firstObsRows, error: firstObsError } = await supabase
+      .from("elurikkus_observations")
+      .select("species_name, observed_at")
+      .in("species_name", speciesNames)
+      .gte("observed_at", "2026-01-01")
+      .order("observed_at", { ascending: true });
+
+    if (firstObsError) {
+      console.warn("[insert-elurikkus-raport] first-obs lookup failed, skipping date filter:", firstObsError.message);
+    } else if (firstObsRows) {
+      for (const row of firstObsRows as Array<{ species_name: string; observed_at: string }>) {
+        // Rows are sorted ascending; first hit per species wins.
+        if (!firstObsByName[row.species_name]) {
+          firstObsByName[row.species_name] = row.observed_at;
+        }
+      }
+    }
+  }
+
+  const periodStartStr = String(payload.period_start);
+  const dateFilteredArrivals = filteredArrivals.filter((entry: unknown) => {
+    if (!entry || typeof entry !== "object") return true;
+    const name = (entry as { species_et?: unknown }).species_et;
+    if (typeof name !== "string" || !name) return true;
+    const actualFirst = firstObsByName[name];
+    if (!actualFirst) return true;                  // defensive: no DB hit, keep
+    return actualFirst >= periodStartStr;           // keep iff true first within period
+  });
+  const earlyArrivalsFiltered = filteredArrivals.length - dateFilteredArrivals.length;
+
   const { data, error } = await supabase
     .from("elurikkus_raport")
     .insert({
@@ -132,7 +178,7 @@ Deno.serve(async (req) => {
       estonia_entries: payload.estonia_entries,
       generation_meta: payload.generation_meta ?? {},
       kevadranne_narrative_et: payload.kevadranne_narrative_et ?? null,
-      kevadranne_arrivals: filteredArrivals,
+      kevadranne_arrivals: dateFilteredArrivals,
     })
     .select("id, generated_at")
     .single();
@@ -142,5 +188,11 @@ Deno.serve(async (req) => {
     return json({ error: error.message }, 500);
   }
 
-  return json({ ok: true, id: data.id, generated_at: data.generated_at, residents_filtered: residentsFiltered }, 200);
+  return json({
+    ok: true,
+    id: data.id,
+    generated_at: data.generated_at,
+    residents_filtered: residentsFiltered,
+    early_arrivals_filtered: earlyArrivalsFiltered,
+  }, 200);
 });

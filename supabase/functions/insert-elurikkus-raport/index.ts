@@ -142,6 +142,58 @@ Deno.serve(async (req) => {
   });
   const residentsFiltered = rawArrivals.length - filteredArrivals.length;
 
+  // ─── Date filter via elurikkus.ee per-species lookup ─────────────────
+  // For species that survived the resident filter, query their actual
+  // earliest current-year observation. Exclude those whose true first obs
+  // predates period_start — they're old arrivals showing up because the
+  // n8n payload's first_obs_date is computed from a 28-day rolling cache.
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+  const WEBHOOK_SECRET = Deno.env.get("VAATLUSTE_WEBHOOK_SECRET")!;
+
+  const speciesNamesForLookup: string[] = [];
+  for (const e of filteredArrivals) {
+    if (e && typeof e === "object") {
+      const n = (e as { species_et?: unknown }).species_et;
+      if (typeof n === "string" && n) speciesNamesForLookup.push(n);
+    }
+  }
+
+  let firstObsByName: Record<string, string | null> = {};
+  let lookupStats: Record<string, number> | null = null;
+  if (speciesNamesForLookup.length > 0) {
+    try {
+      const lookupYear = new Date(String(payload.period_start)).getUTCFullYear() || new Date().getUTCFullYear();
+      const lookupRes = await fetch(`${SUPABASE_URL}/functions/v1/get-species-year-first`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-webhook-secret": WEBHOOK_SECRET,
+        },
+        body: JSON.stringify({ species: speciesNamesForLookup, year: lookupYear }),
+      });
+      if (lookupRes.ok) {
+        const lookupJson = await lookupRes.json() as { first_obs: Record<string, string | null>; stats: Record<string, number> };
+        firstObsByName = lookupJson.first_obs ?? {};
+        lookupStats = lookupJson.stats ?? null;
+      } else {
+        console.warn("[insert-elurikkus-raport] year-first lookup HTTP", lookupRes.status);
+      }
+    } catch (err) {
+      console.warn("[insert-elurikkus-raport] year-first lookup error:", err);
+    }
+  }
+
+  const periodStartStr = String(payload.period_start);
+  const dateFilteredArrivals = filteredArrivals.filter((entry: unknown) => {
+    if (!entry || typeof entry !== "object") return true;
+    const name = (entry as { species_et?: unknown }).species_et;
+    if (typeof name !== "string" || !name) return true;
+    const actualFirst = firstObsByName[name];
+    if (!actualFirst) return true;                 // defensive: no lookup hit, KEEP
+    return actualFirst >= periodStartStr;          // KEEP iff true first within period
+  });
+  const earlyArrivalsFiltered = filteredArrivals.length - dateFilteredArrivals.length;
+
   const { data, error } = await supabase
     .from("elurikkus_raport")
     .insert({
@@ -151,7 +203,7 @@ Deno.serve(async (req) => {
       estonia_entries: payload.estonia_entries,
       generation_meta: payload.generation_meta ?? {},
       kevadranne_narrative_et: payload.kevadranne_narrative_et ?? null,
-      kevadranne_arrivals: filteredArrivals,
+      kevadranne_arrivals: dateFilteredArrivals,
     })
     .select("id, generated_at")
     .single();
@@ -166,5 +218,7 @@ Deno.serve(async (req) => {
     id: data.id,
     generated_at: data.generated_at,
     residents_filtered: residentsFiltered,
+    early_arrivals_filtered: earlyArrivalsFiltered,
+    lookup_stats: lookupStats,
   }, 200);
 });

@@ -219,41 +219,41 @@ Deno.serve(async (req) => {
 
   let fetched = 0;
   let errors = 0;
+  let timedOut = false;
+  const startedAt = Date.now();
+  const TIME_BUDGET_MS = 40000; // leave 10s buffer under the 50s function limit
+  const fetchedAt = new Date().toISOString();
+
   if (toFetch.length > 0) {
-    const fetchResults = await mapWithConcurrency(toFetch, CONCURRENCY, async (sp) => {
+    await mapWithConcurrency(toFetch, CONCURRENCY, async (sp) => {
+      // Hard time budget: skip remaining work if we've blown past.
+      if (Date.now() - startedAt > TIME_BUDGET_MS) {
+        timedOut = true;
+        return;
+      }
       try {
         const earliest = await fetchEarliestForSpecies(sp, year, proxyBaseUrl);
-        return { species_et: sp, first_obs_date: earliest };
+        result[sp] = earliest;
+        if (earliest) {
+          // Upsert THIS species immediately so partial work persists across timeouts.
+          const { error: upsertErr } = await supabase
+            .from("species_year_first_obs")
+            .upsert(
+              [{ species_et: sp, year, first_obs_date: earliest, fetched_at: fetchedAt }],
+              { onConflict: "species_et,year" },
+            );
+          if (upsertErr) {
+            console.warn(`[get-species-year-first] upsert failed for ${sp}: ${upsertErr.message}`);
+          } else {
+            fetched++;
+          }
+        }
       } catch (err) {
         console.warn(`[get-species-year-first] error for ${sp}:`, err);
         errors++;
-        return { species_et: sp, first_obs_date: null };
+        result[sp] = null;
       }
     });
-
-    const upsertRows: Array<{ species_et: string; year: number; first_obs_date: string; fetched_at: string }> = [];
-    const fetchedAt = new Date().toISOString();
-    for (const r of fetchResults) {
-      result[r.species_et] = r.first_obs_date;
-      if (r.first_obs_date) {
-        upsertRows.push({
-          species_et: r.species_et,
-          year,
-          first_obs_date: r.first_obs_date,
-          fetched_at: fetchedAt,
-        });
-        fetched++;
-      }
-    }
-
-    if (upsertRows.length > 0) {
-      const { error: upsertErr } = await supabase
-        .from("species_year_first_obs")
-        .upsert(upsertRows, { onConflict: "species_et,year" });
-      if (upsertErr) {
-        console.warn("[get-species-year-first] upsert failed:", upsertErr.message);
-      }
-    }
   }
 
   return json({
@@ -264,6 +264,8 @@ Deno.serve(async (req) => {
       fetched,
       cached_returned: cacheHits,
       errors,
+      timed_out: timedOut,
+      elapsed_ms: Date.now() - startedAt,
     },
   });
 });

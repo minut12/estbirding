@@ -165,6 +165,15 @@ const RESIDENT_EXCLUSIONS: ReadonlySet<string> = new Set([
   "Punapea-vart",         // Aythya ferina (early April)
   "Mägikiur",             // Anthus spinoletta (mid-April)
   "Hõbehaigur",           // Ardea alba (mid-April)
+
+  // ─── Batch 4 — Phase F top-up ────────────────────────────────────────
+  "Vesipapp",             // Cinclus cinclus (resident; my earlier omission)
+  "Pöialpoiss",           // Regulus regulus (year-round resident)
+  "Kaelustuvi",           // Columba palumbus (partial migrant, bulk resident in EE)
+  "Metskiur",             // Anthus trivialis (typical first ~11 April)
+  "Võsaraat",             // Prunella modularis (typical first ~27 February)
+  "Metskurvits",           // Scolopax rusticola (typical first early April)
+  "Valge-toonekurg",      // Ciconia ciconia (typical first late March / early April)
 ]);
 
 const json = (body: unknown, status = 200) =>

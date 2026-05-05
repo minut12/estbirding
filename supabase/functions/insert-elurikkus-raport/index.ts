@@ -93,6 +93,20 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
+  // Filter out species that are residents/winter visitors and shouldn't
+  // appear in spring arrivals. n8n Code node misclassifies them; we clean
+  // here so the persisted row reflects reality.
+  const rawArrivals = Array.isArray(payload.kevadranne_arrivals)
+    ? payload.kevadranne_arrivals
+    : [];
+  const filteredArrivals = rawArrivals.filter((entry: unknown) => {
+    if (!entry || typeof entry !== "object") return true; // keep malformed (defensive)
+    const name = (entry as { species_et?: unknown }).species_et;
+    if (typeof name !== "string" || !name) return true;   // keep if no name (defensive)
+    return !RESIDENT_EXCLUSIONS.has(name);
+  });
+  const residentsFiltered = rawArrivals.length - filteredArrivals.length;
+
   const { data, error } = await supabase
     .from("elurikkus_raport")
     .insert({
@@ -102,7 +116,7 @@ Deno.serve(async (req) => {
       estonia_entries: payload.estonia_entries,
       generation_meta: payload.generation_meta ?? {},
       kevadranne_narrative_et: payload.kevadranne_narrative_et ?? null,
-      kevadranne_arrivals: payload.kevadranne_arrivals ?? [],
+      kevadranne_arrivals: filteredArrivals,
     })
     .select("id, generated_at")
     .single();
@@ -112,5 +126,5 @@ Deno.serve(async (req) => {
     return json({ error: error.message }, 500);
   }
 
-  return json({ ok: true, id: data.id, generated_at: data.generated_at }, 200);
+  return json({ ok: true, id: data.id, generated_at: data.generated_at, residents_filtered: residentsFiltered }, 200);
 });

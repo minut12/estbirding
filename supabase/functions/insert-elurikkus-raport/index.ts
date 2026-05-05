@@ -21,6 +21,36 @@ interface InsertPayload {
   kevadranne_arrivals?: unknown[];
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// RESIDENT_EXCLUSIONS — species the migrant heuristic in the n8n Code node
+// misclassifies as spring arrivals. Filtered out at write time so the DB
+// row's kevadranne_arrivals never contains them. Categories:
+//   - Year-round residents
+//   - Winter visitors (depart in spring, do not arrive)
+// To override per-species without code change, edit the n8n Code node.
+// ─────────────────────────────────────────────────────────────────────────
+const RESIDENT_EXCLUSIONS: ReadonlySet<string> = new Set([
+  // Year-round residents
+  "Rabapistrik",          // Falco peregrinus
+  "Kassikakk",            // Bubo bubo
+  "Kaelus-turteltuvi",    // Streptopelia decaocto
+  "Laanerähn",            // Picoides tridactylus
+  "Kõrvukräts",           // Asio otus
+  "Mänsak",               // Nucifraga caryocatactes
+  "Pasknäär",             // Garrulus glandarius
+  "Habekakk",             // Strix nebulosa
+  "Värbkakk",             // Glaucidium passerinum
+  "Kodukakk",             // Strix aluco
+  "Händkakk",             // Strix uralensis
+  "Laanenäär",            // Perisoreus infaustus
+  "Musträhn",             // Dryocopus martius
+
+  // Winter visitors (depart, not arrive, in spring)
+  "Kirjuhahk",            // Polysticta stelleri
+  "Hangelind",            // Plectrophenax nivalis
+  "Mägi-kanepilind",      // Linaria flavirostris
+]);
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,

@@ -49,6 +49,22 @@ const RESIDENT_EXCLUSIONS: ReadonlySet<string> = new Set([
   "Kirjuhahk",            // Polysticta stelleri
   "Hangelind",            // Plectrophenax nivalis
   "Mägi-kanepilind",      // Linaria flavirostris
+
+  // Batch 2 — additional residents (often unreported in winter so heuristic misfires)
+  "Nurmkana",             // Perdix perdix
+  "Merikajakas",          // Larus marinus
+  "Valgeselg-kirjurähn",  // Dendrocopos leucotos
+  "Kanakull",             // Accipiter gentilis
+  "Tamme-kirjurähn",      // Dendrocoptes medius
+  "Kodutuvi",             // Columba livia
+  "Hahk",                 // Somateria mollissima
+  "Tutt-tihane",          // Lophophanes cristatus
+  "Kuuse-käbilind",       // Loxia curvirostra (irruptive, not seasonal migrant)
+  "Künnivares",           // Corvus frugilegus (partial migrant, bulk overwinter in EE)
+
+  // Batch 2 — additional winter visitors / passage species
+  "Hallõgija",            // Lanius excubitor (mainly winter visitor in EE)
+  "Mustvaeras",           // Melanitta nigra (passage migrant; observations ≠ "arrivals")
 ]);
 
 const json = (body: unknown, status = 200) =>

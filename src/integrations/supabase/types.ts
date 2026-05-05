@@ -975,6 +975,33 @@ export type Database = {
         }
         Relationships: []
       }
+      species_year_first_obs: {
+        Row: {
+          fetched_at: string
+          first_obs_date: string
+          locality: string | null
+          observer: string | null
+          species_et: string
+          year: number
+        }
+        Insert: {
+          fetched_at?: string
+          first_obs_date: string
+          locality?: string | null
+          observer?: string | null
+          species_et: string
+          year: number
+        }
+        Update: {
+          fetched_at?: string
+          first_obs_date?: string
+          locality?: string | null
+          observer?: string | null
+          species_et?: string
+          year?: number
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string

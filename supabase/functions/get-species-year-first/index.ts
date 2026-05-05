@@ -22,7 +22,7 @@ const SPRING_CUTOFF_MMDD = "02-15";   // ignore winter-stray records
 const CACHE_TTL_HOURS = 24;
 const PAGE_LIMIT = 100;
 const MAX_PAGES = 30;
-const CONCURRENCY = 10;
+const CONCURRENCY = 3;
 const PAGE_THROTTLE_MS = 250;
 
 const corsHeaders = {

@@ -146,14 +146,7 @@ serve(async (req) => {
       const text = await metaFile.text();
       const parsed = JSON.parse(text);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        // species_meta_v1.json shape: { version, updatedAt, items: { [speciesName]: {...} } }
-        // Read from `.items` if present, fall back to `parsed` for forward-compat
-        // with older/alternate shapes. Always end up with an object so
-        // `meta?.is_migrant` lookups never throw.
-        speciesMeta =
-          (parsed && typeof parsed === "object" && parsed.items && typeof parsed.items === "object")
-            ? parsed.items
-            : (parsed && typeof parsed === "object" ? parsed : {});
+        speciesMeta = parsed;
       }
     }
   } catch (_e) {

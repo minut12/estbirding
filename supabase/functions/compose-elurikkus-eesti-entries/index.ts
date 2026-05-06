@@ -202,6 +202,7 @@ Deno.serve(async (req) => {
       location: rep.locality ?? "",
       sub_region: rep.county,
       country_code: "EE",
+      sub_id: rep.sub_id ?? null,
       lat: rep.lat,
       lng: rep.lon,
       count: rep.individual_count ?? 1,

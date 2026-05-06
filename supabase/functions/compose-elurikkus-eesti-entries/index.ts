@@ -151,7 +151,7 @@ Deno.serve(async (req) => {
     species_lat: string | null;
     rarity_level: RarityTier;
     rows: ObsRow[];
-    representative: ObsRow;     // earliest observation
+    representative: ObsRow;     // latest observation
     observer_set: Set<string>;
     first_date: string;
     last_date: string;
@@ -185,10 +185,10 @@ Deno.serve(async (req) => {
     }
     if (row.observed_at < agg.first_date) {
       agg.first_date = row.observed_at;
-      agg.representative = row;
     }
     if (row.observed_at > agg.last_date) {
       agg.last_date = row.observed_at;
+      agg.representative = row;
     }
   }
 

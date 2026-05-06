@@ -92,3 +92,6 @@ verify_jwt = false
 
 [functions.get-species-year-first]
 verify_jwt = false
+
+[functions.compose-elurikkus-eesti-entries]
+verify_jwt = false

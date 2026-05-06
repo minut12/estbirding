@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-06T12:29:41.107360Z",
+  "updatedAt": "2026-05-06T17:37:20.619979Z",
   "items": {
     "Ohhoota hõbekajakas": {
       "ebirdCode": "slbgul",
@@ -246,7 +246,7 @@
       "notify": true
     },
     "Mustpugu-rästas": {
-      "ebirdCode": "bktthr1",
+      "ebirdCode": "datthr1",
       "rarityLevel": "mega",
       "scientificName": "Turdus atrogularis",
       "notify": true
@@ -416,7 +416,7 @@
       "notify": true
     },
     "Väikealk": {
-      "ebirdCode": "dovekie",
+      "ebirdCode": "doveki",
       "rarityLevel": "mega",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/vaikealk.webp",
       "scientificName": "Alle alle",
@@ -1630,7 +1630,7 @@
       "notify": true
     },
     "Väikehuik": {
-      "ebirdCode": "lilcra1",
+      "ebirdCode": "litcra1",
       "rarityLevel": "rare",
       "scientificName": "Zapornia parva",
       "notify": true

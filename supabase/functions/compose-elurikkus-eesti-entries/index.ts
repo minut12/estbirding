@@ -3,7 +3,7 @@
 // Composes the Eesti tab entries for the elurikkus_raport.
 // Replaces the cap+rank logic that was inside the n8n Code node.
 //
-// Auth: X-Webhook-Secret header (shared with insert-elurikkus-raport).
+// Auth: none (public endpoint, mirrors get-elurikkus-recent-rarities pattern).
 //
 // Input:  POST { period_start: "YYYY-MM-DD", period_end: "YYYY-MM-DD" }
 // Output: {
@@ -27,7 +27,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const WEBHOOK_SECRET = Deno.env.get("N8N_VAATLUSTE_WEBHOOK_SECRET") ?? "";
 
 const TOTAL_CAP = 200;
 const SPECIES_META_URL_PATH = "/storage/v1/object/public/bird-avatars/meta/species_meta_v1.json";
@@ -85,11 +84,9 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
-  if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !WEBHOOK_SECRET) {
+  if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
     return json({ error: "server_misconfigured" }, 500);
   }
-  const provided = req.headers.get("x-webhook-secret") ?? "";
-  if (!provided || provided !== WEBHOOK_SECRET) return json({ error: "unauthorized" }, 401);
 
   let body: { period_start?: unknown; period_end?: unknown };
   try {

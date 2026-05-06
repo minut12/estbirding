@@ -1,2 +1,2 @@
-[functions._temp_upload_meta]
+[functions.temp-upload-meta]
 verify_jwt = false

@@ -60,6 +60,7 @@ type VaatlusEntry = {
   comparison_et?: string | null;
   ee_probability_pct?: number;
   source?: EntrySource | string;
+  sub_id?: string | null;
   biology_et?: EntryBiology | null;
   sights_stats?: SightsStats | null;
   data_integrity?: 'verified' | 'unverified';
@@ -192,7 +193,7 @@ function buildSubIdLookup(obs: SourceObservation[] | undefined): Map<string, str
 }
 
 function findSubId(entry: VaatlusEntry, lookup: Map<string, string>): string | undefined {
-  return lookup.get(`${entry.species_lat}|${entry.date}|${entry.location}`);
+  return lookup.get(`${entry.species_lat}|${entry.date}|${entry.location}`) ?? entry.sub_id ?? undefined;
 }
 
 const FLAG: Record<string, string> = {
@@ -341,6 +342,21 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
           <span className="text-muted-foreground">Vaatleja(d): </span>
           <span>{obs.text}</span>
         </div>
+      )}
+      {subId && (entry.source === 'ebird' || entry.source === 'et_rarity_topup' || entry.source === 'elurikkus') && (
+        <a
+          href={
+            entry.source === 'elurikkus'
+              ? `https://elurikkus.ee/occurrences/${subId}`
+              : `https://ebird.org/checklist/${subId}`
+          }
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+        >
+          Vaata kontrollnimekirja
+          <ExternalLink className="w-3 h-3" />
+        </a>
       )}
       {typeof entry.count === 'number' && entry.count > 1 && (
         <div className="text-sm">

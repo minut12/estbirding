@@ -343,13 +343,9 @@ function EntryCard({ entry, subId, ebirdCode, avatarUrl }: { entry: VaatlusEntry
           <span>{obs.text}</span>
         </div>
       )}
-      {subId && (entry.source === 'ebird' || entry.source === 'et_rarity_topup' || entry.source === 'elurikkus') && (
+      {subId && (entry.source === 'ebird' || entry.source === 'et_rarity_topup') && (
         <a
-          href={
-            entry.source === 'elurikkus'
-              ? `https://elurikkus.ee/occurrences/${subId}`
-              : `https://ebird.org/checklist/${subId}`
-          }
+          href={`https://ebird.org/checklist/${subId}`}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 text-xs text-primary hover:underline"

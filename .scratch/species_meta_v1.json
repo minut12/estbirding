@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-06T10:29:32.367Z",
+  "updatedAt": "2026-05-06T12:29:41.107360Z",
   "items": {
     "Ohhoota hõbekajakas": {
       "ebirdCode": "slbgul",
@@ -32,7 +32,7 @@
       "scientificName": "Calidris acuminata"
     },
     "Ameerika piilpart": {
-      "ebirdCode": "amewig",
+      "ebirdCode": "gnwtea",
       "rarityLevel": "super",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/ameerika-piilpart.webp",
       "scientificName": "Anas carolinensis"
@@ -246,7 +246,7 @@
       "notify": true
     },
     "Mustpugu-rästas": {
-      "ebirdCode": "retthr1",
+      "ebirdCode": "bktthr1",
       "rarityLevel": "mega",
       "scientificName": "Turdus atrogularis",
       "notify": true
@@ -416,7 +416,7 @@
       "notify": true
     },
     "Väikealk": {
-      "ebirdCode": "ribgul",
+      "ebirdCode": "dovekie",
       "rarityLevel": "mega",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/vaikealk.webp",
       "scientificName": "Alle alle",
@@ -456,7 +456,7 @@
       "notify": true
     },
     "Kaeluskotkas": {
-      "ebirdCode": "eurgr1",
+      "ebirdCode": "eurgri1",
       "rarityLevel": "mega",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/kaeluskotkas.webp",
       "scientificName": "Gyps fulvus"
@@ -701,6 +701,7 @@
     "Kaljukajakas": {
       "ebirdCode": "bklkit",
       "rarityLevel": "super",
+      "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/kaljukajakas.webp",
       "scientificName": "Rissa tridactyla",
       "notify": true
     },
@@ -932,9 +933,9 @@
       "notify": true
     },
     "Raipekotkas": {
+      "ebirdCode": "eurgri1",
       "rarityLevel": "mega",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/raipekotkas.webp",
-      "ebirdCode": "eurgri1",
       "scientificName": "Gyps fulvus"
     },
     "Mõrsjapart": {
@@ -1213,7 +1214,7 @@
       "notify": true
     },
     "Tõmmu-lehelind": {
-      "ebirdCode": "duwwar1",
+      "ebirdCode": "duswar",
       "rarityLevel": "super",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/tommu-lehelind.webp",
       "scientificName": "Phylloscopus fuscatus"
@@ -1348,7 +1349,7 @@
       "notify": true
     },
     "Roosterind-tüll": {
-      "ebirdCode": "lesplo1",
+      "ebirdCode": "eurdot",
       "rarityLevel": "super",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/roosterind-tull.webp",
       "scientificName": "Eudromias morinellus"
@@ -1492,7 +1493,7 @@
       "scientificName": "Columba livia f. domestica"
     },
     "Krüüsel": {
-      "ebirdCode": "blkguj",
+      "ebirdCode": "blkgui",
       "rarityLevel": "rare",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/kruusel.webp",
       "scientificName": "Cepphus grylle"
@@ -1629,7 +1630,7 @@
       "notify": true
     },
     "Väikehuik": {
-      "ebirdCode": "ltrcra1",
+      "ebirdCode": "lilcra1",
       "rarityLevel": "rare",
       "scientificName": "Zapornia parva",
       "notify": true
@@ -1801,7 +1802,7 @@
       "scientificName": "Poecile palustris"
     },
     "Salupäll": {
-      "ebirdCode": "ictwar1",
+      "ebirdCode": "eursco1",
       "rarityLevel": "mega",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/salupall.webp",
       "scientificName": "Otus scops"

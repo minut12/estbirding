@@ -1,7 +1,7 @@
 // supabase/functions/get-ennustus-map/index.ts
 //
 // Returns rows from ennustus_cache as a JSON array.
-// Auth: X-Webhook-Secret: <VAATLUSTE_WEBHOOK_SECRET>  (matches repo convention)
+// Auth: none (public endpoint, mirrors get-elurikkus-recent-rarities pattern).
 // Used by the vaatluste-koordinaator n8n workflow to enrich europe_entries with
 // Estonia's current_pct probability for entries from neighbor countries.
 
@@ -17,22 +17,6 @@ const corsHeaders = {
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
-  }
-
-  // --- Custom-header auth (same pattern as insert-vaatluste-raport) ---
-  const providedSecret = req.headers.get("x-webhook-secret") || "";
-  const expectedSecret = Deno.env.get("VAATLUSTE_WEBHOOK_SECRET");
-  if (!expectedSecret) {
-    return new Response(
-      JSON.stringify({ error: "Server misconfigured: VAATLUSTE_WEBHOOK_SECRET unset" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
-  }
-  if (providedSecret !== expectedSecret) {
-    return new Response(
-      JSON.stringify({ error: "Unauthorized" }),
-      { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
   }
 
   // --- Service-role client to read ennustus_cache (bypasses RLS) ---

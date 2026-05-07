@@ -21,6 +21,7 @@ import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
 import SpeciesPredictionSettings from './SpeciesPredictionSettings';
 import EventLog from './EventLog';
+import { SpeciesMetaEditor } from './SpeciesMetaEditor';
 import { LINNULIIGID_SCOPE, RARILIIN_SCOPE } from '@/lib/mapScope';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import {
@@ -46,7 +47,7 @@ import {
 import { isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
 
 type ResetMode = 'soft' | 'hard' | null;
-type SettingsPage = 'home' | 'news' | 'translations' | 'species' | 'rariliin' | 'species_prediction' | 'event_log';
+type SettingsPage = 'home' | 'news' | 'translations' | 'species' | 'species_editor' | 'rariliin' | 'species_prediction' | 'event_log';
 const LS_RESOLVED_PROXY_BASE = 'resolved_proxy_base_v1';
 const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 const LS_SUPABASE_PROXY_BASE = 'supabase_proxy_base_v1';
@@ -917,6 +918,7 @@ export default function SettingsTab() {
   );
 
   const renderSettingsSpecies = () => <AvatarManager scope={LINNULIIGID_SCOPE} />;
+  const renderSettingsSpeciesEditor = () => <SpeciesMetaEditor />;
   const renderSettingsRariliin = () => <AvatarManager scope={RARILIIN_SCOPE} />;
   const renderSettingsSpeciesPrediction = () => <SpeciesPredictionSettings />;
   const renderSettingsEventLog = () => <EventLog />;
@@ -1006,6 +1008,9 @@ export default function SettingsTab() {
           <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('species')}>
             Linnuliigid
           </Button>
+          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('species_editor')}>
+            Liigi-andmed
+          </Button>
           <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('rariliin')}>
             Rariliin
           </Button>
@@ -1028,6 +1033,7 @@ export default function SettingsTab() {
     if (settingsPage === 'news') return <>{renderSettingsHeader('Uudised')}{renderSettingsNews()}</>;
     if (settingsPage === 'translations') return <>{renderSettingsHeader('Tõlge')}{renderSettingsTranslations()}</>;
     if (settingsPage === 'species') return <>{renderSettingsHeader('Linnuliigid')}{renderSettingsSpecies()}</>;
+    if (settingsPage === 'species_editor') return <>{renderSettingsHeader('Liigi-andmed')}{renderSettingsSpeciesEditor()}</>;
     if (settingsPage === 'rariliin') return <>{renderSettingsHeader('Rariliin')}{renderSettingsRariliin()}</>;
     if (settingsPage === 'species_prediction') return <>{renderSettingsHeader('Species Prediction & Research')}{renderSettingsSpeciesPrediction()}</>;
     if (settingsPage === 'event_log') return <>{renderSettingsHeader('Sündmuste logi')}{renderSettingsEventLog()}</>;

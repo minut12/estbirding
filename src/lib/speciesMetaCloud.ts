@@ -21,6 +21,7 @@ export type SpeciesMetaCloudItem = {
   rariliinCode?: string;
   notificationNote?: string;
   notify?: boolean;
+  is_migrant?: boolean | null;
 };
 
 export type SpeciesMetaCloudJson = {
@@ -91,6 +92,7 @@ function normalizeCloudItem(raw: unknown): SpeciesMetaCloudItem {
     rariliinCode: normalizeUiText(String(x.rariliinCode || '')) || undefined,
     notificationNote: normalizeUiText(String(x.notificationNote || '')) || undefined,
     notify: x.notify === true ? true : undefined,
+    is_migrant: typeof x.is_migrant === 'boolean' ? x.is_migrant : undefined,
   };
 }
 

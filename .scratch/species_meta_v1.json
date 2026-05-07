@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-06T17:37:20.619979Z",
+  "updatedAt": "2026-05-06T19:25:29.886Z",
   "items": {
     "Ohhoota hõbekajakas": {
       "ebirdCode": "slbgul",
@@ -23,6 +23,7 @@
     "Aedporr": {
       "ebirdCode": "shttre1",
       "rarityLevel": "super",
+      "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/aedporr.webp",
       "scientificName": "Certhia brachydactyla",
       "notify": true
     },
@@ -1123,7 +1124,8 @@
       "rarityLevel": "none",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/herilaseviu.webp",
       "scientificName": "Pernis apivorus",
-      "notify": true
+      "notify": true,
+      "is_migrant": true
     },
     "Lääne-sabatihane": {
       "rarityLevel": "mega",
@@ -2414,6 +2416,7 @@
     "Soo-roolind": {
       "ebirdCode": "marwar3",
       "rarityLevel": "none",
+      "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/soo-roolind.webp",
       "scientificName": "Acrocephalus palustris"
     },
     "Sookurg": {

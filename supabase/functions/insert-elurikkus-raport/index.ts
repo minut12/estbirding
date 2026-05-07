@@ -184,8 +184,16 @@ Deno.serve(async (req) => {
   }
 
   const periodStartStr = String(payload.period_start);
+  let dateFilterBypassed = 0;
   const dateFilteredArrivals = filteredArrivals.filter((entry: unknown) => {
     if (!entry || typeof entry !== "object") return true;
+    // Bypass date filter for forced-include species (is_migrant_override: true).
+    // Set by get-elurikkus-arrivals-2026 when species_meta has is_migrant: true.
+    // We trust the override even if the species's true first 2026 obs predates period_start.
+    if ((entry as { is_migrant_override?: unknown }).is_migrant_override === true) {
+      dateFilterBypassed += 1;
+      return true;
+    }
     const name = (entry as { species_et?: unknown }).species_et;
     if (typeof name !== "string" || !name) return true;
     const actualFirst = firstObsByName[name];
@@ -219,6 +227,7 @@ Deno.serve(async (req) => {
     generated_at: data.generated_at,
     residents_filtered: residentsFiltered,
     early_arrivals_filtered: earlyArrivalsFiltered,
+    date_filter_bypassed: dateFilterBypassed,
     lookup_stats: lookupStats,
   }, 200);
 });

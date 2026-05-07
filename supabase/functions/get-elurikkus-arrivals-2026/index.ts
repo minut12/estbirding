@@ -164,6 +164,7 @@ serve(async (req) => {
     county: string | null;
     observer: string | null;
     filter_source: "manual" | "heuristic";
+    is_migrant_override: boolean | null;
   }> = [];
 
   for (const [species_et, state] of bySpecies) {
@@ -196,6 +197,7 @@ serve(async (req) => {
       county: state.first_2026.county,
       observer: state.first_2026.observer,
       filter_source: manualOverride !== undefined ? "manual" : "heuristic",
+      is_migrant_override: typeof manualOverride === "boolean" ? manualOverride : null,
     });
   }
 

@@ -146,7 +146,11 @@ serve(async (req) => {
       const text = await metaFile.text();
       const parsed = JSON.parse(text);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        speciesMeta = parsed;
+        // species_meta_v1.json wraps entries under `items`; older format had keys at top level.
+        // Defensive: try `items` first, fall back to the parsed object itself.
+        speciesMeta = (parsed.items && typeof parsed.items === "object" && !Array.isArray(parsed.items))
+          ? parsed.items
+          : parsed;
       }
     }
   } catch (_e) {

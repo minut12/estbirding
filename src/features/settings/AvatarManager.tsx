@@ -21,13 +21,16 @@ import {
   loadSpeciesMeta,
   seedSpeciesMetaFallback,
   upsertSpeciesMeta,
+  type SpeciesMeta,
   type SpeciesMetaLookupFallback,
 } from '@/lib/speciesMeta';
 import {
   SPECIES_META_LAST_SYNC_AT_KEY,
+  downloadSpeciesMetaJson,
   getSpeciesMetaSyncStatus,
   refreshSpeciesMetaFromCloud,
   saveSpeciesMetaToCloud,
+  type SpeciesMetaCloudItem,
 } from '@/lib/speciesMetaCloud';
 import { addCustomSpecies, removeCustomSpecies, isCustomSpecies } from '@/lib/customSpecies';
 import { addCustomSpeciesToCloud, removeCustomSpeciesFromCloud, refreshCustomSpeciesFromCloud } from '@/lib/customSpeciesCloud';
@@ -52,6 +55,9 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
   const [scopeMetadata, setScopeMetadata] = useState<SpeciesMetaLookupFallback>({});
   const [avatarsReady, setAvatarsReady] = useState(false);
   const [scientificName, setScientificName] = useState('');
+  const [isMigrantMode, setIsMigrantMode] = useState<'heuristic' | 'true' | 'false'>('heuristic');
+  const [notify, setNotify] = useState<boolean>(false);
+  const [cloudItems, setCloudItems] = useState<Record<string, SpeciesMetaCloudItem>>({});
   const [fetchingTaxon, setFetchingTaxon] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newSpeciesName, setNewSpeciesName] = useState('');
@@ -98,6 +104,15 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     return () => window.removeEventListener('species-meta-updated', onMetaUpdated as EventListener);
   }, [scope]);
 
+  // Local merge strips is_migrant — read it directly from cloud JSON.
+  useEffect(() => {
+    let cancelled = false;
+    downloadSpeciesMetaJson(scope)
+      .then((json) => { if (!cancelled) setCloudItems(json?.items ?? {}); })
+      .catch(() => { if (!cancelled) setCloudItems({}); });
+    return () => { cancelled = true; };
+  }, [scope]);
+
   useEffect(() => {
     const onCustomSpeciesUpdated = () => {
       fetchSpeciesList(scope).then((list) => { if (list.length > 0) setSpecies(list.map(normalizeUiText)); });
@@ -123,8 +138,14 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     setEbirdCode(meta.ebirdCode || '');
     setRarityLevel(meta.rarityLevel || 'none');
     setScientificName(meta.scientificName || '');
+    const cloudItem = cloudItems[selected];
+    setIsMigrantMode(
+      cloudItem?.is_migrant === true ? 'true' :
+      cloudItem?.is_migrant === false ? 'false' : 'heuristic'
+    );
+    setNotify(cloudItem?.notify === true);
     setPreview(null);
-  }, [scope, selected, scopeMetadata, avatarsReady]);
+  }, [scope, selected, scopeMetadata, avatarsReady, cloudItems]);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -156,16 +177,20 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     setSaving(true);
     try {
       console.info('[avatar-manager] save start', { species: selected, hasPreview: true });
+      const migrantValue: boolean | null =
+        isMigrantMode === 'true' ? true : isMigrantMode === 'false' ? false : null;
       const patch = {
         ebirdCode: ebirdCode.trim(),
         rarityLevel,
         scientificName: scientificName.trim() || undefined,
+        notify,
       };
       console.info('[avatar-manager] avatar upload start', { species: selected });
       const publicUrl = await uploadSharedAvatar(selected, preview, scope);
       console.info('[avatar-manager] avatar upload end', { species: selected, publicUrl });
-      console.info('[avatar-manager] metadata save start', { species: selected, patch: { ...patch, avatarUrl: publicUrl } });
-      const merged = await saveSpeciesMetaToCloud(selected, { ...patch, avatarUrl: publicUrl }, scope);
+      const cloudPatch = { ...patch, avatarUrl: publicUrl, is_migrant: migrantValue };
+      console.info('[avatar-manager] metadata save start', { species: selected, patch: cloudPatch });
+      const merged = await saveSpeciesMetaToCloud(selected, cloudPatch as unknown as Partial<SpeciesMeta>, scope);
       console.info('[avatar-manager] metadata save end', { species: selected, saved: Boolean(merged[selected]) });
       setCurrentAvatar(publicUrl);
       setPreview(null);
@@ -173,6 +198,8 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
       notifyIframeUpdate('update', selected, publicUrl, scope);
       setLastSyncAt(localStorage.getItem(scope.speciesMetaLastSyncAtKey || SPECIES_META_LAST_SYNC_AT_KEY) || '');
       setSyncStatus(getSpeciesMetaSyncStatus(scope));
+      const refreshed = await downloadSpeciesMetaJson(scope).catch(() => null);
+      if (refreshed) setCloudItems(refreshed.items ?? {});
       toast.success('Liigi seaded salvestati pilve.');
     } catch (ex: any) {
       console.error('[avatar-manager] save error', { species: selected, error: ex });
@@ -184,7 +211,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     } finally {
       setSaving(false);
     }
-  }, [saving, scope, selected, preview, ebirdCode, rarityLevel, scientificName]);
+  }, [saving, scope, selected, preview, ebirdCode, rarityLevel, scientificName, notify, isMigrantMode]);
 
   const handleRemove = useCallback(async () => {
     if (!selected) return;
@@ -260,21 +287,27 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
         } catch {}
       }
 
+      const migrantValue: boolean | null =
+        isMigrantMode === 'true' ? true : isMigrantMode === 'false' ? false : null;
       const patch = {
         ebirdCode: ebirdCode.trim(),
         rarityLevel,
         avatarUrl: currentAvatar || undefined,
         scientificName: resolvedSciName || undefined,
+        notify,
       };
+      const cloudPatch = { ...patch, is_migrant: migrantValue };
       upsertSpeciesMeta(selected, patch, scope);
       window.dispatchEvent(new CustomEvent('species-meta-updated'));
-      console.info('[avatar-manager] metadata-only save start', { species: selected, patch });
-      return patch;
+      console.info('[avatar-manager] metadata-only save start', { species: selected, patch: cloudPatch });
+      return cloudPatch;
     };
 
-    doSave().then((patch) => saveSpeciesMetaToCloud(selected, patch, scope))
+    doSave().then((patch) => saveSpeciesMetaToCloud(selected, patch as unknown as Partial<SpeciesMeta>, scope))
       .then(async () => {
         await refreshSpeciesMetaFromCloud({ force: true, scope }).catch(() => {});
+        const refreshed = await downloadSpeciesMetaJson(scope).catch(() => null);
+        if (refreshed) setCloudItems(refreshed.items ?? {});
         setLastSyncAt(localStorage.getItem(scope.speciesMetaLastSyncAtKey || SPECIES_META_LAST_SYNC_AT_KEY) || '');
         setSyncStatus(getSpeciesMetaSyncStatus(scope));
         console.info('[avatar-manager] metadata-only save end', { species: selected });
@@ -290,7 +323,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
       .finally(() => {
         setSaving(false);
       });
-  }, [saving, scope, selected, ebirdCode, rarityLevel, currentAvatar, scientificName]);
+  }, [saving, scope, selected, ebirdCode, rarityLevel, currentAvatar, scientificName, notify, isMigrantMode]);
 
   const handleSyncNow = useCallback(async () => {
     setSyncing(true);
@@ -526,6 +559,47 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
               <option value="super">{ET_STRINGS.raritySuper}</option>
               <option value="mega">{ET_STRINGS.rarityMega}</option>
             </select>
+            <Label>Saabumise klassifikatsioon</Label>
+            <div className="flex flex-col gap-1 text-sm">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="is_migrant"
+                  value="heuristic"
+                  checked={isMigrantMode === 'heuristic'}
+                  onChange={() => setIsMigrantMode('heuristic')}
+                />
+                <span>Heuristika otsustab (vaikeväärtus)</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="is_migrant"
+                  value="true"
+                  checked={isMigrantMode === 'true'}
+                  onChange={() => setIsMigrantMode('true')}
+                />
+                <span>Alati saabuja (jäta talvine vaatlus tähelepanuta)</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="is_migrant"
+                  value="false"
+                  checked={isMigrantMode === 'false'}
+                  onChange={() => setIsMigrantMode('false')}
+                />
+                <span>Ei ole saabuja (alati välistatud)</span>
+              </label>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={notify}
+                onChange={(e) => setNotify(e.target.checked)}
+              />
+              <span>Saada teavitus uutest vaatlustest</span>
+            </label>
             <Button variant="outline" className="w-full" onClick={handleMetaSave} disabled={saving}>
               {ET_STRINGS.saveSpeciesSettings}
             </Button>

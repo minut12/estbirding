@@ -67,46 +67,46 @@ function extractMunicipalityFromLocality(text: string | null | undefined): strin
   return m ? m[1].trim() : null;
 }
 
-function resolveCoordsFromMostRecent(
-  mostRecent: ParsedObservation | null,
-): { lat: number | null; lon: number | null; coords_source: string; coords_status: string } {
-  if (!mostRecent) {
-    return { lat: null, lon: null, coords_source: "none", coords_status: "missing" };
-  }
-  const lat = mostRecent.lat;
-  const lon = mostRecent.lon;
-  if (Number.isFinite(lat as number) && Number.isFinite(lon as number)) {
-    return { lat: lat as number, lon: lon as number, coords_source: "exact", coords_status: "public" };
-  }
+interface ResolvedPick {
+  obs: ParsedObservation;
+  idx: number;
+  lat: number;
+  lon: number;
+  coords_source: string;
+  coords_status: string;
+}
 
-  // 2. Exact-match municipality from locality
-  if (mostRecent.locality) {
-    const mKey = normalizeName(mostRecent.locality)
-      .replace(/_linn$/, "").replace(/_vald$/, "").replace(/_alev$/, "").replace(/_alevik$/, "");
-    const mCentroid = mKey ? MUNICIPALITY_CENTROIDS[mKey] : null;
-    if (mCentroid) {
-      return { lat: mCentroid.lat, lon: mCentroid.lon, coords_source: "municipality_centroid", coords_status: "restricted" };
+function pickResolvedObs(observations: ParsedObservation[]): ResolvedPick | null {
+  for (let i = 0; i < observations.length; i++) {
+    const o = observations[i];
+    if (Number.isFinite(o.lat as number) && Number.isFinite(o.lon as number)) {
+      return { obs: o, idx: i, lat: o.lat as number, lon: o.lon as number, coords_source: "exact", coords_status: "public" };
     }
-    // 3. Substring fallback
-    const lower = mostRecent.locality.toLowerCase();
-    for (const key of Object.keys(MUNICIPALITY_CENTROIDS)) {
-      if (lower.includes(key)) {
-        const c = MUNICIPALITY_CENTROIDS[key];
-        return { lat: c.lat, lon: c.lon, coords_source: "municipality_centroid", coords_status: "restricted" };
+    if (o.locality) {
+      const mKey = normalizeName(o.locality)
+        .replace(/_linn$/, "").replace(/_vald$/, "").replace(/_alev$/, "").replace(/_alevik$/, "");
+      const mCentroid = mKey ? MUNICIPALITY_CENTROIDS[mKey] : null;
+      if (mCentroid) {
+        return { obs: o, idx: i, lat: mCentroid.lat, lon: mCentroid.lon, coords_source: "municipality_centroid", coords_status: "restricted" };
+      }
+      const lower = o.locality.toLowerCase();
+      let subHit: { lat: number; lon: number } | null = null;
+      for (const key of Object.keys(MUNICIPALITY_CENTROIDS)) {
+        if (lower.includes(key)) { subHit = MUNICIPALITY_CENTROIDS[key]; break; }
+      }
+      if (subHit) {
+        return { obs: o, idx: i, lat: subHit.lat, lon: subHit.lon, coords_source: "municipality_centroid", coords_status: "restricted" };
+      }
+    }
+    if (o.county) {
+      const cKey = normalizeName(o.county).replace(/_county$/, "").replace(/_maakond$/, "");
+      const cCentroid = cKey ? COUNTY_CENTROIDS[cKey] : null;
+      if (cCentroid) {
+        return { obs: o, idx: i, lat: cCentroid.lat, lon: cCentroid.lon, coords_source: "county_centroid", coords_status: "restricted" };
       }
     }
   }
-
-  // 4. County
-  if (mostRecent.county) {
-    const cKey = normalizeName(mostRecent.county).replace(/_county$/, "").replace(/_maakond$/, "");
-    const cCentroid = cKey ? COUNTY_CENTROIDS[cKey] : null;
-    if (cCentroid) {
-      return { lat: cCentroid.lat, lon: cCentroid.lon, coords_source: "county_centroid", coords_status: "restricted" };
-    }
-  }
-
-  return { lat: null, lon: null, coords_source: "none", coords_status: "missing" };
+  return null;
 }
 
 interface ParsedObservation {
@@ -504,33 +504,37 @@ Deno.serve(async (req) => {
 
       const detailUrl = extractDetailUrl(html, name);
 
-      const resolved = resolveCoordsFromMostRecent(mostRecent);
+      const resolved = pickResolvedObs(observations);
+      const picked = resolved?.obs ?? null;
+      const metaSource = picked ?? mostRecent;
 
       console.log('[elu-cache]', name, '→', {
-        coords_source: resolved.coords_source,
-        locality: mostRecent?.locality ?? null,
-        lat: resolved.lat,
-        lon: resolved.lon,
-        observed_at: mostRecent?.observed_at ?? null,
+        picked_idx: resolved?.idx ?? -1,
+        total_obs: observations.length,
+        coords_source: resolved?.coords_source ?? 'none',
+        locality: metaSource?.locality ?? null,
+        lat: resolved?.lat ?? null,
+        lon: resolved?.lon ?? null,
+        observed_at: metaSource?.observed_at ?? null,
       });
 
-      // === WRITE 1: elurikkus_cache — atomic from mostRecent + resolver ===
+      // === WRITE 1: elurikkus_cache — atomic from picked obs (or mostRecent meta if none resolved) ===
       const cacheRow = {
         species_name: name,
-        lat: resolved.lat,
-        lon: resolved.lon,
+        lat: resolved?.lat ?? null,
+        lon: resolved?.lon ?? null,
         occ7,
-        t: mostRecent?.observed_at ?? t ?? null,
-        coords_status: resolved.coords_status,
-        coords_source: resolved.coords_source,
-        locality: mostRecent?.locality ?? null,
-        municipality: mostRecent?.municipality ?? null,
-        county: mostRecent?.county ?? null,
+        t: metaSource?.observed_at ?? t ?? null,
+        coords_status: resolved?.coords_status ?? "missing",
+        coords_source: resolved?.coords_source ?? "none",
+        locality: metaSource?.locality ?? null,
+        municipality: metaSource?.municipality ?? null,
+        county: metaSource?.county ?? null,
         open_url: detailUrl || searchUrl,
         search_url: searchUrl,
-        individual_count: mostRecent?.individual_count ?? null,
-        behavior: mostRecent?.behavior ?? null,
-        collectors: mostRecent?.observer ?? null,
+        individual_count: metaSource?.individual_count ?? null,
+        behavior: metaSource?.behavior ?? null,
+        collectors: metaSource?.observer ?? null,
         fetched_at: new Date().toISOString(),
       };
 

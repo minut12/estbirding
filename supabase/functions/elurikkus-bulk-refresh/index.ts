@@ -545,6 +545,29 @@ Deno.serve(async (req) => {
         observed_at: metaSource?.observed_at ?? null,
       });
 
+      // === GUARD: never downgrade an existing 'exact' cache row to a lower-precision source ===
+      const { data: existing } = await supabase
+        .from('elurikkus_cache')
+        .select('coords_source, lat, lon')
+        .eq('species_name', name)
+        .maybeSingle();
+
+      console.log('[elu-cache]', name, 'existing:', {
+        source: existing?.coords_source ?? '(no row)',
+        lat: existing?.lat ?? null,
+      });
+
+      const existingIsExact =
+        existing?.coords_source === 'exact' &&
+        Number.isFinite(existing?.lat) &&
+        Number.isFinite(existing?.lon);
+
+      if (existingIsExact && (resolved?.coords_source ?? 'none') !== 'exact') {
+        console.log('[elu-cache] SKIP-PRESERVE-EXACT', name,
+          '(existing exact GPS, new resolution =', (resolved?.coords_source ?? 'none') + ')');
+        continue;
+      }
+
       // === WRITE 1: elurikkus_cache — atomic from picked obs (or mostRecent meta if none resolved) ===
       const cacheRow = {
         species_name: name,

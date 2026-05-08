@@ -257,10 +257,37 @@ function buildColumnIndex(cells: string[]): Record<string, number> {
   return colIndex;
 }
 
-function parseObservationsFromHtml(html: string): ObservationParseResult {
+function parseObservationsFromHtml(html: string, species?: string): ObservationParseResult {
   const observations: ParsedObservation[] = [];
   let skippedNoDate = 0;
   let colIndex: Record<string, number> = {};
+
+  // JSON pre-pass: extract real GPS from SvelteKit-fetched JSON block
+  const sveltekitRe = /<script type="application\/json" data-sveltekit-fetched data-url="https:\/\/elurikkus\.ee\/api\/occurrences\/search"[^>]*>([\s\S]*?)<\/script>/;
+  const m = html.match(sveltekitRe);
+  const coordsBySubId = new Map<string, { lat: number | null; lon: number | null; municipality: string | null; county: string | null; locality: string | null }>();
+  if (m) {
+    try {
+      const envelope = JSON.parse(m[1]);
+      const inner = typeof envelope.body === "string" ? JSON.parse(envelope.body) : envelope.body;
+      for (const r of (inner?.results ?? [])) {
+        const id = r?.id != null ? String(r.id) : "";
+        if (!id) continue;
+        const lat = Number(r.latitude);
+        const lon = Number(r.longitude);
+        coordsBySubId.set(id, {
+          lat: Number.isFinite(lat) && lat !== 0 ? lat : null,
+          lon: Number.isFinite(lon) && lon !== 0 ? lon : null,
+          municipality: r.municipality || null,
+          county: r.county || null,
+          locality: r.locality || null,
+        });
+      }
+    } catch (_e) {
+      // leave map empty; row parser still extracts text fields
+    }
+  }
+
   // Iterate <tr>...</tr>
   const rowRe = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
   let rowMatch: RegExpExecArray | null;
@@ -320,19 +347,38 @@ function parseObservationsFromHtml(html: string): ObservationParseResult {
     const behavior = colIndex.behavior !== undefined ? cellTexts[colIndex.behavior] || null : null;
 
     const finalLocality = locality && locality.length <= 200 ? locality : null;
+
+    // Merge JSON pre-pass coords/fields when available
+    const j = sub_id ? coordsBySubId.get(String(sub_id)) : null;
+    let mergedLat = lat;
+    let mergedLon = lon;
+    let mergedLocality: string | null = finalLocality;
+    let mergedMunicipality: string | null = extractMunicipalityFromLocality(finalLocality);
+    let mergedCounty: string | null = county && county.length <= 100 ? county : null;
+    if (j) {
+      if (j.lat != null && j.lon != null) {
+        mergedLat = j.lat;
+        mergedLon = j.lon;
+      }
+      mergedLocality = j.locality || mergedLocality || j.municipality || j.county || null;
+      mergedMunicipality = j.municipality || mergedMunicipality || null;
+      mergedCounty = j.county || mergedCounty || null;
+    }
+
     observations.push({
       sub_id,
       observed_at,
-      locality: finalLocality,
-      municipality: extractMunicipalityFromLocality(finalLocality),
-      county: county && county.length <= 100 ? county : null,
-      lat,
-      lon,
+      locality: mergedLocality,
+      municipality: mergedMunicipality,
+      county: mergedCounty,
+      lat: mergedLat,
+      lon: mergedLon,
       observer: observer && observer.length <= 200 ? observer : null,
       individual_count,
       behavior,
     });
   }
+  console.log("[elu-parse]", species ?? "(unknown)", "jsonHits:", coordsBySubId.size, "rows:", observations.length);
   return { observations, skippedNoDate };
 }
 
@@ -494,7 +540,7 @@ Deno.serve(async (req) => {
       const html = await fetchWithTimeout(searchUrl, 10000);
 
       // Parse per-observation rows from the HTML
-      const parseResult = parseObservationsFromHtml(html);
+      const parseResult = parseObservationsFromHtml(html, name);
       const observations = parseResult.observations;
       totalSkippedNoDate += parseResult.skippedNoDate;
       // Sort by observed_at desc (string ISO sort works)

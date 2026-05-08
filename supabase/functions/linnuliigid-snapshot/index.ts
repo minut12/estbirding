@@ -897,30 +897,125 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
   }
 
   const force = String(url.searchParams.get("force") || "").trim() === "1";
-  const sourceUrl = `https://elurikkus.ee/app/occurrences/search?text=${encodeURIComponent(species)}&_ts=${Date.now()}${force ? "&force=1" : ""}`;
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  const buildPageUrl = (page: number): string => {
+    const u = new URL("https://elurikkus.ee/app/occurrences/search");
+    u.searchParams.set("text", species);
+    u.searchParams.set("limit", "100");
+    u.searchParams.set("offset", String(page * 100));
+    u.searchParams.set("orderBy", "event_date_naive");
+    u.searchParams.set("orderAscending", "false");
+    u.searchParams.set("_ts", String(Date.now()));
+    if (force) u.searchParams.set("force", "1");
+    return u.toString();
+  };
+  const sourceUrl = buildPageUrl(0);
   const startedAt = Date.now();
   try {
-    const upstreamRes = await fetch(sourceUrl, {
-      method: "GET",
-      headers: {
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-        "User-Agent": "EstBirding/1.0",
-      },
-    });
-    const html = await upstreamRes.text();
+    const MAX_PAGES = 30;
+    const MAX_ITEMS = 1500;
+    const mergedItems: LiveOccItem[] = [];
+    const mergedRows: EluSearchRow[] = [];
+    let pagesFetched = 0;
+    let paginationStopReason: "empty_page" | "max_pages" | "max_items" | "fetch_error" = "max_pages";
+    let totalUpstreamBytes = 0;
+    let firstPageHtml = "";
+    let firstPageStatus = 0;
+    let lastPageStatus = 0;
+
+    const fetchPage = async (pageUrl: string): Promise<{ ok: boolean; status: number; html: string; bytes: number }> => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 8000);
+        try {
+          const res = await fetch(pageUrl, {
+            method: "GET",
+            headers: {
+              "Cache-Control": "no-cache",
+              "Pragma": "no-cache",
+              "User-Agent": "EstBirding/1.0",
+            },
+            signal: ctrl.signal,
+          });
+          const html = await res.text();
+          clearTimeout(timer);
+          const bytes = new TextEncoder().encode(html).length;
+          return { ok: res.ok, status: res.status, html, bytes };
+        } catch (e) {
+          clearTimeout(timer);
+          if (attempt === 0) {
+            await sleep(500);
+            continue;
+          }
+          console.error("[elurikkus_species] page fetch failed", { pageUrl, err: String((e as Error)?.message || e) });
+          return { ok: false, status: 0, html: "", bytes: 0 };
+        }
+      }
+      return { ok: false, status: 0, html: "", bytes: 0 };
+    };
+
+    pageLoop: for (let page = 0; page < MAX_PAGES; page++) {
+      if (page > 0) await sleep(100);
+      const pageUrl = buildPageUrl(page);
+      const r = await fetchPage(pageUrl);
+      pagesFetched++;
+      totalUpstreamBytes += r.bytes;
+      lastPageStatus = r.status;
+      if (page === 0) {
+        firstPageHtml = r.html;
+        firstPageStatus = r.status;
+      }
+      if (!r.ok) {
+        paginationStopReason = "fetch_error";
+        console.error("[elurikkus_species] stopping pagination after fetch error", { species, page, status: r.status });
+        break pageLoop;
+      }
+      const pageItems = parseElurikkusHtmlItems(r.html);
+      const pageRows = parseSearchRowsFromHtml(r.html).filter((row) => Number.isFinite(row.ms || NaN));
+      if (pageItems.length === 0 && pageRows.length === 0) {
+        paginationStopReason = "empty_page";
+        break pageLoop;
+      }
+      for (const it of pageItems) {
+        mergedItems.push(it);
+        if (mergedItems.length >= MAX_ITEMS) break;
+      }
+      for (const row of pageRows) mergedRows.push(row);
+      if (mergedItems.length >= MAX_ITEMS) {
+        paginationStopReason = "max_items";
+        break pageLoop;
+      }
+    }
+
     const durationMs = Date.now() - startedAt;
-    const upstreamBytes = new TextEncoder().encode(html).length;
-    const items = parseElurikkusHtmlItems(html);
-    const parsedSearch = parseElurikkusSearchPage([html]);
+    const items = mergedItems.slice(0, MAX_ITEMS);
+
+    const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+    const occ7 = items.reduce((n, it) => {
+      const t = it.observedAt ? Date.parse(it.observedAt) : NaN;
+      return Number.isFinite(t) && t >= cutoff ? n + 1 : n;
+    }, 0);
+
+    let dataMaxAt: string | null = null;
+    {
+      let maxTs = 0;
+      for (const it of items) {
+        if (!it.observedAt) continue;
+        const t = Date.parse(it.observedAt);
+        if (Number.isFinite(t) && t > maxTs) { maxTs = t; dataMaxAt = it.observedAt; }
+      }
+    }
+
+    const parsedSearch = parseElurikkusSearchPage([firstPageHtml]);
     const parsedSummary = summarizeParsedElurikkusRecords(parsedSearch.records);
-    const parsedRows = parseSearchRowsFromHtml(html)
-      .filter((r) => Number.isFinite(r.ms || NaN))
-      .sort((a, b) => Number(b.ms || 0) - Number(a.ms || 0));
-    const estRows = parsedRows.filter((r) => isLikelyEstoniaRow(r));
-    const newestRows = (estRows.length ? estRows : parsedRows).slice(0, 50);
-    const dataMaxAt = newestRows.length ? (newestRows[0].observedAt || null) : (items.length ? items[0].observedAt : null);
-    const occ7 = countOcc7FromRows(estRows.length ? estRows : parsedRows);
+
+    const sortedRows = mergedRows.slice().sort((a, b) => Number(b.ms || 0) - Number(a.ms || 0));
+    const estRows = sortedRows.filter((r) => isLikelyEstoniaRow(r));
+    const newestRows = (estRows.length ? estRows : sortedRows).slice(0, 50);
+    if (!dataMaxAt && newestRows.length) {
+      dataMaxAt = newestRows[0].observedAt || dataMaxAt;
+    }
+
     let selected: Record<string, unknown> | null = null;
     for (let i = 0; i < Math.min(10, newestRows.length); i++) {
       const row = newestRows[i];
@@ -958,36 +1053,10 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
         // continue to next row
       }
     }
-    const totalMatch = html.match(/returns\s+([\d\s,\.]+)\s+results/i);
-    const totalResults = totalMatch ? Number(String(totalMatch[1] || "").replace(/[^\d]/g, "")) || 0 : 0;
-    if (!upstreamRes.ok) {
-      return new Response(
-        JSON.stringify(withSignature("elurikkus_species", {
-          ok: false,
-          query: species,
-          stage: "upstream",
-          species,
-          sourceUrl,
-          upstreamStatus: upstreamRes.status,
-          upstreamBytes,
-          durationMs,
-          htmlLength: html.length,
-          dataMaxAt,
-          occ7,
-          elurikkusAvailable: parsedSearch.available,
-          elurikkusRecentRecords: parsedSummary.records,
-          freshestElurikkusDate: parsedSummary.freshestElurikkusDate,
-          freshestElurikkusLocality: parsedSummary.freshestElurikkusLocality,
-          topElurikkusLocalities: parsedSummary.topElurikkusLocalities,
-          parserDebug: parsedSearch.debug,
-          totalResults,
-          selected,
-          items,
-          message: `Upstream HTTP ${upstreamRes.status}`,
-        })),
-        { status: upstreamRes.status, headers: buildModeHeaders("elurikkus_species") },
-      );
-    }
+
+    const totalMatch = firstPageHtml.match(/returns\s+([\d\s,\.]+)\s+results/i);
+    const totalResultsParsed = totalMatch ? Number(String(totalMatch[1] || "").replace(/[^\d]/g, "")) || 0 : 0;
+    const totalResults = totalResultsParsed > 0 ? totalResultsParsed : items.length;
 
     return new Response(
       JSON.stringify(withSignature("elurikkus_species", {
@@ -995,10 +1064,10 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
         query: species,
         species,
         sourceUrl,
-        upstreamStatus: upstreamRes.status,
-        upstreamBytes,
+        upstreamStatus: firstPageStatus || lastPageStatus,
+        upstreamBytes: totalUpstreamBytes,
         durationMs,
-        htmlLength: html.length,
+        htmlLength: firstPageHtml.length,
         totalResults,
         dataMaxAt,
         occ7,
@@ -1009,8 +1078,10 @@ async function handleElurikkusSpeciesRequest(req: Request, url: URL): Promise<Re
         topElurikkusLocalities: parsedSummary.topElurikkusLocalities,
         parserDebug: parsedSearch.debug,
         selected,
-        sample: html.slice(0, 200),
+        sample: firstPageHtml.slice(0, 200),
         items,
+        pagesFetched,
+        paginationStopReason,
       })),
       { status: 200, headers: buildModeHeaders("elurikkus_species") },
     );

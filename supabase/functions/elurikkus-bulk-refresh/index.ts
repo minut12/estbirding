@@ -504,33 +504,37 @@ Deno.serve(async (req) => {
 
       const detailUrl = extractDetailUrl(html, name);
 
-      const resolved = resolveCoordsFromMostRecent(mostRecent);
+      const resolved = pickResolvedObs(observations);
+      const picked = resolved?.obs ?? null;
+      const metaSource = picked ?? mostRecent;
 
       console.log('[elu-cache]', name, '→', {
-        coords_source: resolved.coords_source,
-        locality: mostRecent?.locality ?? null,
-        lat: resolved.lat,
-        lon: resolved.lon,
-        observed_at: mostRecent?.observed_at ?? null,
+        picked_idx: resolved?.idx ?? -1,
+        total_obs: observations.length,
+        coords_source: resolved?.coords_source ?? 'none',
+        locality: metaSource?.locality ?? null,
+        lat: resolved?.lat ?? null,
+        lon: resolved?.lon ?? null,
+        observed_at: metaSource?.observed_at ?? null,
       });
 
-      // === WRITE 1: elurikkus_cache — atomic from mostRecent + resolver ===
+      // === WRITE 1: elurikkus_cache — atomic from picked obs (or mostRecent meta if none resolved) ===
       const cacheRow = {
         species_name: name,
-        lat: resolved.lat,
-        lon: resolved.lon,
+        lat: resolved?.lat ?? null,
+        lon: resolved?.lon ?? null,
         occ7,
-        t: mostRecent?.observed_at ?? t ?? null,
-        coords_status: resolved.coords_status,
-        coords_source: resolved.coords_source,
-        locality: mostRecent?.locality ?? null,
-        municipality: mostRecent?.municipality ?? null,
-        county: mostRecent?.county ?? null,
+        t: metaSource?.observed_at ?? t ?? null,
+        coords_status: resolved?.coords_status ?? "missing",
+        coords_source: resolved?.coords_source ?? "none",
+        locality: metaSource?.locality ?? null,
+        municipality: metaSource?.municipality ?? null,
+        county: metaSource?.county ?? null,
         open_url: detailUrl || searchUrl,
         search_url: searchUrl,
-        individual_count: mostRecent?.individual_count ?? null,
-        behavior: mostRecent?.behavior ?? null,
-        collectors: mostRecent?.observer ?? null,
+        individual_count: metaSource?.individual_count ?? null,
+        behavior: metaSource?.behavior ?? null,
+        collectors: metaSource?.observer ?? null,
         fetched_at: new Date().toISOString(),
       };
 

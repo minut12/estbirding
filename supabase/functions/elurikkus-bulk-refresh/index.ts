@@ -540,7 +540,7 @@ Deno.serve(async (req) => {
       const html = await fetchWithTimeout(searchUrl, 10000);
 
       // Parse per-observation rows from the HTML
-      const parseResult = parseObservationsFromHtml(html);
+      const parseResult = parseObservationsFromHtml(html, name);
       const observations = parseResult.observations;
       totalSkippedNoDate += parseResult.skippedNoDate;
       // Sort by observed_at desc (string ISO sort works)

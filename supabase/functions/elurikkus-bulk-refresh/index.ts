@@ -14,10 +14,106 @@ const DEFAULT_SPECIES: string[] = [
 
 const DELAY_MS = 600;
 
+// Centroid tables duplicated from linnuliigid-snapshot (consolidation TBD).
+const COUNTY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
+  harju: { lat: 59.40, lon: 24.80 },
+  hiiu: { lat: 58.92, lon: 22.60 },
+  ida_viru: { lat: 59.35, lon: 27.42 },
+  jõgeva: { lat: 58.75, lon: 26.40 },
+  järva: { lat: 58.89, lon: 25.57 },
+  lääne: { lat: 58.94, lon: 23.54 },
+  lääne_viru: { lat: 59.30, lon: 26.33 },
+  põlva: { lat: 58.05, lon: 27.05 },
+  pärnu: { lat: 58.38, lon: 24.53 },
+  rapla: { lat: 58.99, lon: 24.79 },
+  saare: { lat: 58.33, lon: 22.48 },
+  tartu: { lat: 58.38, lon: 26.73 },
+  valga: { lat: 57.78, lon: 26.04 },
+  viljandi: { lat: 58.36, lon: 25.60 },
+  võru: { lat: 57.84, lon: 27.00 },
+};
+const MUNICIPALITY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
+  tartu: { lat: 58.38, lon: 26.73 },
+  tallinn: { lat: 59.44, lon: 24.75 },
+  pärnu: { lat: 58.38, lon: 24.50 },
+  narva: { lat: 59.38, lon: 28.19 },
+  viljandi: { lat: 58.36, lon: 25.60 },
+  võru: { lat: 57.84, lon: 27.00 },
+  rakvere: { lat: 59.35, lon: 26.36 },
+  haapsalu: { lat: 58.94, lon: 23.54 },
+  kuressaare: { lat: 58.25, lon: 22.49 },
+  jõgeva: { lat: 58.75, lon: 26.40 },
+  paide: { lat: 58.88, lon: 25.56 },
+  rapla: { lat: 58.99, lon: 24.79 },
+  valga: { lat: 57.78, lon: 26.04 },
+  põlva: { lat: 58.05, lon: 27.05 },
+};
+
+function normalizeName(v: unknown): string {
+  return String(v || "").toLowerCase()
+    .replace(/[ä]/g, "a")
+    .replace(/[ö]/g, "o")
+    .replace(/[õ]/g, "o")
+    .replace(/[ü]/g, "u")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function extractMunicipalityFromLocality(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const m = text.match(
+    /([A-Za-zÀ-ž]+(?:-[A-Za-zÀ-ž]+)*(?:\s+[A-Za-zÀ-ž]+(?:-[A-Za-zÀ-ž]+)*)*\s+(?:vald|linn))/i,
+  );
+  return m ? m[1].trim() : null;
+}
+
+function resolveCoordsFromMostRecent(
+  mostRecent: ParsedObservation | null,
+): { lat: number | null; lon: number | null; coords_source: string; coords_status: string } {
+  if (!mostRecent) {
+    return { lat: null, lon: null, coords_source: "none", coords_status: "missing" };
+  }
+  const lat = mostRecent.lat;
+  const lon = mostRecent.lon;
+  if (Number.isFinite(lat as number) && Number.isFinite(lon as number)) {
+    return { lat: lat as number, lon: lon as number, coords_source: "exact", coords_status: "public" };
+  }
+
+  // 2. Exact-match municipality from locality
+  if (mostRecent.locality) {
+    const mKey = normalizeName(mostRecent.locality)
+      .replace(/_linn$/, "").replace(/_vald$/, "").replace(/_alev$/, "").replace(/_alevik$/, "");
+    const mCentroid = mKey ? MUNICIPALITY_CENTROIDS[mKey] : null;
+    if (mCentroid) {
+      return { lat: mCentroid.lat, lon: mCentroid.lon, coords_source: "municipality_centroid", coords_status: "restricted" };
+    }
+    // 3. Substring fallback
+    const lower = mostRecent.locality.toLowerCase();
+    for (const key of Object.keys(MUNICIPALITY_CENTROIDS)) {
+      if (lower.includes(key)) {
+        const c = MUNICIPALITY_CENTROIDS[key];
+        return { lat: c.lat, lon: c.lon, coords_source: "municipality_centroid", coords_status: "restricted" };
+      }
+    }
+  }
+
+  // 4. County
+  if (mostRecent.county) {
+    const cKey = normalizeName(mostRecent.county).replace(/_county$/, "").replace(/_maakond$/, "");
+    const cCentroid = cKey ? COUNTY_CENTROIDS[cKey] : null;
+    if (cCentroid) {
+      return { lat: cCentroid.lat, lon: cCentroid.lon, coords_source: "county_centroid", coords_status: "restricted" };
+    }
+  }
+
+  return { lat: null, lon: null, coords_source: "none", coords_status: "missing" };
+}
+
 interface ParsedObservation {
   sub_id: string | null;
   observed_at: string; // ISO date YYYY-MM-DD
   locality: string | null;
+  municipality: string | null;
   county: string | null;
   lat: number | null;
   lon: number | null;

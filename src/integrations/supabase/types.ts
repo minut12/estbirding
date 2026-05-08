@@ -92,10 +92,13 @@ export type Database = {
           collectors: string | null
           coords_source: string | null
           coords_status: string | null
+          county: string | null
           fetched_at: string
           individual_count: number | null
           lat: number | null
+          locality: string | null
           lon: number | null
+          municipality: string | null
           occ7: number | null
           open_url: string | null
           search_url: string | null
@@ -107,10 +110,13 @@ export type Database = {
           collectors?: string | null
           coords_source?: string | null
           coords_status?: string | null
+          county?: string | null
           fetched_at?: string
           individual_count?: number | null
           lat?: number | null
+          locality?: string | null
           lon?: number | null
+          municipality?: string | null
           occ7?: number | null
           open_url?: string | null
           search_url?: string | null
@@ -122,10 +128,13 @@ export type Database = {
           collectors?: string | null
           coords_source?: string | null
           coords_status?: string | null
+          county?: string | null
           fetched_at?: string
           individual_count?: number | null
           lat?: number | null
+          locality?: string | null
           lon?: number | null
+          municipality?: string | null
           occ7?: number | null
           open_url?: string | null
           search_url?: string | null

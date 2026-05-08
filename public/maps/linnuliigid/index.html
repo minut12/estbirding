@@ -7443,7 +7443,7 @@ async function _loadElurikkusCacheFromSupabase(){
     var anonKey = cfg.anonKey;
     if(!supabaseUrl || !anonKey) return;
     var res = await fetch(
-      supabaseUrl + '/rest/v1/elurikkus_cache?select=*&order=fetched_at.desc',
+      supabaseUrl + '/rest/v1/elurikkus_cache?select=species_name,lat,lon,occ7,t,open_url,search_url,fetched_at,coords_status,coords_source,locality,municipality,county,individual_count,behavior,collectors&order=fetched_at.desc',
       {
         headers: {
           'apikey': anonKey,
@@ -7463,10 +7463,9 @@ async function _loadElurikkusCacheFromSupabase(){
       var existingTs = p.clientScannedAt ? new Date(p.clientScannedAt).getTime() : 0;
       var cacheTs = new Date(row.fetched_at).getTime();
       if(cacheTs <= existingTs) continue;
-      var hasCoords = row.lat && row.lon &&
-        row.coords_status === 'public' &&
-        Number.isFinite(row.lat) && Number.isFinite(row.lon);
-      var merged = Object.assign({}, p, {
+      var hasCoords = Number.isFinite(row.lat) && Number.isFinite(row.lon);
+      /* PRE-STAGE-C BLOCK (kept for rollback until verification passes):
+      var merged_OLD = Object.assign({}, p, {
         occ7: typeof row.occ7 === 'number' ? row.occ7 : p.occ7,
         t: row.t || p.t,
         src: 'ElurikkusCloud',
@@ -7475,8 +7474,43 @@ async function _loadElurikkusCacheFromSupabase(){
         coords_status: row.coords_status || p.coords_status,
         coords_source: row.coords_source || p.coords_source,
       });
-      if(hasCoords){ merged.lat = row.lat; merged.lon = row.lon; }
+      if(hasCoords){ merged_OLD.lat = row.lat; merged_OLD.lon = row.lon; }
+      */
+      var newerT = (row.t && (!p.t || String(row.t) > String(p.t))) ? row.t : (p.t || row.t || null);
+      var merged = Object.assign({}, p, {
+        occ7: typeof row.occ7 === 'number' ? row.occ7 : p.occ7,
+        t: newerT,
+        src: 'ElurikkusCloud',
+        openUrl: row.open_url || p.openUrl,
+        searchUrl: row.search_url || p.searchUrl,
+        coords_status: row.coords_status,
+        coords_source: row.coords_source,
+      });
+      if(hasCoords){
+        merged.lat = row.lat;
+        merged.lon = row.lon;
+      } else {
+        delete merged.lat;
+        delete merged.lon;
+      }
+      merged.eluExtra = {
+        locality:        row.locality        != null ? row.locality        : null,
+        municipality:    row.municipality    != null ? row.municipality    : null,
+        county:          row.county          != null ? row.county          : null,
+        individualCount: row.individual_count != null ? row.individual_count : null,
+        behavior:        row.behavior         != null ? row.behavior         : null,
+        collectors:      row.collectors       != null ? row.collectors       : null,
+      };
       points[key] = merged;
+      if (key === 'Mustkael-pütt' || key === 'Kaldapääsuke') {
+        console.log('[elu-load]', key, {
+          lat: merged.lat,
+          lon: merged.lon,
+          locality: merged.eluExtra && merged.eluExtra.locality,
+          coords_source: merged.coords_source,
+          t: merged.t,
+        });
+      }
       if (key === 'Punanokk-vart') {
         console.log('[NETTA-TRACE] points WRITE at ELU_CLOUD_CACHE:',
           JSON.stringify({

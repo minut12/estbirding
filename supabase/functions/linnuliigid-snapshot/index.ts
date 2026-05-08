@@ -136,7 +136,9 @@ function formatDateEEFromTs(ts: number): string | null {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// Fetch occurrence data for one species from Elurikkus biocache API
+// Fetch occurrence data for one species from Elurikkus biocache API.
+// Paginates via &start=<page*pageSize>&pageSize=200 until empty page, item ceiling,
+// page ceiling, per-species wall-clock budget, or two consecutive fetch errors.
 async function fetchSpeciesData(name: string): Promise<{
   lat: number | null;
   lon: number | null;
@@ -153,40 +155,106 @@ async function fetchSpeciesData(name: string): Promise<{
   districts: string | null;
   eestiOmavalitsused: string | null;
 }> {
-  const searchUrl = `https://elurikkus.ee/biocache-service/occurrences/search?q=${encodeURIComponent(name)}&sort=eventDate&dir=desc&pageSize=200&fq=country:Estonia&_ts=${Date.now()}`;
+  const PAGINATION_MAX_PAGES = 30;
+  const PAGINATION_MAX_ITEMS = 1500;
+  const PAGINATION_BUDGET_MS = 7000;
+  const PAGINATION_INTER_PAGE_MS = 100;
+  const PAGINATION_PAGE_TIMEOUT_MS = 8000;
+  const PAGE_SIZE = 200;
+  const startedAt = Date.now();
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const buildBiocacheUrl = (start: number): string =>
+    `https://elurikkus.ee/biocache-service/occurrences/search?q=${encodeURIComponent(name)}&sort=eventDate&dir=desc&pageSize=${PAGE_SIZE}&start=${start}&fq=country:Estonia&_ts=${Date.now()}`;
+
+  const fetchPage = async (pageUrl: string): Promise<{ ok: boolean; status: number; bodyText: string }> => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), PAGINATION_PAGE_TIMEOUT_MS);
+      try {
+        const res = await fetch(pageUrl, {
+          signal: ctrl.signal,
+          headers: {
+            Accept: "application/json",
+            "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+          },
+        });
+        const bodyText = await res.text();
+        clearTimeout(timer);
+        return { ok: res.ok, status: res.status, bodyText };
+      } catch (e) {
+        clearTimeout(timer);
+        if (attempt === 0) {
+          await sleep(500);
+          continue;
+        }
+        console.warn("[snapshot:biocache] page fetch failed", { species: name, pageUrl, err: String((e as Error)?.message || e) });
+        return { ok: false, status: 0, bodyText: "" };
+      }
+    }
+    return { ok: false, status: 0, bodyText: "" };
+  };
 
   try {
-    const res = await fetch(searchUrl, {
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-      },
-    });
-    clearTimeout(timeout);
+    const merged: Record<string, unknown>[] = [];
+    let pagesFetched = 0;
+    let stopReason: "empty_page" | "max_items" | "max_pages" | "budget_exceeded" | "fetch_error" = "max_pages";
+    let firstPageFatal = false;
+    let lastPageStatus = 0;
 
-    console.log('[fetchSpeciesData]', name, 'biocache status:', res.status);
-    if (!res.ok) {
-      // Consume body to release connection, then fall back to HTML scraping
-      await res.body?.cancel().catch(() => {});
+    pageLoop: for (let page = 0; page < PAGINATION_MAX_PAGES; page++) {
+      if (page > 0) await sleep(PAGINATION_INTER_PAGE_MS);
+      if (Date.now() - startedAt >= PAGINATION_BUDGET_MS) {
+        stopReason = "budget_exceeded";
+        break pageLoop;
+      }
+      const pageUrl = buildBiocacheUrl(page * PAGE_SIZE);
+      const r = await fetchPage(pageUrl);
+      pagesFetched++;
+      lastPageStatus = r.status;
+      if (!r.ok) {
+        if (page === 0) firstPageFatal = true;
+        stopReason = "fetch_error";
+        console.warn("[snapshot:biocache] stopping pagination", { species: name, page, status: r.status });
+        break pageLoop;
+      }
+      let json: Record<string, unknown> | null = null;
+      try {
+        json = r.bodyText ? JSON.parse(r.bodyText) : {};
+      } catch {
+        if (page === 0) firstPageFatal = true;
+        stopReason = "fetch_error";
+        console.warn("[snapshot:biocache] non-JSON response", { species: name, page });
+        break pageLoop;
+      }
+      const occurrences: Record<string, unknown>[] = Array.isArray(json?.occurrences)
+        ? (json.occurrences as Record<string, unknown>[])
+        : [];
+      if (occurrences.length === 0) {
+        if (page === 0) firstPageFatal = true;
+        stopReason = "empty_page";
+        break pageLoop;
+      }
+      for (const occ of occurrences) {
+        merged.push(occ);
+        if (merged.length >= PAGINATION_MAX_ITEMS) break;
+      }
+      if (merged.length >= PAGINATION_MAX_ITEMS) {
+        stopReason = "max_items";
+        break pageLoop;
+      }
+    }
+
+    console.log('[fetchSpeciesData]', name, 'biocache status:', lastPageStatus, 'pagesFetched:', pagesFetched, 'items:', merged.length, 'stopReason:', stopReason);
+
+    // If page 0 totally failed (network / non-OK / non-JSON / empty) — preserve original
+    // behavior of falling back to HTML scrape so this species isn't lost.
+    if (firstPageFatal && merged.length === 0) {
       return await fetchSpeciesFromHtml(name);
     }
 
-    let json: Record<string, unknown>;
-    try {
-      json = await res.json();
-    } catch {
-      // Non-JSON response (e.g. HTML error page returned as 200)
-      return await fetchSpeciesFromHtml(name);
-    }
-    const occurrences: Record<string, unknown>[] = Array.isArray(json?.occurrences) ? json.occurrences : [];
-
-    const normalized = occurrences
+    const normalized = merged
       .map((occ: Record<string, unknown>) => {
         const rawDate = String(
           occ.eventDate || occ.occurrenceDate || occ.observed_at || occ.datetime || "",
@@ -199,7 +267,7 @@ async function fetchSpeciesData(name: string): Promise<{
     const latestTs = normalized[0]?.t || 0;
     const latestDate = latestTs > 0 ? new Date(latestTs).toISOString() : null;
 
-    // JSON API returned OK but no usable dates — fall back to HTML scraping
+    // Biocache returned data but no parseable dates — preserve original HTML fallback.
     if (!latestDate) {
       return await fetchSpeciesFromHtml(name);
     }
@@ -212,7 +280,7 @@ async function fetchSpeciesData(name: string): Promise<{
     let municipality: string | null = null;
     let county: string | null = null;
 
-    for (const occ of occurrences) {
+    for (const occ of merged) {
       if (!locality) locality = String((occ as Record<string, unknown>).locality || (occ as Record<string, unknown>).locationRemarks || "") || null;
       if (!municipality) municipality = String((occ as Record<string, unknown>).municipality || (occ as Record<string, unknown>).stateProvince || "") || null;
       if (!county) county = String((occ as Record<string, unknown>).county || (occ as Record<string, unknown>).stateProvince || "") || null;
@@ -248,18 +316,24 @@ async function fetchSpeciesData(name: string): Promise<{
         latestRaw: normalized[0]?.rawDate || null,
         latestFmt: latestDate,
         top3: normalized.slice(0, 3).map((x: { t: number }) => new Date(x.t).toISOString()),
+        pagesFetched,
+        stopReason,
       });
     }
 
     return { lat, lon, latestDate, occ7, coordsStatus, coordsSource, locality, municipality, county, individualCount: null, behavior: null, collectors: null, districts: null, eestiOmavalitsused: null };
   } catch (e) {
-    clearTimeout(timeout);
+    console.warn("[snapshot:biocache] unexpected error", { species: name, err: String((e as Error)?.message || e) });
     // Fallback to HTML scraping
     return await fetchSpeciesFromHtml(name);
   }
 }
 
-// Fallback: scrape from HTML search page
+// Fallback: scrape from HTML search page.
+// Paginates via &limit=100&offset=<page*100>&orderBy=event_date_naive&orderAscending=false
+// (mirrors handleElurikkusSpeciesRequest's scheme) until empty page, item ceiling,
+// page ceiling, per-species wall-clock budget, or two consecutive fetch errors.
+// Metadata for the newest-occurrence row is extracted from page-0 HTML only.
 async function fetchSpeciesFromHtml(name: string): Promise<{
   lat: number | null;
   lon: number | null;
@@ -276,33 +350,101 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
   districts: string | null;
   eestiOmavalitsused: string | null;
 }> {
-  const url = `https://elurikkus.ee/app/occurrences/search?text=${encodeURIComponent(name)}&_ts=${Date.now()}`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const PAGINATION_MAX_PAGES = 30;
+  const PAGINATION_MAX_ITEMS = 1500;
+  const PAGINATION_BUDGET_MS = 7000;
+  const PAGINATION_INTER_PAGE_MS = 100;
+  const PAGINATION_PAGE_TIMEOUT_MS = 8000;
+  const PAGE_SIZE = 100;
+  const startedAt = Date.now();
+
+  const buildHtmlUrl = (page: number): string => {
+    const u = new URL("https://elurikkus.ee/app/occurrences/search");
+    u.searchParams.set("text", name);
+    u.searchParams.set("limit", String(PAGE_SIZE));
+    u.searchParams.set("offset", String(page * PAGE_SIZE));
+    u.searchParams.set("orderBy", "event_date_naive");
+    u.searchParams.set("orderAscending", "false");
+    u.searchParams.set("_ts", String(Date.now()));
+    return u.toString();
+  };
+
+  const fetchPage = async (pageUrl: string): Promise<{ ok: boolean; status: number; html: string }> => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), PAGINATION_PAGE_TIMEOUT_MS);
+      try {
+        const res = await fetch(pageUrl, {
+          signal: ctrl.signal,
+          headers: {
+            Accept: "text/html",
+            "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+          },
+        });
+        const html = await res.text();
+        clearTimeout(timer);
+        return { ok: res.ok, status: res.status, html };
+      } catch (e) {
+        clearTimeout(timer);
+        if (attempt === 0) {
+          await sleep(500);
+          continue;
+        }
+        console.warn("[snapshot:html] page fetch failed", { species: name, pageUrl, err: String((e as Error)?.message || e) });
+        return { ok: false, status: 0, html: "" };
+      }
+    }
+    return { ok: false, status: 0, html: "" };
+  };
+
+  console.log('[html-fallback]', name, 'starting');
 
   try {
-    console.log('[html-fallback]', name, 'starting');
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        Accept: "text/html",
-        "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-      },
-    });
-    clearTimeout(timeout);
-    if (!res.ok) return { lat: null, lon: null, latestDate: null, occ7: 0, coordsStatus: "missing" as const, coordsSource: "none" as const, locality: null, municipality: null, county: null, individualCount: null, behavior: null, collectors: null, districts: null, eestiOmavalitsused: null };
-
-    const html = await res.text();
-
-    // Extract dates
     const allDates: string[] = [];
-    let m: RegExpExecArray | null;
-    const reJson = /"(?:eventDate|datetime)"\s*:\s*"?(\d{4}-\d{2}-\d{2})/gi;
-    while ((m = reJson.exec(html)) !== null) allDates.push(m[1]);
-    const reTable = /(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}/g;
-    while ((m = reTable.exec(html)) !== null) allDates.push(m[1]);
+    let firstPageHtml = "";
+    let pagesFetched = 0;
+    let stopReason: "empty_page" | "max_items" | "max_pages" | "budget_exceeded" | "fetch_error" = "max_pages";
+    let firstPageFatal = false;
+
+    pageLoop: for (let page = 0; page < PAGINATION_MAX_PAGES; page++) {
+      if (page > 0) await sleep(PAGINATION_INTER_PAGE_MS);
+      if (Date.now() - startedAt >= PAGINATION_BUDGET_MS) {
+        stopReason = "budget_exceeded";
+        break pageLoop;
+      }
+      const pageUrl = buildHtmlUrl(page);
+      const r = await fetchPage(pageUrl);
+      pagesFetched++;
+      if (!r.ok) {
+        if (page === 0) firstPageFatal = true;
+        stopReason = "fetch_error";
+        console.warn("[snapshot:html] stopping pagination", { species: name, page, status: r.status });
+        break pageLoop;
+      }
+      if (page === 0) firstPageHtml = r.html;
+      const before = allDates.length;
+      let m: RegExpExecArray | null;
+      const reJson = /"(?:eventDate|datetime)"\s*:\s*"?(\d{4}-\d{2}-\d{2})/gi;
+      while ((m = reJson.exec(r.html)) !== null) allDates.push(m[1]);
+      const reTable = /(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}/g;
+      while ((m = reTable.exec(r.html)) !== null) allDates.push(m[1]);
+      const added = allDates.length - before;
+      if (added === 0) {
+        stopReason = "empty_page";
+        break pageLoop;
+      }
+      if (allDates.length >= PAGINATION_MAX_ITEMS) {
+        stopReason = "max_items";
+        break pageLoop;
+      }
+    }
+
+    // Page 0 entirely failed (network / non-OK) — preserve original res.ok=false branch shape.
+    if (firstPageFatal) {
+      return { lat: null, lon: null, latestDate: null, occ7: 0, coordsStatus: "missing" as const, coordsSource: "none" as const, locality: null, municipality: null, county: null, individualCount: null, behavior: null, collectors: null, districts: null, eestiOmavalitsused: null };
+    }
 
     const normalized = allDates
       .map((rawDate) => ({ rawDate, t: parseElurikkusDate(rawDate) }))
@@ -320,7 +462,7 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
     let lat: number | null = null;
     let lon: number | null = null;
 
-    // Extract metadata from search-page HTML table (search-page-only tier)
+    // Extract metadata from search-page HTML table (page 0 only — newest occurrence row).
     // Fields requiring the detail page (county, municipality, districts, eestiOmavalitsused)
     // stay null here — the frontend "Refresh from Elurikkus" button populates them on demand.
     let locality: string | null = null;
@@ -336,7 +478,7 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
       const stripTags = (s: string) => s.replace(/<[^>]*>/g, "").trim();
 
       // --- find <thead> and extract column names ---
-      const theadMatch = html.match(/<thead[^>]*>([\s\S]*?)<\/thead>/i);
+      const theadMatch = firstPageHtml.match(/<thead[^>]*>([\s\S]*?)<\/thead>/i);
       if (theadMatch) {
         const headerRow = theadMatch[1];
         const thMatches = [...headerRow.matchAll(/<th[^>]*>([\s\S]*?)<\/th>/gi)];
@@ -352,7 +494,7 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
         const idxCollectors = findCol(["collector", "kogunik", "recorded by", "leidja"]);
 
         // --- extract first <tr> in <tbody> = newest occurrence ---
-        const tbodyMatch = html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
+        const tbodyMatch = firstPageHtml.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
         if (tbodyMatch) {
           const firstTr = tbodyMatch[1].match(/<tr[^>]*>([\s\S]*?)<\/tr>/i);
           if (firstTr) {
@@ -418,10 +560,14 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
       municipality,
       county,
       resolved: coordsSource,
+      pagesFetched,
+      stopReason,
+      occ7,
+      datesParsed: allDates.length,
     }));
     return { lat, lon, latestDate, occ7, coordsStatus, coordsSource, locality, municipality, county, individualCount, behavior, collectors, districts, eestiOmavalitsused };
-  } catch {
-    clearTimeout(timeout);
+  } catch (e) {
+    console.warn("[snapshot:html] unexpected error", { species: name, err: String((e as Error)?.message || e) });
     return { lat: null, lon: null, latestDate: null, occ7: 0, coordsStatus: "missing", coordsSource: "none", locality: null, municipality: null, county: null, individualCount: null, behavior: null, collectors: null, districts: null, eestiOmavalitsused: null };
   }
 }

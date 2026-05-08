@@ -257,10 +257,37 @@ function buildColumnIndex(cells: string[]): Record<string, number> {
   return colIndex;
 }
 
-function parseObservationsFromHtml(html: string): ObservationParseResult {
+function parseObservationsFromHtml(html: string, species?: string): ObservationParseResult {
   const observations: ParsedObservation[] = [];
   let skippedNoDate = 0;
   let colIndex: Record<string, number> = {};
+
+  // JSON pre-pass: extract real GPS from SvelteKit-fetched JSON block
+  const sveltekitRe = /<script type="application\/json" data-sveltekit-fetched data-url="https:\/\/elurikkus\.ee\/api\/occurrences\/search"[^>]*>([\s\S]*?)<\/script>/;
+  const m = html.match(sveltekitRe);
+  const coordsBySubId = new Map<string, { lat: number | null; lon: number | null; municipality: string | null; county: string | null; locality: string | null }>();
+  if (m) {
+    try {
+      const envelope = JSON.parse(m[1]);
+      const inner = typeof envelope.body === "string" ? JSON.parse(envelope.body) : envelope.body;
+      for (const r of (inner?.results ?? [])) {
+        const id = r?.id != null ? String(r.id) : "";
+        if (!id) continue;
+        const lat = Number(r.latitude);
+        const lon = Number(r.longitude);
+        coordsBySubId.set(id, {
+          lat: Number.isFinite(lat) && lat !== 0 ? lat : null,
+          lon: Number.isFinite(lon) && lon !== 0 ? lon : null,
+          municipality: r.municipality || null,
+          county: r.county || null,
+          locality: r.locality || null,
+        });
+      }
+    } catch (_e) {
+      // leave map empty; row parser still extracts text fields
+    }
+  }
+
   // Iterate <tr>...</tr>
   const rowRe = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
   let rowMatch: RegExpExecArray | null;

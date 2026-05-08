@@ -14,10 +14,106 @@ const DEFAULT_SPECIES: string[] = [
 
 const DELAY_MS = 600;
 
+// Centroid tables duplicated from linnuliigid-snapshot (consolidation TBD).
+const COUNTY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
+  harju: { lat: 59.40, lon: 24.80 },
+  hiiu: { lat: 58.92, lon: 22.60 },
+  ida_viru: { lat: 59.35, lon: 27.42 },
+  jõgeva: { lat: 58.75, lon: 26.40 },
+  järva: { lat: 58.89, lon: 25.57 },
+  lääne: { lat: 58.94, lon: 23.54 },
+  lääne_viru: { lat: 59.30, lon: 26.33 },
+  põlva: { lat: 58.05, lon: 27.05 },
+  pärnu: { lat: 58.38, lon: 24.53 },
+  rapla: { lat: 58.99, lon: 24.79 },
+  saare: { lat: 58.33, lon: 22.48 },
+  tartu: { lat: 58.38, lon: 26.73 },
+  valga: { lat: 57.78, lon: 26.04 },
+  viljandi: { lat: 58.36, lon: 25.60 },
+  võru: { lat: 57.84, lon: 27.00 },
+};
+const MUNICIPALITY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
+  tartu: { lat: 58.38, lon: 26.73 },
+  tallinn: { lat: 59.44, lon: 24.75 },
+  pärnu: { lat: 58.38, lon: 24.50 },
+  narva: { lat: 59.38, lon: 28.19 },
+  viljandi: { lat: 58.36, lon: 25.60 },
+  võru: { lat: 57.84, lon: 27.00 },
+  rakvere: { lat: 59.35, lon: 26.36 },
+  haapsalu: { lat: 58.94, lon: 23.54 },
+  kuressaare: { lat: 58.25, lon: 22.49 },
+  jõgeva: { lat: 58.75, lon: 26.40 },
+  paide: { lat: 58.88, lon: 25.56 },
+  rapla: { lat: 58.99, lon: 24.79 },
+  valga: { lat: 57.78, lon: 26.04 },
+  põlva: { lat: 58.05, lon: 27.05 },
+};
+
+function normalizeName(v: unknown): string {
+  return String(v || "").toLowerCase()
+    .replace(/[ä]/g, "a")
+    .replace(/[ö]/g, "o")
+    .replace(/[õ]/g, "o")
+    .replace(/[ü]/g, "u")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function extractMunicipalityFromLocality(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const m = text.match(
+    /([A-Za-zÀ-ž]+(?:-[A-Za-zÀ-ž]+)*(?:\s+[A-Za-zÀ-ž]+(?:-[A-Za-zÀ-ž]+)*)*\s+(?:vald|linn))/i,
+  );
+  return m ? m[1].trim() : null;
+}
+
+function resolveCoordsFromMostRecent(
+  mostRecent: ParsedObservation | null,
+): { lat: number | null; lon: number | null; coords_source: string; coords_status: string } {
+  if (!mostRecent) {
+    return { lat: null, lon: null, coords_source: "none", coords_status: "missing" };
+  }
+  const lat = mostRecent.lat;
+  const lon = mostRecent.lon;
+  if (Number.isFinite(lat as number) && Number.isFinite(lon as number)) {
+    return { lat: lat as number, lon: lon as number, coords_source: "exact", coords_status: "public" };
+  }
+
+  // 2. Exact-match municipality from locality
+  if (mostRecent.locality) {
+    const mKey = normalizeName(mostRecent.locality)
+      .replace(/_linn$/, "").replace(/_vald$/, "").replace(/_alev$/, "").replace(/_alevik$/, "");
+    const mCentroid = mKey ? MUNICIPALITY_CENTROIDS[mKey] : null;
+    if (mCentroid) {
+      return { lat: mCentroid.lat, lon: mCentroid.lon, coords_source: "municipality_centroid", coords_status: "restricted" };
+    }
+    // 3. Substring fallback
+    const lower = mostRecent.locality.toLowerCase();
+    for (const key of Object.keys(MUNICIPALITY_CENTROIDS)) {
+      if (lower.includes(key)) {
+        const c = MUNICIPALITY_CENTROIDS[key];
+        return { lat: c.lat, lon: c.lon, coords_source: "municipality_centroid", coords_status: "restricted" };
+      }
+    }
+  }
+
+  // 4. County
+  if (mostRecent.county) {
+    const cKey = normalizeName(mostRecent.county).replace(/_county$/, "").replace(/_maakond$/, "");
+    const cCentroid = cKey ? COUNTY_CENTROIDS[cKey] : null;
+    if (cCentroid) {
+      return { lat: cCentroid.lat, lon: cCentroid.lon, coords_source: "county_centroid", coords_status: "restricted" };
+    }
+  }
+
+  return { lat: null, lon: null, coords_source: "none", coords_status: "missing" };
+}
+
 interface ParsedObservation {
   sub_id: string | null;
   observed_at: string; // ISO date YYYY-MM-DD
   locality: string | null;
+  municipality: string | null;
   county: string | null;
   lat: number | null;
   lon: number | null;
@@ -196,10 +292,12 @@ function parseObservationsFromHtml(html: string): ObservationParseResult {
     const county = colIndex.county !== undefined ? cellTexts[colIndex.county] || null : null;
     const behavior = colIndex.behavior !== undefined ? cellTexts[colIndex.behavior] || null : null;
 
+    const finalLocality = locality && locality.length <= 200 ? locality : null;
     observations.push({
       sub_id,
       observed_at,
-      locality: locality && locality.length <= 200 ? locality : null,
+      locality: finalLocality,
+      municipality: extractMunicipalityFromLocality(finalLocality),
       county: county && county.length <= 100 ? county : null,
       lat,
       lon,
@@ -406,35 +504,28 @@ Deno.serve(async (req) => {
 
       const detailUrl = extractDetailUrl(html, name);
 
-      let lat: number | null = mostRecent?.lat ?? null;
-      let lon: number | null = mostRecent?.lon ?? null;
-      let coordsStatus = lat !== null && lon !== null ? "public" : "missing";
-      let coordsSource: string | null = lat !== null && lon !== null ? "row" : null;
+      const resolved = resolveCoordsFromMostRecent(mostRecent);
 
-      if ((lat === null || lon === null) && detailUrl) {
-        const coords = await fetchDetailCoords(detailUrl);
-        if (coords) {
-          lat = coords.lat;
-          lon = coords.lon;
-          coordsStatus = "public";
-          coordsSource = "detail";
-        } else {
-          coordsStatus = "restricted";
-          coordsSource = "detail";
-        }
-      } else if (lat === null && !detailUrl) {
-        coordsSource = "search";
-      }
+      console.log('[elu-cache]', name, '→', {
+        coords_source: resolved.coords_source,
+        locality: mostRecent?.locality ?? null,
+        lat: resolved.lat,
+        lon: resolved.lon,
+        observed_at: mostRecent?.observed_at ?? null,
+      });
 
-      // === WRITE 1: elurikkus_cache (existing summary + 3 new popup-fields) ===
+      // === WRITE 1: elurikkus_cache — atomic from mostRecent + resolver ===
       const cacheRow = {
         species_name: name,
-        lat,
-        lon,
+        lat: resolved.lat,
+        lon: resolved.lon,
         occ7,
-        t,
-        coords_status: coordsStatus,
-        coords_source: coordsSource ?? (detailUrl ? "detail" : "search"),
+        t: mostRecent?.observed_at ?? t ?? null,
+        coords_status: resolved.coords_status,
+        coords_source: resolved.coords_source,
+        locality: mostRecent?.locality ?? null,
+        municipality: mostRecent?.municipality ?? null,
+        county: mostRecent?.county ?? null,
         open_url: detailUrl || searchUrl,
         search_url: searchUrl,
         individual_count: mostRecent?.individual_count ?? null,

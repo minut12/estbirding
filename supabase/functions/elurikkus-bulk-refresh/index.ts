@@ -292,10 +292,12 @@ function parseObservationsFromHtml(html: string): ObservationParseResult {
     const county = colIndex.county !== undefined ? cellTexts[colIndex.county] || null : null;
     const behavior = colIndex.behavior !== undefined ? cellTexts[colIndex.behavior] || null : null;
 
+    const finalLocality = locality && locality.length <= 200 ? locality : null;
     observations.push({
       sub_id,
       observed_at,
-      locality: locality && locality.length <= 200 ? locality : null,
+      locality: finalLocality,
+      municipality: extractMunicipalityFromLocality(finalLocality),
       county: county && county.length <= 100 ? county : null,
       lat,
       lon,

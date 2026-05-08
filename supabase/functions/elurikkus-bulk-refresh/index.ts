@@ -47,6 +47,33 @@ const MUNICIPALITY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
   rapla: { lat: 58.99, lon: 24.79 },
   valga: { lat: 57.78, lon: 26.04 },
   põlva: { lat: 58.05, lon: 27.05 },
+  // Birding hotspots (peninsulas, capes, nature reserves)
+  sorve: { lat: 57.92, lon: 22.05 },
+  poosaspea: { lat: 59.23, lon: 23.55 },
+  puise: { lat: 58.85, lon: 23.50 },
+  pakri: { lat: 59.39, lon: 24.05 },
+  kopu: { lat: 58.92, lon: 22.20 },
+  vilsandi: { lat: 58.38, lon: 21.83 },
+  kaina: { lat: 58.83, lon: 22.78 },
+  matsalu: { lat: 58.74, lon: 23.71 },
+  audru: { lat: 58.40, lon: 24.34 },
+  // Missing municipalities
+  haademeeste: { lat: 58.07, lon: 24.50 },
+  laane_nigula: { lat: 58.95, lon: 23.81 },
+  // Towns / smaller cities
+  maardu: { lat: 59.476, lon: 25.025 },
+  sillamae: { lat: 59.395, lon: 27.766 },
+  kohtla_jarve: { lat: 59.40, lon: 27.28 },
+  keila: { lat: 59.305, lon: 24.418 },
+  saue: { lat: 59.32, lon: 24.55 },
+  poltsamaa: { lat: 58.65, lon: 25.97 },
+  turi: { lat: 58.81, lon: 25.43 },
+  elva: { lat: 58.22, lon: 26.42 },
+  mustvee: { lat: 58.85, lon: 26.93 },
+  tapa: { lat: 59.27, lon: 25.96 },
+  antsla: { lat: 57.83, lon: 26.54 },
+  otepaa: { lat: 58.06, lon: 26.49 },
+  kallaste: { lat: 58.66, lon: 27.16 },
 };
 
 function normalizeName(v: unknown): string {

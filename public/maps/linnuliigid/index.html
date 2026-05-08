@@ -8871,7 +8871,21 @@ function buildPopupHtml(key, p){
   const beh = val(x.behavior ?? p.behavior);
   const col = val(x.collectors ?? p.collectors);
   const latest = fmtDateEE(val(p.t));
-  let occ7 = Number.isFinite(p.occ7) ? p.occ7 : 0;
+  // Prefer uncapped 7-day count from Tõenäosus's __probEluCache.items when present.
+  // Fall back to p.occ7 (typically ~50, capped) for species Tõenäosus hasn't scanned.
+  let occ7;
+  try {
+    const _eluKey = _speciesKey(key);
+    const _probItems = (window.__probEluCache || {})[_eluKey]?.items;
+    if (Array.isArray(_probItems) && _probItems.length > 0) {
+      const _stats = _computeLiveStats(_probItems);
+      occ7 = Number.isFinite(_stats && _stats.itemsWithin7d) ? _stats.itemsWithin7d : (Number.isFinite(p.occ7) ? p.occ7 : 0);
+    } else {
+      occ7 = Number.isFinite(p.occ7) ? p.occ7 : 0;
+    }
+  } catch (_e) {
+    occ7 = Number.isFinite(p.occ7) ? p.occ7 : 0;
+  }
   if(isWithin7dAny(p.t) && occ7 < 1) occ7 = 1;
   const src = val(p.src);
   const locText = String(x.locality || x.municipality || p.placeText || x.county || '').trim();

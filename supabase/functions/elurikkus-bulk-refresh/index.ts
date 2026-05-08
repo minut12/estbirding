@@ -504,35 +504,28 @@ Deno.serve(async (req) => {
 
       const detailUrl = extractDetailUrl(html, name);
 
-      let lat: number | null = mostRecent?.lat ?? null;
-      let lon: number | null = mostRecent?.lon ?? null;
-      let coordsStatus = lat !== null && lon !== null ? "public" : "missing";
-      let coordsSource: string | null = lat !== null && lon !== null ? "row" : null;
+      const resolved = resolveCoordsFromMostRecent(mostRecent);
 
-      if ((lat === null || lon === null) && detailUrl) {
-        const coords = await fetchDetailCoords(detailUrl);
-        if (coords) {
-          lat = coords.lat;
-          lon = coords.lon;
-          coordsStatus = "public";
-          coordsSource = "detail";
-        } else {
-          coordsStatus = "restricted";
-          coordsSource = "detail";
-        }
-      } else if (lat === null && !detailUrl) {
-        coordsSource = "search";
-      }
+      console.log('[elu-cache]', name, '→', {
+        coords_source: resolved.coords_source,
+        locality: mostRecent?.locality ?? null,
+        lat: resolved.lat,
+        lon: resolved.lon,
+        observed_at: mostRecent?.observed_at ?? null,
+      });
 
-      // === WRITE 1: elurikkus_cache (existing summary + 3 new popup-fields) ===
+      // === WRITE 1: elurikkus_cache — atomic from mostRecent + resolver ===
       const cacheRow = {
         species_name: name,
-        lat,
-        lon,
+        lat: resolved.lat,
+        lon: resolved.lon,
         occ7,
-        t,
-        coords_status: coordsStatus,
-        coords_source: coordsSource ?? (detailUrl ? "detail" : "search"),
+        t: mostRecent?.observed_at ?? t ?? null,
+        coords_status: resolved.coords_status,
+        coords_source: resolved.coords_source,
+        locality: mostRecent?.locality ?? null,
+        municipality: mostRecent?.municipality ?? null,
+        county: mostRecent?.county ?? null,
         open_url: detailUrl || searchUrl,
         search_url: searchUrl,
         individual_count: mostRecent?.individual_count ?? null,

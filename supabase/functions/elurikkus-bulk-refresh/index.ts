@@ -347,19 +347,38 @@ function parseObservationsFromHtml(html: string, species?: string): ObservationP
     const behavior = colIndex.behavior !== undefined ? cellTexts[colIndex.behavior] || null : null;
 
     const finalLocality = locality && locality.length <= 200 ? locality : null;
+
+    // Merge JSON pre-pass coords/fields when available
+    const j = sub_id ? coordsBySubId.get(String(sub_id)) : null;
+    let mergedLat = lat;
+    let mergedLon = lon;
+    let mergedLocality: string | null = finalLocality;
+    let mergedMunicipality: string | null = extractMunicipalityFromLocality(finalLocality);
+    let mergedCounty: string | null = county && county.length <= 100 ? county : null;
+    if (j) {
+      if (j.lat != null && j.lon != null) {
+        mergedLat = j.lat;
+        mergedLon = j.lon;
+      }
+      mergedLocality = j.locality || mergedLocality || j.municipality || j.county || null;
+      mergedMunicipality = j.municipality || mergedMunicipality || null;
+      mergedCounty = j.county || mergedCounty || null;
+    }
+
     observations.push({
       sub_id,
       observed_at,
-      locality: finalLocality,
-      municipality: extractMunicipalityFromLocality(finalLocality),
-      county: county && county.length <= 100 ? county : null,
-      lat,
-      lon,
+      locality: mergedLocality,
+      municipality: mergedMunicipality,
+      county: mergedCounty,
+      lat: mergedLat,
+      lon: mergedLon,
       observer: observer && observer.length <= 200 ? observer : null,
       individual_count,
       behavior,
     });
   }
+  console.log("[elu-parse]", species ?? "(unknown)", "jsonHits:", coordsBySubId.size, "rows:", observations.length);
   return { observations, skippedNoDate };
 }
 

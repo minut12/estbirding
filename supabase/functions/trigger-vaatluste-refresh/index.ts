@@ -112,29 +112,43 @@ serve(async (req) => {
   const startedAt = new Date().toISOString();
 
   const ELURIKKUS_WEBHOOK_URL = Deno.env.get("N8N_VAATLUSTE_ELURIKKUS_WEBHOOK_URL") ?? "";
+  const TOENAOSUS_WEBHOOK_URL = Deno.env.get("N8N_TOENAOSUS_WEBHOOK_URL") ?? "";
+  const TOENAOSUS_WEBHOOK_SECRET = Deno.env.get("N8N_TOENAOSUS_WEBHOOK_SECRET") ?? "";
 
-  const callHeaders = {
-    "Content-Type": "application/json",
-    "X-Webhook-Secret": N8N_WEBHOOK_SECRET,
-  };
   const callBody = JSON.stringify({
     source: "app-manual",
     triggered_at: startedAt,
     ...clientPayload,
   });
 
-  const targets: Array<{ key: "ebird" | "elurikkus"; url: string }> = [
-    { key: "ebird", url: N8N_WEBHOOK_URL },
+  const targets: Array<{
+    key: "ebird" | "elurikkus" | "toenaosus";
+    url: string;
+    secret: string;
+  }> = [
+    { key: "ebird", url: N8N_WEBHOOK_URL, secret: N8N_WEBHOOK_SECRET },
   ];
   if (ELURIKKUS_WEBHOOK_URL) {
-    targets.push({ key: "elurikkus", url: ELURIKKUS_WEBHOOK_URL });
+    targets.push({ key: "elurikkus", url: ELURIKKUS_WEBHOOK_URL, secret: N8N_WEBHOOK_SECRET });
   } else {
     console.warn("N8N_VAATLUSTE_ELURIKKUS_WEBHOOK_URL not set — skipping elurikkus trigger");
+  }
+  if (TOENAOSUS_WEBHOOK_URL && TOENAOSUS_WEBHOOK_SECRET) {
+    targets.push({ key: "toenaosus", url: TOENAOSUS_WEBHOOK_URL, secret: TOENAOSUS_WEBHOOK_SECRET });
+  } else {
+    console.warn("N8N_TOENAOSUS_WEBHOOK_URL or N8N_TOENAOSUS_WEBHOOK_SECRET not set — skipping toenaosus trigger");
   }
 
   const results = await Promise.allSettled(
     targets.map((t) =>
-      fetch(t.url, { method: "POST", headers: callHeaders, body: callBody }),
+      fetch(t.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Webhook-Secret": t.secret,
+        },
+        body: callBody,
+      }),
     ),
   );
 
@@ -160,12 +174,16 @@ serve(async (req) => {
   if (!ELURIKKUS_WEBHOOK_URL) {
     summary.elurikkus = { triggered: false, status: null, error: "env_missing" };
   }
+  if (!TOENAOSUS_WEBHOOK_URL || !TOENAOSUS_WEBHOOK_SECRET) {
+    summary.toenaosus = { triggered: false, status: null, error: "env_missing" };
+  }
 
   const ebirdOk = summary.ebird?.triggered === true;
   const elurikkusOk = summary.elurikkus?.triggered === true;
-  const overallOk = ebirdOk && elurikkusOk;
+  const toenaosusOk = summary.toenaosus?.triggered === true;
+  const overallOk = ebirdOk && elurikkusOk && toenaosusOk;
 
-  if (!ebirdOk && !elurikkusOk) {
+  if (!ebirdOk && !elurikkusOk && !toenaosusOk) {
     return json(
       {
         triggered: false,

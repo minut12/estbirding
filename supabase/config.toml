@@ -95,3 +95,6 @@ verify_jwt = false
 
 [functions.compose-elurikkus-eesti-entries]
 verify_jwt = false
+
+[functions.insert-toenaosus-raport]
+verify_jwt = false

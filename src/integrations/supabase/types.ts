@@ -1011,6 +1011,48 @@ export type Database = {
         }
         Relationships: []
       }
+      toenaosus_raport: {
+        Row: {
+          entries: Json
+          generated_at: string
+          generation_meta: Json | null
+          id: string
+          intro_et: string | null
+          model: string | null
+          period_end: string
+          period_start: string
+          regions: string[]
+          season: string
+          source_data: Json | null
+        }
+        Insert: {
+          entries?: Json
+          generated_at?: string
+          generation_meta?: Json | null
+          id?: string
+          intro_et?: string | null
+          model?: string | null
+          period_end: string
+          period_start: string
+          regions?: string[]
+          season: string
+          source_data?: Json | null
+        }
+        Update: {
+          entries?: Json
+          generated_at?: string
+          generation_meta?: Json | null
+          id?: string
+          intro_et?: string | null
+          model?: string | null
+          period_end?: string
+          period_start?: string
+          regions?: string[]
+          season?: string
+          source_data?: Json | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string

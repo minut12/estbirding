@@ -1064,7 +1064,8 @@ export default function OverviewTab() {
                     })}
                   </div>
                 </>
-              )
+              )}
+              </div>
             ) : (
               <div className="space-y-3">
                 {activeEntries.length === 0 ? (

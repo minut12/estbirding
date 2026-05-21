@@ -941,7 +941,20 @@ export default function OverviewTab() {
                 periodEnd={elurikkusReport?.period_end ?? periodEnd}
               />
             ) : section === 'toenaosus' ? (
-              toenaosusReport === null ? (
+              <div className="space-y-3">
+                <div className="flex justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefreshToenaosus}
+                    disabled={isRefreshingToenaosus}
+                    className="gap-2"
+                  >
+                    <RefreshCw className={cn('w-4 h-4', isRefreshingToenaosus && 'animate-spin')} />
+                    {isRefreshingToenaosus ? 'Värskendab...' : 'Värskenda nüüd'}
+                  </Button>
+                </div>
+                {toenaosusReport === null ? (
                 <p className="text-sm text-muted-foreground text-center py-8">
                   Tõenäosuse andmed pole veel saadaval. Vajuta Värskenda nuppu.
                 </p>

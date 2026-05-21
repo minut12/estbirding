@@ -1,7 +1,7 @@
 // insert-toenaosus-raport
 // Receives the n8n Tõenäosus workflow payload and inserts a row into
 // public.toenaosus_raport using the service-role key. Auth via
-// X-Webhook-Secret header against N8N_TOENAOSUS_WEBHOOK_SECRET env var.
+// X-Webhook-Secret header against VAATLUSTE_WEBHOOK_SECRET env var.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -30,11 +30,11 @@ serve(async (req) => {
     return jsonResponse(405, { error: 'method_not_allowed' });
   }
 
-  const expectedSecret = Deno.env.get('N8N_TOENAOSUS_WEBHOOK_SECRET');
+  const expectedSecret = Deno.env.get('VAATLUSTE_WEBHOOK_SECRET');
   if (!expectedSecret) {
     return jsonResponse(500, {
       error: 'server_misconfigured',
-      detail: 'N8N_TOENAOSUS_WEBHOOK_SECRET not set',
+      detail: 'VAATLUSTE_WEBHOOK_SECRET not set',
     });
   }
   if (req.headers.get('x-webhook-secret') !== expectedSecret) {

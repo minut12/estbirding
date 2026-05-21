@@ -742,6 +742,38 @@ export default function OverviewTab() {
     }
   }, []);
 
+  const handleRefreshToenaosus = useCallback(async () => {
+    setIsRefreshingToenaosus(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('trigger-toenaosus-refresh', {
+        method: 'POST',
+        body: {},
+      });
+      if (error) {
+        const ctx: any = (error as any)?.context;
+        let detail = error.message || 'Tundmatu viga';
+        try {
+          const body = await ctx?.json?.();
+          if (body?.error) detail = body.error;
+          else if (body?.message) detail = body.message;
+        } catch { /* ignore */ }
+        toast.error(`Viga: ${detail}`);
+        setIsRefreshingToenaosus(false);
+        return;
+      }
+      toast.success('Värskendamine käivitatud — uus raport ilmub ~1-2 minuti pärast');
+      await new Promise((r) => setTimeout(r, 90_000));
+      try {
+        const fresh = await fetchLatestToenaosus();
+        setToenaosusReport(fresh);
+      } catch { /* ignore refetch errors */ }
+    } catch (e: any) {
+      toast.error(`Viga: ${e?.message || 'tundmatu viga'}`);
+    } finally {
+      setIsRefreshingToenaosus(false);
+    }
+  }, []);
+
   const mergedEstonia = useMemo(
     () => mergeEstoniaEntries(report?.estonia_entries, elurikkusReport?.estonia_entries),
     [report, elurikkusReport],

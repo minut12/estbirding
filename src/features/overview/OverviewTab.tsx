@@ -898,7 +898,7 @@ export default function OverviewTab() {
               <p className="text-sm leading-relaxed text-foreground/90">{kevadranneNarrative}</p>
             )}
 
-            <div className="flex gap-2 border-b border-border">
+            <div className="flex w-full gap-1 sm:gap-2 border-b border-border">
               {([
                 { id: 'ee' as const, label: 'Eesti', count: eeRarities, disabled: false },
                 { id: 'eu' as const, label: 'Euroopa', count: euRarities, disabled: false },
@@ -910,23 +910,23 @@ export default function OverviewTab() {
                   onClick={() => !t.disabled && setSection(t.id)}
                   disabled={t.disabled}
                   className={cn(
-                    'px-4 py-2 text-sm font-medium border-b-2 -mb-px flex items-center gap-2 transition-colors',
+                    'flex-1 min-w-0 px-1 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 -mb-px flex items-center justify-center gap-1 sm:gap-2 transition-colors',
                     section === t.id
                       ? 'border-primary text-primary'
                       : 'border-transparent text-muted-foreground hover:text-foreground',
                     t.disabled && 'opacity-50 cursor-not-allowed hover:text-muted-foreground',
                   )}
                 >
-                  {t.label}
+                  <span className="truncate">{t.label}</span>
                   {t.count > 0 && (
                     t.id === 'toenaosus' ? (
-                      <Badge className="h-5 px-1.5 text-[10px] bg-emerald-100 text-emerald-700 border-transparent hover:bg-emerald-100">
+                      <Badge className="h-5 px-1 sm:px-1.5 text-[10px] shrink-0 bg-emerald-100 text-emerald-700 border-transparent hover:bg-emerald-100">
                         {t.count}
                       </Badge>
                     ) : (
                       <Badge
                         variant={t.id === 'arrivals' ? 'secondary' : 'destructive'}
-                        className="h-5 px-1.5 text-[10px]"
+                        className="h-5 px-1 sm:px-1.5 text-[10px] shrink-0"
                       >
                         {t.count}
                       </Badge>

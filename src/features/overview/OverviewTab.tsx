@@ -964,6 +964,7 @@ export default function OverviewTab() {
                   {toenaosusReport.intro_et && (
                     <p className="text-sm leading-relaxed">{toenaosusReport.intro_et}</p>
                   )}
+                  <CorridorBadge weatherCorridors={(toenaosusReport as any)?.source_data?.weather_corridors} />
                   <p className="text-sm text-muted-foreground text-center py-8">
                     Selles perioodis ei tuvastatud naabermaades vaatlusi haruldastest liikidest, kes võiksid lähiajal Eestisse jõuda.
                   </p>
@@ -973,6 +974,7 @@ export default function OverviewTab() {
                   {toenaosusReport.intro_et && (
                     <p className="text-sm leading-relaxed">{toenaosusReport.intro_et}</p>
                   )}
+                  <CorridorBadge weatherCorridors={(toenaosusReport as any)?.source_data?.weather_corridors} />
                   <div className="space-y-3">
                     {sortedToenaosusEntries.map((entry, idx) => {
                       const tier = effectiveRarityTier(entry);

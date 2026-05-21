@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { AlertTriangle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye, BarChart3 } from 'lucide-react';
 import { toast } from 'sonner';
 import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
+import CorridorBadge from './CorridorBadge';
 
 function buildSciNameToEbirdCode(map: SpeciesMetaMap): Map<string, string> {
   const out = new Map<string, string>();

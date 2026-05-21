@@ -88,17 +88,17 @@ export default function CorridorBadge({ weatherCorridors }: Props) {
       </svg>
       <div className="flex flex-col gap-1 min-w-0 flex-1">
         {corridor ? (
-          <p className="text-sm font-bold leading-tight">{corridor.name_et}</p>
+          <p className="text-sm font-bold leading-tight break-words">{corridor.name_et}</p>
         ) : (
-          <p className="text-sm font-medium text-muted-foreground leading-tight">
+          <p className="text-sm font-medium text-muted-foreground leading-tight break-words">
             Ei ole aktiivset õhuvoolukoridori
           </p>
         )}
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground break-words">
           850 hPa: {windSpeed} km/h · suund {Math.round(windDirDeg)}°
           {summary.is_high_pressure ? ' · kõrgrõhkkond Euroopa kohal' : ''}
         </p>
-        {speciesLine && <p className="text-xs text-muted-foreground">{speciesLine}</p>}
+        {speciesLine && <p className="text-xs text-muted-foreground break-words">{speciesLine}</p>}
       </div>
     </div>
   );

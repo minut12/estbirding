@@ -943,7 +943,7 @@ export default function OverviewTab() {
                 periodEnd={elurikkusReport?.period_end ?? periodEnd}
               />
             ) : section === 'toenaosus' ? (
-              <div className="space-y-3">
+              <div className="space-y-3 w-full max-w-full overflow-x-hidden">
                 <div className="flex justify-end">
                   <Button
                     variant="outline"

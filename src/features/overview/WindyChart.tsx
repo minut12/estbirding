@@ -3,7 +3,7 @@ const WINDY_URL =
 
 export default function WindyChart() {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2 w-full max-w-full overflow-hidden">
       <h3 className="text-base font-semibold">
         Sünoptiline tuulekaart 850 hPa rõhupinnal
       </h3>
@@ -13,8 +13,8 @@ export default function WindyChart() {
         loading="lazy"
         width="100%"
         height="380"
-        className="w-full rounded-md border-0"
-        style={{ border: 0 }}
+        className="block w-full max-w-full rounded-md border-0"
+        style={{ border: 0, maxWidth: '100%' }}
       />
       <p className="text-xs text-muted-foreground">
         Allikas: Windy.com · ECMWF mudel · Roheliste joonte suund näitab tuule liikumist; mõõtkavad oma menüüs.

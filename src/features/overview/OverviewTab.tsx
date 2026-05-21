@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { AlertTriangle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye, BarChart3 } from 'lucide-react';
+import { toast } from 'sonner';
 import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
 
 function buildSciNameToEbirdCode(map: SpeciesMetaMap): Map<string, string> {
@@ -637,6 +638,7 @@ export default function OverviewTab() {
   const [section, setSection] = useState<'ee' | 'eu' | 'arrivals' | 'toenaosus'>('ee');
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [isRefreshingToenaosus, setIsRefreshingToenaosus] = useState(false);
 
   const fetchLatest = useCallback(async (): Promise<VaatlusteRaport | null> => {
     setError(null);
@@ -737,6 +739,38 @@ export default function OverviewTab() {
     } catch {
       setRefreshError('Värskendamine ebaõnnestus. Proovi hiljem uuesti.');
       setRefreshing(false);
+    }
+  }, []);
+
+  const handleRefreshToenaosus = useCallback(async () => {
+    setIsRefreshingToenaosus(true);
+    try {
+      const { error } = await supabase.functions.invoke('trigger-toenaosus-refresh', {
+        method: 'POST',
+        body: {},
+      });
+      if (error) {
+        const ctx: any = (error as any)?.context;
+        let detail = error.message || 'Tundmatu viga';
+        try {
+          const body = await ctx?.json?.();
+          if (body?.error) detail = body.error;
+          else if (body?.message) detail = body.message;
+        } catch { /* ignore */ }
+        toast.error(`Viga: ${detail}`);
+        setIsRefreshingToenaosus(false);
+        return;
+      }
+      toast.success('Värskendamine käivitatud — uus raport ilmub ~1-2 minuti pärast');
+      await new Promise((r) => setTimeout(r, 90_000));
+      try {
+        const fresh = await fetchLatestToenaosus();
+        setToenaosusReport(fresh);
+      } catch { /* ignore refetch errors */ }
+    } catch (e: any) {
+      toast.error(`Viga: ${e?.message || 'tundmatu viga'}`);
+    } finally {
+      setIsRefreshingToenaosus(false);
     }
   }, []);
 
@@ -907,7 +941,20 @@ export default function OverviewTab() {
                 periodEnd={elurikkusReport?.period_end ?? periodEnd}
               />
             ) : section === 'toenaosus' ? (
-              toenaosusReport === null ? (
+              <div className="space-y-3">
+                <div className="flex justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefreshToenaosus}
+                    disabled={isRefreshingToenaosus}
+                    className="gap-2"
+                  >
+                    <RefreshCw className={cn('w-4 h-4', isRefreshingToenaosus && 'animate-spin')} />
+                    {isRefreshingToenaosus ? 'Värskendab...' : 'Värskenda nüüd'}
+                  </Button>
+                </div>
+                {toenaosusReport === null ? (
                 <p className="text-sm text-muted-foreground text-center py-8">
                   Tõenäosuse andmed pole veel saadaval. Vajuta Värskenda nuppu.
                 </p>
@@ -1017,7 +1064,8 @@ export default function OverviewTab() {
                     })}
                   </div>
                 </>
-              )
+              )}
+              </div>
             ) : (
               <div className="space-y-3">
                 {activeEntries.length === 0 ? (

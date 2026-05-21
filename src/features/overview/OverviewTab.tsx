@@ -745,7 +745,7 @@ export default function OverviewTab() {
   const handleRefreshToenaosus = useCallback(async () => {
     setIsRefreshingToenaosus(true);
     try {
-      const { data, error } = await supabase.functions.invoke('trigger-toenaosus-refresh', {
+      const { error } = await supabase.functions.invoke('trigger-toenaosus-refresh', {
         method: 'POST',
         body: {},
       });

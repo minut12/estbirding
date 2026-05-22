@@ -100,9 +100,14 @@ Deno.serve(async (req) => {
             endpoint: sub.endpoint,
             keys: { p256dh: sub.key_p256dh, auth: sub.key_auth },
           };
+          const pushPayload: Record<string, string> = { species: sp };
+          if (notification_title) pushPayload.title = notification_title;
+          if (notification_body) pushPayload.body = notification_body;
+          if (notification_url) pushPayload.url = notification_url;
+          if (notification_tag) pushPayload.tag = notification_tag;
           const result = await webpush.sendNotification(
             pushSub,
-            JSON.stringify({ species: sp }),
+            JSON.stringify(pushPayload),
             { TTL: 86400, urgency: "high" },
           );
           sent++;

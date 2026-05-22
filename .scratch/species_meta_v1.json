@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-06T19:25:29.886Z",
+  "updatedAt": "2026-05-22T09:02:58.823Z",
   "items": {
     "Ohhoota hõbekajakas": {
       "ebirdCode": "slbgul",
@@ -66,6 +66,7 @@
     "Hallkibu": {
       "ebirdCode": "tersan",
       "rarityLevel": "mega",
+      "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/hallkibu.webp",
       "scientificName": "Xenus cinereus"
     },
     "Hallrüdi": {
@@ -136,7 +137,10 @@
       "rarityLevel": "mega",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/suula.webp",
       "scientificName": "Morus bassanus",
-      "notify": true
+      "notify": true,
+      "expected_corridors": [
+        "north_atlantic"
+      ]
     },
     "Koldjalg-hõbekajakas": {
       "ebirdCode": "casgul2",
@@ -212,7 +216,10 @@
       "rarityLevel": "super",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/mesilasenapp.webp",
       "scientificName": "Merops apiaster",
-      "notify": true
+      "notify": true,
+      "expected_corridors": [
+        "black_sea_pannonian"
+      ]
     },
     "Mägi-kanepilind": {
       "ebirdCode": "twite1",
@@ -237,7 +244,10 @@
       "rarityLevel": "super",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/kalda-radilind.webp",
       "scientificName": "Cettia cetti",
-      "notify": true
+      "notify": true,
+      "expected_corridors": [
+        "black_sea_pannonian"
+      ]
     },
     "Käharpelikan": {
       "ebirdCode": "dalpel1",
@@ -303,7 +313,10 @@
       "rarityLevel": "super",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/karbuskajakas.webp",
       "scientificName": "Ichthyaetus melanocephalus",
-      "notify": true
+      "notify": true,
+      "expected_corridors": [
+        "caspian_central_asia"
+      ]
     },
     "Väike-laukhani": {
       "ebirdCode": "lwfgoo",
@@ -382,7 +395,10 @@
       "rarityLevel": "rare",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/stepi-loorkull.webp",
       "scientificName": "Circus macrourus",
-      "notify": true
+      "notify": true,
+      "expected_corridors": [
+        "caspian_central_asia"
+      ]
     },
     "Ruugerüdi": {
       "ebirdCode": "bubsan",
@@ -394,8 +410,12 @@
     "Naerutiir": {
       "ebirdCode": "gubter2",
       "rarityLevel": "mega",
+      "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/naerutiir.webp",
       "scientificName": "Gelochelidon nilotica",
-      "notify": true
+      "notify": true,
+      "expected_corridors": [
+        "north_atlantic"
+      ]
     },
     "Metsvint": {
       "ebirdCode": "comcha",
@@ -421,7 +441,10 @@
       "rarityLevel": "mega",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/vaikealk.webp",
       "scientificName": "Alle alle",
-      "notify": true
+      "notify": true,
+      "expected_corridors": [
+        "north_atlantic"
+      ]
     },
     "Väikehüüp": {
       "ebirdCode": "litbit1",
@@ -466,7 +489,10 @@
       "ebirdCode": "deswhe1",
       "rarityLevel": "super",
       "scientificName": "Oenanthe deserti",
-      "notify": true
+      "notify": true,
+      "expected_corridors": [
+        "caspian_central_asia"
+      ]
     },
     "Luitsnokk-iibis": {
       "ebirdCode": "eurspo1",
@@ -559,7 +585,10 @@
       "rarityLevel": "rare",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/must-toonekurg.webp",
       "scientificName": "Ciconia nigra",
-      "notify": true
+      "notify": true,
+      "expected_corridors": [
+        "black_sea_pannonian"
+      ]
     },
     "Põhja-kirjurästas": {
       "ebirdCode": "scathr2",
@@ -748,7 +777,10 @@
       "rarityLevel": "none",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/must-harksaba.webp",
       "scientificName": "Milvus migrans",
-      "notify": true
+      "notify": true,
+      "expected_corridors": [
+        "black_sea_pannonian"
+      ]
     },
     "Heletilder": {
       "ebirdCode": "comgre",
@@ -798,7 +830,10 @@
       "ebirdCode": "bktgod",
       "rarityLevel": "none",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/mustsaba-vigle.webp",
-      "scientificName": "Limosa limosa"
+      "scientificName": "Limosa limosa",
+      "expected_corridors": [
+        "north_atlantic"
+      ]
     },
     "Kadakatäks": {
       "ebirdCode": "whinch1",
@@ -829,7 +864,10 @@
       "ebirdCode": "banswa",
       "rarityLevel": "none",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/kaldapaasuke.webp",
-      "scientificName": "Riparia riparia"
+      "scientificName": "Riparia riparia",
+      "expected_corridors": [
+        "black_sea_pannonian"
+      ]
     },
     "Kägu": {
       "ebirdCode": "comcuc",
@@ -880,13 +918,19 @@
       "rarityLevel": "super",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/karkjalg.webp",
       "scientificName": "Himantopus himantopus",
-      "notify": true
+      "notify": true,
+      "expected_corridors": [
+        "black_sea_pannonian"
+      ]
     },
     "Räusktiir": {
       "ebirdCode": "caster1",
       "rarityLevel": "none",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/rausktiir.webp",
-      "scientificName": "Hydroprogne caspia"
+      "scientificName": "Hydroprogne caspia",
+      "expected_corridors": [
+        "north_atlantic"
+      ]
     },
     "Naaskelnokk": {
       "ebirdCode": "pieavo1",
@@ -1057,7 +1101,10 @@
       "ebirdCode": "rossta2",
       "rarityLevel": "rare",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/roosa-kuldnokk.webp",
-      "scientificName": "Pastor roseus"
+      "scientificName": "Pastor roseus",
+      "expected_corridors": [
+        "caspian_central_asia"
+      ]
     },
     "Stepipistrik": {
       "ebirdCode": "sakfal1",
@@ -1124,7 +1171,6 @@
       "rarityLevel": "none",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/herilaseviu.webp",
       "scientificName": "Pernis apivorus",
-      "notify": true,
       "is_migrant": true
     },
     "Lääne-sabatihane": {
@@ -1289,7 +1335,10 @@
     "Tõmmuiibis": {
       "ebirdCode": "gloibi",
       "rarityLevel": "super",
-      "scientificName": "Plegadis falcinellus"
+      "scientificName": "Plegadis falcinellus",
+      "expected_corridors": [
+        "black_sea_pannonian"
+      ]
     },
     "Tundrarüüt": {
       "ebirdCode": "pagplo",
@@ -1634,6 +1683,7 @@
     "Väikehuik": {
       "ebirdCode": "litcra1",
       "rarityLevel": "rare",
+      "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/vaikehuik.webp",
       "scientificName": "Zapornia parva",
       "notify": true
     },
@@ -1674,7 +1724,10 @@
     "Vahemere tormilind": {
       "ebirdCode": "levshe1",
       "rarityLevel": "mega",
-      "notify": true
+      "notify": true,
+      "expected_corridors": [
+        "black_sea_pannonian"
+      ]
     },
     "Urvalind": {
       "ebirdCode": "comlin",
@@ -1764,7 +1817,11 @@
       "rarityLevel": "mega",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/stepi-tuuletallaja.webp",
       "scientificName": "Falco naumanni",
-      "notify": true
+      "notify": true,
+      "expected_corridors": [
+        "black_sea_pannonian",
+        "caspian_central_asia"
+      ]
     },
     "Sooräts": {
       "ebirdCode": "sheowl",
@@ -1858,14 +1915,15 @@
     },
     "Põhjatsiitsitaja": {
       "ebirdCode": "ortbun1",
-      "rarityLevel": "none",
+      "rarityLevel": "rare",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/pohjatsiitsitaja.webp",
       "scientificName": "Emberiza rustica",
       "notify": true
     },
     "Punasaba-õgija": {
       "ebirdCode": "rebshr1",
-      "rarityLevel": "none",
+      "rarityLevel": "super",
+      "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/punasaba-ogija.webp",
       "scientificName": "Lanius phoenicuroides",
       "notify": true
     },
@@ -1905,7 +1963,8 @@
       "ebirdCode": "euabla1",
       "rarityLevel": "none",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/mustrastas.webp",
-      "scientificName": "Turdus merula"
+      "scientificName": "Turdus merula",
+      "is_migrant": false
     },
     "Musträhn": {
       "ebirdCode": "blawoo1",
@@ -2061,7 +2120,10 @@
     "Hõbehaigur": {
       "ebirdCode": "greegr",
       "rarityLevel": "none",
-      "scientificName": "Ardea alba"
+      "scientificName": "Ardea alba",
+      "expected_corridors": [
+        "black_sea_pannonian"
+      ]
     },
     "Jääkoskel": {
       "ebirdCode": "commer",
@@ -2393,10 +2455,13 @@
     },
     "Siidhaigur": {
       "ebirdCode": "litegr",
-      "rarityLevel": "none",
+      "rarityLevel": "super",
       "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/siidhaigur.webp",
       "scientificName": "Egretta garzetta",
-      "notify": true
+      "notify": true,
+      "expected_corridors": [
+        "black_sea_pannonian"
+      ]
     },
     "Siisike": {
       "ebirdCode": "eursis",
@@ -2453,7 +2518,9 @@
     "Talvike": {
       "ebirdCode": "yellow2",
       "rarityLevel": "none",
-      "scientificName": "Emberiza citrinella"
+      "avatarUrl": "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/linnuliigid/talvike.webp",
+      "scientificName": "Emberiza citrinella",
+      "is_migrant": false
     },
     "Tikutaja": {
       "ebirdCode": "comsni",

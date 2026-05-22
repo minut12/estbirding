@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
 import CorridorBadge from './CorridorBadge';
 import WindyChart from './WindyChart';
+import RareObservationsFeed from './RareObservationsFeed';
 
 function buildSciNameToEbirdCode(map: SpeciesMetaMap): Map<string, string> {
   const out = new Map<string, string>();
@@ -1071,6 +1072,7 @@ export default function OverviewTab() {
                   </div>
                 </>
               )}
+              <RareObservationsFeed />
               </div>
             ) : (
               <div className="space-y-3">

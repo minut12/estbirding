@@ -97,6 +97,7 @@ export type Database = {
           lat: number | null
           lng: number | null
           location: string | null
+          notification_sent_at: string | null
           obs_count: number | null
           obs_date: string
           observer_names: string[] | null
@@ -118,6 +119,7 @@ export type Database = {
           lat?: number | null
           lng?: number | null
           location?: string | null
+          notification_sent_at?: string | null
           obs_count?: number | null
           obs_date: string
           observer_names?: string[] | null
@@ -139,6 +141,7 @@ export type Database = {
           lat?: number | null
           lng?: number | null
           location?: string | null
+          notification_sent_at?: string | null
           obs_count?: number | null
           obs_date?: string
           observer_names?: string[] | null

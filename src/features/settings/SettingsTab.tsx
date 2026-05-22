@@ -21,6 +21,7 @@ import DeveloperSettings from './DeveloperSettings';
 import NewsSourcesSettings from './NewsSourcesSettings';
 import SpeciesPredictionSettings from './SpeciesPredictionSettings';
 import EventLog from './EventLog';
+import NotificationSettingsCard from './NotificationSettingsCard';
 import { LINNULIIGID_SCOPE, RARILIIN_SCOPE } from '@/lib/mapScope';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import {
@@ -995,6 +996,8 @@ export default function SettingsTab() {
           </Button>
         </div>
       </div>
+
+      <NotificationSettingsCard />
 
       {canManageSettings && <div className="flex flex-col gap-2">
         <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('news')}>

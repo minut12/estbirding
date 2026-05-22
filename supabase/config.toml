@@ -101,3 +101,6 @@ verify_jwt = false
 
 [functions.insert-ebird-rare-observations]
 verify_jwt = false
+
+[functions.mark-observations-notified]
+verify_jwt = false

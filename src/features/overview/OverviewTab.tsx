@@ -638,7 +638,7 @@ export default function OverviewTab() {
   const [toenaosusReport, setToenaosusReport] = useState<ToenaosusRaport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [section, setSection] = useState<'ee' | 'eu' | 'arrivals' | 'toenaosus'>('ee');
+  const [section, setSection] = useState<'ee' | 'eu' | 'arrivals' | 'toenaosus' | 'arhiiv'>('ee');
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [isRefreshingToenaosus, setIsRefreshingToenaosus] = useState(false);
@@ -905,6 +905,7 @@ export default function OverviewTab() {
                 { id: 'eu' as const, label: 'Euroopa', count: euRarities, disabled: false },
                 { id: 'arrivals' as const, label: 'Saabujad', count: arrivalsCount, disabled: arrivalsCount === 0 },
                 { id: 'toenaosus' as const, label: 'Tõenäosus', count: toenaosusCount, disabled: false },
+                { id: 'arhiiv' as const, label: 'Arhiiv', count: 0, disabled: false },
               ]).map((t) => (
                 <button
                   key={t.id}
@@ -1072,7 +1073,10 @@ export default function OverviewTab() {
                   </div>
                 </>
               )}
-              <RareObservationsFeed />
+              </div>
+            ) : section === 'arhiiv' ? (
+              <div className="overflow-x-hidden w-full max-w-full pt-4">
+                <RareObservationsFeed />
               </div>
             ) : (
               <div className="space-y-3">

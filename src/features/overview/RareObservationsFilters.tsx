@@ -68,6 +68,7 @@ function ChipButton({
 
 export default function RareObservationsFilters({ filters, onChange }: Props) {
   const [searchInput, setSearchInput] = useState(filters.search);
+  const [sliderVisible, setSliderVisible] = useState(filters.maxDistanceKm);
 
   // Debounce search → parent
   useEffect(() => {
@@ -78,6 +79,11 @@ export default function RareObservationsFilters({ filters, onChange }: Props) {
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
+
+  // Keep slider's visible value in sync if parent resets filters
+  useEffect(() => {
+    setSliderVisible(filters.maxDistanceKm);
+  }, [filters.maxDistanceKm]);
 
   const toggleCountry = (cc: string) => {
     const has = filters.countries.includes(cc);
@@ -100,9 +106,9 @@ export default function RareObservationsFilters({ filters, onChange }: Props) {
   };
 
   const distanceLabel =
-    filters.maxDistanceKm >= MAX_DISTANCE_NO_LIMIT
+    sliderVisible >= MAX_DISTANCE_NO_LIMIT
       ? 'Kogu Euroopa'
-      : `≤ ${filters.maxDistanceKm} km`;
+      : `≤ ${sliderVisible} km`;
 
   return (
     <div className="space-y-3 w-full max-w-full">
@@ -160,11 +166,12 @@ export default function RareObservationsFilters({ filters, onChange }: Props) {
           <span className="shrink-0 font-medium text-foreground">{distanceLabel}</span>
         </div>
         <Slider
-          value={[filters.maxDistanceKm]}
+          value={[sliderVisible]}
           min={50}
           max={MAX_DISTANCE_NO_LIMIT}
           step={50}
-          onValueChange={(v) => onChange({ ...filters, maxDistanceKm: v[0] ?? MAX_DISTANCE_NO_LIMIT })}
+          onValueChange={(v) => setSliderVisible(v[0] ?? MAX_DISTANCE_NO_LIMIT)}
+          onValueCommit={(v) => onChange({ ...filters, maxDistanceKm: v[0] ?? MAX_DISTANCE_NO_LIMIT })}
           aria-label="Kaugus Eestist"
         />
       </div>

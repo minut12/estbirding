@@ -98,3 +98,6 @@ verify_jwt = false
 
 [functions.insert-toenaosus-raport]
 verify_jwt = false
+
+[functions.insert-ebird-rare-observations]
+verify_jwt = false

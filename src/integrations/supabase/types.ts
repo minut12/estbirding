@@ -86,6 +86,72 @@ export type Database = {
         }
         Relationships: []
       }
+      ebird_rare_observations: {
+        Row: {
+          country_code: string | null
+          distance_to_ee_km: number | null
+          ebird_sub_id: string
+          first_seen_at: string
+          id: string
+          last_seen_at: string
+          lat: number | null
+          lng: number | null
+          location: string | null
+          obs_count: number | null
+          obs_date: string
+          observer_names: string[] | null
+          rarity_level: string | null
+          raw_observation: Json | null
+          region: string | null
+          species_code: string
+          species_et_name: string | null
+          species_lat_name: string | null
+          wind_corridor_at_time: Json | null
+        }
+        Insert: {
+          country_code?: string | null
+          distance_to_ee_km?: number | null
+          ebird_sub_id: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          lat?: number | null
+          lng?: number | null
+          location?: string | null
+          obs_count?: number | null
+          obs_date: string
+          observer_names?: string[] | null
+          rarity_level?: string | null
+          raw_observation?: Json | null
+          region?: string | null
+          species_code: string
+          species_et_name?: string | null
+          species_lat_name?: string | null
+          wind_corridor_at_time?: Json | null
+        }
+        Update: {
+          country_code?: string | null
+          distance_to_ee_km?: number | null
+          ebird_sub_id?: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          lat?: number | null
+          lng?: number | null
+          location?: string | null
+          obs_count?: number | null
+          obs_date?: string
+          observer_names?: string[] | null
+          rarity_level?: string | null
+          raw_observation?: Json | null
+          region?: string | null
+          species_code?: string
+          species_et_name?: string | null
+          species_lat_name?: string | null
+          wind_corridor_at_time?: Json | null
+        }
+        Relationships: []
+      }
       elurikkus_cache: {
         Row: {
           behavior: string | null

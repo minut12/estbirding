@@ -50,25 +50,27 @@ self.addEventListener('fetch', (event) => {
 
 // === Push Notification Handler ===
 self.addEventListener('push', function(event) {
-  let data = { species: 'Tundmatu liik' };
+  let payload = {};
   try {
-    if (event.data) {
-      data = event.data.json();
-    }
+    if (event.data) payload = event.data.json();
   } catch (e) {
     try {
-      data = { species: event.data.text() };
+      payload = { species: event.data.text() };
     } catch (e2) {}
   }
 
-  const species = data.species || 'Tundmatu liik';
-  const title = 'EstBirding';
+  const species = payload.species || '';
+  const title = payload.title || 'EstBirding';
+  const body = payload.body || ((species || 'Tundmatu liik') + ' on märgatud!');
+  const url = payload.url || '/';
+  const tag = payload.tag || ('estbirding-' + String(species).replace(/[^a-zA-ZäöüõÄÖÜÕ0-9]/g, '-'));
+
   const options = {
-    body: species + ' on märgatud!',
+    body: body,
     icon: '/icon.png',
     badge: '/icon.png',
-    tag: 'estbirding-' + species.replace(/[^a-zA-ZäöüõÄÖÜÕ0-9]/g, '-'),
-    data: { url: '/', species: species },
+    tag: tag,
+    data: { url: url, species: species },
     vibrate: [200, 100, 200],
     requireInteraction: false
   };

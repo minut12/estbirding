@@ -16,8 +16,22 @@ function errorMessage(error: unknown): string {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
+  const expectedSecret = Deno.env.get('VAATLUSTE_WEBHOOK_SECRET');
+  if (req.headers.get('x-webhook-secret') !== expectedSecret) {
+    return new Response(JSON.stringify({ error: 'unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   try {
-    const { species } = await req.json();
+    const {
+      species,
+      notification_title,
+      notification_body,
+      notification_url,
+      notification_tag,
+    } = await req.json();
     if (!Array.isArray(species) || species.length === 0) {
       return new Response(JSON.stringify({ error: "species array required" }), {
         status: 400,
@@ -86,9 +100,14 @@ Deno.serve(async (req) => {
             endpoint: sub.endpoint,
             keys: { p256dh: sub.key_p256dh, auth: sub.key_auth },
           };
+          const pushPayload: Record<string, string> = { species: sp };
+          if (notification_title) pushPayload.title = notification_title;
+          if (notification_body) pushPayload.body = notification_body;
+          if (notification_url) pushPayload.url = notification_url;
+          if (notification_tag) pushPayload.tag = notification_tag;
           const result = await webpush.sendNotification(
             pushSub,
-            JSON.stringify({ species: sp }),
+            JSON.stringify(pushPayload),
             { TTL: 86400, urgency: "high" },
           );
           sent++;

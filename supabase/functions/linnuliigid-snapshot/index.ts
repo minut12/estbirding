@@ -1706,7 +1706,7 @@ async function runRefresh(
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+            "X-Webhook-Secret": Deno.env.get("VAATLUSTE_WEBHOOK_SECRET") ?? "",
           },
           body: JSON.stringify({ species: newlySpottedSpecies }),
         });

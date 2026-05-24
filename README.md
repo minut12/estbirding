@@ -1,76 +1,32 @@
-# Welcome to your Lovable project
+# EstBirding
 
-## Project info
+Estonian bird observation and prediction platform. Surfaces eBird, eElurikkus,
+and GBIF data through interactive maps, arrival tracking, and migration
+prediction, with Estonian-language narrative summaries.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+🌐 Live app: https://estbirding.lovable.app
 
-## How can I edit this code?
+## Features
 
-There are several ways of editing your application.
+- **Linnuliigid** — interactive species map with eBird 7-day observation counts and probability estimates
+- **Ülevaade** — daily / twice-daily observation reports synthesised from eBird and eElurikkus
+- **Saabujad** — spring migrant arrival tracking against historical baselines
+- **Tõenäosus** — rare-species probability prediction using neighbouring-country data
+- Push notifications for rare and notable observations
 
-**Use Lovable**
+## Tech stack
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- React + Vite (frontend)
+- Leaflet (standalone map HTMLs — Linnuliigid, Europe, Rariliin) + MapLibre GL JS (React events map)
+- Supabase — PostgreSQL, Edge Functions (Deno), Storage, Auth
+- n8n Cloud — workflow automation and external API relays
+- OpenAI + Anthropic Claude — Estonian-language narrative generation and translation
 
-Changes made via Lovable will be committed automatically to this repo.
+## Data sources
 
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
-
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+- [eBird](https://ebird.org) — Cornell Lab of Ornithology
+- [eElurikkus](https://elurikkus.ee) — Estonian Biodiversity Information System
+- [GBIF](https://gbif.org) — Global Biodiversity Information Facility
 
 ## Translation endpoint (news translation)
 
@@ -182,3 +138,7 @@ curl -i "https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/ebird_recent?regi
 - Frontend reads directly from `public.news_items` and resolves source labels from `public.news_sources`.
 - News image fields: `image_url`, `cached_image_url`, `cached_image_path`.
 - `news-refresh` upserts by `source_id + url` and caches images into `news-images`.
+
+## License
+
+This source is published for transparency. **All rights reserved.** See [LICENSE](./LICENSE).

@@ -26,3 +26,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Dev tool / scratch directories
+.lovable/
+.scratch/
+.tmp_diag/
+.claude/

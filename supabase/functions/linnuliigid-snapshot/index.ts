@@ -2052,16 +2052,19 @@ Deno.serve(async (req) => {
 
       try {
         const result = await runRefresh(supabaseAdmin, { startIndex: resumeStart, runId, speciesFilter });
-        const finalStatus = result.finished ? "ready" : "running";
+        // Always finalize: if partial (wall-clock break), still mark ready+generated_at so watchers complete.
+        const isComplete = result.finished || result.partial;
+        const finalStatus = isComplete ? "ready" : "running";
+        const finishedAt = new Date().toISOString();
         const { error: finalizeError } = await updateSnapshot(supabaseAdmin, {
           points_json: result.points,
           status: finalStatus,
           progress_done: result.done,
           progress_total: result.total,
           last_error: result.lastError,
-          heartbeat_at: new Date().toISOString(),
+          heartbeat_at: finishedAt,
           run_id: result.runId,
-          ...(result.finished ? { generated_at: new Date().toISOString() } : {}),
+          ...(isComplete ? { generated_at: finishedAt } : {}),
         });
         if (finalizeError) throw finalizeError;
 
@@ -2069,10 +2072,12 @@ Deno.serve(async (req) => {
           status: finalStatus,
           progress_done: result.done,
           progress_total: result.total,
-          generated_at: result.finished ? new Date().toISOString() : current?.generated_at || null,
+          generated_at: isComplete ? finishedAt : current?.generated_at || null,
           points_json: result.points,
           last_error: result.lastError,
-          heartbeat_at: heartbeatColumnAvailable ? new Date().toISOString() : null,
+          heartbeat_at: heartbeatColumnAvailable ? finishedAt : null,
+          partial: !!result.partial,
+          species_skipped: Number(result.speciesSkipped || 0),
         };
         return new Response(
           JSON.stringify(withSignature("snapshot", responseBody)),

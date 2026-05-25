@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye, BarChart3, Copy, Check } from 'lucide-react';
+import { AlertTriangle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye, BarChart3 } from 'lucide-react';
 import { toast } from 'sonner';
 import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
 import CorridorBadge from './CorridorBadge';
@@ -642,7 +642,6 @@ export default function OverviewTab() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [isRefreshingToenaosus, setIsRefreshingToenaosus] = useState(false);
-  const [copiedToenaosus, setCopiedToenaosus] = useState(false);
 
   const fetchLatest = useCallback(async (): Promise<VaatlusteRaport | null> => {
     setError(null);
@@ -818,27 +817,6 @@ export default function OverviewTab() {
     });
   }, [toenaosusEntries]);
   const toenaosusCount = sortedToenaosusEntries.length;
-  const handleCopyToenaosusJson = async () => {
-    const payload = {
-      source: 'toenaosus_raport',
-      copied_at: new Date().toISOString(),
-      period_label: periodStart && periodEnd ? formatPeriod(periodStart, periodEnd) : null,
-      period_start: toenaosusReport?.period_start ?? null,
-      period_end: toenaosusReport?.period_end ?? null,
-      generated_at: toenaosusReport?.generated_at ?? null,
-      candidate_count: sortedToenaosusEntries.length,
-      items: sortedToenaosusEntries,
-    };
-    const json = JSON.stringify(payload, null, 2);
-    try {
-      await navigator.clipboard.writeText(json);
-      setCopiedToenaosus(true);
-      setTimeout(() => setCopiedToenaosus(false), 2000);
-    } catch (err) {
-      console.error('[toenaosus-copy] clipboard write failed', err);
-      toast.error('Kopeerimine ebaõnnestus');
-    }
-  };
   const activeEntries = section === 'eu' ? euEntries : eeEntries;
   const activeLookup = section === 'eu' ? euSubIdLookup : eeSubIdLookup;
   const speciesMetaMap = useMemo(() => loadSpeciesMeta(), [report]);
@@ -968,17 +946,7 @@ export default function OverviewTab() {
               />
             ) : section === 'toenaosus' ? (
               <div className="space-y-3 w-full max-w-full overflow-x-hidden">
-                <div className="flex justify-end gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCopyToenaosusJson}
-                    disabled={sortedToenaosusEntries.length === 0}
-                    className="gap-2"
-                  >
-                    {copiedToenaosus ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                    {copiedToenaosus ? 'Kopeeritud!' : 'Kopeeri JSON'}
-                  </Button>
+                <div className="flex justify-end">
                   <Button
                     variant="outline"
                     size="sm"

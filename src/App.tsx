@@ -13,15 +13,24 @@ import ResetPasswordPage from "./pages/ResetPasswordPage";
 import AdminUsersScreen from "./screens/AdminUsersScreen";
 import NotFound from "./pages/NotFound";
 import { broadcastSupabaseConfigToMapIframes } from "./config/supabaseConfig";
+import { supabaseConfigError } from "./integrations/supabase/client";
+import RootErrorBoundary from "./components/RootErrorBoundary";
+import ConfigErrorScreen from "./components/ConfigErrorScreen";
 
 const queryClient = new QueryClient();
 
 const App = () => {
   useEffect(() => {
+    if (supabaseConfigError) return;
     broadcastSupabaseConfigToMapIframes();
   }, []);
 
+  if (supabaseConfigError) {
+    return <ConfigErrorScreen detail={supabaseConfigError} />;
+  }
+
   return (
+    <RootErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
@@ -63,6 +72,7 @@ const App = () => {
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>
+    </RootErrorBoundary>
   );
 };
 

@@ -538,7 +538,7 @@ export default function SettingsTab() {
         text: 'Tere! This is a test.',
         targetLang: 'et',
       };
-      const anon = String((import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || '').trim();
+      const anon = SUPABASE_KEY;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (anon) {
         headers.apikey = anon;

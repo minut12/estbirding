@@ -1738,8 +1738,9 @@ async function runRefresh(
   }
 
   return {
-    done, total, finished: done >= total, timedOut: false, lastError, points, runId,
+    done, total, finished: done >= total && !partial, timedOut: false, lastError, points, runId,
     upstreamDataMaxAt: upstreamMaxTs > 0 ? new Date(upstreamMaxTs).toISOString() : null,
+    partial, speciesSkipped,
   };
 }
 

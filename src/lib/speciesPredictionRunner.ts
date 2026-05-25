@@ -387,8 +387,8 @@ async function pollForResult(
       const pollResp = await fetch(pollUrl, {
         method: 'GET',
         headers: {
-          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || ''}`,
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
         },
       });
 

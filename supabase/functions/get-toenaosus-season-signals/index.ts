@@ -16,6 +16,19 @@ function getISOWeek(date: Date): number {
   return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 }
 
+function getWeekValue(weeks: Map<number, number>, w: number): number {
+  const nw = ((w - 1) % 53 + 53) % 53 + 1;
+  return weeks.get(nw) ?? 0;
+}
+
+function rollingSum(weeks: Map<number, number>, center: number): number {
+  let sum = 0;
+  for (let offset = -2; offset <= 2; offset++) {
+    sum += getWeekValue(weeks, center + offset);
+  }
+  return sum;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -89,15 +102,25 @@ Deno.serve(async (req) => {
 
     const results = speciesNames.map((sn) => {
       const s = stats.get(sn) ?? { total: 0, weeks: new Map<number, number>() };
+
       const currentWeekObs = s.weeks.get(currentWeek) ?? 0;
       let peakWeekObs = 0;
       for (const v of s.weeks.values()) if (v > peakWeekObs) peakWeekObs = v;
 
+      const currentSmoothed = rollingSum(s.weeks, currentWeek);
+      let peakSmoothed = 0;
+      for (let w = 1; w <= 53; w++) {
+        const v = rollingSum(s.weeks, w);
+        if (v > peakSmoothed) peakSmoothed = v;
+      }
+
       let season_signal: number;
-      if (s.total < 5 || peakWeekObs === 0) {
+      if (s.total < 5 || peakSmoothed === 0) {
         season_signal = 0.5;
       } else {
-        season_signal = Math.max(0, Math.min(1, currentWeekObs / peakWeekObs));
+        const rawRatio = Math.max(0, Math.min(1, currentSmoothed / peakSmoothed));
+        const confidence = Math.min(1, s.total / 30);
+        season_signal = confidence * rawRatio + (1 - confidence) * 0.5;
       }
 
       return {
@@ -105,6 +128,9 @@ Deno.serve(async (req) => {
         total_obs: s.total,
         current_week_obs: currentWeekObs,
         peak_week_obs: peakWeekObs,
+        current_smoothed: currentSmoothed,
+        peak_smoothed: peakSmoothed,
+        confidence: Math.round(Math.min(1, s.total / 30) * 1000) / 1000,
         season_signal: Math.round(season_signal * 1000) / 1000,
       };
     });

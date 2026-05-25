@@ -104,3 +104,6 @@ verify_jwt = false
 
 [functions.mark-observations-notified]
 verify_jwt = false
+
+[functions.get-toenaosus-season-signals]
+verify_jwt = false

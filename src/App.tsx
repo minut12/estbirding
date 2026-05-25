@@ -72,6 +72,7 @@ const App = () => {
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>
+    </RootErrorBoundary>
   );
 };
 

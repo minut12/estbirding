@@ -174,6 +174,11 @@ type ToenaosusEntry = VaatlusEntry & {
     distance_factor: number;
     count_factor: number;
     season_factor: number;
+    corridor_factor?: number;
+    // v2 additions, optional for legacy compatibility
+    adjacency_bonus?: number;
+    raw_score?: number;
+    formula_version?: string;
   };
   avatar_url?: string | null;
 };
@@ -1090,6 +1095,21 @@ export default function OverviewTab() {
                               {entry.neighbor_breakdown
                                 .map((b) => `${b.country_code} ×${b.obs_count}`)
                                 .join(' · ')}
+                            </p>
+                          )}
+
+                          {typeof entry.probability_factors?.adjacency_bonus === 'number' && (
+                            <p
+                              className="text-xs text-muted-foreground"
+                              title={
+                                typeof entry.probability_factors?.raw_score === 'number'
+                                  ? `Toorpunktiskoor: ${entry.probability_factors.raw_score.toFixed(2)} (enne piiramist 5–95)`
+                                  : undefined
+                              }
+                            >
+                              <span className="font-semibold">Naabermaa lähedusboonus:</span>{' '}
+                              {entry.probability_factors.adjacency_bonus} punkti{' '}
+                              <span className="opacity-70">(LV/FI: 10, LT: 8, SE: 7, PL: 5, RU: 4, BY: 3)</span>
                             </p>
                           )}
 

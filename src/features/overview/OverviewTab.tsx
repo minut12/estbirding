@@ -180,6 +180,8 @@ type ToenaosusEntry = VaatlusEntry & {
     raw_score?: number;
     formula_version?: string;
   };
+  // v8+ arrival sites, optional for legacy compatibility
+  likely_arrival_sites_et?: Array<{ name: string; reasoning: string }>;
   avatar_url?: string | null;
 };
 

@@ -1415,7 +1415,8 @@ async function rebuildSnapshotNow(supabaseAdmin: any, currentRow: Record<string,
   try {
     const result = await runRefresh(supabaseAdmin, { startIndex: 0, runId });
     const finishedAt = new Date().toISOString();
-    const finalStatus = result.finished ? "ready" : "running";
+    const isComplete = result.finished || (result as { partial?: boolean }).partial;
+    const finalStatus = isComplete ? "ready" : "running";
     const { error: finalizeError } = await updateSnapshot(supabaseAdmin, {
       points_json: result.points,
       status: finalStatus,
@@ -1424,7 +1425,7 @@ async function rebuildSnapshotNow(supabaseAdmin: any, currentRow: Record<string,
       last_error: result.lastError,
       heartbeat_at: finishedAt,
       run_id: result.runId,
-      ...(result.finished ? { generated_at: finishedAt } : {}),
+      ...(isComplete ? { generated_at: finishedAt } : {}),
     });
     if (finalizeError) throw finalizeError;
 
@@ -1570,10 +1571,24 @@ async function runRefresh(
   let done = startIndex;
   let lastError: string | null = null;
   let upstreamMaxTs = 0;
+  let speciesSkipped = 0;
+  let partial = false;
   const MAX_RETRIES = 2;
-  const INDEX_TIMEOUT_MS = 30000;
+  const SPECIES_HARD_TIMEOUT_MS = 12_000;
+  const LOOP_HARD_BUDGET_MS = 45 * 60 * 1000;
+  const loopStartMs = Date.now();
   for (let i = startIndex; i < total; i++) {
     const name = SPECIES[i];
+    const speciesName = name;
+    const speciesCode = name;
+    const idx = i;
+    console.log(`[snapshot] idx=${idx}/${total} starting species="${speciesName}" code="${speciesCode}" elapsedMs=${Date.now() - loopStartMs}`);
+
+    if (Date.now() - loopStartMs > LOOP_HARD_BUDGET_MS) {
+      console.warn(`[snapshot] global wall-clock budget exhausted at idx=${idx}/${total} — proceeding to finalize`);
+      partial = true;
+      break;
+    }
     // Skip species not matching filter (debug single-species mode)
     if (speciesFilter && name.toLowerCase() !== speciesFilter) {
       done++;
@@ -1598,7 +1613,7 @@ async function runRefresh(
             for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
               try {
                 if (attempt > 0) await sleep(400 * Math.pow(2, attempt - 1));
-                data = await withTimeout(fetchSpeciesData(name), 12000, `species=${name}`);
+                data = await withTimeout(fetchSpeciesData(name), 8000, `species=${name}`);
                 break;
               } catch (e) {
                 lastErr = e instanceof Error ? e : new Error(String(e));
@@ -1639,16 +1654,17 @@ async function runRefresh(
               console.warn("[refresh]", lastError);
             }
           })(),
-          (async () => {
-            await sleep(INDEX_TIMEOUT_MS);
-            throw new Error(`INDEX_TIMEOUT index=${i} species=${name}`);
-          })(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("species-hard-timeout")), SPECIES_HARD_TIMEOUT_MS)
+          ),
         ]);
       }
     } catch (e) {
-      done++;
-      lastError = `${name}: ${e instanceof Error ? e.message : String(e)}`;
-      console.warn("[refresh] item failure", lastError);
+      const reason = e instanceof Error ? e.message : String(e);
+      console.warn(`[snapshot] skip species="${speciesName}" reason="${reason}"`);
+      if (done <= i) done = i + 1; // ensure forward progress even if inner didn't increment
+      speciesSkipped++;
+      lastError = `${name}: ${reason}`;
     }
 
     const upd = await updateSnapshot(supabase, {
@@ -1664,6 +1680,7 @@ async function runRefresh(
       return {
         done, total, finished: false, timedOut: true, lastError, points, runId,
         upstreamDataMaxAt: upstreamMaxTs > 0 ? new Date(upstreamMaxTs).toISOString() : null,
+        partial, speciesSkipped,
       };
     }
   }
@@ -1722,8 +1739,9 @@ async function runRefresh(
   }
 
   return {
-    done, total, finished: done >= total, timedOut: false, lastError, points, runId,
+    done, total, finished: done >= total && !partial, timedOut: false, lastError, points, runId,
     upstreamDataMaxAt: upstreamMaxTs > 0 ? new Date(upstreamMaxTs).toISOString() : null,
+    partial, speciesSkipped,
   };
 }
 
@@ -2035,16 +2053,19 @@ Deno.serve(async (req) => {
 
       try {
         const result = await runRefresh(supabaseAdmin, { startIndex: resumeStart, runId, speciesFilter });
-        const finalStatus = result.finished ? "ready" : "running";
+        // Always finalize: if partial (wall-clock break), still mark ready+generated_at so watchers complete.
+        const isComplete = result.finished || result.partial;
+        const finalStatus = isComplete ? "ready" : "running";
+        const finishedAt = new Date().toISOString();
         const { error: finalizeError } = await updateSnapshot(supabaseAdmin, {
           points_json: result.points,
           status: finalStatus,
           progress_done: result.done,
           progress_total: result.total,
           last_error: result.lastError,
-          heartbeat_at: new Date().toISOString(),
+          heartbeat_at: finishedAt,
           run_id: result.runId,
-          ...(result.finished ? { generated_at: new Date().toISOString() } : {}),
+          ...(isComplete ? { generated_at: finishedAt } : {}),
         });
         if (finalizeError) throw finalizeError;
 
@@ -2052,10 +2073,12 @@ Deno.serve(async (req) => {
           status: finalStatus,
           progress_done: result.done,
           progress_total: result.total,
-          generated_at: result.finished ? new Date().toISOString() : current?.generated_at || null,
+          generated_at: isComplete ? finishedAt : current?.generated_at || null,
           points_json: result.points,
           last_error: result.lastError,
-          heartbeat_at: heartbeatColumnAvailable ? new Date().toISOString() : null,
+          heartbeat_at: heartbeatColumnAvailable ? finishedAt : null,
+          partial: !!result.partial,
+          species_skipped: Number(result.speciesSkipped || 0),
         };
         return new Response(
           JSON.stringify(withSignature("snapshot", responseBody)),

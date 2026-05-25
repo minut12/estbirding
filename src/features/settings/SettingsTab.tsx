@@ -44,7 +44,7 @@ import {
   resolveProxyBase,
   setStoredProxyBase,
 } from '@/config/proxyEndpoint';
-import { isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
+import { SUPABASE_KEY, isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
 
 type ResetMode = 'soft' | 'hard' | null;
 type SettingsPage = 'home' | 'news' | 'translations' | 'species' | 'rariliin' | 'species_prediction' | 'event_log';

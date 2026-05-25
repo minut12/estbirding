@@ -1415,7 +1415,8 @@ async function rebuildSnapshotNow(supabaseAdmin: any, currentRow: Record<string,
   try {
     const result = await runRefresh(supabaseAdmin, { startIndex: 0, runId });
     const finishedAt = new Date().toISOString();
-    const finalStatus = result.finished ? "ready" : "running";
+    const isComplete = result.finished || (result as { partial?: boolean }).partial;
+    const finalStatus = isComplete ? "ready" : "running";
     const { error: finalizeError } = await updateSnapshot(supabaseAdmin, {
       points_json: result.points,
       status: finalStatus,
@@ -1424,7 +1425,7 @@ async function rebuildSnapshotNow(supabaseAdmin: any, currentRow: Record<string,
       last_error: result.lastError,
       heartbeat_at: finishedAt,
       run_id: result.runId,
-      ...(result.finished ? { generated_at: finishedAt } : {}),
+      ...(isComplete ? { generated_at: finishedAt } : {}),
     });
     if (finalizeError) throw finalizeError;
 

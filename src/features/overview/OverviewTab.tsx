@@ -180,6 +180,8 @@ type ToenaosusEntry = VaatlusEntry & {
     raw_score?: number;
     formula_version?: string;
   };
+  // v8+ arrival sites, optional for legacy compatibility
+  likely_arrival_sites_et?: Array<{ name: string; reasoning: string }>;
   avatar_url?: string | null;
 };
 
@@ -1111,6 +1113,29 @@ export default function OverviewTab() {
                               {entry.probability_factors.adjacency_bonus} punkti{' '}
                               <span className="opacity-70">(LV/FI: 10, LT: 8, SE: 7, PL: 5, RU: 4, BY: 3)</span>
                             </p>
+                          )}
+
+                          {entry.likely_arrival_sites_et && entry.likely_arrival_sites_et.length > 0 && entry.likely_arrival_sites_et.some((s) => s.name) && (
+                            <div className="mt-2 space-y-1">
+                              <p className="text-xs font-semibold text-muted-foreground">Tõenäoline saabumiskoht Eestis</p>
+                              {entry.likely_arrival_sites_et
+                                .filter((s) => s.name)
+                                .map((site, idx) => (
+                                  <div key={idx}>
+                                    <p className="text-xs text-muted-foreground">
+                                      <a
+                                        href={`https://www.google.com/maps/search/${encodeURIComponent(site.name + ' Eesti')}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="font-semibold hover:underline"
+                                      >
+                                        {site.name}
+                                      </a>
+                                    </p>
+                                    <p className="text-xs text-muted-foreground opacity-70">{site.reasoning}</p>
+                                  </div>
+                                ))}
+                            </div>
                           )}
 
                           {entry.why_likely_et && (

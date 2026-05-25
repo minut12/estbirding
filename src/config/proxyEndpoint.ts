@@ -1,3 +1,5 @@
+import { SUPABASE_URL } from "@/config/supabaseConfig";
+
 const KEY = "estbirding.proxyBase";
 const LS_RESOLVED_PROXY_BASE = "resolved_proxy_base_v1";
 export const PROXY_ENDPOINT_UPDATED_EVENT = "proxy-endpoint-updated";

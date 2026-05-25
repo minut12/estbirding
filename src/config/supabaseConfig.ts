@@ -1,3 +1,26 @@
+// FALLBACK HARDCODING: temporary workaround for Lovable platform-level
+// env propagation bug. Keep in sync with src/integrations/supabase/client.ts.
+// Anon/publishable key is public-by-design (RLS-protected), safe to embed.
+const FALLBACK_URL = "https://eenwcyuyugyrjgpivxrq.supabase.co";
+const FALLBACK_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVlbndjeXV5dWd5cmpncGl2eHJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1MzAxNTAsImV4cCI6MjA4NzEwNjE1MH0.pyU1vWLAUcFCBFggn0Ao2dI49yuTo0p5lvSWpPmWUis";
+
+const RAW_ENV_URL = String(import.meta.env.VITE_SUPABASE_URL || "").trim();
+const RAW_ENV_KEY = String(
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    "",
+).trim();
+
+export const SUPABASE_URL = RAW_ENV_URL || FALLBACK_URL;
+export const SUPABASE_KEY = RAW_ENV_KEY || FALLBACK_KEY;
+
+if (!RAW_ENV_URL || !RAW_ENV_KEY) {
+  console.warn(
+    "[supabase] env injection missing — using hardcoded fallback (see src/config/supabaseConfig.ts).",
+  );
+}
+
 const SUPABASE_URL_OVERRIDE_KEY = "dev_supabase_url_override";
 const SUPABASE_ANON_KEY_OVERRIDE_KEY = "dev_supabase_anon_key_override";
 export const DEV_MODE_KEY = "estbirding.devMode";
@@ -11,11 +34,11 @@ function getLocalStorageValue(key: string): string | null {
 }
 
 function getEnvUrl(): string {
-  return String(import.meta.env.VITE_SUPABASE_URL || "").trim();
+  return SUPABASE_URL;
 }
 
 function getEnvAnonKey(): string {
-  return String(import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "").trim();
+  return SUPABASE_KEY;
 }
 
 function isPlaceholderValue(value: string): boolean {

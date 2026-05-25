@@ -1570,10 +1570,24 @@ async function runRefresh(
   let done = startIndex;
   let lastError: string | null = null;
   let upstreamMaxTs = 0;
+  let speciesSkipped = 0;
+  let partial = false;
   const MAX_RETRIES = 2;
-  const INDEX_TIMEOUT_MS = 30000;
+  const SPECIES_HARD_TIMEOUT_MS = 12_000;
+  const LOOP_HARD_BUDGET_MS = 45 * 60 * 1000;
+  const loopStartMs = Date.now();
   for (let i = startIndex; i < total; i++) {
     const name = SPECIES[i];
+    const speciesName = name;
+    const speciesCode = name;
+    const idx = i;
+    console.log(`[snapshot] idx=${idx}/${total} starting species="${speciesName}" code="${speciesCode}" elapsedMs=${Date.now() - loopStartMs}`);
+
+    if (Date.now() - loopStartMs > LOOP_HARD_BUDGET_MS) {
+      console.warn(`[snapshot] global wall-clock budget exhausted at idx=${idx}/${total} — proceeding to finalize`);
+      partial = true;
+      break;
+    }
     // Skip species not matching filter (debug single-species mode)
     if (speciesFilter && name.toLowerCase() !== speciesFilter) {
       done++;
@@ -1598,7 +1612,7 @@ async function runRefresh(
             for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
               try {
                 if (attempt > 0) await sleep(400 * Math.pow(2, attempt - 1));
-                data = await withTimeout(fetchSpeciesData(name), 12000, `species=${name}`);
+                data = await withTimeout(fetchSpeciesData(name), 8000, `species=${name}`);
                 break;
               } catch (e) {
                 lastErr = e instanceof Error ? e : new Error(String(e));
@@ -1639,16 +1653,17 @@ async function runRefresh(
               console.warn("[refresh]", lastError);
             }
           })(),
-          (async () => {
-            await sleep(INDEX_TIMEOUT_MS);
-            throw new Error(`INDEX_TIMEOUT index=${i} species=${name}`);
-          })(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("species-hard-timeout")), SPECIES_HARD_TIMEOUT_MS)
+          ),
         ]);
       }
     } catch (e) {
-      done++;
-      lastError = `${name}: ${e instanceof Error ? e.message : String(e)}`;
-      console.warn("[refresh] item failure", lastError);
+      const reason = e instanceof Error ? e.message : String(e);
+      console.warn(`[snapshot] skip species="${speciesName}" reason="${reason}"`);
+      if (done <= i) done = i + 1; // ensure forward progress even if inner didn't increment
+      speciesSkipped++;
+      lastError = `${name}: ${reason}`;
     }
 
     const upd = await updateSnapshot(supabase, {
@@ -1664,6 +1679,7 @@ async function runRefresh(
       return {
         done, total, finished: false, timedOut: true, lastError, points, runId,
         upstreamDataMaxAt: upstreamMaxTs > 0 ? new Date(upstreamMaxTs).toISOString() : null,
+        partial, speciesSkipped,
       };
     }
   }

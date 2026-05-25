@@ -174,6 +174,11 @@ type ToenaosusEntry = VaatlusEntry & {
     distance_factor: number;
     count_factor: number;
     season_factor: number;
+    corridor_factor?: number;
+    // v2 additions, optional for legacy compatibility
+    adjacency_bonus?: number;
+    raw_score?: number;
+    formula_version?: string;
   };
   avatar_url?: string | null;
 };

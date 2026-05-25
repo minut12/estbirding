@@ -1098,6 +1098,21 @@ export default function OverviewTab() {
                             </p>
                           )}
 
+                          {typeof entry.probability_factors?.adjacency_bonus === 'number' && (
+                            <p
+                              className="text-xs text-muted-foreground"
+                              title={
+                                typeof entry.probability_factors?.raw_score === 'number'
+                                  ? `Toorpunktiskoor: ${entry.probability_factors.raw_score.toFixed(2)} (enne piiramist 5–95)`
+                                  : undefined
+                              }
+                            >
+                              <span className="font-semibold">Naabermaa lähedusboonus:</span>{' '}
+                              {entry.probability_factors.adjacency_bonus} punkti{' '}
+                              <span className="opacity-70">(LV/FI: 10, LT: 8, SE: 7, PL: 5, RU: 4, BY: 3)</span>
+                            </p>
+                          )}
+
                           {entry.why_likely_et && (
                             <div>
                               <p className="text-xs font-semibold text-muted-foreground">Miks tõenäoline?</p>

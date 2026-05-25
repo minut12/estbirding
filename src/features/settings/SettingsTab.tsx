@@ -595,7 +595,7 @@ export default function SettingsTab() {
         toast.error('Tõlke endpoint puudub. Ava Seaded → Tõlge ja salvesta URL.');
         throw new Error('TRANSLATE_ENDPOINT_MISSING');
       }
-      const anon = String((import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || '').trim();
+      const anon = SUPABASE_KEY;
       const headers: Record<string, string> = {};
       if (anon) {
         headers.apikey = anon;

@@ -95,7 +95,7 @@ async function translateText(endpoint: string, text: string, sourceLang?: string
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
-  const anon = String((import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || '').trim();
+  const anon = SUPABASE_KEY;
   if (anon) {
     headers.apikey = anon;
     if (!token) headers.Authorization = `Bearer ${anon}`;

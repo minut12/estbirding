@@ -6,6 +6,7 @@ import {
   getTranslateEndpoint,
 } from '@/config/translationEndpoint';
 import { supabase } from '@/integrations/supabase/client';
+import { SUPABASE_KEY } from '@/config/supabaseConfig';
 import { toast } from 'sonner';
 
 export interface TranslateEtInput {
@@ -95,7 +96,7 @@ async function translateText(endpoint: string, text: string, sourceLang?: string
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
-  const anon = String((import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || '').trim();
+  const anon = SUPABASE_KEY;
   if (anon) {
     headers.apikey = anon;
     if (!token) headers.Authorization = `Bearer ${anon}`;

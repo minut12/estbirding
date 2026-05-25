@@ -44,7 +44,7 @@ import {
   resolveProxyBase,
   setStoredProxyBase,
 } from '@/config/proxyEndpoint';
-import { isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
+import { SUPABASE_KEY, isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
 
 type ResetMode = 'soft' | 'hard' | null;
 type SettingsPage = 'home' | 'news' | 'translations' | 'species' | 'rariliin' | 'species_prediction' | 'event_log';
@@ -538,7 +538,7 @@ export default function SettingsTab() {
         text: 'Tere! This is a test.',
         targetLang: 'et',
       };
-      const anon = String((import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || '').trim();
+      const anon = SUPABASE_KEY;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (anon) {
         headers.apikey = anon;
@@ -595,7 +595,7 @@ export default function SettingsTab() {
         toast.error('Tõlke endpoint puudub. Ava Seaded → Tõlge ja salvesta URL.');
         throw new Error('TRANSLATE_ENDPOINT_MISSING');
       }
-      const anon = String((import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || '').trim();
+      const anon = SUPABASE_KEY;
       const headers: Record<string, string> = {};
       if (anon) {
         headers.apikey = anon;

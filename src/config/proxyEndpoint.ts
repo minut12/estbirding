@@ -1,3 +1,5 @@
+import { SUPABASE_URL } from "@/config/supabaseConfig";
+
 const KEY = "estbirding.proxyBase";
 const LS_RESOLVED_PROXY_BASE = "resolved_proxy_base_v1";
 export const PROXY_ENDPOINT_UPDATED_EVENT = "proxy-endpoint-updated";
@@ -19,7 +21,7 @@ function normalizeProxyBase(raw: string): string {
 }
 
 function buildDefaultSupabaseProxyBase(): string {
-  const supabaseUrl = String((import.meta as any).env?.VITE_SUPABASE_URL || "").trim();
+  const supabaseUrl = SUPABASE_URL;
   if (!supabaseUrl) return "";
   try {
     const u = new URL(supabaseUrl);

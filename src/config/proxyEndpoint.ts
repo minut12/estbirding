@@ -19,7 +19,7 @@ function normalizeProxyBase(raw: string): string {
 }
 
 function buildDefaultSupabaseProxyBase(): string {
-  const supabaseUrl = String((import.meta as any).env?.VITE_SUPABASE_URL || "").trim();
+  const supabaseUrl = SUPABASE_URL;
   if (!supabaseUrl) return "";
   try {
     const u = new URL(supabaseUrl);

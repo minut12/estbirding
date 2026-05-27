@@ -316,18 +316,23 @@ export function requestAvatarsFromIframe(scope: SpeciesScopeConfig = LINNULIIGID
 export async function fetchSpeciesList(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): Promise<string[]> {
   try {
     const { loadCustomSpecies } = await import('@/lib/customSpecies');
+    const { loadDiscoveredSpecies } = await import('@/lib/discoveredSpecies');
     const res = await fetch(scope.speciesJsonPath);
     if (!res.ok) throw new Error('Failed');
     const baseList: string[] = await res.json();
     const custom = loadCustomSpecies();
-    const merged = [...new Set([...baseList, ...custom])];
+    const discovered = loadDiscoveredSpecies(scope.id);
+    const merged = [...new Set([...baseList, ...custom, ...discovered])];
     merged.sort((a, b) => a.localeCompare(b, 'et'));
     return merged;
   } catch {
     try {
       const { loadCustomSpecies } = await import('@/lib/customSpecies');
+      const { loadDiscoveredSpecies } = await import('@/lib/discoveredSpecies');
       const custom = loadCustomSpecies();
-      return custom.length > 0 ? custom : [];
+      const discovered = loadDiscoveredSpecies(scope.id);
+      const merged = [...new Set([...custom, ...discovered])];
+      return merged.length > 0 ? merged : [];
     } catch {
       return [];
     }

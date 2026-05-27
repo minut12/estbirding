@@ -122,6 +122,17 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
   }, [scope]);
 
   useEffect(() => {
+    const onDiscoveredUpdated = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail as { scopeId?: string } | undefined;
+      // Only refresh if the discovery belongs to the currently-viewed scope.
+      if (detail && detail.scopeId && detail.scopeId !== scope.id) return;
+      fetchSpeciesList(scope).then((list) => { if (list.length > 0) setSpecies(list.map(normalizeUiText)); });
+    };
+    window.addEventListener('discovered-species-updated', onDiscoveredUpdated as EventListener);
+    return () => window.removeEventListener('discovered-species-updated', onDiscoveredUpdated as EventListener);
+  }, [scope]);
+
+  useEffect(() => {
     if (!selected) {
       setCurrentAvatar(null);
       setPreview(null);

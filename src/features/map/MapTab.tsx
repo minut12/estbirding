@@ -12,8 +12,9 @@ import { LINNULIIGID_SCOPE, RARILIIN_SCOPE, USA_CO_SCOPE, USA_PA_SCOPE, USA_I70_
 import { resolveProxyBase } from '@/config/proxyEndpoint';
 import { buildSpeciesMetaLookupFallback, getScopedSpeciesMeta, loadSpeciesMeta, seedSpeciesMetaFallback, upsertSpeciesMeta } from '@/lib/speciesMeta';
 import { refreshSpeciesMetaFromCloud, saveSpeciesMetaToCloud, downloadSpeciesMetaJson, uploadSpeciesMetaJson } from '@/lib/speciesMetaCloud';
-import { loadCustomSpecies, addCustomSpecies, isCustomSpecies } from '@/lib/customSpecies';
-import { refreshCustomSpeciesFromCloud, downloadCustomSpeciesJson, uploadCustomSpeciesJson } from '@/lib/customSpeciesCloud';
+import { loadCustomSpecies } from '@/lib/customSpecies';
+import { refreshCustomSpeciesFromCloud } from '@/lib/customSpeciesCloud';
+import { addDiscoveredSpeciesBatch } from '@/lib/discoveredSpecies';
 import { broadcastSupabaseConfigToMapIframes, getSupabaseAnonKey, getSupabaseUrl, isDeveloperModeEnabled, validateSupabaseConfig } from '@/config/supabaseConfig';
 import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
@@ -630,28 +631,33 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     return () => window.removeEventListener('message', handler);
   }, [current.id, sendAvatarsToIframe, sendAppInsets, sendSpeciesMetaToIframe, sendSupabaseConfigToIframe, sendToIframe, user, mapScope, sendPredictionContextToIframe, sendActivePredictionSpeciesToIframe]);
 
-  // === Species discovery (USA maps): ingest species the iframe found on eBird ===
+  // === Species discovery (USA maps only): ingest species the iframe found on eBird ===
+  // Writes ONLY to the scope-keyed discoveredSpecies store + scoped speciesMeta.
+  // Never touches the global customSpecies store, so Linnuliigid/Rariliin cannot be polluted.
   useEffect(() => {
     const handler = (ev: MessageEvent) => {
       if (!ev.data || ev.data.type !== 'MAP_DISCOVERED_SPECIES') return;
       const scopeId = String(ev.data.scopeId || '') as SpeciesScopeId;
       const scopeCfg = (SPECIES_SCOPES as Record<string, SpeciesScopeConfig>)[scopeId];
       if (!scopeCfg) {
-        console.warn('[discovery] unknown scope', ev.data.scopeId);
+        console.warn('[discovery] unknown scopeId', ev.data.scopeId);
         return;
       }
-      const list = Array.isArray(ev.data.species) ? ev.data.species : [];
-      if (!list.length) return;
+      // Only USA scopes receive discoveries. Linnuliigid/Rariliin never emit
+      // MAP_DISCOVERED_SPECIES, but guard anyway to enforce the isolation invariant.
+      if (scopeId !== 'usa_co' && scopeId !== 'usa_pa' && scopeId !== 'usa_i70') {
+        console.warn('[discovery] refusing to apply discoveries to non-USA scope:', scopeId);
+        return;
+      }
+      const items = Array.isArray(ev.data.species) ? ev.data.species : [];
+      if (!items.length) return;
 
-      const addedNames: string[] = [];
+      const names: string[] = [];
       const metaPatches: { name: string; ebirdCode?: string; scientificName?: string }[] = [];
-
-      for (const item of list) {
+      for (const item of items) {
         const name = String(item?.name || '').trim();
         if (!name) continue;
-        if (!isCustomSpecies(name)) {
-          if (addCustomSpecies(name)) addedNames.push(name);
-        }
+        names.push(name);
         const code = String(item?.ebirdCode || '').trim();
         const sci = String(item?.sciName || '').trim();
         if (code || sci) {
@@ -663,36 +669,27 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
         }
       }
 
-      console.log(`[discovery] scope=${scopeId} received=${list.length} added=${addedNames.length} metaPatches=${metaPatches.length}`);
+      const addedCount = addDiscoveredSpeciesBatch(names, scopeId);
+      console.log(`[discovery] scope=${scopeId} received=${items.length} newlyAdded=${addedCount} metaChanged=${metaPatches.length > 0}`);
 
-      // Best-effort, batched cloud sync. One download+upload per store so a refresh
-      // that discovers hundreds of species does not fire hundreds of racing writes.
-      if (addedNames.length > 0) {
-        (async () => {
-          try {
-            const latest = (await downloadCustomSpeciesJson()) || { version: 1 as const, updatedAt: '', items: [] };
-            const items = [...latest.items, ...addedNames];
-            await uploadCustomSpeciesJson({ version: 1, updatedAt: new Date().toISOString(), items });
-          } catch (err) {
-            console.warn('[discovery] custom species cloud sync failed', err);
-          }
-        })();
-      }
+      // One batched cloud meta sync per discovery batch (not per species). The real
+      // saveSpeciesMetaToCloud signature is (name, patch, scope) — per-species — so a
+      // batch is done with a single download+merge+upload to avoid racing writes.
       if (metaPatches.length > 0) {
         (async () => {
           try {
             const latest = (await downloadSpeciesMetaJson(scopeCfg)) || { version: 1 as const, updatedAt: '', items: {} };
-            const items = { ...latest.items };
+            const metaItems = { ...latest.items };
             for (const patch of metaPatches) {
-              items[patch.name] = {
-                ...(items[patch.name] || {}),
+              metaItems[patch.name] = {
+                ...(metaItems[patch.name] || {}),
                 ...(patch.ebirdCode ? { ebirdCode: patch.ebirdCode } : {}),
                 ...(patch.scientificName ? { scientificName: patch.scientificName } : {}),
               };
             }
-            await uploadSpeciesMetaJson({ version: 1, updatedAt: new Date().toISOString(), items }, scopeCfg);
+            await uploadSpeciesMetaJson({ version: 1, updatedAt: new Date().toISOString(), items: metaItems }, scopeCfg);
           } catch (err) {
-            console.warn('[discovery] species meta cloud sync failed', err);
+            console.warn('[discovery] cloud meta sync failed', err);
           }
         })();
       }

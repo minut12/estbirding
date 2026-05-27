@@ -399,6 +399,14 @@
 const REGIONS = ["US-PA"];
 const REGION_NAME = {"US-PA":"Pennsylvania"};
 const DISCOVERY_MODE = true; // USA maps: accept all species from eBird, not just pre-registered ones
+const STAY_LOCATIONS = [
+  {
+    name: 'Pennsylvania Stay',
+    address: '4424 Peachey Rd, Huntingdon, PA 16652',
+    lat: 40.6398271,
+    lon: -77.8402891,
+  },
+];
 
 /* ========= Storage keys ========= */
 const LS_AVATARS = "bm_usa_pa_avatars";
@@ -1360,8 +1368,50 @@ function preloadAvatars(){
   urls.slice(0, 500).forEach(u => { const img = new Image(); img.decoding="async"; img.loading="eager"; img.src = u; });
 }
 
+/* ========= Stay (lodging) markers ========= */
+function renderStayMarkers(){
+  try {
+    if (!map || !Array.isArray(STAY_LOCATIONS)) return;
+    const esc = function(s){ return String(s || '').replace(/[<>&"]/g, function(c){ return ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'})[c]; }); };
+    const icon = L.divIcon({
+      className: 'stay-marker',
+      html: '<div style="font-size:28px;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,.45);user-select:none;">🏠</div>',
+      iconSize: [32, 32],
+      iconAnchor: [16, 28],
+      popupAnchor: [0, -28],
+    });
+    STAY_LOCATIONS.forEach(function(stay){
+      if (!Number.isFinite(stay.lat) || !Number.isFinite(stay.lon)) return;
+      const marker = L.marker([stay.lat, stay.lon], {
+        icon: icon,
+        zIndexOffset: 1000,
+        keyboard: false,
+      }).addTo(map);
+      marker.bindPopup('<strong>' + esc(stay.name) + '</strong><br>' + esc(stay.address));
+    });
+  } catch(e) { console.warn('[stayMarkers] failed', e); }
+}
+
+function renderStayLegend(){
+  try {
+    if (!map) return;
+    if (window.__stayLegendAdded) return;
+    const legend = L.control({ position: 'bottomleft' });
+    legend.onAdd = function(){
+      const div = L.DomUtil.create('div', 'stay-legend');
+      div.style.cssText = 'background:rgba(255,255,255,.96);padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;box-shadow:0 1px 4px rgba(0,0,0,.15);line-height:1.4;';
+      div.innerHTML = '<span style="font-size:14px;">🏠</span> = Peatumiskoht';
+      return div;
+    };
+    legend.addTo(map);
+    window.__stayLegendAdded = true;
+  } catch(e) { console.warn('[stayLegend] failed', e); }
+}
+
 /* ========= Map ========= */
 const map = L.map("map", { zoomControl:false }).setView([40.4842, -78.0103], 8);
+renderStayMarkers();
+renderStayLegend();
 L.control.zoom({ position:"topright" }).addTo(map);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
 map.createPane("highlightPane");

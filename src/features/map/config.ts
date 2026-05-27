@@ -38,6 +38,33 @@ export const maps: MapDefinition[] = [
     enabled: true,
     permissionKey: 'maps.view.rariliin',
   },
+  {
+    id: 'usa-co',
+    name: 'Colorado',
+    region: 'USA',
+    type: 'asset',
+    source: '/maps/usa-co/index.html',
+    enabled: true,
+    permissionKey: 'maps.view.usa.co',
+  },
+  {
+    id: 'usa-pa',
+    name: 'Pennsylvania',
+    region: 'USA',
+    type: 'asset',
+    source: '/maps/usa-pa/index.html',
+    enabled: true,
+    permissionKey: 'maps.view.usa.pa',
+  },
+  {
+    id: 'usa-i70',
+    name: 'USA I-70 Route',
+    region: 'USA',
+    type: 'asset',
+    source: '/maps/usa-i70/index.html',
+    enabled: true,
+    permissionKey: 'maps.view.usa.i70',
+  },
 ];
 
 export function getActiveMap(): MapDefinition {

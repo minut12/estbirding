@@ -4,7 +4,13 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 
-export type MapScope = 'ee_map' | 'europe_map' | 'rariliin_map';
+export type MapScope =
+  | 'ee_map'
+  | 'europe_map'
+  | 'rariliin_map'
+  | 'usa_co_map'
+  | 'usa_pa_map'
+  | 'usa_i70_map';
 
 const CACHE_PREFIX = 'speciesHidden';
 

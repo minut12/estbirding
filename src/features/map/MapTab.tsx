@@ -8,7 +8,7 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { APP_VERSION } from '@/lib/version';
 import { fetchSharedAvatars, getMergedAvatars, notifyIframe } from '@/lib/avatar-storage';
-import { LINNULIIGID_SCOPE, RARILIIN_SCOPE } from '@/lib/mapScope';
+import { LINNULIIGID_SCOPE, RARILIIN_SCOPE, USA_CO_SCOPE, USA_PA_SCOPE, USA_I70_SCOPE, type SpeciesScopeConfig } from '@/lib/mapScope';
 import { resolveProxyBase } from '@/config/proxyEndpoint';
 import { buildSpeciesMetaLookupFallback, getScopedSpeciesMeta, loadSpeciesMeta, seedSpeciesMetaFallback, upsertSpeciesMeta } from '@/lib/speciesMeta';
 import { refreshSpeciesMetaFromCloud, saveSpeciesMetaToCloud } from '@/lib/speciesMetaCloud';
@@ -46,6 +46,18 @@ const MAP_ID_TO_SCOPE: Record<string, MapScope> = {
   'linnuliigid-ee': 'ee_map',
   'europe': 'europe_map',
   'rariliin': 'rariliin_map',
+  'usa-co': 'usa_co_map',
+  'usa-pa': 'usa_pa_map',
+  'usa-i70': 'usa_i70_map',
+};
+
+const SCOPE_BY_MAP_ID: Record<string, SpeciesScopeConfig> = {
+  'linnuliigid-ee': LINNULIIGID_SCOPE,
+  'europe': LINNULIIGID_SCOPE, // intentional: Europe shares meta with EE
+  'rariliin': RARILIIN_SCOPE,
+  'usa-co': USA_CO_SCOPE,
+  'usa-pa': USA_PA_SCOPE,
+  'usa-i70': USA_I70_SCOPE,
 };
 
 interface MapTabProps {
@@ -66,7 +78,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   const fallbackMap = resolveAllowedMapSelection({ role, permissions, maps, requestedId: selectedId }) ?? availableMaps[0] ?? getActiveMap();
   const current = availableMaps.find((m) => m.id === selectedId) ?? fallbackMap;
   const mapScope = MAP_ID_TO_SCOPE[current.id] as MapScope | undefined;
-  const speciesScope = current.id === 'rariliin' ? RARILIIN_SCOPE : LINNULIIGID_SCOPE;
+  const speciesScope = SCOPE_BY_MAP_ID[current.id] ?? LINNULIIGID_SCOPE;
   const canEditKevadranne = isAdmin || hasPermission(PERMISSIONS.kevadranneEdit);
   const speciesPredictionRuntimeMarker = `${APP_VERSION}|panel-runtime-fix001`;
   const iframeSrc = useMemo(() => {

@@ -22,7 +22,7 @@ import NewsSourcesSettings from './NewsSourcesSettings';
 import SpeciesPredictionSettings from './SpeciesPredictionSettings';
 import EventLog from './EventLog';
 import NotificationSettingsCard from './NotificationSettingsCard';
-import { LINNULIIGID_SCOPE, RARILIIN_SCOPE } from '@/lib/mapScope';
+import { LINNULIIGID_SCOPE, RARILIIN_SCOPE, USA_CO_SCOPE, USA_PA_SCOPE, USA_I70_SCOPE } from '@/lib/mapScope';
 import { refreshSpeciesMetaFromCloud } from '@/lib/speciesMetaCloud';
 import {
   getTranslateEndpoint,
@@ -47,7 +47,7 @@ import {
 import { SUPABASE_KEY, isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
 
 type ResetMode = 'soft' | 'hard' | null;
-type SettingsPage = 'home' | 'news' | 'translations' | 'species' | 'rariliin' | 'species_prediction' | 'event_log';
+type SettingsPage = 'home' | 'news' | 'translations' | 'species' | 'rariliin' | 'usa_co' | 'usa_pa' | 'usa_i70' | 'species_prediction' | 'event_log';
 const LS_RESOLVED_PROXY_BASE = 'resolved_proxy_base_v1';
 const LS_TRANSLATE_ENDPOINT = 'translate_endpoint_v1';
 const LS_SUPABASE_PROXY_BASE = 'supabase_proxy_base_v1';
@@ -919,6 +919,9 @@ export default function SettingsTab() {
 
   const renderSettingsSpecies = () => <AvatarManager scope={LINNULIIGID_SCOPE} />;
   const renderSettingsRariliin = () => <AvatarManager scope={RARILIIN_SCOPE} />;
+  const renderSettingsUsaCo = () => <AvatarManager scope={USA_CO_SCOPE} />;
+  const renderSettingsUsaPa = () => <AvatarManager scope={USA_PA_SCOPE} />;
+  const renderSettingsUsaI70 = () => <AvatarManager scope={USA_I70_SCOPE} />;
   const renderSettingsSpeciesPrediction = () => <SpeciesPredictionSettings />;
   const renderSettingsEventLog = () => <EventLog />;
 
@@ -1012,6 +1015,15 @@ export default function SettingsTab() {
           <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('rariliin')}>
             Rariliin
           </Button>
+          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('usa_co')}>
+            Colorado liigid
+          </Button>
+          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('usa_pa')}>
+            Pennsylvania liigid
+          </Button>
+          <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('usa_i70')}>
+            USA I-70 Route liigid
+          </Button>
           <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('species_prediction')}>
             Species Prediction
           </Button>
@@ -1032,6 +1044,9 @@ export default function SettingsTab() {
     if (settingsPage === 'translations') return <>{renderSettingsHeader('Tõlge')}{renderSettingsTranslations()}</>;
     if (settingsPage === 'species') return <>{renderSettingsHeader('Linnuliigid')}{renderSettingsSpecies()}</>;
     if (settingsPage === 'rariliin') return <>{renderSettingsHeader('Rariliin')}{renderSettingsRariliin()}</>;
+    if (settingsPage === 'usa_co') return <>{renderSettingsHeader('Colorado')}{renderSettingsUsaCo()}</>;
+    if (settingsPage === 'usa_pa') return <>{renderSettingsHeader('Pennsylvania')}{renderSettingsUsaPa()}</>;
+    if (settingsPage === 'usa_i70') return <>{renderSettingsHeader('USA I-70 Route')}{renderSettingsUsaI70()}</>;
     if (settingsPage === 'species_prediction') return <>{renderSettingsHeader('Species Prediction & Research')}{renderSettingsSpeciesPrediction()}</>;
     if (settingsPage === 'event_log') return <>{renderSettingsHeader('Sündmuste logi')}{renderSettingsEventLog()}</>;
     return renderSettingsHome();

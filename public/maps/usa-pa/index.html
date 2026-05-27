@@ -1,0 +1,2520 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>Pennsylvania - BirdMap (eBird, last 7 days)</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    :root{
+      --topbar-h: 56px;
+      --sidebar-w: 420px;
+      --line: #e5e7eb;
+      --muted: #6b7280;
+      --green: #16a34a;
+      --orange: #f97316;
+      --btn: #0a7;
+      --btn2: #666;
+
+      --mSize: 34px;      /* map marker circle size */
+      --mBorder: 3px;
+      --badgeFont: 12px;
+      --badgePadY: 2px;
+      --badgePadX: 7px;
+      --badgeOffset: 12px;
+
+    }
+    html, body { height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+    body { overflow:hidden; background:#fff; }
+    body.embedded { --topbar-h: 0px; }
+
+    #shell{ height:100%; display:flex; flex-direction:column; }
+    #topbar{
+      height:var(--topbar-h);
+      display:flex; align-items:center; gap:10px;
+      padding:10px 12px; box-sizing:border-box;
+      border-bottom:1px solid var(--line);
+      background:#fafafa;
+    }
+    body.embedded #topbar{ display:none; }
+    #topbar strong{ font-size:14px; }
+    #topbar .pill{
+      display:inline-flex; align-items:center; gap:6px;
+      padding:6px 10px; border-radius:999px;
+      border:1px solid #ddd; background:#fff;
+      font-size:12px; white-space:nowrap;
+    }
+    #topbar .muted{ color:var(--muted); font-size:12px; }
+
+    #main{
+      flex:1 1 auto; min-height:0;
+      display:grid;
+      grid-template-columns: var(--sidebar-w) 1fr;
+      height:calc(100dvh - var(--topbar-h));
+      position:relative;
+    }
+
+    /* Sidebar */
+    #sidebar{
+      z-index: 7000;
+      border-right:1px solid var(--line);
+      display:flex;
+      flex-direction:column;
+      height:100%;
+      max-height:100vh;
+      overflow:hidden;
+      padding:0;
+      box-sizing:border-box;
+      background:#fff;
+      pointer-events: auto;
+    }
+
+    .panel-header{
+      position:sticky;
+      top:0;
+      z-index:50;
+      background:#fff;
+      border-bottom:1px solid #f0f0f0;
+      padding:10px;
+    }
+    .panel-content-scroll{
+      flex:1;
+      min-height:0;
+      overflow-y:auto;
+      -webkit-overflow-scrolling:touch;
+      overscroll-behavior:contain;
+      touch-action:pan-y;
+      padding:10px;
+      box-sizing:border-box;
+    }
+
+    .sidebarHeader{
+      background:#fff;
+      padding-bottom:8px;
+      border-bottom:1px solid #f0f0f0;
+      margin-bottom:8px;
+      position: relative;
+    }
+    #stickyPanel{ padding: 6px 0 10px; }
+    .sidebarHeaderTop{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+    }
+    #sidebar h2{ margin:0; font-size:18px; }
+    #closeSidebarBtn{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      width:40px; height:40px;
+      border-radius:12px;
+      border:1px solid #d1d5db;
+      background:#f3f4f6;
+      color:#111827;
+      box-shadow:0 1px 2px rgba(0,0,0,.08);
+      cursor:pointer;
+      line-height:1;
+      flex:0 0 40px;
+      margin-left:8px;
+    }
+
+    .small{ color:var(--muted); font-size:12px; margin:6px 0 10px; line-height:1.35; }
+    .header-copy{flex:1;min-width:0;padding-right:52px}
+    #controls{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+    .btn{
+      padding:6px 10px; border:0; border-radius:10px;
+      background:var(--btn); color:#fff; cursor:pointer; font-size:13px;
+    }
+    .btn.secondary{ background:var(--btn2); }
+    .btn.danger{ background:#ef4444; }
+    .btn.on{ background:var(--green); }
+    .btn.off{ background:var(--orange); }
+
+    #filterBox{
+      width:100%; padding:10px 12px;
+      border:1px solid #d1d5db; border-radius:12px;
+      font-size:14px; box-sizing:border-box;
+      margin-bottom:10px;
+    }
+    #progressLine{ font-size:12px; color:var(--muted); margin:6px 0 10px; }
+    #list{ display:block; }
+
+    .row{
+      display:grid; grid-template-columns: 52px 1fr;
+      gap:10px; align-items:flex-start;
+      padding:10px 0; border-bottom:1px dashed #eee;
+    }
+    .avatar{
+      width:46px; height:46px; border-radius:50%;
+      border:3px solid #999;
+      background-size:cover; background-position:center;
+      background-color:#e5f3ff;
+    }
+    .name{ font-weight:650; cursor:pointer; user-select:none; line-height:1.15; }
+    .name.disabled{ opacity:.45; text-decoration:line-through; }
+    .name-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .rarity-badge{
+      display:inline-flex;align-items:center;justify-content:center;
+      min-width:26px;height:18px;padding:0 6px;border-radius:999px;
+      background:#e2e8f0;color:#334155;font-size:10px;font-weight:700;
+      border:1px solid #cbd5e1;line-height:1;
+    }
+    .meta{ margin-top:4px; color:var(--muted); font-size:12px; line-height:1.35; }
+    .pillMini{
+      display:inline-block; padding:2px 7px;
+      border-radius:999px; background:#eef2ff;
+      font-size:11px; margin-right:6px; color:#111;
+    }
+    .hintBadge{
+      display:inline-block; padding:2px 8px; border-radius:999px;
+      font-size:11px; background:#eef; color:#111;
+    }
+
+    /* Map */
+    #mapWrap{ position:relative; width:100%; height:100%; }
+    #map{ width:100%; height:100%; }
+
+    .sidebar-backdrop{
+      display:none;
+      position:fixed;
+      inset:0;
+      z-index:1100;
+      background:rgba(0,0,0,.35);
+    }
+
+    /* Mobile off-canvas sidebar */
+    @media (max-width: 900px){
+      #controls{ flex-wrap: wrap; overflow: visible; padding-bottom: 6px; }
+      #controls .btn{ flex: 0 0 auto; }
+
+      #main{ grid-template-columns: 1fr; }
+      #sidebar{
+        z-index: 7000;
+        position:fixed;
+        left:0; top:0;
+        height:100dvh;
+        width:min(82vw, 380px);
+        transform:translateX(-105%);
+        transition:transform .2s ease;
+        box-shadow:0 12px 30px rgba(0,0,0,.25);
+        padding-top:12px;
+        overflow-y:auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      #sidebar.open{ transform:translateX(0); }
+      #sidebar.open + #mapWrap{ pointer-events:auto; }
+      #closeSidebarBtn{ align-items:center; justify-content:center; }
+      .sidebar-backdrop.show{ display:block; }
+      .sidebar-backdrop{ z-index:3500 !important; }
+    }
+
+    /* Marker styling */
+    .leaflet-marker-icon{ overflow: visible !important; }
+    .pulse-ring{
+      animation: pulseRing 0.9s ease-out 0s 3 forwards;
+      transform-origin:center center;
+    }
+    @keyframes pulseRing{
+      0%{ opacity:.95; transform:scale(.5); }
+      70%{ opacity:.35; transform:scale(1.4); }
+      100%{ opacity:0; transform:scale(1.8); }
+    }
+
+    .bannerWarn{
+      margin:8px 0 10px;
+      padding:8px 10px;
+      background:#fff7ed;
+      border:1px solid #fed7aa;
+      color:#9a3412;
+      border-radius:12px;
+      font-size:12px;
+      line-height:1.35;
+      display:none;
+    }
+    .snapshot-banner{
+      font-size:11px;
+      color:#334155;
+      padding:6px 10px;
+      background:#f0fdf4;
+      border:1px solid #bbf7d0;
+      border-radius:10px;
+      margin:8px 0 10px;
+      display:none;
+    }
+    .snapshot-banner.warn{ background:#fef3c7; border-color:#fde68a; color:#92400e; }
+    .snapshot-banner.error{ background:#fee2e2; border-color:#fecaca; color:#dc2626; }
+    .debug-panel{
+      font-size:11px;
+      color:#64748b;
+      background:#f8fafc;
+      border:1px solid #e2e8f0;
+      border-radius:8px;
+      padding:6px 10px;
+      margin:8px 0 10px;
+    }
+    .debug-panel summary{ cursor:pointer; font-weight:600; color:#475569; }
+
+    /* Settings modal */
+    #modalBackdrop{
+      position:fixed; inset:0;
+      background:rgba(0,0,0,.35);
+      z-index:9000;
+      display:none;
+      align-items:center; justify-content:center;
+      padding:18px; box-sizing:border-box;
+    }
+    #modal{
+      width:min(600px, 96vw);
+      border-radius:16px;
+      background:#fff;
+      box-shadow:0 20px 60px rgba(0,0,0,.35);
+      padding:14px; box-sizing:border-box;
+    }
+    #modal h3{ margin:0 0 8px 0; }
+    #modal .grid{ display:grid; gap:10px; }
+    #modal textarea{
+      width:100%; min-height:220px;
+      padding:10px 12px;
+      border:1px solid #d1d5db;
+      border-radius:12px;
+      font-size:13px;
+      box-sizing:border-box;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    #modal input[type="text"]{
+      width:100%; padding:10px 12px;
+      border:1px solid #d1d5db;
+      border-radius:12px;
+      font-size:14px;
+      box-sizing:border-box;
+    }
+    #modal .rowBtns{ display:flex; gap:10px; justify-content:flex-end; margin-top:10px; }
+  </style>
+</head>
+
+<body>
+<div id="shell">
+
+  <div id="topbar">
+    <strong>Pennsylvania</strong>
+    <span class="pill">US-PA</span>
+    <span class="pill">eBird | 7 days</span>
+    <span class="pill" id="proxyPill"></span>
+    <span class="pill">Avatars: <span class="hintBadge">bm_usa_pa_avatars</span></span>
+    <span class="muted" id="statusText"></span>
+  </div>
+
+  <div id="main">
+    <aside id="sidebar" aria-label="Sidebar">
+      <div class="panel-header">
+      <div id="stickyPanel">
+<div class="sidebarHeader">
+        <div class="sidebarHeaderTop">
+          <div class="header-copy">
+          <h2>eBird Pennsylvania</h2>
+          </div>
+          <button id="closeSidebarBtn" title="Close" aria-label="Close">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+        <div class="small header-copy" style="margin-bottom:0;">
+          Showing recent eBird observations.
+          <br/>Counts: fetch last 30 days (max 1000), then count last 7 days.
+          <br/>Markers are shown only when a region has &gt;0 records in last 7 days.
+        </div>
+      </div>
+
+      <div id="controls">
+        <button class="btn secondary" id="settingsBtn" style="display:none">Settings</button>
+        <button class="btn" id="btnRefreshData">Refresh data</button>
+        <button class="btn secondary" id="btnReloadSnapshot">Reload snapshot</button>
+        <button class="btn on" id="perCountryBtn" style="display:none">Per-country: ON</button>
+        <button class="btn off" id="rareOnlyBtn">Rare only: OFF</button>
+        <label class="chk"><input type="checkbox" id="toggle7days" checked/> 7 days only</label>
+      </div>
+
+      <div id="snapshotBanner" class="snapshot-banner"></div>
+      <div id="warnBanner" class="bannerWarn"></div>
+      <details class="debug-panel" id="debugPanel">
+        <summary>Debug info</summary>
+        <div id="debugContent">Loading...</div>
+      </details>
+      <div id="progressLine">Ready.</div>
+      <input id="filterBox" type="text" placeholder="Filter species..."/>
+      </div>
+      </div>
+      <div class="panel-content-scroll">
+      <div id="list"></div>
+      </div>
+    </aside>
+
+    <div id="mapWrap">
+      <div id="map"></div>
+    </div>
+  </div>
+</div>
+
+<div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+
+
+<div id="modalBackdrop">
+  <div id="modal">
+    <h3>Pennsylvania map settings</h3>
+    <div class="small" style="margin-top:0;">
+      eBird API token (pre-filled, override only if needed). Species list: one per line.
+    </div>
+    <div class="grid">
+      <label style="font-size:13px;font-weight:600;">eBird API token</label>
+      <input id="tokenInput" type="text" placeholder="Paste your eBird API token here…" style="width:100%;padding:6px 8px;box-sizing:border-box;font-size:13px;border:1px solid #ccc;border-radius:4px;margin-bottom:8px;">
+      <textarea id="speciesInput" placeholder="One species per line (Estonian names)..."></textarea>
+    </div>
+    <div class="rowBtns">
+      <button class="btn secondary" id="modalCancel">Cancel</button>
+      <button class="btn" id="modalSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/maps/shared/map-hamburger-control.js"></script>
+<script src="/maps/shared/format-ee.js"></script>
+<script src="/maps/shared/species-meta.js"></script>
+<script src="/maps/shared/rarity-style.js"></script>
+<script src="/maps/shared/et-strings.js"></script>
+<script>
+/* ========= Embedded detection ========= */
+(function(){
+  try {
+    if (window.self !== window.top) document.body.classList.add("embedded");
+  } catch(e) {
+    document.body.classList.add("embedded");
+  }
+})();
+
+/* ========= Regions ========= */
+const REGIONS = ["US-PA"];
+const REGION_NAME = {"US-PA":"Pennsylvania"};
+
+/* ========= Storage keys ========= */
+const LS_AVATARS = "bm_usa_pa_avatars";
+const LS_CODES   = "bm_usa_pa_ebird_codes";
+const LS_POINTS  = "bm_usa_pa_points";
+const LS_SPECIES_META = "estbirding.usa_pa.speciesMeta.v1";
+const LS_SPECIES     = "bm_usa_pa_species_list";
+const LS_PER_COUNTRY = "bm_usa_pa_per_country";
+const LS_RARE_ONLY   = "bm_usa_pa_rare_only";
+const LS_SNAPSHOT_PREFIX = "bm_usa_pa_snapshot:";
+const LS_EU_LAST_GOOD = "bm_usa_pa_last_good_snapshot";
+const SNAPSHOT_VERSION = "usa_pa_map_v1";
+const LS_TOKEN = "bm_ebird_token";
+const HARDCODED_EBIRD_TOKEN = "9s72dc2jcjlq";
+var EBIRD_TOKEN = "";
+var tokenSanitized = false;
+
+/* ========= Defaults ========= */
+
+function getEbirdToken(){
+  const raw = String(localStorage.getItem(LS_TOKEN) || "");
+  const tokenTrim = raw.trim();
+  const tokenClean = tokenTrim.replace(/[^A-Za-z0-9]/g, "");
+  tokenSanitized = tokenTrim !== tokenClean;
+  if (tokenTrim !== tokenClean) { try { localStorage.setItem(LS_TOKEN, tokenClean); } catch(e){ console.warn("[quota] LS_TOKEN save failed", e); } }
+  EBIRD_TOKEN = tokenClean || HARDCODED_EBIRD_TOKEN;
+  return EBIRD_TOKEN;
+}
+
+function detectProxyMode(){
+  return getEbirdToken() ? "Direct eBird API" : "No token";
+}
+
+function updateProxyHint(){
+  const el = document.getElementById("proxyPill");
+  if (!el) return;
+  const token = getEbirdToken();
+  if (token) {
+    el.textContent = "eBird: Direct";
+    el.title = "Using local eBird API token";
+    console.info("[ebird] direct mode via local token");
+  } else {
+    el.textContent = "eBird: No token";
+    el.title = "Set your eBird API token in Settings";
+    console.warn("[ebird] no token set");
+  }
+}
+
+const DEFAULT_SPECIES = [];
+const DEFAULT_EBIRD_CODES = {
+  "Siberi lehelind": "radwar1",
+  "Siberi raat": "sibacc",
+  "Siidhaigur": "litegr",
+  "MÃ¤nsak": "eurmut3",
+  "Naaskelnokk": "pieav01",
+  "Naerukajakas": "bkhgul",
+  "Naerutiir": "gubter2",
+  "Niidu-kaelustÃ¤ks": "sibsto1",
+  "Niidu-ritsiklind": "pagwar1",
+  "Niidukiur": "ricpip1",
+  "Nunn-kivitÃ¤ks": "piewhe1",
+  "Nurmkana": "grypar",
+  "NÃµgipart": "ambduc",
+  "NÃµlva-lehelind": "grewar3",
+  "NÃµmmekiur": "tawpip1",
+  "NÃµmmelÃµoke": "woolar1",
+  "Ohakalind": "eurgol",
+  "Ohhoota hÃµbekajakas": "slbgul",
+  "Padu-roolind": "padwar1",
+  "PasknÃ¤Ã¤r": "eurjay1",
+  "Peegel-tormilind": "sooshe",
+  "Pelikan": "grwpel1",
+  "Peoleo": "eugori2",
+  "Piilpart": "gnwtea",
+  "Piiritaja": "comswi",
+  "Pikksaba-Ã¤nn": "lotjae",
+  "PlÃ¼tt": "brbsan",
+  "PlÃ¼Ã¼": "bkbplo",
+  "Polaarkajakas": "y00478",
+  "Prillvaeras": "sursco",
+  "Pruunselg-pÃµÃµsalind": "grewhi1",
+  "Puna-harksaba": "redkit1",
+  "Puna-veetallaja": "redpha1",
+  "Punajalg-pistrik": "reffal1",
+  "Punajalg-tilder": "comred1",
+  "Punakael-lagle": "rebgoo1",
+  "Punakurk-kaur": "retloo",
+  "Punanokk-vart": "recpoc",
+  "Punapea-vart": "compoc",
+  "Punapea-Ãµgija": "wooshr1",
+  "Punarind": "eurrob1",
+  "Punasaba-Ãµgija": "rutshr2",
+  "Punaselg-Ãµgija": "rebshr1",
+  "Purpurhaigur": "purher1",
+  "PÃµhja-kirjurÃ¤stas": "scathr2",
+  "PÃµhja-lehelind": "arcwar1",
+  "PÃµhja-tormipÃ¤Ã¤su": "lcspet",
+  "PÃµhjatsiitsitaja": "rusbun",
+  "PÃµhjavint": "brambl",
+  "PÃµldlÃµoke": "skylar",
+  "PÃµldtsiitsitaja": "ortbun1",
+  "PÃµldvutt": "comqua1",
+  "PÃ¶ialpoiss": "goldcr1",
+  "Rabapistrik": "perfal",
+  "RabapÃ¼Ã¼": "wilpta",
+  "Raisakotkas": "cinvul1",
+  "Randkajakas": "laugul",
+  "Randkiur": "rocpip1",
+  "Randtiir": "arcter",
+  "Raudkull": "eurspa1",
+  "Ristpart": "comshe",
+  "RoherÃ¤hn": "eugwoo2",
+  "Rohevint": "eurgre1",
+  "Rohukoskel": "rebmer",
+  "Rohunepp": "gresni1",
+  "KÃµrbe-kivitÃ¤ks": "deswhe1",
+  "KÃµrbe-pÃµÃµsalind": "asdwar1",
+  "KÃµrkja-roolind": "sedwar1",
+  "KÃµrvukrÃ¤ts": "loeowl",
+  "KÃµvernokk-rÃ¼di": "cursan",
+  "KÃ¼nnivares": "rook1",
+  "LaanenÃ¤Ã¤r": "sibjay1",
+  "LaanepÃ¼Ã¼": "hazgro1",
+  "Laisaba-Ã¤nn": "pomjae",
+  "Lammitilder": "marsan",
+  "Lapi tsiitsitaja": "laplon",
+  "Lasuurtihane": "azutit2",
+  "Lauk": "eurcoo",
+  "Laululuik": "whoswa",
+  "LaulurÃ¤stas": "sonthr1",
+  "LeeterÃ¼di": "sander",
+  "Leevike": "eurbul",
+  "Liiv-kivitÃ¤ks": "isawhe1",
+  "LinavÃ¤strik": "whiwag",
+  "Loorkakk": "webowl1",
+  "Luitsnokk-iibis": "eurspo1",
+  "Luitsnokk-part": "norsho",
+  "Lumehani": "snogoo",
+  "Lumekakk": "snoowl1",
+  "LÃ¤Ã¤ne-lehelind": "webwar1",
+  "LÃ¤Ã¤ne-pÃ¶ialpoiss": "firecr1",
+  "LÃµopistrik": "eurhob",
+  "LÃµuna-hÃµbekajakas": "yelgul1",
+  "LÃ¼hinokk-hani": "pifgoo",
+  "Madukotkas": "shteag1",
+  "Mandariinpart": "manduc",
+  "Merikajakas": "gbbgul",
+  "Merikotkas": "wtheag",
+  "MerirÃ¼di": "pursan",
+  "Merivart": "gresca",
+  "MesilasenÃ¤pp": "eubeat1",
+  "Mets-lehelind": "woowar",
+  "Metsis": "wescap1",
+  "Metskurvits": "eurwoo",
+  "Metsvint": "comcha",
+  "Must-harksaba": "blakit1",
+  "Must-lepalind": "blared1",
+  "Must-toonekurg": "blasto1",
+  "Mustjalg-tÃ¼ll": "kenplo1",
+  "Mustkael-pÃ¼tt": "eargre",
+  "Mustkurk-raat": "bltacc1",
+  "Mustlagle": "brant",
+  "Mustlauk-Ãµgija": "legshr2",
+  "Mustpea-pÃµÃµsalind": "blackc1",
+  "Mustpea-tsiitsitaja": "blhbun1",
+  "Mustpugu-rÃ¤stas": "retthr1",
+  "MustrÃ¤hn": "blawoo1",
+  "Mustvaeras": "blksco1",
+  "Mustvares": "carcro1",
+  "Mustviires": "blkter",
+  "MÃ¤nni-kÃ¤bilind": "parcro2",
+  "MÃ¤nnileevike": "pingro",
+  "MÃ¤nnitalvike": "pinbun",
+  "Euroopa kaelustÃ¤ks": "stonec4",
+  "Habekakk": "grgowl",
+  "Habeviires": "whiter2",
+  "Hahk": "comeid",
+  "Hall-kÃ¤rbsenÃ¤pp": "spofly1",
+  "Hallhaigur": "graher1",
+  "Hallhani": "gragoo",
+  "Hallkibu": "tersan",
+  "Hallpea-rÃ¤hn": "gyfwoo1",
+  "HallpÃµsk-pÃ¼tt": "rengre",
+  "HallrÃ¼di": "semsan",
+  "Halltsiitsitaja": "corbun1",
+  "HallÃµgija": "norshr1",
+  "Hangelind": "snobun",
+  "Haugaskotkas": "boneag2",
+  "Hele-urvalind": "hoared1",
+  "Heletilder": "comgre",
+  "Herilaseviu": "euhbuz1",
+  "HoburÃ¤stas": "misthr1",
+  "HÃ¤ndkakk": "uraowl1",
+  "HÃ¤nilane": "eaywag1",
+  "HÃµbehaigur": "greegr",
+  "HÃ¼Ã¼p": "grebit1",
+  "Ida-mustvaeras": "blksco2",
+  "Jahipistrik": "gyrfal",
+  "JÃ¤mejalg": "eutkne1",
+  "JÃ¤rvekaur": "arcloo",
+  "JÃ¤Ã¤kajakas": "glagul",
+  "JÃ¤Ã¤kaur": "comloo",
+  "JÃµgi-ritsiklind": "eurwar2",
+  "JÃµgitiir": "comter",
+  "JÃµgitilder": "comsan",
+  "JÃµgivÃ¤strik": "grywag",
+  "Kaelus-kÃ¤rbsenÃ¤pp": "colfly1",
+  "Kaelus-turteltuvi": "eucdov",
+  "Kaeluskotkas": "eurgr1",
+  "KaelusrÃ¤stas": "rinouz1",
+  "Kaelustuvi": "cowpig1",
+  "Kalakajakas": "mewgul",
+  "Kalakotkas": "osprey",
+  "Kalda-rÃ¤dilind": "cetwar1",
+  "KaldapÃ¤Ã¤suke": "banswa",
+  "Kaljukajakas": "bklkit",
+  "Kaljukotkas": "goleag",
+  "Kanada lagle": "cangoo",
+  "Karbuskajakas": "medgul1",
+  "Karkjalg": "bkwsti",
+  "Karmiinleevike": "comros",
+  "Karvasjalg-kakk": "borowl",
+  "Karvasjalg-viu": "rolhaw",
+  "Kassikakk": "eueowl1",
+  "Kiivitaja": "norlap",
+  "Kiripugu-rÃ¼di": "pecsan",
+  "Kirjuhahk": "steeid",
+  "Kivikakk": "litowl1",
+  "Kivirullija": "rudtur",
+  "KivitÃ¤ks": "norwhe",
+  "Kodukakk": "tawowl1",
+  "Koldhaigur": "squher1",
+  "Koldjalg-hÃµbekajakas": "casgul2",
+  "Koldvint": "eurser1",
+  "Kormoran": "grecor",
+  "KrÃ¼Ã¼sel": "blkguj",
+  "Kuld-lehelind": "palwar5",
+  "KuldhÃ¤nilane": "citwag",
+  "Kuldnokk": "eursta",
+  "Kuldtsiitsitaja": "yebbun",
+  "Kuninghahk": "kineid",
+  "Kuuse-kÃ¤bilind": "redcro",
+  "KÃ¤blik": "winwre4",
+  "KÃ¤gu": "comcuc",
+  "KÃ¤harpelikan": "dalpel1",
+  "KÃ¤osulane": "ictwar1",
+  "KÃ¤Ã¤buskormoran": "pygcor2",
+  "KÃ¤Ã¤buskotkas": "booeag1",
+  "KÃµnnuÃµgija": "isashr1",
+  "Aed-lepalind": "comred2",
+  "Aed-pÃµÃµsalind": "garwar1",
+  "Aed-roolind": "blrwar1",
+  "Aedporr": "shtre1",
+  "Alk": "razorb",
+  "AlverÃ¼di": "shtsan",
+  "Ameerika piilpart": "amewig",
+  "Atlantise tormilind": "scoshe1",
+  "Aul": "lotduc",
+  "Baleaari tormilind": "balshe1",
+  "VÃ¤ikepistrik": "merlin",
+  "Kanakull": "norgos1",
+  "VÃ¶Ã¶tkakk": "nohowl",
+  "VÃ¶Ã¶tnokk-kajakas": "ribgul",
+  "VÃ¶Ã¶tsaba-vigle": "batgod",
+  "\u00D5\u00F5netuvi": "stodov1",
+  "Ã–Ã¶bik": "thrnig1",
+  "Ã–Ã¶haigur": "bcnher",
+  "Ã–Ã¶sorr": "eurnig1",
+  "VÃ¤Ã¤nkael": "eurrwry",
+  "VÃµsa-ritsiklind": "cogwar1",
+  "VÃµsaraat": "dunnoc1",
+  "VÃ¶Ã¶t-kÃ¤bilind": "whwcro",
+  "VÃ¶Ã¶t-pÃµÃµsalind": "barwar1",
+  "VÃ¶Ã¶thani": "bahgoo",
+  "VÃ¤iketrapp": "litbus1",
+  "VÃ¤iketsiitsitaja": "litbun",
+  "VÃ¤iketÃ¼ll": "ltrplo",
+  "VÃ¤lja-loorkull": "norhar1",
+  "VÃ¤lja-vÃ¤ikelÃµoke": "gstlar1",
+  "VÃ¤rbkakk": "eupowl1",
+  "VÃ¤rbrÃ¼di": "temsti",
+  "VÃ¤iketiir": "litter1",
+  "VÃ¤ikekoovitaja": "whimbr",
+  "VÃ¤ikekoskel": "smew",
+  "VÃ¤ikeluik": "tunswa",
+  "VÃ¤ikepÃ¼tt": "litgre1",
+  "VÃ¤ikerÃ¼di": "litsti",
+  "VÃ¤ike-lehelind": "comchi1",
+  "VÃ¤ike-pÃµÃµsalind": "leswhi4",
+  "VÃ¤ikealk": "ribgul",
+  "VÃ¤ikehuik": "ltrcra1",
+  "VÃ¤ikehÃ¼Ã¼p": "litbit1",
+  "VÃ¤ikekajakas": "litgul",
+  "Viupart": "eurwig",
+  "VÃ¤ike-konnakotkas": "leseag1",
+  "VÃ¤ike-kÃ¤osulane": "boowar1",
+  "VÃ¤ike-kÃ¤rbsenÃ¤pp": "rebfly",
+  "VÃ¤ike-laukhani": "lwfgoo",
+  "Valgesilm-vart": "ferduc",
+  "Valgetiib-viires": "whwter",
+  "Veetallaja": "renpha",
+  "Veisehaigur": "categr1",
+  "Vesipapp": "whtdip1",
+  "Vaaraohani": "egygoo",
+  "VaenukÃ¤gu": "hoopoe",
+  "VainurÃ¤stas": "redwin",
+  "Valge-toonekurg": "whisto1",
+  "ValgepÃµsk-lagle": "bargoo",
+  "Valgeselg-kirjurÃ¤hn": "whbwoo1",
+  "TÃ¤pikhuik": "spocra1",
+  "TÃµmmu-lehelind": "duswar",
+  "TÃµmmuiibis": "gloibi",
+  "TÃµmmukajakas": "lbbgul",
+  "TÃµmmuvaeras": "whwsco3",
+  "Urvalind": "redpol1",
+  "Tutt-tiir": "santer1",
+  "TuttlÃµoke": "crelar1",
+  "TuttpÃ¼tt": "grcgre1",
+  "Tuttvart": "tufduc",
+  "Tuuletallaja": "eurkes",
+  "Triip-ritsiklind": "lanwar",
+  "Tuhk-lehelind": "humwar1",
+  "Tumetilder": "spored",
+  "Tundra-rabahani": "tunbeg1",
+  "Tundrakaur": "yebloo",
+  "Tundrakiur": "retpip",
+  "Turteltuvi": "eutdov",
+  "Tait": "commoo3",
+  "Talvike": "yellow2",
+  "Tamme-kirjurÃ¤hn": "miswoo1",
+  "Teder": "blagro1",
+  "Tiigi-roolind": "eurwar1",
+  "Tikutaja": "comsni",
+  "Suurkoovitaja": "eurcur",
+  "Suurnokk-vint": "hawfin",
+  "SuurrÃ¼di": "redkno",
+  "SuurÃ¤nn": "gresku1",
+  "SÃ¶Ã¶dikÃ¤nn": "parjae",
+  "Stepipistrik": "sakfal1",
+  "Stepiviu": "lolbuz1",
+  "SuitsupÃ¤Ã¤suke": "barswa",
+  "Suula": "norgan",
+  "Suur-konnakotkas": "grseag1",
+  "Suur-laukhani": "gwfgoo",
+  "HÃµbehaugas": "bkskit1",
+  "KadakatÃ¤ks": "whinch1",
+  "LaanerÃ¤hn": "ettwoo1",
+  "LiivatÃ¼ll": "corplo",
+  "Merisk": "euroys1",
+  "Metskiur": "trepip",
+  "Metstilder": "grnsan",
+  "Mudanepp": "jacsni",
+  "Mudatilder": "woosan",
+  "Must-kÃ¤rbsenÃ¤pp": "eupfly1",
+  "Mustsaba-vigle": "bktgod",
+  "MÃ¤gi-kanepilind": "twite1",
+  "Siidisaba": "bohwax",
+  "Siisike": "eursis",
+  "Siniraag": "eurrol1",
+  "Tutkas": "ruff",
+  "Vihitaja": "comsan"
+};
+
+/* ========= Limits ========= */
+const MAX_RESULTS = 1000;   // match Finland map
+const BACK_DAYS = 30;       // match Finland map
+const REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
+const CONCURRENCY_DESKTOP = 6;
+const CONCURRENCY_MOBILE = 4;
+
+
+const REGION_CONCURRENCY_DESKTOP = 3;
+const REGION_CONCURRENCY_MOBILE = 2;
+/* ========= Helpers ========= */
+function safeParseJSON(str){ try{ return JSON.parse(str); }catch{ return null; } }
+function decodeLatin1Utf8(str){
+  const bytes = new Uint8Array(str.length);
+  for (let i = 0; i < str.length; i++) bytes[i] = str.charCodeAt(i) & 0xff;
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+function normalizeText(v){
+  const s = String(v || "").trim();
+  if (!s) return "";
+  if (!/[\u00C3\u00C2\u00E2]/.test(s)) return s;
+  try {
+    const fixed = decodeLatin1Utf8(s);
+    return fixed && /[^\x00-\x7F]/.test(fixed) ? fixed : s;
+  } catch(e) {
+    return s;
+  }
+}
+function normalizeNameArray(arr){
+  const out = [];
+  const seen = new Set();
+  for (const raw of (arr || [])) {
+    const key = normalizeText(raw);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
+}
+function sameNameList(a, b){
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+function mergeNameLists(base, extra){
+  return normalizeNameArray([...(base || []), ...(extra || [])]);
+}
+function normalizeNameMap(obj){
+  const out = {};
+  const src = (obj && typeof obj === "object" && !Array.isArray(obj)) ? obj : {};
+  for (const [rawKey, value] of Object.entries(src)) {
+    const key = normalizeText(rawKey);
+    if (!key) continue;
+    out[key] = value;
+  }
+  return out;
+}
+function normalizeSpeciesMetaStorage(){
+  const raw = safeParseJSON(localStorage.getItem(LS_SPECIES_META) || "{}") || {};
+  const normalized = normalizeNameMap(raw);
+  if (Object.keys(normalized).length && JSON.stringify(raw) !== JSON.stringify(normalized)) {
+    try { localStorage.setItem(LS_SPECIES_META, JSON.stringify(normalized)); } catch(e){ console.warn("[quota] LS_SPECIES_META save failed", e); }
+  }
+}
+function getSpeciesMeta(name){
+  if (window.getSpeciesMetaShared) return window.getSpeciesMetaShared(name);
+  return { name, rarityLevel: "none" };
+}
+function resolveEbirdCode(name){
+  const meta = getSpeciesMeta(name);
+  return meta.ebirdCode || EBIRD_CODES[name] || "";
+}
+function isAvatarVal(v){ return typeof v === "string" && (v.startsWith("data:image") || v.startsWith("http") || v.startsWith("/") ); }
+function isRecent7(iso){
+  if(!iso) return false;
+  const d = new Date(iso);
+  if (isNaN(d)) return false;
+  return (Date.now() - d.getTime())/86400000 <= 7;
+}
+function borderColorByDate(iso){
+  if (!iso) return "#999";
+  const d = new Date(iso);
+  if (isNaN(d)) return "#f97316";
+  const diff = (Date.now() - d.getTime())/86400000;
+  return diff <= 7 ? "#16a34a" : "#f97316";
+}
+function formatDateEt(isoLike){ return window.formatDateEE ? window.formatDateEE(isoLike) : String(isoLike || ""); }
+function formatDateTimeEt(isoLike){
+  if (!isoLike) return "-";
+  const d = new Date(String(isoLike));
+  if (isNaN(d)) return formatDateEt(isoLike);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${formatDateEt(d)} ${hh}:${mi}`;
+}
+function showWarn(msg){
+  const el = document.getElementById("warnBanner");
+  if (!msg) { el.style.display="none"; el.textContent=""; return; }
+  el.textContent = msg;
+  el.style.display = "block";
+}
+
+/* ========= Avatars migration ========= */
+function migrateAvatars() {
+  const current = safeParseJSON(localStorage.getItem(LS_AVATARS) || "{}") || {};
+  const curCount = Object.values(current).filter(isAvatarVal).length;
+
+  let best = null;
+  let bestCount = curCount;
+
+  for (let i=0; i<localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (!k || k === LS_AVATARS) continue;
+    const raw = localStorage.getItem(k);
+    if (!raw || raw.length < 10 || raw.length > 2_000_000) continue;
+    const obj = safeParseJSON(raw);
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) continue;
+    let c = 0;
+    for (const v of Object.values(obj)) if (isAvatarVal(v)) c++;
+    if (c > bestCount) { bestCount = c; best = obj; }
+  }
+
+  const merged = { ...(best || {}), ...current };
+  const mergedCount = Object.values(merged).filter(isAvatarVal).length;
+  if (mergedCount > curCount) { try { localStorage.setItem(LS_AVATARS, JSON.stringify(merged)); } catch(e){ console.warn("[quota] LS_AVATARS save failed", e); } }
+  return merged;
+}
+
+/* ========= Load storage ========= */
+let avatars = migrateAvatars();
+avatars = normalizeNameMap(avatars);
+try { localStorage.setItem(LS_AVATARS, JSON.stringify(avatars)); } catch(e){ console.warn("[quota] LS_AVATARS save failed", e); }
+
+let EBIRD_CODES = (() => {
+  const defaults = normalizeNameMap(DEFAULT_EBIRD_CODES);
+  const stored = normalizeNameMap(safeParseJSON(localStorage.getItem(LS_CODES) || "{}") || {});
+  const merged = { ...defaults, ...stored };
+  try { localStorage.setItem(LS_CODES, JSON.stringify(merged)); } catch(e){ console.warn("[quota] LS_CODES save failed", e); }
+  return merged;
+})();
+
+let points = normalizeNameMap(safeParseJSON(localStorage.getItem(LS_POINTS) || "{}") || {});
+try { localStorage.setItem(LS_POINTS, JSON.stringify(points)); } catch(e){ console.warn("[quota] LS_POINTS save failed", e); }
+normalizeSpeciesMetaStorage();
+
+const SHARED_SPECIES_URL = "/maps/usa-pa/species.json";
+const DEFAULT_SPECIES_NORMALIZED = normalizeNameArray(DEFAULT_SPECIES.slice());
+let MASTER_SPECIES = DEFAULT_SPECIES_NORMALIZED.slice();
+let speciesListSource = "fallback_default";
+let EUROPE_SPECIES_EXTRAS = [];
+
+function readStoredEuropeSpecies(){
+  try {
+    const raw = (localStorage.getItem(LS_SPECIES) || "").trim();
+    return raw ? normalizeNameArray(raw.split("\n").map(s=>s.trim()).filter(Boolean)) : [];
+  } catch(e) {
+    return [];
+  }
+}
+function deriveEuropeExtras(masterSpecies, speciesList){
+  const normalizedMaster = normalizeNameArray(masterSpecies && masterSpecies.length ? masterSpecies : DEFAULT_SPECIES_NORMALIZED);
+  const masterSet = new Set(normalizedMaster);
+  return normalizeNameArray((speciesList || []).filter(name => !masterSet.has(normalizeText(name))));
+}
+function persistEuropeSpeciesExtras(){
+  try { localStorage.setItem(LS_SPECIES, EUROPE_SPECIES_EXTRAS.join("\n")); } catch(e){ console.warn("[quota] LS_SPECIES save failed", e); }
+}
+
+const storedEuropeSpecies = readStoredEuropeSpecies();
+EUROPE_SPECIES_EXTRAS = deriveEuropeExtras(MASTER_SPECIES, storedEuropeSpecies);
+let SPECIES = mergeNameLists(MASTER_SPECIES, EUROPE_SPECIES_EXTRAS);
+speciesListSource = storedEuropeSpecies.length ? "master+stored_extras" : "fallback_default";
+persistEuropeSpeciesExtras();
+
+// === Custom species helpers (called from postMessage handler below) ===
+let __bm_bundledSpeciesSet = null; // populated by loadSharedEuropeSpecies
+
+window.__bm_addSpeciesIfMissing = function(name){
+  try {
+    if (!name || typeof name !== "string") return false;
+    const n = normalizeText(name);
+    if (!n) return false;
+    if (SPECIES.indexOf(n) !== -1) return false;
+    SPECIES.push(n);
+    if (typeof render === "function") render();
+    return true;
+  } catch(e){ console.warn("[customSpecies] add failed", e); return false; }
+};
+
+window.__bm_removeCustomSpecies = function(name){
+  try {
+    if (!name || typeof name !== "string") return false;
+    const n = normalizeText(name);
+    const i = SPECIES.indexOf(n);
+    if (i === -1) return false;
+    if (__bm_bundledSpeciesSet && __bm_bundledSpeciesSet.has(n)) return false;
+    SPECIES.splice(i, 1);
+    try { if (typeof points === "object" && points && points[n]) delete points[n]; } catch(_){}
+    if (typeof saveAll === "function") saveAll();
+    if (typeof render === "function") render();
+    return true;
+  } catch(e){ console.warn("[customSpecies] remove failed", e); return false; }
+};
+
+window.__bm_applyCustomSpeciesList = function(list){
+  try {
+    if (!Array.isArray(list)) return;
+    let changed = false;
+    for (let ci = 0; ci < list.length; ci++) {
+      const n = (typeof list[ci] === "string") ? normalizeText(list[ci]) : "";
+      if (n && SPECIES.indexOf(n) === -1) {
+        SPECIES.push(n);
+        changed = true;
+      }
+    }
+    if (changed && typeof render === "function") render();
+  } catch(e){ console.warn("[customSpecies] apply failed", e); }
+};
+
+window.__bm_reconcileCustomSpecies = function(list){
+  try {
+    if (!Array.isArray(list)) return;
+    if (!__bm_bundledSpeciesSet) return;
+    const allowed = {};
+    for (let ri = 0; ri < list.length; ri++) {
+      const rn = (typeof list[ri] === "string") ? normalizeText(list[ri]) : "";
+      if (rn) allowed[rn] = true;
+    }
+    let changed = false;
+    for (let si = SPECIES.length - 1; si >= 0; si--) {
+      const sn = SPECIES[si];
+      if (__bm_bundledSpeciesSet.has(sn)) continue;
+      if (!allowed[sn]) {
+        SPECIES.splice(si, 1);
+        try { if (typeof points === "object" && points && points[sn]) delete points[sn]; } catch(_){}
+        changed = true;
+      }
+    }
+    if (changed) {
+      if (typeof saveAll === "function") saveAll();
+      if (typeof render === "function") render();
+    }
+  } catch(e){ console.warn("[customSpecies] reconcile failed", e); }
+};
+
+function countObservedSpecies(){
+  let count = 0;
+  for (const name of Object.keys(points || {})) {
+    const p = points[name] || {};
+    if (Number.isFinite(p.lat) || Number.isFinite(p.lon) || p.t || p.county || p.country || p.obs || p.lastSeen) count++;
+  }
+  return count;
+}
+function logEuropeSpeciesDiagnostics(masterSpecies, previousSpecies, nextSpecies){
+  const previousSet = new Set(previousSpecies || []);
+  const injected = (nextSpecies || []).filter(name => !previousSet.has(name));
+  console.info(`[europe] masterSpeciesCount=${(masterSpecies || []).length}`);
+  console.info(`[europe] observedSpeciesCount=${countObservedSpecies()}`);
+  console.info(`[europe] sidebarSpeciesCount=${(nextSpecies || []).length}`);
+  console.info(`[europe] missingSpeciesInjected=${injected.length}`);
+  if (injected.length) console.info(`[europe] exampleMissingAdded=${injected[0]}`);
+}
+function reconcileEuropeSpecies(masterSpecies, extraSpecies, sourceLabel){
+  const normalizedMaster = normalizeNameArray(masterSpecies && masterSpecies.length ? masterSpecies : DEFAULT_SPECIES_NORMALIZED);
+  const normalizedExtra = deriveEuropeExtras(normalizedMaster, extraSpecies || []);
+  MASTER_SPECIES = normalizedMaster.slice();
+  EUROPE_SPECIES_EXTRAS = normalizedExtra.slice();
+  const nextSpecies = mergeNameLists(normalizedMaster, EUROPE_SPECIES_EXTRAS);
+  if (sameNameList(SPECIES, nextSpecies)) {
+    speciesListSource = sourceLabel;
+    persistEuropeSpeciesExtras();
+    logEuropeSpeciesDiagnostics(normalizedMaster, SPECIES, nextSpecies);
+    return false;
+  }
+  const previousSpecies = SPECIES.slice();
+  SPECIES = nextSpecies;
+  speciesListSource = sourceLabel;
+  persistEuropeSpeciesExtras();
+  logEuropeSpeciesDiagnostics(normalizedMaster, previousSpecies, nextSpecies);
+  return true;
+}
+async function loadSharedEuropeSpecies(){
+  try {
+    const res = await fetch(SHARED_SPECIES_URL, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = await res.json();
+    if (!Array.isArray(payload)) return;
+    const sharedSpecies = normalizeNameArray(payload);
+    if (!sharedSpecies.length) return;
+    // Capture bundled species set for reconciliation
+    __bm_bundledSpeciesSet = new Set(sharedSpecies);
+    const storedExtras = deriveEuropeExtras(sharedSpecies, readStoredEuropeSpecies());
+    const changed = reconcileEuropeSpecies(sharedSpecies, mergeNameLists(EUROPE_SPECIES_EXTRAS, storedExtras), "master+stored_extras");
+    if (changed) {
+      saveAll();
+      render();
+      updateDebugPanel();
+    }
+  } catch (e) {
+    console.warn("[species] europe shared species fallback failed", e);
+  }
+}
+
+let perCountry = (localStorage.getItem(LS_PER_COUNTRY) || "1") === "1";
+let rareOnly = (localStorage.getItem(LS_RARE_ONLY) || "0") === "1";
+let recentOnly = true;
+let lastRefreshAt = null;
+let lastSnapshotAt = null;
+let dataMode = "live";
+let AUTO_SYNC_CANCELLED = false;
+let snapshotDebugNote = null;
+let refreshStoppedByUser = false;
+let lastError = null;
+let stoppedAtIndex = null;
+let stoppedAtKey = null;
+let lastRequest = null;
+let okCount = 0;
+let failCount = 0;
+let lastErrorStatus = null;
+let lastErrorSnippet = null;
+let lastBodySnippet = null;
+let debugCountryTop5 = "-";
+let debugCountrySample = "-";
+let debugMax7d = "-";
+let debugExampleGt1 = "-";
+let debugLastCountryRows = "-";
+let debugTotalFetchedRows = 0;
+let debugValidCoordsRows = 0;
+const DEV_DEBUG = /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname) || /[?&]debug=1(?:&|$)/.test(window.location.search);
+
+function parseObsDateToMs(obsDt){
+  const raw = String(obsDt || "").trim();
+  if (!raw) return null;
+  let m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0).getTime();
+  m = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), 0, 0).getTime();
+  const d = new Date(raw);
+  if (!isNaN(d.getTime())) return d.getTime();
+  return null;
+}
+
+function obsDtToYmd(obsDt){
+  const raw = String(obsDt || "").trim();
+  if (!raw) return null;
+  const ymd = raw.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : null;
+}
+
+function isInLastNDaysYmd(ymd, days){
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ""))) return false;
+  const d = Math.max(1, Number(days) || 7);
+  const cutoffYmd = new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+  return ymd >= cutoffYmd;
+}
+
+function isInLastNDaysTs(ts, days){
+  if (!Number.isFinite(ts)) return false;
+  const d = Math.max(1, Number(days) || 7);
+  return ts >= (Date.now() - d * 86400000);
+}
+
+function compactPoints(){
+  const compact = {};
+  for (const [name, p] of Object.entries(points)) {
+    if (!p) continue;
+    const cp = {};
+    // Only keep fields that have meaningful values
+    if (Number.isFinite(p.lat)) cp.lat = p.lat;
+    if (Number.isFinite(p.lon)) cp.lon = p.lon;
+    if (p.t) cp.t = p.t;
+    if (p.tMs) cp.tMs = p.tMs;
+    if (p.region) cp.region = p.region;
+    if (p.loc) cp.loc = p.loc;
+    if (Number.isFinite(p.occ7) && p.occ7 > 0) cp.occ7 = p.occ7;
+    if (p.ebirdCode) cp.ebirdCode = p.ebirdCode;
+    if (p.visible === false) cp.visible = false;
+    if (p.migration) cp.migration = true;
+    if (p.fetchedAt) cp.fetchedAt = p.fetchedAt;
+    // Compact regions: only keep regions that have occ7 > 0 or valid coords
+    if (p.regions && typeof p.regions === "object") {
+      const cr = {};
+      for (const [rg, d] of Object.entries(p.regions)) {
+        if (!d) continue;
+        if (!Number.isFinite(d.lat) || !Number.isFinite(d.lon)) continue;
+        const rd = { lat: d.lat, lon: d.lon };
+        if (d.t) rd.t = d.t;
+        if (d.loc) rd.loc = d.loc;
+        if (Number.isFinite(d.occ7) && d.occ7 > 0) rd.occ7 = d.occ7;
+        if (Number.isFinite(d.howMany)) rd.howMany = d.howMany;
+        cr[rg] = rd;
+      }
+      if (Object.keys(cr).length > 0) cp.regions = cr;
+    }
+    if (Object.keys(cp).length > 0) compact[name] = cp;
+  }
+  return compact;
+}
+
+function saveAll(){
+  try {
+    localStorage.setItem(LS_POINTS, JSON.stringify(compactPoints()));
+  } catch (e) {
+    console.warn("[saveAll] bm_usa_pa_points save failed, clearing old snapshots and retrying", e);
+    // Clear old snapshots to free space
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(LS_SNAPSHOT_PREFIX)) {
+        localStorage.removeItem(key);
+        i--; // adjust index after removal
+      }
+    }
+    try {
+      localStorage.setItem(LS_POINTS, JSON.stringify(compactPoints()));
+    } catch (e2) {
+      console.error("[saveAll] bm_usa_pa_points save failed even after cleanup", e2);
+    }
+  }
+  try { localStorage.setItem(LS_AVATARS, JSON.stringify(avatars)); } catch(e){}
+  try { localStorage.setItem(LS_CODES, JSON.stringify(EBIRD_CODES)); } catch(e){}
+  try { localStorage.setItem(LS_EBIRD_TOKEN, EBIRD_TOKEN || ""); } catch(e){}
+  try { localStorage.setItem(LS_SPECIES, SPECIES.join("\n")); } catch(e){}
+  try { localStorage.setItem(LS_PER_COUNTRY, perCountry ? "1" : "0"); } catch(e){}
+}
+
+function getSnapshotKey(){
+  return `usa_pa_map:v1:7days=${recentOnly ? "1" : "0"}:perCountry=${perCountry ? "1" : "0"}:regions=${REGIONS.join(",")}`;
+}
+
+function getSnapshotStorageKey(){
+  return LS_SNAPSHOT_PREFIX + getSnapshotKey();
+}
+
+function getSnapshotCounts(){
+  let markersCount = 0;
+  let itemsCount = 0;
+  for (const name of SPECIES){
+    if (!passesRareOnlyFilter(name)) continue;
+    const p = points[name];
+    if (!p) continue;
+    const regions = (p.regions && typeof p.regions === "object") ? p.regions : null;
+    if (!regions) continue;
+    let hasVisible = false;
+    for (const d of Object.values(regions)){
+      const occ7 = Number(d?.occ7 || 0);
+      if (recentOnly && !(occ7 > 0)) continue;
+      if (Number.isFinite(d?.lat) && Number.isFinite(d?.lon)) {
+        hasVisible = true;
+        if (perCountry) markersCount++;
+      }
+    }
+    if (hasVisible) {
+      itemsCount++;
+      if (!perCountry) markersCount++;
+    }
+  }
+  return { markers: markersCount, items: itemsCount };
+}
+
+function updateDebugPanel(){
+  const el = document.getElementById("debugContent");
+  if (!el) return;
+  const counts = getSnapshotCounts();
+  el.innerHTML = [
+    `active filters: <b>7 days only=${recentOnly ? "ON" : "OFF"}, per-country=${perCountry ? "ON" : "OFF"}, rare only=${rareOnly ? "ON" : "OFF"}</b>`,
+    `dataMode: <b>${dataMode}</b>`,
+    `lastSnapshotAt: <b>${lastSnapshotAt ? formatDateTimeEt(lastSnapshotAt) : "-"}</b>`,
+    `lastRefreshAt: <b>${lastRefreshAt ? formatDateTimeEt(lastRefreshAt) : "-"}</b>`,
+    `counts: <b>markers=${counts.markers}, items=${counts.items}</b>`,
+    `okCount/failCount: <b>${okCount}/${failCount}</b>`,
+    `lastError: <b>${lastError || "-"}</b>`,
+    `lastErrorStatus: <b>${lastErrorStatus ?? "-"}</b>`,
+    `lastErrorSnippet: <b>${lastErrorSnippet || "-"}</b>`,
+    `ebirdMode: <b>Server (Edge Function)</b>`,
+    `bodySnippet: <b>${lastBodySnippet || "-"}</b>`,
+    `stoppedAtIndex: <b>${stoppedAtIndex ?? "-"}</b>`,
+    `stoppedAtKey: <b>${stoppedAtKey || "-"}</b>`,
+    `lastRequest: <b>${lastRequest ? `${lastRequest.url} (${lastRequest.status ?? "?"}, ${lastRequest.timeMs ?? "?"}ms)` : "-"}</b>`,
+    `countryTop5(7d): <b>${debugCountryTop5}</b>`,
+    `lastCountryRows: <b>${debugLastCountryRows}</b>`,
+    `countrySample(7d): <b>${debugCountrySample}</b>`,
+    `max7dCountThisRefresh: <b>${debugMax7d}</b>`,
+    `Example >1: <b>${debugExampleGt1}</b>`,
+    `snapshotNote: <b>${snapshotDebugNote || "-"}</b>`,
+  ].join("<br>");
+}
+
+function showSnapshotBanner(msg, type){
+  const el = document.getElementById("snapshotBanner");
+  if (!el) return;
+  el.textContent = msg;
+  el.className = "snapshot-banner" + (type ? " " + type : "");
+  el.style.display = "block";
+}
+
+function hideSnapshotBanner(){
+  const el = document.getElementById("snapshotBanner");
+  if (el) el.style.display = "none";
+}
+
+async function saveSnapshotLocal(){
+  const snapshot = {
+    version: SNAPSHOT_VERSION,
+    createdAt: new Date().toISOString(),
+    payload: { points, species: SPECIES },
+    meta: {
+      filters: { recentOnly, perCountry, regions: REGIONS.slice() },
+      counts: getSnapshotCounts(),
+    },
+  };
+  try { localStorage.setItem(getSnapshotStorageKey(), JSON.stringify(snapshot)); } catch(e){ console.warn("[snapshot] snapshot save failed (quota)", e); }
+  try { localStorage.setItem(LS_EU_LAST_GOOD, JSON.stringify(snapshot)); } catch(e){ console.warn("[snapshot] bm_usa_pa_last_good_snapshot save failed (quota)", e); }
+  lastSnapshotAt = snapshot.createdAt;
+  updateDebugPanel();
+}
+
+function applySnapshot(snapshot){
+  if (!snapshot) return false;
+  if (snapshot.version !== SNAPSHOT_VERSION){
+    snapshotDebugNote = "snapshot outdated";
+    updateDebugPanel();
+    return false;
+  }
+  if (!snapshot.payload || typeof snapshot.payload !== "object" || !snapshot.payload.points || typeof snapshot.payload.points !== "object"){
+    snapshotDebugNote = "snapshot corrupted";
+    updateDebugPanel();
+    return false;
+  }
+  // Preserve visibility flags from current points before overwriting
+  var savedVisibility = {};
+  for (var k in points) {
+    if (points[k] && typeof points[k].visible === "boolean") {
+      savedVisibility[k] = points[k].visible;
+    }
+  }
+  points = snapshot.payload.points || {};
+  // Restore visibility flags
+  for (var k2 in savedVisibility) {
+    if (!points[k2]) points[k2] = {};
+    points[k2].visible = savedVisibility[k2];
+  }
+  console.log("[prefs] scope=usa_pa_map snapshot applied, preserved visibility for", Object.keys(savedVisibility).length, "species");
+  if (Array.isArray(snapshot.payload.species) && snapshot.payload.species.length) {
+    SPECIES = normalizeNameArray(snapshot.payload.species);
+    speciesListSource = "snapshot";
+  }
+  dataMode = "snapshot";
+  lastSnapshotAt = snapshot.createdAt || null;
+  snapshotDebugNote = null;
+  try { localStorage.setItem(LS_EU_LAST_GOOD, JSON.stringify(snapshot)); } catch(e){ console.warn("[snapshot] bm_usa_pa_last_good_snapshot save failed (quota)", e); }
+  saveAll();
+  render();
+  updateDebugPanel();
+  return true;
+}
+
+function loadSnapshotLocal(){
+  const raw = localStorage.getItem(getSnapshotStorageKey());
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch(e){
+    snapshotDebugNote = "snapshot corrupted";
+    return null;
+  }
+}
+
+function reloadSnapshot(){
+  resetEuropeDebugState();
+  const snapshot = loadSnapshotLocal();
+  if (!snapshot) {
+    showSnapshotBanner("No snapshot available", "warn");
+    setStatus("No snapshot found");
+    progressLine.textContent = "No snapshot found.";
+    updateDebugPanel();
+    return false;
+  }
+  if (!applySnapshot(snapshot)) {
+    const msg = snapshotDebugNote === "snapshot outdated" ? "Snapshot outdated" : "Snapshot corrupted";
+    showSnapshotBanner(msg, "warn");
+    setStatus(msg);
+    progressLine.textContent = msg;
+    updateDebugPanel();
+    return false;
+  }
+  showSnapshotBanner(`Loaded snapshot: ${formatDateTimeEt(snapshot.createdAt)}`);
+  setStatus(`Loaded snapshot: ${formatDateTimeEt(snapshot.createdAt)}`);
+  progressLine.textContent = "Loaded snapshot.";
+  return true;
+}
+
+function preloadAvatars(){
+  const urls = Object.values(avatars).filter(isAvatarVal);
+  urls.slice(0, 500).forEach(u => { const img = new Image(); img.decoding="async"; img.loading="eager"; img.src = u; });
+}
+
+/* ========= Map ========= */
+const map = L.map("map", { zoomControl:false }).setView([56.7, 20.5], 5);
+L.control.zoom({ position:"topright" }).addTo(map);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+map.createPane("highlightPane");
+map.getPane("highlightPane").style.zIndex = "650";
+map.getPane("highlightPane").style.pointerEvents = "none";
+
+const markers = new Map();
+let activePulseRing = null;
+let activePulseTimeout = null;
+let markerZoomRefreshTimer = null;
+
+function clearPulseRing(){
+  if (activePulseTimeout) {
+    clearTimeout(activePulseTimeout);
+    activePulseTimeout = null;
+  }
+  if (activePulseRing) {
+    try { map.removeLayer(activePulseRing); } catch(e){}
+    activePulseRing = null;
+  }
+}
+
+function showPulseRing(lat, lon){
+  clearPulseRing();
+  activePulseRing = L.circleMarker([lat, lon], {
+    pane: "highlightPane",
+    radius: 18,
+    color: "#0ea5e9",
+    weight: 3,
+    fillColor: "#38bdf8",
+    fillOpacity: 0.2,
+    className: "pulse-ring",
+    interactive: false,
+  }).addTo(map);
+  activePulseTimeout = setTimeout(clearPulseRing, 2500);
+}
+window.addEventListener("beforeunload", clearPulseRing);
+
+function markerSizeForZoom(z){
+  if (z <= 4) return 30;
+  if (z <= 5) return 34;
+  if (z <= 6) return 40;
+  if (z <= 8) return 46;
+  return 54;
+}
+
+function markerLayoutForZoom(zoom){
+  const M = markerSizeForZoom(zoom);
+  const TOP = Math.round(M * 0.35);
+  const BOTTOM = Math.round(M * 0.55);
+  const W = M;
+  const H = TOP + M + BOTTOM;
+  const countHeight = Math.max(18, Math.round(M * 0.42));
+  const rarityHeight = Math.max(16, Math.round(M * 0.32));
+  const countFont = Math.max(10, Math.round(M * 0.28));
+  const rarityFont = Math.max(9, Math.round(M * 0.22));
+  const countPadX = Math.round(M * 0.15);
+  const rarityPadX = Math.round(M * 0.18);
+  return { M, TOP, BOTTOM, W, H, countHeight, rarityHeight, countFont, rarityFont, countPadX, rarityPadX };
+}
+
+function buildMarkerElement({ M, TOP, BOTTOM, countHeight, rarityHeight, countFont, rarityFont, countPadX, rarityPadX, count, rarityText, rarityStyle, avatarUrl, ring, isMigr }){
+  const root = document.createElement("div");
+  root.style.position = "relative";
+  root.style.width = `${M}px`;
+  root.style.height = `${TOP + M + BOTTOM}px`;
+  root.style.overflow = "visible";
+
+  const avatarWrap = document.createElement("div");
+  avatarWrap.style.position = "absolute";
+  avatarWrap.style.left = "0";
+  avatarWrap.style.top = `${TOP}px`;
+  avatarWrap.style.width = `${M}px`;
+  avatarWrap.style.height = `${M}px`;
+  avatarWrap.style.borderRadius = "9999px";
+  avatarWrap.style.overflow = "hidden";
+  avatarWrap.style.border = `4px solid ${ring || "#1f6f4a"}`;
+  avatarWrap.style.boxSizing = "border-box";
+  avatarWrap.style.background = "#ddd";
+
+  const avatarImg = document.createElement("img");
+  avatarImg.alt = "";
+  avatarImg.src = String(avatarUrl || "").trim() || "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+  avatarImg.style.width = "100%";
+  avatarImg.style.height = "100%";
+  avatarImg.style.objectFit = "cover";
+  avatarImg.style.display = "block";
+  avatarWrap.appendChild(avatarImg);
+  root.appendChild(avatarWrap);
+
+  if (rarityText) {
+    const rarityEl = document.createElement("div");
+    rarityEl.textContent = rarityText;
+    rarityEl.style.position = "absolute";
+    rarityEl.style.left = "50%";
+    rarityEl.style.top = "0";
+    rarityEl.style.transform = "translateX(-50%)";
+    rarityEl.style.height = `${rarityHeight}px`;
+    rarityEl.style.padding = `0 ${rarityPadX}px`;
+    rarityEl.style.borderRadius = "9999px";
+    rarityEl.style.background = (rarityStyle && rarityStyle.badgeBg) ? rarityStyle.badgeBg : "#111";
+    rarityEl.style.color = (rarityStyle && rarityStyle.badgeFg) ? rarityStyle.badgeFg : "#fff";
+    rarityEl.style.fontSize = `${rarityFont}px`;
+    rarityEl.style.fontWeight = "800";
+    rarityEl.style.lineHeight = `${rarityHeight}px`;
+    rarityEl.style.border = "2px solid #fff";
+    rarityEl.style.boxShadow = "0 2px 6px rgba(0,0,0,.25)";
+    rarityEl.style.zIndex = "30";
+    rarityEl.style.pointerEvents = "none";
+    root.appendChild(rarityEl);
+  }
+
+  if ((count===0) || Number.isFinite(count)) {
+    const countEl = document.createElement("div");
+    countEl.textContent = String(count);
+    countEl.style.position = "absolute";
+    countEl.style.left = "50%";
+    countEl.style.top = `${TOP + M + 6}px`;
+    countEl.style.transform = "translateX(-50%)";
+    countEl.style.minWidth = `${Math.max(24, Math.round(M * 0.54))}px`;
+    countEl.style.height = `${countHeight}px`;
+    countEl.style.padding = `0 ${countPadX}px`;
+    countEl.style.borderRadius = "9999px";
+    countEl.style.background = isMigr ? "#16a34a" : "#f57c00";
+    countEl.style.color = "#fff";
+    countEl.style.fontSize = `${countFont}px`;
+    countEl.style.fontWeight = "800";
+    countEl.style.lineHeight = `${countHeight}px`;
+    countEl.style.textAlign = "center";
+    countEl.style.border = "2px solid #fff";
+    countEl.style.boxShadow = "0 2px 6px rgba(0,0,0,.25)";
+    countEl.style.zIndex = "20";
+    countEl.style.pointerEvents = "none";
+    root.appendChild(countEl);
+  }
+
+  return root;
+}
+
+function makeIcon(url, border, rarityLevel, occ7, isMigr){
+  const { M, TOP, BOTTOM, W, H, countHeight, rarityHeight, countFont, rarityFont, countPadX, rarityPadX } = markerLayoutForZoom(map.getZoom());
+  const rarityStyle = window.getRarityStyle ? window.getRarityStyle(rarityLevel || "none") : null;
+  const ring = (rarityStyle && rarityStyle.ringColor) ? rarityStyle.ringColor : border;
+  const rarityText = rarityStyle && rarityStyle.badgeText ? rarityStyle.badgeText : "";
+  const root = buildMarkerElement({ M, TOP, BOTTOM, countHeight, rarityHeight, countFont, rarityFont, countPadX, rarityPadX, count: occ7, rarityText, rarityStyle, avatarUrl: url, ring, isMigr });
+  return L.divIcon({ html: root, className:"", iconSize:[W,H], iconAnchor:[W/2, TOP + M/2], popupAnchor:[0, -(TOP + M/2)] });
+}
+
+/* ========= Meta text ========= */
+function fmtMeta(p){
+  if(!p) return "No data yet";
+
+  const parts = [];
+  const hasLoc = Number.isFinite(p.lat) && Number.isFinite(p.lon);
+  if (hasLoc) {
+    parts.push(`<span class="pillMini">lat</span>${Number(p.lat).toFixed(4)}`);
+    parts.push(`<span class="pillMini">lon</span>${Number(p.lon).toFixed(4)}`);
+  } else {
+    parts.push("No location yet");
+  }
+
+  if (p.t) parts.push(`<span class="pillMini">last</span>${formatDateEt(p.t)}`);
+  if (p.region) parts.push(`<span class="pillMini">country</span>${p.region}`);
+  if ((p.occ7===0) || Number.isFinite(Number(p.occ7))) parts.push(`<span class="pillMini">7d total</span>${p.occ7}`);
+
+  if (p.regions && typeof p.regions === "object") {
+    const chips = [];
+    for (const [rg, d] of Object.entries(p.regions)) {
+      if (!d || !Number.isFinite(Number(d.occ7))) continue;
+      if (Number(d.occ7) <= 0) continue;
+      chips.push(`${rg}:${d.occ7}`);
+    }
+    if (chips.length) parts.push(`<span class="pillMini">countries</span>${chips.join(" | ")}`);
+  }
+  return parts.join(" ");
+}
+
+/* ========= Markers ========= */
+function clearSpeciesMarkers(species){
+  for (const [k, m] of Array.from(markers.entries())) {
+    if (k === species || k.startsWith(species + "@@")) {
+      try { map.removeLayer(m); } catch(e){}
+      markers.delete(k);
+    }
+  }
+}
+
+function updateMarker(species){
+  clearSpeciesMarkers(species);
+
+  const p = points[species]; if (!p) return;
+  if (p.visible === false) return;
+  if (!passesRareOnlyFilter(species)) return;
+  const meta = getSpeciesMeta(species);
+
+  const regionsObj = (p.regions && typeof p.regions === "object") ? p.regions : null;
+  if (!regionsObj) return;
+
+  const rarityLevel = meta.rarityLevel || "none";
+  const isMigr = !!p.migration;
+
+  // determine latest overall (by last seen date)
+  let latestRegion = "";
+  let latestDate = "";
+  for (const [rg, d] of Object.entries(regionsObj)) {
+    const dt = (d && d.t) ? String(d.t) : "";
+    if (dt && (!latestDate || dt > latestDate)) {
+      latestDate = dt;
+      latestRegion = rg;
+    }
+  }
+
+  let latestMarker = null;
+
+  if (perCountry) {
+    for (const [rg, d] of Object.entries(regionsObj)) {
+      if (!d) continue;
+      if (!Number.isFinite(d.lat) || !Number.isFinite(d.lon)) continue;
+
+      // show markers only if occ7>0
+      const occ7 = Number(d.occ7 || 0);
+      if (recentOnly && !(occ7 > 0)) continue;
+
+      const border = borderColorByDate(d.t);
+      const icon = makeIcon(meta.avatarUrl || avatars[species] || "", border, rarityLevel, occ7, isMigr);
+
+      const where = d.loc ? `<br><small>location: ${d.loc}</small>` : "";
+      const when  = d.t ? `<br><small>last seen: ${formatDateEt(d.t)}</small>` : "";
+      const srcLn = `<br><small>source: eBird ${rg} (${REGION_NAME[rg]||rg})</small>`;
+      const occLn = `<br><small>7d records: ${occ7} (computed from last ${BACK_DAYS}d)</small>`;
+      const howManyLn = Number.isFinite(d.howMany) ? `<br><small>count: ${d.howMany}</small>` : "";
+      const migr  = `<br><small>migration: ${isMigr ? "yes" : "no"}</small>`;
+      const rarLn = rarityLevel !== "none" ? `<br><small>rarity: ${window.getRarityBadgeText(rarityLevel)}</small>` : "";
+
+      const markerKey = species + "@@" + rg;
+      const popupName = window.normalizeUiText ? window.normalizeUiText(species) : species;
+      const m = L.marker([d.lat, d.lon], { icon }).addTo(map)
+        .bindPopup(`<b>${popupName}</b>${when}${where}${srcLn}${occLn}${howManyLn}${migr}${rarLn}`);
+      markers.set(markerKey, m);
+
+      if (rg === latestRegion) latestMarker = m;
+    }
+  } else {
+    // single marker: show latest region that has occ7>0
+    let best = null;
+    for (const [rg, d] of Object.entries(regionsObj)) {
+      const occ7 = Number(d?.occ7 || 0);
+      if (recentOnly && !(occ7 > 0)) continue;
+      if (!best || (d.t && d.t > best.t)) best = { rg, ...d };
+    }
+    if (best) {
+      const border = borderColorByDate(best.t);
+      const total7 = Number(p.occ7 || 0);
+      const icon = makeIcon(meta.avatarUrl || avatars[species] || "", border, rarityLevel, total7, isMigr);
+      const where = best.loc ? `<br><small>location: ${best.loc}</small>` : "";
+      const when  = best.t ? `<br><small>last seen: ${formatDateEt(best.t)}</small>` : "";
+      const srcLn = `<br><small>source: eBird ${best.rg} (${REGION_NAME[best.rg]||best.rg})</small>`;
+      const occLn = `<br><small>7d records (total): ${total7}</small>`;
+      const howManyLn = Number.isFinite(best.howMany) ? `<br><small>count: ${best.howMany}</small>` : "";
+      const migr  = `<br><small>migration: ${isMigr ? "yes" : "no"}</small>`;
+      const rarLn = rarityLevel !== "none" ? `<br><small>rarity: ${window.getRarityBadgeText(rarityLevel)}</small>` : "";
+
+      const popupName = window.normalizeUiText ? window.normalizeUiText(species) : species;
+      const m = L.marker([best.lat, best.lon], { icon }).addTo(map)
+        .bindPopup(`<b>${popupName}</b>${when}${where}${srcLn}${occLn}${howManyLn}${migr}${rarLn}`);
+      latestMarker = m;
+      markers.set(species + "@@" + best.rg, m);
+    }
+  }
+
+  if (latestMarker) markers.set(species, latestMarker);
+}
+
+function refreshMarkerIcons(){
+  SPECIES.forEach(updateMarker);
+}
+
+function scheduleRefreshMarkerIcons(){
+  if (markerZoomRefreshTimer) return;
+  markerZoomRefreshTimer = setTimeout(() => {
+    markerZoomRefreshTimer = null;
+    refreshMarkerIcons();
+  }, 100);
+}
+
+map.on("zoomend", scheduleRefreshMarkerIcons);
+
+/* ========= UI ========= */
+const listEl = document.getElementById("list");
+const filterBox = document.getElementById("filterBox");
+const progressLine = document.getElementById("progressLine");
+const statusText = document.getElementById("statusText");
+const perCountryBtn = document.getElementById("perCountryBtn");
+const rareOnlyBtn = document.getElementById("rareOnlyBtn");
+
+function setStatus(s){ statusText.textContent = s || ""; }
+function norm(s){ return (s || "").toLowerCase().normalize("NFC"); }
+function isRareSpecies(name){
+  const meta = getSpeciesMeta(name);
+  return Boolean(meta && meta.rarityLevel && meta.rarityLevel !== "none");
+}
+function passesRareOnlyFilter(name){
+  return !rareOnly || isRareSpecies(name);
+}
+
+function rowHTML(name){
+  const p = points[name] || {};
+  const meta = getSpeciesMeta(name);
+  const displayName = window.normalizeUiText ? window.normalizeUiText(name) : name;
+  const bcol = borderColorByDate(p.t);
+  const nameCls = (p.visible === false) ? "name disabled" : "name";
+  const hasLocation = Number.isFinite(p.lat) && Number.isFinite(p.lon);
+  const hasMarker = markers.has(name) || hasLocation;
+  const openDisabled = hasLocation ? "" : "disabled title=\"No location yet\"";
+  const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(meta.rarityLevel) : "";
+
+  return `
+    <div class="row" data-key="${name}">
+      <div class="avatar" style="background-image:url('${meta.avatarUrl || avatars[name] || ""}');border-color:${bcol}"></div>
+      <div>
+        <div class="name-row">
+          <div class="${nameCls}" title="Tap to hide/show marker">${displayName}</div>
+          ${rarityText ? `<span class="rarity-badge" title="Haruldus">${rarityText}</span>` : ""}
+        </div>
+        ${hasMarker ? `<div style="margin-top:6px;"><button class="btn secondary" data-open ${openDisabled}>Open</button></div>` : ""}
+        <div class="meta">${fmtMeta(p)}</div>
+      </div>
+    </div>`;
+}
+
+function render(){
+  const q = norm((filterBox.value || "").trim());
+  listEl.innerHTML = "";
+  SPECIES
+    .filter(n => passesRareOnlyFilter(n))
+    .filter(n => norm(n).includes(q))
+    .forEach(n => listEl.insertAdjacentHTML("beforeend", rowHTML(n)));
+  wireRows();
+  // update markers for visible list quickly
+  SPECIES.forEach(updateMarker);
+}
+
+function wireRows(){
+  document.querySelectorAll(".row[data-key]").forEach(row=>{
+    const key = row.getAttribute("data-key");
+    const p = points[key] = points[key] || {};
+
+    const nameEl = row.querySelector(".name");
+    const openBtn = row.querySelector("[data-open]");
+
+    if (nameEl) nameEl.addEventListener("click", ()=>{
+      p.visible = (p.visible === false) ? true : false;
+      saveAll(); updateMarker(key); render();
+      console.log("[prefs] scope=usa_pa_map save species=" + key + " hidden=" + (p.visible === false));
+      // Notify parent app of visibility change
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({
+            type: 'SPECIES_VISIBILITY_CHANGED',
+            speciesKey: key,
+            isHidden: p.visible === false
+          }, '*');
+        }
+      } catch(e) {}
+    });
+
+    if (openBtn) openBtn.addEventListener("click", ()=>{
+      if (!(Number.isFinite(p.lat) && Number.isFinite(p.lon))) {
+        showSnapshotBanner("No location yet", "warn");
+        setTimeout(hideSnapshotBanner, 1800);
+        return;
+      }
+      const targetZoom = Math.max(map.getZoom(), 6);
+      const targetLatLng = [p.lat, p.lon];
+      map.flyTo(targetLatLng, targetZoom, { duration: 0.6 });
+      showPulseRing(p.lat, p.lon);
+
+      if (markers.has(key)) {
+        const m = markers.get(key);
+        setTimeout(()=> { try { m.openPopup(); } catch(e){} }, 450);
+        closeSidebarOnMobile();
+      } else {
+        closeSidebarOnMobile();
+      }
+    });
+  });
+}
+
+/* ========= eBird fetch (match Finland logic) ========= */
+let refreshCancelled = false;
+
+function delayMs(ms){
+  return new Promise((resolve)=> setTimeout(resolve, ms));
+}
+
+function buildErrorMessage(prefix, status, snippet){
+  const cleanSnippet = (snippet || "").slice(0, 200);
+  return `${prefix} HTTP ${status}. ${cleanSnippet}`;
+}
+
+function isAbortLike(err){
+  const msg = String((err && (err.name || err.message || err)) || "").toLowerCase();
+  return msg.includes("abort") || msg.includes("aborted") || msg.includes("signal is aborted");
+}
+
+async function fetchWithTimeout(url, opts = {}, timeoutMs = 20000){
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try{
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function safeFetchText(url, opts = {}, timeoutMs = 20000, retries = 1){
+  let lastErr = null;
+  for(let attempt = 0; attempt <= retries; attempt++){
+    try{
+      const res = await fetchWithTimeout(url, opts, timeoutMs);
+      if(!res.ok){
+        const text = await res.text().catch(()=> "");
+        const e = new Error(`HTTP_${res.status}`);
+        e.httpStatus = res.status;
+        e.body = text;
+        throw e;
+      }
+      return await res.text();
+    } catch(err){
+      lastErr = err;
+      const abortLike = isAbortLike(err);
+      const status0Like = String(err).includes("status=0") || String(err).includes("HTTP_0");
+      if(attempt < retries && (abortLike || status0Like)){
+        await new Promise(r => setTimeout(r, 700));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
+async function safeFetchJson(url, options = {}){
+  const timeoutMs = Number(options.timeoutMs || 20000);
+  const retries = Number(options.retries || 2);
+  const retryBackoff = [1000, 3000];
+  const requestUrl = String(url || "");
+  let attempt = 0;
+  while (attempt <= retries) {
+    const t0 = performance.now();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(()=> controller.abort(), timeoutMs);
+    if (options.signal) {
+      if (options.signal.aborted) controller.abort();
+      else options.signal.addEventListener("abort", ()=> controller.abort(), { once: true });
+    }
+    try {
+      const res = await fetch(requestUrl, {
+        headers: options.headers || {},
+        signal: controller.signal,
+        cache: options.cache || "no-store",
+        method: options.method || "GET",
+        body: options.body,
+      });
+      const timeMs = Math.round(performance.now() - t0);
+      const status = res.status;
+      if (status === 429 && attempt < retries) {
+        clearTimeout(timeoutId);
+        await delayMs(retryBackoff[Math.min(attempt, retryBackoff.length - 1)]);
+        attempt++;
+        continue;
+      }
+      if (!res.ok) {
+        const textSnippet = (await res.text().catch(()=> "")).slice(0, 200);
+        const err = new Error(buildErrorMessage("Request failed.", status, textSnippet));
+        err.status = status;
+        err.textSnippet = textSnippet;
+        err.timeMs = timeMs;
+        err.url = requestUrl;
+        throw err;
+      }
+      const rawText = await res.text();
+      const textSnippet = rawText.slice(0, 200);
+      let json = null;
+      try {
+        json = rawText ? JSON.parse(rawText) : null;
+      } catch (parseErr) {
+        const err = new Error(`Invalid JSON response. ${textSnippet}`);
+        err.status = status;
+        err.textSnippet = textSnippet;
+        err.timeMs = timeMs;
+        err.url = requestUrl;
+        throw err;
+      }
+      clearTimeout(timeoutId);
+      return {
+        ok: true,
+        status,
+        json,
+        textSnippet,
+        timeMs,
+        url: requestUrl,
+      };
+    } catch (e) {
+      clearTimeout(timeoutId);
+      const timeMs = Math.round(performance.now() - t0);
+      if (controller.signal.aborted && !(options.signal && options.signal.aborted)) {
+        const err = new Error(`Request timed out after ${timeoutMs}ms`);
+        err.status = 0;
+        err.textSnippet = "";
+        err.timeMs = timeMs;
+        err.url = requestUrl;
+        throw err;
+      }
+      if ((e && e.name === "AbortError") || (options.signal && options.signal.aborted)) {
+        throw e;
+      }
+      if (attempt < retries) {
+        await delayMs(retryBackoff[Math.min(attempt, retryBackoff.length - 1)]);
+        attempt++;
+        continue;
+      }
+      if (!e.status) e.status = 0;
+      if (!e.timeMs) e.timeMs = timeMs;
+      if (!e.url) e.url = requestUrl;
+      throw e;
+    }
+  }
+  return { ok: false, status: 0, json: null, textSnippet: "", timeMs: 0, url: requestUrl };
+}
+
+async function refreshEuropeAggregated(keys, onProgress){
+  const speciesByCode = new Map();
+  for (const speciesName of keys) {
+    const p = points[speciesName] = points[speciesName] || {};
+    const code = resolveEbirdCode(speciesName) || p.ebirdCode || EBIRD_CODES[speciesName];
+    if (!code) continue;
+    speciesByCode.set(code, speciesName);
+  }
+
+  const aggregate = {};
+  keys.forEach((speciesName) => {
+    aggregate[speciesName] = {
+      regions: {},
+      total7: 0,
+      latest: { t: "", tMs: 0, region: "", lat: null, lon: null, loc: "" },
+    };
+  });
+
+  let okCountries = 0;
+  let failCountries = 0;
+  let doneCountries = 0;
+  let max7dCount = 0;
+  let max7dSpecies = "-";
+  let max7dCountry = "-";
+  const totalCountsGlobalByCode = {};
+  debugTotalFetchedRows = 0;
+  debugValidCoordsRows = 0;
+
+  for (const region of REGIONS) {
+    if (refreshCancelled) break;
+    const token = getEbirdToken();
+    const url = buildEbirdCountryRecentUrl(region, BACK_DAYS, MAX_RESULTS, token);
+    try {
+      const raw = await safeFetchText(url, { headers: { "X-eBirdApiToken": token } }, 20000, 1);
+      let payload = null;
+      try { payload = raw ? JSON.parse(raw) : null; } catch { payload = null; }
+      lastRequest = { url, status: 200, timeMs: null };
+      lastBodySnippet = String(raw || "").slice(0, 200) || lastBodySnippet;
+      if (!Array.isArray(payload)) {
+        const err = new Error("Invalid eBird payload");
+        err.status = 200;
+        err.textSnippet = JSON.stringify(payload || "").slice(0, 200);
+        err.url = url;
+        err.region = region;
+        throw err;
+      }
+
+      const perSpeciesRegionByCode = {};
+      const perCountryCounts = {};
+      const countrySampleRows = [];
+      for (const obs of payload) {
+        debugTotalFetchedRows++;
+        const speciesCode = String(obs?.speciesCode || "");
+        const speciesName = speciesByCode.get(speciesCode);
+        if (!speciesName) continue;
+        const obsDt = String(obs?.obsDt || "");
+        const ymd = obsDtToYmd(obsDt);
+        const ts = parseObsDateToMs(obsDt);
+        const isValidDt = ts !== null && Number.isFinite(ts);
+        const latRaw = Number(obs?.lat);
+        const lonRaw = Number(obs?.lng);
+        if (Number.isFinite(latRaw) && Number.isFinite(lonRaw)) {
+          debugValidCoordsRows++;
+        }
+        if (!perSpeciesRegionByCode[speciesCode]) {
+          perSpeciesRegionByCode[speciesCode] = { occ7: 0, latestObs: null, latestTs: 0, speciesCode: speciesCode, sampleObsDt: obsDt };
+        }
+        if ((ymd && isInLastNDaysYmd(ymd, 7)) || (isValidDt && isInLastNDaysTs(ts, 7))) {
+          perCountryCounts[speciesCode] = (perCountryCounts[speciesCode] ?? 0) + 1;
+          totalCountsGlobalByCode[speciesCode] = (totalCountsGlobalByCode[speciesCode] ?? 0) + 1;
+          perSpeciesRegionByCode[speciesCode].occ7 = perCountryCounts[speciesCode];
+          if (countrySampleRows.length < 5) countrySampleRows.push({ speciesCode, count: perCountryCounts[speciesCode], obsDt });
+          if (perCountryCounts[speciesCode] > max7dCount) {
+            max7dCount = perCountryCounts[speciesCode];
+            max7dSpecies = speciesCode;
+            max7dCountry = region;
+          }
+        }
+        if (isValidDt) {
+          if (!perSpeciesRegionByCode[speciesCode].latestTs || ts > perSpeciesRegionByCode[speciesCode].latestTs) {
+            perSpeciesRegionByCode[speciesCode].latestObs = obs;
+            perSpeciesRegionByCode[speciesCode].latestTs = ts;
+          }
+        }
+      }
+      debugCountryTop5 = Object.entries(perCountryCounts)
+        .sort((a, b) => Number(b[1]) - Number(a[1]))
+        .slice(0, 5)
+        .map(([code, count]) => `${code}:${count}`)
+        .join(" | ") || "-";
+      debugLastCountryRows = `${region} rows=${payload.length}`;
+      debugCountrySample = countrySampleRows
+        .map((x) => `${region} ${x.speciesCode}:${x.count} @ ${x.obsDt}`)
+        .join(" | ") || "-";
+
+      for (const [speciesCode, regionStats] of Object.entries(perSpeciesRegionByCode)) {
+        const speciesName = speciesByCode.get(speciesCode);
+        if (!speciesName) continue;
+        const latestObs = regionStats.latestObs;
+        if (!latestObs) continue;
+        const lat = Number(latestObs.lat);
+        const lon = Number(latestObs.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+        const t = String(latestObs.obsDt || "").slice(0, 10);
+        const lastSeenMs = Number(regionStats.latestTs || 0);
+        aggregate[speciesName].regions[region] = {
+          lat,
+          lon,
+          t,
+          tMs: lastSeenMs,
+          loc: latestObs.locName || "",
+          occ7: Number(regionStats.occ7 || 0),
+          howMany: latestObs.howMany != null ? Number(latestObs.howMany) : null,
+        };
+        aggregate[speciesName].total7 += Number(regionStats.occ7 || 0);
+        if (lastSeenMs && (!aggregate[speciesName].latest.tMs || lastSeenMs > aggregate[speciesName].latest.tMs)) {
+          aggregate[speciesName].latest = {
+            t,
+            tMs: lastSeenMs,
+            region,
+            lat,
+            lon,
+            loc: latestObs.locName || "",
+          };
+        }
+      }
+      okCountries++;
+    } catch (e) {
+      failCountries++;
+      const status = Number(e?.status || e?.httpStatus || 0);
+      if (status === 403) {
+        const err = new Error(String(e?.textSnippet || e?.message || "403 forbidden"));
+        err.status = 403;
+        err.textSnippet = String(e?.textSnippet || e?.message || "").slice(0, 200);
+        err.url = e?.url || url;
+        err.region = region;
+        throw err;
+      }
+      lastRequest = { url: e?.url || url, status: e?.status, timeMs: e?.timeMs };
+      lastBodySnippet = String(e?.textSnippet || e?.message || "").slice(0, 200) || lastBodySnippet;
+      setRefreshError(`country=${region} status=${status} ${String(e?.textSnippet || e?.message || "").slice(0, 200)}`, doneCountries + 1, region);
+      const isNetAbort = isAbortLike(e) || status === 0 || String(e?.message || "").includes("HTTP_0");
+      if (isNetAbort) {
+        setStatus(`Skipped ${region} (network/abort), continuing...`);
+      } else {
+        setStatus(`Skipped ${region}, continuing...`);
+      }
+      console.warn("Country refresh failed, skipping", region, e);
+    }
+
+    doneCountries++;
+    onProgress?.(doneCountries, REGIONS.length);
+    if (refreshCancelled) break;
+    await delayMs(250);
+  }
+
+  for (const speciesName of keys) {
+    const p = points[speciesName] = points[speciesName] || {};
+    const agg = aggregate[speciesName] || { regions: {}, total7: 0, latest: { t: "", tMs: 0, region: "", lat: null, lon: null, loc: "" } };
+    p.fetchedAt = Date.now();
+    const code = resolveEbirdCode(speciesName) || p.ebirdCode || EBIRD_CODES[speciesName];
+    p.occ7 = Number(totalCountsGlobalByCode[code] ?? agg.total7 ?? 0);
+    p.regions = agg.regions;
+    if (agg.latest.t) {
+      p.t = agg.latest.t;
+      p.tMs = agg.latest.tMs || 0;
+      p.region = agg.latest.region;
+      p.lat = agg.latest.lat;
+      p.lon = agg.latest.lon;
+      p.loc = agg.latest.loc;
+    } else {
+      p.t = "";
+      p.tMs = 0;
+      p.region = "";
+      p.lat = null;
+      p.lon = null;
+      p.loc = "";
+    }
+    if (typeof p.visible !== "boolean") p.visible = true;
+    updateMarker(speciesName);
+  }
+  debugMax7d = `${String(max7dCount || 0)} (species ${max7dSpecies} country ${max7dCountry})`;
+  debugExampleGt1 = max7dCount > 1
+    ? `${max7dSpecies} in ${max7dCountry} = ${max7dCount}`
+    : "none > 1 in this refresh";
+  saveAll();
+  render();
+  return { okCountries, failCountries, totalCountries: REGIONS.length };
+}
+
+async function runPool(tasks, limit){
+  const executing = new Set();
+  for (const task of tasks) {
+    const pr = task().finally(()=> executing.delete(pr));
+    executing.add(pr);
+    if (executing.size >= limit) await Promise.race(executing);
+  }
+  await Promise.allSettled(Array.from(executing));
+}
+
+function stopRefresh(){
+  refreshStoppedByUser = true;
+  refreshCancelled = true;
+  setRefreshError("Stopped by user", stoppedAtIndex, stoppedAtKey || "user");
+  setStatus("Stopped.");
+  progressLine.textContent = "Stopped.";
+}
+
+function setRefreshError(message, idx, key){
+  lastError = (message || "Unknown refresh error").slice(0, 400);
+  lastErrorSnippet = String(message || "").slice(0, 200) || null;
+  stoppedAtIndex = Number.isFinite(idx) ? idx : null;
+  stoppedAtKey = key || null;
+}
+
+function resetEuropeDebugState(){
+  lastError = null;
+  stoppedAtIndex = null;
+  stoppedAtKey = null;
+  okCount = 0;
+  failCount = 0;
+  lastErrorStatus = null;
+  lastErrorSnippet = null;
+  lastBodySnippet = null;
+  lastRequest = null;
+  debugTotalFetchedRows = 0;
+  debugValidCoordsRows = 0;
+}
+
+function validateRefreshConfig(){
+  const token = getEbirdToken();
+  if (!token) return { ok: false, message: "Missing eBird token. Open Settings and paste your eBird API token." };
+  return { ok: true, message: "" };
+}
+
+function buildEbirdCountryRecentUrl(regionCode, back, maxResults, token){
+  return `https://api.ebird.org/v2/data/obs/${encodeURIComponent(regionCode)}/recent?back=${back}&maxResults=${maxResults}&key=${encodeURIComponent(token || getEbirdToken())}&_ts=${Date.now()}`;
+}
+
+async function refreshKeys(keys, force=true){
+  showWarn("");
+  refreshStoppedByUser = false;
+  lastError = null;
+  stoppedAtIndex = null;
+  stoppedAtKey = null;
+  lastRequest = null;
+  okCount = 0;
+  failCount = 0;
+  lastErrorStatus = null;
+  lastErrorSnippet = null;
+  lastBodySnippet = null;
+  updateDebugPanel();
+
+  const cfg = validateRefreshConfig();
+  if (!cfg.ok) {
+    setRefreshError(cfg.message, 0, "config");
+    showWarn(cfg.message);
+    updateDebugPanel();
+    return { done: 0, total: keys.length, successCount: 0, failureCount: keys.length, aborted: false };
+  }
+
+  const token = getEbirdToken();
+  const healthUrl = buildEbirdCountryRecentUrl("EE", 1, 1, token);
+  try {
+    const health = await safeFetchJson(healthUrl, { timeoutMs: 10000, retries: 0, headers: { "X-eBirdApiToken": token } });
+    lastErrorStatus = health.status;
+    lastBodySnippet = health.textSnippet || null;
+    lastRequest = { url: health.url, status: health.status, timeMs: health.timeMs };
+  } catch (e) {
+    lastErrorStatus = e?.status ?? 0;
+    lastErrorSnippet = String(e?.textSnippet || e?.message || "").slice(0, 200);
+    lastBodySnippet = String(e?.textSnippet || e?.message || "").slice(0, 200) || null;
+    lastRequest = { url: e?.url || healthUrl, status: e?.status, timeMs: e?.timeMs };
+    const status = Number(e?.status || 0);
+    if (status === 403) {
+      const msg = "eBird returned 403. Token may be malformed OR you may be temporarily blocked due to too many requests. Use Hard reset and try again with throttled refresh.";
+      showSnapshotBanner(msg, "error");
+      showWarn(msg);
+      setRefreshError(`${msg}. status=403 ${lastErrorSnippet || ""}`, 0, "health-check");
+      updateDebugPanel();
+      return { done: 0, total: keys.length, successCount: 0, failureCount: 0, aborted: false };
+    }
+    if (status === 401) {
+      const msg = "eBird token invalid (401). Open Settings and check your eBird API token.";
+      showSnapshotBanner(msg, "error");
+      showWarn(msg);
+      setRefreshError(`${msg}. status=${status} ${lastErrorSnippet || ""}`, 0, "health-check");
+      updateDebugPanel();
+      return { done: 0, total: keys.length, successCount: 0, failureCount: 0, aborted: false };
+    }
+    const msg = `Health check failed (status ${status || "?"}).`;
+    showSnapshotBanner(msg, "warn");
+    showWarn(msg);
+    setRefreshError(`${msg} ${lastErrorSnippet || ""}`, 0, "health-check");
+    updateDebugPanel();
+    return { done: 0, total: keys.length, successCount: 0, failureCount: 0, aborted: false };
+  }
+
+  refreshCancelled = false;
+  refreshStoppedByUser = false;
+
+  let done = 0;
+  const total = REGIONS.length;
+  progressLine.textContent = `Refreshing: 0/${total}`;
+  setStatus(`Refreshing 0/${total}`);
+  try {
+    const result = await refreshEuropeAggregated(keys, (d, t)=>{
+      done = d;
+      progressLine.textContent = `Refreshing: ${d}/${t}`;
+      setStatus(d === t ? "Done." : `Refreshing ${d}/${t}`);
+    });
+    okCount = result.okCountries;
+    failCount = result.failCountries;
+  } catch (e) {
+    failCount++;
+    lastErrorStatus = e?.status ?? 0;
+    lastErrorSnippet = String(e?.textSnippet || e?.message || "").slice(0, 200);
+    const msg = Number(e?.status) === 403
+      ? "eBird returned 403. Token may be malformed OR you may be temporarily blocked due to too many requests. Use Hard reset and try again with throttled refresh."
+      : String(e?.message || "Refresh runtime failure");
+    showSnapshotBanner(msg, "error");
+    showWarn(msg);
+    setRefreshError(msg, done, e?.region || "refresh");
+    console.error("[refresh] top-level failure", e);
+  }
+
+  if (!refreshCancelled) {
+    progressLine.textContent = `Done. Countries=${total}. ok=${okCount}, fail=${failCount}`;
+    setStatus("Done.");
+  }
+  updateDebugPanel();
+  return { done, total, successCount: okCount, failureCount: failCount, aborted: refreshCancelled };
+}
+
+/* ========= Sidebar open/close ========= */
+const sidebar = document.getElementById("sidebar");
+const closeBtn = document.getElementById("closeSidebarBtn");
+const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+
+function openSidebar() {
+  sidebar.classList.add("open");
+  if (sidebarBackdrop) sidebarBackdrop.classList.add("show");
+  document.body.classList.add("sidebar-open");
+  setTimeout(()=> map.invalidateSize(true), 260);
+}
+function closeSidebar() {
+  sidebar.classList.remove("open");
+  if (sidebarBackdrop) sidebarBackdrop.classList.remove("show");
+  document.body.classList.remove("sidebar-open");
+  setTimeout(()=> map.invalidateSize(true), 260);
+}
+function closeSidebarOnMobile(){
+  if (window.matchMedia("(max-width: 900px)").matches) closeSidebar();
+}
+
+initMapHamburgerControl({
+  map,
+  onClick: function(){
+    if (sidebar.classList.contains("open")) closeSidebar();
+    else openSidebar();
+  },
+  title: (window.ET_STRINGS && window.ET_STRINGS.listMenu) || "Nimekiri",
+  ariaLabel: (window.ET_STRINGS && window.ET_STRINGS.listMenu) || "Nimekiri",
+  iconSvg: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
+});
+if (sidebarBackdrop) sidebarBackdrop.addEventListener("click", closeSidebar);
+closeBtn.addEventListener("click", closeSidebar);
+window.addEventListener("resize", ()=> setTimeout(()=> map.invalidateSize(true), 150));
+
+/* ========= Per-country toggle ========= */
+function syncPerCountryBtn(){
+  perCountryBtn.textContent = perCountry ? "Per-country: ON" : "Per-country: OFF";
+  perCountryBtn.className = "btn " + (perCountry ? "on" : "off");
+}
+function syncRareOnlyBtn(){
+  rareOnlyBtn.textContent = rareOnly ? "Rare only: ON" : "Rare only: OFF";
+  rareOnlyBtn.className = "btn " + (rareOnly ? "on" : "off");
+}
+perCountryBtn.addEventListener("click", ()=>{
+  perCountry = !perCountry;
+  saveAll();
+  syncPerCountryBtn();
+  // redraw markers
+  SPECIES.forEach(updateMarker);
+  updateDebugPanel();
+});
+syncPerCountryBtn();
+rareOnlyBtn.addEventListener("click", ()=>{
+  rareOnly = !rareOnly;
+  saveAll();
+  syncRareOnlyBtn();
+  render();
+  updateDebugPanel();
+});
+syncRareOnlyBtn();
+
+/* ========= Settings modal ========= */
+const modalBackdrop = document.getElementById("modalBackdrop");
+const settingsBtn = document.getElementById("settingsBtn");
+const speciesInput = document.getElementById("speciesInput");
+const tokenInput = document.getElementById("tokenInput");
+
+function openSettings(){
+  tokenInput.value = EBIRD_TOKEN || HARDCODED_EBIRD_TOKEN;
+  speciesInput.value = SPECIES.join("\n");
+  modalBackdrop.style.display = "flex";
+}
+function closeSettings(){ modalBackdrop.style.display = "none"; }
+
+settingsBtn.addEventListener("click", openSettings);
+document.getElementById("modalCancel").addEventListener("click", closeSettings);
+modalBackdrop.addEventListener("click", (e)=>{ if (e.target === modalBackdrop) closeSettings(); });
+
+document.getElementById("modalSave").addEventListener("click", ()=>{
+  const newToken = (tokenInput.value || "").trim().replace(/[^a-zA-Z0-9_\-]/g, "");
+  try { localStorage.setItem(LS_TOKEN, newToken); } catch(e){ console.warn("[quota] LS_TOKEN save failed", e); }
+  updateProxyHint();
+  if (!newToken) { EBIRD_TOKEN = HARDCODED_EBIRD_TOKEN; showWarn(""); }
+  else showWarn("");
+  const lines = normalizeNameArray((speciesInput.value||"").split("\n").map(s=>s.trim()).filter(Boolean));
+  reconcileEuropeSpecies(MASTER_SPECIES, lines, "master+custom");
+  saveAll(); render(); closeSettings();
+  updateDebugPanel();
+});
+
+/* ========= Buttons ========= */
+document.getElementById("btnRefreshData").addEventListener("click", async ()=>{
+  resetEuropeDebugState();
+  hideSnapshotBanner();
+  showWarn("");
+  AUTO_SYNC_CANCELLED = true;
+  const keys = SPECIES.filter(n => resolveEbirdCode(n) || (points[n]||{}).ebirdCode);
+  if (keys.length === 0) {
+    showSnapshotBanner("No species with eBird codes configured.", "warn");
+    return;
+  }
+  dataMode = "live";
+  updateDebugPanel();
+  try{
+    const result = await refreshKeys(keys, true);
+    if (result.aborted) {
+      const msg = `Refresh stopped. ${lastError || "Stopped by user."} idx=${stoppedAtIndex ?? "?"} key=${stoppedAtKey || "?"}`;
+      showSnapshotBanner(msg, "warn");
+      showWarn(msg);
+      updateDebugPanel();
+      return;
+    }
+    if (result.successCount <= 0) {
+      const loaded = reloadSnapshot();
+      if (!loaded) showSnapshotBanner("Refresh failed and no snapshot available", "error");
+      else showSnapshotBanner("Refresh failed. Showing last snapshot.", "warn");
+      showWarn("Refresh failed. UI kept on last known snapshot.");
+      return;
+    }
+    lastRefreshAt = new Date().toISOString();
+    if (result.successCount > 0) await saveSnapshotLocal();
+    dataMode = "live";
+    setStatus(`Data loaded | ${formatDateTimeEt(lastRefreshAt)}`);
+    progressLine.textContent = "Data loaded";
+    showSnapshotBanner("Data loaded");
+    setTimeout(hideSnapshotBanner, 4000);
+    updateDebugPanel();
+  }catch(e){
+    setRefreshError(String(e?.message || e || "Refresh failed"), stoppedAtIndex, stoppedAtKey || "refresh");
+    console.warn("[refresh] failed", e);
+    const loaded = reloadSnapshot();
+    if (!loaded) showSnapshotBanner("Refresh failed and no snapshot available", "error");
+    else showSnapshotBanner("Refresh failed. Showing last snapshot.", "warn");
+    showWarn("Refresh failed. UI kept on last known snapshot.");
+    updateDebugPanel();
+  }
+});
+document.getElementById("btnReloadSnapshot").addEventListener("click", ()=>{
+  resetEuropeDebugState();
+  reloadSnapshot();
+});
+filterBox.addEventListener("input", render);
+document.getElementById("toggle7days").addEventListener("change", (e)=>{
+  recentOnly = !!e.target.checked;
+  render();
+  updateDebugPanel();
+});
+if (!DEV_DEBUG) {
+  const panel = document.getElementById("debugPanel");
+  if (panel) panel.style.display = "none";
+}
+
+/* ========= Init ========= */
+preloadAvatars();
+updateProxyHint();
+if (!getEbirdToken()) {
+  EBIRD_TOKEN = HARDCODED_EBIRD_TOKEN;
+}
+render();
+loadSharedEuropeSpecies().then(function(){
+  // Apply cached custom species on cold start
+  try {
+    const raw = localStorage.getItem("estbirding.customSpecies.v1");
+    if (raw) {
+      const cached = JSON.parse(raw);
+      if (Array.isArray(cached) && cached.length && typeof window.__bm_applyCustomSpeciesList === "function") {
+        window.__bm_applyCustomSpeciesList(cached);
+      }
+    }
+  } catch(e){}
+});
+recentOnly = (document.getElementById("toggle7days")?.checked !== false);
+if (!reloadSnapshot()) {
+  dataMode = "live";
+}
+updateDebugPanel();
+
+// Sidebar defaults
+if (!window.matchMedia("(max-width: 900px)").matches) {
+  sidebar.classList.add("open");
+} else {
+  closeSidebar();
+}
+
+// Starter refresh (quick feedback)
+
+/* ========= Auto-sync (fill map like country maps) ========= */
+const LS_LAST_AUTOSYNC = "bm_eu_last_autosync";
+function shouldAutoSync(){
+  const last = Number(localStorage.getItem(LS_LAST_AUTOSYNC) || 0);
+  const empty = Object.keys(points || {}).length === 0;
+  return empty || (Date.now() - last) > 6*60*60*1000;
+}
+function startAutoSync(){
+  if (!shouldAutoSync()) return;
+
+  const isMobile = window.matchMedia("(max-width: 900px)").matches;
+  const chunkSize = isMobile ? 60 : 100;
+
+  const keys = SPECIES.filter(s => resolveEbirdCode(s) || (points[s]||{}).ebirdCode);
+  if (keys.length === 0) return;
+
+  AUTO_SYNC_CANCELLED = false;
+  let offset = 0;
+  const runNext = async ()=>{
+    if (AUTO_SYNC_CANCELLED) return;
+
+    const chunk = keys.slice(offset, offset + chunkSize);
+    if (chunk.length === 0){
+      try { localStorage.setItem(LS_LAST_AUTOSYNC, String(Date.now())); } catch(e){ console.warn("[quota] LS_LAST_AUTOSYNC save failed", e); }
+      return;
+    }
+    await refreshKeys(chunk, false);
+    offset += chunkSize;
+
+    if (offset < keys.length && !AUTO_SYNC_CANCELLED){
+      setTimeout(runNext, 1200);
+    } else {
+      try { localStorage.setItem(LS_LAST_AUTOSYNC, String(Date.now())); } catch(e){ console.warn("[quota] LS_LAST_AUTOSYNC save failed", e); }
+    }
+  };
+  runNext();
+}
+startAutoSync();
+
+/* ========= Parent app refresh messages ========= */
+window.addEventListener("message", function(ev){
+  try{
+    if (!ev.data || typeof ev.data !== "object") return;
+    const t = ev.data.type;
+    // Species visibility restore from parent (before origin check since parent sends it)
+    if (t === "SPECIES_VISIBILITY_RESTORE" && Array.isArray(ev.data.hiddenSpecies)){
+      const hiddenSet = new Set(ev.data.hiddenSpecies);
+      console.log("[prefs] scope=usa_pa_map SPECIES_VISIBILITY_RESTORE received, hiddenCount=" + hiddenSet.size,
+        "first3=", Array.from(hiddenSet).slice(0, 3));
+      let changed = false;
+      let appliedCount = 0;
+      SPECIES.forEach(function(name){
+        points[name] = points[name] || {};
+        const shouldHide = hiddenSet.has(name);
+        const isHidden = (points[name].visible === false);
+        if (shouldHide !== isHidden){
+          points[name].visible = !shouldHide;
+          changed = true;
+          if (shouldHide) appliedCount++;
+        }
+      });
+      console.log("[prefs] scope=usa_pa_map appliedHidden=" + appliedCount + " changed=" + changed);
+      if (changed){ saveAll(); SPECIES.forEach(updateMarker); render(); }
+      return;
+    }
+    if (ev.origin !== window.location.origin) return;
+    if (t === "MAP_REFRESH_VISIBLE" || t === "MAP_REFRESH_SELECTED") {
+      resetEuropeDebugState();
+      document.getElementById("btnRefreshData")?.click();
+    }
+    if (t === "SPECIES_META_DEFAULTS" && ev.data.speciesMeta && typeof ev.data.speciesMeta === "object") {
+      const incoming = normalizeNameMap(ev.data.speciesMeta);
+      if (Object.keys(incoming).length) {
+        const existing = safeParseJSON(localStorage.getItem(LS_SPECIES_META) || "{}") || {};
+        try { localStorage.setItem(LS_SPECIES_META, JSON.stringify({ ...existing, ...incoming })); } catch(e){ console.warn("[quota] LS_SPECIES_META save failed", e); }
+        render();
+      }
+    }
+    if (t === "CUSTOM_SPECIES_DEFAULTS" && Array.isArray(ev.data.customSpecies)) {
+      try { localStorage.setItem("estbirding.customSpecies.v1", JSON.stringify(ev.data.customSpecies)); } catch(_){}
+      if (typeof window.__bm_applyCustomSpeciesList === "function") {
+        window.__bm_applyCustomSpeciesList(ev.data.customSpecies);
+      }
+      if (typeof window.__bm_reconcileCustomSpecies === "function") {
+        window.__bm_reconcileCustomSpecies(ev.data.customSpecies);
+      }
+    }
+    if (t === "CUSTOM_SPECIES_REMOVE" && typeof ev.data.name === "string") {
+      if (typeof window.__bm_removeCustomSpecies === "function") {
+        window.__bm_removeCustomSpecies(ev.data.name);
+      }
+    }
+  }catch(e){}
+});
+try { if (window.parent && window.parent !== window) {
+  window.parent.postMessage({ type: "SPECIES_META_REQUEST" }, "*");
+  window.parent.postMessage({ type: "CUSTOM_SPECIES_REQUEST" }, "*");
+} } catch(e){}
+</script>
+</body>
+</html>
+
+
+
+

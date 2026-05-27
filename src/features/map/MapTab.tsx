@@ -8,12 +8,12 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { APP_VERSION } from '@/lib/version';
 import { fetchSharedAvatars, getMergedAvatars, notifyIframe } from '@/lib/avatar-storage';
-import { LINNULIIGID_SCOPE, RARILIIN_SCOPE, USA_CO_SCOPE, USA_PA_SCOPE, USA_I70_SCOPE, type SpeciesScopeConfig } from '@/lib/mapScope';
+import { LINNULIIGID_SCOPE, RARILIIN_SCOPE, USA_CO_SCOPE, USA_PA_SCOPE, USA_I70_SCOPE, SPECIES_SCOPES, type SpeciesScopeConfig, type SpeciesScopeId } from '@/lib/mapScope';
 import { resolveProxyBase } from '@/config/proxyEndpoint';
 import { buildSpeciesMetaLookupFallback, getScopedSpeciesMeta, loadSpeciesMeta, seedSpeciesMetaFallback, upsertSpeciesMeta } from '@/lib/speciesMeta';
-import { refreshSpeciesMetaFromCloud, saveSpeciesMetaToCloud } from '@/lib/speciesMetaCloud';
-import { loadCustomSpecies } from '@/lib/customSpecies';
-import { refreshCustomSpeciesFromCloud } from '@/lib/customSpeciesCloud';
+import { refreshSpeciesMetaFromCloud, saveSpeciesMetaToCloud, downloadSpeciesMetaJson, uploadSpeciesMetaJson } from '@/lib/speciesMetaCloud';
+import { loadCustomSpecies, addCustomSpecies, isCustomSpecies } from '@/lib/customSpecies';
+import { refreshCustomSpeciesFromCloud, downloadCustomSpeciesJson, uploadCustomSpeciesJson } from '@/lib/customSpeciesCloud';
 import { broadcastSupabaseConfigToMapIframes, getSupabaseAnonKey, getSupabaseUrl, isDeveloperModeEnabled, validateSupabaseConfig } from '@/config/supabaseConfig';
 import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
@@ -629,6 +629,77 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
   }, [current.id, sendAvatarsToIframe, sendAppInsets, sendSpeciesMetaToIframe, sendSupabaseConfigToIframe, sendToIframe, user, mapScope, sendPredictionContextToIframe, sendActivePredictionSpeciesToIframe]);
+
+  // === Species discovery (USA maps): ingest species the iframe found on eBird ===
+  useEffect(() => {
+    const handler = (ev: MessageEvent) => {
+      if (!ev.data || ev.data.type !== 'MAP_DISCOVERED_SPECIES') return;
+      const scopeId = String(ev.data.scopeId || '') as SpeciesScopeId;
+      const scopeCfg = (SPECIES_SCOPES as Record<string, SpeciesScopeConfig>)[scopeId];
+      if (!scopeCfg) {
+        console.warn('[discovery] unknown scope', ev.data.scopeId);
+        return;
+      }
+      const list = Array.isArray(ev.data.species) ? ev.data.species : [];
+      if (!list.length) return;
+
+      const addedNames: string[] = [];
+      const metaPatches: { name: string; ebirdCode?: string; scientificName?: string }[] = [];
+
+      for (const item of list) {
+        const name = String(item?.name || '').trim();
+        if (!name) continue;
+        if (!isCustomSpecies(name)) {
+          if (addCustomSpecies(name)) addedNames.push(name);
+        }
+        const code = String(item?.ebirdCode || '').trim();
+        const sci = String(item?.sciName || '').trim();
+        if (code || sci) {
+          const patch: { ebirdCode?: string; scientificName?: string } = {};
+          if (code) patch.ebirdCode = code;
+          if (sci) patch.scientificName = sci;
+          upsertSpeciesMeta(name, patch, scopeCfg);
+          metaPatches.push({ name, ...patch });
+        }
+      }
+
+      console.log(`[discovery] scope=${scopeId} received=${list.length} added=${addedNames.length} metaPatches=${metaPatches.length}`);
+
+      // Best-effort, batched cloud sync. One download+upload per store so a refresh
+      // that discovers hundreds of species does not fire hundreds of racing writes.
+      if (addedNames.length > 0) {
+        (async () => {
+          try {
+            const latest = (await downloadCustomSpeciesJson()) || { version: 1 as const, updatedAt: '', items: [] };
+            const items = [...latest.items, ...addedNames];
+            await uploadCustomSpeciesJson({ version: 1, updatedAt: new Date().toISOString(), items });
+          } catch (err) {
+            console.warn('[discovery] custom species cloud sync failed', err);
+          }
+        })();
+      }
+      if (metaPatches.length > 0) {
+        (async () => {
+          try {
+            const latest = (await downloadSpeciesMetaJson(scopeCfg)) || { version: 1 as const, updatedAt: '', items: {} };
+            const items = { ...latest.items };
+            for (const patch of metaPatches) {
+              items[patch.name] = {
+                ...(items[patch.name] || {}),
+                ...(patch.ebirdCode ? { ebirdCode: patch.ebirdCode } : {}),
+                ...(patch.scientificName ? { scientificName: patch.scientificName } : {}),
+              };
+            }
+            await uploadSpeciesMetaJson({ version: 1, updatedAt: new Date().toISOString(), items }, scopeCfg);
+          } catch (err) {
+            console.warn('[discovery] species meta cloud sync failed', err);
+          }
+        })();
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
 
   useEffect(() => {
     const rerunHandler = () => {

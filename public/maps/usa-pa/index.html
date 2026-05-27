@@ -398,6 +398,7 @@
 /* ========= Regions ========= */
 const REGIONS = ["US-PA"];
 const REGION_NAME = {"US-PA":"Pennsylvania"};
+const DISCOVERY_MODE = true; // USA maps: accept all species from eBird, not just pre-registered ones
 
 /* ========= Storage keys ========= */
 const LS_AVATARS = "bm_usa_pa_avatars";
@@ -1360,7 +1361,7 @@ function preloadAvatars(){
 }
 
 /* ========= Map ========= */
-const map = L.map("map", { zoomControl:false }).setView([56.7, 20.5], 5);
+const map = L.map("map", { zoomControl:false }).setView([40.4842, -78.0103], 8);
 L.control.zoom({ position:"topright" }).addTo(map);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
 map.createPane("highlightPane");
@@ -1894,6 +1895,8 @@ async function safeFetchJson(url, options = {}){
 
 async function refreshEuropeAggregated(keys, onProgress){
   const speciesByCode = new Map();
+  const speciesMetaByCode = new Map(); // <code, { comName, sciName }> discovered from eBird responses
+  const discoveredSpecies = new Map(); // <name, { ebirdCode, sciName }> new species found during this refresh
   for (const speciesName of keys) {
     const p = points[speciesName] = points[speciesName] || {};
     const code = resolveEbirdCode(speciesName) || p.ebirdCode || EBIRD_CODES[speciesName];
@@ -1945,8 +1948,22 @@ async function refreshEuropeAggregated(keys, onProgress){
       for (const obs of payload) {
         debugTotalFetchedRows++;
         const speciesCode = String(obs?.speciesCode || "");
-        const speciesName = speciesByCode.get(speciesCode);
-        if (!speciesName) continue;
+        let speciesName = speciesByCode.get(speciesCode);
+        if (!speciesName) {
+          if (!DISCOVERY_MODE) continue;
+          // Discovery mode: accept any species from eBird, keyed by English common name
+          speciesName = String(obs?.comName || "").trim();
+          if (!speciesName || !speciesCode) continue;
+          speciesByCode.set(speciesCode, speciesName);
+          speciesMetaByCode.set(speciesCode, { comName: speciesName, sciName: String(obs?.sciName || "").trim() });
+          EBIRD_CODES[speciesName] = speciesCode;
+          if (!aggregate[speciesName]) {
+            aggregate[speciesName] = { regions: {}, total7: 0, latest: { t: "", tMs: 0, region: "", lat: null, lon: null, loc: "" } };
+          }
+          if (!discoveredSpecies.has(speciesName)) {
+            discoveredSpecies.set(speciesName, { ebirdCode: speciesCode, sciName: String(obs?.sciName || "").trim() });
+          }
+        }
         const obsDt = String(obs?.obsDt || "");
         const ymd = obsDtToYmd(obsDt);
         const ts = parseObsDateToMs(obsDt);
@@ -2048,7 +2065,14 @@ async function refreshEuropeAggregated(keys, onProgress){
     await delayMs(250);
   }
 
-  for (const speciesName of keys) {
+  const allSpeciesNames = DISCOVERY_MODE
+    ? Array.from(new Set([...keys, ...Object.keys(aggregate)]))
+    : keys;
+
+  for (const speciesName of allSpeciesNames) {
+    if (DISCOVERY_MODE && !SPECIES.includes(speciesName)) {
+      SPECIES.push(speciesName);
+    }
     const p = points[speciesName] = points[speciesName] || {};
     const agg = aggregate[speciesName] || { regions: {}, total7: 0, latest: { t: "", tMs: 0, region: "", lat: null, lon: null, loc: "" } };
     p.fetchedAt = Date.now();
@@ -2079,6 +2103,26 @@ async function refreshEuropeAggregated(keys, onProgress){
     : "none > 1 in this refresh";
   saveAll();
   render();
+
+  // Discovery mode: notify the parent app of newly found species so it can
+  // populate customSpecies + speciesMeta (eBird code + scientific name).
+  if (DISCOVERY_MODE && discoveredSpecies.size > 0) {
+    try {
+      const list = Array.from(discoveredSpecies.entries()).map(([name, meta]) => ({
+        name,
+        ebirdCode: meta.ebirdCode,
+        sciName: meta.sciName,
+      }));
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({
+          type: "MAP_DISCOVERED_SPECIES",
+          mapId: "usa-pa",
+          scopeId: "usa_pa",
+          species: list,
+        }, "*");
+      }
+    } catch(e) { console.warn("[discovery] postMessage failed", e); }
+  }
   return { okCountries, failCountries, totalCountries: REGIONS.length };
 }
 
@@ -2324,7 +2368,7 @@ document.getElementById("btnRefreshData").addEventListener("click", async ()=>{
   showWarn("");
   AUTO_SYNC_CANCELLED = true;
   const keys = SPECIES.filter(n => resolveEbirdCode(n) || (points[n]||{}).ebirdCode);
-  if (keys.length === 0) {
+  if (keys.length === 0 && !DISCOVERY_MODE) {
     showSnapshotBanner("No species with eBird codes configured.", "warn");
     return;
   }

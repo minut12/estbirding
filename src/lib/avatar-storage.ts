@@ -67,12 +67,31 @@ export async function fetchSharedAvatars(scope: SpeciesScopeConfig = LINNULIIGID
 
     if (!rpcError && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
       const map: AvatarMap = {};
+      const scopePrefix = scope.avatarSpeciesKeyPrefix; // e.g. "usa-co:" or "linnuliigid:"
+      let skippedOtherScope = 0;
+      let skippedLegacyNonEE = 0;
+
       for (const row of rpcData as Array<{ species_key: string; public_url: string }>) {
-        if (row.species_key && row.public_url) {
-          map[unscopedSpeciesKey(row.species_key, scope)] = row.public_url;
+        if (!row.species_key || !row.public_url) continue;
+        const key = row.species_key;
+        const hasScopePrefix = /^[a-z0-9_-]+:/i.test(key);
+
+        if (hasScopePrefix) {
+          // Belongs to a specific scope — must match this scope exactly.
+          if (!key.startsWith(scopePrefix)) { skippedOtherScope++; continue; }
+          map[key.slice(scopePrefix.length)] = row.public_url;
+        } else {
+          // Legacy (no prefix) — only valid for Linnuliigid scope (only scope that existed pre-scoping).
+          if (scope.id !== 'linnuliigid') { skippedLegacyNonEE++; continue; }
+          map[key] = row.public_url;
         }
       }
-      console.log('[avatar-storage] fetchSharedAvatars via RPC: got', Object.keys(map).length, 'avatars');
+
+      console.log('[avatar-storage] fetchSharedAvatars via RPC:',
+        'scope=' + scope.id,
+        'kept=' + Object.keys(map).length,
+        'skippedOtherScope=' + skippedOtherScope,
+        'skippedLegacyNonEE=' + skippedLegacyNonEE);
       persistSharedCache(map, scope);
       return map;
     }

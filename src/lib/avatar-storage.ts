@@ -174,11 +174,18 @@ export async function uploadSharedAvatar(speciesKey: string, dataUrl: string, sc
 
   const { error: uploadError } = await supabase.storage
     .from('bird-avatars')
-    .upload(filePath, blob, { contentType: 'image/webp', upsert: true });
+    .upload(filePath, blob, {
+      contentType: 'image/webp',
+      upsert: true,
+      cacheControl: '0',  // serve fresh on re-upload; query-string version below handles browser cache
+    });
   if (uploadError) throw new Error('Üleslaadimine ebaõnnestus: ' + uploadError.message);
 
   const { data: urlData } = supabase.storage.from('bird-avatars').getPublicUrl(filePath);
-  const publicUrl = urlData.publicUrl;
+  // Cache-buster: every upload gets a unique URL so browser cache + localStorage caches see "new" data.
+  // The file path on Storage stays stable; only the URL the client uses changes.
+  const versionedUrl = `${urlData.publicUrl}?v=${Date.now()}`;
+  const publicUrl = versionedUrl;
 
   const { error: dbError } = await supabase
     .from('bird_avatar_map')

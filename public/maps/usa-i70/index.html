@@ -2599,6 +2599,8 @@ window.addEventListener("message", function(ev){
       if (Object.keys(incoming).length) {
         const existing = safeParseJSON(localStorage.getItem(LS_SPECIES_META) || "{}") || {};
         try { localStorage.setItem(LS_SPECIES_META, JSON.stringify({ ...existing, ...incoming })); } catch(e){ console.warn("[quota] LS_SPECIES_META save failed", e); }
+        // Re-render markers so rarity rings/badges reflect the updated meta.
+        try { SPECIES.forEach(function(name){ try { updateMarker(name); } catch(_){} }); } catch(_){}
         render();
       }
     }

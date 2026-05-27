@@ -1,6 +1,9 @@
 (function () {
   var DEFAULT_KEY = "estbirding.speciesMeta.v1";
   var RARILIIN_KEY = "estbirding.rariliin.speciesMeta.v1";
+  var USA_CO_KEY = "estbirding.usa_co.speciesMeta.v1";
+  var USA_PA_KEY = "estbirding.usa_pa.speciesMeta.v1";
+  var USA_I70_KEY = "estbirding.usa_i70.speciesMeta.v1";
   function fixMojibake(s) {
     var v = String(s || "");
     if (!/[\u00C3\u00C2\u00E2]/.test(v)) return v;
@@ -21,6 +24,9 @@
     try {
       var path = String((window.location && window.location.pathname) || "");
       if (path.indexOf("/maps/rariliin/") >= 0) return RARILIIN_KEY;
+      if (path.indexOf("/maps/usa-co/") >= 0) return USA_CO_KEY;
+      if (path.indexOf("/maps/usa-pa/") >= 0) return USA_PA_KEY;
+      if (path.indexOf("/maps/usa-i70/") >= 0) return USA_I70_KEY;
     } catch (e) {}
     return DEFAULT_KEY;
   }

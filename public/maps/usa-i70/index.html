@@ -2501,6 +2501,17 @@ window.addEventListener("message", function(ev){
   try{
     if (!ev.data || typeof ev.data !== "object") return;
     const t = ev.data.type;
+    // Shared avatars from parent (AvatarManager). USA maps use REPLACE semantics:
+    // they have no local-only avatars, so the parent's shared cache is authoritative.
+    // This also prunes stale entries (e.g. linnuliigid pollution that migrateAvatars merged in).
+    if (t === "AVATARS_DEFAULTS" && ev.data.avatars){
+      avatars = normalizeNameMap(Object.assign({}, ev.data.avatars));
+      try { saveAll(); } catch(e){}
+      try { preloadAvatars(); } catch(e){}
+      SPECIES.forEach(function(name){ try{ updateMarker(name); }catch(e){} });
+      try { render(); } catch(e){}
+      return;
+    }
     // Species visibility restore from parent (before origin check since parent sends it)
     if (t === "SPECIES_VISIBILITY_RESTORE" && Array.isArray(ev.data.hiddenSpecies)){
       const hiddenSet = new Set(ev.data.hiddenSpecies);

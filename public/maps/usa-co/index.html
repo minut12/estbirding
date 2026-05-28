@@ -2181,6 +2181,55 @@ function rowHTML(name){
     </div>`;
 }
 
+var __rarityDiagDone = false;
+function __rarityDiag(){
+  if (__rarityDiagDone) return;
+  var rareNames = [];
+  for (var i = 0; i < SPECIES.length && rareNames.length < 5; i++){
+    var nm = SPECIES[i];
+    var meta = getSpeciesMeta(nm);
+    if (meta && meta.rarityLevel && meta.rarityLevel !== 'none') rareNames.push(nm);
+  }
+  console.log('[RARITY-DIAG] ---- start ----');
+  console.log('[RARITY-DIAG] getRarityBadgeText typeof =', typeof window.getRarityBadgeText);
+  console.log('[RARITY-DIAG] getRarityStyle typeof =', typeof window.getRarityStyle);
+  console.log('[RARITY-DIAG] rare species found in SPECIES =', rareNames.length, rareNames);
+
+  rareNames.forEach(function(nm){
+    var meta = getSpeciesMeta(nm);
+    var lvl = meta ? meta.rarityLevel : '(no meta)';
+    var txt = (window.getRarityBadgeText ? window.getRarityBadgeText(lvl) : '(fn missing)');
+    console.log('[RARITY-DIAG] species="' + nm + '" rarityLevel=' + lvl + ' badgeText="' + txt + '"');
+  });
+
+  if (rareNames.length){
+    var first = rareNames[0];
+    var rowEl = listEl.querySelector('.row[data-key="' + (window.CSS && CSS.escape ? CSS.escape(first) : first) + '"]');
+    if (!rowEl){
+      console.log('[RARITY-DIAG] DOM: no .row found for "' + first + '" (selector/escaping issue?)');
+    } else {
+      var badge = rowEl.querySelector('.rarity-badge');
+      if (!badge){
+        console.log('[RARITY-DIAG] DOM: row exists but NO .rarity-badge span emitted -> rowHTML path produced empty rarityText at render time');
+      } else {
+        var cs = window.getComputedStyle(badge);
+        var nameRow = rowEl.querySelector('.name-row');
+        console.log('[RARITY-DIAG] DOM: .rarity-badge EXISTS. text="' + badge.textContent + '"'
+          + ' display=' + cs.display
+          + ' visibility=' + cs.visibility
+          + ' opacity=' + cs.opacity
+          + ' width=' + cs.width
+          + ' height=' + cs.height
+          + ' overflow(parent)=' + (nameRow ? window.getComputedStyle(nameRow).overflow : 'n/a')
+          + ' color=' + cs.color
+          + ' background=' + cs.backgroundColor);
+      }
+    }
+  }
+  console.log('[RARITY-DIAG] ---- end ----');
+  __rarityDiagDone = true;
+}
+
 function render(){
   const q = norm((filterBox.value || "").trim());
   listEl.innerHTML = "";
@@ -2193,6 +2242,7 @@ function render(){
   SPECIES.forEach(updateMarker);
   updateSpeciesCount(visible.length, SPECIES.length, q);
   scheduleDeclutter();
+  try { __rarityDiag(); } catch(e) { console.warn('[RARITY-DIAG] threw', e); }
 }
 
 function updateSpeciesCount(shown, total, query){

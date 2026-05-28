@@ -26,6 +26,7 @@ import { isSpeciesPredictionEnabled } from '@/lib/settings';
 import { ACTIVE_PREDICTION_IFRAME_READY_MESSAGE, ACTIVE_PREDICTION_SPECIES_EVENT, ACTIVE_PREDICTION_SPECIES_MESSAGE, getActivePredictionSpecies, setActivePredictionSpecies, type ActivePredictionSpecies } from '@/lib/activePredictionSpecies';
 import { normalizeSpeciesName } from '@/lib/textNormalize';
 import { runBundledSpeciesBackfill } from '@/lib/speciesMetaBackfill';
+import { loadGbifPins, addGbifPin, removeGbifPin, type GbifPin } from '@/lib/gbifPins';
 import { log } from '@/lib/eventLog';
 import { toast } from 'sonner';
 import {
@@ -818,6 +819,16 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
         });
       }, 450);
     }
+    // Push the user's cloud-synced GBIF pins for this map into the iframe.
+    if (speciesScope.id === 'usa_co' || speciesScope.id === 'usa_pa' || speciesScope.id === 'usa_i70') {
+      const pinScopeId = speciesScope.id;
+      setTimeout(() => {
+        loadGbifPins(pinScopeId).then((pins) => {
+          try { sendToIframe({ type: 'GBIF_PINS_DEFAULTS', scopeId: pinScopeId, pins }); }
+          catch (e) { console.warn('[MapTab] push GBIF pins failed', e); }
+        });
+      }, 500);
+    }
     // Auto-refresh after initial load
     setTimeout(() => {
       lastAutoRefreshRef.current = Date.now();
@@ -868,6 +879,41 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     window.addEventListener('species-meta-updated', onMetaUpdated as EventListener);
     return () => window.removeEventListener('species-meta-updated', onMetaUpdated as EventListener);
   }, [sendSpeciesMetaToIframe]);
+
+  useEffect(() => {
+    const handler = async (ev: MessageEvent) => {
+      const d = ev.data;
+      if (!d || (d.type !== 'GBIF_PIN_ADD' && d.type !== 'GBIF_PIN_REMOVE')) return;
+      const scopeId = String(d.scopeId || '');
+      if (scopeId !== 'usa_co' && scopeId !== 'usa_pa' && scopeId !== 'usa_i70') return;
+
+      if (d.type === 'GBIF_PIN_ADD' && d.pin) {
+        const pin: GbifPin = {
+          gbifId: String(d.pin.gbifId || ''),
+          species: String(d.pin.species || ''),
+          lat: Number(d.pin.lat),
+          lon: Number(d.pin.lon),
+          date: d.pin.date ?? null,
+        };
+        if (!pin.gbifId || !Number.isFinite(pin.lat) || !Number.isFinite(pin.lon)) return;
+        const ok = await addGbifPin(scopeId, pin);
+        if (!ok) {
+          const pins = await loadGbifPins(scopeId);
+          try { sendToIframe({ type: 'GBIF_PINS_DEFAULTS', scopeId, pins }); } catch {}
+        }
+      } else if (d.type === 'GBIF_PIN_REMOVE') {
+        const gbifId = String(d.gbifId || '');
+        if (!gbifId) return;
+        const ok = await removeGbifPin(scopeId, gbifId);
+        if (!ok) {
+          const pins = await loadGbifPins(scopeId);
+          try { sendToIframe({ type: 'GBIF_PINS_DEFAULTS', scopeId, pins }); } catch {}
+        }
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [sendToIframe]);
 
   useEffect(() => {
     const onCustomSpeciesUpdated = () => sendCustomSpeciesToIframe();

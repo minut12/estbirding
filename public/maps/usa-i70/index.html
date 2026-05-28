@@ -1506,6 +1506,12 @@ try { gbifTaxonKeys = JSON.parse(localStorage.getItem('gbif_taxonkeys_usa_i70') 
 var gbifLoadingSpecies = new Set();
 window.gbifStats = window.gbifStats || {};
 
+// === GBIF pin state ===
+var pinnedGbif = new Map();        // gbifId -> { gbifId, species, lat, lon, date }
+var pinnedGbifMarkers = new Map(); // gbifId -> L.marker
+var __gbifOccById = {};            // gbifId -> { species, lat, lon, date } for popup pin button
+var GBIF_PIN_SCOPE_ID = 'usa_i70';
+
 function _saveGbifTaxonKeys(){
   try { localStorage.setItem('gbif_taxonkeys_usa_i70', JSON.stringify(gbifTaxonKeys)); } catch(e){}
 }
@@ -1616,6 +1622,24 @@ function _escapeHtmlGbif(s){
 }
 
 function buildGbifPopup(species, occ){
+  var gbifId = String(occ.key || occ.gbifID || '');
+  if (gbifId) {
+    __gbifOccById[gbifId] = {
+      species: species,
+      lat: Number(occ.decimalLatitude),
+      lon: Number(occ.decimalLongitude),
+      date: occ.eventDate || (occ.year ? String(occ.year) : null),
+    };
+  }
+  var isPinned = gbifId && pinnedGbif.has(gbifId);
+  var pinBtnLabel = isPinned ? '📌 Eemalda nõel' : '📌 Kinnita';
+  var pinBtnStyle = 'padding:3px 8px;border:1px solid ' + (isPinned ? '#b45309' : '#6366f1')
+    + ';border-radius:6px;background:' + (isPinned ? '#fef3c7' : '#eef2ff')
+    + ';color:' + (isPinned ? '#92400e' : '#4338ca') + ';font-size:11px;cursor:pointer';
+  var pinBtnHtml = gbifId
+    ? '<button onclick="window.__toggleGbifPin(\'' + gbifId + '\')" style="' + pinBtnStyle + '">' + pinBtnLabel + '</button>'
+    : '';
+
   var lat = Number(occ.decimalLatitude).toFixed(4);
   var lon = Number(occ.decimalLongitude).toFixed(4);
   var coords = lat + ', ' + lon;
@@ -1641,6 +1665,7 @@ function buildGbifPopup(species, occ){
     + '<br><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'
     + '<a href="' + wazeUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Waze</a>'
     + '<a href="' + mapsUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Maps</a>'
+    + pinBtnHtml
     + '</div>'
     + '<div style="margin-top:4px"><small style="color:#6366f1">GBIF</small></div>'
     + '</div>';
@@ -1697,6 +1722,8 @@ async function toggleGbifData(species){
       var occ = allResults[i];
       var lat = occ.decimalLatitude, lon = occ.decimalLongitude;
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      var gid = String(occ.key || occ.gbifID || '');
+      if (gid && pinnedGbif.has(gid)) continue; // pinned layer already shows this one
       var icon = _gbifMiniIcon(avatarUrl, occ.year);
       var m = L.marker([lat, lon], { icon: icon });
       m.bindPopup(buildGbifPopup(species, occ));
@@ -1717,6 +1744,55 @@ async function toggleGbifData(species){
   gbifLoadingSpecies.delete(species);
   render();
 }
+
+function renderPinnedGbifMarkers(){
+  try {
+    pinnedGbifMarkers.forEach(function(m){ try { map.removeLayer(m); } catch(e){} });
+    pinnedGbifMarkers.clear();
+    pinnedGbif.forEach(function(pin, gbifId){
+      if (!Number.isFinite(pin.lat) || !Number.isFinite(pin.lon)) return;
+      var year = pin.date ? parseInt(String(pin.date).slice(0,4), 10) : null;
+      var avatarUrl = (window.getDisplayAvatar ? window.getDisplayAvatar(pin.species) : ((typeof avatars !== 'undefined' && avatars[pin.species]) || ''));
+      var icon = _gbifMiniIcon(avatarUrl, year);
+      var occLike = { key: gbifId, decimalLatitude: pin.lat, decimalLongitude: pin.lon, eventDate: pin.date, year: year };
+      __gbifOccById[gbifId] = { species: pin.species, lat: pin.lat, lon: pin.lon, date: pin.date };
+      var m = L.marker([pin.lat, pin.lon], { icon: icon });
+      m.bindPopup(buildGbifPopup(pin.species, occLike));
+      m.addTo(map);
+      pinnedGbifMarkers.set(gbifId, m);
+    });
+  } catch(e){ console.warn('[gbif-pin] render failed', e); }
+}
+
+window.__toggleGbifPin = function(gbifId){
+  gbifId = String(gbifId || '');
+  if (!gbifId) return;
+  if (pinnedGbif.has(gbifId)){
+    pinnedGbif.delete(gbifId);
+    var pm = pinnedGbifMarkers.get(gbifId);
+    if (pm){ try { map.removeLayer(pm); } catch(e){} pinnedGbifMarkers.delete(gbifId); }
+    try {
+      if (window.parent && window.parent !== window){
+        window.parent.postMessage({ type: 'GBIF_PIN_REMOVE', scopeId: GBIF_PIN_SCOPE_ID, gbifId: gbifId }, '*');
+      }
+    } catch(e){}
+  } else {
+    var occ = __gbifOccById[gbifId];
+    if (!occ){ console.warn('[gbif-pin] no occ data for', gbifId); return; }
+    var pin = { gbifId: gbifId, species: occ.species, lat: occ.lat, lon: occ.lon, date: occ.date || null };
+    pinnedGbif.set(gbifId, pin);
+    try {
+      if (window.parent && window.parent !== window){
+        window.parent.postMessage({ type: 'GBIF_PIN_ADD', scopeId: GBIF_PIN_SCOPE_ID, pin: pin }, '*');
+      }
+    } catch(e){}
+  }
+  renderPinnedGbifMarkers();
+  try {
+    var existing = pinnedGbifMarkers.get(gbifId);
+    if (existing) existing.openPopup();
+  } catch(e){}
+};
 
 let activePulseRing = null;
 let activePulseTimeout = null;
@@ -3005,6 +3081,22 @@ window.addEventListener("message", function(ev){
       });
       console.log("[prefs] scope=usa_i70_map appliedHidden=" + appliedCount + " changed=" + changed);
       if (changed){ saveAll(); SPECIES.forEach(updateMarker); render(); }
+      return;
+    }
+    if (t === "GBIF_PINS_DEFAULTS" && Array.isArray(ev.data.pins)){
+      if (ev.data.scopeId && ev.data.scopeId !== GBIF_PIN_SCOPE_ID) return;
+      pinnedGbif.clear();
+      ev.data.pins.forEach(function(p){
+        if (!p || !p.gbifId) return;
+        pinnedGbif.set(String(p.gbifId), {
+          gbifId: String(p.gbifId),
+          species: String(p.species || ''),
+          lat: Number(p.lat),
+          lon: Number(p.lon),
+          date: p.date || null,
+        });
+      });
+      renderPinnedGbifMarkers();
       return;
     }
     if (ev.origin !== window.location.origin) return;

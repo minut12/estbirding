@@ -616,6 +616,42 @@ export type Database = {
         }
         Relationships: []
       }
+      gbif_pins: {
+        Row: {
+          created_at: string
+          event_date: string | null
+          gbif_id: string
+          id: string
+          lat: number
+          lon: number
+          map_scope: string
+          species: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_date?: string | null
+          gbif_id: string
+          id?: string
+          lat: number
+          lon: number
+          map_scope: string
+          species: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          event_date?: string | null
+          gbif_id?: string
+          id?: string
+          lat?: number
+          lon?: number
+          map_scope?: string
+          species?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       linnuliigid_snapshot: {
         Row: {
           created_at: string

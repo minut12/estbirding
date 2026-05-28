@@ -392,7 +392,6 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/OverlappingMarkerSpiderfier-Leaflet/0.2.6/oms.min.js"></script>
 <script src="/maps/shared/map-hamburger-control.js"></script>
 <script src="/maps/shared/format-ee.js"></script>
 <script src="/maps/shared/species-meta.js"></script>
@@ -1433,27 +1432,6 @@ renderStayMarkers();
 renderStayLegend();
 L.control.zoom({ position:"topright" }).addTo(map);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
-
-// OverlappingMarkerSpiderfier: fan out markers stacked at identical coordinates.
-var oms = null;
-try {
-  if (typeof OverlappingMarkerSpiderfier === 'function') {
-    oms = new OverlappingMarkerSpiderfier(map, {
-      keepSpiderfied: true,
-      nearbyDistance: 20,
-      circleSpiralSwitchover: 9,
-      legWeight: 2.0,
-    });
-    oms.addListener('click', function(marker){
-      try { if (marker.getPopup && marker.getPopup()) marker.openPopup(); } catch(e){}
-    });
-    oms.addListener('spiderfy', function(markers){
-      try { markers.forEach(function(m){ if (m.closePopup) m.closePopup(); }); } catch(e){}
-    });
-  }
-} catch(e) { console.warn('[oms] init failed', e); }
-window.__oms = oms;
-
 map.createPane("highlightPane");
 map.getPane("highlightPane").style.zIndex = "650";
 map.getPane("highlightPane").style.pointerEvents = "none";
@@ -1633,7 +1611,6 @@ function fmtMeta(p){
 function clearSpeciesMarkers(species){
   for (const [k, m] of Array.from(markers.entries())) {
     if (k === species || k.startsWith(species + "@@")) {
-      try { if (window.__oms) window.__oms.removeMarker(m); } catch(e){}
       try { map.removeLayer(m); } catch(e){}
       markers.delete(k);
     }
@@ -1691,8 +1668,8 @@ function updateMarker(species){
       const popupName = window.normalizeUiText ? window.normalizeUiText(species) : species;
       const m = L.marker([d.lat, d.lon], { icon }).addTo(map)
         .bindPopup(`<b>${popupName}</b>${when}${where}${srcLn}${occLn}${howManyLn}${migr}${rarLn}`);
+      m.__trueLatLng = [d.lat, d.lon];
       markers.set(markerKey, m);
-      try { if (window.__oms) window.__oms.addMarker(m); } catch(e){}
 
       if (rg === latestRegion) latestMarker = m;
     }
@@ -1719,17 +1696,71 @@ function updateMarker(species){
       const popupName = window.normalizeUiText ? window.normalizeUiText(species) : species;
       const m = L.marker([best.lat, best.lon], { icon }).addTo(map)
         .bindPopup(`<b>${popupName}</b>${when}${where}${srcLn}${occLn}${howManyLn}${migr}${rarLn}`);
+      m.__trueLatLng = [best.lat, best.lon];
       latestMarker = m;
       markers.set(species + "@@" + best.rg, m);
-      try { if (window.__oms) window.__oms.addMarker(m); } catch(e){}
     }
   }
 
   if (latestMarker) markers.set(species, latestMarker);
+  scheduleDeclutter();
 }
 
 function refreshMarkerIcons(){
   SPECIES.forEach(updateMarker);
+  scheduleDeclutter();
+}
+
+// ===== Zoom-based declutter: fan out markers sharing identical coords =====
+var DECLUTTER_MIN_ZOOM = 12;
+var DECLUTTER_PX_PER_ZOOM = 11;
+var DECLUTTER_MAX_PX = 48;
+
+function declutterOverlappingMarkers(){
+  try {
+    if (!map || !markers || typeof markers.forEach !== 'function') return;
+    var zoom = map.getZoom();
+    var spacing = Math.max(0, Math.min(DECLUTTER_MAX_PX, (zoom - DECLUTTER_MIN_ZOOM) * DECLUTTER_PX_PER_ZOOM));
+
+    var groups = {};
+    markers.forEach(function(m){
+      var t = m && m.__trueLatLng;
+      if (!t || !Number.isFinite(t[0]) || !Number.isFinite(t[1])) return;
+      var gk = t[0].toFixed(5) + ',' + t[1].toFixed(5);
+      (groups[gk] = groups[gk] || []).push(m);
+    });
+
+    var goldenAngle = Math.PI * (3 - Math.sqrt(5));
+
+    Object.keys(groups).forEach(function(gk){
+      var grp = groups[gk];
+      if (grp.length === 1 || spacing <= 0){
+        grp.forEach(function(m){ try { m.setLatLng(m.__trueLatLng); } catch(e){} });
+        return;
+      }
+      var center = grp[0].__trueLatLng;
+      var centerPt = map.project(center, zoom);
+      grp.forEach(function(m, i){
+        var r = spacing * Math.sqrt(i);
+        var theta = i * goldenAngle;
+        var px = centerPt.x + r * Math.cos(theta);
+        var py = centerPt.y + r * Math.sin(theta);
+        try {
+          var ll = map.unproject(L.point(px, py), zoom);
+          m.setLatLng(ll);
+        } catch(e){}
+      });
+    });
+  } catch(e){ console.warn('[declutter] failed', e); }
+}
+
+var __declutterTimer = null;
+function scheduleDeclutter(){
+  if (__declutterTimer) return;
+  __declutterTimer = setTimeout(function(){
+    __declutterTimer = null;
+    declutterOverlappingMarkers();
+  }, 60);
 }
 
 function scheduleRefreshMarkerIcons(){
@@ -1796,6 +1827,7 @@ function render(){
   // update markers for visible list quickly
   SPECIES.forEach(updateMarker);
   updateSpeciesCount(visible.length, SPECIES.length, q);
+  scheduleDeclutter();
 }
 
 function updateSpeciesCount(shown, total, query){

@@ -302,6 +302,17 @@
       box-sizing:border-box;
     }
     #modal .rowBtns{ display:flex; gap:10px; justify-content:flex-end; margin-top:10px; }
+    .gbif-mini-marker { background: transparent; border: none; }
+    .gbif-mini-icon {
+      width: 22px; height: 22px; border-radius: 50%;
+      border: 2px solid #6366f1; background-size: cover;
+      background-position: center; background-color: #e0e7ff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .gbif-btn { background: #6366f1 !important; color: #fff !important; }
+    .gbif-btn.active { background: #4f46e5 !important; }
+    .gbif-btn:disabled { opacity: 0.5; }
+    .gbif-status-line { font-size: 11px; color: #6366f1; margin-top: 2px; }
   </style>
 </head>
 
@@ -411,6 +422,48 @@
 const REGIONS = ["US-CO"];
 const REGION_NAME = {"US-CO":"Colorado"};
 const DISCOVERY_MODE = true; // USA maps: accept all species from eBird, not just pre-registered ones
+
+/* ========= GBIF region config ========= */
+var GBIF_STATES = [{ ebird: 'US-CO', name: 'Colorado' }];
+var GBIF_YEARS_BACK = 3;
+
+// ---- GBIF polite client: max 3 concurrent + 429 backoff with jitter ----
+var __gbifInFlight = 0;
+var __gbifQueue = [];
+var GBIF_MAX_CONCURRENT = 3;
+var GBIF_MAX_RETRIES = 5;
+function __gbifPump(){ while(__gbifInFlight < GBIF_MAX_CONCURRENT && __gbifQueue.length){ var job=__gbifQueue.shift(); __gbifInFlight++; job(); } }
+function __gbifRelease(){ __gbifInFlight = Math.max(0, __gbifInFlight-1); __gbifPump(); }
+function __gbifSleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+async function gbifFetch(url, opts){
+  return new Promise(function(resolve, reject){
+    __gbifQueue.push(async function run(){
+      var attempt = 0;
+      while(true){
+        try{
+          var res = await fetch(url, opts);
+          if(res.status === 429 && attempt < GBIF_MAX_RETRIES){
+            var ra = parseInt(res.headers.get('Retry-After') || '0', 10);
+            var waitMs = ra > 0 ? ra*1000 : Math.min(8000, 500*Math.pow(2,attempt)) + Math.random()*400;
+            attempt++;
+            await __gbifSleep(waitMs);
+            continue;
+          }
+          __gbifRelease();
+          resolve(res);
+          return;
+        }catch(e){
+          if(attempt < GBIF_MAX_RETRIES){ attempt++; await __gbifSleep(Math.min(8000, 500*Math.pow(2,attempt))); continue; }
+          __gbifRelease();
+          reject(e);
+          return;
+        }
+      }
+    });
+    __gbifPump();
+  });
+}
+window.gbifFetch = gbifFetch;
 const STAY_LOCATIONS = [
   {
     name: 'Colorado Stay',
@@ -1431,6 +1484,226 @@ map.getPane("highlightPane").style.zIndex = "650";
 map.getPane("highlightPane").style.pointerEvents = "none";
 
 const markers = new Map();
+
+// === GBIF state ===
+var gbifMarkers = new Map();
+var gbifTaxonKeys = {};
+try { gbifTaxonKeys = JSON.parse(localStorage.getItem('gbif_taxonkeys_usa_co') || '{}'); } catch(e){}
+var gbifLoadingSpecies = new Set();
+window.gbifStats = window.gbifStats || {};
+
+function _saveGbifTaxonKeys(){
+  try { localStorage.setItem('gbif_taxonkeys_usa_co', JSON.stringify(gbifTaxonKeys)); } catch(e){}
+}
+
+// State name -> gadmGid resolver (cached). Avoids hardcoding GADM GIDs.
+var __stateGadmGid = {};
+try { __stateGadmGid = JSON.parse(localStorage.getItem('bm_state_gadm_gid') || '{}'); } catch(e){}
+
+async function resolveStateGadmGid(state){
+  if (__stateGadmGid[state.ebird]) return __stateGadmGid[state.ebird];
+  try {
+    var url = 'https://api.gbif.org/v1/occurrence/search?country=US&stateProvince='
+      + encodeURIComponent(state.name) + '&hasCoordinate=true&limit=1';
+    var res = await gbifFetch(url);
+    if (res.ok){
+      var data = await res.json();
+      var rec = (data.results && data.results[0]) || null;
+      var gid = rec && rec.gadm && rec.gadm.level1 && rec.gadm.level1.gid;
+      if (gid){
+        __stateGadmGid[state.ebird] = gid;
+        try { localStorage.setItem('bm_state_gadm_gid', JSON.stringify(__stateGadmGid)); } catch(e){}
+        console.info('[GBIF] resolved', state.name, '->', gid);
+        return gid;
+      }
+    }
+  } catch(e){ console.warn('[GBIF] gadmGid resolve failed for', state.name, e); }
+  return null;
+}
+
+async function resolveAllStateGadmGids(){
+  var gids = [];
+  for (var i = 0; i < GBIF_STATES.length; i++){
+    var gid = await resolveStateGadmGid(GBIF_STATES[i]);
+    if (gid) gids.push(gid);
+  }
+  return gids;
+}
+
+async function resolveGbifTaxonKey(species){
+  var cached = gbifTaxonKeys[species];
+  if (cached && cached.taxonKey) return cached.taxonKey;
+
+  var sciName = '';
+  try {
+    var meta = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(species) : null;
+    if (meta && typeof meta.scientificName === 'string' && meta.scientificName.trim()){
+      sciName = meta.scientificName.trim();
+    }
+  } catch(_){}
+
+  if (sciName){
+    try {
+      var res = await gbifFetch('https://api.gbif.org/v1/species/match?name='
+        + encodeURIComponent(sciName) + '&kingdom=Animalia&strict=true');
+      if (res.ok){
+        var data = await res.json();
+        if (data.usageKey && data.matchType !== 'NONE'){
+          gbifTaxonKeys[species] = { taxonKey: data.usageKey, scientificName: data.scientificName || sciName, resolvedVia: 'sciname_lookup' };
+          _saveGbifTaxonKeys();
+          return data.usageKey;
+        }
+      }
+    } catch(e){ console.warn('[GBIF] match failed for', sciName, e); }
+    try {
+      var res2 = await gbifFetch('https://api.gbif.org/v1/species/match?name='
+        + encodeURIComponent(sciName) + '&kingdom=Animalia');
+      if (res2.ok){
+        var data2 = await res2.json();
+        if (data2.usageKey && data2.confidence > 80){
+          gbifTaxonKeys[species] = { taxonKey: data2.usageKey, scientificName: data2.scientificName || sciName, resolvedVia: 'sciname_loose' };
+          _saveGbifTaxonKeys();
+          return data2.usageKey;
+        }
+      }
+    } catch(e){}
+  }
+
+  try {
+    var res3 = await gbifFetch('https://api.gbif.org/v1/species/suggest?q='
+      + encodeURIComponent(species) + '&rank=SPECIES&limit=5');
+    if (res3.ok){
+      var suggestions = await res3.json();
+      var bird = suggestions.find(function(s){ return s.class === 'Aves'; });
+      if (bird && bird.key){
+        gbifTaxonKeys[species] = { taxonKey: bird.key, scientificName: bird.scientificName || '?', resolvedVia: 'suggest_fallback', warning: true };
+        _saveGbifTaxonKeys();
+        return bird.key;
+      }
+    }
+  } catch(e){}
+
+  console.warn('[GBIF] could not resolve', species);
+  return null;
+}
+
+function _gbifMiniIcon(avatarUrl, year){
+  var currentYear = new Date().getFullYear();
+  var age = currentYear - (year || currentYear);
+  var opacity = Math.max(0.3, 1 - (age * 0.07));
+  var borderColor = age <= 1 ? '#4f46e5' : age <= 3 ? '#6366f1' : age <= 6 ? '#818cf8' : '#a5b4fc';
+  var bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#c7d2fe";
+  var html = '<div class="gbif-mini-icon" style="border-color:' + borderColor + ';opacity:' + opacity + ';' + bg + '"></div>';
+  return L.divIcon({ html: html, className: 'gbif-mini-marker', iconSize:[22,22], iconAnchor:[11,11], popupAnchor:[0,-14] });
+}
+
+function _escapeHtmlGbif(s){
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function buildGbifPopup(species, occ){
+  var lat = Number(occ.decimalLatitude).toFixed(4);
+  var lon = Number(occ.decimalLongitude).toFixed(4);
+  var coords = lat + ', ' + lon;
+  var dateStr = occ.eventDate ? String(occ.eventDate).slice(0,10)
+    : (occ.year ? occ.year + (occ.month ? '-' + String(occ.month).padStart(2,'0') : '') : '?');
+  var locParts = [occ.locality, occ.stateProvince].filter(Boolean);
+  var locStr = locParts.length ? locParts.join(', ') : '';
+  var cached = gbifTaxonKeys[species] || {};
+  var displaySci = cached.scientificName || '';
+  var sciLine = displaySci ? '<br><small style="color:#64748b;font-style:italic">' + _escapeHtmlGbif(displaySci) + '</small>' : '';
+  var warningLine = (cached.warning || (cached.resolvedVia && cached.resolvedVia.indexOf('fallback') !== -1))
+    ? '<br><small style="color:#f59e0b">&#9888;&#65039; Kontrollimata vaste</small>' : '';
+  var wazeUrl = 'https://waze.com/ul?ll=' + lat + ',' + lon + '&navigate=yes';
+  var mapsUrl = 'https://www.google.com/maps?q=' + lat + ',' + lon;
+  var btnStyle = 'padding:3px 8px;border:1px solid #6366f1;border-radius:6px;background:#eef2ff;color:#4338ca;font-size:11px;cursor:pointer;text-decoration:none';
+  return '<div style="min-width:200px">'
+    + '<b>' + _escapeHtmlGbif(species) + '</b>' + sciLine
+    + '<br><small>Kuupäev: ' + _escapeHtmlGbif(dateStr) + '</small>'
+    + (locStr ? '<br><small>Koht: ' + _escapeHtmlGbif(locStr) + '</small>' : '')
+    + '<br><small>Aasta: ' + (occ.year || '?') + '</small>'
+    + '<br><small>Koordinaadid: ' + coords + '</small>'
+    + warningLine
+    + '<br><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'
+    + '<a href="' + wazeUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Waze</a>'
+    + '<a href="' + mapsUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Maps</a>'
+    + '</div>'
+    + '<div style="margin-top:4px"><small style="color:#6366f1">GBIF</small></div>'
+    + '</div>';
+}
+
+async function toggleGbifData(species){
+  if (gbifMarkers.has(species) && gbifMarkers.get(species).length > 0){
+    gbifMarkers.get(species).forEach(function(m){ try { map.removeLayer(m); } catch(e){} });
+    gbifMarkers.delete(species);
+    if (window.gbifStats) delete window.gbifStats[species];
+    render();
+    return;
+  }
+  gbifLoadingSpecies.add(species);
+  render();
+  try {
+    var taxonKey = await resolveGbifTaxonKey(species);
+    if (!taxonKey){
+      setStatus('GBIF: species not found – ' + species);
+      gbifLoadingSpecies.delete(species);
+      render();
+      return;
+    }
+    var gids = await resolveAllStateGadmGids();
+    if (!gids.length){
+      setStatus('GBIF: could not resolve region');
+      gbifLoadingSpecies.delete(species);
+      render();
+      return;
+    }
+    var gadmParam = gids.join(';');
+    var allResults = [];
+    var currentYear = new Date().getFullYear();
+    var startYear = currentYear - (GBIF_YEARS_BACK - 1);
+    var PER_YEAR_LIMIT = 300;
+    for (var yr = currentYear; yr >= startYear; yr--){
+      try {
+        var url = 'https://api.gbif.org/v1/occurrence/search'
+          + '?taxonKey=' + taxonKey
+          + '&gadmGid=' + encodeURIComponent(gadmParam)
+          + '&hasCoordinate=true'
+          + '&hasGeospatialIssue=false'
+          + '&year=' + yr
+          + '&limit=' + PER_YEAR_LIMIT;
+        var res = await gbifFetch(url);
+        if (!res.ok) continue;
+        var data = await res.json();
+        allResults.push.apply(allResults, data.results || []);
+      } catch(err){ console.warn('[GBIF] fetch year', yr, 'failed', err); }
+    }
+    var avatarUrl = (window.getDisplayAvatar ? window.getDisplayAvatar(species) : ((typeof avatars !== 'undefined' && avatars[species]) || ''));
+    var markerList = [];
+    for (var i = 0; i < allResults.length; i++){
+      var occ = allResults[i];
+      var lat = occ.decimalLatitude, lon = occ.decimalLongitude;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      var icon = _gbifMiniIcon(avatarUrl, occ.year);
+      var m = L.marker([lat, lon], { icon: icon });
+      m.bindPopup(buildGbifPopup(species, occ));
+      m.addTo(map);
+      markerList.push(m);
+    }
+    gbifMarkers.set(species, markerList);
+    var years = allResults.map(function(o){ return o.year; }).filter(function(y){ return Number.isFinite(y); });
+    window.gbifStats[species] = {
+      count: markerList.length,
+      minYear: years.length ? Math.min.apply(null, years) : startYear,
+      maxYear: years.length ? Math.max.apply(null, years) : currentYear
+    };
+  } catch(e){
+    console.warn('[GBIF] toggle failed', species, e);
+    setStatus('GBIF: error – ' + species);
+  }
+  gbifLoadingSpecies.delete(species);
+  render();
+}
+
 let activePulseRing = null;
 let activePulseTimeout = null;
 let markerZoomRefreshTimer = null;
@@ -1796,6 +2069,24 @@ function rowHTML(name){
   const openDisabled = hasLocation ? "" : "disabled title=\"No location yet\"";
   const rarityText = window.getRarityBadgeText ? window.getRarityBadgeText(meta.rarityLevel) : "";
 
+  const isGbifActive = gbifMarkers.has(name) && gbifMarkers.get(name).length > 0;
+  const isGbifLoading = gbifLoadingSpecies.has(name);
+  const gbifBtnText = isGbifLoading ? 'GBIF...' : (isGbifActive ? 'GBIF ✕' : 'GBIF');
+  const gbifBtnClass = isGbifActive ? 'btn gbif-btn active' : 'btn gbif-btn';
+  const gbifBtnHtml = '<button class="' + gbifBtnClass + '" data-gbif-species="' + name.replace(/"/g,'&quot;') + '"'
+    + (isGbifLoading ? ' disabled' : '')
+    + ' title="Show GBIF observations (last ' + GBIF_YEARS_BACK + 'y). Shift+click = override species match">'
+    + gbifBtnText + '</button>';
+
+  let gbifStatusHtml = '';
+  const gbifStat = window.gbifStats && window.gbifStats[name];
+  if (gbifStat) {
+    const cached = gbifTaxonKeys[name] || {};
+    const sci = cached.scientificName ? ' &middot; <i style="color:#64748b">' + _escapeHtmlGbif(cached.scientificName) + '</i>' : '';
+    const warn = cached.warning ? ' &#9888;&#65039;' : '';
+    gbifStatusHtml = '<div class="gbif-status-line">GBIF: ' + gbifStat.count + ' vaatlust (' + (gbifStat.minYear || '?') + '–' + (gbifStat.maxYear || '?') + ')' + sci + warn + '</div>';
+  }
+
   return `
     <div class="row" data-key="${name}">
       <div class="avatar" style="background-image:url('${meta.avatarUrl || avatars[name] || ""}');border-color:${bcol}"></div>
@@ -1804,7 +2095,11 @@ function rowHTML(name){
           <div class="${nameCls}" title="Tap to hide/show marker">${displayName}</div>
           ${rarityText ? `<span class="rarity-badge" title="Haruldus">${rarityText}</span>` : ""}
         </div>
-        ${hasMarker ? `<div style="margin-top:6px;"><button class="btn secondary" data-open ${openDisabled}>Open</button></div>` : ""}
+        <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+          ${hasMarker ? `<button class="btn secondary" data-open ${openDisabled}>Open</button>` : ""}
+          ${gbifBtnHtml}
+        </div>
+        ${gbifStatusHtml}
         <div class="meta">${fmtMeta(p)}</div>
       </div>
     </div>`;
@@ -1843,6 +2138,39 @@ function wireRows(){
 
     const nameEl = row.querySelector(".name");
     const openBtn = row.querySelector("[data-open]");
+    const gbifBtn = row.querySelector(".gbif-btn");
+
+    if (gbifBtn) gbifBtn.addEventListener("click", (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      const species = gbifBtn.getAttribute("data-gbif-species") || key;
+      if (!species) return;
+      if (e.shiftKey){
+        const cur = gbifTaxonKeys[species] || {};
+        const curSci = cur.scientificName || "";
+        let input = prompt("GBIF match: " + species + "\nCurrent: " + curSci + "\n\nEnter scientific name (e.g. \"Turdus migratorius\") or numeric taxonKey:", curSci);
+        if (input === null) return;
+        input = input.trim();
+        if (!input){ delete gbifTaxonKeys[species]; _saveGbifTaxonKeys(); render(); return; }
+        if (/^\d+$/.test(input)){
+          gbifTaxonKeys[species] = { taxonKey: Number(input), scientificName: "(manual)", resolvedVia: "manual" };
+          _saveGbifTaxonKeys();
+        } else {
+          gbifFetch("https://api.gbif.org/v1/species/match?name=" + encodeURIComponent(input) + "&kingdom=Animalia")
+            .then(r => r.json())
+            .then(data => {
+              if (data.usageKey){
+                gbifTaxonKeys[species] = { taxonKey: data.usageKey, scientificName: data.scientificName || input, resolvedVia: "manual_sciname" };
+                _saveGbifTaxonKeys();
+                if (gbifMarkers.has(species)){ gbifMarkers.get(species).forEach(m => { try { map.removeLayer(m); } catch(e){} }); gbifMarkers.delete(species); }
+                render();
+              }
+            }).catch(()=>{});
+        }
+        return;
+      }
+      toggleGbifData(species);
+    });
 
     if (nameEl) nameEl.addEventListener("click", ()=>{
       p.visible = (p.visible === false) ? true : false;

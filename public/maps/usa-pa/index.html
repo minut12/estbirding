@@ -104,6 +104,17 @@
       gap:10px;
     }
     #sidebar h2{ margin:0; font-size:18px; }
+    .species-count{
+      display:inline-block;
+      font-size:12px;
+      font-weight:600;
+      color:#475569;
+      background:#f1f5f9;
+      border:1px solid #e2e8f0;
+      border-radius:999px;
+      padding:2px 10px;
+      margin-top:4px;
+    }
     #closeSidebarBtn{
       display:inline-flex;
       align-items:center;
@@ -314,6 +325,7 @@
         <div class="sidebarHeaderTop">
           <div class="header-copy">
           <h2>eBird Pennsylvania</h2>
+          <span id="speciesCount" class="species-count">Liigid: 0</span>
           </div>
           <button id="closeSidebarBtn" title="Close" aria-label="Close">
             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
@@ -1745,13 +1757,26 @@ function rowHTML(name){
 function render(){
   const q = norm((filterBox.value || "").trim());
   listEl.innerHTML = "";
-  SPECIES
+  const visible = SPECIES
     .filter(n => passesRareOnlyFilter(n))
-    .filter(n => norm(n).includes(q))
-    .forEach(n => listEl.insertAdjacentHTML("beforeend", rowHTML(n)));
+    .filter(n => norm(n).includes(q));
+  visible.forEach(n => listEl.insertAdjacentHTML("beforeend", rowHTML(n)));
   wireRows();
   // update markers for visible list quickly
   SPECIES.forEach(updateMarker);
+  updateSpeciesCount(visible.length, SPECIES.length, q);
+}
+
+function updateSpeciesCount(shown, total, query){
+  try {
+    const el = document.getElementById('speciesCount');
+    if (!el) return;
+    if (query && shown !== total) {
+      el.textContent = 'Liigid: ' + shown + ' / ' + total;
+    } else {
+      el.textContent = 'Liigid: ' + total;
+    }
+  } catch(e) { /* non-fatal */ }
 }
 
 function wireRows(){

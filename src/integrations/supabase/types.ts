@@ -86,6 +86,54 @@ export type Database = {
         }
         Relationships: []
       }
+      ebird_pins: {
+        Row: {
+          checklist_sub_id: string | null
+          count_observed: number | null
+          created_at: string
+          ebird_id: string
+          id: string
+          lat: number
+          location_name: string | null
+          lon: number
+          map_scope: string
+          obs_date: string | null
+          species: string
+          species_code: string | null
+          user_id: string
+        }
+        Insert: {
+          checklist_sub_id?: string | null
+          count_observed?: number | null
+          created_at?: string
+          ebird_id: string
+          id?: string
+          lat: number
+          location_name?: string | null
+          lon: number
+          map_scope: string
+          obs_date?: string | null
+          species: string
+          species_code?: string | null
+          user_id: string
+        }
+        Update: {
+          checklist_sub_id?: string | null
+          count_observed?: number | null
+          created_at?: string
+          ebird_id?: string
+          id?: string
+          lat?: number
+          location_name?: string | null
+          lon?: number
+          map_scope?: string
+          obs_date?: string | null
+          species?: string
+          species_code?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       ebird_rare_observations: {
         Row: {
           country_code: string | null

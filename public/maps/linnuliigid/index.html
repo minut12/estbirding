@@ -8691,10 +8691,17 @@ function renderPinnedGbifMarkers(){
         var letter = String(pin.species || '?').charAt(0).toUpperCase();
         icon = _eluObsAvatarIcon(hasAv ? avatarUrl : '', srcColor, 'solid', 3, 0.95, letter);
         var dateFmt = pin.date ? String(pin.date).replace(/^(\d{4})-(\d{2})-(\d{2}).*/, '$3.$2.$1') : '?';
+        var pinCoords = Number(pin.lat).toFixed(5) + ', ' + Number(pin.lon).toFixed(5);
+        var pinCopyBtn = '<button '
+          + "onclick=\"navigator.clipboard.writeText('" + pinCoords + "').then(function(){"
+          + "this.textContent='Kopeeritud!';var b=this;setTimeout(function(){b.textContent='Kopeeri'},1500)}.bind(this))\" "
+          + 'style="padding:3px 8px;border:1px solid ' + srcColor + ';border-radius:6px;'
+          + 'background:' + srcBg + ';color:' + srcText + ';font-size:11px;cursor:pointer">Kopeeri</button>';
         popupHtml = '<div style="font-family:system-ui;font-size:12px">'
           + '<b>' + escapeHtml(pin.species) + '</b><br>' + escapeHtml(dateFmt)
           + '<br><span style="color:' + srcColor + ';font-size:11px">' + srcLabel + '</span>'
           + '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'
+          + pinCopyBtn
           + '<button onclick="window.__toggleGbifPin(\'' + id + '\')" '
           + 'style="padding:3px 8px;border:1px solid ' + srcColor + ';border-radius:6px;'
           + 'background:' + srcBg + ';color:' + srcText + ';font-size:11px;cursor:pointer">📌 Eemalda nõel</button>'
@@ -10034,6 +10041,12 @@ function renderElurikkusObservationsLayer(speciesName) {
     if (pinnedGbif.has(synthId)) continue; // drawn by the persistent pin layer (Part E)
     __gbifOccById[synthId] = { species: speciesName, lat: _lLat, lon: _lLon, date: _lDate ? String(_lDate).slice(0, 10) : null };
 
+    var eluCoords = _lLat.toFixed(5) + ', ' + _lLon.toFixed(5);
+    var eluCopyBtn = '<button '
+      + "onclick=\"navigator.clipboard.writeText('" + eluCoords + "').then(function(){"
+      + "this.textContent='Kopeeritud!';var b=this;setTimeout(function(){b.textContent='Kopeeri'},1500)}.bind(this))\" "
+      + 'style="padding:3px 8px;border:1px solid #1E7F3E;border-radius:6px;'
+      + 'background:#dcfce7;color:#166534;font-size:11px;cursor:pointer">Kopeeri</button>';
     var eluPinned = pinnedGbif.has(synthId);
     var eluPinBtn = '<button onclick="window.__toggleGbifPin(\'' + synthId + '\')" '
       + 'style="padding:3px 8px;border:1px solid #1E7F3E;border-radius:6px;'
@@ -10044,7 +10057,7 @@ function renderElurikkusObservationsLayer(speciesName) {
     var icon = _eluObsAvatarIcon(hasAvatar ? avatarUrl : '', borderColor, borderStyle, 3, opacity, fallbackLetter);
     var m = L.marker([_lLat, _lLon], { icon: icon, pane: 'eluObsPane' });
     m.bindPopup('<div style="font-family:system-ui;font-size:12px"><b>' + dateFormatted + '</b><br>' + (placeLabel || '-') + '<br><span style="color:#94a3b8;font-size:11px">' + sourceLabel + '</span>'
-      + '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">' + eluPinBtn + '</div>'
+      + '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">' + eluCopyBtn + eluPinBtn + '</div>'
       + '</div>');
     _eluObsLayerGroup.addLayer(m);
   }
@@ -10138,6 +10151,12 @@ function renderEbirdObservationsLayer(speciesName) {
     var locLabel = item.loc || '-';
     var countLabel = (item.howMany != null) ? (' \u00b7 kogus: ' + item.howMany) : '';
 
+    var ebCoords = lat.toFixed(5) + ', ' + lon.toFixed(5);
+    var ebCopyBtn = '<button '
+      + "onclick=\"navigator.clipboard.writeText('" + ebCoords + "').then(function(){"
+      + "this.textContent='Kopeeritud!';var b=this;setTimeout(function(){b.textContent='Kopeeri'},1500)}.bind(this))\" "
+      + 'style="padding:3px 8px;border:1px solid #f59e0b;border-radius:6px;'
+      + 'background:#fef3c7;color:#92400e;font-size:11px;cursor:pointer">Kopeeri</button>';
     var ebPinned = pinnedGbif.has(synthId);
     var ebPinBtn = '<button onclick="window.__toggleGbifPin(\'' + synthId + '\')" '
       + 'style="padding:3px 8px;border:1px solid #f59e0b;border-radius:6px;'
@@ -10152,7 +10171,7 @@ function renderEbirdObservationsLayer(speciesName) {
       '<b>' + dateFormatted + '</b><br>' +
       locLabel + '<br>' +
       '<span style="color:#f59e0b;font-size:11px">eBird' + countLabel + '</span>' +
-      '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">' + ebPinBtn + '</div>' +
+      '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">' + ebCopyBtn + ebPinBtn + '</div>' +
       '</div>'
     );
     _ebirdObsLayerGroup.addLayer(m);

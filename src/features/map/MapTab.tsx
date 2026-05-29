@@ -27,6 +27,7 @@ import { ACTIVE_PREDICTION_IFRAME_READY_MESSAGE, ACTIVE_PREDICTION_SPECIES_EVENT
 import { normalizeSpeciesName } from '@/lib/textNormalize';
 import { runBundledSpeciesBackfill } from '@/lib/speciesMetaBackfill';
 import { loadGbifPins, addGbifPin, removeGbifPin, type GbifPin } from '@/lib/gbifPins';
+import { loadEbirdPins, addEbirdPin, removeEbirdPin, type EbirdPin } from '@/lib/ebirdPins';
 import { log } from '@/lib/eventLog';
 import { toast } from 'sonner';
 import {
@@ -829,6 +830,16 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
         });
       }, 500);
     }
+    // Push the user's cloud-synced eBird obs pins for this map into the iframe.
+    if (speciesScope.id === 'usa_co' || speciesScope.id === 'usa_pa' || speciesScope.id === 'usa_i70') {
+      const ebirdPinScopeId = speciesScope.id;
+      setTimeout(() => {
+        loadEbirdPins(ebirdPinScopeId).then((pins) => {
+          try { sendToIframe({ type: 'EBIRD_PINS_DEFAULTS', scopeId: ebirdPinScopeId, pins }); }
+          catch (e) { console.warn('[MapTab] push eBird pins failed', e); }
+        });
+      }, 500);
+    }
     // Auto-refresh after initial load
     setTimeout(() => {
       lastAutoRefreshRef.current = Date.now();
@@ -909,6 +920,45 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
         if (!ok) {
           const pins = await loadGbifPins(scopeId);
           try { sendToIframe({ type: 'GBIF_PINS_DEFAULTS', scopeId, pins }); } catch {}
+        }
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [sendToIframe]);
+
+  useEffect(() => {
+    const handler = async (ev: MessageEvent) => {
+      const d = ev.data;
+      if (!d || (d.type !== 'EBIRD_PIN_ADD' && d.type !== 'EBIRD_PIN_REMOVE')) return;
+      const scopeId = String(d.scopeId || '');
+      if (scopeId !== 'usa_co' && scopeId !== 'usa_pa' && scopeId !== 'usa_i70') return;
+
+      if (d.type === 'EBIRD_PIN_ADD' && d.pin) {
+        const pin: EbirdPin = {
+          ebirdId: String(d.pin.ebirdId || ''),
+          species: String(d.pin.species || ''),
+          speciesCode: d.pin.speciesCode ?? null,
+          lat: Number(d.pin.lat),
+          lon: Number(d.pin.lon),
+          obsDate: d.pin.obsDate ?? null,
+          locationName: d.pin.locationName ?? null,
+          countObserved: Number.isFinite(Number(d.pin.countObserved)) ? Number(d.pin.countObserved) : null,
+          checklistSubId: d.pin.checklistSubId ?? null,
+        };
+        if (!pin.ebirdId || !Number.isFinite(pin.lat) || !Number.isFinite(pin.lon)) return;
+        const ok = await addEbirdPin(scopeId, pin);
+        if (!ok) {
+          const pins = await loadEbirdPins(scopeId);
+          try { sendToIframe({ type: 'EBIRD_PINS_DEFAULTS', scopeId, pins }); } catch {}
+        }
+      } else if (d.type === 'EBIRD_PIN_REMOVE') {
+        const ebirdId = String(d.ebirdId || '');
+        if (!ebirdId) return;
+        const ok = await removeEbirdPin(scopeId, ebirdId);
+        if (!ok) {
+          const pins = await loadEbirdPins(scopeId);
+          try { sendToIframe({ type: 'EBIRD_PINS_DEFAULTS', scopeId, pins }); } catch {}
         }
       }
     };

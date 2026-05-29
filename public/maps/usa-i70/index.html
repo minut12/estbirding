@@ -1522,6 +1522,21 @@ var ebird30Markers = new Map();        // species -> array of L.marker
 var ebird30LoadingSpecies = new Set();
 window.ebird30Stats = window.ebird30Stats || {};  // species -> { count, regionsHit, dateRange }
 
+// === eBird obs pin state ===
+var pinnedEbird = new Map();        // ebirdId -> full pin object
+var pinnedEbirdMarkers = new Map(); // ebirdId -> L.marker
+var __ebirdObsById = {};            // ebirdId -> { species, speciesCode, lat, lon, ...obs fields } for popup pin button
+var EBIRD_PIN_SCOPE_ID = 'usa_i70';
+
+// Fingerprint a raw eBird obs into a stable per-observation id.
+function _ebirdFingerprint(obs){
+  var sub = String(obs.subId || '');
+  var lat = Number(obs.lat);
+  var lon = Number(obs.lng);
+  var dt = String(obs.obsDt || '');
+  return sub + '|' + lat.toFixed(5) + '|' + lon.toFixed(5) + '|' + dt;
+}
+
 // === GBIF pin state ===
 var pinnedGbif = new Map();        // gbifId -> { gbifId, species, lat, lon, date }
 var pinnedGbifMarkers = new Map(); // gbifId -> L.marker
@@ -1792,6 +1807,29 @@ function buildEbird30Popup(species, obs){
   var mapsUrl = 'https://www.google.com/maps?q=' + lat + ',' + lon;
   var btnStyle = 'padding:3px 8px;border:1px solid #ea580c;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;cursor:pointer;text-decoration:none';
   var sciLine = obs.sciName ? '<br><small style="color:#64748b;font-style:italic">' + _escapeHtmlGbif(obs.sciName) + '</small>' : '';
+
+  var ebirdId = _ebirdFingerprint(obs);
+  if (ebirdId) {
+    __ebirdObsById[ebirdId] = {
+      species: species,
+      speciesCode: (typeof resolveEbirdSpeciesCode === 'function' ? resolveEbirdSpeciesCode(species) : null),
+      lat: Number(obs.lat),
+      lon: Number(obs.lng),
+      obsDt: obs.obsDt || null,
+      locName: obs.locName || null,
+      howMany: obs.howMany,
+      subId: obs.subId || null,
+    };
+  }
+  var isPinned = ebirdId && pinnedEbird.has(ebirdId);
+  var pinBtnLabel = isPinned ? '📌 Eemalda nõel' : '📌 Kinnita';
+  var pinBtnStyle = 'padding:3px 8px;border:1px solid ' + (isPinned ? '#b45309' : '#ea580c')
+    + ';border-radius:6px;background:' + (isPinned ? '#fef3c7' : '#fff7ed')
+    + ';color:' + (isPinned ? '#92400e' : '#9a3412') + ';font-size:11px;cursor:pointer';
+  var pinBtnHtml = ebirdId
+    ? '<button onclick="window.__toggleEbirdPin(\'' + ebirdId.replace(/'/g, "\\'") + '\')" style="' + pinBtnStyle + '">' + pinBtnLabel + '</button>'
+    : '';
+
   return '<div style="min-width:200px">'
     + '<b>' + _escapeHtmlGbif(species) + '</b>' + sciLine
     + '<br><small>Kuupäev: ' + _escapeHtmlGbif(dateStr) + '</small>'
@@ -1802,6 +1840,7 @@ function buildEbird30Popup(species, obs){
     + (checklistUrl ? '<a href="' + checklistUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Vaatlusleht</a>' : '')
     + '<a href="' + wazeUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Waze</a>'
     + '<a href="' + mapsUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Maps</a>'
+    + pinBtnHtml
     + '</div>'
     + '<div style="margin-top:4px"><small style="color:#ea580c">eBird 30d</small></div>'
     + '</div>';
@@ -1873,6 +1912,8 @@ async function toggleEbird30Data(species){
       var obs = unique[n];
       var lat = obs.lat, lon = obs.lng;
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      var eid = _ebirdFingerprint(obs);
+      if (eid && pinnedEbird.has(eid)) continue; // pinned layer already shows this one
       var daysAgo = _daysAgo(obs.obsDt);
       var icon = _ebird30MiniIcon(avatarUrl, daysAgo);
       var m = L.marker([lat, lon], { icon: icon });
@@ -1895,6 +1936,86 @@ async function toggleEbird30Data(species){
   ebird30LoadingSpecies.delete(species);
   render();
 }
+
+// === eBird obs pin: persistent layer (independent of the 30d toggle) ===
+function renderPinnedEbirdMarkers(){
+  try {
+    pinnedEbirdMarkers.forEach(function(m){ try { map.removeLayer(m); } catch(e){} });
+    pinnedEbirdMarkers.clear();
+    pinnedEbird.forEach(function(pin, eid){
+      if (!Number.isFinite(pin.lat) || !Number.isFinite(pin.lon)) return;
+      var daysAgo = pin.obsDate ? _daysAgo(pin.obsDate) : 99;
+      var avatarUrl = (window.getDisplayAvatar ? window.getDisplayAvatar(pin.species) : ((typeof avatars !== 'undefined' && avatars[pin.species]) || ''));
+      var icon = _ebird30MiniIcon(avatarUrl, daysAgo);
+      // Synthesize an obs-shape object for popup rendering
+      var obsLike = {
+        subId: pin.checklistSubId || '',
+        lat: pin.lat,
+        lng: pin.lon,
+        obsDt: pin.obsDate || '',
+        locName: pin.locationName || '',
+        howMany: pin.countObserved,
+        sciName: '', // not stored — popup will just omit the line
+      };
+      __ebirdObsById[eid] = {
+        species: pin.species,
+        speciesCode: pin.speciesCode || null,
+        lat: pin.lat,
+        lon: pin.lon,
+        obsDt: pin.obsDate,
+        locName: pin.locationName,
+        howMany: pin.countObserved,
+        subId: pin.checklistSubId,
+      };
+      var m = L.marker([pin.lat, pin.lon], { icon: icon });
+      m.bindPopup(buildEbird30Popup(pin.species, obsLike));
+      m.addTo(map);
+      pinnedEbirdMarkers.set(eid, m);
+    });
+  } catch(e){ console.warn('[ebird-pin] render failed', e); }
+}
+
+window.__toggleEbirdPin = function(ebirdId){
+  ebirdId = String(ebirdId || '');
+  if (!ebirdId) return;
+  if (pinnedEbird.has(ebirdId)){
+    // UNPIN (optimistic)
+    pinnedEbird.delete(ebirdId);
+    var pm = pinnedEbirdMarkers.get(ebirdId);
+    if (pm){ try { map.removeLayer(pm); } catch(e){} pinnedEbirdMarkers.delete(ebirdId); }
+    try {
+      if (window.parent && window.parent !== window){
+        window.parent.postMessage({ type: 'EBIRD_PIN_REMOVE', scopeId: EBIRD_PIN_SCOPE_ID, ebirdId: ebirdId }, '*');
+      }
+    } catch(e){}
+  } else {
+    // PIN (optimistic) — pull obs data from lookup
+    var obs = __ebirdObsById[ebirdId];
+    if (!obs){ console.warn('[ebird-pin] no obs data for', ebirdId); return; }
+    var pin = {
+      ebirdId: ebirdId,
+      species: obs.species,
+      speciesCode: obs.speciesCode || (typeof resolveEbirdSpeciesCode === 'function' ? resolveEbirdSpeciesCode(obs.species) : null),
+      lat: obs.lat,
+      lon: obs.lon,
+      obsDate: obs.obsDt || null,
+      locationName: obs.locName || null,
+      countObserved: (obs.howMany != null && Number.isFinite(Number(obs.howMany))) ? Number(obs.howMany) : null,
+      checklistSubId: obs.subId || null,
+    };
+    pinnedEbird.set(ebirdId, pin);
+    try {
+      if (window.parent && window.parent !== window){
+        window.parent.postMessage({ type: 'EBIRD_PIN_ADD', scopeId: EBIRD_PIN_SCOPE_ID, pin: pin }, '*');
+      }
+    } catch(e){}
+  }
+  renderPinnedEbirdMarkers();
+  try {
+    var existing = pinnedEbirdMarkers.get(ebirdId);
+    if (existing) existing.openPopup();
+  } catch(e){}
+};
 
 function renderPinnedGbifMarkers(){
   try {
@@ -3277,6 +3398,26 @@ window.addEventListener("message", function(ev){
         });
       });
       renderPinnedGbifMarkers();
+      return;
+    }
+    if (t === "EBIRD_PINS_DEFAULTS" && Array.isArray(ev.data.pins)){
+      if (ev.data.scopeId && ev.data.scopeId !== EBIRD_PIN_SCOPE_ID) return;
+      pinnedEbird.clear();
+      ev.data.pins.forEach(function(p){
+        if (!p || !p.ebirdId) return;
+        pinnedEbird.set(String(p.ebirdId), {
+          ebirdId: String(p.ebirdId),
+          species: String(p.species || ''),
+          speciesCode: p.speciesCode || null,
+          lat: Number(p.lat),
+          lon: Number(p.lon),
+          obsDate: p.obsDate || null,
+          locationName: p.locationName || null,
+          countObserved: (p.countObserved != null && Number.isFinite(Number(p.countObserved))) ? Number(p.countObserved) : null,
+          checklistSubId: p.checklistSubId || null,
+        });
+      });
+      renderPinnedEbirdMarkers();
       return;
     }
     if (ev.origin !== window.location.origin) return;

@@ -8,14 +8,14 @@ export interface GbifPin {
   date: string | null;
 }
 
-const USA_SCOPES = new Set(['usa_co', 'usa_pa', 'usa_i70']);
+const PIN_ENABLED_SCOPES = new Set(['usa_co', 'usa_pa', 'usa_i70', 'linnuliigid']);
 
-function isUsaScope(mapScope: string): boolean {
-  return USA_SCOPES.has(mapScope);
+function isPinEnabledScope(mapScope: string): boolean {
+  return PIN_ENABLED_SCOPES.has(mapScope);
 }
 
 export async function loadGbifPins(mapScope: string): Promise<GbifPin[]> {
-  if (!isUsaScope(mapScope)) return [];
+  if (!isPinEnabledScope(mapScope)) return [];
   try {
     const { data, error } = await supabase
       .from('gbif_pins')
@@ -36,7 +36,7 @@ export async function loadGbifPins(mapScope: string): Promise<GbifPin[]> {
 }
 
 export async function addGbifPin(mapScope: string, pin: GbifPin): Promise<boolean> {
-  if (!isUsaScope(mapScope)) return false;
+  if (!isPinEnabledScope(mapScope)) return false;
   try {
     const { data: userData } = await supabase.auth.getUser();
     const userId = userData?.user?.id;
@@ -61,7 +61,7 @@ export async function addGbifPin(mapScope: string, pin: GbifPin): Promise<boolea
 }
 
 export async function removeGbifPin(mapScope: string, gbifId: string): Promise<boolean> {
-  if (!isUsaScope(mapScope)) return false;
+  if (!isPinEnabledScope(mapScope)) return false;
   try {
     const { error } = await supabase
       .from('gbif_pins')

@@ -820,7 +820,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       }, 450);
     }
     // Push the user's cloud-synced GBIF pins for this map into the iframe.
-    if (speciesScope.id === 'usa_co' || speciesScope.id === 'usa_pa' || speciesScope.id === 'usa_i70') {
+    if (['usa_co', 'usa_pa', 'usa_i70', 'linnuliigid'].includes(speciesScope.id)) {
       const pinScopeId = speciesScope.id;
       setTimeout(() => {
         loadGbifPins(pinScopeId).then((pins) => {
@@ -885,7 +885,8 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       const d = ev.data;
       if (!d || (d.type !== 'GBIF_PIN_ADD' && d.type !== 'GBIF_PIN_REMOVE')) return;
       const scopeId = String(d.scopeId || '');
-      if (scopeId !== 'usa_co' && scopeId !== 'usa_pa' && scopeId !== 'usa_i70') return;
+      const allowed = ['usa_co', 'usa_pa', 'usa_i70', 'linnuliigid'];
+      if (!allowed.includes(scopeId)) return;
 
       if (d.type === 'GBIF_PIN_ADD' && d.pin) {
         const pin: GbifPin = {

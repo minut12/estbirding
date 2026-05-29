@@ -313,6 +313,17 @@
     .gbif-btn.active { background: #4f46e5 !important; }
     .gbif-btn:disabled { opacity: 0.5; }
     .gbif-status-line { font-size: 11px; color: #6366f1; margin-top: 2px; }
+    .ebird30-mini-marker { background: transparent; border: none; }
+    .ebird30-mini-icon {
+      width: 22px; height: 22px; border-radius: 50%;
+      border: 2px solid #ea580c; background-size: cover;
+      background-position: center; background-color: #fed7aa;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .ebird30-btn { background: #ea580c !important; color: #fff !important; }
+    .ebird30-btn.active { background: #c2410c !important; }
+    .ebird30-btn:disabled { opacity: 0.5; }
+    .ebird30-status-line { font-size: 11px; color: #ea580c; margin-top: 2px; }
   </style>
 </head>
 
@@ -1506,6 +1517,11 @@ try { gbifTaxonKeys = JSON.parse(localStorage.getItem('gbif_taxonkeys_usa_i70') 
 var gbifLoadingSpecies = new Set();
 window.gbifStats = window.gbifStats || {};
 
+// === 30d eBird observation layer ===
+var ebird30Markers = new Map();        // species -> array of L.marker
+var ebird30LoadingSpecies = new Set();
+window.ebird30Stats = window.ebird30Stats || {};  // species -> { count, regionsHit, dateRange }
+
 // === GBIF pin state ===
 var pinnedGbif = new Map();        // gbifId -> { gbifId, species, lat, lon, date }
 var pinnedGbifMarkers = new Map(); // gbifId -> L.marker
@@ -1742,6 +1758,141 @@ async function toggleGbifData(species){
     setStatus('GBIF: error – ' + species);
   }
   gbifLoadingSpecies.delete(species);
+  render();
+}
+
+// === 30d eBird observation layer: helpers ===
+function _ebird30MiniIcon(avatarUrl, daysAgo){
+  // Color fade: brighter for newer sightings.
+  var opacity = Math.max(0.4, 1 - (daysAgo * 0.022));
+  var borderColor = daysAgo <= 2 ? '#dc2626' : daysAgo <= 7 ? '#ea580c' : daysAgo <= 14 ? '#f59e0b' : '#fbbf24';
+  var bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#fed7aa";
+  var html = '<div class="ebird30-mini-icon" style="border-color:' + borderColor + ';opacity:' + opacity + ';' + bg + '"></div>';
+  return L.divIcon({ html: html, className: 'ebird30-mini-marker', iconSize:[22,22], iconAnchor:[11,11], popupAnchor:[0,-14] });
+}
+
+function _daysAgo(isoDate){
+  try {
+    var t = Date.parse(String(isoDate || '').replace(' ', 'T'));
+    if (!Number.isFinite(t)) return 99;
+    return Math.max(0, Math.floor((Date.now() - t) / 86400000));
+  } catch(e) { return 99; }
+}
+
+function buildEbird30Popup(species, obs){
+  var lat = Number(obs.lat).toFixed(4);
+  var lon = Number(obs.lng).toFixed(4);
+  var coords = lat + ', ' + lon;
+  var dateStr = obs.obsDt || '?';
+  var loc = obs.locName || '';
+  var count = obs.howMany != null ? obs.howMany : '?';
+  var checklistId = obs.subId || '';
+  var checklistUrl = checklistId ? ('https://ebird.org/checklist/' + encodeURIComponent(checklistId)) : '';
+  var wazeUrl = 'https://waze.com/ul?ll=' + lat + ',' + lon + '&navigate=yes';
+  var mapsUrl = 'https://www.google.com/maps?q=' + lat + ',' + lon;
+  var btnStyle = 'padding:3px 8px;border:1px solid #ea580c;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;cursor:pointer;text-decoration:none';
+  var sciLine = obs.sciName ? '<br><small style="color:#64748b;font-style:italic">' + _escapeHtmlGbif(obs.sciName) + '</small>' : '';
+  return '<div style="min-width:200px">'
+    + '<b>' + _escapeHtmlGbif(species) + '</b>' + sciLine
+    + '<br><small>Kuupäev: ' + _escapeHtmlGbif(dateStr) + '</small>'
+    + (loc ? '<br><small>Koht: ' + _escapeHtmlGbif(loc) + '</small>' : '')
+    + '<br><small>Arv: ' + _escapeHtmlGbif(count) + '</small>'
+    + '<br><small>Koordinaadid: ' + coords + '</small>'
+    + '<br><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'
+    + (checklistUrl ? '<a href="' + checklistUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Vaatlusleht</a>' : '')
+    + '<a href="' + wazeUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Waze</a>'
+    + '<a href="' + mapsUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Maps</a>'
+    + '</div>'
+    + '<div style="margin-top:4px"><small style="color:#ea580c">eBird 30d</small></div>'
+    + '</div>';
+}
+
+function resolveEbirdSpeciesCode(species){
+  try {
+    if (typeof EBIRD_CODES !== 'undefined' && EBIRD_CODES && EBIRD_CODES[species]) return EBIRD_CODES[species];
+  } catch(e){}
+  // Fallback: try speciesMeta (cloud-synced)
+  try {
+    var meta = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(species) : null;
+    if (meta && meta.ebirdCode) return String(meta.ebirdCode).trim();
+  } catch(e){}
+  return null;
+}
+
+async function toggleEbird30Data(species){
+  // Toggle off if already shown
+  if (ebird30Markers.has(species) && ebird30Markers.get(species).length > 0){
+    ebird30Markers.get(species).forEach(function(m){ try { map.removeLayer(m); } catch(e){} });
+    ebird30Markers.delete(species);
+    if (window.ebird30Stats) delete window.ebird30Stats[species];
+    render();
+    return;
+  }
+  ebird30LoadingSpecies.add(species);
+  render();
+  try {
+    var code = resolveEbirdSpeciesCode(species);
+    if (!code){
+      try { setStatus && setStatus('30d:eBird – liigil puudub eBird kood: ' + species); } catch(e){}
+      ebird30LoadingSpecies.delete(species);
+      render();
+      return;
+    }
+    var allObs = [];
+    var regionsHit = 0;
+    for (var i = 0; i < REGIONS.length; i++){
+      var region = REGIONS[i];
+      try {
+        var url = 'https://api.ebird.org/v2/data/obs/' + encodeURIComponent(region)
+          + '/recent/' + encodeURIComponent(code)
+          + '?back=30&includeProvisional=true';
+        var res = await gbifFetch(url, { headers: { 'X-eBirdApiToken': HARDCODED_EBIRD_TOKEN } });
+        if (!res.ok) continue;
+        var data = await res.json();
+        if (Array.isArray(data) && data.length){
+          allObs.push.apply(allObs, data);
+          regionsHit++;
+        }
+      } catch(err){ console.warn('[eBird30] fetch', region, 'failed', err); }
+    }
+    // De-dup by subId+lat+lng (same checklist record returned by multiple regions is unlikely but cheap to guard)
+    var seen = {};
+    var unique = [];
+    for (var j = 0; j < allObs.length; j++){
+      var o = allObs[j];
+      var k = (o.subId || '') + '|' + o.lat + '|' + o.lng + '|' + o.obsDt;
+      if (seen[k]) continue;
+      seen[k] = 1;
+      unique.push(o);
+    }
+    // Render
+    var avatarUrl = (window.getDisplayAvatar ? window.getDisplayAvatar(species) : ((typeof avatars !== 'undefined' && avatars[species]) || ''));
+    var markerList = [];
+    var dates = [];
+    for (var n = 0; n < unique.length; n++){
+      var obs = unique[n];
+      var lat = obs.lat, lon = obs.lng;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      var daysAgo = _daysAgo(obs.obsDt);
+      var icon = _ebird30MiniIcon(avatarUrl, daysAgo);
+      var m = L.marker([lat, lon], { icon: icon });
+      m.bindPopup(buildEbird30Popup(species, obs));
+      m.addTo(map);
+      markerList.push(m);
+      dates.push(obs.obsDt);
+    }
+    ebird30Markers.set(species, markerList);
+    window.ebird30Stats[species] = {
+      count: markerList.length,
+      regionsHit: regionsHit,
+      regionsTotal: REGIONS.length,
+      latest: dates.length ? dates.reduce(function(a,b){ return a > b ? a : b; }) : null,
+    };
+  } catch(e){
+    console.warn('[eBird30] toggle failed', species, e);
+    try { setStatus && setStatus('30d:eBird viga: ' + species); } catch(e2){}
+  }
+  ebird30LoadingSpecies.delete(species);
   render();
 }
 
@@ -2168,6 +2319,24 @@ function rowHTML(name){
     + ' title="Show GBIF observations (last ' + GBIF_YEARS_BACK + 'y). Shift+click = override species match">'
     + gbifBtnText + '</button>';
 
+  const ebird30HasCode = !!resolveEbirdSpeciesCode(name);
+  const ebird30Active = ebird30Markers.has(name) && ebird30Markers.get(name).length > 0;
+  const ebird30Loading = ebird30LoadingSpecies.has(name);
+  const ebird30Label = ebird30Loading ? '30d:eBird...' : (ebird30Active ? '30d:eBird ✕' : '30d:eBird');
+  const ebird30Class = ebird30Active ? 'btn ebird30-btn active' : 'btn ebird30-btn';
+  const ebird30Disabled = (ebird30Loading || !ebird30HasCode) ? ' disabled' : '';
+  const ebird30Title = !ebird30HasCode ? 'eBird kood puudub' : 'Näita viimase 30 päeva eBird vaatlusi';
+  const ebird30BtnHtml = '<button class="' + ebird30Class + '" data-ebird30-species="' + name.replace(/"/g,'&quot;') + '"'
+    + ebird30Disabled + ' title="' + ebird30Title + '">' + ebird30Label + '</button>';
+
+  let ebird30StatusHtml = '';
+  const ebird30Stat = window.ebird30Stats && window.ebird30Stats[name];
+  if (ebird30Stat) {
+    const freshNote = ebird30Stat.latest ? ' (viimati ' + ebird30Stat.latest + ')' : '';
+    const partial = (ebird30Stat.regionsHit < ebird30Stat.regionsTotal) ? ' [' + ebird30Stat.regionsHit + '/' + ebird30Stat.regionsTotal + ' regiooni]' : '';
+    ebird30StatusHtml = '<div class="ebird30-status-line">eBird 30d: ' + ebird30Stat.count + ' vaatlust' + freshNote + partial + '</div>';
+  }
+
   let gbifStatusHtml = '';
   const gbifStat = window.gbifStats && window.gbifStats[name];
   if (gbifStat) {
@@ -2188,8 +2357,10 @@ function rowHTML(name){
         <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
           ${hasMarker ? `<button class="btn secondary" data-open ${openDisabled}>Open</button>` : ""}
           ${gbifBtnHtml}
+          ${ebird30BtnHtml}
         </div>
         ${gbifStatusHtml}
+        ${ebird30StatusHtml}
         <div class="meta">${fmtMeta(p)}</div>
       </div>
     </div>`;
@@ -2229,6 +2400,15 @@ function wireRows(){
     const nameEl = row.querySelector(".name");
     const openBtn = row.querySelector("[data-open]");
     const gbifBtn = row.querySelector(".gbif-btn");
+    const ebird30Btn = row.querySelector(".ebird30-btn");
+
+    if (ebird30Btn) ebird30Btn.addEventListener("click", (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      if (ebird30Btn.disabled) return;
+      const species = ebird30Btn.getAttribute("data-ebird30-species") || key;
+      if (species) toggleEbird30Data(species);
+    });
 
     if (gbifBtn) gbifBtn.addEventListener("click", (e)=>{
       e.preventDefault();

@@ -1968,10 +1968,12 @@ function renderPinnedEbirdMarkers(){
         subId: pin.checklistSubId,
       };
       var m = L.marker([pin.lat, pin.lon], { icon: icon });
+      m.__trueLatLng = [pin.lat, pin.lon];
       m.bindPopup(buildEbird30Popup(pin.species, obsLike));
       m.addTo(map);
       pinnedEbirdMarkers.set(eid, m);
     });
+    try { scheduleDeclutter(); } catch(e){}
   } catch(e){ console.warn('[ebird-pin] render failed', e); }
 }
 
@@ -2029,10 +2031,12 @@ function renderPinnedGbifMarkers(){
       var occLike = { key: gbifId, decimalLatitude: pin.lat, decimalLongitude: pin.lon, eventDate: pin.date, year: year };
       __gbifOccById[gbifId] = { species: pin.species, lat: pin.lat, lon: pin.lon, date: pin.date };
       var m = L.marker([pin.lat, pin.lon], { icon: icon });
+      m.__trueLatLng = [pin.lat, pin.lon];
       m.bindPopup(buildGbifPopup(pin.species, occLike));
       m.addTo(map);
       pinnedGbifMarkers.set(gbifId, m);
     });
+    try { scheduleDeclutter(); } catch(e){}
   } catch(e){ console.warn('[gbif-pin] render failed', e); }
 }
 
@@ -2352,12 +2356,15 @@ function declutterOverlappingMarkers(){
     var spacing = Math.max(0, Math.min(DECLUTTER_MAX_PX, (zoom - DECLUTTER_MIN_ZOOM) * DECLUTTER_PX_PER_ZOOM));
 
     var groups = {};
-    markers.forEach(function(m){
+    function __collectForDeclutter(m){
       var t = m && m.__trueLatLng;
       if (!t || !Number.isFinite(t[0]) || !Number.isFinite(t[1])) return;
       var gk = t[0].toFixed(5) + ',' + t[1].toFixed(5);
       (groups[gk] = groups[gk] || []).push(m);
-    });
+    }
+    markers.forEach(__collectForDeclutter);
+    try { if (typeof pinnedGbifMarkers !== 'undefined' && pinnedGbifMarkers.forEach) pinnedGbifMarkers.forEach(__collectForDeclutter); } catch(e){}
+    try { if (typeof pinnedEbirdMarkers !== 'undefined' && pinnedEbirdMarkers.forEach) pinnedEbirdMarkers.forEach(__collectForDeclutter); } catch(e){}
 
     var goldenAngle = Math.PI * (3 - Math.sqrt(5));
 

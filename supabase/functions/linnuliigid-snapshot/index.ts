@@ -139,7 +139,7 @@ function formatDateEEFromTs(ts: number): string | null {
 // Fetch occurrence data for one species from Elurikkus biocache API.
 // Paginates via &start=<page*pageSize>&pageSize=200 until empty page, item ceiling,
 // page ceiling, per-species wall-clock budget, or two consecutive fetch errors.
-async function fetchSpeciesData(name: string): Promise<{
+async function fetchSpeciesData(name: string, signal?: AbortSignal): Promise<{
   lat: number | null;
   lon: number | null;
   latestDate: string | null;
@@ -166,34 +166,36 @@ async function fetchSpeciesData(name: string): Promise<{
   const buildBiocacheUrl = (start: number): string =>
     `https://elurikkus.ee/biocache-service/occurrences/search?q=${encodeURIComponent(name)}&sort=eventDate&dir=desc&pageSize=${PAGE_SIZE}&start=${start}&fq=country:Estonia&_ts=${Date.now()}`;
 
+  // Single attempt per page (was 2). The fetch runs under a controller that aborts
+  // when either the per-page timer fires OR the parent species signal aborts, so a
+  // lost per-species deadline actually cancels the in-flight socket.
   const fetchPage = async (pageUrl: string): Promise<{ ok: boolean; status: number; bodyText: string }> => {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), PAGINATION_PAGE_TIMEOUT_MS);
-      try {
-        const res = await fetch(pageUrl, {
-          signal: ctrl.signal,
-          headers: {
-            Accept: "application/json",
-            "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)",
-            "Cache-Control": "no-cache",
-            "Pragma": "no-cache",
-          },
-        });
-        const bodyText = await res.text();
-        clearTimeout(timer);
-        return { ok: res.ok, status: res.status, bodyText };
-      } catch (e) {
-        clearTimeout(timer);
-        if (attempt === 0) {
-          await sleep(500);
-          continue;
-        }
-        console.warn("[snapshot:biocache] page fetch failed", { species: name, pageUrl, err: String((e as Error)?.message || e) });
-        return { ok: false, status: 0, bodyText: "" };
-      }
+    const pageCtrl = new AbortController();
+    const onParentAbort = () => pageCtrl.abort();
+    if (signal) {
+      if (signal.aborted) pageCtrl.abort();
+      else signal.addEventListener("abort", onParentAbort, { once: true });
     }
-    return { ok: false, status: 0, bodyText: "" };
+    const pageTimer = setTimeout(() => pageCtrl.abort(), PAGINATION_PAGE_TIMEOUT_MS);
+    try {
+      const res = await fetch(pageUrl, {
+        signal: pageCtrl.signal,
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)",
+          "Cache-Control": "no-cache",
+          "Pragma": "no-cache",
+        },
+      });
+      const bodyText = await res.text();
+      return { ok: res.ok, status: res.status, bodyText };
+    } catch (e) {
+      console.warn("[snapshot:biocache] page fetch failed", { species: name, pageUrl, err: String((e as Error)?.message || e) });
+      return { ok: false, status: 0, bodyText: "" };
+    } finally {
+      clearTimeout(pageTimer);
+      if (signal) signal.removeEventListener("abort", onParentAbort);
+    }
   };
 
   try {
@@ -251,7 +253,7 @@ async function fetchSpeciesData(name: string): Promise<{
     // If page 0 totally failed (network / non-OK / non-JSON / empty) — preserve original
     // behavior of falling back to HTML scrape so this species isn't lost.
     if (firstPageFatal && merged.length === 0) {
-      return await fetchSpeciesFromHtml(name);
+      return await fetchSpeciesFromHtml(name, signal);
     }
 
     const normalized = merged
@@ -269,7 +271,7 @@ async function fetchSpeciesData(name: string): Promise<{
 
     // Biocache returned data but no parseable dates — preserve original HTML fallback.
     if (!latestDate) {
-      return await fetchSpeciesFromHtml(name);
+      return await fetchSpeciesFromHtml(name, signal);
     }
     const occ7 = normalized.filter((x: { t: number }) => x.t >= (Date.now() - 7 * 24 * 60 * 60 * 1000)).length;
     let lat: number | null = null;
@@ -325,7 +327,7 @@ async function fetchSpeciesData(name: string): Promise<{
   } catch (e) {
     console.warn("[snapshot:biocache] unexpected error", { species: name, err: String((e as Error)?.message || e) });
     // Fallback to HTML scraping
-    return await fetchSpeciesFromHtml(name);
+    return await fetchSpeciesFromHtml(name, signal);
   }
 }
 
@@ -334,7 +336,7 @@ async function fetchSpeciesData(name: string): Promise<{
 // (mirrors handleElurikkusSpeciesRequest's scheme) until empty page, item ceiling,
 // page ceiling, per-species wall-clock budget, or two consecutive fetch errors.
 // Metadata for the newest-occurrence row is extracted from page-0 HTML only.
-async function fetchSpeciesFromHtml(name: string): Promise<{
+async function fetchSpeciesFromHtml(name: string, signal?: AbortSignal): Promise<{
   lat: number | null;
   lon: number | null;
   latestDate: string | null;
@@ -369,34 +371,34 @@ async function fetchSpeciesFromHtml(name: string): Promise<{
     return u.toString();
   };
 
+  // Single attempt per page (was 2). Aborts on the per-page timer OR the parent species signal.
   const fetchPage = async (pageUrl: string): Promise<{ ok: boolean; status: number; html: string }> => {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), PAGINATION_PAGE_TIMEOUT_MS);
-      try {
-        const res = await fetch(pageUrl, {
-          signal: ctrl.signal,
-          headers: {
-            Accept: "text/html",
-            "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)",
-            "Cache-Control": "no-cache",
-            "Pragma": "no-cache",
-          },
-        });
-        const html = await res.text();
-        clearTimeout(timer);
-        return { ok: res.ok, status: res.status, html };
-      } catch (e) {
-        clearTimeout(timer);
-        if (attempt === 0) {
-          await sleep(500);
-          continue;
-        }
-        console.warn("[snapshot:html] page fetch failed", { species: name, pageUrl, err: String((e as Error)?.message || e) });
-        return { ok: false, status: 0, html: "" };
-      }
+    const pageCtrl = new AbortController();
+    const onParentAbort = () => pageCtrl.abort();
+    if (signal) {
+      if (signal.aborted) pageCtrl.abort();
+      else signal.addEventListener("abort", onParentAbort, { once: true });
     }
-    return { ok: false, status: 0, html: "" };
+    const pageTimer = setTimeout(() => pageCtrl.abort(), PAGINATION_PAGE_TIMEOUT_MS);
+    try {
+      const res = await fetch(pageUrl, {
+        signal: pageCtrl.signal,
+        headers: {
+          Accept: "text/html",
+          "User-Agent": "Mozilla/5.0 (compatible; EstBirding/1.0)",
+          "Cache-Control": "no-cache",
+          "Pragma": "no-cache",
+        },
+      });
+      const html = await res.text();
+      return { ok: res.ok, status: res.status, html };
+    } catch (e) {
+      console.warn("[snapshot:html] page fetch failed", { species: name, pageUrl, err: String((e as Error)?.message || e) });
+      return { ok: false, status: 0, html: "" };
+    } finally {
+      clearTimeout(pageTimer);
+      if (signal) signal.removeEventListener("abort", onParentAbort);
+    }
   };
 
   console.log('[html-fallback]', name, 'starting');
@@ -1573,7 +1575,8 @@ async function runRefresh(
   let upstreamMaxTs = 0;
   let speciesSkipped = 0;
   let partial = false;
-  const MAX_RETRIES = 2;
+  let processedThisBatch = 0;
+  const MAX_RETRIES = 1;
   const SPECIES_HARD_TIMEOUT_MS = 12_000;
   const LOOP_HARD_BUDGET_MS = 45 * 60 * 1000;
   const loopStartMs = Date.now();
@@ -1594,6 +1597,7 @@ async function runRefresh(
       done++;
       continue;
     }
+    processedThisBatch++;
     try {
       // Runner watches for takeover marker and skips current index once requested.
       const { data: takeoverRow } = await supabase
@@ -1606,58 +1610,74 @@ async function runRefresh(
         done++;
         lastError = `${name}: forced takeover skip`;
       } else {
-        await Promise.race([
-          (async () => {
-            let data: Awaited<ReturnType<typeof fetchSpeciesData>> | null = null;
-            let lastErr: Error | null = null;
-            for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-              try {
-                if (attempt > 0) await sleep(400 * Math.pow(2, attempt - 1));
-                data = await withTimeout(fetchSpeciesData(name), 8000, `species=${name}`);
-                break;
-              } catch (e) {
-                lastErr = e instanceof Error ? e : new Error(String(e));
-              }
+        // Single aborting deadline for the whole per-species unit. speciesCtrl.abort()
+        // is threaded through fetchSpeciesData -> fetchSpeciesFromHtml -> fetchPage, so a
+        // lost deadline actually cancels the in-flight socket and stops the work, instead
+        // of leaving it running like the old bare-timer withTimeout + Promise.race.
+        const speciesCtrl = new AbortController();
+        const hardTimer = setTimeout(() => speciesCtrl.abort(), SPECIES_HARD_TIMEOUT_MS);
+        const tStart = Date.now();
+        let data: Awaited<ReturnType<typeof fetchSpeciesData>> | null = null;
+        let lastErr: Error | null = null;
+        try {
+          for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+              if (attempt > 0) await sleep(400 * Math.pow(2, attempt - 1));
+              data = await fetchSpeciesData(name, speciesCtrl.signal);
+              break;
+            } catch (e) {
+              lastErr = e instanceof Error ? e : new Error(String(e));
+              if (speciesCtrl.signal.aborted) break; // hard deadline hit — don't retry
             }
-            done++;
-            if (data) {
-              const srcTs = parseElurikkusDate(String(data.latestDate || ""));
-              if (srcTs > upstreamMaxTs) upstreamMaxTs = srcTs;
-              const entry: (typeof points)[string] = {
-                src: "Elurikkus",
-                visible: points[name]?.visible ?? true,
-              };
-              // Bug 2 fix: preserve existing t when new fetch returns no date, so snapshot doesn't lose stale date
-              if (data.latestDate) {
-                entry.t = data.latestDate;
-              } else if (points[name]?.t) {
-                entry.t = points[name].t;
-              }
-              // Always write lat/lon explicitly (including null) so the merge layer
-              // overwrites stale numeric values rather than preserving them.
-              entry.lat = data.lat ?? null;
-              entry.lon = data.lon ?? null;
-              entry.occ7 = data.occ7;
-              entry.coords_status = data.coordsStatus;
-              entry.coords_source = data.coordsSource;
-              entry.locality = data.locality;
-              entry.municipality = data.municipality;
-              entry.county = data.county;
-              if (data.individualCount != null) entry.individualCount = data.individualCount;
-              if (data.behavior) entry.behavior = data.behavior;
-              if (data.collectors) entry.collectors = data.collectors;
-              if (data.districts) entry.districts = data.districts;
-              if (data.eestiOmavalitsused) entry.eestiOmavalitsused = data.eestiOmavalitsused;
-              points[name] = entry;
-            } else {
-              lastError = `${name}: ${lastErr?.message || "Unknown fetch error"}`;
-              console.warn("[refresh]", lastError);
-            }
-          })(),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("species-hard-timeout")), SPECIES_HARD_TIMEOUT_MS)
-          ),
-        ]);
+          }
+        } finally {
+          clearTimeout(hardTimer);
+        }
+        // If the hard deadline fired, the in-flight fetch was aborted but fetchPage
+        // swallows the AbortError into {ok:false}, so fetchSpeciesData can still return a
+        // partial/empty object. Discard it and treat as a skip — matching the old
+        // timeout-throw semantics so we preserve the existing snapshot value (and never
+        // downgrade good coords to null on a timeout).
+        if (speciesCtrl.signal.aborted) {
+          if (!lastErr) lastErr = new Error("species-hard-timeout");
+          data = null;
+        }
+        done++;
+        console.log("[snap-species]", name, Date.now() - tStart, "ms", data ? "ok" : "skip");
+        if (data) {
+          const srcTs = parseElurikkusDate(String(data.latestDate || ""));
+          if (srcTs > upstreamMaxTs) upstreamMaxTs = srcTs;
+          const entry: (typeof points)[string] = {
+            src: "Elurikkus",
+            visible: points[name]?.visible ?? true,
+          };
+          // Bug 2 fix: preserve existing t when new fetch returns no date, so snapshot doesn't lose stale date
+          if (data.latestDate) {
+            entry.t = data.latestDate;
+          } else if (points[name]?.t) {
+            entry.t = points[name].t;
+          }
+          // Always write lat/lon explicitly (including null) so the merge layer
+          // overwrites stale numeric values rather than preserving them.
+          entry.lat = data.lat ?? null;
+          entry.lon = data.lon ?? null;
+          entry.occ7 = data.occ7;
+          entry.coords_status = data.coordsStatus;
+          entry.coords_source = data.coordsSource;
+          entry.locality = data.locality;
+          entry.municipality = data.municipality;
+          entry.county = data.county;
+          if (data.individualCount != null) entry.individualCount = data.individualCount;
+          if (data.behavior) entry.behavior = data.behavior;
+          if (data.collectors) entry.collectors = data.collectors;
+          if (data.districts) entry.districts = data.districts;
+          if (data.eestiOmavalitsused) entry.eestiOmavalitsused = data.eestiOmavalitsused;
+          points[name] = entry;
+        } else {
+          // Keep the species' existing snapshot value (don't overwrite with empty) and move on.
+          lastError = `${name}: ${lastErr?.message || "Unknown fetch error"}`;
+          console.warn("[refresh]", lastError);
+        }
       }
     } catch (e) {
       const reason = e instanceof Error ? e.message : String(e);
@@ -1677,6 +1697,7 @@ async function runRefresh(
     });
     if (upd.error) throw upd.error;
     if (Date.now() - startedAt > MAX_RUN_MS) {
+      console.log("[snap-batch] processed=" + processedThisBatch + " elapsedMs=" + (Date.now() - startedAt) + " avgPerSpeciesMs=" + Math.round((Date.now() - startedAt) / Math.max(1, processedThisBatch)));
       return {
         done, total, finished: false, timedOut: true, lastError, points, runId,
         upstreamDataMaxAt: upstreamMaxTs > 0 ? new Date(upstreamMaxTs).toISOString() : null,
@@ -1738,6 +1759,7 @@ async function runRefresh(
     }
   }
 
+  console.log("[snap-batch] processed=" + processedThisBatch + " elapsedMs=" + (Date.now() - startedAt) + " avgPerSpeciesMs=" + Math.round((Date.now() - startedAt) / Math.max(1, processedThisBatch)));
   return {
     done, total, finished: done >= total && !partial, timedOut: false, lastError, points, runId,
     upstreamDataMaxAt: upstreamMaxTs > 0 ? new Date(upstreamMaxTs).toISOString() : null,

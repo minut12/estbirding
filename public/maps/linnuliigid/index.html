@@ -351,6 +351,33 @@ function _log(msg) {
   } catch(e) {}
 }
 
+// ---- [NETTA-TRACE] diagnostic helper (additive logging only; NO behavior change) ----
+// Captures ordered (t, eluExtra, src, coords) snapshots at each points write/read site
+// to expose where eluExtra advances while p.t stays stale. Gated to Punanokk-vart unless
+// window.__nettaTraceAll === true. Dump with: copy(JSON.stringify(window.__NETTA_TRACE, null, 2)).
+var __nettaTrace = function(site, species, p){
+  try{
+    if(!window.__nettaTraceAll && species !== 'Punanokk-vart') return;
+    window.__NETTA_TRACE = window.__NETTA_TRACE || [];
+    var x = (p && p.eluExtra) ? p.eluExtra : {};
+    var entry = {
+      seq: window.__NETTA_TRACE.length,
+      ts: new Date().toISOString(),
+      site: site,
+      species: species,
+      t: p ? p.t : null,
+      src: p ? p.src : null,
+      eluLocality: x.locality != null ? x.locality : null,
+      eluCollectors: x.collectors != null ? x.collectors : null,
+      lat: p ? p.lat : null,
+      lon: p ? p.lon : null,
+      coords_source: p ? (p.coords_source || p.coordsSource) : null
+    };
+    window.__NETTA_TRACE.push(entry);
+    console.log('[NETTA-TRACE]', site, JSON.stringify(entry));
+  }catch(_e){}
+};
+
 // ---- GBIF polite client: max 3 concurrent + 429 backoff with jitter ----
 var __gbifInFlight = 0;
 var __gbifQueue = [];
@@ -3933,6 +3960,7 @@ function applyElurikkusExactCoords(species, detailHtml, detailUrl, newestIso, oc
       })
     );
   }
+  __nettaTrace('elu_exact_detail', species, p);
   if(_shouldDeferEeRefreshUi()){
     _logEeRefreshStage({
       view: (_getEeRefreshContext() && _getEeRefreshContext().view) || _getElurikkusRefreshView(),
@@ -5421,6 +5449,7 @@ function _applySelectedOccurrenceFromServer(speciesName, json){
       })
     );
   }
+  __nettaTrace('applySelectedOccurrence', speciesName, p);
   try{ save(); }catch(e){}
   try{ updateMarker(speciesName); }catch(e){}
   try{ render(); }catch(e){}
@@ -7507,6 +7536,7 @@ async function _loadElurikkusCacheFromSupabase(){
         behavior:        row.behavior         != null ? row.behavior         : null,
         collectors:      row.collectors       != null ? row.collectors       : null,
       };
+      __nettaTrace('cloud_merge', key, merged);
       points[key] = merged;
       if (key === 'Mustkael-pütt' || key === 'Kaldapääsuke') {
         console.log('[elu-load]', key, {
@@ -9014,6 +9044,7 @@ function escapeHtml(s){
 }
 function buildPopupHtml(key, p){
   const x = (p && p.eluExtra) ? p.eluExtra : {};
+  __nettaTrace('popup_read', key, p);
   const val = (v)=> (v===undefined || v===null || String(v).trim()==='') ? '-' : String(v).trim();
   const ind = val(x.individualCount ?? p.individualCount);
   const beh = val(x.behavior ?? p.behavior);

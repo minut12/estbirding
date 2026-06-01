@@ -1526,7 +1526,7 @@ async function runRefresh(
   const startIndex = Math.max(0, Math.min(total, Number(opts?.startIndex || 0)));
   const runId = opts?.runId || crypto.randomUUID();
   const startedAt = Date.now();
-  const MAX_RUN_MS = 60000;
+  const MAX_RUN_MS = 90000;
   const nowIso = () => new Date().toISOString();
 
   const { data: existingRow } = await supabase
@@ -1922,7 +1922,7 @@ Deno.serve(async (req) => {
       const force = body?.force === true;
       // Debug-only: filter rebuild to a single species by name
       const speciesFilter = typeof body?.species === "string" ? body.species : "";
-      const STALE_MS = 90000;
+      const STALE_MS = 20000;
       const nowMs = Date.now();
       const nowIso = new Date().toISOString();
       const runId = crypto.randomUUID();
@@ -2090,6 +2090,7 @@ Deno.serve(async (req) => {
           ...(isComplete ? { generated_at: finishedAt } : {}),
         });
         if (finalizeError) throw finalizeError;
+        if (isComplete) console.log("[snap-final] done=" + result.done + "/" + result.total + " generated_at=" + finishedAt);
 
         const responseBody = {
           status: finalStatus,

@@ -7385,6 +7385,7 @@ async function _applySnapshot(snap){
         );
       }
     }
+    __nettaTrace('apply_snapshot', key, snapPoint);
     // If device-local live data is newer than the snapshot, patch counts on top
     // — must not replace the point or overwrite positional fields.
     if(keepClientScan){
@@ -8940,6 +8941,7 @@ window.saveSpringEditModal = function(clearValue){
 };
 
 function updateMarker(key) {
+  __nettaTrace('update_marker', key, points[key]);
   const p = points[key];
   const prevMarker = markers.has(key) ? markers.get(key) : null;
   const clusterGroup = window.__markerClusterGroup || window.markerClusterGroup || null;

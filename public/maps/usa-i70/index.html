@@ -172,6 +172,12 @@
       background:#e2e8f0;color:#334155;font-size:10px;font-weight:700;
       border:1px solid #cbd5e1;line-height:1;
     }
+    .pin-count-badge{
+      display:inline-flex;align-items:center;gap:2px;
+      min-width:24px;height:18px;padding:0 6px;border-radius:999px;
+      background:#fef3c7;color:#92400e;font-size:10px;font-weight:700;
+      border:1px solid #fcd34d;line-height:1;
+    }
     .meta{ margin-top:4px; color:var(--muted); font-size:12px; line-height:1.35; }
     .pillMini{
       display:inline-block; padding:2px 7px;
@@ -2013,6 +2019,7 @@ window.__toggleEbirdPin = function(ebirdId){
     } catch(e){}
   }
   renderPinnedEbirdMarkers();
+  render();
   try {
     var existing = pinnedEbirdMarkers.get(ebirdId);
     if (existing) existing.openPopup();
@@ -2040,6 +2047,21 @@ function renderPinnedGbifMarkers(){
   } catch(e){ console.warn('[gbif-pin] render failed', e); }
 }
 
+function pinCountForSpecies(name){
+  var n = 0;
+  try {
+    if (typeof pinnedGbif !== 'undefined' && pinnedGbif.forEach){
+      pinnedGbif.forEach(function(p){ if (p && p.species === name) n++; });
+    }
+  } catch(e){}
+  try {
+    if (typeof pinnedEbird !== 'undefined' && pinnedEbird.forEach){
+      pinnedEbird.forEach(function(p){ if (p && p.species === name) n++; });
+    }
+  } catch(e){}
+  return n;
+}
+
 window.__toggleGbifPin = function(gbifId){
   gbifId = String(gbifId || '');
   if (!gbifId) return;
@@ -2064,6 +2086,7 @@ window.__toggleGbifPin = function(gbifId){
     } catch(e){}
   }
   renderPinnedGbifMarkers();
+  render();
   try {
     var existing = pinnedGbifMarkers.get(gbifId);
     if (existing) existing.openPopup();
@@ -2481,6 +2504,10 @@ function rowHTML(name){
         <div class="name-row">
           <div class="${nameCls}" title="Tap to hide/show marker">${displayName}</div>
           ${rarityText ? `<span class="rarity-badge" title="Haruldus">${rarityText}</span>` : ""}
+          ${(function(){
+            var pc = pinCountForSpecies(name);
+            return pc > 0 ? `<span class="pin-count-badge" title="Kinnitatud vaatlusi">📌 ${pc}</span>` : "";
+          })()}
         </div>
         <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
           ${hasMarker ? `<button class="btn secondary" data-open ${openDisabled}>Open</button>` : ""}
@@ -3405,6 +3432,7 @@ window.addEventListener("message", function(ev){
         });
       });
       renderPinnedGbifMarkers();
+      render();
       return;
     }
     if (t === "EBIRD_PINS_DEFAULTS" && Array.isArray(ev.data.pins)){
@@ -3425,6 +3453,7 @@ window.addEventListener("message", function(ev){
         });
       });
       renderPinnedEbirdMarkers();
+      render();
       return;
     }
     if (ev.origin !== window.location.origin) return;

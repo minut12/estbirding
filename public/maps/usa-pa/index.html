@@ -1630,6 +1630,19 @@ async function resolveGbifTaxonKey(species){
   return null;
 }
 
+// Resolve a species' avatar the SAME way the main species marker does:
+// cloud-saved meta.avatarUrl first, then the in-memory avatars object.
+function resolveSpeciesAvatar(species){
+  try {
+    var meta = (typeof getSpeciesMeta === 'function') ? getSpeciesMeta(species) : null;
+    if (meta && meta.avatarUrl && String(meta.avatarUrl).trim()) return meta.avatarUrl;
+  } catch(e){}
+  try {
+    if (typeof avatars !== 'undefined' && avatars[species]) return avatars[species];
+  } catch(e){}
+  return '';
+}
+
 function _gbifMiniIcon(avatarUrl, year){
   var currentYear = new Date().getFullYear();
   var age = currentYear - (year || currentYear);
@@ -1739,7 +1752,7 @@ async function toggleGbifData(species){
         allResults.push.apply(allResults, data.results || []);
       } catch(err){ console.warn('[GBIF] fetch year', yr, 'failed', err); }
     }
-    var avatarUrl = (window.getDisplayAvatar ? window.getDisplayAvatar(species) : ((typeof avatars !== 'undefined' && avatars[species]) || ''));
+    var avatarUrl = resolveSpeciesAvatar(species);
     var markerList = [];
     for (var i = 0; i < allResults.length; i++){
       var occ = allResults[i];
@@ -1897,7 +1910,7 @@ async function toggleEbird30Data(species){
       unique.push(o);
     }
     // Render
-    var avatarUrl = (window.getDisplayAvatar ? window.getDisplayAvatar(species) : ((typeof avatars !== 'undefined' && avatars[species]) || ''));
+    var avatarUrl = resolveSpeciesAvatar(species);
     var markerList = [];
     var dates = [];
     for (var n = 0; n < unique.length; n++){
@@ -1937,7 +1950,7 @@ function renderPinnedEbirdMarkers(){
     pinnedEbird.forEach(function(pin, eid){
       if (!Number.isFinite(pin.lat) || !Number.isFinite(pin.lon)) return;
       var daysAgo = pin.obsDate ? _daysAgo(pin.obsDate) : 99;
-      var avatarUrl = (window.getDisplayAvatar ? window.getDisplayAvatar(pin.species) : ((typeof avatars !== 'undefined' && avatars[pin.species]) || ''));
+      var avatarUrl = resolveSpeciesAvatar(pin.species);
       var icon = _ebird30MiniIcon(avatarUrl, daysAgo);
       // Synthesize an obs-shape object for popup rendering
       var obsLike = {
@@ -2019,7 +2032,7 @@ function renderPinnedGbifMarkers(){
     pinnedGbif.forEach(function(pin, gbifId){
       if (!Number.isFinite(pin.lat) || !Number.isFinite(pin.lon)) return;
       var year = pin.date ? parseInt(String(pin.date).slice(0,4), 10) : null;
-      var avatarUrl = (window.getDisplayAvatar ? window.getDisplayAvatar(pin.species) : ((typeof avatars !== 'undefined' && avatars[pin.species]) || ''));
+      var avatarUrl = resolveSpeciesAvatar(pin.species);
       var icon = _gbifMiniIcon(avatarUrl, year);
       var occLike = { key: gbifId, decimalLatitude: pin.lat, decimalLongitude: pin.lon, eventDate: pin.date, year: year };
       __gbifOccById[gbifId] = { species: pin.species, lat: pin.lat, lon: pin.lon, date: pin.date };

@@ -565,9 +565,28 @@ function gasCostUSD(oneWayKm){
   return gallons * GAS_PRICE_PER_GALLON;
 }
 
-function formatDistanceBlock(route, stayName){
+// Build a Google Maps TRANSIT directions deep-link from the relevant stay to a marker.
+function transitDirectionsUrl(lat, lon){
+  var stay = (typeof refStayFor === 'function') ? refStayFor(lat, lon) : (Array.isArray(STAY_LOCATIONS) ? STAY_LOCATIONS[0] : null);
+  if (!stay) return '';
+  return 'https://www.google.com/maps/dir/?api=1'
+    + '&origin=' + stay.lat + ',' + stay.lon
+    + '&destination=' + lat + ',' + lon
+    + '&travelmode=transit';
+}
+
+function formatDistanceBlock(route, stayName, lat, lon){
+  var transitUrl = transitDirectionsUrl(lat, lon);
+  var transitLink = transitUrl
+    ? '<div style="margin-top:4px"><a href="' + transitUrl + '" target="_blank" rel="noopener" '
+      + 'style="font-size:11px;color:#2563eb;text-decoration:none">🚌 Ühistransport (Google Maps)</a></div>'
+    : '';
+
   if (!route){
-    return '<div style="margin-top:6px;font-size:11px;color:#94a3b8">Teekonna info pole saadaval</div>';
+    return '<div style="margin-top:8px;padding-top:6px;border-top:1px solid #e2e8f0;font-size:11px;color:#475569">'
+      + '<div style="color:#94a3b8">Teekonna info pole saadaval</div>'
+      + transitLink
+      + '</div>';
   }
   var oneWayKm = route.km;
   var oneWayMi = oneWayKm * 0.621371;
@@ -582,6 +601,7 @@ function formatDistanceBlock(route, stayName){
     + '<div><b>' + _escapeHtmlGbif(stayName) + '</b> →</div>'
     + '<div>Sõit: ' + oneWayKm.toFixed(1) + ' km (' + oneWayMi.toFixed(1) + ' mi), ~' + timeStr + ' (üks suund)</div>'
     + '<div>Kütus (' + tripLabel + ', ' + totalKm.toFixed(0) + ' km): ~$' + cost.toFixed(2) + '</div>'
+    + transitLink
     + '</div>';
 }
 
@@ -600,7 +620,7 @@ function attachDistanceInfo(marker, lat, lon){
       if (!stay){ holder.innerHTML = ''; holder.setAttribute('data-loaded','1'); return; }
       holder.innerHTML = '<div style="margin-top:6px;font-size:11px;color:#94a3b8">Arvutan teekonda…</div>';
       fetchDrivingRoute(stay.lat, stay.lon, lat, lon).then(function(route){
-        holder.innerHTML = formatDistanceBlock(route, stay.name);
+        holder.innerHTML = formatDistanceBlock(route, stay.name, lat, lon);
         holder.setAttribute('data-loaded','1');
       });
     } catch(e){ console.warn('[route] attach failed', e); }

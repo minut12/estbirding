@@ -490,6 +490,109 @@ const STAY_LOCATIONS = [
   },
 ];
 
+/* ========= Driving distance + gas cost (OSRM) ========= */
+// === Gas cost assumptions (editable) ===
+var GAS_PRICE_PER_GALLON = 3.30;  // USD per US gallon (US avg ~mid 2026; adjust to current)
+var CAR_MPG = 28;                 // miles per US gallon (adjust to your rental/car)
+var ROUND_TRIP = true;            // cost & distance shown for there-and-back
+
+function _haversineKm(lat1, lon1, lat2, lon2){
+  var R = 6371;
+  var dLat = (lat2-lat1) * Math.PI/180;
+  var dLon = (lon2-lon1) * Math.PI/180;
+  var a = Math.sin(dLat/2)*Math.sin(dLat/2)
+    + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// Returns the stay location to measure FROM, given a target marker's coords.
+function refStayFor(lat, lon){
+  if (!Array.isArray(STAY_LOCATIONS) || !STAY_LOCATIONS.length) return null;
+  if (STAY_LOCATIONS.length === 1) return STAY_LOCATIONS[0];
+  // Multiple stays (i70): pick the geographically nearest by straight-line.
+  var best = null, bestD = Infinity;
+  for (var i = 0; i < STAY_LOCATIONS.length; i++){
+    var s = STAY_LOCATIONS[i];
+    var d = _haversineKm(lat, lon, s.lat, s.lon);
+    if (d < bestD){ bestD = d; best = s; }
+  }
+  return best;
+}
+
+// Cache: "lat,lon@@stayLat,stayLon" -> { km, min } (one-way driving)
+var __routeCache = {};
+
+async function fetchDrivingRoute(fromLat, fromLon, toLat, toLon){
+  var key = toLat.toFixed(5) + ',' + toLon.toFixed(5) + '@@' + fromLat.toFixed(5) + ',' + fromLon.toFixed(5);
+  if (__routeCache[key]) return __routeCache[key];
+  try {
+    // OSRM expects lon,lat order; coordinates are stay -> marker.
+    var url = 'https://router.project-osrm.org/route/v1/driving/'
+      + fromLon + ',' + fromLat + ';' + toLon + ',' + toLat
+      + '?overview=false';
+    var res = await fetch(url);
+    if (!res.ok) throw new Error('OSRM HTTP ' + res.status);
+    var data = await res.json();
+    var route = data && data.routes && data.routes[0];
+    if (!route) throw new Error('no route');
+    var out = { km: route.distance / 1000, min: route.duration / 60 };
+    __routeCache[key] = out;
+    return out;
+  } catch(e){
+    console.warn('[route] OSRM failed', e);
+    return null;
+  }
+}
+
+function gasCostUSD(oneWayKm){
+  var totalKm = ROUND_TRIP ? oneWayKm * 2 : oneWayKm;
+  var miles = totalKm * 0.621371;
+  var gallons = miles / CAR_MPG;
+  return gallons * GAS_PRICE_PER_GALLON;
+}
+
+function formatDistanceBlock(route, stayName){
+  if (!route){
+    return '<div style="margin-top:6px;font-size:11px;color:#94a3b8">Teekonna info pole saadaval</div>';
+  }
+  var oneWayKm = route.km;
+  var oneWayMi = oneWayKm * 0.621371;
+  var totalKm = ROUND_TRIP ? oneWayKm * 2 : oneWayKm;
+  var min = route.min;
+  var hrs = Math.floor(min / 60);
+  var mins = Math.round(min % 60);
+  var timeStr = (hrs > 0 ? hrs + 'h ' : '') + mins + 'min';
+  var cost = gasCostUSD(oneWayKm);
+  var tripLabel = ROUND_TRIP ? 'edasi-tagasi' : 'ühe suuna';
+  return '<div style="margin-top:8px;padding-top:6px;border-top:1px solid #e2e8f0;font-size:11px;color:#475569">'
+    + '<div><b>' + _escapeHtmlGbif(stayName) + '</b> →</div>'
+    + '<div>Sõit: ' + oneWayKm.toFixed(1) + ' km (' + oneWayMi.toFixed(1) + ' mi), ~' + timeStr + ' (üks suund)</div>'
+    + '<div>Kütus (' + tripLabel + ', ' + totalKm.toFixed(0) + ' km): ~$' + cost.toFixed(2) + '</div>'
+    + '</div>';
+}
+
+// Attach lazy distance/cost computation to a marker. Computes on first popupopen.
+function attachDistanceInfo(marker, lat, lon){
+  if (!marker || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
+  marker.on('popupopen', function(){
+    try {
+      var popup = marker.getPopup();
+      if (!popup) return;
+      var el = popup.getElement && popup.getElement();
+      if (!el) return;
+      var holder = el.querySelector('.dist-info-holder');
+      if (!holder || holder.getAttribute('data-loaded') === '1') return;
+      var stay = refStayFor(lat, lon);
+      if (!stay){ holder.innerHTML = ''; holder.setAttribute('data-loaded','1'); return; }
+      holder.innerHTML = '<div style="margin-top:6px;font-size:11px;color:#94a3b8">Arvutan teekonda…</div>';
+      fetchDrivingRoute(stay.lat, stay.lon, lat, lon).then(function(route){
+        holder.innerHTML = formatDistanceBlock(route, stay.name);
+        holder.setAttribute('data-loaded','1');
+      });
+    } catch(e){ console.warn('[route] attach failed', e); }
+  });
+}
+
 /* ========= Storage keys ========= */
 const LS_AVATARS = "bm_usa_co_avatars";
 const LS_CODES   = "bm_usa_co_ebird_codes";
@@ -1704,6 +1807,7 @@ function buildGbifPopup(species, occ){
     + pinBtnHtml
     + '</div>'
     + '<div style="margin-top:4px"><small style="color:#6366f1">GBIF</small></div>'
+    + '<div class="dist-info-holder"></div>'
     + '</div>';
 }
 
@@ -1763,6 +1867,7 @@ async function toggleGbifData(species){
       var icon = _gbifMiniIcon(avatarUrl, occ.year);
       var m = L.marker([lat, lon], { icon: icon });
       m.bindPopup(buildGbifPopup(species, occ));
+      attachDistanceInfo(m, lat, lon);
       m.addTo(map);
       markerList.push(m);
     }
@@ -1848,6 +1953,7 @@ function buildEbird30Popup(species, obs){
     + pinBtnHtml
     + '</div>'
     + '<div style="margin-top:4px"><small style="color:#ea580c">eBird 30d</small></div>'
+    + '<div class="dist-info-holder"></div>'
     + '</div>';
 }
 
@@ -1923,6 +2029,7 @@ async function toggleEbird30Data(species){
       var icon = _ebird30MiniIcon(avatarUrl, daysAgo);
       var m = L.marker([lat, lon], { icon: icon });
       m.bindPopup(buildEbird30Popup(species, obs));
+      attachDistanceInfo(m, lat, lon);
       m.addTo(map);
       markerList.push(m);
       dates.push(obs.obsDt);
@@ -1975,6 +2082,7 @@ function renderPinnedEbirdMarkers(){
       var m = L.marker([pin.lat, pin.lon], { icon: icon });
       m.__trueLatLng = [pin.lat, pin.lon];
       m.bindPopup(buildEbird30Popup(pin.species, obsLike));
+      attachDistanceInfo(m, pin.lat, pin.lon);
       m.addTo(map);
       pinnedEbirdMarkers.set(eid, m);
     });
@@ -2039,6 +2147,7 @@ function renderPinnedGbifMarkers(){
       var m = L.marker([pin.lat, pin.lon], { icon: icon });
       m.__trueLatLng = [pin.lat, pin.lon];
       m.bindPopup(buildGbifPopup(pin.species, occLike));
+      attachDistanceInfo(m, pin.lat, pin.lon);
       m.addTo(map);
       pinnedGbifMarkers.set(gbifId, m);
     });
@@ -2322,8 +2431,9 @@ function updateMarker(species){
       const markerKey = species + "@@" + rg;
       const popupName = window.normalizeUiText ? window.normalizeUiText(species) : species;
       const m = L.marker([d.lat, d.lon], { icon }).addTo(map)
-        .bindPopup(`<b>${popupName}</b>${when}${where}${srcLn}${occLn}${howManyLn}${migr}${rarLn}`);
+        .bindPopup(`<b>${popupName}</b>${when}${where}${srcLn}${occLn}${howManyLn}${migr}${rarLn}<div class="dist-info-holder"></div>`);
       m.__trueLatLng = [d.lat, d.lon];
+      attachDistanceInfo(m, d.lat, d.lon);
       markers.set(markerKey, m);
 
       if (rg === latestRegion) latestMarker = m;
@@ -2350,8 +2460,9 @@ function updateMarker(species){
 
       const popupName = window.normalizeUiText ? window.normalizeUiText(species) : species;
       const m = L.marker([best.lat, best.lon], { icon }).addTo(map)
-        .bindPopup(`<b>${popupName}</b>${when}${where}${srcLn}${occLn}${howManyLn}${migr}${rarLn}`);
+        .bindPopup(`<b>${popupName}</b>${when}${where}${srcLn}${occLn}${howManyLn}${migr}${rarLn}<div class="dist-info-holder"></div>`);
       m.__trueLatLng = [best.lat, best.lon];
+      attachDistanceInfo(m, best.lat, best.lon);
       latestMarker = m;
       markers.set(species + "@@" + best.rg, m);
     }

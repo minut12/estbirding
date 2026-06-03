@@ -551,6 +551,23 @@ function gasCostUSD(oneWayKm){
   return gallons * GAS_PRICE_PER_GALLON;
 }
 
+// Open an external URL from the TOP browsing context to avoid COOP/sandbox
+// failures (Firefox NS_ERROR_DOM_COOP_FAILED) when opening from inside the iframe.
+window.__openExternal = function(url){
+  if (!url) return;
+  try {
+    var w = (window.top || window);
+    var opened = w.open(url, '_blank', 'noopener,noreferrer');
+    if (!opened) {
+      // Popup blocked or open() returned null — fall back to top-level navigation.
+      try { (window.top || window).location.href = url; } catch(e){ window.location.href = url; }
+    }
+  } catch(e){
+    // Cross-origin top access denied or other failure — last-resort same-context open.
+    try { window.open(url, '_blank', 'noopener,noreferrer'); } catch(e2){ window.location.href = url; }
+  }
+};
+
 // Build a Google Maps TRANSIT directions deep-link from the relevant stay to a marker.
 function transitDirectionsUrl(lat, lon){
   var stay = (typeof refStayFor === 'function') ? refStayFor(lat, lon) : (Array.isArray(STAY_LOCATIONS) ? STAY_LOCATIONS[0] : null);
@@ -564,8 +581,8 @@ function transitDirectionsUrl(lat, lon){
 function formatDistanceBlock(route, stayName, lat, lon){
   var transitUrl = transitDirectionsUrl(lat, lon);
   var transitLink = transitUrl
-    ? '<div style="margin-top:4px"><a href="' + transitUrl + '" target="_blank" rel="noopener" '
-      + 'style="font-size:11px;color:#2563eb;text-decoration:none">🚌 Ühistransport (Google Maps)</a></div>'
+    ? '<div style="margin-top:4px"><a href="#" onclick="window.__openExternal(\'' + transitUrl.replace(/'/g, "\\'") + '\');return false;" '
+      + 'style="font-size:11px;color:#2563eb;text-decoration:none;cursor:pointer">🚌 Ühistransport (Google Maps)</a></div>'
     : '';
 
   if (!route){
@@ -1822,8 +1839,8 @@ function buildGbifPopup(species, occ){
     + '<br><small>Koordinaadid: ' + coords + '</small>'
     + warningLine
     + '<br><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'
-    + '<a href="' + wazeUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Waze</a>'
-    + '<a href="' + mapsUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Maps</a>'
+    + '<a href="#" onclick="window.__openExternal(\'' + wazeUrl.replace(/'/g, "\\'") + '\');return false;" style="' + btnStyle + ';cursor:pointer">Waze</a>'
+    + '<a href="#" onclick="window.__openExternal(\'' + mapsUrl.replace(/'/g, "\\'") + '\');return false;" style="' + btnStyle + ';cursor:pointer">Maps</a>'
     + pinBtnHtml
     + '</div>'
     + '<div style="margin-top:4px"><small style="color:#6366f1">GBIF</small></div>'
@@ -1967,9 +1984,9 @@ function buildEbird30Popup(species, obs){
     + '<br><small>Arv: ' + _escapeHtmlGbif(count) + '</small>'
     + '<br><small>Koordinaadid: ' + coords + '</small>'
     + '<br><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'
-    + (checklistUrl ? '<a href="' + checklistUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Vaatlusleht</a>' : '')
-    + '<a href="' + wazeUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Waze</a>'
-    + '<a href="' + mapsUrl + '" target="_blank" rel="noopener" style="' + btnStyle + '">Maps</a>'
+    + (checklistUrl ? '<a href="#" onclick="window.__openExternal(\'' + checklistUrl.replace(/'/g, "\\'") + '\');return false;" style="' + btnStyle + ';cursor:pointer">Vaatlusleht</a>' : '')
+    + '<a href="#" onclick="window.__openExternal(\'' + wazeUrl.replace(/'/g, "\\'") + '\');return false;" style="' + btnStyle + ';cursor:pointer">Waze</a>'
+    + '<a href="#" onclick="window.__openExternal(\'' + mapsUrl.replace(/'/g, "\\'") + '\');return false;" style="' + btnStyle + ';cursor:pointer">Maps</a>'
     + pinBtnHtml
     + '</div>'
     + '<div style="margin-top:4px"><small style="color:#ea580c">eBird 30d</small></div>'

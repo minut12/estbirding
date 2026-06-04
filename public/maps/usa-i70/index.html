@@ -703,8 +703,21 @@ function formatDistanceBlock(route, stayName, lat, lon, stay){
     + '</div>';
 }
 
+// Per-route popup config. The travel/cost estimate block belongs only to the
+// single-stay Colorado planning view (usa-co); the multi-state I-70 corridor
+// map omits it. formatDistanceBlock() stays intact and is still used by usa-co.
+var ROUTE_ID = 'usa-i70';
+var ROUTE_CONFIG = {
+  'usa-i70': { showTravelEstimates: false },
+};
+function showTravelEstimates(){
+  var cfg = ROUTE_CONFIG[ROUTE_ID];
+  return cfg ? cfg.showTravelEstimates !== false : true;
+}
+
 // Attach lazy distance/cost computation to a marker. Computes on first popupopen.
 function attachDistanceInfo(marker, lat, lon){
+  if (!showTravelEstimates()) return; // I-70 corridor: no travel/cost block in popups
   if (!marker || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
   marker.on('popupopen', function(){
     try {

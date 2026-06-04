@@ -496,6 +496,24 @@ var GAS_PRICE_PER_GALLON = 3.30;  // USD per US gallon (US avg ~mid 2026; adjust
 var CAR_MPG = 28;                 // miles per US gallon (adjust to your rental/car)
 var ROUND_TRIP = true;            // cost & distance shown for there-and-back
 
+// === Ride-hail cost assumptions (editable). Estimates only — not live prices. ===
+var RIDE_ROUND_TRIP = true;     // show round-trip (two separate rides)
+var RIDE_RANGE_SPREAD = 0.18;   // ±18% low/high band around the point estimate (surge/variation)
+
+// Local taxi profile
+var TAXI_BOOKING_FEE = 0.00;    // USD dispatch/booking fee
+var TAXI_BASE_FARE  = 3.00;     // USD flag drop
+var TAXI_PER_MILE   = 2.80;     // USD per mile
+var TAXI_PER_MIN    = 0.40;     // USD per minute (waiting/slow traffic)
+var TAXI_MIN_FARE   = 8.00;     // USD minimum per ride
+
+// Uber profile (UberX-ish)
+var UBER_BOOKING_FEE = 2.50;    // USD booking fee
+var UBER_BASE_FARE  = 1.50;     // USD base
+var UBER_PER_MILE   = 1.40;     // USD per mile
+var UBER_PER_MIN    = 0.30;     // USD per minute
+var UBER_MIN_FARE   = 7.00;     // USD minimum per ride
+
 function _haversineKm(lat1, lon1, lat2, lon2){
   var R = 6371;
   var dLat = (lat2-lat1) * Math.PI/180;
@@ -551,6 +569,38 @@ function gasCostUSD(oneWayKm){
   return gallons * GAS_PRICE_PER_GALLON;
 }
 
+// One-way point estimate for a single ride, given one-way km + minutes.
+function _rideOneWay(profile, oneWayKm, oneWayMin){
+  var miles = oneWayKm * 0.621371;
+  var fare = profile.booking + profile.base + (profile.perMile * miles) + (profile.perMin * oneWayMin);
+  return Math.max(fare, profile.minFare);
+}
+
+// Returns { low, high } for the trip (round-trip = two one-way rides).
+function rideEstimate(profile, oneWayKm, oneWayMin){
+  var oneWay = _rideOneWay(profile, oneWayKm, oneWayMin);
+  var trip = RIDE_ROUND_TRIP ? oneWay * 2 : oneWay;
+  return {
+    low:  trip * (1 - RIDE_RANGE_SPREAD),
+    high: trip * (1 + RIDE_RANGE_SPREAD)
+  };
+}
+
+var TAXI_PROFILE = { booking: 0, base: 0, perMile: 0, perMin: 0, minFare: 0 };
+var UBER_PROFILE = { booking: 0, base: 0, perMile: 0, perMin: 0, minFare: 0 };
+function _initRideProfiles(){
+  TAXI_PROFILE = { booking: TAXI_BOOKING_FEE, base: TAXI_BASE_FARE, perMile: TAXI_PER_MILE, perMin: TAXI_PER_MIN, minFare: TAXI_MIN_FARE };
+  UBER_PROFILE = { booking: UBER_BOOKING_FEE, base: UBER_BASE_FARE, perMile: UBER_PER_MILE, perMin: UBER_PER_MIN, minFare: UBER_MIN_FARE };
+}
+_initRideProfiles();
+
+// Uber universal booking link (pickup + dropoff pre-filled; live price shown in Uber).
+function uberBookingUrl(fromLat, fromLon, toLat, toLon){
+  return 'https://m.uber.com/ul/?action=setPickup'
+    + '&pickup[latitude]=' + fromLat + '&pickup[longitude]=' + fromLon
+    + '&dropoff[latitude]=' + toLat + '&dropoff[longitude]=' + toLon;
+}
+
 // Open an external URL in a NEW TAB, initiated from the TOP (non-sandboxed)
 // document to avoid COOP failures from the sandboxed iframe. Never navigates
 // the app frame (no location assignment anywhere).
@@ -594,7 +644,7 @@ function transitDirectionsUrl(lat, lon){
     + '&travelmode=transit';
 }
 
-function formatDistanceBlock(route, stayName, lat, lon){
+function formatDistanceBlock(route, stayName, lat, lon, stay){
   var transitUrl = transitDirectionsUrl(lat, lon);
   var transitLink = transitUrl
     ? '<div style="margin-top:4px"><a href="#" onclick="window.__openExternal(\'' + transitUrl.replace(/'/g, "\\'") + '\');return false;" '
@@ -616,10 +666,25 @@ function formatDistanceBlock(route, stayName, lat, lon){
   var timeStr = (hrs > 0 ? hrs + 'h ' : '') + mins + 'min';
   var cost = gasCostUSD(oneWayKm);
   var tripLabel = ROUND_TRIP ? 'edasi-tagasi' : 'ühe suuna';
+  var rideHtml = '';
+  if (route){
+    var taxi = rideEstimate(TAXI_PROFILE, route.km, route.min);
+    var uber = rideEstimate(UBER_PROFILE, route.km, route.min);
+    var tripWord = RIDE_ROUND_TRIP ? 'edasi-tagasi' : 'üks suund';
+    var uburl = (stay ? uberBookingUrl(stay.lat, stay.lon, lat, lon) : '');
+    var uberLink = uburl
+      ? ' <a href="#" onclick="window.__openExternal(\'' + uburl.replace(/'/g, "\\'") + '\');return false;" style="color:#000;text-decoration:underline;cursor:pointer">telli</a>'
+      : '';
+    rideHtml =
+        '<div style="margin-top:4px">Takso (' + tripWord + ', hinnang): ~$' + taxi.low.toFixed(0) + '–$' + taxi.high.toFixed(0) + '</div>'
+      + '<div>Uber (' + tripWord + ', hinnang): ~$' + uber.low.toFixed(0) + '–$' + uber.high.toFixed(0) + uberLink + '</div>'
+      + '<div style="color:#94a3b8;font-size:10px;margin-top:2px">Hinnangulised hinnad, ilma reaalajas surge\'ita</div>';
+  }
   return '<div style="margin-top:8px;padding-top:6px;border-top:1px solid #e2e8f0;font-size:11px;color:#475569">'
     + '<div><b>' + _escapeHtmlGbif(stayName) + '</b> →</div>'
     + '<div>Sõit: ' + oneWayKm.toFixed(1) + ' km (' + oneWayMi.toFixed(1) + ' mi), ~' + timeStr + ' (üks suund)</div>'
     + '<div>Kütus (' + tripLabel + ', ' + totalKm.toFixed(0) + ' km): ~$' + cost.toFixed(2) + '</div>'
+    + rideHtml
     + transitLink
     + '</div>';
 }
@@ -639,7 +704,7 @@ function attachDistanceInfo(marker, lat, lon){
       if (!stay){ holder.innerHTML = ''; holder.setAttribute('data-loaded','1'); return; }
       holder.innerHTML = '<div style="margin-top:6px;font-size:11px;color:#94a3b8">Arvutan teekonda…</div>';
       fetchDrivingRoute(stay.lat, stay.lon, lat, lon).then(function(route){
-        holder.innerHTML = formatDistanceBlock(route, stay.name, lat, lon);
+        holder.innerHTML = formatDistanceBlock(route, stay.name, lat, lon, stay);
         holder.setAttribute('data-loaded','1');
       });
     } catch(e){ console.warn('[route] attach failed', e); }

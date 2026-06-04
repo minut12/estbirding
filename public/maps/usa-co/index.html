@@ -514,6 +514,10 @@ var UBER_PER_MILE   = 1.40;     // USD per mile
 var UBER_PER_MIN    = 0.30;     // USD per minute
 var UBER_MIN_FARE   = 7.00;     // USD minimum per ride
 
+// Taxi/Uber rides start here (Mountain Metro Voyager Transfer Center), not the stay,
+// modeling: bus to the transfer center, then ride-hail the last leg.
+var RIDE_ORIGIN = { name: 'Voyager Transfer Center', lat: 38.950443, lon: -104.801376 };
+
 function _haversineKm(lat1, lon1, lat2, lon2){
   var R = 6371;
   var dLat = (lat2-lat1) * Math.PI/180;
@@ -666,20 +670,12 @@ function formatDistanceBlock(route, stayName, lat, lon, stay){
   var timeStr = (hrs > 0 ? hrs + 'h ' : '') + mins + 'min';
   var cost = gasCostUSD(oneWayKm);
   var tripLabel = ROUND_TRIP ? 'edasi-tagasi' : 'ühe suuna';
-  var rideHtml = '';
-  if (route){
-    var taxi = rideEstimate(TAXI_PROFILE, route.km, route.min);
-    var uber = rideEstimate(UBER_PROFILE, route.km, route.min);
-    var tripWord = RIDE_ROUND_TRIP ? 'edasi-tagasi' : 'üks suund';
-    var uburl = (stay ? uberBookingUrl(stay.lat, stay.lon, lat, lon) : '');
-    var uberLink = uburl
-      ? ' <a href="#" onclick="window.__openExternal(\'' + uburl.replace(/'/g, "\\'") + '\');return false;" style="color:#000;text-decoration:underline;cursor:pointer">telli</a>'
-      : '';
-    rideHtml =
-        '<div style="margin-top:4px">Takso (' + tripWord + ', hinnang): ~$' + taxi.low.toFixed(0) + '–$' + taxi.high.toFixed(0) + '</div>'
-      + '<div>Uber (' + tripWord + ', hinnang): ~$' + uber.low.toFixed(0) + '–$' + uber.high.toFixed(0) + uberLink + '</div>'
-      + '<div style="color:#94a3b8;font-size:10px;margin-top:2px">Hinnangulised hinnad, ilma reaalajas surge\'ita</div>';
-  }
+  // Ride leg (taxi/Uber) starts from RIDE_ORIGIN (Voyager Transfer Center), not the
+  // stay — it needs its own Voyager→marker route, fetched async into this holder.
+  var rideHtml = route
+    ? '<div class="ride-info-holder" data-rlat="' + lat + '" data-rlon="' + lon + '">'
+      + '<div style="color:#94a3b8">Takso/Uber: arvutan…</div></div>'
+    : '';
   return '<div style="margin-top:8px;padding-top:6px;border-top:1px solid #e2e8f0;font-size:11px;color:#475569">'
     + '<div><b>' + _escapeHtmlGbif(stayName) + '</b> →</div>'
     + '<div>Sõit: ' + oneWayKm.toFixed(1) + ' km (' + oneWayMi.toFixed(1) + ' mi), ~' + timeStr + ' (üks suund)</div>'
@@ -687,6 +683,31 @@ function formatDistanceBlock(route, stayName, lat, lon, stay){
     + rideHtml
     + transitLink
     + '</div>';
+}
+
+// Fill the taxi/Uber estimate from RIDE_ORIGIN (Voyager Transfer Center) → marker,
+// fetching its own OSRM route (cached). CO-only multimodal: bus to transfer center, then ride.
+function fillRideEstimate(holderEl, toLat, toLon){
+  if (!holderEl) return;
+  var origin = RIDE_ORIGIN;
+  fetchDrivingRoute(origin.lat, origin.lon, toLat, toLon).then(function(rr){
+    if (!rr){
+      holderEl.innerHTML = '<div style="color:#94a3b8">Takso/Uber hinnang pole saadaval</div>';
+      return;
+    }
+    var taxi = rideEstimate(TAXI_PROFILE, rr.km, rr.min);
+    var uber = rideEstimate(UBER_PROFILE, rr.km, rr.min);
+    var tripWord = RIDE_ROUND_TRIP ? 'edasi-tagasi' : 'üks suund';
+    var uburl = uberBookingUrl(origin.lat, origin.lon, toLat, toLon);
+    var uberLink = uburl
+      ? ' <a href="#" onclick="window.__openExternal(\'' + uburl.replace(/'/g, "\\'") + '\');return false;" style="color:#000;text-decoration:underline;cursor:pointer">telli</a>'
+      : '';
+    holderEl.innerHTML =
+        '<div style="margin-top:4px"><b>' + _escapeHtmlGbif(origin.name) + '</b> → (takso/Uber lähtekoht)</div>'
+      + '<div>Takso (' + tripWord + ', hinnang): ~$' + taxi.low.toFixed(0) + '–$' + taxi.high.toFixed(0) + '</div>'
+      + '<div>Uber (' + tripWord + ', hinnang): ~$' + uber.low.toFixed(0) + '–$' + uber.high.toFixed(0) + uberLink + '</div>'
+      + '<div style="color:#94a3b8;font-size:10px;margin-top:2px">Hinnangulised hinnad, ilma reaalajas surge\'ita</div>';
+  });
 }
 
 // Attach lazy distance/cost computation to a marker. Computes on first popupopen.
@@ -706,6 +727,13 @@ function attachDistanceInfo(marker, lat, lon){
       fetchDrivingRoute(stay.lat, stay.lon, lat, lon).then(function(route){
         holder.innerHTML = formatDistanceBlock(route, stay.name, lat, lon, stay);
         holder.setAttribute('data-loaded','1');
+        // CO-only: fill the taxi/Uber leg from the Voyager transfer center.
+        try {
+          var rideHolder = holder.querySelector('.ride-info-holder');
+          if (rideHolder && typeof fillRideEstimate === 'function'){
+            fillRideEstimate(rideHolder, Number(rideHolder.getAttribute('data-rlat')), Number(rideHolder.getAttribute('data-rlon')));
+          }
+        } catch(e){ console.warn('[ride] fill failed', e); }
       });
     } catch(e){ console.warn('[route] attach failed', e); }
   });

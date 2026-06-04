@@ -1029,7 +1029,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
             src={iframeSrc}
             title={current.name}
             className="absolute inset-0 w-full h-full border-0 block"
-            sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+            sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms"
             onLoad={handleLoad}
             onError={handleError}
           />

@@ -95,6 +95,7 @@
   .poi-pop a { color: #16a34a; }
   .poi-pop .pop-actions { display: flex; gap: 6px; margin-top: 8px; }
   .poi-pop .pop-actions button { flex: 1; border: 1px solid rgba(0,0,0,0.15); background: #fff; border-radius: 6px; padding: 5px; font-size: 12px; cursor: pointer; }
+  .confirm-armed { background: #dc2626 !important; color: #fff !important; border-color: #dc2626 !important; }
   .poi-pop .pop-links { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
 </style>
 </head>
@@ -167,8 +168,10 @@
   var saveTimer = null;
 
   /* ========= Map ========= */
+  // Initial view focused on the Colorado stay (Peyton). Only the INITIAL view —
+  // MAP_SHOWN / MAP_PING never re-center, so panning is preserved across tab switches.
   var map = L.map('map', { zoomControl: true, attributionControl: true })
-    .setView([39.0, -105.5], 7);
+    .setView([38.9359677, -104.6181762], 11);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -265,10 +268,10 @@
     if (it.notes) html += '<div class="notes">' + esc(it.notes) + '</div>';
     html += '<div class="pop-links">';
     if (it.url){
-      html += '<a href="' + esc(it.url) + '" target="_blank" rel="noopener">Ava link ↗</a>';
+      html += '<a href="' + esc(it.url) + '" target="_blank" rel="noopener noreferrer">Ava link ↗</a>';
     }
     var gm = 'https://www.google.com/maps?q=' + encodeURIComponent(it.lat + ',' + it.lon);
-    html += '<a href="' + gm + '" target="_blank" rel="noopener">Google Maps ↗</a>';
+    html += '<a href="' + gm + '" target="_blank" rel="noopener noreferrer">Google Maps ↗</a>';
     html += '</div>';
     html += '<div class="pop-actions">';
     html += '<button data-act="edit" data-id="' + esc(it.id) + '">Muuda</button>';
@@ -287,8 +290,8 @@
       node.querySelectorAll('button[data-act]').forEach(function(b){
         b.addEventListener('click', function(){
           var id = b.getAttribute('data-id');
-          if (b.getAttribute('data-act') === 'edit') openEditForm(id);
-          else deleteItem(id);
+          if (b.getAttribute('data-act') === 'edit'){ openEditForm(id); return; }
+          armOrConfirmDelete(b, function(){ performDelete(id); });
         });
       });
     });
@@ -325,14 +328,43 @@
     for (var i=0;i<items.length;i++){ if (items[i].id === id) return items[i]; }
     return null;
   }
-  function deleteItem(id){
+  // Actual removal — no modal. confirm() is blocked in the sandboxed iframe
+  // (no allow-modals), so deletion is gated by a two-step button instead.
+  function performDelete(id){
     var it = findItem(id);
     if (!it) return;
-    if (!window.confirm('Kustuta "' + (it.name || 'märk') + '"?')) return;
     items = items.filter(function(x){ return x.id !== id; });
     removeMarkerFromMap(id);
     scheduleSave();
     closeForm();
+  }
+  // Two-step confirm on a button: first click arms it ("Kinnita kustutamine?")
+  // for 4 s; a second click within that window calls onConfirm. Auto-reverts.
+  function armOrConfirmDelete(btn, onConfirm){
+    if (btn.__armed){
+      if (btn.__revertTid){ clearTimeout(btn.__revertTid); btn.__revertTid = null; }
+      btn.__armed = false;
+      btn.textContent = 'Kustuta';
+      btn.classList.remove('confirm-armed');
+      onConfirm();
+      return;
+    }
+    btn.__armed = true;
+    btn.textContent = 'Kinnita kustutamine?';
+    btn.classList.add('confirm-armed');
+    btn.__revertTid = setTimeout(function(){
+      btn.__armed = false;
+      btn.textContent = 'Kustuta';
+      btn.classList.remove('confirm-armed');
+      btn.__revertTid = null;
+    }, 4000);
+  }
+  function resetDeleteButton(btn){
+    if (!btn) return;
+    if (btn.__revertTid){ clearTimeout(btn.__revertTid); btn.__revertTid = null; }
+    btn.__armed = false;
+    btn.textContent = 'Kustuta';
+    btn.classList.remove('confirm-armed');
   }
 
   /* ========= Form ========= */
@@ -375,6 +407,7 @@
     fNotes.value = it.notes;
     fUrl.value = it.url;
     fDelete.style.display = '';
+    resetDeleteButton(fDelete);
     formPanel.classList.add('open');
     fName.focus();
   }
@@ -412,7 +445,11 @@
 
   document.getElementById('fSave').addEventListener('click', saveForm);
   document.getElementById('fCancel').addEventListener('click', closeForm);
-  fDelete.addEventListener('click', function(){ if (editingId) deleteItem(editingId); });
+  fDelete.addEventListener('click', function(){
+    if (!editingId) return;
+    var id = editingId;
+    armOrConfirmDelete(fDelete, function(){ performDelete(id); });
+  });
 
   /* ========= Add-marker triggers ========= */
   // contextmenu covers desktop right-click AND mobile long-press in Leaflet.

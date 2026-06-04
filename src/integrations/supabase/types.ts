@@ -1206,6 +1206,54 @@ export type Database = {
         }
         Relationships: []
       }
+      ufo_sightings: {
+        Row: {
+          case_id: string
+          city: string | null
+          lat: number
+          lon: number
+          occurred: string | null
+          region: string | null
+          shape: string | null
+          source: string | null
+          submitted: string | null
+          summary: string | null
+          tags: string[] | null
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          case_id: string
+          city?: string | null
+          lat: number
+          lon: number
+          occurred?: string | null
+          region?: string | null
+          shape?: string | null
+          source?: string | null
+          submitted?: string | null
+          summary?: string | null
+          tags?: string[] | null
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          case_id?: string
+          city?: string | null
+          lat?: number
+          lon?: number
+          occurred?: string | null
+          region?: string | null
+          shape?: string | null
+          source?: string | null
+          submitted?: string | null
+          summary?: string | null
+          tags?: string[] | null
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string

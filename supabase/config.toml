@@ -107,3 +107,9 @@ verify_jwt = false
 
 [functions.get-toenaosus-season-signals]
 verify_jwt = false
+
+[functions.insert-ufo-sightings]
+verify_jwt = false
+
+[functions.get-ufo-sightings]
+verify_jwt = false

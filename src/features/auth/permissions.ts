@@ -10,6 +10,7 @@ export const PERMISSIONS = {
   mapViewUsaI70: "maps.view.usa.i70",
   mapViewUsaCoPoi: "maps.view.usa.copoi",
   mapViewUsaPaPoi: "maps.view.usa.papoi",
+  mapViewUsaI70Poi: "maps.view.usa.i70poi",
   settingsManage: "settings.manage",
   settingsLinksAdmin: "settings.links.admin",
   kevadranneEdit: "kevadranne.edit",

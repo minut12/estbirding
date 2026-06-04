@@ -83,6 +83,15 @@ export const maps: MapDefinition[] = [
     enabled: true,
     permissionKey: 'maps.view.usa.papoi',
   },
+  {
+    id: 'usa-i70-poi',
+    name: 'USA – I-70 (POI)',
+    region: 'USA',
+    type: 'asset',
+    source: '/maps/usa-i70-poi/index.html',
+    enabled: true,
+    permissionKey: 'maps.view.usa.i70poi',
+  },
 ];
 
 export function getActiveMap(): MapDefinition {

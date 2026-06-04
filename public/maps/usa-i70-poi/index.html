@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="et">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<title>USA – I-70 (POI)</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1f2937; }
+  #map { position: absolute; inset: 0; }
+
+  /* ===== Toolbar ===== */
+  #toolbar {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 1000;
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 8px; padding-bottom: var(--bottom-inset, 8px);
+    pointer-events: none;
+  }
+  #toolbar > * { pointer-events: auto; }
+  .bar-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    border: 1px solid rgba(0,0,0,0.12); background: #fff;
+    border-radius: 999px; padding: 5px 10px; font-size: 13px; cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12); user-select: none;
+    transition: opacity .15s, transform .05s;
+  }
+  .chip:active { transform: scale(0.96); }
+  .chip.off { opacity: 0.4; }
+  .chip .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+  .btn {
+    border: 1px solid rgba(0,0,0,0.12); background: #fff;
+    border-radius: 8px; padding: 6px 11px; font-size: 13px; cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12); color: #1f2937;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn.green { background: #16a34a; color: #fff; border-color: #16a34a; }
+
+  #searchWrap { position: relative; flex: 1 1 180px; min-width: 160px; }
+  #searchInput {
+    width: 100%; border: 1px solid rgba(0,0,0,0.12); border-radius: 8px;
+    padding: 7px 10px; font-size: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+  }
+  #searchResults {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+    background: #fff; border: 1px solid rgba(0,0,0,0.12); border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.18); overflow: hidden; display: none;
+    max-height: 240px; overflow-y: auto;
+  }
+  #searchResults.open { display: block; }
+  .sr-item { padding: 8px 10px; font-size: 13px; cursor: pointer; border-bottom: 1px solid #f1f5f9; }
+  .sr-item:last-child { border-bottom: none; }
+  .sr-item:hover { background: #f0fdf4; }
+
+  /* ===== Marker pin ===== */
+  .poi-pin {
+    width: 30px; height: 30px; border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    border: 2px solid #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.35);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .poi-pin span { transform: rotate(45deg); font-size: 15px; line-height: 1; }
+
+  /* ===== Form panel ===== */
+  #formPanel {
+    position: absolute; z-index: 1200; left: 50%; bottom: 16px;
+    transform: translateX(-50%);
+    width: min(360px, calc(100% - 24px));
+    background: #fff; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+    padding: 14px; display: none;
+    margin-bottom: var(--bottom-inset, 0px);
+  }
+  #formPanel.open { display: block; }
+  #formPanel h3 { margin: 0 0 10px; font-size: 15px; }
+  #formPanel label { display: block; font-size: 12px; color: #4b5563; margin: 8px 0 3px; }
+  #formPanel input, #formPanel select, #formPanel textarea {
+    width: 100%; border: 1px solid rgba(0,0,0,0.18); border-radius: 7px;
+    padding: 7px 9px; font-size: 14px; font-family: inherit;
+  }
+  #formPanel textarea { resize: vertical; min-height: 48px; }
+  .form-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .form-actions .btn { flex: 1 1 auto; text-align: center; }
+  .btn.danger { background: #fff; color: #dc2626; border-color: #fecaca; }
+
+  /* ===== Popup ===== */
+  .poi-pop { font-size: 13px; min-width: 170px; }
+  .poi-pop h4 { margin: 0 0 6px; font-size: 14px; }
+  .poi-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 7px; border-radius: 999px; color: #fff; margin-bottom: 6px; }
+  .poi-pop .notes { color: #374151; white-space: pre-wrap; margin: 6px 0; }
+  .poi-pop a { color: #16a34a; }
+  .poi-pop .pop-actions { display: flex; gap: 6px; margin-top: 8px; }
+  .poi-pop .pop-actions button { flex: 1; border: 1px solid rgba(0,0,0,0.15); background: #fff; border-radius: 6px; padding: 5px; font-size: 12px; cursor: pointer; }
+  .confirm-armed { background: #dc2626 !important; color: #fff !important; border-color: #dc2626 !important; }
+  .poi-pop .pop-links { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+
+  /* ===== Live 🛸 layer ===== */
+  .chip.live { border-color: #7c3aed; color: #7c3aed; font-weight: 600; }
+  .chip.live.off { opacity: 0.45; }
+  .ufo-pin {
+    width: 22px; height: 22px; border-radius: 50%; background: #7c3aed;
+    border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+    display: flex; align-items: center; justify-content: center; position: relative;
+  }
+  .ufo-pin span { font-size: 11px; line-height: 1; }
+  .ufo-pin::after {
+    content: ''; position: absolute; inset: -4px; border-radius: 50%;
+    border: 2px solid #7c3aed; animation: ufoPulse 1.8s ease-out infinite; pointer-events: none;
+  }
+  @keyframes ufoPulse {
+    0%   { transform: scale(0.6); opacity: 0.7; }
+    100% { transform: scale(1.7); opacity: 0; }
+  }
+  .ufo-meta { color: #4b5563; font-size: 12px; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="toolbar">
+  <div class="bar-row" id="chipRow"></div>
+  <div class="bar-row">
+    <div id="searchWrap">
+      <input id="searchInput" type="text" placeholder="Otsi kohta… (Enter)" autocomplete="off"/>
+      <div id="searchResults"></div>
+    </div>
+    <button class="btn" id="btnExport">Eksport</button>
+    <button class="btn" id="btnImport">Import</button>
+    <input id="importFile" type="file" accept=".json,application/json" style="display:none"/>
+  </div>
+</div>
+
+<div id="formPanel">
+  <h3 id="formTitle">Lisa märk</h3>
+  <label for="fName">Nimi *</label>
+  <input id="fName" type="text" maxlength="120"/>
+  <label for="fCat">Kategooria</label>
+  <select id="fCat"></select>
+  <label for="fNotes">Märkmed</label>
+  <textarea id="fNotes" maxlength="2000"></textarea>
+  <label for="fUrl">Link</label>
+  <input id="fUrl" type="url" placeholder="https://…"/>
+  <div class="form-actions">
+    <button class="btn green" id="fSave">Salvesta</button>
+    <button class="btn" id="fCancel">Tühista</button>
+    <button class="btn danger" id="fDelete" style="display:none">Kustuta</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ========= Categories ========= */
+  var CATEGORIES = {
+    visit:  { label: 'Vaatamisväärsus', emoji: '🏞️', color: '#0d9488' },
+    ufo:    { label: 'UFO / MUFON',     emoji: '🛸', color: '#7c3aed' },
+    bird:   { label: 'Linnukoht',       emoji: '🦅', color: '#16a34a' },
+    food:   { label: 'Söök / majutus',  emoji: '🍽️', color: '#ea580c' },
+    other:  { label: 'Muu',             emoji: '📍', color: '#64748b' }
+  };
+  var CAT_KEYS = Object.keys(CATEGORIES);
+
+  var MARKERS_KEY = 'bm_i70poi_markers_v1';
+  var FILTERS_KEY = 'bm_i70poi_filters_v1';
+
+  /* ========= Seed data (first load only) ========= */
+  var SEED = [
+    { cat:'visit', name:'Gateway Arch (St. Louis)', lat:38.6247, lon:-90.1848 },
+    { cat:'visit', name:'Eisenhower Presidential Library (Abilene, KS)', lat:38.9108, lon:-97.2139, notes:'Otse I-70 ääres' },
+    { cat:'other', name:'World\'s Largest Easel (Goodland, KS)', lat:39.3289, lon:-101.7099, notes:'Kiire fotopeatus' },
+    { cat:'bird',  name:'Konza Prairie (Manhattan, KS)', lat:39.0936, lon:-96.5750, notes:'Preerialinnud, ~15 min I-70-st' },
+    { cat:'ufo',   name:'Mothman Museum (Point Pleasant, WV)', lat:38.8443, lon:-82.1371, notes:'~1,5 h I-70-st lõunas — ainult kui aega on' }
+  ];
+
+  /* ========= Stay (lodging) — fixed marker, NOT part of items ========= */
+  var STAY_LOCATIONS = [
+    { name: 'Colorado Stay', address: 'Antelope Meadows Cir, Peyton, CO 80831', lat: 38.9359677, lon: -104.6181762 },
+    { name: 'Pennsylvania Stay', address: '4424 Peachey Rd, Huntingdon, PA 16652', lat: 40.6398271, lon: -77.8402891 }
+  ];
+
+  /* ========= State ========= */
+  var items = [];                 // array of marker objects
+  var markerById = {};            // id -> L.marker
+  var filters = {};               // cat -> bool (visible)
+  var editingId = null;           // id being edited, or null when adding
+  var pendingLatLng = null;       // latlng for a new marker
+  var tempHighlight = null;       // temporary search-result marker
+  var saveTimer = null;
+  var ufoChip = null;             // the 🛸 Live toggle chip
+
+  /* ========= Live UFO layer (read-only, from get-ufo-sightings) ========= */
+  // Never mixed into `items` / export — separate layerGroup, not persisted.
+  var UFO_FALLBACK_URL = 'https://eenwcyuyugyrjgpivxrq.supabase.co';
+  var SUPABASE_URL = '';          // captured from parent SUPABASE_CONFIG broadcast
+  var UFO_STALE_MS = 30 * 60 * 1000;
+  var UFO_LAYER = { enabled: false, layerGroup: null, loaded: false, lastFetch: 0, data: [] };
+
+  /* ========= Map ========= */
+  // Initial view tuned for the whole I-70 corridor (matches the usa-i70 bird map).
+  // Only the INITIAL view — MAP_SHOWN / MAP_PING never re-center, so panning is
+  // preserved across tab switches.
+  var map = L.map('map', { zoomControl: true, attributionControl: true })
+    .setView([39.5, -94.5], 5);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+
+  /* ========= Persistence ========= */
+  function loadFilters(){
+    CAT_KEYS.forEach(function(k){ filters[k] = true; });
+    filters.__ufoLive = false; // live 🛸 layer, default OFF
+    try {
+      var raw = localStorage.getItem(FILTERS_KEY);
+      if (raw){
+        var obj = JSON.parse(raw);
+        CAT_KEYS.forEach(function(k){ if (typeof obj[k] === 'boolean') filters[k] = obj[k]; });
+        if (typeof obj.__ufoLive === 'boolean') filters.__ufoLive = obj.__ufoLive;
+      }
+    } catch(e){ /* keep defaults */ }
+  }
+  function saveFilters(){
+    try { localStorage.setItem(FILTERS_KEY, JSON.stringify(filters)); } catch(e){}
+  }
+
+  function loadItems(){
+    var raw = null;
+    try { raw = localStorage.getItem(MARKERS_KEY); } catch(e){ raw = null; }
+    if (raw == null){
+      // First load: seed editable starter points.
+      items = SEED.map(function(s){
+        return {
+          id: newId(),
+          lat: s.lat, lon: s.lon,
+          cat: CATEGORIES[s.cat] ? s.cat : 'other',
+          name: s.name || '',
+          notes: s.notes || '',
+          url: s.url || '',
+          created: 0
+        };
+      });
+      saveNow();
+      return;
+    }
+    try {
+      var obj = JSON.parse(raw);
+      var list = (obj && Array.isArray(obj.items)) ? obj.items : [];
+      items = list.map(normalizeItem).filter(Boolean);
+    } catch(e){
+      items = []; // corrupt JSON -> start empty, don't clobber until next save
+    }
+  }
+  function normalizeItem(it){
+    if (!it || typeof it !== 'object') return null;
+    var lat = Number(it.lat), lon = Number(it.lon);
+    if (!isFinite(lat) || !isFinite(lon)) return null;
+    return {
+      id: String(it.id || newId()),
+      lat: lat, lon: lon,
+      cat: CATEGORIES[it.cat] ? it.cat : 'other',
+      name: String(it.name || ''),
+      notes: String(it.notes || ''),
+      url: String(it.url || ''),
+      created: Number(it.created) || 0
+    };
+  }
+  function saveNow(){
+    try { localStorage.setItem(MARKERS_KEY, JSON.stringify({ v: 1, items: items })); } catch(e){}
+  }
+  function scheduleSave(){
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(function(){ saveTimer = null; saveNow(); }, 500);
+  }
+  function newId(){
+    return 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+  }
+
+  /* ========= Markers ========= */
+  function makeIcon(cat){
+    var c = CATEGORIES[cat] || CATEGORIES.other;
+    return L.divIcon({
+      className: '',
+      html: '<div class="poi-pin" style="background:' + c.color + '"><span>' + c.emoji + '</span></div>',
+      iconSize: [30, 30],
+      iconAnchor: [15, 30],
+      popupAnchor: [0, -28]
+    });
+  }
+  function esc(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+  function popupHtml(it){
+    var c = CATEGORIES[it.cat] || CATEGORIES.other;
+    var html = '<div class="poi-pop">';
+    html += '<h4>' + esc(it.name || '(nimetu)') + '</h4>';
+    html += '<span class="poi-badge" style="background:' + c.color + '">' + c.emoji + ' ' + esc(c.label) + '</span>';
+    if (it.notes) html += '<div class="notes">' + esc(it.notes) + '</div>';
+    html += '<div class="pop-links">';
+    if (it.url){
+      html += '<a href="' + esc(it.url) + '" target="_blank" rel="noopener noreferrer">Ava link ↗</a>';
+    }
+    var gm = 'https://www.google.com/maps?q=' + encodeURIComponent(it.lat + ',' + it.lon);
+    html += '<a href="' + gm + '" target="_blank" rel="noopener noreferrer">Google Maps ↗</a>';
+    html += '</div>';
+    html += '<div class="pop-actions">';
+    html += '<button data-act="edit" data-id="' + esc(it.id) + '">Muuda</button>';
+    html += '<button data-act="del" data-id="' + esc(it.id) + '">Kustuta</button>';
+    html += '</div></div>';
+    return html;
+  }
+  function visible(it){ return filters[it.cat] !== false; }
+
+  function addMarkerToMap(it){
+    var m = L.marker([it.lat, it.lon], { icon: makeIcon(it.cat) });
+    m.bindPopup(popupHtml(it));
+    m.on('popupopen', function(e){
+      var node = e.popup.getElement();
+      if (!node) return;
+      node.querySelectorAll('button[data-act]').forEach(function(b){
+        b.addEventListener('click', function(){
+          var id = b.getAttribute('data-id');
+          if (b.getAttribute('data-act') === 'edit'){ openEditForm(id); return; }
+          armOrConfirmDelete(b, function(){ performDelete(id); });
+        });
+      });
+    });
+    markerById[it.id] = m;
+    if (visible(it)) m.addTo(map);
+  }
+  function refreshMarker(it){
+    var m = markerById[it.id];
+    if (!m) { addMarkerToMap(it); return; }
+    m.setLatLng([it.lat, it.lon]);
+    m.setIcon(makeIcon(it.cat));
+    m.setPopupContent(popupHtml(it));
+    applyVisibility(it);
+  }
+  function applyVisibility(it){
+    var m = markerById[it.id];
+    if (!m) return;
+    if (visible(it)){ if (!map.hasLayer(m)) m.addTo(map); }
+    else { if (map.hasLayer(m)) map.removeLayer(m); }
+  }
+  function renderAll(){
+    items.forEach(function(it){
+      if (!markerById[it.id]) addMarkerToMap(it);
+      else applyVisibility(it);
+    });
+  }
+  function removeMarkerFromMap(id){
+    var m = markerById[id];
+    if (m){ map.removeLayer(m); delete markerById[id]; }
+  }
+
+  /* ========= CRUD ========= */
+  function findItem(id){
+    for (var i=0;i<items.length;i++){ if (items[i].id === id) return items[i]; }
+    return null;
+  }
+  // Actual removal — no modal. confirm() is blocked in the sandboxed iframe
+  // (no allow-modals), so deletion is gated by a two-step button instead.
+  function performDelete(id){
+    var it = findItem(id);
+    if (!it) return;
+    items = items.filter(function(x){ return x.id !== id; });
+    removeMarkerFromMap(id);
+    scheduleSave();
+    closeForm();
+  }
+  // Two-step confirm on a button: first click arms it ("Kinnita kustutamine?")
+  // for 4 s; a second click within that window calls onConfirm. Auto-reverts.
+  function armOrConfirmDelete(btn, onConfirm){
+    if (btn.__armed){
+      if (btn.__revertTid){ clearTimeout(btn.__revertTid); btn.__revertTid = null; }
+      btn.__armed = false;
+      btn.textContent = 'Kustuta';
+      btn.classList.remove('confirm-armed');
+      onConfirm();
+      return;
+    }
+    btn.__armed = true;
+    btn.textContent = 'Kinnita kustutamine?';
+    btn.classList.add('confirm-armed');
+    btn.__revertTid = setTimeout(function(){
+      btn.__armed = false;
+      btn.textContent = 'Kustuta';
+      btn.classList.remove('confirm-armed');
+      btn.__revertTid = null;
+    }, 4000);
+  }
+  function resetDeleteButton(btn){
+    if (!btn) return;
+    if (btn.__revertTid){ clearTimeout(btn.__revertTid); btn.__revertTid = null; }
+    btn.__armed = false;
+    btn.textContent = 'Kustuta';
+    btn.classList.remove('confirm-armed');
+  }
+
+  /* ========= Form ========= */
+  var formPanel = document.getElementById('formPanel');
+  var fName = document.getElementById('fName');
+  var fCat = document.getElementById('fCat');
+  var fNotes = document.getElementById('fNotes');
+  var fUrl = document.getElementById('fUrl');
+  var fDelete = document.getElementById('fDelete');
+  var formTitle = document.getElementById('formTitle');
+
+  // Populate category select
+  CAT_KEYS.forEach(function(k){
+    var opt = document.createElement('option');
+    opt.value = k;
+    opt.textContent = CATEGORIES[k].emoji + ' ' + CATEGORIES[k].label;
+    fCat.appendChild(opt);
+  });
+
+  function openAddForm(latlng){
+    editingId = null;
+    pendingLatLng = latlng;
+    formTitle.textContent = 'Lisa märk';
+    fName.value = '';
+    fCat.value = 'visit';
+    fNotes.value = '';
+    fUrl.value = '';
+    fDelete.style.display = 'none';
+    formPanel.classList.add('open');
+    fName.focus();
+  }
+  function openEditForm(id){
+    var it = findItem(id);
+    if (!it) return;
+    editingId = id;
+    pendingLatLng = null;
+    formTitle.textContent = 'Muuda märki';
+    fName.value = it.name;
+    fCat.value = it.cat;
+    fNotes.value = it.notes;
+    fUrl.value = it.url;
+    fDelete.style.display = '';
+    resetDeleteButton(fDelete);
+    formPanel.classList.add('open');
+    fName.focus();
+  }
+  function closeForm(){
+    formPanel.classList.remove('open');
+    editingId = null;
+    pendingLatLng = null;
+  }
+  function saveForm(){
+    var name = fName.value.trim();
+    if (!name){ fName.focus(); return; }
+    var data = {
+      name: name,
+      cat: CATEGORIES[fCat.value] ? fCat.value : 'other',
+      notes: fNotes.value.trim(),
+      url: fUrl.value.trim()
+    };
+    if (editingId){
+      var it = findItem(editingId);
+      if (it){ it.name = data.name; it.cat = data.cat; it.notes = data.notes; it.url = data.url; refreshMarker(it); }
+    } else if (pendingLatLng){
+      var nit = {
+        id: newId(),
+        lat: pendingLatLng.lat, lon: pendingLatLng.lng,
+        cat: data.cat, name: data.name, notes: data.notes, url: data.url,
+        created: Date.now()
+      };
+      items.push(nit);
+      addMarkerToMap(nit);
+      if (markerById[nit.id]) markerById[nit.id].openPopup();
+    }
+    scheduleSave();
+    closeForm();
+  }
+
+  document.getElementById('fSave').addEventListener('click', saveForm);
+  document.getElementById('fCancel').addEventListener('click', closeForm);
+  fDelete.addEventListener('click', function(){
+    if (!editingId) return;
+    var id = editingId;
+    armOrConfirmDelete(fDelete, function(){ performDelete(id); });
+  });
+
+  /* ========= Add-marker triggers ========= */
+  // contextmenu covers desktop right-click AND mobile long-press in Leaflet.
+  map.on('contextmenu', function(e){ openAddForm(e.latlng); });
+  // Desktop convenience: plain left-click also opens the add form.
+  map.on('click', function(e){
+    if (e.originalEvent && e.originalEvent.button === 2) return;
+    openAddForm(e.latlng);
+  });
+
+  /* ========= Filter chips ========= */
+  var chipRow = document.getElementById('chipRow');
+  function buildChips(){
+    CAT_KEYS.forEach(function(k){
+      var c = CATEGORIES[k];
+      var chip = document.createElement('button');
+      chip.className = 'chip' + (filters[k] === false ? ' off' : '');
+      chip.setAttribute('data-cat', k);
+      chip.innerHTML = '<span class="dot" style="background:' + c.color + '"></span>' + c.emoji + ' ' + esc(c.label);
+      chip.addEventListener('click', function(){
+        filters[k] = (filters[k] === false);
+        chip.classList.toggle('off', filters[k] === false);
+        saveFilters();
+        items.forEach(applyVisibility);
+      });
+      chipRow.appendChild(chip);
+    });
+    // Live 🛸 layer chip — independent of the manual `ufo` category chip.
+    ufoChip = document.createElement('button');
+    ufoChip.className = 'chip live' + (filters.__ufoLive ? '' : ' off');
+    ufoChip.setAttribute('data-ufo-live', '1');
+    ufoChip.textContent = '🛸 Live';
+    ufoChip.addEventListener('click', function(){ setUfoLive(!UFO_LAYER.enabled); });
+    chipRow.appendChild(ufoChip);
+  }
+
+  /* ========= Search (Nominatim) ========= */
+  var searchInput = document.getElementById('searchInput');
+  var searchResults = document.getElementById('searchResults');
+  function closeSearchResults(){ searchResults.classList.remove('open'); searchResults.innerHTML = ''; }
+  function runSearch(){
+    var q = searchInput.value.trim();
+    if (!q){ closeSearchResults(); return; }
+    var url = 'https://nominatim.openstreetmap.org/search?format=json&limit=5'
+      + '&viewbox=-109.06,42.30,-74.68,37.00&bounded=0'
+      + '&q=' + encodeURIComponent(q);
+    fetch(url, { headers: { 'Accept': 'application/json' } })
+      .then(function(r){ return r.ok ? r.json() : []; })
+      .then(function(list){
+        searchResults.innerHTML = '';
+        if (!Array.isArray(list) || !list.length){ closeSearchResults(); return; }
+        list.slice(0, 5).forEach(function(res){
+          var div = document.createElement('div');
+          div.className = 'sr-item';
+          div.textContent = res.display_name || (res.lat + ', ' + res.lon);
+          div.addEventListener('click', function(){
+            var lat = Number(res.lat), lon = Number(res.lon);
+            if (!isFinite(lat) || !isFinite(lon)) return;
+            map.setView([lat, lon], 13);
+            if (tempHighlight) map.removeLayer(tempHighlight);
+            tempHighlight = L.circleMarker([lat, lon], {
+              radius: 10, color: '#16a34a', weight: 3, fillColor: '#16a34a', fillOpacity: 0.25
+            }).addTo(map);
+            closeSearchResults();
+          });
+          searchResults.appendChild(div);
+        });
+        searchResults.classList.add('open');
+      })
+      .catch(function(){ closeSearchResults(); });
+  }
+  // Search on Enter only (respect Nominatim usage policy — no per-keystroke calls).
+  searchInput.addEventListener('keydown', function(e){
+    if (e.key === 'Enter'){ e.preventDefault(); runSearch(); }
+  });
+  document.addEventListener('click', function(e){
+    if (!searchResults.contains(e.target) && e.target !== searchInput) closeSearchResults();
+  });
+
+  /* ========= Export / Import ========= */
+  document.getElementById('btnExport').addEventListener('click', function(){
+    var blob = new Blob([JSON.stringify(items, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'i70-poi-export.json';
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  });
+  var importFile = document.getElementById('importFile');
+  document.getElementById('btnImport').addEventListener('click', function(){ importFile.click(); });
+  importFile.addEventListener('change', function(){
+    var file = importFile.files && importFile.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      try {
+        var parsed = JSON.parse(String(reader.result));
+        // Accept either a bare array or the { v, items } export shape.
+        var list = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.items) ? parsed.items : []);
+        var byId = {};
+        items.forEach(function(it){ byId[it.id] = it; });
+        var added = 0, updated = 0;
+        list.forEach(function(raw){
+          var it = normalizeItem(raw);
+          if (!it) return;
+          if (byId[it.id]){ updated++; } else { added++; }
+          byId[it.id] = it;
+        });
+        items = Object.keys(byId).map(function(k){ return byId[k]; });
+        // Rebuild all markers cleanly.
+        Object.keys(markerById).forEach(removeMarkerFromMap);
+        renderAll();
+        saveNow();
+        window.alert('Imporditud: ' + added + ' uut, ' + updated + ' uuendatud.');
+      } catch(e){
+        window.alert('Vigane JSON fail.');
+      }
+      importFile.value = '';
+    };
+    reader.readAsText(file);
+  });
+
+  /* ========= Parent postMessage handling ========= */
+  // Apply bottom-nav inset so toolbar/form clear the app's bottom navigation.
+  function applyInsets(bottomNavPx){
+    var px = Number(bottomNavPx);
+    if (!isFinite(px) || px < 0) px = 0;
+    document.documentElement.style.setProperty('--bottom-inset', px + 'px');
+  }
+  window.addEventListener('message', function(ev){
+    try {
+      if (!ev.data || typeof ev.data !== 'object') return;
+      var t = ev.data.type;
+      if (t === 'MAP_SHOWN' || t === 'MAP_PING'){
+        setTimeout(function(){ map.invalidateSize(true); }, 80);
+        return;
+      }
+      if (t === 'APP_INSETS'){
+        applyInsets(ev.data.bottomNavPx);
+        return;
+      }
+      if (t === 'SUPABASE_CONFIG'){
+        if (ev.data.supabaseUrl && typeof ev.data.supabaseUrl === 'string'){
+          SUPABASE_URL = String(ev.data.supabaseUrl).replace(/\/+$/, '');
+        }
+        return;
+      }
+      // Ignore everything else silently (AVATARS, species meta, etc.).
+    } catch(e){ /* never throw on parent broadcasts */ }
+  });
+
+  window.addEventListener('resize', function(){ setTimeout(function(){ map.invalidateSize(true); }, 120); });
+
+  /* ========= Stay marker + legend (mirrors usa-co STAY_LOCATIONS pattern) ========= */
+  // Fixed lodging marker: separate from `items`, so it is never filtered by the
+  // category chips and never editable/deletable via the popup CRUD.
+  function renderStayMarkers(){
+    try {
+      if (!map || !Array.isArray(STAY_LOCATIONS)) return;
+      var icon = L.divIcon({
+        className: 'stay-marker',
+        html: '<div style="font-size:28px;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,.45);user-select:none;">🏠</div>',
+        iconSize: [32, 32],
+        iconAnchor: [16, 28],
+        popupAnchor: [0, -28]
+      });
+      STAY_LOCATIONS.forEach(function(stay){
+        if (!isFinite(stay.lat) || !isFinite(stay.lon)) return;
+        var marker = L.marker([stay.lat, stay.lon], { icon: icon, zIndexOffset: 1000, keyboard: false }).addTo(map);
+        var gm = 'https://www.google.com/maps?q=' + encodeURIComponent(stay.lat + ',' + stay.lon);
+        marker.bindPopup('<strong>' + esc(stay.name) + '</strong><br>' + esc(stay.address)
+          + '<br><a href="' + gm + '" target="_blank" rel="noopener noreferrer">Google Maps ↗</a>');
+      });
+    } catch(e){ console.warn('[stayMarkers] failed', e); }
+  }
+  function renderStayLegend(){
+    try {
+      if (!map || window.__stayLegendAdded) return;
+      var legend = L.control({ position: 'bottomleft' });
+      legend.onAdd = function(){
+        var div = L.DomUtil.create('div', 'stay-legend');
+        div.style.cssText = 'background:rgba(255,255,255,.96);padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;box-shadow:0 1px 4px rgba(0,0,0,.15);line-height:1.4;';
+        div.innerHTML = '<span style="font-size:14px;">🏠</span> = Peatumiskoht';
+        return div;
+      };
+      legend.addTo(map);
+      window.__stayLegendAdded = true;
+    } catch(e){ console.warn('[stayLegend] failed', e); }
+  }
+
+  /* ========= Live UFO layer (read-only) ========= */
+  function ufoBaseUrl(){ return (SUPABASE_URL || UFO_FALLBACK_URL).replace(/\/+$/, ''); }
+  function ufoFmtDate(iso){
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    var dd = ('0' + d.getDate()).slice(-2);
+    var mm = ('0' + (d.getMonth() + 1)).slice(-2);
+    return dd + '.' + mm + '.' + d.getFullYear();
+  }
+  function ufoTrunc(s, n){ s = String(s == null ? '' : s); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+  function ufoIcon(){
+    return L.divIcon({
+      className: 'ufo-pin-wrap',
+      html: '<div class="ufo-pin"><span>🛸</span></div>',
+      iconSize: [22, 22],
+      iconAnchor: [11, 11],
+      popupAnchor: [0, -12]
+    });
+  }
+  function ufoPopupHtml(s){
+    var src = String(s.source || '');
+    var srcLabel = /mufon/i.test(src) ? 'MUFON' : 'UFO Stalker';
+    var html = '<div class="poi-pop">';
+    html += '<h4>🛸 ' + (esc(s.shape) || 'Tundmatu') + '</h4>';
+    var meta = [];
+    var date = ufoFmtDate(s.occurred);
+    if (date) meta.push(esc(date));
+    if (s.city) meta.push(esc(s.city));
+    if (meta.length) html += '<div class="ufo-meta">' + meta.join(' · ') + '</div>';
+    html += '<span class="poi-badge" style="background:#7c3aed">' + esc(srcLabel) + '</span>';
+    if (s.summary) html += '<div class="notes">' + esc(ufoTrunc(s.summary, 200)) + '</div>';
+    if (s.url) html += '<div class="pop-links"><a href="' + esc(s.url) + '" target="_blank" rel="noopener noreferrer">Ava UFO Stalkeris ↗</a></div>';
+    html += '</div>';
+    return html;
+  }
+  function showUfoLayer(){
+    if (UFO_LAYER.layerGroup){ map.removeLayer(UFO_LAYER.layerGroup); }
+    UFO_LAYER.layerGroup = L.layerGroup();
+    UFO_LAYER.data.forEach(function(s){
+      var lat = Number(s.lat), lon = Number(s.lon);
+      if (!isFinite(lat) || !isFinite(lon)) return;
+      var m = L.marker([lat, lon], { icon: ufoIcon(), zIndexOffset: 500, keyboard: false });
+      m.bindPopup(ufoPopupHtml(s));
+      UFO_LAYER.layerGroup.addLayer(m);
+    });
+    if (UFO_LAYER.enabled) UFO_LAYER.layerGroup.addTo(map);
+  }
+  function loadAndShowUfo(){
+    var url = ufoBaseUrl() + '/functions/v1/get-ufo-sightings?days=180&limit=300';
+    fetch(url, { headers: { 'Accept': 'application/json' } })
+      .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(json){
+        UFO_LAYER.data = (json && Array.isArray(json.sightings)) ? json.sightings : [];
+        UFO_LAYER.loaded = true;
+        UFO_LAYER.lastFetch = Date.now();
+        showUfoLayer(); // empty result is fine — chip stays ON, nothing renders
+      })
+      .catch(function(e){
+        console.warn('[UFO-LIVE] fetch failed', e);
+        revertUfoChipOff();
+      });
+  }
+  function revertUfoChipOff(){
+    UFO_LAYER.enabled = false;
+    filters.__ufoLive = false;
+    saveFilters();
+    if (ufoChip) ufoChip.classList.add('off');
+    if (UFO_LAYER.layerGroup) map.removeLayer(UFO_LAYER.layerGroup);
+  }
+  function setUfoLive(on){
+    UFO_LAYER.enabled = !!on;
+    filters.__ufoLive = !!on;
+    saveFilters();
+    if (ufoChip) ufoChip.classList.toggle('off', !on);
+    if (on){
+      var stale = (Date.now() - UFO_LAYER.lastFetch) > UFO_STALE_MS;
+      if (!UFO_LAYER.loaded || stale){ loadAndShowUfo(); }
+      else { showUfoLayer(); }
+    } else {
+      if (UFO_LAYER.layerGroup) map.removeLayer(UFO_LAYER.layerGroup);
+    }
+  }
+
+  /* ========= Boot ========= */
+  loadFilters();
+  buildChips();
+  loadItems();
+  renderAll();
+  renderStayMarkers();
+  renderStayLegend();
+  // Request Supabase config from parent (it answers with SUPABASE_CONFIG); the
+  // hardcoded fallback URL kicks in at fetch time if it never arrives.
+  try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'SUPABASE_CONFIG_REQUEST' }, '*'); } catch(e){}
+  setTimeout(function(){ if (!SUPABASE_URL) SUPABASE_URL = UFO_FALLBACK_URL; }, 3000);
+  // Restore the live layer if it was left ON last session.
+  if (filters.__ufoLive === true){ setUfoLive(true); }
+  // Ask parent for insets in case APP_INSETS was broadcast before we were ready.
+  try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'INSETS_REQUEST' }, '*'); } catch(e){}
+
+})();
+</script>
+</body>
+</html>

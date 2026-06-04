@@ -565,20 +565,36 @@ function gasCostUSD(oneWayKm){
   return gallons * GAS_PRICE_PER_GALLON;
 }
 
-// Open an external URL in a NEW TAB only. Never navigates the app frame.
-// (Navigating window.top.location would replace the running map app — never do that.)
+// Open an external URL in a NEW TAB, initiated from the TOP (non-sandboxed)
+// document to avoid COOP failures from the sandboxed iframe. Never navigates
+// the app frame (no location assignment anywhere).
 window.__openExternal = function(url){
   if (!url) return;
+  var topWin, topDoc;
+  try { topWin = window.top || window; topDoc = topWin.document; }
+  catch(e){ topWin = window; topDoc = document; } // cross-origin top blocked (shouldn't happen, same-origin)
+
+  // Primary: temporary anchor click in the TOP document.
   try {
-    // Plain new-tab open from this context. noopener prevents the new tab
-    // from holding a reference back to the app (also avoids COOP opener issues).
-    var w = window.open(url, '_blank', 'noopener,noreferrer');
-    if (w && typeof w.focus === 'function') { try { w.focus(); } catch(e){} }
-    // If w is null, the browser blocked the popup. Do NOT navigate the app away.
-    // Fail quietly — the user can allow popups or long-press the link. Log for debugging.
-    if (!w) console.warn('[openExternal] popup blocked or null; not navigating app. URL:', url);
+    var a = topDoc.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.style.display = 'none';
+    (topDoc.body || topDoc.documentElement).appendChild(a);
+    a.click();
+    setTimeout(function(){ try { a.parentNode && a.parentNode.removeChild(a); } catch(e){} }, 0);
+    return;
   } catch(e){
-    console.warn('[openExternal] open failed; app left intact.', e);
+    console.warn('[openExternal] top-doc anchor failed, trying window.open', e);
+  }
+
+  // Fallback: window.open from top context. Still never navigates the app.
+  try {
+    var w = (topWin && topWin.open) ? topWin.open(url, '_blank', 'noopener,noreferrer') : window.open(url, '_blank', 'noopener,noreferrer');
+    if (!w) console.warn('[openExternal] popup blocked; app left intact.', url);
+  } catch(e2){
+    console.warn('[openExternal] open failed entirely; app intact.', e2);
   }
 };
 

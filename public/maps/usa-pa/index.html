@@ -551,20 +551,20 @@ function gasCostUSD(oneWayKm){
   return gallons * GAS_PRICE_PER_GALLON;
 }
 
-// Open an external URL from the TOP browsing context to avoid COOP/sandbox
-// failures (Firefox NS_ERROR_DOM_COOP_FAILED) when opening from inside the iframe.
+// Open an external URL in a NEW TAB only. Never navigates the app frame.
+// (Navigating window.top.location would replace the running map app — never do that.)
 window.__openExternal = function(url){
   if (!url) return;
   try {
-    var w = (window.top || window);
-    var opened = w.open(url, '_blank', 'noopener,noreferrer');
-    if (!opened) {
-      // Popup blocked or open() returned null — fall back to top-level navigation.
-      try { (window.top || window).location.href = url; } catch(e){ window.location.href = url; }
-    }
+    // Plain new-tab open from this context. noopener prevents the new tab
+    // from holding a reference back to the app (also avoids COOP opener issues).
+    var w = window.open(url, '_blank', 'noopener,noreferrer');
+    if (w && typeof w.focus === 'function') { try { w.focus(); } catch(e){} }
+    // If w is null, the browser blocked the popup. Do NOT navigate the app away.
+    // Fail quietly — the user can allow popups or long-press the link. Log for debugging.
+    if (!w) console.warn('[openExternal] popup blocked or null; not navigating app. URL:', url);
   } catch(e){
-    // Cross-origin top access denied or other failure — last-resort same-context open.
-    try { window.open(url, '_blank', 'noopener,noreferrer'); } catch(e2){ window.location.href = url; }
+    console.warn('[openExternal] open failed; app left intact.', e);
   }
 };
 

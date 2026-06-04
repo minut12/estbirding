@@ -24,6 +24,10 @@ Deno.serve(async (req) => {
   if (!Number.isFinite(limit) || limit <= 0) limit = 100;
   if (limit > 300) limit = 300;
 
+  const regionRaw = url.searchParams.get("region");
+  const region =
+    regionRaw && /^[A-Za-z ]{2,40}$/.test(regionRaw) ? regionRaw : null;
+
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
   const supabase = createClient(
@@ -31,7 +35,7 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("ufo_sightings")
     .select(
       "case_id, occurred, submitted, lat, lon, city, region, shape, summary, source, tags, url",
@@ -39,6 +43,12 @@ Deno.serve(async (req) => {
     .gte("submitted", cutoff)
     .order("submitted", { ascending: false })
     .limit(limit);
+
+  if (region) {
+    query = query.eq("region", region);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return new Response(JSON.stringify({ error: error.message }), {

@@ -65,6 +65,15 @@ export const maps: MapDefinition[] = [
     enabled: true,
     permissionKey: 'maps.view.usa.i70',
   },
+  {
+    id: 'usa-co-poi',
+    name: 'USA – CO (POI)',
+    region: 'USA',
+    type: 'asset',
+    source: '/maps/usa-co-poi/index.html',
+    enabled: true,
+    permissionKey: 'maps.view.usa.copoi',
+  },
 ];
 
 export function getActiveMap(): MapDefinition {

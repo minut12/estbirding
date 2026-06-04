@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
-<title>USA – CO (POI)</title>
+<title>USA – PA (POI)</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
@@ -165,21 +165,22 @@
   };
   var CAT_KEYS = Object.keys(CATEGORIES);
 
-  var MARKERS_KEY = 'bm_copoi_markers_v1';
-  var FILTERS_KEY = 'bm_copoi_filters_v1';
+  var MARKERS_KEY = 'bm_papoi_markers_v1';
+  var FILTERS_KEY = 'bm_papoi_filters_v1';
 
   /* ========= Seed data (first load only) ========= */
   var SEED = [
-    { cat:'ufo',   name:'UFO Watchtower (Hooper)', lat:37.8639, lon:-105.8842, notes:'San Luis Valley kuulus UFO vaatlustorn, Hwy 17 ääres', url:'http://www.ufowatchtower.com/' },
-    { cat:'ufo',   name:'San Luis Valley (hotspot ala)', lat:37.6, lon:-105.8, notes:'Ajalooliselt tihe UFO/anomaalia teadete piirkond' },
-    { cat:'visit', name:'Great Sand Dunes NP', lat:37.7916, lon:-105.5943, notes:'Liivadüünid + Sangre de Cristo mäed' },
-    { cat:'visit', name:'Garden of the Gods', lat:38.8784, lon:-104.8698 },
-    { cat:'visit', name:'Rocky Mountain NP (Bear Lake)', lat:40.3131, lon:-105.6459 }
+    { cat:'ufo',   name:'Kecksburg UFO monument', lat:40.1840, lon:-79.4615, notes:'1965 "acorn" intsidendi koht, monument külas', url:'https://en.wikipedia.org/wiki/Kecksburg_UFO_incident' },
+    { cat:'ufo',   name:'Chestnut Ridge (hotspot ala)', lat:40.20, lon:-79.40, notes:'PA tuntuim UFO/anomaalia teadete piirkond' },
+    { cat:'visit', name:'Fallingwater', lat:39.9064, lon:-79.4677, notes:'F. L. Wright, eelbroneering vajalik' },
+    { cat:'visit', name:'Gettysburg NMP', lat:39.8121, lon:-77.2311 },
+    { cat:'bird',  name:'Hawk Mountain Sanctuary', lat:40.6404, lon:-75.9879, notes:'Kuulus röövlinnurände vaatluskoht' },
+    { cat:'bird',  name:'Presque Isle SP (Erie)', lat:42.1567, lon:-80.1118 }
   ];
 
   /* ========= Stay (lodging) — fixed marker, NOT part of items ========= */
   var STAY_LOCATIONS = [
-    { name: 'Colorado Stay', address: 'Antelope Meadows Cir, Peyton, CO 80831', lat: 38.9359677, lon: -104.6181762 }
+    { name: 'Pennsylvania Stay', address: '4424 Peachey Rd, Huntingdon, PA 16652', lat: 40.6398271, lon: -77.8402891 }
   ];
 
   /* ========= State ========= */
@@ -200,10 +201,10 @@
   var UFO_LAYER = { enabled: false, layerGroup: null, loaded: false, lastFetch: 0, data: [] };
 
   /* ========= Map ========= */
-  // Initial view focused on the Colorado stay (Peyton). Only the INITIAL view —
+  // Initial view focused on the Pennsylvania stay (Huntingdon). Only the INITIAL view —
   // MAP_SHOWN / MAP_PING never re-center, so panning is preserved across tab switches.
   var map = L.map('map', { zoomControl: true, attributionControl: true })
-    .setView([38.9359677, -104.6181762], 11);
+    .setView([40.6398271, -77.8402891], 11);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -528,7 +529,7 @@
     var q = searchInput.value.trim();
     if (!q){ closeSearchResults(); return; }
     var url = 'https://nominatim.openstreetmap.org/search?format=json&limit=5'
-      + '&viewbox=-109.1,41.0,-102.0,37.0&bounded=0'
+      + '&viewbox=-80.52,42.27,-74.68,39.71&bounded=0'
       + '&q=' + encodeURIComponent(q);
     fetch(url, { headers: { 'Accept': 'application/json' } })
       .then(function(r){ return r.ok ? r.json() : []; })
@@ -568,7 +569,7 @@
     var blob = new Blob([JSON.stringify(items, null, 2)], { type: 'application/json' });
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
-    a.href = url; a.download = 'co-poi-export.json';
+    a.href = url; a.download = 'pa-poi-export.json';
     document.body.appendChild(a); a.click();
     document.body.removeChild(a);
     setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
@@ -724,7 +725,7 @@
     if (UFO_LAYER.enabled) UFO_LAYER.layerGroup.addTo(map);
   }
   function loadAndShowUfo(){
-    var url = ufoBaseUrl() + '/functions/v1/get-ufo-sightings?days=180&limit=200&region=Colorado';
+    var url = ufoBaseUrl() + '/functions/v1/get-ufo-sightings?days=180&limit=200&region=Pennsylvania';
     fetch(url, { headers: { 'Accept': 'application/json' } })
       .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function(json){

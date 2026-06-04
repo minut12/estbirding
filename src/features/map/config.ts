@@ -74,6 +74,15 @@ export const maps: MapDefinition[] = [
     enabled: true,
     permissionKey: 'maps.view.usa.copoi',
   },
+  {
+    id: 'usa-pa-poi',
+    name: 'USA – PA (POI)',
+    region: 'USA',
+    type: 'asset',
+    source: '/maps/usa-pa-poi/index.html',
+    enabled: true,
+    permissionKey: 'maps.view.usa.papoi',
+  },
 ];
 
 export function getActiveMap(): MapDefinition {

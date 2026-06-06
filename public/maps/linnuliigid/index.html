@@ -8748,6 +8748,21 @@ function renderPinnedGbifMarkers(){
           year: year
         });
       }
+      // Sidebar filter: skip pins whose species doesn't match the filter text.
+      // Forgiving (lowercase substring) — a near-miss key still filters; a true
+      // mismatch fails VISIBLE (pin stays), never fails-hidden.
+      var __pinPasses = (typeof _speciesPassesSidebarFilter === 'function')
+        ? _speciesPassesSidebarFilter(pin.species)
+        : (function(){
+            try {
+              var box = document.getElementById('filterBox');
+              var q = (box && box.value || '').toLowerCase().trim();
+              if (!q) return true;
+              return String(pin.species || '').toLowerCase().indexOf(q) !== -1;
+            } catch(e){ return true; }
+          })();
+      if (!__pinPasses) { return; } // skip this pin (forEach callback continue)
+
       var m = L.marker([pin.lat, pin.lon], { icon: icon });
       m.bindPopup(popupHtml);
       m.addTo(map); // base markerPane — always visible, NOT the cluster group, ignores filters
@@ -10768,6 +10783,7 @@ document.getElementById('filterBox').addEventListener('input', function(){
     }
   } catch(e){}
   try { if(window.refreshEbirdEEMarkers) window.refreshEbirdEEMarkers(); } catch(e){}
+  try { if (typeof renderPinnedGbifMarkers === 'function') renderPinnedGbifMarkers(); } catch(e){}
 });
 </script>
 

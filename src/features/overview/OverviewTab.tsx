@@ -610,7 +610,7 @@ async function fetchLatestToenaosus(): Promise<ToenaosusRaport | null> {
     .limit(1)
     .maybeSingle();
   if (error) throw error;
-  const row = (data || null) as ToenaosusRaport | null;
+  const row = ((data || null) as unknown) as ToenaosusRaport | null;
   if (row) {
     row.entries = Array.isArray(row.entries) ? row.entries : [];
     row.regions = Array.isArray(row.regions) ? row.regions : [];

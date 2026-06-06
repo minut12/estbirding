@@ -892,6 +892,7 @@ var pinnedGbif = new Map();        // gbifId -> { gbifId, species, lat, lon, dat
 var pinnedGbifMarkers = new Map(); // gbifId -> L.marker
 var __gbifOccById = {};            // gbifId -> { species, lat, lon, date } for the popup pin button
 var GBIF_PIN_SCOPE_ID = 'linnuliigid'; // must match the React scope id
+try { window.pinnedGbif = pinnedGbif; window.pinnedGbifMarkers = pinnedGbifMarkers; } catch(e){}
 
 function _saveGbifTaxonKeys() {
   try { localStorage.setItem('gbif_taxonkeys', JSON.stringify(gbifTaxonKeys)); } catch(e){}

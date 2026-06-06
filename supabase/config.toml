@@ -113,3 +113,6 @@ verify_jwt = false
 
 [functions.get-ufo-sightings]
 verify_jwt = false
+
+[functions.get-corridor-tags]
+verify_jwt = false

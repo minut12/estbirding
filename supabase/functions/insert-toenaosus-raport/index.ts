@@ -95,12 +95,14 @@ serve(async (req) => {
       regions,
       intro_et,
       entries,
+      corridor_watchlist,
       source_data,
       model,
       generation_meta,
     })
     .select('id')
     .single();
+
 
   if (error) {
     return jsonResponse(500, { error: 'insert_failed', detail: error.message });

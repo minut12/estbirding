@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye, BarChart3, Copy, Check } from 'lucide-react';
+import { AlertTriangle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye, BarChart3, Copy, Check, Wind } from 'lucide-react';
 import { toast } from 'sonner';
 import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
 import CorridorBadge from './CorridorBadge';
@@ -185,6 +185,16 @@ type ToenaosusEntry = VaatlusEntry & {
   avatar_url?: string | null;
 };
 
+type CorridorWatchlistItem = {
+  ebird_code: string;
+  species_et: string | null;
+  species_lat: string | null;
+  rarity_level: string;
+  avatar_url: string | null;
+  matched_corridors: string[];
+  matched_corridor_names_et: string[];
+};
+
 type ToenaosusRaport = {
   id: string;
   generated_at: string;
@@ -194,7 +204,7 @@ type ToenaosusRaport = {
   regions: string[];
   intro_et: string | null;
   entries: ToenaosusEntry[];
-  corridor_watchlist: unknown[];
+  corridor_watchlist?: CorridorWatchlistItem[];
   source_data: Record<string, unknown> | null;
   model: string | null;
   generation_meta: Record<string, unknown> | null;
@@ -575,6 +585,60 @@ function ArrivalsList({
         ))}
       </ul>
     </div>
+  );
+}
+
+function CorridorWatchlist({ items }: { items?: CorridorWatchlistItem[] }) {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const corridorNames = Array.from(
+    new Set(items.flatMap((i) => i.matched_corridor_names_et || [])),
+  );
+  return (
+    <Card className="p-4 space-y-2 border-l-4 border-l-sky-500 bg-sky-50/40">
+      <div className="flex items-center gap-2">
+        <Wind className="w-4 h-4 text-sky-600 shrink-0" />
+        <p className="text-sm font-semibold">Aktiivne koridor — jälgi neid liike</p>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Tuuletingimused on soodsad{corridorNames.length ? ` (${corridorNames.join(', ')})` : ''}, kuid neid
+        haruldusi pole naabermaades veel vaadeldud — seetõttu puuduvad nad ennustuse nimekirjast. Tasub jälgida.
+      </p>
+      <div className="space-y-2 pt-1">
+        {items.map((it, idx) => (
+          <div key={`${it.ebird_code}-${idx}`} className="flex items-center gap-2">
+            {it.avatar_url ? (
+              <img
+                src={it.avatar_url}
+                alt={it.species_et ?? ''}
+                loading="lazy"
+                className="w-10 h-10 rounded-md object-cover shrink-0 bg-muted"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-md shrink-0 bg-muted flex items-center justify-center text-muted-foreground">
+                <Bird className="w-5 h-5" />
+              </div>
+            )}
+            <div className="flex flex-wrap items-baseline gap-x-2 min-w-0 flex-1">
+              <span className="font-semibold text-sm">{it.species_et}</span>
+              <span className="italic text-muted-foreground text-xs">({it.species_lat})</span>
+            </div>
+            {it.rarity_level === 'rare' && (
+              <Badge className="gap-1 bg-amber-500 text-white hover:bg-amber-500/90 border-transparent">Rari</Badge>
+            )}
+            {it.rarity_level === 'super' && (
+              <Badge className="gap-1 bg-red-600 text-white hover:bg-red-600/90 border-transparent">
+                <AlertTriangle className="w-3 h-3" />Super rari
+              </Badge>
+            )}
+            {it.rarity_level === 'mega' && (
+              <Badge className="gap-1 bg-red-800 text-white hover:bg-red-800/90 border-transparent font-bold shadow-sm">
+                <AlertTriangle className="w-3 h-3" />Mega rari
+              </Badge>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 
@@ -1008,6 +1072,7 @@ export default function OverviewTab() {
                     <p className="text-sm leading-relaxed">{toenaosusReport.intro_et}</p>
                   )}
                   <CorridorBadge weatherCorridors={(toenaosusReport as any)?.source_data?.weather_corridors} />
+                  <CorridorWatchlist items={toenaosusReport.corridor_watchlist} />
                   <WindyChart />
                   <p className="text-sm text-muted-foreground text-center py-8">
                     Selles perioodis ei tuvastatud naabermaades vaatlusi haruldastest liikidest, kes võiksid lähiajal Eestisse jõuda.
@@ -1019,6 +1084,7 @@ export default function OverviewTab() {
                     <p className="text-sm leading-relaxed">{toenaosusReport.intro_et}</p>
                   )}
                   <CorridorBadge weatherCorridors={(toenaosusReport as any)?.source_data?.weather_corridors} />
+                  <CorridorWatchlist items={toenaosusReport.corridor_watchlist} />
                   <WindyChart />
                   <div className="space-y-3">
                     {sortedToenaosusEntries.map((entry, idx) => {

@@ -1166,6 +1166,7 @@ export type Database = {
       }
       toenaosus_raport: {
         Row: {
+          corridor_watchlist: Json
           entries: Json
           generated_at: string
           generation_meta: Json | null
@@ -1179,6 +1180,7 @@ export type Database = {
           source_data: Json | null
         }
         Insert: {
+          corridor_watchlist?: Json
           entries?: Json
           generated_at?: string
           generation_meta?: Json | null
@@ -1192,6 +1194,7 @@ export type Database = {
           source_data?: Json | null
         }
         Update: {
+          corridor_watchlist?: Json
           entries?: Json
           generated_at?: string
           generation_meta?: Json | null

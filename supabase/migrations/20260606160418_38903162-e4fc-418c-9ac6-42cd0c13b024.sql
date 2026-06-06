@@ -1,0 +1,1 @@
+alter table public.toenaosus_raport add column if not exists corridor_watchlist jsonb not null default '[]'::jsonb;

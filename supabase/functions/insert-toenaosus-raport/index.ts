@@ -69,6 +69,8 @@ serve(async (req) => {
   const regions = Array.isArray(body.regions) ? (body.regions as string[]) : [];
   const intro_et = typeof body.intro_et === 'string' ? body.intro_et : null;
   const entries = Array.isArray(body.entries) ? body.entries : [];
+  const corridor_watchlist = Array.isArray(body.corridor_watchlist) ? body.corridor_watchlist : [];
+
   const source_data =
     body.source_data && typeof body.source_data === 'object'
       ? (body.source_data as Record<string, unknown>)
@@ -93,12 +95,14 @@ serve(async (req) => {
       regions,
       intro_et,
       entries,
+      corridor_watchlist,
       source_data,
       model,
       generation_meta,
     })
     .select('id')
     .single();
+
 
   if (error) {
     return jsonResponse(500, { error: 'insert_failed', detail: error.message });

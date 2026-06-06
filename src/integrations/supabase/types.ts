@@ -53,6 +53,30 @@ export type Database = {
         }
         Relationships: []
       }
+      corridor_species_tags: {
+        Row: {
+          corridors: string[]
+          ebird_code: string | null
+          note: string | null
+          scientific_name: string
+          updated_at: string
+        }
+        Insert: {
+          corridors?: string[]
+          ebird_code?: string | null
+          note?: string | null
+          scientific_name: string
+          updated_at?: string
+        }
+        Update: {
+          corridors?: string[]
+          ebird_code?: string | null
+          note?: string | null
+          scientific_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       ebird_cache: {
         Row: {
           fetched_at: string

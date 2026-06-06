@@ -8764,6 +8764,12 @@ function renderPinnedGbifMarkers(){
           })();
       if (!__pinPasses) { return; } // skip this pin (forEach callback continue)
 
+      // Hide pins whose species is toggled off in the sidebar (visible===false).
+      // Match by species → points key. Unknown species => fail VISIBLE (pin stays).
+      var __pinPts = (window.points && window.points[pin.species])
+        || (typeof points !== 'undefined' ? points[pin.species] : null);
+      if (__pinPts && __pinPts.visible === false) { return; } // species hidden → skip pin
+
       var m = L.marker([pin.lat, pin.lon], { icon: icon });
       m.bindPopup(popupHtml);
       m.addTo(map); // base markerPane — always visible, NOT the cluster group, ignores filters
@@ -8849,6 +8855,7 @@ function toggleVisibility(key){
       }, '*');
     }
   } catch(e) {}
+  try { if (typeof renderPinnedGbifMarkers === 'function') renderPinnedGbifMarkers(); } catch(e){}
 }
 
 function setRarity(key, val){

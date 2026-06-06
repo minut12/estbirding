@@ -194,6 +194,7 @@ type ToenaosusRaport = {
   regions: string[];
   intro_et: string | null;
   entries: ToenaosusEntry[];
+  corridor_watchlist: unknown[];
   source_data: Record<string, unknown> | null;
   model: string | null;
   generation_meta: Record<string, unknown> | null;

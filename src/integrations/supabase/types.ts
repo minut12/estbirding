@@ -1373,6 +1373,10 @@ export type Database = {
       }
     }
     Functions: {
+      bulk_upsert_ebird_rare_observations: {
+        Args: { p_observations: Json; p_wind_corridor?: Json }
+        Returns: Json
+      }
       events_admin_assert_admin: { Args: never; Returns: undefined }
       events_admin_create: {
         Args: {

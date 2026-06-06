@@ -8940,6 +8940,17 @@ window.saveSpringEditModal = function(clearValue){
   }
 };
 
+// Sidebar filter-box → main marker visibility (mirrors _ebirdEEPassesSidebarFilter).
+// Empty filter => all pass. Match logic must mirror render(): key.toLowerCase().includes(q).
+function _speciesPassesSidebarFilter(key){
+  try{
+    var box = document.getElementById('filterBox');
+    var q = (box && box.value || '').toLowerCase().trim();
+    if(!q) return true;
+    return String(key || '').toLowerCase().indexOf(q) !== -1;
+  }catch(e){ return true; }
+}
+
 function updateMarker(key) {
   __nettaTrace('update_marker', key, points[key]);
   const p = points[key];
@@ -8961,7 +8972,8 @@ function updateMarker(key) {
     || String(p.coords_status || '') === 'restricted_or_missing';
   const markerCount = getMarkerCount(p);
   const passesRecent = (!window.__recentOnly) || hasRecentObservation(p);
-  const isVisible = (p.visible !== false) && passesRecent && hasCoords && !coordsRestricted;
+  const passesSidebarFilter = _speciesPassesSidebarFilter(key);
+  const isVisible = (p.visible !== false) && passesRecent && hasCoords && !coordsRestricted && passesSidebarFilter;
   if (key === 'Punanokk-vart') {
     console.log('[NETTA-TRACE] render DECISION:', JSON.stringify({
       hasLat: !!Number.isFinite(p?.lat),
@@ -10748,6 +10760,13 @@ document.addEventListener('DOMContentLoaded', function(){
 <script>
 document.getElementById('filterBox').addEventListener('input', function(){
   try { render(); } catch(e){}
+  try {
+    var __pts = window.points || {};
+    var __upd = window.updateMarker || (typeof updateMarker === 'function' ? updateMarker : null);
+    if (__upd) {
+      Object.keys(__pts).forEach(function(k){ try { __upd(k); } catch(e){} });
+    }
+  } catch(e){}
   try { if(window.refreshEbirdEEMarkers) window.refreshEbirdEEMarkers(); } catch(e){}
 });
 </script>

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye, BarChart3, Copy, Check, Wind } from 'lucide-react';
+import { AlertTriangle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye, BarChart3, Clock, Copy, Check, Wind } from 'lucide-react';
 import { toast } from 'sonner';
 import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
 import CorridorBadge from './CorridorBadge';
@@ -130,6 +130,21 @@ function getProbabilityBadgeClass(pct: number): string {
   return 'bg-red-500 text-white hover:bg-red-500/90 border-transparent';
 }
 
+function getTimingBandClass(band?: string | null): string {
+  switch (band) {
+    case 'imminent':
+      return 'border-emerald-500/60 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300';
+    case 'this_week':
+      return 'border-amber-500/60 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300';
+    case 'passed':
+    case 'out_of_window':
+      return 'border-border bg-muted text-muted-foreground opacity-70';
+    case 'in_season':
+    default:
+      return 'border-border bg-muted text-muted-foreground';
+  }
+}
+
 type SourceObservation = {
   species_lat?: string;
   date?: string;
@@ -180,6 +195,9 @@ type ToenaosusEntry = VaatlusEntry & {
     raw_score?: number;
     formula_version?: string;
   };
+  arrival_window_et?: string | null;
+  timing_band?: string | null;
+  freshest_obs_days?: number | null;
   // v8+ arrival sites, optional for legacy compatibility
   likely_arrival_sites_et?: Array<{ name: string; reasoning: string }>;
   avatar_url?: string | null;
@@ -1157,6 +1175,29 @@ export default function OverviewTab() {
                             {countNum} {countNum === 1 ? 'isend' : 'isendit'} ·{' '}
                             {entry.distance_to_ee_km} km Eestist
                           </p>
+
+                          {entry.arrival_window_et && (
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                              <span
+                                className={cn(
+                                  'rounded-md border px-2.5 py-0.5 text-xs font-medium',
+                                  getTimingBandClass(entry.timing_band),
+                                )}
+                              >
+                                {entry.arrival_window_et}
+                              </span>
+                              {typeof entry.freshest_obs_days === 'number' && (
+                                <span className="text-xs text-muted-foreground">
+                                  {entry.freshest_obs_days === 0
+                                    ? 'värskeim signaal täna'
+                                    : entry.freshest_obs_days === 1
+                                      ? 'värskeim signaal 1 päev tagasi'
+                                      : `värskeim signaal ${entry.freshest_obs_days} päeva tagasi`}
+                                </span>
+                              )}
+                            </div>
+                          )}
 
                           {entry.neighbor_breakdown.length > 0 && (
                             <p className="text-xs text-muted-foreground">

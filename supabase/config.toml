@@ -116,3 +116,6 @@ verify_jwt = false
 
 [functions.get-corridor-tags]
 verify_jwt = false
+
+[functions.get-ee-species-presence]
+verify_jwt = false

@@ -198,6 +198,9 @@ type ToenaosusEntry = VaatlusEntry & {
   arrival_window_et?: string | null;
   timing_band?: string | null;
   freshest_obs_days?: number | null;
+  ee_obs_count?: number;
+  ee_last_date?: string | null;
+  ee_last_location?: string | null;
   // v8+ arrival sites, optional for legacy compatibility
   likely_arrival_sites_et?: Array<{ name: string; reasoning: string }>;
   avatar_url?: string | null;
@@ -1194,6 +1197,20 @@ export default function OverviewTab() {
                                     : entry.freshest_obs_days === 1
                                       ? 'värskeim signaal 1 päev tagasi'
                                       : `värskeim signaal ${entry.freshest_obs_days} päeva tagasi`}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {typeof entry.ee_obs_count === 'number' && entry.ee_obs_count > 0 && (
+                            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
+                              <MapPin className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                              <span className="rounded-md border border-amber-500/60 bg-amber-50 px-2.5 py-0.5 font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                                Eestis juba {entry.ee_obs_count} {entry.ee_obs_count === 1 ? 'vaatlus' : 'vaatlust'}
+                              </span>
+                              {(entry.ee_last_date || entry.ee_last_location) && (
+                                <span className="text-muted-foreground">
+                                  viimane{entry.ee_last_date ? ` ${entry.ee_last_date}` : ''}{entry.ee_last_location ? ` · ${entry.ee_last_location}` : ''}
                                 </span>
                               )}
                             </div>

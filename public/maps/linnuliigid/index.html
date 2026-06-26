@@ -6518,8 +6518,10 @@ function saveSnapshotLocal(){
     payload: { points: points, species: SPECIES },
     meta: { filters: { recentOnly: is7daysOnly() } },
   };
-  localStorage.setItem(getSnapshotStorageKey(), JSON.stringify(snapshot));
-  localStorage.setItem(LS_EE_LAST_GOOD, JSON.stringify(snapshot));
+  try { localStorage.setItem(getSnapshotStorageKey(), JSON.stringify(snapshot)); }
+  catch(e){ console.warn('[snapshot] snapshot save failed (quota)', e); }
+  try { localStorage.setItem(LS_EE_LAST_GOOD, JSON.stringify(snapshot)); }
+  catch(e){ console.warn('[snapshot] bm_ee_last_good save failed (quota)', e); }
   lastSnapshotAt = snapshot.createdAt;
   dataMode = 'live';
   snapshotDebugNote = null;

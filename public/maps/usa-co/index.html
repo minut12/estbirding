@@ -1614,7 +1614,7 @@ async function saveSnapshotLocal(){
     },
   };
   try { localStorage.setItem(getSnapshotStorageKey(), JSON.stringify(snapshot)); } catch(e){ console.warn("[snapshot] snapshot save failed (quota)", e); }
-  try { localStorage.setItem(LS_EU_LAST_GOOD, JSON.stringify(snapshot)); } catch(e){ console.warn("[snapshot] bm_usa_co_last_good_snapshot save failed (quota)", e); }
+  // last_good write dropped (dead dup — read by nobody; load uses primary snapshot)
   lastSnapshotAt = snapshot.createdAt;
   updateDebugPanel();
 }
@@ -1652,7 +1652,7 @@ function applySnapshot(snapshot){
   dataMode = "snapshot";
   lastSnapshotAt = snapshot.createdAt || null;
   snapshotDebugNote = null;
-  try { localStorage.setItem(LS_EU_LAST_GOOD, JSON.stringify(snapshot)); } catch(e){ console.warn("[snapshot] bm_usa_co_last_good_snapshot save failed (quota)", e); }
+  // last_good write dropped (dead dup — read by nobody; load uses primary snapshot)
   saveAll();
   render();
   updateDebugPanel();

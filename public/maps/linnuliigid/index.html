@@ -6520,8 +6520,7 @@ function saveSnapshotLocal(){
   };
   try { localStorage.setItem(getSnapshotStorageKey(), JSON.stringify(snapshot)); }
   catch(e){ console.warn('[snapshot] snapshot save failed (quota)', e); }
-  try { localStorage.setItem(LS_EE_LAST_GOOD, JSON.stringify(snapshot)); }
-  catch(e){ console.warn('[snapshot] bm_ee_last_good save failed (quota)', e); }
+  // last_good write dropped (byte-identical to primary, evicted together — no resilience gain)
   lastSnapshotAt = snapshot.createdAt;
   dataMode = 'live';
   snapshotDebugNote = null;

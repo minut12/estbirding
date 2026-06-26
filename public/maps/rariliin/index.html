@@ -5819,7 +5819,7 @@ function saveSnapshotLocal(){
     meta: { filters: { recentOnly: is7daysOnly() } },
   };
   localStorage.setItem(getSnapshotStorageKey(), JSON.stringify(snapshot));
-  localStorage.setItem(LS_EE_LAST_GOOD, JSON.stringify(snapshot));
+  // last_good write dropped (byte-identical to primary, evicted together — no resilience gain)
   lastSnapshotAt = snapshot.createdAt;
   dataMode = 'live';
   snapshotDebugNote = null;

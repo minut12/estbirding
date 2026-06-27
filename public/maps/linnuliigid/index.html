@@ -6511,11 +6511,34 @@ function getSnapshotKey(){
 function getSnapshotStorageKey(){
   return LS_SNAPSHOT_PREFIX + getSnapshotKey();
 }
+// Remove debug/trace fields that must never persist. Denylist (keeps every real field
+// incl. coordLock / coords_source / coordsSource — only debug/trace keys are dropped).
+function _stripEntryDebug(e){
+  if(!e || typeof e !== 'object') return e;
+  const out = {};
+  for(const k in e){
+    if(k === 'lastCoordDecision' || k === 'lastSelectedApply') continue;
+    if(k.indexOf('__') === 0) continue;            // any __-prefixed top-level field
+    if(k === 'eluExtra' && e.eluExtra && typeof e.eluExtra === 'object'){
+      const ex = {};
+      for(const xk in e.eluExtra){ if(xk.indexOf('__') === 0) continue; ex[xk] = e.eluExtra[xk]; }
+      out.eluExtra = ex;
+    } else {
+      out[k] = e[k];
+    }
+  }
+  return out;
+}
+function serializePoints(pts){
+  const out = {};
+  for(const k in pts) out[k] = _stripEntryDebug(pts[k]);
+  return out;
+}
 function saveSnapshotLocal(){
   const snapshot = {
     version: SNAPSHOT_VERSION,
     createdAt: new Date().toISOString(),
-    payload: { points: points, species: SPECIES },
+    payload: { points: serializePoints(points), species: SPECIES },
     meta: { filters: { recentOnly: is7daysOnly() } },
   };
   try { localStorage.setItem(getSnapshotStorageKey(), JSON.stringify(snapshot)); }
@@ -8441,7 +8464,7 @@ function _prunePointsForStorage(pts) {
   var pruned = {};
   var KEEP = ['lat','lon','t','occ7','src','visible','rarity','migration','coords_status',
     'occ7Ebird','occ7EbirdUpdated','occ7Elu','occ7EluUpdated','lastFetched','clientScannedAt',
-    'ebirdCode','ebirdAuto','loc','openUrl','searchUrl','coords_source','eluExtra'];
+    'ebirdCode','ebirdAuto','loc','openUrl','searchUrl','coords_source','coordsSource','coordLock','eluExtra'];
   for (var key in pts) {
     var p = pts[key];
     if (!p) continue;
@@ -8449,7 +8472,8 @@ function _prunePointsForStorage(pts) {
     for (var i = 0; i < KEEP.length; i++) {
       if (p[KEEP[i]] !== undefined && p[KEEP[i]] !== null && p[KEEP[i]] !== '') row[KEEP[i]] = p[KEEP[i]];
     }
-    if (Object.keys(row).length > 0) pruned[key] = row;
+    // Deep-clean eluExtra so the kept `eluExtra` doesn't drag __occ7debug/__coordDebug along.
+    if (Object.keys(row).length > 0) pruned[key] = _stripEntryDebug(row);
   }
   return pruned;
 }
@@ -8463,7 +8487,7 @@ function save() {
     // Free space: drop per-species prob caches
     try{for(var li=localStorage.length-1;li>=0;li--){var lk=localStorage.key(li);if(lk&&lk.indexOf('bm_prob2_')===0)localStorage.removeItem(lk);}}catch(ce){}
     var minimal = {};
-    for (var k in points) { var mp=points[k]; if(mp&&Number.isFinite(mp.lat)) minimal[k]={lat:mp.lat,lon:mp.lon,t:mp.t,src:mp.src,occ7Elu:mp.occ7Elu,occ7Ebird:mp.occ7Ebird}; }
+    for (var k in points) { var mp=points[k]; if(mp&&Number.isFinite(mp.lat)) minimal[k]={lat:mp.lat,lon:mp.lon,t:mp.t,src:mp.src,occ7Elu:mp.occ7Elu,occ7Ebird:mp.occ7Ebird,coordLock:mp.coordLock,coords_source:mp.coords_source,coordsSource:mp.coordsSource}; }
     // Strip undefineds
     for(var mk in minimal){for(var mf in minimal[mk]){if(minimal[mk][mf]===undefined)delete minimal[mk][mf];}}
     try { localStorage.setItem(LS_POINTS, JSON.stringify(minimal)); console.log('[save] points minimal ok'); } catch(e2) { console.error('[save] points completely failed', e2); }

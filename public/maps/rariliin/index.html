@@ -5811,11 +5811,34 @@ function getSnapshotKey(){
 function getSnapshotStorageKey(){
   return LS_SNAPSHOT_PREFIX + getSnapshotKey();
 }
+// Remove debug/trace fields that must never persist. Denylist (keeps every real field
+// incl. coordLock / coords_source / coordsSource — only debug/trace keys are dropped).
+function _stripEntryDebug(e){
+  if(!e || typeof e !== 'object') return e;
+  const out = {};
+  for(const k in e){
+    if(k === 'lastCoordDecision' || k === 'lastSelectedApply') continue;
+    if(k.indexOf('__') === 0) continue;            // any __-prefixed top-level field
+    if(k === 'eluExtra' && e.eluExtra && typeof e.eluExtra === 'object'){
+      const ex = {};
+      for(const xk in e.eluExtra){ if(xk.indexOf('__') === 0) continue; ex[xk] = e.eluExtra[xk]; }
+      out.eluExtra = ex;
+    } else {
+      out[k] = e[k];
+    }
+  }
+  return out;
+}
+function serializePoints(pts){
+  const out = {};
+  for(const k in pts) out[k] = _stripEntryDebug(pts[k]);
+  return out;
+}
 function saveSnapshotLocal(){
   const snapshot = {
     version: SNAPSHOT_VERSION,
     createdAt: new Date().toISOString(),
-    payload: { points: points, species: SPECIES },
+    payload: { points: serializePoints(points), species: SPECIES },
     meta: { filters: { recentOnly: is7daysOnly() } },
   };
   localStorage.setItem(getSnapshotStorageKey(), JSON.stringify(snapshot));
@@ -7368,7 +7391,7 @@ window.addEventListener('message', function(ev){
 
 function save() {
   localStorage.setItem(LS_AVATARS, JSON.stringify(avatars));
-  localStorage.setItem(LS_POINTS, JSON.stringify(points));
+  localStorage.setItem(LS_POINTS, JSON.stringify(serializePoints(points)));
   localStorage.setItem(LS_NAMES, JSON.stringify(nameCache));
         _persistLiveCaches();
 }

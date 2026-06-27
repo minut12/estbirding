@@ -999,6 +999,51 @@ export type Database = {
         }
         Relationships: []
       }
+      poi_pins: {
+        Row: {
+          cat: string
+          created_at: string
+          created_ms: number | null
+          id: string
+          lat: number
+          lon: number
+          map_scope: string
+          name: string
+          notes: string
+          poi_id: string
+          url: string
+          user_id: string
+        }
+        Insert: {
+          cat?: string
+          created_at?: string
+          created_ms?: number | null
+          id?: string
+          lat: number
+          lon: number
+          map_scope: string
+          name?: string
+          notes?: string
+          poi_id: string
+          url?: string
+          user_id: string
+        }
+        Update: {
+          cat?: string
+          created_at?: string
+          created_ms?: number | null
+          id?: string
+          lat?: number
+          lon?: number
+          map_scope?: string
+          name?: string
+          notes?: string
+          poi_id?: string
+          url?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       prediction_jobs: {
         Row: {
           analysis_version: string | null

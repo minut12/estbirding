@@ -167,6 +167,7 @@
 
   var MARKERS_KEY = 'bm_i70poi_markers_v1';
   var FILTERS_KEY = 'bm_i70poi_filters_v1';
+  var POI_SCOPE = 'usa_i70_poi';
 
   /* ========= Seed data (first load only) ========= */
   var SEED = [
@@ -276,6 +277,42 @@
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(function(){ saveTimer = null; saveNow(); }, 500);
   }
+  function _poiParent(){ return (window.parent && window.parent !== window) ? window.parent : null; }
+  function postPoiUpsert(it){
+    var pw = _poiParent(); if (!pw || !it) return;
+    try {
+      pw.postMessage({ type:'POI_PIN_UPSERT', scopeId:POI_SCOPE, pin:{
+        poiId: it.id, lat: it.lat, lon: it.lon, cat: it.cat,
+        name: it.name, notes: it.notes, url: it.url, created: Number(it.created) || 0
+      }}, '*');
+    } catch(e){}
+  }
+  function postPoiRemove(id){
+    var pw = _poiParent(); if (!pw || !id) return;
+    try { pw.postMessage({ type:'POI_PIN_REMOVE', scopeId:POI_SCOPE, poiId:id }, '*'); } catch(e){}
+  }
+  function postPoiLocalSnapshot(){
+    var pw = _poiParent(); if (!pw) return;
+    try { pw.postMessage({ type:'POI_LOCAL_SNAPSHOT', scopeId:POI_SCOPE, items: items.slice() }, '*'); } catch(e){}
+  }
+  // Cloud is authoritative: replace local items with the cloud set and redraw.
+  function applyCloudPins(pins){
+    if (!Array.isArray(pins)) return;
+    try { Object.keys(markerById).forEach(function(id){ removeMarkerFromMap(id); }); } catch(e){}
+    items = pins.map(function(pn){
+      return {
+        id: String(pn.poiId || pn.id || newId()),
+        lat: Number(pn.lat), lon: Number(pn.lon),
+        cat: CATEGORIES[pn.cat] ? pn.cat : 'other',
+        name: String(pn.name || ''), notes: String(pn.notes || ''),
+        url: String(pn.url || ''), created: Number(pn.created) || 0
+      };
+    }).filter(function(it){ return isFinite(it.lat) && isFinite(it.lon); });
+    items.forEach(function(it){ addMarkerToMap(it); });
+    saveNow();
+    // Re-apply category filters across all markers (mirrors the chip-click handler).
+    items.forEach(applyVisibility);
+  }
   function newId(){
     return 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
   }
@@ -371,6 +408,7 @@
     if (!it) return;
     items = items.filter(function(x){ return x.id !== id; });
     removeMarkerFromMap(id);
+    postPoiRemove(id);
     scheduleSave();
     closeForm();
   }
@@ -463,7 +501,7 @@
     };
     if (editingId){
       var it = findItem(editingId);
-      if (it){ it.name = data.name; it.cat = data.cat; it.notes = data.notes; it.url = data.url; refreshMarker(it); }
+      if (it){ it.name = data.name; it.cat = data.cat; it.notes = data.notes; it.url = data.url; refreshMarker(it); postPoiUpsert(it); }
     } else if (pendingLatLng){
       var nit = {
         id: newId(),
@@ -474,6 +512,7 @@
       items.push(nit);
       addMarkerToMap(nit);
       if (markerById[nit.id]) markerById[nit.id].openPopup();
+      postPoiUpsert(nit);
     }
     scheduleSave();
     closeForm();
@@ -632,6 +671,14 @@
         if (ev.data.supabaseUrl && typeof ev.data.supabaseUrl === 'string'){
           SUPABASE_URL = String(ev.data.supabaseUrl).replace(/\/+$/, '');
         }
+        return;
+      }
+      if (t === 'POI_PINS_DEFAULTS' && ev.data.scopeId === POI_SCOPE){
+        applyCloudPins(ev.data.pins);
+        return;
+      }
+      if (t === 'POI_LOCAL_SNAPSHOT_REQUEST' && ev.data.scopeId === POI_SCOPE){
+        postPoiLocalSnapshot();
         return;
       }
       // Ignore everything else silently (AVATARS, species meta, etc.).

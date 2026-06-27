@@ -27,6 +27,7 @@ import { ACTIVE_PREDICTION_IFRAME_READY_MESSAGE, ACTIVE_PREDICTION_SPECIES_EVENT
 import { normalizeSpeciesName } from '@/lib/textNormalize';
 import { runBundledSpeciesBackfill } from '@/lib/speciesMetaBackfill';
 import { loadGbifPins, addGbifPin, removeGbifPin, type GbifPin } from '@/lib/gbifPins';
+import { loadPoiPins, upsertPoiPin, upsertManyPoiPins, removePoiPin, type PoiPin } from '@/lib/poiPins';
 import { loadEbirdPins, addEbirdPin, removeEbirdPin, type EbirdPin } from '@/lib/ebirdPins';
 import { log } from '@/lib/eventLog';
 import { toast } from 'sonner';
@@ -61,6 +62,12 @@ const SCOPE_BY_MAP_ID: Record<string, SpeciesScopeConfig> = {
   'usa-co': USA_CO_SCOPE,
   'usa-pa': USA_PA_SCOPE,
   'usa-i70': USA_I70_SCOPE,
+};
+
+const POI_SCOPE_BY_MAP_ID: Record<string, string> = {
+  'usa-co-poi': 'usa_co_poi',
+  'usa-pa-poi': 'usa_pa_poi',
+  'usa-i70-poi': 'usa_i70_poi',
 };
 
 interface MapTabProps {
@@ -830,6 +837,22 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
         });
       }, 500);
     }
+    // Push the user's cloud-synced POI pins for this map into the iframe.
+    const poiScopeId = POI_SCOPE_BY_MAP_ID[current.id];
+    if (poiScopeId) {
+      setTimeout(() => {
+        loadPoiPins(poiScopeId).then((pins) => {
+          try {
+            if (pins.length > 0) {
+              sendToIframe({ type: 'POI_PINS_DEFAULTS', scopeId: poiScopeId, pins });
+            } else {
+              // Empty cloud → ask the iframe for its local pins to bootstrap-migrate them up.
+              sendToIframe({ type: 'POI_LOCAL_SNAPSHOT_REQUEST', scopeId: poiScopeId });
+            }
+          } catch (e) { console.warn('[MapTab] push POI pins failed', e); }
+        });
+      }, 500);
+    }
     // Push the user's cloud-synced eBird obs pins for this map into the iframe.
     if (speciesScope.id === 'usa_co' || speciesScope.id === 'usa_pa' || speciesScope.id === 'usa_i70') {
       const ebirdPinScopeId = speciesScope.id;
@@ -921,6 +944,60 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
           const pins = await loadGbifPins(scopeId);
           try { sendToIframe({ type: 'GBIF_PINS_DEFAULTS', scopeId, pins }); } catch {}
         }
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [sendToIframe]);
+
+  // POI pin cloud-sync: iframe → parent → Supabase (mirrors the GBIF handler).
+  useEffect(() => {
+    const poiAllowed = ['usa_co_poi', 'usa_pa_poi', 'usa_i70_poi'];
+    const handler = async (ev: MessageEvent) => {
+      const d = ev.data;
+      if (!d) return;
+      const scopeId = String(d.scopeId || '');
+      if (!poiAllowed.includes(scopeId)) return;
+
+      if (d.type === 'POI_PIN_UPSERT' && d.pin) {
+        const pin: PoiPin = {
+          poiId: String(d.pin.poiId || ''),
+          lat: Number(d.pin.lat),
+          lon: Number(d.pin.lon),
+          cat: String(d.pin.cat || 'other'),
+          name: String(d.pin.name || ''),
+          notes: String(d.pin.notes || ''),
+          url: String(d.pin.url || ''),
+          created: Number(d.pin.created) || 0,
+        };
+        if (!pin.poiId || !Number.isFinite(pin.lat) || !Number.isFinite(pin.lon)) return;
+        const ok = await upsertPoiPin(scopeId, pin);
+        if (!ok) {
+          const pins = await loadPoiPins(scopeId);
+          try { sendToIframe({ type: 'POI_PINS_DEFAULTS', scopeId, pins }); } catch {}
+        }
+      } else if (d.type === 'POI_PIN_REMOVE') {
+        const poiId = String(d.poiId || '');
+        if (!poiId) return;
+        const ok = await removePoiPin(scopeId, poiId);
+        if (!ok) {
+          const pins = await loadPoiPins(scopeId);
+          try { sendToIframe({ type: 'POI_PINS_DEFAULTS', scopeId, pins }); } catch {}
+        }
+      } else if (d.type === 'POI_LOCAL_SNAPSHOT' && Array.isArray(d.items)) {
+        const pins: PoiPin[] = d.items.map((it: any) => ({
+          poiId: String(it.id || ''),
+          lat: Number(it.lat),
+          lon: Number(it.lon),
+          cat: String(it.cat || 'other'),
+          name: String(it.name || ''),
+          notes: String(it.notes || ''),
+          url: String(it.url || ''),
+          created: Number(it.created) || 0,
+        })).filter((p: PoiPin) => p.poiId && Number.isFinite(p.lat) && Number.isFinite(p.lon));
+        if (pins.length > 0) await upsertManyPoiPins(scopeId, pins);
+        const fresh = await loadPoiPins(scopeId);
+        try { sendToIframe({ type: 'POI_PINS_DEFAULTS', scopeId, pins: fresh }); } catch {}
       }
     };
     window.addEventListener('message', handler);

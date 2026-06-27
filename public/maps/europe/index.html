@@ -1263,6 +1263,25 @@ function hideSnapshotBanner(){
   if (el) el.style.display = "none";
 }
 
+// Trim the full snapshot down to ONLY the shape linnuliigid's
+// _loadNeighborDataLocal reads cross-map: payload.points[name].regions[cc].{occ7,t,lat,lon,loc}.
+// Keeps the neighbor-overlay feed intact while dropping the ~308KB of unused snapshot bulk.
+function _trimSnapshotForNeighbors(snapshot){
+  const src = (snapshot && snapshot.payload && snapshot.payload.points) || {};
+  const points = {};
+  for(const name in src){
+    const regions = src[name] && src[name].regions;
+    if(!regions) continue;
+    const outR = {};
+    for(const cc in regions){
+      const r = regions[cc] || {};
+      outR[cc] = { occ7: r.occ7, t: r.t, lat: r.lat, lon: r.lon, loc: r.loc };
+    }
+    points[name] = { regions: outR };
+  }
+  return { version: snapshot.version, createdAt: snapshot.createdAt, payload: { points: points } };
+}
+
 async function saveSnapshotLocal(){
   const snapshot = {
     version: SNAPSHOT_VERSION,
@@ -1274,7 +1293,7 @@ async function saveSnapshotLocal(){
     },
   };
   try { localStorage.setItem(getSnapshotStorageKey(), JSON.stringify(snapshot)); } catch(e){ console.warn("[snapshot] snapshot save failed (quota)", e); }
-  try { localStorage.setItem(LS_EU_LAST_GOOD, JSON.stringify(snapshot)); } catch(e){ console.warn("[snapshot] bm_eu_last_good_snapshot save failed (quota)", e); }
+  try { localStorage.setItem(LS_EU_LAST_GOOD, JSON.stringify(_trimSnapshotForNeighbors(snapshot))); } catch(e){ console.warn("[snapshot] bm_eu_last_good_snapshot save failed (quota)", e); }
   lastSnapshotAt = snapshot.createdAt;
   updateDebugPanel();
 }
@@ -1312,7 +1331,7 @@ function applySnapshot(snapshot){
   dataMode = "snapshot";
   lastSnapshotAt = snapshot.createdAt || null;
   snapshotDebugNote = null;
-  try { localStorage.setItem(LS_EU_LAST_GOOD, JSON.stringify(snapshot)); } catch(e){ console.warn("[snapshot] bm_eu_last_good_snapshot save failed (quota)", e); }
+  try { localStorage.setItem(LS_EU_LAST_GOOD, JSON.stringify(_trimSnapshotForNeighbors(snapshot))); } catch(e){ console.warn("[snapshot] bm_eu_last_good_snapshot save failed (quota)", e); }
   saveAll();
   render();
   updateDebugPanel();

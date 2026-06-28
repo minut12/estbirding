@@ -1067,7 +1067,7 @@ async function loadSharedEuropeSpecies(){
 }
 
 let perCountry = (localStorage.getItem(LS_PER_COUNTRY) || "1") === "1";
-let rareOnly = (localStorage.getItem(LS_RARE_ONLY) || "0") === "1";
+let rareOnly = (localStorage.getItem(LS_RARE_ONLY) ?? "1") === "1";
 let recentOnly = true;
 let lastRefreshAt = null;
 let lastSnapshotAt = null;

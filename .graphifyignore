@@ -1,0 +1,14 @@
+node_modules/
+dist/
+graphify-out/cache/
+
+# Repo images are UI/branding chrome (favicons, icons, placeholders); the real bird
+# avatars live in Supabase storage, not the repo. Keep them out of the semantic pass.
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+# The repo's 2 SVGs (public/icons/kingfisher.svg, public/placeholder.svg) are chrome
+# too, not diagrams. Without this they'd be detected as images and force vision agents.
+*.svg

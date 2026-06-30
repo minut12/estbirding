@@ -14391,5 +14391,77 @@ if(bg) bg.addEventListener('click',function(e){if(e.target===this) window.__clos
 
 
 
+<!-- === DIAG: avatar key-normalization recon (READ-ONLY, console only) === -->
+<script>
+(function(){
+  try {
+    window.__lastAvatarDefaults = window.__lastAvatarDefaults || null;
+    window.addEventListener('message', function(ev){
+      try {
+        if (ev && ev.data && ev.data.type === 'AVATARS_DEFAULTS' && ev.data.avatars) {
+          window.__lastAvatarDefaults = ev.data.avatars;
+        }
+      } catch(e){}
+    });
+
+    function cps(s){ try { return Array.from(String(s)).map(function(c){ return c.codePointAt(0).toString(16); }).join(' '); } catch(e){ return '?'; } }
+    function slug(s){ try { return (typeof slugifySpeciesKey==='function') ? slugifySpeciesKey(s) : '(no slugify)'; } catch(e){ return '(err)'; } }
+    function garble(s){ try { return (typeof _toInternalKey==='function') ? _toInternalKey(s) : '(no _toInternalKey)'; } catch(e){ return '(err)'; } }
+
+    // Clean-Unicode target names. The diag prints codepoints, so even if these
+    // literals get mangled on save we'll still see it in the output.
+    var TARGETS = ['Värbkakk', 'Väike-kirjurähn'];
+
+    window.__avatarDiag = function(){
+      var sp    = (typeof SPECIES !== 'undefined') ? SPECIES : (window.SPECIES || []);
+      var av    = (typeof avatars !== 'undefined') ? avatars : (window.avatars || {});
+      var cloud = window.__lastAvatarDefaults || {};
+      var cloudKeys = Object.keys(cloud);
+
+      console.log('[AVATAR-DIAG] SPECIES count:', sp.length, '| cloud avatar keys:', cloudKeys.length);
+
+      TARGETS.forEach(function(clean){
+        var garbled = garble(clean);
+        var sClean  = slug(clean);
+        var sNFC    = slug(String(clean).normalize('NFC'));
+        var sNFD    = slug(String(clean).normalize('NFD'));
+
+        var idxClean   = sp.indexOf(clean);
+        var idxGarbled = sp.indexOf(garbled);
+        var speciesEntry = (idxGarbled >= 0) ? garbled : (idxClean >= 0 ? clean : null);
+        var speciesSlug  = speciesEntry ? slug(speciesEntry) : '(not in SPECIES)';
+
+        var matchExact = cloudKeys.filter(function(k){ return k === clean || k === garbled; });
+        var matchSlug  = cloudKeys.filter(function(k){ return slug(k) === sClean; });
+        var matchNFC   = cloudKeys.filter(function(k){ return slug(String(k).normalize('NFC')) === sClean; });
+        var matchNFD   = cloudKeys.filter(function(k){ return slug(String(k).normalize('NFD')) === sClean; });
+
+        console.log('[AVATAR-DIAG] ----', clean, '----');
+        console.log('  clean cps        :', cps(clean));
+        console.log('  garbled key      :', garbled, '| cps:', cps(garbled));
+        console.log('  in SPECIES       : clean idx', idxClean, '| garbled idx', idxGarbled);
+        console.log('  species slug     :', speciesSlug, '| clean slug:', sClean, '| NFC:', sNFC, '| NFD:', sNFD);
+        console.log('  cloud match exact:', matchExact);
+        console.log('  cloud match slug :', matchSlug.map(function(k){ return k + ' [' + cps(k) + ']'; }));
+        console.log('  cloud match NFC  :', matchNFC.map(function(k){ return k + ' [' + cps(k) + ']'; }));
+        console.log('  cloud match NFD  :', matchNFD.map(function(k){ return k + ' [' + cps(k) + ']'; }));
+        console.log('  avatars[garbled] :', av[garbled] || '(none)');
+        console.log('  avatars[clean]   :', av[clean] || '(none)');
+        try { console.log('  getDisplayAvatar :', (typeof getDisplayAvatar==='function') ? getDisplayAvatar(speciesEntry || garbled) : '(no fn)'); }
+        catch(e){ console.log('  getDisplayAvatar : (err)', e && e.message); }
+      });
+      return 'done';
+    };
+
+    function fireWhenReady(){
+      if (typeof SPECIES === 'undefined') { setTimeout(fireWhenReady, 800); return; }
+      setTimeout(function(){ try { window.__avatarDiag(); } catch(e){ console.log('[AVATAR-DIAG] error', e && e.message); } }, 3500);
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fireWhenReady);
+    else fireWhenReady();
+  } catch(e) { try { console.log('[AVATAR-DIAG] fatal', e && e.message); } catch(_){} }
+})();
+</script>
+
 </body>
 </html>

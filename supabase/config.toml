@@ -119,3 +119,6 @@ verify_jwt = false
 
 [functions.get-ee-species-presence]
 verify_jwt = false
+
+[functions.get-elurikkus-recent-obs]
+verify_jwt = false

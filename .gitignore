@@ -36,3 +36,6 @@ dist-ssr
 # Graphify knowledge-graph outputs — rebuilt locally via the post-commit hook;
 # keep out of the Lovable-synced repo.
 graphify-out/
+
+# Local MCP server config — contains a loopback-only bearer token; never commit.
+.mcp.json

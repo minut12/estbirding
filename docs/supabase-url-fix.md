@@ -1,18 +1,18 @@
 # Supabase URL fix
 
-Kui Supabase URL on vale, Edge Function päringud ebaõnnestuvad (nt `Failed to fetch`).
+Kui Supabase URL on vale, Edge Function pï¿½ringud ebaï¿½nnestuvad (nt `Failed to fetch`).
 
-## Õige Project URL
+## ï¿½ige Project URL
 1. Ava Supabase Dashboard.
 2. Mine **Project Settings -> API**.
 3. Kopeeri **Project URL**.
 
-## Määra Lovable env muutujad
+## Mï¿½ï¿½ra Lovable env muutujad
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
 ## Ajutine parandamine seadmes
-Kui env on vale, ava rakenduses **Seaded -> Arendaja -> Supabase (arendaja)** ja määra:
+Kui env on vale, ava rakenduses **Seaded -> Arendaja -> Supabase (arendaja)** ja mï¿½ï¿½ra:
 - `Supabase URL override`
 - `Supabase anon key override` (valikuline)
 

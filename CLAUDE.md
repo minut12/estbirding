@@ -24,26 +24,24 @@ update it rather than create a duplicate. Create the folder if it doesn't exist.
 
 ## Obsidian vault access (MCP)
 
-An `obsidian` MCP server is registered project-scoped (`.mcp.json`). It reaches the
-local EstBirding vault via the Local REST API plugin over `http://127.0.0.1:27123`.
-Tools are only live when the vault is open in Obsidian; if calls fail, the vault is
-probably closed — say so rather than working around it.
+The `obsidian` MCP server (project-scoped, `.mcp.json`) reaches the local vault via the
+Local REST API plugin on `http://127.0.0.1:27123`. Tools are **vault-relative** and only
+work while Obsidian is open with the EstBirding vault.
 
-Expected tool capabilities (exact names come from the server at runtime): list files,
-read a file, full-text search, append content, patch content, delete file.
+Layout note: this repo is nested inside the vault at `EstBirding/estbirding/`. Therefore:
 
-**Read**
-- The existing session-start rule stands: read `decisions/` as binding constraints.
-  Pull them with the read tools (read-file / search / list) instead of assuming
-  contents.
-- Any hand-written note in the vault root may be read for context.
+- Repo files — `decisions/`, `memory/`, `graphify-out/`, source — are already in your
+  native working directory. Read and write them with normal file tools. **Do NOT use the
+  Obsidian MCP for anything inside the repo**; via MCP they'd need an `estbirding/` prefix
+  and it only duplicates native access.
+- `decisions/` lives IN the repo (`estbirding/decisions/`): create-if-absent, read at
+  session start as binding constraints — all native, no MCP.
+- `graphify-out/` is Graphify-owned. Read-only. Never write or delete.
 
-**Write — only after Kristian's explicit go. Never write unprompted.**
-- New atomic decision notes: append to `decisions/`, one decision per note.
-- Prefer append / patch over rewriting whole files.
+**Use the Obsidian MCP only for vault-root notes OUTSIDE the repo** — the daily notes
+(e.g. `2026-06-30.md`) and hand-written planning notes — to pull that context into a
+session.
 
-**Never**
-- Never write to or delete anything under `graphify/` — Graphify owns it
-  (auto-generated). Read-only at most.
-- Never call the delete-file tool anywhere in the vault.
-- Never commit the bearer token or `.mcp.json`.
+**Read-only by default.** Use the read/search tools only. Do not append, patch, create,
+delete, or move any vault file unless Kristian explicitly says so in that session. Never
+call the delete tool anywhere in the vault. Never commit the bearer token or `.mcp.json`.

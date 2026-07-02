@@ -1,0 +1,1 @@
+ALTER TABLE public.gbif_pins ADD COLUMN IF NOT EXISTS details jsonb DEFAULT NULL;

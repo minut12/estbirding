@@ -109,6 +109,12 @@
       "skillPath": "skills/talking-head-recut/SKILL.md",
       "computedHash": "a82a030cfeea7b799907cd1f7e278d81b38274f6be5cd6cbb57016f41f3f4fb4"
     },
+    "travel-planner": {
+      "source": "travisjneuman/.claude",
+      "sourceType": "github",
+      "skillPath": "skills/travel-planner/SKILL.md",
+      "computedHash": "35991891a6ed5e561b1f74b0d17fdb8a8aec6815050a5fad6c1efe99649c5e4c"
+    },
     "website-to-video": {
       "source": "heygen-com/hyperframes",
       "sourceType": "github",

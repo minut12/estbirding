@@ -691,6 +691,7 @@ export type Database = {
       gbif_pins: {
         Row: {
           created_at: string
+          details: Json | null
           event_date: string | null
           gbif_id: string
           id: string
@@ -702,6 +703,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          details?: Json | null
           event_date?: string | null
           gbif_id: string
           id?: string
@@ -713,6 +715,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          details?: Json | null
           event_date?: string | null
           gbif_id?: string
           id?: string

@@ -8461,7 +8461,8 @@ window.addEventListener('message', function(ev){
         var gid = String(p.gbifId);
         pinnedGbif.set(gid, {
           gbifId: gid, species: String(p.species),
-          lat: Number(p.lat), lon: Number(p.lon), date: p.date != null ? p.date : null
+          lat: Number(p.lat), lon: Number(p.lon), date: p.date != null ? p.date : null,
+          details: (p.details != null ? p.details : null)
         });
       });
       renderPinnedGbifMarkers();
@@ -8771,9 +8772,23 @@ function renderPinnedGbifMarkers(){
           + "this.textContent='Kopeeritud!';var b=this;setTimeout(function(){b.textContent='Kopeeri'},1500)}.bind(this))\" "
           + 'style="padding:3px 8px;border:1px solid ' + srcColor + ';border-radius:6px;'
           + 'background:' + srcBg + ';color:' + srcText + ';font-size:11px;cursor:pointer">Kopeeri</button>';
+        // Rich detail lines (elu pins carry pin.details; GBIF/eBird/legacy pins have
+        // null → sparse popup, no regression). Mirrors _eluObsPopupHtml's labels.
+        var __det = pin.details || null;
+        var __detailHtml = '';
+        if (__det) {
+          var __koht = String(__det.loc || '').trim();
+          if (__det.cty) __koht = __koht ? (__koht + ', ' + String(__det.cty)) : String(__det.cty);
+          if (__koht) __detailHtml += '<div>koht: ' + escapeHtml(__koht) + '</div>';
+          if (__det.n != null && String(__det.n).trim() !== '') __detailHtml += '<div>Individual count: ' + escapeHtml(String(__det.n)) + '</div>';
+          if (__det.bhv) __detailHtml += '<div>Behavior: ' + escapeHtml(String(__det.bhv)) + '</div>';
+          if (__det.obr) __detailHtml += '<div>Collectors: ' + escapeHtml(String(__det.obr)) + '</div>';
+          __detailHtml += '<div style="margin-top:4px;font-size:11px;opacity:.8">coords: ' + Number(pin.lat).toFixed(5) + ', ' + Number(pin.lon).toFixed(5) + '</div>';
+        }
         popupHtml = '<div style="font-family:system-ui;font-size:12px">'
           + '<b>' + escapeHtml(pin.species) + '</b><br>' + escapeHtml(dateFmt)
           + '<br><span style="color:' + srcColor + ';font-size:11px">' + srcLabel + '</span>'
+          + (__detailHtml ? '<div style="margin-top:6px">' + __detailHtml + '</div>' : '')
           + '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'
           + pinCopyBtn
           + '<button onclick="window.__toggleGbifPin(\'' + id + '\')" '
@@ -8831,11 +8846,15 @@ window.__toggleGbifPin = function(gbifId){
   } else {
     var occ = __gbifOccById[gbifId];
     if (!occ) { console.warn('[gbif-pin] no occ data for', gbifId); return; }
-    var pin = { gbifId: gbifId, species: occ.species, lat: occ.lat, lon: occ.lon, date: occ.date || null };
+    var pin = { gbifId: gbifId, species: occ.species, lat: occ.lat, lon: occ.lon, date: occ.date || null, details: (occ.details || null) };
     pinnedGbif.set(gbifId, pin);
     renderPinnedGbifMarkers();
     try { parent.postMessage({ type: 'GBIF_PIN_ADD', scopeId: GBIF_PIN_SCOPE_ID, pin: pin }, '*'); } catch(e){}
   }
+  // elu-obs pins: the transient secondary layer must re-sync so (a) on pin, the now-stale transient under
+  // the new pin is dropped by the skip-if-pinned guard, and (b) on unpin, the obs is redrawn (or stays gone
+  // if it has aged out of the 7d payload). Guarded to elu: ids so GBIF/eBird pin toggles don't re-render.
+  if (String(gbifId).indexOf('elu:') === 0) { try { _syncEluObsVisibility(); } catch(e){} }
   try { map.closePopup(); } catch(e){}
 };
 
@@ -8866,7 +8885,15 @@ function _eluObsIcon(avatarUrl){
     + 'background-size:cover;background-position:center;box-sizing:border-box;' + bg + '"></div>';
   return L.divIcon({ html: html, className: '', iconSize: [26,26], iconAnchor: [13,13], popupAnchor: [0,-13] });
 }
-function _eluObsPopupHtml(speciesKey, o){
+// Canonical synthetic pin id for a secondary elu-obs record. MUST match the id
+// shape used by the persistent pin layer and the gbif_pins store:
+// 'elu:<species>:<lat5>:<lon5>:<YYYY-MM-DD>'. Date is sliced to 10 chars so the id
+// stays stable regardless of any time component on the source date.
+function _eluObsSynthId(species, lat, lon, date){
+  return 'elu:' + species + ':' + Number(lat).toFixed(5) + ':' + Number(lon).toFixed(5)
+       + ':' + String(date || '').slice(0, 10);
+}
+function _eluObsPopupHtml(speciesKey, o, sid){
   var esc = (typeof escapeHtml === 'function') ? escapeHtml : function(s){ return String(s == null ? '' : s); };
   var html = '<div style="font-weight:700;margin-bottom:4px">' + esc(speciesKey) + '</div>';
   if(o.d){
@@ -8883,9 +8910,16 @@ function _eluObsPopupHtml(speciesKey, o){
   if(extra) html += '<div style="margin-top:6px">' + extra + '</div>';
   var lat = Number(o.lat), lon = Number(o.lon);
   if(Number.isFinite(lat) && Number.isFinite(lon)){
+    var pinBtn = '';
+    if(sid){
+      var __pinned = (typeof pinnedGbif !== 'undefined') && pinnedGbif.has(sid);
+      pinBtn = '<button class="popupBtn" onclick="window.__toggleGbifPin(\'' + sid + '\')">'
+        + (__pinned ? '📌 Eemalda nõel' : '📌 Kinnita nõelaga') + '</button>';
+    }
     html += '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">'
       + '<button class="popupBtn" onclick="copyCoords(' + lat + ',' + lon + ')">Copy coords</button>'
       + '<button class="popupBtn" onclick="openWaze(' + lat + ',' + lon + ')">Open in Waze</button>'
+      + pinBtn
       + '</div>'
       + '<div style="margin-top:6px;font-size:12px;opacity:.8">coords: ' + lat.toFixed(5) + ',' + lon.toFixed(5) + '</div>';
   }
@@ -8961,8 +8995,23 @@ function _renderEluObsMarkers(){
     for(var ci = 0; ci < chosen.length; ci++){
       var co = chosen[ci];
       try{
+        // Pinnable secondary obs: canonical synthId, skip if already pinned (the
+        // persistent pin layer draws it instead), and register the occ so the
+        // popup's "Kinnita nõelaga" button can drive __toggleGbifPin.
+        var __sid = _eluObsSynthId(key, co.lat, co.lon, co.d);
+        if(pinnedGbif.has(__sid)) continue; // pinned → drawn by persistent pin layer, bypasses 7d age-out
+        // Stash rich popup fields (null/empty omitted) so a pin captures them and
+        // keeps full detail in the pin-layer popup after the 7d source obs ages out.
+        var __d = {};
+        if(co.loc) __d.loc = co.loc;
+        if(co.cty) __d.cty = co.cty;
+        if(co.obr) __d.obr = co.obr;
+        if(co.n != null) __d.n = co.n;
+        if(co.bhv) __d.bhv = co.bhv;
+        if(co.sid) __d.sid = co.sid;
+        __gbifOccById[__sid] = { species: key, lat: Number(co.lat), lon: Number(co.lon), date: co.d ? String(co.d).slice(0,10) : null, details: (Object.keys(__d).length ? __d : null) };
         var m = L.marker([Number(co.lat), Number(co.lon)], { icon: _eluObsIcon(avatarUrl) });
-        m.bindPopup(_eluObsPopupHtml(key, co));
+        m.bindPopup(_eluObsPopupHtml(key, co, __sid));
         m.addTo(map); // base map pane, like GBIF markers — NOT the cluster group
         markerList.push(m);
       }catch(e){}
@@ -10167,15 +10216,7 @@ try{
     window.parent.postMessage({ type: 'SUPABASE_CONFIG_REQUEST' }, '*');
   }
 }catch(e){}
-// === eElurikkus observation layer (lives in main script block for closure access to liveElurikkusBySpecies, avatars, map, points) ===
-var _eluObsLayerGroup = null;
-
-if (map && !map.getPane('eluObsPane')) {
-  map.createPane('eluObsPane');
-  map.getPane('eluObsPane').style.zIndex = 600;
-  map.getPane('eluObsPane').style.pointerEvents = 'auto';
-}
-
+// Avatar icon for pinned secondary obs markers — used by the persistent pin layer (renderPinnedGbifMarkers, ~8766).
 function _eluObsAvatarIcon(avatarUrl, borderColor, borderStyle, borderWidth, opacity, letter) {
   var size = 26;
   var bg = avatarUrl
@@ -10188,280 +10229,7 @@ function _eluObsAvatarIcon(avatarUrl, borderColor, borderStyle, borderWidth, opa
   return L.divIcon({ html: html, className: '', iconSize: [total, total], iconAnchor: [total / 2, total / 2], popupAnchor: [0, -(total / 2 + 2)] });
 }
 
-function clearEluObsLayer() {
-  if (_eluObsLayerGroup) { map.removeLayer(_eluObsLayerGroup); _eluObsLayerGroup = null; }
-}
-window.clearEluObsLayer = clearEluObsLayer;
-
-function renderElurikkusObservationsLayer(speciesName) {
-  clearEluObsLayer();
-  var toggleActive = !!(window.__eluObsToggleActive);
-  console.debug('[ELU-OBS-LAYER] entry', speciesName, {
-    probEluCacheKeys: Object.keys(window.__probEluCache || {}).length,
-    liveElurikkusKeys: Object.keys(liveElurikkusBySpecies || {}).length,
-    avatarsAvailable: typeof avatars !== 'undefined' && avatars !== null,
-    toggleActive: toggleActive
-  });
-  console.debug('[ELU-OBS-DIAG] resolvers', {
-    resolveCentroidFromPlace: typeof resolveCentroidFromPlace,
-    resolveFallbackLatLon: typeof resolveFallbackLatLon,
-    probEluCacheType: typeof window.__probEluCache,
-    liveElurikkusType: typeof liveElurikkusBySpecies,
-    pointsType: typeof points,
-    avatarsType: typeof avatars
-  });
-  if (!toggleActive) return;
-  var _eluKey = _normalizeSpeciesKey(speciesName);
-  var items = [];
-  var _chosenSource = 'none';
-  var _pec = (window.__probEluCache || {})[_eluKey] || null;
-  if (_pec && Array.isArray(_pec.items) && _pec.items.length > 0) {
-    items = _pec.items;
-    _chosenSource = '__probEluCache';
-  } else {
-    var _lec = liveElurikkusBySpecies[_eluKey] || null;
-    if (_lec && Array.isArray(_lec.items)) { items = _lec.items; _chosenSource = 'liveElurikkusBySpecies'; }
-  }
-  console.debug('[ELU-OBS-DIAG] sources', speciesName, {
-    probEluCacheKey: _eluKey,
-    probEluCacheItems: (_pec && Array.isArray(_pec.items)) ? _pec.items.length : 'none',
-    liveElurikkusItems: (liveElurikkusBySpecies[_eluKey] && Array.isArray(liveElurikkusBySpecies[_eluKey].items)) ? liveElurikkusBySpecies[_eluKey].items.length : 'none',
-    pointsEntry: points[speciesName] ? {
-      occ7: points[speciesName].occ7,
-      occ7Elu: points[speciesName].occ7Elu,
-      hasLat: Number.isFinite(points[speciesName].lat),
-      hasLon: Number.isFinite(points[speciesName].lon),
-      keys: Object.keys(points[speciesName]),
-      arrayKeys: Object.keys(points[speciesName]).filter(function(k){ return Array.isArray(points[speciesName][k]); })
-    } : null,
-    chosenSourceUsed: _chosenSource
-  });
-
-  var avatarUrl = getDisplayAvatar(speciesName);
-  var hasAvatar = !!(avatarUrl && avatarUrl.indexOf('placeholder') === -1);
-  var fallbackLetter = String(speciesName || '?').charAt(0).toUpperCase();
-
-  _eluObsLayerGroup = L.layerGroup();
-  var _now = Date.now();
-  var _7dMs = 7 * 24 * 60 * 60 * 1000;
-  var stats = { native: 0, resolved: 0, marker: 0, skipped: 0, in7d: 0, fallbackIcon: 0 };
-  var _skipReasons = { ageOver7d: 0, noPlaceText: 0, resolverReturnedNull: 0, dateUnparseable: 0, otherSkipped: 0 };
-  var _diagItemIndex = 0;
-
-  for (var i = 0; i < items.length; i++) {
-    var item = items[i];
-    var _lLat = Number(item.lat); var _lLon = Number(item.lon);
-    var coordSource = 'native';
-    var _diagSkipReason = null;
-    var _diagPlaceUsed = null;
-    var _diagCentroidResult = null;
-    var _diagFallbackResult = null;
-    if (!Number.isFinite(_lLat) || !Number.isFinite(_lLon)) {
-      var place = String(item.placeText || item.locality || item.municipality || item.county || '').trim();
-      _diagPlaceUsed = place;
-      var resolved = resolvePlace(place, item.municipality || '', item.county || '');
-      _diagCentroidResult = resolved;
-      if (resolved && Number.isFinite(resolved.lat) && Number.isFinite(resolved.lon)) {
-        _lLat = resolved.lat; _lLon = resolved.lon;
-        coordSource = 'resolved';
-      } else {
-        coordSource = 'skipped';
-        _diagSkipReason = !place ? 'no-place-text' : 'resolver-null';
-        if (!place) _skipReasons.noPlaceText++; else _skipReasons.resolverReturnedNull++;
-        stats.skipped++;
-        if (_diagItemIndex < 3) {
-          console.debug('[ELU-OBS-DIAG] item', _diagItemIndex, {
-            observedAt: item.observedAt, placeText: item.placeText, municipality: item.municipality,
-            locality: item.locality, county: item.county, coordsStatus: item.coordsStatus,
-            nativeLatRaw: item.lat, nativeLonRaw: item.lon,
-            nativeLatFinite: Number.isFinite(Number(item.lat)), nativeLonFinite: Number.isFinite(Number(item.lon)),
-            placeUsedForResolve: _diagPlaceUsed, resolveResult: resolved,
-            resolveStrategy: resolved ? (resolved._strategy || 'unknown') : 'none',
-            strippedText: _stripPlaceSuffix(place),
-            finalCoordSource: coordSource, skipReason: _diagSkipReason
-          });
-          _diagItemIndex++;
-        }
-        continue;
-      }
-    }
-    var _lDate = String(item.observedAt || item.eventDate || item.date || '');
-    if (!_lDate) { _diagSkipReason = 'date-unparseable'; _skipReasons.dateUnparseable++; stats.skipped++; if (_diagItemIndex < 3) { console.debug('[ELU-OBS-DIAG] item', _diagItemIndex, { observedAt: item.observedAt, finalCoordSource: coordSource, skipReason: _diagSkipReason }); _diagItemIndex++; } continue; }
-    var _lTs = _toDay(_lDate);
-    if (!_lTs || _lTs <= 0 || (_now - _lTs) > _7dMs) { _skipReasons.ageOver7d++; continue; }
-    var ageDays = (_now - _lTs) / 86400000;
-    if (_diagItemIndex < 3) {
-      console.debug('[ELU-OBS-DIAG] item', _diagItemIndex, {
-        observedAt: item.observedAt, ageDays: Math.round(ageDays * 10) / 10,
-        placeText: item.placeText, municipality: item.municipality,
-        locality: item.locality, county: item.county, coordsStatus: item.coordsStatus,
-        nativeLatRaw: item.lat, nativeLonRaw: item.lon,
-        nativeLatFinite: Number.isFinite(Number(item.lat)), nativeLonFinite: Number.isFinite(Number(item.lon)),
-        placeUsedForResolve: _diagPlaceUsed, resolveResult: _diagCentroidResult,
-        resolveStrategy: _diagCentroidResult ? (_diagCentroidResult._strategy || 'native') : 'native',
-        strippedText: _stripPlaceSuffix(String(item.placeText || '')),
-        finalCoordSource: coordSource, skipReason: null
-      });
-      _diagItemIndex++;
-    }
-    stats.in7d++;
-    if (coordSource === 'native') stats.native++; else stats.resolved++;
-    if (!hasAvatar) stats.fallbackIcon++;
-
-    var baseOpacity = coordSource === 'native' ? 0.85 : 0.65;
-    var opacity = baseOpacity * (1 - 0.5 * (ageDays / 7));
-    var borderColor = coordSource === 'native' ? '#1E7F3E' : '#E88D2A';
-    var borderStyle = coordSource === 'resolved' ? 'dashed' : 'solid';
-    var placeLabel = String(item.placeText || item.locality || item.municipality || item.county || '').trim();
-    var dateFormatted = _lDate.replace(/^(\d{4})-(\d{2})-(\d{2}).*/, '$3.$2.$1');
-    var sourceLabel = coordSource === 'native' ? 'Native coords' : 'Resolved from place: ' + placeLabel;
-
-    // eElu obs carry no stable record id, so fall back to the composite synthetic id (Part A).
-    var synthId = 'elu:' + speciesName + ':' + _lLat.toFixed(5) + ':' + _lLon.toFixed(5) + ':' + (_lDate || '');
-    if (pinnedGbif.has(synthId)) continue; // drawn by the persistent pin layer (Part E)
-    __gbifOccById[synthId] = { species: speciesName, lat: _lLat, lon: _lLon, date: _lDate ? String(_lDate).slice(0, 10) : null };
-
-    var eluCoords = _lLat.toFixed(5) + ', ' + _lLon.toFixed(5);
-    var eluCopyBtn = '<button '
-      + "onclick=\"navigator.clipboard.writeText('" + eluCoords + "').then(function(){"
-      + "this.textContent='Kopeeritud!';var b=this;setTimeout(function(){b.textContent='Kopeeri'},1500)}.bind(this))\" "
-      + 'style="padding:3px 8px;border:1px solid #1E7F3E;border-radius:6px;'
-      + 'background:#dcfce7;color:#166534;font-size:11px;cursor:pointer">Kopeeri</button>';
-    var eluPinned = pinnedGbif.has(synthId);
-    var eluPinBtn = '<button onclick="window.__toggleGbifPin(\'' + synthId + '\')" '
-      + 'style="padding:3px 8px;border:1px solid #1E7F3E;border-radius:6px;'
-      + 'background:#dcfce7;color:#166534;font-size:11px;cursor:pointer">'
-      + (eluPinned ? '📌 Eemalda nõel' : '📌 Kinnita nõelaga')
-      + '</button>';
-
-    var icon = _eluObsAvatarIcon(hasAvatar ? avatarUrl : '', borderColor, borderStyle, 3, opacity, fallbackLetter);
-    var m = L.marker([_lLat, _lLon], { icon: icon, pane: 'eluObsPane' });
-    m.bindPopup('<div style="font-family:system-ui;font-size:12px"><b>' + dateFormatted + '</b><br>' + (placeLabel || '-') + '<br><span style="color:#94a3b8;font-size:11px">' + sourceLabel + '</span>'
-      + '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">' + eluCopyBtn + eluPinBtn + '</div>'
-      + '</div>');
-    _eluObsLayerGroup.addLayer(m);
-  }
-
-  // Add species marker point if it has native coords
-  var eluPoint = points[speciesName] || {};
-  if (Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon) && eluPoint.t) {
-    var _mTs = _toDay(eluPoint.t);
-    if (_mTs && _mTs > 0 && (_now - _mTs) <= _7dMs) {
-      var mAgeDays = (_now - _mTs) / 86400000;
-      var mOpacity = 0.95 * (1 - 0.5 * (mAgeDays / 7));
-      var mDateFmt = String(eluPoint.t || '').replace(/^(\d{4})-(\d{2})-(\d{2}).*/, '$3.$2.$1');
-      var mIcon = _eluObsAvatarIcon(hasAvatar ? avatarUrl : '', '#2166AC', 'solid', 4, mOpacity, fallbackLetter);
-      if (!hasAvatar) stats.fallbackIcon++;
-      var mMarker = L.marker([eluPoint.lat, eluPoint.lon], { icon: mIcon, pane: 'eluObsPane' });
-      mMarker.bindPopup('<div style="font-family:system-ui;font-size:12px"><b>' + mDateFmt + '</b><br>Marker point<br><span style="color:#94a3b8;font-size:11px">Native coords (detail page)</span></div>');
-      _eluObsLayerGroup.addLayer(mMarker);
-      stats.marker++;
-      stats.in7d++;
-    }
-  }
-
-  _eluObsLayerGroup.addTo(map);
-  console.debug('[ELU-OBS-LAYER]', speciesName, {
-    itemsTotal: items.length,
-    native: stats.native,
-    resolved: stats.resolved,
-    marker: stats.marker,
-    skipped: stats.skipped,
-    in7d: stats.in7d,
-    hasAvatarForSpecies: hasAvatar,
-    fallbackIconUsed: stats.fallbackIcon,
-    skipReasons: _skipReasons
-  });
-}
-window.renderElurikkusObservationsLayer = renderElurikkusObservationsLayer;
-
-// === eBird 7d observation layer (per-species, mirrors eElu render model) ===
-// Reads from bm_ebird_obs_v1 cache populated by __refreshEbirdEEBulk.
-var _ebirdObsLayerGroup = null;
-
-function clearEbirdObsLayer() {
-  if (_ebirdObsLayerGroup) { map.removeLayer(_ebirdObsLayerGroup); _ebirdObsLayerGroup = null; }
-}
-window.clearEbirdObsLayer = clearEbirdObsLayer;
-
-function renderEbirdObservationsLayer(speciesName) {
-  clearEbirdObsLayer();
-  var toggleActive = !!(window.__eluObsToggleActive);
-  if (!toggleActive) return;
-
-  var bySpecies = {};
-  try {
-    var raw = localStorage.getItem('bm_ebird_obs_v1');
-    if (raw) {
-      var cached = JSON.parse(raw);
-      bySpecies = (cached && cached.bySpecies) || {};
-    }
-  } catch (e) {}
-
-  var items = bySpecies[speciesName] || [];
-  if (!items.length) return;
-
-  var avatarUrl = getDisplayAvatar(speciesName);
-  var hasAvatar = !!(avatarUrl && avatarUrl.indexOf('placeholder') === -1);
-  var fallbackLetter = String(speciesName || '?').charAt(0).toUpperCase();
-
-  _ebirdObsLayerGroup = L.layerGroup();
-  var _now = Date.now();
-  var _7dMs = 7 * 24 * 60 * 60 * 1000;
-
-  for (var i = 0; i < items.length; i++) {
-    var item = items[i];
-    var lat = Number(item.lat), lon = Number(item.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-    var obsDt = String(item.obsDt || '');
-    if (!obsDt) continue;
-    var tsMs = Date.parse(obsDt.replace(' ', 'T'));
-    if (!Number.isFinite(tsMs) || (_now - tsMs) > _7dMs) continue;
-
-    // Source-namespaced synthetic pin id (Part A). Stable across re-fetches.
-    var synthId = item.subId
-      ? ('ebird:' + item.subId + ':' + (item.speciesCode || ''))
-      : ('ebird:' + speciesName + ':' + lat.toFixed(5) + ':' + lon.toFixed(5) + ':' + (obsDt || ''));
-    if (pinnedGbif.has(synthId)) continue; // drawn by the persistent pin layer (Part E)
-    __gbifOccById[synthId] = { species: speciesName, lat: lat, lon: lon, date: obsDt ? obsDt.slice(0, 10) : null };
-
-    var ageDays = (_now - tsMs) / 86400000;
-    var opacity = 0.85 * (1 - 0.5 * (ageDays / 7));
-    var dateFormatted = obsDt.substring(0, 10).replace(/^(\d{4})-(\d{2})-(\d{2}).*/, '$3.$2.$1');
-    var locLabel = item.loc || '-';
-    var countLabel = (item.howMany != null) ? (' \u00b7 kogus: ' + item.howMany) : '';
-
-    var ebCoords = lat.toFixed(5) + ', ' + lon.toFixed(5);
-    var ebCopyBtn = '<button '
-      + "onclick=\"navigator.clipboard.writeText('" + ebCoords + "').then(function(){"
-      + "this.textContent='Kopeeritud!';var b=this;setTimeout(function(){b.textContent='Kopeeri'},1500)}.bind(this))\" "
-      + 'style="padding:3px 8px;border:1px solid #f59e0b;border-radius:6px;'
-      + 'background:#fef3c7;color:#92400e;font-size:11px;cursor:pointer">Kopeeri</button>';
-    var ebPinned = pinnedGbif.has(synthId);
-    var ebPinBtn = '<button onclick="window.__toggleGbifPin(\'' + synthId + '\')" '
-      + 'style="padding:3px 8px;border:1px solid #f59e0b;border-radius:6px;'
-      + 'background:#fef3c7;color:#92400e;font-size:11px;cursor:pointer">'
-      + (ebPinned ? '\ud83d\udccc Eemalda n\u00f5el' : '\ud83d\udccc Kinnita n\u00f5elaga')
-      + '</button>';
-
-    var icon = _eluObsAvatarIcon(hasAvatar ? avatarUrl : '', '#f59e0b', 'solid', 3, opacity, fallbackLetter);
-    var m = L.marker([lat, lon], { icon: icon, pane: 'eluObsPane' });
-    m.bindPopup(
-      '<div style="font-family:system-ui;font-size:12px">' +
-      '<b>' + dateFormatted + '</b><br>' +
-      locLabel + '<br>' +
-      '<span style="color:#f59e0b;font-size:11px">eBird' + countLabel + '</span>' +
-      '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">' + ebCopyBtn + ebPinBtn + '</div>' +
-      '</div>'
-    );
-    _ebirdObsLayerGroup.addLayer(m);
-  }
-
-  if (_ebirdObsLayerGroup.getLayers().length) _ebirdObsLayerGroup.addTo(map);
-}
-window.renderEbirdObservationsLayer = renderEbirdObservationsLayer;
-
-// === eBird obs debug helpers ===
+// === eBird obs debug helpers (operate on the shared bm_ebird_obs_v1 cache) ===
 window.__ebirdObsStats = function () {
   try {
     var raw = localStorage.getItem('bm_ebird_obs_v1');
@@ -10486,20 +10254,6 @@ window.__ebirdObsStats = function () {
 window.__ebirdObsClear = function () {
   localStorage.removeItem('bm_ebird_obs_v1');
   console.log('[EBIRD-OBS] cache cleared');
-};
-
-window.__ebirdObsForce = async function () {
-  try {
-    if (typeof window.__refreshEbirdEEBulk === 'function') await window.__refreshEbirdEEBulk();
-    var openSpecies = (typeof activeProbSpecies !== 'undefined' && activeProbSpecies) || (window.activeProbSpecies || '');
-    if (openSpecies && typeof window.renderEbirdObservationsLayer === 'function') {
-      window.renderEbirdObservationsLayer(openSpecies);
-    }
-    return window.__ebirdObsStats();
-  } catch (e) {
-    console.warn('[EBIRD-OBS] force failed', e);
-    return { ok: false, error: String(e) };
-  }
 };
 
 // Narrow helper for info-card count fallback (avoids exposing __probEluCache)
@@ -11448,9 +11202,9 @@ var __sharedDefaults = {};
       window.__ennEbirdCountsUpdatedAt = Date.now();
 
       // === Phase 1: bucket 7d obs (with coords) into bm_ebird_obs_v1 ===
-      // Side-effect side-channel for renderEbirdObservationsLayer. Reuses
-      // codeToName built above. Wrapped in try/catch so any failure here
-      // (quota, parse, etc.) never breaks the existing counts logic below.
+      // Populates the shared bm_ebird_obs_v1 cache read by the prob info-card
+      // eBird pill and count fallbacks. Reuses codeToName built above. Wrapped
+      // in try/catch so any failure here never breaks the counts logic below.
       try {
         var __obs_now = now;
         var __obs_7dMs = win7;
@@ -11846,11 +11600,6 @@ var __sharedDefaults = {};
     '@media(max-width:768px){#probInfoPanel{max-width:180px!important;font-size:11px!important;padding:10px 12px!important}}';
   document.head.appendChild(style);
 
-  // --- eElurikkus obs layer state (read before panel HTML build) ---
-  var _eluObsToggleActive = false;
-  try { _eluObsToggleActive = localStorage.getItem('bm_enn_show_elu_obs') === 'true'; } catch(_e) {}
-  window.__eluObsToggleActive = _eluObsToggleActive;
-
   // --- Info panel (injected into #mapWrap) ---
   var mapWrap = document.getElementById('mapWrap');
   var probPanel = document.createElement('div');
@@ -11877,15 +11626,6 @@ var __sharedDefaults = {};
         '<span id="probSrcPillEbird" style="font-size:11px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;display:none">eBird</span>' +
       '</div>' +
       '<div id="probFetchStatus" style="font-size:11px;color:#94a3b8;margin-top:6px"></div>' +
-      '<div style="margin-top:6px;display:flex;align-items:center;gap:6px">' +
-        '<button id="eluObsToggleBtn" style="font-size:11px;padding:2px 8px;border-radius:12px;border:1px solid #d1d5db;background:#f8fafc;color:#64748b;cursor:pointer" onclick="window.__toggleEluObsLayer()">' + (_eluObsToggleActive ? 'Peida obs' : 'Kuva obs') + '</button>' +
-      '</div>' +
-      '<div id="eluObsLegend" style="margin-top:4px;font-size:11px;color:#64748b;display:' + (_eluObsToggleActive ? 'flex' : 'none') + ';align-items:center;gap:6px;flex-wrap:wrap">' +
-        'Obs: <svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="#ddd" stroke="#1E7F3E" stroke-width="2"/></svg> native ' +
-        '<svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="#ddd" stroke="#E88D2A" stroke-width="2" stroke-dasharray="2 2"/></svg> resolved ' +
-        '<svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="#ddd" stroke="#f59e0b" stroke-width="2"/></svg> eBird ' +
-        '<svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="#ddd" stroke="#2166AC" stroke-width="2.5"/></svg> marker' +
-      '</div>' +
     '</div>';
   mapWrap.appendChild(probPanel);
 
@@ -11893,23 +11633,6 @@ var __sharedDefaults = {};
   document.getElementById('probCloseBtn').addEventListener('click', function(){
     if(activeProbSpecies) toggleProbability(activeProbSpecies);
   });
-
-  window.__toggleEluObsLayer = function() {
-    _eluObsToggleActive = !_eluObsToggleActive;
-    window.__eluObsToggleActive = _eluObsToggleActive;
-    try { localStorage.setItem('bm_enn_show_elu_obs', _eluObsToggleActive ? 'true' : 'false'); } catch(_e) {}
-    var btn = document.getElementById('eluObsToggleBtn');
-    if (btn) btn.textContent = _eluObsToggleActive ? 'Peida obs' : 'Kuva obs';
-    var legend = document.getElementById('eluObsLegend');
-    if (legend) legend.style.display = _eluObsToggleActive ? 'flex' : 'none';
-    if (_eluObsToggleActive && activeProbSpecies) {
-      if (typeof window.renderElurikkusObservationsLayer === 'function') window.renderElurikkusObservationsLayer(activeProbSpecies);
-      if (typeof window.renderEbirdObservationsLayer === 'function') window.renderEbirdObservationsLayer(activeProbSpecies);
-    } else {
-      if (typeof window.clearEluObsLayer === 'function') window.clearEluObsLayer();
-      if (typeof window.clearEbirdObsLayer === 'function') window.clearEbirdObsLayer();
-    }
-  };
 
   // --- Helpers ---
   var probLayerGroup = null;
@@ -12633,8 +12356,6 @@ var __sharedDefaults = {};
   // --- Layer rendering ---
   function clearProbabilityLayer() {
     if (probLayerGroup) { map.removeLayer(probLayerGroup); probLayerGroup = null; }
-    if (typeof window.clearEluObsLayer === 'function') window.clearEluObsLayer();
-    if (typeof window.clearEbirdObsLayer === 'function') window.clearEbirdObsLayer();
   }
 
   function buildTemporalBreakdown(cell) {
@@ -13179,8 +12900,6 @@ var __sharedDefaults = {};
       }
 
       renderProbabilityOverlay(result.scored, speciesName, result.data.occurrences.length, result.seasonal.length, result.seasonInfo);
-      if (typeof window.renderElurikkusObservationsLayer === 'function') window.renderElurikkusObservationsLayer(speciesName);
-      if (typeof window.renderEbirdObservationsLayer === 'function') window.renderEbirdObservationsLayer(speciesName);
       if (typeof render === 'function') render();
 
       var _eluKey = typeof _normalizeSpeciesKey === 'function' ? _normalizeSpeciesKey(speciesName) : String(speciesName || '').trim().toLowerCase();

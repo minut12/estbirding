@@ -1,4 +1,5 @@
 import { supabase } from '@/config/supabaseClient';
+import type { Json } from '@/integrations/supabase/types';
 
 export interface GbifPin {
   gbifId: string;
@@ -6,6 +7,10 @@ export interface GbifPin {
   lat: number;
   lon: number;
   date: string | null;
+  // Optional per-obs popup detail, stored in the gbif_pins.details jsonb column.
+  // Elurikkus pins carry { loc, cty, obr, n, bhv, sid } (null/empty keys omitted);
+  // GBIF/eBird pins omit it (null).
+  details?: Record<string, unknown> | null;
 }
 
 const PIN_ENABLED_SCOPES = new Set(['usa_co', 'usa_pa', 'usa_i70', 'linnuliigid']);
@@ -19,7 +24,7 @@ export async function loadGbifPins(mapScope: string): Promise<GbifPin[]> {
   try {
     const { data, error } = await supabase
       .from('gbif_pins')
-      .select('gbif_id, species, lat, lon, event_date')
+      .select('gbif_id, species, lat, lon, event_date, details')
       .eq('map_scope', mapScope);
     if (error) { console.warn('[gbifPins] load failed', error); return []; }
     return (data || []).map((r: any) => ({
@@ -28,6 +33,7 @@ export async function loadGbifPins(mapScope: string): Promise<GbifPin[]> {
       lat: Number(r.lat),
       lon: Number(r.lon),
       date: r.event_date ?? null,
+      details: r.details ?? null,
     }));
   } catch (e) {
     console.warn('[gbifPins] load threw', e);
@@ -51,6 +57,7 @@ export async function addGbifPin(mapScope: string, pin: GbifPin): Promise<boolea
         lat: pin.lat,
         lon: pin.lon,
         event_date: pin.date ?? null,
+        details: (pin.details ?? null) as Json,
       }, { onConflict: 'user_id,map_scope,gbif_id' });
     if (error) { console.warn('[gbifPins] add failed', error); return false; }
     return true;

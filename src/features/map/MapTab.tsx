@@ -929,6 +929,9 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
           lat: Number(d.pin.lat),
           lon: Number(d.pin.lon),
           date: d.pin.date ?? null,
+          // Pass-through: the iframe owns the shape; we do not validate/reshape.
+          // undefined (GBIF/eBird, or pre-step-3 elu) → null, harmless.
+          details: d.pin.details ?? null,
         };
         if (!pin.gbifId || !Number.isFinite(pin.lat) || !Number.isFinite(pin.lon)) return;
         const ok = await addGbifPin(scopeId, pin);

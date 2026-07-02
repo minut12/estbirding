@@ -887,6 +887,12 @@ var gbifTaxonKeys = {};
 try { gbifTaxonKeys = JSON.parse(localStorage.getItem('gbif_taxonkeys') || '{}'); } catch(e){}
 var gbifLoadingSpecies = new Set();
 
+// === Elurikkus recent-obs secondary markers (fetch-time only; NOT persisted) ===
+var ELU_OBS_PINS_ENABLED = true;      // kill switch — flip to false for a one-char disable
+var ELU_OBS_MAX_PER_SPECIES = 10;     // client render cap per species (after duplicate-skip)
+var eluObsMarkers = new Map();        // species key -> array of L.marker (mirrors gbifMarkers)
+var __eluRecentObs = null;            // last successful EF payload (in-memory only)
+
 // === GBIF pin state ===
 var pinnedGbif = new Map();        // gbifId -> { gbifId, species, lat, lon, date }
 var pinnedGbifMarkers = new Map(); // gbifId -> L.marker
@@ -4271,6 +4277,14 @@ async function refreshAllElurikkusOnce(){
         errors: errors,
         aborted: aborted,
       });
+      // elu-obs secondary pins: points are fully populated and main markers rebuilt above
+      // (rebuildAllMarkers → [fix] updateMarker, then render). Re-resolve/re-render here so cold
+      // boot, auto refresh and manual refresh all converge on ONE shared hook. The cached EF payload
+      // already holds all species; only the slug→key resolution needed full `points`.
+      try{
+        if(__eluRecentObs){ _renderEluObsMarkers(); }  // cached payload → re-resolve vs current points, no network
+        else { _fetchEluRecentObs(); }                 // cache empty (boot fetch not yet returned) → fetch (EF ~300s cache)
+      }catch(e){}
     } finally {
       __eeRefreshContext = null;
       __eluBulkActive = false;
@@ -4419,6 +4433,7 @@ function setRecentOnly(val){
   }
   rebuildAllMarkers();
   render();
+  try { if (typeof _syncEluObsVisibility === 'function') _syncEluObsVisibility(); } catch(e){}
 }
 window.__recentOnly = getRecentOnly();
 window.__snapshotLoadedOnce = false;
@@ -8203,6 +8218,8 @@ function _wireSnapshotButtons(){
       btnElu.disabled = true;
       try{
         await refreshAllFromElurikkus();
+        // elu-obs re-render happens in refreshAllElurikkusOnce's completion hook (shared by manual + auto);
+        // no separate trigger here — this handler is also skipped by the duplicate-refresh guard.
       }finally{
         btnElu.__running = false;
         btnElu.disabled = false;
@@ -8838,6 +8855,162 @@ function _markerIcon(avatarUrl, borderColor, count7d, rarityLevel){
 function defaultIcon(borderColor, count7d, rarityLevel) { return _markerIcon('', borderColor, count7d, rarityLevel); }
 function avatarIcon(url, borderColor, count7d, rarityLevel) { return _markerIcon(url, borderColor, count7d, rarityLevel); }
 
+// === Elurikkus recent-obs secondary pins ===================================
+// Renders last-7d per-observation elurikkus markers alongside the existing
+// one-marker-per-species. Mirrors the GBIF multi-marker layer (gbifMarkers):
+// species key -> array of L.marker on the base map pane (NOT the cluster group).
+// Fetch-time only; never persisted to any snapshot / localStorage.
+function _eluObsIcon(avatarUrl){
+  var bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#29c";
+  var html = '<div style="width:26px;height:26px;border-radius:50%;border:1.5px solid #2c7fb8;opacity:0.75;'
+    + 'background-size:cover;background-position:center;box-sizing:border-box;' + bg + '"></div>';
+  return L.divIcon({ html: html, className: '', iconSize: [26,26], iconAnchor: [13,13], popupAnchor: [0,-13] });
+}
+function _eluObsPopupHtml(speciesKey, o){
+  var esc = (typeof escapeHtml === 'function') ? escapeHtml : function(s){ return String(s == null ? '' : s); };
+  var html = '<div style="font-weight:700;margin-bottom:4px">' + esc(speciesKey) + '</div>';
+  if(o.d){
+    var dTxt = (typeof fmtDateEE === 'function') ? fmtDateEE(o.d) : o.d;
+    html += '<div>vaatluse kuupäev: ' + esc(dTxt) + '</div>';
+  }
+  var koht = String(o.loc || '').trim();
+  if(o.cty) koht = koht ? (koht + ', ' + String(o.cty)) : String(o.cty);
+  if(koht) html += '<div>koht: ' + esc(koht) + '</div>';
+  var extra = '';
+  if(o.n !== undefined && o.n !== null && String(o.n).trim() !== '') extra += '<div>Individual count: ' + esc(String(o.n)) + '</div>';
+  if(o.bhv) extra += '<div>Behavior: ' + esc(String(o.bhv)) + '</div>';
+  if(o.obr) extra += '<div>Collectors: ' + esc(String(o.obr)) + '</div>';
+  if(extra) html += '<div style="margin-top:6px">' + extra + '</div>';
+  var lat = Number(o.lat), lon = Number(o.lon);
+  if(Number.isFinite(lat) && Number.isFinite(lon)){
+    html += '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">'
+      + '<button class="popupBtn" onclick="copyCoords(' + lat + ',' + lon + ')">Copy coords</button>'
+      + '<button class="popupBtn" onclick="openWaze(' + lat + ',' + lon + ')">Open in Waze</button>'
+      + '</div>'
+      + '<div style="margin-top:6px;font-size:12px;opacity:.8">coords: ' + lat.toFixed(5) + ',' + lon.toFixed(5) + '</div>';
+  }
+  return '<div style="min-width:210px">' + html + '</div>';
+}
+// Mirror updateMarker()'s isVisible decision so secondaries appear/disappear
+// exactly with the species' main marker.
+function _eluObsSpeciesVisible(key){
+  var p = points[key];
+  if(!p) return false;
+  var hasCoords = Number.isFinite(p.lat) && Number.isFinite(p.lon);
+  var coordsRestricted = String(p.coords_status || '') === 'restricted'
+    || String(p.coords_status || '') === 'restricted_or_missing';
+  var passesRecent = (!window.__recentOnly) || (typeof hasRecentObservation === 'function' ? hasRecentObservation(p) : true);
+  var passesSidebarFilter = (typeof _speciesPassesSidebarFilter === 'function') ? _speciesPassesSidebarFilter(key) : true;
+  return (p.visible !== false) && passesRecent && hasCoords && !coordsRestricted && passesSidebarFilter;
+}
+function _clearEluObsMarkers(){
+  try{
+    eluObsMarkers.forEach(function(list){
+      (list || []).forEach(function(m){ try{ map.removeLayer(m); }catch(e){} });
+    });
+  }catch(e){}
+  try{ eluObsMarkers.clear(); }catch(e){}
+}
+function _renderEluObsMarkers(){
+  if(!ELU_OBS_PINS_ENABLED) return;
+  _clearEluObsMarkers();
+  var payload = __eluRecentObs;
+  if(!payload || !payload.species || typeof payload.species !== 'object') return;
+  if(typeof L === 'undefined' || !map) return;
+
+  // Build slug -> actual points key index once (same normalization getDisplayAvatar uses).
+  var slugIndex = {};
+  for(var k in points){
+    if(!points.hasOwnProperty(k)) continue;
+    var sl = (typeof slugifySpeciesKey === 'function') ? slugifySpeciesKey(k) : String(k).toLowerCase();
+    if(!(sl in slugIndex)) slugIndex[sl] = k;
+  }
+  function _resolveKey(sciName){
+    if(points[sciName]) return sciName;
+    var clean = (typeof _normText === 'function') ? _normText(sciName) : sciName;
+    if(clean !== sciName && points[clean]) return clean;
+    var sl = (typeof slugifySpeciesKey === 'function') ? slugifySpeciesKey(sciName) : String(sciName).toLowerCase();
+    return slugIndex[sl] || '';
+  }
+
+  var unmatched = 0;
+  var speciesNames = Object.keys(payload.species);
+  for(var si = 0; si < speciesNames.length; si++){
+    var sciName = speciesNames[si];
+    var entry = payload.species[sciName];
+    if(!entry || !Array.isArray(entry.obs) || !entry.obs.length) continue;
+    var key = _resolveKey(sciName);
+    if(!key){ unmatched++; continue; }
+    if(!_eluObsSpeciesVisible(key)) continue;
+    var p = points[key];
+    var mainLat = (p && Number.isFinite(p.lat)) ? Number(p.lat) : null;
+    var mainLon = (p && Number.isFinite(p.lon)) ? Number(p.lon) : null;
+    // Newest first, then skip the obs that IS the main marker, then cap to N.
+    var obs = entry.obs.slice().sort(function(a, b){ return String((b && b.d) || '').localeCompare(String((a && a.d) || '')); });
+    var chosen = [];
+    for(var oi = 0; oi < obs.length && chosen.length < ELU_OBS_MAX_PER_SPECIES; oi++){
+      var o = obs[oi];
+      var lat = Number(o && o.lat), lon = Number(o && o.lon);
+      if(!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      if(mainLat !== null && mainLon !== null && Math.abs(lat - mainLat) < 1e-4 && Math.abs(lon - mainLon) < 1e-4) continue;
+      chosen.push(o);
+    }
+    if(!chosen.length) continue;
+    var avatarUrl = (typeof getDisplayAvatar === 'function') ? getDisplayAvatar(key) : '';
+    var markerList = [];
+    for(var ci = 0; ci < chosen.length; ci++){
+      var co = chosen[ci];
+      try{
+        var m = L.marker([Number(co.lat), Number(co.lon)], { icon: _eluObsIcon(avatarUrl) });
+        m.bindPopup(_eluObsPopupHtml(key, co));
+        m.addTo(map); // base map pane, like GBIF markers — NOT the cluster group
+        markerList.push(m);
+      }catch(e){}
+    }
+    if(markerList.length) eluObsMarkers.set(key, markerList);
+  }
+  if(unmatched > 0) console.log('[elu-obs] unmatched: ' + unmatched + ' species');
+  try{
+    var __eluDiagSpecies = 0, __eluDiagPins = 0, __eluDiagMax = 0, __eluDiagMaxKey = '';
+    eluObsMarkers.forEach(function(list, key){
+      var c = (list && list.length) ? list.length : 0;
+      if(c > 0){ __eluDiagSpecies++; __eluDiagPins += c; if(c > __eluDiagMax){ __eluDiagMax = c; __eluDiagMaxKey = key; } }
+    });
+    console.log('[elu-obs] rendered:', {
+      speciesWithPins: __eluDiagSpecies,
+      totalPins: __eluDiagPins,
+      maxPerSpecies: __eluDiagMax,
+      maxKey: __eluDiagMaxKey,
+      rukkiPins: (eluObsMarkers.get('Rukkirääk') || []).length,
+      poldvuttPins: (eluObsMarkers.get('Põldvutt') || []).length,
+      rukkiResolvedKey: _resolveKey('Rukkirääk'),
+      poldvuttResolvedKey: _resolveKey('Põldvutt'),
+      payloadSpecies: (__eluRecentObs && __eluRecentObs.species) ? Object.keys(__eluRecentObs.species).length : 0
+    });
+  }catch(e){ console.warn('[elu-obs] diag failed', e); }
+}
+// Cheap re-projection to match current visibility (hide/unhide, 7p toggle, filter).
+function _syncEluObsVisibility(){
+  if(!ELU_OBS_PINS_ENABLED) return;
+  try{ _renderEluObsMarkers(); }catch(e){}
+}
+async function _fetchEluRecentObs(){
+  if(!ELU_OBS_PINS_ENABLED) return;
+  try{
+    var res = await fetch('https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/get-elurikkus-recent-obs', { cache: 'no-store' });
+    if(!res || !res.ok){ console.warn('[elu-obs] fetch failed: HTTP ' + (res && res.status)); return; }
+    var json = await res.json();
+    if(json && json.species && typeof json.species === 'object'){
+      __eluRecentObs = json;      // age-out: server already filters to 7d; trust fresh payload
+      _renderEluObsMarkers();
+    }else{
+      console.warn('[elu-obs] fetch returned no species payload');
+    }
+  }catch(e){
+    console.warn('[elu-obs] fetch error — keeping previous data', e); // leave __eluRecentObs in place
+  }
+}
+
 
 // Avatar & manual location
 function setLocation(key) {
@@ -8881,6 +9054,7 @@ function toggleVisibility(key){
     }
   } catch(e) {}
   try { if (typeof renderPinnedGbifMarkers === 'function') renderPinnedGbifMarkers(); } catch(e){}
+  try { if (typeof _syncEluObsVisibility === 'function') _syncEluObsVisibility(); } catch(e){}
 }
 
 function setRarity(key, val){
@@ -9905,6 +10079,19 @@ if(__loadedLocalSnapshot){
 _validateAndSyncResumeState({ quiet: false });
 _startSnapshotBoot();
 _initElurikkusAuto30m();
+// Elurikkus recent-obs secondary pins: fetch once `points` has SETTLED (snapshot/points restore
+// complete), not at a fixed delay — a cold profile isn't populated at 3.5s and under-matches.
+// Required as an independent trigger because auto-30m refresh is opt-in (LS_ELU_AUTO_30M): with it
+// off and no manual refresh, the completion hook (Hunk A) may never fire, so boot is the sole path.
+// "Settled" = count unchanged across two consecutive 500ms polls (so we don't fire on a partial),
+// capped at 24 polls (~12s) so a still-trickling scrape still triggers eventually (Hunk A then
+// corrects on the next completed refresh).
+(function _bootEluObs(tries, lastN){
+  if(!ELU_OBS_PINS_ENABLED) return;
+  var n = (points && typeof points === 'object') ? Object.keys(points).length : 0;
+  if((n > 0 && n === lastN) || tries <= 0){ try{ _fetchEluRecentObs(); }catch(e){} return; }
+  setTimeout(function(){ _bootEluObs(tries - 1, n); }, 500);
+})(24, -1);
 
 // Trigger spring cloud sync after config is ready (with retry)
 (function _bootSpringSync(){
@@ -10817,6 +11004,7 @@ document.getElementById('filterBox').addEventListener('input', function(){
   } catch(e){}
   try { if(window.refreshEbirdEEMarkers) window.refreshEbirdEEMarkers(); } catch(e){}
   try { if (typeof renderPinnedGbifMarkers === 'function') renderPinnedGbifMarkers(); } catch(e){}
+  try { if (typeof _syncEluObsVisibility === 'function') _syncEluObsVisibility(); } catch(e){}
 });
 </script>
 

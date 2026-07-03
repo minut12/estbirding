@@ -514,9 +514,10 @@ var UBER_PER_MILE   = 1.40;     // USD per mile
 var UBER_PER_MIN    = 0.30;     // USD per minute
 var UBER_MIN_FARE   = 7.00;     // USD minimum per ride
 
-// Taxi/Uber rides start here (Mountain Metro Voyager Transfer Center), not the stay,
-// modeling: bus to the transfer center, then ride-hail the last leg.
-var RIDE_ORIGIN = { name: 'Voyager Transfer Center', lat: 38.950443, lon: -104.801376 };
+// Taxi/Uber rides originate from the same stay/home marker as the driving leg
+// (refStayFor). Rural Falcon/Peyton addresses are serviced by Uber, so no
+// transfer-center fallback is needed. To extend to another scope, ensure that
+// scope's map defines STAY_LOCATIONS with { name, lat, lon } entries.
 
 function _haversineKm(lat1, lon1, lat2, lon2){
   var R = 6371;

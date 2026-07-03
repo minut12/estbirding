@@ -666,20 +666,22 @@ function formatDistanceBlock(route, stayName, lat, lon, stay){
   var timeStr = (hrs > 0 ? hrs + 'h ' : '') + mins + 'min';
   var cost = gasCostUSD(oneWayKm);
   var tripLabel = ROUND_TRIP ? 'edasi-tagasi' : 'ühe suuna';
-  var rideHtml = '';
-  if (route){
-    var taxi = rideEstimate(TAXI_PROFILE, route.km, route.min);
-    var uber = rideEstimate(UBER_PROFILE, route.km, route.min);
-    var tripWord = RIDE_ROUND_TRIP ? 'edasi-tagasi' : 'üks suund';
-    var uburl = (stay ? uberBookingUrl(stay.lat, stay.lon, lat, lon) : '');
-    var uberLink = uburl
-      ? ' <a href="#" onclick="window.__openExternal(\'' + uburl.replace(/'/g, "\\'") + '\');return false;" style="color:#000;text-decoration:underline;cursor:pointer">telli</a>'
-      : '';
-    rideHtml =
-        '<div style="margin-top:4px">Takso (' + tripWord + ', hinnang): ~$' + taxi.low.toFixed(0) + '–$' + taxi.high.toFixed(0) + '</div>'
-      + '<div>Uber (' + tripWord + ', hinnang): ~$' + uber.low.toFixed(0) + '–$' + uber.high.toFixed(0) + uberLink + '</div>'
-      + '<div style="color:#94a3b8;font-size:10px;margin-top:2px">Hinnangulised hinnad, ilma reaalajas surge\'ita</div>';
-  }
+  // Ride leg (taxi/Uber) shares the same origin as the driving leg — the
+  // stay/home marker (Pennsylvania Stay). Reuses the OSRM route already fetched
+  // above; no separate origin, no second network call.
+  var taxi = rideEstimate(TAXI_PROFILE, oneWayKm, min);
+  var uber = rideEstimate(UBER_PROFILE, oneWayKm, min);
+  var tripWord = RIDE_ROUND_TRIP ? 'edasi-tagasi' : 'üks suund';
+  var uburl = (stay && Number.isFinite(stay.lat) && Number.isFinite(stay.lon))
+    ? uberBookingUrl(stay.lat, stay.lon, lat, lon) : '';
+  var uberLink = uburl
+    ? ' <a href="#" onclick="window.__openExternal(\'' + uburl.replace(/'/g, "\\'") + '\');return false;" style="color:#000;text-decoration:underline;cursor:pointer">telli</a>'
+    : '';
+  var rideHtml =
+      '<div style="margin-top:4px;color:#64748b">Takso/Uber lähtekoht: <b>' + _escapeHtmlGbif(stayName) + '</b></div>'
+    + '<div>Takso (' + tripWord + ', hinnang): ~$' + taxi.low.toFixed(0) + '–$' + taxi.high.toFixed(0) + '</div>'
+    + '<div>Uber (' + tripWord + ', hinnang): ~$' + uber.low.toFixed(0) + '–$' + uber.high.toFixed(0) + uberLink + '</div>'
+    + '<div style="color:#94a3b8;font-size:10px;margin-top:2px">Hinnangulised hinnad, ilma reaalajas surge\'ita</div>';
   return '<div style="margin-top:8px;padding-top:6px;border-top:1px solid #e2e8f0;font-size:11px;color:#475569">'
     + '<div><b>' + _escapeHtmlGbif(stayName) + '</b> →</div>'
     + '<div>Sõit: ' + oneWayKm.toFixed(1) + ' km (' + oneWayMi.toFixed(1) + ' mi), ~' + timeStr + ' (üks suund)</div>'

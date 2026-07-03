@@ -122,3 +122,9 @@ verify_jwt = false
 
 [functions.get-elurikkus-recent-obs]
 verify_jwt = false
+
+[functions.get-news-untranslated-v2]
+verify_jwt = false
+
+[functions.update-news-translation-v2]
+verify_jwt = false

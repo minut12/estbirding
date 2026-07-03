@@ -716,13 +716,6 @@ function attachDistanceInfo(marker, lat, lon){
       fetchDrivingRoute(stay.lat, stay.lon, lat, lon).then(function(route){
         holder.innerHTML = formatDistanceBlock(route, stay.name, lat, lon, stay);
         holder.setAttribute('data-loaded','1');
-        // CO-only: fill the taxi/Uber leg from the Voyager transfer center.
-        try {
-          var rideHolder = holder.querySelector('.ride-info-holder');
-          if (rideHolder && typeof fillRideEstimate === 'function'){
-            fillRideEstimate(rideHolder, Number(rideHolder.getAttribute('data-rlat')), Number(rideHolder.getAttribute('data-rlon')));
-          }
-        } catch(e){ console.warn('[ride] fill failed', e); }
       });
     } catch(e){ console.warn('[route] attach failed', e); }
   });

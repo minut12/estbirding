@@ -696,30 +696,8 @@ function formatDistanceBlock(route, stayName, lat, lon, stay){
     + '</div>';
 }
 
-// Fill the taxi/Uber estimate from RIDE_ORIGIN (Voyager Transfer Center) → marker,
-// fetching its own OSRM route (cached). CO-only multimodal: bus to transfer center, then ride.
-function fillRideEstimate(holderEl, toLat, toLon){
-  if (!holderEl) return;
-  var origin = RIDE_ORIGIN;
-  fetchDrivingRoute(origin.lat, origin.lon, toLat, toLon).then(function(rr){
-    if (!rr){
-      holderEl.innerHTML = '<div style="color:#94a3b8">Takso/Uber hinnang pole saadaval</div>';
-      return;
-    }
-    var taxi = rideEstimate(TAXI_PROFILE, rr.km, rr.min);
-    var uber = rideEstimate(UBER_PROFILE, rr.km, rr.min);
-    var tripWord = RIDE_ROUND_TRIP ? 'edasi-tagasi' : 'üks suund';
-    var uburl = uberBookingUrl(origin.lat, origin.lon, toLat, toLon);
-    var uberLink = uburl
-      ? ' <a href="#" onclick="window.__openExternal(\'' + uburl.replace(/'/g, "\\'") + '\');return false;" style="color:#000;text-decoration:underline;cursor:pointer">telli</a>'
-      : '';
-    holderEl.innerHTML =
-        '<div style="margin-top:4px"><b>' + _escapeHtmlGbif(origin.name) + '</b> → (takso/Uber lähtekoht)</div>'
-      + '<div>Takso (' + tripWord + ', hinnang): ~$' + taxi.low.toFixed(0) + '–$' + taxi.high.toFixed(0) + '</div>'
-      + '<div>Uber (' + tripWord + ', hinnang): ~$' + uber.low.toFixed(0) + '–$' + uber.high.toFixed(0) + uberLink + '</div>'
-      + '<div style="color:#94a3b8;font-size:10px;margin-top:2px">Hinnangulised hinnad, ilma reaalajas surge\'ita</div>';
-  });
-}
+// (Taxi/Uber estimate is now rendered inline inside formatDistanceBlock, using
+// the same stay origin + OSRM route as the driving leg — no separate fetch.)
 
 // Attach lazy distance/cost computation to a marker. Computes on first popupopen.
 function attachDistanceInfo(marker, lat, lon){

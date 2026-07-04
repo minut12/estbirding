@@ -29,10 +29,12 @@ interface NewsItem {
   source_key?: string | null;
   title: string;
   title_et?: string | null;
+  title_et_v2?: string | null;
   translated_title?: string | null;
   summary: string | null;
   body: string | null;
   body_et?: string | null;
+  body_et_v2?: string | null;
   translated_body?: string | null;
   content_html: string | null;
   url: string | null;
@@ -75,9 +77,9 @@ const NEWS_HASH_LIST = '#news';
 const NEWS_HASH_ARTICLE = '#news-article';
 const NEWS_LAST_REFRESH_KEY = 'estbirding.news.lastRefreshAt.v1';
 
-const NEWS_VIEW_SELECT = 'id,source_key,title,title_et,body,body_et,summary,published_at,url,image_url,archived,translation_status,translation_error,translated_at,created_at,external_id,source_id,source_slug,source_name,cached_image_url,cached_image_path,display_image_url,content_html,fetched_at,guid,raw_json,language,source_lang,translated_title,translated_body';
+const NEWS_VIEW_SELECT = 'id,source_key,title,title_et,title_et_v2,body,body_et,body_et_v2,summary,published_at,url,image_url,archived,translation_status,translation_error,translated_at,created_at,external_id,source_id,source_slug,source_name,cached_image_url,cached_image_path,display_image_url,content_html,fetched_at,guid,raw_json,language,source_lang,translated_title,translated_body';
 const ALL_SOURCES_LABEL = normalizeDisplayText("Kõik allikad");
-const NEWS_TABLE_FALLBACK_SELECT = 'id,source_key,title,title_et,body,body_et,summary,published_at,url,image_url,archived,translation_status,translation_error,translated_at,source_id,source_slug,permalink_url,content_html,created_at,cached_image_url,image_cached_url,language,source_lang,guid,raw_json,fetched_at';
+const NEWS_TABLE_FALLBACK_SELECT = 'id,source_key,title,title_et,title_et_v2,body,body_et,body_et_v2,summary,published_at,url,image_url,archived,translation_status,translation_error,translated_at,source_id,source_slug,permalink_url,content_html,created_at,cached_image_url,image_cached_url,language,source_lang,guid,raw_json,fetched_at';
 const NEWS_MIN_SELECT = 'id,source_key,title,body,summary,published_at,url,image_url,archived,source_id,source_slug,created_at,cached_image_url,content_html,fetched_at,guid,raw_json,language,source_lang';
 
 /* Format date */
@@ -198,11 +200,11 @@ function cleanupNewsHtml(html: string | null | undefined): string | null {
 }
 
 function getTranslatedTitle(item: NewsItem): string {
-  return cleanupNewsText(item.title_et || item.translated_title || '');
+  return cleanupNewsText(item.title_et_v2 || item.title_et || item.translated_title || '');
 }
 
 function getTranslatedBody(item: NewsItem): string {
-  return cleanupNewsText(item.body_et || item.translated_body || '');
+  return cleanupNewsText(item.body_et_v2 || item.body_et || item.translated_body || '');
 }
 
 type PreservedMediaBlock = {

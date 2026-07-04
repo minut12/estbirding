@@ -10973,12 +10973,29 @@ var __sharedDefaults = {};
     window.__ebirdEELayerOn = !window.__ebirdEELayerOn;
     localStorage.setItem(LS_EBIRD_EE_LAYER, window.__ebirdEELayerOn ? '1' : '0');
     if(window.__ebirdEELayerOn){
-      ebirdEEBtn.textContent = 'eBird EE: Loading...';
+      ebirdEEBtn.textContent = 'eBird EE: laadin…';
       ebirdEEBtn.disabled = true;
       ebirdEEBtn.style.opacity = '0.6';
-      _updateEbirdEEProgress(0, 0, 'Starting...', 'running');
+      _updateEbirdEEProgress(0, 0, 'Laadin eBird EE vaatlusi…', 'running');
       if(Object.keys(ebirdEEPoints).length > 0) refreshEbirdEEMarkers();
-      refreshEbirdEEBulk();
+      refreshEbirdEEBulk().then(function(res){
+        ebirdEEBtn.disabled = false;
+        ebirdEEBtn.style.opacity = '';
+        syncEbirdEEBtn();
+        if(res && res.ok){
+          var secs = (res.durationMs != null) ? (res.durationMs / 1000).toFixed(1).replace('.', ',') : null;
+          var doneMsg = 'valmis · ' + (res.written != null ? res.written : 0) + ' vaatlust' + (secs ? (' · ' + secs + ' s') : '');
+          _updateEbirdEEProgress(res.written || 0, res.written || 0, doneMsg, 'done');
+        } else {
+          _updateEbirdEEProgress(0, 0, 'eBird EE laadimine ebaõnnestus', 'error');
+        }
+      }).catch(function(err){
+        ebirdEEBtn.disabled = false;
+        ebirdEEBtn.style.opacity = '';
+        syncEbirdEEBtn();
+        console.warn('[eBird EE bulk] handler error', err && err.message);
+        _updateEbirdEEProgress(0, 0, 'eBird EE laadimine ebaõnnestus', 'error');
+      });
     } else {
       syncEbirdEEBtn();
       refreshEbirdEEMarkers();
@@ -11091,9 +11108,7 @@ var __sharedDefaults = {};
     if(__ebirdEEBulkInFlight) return __ebirdEEBulkInFlight;
     window.__ennEbirdCounts = window.__ennEbirdCounts || {};
     var started = Date.now();
-    var SUPABASE_REF = 'eenwcyuyugyrjgpivxrq';
     var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
-    var proxyUrl = 'https://' + SUPABASE_REF + '.supabase.co/functions/v1/ebird_recent?regionCode=EE&back=30&maxResults=10000&detail=full&_ts=' + Date.now();
     var directUrl = 'https://api.ebird.org/v2/data/obs/EE/recent?back=30&maxResults=10000&detail=full&_ts=' + Date.now();
 
     async function _fetchWithTimeout(url, opts, ms){
@@ -11109,21 +11124,16 @@ var __sharedDefaults = {};
 
     __ebirdEEBulkInFlight = (async function(){
       var arr = null;
-      // Prefer proxy (token stays server-side). Fall back to direct on failure.
+      // Direct to eBird — iframe CSP allows api.ebird.org. Proxy attempt dropped:
+      // ebird_recent CORS-rejects the X-eBirdApiToken header (preflight fails) and
+      // would 418 from Supabase IPs anyway. Direct is the proven working path.
       try {
-        var res = await _fetchWithTimeout(proxyUrl, { headers: { 'X-eBirdApiToken': token }, cache: 'no-store' }, 30000);
-        if(!res.ok) throw new Error('proxy HTTP ' + res.status);
-        var json = await res.json();
-        arr = Array.isArray(json) ? json : (json && (json.observations || json.data));
-      } catch(proxyErr){
-        try {
-          var res2 = await _fetchWithTimeout(directUrl, { headers: { 'X-eBirdApiToken': token }, cache: 'no-store' }, 30000);
-          if(!res2.ok) throw new Error('direct HTTP ' + res2.status);
-          arr = await res2.json();
-        } catch(directErr){
-          console.warn('[eBird EE bulk] both proxy and direct failed', proxyErr && proxyErr.message, directErr && directErr.message);
-          return { ok: false, reason: 'fetch_failed', durationMs: Date.now() - started };
-        }
+        var res = await _fetchWithTimeout(directUrl, { headers: { 'X-eBirdApiToken': token }, cache: 'no-store' }, 30000);
+        if(!res.ok) throw new Error('eBird HTTP ' + res.status);
+        arr = await res.json();
+      } catch(fetchErr){
+        console.warn('[eBird EE bulk] eBird direct fetch failed', fetchErr && fetchErr.message);
+        return { ok: false, reason: 'fetch_failed', durationMs: Date.now() - started };
       }
 
       if(!Array.isArray(arr)){
@@ -11303,10 +11313,10 @@ var __sharedDefaults = {};
           if(ep && Number.isFinite(ep.lat) && Number.isFinite(ep.lon)) found++;
         }
       } catch(e){}
-      el.textContent = 'eBird EE: Done. ' + found + ' species with data.';
+      el.textContent = (typeof currentSpecies === 'string' && currentSpecies.trim() !== '') ? currentSpecies : ('eBird EE: Done. ' + found + ' species with data.');
       setTimeout(function(){ el.style.display = 'none'; }, 8000);
     } else if(status === 'error'){
-      el.textContent = 'eBird EE: Error — ' + (currentSpecies || 'unknown');
+      el.textContent = (typeof currentSpecies === 'string' && currentSpecies.trim() !== '') ? currentSpecies : ('eBird EE: Error — ' + (currentSpecies || 'unknown'));
       el.style.color = '#dc2626';
       setTimeout(function(){ el.style.display = 'none'; el.style.color = ''; }, 8000);
     }

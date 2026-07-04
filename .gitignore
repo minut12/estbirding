@@ -39,3 +39,5 @@ graphify-out/
 
 # Local MCP server config — contains a loopback-only bearer token; never commit.
 .mcp.json
+
+public/maps/**/*.bak

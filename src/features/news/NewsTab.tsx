@@ -127,7 +127,12 @@ function stripNewsBoilerplate(value: string | null | undefined): string {
 }
 
 function cleanupNewsText(value: string | null | undefined): string {
-  return stripNewsBoilerplate(value)
+  // Remove the whole "(Feed generated with FetchRSS)" parenthetical (parens +
+  // surrounding whitespace) up front — must run before stripNewsBoilerplate,
+  // which otherwise deletes the inner phrase and leaves an empty "( )" behind.
+  return stripNewsBoilerplate(
+    String(value ?? '').replace(/\s*\(\s*Feed\s+generated\s+with\s+FetchRSS\s*\)\s*/gi, ' '),
+  )
     .replace(/\r/g, '')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')

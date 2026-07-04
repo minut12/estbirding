@@ -1420,6 +1420,7 @@ export type Database = {
           archived: boolean | null
           body: string | null
           body_et: string | null
+          body_et_v2: string | null
           cached_image_path: string | null
           cached_image_url: string | null
           content_fetch_error: string | null
@@ -1446,6 +1447,7 @@ export type Database = {
           summary: string | null
           title: string | null
           title_et: string | null
+          title_et_v2: string | null
           translated_at: string | null
           translated_body: string | null
           translated_title: string | null

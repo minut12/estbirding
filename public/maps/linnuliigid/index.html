@@ -875,9 +875,53 @@ window.__bm_avatars = avatars;
 // Map
 const IS_MOBILE_DEVICE = matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 const IS_MOBILE = IS_MOBILE_DEVICE;
-const map = window.map = L.map('map', { zoomControl: !IS_MOBILE_DEVICE }).setView([58.7,25.3], 6.5);
-if (IS_MOBILE_DEVICE) { L.control.zoom({ position: 'topright' }).addTo(map); }
+const map = window.map = L.map('map', { zoomControl: false }).setView([58.7,25.3], 6.5);
+/* Reactive zoom placement: desktop=topleft, mobile=topright. Re-evaluates matchMedia
+   live, so a narrow-at-mount load no longer permanently pins zoom top-right on desktop.
+   Owns the single zoom control (map was created with zoomControl:false). */
+(function () {
+  var zoomCtl = null, curPos = null;
+  function want() {
+    return (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) ? 'topright' : 'topleft';
+  }
+  function place() {
+    try {
+      var pos = want();
+      if (curPos === pos) return;
+      if (zoomCtl) { try { window.map.removeControl(zoomCtl); } catch (e) {} }
+      zoomCtl = L.control.zoom({ position: pos });
+      window.map.addControl(zoomCtl);
+      curPos = pos;
+    } catch (e) {}
+  }
+  place();
+  window.addEventListener('resize', place);
+  try {
+    var mq = window.matchMedia('(max-width: 900px)');
+    if (mq.addEventListener) mq.addEventListener('change', place);
+    else if (mq.addListener) mq.addListener(place);
+  } catch (e) {}
+})();
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).addTo(map);
+
+/* Map sizing-race guard. Leaflet caches the container size at L.map() init; on a
+   landing-view load where #map is briefly narrow/unsized, it paints a strip and no
+   window 'resize' ever fires to correct it. ResizeObserver fires once immediately on
+   observe (correcting a stale init size) AND on every later container resize. Late
+   timers cover slow first paint beyond the existing ~260ms one-shots. */
+(function () {
+  function inval() { try { if (window.map && window.map.invalidateSize) window.map.invalidateSize(); } catch (e) {} }
+  try {
+    var wrap = document.getElementById('mapWrap');
+    if (wrap && 'ResizeObserver' in window) {
+      var t = null;
+      var ro = new ResizeObserver(function () { clearTimeout(t); t = setTimeout(inval, 60); });
+      ro.observe(wrap);
+    }
+  } catch (e) {}
+  setTimeout(inval, 700);
+  setTimeout(inval, 1500);
+})();
 
 const markers = new Map();
 

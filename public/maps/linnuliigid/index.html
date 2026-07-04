@@ -885,8 +885,10 @@ const map = window.map = L.map('map', { zoomControl: false }).setView([58.7,25.3
    live, so a narrow-at-mount load no longer permanently pins zoom top-right on desktop.
    Owns the single zoom control (map was created with zoomControl:false). */
 (function () {
+  var UA_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   var zoomCtl = null, curPos = null;
   function want() {
+    if (UA_MOBILE) return 'topright';
     return (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) ? 'topright' : 'topleft';
   }
   function place() {
@@ -915,6 +917,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).
    observe (correcting a stale init size) AND on every later container resize. Late
    timers cover slow first paint beyond the existing ~260ms one-shots. */
 (function () {
+  if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) return; /* mobile: keep original behavior, no resize guard */
   function inval() { try { if (window.map && window.map.invalidateSize) window.map.invalidateSize(); } catch (e) {} }
   try {
     var wrap = document.getElementById('mapWrap');

@@ -22,6 +22,24 @@ const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 const json = (o: unknown, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { ...cors, "content-type": "application/json" } });
 
+// GBIF eventDate can be year-only ("2016") or year-month ("2016-05"), which Postgres
+// rejects as a date. GBIF also parses those into integer year/month/day fields — use
+// them (robust), falling back to a strict eventDate check. Partial dates coerce to the
+// first of the known period so the YEAR is preserved for the 10-yr HISTORY window.
+// deno-lint-ignore no-explicit-any
+function gbifDate(o: any): string | null {
+  if (o.year) {
+    const mm = String(o.month ?? 1).padStart(2, "0");
+    const dd = String(o.day ?? 1).padStart(2, "0");
+    return `${o.year}-${mm}-${dd}`;
+  }
+  if (o.eventDate) {
+    const s = String(o.eventDate).slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+  }
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -71,7 +89,7 @@ Deno.serve(async (req) => {
           species_name: sp.species_name,
           species_lat: sp.species_lat,
           gbif_key: o.key,
-          observed_at: o.eventDate ? String(o.eventDate).slice(0, 10) : null,
+          observed_at: gbifDate(o),
           lat: o.decimalLatitude,
           lon: o.decimalLongitude,
         }))

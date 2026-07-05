@@ -137,8 +137,6 @@ Deno.serve(async (req) => {
         species_count: rows.length,
         observations_total: observations.length,
         duration_ms,
-        recent_obs_upserted: recentUpserted,
-        recent_obs_errors: recentErrors,
       }),
       { status: 200, headers: corsHeaders },
     );

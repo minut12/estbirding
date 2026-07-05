@@ -1,0 +1,1 @@
+drop table if exists public.ebird_recent_obs;

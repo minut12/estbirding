@@ -227,39 +227,6 @@ export type Database = {
         }
         Relationships: []
       }
-      ebird_recent_obs: {
-        Row: {
-          fetched_at: string
-          id: number
-          lat: number | null
-          location_name: string | null
-          lon: number | null
-          obs_date: string | null
-          species_name: string
-          sub_id: string | null
-        }
-        Insert: {
-          fetched_at?: string
-          id?: never
-          lat?: number | null
-          location_name?: string | null
-          lon?: number | null
-          obs_date?: string | null
-          species_name: string
-          sub_id?: string | null
-        }
-        Update: {
-          fetched_at?: string
-          id?: never
-          lat?: number | null
-          location_name?: string | null
-          lon?: number | null
-          obs_date?: string | null
-          species_name?: string
-          sub_id?: string | null
-        }
-        Relationships: []
-      }
       elurikkus_cache: {
         Row: {
           behavior: string | null

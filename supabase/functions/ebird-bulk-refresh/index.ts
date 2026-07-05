@@ -127,48 +127,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // --- Phase B: raw per-obs landing for FRESHNESS (additive; ebird_cache above is untouched) ---
-    // Dedup by (sub_id, species_name, obs_date) so one upsert statement can't hit a key twice.
-    const rawByKey = new Map<string, {
-      species_name: string; obs_date: string | null;
-      lat: number | null; lon: number | null;
-      sub_id: string; location_name: string;
-    }>();
-    for (const obs of observations) {
-      const name = obs.comName;
-      if (!name) continue;
-      const obs_date = obs.obsDt?.split(" ")[0] || null;
-      const sub_id = obs.subId || "";
-      rawByKey.set(`${sub_id}|${name}|${obs_date ?? ""}`, {
-        species_name: name,
-        obs_date,
-        lat: typeof obs.lat === "number" ? obs.lat : null,
-        lon: typeof obs.lng === "number" ? obs.lng : null,
-        sub_id,
-        location_name: obs.locName || "",
-      });
-    }
-    const rawRows = Array.from(rawByKey.values()).map((r) => ({
-      ...r, fetched_at: new Date().toISOString(),
-    }));
-
-    let recentUpserted = 0;
-    let recentErrors = 0;
-    for (let i = 0; i < rawRows.length; i += CHUNK) {
-      const chunk = rawRows.slice(i, i + CHUNK);
-      const { error } = await supabase
-        .from("ebird_recent_obs")
-        .upsert(chunk, { onConflict: "sub_id,species_name,obs_date" });
-      if (error) { recentErrors++; console.error("[ebird-bulk-refresh] recent_obs upsert error:", error.message); }
-      else recentUpserted += chunk.length;
-    }
-
-    // Rolling 7-day window: prune anything older than 8 days.
-    const pruneBefore = new Date(Date.now() - 8 * 864e5).toISOString().slice(0, 10);
-    const { error: pruneErr } = await supabase
-      .from("ebird_recent_obs").delete().lt("obs_date", pruneBefore);
-    if (pruneErr) console.error("[ebird-bulk-refresh] prune error:", pruneErr.message);
-    // --- end Phase B block ---
 
     const duration_ms = Date.now() - t0;
     return new Response(

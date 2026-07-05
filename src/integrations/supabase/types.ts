@@ -688,6 +688,39 @@ export type Database = {
         }
         Relationships: []
       }
+      gbif_occurrences: {
+        Row: {
+          fetched_at: string
+          gbif_key: number | null
+          id: number
+          lat: number
+          lon: number
+          observed_at: string | null
+          species_lat: string | null
+          species_name: string
+        }
+        Insert: {
+          fetched_at?: string
+          gbif_key?: number | null
+          id?: never
+          lat: number
+          lon: number
+          observed_at?: string | null
+          species_lat?: string | null
+          species_name: string
+        }
+        Update: {
+          fetched_at?: string
+          gbif_key?: number | null
+          id?: never
+          lat?: number
+          lon?: number
+          observed_at?: string | null
+          species_lat?: string | null
+          species_name?: string
+        }
+        Relationships: []
+      }
       gbif_pins: {
         Row: {
           created_at: string
@@ -724,6 +757,33 @@ export type Database = {
           map_scope?: string
           species?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      gbif_taxon_keys: {
+        Row: {
+          match_confidence: string | null
+          matched_at: string
+          override: boolean
+          species_lat: string | null
+          species_name: string
+          taxon_key: number | null
+        }
+        Insert: {
+          match_confidence?: string | null
+          matched_at?: string
+          override?: boolean
+          species_lat?: string | null
+          species_name: string
+          taxon_key?: number | null
+        }
+        Update: {
+          match_confidence?: string | null
+          matched_at?: string
+          override?: boolean
+          species_lat?: string | null
+          species_name?: string
+          taxon_key?: number | null
         }
         Relationships: []
       }

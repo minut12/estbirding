@@ -16,5 +16,15 @@ GBIF's `eventDate` is not always a full date — it can be year-only (`"2016"`) 
 ## Trade-off — load-bearing for Phase C
 Year-only records receive a **synthetic Jan-1 month**. GBIF populates real month/day for the large majority of observation records, so this affects only a sparse tail — but it means **Phase-C SEASON scoring must treat coerced dates as month-unknown**, not trust the synthetic month, or migration-timing signal will be biased toward January for that tail. (The `page_cap:3000` temporal-truncation for very common species is a separate, already-logged Phase-C watch-item.)
 
+## Resolution (Phase C · 2026-07-05)
+
+**The gap.** `gbif_occurrences` stores no precision flag (`species_name, species_lat, gbif_key, observed_at, lat, lon`). A stored `2016-01-01` from a year-only coercion is byte-identical to a genuine 1-January observation, so "treat coerced dates as month-unknown" is uncomputable per-record.
+
+**Decision.** SEASON handles this **wholesale**: every record with `month = 1 AND day = 1` is **excluded from SEASON month-centrality**, and **retained in HISTORY** (year + coordinates are all HISTORY needs). No precision flag, no Phase-A change, no 556k-row backfill.
+
+**Why it's acceptable.** Genuine 1-Jan observations are ~0.3% of dated records in a low-activity Estonian midwinter, and SEASON carries only 5% of the composite weight — so the real signal discarded is negligible, while the entire coerced tail is correctly neutralized.
+
+**Consequence — a deliberate server/client divergence.** The live client reads GBIF directly (real partial dates); the server reads the coerced table and drops Jan-1 from SEASON. Phase-C parity-checking **must expect** this divergence on winter species — it is correct behaviour, not a compute bug. (See the compute-ennustus cadence + parity-contract note.)
+
 ## Relates
 Part of Phase A (GBIF HISTORY ingest); see `2026-07-05-toenaosus-history-source-gbif-not-elurikkus.md` for why HISTORY sources from GBIF. The compute EF in Phase C reads `observed_at`; anything that derives month/season from it must apply the month-unknown rule above.

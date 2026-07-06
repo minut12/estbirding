@@ -10319,6 +10319,49 @@ document.addEventListener('DOMContentLoaded', function(){
   _wireSidebarSettingsRow();
   _refreshBuildStampUi();
 });
+
+// ---- Admin flag (Phase D · Fix 1) ----
+(function(){
+  var KEY='bm_admin';
+  function isOn(){ return localStorage.getItem(KEY)==='1'; }
+  function apply(){ document.body.dataset.admin = isOn() ? '1' : ''; }
+  function on(){ localStorage.setItem(KEY,'1'); apply(); return true; }
+  function off(){ localStorage.removeItem(KEY); apply(); return false; }
+  function toggle(){ return isOn() ? off() : on(); }
+
+  // Rehydrate from ?admin=1 (persistent — writes to localStorage)
+  try {
+    var q = new URLSearchParams(location.search);
+    if(q.get('admin')==='1') localStorage.setItem(KEY,'1');
+  } catch(e){}
+
+  // Initial apply (handle both post-DOM and pre-DOM script positions)
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', apply, {once:true});
+  } else {
+    apply();
+  }
+
+  // Keybind: bare Shift+A, guarded against input focus and key auto-repeat
+  document.addEventListener('keydown', function(e){
+    if(e.repeat) return;
+    if(!e.shiftKey) return;
+    if(e.ctrlKey || e.altKey || e.metaKey) return;
+    var k = e.key;
+    if(k !== 'A' && k !== 'a') return;
+    var el = document.activeElement;
+    if(el){
+      var tag = el.tagName;
+      if(tag==='INPUT' || tag==='TEXTAREA' || el.isContentEditable) return;
+    }
+    e.preventDefault();
+    var next = toggle();
+    console.log('[bm-admin]', next ? 'ON' : 'OFF');
+  });
+
+  // Console API
+  window.__bmAdmin = { on: on, off: off, toggle: toggle, isOn: isOn };
+})();
 </script>
 
 
@@ -13520,15 +13563,29 @@ document.addEventListener('click', function(e) {
 .eNb{margin-top:2px;font-size:11px;color:#475569}
 .eNbB{font-weight:600;color:#047857}
 @media(max-width:600px){#ennBox{width:96vw;max-height:85vh}.eAv{width:30px;height:30px}.eNm{font-size:13px}.ePct{font-size:15px}.eR{gap:7px;padding:6px}}
+.bm-admin-only { display: none !important; }
+body[data-admin="1"] .bm-admin-only { display: revert !important; }
+.bm-admin-pill {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(220, 38, 38, 0.1);
+  color: rgb(185, 28, 28);
+  margin-left: 6px;
+  vertical-align: middle;
+  letter-spacing: 0.03em;
+}
 </style>
 
 <div id="ennBg">
 <div id="ennBox">
 <div class="ennHdr">
-<div><h3>Tõenäosus</h3><p class="sub">Tõenäosus praegusel perioodil</p></div>
+<div><h3>Tõenäosus<span class="bm-admin-only bm-admin-pill">ADMIN</span></h3><p class="sub">Tõenäosus praegusel perioodil</p></div>
 <div style="display:flex;gap:8px;align-items:center">
-<button class="btn secondary" style="font-size:12px;padding:4px 10px" onclick="window.__scanEnnAll(this,{skipEluRefresh:true})" title="Kiire skaneerimine (kasutab vahemällu salvestatud eElurikkuse andmeid)">Skaneeri</button>
-<button id="ennJagaBtn" class="btn secondary" style="font-size:12px;padding:4px 10px" onclick="window.__ennJagaClick(this)" title="Jaga skaneeritud andmeid teistele seadmetele pilve kaudu">&#9729; Jaga</button>
+<button class="btn secondary bm-admin-only" style="font-size:12px;padding:4px 10px" onclick="window.__scanEnnAll(this,{skipEluRefresh:true})" title="Kiire skaneerimine (kasutab vahemällu salvestatud eElurikkuse andmeid)">Skaneeri</button>
+<button id="ennJagaBtn" class="btn secondary bm-admin-only" style="font-size:12px;padding:4px 10px" onclick="window.__ennJagaClick(this)" title="Jaga skaneeritud andmeid teistele seadmetele pilve kaudu">&#9729; Jaga</button>
 <button class="btn small" onclick="window.__closeEnn()">&#10005;</button>
 </div>
 </div>

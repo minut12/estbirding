@@ -452,8 +452,8 @@ function ymd(d: Date): string {
 
 // HISTORY: all GBIF occurrences for the taxon key. PostgREST caps at 1000 rows
 // per request, so page through until exhausted (page_cap ~3000/species).
-async function fetchAllGbif(supabase: any, taxonKey: any): Promise<any[]> {
-  if (taxonKey === null || taxonKey === undefined) return [];
+async function fetchAllGbif(supabase: any, speciesName: string): Promise<any[]> {
+  if (!speciesName) return [];
   const pageSize = 1000;
   let from = 0;
   const out: any[] = [];
@@ -462,7 +462,7 @@ async function fetchAllGbif(supabase: any, taxonKey: any): Promise<any[]> {
     const { data, error } = await supabase
       .from('gbif_occurrences')
       .select('lat,lon,observed_at')
-      .eq('gbif_key', taxonKey)
+      .eq('species_name', speciesName)
       .not('lat', 'is', null)
       .not('lon', 'is', null)
       .range(from, from + pageSize - 1);

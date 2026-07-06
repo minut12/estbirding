@@ -528,7 +528,7 @@ function exitRow(speciesName: string, reason: 'A' | 'B' | 'C'): any {
 
 async function computeSpecies(supabase: any, speciesName: string, taxonKey: any): Promise<any> {
   // 1. HISTORY (allOccs) from GBIF, deduped (parity with client).
-  const gbifRows = await fetchAllGbif(supabase, taxonKey);
+  const gbifRows = await fetchAllGbif(supabase, speciesName);
   let allOccs = gbifRows.map((r: any) => ({
     lat: Number(r.lat),
     lon: Number(r.lon),

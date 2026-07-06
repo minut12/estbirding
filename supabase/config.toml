@@ -131,3 +131,6 @@ verify_jwt = false
 
 [functions.gbif-bulk-refresh]
 verify_jwt = false
+
+[functions.compute-ennustus]
+verify_jwt = false

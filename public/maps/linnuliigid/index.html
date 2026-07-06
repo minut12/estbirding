@@ -13091,8 +13091,9 @@ try { localStorage.removeItem('bm_enn_prob_v1'); } catch (e) {}
     var isCompact=e.c!=null&&e.computedAt==null;
     var computedAt=isCompact?e.c:e.computedAt;
     if(!computedAt) return;
-    if(now-computedAt>ENN_CACHE_TTL_MS){expired++;return;}
+    if(!isCompact && (now-computedAt>ENN_CACHE_TTL_MS)){expired++;return;}
     if(isCompact){
+      var _localStale=(now-computedAt)>ENN_CACHE_TTL_MS;
       window.__probDataBySpecies[name]={
         computedAt:e.c,
         overallScore:e.s,
@@ -13102,7 +13103,8 @@ try { localStorage.removeItem('bm_enn_prob_v1'); } catch (e) {}
         periods:e.p!=null?[{pct:e.p,isCurrent:true,label:'current'}]:[],
         noData:e.n===1,
         exitReason:e.x||undefined,
-        bestPeriod:(e.bp!=null)?{pct:e.bp,label:e.bl||'best'}:null
+        bestPeriod:(e.bp!=null)?{pct:e.bp,label:e.bl||'best'}:null,
+        stale:_localStale
       };
     }else{
       window.__probDataBySpecies[name]=e;
@@ -13318,7 +13320,8 @@ window.__ennCachePullFromCloud=async function(){
     data.forEach(function(row){
       var existing=(window.__probDataBySpecies||{})[row.species_name];
       if(existing&&existing.computedAt&&existing.computedAt>=row.computed_at){skipped++;return;}
-      if(now-row.computed_at>(window.ENN_CACHE_TTL_MS||43200000)){skipped++;return;}
+      var _ttlMs=window.ENN_CACHE_TTL_MS||43200000;
+      var _stale=(now-row.computed_at)>_ttlMs;
       window.__probDataBySpecies[row.species_name]={
         computedAt:row.computed_at,
         overallScore:row.score||0,
@@ -13328,7 +13331,8 @@ window.__ennCachePullFromCloud=async function(){
         periods:row.current_pct!=null?[{pct:row.current_pct,isCurrent:true,label:'current'}]:[],
         noData:!!row.no_data,
         exitReason:row.exit_reason,
-        bestPeriod:(row.best_period_pct!=null)?{pct:row.best_period_pct,label:row.best_period_label||'best'}:null
+        bestPeriod:(row.best_period_pct!=null)?{pct:row.best_period_pct,label:row.best_period_label||'best'}:null,
+        stale:_stale
       };
       applied++;
     });
@@ -13563,8 +13567,19 @@ document.addEventListener('click', function(e) {
 .eNb{margin-top:2px;font-size:11px;color:#475569}
 .eNbB{font-weight:600;color:#047857}
 @media(max-width:600px){#ennBox{width:96vw;max-height:85vh}.eAv{width:30px;height:30px}.eNm{font-size:13px}.ePct{font-size:15px}.eR{gap:7px;padding:6px}}
-.bm-admin-only { display: none !important; }
-body[data-admin="1"] .bm-admin-only { display: revert !important; }
+body:not([data-admin="1"]) .bm-admin-only { display: none; }
+.bm-stale-pill {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(217, 119, 6, 0.12);
+  color: rgb(180, 83, 9);
+  margin-left: 6px;
+  vertical-align: middle;
+  letter-spacing: 0.02em;
+}
 .bm-admin-pill {
   display: inline-block;
   font-size: 10px;

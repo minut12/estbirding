@@ -1,5 +1,5 @@
 // compute-ennustus
-// redeploy-marker: v1 · 2026-07-06 · initial ship (Phase C step 2)
+// redeploy-marker: v2 · 2026-07-06 · fix HISTORY predicate gbif_key→species_name
 //
 // Server-side port of the live Tõenäosus composite scorer
 // (`calculateProbabilities` + the head of `computeProbForSpecies` in
@@ -452,8 +452,8 @@ function ymd(d: Date): string {
 
 // HISTORY: all GBIF occurrences for the taxon key. PostgREST caps at 1000 rows
 // per request, so page through until exhausted (page_cap ~3000/species).
-async function fetchAllGbif(supabase: any, taxonKey: any): Promise<any[]> {
-  if (taxonKey === null || taxonKey === undefined) return [];
+async function fetchAllGbif(supabase: any, speciesName: string): Promise<any[]> {
+  if (!speciesName) return [];
   const pageSize = 1000;
   let from = 0;
   const out: any[] = [];
@@ -462,7 +462,7 @@ async function fetchAllGbif(supabase: any, taxonKey: any): Promise<any[]> {
     const { data, error } = await supabase
       .from('gbif_occurrences')
       .select('lat,lon,observed_at')
-      .eq('gbif_key', taxonKey)
+      .eq('species_name', speciesName)
       .not('lat', 'is', null)
       .not('lon', 'is', null)
       .range(from, from + pageSize - 1);
@@ -528,7 +528,7 @@ function exitRow(speciesName: string, reason: 'A' | 'B' | 'C'): any {
 
 async function computeSpecies(supabase: any, speciesName: string, taxonKey: any): Promise<any> {
   // 1. HISTORY (allOccs) from GBIF, deduped (parity with client).
-  const gbifRows = await fetchAllGbif(supabase, taxonKey);
+  const gbifRows = await fetchAllGbif(supabase, speciesName);
   let allOccs = gbifRows.map((r: any) => ({
     lat: Number(r.lat),
     lon: Number(r.lon),

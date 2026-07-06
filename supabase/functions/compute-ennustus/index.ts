@@ -1,5 +1,5 @@
 // compute-ennustus
-// redeploy-marker: v1 · 2026-07-06 · initial ship (Phase C step 2)
+// redeploy-marker: v2 · 2026-07-06 · fix HISTORY predicate gbif_key→species_name
 //
 // Server-side port of the live Tõenäosus composite scorer
 // (`calculateProbabilities` + the head of `computeProbForSpecies` in

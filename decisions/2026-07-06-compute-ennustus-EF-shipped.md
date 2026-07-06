@@ -41,11 +41,11 @@ rationale still stands.
 
 ## Verification
 - **Smoke `{offset:0,limit:5}` — CONFIRMED (2026-07-06 ~09:50Z).** Returned `{processed:5, next_offset:5, done:false, exits:{A:2, B:0, C:0, ok:3}}` — exactly the predicted `{A:2, ok:3}`, so the runtime is v2 (all-A would have meant v1). Written rows validated: Aafrika harksaba + Aedporr → Exit A (0 GBIF); Aed-põõsalind score 82 (@0.1°), Aed-roolind 61 (@0.1°), Alk 29 (@0.15°). Grid sizes track GBIF volume; Alk demonstrates the headline-vs-best split (`score=current_pct=29` current period, `best_period_pct=47` Oct–Nov peak); seasons not January-anchored (Jan-1 exclusion working).
+- **Full backfill — CONFIRMED (2026-07-06 ~10:47Z).** 18 chunks at `limit=25` via the resumable loop; no chunk errored. Connector verification: `ennustus_cache` = **449 rows = full `gbif_taxon_keys` universe**, 0 missing, 0 stale, 0 orphans. Breakdown `ok=334 · A=87 · B=0 · C=28` (exact match to the loop's summed exits). **0 species at the 95 cap** → healthy score spread (the composite-rebuild goal). All rows computed 10:45–10:47Z.
 - **Client-parity — PENDING.** Target **Jõgi-ritsiklind** (offset 59; 2033 GBIF uncapped, 40 fresh elu; in-season). Server value: score 76, current_pct 76, best period "25 Jun–09 Jul", season "May 14–Jul 13", top cell (58.35, 26.85) @0.1°. Awaiting client `[PROB-SCORE]`; residual gap must be explained only by axes #1 + #5 (with minor #2). Anything else moving = port defect.
 
 ## Deferred / follow-ups
 - **Scheduler (Phase C step 3):** 2×/day ~07:00 + ~19:00, ~55 min after the elurikkus refresh. Mechanism undecided — n8n Schedule→`splitInBatches`→HTTP vs Supabase pg_cron. Needs mechanism + build-version decision before build.
-- **Full backfill:** ~90 chunks (449 species ÷ 25) across the species universe once parity passes.
 - **Phase D:** iframe read-only cutover (consumes `ennustus_cache`; render boosts `occ7Elu`/neighbour stay client-side).
 - **Cosmetic debt:** two stale comments in `index.ts` still say "taxon key."
 - **Secret:** `VAATLUSTE_WEBHOOK_SECRET` surfaced in a working session — rotate + update the n8n Header Auth credential (`J36l6pyvltfpqlJC`). *(Rotation deferred by owner.)*

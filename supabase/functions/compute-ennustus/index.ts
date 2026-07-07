@@ -1,4 +1,5 @@
 // compute-ennustus
+// redeploy-marker: v5 · 2026-07-07 · per-species cells flush (no batch accumulation)
 // redeploy-marker: v4 · 2026-07-07 · prune mirrors client draw-skip (index.html:12704)
 // redeploy-marker: v3 · 2026-07-07 · adds ennustus_cells_cache grid persistence
 // redeploy-marker: v2 · 2026-07-06 · fix HISTORY predicate gbif_key→species_name

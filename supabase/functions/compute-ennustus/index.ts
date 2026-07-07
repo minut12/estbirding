@@ -1,4 +1,5 @@
 // compute-ennustus
+// redeploy-marker: v5 · 2026-07-07 · per-species cells flush (no batch accumulation)
 // redeploy-marker: v4 · 2026-07-07 · prune mirrors client draw-skip (index.html:12704)
 // redeploy-marker: v3 · 2026-07-07 · adds ennustus_cells_cache grid persistence
 // redeploy-marker: v2 · 2026-07-06 · fix HISTORY predicate gbif_key→species_name
@@ -700,15 +701,26 @@ serve(async (req) => {
   const slice = species || [];
   const exits = { A: 0, B: 0, C: 0, ok: 0 };
   const summaryRows: any[] = [];
-  const cellsRows: any[] = [];
 
   // Sequential: release each species' occurrences before the next.
+  // v5: flush each species' cellsRow immediately (best-effort) to avoid
+  // accumulating a multi-MB jsonb payload for the batch-end upsert.
   for (const sp of slice) {
     const { summaryRow, cellsRow } = await computeSpecies(supabase, sp.species_name, sp.taxon_key);
     if (summaryRow.no_data) exits[summaryRow.exit_reason as 'A' | 'B' | 'C']++;
     else exits.ok++;
     summaryRows.push(summaryRow);
-    if (cellsRow) cellsRows.push(cellsRow);
+
+    if (cellsRow) {
+      try {
+        const { error: cellsErr } = await supabase
+          .from('ennustus_cells_cache')
+          .upsert(cellsRow, { onConflict: 'species_name' });
+        if (cellsErr) console.error('[cells-write]', sp.species_name, cellsErr);
+      } catch (e) {
+        console.error('[cells-write] threw', sp.species_name, e);
+      }
+    }
   }
 
   // Summary write -- byte-identical to v2: same payload, same onConflict, same
@@ -719,19 +731,6 @@ serve(async (req) => {
       .upsert(summaryRows, { onConflict: 'species_name' });
     if (upErr) {
       return jsonResponse(500, { error: 'upsert_failed', detail: upErr.message });
-    }
-  }
-
-  // Cells write -- best-effort, independent. A failure here is logged and swallowed;
-  // it never fails the summary write or the response.
-  if (cellsRows.length) {
-    try {
-      const { error: cellsErr } = await supabase
-        .from('ennustus_cells_cache')
-        .upsert(cellsRows, { onConflict: 'species_name' });
-      if (cellsErr) console.error('[cells-write]', cellsErr);
-    } catch (e) {
-      console.error('[cells-write] threw', e);
     }
   }
 

@@ -1,4 +1,5 @@
 // compute-ennustus
+// redeploy-marker: v4 · 2026-07-07 · prune mirrors client draw-skip (index.html:12704)
 // redeploy-marker: v3 · 2026-07-07 · adds ennustus_cells_cache grid persistence
 // redeploy-marker: v2 · 2026-07-06 · fix HISTORY predicate gbif_key→species_name
 //
@@ -630,7 +631,9 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
   // Prune no-signal cells (probability=0 & gbifCount=0 & eluCount=0); allowlist only
   // the fields the overlay renders; rename periods[].probability -> periods[].pct.
   const cellsSerialized = scored
-    .filter((c: any) => !(c.probability === 0 && c.gbifCount === 0 && c.eluCount === 0))
+    .filter((c: any) =>
+      c.isTopScore === true ||
+      !(c.gbifCount <= 0 && (c.eluCount || 0) <= 0 && !c.markerInCell && (c.scoreRecency || 0) <= 0))
     .map((c: any) => ({
       latMin: c.latMin, latMax: c.latMax,
       lonMin: c.lonMin, lonMax: c.lonMax,

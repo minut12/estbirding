@@ -1,4 +1,5 @@
 // compute-ennustus
+// redeploy-marker: v6 · 2026-07-07 · periods carry obsCount + isCurrent (cell-cache count-carry)
 // redeploy-marker: v5 · 2026-07-07 · per-species cells flush (no batch accumulation)
 // redeploy-marker: v4 · 2026-07-07 · prune mirrors client draw-skip (index.html:12704)
 // redeploy-marker: v3 · 2026-07-07 · adds ennustus_cells_cache grid persistence
@@ -645,7 +646,7 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
       scoreRecency: c.scoreRecency,
       isTopScore: c.isTopScore === true,
       centerLat: c.centerLat, centerLon: c.centerLon,
-      periods: (c.periods || []).map((p: any) => ({ label: p.label, pct: p.probability })),
+      periods: (c.periods || []).map((p: any) => ({ label: p.label, pct: p.probability, obsCount: p.obsCount, isCurrent: p.isCurrent })),
     }));
 
   const cellsRow = {

@@ -13095,7 +13095,7 @@ var __sharedDefaults = {};
     _probHideCachePlaceholder();
     var grid = cells.map(function(c){
       var o = {}; for (var k in c) { if (Object.prototype.hasOwnProperty.call(c,k)) o[k] = c[k]; }
-      if (Array.isArray(c.periods)) o.periods = c.periods.map(function(p){ return { label: p.label, probability: p.pct }; });
+      if (Array.isArray(c.periods)) o.periods = c.periods.map(function(p){ return { label: p.label, probability: p.pct, obsCount: p.obsCount, isCurrent: p.isCurrent }; });
       return o;
     });
     var gbifSum = 0, eluSum = 0;

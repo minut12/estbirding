@@ -10434,6 +10434,8 @@ document.addEventListener('DOMContentLoaded', function(){
   }
 
   window.__ennRenderFresh = _ennRenderFresh;
+  window.__ennFmtNextRun = _ennFmtNextRun;
+  window.__ennFmtLastUpdated = _ennFmtLastUpdated;
 })();
 </script>
 
@@ -11804,6 +11806,7 @@ var __sharedDefaults = {};
         '<span id="probSrcPillEbird" style="font-size:11px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;display:none">eBird</span>' +
       '</div>' +
       '<div id="probFetchStatus" style="font-size:11px;color:#94a3b8;margin-top:6px"></div>' +
+      '<div id="probCachePlaceholder" class="bm-prob-placeholder" style="display:none;font-size:11px;color:#475569;margin-top:8px;padding:8px 10px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px"></div>' +
     '</div>';
   mapWrap.appendChild(probPanel);
 
@@ -13045,6 +13048,44 @@ var __sharedDefaults = {};
 
   window.computeProbForSpecies = computeProbForSpecies;
 
+  // --- Fix 2c v2: prob-cache render helpers (non-admin, zero client compute) ---
+  function _probShowCachePlaceholder(){
+    var box = document.getElementById('probCachePlaceholder');
+    if(!box) return;
+    var next = (typeof window.__ennFmtNextRun === 'function') ? window.__ennFmtNextRun() : '';
+    box.textContent = 'Andmed puuduvad — järgmine uuendus ' + next;
+    box.style.display = 'block';
+  }
+  function _probHideCachePlaceholder(){
+    var box = document.getElementById('probCachePlaceholder');
+    if(box) box.style.display = 'none';
+  }
+  async function _probRenderFromCache(speciesName){
+    var fetched = await window.__fetchEnnCellsForSpecies(speciesName);
+    if (activeProbSpecies !== speciesName) return; // toggled away during fetch
+    var cells = (fetched && Array.isArray(fetched.cells)) ? fetched.cells : null;
+    if (!fetched || fetched.failed || fetched.miss || !cells || !cells.length) {
+      clearProbabilityLayer();
+      setProbStatus('');
+      _probShowCachePlaceholder();
+      return;
+    }
+    _probHideCachePlaceholder();
+    var grid = cells.map(function(c){
+      var o = {}; for (var k in c) { if (Object.prototype.hasOwnProperty.call(c,k)) o[k] = c[k]; }
+      if (Array.isArray(c.periods)) o.periods = c.periods.map(function(p){ return { label: p.label, probability: p.pct }; });
+      return o;
+    });
+    var gbifSum = 0, eluSum = 0;
+    grid.forEach(function(c){ gbifSum += (c.gbifCount||0); eluSum += (c.eluCount||0); });
+    var summary = (window.__probDataBySpecies || {})[speciesName] || {};
+    var seasonLabel = summary.season || '';
+    renderProbabilityOverlay(grid, speciesName, gbifSum + eluSum, 0, { label: seasonLabel });
+    if (typeof render === 'function') render();
+    var updated = (typeof window.__ennFmtLastUpdated === 'function') ? window.__ennFmtLastUpdated(fetched.computedAt) : '';
+    setProbStatus('GBIF: ' + gbifSum + ' · eElurikkus: ' + eluSum + ' · ' + grid.length + ' cells · updated ' + updated);
+  }
+
   // --- toggleProbability: UI wrapper around computeProbForSpecies ---
   window.toggleProbability = async function toggleProbability(speciesName) {
     // Deactivate
@@ -13066,6 +13107,12 @@ var __sharedDefaults = {};
     if (btn) btn.classList.add('prob-loading');
 
     try {
+      // Fix 2c v2 · non-admin → server grid cache (zero client compute). Admin → full compute below.
+      if (!(window.__bmAdmin && window.__bmAdmin.isOn())) {
+        await _probRenderFromCache(speciesName);
+        return;
+      }
+
       var result = await computeProbForSpecies(speciesName, { force: true });
 
       // User may have toggled away while fetching
@@ -13417,6 +13464,29 @@ window.__ennCachePullFromCloud=async function(){
   }catch(err){
     console.warn('[enn-cache] cloud pull failed:',err);
     return{failed:true,error:String(err)};
+  }
+};
+
+// Fix 2c v2 · per-species grid fetch from ennustus_cells_cache (in-memory cached; non-admin read path)
+window.__ennCellsBySpecies = window.__ennCellsBySpecies || {};
+window.__fetchEnnCellsForSpecies = async function(speciesName){
+  var cached = window.__ennCellsBySpecies[speciesName];
+  if (cached) return cached;
+  var sbUrl = String(typeof __resolvedSupabaseUrl!=='undefined'?__resolvedSupabaseUrl:'').replace(/\/+$/,'');
+  var anonKey = String(typeof __resolvedSupabaseAnonKey!=='undefined'?__resolvedSupabaseAnonKey:'').trim();
+  if(!sbUrl||!anonKey) return {failed:true, reason:'no-config'};
+  try {
+    var key = String(speciesName||'').normalize('NFC');
+    var url = sbUrl + '/rest/v1/ennustus_cells_cache?species_name=eq.' + encodeURIComponent(key) + '&select=cells,computed_at';
+    var res = await fetch(url, { headers:{ 'apikey':anonKey, 'Authorization':'Bearer '+anonKey } });
+    if(!res.ok) return {failed:true, reason:'http-'+res.status};
+    var rows = await res.json();
+    if(!rows || !rows.length) return {miss:true};
+    var out = { cells: (rows[0].cells || []), computedAt: rows[0].computed_at };
+    window.__ennCellsBySpecies[speciesName] = out;
+    return out;
+  } catch(err){
+    return {failed:true, error:String(err)};
   }
 };
 

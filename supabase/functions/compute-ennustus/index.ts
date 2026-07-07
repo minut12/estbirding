@@ -1,4 +1,5 @@
 // compute-ennustus
+// redeploy-marker: v3 · 2026-07-07 · adds ennustus_cells_cache grid persistence
 // redeploy-marker: v2 · 2026-07-06 · fix HISTORY predicate gbif_key→species_name
 //
 // Server-side port of the live Tõenäosus composite scorer
@@ -540,11 +541,11 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
   const computedAt = Date.now();
 
   // 2. Exit A -- no occurrences.
-  if (!allOccs.length) return exitRow(speciesName, 'A');
+  if (!allOccs.length) return { summaryRow: exitRow(speciesName, 'A'), cellsRow: null };
 
   // 3. Season window (Jan-1-excluded DoY set). Exit B -- unreachable but kept for parity.
   let seasonInfo = calculateSeasonFromData(allOccs);
-  if (!seasonInfo) return exitRow(speciesName, 'B');
+  if (!seasonInfo) return { summaryRow: exitRow(speciesName, 'B'), cellsRow: null };
 
   // 4. In-season subset, with the +-45-day fallback.
   let seasonal = allOccs.filter((o: any) => isInSeasonRange(o.date, seasonInfo.start, seasonInfo.end));
@@ -555,7 +556,7 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
     const fb2 = new Date(now2); fb2.setDate(fb2.getDate() + 45);
     seasonInfo = { start: fb1, end: fb2, label: formatSeasonWindow(45) };
   }
-  if (seasonal.length === 0) return exitRow(speciesName, 'C');
+  if (seasonal.length === 0) return { summaryRow: exitRow(speciesName, 'C'), cellsRow: null };
 
   // 5. Cell size from GBIF volume (all history is GBIF here).
   const totalGbifRecords = allOccs.length;
@@ -574,7 +575,7 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
 
   // 10. topCell = simple max-probability sort (gotcha #6, NOT flagTopScoreCell).
   const topCell = scored.slice().sort((a: any, b: any) => b.probability - a.probability)[0];
-  if (!topCell) return exitRow(speciesName, 'C');
+  if (!topCell) return { summaryRow: exitRow(speciesName, 'C'), cellsRow: null };
 
   // 11. Cell center + raw score (cap 95).
   const cell_lat = (topCell.latMin + topCell.latMax) / 2;
@@ -605,7 +606,7 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
   }
 
   // 14. Result row (raw score only -- boosts stay render-side, gotcha #3).
-  return {
+  const summaryRow = {
     species_name: speciesName,
     computed_at: computedAt,
     score,
@@ -619,6 +620,38 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
     best_period_label,
     updated_at: new Date().toISOString(),
   };
+
+  // 15. Per-cell grid for ennustus_cells_cache (Phase D · v3). Best-effort sibling
+  //     payload; the client heatmap (renderProbabilityOverlay) reads these fields.
+  //     Synthesize the crown flag server-side -- the client's flagTopScoreCell is
+  //     render-only and was skipped in the port (see line ~437).
+  (topCell as any).isTopScore = true;
+
+  // Prune no-signal cells (probability=0 & gbifCount=0 & eluCount=0); allowlist only
+  // the fields the overlay renders; rename periods[].probability -> periods[].pct.
+  const cellsSerialized = scored
+    .filter((c: any) => !(c.probability === 0 && c.gbifCount === 0 && c.eluCount === 0))
+    .map((c: any) => ({
+      latMin: c.latMin, latMax: c.latMax,
+      lonMin: c.lonMin, lonMax: c.lonMax,
+      probability: c.probability,
+      gbifCount: c.gbifCount,
+      eluCount: c.eluCount,
+      markerInCell: c.markerInCell,
+      scoreRecency: c.scoreRecency,
+      isTopScore: c.isTopScore === true,
+      centerLat: c.centerLat, centerLon: c.centerLon,
+      periods: (c.periods || []).map((p: any) => ({ label: p.label, pct: p.probability })),
+    }));
+
+  const cellsRow = {
+    species_name: speciesName,
+    cells: cellsSerialized,
+    computed_at: computedAt,          // MUST equal summaryRow.computed_at
+    updated_at: new Date().toISOString(),
+  };
+
+  return { summaryRow, cellsRow };
 }
 
 // ============================================================================
@@ -663,22 +696,39 @@ serve(async (req) => {
 
   const slice = species || [];
   const exits = { A: 0, B: 0, C: 0, ok: 0 };
-  const rows: any[] = [];
+  const summaryRows: any[] = [];
+  const cellsRows: any[] = [];
 
   // Sequential: release each species' occurrences before the next.
   for (const sp of slice) {
-    const row = await computeSpecies(supabase, sp.species_name, sp.taxon_key);
-    if (row.no_data) exits[row.exit_reason as 'A' | 'B' | 'C']++;
+    const { summaryRow, cellsRow } = await computeSpecies(supabase, sp.species_name, sp.taxon_key);
+    if (summaryRow.no_data) exits[summaryRow.exit_reason as 'A' | 'B' | 'C']++;
     else exits.ok++;
-    rows.push(row);
+    summaryRows.push(summaryRow);
+    if (cellsRow) cellsRows.push(cellsRow);
   }
 
-  if (rows.length) {
+  // Summary write -- byte-identical to v2: same payload, same onConflict, same
+  // 500-on-error. This remains the authoritative write.
+  if (summaryRows.length) {
     const { error: upErr } = await supabase
       .from('ennustus_cache')
-      .upsert(rows, { onConflict: 'species_name' });
+      .upsert(summaryRows, { onConflict: 'species_name' });
     if (upErr) {
       return jsonResponse(500, { error: 'upsert_failed', detail: upErr.message });
+    }
+  }
+
+  // Cells write -- best-effort, independent. A failure here is logged and swallowed;
+  // it never fails the summary write or the response.
+  if (cellsRows.length) {
+    try {
+      const { error: cellsErr } = await supabase
+        .from('ennustus_cells_cache')
+        .upsert(cellsRows, { onConflict: 'species_name' });
+      if (cellsErr) console.error('[cells-write]', cellsErr);
+    } catch (e) {
+      console.error('[cells-write] threw', e);
     }
   }
 

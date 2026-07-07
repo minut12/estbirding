@@ -1,0 +1,24 @@
+- generic [ref=f1e3]:
+  - complementary [ref=f1e4]:
+    - textbox "Filter..." [ref=f1e6]
+    - generic [ref=f1e7]:
+      - generic [ref=f1e8]:
+        - button "Tuulekaart" [ref=f1e9] [cursor=pointer]
+        - button "Kevadränne" [ref=f1e10] [cursor=pointer]
+        - button "eBird EE" [ref=f1e11] [cursor=pointer]
+        - button "Tõenäosus" [ref=f1e12] [cursor=pointer]
+        - generic "Mitu erinevat liiki on viimase 7 päeva jooksul aktiivsed" [ref=f1e13]: "7p liigid: 0"
+        - generic "Mitu liiki on sidebaris peidetud (klikitud ära, visible=false)" [ref=f1e14]: "Peidetud: 0"
+      - generic [ref=f1e15]:
+        - 'button "7p: ON" [ref=f1e16] [cursor=pointer]'
+        - button "Refresh from Elurikkus" [ref=f1e17] [cursor=pointer]
+  - main [ref=f1e18]:
+    - generic [ref=f1e19]:
+      - generic:
+        - generic [ref=f1e20]:
+          - button "Zoom in" [ref=f1e21] [cursor=pointer]: +
+          - button "Zoom out" [ref=f1e22] [cursor=pointer]: −
+        - link "Leaflet" [ref=f1e24] [cursor=pointer]:
+          - /url: https://leafletjs.com
+          - img [ref=f1e25]
+          - text: Leaflet

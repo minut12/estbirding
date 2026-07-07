@@ -416,6 +416,35 @@ export type Database = {
         }
         Relationships: []
       }
+      ennustus_cells_cache: {
+        Row: {
+          cells: Json
+          computed_at: number
+          species_name: string
+          updated_at: string
+        }
+        Insert: {
+          cells: Json
+          computed_at: number
+          species_name: string
+          updated_at?: string
+        }
+        Update: {
+          cells?: Json
+          computed_at?: number
+          species_name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ennustus_cells_cache_species_name_fkey"
+            columns: ["species_name"]
+            isOneToOne: true
+            referencedRelation: "ennustus_cache"
+            referencedColumns: ["species_name"]
+          },
+        ]
+      }
       europe_ebird_cache: {
         Row: {
           country_code: string

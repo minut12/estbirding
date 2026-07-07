@@ -10362,6 +10362,79 @@ document.addEventListener('DOMContentLoaded', function(){
   // Console API
   window.__bmAdmin = { on: on, off: off, toggle: toggle, isOn: isOn };
 })();
+
+// ---- Freshness helpers (Phase D · Fix 2b) ----
+(function(){
+  // Scheduler hours in Europe/Tallinn — matches n8n cron `0 7,19 * * *`
+  // in the `compute-ennustus-scheduler` workflow. Update BOTH if the cron changes.
+  var ENN_SCHEDULER_HOURS = [7, 19];
+
+  function _padHour(h){ return (h < 10 ? '0' + h : String(h)) + ':00'; }
+
+  function _tallinnDateKey(d){
+    // Stable "YYYY-MM-DD" in Europe/Tallinn for same-day comparison
+    try {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Tallinn',
+        year: 'numeric', month: '2-digit', day: '2-digit'
+      }).format(d);
+    } catch(e) { return String(d.getTime()); }
+  }
+
+  function _ennFmtLastUpdated(ms){
+    if(!ms || !isFinite(ms)) return '—';
+    var d = new Date(ms);
+    var now = new Date();
+    var sameDay = _tallinnDateKey(d) === _tallinnDateKey(now);
+    try {
+      var hhmm = new Intl.DateTimeFormat('et-EE', {
+        timeZone: 'Europe/Tallinn',
+        hour: '2-digit', minute: '2-digit', hour12: false
+      }).format(d);
+      if(sameDay) return hhmm;
+      var ddmm = new Intl.DateTimeFormat('et-EE', {
+        timeZone: 'Europe/Tallinn',
+        day: '2-digit', month: '2-digit'
+      }).format(d);
+      return ddmm + ' ' + hhmm;
+    } catch(e) { return '—'; }
+  }
+
+  function _ennFmtNextRun(){
+    try {
+      var hStr = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Europe/Tallinn',
+        hour: '2-digit', hour12: false
+      }).format(new Date());
+      var hNow = parseInt(hStr, 10);
+      if(!isFinite(hNow)) return '—';
+      for(var i = 0; i < ENN_SCHEDULER_HOURS.length; i++){
+        if(ENN_SCHEDULER_HOURS[i] > hNow) return _padHour(ENN_SCHEDULER_HOURS[i]);
+      }
+      return _padHour(ENN_SCHEDULER_HOURS[0]);
+    } catch(e) { return '—'; }
+  }
+
+  function _ennMaxComputedAt(){
+    var pd = window.__probDataBySpecies || {};
+    var max = 0;
+    for(var k in pd){
+      var c = pd[k] && pd[k].computedAt;
+      if(c && c > max) max = c;
+    }
+    return max || null;
+  }
+
+  function _ennRenderFresh(){
+    var tsEl = document.getElementById('ennFreshTs');
+    var nextEl = document.getElementById('ennFreshNext');
+    if(!tsEl && !nextEl) return; // panel not present yet
+    if(tsEl) tsEl.textContent = _ennFmtLastUpdated(_ennMaxComputedAt());
+    if(nextEl) nextEl.textContent = _ennFmtNextRun();
+  }
+
+  window.__ennRenderFresh = _ennRenderFresh;
+})();
 </script>
 
 
@@ -13111,6 +13184,7 @@ try { localStorage.removeItem('bm_enn_prob_v1'); } catch (e) {}
     }
     restored++;
   });
+  try { if(typeof window.__ennRenderFresh === 'function') window.__ennRenderFresh(); } catch(e){}
   console.log('[enn-cache] prob restored:',restored,'expired:',expired);
 }catch(err){console.warn('[enn-cache] prob restore failed:',err);}})();
 
@@ -13336,6 +13410,7 @@ window.__ennCachePullFromCloud=async function(){
       };
       applied++;
     });
+    try { if(typeof window.__ennRenderFresh === 'function') window.__ennRenderFresh(); } catch(e){}
     console.log('[enn-cache] cloud pulled:',applied,'applied,',skipped,'skipped');
     if(applied>0&&typeof window.__schedulePersistProbCache==='function') window.__schedulePersistProbCache();
     return{pulled:applied,skipped:skipped};
@@ -13592,6 +13667,21 @@ body:not([data-admin="1"]) .bm-admin-only { display: none; }
   vertical-align: middle;
   letter-spacing: 0.03em;
 }
+.ennFresh {
+  margin: 0;
+  padding: 8px 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+}
+.ennFresh #ennFreshTs,
+.ennFresh #ennFreshNext,
+.ennFresh #ennFreshCount {
+  font-weight: 500;
+  color: #1e293b;
+}
 </style>
 
 <div id="ennBg">
@@ -13604,7 +13694,7 @@ body:not([data-admin="1"]) .bm-admin-only { display: none; }
 <button class="btn small" onclick="window.__closeEnn()">&#10005;</button>
 </div>
 </div>
-<div class="ennSum" id="ennSum"></div>
+<p class="ennFresh">Uuendatud <span id="ennFreshTs">—</span> · järgmine <span id="ennFreshNext">—</span> · <span id="ennFreshCount">—</span> liiki</p>
 <div class="ennSrch"><input id="ennQ" type="text" placeholder="Otsi liiki..." oninput="window.__renderEnn()"></div>
 <div class="ennLst" id="ennLst"></div>
 <div class="ennFt" id="ennFt"></div>
@@ -14049,8 +14139,8 @@ function render(){
   else if(sort==='spring') displayList.sort(function(a,b){return ssk(a.spring)-ssk(b.spring);});
   else displayList.sort(function(a,b){return a.name.localeCompare(b.name,'et');});
 
-  var el=document.getElementById('ennSum');
-  if(el) el.innerHTML='<span><b>'+displayList.length+'</b> liiki kaardil · <b>'+cachedCount+'</b> skaneeritud</span>';
+  var el=document.getElementById('ennFreshCount');
+  if(el) el.textContent=displayList.length;
 
   var lst=document.getElementById('ennLst');
   if(!lst) return;
@@ -14087,6 +14177,11 @@ function render(){
         _bpLine='<div style="color:#64748b;font-size:11px;margin-top:1px">Parim: '+_bpBest.label+' ('+_bpBest.pct+'%)</div>';
       }
     }
+    var _staleHtml='';
+    if(_bpd && _bpd.stale && _bpd.computedAt){
+      var _ageHours = Math.ceil((Date.now() - _bpd.computedAt) / 3600000);
+      _staleHtml = ' <span class="bm-stale-pill">' + _ageHours + ' t vanad</span>';
+    }
     // Neighbour-country boost line
     var _nbLine = '';
     var _nbPct  = Number(s.neighborBoost) || 0;
@@ -14098,7 +14193,7 @@ function render(){
                 ' <span class="eNbB">+' + _nbPct + '%</span></div>';
     }
     h+='<div class="eR"><div class="eAv" style="'+sty+'"></div><div class="eInf">'+
-      '<div class="eNm">'+nm+ebLabel+' <button class="ePrb" onclick="window.__ennProb(\''+escName+'\')">Prob</button></div><div class="eLt">'+sl+_bpLine+_nbLine+'</div>'+
+      '<div class="eNm">'+nm+ebLabel+' <button class="ePrb" onclick="window.__ennProb(\''+escName+'\')">Prob</button></div><div class="eLt">'+sl+_bpLine+_staleHtml+_nbLine+'</div>'+
       '<div class="eBar"><div class="eBf" style="width:'+(hasScore?Math.min(100,sc):0)+'%;background:'+bc+'"></div></div>'+
       '</div><div class="eRt">'+pctHtml+'</div></div>';
   }
@@ -14117,6 +14212,7 @@ function render(){
       '<button class="eSP '+(sort==='spring'?'eSA':'eSO')+'" onclick="window.__sortEnn(\'spring\')">Kevad kp</button>'+
       '<button class="eSP '+(sort==='az'?'eSA':'eSO')+'" onclick="window.__sortEnn(\'az\')">A-Z</button></div>';
   }
+  try { if(typeof window.__ennRenderFresh === 'function') window.__ennRenderFresh(); } catch(e){}
 }
 
 function ssk(ds){if(!ds) return 999999;

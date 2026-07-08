@@ -13677,27 +13677,37 @@ window.buildTop3PeriodsSection = function(speciesKey) {
 
   // --- Monochrome probability curve (P2). Shape carries the level; colour is reserved for the
   // P3 density strip, so the line/dots are never coloured by probability band. maxPct = peak.pct
-  // (peak is the max-pct period from Step B) — reused, not recomputed.
+  // (peak is the max-pct period from Step B) — reused, not recomputed. Range-filled (decision B):
+  // the band spans _minPct..peak.pct, so genuinely flat seasons are amplified (accepted cost).
   var _maxPct = peak.pct || 0;
   if (_maxPct > 0) {
     var _n = periods.length;
+    var _minPct = periods[0].pct || 0;
+    for (var _qi = 1; _qi < _n; _qi++) { if ((periods[_qi].pct || 0) < _minPct) _minPct = periods[_qi].pct || 0; }
+    var _flat = (_maxPct === _minPct);   // all periods equal -> avoid /0, draw a flat mid-band line
     var _xs = [], _ys = [], _pts = '';
     for (var xi = 0; xi < _n; xi++) {
       var _x = _n > 1 ? (12 + 276 * (xi / (_n - 1))) : 150;
-      var _y = 72 - ((periods[xi].pct || 0) / _maxPct) * 64;
+      var _y = _flat ? 60 : (108 - (((periods[xi].pct || 0) - _minPct) / (_maxPct - _minPct)) * 96);
       _xs.push(_x); _ys.push(_y);
       _pts += (xi ? ' ' : '') + _x.toFixed(1) + ',' + _y.toFixed(1);
     }
     html += '<div style="font-size:10px;color:#94a3b8;margin-top:8px;">Tõenäosus</div>';
-    html += '<svg viewBox="0 0 300 80" style="width:100%;height:auto;display:block;margin-top:2px;">';
-    html += '<polyline points="' + _pts + '" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
-    // peak marker (neutral) with "tipp" above
-    html += '<circle cx="' + _xs[peakIdx].toFixed(1) + '" cy="' + _ys[peakIdx].toFixed(1) + '" r="3" fill="#64748b"/>';
-    html += '<text x="' + Math.max(16, Math.min(_xs[peakIdx], 284)).toFixed(1) + '" y="' + Math.max(3, _ys[peakIdx] - 6).toFixed(1) + '" fill="#64748b" font-size="9" text-anchor="middle">tipp</text>';
-    // praegu marker (amber) with "praegu" below
-    if (curIdx >= 0) {
+    html += '<svg viewBox="0 0 300 120" style="width:100%;height:auto;display:block;margin-top:2px;">';
+    html += '<polyline points="' + _pts + '" fill="none" stroke="#64748b" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+    if (curIdx >= 0 && curIdx === peakIdx) {
+      // peak IS the current period -> single amber dot + merged label below (avoids clipping the top)
       html += '<circle cx="' + _xs[curIdx].toFixed(1) + '" cy="' + _ys[curIdx].toFixed(1) + '" r="4" fill="#f59e0b" stroke="#fff" stroke-width="1.5"/>';
-      html += '<text x="' + Math.max(16, Math.min(_xs[curIdx], 284)).toFixed(1) + '" y="' + Math.min(78, _ys[curIdx] + 13).toFixed(1) + '" fill="#92400e" font-size="9" text-anchor="middle">praegu</text>';
+      html += '<text x="' + Math.max(28, Math.min(_xs[curIdx], 272)).toFixed(1) + '" y="' + Math.min(116, _ys[curIdx] + 14).toFixed(1) + '" fill="#92400e" font-size="9" text-anchor="middle">praegu · tipp</text>';
+    } else {
+      // peak marker (neutral) with "tipp" above
+      html += '<circle cx="' + _xs[peakIdx].toFixed(1) + '" cy="' + _ys[peakIdx].toFixed(1) + '" r="3" fill="#64748b"/>';
+      html += '<text x="' + Math.max(16, Math.min(_xs[peakIdx], 284)).toFixed(1) + '" y="' + Math.max(9, _ys[peakIdx] - 6).toFixed(1) + '" fill="#64748b" font-size="9" text-anchor="middle">tipp</text>';
+      // praegu marker (amber) with "praegu" below
+      if (curIdx >= 0) {
+        html += '<circle cx="' + _xs[curIdx].toFixed(1) + '" cy="' + _ys[curIdx].toFixed(1) + '" r="4" fill="#f59e0b" stroke="#fff" stroke-width="1.5"/>';
+        html += '<text x="' + Math.max(16, Math.min(_xs[curIdx], 284)).toFixed(1) + '" y="' + Math.min(116, _ys[curIdx] + 13).toFixed(1) + '" fill="#92400e" font-size="9" text-anchor="middle">praegu</text>';
+      }
     }
     html += '</svg>';
     html += '<div style="display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;margin-top:1px;"><span>' + periods[0].label + '</span><span>' + periods[_n - 1].label + '</span></div>';
@@ -13725,6 +13735,18 @@ window.buildTop3PeriodsSection = function(speciesKey) {
       var _brd = (_r === 0) ? 'border:0.5px solid #e5e7eb;' : '';
       var _tick = (si === curIdx) ? '<div style="position:absolute;left:50%;top:0;bottom:0;width:2px;background:#2c2c2a;transform:translateX(-50%);"></div>' : '';
       html += '<div style="position:relative;flex:1;height:24px;box-sizing:border-box;background:' + _col + ';border-radius:' + _radius + ';' + _brd + '">' + _tick + '</div>';
+    }
+    html += '</div>';
+    // month ticks — one flex cell per period, aligned to the strip segments above. Label only on
+    // the first period of each month, parsed from the label's first letter-run (language-agnostic:
+    // English "Jul" / Estonian "juuli" alike). Unparseable label -> empty cell, never throws.
+    html += '<div style="display:flex;gap:1.5px;margin-top:2px;">';
+    var _prevM = '';
+    for (var _ti = 0; _ti < periods.length; _ti++) {
+      var _m = (String(periods[_ti].label || '').match(/[A-Za-zÀ-ſ]+/) || [''])[0];
+      var _show = (_m && _m !== _prevM) ? _m : '';
+      if (_m) _prevM = _m;
+      html += '<div style="flex:1;font-size:10px;color:#94a3b8;text-align:left;overflow:hidden;">' + _show + '</div>';
     }
     html += '</div>';
     // täna legend note (mini tick matching the on-strip marker)

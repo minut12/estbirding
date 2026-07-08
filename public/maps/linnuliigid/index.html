@@ -11868,7 +11868,7 @@ var __sharedDefaults = {};
     var now = new Date();
     var start = new Date(now); start.setDate(start.getDate() - windowDays);
     var end = new Date(now); end.setDate(end.getDate() + windowDays);
-    var fmt = function(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+    var fmt = function(d) { return d.toLocaleDateString('et-EE', { month: 'long', day: 'numeric' }); };
     return fmt(start) + ' \u2013 ' + fmt(end);
   }
 
@@ -11897,7 +11897,7 @@ var __sharedDefaults = {};
       var now = new Date();
       var start = new Date(now); start.setDate(start.getDate() - 21);
       var end = new Date(now); end.setDate(end.getDate() + 21);
-      var fmt = function(dd) { return dd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+      var fmt = function(dd) { return dd.toLocaleDateString('et-EE', { month: 'long', day: 'numeric' }); };
       return { start: start, end: end, label: fmt(start) + ' \u2013 ' + fmt(end) };
     }
 
@@ -11914,7 +11914,7 @@ var __sharedDefaults = {};
     var startDate = doyToDate(year, p10);
     var endDate = doyToDate(year, p90);
 
-    var fmt2 = function(dd) { return dd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+    var fmt2 = function(dd) { return dd.toLocaleDateString('et-EE', { month: 'long', day: 'numeric' }); };
     return { start: startDate, end: endDate, label: fmt2(startDate) + ' \u2013 ' + fmt2(endDate) };
   }
 
@@ -11981,7 +11981,7 @@ var __sharedDefaults = {};
 
   // --- Temporal period helpers ---
   function getSeasonPeriods(seasonStart, seasonEnd) {
-    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var months = ['jaanuar','veebruar','märts','aprill','mai','juuni','juuli','august','september','oktoober','november','detsember'];
     // If no season dates provided, fall back to ±21 days
     if (!seasonStart || !seasonEnd) {
       var now = new Date();
@@ -11995,10 +11995,17 @@ var __sharedDefaults = {};
       if (periodEnd > seasonEnd) periodEnd = new Date(seasonEnd);
       // Skip very short tail periods (<3 days)
       if (periodEnd - current < 3 * 86400000 && periods.length > 0) break;
+      // Collapsed Estonian range label: same month -> "17.\u201331. juuli"; cross month -> "31. juuli\u201314. august"
+      var _sM = current.getMonth(), _eM = periodEnd.getMonth();
+      var _sD = String(current.getDate()).padStart(2,'0');
+      var _eD = String(periodEnd.getDate()).padStart(2,'0');
+      var _lbl = (_sM === _eM)
+        ? (_sD + '.\u2013' + _eD + '. ' + months[_eM])
+        : (_sD + '. ' + months[_sM] + '\u2013' + _eD + '. ' + months[_eM]);
       periods.push({
         start: new Date(current),
         end: new Date(periodEnd),
-        label: String(current.getDate()).padStart(2,'0') + ' ' + months[current.getMonth()] + '\u2013' + String(periodEnd.getDate()).padStart(2,'0') + ' ' + months[periodEnd.getMonth()],
+        label: _lbl,
         count: 0
       });
       current = periodEnd;

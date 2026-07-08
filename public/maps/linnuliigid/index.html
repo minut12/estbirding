@@ -12553,30 +12553,46 @@ var __sharedDefaults = {};
 
   function buildTemporalBreakdown(cell) {
     if (!cell.periods || !cell.periods.length) return '';
-    var _mi = -1, _mp = -1;
-    for (var _mm = 0; _mm < cell.periods.length; _mm++) { var _mv = cell.periods[_mm].probability || 1; if (_mv > _mp) { _mp = _mv; _mi = _mm; } }
+    // 12 monthly rows (Jan\u2013Dec), bucketed by each period's START month (same as the sidebar chart
+    // v3). Works on the cache path (no dates) since it reads only the Estonian label + obs + pct.
+    var _MI = { jaanuar:0, veebruar:1, 'm\u00E4rts':2, aprill:3, mai:4, juuni:5, juuli:6,
+                august:7, september:8, oktoober:9, november:10, detsember:11 };
+    var _MN = ['jaanuar','veebruar','m\u00E4rts','aprill','mai','juuni','juuli','august',
+               'september','oktoober','november','detsember'];
+    var _buck = []; for (var _b = 0; _b < 12; _b++) _buck.push({ obs:0, pct:0, has:false });
+    for (var _p = 0; _p < cell.periods.length; _p++) {
+      var _t = (String(cell.periods[_p].label || '').match(/[A-Za-z\u00C0-\u017F]+/) || [''])[0].toLowerCase();
+      var _mi = _MI[_t]; if (_mi === undefined) continue;
+      _buck[_mi].obs += (cell.periods[_p].obsCount || 0);                          // obs = SUM
+      _buck[_mi].pct = Math.max(_buck[_mi].pct, cell.periods[_p].probability || 0);  // pct = MAX
+      _buck[_mi].has = true;
+    }
+    var _maxPct = 0, _peakM = -1;
+    for (var _k = 0; _k < 12; _k++) { if (_buck[_k].pct > _maxPct) { _maxPct = _buck[_k].pct; _peakM = _k; } }
+    var _nowM = new Date().getMonth();   // praegu = current calendar month
     var html = '<div style="border-top:1px solid #eee;margin-top:6px;padding-top:6px">'
       + '<div style="font-size:11px;font-weight:600;color:#555;margin-bottom:4px">T\u00F5en\u00E4osus perioodi kaupa</div>';
-    for (var p = 0; p < cell.periods.length; p++) {
-      var period = cell.periods[p];
-      var prob = period.probability || 1;
+    for (var m = 0; m < 12; m++) {
+      var prob = _buck[m].pct || 0;
+      var _empty = (!_buck[m].has || prob === 0);
       var barColor = prob > 60 ? '#E24B4A' : prob > 25 ? '#E88D2A' : '#7F77DD';
       var pctColor = prob > 60 ? '#A32D2D' : prob > 25 ? '#854F0B' : '#534AB7';
-      var barWidth = Math.max(4, Math.round(prob * 0.8));
-      var cnt = Number(period.obsCount);
+      var barWidth = _maxPct > 0 ? Math.round((prob / _maxPct) * 100) : 0;
+      var cnt = Number(_buck[m].obs);
       var cntHtml = (Number.isFinite(cnt) && cnt > 0)
         ? '<span style="font-size:9px;color:#999;min-width:20px">(' + cnt + ')' + (cnt <= 2 ? ' ~' : '') + '</span>'
         : '';
-      var praeguPill = period.isCurrent
+      var praeguPill = (m === _nowM)
         ? '<span style="font-size:9px;font-weight:500;color:#92400e;background:#fef3c7;padding:2px 6px;border-radius:999px;flex-shrink:0">praegu</span>'
         : '';
-      var rowBg = period.isCurrent ? '#fffbeb' : 'transparent';
-      var rowBorder = period.isCurrent ? 'border:0.5px solid #fde68a;' : '';
-      html += '<div style="display:flex;align-items:center;gap:6px;padding:3px 5px;margin:1px 0;border-radius:6px;background:' + rowBg + ';' + rowBorder + '">'
+      var rowBg = (m === _nowM) ? '#fffbeb' : 'transparent';
+      var rowBorder = (m === _nowM) ? 'border:0.5px solid #fde68a;' : '';
+      var rowDim = _empty ? 'opacity:0.45;' : '';   // dim empty months so the season reads at a glance
+      html += '<div style="display:flex;align-items:center;gap:6px;padding:3px 5px;margin:1px 0;border-radius:6px;' + rowDim + 'background:' + rowBg + ';' + rowBorder + '">'
         + praeguPill
-        + '<span style="font-size:10px;color:#666;min-width:100px;white-space:nowrap">' + (p === _mi ? '\u2B50 ' : '') + _etDateLabel(period.label) + '</span>'
+        + '<span style="font-size:10px;color:#666;min-width:100px;white-space:nowrap">' + (m === _peakM ? '\u2B50 ' : '') + _MN[m] + '</span>'
         + '<div style="flex:1;height:8px;background:#f1f1f1;border-radius:4px;overflow:hidden">'
-        + '<div style="width:' + barWidth + '%;height:100%;background:' + barColor + ';border-radius:4px"></div></div>'
+        + '<div style="width:' + barWidth + '%;height:100%;background:' + (_empty ? 'transparent' : barColor) + ';border-radius:4px"></div></div>'
         + '<span style="font-size:10px;color:' + pctColor + ';min-width:32px;text-align:right;font-weight:500">' + prob + '%</span>'
         + cntHtml
         + '</div>';

@@ -12574,7 +12574,30 @@ var __sharedDefaults = {};
       + '<div style="font-size:11px;font-weight:600;color:#555;margin-bottom:4px">T\u00F5en\u00E4osus perioodi kaupa</div>';
     for (var m = 0; m < 12; m++) {
       var prob = _buck[m].pct || 0;
-      var _empty = (!_buck[m].has || prob === 0);
+      var _isNow = (m === _nowM);
+      var praeguPill = _isNow
+        ? '<span style="font-size:9px;font-weight:500;color:#92400e;background:#fef3c7;padding:2px 6px;border-radius:999px;flex-shrink:0">praegu</span>'
+        : '';
+      var rowBg = _isNow ? '#fffbeb' : 'transparent';
+      var rowBorder = _isNow ? 'border:0.5px solid #fde68a;' : '';
+      var star = (m === _peakM ? '\u2B50 ' : '');   // peak is always a data month -> empty rows get none
+
+      if (prob === 0) {
+        // Empty month -> shrunk row (font 9px, height 13px): muted name + 0%, no bar track and no
+        // obs count, so the data months dominate the list. The praegu month stays marked (amber
+        // pill + stronger, undimmed text) so "you are here" survives the empty stretch.
+        var _eDim  = _isNow ? '' : 'opacity:0.45;';
+        var _eName = _isNow ? '#92400e' : '#999';
+        html += '<div style="display:flex;align-items:center;gap:6px;height:13px;padding:0 5px;margin:1px 0;border-radius:6px;font-size:9px;' + _eDim + 'background:' + rowBg + ';' + rowBorder + '">'
+          + praeguPill
+          + '<span style="color:' + _eName + ';min-width:100px;white-space:nowrap">' + star + _MN[m] + '</span>'
+          + '<div style="flex:1"></div>'
+          + '<span style="color:#999;min-width:32px;text-align:right">0%</span>'
+          + '</div>';
+        continue;
+      }
+
+      // Data month -> full row: name, bar, %, obs, star if peak, praegu pill if current.
       var barColor = prob > 60 ? '#E24B4A' : prob > 25 ? '#E88D2A' : '#7F77DD';
       var pctColor = prob > 60 ? '#A32D2D' : prob > 25 ? '#854F0B' : '#534AB7';
       var barWidth = _maxPct > 0 ? Math.round((prob / _maxPct) * 100) : 0;
@@ -12582,17 +12605,11 @@ var __sharedDefaults = {};
       var cntHtml = (Number.isFinite(cnt) && cnt > 0)
         ? '<span style="font-size:9px;color:#999;min-width:20px">(' + cnt + ')' + (cnt <= 2 ? ' ~' : '') + '</span>'
         : '';
-      var praeguPill = (m === _nowM)
-        ? '<span style="font-size:9px;font-weight:500;color:#92400e;background:#fef3c7;padding:2px 6px;border-radius:999px;flex-shrink:0">praegu</span>'
-        : '';
-      var rowBg = (m === _nowM) ? '#fffbeb' : 'transparent';
-      var rowBorder = (m === _nowM) ? 'border:0.5px solid #fde68a;' : '';
-      var rowDim = _empty ? 'opacity:0.45;' : '';   // dim empty months so the season reads at a glance
-      html += '<div style="display:flex;align-items:center;gap:6px;padding:3px 5px;margin:1px 0;border-radius:6px;' + rowDim + 'background:' + rowBg + ';' + rowBorder + '">'
+      html += '<div style="display:flex;align-items:center;gap:6px;padding:3px 5px;margin:1px 0;border-radius:6px;background:' + rowBg + ';' + rowBorder + '">'
         + praeguPill
-        + '<span style="font-size:10px;color:#666;min-width:100px;white-space:nowrap">' + (m === _peakM ? '\u2B50 ' : '') + _MN[m] + '</span>'
+        + '<span style="font-size:10px;color:#666;min-width:100px;white-space:nowrap">' + star + _MN[m] + '</span>'
         + '<div style="flex:1;height:8px;background:#f1f1f1;border-radius:4px;overflow:hidden">'
-        + '<div style="width:' + barWidth + '%;height:100%;background:' + (_empty ? 'transparent' : barColor) + ';border-radius:4px"></div></div>'
+        + '<div style="width:' + barWidth + '%;height:100%;background:' + barColor + ';border-radius:4px"></div></div>'
         + '<span style="font-size:10px;color:' + pctColor + ';min-width:32px;text-align:right;font-weight:500">' + prob + '%</span>'
         + cntHtml
         + '</div>';
@@ -13789,13 +13806,19 @@ window.buildTop3PeriodsSection = function(speciesKey) {
       }
     }
     html += '</svg>';
-    // fixed 12-month axis (jaan..dets) — 12 equal cells, centre-aligned, inset 4% to match slots
-    var _MON = ['jaan','veebr','märts','apr','mai','juuni','juuli','aug','sept','okt','nov','dets'];
-    html += '<div style="display:flex;margin-top:2px;padding:0 4%;">';
-    for (var _am = 0; _am < 12; _am++) {
-      html += '<div style="flex:1;font-size:8px;color:#94a3b8;text-align:center;overflow:hidden;">' + _MON[_am] + '</div>';
+    // fixed 12-month axis (jaan..dets), staggered on two rows so all 12 labels fit the narrow
+    // panel: even months on the top row, odd months dropped to the second (double the room each).
+    // Each label sits at its slot centre as a % of width — slot centre 12+m*_slot+_slot/2 in the
+    // 300-unit viewBox, so left = that / 3 percent. Reuses the same _slot the bars/line use.
+    var _AB = ['jaan','veebr','märts','apr','mai','juuni','juuli','aug','sept','okt','nov','dets'];
+    var _ax = '<div style="position:relative;height:26px;margin-top:2px;font-size:9px;color:#94a3b8;">';
+    for (var _a = 0; _a < 12; _a++) {
+      var _lx = (12 + _a * _slot + _slot / 2) / 3;             // % of width
+      var _top = (_a % 2) ? 13 : 0;                            // stagger: odd months drop to row 2
+      _ax += '<span style="position:absolute;top:' + _top + 'px;left:' + _lx + '%;transform:translateX(-50%);">' + _AB[_a] + '</span>';
     }
-    html += '</div>';
+    _ax += '</div>';
+    html += _ax;
   }
 
   html += '</div>';

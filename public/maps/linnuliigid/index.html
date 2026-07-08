@@ -12551,6 +12551,8 @@ var __sharedDefaults = {};
 
   function buildTemporalBreakdown(cell) {
     if (!cell.periods || !cell.periods.length) return '';
+    var _mi = -1, _mp = -1;
+    for (var _mm = 0; _mm < cell.periods.length; _mm++) { var _mv = cell.periods[_mm].probability || 1; if (_mv > _mp) { _mp = _mv; _mi = _mm; } }
     var html = '<div style="border-top:1px solid #eee;margin-top:6px;padding-top:6px">'
       + '<div style="font-size:11px;font-weight:600;color:#555;margin-bottom:4px">T\u00F5en\u00E4osus perioodi kaupa</div>';
     for (var p = 0; p < cell.periods.length; p++) {
@@ -12570,7 +12572,7 @@ var __sharedDefaults = {};
       var rowBorder = period.isCurrent ? 'border:0.5px solid #fde68a;' : '';
       html += '<div style="display:flex;align-items:center;gap:6px;padding:3px 5px;margin:1px 0;border-radius:6px;background:' + rowBg + ';' + rowBorder + '">'
         + praeguPill
-        + '<span style="font-size:10px;color:#666;min-width:100px;white-space:nowrap">' + _etDateLabel(period.label) + '</span>'
+        + '<span style="font-size:10px;color:#666;min-width:100px;white-space:nowrap">' + (p === _mi ? '\u2B50 ' : '') + _etDateLabel(period.label) + '</span>'
         + '<div style="flex:1;height:8px;background:#f1f1f1;border-radius:4px;overflow:hidden">'
         + '<div style="width:' + barWidth + '%;height:100%;background:' + barColor + ';border-radius:4px"></div></div>'
         + '<span style="font-size:10px;color:' + pctColor + ';min-width:32px;text-align:right;font-weight:500">' + prob + '%</span>'
@@ -12683,12 +12685,46 @@ var __sharedDefaults = {};
     var gbifSeason = cell.gbifCount || 0;
     var gbifTotal = cell.gbifCountTotal || gbifSeason;
 
+    // Trend + peak (periods are chronological; 0 or 1 isCurrent)
+    var _ci = -1, _mi = -1, _mProb = -1;
+    if (cell.periods && cell.periods.length) {
+      for (var _pi = 0; _pi < cell.periods.length; _pi++) {
+        if (cell.periods[_pi].isCurrent) _ci = _pi;
+        var _pp = cell.periods[_pi].probability || 1;
+        if (_pp > _mProb) { _mProb = _pp; _mi = _pi; }
+      }
+    }
+    var _trendChip = '';
+    if (_ci >= 0 && _mi >= 0) {
+      if (_ci === _mi) _trendChip = '<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:500;color:#92400e;background:#fef3c7;border-radius:999px;padding:3px 9px">\u2B06 hooaja tipp</span>';
+      else if (_mi > _ci) _trendChip = '<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:500;color:#3B6D11;background:#EAF3DE;border-radius:999px;padding:3px 9px">\u2197 t\u00F5useb</span>';
+      else _trendChip = '<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:500;color:#A32D2D;background:#FBEBEB;border-radius:999px;padding:3px 9px">\u2198 langeb</span>';
+    }
+    var _bestBanner = '';
+    if (_ci >= 0 && _mi >= 0 && (cell.periods[_mi].probability || 1) > 25) {
+      var _peak = cell.periods[_mi];
+      var _bestLabel = _ci === _mi ? 'Parim aeg on praegu' : (_mi > _ci ? 'Parim aeg tuleb' : 'Parim aeg oli');
+      _bestBanner = '<div style="display:flex;align-items:center;gap:9px;margin:6px 0 0;background:#fffbeb;border:0.5px solid #fde68a;border-radius:9px;padding:7px 10px">'
+        + '<span style="font-size:15px">\u2B50</span>'
+        + '<div style="line-height:1.35">'
+        + '<div style="font-size:11px;font-weight:500;color:#92400e">' + _bestLabel + '</div>'
+        + '<div style="font-size:12px;color:#334155">' + _etDateLabel(_peak.label) + ' \u00b7 <b>' + (_peak.probability || 1) + '%</b></div>'
+        + '</div></div>';
+    }
+    var _chips = [];
+    if ((gbifTotal + (cell.eluCount || 0)) >= 20) _chips.push('<span style="font-size:10px;color:#534AB7;background:#EEEDFE;border-radius:6px;padding:3px 8px">\uD83D\uDCCD ajalooline ala</span>');
+    if ((cell.scoreRecency || 0) > 0) _chips.push('<span style="font-size:10px;color:#0F6E56;background:#E1F5EE;border-radius:6px;padding:3px 8px">\uD83D\uDD52 v\u00E4rske vaatlus</span>');
+    if (globalEluRecent7d > 0) _chips.push('<span style="font-size:10px;color:#854F0B;background:#FAEEDA;border-radius:6px;padding:3px 8px">\uD83D\uDD25 aktiivne \u00b7 ' + globalEluRecent7d + ' vaatlust 7p</span>');
+    var _chipsRow = _chips.length ? '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px">' + _chips.join('') + '</div>' : '';
+
     // Temporal breakdown
     var temporalHtml = buildTemporalBreakdown(cell);
 
     return '<div style="font-family:system-ui;min-width:240px;max-width:360px">'
-      + '<div style="font-size:22px;font-weight:600;color:' + probColor + ';margin-bottom:2px">' + cell.probability + '%</div>'
+      + '<div style="display:flex;align-items:center;gap:9px;margin-bottom:2px"><span style="font-size:22px;font-weight:600;color:' + probColor + '">' + cell.probability + '%</span>' + _trendChip + '</div>'
       + '<div style="font-size:12px;color:#64748b;margin-bottom:8px">' + _subtitleText + '</div>'
+      + _bestBanner
+      + _chipsRow
       + '<div style="border-top:1px solid #eee;padding-top:6px;margin-top:2px">'
         + '<div style="font-size:10px;font-weight:600;color:#94a3b8;letter-spacing:.04em;text-transform:uppercase;margin-bottom:3px">See ruut</div>'
         + '<div style="font-size:12px;color:#334155">\uD83D\uDCCD <b>GBIF ' + gbifSeason + '</b>'

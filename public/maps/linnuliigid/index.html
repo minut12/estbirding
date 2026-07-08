@@ -13682,85 +13682,63 @@ window.buildTop3PeriodsSection = function(speciesKey) {
   var _peakVerb = peakIdx < curIdx ? 'oli' : (peakIdx === curIdx ? 'on' : 'tuleb');
   html += '<div style="font-size:10px;color:#94a3b8;margin-top:6px;">hooaja tipp ' + _peakVerb + ' ' + peak.label + ' · ' + peak.pct + '%</div>';
 
-  // --- Monochrome probability curve (P2). Shape carries the level; colour is reserved for the
-  // P3 density strip, so the line/dots are never coloured by probability band. maxPct = peak.pct
-  // (peak is the max-pct period from Step B) — reused, not recomputed. Range-filled (decision B):
-  // the band spans _minPct..peak.pct, so genuinely flat seasons are amplified (accepted cost).
+  // --- Combo chart (v2): light-blue count bars (Vaatlused) + orange probability line (Tõenäosus).
+  // Replaces the P2 monochrome curve + P3 density strip. Sidebar reads .count and .pct (NOT
+  // .probability — that is the popup). peak/peakIdx/curIdx reused from Step B, not recomputed.
+  var _n = periods.length;
+  var _maxCount = 0;
+  for (var _bi = 0; _bi < _n; _bi++) { if ((periods[_bi].count || 0) > _maxCount) _maxCount = periods[_bi].count || 0; }
   var _maxPct = peak.pct || 0;
-  if (_maxPct > 0) {
-    var _n = periods.length;
-    var _minPct = periods[0].pct || 0;
-    for (var _qi = 1; _qi < _n; _qi++) { if ((periods[_qi].pct || 0) < _minPct) _minPct = periods[_qi].pct || 0; }
-    var _flat = (_maxPct === _minPct);   // all periods equal -> avoid /0, draw a flat mid-band line
-    var _xs = [], _ys = [], _pts = '';
-    for (var xi = 0; xi < _n; xi++) {
-      var _x = _n > 1 ? (12 + 276 * (xi / (_n - 1))) : 150;
-      var _y = _flat ? 60 : (108 - (((periods[xi].pct || 0) - _minPct) / (_maxPct - _minPct)) * 96);
-      _xs.push(_x); _ys.push(_y);
-      _pts += (xi ? ' ' : '') + _x.toFixed(1) + ',' + _y.toFixed(1);
+  if (_n > 0 && (_maxCount > 0 || _maxPct > 0)) {
+    var _slot = 276 / _n, _barW = _slot * 0.72;
+    var _cxs = [], _lys = [], _bars = '', _linePts = '';
+    for (var _ci2 = 0; _ci2 < _n; _ci2++) {
+      var _cx = 12 + _ci2 * _slot + _slot / 2;
+      _cxs.push(_cx);
+      var _bh = _maxCount > 0 ? ((periods[_ci2].count || 0) / _maxCount) * 100 : 0;
+      if (_bh > 0) {
+        _bars += '<rect x="' + (_cx - _barW / 2).toFixed(1) + '" y="' + (120 - _bh).toFixed(1) + '" width="' + _barW.toFixed(1) + '" height="' + _bh.toFixed(1) + '" fill="#85B7EB" rx="1.5"/>';
+      }
+      var _ly = 120 - (_maxPct > 0 ? ((periods[_ci2].pct || 0) / _maxPct) * 100 : 0);
+      _lys.push(_ly);
+      if (_maxPct > 0) _linePts += (_linePts ? ' ' : '') + _cx.toFixed(1) + ',' + _ly.toFixed(1);
     }
-    html += '<div style="font-size:10px;color:#94a3b8;margin-top:8px;">Tõenäosus</div>';
-    html += '<svg viewBox="0 0 300 120" style="width:100%;height:auto;display:block;margin-top:2px;">';
-    html += '<polyline points="' + _pts + '" fill="none" stroke="#64748b" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
-    if (curIdx >= 0 && curIdx === peakIdx) {
-      // peak IS the current period -> single amber dot + merged label below (avoids clipping the top)
-      html += '<circle cx="' + _xs[curIdx].toFixed(1) + '" cy="' + _ys[curIdx].toFixed(1) + '" r="4" fill="#f59e0b" stroke="#fff" stroke-width="1.5"/>';
-      html += '<text x="' + Math.max(28, Math.min(_xs[curIdx], 272)).toFixed(1) + '" y="' + Math.min(116, _ys[curIdx] + 14).toFixed(1) + '" fill="#92400e" font-size="9" text-anchor="middle">praegu · tipp</text>';
-    } else {
-      // peak marker (neutral) with "tipp" above
-      html += '<circle cx="' + _xs[peakIdx].toFixed(1) + '" cy="' + _ys[peakIdx].toFixed(1) + '" r="3" fill="#64748b"/>';
-      html += '<text x="' + Math.max(16, Math.min(_xs[peakIdx], 284)).toFixed(1) + '" y="' + Math.max(9, _ys[peakIdx] - 6).toFixed(1) + '" fill="#64748b" font-size="9" text-anchor="middle">tipp</text>';
-      // praegu marker (amber) with "praegu" below
-      if (curIdx >= 0) {
-        html += '<circle cx="' + _xs[curIdx].toFixed(1) + '" cy="' + _ys[curIdx].toFixed(1) + '" r="4" fill="#f59e0b" stroke="#fff" stroke-width="1.5"/>';
-        html += '<text x="' + Math.max(16, Math.min(_xs[curIdx], 284)).toFixed(1) + '" y="' + Math.min(116, _ys[curIdx] + 13).toFixed(1) + '" fill="#92400e" font-size="9" text-anchor="middle">praegu</text>';
+    // legend row
+    html += '<div style="display:flex;align-items:center;gap:12px;margin-top:10px;font-size:10px;color:#94a3b8;">'
+      + '<span style="display:inline-flex;align-items:center;gap:4px;"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#85B7EB;"></span>Vaatlused</span>'
+      + '<span style="display:inline-flex;align-items:center;gap:4px;"><span style="display:inline-block;width:12px;height:2px;background:#D85A30;"></span>Tõenäosus</span>'
+      + '</div>';
+    html += '<svg viewBox="0 0 300 128" style="width:100%;height:auto;display:block;margin-top:3px;">';
+    html += _bars;
+    if (_maxPct > 0) {
+      html += '<polyline points="' + _linePts + '" fill="none" stroke="#D85A30" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+      if (curIdx >= 0 && curIdx === peakIdx) {
+        // peak IS the current period -> single hollow dot + merged label above
+        html += '<circle cx="' + _cxs[curIdx].toFixed(1) + '" cy="' + _lys[curIdx].toFixed(1) + '" r="4" fill="#fff" stroke="#D85A30" stroke-width="2"/>';
+        html += '<text x="' + Math.max(28, Math.min(_cxs[curIdx], 272)).toFixed(1) + '" y="' + Math.max(9, _lys[curIdx] - 7).toFixed(1) + '" fill="#854F0B" font-size="9" text-anchor="middle">praegu · tipp</text>';
+      } else {
+        // peak marker (filled orange) with "tipp" above
+        html += '<circle cx="' + _cxs[peakIdx].toFixed(1) + '" cy="' + _lys[peakIdx].toFixed(1) + '" r="3.5" fill="#D85A30"/>';
+        html += '<text x="' + Math.max(16, Math.min(_cxs[peakIdx], 284)).toFixed(1) + '" y="' + Math.max(9, _lys[peakIdx] - 7).toFixed(1) + '" fill="#993C1D" font-size="9" text-anchor="middle">tipp</text>';
+        // praegu marker (hollow) with "praegu" above
+        if (curIdx >= 0) {
+          html += '<circle cx="' + _cxs[curIdx].toFixed(1) + '" cy="' + _lys[curIdx].toFixed(1) + '" r="4" fill="#fff" stroke="#D85A30" stroke-width="2"/>';
+          html += '<text x="' + Math.max(16, Math.min(_cxs[curIdx], 284)).toFixed(1) + '" y="' + Math.max(9, _lys[curIdx] - 7).toFixed(1) + '" fill="#854F0B" font-size="9" text-anchor="middle">praegu</text>';
+        }
       }
     }
     html += '</svg>';
-    html += '<div style="display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;margin-top:1px;"><span>' + periods[0].label + '</span><span>' + periods[_n - 1].label + '</span></div>';
-  }
-
-  // --- Observation-density heat-strip (P3). The ONE coloured element: encodes observation
-  // DENSITY (count), not probability, on its own white->red scale (valge = vähe, punane = palju).
-  // Probability heat (green/amber/red) stays on the map — never reused here.
-  var _maxCount = 0;
-  for (var dc = 0; dc < periods.length; dc++) { if ((periods[dc].count || 0) > _maxCount) _maxCount = periods[dc].count || 0; }
-  if (_maxCount > 0) {
-    // legend row
-    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;">';
-    html += '<span style="font-size:10px;color:#94a3b8;">Vaatluste tihedus</span>';
-    html += '<span style="display:inline-flex;align-items:center;gap:4px;font-size:9px;color:#94a3b8;">vähe'
-      + '<span style="display:inline-block;width:34px;height:8px;border-radius:2px;background:linear-gradient(90deg,#F1EFE8,#F5C4B3,#F0997B,#D85A30);"></span>'
-      + 'palju</span>';
-    html += '</div>';
-    // strip — one equal-width segment per period, left->right in period order
-    html += '<div style="display:flex;gap:1.5px;margin-top:4px;">';
-    for (var si = 0; si < periods.length; si++) {
-      var _r = (periods[si].count || 0) / _maxCount;
-      var _col = _r === 0 ? '#F1EFE8' : (_r <= 0.33 ? '#F5C4B3' : (_r <= 0.66 ? '#F0997B' : '#D85A30'));
-      var _radius = (si === 0 ? '4px 0 0 4px' : (si === periods.length - 1 ? '0 4px 4px 0' : '0'));
-      var _brd = (_r === 0) ? 'border:0.5px solid #e5e7eb;' : '';
-      var _tick = (si === curIdx) ? '<div style="position:absolute;left:50%;top:0;bottom:0;width:2px;background:#2c2c2a;transform:translateX(-50%);"></div>' : '';
-      html += '<div style="position:relative;flex:1;height:24px;box-sizing:border-box;background:' + _col + ';border-radius:' + _radius + ';' + _brd + '">' + _tick + '</div>';
-    }
-    html += '</div>';
-    // month ticks — one flex cell per period, aligned to the strip segments above. Label only on
-    // the first period of each month, parsed from the label's first letter-run (language-agnostic:
-    // English "Jul" / Estonian "juuli" alike). Unparseable label -> empty cell, never throws.
-    html += '<div style="display:flex;gap:1.5px;margin-top:2px;">';
+    // month ticks (kept from the retired density block) — flex row inset 4% (=12/300) to align to
+    // the SVG slots; month = first letter-run of label, shown only when it changes (Estonian juuli).
+    html += '<div style="display:flex;gap:1.5px;margin-top:2px;padding:0 4%;">';
     var _prevM = '';
-    for (var _ti = 0; _ti < periods.length; _ti++) {
+    for (var _ti = 0; _ti < _n; _ti++) {
       var _m = (String(periods[_ti].label || '').match(/[A-Za-zÀ-ſ]+/) || [''])[0];
       var _show = (_m && _m !== _prevM) ? _m : '';
       if (_m) _prevM = _m;
       html += '<div style="flex:1;font-size:10px;color:#94a3b8;text-align:left;overflow:hidden;">' + _show + '</div>';
     }
     html += '</div>';
-    // täna legend note (mini tick matching the on-strip marker)
-    if (curIdx >= 0) {
-      html += '<div style="display:flex;align-items:center;gap:4px;margin-top:3px;font-size:9px;color:#94a3b8;">'
-        + '<span style="display:inline-block;width:2px;height:9px;background:#2c2c2a;"></span>täna</div>';
-    }
   }
 
   html += '</div>';

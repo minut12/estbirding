@@ -12694,11 +12694,29 @@ var __sharedDefaults = {};
         if (_pp > _mProb) { _mProb = _pp; _mi = _pi; }
       }
     }
+    // Mean-aggregate trend: earlier = periods up to & incl. current; later = periods after.
+    // Reads .probability (0-100). Missing/out-of-season period contributes 0 to the mean
+    // (|| 0 here \u2014 unlike the max-finder's || 1, a real 0% period should drag the mean down).
+    var _sumE = 0, _cntE = 0, _sumL = 0, _cntL = 0;
+    if (_ci >= 0 && cell.periods && cell.periods.length) {
+      for (var _dgi = 0; _dgi < cell.periods.length; _dgi++) {
+        var _dgp = cell.periods[_dgi].probability || 0;
+        if (_dgi <= _ci) { _sumE += _dgp; _cntE++; } else { _sumL += _dgp; _cntL++; }
+      }
+    }
+    var _meanE = _cntE ? _sumE / _cntE : 0;
+    var _meanL = _cntL ? (_sumL / _cntL) : null;          // null = no later periods
+    var _dTrend = (_meanL === null) ? null : (_meanL - _meanE);
     var _trendChip = '';
-    if (_ci >= 0 && _mi >= 0) {
-      if (_ci === _mi) _trendChip = '<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:500;color:#92400e;background:#fef3c7;border-radius:999px;padding:3px 9px">\u2B06 hooaja tipp</span>';
-      else if (_mi > _ci) _trendChip = '<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:500;color:#3B6D11;background:#EAF3DE;border-radius:999px;padding:3px 9px">\u2197 t\u00F5useb</span>';
-      else _trendChip = '<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:500;color:#A32D2D;background:#FBEBEB;border-radius:999px;padding:3px 9px">\u2198 langeb</span>';
+    if (_ci >= 0) {
+      var _EPS = 3;
+      if (_dTrend === null || _dTrend < -_EPS) {
+        _trendChip = '<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:500;color:#A32D2D;background:#FBEBEB;border-radius:999px;padding:3px 9px">\u2198 langeb</span>';   // falling, or no later periods
+      } else if (_dTrend > _EPS) {
+        _trendChip = '<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:500;color:#3B6D11;background:#EAF3DE;border-radius:999px;padding:3px 9px">\u2197 t\u00F5useb</span>';
+      } else {
+        _trendChip = '<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:500;color:#64748b;background:#f1f5f9;border-radius:999px;padding:3px 9px">stabiilne</span>';   // no arrow
+      }
     }
     var _bestBanner = '';
     if (_ci >= 0 && _mi >= 0 && (cell.periods[_mi].probability || 1) > 25) {

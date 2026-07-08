@@ -11800,11 +11800,6 @@ var __sharedDefaults = {};
     '</div>' +
     '<div style="border-top:1px solid #e2e8f0;padding-top:10px">' +
       '<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">Allikad</div>' +
-      '<div style="display:flex;gap:4px;flex-wrap:wrap">' +
-        '<span style="font-size:11px;background:#eef2ff;color:#3730a3;padding:2px 8px;border-radius:12px">eElurikkus</span>' +
-        '<span style="font-size:11px;background:#ecfdf5;color:#065f46;padding:2px 8px;border-radius:12px">GBIF</span>' +
-        '<span id="probSrcPillEbird" style="font-size:11px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;display:none">eBird</span>' +
-      '</div>' +
       '<div id="probFetchStatus" style="font-size:11px;color:#94a3b8;margin-top:6px"></div>' +
       '<div id="probCachePlaceholder" class="bm-prob-placeholder" style="display:none;font-size:11px;color:#475569;margin-top:8px;padding:8px 10px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px"></div>' +
     '</div>';
@@ -12827,9 +12822,36 @@ var __sharedDefaults = {};
   }
 
   // --- UI helpers ---
-  function setProbStatus(txt) {
+  function setProbStatus(s) {
     var el = document.getElementById('probFetchStatus');
-    if (el) el.textContent = txt;
+    if (!el) return;
+    // Backward-compatible: progress / error / clear callers still pass a plain string.
+    if (s == null || typeof s === 'string') { el.textContent = s || ''; return; }
+    // Stats object -> merged source rows + tiles (Phase 1; coverage bar is Phase 2).
+    function _fresh(n) {
+      var _t = (n === 1) ? (n + ' uus · 7p') : (n + ' uut · 7p');
+      return '<span style="font-size:10px;color:#3B6D11;background:#EAF3DE;border-radius:999px;padding:1px 7px;margin-left:6px;">' + _t + '</span>';
+    }
+    function _row(name, count, occ7) {
+      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:3px 0;">'
+        + '<span style="font-size:12px;color:#334155;">' + name + ((occ7 || 0) > 0 ? _fresh(occ7) : '') + '</span>'
+        + '<span style="font-size:12px;font-weight:600;color:#1e293b;">' + count + '</span>'
+        + '</div>';
+    }
+    function _tile(label, val) {
+      return '<div><div style="font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.03em;">' + label + '</div>'
+        + '<div style="font-size:14px;font-weight:600;color:#1e293b;">' + val + '</div></div>';
+    }
+    var html = '';
+    html += _row('GBIF', s.gbif, 0);              // GBIF has no freshness signal
+    html += _row('eElurikkus', s.elu, s.eluOcc7);
+    if (s.ebird !== undefined) html += _row('eBird', s.ebird, s.ebirdOcc7);   // omitted on cache path
+    html += '<div style="border-top:1px solid #eef2f7;margin-top:6px;padding-top:6px;display:flex;gap:16px;">';
+    if (s.seasonal !== undefined) html += _tile('hooajal', s.seasonal);
+    html += _tile('ruutu', s.cells);
+    html += '</div>';
+    if (s.partial && s.updated) html += '<div style="font-size:10px;color:#94a3b8;margin-top:5px;">uuendatud ' + s.updated + '</div>';
+    el.innerHTML = html;
   }
   function showProbInfoPanel(speciesName) {
     var panel = document.getElementById('probInfoPanel');
@@ -13166,7 +13188,7 @@ var __sharedDefaults = {};
     renderProbabilityOverlay(grid, speciesName, gbifSum + eluSum, 0, { label: seasonLabel });
     if (typeof render === 'function') render();
     var updated = (typeof window.__ennFmtLastUpdated === 'function') ? window.__ennFmtLastUpdated(fetched.computedAt) : '';
-    setProbStatus('GBIF: ' + gbifSum + ' · eElurikkus: ' + eluSum + ' · ' + grid.length + ' cells · updated ' + updated);
+    setProbStatus({ gbif: gbifSum, elu: eluSum, cells: grid.length, updated: updated, partial: true });
   }
 
   // --- toggleProbability: UI wrapper around computeProbForSpecies ---
@@ -13235,7 +13257,10 @@ var __sharedDefaults = {};
           }
         }
       } catch(_ebErr) {}
-      setProbStatus('GBIF: ' + _gbifTotal + ' \u00b7 ' + _eluInfo + _ebirdInfo + ' \u00b7 ' + result.seasonal.length + ' in season \u00b7 ' + result.scored.length + ' cells');
+      setProbStatus({ gbif: _gbifTotal, elu: _eluLiveCount, eluOcc7: _occ7,
+        ebird: (_ebItems && _ebItems.length) ? _ebItems.length : undefined,
+        ebirdOcc7: (_ebItems && _ebItems.length) ? _ebItems.length : undefined,
+        seasonal: result.seasonal.length, cells: result.scored.length });
 
     } catch(err) {
       console.error('[prob]', err);

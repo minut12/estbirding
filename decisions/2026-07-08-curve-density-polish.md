@@ -1,5 +1,7 @@
 # Sidebar curve + density polish (Item 1)
 
+> **Superseded by [[2026-07-08-sidebar-chart-v2-combo]]** (2026-07-08, commit `fdfe16f`) — the range-fill curve and the density heat-strip were replaced by one combo count-bars + probability-line chart. Body below kept intact as history: it records *why* decision B / the merged marker / the density strip existed.
+
 **Status:** Done · 2026-07-08 (commit `e653837`)
 **Scope:** the P2 curve block and P3 density block inside `buildTop3PeriodsSection(key)` in `public/maps/linnuliigid/index.html`. Iframe HTML; string-concat + inline styles. Companion to [[2026-07-08-sidebar-panel-buildTop3PeriodsSection-redesign]].
 

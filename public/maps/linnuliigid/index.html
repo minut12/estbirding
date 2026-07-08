@@ -12719,6 +12719,8 @@ var __sharedDefaults = {};
       } else {
         _trendChip = '<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:500;color:#64748b;background:#f1f5f9;border-radius:999px;padding:3px 9px">stabiilne</span>';   // no arrow
       }
+    } else {
+      _trendChip = '<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:500;color:#64748b;background:#f1f5f9;border-radius:999px;padding:3px 9px">väljaspool hooaega</span>';   // out of season: no current period
     }
     var _bestBanner = '';
     if (_ci >= 0 && _mi >= 0 && (cell.periods[_mi].probability || 1) > 25) {
@@ -13682,12 +13684,20 @@ window.buildTop3PeriodsSection = function(speciesKey) {
   }
 
   // Hero: best upcoming window, else "möödas"
-  if (upcoming) {
+  if (upcoming && !(current && (current.pct || 0) >= (upcoming.pct || 0))) {
     html += '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:9px 11px;">';
     html += '<div style="font-size:10px;font-weight:600;color:#92400e;">Parim aeg veel ees</div>';
     html += '<div style="display:flex;align-items:baseline;gap:8px;margin-top:3px;">';
     html += '<span style="font-size:14px;font-weight:600;color:#1e293b;">' + upcoming.label + '</span>';
     html += '<span style="font-size:15px;font-weight:700;color:#92400e;">' + upcoming.pct + '%</span>';
+    html += '</div></div>';
+  } else if (upcoming && current) {
+    // upcoming exists but now is as good as / better than it -> best time is now (amber)
+    html += '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:9px 11px;">';
+    html += '<div style="font-size:10px;font-weight:600;color:#92400e;">Parim aeg on praegu</div>';
+    html += '<div style="display:flex;align-items:baseline;gap:8px;margin-top:3px;">';
+    html += '<span style="font-size:14px;font-weight:600;color:#1e293b;">' + current.label + '</span>';
+    html += '<span style="font-size:15px;font-weight:700;color:#92400e;">' + current.pct + '%</span>';
     html += '</div></div>';
   } else if (current && peakIdx === curIdx) {
     // no window ahead, but the peak IS the current period -> best time is right now (amber)

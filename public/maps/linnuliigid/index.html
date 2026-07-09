@@ -13838,11 +13838,11 @@ window.buildTop3PeriodsSection = function(speciesKey) {
     for (var _m2 = 0; _m2 < 12; _m2++) {
       var _cx = 12 + _m2 * _slot + _slot / 2;
       _cxs.push(_cx);
-      var _bh = _maxCount > 0 ? (_buck[_m2].count / _maxCount) * 100 : 0;
+      var _bh = _maxCount > 0 ? (_buck[_m2].count / _maxCount) * 130 : 0;
       if (_bh > 0) {
-        _bars += '<rect x="' + (_cx - _barW / 2).toFixed(1) + '" y="' + (120 - _bh).toFixed(1) + '" width="' + _barW.toFixed(1) + '" height="' + _bh.toFixed(1) + '" fill="#85B7EB" rx="1.5"/>';
+        _bars += '<rect x="' + (_cx - _barW / 2).toFixed(1) + '" y="' + (150 - _bh).toFixed(1) + '" width="' + _barW.toFixed(1) + '" height="' + _bh.toFixed(1) + '" fill="#85B7EB" rx="1.5"/>';
       }
-      var _ly = 120 - (_maxPct > 0 ? (_buck[_m2].pct / _maxPct) * 100 : 0);
+      var _ly = 150 - (_maxPct > 0 ? (_buck[_m2].pct / _maxPct) * 130 : 0);
       _lys.push(_ly);
       if (_maxPct > 0) _linePts += (_linePts ? ' ' : '') + _cx.toFixed(1) + ',' + _ly.toFixed(1);
     }
@@ -13851,7 +13851,7 @@ window.buildTop3PeriodsSection = function(speciesKey) {
       + '<span style="display:inline-flex;align-items:center;gap:4px;"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#85B7EB;"></span>Vaatlused</span>'
       + '<span style="display:inline-flex;align-items:center;gap:4px;"><span style="display:inline-block;width:12px;height:2px;background:#D85A30;"></span>Tõenäosus</span>'
       + '</div>';
-    html += '<svg viewBox="0 0 300 128" style="width:100%;height:auto;display:block;margin-top:3px;">';
+    html += '<svg viewBox="0 0 300 160" style="width:100%;height:auto;display:block;margin-top:3px;">';
     html += _bars;
     if (_maxPct > 0) {
       html += '<polyline points="' + _linePts + '" fill="none" stroke="#D85A30" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
@@ -13869,14 +13869,15 @@ window.buildTop3PeriodsSection = function(speciesKey) {
       }
     }
     html += '</svg>';
-    // fixed 12-month axis (jaan..dets) on a single row. Each label sits at its slot centre as a %
-    // of width — slot centre 12+m*_slot+_slot/2 in the 300-unit viewBox, so left = that / 3 percent.
-    // Reuses the same _slot the bars/line use.
+    // fixed 12-month axis (jaan..dets), labels rotated -40° so all 12 fit the narrow panel. Each
+    // label sits at its slot centre as a % of width — slot centre 12+m*_slot+_slot/2 in the 300-unit
+    // viewBox, so left = that / 3 percent. Reuses the same _slot the bars/line use.
     var _AB = ['jaan','veebr','märts','apr','mai','juuni','juuli','aug','sept','okt','nov','dets'];
-    var _ax = '<div style="position:relative;height:12px;margin-top:2px;font-size:8px;color:#94a3b8;">';
+    var _ax = '<div style="position:relative;height:32px;margin-top:4px;font-size:9px;color:#94a3b8;">';
     for (var _a = 0; _a < 12; _a++) {
       var _lx = (12 + _a * _slot + _slot / 2) / 3;             // % of width
-      _ax += '<span style="position:absolute;top:0;left:' + _lx + '%;transform:translateX(-50%);">' + _AB[_a] + '</span>';
+      _ax += '<span style="position:absolute;top:0;left:' + _lx + '%;white-space:nowrap;'
+           + 'transform:translateX(-50%) rotate(-40deg);transform-origin:center;">' + _AB[_a] + '</span>';
     }
     _ax += '</div>';
     html += _ax;

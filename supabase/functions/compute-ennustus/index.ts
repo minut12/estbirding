@@ -593,11 +593,11 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
   const computedAt = Date.now();
 
   // 2. Exit A -- no occurrences.
-  if (!allOccs.length) return { summaryRow: exitRow(speciesName, 'A'), cellsRow: null };
+  if (!allOccs.length) return { summaryRow: exitRow(speciesName, 'A'), cellsRow: null, dbg: { sp: speciesName, exit: 'A' } };
 
   // 3. Season window (Jan-1-excluded DoY set). Exit B -- unreachable but kept for parity.
   let seasonInfo = calculateSeasonFromData(allOccs);
-  if (!seasonInfo) return { summaryRow: exitRow(speciesName, 'B'), cellsRow: null };
+  if (!seasonInfo) return { summaryRow: exitRow(speciesName, 'B'), cellsRow: null, dbg: { sp: speciesName, exit: 'B' } };
 
   // 4. In-season subset, with the +-45-day fallback.
   let seasonal = allOccs.filter((o: any) => isInSeasonRange(o.date, seasonInfo.start, seasonInfo.end));
@@ -608,7 +608,7 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
     const fb2 = new Date(now2); fb2.setDate(fb2.getDate() + 45);
     seasonInfo = { start: fb1, end: fb2, label: formatSeasonWindow(45) };
   }
-  if (seasonal.length === 0) return { summaryRow: exitRow(speciesName, 'C'), cellsRow: null };
+  if (seasonal.length === 0) return { summaryRow: exitRow(speciesName, 'C'), cellsRow: null, dbg: { sp: speciesName, exit: 'C' } };
 
   // 5. Cell size from total history volume (GBIF + elurikkus lag tail; name kept).
   const totalGbifRecords = allOccs.length;
@@ -627,7 +627,7 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
 
   // 10. topCell = simple max-probability sort (gotcha #6, NOT flagTopScoreCell).
   const topCell = scored.slice().sort((a: any, b: any) => b.probability - a.probability)[0];
-  if (!topCell) return { summaryRow: exitRow(speciesName, 'C'), cellsRow: null };
+  if (!topCell) return { summaryRow: exitRow(speciesName, 'C'), cellsRow: null, dbg: { sp: speciesName, exit: 'C' } };
 
   // 11. Cell center + raw score (cap 95).
   const cell_lat = (topCell.latMin + topCell.latMax) / 2;
@@ -705,7 +705,18 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
     updated_at: new Date().toISOString(),
   };
 
-  return { summaryRow, cellsRow };
+  // [v7-dbg TEMP] per-species diagnostics -- REMOVE after fold-in confirmed.
+  const dbg = {
+    sp: speciesName,
+    gbif: gbifRows.length,
+    gbifMax: gbifMaxDate,
+    eluTail: eluTail.length,
+    seasonal: seasonal.length,
+    seasonalElu: seasonal.filter((o: any) => o.source === 'elurikkus').length,
+    cellElu: scored.reduce((n: number, c: any) => n + (c.eluCount || 0), 0),
+  };
+
+  return { summaryRow, cellsRow, dbg };
 }
 
 // ============================================================================
@@ -751,12 +762,14 @@ serve(async (req) => {
   const slice = species || [];
   const exits = { A: 0, B: 0, C: 0, ok: 0 };
   const summaryRows: any[] = [];
+  const dbgArr: any[] = []; // [v7-dbg TEMP]
 
   // Sequential: release each species' occurrences before the next.
   // v5: flush each species' cellsRow immediately (best-effort) to avoid
   // accumulating a multi-MB jsonb payload for the batch-end upsert.
   for (const sp of slice) {
-    const { summaryRow, cellsRow } = await computeSpecies(supabase, sp.species_name, sp.taxon_key);
+    const { summaryRow, cellsRow, dbg } = await computeSpecies(supabase, sp.species_name, sp.taxon_key);
+    if (dbg) dbgArr.push(dbg); // [v7-dbg TEMP]
     if (summaryRow.no_data) exits[summaryRow.exit_reason as 'A' | 'B' | 'C']++;
     else exits.ok++;
     summaryRows.push(summaryRow);
@@ -788,5 +801,5 @@ serve(async (req) => {
   const next_offset = offset + slice.length;
   const done = slice.length < limit;
 
-  return jsonResponse(200, { processed, offset, limit, next_offset, done, exits });
+  return jsonResponse(200, { build: 'v7-elutail-dbg', processed, offset, limit, next_offset, done, exits, dbg: dbgArr });
 });

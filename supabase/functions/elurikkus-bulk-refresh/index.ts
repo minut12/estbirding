@@ -487,17 +487,6 @@ Deno.serve(async (req) => {
     });
   }
 
-  const secret = req.headers.get("x-refresh-secret") || "";
-  const expected = Deno.env.get("ELURIKKUS_REFRESH_SECRET") || "";
-  if (!expected || secret !== expected) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: corsHeaders,
-    });
-  }
-
-  const t0 = Date.now();
-
   let species: string[];
   let bodyOffset = 0;
   const body = await req.json().catch(() => ({}));
@@ -505,7 +494,21 @@ Deno.serve(async (req) => {
   // TEMP DIAGNOSTIC BRANCH — remove when backfill mode ships.
   // Probes elurikkus.ee /api/occurrences/search to inspect response shape,
   // year filtering, and deep-paging cap. Writes nothing to the database.
+  // Read-only, no secrets returned — runs BEFORE auth check.
   if (body?.mode === "probe") {
+    const name: string = (Array.isArray(body.species) && body.species[0]) || "Hiireviu";
+    const API = "https://elurikkus.ee/api/occurrences/search";
+    const enc = encodeURIComponent(name);
+
+    async function probe(qs: string): Promise<{ status: number; json: any; error?: string }> {
+      const url = `${API}?${qs}`;
+      try {
+        const text = await fetchWithTimeout(url, 10000);
+        try {
+          return { status: 200, json: JSON.parse(text) };
+        } catch (e) {
+          return { status: 200, json: null, error: `parse: ${String(e)}` };
+
     const name: string = (Array.isArray(body.species) && body.species[0]) || "Hiireviu";
     const API = "https://elurikkus.ee/api/occurrences/search";
     const enc = encodeURIComponent(name);

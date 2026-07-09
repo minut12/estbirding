@@ -502,6 +502,67 @@ Deno.serve(async (req) => {
   let bodyOffset = 0;
   const body = await req.json().catch(() => ({}));
 
+  // TEMP DIAGNOSTIC BRANCH — remove when backfill mode ships.
+  // Probes elurikkus.ee /api/occurrences/search to inspect response shape,
+  // year filtering, and deep-paging cap. Writes nothing to the database.
+  if (body?.mode === "probe") {
+    const name: string = (Array.isArray(body.species) && body.species[0]) || "Hiireviu";
+    const API = "https://elurikkus.ee/api/occurrences/search";
+    const enc = encodeURIComponent(name);
+
+    async function probe(qs: string): Promise<{ status: number; json: any; error?: string }> {
+      const url = `${API}?${qs}`;
+      try {
+        const text = await fetchWithTimeout(url, 10000);
+        try {
+          return { status: 200, json: JSON.parse(text) };
+        } catch (e) {
+          return { status: 200, json: null, error: `parse: ${String(e)}` };
+        }
+      } catch (e) {
+        const msg = String(e);
+        const m = msg.match(/HTTP (\d{3})/);
+        return { status: m ? Number(m[1]) : 0, json: null, error: msg };
+      }
+    }
+
+    const base = await probe(`text=${enc}&pageSize=1`);
+    const y2024 = await probe(`text=${enc}&fq=year:2024&pageSize=1`);
+    const y2025 = await probe(`text=${enc}&fq=year:2025&pageSize=1`);
+    const dp9999 = await probe(`text=${enc}&start=9999&pageSize=1`);
+    const dp10001 = await probe(`text=${enc}&start=10001&pageSize=1`);
+
+    const baseFirst = base.json?.occurrences?.[0] ?? base.json?.results?.[0] ?? null;
+
+    return new Response(
+      JSON.stringify({
+        name,
+        base: {
+          status: base.status,
+          totalRecords: base.json?.totalRecords ?? null,
+          firstKeys: baseFirst ? Object.keys(baseFirst) : [],
+          firstResult: baseFirst,
+          error: base.error,
+        },
+        year2024: {
+          status: y2024.status,
+          totalRecords: y2024.json?.totalRecords ?? null,
+          error: y2024.error,
+        },
+        year2025: {
+          status: y2025.status,
+          totalRecords: y2025.json?.totalRecords ?? null,
+          error: y2025.error,
+        },
+        deepPaging: {
+          at9999: dp9999.status,
+          at10001: dp10001.status,
+        },
+      }),
+      { status: 200, headers: corsHeaders },
+    );
+  }
+
   if (body && Array.isArray(body.species) && body.species.length > 0) {
     species = body.species.map((s: unknown) => String(s).trim()).filter(Boolean);
   } else {

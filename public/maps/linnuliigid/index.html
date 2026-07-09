@@ -12172,58 +12172,106 @@ var __sharedDefaults = {};
 
     // --- D: Freshness — recent eElurikkus obs within 7 days, per cell ---
     // Gather recent eElu locations (same logic as before, but 7-day window)
-    var eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
     var recentEluLocs = [];
     var _now = Date.now();
     var _7dMs = 7 * 24 * 60 * 60 * 1000;
-    if (Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon) && eluPoint.t) {
-      var _mTs = (typeof _toDay === 'function') ? _toDay(eluPoint.t) : Date.parse(eluPoint.t);
-      if (_mTs && _mTs > 0 && (_now - _mTs) <= _7dMs) {
-        recentEluLocs.push({ lat: eluPoint.lat, lon: eluPoint.lon, ageDays: (_now - _mTs) / 86400000 });
-      }
-    }
-    var _eluLiveKey = String(speciesName || '').trim().toLowerCase();
-    var _eluLiveEntry = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluLiveKey]) || null;
-    var _eluLiveItems = (_eluLiveEntry && Array.isArray(_eluLiveEntry.items)) ? _eluLiveEntry.items : [];
-    if (_eluLiveItems.length === 0) {
-      try {
-        var _lsElu = JSON.parse(localStorage.getItem('bm_live_elurikkus_v1') || '{}');
-        var _lsEntry = _lsElu[_eluLiveKey] || _lsElu[speciesName] || null;
-        if (_lsEntry && Array.isArray(_lsEntry.items)) _eluLiveItems = _lsEntry.items;
-      } catch(_e) {}
-    }
-    if (_eluLiveItems.length === 0) {
-      var _pecFresh = (window.__probEluCache || {})[_eluLiveKey] || (window.__probEluCache || {})[speciesName] || null;
-      if (_pecFresh && Array.isArray(_pecFresh.items)) _eluLiveItems = _pecFresh.items;
-    }
-    var _freshEluStats = { withNativeCoords: 0, resolvedFromPlace: 0, stillSkipped: 0, contributed: 0 };
-    for (var _li = 0; _li < _eluLiveItems.length; _li++) {
-      var _lIt = _eluLiveItems[_li];
-      var _lLat = Number(_lIt.lat); var _lLon = Number(_lIt.lon);
-      if (!Number.isFinite(_lLat) || !Number.isFinite(_lLon)) {
-        var _lPlace = String(_lIt.placeText || _lIt.locality || _lIt.municipality || _lIt.county || '').trim();
-        var _lResolved = null;
-        if (_lPlace || _lIt.municipality || _lIt.county) {
-          _lResolved = (typeof resolvePlace === 'function') ? resolvePlace(_lPlace, _lIt.municipality || '', _lIt.county || '') : null;
-        }
-        if (_lResolved && Number.isFinite(_lResolved.lat) && Number.isFinite(_lResolved.lon)) {
-          _lLat = _lResolved.lat; _lLon = _lResolved.lon;
-          _freshEluStats.resolvedFromPlace++;
+
+    // [P3 eElu-exact] Prefer EF-served recent obs (exact coords, 7d window, species-keyed)
+    // from window.__eluRecentObs — the same payload the elu-obs render path consumes
+    // (~L9000-9072). When EF has no in-window obs for this species, fall through to the
+    // legacy scraper/resolvePlace path byte-identically (zero regression).
+    var _efRecentUsed = false, _efRecentCount = 0;
+    try {
+      // Mirror the render path's _resolveKey (L9014-9020), INVERTED: the scorer starts from
+      // the points key `speciesName`, so find the __eluRecentObs.species key that resolves to
+      // it, using the SAME primitives (exact points hit / _normText / slugifySpeciesKey) —
+      // no new normalization, so a diacritic/mojibake key can't silently mismatch.
+      var _efKey = '';
+      var _efSp = (window.__eluRecentObs && __eluRecentObs.species) || null;
+      if (_efSp) {
+        if (_efSp[speciesName]) {
+          _efKey = speciesName;
         } else {
-          _freshEluStats.stillSkipped++;
-          continue;
+          var _slTarget = (typeof slugifySpeciesKey === 'function') ? slugifySpeciesKey(speciesName) : String(speciesName).toLowerCase();
+          var _ntTarget = (typeof _normText === 'function') ? _normText(speciesName) : speciesName;
+          for (var _ek in _efSp) {
+            if (!Object.prototype.hasOwnProperty.call(_efSp, _ek)) continue;
+            var _ekClean = (typeof _normText === 'function') ? _normText(_ek) : _ek;
+            var _ekSlug = (typeof slugifySpeciesKey === 'function') ? slugifySpeciesKey(_ek) : String(_ek).toLowerCase();
+            if (_ekClean === _ntTarget || _ekSlug === _slTarget) { _efKey = _ek; break; }
+          }
         }
-      } else {
-        _freshEluStats.withNativeCoords++;
       }
-      var _lDate = String(_lIt.observedAt || _lIt.eventDate || _lIt.date || '');
-      if (!_lDate) continue;
-      var _lTs = (typeof _toDay === 'function') ? _toDay(_lDate) : Date.parse(_lDate);
-      if (!_lTs || _lTs <= 0 || (_now - _lTs) > _7dMs) continue;
-      recentEluLocs.push({ lat: _lLat, lon: _lLon, ageDays: (_now - _lTs) / 86400000 });
-      _freshEluStats.contributed++;
+      var _efEntry = (_efSp && _efKey && _efSp[_efKey]) || null;
+      var _efObs = (_efEntry && Array.isArray(_efEntry.obs)) ? _efEntry.obs : [];
+      for (var _fi = 0; _fi < _efObs.length; _fi++) {
+        var _fo = _efObs[_fi];
+        var _flat = Number(_fo && _fo.lat), _flon = Number(_fo && _fo.lon);
+        if (!Number.isFinite(_flat) || !Number.isFinite(_flon)) continue;
+        var _fts = (typeof _toDay === 'function') ? _toDay(_fo && _fo.d) : Date.parse(_fo && _fo.d);
+        if (!_fts || _fts <= 0 || (_now - _fts) > _7dMs) continue;
+        recentEluLocs.push({ lat: _flat, lon: _flon, ageDays: (_now - _fts) / 86400000 });
+        _efRecentCount++;
+      }
+      _efRecentUsed = _efRecentCount > 0;
+    } catch (_e) { _efRecentUsed = false; }
+
+    // Declared outside the guard so the [FRESHNESS-ELU] diag never throws on the EF path.
+    var _eluLiveItems = [];
+    var _freshEluStats = { withNativeCoords: 0, resolvedFromPlace: 0, stillSkipped: 0, contributed: 0 };
+
+    if (!_efRecentUsed) {
+      var eluPoint = (typeof points !== 'undefined' && points[speciesName]) || {};
+      if (Number.isFinite(eluPoint.lat) && Number.isFinite(eluPoint.lon) && eluPoint.t) {
+        var _mTs = (typeof _toDay === 'function') ? _toDay(eluPoint.t) : Date.parse(eluPoint.t);
+        if (_mTs && _mTs > 0 && (_now - _mTs) <= _7dMs) {
+          recentEluLocs.push({ lat: eluPoint.lat, lon: eluPoint.lon, ageDays: (_now - _mTs) / 86400000 });
+        }
+      }
+      var _eluLiveKey = String(speciesName || '').trim().toLowerCase();
+      var _eluLiveEntry = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluLiveKey]) || null;
+      _eluLiveItems = (_eluLiveEntry && Array.isArray(_eluLiveEntry.items)) ? _eluLiveEntry.items : [];
+      if (_eluLiveItems.length === 0) {
+        try {
+          var _lsElu = JSON.parse(localStorage.getItem('bm_live_elurikkus_v1') || '{}');
+          var _lsEntry = _lsElu[_eluLiveKey] || _lsElu[speciesName] || null;
+          if (_lsEntry && Array.isArray(_lsEntry.items)) _eluLiveItems = _lsEntry.items;
+        } catch(_e) {}
+      }
+      if (_eluLiveItems.length === 0) {
+        var _pecFresh = (window.__probEluCache || {})[_eluLiveKey] || (window.__probEluCache || {})[speciesName] || null;
+        if (_pecFresh && Array.isArray(_pecFresh.items)) _eluLiveItems = _pecFresh.items;
+      }
+      for (var _li = 0; _li < _eluLiveItems.length; _li++) {
+        var _lIt = _eluLiveItems[_li];
+        var _lLat = Number(_lIt.lat); var _lLon = Number(_lIt.lon);
+        if (!Number.isFinite(_lLat) || !Number.isFinite(_lLon)) {
+          var _lPlace = String(_lIt.placeText || _lIt.locality || _lIt.municipality || _lIt.county || '').trim();
+          var _lResolved = null;
+          if (_lPlace || _lIt.municipality || _lIt.county) {
+            _lResolved = (typeof resolvePlace === 'function') ? resolvePlace(_lPlace, _lIt.municipality || '', _lIt.county || '') : null;
+          }
+          if (_lResolved && Number.isFinite(_lResolved.lat) && Number.isFinite(_lResolved.lon)) {
+            _lLat = _lResolved.lat; _lLon = _lResolved.lon;
+            _freshEluStats.resolvedFromPlace++;
+          } else {
+            _freshEluStats.stillSkipped++;
+            continue;
+          }
+        } else {
+          _freshEluStats.withNativeCoords++;
+        }
+        var _lDate = String(_lIt.observedAt || _lIt.eventDate || _lIt.date || '');
+        if (!_lDate) continue;
+        var _lTs = (typeof _toDay === 'function') ? _toDay(_lDate) : Date.parse(_lDate);
+        if (!_lTs || _lTs <= 0 || (_now - _lTs) > _7dMs) continue;
+        recentEluLocs.push({ lat: _lLat, lon: _lLon, ageDays: (_now - _lTs) / 86400000 });
+        _freshEluStats.contributed++;
+      }
     }
     console.debug('[FRESHNESS-ELU]', speciesName, {
+      source: _efRecentUsed ? 'ef-exact' : 'scraper',
+      efContributed: _efRecentCount,
       itemsTotal: _eluLiveItems.length,
       withNativeCoords: _freshEluStats.withNativeCoords,
       resolvedFromPlace: _freshEluStats.resolvedFromPlace,

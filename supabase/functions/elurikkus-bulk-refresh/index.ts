@@ -559,6 +559,19 @@ Deno.serve(async (req) => {
     );
   }
 
+  const secret = req.headers.get("x-refresh-secret") || "";
+  const expected = Deno.env.get("ELURIKKUS_REFRESH_SECRET") || "";
+  if (!expected || secret !== expected) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: corsHeaders,
+    });
+  }
+
+  const t0 = Date.now();
+
+
+
   if (body && Array.isArray(body.species) && body.species.length > 0) {
     species = body.species.map((s: unknown) => String(s).trim()).filter(Boolean);
   } else {

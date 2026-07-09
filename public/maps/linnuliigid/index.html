@@ -12759,12 +12759,14 @@ var __sharedDefaults = {};
     var gbifSeason = cell.gbifCount || 0;
     var gbifTotal = cell.gbifCountTotal || gbifSeason;
 
-    // Trend + peak (periods are chronological; 0 or 1 isCurrent)
+    // Trend + peak. P2.6: source the same yearBreakdown the popup list uses (admin-live) so the
+    // banner + chip agree with the list; non-admin -> season `periods`, unchanged. 0 or 1 isCurrent.
+    var _src = (cell.yearBreakdown && cell.yearBreakdown.length) ? cell.yearBreakdown : cell.periods;
     var _ci = -1, _mi = -1, _mProb = -1;
-    if (cell.periods && cell.periods.length) {
-      for (var _pi = 0; _pi < cell.periods.length; _pi++) {
-        if (cell.periods[_pi].isCurrent) _ci = _pi;
-        var _pp = cell.periods[_pi].probability || 1;
+    if (_src && _src.length) {
+      for (var _pi = 0; _pi < _src.length; _pi++) {
+        if (_src[_pi].isCurrent) _ci = _pi;
+        var _pp = _src[_pi].probability || 1;
         if (_pp > _mProb) { _mProb = _pp; _mi = _pi; }
       }
     }
@@ -12772,9 +12774,9 @@ var __sharedDefaults = {};
     // Reads .probability (0-100). Missing/out-of-season period contributes 0 to the mean
     // (|| 0 here \u2014 unlike the max-finder's || 1, a real 0% period should drag the mean down).
     var _sumE = 0, _cntE = 0, _sumL = 0, _cntL = 0;
-    if (_ci >= 0 && cell.periods && cell.periods.length) {
-      for (var _dgi = 0; _dgi < cell.periods.length; _dgi++) {
-        var _dgp = cell.periods[_dgi].probability || 0;
+    if (_ci >= 0 && _src && _src.length) {
+      for (var _dgi = 0; _dgi < _src.length; _dgi++) {
+        var _dgp = _src[_dgi].probability || 0;
         if (_dgi <= _ci) { _sumE += _dgp; _cntE++; } else { _sumL += _dgp; _cntL++; }
       }
     }
@@ -12795,8 +12797,8 @@ var __sharedDefaults = {};
       _trendChip = '<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:500;color:#64748b;background:#f1f5f9;border-radius:999px;padding:3px 9px">väljaspool hooaega</span>';   // out of season: no current period
     }
     var _bestBanner = '';
-    if (_ci >= 0 && _mi >= 0 && (cell.periods[_mi].probability || 1) > 25) {
-      var _peak = cell.periods[_mi];
+    if (_ci >= 0 && _mi >= 0 && (_src[_mi].probability || 1) > 25) {
+      var _peak = _src[_mi];
       var _bestLabel = _ci === _mi ? 'Parim aeg on praegu' : (_mi > _ci ? 'Parim aeg tuleb' : 'Parim aeg oli');
       _bestBanner = '<div style="display:flex;align-items:center;gap:9px;margin:6px 0 0;background:#fffbeb;border:0.5px solid #fde68a;border-radius:9px;padding:7px 10px">'
         + '<span style="font-size:15px">\u2B50</span>'

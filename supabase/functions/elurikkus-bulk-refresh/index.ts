@@ -500,13 +500,8 @@ Deno.serve(async (req) => {
     const API = "https://elurikkus.ee/api/occurrences/search";
     const enc = encodeURIComponent(name);
 
-
-
-    const name: string = (Array.isArray(body.species) && body.species[0]) || "Hiireviu";
-    const API = "https://elurikkus.ee/api/occurrences/search";
-    const enc = encodeURIComponent(name);
-
     async function probe(qs: string): Promise<{ status: number; json: any; error?: string }> {
+
       const url = `${API}?${qs}`;
       try {
         const text = await fetchWithTimeout(url, 10000);

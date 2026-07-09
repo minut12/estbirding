@@ -13214,6 +13214,12 @@ var __sharedDefaults = {};
       var _mappedPeriods=topCell.periods.map(function(p){
         return{label:p.label,pct:p.probability||1,count:p.obsCount||p.count||0,isCurrent:!!p.isCurrent};
       });
+      // Phase 2: carry the full-year breakdown into probData so the sidebar chart can source it
+      // (admin-live only). pct uses ||0 (NOT the ||1 season floor) so zero-obs months stay at
+      // baseline, matching the popup. Non-admin/cache probData has no yearBreakdown -> fallback.
+      var _mappedYB=(topCell.yearBreakdown||[]).map(function(p){
+        return{label:p.label,pct:p.probability||0,count:p.obsCount||p.count||0,isCurrent:!!p.isCurrent};
+      });
       var _bestP=null;
       for(var _bpi2=0;_bpi2<_mappedPeriods.length;_bpi2++){
         if(!_bestP||(_mappedPeriods[_bpi2].pct||0)>(_bestP.pct||0)) _bestP=_mappedPeriods[_bpi2];
@@ -13225,6 +13231,7 @@ var __sharedDefaults = {};
         overallScore: topCell.probability,
         season: (seasonInfo && seasonInfo.label) || '',
         periods: _mappedPeriods,
+        yearBreakdown: _mappedYB,
         bestPeriod:(_bestP&&(_bestP.pct||0)>0)?{pct:_bestP.pct,label:_bestP.label}:null
       };
       if(typeof window.__schedulePersistProbCache==='function') window.__schedulePersistProbCache();
@@ -13735,24 +13742,27 @@ window.buildTop3PeriodsSection = function(speciesKey) {
       + '</div>';
   }
 
-  // Step B — full-data hero. periods is chronological { label, pct, count, isCurrent }.
+  // Step B — full-data hero. P2.5: source the same yearBreakdown the chart uses (admin-live) so the
+  // hero + honesty agree with the chart month-for-month; non-admin (no yearBreakdown) -> season
+  // `periods` unchanged (fortnight windows). Entries are chronological { label, pct, count, isCurrent }.
+  var _src = (probData.yearBreakdown && probData.yearBreakdown.length) ? probData.yearBreakdown : periods;
   var curIdx = -1, current = null;
-  for (var ci = 0; ci < periods.length; ci++) {
-    if (periods[ci].isCurrent) { curIdx = ci; current = periods[ci]; break; }
+  for (var ci = 0; ci < _src.length; ci++) {
+    if (_src[ci].isCurrent) { curIdx = ci; current = _src[ci]; break; }
   }
 
   // peak = max-pct period overall
-  var peak = periods[0], peakIdx = 0;
-  for (var pi = 0; pi < periods.length; pi++) {
-    if ((periods[pi].pct || 0) > (peak.pct || 0)) { peak = periods[pi]; peakIdx = pi; }
+  var peak = _src[0], peakIdx = 0;
+  for (var pi = 0; pi < _src.length; pi++) {
+    if ((_src[pi].pct || 0) > (peak.pct || 0)) { peak = _src[pi]; peakIdx = pi; }
   }
 
   // upcoming = highest-pct period strictly after current (pct > 0). No raw start date on the
-  // period objects (mapping at 13086 keeps only label/pct/count/isCurrent) -> no "X päeva pärast".
+  // period objects (mapping keeps only label/pct/count/isCurrent) -> no "X päeva pärast".
   var upcoming = null;
-  for (var ui = curIdx + 1; ui < periods.length; ui++) {
-    if ((periods[ui].pct || 0) > 0 && (!upcoming || (periods[ui].pct || 0) > (upcoming.pct || 0))) {
-      upcoming = periods[ui];
+  for (var ui = curIdx + 1; ui < _src.length; ui++) {
+    if ((_src[ui].pct || 0) > 0 && (!upcoming || (_src[ui].pct || 0) > (upcoming.pct || 0))) {
+      upcoming = _src[ui];
     }
   }
 
@@ -13802,12 +13812,16 @@ window.buildTop3PeriodsSection = function(speciesKey) {
   // bar with the line at baseline. Sidebar reads .count and .pct (NOT .probability — the popup).
   var _MI = { jaanuar:0, veebruar:1, 'märts':2, aprill:3, mai:4, juuni:5, juuli:6,
               august:7, september:8, oktoober:9, november:10, detsember:11 };
+  // Phase 2: chart sources the full-year yearBreakdown (admin-live, all occurrences) when present,
+  // matching the popup list; else the season-bounded periods (non-admin/cache). Hero/honesty above
+  // still read the season `periods` untouched — only the chart goes full-year.
+  var _chartSrc = (probData.yearBreakdown && probData.yearBreakdown.length) ? probData.yearBreakdown : periods;
   var _buck = []; for (var _b = 0; _b < 12; _b++) _buck.push({ count: 0, pct: 0, has: false });
-  for (var _p = 0; _p < periods.length; _p++) {
-    var _mtok = (String(periods[_p].label || '').match(/[A-Za-zÀ-ſ]+/) || [''])[0].toLowerCase();
+  for (var _p = 0; _p < _chartSrc.length; _p++) {
+    var _mtok = (String(_chartSrc[_p].label || '').match(/[A-Za-zÀ-ſ]+/) || [''])[0].toLowerCase();
     var _mi = _MI[_mtok]; if (_mi === undefined) continue;              // unmapped -> skip
-    _buck[_mi].count += (periods[_p].count || 0);                       // count = SUM
-    _buck[_mi].pct = Math.max(_buck[_mi].pct, periods[_p].pct || 0);    // pct = MAX
+    _buck[_mi].count += (_chartSrc[_p].count || 0);                     // count = SUM
+    _buck[_mi].pct = Math.max(_buck[_mi].pct, _chartSrc[_p].pct || 0);  // pct = MAX
     _buck[_mi].has = true;
   }
   var _maxCount = 0, _maxPct = 0, _peakM = -1;

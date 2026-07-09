@@ -13867,16 +13867,14 @@ window.buildTop3PeriodsSection = function(speciesKey) {
       }
     }
     html += '</svg>';
-    // fixed 12-month axis (jaan..dets), staggered on two rows so all 12 labels fit the narrow
-    // panel: even months on the top row, odd months dropped to the second (double the room each).
-    // Each label sits at its slot centre as a % of width — slot centre 12+m*_slot+_slot/2 in the
-    // 300-unit viewBox, so left = that / 3 percent. Reuses the same _slot the bars/line use.
+    // fixed 12-month axis (jaan..dets) on a single row. Each label sits at its slot centre as a %
+    // of width — slot centre 12+m*_slot+_slot/2 in the 300-unit viewBox, so left = that / 3 percent.
+    // Reuses the same _slot the bars/line use.
     var _AB = ['jaan','veebr','märts','apr','mai','juuni','juuli','aug','sept','okt','nov','dets'];
-    var _ax = '<div style="position:relative;height:26px;margin-top:2px;font-size:9px;color:#94a3b8;">';
+    var _ax = '<div style="position:relative;height:12px;margin-top:2px;font-size:8px;color:#94a3b8;">';
     for (var _a = 0; _a < 12; _a++) {
       var _lx = (12 + _a * _slot + _slot / 2) / 3;             // % of width
-      var _top = (_a % 2) ? 13 : 0;                            // stagger: odd months drop to row 2
-      _ax += '<span style="position:absolute;top:' + _top + 'px;left:' + _lx + '%;transform:translateX(-50%);">' + _AB[_a] + '</span>';
+      _ax += '<span style="position:absolute;top:0;left:' + _lx + '%;transform:translateX(-50%);">' + _AB[_a] + '</span>';
     }
     _ax += '</div>';
     html += _ax;

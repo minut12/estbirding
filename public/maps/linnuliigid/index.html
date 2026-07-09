@@ -12059,6 +12059,42 @@ var __sharedDefaults = {};
     cell.periodConfidence = confidence;
   }
 
+  // --- Full-year breakdown (Phase 1, admin-live) ---------------------------------------------
+  // GBIF coerces partial dates to Jan-1 placeholders; drop those so January isn't inflated
+  // (ported from compute-ennustus:50). Real (non-GBIF) Jan-1 records are kept.
+  function isJan1(d) { return d.getMonth() === 0 && d.getDate() === 1; }
+
+  // Score ALL occurrences in a cell into 12 calendar-month buckets, un-gated by the season window,
+  // reusing calculatePeriodProbabilities for parity with the season-bounded list. Returns 12 period
+  // objects shaped like cell.periods ({label, obsCount, probability, isCurrent}) — the popup list
+  // only. Requires raw occurrences, so callers attach it solely in the admin-live compute path.
+  var _YB_MONTHS = ['jaanuar','veebruar','märts','aprill','mai','juuni','juuli','august','september','oktoober','november','detsember'];
+  function buildYearBreakdownForCell(cell, allOccs, cellSize) {
+    var monthCounts = [0,0,0,0,0,0,0,0,0,0,0,0];
+    for (var i = 0; i < allOccs.length; i++) {
+      var o = allOccs[i];
+      if (!(o.lat >= cell.latMin && o.lat < cell.latMax && o.lon >= cell.lonMin && o.lon < cell.lonMax)) continue;
+      var d = parseProbDate(o.date);
+      if (!d) continue;
+      if (String(o.source || '').toLowerCase() === 'gbif' && isJan1(d)) continue;   // drop coerced Jan-1
+      monthCounts[d.getMonth()]++;
+    }
+    var year = new Date().getFullYear();
+    var periods = [];
+    for (var m = 0; m < 12; m++) {
+      periods.push({ label: _YB_MONTHS[m], start: new Date(year, m, 1), end: new Date(year, m + 1, 1),
+                     count: monthCounts[m], probability: 1, isCurrent: false, obsCount: monthCounts[m] });
+    }
+    // Reuse the per-period scorer (within-cell log-normalized; current-period freshness via the
+    // parent cell's scoreRecency/markerInCell). eluPoint/cellSize are unused by the scorer today.
+    calculatePeriodProbabilities({ periods: periods, scoreRecency: cell.scoreRecency, markerInCell: cell.markerInCell }, null, cellSize);
+    // Zero-obs months read a true 0% (not the scorer's Math.max(1,…) floor) so they reuse the
+    // shrunk-empty row style and match the non-admin cache path. The season/map floor is untouched
+    // — this override lives only in the breakdown, not in calculatePeriodProbabilities.
+    for (var _z = 0; _z < periods.length; _z++) { if (periods[_z].count === 0) periods[_z].probability = 0; }
+    return periods;
+  }
+
   // Phase 2: eBird 7d obs contribution to cell freshness.
   // Matches the scoring bbox predicate exactly (half-open < on upper bounds).
   function getEbirdCellStats(speciesName, cell) {
@@ -12552,7 +12588,10 @@ var __sharedDefaults = {};
   }
 
   function buildTemporalBreakdown(cell) {
-    if (!cell.periods || !cell.periods.length) return '';
+    // Phase 1: prefer the full-year breakdown (admin-live, all occurrences, un-gated by season)
+    // when present; otherwise fall back to the season-bounded cell.periods (cache / non-admin).
+    var _src = (cell.yearBreakdown && cell.yearBreakdown.length) ? cell.yearBreakdown : cell.periods;
+    if (!_src || !_src.length) return '';
     // 12 monthly rows (Jan\u2013Dec), bucketed by each period's START month (same as the sidebar chart
     // v3). Works on the cache path (no dates) since it reads only the Estonian label + obs + pct.
     var _MI = { jaanuar:0, veebruar:1, 'm\u00E4rts':2, aprill:3, mai:4, juuni:5, juuli:6,
@@ -12560,11 +12599,11 @@ var __sharedDefaults = {};
     var _MN = ['jaanuar','veebruar','m\u00E4rts','aprill','mai','juuni','juuli','august',
                'september','oktoober','november','detsember'];
     var _buck = []; for (var _b = 0; _b < 12; _b++) _buck.push({ obs:0, pct:0, has:false });
-    for (var _p = 0; _p < cell.periods.length; _p++) {
-      var _t = (String(cell.periods[_p].label || '').match(/[A-Za-z\u00C0-\u017F]+/) || [''])[0].toLowerCase();
+    for (var _p = 0; _p < _src.length; _p++) {
+      var _t = (String(_src[_p].label || '').match(/[A-Za-z\u00C0-\u017F]+/) || [''])[0].toLowerCase();
       var _mi = _MI[_t]; if (_mi === undefined) continue;
-      _buck[_mi].obs += (cell.periods[_p].obsCount || 0);                          // obs = SUM
-      _buck[_mi].pct = Math.max(_buck[_mi].pct, cell.periods[_p].probability || 0);  // pct = MAX
+      _buck[_mi].obs += (_src[_p].obsCount || 0);                          // obs = SUM
+      _buck[_mi].pct = Math.max(_buck[_mi].pct, _src[_p].probability || 0);  // pct = MAX
       _buck[_mi].has = true;
     }
     var _maxPct = 0, _peakM = -1;
@@ -13130,6 +13169,14 @@ var __sharedDefaults = {};
     });
 
     var scored = calculateProbabilities(gridCells, seasonal, data.occurrences, speciesName, probCellSize, seasonInfo);
+
+    // Phase 1 (admin-live): attach a full-year 12-month breakdown to each cell, scored from ALL
+    // occurrences (un-gated by season) for the popup list only. Additive — the sidebar
+    // (__probDataBySpecies below) and the headline still read the season-bounded topCell.periods.
+    // Cache/non-admin cells never get yearBreakdown, so buildTemporalBreakdown falls back there.
+    for (var _yb = 0; _yb < scored.length; _yb++) {
+      scored[_yb].yearBreakdown = buildYearBreakdownForCell(scored[_yb], data.occurrences, probCellSize);
+    }
 
     // Write to __probDataBySpecies
     window.__probDataBySpecies = window.__probDataBySpecies || {};

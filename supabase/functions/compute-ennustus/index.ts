@@ -1,4 +1,5 @@
 // compute-ennustus
+// redeploy-marker: v7 · 2026-07-09 · HISTORY folds elurikkus GBIF-lag tail (obs postdating gbifMax); revives 0-GBIF species
 // redeploy-marker: v6 · 2026-07-07 · periods carry obsCount + isCurrent (cell-cache count-carry)
 // redeploy-marker: v5 · 2026-07-07 · per-species cells flush (no batch accumulation)
 // redeploy-marker: v4 · 2026-07-07 · prune mirrors client draw-skip (index.html:12704)
@@ -18,7 +19,8 @@
 //   2. SEASON drops GBIF Jan-1 (month=1 & day=1) from date-binned paths only.
 //   3. Five feeder-absent species have 0 freshness rows -> FRESHNESS = 0.
 //   4. No eBird freshness (Phase B reverted).
-//   5. HISTORY = gbif_occurrences only (no elurikkus history fold-in).
+//   5. HISTORY = GBIF + elurikkus tail postdating GBIF's newest (v7 lag fold-in;
+//      also revives 0-GBIF species). Supersedes the original gbif-only port.
 // See decisions/2026-07-05-compute-ennustus-*.md (binding).
 //
 // Auth: X-Webhook-Secret header against VAATLUSTE_WEBHOOK_SECRET (same secret
@@ -509,6 +511,39 @@ async function fetchFreshness(supabase: any, speciesName: string): Promise<any[]
   return recentEluLocs;
 }
 
+// HISTORY tail: coord-bearing elurikkus obs that POSTDATE GBIF's newest record for
+// this species -- the ~1yr GBIF ingestion-lag tail (strict `>` => zero cross-source
+// overlap with GBIF history). When gbifMaxDate is null/'' (species with 0 GBIF rows)
+// there is no lower bound, so all coord-bearing elurikkus history is folded in.
+// Upper clamp (<= today ymd) mirrors fetchFreshness's future-date guard. Pages like
+// fetchAllGbif (1000 rows/request, same 50-page safety ceiling).
+async function fetchEluHistoryTail(supabase: any, speciesName: string, gbifMaxDate: string | null): Promise<any[]> {
+  if (!speciesName) return [];
+  const upperStr = ymd(new Date());
+  const pageSize = 1000;
+  let from = 0;
+  const out: any[] = [];
+  for (let guard = 0; guard < 50; guard++) {
+    let q = supabase
+      .from('elurikkus_observations')
+      .select('lat,lon,observed_at')
+      .eq('species_name', speciesName)
+      .not('lat', 'is', null)
+      .not('lon', 'is', null)
+      .lte('observed_at', upperStr);
+    if (gbifMaxDate) q = q.gt('observed_at', gbifMaxDate); // '' / null => no lower bound
+    const { data, error } = await q.range(from, from + pageSize - 1);
+    if (error) throw new Error('elurikkus_observations (history tail) read failed: ' + error.message);
+    if (!data || data.length === 0) break;
+    for (const r of data) {
+      out.push({ lat: Number(r.lat), lon: Number(r.lon), date: String(r.observed_at || ''), source: 'elurikkus' });
+    }
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return out;
+}
+
 // ============================================================================
 // Per-species orchestration (port of computeProbForSpecies head, 12661-12928)
 // ============================================================================
@@ -539,6 +574,20 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
     date: String(r.observed_at || ''),
     source: 'gbif',
   }));
+
+  // [GBIF-lag fold-in] GBIF ingests ~1yr late, so the current season is missing from
+  // the map for lagged species (and 0-GBIF species hit Exit A -> no map at all). Fold
+  // the coord-bearing elurikkus obs that postdate GBIF's newest record for this species
+  // into HISTORY. gbifMaxDate '' (no GBIF rows) => no lower bound => all coord-bearing
+  // elu. Plain string compare on YYYY-MM-DD is correct.
+  let gbifMaxDate = '';
+  for (const r of gbifRows) {
+    const _d = String(r.observed_at || '');
+    if (_d > gbifMaxDate) gbifMaxDate = _d;
+  }
+  const eluTail = await fetchEluHistoryTail(supabase, speciesName, gbifMaxDate || null);
+  allOccs = allOccs.concat(eluTail);
+
   allOccs = deduplicateOccurrences(allOccs);
 
   const computedAt = Date.now();
@@ -561,7 +610,7 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
   }
   if (seasonal.length === 0) return { summaryRow: exitRow(speciesName, 'C'), cellsRow: null };
 
-  // 5. Cell size from GBIF volume (all history is GBIF here).
+  // 5. Cell size from total history volume (GBIF + elurikkus lag tail; name kept).
   const totalGbifRecords = allOccs.length;
   const probCellSize = totalGbifRecords > 500 ? 0.1 : totalGbifRecords > 100 ? 0.15 : 0.2;
 

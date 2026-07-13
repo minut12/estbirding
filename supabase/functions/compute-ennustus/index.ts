@@ -575,18 +575,12 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
     source: 'gbif',
   }));
 
-  // [GBIF-lag fold-in] GBIF ingests ~1yr late, so the current season is missing from
-  // the map for lagged species (and 0-GBIF species hit Exit A -> no map at all). Fold
-  // the coord-bearing elurikkus obs that postdate GBIF's newest record for this species
-  // into HISTORY. gbifMaxDate '' (no GBIF rows) => no lower bound => all coord-bearing
-  // elu. Plain string compare on YYYY-MM-DD is correct.
-  let gbifMaxDate = '';
-  for (const r of gbifRows) {
-    const _d = String(r.observed_at || '');
-    if (_d > gbifMaxDate) gbifMaxDate = _d;
-  }
-  const eluTail = await fetchEluHistoryTail(supabase, speciesName, gbifMaxDate || null);
-  allOccs = allOccs.concat(eluTail);
+  // [Elu HISTORY fold-in] Fold ALL coord-bearing elurikkus history into HISTORY.
+  // With 3+ years of elurikkus backfilled, most rows overlap GBIF's date range;
+  // cross-source overlap is handled by deduplicateOccurrences below (0.005° coord +
+  // date bucket). 0-GBIF species get an elu-only HISTORY.
+  const eluHistory = await fetchEluHistory(supabase, speciesName);
+  allOccs = allOccs.concat(eluHistory);
 
   allOccs = deduplicateOccurrences(allOccs);
 

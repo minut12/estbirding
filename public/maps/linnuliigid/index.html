@@ -14684,68 +14684,11 @@ window.__scanEnnAll=async function(btn,opts){
   window.__scanEnnAllRunning=true;
   _ennScanAbort=false;
   opts=opts||{};
-  var skipEluRefresh=opts.skipEluRefresh!==false; // default: skip
   var forceRescan=opts.force===true;
   var scanStartMs=Date.now();
 
   try{
-    // Phase 1: Elurikkus cloud refresh (only if explicitly requested via Värskenda)
-    if(!skipEluRefresh){
-      if(btn){btn.disabled=true;btn.style.opacity='.6';btn.textContent='Värskendan eElurikkus...';}
-      try{
-        var ELU_EDGE='https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/elurikkus-bulk-refresh';
-        var ELU_SECRET='elu-refresh-2026';
-        var ELU_BATCH=75;
-        var totalSpecies=sp().length||450;
-        var eluUpdated=0,eluErrors=0;
-
-        // Build batch offsets
-        var batchOffsets=[];
-        for(var eluOff=0;eluOff<totalSpecies;eluOff+=ELU_BATCH) batchOffsets.push(eluOff);
-
-        // Run 3 batches in parallel at a time
-        var PARALLEL_BATCHES=3;
-        for(var bi=0;bi<batchOffsets.length;bi+=PARALLEL_BATCHES){
-          if(_ennScanAbort){console.log('[ELU-REFRESH] ABORTED at group',bi);break;}
-          var slice=batchOffsets.slice(bi,bi+PARALLEL_BATCHES);
-          console.log('[ELU-REFRESH] parallel group offsets:',slice);
-          if(btn) btn.textContent='eElu '+slice[0]+'/'+totalSpecies;
-
-          var groupResults=await Promise.all(slice.map(function(offset){
-            return fetch(ELU_EDGE,{
-              method:'POST',
-              headers:{'Content-Type':'application/json','x-refresh-secret':ELU_SECRET},
-              body:JSON.stringify({offset:offset,limit:ELU_BATCH})
-            }).then(function(r){return r.ok?r.json():Promise.resolve({failed:true,offset:offset});})
-              .catch(function(err){console.warn('[ELU-REFRESH] batch error offset='+offset,err);return{failed:true,offset:offset};});
-          }));
-
-          for(var gi=0;gi<groupResults.length;gi++){
-            var gr=groupResults[gi];
-            if(gr&&!gr.failed){
-              eluUpdated+=(gr.updated||0);
-              eluErrors+=(gr.errors||0);
-              console.log('[ELU-REFRESH] batch offset='+slice[gi],gr);
-            }
-          }
-        }
-        console.log('[ELU-REFRESH] done. updated:',eluUpdated,'errors:',eluErrors);
-      }catch(eluTopErr){
-        console.warn('[ELU-REFRESH] top-level error',eluTopErr);
-      }
-
-      // Reload elurikkus cache into points
-      try{
-        if(btn) btn.textContent='Laadin eElu...';
-        if(typeof _loadElurikkusCacheFromSupabase==='function'){
-          await _loadElurikkusCacheFromSupabase();
-        }
-      }catch(reloadErr){
-        console.warn('[SCAN] cache reload error',reloadErr);
-      }
-    }else{
-      console.log('[SCAN] skipping Elurikkus refresh (using cached data)');
-    }
+    // eElurikkus forward refresh is scheduled server-side (n8n, 05:30/17:30). The browser must never hold a refresh secret.
 
     if(btn){btn.disabled=true;btn.style.opacity='.6';}
 

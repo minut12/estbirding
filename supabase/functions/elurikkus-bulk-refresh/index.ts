@@ -530,7 +530,7 @@ Deno.serve(async (req) => {
           firstDate: first?.event_date ?? null,
           lastId: last?.id ?? null,
           lastDate: last?.event_date ?? null,
-          bodySnippet: res.status === 200 ? null : text.slice(0, 300),
+          bodySnippet: res.status === 200 ? null : text.slice(0, 500),
           error: res.status === 200 ? undefined : `HTTP ${res.status}`,
         };
       } catch (e) {
@@ -544,7 +544,7 @@ Deno.serve(async (req) => {
           firstDate: null,
           lastId: null,
           lastDate: null,
-          bodySnippet: msg.slice(0, 300),
+          bodySnippet: msg.slice(0, 500),
           error: msg,
         };
       } finally {
@@ -556,21 +556,26 @@ Deno.serve(async (req) => {
       q: `_text_:"${name}"`,
       fq: {},
       pagination: { offset: 0, limit: 50, order: { by: "event_datetime_point", ascending: false } },
-      facets: {},
+      facets: [],
       fields: null,
       ...over,
     });
 
+    const P = (offset: number, limit = 50, ascending = false) => ({
+      pagination: { offset, limit, order: { by: "event_datetime_point", ascending } },
+    });
+
     const probes = [
-      await postQuery("echo", Q()),
-      await postQuery("limit500", Q({ pagination: { offset: 0, limit: 500, order: { by: "event_datetime_point", ascending: false } } })),
-      await postQuery("offset200", Q({ pagination: { offset: 200, limit: 50, order: { by: "event_datetime_point", ascending: false } } })),
-      await postQuery("offset9999", Q({ pagination: { offset: 9999, limit: 50, order: { by: "event_datetime_point", ascending: false } } })),
-      await postQuery("offset10001", Q({ pagination: { offset: 10001, limit: 50, order: { by: "event_datetime_point", ascending: false } } })),
-      await postQuery("offset30000", Q({ pagination: { offset: 30000, limit: 50, order: { by: "event_datetime_point", ascending: false } } })),
-      await postQuery("ascending", Q({ pagination: { offset: 0, limit: 50, order: { by: "event_datetime_point", ascending: true } } })),
-      await postQuery("fqYearArray", Q({ fq: { year: [2024] } })),
-      await postQuery("fqYearScalar", Q({ fq: { year: 2024 } })),
+      await postQuery("echoFixed", Q()),
+      await postQuery("limit500", Q(P(0, 500))),
+      await postQuery("offset9999", Q(P(9999))),
+      await postQuery("offset10001", Q(P(10001))),
+      await postQuery("offset30000", Q(P(30000))),
+      await postQuery("offset46000", Q(P(46000))),
+      await postQuery("ascending", Q(P(0, 50, true))),
+      await postQuery("qYear", Q({ q: `_text_:"${name}" AND year:2024` })),
+      await postQuery("qDateRange", Q({ q: `_text_:"${name}" AND event_date:[2024-01-01 TO 2024-12-31]` })),
+      await postQuery("fqValues", Q({ fq: { year: { values: [2024] } } })),
     ];
 
     return new Response(

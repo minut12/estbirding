@@ -1,4 +1,5 @@
 // compute-ennustus
+// redeploy-marker: v8 · 2026-07-13 · HISTORY folds ALL coord-bearing elurikkus (not just post-gbifMax tail); cross-source dedup now load-bearing
 // redeploy-marker: v7 · 2026-07-09 · HISTORY folds elurikkus GBIF-lag tail (obs postdating gbifMax); revives 0-GBIF species
 // redeploy-marker: v6 · 2026-07-07 · periods carry obsCount + isCurrent (cell-cache count-carry)
 // redeploy-marker: v5 · 2026-07-07 · per-species cells flush (no batch accumulation)

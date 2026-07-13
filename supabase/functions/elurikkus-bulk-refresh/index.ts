@@ -655,13 +655,22 @@ Deno.serve(async (req) => {
       asOfDate.getUTCDate(),
     ));
 
+    // Working list rule: explicit `species` array wins; else if either `offset` or
+    // `limit` is supplied we slice DEFAULT_SPECIES; else the working list is the
+    // FULL DEFAULT_SPECIES array. `done` reflects completion of THIS working list.
+    // A returned cursor is only valid when resent with identical
+    // `species` / `offset` / `limit` as the request that produced it.
     let backfillSpecies: string[];
+    const reqOffset: number | null = typeof body.offset === "number" ? Math.max(0, body.offset) : null;
+    const reqLimit: number | null = typeof body.limit === "number" ? Math.max(1, Math.min(DEFAULT_SPECIES.length, body.limit)) : null;
     if (Array.isArray(body.species) && body.species.length > 0) {
       backfillSpecies = body.species.map((s: unknown) => String(s).trim()).filter(Boolean);
+    } else if (reqOffset !== null || reqLimit !== null) {
+      const off = reqOffset ?? 0;
+      const lim = reqLimit ?? DEFAULT_SPECIES.length;
+      backfillSpecies = DEFAULT_SPECIES.slice(off, off + lim);
     } else {
-      const offset = typeof body.offset === "number" ? Math.max(0, body.offset) : 0;
-      const limit = typeof body.limit === "number" ? Math.min(100, Math.max(1, body.limit)) : DEFAULT_SPECIES.length;
-      backfillSpecies = DEFAULT_SPECIES.slice(offset, offset + limit);
+      backfillSpecies = DEFAULT_SPECIES.slice();
     }
 
     const stats = {

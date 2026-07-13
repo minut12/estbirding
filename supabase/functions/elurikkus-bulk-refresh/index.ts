@@ -503,6 +503,310 @@ Deno.serve(async (req) => {
 
   const t0 = Date.now();
 
+  // ==================== BACKFILL MODE ====================
+  if (body?.mode === "backfill") {
+    const ELU_API = "https://elurikkus.ee/api/occurrences/search";
+    const BACKFILL_YEARS = 3;
+    const PAGE_LIMIT = 500;
+    const MAX_OFFSET = 9500;
+    const SPLIT_THRESHOLD = 9500;
+    const REQ_DELAY_MS = 400;
+    const BUDGET_MS = 50000;
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return new Response(JSON.stringify({ error: "Missing Supabase env vars" }), { status: 500, headers: corsHeaders });
+    }
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    const cursor = body?.cursor ?? null;
+    const asOfStr: string = (cursor && typeof cursor.as_of === "string" && cursor.as_of)
+      || (typeof body?.as_of === "string" && body.as_of)
+      || new Date().toISOString().slice(0, 10);
+    const asOfDate = new Date(`${asOfStr}T00:00:00Z`);
+    if (!Number.isFinite(asOfDate.getTime())) {
+      return new Response(JSON.stringify({ error: "invalid as_of" }), { status: 400, headers: corsHeaders });
+    }
+    const floorDate = new Date(Date.UTC(
+      asOfDate.getUTCFullYear() - BACKFILL_YEARS,
+      asOfDate.getUTCMonth(),
+      asOfDate.getUTCDate(),
+    ));
+
+    let backfillSpecies: string[];
+    if (Array.isArray(body.species) && body.species.length > 0) {
+      backfillSpecies = body.species.map((s: unknown) => String(s).trim()).filter(Boolean);
+    } else {
+      const offset = typeof body.offset === "number" ? Math.max(0, body.offset) : 0;
+      const limit = typeof body.limit === "number" ? Math.min(100, Math.max(1, body.limit)) : DEFAULT_SPECIES.length;
+      backfillSpecies = DEFAULT_SPECIES.slice(offset, offset + limit);
+    }
+
+    const stats = {
+      requests: 0,
+      windows_processed: 0,
+      rows_seen: 0,
+      rows_upserted: 0,
+      name_mismatches: 0,
+      future_dated: 0,
+      truncated_windows: 0,
+    };
+    const backfillErrors: string[] = [];
+    const species_processed: string[] = [];
+
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const budgetExceeded = () => Date.now() - t0 > BUDGET_MS;
+
+    function buildYearWindows(): { from: Date; to: Date }[] {
+      const out: { from: Date; to: Date }[] = [];
+      const startY = asOfDate.getUTCFullYear();
+      const endY = floorDate.getUTCFullYear();
+      for (let y = startY; y >= endY; y--) {
+        const yStart = new Date(Date.UTC(y, 0, 1));
+        const yEnd = new Date(Date.UTC(y, 11, 31));
+        const from = yStart.getTime() < floorDate.getTime() ? floorDate : yStart;
+        const to = yEnd.getTime() > asOfDate.getTime() ? asOfDate : yEnd;
+        if (from.getTime() <= to.getTime()) out.push({ from, to });
+      }
+      return out;
+    }
+
+    function buildMonthWindows(from: Date, to: Date): { from: Date; to: Date }[] {
+      const out: { from: Date; to: Date }[] = [];
+      let y = to.getUTCFullYear();
+      let m = to.getUTCMonth();
+      while (true) {
+        const monStart = new Date(Date.UTC(y, m, 1));
+        const monEnd = new Date(Date.UTC(y, m + 1, 0));
+        const f = monStart.getTime() < from.getTime() ? from : monStart;
+        const t = monEnd.getTime() > to.getTime() ? to : monEnd;
+        if (f.getTime() <= t.getTime()) out.push({ from: f, to: t });
+        if (monStart.getTime() <= from.getTime()) break;
+        m -= 1;
+        if (m < 0) { m = 11; y -= 1; }
+      }
+      return out;
+    }
+
+    function buildDayWindows(from: Date, to: Date): { from: Date; to: Date }[] {
+      const out: { from: Date; to: Date }[] = [];
+      for (let ts = to.getTime(); ts >= from.getTime(); ts -= 86400000) {
+        const d = new Date(ts);
+        out.push({ from: d, to: d });
+      }
+      return out;
+    }
+
+    async function eluSearch(name: string, from: string, to: string, offset: number, limit: number) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      try {
+        const res = await fetch(ELU_API, {
+          method: "POST",
+          headers: { "content-type": "application/json", "accept": "application/json" },
+          body: JSON.stringify({
+            q: `_text_:"${name}" AND event_date:[${from} TO ${to}]`,
+            fq: {},
+            pagination: { offset, limit, order: { by: "event_datetime_point", ascending: false } },
+            facets: [],
+            fields: null,
+          }),
+          signal: controller.signal,
+        });
+        stats.requests++;
+        const text = await res.text();
+        if (res.status !== 200) {
+          return { status: res.status, count: 0, results: [] as any[], error: `HTTP ${res.status}: ${text.slice(0, 200)}` };
+        }
+        try {
+          const json = JSON.parse(text);
+          return { status: 200, count: Number(json?.count ?? 0), results: (json?.results ?? []) as any[], error: undefined as string | undefined };
+        } catch (e) {
+          return { status: 200, count: 0, results: [] as any[], error: `JSON parse: ${String(e)}` };
+        }
+      } catch (e) {
+        stats.requests++;
+        return { status: 0, count: 0, results: [] as any[], error: String(e) };
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    const trunc = (s: string | null, n: number) => (s == null ? null : (s.length > n ? s.slice(0, n) : s));
+
+    function mapRow(name: string, r: any) {
+      const lat = Number(r.latitude);
+      const lon = Number(r.longitude);
+      const locRaw = (typeof r.locality === "string" && r.locality)
+        || (typeof r.municipality === "string" && r.municipality)
+        || (typeof r.county === "string" && r.county)
+        || null;
+      const county = typeof r.county === "string" ? r.county : null;
+      let observer: string | null = null;
+      if (Array.isArray(r.recorded_by)) observer = r.recorded_by.map((x: unknown) => String(x)).join(", ");
+      const ic = Number(r.individual_count);
+      return {
+        sub_id: String(r.id),
+        species_name: name,
+        species_lat: null,
+        observed_at: r.event_date,
+        lat: Number.isFinite(lat) && lat !== 0 ? lat : null,
+        lon: Number.isFinite(lon) && lon !== 0 ? lon : null,
+        locality: trunc(locRaw, 200),
+        county: trunc(county, 100),
+        observer: trunc(observer, 200),
+        individual_count: Number.isFinite(ic) ? ic : null,
+        behavior: r.behavior ?? null,
+        fetched_at: new Date().toISOString(),
+      };
+    }
+
+    async function upsertBatch(rows: any[]) {
+      for (let i = 0; i < rows.length; i += 500) {
+        const chunk = rows.slice(i, i + 500);
+        const { error } = await supabase
+          .from("elurikkus_observations")
+          .upsert(chunk, { onConflict: "sub_id" });
+        if (error) {
+          backfillErrors.push(`upsert: ${error.message}`);
+        } else {
+          stats.rows_upserted += chunk.length;
+        }
+      }
+    }
+
+    function consumeStats(name: string, results: any[]) {
+      const nameLc = name.toLowerCase();
+      for (const x of results) {
+        stats.rows_seen++;
+        const cn = String(x.common_name_est ?? "").toLowerCase();
+        if (cn && cn !== nameLc) stats.name_mismatches++;
+        if (typeof x.event_date === "string" && x.event_date > asOfStr) stats.future_dated++;
+      }
+    }
+
+    let outCursor: any = null;
+    let done = true;
+
+    let startSpeciesIdx = 0;
+    if (cursor && typeof cursor.speciesIdx === "number") startSpeciesIdx = Math.max(0, cursor.speciesIdx);
+
+    speciesLoop: for (let sIdx = startSpeciesIdx; sIdx < backfillSpecies.length; sIdx++) {
+      const name = backfillSpecies[sIdx];
+      species_processed.push(name);
+
+      const cursorWindowFrom: string | null = (sIdx === startSpeciesIdx && cursor?.windowFrom) ? String(cursor.windowFrom) : null;
+      const resumeOffset: number = (sIdx === startSpeciesIdx && typeof cursor?.offset === "number") ? cursor.offset : 0;
+      let active = cursorWindowFrom == null;
+
+      const processWindow = async (w: { from: Date; to: Date }): Promise<boolean> => {
+        if (budgetExceeded()) {
+          outCursor = { as_of: asOfStr, speciesIdx: sIdx, windowFrom: iso(w.from), offset: 0 };
+          done = false;
+          return false;
+        }
+        const fromStr = iso(w.from);
+        const toStr = iso(w.to);
+
+        // Resume: skip leaves newer than cursor (never spend a request on them).
+        if (!active && cursorWindowFrom && fromStr > cursorWindowFrom) return true;
+
+        const initialOffset = (!active && cursorWindowFrom === fromStr) ? resumeOffset : 0;
+
+        if (stats.requests > 0) await delay(REQ_DELAY_MS);
+        if (budgetExceeded()) {
+          outCursor = { as_of: asOfStr, speciesIdx: sIdx, windowFrom: fromStr, offset: initialOffset };
+          done = false;
+          return false;
+        }
+
+        const r = await eluSearch(name, fromStr, toStr, initialOffset, PAGE_LIMIT);
+        stats.windows_processed++;
+        if (r.error) backfillErrors.push(`${name} [${fromStr}..${toStr}]@${initialOffset}: ${r.error}`);
+
+        if (r.count === 0) {
+          if (cursorWindowFrom === fromStr) active = true;
+          return true;
+        }
+
+        // Split oversized windows (only when we haven't started paging).
+        if (r.count > SPLIT_THRESHOLD && initialOffset === 0) {
+          const spanDays = Math.round((w.to.getTime() - w.from.getTime()) / 86400000) + 1;
+          let subs: { from: Date; to: Date }[] | null = null;
+          if (spanDays > 31) subs = buildMonthWindows(w.from, w.to);
+          else if (spanDays > 1) subs = buildDayWindows(w.from, w.to);
+          else {
+            // Day-leaf: cannot split further. Truncate at cap.
+            stats.truncated_windows++;
+            console.warn(`[elu-backfill] TRUNCATED day-window ${name} ${fromStr} count=${r.count}`);
+            subs = null;
+          }
+          if (subs) {
+            for (const sw of subs) {
+              const ok = await processWindow(sw);
+              if (!ok) return false;
+            }
+            if (cursorWindowFrom === fromStr) active = true;
+            return true;
+          }
+        }
+
+        // Page the current window; r already holds the first page at initialOffset.
+        consumeStats(name, r.results);
+        await upsertBatch(r.results.map((x) => mapRow(name, x)));
+
+        let offset = initialOffset + PAGE_LIMIT;
+        while (offset < r.count && offset <= MAX_OFFSET) {
+          if (budgetExceeded()) {
+            outCursor = { as_of: asOfStr, speciesIdx: sIdx, windowFrom: fromStr, offset };
+            done = false;
+            return false;
+          }
+          await delay(REQ_DELAY_MS);
+          const pr = await eluSearch(name, fromStr, toStr, offset, PAGE_LIMIT);
+          if (pr.error) backfillErrors.push(`${name} [${fromStr}..${toStr}]@${offset}: ${pr.error}`);
+          if (pr.results.length === 0) break;
+          consumeStats(name, pr.results);
+          await upsertBatch(pr.results.map((x) => mapRow(name, x)));
+          offset += PAGE_LIMIT;
+        }
+
+        if (cursorWindowFrom === fromStr) active = true;
+        return true;
+      };
+
+      const yearWindows = buildYearWindows();
+      for (const yw of yearWindows) {
+        const ok = await processWindow(yw);
+        if (!ok) break speciesLoop;
+      }
+
+      if (sIdx < backfillSpecies.length - 1) await delay(REQ_DELAY_MS);
+    }
+
+    const duration_ms = Date.now() - t0;
+    return new Response(JSON.stringify({
+      mode: "backfill",
+      as_of: asOfStr,
+      done,
+      cursor: outCursor,
+      species_processed,
+      requests: stats.requests,
+      windows_processed: stats.windows_processed,
+      rows_seen: stats.rows_seen,
+      rows_upserted: stats.rows_upserted,
+      name_mismatches: stats.name_mismatches,
+      future_dated: stats.future_dated,
+      truncated_windows: stats.truncated_windows,
+      errors: backfillErrors.slice(0, 50),
+      duration_ms,
+    }), { status: 200, headers: corsHeaders });
+  }
+  // ==================== END BACKFILL MODE ====================
+
+
+
 
 
   if (body && Array.isArray(body.species) && body.species.length > 0) {

@@ -526,16 +526,22 @@ Deno.serve(async (req) => {
     const fromStr = isoDay(fromDate);
     const toStr = isoDay(asOfDate);
 
+    // Working list rule: explicit `species` array wins; else if either `offset` or
+    // `limit` is supplied we slice DEFAULT_SPECIES; else the working list is the
+    // FULL DEFAULT_SPECIES array. `done` reflects completion of THIS working list.
+    // A returned cursor / next_index is only valid when resent with identical
+    // `species` / `offset` / `limit` as the request that produced it.
     let sizeSpecies: string[];
-    let startOffset = 0;
-    let usingDefault = false;
+    const reqOffset: number | null = typeof body.offset === "number" ? Math.max(0, body.offset) : null;
+    const reqLimit: number | null = typeof body.limit === "number" ? Math.max(1, Math.min(DEFAULT_SPECIES.length, body.limit)) : null;
     if (Array.isArray(body.species) && body.species.length > 0) {
       sizeSpecies = body.species.map((s: unknown) => String(s).trim()).filter(Boolean);
+    } else if (reqOffset !== null || reqLimit !== null) {
+      const off = reqOffset ?? 0;
+      const lim = reqLimit ?? DEFAULT_SPECIES.length;
+      sizeSpecies = DEFAULT_SPECIES.slice(off, off + lim);
     } else {
-      usingDefault = true;
-      startOffset = typeof body.offset === "number" ? Math.max(0, body.offset) : 0;
-      const limit = typeof body.limit === "number" ? Math.min(449, Math.max(1, body.limit)) : 100;
-      sizeSpecies = DEFAULT_SPECIES.slice(startOffset, startOffset + limit);
+      sizeSpecies = DEFAULT_SPECIES.slice();
     }
 
     const results: Array<{ species: string; count: number | null; ok: boolean }> = [];
@@ -544,12 +550,12 @@ Deno.serve(async (req) => {
 
     let processed = 0;
     let done = true;
-    let nextOffset: number | null = null;
+    let nextIndex: number | null = null;
 
     for (let i = 0; i < sizeSpecies.length; i++) {
       if (Date.now() - t0 > BUDGET_MS) {
         done = false;
-        nextOffset = usingDefault ? startOffset + i : i;
+        nextIndex = i;
         break;
       }
       const name = sizeSpecies[i];
@@ -604,7 +610,9 @@ Deno.serve(async (req) => {
       from: fromStr,
       to: toStr,
       done,
-      next_offset: nextOffset,
+      next_index: done ? null : nextIndex,
+      req_offset: reqOffset,
+      req_limit: reqLimit,
       species_counted: processed,
       ok_count: okResults.length,
       failed_count: processed - okResults.length,
@@ -647,13 +655,22 @@ Deno.serve(async (req) => {
       asOfDate.getUTCDate(),
     ));
 
+    // Working list rule: explicit `species` array wins; else if either `offset` or
+    // `limit` is supplied we slice DEFAULT_SPECIES; else the working list is the
+    // FULL DEFAULT_SPECIES array. `done` reflects completion of THIS working list.
+    // A returned cursor is only valid when resent with identical
+    // `species` / `offset` / `limit` as the request that produced it.
     let backfillSpecies: string[];
+    const reqOffset: number | null = typeof body.offset === "number" ? Math.max(0, body.offset) : null;
+    const reqLimit: number | null = typeof body.limit === "number" ? Math.max(1, Math.min(DEFAULT_SPECIES.length, body.limit)) : null;
     if (Array.isArray(body.species) && body.species.length > 0) {
       backfillSpecies = body.species.map((s: unknown) => String(s).trim()).filter(Boolean);
+    } else if (reqOffset !== null || reqLimit !== null) {
+      const off = reqOffset ?? 0;
+      const lim = reqLimit ?? DEFAULT_SPECIES.length;
+      backfillSpecies = DEFAULT_SPECIES.slice(off, off + lim);
     } else {
-      const offset = typeof body.offset === "number" ? Math.max(0, body.offset) : 0;
-      const limit = typeof body.limit === "number" ? Math.min(100, Math.max(1, body.limit)) : DEFAULT_SPECIES.length;
-      backfillSpecies = DEFAULT_SPECIES.slice(offset, offset + limit);
+      backfillSpecies = DEFAULT_SPECIES.slice();
     }
 
     const stats = {
@@ -903,7 +920,9 @@ Deno.serve(async (req) => {
       mode: "backfill",
       as_of: asOfStr,
       done,
-      cursor: outCursor,
+      cursor: done ? null : outCursor,
+      req_offset: reqOffset,
+      req_limit: reqLimit,
       species_processed,
       requests: stats.requests,
       windows_processed: stats.windows_processed,

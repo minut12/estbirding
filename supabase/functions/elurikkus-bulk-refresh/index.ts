@@ -503,6 +503,119 @@ Deno.serve(async (req) => {
 
   const t0 = Date.now();
 
+  // ==================== SIZE MODE (read-only counting) ====================
+  if (body?.mode === "size") {
+    const ELU_API = "https://elurikkus.ee/api/occurrences/search";
+    const YEARS = 3;
+    const REQ_DELAY_MS = 300;
+    const BUDGET_MS = 50000;
+    const REQ_TIMEOUT_MS = 15000;
+
+    const asOfStr: string = (typeof body?.as_of === "string" && body.as_of)
+      || new Date().toISOString().slice(0, 10);
+    const asOfDate = new Date(`${asOfStr}T00:00:00Z`);
+    if (!Number.isFinite(asOfDate.getTime())) {
+      return new Response(JSON.stringify({ error: "invalid as_of" }), { status: 400, headers: corsHeaders });
+    }
+    const fromDate = new Date(Date.UTC(
+      asOfDate.getUTCFullYear() - YEARS,
+      asOfDate.getUTCMonth(),
+      asOfDate.getUTCDate(),
+    ));
+    const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+    const fromStr = isoDay(fromDate);
+    const toStr = isoDay(asOfDate);
+
+    let sizeSpecies: string[];
+    let startOffset = 0;
+    let usingDefault = false;
+    if (Array.isArray(body.species) && body.species.length > 0) {
+      sizeSpecies = body.species.map((s: unknown) => String(s).trim()).filter(Boolean);
+    } else {
+      usingDefault = true;
+      startOffset = typeof body.offset === "number" ? Math.max(0, body.offset) : 0;
+      const limit = typeof body.limit === "number" ? Math.min(449, Math.max(1, body.limit)) : 100;
+      sizeSpecies = DEFAULT_SPECIES.slice(startOffset, startOffset + limit);
+    }
+
+    const results: Array<{ species: string; count: number | null; ok: boolean }> = [];
+    const errors: string[] = [];
+    const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    let processed = 0;
+    let done = true;
+    let nextOffset: number | null = null;
+
+    for (let i = 0; i < sizeSpecies.length; i++) {
+      if (Date.now() - t0 > BUDGET_MS) {
+        done = false;
+        nextOffset = usingDefault ? startOffset + i : i;
+        break;
+      }
+      const name = sizeSpecies[i];
+      const reqBody = {
+        q: `_text_:"${name}" AND event_date:[${fromStr} TO ${toStr}]`,
+        fq: {},
+        pagination: { offset: 0, limit: 1, order: { by: "event_datetime_point", ascending: false } },
+        facets: [],
+        fields: null,
+      };
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), REQ_TIMEOUT_MS);
+      try {
+        const res = await fetch(ELU_API, {
+          method: "POST",
+          headers: { "content-type": "application/json", "accept": "application/json" },
+          body: JSON.stringify(reqBody),
+          signal: ctrl.signal,
+        });
+        if (!res.ok) {
+          const snippet = (await res.text().catch(() => "")).slice(0, 300);
+          errors.push(`${name}: HTTP ${res.status} ${snippet}`);
+          results.push({ species: name, count: null, ok: false });
+        } else {
+          const j = await res.json().catch(() => null) as { count?: unknown } | null;
+          const c = j && typeof j.count === "number" ? j.count : null;
+          if (c === null) {
+            errors.push(`${name}: missing numeric count`);
+            results.push({ species: name, count: null, ok: false });
+          } else {
+            results.push({ species: name, count: c, ok: true });
+          }
+        }
+      } catch (e) {
+        errors.push(`${name}: ${(e as Error).message}`);
+        results.push({ species: name, count: null, ok: false });
+      } finally {
+        clearTimeout(timer);
+      }
+      processed++;
+      if (i < sizeSpecies.length - 1) await delay(REQ_DELAY_MS);
+    }
+
+    results.sort((a, b) => (b.count ?? -1) - (a.count ?? -1));
+    const okResults = results.filter((r) => r.ok);
+    const totalRows = okResults.reduce((s, r) => s + (r.count || 0), 0);
+    const estMb = Math.round((totalRows * 0.3 / 1024) * 10) / 10;
+
+    return new Response(JSON.stringify({
+      mode: "size",
+      as_of: asOfStr,
+      from: fromStr,
+      to: toStr,
+      done,
+      next_offset: nextOffset,
+      species_counted: processed,
+      ok_count: okResults.length,
+      failed_count: processed - okResults.length,
+      total_rows: totalRows,
+      est_mb: estMb,
+      results,
+      errors: errors.slice(0, 100),
+      duration_ms: Date.now() - t0,
+    }), { headers: { ...corsHeaders, "content-type": "application/json" }, status: 200 });
+  }
+
   // ==================== BACKFILL MODE ====================
   if (body?.mode === "backfill") {
     const ELU_API = "https://elurikkus.ee/api/occurrences/search";

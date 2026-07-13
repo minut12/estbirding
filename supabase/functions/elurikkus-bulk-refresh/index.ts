@@ -497,58 +497,106 @@ Deno.serve(async (req) => {
   // Read-only, no secrets returned — runs BEFORE auth check.
   if (body?.mode === "probe") {
     const name: string = (Array.isArray(body.species) && body.species[0]) || "Hiireviu";
-    const API = "https://elurikkus.ee/api/occurrences/search";
     const enc = encodeURIComponent(name);
 
-    async function probe(qs: string): Promise<{ status: number; json: any; error?: string }> {
-
-      const url = `${API}?${qs}`;
+    async function probeApp(qs: string): Promise<{
+      status: number;
+      blockFound: boolean;
+      dataUrl: string | null;
+      innerKeys: string[];
+      totalRecords: number | null;
+      resultCount: number;
+      firstKeys: string[];
+      firstResult: any;
+      error?: string;
+    }> {
+      const url = `https://elurikkus.ee/app/occurrences/search?${qs}`;
       try {
-        const text = await fetchWithTimeout(url, 10000);
+        const html = await fetchWithTimeout(url, 10000);
+        const m = html.match(/<script type="application\/json" data-sveltekit-fetched data-url="([^"]*)"[^>]*>([\s\S]*?)<\/script>/);
+        if (!m) {
+          return {
+            status: 200,
+            blockFound: false,
+            dataUrl: null,
+            innerKeys: [],
+            totalRecords: null,
+            resultCount: 0,
+            firstKeys: [],
+            firstResult: null,
+          };
+        }
+        const dataUrl = m[1];
         try {
-          return { status: 200, json: JSON.parse(text) };
+          const envelope = JSON.parse(m[2]);
+          const inner = typeof envelope.body === "string" ? JSON.parse(envelope.body) : envelope.body;
+          const results = (inner?.results ?? inner?.occurrences ?? []) as any[];
+          const firstResult = results[0] ?? null;
+          return {
+            status: 200,
+            blockFound: true,
+            dataUrl,
+            innerKeys: Object.keys(inner ?? {}),
+            totalRecords: inner?.totalRecords ?? null,
+            resultCount: results.length,
+            firstKeys: firstResult ? Object.keys(firstResult) : [],
+            firstResult,
+          };
         } catch (e) {
-          return { status: 200, json: null, error: `parse: ${String(e)}` };
+          return {
+            status: 200,
+            blockFound: true,
+            dataUrl,
+            innerKeys: [],
+            totalRecords: null,
+            resultCount: 0,
+            firstKeys: [],
+            firstResult: null,
+            error: `parse: ${String(e)}`,
+          };
         }
       } catch (e) {
         const msg = String(e);
-        const m = msg.match(/HTTP (\d{3})/);
-        return { status: m ? Number(m[1]) : 0, json: null, error: msg };
+        const hm = msg.match(/HTTP (\d{3})/);
+        return {
+          status: hm ? Number(hm[1]) : 0,
+          blockFound: false,
+          dataUrl: null,
+          innerKeys: [],
+          totalRecords: null,
+          resultCount: 0,
+          firstKeys: [],
+          firstResult: null,
+          error: msg,
+        };
       }
     }
 
-    const base = await probe(`text=${enc}&pageSize=1`);
-    const y2024 = await probe(`text=${enc}&fq=year:2024&pageSize=1`);
-    const y2025 = await probe(`text=${enc}&fq=year:2025&pageSize=1`);
-    const dp9999 = await probe(`text=${enc}&start=9999&pageSize=1`);
-    const dp10001 = await probe(`text=${enc}&start=10001&pageSize=1`);
+    const base = await probeApp(`text=${enc}`);
+    const pageSize100 = await probeApp(`text=${enc}&pageSize=100`);
+    const year2024 = await probeApp(`text=${enc}&fq=year:2024`);
+    const start200 = await probeApp(`text=${enc}&start=200`);
+    const month09 = await probeApp(`text=${enc}&fq=month:09`);
 
-    const baseFirst = base.json?.occurrences?.[0] ?? base.json?.results?.[0] ?? null;
+    const strip = (r: typeof base) => ({
+      status: r.status,
+      blockFound: r.blockFound,
+      dataUrl: r.dataUrl,
+      innerKeys: r.innerKeys,
+      totalRecords: r.totalRecords,
+      resultCount: r.resultCount,
+      firstKeys: r.firstKeys,
+      error: r.error,
+    });
 
     return new Response(
       JSON.stringify({
         name,
-        base: {
-          status: base.status,
-          totalRecords: base.json?.totalRecords ?? null,
-          firstKeys: baseFirst ? Object.keys(baseFirst) : [],
-          firstResult: baseFirst,
-          error: base.error,
-        },
-        year2024: {
-          status: y2024.status,
-          totalRecords: y2024.json?.totalRecords ?? null,
-          error: y2024.error,
-        },
-        year2025: {
-          status: y2025.status,
-          totalRecords: y2025.json?.totalRecords ?? null,
-          error: y2025.error,
-        },
-        deepPaging: {
-          at9999: dp9999.status,
-          at10001: dp10001.status,
-        },
+        base,
+        pageSize100: strip(pageSize100),
+        year2024: strip(year2024),
+        start200: strip(start200),
+        month09: strip(month09),
       }),
       { status: 200, headers: corsHeaders },
     );

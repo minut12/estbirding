@@ -550,12 +550,12 @@ Deno.serve(async (req) => {
 
     let processed = 0;
     let done = true;
-    let nextOffset: number | null = null;
+    let nextIndex: number | null = null;
 
     for (let i = 0; i < sizeSpecies.length; i++) {
       if (Date.now() - t0 > BUDGET_MS) {
         done = false;
-        nextOffset = usingDefault ? startOffset + i : i;
+        nextIndex = i;
         break;
       }
       const name = sizeSpecies[i];

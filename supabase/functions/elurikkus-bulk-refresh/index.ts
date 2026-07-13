@@ -496,87 +496,85 @@ Deno.serve(async (req) => {
   // year filtering, and deep-paging cap. Writes nothing to the database.
   // Read-only, no secrets returned — runs BEFORE auth check.
   if (body?.mode === "probe") {
-    const name: string = (Array.isArray(body.species) && body.species[0]) || "Hiireviu";
-    const enc = encodeURIComponent(name);
+    const name = (Array.isArray(body.species) && body.species[0]) || "Hiireviu";
 
-    async function probeApp(qs: string): Promise<{
-      status: number;
-      count: number | null;
-      query: any;
-      resultCount: number;
-      firstId: string | number | null;
-      firstDate: string | null;
-      lastId: string | number | null;
-      error?: string;
-    }> {
-      const url = `https://elurikkus.ee/app/occurrences/search?${qs}`;
+    async function postQuery(label: string, q: any) {
+      const url = "https://elurikkus.ee/api/occurrences/search";
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
       try {
-        const html = await fetchWithTimeout(url, 10000);
-        const m = html.match(/<script type="application\/json" data-sveltekit-fetched data-url="([^"]*)"[^>]*>([\s\S]*?)<\/script>/);
-        if (!m) {
-          return {
-            status: 200,
-            count: null,
-            query: null,
-            resultCount: 0,
-            firstId: null,
-            firstDate: null,
-            lastId: null,
-            error: "sveltekit block not found",
-          };
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json", "accept": "application/json" },
+          body: JSON.stringify(q),
+          signal: controller.signal,
+        });
+        const text = await res.text();
+        let json: any = null;
+        if (res.status === 200) {
+          try {
+            json = JSON.parse(text);
+          } catch (_e) {
+            // json remains null
+          }
         }
-        try {
-          const envelope = JSON.parse(m[2]);
-          const inner = typeof envelope.body === "string" ? JSON.parse(envelope.body) : envelope.body;
-          const results = (inner?.results ?? inner?.occurrences ?? []) as any[];
-          const first = results[0] ?? null;
-          const last = results[results.length - 1] ?? null;
-          return {
-            status: 200,
-            count: inner?.count ?? null,
-            query: inner?.query ?? null,
-            resultCount: results.length,
-            firstId: first?.id ?? null,
-            firstDate: first?.event_date ?? null,
-            lastId: last?.id ?? null,
-          };
-        } catch (e) {
-          return {
-            status: 200,
-            count: null,
-            query: null,
-            resultCount: 0,
-            firstId: null,
-            firstDate: null,
-            lastId: null,
-            error: `parse: ${String(e)}`,
-          };
-        }
+        const results = (json?.results ?? []) as any[];
+        const first = results[0] ?? null;
+        const last = results.slice(-1)[0] ?? null;
+        return {
+          label,
+          status: res.status,
+          count: json?.count ?? null,
+          resultCount: results.length,
+          firstId: first?.id ?? null,
+          firstDate: first?.event_date ?? null,
+          lastId: last?.id ?? null,
+          lastDate: last?.event_date ?? null,
+          bodySnippet: res.status === 200 ? null : text.slice(0, 300),
+          error: res.status === 200 ? undefined : `HTTP ${res.status}`,
+        };
       } catch (e) {
         const msg = String(e);
-        const hm = msg.match(/HTTP (\d{3})/);
         return {
-          status: hm ? Number(hm[1]) : 0,
+          label,
+          status: 0,
           count: null,
-          query: null,
           resultCount: 0,
           firstId: null,
           firstDate: null,
           lastId: null,
+          lastDate: null,
+          bodySnippet: msg.slice(0, 300),
           error: msg,
         };
+      } finally {
+        clearTimeout(timer);
       }
     }
 
-    const base = await probeApp(`text=${enc}`);
-    const pageSize100 = await probeApp(`text=${enc}&pageSize=100`);
-    const year2024 = await probeApp(`text=${enc}&fq=year:2024`);
-    const year2019 = await probeApp(`text=${enc}&fq=year:2019`);
-    const start200 = await probeApp(`text=${enc}&start=200`);
-    const month9 = await probeApp(`text=${enc}&fq=month:9`);
+    const Q = (over: any = {}) => ({
+      q: `_text_:"${name}"`,
+      fq: {},
+      pagination: { offset: 0, limit: 50, order: { by: "event_datetime_point", ascending: false } },
+      facets: {},
+      fields: null,
+      ...over,
+    });
+
+    const probes = [
+      await postQuery("echo", Q()),
+      await postQuery("limit500", Q({ pagination: { offset: 0, limit: 500, order: { by: "event_datetime_point", ascending: false } } })),
+      await postQuery("offset200", Q({ pagination: { offset: 200, limit: 50, order: { by: "event_datetime_point", ascending: false } } })),
+      await postQuery("offset9999", Q({ pagination: { offset: 9999, limit: 50, order: { by: "event_datetime_point", ascending: false } } })),
+      await postQuery("offset10001", Q({ pagination: { offset: 10001, limit: 50, order: { by: "event_datetime_point", ascending: false } } })),
+      await postQuery("offset30000", Q({ pagination: { offset: 30000, limit: 50, order: { by: "event_datetime_point", ascending: false } } })),
+      await postQuery("ascending", Q({ pagination: { offset: 0, limit: 50, order: { by: "event_datetime_point", ascending: true } } })),
+      await postQuery("fqYearArray", Q({ fq: { year: [2024] } })),
+      await postQuery("fqYearScalar", Q({ fq: { year: 2024 } })),
+    ];
 
     return new Response(
-      JSON.stringify({ name, base, pageSize100, year2024, year2019, start200, month9 }),
+      JSON.stringify({ name, probes }),
       { status: 200, headers: corsHeaders },
     );
   }

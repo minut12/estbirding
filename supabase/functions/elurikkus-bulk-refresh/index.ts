@@ -501,13 +501,12 @@ Deno.serve(async (req) => {
 
     async function probeApp(qs: string): Promise<{
       status: number;
-      blockFound: boolean;
-      dataUrl: string | null;
-      innerKeys: string[];
-      totalRecords: number | null;
+      count: number | null;
+      query: any;
       resultCount: number;
-      firstKeys: string[];
-      firstResult: any;
+      firstId: string | number | null;
+      firstDate: string | null;
+      lastId: string | number | null;
       error?: string;
     }> {
       const url = `https://elurikkus.ee/app/occurrences/search?${qs}`;
@@ -517,41 +516,39 @@ Deno.serve(async (req) => {
         if (!m) {
           return {
             status: 200,
-            blockFound: false,
-            dataUrl: null,
-            innerKeys: [],
-            totalRecords: null,
+            count: null,
+            query: null,
             resultCount: 0,
-            firstKeys: [],
-            firstResult: null,
+            firstId: null,
+            firstDate: null,
+            lastId: null,
+            error: "sveltekit block not found",
           };
         }
-        const dataUrl = m[1];
         try {
           const envelope = JSON.parse(m[2]);
           const inner = typeof envelope.body === "string" ? JSON.parse(envelope.body) : envelope.body;
           const results = (inner?.results ?? inner?.occurrences ?? []) as any[];
-          const firstResult = results[0] ?? null;
+          const first = results[0] ?? null;
+          const last = results[results.length - 1] ?? null;
           return {
             status: 200,
-            blockFound: true,
-            dataUrl,
-            innerKeys: Object.keys(inner ?? {}),
-            totalRecords: inner?.totalRecords ?? null,
+            count: inner?.count ?? null,
+            query: inner?.query ?? null,
             resultCount: results.length,
-            firstKeys: firstResult ? Object.keys(firstResult) : [],
-            firstResult,
+            firstId: first?.id ?? null,
+            firstDate: first?.event_date ?? null,
+            lastId: last?.id ?? null,
           };
         } catch (e) {
           return {
             status: 200,
-            blockFound: true,
-            dataUrl,
-            innerKeys: [],
-            totalRecords: null,
+            count: null,
+            query: null,
             resultCount: 0,
-            firstKeys: [],
-            firstResult: null,
+            firstId: null,
+            firstDate: null,
+            lastId: null,
             error: `parse: ${String(e)}`,
           };
         }
@@ -560,13 +557,12 @@ Deno.serve(async (req) => {
         const hm = msg.match(/HTTP (\d{3})/);
         return {
           status: hm ? Number(hm[1]) : 0,
-          blockFound: false,
-          dataUrl: null,
-          innerKeys: [],
-          totalRecords: null,
+          count: null,
+          query: null,
           resultCount: 0,
-          firstKeys: [],
-          firstResult: null,
+          firstId: null,
+          firstDate: null,
+          lastId: null,
           error: msg,
         };
       }
@@ -575,29 +571,12 @@ Deno.serve(async (req) => {
     const base = await probeApp(`text=${enc}`);
     const pageSize100 = await probeApp(`text=${enc}&pageSize=100`);
     const year2024 = await probeApp(`text=${enc}&fq=year:2024`);
+    const year2019 = await probeApp(`text=${enc}&fq=year:2019`);
     const start200 = await probeApp(`text=${enc}&start=200`);
-    const month09 = await probeApp(`text=${enc}&fq=month:09`);
-
-    const strip = (r: typeof base) => ({
-      status: r.status,
-      blockFound: r.blockFound,
-      dataUrl: r.dataUrl,
-      innerKeys: r.innerKeys,
-      totalRecords: r.totalRecords,
-      resultCount: r.resultCount,
-      firstKeys: r.firstKeys,
-      error: r.error,
-    });
+    const month9 = await probeApp(`text=${enc}&fq=month:9`);
 
     return new Response(
-      JSON.stringify({
-        name,
-        base,
-        pageSize100: strip(pageSize100),
-        year2024: strip(year2024),
-        start200: strip(start200),
-        month09: strip(month09),
-      }),
+      JSON.stringify({ name, base, pageSize100, year2024, year2019, start200, month9 }),
       { status: 200, headers: corsHeaders },
     );
   }

@@ -512,29 +512,28 @@ async function fetchFreshness(supabase: any, speciesName: string): Promise<any[]
   return recentEluLocs;
 }
 
-// HISTORY tail: coord-bearing elurikkus obs that POSTDATE GBIF's newest record for
-// this species -- the ~1yr GBIF ingestion-lag tail (strict `>` => zero cross-source
-// overlap with GBIF history). When gbifMaxDate is null/'' (species with 0 GBIF rows)
-// there is no lower bound, so all coord-bearing elurikkus history is folded in.
+// HISTORY: ALL coord-bearing elurikkus obs for this species, regardless of date
+// relative to GBIF. With 3+ years of elurikkus backfilled, most rows overlap GBIF's
+// date range -- cross-source overlap is handled downstream by deduplicateOccurrences
+// (0.005° coord + date bucket, applied on the merged array in computeSpecies).
 // Upper clamp (<= today ymd) mirrors fetchFreshness's future-date guard. Pages like
 // fetchAllGbif (1000 rows/request, same 50-page safety ceiling).
-async function fetchEluHistoryTail(supabase: any, speciesName: string, gbifMaxDate: string | null): Promise<any[]> {
+async function fetchEluHistory(supabase: any, speciesName: string): Promise<any[]> {
   if (!speciesName) return [];
   const upperStr = ymd(new Date());
   const pageSize = 1000;
   let from = 0;
   const out: any[] = [];
   for (let guard = 0; guard < 50; guard++) {
-    let q = supabase
+    const q = supabase
       .from('elurikkus_observations')
       .select('lat,lon,observed_at')
       .eq('species_name', speciesName)
       .not('lat', 'is', null)
       .not('lon', 'is', null)
       .lte('observed_at', upperStr);
-    if (gbifMaxDate) q = q.gt('observed_at', gbifMaxDate); // '' / null => no lower bound
     const { data, error } = await q.range(from, from + pageSize - 1);
-    if (error) throw new Error('elurikkus_observations (history tail) read failed: ' + error.message);
+    if (error) throw new Error('elurikkus_observations (history) read failed: ' + error.message);
     if (!data || data.length === 0) break;
     for (const r of data) {
       out.push({ lat: Number(r.lat), lon: Number(r.lon), date: String(r.observed_at || ''), source: 'elurikkus' });

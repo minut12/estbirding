@@ -12642,8 +12642,16 @@ var __sharedDefaults = {};
     if (!_src || !_src.length) return '';
     // 12 monthly rows (Jan\u2013Dec), bucketed by each period's START month (same as the sidebar chart
     // v3). Works on the cache path (no dates) since it reads only the Estonian label + obs + pct.
+    // Two label dialects reach this function. Admin-live cells carry Estonian labels from
+    // getSeasonPeriods ("06.\u201320. aprill"). Cached cells come from compute-ennustus via
+    // _probRenderFromCache, which passes the server's label through untouched, and the server
+    // writes English 3-letter abbreviations ("06 Apr\u201320 Apr"). Verified against
+    // ennustus_cells_cache: exactly these twelve tokens, no variants. Without the English keys
+    // every cached period is skipped and the non-admin list is twelve rows of 0%.
     var _MI = { jaanuar:0, veebruar:1, 'm\u00E4rts':2, aprill:3, mai:4, juuni:5, juuli:6,
-                august:7, september:8, oktoober:9, november:10, detsember:11 };
+                august:7, september:8, oktoober:9, november:10, detsember:11,
+                jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6,
+                aug:7, sep:8, oct:9, nov:10, dec:11 };
     var _MN = ['jaanuar','veebruar','m\u00E4rts','aprill','mai','juuni','juuli','august',
                'september','oktoober','november','detsember'];
     var _buck = []; for (var _b = 0; _b < 12; _b++) _buck.push({ obs:0, pct:0, has:false });
@@ -13869,8 +13877,12 @@ window.buildTop3PeriodsSection = function(speciesKey) {
   // --- Combo chart (v3): fixed 12-month (Jan–Dec) axis. Periods are bucketed by their START month
   // (parsed from the now-Estonian label); count SUMmed, pct MAXed per month. Empty months show no
   // bar with the line at baseline. Sidebar reads .count and .pct (NOT .probability — the popup).
+  // Same two dialects as the popup map (buildTemporalBreakdown): Estonian from getSeasonPeriods
+  // (admin-live), English 3-letter from compute-ennustus (cached/non-admin).
   var _MI = { jaanuar:0, veebruar:1, 'märts':2, aprill:3, mai:4, juuni:5, juuli:6,
-              august:7, september:8, oktoober:9, november:10, detsember:11 };
+              august:7, september:8, oktoober:9, november:10, detsember:11,
+              jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6,
+              aug:7, sep:8, oct:9, nov:10, dec:11 };
   // Phase 2: chart sources the full-year yearBreakdown (admin-live, all occurrences) when present,
   // matching the popup list; else the season-bounded periods (non-admin/cache). Hero/honesty above
   // still read the season `periods` untouched — only the chart goes full-year.

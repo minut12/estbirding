@@ -140,3 +140,23 @@ whole tree) and run the DB gate in section 3 before trusting it.
 - **Dec-tail sentinel** is the single most likely place for a silent bug: if the binning loops keep
   computing `getDayOfYear(period.end)` instead of reading `period.endDoy`, the 999 never applies and
   17-31 Dec vanish. The section 2-B step is explicit about this.
+- **Dedup ties inherit GBIF source, so the new gate still drops some real Jan-1 (unquantified, not
+  fixed here).** `allOccs = gbifRows.concat(eluHistory)` then `deduplicateOccurrences` keeps the first
+  record per `date | lat×200 | lon×200` bucket, so GBIF wins every tie. A GBIF Jan-1 placeholder
+  colliding with a real elurikkus Jan-1 record in the same bucket inherits `source:'gbif'` and is then
+  dropped by the new gate. Unquantified — the join times out. The source-gate is still a strict
+  improvement (it stops the wholesale deletion), so ship it as drafted; this residue is not a Phase-1
+  fix. The real discriminator is time-of-day, which `elurikkus_observations.observed_at` discards at
+  ingest (column is `date`, not `timestamptz`) even though eElurikkus supplies it — see section 5.
+
+---
+
+## 5. Open item — the actual fix (separate effort, NOT part of this spec)
+
+**Preserve time-of-day in `elurikkus_observations`.** The Jan-1 problem is only *guessable* by source
+because the timestamp was thrown away at ingest: `observed_at` is `date`, not `timestamptz`, so a real
+elurikkus Jan-1 observation and a GBIF Jan-1 placeholder look identical once bucketed. eElurikkus does
+supply the time-of-day. Change the column to `timestamptz` (or add a timestamp column), backfill /
+re-ingest from eElurikkus, and the discriminator becomes real (placeholder = bare date/midnight; real
+= a genuine time) instead of a source flag that dedup can flip. Schema change + backfill re-run. Its
+own effort; do not fold it into the full-year-periods spec.

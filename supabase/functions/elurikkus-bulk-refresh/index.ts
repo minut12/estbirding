@@ -152,6 +152,7 @@ interface ParsedObservation {
 interface ObservationParseResult {
   observations: ParsedObservation[];
   skippedNoDate: number;
+  skippedFuture: number;
 }
 
 function delay(ms: number): Promise<void> {

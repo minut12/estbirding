@@ -259,8 +259,10 @@ function buildColumnIndex(cells: string[]): Record<string, number> {
 }
 
 function parseObservationsFromHtml(html: string, species?: string): ObservationParseResult {
+  const todayIso = new Date().toISOString().slice(0, 10);
   const observations: ParsedObservation[] = [];
   let skippedNoDate = 0;
+  let skippedFuture = 0;
   let colIndex: Record<string, number> = {};
 
   // JSON pre-pass: extract real GPS from SvelteKit-fetched JSON block

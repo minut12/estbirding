@@ -893,7 +893,7 @@ Deno.serve(async (req) => {
 
         // Page the current window; r already holds the first page at initialOffset.
         consumeStats(name, r.results);
-        await upsertBatch(r.results.map((x) => mapRow(name, x)));
+        await upsertBatch(r.results.filter((x) => typeof x.event_date === "string" && x.event_date <= asOfStr).map((x) => mapRow(name, x)));
 
         let offset = initialOffset + PAGE_LIMIT;
         while (offset < r.count && offset <= MAX_OFFSET) {

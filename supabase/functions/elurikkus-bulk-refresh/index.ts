@@ -1216,10 +1216,12 @@ Deno.serve(async (req) => {
     observations_without_sub_id: totalWithoutSubId,
     observations_failed: totalObsFailed,
     observations_skipped_no_date: totalSkippedNoDate,
+    observations_skipped_future: totalSkippedFuture,
     observations_failed_upsert: totalObsFailed,
     observations_inserted: totalObsInserted,
     observations_updated: totalObsUpdated,
     cache_rows_upserted: totalCacheUpserts,
+    coords_preserved: coordsPreserved,
   };
 
   return new Response(JSON.stringify(result), {

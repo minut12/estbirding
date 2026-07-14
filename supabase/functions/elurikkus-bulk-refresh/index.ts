@@ -386,7 +386,7 @@ function parseObservationsFromHtml(html: string, species?: string): ObservationP
     });
   }
   console.log("[elu-parse]", species ?? "(unknown)", "jsonHits:", coordsBySubId.size, "rows:", observations.length);
-  return { observations, skippedNoDate };
+  return { observations, skippedNoDate, skippedFuture };
 }
 
 function extractNewestIsoFromSearch(html: string): string | null {

@@ -993,6 +993,7 @@ Deno.serve(async (req) => {
       const parseResult = parseObservationsFromHtml(html, name);
       const observations = parseResult.observations;
       totalSkippedNoDate += parseResult.skippedNoDate;
+      totalSkippedFuture += parseResult.skippedFuture;
       // Sort by observed_at desc (string ISO sort works)
       observations.sort((a, b) => (a.observed_at < b.observed_at ? 1 : a.observed_at > b.observed_at ? -1 : 0));
       const mostRecent = observations[0] ?? null;

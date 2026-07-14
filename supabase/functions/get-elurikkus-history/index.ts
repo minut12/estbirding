@@ -48,9 +48,9 @@ serve(async (req) => {
   const sinceRaw = (url.searchParams.get("since") || "").trim();
   const sinceValid = /^\d{4}-\d{2}-\d{2}$/.test(sinceRaw) &&
     !Number.isNaN(new Date(sinceRaw).getTime());
+  const sinceApplied = sinceValid ? sinceRaw : null;
   const sinceEcho = sinceApplied;                       // only echo what was used
   const sinceInvalid = !!sinceRaw && !sinceValid;       // present but unparseable
-  const sinceApplied = sinceValid ? sinceRaw : null;
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
@@ -100,6 +100,7 @@ serve(async (req) => {
   const body = {
     species,
     since: sinceEcho,
+    since_invalid: sinceInvalid,
     count: items.length,
     pages,
     truncated,

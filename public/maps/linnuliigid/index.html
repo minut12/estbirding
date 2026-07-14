@@ -13119,34 +13119,48 @@ var __sharedDefaults = {};
       }
       console.log('[prob] eElurikkus items:', eluItems.length, '-> with coords:', eluOccs.length);
 
-      // Historical HTML fetch
-      try {
-        var searchUrl = 'https://elurikkus.ee/app/occurrences/search?text=' + encodeURIComponent(speciesName) + '&_ts=' + Date.now();
-        var html = await tryFetch(searchUrl);
-        if (html && typeof extractElurikkusRecordRows === 'function') {
-          var htmlRows = extractElurikkusRecordRows(html);
-          for (var j = 0; j < htmlRows.length; j++) {
-            var row = htmlRows[j];
-            var rLat = Number(row.lat), rLon = Number(row.lon);
-            var rHas = Number.isFinite(rLat) && Number.isFinite(rLon);
-            if (!rHas) {
-              var rRes = (typeof resolvePlace === 'function') ? resolvePlace(row.placeText || row.locality || '', row.municipality || '', row.county || '') : null;
-              if (rRes && Number.isFinite(rRes.lat) && Number.isFinite(rRes.lon)) { rLat = rRes.lat; rLon = rRes.lon; rHas = true; }
-            }
-            if (!rHas) continue;
-            eluOccs.push({ lat: rLat, lon: rLon, date: String(row.observedAt || ''), source: 'elurikkus', scientificName: String(row.scientificName || row.taxonName || '') });
-          }
-        }
-      } catch(htmlErr) {
-        console.warn('[prob] Historical HTML fetch failed:', htmlErr);
-      }
-
       var sciName = extractScientificName(eluOccs);
       if (!sciName && typeof SPECIES_SCINAMES !== 'undefined' && SPECIES_SCINAMES[speciesName]) sciName = SPECIES_SCINAMES[speciesName];
 
       var gbifOccs = [];
       if (sciName) {
         gbifOccs = await fetchProbGbifOccurrences(sciName, function() {});
+      }
+
+      // Gap boundary: GBIF's newest eventDate for this species. Lexicographic max on ISO
+      // dates == chronological max; done on strings on purpose, so no Date/UTC off-by-one.
+      var _gbifMaxIso = '';
+      for (var _gi = 0; _gi < gbifOccs.length; _gi++) {
+        var _gs = String((gbifOccs[_gi] || {}).date || '').slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(_gs)) continue;
+        if (_gs > _gbifMaxIso) _gbifMaxIso = _gs;
+      }
+
+      // eElurikkus history from Supabase — exact coords, paged server-side. Replaces the
+      // elurikkus.ee/app/occurrences/search scrape, which hardcodes offset:0 limit:50 and
+      // cannot be paged. `since` is exclusive, so GBIF's boundary day is not double-counted.
+      var _eluHistAdded = 0;
+      try {
+        var _histUrl = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/get-elurikkus-history'
+          + '?species=' + encodeURIComponent(speciesName)
+          + (_gbifMaxIso ? '&since=' + _gbifMaxIso : '');
+        var _histRes = await fetch(_histUrl, { cache: 'no-store' });
+        if (!_histRes.ok) throw new Error('HTTP ' + _histRes.status);
+        var _hist = await _histRes.json();
+        var _hItems = (_hist && Array.isArray(_hist.items)) ? _hist.items : [];
+        for (var _hi = 0; _hi < _hItems.length; _hi++) {
+          var _h = _hItems[_hi] || {};
+          var _hLat = Number(_h.lat), _hLon = Number(_h.lon);
+          if (!Number.isFinite(_hLat) || !Number.isFinite(_hLon)) continue;
+          eluOccs.push({ lat: _hLat, lon: _hLon, date: String(_h.d || ''), source: 'elurikkus', scientificName: sciName || '' });
+          _eluHistAdded++;
+        }
+        console.log('[prob-elu-hist]', speciesName, {
+          since: _gbifMaxIso || null, count: _hist.count, pages: _hist.pages,
+          truncated: _hist.truncated, added: _eluHistAdded
+        });
+      } catch (_hErr) {
+        console.warn('[prob-elu-hist] FAILED — scoring without gap-fill:', _hErr);
       }
 
       var allOccs = deduplicateOccurrences(eluOccs.concat(gbifOccs));
@@ -13371,17 +13385,12 @@ var __sharedDefaults = {};
       renderProbabilityOverlay(result.scored, speciesName, result.data.occurrences.length, result.seasonal.length, result.seasonInfo);
       if (typeof render === 'function') render();
 
-      var _eluKey = typeof _normalizeSpeciesKey === 'function' ? _normalizeSpeciesKey(speciesName) : String(speciesName || '').trim().toLowerCase();
       var _gbifTotal = result.data.occurrences.filter(function(o){ return o.source === 'gbif'; }).length;
-      var _eluLiveCache = (typeof liveElurikkusBySpecies !== 'undefined' && liveElurikkusBySpecies[_eluKey]) || null;
-      var _eluLiveCount = (_eluLiveCache && Array.isArray(_eluLiveCache.items)) ? _eluLiveCache.items.length : 0;
-      if (_eluLiveCount === 0 && typeof window.__getProbEluItemCount === 'function') {
-        _eluLiveCount = window.__getProbEluItemCount(_eluKey);
-      }
+      var _eluScored = result.data.occurrences.filter(function(o){ return o.source === 'elurikkus'; }).length;
       var _eluPoint2 = (typeof points !== 'undefined' && points[speciesName]) || {};
       var _occ7 = Number.isFinite(_eluPoint2.occ7) ? _eluPoint2.occ7 : 0;
       var _eluDateStr = _eluPoint2.t ? formatDateEE(_eluPoint2.t) : '';
-      var _eluInfo = 'eElurikkus: ' + _eluLiveCount + ' items';
+      var _eluInfo = 'eElurikkus: ' + _eluScored + ' items';
       if (_occ7 > 0) _eluInfo += ' (' + _occ7 + ' in 7d)';
       if (_eluDateStr) _eluInfo += ' \u00b7 ' + _eluDateStr;
       // eBird: N items (M in 7d) — bucket already enforces 7d, so N === M
@@ -13396,7 +13405,7 @@ var __sharedDefaults = {};
           }
         }
       } catch(_ebErr) {}
-      setProbStatus({ gbif: _gbifTotal, elu: _eluLiveCount, eluOcc7: _occ7,
+      setProbStatus({ gbif: _gbifTotal, elu: _eluScored, eluOcc7: _occ7,
         ebird: (_ebItems && _ebItems.length) ? _ebItems.length : undefined,
         ebirdOcc7: (_ebItems && _ebItems.length) ? _ebItems.length : undefined,
         seasonal: result.seasonal.length, cells: result.scored.length });

@@ -1045,7 +1045,7 @@ Deno.serve(async (req) => {
       // === GUARD: never downgrade an existing 'exact' cache row to a lower-precision source ===
       const { data: existing } = await supabase
         .from('elurikkus_cache')
-        .select('coords_source, lat, lon')
+        .select('coords_source, coords_status, lat, lon')
         .eq('species_name', name)
         .maybeSingle();
 
@@ -1073,7 +1073,7 @@ Deno.serve(async (req) => {
         lon: preserveExactCoords ? existing!.lon : (resolved?.lon ?? null),
         occ7,
         t: metaSource?.observed_at ?? t ?? null,
-        coords_status: preserveExactCoords ? "public" : (resolved?.coords_status ?? "missing"),
+        coords_status: preserveExactCoords ? (existing!.coords_status ?? 'public') : (resolved?.coords_status ?? 'missing'),
         coords_source: preserveExactCoords ? "exact" : (resolved?.coords_source ?? "none"),
         locality: metaSource?.locality ?? null,
         municipality: metaSource?.municipality ?? null,

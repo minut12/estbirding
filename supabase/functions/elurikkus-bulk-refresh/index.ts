@@ -907,7 +907,7 @@ Deno.serve(async (req) => {
           if (pr.error) backfillErrors.push(`${name} [${fromStr}..${toStr}]@${offset}: ${pr.error}`);
           if (pr.results.length === 0) break;
           consumeStats(name, pr.results);
-          await upsertBatch(pr.results.map((x) => mapRow(name, x)));
+          await upsertBatch(pr.results.filter((x) => typeof x.event_date === "string" && x.event_date <= asOfStr).map((x) => mapRow(name, x)));
           offset += PAGE_LIMIT;
         }
 

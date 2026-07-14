@@ -11,7 +11,7 @@
 **Consequences.**
 
 - **The secret was public.** Anyone viewing source could replay it and drive 445 species of scraping against elurikkus.ee from their own browser. The secret has been rotated and the client path removed (commit `007cfe4`); the browser now holds no refresh capability at all.
-- **A real scheduler now exists.** An n8n workflow owns the forward refresh at **05:30 / 17:30**, with the secret held in an n8n credential — sequenced ahead of the **06:05 / 18:05** report and the **07:00 / 19:00** compute, so each downstream stage reads fresh upstream state.
+- **A real scheduler now exists.** The n8n workflow `elurikkus-bulk-refresh-scheduler` (`3GQJ9ZokI5tmJgNI`, cron `15 5,17 * * *`, tz Europe/Tallinn) owns the forward refresh at **05:15 / 17:15**, with the secret held in an n8n credential — sequenced ahead of the **06:05 / 18:05** report and the **07:00 / 19:00** compute, so each downstream stage reads fresh upstream state. Verified live: the scheduled trigger (`mode: trigger`) fired successfully at `2026-07-14T02:15:00Z` = 05:15 EEST (execution `3144`), and `versionId == activeVersionId`, so cron executes the fixed build — not the draft.
 - **The comment is now true.** It describes reality rather than intent: the table really is populated twice daily by a scheduled invocation of `elurikkus-bulk-refresh`.
 
 **Lesson.** A comment asserted a schedule, and it was believed for two months — nothing ever checked. Freshness of an ingest table is a claim that must be **verified against the data** (max observation/ingest timestamp, row counts over time), not read from a comment. A comment records intent at write time; it does not observe runtime. Treat "populated twice daily" as a hypothesis to test, never as a guarantee.

@@ -48,8 +48,9 @@ serve(async (req) => {
   const sinceRaw = (url.searchParams.get("since") || "").trim();
   const sinceValid = /^\d{4}-\d{2}-\d{2}$/.test(sinceRaw) &&
     !Number.isNaN(new Date(sinceRaw).getTime());
-  const sinceEcho = sinceRaw ? sinceRaw : null;
   const sinceApplied = sinceValid ? sinceRaw : null;
+  const sinceEcho = sinceApplied;                       // only echo what was used
+  const sinceInvalid = !!sinceRaw && !sinceValid;       // present but unparseable
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
@@ -66,7 +67,8 @@ serve(async (req) => {
       .not("lat", "is", null)
       .not("lon", "is", null)
       .lte("observed_at", todayIso)
-      .order("observed_at", { ascending: false });
+      .order("observed_at", { ascending: false })
+      .order("id", { ascending: false });
     if (sinceApplied) q = q.gt("observed_at", sinceApplied);
 
     const upper = Math.min(offset + PAGE - 1, MAX_ROWS - 1);
@@ -98,6 +100,7 @@ serve(async (req) => {
   const body = {
     species,
     since: sinceEcho,
+    since_invalid: sinceInvalid,
     count: items.length,
     pages,
     truncated,

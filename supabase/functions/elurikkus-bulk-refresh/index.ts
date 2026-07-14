@@ -152,6 +152,7 @@ interface ParsedObservation {
 interface ObservationParseResult {
   observations: ParsedObservation[];
   skippedNoDate: number;
+  skippedFuture: number;
 }
 
 function delay(ms: number): Promise<void> {
@@ -258,8 +259,10 @@ function buildColumnIndex(cells: string[]): Record<string, number> {
 }
 
 function parseObservationsFromHtml(html: string, species?: string): ObservationParseResult {
+  const todayIso = new Date().toISOString().slice(0, 10);
   const observations: ParsedObservation[] = [];
   let skippedNoDate = 0;
+  let skippedFuture = 0;
   let colIndex: Record<string, number> = {};
 
   // JSON pre-pass: extract real GPS from SvelteKit-fetched JSON block
@@ -314,6 +317,10 @@ function parseObservationsFromHtml(html: string, species?: string): ObservationP
     const observed_at = parseEstonianDate(dateText);
     if (!observed_at) {
       if (cellTexts.some(Boolean)) skippedNoDate++;
+      continue;
+    }
+    if (observed_at > todayIso) {
+      skippedFuture++;
       continue;
     }
 
@@ -379,10 +386,11 @@ function parseObservationsFromHtml(html: string, species?: string): ObservationP
     });
   }
   console.log("[elu-parse]", species ?? "(unknown)", "jsonHits:", coordsBySubId.size, "rows:", observations.length);
-  return { observations, skippedNoDate };
+  return { observations, skippedNoDate, skippedFuture };
 }
 
 function extractNewestIsoFromSearch(html: string): string | null {
+  const todayIso = new Date().toISOString().slice(0, 10);
   const isoMatches = html.match(/\b(\d{4})-(\d{2})-(\d{2})\b/g) || [];
   const euMatches = html.match(/\b(\d{2})\.(\d{2})\.(\d{4})\b/g) || [];
 
@@ -405,9 +413,10 @@ function extractNewestIsoFromSearch(html: string): string | null {
     }
   }
 
-  if (dates.length === 0) return null;
-  dates.sort();
-  return dates[dates.length - 1];
+  const filtered = dates.filter((d) => d <= todayIso);
+  if (filtered.length === 0) return null;
+  filtered.sort();
+  return filtered[filtered.length - 1];
 }
 
 function extractDetailUrl(html: string, _species: string): string | null {
@@ -884,7 +893,7 @@ Deno.serve(async (req) => {
 
         // Page the current window; r already holds the first page at initialOffset.
         consumeStats(name, r.results);
-        await upsertBatch(r.results.map((x) => mapRow(name, x)));
+        await upsertBatch(r.results.filter((x) => typeof x.event_date === "string" && x.event_date <= asOfStr).map((x) => mapRow(name, x)));
 
         let offset = initialOffset + PAGE_LIMIT;
         while (offset < r.count && offset <= MAX_OFFSET) {
@@ -898,7 +907,7 @@ Deno.serve(async (req) => {
           if (pr.error) backfillErrors.push(`${name} [${fromStr}..${toStr}]@${offset}: ${pr.error}`);
           if (pr.results.length === 0) break;
           consumeStats(name, pr.results);
-          await upsertBatch(pr.results.map((x) => mapRow(name, x)));
+          await upsertBatch(pr.results.filter((x) => typeof x.event_date === "string" && x.event_date <= asOfStr).map((x) => mapRow(name, x)));
           offset += PAGE_LIMIT;
         }
 
@@ -967,6 +976,8 @@ Deno.serve(async (req) => {
   let totalWithoutSubId = 0;
   let totalObsFailed = 0;
   let totalSkippedNoDate = 0;
+  let totalSkippedFuture = 0;
+  let coordsPreserved = 0;
   let totalObsInserted = 0;
   let totalObsUpdated = 0;
   let totalCacheUpserts = 0;
@@ -982,6 +993,7 @@ Deno.serve(async (req) => {
       const parseResult = parseObservationsFromHtml(html, name);
       const observations = parseResult.observations;
       totalSkippedNoDate += parseResult.skippedNoDate;
+      totalSkippedFuture += parseResult.skippedFuture;
       // Sort by observed_at desc (string ISO sort works)
       observations.sort((a, b) => (a.observed_at < b.observed_at ? 1 : a.observed_at > b.observed_at ? -1 : 0));
       const mostRecent = observations[0] ?? null;
@@ -1047,21 +1059,22 @@ Deno.serve(async (req) => {
         Number.isFinite(existing?.lat) &&
         Number.isFinite(existing?.lon);
 
-      if (existingIsExact && (resolved?.coords_source ?? 'none') !== 'exact') {
-        console.log('[elu-cache] SKIP-PRESERVE-EXACT', name,
-          '(existing exact GPS, new resolution =', (resolved?.coords_source ?? 'none') + ')');
-        continue;
+      const preserveExactCoords = existingIsExact && (resolved?.coords_source ?? 'none') !== 'exact';
+      if (preserveExactCoords) {
+        console.log('[elu-cache] PRESERVE-EXACT', name,
+          '(existing exact GPS retained; new resolution =', (resolved?.coords_source ?? 'none') + '); updating non-coord fields');
+        coordsPreserved++;
       }
 
       // === WRITE 1: elurikkus_cache — atomic from picked obs (or mostRecent meta if none resolved) ===
       const cacheRow = {
         species_name: name,
-        lat: resolved?.lat ?? null,
-        lon: resolved?.lon ?? null,
+        lat: preserveExactCoords ? existing!.lat : (resolved?.lat ?? null),
+        lon: preserveExactCoords ? existing!.lon : (resolved?.lon ?? null),
         occ7,
         t: metaSource?.observed_at ?? t ?? null,
-        coords_status: resolved?.coords_status ?? "missing",
-        coords_source: resolved?.coords_source ?? "none",
+        coords_status: preserveExactCoords ? "public" : (resolved?.coords_status ?? "missing"),
+        coords_source: preserveExactCoords ? "exact" : (resolved?.coords_source ?? "none"),
         locality: metaSource?.locality ?? null,
         municipality: metaSource?.municipality ?? null,
         county: metaSource?.county ?? null,
@@ -1203,10 +1216,12 @@ Deno.serve(async (req) => {
     observations_without_sub_id: totalWithoutSubId,
     observations_failed: totalObsFailed,
     observations_skipped_no_date: totalSkippedNoDate,
+    observations_skipped_future: totalSkippedFuture,
     observations_failed_upsert: totalObsFailed,
     observations_inserted: totalObsInserted,
     observations_updated: totalObsUpdated,
     cache_rows_upserted: totalCacheUpserts,
+    coords_preserved: coordsPreserved,
   };
 
   return new Response(JSON.stringify(result), {

@@ -827,6 +827,8 @@ Deno.serve(async (req) => {
 
     let outCursor: any = null;
     let done = true;
+    let haltedOnError = false;
+
 
     let startSpeciesIdx = 0;
     if (cursor && typeof cursor.speciesIdx === "number") startSpeciesIdx = Math.max(0, cursor.speciesIdx);
@@ -863,8 +865,14 @@ Deno.serve(async (req) => {
         const r = await eluSearch(name, fromStr, toStr, initialOffset, PAGE_LIMIT);
         stats.windows_processed++;
         if (r.error) backfillErrors.push(`${name} [${fromStr}..${toStr}]@${initialOffset}: ${r.error}`);
+        if (r.error) {
+          haltedOnError = true;
+          done = false;
+          return false;
+        }
 
         if (r.count === 0) {
+
           if (cursorWindowFrom === fromStr) active = true;
           return true;
         }
@@ -905,7 +913,13 @@ Deno.serve(async (req) => {
           await delay(REQ_DELAY_MS);
           const pr = await eluSearch(name, fromStr, toStr, offset, PAGE_LIMIT);
           if (pr.error) backfillErrors.push(`${name} [${fromStr}..${toStr}]@${offset}: ${pr.error}`);
+          if (pr.error) {
+            haltedOnError = true;
+            done = false;
+            return false;
+          }
           if (pr.results.length === 0) break;
+
           consumeStats(name, pr.results);
           await upsertBatch(pr.results.filter((x) => typeof x.event_date === "string" && x.event_date <= asOfStr).map((x) => mapRow(name, x)));
           offset += PAGE_LIMIT;
@@ -929,7 +943,9 @@ Deno.serve(async (req) => {
       mode: "backfill",
       as_of: asOfStr,
       done,
+      halted_on_error: haltedOnError,
       cursor: done ? null : outCursor,
+
       req_offset: reqOffset,
       req_limit: reqLimit,
       species_processed,

@@ -1059,21 +1059,22 @@ Deno.serve(async (req) => {
         Number.isFinite(existing?.lat) &&
         Number.isFinite(existing?.lon);
 
-      if (existingIsExact && (resolved?.coords_source ?? 'none') !== 'exact') {
-        console.log('[elu-cache] SKIP-PRESERVE-EXACT', name,
-          '(existing exact GPS, new resolution =', (resolved?.coords_source ?? 'none') + ')');
-        continue;
+      const preserveExactCoords = existingIsExact && (resolved?.coords_source ?? 'none') !== 'exact';
+      if (preserveExactCoords) {
+        console.log('[elu-cache] PRESERVE-EXACT', name,
+          '(existing exact GPS retained; new resolution =', (resolved?.coords_source ?? 'none') + '); updating non-coord fields');
+        coordsPreserved++;
       }
 
       // === WRITE 1: elurikkus_cache — atomic from picked obs (or mostRecent meta if none resolved) ===
       const cacheRow = {
         species_name: name,
-        lat: resolved?.lat ?? null,
-        lon: resolved?.lon ?? null,
+        lat: preserveExactCoords ? existing!.lat : (resolved?.lat ?? null),
+        lon: preserveExactCoords ? existing!.lon : (resolved?.lon ?? null),
         occ7,
         t: metaSource?.observed_at ?? t ?? null,
-        coords_status: resolved?.coords_status ?? "missing",
-        coords_source: resolved?.coords_source ?? "none",
+        coords_status: preserveExactCoords ? "ok" : (resolved?.coords_status ?? "missing"),
+        coords_source: preserveExactCoords ? "exact" : (resolved?.coords_source ?? "none"),
         locality: metaSource?.locality ?? null,
         municipality: metaSource?.municipality ?? null,
         county: metaSource?.county ?? null,

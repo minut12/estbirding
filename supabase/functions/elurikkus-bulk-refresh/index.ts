@@ -866,6 +866,7 @@ Deno.serve(async (req) => {
         stats.windows_processed++;
         if (r.error) backfillErrors.push(`${name} [${fromStr}..${toStr}]@${initialOffset}: ${r.error}`);
         if (r.error) {
+          outCursor = { as_of: asOfStr, speciesIdx: sIdx, windowFrom: fromStr, offset: initialOffset };
           haltedOnError = true;
           done = false;
           return false;
@@ -914,6 +915,7 @@ Deno.serve(async (req) => {
           const pr = await eluSearch(name, fromStr, toStr, offset, PAGE_LIMIT);
           if (pr.error) backfillErrors.push(`${name} [${fromStr}..${toStr}]@${offset}: ${pr.error}`);
           if (pr.error) {
+            outCursor = { as_of: asOfStr, speciesIdx: sIdx, windowFrom: fromStr, offset };
             haltedOnError = true;
             done = false;
             return false;

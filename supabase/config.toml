@@ -134,3 +134,6 @@ verify_jwt = false
 
 [functions.compute-ennustus]
 verify_jwt = false
+
+[functions.get-elurikkus-history]
+verify_jwt = false

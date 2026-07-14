@@ -319,6 +319,10 @@ function parseObservationsFromHtml(html: string, species?: string): ObservationP
       if (cellTexts.some(Boolean)) skippedNoDate++;
       continue;
     }
+    if (observed_at > todayIso) {
+      skippedFuture++;
+      continue;
+    }
 
     // sub_id from /occurrences/<id> link or data-record-id
     let sub_id: string | null = null;

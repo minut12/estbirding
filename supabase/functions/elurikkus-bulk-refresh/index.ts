@@ -390,6 +390,7 @@ function parseObservationsFromHtml(html: string, species?: string): ObservationP
 }
 
 function extractNewestIsoFromSearch(html: string): string | null {
+  const todayIso = new Date().toISOString().slice(0, 10);
   const isoMatches = html.match(/\b(\d{4})-(\d{2})-(\d{2})\b/g) || [];
   const euMatches = html.match(/\b(\d{2})\.(\d{2})\.(\d{4})\b/g) || [];
 
@@ -412,9 +413,10 @@ function extractNewestIsoFromSearch(html: string): string | null {
     }
   }
 
-  if (dates.length === 0) return null;
-  dates.sort();
-  return dates[dates.length - 1];
+  const filtered = dates.filter((d) => d <= todayIso);
+  if (filtered.length === 0) return null;
+  filtered.sort();
+  return filtered[filtered.length - 1];
 }
 
 function extractDetailUrl(html: string, _species: string): string | null {

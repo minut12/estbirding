@@ -205,6 +205,45 @@ function getSeasonPeriods(seasonStart: any, seasonEnd: any): any[] {
   return periods;
 }
 
+// Full-year 26-period template (14-day windows starting Jan 1).
+// Every window carries explicit startDoy / endDoy; the LAST window's endDoy is a
+// 999 sentinel and its `end` is Jan 1 of the following year so that:
+//   - the DoY binning loops (which compare period.startDoy / period.endDoy) absorb
+//     the 17-31 Dec tail and the leap day instead of dropping them, AND
+//   - isCurrent (which compares Date instants) still fires on 31 Dec — a Dec-31
+//     `end` would leave 31 Dec in NO current period, zeroing freshness nationwide
+//     and leaving current_pct null one day every year.
+function getYearPeriods(): any[] {
+  var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var year = new Date().getFullYear();
+  var periods: any[] = [];
+  for (var k = 0; k < 26; k++) {
+    var start = new Date(year, 0, 1);
+    start.setDate(start.getDate() + 14 * k);
+    var end: Date;
+    var endDoy: number;
+    if (k === 25) {
+      // Last window: absorb the Dec tail + leap day. See note above.
+      end = new Date(year + 1, 0, 1);
+      endDoy = 999;
+    } else {
+      end = new Date(year, 0, 1);
+      end.setDate(end.getDate() + 14 * (k + 1));
+      endDoy = getDayOfYear(end);
+    }
+    var startDoy = getDayOfYear(start);
+    periods.push({
+      start: start,
+      end: end,
+      startDoy: startDoy,
+      endDoy: endDoy,
+      label: String(start.getDate()).padStart(2, '0') + ' ' + months[start.getMonth()] + '–' + String(end.getDate()).padStart(2, '0') + ' ' + months[end.getMonth()],
+      count: 0,
+    });
+  }
+  return periods;
+}
+
 // --- grid (index.html 11812-11861) ---
 const ESTONIA_BOUNDS = { minLat: 57.50, maxLat: 59.75, minLon: 21.50, maxLon: 28.25 };
 

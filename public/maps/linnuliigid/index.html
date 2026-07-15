@@ -12008,6 +12008,29 @@ var __sharedDefaults = {};
     return periods;
   }
 
+  // Full-year 26-period template (14-day windows from Jan 1). Every window carries explicit
+  // startDoy/endDoy; the LAST window's endDoy is a 999 sentinel and its `end` is Jan 1 of the
+  // next year, so the DoY binning loops absorb 17–31 Dec + the leap day AND isCurrent (which
+  // compares Date instants) still fires on 31 Dec. A Dec-31 end would leave 31 Dec in no current
+  // period, zeroing freshness and leaving the headline's current period unset one day a year.
+  function getYearPeriods() {
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var year = new Date().getFullYear();
+    var periods = [];
+    for (var k = 0; k < 26; k++) {
+      var start = new Date(year, 0, 1); start.setDate(start.getDate() + 14 * k);
+      var end, endDoy;
+      if (k === 25) { end = new Date(year + 1, 0, 1); endDoy = 999; }
+      else { end = new Date(year, 0, 1); end.setDate(end.getDate() + 14 * (k + 1)); endDoy = getDayOfYear(end); }
+      periods.push({
+        start: start, end: end, startDoy: getDayOfYear(start), endDoy: endDoy,
+        label: String(start.getDate()).padStart(2,'0') + ' ' + months[start.getMonth()] + '–' + String(end.getDate()).padStart(2,'0') + ' ' + months[end.getMonth()],
+        count: 0
+      });
+    }
+    return periods;
+  }
+
   function assignRecordsToPeriods(cell, periods) {
     cell.periods = periods.map(function(p) { return { start: p.start, end: p.end, label: p.label, count: 0, probability: 1, isCurrent: false, obsCount: 0 }; });
     for (var i = 0; i < cell.occurrences.length; i++) {
@@ -12025,75 +12048,10 @@ var __sharedDefaults = {};
     }
   }
 
-  function calculatePeriodProbabilities(cell, eluPoint, cellSize) {
-    if (!cell.periods || !cell.periods.length) return;
-    var now = new Date();
-    var markerInCell = !!cell.markerInCell;
-
-    // Within-cell normalization with confidence dampening for sparse cells
-    var maxPeriodCount = 0;
-    var totalSeasonObs = 0;
-    for (var p = 0; p < cell.periods.length; p++) {
-      if (cell.periods[p].count > maxPeriodCount) maxPeriodCount = cell.periods[p].count;
-      totalSeasonObs += cell.periods[p].count;
-    }
-    var effectiveMax = Math.max(maxPeriodCount, 10); // floor at 10 to prevent 1/1=100%
-    // Confidence: cells with few total obs get dampened (1obs→18%, 5→47%, 10→68%, 50→100%)
-    var confidence = Math.min(1.0, Math.log1p(totalSeasonObs) / Math.log1p(50));
-
-    for (var p = 0; p < cell.periods.length; p++) {
-      var period = cell.periods[p];
-      var periodHistorical = 0;
-      if (maxPeriodCount > 0 && period.count > 0) {
-        periodHistorical = Math.round(
-          (Math.log1p(period.count) / Math.log1p(effectiveMax)) * confidence * 95
-        );
-      }
-      var isCurrentPeriod = (now >= period.start && now < period.end);
-      var periodRecency = (isCurrentPeriod && markerInCell) ? Math.round(cell.scoreRecency * 0.9 * confidence) : 0;
-
-      period.probability = Math.max(1, Math.min(95, periodHistorical + periodRecency));
-      period.isCurrent = isCurrentPeriod;
-      period.obsCount = period.count;
-    }
-    cell.periodConfidence = confidence;
-  }
-
-  // --- Full-year breakdown (Phase 1, admin-live) ---------------------------------------------
-  // GBIF coerces partial dates to Jan-1 placeholders; drop those so January isn't inflated
-  // (ported from compute-ennustus:50). Real (non-GBIF) Jan-1 records are kept.
+  // GBIF coerces partial dates to Jan-1 placeholders; the scorer's two binning loops drop those
+  // (source-gated: only source==='gbif') so January isn't inflated, while real elurikkus Jan-1
+  // records survive. Ported from the compute-ennustus source-gate (v9).
   function isJan1(d) { return d.getMonth() === 0 && d.getDate() === 1; }
-
-  // Score ALL occurrences in a cell into 12 calendar-month buckets, un-gated by the season window,
-  // reusing calculatePeriodProbabilities for parity with the season-bounded list. Returns 12 period
-  // objects shaped like cell.periods ({label, obsCount, probability, isCurrent}) — the popup list
-  // only. Requires raw occurrences, so callers attach it solely in the admin-live compute path.
-  var _YB_MONTHS = ['jaanuar','veebruar','märts','aprill','mai','juuni','juuli','august','september','oktoober','november','detsember'];
-  function buildYearBreakdownForCell(cell, allOccs, cellSize) {
-    var monthCounts = [0,0,0,0,0,0,0,0,0,0,0,0];
-    for (var i = 0; i < allOccs.length; i++) {
-      var o = allOccs[i];
-      if (!(o.lat >= cell.latMin && o.lat < cell.latMax && o.lon >= cell.lonMin && o.lon < cell.lonMax)) continue;
-      var d = parseProbDate(o.date);
-      if (!d) continue;
-      if (String(o.source || '').toLowerCase() === 'gbif' && isJan1(d)) continue;   // drop coerced Jan-1
-      monthCounts[d.getMonth()]++;
-    }
-    var year = new Date().getFullYear();
-    var periods = [];
-    for (var m = 0; m < 12; m++) {
-      periods.push({ label: _YB_MONTHS[m], start: new Date(year, m, 1), end: new Date(year, m + 1, 1),
-                     count: monthCounts[m], probability: 1, isCurrent: false, obsCount: monthCounts[m] });
-    }
-    // Reuse the per-period scorer (within-cell log-normalized; current-period freshness via the
-    // parent cell's scoreRecency/markerInCell). eluPoint/cellSize are unused by the scorer today.
-    calculatePeriodProbabilities({ periods: periods, scoreRecency: cell.scoreRecency, markerInCell: cell.markerInCell }, null, cellSize);
-    // Zero-obs months read a true 0% (not the scorer's Math.max(1,…) floor) so they reuse the
-    // shrunk-empty row style and match the non-admin cache path. The season/map floor is untouched
-    // — this override lives only in the breakdown, not in calculatePeriodProbabilities.
-    for (var _z = 0; _z < periods.length; _z++) { if (periods[_z].count === 0) periods[_z].probability = 0; }
-    return periods;
-  }
 
   // Phase 2: eBird 7d obs contribution to cell freshness.
   // Matches the scoring bbox predicate exactly (half-open < on upper bounds).
@@ -12147,17 +12105,18 @@ var __sharedDefaults = {};
     var confidence = Math.max(0.3, Math.min(1.0, Math.log1p(totalRecords) / Math.log1p(500)));
 
     // --- C: Season centrality per period ---
-    var periodTemplate = getSeasonPeriods(seasonInfo && seasonInfo.start, seasonInfo && seasonInfo.end);
+    var periodTemplate = getYearPeriods();
     // Pre-count total occurrences per period template slot across ALL cells
     var periodTotalCounts = [];
     for (var _ci = 0; _ci < periodTemplate.length; _ci++) periodTotalCounts.push(0);
     for (var _oi = 0; _oi < (allOccs || []).length; _oi++) {
       var _od = parseProbDate((allOccs[_oi] || {}).date || (allOccs[_oi] || {}).eventDate);
       if (!_od) continue;
+      if (isJan1(_od) && String((allOccs[_oi] || {}).source || '').toLowerCase() === 'gbif') continue;   // drop GBIF Jan-1 only; keep real elurikkus Jan-1
       var _odoy = getDayOfYear(_od);
       for (var _pi = 0; _pi < periodTemplate.length; _pi++) {
-        var _ps = getDayOfYear(periodTemplate[_pi].start);
-        var _pe = getDayOfYear(periodTemplate[_pi].end);
+        var _ps = periodTemplate[_pi].startDoy;
+        var _pe = periodTemplate[_pi].endDoy;
         if (_odoy >= _ps && _odoy < _pe) { periodTotalCounts[_pi]++; break; }
       }
     }
@@ -12334,10 +12293,11 @@ var __sharedDefaults = {};
       for (var _coi = 0; _coi < (cell.occurrences || []).length; _coi++) {
         var _cod = parseProbDate((cell.occurrences[_coi] || {}).date || (cell.occurrences[_coi] || {}).eventDate);
         if (!_cod) continue;
+        if (isJan1(_cod) && String((cell.occurrences[_coi] || {}).source || '').toLowerCase() === 'gbif') continue;   // drop GBIF Jan-1 only; keep real elurikkus Jan-1
         var _codoy = getDayOfYear(_cod);
         for (var _cpj = 0; _cpj < periodTemplate.length; _cpj++) {
-          var _cps = getDayOfYear(periodTemplate[_cpj].start);
-          var _cpe = getDayOfYear(periodTemplate[_cpj].end);
+          var _cps = periodTemplate[_cpj].startDoy;
+          var _cpe = periodTemplate[_cpj].endDoy;
           if (_codoy >= _cps && _codoy < _cpe) { cellPeriodCounts[_cpj]++; break; }
         }
       }
@@ -12636,9 +12596,9 @@ var __sharedDefaults = {};
   }
 
   function buildTemporalBreakdown(cell) {
-    // Phase 1: prefer the full-year breakdown (admin-live, all occurrences, un-gated by season)
-    // when present; otherwise fall back to the season-bounded cell.periods (cache / non-admin).
-    var _src = (cell.yearBreakdown && cell.yearBreakdown.length) ? cell.yearBreakdown : cell.periods;
+    // Reads cell.periods — the full-year 26-period cells the scorer (admin) and cache (non-admin)
+    // both now produce — bucketed into 12 monthly rows below.
+    var _src = cell.periods;
     if (!_src || !_src.length) return '';
     // 12 monthly rows (Jan\u2013Dec), bucketed by each period's START month (same as the sidebar chart
     // v3). Works on the cache path (no dates) since it reads only the Estonian label + obs + pct.
@@ -12655,16 +12615,18 @@ var __sharedDefaults = {};
     var _MN = ['jaanuar','veebruar','m\u00E4rts','aprill','mai','juuni','juuli','august',
                'september','oktoober','november','detsember'];
     var _buck = []; for (var _b = 0; _b < 12; _b++) _buck.push({ obs:0, pct:0, has:false });
+    var _curBucket = -1;   // month bucket of the isCurrent period; overrides calendar month for praegu
     for (var _p = 0; _p < _src.length; _p++) {
       var _t = (String(_src[_p].label || '').match(/[A-Za-z\u00C0-\u017F]+/) || [''])[0].toLowerCase();
       var _mi = _MI[_t]; if (_mi === undefined) continue;
       _buck[_mi].obs += (_src[_p].obsCount || 0);                          // obs = SUM
       _buck[_mi].pct = Math.max(_buck[_mi].pct, _src[_p].probability || 0);  // pct = MAX
       _buck[_mi].has = true;
+      if (_src[_p].isCurrent) _curBucket = _mi;   // isCurrent overrides which month is "praegu"
     }
     var _maxPct = 0, _peakM = -1;
     for (var _k = 0; _k < 12; _k++) { if (_buck[_k].pct > _maxPct) { _maxPct = _buck[_k].pct; _peakM = _k; } }
-    var _nowM = new Date().getMonth();   // praegu = current calendar month
+    var _nowM = (_curBucket >= 0) ? _curBucket : new Date().getMonth();   // praegu = isCurrent period's month; calendar month only if none flagged
     var html = '<div style="border-top:1px solid #eee;margin-top:6px;padding-top:6px">'
       + '<div style="font-size:11px;font-weight:600;color:#555;margin-bottom:4px">T\u00F5en\u00E4osus perioodi kaupa</div>';
     for (var m = 0; m < 12; m++) {
@@ -12815,9 +12777,9 @@ var __sharedDefaults = {};
     var gbifSeason = cell.gbifCount || 0;
     var gbifTotal = cell.gbifCountTotal || gbifSeason;
 
-    // Trend + peak. P2.6: source the same yearBreakdown the popup list uses (admin-live) so the
-    // banner + chip agree with the list; non-admin -> season `periods`, unchanged. 0 or 1 isCurrent.
-    var _src = (cell.yearBreakdown && cell.yearBreakdown.length) ? cell.yearBreakdown : cell.periods;
+    // Trend + peak. Sources cell.periods — the full-year 26-period cells the scorer/cache now
+    // produce — so banner + chip agree with the popup list on both admin and cache paths. 0 or 1 isCurrent.
+    var _src = cell.periods;
     var _ci = -1, _mi = -1, _mProb = -1;
     if (_src && _src.length) {
       for (var _pi = 0; _pi < _src.length; _pi++) {
@@ -13225,7 +13187,7 @@ var __sharedDefaults = {};
       }
     }
 
-    var gridCells = buildEstoniaGrid(seasonal, probCellSize);
+    var gridCells = buildEstoniaGrid(data.occurrences, probCellSize);
     var precision = probCellSize < 0.1 ? 3 : 2;
     var allGbif = data.occurrences.filter(function(o){ return o.source === 'gbif'; });
     var gbifTotalByCell = {};
@@ -13241,14 +13203,6 @@ var __sharedDefaults = {};
     });
 
     var scored = calculateProbabilities(gridCells, seasonal, data.occurrences, speciesName, probCellSize, seasonInfo);
-
-    // Phase 1 (admin-live): attach a full-year 12-month breakdown to each cell, scored from ALL
-    // occurrences (un-gated by season) for the popup list only. Additive — the sidebar
-    // (__probDataBySpecies below) and the headline still read the season-bounded topCell.periods.
-    // Cache/non-admin cells never get yearBreakdown, so buildTemporalBreakdown falls back there.
-    for (var _yb = 0; _yb < scored.length; _yb++) {
-      scored[_yb].yearBreakdown = buildYearBreakdownForCell(scored[_yb], data.occurrences, probCellSize);
-    }
 
     // Write to __probDataBySpecies
     window.__probDataBySpecies = window.__probDataBySpecies || {};
@@ -13284,13 +13238,7 @@ var __sharedDefaults = {};
     }
     if (topCell && topCell.periods) {
       var _mappedPeriods=topCell.periods.map(function(p){
-        return{label:p.label,pct:p.probability||1,count:p.obsCount||p.count||0,isCurrent:!!p.isCurrent};
-      });
-      // Phase 2: carry the full-year breakdown into probData so the sidebar chart can source it
-      // (admin-live only). pct uses ||0 (NOT the ||1 season floor) so zero-obs months stay at
-      // baseline, matching the popup. Non-admin/cache probData has no yearBreakdown -> fallback.
-      var _mappedYB=(topCell.yearBreakdown||[]).map(function(p){
-        return{label:p.label,pct:p.probability||0,count:p.obsCount||p.count||0,isCurrent:!!p.isCurrent};
+        return{label:p.label,pct:p.probability,count:p.obsCount||p.count||0,isCurrent:!!p.isCurrent};
       });
       var _bestP=null;
       for(var _bpi2=0;_bpi2<_mappedPeriods.length;_bpi2++){
@@ -13303,7 +13251,6 @@ var __sharedDefaults = {};
         overallScore: topCell.probability,
         season: (seasonInfo && seasonInfo.label) || '',
         periods: _mappedPeriods,
-        yearBreakdown: _mappedYB,
         bestPeriod:(_bestP&&(_bestP.pct||0)>0)?{pct:_bestP.pct,label:_bestP.label}:null
       };
       if(typeof window.__schedulePersistProbCache==='function') window.__schedulePersistProbCache();
@@ -13809,10 +13756,10 @@ window.buildTop3PeriodsSection = function(speciesKey) {
       + '</div>';
   }
 
-  // Step B — full-data hero. P2.5: source the same yearBreakdown the chart uses (admin-live) so the
-  // hero + honesty agree with the chart month-for-month; non-admin (no yearBreakdown) -> season
-  // `periods` unchanged (fortnight windows). Entries are chronological { label, pct, count, isCurrent }.
-  var _src = (probData.yearBreakdown && probData.yearBreakdown.length) ? probData.yearBreakdown : periods;
+  // Step B — full-data hero. Sources `periods` — the full-year 26-period cells (14-day windows) —
+  // so hero + honesty agree with the chart month-for-month on both admin and cache paths.
+  // Entries are chronological { label, pct, count, isCurrent }.
+  var _src = periods;
   var curIdx = -1, current = null;
   for (var ci = 0; ci < _src.length; ci++) {
     if (_src[ci].isCurrent) { curIdx = ci; current = _src[ci]; break; }
@@ -13883,10 +13830,9 @@ window.buildTop3PeriodsSection = function(speciesKey) {
               august:7, september:8, oktoober:9, november:10, detsember:11,
               jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6,
               aug:7, sep:8, oct:9, nov:10, dec:11 };
-  // Phase 2: chart sources the full-year yearBreakdown (admin-live, all occurrences) when present,
-  // matching the popup list; else the season-bounded periods (non-admin/cache). Hero/honesty above
-  // still read the season `periods` untouched — only the chart goes full-year.
-  var _chartSrc = (probData.yearBreakdown && probData.yearBreakdown.length) ? probData.yearBreakdown : periods;
+  // Chart sources `periods` — the full-year 26-period cells — matching the popup list on both
+  // admin and cache paths. Hero/honesty above read the same `periods`.
+  var _chartSrc = periods;
   var _buck = []; for (var _b = 0; _b < 12; _b++) _buck.push({ count: 0, pct: 0, has: false });
   for (var _p = 0; _p < _chartSrc.length; _p++) {
     var _mtok = (String(_chartSrc[_p].label || '').match(/[A-Za-zÀ-ſ]+/) || [''])[0].toLowerCase();

@@ -679,8 +679,10 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
 
   // 6. No synthetic marker injection (client 12846-12856 dropped -- axis #1).
 
-  // 7. Grid from the SEASONAL subset.
-  const gridCells = buildEstoniaGrid(seasonal, probCellSize);
+  // 7. Grid from ALL occurrences (not just seasonal), so winter-only cells enter
+  //    the grid instead of vanishing. cell.gbifCount / eluCount become all-year
+  //    counts as a result — intended.
+  const gridCells = buildEstoniaGrid(allOccs, probCellSize);
 
   // 8. FRESHNESS input from elurikkus_observations.
   const recentEluLocs = await fetchFreshness(supabase, speciesName);

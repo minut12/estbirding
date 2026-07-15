@@ -334,21 +334,44 @@ function calculateProbabilities(gridCells: any[], seasonal: any[], allOccs: any[
   var confidence = Math.max(0.3, Math.min(1.0, Math.log1p(totalRecords) / Math.log1p(500)));
 
   // --- C: Season centrality per period ---
-  var periodTemplate = getSeasonPeriods(seasonInfo && seasonInfo.start, seasonInfo && seasonInfo.end);
+  var periodTemplate = getYearPeriods();
   // Pre-count total occurrences per period template slot across ALL cells.
-  // PORT CHANGE (gotcha #4): skip isJan1 -- this is a date-binned path.
+  // PORT CHANGE: drop Jan-1 ONLY from GBIF (synthetic partial-date placeholders).
+  //             Real elurikkus Jan-1 observations count normally.
+  // Comparisons read period.startDoy / period.endDoy so the 999 sentinel on the
+  // last window absorbs 17-31 Dec + the leap day (see getYearPeriods).
   var periodTotalCounts: number[] = [];
   for (var _ci = 0; _ci < periodTemplate.length; _ci++) periodTotalCounts.push(0);
+  var _invParseable = 0; // occurrences with a parseable date
+  var _invGbifJan1Dropped = 0; // GBIF Jan-1 dropped by the source-gated filter
   for (var _oi = 0; _oi < (allOccs || []).length; _oi++) {
     var _od = parseProbDate((allOccs[_oi] || {}).date || (allOccs[_oi] || {}).eventDate);
     if (!_od) continue;
-    if (isJan1(_od)) continue; // PORT CHANGE: drop GBIF Jan-1 from centrality
+    _invParseable++;
+    if (isJan1(_od) && String((allOccs[_oi] || {}).source || '').toLowerCase() === 'gbif') {
+      _invGbifJan1Dropped++;
+      continue;
+    }
     var _odoy = getDayOfYear(_od);
     for (var _pi = 0; _pi < periodTemplate.length; _pi++) {
-      var _ps = getDayOfYear(periodTemplate[_pi].start);
-      var _pe = getDayOfYear(periodTemplate[_pi].end);
+      var _ps = periodTemplate[_pi].startDoy;
+      var _pe = periodTemplate[_pi].endDoy;
       if (_odoy >= _ps && _odoy < _pe) { periodTotalCounts[_pi]++; break; }
     }
+  }
+  // Dev-log invariant: sum(periodCounts) === (parseable-date occs) - (GBIF Jan-1 dropped).
+  // Catches a record falling between windows (would indicate a getYearPeriods bug).
+  var _invSum = 0;
+  for (var _ii = 0; _ii < periodTotalCounts.length; _ii++) _invSum += periodTotalCounts[_ii];
+  var _invExpected = _invParseable - _invGbifJan1Dropped;
+  if (_invSum !== _invExpected) {
+    console.warn('[compute-ennustus] period no-drop invariant failed', {
+      species: speciesName,
+      sumPeriodCounts: _invSum,
+      expected: _invExpected,
+      parseable: _invParseable,
+      gbifJan1Dropped: _invGbifJan1Dropped,
+    });
   }
   var maxPeriodTotal = Math.max.apply(null, periodTotalCounts.concat([1]));
   // centrality: peak period = 1.0, edge = 0.3+

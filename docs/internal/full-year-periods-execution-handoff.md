@@ -62,6 +62,15 @@ Scope: **`compute-ennustus` edge function only. Do NOT recompute all species —
 After Lovable returns, `get_diff` its SHA (standing gate: Lovable auto-commits to main and sweeps the
 whole tree) and run the DB gate in section 3 before trusting it.
 
+**Recompute-only-`Tait` mechanism (confirmed 2026-07-15).** "Recompute only `Tait`" is driven by
+POSTing the deployed `compute-ennustus` function with `{"offset":364,"limit":1}` — `offset 364` is
+`Tait`, and only `Tait`, in the species ordering. Auth header `x-webhook-secret:
+$VAATLUSTE_WEBHOOK_SECRET` (the var name, never the literal). A successful single-row run returns
+`{"processed":1,"offset":364,"limit":1,"next_offset":365,"done":false,"exits":{"A":0,"B":0,"C":0,"ok":1}}`.
+`done:false` is expected for a one-row slice — it only means the full pagination is not exhausted, not
+that the row failed. Use this to drive the Lovable prompt's "recompute only Tait" step from a shell
+without touching the Phase-3 scheduler.
+
 > **Prompt to Lovable:**
 >
 > Edit only `supabase/functions/compute-ennustus/index.ts`. Do not recompute all species yet.
@@ -89,6 +98,14 @@ whole tree) and run the DB gate in section 3 before trusting it.
 > - **Change the three binning comparisons to use `period.startDoy` / `period.endDoy`** instead of
 >   recomputing `getDayOfYear(period.start/end)` at `L304-305` and `L376-378` — otherwise the 999
 >   sentinel never takes effect and the Dec tail is still dropped.
+> - **Both boundary representations must coexist and are not interchangeable.** Each window carries its
+>   boundary twice: as a `Date` (`start`/`end`, used only to render the human label) **and** as a
+>   day-of-year integer (`startDoy`/`endDoy`, used only for binning). They deliberately diverge at the
+>   Dec tail — the last window's label still reads a real date range, but its `endDoy` is the `999`
+>   sentinel, which has no real-date equivalent. So every consumer must choose by purpose: labels from
+>   the `Date` pair, binning from the `Doy` pair. Recomputing `getDayOfYear(period.end)` silently
+>   re-derives the `Date` boundary (capped at 365/366) and discards the 999 — which is exactly the
+>   Dec-tail drop. This is why B keeps both and never lets one stand in for the other.
 >
 > **C. Build the grid from `allOccs`, not `seasonal`.**
 > `L614`: `buildEstoniaGrid(seasonal, probCellSize)` -> `buildEstoniaGrid(allOccs, probCellSize)`.

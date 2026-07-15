@@ -431,17 +431,19 @@ function calculateProbabilities(gridCells: any[], seasonal: any[], allOccs: any[
     cell.freshDensityMul = (cellRecentCount > 0 && baseFresh > 0) ? (1 + 0.3 * Math.log1p(cellRecentCount)) : 1;
 
     // Count this cell's obs per period for period-local history.
-    // PORT CHANGE (gotcha #4): skip isJan1 -- date-binned path.
+    // PORT CHANGE: drop Jan-1 ONLY from GBIF; real elurikkus Jan-1 rows count.
+    // Comparisons use period.startDoy / endDoy so the last window's 999 sentinel
+    // catches 17-31 Dec + the leap day.
     var cellPeriodCounts: number[] = [];
     for (var _cpi = 0; _cpi < periodTemplate.length; _cpi++) cellPeriodCounts.push(0);
     for (var _coi = 0; _coi < (cell.occurrences || []).length; _coi++) {
       var _cod = parseProbDate((cell.occurrences[_coi] || {}).date || (cell.occurrences[_coi] || {}).eventDate);
       if (!_cod) continue;
-      if (isJan1(_cod)) continue; // PORT CHANGE: drop GBIF Jan-1 from the 0.4 blend term
+      if (isJan1(_cod) && String((cell.occurrences[_coi] || {}).source || '').toLowerCase() === 'gbif') continue;
       var _codoy = getDayOfYear(_cod);
       for (var _cpj = 0; _cpj < periodTemplate.length; _cpj++) {
-        var _cps = getDayOfYear(periodTemplate[_cpj].start);
-        var _cpe = getDayOfYear(periodTemplate[_cpj].end);
+        var _cps = periodTemplate[_cpj].startDoy;
+        var _cpe = periodTemplate[_cpj].endDoy;
         if (_codoy >= _cps && _codoy < _cpe) { cellPeriodCounts[_cpj]++; break; }
       }
     }

@@ -1,4 +1,5 @@
 // compute-ennustus
+// redeploy-marker: v9 · 2026-07-15 · full-year 26-period template; source-gated Jan-1 (drop GBIF only, keep real elurikkus); grid from allOccs
 // redeploy-marker: v8 · 2026-07-13 · HISTORY folds ALL coord-bearing elurikkus (not just post-gbifMax tail); cross-source dedup now load-bearing
 // redeploy-marker: v7 · 2026-07-09 · HISTORY folds elurikkus GBIF-lag tail (obs postdating gbifMax); revives 0-GBIF species
 // redeploy-marker: v6 · 2026-07-07 · periods carry obsCount + isCurrent (cell-cache count-carry)
@@ -109,7 +110,11 @@ function calculateSeasonFromData(occurrences: any[]): any {
   var doys: number[] = [];
   for (var i = 0; i < occurrences.length; i++) {
     var d = parseProbDate(occurrences[i].date);
-    if (d && !isJan1(d)) doys.push(getDayOfYear(d)); // PORT CHANGE: drop GBIF Jan-1
+    // PORT CHANGE: drop Jan-1 ONLY when the occurrence is GBIF (synthetic partial-date placeholder).
+    // Real elurikkus Jan-1 observations enter the DoY set and unbias the season window.
+    if (d && !(isJan1(d) && String((occurrences[i] || {}).source || '').toLowerCase() === 'gbif')) {
+      doys.push(getDayOfYear(d));
+    }
   }
 
   if (doys.length < 5) {
@@ -196,6 +201,45 @@ function getSeasonPeriods(seasonStart: any, seasonEnd: any): any[] {
       count: 0,
     });
     current = periodEnd;
+  }
+  return periods;
+}
+
+// Full-year 26-period template (14-day windows starting Jan 1).
+// Every window carries explicit startDoy / endDoy; the LAST window's endDoy is a
+// 999 sentinel and its `end` is Jan 1 of the following year so that:
+//   - the DoY binning loops (which compare period.startDoy / period.endDoy) absorb
+//     the 17-31 Dec tail and the leap day instead of dropping them, AND
+//   - isCurrent (which compares Date instants) still fires on 31 Dec — a Dec-31
+//     `end` would leave 31 Dec in NO current period, zeroing freshness nationwide
+//     and leaving current_pct null one day every year.
+function getYearPeriods(): any[] {
+  var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var year = new Date().getFullYear();
+  var periods: any[] = [];
+  for (var k = 0; k < 26; k++) {
+    var start = new Date(year, 0, 1);
+    start.setDate(start.getDate() + 14 * k);
+    var end: Date;
+    var endDoy: number;
+    if (k === 25) {
+      // Last window: absorb the Dec tail + leap day. See note above.
+      end = new Date(year + 1, 0, 1);
+      endDoy = 999;
+    } else {
+      end = new Date(year, 0, 1);
+      end.setDate(end.getDate() + 14 * (k + 1));
+      endDoy = getDayOfYear(end);
+    }
+    var startDoy = getDayOfYear(start);
+    periods.push({
+      start: start,
+      end: end,
+      startDoy: startDoy,
+      endDoy: endDoy,
+      label: String(start.getDate()).padStart(2, '0') + ' ' + months[start.getMonth()] + '–' + String(end.getDate()).padStart(2, '0') + ' ' + months[end.getMonth()],
+      count: 0,
+    });
   }
   return periods;
 }
@@ -290,21 +334,44 @@ function calculateProbabilities(gridCells: any[], seasonal: any[], allOccs: any[
   var confidence = Math.max(0.3, Math.min(1.0, Math.log1p(totalRecords) / Math.log1p(500)));
 
   // --- C: Season centrality per period ---
-  var periodTemplate = getSeasonPeriods(seasonInfo && seasonInfo.start, seasonInfo && seasonInfo.end);
+  var periodTemplate = getYearPeriods();
   // Pre-count total occurrences per period template slot across ALL cells.
-  // PORT CHANGE (gotcha #4): skip isJan1 -- this is a date-binned path.
+  // PORT CHANGE: drop Jan-1 ONLY from GBIF (synthetic partial-date placeholders).
+  //             Real elurikkus Jan-1 observations count normally.
+  // Comparisons read period.startDoy / period.endDoy so the 999 sentinel on the
+  // last window absorbs 17-31 Dec + the leap day (see getYearPeriods).
   var periodTotalCounts: number[] = [];
   for (var _ci = 0; _ci < periodTemplate.length; _ci++) periodTotalCounts.push(0);
+  var _invParseable = 0; // occurrences with a parseable date
+  var _invGbifJan1Dropped = 0; // GBIF Jan-1 dropped by the source-gated filter
   for (var _oi = 0; _oi < (allOccs || []).length; _oi++) {
     var _od = parseProbDate((allOccs[_oi] || {}).date || (allOccs[_oi] || {}).eventDate);
     if (!_od) continue;
-    if (isJan1(_od)) continue; // PORT CHANGE: drop GBIF Jan-1 from centrality
+    _invParseable++;
+    if (isJan1(_od) && String((allOccs[_oi] || {}).source || '').toLowerCase() === 'gbif') {
+      _invGbifJan1Dropped++;
+      continue;
+    }
     var _odoy = getDayOfYear(_od);
     for (var _pi = 0; _pi < periodTemplate.length; _pi++) {
-      var _ps = getDayOfYear(periodTemplate[_pi].start);
-      var _pe = getDayOfYear(periodTemplate[_pi].end);
+      var _ps = periodTemplate[_pi].startDoy;
+      var _pe = periodTemplate[_pi].endDoy;
       if (_odoy >= _ps && _odoy < _pe) { periodTotalCounts[_pi]++; break; }
     }
+  }
+  // Dev-log invariant: sum(periodCounts) === (parseable-date occs) - (GBIF Jan-1 dropped).
+  // Catches a record falling between windows (would indicate a getYearPeriods bug).
+  var _invSum = 0;
+  for (var _ii = 0; _ii < periodTotalCounts.length; _ii++) _invSum += periodTotalCounts[_ii];
+  var _invExpected = _invParseable - _invGbifJan1Dropped;
+  if (_invSum !== _invExpected) {
+    console.warn('[compute-ennustus] period no-drop invariant failed', {
+      species: speciesName,
+      sumPeriodCounts: _invSum,
+      expected: _invExpected,
+      parseable: _invParseable,
+      gbifJan1Dropped: _invGbifJan1Dropped,
+    });
   }
   var maxPeriodTotal = Math.max.apply(null, periodTotalCounts.concat([1]));
   // centrality: peak period = 1.0, edge = 0.3+
@@ -364,17 +431,19 @@ function calculateProbabilities(gridCells: any[], seasonal: any[], allOccs: any[
     cell.freshDensityMul = (cellRecentCount > 0 && baseFresh > 0) ? (1 + 0.3 * Math.log1p(cellRecentCount)) : 1;
 
     // Count this cell's obs per period for period-local history.
-    // PORT CHANGE (gotcha #4): skip isJan1 -- date-binned path.
+    // PORT CHANGE: drop Jan-1 ONLY from GBIF; real elurikkus Jan-1 rows count.
+    // Comparisons use period.startDoy / endDoy so the last window's 999 sentinel
+    // catches 17-31 Dec + the leap day.
     var cellPeriodCounts: number[] = [];
     for (var _cpi = 0; _cpi < periodTemplate.length; _cpi++) cellPeriodCounts.push(0);
     for (var _coi = 0; _coi < (cell.occurrences || []).length; _coi++) {
       var _cod = parseProbDate((cell.occurrences[_coi] || {}).date || (cell.occurrences[_coi] || {}).eventDate);
       if (!_cod) continue;
-      if (isJan1(_cod)) continue; // PORT CHANGE: drop GBIF Jan-1 from the 0.4 blend term
+      if (isJan1(_cod) && String((cell.occurrences[_coi] || {}).source || '').toLowerCase() === 'gbif') continue;
       var _codoy = getDayOfYear(_cod);
       for (var _cpj = 0; _cpj < periodTemplate.length; _cpj++) {
-        var _cps = getDayOfYear(periodTemplate[_cpj].start);
-        var _cpe = getDayOfYear(periodTemplate[_cpj].end);
+        var _cps = periodTemplate[_cpj].startDoy;
+        var _cpe = periodTemplate[_cpj].endDoy;
         if (_codoy >= _cps && _codoy < _cpe) { cellPeriodCounts[_cpj]++; break; }
       }
     }
@@ -610,8 +679,10 @@ async function computeSpecies(supabase: any, speciesName: string, taxonKey: any)
 
   // 6. No synthetic marker injection (client 12846-12856 dropped -- axis #1).
 
-  // 7. Grid from the SEASONAL subset.
-  const gridCells = buildEstoniaGrid(seasonal, probCellSize);
+  // 7. Grid from ALL occurrences (not just seasonal), so winter-only cells enter
+  //    the grid instead of vanishing. cell.gbifCount / eluCount become all-year
+  //    counts as a result — intended.
+  const gridCells = buildEstoniaGrid(allOccs, probCellSize);
 
   // 8. FRESHNESS input from elurikkus_observations.
   const recentEluLocs = await fetchFreshness(supabase, speciesName);

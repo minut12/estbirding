@@ -1,4 +1,5 @@
 // compute-ennustus
+// redeploy-marker: v9 · 2026-07-15 · full-year 26-period template; source-gated Jan-1 (drop GBIF only, keep real elurikkus); grid from allOccs
 // redeploy-marker: v8 · 2026-07-13 · HISTORY folds ALL coord-bearing elurikkus (not just post-gbifMax tail); cross-source dedup now load-bearing
 // redeploy-marker: v7 · 2026-07-09 · HISTORY folds elurikkus GBIF-lag tail (obs postdating gbifMax); revives 0-GBIF species
 // redeploy-marker: v6 · 2026-07-07 · periods carry obsCount + isCurrent (cell-cache count-carry)
@@ -109,7 +110,11 @@ function calculateSeasonFromData(occurrences: any[]): any {
   var doys: number[] = [];
   for (var i = 0; i < occurrences.length; i++) {
     var d = parseProbDate(occurrences[i].date);
-    if (d && !isJan1(d)) doys.push(getDayOfYear(d)); // PORT CHANGE: drop GBIF Jan-1
+    // PORT CHANGE: drop Jan-1 ONLY when the occurrence is GBIF (synthetic partial-date placeholder).
+    // Real elurikkus Jan-1 observations enter the DoY set and unbias the season window.
+    if (d && !(isJan1(d) && String((occurrences[i] || {}).source || '').toLowerCase() === 'gbif')) {
+      doys.push(getDayOfYear(d));
+    }
   }
 
   if (doys.length < 5) {

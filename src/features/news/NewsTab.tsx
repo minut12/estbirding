@@ -167,7 +167,9 @@ function buildSourceFallbackTitle(sourceName: string): string {
 
 function getDisplayTitleForSource(sourceName: string, title: string | null | undefined): string {
   const cleanedTitle = cleanupNewsText(title);
-  return isGeneratedFallbackTitle(cleanedTitle) ? buildSourceFallbackTitle(sourceName) : cleanedTitle;
+  return capitalizeFirst(
+    isGeneratedFallbackTitle(cleanedTitle) ? buildSourceFallbackTitle(sourceName) : cleanedTitle,
+  );
 }
 
 function getCanonicalSourceValue(source: Partial<NewsSource> | NewsItem): string {

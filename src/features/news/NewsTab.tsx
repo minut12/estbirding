@@ -141,8 +141,7 @@ function cleanupNewsText(value: string | null | undefined): string {
 
 function capitalizeFirst(s: string): string {
   if (!s) return s;
-  return s.replace(/^(
-*)\p{L}/u, (match) => match.toUpperCase());
+  return s.replace(/^(\s*)(\p{L})/u, (_m, ws: string, letter: string) => ws + letter.toUpperCase());
 }
 
 function isGeneratedFallbackTitle(value: string | null | undefined): boolean {

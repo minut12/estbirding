@@ -216,7 +216,7 @@ function getTranslatedTitle(item: NewsItem): string {
 }
 
 function getTranslatedBody(item: NewsItem): string {
-  return cleanupNewsText(item.body_et_v2 || item.body_et || item.translated_body || '');
+  return capitalizeFirst(cleanupNewsText(item.body_et_v2 || item.body_et || item.translated_body || ''));
 }
 
 type PreservedMediaBlock = {

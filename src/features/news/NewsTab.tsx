@@ -823,6 +823,27 @@ export default function NewsTab() {
   useEffect(() => {
     loadPage('initial');
   }, [loadPage]);
+  // Reflect ACTUAL data freshness from loaded items (server-side ingestion won't touch localStorage).
+  useEffect(() => {
+    if (newsItems.length === 0) return;
+    let maxMs = 0;
+    let maxIso: string | null = null;
+    for (const item of newsItems) {
+      const candidate = item.fetched_at || item.created_at || null;
+      if (!candidate) continue;
+      const ms = new Date(candidate).getTime();
+      if (Number.isFinite(ms) && ms > maxMs) {
+        maxMs = ms;
+        maxIso = candidate;
+      }
+    }
+    if (!maxIso) return;
+    setLastRefreshAt((prev) => {
+      const prevMs = prev ? new Date(prev).getTime() : 0;
+      return Number.isFinite(prevMs) && prevMs > maxMs ? prev : maxIso;
+    });
+  }, [newsItems]);
+
   const allItems = useMemo(() => {
     const filteredBySource = newsItems.filter((item) => {
       if (sourceFilter === 'all') return true;

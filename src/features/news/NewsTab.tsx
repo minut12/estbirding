@@ -139,6 +139,11 @@ function cleanupNewsText(value: string | null | undefined): string {
     .trim();
 }
 
+function capitalizeFirst(s: string): string {
+  if (!s) return s;
+  return s.replace(/^(\s*)(\p{L})/u, (_m, ws: string, letter: string) => ws + letter.toUpperCase());
+}
+
 function isGeneratedFallbackTitle(value: string | null | undefined): boolean {
   const title = cleanupNewsText(value).toLowerCase();
   if (!title) return true;
@@ -162,7 +167,9 @@ function buildSourceFallbackTitle(sourceName: string): string {
 
 function getDisplayTitleForSource(sourceName: string, title: string | null | undefined): string {
   const cleanedTitle = cleanupNewsText(title);
-  return isGeneratedFallbackTitle(cleanedTitle) ? buildSourceFallbackTitle(sourceName) : cleanedTitle;
+  return capitalizeFirst(
+    isGeneratedFallbackTitle(cleanedTitle) ? buildSourceFallbackTitle(sourceName) : cleanedTitle,
+  );
 }
 
 function getCanonicalSourceValue(source: Partial<NewsSource> | NewsItem): string {
@@ -209,7 +216,7 @@ function getTranslatedTitle(item: NewsItem): string {
 }
 
 function getTranslatedBody(item: NewsItem): string {
-  return cleanupNewsText(item.body_et_v2 || item.body_et || item.translated_body || '');
+  return capitalizeFirst(cleanupNewsText(item.body_et_v2 || item.body_et || item.translated_body || ''));
 }
 
 type PreservedMediaBlock = {

@@ -139,6 +139,12 @@ function cleanupNewsText(value: string | null | undefined): string {
     .trim();
 }
 
+function capitalizeFirst(s: string): string {
+  if (!s) return s;
+  return s.replace(/^(
+*)\p{L}/u, (match) => match.toUpperCase());
+}
+
 function isGeneratedFallbackTitle(value: string | null | undefined): boolean {
   const title = cleanupNewsText(value).toLowerCase();
   if (!title) return true;

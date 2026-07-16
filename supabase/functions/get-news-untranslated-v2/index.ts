@@ -62,7 +62,7 @@ serve(async (req) => {
     .eq('translation_v2_status', 'pending')
     .neq('source_slug', 'eoy')
     .or('source_lang.is.null,source_lang.neq.et')
-    .order('published_at', { ascending: true })
+    .order('published_at', { ascending: false })
     .limit(limit);
 
   if (error) {

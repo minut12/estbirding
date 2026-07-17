@@ -8272,11 +8272,15 @@ async function loadElurikkusPrimary(){
       const payload = { items: items, dataMaxAt: String((obs[0] && obs[0].d) || '') };
       try{
         await _applyElurikkusPayloadToPoints(name, payload);
-        window.points = window.points || {};
-        if(window.points[name] && typeof window.points[name].visible !== 'boolean') window.points[name].visible = true;
+        if(window.points && window.points[name]){
+          points[name] = Object.assign({}, points[name] || {}, window.points[name]);
+          points[name].coordLock = 'exact';
+          if(typeof points[name].visible !== 'boolean') points[name].visible = true;
+        }
         applied++;
       }catch(e){ console.warn('[rariliin P4b] apply failed', name, e && e.message); }
     }
+    try{ if(typeof rebuildAllMarkers === 'function') rebuildAllMarkers(); }catch(e){}
     try{ if(typeof render === 'function') render(); }catch(e){}
     console.log('[rariliin P4b] applied ' + applied + ' rare species from elurikkus_observations');
   }catch(e){ console.warn('[rariliin P4b] loadElurikkusPrimary error', e && e.message); }

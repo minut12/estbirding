@@ -3552,7 +3552,7 @@ async function refreshSpringYearFirstForKeys(keys){
 // Toggle state: 7 days only
 function getRecentOnly(){
   const v = localStorage.getItem(LS_RECENT_ONLY);
-  return v === null ? true : (v === '1');
+  return v === null ? false : (v === '1');
 }
 function setRecentOnly(val){
   const on = !!val;
@@ -6655,11 +6655,18 @@ function rebuildAllMarkers(){
 
 function _checkEmpty7dBanner(){
   if(!is7daysOnly()) return;
+  // Rare species are seldom seen, so a couple of recent sightings next to dozens of hidden ones
+  // still reads as a broken map. Warn on "mostly hidden", not only on "nothing recent at all".
+  const WARN_WHEN_HIDDEN_RATIO = 0.5;
   const recentCount = SPECIES.filter(n => { const p = points[n]; return p && hasRecentObservation(p); }).length;
   const totalWithCoords = SPECIES.filter(n => { const p = points[n]; return p && Number.isFinite(p.lat); }).length;
-  if(recentCount === 0 && totalWithCoords > 0){
-    _showSnapshotBanner('No observations in last 7 days in current dataset. Turn off "7 days only" to see all known locations.', 'warn', true);
-  }
+  const hiddenCount = totalWithCoords - recentCount;
+  if(totalWithCoords <= 0 || hiddenCount <= 0) return;
+  if(recentCount > 0 && (hiddenCount / totalWithCoords) < WARN_WHEN_HIDDEN_RATIO) return;
+  const bannerMsg = (recentCount === 0)
+    ? 'No observations in last 7 days in current dataset. Turn off "7 days only" to see all known locations.'
+    : (hiddenCount + ' of ' + totalWithCoords + ' known locations are hidden by "7 days only". Turn it off to see all.');
+  _showSnapshotBanner(bannerMsg, 'warn', true);
 }
 
 async function _loadSnapshotImpl(){

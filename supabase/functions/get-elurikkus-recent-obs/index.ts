@@ -60,9 +60,13 @@ serve(async (req) => {
     ? speciesParam.split(",").map((s) => s.trim()).filter(Boolean)
     : null;
 
+  const daysParam = parseInt(url.searchParams.get("days") || "", 10);
+  const days = Number.isFinite(daysParam) && daysParam > 0 ? Math.min(daysParam, 90) : DAYS_WINDOW;
+
+
   const cutoff = new Date();
   cutoff.setUTCHours(0, 0, 0, 0);
-  cutoff.setUTCDate(cutoff.getUTCDate() - DAYS_WINDOW);
+  cutoff.setUTCDate(cutoff.getUTCDate() - days);
   const cutoffIso = cutoff.toISOString().slice(0, 10);
 
   // Pull all last-7d rows for chosen species (for total_7d count),
@@ -133,7 +137,7 @@ serve(async (req) => {
 
   const body = {
     generated_at: new Date().toISOString(),
-    days: DAYS_WINDOW,
+    days: days,
     cap_per_species: CAP_PER_SPECIES,
     species,
   };

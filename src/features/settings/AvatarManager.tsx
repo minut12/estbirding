@@ -49,6 +49,8 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
   const [manualKey, setManualKey] = useState('');
   const [ebirdCode, setEbirdCode] = useState('');
   const [rarityLevel, setRarityLevel] = useState<'none' | 'rare' | 'super' | 'mega'>('none');
+  const [rariliinCode, setRariliinCode] = useState('');
+  const [notificationNote, setNotificationNote] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<string>(() => localStorage.getItem(scope.speciesMetaLastSyncAtKey || SPECIES_META_LAST_SYNC_AT_KEY) || '');
   const [syncStatus, setSyncStatus] = useState(() => getSpeciesMetaSyncStatus(scope));
@@ -148,6 +150,8 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     setCurrentAvatar(meta.avatarUrl || avatars[selected] || null);
     setEbirdCode(meta.ebirdCode || '');
     setRarityLevel(meta.rarityLevel || 'none');
+    setRariliinCode(meta.rariliinCode || '');
+    setNotificationNote(meta.notificationNote || '');
     setScientificName(meta.scientificName || '');
     const cloudItem = cloudItems[selected];
     setIsMigrantMode(
@@ -287,6 +291,16 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
 
     // Silent auto-fetch scientific name if missing but ebirdCode is set
     const doSave = async () => {
+      if (scope.id === 'rariliin') {
+        const patch = {
+          rariliinCode: rariliinCode.trim() || undefined,
+          notificationNote: notificationNote || undefined,
+          notify,
+        };
+        upsertSpeciesMeta(selected, patch as unknown as Partial<SpeciesMeta>, scope);
+        window.dispatchEvent(new CustomEvent('species-meta-updated'));
+        return patch;
+      }
       let resolvedSciName = scientificName.trim();
       if (!resolvedSciName && ebirdCode.trim()) {
         try {
@@ -334,7 +348,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
       .finally(() => {
         setSaving(false);
       });
-  }, [saving, scope, selected, ebirdCode, rarityLevel, currentAvatar, scientificName, notify, isMigrantMode]);
+  }, [saving, scope, selected, ebirdCode, rarityLevel, currentAvatar, scientificName, notify, isMigrantMode, rariliinCode, notificationNote]);
 
   const handleSyncNow = useCallback(async () => {
     setSyncing(true);
@@ -433,7 +447,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
         <Cloud className="w-4 h-4 text-primary" />
         {scope.displayName} {ET_STRINGS.speciesSettings.toLowerCase()}
       </h3>
-      <p className="text-xs text-muted-foreground">{ET_STRINGS.sharedManaged}</p>
+      <p className="text-xs text-muted-foreground">{scope.id === 'rariliin' ? 'Ainult Rariliini väljad: 3+3 kood ja teate märkus.' : ET_STRINGS.sharedManaged}</p>
 
       {hasSpecies ? (
         <div className="space-y-1.5">
@@ -526,12 +540,29 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
           </div>
 
           <div className="space-y-2">
-            {selectedScopeMeta && (
+            {scope.id === 'rariliin' ? (
+              <>
+                <Label htmlFor="rariliinCode">3+3 kood</Label>
+                <Input id="rariliinCode" placeholder="nt SAXOLA" value={rariliinCode} onChange={(e) => setRariliinCode(e.target.value)} />
+                <Label htmlFor="notificationNote">Teate märkus</Label>
+                <select
+                  id="notificationNote"
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={notificationNote}
+                  onChange={(e) => setNotificationNote(e.target.value)}
+                >
+                  <option value="">Väljas</option>
+                  <option value="kõik teated">Kõik teated</option>
+                  <option value="ainult haruldused">Ainult haruldused</option>
+                </select>
+              </>
+            ) : selectedScopeMeta && (
               <div className="rounded-md border border-border bg-muted/20 p-3 text-xs space-y-1">
                 {selectedScopeMeta.rariliinCode && <div>3+3 kood: {selectedScopeMeta.rariliinCode}</div>}
                 {selectedScopeMeta.notificationNote && <div>Teate märkus: {selectedScopeMeta.notificationNote}</div>}
               </div>
             )}
+            {scope.id !== 'rariliin' && (<>
             <Label htmlFor="ebirdCode">eBird speciesCode</Label>
             <Input
               id="ebirdCode"
@@ -603,6 +634,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
                 <span>Ei ole saabuja (alati välistatud)</span>
               </label>
             </div>
+            </>)}
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"

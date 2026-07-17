@@ -8207,6 +8207,7 @@ function _startSnapshotBoot(){
       fetchServerMeta();
       _startServerMetaPolling();
       loadSnapshot();
+      loadElurikkusPrimary();
     return;
   }
   __supabaseConfigReady = false;
@@ -8220,9 +8221,61 @@ function _startSnapshotBoot(){
         fetchServerMeta();
         _startServerMetaPolling();
         loadSnapshot();
+        loadElurikkusPrimary();
     }
   }, 1500);
 }
+// [rariliin P4b 2026-07] Primary rare-species coords from elurikkus_observations (server, exact).
+// Replaces the disabled scan as the coord source. Snapshot stays for metadata; eBird layer complements.
+async function loadElurikkusPrimary(){
+  try{
+    const cfg = (typeof resolveSupabaseConfig === 'function') ? resolveSupabaseConfig() : null;
+    const base = (cfg && cfg.supabaseUrl) ? String(cfg.supabaseUrl).replace(/\/+$/, '') : '';
+    if(!base){ console.warn('[rariliin P4b] supabase base not ready'); return; }
+    const CHUNK = 50, DAYS = 45;
+    const names = (typeof SPECIES !== 'undefined' && Array.isArray(SPECIES)) ? SPECIES.slice() : [];
+    const merged = {};
+    for(let i = 0; i < names.length; i += CHUNK){
+      const group = names.slice(i, i + CHUNK);
+      const url = base + '/functions/v1/get-elurikkus-recent-obs?days=' + DAYS +
+        '&species=' + encodeURIComponent(group.join(','));
+      let res = null;
+      try{ res = await fetch(url, { cache: 'no-store' }); }
+      catch(e){ console.warn('[rariliin P4b] fetch failed', e && e.message); continue; }
+      if(!res || !res.ok){ console.warn('[rariliin P4b] http', res && res.status); continue; }
+      let json = null; try{ json = await res.json(); }catch(e){ continue; }
+      const sp = (json && json.species && typeof json.species === 'object') ? json.species : {};
+      for(const k in sp){ if(Object.prototype.hasOwnProperty.call(sp, k)) merged[k] = sp[k]; }
+    }
+    const keys = Object.keys(merged);
+    let applied = 0;
+    for(let i = 0; i < keys.length; i++){
+      const name = keys[i];
+      if(typeof isWhitelistedSpecies === 'function' && !isWhitelistedSpecies(name)) continue;
+      const obs = (merged[name] && Array.isArray(merged[name].obs)) ? merged[name].obs : [];
+      if(!obs.length) continue;
+      const items = [];
+      for(let j = 0; j < obs.length; j++){
+        const o = obs[j] || {};
+        const lat = Number(o.lat), lon = Number(o.lon);
+        if(!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+        items.push({ coordsStatus:'public', lat:lat, lon:lon, eventDate:String(o.d || ''), observedAt:String(o.d || ''), occurrenceUrl:null, coordSource:'elurikkus_observations' });
+      }
+      if(!items.length) continue;
+      const payload = { items: items, dataMaxAt: String((obs[0] && obs[0].d) || '') };
+      try{
+        await _applyElurikkusPayloadToPoints(name, payload);
+        window.points = window.points || {};
+        if(window.points[name] && typeof window.points[name].visible !== 'boolean') window.points[name].visible = true;
+        applied++;
+      }catch(e){ console.warn('[rariliin P4b] apply failed', name, e && e.message); }
+    }
+    try{ if(typeof render === 'function') render(); }catch(e){}
+    console.log('[rariliin P4b] applied ' + applied + ' rare species from elurikkus_observations');
+  }catch(e){ console.warn('[rariliin P4b] loadElurikkusPrimary error', e && e.message); }
+}
+window.loadElurikkusPrimary = loadElurikkusPrimary;
+
 function _initElurikkusAuto30m(){
   // [rariliin-fold 2026-07] Auto 30-min Elurikkus scan disabled (mirror-only mode).
   try{ if(__eluAuto30mTimer){ clearInterval(__eluAuto30mTimer); __eluAuto30mTimer = null; } }catch(e){}

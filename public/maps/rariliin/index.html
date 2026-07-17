@@ -241,6 +241,7 @@
   .elu-debug-actions{display:flex;gap:6px;flex-wrap:wrap}
   .elu-debug-text{width:100%;min-height:260px;resize:vertical;border:1px solid #cbd5e1;border-radius:8px;padding:8px;font:12px/1.4 ui-monospace,Consolas,monospace;background:#f8fafc;color:#0f172a}
 
+.marker-ebird-badge{position:absolute;left:-4px;top:26px;height:15px;padding:0 4px;border-radius:7px;background:#1565c0;color:#fff;border:1.5px solid #fff;font-size:9px;line-height:12px;font-weight:800;text-align:center;z-index:4;box-shadow:0 1px 2px rgba(0,0,0,.3)}
 </style>
 </head>
 <body>
@@ -7425,6 +7426,135 @@ function _markerIcon(avatarUrl, borderColor, count7d, rarityLevel){
 }
 function defaultIcon(borderColor, count7d, rarityLevel) { return _markerIcon('', borderColor, count7d, rarityLevel); }
 function avatarIcon(url, borderColor, count7d, rarityLevel) { return _markerIcon(url, borderColor, count7d, rarityLevel); }
+
+// ===== eBird EE layer (Rariliin) — mirrors Linnuliigid, whitelist-only, additive =====
+var RARILIIN_EBIRD_CODES = {"Väike-laukhani":"lwfgoo","Kuninghahk":"kineid","Ida-mustvaeras":"blksco2","Prillvaeras":"sursco","Punanokk-vart":"recpoc","Valgesilm-vart":"ferduc","Mustkael-pütt":"eargre","Väiketrapp":"litbus1","Väikehuik":"litcra1","Jämejalg":"eutkne1","Karkjalg":"bkwsti","Roosterind-tüll":"eurdot","Stepikiivitaja":"soclap1","Mustjalg-tüll":"kenplo1","Hallkibu":"tersan","Puna-veetallaja":"redpha1","Ruugerüdi":"bubsan","Kiripugu-rüdi":"pecsan","Hallrüdi":"semsan","Pikksaba-änn":"lotjae","Laisaba-änn":"pomjae","Suuränn":"gresku1","Väikealk":"doveki","Naerutiir":"gubter2","Habeviires":"whiter2","Valgetiib-viires":"whwter","Roosakajakas":"rosgul","Kaljukajakas":"bklkit","Karbuskajakas":"medgul1","Lõuna-hõbekajakas":"yelgul1","Jääkajakas":"glagul","Ohhoota hõbekajakas":"slbgul","Polaarkajakas":"y00478","Jääkaur":"comloo","Tundrakaur":"yebloo","Põhja-tormipääsu":"lcspet","Peegel-tormilind":"sooshe","Suula":"norgan","Tõmmuiibis":"gloibi","Luitsnokk-iibis":"eurspo1","Pelikan":"grwpel1","Väikehüüp":"litbit1","Siidhaigur":"litegr","Ööhaigur":"bcnher","Veisehaigur":"categr1","Purpurhaigur":"purher1","Loorkakk":"webowl1","Kivikakk":"litowl1","Vöötkakk":"nohowl","Lumekakk":"snoowl1","Hõbehaugas":"bkskit1","Raisakotkas":"cinvul1","Kaeluskotkas":"eurgri1","Madukotkas":"shteag1","Kääbuskotkas":"booeag1","Stepikotkas":"steeag1","Stepi-loorkull":"palhar1","Stepiviu":"lolbuz1","Siniraag":"eurrol1","Mesilasenäpp":"eubeat1","Roherähn":"eugwoo2","Jahipistrik":"gyrfal","Stepipistrik":"sakfal1","Mustlauk-õgija":"legshr2","Punapea-õgija":"wooshr1","Laanenäär":"sibjay1","Lasuurtihane":"azutit2","Tuttlõoke":"crelar1","Sarviklõoke":"horlar","Välja-väikelõoke":"gstlar1","Padu-roolind":"padwar1","Roostepääsuke":"rerswa8","Tuhk-lehelind":"humwar1","Kuld-lehelind":"palwar5","Siberi lehelind":"radwar1","Tõmmu-lehelind":"duswar","Põhja-lehelind":"arcwar1","Kõrbe-põõsalind":"asdwar1","Roosa-kuldnokk":"rossta2","Kaelusrästas":"rinouz1","Mustpugu-rästas":"datthr1","Rubiinööbik":"sibrub","Kaelus-kärbsenäpp":"colfly1","Sinisaba":"refblu1","Niidu-kaelustäks":"sibsto1","Euroopa kaelustäks":"stonec4","Kõrbe-kivitäks":"deswhe1","Nunn-kivitäks":"piewhe1","Liiv-kivitäks":"isawhe1","Mustkurk-raat":"bltacc1","Siberi raat":"sibacc","Nõmmekiur":"tawpip1","Niidukiur":"ricpip1","Mägikiur":"watpip1","Männileevike":"pingro","Vööt-käbilind":"whwcro","Kuldtsiitsitaja":"yebbun","Väiketsiitsitaja":"litbun","Põhjatsiitsitaja":"rusbun","Mustpea-tsiitsitaja":"blhbun1","Halltsiitsitaja":"corbun1","Vööthani":"bahgoo","Lumehani":"snogoo","Vaaraohani":"egygoo"};
+
+var LS_EBIRD_EE_POINTS = 'bm_rariliin_ebird_ee_points';
+var ebirdEEPoints = {};
+try { ebirdEEPoints = JSON.parse(localStorage.getItem(LS_EBIRD_EE_POINTS) || '{}'); } catch(e){ ebirdEEPoints = {}; }
+function _saveEbirdEE(){ try { localStorage.setItem(LS_EBIRD_EE_POINTS, JSON.stringify(ebirdEEPoints)); } catch(e){} }
+var ebirdEEMarkers = new Map();
+
+function _ebirdMarkerIcon(avatarUrl, count7d, rarityLevel){
+  var color = (typeof rarityToBorder === 'function') ? rarityToBorder(rarityLevel, '#2e7d32') : '#2e7d32';
+  var style = window.getRarityStyle ? window.getRarityStyle(rarityLevel || 'none') : null;
+  var count = Number.isFinite(count7d) && count7d >= 1
+    ? '<div class="marker-count" title="Vaatlused viimase 7 päeva jooksul">' + count7d + '</div>' : '';
+  var rb = (typeof rarityToBadge === 'function') ? rarityToBadge(rarityLevel) : '';
+  var rarityBadge = rb
+    ? '<div class="marker-rarity-badge" style="background:' + (style ? style.badgeBg : '#111') + ';color:' + (style ? style.badgeFg : '#fff') + '">' + rb + '</div>' : '';
+  var bg = avatarUrl ? "background-image:url('" + avatarUrl + "')" : "background-color:#29c";
+  var srcBadge = '<div class="marker-ebird-badge">eB</div>';
+  var html = '<div class="marker-wrap"><div class="marker-circle" style="border-color:' + color + ';' + bg + '"></div>' + rarityBadge + count + srcBadge + '</div>';
+  return L.divIcon({ html: html, className: '', iconSize:[44,72], iconAnchor:[22,36], popupAnchor:[0,-36] });
+}
+
+function ebirdEEPopupHtml(key, ep){
+  var out = ['<div style="font-weight:600">' + key + '</div>'];
+  if(ep.t) out.push('<div>' + ep.t + (ep.loc ? ' · ' + ep.loc : '') + '</div>');
+  if(Number.isFinite(ep.howMany)) out.push('<div>Isendeid: ' + ep.howMany + '</div>');
+  if(ep.observer) out.push('<div>Vaatleja: ' + ep.observer + '</div>');
+  out.push('<div style="color:#1565c0;font-size:11px;margin-top:2px">Allikas: eBird EE</div>');
+  return out.join('');
+}
+
+var __ebirdEEBulkInFlight = null;
+async function refreshEbirdEEBulk(){
+  if(__ebirdEEBulkInFlight) return __ebirdEEBulkInFlight;
+  var started = Date.now();
+  var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
+  var directUrl = 'https://api.ebird.org/v2/data/obs/EE/recent?back=30&maxResults=10000&detail=full&_ts=' + Date.now();
+  __ebirdEEBulkInFlight = (async function(){
+    var arr = null;
+    try {
+      var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+      var timer = ctrl ? setTimeout(function(){ try{ ctrl.abort(); }catch(e){} }, 30000) : null;
+      try {
+        var opts = { headers: { 'X-eBirdApiToken': token }, cache: 'no-store' };
+        if(ctrl) opts.signal = ctrl.signal;
+        var res = await fetch(directUrl, opts);
+        if(!res.ok) throw new Error('eBird HTTP ' + res.status);
+        arr = await res.json();
+      } finally { if(timer) clearTimeout(timer); }
+    } catch(err){ console.warn('[rariliin eBird EE] fetch failed', err && err.message); return { ok:false, reason:'fetch_failed' }; }
+    if(!Array.isArray(arr)){ console.warn('[rariliin eBird EE] invalid payload'); return { ok:false, reason:'invalid_payload' }; }
+
+    var now = Date.now(), win7 = 7*24*60*60*1000;
+    var codeToName = Object.create(null);
+    for(var en in RARILIIN_EBIRD_CODES){ if(Object.prototype.hasOwnProperty.call(RARILIIN_EBIRD_CODES, en)){ codeToName[RARILIIN_EBIRD_CODES[en]] = en; } }
+    var byCode = Object.create(null);
+    for(var i=0;i<arr.length;i++){
+      var obs = arr[i]; var code = String((obs && obs.speciesCode) || '');
+      if(!code || !codeToName[code]) continue;   // whitelist filter
+      var slot = byCode[code]; if(!slot){ slot = { count7:0, latest:null, latestTs:0 }; byCode[code] = slot; }
+      var dstr = String((obs && obs.obsDt) || '').substring(0,10);
+      var ms = (typeof _toDay === 'function') ? _toDay(dstr) : Date.parse(dstr);
+      if(ms && (now-ms) >= 0 && (now-ms) <= win7) slot.count7++;
+      if(ms && ms > slot.latestTs){ slot.latestTs = ms; slot.latest = obs; }
+    }
+    var written = 0;
+    for(var c in byCode){ if(!Object.prototype.hasOwnProperty.call(byCode, c)) continue;
+      var stats = byCode[c]; var name = codeToName[c]; var latest = stats.latest;
+      if(!name || !latest) continue;
+      var lat = +latest.lat, lon = +latest.lng;
+      if(!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      var observer = latest.userDisplayName || (latest.firstName && latest.lastName ? ((latest.firstName||'') + ' ' + (latest.lastName||'')).trim() : null);
+      ebirdEEPoints[name] = { lat:lat, lon:lon, t:String(latest.obsDt||'').substring(0,10), loc:latest.locName||'', occ7:stats.count7, howMany:Number.isFinite(latest.howMany)?latest.howMany:null, observer:observer, subId:latest.subId||null, lastFetched:new Date().toISOString(), src:'eBird EE' };
+      written++;
+    }
+    _saveEbirdEE();
+    try { refreshEbirdEEMarkers(); } catch(e){}
+    console.log('[rariliin eBird EE] written ' + written + ' species in ' + (Date.now()-started) + 'ms');
+    return { ok:true, written:written };
+  })();
+  try { return await __ebirdEEBulkInFlight; } finally { __ebirdEEBulkInFlight = null; }
+}
+window.refreshEbirdEEBulk = refreshEbirdEEBulk;
+
+function refreshEbirdEEMarkers(){
+  var cluster = window.__markerClusterGroup || window.markerClusterGroup || null;
+  ebirdEEMarkers.forEach(function(m){ try { if(cluster && cluster.removeLayer) cluster.removeLayer(m); else map.removeLayer(m); } catch(e){} });
+  ebirdEEMarkers.clear();
+  var now = Date.now(), win7 = 7*24*60*60*1000;
+  var keys = Object.keys(ebirdEEPoints);
+  for(var i=0;i<keys.length;i++){
+    var key = keys[i]; var ep = ebirdEEPoints[key];
+    if(!ep || !Number.isFinite(ep.lat) || !Number.isFinite(ep.lon)) continue;
+    if(typeof isWhitelistedSpecies === 'function' && !isWhitelistedSpecies(key)) continue;   // whitelist safety
+    if(window.__recentOnly){
+      var occ7 = Number(ep.occ7 || 0); var dateRecent = false;
+      if(ep.t){ var ms = (typeof _toDay === 'function') ? _toDay(ep.t) : Date.parse(ep.t); if(ms && (now-ms) >= 0 && (now-ms) <= win7) dateRecent = true; }
+      if(!(occ7 > 0) && !dateRecent) continue;
+    }
+    var mainP = (points || {})[key] || {};
+    if(mainP.visible === false) continue;   // respect species visibility toggle
+    var avatar = (typeof getDisplayAvatar === 'function') ? getDisplayAvatar(key) : ((typeof avatars !== 'undefined' && avatars[key]) || '');
+    var metaCfg = window.getSpeciesMetaShared ? window.getSpeciesMetaShared(key) : { rarityLevel:'none' };
+    var icon = _ebirdMarkerIcon(avatar, Number(ep.occ7 || 0), metaCfg.rarityLevel || 'none');
+    var m = L.marker([ep.lat, ep.lon], { icon: icon });
+    m.bindPopup(ebirdEEPopupHtml(key, ep));
+    if(cluster && typeof cluster.addLayer === 'function') cluster.addLayer(m); else m.addTo(map);
+    ebirdEEMarkers.set(key, m);
+  }
+}
+window.refreshEbirdEEMarkers = refreshEbirdEEMarkers;
+
+// Re-render eBird markers shortly after any main-marker update (keeps filters in sync)
+try {
+  if(typeof updateMarker === 'function' && !window.__rl_ebird_upd_patch){
+    window.__rl_ebird_upd_patch = true;
+    var _rlOrigUpdateMarker = updateMarker;
+    updateMarker = function(){ var out = _rlOrigUpdateMarker.apply(this, arguments); clearTimeout(window.__rlEbirdRefreshTimer); window.__rlEbirdRefreshTimer = setTimeout(function(){ try{ refreshEbirdEEMarkers(); }catch(e){} }, 200); return out; };
+  }
+} catch(e){}
+
+// Boot: render cached eBird markers immediately, fetch fresh on load, refresh every 30 min (mirrors Linnuliigid)
+try { refreshEbirdEEMarkers(); } catch(e){}
+setTimeout(function(){ try { refreshEbirdEEBulk(); } catch(e){} }, 1200);
+setInterval(function(){ try { refreshEbirdEEBulk(); } catch(e){} }, 30*60*1000);
+// ===== end eBird EE layer =====
+
 
 
 // Avatar & manual location

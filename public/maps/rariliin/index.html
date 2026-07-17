@@ -6664,8 +6664,8 @@ function _checkEmpty7dBanner(){
   if(totalWithCoords <= 0 || hiddenCount <= 0) return;
   if(recentCount > 0 && (hiddenCount / totalWithCoords) < WARN_WHEN_HIDDEN_RATIO) return;
   const bannerMsg = (recentCount === 0)
-    ? 'No observations in last 7 days in current dataset. Turn off "7 days only" to see all known locations.'
-    : (hiddenCount + ' of ' + totalWithCoords + ' known locations are hidden by "7 days only". Turn it off to see all.');
+    ? 'Viimase 7 päeva jooksul vaatlusi pole. Lülita 7 päeva filter välja, et näha kõiki asukohti.'
+    : (hiddenCount + '/' + totalWithCoords + ' asukohta on 7 päeva filtriga peidetud. Lülita see välja, et näha kõiki.');
   _showSnapshotBanner(bannerMsg, 'warn', true);
 }
 

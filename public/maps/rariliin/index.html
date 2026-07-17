@@ -254,7 +254,7 @@
 <div id="snapshotBanner" class="snapshot-banner" style="display:none !important"></div>
 <div class="fetch-controls">
   <button id="recentToggle" class="btn on" title="7 päeva filter">7p: ON</button>
-  <button id="btnRefreshData" class="btn" title="Refresh all species from Elurikkus">Refresh from Elurikkus</button>
+  <button id="btnRefreshData" class="btn" title="Refresh all species from Elurikkus" style="display:none" hidden>Refresh from Elurikkus</button>
   <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index" style="display:none">Resume</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
@@ -3300,6 +3300,11 @@ async function refreshSpeciesFromElurikkus(key, signal){
   return await autoFetchCoords(species, searchUrl, signal);
 }
 async function refreshAllElurikkusOnce(){
+  // [rariliin-fold 2026-07] Independent Elurikkus scan disabled. Rariliin now mirrors the
+  // linnuliigid-snapshot only (loadSnapshot -> _applySnapshot -> prunePointsToWhitelist).
+  // Scan machinery below is retained as dead code; do NOT re-enable without removing the mirror.
+  console.log('[rariliin-fold] refreshAllElurikkusOnce suppressed (mirror-only mode)');
+  return null;
   const view = _getElurikkusRefreshView();
   if(__eluBulkActive || __elurikkusBulkActive){
     _logElurikkusRefresh('[elurikkus] duplicate refresh prevented', {
@@ -8089,6 +8094,9 @@ function _startSnapshotBoot(){
   }, 1500);
 }
 function _initElurikkusAuto30m(){
+  // [rariliin-fold 2026-07] Auto 30-min Elurikkus scan disabled (mirror-only mode).
+  try{ if(__eluAuto30mTimer){ clearInterval(__eluAuto30mTimer); __eluAuto30mTimer = null; } }catch(e){}
+  return;
   try{
     if(String(localStorage.getItem(LS_ELU_AUTO_30M) || '0') !== '1') return;
     if(__eluAuto30mTimer) return;

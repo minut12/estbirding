@@ -45,3 +45,10 @@ session.
 **Read-only by default.** Use the read/search tools only. Do not append, patch, create,
 delete, or move any vault file unless Kristian explicitly says so in that session. Never
 call the delete tool anywhere in the vault. Never commit the bearer token or `.mcp.json`.
+
+### Obsidian memory sink (Local REST API)
+- **Precondition:** Obsidian desktop must be running — the plugin is desktop-only and binds `http://127.0.0.1:27123`. Closed app = connection refused (server-down), not an auth fault.
+- **Token:** 64-char hex in `.mcp.json`; resets on plugin toggle → re-sync after any toggle. **`jq` is NOT installed** on the Windows Git Bash — extract with `grep -oiE '[a-f0-9]{64}' .mcp.json | head -1` (jq silently yields an empty token → false `authenticated: false`). Use HTTP `27123`, not HTTPS `27124` (self-signed cert rejected by Node/curl).
+- **Paths are vault-relative from vault ROOT.** The repo is nested at `estbirding/`, so repo files are `/vault/estbirding/...` via REST.
+- **Sink lives OUTSIDE the repo tree** at vault root `estbirding-memory/` (a sibling of `estbirding/`, so Lovable's auto-commit never sweeps it). It is *not* git-tracked — canonical/versioned ADRs still belong in repo `decisions/`. Layout: `estbirding-memory/adr/` (drafts/mirrors), `.../notes/` (WIP, handoffs), `.../_meta/` (self-documenting connection facts).
+- **Helper:** `scripts/obsidian.sh {put|get|ls|rm} <vault-path> [file] [--force]` — `put` expects 204, overwrite-per-slug, and refuses writes under `estbirding/*` without `--force` so the git-tracked mirror can't be clobbered via REST.

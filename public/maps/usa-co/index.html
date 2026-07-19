@@ -2696,8 +2696,10 @@ function speciesInBounds(species){
   }
   return false;
 }
+var __bootReady = false;
 var __reconcileTimer = null;
 function scheduleReconcile(){
+  if (!__bootReady) return;
   if (__reconcileTimer) return;
   __reconcileTimer = setTimeout(function(){
     __reconcileTimer = null;
@@ -2720,6 +2722,7 @@ function markerModeIsAvatar(){ return !!(map && map.getZoom && map.getZoom() >= 
 var __lastMarkerMode = null;
 var __zoomFixTimer = null;
 function scheduleZoomFix(){
+  if (!__bootReady) return;
   if (__zoomFixTimer) return;
   __zoomFixTimer = setTimeout(function(){
     __zoomFixTimer = null;
@@ -2735,7 +2738,7 @@ function scheduleZoomFix(){
 }
 map.on("zoomend", scheduleZoomFix);
 map.on("moveend", scheduleReconcile);
-try { map.whenReady(function(){ scheduleZoomFix(); }); } catch(e){}
+try { map.whenReady(function(){ setTimeout(function(){ __bootReady = true; scheduleZoomFix(); }, 800); }); } catch(e){}
 
 /* ========= UI ========= */
 const listEl = document.getElementById("list");
@@ -3168,7 +3171,7 @@ async function refreshEuropeAggregated(keys, onProgress){
     const token = getEbirdToken();
     const url = buildEbirdCountryRecentUrl(region, BACK_DAYS, MAX_RESULTS, token);
     try {
-      const raw = await safeFetchText(url, { headers: { "X-eBirdApiToken": token } }, 20000, 1);
+      const raw = await safeFetchText(url, { headers: { "X-eBirdApiToken": token } }, 9000, 1);
       let payload = null;
       try { payload = raw ? JSON.parse(raw) : null; } catch { payload = null; }
       lastRequest = { url, status: 200, timeMs: null };

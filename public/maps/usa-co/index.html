@@ -2541,6 +2541,7 @@ function updateMarker(species){
       // show markers only if occ7>0
       const occ7 = Number(d.occ7 || 0);
       if (recentOnly && !(occ7 > 0)) continue;
+      if (!inCullBounds(d.lat, d.lon)) continue;
 
       const border = borderColorByDate(d.t);
       const icon = makeIcon(meta.avatarUrl || avatars[species] || "", border, rarityLevel, occ7, isMigr);
@@ -2571,6 +2572,7 @@ function updateMarker(species){
       if (recentOnly && !(occ7 > 0)) continue;
       if (!best || (d.t && d.t > best.t)) best = { rg, ...d };
     }
+    if (best && !inCullBounds(best.lat, best.lon)) best = null;
     if (best) {
       const border = borderColorByDate(best.t);
       const total7 = Number(p.occ7 || 0);
@@ -2665,7 +2667,50 @@ function scheduleRefreshMarkerIcons(){
   }, 100);
 }
 
-map.on("zoomend", scheduleDeclutter);
+var CULL_PAD = 0.3;
+function inCullBounds(lat, lon){
+  try {
+    if (!map || (map.getSize && map.getSize().x === 0)) return true;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+    return map.getBounds().pad(CULL_PAD).contains(L.latLng(lat, lon));
+  } catch(e){ return true; }
+}
+function speciesInBounds(species){
+  var p = points[species];
+  if (!p || p.visible === false) return false;
+  if (!passesRareOnlyFilter(species)) return false;
+  var regionsObj = (p.regions && typeof p.regions === "object") ? p.regions : null;
+  if (!regionsObj) return false;
+  for (var rg in regionsObj){
+    var d = regionsObj[rg];
+    if (!d) continue;
+    if (recentOnly && !(Number(d.occ7 || 0) > 0)) continue;
+    if (inCullBounds(d.lat, d.lon)) return true;
+  }
+  return false;
+}
+var __reconcileTimer = null;
+function scheduleReconcile(){
+  if (__reconcileTimer) return;
+  __reconcileTimer = setTimeout(function(){
+    __reconcileTimer = null;
+    cullReconcile();
+  }, 150);
+}
+function cullReconcile(){
+  try {
+    SPECIES.forEach(function(species){
+      var shown = markers.has(species);
+      var want = speciesInBounds(species);
+      if (want && !shown) updateMarker(species);
+      else if (!want && shown) clearSpeciesMarkers(species);
+    });
+    scheduleDeclutter();
+  } catch(e){ console.warn('[cull] reconcile failed', e); }
+}
+map.on("zoomend", scheduleReconcile);
+map.on("moveend", scheduleReconcile);
+try { map.whenReady(function(){ scheduleReconcile(); }); } catch(e){}
 
 /* ========= UI ========= */
 const listEl = document.getElementById("list");

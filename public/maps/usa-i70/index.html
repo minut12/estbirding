@@ -2378,11 +2378,7 @@ function showPulseRing(lat, lon){
 window.addEventListener("beforeunload", clearPulseRing);
 
 function markerSizeForZoom(z){
-  if (z <= 4) return 30;
-  if (z <= 5) return 34;
-  if (z <= 6) return 40;
-  if (z <= 8) return 46;
-  return 54;
+  return 40;
 }
 
 function markerLayoutForZoom(zoom){
@@ -2421,6 +2417,7 @@ function buildMarkerElement({ M, TOP, BOTTOM, countHeight, rarityHeight, countFo
 
   const avatarImg = document.createElement("img");
   avatarImg.alt = "";
+  avatarImg.decoding = "async";
   avatarImg.src = String(avatarUrl || "").trim() || "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
   avatarImg.style.width = "100%";
   avatarImg.style.height = "100%";
@@ -2685,7 +2682,7 @@ function scheduleRefreshMarkerIcons(){
   }, 100);
 }
 
-map.on("zoomend", scheduleRefreshMarkerIcons);
+map.on("zoomend", scheduleDeclutter);
 
 /* ========= UI ========= */
 const listEl = document.getElementById("list");

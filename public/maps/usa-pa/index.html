@@ -2353,7 +2353,7 @@ function showPulseRing(lat, lon){
 window.addEventListener("beforeunload", clearPulseRing);
 
 function markerSizeForZoom(z){
-  return 40;
+  return 34;
 }
 
 function markerLayoutForZoom(zoom){
@@ -2396,7 +2396,7 @@ function buildMarkerElement({ M, TOP, BOTTOM, countHeight, rarityHeight, countFo
   avatarImg.src = String(avatarUrl || "").trim() || "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
   avatarImg.style.width = "100%";
   avatarImg.style.height = "100%";
-  avatarImg.style.objectFit = "cover";
+  avatarImg.style.objectFit = "contain";
   avatarImg.style.display = "block";
   avatarWrap.appendChild(avatarImg);
   root.appendChild(avatarWrap);
@@ -2451,6 +2451,13 @@ function buildMarkerElement({ M, TOP, BOTTOM, countHeight, rarityHeight, countFo
 }
 
 function makeIcon(url, border, rarityLevel, occ7, isMigr){
+  if (typeof markerModeIsAvatar === "function" && !markerModeIsAvatar()){
+    var rsDot = window.getRarityStyle ? window.getRarityStyle(rarityLevel || "none") : null;
+    var dotColor = (rsDot && rsDot.ringColor) ? rsDot.ringColor : (border || "#D85A30");
+    var Dd = 16;
+    var dotHtml = '<div style="width:' + Dd + 'px;height:' + Dd + 'px;border-radius:9999px;background:' + dotColor + ';border:2px solid #fff;box-shadow:0 1px 2px rgba(0,0,0,.35);box-sizing:border-box;"></div>';
+    return L.divIcon({ html: dotHtml, className: "", iconSize: [Dd, Dd], iconAnchor: [Dd/2, Dd/2], popupAnchor: [0, -Dd/2] });
+  }
   const { M, TOP, BOTTOM, W, H, countHeight, rarityHeight, countFont, rarityFont, countPadX, rarityPadX } = markerLayoutForZoom(map.getZoom());
   const rarityStyle = window.getRarityStyle ? window.getRarityStyle(rarityLevel || "none") : null;
   const ring = (rarityStyle && rarityStyle.ringColor) ? rarityStyle.ringColor : border;
@@ -2700,9 +2707,27 @@ function cullReconcile(){
     scheduleDeclutter();
   } catch(e){ console.warn('[cull] reconcile failed', e); }
 }
-map.on("zoomend", scheduleReconcile);
+var AVATAR_MIN_ZOOM = 11;
+function markerModeIsAvatar(){ return !!(map && map.getZoom && map.getZoom() >= AVATAR_MIN_ZOOM); }
+var __lastMarkerMode = null;
+var __zoomFixTimer = null;
+function scheduleZoomFix(){
+  if (__zoomFixTimer) return;
+  __zoomFixTimer = setTimeout(function(){
+    __zoomFixTimer = null;
+    var mode = markerModeIsAvatar() ? 1 : 0;
+    if (mode !== __lastMarkerMode){
+      __lastMarkerMode = mode;
+      try { SPECIES.forEach(updateMarker); } catch(e){ console.warn('[cull] mode rebuild failed', e); }
+      scheduleDeclutter();
+    } else {
+      cullReconcile();
+    }
+  }, 120);
+}
+map.on("zoomend", scheduleZoomFix);
 map.on("moveend", scheduleReconcile);
-try { map.whenReady(function(){ scheduleReconcile(); }); } catch(e){}
+try { map.whenReady(function(){ scheduleZoomFix(); }); } catch(e){}
 
 /* ========= UI ========= */
 const listEl = document.getElementById("list");

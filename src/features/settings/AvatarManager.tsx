@@ -35,6 +35,7 @@ import {
 import { addCustomSpecies, removeCustomSpecies, isCustomSpecies } from '@/lib/customSpecies';
 import { addCustomSpeciesToCloud, removeCustomSpeciesFromCloud, refreshCustomSpeciesFromCloud } from '@/lib/customSpeciesCloud';
 import { fetchEbirdTaxon } from '@/lib/ebirdTaxon';
+import { fetchGbifOccurrenceCount } from '@/lib/gbifOccurrenceCount';
 import { ET_STRINGS } from '@/lib/etStrings';
 import { normalizeUiText } from '@/lib/textNormalize';
 
@@ -64,6 +65,10 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
   const [showAddForm, setShowAddForm] = useState(false);
   const [newSpeciesName, setNewSpeciesName] = useState('');
   const [bundledSpecies, setBundledSpecies] = useState<Set<string>>(new Set());
+  // Read-only GBIF obs-count line — display-only local state, never persisted.
+  const [obsCount, setObsCount] = useState<number | null>(null);
+  const [obsLoading, setObsLoading] = useState(false);
+  const [obsError, setObsError] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const hydratedSelectionRef = useRef<string | null>(null);
 
@@ -166,6 +171,34 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     setNotify(cloudItem?.notify === true);
     setPreview(null);
   }, [scope, selected, scopeMetadata, avatarsReady, cloudItems]);
+
+  // Live GBIF total-observation count for the current sciName (display-only; never saved).
+  useEffect(() => {
+    if (scope.id === 'rariliin' || !selected || !scientificName.trim()) {
+      setObsCount(null);
+      setObsLoading(false);
+      setObsError(false);
+      return;
+    }
+    let cancelled = false;
+    setObsLoading(true);
+    setObsError(false);
+    fetchGbifOccurrenceCount(scientificName.trim(), scope.gbifRegion)
+      .then((count) => {
+        if (cancelled) return;
+        setObsCount(count);
+        setObsError(count == null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setObsCount(null);
+        setObsError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setObsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [scope, selected, scientificName]);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -594,6 +627,16 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
                 {fetchingTaxon ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Lae eBirdist'}
               </Button>
             </div>
+            {scientificName.trim() && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <span>Vaatlusi kokku ({scope.displayName}):</span>
+                {obsLoading
+                  ? <span className="inline-flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> laen…</span>
+                  : obsError || obsCount == null
+                    ? <span title="GBIF päring ebaõnnestus">—</span>
+                    : <span className="font-medium text-foreground tabular-nums">{obsCount.toLocaleString('et-EE')}</span>}
+              </p>
+            )}
             <Label htmlFor="rarityLevel">{ET_STRINGS.rarityLabel}</Label>
             <select
               id="rarityLevel"

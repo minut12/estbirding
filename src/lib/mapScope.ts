@@ -8,6 +8,8 @@ export type SpeciesScopeConfig = {
   mapPath: string;
   speciesJsonPath: string;
   speciesMetaAssetPath?: string;
+  /** Read-only GBIF occurrence-count region filter; gadmGid wins over country. */
+  gbifRegion?: { country?: string; gadmGid?: string };
   placeholderAvatarUrl: string;
   avatarLocalOverridesKey: string;
   avatarSharedCacheKey: string;
@@ -32,6 +34,7 @@ export const LINNULIIGID_SCOPE: SpeciesScopeConfig = {
   mapPath: "/maps/linnuliigid/index.html",
   speciesJsonPath: "/maps/linnuliigid/species.json",
   speciesMetaAssetPath: "/maps/linnuliigid/species-meta.json",
+  gbifRegion: { country: "EE" },
   placeholderAvatarUrl: "/maps/linnuliigid/avatars/placeholder.webp",
   avatarLocalOverridesKey: "linnuliigid_avatars_v1",
   avatarSharedCacheKey: "linnuliigid_avatar_defaults_v1",
@@ -56,6 +59,7 @@ export const RARILIIN_SCOPE: SpeciesScopeConfig = {
   mapPath: "/maps/rariliin/index.html",
   speciesJsonPath: "/maps/rariliin/species.json",
   speciesMetaAssetPath: "/maps/rariliin/species-meta.json",
+  gbifRegion: { country: "EE" },
   placeholderAvatarUrl: "/maps/rariliin/avatars/placeholder.webp",
   avatarLocalOverridesKey: "rariliin_avatars_v1",
   avatarSharedCacheKey: "rariliin_avatar_defaults_v1",
@@ -80,6 +84,7 @@ export const USA_CO_SCOPE: SpeciesScopeConfig = {
   mapPath: "/maps/usa-co/index.html",
   speciesJsonPath: "/maps/usa-co/species.json",
   // No speciesMetaAssetPath — these maps start empty; AvatarManager will skip the asset fetch
+  gbifRegion: { gadmGid: "USA.6_1" },
   placeholderAvatarUrl: "/maps/usa-co/avatars/placeholder.webp",
   avatarLocalOverridesKey: "usa_co_avatars_v1",
   avatarSharedCacheKey: "usa_co_avatar_defaults_v1",
@@ -103,6 +108,7 @@ export const USA_PA_SCOPE: SpeciesScopeConfig = {
   mapScope: "usa_pa_map",
   mapPath: "/maps/usa-pa/index.html",
   speciesJsonPath: "/maps/usa-pa/species.json",
+  gbifRegion: { gadmGid: "USA.39_1" },
   placeholderAvatarUrl: "/maps/usa-pa/avatars/placeholder.webp",
   avatarLocalOverridesKey: "usa_pa_avatars_v1",
   avatarSharedCacheKey: "usa_pa_avatar_defaults_v1",
@@ -126,6 +132,7 @@ export const USA_I70_SCOPE: SpeciesScopeConfig = {
   mapScope: "usa_i70_map",
   mapPath: "/maps/usa-i70/index.html",
   speciesJsonPath: "/maps/usa-i70/species.json",
+  gbifRegion: { country: "US" }, // multi-state route; country-level
   placeholderAvatarUrl: "/maps/usa-i70/avatars/placeholder.webp",
   avatarLocalOverridesKey: "usa_i70_avatars_v1",
   avatarSharedCacheKey: "usa_i70_avatar_defaults_v1",

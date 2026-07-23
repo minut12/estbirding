@@ -65,6 +65,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
   const [newSpeciesName, setNewSpeciesName] = useState('');
   const [bundledSpecies, setBundledSpecies] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
+  const hydratedSelectionRef = useRef<string | null>(null);
 
   useEffect(() => {
     loadSpeciesMeta(scope);
@@ -136,6 +137,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
 
   useEffect(() => {
     if (!selected) {
+      hydratedSelectionRef.current = null;
       setCurrentAvatar(null);
       setPreview(null);
       setEbirdCode('');
@@ -143,6 +145,9 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
       setScientificName('');
       return;
     }
+    const selectionKey = `${scope.id}::${selected}`;
+    if (hydratedSelectionRef.current === selectionKey) return; // background refresh: don't clobber unsaved edits
+    hydratedSelectionRef.current = selectionKey;
     const avatars = getMergedAvatars(scope);
     const meta = scope.id === 'rariliin'
       ? getRariliinSpeciesMeta(selected, scopeMetadata)

@@ -115,6 +115,11 @@
       padding:2px 10px;
       margin-top:4px;
     }
+    .usaPillRow{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:6px; }
+    .usaPillRow .species-count{ margin-top:0; }
+    .active7d-badge{ display:inline-flex; align-items:center; padding:4px 10px; border-radius:999px; border:1px solid #cbd5e1; background:#fff; font-size:12px; color:#334155; white-space:nowrap; }
+    .usa-trip-badge{ display:inline-flex; align-items:center; gap:6px; padding:4px 11px; border-radius:999px; border:1px solid #c7d2fe; background:#eef2ff; color:#3730a3; font-size:12px; font-weight:700; white-space:nowrap; }
+    .usa-trip-badge .dot{ width:7px; height:7px; border-radius:50%; background:#6366f1; }
     #closeSidebarBtn{
       display:inline-flex;
       align-items:center;
@@ -353,7 +358,12 @@
         <div class="sidebarHeaderTop">
           <div class="header-copy">
           <h2>eBird Pennsylvania</h2>
-          <span id="speciesCount" class="species-count">Liigid: 0</span>
+          <div class="usaPillRow">
+            <span id="speciesCount" class="species-count">Liigid: 0</span>
+            <span id="active7dBadge" class="active7d-badge" title="Mitu erinevat liiki on selle kaardi eBird-andmetes viimase 7 päeva jooksul aktiivsed">7p liigid: 0</span>
+            <span id="hiddenSpeciesBadge" class="active7d-badge" title="Mitu liiki on sellel kaardil peidetud (visible=false)">Peidetud: 0</span>
+            <span id="usaTripBadge" class="usa-trip-badge" title="Mitu erinevat liiki on peidetud kõigil kolmel USA kaardil kokku (Colorado + Pennsylvania + IS-70)"><span class="dot"></span>USA reis kokku: 0 liiki</span>
+          </div>
           </div>
           <button id="closeSidebarBtn" title="Close" aria-label="Close">
             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
@@ -3791,6 +3801,83 @@ try { if (window.parent && window.parent !== window) {
   window.parent.postMessage({ type: "SPECIES_META_REQUEST" }, "*");
   window.parent.postMessage({ type: "CUSTOM_SPECIES_REQUEST" }, "*");
 } } catch(e){}
+</script>
+<!-- === USA filtering-info pills (7p liigid / Peidetud / USA reis kokku) — display-only === -->
+<script>
+(function(){
+  'use strict';
+  // >>> PER-FILE CONSTANT: set to THIS map's own points store key. <<<
+  //   usa-co/index.html   -> 'bm_usa_co_points'
+  //   usa-pa/index.html   -> 'bm_usa_pa_points'
+  //   usa-i70/index.html  -> 'bm_usa_i70_points'
+  var USA_SELF_KEY = 'bm_usa_pa_points';
+  var USA_ALL_KEYS = ['bm_usa_co_points','bm_usa_pa_points','bm_usa_i70_points'];
+  var SEVEN_MS = 7*24*60*60*1000;
+
+  function readStore(key){
+    try{ var raw = localStorage.getItem(key); if(!raw) return {}; var o = JSON.parse(raw); return (o && typeof o==='object') ? o : {}; }
+    catch(e){ return {}; }
+  }
+  function normKey(s){
+    var v = String(s==null?'':s);
+    if(/[\u00C3\u00C2\u00E2]/.test(v)){
+      try{ var b=new Uint8Array(v.length); for(var i=0;i<v.length;i++) b[i]=v.charCodeAt(i)&255; v=new TextDecoder('utf-8',{fatal:false}).decode(b)||v; }catch(e){}
+    }
+    try{ v = v.normalize('NFC'); }catch(e){}
+    return v.replace(/\uFFFD/g,'').trim().toLowerCase();
+  }
+  function isActive7d(p){
+    if(!p || typeof p!=='object') return false;
+    var occ7 = (p.occ7===0 || p.occ7) ? Number(p.occ7) : NaN;
+    if(Number.isFinite(occ7)) return occ7>0;
+    if(p.t){ var ms = Date.parse(p.t); if(Number.isFinite(ms) && (Date.now()-ms)<=SEVEN_MS) return true; }
+    return false;
+  }
+  function countSelf(store){
+    var active=0, hidden=0;
+    for(var k in store){ if(!Object.prototype.hasOwnProperty.call(store,k)) continue;
+      var p = store[k]; if(!p || typeof p!=='object') continue;
+      if(p.visible===false) hidden++;
+      if(isActive7d(p)) active++;
+    }
+    return { active: active, hidden: hidden };
+  }
+  function countTripHiddenDistinct(){
+    var seen = Object.create(null), n=0;
+    for(var i=0;i<USA_ALL_KEYS.length;i++){
+      var store = readStore(USA_ALL_KEYS[i]);
+      for(var k in store){ if(!Object.prototype.hasOwnProperty.call(store,k)) continue;
+        var p = store[k]; if(!p || typeof p!=='object') continue;
+        if(p.visible===false){ var nk = normKey(k); if(nk && !seen[nk]){ seen[nk]=1; n++; } }
+      }
+    }
+    return n;
+  }
+  function updatePills(){
+    try{
+      var self = countSelf(readStore(USA_SELF_KEY));
+      var trip = countTripHiddenDistinct();
+      var a = document.getElementById('active7dBadge');
+      var h = document.getElementById('hiddenSpeciesBadge');
+      var t = document.getElementById('usaTripBadge');
+      if(a) a.textContent = '7p liigid: ' + self.active;
+      if(h) h.textContent = 'Peidetud: ' + self.hidden;
+      if(t) t.innerHTML = '<span class="dot"></span>USA reis kokku: ' + trip + ' liiki';
+    }catch(e){}
+  }
+  // Recompute on every sidebar re-render (toggle / filter / refresh) — no render() monkey-patch.
+  try{
+    var listEl = document.getElementById('list');
+    if(listEl && window.MutationObserver){
+      new MutationObserver(function(){ updatePills(); }).observe(listEl, { childList:true });
+    }
+  }catch(e){}
+  // Cross-map / other-tab writes to any USA store.
+  try{ window.addEventListener('storage', function(ev){ if(!ev || ev.key==null || USA_ALL_KEYS.indexOf(ev.key)!==-1) updatePills(); }); }catch(e){}
+  // Initial paint + slow fallback.
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', updatePills); else updatePills();
+  setInterval(updatePills, 30000);
+})();
 </script>
 </body>
 </html>

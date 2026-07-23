@@ -3,7 +3,11 @@
 // Deliberately independent of the iframe GBIF code under public/maps/** (its
 // bm_taxonkey_cache stays untouched; this module uses its own React-side keys).
 
-export type GbifRegion = { country?: string; gadmGid?: string };
+// eBird Observation Dataset on GBIF — makes the count "eBird observations", globally.
+const EBIRD_EOD_DATASET_KEY = '4fa7b334-ce0d-4e88-aaae-2e0c138d049e';
+// Flip to true to count ALL GBIF sources globally (~807K vs eBird's ~794K); that
+// number would be "GBIF", not "eBird". Default false = eBird-only. No UI for this.
+const INCLUDE_ALL_DATASETS = false;
 
 const TAXON_KEY_CACHE_KEY = 'estbirding.gbifTaxonKey.v1';
 const OBS_COUNT_CACHE_KEY = 'estbirding.gbifObsCount.v1';
@@ -29,12 +33,6 @@ function writeCache<T>(storageKey: string, cache: Record<string, T>): void {
   } catch {
     // Storage full / unavailable — caching is best-effort only.
   }
-}
-
-export function regionQuery(region?: GbifRegion): string {
-  if (region?.gadmGid) return `&gadmGid=${encodeURIComponent(region.gadmGid)}`;
-  if (region?.country) return `&country=${encodeURIComponent(region.country)}`;
-  return '';
 }
 
 async function matchTaxon(scientificName: string, strict: boolean): Promise<number | null> {
@@ -75,18 +73,15 @@ async function fetchWithRateLimitRetry(url: string): Promise<Response | null> {
   }
 }
 
-export async function fetchGbifOccurrenceCount(
-  scientificName: string,
-  region?: GbifRegion,
-): Promise<number | null> {
+export async function fetchGbifOccurrenceCount(scientificName: string): Promise<number | null> {
   const name = scientificName.trim();
   if (!name) return null;
   try {
     const taxonKey = await resolveTaxonKey(name);
     if (taxonKey == null) return null;
 
-    const fragment = regionQuery(region);
-    const cacheKey = `${taxonKey}|${fragment}`;
+    const datasetParam = INCLUDE_ALL_DATASETS ? '' : `&datasetKey=${EBIRD_EOD_DATASET_KEY}`;
+    const cacheKey = `${taxonKey}|eod`;
     const cache = readCache<ObsCountCacheEntry>(OBS_COUNT_CACHE_KEY);
     const hit = cache[cacheKey];
     if (hit && typeof hit.count === 'number' && Date.now() - hit.ts < OBS_COUNT_TTL_MS) {
@@ -94,7 +89,7 @@ export async function fetchGbifOccurrenceCount(
     }
 
     const res = await fetchWithRateLimitRetry(
-      `https://api.gbif.org/v1/occurrence/search?taxonKey=${taxonKey}${fragment}&limit=0`,
+      `https://api.gbif.org/v1/occurrence/search?taxonKey=${taxonKey}${datasetParam}&limit=0`,
     );
     if (!res || !res.ok) return null;
     const json = await res.json();

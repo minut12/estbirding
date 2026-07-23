@@ -56,8 +56,7 @@ vi.mock('@/lib/ebirdTaxon', () => ({
 }));
 
 vi.mock('@/lib/gbifOccurrenceCount', () => ({
-  regionQuery: vi.fn(() => ''),
-  fetchGbifOccurrenceCount: vi.fn(async () => 564716),
+  fetchGbifOccurrenceCount: vi.fn(async () => 794353),
 }));
 
 import AvatarManager from '@/features/settings/AvatarManager';
@@ -91,7 +90,7 @@ describe('AvatarManager GBIF obs-count line', () => {
       scientificName: 'Corvus brachyrhynchos',
     }));
     vi.mocked(fetchGbifOccurrenceCount).mockClear();
-    vi.mocked(fetchGbifOccurrenceCount).mockImplementation(async () => 564716);
+    vi.mocked(fetchGbifOccurrenceCount).mockImplementation(async () => 794353);
     vi.mocked(saveSpeciesMetaToCloud).mockClear();
   });
 
@@ -100,20 +99,17 @@ describe('AvatarManager GBIF obs-count line', () => {
     fireEvent.click(item);
   }
 
-  it('renders the formatted region-filtered count under the scientific name', async () => {
+  it('renders the formatted global eBird count under the scientific name', async () => {
     render(<AvatarManager scope={USA_CO_SCOPE} />);
     await selectAmericanCrow();
 
-    // The read-only line renders with the scope's display name…
-    await screen.findByText(/Vaatlusi kokku \(Colorado\):/);
+    // The read-only line renders the global eBird label…
+    await screen.findByText(/Vaatlusi kokku \(eBird\):/);
     // …and the et-EE formatted count (NBSP-family group separators normalized).
-    await screen.findByText((content) => content.replace(/[  ]/g, ' ') === '564 716');
+    await screen.findByText((content) => content.replace(/[  ]/g, ' ') === '794 353');
 
-    // The lookup is keyed off the form's sciName + the scope's approved GBIF region.
-    expect(vi.mocked(fetchGbifOccurrenceCount)).toHaveBeenCalledWith(
-      'Corvus brachyrhynchos',
-      { gadmGid: 'USA.6_1' },
-    );
+    // The lookup is keyed off the form's sciName only — no region argument.
+    expect(vi.mocked(fetchGbifOccurrenceCount)).toHaveBeenCalledWith('Corvus brachyrhynchos');
   });
 
   it('never leaks an obs-count field into the cloud save patch', async () => {

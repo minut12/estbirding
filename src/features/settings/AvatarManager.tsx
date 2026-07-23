@@ -172,7 +172,8 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     setPreview(null);
   }, [scope, selected, scopeMetadata, avatarsReady, cloudItems]);
 
-  // Live GBIF total-observation count for the current sciName (display-only; never saved).
+  // Live global eBird observation count (via GBIF's eBird dataset) for the current
+  // sciName (display-only; never saved).
   useEffect(() => {
     if (scope.id === 'rariliin' || !selected || !scientificName.trim()) {
       setObsCount(null);
@@ -183,7 +184,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
     let cancelled = false;
     setObsLoading(true);
     setObsError(false);
-    fetchGbifOccurrenceCount(scientificName.trim(), scope.gbifRegion)
+    fetchGbifOccurrenceCount(scientificName.trim())
       .then((count) => {
         if (cancelled) return;
         setObsCount(count);
@@ -629,7 +630,7 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
             </div>
             {scientificName.trim() && (
               <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                <span>Vaatlusi kokku ({scope.displayName}):</span>
+                <span>Vaatlusi kokku (eBird):</span>
                 {obsLoading
                   ? <span className="inline-flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> laen…</span>
                   : obsError || obsCount == null

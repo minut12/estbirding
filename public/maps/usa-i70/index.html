@@ -1743,8 +1743,50 @@ const map = L.map("map", { zoomControl:false }).setView([39.5, -94.5], 5);
 renderStayMarkers();
 renderStayLegend();
 L.control.zoom({ position:"topright" }).addTo(map);
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
-map.createPane("highlightPane");
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+    /* ========= I-70 Route road overlay ========= */
+    (function drawI70Route(){
+      try {
+        if (!Array.isArray(STAY_LOCATIONS) || STAY_LOCATIONS.length < 2) return;
+        var CO = STAY_LOCATIONS.find(function(s){ return /colorado/i.test(s.name); }) || STAY_LOCATIONS[0];
+        var PA = STAY_LOCATIONS.find(function(s){ return /pennsylvania/i.test(s.name); }) || STAY_LOCATIONS[1];
+        if (!CO || !PA) return;
+        if (!map.getPane('i70RoutePane')) {
+          map.createPane('i70RoutePane');
+          map.getPane('i70RoutePane').style.zIndex = 350;      // above OSM tiles, below markers
+          map.getPane('i70RoutePane').style.pointerEvents = 'none';
+        }
+        // Static I-70 corridor fallback (Denver -> Breezewood) + CO/PA base connectors.
+        var I70_FALLBACK = [
+          [CO.lat, CO.lon],
+          [38.8339,-104.8214],[39.0872,-104.8730],[39.3722,-104.8561],[39.7392,-104.9903],
+          [39.7392,-104.7500],[39.2639,-103.6922],[39.2999,-102.2696],[39.3506,-101.7107],
+          [39.3919,-101.0524],[39.0219,-99.8779],[38.8792,-99.3268],[38.8403,-97.6114],
+          [39.0289,-96.8314],[39.0473,-95.6752],[39.1155,-94.6268],[38.9517,-92.3341],
+          [38.6270,-90.1994],[39.1200,-88.5434],[39.4667,-87.4139],[39.7684,-86.1581],
+          [39.8289,-84.8902],[39.7589,-84.1916],[39.9612,-82.9988],[39.9403,-82.0132],
+          [40.0640,-80.7209],[40.1734,-80.2462],[40.2237,-79.6089],[39.9915,-78.2522],
+          [PA.lat, PA.lon]
+        ];
+        var casing = L.polyline(I70_FALLBACK, { pane:'i70RoutePane', color:'#ffffff', weight:7, opacity:0.95, lineJoin:'round', lineCap:'round' }).addTo(map);
+        var fill   = L.polyline(I70_FALLBACK, { pane:'i70RoutePane', color:'#d7261e', weight:3.5, opacity:1, lineJoin:'round', lineCap:'round' }).addTo(map);
+        window.__i70Route = { casing: casing, fill: fill, source: 'fallback' };
+        // Upgrade to true highway geometry via OSRM (same service already used for driving distance).
+        var url = 'https://router.project-osrm.org/route/v1/driving/'
+          + CO.lon + ',' + CO.lat + ';' + PA.lon + ',' + PA.lat
+          + '?overview=full&geometries=geojson';
+        fetch(url).then(function(r){ return r.ok ? r.json() : null; }).then(function(data){
+          var route = data && data.routes && data.routes[0];
+          var coords = route && route.geometry && route.geometry.coordinates;
+          if (!coords || !coords.length) return;
+          var latlngs = coords.map(function(c){ return [c[1], c[0]]; });
+          casing.setLatLngs(latlngs);
+          fill.setLatLngs(latlngs);
+          window.__i70Route.source = 'osrm';
+        }).catch(function(e){ console.warn('[i70Route] OSRM upgrade failed; keeping fallback', e); });
+      } catch(e){ console.warn('[i70Route] draw failed', e); }
+    })();
+    map.createPane("highlightPane");
 map.getPane("highlightPane").style.zIndex = "650";
 map.getPane("highlightPane").style.pointerEvents = "none";
 

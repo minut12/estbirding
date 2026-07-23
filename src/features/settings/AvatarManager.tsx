@@ -36,6 +36,7 @@ import { addCustomSpecies, removeCustomSpecies, isCustomSpecies } from '@/lib/cu
 import { addCustomSpeciesToCloud, removeCustomSpeciesFromCloud, refreshCustomSpeciesFromCloud } from '@/lib/customSpeciesCloud';
 import { fetchEbirdTaxon } from '@/lib/ebirdTaxon';
 import { fetchGbifOccurrenceCount } from '@/lib/gbifOccurrenceCount';
+import UsaRarityClassifier from '@/features/settings/UsaRarityClassifier';
 import { ET_STRINGS } from '@/lib/etStrings';
 import { normalizeUiText } from '@/lib/textNormalize';
 
@@ -732,6 +733,13 @@ export default function AvatarManager({ scope = LINNULIIGID_SCOPE }: { scope?: S
               </Button>
             )}
           </div>
+        </>
+      )}
+
+      {scope.id.startsWith('usa_') && (
+        <>
+          <Separator />
+          <UsaRarityClassifier scope={scope} />
         </>
       )}
 

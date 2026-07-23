@@ -263,6 +263,62 @@ export async function saveSpeciesMetaToCloud(speciesName: string, patch: Partial
   }
 }
 
+export async function saveSpeciesMetaBatchToCloud(
+  patchesBySpecies: Record<string, Partial<SpeciesMeta>>,
+  scope: SpeciesScopeConfig = LINNULIIGID_SCOPE,
+): Promise<Record<string, SpeciesMeta>> {
+  // Normalize + drop empty keys; a single download→merge→upload avoids lost-update
+  // races that per-species round-trips would introduce.
+  const entries = Object.entries(patchesBySpecies)
+    .map(([name, patch]) => [normalizeSpeciesName(name), patch] as const)
+    .filter(([key]) => Boolean(key));
+  if (entries.length === 0) return loadSpeciesMeta(scope);
+
+  validateCloudConfig(scope);
+  console.info('[species-meta-cloud] batch save start', {
+    count: entries.length,
+    bucket: BUCKET,
+    path: scope.speciesMetaCloudFilePath,
+  });
+
+  const latest = (await downloadSpeciesMetaJson(scope)) || { version: 1 as const, updatedAt: new Date().toISOString(), items: {} };
+  const nextItems = { ...latest.items };
+  for (const [key, patch] of entries) {
+    const prev = nextItems[key] || {};
+    nextItems[key] = {
+      ...prev,
+      ...normalizeCloudItem({ ...prev, ...patch }),
+    };
+  }
+
+  const nextPayload: SpeciesMetaCloudJson = {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    items: nextItems,
+  };
+
+  try {
+    await uploadSpeciesMetaJson(nextPayload, scope);
+    const merged = mergeCloudOverLocal(loadSpeciesMeta(scope), nextPayload);
+    replaceSpeciesMeta(merged, scope);
+    localStorage.setItem(scope.speciesMetaCloudUpdatedAtKey, nextPayload.updatedAt || '');
+    localStorage.setItem(scope.speciesMetaLastSyncAtKey, new Date().toISOString());
+    clearLastSyncError(scope);
+    console.info('[species-meta-cloud] batch save end', {
+      count: entries.length,
+      updatedAt: nextPayload.updatedAt,
+      items: Object.keys(nextPayload.items).length,
+    });
+    try { window.dispatchEvent(new CustomEvent('species-meta-updated')); } catch {}
+    return merged;
+  } catch (error) {
+    const actionableError = toActionableCloudError(error, 'Pilve salvestamine ebaõnnestus.');
+    setLastSyncError(actionableError.message, scope);
+    console.error('[species-meta-cloud] batch save error', { count: entries.length, error, message: actionableError.message });
+    throw actionableError;
+  }
+}
+
 export function getSpeciesMetaSyncStatus(scope: SpeciesScopeConfig = LINNULIIGID_SCOPE): SpeciesMetaSyncStatus {
   return {
     cloudLoaded: localStorage.getItem(scope.speciesMetaCloudLoadedKey || CLOUD_LOADED_KEY) === '1',

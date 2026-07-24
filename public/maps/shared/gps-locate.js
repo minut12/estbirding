@@ -14,8 +14,8 @@
   function injectStyle() {
     if (document.getElementById('estgps-style')) return;
     var css =
-      '.estgps-fab{position:fixed;right:14px;z-index:900;' +
-      'bottom:calc(env(safe-area-inset-bottom,0px) + var(--bottom-inset,0px) + 14px);' +
+      '.estgps-fab{position:fixed;right:16px;z-index:900;' +
+      'bottom:calc(env(safe-area-inset-bottom,0px) + var(--bottom-inset,0px) + 90px);' +
       'width:46px;height:46px;border-radius:50%;background:#fff;border:1px solid rgba(0,0,0,.10);' +
       'box-shadow:0 2px 8px rgba(0,0,0,.22);display:none;align-items:center;justify-content:center;cursor:pointer;padding:0}' +
       '.estgps-fab:active{transform:scale(.95)}' +
@@ -24,7 +24,7 @@
       '.estgps-fab[disabled]{opacity:.55;cursor:default}' +
       '.estgps-dot{width:16px;height:16px;border-radius:50%;background:#1a73e8;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}' +
       '.estgps-toast{position:fixed;left:50%;transform:translateX(-50%);z-index:950;' +
-      'bottom:calc(env(safe-area-inset-bottom,0px) + var(--bottom-inset,0px) + 74px);' +
+      'bottom:calc(env(safe-area-inset-bottom,0px) + var(--bottom-inset,0px) + 150px);' +
       'background:#111827;color:#fff;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;' +
       'padding:8px 13px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.3);opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}' +
       '.estgps-toast.show{opacity:1}';

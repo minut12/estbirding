@@ -5,6 +5,7 @@ export interface AppSettings {
   eventsSourceUrl: string;
   autoTranslateToEstonian: boolean;
   enableSpeciesPredictionBeta: boolean;
+  gpsEnabled: boolean;
 }
 
 const STORAGE_KEY = 'estbirding-settings';
@@ -15,6 +16,7 @@ const defaults: AppSettings = {
   eventsSourceUrl: '',        // TODO: set real events feed URL
   autoTranslateToEstonian: true,
   enableSpeciesPredictionBeta: false,
+  gpsEnabled: false,
 };
 
 export function loadSettings(): AppSettings {
@@ -38,6 +40,10 @@ export function saveSettings(settings: AppSettings): void {
 
 export function isSpeciesPredictionEnabled(): boolean {
   return loadSettings().enableSpeciesPredictionBeta === true;
+}
+
+export function isGpsEnabled(): boolean {
+  return loadSettings().gpsEnabled === true;
 }
 
 export function isAutoTranslateNewsToEtEnabled(): boolean {

@@ -45,6 +45,7 @@ import {
   setStoredProxyBase,
 } from '@/config/proxyEndpoint';
 import { SUPABASE_KEY, isDeveloperModeEnabled, setDeveloperModeEnabled } from '@/config/supabaseConfig';
+import { broadcastGpsConfigToMapIframes } from '@/config/gpsConfig';
 
 type ResetMode = 'soft' | 'hard' | null;
 type SettingsPage = 'home' | 'news' | 'translations' | 'species' | 'rariliin' | 'usa_co' | 'usa_pa' | 'usa_i70' | 'species_prediction' | 'event_log';
@@ -518,6 +519,14 @@ export default function SettingsTab() {
     toast.success(checked
       ? 'Võõrkeelsete uudiste tõlge on sisse lülitatud'
       : 'Võõrkeelsete uudiste tõlge on välja lülitatud');
+  };
+
+  const handleGpsToggle = (checked: boolean) => {
+    const next = { ...form, gpsEnabled: checked };
+    setForm(next);
+    saveSettings(next);
+    broadcastGpsConfigToMapIframes();
+    toast.success(checked ? 'GPS-asukoht on lubatud' : 'GPS-asukoht on välja lülitatud');
   };
 
   const handleTestTranslate = async () => {
@@ -1001,6 +1010,18 @@ export default function SettingsTab() {
       </div>
 
       <NotificationSettingsCard />
+
+      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="gpsEnabled">Luba GPS-asukoht</Label>
+            <p className="text-xs text-muted-foreground">
+              Näita minu asukohta Linnuliigid (EE) ja USA kaartidel.
+            </p>
+          </div>
+          <Switch id="gpsEnabled" checked={form.gpsEnabled} onCheckedChange={handleGpsToggle} />
+        </div>
+      </div>
 
       {canManageSettings && <div className="flex flex-col gap-2">
         <Button className="w-full justify-center py-6 text-base font-bold" onClick={() => setSettingsPage('news')}>

@@ -281,6 +281,7 @@
 <script src="/maps/shared/species-meta.js"></script>
 <script src="/maps/shared/rarity-style.js"></script>
 <script src="/maps/shared/et-strings.js"></script>
+<script src="/maps/shared/gps-locate.js"></script>
 
 <script>
 // Define the prediction selector EARLY so popup onclick handlers can find it
@@ -881,6 +882,7 @@ window.__bm_avatars = avatars;
 const IS_MOBILE_DEVICE = matchMedia("(max-width: 900px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 const IS_MOBILE = IS_MOBILE_DEVICE;
 const map = window.map = L.map('map', { zoomControl: false }).setView([58.7,25.3], 6.5);
+try { if (window.EstGps) window.EstGps.init(window.map, { mapId: 'linnuliigid-ee' }); } catch (e) {}
 /* Reactive zoom placement: desktop=topleft, mobile=topright. Re-evaluates matchMedia
    live, so a narrow-at-mount load no longer permanently pins zoom top-right on desktop.
    Owns the single zoom control (map was created with zoomControl:false). */

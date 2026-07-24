@@ -22,7 +22,7 @@ import { type MapScope, loadSpeciesVisibility, saveSpeciesVisibility, loadLocalH
 import { getSpeciesScopeByMapId, SPECIES_PREDICTION_EVENT_TYPES, type SpeciesPredictionRequestPayload } from '@/lib/speciesPrediction';
 import { loadSpeciesPredictionSettings } from '@/lib/speciesPredictionSettings';
 import { runSpeciesPredictionRequest } from '@/lib/speciesPredictionRunner';
-import { isSpeciesPredictionEnabled } from '@/lib/settings';
+import { isSpeciesPredictionEnabled, isGpsEnabled } from '@/lib/settings';
 import { ACTIVE_PREDICTION_IFRAME_READY_MESSAGE, ACTIVE_PREDICTION_SPECIES_EVENT, ACTIVE_PREDICTION_SPECIES_MESSAGE, getActivePredictionSpecies, setActivePredictionSpecies, type ActivePredictionSpecies } from '@/lib/activePredictionSpecies';
 import { normalizeSpeciesName } from '@/lib/textNormalize';
 import { runBundledSpeciesBackfill } from '@/lib/speciesMetaBackfill';
@@ -146,6 +146,12 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
 
   // Send MAP_SHOWN to iframe so Leaflet can invalidateSize
   const sendMapShown = useCallback(() => sendToIframe({ type: 'MAP_SHOWN' }), [sendToIframe]);
+
+  // Send the GPS gate so the iframe knows whether geolocation is permitted
+  const sendGpsConfig = useCallback(
+    () => sendToIframe({ type: 'GPS_CONFIG', enabled: isGpsEnabled() }),
+    [sendToIframe],
+  );
 
   // Send MAP_REFRESH_VISIBLE to iframe
   const sendRefreshVisible = useCallback(() => {
@@ -338,6 +344,9 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
       }
       if (ev.data?.type === 'LOG_EVENT' && ev.data?.msg) {
         log(String(ev.data.msg));
+      }
+      if (ev.data?.type === 'GPS_CONFIG_REQUEST') {
+        sendToIframe({ type: 'GPS_CONFIG', enabled: isGpsEnabled() });
       }
       if (ev.data?.type === 'SUPABASE_CONFIG_REQUEST') {
         const validation = validateSupabaseConfig();
@@ -816,6 +825,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     setTimeout(sendPermissionsToIframe, 380);
     setTimeout(sendFeatureFlagsToIframe, 390);
     setTimeout(broadcastSupabaseConfigToMapIframes, 390);
+    setTimeout(sendGpsConfig, 395);
     setTimeout(sendAppInsets, 400);
     // Send species visibility preferences
     if (user?.id && mapScope) {
@@ -1110,6 +1120,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
             title={current.name}
             className="absolute inset-0 w-full h-full border-0 block"
             sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms"
+            allow="geolocation"
             onLoad={handleLoad}
             onError={handleError}
           />

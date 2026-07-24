@@ -6,6 +6,7 @@
 <title>USA – I-70 (POI)</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/maps/shared/gps-locate.js"></script>
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; height: 100%; }
@@ -207,6 +208,7 @@
   // preserved across tab switches.
   var map = L.map('map', { zoomControl: true, attributionControl: true })
     .setView([39.5, -94.5], 5);
+  try { if (window.EstGps) window.EstGps.init(map, { mapId: 'usa-i70-poi' }); } catch (e) {}
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

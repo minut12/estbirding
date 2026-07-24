@@ -435,6 +435,7 @@
 <script src="/maps/shared/species-meta.js"></script>
 <script src="/maps/shared/rarity-style.js"></script>
 <script src="/maps/shared/et-strings.js"></script>
+<script src="/maps/shared/gps-locate.js"></script>
 <script>
 /* ========= Embedded detection ========= */
 (function(){
@@ -1725,6 +1726,7 @@ function renderStayLegend(){
 
 /* ========= Map ========= */
 const map = L.map("map", { zoomControl:false }).setView([40.4842, -78.0103], 8);
+try { if (window.EstGps) window.EstGps.init(map, { mapId: 'usa-pa' }); } catch (e) {}
 renderStayMarkers();
 renderStayLegend();
 L.control.zoom({ position:"topright" }).addTo(map);

@@ -1,36 +1,51 @@
-# GPS location feature — implementation status
+# GPS location feature — architecture & decisions (2026-07-24)
 
-**Branch:** `feat/gps-location` (3 stacked commits off `main`) · **Date:** 2026-07-24
+**Request:** Add opt-in GPS positioning. Activate in Settings ("allow gps positioning"); once on, available only on **Linnuliigid (EE)** and **USA maps incl. POI**. On use, zoom in like Google Maps.
 
-Opt-in "show my location" control for the 7 in-app maps. Built in three surgical layers.
+**Delivered as:** 3 Claude Code `.md` prompts (locate-first, one concern each). All repo/frontend work — no Supabase/n8n. Mockup delivered before UI change.
 
-## Architecture / contract
+## Inferred decisions (user declined the multiple-choice gate; proceeded on intent)
+- **Map scope (7):** `linnuliigid`, `usa-co`, `usa-pa`, `usa-i70`, `usa-co-poi`, `usa-pa-poi`, `usa-i70-poi`. Excludes `europe`, `rariliin`. Scoping is enforced by *which maps include the module* — no per-map gate logic.
+- **Propagation:** postMessage, mirroring the existing `SUPABASE_CONFIG` channel (respects "I/O flows through the React parent"). Not URL param, not shared localStorage.
+- **Behavior:** one-shot locate → `flyTo(Math.max(currentZoom, 16))` (never zooms out) + blue dot + accuracy circle; re-tap re-centers. Not continuous `watchPosition`.
+- **Native Android:** web/PWA first. Native WebView geolocation (AndroidManifest `ACCESS_FINE_LOCATION` + `onGeolocationPermissionsShowPrompt`) is a **separate follow-up**, not in these prompts.
 
-- **Setting:** `gpsEnabled` (default `false`) in `src/lib/settings.ts`; reader `isGpsEnabled()`. Backward-compatible (loaded via `{...defaults, ...parsed}`).
-- **postMessage contract:** parent → iframe `{type:'GPS_CONFIG', enabled}`; iframe → parent on boot `{type:'GPS_CONFIG_REQUEST'}`, parent replies with `GPS_CONFIG`.
-- **Broadcaster:** `src/config/gpsConfig.ts` `broadcastGpsConfigToMapIframes()` mirrors `broadcastSupabaseConfigToMapIframes` (selector `iframe[data-map-iframe="true"]`).
-- **MapTab.tsx:** `sendGpsConfig`, a `GPS_CONFIG_REQUEST` reply branch, a push in the `handleLoad` stagger (`setTimeout(sendGpsConfig, 395)`), and `allow="geolocation"` on the iframe (sandbox unchanged).
-- **SettingsTab.tsx:** user-level "Luba GPS-asukoht" switch placed **outside** `canManageSettings` (every role sees it).
-- **Shared control:** `public/maps/shared/gps-locate.js` — self-contained `window.EstGps.init(map, {mapId})`. Gate-driven FAB (hidden until `GPS_CONFIG enabled:true`), one-shot `getCurrentPosition` → `flyTo(max(zoom,16))` + dot/accuracy ring. Idempotent; never throws on parent broadcasts.
+## Contract (postMessage)
+- Parent → iframe: `{ type: 'GPS_CONFIG', enabled: boolean }`
+- iframe → parent on boot: `{ type: 'GPS_CONFIG_REQUEST' }` → parent replies with `GPS_CONFIG`.
 
-**Wired maps (7):** `linnuliigid`, `usa-co`, `usa-pa`, `usa-i70`, `usa-co-poi`, `usa-pa-poi`, `usa-i70-poi`. `europe`/`rariliin` untouched.
+## Files / anchors
+**Prompt 1 (data+primitive):** `src/lib/settings.ts` (add `gpsEnabled:false` + `isGpsEnabled()`); new `src/config/gpsConfig.ts` (`broadcastGpsConfigToMapIframes()`, mirrors `broadcastSupabaseConfigToMapIframes`).
+**Prompt 2 (UI+wiring):** `SettingsTab.tsx` — Switch-row card in `renderSettingsHome()` **outside** `canManageSettings` (user-level), handler saves + broadcasts. `MapTab.tsx` — `sendGpsConfig` useCallback; `GPS_CONFIG_REQUEST` branch next to `SUPABASE_CONFIG_REQUEST` (~L348); `setTimeout(sendGpsConfig, 395)` in `handleLoad` (~L828); add `allow="geolocation"` to `<iframe data-map-iframe>` (~L1123, previously only `sandbox`).
+**Prompt 3 (map control):** new `public/maps/shared/gps-locate.js` exposing `window.EstGps.init(map, {mapId})`; per map: one `<script src="/maps/shared/gps-locate.js">` include + one `window.EstGps.init(map, …)` expression right after `L.map(...)`.
 
-## Load-bearing invariants (footguns)
+## Map structure notes (verified via Lovable read)
+- **Species maps** (`linnuliigid`, `usa-co/pa/i70`): `/maps/shared/*.js` block before a top-level classic main `<script>`. `linnuliigid` exposes `window.map` (L883); `usa-co` `const map` (L1735), `usa-pa` (L1727), `usa-i70` (L1752).
+- **POI maps** (`*-poi`): Leaflet in `<head>` (JS @ L8) + single IIFE (@ L155); `var map` closure-scoped (@ L206/207/208). `usa-i70-poi` has an inner `drawI70Route` IIFE @ L216 — init targets the **outer** map (@L211, after `setView` @L209, before the inner IIFE). All 3 POI maps init with `attributionControl: true` (bottom-right) — see overlap risk below.
+- None had pre-existing geolocation. Each already has a `message` handler switching on `ev.data.type`.
 
-- **linnuliigid:** init MUST be an expression statement — `try { if (window.EstGps) window.EstGps.init(window.map, {…}); } catch (e) {}` on the line after `const map` — never a new `let`/`const`/`<script>` (TDZ / closure-scope crash → white-screen).
-- **usa-i70-poi:** init must reference the **outer** `map` after the full `var map = …setView(…)` statement and **before** the `drawI70Route` IIFE.
-- All logic lives in the shared file; per-map edits are only one `<script src>` include + one `init()` call.
+## Footgun compliance
+All new logic in the shared file; per-map edits are only an include + an init **expression inside the existing main `<script>`** (no new top-level `let`/`const`, no new `<script>` tag). Does not touch `loadSpeciesMeta`, `window.points`/`__bm_points`/`pt()`, `_applySnapshot`, snapshot keys, cron/cooldown.
 
-## Verification done (2026-07-24)
+## Estonian copy (MCP-verified — spell + morphology)
+- Toggle: **Luba GPS-asukoht** · desc **Näita minu asukohta Linnuliigid (EE) ja USA kaartidel.**
+- Button: **Minu asukoht** · locating **Otsin asukohta…** · denied **Asukoha luba on keelatud** · error **Asukohta ei õnnestunud tuvastada**
+- Toasts: **GPS-asukoht on lubatud** / **GPS-asukoht on välja lülitatud**
 
-- `tsc --noEmit -p tsconfig.app.json`: 0 errors in changed TS (only pre-existing `@lovable.dev/mcp-js` module-not-found remain).
-- `node --check` on the shared module: parses.
-- Headless-browser static-server sweep of all 7 maps: `typeof window.EstGps === 'object'`, map initializes, FAB `display:none` when gate off → `flex` on `GPS_CONFIG enabled:true`, tap → toast `Otsin asukohta…` + button disabled while busy, **0 console errors**, linnuliigid no white-screen.
+## Implementation status (2026-07-24 · branch `feat/gps-location`, pushed to origin)
+Commits (4): `56f65ea` P1 (settings+helper) → `d7f8d6e` P2 (toggle+propagation) → `e20eea4` P3 (map control) → `61df499` docs (this note). `origin/feat/gps-location` in sync; branched off `main` @ `a56f958`.
+- **Prompt 1:** vitest green (default-off, save→isGpsEnabled round-trip, legacy-blob fallback, broadcast smoke); `tsc --noEmit` clean on changed files.
+- **Prompt 2:** `tsc` clean on changed files. Local dev-server runtime **not** obtained — pre-existing `@lovable.dev/mcp-js` missing from `node_modules` breaks `vite.config.ts` (both `vite build` and `vite dev`). Not fabricated.
+- **Prompt 3:** `node --check` on the module; headless Chromium over a static `public/` server — all 7 maps: `window.EstGps` present, map inits, FAB `none→flex` on `GPS_CONFIG {enabled:true}`, 0 console errors; **linnuliigid no white-screen**; `usa-i70-poi` outer-map trap cleared; tap → `Otsin asukohta…` toast + button-disabled, no throw. `git status` = only the 7 `index.html` + the shared file; `europe`/`rariliin` untouched. Audited against this note post-commit — all anchors present, line-for-line match.
 
-## Deferred / out of scope
+## Pending verification (real device / Lovable preview — headless can't grant OS geolocation)
+- Actual fix → blue dot + accuracy ring + zoom-in to ~z16; re-tap re-centers.
+- Denied path shows **Asukoha luba on keelatud**.
+- **POI maps FAB-vs-attribution overlap (priority):** the 3 POI maps show Leaflet's `attributionControl` bottom-right; the FAB also sits bottom-right (14px). Species maps don't carry that control, so the risk is POI-only. Check first. Trivial fixes if it overlaps: (a) move attribution to `bottomleft` on those maps, or (b) lift the FAB `bottom` offset in `gps-locate.js`.
+- Confirm `europe`/`rariliin` show **no** button; toggle-off clears the dot + hides the button.
 
-- **Real runtime confirmation on the Lovable preview** — local `vite`/`npm run dev` is blocked by the pre-existing missing `@lovable.dev/mcp-js` package (imported by `vite.config.ts`). Confirm on the deployed preview.
-- **Actual GPS fix + zoom + denied-path toast** (`Asukoha luba on keelatud`) need a real device/permission prompt; headless can't grant/deny OS geolocation.
-- **Native Android WebView geolocation is a separate follow-up** — WebView needs `onGeolocationPermissionsShowPrompt` + runtime location permission; the iframe `allow="geolocation"` only covers the browser/PWA path.
+## Known pre-existing blocker (unrelated to this feature)
+`@lovable.dev/mcp-js` missing from `node_modules` breaks local `vite build`/`dev`. Sole source of the 4 pre-existing `tsc` errors in `src/lib/mcp/*`. Separate one-concern fix if wanted.
 
-Estonian UI copy is MCP-verified — do not paraphrase.
+## Open follow-up
+Native Android geolocation wiring (AndroidManifest permission + WebView `onGeolocationPermissionsShowPrompt`). Tracking issue to be filed on the repo.

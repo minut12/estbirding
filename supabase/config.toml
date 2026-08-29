@@ -1,4 +1,4 @@
-project_id = "eenwcyuyugyrjgpivxrq"
+project_id = "rfjhrosxbaihyrnbmmbl"
 
 [functions.elurikkus-proxy]
 verify_jwt = false
@@ -19,9 +19,6 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.backfill-news-images]
-verify_jwt = false
-
-[functions.events-admin]
 verify_jwt = false
 
 [functions.linnuliigid-snapshot]
@@ -136,4 +133,53 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.get-elurikkus-history]
+verify_jwt = false
+
+# Added M3: these 14 functions had no config entry and would have deployed with
+# verify_jwt = true, breaking their machine callers (n8n, GitHub Actions, scripts,
+# map HTML). Probed against the old project 2026-08-29 with no Authorization and
+# no apikey: every one reached function code (200 / function-level 401 / 405 /
+# 400 / 406), never the platform JWT gate — so production ran them with
+# verify_jwt = false. These entries reproduce that.
+
+[functions.debug-year-first]
+verify_jwt = false
+
+[functions.ebird-bulk-refresh]
+verify_jwt = false
+
+[functions.elurikkus-bulk-refresh]
+verify_jwt = false
+
+[functions.elurikkus-species]
+verify_jwt = false
+
+[functions.events-image-upload]
+verify_jwt = false
+
+[functions.get-elurikkus-observations]
+verify_jwt = false
+
+[functions.get-ennustus-map]
+verify_jwt = false
+
+[functions.insert-elurikkus-raport]
+verify_jwt = false
+
+[functions.insert-europe-ebird-cache]
+verify_jwt = false
+
+[functions.insert-vaatluste-raport]
+verify_jwt = false
+
+[functions.linnuliigid-control]
+verify_jwt = false
+
+[functions.mcp]
+verify_jwt = false
+
+[functions.trigger-toenaosus-refresh]
+verify_jwt = false
+
+[functions.trigger-vaatluste-refresh]
 verify_jwt = false

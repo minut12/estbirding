@@ -9100,7 +9100,7 @@ function _syncEluObsVisibility(){
 async function _fetchEluRecentObs(){
   if(!ELU_OBS_PINS_ENABLED) return;
   try{
-    var res = await fetch('https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/get-elurikkus-recent-obs', { cache: 'no-store' });
+    var res = await fetch('https://rfjhrosxbaihyrnbmmbl.supabase.co/functions/v1/get-elurikkus-recent-obs', { cache: 'no-store' });
     if(!res || !res.ok){ console.warn('[elu-obs] fetch failed: HTTP ' + (res && res.status)); return; }
     var json = await res.json();
     if(json && json.species && typeof json.species === 'object'){
@@ -9459,7 +9459,7 @@ function openWaze(lat, lon){
 var activeProbSpecies = null;
 
 // === NOTIFICATION BELL TOGGLE ===
-var VAPID_PUBLIC_KEY = 'BBugk-8xSVxkyM0-_gYvcwlno0Mu2XNzyoA1HkI812T9E4zdn8tVYfxUyucuovJIpWTjJkURu-FKTF3BirgszeQ';
+var VAPID_PUBLIC_KEY = 'BMcJJwiQiFdVYrzz8wpoMp0kA2zbw4o4QHgebWs1WV0LexhjNPek5JX1ZHM8xswOXP_VJqUl_1UoA83tKEtpldI';
 
 var __notifySpecies = [];
 try { __notifySpecies = JSON.parse(localStorage.getItem('bm_notify_species') || '[]'); } catch(e){ __notifySpecies = []; }
@@ -9710,7 +9710,7 @@ window.toggleNotification = async function(speciesName) {
 
     var fromBm = __notifySpecies || [];
 
-    var cloudUrl = 'https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/meta/species_meta_v1.json?t=' + Date.now();
+    var cloudUrl = 'https://rfjhrosxbaihyrnbmmbl.supabase.co/storage/v1/object/public/bird-avatars/meta/species_meta_v1.json?t=' + Date.now();
     var res = await fetch(cloudUrl, { cache: 'no-store' });
     if (res.ok) {
       var cloud = await res.json();
@@ -11212,7 +11212,7 @@ var __sharedDefaults = {};
     if(!code && window.points && window.points[estName] && window.points[estName].ebirdCode) code = window.points[estName].ebirdCode;
     if(!code) return null;
 
-    var SUPABASE_REF = 'eenwcyuyugyrjgpivxrq';
+    var SUPABASE_REF = 'rfjhrosxbaihyrnbmmbl';
     var token = localStorage.getItem('bm_ebird_token') || '9s72dc2jcjlq';
     var directUrl = 'https://api.ebird.org/v2/data/obs/EE/recent/' + encodeURIComponent(code) + '?back=30&maxResults=1000&detail=full&_ts=' + Date.now();
     var proxyUrl = 'https://' + SUPABASE_REF + '.supabase.co/functions/v1/ebird_recent?regionCode=EE&back=30&maxResults=1000&detail=full&speciesCode=' + encodeURIComponent(code);
@@ -13113,7 +13113,7 @@ var __sharedDefaults = {};
       // cannot be paged. `since` is exclusive, so GBIF's boundary day is not double-counted.
       var _eluHistAdded = 0;
       try {
-        var _histUrl = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/get-elurikkus-history'
+        var _histUrl = 'https://rfjhrosxbaihyrnbmmbl.supabase.co/functions/v1/get-elurikkus-history'
           + '?species=' + encodeURIComponent(speciesName)
           + (_gbifMaxIso ? '&since=' + _gbifMaxIso : '');
         var _histRes = await fetch(_histUrl, { cache: 'no-store' });
@@ -14071,7 +14071,7 @@ body:not([data-admin="1"]) .bm-admin-only { display: none; }
 var BM_NEIGHBOR_CACHE_KEY    = 'bm_neighbor_cache_v1';
 var BM_NEIGHBOR_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 var BM_NEIGHBOR_FETCH_TIMEOUT_MS = 15000;
-var BM_NEIGHBOR_ENDPOINT = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/get-europe-ebird-cache';
+var BM_NEIGHBOR_ENDPOINT = 'https://rfjhrosxbaihyrnbmmbl.supabase.co/functions/v1/get-europe-ebird-cache';
 
 var _NB_SOUTH = ['LV','LT','PL','BY'];
 var _NB_NORTH = ['FI','SE','RU'];

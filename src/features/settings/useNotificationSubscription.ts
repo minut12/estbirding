@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 const VAPID_PUBLIC_KEY =
-  'BBugk-8xSVxkyM0-_gYvcwlno0Mu2XNzyoA1HkI812T9E4zdn8tVYfxUyucuovJIpWTjJkURu-FKTF3BirgszeQ';
+  'BMcJJwiQiFdVYrzz8wpoMp0kA2zbw4o4QHgebWs1WV0LexhjNPek5JX1ZHM8xswOXP_VJqUl_1UoA83tKEtpldI';
 
 const SPECIES_META_URL =
-  'https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/meta/species_meta_v1.json';
+  'https://rfjhrosxbaihyrnbmmbl.supabase.co/storage/v1/object/public/bird-avatars/meta/species_meta_v1.json';
 
 export type SubscriptionState =
   | { status: 'unsupported' }

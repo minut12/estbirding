@@ -54,7 +54,7 @@ export default function EventLog() {
       label: '☁️ Cloud notify',
       action: async () => {
         try {
-          const r = await fetch('https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/meta/species_meta_v1.json?t=' + Date.now());
+          const r = await fetch('https://rfjhrosxbaihyrnbmmbl.supabase.co/storage/v1/object/public/bird-avatars/meta/species_meta_v1.json?t=' + Date.now());
           const d = await r.json();
           const n = Object.entries(d.items || {}).filter(([, v]: any) => v?.notify === true);
           log('☁️ Cloud notify: ' + n.length + ' species');

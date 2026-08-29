@@ -16,7 +16,7 @@ if (-not $secret) {
 }
 if (-not $secret) { Write-Error "No secret provided."; exit 1 }
 
-$uri  = "https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/gbif-bulk-refresh"
+$uri  = "https://rfjhrosxbaihyrnbmmbl.supabase.co/functions/v1/gbif-bulk-refresh"
 $body = @{ mode = $Mode; offset = $Offset; batch_size = $BatchSize; page_cap = $PageCap } | ConvertTo-Json -Compress
 Write-Host "POST $uri  mode=$Mode offset=$Offset batch_size=$BatchSize page_cap=$PageCap"
 

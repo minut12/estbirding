@@ -80,9 +80,9 @@
     <details>
       <summary>Autoâ€‘fetch options</summary>
       <div class="small">
-       <label>Proxy base (optional): <input id="proxyBase" placeholder="e.g. https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/proxy?url=" style="width:100%"></label>
+       <label>Proxy base (optional): <input id="proxyBase" placeholder="e.g. https://rfjhrosxbaihyrnbmmbl.supabase.co/functions/v1/proxy?url=" style="width:100%"></label>
         <p>Leave empty to use the default Supabase proxy:<br>
-        <code>https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/proxy?url=</code></p>
+        <code>https://rfjhrosxbaihyrnbmmbl.supabase.co/functions/v1/proxy?url=</code></p>
         <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
           <button id="fetchAllNames" class="btn secondary">Fetch ALL names</button>
           <button id="fetchAllCoords" class="btn secondary">Fetch ALL coords</button> 
@@ -254,7 +254,7 @@ const DEFAULT_SPRING_DATES = {
 
 let avatars = JSON.parse(localStorage.getItem(LS_AVATARS) || '{}');
 let points  = JSON.parse(localStorage.getItem(LS_POINTS) || '{}'); // key = estonian name
-const DEFAULT_PROXY_BASE = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/proxy?url=';
+const DEFAULT_PROXY_BASE = 'https://rfjhrosxbaihyrnbmmbl.supabase.co/functions/v1/proxy?url=';
 const FALLBACK_PROXY_BASE = ''; // removed dead allorigins.win proxy
 let proxyBase = localStorage.getItem(LS_PROXY) || DEFAULT_PROXY_BASE;
 let nameCache = JSON.parse(localStorage.getItem(LS_NAMES) || '{}'); // not really used here

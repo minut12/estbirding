@@ -6,7 +6,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 // Hidden debug shortcut: ?reset=1 triggers full reset
 import { fullReset, doHardReload } from './lib/cache-reset';
 import { log } from './lib/eventLog';
-const BUILTIN_TRANSLATE_ENDPOINT = 'https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/translate-et';
+const BUILTIN_TRANSLATE_ENDPOINT = 'https://rfjhrosxbaihyrnbmmbl.supabase.co/functions/v1/translate-et';
 declare const __BUILD_TIME__: string;
 const RUNTIME_BUILD_MARKER = `${__BUILD_TIME__}|app-runtime-c92cfa2`;
 

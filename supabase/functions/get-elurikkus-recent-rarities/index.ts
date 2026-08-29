@@ -15,7 +15,7 @@ const corsHeaders = {
 
 const DAYS_WINDOW = 14;
 const SPECIES_META_URL =
-  "https://eenwcyuyugyrjgpivxrq.supabase.co/storage/v1/object/public/bird-avatars/meta/species_meta_v1.json";
+  "https://rfjhrosxbaihyrnbmmbl.supabase.co/storage/v1/object/public/bird-avatars/meta/species_meta_v1.json";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {

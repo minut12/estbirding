@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Trigger snapshot refresh and wait for completion
         env:
-          FUNCTION_URL: https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/linnuliigid-snapshot
+          FUNCTION_URL: https://rfjhrosxbaihyrnbmmbl.supabase.co/functions/v1/linnuliigid-snapshot
           SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -uo pipefail   # no -e; explicit per-call error handling

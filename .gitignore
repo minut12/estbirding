@@ -34,6 +34,9 @@ dist-ssr
 .claude/
 .playwright-mcp/
 
+# Supabase CLI local scratch state (link target, version pins) — not source.
+supabase/.temp/
+
 # Graphify knowledge-graph outputs — rebuilt locally via the post-commit hook;
 # keep out of the Lovable-synced repo.
 graphify-out/

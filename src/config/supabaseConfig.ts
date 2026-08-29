@@ -1,9 +1,8 @@
-// FALLBACK HARDCODING: temporary workaround for Lovable platform-level
-// env propagation bug. Keep in sync with src/integrations/supabase/client.ts.
+// FALLBACK HARDCODING: used when the host does not inject VITE_SUPABASE_* at
+// build time. Keep in sync with src/integrations/supabase/client.ts.
 // Anon/publishable key is public-by-design (RLS-protected), safe to embed.
-const FALLBACK_URL = "https://eenwcyuyugyrjgpivxrq.supabase.co";
-const FALLBACK_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVlbndjeXV5dWd5cmpncGl2eHJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1MzAxNTAsImV4cCI6MjA4NzEwNjE1MH0.pyU1vWLAUcFCBFggn0Ao2dI49yuTo0p5lvSWpPmWUis";
+const FALLBACK_URL = "https://rfjhrosxbaihyrnbmmbl.supabase.co";
+const FALLBACK_KEY = "sb_publishable_DqkIu4ef3j1mqqC-dxRt6A_m325WsvX";
 
 const RAW_ENV_URL = String(import.meta.env.VITE_SUPABASE_URL || "").trim();
 const RAW_ENV_KEY = String(

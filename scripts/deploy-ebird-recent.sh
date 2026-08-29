@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-PROJECT_REF="${1:-eenwcyuyugyrjgpivxrq}"
+PROJECT_REF="${1:-rfjhrosxbaihyrnbmmbl}"
 
 echo "Linking Supabase project: ${PROJECT_REF}"
 supabase link --project-ref "${PROJECT_REF}"

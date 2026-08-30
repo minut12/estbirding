@@ -8,7 +8,7 @@
 //
 // Auth on this function: X-Webhook-Secret must equal VAATLUSTE_WEBHOOK_SECRET.
 //
-// Wall clock: Supabase Pro caps an invocation at ~400 s, so after BUDGET_MS the
+// Wall clock: the edge gateway 504s at 150 s, so after BUDGET_MS the
 // driver self-chains -- it POSTs public.m7_call_ef over PostgREST with the
 // service-role key, which enqueues a fresh invocation carrying (run_id, hop+1,
 // state). The chain POST is awaited: an un-awaited fetch dies with the isolate.
@@ -20,9 +20,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 
-// chain past this; a call may take up to CALL_TIMEOUT_MS, 200+180 < 400 s Pro wall clock
-const BUDGET_MS = 200_000;
-const CALL_TIMEOUT_MS = 180_000; // matches the n8n Fire nodes' timeout
+// Supabase edge gateway 504s at 150 s and the isolate dies soon after --
+// 90 + 55 < 150; hops chain via pg_net well before that.
+const BUDGET_MS = 90_000;
+const CALL_TIMEOUT_MS = 55_000;
 const RETRY_DELAY_MS = 3_000; // n8n used waitBetweenTries 3000-5000
 
 const corsHeaders = {
@@ -104,8 +105,11 @@ const JOBS: Record<JobName, JobConfig> = {
     target: "elurikkus-bulk-refresh",
     secretHeader: "x-refresh-secret",
     secretEnv: "ELURIKKUS_REFRESH_SECRET",
-    maxCalls: 15,
-    body: (s) => ({ offset: s.offset, limit: 50 }),
+    // limit 25 (was 50) so one chunk lands around 30 s, well inside
+    // CALL_TIMEOUT_MS; maxCalls 30 (was 15) because 445 species / 25 = 18
+    // chunks, leaving headroom for a growing species list.
+    maxCalls: 30,
+    body: (s) => ({ offset: s.offset, limit: 25 }),
     step: (s, resp) => {
       const attempted = Number(resp.done ?? 0);
       const updated = Number(resp.updated ?? 0);
@@ -207,7 +211,7 @@ function normalizeState(v: unknown): JobState {
 }
 
 // ---------------------------------------------------------------------------
-// Target call: 180 s timeout, one retry on network error / 5xx
+// Target call: CALL_TIMEOUT_MS, one retry on network error / 5xx
 // ---------------------------------------------------------------------------
 
 async function callTarget(
@@ -324,6 +328,30 @@ async function openRun(
   return (data as { id: number }).id;
 }
 
+// Heartbeat after every target call, so a hop that is later killed by the
+// gateway still leaves behind how far it actually got. Never throws: a
+// logging failure must not abort a batch that is otherwise making progress.
+async function touchRun(
+  sb: Admin,
+  id: number | null,
+  calls: number,
+  state: Record<string, unknown>,
+): Promise<void> {
+  if (id === null) return;
+  try {
+    const { error } = await sb
+      .from("cron_runs")
+      .update({ calls, state })
+      .eq("id", id);
+    if (error) console.error("[cron_runs touch]", error.message);
+  } catch (e) {
+    console.error(
+      "[cron_runs touch]",
+      e instanceof Error ? e.message : String(e),
+    );
+  }
+}
+
 async function closeRun(
   sb: Admin,
   id: number | null,
@@ -411,6 +439,7 @@ Deno.serve(async (req) => {
   let chained = false;
   let stopped: string | null = null;
   let errorMsg: string | null = null;
+  let rowClosed = false; // the chained path closes the row inside the loop
 
   try {
     while (true) {
@@ -427,6 +456,7 @@ Deno.serve(async (req) => {
         resp,
       );
       state = stepped.state;
+      await touchRun(sb, rowId, calls, { ...state });
 
       if (stepped.stop) {
         stopped = stepped.reason ?? "done";
@@ -437,9 +467,31 @@ Deno.serve(async (req) => {
         break;
       }
       if (Date.now() - started > BUDGET_MS) {
-        await chain(job, runId, hop, state);
-        chained = true;
+        // Close the row BEFORE chaining. The chain POST is the most likely
+        // thing to be cut short by the gateway, and a hop that dies mid-POST
+        // must not leave an open row that reads as a crash.
         stopped = "chained";
+        chained = true;
+        await closeRun(sb, rowId, {
+          calls,
+          ok: true,
+          state: { ...state, stopped, chained },
+          error: null,
+        });
+        rowClosed = true;
+        try {
+          await chain(job, runId, hop, state);
+        } catch (e) {
+          // The successor was never enqueued; correct the row we just closed.
+          errorMsg = e instanceof Error ? e.message : String(e);
+          chained = false;
+          await closeRun(sb, rowId, {
+            calls,
+            ok: false,
+            state: { ...state, stopped, chained },
+            error: errorMsg,
+          });
+        }
         break;
       }
     }
@@ -449,12 +501,14 @@ Deno.serve(async (req) => {
 
   const ok = errorMsg === null;
   const tookMs = Date.now() - started;
-  await closeRun(sb, rowId, {
-    calls,
-    ok,
-    state: { ...state, stopped, chained },
-    error: errorMsg,
-  });
+  if (!rowClosed) {
+    await closeRun(sb, rowId, {
+      calls,
+      ok,
+      state: { ...state, stopped, chained },
+      error: errorMsg,
+    });
+  }
 
   return json(ok ? 200 : 500, {
     ok,

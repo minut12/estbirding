@@ -183,3 +183,9 @@ verify_jwt = false
 
 [functions.trigger-vaatluste-refresh]
 verify_jwt = false
+
+[functions.batch-driver]
+verify_jwt = false
+
+[functions.ufo-refresh]
+verify_jwt = false

@@ -5,6 +5,11 @@
 
 [build.environment]
   NODE_VERSION = "22"
+  # The eBird token is a client-side key by design: the map iframes call
+  # api.ebird.org directly from the browser, so it is embedded in
+  # public/maps/*/index.html and map-placeholder.html. Netlify's secrets scan
+  # flags it and fails the build; this omits that one key from the scan.
+  SECRETS_SCAN_OMIT_KEYS = "EBIRD_API_TOKEN"
 
 [[redirects]]
   from = "/*"

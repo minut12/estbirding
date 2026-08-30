@@ -1,6 +1,4 @@
-const fetch = globalThis.fetch || require("node-fetch");
-
-exports.handler = async function (event) {
+export const handler = async function (event) {
   const json = (obj, statusCode = 200) => ({
     statusCode,
     headers: { "Content-Type": "application/json; charset=utf-8" },

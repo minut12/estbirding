@@ -11,7 +11,7 @@
 // No retries and no caching: a retry would muddy the signal, and a cached
 // answer is worthless for a reachability question.
 
-exports.handler = async function () {
+export const handler = async function () {
   const json = (obj, statusCode = 200) => ({
     statusCode,
     headers: { "Content-Type": "application/json; charset=utf-8" },

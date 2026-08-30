@@ -1,4 +1,4 @@
-exports.handler = async function () {
+export const handler = async function () {
   return {
     statusCode: 200,
     headers: { "Content-Type": "application/json; charset=utf-8" },

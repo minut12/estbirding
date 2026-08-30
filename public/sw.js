@@ -1,6 +1,9 @@
-const CACHE_NAME = 'estbirding-v2-runtime-diagnostics';
+// Cache name is derived from the SW's own URL: src/main.tsx registers
+// /sw.js?v=<build marker>, so every build gets its own cache and `activate`
+// evicts the previous one.
+const SW_VERSION = (() => { try { return new URL(self.location.href).searchParams.get('v') || 'dev'; } catch (e) { return 'dev'; } })();
+const CACHE_NAME = 'estbirding-' + SW_VERSION;
 const PRECACHE_URLS = [
-  '/',
   '/manifest.json',
   '/map-placeholder.html',
 ];
@@ -31,6 +34,22 @@ self.addEventListener('fetch', (event) => {
   // Always fetch /reset/ from network
   if (DENY_CACHE.some((p) => url.pathname.startsWith(p))) {
     event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // Navigations (index.html) are network-first so a deploy never leaves a
+  // returning browser with an index.html that points at vanished asset hashes.
+  // Cache fallback for offline; never cache a non-200.
+  if (event.request.mode === 'navigate' || url.pathname === '/' || url.pathname === '/index.html') {
+    event.respondWith(
+      fetch(event.request).then((response) => {
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put('/', copy)).catch(() => {});
+        }
+        return response;
+      }).catch(() => caches.match('/'))
+    );
     return;
   }
 

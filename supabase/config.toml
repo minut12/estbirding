@@ -192,3 +192,6 @@ verify_jwt = false
 
 [functions.news-translate-v2]
 verify_jwt = false
+
+[functions.m7-probe]
+verify_jwt = false

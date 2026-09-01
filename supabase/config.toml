@@ -198,3 +198,6 @@ verify_jwt = false
 
 [functions.elurikkus-orchestrator]
 verify_jwt = false
+
+[functions.vaatluste-orchestrator]
+verify_jwt = false

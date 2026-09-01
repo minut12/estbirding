@@ -1075,7 +1075,16 @@ const TOPUP_REGIONS = ["FI", "LV", "LT", "SE", "NO", "DK", "PL"];
 const TOPUP_OBS_PER_SPECIES_PER_COUNTRY_CAP = 1;
 const TOPUP_TOTAL_CAP = 200;
 const MEGA_ONLY_COUNTRIES = new Set(["NO", "DK"]);
-const MAX_PER_COUNTRY = 8;
+// n8n's 8 only ever yielded ~26 entries because 87% of its per-species topup
+// calls came back 429-rate-limited, so most countries never filled their slots.
+// The region pull (M7.4c) has no such losses and fills all 7 countries: 8 gave
+// 49 entries / 17.5k output tokens / 235 s Sonnet (dry run 2026-09-01,
+// cron_runs 54) -- too close to the 286 s ceiling the 340 s budget leaves.
+// 4 restores the historical raport size (<= 28) at ~2 min.
+const MAX_PER_COUNTRY = Math.max(
+  1,
+  Number(Deno.env.get("VAATLUSTE_MAX_PER_COUNTRY")) || 4,
+);
 const RARITY_RANK: Record<string, number> = {
   mega: 0,
   super: 1,

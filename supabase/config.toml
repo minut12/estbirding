@@ -189,3 +189,6 @@ verify_jwt = false
 
 [functions.ufo-refresh]
 verify_jwt = false
+
+[functions.news-translate-v2]
+verify_jwt = false

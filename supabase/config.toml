@@ -195,3 +195,6 @@ verify_jwt = false
 
 [functions.m7-probe]
 verify_jwt = false
+
+[functions.elurikkus-orchestrator]
+verify_jwt = false

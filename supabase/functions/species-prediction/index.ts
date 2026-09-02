@@ -4,13 +4,16 @@ import { corsHeaders } from '../_shared/cors.ts';
 
 const EDGE_FUNCTION_VERSION = 'species-prediction-2026-03-17-async';
 const DEFAULT_TIMEOUT_MS = 120000;
+// M7.7: remove — n8n workflow z8vxudX8guSqNUdZ is retired. WEBHOOK_ENV_KEY is
+// still read by resolveWebhookTarget()/the legacy status probe; the two auth
+// keys are dead. None of the three gate the Sonnet analyst path any more.
 const WEBHOOK_ENV_KEY = 'SPECIES_PREDICTION_N8N_WEBHOOK_URL';
-const AUTH_HEADER_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_HEADER';
-const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE';
+const AUTH_HEADER_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_HEADER'; // M7.7: remove
+const AUTH_VALUE_ENV_KEY = 'SPECIES_PREDICTION_N8N_AUTH_VALUE'; // M7.7: remove
 const TIMEOUT_ENV_KEY = 'SPECIES_PREDICTION_TIMEOUT_MS';
 const LOG_PREFIX = '[species-prediction]';
 const EXPECTED_PRODUCTION_WEBHOOK_PATH = 'species-prediction-evidence-first';
-const SPECIES_PREDICTION_BACKEND_BUILD = '2026-04-02-spring-filter-v2';
+const SPECIES_PREDICTION_BACKEND_BUILD = '2026-09-02-sonnet-in-ef';
 const INVOKE_ROUTE_VERSION = 'fix20';
 const EDGE_FUNCTION_FILE = 'supabase/functions/species-prediction/index.ts';
 const EDGE_FUNCTION_ENTRYPOINT = 'serve(async (req) => { ... })';
@@ -26,6 +29,160 @@ const STATUS_NO_CACHE_HEADERS = {
 // https://estbirds.app.n8n.cloud/webhook/species-prediction-evidence-first
 
 console.error(`SPECIES_PREDICTION_BOOT ${INVOKE_ROUTE_VERSION} ${EDGE_FUNCTION_FILE} ${EDGE_FUNCTION_ENTRYPOINT}`);
+
+// ── M7.6: in-EF Sonnet analyst (replaces n8n species_prediction_v31) ─────────
+//
+// PROMPT_PREFIX is the n8n workflow's static rules block, byte for byte. It was
+// extracted from node 11-build-evidence-payload.js lines 569-591 (the array
+// elements before the `Evidence: ` element, joined with \n plus a trailing \n)
+// and replayed with node: 3201 chars / 3225 UTF-8 bytes / sha256 39ddfdd4...
+// The text contains no backtick, no backslash and no ${, so it needs zero
+// escaping inside this template literal and its char count is unambiguous.
+//
+// DO NOT edit this text -- not the spelling, not the spacing, not the em
+// dashes, not the arrows. It is the prompt n8n has been running.
+const PROMPT_PREFIX = `System: You are an expert Estonian birding analyst. Return STRICT JSON only — no markdown, no text outside the JSON object.
+Human: Analyze this bird prediction evidence and return a JSON object with keys: insightSummary, confidenceNote, rankingNotes, warnings.
+
+RULES (follow precisely):
+1. If recentCount7d > 0: opening sentence MUST be "ALREADY PRESENT — [N] records in 7 days."
+2. If hasForeignPressure: you MUST name the countries, point counts, and specific localities from recentForeignEbirdPoints.
+3. insightSummary: 2-4 sentences max. Cover: Estonia presence status → foreign pressure → what it means for watchers, FRAMED BY PHENOLOGY.
+4. confidenceNote: 1 sentence. Quote the actual recentCount7d number and primary evidence source.
+5. rankingNotes: list which evidence drove each rank-1 target, in priority order: EE recent → EE history → foreign proximity → weather.
+6. warnings: array of short strings. Only real issues: unavailable sources, missing coordinates, low evidence.
+7. Do NOT invent coordinates, localities, dates, counts, or species behaviour.
+8. Do NOT say "insufficient evidence" if recentCount7d > 0.
+9. PHENOLOGY-AWARE FRAMING (critical):
+   - Examine arrivalPhenologyContext. If beforeTypicalArrival === true, the species is NOT overdue, NOT delayed, NOT due imminently.
+   - If beforeTypicalArrival: NEVER say "overdue", "should have arrived", "may have arrived undetected", "migration timing is near", or "arrival imminent".
+   - If beforeTypicalArrival: SAY "Pre-arrival — typical first arrival in Estonia is around [medianFirstArrival] (typical range [p25FirstArrival] to [p75FirstArrival]). Today is [todayMonthDay], approximately [daysUntilMedian] days before typical arrival. Foreign pressure indicates migration in progress; expect Estonian arrivals around [medianFirstArrival]."
+   - If withinTypicalArrival: SAY "Within typical arrival window — typical first arrivals span [p25FirstArrival] to [p75FirstArrival], median [medianFirstArrival]. Today is [todayMonthDay]." Then note foreign pressure as supporting evidence.
+   - If afterTypicalArrival AND no recent EE record: arrival appears delayed; note it but do not over-state urgency.
+   - If phenology.method === "no_data": acknowledge unknown phenology and rely on general species biology, do not assume overdue.
+10. ALWAYS use medianFirstArrival as "typical" timing in your summary, NOT earliestEverFirstArrival. earliestEverFirstArrival is the absolute earliest record ever and is outlier-sensitive — only mention it if explicitly relevant (e.g. "earliest record ever was [date], but this is exceptional"). Default to median.
+11. NEVER let foreign pressure alone drive urgency claims. Foreign pressure means birds are migrating, not that they are about to land in Estonia today.
+12. WIND DIRECTION INTERPRETATION: Wind direction is the direction the wind is COMING FROM. For northbound spring migrants in Estonia: southerly winds (135°-225°) are TAILWINDS and FAVORABLE. Northerly winds (315°-45°) are HEADWINDS and UNFAVORABLE. Easterly winds may help eastern migrants, westerly winds may help western migrants. Do NOT call northerly winds "favorable" for spring migration. State wind impact accurately.
+
+`;
+const PROMPT_PREFIX_LEN = 3201;
+const PROMPT_PREFIX_SHA256 = '39ddfdd405e531e5ddfd9ecd489953abaaff4be9ab4edc11368cbf778a176837';
+
+const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
+const ANTHROPIC_VERSION = '2023-06-01';
+// n8n's model node ran claude-sonnet-4-5-20250929 (cred w3NzgYQmhVki1UQ3).
+// Flipping the model is its own gate, so it comes from the environment.
+const DEFAULT_SONNET_MODEL = 'claude-sonnet-4-5-20250929';
+const MODEL_ENV_KEY = 'ANTHROPIC_MODEL_SPECIES_PREDICTION';
+// n8n's langchain node carried `options: {}` = the node default, and the export
+// does not record what that resolved to. 4096 is OUR figure, not a recovered
+// n8n one; the four narrative fields are short, so it is generous.
+const SONNET_MAX_TOKENS = 4096;
+// Same shutdown envelope as toenaosus-orchestrator (M7.4a): beforeunload lands
+// at ~360 s and the hard kill at ~400 s.
+const ORCH_BUDGET_MS = 340_000;
+const SONNET_MAX_TIMEOUT_MS = 120_000;
+const SONNET_RESERVE_MS = 20_000;
+// Below this much remaining budget we skip Sonnet rather than start a call we
+// cannot finish, and fall back to the local narrative.
+const SONNET_BUDGET_FLOOR_MS = 60_000;
+
+function sonnetModel(): string {
+  return (Deno.env.get(MODEL_ENV_KEY) || '').trim() || DEFAULT_SONNET_MODEL;
+}
+
+function anthropicKey(): string {
+  return (Deno.env.get('ANTHROPIC_API_KEY') || '').trim();
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Module load: the length assert is synchronous and catches the damage an editor
+// actually does -- stripped trailing spaces, a rewrapped line, CRLF. A wrong
+// length kills the deploy rather than shipping a prompt n8n never ran.
+if (PROMPT_PREFIX.length !== PROMPT_PREFIX_LEN) {
+  throw new Error(`PROMPT_PREFIX length ${PROMPT_PREFIX.length} != ${PROMPT_PREFIX_LEN}`);
+}
+// The sha256 assert (which catches same-length substitutions) needs WebCrypto +
+// TextEncoder and therefore an await. It is memoised and awaited before every
+// Sonnet call instead of at module load: top-level await would break the two
+// vm-based test harnesses that execute this file transpiled to CommonJS, and
+// their sandbox has no TextEncoder. No prompt can reach Anthropic unverified.
+let promptPrefixVerification: Promise<void> | null = null;
+function assertPromptPrefix(): Promise<void> {
+  if (!promptPrefixVerification) {
+    promptPrefixVerification = (async () => {
+      const actual = await sha256Hex(PROMPT_PREFIX);
+      if (actual !== PROMPT_PREFIX_SHA256) {
+        throw new Error(`PROMPT_PREFIX sha256 ${actual} != ${PROMPT_PREFIX_SHA256}`);
+      }
+    })();
+  }
+  return promptPrefixVerification;
+}
+
+// Shutdown state, same shape as toenaosus-orchestrator: beforeunload arrives at
+// ~360 s and leaves room for one write, so once it has closed the open jobs
+// every later update must skip.
+let shuttingDown = false;
+
+type OpenPredictionJob = {
+  requestId: string;
+  speciesKey: string;
+  startedAt: number;
+  stage: string;
+};
+
+const OPEN_JOBS = new Map<string, OpenPredictionJob>();
+
+const jobElapsed = (job: OpenPredictionJob) => Date.now() - job.startedAt;
+
+function registerBeforeUnload(): boolean {
+  try {
+    addEventListener('beforeunload', (ev: Event) => {
+      const reason = (ev as Event & { detail?: { reason?: string } }).detail?.reason ?? 'unknown';
+      shuttingDown = true;
+      console.error(`${LOG_PREFIX} beforeunload reason=${reason} open_jobs=${OPEN_JOBS.size}`);
+      const admin = getSupabaseAdmin();
+      for (const job of OPEN_JOBS.values()) {
+        console.error(`${LOG_PREFIX} beforeunload requestId=${job.requestId} stage=${job.stage} elapsed=${jobElapsed(job)}`);
+        const closing = Promise.resolve(
+          admin.from('prediction_jobs').update({
+            status: 'failed',
+            error_json: { code: 'SHUTDOWN', reason, stage: job.stage, elapsedMs: jobElapsed(job) },
+            updated_at: new Date().toISOString(),
+          }).eq('request_id', job.requestId),
+        ).catch((e: unknown) => console.error(`${LOG_PREFIX} beforeunload close failed`, String(e)));
+        keepBackgroundWorkAlive(closing);
+      }
+      OPEN_JOBS.clear();
+    });
+    return true;
+  } catch (err) {
+    console.error(`${LOG_PREFIX} beforeunload register failed`, String(err));
+    return false;
+  }
+}
+
+function keepBackgroundWorkAlive(work: Promise<unknown>): boolean {
+  try {
+    const runtime = (globalThis as Record<string, unknown>).EdgeRuntime as
+      | { waitUntil?: (p: Promise<unknown>) => void }
+      | undefined;
+    if (runtime?.waitUntil) {
+      runtime.waitUntil(work);
+      return true;
+    }
+  } catch {
+    // waitUntil not available - background work may get killed
+  }
+  return false;
+}
+
+const BEFORE_UNLOAD_REGISTERED = registerBeforeUnload();
 
 type WebhookValidationErrorCode =
   | 'MISSING_WEBHOOK_URL'
@@ -190,6 +347,10 @@ type NormalizedUpstreamResponse = {
 
 type SummaryOrigin =
   | 'normalized_upstream'
+  // M7.6: narrative authored by the in-EF Sonnet analyst. Distinct from
+  // 'normalized_upstream' (which n8n used) because it is the one origin the
+  // finalizer must not overwrite -- see buildFinalPredictionPayloadFromEvidence.
+  | 'sonnet_in_ef'
   | 'deterministic_structured'
   | 'regenerated_from_structured'
   | 'neutral_sanitizer_fallback'
@@ -427,31 +588,24 @@ serve(async (req) => {
     const timeoutMsUsed = resolveTimeoutMs();
 
     // ── GET ?mode=config ──
-    // Passive configuration check. Verifies the webhook secret is set and parses
-    // as a URL. Does NOT call n8n. Replaces the legacy mode=status verify=1 probe
-    // which fired the full prediction pipeline on every settings page mount.
+    // Passive configuration check. Does NOT call the analyst. Replaces the
+    // legacy mode=status verify=1 probe which fired the full prediction pipeline
+    // on every settings page mount.
+    // M7.6: what is configured is now the Anthropic key, not an n8n webhook.
+    // `webhookConfigured` / `webhookHost` are kept as aliases because the client
+    // still reads them; the settings page is fixed in M7.6d.
     if (req.method === 'GET' && url.searchParams.get('mode') === 'config') {
-      const rawWebhookUrl = (Deno.env.get(WEBHOOK_ENV_KEY) || '').trim();
-      let configWebhookHost: string | null = null;
-      let configWebhookConfigured = false;
-      if (rawWebhookUrl) {
-        try {
-          configWebhookHost = new URL(rawWebhookUrl).host || null;
-          configWebhookConfigured = !!configWebhookHost;
-        } catch {
-          // Malformed URL: report as unconfigured rather than throwing.
-          configWebhookConfigured = false;
-          configWebhookHost = null;
-        }
-      }
+      const configAiConfigured = !!anthropicKey();
       console.info(`${LOG_PREFIX} config check`, {
-        webhookConfigured: configWebhookConfigured,
-        webhookHost: configWebhookHost,
+        aiConfigured: configAiConfigured,
+        model: sonnetModel(),
         predictionBackendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
       });
       return json({
-        webhookConfigured: configWebhookConfigured,
-        webhookHost: configWebhookHost,
+        aiConfigured: configAiConfigured,
+        model: sonnetModel(),
+        webhookConfigured: configAiConfigured,
+        webhookHost: configAiConfigured ? 'anthropic' : null,
         backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
       }, 200, STATUS_NO_CACHE_HEADERS);
     }
@@ -742,7 +896,7 @@ serve(async (req) => {
     });
 
     // Fire-and-forget background work
-    const backgroundWork = executeN8nAndPersist({
+    const backgroundWork = executePredictionAndPersist({
       requestId,
       webhookUrl,
       webhookConfigured,
@@ -790,7 +944,7 @@ serve(async (req) => {
 });
 
 // ── Background worker: call n8n and persist result ──
-async function executeN8nAndPersist(opts: {
+async function executePredictionAndPersist(opts: {
   requestId: string;
   webhookUrl: string;
   webhookConfigured: boolean;
@@ -804,6 +958,12 @@ async function executeN8nAndPersist(opts: {
   const { requestId, webhookUrl, webhookConfigured, webhookTarget, payload, speciesKey, speciesName, timeoutMsUsed, admin } = opts;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMsUsed);
+  // M7.6: stage + budget tracking, so beforeunload can close this row with the
+  // stage it died in and the Sonnet call knows what the run has already spent.
+  const budgetStartedAt = Date.now();
+  const timings: Record<string, unknown> = {};
+  const job: OpenPredictionJob = { requestId, speciesKey, startedAt: budgetStartedAt, stage: 'evidence' };
+  OPEN_JOBS.set(requestId, job);
 
   try {
     console.info(`${LOG_PREFIX} evidence_assembly_start`, { requestId, speciesKey });
@@ -815,10 +975,18 @@ async function executeN8nAndPersist(opts: {
       webhookTarget,
       webhookUrl,
       signal: controller.signal,
+      timings,
+      budgetStartedAt,
     });
-    if (stringOr(resultObj.payloadSourceState) !== 'n8n_v3_passthrough') {
-      resultObj = finalizePredictionResponse(resultObj, 'persist_main_result');
-    }
+    job.stage = 'finalize';
+    resultObj = finalizePredictionResponse(resultObj, 'persist_main_result');
+    // The addendum keeps this second finalization pass (it is idempotent for the
+    // structural fields, and B1.6 carries the narrative through both). Logged so
+    // C4 can see which origin survived it.
+    console.log('[FINALIZE]', JSON.stringify({ pass: 2, summaryOrigin: stringOr(resultObj.summaryOrigin), requestId }));
+    timings.total_ms = Date.now() - budgetStartedAt;
+    resultObj.__timings = timings;
+    if (asRecord(payload.settings).dryRun === true) resultObj.__dryRun = true;
     const analysisVersion = typeof resultObj.analysisVersion === 'string' ? resultObj.analysisVersion : null;
     const generatedAt = typeof resultObj.generatedAt === 'string' ? resultObj.generatedAt : new Date().toISOString();
 
@@ -827,11 +995,20 @@ async function executeN8nAndPersist(opts: {
       speciesKey,
       analysisVersion,
       generatedAt,
+      summaryOrigin: stringOr(resultObj.summaryOrigin),
+      timings,
     });
     logPredictionSummaryState('before_persist', 'persist_main_result', resultObj, {
       persistedObjectIsFinalizedObject: true,
     });
 
+    job.stage = 'persist';
+    // beforeunload has already closed this row; a second write would overwrite
+    // the shutdown reason with a half-finished result.
+    if (shuttingDown) {
+      console.error(`${LOG_PREFIX} skip_persist_shutting_down`, { requestId });
+      return;
+    }
     await admin.from('prediction_jobs').update({
       status: 'completed',
       result_json: resultObj,
@@ -862,6 +1039,10 @@ async function executeN8nAndPersist(opts: {
           persistedObjectIsFinalizedObject: true,
         });
       }
+      if (shuttingDown) {
+        console.error(`${LOG_PREFIX} skip_error_persist_shutting_down`, { requestId });
+        return;
+      }
       await admin.from('prediction_jobs').update(recoveredResult ? {
         status: 'completed',
         result_json: recoveredResult,
@@ -877,6 +1058,7 @@ async function executeN8nAndPersist(opts: {
     } catch { /* ignore */ }
   } finally {
     clearTimeout(timer);
+    OPEN_JOBS.delete(requestId);
   }
 }
 
@@ -988,9 +1170,15 @@ async function buildMapFirstPredictionResult(opts: {
   webhookTarget: WebhookTargetInfo;
   webhookUrl: string;
   signal: AbortSignal;
+  // M7.6: stage timings and the budget clock, threaded from the background
+  // worker so the Sonnet call knows how much of the run it has already spent.
+  timings?: Record<string, unknown>;
+  budgetStartedAt?: number;
   diagnosticEventsCollector?: Array<{ tag: string; data: unknown }>;
 }): Promise<Record<string, unknown>> {
   const { payload, speciesKey, speciesName, webhookConfigured, webhookTarget, webhookUrl, signal, diagnosticEventsCollector } = opts;
+  const timings: Record<string, unknown> = opts.timings ?? {};
+  const budgetStartedAt = opts.budgetStartedAt ?? Date.now();
   const payloadSpecies = asRecord(payload.species);
   const settings = asRecord(payload.settings);
   const latinName = stringOr(payloadSpecies.latinName);
@@ -998,18 +1186,26 @@ async function buildMapFirstPredictionResult(opts: {
   const horizonDays = clampInt(toNumber(settings.horizonDays) || 7, 1, 30);
 
   const estoniaHistorySource = settings.useElurikkusHistory === false ? 'GBIF' : 'EELURIKKUS';
+  const elurikkusStartedAt = Date.now();
   const elurikkusHistoryPoints = settings.useElurikkusHistory === false ? [] : await fetchElurikkusEstoniaHistory(speciesName, signal);
+  timings.elurikkus_ms = Date.now() - elurikkusStartedAt;
+  const gbifStartedAt = Date.now();
   const gbifHistoryPoints = await fetchGbifEstoniaHistory(latinName || speciesName, signal);
+  timings.gbif_ms = Date.now() - gbifStartedAt;
   const mergedEstoniaHistoryPoints = elurikkusHistoryPoints.length
     ? [...elurikkusHistoryPoints, ...gbifHistoryPoints]
     : gbifHistoryPoints;
   const estoniaHistoryPoints = dedupeEstoniaHistoryPoints(mergedEstoniaHistoryPoints);
   const estoniaHistoryClusters = clusterEstoniaHistory(estoniaHistoryPoints);
+  const ebirdStartedAt = Date.now();
   const foreignRecentPoints = ebirdSpeciesCode
     ? await fetchForeignRecentPoints(ebirdSpeciesCode, settings, signal)
     : [];
+  timings.ebird_ms = Date.now() - ebirdStartedAt;
   const foreignClusters = clusterForeignRecentPoints(foreignRecentPoints);
+  const weatherStartedAt = Date.now();
   const weather = await fetchWeatherForPrediction(foreignClusters, signal);
+  timings.weather_ms = Date.now() - weatherStartedAt;
   const estoniaEvidence = buildEstoniaEvidenceFromHistory(estoniaHistoryPoints);
   const historicalEvidence = buildHistoricalEvidenceFromHistory(estoniaHistoryClusters);
   const foreignEvidence = buildForeignEvidenceFromPointsAndClusters(foreignRecentPoints, foreignClusters);
@@ -1035,7 +1231,10 @@ async function buildMapFirstPredictionResult(opts: {
     estoniaHistoryClusters,
     foreignRecentPoints,
     foreignClusters,
-    webhookConfigured,
+    // M7.6: the availability of the secondary AI summary is now the Anthropic
+    // key, not the (deliberately unset) n8n webhook. `webhookConfigured` from
+    // the request is left untouched for the other diagnostics.
+    webhookConfigured: !!anthropicKey(),
     estoniaHistorySourceUsed: elurikkusHistoryPoints.length && gbifHistoryPoints.length
       ? 'mixed'
       : (elurikkusHistoryPoints.length ? 'EELURIKKUS' : (estoniaHistoryPoints.length ? 'GBIF' : estoniaHistorySource)),
@@ -1058,56 +1257,57 @@ async function buildMapFirstPredictionResult(opts: {
     evidenceStateSnapshot,
   });
   const warnings = Array.from(new Set(sourceHealth.sourceWarnings as string[]));
-  const requiresN8nSummary = settings.enableOpenAISummary === true || settings.enableN8nResearch === true;
-  const n8nDecisionData = {
-    webhookUrlConfigured: !!Deno.env.get(WEBHOOK_ENV_KEY),
-    webhookUrlPreview: (Deno.env.get(WEBHOOK_ENV_KEY) || '').slice(0, 60),
-    authHeaderConfigured: !!Deno.env.get(AUTH_HEADER_ENV_KEY),
-    authValueConfigured: !!Deno.env.get(AUTH_VALUE_ENV_KEY),
+  const countryScores = buildCountryScores(foreignEvidence);
+  // M7.6: the settings flag names are unchanged (the client still sends
+  // enableOpenAISummary / enableN8nResearch); only the analyst behind them
+  // moved from n8n into this function.
+  const requiresAiSummary = settings.enableOpenAISummary === true || settings.enableN8nResearch === true;
+  const aiConfigured = !!anthropicKey();
+  const aiDecisionData = {
+    aiConfigured,
+    model: sonnetModel(),
+    dryRun: settings.dryRun === true,
     timeoutMsEnv: Deno.env.get(TIMEOUT_ENV_KEY) || null,
-    webhookTargetConfigured: webhookTarget.webhookConfigured,
-    webhookTargetValid: webhookTarget.valid,
-    webhookHost: webhookTarget.configuredWebhookUrl ? (() => {
-      try { return new URL(webhookTarget.configuredWebhookUrl).host; } catch { return ''; }
-    })() : '',
     enableOpenAISummary: settings.enableOpenAISummary,
     enableN8nResearch: settings.enableN8nResearch,
-    requiresN8nSummary,
-    willCallN8n: requiresN8nSummary && webhookTarget.webhookConfigured && webhookTarget.valid,
-    fallbackReason: !requiresN8nSummary
+    requiresAiSummary,
+    willCallSonnet: requiresAiSummary && aiConfigured && settings.dryRun !== true,
+    fallbackReason: !requiresAiSummary
       ? 'enableOpenAISummary AND enableN8nResearch both false in settings'
-      : (!webhookTarget.webhookConfigured ? 'webhookTarget.webhookConfigured=false' : (!webhookTarget.valid ? 'webhookTarget.valid=false' : '')),
+      : (!aiConfigured ? 'ANTHROPIC_API_KEY not configured' : (settings.dryRun === true ? 'dryRun' : '')),
     requestType: stringOr((payload as Record<string, unknown>).requestType),
     scope: stringOr((payload as Record<string, unknown>).scope, settings.scope) || 'linnuliigid',
     predictionMode: stringOr(settings.predictionMode),
     speciesKey,
     speciesName,
   };
-  console.log('[N8N-DECISION]', JSON.stringify(n8nDecisionData));
-  diagnosticEventsCollector?.push({ tag: '[N8N-DECISION]', data: n8nDecisionData });
-  const normalizedN8nResponse = requiresN8nSummary
-    ? await maybeFetchSecondarySummary({
-      webhookTarget,
-      webhookUrl,
-      payload,
-      signal,
-      foreignEvidence,
-      predictedTargets,
-      weather,
+  console.log('[AI-DECISION]', JSON.stringify(aiDecisionData));
+  diagnosticEventsCollector?.push({ tag: '[AI-DECISION]', data: aiDecisionData });
+  const sonnetResponse = requiresAiSummary
+    ? await fetchSonnetSummary({
+      settings,
+      speciesKey,
+      speciesName,
+      species: { speciesKey, speciesName, latinName, ebirdSpeciesCode },
+      scope: stringOr((payload as Record<string, unknown>).scope, settings.scope) || 'linnuliigid',
       sourceHealth,
       estoniaEvidence,
       estoniaHistoryPoints,
       estoniaHistoryClusters,
+      foreignEvidence,
       foreignRecentPoints,
       foreignClusters,
+      countryScores,
+      predictedTargets,
+      weather,
+      evidenceSummary,
       evidenceStateSnapshot,
+      globalMigrationEtas,
+      budgetStartedAt,
+      timings,
       diagnosticEventsCollector,
     })
     : null;
-  if ((normalizedN8nResponse as Record<string, unknown> | null)?.payloadSourceState === 'n8n_v3_passthrough') {
-    return attachNormalizationMarkers(normalizedN8nResponse as unknown as Record<string, unknown>);
-  }
-  const countryScores = buildCountryScores(foreignEvidence);
   const topPredictedPoints = predictedTargets.slice(0, Math.min(5, clampInt(toNumber(settings.outputCount) || 5, 1, 5)));
   const latestCluster = foreignClustersForRouting[0] ?? null;
   const baseResult = {
@@ -1212,26 +1412,28 @@ async function buildMapFirstPredictionResult(opts: {
       predictedTargets: topPredictedPoints,
       rawLinks,
       evidenceState: evidenceStateSnapshot,
-      ...(normalizedN8nResponse ? { aiSummary: normalizedN8nResponse.insightSummary } : {}),
+      ...(sonnetResponse ? { aiSummary: sonnetResponse.insightSummary } : {}),
     },
   };
   const canonical = buildCanonicalPredictionRecord({
     base: baseResult,
-    alternate: normalizedN8nResponse,
-    preferredSummary: normalizedN8nResponse ? {
-      insightSummary: normalizedN8nResponse.insightSummary,
-      confidenceNote: normalizedN8nResponse.confidenceNote,
-      rankingNotes: normalizedN8nResponse.rankingNotes,
-      warnings: normalizedN8nResponse.warnings,
+    alternate: sonnetResponse,
+    preferredSummary: sonnetResponse ? {
+      insightSummary: sonnetResponse.insightSummary,
+      confidenceNote: sonnetResponse.confidenceNote,
+      rankingNotes: sonnetResponse.rankingNotes,
+      warnings: sonnetResponse.warnings,
     } : null,
+    // M7.6: 'sonnet_in_ef' on the analyst path, 'deterministic_structured' on
+    // the fallback path. The finalizer keys its no-overwrite rule on this.
+    preferredSummaryOrigin: sonnetResponse ? (sonnetResponse.summaryOrigin ?? null) : null,
   });
-  // Resolve payloadSourceState: v3 passthrough wins; otherwise mark as current pipeline output.
-  const resolvedPayloadSourceState = (normalizedN8nResponse as Record<string, unknown> | null)?.payloadSourceState === 'n8n_v3_passthrough'
-    ? 'n8n_v3_passthrough'
-    : 'current_finalized_backend_output';
+  // Decision 2: the EF builder stays canonical, so this is always the current
+  // pipeline output. n8n_v3_passthrough can no longer be produced (M7.6).
+  const resolvedPayloadSourceState = 'current_finalized_backend_output';
   let canonicalResponse = attachNormalizationMarkers({
     ...baseResult,
-    ...(normalizedN8nResponse ? { ok: normalizedN8nResponse.ok, status: normalizedN8nResponse.status, error: normalizedN8nResponse.error } : {}),
+    ...(sonnetResponse ? { ok: sonnetResponse.ok, status: sonnetResponse.status, error: sonnetResponse.error } : {}),
     payloadSourceState: resolvedPayloadSourceState,
     speciesKey: canonical.speciesKey,
     speciesName: canonical.speciesName,
@@ -1322,8 +1524,10 @@ async function buildMapFirstPredictionResult(opts: {
   });
   // Scrub rawResearchPayload narrative fields before finalization so finalizePredictionResponse
   // starts from a clean state rather than inheriting any stale narrative from the canonical merge.
-  // Skip scrubbing for v3 passthrough payloads — their evidence is authoritative.
-  if (resolvedPayloadSourceState !== 'n8n_v3_passthrough') {
+  // M7.6: the v3-passthrough exemption is gone with the passthrough itself.
+  // These writes only affect rawResearchPayload, which
+  // buildFinalPredictionPayloadFromEvidence rebuilds from the final narrative.
+  {
     const preScrub = scrubStaleNarrativeFromStructuredEvidence(asRecord(canonicalResponse));
     const preRwp = asRecord(canonicalResponse.rawResearchPayload);
     preRwp.aiSummary = preScrub.safeSummary;
@@ -2576,301 +2780,636 @@ function buildConeVector(cluster: Record<string, unknown>, target: Record<string
   };
 }
 
-async function maybeFetchSecondarySummary(opts: {
-  webhookTarget: WebhookTargetInfo;
-  webhookUrl: string;
-  payload: Record<string, unknown>;
-  signal: AbortSignal;
-  foreignEvidence: Record<string, unknown>[];
+// ── M7.6: arrival phenology ─────────────────────────────────────────────────
+// Verbatim port of the n8n v26 block (11-build-evidence-payload.js lines
+// 639-726): per-year earliest day-of-year -> median window, with the same
+// thresholds (>=3 years: median-14 .. latestFirst+14; 1-2 years: median +/-21)
+// and the same MM-DD formatting. Prompt rules 9-10 name these exact fields, so
+// the shape is part of the byte-for-byte contract.
+// n8n read `.date` on its history points; the EF's carry the same value as
+// `.eventDate` (fetchElurikkusEstoniaHistory / fetchGbifEstoniaHistory).
+function computeArrivalPhenology(estoniaHistoryPoints: Record<string, unknown>[]): Record<string, unknown> {
+  const today = new Date();
+  const todayDOY = Math.floor((today.getTime() - new Date(today.getFullYear(), 0, 1).getTime()) / 86400000) + 1;
+  const earliestByYear = new Map<number, number>();
+  for (const entry of estoniaHistoryPoints) {
+    const point = asRecord(entry);
+    const raw = stringOr(point.eventDate, point.date);
+    if (!raw) continue;
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) continue;
+    const year = parsed.getFullYear();
+    const doy = Math.floor((parsed.getTime() - new Date(year, 0, 1).getTime()) / 86400000) + 1;
+    const current = earliestByYear.get(year);
+    if (current === undefined || current > doy) earliestByYear.set(year, doy);
+  }
+  const yearList = Array.from(earliestByYear.keys()).sort((left, right) => left - right);
+  const earliestDOYs = yearList
+    .map((year) => earliestByYear.get(year) as number)
+    .sort((left, right) => left - right);
+  const doyToMonthDay = (doy: number): string => {
+    const date = new Date(today.getFullYear(), 0, doy);
+    return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+
+  if (earliestDOYs.length >= 3) {
+    // v26: window based on median, not absolute earliest (outlier-resistant).
+    const earliestEver = earliestDOYs[0];
+    const latestFirst = earliestDOYs[earliestDOYs.length - 1];
+    const median = earliestDOYs[Math.floor(earliestDOYs.length / 2)];
+    const p25 = earliestDOYs[Math.max(0, Math.floor(earliestDOYs.length * 0.25))];
+    const p75 = earliestDOYs[Math.min(earliestDOYs.length - 1, Math.floor(earliestDOYs.length * 0.75))];
+    const windowStartDOY = Math.max(1, median - 14);
+    const windowEndDOY = latestFirst + 14;
+    return {
+      method: 'per_year_earliest_median_window',
+      yearsAnalyzed: earliestDOYs.length,
+      yearsCovered: yearList,
+      earliestEverFirstArrival: doyToMonthDay(earliestEver),
+      p25FirstArrival: doyToMonthDay(p25),
+      medianFirstArrival: doyToMonthDay(median),
+      p75FirstArrival: doyToMonthDay(p75),
+      latestFirstArrival: doyToMonthDay(latestFirst),
+      typicalArrivalWindowStart: doyToMonthDay(windowStartDOY),
+      typicalArrivalWindowEnd: doyToMonthDay(windowEndDOY),
+      windowStartDOY,
+      windowEndDOY,
+      todayMonthDay: doyToMonthDay(todayDOY),
+      todayDOY,
+      beforeTypicalArrival: todayDOY < windowStartDOY,
+      withinTypicalArrival: todayDOY >= windowStartDOY && todayDOY <= windowEndDOY,
+      afterTypicalArrival: todayDOY > windowEndDOY,
+      daysUntilWindowStart: windowStartDOY - todayDOY,
+      daysSinceWindowStart: todayDOY - windowStartDOY,
+      daysUntilMedian: median - todayDOY,
+    };
+  }
+
+  if (earliestDOYs.length >= 1) {
+    // Low data: median +/- 21 days (more conservative buffer).
+    const median = earliestDOYs[Math.floor(earliestDOYs.length / 2)];
+    return {
+      method: earliestDOYs.length === 1 ? 'single_year_only' : 'few_years_only',
+      yearsAnalyzed: earliestDOYs.length,
+      yearsCovered: yearList,
+      earliestEverFirstArrival: doyToMonthDay(earliestDOYs[0]),
+      medianFirstArrival: doyToMonthDay(median),
+      latestFirstArrival: doyToMonthDay(earliestDOYs[earliestDOYs.length - 1]),
+      typicalArrivalWindowStart: doyToMonthDay(Math.max(1, median - 21)),
+      typicalArrivalWindowEnd: doyToMonthDay(median + 21),
+      todayMonthDay: doyToMonthDay(todayDOY),
+      todayDOY,
+      beforeTypicalArrival: todayDOY < (median - 21),
+      withinTypicalArrival: todayDOY >= (median - 21) && todayDOY <= (median + 21),
+      afterTypicalArrival: todayDOY > (median + 21),
+      note: `Only ${earliestDOYs.length} year(s) of data; window is best-guess median ±21 days.`,
+    };
+  }
+
+  return {
+    method: 'no_data',
+    yearsAnalyzed: 0,
+    note: 'No usable Estonia history points; rely on AI biological knowledge.',
+    beforeTypicalArrival: null,
+    withinTypicalArrival: null,
+    afterTypicalArrival: null,
+  };
+}
+
+type RecentLocalityStat = {
+  locality: string;
+  county: string;
+  recent1d: number;
+  recent3d: number;
+  recent7d: number;
+  recent30d: number;
+  individuals: number;
+  hasCoords: boolean;
+};
+
+// M7.6: n8n's Evidence carried per-locality recency stats built by the
+// eElurikkus parse node (`localityStats`). The EF has no equivalent structure,
+// so derive it from estoniaHistoryPoints, which carry locality, municipality,
+// daysAgo and count. Every point is coordinate-filtered before it reaches that
+// array, so hasCoords is always true. Field names match n8n's.
+function buildRecentLocalityStats(estoniaHistoryPoints: Record<string, unknown>[]): RecentLocalityStat[] {
+  const byLocality = new Map<string, RecentLocalityStat>();
+  for (const entry of estoniaHistoryPoints) {
+    const point = asRecord(entry);
+    const locality = sanitizeDisplayLabel(stringOr(point.locality, point.municipality));
+    if (!locality) continue;
+    const key = normalizeComparableText(locality);
+    let stat = byLocality.get(key);
+    if (!stat) {
+      stat = {
+        locality,
+        county: sanitizeDisplayLabel(stringOr(point.municipality)),
+        recent1d: 0,
+        recent3d: 0,
+        recent7d: 0,
+        recent30d: 0,
+        individuals: 0,
+        hasCoords: true,
+      };
+      byLocality.set(key, stat);
+    }
+    stat.individuals += Math.max(1, Math.round(toNumber(point.count) || 1));
+    // A point with no usable daysAgo must not be counted as fresh.
+    if (!hasNumber(point.daysAgo)) continue;
+    const daysAgo = toNumber(point.daysAgo);
+    if (daysAgo <= 1) stat.recent1d += 1;
+    if (daysAgo <= 3) stat.recent3d += 1;
+    if (daysAgo <= 7) stat.recent7d += 1;
+    if (daysAgo <= 30) stat.recent30d += 1;
+  }
+  // n8n: localityStats values with recent7d > 0, sorted by recency then
+  // individuals, capped at 10 (the Evidence block then takes the first 6).
+  return Array.from(byLocality.values())
+    .filter((stat) => stat.recent7d > 0)
+    .sort((left, right) => (right.recent7d - left.recent7d) || (right.individuals - left.individuals))
+    .slice(0, 10);
+}
+
+// M7.6: the Evidence object handed to the analyst, in the n8n key order.
+// Mapping decisions (Phase A A4 + the go-B addendum): keys with no EF source are
+// OMITTED rather than emitted as zeros, so the model cannot read an invented 0
+// as evidence of absence. Omitted n8n keys, and why:
+//   topScoredTargets[].scoreBreakdown      - the EF ranker exposes no breakdown
+//   topScoredTargets[].coastalLikely       - no EF equivalent (habitatCue is not it)
+//   topScoredTargets[].eeRecent*           - only when a locality stat matches by name
+//   foreignPressure.topClusters[].recent7d - only when the cluster's member
+//                                            points are recoverable via clusterId
+function buildAnalystEvidence(input: {
+  species: Record<string, unknown>;
+  evidenceState: string;
+  sourceHealth: Record<string, unknown>;
+  estoniaEvidence: Record<string, unknown>;
+  estoniaHistoryPoints: Record<string, unknown>[];
+  foreignRecentPoints: Record<string, unknown>[];
+  foreignClusters: Record<string, unknown>[];
+  countryScores: Record<string, number>;
   predictedTargets: Record<string, unknown>[];
   weather: Record<string, unknown>;
+}): Record<string, unknown> {
+  const localityStats = buildRecentLocalityStats(input.estoniaHistoryPoints);
+  const sourceWarnings = Array.isArray(input.sourceHealth.sourceWarnings)
+    ? input.sourceHealth.sourceWarnings.map((item) => String(item ?? ''))
+    : [];
+  const recentCount7d = Math.max(0, Math.round(toNumber(input.estoniaEvidence.recentCount7d)));
+  const recentCount30d = Math.max(0, Math.round(toNumber(input.estoniaEvidence.recentCount30d)));
+
+  // n8n: Object.entries(countryScores) sorted by score desc, top 5 keys. Scores
+  // of 0 are dropped: the EF's buildCountryScores always emits all six keys, and
+  // naming a country with no points would be exactly the invented pressure that
+  // prompt rule 2 and the evidence guardrails exist to prevent.
+  const primaryCountries = Object.entries(input.countryScores)
+    .filter(([, score]) => toNumber(score) > 0)
+    .sort((left, right) => toNumber(right[1]) - toNumber(left[1]))
+    .slice(0, 5)
+    .map(([country]) => country);
+
+  const analystWeather: Record<string, unknown> = {
+    source: stringOr(input.weather.source) || 'Open-Meteo',
+    windSpeedKmh: toNumber(input.weather.windSpeedKph),
+    windDirectionDeg: toNumber(input.weather.windDirectionDeg),
+    precipitation: toNumber(input.weather.precipitationMm),
+    ...(hasNumber(input.weather.temperatureC) ? { temperatureC: toNumber(input.weather.temperatureC) } : {}),
+    observedAt: stringOr(input.weather.fetchedAt),
+  };
+
+  return {
+    species: input.species,
+    evidenceState: input.evidenceState,
+    sourceHealth: { ...input.sourceHealth, sourceWarnings: sourceWarnings.slice(0, 3) },
+    arrivalPhenologyContext: computeArrivalPhenology(input.estoniaHistoryPoints),
+    estoniaPresence: {
+      recentCount7d,
+      recentCount30d,
+      alreadyPresent: input.estoniaEvidence.alreadyPresent === true,
+      freshestDate: stringOr(input.estoniaEvidence.latestEstoniaDate),
+      freshestLocality: stringOr(input.estoniaEvidence.latestEstoniaLocality),
+      topRecentLocalities: localityStats.slice(0, 6).map((stat) => ({
+        locality: stat.locality,
+        county: stat.county,
+        recent1d: stat.recent1d,
+        recent3d: stat.recent3d,
+        recent7d: stat.recent7d,
+        individuals: stat.individuals,
+        hasCoords: stat.hasCoords,
+      })),
+    },
+    foreignPressure: {
+      hasForeignPressure: input.foreignRecentPoints.length > 0,
+      totalPoints: input.foreignRecentPoints.length,
+      primaryCountries,
+      countryScores: input.countryScores,
+      recentPoints: input.foreignRecentPoints.slice(0, 12).map((entry) => {
+        const point = asRecord(entry);
+        return {
+          country: stringOr(point.countryName, point.countryCode),
+          locality: stringOr(point.locName),
+          date: stringOr(point.obsDt),
+          howMany: hasNumber(point.howMany) ? toNumber(point.howMany) : null,
+        };
+      }),
+      topClusters: input.foreignClusters.slice(0, 5).map((entry) => {
+        const cluster = asRecord(entry);
+        const clusterId = stringOr(cluster.id);
+        // clusterForeignRecentPoints stamps clusterId onto each member point, so
+        // the 7-day count is recoverable. Where it is not, the key is omitted.
+        const members = clusterId
+          ? input.foreignRecentPoints.filter((point) => stringOr(asRecord(point).clusterId) === clusterId)
+          : [];
+        const locNames = Array.isArray(cluster.locNames) ? cluster.locNames.map((item) => String(item ?? '')) : [];
+        return {
+          locality: locNames[0] || '',
+          countries: Array.isArray(cluster.countries) ? cluster.countries.map((item) => String(item ?? '')) : [],
+          count: toNumber(cluster.pointCount),
+          ...(members.length
+            ? {
+              recent7d: members.filter((point) =>
+                hasNumber(asRecord(point).daysAgo) && toNumber(asRecord(point).daysAgo) <= 7
+              ).length,
+            }
+            : {}),
+          latestDate: stringOr(cluster.newestObsDt),
+        };
+      }),
+    },
+    topScoredTargets: input.predictedTargets.slice(0, 6).map((entry) => {
+      const target = asRecord(entry);
+      const name = stringOr(target.displayName, target.name);
+      const matched = name
+        ? localityStats.find((stat) => normalizeComparableText(stat.locality) === normalizeComparableText(name))
+        : undefined;
+      return {
+        name,
+        // n8n's `score` was its own 0-100 composite; the EF's nearest equivalent
+        // is the target confidence. Different derivation, same role for ranking.
+        score: Math.round(toNumber(target.confidence)),
+        ...(matched
+          ? { eeRecent7d: matched.recent7d, eeRecent30d: matched.recent30d, eeIndividuals: matched.individuals }
+          : {}),
+        gbifCount: toNumber(target.supportingEstoniaHistoryCount),
+        latestDate: stringOr(target.latestSupportingEstoniaDate),
+        ...(hasNumber(target.nearestRelevantClusterKm) ? { foreignNearKm: toNumber(target.nearestRelevantClusterKm) } : {}),
+      };
+    }),
+    weather: analystWeather,
+  };
+}
+
+// The whole prompt, exactly as n8n assembled it: the static rules block (which
+// carries its own literal "System:" line) followed by the Evidence JSON. n8n's
+// chainLlm sent this as ONE user turn, so callSonnet takes no system parameter.
+function buildAnalystPrompt(evidence: Record<string, unknown>): string {
+  return `${PROMPT_PREFIX}Evidence: ${JSON.stringify(evidence)}`;
+}
+
+// Port of 14-finalize-response.js tryParse: accept an object that already looks
+// like the analyst result, else strip ``` fences, else grab the first {...}.
+function parseAnalystOutput(value: unknown): Record<string, unknown> | null {
+  if (!value) return null;
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    if (record.insightSummary || record.confidenceNote || record.rankingNotes) return record;
+  }
+  if (typeof value !== 'string') return null;
+  const stripped = value.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  try {
+    const direct = JSON.parse(stripped);
+    if (direct && typeof direct === 'object' && !Array.isArray(direct)) return direct as Record<string, unknown>;
+  } catch { /* fall through to the brace match */ }
+  const match = stripped.match(/\{[\s\S]*\}/);
+  if (match) {
+    try {
+      const recovered = JSON.parse(match[0]);
+      if (recovered && typeof recovered === 'object' && !Array.isArray(recovered)) return recovered as Record<string, unknown>;
+    } catch { /* give up */ }
+  }
+  return null;
+}
+
+type AnthropicResponse = {
+  content?: Array<{ type?: string; text?: string }>;
+  usage?: { input_tokens?: number; output_tokens?: number };
+  stop_reason?: string;
+  model?: string;
+};
+
+// node "Anthropic Chat Model" + "Analyst Chain": one user message, no system
+// prompt, no temperature (n8n set none).
+async function callSonnet(userMessage: string, maxTokens: number, timeoutMs: number): Promise<AnthropicResponse> {
+  const apiKey = anthropicKey();
+  if (!apiKey) throw new Error('missing_env:ANTHROPIC_API_KEY');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(ANTHROPIC_URL, {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': ANTHROPIC_VERSION,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: sonnetModel(),
+        max_tokens: maxTokens,
+        messages: [{ role: 'user', content: userMessage }],
+      }),
+      signal: controller.signal,
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`anthropic HTTP ${res.status}: ${text.slice(0, 300)}`);
+    return JSON.parse(text) as AnthropicResponse;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error(`anthropic timeout after ${timeoutMs} ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Extract the four narrative fields, port of 14-finalize-response.js lines
+// 89-102. The max_tokens guard n8n lacked is checked first: a truncated reply
+// would otherwise fall through as a confusing parse failure.
+function extractAnalystNarrative(response: AnthropicResponse): {
+  insightSummary: string;
+  confidenceNote: string;
+  rankingNotes: string;
+  warnings: string[];
+} {
+  if (response.stop_reason === 'max_tokens') {
+    throw new Error(`Sonnet stopped on max_tokens (${response.usage?.output_tokens ?? 0} tokens)`);
+  }
+  const blocks = response.content || [];
+  const textBlock = blocks.find((block) => block && block.type === 'text');
+  if (!textBlock || !textBlock.text) throw new Error('Sonnet returned no text block');
+  const parsed = parseAnalystOutput(textBlock.text);
+  const isValid = !!(parsed && (parsed.insightSummary || parsed.confidenceNote || parsed.rankingNotes));
+  if (!parsed || !isValid) throw new Error('Sonnet returned no usable JSON narrative');
+  const rankingNotes = Array.isArray(parsed.rankingNotes)
+    ? parsed.rankingNotes.map((item) => String(item ?? '')).join(' ')
+    : String(parsed.rankingNotes || '').trim();
+  const warnings = Array.isArray(parsed.warnings)
+    ? parsed.warnings.map((item) => String(item ?? ''))
+    : (parsed.warnings ? [String(parsed.warnings)] : []);
+  return {
+    insightSummary: String(parsed.insightSummary || '').trim(),
+    confidenceNote: String(parsed.confidenceNote || '').trim(),
+    rankingNotes,
+    warnings,
+  };
+}
+
+type SonnetSummaryInput = {
+  settings: Record<string, unknown>;
+  speciesKey: string;
+  speciesName: string;
+  species: Record<string, unknown>;
+  scope: string;
   sourceHealth: Record<string, unknown>;
   estoniaEvidence: Record<string, unknown>;
   estoniaHistoryPoints: Record<string, unknown>[];
   estoniaHistoryClusters: Record<string, unknown>[];
+  foreignEvidence: Record<string, unknown>[];
   foreignRecentPoints: Record<string, unknown>[];
   foreignClusters: Record<string, unknown>[];
+  countryScores: Record<string, number>;
+  predictedTargets: Record<string, unknown>[];
+  weather: Record<string, unknown>;
+  evidenceSummary: Record<string, unknown>;
   evidenceStateSnapshot: EvidenceStateSnapshot;
+  globalMigrationEtas: unknown[];
+  budgetStartedAt: number;
+  timings: Record<string, unknown>;
   diagnosticEventsCollector?: Array<{ tag: string; data: unknown }>;
-}): Promise<NormalizedUpstreamResponse> {
-  const {
-    webhookTarget,
-    webhookUrl,
-    payload,
-    signal,
-    foreignEvidence,
-    predictedTargets,
-    weather,
-    sourceHealth,
-    estoniaEvidence,
-    estoniaHistoryPoints,
-    estoniaHistoryClusters,
-    foreignRecentPoints,
-    foreignClusters,
-    evidenceStateSnapshot,
-    diagnosticEventsCollector,
-  } = opts;
-  if (!webhookTarget.webhookConfigured || !webhookTarget.valid) {
-    throw createWebhookConfigError(webhookTarget);
-  }
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const authHeader = (Deno.env.get(AUTH_HEADER_ENV_KEY) || '').trim();
-  const authValue = (Deno.env.get(AUTH_VALUE_ENV_KEY) || '').trim();
-  if (authHeader && authValue) headers[authHeader] = authValue;
-  const requestBodyJson = JSON.stringify({
-    ...payload,
-    evidenceSummary: {
-      sourceHealth,
-      foreignEvidence,
-      predictedTargets,
-      weather,
-      estoniaEvidence,
-      estoniaHistoryPoints,
-      estoniaHistoryClusters,
-      foreignRecentPoints,
-      foreignClusters,
-      evidenceState: evidenceStateSnapshot,
-      hardRules: {
-        distinguishNegativeEvidenceFromMissingData: true,
-        doNotUseHighConfidenceAbsenceWhenSourcesUnavailable: true,
-        weatherAloneIsWeakOrNeutral: true,
-      },
-    },
-  });
-  const callStartData = {
-    webhookHost: (() => { try { return new URL(webhookUrl).host; } catch { return ''; } })(),
-    webhookPath: (() => { try { return new URL(webhookUrl).pathname; } catch { return ''; } })(),
-    bodyBytes: requestBodyJson.length,
-    authHeaderName: authHeader || null,
-    hasAuthValue: !!authValue,
+};
+
+type AnalystNarrative = {
+  insightSummary: string;
+  confidenceNote: string;
+  rankingNotes: string;
+  warnings: string[];
+};
+
+// Shared envelope so the Sonnet path and the fallback path return the exact same
+// NormalizedUpstreamResponse shape. The structured evidence echoed back is the
+// EF's own: the analyst contributes narrative only, and identical evidence keeps
+// pickCanonicalStructuredSource on the base result (decision 2).
+function buildSonnetNormalizedResponse(
+  input: SonnetSummaryInput,
+  narrative: AnalystNarrative,
+  summaryOrigin: SummaryOrigin,
+  raw: Record<string, unknown>,
+): NormalizedUpstreamResponse {
+  const snapshot = input.evidenceStateSnapshot;
+  return {
+    ok: true,
+    status: 'completed',
+    error: null,
+    speciesKey: input.speciesKey,
+    speciesName: input.speciesName,
+    scope: input.scope,
+    insightSummary: narrative.insightSummary,
+    confidenceNote: narrative.confidenceNote,
+    rankingNotes: narrative.rankingNotes,
+    warnings: narrative.warnings,
+    generatedAt: new Date().toISOString(),
+    analysisVersion: `${EDGE_FUNCTION_VERSION}|map-first|sonnet`,
+    sourceHealth: input.sourceHealth,
+    countryScores: input.countryScores as unknown as Record<string, unknown>,
+    estoniaEvidence: input.estoniaEvidence,
+    evidenceSummary: input.evidenceSummary,
+    foreignClusters: input.foreignClusters,
+    predictedTargets: input.predictedTargets,
+    topTarget: input.predictedTargets.length ? asRecord(input.predictedTargets[0]) : undefined,
+    foreignRecentPoints: input.foreignRecentPoints,
+    estoniaHistoryPoints: input.estoniaHistoryPoints,
+    elurikkusRecentRecords: [],
+    estoniaHistoryClusters: input.estoniaHistoryClusters,
+    mapLayers: {},
+    mapLayersDefault: {},
+    species: input.species,
+    weather: input.weather,
+    evidenceState: snapshot.evidenceState,
+    hasUsableRecentEstoniaEvidence: snapshot.hasUsableRecentEstoniaEvidence,
+    hasUsableEstoniaHistory: snapshot.hasUsableEstoniaHistory,
+    hasUsableForeignPressure: snapshot.hasUsableForeignPressure,
+    hasUsablePredictedTargets: snapshot.hasUsablePredictedTargets,
+    hasOnlyWeather: snapshot.hasOnlyWeather,
+    hasOnlySourceAvailabilityWithoutUsableEvidence: snapshot.hasOnlySourceAvailabilityWithoutUsableEvidence,
+    activeEvidenceSources: snapshot.activeEvidenceSources,
+    availableSources: snapshot.availableSources,
+    attemptedButUnavailable: snapshot.attemptedButUnavailable,
+    attemptedButReturnedNoUsableEvidence: snapshot.attemptedButReturnedNoUsableEvidence,
+    effectiveRankingMode: snapshot.effectiveRankingMode,
+    summaryGuardrailApplied: false,
+    summaryGuardrailReason: '',
+    summaryOrigin,
+    // Decision 2: the EF stays the canonical payload source. This is never
+    // 'n8n_v3_passthrough'.
+    payloadSourceState: 'current_finalized_backend_output',
+    globalMigrationEtas: input.globalMigrationEtas,
+    topPredictedPoints: input.predictedTargets,
+    aiSummary: narrative.insightSummary,
+    raw,
   };
-  console.log('[N8N-CALL-START]', JSON.stringify(callStartData));
-  diagnosticEventsCollector?.push({ tag: '[N8N-CALL-START]', data: callStartData });
-  let upstream: Response;
-  try {
-    upstream = await fetch(webhookUrl, {
-      method: 'POST',
-      headers,
-      body: requestBodyJson,
-      signal,
-    });
-  } catch (err) {
-    const errData = {
-      message: err instanceof Error ? err.message : String(err),
-      name: err instanceof Error ? err.name : '',
-    };
-    console.log('[N8N-CALL-ERROR]', JSON.stringify(errData));
-    diagnosticEventsCollector?.push({ tag: '[N8N-CALL-ERROR]', data: errData });
-    throw err;
+}
+
+// The EF's own narrative, used whenever Sonnet is skipped, unreachable or
+// unparseable. n8n did the same: finalize_response fell back to base.aiSummary
+// rather than failing the run (decision 5).
+function buildLocalNarrative(input: SonnetSummaryInput): AnalystNarrative {
+  return buildCanonicalSummaryFromEvidence({
+    speciesName: input.speciesName,
+    estoniaEvidence: input.estoniaEvidence,
+    foreignEvidence: input.foreignEvidence,
+    foreignRecentPoints: input.foreignRecentPoints,
+    foreignClusters: input.foreignClusters,
+    predictedTargets: input.predictedTargets,
+    activeEvidenceSources: input.evidenceStateSnapshot.activeEvidenceSources,
+    evidenceStateSnapshot: input.evidenceStateSnapshot,
+  });
+}
+
+function sonnetFallback(
+  input: SonnetSummaryInput,
+  reason: string,
+  raw: Record<string, unknown>,
+): NormalizedUpstreamResponse {
+  const local = buildLocalNarrative(input);
+  const warnings = Array.from(new Set([...local.warnings, `ai_summary_unavailable: ${reason}`]));
+  console.warn('[AI-SUMMARY-FALLBACK]', JSON.stringify({ speciesKey: input.speciesKey, reason }));
+  input.diagnosticEventsCollector?.push({ tag: '[AI-SUMMARY-FALLBACK]', data: { reason } });
+  // Origin stays deterministic: there is no AI narrative to protect, so the
+  // finalizer may rebuild the text as it always has. The warning still survives,
+  // via the warnings union in buildFinalPredictionPayloadFromEvidence.
+  return buildSonnetNormalizedResponse(input, { ...local, warnings }, 'deterministic_structured', raw);
+}
+
+// ── M7.6: the analyst call, replacing the n8n webhook POST ──────────────────
+// Returns the same NormalizedUpstreamResponse the n8n path returned, so the
+// existing non-passthrough merge (preferredSummary -> buildCanonicalPrediction-
+// Record) carries the narrative into the canonical response unchanged.
+async function fetchSonnetSummary(input: SonnetSummaryInput): Promise<NormalizedUpstreamResponse> {
+  // Decision 5: a missing key is a real configuration error, not a fallback.
+  if (!anthropicKey()) throw new Error('missing_env:ANTHROPIC_API_KEY');
+  // No prompt reaches Anthropic without the byte-for-byte hash check.
+  await assertPromptPrefix();
+
+  if (input.settings.dryRun === true) {
+    const local = buildLocalNarrative(input);
+    console.info('[AI-SUMMARY-DRYRUN]', JSON.stringify({ speciesKey: input.speciesKey, model: sonnetModel() }));
+    input.diagnosticEventsCollector?.push({ tag: '[AI-SUMMARY-DRYRUN]', data: { model: sonnetModel() } });
+    return buildSonnetNormalizedResponse(input, local, 'deterministic_structured', { dryRun: true });
   }
-  const text = await upstream.text();
+
+  // Budget guard: never start a call we cannot finish inside the shutdown
+  // envelope. The env cap stays a sub-cap for the Sonnet call only.
+  const elapsed = Date.now() - input.budgetStartedAt;
+  const sonnetTimeout = Math.min(
+    SONNET_MAX_TIMEOUT_MS,
+    resolveTimeoutMs(),
+    ORCH_BUDGET_MS - elapsed - SONNET_RESERVE_MS,
+  );
+  if (elapsed > ORCH_BUDGET_MS - SONNET_BUDGET_FLOOR_MS || sonnetTimeout <= 0) {
+    return sonnetFallback(input, `budget_exceeded_before_sonnet after ${elapsed} ms`, { elapsedMs: elapsed });
+  }
+
+  const evidence = buildAnalystEvidence({
+    species: input.species,
+    evidenceState: input.evidenceStateSnapshot.evidenceState,
+    sourceHealth: input.sourceHealth,
+    estoniaEvidence: input.estoniaEvidence,
+    estoniaHistoryPoints: input.estoniaHistoryPoints,
+    foreignRecentPoints: input.foreignRecentPoints,
+    foreignClusters: input.foreignClusters,
+    countryScores: input.countryScores,
+    predictedTargets: input.predictedTargets,
+    weather: input.weather,
+  });
+  const prompt = buildAnalystPrompt(evidence);
+  // Debug knob for the max_tokens guard (verification step C3). A truncated
+  // reply degrades to the fallback, so leaving it ungated is harmless.
+  const overrideRaw = Number(input.settings.maxTokensOverride);
+  const maxTokens = Number.isFinite(overrideRaw) && overrideRaw > 0
+    ? Math.floor(overrideRaw)
+    : SONNET_MAX_TOKENS;
   const callData = {
-    status: upstream.status,
-    ok: upstream.ok,
-    headers: Object.fromEntries(upstream.headers.entries()),
-    bodyBytes: text.length,
+    model: sonnetModel(),
+    promptChars: prompt.length,
+    evidenceChars: prompt.length - PROMPT_PREFIX.length,
+    maxTokens,
+    timeoutMs: sonnetTimeout,
+    elapsedMs: elapsed,
   };
-  console.log('[N8N-CALL]', JSON.stringify(callData));
-  diagnosticEventsCollector?.push({ tag: '[N8N-CALL]', data: callData });
-  console.log('[N8N-CALL-BODY-PREVIEW]', text.slice(0, 500));
-  diagnosticEventsCollector?.push({ tag: '[N8N-CALL-BODY-PREVIEW]', data: { preview: text.slice(0, 2000) } });
-  let n8nParsed = safeJsonParse(text);
-  if (Array.isArray(n8nParsed)) n8nParsed = n8nParsed[0];
-  const n8nRecord = asRecord(n8nParsed);
-  const gateData = {
-    n8nParsedTruthy: !!n8nParsed,
-    n8nRecordOk: n8nRecord.ok,
-    n8nRecordOkStrictTrue: n8nRecord.ok === true,
-    analysisVersionType: typeof n8nRecord.analysisVersion,
-    analysisVersionValue: typeof n8nRecord.analysisVersion === 'string' ? n8nRecord.analysisVersion : null,
-    analysisVersionStartsWithV3: typeof n8nRecord.analysisVersion === 'string' && n8nRecord.analysisVersion.startsWith('v3'),
-    n8nRecordTopLevelKeys: Object.keys(n8nRecord).slice(0, 40),
-    workflowVersion: typeof n8nRecord.__workflowVersion === 'string' ? n8nRecord.__workflowVersion : null,
-    debugFinalizeSource: (() => {
-      const df = n8nRecord.__debugFinalize;
-      return df && typeof df === 'object' && !Array.isArray(df) ? (df as Record<string, unknown>).source : null;
-    })(),
+  console.log('[AI-CALL-START]', JSON.stringify(callData));
+  input.diagnosticEventsCollector?.push({ tag: '[AI-CALL-START]', data: callData });
+
+  const startedAt = Date.now();
+  let response: AnthropicResponse;
+  try {
+    response = await callSonnet(prompt, maxTokens, sonnetTimeout);
+  } catch (err) {
+    input.timings.sonnet_ms = Date.now() - startedAt;
+    const message = err instanceof Error ? err.message : String(err);
+    return sonnetFallback(input, message, { error: message });
+  }
+  input.timings.sonnet_ms = Date.now() - startedAt;
+  input.timings.sonnet_input_tokens = response.usage?.input_tokens ?? null;
+  input.timings.sonnet_output_tokens = response.usage?.output_tokens ?? null;
+  input.timings.stop_reason = response.stop_reason ?? null;
+  input.timings.model = stringOr(response.model) || sonnetModel();
+
+  let narrative: AnalystNarrative;
+  try {
+    narrative = extractAnalystNarrative(response);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return sonnetFallback(input, message, { stop_reason: response.stop_reason ?? null });
+  }
+
+  const callResult = {
+    insightSummaryChars: narrative.insightSummary.length,
+    confidenceNoteChars: narrative.confidenceNote.length,
+    rankingNotesChars: narrative.rankingNotes.length,
+    warningsCount: narrative.warnings.length,
+    stopReason: response.stop_reason ?? null,
+    outputTokens: response.usage?.output_tokens ?? null,
+    sonnetMs: input.timings.sonnet_ms,
   };
-  console.log('[N8N-PASSTHROUGH-GATE]', JSON.stringify(gateData));
-  diagnosticEventsCollector?.push({ tag: '[N8N-PASSTHROUGH-GATE]', data: gateData });
-  if (
-    n8nParsed
-    && n8nRecord.ok === true
-    && typeof n8nRecord.analysisVersion === 'string'
-    && n8nRecord.analysisVersion.startsWith('v3')
-  ) {
-    console.log('[species-prediction] V3 passthrough activated');
-    const passthroughPredictedTargets = Array.isArray(n8nRecord.predictedTargets) ? n8nRecord.predictedTargets : [];
-    const passthroughTopPredictedPoints = Array.isArray(n8nRecord.topPredictedPoints)
-      ? n8nRecord.topPredictedPoints
-      : passthroughPredictedTargets;
-    const passthroughSummary = stringOr(
-      n8nRecord.insightSummary,
-      asRecord(n8nRecord.aiSummary).insightSummary,
-      n8nRecord.aiSummary,
-      '',
-    );
-    return {
-      ...n8nRecord,
-      ok: true,
-      status: 'completed',
-      error: null,
-      speciesKey: stringOr(n8nRecord.speciesKey, asRecord(n8nRecord.species).speciesKey, asRecord(n8nRecord.species).key, asRecord(payload.species).key),
-      speciesName: stringOr(n8nRecord.speciesName, asRecord(n8nRecord.species).speciesName, asRecord(n8nRecord.species).name, asRecord(payload.species).name),
-      scope: stringOr(n8nRecord.scope, asRecord(payload.settings).scope) || 'linnuliigid',
-      generatedAt: stringOr(n8nRecord.generatedAt) || new Date().toISOString(),
-      analysisVersion: stringOr(n8nRecord.analysisVersion) || 'v3_passthrough',
-      sourceHealth: asRecord(n8nRecord.sourceHealth),
-      countryScores: asRecord(n8nRecord.countryScores),
-      estoniaEvidence: asRecord(n8nRecord.estoniaEvidence),
-      evidenceSummary: asRecord(n8nRecord.evidenceSummary),
-      foreignClusters: Array.isArray(n8nRecord.foreignClusters) ? n8nRecord.foreignClusters : [],
-      predictedTargets: passthroughPredictedTargets,
-      topTarget: passthroughTopPredictedPoints.length ? asRecord(passthroughTopPredictedPoints[0]) : undefined,
-      foreignRecentPoints: Array.isArray(n8nRecord.foreignRecentPoints) ? n8nRecord.foreignRecentPoints : [],
-      estoniaHistoryPoints: Array.isArray(n8nRecord.estoniaHistoryPoints) ? n8nRecord.estoniaHistoryPoints : [],
-      elurikkusRecentRecords: Array.isArray(n8nRecord.elurikkusRecentRecords) ? n8nRecord.elurikkusRecentRecords : [],
-      estoniaHistoryClusters: Array.isArray(n8nRecord.estoniaHistoryClusters) ? n8nRecord.estoniaHistoryClusters : [],
-      mapLayers: asRecord(n8nRecord.mapLayers),
-      mapLayersDefault: asRecord(n8nRecord.mapLayersDefault),
-      species: asRecord(n8nRecord.species),
-      weather: asRecord(n8nRecord.weather),
-      evidenceState: typeof n8nRecord.evidenceState === 'string' ? n8nRecord.evidenceState as EvidenceState : 'insufficient',
-      hasUsableRecentEstoniaEvidence: n8nRecord.hasUsableRecentEstoniaEvidence === true,
-      hasUsableEstoniaHistory: n8nRecord.hasUsableEstoniaHistory === true,
-      hasUsableForeignPressure: n8nRecord.hasUsableForeignPressure === true,
-      hasUsablePredictedTargets: n8nRecord.hasUsablePredictedTargets === true || passthroughTopPredictedPoints.length > 0,
-      hasOnlyWeather: n8nRecord.hasOnlyWeather === true,
-      hasOnlySourceAvailabilityWithoutUsableEvidence: n8nRecord.hasOnlySourceAvailabilityWithoutUsableEvidence === true,
-      activeEvidenceSources: Array.isArray(n8nRecord.activeEvidenceSources) ? n8nRecord.activeEvidenceSources.map((item) => String(item ?? '')) : [],
-      availableSources: Array.isArray(n8nRecord.availableSources) ? n8nRecord.availableSources.map((item) => String(item ?? '')) : [],
-      attemptedButUnavailable: Array.isArray(n8nRecord.attemptedButUnavailable) ? n8nRecord.attemptedButUnavailable.map((item) => String(item ?? '')) : [],
-      attemptedButReturnedNoUsableEvidence: Array.isArray(n8nRecord.attemptedButReturnedNoUsableEvidence) ? n8nRecord.attemptedButReturnedNoUsableEvidence.map((item) => String(item ?? '')) : [],
-      effectiveRankingMode: stringOr(n8nRecord.effectiveRankingMode),
-      summaryGuardrailApplied: false,
-      summaryGuardrailReason: '',
-      payloadSourceState: 'n8n_v3_passthrough',
-      globalMigrationEtas: Array.isArray(n8nRecord.globalMigrationEtas) ? n8nRecord.globalMigrationEtas : [],
-      topPredictedPoints: passthroughTopPredictedPoints,
-      insightSummary: passthroughSummary,
-      aiSummary: passthroughSummary,
-      confidenceNote: stringOr(n8nRecord.confidenceNote, asRecord(n8nRecord.aiSummary).confidenceNote),
-      rankingNotes: stringOr(n8nRecord.rankingNotes, asRecord(n8nRecord.aiSummary).rankingNotes),
-      warnings: Array.isArray(n8nRecord.warnings)
-        ? n8nRecord.warnings.map((item) => String(item ?? ''))
-        : (Array.isArray(asRecord(n8nRecord.aiSummary).warnings)
-          ? (asRecord(n8nRecord.aiSummary).warnings as unknown[]).map((item) => String(item ?? ''))
-          : []),
-      summarySourcePath: typeof n8nRecord.summarySourcePath === 'string' ? n8nRecord.summarySourcePath : undefined,
-      summaryOrigin: typeof n8nRecord.summaryOrigin === 'string' ? n8nRecord.summaryOrigin as SummaryOrigin : undefined,
-      raw: n8nRecord,
-    } as NormalizedUpstreamResponse;
-  }
-  const data = n8nParsed;
-  const effectiveData = n8nParsed;
-  if (!upstream.ok) {
-    throw createUpstreamError({
-      stage: 'n8n_upstream',
-      webhookTarget,
-      upstreamStatus: upstream.status,
-      upstreamStatusText: upstream.statusText,
-      upstreamBody: data,
-    });
-  }
-  const upstreamRecord = asRecord(effectiveData);
-  const shapeDiagnostics = buildSummaryShapeDiagnostics(effectiveData);
-  const extractedSummary = extractNormalizedAiSummary(effectiveData);
-  const normalizedResponse = normalizeN8nPredictionSuccessPayload(effectiveData);
-  console.info(`${LOG_PREFIX} upstream_normalization`, {
-    branch: 'maybeFetchSecondarySummary.upstream_normalization',
-    functionName: 'maybeFetchSecondarySummary',
-    topLevelKeys: shapeDiagnostics.topLevelKeys,
-    aiSummaryType: typeof upstreamRecord.aiSummary,
-    nestedInsightSummaryType: typeof asRecord(upstreamRecord.aiSummary).insightSummary,
-    topLevelInsightSummaryType: typeof upstreamRecord.insightSummary,
-    summaryShapeUsed: extractedSummary?.summaryShapeUsed || 'missing',
-    normalizedInsightLength: extractedSummary?.normalizedInsightLength || 0,
-    normalizedWarningsCount: extractedSummary?.normalizedWarningsCount || 0,
-    normalizedRankingNotesType: extractedSummary?.normalizedRankingNotesType || '',
-    summarySourcePath: extractedSummary?.summarySourcePath || '',
-    rankingNotesInputType: extractedSummary?.rankingNotesInputType || '',
-    warningsInputType: extractedSummary?.warningsInputType || '',
-    normalizedPredictionShape: extractedSummary?.normalizedPredictionShape || '',
-    nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
-    backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
+  console.log('[AI-CALL]', JSON.stringify(callResult));
+  input.diagnosticEventsCollector?.push({ tag: '[AI-CALL]', data: callResult });
+
+  // The analyst's own warnings plus this run's source warnings, exactly as the
+  // n8n path merged them.
+  const sourceWarnings = Array.isArray(input.sourceHealth.sourceWarnings)
+    ? input.sourceHealth.sourceWarnings.map((item) => String(item ?? ''))
+    : [];
+  const merged: AnalystNarrative = {
+    ...narrative,
+    warnings: Array.from(new Set([...narrative.warnings, ...sourceWarnings])),
+  };
+  const normalized = buildSonnetNormalizedResponse(input, merged, 'sonnet_in_ef', {
+    stop_reason: response.stop_reason ?? null,
+    model: stringOr(response.model) || sonnetModel(),
+    usage: response.usage ?? null,
   });
-  if (!normalizedResponse) {
-    console.warn(`${LOG_PREFIX} upstream_normalization_failed`, {
-      filePath: EDGE_FUNCTION_FILE,
-      functionName: 'maybeFetchSecondarySummary',
-      branchName: 'maybeFetchSecondarySummary.throw.invalid_upstream_json',
-      hasTopLevelInsightSummary: shapeDiagnostics.hasTopLevelInsightSummary,
-      hasNestedAiSummaryObject: shapeDiagnostics.hasNestedAiSummaryObject,
-      hasNestedAiSummaryInsight: shapeDiagnostics.hasNestedAiSummaryInsight,
-      topLevelKeys: shapeDiagnostics.topLevelKeys,
-      nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
-      insightSummaryType: shapeDiagnostics.insightSummaryType,
-      normalizedInsightLength: extractedSummary?.normalizedInsightLength || 0,
-      normalizedWarningsCount: extractedSummary?.normalizedWarningsCount || 0,
-      normalizedRankingNotesType: extractedSummary?.normalizedRankingNotesType || '',
-      summarySourcePath: extractedSummary?.summarySourcePath || '',
-      hasAiSummaryObject: extractedSummary?.hasAiSummaryObject ?? shapeDiagnostics.hasNestedAiSummaryObject,
-      hasNestedInsightSummary: extractedSummary?.hasNestedInsightSummary ?? shapeDiagnostics.hasNestedAiSummaryInsight,
-      rankingNotesInputType: extractedSummary?.rankingNotesInputType || '',
-      warningsInputType: extractedSummary?.warningsInputType || '',
-      normalizedPredictionShape: extractedSummary?.normalizedPredictionShape || '',
-      insightSummaryValuePreview: buildInsightSummaryPreview(effectiveData),
-      aiSummaryType: typeof upstreamRecord.aiSummary,
-      nestedInsightSummaryType: typeof asRecord(upstreamRecord.aiSummary).insightSummary,
-      topLevelInsightSummaryType: typeof upstreamRecord.insightSummary,
-      backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
-    });
-    throw createUpstreamError({
-      stage: 'invalid_upstream_json',
-      webhookTarget,
-      upstreamStatus: upstream.status,
-      upstreamStatusText: upstream.statusText,
-      upstreamBody: {
-        ...asRecord(effectiveData),
-        hasTopLevelInsightSummary: shapeDiagnostics.hasTopLevelInsightSummary,
-        hasNestedAiSummaryObject: shapeDiagnostics.hasNestedAiSummaryObject,
-        hasNestedAiSummaryInsight: shapeDiagnostics.hasNestedAiSummaryInsight,
-        topLevelKeys: shapeDiagnostics.topLevelKeys,
-        nestedAiSummaryKeys: shapeDiagnostics.nestedAiSummaryKeys,
-        insightSummaryType: shapeDiagnostics.insightSummaryType,
-        normalizedInsightLength: extractedSummary?.normalizedInsightLength || 0,
-        normalizedWarningsCount: extractedSummary?.normalizedWarningsCount || 0,
-        normalizedRankingNotesType: extractedSummary?.normalizedRankingNotesType || '',
-        summarySourcePath: extractedSummary?.summarySourcePath || '',
-        hasAiSummaryObject: extractedSummary?.hasAiSummaryObject ?? shapeDiagnostics.hasNestedAiSummaryObject,
-        hasNestedInsightSummary: extractedSummary?.hasNestedInsightSummary ?? shapeDiagnostics.hasNestedAiSummaryInsight,
-        rankingNotesInputType: extractedSummary?.rankingNotesInputType || '',
-        warningsInputType: extractedSummary?.warningsInputType || '',
-        normalizedPredictionShape: extractedSummary?.normalizedPredictionShape || '',
-        insightSummaryValuePreview: buildInsightSummaryPreview(effectiveData),
-        nestedInsightSummaryType: typeof asRecord(upstreamRecord.aiSummary).insightSummary,
-        topLevelInsightSummaryType: typeof upstreamRecord.insightSummary,
-        backendBuild: SPECIES_PREDICTION_BACKEND_BUILD,
-      },
-      fallbackCode: 'N8N_UPSTREAM_INVALID_RESPONSE',
-      fallbackMessage: 'n8n returned success but no AI summary payload was present',
-      shapeDiagnostics,
-    });
+  // The same evidence-state guardrails the n8n narrative passed through. If this
+  // fires it rewrites the text and sets summaryGuardrailApplied -- the signal C4
+  // checks.
+  const guarded = applyEvidenceStateSummaryGuardrails(normalized, input.evidenceStateSnapshot);
+  if (guarded.summaryGuardrailApplied) {
+    console.warn('[AI-SUMMARY-GUARDRAIL]', JSON.stringify({
+      speciesKey: input.speciesKey,
+      reason: guarded.summaryGuardrailReason,
+      original: narrative.insightSummary.slice(0, 160),
+    }));
   }
-  const guardedResponse = applyEvidenceStateSummaryGuardrails(normalizedResponse, evidenceStateSnapshot);
-  console.info(`${LOG_PREFIX} summary_guardrails`, {
-    evidenceState: guardedResponse.evidenceState,
-    hasUsableRecentEstoniaEvidence: guardedResponse.hasUsableRecentEstoniaEvidence,
-    hasUsableEstoniaHistory: guardedResponse.hasUsableEstoniaHistory,
-    hasUsableForeignPressure: guardedResponse.hasUsableForeignPressure,
-    hasUsablePredictedTargets: guardedResponse.hasUsablePredictedTargets,
-    hasOnlyWeather: guardedResponse.hasOnlyWeather,
-    summaryGuardrailApplied: guardedResponse.summaryGuardrailApplied,
-    summaryGuardrailReason: guardedResponse.summaryGuardrailReason,
-    originalAiSummarySnippet: buildInsightSummaryPreview(effectiveData),
-    finalAiSummarySnippet: guardedResponse.insightSummary.slice(0, 160),
-  });
-  return guardedResponse;
+  return { ...guarded, summaryOrigin: 'sonnet_in_ef' };
 }
 
 function resolveWebhookTarget(): WebhookTargetInfo {
@@ -2977,6 +3516,8 @@ function resolveWebhookTarget(): WebhookTargetInfo {
   });
 }
 
+// M7.7: remove — no caller since M7.6 removed the n8n webhook POST. Kept only
+// so the 'missing_webhook_url' stage stays exercised by the error-shape types.
 function createWebhookConfigError(webhookTarget: WebhookTargetInfo): SpeciesPredictionUpstreamError {
   return {
     stage: 'missing_webhook_url',
@@ -3981,7 +4522,11 @@ function buildSourceHealthMapFirst(input: {
   if (!input.estoniaHistoryPoints.length) warnings.push('Estonia history returned no coordinate-backed points.');
   if (!input.foreignRecentPoints.length) warnings.push('Foreign eBird evidence is sparse or unavailable.');
   if (!input.foreignClusters.length) warnings.push('No foreign-country clusters were available to display.');
-  if (!input.webhookConfigured) warnings.push('Secondary AI summary is unavailable because no webhook is configured.');
+  // M7.6: the flag now means "the AI analyst is configured" (ANTHROPIC_API_KEY),
+  // not "an n8n webhook URL is set". Without this the warning would fire on
+  // every single run, since SPECIES_PREDICTION_N8N_WEBHOOK_URL is deliberately
+  // unset, and it would reach both the user and the analyst's own sourceHealth.
+  if (!input.webhookConfigured) warnings.push('Secondary AI summary is unavailable because the AI analyst is not configured.');
   if (!input.estoniaHistoryClusters.length) warnings.push('No Estonia history clusters were available, so predicted targets remain empty.');
   const primarySources = [input.estoniaHistorySourceUsed === 'GBIF'
     ? 'GBIF Estonia'
@@ -4471,9 +5016,11 @@ function sanitizeSummaryAgainstEvidence(response: Record<string, unknown>): Reco
 function enforceCanonicalSummaryConsistency(
   canonical: CanonicalPredictionRecord,
 ): CanonicalPredictionRecord {
-  // Skip guardrail if n8n already provided an OpenAI summary
+  // Skip guardrail if an analyst already provided the summary.
+  // M7.6: 'sonnet_in_ef' is the in-EF Sonnet analyst (same standing as the
+  // n8n-era origins it joins here).
   if (canonical.summaryOrigin === 'openai_analyst' || canonical.summaryOrigin === 'openai'
-    || canonical.summaryOrigin === 'normalized_upstream') {
+    || canonical.summaryOrigin === 'normalized_upstream' || canonical.summaryOrigin === 'sonnet_in_ef') {
     return {
       ...canonical,
       consistencyChecks: buildFinalConsistencyChecksFromCanonical({
@@ -4853,19 +5400,34 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
   estoniaEvidence.recentCount30d = recentCount30d;
   estoniaEvidence.alreadyPresent = recentCount7d > 0;
 
+  // M7.6 (B1.6): a narrative authored by the in-EF Sonnet analyst is not stale
+  // text from a previous run -- it was generated from THIS run's structured
+  // evidence and already passed canonicalSummaryMatchesEvidence in
+  // buildCanonicalPredictionRecord. Overwriting it here would make the whole
+  // port a silent no-op, so for that one origin the finalizer keeps the text and
+  // rebuilds only the structural fields around it. Every other origin behaves
+  // exactly as before.
+  const keepAiNarrative = stringOr(payload.summaryOrigin) === 'sonnet_in_ef';
+  const finalInsightSummary = keepAiNarrative
+    ? stringOr(payload.insightSummary, payload.aiSummary)
+    : scrubbed.safeSummary;
+
   const finalWarnings = Array.from(new Set([
     ...(recentCount7d > 0 ? [] : ['No recent Estonia records were confirmed in the last 7 days.']),
     ...(estoniaHistoryPoints.length || estoniaHistoryClusters.length ? [] : ['No coordinate-backed Estonia history was available in this run.']),
     ...((asRecord(payload.sourceHealth).ebirdAvailable === true && (foreignRecentPoints.length || foreignClusters.length)) ? [] : ['No foreign pressure was available in this run.']),
     ...(predictedTargets.length ? [] : ['No predicted targets were retained from the final structured evidence.']),
     ...(scrubbed.warning ? [scrubbed.warning] : []),
+    // M7.6 (B1.6): the analyst's own warnings, and the ai_summary_unavailable
+    // marker on the fallback path, would otherwise be dropped here.
+    ...(Array.isArray(payload.warnings) ? payload.warnings.map((item) => String(item ?? '')).filter(Boolean) : []),
   ]));
   const finalConsistencyChecks = buildFinalConsistencyChecksFromCanonical({
     foreignRecentPoints,
     foreignClusters,
     predictedTargets: canonicalPredictedTargets,
     weather: canonicalWeather,
-    insightSummary: scrubbed.safeSummary,
+    insightSummary: finalInsightSummary,
   });
   const finalPayload: Record<string, unknown> = {
     speciesKey: payload.speciesKey,
@@ -4906,8 +5468,8 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     alreadyMissedRisk: payload.alreadyMissedRisk,
     countryScores: canonicalCountryScores,
     topPredictedPoints: canonicalPredictedTargets,
-    insightSummary: scrubbed.safeSummary,
-    aiSummary: scrubbed.safeSummary,
+    insightSummary: finalInsightSummary,
+    aiSummary: finalInsightSummary,
     confidenceNote: payload.confidenceNote,
     rankingNotes: payload.rankingNotes,
     warnings: finalWarnings,
@@ -4916,8 +5478,10 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
       ...finalConsistencyChecks,
       legacyStateSafe: true,
     },
-    summaryOrigin: scrubbed.reasons.length ? 'neutral_sanitizer_fallback' : 'regenerated_from_structured',
-    summaryRegeneratedFromStructuredEvidence: true,
+    summaryOrigin: keepAiNarrative
+      ? 'sonnet_in_ef'
+      : (scrubbed.reasons.length ? 'neutral_sanitizer_fallback' : 'regenerated_from_structured'),
+    summaryRegeneratedFromStructuredEvidence: !keepAiNarrative,
     backendBuild: payload.backendBuild,
     invokeRouteVersion: payload.invokeRouteVersion,
     responseProof: payload.responseProof,
@@ -4983,9 +5547,12 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
         totalForeignRecentPoints: foreignRecentPoints.length,
         primaryCountries: canonicalPrimaryCountries,
       },
-      // Fresh computed values — never carried from rawResearchPayload
-      aiSummary: scrubbed.safeSummary,
-      insightSummary: scrubbed.safeSummary,
+      // Fresh computed values — never carried from rawResearchPayload.
+      // M7.6 (B1.6): must mirror the top-level narrative, or
+      // validatePredictionPayloadConsistency reports raw_payload_mismatch and
+      // finalizePredictionResponse re-scrubs the text we just preserved.
+      aiSummary: finalInsightSummary,
+      insightSummary: finalInsightSummary,
       confidenceNote: '',
       rankingNotes: [],
       topPredictedPoints: canonicalPredictedTargets,
@@ -5035,7 +5602,7 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
       foreignClusters,
       predictedTargets: canonicalPredictedTargets,
       weather: canonicalWeather,
-      insightSummary: scrubbed.safeSummary,
+      insightSummary: finalInsightSummary,
     }).weatherLooksSupportive === true && /weather_only_insufficient/i.test(stringOr(payload.summaryGuardrailReason)) ? ['summary_guardrail_reason_contradicts_weather'] : []),
   ]));
   finalPayload.summaryGuardrailReason = finalSummaryGuardrailReasons.join(',');
@@ -5621,13 +6188,16 @@ function finalizePredictionResponse(
     return canonicalResponse;
   }
 
-  // Skip finalization if this payload was written directly by n8n
+  // Skip finalization if this payload was written directly by n8n.
+  // M7.6 (B1.7): the third clause used to be
+  //   rawResearchPayload.evidenceSummary.totalForeignRecentPoints > 0
+  // which had nothing to do with n8n -- it skipped finalization for ANY result
+  // that had foreign points. With eBird returning 418 today that count is 0, so
+  // it never fires; once M7.6b restores the relay it would have started firing
+  // and silently skipped finalization for every EF-built result. Dropped.
   const isN8nPassthrough =
     stringOr(canonicalResponse.summaryOrigin) === 'n8n_evidence_first' ||
-    stringOr(canonicalResponse.payloadSourceState) === 'n8n_v3_passthrough' ||
-    (((canonicalResponse.rawResearchPayload as Record<string, unknown> | null)
-      ?.evidenceSummary as Record<string, unknown> | null)
-      ?.totalForeignRecentPoints as number ?? 0) > 0;
+    stringOr(canonicalResponse.payloadSourceState) === 'n8n_v3_passthrough';
   if (isN8nPassthrough) {
     console.log(`[finalizePredictionResponse] Skipping (${branch}): n8n passthrough detected`);
     return canonicalResponse;
@@ -5635,6 +6205,14 @@ function finalizePredictionResponse(
 
   logPredictionSummaryState('canonical_response_built', branch, canonicalResponse);
   const finalPayload = buildFinalPredictionPayloadFromEvidence(canonicalResponse);
+  // M7.6 (B1.6): the two blocks below are the enforcement arm of the same scrub
+  // that buildFinalPredictionPayloadFromEvidence just skipped for an in-EF
+  // Sonnet narrative. Without this flag they would overwrite it right back --
+  // validateNarrativeConsistency's foreign-country regex has no word boundary,
+  // so the plain word "present" matches /SE/i and trips the rewrite whenever
+  // there are no foreign points, which is exactly today's state. The mismatch
+  // and stale WARNINGS are still recorded; only the text is preserved.
+  const keepAiNarrative = stringOr(finalPayload.summaryOrigin) === 'sonnet_in_ef';
   const finalValidation = validatePredictionPayloadConsistency(finalPayload);
   if (!finalValidation.rawPayloadMatchesFinalPayload) {
     // Change 1: surface the mismatch visibly in the API response so callers can detect it.
@@ -5646,10 +6224,12 @@ function finalizePredictionResponse(
     // scrubber now — do not let a mismatched payload leave with stale text intact.
     const mismatchScrub = scrubStaleNarrativeFromStructuredEvidence(finalPayload);
     if (mismatchScrub.reasons.length) {
-      finalPayload.insightSummary = mismatchScrub.safeSummary;
-      finalPayload.aiSummary = mismatchScrub.safeSummary;
-      finalPayload.summaryOrigin = 'neutral_sanitizer_fallback';
-      finalPayload.summaryRegeneratedFromStructuredEvidence = true;
+      if (!keepAiNarrative) {
+        finalPayload.insightSummary = mismatchScrub.safeSummary;
+        finalPayload.aiSummary = mismatchScrub.safeSummary;
+        finalPayload.summaryOrigin = 'neutral_sanitizer_fallback';
+        finalPayload.summaryRegeneratedFromStructuredEvidence = true;
+      }
       if (mismatchScrub.warning) {
         finalPayload.warnings = Array.from(new Set([
           ...(Array.isArray(finalPayload.warnings) ? finalPayload.warnings.map((w) => String(w || '')) : []),
@@ -5663,8 +6243,10 @@ function finalizePredictionResponse(
     mismatchRwp.warnings = finalPayload.warnings;
   }
   if (finalValidation.reasons.length) {
-    finalPayload.insightSummary = buildDeterministicSummaryFromStructuredEvidence(finalPayload);
-    finalPayload.aiSummary = stringOr(finalPayload.insightSummary);
+    if (!keepAiNarrative) {
+      finalPayload.insightSummary = buildDeterministicSummaryFromStructuredEvidence(finalPayload);
+      finalPayload.aiSummary = stringOr(finalPayload.insightSummary);
+    }
     finalPayload.warnings = Array.from(new Set([...(Array.isArray(finalPayload.warnings) ? finalPayload.warnings.map((item) => String(item || '')) : []), STALE_NARRATIVE_WARNING]));
     finalPayload.consistencyChecks = buildFinalConsistencyChecksFromCanonical({
       foreignRecentPoints: Array.isArray(finalPayload.foreignRecentPoints) ? finalPayload.foreignRecentPoints : [],
@@ -5698,6 +6280,9 @@ function buildCanonicalPredictionRecord(input: {
   base: Record<string, unknown>;
   alternate?: Record<string, unknown> | null;
   preferredSummary?: Pick<CanonicalPredictionRecord, 'insightSummary' | 'confidenceNote' | 'rankingNotes' | 'warnings'> | null;
+  // M7.6: which analyst authored preferredSummary. Defaults to the historical
+  // 'normalized_upstream' when the caller does not say.
+  preferredSummaryOrigin?: SummaryOrigin | null;
 }): CanonicalPredictionRecord {
   const chosen = pickCanonicalStructuredSource(input.base, input.alternate);
   const sourceHealth = asRecord(chosen.sourceHealth);
@@ -5760,8 +6345,11 @@ function buildCanonicalPredictionRecord(input: {
     });
   }
   const summary = summaryCheck.ok ? preferredSummary : deterministicSummary;
+  // M7.6: carry the caller's origin through instead of collapsing every accepted
+  // upstream narrative to 'normalized_upstream' -- the finalizer keys the
+  // no-overwrite rule on 'sonnet_in_ef' and cannot recover it later.
   const summaryOrigin: SummaryOrigin = summaryCheck.ok && input.preferredSummary
-    ? 'normalized_upstream'
+    ? (input.preferredSummaryOrigin || 'normalized_upstream')
     : 'deterministic_structured';
   return enforceCanonicalSummaryConsistency({
     speciesKey: stringOr(chosen.speciesKey, asRecord(chosen.species).speciesKey, asRecord(chosen.species).key),

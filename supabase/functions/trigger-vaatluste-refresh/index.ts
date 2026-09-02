@@ -146,8 +146,8 @@ serve(async (req) => {
   };
 
   // `internal` = one of our own orchestrator EFs: gets the AbortController
-  // timeout and has its 202 body read for run_id. The toenaosus leg is still an
-  // n8n webhook and keeps the previous no-timeout, no-body-parse behaviour.
+  // timeout and has its 202 body read for run_id. Since M7.5b all three legs
+  // are internal.
   const targets: Array<{
     key: TargetKey;
     url: string;
@@ -166,17 +166,13 @@ serve(async (req) => {
       secret: VAATLUSTE_WEBHOOK_SECRET,
       internal: true,
     },
-  ];
-  if (TOENAOSUS_WEBHOOK_URL && TOENAOSUS_WEBHOOK_SECRET) {
-    targets.push({
+    {
       key: "toenaosus",
-      url: TOENAOSUS_WEBHOOK_URL,
-      secret: TOENAOSUS_WEBHOOK_SECRET,
-      internal: false,
-    });
-  } else {
-    console.warn("N8N_TOENAOSUS_WEBHOOK_URL or N8N_TOENAOSUS_WEBHOOK_SECRET not set — skipping toenaosus trigger");
-  }
+      url: `${SUPABASE_URL}/functions/v1/toenaosus-orchestrator`,
+      secret: VAATLUSTE_WEBHOOK_SECRET,
+      internal: true,
+    },
+  ];
 
   async function callTarget(t: typeof targets[number]): Promise<TargetResult> {
     const ctrl = new AbortController();
@@ -233,10 +229,6 @@ serve(async (req) => {
       summary[key] = { triggered: false, status: null, error: msg };
     }
   });
-
-  if (!TOENAOSUS_WEBHOOK_URL || !TOENAOSUS_WEBHOOK_SECRET) {
-    summary.toenaosus = { triggered: false, status: null, error: "env_missing" };
-  }
 
   const ebirdOk = summary.ebird?.triggered === true;
   const elurikkusOk = summary.elurikkus?.triggered === true;

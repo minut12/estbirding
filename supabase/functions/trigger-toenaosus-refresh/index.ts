@@ -2,21 +2,35 @@
 // ─────────────────────────
 // Accepts POST from the EstBirding app (Ülevaade → Tõenäosus subtab
 // "Värskenda nüüd" button), rate-limits to 5-minute minimum interval,
-// then forwards to the n8n toenaosus-koordinaator webhook with the
-// shared secret.
+// then calls the toenaosus-orchestrator Edge Function with the shared
+// secret.
 //
-// Returns 202 immediately on success — the n8n workflow runs async and
-// inserts a new row into toenaosus_raport. Frontend polls for the new row.
+// M7.5b: this leg used to POST the n8n webhook toenaosus-koordinaator. n8n
+// dies 2026-09-19, and since M7.5 the raport comes from
+// toenaosus-orchestrator, which answers 202 immediately -- the same
+// "started, poll for the row" semantics the button already expects.
+//
+// Returns 202 immediately on success — the orchestrator runs its work in a
+// background task and inserts a new row into toenaosus_raport. Frontend polls
+// for the new row.
 
 // deno-lint-ignore-file no-explicit-any
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+// Authenticates the internal orchestrator call (toenaosus-orchestrator reads
+// this same var).
+const VAATLUSTE_WEBHOOK_SECRET = Deno.env.get("VAATLUSTE_WEBHOOK_SECRET") ?? "";
+// M7.7: remove — dead since M7.5b repointed this leg at the orchestrator EF.
 const N8N_WEBHOOK_URL = Deno.env.get("N8N_TOENAOSUS_WEBHOOK_URL") ?? "";
+// M7.7: remove
 const N8N_WEBHOOK_SECRET = Deno.env.get("N8N_TOENAOSUS_WEBHOOK_SECRET") ?? "";
 
 const MIN_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+// The orchestrator answers 202 after one DB insert, so 10 s is generous; it
+// exists so a hung EF cannot hold the button's request open.
+const ORCHESTRATOR_TIMEOUT_MS = 10_000;
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -48,12 +62,8 @@ serve(async (req) => {
     console.error("Missing Supabase env vars");
     return json({ error: "server_misconfigured" }, 500);
   }
-  if (!N8N_WEBHOOK_URL || !N8N_WEBHOOK_URL.startsWith("https://")) {
-    console.error("Invalid or missing N8N_TOENAOSUS_WEBHOOK_URL:", JSON.stringify(N8N_WEBHOOK_URL));
-    return json({ error: "invalid_or_missing_webhook_url" }, 500);
-  }
-  if (!N8N_WEBHOOK_SECRET) {
-    console.error("Missing N8N_TOENAOSUS_WEBHOOK_SECRET");
+  if (!VAATLUSTE_WEBHOOK_SECRET) {
+    console.error("Missing VAATLUSTE_WEBHOOK_SECRET");
     return json({ error: "server_misconfigured" }, 500);
   }
 
@@ -121,26 +131,44 @@ serve(async (req) => {
   let triggered = false;
   let status: number | null = null;
   let errorMsg: string | null = null;
+  let runId: string | null = null;
 
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ORCHESTRATOR_TIMEOUT_MS);
   try {
-    const resp = await fetch(N8N_WEBHOOK_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Webhook-Secret": N8N_WEBHOOK_SECRET,
+    const resp = await fetch(
+      `${SUPABASE_URL}/functions/v1/toenaosus-orchestrator`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Webhook-Secret": VAATLUSTE_WEBHOOK_SECRET,
+        },
+        body: callBody,
+        signal: ctrl.signal,
       },
-      body: callBody,
-    });
+    );
     status = resp.status;
     triggered = resp.ok;
     if (!resp.ok) {
       const txt = await resp.text().catch(() => "");
       errorMsg = `HTTP ${resp.status}`;
-      console.error(`toenaosus webhook ${resp.status}: ${txt}`);
+      console.error(`toenaosus orchestrator ${resp.status}: ${txt}`);
+    } else {
+      // The orchestrator answers 202 {ok, run_id, ...}. run_id is surfaced
+      // additively; failing to read it must not fail an accepted trigger.
+      try {
+        const body = await resp.json() as { run_id?: unknown };
+        if (typeof body?.run_id === "string") runId = body.run_id;
+      } catch {
+        // body is informational only
+      }
     }
   } catch (err) {
     errorMsg = String((err as { message?: string })?.message ?? err);
-    console.error("toenaosus webhook fetch threw:", errorMsg);
+    console.error("toenaosus orchestrator fetch threw:", errorMsg);
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!triggered) {
@@ -149,7 +177,9 @@ serve(async (req) => {
         triggered: false,
         error: "n8n_trigger_failed",
         message: "Värskenduse käivitamine ebaõnnestus. Proovi uuesti.",
-        results: { toenaosus: { triggered: false, status, error: errorMsg } },
+        results: {
+          toenaosus: { triggered: false, status, error: errorMsg, run_id: null },
+        },
       },
       502,
     );
@@ -161,7 +191,9 @@ serve(async (req) => {
       ok: true,
       started_at: startedAt,
       n8n_status: status,
-      results: { toenaosus: { triggered: true, status, error: null } },
+      results: {
+        toenaosus: { triggered: true, status, error: null, run_id: runId },
+      },
       message: "Värskendus käivitatud. Uus aruanne ilmub umbes 1-2 minuti pärast.",
     },
     202,

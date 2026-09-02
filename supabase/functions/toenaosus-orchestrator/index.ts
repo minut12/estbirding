@@ -1736,7 +1736,8 @@ async function notifyNearEstoniaRarities(sb: Admin): Promise<NotifySummary> {
           species: [speciesName],
           notification_title: title,
           notification_body: body,
-          notification_url: "/ulevaade/toenaosus",
+          // M7.5 C4: n8n sent "/ulevaade/toenaosus", which is not an app route (404); the Tõenäosus subtab is local state in OverviewTab. Deep link (?section=) is a Cleanup item.
+          notification_url: "/ulevaade",
           notification_tag: "rare-" + obs.id,
         },
         NOTIFY_TIMEOUT_MS,
@@ -1784,7 +1785,7 @@ function notifyTestPush(species: string): Promise<unknown> {
       species: [species],
       notification_title: "🧪 EstBirds test",
       notification_body: "M7.5 toenaosus-orchestrator notify path",
-      notification_url: "/ulevaade/toenaosus",
+      notification_url: "/ulevaade",
       notification_tag: "m7-5-test",
     },
     NOTIFY_TIMEOUT_MS,

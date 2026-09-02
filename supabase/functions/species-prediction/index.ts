@@ -1719,26 +1719,42 @@ function dedupeEstoniaHistoryPoints(points: Record<string, unknown>[]): Record<s
     .sort((left, right) => Date.parse(String(right.eventDate || '')) - Date.parse(String(left.eventDate || '')));
 }
 
+const EBIRD_RELAY_URL = Deno.env.get('EBIRD_RELAY_URL') || 'https://estbirds.netlify.app/api/ebird-relay';
+
+// M7.6b: same relay contract the orchestrators use -- only `?path=` is forwarded,
+// the eBird status is passed through verbatim, and the relay caps each call at 9 s.
+async function ebirdRelayGet(path: string, signal: AbortSignal): Promise<{ ok: boolean; status: number; rows: unknown[]; error?: string }> {
+  const secret = (Deno.env.get('EBIRD_RELAY_SECRET') || '').trim();
+  const resp = await fetch(`${EBIRD_RELAY_URL}?path=${encodeURIComponent(path)}`, {
+    signal,
+    headers: { 'x-relay-secret': secret, 'Accept': 'application/json' },
+  });
+  if (!resp.ok) return { ok: false, status: resp.status, rows: [], error: resp.statusText };
+  const data = await resp.json();
+  return { ok: true, status: resp.status, rows: Array.isArray(data) ? data : [] };
+}
+
+// M7.6b: eBird via Netlify relay — Supabase egress gets HTTP 418 from api.ebird.org (see decisions/ + m7-findings M7.1/M7.4c).
 async function fetchForeignRecentPoints(ebirdSpeciesCode: string, settings: Record<string, unknown>, signal: AbortSignal): Promise<Record<string, unknown>[]> {
-  const token = (Deno.env.get('EBIRD_API_TOKEN') || '').trim();
-  if (!token) return [];
+  if (!(Deno.env.get('EBIRD_RELAY_SECRET') || '').trim()) {
+    console.warn(`${LOG_PREFIX} fetchForeignRecentPoints.relay_secret_missing`);
+    return [];
+  }
   const enabled = getEnabledForeignRegions(settings);
   const requests = enabled.map(async (entry) => {
-    const url = `https://api.ebird.org/v2/data/obs/${encodeURIComponent(entry.regionCode)}/recent/${encodeURIComponent(ebirdSpeciesCode)}?back=30&maxResults=1000`;
+    const path = `/data/obs/${encodeURIComponent(entry.regionCode)}/recent/${encodeURIComponent(ebirdSpeciesCode)}?back=30&maxResults=1000`;
     try {
-      const resp = await fetch(url, {
-        signal,
-        headers: { 'X-eBirdApiToken': token, 'Accept': 'application/json' },
-      });
-      if (!resp.ok) {
+      const relayResult = await ebirdRelayGet(path, signal);
+      if (!relayResult.ok) {
         console.warn(`${LOG_PREFIX} fetchForeignRecentPoints.http_error`, {
           regionCode: entry.regionCode,
-          status: resp.status,
-          statusText: resp.statusText,
+          status: relayResult.status,
+          statusText: relayResult.error ?? '',
+          via: 'relay',
         });
         return [];
       }
-      const rows = await resp.json() as unknown[];
+      const rows = relayResult.rows;
       const points = (Array.isArray(rows) ? rows : []).map((row) => {
         const item = asRecord(row);
         const obsDt = normalizeDateString(stringOr(item.obsDt, item.obsTime));
@@ -1761,6 +1777,7 @@ async function fetchForeignRecentPoints(ebirdSpeciesCode: string, settings: Reco
         regionCode: entry.regionCode,
         rawRows: Array.isArray(rows) ? rows.length : 0,
         pointsExtracted: points.length,
+        via: 'relay',
       });
       return points;
     } catch (err) {

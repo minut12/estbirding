@@ -1,0 +1,2 @@
+-- M7.5: Tõenäosus raport + near-Estonia rarity pushes twice daily, replacing n8n tõenäosus-koordinaator v8.1 (UCPth8wljSkLBM64, 06:10/18:10 Tallinn). UTC; DST drift accepted. 10 min after m7-vaatluste-raport so get-ee-species-presence sees the fresh vaatluste_raport.
+select cron.schedule('m7-toenaosus-raport', '10 3,15 * * *', $$select public.m7_call_ef('toenaosus-orchestrator', '{"source":"schedule"}')$$);

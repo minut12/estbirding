@@ -201,3 +201,6 @@ verify_jwt = false
 
 [functions.vaatluste-orchestrator]
 verify_jwt = false
+
+[functions.toenaosus-orchestrator]
+verify_jwt = false

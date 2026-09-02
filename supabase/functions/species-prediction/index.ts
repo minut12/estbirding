@@ -4866,6 +4866,37 @@ function buildCanonicalSummaryFromEvidence(input: {
   };
 }
 
+// M7.6-fix1: a foreign-pressure MENTION is only a CLAIM when it is not negated.
+// Prompt rules 2/11 make the analyst write "No foreign pressure detected ..."
+// exactly when the structured foreign arrays are empty, so a negation-blind match
+// fails every compliant summary. Country codes are word-bounded too: \bse\b no
+// longer fires on "present", \bhel\b no longer fires on "Helsinki"/"shell".
+// The 'by' country code is deliberately absent: even word-bounded it matches the
+// English preposition ("supported by ...", "shaped by westerly winds"), which is
+// a claim-free phrase the analyst writes constantly. Belarus is matched by name.
+const FOREIGN_TERM = /\b(?:foreign pressure|poland|sweden|finland|latvia|lithuania|belarus|russia|mikoszewo|kalmar|helsinki|zatoka pomorska|hel|dziwnów|pl|se|fi|lv|lt|ru)\b/gi;
+const NEGATION_WINDOW = /\b(?:no|not|none|without|absent|lack(?:s|ing)?|zero|neither|nor|isn't|wasn't|aren't|weren't|doesn't|didn't|hasn't|haven't|cannot|can't|never)\b(?:\s+\S+){0,4}\s*$/i;
+function mentionsForeignPressureClaim(summary: string): boolean {
+  const text = String(summary ?? '');
+  for (const m of text.matchAll(FOREIGN_TERM)) {
+    const before = text.slice(Math.max(0, (m.index ?? 0) - 80), m.index ?? 0);
+    if (!NEGATION_WINDOW.test(before)) return true;
+  }
+  return false;
+}
+
+// M7.6-fix1: these markers record WHY there is no AI narrative. They describe the
+// run, not the text, so a guardrail rebuild must carry them forward instead of
+// replacing the warning set wholesale -- otherwise the only surviving trace of a
+// max_tokens/budget stop is __timings.stop_reason.
+const AI_FALLBACK_WARNING_PATTERN = /^(?:ai_summary_unavailable:|budget_exceeded_before_sonnet)/;
+function preserveAiFallbackWarnings(rebuilt: string[], incoming: unknown): string[] {
+  const carried = (Array.isArray(incoming) ? incoming : [])
+    .map((item) => String(item ?? ''))
+    .filter((item) => AI_FALLBACK_WARNING_PATTERN.test(item));
+  return Array.from(new Set([...rebuilt, ...carried]));
+}
+
 function canonicalSummaryMatchesEvidence(input: {
   summary: string;
   estoniaEvidence: Record<string, unknown>;
@@ -4878,13 +4909,12 @@ function canonicalSummaryMatchesEvidence(input: {
   const reasons: string[] = [];
   const recentCount7d = Math.max(0, Math.round(toNumber(input.estoniaEvidence.recentCount7d)));
   const recentCount30d = Math.max(0, Math.round(toNumber(input.estoniaEvidence.recentCount30d)));
-  const foreignMentionPattern = /foreign pressure|poland|sweden|finland|latvia|lithuania|belarus|russia|\bpl\b|\bse\b|\bfi\b/i;
   const namedLocalityPattern = /p(?:õ|o)õsaspea|ristna|s(?:ä|a)äre/i;
   const hotspotPattern = /hotspot|target|ranking|p(?:õ|o)õsaspea|ristna|s(?:ä|a)äre/i;
   const countMatch = summary.match(/(\d+)\s+records?\s+in\s+7\s+days/i);
   if ((/already present/i.test(summary) || countMatch) && recentCount7d <= 0) reasons.push('summary_claims_recent_estonia_but_recentCount7d_is_zero');
   if (countMatch && Number(countMatch[1]) !== recentCount7d) reasons.push('summary_recentCount7d_does_not_match_structured_recentCount7d');
-  if (foreignMentionPattern.test(summary) && !input.foreignRecentPoints.length && !input.foreignClusters.length) {
+  if (mentionsForeignPressureClaim(summary) && !input.foreignRecentPoints.length && !input.foreignClusters.length) {
     reasons.push('summary_mentions_foreign_pressure_without_structured_foreign_evidence');
   }
   if (/põõsaspea|ristna|sääre/i.test(summary)) {
@@ -4935,7 +4965,9 @@ function buildFinalConsistencyChecksFromCanonical(input: {
   foreignPressureMatchesNarrative: boolean;
 } {
   const summary = stringOr(input.insightSummary);
-  const mentionsForeign = /foreign pressure is active|pressure is building|poland|sweden|finland|latvia|lithuania|belarus|russia|pl\b|se\b|fi\b/i.test(summary);
+  // M7.6-fix1: same negation-aware, fully word-bounded claim test as the other
+  // guardrails. The three booleans below are unchanged.
+  const mentionsForeign = mentionsForeignPressureClaim(summary);
   const hasRouteBearingTargets = input.predictedTargets.some((entry) => {
     const target = asRecord(entry);
     const migrationEta = asRecord(target.migrationEta);
@@ -4995,7 +5027,7 @@ function sanitizeSummaryAgainstEvidence(response: Record<string, unknown>): Reco
     /ALREADY PRESENT/i.test(summary) && toNumber(recent7d) <= 0;
 
   const invalidForeignNarrative =
-    /(PL|SE|FI|Poland|Sweden|Finland|Mikoszewo|Kalmar|Helsinki|Zatoka Pomorska|Hel|Dziwnów)/i.test(summary) &&
+    mentionsForeignPressureClaim(summary) &&
     (!ebirdAvailable || (foreignPointCount === 0 && foreignClusterCount === 0));
 
   const invalidHotspotNarrative =
@@ -5111,7 +5143,10 @@ function enforceCanonicalSummaryConsistency(
     insightSummary: enforcedSummary.insightSummary,
     confidenceNote: enforcedSummary.confidenceNote,
     rankingNotes: enforcedSummary.rankingNotes,
-    warnings: enforcedSummary.warnings,
+    // M7.6-fix1: the rebuilt narrative brings its own warning set, but the
+    // ai_summary_unavailable / budget_exceeded marker describes the RUN and must
+    // survive the rewrite.
+    warnings: preserveAiFallbackWarnings(enforcedSummary.warnings, canonical.warnings),
     summaryGuardrailApplied: true,
     summaryGuardrailReason: Array.from(new Set([...summaryCheck.reasons, ...failedConsistencyKeys, canonical.summaryGuardrailReason].filter(Boolean))).join(','),
     summaryOrigin: enforcedOrigin,
@@ -5210,8 +5245,8 @@ function scrubStaleNarrativeFromStructuredEvidence(payload: Record<string, unkno
   const reasons: string[] = [];
 
   if (/^ALREADY PRESENT/i.test(summary) && recentCount7d <= 0) reasons.push('summary_claims_already_present_without_recent_evidence');
-  if (sourceHealth.ebirdAvailable !== true && /(PL|SE|FI|Poland|Sweden|Finland|foreign pressure)/i.test(summary)) reasons.push('summary_mentions_foreign_pressure_without_ebird');
-  if (foreignRecentPoints.length === 0 && foreignClusters.length === 0 && /(Mikoszewo|Zatoka Pomorska|Brittas väg|Helsinki|Kalmar|Rezerwat przyrody Mewia Łacha|Hel|Dziwn[oó]w)/i.test(summary)) reasons.push('summary_mentions_foreign_locality_without_evidence');
+  if (sourceHealth.ebirdAvailable !== true && mentionsForeignPressureClaim(summary)) reasons.push('summary_mentions_foreign_pressure_without_ebird');
+  if (foreignRecentPoints.length === 0 && foreignClusters.length === 0 && /\b(Mikoszewo|Zatoka Pomorska|Brittas väg|Helsinki|Kalmar|Rezerwat przyrody Mewia Łacha|Hel|Dziwn[oó]w)\b/i.test(summary)) reasons.push('summary_mentions_foreign_locality_without_evidence');
   if (estoniaHistoryPoints.length === 0 && estoniaHistoryClusters.length === 0 && freshestLocalities.length === 0 && /(Sääre|Ristna|Põõsaspea|Spithami|Tagaranna)/i.test(summary)) reasons.push('summary_mentions_estonia_locality_without_evidence');
   if (predictedTargets.length === 0 && /(watchers should focus|focus on|target hotspots|top hotspots|hotspot ranking|Ristna|Põõsaspea|Spithami|Tagaranna|Sääre)/i.test(summary)) reasons.push('summary_mentions_targets_without_predicted_targets');
   if (stringOr(payload.payloadSourceState) === 'legacy_or_unverified_source') reasons.push('legacy_or_unverified_source_reused_stale_narrative');
@@ -6157,7 +6192,7 @@ function validateNarrativeConsistency(payload: Record<string, unknown>): Narrati
   const reasons: string[] = [];
   const summaryMatchesEvidence = !(/^ALREADY PRESENT/i.test(summary) && recentCount7d <= 0);
   if (!summaryMatchesEvidence) reasons.push('summary_claims_already_present_without_recent_evidence');
-  const foreignPressureMatchesNarrative = !(/(PL|SE|FI|Poland|Sweden|Finland|Mikoszewo|Kalmar|Helsinki|Zatoka Pomorska|Hel|Dziwnów|foreign pressure)/i.test(summary)
+  const foreignPressureMatchesNarrative = !(mentionsForeignPressureClaim(summary)
     && (asRecord(payload.sourceHealth).ebirdAvailable !== true || (!foreignRecentPoints.length && !foreignClusters.length)));
   if (!foreignPressureMatchesNarrative) reasons.push('summary_mentions_foreign_pressure_without_evidence');
   const estoniaPresenceMatchesNarrative = !(/(Sääre|Ristna|Põõsaspea|Spithami|Tagaranna|Saaremaa|Hiiu|Lääne counties)/i.test(summary)
@@ -6345,6 +6380,12 @@ function buildCanonicalPredictionRecord(input: {
     });
   }
   const summary = summaryCheck.ok ? preferredSummary : deterministicSummary;
+  // M7.6-fix1: when the guardrail discards the analyst's summary it also discards
+  // that summary's warnings -- including the ai_summary_unavailable marker the
+  // Sonnet fallback path attaches. That marker is about the run, not the text.
+  const summaryWarnings = summaryCheck.ok
+    ? summary.warnings
+    : preserveAiFallbackWarnings(summary.warnings, input.preferredSummary?.warnings);
   // M7.6: carry the caller's origin through instead of collapsing every accepted
   // upstream narrative to 'normalized_upstream' -- the finalizer keys the
   // no-overwrite rule on 'sonnet_in_ef' and cannot recover it later.
@@ -6388,7 +6429,7 @@ function buildCanonicalPredictionRecord(input: {
     insightSummary: summary.insightSummary,
     confidenceNote: summary.confidenceNote,
     rankingNotes: summary.rankingNotes,
-    warnings: summary.warnings,
+    warnings: summaryWarnings,
     summaryGuardrailApplied: !summaryCheck.ok,
     summaryGuardrailReason: !summaryCheck.ok ? summaryCheck.reasons.join(',') : '',
     summaryOrigin,

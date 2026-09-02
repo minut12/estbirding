@@ -13,6 +13,40 @@ type StaleNarrativeHooks = {
     payload: Record<string, unknown>,
   ) => Record<string, unknown>;
   STALE_NARRATIVE_WARNING: string;
+  // M7.6-fix1
+  mentionsForeignPressureClaim: (summary: string) => boolean;
+  canonicalSummaryMatchesEvidence: (input: {
+    summary: string;
+    estoniaEvidence: Record<string, unknown>;
+    foreignRecentPoints: unknown[];
+    foreignClusters: unknown[];
+    predictedTargets: unknown[];
+    elurikkusRecentRecords: unknown[];
+  }) => { ok: boolean; reasons: string[] };
+  buildFinalConsistencyChecksFromCanonical: (input: {
+    foreignRecentPoints: unknown[];
+    foreignClusters: unknown[];
+    predictedTargets: unknown[];
+    weather: Record<string, unknown>;
+    insightSummary: string;
+  }) => Record<string, boolean>;
+  sanitizeSummaryAgainstEvidence: (
+    response: Record<string, unknown>,
+  ) => Record<string, unknown>;
+  buildCanonicalPredictionRecord: (input: {
+    base: Record<string, unknown>;
+    alternate?: Record<string, unknown> | null;
+    preferredSummary?: {
+      insightSummary: string;
+      confidenceNote: string;
+      rankingNotes: string;
+      warnings: string[];
+    } | null;
+    preferredSummaryOrigin?: string | null;
+  }) => Record<string, unknown>;
+  enforceCanonicalSummaryConsistency: (
+    canonical: Record<string, unknown>,
+  ) => Record<string, unknown>;
 };
 
 function loadHooks(): StaleNarrativeHooks {
@@ -23,6 +57,12 @@ globalThis.__speciesPredictionStaleNarrativeTestHooks = {
   finalizePredictionResponse,
   buildFinalPredictionPayloadFromEvidence,
   STALE_NARRATIVE_WARNING,
+  mentionsForeignPressureClaim,
+  canonicalSummaryMatchesEvidence,
+  buildFinalConsistencyChecksFromCanonical,
+  sanitizeSummaryAgainstEvidence,
+  buildCanonicalPredictionRecord,
+  enforceCanonicalSummaryConsistency,
 };
 `;
   const transpiled = ts.transpileModule(wrapped, {
@@ -266,5 +306,183 @@ describe("stale narrative scrubber", () => {
     expect(cluster.countryCodes).toEqual(["lv"]);
     expect(cluster.totalHowMany).toBe(3);
     expect(cluster.nearestDistanceKm).toBe(69);
+  });
+});
+
+// M7.6-fix1: the C4 real run (request_id 9b969274…) produced a rule-compliant
+// Sonnet summary that the guardrail rejected because its foreign-mention test was
+// negation-blind and, at 4 of 5 sites, not word-bounded.
+const C4_SENTENCE =
+  "No foreign pressure detected from neighboring countries. Current westerly winds (262°) at 10 km/h are cross-winds for a northbound arrival.";
+
+describe("mentionsForeignPressureClaim (M7.6-fix1)", () => {
+  const hooks = loadHooks();
+
+  it("treats a negated mention as no claim (the C4 sentence)", () => {
+    expect(hooks.mentionsForeignPressureClaim(C4_SENTENCE)).toBe(false);
+  });
+
+  it("treats an asserted mention as a claim", () => {
+    expect(
+      hooks.mentionsForeignPressureClaim(
+        "Strong foreign pressure from Poland (12 points at Mikoszewo)",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not fire on the substring 'se' inside 'present' (old /SE/i false positive)", () => {
+    expect(hooks.mentionsForeignPressureClaim("Birds are present near Sääre")).toBe(false);
+  });
+
+  it("scopes the negation to the negated term only", () => {
+    // "Not in Finland" is negated; "strong pressure from Latvia" is not.
+    expect(
+      hooks.mentionsForeignPressureClaim("Not in Finland but strong pressure from Latvia"),
+    ).toBe(true);
+  });
+
+  it("does not fire on the English preposition 'by' (the 'by' country code is excluded)", () => {
+    expect(
+      hooks.mentionsForeignPressureClaim(
+        "No foreign pressure detected. Watchers should focus on coastal sites shaped by westerly winds.",
+      ),
+    ).toBe(false);
+  });
+
+  it("still flags Belarus by name", () => {
+    expect(
+      hooks.mentionsForeignPressureClaim("Strong pressure is building from Belarus."),
+    ).toBe(true);
+  });
+
+  it("leaves 'Birds are present near Sääre' alone in sanitizeSummaryAgainstEvidence", () => {
+    // predictedTargets is non-empty so the unrelated hotspot rule cannot fire and
+    // the foreign rule is the only one under test.
+    const response: Record<string, unknown> = {
+      insightSummary: "Birds are present near Sääre",
+      aiSummary: "Birds are present near Sääre",
+      estoniaEvidence: { recentCount7d: 0 },
+      foreignRecentPoints: [],
+      foreignClusters: [],
+      predictedTargets: [{ name: "Sääre" }],
+      sourceHealth: { ebirdAvailable: false },
+    };
+
+    const sanitized = hooks.sanitizeSummaryAgainstEvidence(response);
+
+    expect(sanitized.insightSummary).toBe("Birds are present near Sääre");
+    expect(sanitized.summaryOrigin).toBeUndefined();
+  });
+});
+
+describe("canonical guardrails accept a negated foreign mention (M7.6-fix1)", () => {
+  const hooks = loadHooks();
+
+  it("canonicalSummaryMatchesEvidence passes the C4 sentence with empty foreign arrays", () => {
+    const result = hooks.canonicalSummaryMatchesEvidence({
+      summary: C4_SENTENCE,
+      estoniaEvidence: { recentCount7d: 0, recentCount30d: 0 },
+      foreignRecentPoints: [],
+      foreignClusters: [],
+      predictedTargets: [],
+      elurikkusRecentRecords: [],
+    });
+
+    expect(result.reasons).not.toContain(
+      "summary_mentions_foreign_pressure_without_structured_foreign_evidence",
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("buildFinalConsistencyChecksFromCanonical keeps foreignPressureMatchesNarrative true", () => {
+    const checks = hooks.buildFinalConsistencyChecksFromCanonical({
+      foreignRecentPoints: [],
+      foreignClusters: [],
+      predictedTargets: [],
+      weather: {},
+      insightSummary: C4_SENTENCE,
+    });
+
+    expect(checks.foreignPressureMatchesNarrative).toBe(true);
+  });
+
+  it("still rejects an asserted foreign claim with no structured foreign evidence", () => {
+    const result = hooks.canonicalSummaryMatchesEvidence({
+      summary: "Strong foreign pressure from Poland (12 points at Mikoszewo).",
+      estoniaEvidence: { recentCount7d: 0, recentCount30d: 0 },
+      foreignRecentPoints: [],
+      foreignClusters: [],
+      predictedTargets: [],
+      elurikkusRecentRecords: [],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toContain(
+      "summary_mentions_foreign_pressure_without_structured_foreign_evidence",
+    );
+  });
+});
+
+describe("ai_summary_unavailable survives the guardrail rebuild (M7.6-fix1)", () => {
+  const hooks = loadHooks();
+  const marker = "ai_summary_unavailable: Sonnet stopped on max_tokens (50 tokens)";
+
+  it("buildCanonicalPredictionRecord keeps the marker when it discards the preferred summary", () => {
+    // recentCount7d is 0, so this narrative fails canonicalSummaryMatchesEvidence and
+    // the record falls back to the deterministic summary -- which used to drop the
+    // fallback marker along with the rest of the preferred summary's warnings.
+    const record = hooks.buildCanonicalPredictionRecord({
+      base: buildBasePayload(),
+      alternate: null,
+      preferredSummary: {
+        insightSummary: "ALREADY PRESENT — 4 records in 7 days.",
+        confidenceNote: "test confidence",
+        rankingNotes: "test ranking",
+        warnings: ["No foreign pressure detected in canonical evidence.", marker],
+      },
+      preferredSummaryOrigin: "deterministic_structured",
+    });
+
+    const warnings = Array.isArray(record.warnings) ? record.warnings.map(String) : [];
+    expect(record.summaryGuardrailApplied).toBe(true);
+    expect(warnings).toContain(marker);
+  });
+
+  it("enforceCanonicalSummaryConsistency keeps the marker when it rebuilds the summary", () => {
+    const canonical: Record<string, unknown> = {
+      speciesKey: "gavia-arctica",
+      speciesName: "Punakurk-kaur",
+      summaryOrigin: "deterministic_structured",
+      insightSummary: "ALREADY PRESENT — 7 records in 7 days at Põõsaspea.",
+      confidenceNote: "test confidence",
+      rankingNotes: "test ranking",
+      warnings: ["No predicted targets returned from canonical evidence.", marker],
+      estoniaEvidence: { recentCount7d: 0, recentCount30d: 0 },
+      foreignRecentPoints: [],
+      foreignClusters: [],
+      predictedTargets: [],
+      elurikkusRecentRecords: [],
+      weather: {},
+      activeEvidenceSources: [],
+      availableSources: [],
+      attemptedButUnavailable: [],
+      attemptedButReturnedNoUsableEvidence: [],
+      hasUsableRecentEstoniaEvidence: false,
+      hasUsableEstoniaHistory: false,
+      hasUsableForeignPressure: false,
+      hasUsablePredictedTargets: false,
+      hasOnlyWeather: false,
+      hasOnlySourceAvailabilityWithoutUsableEvidence: false,
+      effectiveRankingMode: "evidence_only",
+      evidenceState: "insufficient_evidence",
+      summaryGuardrailReason: "",
+    };
+
+    const enforced = hooks.enforceCanonicalSummaryConsistency(canonical);
+
+    const warnings = Array.isArray(enforced.warnings) ? enforced.warnings.map(String) : [];
+    expect(enforced.summaryRegeneratedFromStructuredEvidence).toBe(true);
+    expect(String(enforced.insightSummary)).not.toMatch(/ALREADY PRESENT/i);
+    expect(warnings).toContain(marker);
   });
 });

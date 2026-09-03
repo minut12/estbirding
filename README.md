@@ -19,7 +19,7 @@ prediction, with Estonian-language narrative summaries.
 - React + Vite (frontend)
 - Leaflet (standalone map HTMLs — Linnuliigid, Europe, Rariliin) + MapLibre GL JS (React events map)
 - Supabase — PostgreSQL, Edge Functions (Deno), Storage, Auth
-- n8n Cloud — workflow automation and external API relays
+- pg_cron (Supabase) + Netlify Functions — scheduling and the eBird relay
 - OpenAI + Anthropic Claude — Estonian-language narrative generation and translation
 
 ## Data sources
@@ -40,17 +40,13 @@ The app translates non-Estonian news into Estonian via a translation HTTP endpoi
 - Runtime override is also available in app Settings (`Translation API URL`) and is stored in localStorage.
 - The client never calls OpenAI directly.
 
-## Species prediction OpenAI analysis
+## Species prediction (Ennustus) — server-side AI
 
-Species prediction keeps OpenAI server-side only:
+The `species-prediction` Edge Function builds the evidence payload (GBIF Estonia history, eBird foreign sightings via the Netlify eBird relay, Open-Meteo wind) and calls Anthropic Sonnet in-function for the narrative. No n8n, no OpenAI.
 
-- App -> Supabase Edge Function -> n8n -> OpenAI
-- Never expose `OPENAI_API_KEY` in client-side code
-- Configure `OPENAI_API_KEY` in n8n or another server-side secret store
-- Optionally set `OPENAI_MODEL`; species prediction defaults to `gpt-5-mini`
-- If the OpenAI stage fails, the app falls back to the deterministic prediction result
-- The species prediction edge function reads the n8n webhook target from the Supabase secret `SPECIES_PREDICTION_N8N_WEBHOOK_URL`
-- Required production value: `https://estbirds.app.n8n.cloud/webhook/species-prediction-evidence-first`
+- Secrets (Supabase): `ANTHROPIC_API_KEY`, optional `ANTHROPIC_MODEL_SPECIES_PREDICTION`, `EBIRD_RELAY_URL`, `EBIRD_RELAY_SECRET`
+- Never expose any of these in client-side code
+- If the Sonnet stage fails, the payload carries an `ai_summary_unavailable` warning and a deterministic fallback narrative
 
 ## CORS Proxy (Supabase Edge Function)
 

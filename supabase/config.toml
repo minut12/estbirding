@@ -136,11 +136,11 @@ verify_jwt = false
 verify_jwt = false
 
 # Added M3: these 14 functions had no config entry and would have deployed with
-# verify_jwt = true, breaking their machine callers (n8n, GitHub Actions, scripts,
-# map HTML). Probed against the old project 2026-08-29 with no Authorization and
-# no apikey: every one reached function code (200 / function-level 401 / 405 /
-# 400 / 406), never the platform JWT gate — so production ran them with
-# verify_jwt = false. These entries reproduce that.
+# verify_jwt = true, breaking their machine callers (GitHub Actions, pg_cron via
+# net.http_post, scripts, map HTML). Probed against the old project 2026-08-29
+# with no Authorization and no apikey: every one reached function code (200 /
+# function-level 401 / 405 / 400 / 406), never the platform JWT gate — so
+# production ran them with verify_jwt = false. These entries reproduce that.
 
 [functions.debug-year-first]
 verify_jwt = false

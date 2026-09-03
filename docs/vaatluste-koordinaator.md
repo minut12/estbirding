@@ -5,39 +5,42 @@ Automated twice-daily observation report combining Estonian and European bird si
 ## Architecture
 
 ```
-[n8n cron 06:00 + 18:00 EET] ──┐
-                                │
-[App Värskenda button]          │
-        │                       │
-        ▼                       │
-[Edge function:                 │
- trigger-vaatluste-refresh]     │
-        │                       │
-        ▼                       │
-[n8n webhook: /vaatluste-       │
- refresh, header-auth]   ──────┤
-                                │
-                                ▼
-                  [Code: fetch eBird in parallel]
-                                │
-                                ▼
-                  [HTTP: Anthropic /v1/messages]
-                                │
-                                ▼
-                  [Code: parse JSON]
-                                │
-                                ▼
-                  [HTTP: POST insert-vaatluste-raport
-                   edge function (X-Webhook-Secret)]
-                                │
-                                ▼
-                  [Edge function inserts via service_role]
-                                │
-                                ▼
-                  [Frontend reads / polls latest row]
+[pg_cron  m7-vaatluste-raport   0 3,15 * * *] ──┐
+[pg_cron  m7-elurikkus-raport   5 3,15 * * *] ──┤  m7_call_ef(<ef>, '{"source":"schedule"}')
+[pg_cron  m7-toenaosus-raport  10 3,15 * * *] ──┤
+                                                 │
+[App "Värskenda" / "Värskenda nüüd" button]      │
+        │                                        │
+        ▼                                        │
+[Edge function:                                  │
+ trigger-vaatluste-refresh /                     │
+ trigger-toenaosus-refresh]                      │
+        │  5-min cooldown, 202 + run_id          │
+        ▼                                        ▼
+[Orchestrator edge functions: vaatluste-orchestrator /
+ elurikkus-orchestrator / toenaosus-orchestrator]
+   X-Webhook-Secret: VAATLUSTE_WEBHOOK_SECRET
+        │
+        │  answers 202 {ok, run_id}; work continues in the background
+        ▼
+[eBird via the Netlify relay + Anthropic Sonnet]
+        │
+        ├──────────────▶ [cron_runs row: status, error, timings]
+        ▼
+[HTTP: POST insert-vaatluste-raport / insert-elurikkus-raport /
+ insert-toenaosus-raport edge function (X-Webhook-Secret)]
+        │
+        ▼
+[Edge function inserts via service_role]
+        │
+        ▼
+[vaatluste_raport / elurikkus_raport / toenaosus_raport]
+        │
+        ▼
+[Frontend reads / polls latest row]
 ```
 
-Both triggers feed the same workflow body. Each run produces one row containing both `estonia` and `europe` sections.
+Both entry points converge on the same orchestrator. Each `vaatluste-orchestrator` run produces one row containing both `estonia` and `europe` sections.
 
 ## Database
 
@@ -82,293 +85,13 @@ type VaatlusEntry = {
 };
 ```
 
-## n8n workflow
+## Pipeline (since M7.4–M7.5, 2026-08-30 → 09-02)
 
-Workflow name: `vaatluste-koordinaator`. Two trigger nodes feeding one shared chain.
-
-### Credentials
-
-- `anthropic-api` — HTTP Header Auth, name `x-api-key`, value = your Anthropic API key
-
-n8n no longer needs a Supabase credential — inserts go through the `insert-vaatluste-raport` edge function, which holds the service-role key in Supabase's edge env. The eBird token (`9s72dc2jcjlq`) is hardcoded in the Code node.
-
-### Webhook secret
-
-Generate a random 32-byte hex string (e.g., `openssl rand -hex 32`). One value is shared across three places:
-
-- n8n env var `VAATLUSTE_WEBHOOK_SECRET` — used by both the inbound Webhook trigger (validates incoming requests from `trigger-vaatluste-refresh`) and the outbound HTTP Request node in Node 4 (sends to `insert-vaatluste-raport`)
-- Supabase edge secret `N8N_VAATLUSTE_WEBHOOK_SECRET` on `trigger-vaatluste-refresh` — sent to n8n on the way in
-- Supabase edge secret `N8N_VAATLUSTE_WEBHOOK_SECRET` on `insert-vaatluste-raport` — checked against the incoming header on the way out
-
-**Rotation caveat.** Rotating the secret means updating all three places in lockstep — n8n env var plus both edge function secrets — or you'll break either the inbound or outbound leg. If we ever expose any of these endpoints externally or go multi-tenant, split them into separate `INSERT_SHARED_SECRET` / `TRIGGER_SHARED_SECRET` values.
-
-### Trigger 1 — Schedule
-
-- Trigger: Schedule
-- Cron: `0 6,18 * * *`
-- Timezone: `Europe/Tallinn`
-
-### Trigger 2 — Webhook
-
-- HTTP Method: `POST`
-- Path: `vaatluste-refresh`
-- Authentication: Header Auth
-  - Header name: `X-Webhook-Secret`
-  - Expected value: `{{$env.VAATLUSTE_WEBHOOK_SECRET}}`
-- Response Mode: Immediately (so the edge function returns fast — workflow keeps running async)
-- Response Code: 202
-- Response Data: `{ "accepted": true }`
-
-The full webhook URL n8n shows after saving (something like `https://your-n8n.app.n8n.cloud/webhook/vaatluste-refresh`) is what you put into the edge function's env vars.
-
-Connect both trigger nodes' outputs to Node 1 below. n8n will run the chain whichever trigger fires.
-
-### Node 1 — Code: Fetch eBird + build prompt
-
-Mode: **Run Once for All Items**. JavaScript:
-
-```javascript
-const REGIONS = ['EE', 'FI', 'LV', 'LT', 'SE', 'NO', 'DK', 'PL'];
-const EBIRD_TOKEN = '9s72dc2jcjlq';
-
-// Detect trigger source — webhook payload has source field; cron has none
-const input = $input.first()?.json ?? {};
-const triggerSource = input.source || 'schedule';
-
-const now = new Date();
-const periodEnd = now.toISOString().slice(0, 10);
-const start = new Date(now);
-start.setDate(start.getDate() - 14);
-const periodStart = start.toISOString().slice(0, 10);
-
-const fetchRegion = async (region) => {
-  try {
-    const data = await this.helpers.httpRequest({
-      method: 'GET',
-      url: `https://api.ebird.org/v2/data/obs/${region}/recent/notable`,
-      qs: { back: 14, detail: 'full' },
-      headers: { 'X-eBirdApiToken': EBIRD_TOKEN },
-      json: true,
-    });
-
-    return (Array.isArray(data) ? data : []).map(obs => {
-      const observerName =
-        obs.userDisplayName ||
-        ([obs.firstName, obs.lastName].filter(Boolean).join(' ').trim() || null);
-
-      return {
-        region,
-        species_en: obs.comName || null,
-        species_lat: obs.sciName || null,
-        date: (obs.obsDt || '').slice(0, 10),
-        time: (obs.obsDt || '').slice(11, 16) || null,
-        location: obs.locName || null,
-        sub_region: obs.subnational1Name || null,
-        sub_region_code: obs.subnational1Code || null,
-        country_code: obs.countryCode || region.split('-')[0],
-        lat: obs.lat ?? null,
-        lng: obs.lng ?? null,
-        count: obs.howMany ?? null,
-        observer: observerName,
-        has_media: obs.hasRichMedia === true,
-        valid: obs.obsValid !== false,
-        reviewed: obs.obsReviewed === true,
-        sub_id: obs.subId || null,
-      };
-    });
-  } catch (err) {
-    console.error(`eBird fetch failed for ${region}: ${err.message}`);
-    return [];
-  }
-};
-
-const all = (await Promise.all(REGIONS.map(fetchRegion))).flat();
-const estoniaObs = all.filter(o => o.region === 'EE');
-const europeObs  = all.filter(o => o.region !== 'EE');
-
-const userMessage = `Periood: ${periodStart} kuni ${periodEnd}.
-
-EESTI VAATLUSED (eBird notable, viimased 14 päeva, ${estoniaObs.length} kirjet):
-${JSON.stringify(estoniaObs, null, 2)}
-
-EUROOPA NAABERPIIRKONNAD (${europeObs.length} kirjet):
-${JSON.stringify(europeObs, null, 2)}
-
-Koosta JSON-vastus täpselt vastavalt süsteemi juhistele.`;
-
-return [{
-  json: {
-    period_start: periodStart,
-    period_end: periodEnd,
-    user_message: userMessage,
-    source_data: { estonia: estoniaObs, europe: europeObs },
-    obs_counts: { estonia: estoniaObs.length, europe: europeObs.length },
-    trigger_source: triggerSource,
-  }
-}];
-```
-
-### Node 2 — HTTP Request: Anthropic API
-
-- Method: `POST`
-- URL: `https://api.anthropic.com/v1/messages`
-- Authentication: Header Auth → `anthropic-api`
-- Headers: `anthropic-version: 2023-06-01`, `content-type: application/json`
-- Body (JSON):
-
-```json
-{
-  "model": "claude-sonnet-4-6",
-  "max_tokens": 4096,
-  "system": "<<paste system prompt from below>>",
-  "messages": [
-    { "role": "user", "content": "={{ $json.user_message }}" }
-  ]
-}
-```
-
-### Node 3 — Code: Parse Anthropic response
-
-```javascript
-const apiResp = $input.first().json;
-const ctx = $('Code').first().json; // adjust if you renamed Node 1
-
-const textBlock = (apiResp.content || []).find(b => b.type === 'text');
-const raw = (textBlock?.text || '').trim();
-
-const cleaned = raw
-  .replace(/^```json\s*/i, '')
-  .replace(/^```\s*/i, '')
-  .replace(/\s*```$/i, '')
-  .trim();
-
-let parsed;
-try {
-  parsed = JSON.parse(cleaned);
-} catch (err) {
-  throw new Error(
-    `Failed to parse Claude response as JSON: ${err.message}\n\nFirst 500 chars:\n${cleaned.slice(0, 500)}`
-  );
-}
-
-return [{
-  json: {
-    period_start: ctx.period_start,
-    period_end: ctx.period_end,
-    intro_et: parsed.intro_et || '',
-    estonia_narrative_et: parsed.estonia?.narrative_et || '',
-    estonia_entries: parsed.estonia?.entries || [],
-    europe_narrative_et: parsed.europe?.narrative_et || '',
-    europe_entries: parsed.europe?.entries || [],
-    source_data: ctx.source_data,
-    model: apiResp.model || 'claude-sonnet-4-6',
-    generation_meta: {
-      input_tokens: apiResp.usage?.input_tokens ?? null,
-      output_tokens: apiResp.usage?.output_tokens ?? null,
-      stop_reason: apiResp.stop_reason ?? null,
-      obs_counts: ctx.obs_counts,
-      trigger_source: ctx.trigger_source,
-    },
-  }
-}];
-```
-
-### Node 4 — HTTP Request: insert via edge function
-
-n8n no longer talks to Supabase directly. Instead, it POSTs the parsed row to the `insert-vaatluste-raport` edge function, which holds the service-role key and performs the insert.
-
-- Method: `POST`
-- URL: `https://eenwcyuyugyrjgpivxrq.supabase.co/functions/v1/insert-vaatluste-raport`
-- Authentication: none at the n8n credential level — the secret is sent as a custom header
-- Send Headers: ON
-  - `X-Webhook-Secret: {{$env.VAATLUSTE_WEBHOOK_SECRET}}`
-  - `Content-Type: application/json`
-- Send Body: ON, Body Content Type: JSON, Specify Body: Using JSON
-- Body: `={{ $json }}` (forwards the entire output of Node 3 — the edge function picks the columns it needs)
-
-Expected response: `201 Created` with `{ "id": "...", "generated_at": "..." }`. Any 4xx/5xx surfaces as a workflow failure in n8n's Executions tab.
-
-`generated_at` and `id` are populated by Postgres defaults inside the edge function's insert.
-
-## Anthropic system prompt
-
-Paste verbatim into Node 2's `system` field:
-
-```
-You are the observation report coordinator for the Estonian Ornithological Society (EOÜ). You produce twice-daily observation summaries in Estonian covering both Estonian and European bird sightings.
-
-OUTPUT: Return ONLY valid JSON matching the schema below. No markdown fences, no preamble, no commentary outside the JSON.
-
-{
-  "period_start": "YYYY-MM-DD",
-  "period_end": "YYYY-MM-DD",
-  "intro_et": "1–2 lauset üldist konteksti hooaja, ilma ja rände kohta. Algab tervitusega 'Tere!'.",
-  "estonia": {
-    "narrative_et": "Täielik vormindatud sektsioon EOÜ stiilis. Algab pealkirjaga '## Eesti vaatlused', millele järgnevad kirjete read tühja reaga eraldatud. Iga kirje formaadis: 'Eestikeelne nimi (*Ladinakeelne nimi*) – kuupäev asukoht, maakond (vaatleja). [Valikuline kontekst.]' Haruldused alguses prefiksiga '**HARULDUS:**'.",
-    "entries": [
-      {
-        "species_et": "Kägu",
-        "species_lat": "Cuculus canorus",
-        "date": "2026-04-01",
-        "location": "Luke",
-        "region": "Tartumaa",
-        "country_code": "EE",
-        "observers": ["Raul Vilk"],
-        "lat": 58.21,
-        "lng": 26.65,
-        "count": null,
-        "is_rarity": true,
-        "rarity_reason": "Erakordselt varane saabumine, varaseim viimase 15 aasta jooksul",
-        "documented": ["foto"],
-        "comparison_et": "Tegu on erakordselt varase saabumisega, mis on tavapärasest enam kui kahe nädala võrra varasem."
-      }
-    ]
-  },
-  "europe": {
-    "narrative_et": "Sama formaat sektsioonile '## Euroopa vaatlused'. Sisaldab naaberriikide olulisi vaatlusi ja Euroopa-tasandi haruldusi.",
-    "entries": []
-  }
-}
-
-RARITY CRITERIA — set is_rarity: true when:
-- Estonia: HK-nimekirja liik; <5 vaatlust aastas Eestis; hooajaväline esinemine; täiesti uus liik Eestile
-- Europe: kontinentaalne vagrant (Nearctic/Aasia/Aafrika); väljaspool tavapärast levila; Põhja-Euroopas erakordne
-
-Common spring/autumn migrants are NOT rarities — they go in entries with is_rarity: false. Set rarity_reason to null when is_rarity is false.
-
-ESTONIAN TRANSLATION:
-- eBird gives English common names. Translate to standard Estonian ornithological vocabulary.
-- Use authoritative Estonian names (e.g., "Vihitaja" for Common Sandpiper, "Räusk" for Caspian Tern, "Kägu" for Cuckoo, "Mustsaba-vigle" for Black-tailed Godwit).
-- If genuinely uncertain, use the Latin name as species_et and write "(eestikeelne nimi täpsustamata)" inline in the narrative.
-
-OBSERVER NAMES:
-- Use the observer field from the input when present.
-- If observer is null (eBird privacy setting), write "(vaatleja teadmata)" in the narrative for that entry.
-
-COMPARISON LINES — pikkus ja täpsus:
-- HARULDUS-kirjetel kirjuta `comparison_et` 2-3 lauset (mitte ainult ühte). Lisa lühike levila kirjeldus, sigimisala või talvitumisala, ning kas tegu on tüüpilise rändeperioodi vaatlusega või vagrandiga.
-- Mitte-haruldus kirjetel piisab ühest lausest või võib `comparison_et` olla null.
-- ÄRA KUNAGI viita konkreetsetele kuupäevadele ("X päeva varasem", "esimene Eestis", "viimane registreerimine 2019") — see info pole sõnastikus ja seda ei tohi leiutada.
-- ÄRA viita Eesti varasematele vaatlustele kvantitatiivselt ("registreeritud N korda viimase 10 aasta jooksul") — kui sul pole täpset andmeallikat, jäta välja.
-- Kui pole kindel, kirjuta lühem ja täpsem lause kui pikem ja küsitavate faktidega.
-- Aktsepteeritavad mustrid:
-  * "Põhja-Euroopas erakordne vaatlus; liigi tavapärane levila on [piirkond]. Sigib [ala] ja talvitub [ala]. Eestis on tegu vagrandi vaatlusega."
-  * "Tegu on antud liigi jaoks tavapärase kevadrände vaatlusega. Liigi peamine rändeaeg langeb [kuud]."
-  * "Eestis on liik haruldane, kuid viimase kümnendi jooksul on esinemus muutunud sagedasemaks. Sigib [piirkond], rändeperioodil läbib Põhja-Euroopat."
-
-NARRATIVE STYLE:
-- Fluent, calm, factual Estonian. EOÜ publication tone.
-- Italicize Latin names in narrative_et using markdown asterisks: *Cuculus canorus*
-- Bold the rarity prefix: **HARULDUS:**
-- Section headers in narrative_et: '## Eesti vaatlused' and '## Euroopa vaatlused'
-- Order entries chronologically within each section (oldest first).
-
-INPUT: User provides eBird notable observations from Estonia and 7 neighboring regions as JSON arrays. Deduplicate by species+date+location and select 8–20 most notable entries per section depending on activity level. If a section has no notable observations, write "Sel perioodil silmapaistvaid vaatlusi ei registreeritud." in narrative_et and return entries: [].
-```
+pg_cron (`m7-vaatluste-raport`, `m7-elurikkus-raport`, `m7-toenaosus-raport`, migrations `supabase/migrations/2026090[2-4]000000_m7_*_cron.sql`) and the app's "Värskenda nüüd" buttons (`trigger-vaatluste-refresh`, `trigger-toenaosus-refresh`) call the orchestrator Edge Functions `vaatluste-orchestrator`, `elurikkus-orchestrator`, `toenaosus-orchestrator` with `X-Webhook-Secret: VAATLUSTE_WEBHOOK_SECRET`. Each answers 202 with a `run_id`, runs eBird (via the Netlify relay) + Anthropic Sonnet in the background, writes a `cron_runs` row, and inserts the raport through the matching `insert-*-raport` EF. The system prompts live byte-for-byte in the orchestrator sources.
 
 ## Edge functions
 
-Two edge functions sit on either side of the n8n workflow. Both use the same shared secret as the n8n webhook (see [Webhook secret](#webhook-secret) above).
+Two edge functions sit on either side of each orchestrator. Both use the shared secret `VAATLUSTE_WEBHOOK_SECRET`.
 
 ### `trigger-vaatluste-refresh`
 
@@ -380,19 +103,19 @@ Responsibilities:
 
 1. Accept POST from the app (CORS allowed; uses Supabase anon key for transport auth).
 2. Check rate limit: reject with `429` if last report is < 5 minutes old.
-3. POST to the n8n webhook with the shared secret in `X-Webhook-Secret` header.
+3. POST to `${SUPABASE_URL}/functions/v1/vaatluste-orchestrator` and `.../elurikkus-orchestrator` and `.../toenaosus-orchestrator` with the shared secret in the `X-Webhook-Secret` header.
 4. Return `202 Accepted` with a `started_at` timestamp.
 
-The function does NOT wait for the workflow to complete — it returns as soon as n8n has acknowledged receipt. The frontend polls the `vaatluste_raport` table for a row newer than `started_at`.
+The function does NOT wait for the raport to be generated — it returns as soon as the orchestrators have answered 202. The frontend polls the `vaatluste_raport` table for a row newer than `started_at`.
 
 ### `insert-vaatluste-raport`
 
-Outbound side — called by Node 4 of the n8n workflow. Holds the service-role key so n8n doesn't need it.
+Outbound side — called by `vaatluste-orchestrator` at the end of its background run. Holds the service-role key so the orchestrator doesn't need it.
 
 Responsibilities:
 
-1. Accept POST from n8n. Require `X-Webhook-Secret` to match `N8N_VAATLUSTE_WEBHOOK_SECRET` — return `401` otherwise.
-2. Validate the body has the expected fields (`period_start`, `period_end`, `intro_et`, `estonia_narrative_et`, `estonia_entries`, `europe_narrative_et`, `europe_entries`, `model`, `generation_meta`; `source_data` optional). Return `400` on shape mismatch so failures surface loudly in n8n's Executions tab rather than landing as a malformed row.
+1. Accept POST from `vaatluste-orchestrator`. Require `X-Webhook-Secret` to match `N8N_VAATLUSTE_WEBHOOK_SECRET` — return `401` otherwise. The name is legacy: this function still reads `N8N_VAATLUSTE_WEBHOOK_SECRET`, and M7.8 unifies it with `VAATLUSTE_WEBHOOK_SECRET` (same value, so the orchestrator's header already matches).
+2. Validate the body has the expected fields (`period_start`, `period_end`, `intro_et`, `estonia_narrative_et`, `estonia_entries`, `europe_narrative_et`, `europe_entries`, `model`, `generation_meta`; `source_data` optional). Return `400` on shape mismatch so failures surface loudly in the orchestrator's logs and its `cron_runs` row rather than landing as a malformed row.
 3. Insert the row via PostgREST using the auto-provided `SUPABASE_SERVICE_ROLE_KEY`.
 4. Return `201 Created` with `{ "id": "...", "generated_at": "..." }`.
 
@@ -404,8 +127,8 @@ Set in Supabase dashboard → Edge Functions → Secrets (or via `supabase secre
 
 | Secret | Used by | Notes |
 | --- | --- | --- |
-| `N8N_VAATLUSTE_WEBHOOK_URL` | `trigger-vaatluste-refresh` | Full URL of the n8n webhook (e.g., `https://your-n8n.app.n8n.cloud/webhook/vaatluste-refresh`) |
-| `N8N_VAATLUSTE_WEBHOOK_SECRET` | both functions | Same value as `VAATLUSTE_WEBHOOK_SECRET` in n8n |
+| `VAATLUSTE_WEBHOOK_SECRET` | `trigger-*-refresh`, all three orchestrators, `insert-*-raport` | Sent as `X-Webhook-Secret` on every internal EF-to-EF call. No URL secret: the triggers build `${SUPABASE_URL}/functions/v1/<orchestrator>` themselves |
+| `N8N_VAATLUSTE_WEBHOOK_SECRET` | `insert-vaatluste-raport` | Still read there until M7.8 unifies it with `VAATLUSTE_WEBHOOK_SECRET` |
 
 `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are auto-provided by the Supabase runtime to every edge function.
 
@@ -455,22 +178,22 @@ async function refresh() {
 
 **Rate limiting.** 5-minute minimum interval between refreshes (enforced in edge function). The cron runs are 12 hours apart so they never hit this.
 
-**Failure handling.** Configure an n8n error workflow on this workflow → email/Slack on failure. The first week of operation is when issues surface.
+**Failure handling.** Every orchestrator run writes a `cron_runs` row (`status`, `error`, timings); check that table plus the Supabase function logs when a raport fails to appear.
 
-**Manual run from n8n UI.** "Execute Workflow" button still works for testing without going through the webhook.
+**Manual run.** Call the orchestrator directly with the curl below, or press "Värskenda" in the app (which goes through `trigger-vaatluste-refresh` and its 5-minute cooldown).
 
 **Retention.** ~730 rows/year. Add cleanup job (`delete from vaatluste_raport where generated_at < now() - interval '90 days'`) once volume warrants.
 
-**Verifying the webhook works.** From a terminal:
+**Verifying the orchestrator works.** From a terminal:
 
 ```bash
-curl -X POST https://your-n8n.app.n8n.cloud/webhook/vaatluste-refresh \
+curl -X POST https://<PROJECT_REF>.supabase.co/functions/v1/vaatluste-orchestrator \
   -H "X-Webhook-Secret: your-secret-value" \
   -H "Content-Type: application/json" \
   -d '{"source":"manual-test"}'
 ```
 
-Should return `{"accepted":true}` with status 202. Within ~30 seconds a new row should appear in `vaatluste_raport` with `generation_meta.trigger_source: "manual-test"`.
+Should return `{"ok":true,"run_id":"..."}` with status 202. Within ~1–2 minutes a new row should appear in `vaatluste_raport` with `generation_meta.trigger_source: "manual-test"`, and a matching `cron_runs` row.
 
 ## Future extensions
 

@@ -34,6 +34,8 @@ bird, right Latin) remains **Phase B** (source glossary).
 committed export `n8n/estbirding-news-ingest-translate-v13.json`. Edits are applied over the
 connector, never by importing the JSON.
 
+Note (M7.7, 2026-09-03): the n8n export was removed from the repo; see git history before c843a37 or estbirding-memory/notes/m7-6-n8n-nodes.
+
 **Related.** [[2026-07-16-latin-anchor-invariant]] — *why* the corrector needs a Latin anchor
 (no anchor → silent no-op); this note is the *how* once the anchor is present.
 [[2026-07-13-n8n-silently-drops-credentials-and-settings-on-import]] — why edits go over the

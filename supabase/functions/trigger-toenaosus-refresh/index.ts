@@ -22,10 +22,6 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 // Authenticates the internal orchestrator call (toenaosus-orchestrator reads
 // this same var).
 const VAATLUSTE_WEBHOOK_SECRET = Deno.env.get("VAATLUSTE_WEBHOOK_SECRET") ?? "";
-// M7.7: remove — dead since M7.5b repointed this leg at the orchestrator EF.
-const N8N_WEBHOOK_URL = Deno.env.get("N8N_TOENAOSUS_WEBHOOK_URL") ?? "";
-// M7.7: remove
-const N8N_WEBHOOK_SECRET = Deno.env.get("N8N_TOENAOSUS_WEBHOOK_SECRET") ?? "";
 
 const MIN_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 // The orchestrator answers 202 after one DB insert, so 10 s is generous; it
@@ -175,7 +171,7 @@ serve(async (req) => {
     return json(
       {
         triggered: false,
-        error: "n8n_trigger_failed",
+        error: "orchestrator_trigger_failed",
         message: "Värskenduse käivitamine ebaõnnestus. Proovi uuesti.",
         results: {
           toenaosus: { triggered: false, status, error: errorMsg, run_id: null },
@@ -190,7 +186,7 @@ serve(async (req) => {
       triggered: true,
       ok: true,
       started_at: startedAt,
-      n8n_status: status,
+      orchestrator_status: status,
       results: {
         toenaosus: { triggered: true, status, error: null, run_id: runId },
       },

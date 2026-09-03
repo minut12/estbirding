@@ -9,7 +9,7 @@
 // since M7.4b/M7.4c both raports come from vaatluste-orchestrator and
 // elurikkus-orchestrator, which answer 202 immediately -- the same
 // "started, poll for the row" semantics the button already expects.
-// The toenaosus leg still goes to n8n; that port is M7.5.
+// M7.5b: the toenaosus leg calls toenaosus-orchestrator too.
 //
 // Returns 202 immediately on success — the orchestrators run their work in a
 // background task and insert a new row into vaatluste_raport /
@@ -24,10 +24,6 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 // Authenticates the two internal orchestrator calls (both read this same var).
 const VAATLUSTE_WEBHOOK_SECRET = Deno.env.get("VAATLUSTE_WEBHOOK_SECRET") ?? "";
-// M7.7: remove — dead since M7.4d repointed both legs at the orchestrator EFs.
-const N8N_WEBHOOK_URL = Deno.env.get("N8N_VAATLUSTE_WEBHOOK_URL") ?? "";
-// M7.7: remove
-const N8N_WEBHOOK_SECRET = Deno.env.get("N8N_VAATLUSTE_WEBHOOK_SECRET") ?? "";
 
 const MIN_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 // The orchestrators answer 202 after one DB insert, so 10 s is generous; it
@@ -125,11 +121,6 @@ serve(async (req) => {
   }
 
   const startedAt = new Date().toISOString();
-
-  // M7.7: remove
-  const ELURIKKUS_WEBHOOK_URL = Deno.env.get("N8N_VAATLUSTE_ELURIKKUS_WEBHOOK_URL") ?? "";
-  const TOENAOSUS_WEBHOOK_URL = Deno.env.get("N8N_TOENAOSUS_WEBHOOK_URL") ?? "";
-  const TOENAOSUS_WEBHOOK_SECRET = Deno.env.get("N8N_TOENAOSUS_WEBHOOK_SECRET") ?? "";
 
   const callBody = JSON.stringify({
     source: "app-manual",
@@ -239,7 +230,7 @@ serve(async (req) => {
     return json(
       {
         triggered: false,
-        error: "n8n_trigger_failed",
+        error: "orchestrator_trigger_failed",
         message: "Värskenduse käivitamine ebaõnnestus. Proovi uuesti.",
         results: summary,
       },
@@ -252,7 +243,7 @@ serve(async (req) => {
       triggered: true,
       ok: overallOk,
       started_at: startedAt,
-      n8n_status: summary.ebird?.status ?? null,
+      orchestrator_status: summary.ebird?.status ?? null,
       results: summary,
       message: overallOk
         ? "Värskendus käivitatud. Uus aruanne ilmub umbes 2-4 minuti pärast."

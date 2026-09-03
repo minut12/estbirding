@@ -486,3 +486,124 @@ describe("ai_summary_unavailable survives the guardrail rebuild (M7.6-fix1)", ()
     expect(warnings).toContain(marker);
   });
 });
+
+// The exact sentence Sonnet returned in the M7.6b Phase C run (req db798eb7,
+// 2026-09-03 04:52Z, EF v18). It is CORRECT -- recentCount30d really was 0 --
+// and the negation-blind /30\s+days/i test rejected it, discarding the narrative
+// and cascading into fail_closed_summary_enforcement.
+const FIX2_30D_SENTENCE =
+  "No Estonian records in past 30 days, well after typical arrival window (median 03-Jan, range 01-Jan to 24-Jan).";
+
+const ZERO_EVIDENCE = {
+  estoniaEvidence: { recentCount7d: 0, recentCount30d: 0 },
+  foreignRecentPoints: [],
+  foreignClusters: [],
+  predictedTargets: [],
+  elurikkusRecentRecords: [],
+};
+
+describe("presence guardrails treat a negated or zero mention as no claim (M7.6-fix2)", () => {
+  const hooks = loadHooks();
+
+  it("accepts the 04:52Z 30-day sentence when recentCount30d is zero", () => {
+    const result = hooks.canonicalSummaryMatchesEvidence({
+      ...ZERO_EVIDENCE,
+      summary: FIX2_30D_SENTENCE,
+    });
+
+    expect(result.reasons).not.toContain(
+      "summary_claims_recent_30d_presence_but_recentCount30d_is_zero",
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("still rejects an asserted 30-day presence claim when recentCount30d is zero", () => {
+    const result = hooks.canonicalSummaryMatchesEvidence({
+      ...ZERO_EVIDENCE,
+      summary: "12 records in the last 30 days confirm a steady presence.",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toContain(
+      "summary_claims_recent_30d_presence_but_recentCount30d_is_zero",
+    );
+  });
+
+  it("accepts a negated 'already present' when recentCount7d is zero", () => {
+    const result = hooks.canonicalSummaryMatchesEvidence({
+      ...ZERO_EVIDENCE,
+      summary: "Punakurk-kaur is not already present in Estonia this week.",
+    });
+
+    expect(result.reasons).not.toContain(
+      "summary_claims_recent_estonia_but_recentCount7d_is_zero",
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("accepts a stated zero count -- '0 records in 7 days' is a true statement, not a claim", () => {
+    const result = hooks.canonicalSummaryMatchesEvidence({
+      ...ZERO_EVIDENCE,
+      summary: "0 records in 7 days for this species.",
+    });
+
+    expect(result.reasons).not.toContain(
+      "summary_claims_recent_estonia_but_recentCount7d_is_zero",
+    );
+    expect(result.reasons).not.toContain(
+      "summary_recentCount7d_does_not_match_structured_recentCount7d",
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("still rejects an asserted ALREADY PRESENT with a non-zero count when recentCount7d is zero", () => {
+    const result = hooks.canonicalSummaryMatchesEvidence({
+      ...ZERO_EVIDENCE,
+      summary: "ALREADY PRESENT — 3 records in 7 days.",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toContain(
+      "summary_claims_recent_estonia_but_recentCount7d_is_zero",
+    );
+  });
+});
+
+// M7.6-fix2: the presence checks use NEGATION_WINDOW_PRESENCE ({0,8}) because a
+// 30-day negation is separated from the term by a whole clause. The foreign
+// check keeps {0,4} -- see the byte-identical guard at the end of this block.
+describe("wider presence negation window accepts natural 30-day phrasings (M7.6-fix2)", () => {
+  const hooks = loadHooks();
+
+  it("accepts 'No Estonian records were confirmed in the past 30 days.'", () => {
+    const result = hooks.canonicalSummaryMatchesEvidence({
+      ...ZERO_EVIDENCE,
+      summary: "No Estonian records were confirmed in the past 30 days.",
+    });
+
+    expect(result.reasons).not.toContain(
+      "summary_claims_recent_30d_presence_but_recentCount30d_is_zero",
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("accepts 'There have been no confirmed Estonian records at all in the past 30 days.'", () => {
+    const result = hooks.canonicalSummaryMatchesEvidence({
+      ...ZERO_EVIDENCE,
+      summary: "There have been no confirmed Estonian records at all in the past 30 days.",
+    });
+
+    expect(result.reasons).not.toContain(
+      "summary_claims_recent_30d_presence_but_recentCount30d_is_zero",
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("keeps the foreign window at 4 -- a claim after a negation is still a claim", () => {
+    // At {0,8} the negator would swallow the whole clause and this real foreign
+    // claim would slip through the guardrail. Pins the two windows apart.
+    expect(
+      hooks.mentionsForeignPressureClaim("Not in Finland but strong pressure from Latvia"),
+    ).toBe(true);
+  });
+});

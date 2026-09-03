@@ -4892,14 +4892,33 @@ function buildCanonicalSummaryFromEvidence(input: {
 // English preposition ("supported by ...", "shaped by westerly winds"), which is
 // a claim-free phrase the analyst writes constantly. Belarus is matched by name.
 const FOREIGN_TERM = /\b(?:foreign pressure|poland|sweden|finland|latvia|lithuania|belarus|russia|mikoszewo|kalmar|helsinki|zatoka pomorska|hel|dziwnów|pl|se|fi|lv|lt|ru)\b/gi;
-const NEGATION_WINDOW = /\b(?:no|not|none|without|absent|lack(?:s|ing)?|zero|neither|nor|isn't|wasn't|aren't|weren't|doesn't|didn't|hasn't|haven't|cannot|can't|never)\b(?:\s+\S+){0,4}\s*$/i;
-function mentionsForeignPressureClaim(summary: string): boolean {
+const NEGATOR = "\\b(?:no|not|none|without|absent|lack(?:s|ing)?|zero|neither|nor|isn't|wasn't|aren't|weren't|doesn't|didn't|hasn't|haven't|cannot|can't|never)\\b";
+const NEGATION_WINDOW = new RegExp(`${NEGATOR}(?:\\s+\\S+){0,4}\\s*$`, 'i');
+// M7.6-fix2: presence phrases put far more words between the negator and the
+// term than "No foreign pressure" does -- "No Estonian records were confirmed in
+// the past 30 days" is 8. This window is deliberately NOT shared with
+// FOREIGN_TERM: at 8 tokens "Not in Finland but strong pressure from Latvia"
+// reads as fully negated and the foreign guardrail stops catching a real claim
+// (fix1 test "scopes the negation to the negated term only"). 4 stays the
+// default so mentionsForeignPressureClaim is byte-identical to fix1.
+const NEGATION_WINDOW_PRESENCE = new RegExp(`${NEGATOR}(?:\\s+\\S+){0,8}\\s*$`, 'i');
+// M7.6-fix2: the negation rule above is not specific to foreign pressure -- the
+// same "a MENTION is only a CLAIM when it is not negated" invariant governs every
+// evidence-presence guardrail. Generalised here so the 7-day and 30-day presence
+// checks share one implementation; `term` must be a global regex (matchAll).
+// `negationWindow` is REQUIRED on purpose: a default would silently hand a
+// future caller the narrow foreign window. mentionsForeignPressureClaim keeps
+// its exact fix1 behaviour.
+function mentionsClaim(summary: string, term: RegExp, negationWindow: RegExp): boolean {
   const text = String(summary ?? '');
-  for (const m of text.matchAll(FOREIGN_TERM)) {
+  for (const m of text.matchAll(term)) {
     const before = text.slice(Math.max(0, (m.index ?? 0) - 80), m.index ?? 0);
-    if (!NEGATION_WINDOW.test(before)) return true;
+    if (!negationWindow.test(before)) return true;
   }
   return false;
+}
+function mentionsForeignPressureClaim(summary: string): boolean {
+  return mentionsClaim(summary, FOREIGN_TERM, NEGATION_WINDOW);
 }
 
 // M7.6-fix1: these markers record WHY there is no AI narrative. They describe the
@@ -4929,7 +4948,14 @@ function canonicalSummaryMatchesEvidence(input: {
   const namedLocalityPattern = /p(?:õ|o)õsaspea|ristna|s(?:ä|a)äre/i;
   const hotspotPattern = /hotspot|target|ranking|p(?:õ|o)õsaspea|ristna|s(?:ä|a)äre/i;
   const countMatch = summary.match(/(\d+)\s+records?\s+in\s+7\s+days/i);
-  if ((/already present/i.test(summary) || countMatch) && recentCount7d <= 0) reasons.push('summary_claims_recent_estonia_but_recentCount7d_is_zero');
+  // M7.6-fix2: a MENTION is only a CLAIM when it is not negated, and a stated
+  // zero is not a presence claim. "not already present" and "0 records in 7
+  // days" are exactly what the analyst writes when recentCount7d is 0 -- the
+  // common case -- and the old test rejected both. A wrong NON-zero count is
+  // still caught by the recentCount7d mismatch check on the next line.
+  const claimsRecentPresence = mentionsClaim(summary, /\balready present\b/gi, NEGATION_WINDOW_PRESENCE)
+    || (countMatch !== null && Number(countMatch[1]) > 0);
+  if (claimsRecentPresence && recentCount7d <= 0) reasons.push('summary_claims_recent_estonia_but_recentCount7d_is_zero');
   if (countMatch && Number(countMatch[1]) !== recentCount7d) reasons.push('summary_recentCount7d_does_not_match_structured_recentCount7d');
   if (mentionsForeignPressureClaim(summary) && !input.foreignRecentPoints.length && !input.foreignClusters.length) {
     reasons.push('summary_mentions_foreign_pressure_without_structured_foreign_evidence');
@@ -4965,7 +4991,11 @@ function canonicalSummaryMatchesEvidence(input: {
   if (hotspotPattern.test(summary) && !input.predictedTargets.length && !reasons.includes('summary_mentions_hotspot_structure_without_predicted_targets')) {
     reasons.push('summary_mentions_hotspot_structure_without_predicted_targets');
   }
-  if (/30\s+days/i.test(summary) && recentCount30d <= 0) reasons.push('summary_claims_recent_30d_presence_but_recentCount30d_is_zero');
+  // M7.6-fix2: negation-aware. The M7.6b Phase C run (req db798eb7, 2026-09-03
+  // 04:52Z) was rejected for the CORRECT sentence "No Estonian records in past
+  // 30 days ...", which discarded a good Sonnet narrative and cascaded into
+  // fail_closed_summary_enforcement.
+  if (mentionsClaim(summary, /\b30\s+days\b/gi, NEGATION_WINDOW_PRESENCE) && recentCount30d <= 0) reasons.push('summary_claims_recent_30d_presence_but_recentCount30d_is_zero');
   return { ok: reasons.length === 0, reasons };
 }
 

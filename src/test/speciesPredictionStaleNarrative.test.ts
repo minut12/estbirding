@@ -607,3 +607,44 @@ describe("wider presence negation window accepts natural 30-day phrasings (M7.6-
     ).toBe(true);
   });
 });
+
+describe("finalize preserves globalMigrationEtas (M7.6b Phase C)", () => {
+  const hooks = loadHooks();
+
+  const ETA = {
+    targetName: "Põõsaspea",
+    entryZone: "Haversi",
+    etaText: "2d",
+    fromCountry: "FI",
+    migrationRoute: { route: [{ lat: 61.17, lon: 25.56, type: "origin" }, { lat: 59.21, lon: 23.5, type: "destination" }] },
+  };
+
+  it("carries a non-empty array through buildFinalPredictionPayloadFromEvidence", () => {
+    const finalPayload = hooks.buildFinalPredictionPayloadFromEvidence(
+      buildBasePayload({ globalMigrationEtas: [ETA] }),
+    );
+
+    expect(Array.isArray(finalPayload.globalMigrationEtas)).toBe(true);
+    expect(finalPayload.globalMigrationEtas).toHaveLength(1);
+    expect((finalPayload.globalMigrationEtas as Record<string, unknown>[])[0]).toMatchObject({
+      targetName: "Põõsaspea",
+      fromCountry: "FI",
+    });
+  });
+
+  it("carries it through finalizePredictionResponse", () => {
+    const finalized = hooks.finalizePredictionResponse(
+      buildBasePayload({ globalMigrationEtas: [ETA] }),
+      "test_finalize_preserves_etas",
+    );
+
+    expect(finalized.globalMigrationEtas).toHaveLength(1);
+  });
+
+  it("emits an empty array rather than dropping the key when absent", () => {
+    const finalPayload = hooks.buildFinalPredictionPayloadFromEvidence(buildBasePayload());
+
+    expect(Object.keys(finalPayload)).toContain("globalMigrationEtas");
+    expect(finalPayload.globalMigrationEtas).toEqual([]);
+  });
+});

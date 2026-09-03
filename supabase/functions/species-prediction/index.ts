@@ -5533,6 +5533,14 @@ function buildFinalPredictionPayloadFromEvidence(payload: Record<string, unknown
     weather: canonicalWeather,
     predictionVectors: canonicalPredictionVectors,
     predictedTargets: canonicalPredictedTargets,
+    // M7.6b Phase C: legacy sibling of predictedTargets[].migrationEta. This
+    // builder rebuilds the payload from an explicit key list, and the key was
+    // missing from it -- so finalize erased whatever buildGlobalMigrationEtas()
+    // computed, for EVERY EF-built result. The n8n-era payload carried it (row
+    // 5b2d92e9, array len 1) only because isN8nPassthrough skips finalize
+    // entirely. The client reads it as a fallback behind migrationEta
+    // (src/lib/speciesPrediction.ts ~1341). Pass through unchanged.
+    globalMigrationEtas: Array.isArray(payload.globalMigrationEtas) ? payload.globalMigrationEtas : [],
     mapLayers: {
       ...asRecord(payload.mapLayers),
       predictedLines: canonicalPredictionVectors.some((entry) => stringOr(asRecord(entry).kind) === 'route'),

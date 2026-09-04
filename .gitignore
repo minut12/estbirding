@@ -45,3 +45,12 @@ graphify-out/
 .mcp.json
 
 public/maps/**/*.bak
+
+# Ennustus scratch (P0–P2 outputs, GBIF facet cache, Claude Code scratch)
+tmp/gbif-cache/
+tmp/backtest_*.csv
+tmp/backtest_*.md
+tmp/phenology_draft*.csv
+tmp/phenology_draft_summary.md
+tmp/phenology_review_batch*.md
+Claude outputs/

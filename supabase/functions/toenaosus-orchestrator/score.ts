@@ -23,6 +23,7 @@ export interface PhenologyRow {
   arrival_bearing_autumn: number | null;
   source_regions_spring: string[] | null;
   source_regions_autumn: string[] | null;
+  flight_class: string | null; // P6b: steers the predicted-site anchor fallback
 }
 
 export interface UpstreamRow {

@@ -1,3 +1,4 @@
+// P6b 2026-09-05: predicted_sites[] on entries + watch-list (ennustus P6b-EF)
 // P4 2026-09-05: score v4 (phenology gate, direction, source, upstream), EE badge, upstream_obs (ennustus P4)
 // toenaosus-orchestrator
 // M7.5: port of the n8n workflow "tõenäosus-koordinaator v8.1"
@@ -110,6 +111,12 @@ import {
   type UpstreamRow,
   V4,
 } from "./score.ts";
+import {
+  type PredictedSite,
+  predictedSitesFor,
+  seasonMonths,
+  type SiteCell,
+} from "./sites.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_FN_BASE = SUPABASE_URL + "/functions/v1";
@@ -721,6 +728,7 @@ interface Candidate {
   probability_factors: ProbabilityFactors;
   ee_present: boolean;
   upstream_obs: UpstreamObs[];
+  predicted_sites: PredictedSite[];
   timing_band?: string;
   arrival_window_et?: string;
   freshest_obs_days?: number | null;
@@ -738,6 +746,7 @@ interface WatchlistItem {
   phenology_mode: string | null;
   direction_fit: number;
   phenology_gate: number;
+  predicted_sites: PredictedSite[];
 }
 
 interface RareObservation {
@@ -1188,7 +1197,7 @@ async function fetchCompute(
     "species_phenology",
     "scientific_name,ebird_code,arrival_modes,spring_window,autumn_window," +
       "arrival_bearing_spring,arrival_bearing_autumn," +
-      "source_regions_spring,source_regions_autumn",
+      "source_regions_spring,source_regions_autumn,flight_class",
   );
   // A silent 0 would gate every species to 0.5 and score exactly like v3 --
   // indistinguishable from success in the output. Fail loud instead.
@@ -1525,6 +1534,7 @@ async function fetchCompute(
       neighbor_breakdown,
       ee_present: !!(__sciLc && eePresentSet.has(__sciLc)),
       upstream_obs,
+      predicted_sites: [], // filled after the watch-list, from one RPC call
       probability_factors: {
         tier_base,
         count_factor: Math.round(cs * 1000) / 1000,
@@ -1683,6 +1693,7 @@ async function fetchCompute(
         phenology_mode: g.mode,
         direction_fit: dfit,
         phenology_gate: g.gate,
+        predicted_sites: [], // filled below, from one RPC call
       });
     }
     corridor_watchlist.sort((a, b) => {
@@ -1690,6 +1701,72 @@ async function fetchCompute(
       return t !== 0 ? t : b.direction_fit - a.direction_fit;
     });
     corridor_watchlist.length = Math.min(corridor_watchlist.length, 5);
+  }
+
+  // ---- P6b: predicted arrival sites (deterministic, never reaches Sonnet) ----
+  // ONE RPC for every species on the report. A failure here degrades sites to
+  // the anchor fallback; it must never fail the run.
+  const nowForSites = new Date();
+  const siteNames = Array.from(
+    new Set(
+      [
+        ...top.map((c) => c.name_et),
+        ...corridor_watchlist.map((w) => w.species_et),
+      ].filter((n): n is string => !!n),
+    ),
+  );
+  const cellsBySpecies = new Map<string, SiteCell[]>();
+  let predictedSiteCells = 0;
+  if (siteNames.length > 0) {
+    const { data: cellRows, error: cellErr } = await sbRead.rpc(
+      "ennustus_predicted_site_cells",
+      {
+        p_species: siteNames,
+        p_months: seasonMonths(nowForSites),
+        p_since: "2010-01-01",
+        p_per_species: 8,
+      },
+    );
+    if (cellErr) {
+      console.warn(
+        "ennustus_predicted_site_cells failed; falling back to anchors:",
+        cellErr.message,
+      );
+    } else {
+      const rows = (cellRows ?? []) as SiteCell[];
+      predictedSiteCells = rows.length;
+      for (const r of rows) {
+        const k = String(r.species_name ?? "");
+        if (!k) continue;
+        const bucket = cellsBySpecies.get(k);
+        if (bucket) bucket.push(r);
+        else cellsBySpecies.set(k, [r]);
+      }
+    }
+  }
+
+  const sitesFor = (
+    nameEt: string | null,
+    nameLat: string | null,
+  ): PredictedSite[] => {
+    const phen = phenByLat.get(String(nameLat || "").trim().toLowerCase()) ??
+      null;
+    const season = seasonFor(nowForSites, phen);
+    const bearingFrom = season === "spring"
+      ? phen?.arrival_bearing_spring ?? null
+      : season === "autumn"
+      ? phen?.arrival_bearing_autumn ?? null
+      : null;
+    return predictedSitesFor(
+      cellsBySpecies.get(String(nameEt ?? "")) ?? [],
+      { bearingFrom, flightClass: phen?.flight_class ?? null },
+      nowForSites,
+    );
+  };
+
+  for (const c of top) c.predicted_sites = sitesFor(c.name_et, c.name_lat);
+  for (const w of corridor_watchlist) {
+    w.predicted_sites = sitesFor(w.species_et, w.species_lat);
   }
 
   // ---- Build enriched rare_observations array (unchanged from v6) ----
@@ -1771,6 +1848,7 @@ async function fetchCompute(
       season_signal_diag: seasonDiag,
       phenology_rows: phenologyRows.length,
       upstream_rows: upstreamRows.length,
+      predicted_site_cells: predictedSiteCells,
       formula_version: V4.FORMULA_VERSION,
     },
     ebird_errors,
@@ -2130,6 +2208,8 @@ function parseMerge(
       ebird_code: c.ebird_code,
       ee_present: c.ee_present,
       upstream_obs: c.upstream_obs ?? [],
+      // P6b addition
+      predicted_sites: c.predicted_sites ?? [],
     };
   });
 

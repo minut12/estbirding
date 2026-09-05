@@ -28,6 +28,7 @@ const TARSIGER: PhenologyRow = {
   arrival_bearing_autumn: 60,
   source_regions_spring: ["FI", "RU-LEN"],
   source_regions_autumn: ["RU-LEN", "RU-KR"],
+  flight_class: null,
 };
 
 // ---- parseDateRange --------------------------------------------------------

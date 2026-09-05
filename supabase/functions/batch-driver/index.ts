@@ -1,10 +1,13 @@
+// P3 2026-09-05: per-country gbif_* jobs, JobState mode/year_from passthrough (ennustus P3)
 // batch-driver
-// M7.2: drives the three paged batch Edge Functions that used to be n8n
+// M7.2: drives the paged batch Edge Functions that used to be n8n
 // schedulers. pg_cron -> pg_net -> public.m7_call_ef -> here -> target EF.
 //
 //   job 'ennustus'  -> compute-ennustus       (x-webhook-secret)
 //   job 'elurikkus' -> elurikkus-bulk-refresh (x-refresh-secret)
-//   job 'gbif'      -> gbif-bulk-refresh      (x-webhook-secret)
+//   job 'gbif'      -> gbif-bulk-refresh      (x-webhook-secret, country EE)
+//   job 'gbif_fi'   -> gbif-bulk-refresh      (x-webhook-secret, country FI)
+//   job 'gbif_se' | 'gbif_lv' | 'gbif_lt' | 'gbif_ru'  -- likewise, rare+ only
 //
 // Auth on this function: X-Webhook-Secret must equal VAATLUSTE_WEBHOOK_SECRET.
 //
@@ -17,6 +20,7 @@
 // counts only the calls made by THIS hop.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { type JobState, normalizeState } from "./state.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 
@@ -48,14 +52,11 @@ class FatalCallError extends Error {}
 // Job table
 // ---------------------------------------------------------------------------
 
-type JobName = "ennustus" | "elurikkus" | "gbif";
+type ForeignGbifJob = "gbif_fi" | "gbif_se" | "gbif_lv" | "gbif_lt" | "gbif_ru";
+type JobName = "ennustus" | "elurikkus" | "gbif" | ForeignGbifJob;
+type GbifCountry = "FI" | "SE" | "LV" | "LT" | "RU";
 
-interface JobState {
-  offset: number;
-  calls_total: number;
-  total_species: number | null;
-  last?: Record<string, unknown>;
-}
+// JobState + normalizeState now live in ./state.ts (imported above).
 
 interface StepResult {
   state: JobState;
@@ -71,6 +72,54 @@ interface JobConfig {
   body: (s: JobState) => Record<string, unknown>;
   step: (s: JobState, resp: Record<string, unknown>) => StepResult;
 }
+
+// Shared by the EE `gbif` job and every per-country gbif_* job. Declared before
+// gbifForeignJob and JOBS -- all three evaluate at module init, so a reference
+// before initialisation here would TDZ-500 every job, EE included.
+const JOBS_GBIF_STEP: JobConfig["step"] = (s, resp) => {
+  const nextOffset = Number(resp.next_offset);
+  const total = Number(resp.total_species ?? 0);
+  const state: JobState = {
+    ...s,
+    offset: Number.isFinite(nextOffset) ? nextOffset : s.offset,
+    total_species: Number.isFinite(total) && total > 0
+      ? total
+      : s.total_species,
+    last: {
+      processed_species: Number(resp.processed_species ?? 0),
+      rows_upserted: Number(resp.rows_upserted ?? 0),
+      error_count: Number(resp.error_count ?? 0),
+      truncated: Number((resp.truncated_species as unknown[] | undefined)?.length ?? 0),
+      skipped_dense: Number((resp.skipped_dense as unknown[] | undefined)?.length ?? 0),
+    },
+  };
+  return resp.done === true
+    ? { state, stop: true, reason: "done" }
+    : { state, stop: false, reason: null };
+};
+
+// Foreign pulls are rare+ only (193 of 449 species) and the EF's density gate
+// skips any species x country cell over max_cell_rows, so page_cap 10 (= 3000
+// rows) is never the binding constraint. batch_size 3 keeps a call inside
+// CALL_TIMEOUT_MS given the extra count request per species.
+const FOREIGN_BATCH = 3;
+const FOREIGN_PAGE_CAP = 10;
+
+const gbifForeignJob = (country: GbifCountry): JobConfig => ({
+  target: "gbif-bulk-refresh",
+  secretHeader: "x-webhook-secret",
+  secretEnv: "VAATLUSTE_WEBHOOK_SECRET",
+  maxCalls: 120,
+  body: (s) => ({
+    mode: s.mode ?? "refresh",
+    ...(s.year_from !== undefined ? { year_from: s.year_from } : {}),
+    country,
+    offset: s.offset,
+    batch_size: FOREIGN_BATCH,
+    page_cap: FOREIGN_PAGE_CAP,
+  }),
+  step: JOBS_GBIF_STEP,
+});
 
 const JOBS: Record<JobName, JobConfig> = {
   // compute-ennustus returns a real boolean `done` (slice.length < limit) plus
@@ -165,26 +214,16 @@ const JOBS: Record<JobName, JobConfig> = {
       batch_size: 5,
       page_cap: 10,
     }),
-    step: (s, resp) => {
-      const nextOffset = Number(resp.next_offset);
-      const total = Number(resp.total_species ?? 0);
-      const state: JobState = {
-        ...s,
-        offset: Number.isFinite(nextOffset) ? nextOffset : s.offset,
-        total_species: Number.isFinite(total) && total > 0
-          ? total
-          : s.total_species,
-        last: {
-          processed_species: Number(resp.processed_species ?? 0),
-          rows_upserted: Number(resp.rows_upserted ?? 0),
-          error_count: Number(resp.error_count ?? 0),
-        },
-      };
-      return resp.done === true
-        ? { state, stop: true, reason: "done" }
-        : { state, stop: false, reason: null };
-    },
+    step: JOBS_GBIF_STEP,
   },
+
+  // Same target, one job per foreign country. rare+ species only; the EF
+  // applies the rarity filter and the density gate from the `country` field.
+  gbif_fi: gbifForeignJob("FI"),
+  gbif_se: gbifForeignJob("SE"),
+  gbif_lv: gbifForeignJob("LV"),
+  gbif_lt: gbifForeignJob("LT"),
+  gbif_ru: gbifForeignJob("RU"),
 };
 
 function isJobName(v: unknown): v is JobName {
@@ -194,20 +233,6 @@ function isJobName(v: unknown): v is JobName {
 
 function emptyState(): JobState {
   return { offset: 0, calls_total: 0, total_species: null };
-}
-
-function normalizeState(v: unknown): JobState {
-  const s = v && typeof v === "object" ? v as Record<string, unknown> : {};
-  const offset = Number(s.offset);
-  const callsTotal = Number(s.calls_total);
-  const total = Number(s.total_species);
-  return {
-    offset: Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0,
-    calls_total: Number.isFinite(callsTotal)
-      ? Math.max(0, Math.floor(callsTotal))
-      : 0,
-    total_species: Number.isFinite(total) && total > 0 ? total : null,
-  };
 }
 
 // ---------------------------------------------------------------------------

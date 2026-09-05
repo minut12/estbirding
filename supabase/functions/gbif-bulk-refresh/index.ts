@@ -1,9 +1,21 @@
+// P3 2026-09-05: country/year_from/rarity filter/density gate/country_code (ennustus P3)
 // gbif-bulk-refresh
-// GBIF Estonia occurrence ingest → public.gbif_occurrences (HISTORY backbone).
+// GBIF occurrence ingest → public.gbif_occurrences (HISTORY backbone).
+// EE pulls every species; foreign countries (FI/SE/LV/LT/RU) pull rare+ only.
 // Additive: does not read or write any pre-existing table.
 // Auth: X-Webhook-Secret must equal VAATLUSTE_WEBHOOK_SECRET (reused from other feeders).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  buildCountUrl,
+  buildOccurrenceUrl,
+  type CountryCode,
+  DENSITY_YEAR_FROM,
+  isCountry,
+  MAX_CELL_ROWS_DEFAULT,
+  selectSpecies,
+  YEAR_FROM_MIN,
+} from "./lib.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -18,7 +30,6 @@ const cors = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 const json = (o: unknown, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { ...cors, "content-type": "application/json" } });
 
@@ -53,9 +64,17 @@ Deno.serve(async (req) => {
   const offset = Number.isInteger(body?.offset) ? body.offset : 0;
   const batchSize = Number.isInteger(body?.batch_size) ? body.batch_size : 25;
   const pageCap = Number.isInteger(body?.page_cap) ? body.page_cap : 10;
+  const maxCellRows = Number.isInteger(body?.max_cell_rows) && body.max_cell_rows > 0
+    ? body.max_cell_rows
+    : MAX_CELL_ROWS_DEFAULT;
 
   const nowY = new Date().getUTCFullYear();
-  const yearFrom = mode === "refresh" ? nowY - 1 : nowY - 10;
+  const country: CountryCode = isCountry(body?.country) ? body.country : "EE";
+  const yearFromOverride = Number.isInteger(body?.year_from) &&
+      body.year_from >= YEAR_FROM_MIN && body.year_from <= nowY
+    ? (body.year_from as number)
+    : null;
+  const yearFrom = yearFromOverride ?? (mode === "refresh" ? nowY - 1 : nowY - 10);
   const yearTo = nowY;
 
   const sb = createClient(SUPABASE_URL, SERVICE_ROLE);
@@ -64,25 +83,39 @@ Deno.serve(async (req) => {
   if (!metaResp.ok) return json({ error: "species_meta_fetch_failed", status: metaResp.status }, 500);
   const meta = await metaResp.json();
   const items = meta?.items ?? {};
-  const species = Object.entries(items)
-    // deno-lint-ignore no-explicit-any
-    .map(([estKey, v]: [string, any]) => ({
-      species_name: cap(estKey),
-      species_lat: String(v?.scientificName || "").trim(),
-    }))
-    .filter((s) => s.species_lat)
-    .sort((a, b) => a.species_name.localeCompare(b.species_name));
+  const species = selectSpecies(items, country);
 
   const slice = species.slice(offset, offset + batchSize);
   let rowsUpserted = 0;
   // deno-lint-ignore no-explicit-any
   const errors: any[] = [];
+  const truncatedSpecies: string[] = [];
+  const skippedDense: Array<{ species_name: string; count: number }> = [];
 
   for (const sp of slice) {
     try {
       const key = await resolveTaxonKey(sb, sp);
       if (!key) { errors.push({ sp: sp.species_name, e: "no_taxon_key" }); continue; }
-      const occ = await pullOccurrences(key, yearFrom, yearTo, pageCap);
+
+      // Density gate (foreign only). Always measured over DENSITY_YEAR_FROM..nowY,
+      // never the request's yearFrom: a species skipped at backfill would otherwise
+      // pass a one-year refresh count and accumulate rows anyway.
+      if (country !== "EE") {
+        const cr = await fetchWithBackoff(buildCountUrl(key, country, DENSITY_YEAR_FROM, nowY));
+        const cj = await cr.json().catch(() => null) as { count?: unknown } | null;
+        const cellCount = Number(cj?.count);
+        if (!cr.ok || !Number.isFinite(cellCount)) {
+          errors.push({ sp: sp.species_name, e: "density_count_failed" });
+          continue;
+        }
+        if (cellCount > maxCellRows) {
+          skippedDense.push({ species_name: sp.species_name, count: cellCount });
+          continue;
+        }
+      }
+
+      const { rows: occ, truncated } = await pullOccurrences(key, country, yearFrom, yearTo, pageCap);
+      if (truncated) truncatedSpecies.push(sp.species_name);
       const rows = occ
         // deno-lint-ignore no-explicit-any
         .map((o: any) => ({
@@ -92,6 +125,7 @@ Deno.serve(async (req) => {
           observed_at: gbifDate(o),
           lat: o.decimalLatitude,
           lon: o.decimalLongitude,
+          country_code: country,
         }))
         // deno-lint-ignore no-explicit-any
         .filter((r: any) => r.gbif_key != null && r.lat != null && r.lon != null);
@@ -110,14 +144,18 @@ Deno.serve(async (req) => {
   return json({
     ok: true,
     mode,
+    country,
     year_from: yearFrom,
     year_to: yearTo,
+    max_cell_rows: maxCellRows,
     processed_species: slice.length,
     from_offset: offset,
     next_offset: nextOffset,
     total_species: species.length,
     done: nextOffset >= species.length,
     rows_upserted: rowsUpserted,
+    truncated_species: truncatedSpecies,
+    skipped_dense: skippedDense,
     error_count: errors.length,
     errors: errors.slice(0, 20),
   });
@@ -146,19 +184,27 @@ async function resolveTaxonKey(sb: any, sp: { species_name: string; species_lat:
   return key;
 }
 
-async function pullOccurrences(taxonKey: number, yFrom: number, yTo: number, pageCap: number) {
+async function pullOccurrences(
+  taxonKey: number,
+  country: CountryCode,
+  yFrom: number,
+  yTo: number,
+  pageCap: number,
+) {
   // deno-lint-ignore no-explicit-any
   const out: any[] = [];
+  let truncated = false;
   for (let page = 0; page < pageCap; page++) {
-    const url = `${GBIF}/occurrence/search?taxonKey=${taxonKey}&country=EE&hasCoordinate=true`
-      + `&year=${yFrom},${yTo}&limit=300&offset=${page * 300}`;
+    const url = buildOccurrenceUrl(taxonKey, country, yFrom, yTo, page);
     const r = await fetchWithBackoff(url);
     if (!r.ok) break;
     const j = await r.json();
     for (const o of (j.results || [])) out.push(o);
     if (j.endOfRecords) break;
+    // Exited by pageCap, not by endOfRecords -> more rows exist than we pulled.
+    if (page === pageCap - 1) truncated = true;
   }
-  return out;
+  return { rows: out, truncated };
 }
 
 // Retry GBIF on 429 / 5xx with exponential backoff.

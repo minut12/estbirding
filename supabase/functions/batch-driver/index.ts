@@ -1,3 +1,4 @@
+// P3b 2026-09-05: 429 retry (Retry-After) + MIN_CALL_INTERVAL_MS (ennustus P3b)
 // P3 2026-09-05: per-country gbif_* jobs, JobState mode/year_from passthrough (ennustus P3)
 // batch-driver
 // M7.2: drives the paged batch Edge Functions that used to be n8n
@@ -29,6 +30,22 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const BUDGET_MS = 90_000;
 const CALL_TIMEOUT_MS = 55_000;
 const RETRY_DELAY_MS = 3_000; // n8n used waitBetweenTries 3000-5000
+
+// Edge gateway rate-limits chained EF invocations (~30/min per trace) and
+// answers 429 "Rate limit exceeded ... Retry after Nms". Honour it, and pace
+// calls so a fast target cannot trip it in the first place.
+const MIN_CALL_INTERVAL_MS = 2_500; // <= 24 calls/min
+const MAX_429_RETRIES = 3;
+const MAX_429_WAIT_MS = 30_000;
+
+function retryAfterMs(res: Response, bodyText: string): number {
+  const hdr = res.headers.get("retry-after");
+  const hdrSec = hdr ? Number(hdr) : NaN;
+  if (Number.isFinite(hdrSec) && hdrSec > 0) return hdrSec * 1000;
+  const m = /Retry after (\d+)ms/i.exec(bodyText);
+  if (m) return Number(m[1]);
+  return RETRY_DELAY_MS;
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -248,7 +265,8 @@ async function callTarget(
   const url = SUPABASE_URL + "/functions/v1/" + cfg.target;
 
   let lastErr = "";
-  for (let attempt = 0; attempt < 2; attempt++) {
+  let retries429 = 0;
+  for (let attempt = 0; attempt < 2 + MAX_429_RETRIES; attempt++) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), CALL_TIMEOUT_MS);
     try {
@@ -262,6 +280,16 @@ async function callTarget(
         signal: ctrl.signal,
       });
       const text = await res.text();
+      if (res.status === 429) {
+        retries429++;
+        const detail = cfg.target + " HTTP 429: " + text.slice(0, 300);
+        if (retries429 > MAX_429_RETRIES) throw new Error(detail);
+        lastErr = detail;
+        const wait = Math.min(retryAfterMs(res, text) + 500, MAX_429_WAIT_MS);
+        clearTimeout(timer);
+        await delay(wait);
+        continue;
+      }
       if (res.ok) {
         try {
           return JSON.parse(text) as Record<string, unknown>;
@@ -461,6 +489,7 @@ Deno.serve(async (req) => {
   const rowId = await openRun(sb, job, runId, hop, state);
 
   let calls = 0; // this hop only; the cap lives in state.calls_total
+  let lastCallAt = 0;
   let chained = false;
   let stopped: string | null = null;
   let errorMsg: string | null = null;
@@ -473,6 +502,11 @@ Deno.serve(async (req) => {
         break;
       }
 
+      if (lastCallAt > 0) {
+        const sinceLast = Date.now() - lastCallAt;
+        if (sinceLast < MIN_CALL_INTERVAL_MS) await delay(MIN_CALL_INTERVAL_MS - sinceLast);
+      }
+      lastCallAt = Date.now();
       const resp = await callTarget(cfg, cfg.body(state));
       calls++;
 

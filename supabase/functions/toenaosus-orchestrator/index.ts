@@ -1,3 +1,4 @@
+// P6b.1 2026-09-05: effort-normalised site share ranking (ennustus P6b.1)
 // P6b 2026-09-05: predicted_sites[] on entries + watch-list (ennustus P6b-EF)
 // P4 2026-09-05: score v4 (phenology gate, direction, source, upstream), EE badge, upstream_obs (ennustus P4)
 // toenaosus-orchestrator

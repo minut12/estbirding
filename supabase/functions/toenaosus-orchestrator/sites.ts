@@ -21,6 +21,7 @@ export interface SiteCell {
   n_total: number;
   n_season: number;
   n_recent5y: number;
+  n_effort: number; // all-species species-days in the cell (observer effort)
   last_date: string | null;
   label: string | null;
   county: string | null;
@@ -57,6 +58,15 @@ export const EE_CENTRE = { lat: 58.6, lon: 25.5 };
 
 const RECENT_DAYS = 730;
 const DAY_MS = 86_400_000;
+
+// Ranking by raw record count rewards observer effort, not species preference
+// -- Põõsaspea gets 73x the watching Ristna does. Rank by the species' SHARE
+// of all-species effort in the cell instead, shrunk toward 0 by EFFORT_PRIOR
+// so a cell with one visit and one sighting cannot look like a hotspot.
+const EFFORT_PRIOR = 200;
+const SHARE_W = 400;
+const SHARE_CAP = 0.05;
+const MIN_SEASON_DAYS = 3;
 
 export const ANCHORS: readonly Anchor[] = [
   { label: "Sõrve säär", lat: 57.91, lon: 22.06, kind: "headland" },
@@ -134,7 +144,9 @@ export function scoreCell(
   bearingFrom: number | null,
   today: Date,
 ): number {
-  const seasonal = Math.log(1 + Math.max(0, cell.n_season));
+  const share = cell.n_season / (Math.max(0, cell.n_effort || 0) + EFFORT_PRIOR);
+  const shareTerm = SHARE_W * Math.min(SHARE_CAP, Math.max(0, share));
+  const seasonal = 0.5 * Math.log(1 + Math.max(0, cell.n_season));
   const recent = 0.5 * Math.log(1 + Math.max(0, cell.n_recent5y));
 
   let fresh = 0;
@@ -145,7 +157,8 @@ export function scoreCell(
     }
   }
 
-  return seasonal + recent + fresh + sectorFit(cell.lat, cell.lon, bearingFrom);
+  return shareTerm + seasonal + recent + fresh +
+    sectorFit(cell.lat, cell.lon, bearingFrom);
 }
 
 function cellLabel(cell: SiteCell): string {
@@ -153,15 +166,23 @@ function cellLabel(cell: SiteCell): string {
     `Ruut ${cell.cell_lat.toFixed(2)} N, ${cell.cell_lon.toFixed(2)} E`;
 }
 
-/** Cells with any seasonal history, best first, capped at `max`. */
+/**
+ * Cells with seasonal history, best first, capped at `max`. Prefers cells
+ * with at least MIN_SEASON_DAYS species-days -- a single stray record is
+ * noise -- and falls back to the old n_season >= 1 rule only when nothing
+ * meets that bar.
+ */
 export function historySites(
   cells: SiteCell[],
   bearingFrom: number | null,
   today: Date,
   max = 3,
 ): PredictedSite[] {
-  return cells
-    .filter((c) => c.n_season >= 1)
+  const qualified = cells.filter((c) => c.n_season >= MIN_SEASON_DAYS);
+  const pool = qualified.length
+    ? qualified
+    : cells.filter((c) => c.n_season >= 1);
+  return pool
     .map((c) => ({ cell: c, score: scoreCell(c, bearingFrom, today) }))
     .sort((a, b) => b.score - a.score)
     .slice(0, max)

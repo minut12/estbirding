@@ -2,7 +2,7 @@
 // Imports sites.ts only -- never index.ts, whose top-level Deno.serve() would
 // start a server inside `deno test`.
 
-import { assert, assertEquals } from "jsr:@std/assert@^1.0.19";
+import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@^1.0.19";
 import {
   anchorSites,
   historySites,
@@ -23,6 +23,7 @@ const cell = (over: Partial<SiteCell>): SiteCell => ({
   n_total: 10,
   n_season: 10,
   n_recent5y: 5,
+  n_effort: 300,
   last_date: "2026-08-30",
   label: "Põõsaspea",
   county: "Lääne",
@@ -118,6 +119,61 @@ Deno.test("historySites: caps at 3", () => {
   assertEquals(sites.length, 3);
   // Best first: n_season 5, 4, 3.
   assertEquals(sites.map((s) => s.label), ["C5", "C4", "C3"]);
+});
+
+Deno.test("historySites: ranks by effort-normalised share, not raw n_season (Söödikänn)", () => {
+  // From the P6b.1 spec: n_season / n_effort per cell, Aug-Oct.
+  const mk = (label: string, n_season: number, n_effort: number) =>
+    cell({ label, n_season, n_effort, n_recent5y: 0, last_date: null });
+  const cells = [
+    mk("Põõsaspea", 236, 18_299),
+    mk("Sõrve", 120, 13_331),
+    mk("Pärispea", 24, 1_620),
+    mk("Ristna", 11, 399),
+    mk("Paldiski", 8, 369),
+    mk("Tahkuna", 7, 796),
+  ];
+  const sites = historySites(cells, null, TODAY);
+  // Raw n_season order would be Põõsaspea, Sõrve, Pärispea -- share flips it:
+  // Ristna's tiny effort makes its 11 records far more diagnostic.
+  assertEquals(sites.map((s) => s.label), ["Ristna", "Põõsaspea", "Pärispea"]);
+});
+
+Deno.test("historySites: MIN_SEASON_DAYS excludes a thin cell when a real one exists, but not when it's alone", () => {
+  const thin = cell({ label: "Thin", n_season: 2 });
+  const real = cell({ label: "Real", n_season: 3 });
+
+  const withBoth = historySites([thin, real], null, TODAY);
+  assertEquals(withBoth.map((s) => s.label), ["Real"]);
+
+  const alone = historySites([thin], null, TODAY);
+  assertEquals(alone.map((s) => s.label), ["Thin"]);
+});
+
+Deno.test("scoreCell: n_effort 0 falls back to the prior, never NaN", () => {
+  const zeroEffort = cell({ n_season: 5, n_effort: 0, n_recent5y: 0, last_date: null });
+  const score = scoreCell(zeroEffort, null, TODAY);
+  assert(Number.isFinite(score), "score must be finite, not NaN");
+  // share = 5 / (0 + EFFORT_PRIOR=200) = 0.025 -> shareTerm = 400*0.025 = 10;
+  // seasonal = 0.5*ln(6); recent = 0; fresh = 0; sectorFit(null) = 0.5.
+  const expected = 10 + 0.5 * Math.log(6) + 0 + 0 + 0.5;
+  assertAlmostEquals(score, expected, 1e-9);
+});
+
+Deno.test("scoreCell: the share term is capped, so two very different cells can tie on it", () => {
+  // 500/(100+200) = 1.667 -> capped; 50/(800+200) = 0.05 exactly -> capped too.
+  const c1 = cell({ n_season: 500, n_effort: 100, n_recent5y: 0, last_date: null });
+  const c2 = cell({ n_season: 50, n_effort: 800, n_recent5y: 0, last_date: null });
+  const s1 = scoreCell(c1, null, TODAY);
+  const s2 = scoreCell(c2, null, TODAY);
+  const seasonal1 = 0.5 * Math.log(1 + 500);
+  const seasonal2 = 0.5 * Math.log(1 + 50);
+  // Subtracting each cell's own seasonal term isolates the share term (plus
+  // the identical recent/fresh/sectorFit residual); both must land on
+  // SHARE_W * SHARE_CAP (400 * 0.05 = 20) + the neutral sectorFit (0.5).
+  assertAlmostEquals(s1 - seasonal1, 20.5, 1e-9);
+  assertAlmostEquals(s2 - seasonal2, 20.5, 1e-9);
+  assertAlmostEquals(s1 - seasonal1, s2 - seasonal2, 1e-9);
 });
 
 Deno.test("historySites: label falls back to county, then to the grid square", () => {

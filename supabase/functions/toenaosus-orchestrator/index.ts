@@ -1,3 +1,4 @@
+// P4 2026-09-05: score v4 (phenology gate, direction, source, upstream), EE badge, upstream_obs (ennustus P4)
 // toenaosus-orchestrator
 // M7.5: port of the n8n workflow "tõenäosus-koordinaator v8.1"
 // (UCPth8wljSkLBM64, versionId e477cb6e, schedule `10 6,18 * * *` Tallinn +
@@ -100,6 +101,15 @@
 // the neutral 0.5 signal. That behaviour is kept; no batching was added.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  directionFit,
+  type PhenologyRow,
+  phenologyGate,
+  scoreV4,
+  seasonFor,
+  type UpstreamRow,
+  V4,
+} from "./score.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_FN_BASE = SUPABASE_URL + "/functions/v1";
@@ -193,6 +203,28 @@ function adminClient() {
     SUPABASE_URL,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
   );
+}
+
+// PostgREST caps a request at 1000 rows, so a bare .range(0, 1999) is a SILENT
+// truncator once a table outgrows the cap. Page until a short page comes back.
+// deno-lint-ignore no-explicit-any
+async function readAll<T>(
+  // deno-lint-ignore no-explicit-any
+  sb: any,
+  table: string,
+  select: string,
+  page = 1000,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; from < 100_000; from += page) {
+    const { data, error } = await sb.from(table).select(select)
+      .range(from, from + page - 1);
+    if (error) throw new Error(`${table}_read_failed: ${error.message}`);
+    const rows = (data ?? []) as T[];
+    out.push(...rows);
+    if (rows.length < page) break;
+  }
+  return out;
 }
 
 // Inferred from the call, NOT ReturnType<typeof createClient>: instantiating
@@ -645,11 +677,29 @@ interface ProbabilityFactors {
   count_factor: number;
   distance_factor: number;
   season_factor: number;
+  // v3 diagnostics: still computed and written, no longer part of the score.
   corridor_factor: number;
   adjacency_bonus: number;
   raw_score: number;
   season_gate: number;
+  // v4
+  phenology_gate: number;
+  direction_fit: number;
+  source_fit: number;
+  upstream: number;
+  season: string | null;
+  phenology_source: string;
+  calibrated_score: number;
   formula_version: string;
+}
+
+interface UpstreamObs {
+  country_code: string;
+  location: string;
+  date: string;
+  count: number;
+  distance_km: number;
+  bearing_from_ee: number;
 }
 
 interface Candidate {
@@ -669,6 +719,8 @@ interface Candidate {
   total_neighbor_obs_30d: number;
   neighbor_breakdown: NeighborBreakdown[];
   probability_factors: ProbabilityFactors;
+  ee_present: boolean;
+  upstream_obs: UpstreamObs[];
   timing_band?: string;
   arrival_window_et?: string;
   freshest_obs_days?: number | null;
@@ -682,6 +734,10 @@ interface WatchlistItem {
   avatar_url: string | null;
   matched_corridors: string[];
   matched_corridor_names_et: string[];
+  arrival_bearing: number | null;
+  phenology_mode: string | null;
+  direction_fit: number;
+  phenology_gate: number;
 }
 
 interface RareObservation {
@@ -975,6 +1031,22 @@ function haversineKm(
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+// Initial great-circle bearing Türi -> obs, degrees clockwise from north.
+function initialBearingDeg(
+  la1: number,
+  lo1: number,
+  la2: number,
+  lo2: number,
+): number {
+  const p1 = la1 * Math.PI / 180;
+  const p2 = la2 * Math.PI / 180;
+  const dl = (lo2 - lo1) * Math.PI / 180;
+  const y = Math.sin(dl) * Math.cos(p2);
+  const x = Math.cos(p1) * Math.sin(p2) -
+    Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+}
+
 // ---- Probability formula v2 ----
 // score = tier_base
 //       + 25 * count_signal       (Hill curve, half-sat at N=15, no ceiling)
@@ -1005,7 +1077,7 @@ const CORRIDOR_WEIGHT = 7;
 const PROB_FLOOR = 5;
 const PROB_CEIL = 95;
 const TOP_N = 30;
-const FORMULA_VERSION = "v3";
+// FORMULA_VERSION now comes from V4.FORMULA_VERSION (./score.ts).
 // v8.3 season gate: the additive SEASON_WEIGHT term alone left a ~50-60% floor
 // even at season=0, so out-of-window species scored high. This multiplicative
 // gate suppresses near-closed windows; in-window species (season >= threshold)
@@ -1108,6 +1180,37 @@ async function fetchCompute(
       ...ebirdPromises,
     ]) as [unknown, unknown, unknown, ...EbirdObs[][]];
   const allObs = allObsArrays.flat();
+
+  // ---- v4 inputs: phenology + upstream follow-through (service role) ----
+  const sbRead = adminClient();
+  const phenologyRows = await readAll<PhenologyRow>(
+    sbRead,
+    "species_phenology",
+    "scientific_name,ebird_code,arrival_modes,spring_window,autumn_window," +
+      "arrival_bearing_spring,arrival_bearing_autumn," +
+      "source_regions_spring,source_regions_autumn",
+  );
+  // A silent 0 would gate every species to 0.5 and score exactly like v3 --
+  // indistinguishable from success in the output. Fail loud instead.
+  if (phenologyRows.length < 150) {
+    throw new Error(
+      "phenology_load_failed: expected >= 150 species_phenology rows, got " +
+        phenologyRows.length,
+    );
+  }
+  const upstreamRows = await readAll<UpstreamRow>(
+    sbRead,
+    "rarity_upstream_stats",
+    "species_lat,from_country,foreign_days,p_ee_30d",
+  );
+  if (upstreamRows.length === 0) {
+    // Valid degraded state (upstream term falls to 0), but never silent.
+    console.warn("rarity_upstream_stats returned 0 rows; upstream term = 0");
+  }
+  const phenByLat = new Map<string, PhenologyRow>();
+  for (const p of phenologyRows) {
+    phenByLat.set(String(p.scientific_name || "").trim().toLowerCase(), p);
+  }
 
   // APPROVED DEVIATION (M7.4c, carried into M7.5): n8n swallowed every region
   // failure into [] and would have gone on to pay for a Sonnet call that wrote
@@ -1332,7 +1435,8 @@ async function fetchCompute(
 
     const ad_bonus = adjacencyBonus(neighbor_breakdown);
 
-    const raw = tier_base +
+    // v3 score, kept for diagnostics only -- it no longer sets probability_pct.
+    const raw_v3 = tier_base +
       (COUNT_WEIGHT * cs) +
       (DISTANCE_WEIGHT * ds) +
       (SEASON_WEIGHT * ss) +
@@ -1344,17 +1448,53 @@ async function fetchCompute(
       ? 1
       : SEASON_GATE_FLOOR +
         (1 - SEASON_GATE_FLOOR) * (ss / SEASON_GATE_THRESHOLD);
-    const gated = raw * season_gate;
 
-    const clamped = Math.max(PROB_FLOOR, Math.min(PROB_CEIL, gated));
-    const probability_pct = Math.round(clamped);
-    if (probability_pct < PROB_FLOOR) continue;
-
-    // v8.9: drop species already confirmed in the eBird EE overview
     const __sciLc = String(meta.scientificName || nearest.sciName || "")
       .trim().toLowerCase();
-    if (__sciLc && eePresentSet.has(__sciLc)) continue;
+    const species_lat = String(meta.scientificName || nearest.sciName || "");
+
+    // ---- v4 score ----
+    const wind = {
+      from_deg: weatherCorridorsData?.summary?.avg_wind_dir_deg ?? null,
+      speed_kmh: weatherCorridorsData?.summary?.avg_wind_speed_kmh ?? null,
+    };
+    const phen = phenByLat.get(__sciLc) ?? null;
+    const f = scoreV4({
+      tier_base,
+      count: cs,
+      distance: ds,
+      season_signal: ss,
+      today: new Date(),
+      species_lat,
+      phen,
+      wind,
+      regions: neighbor_breakdown.map((b) => b.country_code),
+      upstream: upstreamRows,
+    });
+    const probability_pct = f.pct;
+    if (probability_pct < PROB_FLOOR) continue;
+
+    // v8.9 dropped EE-present species outright; v4 keeps them and badges them.
     const __eeC = (__sciLc && eeCountMap.get(__sciLc)) || null;
+
+    // Two freshest neighbour observations with coordinates.
+    const upstream_obs: UpstreamObs[] = obsList
+      .filter((o) => typeof o.lat === "number" && typeof o.lng === "number")
+      .slice()
+      .sort((a, b) => String(b.obsDt || "").localeCompare(String(a.obsDt || "")))
+      .slice(0, 2)
+      .map((o) => ({
+        country_code: o._region as string,
+        location: o.locName ?? "",
+        date: o.obsDt || "",
+        count: Number(o.howMany) || 1,
+        distance_km: Math.round(
+          haversineKm(TURI.lat, TURI.lng, o.lat as number, o.lng as number),
+        ),
+        bearing_from_ee: Math.round(
+          initialBearingDeg(TURI.lat, TURI.lng, o.lat as number, o.lng as number),
+        ),
+      }));
 
     candidates.push({
       ebird_code: ebirdCode,
@@ -1383,6 +1523,8 @@ async function fetchCompute(
       distance_to_ee_km: Math.round(nearestKm),
       total_neighbor_obs_30d: totalCount,
       neighbor_breakdown,
+      ee_present: !!(__sciLc && eePresentSet.has(__sciLc)),
+      upstream_obs,
       probability_factors: {
         tier_base,
         count_factor: Math.round(cs * 1000) / 1000,
@@ -1390,9 +1532,16 @@ async function fetchCompute(
         season_factor: Math.round(ss * 1000) / 1000,
         corridor_factor,
         adjacency_bonus: ad_bonus,
-        raw_score: Math.round(raw * 100) / 100,
+        raw_score: Math.round(raw_v3 * 100) / 100,
         season_gate: Math.round(season_gate * 1000) / 1000,
-        formula_version: FORMULA_VERSION,
+        phenology_gate: f.phenology_gate,
+        direction_fit: f.direction_fit,
+        source_fit: f.source_fit,
+        upstream: f.upstream,
+        season: f.season,
+        phenology_source: f.phenology_source,
+        calibrated_score: f.calibrated_score,
+        formula_version: V4.FORMULA_VERSION,
       },
     });
   }
@@ -1433,8 +1582,8 @@ async function fetchCompute(
       : 9999;
     const gate =
       (c.probability_factors &&
-          typeof c.probability_factors.season_gate === "number")
-        ? c.probability_factors.season_gate
+          typeof c.probability_factors.phenology_gate === "number")
+        ? c.probability_factors.phenology_gate
         : 1;
     const corridorMatch = !!c.corridor_match;
     let band: string, label: string;
@@ -1477,24 +1626,49 @@ async function fetchCompute(
   );
   const candidateCodes = new Set(candidates.map((c) => c.ebird_code));
   const corridor_watchlist: WatchlistItem[] = [];
-  if (activeCorridorIds.size > 0) {
+  {
+    const wlWind = {
+      from_deg: weatherCorridorsData?.summary?.avg_wind_dir_deg ?? null,
+      speed_kmh: weatherCorridorsData?.summary?.avg_wind_speed_kmh ?? null,
+    };
+    const wlToday = new Date();
     for (const sp of speciesList) {
       if (!sp || !sp.ebirdCode) continue;
       if (!["rare", "super", "mega"].includes(sp.rarityLevel as string)) {
         continue;
       }
       if (sp.predictionExclude) continue;
-      if (
-        eePresentSet.has(String(sp.scientificName || "").trim().toLowerCase())
-      ) {
-        continue; // v8.9: already in EE
-      }
+      const spLc = String(sp.scientificName || "").trim().toLowerCase();
+      if (eePresentSet.has(spLc)) continue; // v8.9: already in EE
       if (candidateCodes.has(sp.ebirdCode)) continue; // already shown with a probability
+
+      // v4: phenology + wind decide the watch-list, not corridor tags.
+      const phen = phenByLat.get(spLc);
+      if (!phen) continue;
+      const season = seasonFor(wlToday, phen);
+      const g = phenologyGate(season, phen);
+      // P4 D2: primary-mode only, and a measurably favourable wind.
+      if (g.gate !== 1) continue;
+      const bearing = season === "spring"
+        ? phen.arrival_bearing_spring
+        : season === "autumn"
+        ? phen.arrival_bearing_autumn
+        : null;
+      // A null bearing scores a neutral 0.5, which would pass on phenology
+      // alone -- require a real bearing, not just a passing number.
+      if (bearing === null || bearing === undefined) continue;
+      const dfit = directionFit(wlWind, bearing);
+      if (dfit < 0.7) continue;
+      if (
+        wlWind.speed_kmh === null || wlWind.speed_kmh < V4.MIN_TRANSPORT_KMH
+      ) {
+        continue;
+      }
+
       const ec = Array.isArray(sp.expected_corridors)
         ? sp.expected_corridors
         : [];
       const matched = ec.filter((id) => activeCorridorIds.has(id));
-      if (matched.length === 0) continue;
       corridor_watchlist.push({
         ebird_code: sp.ebirdCode,
         species_et: sp.name || sp.estonianName || null,
@@ -1505,11 +1679,17 @@ async function fetchCompute(
         matched_corridor_names_et: matched.map((id) =>
           corridorNameById.get(id) || id
         ),
+        arrival_bearing: bearing ?? null,
+        phenology_mode: g.mode,
+        direction_fit: dfit,
+        phenology_gate: g.gate,
       });
     }
-    corridor_watchlist.sort((a, b) =>
-      (tierRank[b.rarity_level] || 0) - (tierRank[a.rarity_level] || 0)
-    );
+    corridor_watchlist.sort((a, b) => {
+      const t = (tierRank[b.rarity_level] || 0) - (tierRank[a.rarity_level] || 0);
+      return t !== 0 ? t : b.direction_fit - a.direction_fit;
+    });
+    corridor_watchlist.length = Math.min(corridor_watchlist.length, 5);
   }
 
   // ---- Build enriched rare_observations array (unchanged from v6) ----
@@ -1589,7 +1769,9 @@ async function fetchCompute(
       corridor_watchlist_count: corridor_watchlist.length,
       active_corridor_ids: Array.from(activeCorridorIds),
       season_signal_diag: seasonDiag,
-      formula_version: FORMULA_VERSION,
+      phenology_rows: phenologyRows.length,
+      upstream_rows: upstreamRows.length,
+      formula_version: V4.FORMULA_VERSION,
     },
     ebird_errors,
   };
@@ -1944,6 +2126,10 @@ function parseMerge(
       ee_last_date: c.ee_last_date || null,
       ee_last_location: c.ee_last_location || null,
       avatar_url: c.avatar_url,
+      // v4 additions
+      ebird_code: c.ebird_code,
+      ee_present: c.ee_present,
+      upstream_obs: c.upstream_obs ?? [],
     };
   });
 

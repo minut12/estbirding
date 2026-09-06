@@ -10406,6 +10406,7 @@ document.addEventListener('DOMContentLoaded', function(){
   var lastRow = null;
   var warnedNoKey = false;
   var warnedEmpty = false;
+  var configFetchDone = false;
   var pillBtn = null;
 
   function getSupabaseConfig(){
@@ -10719,6 +10720,7 @@ document.addEventListener('DOMContentLoaded', function(){
       }).then(function(rows){
         var row = (Array.isArray(rows) && rows[0]) ? rows[0] : null;
         if(row){
+          configFetchDone = true;
           saveCache(row);
           render(row);
         }else{
@@ -10767,6 +10769,26 @@ document.addEventListener('DOMContentLoaded', function(){
       }
     }catch(e){}
   }
+
+  // The parent posts SUPABASE_CONFIG after this IIFE has already run bootstrap() at
+  // map.whenReady, so the first fetchRaport() sees an empty anonKey and bails. Re-run it
+  // once the key lands; the 6 h interval stays the fallback if it never does.
+  window.addEventListener('message', function(ev){
+    try{
+      if(!ev.data || typeof ev.data !== 'object' || ev.data.type !== 'SUPABASE_CONFIG') return;
+      if(configFetchDone) return;
+      // Defer so the main listener (:8472) has assigned __resolvedSupabaseAnonKey first.
+      setTimeout(function(){
+        try{
+          var cfg = getSupabaseConfig();
+          if(!cfg.anonKey) return;
+          configFetchDone = true;
+          warnedNoKey = false;
+          fetchRaport();
+        }catch(e){ console.warn('[bm_pred] config-triggered fetch failed', e); }
+      }, 0);
+    }catch(e){}
+  });
 
   startWhenMapReady();
   window.__bm_predRender = render;

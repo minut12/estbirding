@@ -1,0 +1,191 @@
+scientific_name,arrival_modes,arrival_bearing_spring,arrival_bearing_autumn,spring_window,autumn_window,flight_class,source_regions_spring,source_regions_autumn,note,source
+Acanthis flammea hornemanni,"{autumn_drift,winter_irruption}",,350,,"[2000-10-15,2000-12-31]",,,"{SE,FI}",,architect_proposal
+Acrocephalus agricola,"{spring_overshoot,autumn_drift}",130,100,"[2000-05-15,2000-06-30]","[2000-07-15,2000-09-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Acrocephalus paludicola,"{spring_overshoot,post_breeding_dispersal}",190,190,"[2000-04-20,2000-06-20]","[2000-07-15,2000-09-30]",,,,S/SW overshoot + post-breeding dispersal,architect_proposal
+Actitis macularius,{autumn_drift},,300,,"[2000-08-01,2000-10-31]",,,"{SE,FI,RU-LEN}",Nearctic; W/NW via Scandinavia,architect_proposal
+Aegithalos caudatus europaeus,{winter_irruption},,230,,"[2000-10-15,2000-12-31]",,,,irruptive from SW,architect_proposal
+Aegolius funereus,"{autumn_drift,winter_irruption}",,30,,"[2000-09-15,2000-11-30]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",EE breeder; irruptive influx from NE,architect_proposal
+Aegypius monachus,{spring_overshoot},190,,"[2000-05-01,2000-07-31]",,,,,summer immatures; one window (draft split Jun/Jul is an artefact),architect_proposal
+Aix galericulata,"{spring_overshoot,winter_irruption}",240,240,"[2000-03-15,2000-05-31]","[2000-10-15,2000-12-31]",,,,feral; low prior,architect_proposal
+Aix sponsa,"{spring_overshoot,winter_irruption}",240,240,"[2000-03-15,2000-05-31]","[2000-10-15,2000-12-31]",,,,feral/escape; low prior,architect_proposal
+Alle alle,"{autumn_drift,winter_irruption}",,340,,"[2000-10-15,2000-12-31]",,,"{SE,FI}",,architect_proposal
+Alopochen aegyptiaca,"{spring_overshoot,post_breeding_dispersal}",230,230,"[2000-03-15,2000-06-30]","[2000-07-15,2000-10-15]",,"{LV,LT,PL,SE}",,feral NW-European expansion from SW,architect_proposal
+Anarhynchus alexandrinus,{spring_overshoot},200,,"[2000-05-01,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Anas carolinensis,"{spring_overshoot,winter_irruption}",260,300,"[2000-03-15,2000-05-31]","[2000-10-15,2000-12-31]",,,"{SE,FI,RU-LEN}",Nearctic duck; spring with dabbling-duck passage from W,architect_proposal
+Anas rubripes,"{autumn_drift,winter_irruption}",,300,,"[2000-10-15,2000-12-31]",,,"{SE,FI,RU-LEN}",,architect_proposal
+Anser albifrons flavirostris,"{spring_overshoot,autumn_drift}",240,300,"[2000-03-15,2000-04-30]","[2000-10-01,2000-11-15]",,,,Greenland whitefront with goose flocks from SW/NW,architect_proposal
+Anser brachyrhynchus,"{spring_overshoot,autumn_drift}",230,320,"[2000-03-15,2000-05-10]","[2000-09-20,2000-11-15]",,,,"spring from Danish/Dutch wintering, autumn from Svalbard via Norway",architect_proposal
+Anser caerulescens,"{spring_overshoot,autumn_drift}",240,300,"[2000-03-15,2000-05-15]","[2000-09-15,2000-11-15]",,,,feral/escape risk; treat with goose flocks,architect_proposal
+Anser erythropus,"{spring_overshoot,autumn_drift}",170,40,"[2000-04-10,2000-05-15]","[2000-09-15,2000-10-31]",,,,Fennoscandian/Russian; spring via Hungary route from S,architect_proposal
+Anser indicus,{spring_overshoot},240,,"[2000-04-15,2000-06-30]",,,,,feral; low prior,architect_proposal
+Anser rossii,"{spring_overshoot,autumn_drift}",240,300,"[2000-03-15,2000-05-15]","[2000-09-15,2000-11-15]",,,,feral risk,architect_proposal
+Anthus campestris,{spring_overshoot},190,,"[2000-05-01,2000-06-15]",,,"{LV,LT,PL,BY,RU-KGD}",,rare EE breeder; from S,architect_proposal
+Anthus cervinus,"{spring_overshoot,autumn_drift}",150,30,"[2000-05-01,2000-06-05]","[2000-08-25,2000-10-10]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",regular migrant,architect_proposal
+Anthus hodgsoni,{autumn_drift},,70,,"[2000-09-10,2000-11-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",Siberian reverse/drift migrant,architect_proposal
+Anthus petrosus,"{spring_overshoot,autumn_drift}",290,330,"[2000-03-15,2000-04-30]","[2000-09-15,2000-11-15]",,,"{SE,FI}",Norwegian breeders; coastal,architect_proposal
+Anthus richardi,{autumn_drift},,70,,"[2000-09-10,2000-11-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",Siberian reverse/drift migrant,architect_proposal
+Anthus spinoletta,{spring_overshoot},210,,"[2000-04-20,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Antigone canadensis,"{spring_overshoot,autumn_drift}",60,60,"[2000-04-01,2000-05-31]","[2000-09-01,2000-10-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",European records are Siberian-route birds with Grus grus; from E,architect_proposal
+Apus pallidus,"{spring_overshoot,post_breeding_dispersal}",210,210,"[2000-04-20,2000-06-20]","[2000-07-15,2000-09-30]",,,,S/SW overshoot + post-breeding dispersal,architect_proposal
+Aquila fasciata,{spring_overshoot},200,,"[2000-04-20,2000-06-30]",,,,,S/SW overshoot,architect_proposal
+Aquila heliaca,{spring_overshoot},190,,"[2000-04-15,2000-07-15]",,,,,,architect_proposal
+Ardea ibis,"{spring_overshoot,post_breeding_dispersal}",220,220,"[2000-04-15,2000-06-30]","[2000-07-15,2000-09-30]",,,,S/SW overshoot + post-breeding dispersal,architect_proposal
+Ardea purpurea,"{spring_overshoot,post_breeding_dispersal}",190,190,"[2000-04-15,2000-06-30]","[2000-07-15,2000-09-30]",,,,S/SW overshoot + post-breeding dispersal,architect_proposal
+Ardeola ralloides,{spring_overshoot},180,,"[2000-04-15,2000-06-30]",,,,,S/SW overshoot,architect_proposal
+Aythya collaris,"{spring_overshoot,winter_irruption}",260,300,"[2000-03-15,2000-05-31]","[2000-10-15,2000-12-31]",,,"{SE,FI,RU-LEN}",Nearctic duck; spring with dabbling-duck passage from W,architect_proposal
+Aythya nyroca,"{spring_overshoot,post_breeding_dispersal}",190,190,"[2000-04-15,2000-05-31]","[2000-08-15,2000-10-15]",,,,,architect_proposal
+Botaurus minutus,{spring_overshoot},190,,"[2000-04-15,2000-06-30]",,,,,S/SW overshoot,architect_proposal
+Branta bernicla nigricans,{autumn_drift},,30,,"[2000-09-15,2000-11-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",with Siberian brent flocks,architect_proposal
+Branta ruficollis,"{spring_overshoot,autumn_drift}",160,60,"[2000-04-01,2000-05-15]","[2000-09-20,2000-11-10]",,,,with whitefront flocks,architect_proposal
+Bubo bubo,{},,,,,,,,resident EE breeder — no arrival vector; exclude from scoring,architect_proposal
+Bucephala islandica,"{spring_overshoot,winter_irruption}",320,330,"[2000-03-01,2000-04-30]","[2000-10-15,2000-12-31]",,,"{SE,FI}",Icelandic; very low prior,architect_proposal
+Burhinus oedicnemus,{spring_overshoot},200,,"[2000-05-01,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Buteo rufinus,"{spring_overshoot,autumn_drift}",130,110,"[2000-04-10,2000-06-15]","[2000-07-15,2000-10-15]",,,,,architect_proposal
+Calandrella brachydactyla,"{spring_overshoot,autumn_drift}",130,100,"[2000-04-20,2000-06-20]","[2000-08-01,2000-10-15]",,"{LV,LT,BY,RU-KGD,PL}","{FI,RU-LEN,RU-KR,RU-PSK}",steppe/Caspian,architect_proposal
+Calcarius lapponicus,"{spring_overshoot,autumn_drift}",20,20,"[2000-04-01,2000-05-10]","[2000-09-01,2000-10-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Calidris acuminata,{autumn_drift},,60,,"[2000-07-10,2000-09-30]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Calidris himantopus,{autumn_drift},,300,,"[2000-08-01,2000-10-31]",,,"{SE,FI,RU-LEN}",Nearctic; W/NW via Scandinavia,architect_proposal
+Calidris melanotos,"{spring_overshoot,autumn_drift}",60,60,"[2000-05-20,2000-06-30]","[2000-07-10,2000-10-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",Siberian + Nearctic; from E/NE,architect_proposal
+Calidris pusilla,{autumn_drift},,300,,"[2000-08-01,2000-10-31]",,,"{SE,FI,RU-LEN}",Nearctic; W/NW via Scandinavia,architect_proposal
+Calidris subruficollis,{autumn_drift},,300,,"[2000-08-01,2000-10-31]",,,"{SE,FI,RU-LEN}",Nearctic; W/NW via Scandinavia,architect_proposal
+Calidris temminckii,"{spring_overshoot,autumn_drift}",180,30,"[2000-05-05,2000-06-05]","[2000-07-10,2000-09-05]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Calliope calliope,{autumn_drift},,70,,"[2000-09-10,2000-11-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",Siberian reverse/drift migrant,architect_proposal
+Calonectris diomedea,{autumn_drift},,290,,"[2000-08-15,2000-11-15]",,,"{SE,FI}",Atlantic; storm-driven via Danish straits,architect_proposal
+Caracara plancus,{},,,,,,,,captive_or_ship_assisted_origin; no natural arrival vector — exclude from scoring,architect_proposal
+Cecropis rufula,{spring_overshoot},190,,"[2000-04-20,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Cepphus grylle,{autumn_drift},,340,,"[2000-09-15,2000-11-30]",,,"{SE,FI}",Baltic resident; post-breeding dispersal from N,architect_proposal
+Certhia brachydactyla,{spring_overshoot},230,,"[2000-04-20,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Cettia cetti,"{spring_overshoot,post_breeding_dispersal}",220,220,"[2000-04-20,2000-06-20]","[2000-07-15,2000-09-30]",,,,S/SW overshoot + post-breeding dispersal,architect_proposal
+Chlidonias hybrida,{spring_overshoot},170,,"[2000-05-01,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Chlidonias leucopterus,{spring_overshoot},140,,"[2000-05-05,2000-06-20]",,,,,regular; from SE,architect_proposal
+Ciconia nigra,"{spring_overshoot,post_breeding_dispersal}",190,190,"[2000-04-15,2000-06-30]","[2000-07-15,2000-09-30]",,,,S/SW overshoot + post-breeding dispersal,architect_proposal
+Circaetus gallicus,{spring_overshoot},190,,"[2000-04-20,2000-07-15]",,,,,spring/summer only,architect_proposal
+Circus macrourus,"{spring_overshoot,autumn_drift}",120,100,"[2000-04-05,2000-05-31]","[2000-08-15,2000-10-15]",,"{LV,LT,BY,RU-KGD,PL}","{FI,RU-LEN,RU-KR,RU-PSK}",near-annual; corridor caspian,architect_proposal
+Clanga clanga,"{spring_overshoot,autumn_drift}",170,90,"[2000-04-01,2000-05-20]","[2000-08-15,2000-10-20]",,,,EE breeder (few pairs); autumn drift from E,architect_proposal
+Coracias garrulus,"{spring_overshoot,post_breeding_dispersal}",170,170,"[2000-04-20,2000-06-20]","[2000-07-15,2000-09-30]",,,,S/SW overshoot + post-breeding dispersal,architect_proposal
+Corvus corone,"{spring_overshoot,autumn_drift}",240,240,"[2000-03-15,2000-05-15]","[2000-09-15,2000-11-15]",,"{LV,LT,PL,SE}",,from W (DK/DE/S Sweden),architect_proposal
+Coturnix coturnix,{spring_overshoot},190,,"[2000-05-05,2000-07-15]",,,,,regular migrant; rare tier = EE status,architect_proposal
+Curruca cantillans,{spring_overshoot},200,,"[2000-04-20,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Curruca nana,{autumn_drift},,70,,"[2000-09-10,2000-11-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",Siberian reverse/drift migrant,architect_proposal
+Cyanistes cyanus,"{autumn_drift,winter_irruption}",,90,,"[2000-10-01,2000-12-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Egretta garzetta,"{spring_overshoot,post_breeding_dispersal}",210,210,"[2000-04-15,2000-06-30]","[2000-07-15,2000-09-30]",,,,S/SW overshoot + post-breeding dispersal,architect_proposal
+Elanus caeruleus,{spring_overshoot},220,,"[2000-04-20,2000-06-30]",,,,,S/SW overshoot,architect_proposal
+Emberiza aureola,{spring_overshoot},120,,"[2000-05-25,2000-06-30]",,,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Emberiza bruniceps,{spring_overshoot},120,,"[2000-05-20,2000-06-30]",,,,,escape risk,architect_proposal
+Emberiza calandra,{spring_overshoot},220,,"[2000-04-20,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Emberiza leucocephalos,"{autumn_drift,winter_irruption}",,70,,"[2000-10-01,2000-12-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Emberiza melanocephala,{spring_overshoot},160,,"[2000-05-15,2000-06-30]",,,"{LV,LT,PL,BY,RU-KGD}",,,architect_proposal
+Emberiza pusilla,"{spring_overshoot,autumn_drift}",130,50,"[2000-05-01,2000-06-10]","[2000-09-10,2000-11-10]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Emberiza rustica,"{spring_overshoot,autumn_drift}",140,40,"[2000-04-20,2000-06-10]","[2000-09-01,2000-10-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Eremophila alpestris,"{spring_overshoot,autumn_drift}",20,20,"[2000-03-01,2000-04-30]","[2000-09-15,2000-11-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Eudromias morinellus,"{spring_overshoot,autumn_drift}",200,30,"[2000-05-05,2000-06-05]","[2000-08-10,2000-09-30]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Falco cherrug,"{spring_overshoot,autumn_drift}",130,110,"[2000-04-15,2000-06-15]","[2000-08-01,2000-10-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}","Falconidae: powered flight, cruise 45 would fit better than 35",architect_proposal
+Falco naumanni,"{spring_overshoot,autumn_drift}",130,100,"[2000-04-20,2000-06-20]","[2000-08-01,2000-10-15]",,"{LV,LT,BY,RU-KGD,PL}","{FI,RU-LEN,RU-KR,RU-PSK}","steppe/Caspian; Falconidae: powered flight, cruise 45 would fit better than 35",architect_proposal
+Falco rusticolus,"{autumn_drift,winter_irruption}",,20,,"[2000-10-01,2000-12-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}","Falconidae: powered flight, cruise 45 would fit better than 35",architect_proposal
+Falco sparverius,{},,,,,,,,captive_or_ship_assisted_origin; no natural arrival vector — exclude from scoring,architect_proposal
+Falco vespertinus,"{spring_overshoot,autumn_drift}",140,110,"[2000-05-01,2000-06-15]","[2000-08-01,2000-09-30]",,,,"autumn juvenile drift from E — currently open; Falconidae: powered flight, cruise 45 would fit better than 35",architect_proposal
+Ficedula albicollis,{spring_overshoot},190,,"[2000-05-01,2000-06-15]",,,,,,architect_proposal
+Galerida cristata,"{autumn_drift,winter_irruption}",,200,,"[2000-09-15,2000-12-31]",,,,flat resident; EE records Oct — treat as autumn/winter dispersal from S,architect_proposal
+Gavia adamsii,"{spring_overshoot,autumn_drift}",30,20,"[2000-04-01,2000-05-31]","[2000-09-15,2000-11-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",regular; from White Sea route,architect_proposal
+Gavia immer,"{autumn_drift,winter_irruption}",320,320,"[2000-04-15,2000-05-31]","[2000-10-01,2000-12-31]",,,"{SE,FI}",,architect_proposal
+Gavia stellata,"{spring_overshoot,autumn_drift}",200,20,"[2000-04-01,2000-05-31]","[2000-09-15,2000-11-15]",,,,regular migrant; rare tier is EE-breeding status only,architect_proposal
+Gelochelidon nilotica,{spring_overshoot},200,,"[2000-05-01,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Glareola pratincola,"{spring_overshoot,autumn_drift}",130,100,"[2000-04-20,2000-06-20]","[2000-08-01,2000-10-15]",,"{LV,LT,BY,RU-KGD,PL}","{FI,RU-LEN,RU-KR,RU-PSK}",steppe/Caspian,architect_proposal
+Grus virgo,{spring_overshoot},140,,"[2000-04-15,2000-06-15]",,waterbird,,,,architect_proposal
+Gyps fulvus,{spring_overshoot},200,,"[2000-05-01,2000-07-31]",,,,,summer immatures May–Jul; one window,architect_proposal
+Gyps himalayensis,{},,,,,,,,captive_or_ship_assisted_origin; no natural arrival vector — exclude from scoring,architect_proposal
+Haliaeetus pelagicus,{},,,,,,,,captive_or_ship_assisted_origin; no natural arrival vector — exclude from scoring,architect_proposal
+Hieraaetus pennatus,"{spring_overshoot,post_breeding_dispersal}",170,170,"[2000-04-20,2000-06-30]","[2000-07-15,2000-09-30]",,,,,architect_proposal
+Himantopus himantopus,{spring_overshoot},190,,"[2000-05-01,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Hydrobates leucorhous,{autumn_drift},,290,,"[2000-08-15,2000-11-15]",,,"{SE,FI}",Atlantic; storm-driven via Danish straits,architect_proposal
+Ichthyaetus ichthyaetus,"{spring_overshoot,autumn_drift}",120,100,"[2000-04-01,2000-05-31]","[2000-08-01,2000-10-31]",,,,,architect_proposal
+Ichthyaetus melanocephalus,"{spring_overshoot,post_breeding_dispersal}",190,190,"[2000-05-01,2000-06-20]","[2000-07-15,2000-09-30]",,,,S/SW overshoot + post-breeding dispersal,architect_proposal
+Iduna caligata,"{spring_overshoot,autumn_drift}",110,90,"[2000-05-15,2000-06-30]","[2000-08-01,2000-09-20]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",near-annual; corridor caspian,architect_proposal
+Lagopus lagopus,{},,,,,,,,resident EE breeder — no arrival vector; exclude from scoring,architect_proposal
+Lanius excubitor pallidirostris,"{spring_overshoot,autumn_drift}",130,100,"[2000-04-20,2000-06-20]","[2000-08-01,2000-10-15]",,"{LV,LT,BY,RU-KGD,PL}","{FI,RU-LEN,RU-KR,RU-PSK}",steppe/Caspian,architect_proposal
+Lanius isabellinus,{autumn_drift},,70,,"[2000-09-10,2000-11-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",Siberian reverse/drift migrant,architect_proposal
+Lanius minor,"{spring_overshoot,autumn_drift}",160,150,"[2000-05-10,2000-06-30]","[2000-07-15,2000-08-31]",,"{LV,LT,PL,BY,RU-KGD}",,,architect_proposal
+Lanius phoenicuroides,"{spring_overshoot,autumn_drift}",120,90,"[2000-05-10,2000-06-20]","[2000-09-10,2000-10-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Lanius senator,{spring_overshoot},200,,"[2000-04-20,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Larus cachinnans,"{spring_overshoot,post_breeding_dispersal}",140,140,"[2000-03-15,2000-05-15]","[2000-07-15,2000-11-15]",,,,regular; from SE (Ukraine/Belarus),architect_proposal
+Larus glaucoides,{winter_irruption},,330,,"[2000-10-15,2000-12-31]",,,"{SE,FI}",,architect_proposal
+Larus hyperboreus,"{autumn_drift,winter_irruption}",350,350,,"[2000-10-15,2000-12-31]",,,"{SE,FI}",,architect_proposal
+Larus michahellis,"{spring_overshoot,post_breeding_dispersal}",210,210,"[2000-03-15,2000-05-31]","[2000-07-15,2000-10-31]",,,,,architect_proposal
+Larus schistisagus,{winter_irruption},,80,,"[2000-10-15,2000-12-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Limnodromus scolopaceus,"{spring_overshoot,autumn_drift}",60,60,"[2000-05-10,2000-06-10]","[2000-08-01,2000-10-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Linaria flavirostris,"{autumn_drift,winter_irruption}",330,330,"[2000-03-15,2000-04-30]","[2000-10-01,2000-11-30]",,,"{SE,FI}",,architect_proposal
+Loxia leucoptera,"{autumn_drift,winter_irruption}",,60,,"[2000-07-15,2000-10-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",2026 irruption in progress,architect_proposal
+Loxia pytyopsittacus,"{autumn_drift,winter_irruption}",,20,,"[2000-08-01,2000-11-30]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",EE breeder; irruptive,architect_proposal
+Mareca americana,"{spring_overshoot,winter_irruption}",260,300,"[2000-03-15,2000-05-31]","[2000-10-15,2000-12-31]",,,"{SE,FI,RU-LEN}",Nearctic duck; spring with dabbling-duck passage from W,architect_proposal
+Melanitta americana,"{spring_overshoot,autumn_drift}",330,20,"[2000-04-01,2000-06-15]","[2000-07-01,2000-09-30]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",Siberian; summer moult flocks,architect_proposal
+Melanitta perspicillata,"{spring_overshoot,autumn_drift}",300,330,"[2000-04-01,2000-06-15]","[2000-10-01,2000-11-30]",,,"{SE,FI}",Nearctic; with scoter flocks,architect_proposal
+Melanitta stejnegeri,"{spring_overshoot,autumn_drift}",330,20,"[2000-03-15,2000-05-31]","[2000-08-01,2000-11-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Melanocorypha calandra,"{spring_overshoot,autumn_drift}",130,100,"[2000-04-20,2000-06-20]","[2000-08-01,2000-10-15]",,"{LV,LT,BY,RU-KGD,PL}","{FI,RU-LEN,RU-KR,RU-PSK}",steppe/Caspian,architect_proposal
+Merops apiaster,{spring_overshoot},190,,"[2000-04-20,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Microcarbo pygmaeus,{spring_overshoot},170,,"[2000-04-15,2000-06-30]",,,,,S/SW overshoot,architect_proposal
+Milvus migrans aegyptius,{spring_overshoot},170,,"[2000-04-20,2000-06-30]",,,,,"Levant/Egypt overshoot, no regional data; low prior",architect_proposal
+Monticola saxatilis,{spring_overshoot},190,,"[2000-04-20,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Morus bassanus,"{spring_overshoot,autumn_drift}",300,300,"[2000-04-01,2000-05-31]","[2000-09-01,2000-11-30]",,,"{SE,FI}",,architect_proposal
+Motacilla flava feldegg,{spring_overshoot},160,,"[2000-04-20,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Netta rufina,{spring_overshoot},200,,"[2000-04-01,2000-05-31]",,,,,,architect_proposal
+Nycticorax nycticorax,{spring_overshoot},190,,"[2000-04-15,2000-06-30]",,,,,S/SW overshoot,architect_proposal
+Oenanthe deserti,{autumn_drift},,110,,"[2000-09-25,2000-11-20]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",reference case 2025-09-12 (FI a week earlier),architect_proposal
+Oenanthe isabellina,"{spring_overshoot,autumn_drift}",130,100,"[2000-04-15,2000-05-31]","[2000-09-15,2000-11-10]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Oenanthe pleschanka,"{spring_overshoot,autumn_drift}",130,100,"[2000-04-20,2000-06-05]","[2000-09-15,2000-11-10]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Otus scops,{spring_overshoot},190,,"[2000-04-20,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Pastor roseus,"{spring_overshoot,autumn_drift}",120,100,"[2000-05-20,2000-06-30]","[2000-08-15,2000-10-15]",,,,irruptive; corridor caspian,architect_proposal
+Pelecanus crispus,{spring_overshoot},160,,"[2000-04-15,2000-06-30]",,,,,S/SW overshoot,architect_proposal
+Pelecanus onocrotalus,{spring_overshoot},160,,"[2000-04-15,2000-06-30]",,,,,S/SW overshoot,architect_proposal
+Perisoreus infaustus,"{autumn_drift,winter_irruption}",,40,,"[2000-09-15,2000-11-30]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Phalaropus fulicaria,{autumn_drift},,340,,"[2000-09-20,2000-11-30]",,,"{SE,FI}",,architect_proposal
+Phalaropus lobatus,"{spring_overshoot,autumn_drift}",170,30,"[2000-05-10,2000-06-20]","[2000-07-15,2000-09-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Phalaropus tricolor,{autumn_drift},,300,,"[2000-08-01,2000-10-31]",,,"{SE,FI,RU-LEN}",Nearctic; W/NW via Scandinavia,architect_proposal
+Phoenicopterus roseus,{spring_overshoot},190,,"[2000-04-15,2000-06-30]",,heron_stork,,,family Phoenicopteridae unmapped → heron_stork; escape risk,architect_proposal
+Phylloscopus borealis,{spring_overshoot},120,,"[2000-06-01,2000-06-30]",,,,,breeds N FI/RU; June arrival from SE route,architect_proposal
+Phylloscopus fuscatus,{autumn_drift},,70,,"[2000-09-10,2000-11-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",Siberian reverse/drift migrant,architect_proposal
+Phylloscopus inornatus,{autumn_drift},,70,,"[2000-09-10,2000-11-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",Siberian reverse/drift migrant,architect_proposal
+Phylloscopus proregulus,{autumn_drift},,70,,"[2000-09-10,2000-11-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",Siberian reverse/drift migrant,architect_proposal
+Phylloscopus schwarzi,{autumn_drift},,70,,"[2000-09-10,2000-11-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",Siberian reverse/drift migrant,architect_proposal
+Picus viridis,"{spring_overshoot,post_breeding_dispersal}",190,190,"[2000-03-01,2000-05-31]","[2000-08-01,2000-10-31]",,,,LV resident; dispersal,architect_proposal
+Pinicola enucleator,"{autumn_drift,winter_irruption}",,30,,"[2000-10-15,2000-12-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Platalea leucorodia,"{spring_overshoot,post_breeding_dispersal}",220,220,"[2000-04-15,2000-06-30]","[2000-07-15,2000-09-30]",,,,S/SW overshoot + post-breeding dispersal,architect_proposal
+Plegadis falcinellus,"{spring_overshoot,post_breeding_dispersal}",190,190,"[2000-04-15,2000-06-30]","[2000-07-15,2000-09-30]",,,,S/SW overshoot + post-breeding dispersal,architect_proposal
+Pluvialis fulva,"{spring_overshoot,autumn_drift}",130,60,"[2000-05-20,2000-06-30]","[2000-07-15,2000-09-30]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Podiceps nigricollis,{spring_overshoot},200,,"[2000-04-10,2000-06-15]",,,,,,architect_proposal
+Poecile cinctus,{winter_irruption},,30,,"[2000-10-01,2000-12-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Polysticta stelleri,"{autumn_drift,winter_irruption}",,40,,"[2000-10-15,2000-12-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",regular winterer; arrival from NE,architect_proposal
+Porzana porzana,{spring_overshoot},190,,"[2000-05-01,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Prunella atrogularis,{autumn_drift},,70,,"[2000-09-10,2000-11-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",Siberian reverse/drift migrant,architect_proposal
+Prunella collaris,{spring_overshoot},200,,"[2000-04-20,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Prunella montanella,{autumn_drift},,70,,"[2000-09-10,2000-11-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",Siberian reverse/drift migrant,architect_proposal
+Puffinus mauretanicus,{autumn_drift},,290,,"[2000-08-15,2000-11-15]",,,"{SE,FI}",Atlantic; storm-driven via Danish straits,architect_proposal
+Puffinus puffinus,{autumn_drift},,290,,"[2000-08-15,2000-11-15]",,,"{SE,FI}",Atlantic; storm-driven via Danish straits,architect_proposal
+Puffinus yelkouan,{autumn_drift},,290,,"[2000-08-15,2000-11-15]",,,"{SE,FI}",Atlantic; storm-driven via Danish straits,architect_proposal
+Rissa tridactyla,{autumn_drift},,320,,"[2000-10-01,2000-11-30]",,,"{SE,FI}",storm-driven from N Atlantic/Norwegian Sea,architect_proposal
+Saxicola maurus,"{spring_overshoot,autumn_drift}",110,80,"[2000-04-10,2000-06-05]","[2000-09-10,2000-10-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Saxicola rubicola,{spring_overshoot},220,,"[2000-04-20,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Somateria spectabilis,"{spring_overshoot,winter_irruption}",340,340,"[2000-03-20,2000-05-15]","[2000-10-15,2000-12-31]",,,"{SE,FI}",with eider passage from N Norway/White Sea,architect_proposal
+Spatula cyanoptera,"{spring_overshoot,winter_irruption}",260,300,"[2000-03-15,2000-05-31]","[2000-10-15,2000-12-31]",,,"{SE,FI,RU-LEN}",Nearctic duck; spring with dabbling-duck passage from W,architect_proposal
+Spatula discors,"{spring_overshoot,winter_irruption}",260,300,"[2000-03-15,2000-05-31]","[2000-10-15,2000-12-31]",,,"{SE,FI,RU-LEN}",Nearctic duck; spring with dabbling-duck passage from W,architect_proposal
+Stercorarius longicaudus,"{spring_overshoot,autumn_drift}",200,20,"[2000-05-10,2000-06-10]","[2000-08-01,2000-09-30]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Stercorarius parasiticus,"{spring_overshoot,autumn_drift}",220,20,"[2000-04-20,2000-06-10]","[2000-08-01,2000-10-15]",,,,regular migrant,architect_proposal
+Stercorarius pomarinus,"{spring_overshoot,autumn_drift}",200,20,"[2000-05-01,2000-06-10]","[2000-08-15,2000-10-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",autumn from Arctic Russia over Finland,architect_proposal
+Stercorarius skua,"{spring_overshoot,autumn_drift}",300,300,"[2000-04-01,2000-05-31]","[2000-09-01,2000-11-15]",,,"{SE,FI}",,architect_proposal
+Sterna dougallii,{spring_overshoot},230,,"[2000-05-10,2000-07-15]",,,,,Atlantic breeder; W/SW,architect_proposal
+Streptopelia turtur,"{spring_overshoot,autumn_drift}",190,190,"[2000-05-01,2000-06-30]","[2000-08-01,2000-09-30]",,,,,architect_proposal
+Strix nebulosa,{winter_irruption},,40,,"[2000-10-15,2000-12-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",irruption years only,architect_proposal
+Surnia ulula,"{autumn_drift,winter_irruption}",,30,,"[2000-10-01,2000-12-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Tadorna ferruginea,"{spring_overshoot,autumn_drift}",130,100,"[2000-04-20,2000-06-20]","[2000-08-01,2000-10-15]",,"{LV,LT,BY,RU-KGD,PL}","{FI,RU-LEN,RU-KR,RU-PSK}",steppe/Caspian,architect_proposal
+Tarsiger cyanurus,"{spring_overshoot,autumn_drift}",130,60,"[2000-05-10,2000-06-20]","[2000-09-05,2000-10-20]",,,"{FI,RU-LEN,RU-KR,RU-PSK}","breeds FI; spring overshoot from SE, autumn drift",architect_proposal
+Tetrax tetrax,"{spring_overshoot,winter_irruption}",120,120,"[2000-04-15,2000-06-15]","[2000-10-15,2000-12-31]",wader,,,bustard: direct daytime flight; wader class is the closest speed proxy,architect_proposal
+Tringa stagnatilis,"{spring_overshoot,autumn_drift}",150,90,"[2000-04-20,2000-06-10]","[2000-07-01,2000-09-15]",,,,regular,architect_proposal
+Turdus atrogularis,"{autumn_drift,winter_irruption}",,70,,"[2000-10-01,2000-12-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Turdus naumanni,"{autumn_drift,winter_irruption}",,70,,"[2000-10-01,2000-12-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",,architect_proposal
+Turdus torquatus,"{spring_overshoot,autumn_drift}",230,330,"[2000-04-05,2000-05-15]","[2000-09-15,2000-10-31]",,,,"Fennoscandian breeders; spring from SW, autumn from NW",architect_proposal
+Tyto alba,"{autumn_drift,winter_irruption}",,220,,"[2000-10-01,2000-12-31]",,,,"SW dispersal, mainly autumn/winter",architect_proposal
+Vanellus gregarius,"{spring_overshoot,autumn_drift}",130,100,"[2000-04-20,2000-06-20]","[2000-08-01,2000-10-15]",,"{LV,LT,BY,RU-KGD,PL}","{FI,RU-LEN,RU-KR,RU-PSK}",steppe/Caspian,architect_proposal
+Vanellus leucurus,"{spring_overshoot,autumn_drift}",130,100,"[2000-04-20,2000-06-20]","[2000-08-01,2000-10-15]",,"{LV,LT,BY,RU-KGD,PL}","{FI,RU-LEN,RU-KR,RU-PSK}",steppe/Caspian,architect_proposal
+Xema sabini,{autumn_drift},,320,,"[2000-09-01,2000-10-31]",,,"{SE,FI}",,architect_proposal
+Xenus cinereus,"{spring_overshoot,autumn_drift}",130,90,"[2000-05-05,2000-06-10]","[2000-07-01,2000-08-31]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",breeds NE Europe; regular,architect_proposal
+Zapornia parva,{spring_overshoot},180,,"[2000-05-01,2000-06-20]",,,,,S/SW overshoot,architect_proposal
+Zoothera aurea,{autumn_drift},,70,,"[2000-09-10,2000-11-15]",,,"{FI,RU-LEN,RU-KR,RU-PSK}",Siberian reverse/drift migrant,architect_proposal

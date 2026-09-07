@@ -699,6 +699,14 @@ interface ProbabilityFactors {
   phenology_source: string;
   calibrated_score: number;
   formula_version: string;
+  // v14 / P4.1 -- additive only, written in the band loop after the score.
+  // timing_cap and source_direction are the multipliers actually applied;
+  // source_bearing_delta and arrival_bearing are the raw inputs, kept so the
+  // taper stays tunable from the calibration CSV.
+  timing_cap?: number;
+  source_direction?: number | null;
+  source_bearing_delta?: number | null;
+  arrival_bearing?: number | null;
 }
 
 interface UpstreamObs {
@@ -1087,6 +1095,17 @@ const CORRIDOR_WEIGHT = 7;
 const PROB_FLOOR = 5;
 const PROB_CEIL = 95;
 const TOP_N = 30;
+// ---- P4.1 selection sanity ----
+// A closed window still scored: a `passed` row carried 15%. The band was
+// computed after the probability and never fed back into it.
+const TIMING_CAP = 0.25;
+// Source direction vs the species' own arrival_bearing. A multiplier, not a
+// filter: a species whose expected arrival direction really is westerly
+// survives it, and the taper can be retuned or backed out from the
+// calibration CSV.
+const SOURCE_DIR_OK_DEG = 60; // <= this: no penalty
+const SOURCE_DIR_BAD_DEG = 120; // >= this: full penalty
+const SOURCE_DIR_FLOOR = 0.3;
 // FORMULA_VERSION now comes from V4.FORMULA_VERSION (./score.ts).
 // v8.3 season gate: the additive SEASON_WEIGHT term alone left a ~50-60% floor
 // even at season=0, so out-of-window species scored high. This multiplicative
@@ -1557,19 +1576,19 @@ async function fetchCompute(
     });
   }
 
-  // ---- Sort + slice ----
-  candidates.sort((a, b) => {
-    if (b.probability_pct !== a.probability_pct) {
-      return b.probability_pct - a.probability_pct;
-    }
-    return (tierRank[b.rarity_level] || 0) - (tierRank[a.rarity_level] || 0);
-  });
-  const top = candidates.slice(0, TOP_N);
-
   // ---- v8.8: arrival-timing band (deterministic, per candidate) ----
   // Honest, qualitative timing window from nearest-sighting freshness + distance
   // (+ active corridor), gated by season. NOT a precise date -- a band the card
   // shows.
+  //
+  // v14 / P4.1: this block moved ABOVE the sort+slice and now iterates
+  // `candidates`, not `top`. The band feeds the timing cap below, and a cap on
+  // probability_pct has to land before every read of it -- ranking (the sort)
+  // and selection (slice TOP_N) included. Capping after the slice left the
+  // report ordered by uncapped values and let a capped 3% row hold a TOP_N slot
+  // against an uncapped 14% one. The loop only ever read per-candidate fields
+  // plus its own two locals, so widening it from `top` to `candidates` changes
+  // nothing but the row count.
   const __nowMs = Date.now();
   const __parseObsMs = (d: string | undefined): number => {
     if (!d || typeof d !== "string") return NaN;
@@ -1577,7 +1596,7 @@ async function fetchCompute(
     if (isNaN(t)) t = Date.parse(d);
     return t;
   };
-  for (const c of top) {
+  for (const c of candidates) {
     let freshestMs = __parseObsMs(c.nearest_obs && c.nearest_obs.date);
     if (Array.isArray(c.neighbor_breakdown)) {
       for (const nb of c.neighbor_breakdown) {
@@ -1620,7 +1639,85 @@ async function fetchCompute(
     c.timing_band = band;
     c.arrival_window_et = label;
     c.freshest_obs_days = isNaN(freshestMs) ? null : Math.round(freshDays);
+
+    // ---- P4.1a: timing cap ----
+    // A closed window must not carry a live probability. Runs after the band is
+    // decided and before anything reads probability_pct.
+    const timing_cap = (band === "passed" || band === "out_of_window")
+      ? TIMING_CAP
+      : 1;
+
+    // ---- P4.1b: source-direction gate ----
+    // An autumn arrival into Estonia does not come from SW Sweden -- but "from
+    // Sweden" is not itself the error. Key on the species' OWN arrival_bearing,
+    // so a genuinely westerly arrival direction passes. Inline on purpose: the
+    // same season->column pick exists at the watch-list and in sitesFor, and
+    // de-duplicating all three is a separate cleanup.
+    //
+    // bearing_from_ee is already the Türi->observation bearing (rule 17), i.e.
+    // "the direction from Estonia to where the bird is" -- the same frame as
+    // arrival_bearing. Not recomputed, and not a bearing from a predicted site.
+    const __phen = phenByLat.get(
+      String(c.name_lat || "").trim().toLowerCase(),
+    ) ?? null;
+    const __season = c.probability_factors.season;
+    const arrival_bearing = __season === "spring"
+      ? __phen?.arrival_bearing_spring ?? null
+      : __season === "autumn"
+      ? __phen?.arrival_bearing_autumn ?? null
+      : null;
+    const __up0 = Array.isArray(c.upstream_obs) ? c.upstream_obs[0] : undefined;
+    const __upBearing = (__up0 && typeof __up0.bearing_from_ee === "number")
+      ? __up0.bearing_from_ee
+      : null;
+
+    // Never penalise a species for missing data: no upstream obs or no bearing
+    // on the phenology row leaves the multiplier at 1 and both keys null, which
+    // is distinguishable in the CSV from an evaluated 1.0.
+    let source_direction: number | null = null;
+    let source_bearing_delta: number | null = null;
+    if (arrival_bearing !== null && __upBearing !== null) {
+      // Smallest angular difference, 360-wrapped -- never a raw subtraction.
+      const __raw = Math.abs(__upBearing - arrival_bearing) % 360;
+      const __delta = __raw > 180 ? 360 - __raw : __raw;
+      source_bearing_delta = Math.round(__delta);
+      // <=60 deg: 1.0. 60..120: linear taper. >=120: SOURCE_DIR_FLOOR.
+      const __mult = __delta <= SOURCE_DIR_OK_DEG
+        ? 1
+        : __delta >= SOURCE_DIR_BAD_DEG
+        ? SOURCE_DIR_FLOOR
+        : 1 -
+          ((__delta - SOURCE_DIR_OK_DEG) /
+                (SOURCE_DIR_BAD_DEG - SOURCE_DIR_OK_DEG)) *
+            (1 - SOURCE_DIR_FLOOR);
+      source_direction = Math.round(__mult * 1000) / 1000;
+    }
+
+    // One rounding for both multipliers, matching scoreV4's Math.round on pct.
+    // PROB_FLOOR is deliberately NOT re-applied: it is a pre-scoring noise
+    // filter on the raw v4 output, the map already hides passed/out_of_window
+    // rows, and P7b needs these rows to exist so outcomes can be scored
+    // against them. A capped row below 5% is the intended result, not a leak.
+    c.probability_pct = Math.round(
+      c.probability_pct * timing_cap * (source_direction ?? 1),
+    );
+
+    c.probability_factors.timing_cap = timing_cap;
+    c.probability_factors.source_direction = source_direction;
+    c.probability_factors.source_bearing_delta = source_bearing_delta;
+    c.probability_factors.arrival_bearing = arrival_bearing;
   }
+
+  // ---- Sort + slice ----
+  // Runs AFTER the band loop (P4.1): both multipliers are already in
+  // probability_pct, so ranking and selection see the capped values.
+  candidates.sort((a, b) => {
+    if (b.probability_pct !== a.probability_pct) {
+      return b.probability_pct - a.probability_pct;
+    }
+    return (tierRank[b.rarity_level] || 0) - (tierRank[a.rarity_level] || 0);
+  });
+  const top = candidates.slice(0, TOP_N);
 
   // ---- Corridor watchlist (v8.5) ----
   // "Conditions favourable" intel: rare/super/mega species whose

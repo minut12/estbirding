@@ -420,6 +420,7 @@ interface EntryRow {
   season: string;
   phen_source: string;
   never_arrived: boolean;
+  timing_band: string; // v8.8, stored on the entry; "" before June 2026
 }
 
 // calibrated_score for a weight triple. Identical to scoreV4's arithmetic --
@@ -605,6 +606,7 @@ for (const r of raports) {
       season: f.season ?? "",
       phen_source: f.phenology_source,
       never_arrived: ever === null,
+      timing_band: str(it.timing_band),
     });
   }
 }
@@ -756,8 +758,45 @@ for (const r of rows.slice(0, 200)) {
   if (f.pct !== v4pct.get(r)) pathMismatch++;
 }
 
+// ─── P4.1 timing cap (v14) ──────────────────────────────────────────────────
+// The EF applies the cap AFTER calibration, so this must too -- Platt is NOT
+// refitted on the capped values, or the harness would stop mirroring the EF.
+//
+// SCOPE, stated plainly: only the timing cap is measurable here. The
+// source-direction gate reads upstream_obs[0].bearing_from_ee, and
+// upstream_obs is absent from every stored entry before September 2026 (0 rows
+// in the train split, 0 in the test split). No proxy is manufactured for it;
+// it is evaluated against the live raport after deploy, not here.
+const TIMING_CAP = 0.25;
+const CAPPED_BANDS = new Set(["passed", "out_of_window"]);
+const timingCapOf = (r: EntryRow): number =>
+  CAPPED_BANDS.has(r.timing_band) ? TIMING_CAP : 1;
+const v41pct = new Map<EntryRow, number>();
+for (const r of rows) {
+  v41pct.set(r, Math.round((v4pct.get(r) ?? 0) * timingCapOf(r)));
+}
+
+const capBandLines: string[] = [
+  "| band | n (test) | mean v4 pct | mean v4.1 pct | hits | hit rate |",
+  "|---|---|---|---|---|---|",
+];
+for (const b of ["imminent", "this_week", "in_season", "passed", "out_of_window", ""]) {
+  const sel = test.filter((r) => r.timing_band === b);
+  if (sel.length === 0) continue;
+  const m4 = sel.reduce((s, r) => s + (v4pct.get(r) ?? 0), 0) / sel.length;
+  const m41 = sel.reduce((s, r) => s + (v41pct.get(r) ?? 0), 0) / sel.length;
+  const h = sel.reduce((s, r) => s + r.outcome, 0);
+  capBandLines.push(
+    `| ${b || "(absent)"} | ${sel.length} | ${m4.toFixed(1)} | ${
+      m41.toFixed(1)
+    } | ${h} | ${(100 * h / sel.length).toFixed(1)}% |`,
+  );
+}
+
 const pV3Test = test.map((r) => r.v3_pct / 100);
 const pV4Test = test.map((r) => (v4pct.get(r) ?? 0) / 100);
+const pV41Test = test.map((r) => (v41pct.get(r) ?? 0) / 100);
+const brierV41 = brier(pV41Test, yTest);
 const brierV3 = brier(pV3Test, yTest);
 const brierV4 = brier(pV4Test, yTest);
 const brierConst = brier(test.map(() => CONST_BASELINE), yTest);
@@ -935,6 +974,7 @@ const CSV_COLS = [
   "v3_pct", "v4_pct", "tier_base", "count_factor", "distance_factor",
   "season_factor", "phenology_gate", "direction_fit", "source_fit", "upstream",
   "season", "phenology_source", "calibrated_score", "country_code", "outcome",
+  "timing_band", "timing_cap", "v4_1_pct",
 ];
 await Deno.writeTextFile(
   "tmp/backtest_v4.csv",
@@ -961,6 +1001,9 @@ await Deno.writeTextFile(
       calibrated_score: Math.round(scoreOf(r, W) * 100) / 100,
       country_code: r.country_code,
       outcome: r.outcome ? "species_hit" : "miss",
+      timing_band: r.timing_band,
+      timing_cap: timingCapOf(r),
+      v4_1_pct: v41pct.get(r),
     })),
   ),
 );
@@ -1042,12 +1085,23 @@ md.push("| model | Brier (test) |");
 md.push("|---|---|");
 md.push(`| v3 (stored pct) | ${brierV3.toFixed(4)} |`);
 md.push(`| **v4 (chosen weights)** | **${brierV4.toFixed(4)}** |`);
+md.push(`| **v4.1 (v4 × timing cap ${TIMING_CAP})** | **${brierV41.toFixed(4)}** |`);
 md.push(`| constant ${(CONST_BASELINE * 100).toFixed(0)}% | ${brierConst.toFixed(4)} |`);
 md.push(`| constant test base rate ${(testBaseRate * 100).toFixed(1)}% | ${brierConstBase.toFixed(4)} |`);
 md.push("");
 md.push(`**Brier skill score** vs constant-base-rate: \`1 − ${brierV4.toFixed(4)}/${brierConstBase.toFixed(4)}\` = **${skill.toFixed(4)}**.`);
 md.push("");
 md.push(`Max v4 pct on test: **${maxV4Test}**.`);
+md.push("");
+md.push("### P4.1 timing cap (v14) — test split");
+md.push("");
+md.push(`\`passed\` and \`out_of_window\` rows are multiplied by **${TIMING_CAP}** after calibration, exactly as the EF does. Platt is not refitted on the capped values.`);
+md.push("");
+md.push(...capBandLines);
+md.push("");
+md.push(`Test Brier: v4 ${brierV4.toFixed(4)} → v4.1 ${brierV41.toFixed(4)} (Δ ${(brierV41 - brierV4).toFixed(4)}; negative = the cap improves calibration).`);
+md.push("");
+md.push("**The source-direction gate is NOT measurable by this harness.** It reads `upstream_obs[0].bearing_from_ee`, and `upstream_obs` is absent from every stored entry before September 2026 — 0 rows in the train split, 0 in the test split. No proxy is substituted. It is evaluated against the live raport after deploy.");
 md.push("");
 md.push("### Calibration (test, 10 buckets)");
 md.push("");

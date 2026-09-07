@@ -250,20 +250,35 @@
 .bm-pred-marker.wl .bm-pred-pct{background:#a78bfa}
 .bm-pred-pill{padding:6px 10px;border-radius:14px;border:1px solid #c4b5fd;background:#fff;color:#5b21b6;font-weight:600;font-size:12px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.12)}
 .bm-pred-pill.on{background:#7c3aed;color:#fff;border-color:#7c3aed}
-.bm-pred-pop{min-width:220px;max-width:260px;line-height:1.35}
-.bm-pred-pop .h{display:flex;align-items:center;gap:8px;margin-bottom:4px}
-.bm-pred-pop .h img{width:34px;height:34px;border-radius:50%;object-fit:cover}
-.bm-pred-pop .sp{font-weight:700;font-size:14px}
-.bm-pred-pop .lat{color:#64748b;font-size:11px;font-style:italic}
-.bm-pred-pop .pct{display:inline-block;padding:1px 7px;border-radius:9px;background:#7c3aed;color:#fff;font-weight:700;font-size:12px}
+/* Gate is the WRAPPER, not .bm-pred-pop: Leaflet adds margin:13px 24px 13px 20px (44px) to
+   .leaflet-popup-content plus 2px wrapper padding. Scoped via the bindPopup className so no
+   other popup on the map changes. 205 inner + 24 margin + 2 padding = 231 < 240. */
+.bm-pred-popup .leaflet-popup-content{margin:9px 12px}
+.bm-pred-pop{min-width:0;max-width:205px;font-size:12px;line-height:1.3}
+/* padding-right clears Leaflet's close button: the default 24px content margin used to do it,
+   and the reduced margin above would otherwise let the ✕ sit on top of the percentage. */
+.bm-pred-pop .h{display:flex;align-items:center;gap:6px;padding-right:14px}
+.bm-pred-pop .h img{width:22px;height:22px;border-radius:50%;object-fit:cover;flex:0 0 22px}
+.bm-pred-pop .sp{font-weight:700;font-size:12px;flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bm-pred-pop .pct{flex:0 0 auto;color:#6d28d9;font-weight:700;font-size:12px}
+.bm-pred-pop .lat{color:#64748b;font-size:11px;font-style:italic;margin-left:28px}
 .bm-pred-pop .row{margin-top:3px;font-size:12px}
-.bm-pred-pop .row,.bm-pred-pop .basis,.bm-pred-pop .foot{display:block;grid-template-columns:none;gap:0}
+.bm-pred-pop .row,.bm-pred-pop .basis,.bm-pred-pop .foot,.bm-pred-pop .site,.bm-pred-pop .seen,.bm-pred-pop .links{display:block;grid-template-columns:none;gap:0}
 .bm-pred-pop .k{color:#64748b}
-.bm-pred-pop .basis{font-size:11px;color:#6d28d9;margin-top:4px}
-.bm-pred-pop .btns{display:flex;gap:6px;margin-top:8px}
-.bm-pred-pop .btns button{flex:1;padding:5px 6px;border-radius:8px;border:1px solid #c4b5fd;background:#f5f3ff;color:#5b21b6;font-size:11px;cursor:pointer}
-.bm-pred-pop .foot{margin-top:6px;font-size:10px;color:#94a3b8}
+.bm-pred-pop .site{font-size:11px;margin-top:3px}
+.bm-pred-pop .seen{font-size:11px;color:#64748b;margin-top:2px}
+.bm-pred-pop .basis{font-size:11px;color:#6d28d9;margin-top:2px}
+.bm-pred-pop .links{margin-top:4px;font-size:11px}
+.bm-pred-pop .links button{background:none;border:0;padding:0;font:inherit;color:#6d28d9;text-decoration:underline;cursor:pointer}
+.bm-pred-pop .links .sep{color:#c4b5fd;margin:0 5px}
+.bm-pred-pop .foot{margin-top:3px;font-size:10px;color:#94a3b8}
+@media (max-width:480px){.bm-pred-pop .lat{display:none}}
 .bm-pred-track{stroke:#7c3aed;stroke-dasharray:6 6;stroke-width:2;opacity:.7}
+/* Do NOT set white-space:normal here. Leaflet panes are position:absolute with no width, so an
+   abspos tooltip that is allowed to wrap shrink-to-fits against a 0-width containing block and
+   collapses to min-content — a one-word column, which is why max-width never bound. Leaflet's
+   own white-space:nowrap is the correct behaviour; shortLoc already bounds the label length. */
+.bm-pred-origin-tip{font-size:11px;line-height:1.3;font-weight:600}
 /* /P6b-iframe */
 
 </style>
@@ -10400,9 +10415,18 @@ document.addEventListener('DOMContentLoaded', function(){
   // upstream_obs bearing/distance are measured from Estonia's reference centre, not from each
   // predicted site — deriving the endpoint per-site would scatter one observation to three places.
   var TURI = { lat: 58.81, lon: 25.43 };
+  var EARTH_R_KM = 6371;
+  // upstream_obs.location is free eBird text — long, often non-Latin. Shorten it for the origin
+  // label only; the popup keeps the same shortened form so a 220 px popup cannot be blown open.
+  var ORIGIN_LABEL_MAX = 20;
+  var ORIGIN_LABEL_MIN_WORD = 10;
+  var ORIGIN_DOT_STYLE = { radius: 5, color: '#0f172a', weight: 2, fillColor: '#ffffff', fillOpacity: 1 };
+  var SITE_HALO_STYLE = { radius: 11, fill: false, color: '#7c3aed', weight: 2, opacity: 0.55 };
 
   var predLayer = window.__bm_predLayer = L.layerGroup();
   var activeTrack = null;
+  var activeOrigin = null;
+  var activeHalo = null;
   var lastRow = null;
   var warnedNoKey = false;
   var warnedEmpty = false;
@@ -10471,8 +10495,7 @@ document.addEventListener('DOMContentLoaded', function(){
   // bearing_from_ee + distance_km, not lat/lon, so the "last seen" track endpoint must be derived.
   function destPoint(lat, lon, bearingDeg, km){
     try{
-      var R = 6371;
-      var d = km / R;
+      var d = km / EARTH_R_KM;
       var brng = bearingDeg * Math.PI / 180;
       var lat1 = lat * Math.PI / 180;
       var lon1 = lon * Math.PI / 180;
@@ -10482,23 +10505,90 @@ document.addEventListener('DOMContentLoaded', function(){
     }catch(e){ return null; }
   }
 
+  // Great-circle distance. The route orders every predicted site by how far it lies from the
+  // source, so the polyline reads outward from the last observation instead of zig-zagging.
+  function kmBetween(aLat, aLon, bLat, bLon){
+    try{
+      var dLat = (bLat - aLat) * Math.PI / 180;
+      var dLon = (bLon - aLon) * Math.PI / 180;
+      var la1 = aLat * Math.PI / 180;
+      var la2 = bLat * Math.PI / 180;
+      var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return 2 * EARTH_R_KM * Math.asin(Math.min(1, Math.sqrt(h)));
+    }catch(e){ return Infinity; }
+  }
+
+  // Cut on a word boundary and mark the cut with an ellipsis. Never transliterate or substitute —
+  // "Лебяжье — Поляна Бианки (…)" stays Cyrillic, it just stops earlier.
+  function shortLoc(raw){
+    try{
+      var t = String(raw == null ? '' : raw).trim();
+      if(t.length <= ORIGIN_LABEL_MAX) return t;
+      var cut = t.slice(0, ORIGIN_LABEL_MAX);
+      var sp = cut.lastIndexOf(' ');
+      if(sp >= ORIGIN_LABEL_MIN_WORD) cut = cut.slice(0, sp);
+      return cut.replace(/[\s—–·,;:.\-(]+$/, '') + '…';
+    }catch(e){ return ''; }
+  }
+
+  // The one place the source point is derived. P5a replaces upstream_obs bearing/distance with a
+  // real lat/lon — when it lands this becomes `return [obs.lat, obs.lon];` and nothing else moves.
+  function sourcePoint(obs){
+    if(!obs || typeof obs.bearing_from_ee !== 'number' || typeof obs.distance_km !== 'number') return null;
+    return destPoint(TURI.lat, TURI.lon, obs.bearing_from_ee, obs.distance_km);
+  }
+
+  function dropLayer(layer){
+    try{ if(layer && window.map) window.map.removeLayer(layer); }catch(e){}
+  }
+
+  // `site` is the clicked site to highlight, not the far end of the line: bearing_from_ee and
+  // distance_km are measured from the Türi anchor, so the reconstructed point is the fixed source
+  // everything else is measured from. Nodes are every predicted site of this species, nearest first.
   function showTrack(site, entry){
     try{
       hideTrack();
+      if(!window.map) return;
       var obs = (entry.upstream_obs && entry.upstream_obs[0]) ? entry.upstream_obs[0] : null;
-      if(!obs || typeof obs.bearing_from_ee !== 'number' || typeof obs.distance_km !== 'number') return;
-      var dest = destPoint(TURI.lat, TURI.lon, obs.bearing_from_ee, obs.distance_km);
-      if(!dest || !window.map) return;
-      activeTrack = L.polyline([[site.lat, site.lon], dest], { className: 'bm-pred-track' });
+      var source = sourcePoint(obs);
+      if(!source) return;
+
+      var sites = Array.isArray(entry.predicted_sites) ? entry.predicted_sites : [];
+      var nodes = sites.filter(function(s){
+        return s && typeof s.lat === 'number' && typeof s.lon === 'number';
+      }).map(function(s){
+        return { lat: s.lat, lon: s.lon, km: kmBetween(source[0], source[1], s.lat, s.lon) };
+      }).sort(function(a, b){ return a.km - b.km; });
+      if(!nodes.length) return;
+
+      var latlngs = [source];
+      nodes.forEach(function(n){ latlngs.push([n.lat, n.lon]); });
+      activeTrack = L.polyline(latlngs, { className: 'bm-pred-track' });
       activeTrack.addTo(window.map);
-    }catch(e){}
+
+      activeOrigin = L.circleMarker(source, ORIGIN_DOT_STYLE);
+      // Leaflet writes tooltip content with innerHTML, so every value is escaped here too.
+      activeOrigin.bindTooltip(
+        'Viimati nähtud · ' + escapeHtml(shortLoc(obs.location)) + ' · ' + escapeHtml(fmtObsDate(obs.date)),
+        { permanent: true, direction: 'top', className: 'bm-pred-origin-tip' }
+      );
+      activeOrigin.addTo(window.map);
+
+      if(site && typeof site.lat === 'number' && typeof site.lon === 'number'){
+        activeHalo = L.circleMarker([site.lat, site.lon], SITE_HALO_STYLE);
+        activeHalo.addTo(window.map);
+      }
+    }catch(e){ console.warn('[bm_pred] showTrack failed', e); }
   }
 
   function hideTrack(){
-    try{
-      if(activeTrack && window.map){ window.map.removeLayer(activeTrack); }
-      activeTrack = null;
-    }catch(e){}
+    dropLayer(activeTrack);
+    dropLayer(activeOrigin);
+    dropLayer(activeHalo);
+    activeTrack = null;
+    activeOrigin = null;
+    activeHalo = null;
   }
 
   function wireButtons(ev, entry, site){
@@ -10525,51 +10615,54 @@ document.addEventListener('DOMContentLoaded', function(){
       var speciesEt = escapeHtml(entry.species_et || '');
       var speciesLat = escapeHtml(entry.species_lat || '');
       var avatarUrl = escapeHtml(entry.avatar_url || '');
-      var pctBadge = '';
+      var pctEl = '';
       if(!isWl && typeof entry.ee_probability_pct === 'number'){
-        pctBadge = ' <span class="pct">' + escapeHtml(Math.round(entry.ee_probability_pct) + ' %') + '</span>';
-      }
-      var labelText = site.label || '';
-      if(site.county) labelText += ' (' + site.county + ')';
-      var label = escapeHtml(labelText);
-
-      var arrivalRow;
-      if(isWl){
-        arrivalRow = '<div class="row">Tingimused soodsad · jälgimisnimekiri</div>';
-      }else{
-        arrivalRow = '<div class="row"><span class="k">Saabumisaeg:</span> ' + escapeHtml(entry.arrival_window_et || '') + '</div>';
+        pctEl = '<div class="pct">' + escapeHtml(Math.round(entry.ee_probability_pct) + ' %') + '</div>';
       }
 
-      var basisLine = '';
-      if(site.source === 'history'){
-        basisLine = '<div class="basis">Varasemad vaatlused selles ruudus: ' + escapeHtml(site.cluster_n != null ? String(site.cluster_n) : '') + '</div>';
-      }else if(site.source === 'anchor'){
-        basisLine = '<div class="basis">Tuntud vaatluskoht</div>';
+      // P6b.3: mode() labels sometimes already carry the county ("Lääne maakond, Põõsaspea neem").
+      // Append it only when the label does not already contain it, and only in the short form —
+      // the label text itself is never rewritten.
+      var labelText = String(site.label || '');
+      var countyEl = '';
+      if(site.county && labelText.toLowerCase().indexOf(String(site.county).toLowerCase()) === -1){
+        countyEl = ' <span class="k">(' + escapeHtml(String(site.county).replace(/maakond/i, 'mk')) + ')</span>';
       }
 
-      var obsRow = '';
+      var seenEl = '';
       var obs = (entry.upstream_obs && entry.upstream_obs[0]) ? entry.upstream_obs[0] : null;
-      if(obs){
-        obsRow = '<div class="row"><span class="k">Viimati nähtud:</span> ' +
-          escapeHtml((obs.location || '') + ', ' + (obs.country_code || '')) + ' · ' + escapeHtml(fmtObsDate(obs.date)) +
-          ' · ' + escapeHtml(obs.count != null ? String(obs.count) : '') + ' is · ' +
-          escapeHtml(obs.distance_km != null ? String(obs.distance_km) : '') + ' km</div>';
+      if(obs && obs.location){
+        seenEl = '<div class="seen" title="' + escapeHtml(obs.location) + '">Viimati nähtud · ' +
+          escapeHtml(shortLoc(obs.location)) + ' · ' + escapeHtml(fmtObsDate(obs.date)) + '</div>';
       }
 
-      var footText = generatedAt ? ('Tõenäosus-raport ' + escapeHtml(fmtTallinn(generatedAt))) : '';
+      // Basis and arrival collapse onto one line — same strings as before, joined with "·".
+      var basisParts = [];
+      if(site.source === 'history' && site.cluster_n != null){
+        basisParts.push('Vaatlusi ruudus: ' + escapeHtml(String(site.cluster_n)));
+      }else if(site.source === 'anchor'){
+        basisParts.push('Tuntud vaatluskoht');
+      }
+      if(isWl){
+        basisParts.push('Tingimused soodsad · jälgimisnimekiri');
+      }else if(entry.arrival_window_et){
+        basisParts.push(escapeHtml(entry.arrival_window_et));
+      }
+      var basisEl = basisParts.length ? ('<div class="basis">' + basisParts.join(' · ') + '</div>') : '';
+
+      var footEl = generatedAt ? ('<div class="foot">Tõenäosus-raport ' + escapeHtml(fmtTallinn(generatedAt)) + '</div>') : '';
       var avatarImg = entry.avatar_url ? ('<img src="' + avatarUrl + '" onerror="this.style.visibility=\'hidden\'">') : '';
 
       return '<div class="bm-pred-pop">' +
-        '<div class="h">' + avatarImg +
-        '<div><div class="sp">' + speciesEt + pctBadge + '</div>' +
-        '<div class="lat">' + speciesLat + '</div></div></div>' +
-        '<div class="row"><span class="k">Ennustatud saabumiskoht:</span> <b>' + label + '</b></div>' +
-        arrivalRow +
-        basisLine +
-        obsRow +
-        '<div class="btns"><button class="bm-pred-open">Ava Ülevaates</button>' +
-        '<button class="bm-pred-copy">Kopeeri koordinaadid</button></div>' +
-        (footText ? '<div class="foot">' + footText + '</div>' : '') +
+        '<div class="h">' + avatarImg + '<div class="sp">' + speciesEt + '</div>' + pctEl + '</div>' +
+        (speciesLat ? '<div class="lat">' + speciesLat + '</div>' : '') +
+        '<div class="site">' + escapeHtml(labelText) + countyEl + '</div>' +
+        seenEl +
+        basisEl +
+        '<div class="links"><button type="button" class="bm-pred-open">Ava Ülevaates</button>' +
+        '<span class="sep">·</span>' +
+        '<button type="button" class="bm-pred-copy">Kopeeri koordinaadid</button></div>' +
+        footEl +
         '</div>';
     }catch(e){
       console.warn('[bm_pred] popupHtml failed', e);
@@ -10592,7 +10685,7 @@ document.addEventListener('DOMContentLoaded', function(){
         '</div>';
       var divIcon = L.divIcon({ className: '', iconSize: [38, 38], iconAnchor: [19, 19], popupAnchor: [0, -18], html: html });
       var marker = L.marker([site.lat, site.lon], { icon: divIcon });
-      marker.bindPopup(function(){ return popupHtml(entry, site, isWl, generatedAt); }, { closeOnClick: false, autoClose: false, maxWidth: 280 });
+      marker.bindPopup(function(){ return popupHtml(entry, site, isWl, generatedAt); }, { closeOnClick: false, autoClose: false, maxWidth: 240, className: 'bm-pred-popup' });
       marker.on('popupopen', function(ev){
         try{ showTrack(site, entry); }catch(e){}
         try{ wireButtons(ev, entry, site); }catch(e){}
@@ -10603,6 +10696,9 @@ document.addEventListener('DOMContentLoaded', function(){
   }
 
   // Rows entering the layer: entries at pct>=20 or ranked <10, plus every watch-list item.
+  // Display filter only — the EF still emits passed/out_of_window rows at 15 %, P4.1 fixes the
+  // engine. The band gate must sit ahead of both branches or those rows return through the other
+  // one. A missing band is kept: older cached raports carry none and must not blank the layer.
   function select(row){
     var entries = [];
     var watchlist = [];
@@ -10611,6 +10707,7 @@ document.addEventListener('DOMContentLoaded', function(){
       for(var i = 0; i < rowEntries.length; i++){
         var e = rowEntries[i];
         if(!e) continue;
+        if(e.timing_band === 'passed' || e.timing_band === 'out_of_window') continue;
         if((typeof e.ee_probability_pct === 'number' && e.ee_probability_pct >= 20) || i < 10){
           entries.push(e);
         }

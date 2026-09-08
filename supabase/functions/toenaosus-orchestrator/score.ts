@@ -24,6 +24,17 @@ export interface PhenologyRow {
   source_regions_spring: string[] | null;
   source_regions_autumn: string[] | null;
   flight_class: string | null; // P6b: steers the predicted-site anchor fallback
+  // P6d watch arc: WHERE the bird is SEEN, traversed clockwise from `from` to
+  // `to`, wrapping through 0. Deliberately distinct from arrival_bearing_*,
+  // which means where it comes FROM and which P4.1's source-direction gate
+  // reads -- for a coastal passage the two diverge. Optional because nothing on
+  // the scoring path reads them and existing callers construct this type
+  // without them; null/absent means no arc is curated, and sites.ts then
+  // behaves exactly as it did before P6d.
+  watch_arc_spring_from?: number | null;
+  watch_arc_spring_to?: number | null;
+  watch_arc_autumn_from?: number | null;
+  watch_arc_autumn_to?: number | null;
 }
 
 export interface UpstreamRow {

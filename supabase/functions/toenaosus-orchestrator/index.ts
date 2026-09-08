@@ -1217,6 +1217,8 @@ async function fetchCompute(
     "species_phenology",
     "scientific_name,ebird_code,arrival_modes,spring_window,autumn_window," +
       "arrival_bearing_spring,arrival_bearing_autumn," +
+      "watch_arc_spring_from,watch_arc_spring_to," +
+      "watch_arc_autumn_from,watch_arc_autumn_to," +
       "source_regions_spring,source_regions_autumn,flight_class",
   );
   // A silent 0 would gate every species to 0.5 and score exactly like v3 --
@@ -1855,9 +1857,22 @@ async function fetchCompute(
       : season === "autumn"
       ? phen?.arrival_bearing_autumn ?? null
       : null;
+    // P6d watch arc -- WHERE the bird is seen, distinct from arrival_bearing_*
+    // (where it comes FROM), which P4.1's source-direction gate still reads.
+    // Null => no arc curated => predictedSitesFor behaves as it did before P6d.
+    const arcFrom = season === "spring"
+      ? phen?.watch_arc_spring_from ?? null
+      : season === "autumn"
+      ? phen?.watch_arc_autumn_from ?? null
+      : null;
+    const arcTo = season === "spring"
+      ? phen?.watch_arc_spring_to ?? null
+      : season === "autumn"
+      ? phen?.watch_arc_autumn_to ?? null
+      : null;
     return predictedSitesFor(
       cellsBySpecies.get(String(nameEt ?? "")) ?? [],
-      { bearingFrom, flightClass: phen?.flight_class ?? null },
+      { bearingFrom, flightClass: phen?.flight_class ?? null, arcFrom, arcTo },
       nowForSites,
     );
   };

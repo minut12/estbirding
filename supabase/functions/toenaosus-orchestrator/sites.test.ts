@@ -5,11 +5,15 @@
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@^1.0.19";
 import {
   anchorSites,
+  haversineKm,
   historySites,
+  inWatchArc,
   predictedSitesFor,
+  RESCUE_MAX_KM,
   scoreCell,
   seasonMonths,
   type SiteCell,
+  SITES_MAX_TOTAL,
 } from "./sites.ts";
 
 const TODAY = new Date("2026-09-05T00:00:00Z");
@@ -272,4 +276,236 @@ Deno.test("predictedSitesFor: cells with only n_season 0 fall back to anchors", 
   );
   assertEquals(sites.length, 2);
   assertEquals(sites.every((s) => s.source === "anchor"), true);
+});
+
+// ---- P6d: watch arc --------------------------------------------------------
+// The arc is WHERE THE BIRD IS SEEN, distinct from arrival_bearing (where it
+// comes FROM). Bearings below are from EE_CENTRE (58.6 N, 25.5 E):
+//   Pärispea 5.4  Käsmu 5.8  Kallaste 85.3  Sõrve säär 250.6  Haeska 281.2
+//   Ristna 281.9  Tahkuna nina 289.3  Põõsaspea neem 302.4  Pakri 316.8
+
+Deno.test("inWatchArc: an arc wrapping through 0 admits both sides of north", () => {
+  // 282 -> 20 is a north-coast arc: admits Tahkuna (289) and Pärispea (5),
+  // rejects Sõrve säär (250) and Kallaste (85).
+  assertEquals(inWatchArc(289.3, 282, 20), true);
+  assertEquals(inWatchArc(5.4, 282, 20), true);
+  assertEquals(inWatchArc(250.6, 282, 20), false);
+  assertEquals(inWatchArc(85.3, 282, 20), false);
+  // Edges are inclusive.
+  assertEquals(inWatchArc(282, 282, 20), true);
+  assertEquals(inWatchArc(20, 282, 20), true);
+  assertEquals(inWatchArc(281.9, 282, 20), false);
+  assertEquals(inWatchArc(20.1, 282, 20), false);
+});
+
+Deno.test("inWatchArc: a non-wrapping arc works without the wrap branch", () => {
+  assertEquals(inWatchArc(85.3, 90, 200), false);
+  assertEquals(inWatchArc(114.7, 90, 200), true);
+  assertEquals(inWatchArc(148.1, 90, 200), true);
+  assertEquals(inWatchArc(250.6, 90, 200), false);
+  assertEquals(inWatchArc(5.4, 90, 200), false);
+});
+
+Deno.test("inWatchArc: a null or absent bound filters nothing", () => {
+  assertEquals(inWatchArc(250.6, null, 20), true);
+  assertEquals(inWatchArc(250.6, 282, null), true);
+  assertEquals(inWatchArc(250.6, undefined, undefined), true);
+});
+
+Deno.test("anchorSites: a null arc is byte-identical to pre-P6d output", () => {
+  // The no-regression proof for the four tormilind watch-list species.
+  const before = anchorSites("seabird", 290);
+  assertEquals(
+    JSON.stringify(anchorSites("seabird", 290, 2, { from: null, to: null })),
+    JSON.stringify(before),
+  );
+  assertEquals(
+    JSON.stringify(anchorSites("seabird", 290, 2, undefined)),
+    JSON.stringify(before),
+  );
+  // ...and that output is still the live one.
+  assertEquals(before.map((s) => s.label), ["Tahkuna nina", "Ristna"]);
+});
+
+Deno.test("anchorSites: an arc narrows eligibility but not ordering or cap", () => {
+  // 0 -> 90 keeps only Pärispea (5.4) and Käsmu (5.8) among seabird kinds.
+  const sites = anchorSites("seabird", 290, 2, { from: 0, to: 90 });
+  assertEquals(sites.map((s) => s.label), ["Pärispea poolsaar", "Käsmu"]);
+  assertEquals(sites.every((s) => s.source === "anchor"), true);
+});
+
+Deno.test("anchorSites: the flight-class filter still excludes an in-arc anchor", () => {
+  // 275 -> 295 contains Haeska (281.2, wetland), Ristna (281.9) and Tahkuna
+  // (289.3). A seabird may not land at a wetland, so Haeska stays out.
+  const seabird = anchorSites("seabird", 290, 5, { from: 275, to: 295 });
+  assertEquals(seabird.some((s) => s.label === "Haeska"), false);
+  assertEquals(seabird.some((s) => s.label === "Tahkuna nina"), true);
+  // A wader may, so the same arc yields it.
+  const wader = anchorSites("wader", 290, 5, { from: 275, to: 295 });
+  assertEquals(wader.some((s) => s.label === "Haeska"), true);
+});
+
+// ---- P6d: corroborated rescue ----------------------------------------------
+// Fixture is Söödikänn's live pool: three cells ship, three do not.
+// share = n_season / (n_effort + 200).
+
+const SOODIKANN: SiteCell[] = [
+  cell({ label: "Põõsaspea", lat: 59.2285, lon: 23.5072, cell_lat: 59.25, cell_lon: 23.5, n_season: 236, n_recent5y: 252, n_effort: 18299, last_date: "2026-08-31" }),
+  cell({ label: "Sõrve", lat: 57.9186, lon: 22.0524, cell_lat: 58.0, cell_lon: 22.0, n_season: 121, n_recent5y: 100, n_effort: 13331, last_date: "2026-09-07" }),
+  cell({ label: "Pärispea küla", lat: 59.6721, lon: 25.7010, cell_lat: 59.75, cell_lon: 25.75, n_season: 24, n_recent5y: 26, n_effort: 1620, last_date: "2026-08-25" }),
+  cell({ label: "Ristna", lat: 58.9284, lon: 22.0396, cell_lat: 59.0, cell_lon: 22.0, n_season: 11, n_recent5y: 100, n_effort: 399, last_date: "2026-05-31" }),
+  cell({ label: "Paldiski", lat: 59.3944, lon: 24.0435, cell_lat: 59.5, cell_lon: 24.0, n_season: 8, n_recent5y: 4, n_effort: 369, last_date: "2025-09-19" }),
+  cell({ label: "Tahkuna", lat: 59.0913, lon: 22.5881, cell_lat: 59.0, cell_lon: 22.5, n_season: 7, n_recent5y: 3, n_effort: 796, last_date: "2025-09-09" }),
+];
+
+const NORTH_COAST = {
+  bearingFrom: 20,
+  flightClass: "seabird",
+  arcFrom: 282,
+  arcTo: 20,
+};
+
+Deno.test("predictedSitesFor: a null arc rescues nothing (no-regression proof)", () => {
+  const before = predictedSitesFor(
+    SOODIKANN,
+    { bearingFrom: 20, flightClass: "seabird" },
+    TODAY,
+  );
+  assertEquals(before.length, 3);
+  assertEquals(before.map((s) => s.label), [
+    "Ristna",
+    "Põõsaspea",
+    "Pärispea küla",
+  ]);
+  // Explicit nulls must behave exactly as absent fields do.
+  assertEquals(
+    JSON.stringify(predictedSitesFor(
+      SOODIKANN,
+      { bearingFrom: 20, flightClass: "seabird", arcFrom: null, arcTo: null },
+      TODAY,
+    )),
+    JSON.stringify(before),
+  );
+});
+
+Deno.test("predictedSitesFor: rescue accepted, appended after the three in score order", () => {
+  const sites = predictedSitesFor(SOODIKANN, NORTH_COAST, TODAY);
+  assertEquals(sites.length, 5);
+  assertEquals(sites.map((s) => s.label), [
+    "Ristna",
+    "Põõsaspea",
+    "Pärispea küla",
+    "Paldiski",
+    "Tahkuna",
+  ]);
+  // The three shipped rows keep their original cluster_n and source.
+  assertEquals(sites.slice(0, 3).map((s) => s.cluster_n), [11, 236, 24]);
+  // A rescued row is a history row: real cluster_n, its own coordinates.
+  for (const s of sites.slice(3)) assertEquals(s.source, "history");
+  assertEquals(sites[3].cluster_n, 8);
+  assertEquals(sites[4].cluster_n, 7);
+  assertEquals(sites[4].lat, 59.0913);
+  assertEquals(sites[4].lon, 22.5881);
+  // Rescues rank below every row they join.
+  assert(sites[3].score <= sites[2].score);
+  assert(sites[4].score <= sites[3].score);
+});
+
+Deno.test("predictedSitesFor: Sõrve is rejected -- outside the arc and over 1 km", () => {
+  // Sõrve's share (.00894) clears the floor, so only the arc and the distance
+  // gate keep it out: bearing 250.6 is outside 282->20, and the cell mean sits
+  // 1.06 km from Sõrve säär.
+  const sites = predictedSitesFor(SOODIKANN, NORTH_COAST, TODAY);
+  assertEquals(sites.some((s) => s.label === "Sõrve"), false);
+});
+
+Deno.test("predictedSitesFor: rescue rejected on distance at just over 1 km", () => {
+  // Same cell, nudged just past RESCUE_MAX_KM from Tahkuna nina (59.09/22.59).
+  const far = SOODIKANN.map((c) =>
+    c.label === "Tahkuna" ? { ...c, lat: 59.1, lon: 22.61 } : c
+  );
+  assert(haversineKm(59.1, 22.61, 59.09, 22.59) > RESCUE_MAX_KM);
+  const sites = predictedSitesFor(far, NORTH_COAST, TODAY);
+  assertEquals(sites.some((s) => s.label === "Tahkuna"), false);
+  // Paldiski still rescues, so the rejection is the distance and nothing else.
+  assertEquals(sites.some((s) => s.label === "Paldiski"), true);
+});
+
+Deno.test("predictedSitesFor: rescue rejected on share -- the rule 16 guard", () => {
+  // Veetallaja's Türju küla: 3 seasonal records in one of Estonia's most-watched
+  // cells. share = 3/13531 = .00022, about 0.05x the weakest shipped row. It
+  // passes distance and arc, and must still be refused -- otherwise "near an
+  // anchor" becomes a side door back to raw-count ranking, opening exactly
+  // where observer effort is highest.
+  const thin = SOODIKANN.map((c) =>
+    c.label === "Tahkuna" ? { ...c, n_season: 3, n_effort: 13331 } : c
+  );
+  const cellShare = 3 / (13331 + 200);
+  const weakestShipped = 236 / (18299 + 200); // Põõsaspea, weakest of the three
+  assert(cellShare / weakestShipped < 0.1);
+  const sites = predictedSitesFor(thin, NORTH_COAST, TODAY);
+  assertEquals(sites.some((s) => s.label === "Tahkuna"), false);
+});
+
+Deno.test("predictedSitesFor: the share gate is a ratio, not an absolute floor", () => {
+  const weakestShipped = 236 / (18299 + 200);
+  const mk = (n_season: number) =>
+    SOODIKANN.map((c) =>
+      c.label === "Tahkuna" ? { ...c, n_season, n_effort: 800 } : c
+    );
+  // 3/1000 = .0030 is under 0.5x .01276; 12/1000 = .0120 is over it.
+  assert(3 / 1000 < weakestShipped * 0.5);
+  assert(12 / 1000 > weakestShipped * 0.5);
+  assertEquals(
+    predictedSitesFor(mk(12), NORTH_COAST, TODAY).some((s) =>
+      s.label === "Tahkuna"
+    ),
+    true,
+  );
+  assertEquals(
+    predictedSitesFor(mk(3), NORTH_COAST, TODAY).some((s) =>
+      s.label === "Tahkuna"
+    ),
+    false,
+  );
+});
+
+Deno.test("predictedSitesFor: at most 2 rescues, 5 sites total", () => {
+  // A third rescuable cell on Põõsaspea neem (59.23/23.51, bearing 302.4).
+  // share 10/1000 = .0100 clears the .00638 floor, but its score stays under
+  // Pärispea küla's 10.00 so it lands sub-cap rather than displacing a row.
+  const extra = SOODIKANN.concat([
+    cell({ label: "Osmussaar", lat: 59.232, lon: 23.512, cell_lat: 59.25, cell_lon: 23.5, n_season: 10, n_recent5y: 5, n_effort: 800, last_date: "2026-08-20" }),
+  ]);
+  const sites = predictedSitesFor(extra, NORTH_COAST, TODAY);
+  // Three rescuable cells compete; RESCUE_MAX takes two, SITES_MAX_TOTAL caps 5.
+  assertEquals(sites.length, SITES_MAX_TOTAL);
+  assertEquals(sites.slice(0, 3).map((s) => s.label), [
+    "Ristna",
+    "Põõsaspea",
+    "Pärispea küla",
+  ]);
+  assertEquals(sites.slice(3).length, 2);
+  assertEquals(sites.slice(3).every((s) => s.source === "history"), true);
+});
+
+Deno.test("predictedSitesFor: the flight-class filter gates rescue too", () => {
+  // raptor_soaring may only land inland, so no coastal anchor can corroborate a
+  // coastal cell however close it sits or however wide the arc.
+  const sites = predictedSitesFor(
+    SOODIKANN,
+    { bearingFrom: 20, flightClass: "raptor_soaring", arcFrom: 0, arcTo: 359 },
+    TODAY,
+  );
+  assertEquals(sites.length, 3);
+  assertEquals(sites.some((s) => s.label === "Tahkuna"), false);
+});
+
+Deno.test("predictedSitesFor: a sub-MIN_SEASON_DAYS cell is never rescued", () => {
+  const thin = SOODIKANN.map((c) =>
+    c.label === "Tahkuna" ? { ...c, n_season: 2, n_effort: 10 } : c
+  );
+  // share 2/210 = .0095 clears the floor easily; only the qualify gate refuses.
+  const sites = predictedSitesFor(thin, NORTH_COAST, TODAY);
+  assertEquals(sites.some((s) => s.label === "Tahkuna"), false);
 });

@@ -5,6 +5,15 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/features/auth/AuthContext';
+import {
+  PREDICTION_RATING_LABELS,
+  PREDICTION_RATING_VALUES,
+  SITE_INDEX_SPECIES_LEVEL,
+  loadMyPredictionRatings,
+  upsertPredictionRating,
+  type PredictionRating,
+} from '@/lib/predictionRatings';
 import { AlertTriangle, RefreshCw, X, ExternalLink, Bird, MapPin, Eye, BarChart3, Clock, Copy, Check, Wind } from 'lucide-react';
 import { toast } from 'sonner';
 import { loadSpeciesMeta, type SpeciesMetaMap } from '@/lib/speciesMeta';
@@ -204,6 +213,9 @@ type ToenaosusEntry = VaatlusEntry & {
   // v8+ arrival sites, optional for legacy compatibility
   likely_arrival_sites_et?: Array<{ name: string; reasoning: string }>;
   avatar_url?: string | null;
+  // v4 payload field (orchestrator index.ts :2209). Optional for legacy rows;
+  // P7a keys prediction_ratings on it.
+  ebird_code?: string;
 };
 
 type CorridorWatchlistItem = {
@@ -687,6 +699,51 @@ async function fetchLatestVaatluste(): Promise<VaatlusteRaport | null> {
   return row;
 }
 
+/**
+ * P7a species-level rating chips on a Tõenäosus entry card. Presentational —
+ * the parent owns the load and the write, so the card does not fire one query
+ * per entry. site_index is always -1 here: the card shows no per-site rows, so
+ * a site-level value would record a rating against a site nobody was shown.
+ */
+function PredictionRateChips({
+  current,
+  pending,
+  message,
+  isAnon,
+  onRate,
+}: {
+  current: PredictionRating | null;
+  pending: boolean;
+  message: string | null;
+  isAnon: boolean;
+  onRate: (rating: PredictionRating) => void;
+}) {
+  if (isAnon) {
+    return <p className="text-xs text-muted-foreground">Hindamiseks logi sisse</p>;
+  }
+  return (
+    <div>
+      <p className="text-xs font-semibold text-muted-foreground">Kas ennustus oli õige?</p>
+      <div className="mt-1 flex flex-wrap gap-1">
+        {PREDICTION_RATING_VALUES.map((value) => (
+          <Button
+            key={value}
+            type="button"
+            size="sm"
+            variant={current === value ? 'default' : 'outline'}
+            className="h-6 rounded-full px-2 text-xs"
+            disabled={pending}
+            onClick={() => onRate(value)}
+          >
+            {PREDICTION_RATING_LABELS[value]}
+          </Button>
+        ))}
+      </div>
+      {message && <p className="mt-1 text-xs text-muted-foreground">{message}</p>}
+    </div>
+  );
+}
+
 async function fetchLatestToenaosus(): Promise<ToenaosusRaport | null> {
   const { data, error } = await supabase
     .from('toenaosus_raport')
@@ -726,6 +783,7 @@ async function fetchLatestElurikkus(): Promise<ElurikkusRaport | null> {
 }
 
 export default function OverviewTab() {
+  const { session } = useAuth();
   const [report, setReport] = useState<VaatlusteRaport | null>(null);
   const [elurikkusReport, setElurikkusReport] = useState<ElurikkusRaport | null>(null);
   const [toenaosusReport, setToenaosusReport] = useState<ToenaosusRaport | null>(null);
@@ -911,6 +969,56 @@ export default function OverviewTab() {
     });
   }, [toenaosusEntries]);
   const toenaosusCount = sortedToenaosusEntries.length;
+
+  // ---- P7a: species-level prediction ratings on the Tõenäosus cards ----
+  // One load per raport, not one per card. Keyed by ebird_code; site_index is
+  // always SITE_INDEX_SPECIES_LEVEL here, so the popup's site-level rows for
+  // the same species are a different row and are never overwritten.
+  const toenaosusRaportId = toenaosusReport?.id ?? null;
+  const [myRatings, setMyRatings] = useState<Record<string, PredictionRating>>({});
+  const [ratingPending, setRatingPending] = useState<string | null>(null);
+  const [ratingMessage, setRatingMessage] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!session || !toenaosusRaportId) { setMyRatings({}); return; }
+    let alive = true;
+    loadMyPredictionRatings(toenaosusRaportId).then((rows) => {
+      if (!alive) return;
+      const next: Record<string, PredictionRating> = {};
+      for (const r of rows) {
+        if (r.siteIndex === SITE_INDEX_SPECIES_LEVEL) next[r.ebirdCode] = r.rating;
+      }
+      setMyRatings(next);
+    });
+    return () => { alive = false; };
+  }, [session, toenaosusRaportId]);
+
+  // Optimistic, then corrected — same contract the map popup follows.
+  const rateSpecies = useCallback(async (ebirdCode: string, rating: PredictionRating) => {
+    if (!toenaosusRaportId || !ebirdCode) return;
+    const prev = myRatings[ebirdCode] ?? null;
+    setMyRatings((m) => ({ ...m, [ebirdCode]: rating }));
+    setRatingMessage((m) => ({ ...m, [ebirdCode]: '' }));
+    setRatingPending(ebirdCode);
+    const res = await upsertPredictionRating({
+      raportId: toenaosusRaportId,
+      ebirdCode,
+      siteIndex: SITE_INDEX_SPECIES_LEVEL,
+      rating,
+    });
+    setRatingPending(null);
+    if (res.ok) return;
+    setMyRatings((m) => {
+      const next = { ...m };
+      if (prev) next[ebirdCode] = prev; else delete next[ebirdCode];
+      return next;
+    });
+    const text = res.reason === 'anon' ? 'Hindamiseks logi sisse' : 'Salvestamine ebaõnnestus';
+    setRatingMessage((m) => ({ ...m, [ebirdCode]: text }));
+    window.setTimeout(() => {
+      setRatingMessage((m) => ({ ...m, [ebirdCode]: '' }));
+    }, 3000);
+  }, [myRatings, toenaosusRaportId]);
   const handleCopyToenaosusJson = async () => {
     const payload = {
       source: 'toenaosus_raport',
@@ -1268,6 +1376,16 @@ export default function OverviewTab() {
                               <p className="text-xs font-semibold text-muted-foreground">Miks tõenäoline?</p>
                               <p className="text-sm italic text-muted-foreground">{entry.why_likely_et}</p>
                             </div>
+                          )}
+
+                          {toenaosusRaportId && entry.ebird_code && (
+                            <PredictionRateChips
+                              current={myRatings[entry.ebird_code] ?? null}
+                              pending={ratingPending === entry.ebird_code}
+                              message={ratingMessage[entry.ebird_code] || null}
+                              isAnon={!session}
+                              onRate={(rating) => rateSpecies(entry.ebird_code, rating)}
+                            />
                           )}
                         </Card>
                       );

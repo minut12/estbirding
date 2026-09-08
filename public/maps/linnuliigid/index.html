@@ -263,7 +263,15 @@
 .bm-pred-pop .pct{flex:0 0 auto;color:#6d28d9;font-weight:700;font-size:12px}
 .bm-pred-pop .lat{color:#64748b;font-size:11px;font-style:italic;margin-left:28px}
 .bm-pred-pop .row{margin-top:3px;font-size:12px}
-.bm-pred-pop .row,.bm-pred-pop .basis,.bm-pred-pop .foot,.bm-pred-pop .site,.bm-pred-pop .seen,.bm-pred-pop .links{display:block;grid-template-columns:none;gap:0}
+.bm-pred-pop .row,.bm-pred-pop .basis,.bm-pred-pop .foot,.bm-pred-pop .site,.bm-pred-pop .seen,.bm-pred-pop .links,.bm-pred-pop .bm-pred-rate,.bm-pred-pop .bm-pred-rate-q,.bm-pred-pop .bm-pred-rate-msg{display:block;grid-template-columns:none;gap:0}
+/* The chip row must re-declare display:flex AFTER the override above, or the
+   page's global .row{display:grid} / the block reset would hijack it (rule 18). */
+.bm-pred-pop .bm-pred-rate{margin-top:4px}
+.bm-pred-pop .bm-pred-rate-q{font-size:11px;color:#64748b}
+.bm-pred-pop .bm-pred-chips{display:flex;flex-wrap:wrap;gap:3px;margin-top:2px}
+.bm-pred-pop .bm-pred-chip{flex:0 0 auto;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:9px;padding:1px 6px;font:inherit;font-size:10px;line-height:1.4;color:#6d28d9;cursor:pointer}
+.bm-pred-pop .bm-pred-chip.on{background:#6d28d9;border-color:#6d28d9;color:#fff;font-weight:700}
+.bm-pred-pop .bm-pred-rate-msg{font-size:10px;color:#94a3b8;margin-top:2px}
 .bm-pred-pop .k{color:#64748b}
 .bm-pred-pop .site{font-size:11px;margin-top:3px}
 .bm-pred-pop .seen{font-size:11px;color:#64748b;margin-top:2px}
@@ -10432,6 +10440,11 @@ document.addEventListener('DOMContentLoaded', function(){
   var warnedEmpty = false;
   var configFetchDone = false;
   var pillBtn = null;
+  // P7a: id of the raport actually fetched from Supabase. Set in fetchRaport,
+  // never from a cached row — a cached id can be stale. Null => chips do not
+  // write. In-memory only: never persisted, re-seeded by the parent each load.
+  var curRaportId = null;
+  var myRatings = {}; // key: ebird_code + '|' + site_index -> rating string
 
   function getSupabaseConfig(){
     try{
@@ -10591,7 +10604,32 @@ document.addEventListener('DOMContentLoaded', function(){
     activeHalo = null;
   }
 
-  function wireButtons(ev, entry, site){
+  // P7a: the popup element for the rating key currently awaiting a result, so
+  // PREDICTION_RATE_RESULT can correct the optimistic state it belongs to.
+  var pendingRate = {}; // key -> { el: popupElement, prev: previousRatingOrEmpty }
+
+  function paintChips(el, key){
+    try{
+      if(!el) return;
+      var cur = myRatings[key] || '';
+      var chips = el.querySelectorAll('.bm-pred-chip');
+      for(var i = 0; i < chips.length; i++){
+        var v = chips[i].getAttribute('data-rate');
+        chips[i].className = 'bm-pred-chip' + (cur && cur === v ? ' on' : '');
+      }
+    }catch(e){}
+  }
+
+  function rateMsg(el, text){
+    try{
+      var box = el ? el.querySelector('.bm-pred-rate-msg') : null;
+      if(box) box.textContent = text || '';
+    }catch(e){}
+  }
+
+  // rateIdx, like popupHtml's, is the already-collapsed rating key from
+  // siteMarker (-1 for watch-list). Never re-collapse it here.
+  function wireButtons(ev, entry, site, rateIdx){
     try{
       var el = (ev && ev.popup && typeof ev.popup.getElement === 'function') ? ev.popup.getElement() : null;
       if(!el) return;
@@ -10607,10 +10645,67 @@ document.addEventListener('DOMContentLoaded', function(){
           try{ navigator.clipboard.writeText(site.lat.toFixed(4) + ', ' + site.lon.toFixed(4)); }catch(e){}
         };
       }
+      // P7a chips: optimistic locally, corrected by PREDICTION_RATE_RESULT.
+      var idx = (typeof rateIdx === 'number') ? rateIdx : -1;
+      var key = rateKey(entry.ebird_code, idx);
+      var chips = el.querySelectorAll('.bm-pred-chip');
+      for(var i = 0; i < chips.length; i++){
+        (function(btn){
+          btn.onclick = function(){
+            try{
+              // No raport id means nothing was fetched from Supabase this load
+              // (cache-only render). Writing would guess at raport_id.
+              if(!curRaportId) return;
+              var val = btn.getAttribute('data-rate');
+              if(!val) return;
+              var prev = myRatings[key] || '';
+              myRatings[key] = val;
+              paintChips(el, key);
+              rateMsg(el, '');
+              pendingRate[key] = { el: el, prev: prev };
+              window.parent.postMessage({
+                type: 'PREDICTION_RATE',
+                raport_id: curRaportId,
+                ebird_code: entry.ebird_code || '',
+                site_index: idx,
+                rating: val
+              }, '*');
+            }catch(e){ console.warn('[bm_pred] rate click failed', e); }
+          };
+        })(chips[i]);
+      }
     }catch(e){}
   }
 
-  function popupHtml(entry, site, isWl, generatedAt){
+  // P7a: ASCII values are what the DB stores; the diacritic labels are display
+  // only. Order is fixed — it is the order the chips render in.
+  var RATE_VALUES = ['oige', 'osaliselt', 'vale', 'voimatu'];
+  var RATE_LABELS = { oige: 'õige', osaliselt: 'osaliselt', vale: 'vale', voimatu: 'võimatu' };
+
+  // rateIdx everywhere below is the rating key index (-1 for species-level and
+  // watch-list rows), never a raw predicted_sites index.
+  function rateKey(ebirdCode, rateIdx){ return String(ebirdCode || '') + '|' + String(rateIdx); }
+
+  function rateChipsHtml(ebirdCode, rateIdx){
+    try{
+      var cur = myRatings[rateKey(ebirdCode, rateIdx)] || '';
+      var chips = '';
+      for(var i = 0; i < RATE_VALUES.length; i++){
+        var v = RATE_VALUES[i];
+        chips += '<button type="button" class="bm-pred-chip' + (cur === v ? ' on' : '') +
+          '" data-rate="' + v + '">' + escapeHtml(RATE_LABELS[v]) + '</button>';
+      }
+      return '<div class="bm-pred-rate">' +
+        '<div class="bm-pred-rate-q">Kas ennustus oli õige?</div>' +
+        '<div class="bm-pred-chips">' + chips + '</div>' +
+        '<div class="bm-pred-rate-msg"></div>' +
+        '</div>';
+    }catch(e){ return ''; }
+  }
+
+  // rateIdx is the ALREADY-COLLAPSED rating key from siteMarker (-1 for
+  // watch-list rows), not the raw predicted_sites index. Do not re-collapse.
+  function popupHtml(entry, site, isWl, generatedAt, rateIdx){
     try{
       var speciesEt = escapeHtml(entry.species_et || '');
       var speciesLat = escapeHtml(entry.species_lat || '');
@@ -10662,6 +10757,7 @@ document.addEventListener('DOMContentLoaded', function(){
         '<div class="links"><button type="button" class="bm-pred-open">Ava Ülevaates</button>' +
         '<span class="sep">·</span>' +
         '<button type="button" class="bm-pred-copy">Kopeeri koordinaadid</button></div>' +
+        rateChipsHtml(entry.ebird_code, rateIdx) +
         footEl +
         '</div>';
     }catch(e){
@@ -10670,7 +10766,7 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   }
 
-  function siteMarker(entry, site, isWl, generatedAt){
+  function siteMarker(entry, site, isWl, generatedAt, siteIdx){
     try{
       if(!site || typeof site.lat !== 'number' || typeof site.lon !== 'number') return null;
       var pctVal = isWl ? null : entry.ee_probability_pct;
@@ -10685,10 +10781,15 @@ document.addEventListener('DOMContentLoaded', function(){
         '</div>';
       var divIcon = L.divIcon({ className: '', iconSize: [38, 38], iconAnchor: [19, 19], popupAnchor: [0, -18], html: html });
       var marker = L.marker([site.lat, site.lon], { icon: divIcon });
-      marker.bindPopup(function(){ return popupHtml(entry, site, isWl, generatedAt); }, { closeOnClick: false, autoClose: false, maxWidth: 240, className: 'bm-pred-popup' });
+      // The ONLY place the watch-list collapse happens. Both the display key
+      // (popupHtml -> rateChipsHtml) and the write key (wireButtons) take this
+      // one value: computed separately they could drift, and the chip would
+      // show one site's verdict while the tap wrote another's.
+      var rateIdx = isWl ? -1 : siteIdx;
+      marker.bindPopup(function(){ return popupHtml(entry, site, isWl, generatedAt, rateIdx); }, { closeOnClick: false, autoClose: false, maxWidth: 240, className: 'bm-pred-popup' });
       marker.on('popupopen', function(ev){
         try{ showTrack(site, entry); }catch(e){}
-        try{ wireButtons(ev, entry, site); }catch(e){}
+        try{ wireButtons(ev, entry, site, rateIdx); }catch(e){}
       });
       marker.on('popupclose', function(){ try{ hideTrack(); }catch(e){} });
       return marker;
@@ -10746,8 +10847,10 @@ document.addEventListener('DOMContentLoaded', function(){
       var count = 0;
       function addSites(entry, isWl){
         if(!entry || !Array.isArray(entry.predicted_sites)) return;
-        entry.predicted_sites.forEach(function(site){
-          var m = siteMarker(entry, site, isWl, generatedAt);
+        entry.predicted_sites.forEach(function(site, siteIdx){
+          // P7a: siteIdx is the RAW predicted_sites index. siteMarker is the one
+          // place that collapses it to the rating key (-1 for watch-list rows).
+          var m = siteMarker(entry, site, isWl, generatedAt, siteIdx);
           if(m){ predLayer.addLayer(m); count++; }
         });
       }
@@ -10819,6 +10922,14 @@ document.addEventListener('DOMContentLoaded', function(){
         if(row){
           configFetchDone = true;
           saveCache(row);
+          // P7a: only a row that actually came back from Supabase sets the id
+          // the chips write against. Telling the parent here (not in render())
+          // survives both the render-from-cache path and the config-race
+          // double fetch. The iframe reports; the parent does all the I/O.
+          curRaportId = row.id || null;
+          if(curRaportId){
+            try{ window.parent.postMessage({ type: 'PREDICTION_RAPORT', raport_id: curRaportId }, '*'); }catch(e){}
+          }
           render(row);
         }else{
           var cached2 = loadCache();
@@ -10872,7 +10983,49 @@ document.addEventListener('DOMContentLoaded', function(){
   // once the key lands; the 6 h interval stays the fallback if it never does.
   window.addEventListener('message', function(ev){
     try{
-      if(!ev.data || typeof ev.data !== 'object' || ev.data.type !== 'SUPABASE_CONFIG') return;
+      if(!ev.data || typeof ev.data !== 'object') return;
+
+      // P7a: the parent's seed of this user's existing ratings for the raport.
+      if(ev.data.type === 'PREDICTION_RATINGS'){
+        try{
+          if(String(ev.data.raport_id || '') !== String(curRaportId || '')) return;
+          myRatings = {};
+          var list = Array.isArray(ev.data.ratings) ? ev.data.ratings : [];
+          for(var i = 0; i < list.length; i++){
+            var r = list[i];
+            if(!r || !r.ebird_code || !r.rating) continue;
+            myRatings[rateKey(r.ebird_code, r.site_index)] = String(r.rating);
+          }
+          // popupHtml reads myRatings when a popup opens, so re-rendering the
+          // layer is enough to seed every chip. Cheap: markers only, no fetch.
+          if(lastRow) render(lastRow);
+        }catch(e){ console.warn('[bm_pred] ratings seed failed', e); }
+        return;
+      }
+
+      // P7a: the parent's verdict on one optimistic chip tap.
+      if(ev.data.type === 'PREDICTION_RATE_RESULT'){
+        try{
+          var key = rateKey(ev.data.ebird_code, ev.data.site_index);
+          var pend = pendingRate[key];
+          delete pendingRate[key];
+          if(ev.data.ok) return; // optimistic state was right; no visual noise
+          // Revert to whatever was showing before the tap.
+          if(pend && pend.prev){ myRatings[key] = pend.prev; } else { delete myRatings[key]; }
+          var el = pend ? pend.el : null;
+          paintChips(el, key);
+          if(ev.data.reason === 'anon'){
+            var box = el ? el.querySelector('.bm-pred-rate') : null;
+            if(box) box.innerHTML = '<div class="bm-pred-rate-q">Hindamiseks logi sisse</div>';
+          }else{
+            rateMsg(el, 'Salvestamine ebaõnnestus');
+            setTimeout(function(){ try{ rateMsg(el, ''); }catch(e){} }, 3000);
+          }
+        }catch(e){ console.warn('[bm_pred] rate result failed', e); }
+        return;
+      }
+
+      if(ev.data.type !== 'SUPABASE_CONFIG') return;
       if(configFetchDone) return;
       // Defer so the main listener (:8472) has assigned __resolvedSupabaseAnonKey first.
       setTimeout(function(){

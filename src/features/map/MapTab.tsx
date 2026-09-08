@@ -18,6 +18,7 @@ import { addDiscoveredSpeciesBatch } from '@/lib/discoveredSpecies';
 import { broadcastSupabaseConfigToMapIframes, getSupabaseAnonKey, getSupabaseUrl, isDeveloperModeEnabled, validateSupabaseConfig } from '@/config/supabaseConfig';
 import { useAuth } from '@/features/auth/AuthContext';
 import { PERMISSIONS } from '@/features/auth/permissions';
+import { isPredictionRating, loadMyPredictionRatings, upsertPredictionRating } from '@/lib/predictionRatings';
 import { type MapScope, loadSpeciesVisibility, saveSpeciesVisibility, loadLocalHidden } from '@/lib/speciesVisibility';
 import { getSpeciesScopeByMapId, SPECIES_PREDICTION_EVENT_TYPES, type SpeciesPredictionRequestPayload } from '@/lib/speciesPrediction';
 import { loadSpeciesPredictionSettings } from '@/lib/speciesPredictionSettings';
@@ -76,7 +77,7 @@ interface MapTabProps {
 }
 
 export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
-  const { user, isAdmin, hasPermission, role, permissions } = useAuth();
+  const { user, isAdmin, hasPermission, role, permissions, session } = useAuth();
   const availableMaps = useMemo(() => (
     getAllowedMapsForRole(role, permissions, maps)
   ), [permissions, role]);
@@ -1055,6 +1056,72 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
   }, [sendToIframe]);
+
+  // P7a prediction ratings. Two iframe messages, one effect: the iframe reports
+  // which raport it loaded (PREDICTION_RAPORT) and we answer with that user's
+  // existing ratings; and it forwards each chip tap (PREDICTION_RATE), which we
+  // write and acknowledge. The iframe is optimistic; this handler corrects it.
+  useEffect(() => {
+    const handler = async (ev: MessageEvent) => {
+      const d = ev.data;
+      if (!d || (d.type !== 'PREDICTION_RATE' && d.type !== 'PREDICTION_RAPORT')) return;
+
+      const raportId = String(d.raport_id || '');
+      if (!raportId) return;
+
+      if (d.type === 'PREDICTION_RAPORT') {
+        if (!session) return; // anonymous: nothing to seed
+        const rows = await loadMyPredictionRatings(raportId);
+        try {
+          sendToIframe({
+            type: 'PREDICTION_RATINGS',
+            raport_id: raportId,
+            ratings: rows.map((r) => ({
+              ebird_code: r.ebirdCode,
+              site_index: r.siteIndex,
+              rating: r.rating,
+            })),
+          });
+        } catch { /* iframe gone */ }
+        return;
+      }
+
+      // PREDICTION_RATE — coerce, then drop silently on anything malformed.
+      const ebirdCode = String(d.ebird_code || '');
+      const siteIndex = Number(d.site_index);
+      const rating: unknown = d.rating;
+      if (!ebirdCode || !Number.isFinite(siteIndex) || !isPredictionRating(rating)) return;
+
+      const reply = (ok: boolean, reason?: 'anon' | 'error') => {
+        try {
+          sendToIframe({
+            type: 'PREDICTION_RATE_RESULT',
+            raport_id: raportId,
+            ebird_code: ebirdCode,
+            site_index: siteIndex,
+            ok,
+            rating: ok ? rating : null,
+            ...(reason ? { reason } : {}),
+          });
+        } catch { /* iframe gone */ }
+      };
+
+      if (!session) { reply(false, 'anon'); return; }
+
+      const note = typeof d.note === 'string' ? d.note : null;
+      const res = await upsertPredictionRating({
+        raportId,
+        ebirdCode,
+        siteIndex,
+        rating,
+        note,
+      });
+      reply(res.ok, res.reason);
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [sendToIframe, session]);
+
 
   useEffect(() => {
     const onCustomSpeciesUpdated = () => sendCustomSpeciesToIframe();

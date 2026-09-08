@@ -204,3 +204,6 @@ verify_jwt = false
 
 [functions.toenaosus-orchestrator]
 verify_jwt = false
+
+[functions.prediction-outcomes]
+verify_jwt = false

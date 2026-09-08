@@ -1,0 +1,14 @@
+-- Ennustus P7b: nightly scoring of closed Tõenäosus predictions.
+--
+-- Depends on public.m7_call_ef from 20260831000000_m7_cron.sql, which supplies
+-- the x-webhook-secret header from Vault, and on the prediction-outcomes Edge
+-- Function being deployed with verify_jwt = false (supabase/config.toml).
+--
+-- 03:40 UTC, 30 min after m7-toenaosus-raport (10 3,15 * * *), so the night's
+-- new raport already exists and its never-scoreable entries get their
+-- not_scored rows on the same run.
+--
+-- No due_from/due_to in the body: the scheduled run deliberately keeps the
+-- default one-day due window and never backfills. Re-running is a no-op --
+-- the upsert is keyed on (raport_id, ebird_code, site_index).
+select cron.schedule('ennustus-prediction-outcomes', '40 3 * * *', $$select public.m7_call_ef('prediction-outcomes', '{"source":"schedule"}')$$);

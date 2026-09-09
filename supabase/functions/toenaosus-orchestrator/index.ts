@@ -118,6 +118,19 @@ import {
   seasonMonths,
   type SiteCell,
 } from "./sites.ts";
+// P5: only the names index.ts does not already own. haversineKm and
+// initialBearingDeg are deliberately NOT imported -- this file defines its own
+// further down, and etaFor uses eta.ts's copies internally anyway.
+import {
+  buildOpenMeteoUrl,
+  type EtaResult,
+  etaFor,
+  type GeoPoint,
+  midpoint,
+  parseOpenMeteo,
+  WIND_UNAVAILABLE_ET,
+  type WindSample,
+} from "./eta.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_FN_BASE = SUPABASE_URL + "/functions/v1";
@@ -716,6 +729,11 @@ interface UpstreamObs {
   count: number;
   distance_km: number;
   bearing_from_ee: number;
+  // P5a: coordinates of the observation itself, so P5 can use upstream_obs[0]
+  // as the ETA source point. The builder already filters on numeric lat/lng,
+  // so both are always present on every row it emits.
+  lat: number;
+  lon: number;
 }
 
 interface Candidate {
@@ -741,6 +759,10 @@ interface Candidate {
   timing_band?: string;
   arrival_window_et?: string;
   freshest_obs_days?: number | null;
+  // P5: carried from species_phenology so parseMerge can pick the airspeed and
+  // hours-per-day for the ETA. The Sonnet payload whitelists its fields
+  // explicitly (see candidates.map() below), so this never reaches the prompt.
+  flight_class?: string | null;
 }
 
 interface WatchlistItem {
@@ -890,6 +912,91 @@ function compassSector(deg: number): { name: string; abbr: string } {
     if (deg >= s.lo && deg < s.hi) return s;
   }
   return { name: "põhi", abbr: "N" };
+}
+
+// ---- P5: 850 hPa wind per (source, predicted site) midpoint ---------------
+//
+// One Open-Meteo call for every pair in the run. Measured 2026-09-09 from this
+// machine: 53 locations -> HTTP 200, 53 location objects, ~0.31 s (three runs:
+// 312/303/306 ms). That is ~3% of WEATHER_TIMEOUT_MS and ~0.1% of a 218 s run,
+// so it needs no batching and no timeout change.
+//
+// WIND-NOW IS THE DESIGN, NOT AN OVERSIGHT. buildOpenMeteoUrl asks for
+// forecast_days=2 with no past_days, and parseOpenMeteo averages now -> +24 h.
+// The ETA is a forward prediction of the earliest arrival from today; it is NOT
+// a reconstruction of a flight already under way, which is what a past_days
+// window would give. Do not widen the window to "fix" it.
+interface EtaWinds {
+  byKey: Map<string, WindSample>;
+  requested: number;
+  returned: number;
+  error: string | null;
+}
+
+function etaWindKey(ebirdCode: string, siteIdx: number): string {
+  return ebirdCode + "|" + siteIdx;
+}
+
+async function predictedSiteWinds(
+  candidates: readonly Candidate[],
+): Promise<EtaWinds> {
+  const keys: string[] = [];
+  const points: GeoPoint[] = [];
+  for (const c of candidates) {
+    // The ETA source is the FRESHEST upstream observation, not the nearest.
+    const src = c.upstream_obs?.[0];
+    if (!src || typeof src.lat !== "number" || typeof src.lon !== "number") {
+      continue;
+    }
+    const sites = c.predicted_sites ?? [];
+    for (let i = 0; i < sites.length; i++) {
+      const s = sites[i];
+      if (!s || typeof s.lat !== "number" || typeof s.lon !== "number") continue;
+      keys.push(etaWindKey(c.ebird_code, i));
+      points.push(midpoint(src.lat, src.lon, s.lat, s.lon));
+    }
+  }
+
+  const none: EtaWinds = {
+    byKey: new Map(),
+    requested: points.length,
+    returned: 0,
+    error: null,
+  };
+  if (!points.length) return none;
+
+  try {
+    const json = await fetchJson(
+      buildOpenMeteoUrl(points),
+      { method: "GET" },
+      WEATHER_TIMEOUT_MS,
+    );
+    const samples = parseOpenMeteo(json, new Date());
+    // parseOpenMeteo drops any location with no usable hour, so a short array
+    // would shift every later sample onto the wrong site -- a silent, plausible
+    // wrong answer. Positional pairing is only sound at equal length; anything
+    // else degrades to no wind at all, which surfaces honestly as
+    // WIND_UNAVAILABLE_ET.
+    if (samples.length !== points.length) {
+      return {
+        ...none,
+        returned: samples.length,
+        error: "length mismatch: requested " + points.length +
+          ", parsed " + samples.length,
+      };
+    }
+    const byKey = new Map<string, WindSample>();
+    for (let i = 0; i < keys.length; i++) byKey.set(keys[i], samples[i]);
+    return {
+      byKey,
+      requested: points.length,
+      returned: samples.length,
+      error: null,
+    };
+  } catch (e) {
+    // A failed or timed-out fetch must leave the raport otherwise identical.
+    return { ...none, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 async function weatherCorridors(): Promise<WeatherCorridorsResult> {
@@ -1525,6 +1632,10 @@ async function fetchCompute(
         bearing_from_ee: Math.round(
           initialBearingDeg(TURI.lat, TURI.lng, o.lat as number, o.lng as number),
         ),
+        // P5a: unrounded, unlike distance_km/bearing_from_ee above -- these
+        // feed haversine/bearing maths in etaFor, not a display string.
+        lat: o.lat as number,
+        lon: o.lng as number,
       }));
 
     candidates.push({
@@ -1877,7 +1988,16 @@ async function fetchCompute(
     );
   };
 
-  for (const c of top) c.predicted_sites = sitesFor(c.name_et, c.name_lat);
+  // P5: same phenology row sitesFor already looks up, read once more for the
+  // ETA airspeed. Null is a valid answer -- etaFor falls back to 50 km/h.
+  const flightClassFor = (nameLat: string | null): string | null =>
+    phenByLat.get(String(nameLat || "").trim().toLowerCase())?.flight_class ??
+      null;
+
+  for (const c of top) {
+    c.predicted_sites = sitesFor(c.name_et, c.name_lat);
+    c.flight_class = flightClassFor(c.name_lat);
+  }
   for (const w of corridor_watchlist) {
     w.predicted_sites = sitesFor(w.species_et, w.species_lat);
   }
@@ -2241,9 +2361,54 @@ interface ParseOutput {
   generation_meta: Record<string, unknown>;
 }
 
+// P5: eta_* fields ride on each predicted_sites[] entry -- not a new top-level
+// field on the entry, and not a separate array.
+//
+// The source point is upstream_obs[0], the FRESHEST upstream observation. It is
+// deliberately NOT c.nearest_obs, which is the NEAREST one; the two diverge on
+// 10 of 24 entries, and using nearest_obs here would be the single most likely
+// silent bug in this change -- every ETA would still look plausible.
+//
+// A candidate with no usable upstream_obs[0] still gets all three fields, with
+// the null-ETA result. A field is never skipped, so consumers can rely on the
+// shape being uniform across every site of every entry.
+function sitesWithEta(
+  c: Candidate,
+  winds: EtaWinds,
+  now: Date,
+): Array<Record<string, unknown>> {
+  const src = c.upstream_obs?.[0] ?? null;
+  const hasSource = !!src && typeof src.lat === "number" &&
+    typeof src.lon === "number";
+  return (c.predicted_sites ?? []).map((s, i) => {
+    if (!hasSource) {
+      const nullEta: EtaResult = {
+        eta_days: null,
+        eta_window_et: WIND_UNAVAILABLE_ET,
+        eta_basis: null,
+      };
+      return { ...s, ...nullEta };
+    }
+    const sample = winds.byKey.get(etaWindKey(c.ebird_code, i));
+    const eta = etaFor(
+      {
+        source: { lat: src!.lat, lon: src!.lon, date: src!.date },
+        site: { lat: s.lat, lon: s.lon, label: s.label },
+        flightClass: c.flight_class ?? null,
+        now,
+      },
+      // tailwindKmh means across the samples it is given; one midpoint per
+      // (source, site) pair means exactly one sample per site.
+      sample ? [sample] : null,
+    );
+    return { ...s, ...eta };
+  });
+}
+
 function parseMerge(
   claude: AnthropicResponse,
   upstream: FetchComputeResult,
+  winds: EtaWinds,
 ): ParseOutput {
   // APPROVED ADDITION (M7.5): n8n had no max_tokens guard, so a truncated
   // response fell through to JSON.parse and surfaced as a confusing "non-JSON"
@@ -2277,6 +2442,10 @@ function parseMerge(
   for (const e of (parsed.entries || [])) {
     if (e && e.ebird_code) textByCode.set(e.ebird_code, e);
   }
+
+  // One clock for the whole merge: two sites of one entry must not land in
+  // different eta_days buckets because the loop crossed a rounding boundary.
+  const etaNow = new Date();
 
   const entries = (upstream.candidates || []).map((c) => {
     const t = textByCode.get(c.ebird_code) || {} as SonnetEntry;
@@ -2321,8 +2490,8 @@ function parseMerge(
       ebird_code: c.ebird_code,
       ee_present: c.ee_present,
       upstream_obs: c.upstream_obs ?? [],
-      // P6b addition
-      predicted_sites: c.predicted_sites ?? [],
+      // P6b addition; P5 adds eta_days / eta_window_et / eta_basis per site.
+      predicted_sites: sitesWithEta(c, winds, etaNow),
     };
   });
 
@@ -2428,6 +2597,26 @@ async function run(sb: Admin, orch: OrchRun, opts: RunOptions) {
     };
     await heartbeat(sb, orch, "fetch_done");
 
+    // --- stage 3b: P5 ETA winds (one Open-Meteo call, ~0.3 s) -------------
+    // After fetch_done because it needs predicted_sites and upstream_obs, which
+    // fetchCompute fills. Before Sonnet so a slow model cannot push the wind
+    // request past its own timeout. Never throws: on failure every site falls
+    // back to the null-ETA result and the rest of the raport is unchanged.
+    await heartbeat(sb, orch, "eta_wind");
+    const t2b = Date.now();
+    const etaWinds = await predictedSiteWinds(fc.candidates);
+    timings.eta_wind_ms = Date.now() - t2b;
+    orch.state = {
+      ...orch.state,
+      timings,
+      eta_wind: {
+        requested: etaWinds.requested,
+        returned: etaWinds.returned,
+        error: etaWinds.error,
+      },
+    };
+    await heartbeat(sb, orch, "eta_wind_done");
+
     // --- stage 4: node "Persist Sightings" --------------------------------
     // Runs BEFORE Sonnet (deviation 1) so a Sonnet failure cannot block it.
     if (opts.dryRun) {
@@ -2531,7 +2720,7 @@ async function run(sb: Admin, orch: OrchRun, opts: RunOptions) {
 
     // --- stage 8: node "Parse + Merge" ------------------------------------
     const t6 = Date.now();
-    const payload = parseMerge(apiResp, fc);
+    const payload = parseMerge(apiResp, fc, etaWinds);
     timings.parse_ms = Date.now() - t6;
     orch.state = {
       ...orch.state,

@@ -175,14 +175,21 @@ function formatDaysEt(days: number): string {
   return Number.isInteger(days) ? String(days) : String(days).replace(".", ",");
 }
 
+// Symmetric ladder: eta_days may be negative, meaning the earliest arrival
+// already fell in the past. Never print a minus sign -- the past branches take
+// the absolute value and carry the tense in the wording instead.
 export function formatEtaEt(etaDays: number): string {
-  if (etaDays === 0) return "Võib juba kohal olla";
-  if (etaDays <= 1) return "Varaseim saabumine: täna või homme";
-  if (etaDays <= 7) {
-    const unit = etaDays === 1 ? "päev" : "päeva";
-    return `Varaseim saabumine: umbes ${formatDaysEt(etaDays)} ${unit}`;
+  if (etaDays > 7) return "Varaseim saabumine: hiljem kui nädal";
+  if (etaDays > 1) {
+    return `Varaseim saabumine: umbes ${formatDaysEt(etaDays)} päeva`;
   }
-  return "Varaseim saabumine: hiljem kui nädal";
+  if (etaDays > 0) return "Varaseim saabumine: täna või homme";
+  if (etaDays === 0) return "Võib juba kohal olla";
+  if (etaDays >= -1) return "Võis saabuda eile või täna";
+  if (etaDays >= -7) {
+    return `Võis saabuda umbes ${formatDaysEt(Math.abs(etaDays))} päeva tagasi`;
+  }
+  return "Võis saabuda üle nädala tagasi";
 }
 
 export function buildOpenMeteoUrl(points: readonly GeoPoint[]): string {
@@ -313,10 +320,10 @@ export function etaFor(
     );
     const travelDays = distanceKm / (groundKmh * hoursPerDay);
     const arrivalMs = sourceMs + travelDays * MS_PER_DAY;
-    const etaDays = Math.max(
-      0,
-      roundToHalf((arrivalMs - now.getTime()) / MS_PER_DAY),
-    );
+    // Not clamped at 0: an old source observation legitimately puts the
+    // earliest arrival in the past, and flattening those to 0 made every such
+    // site read "Võib juba kohal olla" regardless of how stale it was.
+    const etaDays = roundToHalf((arrivalMs - now.getTime()) / MS_PER_DAY);
 
     return {
       eta_days: etaDays,

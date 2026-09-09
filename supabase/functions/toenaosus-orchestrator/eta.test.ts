@@ -117,12 +117,51 @@ Deno.test("etaFor: unknown flight class falls back to 50 km/h and 10 h/day", () 
 });
 
 // --- Estonian strings --------------------------------------------------------
-Deno.test("formatEtaEt: exact strings", () => {
+Deno.test("formatEtaEt: exact strings (future)", () => {
   assertEquals(formatEtaEt(0), "Võib juba kohal olla");
   assertEquals(formatEtaEt(1), "Varaseim saabumine: täna või homme");
   assertEquals(formatEtaEt(1.5), "Varaseim saabumine: umbes 1,5 päeva");
   assertEquals(formatEtaEt(4), "Varaseim saabumine: umbes 4 päeva");
   assertEquals(formatEtaEt(9), "Varaseim saabumine: hiljem kui nädal");
+});
+
+Deno.test("formatEtaEt: exact strings (past)", () => {
+  assertEquals(formatEtaEt(-0.5), "Võis saabuda eile või täna");
+  assertEquals(formatEtaEt(-1.5), "Võis saabuda umbes 1,5 päeva tagasi");
+  assertEquals(formatEtaEt(-4), "Võis saabuda umbes 4 päeva tagasi");
+  assertEquals(formatEtaEt(-29.5), "Võis saabuda üle nädala tagasi");
+});
+
+// Each boundary is asserted on both sides, so a flipped comparison in the
+// ladder cannot pass. 0, -1 and -7 are the cases the ladder rules on.
+Deno.test("formatEtaEt: branch boundaries at 7, 1, 0, -1 and -7", () => {
+  // >7 vs <=7
+  assertEquals(formatEtaEt(7.5), "Varaseim saabumine: hiljem kui nädal");
+  assertEquals(formatEtaEt(7), "Varaseim saabumine: umbes 7 päeva");
+  // >1 vs <=1
+  assertEquals(formatEtaEt(1.5), "Varaseim saabumine: umbes 1,5 päeva");
+  assertEquals(formatEtaEt(1), "Varaseim saabumine: täna või homme");
+  // >0 vs ===0 -- the pivot the whole change hangs on
+  assertEquals(formatEtaEt(0.5), "Varaseim saabumine: täna või homme");
+  assertEquals(formatEtaEt(0), "Võib juba kohal olla");
+  // <0 vs >=-1
+  assertEquals(formatEtaEt(-0.5), "Võis saabuda eile või täna");
+  assertEquals(formatEtaEt(-1), "Võis saabuda eile või täna");
+  // <-1 vs >=-7
+  assertEquals(formatEtaEt(-1.5), "Võis saabuda umbes 1,5 päeva tagasi");
+  assertEquals(formatEtaEt(-7), "Võis saabuda umbes 7 päeva tagasi");
+  // <-7
+  assertEquals(formatEtaEt(-7.5), "Võis saabuda üle nädala tagasi");
+});
+
+// Negative eta_days is an internal number, never a user-visible minus sign.
+Deno.test("formatEtaEt: no output string ever contains a minus sign", () => {
+  for (let half = -70; half <= 20; half++) {
+    const days = half / 2;
+    const text = formatEtaEt(days);
+    assert(!text.includes("-"), `${days} -> ${text}`);
+    assert(!text.includes("−"), `${days} -> ${text}`);
+  }
 });
 
 Deno.test("windLabelEt: thresholds at +/-10", () => {
@@ -133,16 +172,48 @@ Deno.test("windLabelEt: thresholds at +/-10", () => {
   assertEquals(windLabelEt(null), null);
 });
 
-// --- eta_days floor ----------------------------------------------------------
-Deno.test("etaFor: eta_days floors at 0 when the observation is old", () => {
+// --- eta_days is not floored at 0 -------------------------------------------
+// Replaces the former "floors at 0" test. A 30-day-old source observation with
+// ~0.82 d of flight arrives ~29.2 d in the past, and that must survive to the
+// caller as a negative number rather than collapsing onto the 0 bucket.
+// A zero-speed wind sample keeps tailwind non-null (so eta_window_et is the
+// ladder string, not WIND_UNAVAILABLE_ET) while leaving ground speed at exactly
+// the 50 km/h seabird airspeed, so the arithmetic below stays exact.
+Deno.test("etaFor: eta_days goes negative when the observation is old", () => {
   const old = new Date(NOW.getTime() - 30 * MS_PER_DAY).toISOString();
   const res = etaFor({
     source: { lat: 59.95, lon: 29.05, date: old },
     site: { lat: 58.93, lon: 22.05, label: "Ristna" },
     flightClass: "seabird",
     now: NOW,
-  }, null);
-  assertEquals(res.eta_days, 0);
+  }, [sample({ speedKmh: 0, dirFromDeg: 0 })]);
+
+  assert(res.eta_days !== null);
+  assert(res.eta_days < 0, `expected a negative eta, got ${res.eta_days}`);
+  assertEquals(res.eta_days, -29); // ~412 km / 500 km per day, minus 30 d
+  assertEquals(res.eta_window_et, "Võis saabuda üle nädala tagasi");
+  assert(res.eta_basis !== null);
+  assertEquals(res.eta_basis.ground_kmh, 50);
+});
+
+// Sign convention guard: a fresh observation must still yield a POSITIVE eta.
+// If the subtraction were ever inverted, the test above would keep passing
+// (old obs, still negative) while every site drifted into the future bands.
+Deno.test("etaFor: a fresh observation still yields a positive eta", () => {
+  const base = {
+    source: { lat: 59.95, lon: 29.05, date: NOW.toISOString() },
+    site: { lat: 58.93, lon: 22.05, label: "Ristna" },
+    now: NOW,
+  };
+  const samples = [sample({ speedKmh: 0, dirFromDeg: 0 })];
+
+  const fast = etaFor({ ...base, flightClass: "seabird" }, samples);
+  assertEquals(fast.eta_days, 1); // ~412 km at 500 km per day
+  assertEquals(fast.eta_window_et, "Varaseim saabumine: täna või homme");
+
+  const slow = etaFor({ ...base, flightClass: "raptor_soaring" }, samples);
+  assertEquals(slow.eta_days, 1.5); // ~412 km at 240 km per day
+  assertEquals(slow.eta_window_et, "Varaseim saabumine: umbes 1,5 päeva");
 });
 
 // --- wind unavailable --------------------------------------------------------
@@ -277,6 +348,8 @@ Deno.test("etaFor: Söödikänn worked example (seabird, +15 tailwind)", () => {
   assertEquals(res.eta_basis.hours_per_day, 10);
   assertEquals(res.eta_basis.site_label, "Ristna");
   assertEquals(res.eta_basis.wind_label_et, "pärituul");
-  assertEquals(res.eta_days, 0); // obs 3 d old, ~0.63 d of travel => already due
-  assertEquals(res.eta_window_et, "Võib juba kohal olla");
+  // obs 3 d old, ~0.63 d of travel => arrival fell ~2.4 d ago. Before the clamp
+  // was removed this read 0 / "Võib juba kohal olla".
+  assertEquals(res.eta_days, -2.5);
+  assertEquals(res.eta_window_et, "Võis saabuda umbes 2,5 päeva tagasi");
 });

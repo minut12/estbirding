@@ -158,7 +158,8 @@ const SONNET_RESERVE_MS = 20_000;
 const EBIRD_TIMEOUT_MS = 20_000;
 const WEATHER_TIMEOUT_MS = 10_000; // n8n Weather Corridors node
 const META_TIMEOUT_MS = 10_000; // species_meta / corridor-tags / ee-presence
-const SEASON_TIMEOUT_MS = 10_000; // get-toenaosus-season-signals
+// P8a.1: 62 names exceeded 10 s (run 334); budget ORCH_BUDGET_MS has room
+const SEASON_TIMEOUT_MS = 45_000; // get-toenaosus-season-signals
 const PERSIST_TIMEOUT_MS = 60_000; // n8n Persist Sightings node
 const NOTIFY_TIMEOUT_MS = 30_000; // send-push / mark-observations-notified
 const INSERT_TIMEOUT_MS = 30_000; // n8n Insert -> Supabase node
@@ -804,6 +805,7 @@ interface SeasonDiag {
   with_signal: number;
   with_fallback: number;
   error: string | null;
+  elapsed_ms: number | null;
 }
 
 interface FetchComputeResult {
@@ -1494,9 +1496,11 @@ async function fetchCompute(
     with_signal: 0,
     with_fallback: 0,
     error: null,
+    elapsed_ms: null,
   };
 
   if (candidateEstonianNames.length > 0) {
+    const __t0 = Date.now();
     try {
       const seasonResp = await fetchJson(
         SEASON_SIGNALS_URL,
@@ -1507,6 +1511,7 @@ async function fetchCompute(
         },
         SEASON_TIMEOUT_MS,
       ) as { results?: Array<Record<string, unknown>> };
+      seasonDiag.elapsed_ms = Date.now() - __t0;
       if (seasonResp && Array.isArray(seasonResp.results)) {
         seasonDiag.fetched = seasonResp.results.length;
         for (const r of seasonResp.results) {
@@ -1519,6 +1524,8 @@ async function fetchCompute(
         }
       }
     } catch (err) {
+      // on abort this is ≈ SEASON_TIMEOUT_MS, not callee latency
+      seasonDiag.elapsed_ms = Date.now() - __t0;
       seasonDiag.error = errMsg(err).slice(0, 200) || "unknown";
     }
   }

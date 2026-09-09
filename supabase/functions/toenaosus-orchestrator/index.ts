@@ -104,11 +104,14 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
+  bearingInArc,
   directionFit,
   type PhenologyRow,
   phenologyGate,
   scoreV4,
   seasonFor,
+  SOURCE_DIR_OK_DEG,
+  sourceArcFor,
   type UpstreamRow,
   V4,
 } from "./score.ts";
@@ -721,6 +724,23 @@ interface ProbabilityFactors {
   source_direction?: number | null;
   source_bearing_delta?: number | null;
   arrival_bearing?: number | null;
+  // P8b: did upstream_obs[0] fall inside the species' source arc? null = no arc
+  // and no arrival_bearing, so the question was never asked and the source is
+  // still the freshest observation anywhere.
+  source_in_arc: boolean | null;
+}
+
+// P8b: the P8c columns, read separately from PhenologyRow so a pre-migration
+// deploy degrades instead of failing. Keyed by ebird_code, the only column the
+// two selects share that is stable enough to join on.
+interface ArcRow {
+  ebird_code: string | null;
+  source_arc_spring_from: number | null;
+  source_arc_spring_to: number | null;
+  source_arc_autumn_from: number | null;
+  source_arc_autumn_to: number | null;
+  autumn_eligible: boolean | null;
+  spring_eligible: boolean | null;
 }
 
 interface UpstreamObs {
@@ -1223,7 +1243,8 @@ const TIMING_CAP = 0.25;
 // filter: a species whose expected arrival direction really is westerly
 // survives it, and the taper can be retuned or backed out from the
 // calibration CSV.
-const SOURCE_DIR_OK_DEG = 60; // <= this: no penalty
+// SOURCE_DIR_OK_DEG (60, <= this: no penalty) now comes from ./score.ts, which
+// also derives P8b's fallback source arc from it. One constant, not two.
 const SOURCE_DIR_BAD_DEG = 120; // >= this: full penalty
 const SOURCE_DIR_FLOOR = 0.3;
 // FORMULA_VERSION now comes from V4.FORMULA_VERSION (./score.ts).
@@ -1361,6 +1382,49 @@ async function fetchCompute(
   const phenByLat = new Map<string, PhenologyRow>();
   for (const p of phenologyRows) {
     phenByLat.set(String(p.scientific_name || "").trim().toLowerCase(), p);
+  }
+
+  // P8b: source_arc_* and *_eligible arrive with the P8c migration. They are
+  // read SEPARATELY, not folded into the select above, because PostgREST 400s
+  // on an unknown column -- and that select is guarded by a throw, so an EF
+  // deployed before the migration would fail every raport. Here a failure
+  // costs one log line and the run degrades to pre-P8b behaviour.
+  let arcRowsLoaded = 0;
+  let arcLoadError: string | null = null;
+  try {
+    const arcRows = await readAll<ArcRow>(
+      sbRead,
+      "species_phenology",
+      "ebird_code,source_arc_spring_from,source_arc_spring_to," +
+        "source_arc_autumn_from,source_arc_autumn_to," +
+        "autumn_eligible,spring_eligible",
+    );
+    arcRowsLoaded = arcRows.length;
+    const arcByCode = new Map<string, ArcRow>();
+    for (const a of arcRows) {
+      const code = String(a.ebird_code || "").trim();
+      if (code) arcByCode.set(code, a);
+    }
+    // Re-set rather than mutate: phenByLat holds the same objects as
+    // phenologyRows, and a merged copy keeps that array as it was read.
+    for (const [key, p] of phenByLat) {
+      const a = arcByCode.get(String(p.ebird_code || "").trim());
+      if (!a) continue;
+      phenByLat.set(key, {
+        ...p,
+        source_arc_spring_from: a.source_arc_spring_from,
+        source_arc_spring_to: a.source_arc_spring_to,
+        source_arc_autumn_from: a.source_arc_autumn_from,
+        source_arc_autumn_to: a.source_arc_autumn_to,
+        autumn_eligible: a.autumn_eligible,
+        spring_eligible: a.spring_eligible,
+      });
+    }
+  } catch (err) {
+    // Left empty on purpose: sourceArcFor falls back to arrival_bearing +-60,
+    // and every *_eligible stays undefined, so nothing is dropped.
+    arcLoadError = errMsg(err).slice(0, 200) || "unknown";
+    console.warn("p8b_arc_load_failed: " + arcLoadError);
   }
 
   // APPROVED DEVIATION (M7.4c, carried into M7.5): n8n swallowed every region
@@ -1531,6 +1595,7 @@ async function fetchCompute(
   }
 
   const candidates: Candidate[] = [];
+  let __ineligible_dropped = 0;
   for (const [ebirdCode, obsList] of bySpecies) {
     const meta = metaByEbirdCode.get(ebirdCode) as SpeciesMeta;
 
@@ -1628,16 +1693,55 @@ async function fetchCompute(
       upstream: upstreamRows,
     });
     const probability_pct = f.pct;
+
+    // P8b/P8c: species curated as not-migrating-here this season are not
+    // candidates. Ahead of the PROB_FLOOR check so the drop is unconditional
+    // and countable, not hidden behind a score that happened to be low.
+    if (f.season === "autumn" && phen?.autumn_eligible === false) {
+      __ineligible_dropped++;
+      continue;
+    }
+    if (f.season === "spring" && phen?.spring_eligible === false) {
+      __ineligible_dropped++;
+      continue;
+    }
+
     if (probability_pct < PROB_FLOOR) continue;
 
     // v8.9 dropped EE-present species outright; v4 keeps them and badges them.
     const __eeC = (__sciLc && eeCountMap.get(__sciLc)) || null;
 
-    // Two freshest neighbour observations with coordinates.
-    const upstream_obs: UpstreamObs[] = obsList
+    // P8b: the two best neighbour observations with coordinates -- in-arc
+    // first, then freshest. Before P8b this was freshest-anywhere, so after
+    // P8a widened the pool southward a Tundrakiur could source from a
+    // Lithuanian bird at 185 deg that had already passed Estonia. With no arc
+    // and no arrival_bearing the predicate is constant-true and the order is
+    // exactly what it was.
+    const __arc = sourceArcFor(phen, f.season);
+    const __inArc = (o: EbirdObs): boolean => {
+      if (!__arc) return true;
+      const b = initialBearingDeg(
+        TURI.lat,
+        TURI.lng,
+        o.lat as number,
+        o.lng as number,
+      );
+      return bearingInArc(b, __arc.from, __arc.to);
+    };
+    const __sortedObs = obsList
       .filter((o) => typeof o.lat === "number" && typeof o.lng === "number")
       .slice()
-      .sort((a, b) => String(b.obsDt || "").localeCompare(String(a.obsDt || "")))
+      .sort((a, b) => {
+        const ia = __inArc(a) ? 1 : 0, ib = __inArc(b) ? 1 : 0;
+        if (ia !== ib) return ib - ia; // in-arc first
+        return String(b.obsDt || "").localeCompare(String(a.obsDt || "")); // then freshest
+      });
+    // Recorded, not chased: false means the arc is curated but the pool holds
+    // nothing inside it, which is a thin-coverage fact worth keeping.
+    const source_in_arc = (__arc && __sortedObs.length > 0)
+      ? __inArc(__sortedObs[0])
+      : null;
+    const upstream_obs: UpstreamObs[] = __sortedObs
       .slice(0, 2)
       .map((o) => ({
         country_code: o._region as string,
@@ -1703,6 +1807,7 @@ async function fetchCompute(
         phenology_source: f.phenology_source,
         calibrated_score: f.calibrated_score,
         formula_version: V4.FORMULA_VERSION,
+        source_in_arc,
       },
     });
   }
@@ -2090,6 +2195,9 @@ async function fetchCompute(
       total_obs_fetched: allObs.length,
       species_with_obs: bySpecies.size,
       candidates_after_floor: candidates.length,
+      ineligible_dropped: __ineligible_dropped,
+      arc_rows_loaded: arcRowsLoaded,
+      ...(arcLoadError ? { p8b_arc_load_failed: arcLoadError } : {}),
       candidates_returned: top.length,
       rare_observations_count: rare_observations.length,
       species_meta_count: speciesList.length,

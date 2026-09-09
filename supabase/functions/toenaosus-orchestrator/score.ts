@@ -35,6 +35,20 @@ export interface PhenologyRow {
   watch_arc_spring_to?: number | null;
   watch_arc_autumn_from?: number | null;
   watch_arc_autumn_to?: number | null;
+  // P8b/P8c source arc: the arc of bearings FROM Türi that an upstream
+  // observation must fall in to be this species' track/ETA source. A third,
+  // independent meaning again -- watch_arc_* is where the bird is SEEN,
+  // arrival_bearing_* is the single direction P4.1b's multiplier measures
+  // against, and a source arc is a curated corridor that can be far wider than
+  // +-SOURCE_DIR_OK_DEG around that bearing. Optional because these columns
+  // arrive with the P8c migration: absent/null must behave exactly as the code
+  // did before P8b.
+  source_arc_spring_from?: number | null;
+  source_arc_spring_to?: number | null;
+  source_arc_autumn_from?: number | null;
+  source_arc_autumn_to?: number | null;
+  autumn_eligible?: boolean | null;
+  spring_eligible?: boolean | null;
 }
 
 export interface UpstreamRow {
@@ -147,6 +161,74 @@ export function seasonFor(today: Date, phen: PhenologyRow | null): Season | null
   const md = monthDay(today);
   if (inWindow(md, parseDateRange(phen.spring_window))) return "spring";
   if (inWindow(md, parseDateRange(phen.autumn_window))) return "autumn";
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// P8b source arc
+// ---------------------------------------------------------------------------
+
+// Angular half-width of the fallback source arc, and the delta at or below
+// which P4.1b applies no direction penalty. Deliberately ONE constant: the
+// fallback arc is defined as "the band that would not have been penalised".
+// index.ts imports this rather than keeping its own copy, so the two cannot
+// drift apart.
+export const SOURCE_DIR_OK_DEG = 60;
+
+/**
+ * Is `b` inside the arc swept clockwise from `from` to `to`? Both bounds are
+ * inclusive and the arc may wrap through 0 (300 -> 20 means 300..360 U 0..20).
+ *
+ * Same wrap maths as sites.ts's `inWatchArc`, deliberately not shared: that one
+ * answers a different question (where the bird is SEEN) and treats a null bound
+ * as "no arc, filter nothing". Here the null case never reaches this function
+ * -- `sourceArcFor` returns null and the caller skips the test entirely.
+ */
+export function bearingInArc(b: number, from: number, to: number): boolean {
+  const norm = (d: number) => ((d % 360) + 360) % 360;
+  const x = norm(b);
+  const f = norm(from);
+  const t = norm(to);
+  return f <= t ? (x >= f && x <= t) : (x >= f || x <= t);
+}
+
+/**
+ * The season's curated source arc, else `arrival_bearing +- SOURCE_DIR_OK_DEG`,
+ * else null.
+ *
+ * Null means NO ARC IS CURATED AND NO BEARING IS KNOWN, and the caller must
+ * then treat every observation as in-arc -- an uncurated species keeps exactly
+ * its pre-P8b freshest-anywhere source. The returned bounds are intentionally
+ * left un-normalised (the fallback can be negative or > 360); `bearingInArc`
+ * normalises both ends.
+ */
+export function sourceArcFor(
+  phen: PhenologyRow | null,
+  season: string | null,
+): { from: number; to: number } | null {
+  if (!phen) return null;
+  const from = season === "spring"
+    ? phen.source_arc_spring_from
+    : season === "autumn"
+    ? phen.source_arc_autumn_from
+    : null;
+  const to = season === "spring"
+    ? phen.source_arc_spring_to
+    : season === "autumn"
+    ? phen.source_arc_autumn_to
+    : null;
+  if (typeof from === "number" && typeof to === "number") return { from, to };
+  const bearing = season === "spring"
+    ? phen.arrival_bearing_spring
+    : season === "autumn"
+    ? phen.arrival_bearing_autumn
+    : null;
+  if (typeof bearing === "number") {
+    return {
+      from: bearing - SOURCE_DIR_OK_DEG,
+      to: bearing + SOURCE_DIR_OK_DEG,
+    };
+  }
   return null;
 }
 

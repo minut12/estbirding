@@ -829,7 +829,9 @@ interface AnthropicResponse {
 //
 // Build run configuration: season -> region set -> period window.
 // Spring/summer (Mar 1 - Jul 31): LV, LT, BY, PL, RU-KGD, SE, FI
-// Fall/winter   (Aug 1 - Feb 28): FI, RU-LEN, RU-PSK, RU-KR, SE
+// Fall/winter   (Aug 1 - Feb 28): FI, RU-LEN, RU-PSK, RU-KR, SE, LV, LT, PL,
+//                                 BY, RU-KGD
+// P8a: see buildConfig() comment for score effect.
 // v8.2: added SE year-round and FI to spring (catches west-route migrants like
 // Chlidonias leucopterus from SE coast).
 // ---------------------------------------------------------------------------
@@ -846,7 +848,16 @@ function buildConfig(): RunConfig {
     }
     : {
       season: "fall_winter",
-      regions: ["FI", "RU-LEN", "RU-PSK", "RU-KR", "SE"],
+      // P8a 2026-09-09: LV/LT/PL/BY/RU-KGD were spring-only, so from Aug 1 the
+      // upstream pool was ~85 % SE and every southern/eastern vagrant was
+      // sourced from Sweden (reffal1: 13/13 obs FI+SE, delta 136).
+      // Widening moves scores through COUNT_W (totalCount sums all regions),
+      // DIST_W (nearest obs; LV/LT/PL are inside lambda 350 km where Ottenby
+      // is not) and UP_W (LV/LT rows in rarity_upstream_stats become
+      // reachable). PL/BY map to null in regionToCountry and are score-inert:
+      // they only widen the pool and the nearest-obs choice. DIR_W/SRC_W are 0
+      // and cannot bias anything. Expect candidates_after_floor to rise.
+      regions: ["FI", "RU-LEN", "RU-PSK", "RU-KR", "SE", "LV", "LT", "PL", "BY", "RU-KGD"],
     };
 
   const periodEnd = now.toISOString().slice(0, 10);

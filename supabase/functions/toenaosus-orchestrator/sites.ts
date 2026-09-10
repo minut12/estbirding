@@ -119,6 +119,14 @@ export const ANCHORS: readonly Anchor[] = [
   { label: "Kallaste (Peipsi)", lat: 58.66, lon: 27.16, kind: "inland" },
   { label: "Värska (Setomaa)", lat: 57.96, lon: 27.64, kind: "inland" },
   { label: "Karula", lat: 57.72, lon: 26.52, kind: "inland" },
+  // P12 2026-09-10: NE coast / Peipsi N / Tallinn / W funnel (ledger 2026-09-09)
+  { label: "Vainupea (Lahemaa)", lat: 59.58, lon: 26.10, kind: "headland" },
+  { label: "Narva-Jõesuu", lat: 59.47, lon: 28.04, kind: "headland" },
+  { label: "Vasknarva", lat: 59.00, lon: 27.73, kind: "wetland" },
+  { label: "Paljassaare", lat: 59.47, lon: 24.70, kind: "headland" },
+  { label: "Vormsi (Rumpo)", lat: 59.00, lon: 23.20, kind: "wetland" },
+  { label: "Undva / Harilaid", lat: 58.50, lon: 21.85, kind: "headland" },
+  { label: "Kübassaare", lat: 58.42, lon: 23.30, kind: "wetland" },
 ];
 
 // Which anchor kinds each flight class can plausibly make landfall at. An

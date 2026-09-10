@@ -196,7 +196,14 @@ Deno.test("historySites: label falls back to county, then to the grid square", (
 // ---- anchorSites -----------------------------------------------------------
 
 const INLAND = ["Aardla", "Kallaste (Peipsi)", "Värska (Setomaa)", "Karula"];
-const WETLAND = ["Kabli", "Haeska", "Matsalu"];
+const WETLAND = [
+  "Kabli",
+  "Haeska",
+  "Matsalu",
+  "Vasknarva",
+  "Vormsi (Rumpo)",
+  "Kübassaare",
+];
 
 Deno.test("anchorSites: raptor_soaring gets inland points only", () => {
   const sites = anchorSites("raptor_soaring", null);
@@ -227,15 +234,17 @@ Deno.test("anchorSites: an unknown flight class accepts any kind", () => {
 
 Deno.test("anchorSites: bearing steers which anchors win", () => {
   // Bearings from the centre of Estonia: Kihnu 240.1, Sõrve 250.6,
-  // Käsmu 5.8, Pärispea 5.4, Tahkuna 289.3, Ristna 281.9.
+  // Käsmu 5.8, Pärispea 5.4, Tahkuna 289.3, Ristna 281.9, Vainupea 17.2.
   // Arriving from the SW, Kihnu is the closest fit -- not Sõrve, which sits
   // ~10 degrees further round.
   const sw = anchorSites("seabird", 225);
   assertEquals(sw.map((s) => s.label), ["Kihnu", "Sõrve säär"]);
 
-  // Arriving from the NNE, the northern headlands take over entirely.
+  // Arriving from the NNE, the northern headlands take over entirely. P12's
+  // Vainupea sits almost on the bearing (fit 0.999) and displaces Pärispea;
+  // Käsmu keeps second on fit (0.969 to Pärispea's 0.968), not on order.
   const ne = anchorSites("seabird", 20);
-  assertEquals(ne.map((s) => s.label), ["Käsmu", "Pärispea poolsaar"]);
+  assertEquals(ne.map((s) => s.label), ["Vainupea (Lahemaa)", "Käsmu"]);
 
   // The live case: this raport's tubenoses carry bearing 290 and no EE history.
   const wnw = anchorSites("seabird", 290);
@@ -328,7 +337,10 @@ Deno.test("anchorSites: a null arc is byte-identical to pre-P6d output", () => {
 });
 
 Deno.test("anchorSites: an arc narrows eligibility but not ordering or cap", () => {
-  // 0 -> 90 keeps only Pärispea (5.4) and Käsmu (5.8) among seabird kinds.
+  // 0 -> 90 keeps Pärispea (5.4), Käsmu (5.8) and, since P12, Vainupea (17.2)
+  // and Narva-Jõesuu (55.3) among seabird kinds. At bearing 290 the two new
+  // ones score 0.049 and 0.000, so the arc narrows eligibility without
+  // touching the order or the cap -- which is what this test is for.
   const sites = anchorSites("seabird", 290, 2, { from: 0, to: 90 });
   assertEquals(sites.map((s) => s.label), ["Pärispea poolsaar", "Käsmu"]);
   assertEquals(sites.every((s) => s.source === "anchor"), true);

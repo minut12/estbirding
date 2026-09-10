@@ -1697,14 +1697,13 @@ async function fetchCompute(
     // P8b/P8c: species curated as not-migrating-here this season are not
     // candidates. Ahead of the PROB_FLOOR check so the drop is unconditional
     // and countable, not hidden behind a score that happened to be low.
-    if (f.season === "autumn" && phen?.autumn_eligible === false) {
-      __ineligible_dropped++;
-      continue;
-    }
-    if (f.season === "spring" && phen?.spring_eligible === false) {
-      __ineligible_dropped++;
-      continue;
-    }
+    // P8b.1: key on the RUN season, not the phenology season. f.season is
+    // null when the species is outside its own window, and out-of-window is
+    // exactly the state autumn_eligible=false exists to drop (lwfgoo: Estonia
+    // is not on its autumn route; bahgoo: feral; eugwoo2: resident).
+    const __runAutumn = config.season === "fall_winter";
+    if (__runAutumn && phen?.autumn_eligible === false) { __ineligible_dropped++; continue; }
+    if (!__runAutumn && phen?.spring_eligible === false) { __ineligible_dropped++; continue; }
 
     if (probability_pct < PROB_FLOOR) continue;
 

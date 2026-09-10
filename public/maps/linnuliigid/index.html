@@ -69,6 +69,7 @@
   .fetch-controls{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0;position:relative;z-index:9999;pointer-events:auto}
   .fetch-controls .btn{font-size:12px;padding:3px 8px}
   .fetch-controls .btn.stop{background:#e74c3c}
+  .elu-updated{font-size:11px;color:#6b7280;margin:4px 0 2px}
   .fetch-progress{font-size:11px;color:#334155;padding:2px 0;min-height:16px}
   .fetch-progress-bar{height:3px;background:#e2e8f0;border-radius:2px;overflow:hidden;margin-top:2px}
   .fetch-progress-bar-inner{height:100%;background:#27ae60;transition:width .2s}
@@ -312,6 +313,7 @@
   <button id="btnResumeFetch" class="btn secondary" title="Resume refresh from saved index" style="display:none">Resume</button>
   <button id="btnStopFetch" class="btn stop" style="display:none" title="Stop polling">Stop</button>
 </div>
+<div id="eluUpdated" class="elu-updated">Andmed viimati uuendatud: –</div>
 <div id="eluProgress" class="snapshot-banner" style="display:none;font-weight:600"></div>
 <div id="eluLastCoord" class="fetch-progress" style="display:none !important"></div>
 <div id="fetchProgress" class="fetch-progress" style="display:none !important"></div>
@@ -1153,6 +1155,13 @@ function formatDateTimeEE(v){
       timeZone: EE_TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour:'2-digit', minute:'2-digit'
     }).format(new Date(ts));
   }catch(e){ return String(v || '-'); }
+}
+function _renderEluUpdated(){
+  try{
+    var el = document.getElementById('eluUpdated'); if(!el) return;
+    var v = __snapshotMeta && __snapshotMeta.generated_at;
+    el.textContent = 'Andmed viimati uuendatud: ' + (v ? formatDateTimeEE(v) : '–');
+  }catch(e){}
 }
 function _speciesKey(name){
   return String(name || '').trim().toLowerCase();
@@ -4615,6 +4624,7 @@ let SNAPSHOT_CONTROL_API = '';
 let __pollTimer = null;
 let __pollCount = 0;
 let __snapshotMeta = { status: null, generated_at: null };
+_renderEluUpdated();
 let __renderedMarkerCount = 0;
 const ESTONIA_REFRESH_INDEX_KEY = "estonia_refresh_index";
 const ESTONIA_RESUME_STATE_KEY = "estonia_refresh_resume_v2";
@@ -7562,6 +7572,7 @@ async function _applySnapshot(snap){
   __processedCount = keys.length;
   __snapshotMeta.status = snap.status || 'ready';
   __snapshotMeta.generated_at = snap.generated_at;
+  _renderEluUpdated();
   _setResumeIndex(__snapshotProgressDone);
   _recomputeClientDataMaxAt();
   // Clear stale clientScannedAt flags once server snapshot catches up

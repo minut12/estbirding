@@ -24,4 +24,4 @@ A foreign-pressure term in the summary only contradicts empty foreign evidence w
 **May not change without revisiting this note:** reintroducing an inline foreign regex at any of the five sites instead of the helper; adding an English-word country code to `FOREIGN_TERM`; replacing a warning set without `preserveAiFallbackWarnings`; relying on the `buildFinalPredictionPayloadFromEvidence` union alone to carry run-level warnings. Reason strings are part of the contract — logs and tests match on them.
 
 ## Relates
-M7.6 in-EF Sonnet port (`37967fc`). Phase C verification: C4 → `summaryOrigin:'sonnet_in_ef'`, `summaryGuardrailApplied:false`; C3 → `warnings` contains `ai_summary_unavailable: Sonnet stopped on max_tokens (50 tokens)`. Deploy is CI-driven — see `2026-07-09-git-push-does-not-deploy-edge-functions.md`.
+M7.6 in-EF Sonnet port (`37967fc`). Phase C verification: C4 → `summaryOrigin:'sonnet_in_ef'`, `summaryGuardrailApplied:false`; C3 → `warnings` contains `ai_summary_unavailable: Sonnet stopped on max_tokens (50 tokens)`. Deploy is CI-driven — see `.github/workflows/deploy-edge-functions.yml`.

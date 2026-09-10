@@ -638,6 +638,11 @@ interface EbirdObs {
   subId?: string;
   userDisplayName?: string;
   _region?: string;
+  // P11: set on rows that came from the per-species watch fetch rather than
+  // /recent/notable. Internal, but it rides into rare_observations.raw_observation
+  // exactly as _region already does -- deliberate, so a gate check can tell
+  // watch-sourced rows apart.
+  _watch?: boolean;
   [k: string]: unknown;
 }
 
@@ -741,6 +746,11 @@ interface ArcRow {
   source_arc_autumn_to: number | null;
   autumn_eligible: boolean | null;
   spring_eligible: boolean | null;
+}
+
+interface WatchRow {
+  ebird_code: string | null;
+  ebird_watch: boolean | null;
 }
 
 interface UpstreamObs {
@@ -1384,6 +1394,16 @@ async function fetchCompute(
     phenByLat.set(String(p.scientific_name || "").trim().toLowerCase(), p);
   }
 
+  // P11: the watch fetch needs source_regions_<season> by ebird_code, not by
+  // scientific name. Same pattern as arcByCode below, but built from
+  // phenologyRows so it survives an arc read failure -- and it only reads
+  // columns from the select above, so the un-merged rows are the right ones.
+  const phenByCode = new Map<string, PhenologyRow>();
+  for (const p of phenologyRows) {
+    const code = String(p.ebird_code || "").trim();
+    if (code) phenByCode.set(code, p);
+  }
+
   // P8b: source_arc_* and *_eligible arrive with the P8c migration. They are
   // read SEPARATELY, not folded into the select above, because PostgREST 400s
   // on an unknown column -- and that select is guarded by a throw, so an EF
@@ -1427,6 +1447,28 @@ async function fetchCompute(
     console.warn("p8b_arc_load_failed: " + arcLoadError);
   }
 
+  // P11: ebird_watch arrives with the P11a migration, and is read SEPARATELY
+  // for the same reason source_arc_* is -- folding an unknown column into the
+  // ArcRow select would 400 and cost the arcs too. Missing column here costs
+  // one log line: zero watch fetches, today's behaviour, said out loud in
+  // generation_meta as p11_watch_load_failed.
+  const watchCodes: string[] = [];
+  let watchLoadError: string | null = null;
+  try {
+    const rows = await readAll<WatchRow>(
+      sbRead,
+      "species_phenology",
+      "ebird_code,ebird_watch",
+    );
+    for (const r of rows) {
+      const code = String(r.ebird_code || "").trim();
+      if (code && r.ebird_watch === true) watchCodes.push(code);
+    }
+  } catch (err) {
+    watchLoadError = errMsg(err).slice(0, 200) || "unknown";
+    console.warn("p11_watch_load_failed: " + watchLoadError);
+  }
+
   // APPROVED DEVIATION (M7.4c, carried into M7.5): n8n swallowed every region
   // failure into [] and would have gone on to pay for a Sonnet call that wrote
   // an empty raport. If ALL regions failed the cause is systemic -- relay down,
@@ -1437,6 +1479,101 @@ async function fetchCompute(
       "ebird_all_regions_failed: " + JSON.stringify(ebird_errors).slice(0, 500),
     );
   }
+
+  // ---- P11: per-species eBird fetch for ebird_watch species ----------------
+  // /recent/notable only returns species notable IN that region, so a species
+  // that is ordinary where it comes from -- a Red-throated Pipit in Finland, a
+  // Great Skua in Sweden -- is invisible to the pool at exactly the place its
+  // source arc points. The P8b source gate can only choose among observations
+  // the pool holds; this widens the pool. /recent/{code} returns every
+  // checklist for that species, so it is opt-in per phenology row and limited
+  // to that species' own source_regions_<season>.
+  //
+  // Placed after the all-regions guard on purpose: a run that is about to
+  // abort should not pay for the watch calls first.
+  const WATCH_BACK_DAYS = 14;
+  const WATCH_CALL_CAP = 120;
+  const WATCH_BATCH = 20;
+
+  const watchCalls: Array<{ code: string; region: string }> = [];
+  for (const code of watchCodes) {
+    const p = phenByCode.get(code);
+    const own = config.season === "fall_winter"
+      ? p?.source_regions_autumn
+      : p?.source_regions_spring;
+    const regions = (Array.isArray(own) && own.length) ? own : config.regions;
+    for (const region of regions) {
+      if (watchCalls.length >= WATCH_CALL_CAP) break;
+      watchCalls.push({ code, region });
+    }
+    if (watchCalls.length >= WATCH_CALL_CAP) break;
+  }
+
+  // Batched rather than one 120-wide Promise.all: today's run is ~10 parallel
+  // calls through a single Netlify relay function with a 9 s timeout of its
+  // own, and a 12x concurrency jump is the likeliest source of 418/504 bursts.
+  const watch_errors: Array<{ code: string; region: string; error: string }> =
+    [];
+  const watchArrays: EbirdObs[][] = [];
+  let watchBatches = 0;
+  for (let i = 0; i < watchCalls.length; i += WATCH_BATCH) {
+    watchBatches++;
+    const settled = await Promise.all(
+      watchCalls.slice(i, i + WATCH_BATCH).map(({ code, region }) =>
+        ebirdGet(
+          `/data/obs/${region}/recent/${code}?back=${WATCH_BACK_DAYS}&detail=full`,
+        )
+          .then((arr) =>
+            Array.isArray(arr)
+              ? arr.map((o) => ({
+                ...(o as EbirdObs),
+                _region: region,
+                _watch: true,
+              }))
+              : []
+          )
+          .catch((err) => {
+            watch_errors.push({
+              code,
+              region,
+              error: errMsg(err).slice(0, 120),
+            });
+            return [] as EbirdObs[];
+          })
+      ),
+    );
+    watchArrays.push(...settled);
+  }
+
+  // Merge into a NEW array, leaving allObs as it was read: total_obs_fetched
+  // keeps meaning "the notable pool". Notable rows go in first and therefore
+  // win any species|subId collision. A watch row with no subId is dropped here
+  // rather than downstream -- the rare_observations loop drops it anyway, and
+  // it cannot be deduped without a key.
+  const obsSeen = new Set<string>();
+  for (const o of allObs) {
+    if (o && o.speciesCode && o.subId) {
+      obsSeen.add(`${o.speciesCode}|${o.subId}`);
+    }
+  }
+  const allObsMerged: EbirdObs[] = allObs.slice();
+  let watchObsAdded = 0;
+  let watchObsDroppedNoSubId = 0;
+  for (const o of watchArrays.flat()) {
+    if (!o || !o.speciesCode || !o.subId) {
+      watchObsDroppedNoSubId++;
+      continue;
+    }
+    const key = `${o.speciesCode}|${o.subId}`;
+    if (obsSeen.has(key)) continue;
+    obsSeen.add(key);
+    allObsMerged.push(o);
+    watchObsAdded++;
+  }
+  console.log(
+    `p11_watch: species=${watchCodes.length} calls=${watchCalls.length} ` +
+      `batches=${watchBatches} added=${watchObsAdded} errors=${watch_errors.length}`,
+  );
 
   // ---- v8.9: Estonian-presence cross-reference ----
   // get-ee-species-presence returns { ebird_ee_present: [sciName...],
@@ -1530,7 +1667,9 @@ async function fetchCompute(
   }
 
   // ---- Filter to rare-in-EE species ----
-  const rareObs = allObs.filter((o) =>
+  // P11: allObsMerged, not allObs -- the notable pool plus the deduped
+  // per-species watch rows.
+  const rareObs = allObsMerged.filter((o) =>
     o && o.speciesCode && metaByEbirdCode.has(o.speciesCode)
   );
 
@@ -2197,6 +2336,13 @@ async function fetchCompute(
       ineligible_dropped: __ineligible_dropped,
       arc_rows_loaded: arcRowsLoaded,
       ...(arcLoadError ? { p8b_arc_load_failed: arcLoadError } : {}),
+      watch_species: watchCodes.length,
+      watch_calls: watchCalls.length,
+      watch_batches: watchBatches,
+      watch_obs_added: watchObsAdded,
+      watch_obs_dropped_no_subid: watchObsDroppedNoSubId,
+      watch_errors,
+      ...(watchLoadError ? { p11_watch_load_failed: watchLoadError } : {}),
       candidates_returned: top.length,
       rare_observations_count: rare_observations.length,
       species_meta_count: speciesList.length,

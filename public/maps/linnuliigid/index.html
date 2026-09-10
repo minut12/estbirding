@@ -282,6 +282,10 @@
 .bm-pred-pop .foot{margin-top:3px;font-size:10px;color:#94a3b8}
 @media (max-width:480px){.bm-pred-pop .lat{display:none}}
 .bm-pred-track{stroke:#7c3aed;stroke-dasharray:6 6;stroke-width:2;opacity:.7}
+/* P9b: the router could not place this track on a lane (entry/exit leg over the class cap, or no
+   path). Drawn as the old straight source->site line, but greyed so it never reads as a route. */
+.bm-pred-track--unresolved{stroke:#9ca3af;stroke-dasharray:4 8;stroke-width:1.5;opacity:.6}
+.bm-pred-note{font-size:12px;color:#6b7280;margin-top:4px}
 /* Do NOT set white-space:normal here. Leaflet panes are position:absolute with no width, so an
    abspos tooltip that is allowed to wrap shrink-to-fits against a 0-width containing block and
    collapses to min-content — a one-word column, which is why max-width never bound. Leaflet's
@@ -10424,6 +10428,36 @@ document.addEventListener('DOMContentLoaded', function(){
   // predicted site — deriving the endpoint per-site would scatter one observation to three places.
   var TURI = { lat: 58.81, lon: 25.43 };
   var EARTH_R_KM = 6371;
+
+  // ---- P9b: corridor lanes + router (inlined from "Claude outputs/corridors.json", draft-5) ----
+  // Inlined rather than fetched: a track must draw on first paint with no extra request, and a
+  // failed fetch would silently degrade every routed track to the straight fallback.
+  var BM_CORRIDORS = {"version":"P9-draft-5","generated":"2026-09-10","notes":["Waypoint lanes for Ennustus track drawing. Consumed by the linnuliigid iframe; also the Deno backtest can read it.","Coordinates are approximate sea/land waypoints, not observation sites. Sites come from predicted_sites[]; lanes only shape the line between source and site.","A lane lists classes that may use it. A class's max_crossing_km bounds the straight legs source->lane-entry and lane-exit->site; if either leg exceeds it, the track falls back to 'unresolved' (drawn grey dashed, or hidden when source_in_arc === false).","Routing: lanes form one graph (nodes shared between lanes are junctions). Dijkstra from the lane node nearest the source to the lane node nearest the site, over edges of lanes the class may use. The two straight legs are checked against max_crossing_km.","raptor_soaring crossing cap 60 km admits Porkkala→Paljassaare (~54 km, the classic Gulf crossing) and Irbe, rejects Hanko→Põõsaspea (~70 km) and everything wider. Kristian to confirm; his eagle picture (option B) implies Turku birds bypass Estonia.","heron_stork added draft-5: DB has 6 flight classes (passerine_nocturnal 77, waterbird 34, seabird 26, wader 22, raptor_soaring 19, heron_stork 12). Herons/storks/spoonbill: overland + coastal wetlands, crossings up to ~100 km (Gulf of Finland at Hanko admitted). 190 rows, 0 null."],"classes":{"seabird":{"lanes":["SEA_W","SEA_N"],"max_crossing_km":400,"style":"sea"},"waterbird":{"lanes":["COAST_W","GULF_X_W","GULF_X_MID","GULF_X_E","SOUTH_LAND","FI_INLAND","LV_COAST","RU_LEN","PARNU_LINK","FI_SW"],"max_crossing_km":80,"style":"coast"},"wader":{"lanes":["COAST_W","INLAND_SE","GULF_X_W","GULF_X_E","SOUTH_LAND","FI_INLAND","LV_COAST","RU_LEN","PARNU_LINK","FI_SW"],"max_crossing_km":120,"style":"coast"},"passerine_nocturnal":{"lanes":["COAST_W","INLAND_SE","NE_TAIGA","GULF_X_W","GULF_X_MID","GULF_X_E","SOUTH_LAND","FI_INLAND","LV_COAST","RU_LEN","PARNU_LINK","FI_SW"],"max_crossing_km":150,"style":"land"},"raptor_soaring":{"lanes":["GULF_X_MID","GULF_X_E","INLAND_SE","SOUTH_LAND","NE_TAIGA","FI_INLAND","LV_COAST","RU_LEN","PARNU_LINK","COAST_W","FI_SW"],"max_crossing_km":60,"style":"land"},"heron_stork":{"lanes":["COAST_W","INLAND_SE","GULF_X_W","GULF_X_MID","GULF_X_E","SOUTH_LAND","FI_INLAND","LV_COAST","RU_LEN","PARNU_LINK","FI_SW"],"max_crossing_km":100,"style":"coast"}},"nodes":{"skagen":[57.75,10.6],"kattegat":[56.8,11.8],"oresund":[55.9,12.7],"bornholm_n":[55.5,14.8],"s_baltic":[55.8,17.5],"gotland_e":[57.3,19.5],"irbe":[57.75,22],"sorve_sea":[57.85,21.95],"ristna_sea":[58.93,21.85],"poosaspea_sea":[59.3,23.45],"kvarken":[63.5,20.9],"bothnia_s":[61.5,19.5],"aland":[60.2,19.8],"hanko_sea":[59.7,22.9],"hanko":[59.82,22.97],"poosaspea":[59.23,23.51],"haapsalu":[58.95,23.5],"matsalu":[58.75,23.7],"muhu":[58.6,23.25],"kuressaare":[58.25,22.5],"sorve":[57.91,22.06],"kolka":[57.75,22.6],"ventspils":[57.4,21.55],"porkkala":[59.93,24.4],"paljassaare":[59.47,24.7],"kotka":[60.45,26.9],"narva_joesuu":[59.47,28.04],"vasknarva":[59,27.73],"tartu":[58.38,26.72],"valga":[57.78,26.05],"valmiera":[57.54,25.4],"daugavpils":[55.87,26.5],"warsaw":[52.2,21],"bialystok":[53.13,23.15],"kaunas":[54.9,23.9],"riga":[56.95,24.1],"parnu":[58.38,24.5],"lahti":[60.98,25.66],"kasmu":[59.6,25.7],"rakvere":[59.35,26.35],"gdansk_bay":[54.7,19],"kvarken_land":[63.1,21.6],"tampere":[61.5,23.8],"jurmala":[56.95,23.6],"lebyazhye":[59.97,29.4],"kingisepp":[59.37,28.6],"oulu":[65,25.5],"turku":[60.45,22.27],"helsinki_w":[60.12,24.75]},"lanes":{"SEA_W":{"label":"Kattegat → S Baltic → Irbe → W headlands","nodes":["skagen","kattegat","oresund","bornholm_n","gdansk_bay","s_baltic","gotland_e","irbe","sorve_sea","ristna_sea","poosaspea_sea"]},"SEA_N":{"label":"Bothnia → Åland → Gulf mouth → Põõsaspea","nodes":["kvarken","bothnia_s","aland","hanko_sea","poosaspea_sea","ristna_sea","sorve_sea","irbe"]},"COAST_W":{"label":"West-Estonian coastal funnel (Põõsaspea → Sõrve → Kolka)","nodes":["poosaspea","haapsalu","matsalu","muhu","kuressaare","sorve","kolka","ventspils"]},"GULF_X_W":{"label":"Hanko → Põõsaspea crossing","nodes":["hanko","poosaspea"]},"GULF_X_MID":{"label":"Porkkala → Tallinn crossing","nodes":["porkkala","paljassaare"]},"GULF_X_E":{"label":"Kotka → Narva-Jõesuu crossing","nodes":["kotka","narva_joesuu"]},"INLAND_SE":{"label":"Narva → Peipsi → Tartu → Valga → LV interior","nodes":["narva_joesuu","vasknarva","tartu","valga","valmiera","daugavpils"]},"SOUTH_LAND":{"label":"PL → LT → LV → S Estonia","nodes":["warsaw","bialystok","kaunas","riga","parnu","valga"]},"NE_TAIGA":{"label":"SE Finland → Narva / Lahemaa → inland","nodes":["lahti","kotka","narva_joesuu","kasmu","rakvere","tartu"]},"FI_INLAND":{"label":"Kvarken → Tampere → Lahti → Kotka (Finnish overland)","nodes":["oulu","kvarken_land","tampere","lahti","kotka"]},"LV_COAST":{"label":"Riga → Jūrmala → Kolka → Sõrve (Irbe ~28 km)","nodes":["riga","jurmala","kolka","sorve"]},"RU_LEN":{"label":"Ingria coast → Kingisepp → Narva-Jõesuu","nodes":["lebyazhye","kingisepp","narva_joesuu"]},"PARNU_LINK":{"label":"Pärnu → Matsalu (joins the coastal funnel)","nodes":["parnu","matsalu"]},"FI_SW":{"label":"Turku → Hanko → Porkkala → Helsinki → Kotka (Finnish south coast)","nodes":["turku","hanko","porkkala","helsinki_w","kotka"]}}};
+
+  // Two-point haversine, [lat,lon] pairs. Deliberately NOT aliased to kmBetween(aLat,aLon,bLat,bLon)
+  // above: different signature, and routeTrack is ported verbatim from the mock, which calls this one.
+  function km(a,b){var R=6371,dLat=(b[0]-a[0])*Math.PI/180,dLon=(b[1]-a[1])*Math.PI/180,la1=a[0]*Math.PI/180,la2=b[0]*Math.PI/180;var h=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)*Math.sin(dLon/2);return 2*R*Math.asin(Math.sqrt(h));}
+
+  // Ported verbatim from "Claude outputs/P9-corridors-mock.html". Dijkstra over the lanes this class
+  // may use; the two straight legs (source -> lane entry, lane exit -> site) are each bounded by the
+  // class max_crossing_km. On failure it still returns pts = [src, site], the straight fallback.
+  function routeTrack(C, src, site, cls){
+    var spec = C.classes[cls]; if(!spec) return { ok:false, reason:'no_class', pts:[src, site] };
+    var adj = {}, allowed = {};
+    for(var li=0; li<spec.lanes.length; li++){ var ns = C.lanes[spec.lanes[li]].nodes;
+      for(var i=0;i<ns.length;i++){ allowed[ns[i]] = true; if(i+1<ns.length){ var a=ns[i], b=ns[i+1], d=km(C.nodes[a],C.nodes[b]);
+        (adj[a]=adj[a]||[]).push([b,d]); (adj[b]=adj[b]||[]).push([a,d]); } } }
+    var en=null, ed=1e9, xn=null, xd=1e9, n;
+    for(n in allowed){ var d1=km(src,C.nodes[n]); if(d1<ed){ed=d1;en=n;} var d2=km(site,C.nodes[n]); if(d2<xd){xd=d2;xn=n;} }
+    var dist={}, prev={}, Q={}; for(n in allowed){ dist[n]=1e12; Q[n]=true; } dist[en]=0;
+    while(true){ var u=null; for(n in Q){ if(u===null||dist[n]<dist[u]) u=n; } if(u===null) break; delete Q[u]; if(u===xn) break;
+      var e=adj[u]||[]; for(var k=0;k<e.length;k++){ var v=e[k][0], w=e[k][1]; if(dist[u]+w<dist[v]){ dist[v]=dist[u]+w; prev[v]=u; } } }
+    var path=[]; for(var c=xn; c; c=prev[c]){ path.unshift(c); if(c===en) break; }
+    var lim=spec.max_crossing_km, ok = ed<=lim && xd<=lim && path[0]===en;
+    var pts=[src]; for(var p=0;p<path.length;p++) pts.push(C.nodes[path[p]]); pts.push(site);
+    return { ok:ok, reason: ok?'ok':(ed>lim?'entry_leg':(xd>lim?'exit_leg':'no_path')), entry_km:Math.round(ed), exit_km:Math.round(xd), lane_km:Math.round(dist[xn]), path:path, pts:pts };
+  }
+
   // upstream_obs.location is free eBird text — long, often non-Latin. Shorten it for the origin
   // label only; the popup keeps the same shortened form so a 220 px popup cannot be blown open.
   var ORIGIN_LABEL_MAX = 20;
@@ -10556,29 +10590,45 @@ document.addEventListener('DOMContentLoaded', function(){
     try{ if(layer && window.map) window.map.removeLayer(layer); }catch(e){}
   }
 
-  // `site` is the clicked site to highlight, not the far end of the line: bearing_from_ee and
-  // distance_km are measured from the Türi anchor, so the reconstructed point is the fixed source
-  // everything else is measured from. Nodes are every predicted site of this species, nearest first.
+  // P9b: ONE routed track, source -> the clicked site, along the corridor lanes this species'
+  // flight_class may use. The pre-P9b polyline through every predicted site nearest-first is gone:
+  // it drew a single line touching three sites, which read as one bird visiting all of them.
+  // `site` is now both the highlight and the far end of the line.
   function showTrack(site, entry){
     try{
       hideTrack();
       if(!window.map) return;
+
+      // The halo marks which site was clicked, so it is independent of whether a track is drawable
+      // and is placed before every early return below.
+      var hasSite = site && typeof site.lat === 'number' && typeof site.lon === 'number';
+      if(hasSite){
+        activeHalo = L.circleMarker([site.lat, site.lon], SITE_HALO_STYLE);
+        activeHalo.addTo(window.map);
+      }
+
+      // P8b: no observation inside the curated source arc means the freshest obs lies in the wrong
+      // direction, so any line drawn from it would be a guess. The popup says so; nothing is drawn.
+      var pf = entry.probability_factors;
+      if(pf && pf.source_in_arc === false) return;
+
       var obs = (entry.upstream_obs && entry.upstream_obs[0]) ? entry.upstream_obs[0] : null;
-      var source = sourcePoint(obs);
+      // P5a carries the observation's own coordinates. sourcePoint() reconstructs them from
+      // bearing/distance off the Türi anchor and stays the fallback for raports predating P5a.
+      var source = (obs && typeof obs.lat === 'number' && typeof obs.lon === 'number')
+        ? [obs.lat, obs.lon]
+        : sourcePoint(obs);
       if(!source) return;
 
-      var sites = Array.isArray(entry.predicted_sites) ? entry.predicted_sites : [];
-      var nodes = sites.filter(function(s){
-        return s && typeof s.lat === 'number' && typeof s.lon === 'number';
-      }).map(function(s){
-        return { lat: s.lat, lon: s.lon, km: kmBetween(source[0], source[1], s.lat, s.lon) };
-      }).sort(function(a, b){ return a.km - b.km; });
-      if(!nodes.length) return;
-
-      var latlngs = [source];
-      nodes.forEach(function(n){ latlngs.push([n.lat, n.lon]); });
-      activeTrack = L.polyline(latlngs, { className: 'bm-pred-track' });
-      activeTrack.addTo(window.map);
+      if(hasSite){
+        // No class, an unknown class, or a leg over the class cap all come back ok:false with a
+        // straight [src, site] in pts -- the pre-P9b line, greyed so it never reads as a route.
+        var r = routeTrack(BM_CORRIDORS, source, [site.lat, site.lon], entry.flight_class);
+        var trackCls = (r && r.ok) ? 'bm-pred-track' : 'bm-pred-track bm-pred-track--unresolved';
+        var pts = (r && r.pts && r.pts.length) ? r.pts : [source, [site.lat, site.lon]];
+        activeTrack = L.polyline(pts, { className: trackCls });
+        activeTrack.addTo(window.map);
+      }
 
       activeOrigin = L.circleMarker(source, ORIGIN_DOT_STYLE);
       // Leaflet writes tooltip content with innerHTML, so every value is escaped here too.
@@ -10587,11 +10637,6 @@ document.addEventListener('DOMContentLoaded', function(){
         { permanent: true, direction: 'top', className: 'bm-pred-origin-tip' }
       );
       activeOrigin.addTo(window.map);
-
-      if(site && typeof site.lat === 'number' && typeof site.lon === 'number'){
-        activeHalo = L.circleMarker([site.lat, site.lon], SITE_HALO_STYLE);
-        activeHalo.addTo(window.map);
-      }
     }catch(e){ console.warn('[bm_pred] showTrack failed', e); }
   }
 
@@ -10746,6 +10791,11 @@ document.addEventListener('DOMContentLoaded', function(){
       var basisEl = basisParts.length ? ('<div class="basis">' + basisParts.join(' · ') + '</div>') : '';
 
       var footEl = generatedAt ? ('<div class="foot">Tõenäosus-raport ' + escapeHtml(fmtTallinn(generatedAt)) + '</div>') : '';
+      // P9b: showTrack draws nothing when source_in_arc is false, so the popup has to say why the
+      // track is missing. Static text, no interpolation -- nothing to escape.
+      var arcNoteEl = (entry.probability_factors && entry.probability_factors.source_in_arc === false)
+        ? '<div class="bm-pred-note">Lähtekoht ebaselge – rändeteed ei kuvata.</div>'
+        : '';
       var avatarImg = entry.avatar_url ? ('<img src="' + avatarUrl + '" onerror="this.style.visibility=\'hidden\'">') : '';
 
       return '<div class="bm-pred-pop">' +
@@ -10757,6 +10807,7 @@ document.addEventListener('DOMContentLoaded', function(){
         '<div class="links"><button type="button" class="bm-pred-open">Ava Ülevaates</button>' +
         '<span class="sep">·</span>' +
         '<button type="button" class="bm-pred-copy">Kopeeri koordinaadid</button></div>' +
+        arcNoteEl +
         rateChipsHtml(entry.ebird_code, rateIdx) +
         footEl +
         '</div>';

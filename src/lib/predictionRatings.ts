@@ -39,6 +39,13 @@ export interface PredictionRatingRow {
   siteIndex: number;
   rating: PredictionRating;
   note: string | null;
+  /**
+   * True when the row was carried from an earlier raport rather than rated on
+   * the one being viewed. `raportId` is then the raport it was rated on, not
+   * the current one. Nothing reads this yet — it exists so carried chips can
+   * be styled later without another change to the data layer.
+   */
+  carried: boolean;
 }
 
 export interface UpsertPredictionRatingInput {
@@ -97,18 +104,63 @@ export async function upsertPredictionRating(
 }
 
 /**
- * The signed-in user's own ratings for one raport. RLS lets an authenticated
- * user SELECT every row, so user_id is filtered explicitly — without it this
- * would return everybody's ratings. Anonymous -> empty, never an error.
+ * Maps either shape onto PredictionRatingRow: the RPC names the originating
+ * raport `from_raport_id` and flags `carried`, the per-raport table read has
+ * plain `raport_id` and no flag at all (absent -> false). Rows with a rating
+ * outside the enum are dropped rather than trusted.
+ */
+function toPredictionRatingRows(data: unknown): PredictionRatingRow[] {
+  const rows = Array.isArray(data) ? data : [];
+  const out: PredictionRatingRow[] = [];
+  for (const r of rows) {
+    const row = r as Record<string, unknown>;
+    const rating = row.rating;
+    if (!isPredictionRating(rating)) continue;
+    out.push({
+      raportId: String(row.from_raport_id ?? row.raport_id ?? ''),
+      ebirdCode: String(row.ebird_code ?? ''),
+      siteIndex: Number(row.site_index),
+      rating,
+      note: ((row.note as string | null | undefined) ?? null),
+      carried: Boolean(row.carried),
+    });
+  }
+  return out;
+}
+
+/**
+ * The signed-in user's own ratings, seeded onto one raport.
+ *
+ * Ratings are keyed per raport but the cron cuts a new raport every few hours,
+ * so reading only `raportId` opens every fresh raport with blank chips. The
+ * RPC re-keys the caller's ratings from the last `days` days onto this raport
+ * by (ebird_code, predicted site label) — site order shifts between raports,
+ * so the label is the stable key — with site_index -1 (species level) carried
+ * by ebird_code alone and the latest rated_at winning per key.
+ *
+ * If the RPC is absent (P10a not yet applied) or errors, this falls back to
+ * the per-raport query, so a deploy-order mismatch degrades to today's votes
+ * instead of blanking the chips. RLS lets an authenticated user SELECT every
+ * row, so that fallback filters user_id explicitly — without it, it would
+ * return everybody's ratings. Anonymous -> empty, never an error.
  */
 export async function loadMyPredictionRatings(
   raportId: string,
+  days = 7,
 ): Promise<PredictionRatingRow[]> {
   if (!raportId) return [];
   try {
     const { data: sessionData } = await supabase.auth.getSession();
     const userId = sessionData?.session?.user?.id;
     if (!userId) return [];
+
+    const { data: carriedData, error: carriedError } = await (supabase as any)
+      .rpc('my_carried_prediction_ratings', {
+        p_raport_id: raportId,
+        p_days: days,
+      });
+    if (!carriedError) return toPredictionRatingRows(carriedData);
+    console.warn('[pred_rate] carried load failed, falling back', carriedError);
 
     const { data, error } = await (supabase as any)
       .from('prediction_ratings')
@@ -119,20 +171,7 @@ export async function loadMyPredictionRatings(
       console.warn('[pred_rate] load failed', error);
       return [];
     }
-    const rows = Array.isArray(data) ? data : [];
-    const out: PredictionRatingRow[] = [];
-    for (const r of rows) {
-      const rating = (r as { rating?: unknown }).rating;
-      if (!isPredictionRating(rating)) continue;
-      out.push({
-        raportId: String((r as { raport_id?: unknown }).raport_id ?? ''),
-        ebirdCode: String((r as { ebird_code?: unknown }).ebird_code ?? ''),
-        siteIndex: Number((r as { site_index?: unknown }).site_index),
-        rating,
-        note: ((r as { note?: string | null }).note ?? null),
-      });
-    }
-    return out;
+    return toPredictionRatingRows(data);
   } catch (e) {
     console.warn('[pred_rate] load threw', e);
     return [];

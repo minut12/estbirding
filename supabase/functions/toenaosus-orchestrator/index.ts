@@ -2616,6 +2616,8 @@ function parseMerge(
       ebird_code: c.ebird_code,
       ee_present: c.ee_present,
       upstream_obs: c.upstream_obs ?? [],
+      // P9a: flight class for the P9b corridor-lane routing in linnuliigid.
+      flight_class: c.flight_class ?? null,
       // P6b addition; P5 adds eta_days / eta_window_et / eta_basis per site.
       predicted_sites: sitesWithEta(c, winds, etaNow),
     };

@@ -4,6 +4,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { APP_VERSION } from '@/lib/version';
@@ -76,8 +77,17 @@ interface MapTabProps {
   onMapChange?: (mapId: string) => void;
 }
 
+// P6: posted by the linnuliigid iframe's Ennustus popup. Both payload fields are optional because
+// this crosses a postMessage boundary -- the iframe may be an older cached build.
+export type OpenUlevaadeMessage = {
+  type: 'OPEN_ULEVAADE';
+  section?: string;
+  ebird_code?: string;
+};
+
 export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
   const { user, isAdmin, hasPermission, role, permissions, session } = useAuth();
+  const navigate = useNavigate();
   const availableMaps = useMemo(() => (
     getAllowedMapsForRole(role, permissions, maps)
   ), [permissions, role]);
@@ -1122,6 +1132,20 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
     return () => window.removeEventListener('message', handler);
   }, [sendToIframe, session]);
 
+  // P6: the Ennustus popup's "Ava Ülevaates" button has posted this since P6b with nothing
+  // listening. The species code travels as router state rather than a query param or a store:
+  // OverviewTab mounts fresh on every tab switch, so mount-time state is all it needs.
+  useEffect(() => {
+    const handler = (ev: MessageEvent) => {
+      const d = ev.data as OpenUlevaadeMessage | null | undefined;
+      if (!d || d.type !== 'OPEN_ULEVAADE') return;
+      // The wire field is snake_case ebird_code; the router state uses ebirdCode.
+      const ebirdCode = typeof d.ebird_code === 'string' && d.ebird_code ? d.ebird_code : null;
+      navigate('/ulevaade', { state: { estbirding: { section: 'toenaosus', ebirdCode } } });
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [navigate]);
 
   useEffect(() => {
     const onCustomSpeciesUpdated = () => sendCustomSpeciesToIframe();

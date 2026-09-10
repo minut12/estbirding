@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -782,18 +783,82 @@ async function fetchLatestElurikkus(): Promise<ElurikkusRaport | null> {
   return row;
 }
 
+// P6: the section the Ülevaade tab is showing. Exported so the router-state payload posted from
+// MapTab and the local state here cannot drift apart.
+export type OverviewSection = 'ee' | 'eu' | 'arrivals' | 'toenaosus' | 'arhiiv';
+
+const OVERVIEW_SECTIONS: readonly OverviewSection[] = ['ee', 'eu', 'arrivals', 'toenaosus', 'arhiiv'];
+
+function isOverviewSection(value: unknown): value is OverviewSection {
+  return typeof value === 'string' && (OVERVIEW_SECTIONS as readonly string[]).includes(value);
+}
+
+// The shape MapTab pushes as router state. Everything is optional: the state may be absent (direct
+// visit, refresh) or written by an older build, so each field is narrowed before use.
+type EstbirdingNavState = {
+  section?: unknown;
+  ebirdCode?: unknown;
+};
+
+function readEstbirdingState(state: unknown): EstbirdingNavState | null {
+  if (!state || typeof state !== 'object') return null;
+  const nested = (state as { estbirding?: unknown }).estbirding;
+  if (!nested || typeof nested !== 'object') return null;
+  return nested as EstbirdingNavState;
+}
+
+// How long the violet ring stays on the card the user was sent to.
+const HIGHLIGHT_MS = 2000;
+
 export default function OverviewTab() {
   const { session } = useAuth();
+  const location = useLocation();
   const [report, setReport] = useState<VaatlusteRaport | null>(null);
   const [elurikkusReport, setElurikkusReport] = useState<ElurikkusRaport | null>(null);
   const [toenaosusReport, setToenaosusReport] = useState<ToenaosusRaport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [section, setSection] = useState<'ee' | 'eu' | 'arrivals' | 'toenaosus' | 'arhiiv'>('ee');
+  const [section, setSection] = useState<OverviewSection>('ee');
+  // P6: the species the map asked us to jump to, held until the Tõenäosus report has loaded.
+  const [pendingEbirdCode, setPendingEbirdCode] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [isRefreshingToenaosus, setIsRefreshingToenaosus] = useState(false);
   const [copiedToenaosus, setCopiedToenaosus] = useState(false);
+
+  // P6, step 1 of 2: read what the map asked for. Mount-only -- this component is rendered behind
+  // `active === 'ulevaade'` in Index, so it remounts on every switch back and the state is fresh.
+  useEffect(() => {
+    const nav = readEstbirdingState(location.state);
+    if (!nav) return;
+    if (isOverviewSection(nav.section)) setSection(nav.section);
+    if (typeof nav.ebirdCode === 'string' && nav.ebirdCode) setPendingEbirdCode(nav.ebirdCode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // P6, step 2 of 2: scroll once the report is in. Keyed on the report because the navigation
+  // usually wins the race against the fetch -- on mount the card does not exist yet. The history
+  // state is cleared only after a card was actually found, so a slow report still gets its jump.
+  useEffect(() => {
+    if (!pendingEbirdCode || !toenaosusReport) return;
+    const el = document.getElementById(`toenaosus-${pendingEbirdCode}`);
+    if (!el) {
+      // Raport rotated since the map loaded and this species is gone: section switch only.
+      setPendingEbirdCode(null);
+      return;
+    }
+    el.scrollIntoView({ block: 'center' });
+    el.classList.add('ring-2', 'ring-violet-500');
+    const timer = window.setTimeout(() => {
+      el.classList.remove('ring-2', 'ring-violet-500');
+    }, HIGHLIGHT_MS);
+    setPendingEbirdCode(null);
+    window.history.replaceState(
+      { ...(window.history.state || {}), estbirding: undefined },
+      '',
+    );
+    return () => window.clearTimeout(timer);
+  }, [toenaosusReport, pendingEbirdCode]);
 
   const fetchLatest = useCallback(async (): Promise<VaatlusteRaport | null> => {
     setError(null);
@@ -1223,6 +1288,11 @@ export default function OverviewTab() {
                       return (
                         <Card
                           key={`${entry.species_lat}-${entry.sub_id ?? entry.date}-${idx}`}
+                          // P6: the scroll target. Omitted entirely when ebird_code is absent, so
+                          // several code-less cards cannot collide on one id.
+                          {...(entry.ebird_code
+                            ? { id: `toenaosus-${entry.ebird_code}`, 'data-ebird': entry.ebird_code }
+                            : {})}
                           className={cn(
                             'p-4 space-y-2',
                             tier === 'rare' && 'border-l-4 border-l-amber-500 bg-amber-50/40',

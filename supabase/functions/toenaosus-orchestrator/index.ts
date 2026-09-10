@@ -157,6 +157,17 @@ const ORCH_BUDGET_MS = 340_000;
 const SONNET_MAX_TIMEOUT_MS = 290_000;
 const SONNET_RESERVE_MS = 20_000;
 
+// P16: output is ~20 tok/s and linear in entry count, so 30 entries meant
+// 12-14k tokens and 243-271 s in one call -- run 354 crossed the 290 s ceiling.
+// Split the candidates and call Sonnet concurrently instead.
+const SONNET_PARTS = 2;
+// A rejected part is retried once, but only when the failure was FAST (an HTTP
+// status, not a timeout) and this much of the shared clock is left. Two ~140 s
+// attempts plus this floor is the whole 290 s ceiling, so a timeout is never
+// retried: there is by definition no room left after one.
+const SONNET_RETRY_MIN_MS = 150_000;
+const SONNET_FAST_FAILURE = /anthropic HTTP (429|5\d\d)/;
+
 // The relay caps its own eBird call at 9 s, so this ceiling is only a backstop.
 const EBIRD_TIMEOUT_MS = 20_000;
 const WEATHER_TIMEOUT_MS = 10_000; // n8n Weather Corridors node
@@ -843,7 +854,9 @@ interface FetchComputeResult {
   weather_corridors: WeatherCorridorsResult | null;
   candidates: Candidate[];
   corridor_watchlist: WatchlistItem[];
-  sonnet_user_content: string;
+  sonnet_user_contents: string[];
+  /** Candidate count per part, parallel to sonnet_user_contents (P16). */
+  sonnet_part_candidates: number[];
   rare_observations: RareObservation[];
   source_data: Record<string, unknown>;
   ebird_errors: Array<{ region: string; error: string }>;
@@ -2336,11 +2349,23 @@ async function fetchCompute(
   }
 
   // ---- Sonnet payload (unchanged shape from v6) ----
-  const sonnetUserPayload = {
+  // P16: one payload per part. `season`, `period` and `weather` are three
+  // scalars outside `candidates`, so repeating them per part is nearly free and
+  // each part still reads as a complete, self-contained request.
+  const candidateChunks: typeof top[] = [];
+  const chunkSize = Math.ceil(top.length / SONNET_PARTS);
+  for (let i = 0; i < top.length; i += chunkSize) {
+    candidateChunks.push(top.slice(i, i + chunkSize));
+  }
+  // An empty pool would otherwise yield zero parts, zero calls and a silently
+  // empty intro_et. One call with no candidates is what v6 did; keep that.
+  if (candidateChunks.length === 0) candidateChunks.push([]);
+
+  const sonnetUserPayloads = candidateChunks.map((chunk) => ({
     season: config.season,
     period: config.period_start + " kuni " + config.period_end,
     weather: weatherCorridorsData,
-    candidates: top.map(function (s) {
+    candidates: chunk.map(function (s) {
       return {
         ebird_code: s.ebird_code,
         name_et: s.name_et,
@@ -2360,18 +2385,19 @@ async function fetchCompute(
         neighbor_breakdown: s.neighbor_breakdown,
       };
     }),
-  };
+  }));
 
-  const sonnetUserContent = USER_PREFIX +
-    JSON.stringify(sonnetUserPayload, null, 2) +
-    USER_SUFFIX;
+  const sonnetUserContents = sonnetUserPayloads.map((p) =>
+    USER_PREFIX + JSON.stringify(p, null, 2) + USER_SUFFIX
+  );
 
   return {
     config,
     weather_corridors: weatherCorridorsData,
     candidates: top,
     corridor_watchlist,
-    sonnet_user_content: sonnetUserContent,
+    sonnet_user_contents: sonnetUserContents,
+    sonnet_part_candidates: candidateChunks.map((c) => c.length),
     rare_observations,
     source_data: {
       total_obs_fetched: allObs.length,
@@ -2656,6 +2682,23 @@ async function callSonnet(
   }
 }
 
+/**
+ * The stage's stop_reason is the WORST of its parts: `max_tokens` beats
+ * anything else, and anything else beats `end_turn` -- so a truncated half can
+ * never be hidden behind a clean one in generation_meta. (parseMerge throws on
+ * `max_tokens` regardless; this is what the run records on its way out.)
+ */
+function worstStopReason(parts: AnthropicResponse[]): string | null {
+  let worst: string | null = null;
+  for (const p of parts) {
+    const r = p.stop_reason ?? null;
+    if (r === "max_tokens") return "max_tokens";
+    if (r && r !== "end_turn") worst = r;
+    else if (worst === null) worst = r;
+  }
+  return worst;
+}
+
 // ---------------------------------------------------------------------------
 // node "Parse + Merge" -- 05-parse-merge.js, verbatim, plus the approved
 // max_tokens guard n8n lacked (deviation 2 in the header).
@@ -2729,42 +2772,67 @@ function sitesWithEta(
 }
 
 function parseMerge(
-  claude: AnthropicResponse,
+  claudeParts: AnthropicResponse[],
   upstream: FetchComputeResult,
   winds: EtaWinds,
 ): ParseOutput {
-  // APPROVED ADDITION (M7.5): n8n had no max_tokens guard, so a truncated
-  // response fell through to JSON.parse and surfaced as a confusing "non-JSON"
-  // error. Checked BEFORE the text-block check.
-  if (claude.stop_reason === "max_tokens") {
-    throw new Error(
-      "Sonnet stopped on max_tokens (" +
-        (claude.usage?.output_tokens ?? 0) + " tokens)",
-    );
-  }
+  // P16: one response per part. Each is guarded and parsed exactly as the
+  // single response was; the part index goes into every message so a failure
+  // says which half died. `textByCode` then accumulates ACROSS parts, which is
+  // the only place the merge differs from v6.
+  const parsedParts: { intro_et?: string; entries?: SonnetEntry[] }[] = [];
 
-  // Anthropic v1/messages: response.content is an array of content blocks
-  const blocks = (claude && claude.content) || [];
-  const textBlock = blocks.find((b) => b && b.type === "text");
-  if (!textBlock || !textBlock.text) {
-    throw new Error("Sonnet returned no text block");
-  }
+  for (let i = 0; i < claudeParts.length; i++) {
+    const claude = claudeParts[i];
 
-  // Strip optional ```json fences just in case
-  let raw = textBlock.text.trim();
-  raw = raw.replace(/^```(json)?\s*/i, "").replace(/\s*```$/, "").trim();
+    // APPROVED ADDITION (M7.5): n8n had no max_tokens guard, so a truncated
+    // response fell through to JSON.parse and surfaced as a confusing "non-JSON"
+    // error. Checked BEFORE the text-block check.
+    if (claude.stop_reason === "max_tokens") {
+      throw new Error(
+        "Sonnet stopped on max_tokens (" +
+          (claude.usage?.output_tokens ?? 0) + " tokens) [part " + i + "]",
+      );
+    }
 
-  let parsed: { intro_et?: string; entries?: SonnetEntry[] };
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error("Sonnet returned non-JSON: " + raw.slice(0, 300));
+    // Anthropic v1/messages: response.content is an array of content blocks
+    const blocks = (claude && claude.content) || [];
+    const textBlock = blocks.find((b) => b && b.type === "text");
+    if (!textBlock || !textBlock.text) {
+      throw new Error("Sonnet returned no text block [part " + i + "]");
+    }
+
+    // Strip optional ```json fences just in case
+    let raw = textBlock.text.trim();
+    raw = raw.replace(/^```(json)?\s*/i, "").replace(/\s*```$/, "").trim();
+
+    try {
+      parsedParts.push(JSON.parse(raw));
+    } catch {
+      throw new Error(
+        "Sonnet returned non-JSON [part " + i + "]: " + raw.slice(0, 300),
+      );
+    }
   }
 
   const textByCode = new Map<string, SonnetEntry>();
-  for (const e of (parsed.entries || [])) {
-    if (e && e.ebird_code) textByCode.set(e.ebird_code, e);
+  for (let i = 0; i < parsedParts.length; i++) {
+    for (const e of (parsedParts[i].entries || [])) {
+      if (!e || !e.ebird_code) continue;
+      // Each code was sent to exactly one part, so a duplicate means a part
+      // answered for a candidate it never received. First writer wins.
+      if (textByCode.has(e.ebird_code)) {
+        console.warn(
+          `[toenaosus-orch] P16 duplicate ebird_code ${e.ebird_code} from part ${i}, keeping the first`,
+        );
+        continue;
+      }
+      textByCode.set(e.ebird_code, e);
+    }
   }
+
+  // Kristian's ruling: the intro belongs to the top-ranked half.
+  const parsed = parsedParts[0] || {};
 
   // One clock for the whole merge: two sites of one entry must not land in
   // different eta_days buckets because the loop crossed a rounding boundary.
@@ -2834,10 +2902,21 @@ function parseMerge(
     model: sonnetModel(),
     generation_meta: {
       run_id: upstream.config.run_id,
-      sonnet_model: claude.model || null,
-      stop_reason: claude.stop_reason || null,
-      input_tokens: claude.usage?.input_tokens || null,
-      output_tokens: claude.usage?.output_tokens || null,
+      // P16: same field names and scalar shapes as the single-call era, but
+      // aggregated over the parts -- model from part 0 (every part sends the
+      // same one), stop_reason the worst, both token counts summed. The input
+      // count roughly doubles because the system prompt, season, period and
+      // weather ride along in each part; that is the real cost of the split.
+      sonnet_model: claudeParts[0]?.model || null,
+      stop_reason: worstStopReason(claudeParts),
+      input_tokens: claudeParts.reduce(
+        (sum, c) => sum + (c.usage?.input_tokens ?? 0),
+        0,
+      ) || null,
+      output_tokens: claudeParts.reduce(
+        (sum, c) => sum + (c.usage?.output_tokens ?? 0),
+        0,
+      ) || null,
     },
   };
 }
@@ -3027,25 +3106,76 @@ async function run(sb: Admin, orch: OrchRun, opts: RunOptions) {
     const maxTokens = opts.dryRun && opts.maxTokensOverride
       ? opts.maxTokensOverride
       : MAX_TOKENS;
-    const apiResp = await callSonnet(
-      SYSTEM_PROMPT,
-      fc.sonnet_user_content,
-      maxTokens,
-      sonnetTimeout,
+    // P16: the parts share one clock -- `sonnetTimeout` is the ceiling for the
+    // whole stage, not per call -- so a rejected part is only retried when the
+    // failure was fast enough to leave room for a second attempt.
+    const partContents = fc.sonnet_user_contents;
+    const partRetried: boolean[] = partContents.map(() => false);
+    const partMs: number[] = partContents.map(() => 0);
+
+    const settled = await Promise.allSettled(
+      partContents.map(async (content, i) => {
+        const tp = Date.now();
+        const resp = await callSonnet(
+          SYSTEM_PROMPT,
+          content,
+          maxTokens,
+          sonnetTimeout,
+        );
+        partMs[i] = Date.now() - tp;
+        return resp;
+      }),
     );
-    calls = 1;
+
+    const apiResps: AnthropicResponse[] = [];
+    for (let i = 0; i < settled.length; i++) {
+      const r = settled[i];
+      if (r.status === "fulfilled") {
+        apiResps.push(r.value);
+        continue;
+      }
+      // A timeout never qualifies: two attempts cannot fit inside one ceiling.
+      const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      const remaining = sonnetTimeout - (Date.now() - t5);
+      if (!SONNET_FAST_FAILURE.test(msg) || remaining < SONNET_RETRY_MIN_MS) {
+        throw r.reason;
+      }
+      console.warn(
+        `[toenaosus-orch] P16 part ${i} failed fast (${msg.slice(0, 120)}), ` +
+          `retrying once with ${remaining} ms left`,
+      );
+      const tp = Date.now();
+      apiResps.push(
+        await callSonnet(SYSTEM_PROMPT, partContents[i], maxTokens, remaining),
+      );
+      partMs[i] = Date.now() - tp;
+      partRetried[i] = true;
+    }
+
+    calls = partContents.length;
     timings.sonnet_ms = Date.now() - t5;
     orch.state = {
       ...orch.state,
       timings,
-      stop_reason: apiResp.stop_reason ?? null,
-      output_tokens: apiResp.usage?.output_tokens ?? null,
+      stop_reason: worstStopReason(apiResps),
+      output_tokens: apiResps.reduce(
+        (sum, r) => sum + (r.usage?.output_tokens ?? 0),
+        0,
+      ),
+      sonnet_parts: apiResps.map((r, i) => ({
+        ms: partMs[i],
+        output_tokens: r.usage?.output_tokens ?? null,
+        stop_reason: r.stop_reason ?? null,
+        candidates: fc.sonnet_part_candidates[i] ?? 0,
+        retried: partRetried[i],
+      })),
+      intro_source: "part0",
     };
     await heartbeat(sb, orch, "sonnet_done");
 
     // --- stage 8: node "Parse + Merge" ------------------------------------
     const t6 = Date.now();
-    const payload = parseMerge(apiResp, fc, etaWinds);
+    const payload = parseMerge(apiResps, fc, etaWinds);
     timings.parse_ms = Date.now() - t6;
     orch.state = {
       ...orch.state,

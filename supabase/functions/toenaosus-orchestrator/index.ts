@@ -1493,7 +1493,16 @@ async function fetchCompute(
   // abort should not pay for the watch calls first.
   const WATCH_BACK_DAYS = 14;
   const WATCH_CALL_CAP = 120;
-  const WATCH_BATCH = 20;
+  // P11c: batch 20 had the relay refuse 45 of 85 calls with HTTP 429 (run 352),
+  // and the refused ones were the in-arc regions the fetch exists for. Four at
+  // a time with a gap between batches, one delayed retry on 429 only.
+  const WATCH_BATCH = 4;
+  const WATCH_GAP_MS = 250;
+  const WATCH_RETRY_MS = 1500;
+  // Stage-local, NOT run-elapsed: the Sonnet budget guard (stage 6) owns the
+  // run clock. This only bounds this stage, so a throttled relay can never
+  // spend the whole run. 47 calls at batch 4 is ~12 batches, ~12-15 s.
+  const WATCH_DEADLINE_MS = 20_000;
 
   const watchCalls: Array<{ code: string; region: string }> = [];
   for (const code of watchCodes) {
@@ -1509,37 +1518,69 @@ async function fetchCompute(
     if (watchCalls.length >= WATCH_CALL_CAP) break;
   }
 
-  // Batched rather than one 120-wide Promise.all: today's run is ~10 parallel
-  // calls through a single Netlify relay function with a 9 s timeout of its
-  // own, and a 12x concurrency jump is the likeliest source of 418/504 bursts.
-  const watch_errors: Array<{ code: string; region: string; error: string }> =
-    [];
+  const watch_errors: Array<
+    { code: string; region: string; error: string; retried?: boolean }
+  > = [];
   const watchArrays: EbirdObs[][] = [];
   let watchBatches = 0;
+  let watchRetries = 0;
+  let watchRetryOk = 0;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  // One delayed retry, and only on 429: a throttle means "come back", so the
+  // same call is worth repeating. Any other status -- or an abort -- would
+  // fail identically the second time and only spend the stage deadline.
+  const watchFetch = async (code: string, region: string): Promise<EbirdObs[]> => {
+    const path =
+      `/data/obs/${region}/recent/${code}?back=${WATCH_BACK_DAYS}&detail=full`;
+    const tag = (arr: unknown): EbirdObs[] =>
+      Array.isArray(arr)
+        ? arr.map((o) => ({ ...(o as EbirdObs), _region: region, _watch: true }))
+        : [];
+    try {
+      return tag(await ebirdGet(path));
+    } catch (err) {
+      const first = errMsg(err);
+      if (!first.includes("relay HTTP 429")) {
+        watch_errors.push({ code, region, error: first.slice(0, 120) });
+        return [];
+      }
+      watchRetries++;
+      await sleep(WATCH_RETRY_MS);
+      try {
+        const out = tag(await ebirdGet(path));
+        watchRetryOk++;
+        return out;
+      } catch (err2) {
+        watch_errors.push({
+          code,
+          region,
+          error: errMsg(err2).slice(0, 120),
+          retried: true,
+        });
+        return [];
+      }
+    }
+  };
+
+  const watchT0 = Date.now();
+  let watchTruncated = false;
+  let watchCallsSkipped = 0;
   for (let i = 0; i < watchCalls.length; i += WATCH_BATCH) {
+    if (Date.now() - watchT0 > WATCH_DEADLINE_MS) {
+      watchTruncated = true;
+      watchCallsSkipped = watchCalls.length - i;
+      console.warn(
+        `p11_watch_truncated_by_deadline: skipped=${watchCallsSkipped}`,
+      );
+      break;
+    }
+    // Between batches only -- no gap before the first.
+    if (i > 0) await sleep(WATCH_GAP_MS);
     watchBatches++;
     const settled = await Promise.all(
       watchCalls.slice(i, i + WATCH_BATCH).map(({ code, region }) =>
-        ebirdGet(
-          `/data/obs/${region}/recent/${code}?back=${WATCH_BACK_DAYS}&detail=full`,
-        )
-          .then((arr) =>
-            Array.isArray(arr)
-              ? arr.map((o) => ({
-                ...(o as EbirdObs),
-                _region: region,
-                _watch: true,
-              }))
-              : []
-          )
-          .catch((err) => {
-            watch_errors.push({
-              code,
-              region,
-              error: errMsg(err).slice(0, 120),
-            });
-            return [] as EbirdObs[];
-          })
+        watchFetch(code, region)
       ),
     );
     watchArrays.push(...settled);
@@ -1572,7 +1613,10 @@ async function fetchCompute(
   }
   console.log(
     `p11_watch: species=${watchCodes.length} calls=${watchCalls.length} ` +
-      `batches=${watchBatches} added=${watchObsAdded} errors=${watch_errors.length}`,
+      `batches=${watchBatches} added=${watchObsAdded} errors=${watch_errors.length} ` +
+      `retries=${watchRetries} retry_ok=${watchRetryOk} ` +
+      `truncated=${watchTruncated} skipped=${watchCallsSkipped} ` +
+      `ms=${Date.now() - watchT0}`,
   );
 
   // ---- v8.9: Estonian-presence cross-reference ----
@@ -2341,6 +2385,14 @@ async function fetchCompute(
       watch_batches: watchBatches,
       watch_obs_added: watchObsAdded,
       watch_obs_dropped_no_subid: watchObsDroppedNoSubId,
+      watch_retries: watchRetries,
+      watch_retry_ok: watchRetryOk,
+      ...(watchTruncated
+        ? {
+          watch_truncated_by_deadline: true,
+          watch_calls_skipped: watchCallsSkipped,
+        }
+        : {}),
       watch_errors,
       ...(watchLoadError ? { p11_watch_load_failed: watchLoadError } : {}),
       candidates_returned: top.length,

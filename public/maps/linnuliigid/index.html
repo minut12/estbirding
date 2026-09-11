@@ -286,6 +286,10 @@
 /* P9b: the router could not place this track on a lane (entry/exit leg over the class cap, or no
    path). Drawn as the old straight source->site line, but greyed so it never reads as a route. */
 .bm-pred-track--unresolved{stroke:#4b5563;stroke-dasharray:6 6;stroke-width:2.5;opacity:.9}
+/* P17: the leg past the predicted site. Same colour and width as the routed track so it reads as
+   "continues", but fainter and finer-dotted so it never competes with the source->site line.
+   Must stay after .bm-pred-track: equal specificity, so source order decides the dasharray. */
+.bm-pred-track--onward{stroke-opacity:.65;stroke-dasharray:2 6}
 .bm-pred-note{font-size:12px;color:#6b7280;margin-top:4px}
 /* Do NOT set white-space:normal here. Leaflet panes are position:absolute with no width, so an
    abspos tooltip that is allowed to wrap shrink-to-fits against a 0-width containing block and
@@ -10470,6 +10474,20 @@ document.addEventListener('DOMContentLoaded', function(){
     return { ok:ok, reason: ok?'ok':(ed>lim?'entry_leg':(xd>lim?'exit_leg':'no_path')), entry_km:Math.round(ed), exit_km:Math.round(xd), lane_km:Math.round(dist[xn]), path:path, pts:pts };
   }
 
+  // P17: one lane node beyond the exit node, continuing away from the source. null when none.
+  function onwardNode(C, cls, path, src){
+    try{
+      var spec = C.classes[cls]; if(!spec || !path || path.length < 1) return null;
+      var xn = path[path.length-1], prevN = path.length > 1 ? path[path.length-2] : null;
+      var best = null, bestD = -1;
+      for(var li=0; li<spec.lanes.length; li++){ var ns = C.lanes[spec.lanes[li]].nodes; var i = ns.indexOf(xn); if(i < 0) continue;
+        var cand = [ns[i-1], ns[i+1]];
+        for(var k=0;k<2;k++){ var n = cand[k]; if(!n || n === prevN || path.indexOf(n) >= 0) continue;
+          var d = km(src, C.nodes[n]); if(d > bestD){ bestD = d; best = n; } } }
+      return best;
+    }catch(e){ return null; }
+  }
+
   // upstream_obs.location is free eBird text — long, often non-Latin. Shorten it for the origin
   // label only; the popup keeps the same shortened form so a 220 px popup cannot be blown open.
   var ORIGIN_LABEL_MAX = 20;
@@ -10479,6 +10497,9 @@ document.addEventListener('DOMContentLoaded', function(){
 
   var predLayer = window.__bm_predLayer = L.layerGroup();
   var activeTrack = null;
+  // P17: every track layer beyond the three scalars below -- the onward stub today, the per-source
+  // tracks next. hideTrack empties it, so a popup close can never leak a polyline onto the map.
+  var activeExtras = [];
   var activeOrigin = null;
   var activeHalo = null;
   var lastRow = null;
@@ -10640,6 +10661,19 @@ document.addEventListener('DOMContentLoaded', function(){
         var pts = (r && r.pts && r.pts.length) ? r.pts : [source, [site.lat, site.lon]];
         activeTrack = L.polyline(pts, { className: trackCls });
         activeTrack.addTo(window.map);
+
+        // P17: the bird does not stop at the site, so continue one lane node further. Gated on a
+        // real lane: a single-node path is routeTrack's direct case, whose pts is a straight
+        // source->site line with no lane drawn, and a stub off it would invent a route.
+        if(r && r.ok && r.path && r.path.length > 1){
+          var on = onwardNode(BM_CORRIDORS, entry.flight_class, r.path, source);
+          if(on){
+            var stub = L.polyline([[site.lat, site.lon], BM_CORRIDORS.nodes[on]],
+              { className: 'bm-pred-track bm-pred-track--onward', interactive: false });
+            stub.addTo(window.map);
+            activeExtras.push(stub);
+          }
+        }
       }
 
       activeOrigin = L.circleMarker(source, ORIGIN_DOT_STYLE);
@@ -10656,6 +10690,8 @@ document.addEventListener('DOMContentLoaded', function(){
     dropLayer(activeTrack);
     dropLayer(activeOrigin);
     dropLayer(activeHalo);
+    for(var i=0;i<activeExtras.length;i++) dropLayer(activeExtras[i]);
+    activeExtras = [];
     activeTrack = null;
     activeOrigin = null;
     activeHalo = null;

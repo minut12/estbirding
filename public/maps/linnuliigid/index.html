@@ -290,6 +290,10 @@
    "continues", but fainter and finer-dotted so it never competes with the source->site line.
    Must stay after .bm-pred-track: equal specificity, so source order decides the dasharray. */
 .bm-pred-track--onward{stroke-opacity:.65;stroke-dasharray:2 6}
+/* P17b: a track from a source other than the freshest. Thinner and lighter so the freshest source
+   still reads as the primary line. After .bm-pred-track--unresolved too: a non-freshest source can
+   also fail to route, and --alt must win the stroke-width on that combination. */
+.bm-pred-track--alt{stroke-width:1.5;stroke-opacity:.55}
 .bm-pred-note{font-size:12px;color:#6b7280;margin-top:4px}
 /* Do NOT set white-space:normal here. Leaflet panes are position:absolute with no width, so an
    abspos tooltip that is allowed to wrap shrink-to-fits against a 0-width containing block and
@@ -10488,11 +10492,20 @@ document.addEventListener('DOMContentLoaded', function(){
     }catch(e){ return null; }
   }
 
+  // P17b: "a>b>c" ends with "b>c" -- the same lane joined further downstream. The shorter path is
+  // then a duplicate of the longer one and only the longer is drawn.
+  function pathEndsWith(a, b){ var t = '>' + b; return a.length >= t.length && a.lastIndexOf(t) === a.length - t.length; }
+
   // upstream_obs.location is free eBird text — long, often non-Latin. Shorten it for the origin
   // label only; the popup keeps the same shortened form so a 220 px popup cannot be blown open.
   var ORIGIN_LABEL_MAX = 20;
   var ORIGIN_LABEL_MIN_WORD = 10;
   var ORIGIN_DOT_STYLE = { radius: 5, color: '#0f172a', weight: 2, fillColor: '#ffffff', fillOpacity: 1 };
+  // P17b: the non-freshest sources get the same dot at half the radius -- enough that a thin track
+  // does not just stop in open sea, small enough not to compete with the freshest, labelled dot.
+  // Derived from ORIGIN_DOT_STYLE so the two cannot drift apart.
+  var ALT_ORIGIN_DOT_STYLE = { radius: ORIGIN_DOT_STYLE.radius / 2, color: ORIGIN_DOT_STYLE.color,
+    weight: ORIGIN_DOT_STYLE.weight, fillColor: ORIGIN_DOT_STYLE.fillColor, fillOpacity: ORIGIN_DOT_STYLE.fillOpacity };
   var SITE_HALO_STYLE = { radius: 11, fill: false, color: '#7c3aed', weight: 2, opacity: 0.55 };
 
   var predLayer = window.__bm_predLayer = L.layerGroup();
@@ -10654,24 +10667,93 @@ document.addEventListener('DOMContentLoaded', function(){
       if(!source) return;
 
       if(hasSite){
-        // No class, an unknown class, or a leg over the class cap all come back ok:false with a
-        // straight [src, site] in pts -- the pre-P9b line, greyed so it never reads as a route.
-        var r = routeTrack(BM_CORRIDORS, source, [site.lat, site.lon], entry.flight_class);
-        var trackCls = (r && r.ok) ? 'bm-pred-track' : 'bm-pred-track bm-pred-track--unresolved';
-        var pts = (r && r.pts && r.pts.length) ? r.pts : [source, [site.lat, site.lon]];
-        activeTrack = L.polyline(pts, { className: trackCls });
-        activeTrack.addTo(window.map);
+        // P17b: every in-arc source gets a track, not only the freshest. The EF caps upstream_obs
+        // at 2 today, so this draws at most two; the cap here is 3 in case that is raised.
+        var dest = [site.lat, site.lon];
+        var ups = entry.upstream_obs || [];
+        var cands = [{ idx: 0, pt: source }];
+        for(var si=1; si<Math.min(ups.length, 3); si++){
+          var uo = ups[si];
+          // No sourcePoint() fallback beyond the freshest: a bearing/distance reconstruction off
+          // the Türi anchor is too coarse to justify a second line on the map.
+          if(!uo || typeof uo.lat !== 'number' || typeof uo.lon !== 'number') continue;
+          cands.push({ idx: si, pt: [uo.lat, uo.lon] });
+        }
+        for(var ci=0; ci<cands.length; ci++){
+          var rr = routeTrack(BM_CORRIDORS, cands[ci].pt, dest, entry.flight_class);
+          cands[ci].r = rr;
+          // A route with no path (unknown class) shares no lane with anything, so it is keyed by
+          // index and can never be deduped away.
+          cands[ci].key = (rr && rr.path && rr.path.length) ? rr.path.join('>') : ('#' + cands[ci].idx);
+          cands[ci].len = (rr && rr.path) ? rr.path.length : 0;
+        }
+        // Longest path first, so a source that joins the same lane further downstream is dropped as
+        // a suffix of one already drawn. Sort is stable, so equal-length ties keep source order.
+        cands.sort(function(a,b){ return b.len - a.len; });
 
-        // P17: the bird does not stop at the site, so continue one lane node further. Gated on a
-        // real lane: a single-node path is routeTrack's direct case, whose pts is a straight
-        // source->site line with no lane drawn, and a stub off it would invent a route.
-        if(r && r.ok && r.path && r.path.length > 1){
-          var on = onwardNode(BM_CORRIDORS, entry.flight_class, r.path, source);
-          if(on){
-            var stub = L.polyline([[site.lat, site.lon], BM_CORRIDORS.nodes[on]],
-              { className: 'bm-pred-track bm-pred-track--onward', interactive: false });
-            stub.addTo(window.map);
-            activeExtras.push(stub);
+        var drawnKeys = [], drawList = [], key0 = null;
+        for(var di=0; di<cands.length; di++){
+          var cd = cands[di], dup = false;
+          if(cd.idx === 0) key0 = cd.key;
+          for(var dk=0; dk<drawnKeys.length; dk++){
+            if(drawnKeys[dk] === cd.key || pathEndsWith(drawnKeys[dk], cd.key)){ dup = true; break; }
+          }
+          if(dup) continue;
+          drawnKeys.push(cd.key);
+          drawList.push(cd);
+        }
+
+        // The freshest source carries the solid line and the onward leg. When its own path was
+        // dropped as a suffix, the longer path that swallowed it carries them instead: same lane to
+        // the same site, so the solid line still traces the freshest bird's route rather than
+        // leaving the entry with nothing but a thin secondary track.
+        var solid = null, pi;
+        for(pi=0; pi<drawList.length; pi++) if(drawList[pi].idx === 0){ solid = drawList[pi]; break; }
+        if(!solid && key0 !== null){
+          for(pi=0; pi<drawList.length; pi++) if(pathEndsWith(drawList[pi].key, key0)){ solid = drawList[pi]; break; }
+        }
+        if(!solid && drawList.length) solid = drawList[0];
+
+        for(var wi=0; wi<drawList.length; wi++){
+          var cw = drawList[wi];
+          // No class, an unknown class, or a leg over the class cap all come back ok:false with a
+          // straight [src, site] in pts -- the pre-P9b line, greyed so it never reads as a route.
+          var r = cw.r;
+          var trackCls = (r && r.ok) ? 'bm-pred-track' : 'bm-pred-track bm-pred-track--unresolved';
+          var pts = (r && r.pts && r.pts.length) ? r.pts : [cw.pt, dest];
+
+          if(cw !== solid){
+            var alt = L.polyline(pts, { className: trackCls + ' bm-pred-track--alt', interactive: false });
+            alt.addTo(window.map);
+            activeExtras.push(alt);
+            var altDot = L.circleMarker(cw.pt, ALT_ORIGIN_DOT_STYLE);
+            altDot.addTo(window.map);
+            activeExtras.push(altDot);
+            continue;
+          }
+
+          activeTrack = L.polyline(pts, { className: trackCls });
+          activeTrack.addTo(window.map);
+
+          // activeOrigin, the labelled "Viimati nähtud" dot, always sits at upstream_obs[0]. When
+          // the solid line came from an older source, that source still needs its own small dot.
+          if(cw.idx !== 0){
+            var solidDot = L.circleMarker(cw.pt, ALT_ORIGIN_DOT_STYLE);
+            solidDot.addTo(window.map);
+            activeExtras.push(solidDot);
+          }
+
+          // P17: the bird does not stop at the site, so continue one lane node further. Gated on a
+          // real lane: a single-node path is routeTrack's direct case, whose pts is a straight
+          // source->site line with no lane drawn, and a stub off it would invent a route.
+          if(r && r.ok && r.path && r.path.length > 1){
+            var on = onwardNode(BM_CORRIDORS, entry.flight_class, r.path, cw.pt);
+            if(on){
+              var stub = L.polyline([dest, BM_CORRIDORS.nodes[on]],
+                { className: 'bm-pred-track bm-pred-track--onward', interactive: false });
+              stub.addTo(window.map);
+              activeExtras.push(stub);
+            }
           }
         }
       }

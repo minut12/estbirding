@@ -1258,6 +1258,12 @@ const CORRIDOR_WEIGHT = 7;
 const PROB_FLOOR = 5;
 const PROB_CEIL = 95;
 const TOP_N = 30;
+// ---- P17c upstream_obs selection ----
+// The two freshest rows were usually the same hotspot on consecutive days, so
+// P17b's per-source tracks collapsed to one line. Entries past [0] must sit at
+// least UPSTREAM_MIN_SEP_KM from every entry already accepted.
+const UPSTREAM_MAX = 3;
+const UPSTREAM_MIN_SEP_KM = 100;
 // ---- P4.1 selection sanity ----
 // A closed window still scored: a `passed` row carried 15%. The band was
 // computed after the probability and never fed back into it.
@@ -1936,8 +1942,29 @@ async function fetchCompute(
     const source_in_arc = (__arc && __sortedObs.length > 0)
       ? __inArc(__sortedObs[0])
       : null;
-    const upstream_obs: UpstreamObs[] = __sortedObs
-      .slice(0, 2)
+    // P17c: the freshest rows are usually the same hotspot on consecutive days,
+    // so taking the top two gave P17b one track to draw almost everywhere. Walk
+    // the list and keep an obs only when it is UPSTREAM_MIN_SEP_KM from every
+    // one already accepted, so each entry stands for a distinct location.
+    // [0] is whatever __sortedObs[0] is, in-arc or not, exactly as before --
+    // source_in_arc, __up0 and the popup keep their input unchanged. Past [0]
+    // an out-of-arc obs is skipped when the species has an arc: it has already
+    // passed Estonia (the P8b reasoning above), so it is not a source to draw.
+    const __picked: EbirdObs[] = [];
+    for (const o of __sortedObs) {
+      if (__picked.length >= UPSTREAM_MAX) break;
+      if (__picked.length > 0 && __arc && !__inArc(o)) continue;
+      const far = __picked.every((p) =>
+        haversineKm(
+          p.lat as number,
+          p.lng as number,
+          o.lat as number,
+          o.lng as number,
+        ) >= UPSTREAM_MIN_SEP_KM
+      );
+      if (far) __picked.push(o);
+    }
+    const upstream_obs: UpstreamObs[] = __picked
       .map((o) => ({
         country_code: o._region as string,
         location: o.locName ?? "",

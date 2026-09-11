@@ -535,6 +535,16 @@ for (
   }
 }
 
+// P19: the instruction that makes Sonnet account for the user's votes. Placed
+// BELOW the pin loop on purpose -- it rides inside the JSON payload, between
+// USER_PREFIX and USER_SUFFIX, so all three pinned strings stay byte-identical
+// and the feedback layer costs no prompt-hash churn.
+// Estonian verified with estonian-mcp; do not reword.
+const FEEDBACK_NOTE_ET =
+  "Arvesta kasutaja hinnangut eelmistele ennustustele: kui kasutaja on liigi " +
+  "märkinud võimatuks või valeks, põhjenda lühidalt, miks ennustus siiski " +
+  "jääb või miks see langeb, ja väldi tagasi lükatud kohti.";
+
 // ---------------------------------------------------------------------------
 // HTTP helpers
 // ---------------------------------------------------------------------------
@@ -713,6 +723,42 @@ interface NearestObs {
   observers: string[];
 }
 
+// P19: the user's own verdict on earlier raports, carried onto every entry.
+// An unvoted species gets the neutral row rather than a missing field, so the
+// P7b calibration join can read it unconditionally.
+type FeedbackRating = "oige" | "osaliselt" | "vale" | "voimatu";
+
+interface FeedbackFactor {
+  rating: FeedbackRating | null;
+  days_ago: number | null;
+  /**
+   * The factor actually applied to probability_pct: FEEDBACK_MULT[rating],
+   * floored at FEEDBACK_MULT.vale if every predicted site was voted down.
+   * Read it as "what happened to the number", not as a lookup of `rating`.
+   */
+  multiplier: number;
+  /** Site labels voted vale/voimatu, excluded from predicted_sites. */
+  sites_rejected: string[];
+}
+
+// P19: one prediction_ratings row, as the orchestrator reads it. The table has
+// no generated type (created outside the repo migrations, same precedent as
+// src/lib/predictionRatings.ts); `rating` stays a raw string until it is
+// narrowed, because an unknown value in that column must not crash a raport.
+interface RatingRow {
+  raport_id: string | null;
+  ebird_code: string | null;
+  site_index: number | null;
+  rating: string | null;
+  rated_at: string | null;
+}
+
+// P19: only the two columns the site-label lookup needs off a past raport.
+interface RaportEntriesRow {
+  id: string | null;
+  entries: unknown;
+}
+
 interface ProbabilityFactors {
   tier_base: number;
   count_factor: number;
@@ -744,6 +790,10 @@ interface ProbabilityFactors {
   // and no arrival_bearing, so the question was never asked and the source is
   // still the freshest observation anywhere.
   source_in_arc: boolean | null;
+  // P19: the user's votes on earlier raports. Written at candidate
+  // construction from the 14-day prediction_ratings read, so it is present on
+  // every entry -- {null, null, 1, []} when nobody voted.
+  feedback: FeedbackFactor;
 }
 
 // P8b: the P8c columns, read separately from PhenologyRow so a pre-migration
@@ -1283,6 +1333,32 @@ const SOURCE_DIR_FLOOR = 0.3;
 // are untouched (gate = 1).
 const SEASON_GATE_THRESHOLD = 0.4;
 const SEASON_GATE_FLOOR = 0.4;
+// ---- P19 user feedback ----
+// prediction_ratings held 36 votes and nothing read them back: Stepiviu was
+// voted `voimatu` three times and still showed at 19%. The window is short on
+// purpose -- a species rejected in September must not still be suppressed in
+// November, when the situation that made it wrong is gone.
+const FEEDBACK_WINDOW_DAYS = 14;
+const FEEDBACK_MULT: Record<FeedbackRating, number> = {
+  voimatu: 0.3,
+  vale: 0.7,
+  osaliselt: 1,
+  oige: 1.2,
+};
+// One `voimatu` is an opinion about one raport. Two, on two different raports,
+// is a standing correction -- the species leaves the pool instead of being
+// scaled down again and again.
+const FEEDBACK_DROP_VOIMATU_RAPORTS = 2;
+const FEEDBACK_NEUTRAL: FeedbackFactor = {
+  rating: null,
+  days_ago: null,
+  multiplier: 1,
+  sites_rejected: [],
+};
+
+function isFeedbackRating(v: unknown): v is FeedbackRating {
+  return v === "oige" || v === "osaliselt" || v === "vale" || v === "voimatu";
+}
 
 function countSignal(n: number): number {
   if (!n || n <= 0) return 0;
@@ -1486,6 +1562,141 @@ async function fetchCompute(
   } catch (err) {
     watchLoadError = errMsg(err).slice(0, 200) || "unknown";
     console.warn("p11_watch_load_failed: " + watchLoadError);
+  }
+
+  // ---- P19: the user's votes on earlier raports (service role) -------------
+  // prediction_ratings is the only channel the user has to talk back to the
+  // model. Read once, here: after phenology, before the first candidate is
+  // built, so the multiplier is already known when the score is written.
+  //
+  // NOT through readAll: that helper takes no filter and throws on failure, and
+  // neither fits. A raport without the feedback layer is still worth
+  // publishing, so a failed read costs one warn and nothing else.
+  const feedbackByCode = new Map<string, FeedbackFactor>();
+  const feedbackVoimatuRaports = new Map<string, number>();
+  const feedbackFor = (code: string): FeedbackFactor => {
+    const fb = feedbackByCode.get(code);
+    // Copied, never aliased: the all-sites-rejected fallback rewrites
+    // `multiplier` on the candidate's own copy.
+    return fb
+      ? { ...fb, sites_rejected: [...fb.sites_rejected] }
+      : { ...FEEDBACK_NEUTRAL, sites_rejected: [] };
+  };
+  // "votes" until the species layer is built, then "labels": the two halves
+  // fail independently and the log line has to say which one did.
+  let feedbackStage = "votes";
+  try {
+    const feedbackNowMs = Date.now();
+    const sinceIso = new Date(
+      feedbackNowMs - FEEDBACK_WINDOW_DAYS * 86400000,
+    ).toISOString();
+    const { data: ratingData, error: ratingErr } = await sbRead
+      .from("prediction_ratings")
+      .select("raport_id,ebird_code,site_index,rating,rated_at")
+      .gte("rated_at", sinceIso);
+    if (ratingErr) throw new Error(ratingErr.message);
+    const ratingRows = (ratingData ?? []) as RatingRow[];
+    // PostgREST caps a page at 1000 rows. Two weeks of hand-cast votes is two
+    // orders of magnitude short of that, so paging here would be dead code --
+    // but say it out loud rather than truncate in silence if that changes.
+    if (ratingRows.length >= 1000) {
+      console.warn("[p19] rating rows hit the 1000-row page cap; truncated");
+    }
+
+    const rowsByCode = new Map<string, RatingRow[]>();
+    for (const r of ratingRows) {
+      const code = String(r.ebird_code || "").trim();
+      if (!code || !isFeedbackRating(r.rating)) continue;
+      const bucket = rowsByCode.get(code);
+      if (bucket) bucket.push(r);
+      else rowsByCode.set(code, [r]);
+    }
+
+    // Species layer: latest vote wins, at any site_index. A site-level vote is
+    // still a statement about the species -- the user marking every site wrong
+    // is not a neutral opinion of the prediction.
+    for (const [code, bucket] of rowsByCode) {
+      let latest: RatingRow | null = null;
+      let latestMs = -Infinity;
+      const voimatuRaports = new Set<string>();
+      for (const r of bucket) {
+        const ms = Date.parse(String(r.rated_at ?? ""));
+        if (!isNaN(ms) && ms > latestMs) {
+          latestMs = ms;
+          latest = r;
+        }
+        if (r.rating === "voimatu") {
+          const id = String(r.raport_id || "");
+          if (id) voimatuRaports.add(id);
+        }
+      }
+      if (!latest || !isFeedbackRating(latest.rating)) continue;
+      feedbackByCode.set(code, {
+        rating: latest.rating,
+        days_ago: Math.max(
+          0,
+          Math.floor((feedbackNowMs - latestMs) / 86400000),
+        ),
+        multiplier: FEEDBACK_MULT[latest.rating],
+        sites_rejected: [],
+      });
+      feedbackVoimatuRaports.set(code, voimatuRaports.size);
+    }
+
+    // Site layer. site_index is a position in the raport the vote was cast on,
+    // and that ordering does not survive to the next raport -- so resolve the
+    // indices to labels here, against the raports they were cast on, and match
+    // by label downstream. Runs AFTER the species layer on purpose: if this
+    // read fails, the multipliers above still stand and sites_rejected simply
+    // stays empty.
+    feedbackStage = "labels";
+    const rejectedRaportIds = new Set<string>();
+    for (const r of ratingRows) {
+      if (r.rating !== "vale" && r.rating !== "voimatu") continue;
+      if (!(Number(r.site_index) >= 0)) continue;
+      const id = String(r.raport_id || "");
+      if (id) rejectedRaportIds.add(id);
+    }
+    if (rejectedRaportIds.size > 0) {
+      const { data: raportData, error: raportErr } = await sbRead
+        .from("toenaosus_raport")
+        .select("id,entries")
+        .in("id", [...rejectedRaportIds]);
+      if (raportErr) throw new Error(raportErr.message);
+      // `${raport_id}|${ebird_code}|${site_index}` -> label
+      const labelByKey = new Map<string, string>();
+      for (const rr of (raportData ?? []) as RaportEntriesRow[]) {
+        const rid = String(rr.id ?? "");
+        const entries = Array.isArray(rr.entries) ? rr.entries : [];
+        for (const e of entries as Array<Record<string, unknown>>) {
+          const code = String(e?.ebird_code ?? "").trim();
+          const sites = e?.predicted_sites;
+          if (!code || !Array.isArray(sites)) continue;
+          sites.forEach((s, i) => {
+            const label = String((s as { label?: unknown })?.label ?? "")
+              .trim();
+            if (label) labelByKey.set(`${rid}|${code}|${i}`, label);
+          });
+        }
+      }
+      for (const [code, fb] of feedbackByCode) {
+        const labels = new Set<string>();
+        for (const r of rowsByCode.get(code) ?? []) {
+          if (r.rating !== "vale" && r.rating !== "voimatu") continue;
+          const idx = Number(r.site_index);
+          if (!(idx >= 0)) continue;
+          const label = labelByKey.get(
+            `${String(r.raport_id || "")}|${code}|${idx}`,
+          );
+          if (label) labels.add(label);
+        }
+        if (labels.size > 0) {
+          feedbackByCode.set(code, { ...fb, sites_rejected: [...labels] });
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[p19] ratings read failed", feedbackStage, e);
   }
 
   // APPROVED DEVIATION (M7.4c, carried into M7.5): n8n swallowed every region
@@ -2030,6 +2241,9 @@ async function fetchCompute(
         calibrated_score: f.calibrated_score,
         formula_version: V4.FORMULA_VERSION,
         source_in_arc,
+        // P19: neutral when the species was never voted on. The multiplier is
+        // recorded here but applied after the band loop, with the other two.
+        feedback: feedbackFor(ebirdCode),
       },
     });
   }
@@ -2166,16 +2380,65 @@ async function fetchCompute(
     c.probability_factors.arrival_bearing = arrival_bearing;
   }
 
+  // ---- P19: the user's votes, applied ----
+  // On pct, not inside scoreV4 on calibrated_score. CAL_B is -2.0367, so
+  // sigmoid(0) is 11.5%: shrinking the score toward zero can only pull a
+  // species DOWN TO ~11.5%, never below it, and a `voimatu` x0.3 has to bite
+  // harder than that. On pct it does -- 19% -> 6%.
+  //
+  // Placed after the band loop and before the sort for the same reason the band
+  // loop sits where it does: a suppressed species must lose its TOP_N seat too,
+  // not just its number.
+  //
+  // PROB_FLOOR is deliberately NOT re-applied, exactly as at the timing cap
+  // above: P7b needs these rows to exist so outcomes can be scored against
+  // them, and a species the user called impossible sitting at 2% is the point.
+  const feedbackDropped: Array<
+    { ebird_code: string; species_et: string; voimatu_raports: number }
+  > = [];
+  const feedbackDroppedCodes = new Set<string>();
+  for (const c of candidates) {
+    const fb = c.probability_factors.feedback;
+    const voimatu_raports = feedbackVoimatuRaports.get(c.ebird_code) ?? 0;
+    if (voimatu_raports >= FEEDBACK_DROP_VOIMATU_RAPORTS) {
+      feedbackDropped.push({
+        ebird_code: c.ebird_code,
+        species_et: c.name_et,
+        voimatu_raports,
+      });
+      feedbackDroppedCodes.add(c.ebird_code);
+      console.log(
+        `[p19] feedback: ${c.ebird_code} dropped voimatu_raports=${voimatu_raports}`,
+      );
+      continue;
+    }
+    if (fb.rating === null) continue;
+    c.probability_pct = Math.min(
+      PROB_CEIL,
+      Math.round(c.probability_pct * fb.multiplier),
+    );
+    console.log(
+      `[p19] feedback: ${c.ebird_code} ${fb.rating} x${fb.multiplier} sites_rejected=${fb.sites_rejected.length}`,
+    );
+  }
+
   // ---- Sort + slice ----
   // Runs AFTER the band loop (P4.1): both multipliers are already in
   // probability_pct, so ranking and selection see the capped values.
-  candidates.sort((a, b) => {
+  // P19: sorts a filtered COPY, so `candidates` keeps both its length (read as
+  // candidates_after_floor) and its membership (read as candidateCodes, which
+  // must still contain the dropped species -- otherwise the corridor watchlist
+  // would resurrect exactly what the votes removed).
+  const scored = candidates.filter((c) =>
+    !feedbackDroppedCodes.has(c.ebird_code)
+  );
+  scored.sort((a, b) => {
     if (b.probability_pct !== a.probability_pct) {
       return b.probability_pct - a.probability_pct;
     }
     return (tierRank[b.rarity_level] || 0) - (tierRank[a.rarity_level] || 0);
   });
-  const top = candidates.slice(0, TOP_N);
+  const top = scored.slice(0, TOP_N);
 
   // ---- Corridor watchlist (v8.5) ----
   // "Conditions favourable" intel: rare/super/mega species whose
@@ -2340,7 +2603,51 @@ async function fetchCompute(
       null;
 
   for (const c of top) {
-    c.predicted_sites = sitesFor(c.name_et, c.name_lat);
+    const sites = sitesFor(c.name_et, c.name_lat);
+    // P19: a site the user voted vale/voimatu is not offered again. Matched by
+    // LABEL, never by index -- the vote's site_index points into the raport it
+    // was cast on, and P10's RPC already re-keys carried ratings by label for
+    // the same reason.
+    const rejected = c.probability_factors.feedback.sites_rejected;
+    const kept = rejected.length > 0
+      ? sites.filter((s) => !rejected.includes(s.label))
+      : sites;
+    if (rejected.length > 0 && kept.length === 0 && sites.length > 0) {
+      // Every site rejected is a verdict on the species, not on the sites. An
+      // entry with no sites is worse than one with rejected sites, so keep them
+      // and treat the species as a `vale` instead. It cannot re-rank:
+      // predicted_sites are attached after the slice, by design (one RPC for
+      // the whole top list). Kristian's ruling -- apply here, log it, no
+      // re-sort.
+      //
+      // "Treat as a vale" literally: FLOOR the multiplier at
+      // FEEDBACK_MULT.vale, do not multiply by it again. The species whose
+      // every site was voted down almost always cast those votes as its own
+      // latest verdict too, so its pct already carries a <= 0.7 factor --
+      // stacking a second 0.7 would charge one verdict twice.
+      c.predicted_sites = sites;
+      const fb = c.probability_factors.feedback;
+      const floored = Math.min(fb.multiplier, FEEDBACK_MULT.vale);
+      if (floored < fb.multiplier) {
+        // Only the shortfall: pct already carries fb.multiplier from the loop
+        // above, and `rating` is never null here -- a site vote is a row for
+        // this species, so the species layer always produced a verdict.
+        c.probability_pct = Math.min(
+          PROB_CEIL,
+          Math.round(c.probability_pct * (floored / fb.multiplier)),
+        );
+        c.probability_factors = {
+          ...c.probability_factors,
+          // The audit field is what was applied, not a lookup of `rating`.
+          feedback: { ...fb, multiplier: floored },
+        };
+      }
+      console.log(
+        `[p19] feedback: ${c.ebird_code} all ${sites.length} sites rejected, multiplier ${fb.multiplier} -> ${floored}`,
+      );
+    } else {
+      c.predicted_sites = kept;
+    }
     c.flight_class = flightClassFor(c.name_lat);
   }
   for (const w of corridor_watchlist) {
@@ -2392,7 +2699,12 @@ async function fetchCompute(
     season: config.season,
     period: config.period_start + " kuni " + config.period_end,
     weather: weatherCorridorsData,
+    // P19: the instruction rides in the USER payload, not SYSTEM_PROMPT, so
+    // the prompt hash pin holds. Repeated per part like the three scalars
+    // above -- each part still reads as a complete request.
+    feedback_note_et: FEEDBACK_NOTE_ET,
     candidates: chunk.map(function (s) {
+      const fb = s.probability_factors.feedback;
       return {
         ebird_code: s.ebird_code,
         name_et: s.name_et,
@@ -2410,6 +2722,17 @@ async function fetchCompute(
         },
         total_neighbor_obs_30d: s.total_neighbor_obs_30d,
         neighbor_breakdown: s.neighbor_breakdown,
+        // P19: present only when the user actually voted. An absent key says
+        // "no verdict"; a null-filled object would read as one.
+        ...(fb.rating
+          ? {
+            user_feedback: {
+              rating: fb.rating,
+              days_ago: fb.days_ago,
+              sites_rejected: fb.sites_rejected,
+            },
+          }
+          : {}),
       };
     }),
   }));
@@ -2430,6 +2753,9 @@ async function fetchCompute(
       total_obs_fetched: allObs.length,
       species_with_obs: bySpecies.size,
       candidates_after_floor: candidates.length,
+      // P19: species removed by two or more `voimatu` raports. Always present,
+      // empty when nothing was dropped, so the audit join needs no coalesce.
+      feedback_dropped: feedbackDropped,
       ineligible_dropped: __ineligible_dropped,
       arc_rows_loaded: arcRowsLoaded,
       ...(arcLoadError ? { p8b_arc_load_failed: arcLoadError } : {}),

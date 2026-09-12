@@ -277,6 +277,8 @@
 .bm-pred-pop .bm-pred-chips{display:flex;flex-wrap:wrap;gap:3px;margin-top:2px}
 .bm-pred-pop .bm-pred-chip{flex:0 0 auto;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:9px;padding:1px 6px;font:inherit;font-size:10px;line-height:1.4;color:#6d28d9;cursor:pointer}
 .bm-pred-pop .bm-pred-chip.on{background:#6d28d9;border-color:#6d28d9;color:#fff;font-weight:700}
+.bm-pred-pop .bm-pred-chip--route.on{background:#b45309;border-color:#b45309}
+.bm-pred-pop .bm-pred-chip--route[disabled]{opacity:.45;cursor:default}
 .bm-pred-pop .bm-pred-rate-msg{font-size:10px;color:#94a3b8;margin-top:2px}
 .bm-pred-pop .k{color:#64748b}
 .bm-pred-pop .site{font-size:11px;margin-top:3px}
@@ -10530,6 +10532,7 @@ document.addEventListener('DOMContentLoaded', function(){
   // write. In-memory only: never persisted, re-seeded by the parent each load.
   var curRaportId = null;
   var myRatings = {}; // key: ebird_code + '|' + site_index -> rating string
+  var myNotes = {}; // P20: same key -> note token ('route_wrong'), absent when none
 
   function getSupabaseConfig(){
     try{
@@ -10786,16 +10789,24 @@ document.addEventListener('DOMContentLoaded', function(){
 
   // P7a: the popup element for the rating key currently awaiting a result, so
   // PREDICTION_RATE_RESULT can correct the optimistic state it belongs to.
-  var pendingRate = {}; // key -> { el: popupElement, prev: previousRatingOrEmpty }
+  var pendingRate = {}; // key -> { el: popupElement, prev: previousRatingOrEmpty, prevNote: previousNoteOrEmpty }
 
   function paintChips(el, key){
     try{
       if(!el) return;
       var cur = myRatings[key] || '';
-      var chips = el.querySelectorAll('.bm-pred-chip');
+      // The route chip shares .bm-pred-chip for styling; it is painted separately below.
+      var chips = el.querySelectorAll('.bm-pred-chip:not(.bm-pred-chip--route)');
       for(var i = 0; i < chips.length; i++){
         var v = chips[i].getAttribute('data-rate');
         chips[i].className = 'bm-pred-chip' + (cur && cur === v ? ' on' : '');
+      }
+      // P20: route chip -- on from myNotes, disabled until the key has a rating.
+      var route = el.querySelector('.bm-pred-chip--route');
+      if(route){
+        route.className = 'bm-pred-chip bm-pred-chip--route' + (myNotes[key] === 'route_wrong' ? ' on' : '');
+        if(cur){ route.removeAttribute('disabled'); route.removeAttribute('title'); }
+        else{ route.setAttribute('disabled', ''); route.setAttribute('title', 'Vali enne hinnang'); }
       }
     }catch(e){}
   }
@@ -10828,7 +10839,7 @@ document.addEventListener('DOMContentLoaded', function(){
       // P7a chips: optimistic locally, corrected by PREDICTION_RATE_RESULT.
       var idx = (typeof rateIdx === 'number') ? rateIdx : -1;
       var key = rateKey(entry.ebird_code, idx);
-      var chips = el.querySelectorAll('.bm-pred-chip');
+      var chips = el.querySelectorAll('.bm-pred-chip:not(.bm-pred-chip--route)');
       for(var i = 0; i < chips.length; i++){
         (function(btn){
           btn.onclick = function(){
@@ -10842,17 +10853,43 @@ document.addEventListener('DOMContentLoaded', function(){
               myRatings[key] = val;
               paintChips(el, key);
               rateMsg(el, '');
-              pendingRate[key] = { el: el, prev: prev };
+              pendingRate[key] = { el: el, prev: prev, prevNote: myNotes[key] || '' };
+              // note is re-sent on every tap: the parent's upsert nulls it otherwise.
               window.parent.postMessage({
                 type: 'PREDICTION_RATE',
                 raport_id: curRaportId,
                 ebird_code: entry.ebird_code || '',
                 site_index: idx,
-                rating: val
+                rating: val,
+                note: myNotes[key] || null
               }, '*');
             }catch(e){ console.warn('[bm_pred] rate click failed', e); }
           };
         })(chips[i]);
+      }
+      // P20: route chip toggles note = 'route_wrong' and keeps the current rating.
+      var routeBtn = el.querySelector('.bm-pred-chip--route');
+      if(routeBtn){
+        routeBtn.onclick = function(){
+          try{
+            if(!curRaportId) return;
+            var cur = myRatings[key];
+            if(!cur) return; // no invented ratings
+            var prevNote = myNotes[key] || '';
+            myNotes[key] = prevNote === 'route_wrong' ? '' : 'route_wrong';
+            paintChips(el, key);
+            rateMsg(el, '');
+            pendingRate[key] = { el: el, prev: cur, prevNote: prevNote };
+            window.parent.postMessage({
+              type: 'PREDICTION_RATE',
+              raport_id: curRaportId,
+              ebird_code: entry.ebird_code || '',
+              site_index: idx,
+              rating: cur,
+              note: myNotes[key] || null
+            }, '*');
+          }catch(e){ console.warn('[bm_pred] route click failed', e); }
+        };
       }
     }catch(e){}
   }
@@ -10868,16 +10905,22 @@ document.addEventListener('DOMContentLoaded', function(){
 
   function rateChipsHtml(ebirdCode, rateIdx){
     try{
-      var cur = myRatings[rateKey(ebirdCode, rateIdx)] || '';
+      var key = rateKey(ebirdCode, rateIdx);
+      var cur = myRatings[key] || '';
       var chips = '';
       for(var i = 0; i < RATE_VALUES.length; i++){
         var v = RATE_VALUES[i];
         chips += '<button type="button" class="bm-pred-chip' + (cur === v ? ' on' : '') +
           '" data-rate="' + v + '">' + escapeHtml(RATE_LABELS[v]) + '</button>';
       }
+      // P20: route feedback, separate from the rating; disabled until rated.
+      var route = '<button type="button" class="bm-pred-chip bm-pred-chip--route' +
+        (myNotes[key] === 'route_wrong' ? ' on' : '') + '" data-route="route_wrong"' +
+        (cur ? '' : ' disabled title="Vali enne hinnang"') + '>marsruut vale</button>';
       return '<div class="bm-pred-rate">' +
         '<div class="bm-pred-rate-q">Kas ennustus oli õige?</div>' +
         '<div class="bm-pred-chips">' + chips + '</div>' +
+        '<div class="bm-pred-chips">' + route + '</div>' +
         '<div class="bm-pred-rate-msg"></div>' +
         '</div>';
     }catch(e){ return ''; }
@@ -11209,11 +11252,13 @@ document.addEventListener('DOMContentLoaded', function(){
         try{
           if(String(ev.data.raport_id || '') !== String(curRaportId || '')) return;
           myRatings = {};
+          myNotes = {};
           var list = Array.isArray(ev.data.ratings) ? ev.data.ratings : [];
           for(var i = 0; i < list.length; i++){
             var r = list[i];
             if(!r || !r.ebird_code || !r.rating) continue;
             myRatings[rateKey(r.ebird_code, r.site_index)] = String(r.rating);
+            if(r.note) myNotes[rateKey(r.ebird_code, r.site_index)] = String(r.note);
           }
           // popupHtml reads myRatings when a popup opens, so re-rendering the
           // layer is enough to seed every chip. Cheap: markers only, no fetch.
@@ -11231,6 +11276,7 @@ document.addEventListener('DOMContentLoaded', function(){
           if(ev.data.ok) return; // optimistic state was right; no visual noise
           // Revert to whatever was showing before the tap.
           if(pend && pend.prev){ myRatings[key] = pend.prev; } else { delete myRatings[key]; }
+          if(pend && pend.prevNote){ myNotes[key] = pend.prevNote; } else { delete myNotes[key]; }
           var el = pend ? pend.el : null;
           paintChips(el, key);
           if(ev.data.reason === 'anon'){

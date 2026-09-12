@@ -1090,6 +1090,7 @@ export default function MapTab({ isActive = true, onMapChange }: MapTabProps) {
               ebird_code: r.ebirdCode,
               site_index: r.siteIndex,
               rating: r.rating,
+              note: r.note,
             })),
           });
         } catch { /* iframe gone */ }

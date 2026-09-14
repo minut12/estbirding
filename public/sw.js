@@ -41,14 +41,18 @@ self.addEventListener('fetch', (event) => {
   // returning browser with an index.html that points at vanished asset hashes.
   // Cache fallback for offline; never cache a non-200.
   if (event.request.mode === 'navigate' || url.pathname === '/' || url.pathname === '/index.html') {
+    // P21: only the top-level shell is cached under '/'. Iframe loads (/maps/**) are navigation
+    // requests too and used to overwrite the shell entry with the map HTML.
+    const isShell = url.pathname === '/' || url.pathname === '/index.html'
+      || (event.request.destination === 'document' && !url.pathname.startsWith('/maps/'));
     event.respondWith(
       fetch(event.request).then((response) => {
-        if (response && response.ok) {
+        if (isShell && response && response.ok) {
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put('/', copy)).catch(() => {});
         }
         return response;
-      }).catch(() => caches.match('/'))
+      }).catch(() => (isShell ? caches.match('/') : caches.match(event.request)))
     );
     return;
   }

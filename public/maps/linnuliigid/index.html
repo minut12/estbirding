@@ -10479,6 +10479,19 @@ document.addEventListener('DOMContentLoaded', function(){
     while(true){ var u=null; for(n in Q){ if(u===null||dist[n]<dist[u]) u=n; } if(u===null) break; delete Q[u]; if(u===xn) break;
       var e=adj[u]||[]; for(var k=0;k<e.length;k++){ var v=e[k][0], w=e[k][1]; if(dist[u]+w<dist[v]){ dist[v]=dist[u]+w; prev[v]=u; } } }
     var path=[]; for(var c=xn; c; c=prev[c]){ path.unshift(c); if(c===en) break; }
+    // P22: trim the overshoot-and-return tail. The exit node is the lane node nearest the site, so the
+    // path often runs to a node 1 km nearer and comes back (tartu>viljandi then 34 km east). Drop the
+    // last leg while it is more than TRIM_F times the exit-leg distance it saves. Only trailing nodes
+    // go and never below two, so a track cannot collapse to a straight line (min-total routing was
+    // tried and rejected in P9f for exactly that). dist[] of the remaining nodes is already final.
+    var TRIM_F = 3;
+    while(path.length > 2 && path[0]===en){
+      var tLast = path[path.length-1], tPrev = path[path.length-2];
+      var tLeg = km(C.nodes[tPrev], C.nodes[tLast]);
+      var tSave = km(C.nodes[tPrev], site) - km(C.nodes[tLast], site);
+      if(tLeg > TRIM_F * tSave){ path.pop(); xn = tPrev; xd = km(C.nodes[xn], site); }
+      else break;
+    }
     var lim=spec.max_crossing_km, ok = ed<=lim && xd<=lim && path[0]===en;
     if(en===xn){ var sd=km(src,site); ok = sd<=lim; return { ok:ok, reason: ok?'ok_direct':'direct_leg', entry_km:Math.round(ed), exit_km:Math.round(xd), lane_km:0, path:[en], pts:[src,site] }; }
     var pts=[src]; for(var p=0;p<path.length;p++) pts.push(C.nodes[path[p]]); pts.push(site);

@@ -104,6 +104,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
+  applySourceRegions,
   bearingInArc,
   directionFit,
   type PhenologyRow,
@@ -112,6 +113,8 @@ import {
   seasonFor,
   SOURCE_DIR_OK_DEG,
   sourceArcFor,
+  sourceRegionsFor,
+  type SourceRegionsVerdict,
   type UpstreamRow,
   V4,
 } from "./score.ts";
@@ -790,6 +793,10 @@ interface ProbabilityFactors {
   // and no arrival_bearing, so the question was never asked and the source is
   // still the freshest observation anywhere.
   source_in_arc: boolean | null;
+  // P23: how source_regions_<run season> treated this species' obs pool.
+  // "filtered" = only listed regions counted; "unfetched" = the list shares no
+  // region with this run's fetch, pool left whole; "missing" = no row or list.
+  source_regions_verdict: SourceRegionsVerdict;
   // P19: the user's votes on earlier raports. Written at candidate
   // construction from the 14-day prediction_ratings read, so it is present on
   // every entry -- {null, null, 1, []} when nobody voted.
@@ -2009,8 +2016,67 @@ async function fetchCompute(
 
   const candidates: Candidate[] = [];
   let __ineligible_dropped = 0;
-  for (const [ebirdCode, obsList] of bySpecies) {
+  // P23: what the source_regions filter did, surfaced in source_data.
+  let __srcMissing = 0;
+  const __srcUnfetched: Array<{ ebird_code: string; listed: string[] }> = [];
+  const __srcDropped: Array<
+    { ebird_code: string; species_et: string; listed: string[]; seen: string[] }
+  > = [];
+  // The RUN season, never f.season -- the same key P8b.1 put on eligibility.
+  const __srcSeason = config.season === "fall_winter"
+    ? "fall_winter"
+    : "spring_summer";
+  for (const [ebirdCode, obsList0] of bySpecies) {
     const meta = metaByEbirdCode.get(ebirdCode) as SpeciesMeta;
+
+    // P23: phen is looked up before any obs-derived value because the pool
+    // filter needs it. Every row in obsList0 shares this speciesCode, so [0]'s
+    // sciName is the same fallback the nearest obs used to supply.
+    const __sciName = meta.scientificName || obsList0[0]?.sciName;
+    const __sciLc = String(__sciName || "").trim().toLowerCase();
+    const phen = phenByLat.get(__sciLc) ?? null;
+
+    // P8b/P8c: species curated as not-migrating-here this season are not
+    // candidates. Ahead of the PROB_FLOOR check so the drop is unconditional
+    // and countable, not hidden behind a score that happened to be low.
+    // P8b.1: key on the RUN season, not the phenology season. f.season is
+    // null when the species is outside its own window, and out-of-window is
+    // exactly the state autumn_eligible=false exists to drop (lwfgoo: Estonia
+    // is not on its autumn route; bahgoo: feral; eugwoo2: resident).
+    // P23: ahead of the source_regions filter too, so an ineligible species is
+    // counted here and never lands in source_regions_dropped.
+    const __runAutumn = config.season === "fall_winter";
+    if (__runAutumn && phen?.autumn_eligible === false) { __ineligible_dropped++; continue; }
+    if (!__runAutumn && phen?.spring_eligible === false) { __ineligible_dropped++; continue; }
+
+    // P23: count only observations from the species' own source regions for
+    // this run season. Before this the lists fed sourceFit alone (SRC_W = 0),
+    // so a species listed FI/RU/SE in autumn still scored from Polish records
+    // (Mustvares, 17 %). Everything below -- nearest, count, breakdown,
+    // UP_W's regions, the P8b arc sort, P17c picking, the timing band -- reads
+    // the filtered pool. ebird_rare_observations stays unfiltered (rareObs).
+    const __srcListed = sourceRegionsFor(phen, __srcSeason);
+    const __srcVerdict = applySourceRegions(
+      obsList0,
+      __srcListed,
+      config.regions,
+    );
+    const obsList = __srcVerdict.obs;
+    if (__srcVerdict.verdict === "missing") {
+      __srcMissing++;
+    } else if (__srcVerdict.verdict === "unfetched") {
+      __srcUnfetched.push({ ebird_code: ebirdCode, listed: __srcListed ?? [] });
+    } else if (obsList.length === 0) {
+      __srcDropped.push({
+        ebird_code: ebirdCode,
+        species_et: (meta.name || meta.estonianName ||
+          obsList0[0]?.comName || "") as string,
+        listed: __srcListed ?? [],
+        seen: Array.from(new Set(obsList0.map((o) => String(o._region))))
+          .sort(),
+      });
+      continue;
+    }
 
     // Nearest obs to Türi
     let nearest: EbirdObs | null = null, nearestKm = Infinity;
@@ -2083,16 +2149,13 @@ async function fetchCompute(
       : SEASON_GATE_FLOOR +
         (1 - SEASON_GATE_FLOOR) * (ss / SEASON_GATE_THRESHOLD);
 
-    const __sciLc = String(meta.scientificName || nearest.sciName || "")
-      .trim().toLowerCase();
-    const species_lat = String(meta.scientificName || nearest.sciName || "");
+    const species_lat = String(__sciName || "");
 
     // ---- v4 score ----
     const wind = {
       from_deg: weatherCorridorsData?.summary?.avg_wind_dir_deg ?? null,
       speed_kmh: weatherCorridorsData?.summary?.avg_wind_speed_kmh ?? null,
     };
-    const phen = phenByLat.get(__sciLc) ?? null;
     const f = scoreV4({
       tier_base,
       count: cs,
@@ -2106,17 +2169,6 @@ async function fetchCompute(
       upstream: upstreamRows,
     });
     const probability_pct = f.pct;
-
-    // P8b/P8c: species curated as not-migrating-here this season are not
-    // candidates. Ahead of the PROB_FLOOR check so the drop is unconditional
-    // and countable, not hidden behind a score that happened to be low.
-    // P8b.1: key on the RUN season, not the phenology season. f.season is
-    // null when the species is outside its own window, and out-of-window is
-    // exactly the state autumn_eligible=false exists to drop (lwfgoo: Estonia
-    // is not on its autumn route; bahgoo: feral; eugwoo2: resident).
-    const __runAutumn = config.season === "fall_winter";
-    if (__runAutumn && phen?.autumn_eligible === false) { __ineligible_dropped++; continue; }
-    if (!__runAutumn && phen?.spring_eligible === false) { __ineligible_dropped++; continue; }
 
     if (probability_pct < PROB_FLOOR) continue;
 
@@ -2196,7 +2248,7 @@ async function fetchCompute(
     candidates.push({
       ebird_code: ebirdCode,
       name_et: (meta.name || meta.estonianName || nearest.comName) as string,
-      name_lat: (meta.scientificName || nearest.sciName) as string,
+      name_lat: __sciName as string,
       rarity_level: meta.rarityLevel as string,
       ee_obs_count: (__eeC && typeof __eeC.count === "number")
         ? __eeC.count
@@ -2241,6 +2293,7 @@ async function fetchCompute(
         calibrated_score: f.calibrated_score,
         formula_version: V4.FORMULA_VERSION,
         source_in_arc,
+        source_regions_verdict: __srcVerdict.verdict,
         // P19: neutral when the species was never voted on. The multiplier is
         // recorded here but applied after the band loop, with the other two.
         feedback: feedbackFor(ebirdCode),
@@ -2757,6 +2810,10 @@ async function fetchCompute(
       // empty when nothing was dropped, so the audit join needs no coalesce.
       feedback_dropped: feedbackDropped,
       ineligible_dropped: __ineligible_dropped,
+      // P23: always present, empty/0 when nothing applied, like feedback_dropped.
+      source_regions_dropped: __srcDropped,
+      source_regions_unfetched: __srcUnfetched,
+      source_regions_missing: __srcMissing,
       arc_rows_loaded: arcRowsLoaded,
       ...(arcLoadError ? { p8b_arc_load_failed: arcLoadError } : {}),
       watch_species: watchCodes.length,

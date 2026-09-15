@@ -4,6 +4,7 @@
 
 import { assertAlmostEquals, assertEquals } from "jsr:@std/assert@^1.0.19";
 import {
+  applySourceRegions,
   directionFit,
   parseDateRange,
   type PhenologyRow,
@@ -12,6 +13,7 @@ import {
   scoreV4,
   seasonFor,
   sourceFit,
+  sourceRegionsFor,
   type UpstreamRow,
   upstreamP,
   V4,
@@ -290,4 +292,67 @@ Deno.test("scoreV4: no phenology row still gets an upstream signal", () => {
   assertEquals(f.phenology_source, "missing");
   assertEquals(f.phenology_gate, 0.5);
   assertEquals(f.upstream, 0.392);
+});
+
+// ---- P23 source regions ----------------------------------------------------
+
+const FALL_REGIONS = [
+  "FI", "RU-LEN", "RU-PSK", "RU-KR", "SE", "LV", "LT", "PL", "BY", "RU-KGD",
+];
+const SPRING_REGIONS = ["LV", "LT", "BY", "PL", "RU-KGD", "SE", "FI"];
+// Mustvares-shaped pool: Polish and Latvian records plus one Finnish.
+const POOL = [
+  { _region: "PL", subId: "a" },
+  { _region: "PL", subId: "b" },
+  { _region: "LV", subId: "c" },
+  { _region: "FI", subId: "d" },
+];
+
+Deno.test("applySourceRegions: filtered keeps only listed _region", () => {
+  const r = applySourceRegions(POOL, ["FI", "RU-LEN", "SE"], FALL_REGIONS);
+  assertEquals(r.verdict, "filtered");
+  assertEquals(r.obs.map((o) => o.subId), ["d"]);
+});
+
+Deno.test("applySourceRegions: filtered -> empty array when none listed", () => {
+  const r = applySourceRegions(
+    POOL.filter((o) => o._region !== "FI"),
+    ["FI", "RU-LEN", "RU-KR", "RU-PSK", "SE"],
+    FALL_REGIONS,
+  );
+  assertEquals(r.verdict, "filtered");
+  assertEquals(r.obs, []);
+});
+
+Deno.test("applySourceRegions: no overlap with fetched regions -> unfetched, pool whole", () => {
+  // A spring run fetches no RU-LEN/RU-KR.
+  const r = applySourceRegions(POOL, ["RU-LEN", "RU-KR"], SPRING_REGIONS);
+  assertEquals(r.verdict, "unfetched");
+  assertEquals(r.obs, POOL);
+});
+
+Deno.test("applySourceRegions: null or [] list -> missing, pool whole", () => {
+  for (const listed of [null, []]) {
+    const r = applySourceRegions(POOL, listed, FALL_REGIONS);
+    assertEquals(r.verdict, "missing");
+    assertEquals(r.obs, POOL);
+  }
+});
+
+Deno.test("applySourceRegions: an obs without _region is never kept by a filter", () => {
+  const r = applySourceRegions(
+    [{ subId: "x" }, { _region: "FI", subId: "y" }] as Array<
+      { _region?: string; subId: string }
+    >,
+    ["FI"],
+    FALL_REGIONS,
+  );
+  assertEquals(r.obs.map((o) => o.subId), ["y"]);
+});
+
+Deno.test("sourceRegionsFor: run season picks the list; null phen -> null", () => {
+  assertEquals(sourceRegionsFor(TARSIGER, "fall_winter"), ["RU-LEN", "RU-KR"]);
+  assertEquals(sourceRegionsFor(TARSIGER, "spring_summer"), ["FI", "RU-LEN"]);
+  assertEquals(sourceRegionsFor(null, "fall_winter"), null);
+  assertEquals(sourceRegionsFor(null, "spring_summer"), null);
 });

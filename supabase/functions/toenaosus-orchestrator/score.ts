@@ -233,6 +233,57 @@ export function sourceArcFor(
 }
 
 // ---------------------------------------------------------------------------
+// P23 source regions
+// ---------------------------------------------------------------------------
+
+export type SourceRegionsVerdict = "filtered" | "unfetched" | "missing";
+
+/**
+ * The RUN season's curated source_regions list, or null.
+ *
+ * Keyed on the run season (config.season), never on seasonFor(): that is null
+ * outside the species' own window, and an out-of-window species is exactly one
+ * whose foreign records should not be counted from the wrong direction.
+ */
+export function sourceRegionsFor(
+  phen: PhenologyRow | null,
+  season: "spring_summer" | "fall_winter",
+): string[] | null {
+  if (!phen) return null;
+  return season === "fall_winter"
+    ? phen.source_regions_autumn
+    : phen.source_regions_spring;
+}
+
+/**
+ * Keep only observations whose `_region` is on the species' list.
+ *
+ * `_region` is the region code the orchestrator queried (PL, RU-LEN), not
+ * eBird's subnational1Code (PL-KP), so it compares directly with the list.
+ *
+ * Two cases leave the pool untouched: no list at all ("missing"), and a list
+ * that shares no region with what this run fetched ("unfetched") -- filtering
+ * there would empty every pool for a reason that is about the fetch, not the
+ * bird. A "filtered" result may be empty; dropping the species is the caller's.
+ */
+export function applySourceRegions<T extends { _region?: string }>(
+  obs: T[],
+  listed: string[] | null,
+  fetched: string[],
+): { obs: T[]; verdict: SourceRegionsVerdict } {
+  if (!listed || listed.length === 0) return { obs, verdict: "missing" };
+  if (!listed.some((r) => fetched.includes(r))) {
+    return { obs, verdict: "unfetched" };
+  }
+  return {
+    obs: obs.filter((o) =>
+      typeof o._region === "string" && listed.includes(o._region)
+    ),
+    verdict: "filtered",
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Gate
 // ---------------------------------------------------------------------------
 

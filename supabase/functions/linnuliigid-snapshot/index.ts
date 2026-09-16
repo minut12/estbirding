@@ -28,34 +28,37 @@ const COUNTY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
   harju: { lat: 59.40, lon: 24.80 },
   hiiu: { lat: 58.92, lon: 22.60 },
   ida_viru: { lat: 59.35, lon: 27.42 },
-  jõgeva: { lat: 58.75, lon: 26.40 },
-  järva: { lat: 58.89, lon: 25.57 },
-  lääne: { lat: 58.94, lon: 23.54 },
-  lääne_viru: { lat: 59.30, lon: 26.33 },
-  põlva: { lat: 58.05, lon: 27.05 },
-  pärnu: { lat: 58.38, lon: 24.53 },
+  jogeva: { lat: 58.75, lon: 26.40 },
+  jarva: { lat: 58.89, lon: 25.57 },
+  laane: { lat: 58.94, lon: 23.54 },
+  laane_viru: { lat: 59.30, lon: 26.33 },
+  polva: { lat: 58.05, lon: 27.05 },
+  parnu: { lat: 58.38, lon: 24.53 },
   rapla: { lat: 58.99, lon: 24.79 },
   saare: { lat: 58.33, lon: 22.48 },
   tartu: { lat: 58.38, lon: 26.73 },
   valga: { lat: 57.78, lon: 26.04 },
   viljandi: { lat: 58.36, lon: 25.60 },
-  võru: { lat: 57.84, lon: 27.00 },
+  voru: { lat: 57.84, lon: 27.00 },
 };
+// NOTE: these are TOWN centroids (linnad), not the 79 omavalitsused — no `vald`
+// has ever resolved against this table. Keys must already be normalizeName() output
+// (ASCII-folded), or the lookup below can never match them.
 const MUNICIPALITY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
   tartu: { lat: 58.38, lon: 26.73 },
   tallinn: { lat: 59.44, lon: 24.75 },
-  pärnu: { lat: 58.38, lon: 24.50 },
+  parnu: { lat: 58.38, lon: 24.50 },
   narva: { lat: 59.38, lon: 28.19 },
   viljandi: { lat: 58.36, lon: 25.60 },
-  võru: { lat: 57.84, lon: 27.00 },
+  voru: { lat: 57.84, lon: 27.00 },
   rakvere: { lat: 59.35, lon: 26.36 },
   haapsalu: { lat: 58.94, lon: 23.54 },
   kuressaare: { lat: 58.25, lon: 22.49 },
-  jõgeva: { lat: 58.75, lon: 26.40 },
+  jogeva: { lat: 58.75, lon: 26.40 },
   paide: { lat: 58.88, lon: 25.56 },
   rapla: { lat: 58.99, lon: 24.79 },
   valga: { lat: 57.78, lon: 26.04 },
-  põlva: { lat: 58.05, lon: 27.05 },
+  polva: { lat: 58.05, lon: 27.05 },
 };
 // Extracts "X vald" / "X linn" fragment from free-text locality.
 function extractMunicipality(text: string | null | undefined): string | null {
@@ -282,21 +285,40 @@ async function fetchSpeciesData(name: string, signal?: AbortSignal): Promise<{
     let municipality: string | null = null;
     let county: string | null = null;
 
-    for (const occ of merged) {
-      if (!locality) locality = String((occ as Record<string, unknown>).locality || (occ as Record<string, unknown>).locationRemarks || "") || null;
-      if (!municipality) municipality = String((occ as Record<string, unknown>).municipality || (occ as Record<string, unknown>).stateProvince || "") || null;
-      if (!county) county = String((occ as Record<string, unknown>).county || (occ as Record<string, unknown>).stateProvince || "") || null;
-      // Extract coordinates (prefer newest with Estonian coords)
-      if (lat === null) {
-        const olat = parseFloat(String(occ.decimalLatitude ?? ""));
-        const olon = parseFloat(String(occ.decimalLongitude ?? ""));
-        if (isEstoniaCoords(olat, olon)) {
-          lat = olat;
-          lon = olon;
-          coordsStatus = "public";
-          coordsSource = "exact";
-        }
+    // Walk `normalized` (sorted newest-first at build time), NOT the raw `merged`
+    // order. The old loop's "prefer newest" comment was never honoured: it scanned
+    // merged and kept the FIRST record with coordinates, pairing the newest date
+    // with an arbitrary earlier occurrence's point.
+    let placeOcc: Record<string, unknown> | null = null;
+    for (const entry of normalized) {
+      const occ = entry.occ as Record<string, unknown>;
+      const olat = parseFloat(String(occ.decimalLatitude ?? ""));
+      const olon = parseFloat(String(occ.decimalLongitude ?? ""));
+      if (isEstoniaCoords(olat, olon)) {
+        lat = olat;
+        lon = olon;
+        coordsStatus = "public";
+        coordsSource = "exact";
+        placeOcc = occ;
+        break;
       }
+    }
+    // Place fields describe the SAME occurrence whose coordinates we kept. With no
+    // coordinates anywhere they describe the newest occurrence — the one whose date
+    // is displayed. Any field that record leaves empty falls back to a newest-first
+    // scan, so coverage is preserved without the old unsorted first-non-empty mix.
+    const placeBase = placeOcc || (normalized[0]?.occ as Record<string, unknown>) || null;
+    if (placeBase) {
+      locality = String(placeBase.locality || placeBase.locationRemarks || "") || null;
+      municipality = String(placeBase.municipality || placeBase.stateProvince || "") || null;
+      county = String(placeBase.county || placeBase.stateProvince || "") || null;
+    }
+    for (const entry of normalized) {
+      if (locality && municipality && county) break;
+      const occ = entry.occ as Record<string, unknown>;
+      if (!locality) locality = String(occ.locality || occ.locationRemarks || "") || null;
+      if (!municipality) municipality = String(occ.municipality || occ.stateProvince || "") || null;
+      if (!county) county = String(occ.county || occ.stateProvince || "") || null;
     }
     if (lat === null || lon === null) {
       const centroid = resolveRestrictedCentroid(municipality, county);

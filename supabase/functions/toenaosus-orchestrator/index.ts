@@ -551,6 +551,22 @@ const FEEDBACK_NOTE_ET =
   "märkinud võimatuks või valeks, põhjenda lühidalt, miks ennustus siiski " +
   "jääb või miks see langeb, ja väldi tagasi lükatud kohti.";
 
+// P25: the species total for the intro. Rides in the USER payload for exactly
+// the reason FEEDBACK_NOTE_ET does -- SYSTEM_PROMPT, USER_PREFIX and
+// USER_SUFFIX stay byte-identical and the pin loop above holds.
+//
+// SYSTEM_PROMPT asks for "kui palju liike on naabermaades nähtud" without
+// naming a field or a length, so since P16 Sonnet has answered it by counting
+// the chunk it was handed -- 15 when the split was 30/2, 7 once P24 narrowed
+// part 0 to the narrated subset. The note names the field AND says the list is
+// a subset: the number alone would leave the rest of the intro still reading
+// as though the part were the whole report.
+// Estonian verified with estonian-mcp; do not reword.
+const INTRO_TOTAL_NOTE_ET =
+  "Märgi sissejuhatuses liikide koguarvuks väli report_species_total. " +
+  "Kandidaatide loend on ainult osa raportist, seega ära loe liike " +
+  "loendi põhjal kokku.";
+
 // ---------------------------------------------------------------------------
 // HTTP helpers
 // ---------------------------------------------------------------------------
@@ -2791,6 +2807,15 @@ async function fetchCompute(
     // the prompt hash pin holds. Repeated per part like the three scalars
     // above -- each part still reads as a complete request.
     feedback_note_et: FEEDBACK_NOTE_ET,
+    // P25: the report-level species count, plus the note that tells Sonnet to
+    // use it instead of counting `candidates`. `top.length`, NOT
+    // narratedTop.length and NOT the TOP_N literal -- the reader sees all 30
+    // entries, so the intro must count the report rather than the Sonnet
+    // subset, and reading the array keeps the number honest on a short pool.
+    // Repeated per part like the four above; part 1's intro is discarded, but
+    // the payload stays uniform and P16's self-contained property holds.
+    report_species_total: top.length,
+    intro_note_et: INTRO_TOTAL_NOTE_ET,
     candidates: chunk.map(function (s) {
       const fb = s.probability_factors.feedback;
       return {

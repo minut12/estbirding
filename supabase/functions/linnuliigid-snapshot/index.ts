@@ -285,40 +285,25 @@ async function fetchSpeciesData(name: string, signal?: AbortSignal): Promise<{
     let municipality: string | null = null;
     let county: string | null = null;
 
-    // Walk `normalized` (sorted newest-first at build time), NOT the raw `merged`
-    // order. The old loop's "prefer newest" comment was never honoured: it scanned
-    // merged and kept the FIRST record with coordinates, pairing the newest date
-    // with an arbitrary earlier occurrence's point.
-    let placeOcc: Record<string, unknown> | null = null;
-    for (const entry of normalized) {
-      const occ = entry.occ as Record<string, unknown>;
-      const olat = parseFloat(String(occ.decimalLatitude ?? ""));
-      const olon = parseFloat(String(occ.decimalLongitude ?? ""));
+    // Newest record wins outright. `normalized` is sorted newest-first, so entry 0 is
+    // the occurrence whose date we display, and its point AND its place text must both
+    // come from that same record. We deliberately do NOT scan older records for a
+    // point: when the newest record's coordinates are withheld, an older public point
+    // drags the marker to a different occurrence's location while the popup still
+    // shows the newest date. Withheld coordinates fall through to the centroid below.
+    const newestOcc = (normalized[0]?.occ as Record<string, unknown>) || null;
+    if (newestOcc) {
+      locality = String(newestOcc.locality || newestOcc.locationRemarks || "") || null;
+      municipality = String(newestOcc.municipality || newestOcc.stateProvince || "") || null;
+      county = String(newestOcc.county || newestOcc.stateProvince || "") || null;
+      const olat = parseFloat(String(newestOcc.decimalLatitude ?? ""));
+      const olon = parseFloat(String(newestOcc.decimalLongitude ?? ""));
       if (isEstoniaCoords(olat, olon)) {
         lat = olat;
         lon = olon;
         coordsStatus = "public";
         coordsSource = "exact";
-        placeOcc = occ;
-        break;
       }
-    }
-    // Place fields describe the SAME occurrence whose coordinates we kept. With no
-    // coordinates anywhere they describe the newest occurrence — the one whose date
-    // is displayed. Any field that record leaves empty falls back to a newest-first
-    // scan, so coverage is preserved without the old unsorted first-non-empty mix.
-    const placeBase = placeOcc || (normalized[0]?.occ as Record<string, unknown>) || null;
-    if (placeBase) {
-      locality = String(placeBase.locality || placeBase.locationRemarks || "") || null;
-      municipality = String(placeBase.municipality || placeBase.stateProvince || "") || null;
-      county = String(placeBase.county || placeBase.stateProvince || "") || null;
-    }
-    for (const entry of normalized) {
-      if (locality && municipality && county) break;
-      const occ = entry.occ as Record<string, unknown>;
-      if (!locality) locality = String(occ.locality || occ.locationRemarks || "") || null;
-      if (!municipality) municipality = String(occ.municipality || occ.stateProvince || "") || null;
-      if (!county) county = String(occ.county || occ.stateProvince || "") || null;
     }
     if (lat === null || lon === null) {
       const centroid = resolveRestrictedCentroid(municipality, county);
@@ -353,11 +338,77 @@ async function fetchSpeciesData(name: string, signal?: AbortSignal): Promise<{
   }
 }
 
+// --- Embedded occurrence payload ---------------------------------------------
+// The /app/ search page ships the POST /api/occurrences/search response verbatim in a
+// SvelteKit hydration tag — one COMPLETE record per occurrence, carrying event_date,
+// latitude/longitude, county, municipality, locality, individual_count, behavior and
+// recorded_by. The rendered <table> exposes only a subset and leaves locality empty on
+// restricted records, which is why the table scrape could never resolve a county.
+// The script content is JSON whose `body` member is itself a JSON string, so reaching
+// the records is two JSON.parse calls — no hand-rolled unescaping of the \" form.
+// (Same shape elurikkus-bulk-refresh already parses; see its parseObservationsFromHtml.)
+type ElurikkusRecord = Record<string, unknown>;
+
+function extractEmbeddedOccurrences(html: string): ElurikkusRecord[] {
+  const re = /<script([^>]*\bdata-sveltekit-fetched\b[^>]*)>([\s\S]*?)<\/script>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    if (!/data-url="[^"]*\/api\/occurrences\/search/i.test(m[1])) continue;
+    try {
+      const envelope = JSON.parse(m[2]) as { body?: unknown } | null;
+      const body = envelope?.body;
+      const inner = typeof body === "string" ? JSON.parse(body) : body;
+      const results = inner && typeof inner === "object"
+        ? (inner as { results?: unknown }).results
+        : null;
+      if (Array.isArray(results)) return results as ElurikkusRecord[];
+    } catch {
+      // Payload shape changed — caller degrades to the table scrape.
+    }
+  }
+  return [];
+}
+
+function recordText(v: unknown): string | null {
+  if (typeof v === "string") return v.trim() || null;
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  return null;
+}
+
+function recordNumber(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string" && v.trim()) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function recordInt(v: unknown): number | null {
+  const n = recordNumber(v);
+  return n === null ? null : Math.trunc(n);
+}
+
+// recorded_by arrives as an array of names; the table scrape produced a plain string,
+// so join to keep `collectors` the same shape for every consumer downstream.
+function recordList(v: unknown): string | null {
+  if (Array.isArray(v)) {
+    const joined = v.map(recordText).filter((x): x is string => x !== null).join(", ");
+    return joined || null;
+  }
+  return recordText(v);
+}
+
+function recordEventDate(rec: ElurikkusRecord): string {
+  return recordText(rec.event_date) || recordText(rec.event_datetime_point) || "";
+}
+
 // Fallback: scrape from HTML search page.
 // Paginates via &limit=100&offset=<page*100>&orderBy=event_date_naive&orderAscending=false
 // (mirrors handleElurikkusSpeciesRequest's scheme) until empty page, item ceiling,
 // page ceiling, per-species wall-clock budget, or two consecutive fetch errors.
-// Metadata for the newest-occurrence row is extracted from page-0 HTML only.
+// Per-occurrence data comes from the embedded payload; the page-0 <table> scrape is
+// kept as a fallback for when that payload stops parsing.
 async function fetchSpeciesFromHtml(name: string, signal?: AbortSignal): Promise<{
   lat: number | null;
   lon: number | null;
@@ -427,6 +478,7 @@ async function fetchSpeciesFromHtml(name: string, signal?: AbortSignal): Promise
 
   try {
     const allDates: string[] = [];
+    const records: ElurikkusRecord[] = [];
     let firstPageHtml = "";
     let pagesFetched = 0;
     let stopReason: "empty_page" | "max_items" | "max_pages" | "budget_exceeded" | "fetch_error" = "max_pages";
@@ -448,18 +500,25 @@ async function fetchSpeciesFromHtml(name: string, signal?: AbortSignal): Promise
         break pageLoop;
       }
       if (page === 0) firstPageHtml = r.html;
+      const pageRecords = extractEmbeddedOccurrences(r.html);
+      for (const rec of pageRecords) {
+        records.push(rec);
+        if (records.length >= PAGINATION_MAX_ITEMS) break;
+      }
+      // The legacy date scrape keeps running alongside the payload parse, so a markup
+      // change that kills the payload degrades to today's numbers rather than to none.
       const before = allDates.length;
       let m: RegExpExecArray | null;
       const reJson = /"(?:eventDate|datetime)"\s*:\s*"?(\d{4}-\d{2}-\d{2})/gi;
       while ((m = reJson.exec(r.html)) !== null) allDates.push(m[1]);
       const reTable = /(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}/g;
       while ((m = reTable.exec(r.html)) !== null) allDates.push(m[1]);
-      const added = allDates.length - before;
+      const added = (allDates.length - before) + pageRecords.length;
       if (added === 0) {
         stopReason = "empty_page";
         break pageLoop;
       }
-      if (allDates.length >= PAGINATION_MAX_ITEMS) {
+      if (records.length >= PAGINATION_MAX_ITEMS || allDates.length >= PAGINATION_MAX_ITEMS) {
         stopReason = "max_items";
         break pageLoop;
       }
@@ -470,6 +529,66 @@ async function fetchSpeciesFromHtml(name: string, signal?: AbortSignal): Promise
       return { lat: null, lon: null, latestDate: null, occ7: 0, coordsStatus: "missing" as const, coordsSource: "none" as const, locality: null, municipality: null, county: null, individualCount: null, behavior: null, collectors: null, districts: null, eestiOmavalitsused: null };
     }
 
+    // --- Payload path (preferred) --------------------------------------------
+    // Every occurrence is embedded whole, so the newest record carries its own point
+    // AND its own place text. Newest record wins outright: we never pair its date with
+    // an older record's coordinates. A newest record whose coordinates are withheld
+    // resolves a centroid from ITS county/municipality, not from someone else's point.
+    const normalizedRecords = records
+      .map((rec) => ({ rec, t: parseElurikkusDate(recordEventDate(rec)) }))
+      .filter((x) => x.t > 0)
+      .sort((a, b) => b.t - a.t);
+
+    if (normalizedRecords.length > 0) {
+      const newest = normalizedRecords[0].rec;
+      const latestDate = new Date(normalizedRecords[0].t).toISOString();
+      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const occ7 = normalizedRecords.filter((x) => x.t >= sevenDaysAgo).length;
+
+      const locality = recordText(newest.locality);
+      const municipality = recordText(newest.municipality);
+      const county = recordText(newest.county);
+      const individualCount = recordInt(newest.individual_count);
+      const behavior = recordText(newest.behavior);
+      const collectors = recordList(newest.recorded_by);
+
+      let lat: number | null = null;
+      let lon: number | null = null;
+      let coordsStatus: "public" | "restricted" | "missing" = "missing";
+      let coordsSource: "exact" | "municipality" | "county" | "none" = "none";
+      const nlat = recordNumber(newest.latitude);
+      const nlon = recordNumber(newest.longitude);
+      if (nlat !== null && nlon !== null && isEstoniaCoords(nlat, nlon)) {
+        lat = nlat;
+        lon = nlon;
+        coordsStatus = "public";
+        coordsSource = "exact";
+      } else {
+        const centroid = resolveRestrictedCentroid(municipality, county);
+        if (centroid) {
+          lat = centroid.lat;
+          lon = centroid.lon;
+          coordsStatus = "restricted";
+          coordsSource = centroid.coordsSource;
+        }
+      }
+
+      console.log("[elurikkus-payload-parse]", JSON.stringify({
+        species: name,
+        locality,
+        municipality,
+        county,
+        resolved: coordsSource,
+        pagesFetched,
+        stopReason,
+        occ7,
+        datesParsed: normalizedRecords.length,
+        recordsParsed: records.length,
+      }));
+      return { lat, lon, latestDate, occ7, coordsStatus, coordsSource, locality, municipality, county, individualCount, behavior, collectors, districts: null, eestiOmavalitsused: null };
+    }
+
+    // --- Fallback: page-0 <table> scrape (pre-payload behaviour, unchanged) ----
     const normalized = allDates
       .map((rawDate) => ({ rawDate, t: parseElurikkusDate(rawDate) }))
       .filter((x) => x.t > 0)

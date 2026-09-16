@@ -5,7 +5,11 @@
 import { assertAlmostEquals, assertEquals } from "jsr:@std/assert@^1.0.19";
 import {
   applySourceRegions,
+  countryNameEt,
   directionFit,
+  formatDateEt,
+  narrateCut,
+  NARRATIVE,
   parseDateRange,
   type PhenologyRow,
   phenologyGate,
@@ -14,6 +18,7 @@ import {
   seasonFor,
   sourceFit,
   sourceRegionsFor,
+  stubWhyLikely,
   type UpstreamRow,
   upstreamP,
   V4,
@@ -355,4 +360,202 @@ Deno.test("sourceRegionsFor: run season picks the list; null phen -> null", () =
   assertEquals(sourceRegionsFor(TARSIGER, "spring_summer"), ["FI", "RU-LEN"]);
   assertEquals(sourceRegionsFor(null, "fall_winter"), null);
   assertEquals(sourceRegionsFor(null, "spring_summer"), null);
+});
+
+// ---- P24 narrative cap -----------------------------------------------------
+
+// Descending, like the list narrateCut is actually handed after the sort.
+const RANKED = (pcts: number[]) =>
+  pcts.map((probability_pct, i) => ({ probability_pct, ebird_code: `sp${i}` }));
+
+const CUT = {
+  minPct: NARRATIVE.MIN_PCT,
+  floor: NARRATIVE.FLOOR,
+  ceiling: NARRATIVE.CEILING,
+};
+
+Deno.test("narrateCut: the live raport shape -- 13 of 30 clear 5%, neither bound binds", () => {
+  // Arrange: the 2026-09-16 raport's own distribution, 42% down to 1%.
+  const entries = RANKED([
+    42, 38, 30, 25, 20, 18, 15, 12, 10, 9, 7, 6, 5,
+    4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 2, 2, 2, 2, 1,
+  ]);
+
+  // Act
+  const { narrated, stubbed } = narrateCut(entries, CUT);
+
+  // Assert
+  assertEquals(entries.length, 30);
+  assertEquals(narrated.length, 13);
+  assertEquals(stubbed.length, 17);
+  assertEquals(narrated[narrated.length - 1].probability_pct, 5);
+  assertEquals(stubbed[0].probability_pct, 4);
+});
+
+Deno.test("narrateCut: only 3 clear 5% -> the floor lifts it to 8", () => {
+  // Arrange
+  const entries = RANKED([20, 9, 5, 4, 4, 3, 3, 2, 2, 1]);
+
+  // Act
+  const { narrated, stubbed } = narrateCut(entries, CUT);
+
+  // Assert: five sub-threshold entries are narrated anyway.
+  assertEquals(narrated.length, 8);
+  assertEquals(stubbed.length, 2);
+  assertEquals(narrated[7].probability_pct, 2);
+});
+
+Deno.test("narrateCut: 22 clear 5% -> the ceiling clamps it to 15", () => {
+  // Arrange: 22 entries at or above 5, 8 below.
+  const entries = RANKED([
+    ...Array(22).fill(0).map((_, i) => 40 - i), // 40..19, all >= 5
+    4, 4, 3, 3, 2, 2, 1, 1,
+  ]);
+
+  // Act
+  const { narrated, stubbed } = narrateCut(entries, CUT);
+
+  // Assert: seven entries above the threshold are stubbed anyway.
+  assertEquals(narrated.length, 15);
+  assertEquals(stubbed.length, 15);
+  assertEquals(stubbed[0].probability_pct, 25);
+});
+
+Deno.test("narrateCut: a list shorter than the floor is narrated whole", () => {
+  // Arrange
+  const entries = RANKED([30, 4, 2]);
+
+  // Act
+  const { narrated, stubbed } = narrateCut(entries, CUT);
+
+  // Assert: never pads to 8 with entries that do not exist.
+  assertEquals(narrated.length, 3);
+  assertEquals(stubbed, []);
+});
+
+Deno.test("narrateCut: empty list -> two empty halves, no throw", () => {
+  // Arrange / Act
+  const { narrated, stubbed } = narrateCut(RANKED([]), CUT);
+
+  // Assert
+  assertEquals(narrated, []);
+  assertEquals(stubbed, []);
+});
+
+Deno.test("narrateCut: a tie straddling the floor is split by position", () => {
+  // Arrange: 3 clear 5%, so the floor lifts to 8 and lands mid-way through a
+  // run of 4% entries. Positions 7 and 8 are tied.
+  const entries = RANKED([20, 9, 5, 4, 4, 4, 4, 4, 4, 4, 4]);
+
+  // Act
+  const { narrated, stubbed } = narrateCut(entries, CUT);
+
+  // Assert: the tie breaks on report order, not on the value.
+  assertEquals(narrated.length, 8);
+  assertEquals(narrated[7].probability_pct, 4);
+  assertEquals(narrated[7].ebird_code, "sp7");
+  assertEquals(stubbed[0].probability_pct, 4);
+  assertEquals(stubbed[0].ebird_code, "sp8");
+});
+
+Deno.test("countryNameEt: every code the raports actually carry", () => {
+  assertEquals(countryNameEt("PL"), "Poola");
+  assertEquals(countryNameEt("SE"), "Rootsi");
+  assertEquals(countryNameEt("FI"), "Soome");
+  assertEquals(countryNameEt("LV"), "Läti");
+  assertEquals(countryNameEt("LT"), "Leedu");
+  assertEquals(countryNameEt("BY"), "Valgevene");
+  assertEquals(countryNameEt("RU-LEN"), "Venemaa");
+});
+
+Deno.test("countryNameEt: any RU-* collapses to Venemaa by prefix", () => {
+  // RU-KGD has never appeared in a raport; it must work the day it does.
+  assertEquals(countryNameEt("RU-KGD"), "Venemaa");
+  assertEquals(countryNameEt("RU-PSK"), "Venemaa");
+  assertEquals(countryNameEt("RU"), "Venemaa");
+});
+
+Deno.test("countryNameEt: unmapped code degrades to itself, uppercased", () => {
+  assertEquals(countryNameEt("EE"), "EE");
+  assertEquals(countryNameEt("no"), "NO");
+});
+
+Deno.test("countryNameEt: null, undefined and blank -> null", () => {
+  assertEquals(countryNameEt(null), null);
+  assertEquals(countryNameEt(undefined), null);
+  assertEquals(countryNameEt(""), null);
+  assertEquals(countryNameEt("   "), null);
+});
+
+Deno.test("formatDateEt: both shapes the EF actually sees", () => {
+  assertEquals(formatDateEt("2026-09-12"), "12. september");
+  assertEquals(formatDateEt("2026-09-12 07:30"), "12. september");
+});
+
+Deno.test("formatDateEt: every month, nominative and lowercase", () => {
+  const want = [
+    "jaanuar",
+    "veebruar",
+    "märts",
+    "aprill",
+    "mai",
+    "juuni",
+    "juuli",
+    "august",
+    "september",
+    "oktoober",
+    "november",
+    "detsember",
+  ];
+  for (let m = 1; m <= 12; m++) {
+    const mm = String(m).padStart(2, "0");
+    assertEquals(formatDateEt(`2026-${mm}-15`), `15. ${want[m - 1]}`);
+  }
+});
+
+Deno.test("formatDateEt: a single-digit day loses its leading zero", () => {
+  assertEquals(formatDateEt("2026-01-01"), "1. jaanuar");
+  assertEquals(formatDateEt("2026-12-09"), "9. detsember");
+});
+
+Deno.test("formatDateEt: unparseable or out-of-range input -> null", () => {
+  assertEquals(formatDateEt(null), null);
+  assertEquals(formatDateEt(undefined), null);
+  assertEquals(formatDateEt(""), null);
+  assertEquals(formatDateEt("12.09.2026"), null);
+  assertEquals(formatDateEt("September 12"), null);
+  assertEquals(formatDateEt("2026-13-01"), null);
+  assertEquals(formatDateEt("2026-00-01"), null);
+  assertEquals(formatDateEt("2026-09-00"), null);
+});
+
+Deno.test("stubWhyLikely: the full sentence, pinned verbatim", () => {
+  // This assertion exists to stop the Estonian drifting. If it fails, the fix
+  // is to restore the string, not to update the expectation.
+  assertEquals(
+    stubWhyLikely({ country_code: "PL", date: "2026-09-12" }),
+    "Madal tõenäosus. Lähimad vaatlused: Poola, viimane 12. september.",
+  );
+  assertEquals(
+    stubWhyLikely({ country_code: "FI", date: "2026-09-14 06:05" }),
+    "Madal tõenäosus. Lähimad vaatlused: Soome, viimane 14. september.",
+  );
+});
+
+Deno.test("stubWhyLikely: a missing country degrades to the lead alone", () => {
+  assertEquals(
+    stubWhyLikely({ country_code: null, date: "2026-09-12" }),
+    "Madal tõenäosus.",
+  );
+  assertEquals(stubWhyLikely({ date: "2026-09-12" }), "Madal tõenäosus.");
+});
+
+Deno.test("stubWhyLikely: a missing date degrades to the lead alone", () => {
+  assertEquals(
+    stubWhyLikely({ country_code: "PL", date: null }),
+    "Madal tõenäosus.",
+  );
+  assertEquals(stubWhyLikely({ country_code: "PL" }), "Madal tõenäosus.");
+  // Never a half-filled sentence, never the word "null".
+  assertEquals(stubWhyLikely({}), "Madal tõenäosus.");
 });

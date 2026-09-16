@@ -107,6 +107,8 @@ import {
   applySourceRegions,
   bearingInArc,
   directionFit,
+  narrateCut,
+  NARRATIVE,
   type PhenologyRow,
   phenologyGate,
   scoreV4,
@@ -115,6 +117,7 @@ import {
   sourceArcFor,
   sourceRegionsFor,
   type SourceRegionsVerdict,
+  stubWhyLikely,
   type UpstreamRow,
   V4,
 } from "./score.ts";
@@ -914,6 +917,12 @@ interface FetchComputeResult {
   sonnet_user_contents: string[];
   /** Candidate count per part, parallel to sonnet_user_contents (P16). */
   sonnet_part_candidates: number[];
+  /**
+   * P24: ebird_codes deliberately withheld from the Sonnet payload, whose
+   * why_likely_et parseMerge fills from the stub template instead. Carried
+   * rather than recomputed so the cut is decided exactly once.
+   */
+  narrative_stubbed_codes: string[];
   rare_observations: RareObservation[];
   source_data: Record<string, unknown>;
   ebird_errors: Array<{ region: string; error: string }>;
@@ -2735,14 +2744,40 @@ async function fetchCompute(
     });
   }
 
+  // ---- P24: narrative cap ----
+  // Which entries are worth a full Sonnet narrative. Everything below the cut
+  // is dropped from the payload entirely and gets a deterministic Estonian stub
+  // in parseMerge -- 17 of the last 30 entries sat at <=4% and each still cost
+  // a 227-450 character why_likely_et plus 2-3 narrated sites.
+  //
+  // Computed HERE, after the predicted-sites loop, and NOT next to the TOP_N
+  // slice: the P19 all-sites-rejected floor above lowers probability_pct after
+  // the slice, so a 5% entry can become a 4% one between the two points.
+  // Cutting at the slice would narrate an entry that later falls below the cut.
+  //
+  // `top` itself is untouched -- all 30 entries keep their place, their order
+  // and every deterministic field. Only the Sonnet payload shrinks.
+  const { narrated: narratedTop, stubbed: stubbedTop } = narrateCut(top, {
+    minPct: NARRATIVE.MIN_PCT,
+    floor: NARRATIVE.FLOOR,
+    ceiling: NARRATIVE.CEILING,
+  });
+  const narrative_stubbed_codes = stubbedTop.map((c) => c.ebird_code);
+  console.log(
+    `[p24] narrative cap: ${narratedTop.length} narrated, ${stubbedTop.length} stubbed (min_pct=${NARRATIVE.MIN_PCT} floor=${NARRATIVE.FLOOR} ceiling=${NARRATIVE.CEILING})`,
+  );
+
   // ---- Sonnet payload (unchanged shape from v6) ----
   // P16: one payload per part. `season`, `period` and `weather` are three
   // scalars outside `candidates`, so repeating them per part is nearly free and
   // each part still reads as a complete, self-contained request.
+  //
+  // P24: the split now runs over the NARRATED subset, not `top`. SONNET_PARTS
+  // and the chunking rule are unchanged; only the input list is shorter.
   const candidateChunks: typeof top[] = [];
-  const chunkSize = Math.ceil(top.length / SONNET_PARTS);
-  for (let i = 0; i < top.length; i += chunkSize) {
-    candidateChunks.push(top.slice(i, i + chunkSize));
+  const chunkSize = Math.ceil(narratedTop.length / SONNET_PARTS);
+  for (let i = 0; i < narratedTop.length; i += chunkSize) {
+    candidateChunks.push(narratedTop.slice(i, i + chunkSize));
   }
   // An empty pool would otherwise yield zero parts, zero calls and a silently
   // empty intro_et. One call with no candidates is what v6 did; keep that.
@@ -2801,6 +2836,7 @@ async function fetchCompute(
     corridor_watchlist,
     sonnet_user_contents: sonnetUserContents,
     sonnet_part_candidates: candidateChunks.map((c) => c.length),
+    narrative_stubbed_codes,
     rare_observations,
     source_data: {
       total_obs_fetched: allObs.length,
@@ -2832,6 +2868,12 @@ async function fetchCompute(
       watch_errors,
       ...(watchLoadError ? { p11_watch_load_failed: watchLoadError } : {}),
       candidates_returned: top.length,
+      // P24: always present, like feedback_dropped and source_regions_dropped.
+      // The two always sum to candidates_returned -- `top` is unchanged by the
+      // cap, only the Sonnet payload is. Gate C reads these rather than
+      // counting empty why_likely_et, which no longer means "Sonnet missed one".
+      narrative_narrated: narratedTop.length,
+      narrative_stubbed: stubbedTop.length,
       rare_observations_count: rare_observations.length,
       species_meta_count: speciesList.length,
       species_meta_eligible: metaByEbirdCode.size,
@@ -3248,8 +3290,14 @@ function parseMerge(
   // different eta_days buckets because the loop crossed a rounding boundary.
   const etaNow = new Date();
 
+  // P24: the codes fetchCompute deliberately withheld from the payload. A code
+  // in here is EXPECTED to be absent from textByCode -- that is not a Sonnet
+  // failure, and its why_likely_et comes from the stub instead of staying "".
+  const stubbedCodes = new Set(upstream.narrative_stubbed_codes || []);
+
   const entries = (upstream.candidates || []).map((c) => {
     const t = textByCode.get(c.ebird_code) || {} as SonnetEntry;
+    const isStubbed = stubbedCodes.has(c.ebird_code);
     return {
       // Shared with VaatlusEntry -- existing EntryCard renders these
       species_et: c.name_et,
@@ -3264,6 +3312,12 @@ function parseMerge(
       count: c.nearest_obs.count,
       is_rarity: true,
       rarity_level: c.rarity_level,
+      // P24: a stubbed entry leaves this "" on purpose, NOT as an oversight.
+      // rarity_reason is species-level content that Sonnet rewrites from
+      // scratch every run in different wording (25 appearances, 25 distinct
+      // texts over 7 days for one species), so the right fix is to cache it per
+      // species -- which needs its own schema decision and is a separate
+      // change. Until then a stubbed entry simply has no rarity_reason.
       rarity_reason: t.rarity_reason || "",
       ee_probability_pct: c.probability_pct,
       source: "ebird",
@@ -3273,7 +3327,17 @@ function parseMerge(
       distance_to_ee_km: c.distance_to_ee_km,
       total_neighbor_obs_30d: c.total_neighbor_obs_30d,
       neighbor_breakdown: c.neighbor_breakdown,
-      why_likely_et: t.why_likely_et || "",
+      // P24: the stub only ever fills a slot Sonnet was never asked about. A
+      // narrated entry that came back empty still reads "" -- that failure must
+      // stay visible rather than being papered over with template text.
+      why_likely_et: isStubbed
+        ? stubWhyLikely({
+          country_code: c.nearest_obs.country_code,
+          date: c.nearest_obs.date,
+        })
+        : t.why_likely_et || "",
+      // P24: stubbed entries name no sites. The deterministic predicted_sites
+      // below are unaffected -- this is the narrated prose list only.
       likely_arrival_sites_et: Array.isArray(t.likely_arrival_sites_et)
         ? t.likely_arrival_sites_et
         : [],

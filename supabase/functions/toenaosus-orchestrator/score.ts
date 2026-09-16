@@ -443,3 +443,151 @@ export function scoreV4(i: V4Inputs, w: V4Weights = V4): V4Factors {
     pct,
   };
 }
+
+// ---------------------------------------------------------------------------
+// P24 narrative cap
+//
+// 30 entries per raport, but the tail sits at 1-4% and Sonnet writes the same
+// weight of confident Estonian for a 1% bird as for a 42% one. The fix is NOT
+// to ask Sonnet to taper -- instructing a model to write less is a behaviour
+// gamble against a SHA-pinned prompt with no test coverage on that stage.
+// Instead the tail never reaches Sonnet at all: the EF drops it from the
+// payload and fills `why_likely_et` from a deterministic template.
+// ---------------------------------------------------------------------------
+
+// Alongside V4 in the same style: the cut is a tuned rule, not three literals
+// scattered across the call site.
+export const NARRATIVE = {
+  MIN_PCT: 5,
+  FLOOR: 8,
+  CEILING: 15,
+} as const;
+
+export interface NarrativeCutOpts {
+  minPct: number;
+  floor: number;
+  ceiling: number;
+}
+
+/**
+ * Split an already-ranked list into the entries that get a full Sonnet
+ * narrative and the entries that get the stub.
+ *
+ * Narrate every entry at or above `minPct`, but never fewer than `floor` and
+ * never more than `ceiling`. Both bounds are counts, not percentages: a raport
+ * whose whole pool is weak still gets `floor` narrated entries rather than a
+ * page of stubs, and a freak day where everything clears `minPct` still costs
+ * at most `ceiling` narratives.
+ *
+ * `entries` MUST already be in report order -- the caller's sort is the only
+ * ranking, and the bounds take from the top of it. A tie spanning the cut is
+ * therefore resolved by position, which is deterministic but arbitrary; that is
+ * the same rule the TOP_N slice already applies one boundary further down.
+ */
+export function narrateCut<T extends { probability_pct: number }>(
+  entries: T[],
+  opts: NarrativeCutOpts,
+): { narrated: T[]; stubbed: T[] } {
+  const above = entries.filter((e) => e.probability_pct >= opts.minPct).length;
+  // Clamp to the band, then to what actually exists: a list shorter than the
+  // floor is narrated whole rather than padded with entries that are not there.
+  const n = Math.min(
+    entries.length,
+    Math.max(opts.floor, Math.min(opts.ceiling, above)),
+  );
+  return { narrated: entries.slice(0, n), stubbed: entries.slice(n) };
+}
+
+// The full live set, confirmed against every country_code present across
+// upstream_obs[] and neighbor_breakdown[] in every raport to date: PL, SE, FI,
+// LV, LT, BY, RU-LEN. Nominative, because the stub sentence puts the name after
+// a colon and so never needs a case-inflected form.
+const COUNTRY_NAME_ET: Record<string, string> = {
+  PL: "Poola",
+  SE: "Rootsi",
+  FI: "Soome",
+  LV: "Läti",
+  LT: "Leedu",
+  BY: "Valgevene",
+  "RU-LEN": "Venemaa",
+};
+
+/**
+ * Region code -> Estonian country name, nominative.
+ *
+ * Subnational codes are not countries: every RU-* collapses to Venemaa by
+ * prefix, so RU-KGD works the day it first appears (it never has yet). Same
+ * prefix shape as `regionToCountry` above, deliberately NOT that function --
+ * it returns null for PL and BY, which is right for upstream stats and wrong
+ * for naming. An unmapped code degrades to itself, uppercased, so a new region
+ * shows up as "EE" rather than as a crash or the word null.
+ */
+export function countryNameEt(code: string | null | undefined): string | null {
+  if (!code) return null;
+  const c = String(code).trim().toUpperCase();
+  if (!c) return null;
+  const named = COUNTRY_NAME_ET[c];
+  if (named) return named;
+  if (c === "RU" || c.startsWith("RU-")) return "Venemaa";
+  return c;
+}
+
+// Nominative, lowercase -- Estonian does not capitalise month names. Fixed
+// list, never generated.
+const MONTHS_ET = [
+  "jaanuar",
+  "veebruar",
+  "märts",
+  "aprill",
+  "mai",
+  "juuni",
+  "juuli",
+  "august",
+  "september",
+  "oktoober",
+  "november",
+  "detsember",
+];
+
+/**
+ * "2026-09-12" or "2026-09-12 07:30" -> "12. september".
+ *
+ * Parsed by regex on the date prefix, never through Date: `new Date("2026-09-12")`
+ * is UTC midnight, and reading getDate() from a timezone west of UTC would
+ * silently report the 11th. The two accepted shapes are what eBird and the
+ * neighbour breakdown actually carry.
+ */
+export function formatDateEt(date: string | null | undefined): string | null {
+  if (!date) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(date).trim());
+  if (!m) return null;
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > 31) return null;
+  return `${day}. ${MONTHS_ET[month - 1]}`;
+}
+
+export interface StubEntry {
+  country_code?: string | null;
+  date?: string | null;
+}
+
+const STUB_LEAD_ET = "Madal tõenäosus.";
+
+/**
+ * The tail entry's `why_likely_et`, in place of a Sonnet narrative.
+ *
+ * Estonian verified with estonian-mcp (0 officialese issues, spell- and
+ * capitalisation-clean). Do not reword, do not hedge, do not add a third
+ * sentence -- this function exists so the string is pinned by a test.
+ *
+ * A missing country or date degrades to the lead sentence alone. Half a
+ * sentence, or one carrying the word "null", is worse than a short one.
+ */
+export function stubWhyLikely(entry: StubEntry): string {
+  const country = countryNameEt(entry.country_code ?? null);
+  const date = formatDateEt(entry.date ?? null);
+  if (!country || !date) return STUB_LEAD_ET;
+  return `${STUB_LEAD_ET} Lähimad vaatlused: ${country}, viimane ${date}.`;
+}

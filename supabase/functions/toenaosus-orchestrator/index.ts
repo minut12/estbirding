@@ -437,12 +437,12 @@ const SYSTEM_PROMPT = `Sa oled Eesti Ornitoloogiaühingu koordinaator, kes valmi
 
 Sulle antakse JSON-andmed kandidaatliikide kohta (viimase 30 päeva naabermaade vaatlused liikidest, kes on Eestis liigitatud kui rare/super/mega-haruldused) JA praeguste ilmastikutingimuste kohta (weather-väli).
 
-Weather-väli sisaldab 850 hPa rõhupinna (õhusammu liikumistasandi) tuule- ja õhurõhuandmeid ning aktiivseid "õhuvoolu-koridore" (active_corridors). Iga aktiivse koridori juures on "direction_text_et" (üks 8 täpsest tuulesuunast: põhi, kirre, ida, kagu, lõuna, edela, lääs, loe) ning "direction_abbr" (N, NE, E, SE, S, SW, W, NW). KASUTA narratiivis täpsemat suunda direction_text_et väljast, MITTE üldistust nagu "lõuna/edela". IGAL koridoril on "arrival_type_et" väli, mis ütleb, kas see esindab "mandritevahelist" (kauglind vaagundliikidele kaugetest pesitsusaladelt) või "regionaalset" (lähedaste populatsioonide liikumisi) saabumist. See vahe on tähtis — kõik koridorid EI ole tugevad ennustused; regionaalsed liikumised toimuvad sõltumata praegusest tuulemustrist.
+Weather-väli sisaldab 850 hPa rõhupinna (õhusammu liikumistasandi) tuule- ja õhurõhuandmeid ning aktiivseid "õhuvoolu-koridore" (active_corridors). Iga aktiivse koridori juures on "direction_text_et" (üks 8 täpsest tuulesuunast: põhi, kirre, ida, kagu, lõuna, edela, lääs, loe) ning "direction_abbr" (N, NE, E, SE, S, SW, W, NW). KASUTA narratiivis täpsemat suunda direction_text_et väljast, MITTE üldistust nagu "lõuna/edela". IGAL koridoril on "arrival_type_et" väli, mis ütleb, kas see esindab "mandritevahelist" (kauglind eksikülalistele kaugetest pesitsusaladelt) või "regionaalset" (lähedaste populatsioonide liikumisi) saabumist. See vahe on tähtis — kõik koridorid EI ole tugevad ennustused; regionaalsed liikumised toimuvad sõltumata praegusest tuulemustrist.
 
 Sinu ülesanne:
 1) Kirjuta eestikeelne sissejuhatus (1 lõik, 3–5 lauset):
    - Üldine pilt: kui palju liike on naabermaades nähtud, milliseid trende on, millised on eriti tähelepanuväärsed.
-   - LISA ALATI üks lause ilmastiku kohta. Kui weather.active_corridors EI OLE tühi: nimeta koridor, märgi selle arrival_type ja selgita lühidalt, kas see suurendab tõenäosust (mandritevaheline) või on pigem regionaalse iseloomuga (lähedaste liikumiste signaal). Kui active_corridors ON tühi: lühidalt märgi, et praegused 850 hPa tuulemustrid ei loo eriti soodsaid tingimusi kaugemate vaagundliikide kandumiseks.
+   - LISA ALATI üks lause ilmastiku kohta. Kui weather.active_corridors EI OLE tühi: nimeta koridor, märgi selle arrival_type ja selgita lühidalt, kas see suurendab tõenäosust (mandritevaheline) või on pigem regionaalse iseloomuga (lähedaste liikumiste signaal). Kui active_corridors ON tühi: lühidalt märgi, et praegused 850 hPa tuulemustrid ei loo eriti soodsaid tingimusi kaugemate eksikülaliste kandumiseks.
    - Kui weather.summary.is_high_pressure on true: maini ka kõrgrõhkkonna olemasolu Euroopa kohal.
 2) Iga liigi kohta:
    - rarity_reason: 1 lause liigi üldise haruldase staatuse kohta Eestis (pesitsusala, miks Eestis haruldane).
@@ -502,9 +502,9 @@ const USER_SUFFIX =
 
 // Measured from the n8n export (A2, 2026-09-02), DECODED -- i.e. the strings
 // Sonnet receives.
-const SYSTEM_PROMPT_CHARS = 6540;
+const SYSTEM_PROMPT_CHARS = 6538;
 const SYSTEM_PROMPT_SHA256 =
-  "cc35262c41057d6e505b696713151185192907d39c8eb248d3b730af497ff0f6";
+  "07870bfb188474071900ed5abb527fd11462be86e4dc278ebcd7d05b73a0342a";
 const USER_PREFIX_CHARS = 65;
 const USER_PREFIX_SHA256 =
   "80a070691d1137b983c82813bddb2792354fda942cd033cf29d79ba80470ef6c";

@@ -9673,7 +9673,7 @@ async function _getOrCreatePushSub() {
 function _syncNotifyToSupabase(subscription, speciesList) {
   try {
     var cfg = resolveSupabaseConfig();
-    if (!cfg.supabaseUrl || !cfg.supabaseKey) return;
+    if (!cfg.supabaseUrl || !cfg.anonKey) return;
     var subJson = subscription.toJSON();
     var payload = {
       endpoint: subJson.endpoint,
@@ -9688,8 +9688,8 @@ function _syncNotifyToSupabase(subscription, speciesList) {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        'apikey': cfg.supabaseKey,
-        'Authorization': 'Bearer ' + cfg.supabaseKey,
+        'apikey': cfg.anonKey,
+        'Authorization': 'Bearer ' + cfg.anonKey,
         'Prefer': 'return=headers-only'
       },
       body: JSON.stringify({
@@ -9704,8 +9704,8 @@ function _syncNotifyToSupabase(subscription, speciesList) {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'apikey': cfg.supabaseKey,
-            'Authorization': 'Bearer ' + cfg.supabaseKey,
+            'apikey': cfg.anonKey,
+            'Authorization': 'Bearer ' + cfg.anonKey,
             'Prefer': 'return=minimal'
           },
           body: JSON.stringify(payload)
@@ -9731,12 +9731,12 @@ if ('serviceWorker' in navigator && navigator.serviceWorker && !window.__pushRot
       var j = msg.newSubscription;
       if (!j || !j.endpoint || !j.keys) return;
       var cfg = resolveSupabaseConfig();
-      if (!cfg.supabaseUrl || !cfg.supabaseKey) return;
+      if (!cfg.supabaseUrl || !cfg.anonKey) return;
 
       var killOld = msg.oldEndpoint
         ? fetch(cfg.supabaseUrl + '/rest/v1/push_subscriptions?endpoint=eq.' + encodeURIComponent(msg.oldEndpoint), {
             method: 'DELETE',
-            headers: { apikey: cfg.supabaseKey, Authorization: 'Bearer ' + cfg.supabaseKey },
+            headers: { apikey: cfg.anonKey, Authorization: 'Bearer ' + cfg.anonKey },
           }).catch(function(){})
         : Promise.resolve();
 
@@ -9935,7 +9935,23 @@ window.toggleNotification = async function(speciesName) {
     var reg = await navigator.serviceWorker.ready;
     var sub = await reg.pushManager.getSubscription();
 
-    if (!sub && __notifySpecies.length > 0 && VAPID_PUBLIC_KEY) {
+    // P35: the old gate required a non-empty __notifySpecies, so a device whose
+    // bell list had not been restored yet never re-subscribed after a rotation.
+    // speciesMeta notify flags are an equally good signal — seed from them.
+    var __metaNotify = [];
+    try {
+      var __gateMeta = JSON.parse(localStorage.getItem('estbirding.speciesMeta.v1') || '{}');
+      for (var __gk in __gateMeta) {
+        if (__gateMeta[__gk] && __gateMeta[__gk].notify === true) __metaNotify.push(__gk);
+      }
+    } catch (e) { console.warn('[notify-reconcile] speciesMeta read failed', e); }
+
+    if (!sub && VAPID_PUBLIC_KEY && (__notifySpecies.length > 0 || __metaNotify.length > 0)) {
+      if (__notifySpecies.length === 0) {
+        __notifySpecies = __metaNotify.slice();
+        try { localStorage.setItem('bm_notify_species', JSON.stringify(__notifySpecies)); } catch (e) {}
+        console.log('[notify-reconcile] seeded', __notifySpecies.length, 'species from speciesMeta');
+      }
       try {
         sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
@@ -9957,13 +9973,13 @@ window.toggleNotification = async function(speciesName) {
       if (__notifySpecies.length > 0) {
         try {
           var cfg = resolveSupabaseConfig();
-          if (cfg.supabaseUrl && cfg.supabaseKey) {
+          if (cfg.supabaseUrl && cfg.anonKey) {
             var checkUrl = cfg.supabaseUrl +
               '/rest/v1/push_subscriptions?endpoint=eq.' +
               encodeURIComponent(sub.endpoint) +
               '&select=endpoint';
             var r = await fetch(checkUrl, {
-              headers: { apikey: cfg.supabaseKey, Authorization: 'Bearer ' + cfg.supabaseKey }
+              headers: { apikey: cfg.anonKey, Authorization: 'Bearer ' + cfg.anonKey }
             });
             var rows = r.ok ? await r.json().catch(function(){ return []; }) : [];
             if (!Array.isArray(rows) || rows.length === 0) {

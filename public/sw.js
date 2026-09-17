@@ -3,6 +3,13 @@
 // evicts the previous one.
 const SW_VERSION = (() => { try { return new URL(self.location.href).searchParams.get('v') || 'dev'; } catch (e) { return 'dev'; } })();
 const CACHE_NAME = 'estbirding-' + SW_VERSION;
+
+// P35: main.tsx also passes the Supabase URL (`su`) and publishable key (`sk`) so
+// syncSubscriptionToSupabase() below can write a rotated subscription with no
+// window open. searchParams is order-independent, so CACHE_NAME is unaffected.
+const SW_PARAMS = (() => { try { return new URL(self.location.href).searchParams; } catch (e) { return null; } })();
+const SB_URL = ((SW_PARAMS && SW_PARAMS.get('su')) || '').replace(/\/+$/, '');
+const SB_KEY = (SW_PARAMS && SW_PARAMS.get('sk')) || '';
 const PRECACHE_URLS = [
   '/manifest.json',
   '/map-placeholder.html',
@@ -128,6 +135,67 @@ self.addEventListener('notificationclick', function(event) {
   );
 });
 
+// Same iOS/Android/Desktop convention the linnuliigid iframe writes.
+function swDeviceLabel() {
+  var ua = (self.navigator && self.navigator.userAgent) || '';
+  if (/iPhone|iPad/.test(ua)) return 'iOS';
+  if (/Android/.test(ua)) return 'Android';
+  return 'Desktop';
+}
+
+// P35: write the rotated subscription to push_subscriptions from the SW itself.
+// postMessage alone loses the rotation whenever the app is closed, which is how
+// the last live subscription was orphaned. Carries the species list across from
+// the old row, then removes it. Never throws — the app-shell reconcile is the
+// next safety net.
+async function syncSubscriptionToSupabase(subJson, oldEndpoint) {
+  try {
+    if (!SB_URL || !SB_KEY || !subJson || !subJson.endpoint) return;
+
+    var headers = {
+      'Content-Type': 'application/json',
+      'apikey': SB_KEY,
+      'Authorization': 'Bearer ' + SB_KEY,
+    };
+    var table = SB_URL + '/rest/v1/push_subscriptions';
+    var species = [];
+
+    if (oldEndpoint) {
+      var oldFilter = '?endpoint=eq.' + encodeURIComponent(oldEndpoint);
+      try {
+        var prev = await fetch(table + oldFilter + '&select=subscribed_species,device_label', { headers: headers });
+        var rows = prev.ok ? await prev.json() : [];
+        if (Array.isArray(rows) && rows.length && Array.isArray(rows[0].subscribed_species)) {
+          species = rows[0].subscribed_species;
+        }
+      } catch (e) {}
+      try {
+        await fetch(table + oldFilter, { method: 'DELETE', headers: headers });
+      } catch (e) {}
+    }
+
+    await fetch(table + '?on_conflict=endpoint', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SB_KEY,
+        'Authorization': 'Bearer ' + SB_KEY,
+        'Prefer': 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify({
+        endpoint: subJson.endpoint,
+        key_p256dh: subJson.keys ? subJson.keys.p256dh : null,
+        key_auth: subJson.keys ? subJson.keys.auth : null,
+        subscribed_species: species,
+        device_label: swDeviceLabel(),
+        updated_at: new Date().toISOString(),
+      }),
+    });
+  } catch (e) {
+    // Silent by design — see above.
+  }
+}
+
 // Chrome periodically rotates push subscriptions. Without this handler the
 // rotation is silent and the old endpoint in push_subscriptions is orphaned.
 self.addEventListener('pushsubscriptionchange', function(event) {
@@ -146,6 +214,11 @@ self.addEventListener('pushsubscriptionchange', function(event) {
           applicationServerKey: appServerKey,
         });
       }
+
+      await syncSubscriptionToSupabase(
+        newSub ? newSub.toJSON() : null,
+        oldSub ? oldSub.endpoint : null
+      );
 
       var clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       var payload = {

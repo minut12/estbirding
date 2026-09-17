@@ -207,3 +207,6 @@ verify_jwt = false
 
 [functions.prediction-outcomes]
 verify_jwt = false
+
+[functions.send-test-push]
+verify_jwt = false

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
-const VAPID_PUBLIC_KEY =
+// Exported for src/lib/pushReconcile.ts (P35) — the app-shell reconcile must use
+// the same key and the same default species list as this hook.
+export const VAPID_PUBLIC_KEY =
   'BMcJJwiQiFdVYrzz8wpoMp0kA2zbw4o4QHgebWs1WV0LexhjNPek5JX1ZHM8xswOXP_VJqUl_1UoA83tKEtpldI';
 
 const SPECIES_META_URL =
@@ -22,7 +24,7 @@ export interface SubscriptionAPI {
   error: string | null;
 }
 
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
+export function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
   const raw = atob(base64);
@@ -31,7 +33,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return out;
 }
 
-async function fetchRareSpeciesList(): Promise<string[]> {
+export async function fetchRareSpeciesList(): Promise<string[]> {
   const res = await fetch(SPECIES_META_URL);
   if (!res.ok) throw new Error(`species_meta fetch failed: HTTP ${res.status}`);
   const data = await res.json();
